@@ -11,9 +11,18 @@ import (
 // past the allocation — a heap-buffer-overflow / adjacent-heap corruption. This
 // is the "%str-long 下標寫無增長護欄" memory-safety gap.
 //
-// The runtime smoke test (tests/mem-safety/str-index-grow.no) proves the guard
-// is actually taken and keeps the program memory-safe; this Go test pins the
-// codegen structure so the guard cannot be silently removed.
+// REACHABILITY NOTE (2026-11-11): no source program can trigger this guard any
+// more. `s[i] = v` was banned globally — the checker's `idxwrite` rule now
+// rejects every `str` index-store, the `with-cap` exemption included — and the
+// surviving place-match form `s[i]: { ok -> it = v }` is gated on `i < len`, so
+// it can never reach past `cap`. The guard is therefore DEAD CODE as far as the
+// language surface goes, kept as defence in depth (an FFI write-back or a future
+// `str.append` could still need it). That makes THIS Go test the only thing
+// pinning it: it drives the parser/lowering directly (lowerForTest runs no
+// checker) so it can still build the pre-ban `s[n] = 'e'` shape and assert the
+// emitted grow block. tests/mem-safety/str-index-grow.no now asserts the
+// reachable semantics instead (in-range place-match lands, out-of-range is a
+// safe no-op) and says so in its own header.
 const strIndexGrowSrc = `
 main = () {
     s str = with-cap(4)

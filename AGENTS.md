@@ -386,7 +386,8 @@ user.to-json = () (s str) {
 #{overflow=wrap}
 digits = digits + 1
 
-; 整数溢出策略（wrap / clamp0 / min / max / saturate / 默认）；只作用于下一陈述，须独占一行
+; 整数溢出策略（wrap / clamp0 / min / max / saturate / 默认）；只作用于下一陈述：
+; 置上方须独占一行，或写在同一行尾随（尾随同样合法）
 
 #{buildin}
 str.byte = (i i64) (c ?byte) {
@@ -491,7 +492,8 @@ c = a + b #{overflow=wrap}
 
 | 模块 | 常用 API |
 | --- | --- |
-| `str` | `.len()`(码点数) `.len-bytes()` `.cap` `.byte(i) ?byte` `.set-byte(i,b) ?bool` `.to-upper()` `.to-lower()` `.index()` `.contains()` `.slice()` `.copy()` `.fill()`；`with-cap(n)`；`s[i]` 码点索引 |
+| `str` | `.len()`(码点数) `.len-bytes()` `.cap` `.byte(i) ?byte` `.to-upper()` `.to-lower()` `.index()` `.contains()` `.slice()` `.copy()` `.fill()` `.bytes()` **`.push(c char)` `.push-str(s)`**；`with-cap(n)`；`s[i]` 码点索引读；**`s[i] = v` 与 `set-byte` 均已禁用**（见 §5.4） |
+| `txt` | `.len()`(码点数) `.len-bytes()` `.byte(i) ?byte` `.to-str()` `.to-bytes()` `.index()` `.contains()` `.slice()` `.fill()` **`.push(c char)` `.push-str(s)` `.push-txt(t)`**；`t[i]` 码点索引读；**`t[i] = v` 自 2026-11-12 起同样禁用**（增长只走 push 家族） |
 | `vec` / `arr` | `vec-create(n, val)`；`[]t.eq(b)`；原地排序 `.asc()` `.desc()`；切片视图 `v[a..b)` |
 | `int` / `float` / `num` | `int.to-str()` `div` `mod`；`f64.sin() cos() tan() degrees() radians()`；`math.PI` `math.E`；具体类型转换见 `number` |
 | `err` | `err.new(msg, code=code.unknown)` `from-errno(errno)`；`code` 枚举（ok/not-found/permission/io/timeout/parse/invalid/overflow/unknown）；`e.is(ec)` `e.msg()` `e.code()` `e.format()`；**`?t` 的 `err ->` 臂绑定的 `it` 就是这个 `err.err`（消息靠 `it.msg()`）** |
@@ -598,7 +600,14 @@ sha1 = (data []byte) (hash [20]byte) {
 
 - 字符串拼接用 `-`；遍历用 `<-`（区间 / 容器）形态，不要用条件循环手动模拟索引递增；枚举 / option 解包用 `match`（`x: { ... }`）。
 - 方法链式调用：`e.format()`、`s.to-upper()`、`v.asc()`。
-- 需要预构建字符串缓冲时，先 `with-cap(n)` 再逐字节 `set-byte` / 下标写入（**只有 `with-cap` 的下标直写豁免**：`with-len(n)` / `with-cap-len(cap, len)` 的 len 已就位，写入仍须 place-match 或 `?=`，直写报 `idxwrite`）。
+- 需要预构建字符串缓冲时，先想清楚是「定长」还是「变长」：定长用 `x str = with-cap-len(n, n)`（len 已就位，可 place-match 写）；变长用 `x str = with-cap(n)` + `s.push(...)` / `s.push-str(...)`（原地扩容，倍增）。逐**字节**拼装仍推荐 `x []byte = with-cap-len(n, n)` + `x[i] = b` + `x.slice(0, k).to-bytes-str()`；原地覆写已有内容用 `s.fill(val byte)`；下标写只剩 place-match `s[i]: { ok -> it = v / -> _ }`（以「读」作闸门，`i >= len` 静默跳过，永不改长度）。
+  - ⚠️ **place-match 的闸门是「码点」不是「字节」**（闸门就是 `s[i]` 这个读，而 `str` 下标读按码点计）。它只适合 ASCII、一格一码点的场景（打连字符 / 打数字 / hex 查表）；**任何可能非 ASCII 或 `>= 0x80` 的逐字节拼装一律走 `[]byte`**。实测 `f = with-len(8)` 后用 place-match 写 224..231，只有前 4 格落盘，其余被闸门静默跳过（`path.split` 的非 ASCII 文件名就是这样被截断的）。
+  - **`str` 的 `with-cap` 下标直写豁免已于 2026-11-11 撤销**（全域禁 `s[i] = v`）。`idxwrite` 的 with-cap 豁免现在只服务 `[]byte` / `[]T` / 固定数组 —— 它们 len=0 时确实只能靠直写增长。
+  - **`txt` 自 2026-11-12 起同案禁止 `t[i] = v`**：它按码点重编码写回，长度会随写入隐式改变（`i` == 码点数为追加、超 255 静默丢弃）。txt 无堆无扩容，也没有 `_set-byte` 之外的拼接通道，变长一律走 `.push(c)` / `.push-str(s)` / `.push-txt(t)`。
+  - 「全域」靠**四个**登记点合起来成立，写新检查时别只补一个：① 函数内局部变量（`IdxLocalTypes`）；② 顶层脚本裸名（`collectTopLevelVarRawForIdx` → `topIndexBaseRaw`）；③ 顶层 struct 字段基底（同一条 `topIndexBaseRaw`，靠 `structFields` 解 `b.t`）；④ 结果参数（`resStrTxtParams`，`collectStrTxtResultParams`）。后三者存在是因为 `IdxLocalTypes` 按函数作用域登记，顶层键为空串、结果参数不带标注、struct 字面量名不登记时都查不到型别。
+  - 🔴 顶层那两处**只能**用来判 `r == "str" || r == "txt"`，绝不能把返回值整体赋给 `lt`：一旦 `lt` 被填上，顶层 `[]byte` / `[]T` / `[N]T` 的直写就会掉进 `isContainerWriteBase` 末尾的 `return true`（顶层 `curFunc` 为空、`capBases` 无条目），大批语料会翻红。`TestIndexWriteTopLevelNonStrTxtNotReported` 就是这条边界的警报器。
+  - `set-byte` 同日私有化为 `_set-byte`，只有 std 内部（`str.fill` / `txt._from-bytes`）可调用；按字节拼 `txt` 用 `txt.from-bytes(b []byte)`。
+  - `with-len(n)` / `with-cap-len(cap, len)` 的 len 已就位，写入须 place-match 或 `?=`，直写报 `idxwrite`。
 - 条件分支优先用行内 guard `cond -> stmt`，复杂分支用 `{}` 短路链。
 - 可失败的容器操作 / 查找 / 解析优先返回 `?t`（空用 `nil`、错误用 `err('msg')`），而非 `(val, ok)`。
 - option `?t` 解包优先用隐式绑定 `ok -> ...(it)...`，而非具名 `ok(v) -> ...(v)...`（少一个绑定名，规避 §6.3 串型坑）；用户自定义枚举变体的载荷仍须具名 `ok(v) ->`（见 §3.2 最佳实践）。
@@ -695,8 +704,8 @@ res: {
 }
 ```
 
-### 6.4 `#{overflow=...}` 必须独占一行且只作用于下一陈述
-放在函数体里不会「整函生效」；必须独立成行置于目标语句上方。同行的行首前缀写法（`#{...} target`）是编译错误。
+### 6.4 `#{overflow=...}` 只作用于下一陈述：上方独占一行，或同行尾随
+两种写法等价。放在函数体里不会「整函生效」；行首前缀写法（`#{...} target`）是编译错误。
 **这是刻意的设计限制（防止滥用），不是待补的实现缺陷**：`overflow` 只认行作用域，因为它是逐运算的
 语义开关，放宽到块/函数级会让「某条运算用哪个模式」需要向上追溯，且 `no fmt` / `no vet` / codegen
 三方极易漂移（现状已漂：函数头注解只让 vet 闭嘴、运行期照旧 `err`）。详见 §3.9.1。
@@ -712,6 +721,12 @@ digits = digits + 1
 ; #{overflow=wrap} digits = digits + 1
 ; #{overflow=wrap} digits = digits + 1   ; 前缀写法 → 编译错误
 ```
+
+存量已用 `no fmt --fix=overflow` 下推过一轮：它先摘掉写在函数头（L1）/ 块头（L2）上的注解，
+再按 checker 的报告逐条补 L3，只动注解行。**判据是「摘掉会不会改变编译结果」——不会**：
+L1/L2 的 `#{overflow}` 对 codegen 与编译期检查都无效（`for` 头加与不加，`15w45dqk` 逐字
+相同），只让 `no vet` 少报 hint。残留 166 处（裸块 `{` / `.` 起首陈述 / `cond -> {` 头）
+的成因与待办见 `docs/docs/lang/annotation-scope.md` §7。
 
 ### 6.5 不要定义会遮蔽成员方法的 union 别名方法
 为 `string = str | txt` 定义 `string.len` 之类的别名方法，会接管 `s.len()` 调用并递归分发回自身 → 段错误。

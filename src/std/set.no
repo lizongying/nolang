@@ -51,7 +51,6 @@ set.init = (data []t) (s set) {
 ; val t: 要加入的元素
 ; 返回 new-size i64: 新的大小
 ; [add](#set.add)
-#{overflow=wrap}
 set.add = (val t) (new-size i64) {
     sz = .size
 
@@ -95,7 +94,6 @@ set.add = (val t) (new-size i64) {
 ; val t: 要移除的元素
 ; 返回 new-size i64: 新的大小
 ; [remove](#set.remove)
-#{overflow=wrap}
 set.remove = (val t) (new-size i64) {
     sz = .size
     idx = -1
@@ -155,7 +153,6 @@ set.contains = (val t) (yes bool) {
 ; osize i64: 另一個集合的元素數量
 ; 返回 new-size i64: 聯集後的大小
 ; [union](#set.union)
-#{overflow=wrap}
 set.union = (other []t, osize i64) (new-size i64) {
     j <- [0..osize): {
         ov = other[j]: {
@@ -201,7 +198,6 @@ set.union = (other []t, osize i64) (new-size i64) {
 ; out []t: 交集結果緩衝區
 ; 返回 cnt i64: 交集元素數量
 ; [intersection](#set.intersection)
-#{overflow=wrap}
 set.intersection = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
     sz = .size
@@ -245,7 +241,6 @@ set.intersection = (other []t, osize i64, out []t) (cnt i64) {
 ; out []t: 差集結果緩衝區
 ; 返回 cnt i64: 差集元素數量
 ; [difference](#set.difference)
-#{overflow=wrap}
 set.difference = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
     sz = .size

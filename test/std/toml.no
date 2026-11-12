@@ -2,8 +2,8 @@
 ;
 ; 執行：no test test/std/toml.no
 ; 覆蓋：parse（scalar/table/註解/負數/布林/錯誤）、get（原始字面）、get-str /
-;       get-i64 / get-f64 / get-bool、has、toml-unquote、toml-strip-comment、
-;       toml-parse-i64（十六進位/底線分隔）、new+put+stringify 回環；
+;       get-i64 / get-f64 / get-bool、has、unquote、strip-comment、
+;       parse-i64（十六進位/底線分隔）、new+put+stringify 回環；
 ;       entry/table/array 緩衝區助手、find-eq、normalize-key、value-complete、
 ;       valid-value、register-table / next-array-table / resolve-section、
 ;       parse-f64 / parse-bool
@@ -217,12 +217,12 @@ t-parse-error = () {
     }
 }
 
-; 單項輔助函式：toml-unquote 去引號、toml-strip-comment 去行尾註解、
-; toml-parse-i64 支援十六進位（0xFF=255）、底線分隔（1_000=1000）與負數
+; 單項輔助函式：unquote 去引號、strip-comment 去行尾註解、
+; parse-i64 支援十六進位（0xFF=255）、底線分隔（1_000=1000）與負數
 t-helpers = () {
     u = ''
     uo = false
-    un = toml.toml-unquote('"hi"')
+    un = toml.unquote('"hi"')
     un: {
         ok -> {
             uo = true
@@ -234,12 +234,12 @@ t-helpers = () {
     runner.is-true(uo, 'unquote ok')
     runner.str-eq(u, 'hi', 2, 'unquote basic string')
 
-    sc = toml.toml-strip-comment('a = 1 # note')
+    sc = toml.strip-comment('a = 1 # note')
     eq-str(sc, 'a = 1', 'strip inline comment')
 
     hv = 0
     ho = false
-    hi = toml.toml-parse-i64('0xFF')
+    hi = toml.parse-i64('0xFF')
     hi: {
         ok -> {
             ho = true
@@ -252,7 +252,7 @@ t-helpers = () {
     runner.eq(hv, 255, 'hex 0xFF == 255')
     uv = 0
     uo2 = false
-    ui = toml.toml-parse-i64('1_000')
+    ui = toml.parse-i64('1_000')
     ui: {
         ok -> {
             uo2 = true
@@ -264,7 +264,7 @@ t-helpers = () {
     runner.is-true(uo2, 'underscore parse ok')
     runner.eq(uv, 1000, 'underscore 1_000 == 1000')
     dv = 0
-    di = toml.toml-parse-i64('-123')
+    di = toml.parse-i64('-123')
     di: {
         ok -> dv = it
 
@@ -296,19 +296,19 @@ n = 42', 'stringify roundtrip')
 
 ; ---- 內部助手直測（entry / table / key / value 判定 / array-of-tables） ----
 
-; 由 toml-make-entry 造一條目，驗 key/value 讀回、key 比較的長度與內容兩路徑
+; 由 make-entry 造一條目，驗 key/value 讀回、key 比較的長度與內容兩路徑
 t-entry = () {
-    e = toml.toml-make-entry('k', 'value text')
-    eq-str(toml.toml-entry-key(e), 'k', 'toml-entry-key')
-    eq-str(toml.toml-entry-value(e), 'value text', 'toml-entry-value')
-    runner.is-true(toml.toml-entry-key-eq(e, 'k'), 'entry-key-eq 相同鍵')
-    runner.is-false(toml.toml-entry-key-eq(e, 'kk'), 'entry-key-eq 長度不符')
-    runner.is-false(toml.toml-entry-key-eq(e, 'j'), 'entry-key-eq 內容不符')
+    e = toml.make-entry('k', 'value text')
+    eq-str(toml.entry-key(e), 'k', 'entry-key')
+    eq-str(toml.entry-value(e), 'value text', 'entry-value')
+    runner.is-true(toml.entry-key-eq(e, 'k'), 'entry-key-eq 相同鍵')
+    runner.is-false(toml.entry-key-eq(e, 'kk'), 'entry-key-eq 長度不符')
+    runner.is-false(toml.entry-key-eq(e, 'j'), 'entry-key-eq 內容不符')
 }
 
-; toml-table-name / toml-array-name 從固定緩衝區還原名稱；toml-table-eq 比較緩衝區
+; table-name / array-name 從固定緩衝區還原名稱；table-eq 比較緩衝區
 t-table-names = () {
-    t toml-table
+    t table
     t.name-len = 3
     t.name[0]: {
         ok -> it = 97
@@ -325,13 +325,13 @@ t-table-names = () {
 
         -> _
     }
-    eq-str(toml.toml-table-name(t), 'abc', 'toml-table-name')
+    eq-str(toml.table-name(t), 'abc', 'table-name')
 
-    runner.is-true(toml.toml-table-eq(t.name, 3, 'abc'), 'table-eq 相同')
-    runner.is-false(toml.toml-table-eq(t.name, 3, 'abd'), 'table-eq 內容不符')
-    runner.is-false(toml.toml-table-eq(t.name, 3, 'ab'), 'table-eq 長度不符')
+    runner.is-true(toml.table-eq(t.name, 3, 'abc'), 'table-eq 相同')
+    runner.is-false(toml.table-eq(t.name, 3, 'abd'), 'table-eq 內容不符')
+    runner.is-false(toml.table-eq(t.name, 3, 'ab'), 'table-eq 長度不符')
 
-    a toml-array-table
+    a array-table
     a.name-len = 2
     a.index = 0
     a.name[0]: {
@@ -344,22 +344,22 @@ t-table-names = () {
 
         -> _
     }
-    eq-str(toml.toml-array-name(a), 'xy', 'toml-array-name')
+    eq-str(toml.array-name(a), 'xy', 'array-name')
 }
 
-; toml-find-eq 只認引號外的等號
+; find-eq 只認引號外的等號
 t-find-eq = () {
-    runner.eq(toml.toml-find-eq('a = b'), 2, 'find-eq bare')
-    runner.eq(toml.toml-find-eq('a="x=y"'), 1, 'find-eq 引號內等號不算')
-    runner.eq(toml.toml-find-eq('noeq'), -1, 'find-eq 找不到回 -1')
-    runner.eq(toml.toml-find-eq(''), -1, 'find-eq 空字串回 -1')
+    runner.eq(toml.find-eq('a = b'), 2, 'find-eq bare')
+    runner.eq(toml.find-eq('a="x=y"'), 1, 'find-eq 引號內等號不算')
+    runner.eq(toml.find-eq('noeq'), -1, 'find-eq 找不到回 -1')
+    runner.eq(toml.find-eq(''), -1, 'find-eq 空字串回 -1')
 }
 
-; toml-normalize-key：合法鍵原樣返回，非法字元與空鍵回 nil
+; normalize-key：合法鍵原樣返回，非法字元與空鍵回 nil
 t-normalize-key = () {
     ok1 = false
     v1 = ''
-    k1 = toml.toml-normalize-key('  a.b  ')
+    k1 = toml.normalize-key('  a.b  ')
     k1: {
         ok -> {
             ok1 = true
@@ -372,7 +372,7 @@ t-normalize-key = () {
     eq-str(v1, 'a.b', 'normalize-key 去空白後為 a.b')
 
     ok2 = false
-    k2 = toml.toml-normalize-key('a$b')
+    k2 = toml.normalize-key('a$b')
     ok2 = k2: {
         ok -> true
 
@@ -381,7 +381,7 @@ t-normalize-key = () {
     runner.is-false(ok2, 'normalize-key 拒絕 $ 字元')
 
     ok3 = false
-    k3 = toml.toml-normalize-key('')
+    k3 = toml.normalize-key('')
     ok3 = k3: {
         ok -> true
 
@@ -392,7 +392,7 @@ t-normalize-key = () {
     ; 引號先被剝除，因此帶引號的鍵會以去引號形式回傳
     ok4 = false
     v4 = ''
-    k4 = toml.toml-normalize-key('"a b"')
+    k4 = toml.normalize-key('"a b"')
     k4: {
         ok -> {
             ok4 = true
@@ -405,39 +405,39 @@ t-normalize-key = () {
     eq-str(v4, 'a b', 'normalize-key 剝除引號')
 }
 
-; toml-value-complete / toml-valid-value：多行值閉合判定與字面值合法性
+; value-complete / valid-value：多行值閉合判定與字面值合法性
 t-value-rules = () {
-    runner.is-true(toml.toml-value-complete('"abc"'), 'complete 已閉合字串')
-    runner.is-false(toml.toml-value-complete('"abc'), 'complete 未閉合字串')
-    runner.is-true(toml.toml-value-complete('[1, 2]'), 'complete 已閉合陣列')
-    runner.is-false(toml.toml-value-complete('[1, 2'), 'complete 未閉合陣列')
-    runner.is-false(toml.toml-value-complete(''), 'complete 空值不完整')
+    runner.is-true(toml.value-complete('"abc"'), 'complete 已閉合字串')
+    runner.is-false(toml.value-complete('"abc'), 'complete 未閉合字串')
+    runner.is-true(toml.value-complete('[1, 2]'), 'complete 已閉合陣列')
+    runner.is-false(toml.value-complete('[1, 2'), 'complete 未閉合陣列')
+    runner.is-false(toml.value-complete(''), 'complete 空值不完整')
 
-    runner.is-true(toml.toml-valid-value('true'), 'valid-value 布林')
-    runner.is-true(toml.toml-valid-value('"x"'), 'valid-value 字串')
-    runner.is-true(toml.toml-valid-value('[1, 2]'), 'valid-value 陣列')
-    runner.is-true(toml.toml-valid-value('1.5'), 'valid-value 浮點')
-    runner.is-true(toml.toml-valid-value('1979-05-27T07:32:00Z'), 'valid-value 日期時間')
-    runner.is-false(toml.toml-valid-value('@'), 'valid-value 拒絕 @')
-    runner.is-false(toml.toml-valid-value(''), 'valid-value 拒絕空值')
-    runner.is-false(toml.toml-valid-value('[1, 2'), 'valid-value 拒絕未閉合陣列')
+    runner.is-true(toml.valid-value('true'), 'valid-value 布林')
+    runner.is-true(toml.valid-value('"x"'), 'valid-value 字串')
+    runner.is-true(toml.valid-value('[1, 2]'), 'valid-value 陣列')
+    runner.is-true(toml.valid-value('1.5'), 'valid-value 浮點')
+    runner.is-true(toml.valid-value('1979-05-27T07:32:00Z'), 'valid-value 日期時間')
+    runner.is-false(toml.valid-value('@'), 'valid-value 拒絕 @')
+    runner.is-false(toml.valid-value(''), 'valid-value 拒絕空值')
+    runner.is-false(toml.valid-value('[1, 2'), 'valid-value 拒絕未閉合陣列')
 }
 
-; toml-register-table / toml-next-array-table / toml-resolve-section：
+; register-table / next-array-table / resolve-section：
 ; 表格去重、array-of-tables 索引自增、子表名改寫為 base[索引].後綴
 t-doc-model = () {
     doc = toml.new()
-    runner.is-true(toml.toml-register-table(doc, 'a.b'), 'register-table 首次成功')
-    runner.is-false(toml.toml-register-table(doc, 'a.b'), 'register-table 重複失敗')
+    runner.is-true(toml.register-table(doc, 'a.b'), 'register-table 首次成功')
+    runner.is-false(toml.register-table(doc, 'a.b'), 'register-table 重複失敗')
     runner.eq(doc.table-count, 1, 'register-table 只登記一次')
 
-    i0 = toml.toml-next-array-table(doc, 'p')
+    i0 = toml.next-array-table(doc, 'p')
     i0: {
         ok -> runner.eq(it, 0, 'next-array-table 首次索引 0')
 
         -> runner.is-false(true, 'next-array-table 首次意外 nil')
     }
-    i1 = toml.toml-next-array-table(doc, 'p')
+    i1 = toml.next-array-table(doc, 'p')
     i1: {
         ok -> runner.eq(it, 1, 'next-array-table 第二次索引 1')
 
@@ -445,16 +445,16 @@ t-doc-model = () {
     }
     runner.eq(doc.array-count, 1, 'array-of-tables 只登記一次')
 
-    eq-str(toml.toml-resolve-section(doc, 'p.x'), 'p[1].x', 'resolve-section 改寫子表名')
-    eq-str(toml.toml-resolve-section(doc, 'p'), 'p', 'resolve-section 純表名不改寫')
-    eq-str(toml.toml-resolve-section(doc, 'other.y'), 'other.y', 'resolve-section 無關名不改寫')
+    eq-str(toml.resolve-section(doc, 'p.x'), 'p[1].x', 'resolve-section 改寫子表名')
+    eq-str(toml.resolve-section(doc, 'p'), 'p', 'resolve-section 純表名不改寫')
+    eq-str(toml.resolve-section(doc, 'other.y'), 'other.y', 'resolve-section 無關名不改寫')
 }
 
-; toml-parse-f64 / toml-parse-bool：型別轉換與失敗回 nil
+; parse-f64 / parse-bool：型別轉換與失敗回 nil
 t-parse-num-bool = () {
     fo = false
     fv = 0.0
-    fp = toml.toml-parse-f64('2.5')
+    fp = toml.parse-f64('2.5')
     fp: {
         ok -> {
             fo = true
@@ -468,7 +468,7 @@ t-parse-num-bool = () {
 
     fo2 = false
     fv2 = 0.0
-    fp2 = toml.toml-parse-f64('1_000.5')
+    fp2 = toml.parse-f64('1_000.5')
     fp2: {
         ok -> {
             fo2 = true
@@ -481,7 +481,7 @@ t-parse-num-bool = () {
     runner.is-true(fv2 == 1000.5, 'parse-f64 底線被剝除')
 
     fo3 = false
-    fp3 = toml.toml-parse-f64('abc')
+    fp3 = toml.parse-f64('abc')
     fo3 = fp3: {
         ok -> true
 
@@ -491,7 +491,7 @@ t-parse-num-bool = () {
 
     bo = false
     bv = false
-    bp = toml.toml-parse-bool('true')
+    bp = toml.parse-bool('true')
     bp: {
         ok -> {
             bo = true
@@ -504,7 +504,7 @@ t-parse-num-bool = () {
     runner.is-true(bv, 'parse-bool 值為真')
 
     bo2 = false
-    bp2 = toml.toml-parse-bool('yes')
+    bp2 = toml.parse-bool('yes')
     bo2 = bp2: {
         ok -> true
 

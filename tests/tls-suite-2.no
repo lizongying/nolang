@@ -20,9 +20,15 @@ buf[0] != 0x12 -> {
 print('PASS: tls-put-u16')
 
 ; 測試 2: tls-get-u16
-buf2 = space.repeat(8)
-buf2[0] = 0xab
-buf2[1] = 0xcd
+; 2026-11-11：str 下標直寫已全域禁用（idxwrite，腳本層也不例外）⇒ 改用 []byte 緩衝
+; 承接，收尾 to-bytes-str() 整體轉回 str。
+buf2-b []byte = with-cap-len(8, 8)
+buf2-b[0] = 0xab
+buf2-b[1] = 0xcd
+k2 <- [2..8): {
+    buf2-b[k2] = 32
+}
+buf2 = buf2-b.to-bytes-str()
 val = 0
 val = tls.get-u16(buf2, 0)
 val != 0xabcd -> {
@@ -41,10 +47,14 @@ buf3[0] != 0x12 -> {
 print('PASS: tls-put-u24')
 
 ; 測試 4: tls-get-u24
-buf4 = space.repeat(8)
-buf4[0] = 0x12
-buf4[1] = 0x34
-buf4[2] = 0x56
+buf4-b []byte = with-cap-len(8, 8)
+buf4-b[0] = 0x12
+buf4-b[1] = 0x34
+buf4-b[2] = 0x56
+k4 <- [3..8): {
+    buf4-b[k4] = 32
+}
+buf4 = buf4-b.to-bytes-str()
 val2 = 0
 val2 = tls.get-u24(buf4, 0)
 val2 != 0x123456 -> {

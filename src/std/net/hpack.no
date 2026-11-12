@@ -361,7 +361,6 @@ tables.dyn-add = (name str, value str) {
 
             .dyn-values[i] ?= dv-tmp
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -407,14 +406,12 @@ tables.dyn-add = (name str, value str) {
         -> _
     }
 
-    #{overflow=wrap}
     .dyn-count = .dyn-count + 1: {
         ok -> it
 
         ->
     }
 
-    #{overflow=wrap}
     .dyn-size = .dyn-size + name.len-bytes() + value.len-bytes() + 32
 }
 
@@ -584,7 +581,6 @@ tables.find-name = (name str) (idx i64) {
 tables.lookup = (idx i64) (name str, value str, ok bool) {
     ok = false
 
-    #{overflow=wrap}
     {
         idx <= 0 -> return
 
@@ -654,8 +650,9 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     #{overflow=wrap}
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
-        out = with-len(1)
-        out[0] = prefix-byte | val
+        ob []byte = with-cap-len(1, 1)
+        ob[0] = prefix-byte | val
+        out = ob.to-bytes-str()
         return
     }
 
@@ -669,7 +666,6 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     (t >= 128) {
         t = t >> 7
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -681,12 +677,15 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
             }
         }
     }
-    out = with-len(n)
+
+    ; 2026-11-11：str 下標直寫已全域禁用 ⇒ []byte 緩衝承接（位元組保真），
+    ; 收尾整體 to-bytes-str()。這裡不能用 place-match：它對 str 是「碼點」閘門，
+    ; 這些是 >= 0x80 的延續位元組，會被靜默跳過。
+    ob []byte = with-cap-len(n, n)
 
     ; 第一個 byte: prefix 全 1
-    out[0] = prefix-byte | max-prefix
+    ob[0] = prefix-byte | max-prefix
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -699,9 +698,8 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     }
     i = 1
     (r-val >= 128) {
-        out[i] = (r-val & 127) | 128
+        ob[i] = (r-val & 127) | 128
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -714,7 +712,8 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
         }
         r-val = r-val >> 7
     }
-    out[i] = r-val
+    ob[i] = r-val
+    out = ob.to-bytes-str()
 }
 
 ; 從 data 的 pos 位置解碼變長整數
@@ -743,7 +742,6 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     first = first-b & max-prefix
     val = first
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -766,7 +764,6 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
         b = data.byte(next-pos)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -778,9 +775,9 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
             }
         }
 
+        #{overflow=wrap}
         val = val + ((b & 127) << m)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -814,11 +811,11 @@ encode-str = (s str) (out str) {
     ; 預先設定總長度（原 with-cap + 逐 byte 寫入在長度 byte 為 0x00
     ;   （空字串）時零寫入不推進長度，產生 0 byte 輸出，回環解碼失敗）
     #{overflow=wrap}
-    out = with-len(len-out.len-bytes() + s.len-bytes())
+    ob []byte = with-cap-len(len-out.len-bytes() + s.len-bytes(), len-out.len-bytes() + s.len-bytes())
 
     ; 複製長度編碼到 out
     i <- [0..len-out.len-bytes()): {
-        out[i] = len-out.byte(i)
+        ob[i] = len-out.byte(i)
     }
     out-n = len-out.len-bytes()
 
@@ -826,8 +823,9 @@ encode-str = (s str) (out str) {
     i <- [0..s.len-bytes()): {
 
         #{overflow=wrap}
-        out[out-n + i] = s.byte(i)
+        ob[out-n + i] = s.byte(i)
     }
+    out = ob.to-bytes-str()
 }
 
 ; 從 data 的 pos 位置解碼字串
@@ -862,7 +860,6 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     p = 0
     len, p = decode-int(data, pos, 7)
 
-    #{overflow=wrap}
     {
         p < 0 -> {
             next-pos = -1
@@ -876,14 +873,13 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
 
     ; 複製字串內容
-    out = with-cap(len)
+    out-b []byte = with-cap-len(len, len)
     i <- [0..len): {
 
         #{overflow=wrap}
-        out[i] = data.byte(p + i)
+        out-b[i] = data.byte(p + i)
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -894,6 +890,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
             ->
         }
     }
+    out = out-b.slice(0, len).to-bytes-str()
 }
 
 ; 標頭編解碼
@@ -919,25 +916,21 @@ tables.encode-header = (name str, value str) (out str) {
     }
 
     #{overflow=wrap}
-    out = with-cap(name.len-bytes() + value.len-bytes() + 8)
+    out-b []byte = with-cap-len(name.len-bytes() + value.len-bytes() + 8, name.len-bytes() + value.len-bytes() + 8)
 
     ; 2. name 匹配 → Literal with Incremental Indexing（6.2.1），name 用索引
     name-idx = 0
     name-idx = .find-name(name)
 
-    #{overflow=wrap}
     name-idx > 0 -> {
 
         ; 格式：01xxxxxx（高 2 位為 01，6-bit 索引）
         idx-out = ' '
         idx-out = encode-int(name-idx, 6, 64)
 
-        ; 複製到 out
-        ; ⚠️ out 是 with-cap 出來的 len=0 緩衝，不能用 `out[i]: { ok -> it = v }`
-        ; （place-match 以讀作閘門，len=0 時讀越界回 nil，ok 臂永不執行），
-        ; 必須直接下標寫入才能增長長度（idxwrite 對 with-cap 基底豁免）。
+        ; 複製到 out-b（[]byte 緩衝，str 下標直寫自 2026-11-11 起全域禁用）
         i <- [0..idx-out.len-bytes()): {
-            out[i] = idx-out.byte(i)
+            out-b[i] = idx-out.byte(i)
         }
         out-n = idx-out.len-bytes()
 
@@ -947,17 +940,18 @@ tables.encode-header = (name str, value str) (out str) {
         i <- [0..val-out.len-bytes()): {
 
             #{overflow=wrap}
-            out[out-n + i] = val-out.byte(i)
+            out-b[out-n + i] = val-out.byte(i)
         }
 
         ; 加入動態表
         .dyn-add(name, value)
+        out = out-b.slice(0, out-n + val-out.len-bytes()).to-bytes-str()
         return
     }
 
     ; 3. 全新標頭 → Literal with Incremental Indexing（6.2.1），新 name
     ; 格式：01000000（索引 0 = 新 name）
-    out[0] = 64
+    out-b[0] = 64
     out-n = 1
 
     ; 編碼 name
@@ -966,7 +960,7 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..name-out.len-bytes()): {
 
         #{overflow=wrap}
-        out[out-n + i] = name-out.byte(i)
+        out-b[out-n + i] = name-out.byte(i)
     }
 
     #{overflow=wrap}
@@ -978,11 +972,12 @@ tables.encode-header = (name str, value str) (out str) {
     i <- [0..val-out.len-bytes()): {
 
         #{overflow=wrap}
-        out[out-n + i] = val-out.byte(i)
+        out-b[out-n + i] = val-out.byte(i)
     }
 
     ; 加入動態表
     .dyn-add(name, value)
+    out = out-b.slice(0, out-n + val-out.len-bytes()).to-bytes-str()
 }
 
 ; 解碼標頭塊
@@ -1050,7 +1045,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 values[count] = lv-tmp
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -1115,7 +1109,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 values[count] = vb-tmp
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -1180,7 +1173,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 values[count] = vb-tmp
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -1242,7 +1234,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 values[count] = vb-tmp
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}

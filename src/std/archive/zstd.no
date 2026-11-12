@@ -8,7 +8,7 @@
 ;
 ; 用法：
 ;   data = fs.read-file('example.zst')   ; 讀取 zst 檔案
-;   decompressed = zstd-decompress(data)  ; 解壓 zstd 格式
+;   decompressed = decompress(data)  ; 解壓 zstd 格式
 ;
 ; 演算法參考：
 ;   - Zstandard format: https://datatracker.ietf.org/doc/html/rfc8878
@@ -50,7 +50,6 @@ zs-bit-reader.read-bit = () (bit i64) {
                     -> _
                 }
 
-                #{overflow=wrap}
                 .pos = .pos + 1: {
                     ok -> it
 
@@ -64,7 +63,6 @@ zs-bit-reader.read-bit = () (bit i64) {
             bit = .bit-buf & 1
             .bit-buf = .bit-buf >> 1
 
-            #{overflow=wrap}
             .bit-cnt = .bit-cnt - 1: {
                 ok -> it
 
@@ -99,7 +97,6 @@ zs-bit-reader.read-varint = () (v i64) {
             -> _
         }
 
-        #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
 
@@ -108,7 +105,6 @@ zs-bit-reader.read-varint = () (v i64) {
         v = v | ((b & 0x7f) << shift)
         (b & 0x80) == 0 -> break
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -163,7 +159,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     .table-log = table-log
     .table-size = 1 << table-log
 
-    #{overflow=wrap}
     .n-symbols = max-symbol + 1: {
         ok -> it
 
@@ -206,7 +201,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     ; 找到第一個負數（低機率符號）
     pos = 0
 
-    #{overflow=wrap}
     i <- [0..max-symbol + 1): {
         ixout179c19 = norm-count[i]: {
             ok -> it
@@ -218,7 +212,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
             {
                 .symbol[high-thresh] ?= i
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -237,7 +230,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         }
     }
 
-    #{overflow=wrap}
     i <- [0..max-symbol + 1): {
         positions[i]: {
             ok -> it = pos
@@ -251,7 +243,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
             -> 0
         }
 
-        #{overflow=wrap}
         nc > 0 -> {
             {
 
@@ -269,7 +260,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     ; 分配符號到表中
     position = 0
 
-    #{overflow=wrap}
     i <- [0..max-symbol + 1): {
         nc = norm-count[i]: {
             ok -> it
@@ -277,7 +267,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
             -> 0
         }
 
-        #{overflow=wrap}
         nc > 0 -> {
             j <- [0..nc): {
                 ixout214c25 = positions[i]: {
@@ -286,7 +275,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
                     -> _
                 }
 
-                #{overflow=wrap}
                 .symbol[ixout214c25 + j]: {
                     ok -> it = i
 
@@ -312,7 +300,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
         {
 
-            #{overflow=wrap}
             .nb-bits[i] ?= table-log - bits-for-count(nc)
 
             nb = .nb-bits[i]: {
@@ -327,7 +314,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
                 -> _
             }
 
-            #{overflow=wrap}
             .next-state[i] ?= (nc << nb) + (i - ixout233c53)
         }: {
             err -> _
@@ -391,7 +377,6 @@ fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -461,7 +446,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         }
     }
 
-    #{overflow=wrap}
     i <- [0..max-symbol + 1): {
         l = lengths[i]: {
             ok -> it
@@ -472,7 +456,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         {
             c ?= .count[l]
 
-            #{overflow=wrap}
             .count[l] ?= c + 1
         }: {
             err -> _
@@ -496,7 +479,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
             -> _
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -523,7 +505,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         }
     }
 
-    #{overflow=wrap}
     i <- [0..max-symbol + 1): {
         l = lengths[i]: {
             ok -> it
@@ -531,7 +512,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
             -> 0
         }
 
-        #{overflow=wrap}
         l > 0 -> {
             ixout364c21 = tmp-base[l]: {
                 ok -> it
@@ -551,6 +531,7 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
                 -> _
             }
 
+            #{overflow=wrap}
             tmp-base[l]: {
                 ok -> it = ixout368c28 + 1
 
@@ -599,7 +580,6 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
             -> _
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -645,7 +625,6 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -660,7 +639,6 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -675,7 +653,6 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -690,7 +667,6 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -705,7 +681,6 @@ zs-frame.read-frame-header = () (ok bool) {
         -> _
     }
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -721,7 +696,6 @@ zs-frame.read-frame-header = () (ok bool) {
     ; Window Descriptor（如果 single-segment == 0）
     .window-size = 0
 
-    #{overflow=wrap}
     single-segment == false -> {
         wd = .data[.pos]: {
             ok -> it
@@ -742,7 +716,6 @@ zs-frame.read-frame-header = () (ok bool) {
     }
 
     ; Dictionary ID（如果存在）
-    #{overflow=wrap}
     dict-id-flag > 0 -> {
         dict-id-size = 1 << (dict-id-flag - 1)
         .pos = .pos + dict-id-size: {
@@ -753,7 +726,6 @@ zs-frame.read-frame-header = () (ok bool) {
     }
 
     ; Frame Content Size（如果存在）
-    #{overflow=wrap}
     {
         fcs-flag == 0 -> {
             single-segment -> {
@@ -776,6 +748,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
                 -> _
             }
+            #{overflow=wrap}
             hi = .data[.pos + 1]: {
                 ok -> it
 
@@ -787,6 +760,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
                 ->
             }
+            #{overflow=wrap}
             fcs = fcs + 256
         }
 
@@ -796,16 +770,19 @@ zs-frame.read-frame-header = () (ok bool) {
 
                 -> _
             }
+            #{overflow=wrap}
             e1 = .data[.pos + 1]: {
                 ok -> it
 
                 -> _
             }
+            #{overflow=wrap}
             e2 = .data[.pos + 2]: {
                 ok -> it
 
                 -> _
             }
+            #{overflow=wrap}
             e3 = .data[.pos + 3]: {
                 ok -> it
 
@@ -826,6 +803,7 @@ zs-frame.read-frame-header = () (ok bool) {
                 -> _
             }
 
+            #{overflow=wrap}
             g1 = .data[.pos + 1]: {
                 ok -> it
 
@@ -834,6 +812,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
             fcs = fcs | (g1 << 8)
 
+            #{overflow=wrap}
             g2 = .data[.pos + 2]: {
                 ok -> it
 
@@ -842,6 +821,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
             fcs = fcs | (g2 << 16)
 
+            #{overflow=wrap}
             g3 = .data[.pos + 3]: {
                 ok -> it
 
@@ -850,6 +830,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
             fcs = fcs | (g3 << 24)
 
+            #{overflow=wrap}
             g4 = .data[.pos + 4]: {
                 ok -> it
 
@@ -874,7 +855,6 @@ zs-frame.decode-block = () (last-block ?bool) {
     last-block = nil
 
     ; 讀取 Block_Header (3 bytes)
-    #{overflow=wrap}
     .pos + 3 > .data.len() -> return
 
     b0 = .data[.pos]: {
@@ -897,7 +877,6 @@ zs-frame.decode-block = () (last-block ?bool) {
         -> _
     }
 
-    #{overflow=wrap}
     .pos = .pos + 3: {
         ok -> it
 
@@ -910,7 +889,6 @@ zs-frame.decode-block = () (last-block ?bool) {
     block-size = (b0 >> 3) | (b1 << 5) | (b2 << 13)
 
     ; Raw_Block (type 0)
-    #{overflow=wrap}
     {
         block-type == 0 -> {
 
@@ -923,7 +901,6 @@ zs-frame.decode-block = () (last-block ?bool) {
                 .out.push(d)
             }
 
-            #{overflow=wrap}
             .pos = .pos + block-size
             return
         }
@@ -982,7 +959,6 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
     lit-type = br.read-bits(2)
 
     ; Raw_Literals (type 0)
-    #{overflow=wrap}
     lit-type == 0 -> {
 
         ; 讀取 literals 大小
@@ -1013,6 +989,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
                 -> _
             }
         }
+        #{overflow=wrap}
         br.pos = br.pos + lit-size: {
             ok -> it
 
@@ -1068,8 +1045,8 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
 ; 解壓縮 Zstandard 格式的資料
 ;   data: zstd 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
-; [zstd-decompress](#zstd.zstd-decompress)
-zstd-decompress = (data []byte) (out []byte) {
+; [decompress](#zstd.decompress)
+decompress = (data []byte) (out []byte) {
     data.len() < 4 -> return
 
     ; 檢查 Zstandard magic number (小端序)
@@ -1151,8 +1128,8 @@ zstd-decompress = (data []byte) (out []byte) {
 ;   out: zstd 壓縮後的資料 ([]byte)
 ; 注意：目前使用 raw block 的基本實現，
 ;       完整 FSE + Huffman + LZ77 壓縮待後續實現。
-; [zstd-compress](#zstd.zstd-compress)
-zstd-compress = (data []byte) (out []byte) {
+; [compress](#zstd.compress)
+compress = (data []byte) (out []byte) {
 
     ; Zstandard magic number (小端序)
     out.push(0x28)

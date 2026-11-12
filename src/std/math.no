@@ -323,6 +323,7 @@ lcm = (a int, b int) (r int) {
 ; r int: 向零截斷的商
 ; [div](#math.div)
 div = (a int, b int) (r int) {
+    #{overflow=wrap}
     r = a / b
 }
 
@@ -360,36 +361,43 @@ mod = (a int, b int) (r int) {
 ; out str: 該碼點的 1–4 位元組 UTF-8 編碼（以 with-cap(4) 預留容量，長度由實際寫入決定）
 ; [char-to-str](#math.char-to-str)
 char-to-str = (c char) (out str) {
-    out = with-cap(4)
+
+    ; str 下標直寫已全域禁用 ⇒ 用 []byte 上界緩衝 + 實際長度切片。
+    ob []byte = with-cap-len(4, 4)
+    n = 1
     {
         c < 0x80 -> {
-            out[0] = c
+            ob[0] = c
         }
 
         c < 0x800 -> {
-            out[0] = 0xc0 | ((c >> 6) & 0x1f)
+            ob[0] = 0xc0 | ((c >> 6) & 0x1f)
 
-            out[1] = 0x80 | (c & 0x3f)
+            ob[1] = 0x80 | (c & 0x3f)
+            n = 2
         }
 
         c < 0x10000 -> {
-            out[0] = 0xe0 | ((c >> 12) & 0x0f)
+            ob[0] = 0xe0 | ((c >> 12) & 0x0f)
 
-            out[1] = 0x80 | ((c >> 6) & 0x3f)
+            ob[1] = 0x80 | ((c >> 6) & 0x3f)
 
-            out[2] = 0x80 | (c & 0x3f)
+            ob[2] = 0x80 | (c & 0x3f)
+            n = 3
         }
 
         -> {
-            out[0] = 0xf0 | ((c >> 18) & 0x07)
+            ob[0] = 0xf0 | ((c >> 18) & 0x07)
 
-            out[1] = 0x80 | ((c >> 12) & 0x3f)
+            ob[1] = 0x80 | ((c >> 12) & 0x3f)
 
-            out[2] = 0x80 | ((c >> 6) & 0x3f)
+            ob[2] = 0x80 | ((c >> 6) & 0x3f)
 
-            out[3] = 0x80 | (c & 0x3f)
+            ob[3] = 0x80 | (c & 0x3f)
+            n = 4
         }
     }
+    out = ob.slice(0, n).to-bytes-str()
 }
 
 ; 浮點轉字串：f64-to-str 函數已移除，改由 std/number.no 的 f64.to-str 方法

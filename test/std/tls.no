@@ -1,14 +1,26 @@
-; std-tls.no — net/tls 模組測試（純函式部分）
+; std-tls.no — net/tls 模組測試
 ;
 ; 執行：no test test/std/tls.no
 ;
-; 為什麼只測這一小塊：net/tls 是 8.6k 行的大件，95 個符號裡絕大多數要真 socket
-; （handshake / record 讀寫 / dial / server-accept / https-serve-once）。本檔先把
-; **不需要連線、可完全確定性斷言**的 14 個位元組/數論工具釘住：
-;   rand-bytes / put-u16 / put-u24 / get-u16 / get-u24 / bytes-cat /
-;   bytes-to-bn / bn-to-bytes / prf / tls-pad / tls-unpad /
-;   cipher-is-ecdhe / cipher-is-gcm / build-nonce
-; 剩下的（record 層、金鑰交換、RSA、AEAD、conn.*、server.*）留給後續輪次。
+; 覆蓋範圍：97 個符號中的 **46 個**，分四層 ——
+;   ① 純函式（位元組/數論工具，不需要 socket，完全確定性）：
+;      rand-bytes / put-u16 / put-u24 / get-u16 / get-u24 / bytes-cat /
+;      bytes-to-bn / bn-to-bytes / prf / tls-pad / tls-unpad /
+;      cipher-is-ecdhe / cipher-is-gcm / build-nonce
+;   ② 記錄層（loopback TCP 真收發，但不需要 TLS 握手 —— 金鑰/鹽/序號全是明參）：
+;      conn.encrypt/decrypt-record-gcm（1.2）、conn.encrypt/decrypt-record-13、
+;      send-raw / recv-n / read-record / net-recv-wait
+;   ③ 白盒（`conn` / `server-conn` 全是公開欄位）：
+;      conn.init / get-fd / close / send / recv / append-hs / append-hs-from、
+;      server-conn.close / append-hs / append-hs-from、server-init
+;   ④ 失敗臂 / 監聽（真 socket，但對端一行資料都不講）：
+;      server-listen / server-accept / https-serve-once / dial / dial-12 /
+;      conn.connect / conn.connect-12
+;
+; 剩下 51 個全部是**必須真握手**的內部步驟（send-client-hello / read-server-hello /
+; derive-keys / handshake / handshake-12-body / rsa-pkcs1-* / gen-x25519-keypair /
+; gen-p256-keypair / server-conn.read-client-hello …）。要覆蓋得先有一個會講 TLS 的
+; 對端（例如內建固定的 ClientHello/ServerHello 位元組流），屬獨立課題。
 ;
 ; 寫法備註：
 ;   - `[N]byte` 固定陣列可以直接用字面量 `iv [12]byte = [0, 0, …]`（實測可用），
@@ -18,6 +30,10 @@
 ;   - helper 內的 `v = a[i]: { ok -> it  -> -1 }` 是直接掛在運算式上的位置型 match，
 ;     不受上面那條限制（裸下標只有在「當運算式用」的語境才回 `?T`）。
 ;   - `runner.eq` 只吃 i64，位元組比較逐個取值比。
+;   - ⚠️ 給 `by()` 的**下標一律先落變數**（`k0 = 0` …）：純函式 + 全字面量實參會被
+;     comptime 折疊，折疊器對 []byte 下標讀會落到失敗臂 ⇒ 斷言恆等假綠（§5.2 #105）。
+;   - 每個用到 TCP 的 TEST 各用自己的埠（39231–39238），跑完 `fs.close` 收乾淨；
+;     同一 TEST 內埠號可重用（server-listen 那條就是「佔用 → 失敗 → 釋放 → 重綁」）。
 
 # /test/runner
 
@@ -266,7 +282,399 @@ t-prf = () {
     runner.is-true(diff2, 'prf: 換 secret 結果不同')
 }
 
-; ── 執行 ──────────────────────────────────────
+; ── conn 白盒：init / get-fd / close / send / recv 的失败臂 ──
+;
+; `tls.conn` 全是公开字段 ⇒ 不需要真握手也能把「未连线时的行为」钉死。
+; 下标一律走变量：纯函式 + 全字面量实参会被 comptime 折叠，
+; 而折叠器对 []byte 下标读会落到失败臂（见 test/README.md §5.2 #105）。
+
+t-conn-init = () {
+    c = tls.conn{}
+    c.init()
+
+    runner.eq(c.get-fd(), -1, 'conn.init: fd = -1')
+    runner.is-false(c.connected, 'conn.init: connected = false')
+    runner.is-false(c.encrypted, 'conn.init: encrypted = false')
+    runner.eq(c.version, 0, 'conn.init: version = 0（未协商）')
+    runner.eq(c.write-seq, 0, 'conn.init: write-seq = 0')
+    runner.eq(c.read-seq, 0, 'conn.init: read-seq = 0')
+    runner.eq(c.hs-buf-len, 0, 'conn.init: hs-buf-len = 0')
+    runner.eq(c.hs-buf.len(), 0, 'conn.init: hs-buf 逻辑长度为 0（容量 64KiB）')
+    runner.eq(c.hs-write-seq, 0, 'conn.init: hs-write-seq = 0')
+    runner.eq(c.hs-read-seq, 0, 'conn.init: hs-read-seq = 0')
+    runner.eq(c.ap-write-seq, 0, 'conn.init: ap-write-seq = 0')
+    runner.eq(c.ap-read-seq, 0, 'conn.init: ap-read-seq = 0')
+
+    nz = false
+    c.rand-state != 0 -> nz = true
+    runner.is-true(nz, 'conn.init: rand-state 非零（xorshift 的 0 是固定点）')
+
+    ; 未连线时 send 回 nil、recv 回 -1（都不得崩）
+    sent = 0
+    c.send('abc'): {
+        ok -> sent = 1
+
+        nil -> sent = 0
+
+        err -> sent = 2
+    }
+    runner.eq(sent, 0, 'conn.send: fd = -1 ⇒ nil')
+
+    buf str = with-len(16)
+    runner.eq(c.recv(buf, 16), -1, 'conn.recv: fd = -1 ⇒ -1')
+
+    ; close：fd 归 -1，可重入
+    c.close()
+    runner.eq(c.get-fd(), -1, 'conn.close: fd 归 -1')
+    c.close()
+    runner.eq(c.get-fd(), -1, 'conn.close: 可重入')
+}
+
+; ── append-hs / append-hs-from：交握讯息缓冲的累加语义 ──
+
+t-append-hs = () {
+    c = tls.conn{}
+    c.init()
+
+    k0 = 0
+    k1 = 1
+    k3 = 3
+    k5 = 5
+    k7 = 7
+
+    d1 []byte = [101, 102, 103]
+    c.append-hs(d1)
+    runner.eq(c.hs-buf-len, 3, 'append-hs: hs-buf-len = 3')
+    runner.eq(c.hs-buf.len(), 3, 'append-hs: hs-buf.len 同步为 3')
+    runner.eq(by(c.hs-buf, k0), 101, 'append-hs: 内容[0] = 101')
+    runner.eq(by(c.hs-buf, k1), 102, 'append-hs: 内容[1] = 102')
+
+    ; 第二次追加必须接在后面，不是覆盖
+    d2 []byte = [7, 8]
+    c.append-hs(d2)
+    runner.eq(c.hs-buf-len, 5, 'append-hs: 累加为 5')
+    runner.eq(by(c.hs-buf, k3), 7, 'append-hs: 第二段落在 [3] = 7')
+
+    ; append-hs-from：只取 src[offset..offset+n)
+    src []byte = [9, 9, 40, 41, 42, 43, 44]
+    c.append-hs-from(src, 2, 3)
+    runner.eq(c.hs-buf-len, 8, 'append-hs-from: 累加为 8')
+    runner.eq(by(c.hs-buf, k5), 40, 'append-hs-from: [5] = src[2] = 40')
+    runner.eq(by(c.hs-buf, k7), 42, 'append-hs-from: [7] = src[4] = 42')
+}
+
+; ── 记录层（loopback TCP）：TLS 1.2 GCM 往返 ──
+
+t-record-gcm = () {
+    lfd = net.net-listen('127.0.0.1', 39231)
+    cfd = net.net-dial('127.0.0.1', 39231)
+    sfd = net.net-accept(lfd)
+
+    key [16]byte = [
+        1, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16,
+    ]
+    salt [4]byte = [10, 11, 12, 13]
+    plain []byte = [65, 66, 67, 68]
+
+    c = tls.conn{}
+    c.init()
+    c.fd = cfd
+
+    ok = c.encrypt-record-gcm(23, plain, key, salt, 0)
+    runner.is-true(ok, 'encrypt-record-gcm: 发送成功')
+
+    rbuf []byte = with-len(4096)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls.read-record(sfd, rbuf)
+    runner.eq(ct, 23, 'encrypt-record-gcm: 对端读到 content type 23（application_data）')
+    runner.eq(rlen, 28, 'encrypt-record-gcm: 记录体 = 8(explicit nonce) + 4(明文) + 16(tag)')
+
+    k0 = 0
+    k1 = 1
+    k2 = 2
+    k3 = 3
+    k4 = 4
+    runner.eq(by(rbuf, k0), 23, '记录头[0] = content type')
+    runner.eq(by(rbuf, k1), 3, '记录头[1] = 版本高字节 3')
+    runner.eq(by(rbuf, k2), 3, '记录头[2] = 版本低字节 3')
+    runner.eq(by(rbuf, k3), 0, '记录头[3] = 长度高字节 0（28 < 256）')
+    runner.eq(by(rbuf, k4), 28, '记录头[4] = 长度低字节 28')
+
+    ; 解密往返
+    dct = 0
+    dout []byte
+    dct, dout = c.decrypt-record-gcm(rbuf, 23, key, salt, 0)
+    runner.eq(dct, 23, 'decrypt-record-gcm: content type = 23')
+    runner.eq(dout.len(), 4, 'decrypt-record-gcm: 明文长度 = 4')
+    runner.eq(by(dout, k0), 65, 'decrypt-record-gcm: 明文[0] = 65')
+    runner.eq(by(dout, k3), 68, 'decrypt-record-gcm: 明文[3] = 68')
+
+    ; expected-ct 不符 ⇒ AEAD 的 AAD 不同 ⇒ 认证失败
+    bct = 0
+    bout []byte
+    bct, bout = c.decrypt-record-gcm(rbuf, 22, key, salt, 0)
+    runner.eq(bct, -1, 'decrypt-record-gcm: expected-ct 不符 ⇒ ct = -1')
+    runner.eq(bout.len(), 0, 'decrypt-record-gcm: 认证失败时输出为空')
+
+    ; 序号错也必须失败（seq 参与 AAD）
+    sct = 0
+    sout []byte
+    sct, sout = c.decrypt-record-gcm(rbuf, 23, key, salt, 1)
+    runner.eq(sct, -1, 'decrypt-record-gcm: seq 不符 ⇒ ct = -1')
+
+    fs.close(cfd)
+    fs.close(sfd)
+    fs.close(lfd)
+}
+
+; ── 记录层：TLS 1.3 往返（无 explicit nonce）──
+
+t-record-13 = () {
+    lfd = net.net-listen('127.0.0.1', 39232)
+    cfd = net.net-dial('127.0.0.1', 39232)
+    sfd = net.net-accept(lfd)
+
+    key [16]byte = [
+        1, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16,
+    ]
+    iv [12]byte = [
+        1, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12,
+    ]
+    plain []byte = [65, 66, 67, 68]
+
+    c = tls.conn{}
+    c.init()
+    c.fd = cfd
+
+    ok = c.encrypt-record-13(23, plain, key, iv, 0)
+    runner.is-true(ok, 'encrypt-record-13: 发送成功')
+
+    rbuf []byte = with-len(4096)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls.read-record(sfd, rbuf)
+    runner.eq(ct, 23, 'encrypt-record-13: content type 23')
+    runner.eq(rlen, 21, 'encrypt-record-13: 记录体 = 4(明文) + 1(inner type) + 16(tag)')
+
+    dct = 0
+    dout []byte
+    dct, dout = c.decrypt-record-13(rbuf, key, iv, 0)
+    runner.eq(dct, 23, 'decrypt-record-13: content type = 23')
+    runner.eq(dout.len(), 4, 'decrypt-record-13: 明文长度 = 4（已剥掉 inner type）')
+
+    k0 = 0
+    k3 = 3
+    runner.eq(by(dout, k0), 65, 'decrypt-record-13: 明文[0] = 65')
+    runner.eq(by(dout, k3), 68, 'decrypt-record-13: 明文[3] = 68')
+
+    ; 换 key 必须认证失败
+    bad-key [16]byte = [
+        2, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16,
+    ]
+    wct = 0
+    wout []byte
+    wct, wout = c.decrypt-record-13(rbuf, bad-key, iv, 0)
+    runner.eq(wct, -1, 'decrypt-record-13: 换 key ⇒ ct = -1')
+
+    fs.close(cfd)
+    fs.close(sfd)
+    fs.close(lfd)
+}
+
+; ── send-raw / recv-n / read-record 的读端失败臂 ──
+
+t-send-raw = () {
+    lfd = net.net-listen('127.0.0.1', 39233)
+    cfd = net.net-dial('127.0.0.1', 39233)
+    sfd = net.net-accept(lfd)
+
+    payload []byte = [65, 66, 67, 68]
+    tls.send-raw(cfd, 23, payload)
+
+    rbuf []byte = with-len(64)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls.read-record(sfd, rbuf)
+    runner.eq(ct, 23, 'send-raw: content type 原样写入记录头')
+    runner.eq(rlen, 4, 'send-raw: 记录体长度 = 4（不加密）')
+
+    ; recv-n：精确读 n 个字节（记录头的前 2 字节）
+    two []byte = [7, 8]
+    tls.send-raw(cfd, 21, two)
+
+    rb2 []byte = with-len(8)
+    okn = tls.recv-n(sfd, rb2, 2)
+    runner.is-true(okn, 'recv-n: 读到 2 字节即返回')
+    k0 = 0
+    k1 = 1
+    k2 = 2
+    k5 = 5
+    runner.eq(by(rb2, k0), 21, 'recv-n: 第 1 字节 = content type 21(alert)')
+    runner.eq(by(rb2, k1), 3, 'recv-n: 第 2 字节 = 版本高字节 3')
+    runner.eq(by(rb2, k2), 0, 'recv-n: 只读 2 字节 ⇒ 缓冲其余位置保持 0')
+
+    ; 对端关闭 ⇒ read-record 的 ct = -1、rlen = 0
+    ; ⚠️ 先把上一条记录的剩余字节读干（recv-n 只读了 2 字节，缓冲里还有 5 字节），
+    ; 否则 read-record 会先读到那条记录的尾巴，永远走不到 FIN 臂。
+    rest []byte = with-len(8)
+    tls.recv-n(sfd, rest, 5)
+    fs.close(cfd)
+    rb3 []byte = with-len(64)
+    cct = 0
+    crlen = 0
+    cct, crlen = tls.read-record(sfd, rb3)
+    runner.eq(cct, -1, 'read-record: 对端 FIN ⇒ ct = -1')
+    runner.eq(crlen, 0, 'read-record: 对端 FIN ⇒ rlen = 0')
+
+    ; net-recv-wait 在 FIN 上回 0（不是 -1）
+    tmp str = with-len(16)
+    runner.eq(tls.net-recv-wait(sfd, tmp, 16), 0, 'net-recv-wait: 对端 FIN ⇒ 0')
+
+    fs.close(sfd)
+    fs.close(lfd)
+}
+
+; ── 服务器端：server-init / server-listen / server-accept / https-serve-once ──
+
+t-server-init = () {
+    si = tls.server-init(-1)
+
+    si: {
+        nil -> runner.eq(0, 1, 'server-init: 预期 ok，实得 nil')
+
+        err -> runner.eq(0, 1, 'server-init: 预期 ok，实得 err')
+
+        ok -> {
+            s = it
+            runner.eq(s.fd, -1, 'server-init: fd 原样保存（-1）')
+            runner.eq(s.n-bytes.len(), 256, 'server-init: RSA 模数 2048 位 = 256 字节')
+            runner.eq(s.d-bytes.len(), 256, 'server-init: RSA 私钥指数 256 字节')
+            runner.eq(s.e-val, 65537, 'server-init: 公钥指数 = 65537')
+            runner.eq(s.version, 771, 'server-init: version = 0x0303（1.2 起手值）')
+            runner.is-false(s.is-tls13, 'server-init: is-tls13 = false')
+            runner.eq(s.hs-buf.len(), 65536, 'server-init: 交握缓冲 64KiB')
+            runner.eq(s.hs-plain-buf.len(), 16400, 'server-init: 明文缓冲 16400')
+            runner.eq(s.write-seq, 0, 'server-init: write-seq = 0')
+            runner.eq(s.read-seq, 0, 'server-init: read-seq = 0')
+            runner.gt(s.cert.len(), 100, 'server-init: 自签凭証非空（> 100 字节）')
+        }
+    }
+}
+
+t-server-listen = () {
+    lfd = tls.server-listen('127.0.0.1', 39234)
+    runner.gt(lfd, 0, 'server-listen: 回可用的监听 fd')
+
+    ; 同一端口重复绑定必须失败（实测 -1，底层没有 SO_REUSEPORT）
+    dup = tls.server-listen('127.0.0.1', 39234)
+    runner.lt(dup, 0, 'server-listen: 端口已被占用 ⇒ 回 < 0')
+    fs.close(lfd)
+
+    ; 关掉之后同一端口可以重新绑定
+    again = tls.server-listen('127.0.0.1', 39234)
+    runner.gt(again, 0, 'server-listen: 关闭后可重新绑定同一端口')
+    fs.close(again)
+}
+
+; 客户端连上就立刻关：accept 能拿到 fd，但握手读不到 ClientHello ⇒ nil / false。
+; 这条覆盖 server-accept / https-serve-once 的失败臂，且不会卡住（FIN 立刻可读）。
+t-server-accept-fail = () {
+    lfd = tls.server-listen('127.0.0.1', 39236)
+    cfd = net.net-dial('127.0.0.1', 39236)
+    fs.close(cfd)
+
+    got = 0
+    tls.server-accept(lfd): {
+        nil -> got = 1
+
+        err -> got = 2
+
+        ok -> got = 3
+    }
+    runner.eq(got, 1, 'server-accept: 客户端立刻 FIN ⇒ nil')
+
+    lfd2 = tls.server-listen('127.0.0.1', 39237)
+    cfd2 = net.net-dial('127.0.0.1', 39237)
+    fs.close(cfd2)
+
+    okh = tls.https-serve-once(lfd2, 200, 'hi')
+    runner.is-false(okh, 'https-serve-once: 握手失败 ⇒ false')
+}
+
+; ── 客户端失败臂：dial / dial-12 / connect / connect-12 对「无人监听」的端口 ──
+
+t-dial-refused = () {
+    got = 0
+    tls.dial('127.0.0.1', 39238): {
+        nil -> got = 1
+
+        err -> got = 2
+
+        ok -> got = 3
+    }
+    runner.eq(got, 1, 'dial: 端口拒绝 ⇒ nil')
+
+    got2 = 0
+    tls.dial-12('127.0.0.1', 39238): {
+        nil -> got2 = 1
+
+        err -> got2 = 2
+
+        ok -> got2 = 3
+    }
+    runner.eq(got2, 1, 'dial-12: 端口拒绝 ⇒ nil')
+
+    c = tls.conn{}
+    c.init()
+    runner.is-false(c.connect('127.0.0.1', 39238), 'conn.connect: 端口拒绝 ⇒ false')
+    runner.eq(c.get-fd(), -1, 'conn.connect: 失败后 fd 仍是 -1')
+
+    c2 = tls.conn{}
+    c2.init()
+    runner.is-false(c2.connect-12('127.0.0.1', 39238), 'conn.connect-12: 端口拒绝 ⇒ false')
+    runner.eq(c2.get-fd(), -1, 'conn.connect-12: 失败后 fd 仍是 -1')
+}
+
+; ── server-conn 白盒：close / append-hs / append-hs-from ──
+
+t-server-conn = () {
+    sc = tls.server-conn{}
+    runner.eq(sc.fd, 0, 'server-conn{}: fd 零值 = 0')
+    runner.eq(sc.hs-buf-len, 0, 'server-conn{}: hs-buf-len 零值')
+
+    sc.close()
+    runner.eq(sc.fd, -1, 'server-conn.close: fd 归 -1')
+    runner.is-false(sc.encrypted, 'server-conn.close: encrypted = false')
+
+    ; append-hs 需要预先给 hs-buf 容量（与 conn.append-hs 不同，这里没有 init）
+    sc2 = tls.server-conn{}
+    sc2.hs-buf = with-len(64)
+    sc2.hs-buf-len = 0
+
+    p1 []byte = [11, 12, 13]
+    sc2.append-hs(p1)
+    runner.eq(sc2.hs-buf-len, 3, 'server-conn.append-hs: 长度 = 3')
+
+    src2 []byte = [0, 0, 21, 22]
+    sc2.append-hs-from(src2, 2, 2)
+    runner.eq(sc2.hs-buf-len, 5, 'server-conn.append-hs-from: 长度 = 5')
+
+    k0 = 0
+    k2 = 2
+    k3 = 3
+    k4 = 4
+    runner.eq(by(sc2.hs-buf, k0), 11, 'server-conn.append-hs: 内容[0] = 11')
+    runner.eq(by(sc2.hs-buf, k2), 13, 'server-conn.append-hs: 内容[2] = 13')
+    runner.eq(by(sc2.hs-buf, k3), 21, 'server-conn.append-hs-from: 内容[3] = src[2] = 21')
+    runner.eq(by(sc2.hs-buf, k4), 22, 'server-conn.append-hs-from: 内容[4] = src[3] = 22')
+}
+
+; ── 执行 ──────────────────────────────────────
 
 p1, f1 = runner.test('tls.rand-bytes', t-rand-bytes)
 p2, f2 = runner.test('tls.u16', t-u16)
@@ -277,6 +685,16 @@ p6, f6 = runner.test('tls.pad', t-pad)
 p7, f7 = runner.test('tls.cipher', t-cipher)
 p8, f8 = runner.test('tls.nonce', t-nonce)
 p9, f9 = runner.test('tls.prf', t-prf)
+p10, f10 = runner.test('tls.conn-init', t-conn-init)
+p11, f11 = runner.test('tls.append-hs', t-append-hs)
+p12, f12 = runner.test('tls.record-gcm', t-record-gcm)
+p13, f13 = runner.test('tls.record-13', t-record-13)
+p14, f14 = runner.test('tls.send-raw', t-send-raw)
+p15, f15 = runner.test('tls.server-init', t-server-init)
+p16, f16 = runner.test('tls.server-listen', t-server-listen)
+p17, f17 = runner.test('tls.server-accept-fail', t-server-accept-fail)
+p18, f18 = runner.test('tls.dial-refused', t-dial-refused)
+p19, f19 = runner.test('tls.server-conn', t-server-conn)
 
 total = runner.summary()
 f = runner.failed-count()

@@ -47,7 +47,6 @@ from-i64 = (v i64) (out bigint) {
         r-v < 0 -> {
             out.sign = -1
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -416,9 +415,13 @@ bigint.mul-bigint = (b bigint) (c bigint) {
                 -> 0
             }
             bv u64 = (bv0 & MASK)
+            #{overflow=wrap}
             p u64 = av * bv
+            #{overflow=wrap}
             p = p + (c.limbs[i + j] & MASK)
+            #{overflow=wrap}
             p = p + carry
+            #{overflow=wrap}
             c.limbs[i + j] = (p & 4294967295)
             carry = p >> 32
         }
@@ -554,7 +557,6 @@ bigint.abs-sub = (b bigint) (c bigint) {
         #{overflow=wrap}
         d = av - borrow - bv
 
-        #{overflow=wrap}
         {
             d < 0 -> {
 
@@ -580,7 +582,6 @@ bigint._mul-i64 = (v i64) (c bigint) {
     r-v = v
     sign = .sign
 
-    #{overflow=wrap}
     r-v < 0 -> {
         sign = -sign
         {
@@ -636,7 +637,6 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     }
     ac = .abs-cmp(b)
 
-    #{overflow=wrap}
     {
         ac < 0 -> {
             q = zero()
@@ -646,6 +646,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
         ac == 0 -> {
             q = one()
+            #{overflow=wrap}
             q.sign = .sign * b.sign: {
                 ok -> it
 
@@ -657,7 +658,6 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     }
 
     ; 單 limb 除數：使用簡單的 _div-i64/_mod-i64
-    #{overflow=wrap}
     b.len == 1 -> {
         v = b0 & MASK
         q = ._div-i64(v)
@@ -676,6 +676,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             -> _
         }
         r.len = 1
+        #{overflow=wrap}
         q.sign = .sign * b.sign: {
             ok -> it
 
@@ -703,6 +704,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
     ; 正規化位移：讓除數最高 limb >= BASE/2。
     ; 用 u64 與 (bt >> 31 == 0) 判斷，避免 i64 有符號比較把 [2^31,2^32) 誤判為負數而過度位移。
+    #{overflow=wrap}
     bt0 = b.limbs[bl - 1]: {
         ok -> it
 
@@ -782,6 +784,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         an2 u64 = (norm-a.limbs[qi + bl - 2] & MASK)
 
         BASE u64 = 4294967296
+        #{overflow=wrap}
         ixout662c27 = norm-b[bl - 1]: {
             ok -> it
 
@@ -790,6 +793,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
         bt-u u64 = (ixout662c27 & MASK)
         bt1 u64 = 0
+        #{overflow=wrap}
         ixout664c33 = norm-b[bl - 2]: {
             ok -> it
 
@@ -799,10 +803,12 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         bl >= 2 -> bt1 = (ixout664c33 & MASK)
 
         ; qhat = floor((an*BASE + an1) / bt)，全程 u64 避免 an*BASE 溢出 i64
+        #{overflow=wrap}
         qhat u64 = (an * BASE + an1) / bt-u
 
         ; 極端情形 qhat 可能 == BASE，壓回 BASE-1
         qhat >> 32 > 0 -> {
+            #{overflow=wrap}
             qhat = BASE - 1
         }
 
@@ -810,8 +816,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         ; 無號比較拆成高/低 32-bit（各半皆 < 2^32，作為 i64 為正數，故可用有符號比較）。
         ; 注意：rhat += bt-u 後可能 >= BASE，此時 c2 = rhat*BASE + an2 在 u64 中溢出；
         ; 但該情形下不等式必為假（c1 < BASE^2 ≤ c1 真值），跳過判定即可，不進位減。
+        #{overflow=wrap}
         rhat u64 = (an * BASE + an1) - qhat * bt-u
+        #{overflow=wrap}
         c1 u64 = qhat * bt1
+        #{overflow=wrap}
         c2 u64 = rhat * BASE + an2
         dec = 0
         (rhat >> 32 == 0) -> {
@@ -825,9 +834,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             }
         }
         dec == 1 -> {
+            #{overflow=wrap}
             qhat = qhat - 1
+            #{overflow=wrap}
             rhat = rhat + bt-u
+            #{overflow=wrap}
             c1 = qhat * bt1
+            #{overflow=wrap}
             c2 = rhat * BASE + an2
             dec = 0
             (rhat >> 32 == 0) -> {
@@ -841,7 +854,9 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
                 }
             }
             dec == 1 -> {
+                #{overflow=wrap}
                 qhat = qhat - 1
+                #{overflow=wrap}
                 rhat = rhat + bt-u
             }
         }
@@ -855,19 +870,25 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
                 -> _
             }
 
+            #{overflow=wrap}
             p u64 = qhat * (ixout717c35 & MASK)
+            #{overflow=wrap}
             p = p + borrow
             pl = p & 4294967295
             limb u64 = (norm-a.limbs[qi + bj] & MASK)
             {
                 (limb >= pl) -> {
+                    #{overflow=wrap}
                     norm-a.limbs[qi + bj] = (limb - pl)
                     borrow = p >> 32
                 }
 
                 -> {
+                    #{overflow=wrap}
                     sub-limb u64 = limb + BASE - pl
+                    #{overflow=wrap}
                     norm-a.limbs[qi + bj] = (sub-limb & 4294967295)
+                    #{overflow=wrap}
                     borrow = (p >> 32) + 1
                 }
             }
@@ -877,6 +898,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         top u64 = (norm-a.limbs[qi + bl] & MASK)
         {
             (top >= borrow) -> {
+                #{overflow=wrap}
                 norm-a.limbs[qi + bl] = (top - borrow)
                 q.limbs[qi]: {
                     ok -> it = qhat
@@ -886,8 +908,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             }
 
             -> {
+                #{overflow=wrap}
                 sub-top u64 = top + BASE - borrow
+                #{overflow=wrap}
                 norm-a.limbs[qi + bl] = (sub-top & 4294967295)
+                #{overflow=wrap}
                 qhat = qhat - 1
                 carry2 u64 = 0
                 bj2 <- [0..bl): {
@@ -897,11 +922,14 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
                         -> _
                     }
 
+                    #{overflow=wrap}
                     s u64 = (norm-a.limbs[qi + bj2] & MASK) + (ixout749c70 & MASK) + carry2
+                    #{overflow=wrap}
                     norm-a.limbs[qi + bj2] = (s & 4294967295)
                     carry2 = s >> 32
                 }
                 carry2-i i64 = carry2
+                #{overflow=wrap}
                 norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry2-i
                 q.limbs[qi]: {
                     ok -> it = qhat
@@ -911,7 +939,6 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -938,6 +965,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
     ; 餘數取自正規化後的 norm-a，必須右移 shift 還原（原本直接複製，導致 r 可能 >= b）
     rc = 0
+    #{overflow=wrap}
     ri = b.len - 1
     (ri >= 0) {
         rcur = norm-a.limbs[ri] & MASK
@@ -966,7 +994,6 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 bigint._div-i64 = (v i64) (q bigint) {
     r-v = v
 
-    #{overflow=wrap}
     r-v < 0 -> {
         {
 
@@ -984,7 +1011,6 @@ bigint._div-i64 = (v i64) (q bigint) {
     q.len = .len
     rem = 0
 
-    #{overflow=wrap}
     i <- [.len - 1..0]: {
         li = .limbs[i]: {
             ok -> it
@@ -1016,7 +1042,6 @@ bigint._div-i64 = (v i64) (q bigint) {
 bigint._mod-i64 = (v i64) (r ?i64) {
     r-v = v
 
-    #{overflow=wrap}
     r-v < 0 -> {
         {
 
@@ -1031,7 +1056,6 @@ bigint._mod-i64 = (v i64) (r ?i64) {
     }
     rem = 0
 
-    #{overflow=wrap}
     i <- [.len - 1..0]: {
         li = .limbs[i]: {
             ok -> it
@@ -1090,7 +1114,6 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
     (tv != 0) {
         tv = tv >> 1
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1107,7 +1130,6 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
     bits = (exp.len - 1) * 32 + lead
     bits == 0 -> return
 
-    #{overflow=wrap}
     i <- [bits - 1..0]: {
         r = r._mul(r)
 
@@ -1192,6 +1214,7 @@ bigint.shl1 = () {
         ; 必須「先擴容再寫入」：.limbs 是恰好 .len 個元素的切片（copy/one 皆以 with-len 建立），
         ; 直接寫 .limbs[.len] 是越界寫，會讓 limb 數與內容失控
         ; （實測 bigint.shl(one, 52) 曾因此得到 2^1074 而非 2^52）。
+        #{overflow=wrap}
         grown []i64 = with-len(.len + 1)
         k <- [0..self.len): {
             {
@@ -1209,7 +1232,6 @@ bigint.shl1 = () {
         }
         .limbs = grown
 
-        #{overflow=wrap}
         .len = .len + 1: {
             ok -> it
 
@@ -1282,7 +1304,6 @@ bigint.normalize = () {
         }
         top != 0 -> break
 
-        #{overflow=wrap}
         .len = .len - 1: {
             ok -> it
 
@@ -1295,15 +1316,18 @@ bigint.normalize = () {
 ; 返回 out str: 十進制字串（負數以 '-' 開頭，零為 "0"）
 ; [to-str](#bigint.to-str)
 bigint.to-str = () (out str) {
-    out = with-cap(256)
+
+    ; str 下標直寫已全域禁用（連 with-cap 豁免也取消）⇒ []byte 上界緩衝承接。
+    ob []byte = with-cap-len(256, 256)
     z = .is-zero()
     z -> {
-        out[0] = 48
+        ob[0] = 48
+        out = ob.slice(0, 1).to-bytes-str()
         return
     }
     out-n = 0
     .sign == -1 -> {
-        out[0] = 45
+        ob[0] = 45
         out-n = 1
     }
     tmp = bigint{}
@@ -1338,7 +1362,6 @@ bigint.to-str = () (out str) {
             -> _
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1356,13 +1379,12 @@ bigint.to-str = () (out str) {
     #{overflow=wrap}
     j = bufn - 1
     (j >= 0) {
-        out[out-n] = buf[j]: {
+        ob[out-n] = buf[j]: {
             ok -> it
 
             -> _
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1374,7 +1396,6 @@ bigint.to-str = () (out str) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1386,6 +1407,7 @@ bigint.to-str = () (out str) {
             }
         }
     }
+    out = ob.slice(0, out-n).to-bytes-str()
 }
 
 ; c = self + v（小整數加法）
@@ -1464,16 +1486,19 @@ bigint.to-i64 = () (v ?i64) {
 ; 返回 out str: 十六進制字串（小寫、無 0x 前綴，負數以 '-' 開頭）
 ; [to-hex](#bigint.to-hex)
 bigint.to-hex = () (out str) {
-    out = with-cap(256)
+
+    ; str 下標直寫已全域禁用（連 with-cap 豁免也取消）⇒ []byte 上界緩衝承接。
+    ob []byte = with-cap-len(256, 256)
     z = .is-zero()
     z -> {
-        out[0] = 48
+        ob[0] = 48
+        out = ob.slice(0, 1).to-bytes-str()
         return
     }
     hex = '0123456789abcdef'
     out-n = 0
     .sign == -1 -> {
-        out[0] = 45
+        ob[0] = 45
         out-n = 1
     }
     nl = .len
@@ -1493,7 +1518,7 @@ bigint.to-hex = () (out str) {
             nibble != 0 -> started = 1
             {
                 started == 1 -> {
-                    out[out-n] = hex[nibble]: {
+                    ob[out-n] = hex[nibble]: {
                         ok -> it
 
                         -> _
@@ -1518,4 +1543,5 @@ bigint.to-hex = () (out str) {
             }
         }
     }
+    out = ob.slice(0, out-n).to-bytes-str()
 }

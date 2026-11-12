@@ -153,7 +153,6 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
         prefix == 0 -> {
             val = first & 63
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -171,6 +170,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             #{overflow=wrap}
             pos + 1 >= buf.len() -> return
 
+            #{overflow=wrap}
             ixout157c42 = buf[pos + 1]: {
                 ok -> it
 
@@ -179,7 +179,6 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = ((first & 63) << 8) | (ixout157c42)
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -198,6 +197,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             pos + 3 >= buf.len() -> return
             val = ((first & 63) << 24)
 
+            #{overflow=wrap}
             ixout170c27 = buf[pos + 1]: {
                 ok -> it
 
@@ -206,6 +206,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout170c27) << 16)
 
+            #{overflow=wrap}
             ixout173c27 = buf[pos + 2]: {
                 ok -> it
 
@@ -214,6 +215,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout173c27) << 8)
 
+            #{overflow=wrap}
             ixout176c26 = buf[pos + 3]: {
                 ok -> it
 
@@ -222,7 +224,6 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | (ixout176c26)
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -241,6 +242,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             pos + 7 >= buf.len() -> return
             val = ((first & 63) << 56)
 
+            #{overflow=wrap}
             ixout189c27 = buf[pos + 1]: {
                 ok -> it
 
@@ -249,6 +251,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout189c27) << 48)
 
+            #{overflow=wrap}
             ixout192c27 = buf[pos + 2]: {
                 ok -> it
 
@@ -257,6 +260,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout192c27) << 40)
 
+            #{overflow=wrap}
             ixout195c27 = buf[pos + 3]: {
                 ok -> it
 
@@ -265,6 +269,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout195c27) << 32)
 
+            #{overflow=wrap}
             ixout198c27 = buf[pos + 4]: {
                 ok -> it
 
@@ -273,6 +278,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout198c27) << 24)
 
+            #{overflow=wrap}
             ixout201c27 = buf[pos + 5]: {
                 ok -> it
 
@@ -281,6 +287,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout201c27) << 16)
 
+            #{overflow=wrap}
             ixout204c27 = buf[pos + 6]: {
                 ok -> it
 
@@ -289,6 +296,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | ((ixout204c27) << 8)
 
+            #{overflow=wrap}
             ixout207c26 = buf[pos + 7]: {
                 ok -> it
 
@@ -297,7 +305,6 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             val = val | (ixout207c26)
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -397,7 +404,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             ->
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -439,7 +445,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 return
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -453,7 +458,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             frames[count].length = 0
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -486,7 +490,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 return
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -500,7 +503,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             frames[count].length = 0
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -519,7 +521,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             frames[count].length = 0
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -544,7 +545,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
                 return
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -558,7 +558,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             frames[count].length = 0
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -586,7 +585,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             frames[count].length = 0
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -700,6 +698,12 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     ; AES-128-ECB 加密樣本得到 mask
     mask = aes.enc-128(sample, hp)
 
+    ; 被遮罩的「第一位元組」是**封包的第 0 個位元組**（RFC 9001 §5.4.1：
+    ; the least significant bits of the first byte of the packet），
+    ; 不是 pn-offset 處 —— pn-offset 只是封包號碼欄位的起點，
+    ; 它與第一位元組之間的位元組（version / CID / length …）不參與遮罩。
+    ; 原實作誤遮了 packet[pn-offset]，於是低 4/5 位被破壞的是封包號碼
+    ; 的最高位元組，而真正的第一位元組（含 pn-len 位）從未被遮罩。
     ; Long Header: mask[0] 的低位 4 bits
 
     ; Short Header: mask[0] 的低位 5 bits
@@ -707,7 +711,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     mask-bits = 0x1f
     is-long-header -> mask-bits = 0x0f
 
-    ixout518c20 = packet[pn-offset]: {
+    ixout518c20 = packet[0]: {
         ok -> it
 
         -> _
@@ -719,7 +723,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
         -> _
     }
 
-    packet[pn-offset]: {
+    packet[0]: {
         ok -> it = ixout518c20 ^ (ixout518c41 & mask-bits)
 
         -> _
@@ -731,18 +735,21 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
 
         #{overflow=wrap}
         pn-offset + j < packet.len() -> {
+            #{overflow=wrap}
             ixout532c28 = packet[pn-offset + j]: {
                 ok -> it
 
                 -> _
             }
 
+            #{overflow=wrap}
             ixout532c52 = mask[mask-offset + j]: {
                 ok -> it
 
                 -> _
             }
 
+            #{overflow=wrap}
             packet[pn-offset + j]: {
                 ok -> it = ixout532c28 ^ ixout532c52
 
@@ -750,7 +757,6 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -787,19 +793,28 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
 
     pn-offset >= packet.len() -> return
 
-    first = packet[pn-offset]: {
+    ; 長度位（低 2 位）在**封包第一位元組**上（RFC 9000 §17.1：
+    ; Packet Number Length bits 屬於 first byte），不在 pn-offset 處。
+    ; 原實作讀 packet[pn-offset] & 3，把封包號碼的最高位元組當成長度位，
+    ; 於是 pn-len 與解出的封包號碼雙雙錯誤。
+    first = packet[0]: {
         ok -> it
 
         -> 0
     }
 
     #{overflow=wrap}
-    pn-len = (first & 3) + 1
+    need = (first & 3) + 1
 
+    ; 資料不足時 pn-len 必須保持 0：呼叫方（conn.recv-initial）以
+    ; 「pn-len <= 0」判定失敗，若先賦值再 return 會留下 1..4 的假成功。
     #{overflow=wrap}
-    pn-offset + pn-len > packet.len() -> return
+    pn-offset + need > packet.len() -> return
+
+    pn-len = need
     truncated-pn = 0
     i <- [0..pn-len): {
+        #{overflow=wrap}
         ixout581c47 = packet[pn-offset + i]: {
             ok -> it
 
@@ -810,15 +825,18 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     }
 
     ; 清除長度位元
+    ; 封包號碼欄位是完整的 8/16/24/32 位元（RFC 9000 §17.1），
+    ; 重建遮罩必須留滿 8*n 位；原實作寫 0x7f/0x3fff/… 少了一位，
+    ; 只要截斷號碼的最高位為 1，解出的號碼就會被削掉一半。
     mask = 0
     {
-        pn-len == 1 -> mask = 0x7f
+        pn-len == 1 -> mask = 0xff
 
-        pn-len == 2 -> mask = 0x3fff
+        pn-len == 2 -> mask = 0xffff
 
-        pn-len == 3 -> mask = 0x1fffff
+        pn-len == 3 -> mask = 0xffffff
 
-        -> mask = 0x3fffffff
+        -> mask = 0xffffffff
     }
     truncated-pn = truncated-pn & mask
 
@@ -826,16 +844,16 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     #{overflow=wrap}
     expected-pn = largest-pn + 1
 
-    ; 計算位元寬度
+    ; 計算位元寬度（RFC 9000 附錄 A.3：pn_win = 1 << (pn_len * 8)）
     pn-win = 0
     {
-        pn-len == 1 -> pn-win = 128
+        pn-len == 1 -> pn-win = 256
 
-        pn-len == 2 -> pn-win = 32768
+        pn-len == 2 -> pn-win = 65536
 
-        pn-len == 3 -> pn-win = 8388608
+        pn-len == 3 -> pn-win = 16777216
 
-        -> pn-win = 2147483648
+        -> pn-win = 4294967296
     }
 
     #{overflow=wrap}
@@ -850,7 +868,6 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     ; 顯式 plain i64 即恢復「就地取 payload」的既有語意（值完全相同）。
     candidate-pn i64 = (expected-pn & (-1 - pn-mask)) | truncated-pn
 
-    #{overflow=wrap}
     {
         candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> {
             {
@@ -1115,7 +1132,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     pos = pos + crypto-data.len()
 
     ; PADDING to reach 1200 bytes
-    #{overflow=wrap}
     (pos < QUIC-MAX-PACKET-SIZE - 16) {
         packet[pos] = 0
 
@@ -1207,7 +1223,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; ── 標頭保護 ──
     apply-header-protection(packet, pn-offset, .client-initial-hp, true)
 
-    #{overflow=wrap}
     .initial-pn = .initial-pn + 1: {
         ok -> it
 
@@ -1249,7 +1264,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     pos = 1
 
     ; 跳過 Version (4 bytes)
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1270,7 +1284,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         -> 0
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1291,7 +1304,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         -> 0
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1309,7 +1321,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     token-len, token-np = varint-decode(buf, pos)
     token-np < 0 -> return
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1338,7 +1349,11 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     pn = 0
     pn-len = 0
     pn, pn-len = decode-packet-number(buf, pn-offset, .largest-initial-pn)
-    pn-len <= 0 -> .largest-initial-pn = pn
+
+    ; pn-len > 0 才是解碼成功（decode-packet-number 失敗時回 (0, 0)）；
+    ; 原實作寫 `pn-len <= 0 ->`，等於只在失敗時更新 largest，成功的封包
+    ; 永遠不推進窗口，於是下一個封包的重建基準一直停在初值。
+    pn-len > 0 -> .largest-initial-pn = pn
 
     ; AEAD 解密
     ; Nonce

@@ -64,7 +64,6 @@ hash-set.add = (key i64) (is-new bool) {
                 return
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -82,7 +81,6 @@ hash-set.add = (key i64) (is-new bool) {
 
         .occ[idx] ?= 1
 
-        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -115,7 +113,6 @@ hash-set.contains = (key i64) (found bool) {
                 return
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -153,7 +150,6 @@ hash-set.remove = (key i64) (removed bool) {
             k == key -> {
                 .occ[idx] ?= 0
 
-                #{overflow=wrap}
                 .size = .size - 1: {
                     ok -> it
 
@@ -163,7 +159,6 @@ hash-set.remove = (key i64) (removed bool) {
                 return
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}

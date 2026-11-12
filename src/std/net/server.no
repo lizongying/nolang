@@ -208,7 +208,6 @@ server-conn.recv-more = () (n i64) {
             -> _
         }
 
-        #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {
             ok -> it
 
@@ -241,7 +240,6 @@ server-conn.parse = () (ok bool) {
         sep-pos >= 0 -> break
 
         ; 緩衝區已滿但未找到分隔符
-        #{overflow=wrap}
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
 
         ; 接收更多資料
@@ -271,13 +269,11 @@ server-conn.parse = () (ok bool) {
     sp2 < 0 -> return
     full-path = after-method.slice(0, sp2)
 
-    #{overflow=wrap}
     .version = after-method.slice(sp2 + 1, after-method.len-bytes())
 
     ; 分離 path 和 query
     q-pos = full-path.index("?")
 
-    #{overflow=wrap}
     {
         q-pos >= 0 -> {
             .path = full-path.slice(0, q-pos)
@@ -291,7 +287,6 @@ server-conn.parse = () (ok bool) {
     }
 
     ; 標頭
-    #{overflow=wrap}
     .headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
 
     ; 解析標頭到 header-names / header-values
@@ -314,7 +309,6 @@ server-conn.parse = () (ok bool) {
     hs = .headers
     hn = hs.len-bytes()
 
-    #{overflow=wrap}
     hn > 0 -> {
         pos = 0
         !! {
@@ -331,16 +325,16 @@ server-conn.parse = () (ok bool) {
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
 
-                        #{overflow=wrap}
                         .header-names[cnt][j] = hs[pos + j]
                     }
 
                     .header-names[cnt].len = name-len
+                    #{overflow=wrap}
                     val-start = colon-pos + 2
+                    #{overflow=wrap}
                     val-len = line-end - val-start
                     j <- [0..val-len): {
 
-                        #{overflow=wrap}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
 
@@ -353,6 +347,7 @@ server-conn.parse = () (ok bool) {
                 }
             }
             next-crlf < 0 -> break
+            #{overflow=wrap}
             pos = next-crlf + 2
         }
     }
@@ -379,13 +374,13 @@ server-conn.parse = () (ok bool) {
     .body = ''
     cl-opt = .get-header('Content-Length')
 
-    #{overflow=wrap}
     cl-opt: {
         ok -> {
             cl-str = it
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
                 ch = cl-str[j]
+                #{overflow=wrap}
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
             content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
@@ -398,6 +393,7 @@ server-conn.parse = () (ok bool) {
                 (available < content-len) {
                     n = .recv-more()
                     n <= 0 -> return
+                    #{overflow=wrap}
                     available = .recv-buf-len - body-start
                 }
                 .body = .recv-buf.slice(body-start, body-start + content-len)
@@ -926,7 +922,6 @@ https-server-conn.recv-more = () (n i64) {
             -> _
         }
 
-        #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {
             ok -> it
 
@@ -954,7 +949,6 @@ https-server-conn.parse = () (ok bool) {
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
 
-        #{overflow=wrap}
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
         n = .recv-more()
         n <= 0 -> return
@@ -983,14 +977,12 @@ https-server-conn.parse = () (ok bool) {
     sp2 < 0 -> return
     full-path = after-method.slice(0, sp2)
 
-    #{overflow=wrap}
     .version = after-method.slice(sp2 + 1, after-method.len-bytes())
 
     ; 分離 path 和 query
     qm = '?'
     q-pos = full-path.index(qm)
 
-    #{overflow=wrap}
     {
         q-pos >= 0 -> {
             .path = full-path.slice(0, q-pos)
@@ -1004,7 +996,6 @@ https-server-conn.parse = () (ok bool) {
     }
 
     ; 標頭
-    #{overflow=wrap}
     .headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
 
     ; 解析標頭
@@ -1027,7 +1018,6 @@ https-server-conn.parse = () (ok bool) {
     hs = .headers
     hn = hs.len-bytes()
 
-    #{overflow=wrap}
     hn > 0 -> {
         pos = 0
         !! {
@@ -1044,16 +1034,16 @@ https-server-conn.parse = () (ok bool) {
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
 
-                        #{overflow=wrap}
                         .header-names[cnt][j] = hs[pos + j]
                     }
 
                     .header-names[cnt].len = name-len
+                    #{overflow=wrap}
                     val-start = colon-pos + 2
+                    #{overflow=wrap}
                     val-len = line-end - val-start
                     j <- [0..val-len): {
 
-                        #{overflow=wrap}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
 
@@ -1066,6 +1056,7 @@ https-server-conn.parse = () (ok bool) {
                 }
             }
             next-crlf < 0 -> break
+            #{overflow=wrap}
             pos = next-crlf + 2
         }
     }
@@ -1092,13 +1083,13 @@ https-server-conn.parse = () (ok bool) {
     .body = ''
     cl-opt = .get-header('Content-Length')
 
-    #{overflow=wrap}
     cl-opt: {
         ok -> {
             cl-str = it
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
                 ch = cl-str[j]
+                #{overflow=wrap}
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
             content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
@@ -1108,6 +1099,7 @@ https-server-conn.parse = () (ok bool) {
                 (available < content-len) {
                     n = .recv-more()
                     n <= 0 -> return
+                    #{overflow=wrap}
                     available = .recv-buf-len - body-start
                 }
                 .body = .recv-buf.slice(body-start, body-start + content-len)

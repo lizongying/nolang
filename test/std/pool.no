@@ -1,0 +1,263 @@
+; std-pool.no — net/pool 模組測試
+;
+; 執行：no test test/std/pool.no
+;
+; 為什麼能測滿 10 個符號（5 方法 + 5 函式/方法）：
+;   `pool` 是**公開結構體**（host / port / max-size / conns[32] / in-use[32] / count），
+;   所以「計數器」與「邊界夾取」都能直接白盒斷言，不需要真的連上誰：
+;     - create / with-size / init 只寫欄位；
+;     - active-count / idle-count / total-count 只讀 count 與 in-use；
+;     - get 在「連不上」時回 nil（用 127.0.0.1:1，必定 refused）；
+;     - close-conn 的越界臂（idx < 0 或 idx >= count）直接 return。
+;   只有 get 的成功路徑與 put / close-all 需要真連接 ⇒ 用 loopback
+;   （net.net-listen + net.net-accept）在單執行緒裡造出來。
+;
+; 覆蓋清單：
+;   函式：create with-size
+;   pool：{init,get,put,close-conn,close-all,active-count,idle-count,total-count}
+;
+; 寫法備註：
+;   - std 結構體一律全限定名：`pool.pool{}`。
+;   - `pool.init` 會把 max-size 夾到 [1, POOL-MAX-CONNS=32]；<=0 → 1，>32 → 32。
+;   - `get()` 回 `?net.conn`；解包後拿到的就是池裡那個 conn（fd 相同）。
+;   - `put()` 對「不在池中的 conn」會**直接關閉**它（不是報錯）。
+
+# /test/runner
+
+; 起一個只 listen 不回應的 TCP 端點，回傳「是否綁定成功」
+listen-fd = (port i64) (lfd fd) {
+    lfd = net.net-listen('127.0.0.1', port)
+}
+
+; 取池中第 idx 個 conn 的 fd（讀不到回 -1）
+conn-fd-at = (p pool.pool, idx i64) (v i64) {
+    v = -1
+    p.conns[idx]: {
+        ok -> v = it.fd
+
+        -> _
+    }
+}
+
+; ── 建構與邊界夾取 ────────────────────────────────────────
+
+t-create = () {
+    p = pool.pool{}
+    p.init('127.0.0.1', 39301, 5)
+
+    runner.str-eq(p.host, '127.0.0.1', 9, 'pool.init: 記錄 host')
+    runner.eq(p.port, 39301, 'pool.init: 記錄 port')
+    runner.eq(p.max-size, 5, 'pool.init: max-size = 5')
+    runner.eq(p.count, 0, 'pool.init: 新池 count = 0')
+    runner.eq(p.total-count(), 0, 'pool.total-count: 空池 = 0')
+    runner.eq(p.active-count(), 0, 'pool.active-count: 空池 = 0')
+    runner.eq(p.idle-count(), 0, 'pool.idle-count: 空池 = 0')
+}
+
+; max-size 的夾取：<= 0 → 1，> POOL-MAX-CONNS(32) → 32
+t-init-clamp = () {
+    p0 = pool.pool{}
+    p0.init('127.0.0.1', 39302, 0)
+    runner.eq(p0.max-size, 1, 'pool.init: max-size = 0 ⇒ 夾到 1')
+
+    pn = pool.pool{}
+    pn.init('127.0.0.1', 39302, -5)
+    runner.eq(pn.max-size, 1, 'pool.init: max-size = -5 ⇒ 夾到 1')
+
+    pb = pool.pool{}
+    pb.init('127.0.0.1', 39302, 100)
+    runner.eq(pb.max-size, 32, 'pool.init: max-size = 100 ⇒ 夾到 32')
+
+    pe = pool.pool{}
+    pe.init('127.0.0.1', 39302, 32)
+    runner.eq(pe.max-size, 32, 'pool.init: max-size = 32 ⇒ 保持 32')
+}
+
+t-create-fn = () {
+    p = pool.create('127.0.0.1', 39303, 6)
+    runner.str-eq(p.host, '127.0.0.1', 9, 'pool.create: host')
+    runner.eq(p.port, 39303, 'pool.create: port')
+    runner.eq(p.max-size, 6, 'pool.create: max-size 由參數決定')
+    runner.eq(p.count, 0, 'pool.create: 初始 count = 0')
+
+    q = pool.with-size('127.0.0.1', 39304)
+    runner.eq(q.max-size, 8, 'pool.with-size: 預設上限 8')
+    runner.eq(q.port, 39304, 'pool.with-size: port')
+}
+
+; ── get 的失敗臂 ─────────────────────────────────────────
+
+; 127.0.0.1:1 必定 connection refused ⇒ get 回 nil 且池不增長
+t-get-fail = () {
+    p = pool.pool{}
+    p.init('127.0.0.1', 1, 4)
+
+    opt = p.get()
+    got = 0
+    got = opt: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(got, -1, 'pool.get: 連不上 ⇒ nil')
+    runner.eq(p.count, 0, 'pool.get: 失敗時 count 仍 0')
+    runner.eq(p.total-count(), 0, 'pool.get: 失敗時 total-count 仍 0')
+}
+
+; ── get 成功 / put 歸還 / close-all ──────────────────────
+
+t-get-put = () {
+    lfd = listen-fd(39305)
+    runner.eq(lfd >= 0, 1, 'pool.get: 起 loopback 監聽 39305')
+
+    p = pool.create('127.0.0.1', 39305, 4)
+
+    opt = p.get()
+    ok-n = 0
+    fd1 = -1
+    opt: {
+        ok -> {
+            c = it
+            ok-n = 1
+            fd1 = c.fd
+            runner.eq(c.fd >= 0, 1, 'pool.get: 成功後 conn.fd >= 0')
+            runner.eq(p.count, 1, 'pool.get: 新建後 count = 1')
+            runner.eq(p.active-count(), 1, 'pool.get: 該 conn 標記為使用中')
+            runner.eq(p.idle-count(), 0, 'pool.get: 此時沒有閒置')
+
+            ; 歸還：不關閉，只把 in-use 置回 false
+            p.put(c)
+            runner.eq(p.active-count(), 0, 'pool.put: 歸還後 active = 0')
+            runner.eq(p.idle-count(), 1, 'pool.put: 歸還後 idle = 1')
+            runner.eq(p.total-count(), 1, 'pool.put: 歸還後總數不變')
+            runner.eq(c.fd, fd1, 'pool.put: 歸還不關閉連接（fd 不變）')
+
+            ; 再 get 應該複用同一條（不新建）
+            opt2 = p.get()
+            opt2: {
+                ok -> {
+                    c2 = it
+                    runner.eq(c2.fd, fd1, 'pool.get: 優先複用閒置連接（fd 相同）')
+                    runner.eq(p.total-count(), 1, 'pool.get: 複用時不新建（總數仍 1）')
+                }
+
+                -> runner.is-true(false, 'pool.get: 第二次取用應成功')
+            }
+
+            p.close-all()
+            runner.eq(p.total-count(), 0, 'pool.close-all: 清空後 total = 0')
+            runner.eq(p.active-count(), 0, 'pool.close-all: 清空後 active = 0')
+            runner.eq(p.idle-count(), 0, 'pool.close-all: 清空後 idle = 0')
+        }
+
+        -> ok-n = -1
+    }
+    runner.eq(ok-n, 1, 'pool.get: 針對真監聽埠回 ok')
+
+    net.close(lfd)
+}
+
+; ── close-conn：越界臂與實際移除 ─────────────────────────
+
+t-close-conn = () {
+    lfd = listen-fd(39306)
+    runner.eq(lfd >= 0, 1, 'pool.close-conn: 起 loopback 監聽 39306')
+
+    ; ⚠️ 這裡必須用 `pool.create(...)` 而不是 `pool.pool{}` + `p.init(...)`：
+    ; 外部呼叫 `p.init(...)` 構造出來的池，`close-conn` 的搬移會失效
+    ; （實測 `conns[1]` 沒有被搬到 `conns[0]`），而 `pool.create(...)` 的池正常。
+    ; 兩者差在 callee 名（模組內是 `init`、模外部是 `pool.pool.init`），
+    ; 屬語言/編譯器層問題，見 test/README.md §5.2 #103。
+    p = pool.create('127.0.0.1', 39306, 4)
+
+    ; 取兩條連接佔住池位。`?net.conn` 丟棄不關連接（net.conn 只有一個 fd、無析構），
+    ; 所以 `_ =` 是安全的 —— 已用 tmp/sh/pl8.no 驗過：丟棄後 slot0/slot1 的 fd 仍有效。
+    _ = p.get()
+    _ = p.get()
+    runner.eq(p.total-count(), 2, 'pool.close-conn: 先取到兩條連接')
+
+    ; 越界：負索引與超界都必須是 no-op（不崩、不改 count）
+    p.close-conn(-1)
+    runner.eq(p.total-count(), 2, 'pool.close-conn: idx < 0 ⇒ no-op')
+    p.close-conn(99)
+    runner.eq(p.total-count(), 2, 'pool.close-conn: idx >= count ⇒ no-op')
+
+    ; 合法索引：關閉並移除，最後一條搬到該位置
+    p.close-conn(0)
+    runner.eq(p.total-count(), 1, 'pool.close-conn: 移除一條後 count = 1')
+    fd-left = conn-fd-at(p, 0)
+    runner.eq(fd-left >= 0, 1, 'pool.close-conn: 搬移後槽位 0 仍是有效 fd')
+
+    p.close-all()
+    runner.eq(p.total-count(), 0, 'pool.close-conn: close-all 收尾')
+
+    net.close(lfd)
+}
+
+; ── put 一個「不在池中」的 conn ⇒ 直接關閉 ────────────────
+
+t-put-unknown = () {
+    lfd = listen-fd(39307)
+    runner.eq(lfd >= 0, 1, 'pool.put: 起 loopback 監聽 39307')
+
+    p = pool.create('127.0.0.1', 39307, 2)
+
+    outsider = net.conn{}
+    ok-d = outsider.dial('127.0.0.1', 39307)
+    runner.is-true(ok-d, 'pool.put: 造一條池外連接')
+
+    ; 池裡沒有這條 ⇒ put 走「直接關閉」臂
+    p.put(outsider)
+    runner.eq(outsider.fd, -1, 'pool.put: 池外 conn 被直接關閉（fd = -1）')
+    runner.eq(p.total-count(), 0, 'pool.put: 池外 conn 不計入池')
+
+    net.close(lfd)
+}
+
+; ── 滿池時不再新建 ───────────────────────────────────────
+
+t-max-size-cap = () {
+    lfd = listen-fd(39308)
+    runner.eq(lfd >= 0, 1, 'pool.max-size: 起 loopback 監聽 39308')
+
+    p = pool.create('127.0.0.1', 39308, 2)
+
+    _ = p.get()
+    _ = p.get()
+    runner.eq(p.total-count(), 2, 'pool.max-size: 取滿 2 條')
+
+    ; 已達上限且無閒置 ⇒ 回 nil
+    o3 = p.get()
+    got = 0
+    got = o3: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(got, -1, 'pool.get: 達 max-size 且無閒置 ⇒ nil')
+    runner.eq(p.total-count(), 2, 'pool.get: 達上限時不新建')
+
+    p.close-all()
+    runner.eq(p.total-count(), 0, 'pool.max-size: 收尾 close-all')
+
+    net.close(lfd)
+}
+
+; ── 執行 ──────────────────────────────────────────────────
+
+p1, f1 = runner.test('pool.create', t-create)
+p2, f2 = runner.test('pool.init-clamp', t-init-clamp)
+p3, f3 = runner.test('pool.create-fn', t-create-fn)
+p4, f4 = runner.test('pool.get-fail', t-get-fail)
+p5, f5 = runner.test('pool.get-put', t-get-put)
+p6, f6 = runner.test('pool.close-conn', t-close-conn)
+p7, f7 = runner.test('pool.put-unknown', t-put-unknown)
+p8, f8 = runner.test('pool.max-size-cap', t-max-size-cap)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

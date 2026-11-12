@@ -277,7 +277,6 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
         dlen > 65535 -> header-len = 10
     }
 
-    #{overflow=wrap}
     mask -> {
         {
 
@@ -315,7 +314,6 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     mask-bit = 0
     mask -> mask-bit = 128
 
-    #{overflow=wrap}
     {
         dlen <= 125 -> buf[1]: {
             ok -> it = mask-bit | dlen
@@ -354,6 +352,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
                 #{overflow=wrap}
                 sh = 56 - i * 8
                 oct = dlen >> sh
+                #{overflow=wrap}
                 idx = 2 + i
                 buf[idx]: {
                     ok -> it = oct & 255
@@ -372,7 +371,6 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
         dlen > 65535 -> mk-start = 10
     }
 
-    #{overflow=wrap}
     {
         mask -> {
             i <- [0..4): {
@@ -754,7 +752,6 @@ server-conn.recv = () (msg ?message) {
     !! {
 
         ; 1) 補到至少 2 bytes（frame header 最小值）
-        #{overflow=wrap}
         .recv-buf-len < 2 -> {
             tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
@@ -765,11 +762,9 @@ server-conn.recv = () (msg ?message) {
             }
             i <- [0..n): {
 
-                #{overflow=wrap}
                 .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
             }
 
-            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
@@ -817,11 +812,9 @@ server-conn.recv = () (msg ?message) {
             }
             i <- [0..n): {
 
-                #{overflow=wrap}
                 .recv-buf[.recv-buf-len + i] ?= tmp2.byte(i)
             }
 
-            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
@@ -856,11 +849,9 @@ server-conn.recv = () (msg ?message) {
             }
             i <- [0..n): {
 
-                #{overflow=wrap}
                 .recv-buf[.recv-buf-len + i] ?= tmp3.byte(i)
             }
 
-            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
@@ -909,7 +900,6 @@ server-conn.recv = () (msg ?message) {
         remaining-len = .recv-buf-len - remaining-start
         i <- [0..remaining-len): {
 
-            #{overflow=wrap}
             .recv-buf[i] ?= .recv-buf.byte(remaining-start + i)
         }
         .recv-buf-len = remaining-len
@@ -995,10 +985,8 @@ server-conn.recv-nb = () (msg ?message) {
     (fill) {
 
         ; 空間不足以再收一輪 → 停止填充，直接進入下方解析階段
-        #{overflow=wrap}
         .recv-buf-len + WS-RECV-SIZE > WS-BUF-SIZE -> fill = false
 
-        #{overflow=wrap}
         .recv-buf-len + WS-RECV-SIZE <= WS-BUF-SIZE && fill -> {
             tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv-nb(.fd, tmp, WS-RECV-SIZE)
@@ -1012,11 +1000,9 @@ server-conn.recv-nb = () (msg ?message) {
             n > 0 -> {
                 i <- [0..n): {
 
-                    #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
 
-                #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n
             }
         }
@@ -1056,7 +1042,6 @@ server-conn.recv-nb = () (msg ?message) {
 
     .recv-buf-len < header-total -> return
 
-    #{overflow=wrap}
     {
         payload-len == 127 -> {
             payload-len = 0
@@ -1086,7 +1071,6 @@ server-conn.recv-nb = () (msg ?message) {
     mask-start = 2 + actual-extra
     mask-key = ''
 
-    #{overflow=wrap}
     masked -> {
         mask-key str = with-len(4)
         k <- [0..4): {
@@ -1097,7 +1081,6 @@ server-conn.recv-nb = () (msg ?message) {
     }
     payload-start = mask-start
 
-    #{overflow=wrap}
     masked -> {
         {
 
@@ -1133,7 +1116,6 @@ server-conn.recv-nb = () (msg ?message) {
     remaining-len = .recv-buf-len - remaining-start
     r <- [0..remaining-len): {
 
-        #{overflow=wrap}
         .recv-buf[r] ?= .recv-buf.byte(remaining-start + r)
     }
     .recv-buf-len = remaining-len
@@ -1191,7 +1173,6 @@ client.send = (opcode i64, data str) (ok bool) {
     ok = false
     .connected == false -> return
 
-    #{overflow=wrap}
     .send-counter = .send-counter + 1: {
         ok -> it
 
@@ -1318,7 +1299,6 @@ client.recv = () (msg ?message) {
     !! {
 
         ; 確保 recv-buf 至少有 2 bytes
-        #{overflow=wrap}
         .recv-buf-len < 2 -> {
             tmp str = with-len(WS-RECV-SIZE)
             n = 0
@@ -1342,7 +1322,6 @@ client.recv = () (msg ?message) {
             }
             i <- [0..n): {
 
-                #{overflow=wrap}
                 .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
             }
             .recv-buf-len = .recv-buf-len + n: {
@@ -1383,7 +1362,6 @@ client.recv = () (msg ?message) {
         #{overflow=wrap}
         header-total = 2 + extra-len
 
-        #{overflow=wrap}
         payload-len == 127 -> {
             .recv-buf-len < header-total -> {
 
@@ -1411,7 +1389,6 @@ client.recv = () (msg ?message) {
                 }
                 i <- [0..n): {
 
-                    #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
                 .recv-buf-len = .recv-buf-len + n: {
@@ -1428,7 +1405,6 @@ client.recv = () (msg ?message) {
             }
         }
 
-        #{overflow=wrap}
         payload-len == 126 -> {
             .recv-buf-len < header-total -> {
 
@@ -1456,7 +1432,6 @@ client.recv = () (msg ?message) {
                 }
                 i <- [0..n): {
 
-                    #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
                 .recv-buf-len = .recv-buf-len + n: {
@@ -1472,7 +1447,6 @@ client.recv = () (msg ?message) {
         #{overflow=wrap}
         frame-total = header-total + payload-len
 
-        #{overflow=wrap}
         .recv-buf-len < frame-total -> {
 
             #{overflow=wrap}
@@ -1501,7 +1475,6 @@ client.recv = () (msg ?message) {
                 }
                 i <- [0..n): {
 
-                    #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
                 .recv-buf-len = .recv-buf-len + n: {
@@ -1521,7 +1494,6 @@ client.recv = () (msg ?message) {
         #{overflow=wrap}
         mask-start ?= 2 + actual-extra
 
-        #{overflow=wrap}
         masked -> {
             mask-key str = with-len(4)
             i <- [0..4): {
@@ -1535,7 +1507,6 @@ client.recv = () (msg ?message) {
         payload-start = 2 + actual-extra
         masked -> payload-start
 
-        #{overflow=wrap}
         2 + actual-extra + 4
         payload str = with-len(payload-len)
         i <- [0..payload-len): {
@@ -1558,7 +1529,6 @@ client.recv = () (msg ?message) {
         remaining-len = .recv-buf-len - remaining-start
         i <- [0..remaining-len): {
 
-            #{overflow=wrap}
             .recv-buf[i] ?= .recv-buf.byte(remaining-start + i)
         }
         .recv-buf-len = remaining-len
@@ -1673,9 +1643,9 @@ connect = (url str) (c ?client) {
     }
     colon-pos = host.index(':')
 
-    #{overflow=wrap}
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
+        #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
@@ -1693,6 +1663,7 @@ connect = (url str) (c ?client) {
                 return
             }
 
+            #{overflow=wrap}
             np = p * 10 + dv - 48: {
                 ok -> it
 
@@ -1843,6 +1814,7 @@ connect = (url str) (c ?client) {
             raw[total + i] ?= tmp.byte(i)
         }
 
+        #{overflow=wrap}
         ntotal = total + n: {
             ok -> it
 
@@ -1893,6 +1865,7 @@ connect = (url str) (c ?client) {
             return
         }
 
+        #{overflow=wrap}
         nsc = status-code * 10 + dv - 48: {
             ok -> it
 

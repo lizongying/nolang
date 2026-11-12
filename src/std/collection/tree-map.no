@@ -67,14 +67,11 @@ tree-map.init = () {
 
     {
 
-        #{overflow=wrap}
         i <- [0..TM-CAP - 1): {
 
-            #{overflow=wrap}
             .left[i] ?= i + 1
         }
 
-        #{overflow=wrap}
         .left[TM-CAP - 1] ?= -1
     }: {
         err -> _
@@ -157,7 +154,6 @@ tree-map.update-ht = (idx i64) {
         r ?= .right[idx]
         rh = .ht(r)
 
-        #{overflow=wrap}
         .height[idx] ?= (lh > rh ? lh : rh) + 1
     }: {
         err -> _
@@ -496,7 +492,6 @@ tree-map.put = (key i64, val i64) (ok bool) {
 
                         .parent[idx] ?= cur
 
-                        #{overflow=wrap}
                         .size = .size + 1: {
                             ok -> it
 
@@ -524,7 +519,6 @@ tree-map.put = (key i64, val i64) (ok bool) {
 
                         .parent[idx] ?= cur
 
-                        #{overflow=wrap}
                         .size = .size + 1: {
                             ok -> it
 
@@ -658,7 +652,6 @@ tree-map.remove = (key i64) (ok bool) {
         idx < 0 -> return
         ok = true
 
-        #{overflow=wrap}
         .size = .size - 1: {
             ok -> it
 
@@ -907,14 +900,11 @@ tree-map.clear = () {
 
     {
 
-        #{overflow=wrap}
         i <- [0..TM-CAP - 1): {
 
-            #{overflow=wrap}
             .left[i] ?= i + 1
         }
 
-        #{overflow=wrap}
         .left[TM-CAP - 1] ?= -1
     }: {
         err -> _

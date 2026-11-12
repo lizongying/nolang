@@ -3,7 +3,7 @@
 ; 執行：no test test/std/zip.no
 ; 覆蓋：u16le / u32le、zip 唯讀視圖（find-eocd/get-cd-off/get-total/entry-off/
 ;       count/entry/name/size/compressed-size/method/extract）、
-;       zip-entry 全部方法、zip-writer 全部方法
+;       entry 全部方法、writer 全部方法
 ;       （put/cd-put/write-u16/write-u32/write-local-file/cd-write-u16/
 ;         cd-write-u32/write-cd-entry/write-eocd/add-file/add-dir/finalize）
 ;
@@ -38,7 +38,7 @@ t-bytes-helpers = () {
 
 ; ── 2. writer 基本寫入單元 ───────────────────────────────────────────
 t-primitives = () {
-    w = zip-writer{}
+    w = writer{}
     w.write-u16(0x1234)
     w.write-u32(0x89abcdef)
     w.put(7)
@@ -58,7 +58,7 @@ t-primitives = () {
 
 ; ── 3. write-local-file 標頭布局（PK\x03\x04）────────────────────────
 t-local = () {
-    w = zip-writer{}
+    w = writer{}
     w.write-local-file('m.txt', 'xy'.to-bytes(), 0x12345678)
 
     runner.eq(len(w.data), 37, 'local header = 30 + 名稱 5 + 內容 2')
@@ -76,7 +76,7 @@ t-local = () {
 
 ; ── 4. write-cd-entry（PK\x01\x02）與 write-eocd（PK\x05\x06）────────
 t-cd-eocd = () {
-    w = zip-writer{}
+    w = writer{}
     w.write-cd-entry('m.txt', 0, 2, 2, 0x12345678)
     runner.eq(len(w.cd-data), 51, 'central directory entry = 46 + 名稱 5')
 
@@ -86,7 +86,7 @@ t-cd-eocd = () {
     nl = w.cd-data.slice(28, 30)
     runner.str-eq(nl.to-hex(), '0500', 4, '中央目錄名稱長度欄 = 5')
 
-    e = zip-writer{}
+    e = writer{}
     e.write-eocd(0, 0)
     runner.eq(len(e.data), 22, 'EOCD 固定 22 位元組')
     eh = e.data.slice(0, 22)
@@ -95,7 +95,7 @@ t-cd-eocd = () {
 
 ; ── 5. writer round-trip：add-file ×2 + add-dir + finalize ────────────
 t-roundtrip = () {
-    w = zip-writer{}
+    w = writer{}
     w.add-file('a.txt', 'hello'.to-bytes())
     w.add-file('b.txt', 'second entry'.to-bytes())
     w.add-dir('sub')
@@ -130,7 +130,7 @@ t-roundtrip = () {
     runner.str-eq(z.extract(1).to-str(), 'second entry', 12, 'extract(1)')
     runner.eq(len(z.extract(2)), 0, '目錄條目內容為空')
 
-    ; zip-entry 視圖必須與 zip.* 一致
+    ; entry 視圖必須與 zip.* 一致
     e0 = z.entry(0)
     e1 = z.entry(2)
     runner.str-eq(e0.name(), 'a.txt', 5, 'entry.name()')
@@ -183,9 +183,9 @@ t-garbage = () {
 }
 
 p1 = runner.test('zip.u16le/u32le', t-bytes-helpers)
-p2 = runner.test('zip-writer primitives', t-primitives)
-p3 = runner.test('zip-writer.write-local-file', t-local)
-p4 = runner.test('zip-writer cd/eocd', t-cd-eocd)
+p2 = runner.test('writer primitives', t-primitives)
+p3 = runner.test('writer.write-local-file', t-local)
+p4 = runner.test('writer cd/eocd', t-cd-eocd)
 p5 = runner.test('zip round-trip', t-roundtrip)
 p6 = runner.test('zip deflate extract', t-deflate)
 p7 = runner.test('zip garbage tolerance', t-garbage)

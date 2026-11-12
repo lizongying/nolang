@@ -773,28 +773,28 @@ t-errors = () {
 
 ; 內部輔助函式直測：索引/十六進制/數字掃描/型別推斷/轉義/引號
 t-helper-prims = () {
-    eq-str(yaml.yaml-str-at([
+    eq-str(yaml.str-at([
         'a',
         'bb',
     ], 1), 'bb', 'str-at 1')
-    eq-str(yaml.yaml-str-at([
+    eq-str(yaml.str-at([
         'a',
     ], 5), '', 'str-at oob')
-    runner.eq(yaml.yaml-hex-digit(48), 0, 'hex-digit 0')
-    runner.eq(yaml.yaml-hex-digit(70), 15, 'hex-digit F')
-    runner.eq(yaml.yaml-hex-digit(97), 10, 'hex-digit a')
-    runner.eq(yaml.yaml-hex-digit(122), -1, 'hex-digit not hex')
-    eq-str(yaml.yaml-hex-char(0), '0', 'hex-char 0')
-    eq-str(yaml.yaml-hex-char(10), 'a', 'hex-char 10')
-    eq-str(yaml.yaml-hex-char(15), 'f', 'hex-char 15')
-    runner.eq(yaml.yaml-spaces(3).len-bytes(), 3, 'spaces 3')
-    eq-str(yaml.yaml-spaces(3), '   ', 'spaces content')
-    runner.eq(yaml.yaml-to-i64('123'), 123, 'to-i64 123')
-    runner.eq(yaml.yaml-to-i64('x'), -1, 'to-i64 bad')
-    runner.eq(yaml.yaml-to-i64(''), -1, 'to-i64 empty')
-    runner.f64-eq(f-of(yaml.yaml-to-f64('1.5')), 1.5, 0.0001, 'to-f64 ok')
-    eq-str(s-of(yaml.yaml-to-f64('abc')), '<nil>', 'to-f64 bad nil')
-    ue = yaml.yaml-unescape-double('a\\nb')
+    runner.eq(yaml.hex-digit(48), 0, 'hex-digit 0')
+    runner.eq(yaml.hex-digit(70), 15, 'hex-digit F')
+    runner.eq(yaml.hex-digit(97), 10, 'hex-digit a')
+    runner.eq(yaml.hex-digit(122), -1, 'hex-digit not hex')
+    eq-str(yaml.hex-char(0), '0', 'hex-char 0')
+    eq-str(yaml.hex-char(10), 'a', 'hex-char 10')
+    eq-str(yaml.hex-char(15), 'f', 'hex-char 15')
+    runner.eq(yaml.spaces(3).len-bytes(), 3, 'spaces 3')
+    eq-str(yaml.spaces(3), '   ', 'spaces content')
+    runner.eq(yaml.to-i64('123'), 123, 'to-i64 123')
+    runner.eq(yaml.to-i64('x'), -1, 'to-i64 bad')
+    runner.eq(yaml.to-i64(''), -1, 'to-i64 empty')
+    runner.f64-eq(f-of(yaml.to-f64('1.5')), 1.5, 0.0001, 'to-f64 ok')
+    eq-str(s-of(yaml.to-f64('abc')), '<nil>', 'to-f64 bad nil')
+    ue = yaml.unescape-double('a\\nb')
     ue: {
         ok -> runner.eq(it.len-bytes(), 3, 'unescape doubles nl')
 
@@ -802,54 +802,54 @@ t-helper-prims = () {
 
         err -> runner.is-true(false, 'unescape ok')
     }
-    eq-str(yaml.yaml-json-escape('ab'), '"ab"', 'json-escape plain')
-    runner.eq(yaml.yaml-json-escape('a"b').len-bytes(), 6, 'json-escape quote len')
-    runner.eq(yaml.yaml-json-escape('a\nb').len-bytes(), 6, 'json-escape nl len')
-    eq-str(yaml.yaml-quote('ab'), '"ab"', 'quote plain')
-    runner.eq(yaml.yaml-quote('a\nb').len-bytes(), 6, 'quote nl len')
-    runner.is-true(yaml.yaml-plain-safe('abc'), 'plain-safe word')
-    runner.is-false(yaml.yaml-plain-safe('42'), 'plain-safe number')
-    runner.is-false(yaml.yaml-plain-safe('-x'), 'plain-safe dash')
-    runner.is-false(yaml.yaml-plain-safe(' a'), 'plain-safe leading space')
-    runner.is-false(yaml.yaml-plain-safe(''), 'plain-safe empty')
-    runner.is-true(yaml.yaml-f-is-nan(yaml.yaml-nan()), 'f-is-nan nan')
-    runner.is-false(yaml.yaml-f-is-nan(1.0), 'f-is-nan 1.0')
-    runner.is-true(yaml.yaml-f-is-inf(yaml.yaml-inf()), 'f-is-inf inf')
-    runner.is-false(yaml.yaml-f-is-inf(1.0), 'f-is-inf 1.0')
-    runner.is-false(yaml.yaml-f-is-inf(0.0), 'f-is-inf 0')
-    runner.is-true(yaml.yaml-f-is-inf(yaml.yaml-inf() * 0.5), 'inf halved stays inf')
-    sk, si, sf = yaml.yaml-scan-number('-3')
+    eq-str(yaml.json-escape('ab'), '"ab"', 'json-escape plain')
+    runner.eq(yaml.json-escape('a"b').len-bytes(), 6, 'json-escape quote len')
+    runner.eq(yaml.json-escape('a\nb').len-bytes(), 6, 'json-escape nl len')
+    eq-str(yaml.quote('ab'), '"ab"', 'quote plain')
+    runner.eq(yaml.quote('a\nb').len-bytes(), 6, 'quote nl len')
+    runner.is-true(yaml.plain-safe('abc'), 'plain-safe word')
+    runner.is-false(yaml.plain-safe('42'), 'plain-safe number')
+    runner.is-false(yaml.plain-safe('-x'), 'plain-safe dash')
+    runner.is-false(yaml.plain-safe(' a'), 'plain-safe leading space')
+    runner.is-false(yaml.plain-safe(''), 'plain-safe empty')
+    runner.is-true(yaml.f-is-nan(yaml.nan()), 'f-is-nan nan')
+    runner.is-false(yaml.f-is-nan(1.0), 'f-is-nan 1.0')
+    runner.is-true(yaml.f-is-inf(yaml.inf()), 'f-is-inf inf')
+    runner.is-false(yaml.f-is-inf(1.0), 'f-is-inf 1.0')
+    runner.is-false(yaml.f-is-inf(0.0), 'f-is-inf 0')
+    runner.is-true(yaml.f-is-inf(yaml.inf() * 0.5), 'inf halved stays inf')
+    sk, si, sf = yaml.scan-number('-3')
     runner.eq(sk, 2, 'scan -3 kind int')
     runner.eq(si, -3, 'scan -3 value')
-    sk2, si2, sf2 = yaml.yaml-scan-number('1.5')
+    sk2, si2, sf2 = yaml.scan-number('1.5')
     runner.eq(sk2, 3, 'scan 1.5 kind float')
     runner.f64-eq(sf2, 1.5, 0.0001, 'scan 1.5 value')
-    sk3, si3, sf3 = yaml.yaml-scan-number('abc')
+    sk3, si3, sf3 = yaml.scan-number('abc')
     runner.eq(sk3, 4, 'scan abc kind str')
-    rk, ri, rf, rb = yaml.yaml-resolve-plain('null')
+    rk, ri, rf, rb = yaml.resolve-plain('null')
     runner.eq(rk, 0, 'resolve null kind')
-    rk2, ri2, rf2, rb2 = yaml.yaml-resolve-plain('true')
+    rk2, ri2, rf2, rb2 = yaml.resolve-plain('true')
     runner.eq(rk2, 1, 'resolve true kind')
     runner.is-true(rb2, 'resolve true bval')
-    rk3, ri3, rf3, rb3 = yaml.yaml-resolve-plain('42')
+    rk3, ri3, rf3, rb3 = yaml.resolve-plain('42')
     runner.eq(rk3, 2, 'resolve 42 kind')
     runner.eq(ri3, 42, 'resolve 42 value')
-    rk4, ri4, rf4, rb4 = yaml.yaml-resolve-plain('xyz')
+    rk4, ri4, rf4, rb4 = yaml.resolve-plain('xyz')
     runner.eq(rk4, 4, 'resolve xyz kind str')
-    eq-str(yaml.yaml-tag-name('!!str'), 'str', 'tag-name shorthand')
-    eq-str(yaml.yaml-tag-name('tag:yaml.org,2002:int'), 'int', 'tag-name uri')
-    eq-str(yaml.yaml-tag-name('!<tag:yaml.org,2002:bool>'), 'bool', 'tag-name verbatim')
-    runner.eq(yaml.yaml-apply-tag('!!str', 2), 4, 'apply-tag str')
-    runner.eq(yaml.yaml-apply-tag('!!int', 4), 2, 'apply-tag int')
-    runner.eq(yaml.yaml-apply-tag('!!bogus', 4), 4, 'apply-tag unknown keeps kind')
-    pk, pv = yaml.yaml-parse-radix('ff', 0, 16)
+    eq-str(yaml.tag-name('!!str'), 'str', 'tag-name shorthand')
+    eq-str(yaml.tag-name('tag:yaml.org,2002:int'), 'int', 'tag-name uri')
+    eq-str(yaml.tag-name('!<tag:yaml.org,2002:bool>'), 'bool', 'tag-name verbatim')
+    runner.eq(yaml.apply-tag('!!str', 2), 4, 'apply-tag str')
+    runner.eq(yaml.apply-tag('!!int', 4), 2, 'apply-tag int')
+    runner.eq(yaml.apply-tag('!!bogus', 4), 4, 'apply-tag unknown keeps kind')
+    pk, pv = yaml.parse-radix('ff', 0, 16)
     runner.eq(pk, 2, 'radix ff kind')
     runner.eq(pv, 255, 'radix ff value')
-    pk2, pv2 = yaml.yaml-parse-radix('777', 0, 8)
+    pk2, pv2 = yaml.parse-radix('777', 0, 8)
     runner.eq(pv2, 511, 'radix 777 octal')
-    pk3, pv3 = yaml.yaml-parse-radix('0x1f', 2, 16)
+    pk3, pv3 = yaml.parse-radix('0x1f', 2, 16)
     runner.eq(pv3, 31, 'radix with prefix offset')
-    pk4, pv4 = yaml.yaml-parse-radix('zz', 0, 16)
+    pk4, pv4 = yaml.parse-radix('zz', 0, 16)
     runner.eq(pk4, 4, 'radix bad stays str')
 }
 
@@ -865,11 +865,11 @@ list:
             d = it
             eq-str(d.to-yaml(), src, 'to-yaml roundtrip')
             eq-str(d.stringify(), src, 'stringify roundtrip')
-            pl = d.pool
-            eq-str(yaml.yaml-json-of(pl, d.root, 0), '{"a":1,"list":["x","y"]}', 'json-of root')
-            emit = yaml.yaml-emit(pl, d.root, 0, 0)
+            pl = d.node-pool
+            eq-str(yaml.json-of(pl, d.root, 0), '{"a":1,"list":["x","y"]}', 'json-of root')
+            emit = yaml.emit(pl, d.root, 0, 0)
             runner.eq(emit.len-bytes(), d.to-yaml().len-bytes(), 'emit == to-yaml')
-            runner.eq(yaml.yaml-emit(pl, -1, 0, 0).len-bytes(), 0, 'emit idx -1 empty')
+            runner.eq(yaml.emit(pl, -1, 0, 0).len-bytes(), 0, 'emit idx -1 empty')
             eq-str(d.to-json(), '{"a":1,"list":["x","y"]}', 'to-json nested')
         }
 
@@ -879,21 +879,21 @@ list:
     }
 }
 
-; ══ 解析器內部（yaml-parser，白盒） ═══════════════════════════════════
+; ══ 解析器內部（parser，白盒） ═══════════════════════════════════
 ;
-; yaml-parser 是 std 的公開結構體（`yaml.yaml-parser`），用戶碼可以直接造出一個
+; parser 是 std 的公開結構體（`yaml.parser`），用戶碼可以直接造出一個
 ; 解析器並逐個方法驅動它，因此這 47 個方法屬於**可測 API 面**，而不是只能靠
 ; `yaml.parse` 間接執行的實作細節。實測有兩個必須遵守的坑：
 ;
-;   1) 變數必須寫型別標註：`p yaml.yaml-parser = yaml.yaml-parser{…}`。
-;      寫成 `p = yaml.yaml-parser{…}` 時推斷出的不是名義型別，調方法會在 MIR
-;      報 `unknown callee yaml.yaml-parser.cur [4qhyyund]`，而 `no vet` 不報。
+;   1) 變數必須寫型別標註：`p yaml.parser = yaml.parser{…}`。
+;      寫成 `p = yaml.parser{…}` 時推斷出的不是名義型別，調方法會在 MIR
+;      報 `unknown callee yaml.parser.cur [4qhyyund]`，而 `no vet` 不報。
 ;   2) 結構體字面量的欄位分隔符是**冒號**：`src: 'x'`。寫成 `=` 時 checker
 ;      照收，MIR 卻對使用者結構體崩 `NoVal`、對 std 結構體靜默給零值。
 
 ; 造一個已裝載 src 的解析器（pos=0 / line=1）
-mk-p = (src str) (p yaml.yaml-parser) {
-    p = yaml.yaml-parser{
+mk-p = (src str) (p yaml.parser) {
+    p = yaml.parser{
         src: src
         n: src.len-bytes()
         pos: 0
@@ -918,8 +918,8 @@ i-at = (a []i64, i i64) (v i64) {
 }
 
 ; 用給定的 kind/keys/kids 造一個節點並追加進池，返回池索引
-mk-node = (p yaml.yaml-parser, kind i64, keys []i64, kids []i64) (idx i64) {
-    nd = yaml.yaml-node{
+mk-node = (p yaml.parser, kind i64, keys []i64, kids []i64) (idx i64) {
+    nd = yaml.node{
         kind: kind
         style: 6
         tag: ''
@@ -937,7 +937,7 @@ mk-node = (p yaml.yaml-parser, kind i64, keys []i64, kids []i64) (idx i64) {
 }
 
 ; 池中第 i 個節點的 kind（越界回 -1）
-ndk = (p yaml.yaml-parser, i i64) (k i64) {
+ndk = (p yaml.parser, i i64) (k i64) {
     k = p.nodes[i]: {
         ok -> it.kind
 
@@ -948,7 +948,7 @@ ndk = (p yaml.yaml-parser, i i64) (k i64) {
 }
 
 ; 池中第 i 個節點的標量文本（越界回 '<oob>'）
-ndt = (p yaml.yaml-parser, i i64) (t str) {
+ndt = (p yaml.parser, i i64) (t str) {
     t = p.nodes[i]: {
         ok -> it.text
 
@@ -959,7 +959,7 @@ ndt = (p yaml.yaml-parser, i i64) (t str) {
 }
 
 ; 池中第 i 個節點的 style（越界回 -1）
-nds = (p yaml.yaml-parser, i i64) (v i64) {
+nds = (p yaml.parser, i i64) (v i64) {
     v = p.nodes[i]: {
         ok -> it.style
 
@@ -970,7 +970,7 @@ nds = (p yaml.yaml-parser, i i64) (v i64) {
 }
 
 ; 池中第 i 個節點的 ival（越界回 -1）
-ndi = (p yaml.yaml-parser, i i64) (v i64) {
+ndi = (p yaml.parser, i i64) (v i64) {
     v = p.nodes[i]: {
         ok -> it.ival
 
@@ -981,7 +981,7 @@ ndi = (p yaml.yaml-parser, i i64) (v i64) {
 }
 
 ; 池中第 i 個節點的 bval 三態（1=true / 0=false / -1=越界）
-ndb = (p yaml.yaml-parser, i i64) (v i64) {
+ndb = (p yaml.parser, i i64) (v i64) {
     v = p.nodes[i]: {
         ok -> {
             it.bval -> 1
@@ -996,7 +996,7 @@ ndb = (p yaml.yaml-parser, i i64) (v i64) {
 }
 
 ; 池中第 i 個節點的 kids 長度（越界回 -1）
-ndkn = (p yaml.yaml-parser, i i64) (n i64) {
+ndkn = (p yaml.parser, i i64) (n i64) {
     n = p.nodes[i]: {
         ok -> it.kids.len()
 
@@ -1007,7 +1007,7 @@ ndkn = (p yaml.yaml-parser, i i64) (n i64) {
 }
 
 ; 池中第 i 個節點的 keys 長度（越界回 -1）
-ndkm = (p yaml.yaml-parser, i i64) (n i64) {
+ndkm = (p yaml.parser, i i64) (n i64) {
     n = p.nodes[i]: {
         ok -> it.keys.len()
 
@@ -1018,7 +1018,7 @@ ndkm = (p yaml.yaml-parser, i i64) (n i64) {
 }
 
 ; 池中第 i 個節點的第 j 個 kids 索引（越界回 -1）
-ndkid = (p yaml.yaml-parser, i i64, j i64) (v i64) {
+ndkid = (p yaml.parser, i i64, j i64) (v i64) {
     v = p.nodes[i]: {
         ok -> {
             sub = it.kids[j]: {
@@ -1155,7 +1155,7 @@ t-p-nodes = () {
 
     ks []i64 = with-len(0)
     vs []i64 = with-len(0)
-    nd = yaml.yaml-node{
+    nd = yaml.node{
         kind: 4
         style: 0
         tag: ''
@@ -1576,11 +1576,11 @@ f = runner.failed-count()
     -> exit(0)
 }
 
-; 節點級輔助函式：yaml-scalar-repr / yaml-node-is-nan / yaml-key-text-eq / yaml-key-eq
+; 節點級輔助函式：scalar-repr / node-is-nan / key-text-eq / key-eq
 ;
-; 這四個函式吃 `yaml-node`（不可命名的型別），但節點可以從公開欄位
-; `doc.pool.nodes[i]` 取到，因此仍然可測；全限定呼叫形如
-; `yaml.yaml-scalar-repr(pl.nodes[i])`。
+; 這四個函式吃 `node`（不可命名的型別），但節點可以從公開欄位
+; `doc.node-pool.nodes[i]` 取到，因此仍然可測；全限定呼叫形如
+; `yaml.scalar-repr(pl.nodes[i])`。
 t-node-helpers = () {
     src = 'i: 42
 f: 1.5
@@ -1596,7 +1596,7 @@ k1: 7'
     r: {
         ok -> {
             d = it
-            pl = d.pool
+            pl = d.node-pool
             nn = pl.nodes.len()
             i-int = -1
             i-flt = -1
@@ -1638,28 +1638,28 @@ k1: 7'
             runner.eq(i-key >= 0, true, '找到 k1 鍵節點')
 
             ; 標量表示：按種類選擇，字符串按需加引號
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-int]), '42', 'repr int')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-flt]), '1.5', 'repr float')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-nan]), '.nan', 'repr nan')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-inf]), '.inf', 'repr inf')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-ninf]), '-.inf', 'repr -inf')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-bool]), 'true', 'repr bool')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-null]), 'null', 'repr null')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-str]), 'plain', 'repr 安全 plain')
-            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-quoted]), '"x: y"', 'repr 需加引號')
+            eq-str(yaml.scalar-repr(pl.nodes[i-int]), '42', 'repr int')
+            eq-str(yaml.scalar-repr(pl.nodes[i-flt]), '1.5', 'repr float')
+            eq-str(yaml.scalar-repr(pl.nodes[i-nan]), '.nan', 'repr nan')
+            eq-str(yaml.scalar-repr(pl.nodes[i-inf]), '.inf', 'repr inf')
+            eq-str(yaml.scalar-repr(pl.nodes[i-ninf]), '-.inf', 'repr -inf')
+            eq-str(yaml.scalar-repr(pl.nodes[i-bool]), 'true', 'repr bool')
+            eq-str(yaml.scalar-repr(pl.nodes[i-null]), 'null', 'repr null')
+            eq-str(yaml.scalar-repr(pl.nodes[i-str]), 'plain', 'repr 安全 plain')
+            eq-str(yaml.scalar-repr(pl.nodes[i-quoted]), '"x: y"', 'repr 需加引號')
 
             ; NaN 判定：只有 FLOAT 且值/原文命中才為真
-            runner.is-true(yaml.yaml-node-is-nan(pl.nodes[i-nan]), 'is-nan .nan')
-            runner.is-false(yaml.yaml-node-is-nan(pl.nodes[i-flt]), 'is-nan 1.5 為假')
-            runner.is-false(yaml.yaml-node-is-nan(pl.nodes[i-null]), 'is-nan 對 null 為假')
+            runner.is-true(yaml.node-is-nan(pl.nodes[i-nan]), 'is-nan .nan')
+            runner.is-false(yaml.node-is-nan(pl.nodes[i-flt]), 'is-nan 1.5 為假')
+            runner.is-false(yaml.node-is-nan(pl.nodes[i-null]), 'is-nan 對 null 為假')
 
             ; 鍵比較：集合節點一律不相等
-            runner.is-true(yaml.yaml-key-text-eq(pl.nodes[i-key], 'k1'), 'key-text-eq 命中')
-            runner.is-false(yaml.yaml-key-text-eq(pl.nodes[i-key], 'zz'), 'key-text-eq 不命中')
-            runner.is-false(yaml.yaml-key-text-eq(pl.nodes[d.root], 'k1'), 'map 節點不參與鍵比較')
-            runner.is-true(yaml.yaml-key-eq(pl.nodes[i-key], pl.nodes[i-key]), 'key-eq 自反')
-            runner.is-false(yaml.yaml-key-eq(pl.nodes[i-key], pl.nodes[i-str]), 'key-eq 不同文本')
-            runner.is-false(yaml.yaml-key-eq(pl.nodes[d.root], pl.nodes[i-key]), 'key-eq 集合側為假')
+            runner.is-true(yaml.key-text-eq(pl.nodes[i-key], 'k1'), 'key-text-eq 命中')
+            runner.is-false(yaml.key-text-eq(pl.nodes[i-key], 'zz'), 'key-text-eq 不命中')
+            runner.is-false(yaml.key-text-eq(pl.nodes[d.root], 'k1'), 'map 節點不參與鍵比較')
+            runner.is-true(yaml.key-eq(pl.nodes[i-key], pl.nodes[i-key]), 'key-eq 自反')
+            runner.is-false(yaml.key-eq(pl.nodes[i-key], pl.nodes[i-str]), 'key-eq 不同文本')
+            runner.is-false(yaml.key-eq(pl.nodes[d.root], pl.nodes[i-key]), 'key-eq 集合側為假')
         }
 
         nil -> runner.is-true(false, 'node-helpers 解析成功')

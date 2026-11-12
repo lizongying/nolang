@@ -62,11 +62,12 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         }
     }
 
-    ; 預分配緩衝區：data 用 with-cap 建 len=0 的容量緩衝，靠直接下標寫入增長長度
-    ; （place-match 以「讀」作閘門，對 len=0 緩衝會因讀越界而靜默不寫）。
-    ; with-cap 基底被 idxwrite lint 豁免，見 checker.isWithCapCall。
+    ; 預分配緩衝區：位元組先寫進 []byte（str 下標直寫自 2026-11-11 起全域禁用，
+    ; 連 with-cap 基底也不再豁免 idxwrite），收尾按實際 total 長度整體轉成 str。
+    ; 注意 place-match `s[i]: { ok -> it = v }` 不能替代本處的「邊寫邊增長」：
+    ; 它以讀取作閘門，i >= len 時整條寫入靜默跳過，不會增長緩衝。
     space = ' '
-    data = with-cap(n)
+    data-b []byte = with-cap-len(n, n)
     tmp = space.repeat(MYSQL-RECV-BUF)
 
     total = 0
@@ -79,7 +80,11 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         }
         read-n = net.net-recv(fd, tmp, remaining)
         {
-            read-n <= 0 -> return
+            read-n <= 0 -> {
+                ; 中途失敗：回傳已收到的部分（對齊原本 with-cap 逐寫增長的語義）
+                data = data-b.slice(0, total).to-bytes-str()
+                return
+            }
         }
 
         ; 複製到位據
@@ -87,7 +92,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         (i < read-n) {
 
             #{overflow=wrap}
-            data[total + i] = tmp.byte(i)
+            data-b[total + i] = tmp.byte(i)
 
             #{overflow=wrap}
             {
@@ -105,6 +110,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         #{overflow=wrap}
         total = total + read-n
     }
+    data = data-b.slice(0, total).to-bytes-str()
     ok = true
 }
 
@@ -144,11 +150,13 @@ mysql-pkt-send = (fd fd, seq i64, payload str, payload-len i64) (ok bool) {
     ok = false
 
     ; 建構標頭：3 位元組 LE 長度 + 1 位元組序號
-    hdr str = with-cap(4)
-    hdr[0] = payload-len & 255
-    hdr[1] = (payload-len >> 8) & 255
-    hdr[2] = (payload-len >> 16) & 255
-    hdr[3] = seq & 255
+    ; str 下標直寫已全域禁用 ⇒ 用 []byte 承接位元組，收尾整體轉回 str。
+    hdr-b []byte = with-cap-len(4, 4)
+    hdr-b[0] = payload-len & 255
+    hdr-b[1] = (payload-len >> 8) & 255
+    hdr-b[2] = (payload-len >> 16) & 255
+    hdr-b[3] = seq & 255
+    hdr = hdr-b.to-bytes-str()
 
     ; 發送標頭
     written = net.net-send(fd, hdr, 4)
@@ -802,27 +810,27 @@ open = (dsn str) (d db-mysql) {
     max-packet = MYSQL-RECV-BUF
     charset = 255; utf8mb4
 
-    ; #{ascii}：resp 是逐位元組填充的協議緩衝（不是碼點串），s[i] 實為位元組定址
-    #{ascii}
-    resp str = with-cap(512)
+    ; resp 是逐位元組填充的協議緩衝（不是碼點串）。str 下標直寫自 2026-11-11 起全域禁用
+    ; （連 with-cap 基底也不再豁免 idxwrite）⇒ 用 []byte 承接位元組，發送前按 wpos 整體轉回 str。
+    resp-b []byte = with-cap-len(512, 512)
     wpos = 0
 
     ; Capabilities (4 bytes LE)
-    resp[0] = client-caps & 255
-    resp[1] = (client-caps >> 8) & 255
-    resp[2] = (client-caps >> 16) & 255
-    resp[3] = (client-caps >> 24) & 255
+    resp-b[0] = client-caps & 255
+    resp-b[1] = (client-caps >> 8) & 255
+    resp-b[2] = (client-caps >> 16) & 255
+    resp-b[3] = (client-caps >> 24) & 255
     wpos = 4
 
     ; Max packet size (4 bytes LE)
-    resp[4] = max-packet & 255
-    resp[5] = (max-packet >> 8) & 255
-    resp[6] = (max-packet >> 16) & 255
-    resp[7] = (max-packet >> 24) & 255
+    resp-b[4] = max-packet & 255
+    resp-b[5] = (max-packet >> 8) & 255
+    resp-b[6] = (max-packet >> 16) & 255
+    resp-b[7] = (max-packet >> 24) & 255
     wpos = 8
 
     ; Charset (1 byte)
-    resp[8] = charset
+    resp-b[8] = charset
     wpos = 9
 
     ; Reserved (23 bytes of 0x00)
@@ -830,7 +838,7 @@ open = (dsn str) (d db-mysql) {
     (i < 23) {
 
         #{overflow=wrap}
-        resp[9 + i] = 0
+        resp-b[9 + i] = 0
 
         #{overflow=wrap}
         {
@@ -849,7 +857,7 @@ open = (dsn str) (d db-mysql) {
     ; Username (null-terminated)
     i = 0
     (i < user.len-bytes()) {
-        resp[wpos] = user.byte(i)
+        resp-b[wpos] = user.byte(i)
 
         #{overflow=wrap}
         {
@@ -875,7 +883,7 @@ open = (dsn str) (d db-mysql) {
             }
         }
     }
-    resp[wpos] = 0
+    resp-b[wpos] = 0
 
     #{overflow=wrap}
     {
@@ -890,7 +898,7 @@ open = (dsn str) (d db-mysql) {
     }
 
     ; Auth response length (1 byte) + auth response (20 bytes)
-    resp[wpos] = 20
+    resp-b[wpos] = 20
 
     #{overflow=wrap}
     {
@@ -905,7 +913,7 @@ open = (dsn str) (d db-mysql) {
     }
     i = 0
     (i < 20) {
-        resp[wpos] = auth-token[i]: {
+        resp-b[wpos] = auth-token[i]: {
             ok -> it
 
             -> _
@@ -939,7 +947,7 @@ open = (dsn str) (d db-mysql) {
     ; Database (null-terminated)
     i = 0
     (i < dbname.len-bytes()) {
-        resp[wpos] = dbname.byte(i)
+        resp-b[wpos] = dbname.byte(i)
 
         #{overflow=wrap}
         {
@@ -965,7 +973,7 @@ open = (dsn str) (d db-mysql) {
             }
         }
     }
-    resp[wpos] = 0
+    resp-b[wpos] = 0
 
     #{overflow=wrap}
     {
@@ -983,7 +991,7 @@ open = (dsn str) (d db-mysql) {
     plugin-name = 'mysql_native_password'
     i = 0
     (i < plugin-name.len-bytes()) {
-        resp[wpos] = plugin-name[i]: {
+        resp-b[wpos] = plugin-name[i]: {
             ok -> it
 
             -> _
@@ -1013,7 +1021,7 @@ open = (dsn str) (d db-mysql) {
             }
         }
     }
-    resp[wpos] = 0
+    resp-b[wpos] = 0
 
     #{overflow=wrap}
     {
@@ -1027,7 +1035,8 @@ open = (dsn str) (d db-mysql) {
         }
     }
 
-    ; 發送握手回應
+    ; 發送握手回應（把 []byte 緩衝按實際寫入量 wpos 轉成 str）
+    resp = resp-b.slice(0, wpos).to-bytes-str()
     #{overflow=wrap}
     send-ok = mysql-pkt-send(fd, hs-seq + 1, resp, wpos)
     {
@@ -1076,9 +1085,10 @@ db-mysql.close = () (ok bool) {
     {
         .connected -> {
 
-            ; 發送 COM_QUIT 封包
-            quit-payload str = with-cap(1)
-            quit-payload[0] = COM-QUIT
+            ; 發送 COM_QUIT 封包（str 下標直寫已全域禁用 ⇒ []byte 承接後整體轉 str）
+            quit-b []byte = with-cap-len(1, 1)
+            quit-b[0] = COM-QUIT
+            quit-payload = quit-b.to-bytes-str()
             send-ok = mysql-pkt-send(.fd, 0, quit-payload, 1)
             fs.close(.fd)
             .fd = -1
@@ -1096,15 +1106,16 @@ db-mysql.exec = (sql str) (r sql.result) {
     }
 
     ; 建構 COM_QUERY 封包：0x03 + SQL
-    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
-    #{ascii, overflow=wrap}
-    payload str = with-cap(sql.len-bytes() + 1)
-    payload[0] = COM-QUERY
+    ; str 下標直寫自 2026-11-11 起全域禁用 ⇒ 用 []byte 承接位元組，
+    ; 發送前按 payload-len 把實際長度整體轉回 str。
+    #{overflow=wrap}
+    payload-b []byte = with-cap-len(sql.len-bytes() + 1, sql.len-bytes() + 1)
+    payload-b[0] = COM-QUERY
     i = 0
     (i < sql.len-bytes()) {
 
         #{overflow=wrap}
-        payload[1 + i] = sql.byte(i)
+        payload-b[1 + i] = sql.byte(i)
 
         #{overflow=wrap}
         {
@@ -1121,6 +1132,7 @@ db-mysql.exec = (sql str) (r sql.result) {
 
     #{overflow=wrap}
     payload-len = 1 + sql.len-bytes()
+    payload = payload-b.slice(0, payload-len).to-bytes-str()
 
     ; 發送（每個新命令 seq 從 0 開始）
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -1164,15 +1176,16 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     }
 
     ; 建構 COM_QUERY 封包
-    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
-    #{ascii, overflow=wrap}
-    payload str = with-cap(sql.len-bytes() + 1)
-    payload[0] = COM-QUERY
+    ; str 下標直寫自 2026-11-11 起全域禁用 ⇒ 用 []byte 承接位元組，
+    ; 發送前按 payload-len 把實際長度整體轉回 str。
+    #{overflow=wrap}
+    payload-b []byte = with-cap-len(sql.len-bytes() + 1, sql.len-bytes() + 1)
+    payload-b[0] = COM-QUERY
     i = 0
     (i < sql.len-bytes()) {
 
         #{overflow=wrap}
-        payload[1 + i] = sql.byte(i)
+        payload-b[1 + i] = sql.byte(i)
 
         #{overflow=wrap}
         {
@@ -1189,6 +1202,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
     #{overflow=wrap}
     payload-len = 1 + sql.len-bytes()
+    payload = payload-b.slice(0, payload-len).to-bytes-str()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -1676,16 +1690,17 @@ stmt-mysql.exec = () (r sql.result) {
     }
 
     ; 建構 COM_QUERY 封包
-    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
-    #{ascii, overflow=wrap}
-    payload str = with-cap(.bound.len-bytes() + 1)
-    payload[0] = COM-QUERY
+    ; str 下標直寫自 2026-11-11 起全域禁用 ⇒ 用 []byte 承接位元組，
+    ; 發送前按 payload-len 把實際長度整體轉回 str。
+    #{overflow=wrap}
+    payload-b []byte = with-cap-len(.bound.len-bytes() + 1, .bound.len-bytes() + 1)
+    payload-b[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {
         {
 
             #{overflow=wrap}
-            payload[1 + i] ?= .bound[i]
+            payload-b[1 + i] ?= .bound[i]
         }: {
             err -> _
 
@@ -1707,6 +1722,7 @@ stmt-mysql.exec = () (r sql.result) {
 
     #{overflow=wrap}
     payload-len = 1 + .bound.len-bytes()
+    payload = payload-b.slice(0, payload-len).to-bytes-str()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -1742,16 +1758,17 @@ stmt-mysql.query = () (rs rows-mysql) {
     }
 
     ; 建構 COM_QUERY 封包
-    ; #{ascii}：payload 是逐位元組填充的協議緩衝，s[i] 實為位元組定址
-    #{ascii, overflow=wrap}
-    payload str = with-cap(.bound.len-bytes() + 1)
-    payload[0] = COM-QUERY
+    ; str 下標直寫自 2026-11-11 起全域禁用 ⇒ 用 []byte 承接位元組，
+    ; 發送前按 payload-len 把實際長度整體轉回 str。
+    #{overflow=wrap}
+    payload-b []byte = with-cap-len(.bound.len-bytes() + 1, .bound.len-bytes() + 1)
+    payload-b[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {
         {
 
             #{overflow=wrap}
-            payload[1 + i] ?= .bound[i]
+            payload-b[1 + i] ?= .bound[i]
         }: {
             err -> _
 
@@ -1773,6 +1790,7 @@ stmt-mysql.query = () (rs rows-mysql) {
 
     #{overflow=wrap}
     payload-len = 1 + .bound.len-bytes()
+    payload = payload-b.slice(0, payload-len).to-bytes-str()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)

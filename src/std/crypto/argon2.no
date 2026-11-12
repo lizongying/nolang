@@ -295,6 +295,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; 構建輸入: len_bytes || input
             ; combined 必須先分配：4 位元組長度前綴 || input。空 vec 下標寫
             ; 沒有增長護欄，會越界寫 → SIGSEGV。
+            #{overflow=wrap}
             combined []byte = with-len(4 + input.len())
 
             combined[0]: {
@@ -367,6 +368,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             ; V = Blake2b(len_bytes || input)
             ; combined 必須先分配：4 位元組長度前綴 || input。空 vec 下標寫
             ; 沒有增長護欄，會越界寫 → SIGSEGV。
+            #{overflow=wrap}
             combined []byte = with-len(4 + input.len())
 
             combined[0]: {
@@ -448,7 +450,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                     }
                 }
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -460,7 +461,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                     }
                 }
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -541,42 +541,49 @@ compress = (x []byte, y []byte) (out []byte) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout320c37 = r[off + 1]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout320c59 = r[off + 2]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout320c82 = r[off + 3]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout320c105 = r[off + 4]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout320c128 = r[off + 5]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout320c151 = r[off + 6]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout320c174 = r[off + 7]: {
             ok -> it
 
@@ -794,6 +801,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; h0-input 必須先分配：6 個 32-bit 欄位(p/out-len/m/t/v/y) + len(P)||P +
     ; len(S)||S + len(K) + len(X) = 40 + password.len() + salt.len()。空 vec
     ; 下標寫會越界 → SIGSEGV（id() 崩潰根因）。
+    #{overflow=wrap}
     h0-input []byte = with-len(40 + password.len() + salt.len())
     pos = 0
 
@@ -826,7 +834,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -867,7 +874,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -908,7 +914,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -949,7 +954,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -990,7 +994,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1031,7 +1034,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1074,7 +1076,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1097,7 +1098,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         }
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1140,7 +1140,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1163,7 +1162,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         }
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1204,7 +1202,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1244,7 +1241,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -1273,6 +1269,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; blocks-per-lane 個 1024-byte 區塊。
     ; 必須預先 with-len 分配：MIR 下對空 vec 按下標寫入沒有增長護欄，
     ; 未分配就寫會越界 SIGSEGV（2026-10-30 argon2 回歸根因之一）。
+    #{overflow=wrap}
     mem []byte = with-len(blocks-per-lane * 1024)
 
     ; 由於記憶體限制，使用 blocks-per-lane 個 1024-byte 區塊
@@ -1403,7 +1400,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1421,7 +1417,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         curr-idx = 0
         (curr-idx < blocks-per-lane) {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1433,7 +1428,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
                 }
             }
 
-            #{overflow=wrap}
             prev-idx < 0 -> {
                 {
 
@@ -1475,7 +1469,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
                 }
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}

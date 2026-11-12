@@ -90,7 +90,6 @@ sleep-ns = (ns i64) {
 ; [duration-between](#time.duration-between)
 duration-between = (start i64, end i64) (diff i64) {
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -110,7 +109,6 @@ duration-between = (start i64, end i64) (diff i64) {
 ; [duration-ms-between](#time.duration-ms-between)
 duration-ms-between = (start i64, end i64) (diff i64) {
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -130,7 +128,6 @@ duration-ms-between = (start i64, end i64) (diff i64) {
 ; [duration-us-between](#time.duration-us-between)
 duration-us-between = (start i64, end i64) (diff i64) {
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -161,7 +158,6 @@ since-s = (start i64) (diff i64) {
 since-ms = (start i64) (diff i64) {
     end = now-ms()
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -181,7 +177,6 @@ since-ms = (start i64) (diff i64) {
 since-us = (start i64) (diff i64) {
     end = now-us()
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -382,10 +377,8 @@ unix-to-date = (ts i64) (d date) {
     #{overflow=wrap}
     rem = ts % 86400
 
-    #{overflow=wrap}
     rem < 0 -> {
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -415,7 +408,6 @@ unix-to-date = (ts i64) (d date) {
     #{overflow=wrap}
     era = z / 146097
 
-    #{overflow=wrap}
     z < 0 && z % 146097 != 0 -> {
         {
 
@@ -467,8 +459,8 @@ unix-to-date = (ts i64) (d date) {
         ->
     }
 
-    #{overflow=wrap}
     mp >= 10 -> {
+        #{overflow=wrap}
         d.month = mp - 9: {
             ok -> it
 
@@ -476,9 +468,9 @@ unix-to-date = (ts i64) (d date) {
         }
     }
 
-    #{overflow=wrap}
     {
         d.month <= 2 -> {
+            #{overflow=wrap}
             d.year = y + 1: {
                 ok -> it
 
@@ -515,7 +507,6 @@ date-to-unix = (d date) (ts i64) {
     m = d.month
 
     ; 調整：3月為年初
-    #{overflow=wrap}
     m <= 2 -> {
         {
 
@@ -532,7 +523,6 @@ date-to-unix = (d date) (ts i64) {
     #{overflow=wrap}
     era = y / 400
 
-    #{overflow=wrap}
     y < 0 && y % 400 != 0 -> {
         {
 
@@ -550,7 +540,6 @@ date-to-unix = (d date) (ts i64) {
     yoe = y - era * 400
     m2 = m
 
-    #{overflow=wrap}
     {
         m2 > 2 -> {
             {
@@ -605,7 +594,6 @@ format-date = (d date) (out str) {
     neg = 0
     yr = d.year
 
-    #{overflow=wrap}
     yr < 0 -> {
         neg = 1
         {
@@ -622,71 +610,151 @@ format-date = (d date) (out str) {
     out = with-len(out-len)
     pos = 0
     neg == 1 -> {
-        out[0] = 45
+        out[0]: {
+            ok -> it = 45
+
+            -> _
+        }
         pos = 1
     }
 
     #{overflow=wrap}
-    out[pos] = (yr / 1000) % 10 + 48
+    out[pos]: {
+        ok -> it = (yr / 1000) % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 1] = (yr / 100) % 10 + 48
+    out[pos + 1]: {
+        ok -> it = (yr / 100) % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 2] = (yr / 10) % 10 + 48
+    out[pos + 2]: {
+        ok -> it = (yr / 10) % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 3] = yr % 10 + 48
+    out[pos + 3]: {
+        ok -> it = yr % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 4] = 45
+    out[pos + 4]: {
+        ok -> it = 45
+
+        -> _
+    }
 
     ; 月
     #{overflow=wrap}
-    out[pos + 5] = d.month / 10 + 48
+    out[pos + 5]: {
+        ok -> it = d.month / 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 6] = d.month % 10 + 48
+    out[pos + 6]: {
+        ok -> it = d.month % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 7] = 45
+    out[pos + 7]: {
+        ok -> it = 45
+
+        -> _
+    }
 
     ; 日
     #{overflow=wrap}
-    out[pos + 8] = d.day / 10 + 48
+    out[pos + 8]: {
+        ok -> it = d.day / 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 9] = d.day % 10 + 48
+    out[pos + 9]: {
+        ok -> it = d.day % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 10] = 32
+    out[pos + 10]: {
+        ok -> it = 32
+
+        -> _
+    }
 
     ; 時
     #{overflow=wrap}
-    out[pos + 11] = d.hour / 10 + 48
+    out[pos + 11]: {
+        ok -> it = d.hour / 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 12] = d.hour % 10 + 48
+    out[pos + 12]: {
+        ok -> it = d.hour % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 13] = 58
+    out[pos + 13]: {
+        ok -> it = 58
+
+        -> _
+    }
 
     ; 分
     #{overflow=wrap}
-    out[pos + 14] = d.min / 10 + 48
+    out[pos + 14]: {
+        ok -> it = d.min / 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 15] = d.min % 10 + 48
+    out[pos + 15]: {
+        ok -> it = d.min % 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 16] = 58
+    out[pos + 16]: {
+        ok -> it = 58
+
+        -> _
+    }
 
     ; 秒
     #{overflow=wrap}
-    out[pos + 17] = d.sec / 10 + 48
+    out[pos + 17]: {
+        ok -> it = d.sec / 10 + 48
+
+        -> _
+    }
 
     #{overflow=wrap}
-    out[pos + 18] = d.sec % 10 + 48
+    out[pos + 18]: {
+        ok -> it = d.sec % 10 + 48
+
+        -> _
+    }
 }
 
 ; 將 Unix 時間戳格式化為可讀字串

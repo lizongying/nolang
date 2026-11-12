@@ -41,6 +41,30 @@ func isModulePrefixBuiltinType(name string) bool {
 	return false
 }
 
+// modulePrefixKeepsBareMethodName 判斷「接收者型別為 name 的方法」是否必須
+// 保持裸名（不加模組前綴）。
+//
+// 這個判定只對**語言內建型別**成立：MIR 以基礎型別名註冊它們的接收者
+// （`str` / `[]T` / `[N]T` / 標量 …），呼叫端的 callee 也是裸名，所以定義側
+// 一旦被改成 `str.str.copy` 就與呼叫端錯開。
+//
+// 兩個反例**不能**跟著跳過，因為呼叫端用的是「模組前綴後的名字」：
+//   - `hashmap-*`：本模組定義的泛型 struct 模板。Phase 2 會把
+//     `hashmap-str-tmpl` 改名為 `map.hashmap-str-tmpl`，單態化再據此生成
+//     `hashmap-str-i64.*`；方法名若保持裸名，模板方法一個都收集不到，
+//     所有 map 呼叫變成 "unknown callee hashmap-str-i64.init"。
+//   - `err`：本模組定義的普通 struct（std/err.no）。Phase 2 改名為
+//     `err.err`，MIR 解析接收者得到 `err.err`，callee 就是 `err.err.msg`；
+//     方法名若保持 `err.msg`，所有 `.msg()` / `.code()` 呼叫全部找不到。
+//
+// 換言之：只有「Phase 2 不該改名、或改了名也不影響呼叫端」的型別才能跳過。
+func modulePrefixKeepsBareMethodName(name string) bool {
+	if strings.HasPrefix(name, "hashmap-") || name == "err" {
+		return false
+	}
+	return isModulePrefixBuiltinType(name)
+}
+
 // getTypeDefName returns the bare name of a type-definition statement, or "".
 func getTypeDefName(stmt parser.Statement) string {
 	switch s := stmt.(type) {
@@ -126,6 +150,29 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 		if strings.Contains(typePrefix, ".") {
 			continue
 		}
+		// 內建型別（str / vec / txt / 各標量）的方法，前綴是**基礎型別**，
+		// 不是本模組定義的 struct。
+		//
+		// `std/str.no` 開頭那份 `#{buildin} str { len u32; cap u32; data []byte }`
+		// 只是內建 str 的佈局聲明（Phase 2 仍會把它改名為 `str.str`，以免同名
+		// 覆蓋 MIR 手工註冊的描述符 —— 那份描述符的 data 欄位刻意標 Inline），
+		// 但 `str.copy = () (dst str) { … }` 的接收者型別是基礎型別 `str`。
+		//
+		// 若不跳過，定義名被改成 `str.str.copy`、self 型別被改成 `str.str`，
+		// 而呼叫端 `s.copy()` 仍是 `str.copy`（prefixTypeName 對內建名短路），
+		// 兩端簽名就此錯開：MIR 收到 `load %str_str` + `call %str-long
+		// @str_clone(%str-long …)` 這種型別不符的 IR，opt-verify 直接拒收
+		// （'%lv' defined with type '%str_str' but expected '%str-long'）。
+		// 症狀是整個編譯失敗；而字串插值 `'{k}'` 必經 fmt-apply-spec →
+		// s.copy()，所以一個 i64 插值就能炸掉構建。
+		//
+		// 注意這裡**不能**直接用 isModulePrefixBuiltinType：它的前綴啟發式
+		// 也會命中 `hashmap-*` 模板，而 `err` 也登記在內建集合裡 —— 兩者都是
+		// 本模組定義的 struct，跳過就會與呼叫端錯開。判定集中在
+		// modulePrefixKeepsBareMethodName（見該函數註釋的完整推導）。
+		if modulePrefixKeepsBareMethodName(typePrefix) {
+			continue
+		}
 		if moduleTypes[typePrefix] {
 			fd.Name = moduleShortName + "." + fd.Name
 			// 同步改寫 self 參數型別：parser 為方法合成的 self 參數型別是
@@ -196,6 +243,17 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string, lo
 		typePrefix := fd.Name[:dotIdx]
 		// Skip if the type prefix already contains a dot (already prefixed)
 		if strings.Contains(typePrefix, ".") {
+			continue
+		}
+		// 內建型別的接收者不是模組型別：`str.copy` 的 `str` 是基礎型別，
+		// 不是 std/str.no 那份 `#{buildin} str { … }` 佈局聲明（它已被
+		// Phase 2 改名成 `str.str`）。這裡若按 typeOwner 反查，value 為
+		// "str" 的鍵只有 "str.str"，方法名會被再改一次成 `str.str.copy`，
+		// 與呼叫端不一致（見 prefixModuleStatements Phase 3 的長註釋）。
+		// 同理，`hashmap-*` 模板與 `err` 都是本模組定義的 struct（不是
+		// 內建型別）：必須與 Phase 3 用同一個判定，否則方法名與 struct 名
+		// 對不上（詳見 modulePrefixKeepsBareMethodName 註釋）。
+		if modulePrefixKeepsBareMethodName(typePrefix) {
 			continue
 		}
 		// 主程序本地型別優先：接收者型別由主程序定義時，方法歸主程序所有，

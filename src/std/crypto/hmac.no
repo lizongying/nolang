@@ -119,6 +119,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     }
 
     ; inner = H(ipad-key || msg)
+    #{overflow=wrap}
     inner-data []byte = with-len(64 + msg-n)
     i <- [0..64): {
         inner-data[i]: {
@@ -269,6 +270,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
             -> _
         }
     }
+    #{overflow=wrap}
     inner-data []byte = with-len(64 + msg-n)
     i <- [0..64): {
         inner-data[i]: {
@@ -418,6 +420,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
             -> _
         }
     }
+    #{overflow=wrap}
     inner-data []byte = with-len(128 + msg-n)
     i <- [0..128): {
         inner-data[i]: {
@@ -558,6 +561,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
             -> _
         }
     }
+    #{overflow=wrap}
     inner-data []byte = with-len(128 + msg-n)
     i <- [0..128): {
         inner-data[i]: {
@@ -698,6 +702,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
             -> _
         }
     }
+    #{overflow=wrap}
     inner-data []byte = with-len(64 + msg-n)
     i <- [0..64): {
         inner-data[i]: {

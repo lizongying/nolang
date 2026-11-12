@@ -5472,9 +5472,26 @@ func (c *codegen) emitFunc(f *Function) error {
 		// (tests/mem-safety/map-tombstone.no, tests/map-generics.no).
 		// Written Dst/params overwrite this, so the extra store is dead for
 		// every value that is actually assigned.
+		//
+		// OUT-PARAMETERS are always zeroed as well, and the predicate is
+		// deliberately WIDER than the drop predicate above. An out-param slot is
+		// write-only from the caller's point of view, so the callee may read it
+		// BEFORE writing — `out.push(x)` reads {len, cap, data} to decide whether
+		// to grow, `out[i] = v` drops the previous element, `out += ...` reads the
+		// old buffer. Leaving that slot as stack garbage hands those reads a
+		// random %vec/%str-long: push's grow path then calls
+		// `nolang_free(<random pointer>)` ("pointer being freed was not
+		// allocated", abort) or, when the garbage looks like a plausible
+		// {len, cap}, allocates/deep-frees whatever len/cap say — measured with
+		// `fill(n) (b box) { b.data.push(65) }` (a []byte INSIDE an out-param
+		// struct, where `structSlotNeedsZero` says false because the analysis
+		// does not treat a `[]byte` field as an owned leaf): abort trap on the
+		// first push, and the same shape with a garbage len grows without bound.
+		// Zeroing costs one store per out-param per call and makes "an untouched
+		// out-param reads as the zero value" a hard invariant instead of luck.
 		if isOptionType(lt) {
 			c.optStoreTag(s, 1)
-		} else if owned || c.structSlotNeedsZero(lt) {
+		} else if owned || c.structSlotNeedsZero(lt) || c.resultParam[v] {
 			// A STRUCT THAT GETS A DROP must start zeroed even though it is
 			// not `owned` (Type.Owned is false for a struct — it is only true
 			// for str/vec/[]T/map/?owned). Before structs with inline owned
@@ -17126,7 +17143,8 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	return nil
 }
 
-// emitBuiltinRawBytePut lowers `txt.set-byte(i, b)` / `str.set-byte(i, b)`:
+// emitBuiltinRawBytePut lowers `txt._set-byte(i, b)` / `str._set-byte(i, b)`
+// (std-private since 2026-11-11; the public spelling used to be `set-byte`):
 // the raw-byte WRITER paired with emitBuiltinRawByteAt's reader. Stores the
 // low byte of b at BYTE index i of the receiver's underlying buffer, leaving
 // the length untouched. It exists because txt indexing became code-point

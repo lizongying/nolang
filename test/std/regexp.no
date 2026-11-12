@@ -171,10 +171,12 @@ i64-of = (v ?i64) (out i64) {
 
 ; 造 n 個 'a' 的字串（用來探指令數上限）
 mk-a = (n i64) (out str) {
-    out = with-cap(n)
+    ; str 下標直寫已全域禁用 ⇒ 用 []byte 緩衝
+    ob []byte = with-cap-len(n, n)
     j <- [0..n): {
-        out[j] = 97
+        ob[j] = 97
     }
+    out = ob.to-bytes-str()
 }
 
 ; emit 逐欄位落盤，n 遞增

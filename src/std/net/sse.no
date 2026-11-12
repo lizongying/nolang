@@ -159,12 +159,12 @@ client.next-event = () (ev ?event) {
             ->
         }
 
-        #{overflow=wrap}
         {
             sep-pos >= 0 -> {
 
                 ; 找到事件邊界
                 event-block = data.slice(0, sep-pos)
+                #{overflow=wrap}
                 remaining-start = sep-pos + sep-len
                 remaining = data.slice(remaining-start, data.len-bytes())
 
@@ -189,7 +189,9 @@ client.next-event = () (ev ?event) {
 
                     ; 去除行尾 \r
                     line.len-bytes() > 0 -> {
+                        #{overflow=wrap}
                         line[line.len-bytes() - 1] == 13 -> {
+                            #{overflow=wrap}
                             line = line.slice(0, line.len-bytes() - 1)
                         }
                     }
@@ -204,6 +206,7 @@ client.next-event = () (ev ?event) {
                             value = ''
                             colon >= 0 -> {
                                 field = line.slice(0, colon)
+                                #{overflow=wrap}
                                 val-start = colon + 1
                                 val-start < line.len-bytes() -> {
                                     line[val-start] == 32 -> {
@@ -239,6 +242,7 @@ client.next-event = () (ev ?event) {
                             }
                         }
                     }
+                    #{overflow=wrap}
                     pos = line-end + 1
                 }
 
@@ -287,7 +291,6 @@ client.next-event = () (ev ?event) {
                 ; 複製到緩衝區末尾
                 i <- [0..n): {
 
-                    #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
                 .recv-buf-len = .recv-buf-len + n: {
@@ -452,7 +455,6 @@ client.reconnect = () (ok bool) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -566,9 +568,9 @@ sse-connect = (url str) (client ?client) {
     }
     colon-pos = host.index(':')
 
-    #{overflow=wrap}
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
+        #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
@@ -577,6 +579,7 @@ sse-connect = (url str) (client ?client) {
                 client = err('invalid port')
                 return
             }
+            #{overflow=wrap}
             p = p * 10 + c - 48
         }
         port = p
@@ -966,7 +969,6 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
     event.len-bytes() > 0 -> msg = msg - 'event: ' - event - lf
 
     ; 處理多行 data（每行以 data: 前綴）
-    #{overflow=wrap}
     {
         data.len-bytes() > 0 -> {
             pos = 0
@@ -977,6 +979,7 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
                 line = data.slice(pos, line-end)
                 msg = msg - 'data: ' - line - lf
                 nl < 0 -> break
+                #{overflow=wrap}
                 pos = nl + 1
             }
         }

@@ -90,7 +90,6 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     .cap == 0 -> .init()
 
     ; 檢查裝載因子，觸發擴容
-    #{overflow=wrap}
     {
         .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2)
     }
@@ -106,7 +105,11 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
                 k ?= .keys[idx]
                 eq = .str-eq(k, key)
                 eq -> {
-                    .vals[idx] ?= val
+                    .vals[idx]: {
+                        ok -> it = val
+
+                        -> _
+                    }
                     is-new = false
                     return
                 }
@@ -115,6 +118,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
                 first-tomb < 0 -> first-tomb = idx
             }
 
+            #{overflow=wrap}
             idx = idx + 1: {
                 ok -> it
 
@@ -127,13 +131,24 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         insert-idx = idx
         first-tomb >= 0 -> insert-idx = first-tomb
 
-        .keys[insert-idx] ?= key
+        .keys[insert-idx]: {
+            ok -> it = key
 
-        .vals[insert-idx] ?= val
+            -> _
+        }
 
-        .occ[insert-idx] ?= 1
+        .vals[insert-idx]: {
+            ok -> it = val
 
-        #{overflow=wrap}
+            -> _
+        }
+
+        .occ[insert-idx]: {
+            ok -> it = 1
+
+            -> _
+        }
+
         .size = .size + 1: {
             ok -> it
 
@@ -206,7 +221,11 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
                 k ?= .keys[idx]
                 eq = .str-eq(k, key)
                 eq -> {
-                    .occ[idx] ?= 2
+                    .occ[idx]: {
+                        ok -> it = 2
+
+                        -> _
+                    }
                     .size = .size - 1: {
                         ok -> it
 
@@ -217,6 +236,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
                 }
             }
 
+            #{overflow=wrap}
             idx = idx + 1: {
                 ok -> it
 
@@ -263,9 +283,15 @@ hashmap-str-tmpl.for-each = () (k str, v v) {
             used ?= .occ[i]
             used == 1 -> {
                 src ?= .keys[i]
-                j <- [0..src.len-bytes()): {
-                    k[j] = src.byte(j)
+
+                ; 2026-11-11：str 下標直寫已全域禁用。k 是結果參數、進來時 len=0，
+                ; 逐位元組長度只能靠 []byte 緩衝承接（位元組保真），再整體轉回 str。
+                sl = src.len-bytes()
+                kb []byte = with-cap-len(sl, sl)
+                j <- [0..sl): {
+                    kb[j] = src.byte(j)
                 }
+                k = kb.to-bytes-str()
 
                 v = .vals[i]
             }
@@ -308,6 +334,7 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
                     used ?= .occ[idx]
                     used == 0 -> break
 
+                    #{overflow=wrap}
                     idx = idx + 1: {
                         ok -> it
 
@@ -316,11 +343,23 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
                     idx >= .cap -> idx = 0
                 }
 
-                .keys[idx] ?= k
+                .keys[idx]: {
+                    ok -> it = k
 
-                .vals[idx] ?= v
+                    -> _
+                }
 
-                .occ[idx] ?= 1
+                .vals[idx]: {
+                    ok -> it = v
+
+                    -> _
+                }
+
+                .occ[idx]: {
+                    ok -> it = 1
+
+                    -> _
+                }
             }
         }
     }: {
@@ -376,7 +415,6 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     .cap == 0 -> .init()
 
     ; 檢查裝載因子，觸發擴容
-    #{overflow=wrap}
     {
         .size + 1 > .cap * 3 / 4 -> .rehash(.cap * 2)
     }
@@ -391,7 +429,11 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
             used == 1 -> {
                 kk ?= .keys[idx]
                 kk == key -> {
-                    .vals[idx] ?= val
+                    .vals[idx]: {
+                        ok -> it = val
+
+                        -> _
+                    }
                     is-new = false
                     return
                 }
@@ -400,6 +442,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
                 first-tomb < 0 -> first-tomb = idx
             }
 
+            #{overflow=wrap}
             idx = idx + 1: {
                 ok -> it
 
@@ -410,13 +453,24 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
         insert-idx = idx
         first-tomb >= 0 -> insert-idx = first-tomb
 
-        .keys[insert-idx] ?= key
+        .keys[insert-idx]: {
+            ok -> it = key
 
-        .vals[insert-idx] ?= val
+            -> _
+        }
 
-        .occ[insert-idx] ?= 1
+        .vals[insert-idx]: {
+            ok -> it = val
 
-        #{overflow=wrap}
+            -> _
+        }
+
+        .occ[insert-idx]: {
+            ok -> it = 1
+
+            -> _
+        }
+
         .size = .size + 1: {
             ok -> it
 
@@ -487,7 +541,11 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
             used == 1 -> {
                 kk ?= .keys[idx]
                 kk == key -> {
-                    .occ[idx] ?= 2
+                    .occ[idx]: {
+                        ok -> it = 2
+
+                        -> _
+                    }
                     .size = .size - 1: {
                         ok -> it
 
@@ -498,6 +556,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
                 }
             }
 
+            #{overflow=wrap}
             idx = idx + 1: {
                 ok -> it
 
@@ -586,6 +645,7 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
                     used ?= .occ[idx]
                     used == 0 -> break
 
+                    #{overflow=wrap}
                     idx = idx + 1: {
                         ok -> it
 
@@ -594,11 +654,23 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
                     idx >= .cap -> idx = 0
                 }
 
-                .keys[idx] ?= k
+                .keys[idx]: {
+                    ok -> it = k
 
-                .vals[idx] ?= v
+                    -> _
+                }
 
-                .occ[idx] ?= 1
+                .vals[idx]: {
+                    ok -> it = v
+
+                    -> _
+                }
+
+                .occ[idx]: {
+                    ok -> it = 1
+
+                    -> _
+                }
             }
         }
     }: {
@@ -659,18 +731,33 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     {
         used ?= .occ[idx]
         used == 1 -> {
-            .vals[idx] ?= val
+            .vals[idx]: {
+                ok -> it = val
+
+                -> _
+            }
             is-new = false
             return
         }
 
-        .keys[idx] ?= key
+        .keys[idx]: {
+            ok -> it = key
 
-        .vals[idx] ?= val
+            -> _
+        }
 
-        .occ[idx] ?= 1
+        .vals[idx]: {
+            ok -> it = val
 
-        #{overflow=wrap}
+            -> _
+        }
+
+        .occ[idx]: {
+            ok -> it = 1
+
+            -> _
+        }
+
         .size = .size + 1: {
             ok -> it
 
@@ -725,9 +812,12 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     {
         used ?= .occ[idx]
         used == 1 -> {
-            .occ[idx] ?= 2
+            .occ[idx]: {
+                ok -> it = 2
 
-            #{overflow=wrap}
+                -> _
+            }
+
             .size = .size - 1: {
                 ok -> it
 

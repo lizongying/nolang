@@ -5,7 +5,7 @@
 ;       index / index-from / rindex / last-index / rindex-from / contains /
 ;       starts-with / ends-with /
 ;       slice / at / byte / decode-cp / to-upper / to-lower / trim / trim-char /
-;       append / append-str / append-txt / truncate / repeat / count /
+;       push / push-str / push-txt / truncate / repeat / count /
 ;       fill / clear / copy / reverse / split / split-n / fields / lines /
 ;       replace-char / replace-str / replace-n / from-hex / eq-full /
 ;       from-str / from-bytes / from-chars /
@@ -13,12 +13,14 @@
 ;
 ; 注意：txt 是 { [255 x i8], i8 } 的**另一種字串佈局**（str 是 {len,cap,data}），
 ;       任何把兩者混用的 codegen 路徑都是高風險區。本檔刻意只用 txt receiver。
-;       set-byte / new / to-u16 / to-u32 / to-u64 / to-byte / to-f32 / to-bool /
+;       cp-write / new / to-u16 / to-u32 / to-u64 / to-byte / to-f32 / to-bool /
 ;       to-bigint / txt-hex-val
 ;
 ; 2026-11-11 補齊：原本列為「已知未測」的 to-u16 / to-u32 / to-u64 / to-byte /
 ;   to-f32 / to-bool 全部補上（`?bool` 的 match 取值問題已不復現），並修好
 ;   `to-bigint` 對任何有效數字都回 0 的缺陷（見 §5.1r）。只剩 `to-i128` 不存在。
+;   同日 `txt.set-byte` 私有化為 `_set-byte`（僅 std 內部可用），原本的
+;   `txt.set-byte` 一組改寫為 `txt.cp-write`，測碼點原位寫入。
 ;
 ; ── 2026-09-26 已修（本檔這幾條斷言就是它們的迴歸釘）──────────────
 ;   1. `txt.to-bytes()` 原本**無法編譯**：實作是 `out.set-byte(i, .byte(i))`，
@@ -254,19 +256,30 @@ t-case-trim = () {
 
 ; ── 修改 ───────────────────────────────────────
 
-; 追加斷言：append 單位元組、append-str 字串、append-txt 另一 txt，逐步校驗長度與內容
-t-append = () {
+; 追加斷言：push 單位元組（碼點 'c'）、push-str 字串、push-txt 另一 txt，逐步校驗長度與內容
+t-push = () {
     t txt = 'ab'
-    t.append(99)
-    runner.eq(t.len(), 3, 'append byte len == 3')
-    runner.str-eq(t.to-str(), 'abc', 3, 'append byte value')
-    t.append-str('de')
-    runner.eq(t.len(), 5, 'append-str len == 5')
-    runner.str-eq(t.to-str(), 'abcde', 5, 'append-str value')
+    t.push("c")
+    runner.eq(t.len(), 3, 'push char len == 3')
+    runner.str-eq(t.to-str(), 'abc', 3, 'push char value')
+    t.push-str('de')
+    runner.eq(t.len(), 5, 'push-str len == 5')
+    runner.str-eq(t.to-str(), 'abcde', 5, 'push-str value')
     u txt = 'FG'
-    t.append-txt(u)
-    runner.eq(t.len(), 7, 'append-txt len == 7')
-    runner.str-eq(t.to-str(), 'abcdeFG', 7, 'append-txt value')
+    t.push-txt(u)
+    runner.eq(t.len(), 7, 'push-txt len == 7')
+    runner.str-eq(t.to-str(), 'abcdeFG', 7, 'push-txt value')
+    ; 多字節碼點：len-bytes 增 3（UTF-8），len（碼點數）增 1
+    t.push("中")
+    runner.eq(t.len-bytes(), 10, 'push 多字節 len-bytes == 10')
+    runner.eq(t.len(), 8, 'push 多字節 len == 8')
+    ; all-or-nothing：255 上限處放不下一個 3 位元組碼點就整條忽略
+    full txt = ''
+    k <- [0..254): {
+        full.push("a")
+    }
+    full.push("中")
+    runner.eq(full.len-bytes(), 254, '上限處裝不下則整條忽略')
 }
 
 ; 截斷斷言：truncate(5) 保留前 5 字元、truncate(0) 清空為長度 0 且 empty
@@ -719,7 +732,7 @@ passed = passed + p7
 
 #{overflow=wrap}
 failed = failed + f7
-p8, f8 = runner.test('txt.append', t-append)
+p8, f8 = runner.test('txt.push', t-push)
 
 #{overflow=wrap}
 passed = passed + p8
@@ -782,47 +795,51 @@ failed = failed + f15
 ; 取值恆為 false」而整族放棄，本輪實測該問題已不存在（`x: { ok(b) -> … }` 取得
 ; 真值），故全部補上。
 
-; set-byte：內建位元組寫入。邊界以**實體容量 255** 為準（不是 len），
-; 越界回 nil 並跳過寫入；成功回 some(true)
-t-set-byte = () {
+; 码点原位写入：`s[i] = <char>` 是 txt 目前**唯一**公开的原位写入形态。
+;
+; 這裡原本測的是 `txt.set-byte(i, b)`（回 `?bool`、以實體容量 255 為界、
+; 越界回 nil 並跳過寫入的可失敗寫入器）。該內建已於 2026-11-11 私有化為
+; `_set-byte`，只供 std 內部（txt._from-bytes / txt.fill 等）使用，用戶代碼
+; 無法再呼叫 ⇒ 本組改測碼點寫，保留其中仍可觀測的語義：
+;   - ASCII 碼點原位覆蓋（碼點值 == 位元組值），長度不變；
+;   - 超出 255 位元組實體容量的寫入被丟棄，既有內容不被破壞。
+t-cp-write = () {
     s txt = 'abc'
 
-    ; 正常寫入：內容改變、長度不變
-    r = s.set-byte(0, 88)
-    r: {
-        ok(v) -> runner.is-true(v, 'set-byte 原位寫入回 ok(true)')
+    ; ASCII 碼點原位覆蓋：X = 0x58 = 88。
+    ; 注意：函數內的 `s[i] = v` 直寫會被 idxwrite 拒絕（與 str 同規則；只有
+    ; 頂層語句放行），因此一律寫成 place-match —— 它同樣是「碼點原位寫」，
+    ; 只是以「讀」作閘門：i >= len 時整條寫入靜默跳過。
+    s[0]: {
+        ok -> it = "X"
 
-        -> runner.is-true(false, 'set-byte 原位寫入不該失敗')
+        -> _
     }
-    runner.str-eq(s.to-str(), 'Xbc', 3, 'set-byte(0, 88) ⇒ Xbc')
-    runner.eq(s.len(), 3, '原位寫入不改長度')
+    runner.str-eq(s.to-str(), 'Xbc', 3, 'txt[0] = "X" ⇒ Xbc')
+    runner.eq(s.len(), 3, '碼點原位寫入不改長度')
 
-    ; 邊界內但超出 len：寫進緩衝，長度仍是 3（給 fill/from-str 這類「先填後設 len」用）
-    r2 = s.set-byte(254, 89)
-    r2: {
-        ok(v2) -> runner.is-true(v2, 'set-byte(254) 在實體容量內 ⇒ ok')
+    ; 尾端原位覆蓋（仍在 len 之內）
+    s[2]: {
+        ok -> it = "Z"
 
-        -> runner.is-true(false, 'set-byte(254) 不該越界')
+        -> _
     }
-    runner.eq(s.len(), 3, '寫到 254 不改 len')
+    runner.str-eq(s.to-str(), 'XbZ', 3, 'txt[2] = "Z" ⇒ XbZ')
+    runner.eq(s.len(), 3, '尾端覆蓋不改長度')
 
-    ; 越界：i >= 255 或 i < 0 都回 nil
-    r3 = s.set-byte(255, 89)
-    r3: {
-        ok -> runner.is-true(false, 'set-byte(255) 應回 nil')
-
-        nil -> runner.is-true(true, 'set-byte(255) ⇒ nil')
-
-        err -> runner.is-true(false, 'set-byte(255) 應回 nil 而非 err')
+    ; 超界：i >= len（此處 == 255 == 實體容量）的寫入被跳過，
+    ; 長度與尾端位元組都不變（不野寫、不越界）
+    big txt = ''
+    k <- [0..255): {
+        big.push("a")
     }
-    r4 = s.set-byte(0 - 1, 89)
-    r4: {
-        ok -> runner.is-true(false, 'set-byte(-1) 應回 nil')
+    big[255]: {
+        ok -> it = "Z"
 
-        nil -> runner.is-true(true, 'set-byte(-1) ⇒ nil')
-
-        err -> runner.is-true(false, 'set-byte(-1) 應回 nil 而非 err')
+        -> _
     }
+    runner.eq(big.len(), 255, '超界碼點寫入不改變長度')
+    runner.is-true(big[254] == 97, '超界碼點寫入不破壞尾端位元組')
 }
 
 ; new：編譯期內建，[]char 逐位元組轉成 txt（超過 255 位元組自動截斷）
@@ -1099,7 +1116,7 @@ passed = passed + p16
 #{overflow=wrap}
 failed = failed + f16
 
-p17, f17 = runner.test('txt.set-byte', t-set-byte)
+p17, f17 = runner.test('txt.cp-write', t-cp-write)
 
 #{overflow=wrap}
 passed = passed + p17

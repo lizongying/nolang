@@ -16,25 +16,25 @@
 ; [markdown](#markdown)
 
 ; 使用小型記錄承載多值解析結果，避免調用方處理可選索引結果。
-; [markdown-line](#markdown.markdown-line)
-markdown-line {
+; [line](#markdown.line)
+line {
     text str
     next-pos i64
     valid bool
 }
-markdown-heading {
+heading {
     level i64
     text str
 }
-markdown-list {
+list {
     kind i64
     text str
 }
-markdown-quote {
+quote {
     yes bool
     text str
 }
-markdown-fence {
+fence {
     yes bool
     marker i64
     width i64
@@ -72,7 +72,6 @@ markdown.prefix-count = (s str, c i64) (n i64) {
         n >= s.len-bytes() -> break
         s.byte(n) != c -> break
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -89,9 +88,9 @@ markdown.prefix-count = (s str, c i64) (n i64) {
 ; 取得 ATX 標題等級與標題文字。
 ; 只接受「1–6 個 # 加一個空格」的形式，並去掉結尾可選的「空格 + 連續 #」。
 ; line str: 原始單行文字
-; out markdown-heading: level 為 1–6（不是標題時為 0），text 為去除前綴與尾部 # 的標題內容
+; out heading: level 為 1–6（不是標題時為 0），text 為去除前綴與尾部 # 的標題內容
 ; [heading](#markdown.heading)
-markdown.heading = (line str) (out markdown-heading) {
+markdown.heading = (line str) (out heading) {
     level-v = 0
     title-v = ''
     s = line.trim()
@@ -114,7 +113,7 @@ markdown.heading = (line str) (out markdown-heading) {
             title-v = title-v.slice-bytes(0, end).trim()
         }
     }
-    out = markdown-heading{
+    out = heading{
         level: level-v
         text: title-v
     }
@@ -136,7 +135,6 @@ markdown.setext-level = (line str) (level i64) {
     (i < n) {
         i >= n || s.byte(i) != c -> break
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -176,7 +174,6 @@ markdown.thematic-break = (line str) (yes bool) {
         }
         c == 32 || c == 9 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -193,7 +190,6 @@ markdown.thematic-break = (line str) (yes bool) {
         c != marker -> return
         marker != 45 && marker != 42 && marker != 95 -> return
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -205,7 +201,6 @@ markdown.thematic-break = (line str) (yes bool) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -223,9 +218,9 @@ markdown.thematic-break = (line str) (yes bool) {
 ; 解析列表項。kind=1 無序，kind=2 有序。
 ; 無序項需「- / * / + 加一個空格」；有序項需「至少一位數字 + . 加一個空格」。
 ; line str: 原始單行文字
-; out markdown-list: kind 為 0（不是列表項）/ 1（無序）/ 2（有序），text 為標記之後的條目內容
+; out list: kind 為 0（不是列表項）/ 1（無序）/ 2（有序），text 為標記之後的條目內容
 ; [list-item](#markdown.list-item)
-markdown.list-item = (line str) (out markdown-list) {
+markdown.list-item = (line str) (out list) {
     kind-v = 0
     content-v = ''
     index-v = 0
@@ -243,7 +238,6 @@ markdown.list-item = (line str) (out markdown-list) {
         (i < n) {
             i >= n || s.byte(i) < 48 || s.byte(i) > 57 -> break
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -268,7 +262,6 @@ markdown.list-item = (line str) (out markdown-list) {
                 #{overflow=wrap}
                 index-v = index-v * 10 + digits.byte(d) - 48
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -285,7 +278,7 @@ markdown.list-item = (line str) (out markdown-list) {
             content-v = s.slice-bytes(i + 2, n)
         }
     }
-    out = markdown-list{
+    out = list{
         kind: kind-v
         text: content-v
     }
@@ -293,7 +286,7 @@ markdown.list-item = (line str) (out markdown-list) {
 
 ; 渲染任務列表內容。
 ; 識別 GFM 任務標記 '[ ] ' 與 '[x] ' / '[X] '，其餘內容按行內語法渲染。
-; content str: 列表項的正文（來自 markdown-list 的 text）
+; content str: 列表項的正文（來自 list 的 text）
 ; out str: 帶上 disabled checkbox 的 HTML 片段，或普通行內 HTML
 ; [list-content](#markdown.list-content)
 markdown.list-content = (content str) (out str) {
@@ -312,9 +305,9 @@ markdown.list-content = (content str) (out str) {
 ; 移除引用行首的 > 標記。
 ; '>' 後若只有一個空格則一併去掉；'>>' 之類的嵌套寫法保留剩餘的 '>'。
 ; line str: 原始單行文字
-; out markdown-quote: yes 表示該行是引用行，text 為去掉行首標記後的內容（非引用行時為空串）
+; out quote: yes 表示該行是引用行，text 為去掉行首標記後的內容（非引用行時為空串）
 ; [blockquote](#markdown.blockquote)
-markdown.blockquote = (line str) (out markdown-quote) {
+markdown.blockquote = (line str) (out quote) {
     content-v = ''
     found = false
     s = line.trim()
@@ -325,7 +318,7 @@ markdown.blockquote = (line str) (out markdown-quote) {
         n > 1 && s.byte(1) == 32 -> content-v = s.slice-bytes(2, n)
         n > 1 && s.byte(1) != 32 -> content-v = s.slice-bytes(1, n)
     }
-    out = markdown-quote{
+    out = quote{
         yes: found
         text: content-v
     }
@@ -334,9 +327,9 @@ markdown.blockquote = (line str) (out markdown-quote) {
 ; 解析 fenced code block 標記。
 ; 開栅行 trim 後須以 3 個以上的反引號或波浪號開頭，後續文字作為語言標籤。
 ; line str: 原始單行文字
-; out markdown-fence: yes 表示是栅欄行；marker 為 96（`）或 126（~）；width 為栅欄長度；info 為語言標籤，沒有時為空串
+; out fence: yes 表示是栅欄行；marker 為 96（`）或 126（~）；width 為栅欄長度；info 為語言標籤，沒有時為空串
 ; [fence](#markdown.fence)
-markdown.fence = (line str) (out markdown-fence) {
+markdown.fence = (line str) (out fence) {
     yes-v = false
     marker-v = 0
     width-v = 0
@@ -359,7 +352,7 @@ markdown.fence = (line str) (out markdown-fence) {
             }
         }
     }
-    out = markdown-fence{
+    out = fence{
         yes: yes-v
         marker: marker-v
         width: width-v
@@ -455,7 +448,6 @@ markdown.inline = (s str) (out str) {
             #{overflow=wrap}
             result = result - markdown.escape-html(s.slice-bytes(i + 1, i + 2))
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -613,7 +605,6 @@ markdown.inline = (s str) (out str) {
             }
             strike = strike == false
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -636,7 +627,6 @@ markdown.inline = (s str) (out str) {
             }
             strong = strong == false
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -659,7 +649,6 @@ markdown.inline = (s str) (out str) {
             }
             strong = strong == false
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -684,7 +673,6 @@ markdown.inline = (s str) (out str) {
             c == 95 && prev-word && next-word -> {
                 result = result - '_'
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -704,7 +692,6 @@ markdown.inline = (s str) (out str) {
             }
             emphasis = emphasis == false
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -719,7 +706,6 @@ markdown.inline = (s str) (out str) {
         }
         result = result - markdown.escape-html(c.to-str())
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -773,9 +759,9 @@ markdown.render-code = (code str, info str) (out str) {
 ; 讀到 '\n' 或字串結尾為止，不包含換行符。
 ; source str: 整份 Markdown 源文字
 ; pos i64: 目前讀取位置（位元組偏移，從 0 開始）
-; out markdown-line: text=該行內容；next-pos=下一行起始偏移；valid=pos 是否落在 [0, len) 內
+; out line: text=該行內容；next-pos=下一行起始偏移；valid=pos 是否落在 [0, len) 內
 ; [read-line](#markdown.read-line)
-markdown.read-line = (source str, pos i64) (out markdown-line) {
+markdown.read-line = (source str, pos i64) (out line) {
     line-v = ''
     next-v = pos
     valid-v = false
@@ -790,7 +776,6 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
                 break
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -806,7 +791,6 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
         {
             end-v < n -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -823,7 +807,7 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
         }
         valid-v = true
     }
-    out = markdown-line{
+    out = line{
         text: line-v
         next-pos: next-v
         valid: valid-v
@@ -861,7 +845,7 @@ markdown.to-html = (source str) (out str) {
             }
 
             -> {
-                line-info markdown-line = markdown.read-line(normalized, pos)
+                line-info line = markdown.read-line(normalized, pos)
                 line = line-info.text
                 pos = line-info.next-pos
                 line-info.valid == false -> break
@@ -881,7 +865,7 @@ markdown.to-html = (source str) (out str) {
             }
             continue
         }
-        fence-info markdown-fence = markdown.fence(trimmed)
+        fence-info fence = markdown.fence(trimmed)
         fence = fence-info.yes
         marker = fence-info.marker
         width = fence-info.width
@@ -930,7 +914,7 @@ markdown.to-html = (source str) (out str) {
             }
             continue
         }
-        heading-info markdown-heading = markdown.heading(trimmed)
+        heading-info heading = markdown.heading(trimmed)
         level = heading-info.level
         heading = heading-info.text
         level > 0 -> {
@@ -971,7 +955,7 @@ markdown.to-html = (source str) (out str) {
             result = result - '<hr>\n'
             continue
         }
-        item-info markdown-list = markdown.list-item(trimmed)
+        item-info list = markdown.list-item(trimmed)
         item-kind = item-info.kind
         item = item-info.text
         item-kind > 0 -> {
@@ -992,7 +976,7 @@ markdown.to-html = (source str) (out str) {
             result = result - '<li>' - markdown.list-content(item) - '</li>\n'
             continue
         }
-        quote-info markdown-quote = markdown.blockquote(trimmed)
+        quote-info quote = markdown.blockquote(trimmed)
         quote = quote-info.text
         is-quote = quote-info.yes
         is-quote -> {
@@ -1035,7 +1019,7 @@ markdown.to-html = (source str) (out str) {
 
         ; 對下一行做一次無副作用的 look-ahead，識别 Setext 標题和表格。
         hard-break-v = line.ends-with('  ')
-        look-info markdown-line = markdown.read-line(normalized, pos)
+        look-info line = markdown.read-line(normalized, pos)
         look-line = look-info.text
         look-pos = look-info.next-pos
         look-valid = look-info.valid
@@ -1055,7 +1039,7 @@ markdown.to-html = (source str) (out str) {
                 pos = look-pos
                 (pos < n-source && pending == false) {
                     pos >= n-source -> break
-                    body-info markdown-line = markdown.read-line(normalized, pos)
+                    body-info line = markdown.read-line(normalized, pos)
                     body-line = body-info.text
                     body-pos = body-info.next-pos
                     body-valid = body-info.valid

@@ -21,9 +21,10 @@
 parse-field = (s str, pos i64) (field str, new-pos i64) {
     r-pos = pos
     fn = 0
-    field = with-cap(s.len-bytes())
+    field-b []byte = with-cap-len(s.len-bytes(), s.len-bytes())
     r-pos >= s.len-bytes() -> {
         new-pos = r-pos
+        field = field-b.slice(0, fn).to-bytes-str()
         return
     }
 
@@ -32,7 +33,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         c == 44 -> {
 
             ; 空欄位（逗號開頭）
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -43,13 +43,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     ->
                 }
             }
+            field = field-b.slice(0, fn).to-bytes-str()
             return
         }
 
         c == 34 -> {
 
             ; 雙引號包圍的欄位
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -71,7 +71,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                         #{overflow=wrap}
                         nc = s.byte(r-pos + 1)
                         nc == 34 -> {
-                            field[fn] = 34
+                            field-b[fn] = 34
                             {
                                 fn-opt = fn + 1
                                 fn-opt: {
@@ -93,7 +93,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     }
 
                     ; 結束雙引號
-                    #{overflow=wrap}
                     {
 
                         #{overflow=wrap}
@@ -109,7 +108,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     r-pos < s.len-bytes() -> {
                         nc = s.byte(r-pos)
 
-                        #{overflow=wrap}
                         nc == 44 -> {
                             {
 
@@ -124,14 +122,14 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                         }
                     }
                     new-pos = r-pos
+                    field = field-b.slice(0, fn).to-bytes-str()
                     return
                 }
                 c == 10 || c == 13 -> {
 
                     ; 換行在引號內視為換行字元
-                    field[fn] = c
+                    field-b[fn] = c
 
-                    #{overflow=wrap}
                     {
 
                         #{overflow=wrap}
@@ -143,7 +141,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                         }
                     }
 
-                    #{overflow=wrap}
                     {
 
                         #{overflow=wrap}
@@ -157,9 +154,8 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     continue
                 }
 
-                field[fn] = c
+                field-b[fn] = c
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -171,7 +167,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     }
                 }
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -184,6 +179,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 }
             }
             new-pos = r-pos
+            field = field-b.slice(0, fn).to-bytes-str()
             return
         }
     }
@@ -192,11 +188,9 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     (r-pos < s.len-bytes()) {
         c = s.byte(r-pos)
 
-        #{overflow=wrap}
         {
             c == 44 -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -208,6 +202,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     }
                 }
                 new-pos = r-pos
+                field = field-b.slice(0, fn).to-bytes-str()
                 return
             }
 
@@ -215,13 +210,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                 ; 換行結束欄位（不消耗換行）
                 new-pos = r-pos
+                field = field-b.slice(0, fn).to-bytes-str()
                 return
             }
         }
 
-        field[fn] = c
+        field-b[fn] = c
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -233,7 +228,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -246,6 +240,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         }
     }
     new-pos = r-pos
+    field = field-b.slice(0, fn).to-bytes-str()
 }
 
 ; 解析一行 CSV 文字
@@ -261,7 +256,6 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     (pos < s.len-bytes() && n < max-fields) {
         fields[n], pos = parse-field(s, pos)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -297,11 +291,10 @@ encode-field = (field str) (out str) {
     j = 0
 
     #{overflow=wrap}
-    out = with-cap(field.len-bytes() * 2 + 2)
+    out-b []byte = with-cap-len(field.len-bytes() * 2 + 2, field.len-bytes() * 2 + 2)
 
-    out[j] = 34
+    out-b[j] = 34
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -315,10 +308,9 @@ encode-field = (field str) (out str) {
     i <- [0..field.len-bytes()): {
         c = field.byte(i)
 
-        #{overflow=wrap}
         {
             c == 34 -> {
-                out[j] = 34
+                out-b[j] = 34
                 {
                     j-opt2 = j + 1
                     j-opt2: {
@@ -328,15 +320,14 @@ encode-field = (field str) (out str) {
                     }
                 }
 
-                out[j] = 34
+                out-b[j] = 34
             }
 
             -> {
-                out[j] = c
+                out-b[j] = c
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -349,5 +340,8 @@ encode-field = (field str) (out str) {
         }
     }
 
-    out[j] = 34
+    out-b[j] = 34
+
+    ; 收尾的雙引號寫在 j 位置但不遞增 j，故長度是 j + 1
+    out = out-b.slice(0, j + 1).to-bytes-str()
 }

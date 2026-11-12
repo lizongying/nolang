@@ -1,0 +1,700 @@
+; std-server.no — net/server 模組測試
+;
+; 執行：no test test/std/server.no
+;
+; 為什麼能測滿 41 個符號（3 函式 + 38 方法）：
+;   ① `secure-compare` 是純函式，直接測；
+;   ② `server` / `server-conn` / `https-server` / `https-server-conn` 都是
+;      **公開結構體** ⇒ 可以在沒有 socket 的情況下白盒構造實例，逐個呼叫
+;      方法（reset / get-header / get-cookie / write-* 的失敗臂都只讀欄位）；
+;   ③ `listen` / `listen-on` / `accept` / `accept-nb` 用 loopback 真跑
+;      （`net.net-listen` + `net.net-dial`），單執行緒即可：先 dial 讓三次
+;      握手落進 accept 佇列，`accept` 就不會阻塞；
+;   ④ `https-server.listen` 只是 `tls.server-listen`＝`net.net-listen` 的
+;      薄包裝，因此同樣能在 loopback 上綁定成功；真正握手（accept 之後的
+;      recv/parse）需要 TLS 憑證，本檔只覆蓋其失敗臂。
+;
+; 覆蓋清單：
+;   函式：secure-compare listen-on https-listen-on
+;   server：{listen,accept,accept-nb,close,fd-of}
+;   server-conn：{recv-more,parse,get-header,write-status,write-header,
+;                write-headers-done,write-body,write-text,write-json,
+;                write-html,write-redirect,write-error,reset,close,
+;                get-cookie,get-signed-cookie,verify-basic-auth,
+;                set-signed-cookie}
+;   https-server：{listen,accept,close}
+;   https-server-conn：{recv-more,parse,get-header,write-status,write-header,
+;                      write-headers-done,write-body,write-text,write-json,
+;                      write-html,reset,close}
+;
+; 寫法備註：
+;   - std 結構體構造必須寫全限定名：`server.server{}` / `server.server-conn{}`
+;     （寫 `server{}` ⇒ checker 認不出 callee）。
+;   - 結構體零值是 0 / 空串，不是 -1 ⇒ 想測「未開啟」臂要顯式 `s.fd = -1`。
+;   - `get-cookie` / `get-signed-cookie` / `verify-basic-auth` 目前是**空殼**
+;     （只 `cookie-header: { -> }` 就返回），本檔鎖住「恆 nil / 恆 false」
+;     這個現狀，等實作補上時這些斷言會紅，提醒修改。
+;   - loopback 響應一律用 `drain()`：寫入方法是逐個 `net-send`，單次 `recv`
+;     只拿得到第一段（會讓 17 條斷言假紅）。順序固定「寫完 → close → drain」。
+;   - `?T` 形參的裸名與限定名是**兩個名義型別**：`flags-of-conn` 收
+;     `?server.server-conn`，`flags-of-https-conn` 收裸 `?https-server-conn`，
+;     不能合併（見 test/README.md §5.2 #98）。
+
+# /test/runner
+
+; 收到對端關閉（recv 回 <= 0）為止的全部位元組。
+; ⚠️ 必須用它而不是單次 `net-recv`：`write-status` / `write-header` / `write-body`
+; 各自獨立 `net-send`，一次 `recv` 只拿得到第一段 —— 實測只收到狀態行，
+; Content-Type / Location / Set-Cookie / 本體全缺（17 條斷言因此假紅）。
+; 因此每個 loopback 測試的順序固定為「服務端寫完 → 服務端 close → 客戶端 drain」。
+drain = (fd fd) (out str) {
+    out = ''
+    buf str = with-len(4096)
+    !! {
+        n = net.net-recv(fd, buf, 4096)
+        n <= 0 -> break
+        chunk = buf.slice(0, n)
+        out = out - chunk
+    }
+}
+
+; 把 ?T 收成「有沒有值」的旗標（取不到 ⇒ -1）
+flags-of = (v ?str) (n i64) {
+    n = -1
+    v: {
+        ok -> n = 1
+
+        -> _
+    }
+}
+
+; ── 純函式 ────────────────────────────────────────────────
+
+t-secure-compare = () {
+    runner.is-true(server.secure-compare('abc', 'abc'), 'secure-compare: 同串 ⇒ true')
+    runner.is-false(server.secure-compare('abc', 'abd'), 'secure-compare: 末位不同 ⇒ false')
+    runner.is-false(server.secure-compare('abc', 'ab'), 'secure-compare: 長度不同 ⇒ false')
+    runner.is-false(server.secure-compare('', 'a'), 'secure-compare: 空 vs 非空 ⇒ false')
+    runner.is-true(server.secure-compare('', ''), 'secure-compare: 雙空 ⇒ true')
+    runner.is-false(server.secure-compare('abcdefgh', 'abcdefgi'), 'secure-compare: 長串中段差異 ⇒ false')
+}
+
+; ── server 未開啟臂（fd = -1）────────────────────────────
+
+t-server-unopened = () {
+    srv = server.server{}
+    srv.fd = -1
+    runner.eq(srv.fd-of(), -1, 'server.fd-of: 初始 -1')
+
+    srv.close()
+    runner.eq(srv.fd-of(), -1, 'server.close: 未開啟時冪等（fd 仍 -1）')
+
+    opt = srv.accept()
+    runner.eq(flags-of-conn(opt), -1, 'server.accept: fd<0 ⇒ nil')
+
+    opt2 = srv.accept-nb()
+    runner.eq(flags-of-conn(opt2), -1, 'server.accept-nb: fd<0 ⇒ nil')
+}
+
+; ?server-conn 的旗標（1=有值 / -1=nil）
+; ⚠️ 形參型別必須寫全限定 `?server.server-conn`：裸 `?server-conn` 會被當成
+; 模組內的另一個名義型別，實參（`?server.server-conn`）就對不上。
+flags-of-conn = (v ?server.server-conn) (n i64) {
+    n = -1
+    v: {
+        ok -> n = 1
+
+        -> _
+    }
+}
+
+; ── server-conn 白盒（不碰 socket）────────────────────────
+
+t-conn-reset = () {
+    c = server.server-conn{}
+    c.fd = -1
+    c.method = 'POST'
+    c.path = '/x'
+    c.query = 'a=1'
+    c.version = 'HTTP/1.1'
+    c.headers = 'Host: h'
+    c.header-count = 3
+    c.body = 'body'
+    c.keep-alive = true
+    c.recv-buf-len = 17
+
+    c.reset()
+
+    runner.str-eq(c.method, '', 0, 'server-conn.reset: method 清空')
+    runner.str-eq(c.path, '', 0, 'server-conn.reset: path 清空')
+    runner.str-eq(c.query, '', 0, 'server-conn.reset: query 清空')
+    runner.str-eq(c.version, '', 0, 'server-conn.reset: version 清空')
+    runner.str-eq(c.headers, '', 0, 'server-conn.reset: headers 清空')
+    runner.eq(c.header-count, 0, 'server-conn.reset: header-count 歸零')
+    runner.str-eq(c.body, '', 0, 'server-conn.reset: body 清空')
+    runner.eq(c.recv-buf-len, 0, 'server-conn.reset: recv-buf-len 歸零')
+}
+
+t-conn-get-header = () {
+    c = server.server-conn{}
+    c.fd = -1
+
+    ; header-count = 0 ⇒ 一定未命中
+    runner.eq(flags-of(c.get-header('Host')), -1, 'server-conn.get-header: 無標頭 ⇒ nil')
+
+    ; 填一筆再查：大小寫不敏感
+    c.header-names[0] = 'Host'
+    c.header-values[0] = 'example.com'
+    c.header-count = 1
+
+    runner.eq(flags-of(c.get-header('Host')), 1, 'server-conn.get-header: 精確命中')
+    runner.eq(flags-of(c.get-header('host')), 1, 'server-conn.get-header: 小寫查詢命中（大小寫不敏感）')
+    runner.eq(flags-of(c.get-header('HOST')), 1, 'server-conn.get-header: 大寫查詢命中')
+    runner.eq(flags-of(c.get-header('X-None')), -1, 'server-conn.get-header: 未命中 ⇒ nil')
+
+    ; 名稱長度不同必須直接判不命中（不能越界比較）
+    runner.eq(flags-of(c.get-header('Hos')), -1, 'server-conn.get-header: 前綴短名 ⇒ nil')
+    runner.eq(flags-of(c.get-header('Hostt')), -1, 'server-conn.get-header: 前綴長名 ⇒ nil')
+}
+
+; 三個認證/Cookie 方法目前是空殼 —— 鎖住現狀（實作補上就該紅）
+t-conn-stubs = () {
+    c = server.server-conn{}
+    c.fd = -1
+    c.header-names[0] = 'Cookie'
+    c.header-values[0] = 'sessionid=abc'
+    c.header-count = 1
+    c.header-names[1] = 'Authorization'
+    c.header-values[1] = 'Basic dTpw'
+    c.header-count = 2
+
+    runner.eq(flags-of(c.get-cookie('sessionid')), -1, 'server-conn.get-cookie: 目前空殼 ⇒ 恆 nil')
+    runner.eq(flags-of(c.get-signed-cookie('sessionid', cookie-key())), -1, 'server-conn.get-signed-cookie: 目前空殼 ⇒ 恆 nil')
+    runner.is-false(c.verify-basic-auth('u', 'p'), 'server-conn.verify-basic-auth: 目前空殼 ⇒ 恆 false')
+}
+
+; 32 位元組的簽名金鑰
+cookie-key = () (k []byte) {
+    k.push(107)
+    k.push(101)
+    k.push(121)
+    k.push(0)
+}
+
+; ── server-conn 寫入方法：fd = -1 全部失敗 ────────────────
+
+t-conn-write-unopened = () {
+    c = server.server-conn{}
+    c.fd = -1
+
+    runner.is-false(c.write-status(200), 'server-conn.write-status: fd<0 ⇒ false')
+    runner.is-false(c.write-header('X', 'y'), 'server-conn.write-header: fd<0 ⇒ false')
+    runner.is-false(c.write-headers-done(), 'server-conn.write-headers-done: fd<0 ⇒ false')
+    runner.is-false(c.write-body('b'), 'server-conn.write-body: fd<0 ⇒ false')
+    runner.is-false(c.write-text(200, 't'), 'server-conn.write-text: fd<0 ⇒ false')
+    runner.is-false(c.write-json(200, '{}'), 'server-conn.write-json: fd<0 ⇒ false')
+    runner.is-false(c.write-html(200, '<p>x</p>'), 'server-conn.write-html: fd<0 ⇒ false')
+    runner.is-false(c.write-redirect(302, '/y'), 'server-conn.write-redirect: fd<0 ⇒ false')
+    runner.is-false(c.write-error(404, 'no'), 'server-conn.write-error: fd<0 ⇒ false')
+
+    c.close()
+    runner.eq(c.fd, -1, 'server-conn.close: 未開啟時冪等')
+
+    ; fd<0 時 recv-more 回 -1、parse 回 false（都不應阻塞）
+    runner.eq(c.recv-more(), -1, 'server-conn.recv-more: fd<0 ⇒ -1')
+    runner.is-false(c.parse(), 'server-conn.parse: fd<0 ⇒ false')
+}
+
+; ── https-server / https-server-conn 白盒 ─────────────────
+
+t-https-server-unopened = () {
+    srv = server.https-server{}
+    srv.fd = -1
+
+    srv.close()
+    runner.eq(srv.fd, -1, 'https-server.close: 未開啟時冪等')
+
+    opt = srv.accept()
+    runner.eq(flags-of-https-conn(opt), -1, 'https-server.accept: fd<0 ⇒ nil')
+}
+
+; ?https-server-conn 的旗標。
+; ⚠️ 這裡是**裸名** `?https-server-conn`，與上面的 `?server.server-conn` 不同：
+; `server.accept` 的結果在跨模組時是全限定名，`https-server.accept` 的卻是裸名
+; （std 兩處宣告不一致，見 test/README.md §5.2）。寫錯任一邊都是 6fgg3htw。
+flags-of-https-conn = (v ?https-server-conn) (n i64) {
+    n = -1
+    v: {
+        ok -> n = 1
+
+        -> _
+    }
+}
+
+t-https-conn-whitebox = () {
+    c = server.https-server-conn{}
+    c.method = 'GET'
+    c.path = '/p'
+    c.query = 'q=1'
+    c.version = 'HTTP/1.1'
+    c.headers = 'Host: h'
+    c.header-count = 2
+    c.body = 'b'
+    c.keep-alive = true
+    c.recv-buf-len = 9
+
+    ; get-header 先於 reset 測（reset 會清 header-count）
+    runner.eq(flags-of(c.get-header('Host')), -1, 'https-server-conn.get-header: header-count>0 但 names 空 ⇒ nil')
+
+    c.reset()
+
+    runner.str-eq(c.method, '', 0, 'https-server-conn.reset: method 清空')
+    runner.str-eq(c.path, '', 0, 'https-server-conn.reset: path 清空')
+    runner.str-eq(c.query, '', 0, 'https-server-conn.reset: query 清空')
+    runner.str-eq(c.version, '', 0, 'https-server-conn.reset: version 清空')
+    runner.str-eq(c.headers, '', 0, 'https-server-conn.reset: headers 清空')
+    runner.eq(c.header-count, 0, 'https-server-conn.reset: header-count 歸零')
+    runner.str-eq(c.body, '', 0, 'https-server-conn.reset: body 清空')
+    runner.eq(c.recv-buf-len, 0, 'https-server-conn.reset: recv-buf-len 歸零')
+
+    ; 填一筆標頭再查（大小寫不敏感路徑與 server-conn 共用同一份實作）
+    c.header-names[0] = 'X-Test'
+    c.header-values[0] = 'v1'
+    c.header-count = 1
+    runner.eq(flags-of(c.get-header('x-test')), 1, 'https-server-conn.get-header: 小寫查詢命中')
+    runner.eq(flags-of(c.get-header('X-Other')), -1, 'https-server-conn.get-header: 未命中 ⇒ nil')
+}
+
+; ── loopback：server / listen / listen-on ────────────────
+
+t-server-listen = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39211)
+    runner.is-true(ok, 'server.listen: 綁定 127.0.0.1:39211 成功')
+    runner.eq(srv.fd-of() >= 0, 1, 'server.fd-of: 綁定後 fd >= 0')
+    runner.str-eq(srv.host, '127.0.0.1', 9, 'server.listen: 記錄 host')
+    runner.eq(srv.port, 39211, 'server.listen: 記錄 port')
+
+    ; 同埠再綁一次必須失敗（還佔用著）
+    srv2 = server.server{}
+    runner.is-false(srv2.listen('127.0.0.1', 39211), 'server.listen: 埠被佔用 ⇒ false')
+    runner.eq(srv2.fd-of(), -1, 'server.listen: 失敗時 fd 保持 -1')
+
+    srv.close()
+    runner.eq(srv.fd-of(), -1, 'server.close: 關閉後 fd = -1')
+}
+
+t-listen-on = () {
+    opt = server.listen-on('127.0.0.1', 39212)
+    got = 0
+    opt: {
+        ok -> {
+            srv = it
+            got = 1
+            runner.eq(srv.fd-of() >= 0, 1, 'server.listen-on: 回 ok 且 fd >= 0')
+            srv.close()
+        }
+
+        -> got = -1
+    }
+    runner.eq(got, 1, 'server.listen-on: 端口可用時回 ok')
+}
+
+; 佔用埠後 listen-on 必須回 nil（失敗臂）
+t-listen-on-busy = () {
+    first = server.server{}
+    bound = first.listen('127.0.0.1', 39213)
+    runner.is-true(bound, 'listen-on-busy: 先佔用 39213')
+
+    opt = server.listen-on('127.0.0.1', 39213)
+    got = 0
+    got = opt: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(got, -1, 'server.listen-on: 埠被佔用 ⇒ nil')
+
+    first.close()
+}
+
+; ── loopback：完整 HTTP 請求／回應 ───────────────────────
+
+t-http-roundtrip = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39214)
+    runner.is-true(ok, 'roundtrip: 綁定 39214')
+
+    cfd = net.net-dial('127.0.0.1', 39214)
+    req = 'GET /hello?x=1 HTTP/1.1\r\nHost: example.com\r\nUser-Agent: t\r\n\r\n'
+    net.net-send(cfd, req, req.len-bytes())
+
+    opt = srv.accept()
+    got = 0
+    opt: {
+        ok -> {
+            c = it
+            got = 1
+            runner.eq(c.fd >= 0, 1, 'roundtrip: accept 回有效 fd')
+
+            ; recv-more 把請求拉進 recv-buf
+            n = c.recv-more()
+            runner.eq(n > 0, 1, 'server-conn.recv-more: 收到 > 0 位元組')
+
+            ; parse 解析請求行與標頭
+            parsed = c.parse()
+            runner.is-true(parsed, 'server-conn.parse: 解析成功')
+
+            runner.str-eq(c.method, 'GET', 3, 'parse: method = GET')
+            runner.str-eq(c.path, '/hello', 6, 'parse: path = /hello')
+            runner.str-eq(c.query, 'x=1', 3, 'parse: query = x=1')
+            runner.str-eq(c.version, 'HTTP/1.1', 8, 'parse: version = HTTP/1.1')
+            runner.eq(flags-of(c.get-header('Host')), 1, 'parse 後 get-header(Host) 命中')
+
+            ; 回應：狀態行 + 標頭 + 空行 + 本體
+            w1 = c.write-status(200)
+            w2 = c.write-header('X-Trace', 'abc')
+            w3 = c.write-headers-done()
+            w4 = c.write-body('pong')
+            runner.is-true(w1, 'server-conn.write-status: 200 寫入成功')
+            runner.is-true(w2, 'server-conn.write-header: 寫入成功')
+            runner.is-true(w3, 'server-conn.write-headers-done: 寫入成功')
+            runner.is-true(w4, 'server-conn.write-body: 寫入成功')
+
+            ; 先寫完並 close，客戶端才能 drain 到對端關閉（見 drain 註解）
+            c.close()
+
+            resp = drain(cfd)
+            runner.eq(resp.index('HTTP/1.1 200 OK') >= 0, 1, 'roundtrip: 收到 200 狀態行')
+            runner.eq(resp.index('X-Trace: abc') >= 0, 1, 'roundtrip: 收到自訂標頭')
+            runner.eq(resp.index('pong') >= 0, 1, 'roundtrip: 收到本體')
+        }
+
+        -> got = -1
+    }
+    runner.eq(got, 1, 'server.accept: loopback 上回 ok')
+
+    net.close(cfd)
+    srv.close()
+}
+
+; write-text 會自動補 Content-Type / Content-Length / Connection / Server
+t-http-write-text = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39215)
+    runner.is-true(ok, 'write-text: 綁定 39215')
+
+    cfd = net.net-dial('127.0.0.1', 39215)
+    req = 'GET /t HTTP/1.1\r\nHost: h\r\n\r\n'
+    net.net-send(cfd, req, req.len-bytes())
+
+    opt = srv.accept()
+    opt: {
+        ok -> {
+            c = it
+            c.recv-more()
+            c.parse()
+            ok-w = c.write-text(200, 'hello')
+            runner.is-true(ok-w, 'server-conn.write-text: 成功')
+
+            ; 先寫完並 close，客戶端才能 drain 到對端關閉（見 drain 註解）
+            c.close()
+
+            resp = drain(cfd)
+            runner.eq(resp.index('HTTP/1.1 200 OK') >= 0, 1, 'write-text: 200 狀態行')
+            runner.eq(resp.index('Content-Type: text/plain') >= 0, 1, 'write-text: Content-Type')
+            runner.eq(resp.index('Content-Length: 5') >= 0, 1, 'write-text: Content-Length = 5')
+            runner.eq(resp.index('Server: nolang-http/1.0') >= 0, 1, 'write-text: Server 標頭')
+            runner.eq(resp.index('hello') >= 0, 1, 'write-text: 本體')
+        }
+
+        -> _
+    }
+
+    net.close(cfd)
+    srv.close()
+}
+
+; write-json：Content-Type 為 application/json
+t-http-write-json = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39216)
+    runner.is-true(ok, 'write-json: 綁定 39216')
+
+    cfd = net.net-dial('127.0.0.1', 39216)
+    req = 'GET /j HTTP/1.1\r\nHost: h\r\n\r\n'
+    net.net-send(cfd, req, req.len-bytes())
+
+    opt = srv.accept()
+    opt: {
+        ok -> {
+            c = it
+            c.recv-more()
+            c.parse()
+            runner.is-true(c.write-json(201, '{"a":1}'), 'server-conn.write-json: 成功')
+
+            ; 先寫完並 close，客戶端才能 drain 到對端關閉（見 drain 註解）
+            c.close()
+
+            resp = drain(cfd)
+            runner.eq(resp.index('HTTP/1.1 201 Created') >= 0, 1, 'write-json: 201 Created')
+            runner.eq(resp.index('Content-Type: application/json') >= 0, 1, 'write-json: Content-Type')
+            runner.eq(resp.index('{"a":1}') >= 0, 1, 'write-json: 本體')
+        }
+
+        -> _
+    }
+
+    net.close(cfd)
+    srv.close()
+}
+
+; write-html：Content-Type 為 text/html
+t-http-write-html = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39217)
+    runner.is-true(ok, 'write-html: 綁定 39217')
+
+    cfd = net.net-dial('127.0.0.1', 39217)
+    req = 'GET /h HTTP/1.1\r\nHost: h\r\n\r\n'
+    net.net-send(cfd, req, req.len-bytes())
+
+    opt = srv.accept()
+    opt: {
+        ok -> {
+            c = it
+            c.recv-more()
+            c.parse()
+            runner.is-true(c.write-html(200, '<h1>x</h1>'), 'server-conn.write-html: 成功')
+
+            ; 先寫完並 close，客戶端才能 drain 到對端關閉（見 drain 註解）
+            c.close()
+
+            resp = drain(cfd)
+            runner.eq(resp.index('Content-Type: text/html') >= 0, 1, 'write-html: Content-Type')
+            runner.eq(resp.index('<h1>x</h1>') >= 0, 1, 'write-html: 本體')
+        }
+
+        -> _
+    }
+
+    net.close(cfd)
+    srv.close()
+}
+
+; write-redirect：Location + Content-Length: 0 + 強制 close
+t-http-write-redirect = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39218)
+    runner.is-true(ok, 'write-redirect: 綁定 39218')
+
+    cfd = net.net-dial('127.0.0.1', 39218)
+    req = 'GET /r HTTP/1.1\r\nHost: h\r\n\r\n'
+    net.net-send(cfd, req, req.len-bytes())
+
+    opt = srv.accept()
+    opt: {
+        ok -> {
+            c = it
+            c.recv-more()
+            c.parse()
+            runner.is-true(c.write-redirect(302, '/new'), 'server-conn.write-redirect: 成功')
+
+            ; 先寫完並 close，客戶端才能 drain 到對端關閉（見 drain 註解）
+            c.close()
+
+            resp = drain(cfd)
+            runner.eq(resp.index('HTTP/1.1 302 Found') >= 0, 1, 'write-redirect: 302 Found')
+            runner.eq(resp.index('Location: /new') >= 0, 1, 'write-redirect: Location')
+            runner.eq(resp.index('Content-Length: 0') >= 0, 1, 'write-redirect: Content-Length 0')
+            runner.eq(resp.index('Connection: close') >= 0, 1, 'write-redirect: 強制 close')
+        }
+
+        -> _
+    }
+
+    net.close(cfd)
+    srv.close()
+}
+
+; write-error：404 + text/plain + 強制 close
+t-http-write-error = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39219)
+    runner.is-true(ok, 'write-error: 綁定 39219')
+
+    cfd = net.net-dial('127.0.0.1', 39219)
+    req = 'GET /e HTTP/1.1\r\nHost: h\r\n\r\n'
+    net.net-send(cfd, req, req.len-bytes())
+
+    opt = srv.accept()
+    opt: {
+        ok -> {
+            c = it
+            c.recv-more()
+            c.parse()
+            runner.is-true(c.write-error(404, 'nope'), 'server-conn.write-error: 成功')
+
+            ; 先寫完並 close，客戶端才能 drain 到對端關閉（見 drain 註解）
+            c.close()
+
+            resp = drain(cfd)
+            runner.eq(resp.index('HTTP/1.1 404 Not Found') >= 0, 1, 'write-error: 404 Not Found')
+            runner.eq(resp.index('Connection: close') >= 0, 1, 'write-error: 強制 close')
+            runner.eq(resp.index('nope') >= 0, 1, 'write-error: 本體')
+        }
+
+        -> _
+    }
+
+    net.close(cfd)
+    srv.close()
+}
+
+; set-signed-cookie：需要有效 fd 才能真的寫出 Set-Cookie
+t-set-signed-cookie = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39220)
+    runner.is-true(ok, 'set-signed-cookie: 綁定 39220')
+
+    cfd = net.net-dial('127.0.0.1', 39220)
+    req = 'GET /c HTTP/1.1\r\nHost: h\r\n\r\n'
+    net.net-send(cfd, req, req.len-bytes())
+
+    opt = srv.accept()
+    opt: {
+        ok -> {
+            c = it
+            c.recv-more()
+            c.parse()
+            c.write-status(200)
+            c.set-signed-cookie('sid', 'v1', cookie-key())
+            c.write-headers-done()
+
+            ; 先寫完並 close，客戶端才能 drain 到對端關閉（見 drain 註解）
+            c.close()
+
+            resp = drain(cfd)
+            runner.eq(resp.index('Set-Cookie: sid=') >= 0, 1, 'server-conn.set-signed-cookie: 寫出 Set-Cookie')
+            runner.eq(resp.index('; Path=/; HttpOnly') >= 0, 1, 'set-signed-cookie: 附 Path/HttpOnly')
+            runner.eq(resp.index('HTTP/1.1 200 OK') >= 0, 1, 'set-signed-cookie: 狀態行')
+        }
+
+        -> _
+    }
+
+    net.close(cfd)
+    srv.close()
+}
+
+; accept-nb：連上後輪詢應拿到連線；空佇列時回 nil
+t-accept-nb = () {
+    srv = server.server{}
+    ok = srv.listen('127.0.0.1', 39221)
+    runner.is-true(ok, 'accept-nb: 綁定 39221')
+
+    ; 佇列空 ⇒ nil
+    empty = srv.accept-nb()
+    runner.eq(flags-of-conn(empty), -1, 'server.accept-nb: 無連線 ⇒ nil')
+
+    cfd = net.net-dial('127.0.0.1', 39221)
+    got = 0
+
+    ; 連線剛建立時可能還沒進 accept 佇列，輪詢若干次（範圍迴圈避開 `tries+1`
+    ; 的溢位檢查把計數器變成 ?i64 的坑）
+    i <- [0..200): {
+        o = srv.accept-nb()
+        v = flags-of-conn(o)
+        v == 1 -> {
+            got = 1
+            o: {
+                ok -> it.close()
+
+                -> _
+            }
+            break
+        }
+    }
+    runner.eq(got, 1, 'server.accept-nb: 連線進來後輪詢命中')
+
+    net.close(cfd)
+    srv.close()
+}
+
+; ── loopback：https-server（TLS 監聽本身不需要憑證）──────
+
+t-https-server-listen = () {
+    srv = server.https-server{}
+    ok = srv.listen('127.0.0.1', 39222)
+    runner.is-true(ok, 'https-server.listen: 綁定 39222 成功')
+    runner.eq(srv.fd >= 0, 1, 'https-server.listen: fd >= 0')
+    runner.eq(srv.port, 39222, 'https-server.listen: 記錄 port')
+
+    srv.close()
+    runner.eq(srv.fd, -1, 'https-server.close: 關閉後 fd = -1')
+}
+
+t-https-listen-on = () {
+    opt = server.https-listen-on('127.0.0.1', 39223)
+    got = 0
+    opt: {
+        ok -> {
+            srv = it
+            got = 1
+            srv.close()
+        }
+
+        -> got = -1
+    }
+    runner.eq(got, 1, 'https-listen-on: 端口可用時回 ok')
+}
+
+; https-server.accept：沒有 TLS 客戶端握手時必須回 nil（不能崩、不能謊報）
+t-https-accept-nil = () {
+    srv = server.https-server{}
+    ok = srv.listen('127.0.0.1', 39224)
+    runner.is-true(ok, 'https-accept-nil: 綁定 39224')
+
+    ; 一條純明文連線進來，TLS 握手拿不到 ClientHello 之後的資料
+    cfd = net.net-dial('127.0.0.1', 39224)
+    net.net-send(cfd, 'GET / HTTP/1.1\r\n\r\n', 18)
+
+    opt = srv.accept()
+    runner.eq(flags-of-https-conn(opt), -1, 'https-server.accept: 明文請求 ⇒ nil')
+
+    net.close(cfd)
+    srv.close()
+}
+
+; ── 執行 ──────────────────────────────────────────────────
+
+p1, f1 = runner.test('server.secure-compare', t-secure-compare)
+p2, f2 = runner.test('server.server-unopened', t-server-unopened)
+p3, f3 = runner.test('server.conn-reset', t-conn-reset)
+p4, f4 = runner.test('server.conn-get-header', t-conn-get-header)
+p5, f5 = runner.test('server.conn-stubs', t-conn-stubs)
+p6, f6 = runner.test('server.conn-write-unopened', t-conn-write-unopened)
+p7, f7 = runner.test('server.https-unopened', t-https-server-unopened)
+p8, f8 = runner.test('server.https-conn-whitebox', t-https-conn-whitebox)
+p9, f9 = runner.test('server.listen', t-server-listen)
+p10, f10 = runner.test('server.listen-on', t-listen-on)
+p11, f11 = runner.test('server.listen-on-busy', t-listen-on-busy)
+p12, f12 = runner.test('server.http-roundtrip', t-http-roundtrip)
+p13, f13 = runner.test('server.write-text', t-http-write-text)
+p14, f14 = runner.test('server.write-json', t-http-write-json)
+p15, f15 = runner.test('server.write-html', t-http-write-html)
+p16, f16 = runner.test('server.write-redirect', t-http-write-redirect)
+p17, f17 = runner.test('server.write-error', t-http-write-error)
+p18, f18 = runner.test('server.set-signed-cookie', t-set-signed-cookie)
+p19, f19 = runner.test('server.accept-nb', t-accept-nb)
+p20, f20 = runner.test('server.https-listen', t-https-server-listen)
+p21, f21 = runner.test('server.https-listen-on', t-https-listen-on)
+p22, f22 = runner.test('server.https-accept-nil', t-https-accept-nil)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

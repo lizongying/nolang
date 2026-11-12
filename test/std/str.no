@@ -450,14 +450,18 @@ t-byte-at = () {
     runner.eq(at-x(s, 3, -1), -1, 'at(3) out of range == nil')
 }
 
-; 驗證 set-byte 原地改寫位元組、長度不變，並用 eq-full 確認整串內容
+; str.set-byte 已于 2026-11-11 私有化（`str._set-byte`），用户码调用会被 checker
+; 以 raqvyltn 拒绝；`s[i] = v` 也一并禁用。构建字节序列的公开路径是 str.from-chars
+; （编译期一次分配新缓冲、逐字节写入、设定长度，不存在越界写与所有权问题）。
+; 本测试保留原 t-set-byte 的位置，改为验证这条替代路径。
 t-set-byte = () {
-    s = ''.with-len(2)
-    s.set-byte(0, 72)
-    s.set-byte(1, 105)
-    runner.eq(s.len-bytes(), 2, 'set-byte keeps len')
-    runner.is-true(s.eq-full('Hi'), 'set-byte writes Hi')
-    runner.eq(byte-at(s, 0, -1), 72, 'set-byte readback byte 0')
+    cs []char
+    cs.push(72)
+    cs.push(105)
+    s = str.from-chars(cs)
+    runner.eq(s.len-bytes(), 2, 'from-chars keeps len 2')
+    runner.is-true(s.eq-full('Hi'), 'from-chars builds Hi')
+    runner.eq(byte-at(s, 0, -1), 72, 'from-chars readback byte 0')
 }
 
 ; 驗證 eq-full 全等：同長同內容為真；長度不同或尾端不同皆為假
@@ -773,8 +777,47 @@ t-replace = () {
     runner.str-eq(s.replace-n('-', '+', 2), 'a+b+c', 5, 'replace-n 2')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 追加断言：push（按码点，原地增长）与 push-str（按位元组，原地增长）
+; 这是 `s[i] = v` 全域禁用后唯一的变长写入口，语义必须钉住：
+;   - push 追加一个码点，UTF-8 编码，len-bytes 涨对应字节数、len 涨 1；
+;   - push-str 追加一个 str，位元组拷贝；
+;   - 空源不改变任何东西（也不分配）；
+;   - 自我追加 `t.push-str(t)` 安全（编译器先 retain 再 memmove）。
+t-push = () {
+    s = 'ab'
+    s.push("c")
+    runner.str-eq(s, 'abc', 3, 'push ascii value')
+    runner.eq(s.len-bytes(), 3, 'push ascii len-bytes')
 
+    s.push("中")
+    runner.eq(s.len-bytes(), 6, 'push 多字節 len-bytes == 6')
+    runner.eq(s.len(), 4, 'push 多字節 len == 4')
+
+    s.push-str('de')
+    runner.eq(s.len-bytes(), 8, 'push-str len-bytes == 8')
+    ; ⚠️ 不要用 runner.str-eq(s.slice(6, 8), 'de', 2, …) 驗尾端：s 現在是 6 個碼點
+    ; 8 個位元組，slice(6, 8) 的 start >= end 走 str.slice 的提前 return，回的是
+    ; **零值 str（data == NULL）**；把這種串連同 n=2 交給 eq ⇒ 對 NULL 做 memcmp
+    ; ⇒ SIGSEGV（§5.2 #106）。尾端內容由 tests/str-push.no 釘住。
+
+    ; 空源：什么都不变
+    t = 'keep'
+    t.push-str('')
+    runner.str-eq(t, 'keep', 4, 'push-str 空源不改變內容')
+
+    ; 自我追加：源與接收者同一塊緩衝
+    u = 'zz'
+    u.push-str(u)
+    runner.str-eq(u, 'zzzz', 4, '自追加 push-str')
+
+    ; 空 str 起手（data == null 走 alloc 分支）
+    w = ''
+    w.push("中")
+    runner.eq(w.len-bytes(), 3, '空 str 起手 push 多字節')
+    runner.eq(w.len(), 1, '空 str 起手 push len')
+}
+
+; ── 執行 ──────────────────────────────────────
 p1, f1 = runner.test('str.len()', t-len)
 
 passed = passed + p1
@@ -879,7 +922,7 @@ passed = passed + p15
 #{overflow=wrap}
 failed = failed + f15
 
-p16, f16 = runner.test('str.set-byte', t-set-byte)
+p16, f16 = runner.test('str.from-chars（原 str.set-byte 的公开替代）', t-set-byte)
 
 #{overflow=wrap}
 passed = passed + p16
@@ -1062,6 +1105,14 @@ passed = passed + p38
 
 #{overflow=wrap}
 failed = failed + f38
+
+p39, f39 = runner.test('str.push / str.push-str', t-push)
+
+#{overflow=wrap}
+passed = passed + p39
+
+#{overflow=wrap}
+failed = failed + f39
 
 total = runner.summary()
 f = runner.failed-count()

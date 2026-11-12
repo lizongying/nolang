@@ -629,8 +629,8 @@ text = toml.stringify(doc)
 
 常用 API：
 
-- `toml.new()` — 建立空的 `toml-doc`
-- `toml.parse(text)` — 解析 TOML，回傳 `?toml-doc`
+- `toml.new()` — 建立空的 `toml`
+- `toml.parse(text)` — 解析 TOML，回傳 `?toml`
 - `doc.put(key, raw-value)` — 新增或更新原始 TOML 值；會拒絕非法值、重複鍵由解析器報錯
 - `toml.get(doc, key)` — 取得原始值（`?str`）
 - `toml.get-str(doc, key)`、`toml.get-i64(doc, key)`、`toml.get-f64(doc, key)`、`toml.get-bool(doc, key)` — 取得已轉換的 scalar
@@ -2381,15 +2381,24 @@ type.method-name = (params) (results) {
 ```no
 ; str 方法
 str.to-upper = () (out str) {
-    out = with-cap(.len-bytes())
-    i <- [0..self.len-bytes()): {
-        c = .byte(i)
-        {
-            c >= 97 && c <= 122 -> out[i] = c - 32
+    n = .len-bytes()
+    b []byte = with-cap-len(n, n)
+    i <- [0..n): {
+        c ?byte = .byte(i)
+        v = c: {
+            ok -> it
 
-            -> out[i] = c
+            nil -> 0
+
+            err -> 0
+        }
+        {
+            v >= 97 && v <= 122 -> b[i] = v - 32
+
+            -> b[i] = v
         }
     }
+    out = b.to-bytes-str()
 }
 
 ; char 方法

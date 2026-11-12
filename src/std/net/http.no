@@ -137,7 +137,6 @@ request.add-header = (name str, value str) (ok bool) {
         -> _
     }
 
-    #{overflow=wrap}
     .header-count = idx + 1: {
         ok -> it
 
@@ -191,13 +190,13 @@ response.parse-headers = () {
         ; 在 [pos, line-end) 中找 ': '
         colon-pos = hs.index-from(': ', pos)
 
-        #{overflow=wrap}
         colon-pos >= 0 && colon-pos < line-end -> {
             cnt = .header-count
             cnt < HTTP-MAX-RESP-HEADERS -> {
 
                 ; 用 slice 複製 name/value（建立獨立緩衝區，避免逐位元組寫入溢出）
                 name-str = hs.slice(pos, colon-pos)
+                #{overflow=wrap}
                 val-str = hs.slice(colon-pos + 2, line-end)
 
                 {
@@ -337,7 +336,6 @@ do = (method str, url str, body str) (resp ?response) {
     ; 檢查 host 是否含 :port
     colon-pos = host.index(':')
 
-    #{overflow=wrap}
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
 
@@ -465,7 +463,6 @@ do = (method str, url str, body str) (resp ?response) {
     ; 解析狀態行（第一行）
     first-line-end = head.index(crlf)
 
-    #{overflow=wrap}
     {
         first-line-end < 0 -> {
             status-line = head
@@ -474,6 +471,7 @@ do = (method str, url str, body str) (resp ?response) {
 
         -> {
             status-line = head.slice(0, first-line-end)
+            #{overflow=wrap}
             r.headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
         }
     }
@@ -570,7 +568,6 @@ do-req = (req request) (resp ?response) {
     }
     colon-pos = host.index(':')
 
-    #{overflow=wrap}
     colon-pos >= 0 -> {
         host-only = host.slice(0, colon-pos)
 
@@ -709,7 +706,6 @@ do-req = (req request) (resp ?response) {
     r.body = recv-raw.slice(sep-pos + separator.len-bytes(), recv-raw.len-bytes())
     first-line-end = head.index(crlf)
 
-    #{overflow=wrap}
     {
         first-line-end < 0 -> {
             status-line = head
@@ -718,6 +714,7 @@ do-req = (req request) (resp ?response) {
 
         -> {
             status-line = head.slice(0, first-line-end)
+            #{overflow=wrap}
             r.headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
         }
     }
@@ -1264,7 +1261,6 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     port-str = ''
     colon-pos = host.index(':')
 
-    #{overflow=wrap}
     colon-pos >= 0 -> {
         host-only = host.slice-bytes(0, colon-pos)
 
@@ -1386,7 +1382,6 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
 
         (ixout1333c10 == 13 && ixout1333c29 == 10 && ixout1333c52 == 13 && ixout1333c75 == 10) -> sep = scan
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

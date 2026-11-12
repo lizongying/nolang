@@ -45,6 +45,7 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     }
 
     ; 逐區塊加密（只處理完整區塊：不足 16 位元組的尾部丟棄）
+    #{overflow=wrap}
     out = with-len((in.len() / 16) * 16)
     blk = 0
     (blk + 16 <= in.len()) {
@@ -52,6 +53,7 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ; XOR 當前區塊與 prev
         xored [16]byte
         i <- [0..16): {
+            #{overflow=wrap}
             ixout52c29 = in[blk + i]: {
                 ok -> it
 
@@ -99,7 +101,6 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -137,6 +138,7 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     }
 
     ; 逐區塊解密（只處理完整區塊：不足 16 位元組的尾部丟棄）
+    #{overflow=wrap}
     out = with-len((in.len() / 16) * 16)
     blk = 0
     (blk + 16 <= in.len()) {
@@ -190,7 +192,6 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -301,6 +302,7 @@ pkcs7-unpad = (in []byte) (out-n i64) {
 
     ; 驗證填充
     i <- [0..pad-len): {
+        #{overflow=wrap}
         ixout263c12 = in[in.len() - 1 - i]: {
             ok -> it
 

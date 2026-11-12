@@ -237,9 +237,9 @@ pos = t.index(sub txt)       ; 查找子串
 ok = t.contains(sub txt)     ; 是否包含
 ok = t.starts-with(sub txt)  ; 前綴檢查
 ok = t.ends-with(sub txt)    ; 後綴檢查
-t.append(b byte)            ; 追加單字節
-t.append-str(s str)          ; 追加 str
-t.append-txt(t2 txt)         ; 追加 txt
+t.push(c char)              ; 追加一個碼點（整字元裝不下 255 上限則整條忽略）
+t.push-str(s str)            ; 追加 str（按位元組截斷至 255）
+t.push-txt(t2 txt)           ; 追加 txt（按位元組截斷至 255）
 out = t.reverse()            ; 反轉
 out = t.slice(start, end)   ; 截取 [start, end)
 r = t.compare(b txt)        ; 字典序比較 (-1/0/1)

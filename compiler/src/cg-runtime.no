@@ -38,10 +38,12 @@ cg-runtime-task-type = () (r str) {
     r = '%task = type { void (i8*)*, i64, i1, i1, i8* }'
 }
 
-; str-type：字符串（len, cap, data）。与 Go emitPrelude 的 %str-long 逐字相同。
+; str-type：字符串（u32 len, u32 cap, data）。与 Go emitPrelude 的 %str-long 逐字相同。
+; ⚠️ B28（2026-11-11 後端變更）：len/cap 由 i64 縮成 u32 ⇒ 描述子從 24B 變 16B，
+;   但**外部 API 仍是 i64**：所有讀寫邊界都要 zext i32→i64 / trunc i64→i32（見 cg.no）。
 ; r: 結果字串
 cg-runtime-str-type = () (r str) {
-    r = '%str-long = type { i64, i64, i8* }   ; len, cap, data'
+    r = '%str-long = type { i32, i32, i8* }   ; u32 len, u32 cap, data (16B); external API stays i64'
 }
 
 ; decls：libc 外部声明。
@@ -62,17 +64,21 @@ cg-runtime-memcmp-decl = () (r str) {
     r = 'declare i32 @memcmp(i8*, i8*, i64)'
 }
 
-; str-eq：@str_eq —— %str-long 结构相等（Go codegen.go:3121 逐字）。
+; str-eq：@str_eq —— %str-long 结构相等（Go emitPrelude 的 @str_eq 逐字）。
 ;   两串相等 iff 长度相同且字节相同（memcmp==0）；绝不对 struct 本体发 icmp（非法）。
 ;   MIR OP-STEREQ 降级到此调用。2 空格缩进（与 Go 该处一致，非 tab）。
 ;   依赖 @memcmp（cg-runtime-memcmp-decl）；不依赖 RC。
+; ⚠️ B28：len 欄是 u32 ⇒ 先 extractvalue 到 i32 暫存（%la.i32/%lb.i32），再 zext 回 i64
+;   才能發 icmp eq i64 與 memcmp(i64 len)。不可直接拿 i32 當 i64 用。
 ; r: 結果字串
 cg-runtime-str-eq = () (r str) {
     b = sb.init(768)
     b.push('define i1 @str_eq(%str-long %a, %str-long %b) {\n')
     b.push('entry:\n')
-    b.push('  %la = extractvalue %str-long %a, 0\n')
-    b.push('  %lb = extractvalue %str-long %b, 0\n')
+    b.push('  %la.i32 = extractvalue %str-long %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %lb.i32 = extractvalue %str-long %b, 0\n')
+    b.push('  %lb = zext i32 %lb.i32 to i64\n')
     b.push('  %lenEq = icmp eq i64 %la, %lb\n')
     b.push('  br i1 %lenEq, label %cmpto, label %noteq\n')
     b.push('cmpto:\n')
@@ -144,15 +150,19 @@ cg-runtime-div-zero-report = () (r str) {
     r = b.str()
 }
 
-; str-concat：@str_concat —— 堆上拼接两个 %str-long（Go codegen.go:3139 逐字）。
+; str-concat：@str_concat —— 堆上拼接两个 %str-long（Go emitPrelude 的 @str_concat 逐字）。
 ; 2 空格缩进（与 Go 该处一致，不是 tab）；依赖 @nolang_rc_alloc（见 cg-rc.no）。
+; ⚠️ B28：len 欄 u32 ⇒ 讀出後 zext i32→i64 才做 add/memcpy；寫回描述子前
+;   trunc i64 %total→i32，且聚合常數改 { i32 0, i32 0, i8* null }。
 ; r: 結果字串
 cg-runtime-str-concat = () (r str) {
     b = sb.init(1024)
     b.push('define %str-long @str_concat(%str-long %a, %str-long %b) {\n')
     b.push('entry:\n')
-    b.push('  %la = extractvalue %str-long %a, 0\n')
-    b.push('  %lb = extractvalue %str-long %b, 0\n')
+    b.push('  %la.i32 = extractvalue %str-long %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %lb.i32 = extractvalue %str-long %b, 0\n')
+    b.push('  %lb = zext i32 %lb.i32 to i64\n')
     b.push('  %total = add i64 %la, %lb\n')
     b.push('  %buf = call i8* @nolang_rc_alloc(i64 %total)\n')
     b.push('  %da = extractvalue %str-long %a, 2\n')
@@ -160,8 +170,10 @@ cg-runtime-str-concat = () (r str) {
     b.push('  %db = extractvalue %str-long %b, 2\n')
     b.push('  %dst2 = getelementptr i8, i8* %buf, i64 %la\n')
     b.push('  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst2, i8* %db, i64 %lb, i1 0)\n')
-    b.push('  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %total, 0\n')
-    b.push('  %r1 = insertvalue %str-long %r0, i64 %total, 1\n')
+    b.push('  %r0.i32 = trunc i64 %total to i32\n')
+    b.push('  %r0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %r0.i32, 0\n')
+    b.push('  %r1.i32 = trunc i64 %total to i32\n')
+    b.push('  %r1 = insertvalue %str-long %r0, i32 %r1.i32, 1\n')
     b.push('  %r2 = insertvalue %str-long %r1, i8* %buf, 2\n')
     b.push('  ret %str-long %r2\n}\n')
     r = b.str()
@@ -173,9 +185,12 @@ cg-runtime-vec-type = () (r str) {
     r = '%vec = type { i64, i64, i64 }'
 }
 
-; option-type：`?T` 的唯一表示（Go codegen.go:2938 逐字）。
+; option-type：`?T` 的唯一表示（Go emitPrelude 的 %option 逐字）。
 ; 32 字节 = 8 字节 tag + 24 字节 payload slot；slot 是 `[3 x i64]`，
-; 所以能内联 <=24 字节的载荷（i64 / %str-long 都装得下），更大的走堆上装箱。
+; 所以能内联 <=24 字节的载荷（i64 / %vec / 16B 的 %str-long 都装得下），更大的走堆上装箱。
+; ⚠️ B28：**slot 本身仍是 24B**（Go optSlotDefaultBytes = 24 未變），故 ?str 仍是 inline；
+;    但 %str-long 改成 16B 後只佔 slot 前 16 字節，**不再是 `[3 x i64]` 三欄 1:1 對應**：
+;    len/cap 以 zext i32→i64 存進 slot[0..1]、讀回時 trunc i64→i32；data 仍 ptrtoint/inttoptr。
 ; tag：0 = ok、1 = nil、2 = err。
 ; r: 結果字串
 cg-runtime-option-type = () (r str) {

@@ -56,6 +56,7 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     n = b & 127
     len = 0
     i <- [0..n): {
+        #{overflow=wrap}
         ixout59c29 = data[pos + 1 + i]: {
             ok -> it
 
@@ -65,7 +66,6 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
         len = (len << 8) | (ixout59c29)
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -137,7 +137,6 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
     }
 
     ; 印出 TBS 標頭位元組以驗證
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -153,7 +152,6 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
         }
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -169,7 +167,6 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
         }
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -236,6 +233,7 @@ x509-serial = (data []byte) (serial i64) {
     ; 讀取序號值
     val = 0
     i <- [0..int-len): {
+        #{overflow=wrap}
         ixout200c29 = data[p + 1 + adv + i]: {
             ok -> it
 
@@ -289,7 +287,6 @@ x509-rsa-e = (data []byte) (e i64) {
     ; 現在 p 指向 SubjectPublicKeyInfo（SEQUENCE，tag 48）
 
     ; 步驟 7：進入 SPKI 內容（跳過 SPKI SEQUENCE 標籤 + 長度）
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -359,6 +356,7 @@ x509-rsa-e = (data []byte) (e i64) {
     }
     val = 0
     i <- [0..exp-len): {
+        #{overflow=wrap}
         ixout310c29 = data[rsa-start + 1 + adv + i]: {
             ok -> it
 
@@ -397,7 +395,6 @@ x509-rsa-n = (data []byte) (out []byte) {
     p = der-skip(data, p)
 
     ; 進入 SPKI
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -452,7 +449,6 @@ x509-rsa-n = (data []byte) (out []byte) {
     actual-start = mod-val-start
     actual-len = mod-len
 
-    #{overflow=wrap}
     mod-len > 0 -> {
         ixout392c10 = data[mod-val-start]: {
             ok -> it
@@ -462,7 +458,6 @@ x509-rsa-n = (data []byte) (out []byte) {
 
         (ixout392c10) == 0 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -473,6 +468,7 @@ x509-rsa-n = (data []byte) (out []byte) {
                     ->
                 }
             }
+            #{overflow=wrap}
             actual-len = mod-len - 1
         }
     }
@@ -2401,7 +2397,6 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
         -> _
     }
 
-    #{overflow=wrap}
     (start < n - 1 && ixout2346c27 == 0) {
         ixout2349c30 = data[start]: {
             ok -> it
@@ -2441,7 +2436,6 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
     content-len = actual + need-pad
     content []byte = with-len(content-len)
 
-    #{overflow=wrap}
     {
         need-pad == 1 -> {
             content[0]: {
@@ -2502,7 +2496,6 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     n = 0
     (tmp != 0) {
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -3412,17 +3405,19 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
 
         sig[out-pos] = limb-byte-0
 
-        #{overflow=wrap}
         {
             out-pos > 0 -> {
+                #{overflow=wrap}
                 sig[out-pos - 1] = limb-byte-1
             }
 
             out-pos > 1 -> {
+                #{overflow=wrap}
                 sig[out-pos - 2] = limb-byte-2
             }
 
             out-pos > 2 -> {
+                #{overflow=wrap}
                 sig[out-pos - 3] = limb-byte-3
             }
         }

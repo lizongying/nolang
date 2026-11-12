@@ -308,22 +308,111 @@ v = s.to-u64()                 ; Returns ?u64
 v = s.to-f64()                 ; Returns ?f64
 ```
 
-## Automatic Length Tracking
+## Subscript Writes Are Banned (`str` 2026-11-11 / `txt` 2026-11-12)
 
-When assigning `s[i] = v`, LLVM codegen automatically updates the `len` field to `max(len, idx+1)` — no need to set it manually:
+> **`s[i] = v` is the compile error `idxwrite`** — no exception for
+> `with-cap` / `with-len` / `with-cap-len` bases. **`txt`'s `t[i] = c` is banned
+> too** (see below).
+>
+> `str`'s reason: it was the only source of "writes past the end of an allocated
+> buffer" — a len=0 buffer grew through direct stores, and writing at `i >= cap`
+> stepped outside the allocation. Codegen's `ensureStrLongBuffer` growth guard
+> existed for exactly that; after the ban the guard is unreachable from user code
+> and is kept only as defensive code.
+>
+> `txt`'s reason is different but equally disqualifying: `t[i] = c` **re-encodes
+> a code point** and writes it back, so the LENGTH changes as a side effect (it
+> appends when `i` equals the code-point count, and drops whatever does not fit
+> in 255 bytes). `txt` has no heap and no growth, but "a subscript write quietly
+> changed the length" is the same hazard.
+
+The four spellings that remain legal:
 
 ```no
-#{fmt-skip}
-s = ''
-s[0] = 72                      ; len automatically becomes 1
-s[1] = 105                     ; len automatically becomes 2
+; (1) byte-by-byte CONSTRUCTION: build in a []byte buffer, convert the whole thing back
+b []byte = with-cap-len(n, n)
+b[0] = 48
+b[i] = src.byte(i): {
+    ok -> it
 
-; Truncation (shortening): bare s.len = n is no longer supported — use slicing
-s = s.slice(0, 5)             ; code-point truncation (consistent with s[i])
-s = s.slice-bytes(0, 5)      ; byte truncation
+    -> 0
+}
+s = b.slice(0, k).to-bytes-str(); or b.to-bytes-str() for the whole buffer
+
+; (2) in-place OVERWRITE of existing content: str.fill writes one value into all
+;     len bytes, length unchanged
+s = 'hello'
+s.fill(72); 'HHHHH'
+
+; (3) the only subscript write left is place-match (gated on a READ: when
+;     i >= len it is a silent no-op — no growth, no out-of-bounds store)
+s[i]: {
+    ok -> it = v
+    -> _
+}
+
+; (4) to GROW the string: the push family (one explicit, auditable call)
+s.push("中")      ; append one code point (UTF-8 encoded)
+s.push-str('de')  ; append a string (in-place growth, byte copy)
 ```
 
-> **`str` writes are byte-level, `txt` writes are code-point level (intentional divergence)**: the `s[i] = v` above treats `v` as a single **byte** written directly into slot `i` of the underlying buffer (`len` becomes `max(len, i+1)`). For the fixed string `txt`, `t[i] = c` works on **code points**: `c` is re-encoded as UTF-8, the trailing bytes shift, it appends when `i` equals the code-point count, and bytes beyond the 255-byte cap are dropped. Both reads (`s[i]` / `t[i]`) return a code-point `char`; only the write semantics differ. To do a raw byte-level write on a `txt`, use `t.set-byte(i, b byte)` (`b` is a `byte`, returns `?bool`: nil and the write is skipped when the index exceeds the 255-byte physical capacity, `some(true)` on success; bounds are measured against physical capacity rather than `len`).
+> ⚠️ **place-match is gated on CODE POINTS, not bytes.** Its gate is the
+> `s[i]` **read**, and `str` index reads are code-point based. So (3) is only
+> right for ASCII, one-code-point-per-slot work (uuid dashes, time digits,
+> hex-table lookups). To assemble content **byte-wise** (anything `>= 0x80`, or
+> any source string that may be non-ASCII) you must use `[]byte` as in (1):
+> measured with `f = with-len(8)`, writing 224..231 through place-match lands
+> only the first 4 slots and silently skips the rest — that is exactly how
+> `path.split` truncated non-ASCII filenames.
+
+> **Truncation**: a bare `s.len = n` is no longer supported — use slicing.
+> `s.slice(0, n)` slices by **code point**, `s.slice-bytes(0, n)` slices by byte.
+> (`b.slice(0, k)` on a `[]byte` buffer is naturally a byte slice.)
+
+> **A `with-cap(n)`-built `str` now grows through `push`**: `s str = with-cap(256)`
+> is a len=0 buffer that already owns capacity, so the first `push` lands without
+> reallocating (`push-str` only reallocs when `len + appended` exceeds `cap`, and
+> then doubles). A byte-wise `buf[i] = b` store is still banned for `str`.
+
+### Growing: the `push` family (2026-11-12)
+
+With direct stores banned, **growth must be one explicit call**:
+
+| Method | Semantics |
+|---|---|
+| `s.push(c char)` | append one code point, UTF-8 encoded (delegates to `push-str`) |
+| `s.push-str(t str)` | append a string, **byte copy**, in-place growth |
+
+```no
+s = 'ab'
+s.push("中")      ; 'ab中' — len-bytes 5, len 3
+s.push-str('de')  ; 'ab中de' — len-bytes 7
+
+t = 'zz'
+t.push-str(t)     ; 'zzzz' (self-append is safe: the source is retained, then memmove'd)
+
+u = ''
+u.push-str('')    ; '' (an empty source changes nothing and allocates nothing)
+```
+
+> `push-str` is a compiler builtin (`#{buildin}`, lowered by MIR into "grow in
+> place + memmove + store the new length"), not a std loop: one append costs
+> O(appended length), and repeated appends are amortized O(1) (doubling).
+> `push` goes through UTF-8 encoding, so `len-bytes` grows by the code point's
+> encoded length while `len` always grows by 1.
+
+> **`txt` writes are banned as well (2026-11-12)**: `t[i] = c` re-encodes a code
+> point and writes it back, so the length changes as a side effect — it appends
+> when `i` equals the code-point count and silently drops whatever exceeds 255
+> bytes. `txt` grows through `t.push(c)` / `t.push-str(s)` / `t.push-txt(u)`, and
+> modifies in place through place-match. Reading `t[i]` still returns the
+> code-point `char`; that has not changed.
+>
+> The raw byte-level writers `str._set-byte` / `txt._set-byte` have been
+> **std-private** since 2026-11-11 (only `str.fill` / `txt.push` inside std call
+> them); user code cannot reach them. To assemble a `txt` byte-wise, gather a
+> `[]byte` and copy it in once with `txt.from-bytes(b)` (anything past 255 bytes
+> is truncated; the length is set from the actual byte count).
 
 ## Pre-allocation (Builtin Syntax)
 
@@ -348,12 +437,15 @@ s = with-cap-len(512, 64)       ; str, len=64, cap=512
 | `with-len(len)` | 1 | len | len | Fixed length; direct index read |
 | `with-cap-len(cap, len)` | 2 | len | cap | Known initial length + reserved growth space |
 
-> ⚠️ **Only a `with-cap` buffer may be written through a subscript.** `with-cap(n)` has
-> len=0, so byte-by-byte subscript stores (`buf[i] = b`) are the only way to grow it —
-> that is why `idxwrite` exempts it. `with-len(n)` / `with-cap-len(cap, len)` already
-> have their length in place, so **stores still require place-match
-> `buf[i]: { ok -> it = v / -> _ }` or `buf[i] ?= v`** — they are treated like any other
-> container, and a direct store is the compile error `idxwrite`.
-> (`with-len` stopped being exempt on 2026-11-10.)
+> ⚠️ **A `str` buffer never allows a direct subscript store** (since 2026-11-11,
+> `with-cap` bases are no longer exempt either). The `idxwrite` with-cap exemption
+> now only serves **`[]byte` / `[]T` / fixed arrays**: their len=0 buffers still
+> grow their length via `buf[i] = b`, and there is no equivalent spelling. For
+> `str`, switch to a `[]byte` buffer + `to-bytes-str()` (see the "Subscript Writes
+> Are Banned" section).
+> `with-len(n)` / `with-cap-len(cap, len)` already have their length in place, so
+> **stores require place-match `buf[i]: { ok -> it = v / -> _ }` or `buf[i] ?= v`**
+> — they are treated like any other container, and a direct store is the compile
+> error `idxwrite`. (`with-len` stopped being exempt on 2026-11-10.)
 
 > **Type inference**: All three builtins infer the result type from the assignment LHS, usable for `str` or `[]T` slices.

@@ -353,6 +353,17 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 		modName := ""
 		fullPath := "" // 完整點分路徑（如 bufio.reader.init）
 		if ident, ok := dot.Receiver.(*Identifier); ok {
+			// 🔴 同名局部變數優先於模組名。receiverType 為空只表示「推不出型別」
+			// （如 match 臂內 `doc = it`，`it` 型別在解析當下尚未落表），**不**
+			// 表示 `doc` 是模組名。缺這條時變數名被當成模組，命中 std 簽名表裡
+			// 恰好同名的裸鍵（noml 的 `doc.get` ⇒ `?i64`），呼叫方因此拿到與實際
+			// 接收者無關的回傳型別：
+			//   lopt = doc.get('a')      ; doc 是 yaml 值，doc.get 是 yaml.get(?yaml)
+			//   ⇒ lopt 被判為 ?i64 ⇒ ok 臂的 it 成 i64 ⇒ `it.kind()` = "unknown
+			//     callee i64.kind"（test/std/yaml.no t-seq）。
+			if p.sem.IsFuncDeclared(p.curFuncName, ident.Value) {
+				return ""
+			}
 			modName = ident.Value
 			fullPath = modName + "." + dot.Property
 		} else if innerDot, ok := dot.Receiver.(*DotExpression); ok {
@@ -652,12 +663,12 @@ func (p *Parser) indexBaseReceiverType(recv Expression) string {
 // structFieldsOf 查詢結構欄位表，容忍「鍵限定、型別裸名」的不對稱。
 //
 // p.structFields 的鍵在**模組檔案內**是模組限定的（src/std/yaml.no 的
-// `yaml-node { … }` 記為 "yaml.yaml-node"，見 decl.go:1575），而變數宣告、
-// 參數、欄位型別原文一律是**裸名**（"yaml-node"）。直接以變數型別原文查表
+// `node { … }` 記為 "yaml.node"，見 decl.go:1575），而變數宣告、
+// 參數、欄位型別原文一律是**裸名**（"node"）。直接以變數型別原文查表
 // 因此必然落空——後果不是「推斷為空」這麼無害：`?=` 的 LHS 型別推斷拿不到
 // 元素型別就不發預宣告，綁定名根本不存在，後續 `nk.kids.len()` 被當成模組
 // 命名空間呼叫（callee "nk.kids.len"）→ 落到 `str-len` 內建而報
-// 「missing receiver」（src/std/yaml.no 的 yaml-emit / yaml-json-of）。
+// 「missing receiver」（src/std/yaml.no 的 emit / json-of）。
 //
 // 查表順序：精確 → 本模組限定 → 唯一後綴匹配。後綴匹配要求唯一，避免兩個
 // 模組同名結構互相冒充。

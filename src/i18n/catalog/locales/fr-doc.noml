@@ -1003,14 +1003,14 @@ Ne diffère de decode que dans le calcul d'indice de la dernière étape, le res
 br bz-bit-reader : source de bits (peut lire 1 bit de plus par tour)
 sym i64 : valeur du symbole décodé, -1 = code illégal ou table vide
 `
-  'bzip2.bzip2-compress': `
+  'bzip2.compress': `
 Compresse des données au format bzip2
 data : données brutes ([]byte)
 out : données compressées en bzip2 ([]byte)
 Note : utilise actuellement une implémentation basique de stored block ;
 la compression complète BWT + MTF + Huffman reste à implémenter ultérieurement.
 `
-  'bzip2.bzip2-decompress': `
+  'bzip2.decompress': `
 Décompresse des données au format bzip2
 data : données compressées en bzip2 ([]byte)
 out : données décompressées ([]byte)
@@ -2866,12 +2866,12 @@ Compression DEFLATE utilisant des blocs stored
 data: données brutes ([]byte)
 out: données compressées DEFLATE ([]byte)
 `
-  'gzip.gzip-compress': `
+  'gzip.compress': `
 Compresse les données au format gzip
 data: données brutes ([]byte)
 out: données compressées en gzip ([]byte)
 `
-  'gzip.gzip-decompress': `
+  'gzip.decompress': `
 Décompresse des données au format gzip
 data: données compressées en gzip ([]byte)
 out: données décompressées ([]byte)
@@ -6316,12 +6316,12 @@ iterations i64: nombre d'itérations ; plus il est grand, plus une attaque par f
 key-len i64: longueur de clé souhaitée (octets), produite bloc par bloc de 64 octets
 Retour out []byte: clé dérivée, avec longueur exactement key-len
 `
-  'pem.pem-decode': `
+  'pem.decode': `
 Parse une chaîne au format PEM (ne prend que le premier bloc BEGIN…END de l'entrée)
 pem-str str: texte contenant au moins un bloc '-----BEGIN <label>-----' … '-----END <label>-----'
-result ?pem-block: ok=l'étiquette et la charge utile décodée, nil=marqueur manquant, échec du décodage Base64 ou contenu trop court
+result ?block: ok=l'étiquette et la charge utile décodée, nil=marqueur manquant, échec du décodage Base64 ou contenu trop court
 `
-  'pem.pem-encode': `
+  'pem.encode': `
 Encode des octets bruts en chaîne au format PEM
 label str: étiquette PEM (ex. 'CERTIFICATE', 'RSA PRIVATE KEY'), doit correspondre à BEGIN/END
 data []byte : données binaires brutes, encodées par base64.encode-std puis coupées à 64 caractères par ligne
@@ -8297,74 +8297,74 @@ sep str: le séparateur
 renvoie out str: la chaîne jointe
 
 `
-  'tar.tar-builder.add-bytes': `
+  'tar.builder.add-bytes': `
 Ajoute une entrée d'octets bruts
 name : nom de l'entrée
 content : octets du contenu de l'entrée
 typ : code de type de l'entrée (TAR-TYPE-FILE / TAR-TYPE-DIR)
 `
-  'tar.tar-builder.add-dir': `
+  'tar.builder.add-dir': `
 Ajoute une entrée de répertoire
 name : nom du répertoire (conventionnellement terminé par /, sans zone de contenu)
 `
-  'tar.tar-builder.add-file': `
+  'tar.builder.add-file': `
 Ajoute une entrée de fichier
 name : nom du fichier (écrit dans le champ name de l'en-tête)
 content : contenu du fichier (complété par des zéros après écriture pour aligner sur la frontière de 512 octets)
 `
-  'tar.tar-builder.finish': `
+  'tar.builder.finish': `
 Termine la construction, écrit la marque de fin et renvoie l'archive tar
 archive : vue lecture seule de tar contenant deux blocs de fin tous zéros
 `
-  'tar.tar-builder.pre-alloc': `
+  'tar.builder.pre-alloc': `
 Préalloue le tampon (utilise une variable locale pour push, afin d'éviter la restriction de push sur les champs de structure)
 size : nombre d'octets du tampon préalloué (complété de zéros jusqu'à cette longueur)
 `
-  'tar.tar-builder.write-header': `
+  'tar.builder.write-header': `
 Écrit un header de 512 octets (méthode interne)
 name : nom du fichier (écrit à l'offset 0 de l'en-tête)
 typ : code du caractère typeflag (48 = fichier, 53 = répertoire)
 sz : nombre d'octets du contenu (écrit en octal dans le champ size)
 `
-  'tar.tar-builder.write-octal': `
+  'tar.builder.write-octal': `
 Écrit un chiffre octal à l'offset spécifié (méthode interne)
 offset : décalage du champ dans le bloc d'en-tête courant
 width : largeur du champ (chiffres octaux alignés à droite, blancs remplis à gauche)
 val : valeur entière à encoder (un NUL est ajouté en fin de bloc)
 `
-  'tar.tar-entry.is-dir': `
+  'tar.entry.is-dir': `
 Détermine si c'est un répertoire
 yes : si cette entrée est un répertoire
 `
-  'tar.tar-entry.is-file': `
+  'tar.entry.is-file': `
 Détermine si c'est un fichier ordinaire
 yes : si cette entrée est un fichier ordinaire
 `
-  'tar.tar-entry.mode': `
+  'tar.entry.mode': `
 Lit les permissions de l'entrée
 mode : bits de permission (décodage octal)
 `
-  'tar.tar-entry.mtime': `
+  'tar.entry.mtime': `
 Lit l'heure de modification de l'entrée
 ts : heure de modification (secondes Unix, décodage octal)
 `
-  'tar.tar-entry.name': `
+  'tar.entry.name': `
 Lit le nom de fichier de l'entrée
 name : nom du fichier de cette entrée
 `
-  'tar.tar-entry.read': `
+  'tar.entry.read': `
 Extrait le contenu de l'entrée
 out : octets du contenu de l'entrée (vide pour un répertoire)
 `
-  'tar.tar-entry.size': `
+  'tar.entry.size': `
 Lit la taille du fichier de l'entrée
 sz : nombre d'octets bruts de l'entrée
 `
-  'tar.tar-entry.type': `
+  'tar.entry.type': `
 Lit le type de l'entrée
 typ : chaîne de type ("file", "dir" ou "unknown")
 `
-  'tar.tar-open-gz': `
+  'tar.open-gz': `
 Crée une vue tar à partir de données compressées gzip (.tar.gz)
 gz-data : données tar compressées en gzip ([]byte)
 archive : archive tar décompressée
@@ -9180,111 +9180,111 @@ result: ok=fichier analysé, err=message d'erreur portant la cause
 doc : le document à sérialiser
 out: texte syntaxique TOML 1.0 (émis entrée par entrée avec les en-têtes de table)
 `
-  'toml.toml-array-name': `
+  'toml.array-name': `
 Lit le nom d'un tableau de tables.
 t: l'enregistrement array-of-tables à lire
 s: le nom de cette table de tableau de tables
 `
-  'toml.toml-doc.put': `
+  'toml.put': `
 Fixe la valeur littérale TOML brute.
 value peut être un tableau, une date-heure, etc. selon la syntaxe TOML ; le module n'ajoute pas de guillemets.
 key: la clé (échoue si la clé ne peut pas être normalisée)
 value: le littéral TOML brut (stocké après validation syntaxique)
 ok: true=écriture réussie, false=clé invalide/valeur invalide/plein
 `
-  'toml.toml-entry-key': `
+  'toml.entry-key': `
 Lit la clé canonique.
-e : la toml-entry à lire
+e : la entry à lire
 s: la clé canonique de l'entrée (forme normalisée séparée par des points)
 `
-  'toml.toml-entry-key-eq': `
+  'toml.entry-key-eq': `
 Compare la clé d'une entrée avec une chaîne.
-e : la toml-entry à comparer
+e : la entry à comparer
 key: chaîne de clé à comparer
 same: si la clé de l'entrée égale key
 `
-  'toml.toml-entry-value': `
+  'toml.entry-value': `
 Lit la valeur TOML brute.
-e : la toml-entry à lire
+e : la entry à lire
 s: littéral de valeur TOML brut (non décodé)
 `
-  'toml.toml-find-eq': `
+  'toml.find-eq': `
 Trouve le premier signe égal qui n'est pas entre guillemets
 s: la ligne clé-valeur à analyser
 pos: position octet du premier '=' hors guillemets (-1 si non trouvé)
 `
-  'toml.toml-make-entry': `
+  'toml.make-entry': `
 Copie clé/valeur dans un tampon de taille fixe.
 key: chaîne de clé
 value: la chaîne de valeur
 e : la nouvelle entrée après copie de la clé/valeur dans le tampon fixe
 `
-  'toml.toml-next-array-table': `
+  'toml.next-array-table': `
 Renvoie et enregistre l'indice suivant d'un tableau de tables.
 doc : le document courant
 name: nom du array-of-tables
 idx: ok=index de cet élément (enregistrement avec auto-incrément), nil=table de même nom introuvable et capacité pleine
 `
-  'toml.toml-normalize-key': `
+  'toml.normalize-key': `
 Analyse une clé nue, entre guillemets ou pointée et émet la clé pointée canonique.
 s: texte de clé brut (bare / quoted / dotted)
 key: ok=clé normalisée en notation pointée, nil=message d'erreur pour clé invalide
 `
-  'toml.toml-parse-bool': `
+  'toml.parse-bool': `
 Analyse un booléen
 s: texte de littéral booléen (uniquement true/false)
 value: ok=le booléen, err=pas un littéral booléen
 `
-  'toml.toml-parse-f64': `
+  'toml.parse-f64': `
 Analyse un flottant
 s: texte de littéral flottant (les séparateurs soulignement retirés automatiquement)
 value: ok=la valeur numérique, err=format illégal
 `
-  'toml.toml-parse-i64': `
+  'toml.parse-i64': `
 Prend en charge les littéraux décimaux, hexadécimaux, octaux et binaires, ainsi que les séparateurs par souligné.
 s: texte de littéral entier
 value: ok=la valeur numérique, nil=texte vide, err=format illégal ou dépassement
 `
-  'toml.toml-register-table': `
+  'toml.register-table': `
 Enregistre une table définie; renvoie false quand elle est définie deux fois.
 doc : le document d'enregistrement
 name: nom de la table
 ok: true=première définition, false=définition dupliquée
 `
-  'toml.toml-resolve-section': `
+  'toml.resolve-section': `
 Résout une sous-table d'un tableau de tables sur l'élément le plus récent.
 doc : le document courant
 name: nom du paragraphe à analyser
 resolved: réécrit en base[indice].suffixe quand la clé est une sous-clé array-of-tables, renvoyé tel quel sinon
 `
-  'toml.toml-strip-comment': `
+  'toml.strip-comment': `
 Supprime les commentaires # hors des chaînes et rogne; les chaînes multilignes sont prises en charge.
 s: texte de ligne brut (gère le # dans les chaînes multilignes)
 out: contenu après retrait des commentaires hors chaîne et trim
 `
-  'toml.toml-table-eq': `
+  'toml.table-eq': `
 Compare des noms de table conservés dans des tampons de taille fixe.
 name: tampon fixe contenant le nom de la table
 name-len: longueur réelle en octets du nom
 s: le nom de table à comparer
 same: si les deux sont identiques octet par octet
 `
-  'toml.toml-table-name': `
+  'toml.table-name': `
 Lit un nom de table.
 t: la table à lire
 s: nom de la table
 `
-  'toml.toml-unquote': `
+  'toml.unquote': `
 Décode une chaîne TOML basique ou littérale
 raw: la chaîne brute avec guillemets
 value: ok=le contenu décodé, nil=pas un littéral chaîne, err=guillemets/échappement illégaux
 `
-  'toml.toml-valid-value': `
+  'toml.valid-value': `
 Accepte les scalaires, tableaux, tables en ligne et littéraux de date/heure de TOML 1.0.
 raw: texte brut de la valeur
 valid: si la syntaxe des littéraux TOML 1.0 est conforme
 `
-  'toml.toml-value-complete': `
+  'toml.value-complete': `
 Détermine si la valeur est fermée ; sert aux tableaux multilignes, tables inline et chaînes multilignes.
 raw: texte brut de la valeur
 complete : si guillemets/parenthèses sont fermés (décide la fin d'une valeur multiligne)
@@ -10816,14 +10816,14 @@ data : flux LZMA2 contenant les octets de contrôle
 start-pos : décalage initial du flux
 out : flux d'octets en clair décompressé (paramètre de sortie nommé, livré en une fois en fin de fonction)
 `
-  'xz.xz-compress': `
+  'xz.compress': `
 Compresse des données au format xz (implémentation de base)
 data : données brutes ([]byte)
 out : données compressées en xz ([]byte)
 Note : utilise actuellement une implémentation de base à bloc stocké (stored block),
 la compression LZMA2 complète reste à implémenter ultérieurement.
 `
-  'xz.xz-decompress': `
+  'xz.decompress': `
 Format .xz :
 - En-tête de flux : 6 octets de magie + 2 octets d'attributs de flux
 - Blocs : En-tête de bloc + Données compressées + Remplissage de bloc + Contrôle
@@ -11051,13 +11051,13 @@ Obtient le nœud de valeur de la i-ème clé du mapping
 i: numéro de paire clé/valeur (à partir de 0)
 out: nœud de valeur de la i-ème paire clé (nil=hors plage ou pas un mapping)
 `
-  'yaml.yaml-apply-tag': `
+  'yaml.apply-tag': `
 Détermine le type de nœud par la balise explicite
 tag: nom d'étiquette normalisé
 kind: sorte de nœud déduite du contenu
 k: type final après écrasement par l'étiquette (le kind d'origine est renvoyé si l'étiquette est inconnue)
 `
-  'yaml.yaml-emit': `
+  'yaml.emit': `
 Émet un nœud en YAML style bloc (sans saut de ligne final)
 pool: la pool de nœuds
 idx: index du nœud à émettre
@@ -11065,68 +11065,68 @@ indent: nombre d'espaces par niveau d'indentation
 depth : profondeur d'imbrication courante
 out: texte YAML de style bloc (sans saut de ligne final)
 `
-  'yaml.yaml-f-is-inf': `
+  'yaml.f-is-inf': `
 On n'utilise pas la comparaison par littéral : les littéraux numériques Nolang ne supportent pas les exposants (`1e308` est coupé en `1` + `e308`).
 Le critère d'infini est « non nul et invariable après division par deux » ; on exclut d'abord NaN avec `x != x`.
 x: la valeur f64 à détecter
 yes: x est l'infini positif/négatif (non nul et inchangé après division par deux)
 `
-  'yaml.yaml-f-is-nan': `
+  'yaml.f-is-nan': `
 Si le flottant est NaN (NaN != NaN)
 On n'utilise pas `float.is-nan` : les appels à récepteur dans le module ne résolvent pas cette méthode dans le backend MIR.
 x: la valeur f64 à détecter
 yes: x est NaN (le critère NaN != NaN)
 `
-  'yaml.yaml-hex-char': `
+  'yaml.hex-char': `
 Convertit un unique chiffre hex (0-15) en caractère
 v: la valeur numérique d'un chiffre hex, 0-15
 ch : le caractère hexadécimal correspondant ('0'-'f')
 `
-  'yaml.yaml-hex-digit': `
+  'yaml.hex-digit': `
 Convertit un caractère hex en sa valeur ; les non-hex renvoient -1
 c : code ASCII du caractère
 d : la valeur 0-15 représentée par ce chiffre hex (-1=caractère hex invalide)
 `
-  'yaml.yaml-inf': `
+  'yaml.inf': `
 Infini positif
 v: la valeur d'infini positif
 `
-  'yaml.yaml-json-escape': `
+  'yaml.json-escape': `
 Échappement des chaînes JSON
 s: la chaîne brute
 out: chaîne JSON échappée (avec les guillemets doubles englobants)
 `
-  'yaml.yaml-json-of': `
+  'yaml.json-of': `
 Convertit un nœud en JSON
 pool: la pool de nœuds
 idx: index du nœud à convertir
 depth : profondeur de récursion restante (évite les cycles d'alias)
 out: le texte JSON correspondant à ce nœud
 `
-  'yaml.yaml-key-eq': `
+  'yaml.key-eq': `
 Si deux nœuds clés sont équivalents (compare les textes scalaires)
 a : nœud-clé a
 b : nœud-clé b
 yes: les textes bruts scalaires des deux nœuds sont égaux
 `
-  'yaml.yaml-key-text-eq': `
+  'yaml.key-text-eq': `
 Si le texte de la clé scalaire est égal à la chaîne donnée
 nd: nœud à comparer (son texte scalaire est pris)
 key: texte cible
 yes: le texte brut du scalaire de nd est égal à key
 `
-  'yaml.yaml-nan': `
+  'yaml.nan': `
 Doit passer par la division à l'exécution : le pliage de constantes calcule `0.0 / 0.0` directement comme 0.
 Passer par une variable locale évite le pliage et obtient un vrai NaN (`x != x` est vrai).
 v: la valeur NaN (produite à l'exécution par 0.0/0.0, pas plié en constant)
 `
-  'yaml.yaml-node-is-nan': `
-le fval de `.nan` est rempli par yaml-nan() avec un vrai NaN, donc jugé par valeur (NaN != NaN).
+  'yaml.node-is-nan': `
+le fval de `.nan` est rempli par nan() avec un vrai NaN, donc jugé par valeur (NaN != NaN).
 Le test du texte brut du nœud sert de repli : des chemins comme la réécriture de balise peuvent ne changer que text sans recalculer fval.
 nd: nœud à inspecter
 yes: le nœud est .nan
 `
-  'yaml.yaml-parse-radix': `
+  'yaml.parse-radix': `
 Parse un entier en base radix (ignore _)
 t: texte contenant des chiffres
 start: offset de départ du nombre
@@ -11134,72 +11134,72 @@ radix: base de numération (2/8/16)
 kind: succès=YAML-KIND-INT, échec=YAML-KIND-STR
 v: la valeur entière issue de la conversion
 `
-  'yaml.yaml-parser.advance': 'Avance d\'un octet'
-  'yaml.yaml-parser.anchor-id': `
+  'yaml.parser.advance': 'Avance d\'un octet'
+  'yaml.parser.anchor-id': `
 Cherche une ancre, renvoie -1 si elle n'est pas trouvée
 name: nom de l'ancre
 idx: index du nœud correspondant (-1=non enregistré)
 `
-  'yaml.yaml-parser.at': `
+  'yaml.parser.at': `
 L'octet décalé de k par rapport à la position actuelle
 k: décalage relatif à la position courante (hors bornes traité comme 0)
 c : valeur de l'octet à pos+k
 `
-  'yaml.yaml-parser.at-doc-marker': `
+  'yaml.parser.at-doc-marker': `
 Si la position actuelle est --- (1) ou ... (2)
 which: 1='---', 2='...', 0=pas un marqueur de document
 `
-  'yaml.yaml-parser.at-eol': `
+  'yaml.parser.at-eol': `
 S'il est en fin de ligne (EOF inclus)
 yes: l'octet courant est \n ou la fin de l'entrée est atteinte
 `
-  'yaml.yaml-parser.byte-at': `
+  'yaml.parser.byte-at': `
 Renvoie src[i], ou 0 hors bornes
 i: index cible
 c : valeur de l'octet à cette position (0 hors limites)
 `
-  'yaml.yaml-parser.cur': `
+  'yaml.parser.cur': `
 L'octet actuel
 c : octet pointé par pos actuellement (0 à EOF)
 `
-  'yaml.yaml-parser.eof': `
+  'yaml.parser.eof': `
 S'il a atteint la fin de l'entrée
 yes: pos a atteint la fin de l'entrée
 `
-  'yaml.yaml-parser.fail': `
+  'yaml.parser.fail': `
 Enregistre une erreur de parse
 msg: description de l'erreur (stockée dans le message d'erreur de l'analyseur)
 `
-  'yaml.yaml-parser.fail-at': `
+  'yaml.parser.fail-at': `
 Enregistre une erreur de parse avec position
 msg: description de l'erreur (position courante ajoutée automatiquement)
 `
-  'yaml.yaml-parser.indent-at': `
+  'yaml.parser.indent-at': `
 Saute les espaces de début de ligne avant de compter : les points d'appel suivent presque toujours skip-blank-lines() directement,
 Ici pos reste en début de ligne (colonne 0), une soustraction directe donne toujours 0 et les blocs imbriqués sont jugés « sans indentation ».
 Après saut, pos s'arrête au premier caractère non espace ; les suivants is-seq-dash / looks-like-map-entry /
 at-doc-marker a aussi besoin de cette position.
 ind: nombre d'espaces avant le premier caractère non espace en début de ligne courante
 `
-  'yaml.yaml-parser.is-seq-dash': `
+  'yaml.parser.is-seq-dash': `
 Si la position actuelle est l'indicateur d'item de séquence '- '
 yes: la position courante est un indicateur d'élément de séquence ('- ' ou '-' en fin de ligne)
 `
-  'yaml.yaml-parser.line-end-of': `
+  'yaml.parser.line-end-of': `
 Renvoie le décalage de fin de ligne de la ligne contenant i (pointant le saut de ligne ou n)
 i: tout décalage octet dans la ligne cible
 le: décalage de fin de ligne (pointe sur le saut de ligne ; égal à la longueur de l'entrée s'il n'y en a pas)
 `
-  'yaml.yaml-parser.line-start-of': `
+  'yaml.parser.line-start-of': `
 Renvoie le décalage de début de la ligne contenant i
 i: tout décalage octet dans la ligne cible
 ls: décalage octet du début de la ligne contenant i
 `
-  'yaml.yaml-parser.looks-like-map-entry': `
+  'yaml.parser.looks-like-map-entry': `
 Si cette ligne contient un ': ' de niveau supérieur, un ':' en fin de ligne ou une clé explicite '? '
 yes: cette ligne a un indicateur de clé de mapping et peut être traitée comme entrée de mapping
 `
-  'yaml.yaml-parser.merge-into': `
+  'yaml.parser.merge-into': `
 Fusionne le traitement de la clé << (supporte les mappings ou séquences de mappings)
 keys: liste des indices de nœuds clés du mapping cible
 vals: la liste des indices de nœuds de valeur du mapping cible
@@ -11207,7 +11207,7 @@ src: index du nœud de valeur de la clé de fusion (<<) (un MAP ou une séquence
 ok-keys: liste des clés après fusion
 ok-vals: liste des valeurs après fusion
 `
-  'yaml.yaml-parser.merge-one': `
+  'yaml.parser.merge-one': `
 Fusionne les entrées d'un mapping dans keys/vals (sans écraser les clés existantes)
 Note : le backend MIR n'autorise pas à move un vec d'entrée directement dans un autre vec (protection emprunt/propriété),
 Ainsi on copie élément par élément, et non ok-keys = keys.
@@ -11217,93 +11217,93 @@ src: index du nœud de mappage à fusionner (doit être de genre MAP)
 ok-keys: liste des clés après fusion (les clés existantes sont conservées en priorité)
 ok-vals: liste des valeurs après fusion
 `
-  'yaml.yaml-parser.newline': `
+  'yaml.parser.newline': `
 Consomme un saut de ligne (\n ou \r\n)
 yes: un saut de ligne consommé ; false=pas sur un saut, position inchangée
 `
-  'yaml.yaml-parser.parse-alias': `
+  'yaml.parser.parse-alias': `
 Analyse l'alias *name
 idx: index du nœud visé par l'alias (-1=ancre absente, erreur déjà enregistrée)
 `
-  'yaml.yaml-parser.parse-block': `
+  'yaml.parser.parse-block': `
 Parse un nœud de contexte bloc (la position actuelle est la colonne de départ du nœud)
 indent: colonne de départ du nœud
 cont-min : le retrait de continuation minimal passé aux nœuds fils
 idx: index de pool du nœud analysé
 `
-  'yaml.yaml-parser.parse-block-indented': `
+  'yaml.parser.parse-block-indented': `
 Parse les lignes suivantes plus indentées comme la valeur
 parent-indent: colonne d'indentation de la ligne de clé parent (les lignes suivantes doivent être plus profondes pour compter comme valeurs)
 idx: index de pool du nœud de valeur analysé
 `
-  'yaml.yaml-parser.parse-block-map': `
+  'yaml.parser.parse-block-map': `
 Parse un mapping bloc
 indent: colonne d'indentation de la clé de mapping (base pour les clés de même niveau et le retour en arrière)
 idx: index de pool du nouveau nœud mapping
 `
-  'yaml.yaml-parser.parse-block-scalar': `
+  'yaml.parser.parse-block-scalar': `
 Parse les scalaires bloc | et >
 cont-min : colonne de retrait que le contenu du bloc doit atteindre (fourni par le contexte appelant)
 idx: index de pool du nouveau nœud scalaire de bloc
 `
-  'yaml.yaml-parser.parse-block-seq': `
+  'yaml.parser.parse-block-seq': `
 Parse une séquence bloc
 indent: colonne d'indentation de l'élément de séquence '-' (base pour les items de même niveau et le retour en arrière)
 idx: index de pool du nouveau nœud séquence
 `
-  'yaml.yaml-parser.parse-docs': `
+  'yaml.parser.parse-docs': `
 Parse tous les documents
 roots: liste d'indices de pool des nœuds racine de chaque document
 `
-  'yaml.yaml-parser.parse-document': `
+  'yaml.parser.parse-document': `
 Parse un document et renvoie l'indice du nœud racine
 idx: index de pool du nœud racine de ce document (-1=échec d'analyse)
 `
-  'yaml.yaml-parser.parse-double': `
+  'yaml.parser.parse-double': `
 Parse un scalaire entre guillemets doubles
 idx: index de pool du nouveau nœud scalaire (échappements déjà traités)
 `
-  'yaml.yaml-parser.parse-flow-map': `
+  'yaml.parser.parse-flow-map': `
 Analyse {k: v, ...}
 idx: index de pool du nouveau nœud mapping
 `
-  'yaml.yaml-parser.parse-flow-node': `
+  'yaml.parser.parse-flow-node': `
 Parse un nœud de contexte flux
 cont-min : le retrait de continuation minimal passé à l'analyse des scalaires imbriqués
 key-mode: true=analyser en position de clé
 flow: true=contexte de flux
 idx: index de pool du nœud analysé
 `
-  'yaml.yaml-parser.parse-flow-seq': `
+  'yaml.parser.parse-flow-seq': `
 Analyse [a, b, ...]
 idx: index de pool du nouveau nœud séquence
 `
-  'yaml.yaml-parser.parse-plain': `
+  'yaml.parser.parse-plain': `
 Parse un scalaire plain (pliage multiligne inclus)
 cont-min : colonne de retrait minimale pour les continuations repliées multilignes (0=pas de continuation interligne)
 key-mode: true=analyser comme clé de mapping, termine devant les indicateurs tels que ': '
 flow: true=contexte de flux (',' '}' ']' terminent aussi)
 idx: index de pool du nouveau nœud scalaire
 `
-  'yaml.yaml-parser.parse-props': `
+  'yaml.parser.parse-props': `
 Parse l'ancre et la balise du préfixe de nœud (dans n'importe quel ordre)
 tag: l'étiquette lue (chaîne vide=aucune)
 anchor : nom de l'ancre lue (vide = aucune ; non vide déjà enregistrée dans la table d'ancres)
 `
-  'yaml.yaml-parser.parse-single': `
+  'yaml.parser.parse-single': `
 Parse un scalaire entre guillemets simples
 idx: index de pool du nouveau nœud scalaire
 `
-  'yaml.yaml-parser.push-node': `
+  'yaml.parser.push-node': `
 Ajoute un nœud et renvoie son indice
 nd: nœud à ajouter
 idx: index de ce nœud dans le pool de nœuds
 `
-  'yaml.yaml-parser.push-null': `
+  'yaml.parser.push-null': `
 Ajoute un nœud vide (null)
 idx: index de pool du nouveau nœud null
 `
-  'yaml.yaml-parser.push-scalar': `
+  'yaml.parser.push-scalar': `
 Construit un nœud scalaire à partir du style et de l'étiquette
 text: texte scalaire
 style: style scalaire (constantes YAML-STYLE-*)
@@ -11311,46 +11311,46 @@ tag: étiquette explicite (vide=type inféré par le schéma core)
 anchor : nom de l'ancre (vide = aucune)
 idx: index de pool du nouveau nœud
 `
-  'yaml.yaml-parser.read-line-content': `
+  'yaml.parser.read-line-content': `
 Lit de la position actuelle à la fin de ligne (blancs de fin et commentaires retirés)
 out: texte jusqu'à la fin de ligne (espaces de fin et commentaires # retirés)
 `
-  'yaml.yaml-parser.read-tag': `
+  'yaml.parser.read-tag': `
 Lit une balise (!!name / !name / !<verbatim> / !)
 out: étiquette complète (avec le préfixe ! ; un ! seul renvoie ';!')
 `
-  'yaml.yaml-parser.read-token': `
+  'yaml.parser.read-token': `
 Lit un jeton nu sans séparateur
 out: le jeton brut lu (s'arrête sur espace/indicateur)
 `
-  'yaml.yaml-parser.register-anchor': `
+  'yaml.parser.register-anchor': `
 Enregistre une ancre
 name: nom de l'ancre
 idx: index du nœud visé par l'ancre
 `
-  'yaml.yaml-parser.set-props': `
+  'yaml.parser.set-props': `
 Attache balise et ancre au nœud (et enregistre l'ancre)
 idx: index cible dans le pool de nœuds
 tag: étiquette explicite (chaîne vide=aucune)
 anchor : nom de l'ancre (vide = aucune ; enregistré aussi si non vide)
 `
-  'yaml.yaml-parser.skip-blank-lines': 'Saute les lignes vides et les commentaires de ligne entière, s\'arrêtant au début du contenu de la ligne suivante'
-  'yaml.yaml-parser.skip-doc-preamble': 'Saute les lignes vides, les commentaires et les lignes de directive'
-  'yaml.yaml-parser.skip-flow-ws': 'Les blancs du contexte de flux — espaces en ligne, sauts de ligne et commentaires'
-  'yaml.yaml-parser.skip-spaces': 'Saute les espaces et tabulations en ligne'
-  'yaml.yaml-parser.skip-to-doc-boundary': 'Saute le reste du document courant et s\'arrête au prochain --- ou en fin d\'entrée'
-  'yaml.yaml-parser.skip-to-eol': 'Saute les blancs de fin et les commentaires de ligne (sans consommer le saut de ligne)'
-  'yaml.yaml-plain-safe': `
+  'yaml.parser.skip-blank-lines': 'Saute les lignes vides et les commentaires de ligne entière, s\'arrêtant au début du contenu de la ligne suivante'
+  'yaml.parser.skip-doc-preamble': 'Saute les lignes vides, les commentaires et les lignes de directive'
+  'yaml.parser.skip-flow-ws': 'Les blancs du contexte de flux — espaces en ligne, sauts de ligne et commentaires'
+  'yaml.parser.skip-spaces': 'Saute les espaces et tabulations en ligne'
+  'yaml.parser.skip-to-doc-boundary': 'Saute le reste du document courant et s\'arrête au prochain --- ou en fin d\'entrée'
+  'yaml.parser.skip-to-eol': 'Saute les blancs de fin et les commentaires de ligne (sans consommer le saut de ligne)'
+  'yaml.plain-safe': `
 Si le texte peut être émis tel quel comme scalaire plain
 s: le texte à émettre
 yes: peut être émis tel quel en scalaire plain (sans guillemets)
 `
-  'yaml.yaml-quote': `
+  'yaml.quote': `
 Émet un scalaire YAML entre guillemets doubles
 s: le texte brut
 out: texte scalaire YAML entre guillemets doubles et échappé
 `
-  'yaml.yaml-resolve-plain': `
+  'yaml.resolve-plain': `
 Infère le type du scalaire plain selon le schéma core
 text: texte brut du scalaire plain
 kind: sorte de nœud déduite (null/bool/int/float/str etc.)
@@ -11358,12 +11358,12 @@ ival: valeur entière quand kind=INT
 fval: valeur flottante quand kind=FLOAT
 bval : valeur booléenne quand kind=BOOL
 `
-  'yaml.yaml-scalar-repr': `
+  'yaml.scalar-repr': `
 La représentation YAML du scalaire
 nd: nœud scalaire
 out: texte de représentation YAML choisi selon le genre et le style
 `
-  'yaml.yaml-scan-number': `
+  'yaml.scan-number': `
 Tente de parser le texte comme entier ou flottant
 Renvoie kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR (pas un nombre)
 t: texte scalaire
@@ -11371,12 +11371,12 @@ kind: sorte numérique reconnue (INT/FLOAT/STR)
 ival: valeur entière quand kind=INT
 fval: valeur flottante quand kind=FLOAT
 `
-  'yaml.yaml-spaces': `
+  'yaml.spaces': `
 Génère n espaces
 n: nombre d'espaces
 out: une chaîne de n espaces
 `
-  'yaml.yaml-str-at': `
+  'yaml.str-at': `
 Pourquoi cet helper est nécessaire : `arr[i]` (arr étant []str) renvoie option<str> par défaut,
 tandis que le backend MIR émet un IR invalide quand option<str> sert d'argument d'appel / récepteur de méthode
 (%option_str ne correspond pas à %str-long). La concaténation de chaînes dépaquette automatiquement l'option,
@@ -11385,22 +11385,22 @@ a : tableau de chaînes cible
 i: index de l'élément
 out: valeur du i-ème élément (chaîne vide si hors plage)
 `
-  'yaml.yaml-tag-name': `
+  'yaml.tag-name': `
 Normalise le nom de balise (!!str / tag:yaml.org,2002:str → str)
 tag: l'étiquette brute (notations comme !!str / tag:yaml.org,2002:str)
 name: nom court de balise normalisé (str/int/seq...)
 `
-  'yaml.yaml-to-f64': `
+  'yaml.to-f64': `
 Convertit le texte en f64 (renvoyer nil signifie un échec)
 t: texte de chiffres
 v: le résultat de conversion (nil=ne peut être analysé en f64)
 `
-  'yaml.yaml-to-i64': `
+  'yaml.to-i64': `
 Convertit le texte en i64, renvoie -1 en cas d'échec
 s: texte entier
 v: la valeur convertie (-1=conversion échouée)
 `
-  'yaml.yaml-unescape-double': `
+  'yaml.unescape-double': `
 Traite les séquences d'échappement dans les guillemets doubles
 body : contenu de la chaîne entre guillemets doubles (séquences d'échappement comprises)
 out: texte déséchappé (nil=contient des échappements illégaux)
@@ -11417,56 +11417,56 @@ data : tableau d'octets du fichier ZIP
 off : position initiale de lecture (0-based)
 v : entier non signé little-endian de 4 octets (0 ~ 2^32-1)
 `
-  'zip.zip-entry.compressed-size': `
+  'zip.entry.compressed-size': `
 Lit la taille compressée de l'entrée
 csz : nombre d'octets après compression
 `
-  'zip.zip-entry.extract': `
+  'zip.entry.extract': `
 Extrait le contenu de l'entrée (stored et deflate)
 out : octets bruts décompressés (stored copié directement, deflate auto-inflaté)
 `
-  'zip.zip-entry.method': `
+  'zip.entry.method': `
 Lit la méthode de compression de l'entrée (0 = stored, 8 = deflate)
 method : méthode de compression (0 = stored, 8 = deflate)
 `
-  'zip.zip-entry.name': `
+  'zip.entry.name': `
 Lit le nom de fichier de l'entrée
 name : nom du fichier de cette entrée
 `
-  'zip.zip-entry.size': `
+  'zip.entry.size': `
 Lit la taille brute de l'entrée
 sz : nombre d'octets bruts avant compression
 `
-  'zip.zip-writer.add-dir': `
+  'zip.writer.add-dir': `
 Ajoute une entrée de répertoire
 name : nom du répertoire (un / final est ajouté automatiquement s'il manque)
 `
-  'zip.zip-writer.add-file': `
+  'zip.writer.add-file': `
 Ajoute un fichier à l'archive (calcule automatiquement le CRC32)
 name : nom de chemin stocké dans l'archive
 content : contenu du fichier (stocké tel quel en mode stored, CRC32 calculé automatiquement)
 `
-  'zip.zip-writer.cd-put': `
+  'zip.writer.cd-put': `
 Ajoute un octet à cd-data
 b : valeur de l'octet à ajouter (les 8 bits de poids faible écrits dans le tampon du répertoire central)
 `
-  'zip.zip-writer.cd-write-u16': `
+  'zip.writer.cd-write-u16': `
 Écrit un entier little-endian de 2 octets dans le répertoire central
 v : entier à écrire (les 16 bits de poids faible ajoutés en little-endian au tampon du répertoire central)
 `
-  'zip.zip-writer.cd-write-u32': `
+  'zip.writer.cd-write-u32': `
 Écrit un entier little-endian de 4 octets dans le répertoire central
 v : entier à écrire (les 32 bits de poids faible ajoutés en little-endian au tampon du répertoire central)
 `
-  'zip.zip-writer.finalize': `
+  'zip.writer.finalize': `
 Écrit le répertoire central et l'EOCD, renvoie les données d'archive complètes
 out : octets d'archive ZIP complets (données locales + répertoire central + EOCD)
 `
-  'zip.zip-writer.put': `
+  'zip.writer.put': `
 Ajoute un octet à data (via une variable locale pour prendre en charge push)
 b : valeur de l'octet à ajouter (les 8 bits de poids faible écrits dans la zone de données locale)
 `
-  'zip.zip-writer.write-cd-entry': `
+  'zip.writer.write-cd-entry': `
 Écrit une entrée de répertoire central
 name : nom du fichier
 offset : décalage initial de l'en-tête de fichier local de cette entrée
@@ -11474,22 +11474,22 @@ size : taille avant compression
 compressed-size : taille après compression
 crc : valeur de contrôle CRC32 du contenu
 `
-  'zip.zip-writer.write-eocd': `
+  'zip.writer.write-eocd': `
 Écrit le dossier de fin (End of Central Directory)
 cd-offset : décalage initial du répertoire central
 cd-size : nombre total d'octets du répertoire central
 `
-  'zip.zip-writer.write-local-file': `
+  'zip.writer.write-local-file': `
 Écrit l'en-tête et le contenu du fichier local
 name : nom du fichier (écrit dans l'en-tête et la zone de données)
 content : contenu du fichier (non compressé, écrit stored tel quel)
 crc : valeur de contrôle CRC32 du contenu
 `
-  'zip.zip-writer.write-u16': `
+  'zip.writer.write-u16': `
 Écrit un entier little-endian de 2 octets
 v : entier à écrire (les 16 bits de poids faible ajoutés en little-endian)
 `
-  'zip.zip-writer.write-u32': `
+  'zip.writer.write-u32': `
 Écrit un entier little-endian de 4 octets
 v : entier à écrire (les 32 bits de poids faible ajoutés en little-endian)
 `
@@ -11505,7 +11505,7 @@ count : nombre total d'entrées (0 si l'archive est endommagée)
   'zip.zip.entry': `
 Obtient la idx-ième entrée
 idx : numéro d'entrée
-e : poignée zip-entry liée au décalage de cette entrée (puis lire les champs via ses méthodes)
+e : poignée entry liée au décalage de cette entrée (puis lire les champs via ses méthodes)
 `
   'zip.zip.entry-off': `
 Décalage de l'entrée de répertoire central idx-ième
@@ -11633,14 +11633,14 @@ Décode un symbole
 br : lecteur de bits lisant les bits du code (le mot de code est assemblé bit par bit depuis le bout MSB)
 sym : valeur de symbole décodée ; renvoie 0 si aucun code n'est atteint dans la longueur de code maximale
 `
-  'zstd.zstd-compress': `
+  'zstd.compress': `
 Compresse des données au format zstd (implémentation de base)
 data : données brutes ([]byte)
 out : données compressées en zstd ([]byte)
 Note : utilise actuellement une implémentation de base à bloc brut (raw block),
 la compression FSE + Huffman + LZ77 complète reste à implémenter ultérieurement.
 `
-  'zstd.zstd-decompress': `
+  'zstd.decompress': `
 Décompresse des données au format Zstandard
 data : données compressées zstd ([]byte)
 out : données décompressées ([]byte)

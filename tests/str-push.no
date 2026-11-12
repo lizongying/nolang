@@ -1,0 +1,108 @@
+; str-push.no — `str.push` / `str.push-str` 的端到端断言
+;
+; 背景：`s[i] = v` 自 2026-11-11 起全域禁用（索引写会隐式改变长度），
+; `str` 唯一的**显式**增长入口就是这两个方法：
+;   s.push(c char)     按码点追加（UTF-8 编码，委托给 push-str）
+;   s.push-str(s str)  按位元组追加（原地扩容，编译器内建）
+;
+; 本档钉住的是**语义**（stdout + 计数），IR 形态由 src/mir/str_push_test.go 钉。
+; 两边都要有：IR 测试防「std 空 body 静默 no-op」，这里防「实现了但算错」。
+;
+; 运行：no run tests/str-push.no < /dev/null
+
+; 每次 `no run` 都应输出纯 ok 行；任何 FAIL 行都代表回归。
+; ⚠️ 刻意不在这里维护 passed/failed 计数器：函数体里的 `passed = passed + 1` 会
+; 声明一个**局部**同名变量，顶层计数永远不动（同一陷阱见 AGENTS 的顶层脚本说明）。
+; 断言结果直接进 stdout，由 golden 指纹比对。
+ck = (label str, cond bool) {
+    ! cond -> print('FAIL', label)
+
+    cond -> print('ok', label)
+}
+
+; ── 1) 从字面量起手（cap == len，第一次追加必然触发扩容）──
+a str = 'ab'
+a.push-str('cd')
+ck('literal-append', a == 'abcd')
+ck('literal-len-bytes', a.len-bytes() == 4)
+ck('literal-len', a.len() == 4)
+
+; ── 2) 空 str 起手（data == null，走 alloc 分支）──
+b str = ''
+b.push-str('xyz')
+ck('empty-receiver', b == 'xyz')
+ck('empty-receiver-len', b.len-bytes() == 3)
+
+; ── 3) 空源：不追加、也不分配 ──
+c str = ''
+c.push-str('')
+ck('empty-source-stays-empty', c.len-bytes() == 0)
+
+d str = 'keep'
+d.push-str('')
+ck('empty-source-keeps-value', d == 'keep')
+ck('empty-source-keeps-len', d.len-bytes() == 4)
+
+; ── 4) 自我追加：源与接收者是同一块缓冲，必须靠 retain + memmove 活下来 ──
+e str = 'zz'
+e.push-str(e)
+ck('self-append', e == 'zzzz')
+ck('self-append-len', e.len-bytes() == 4)
+
+; 再来一次（此时走「容量够」的分支，同一块缓冲、无扩容）
+e.push-str(e)
+ck('self-append-again', e == 'zzzzzzzz')
+ck('self-append-again-len', e.len-bytes() == 8)
+
+; ── 5) 多字节码点：len-bytes 增 3，len 增 1 ──
+f str = ''
+f.push("中")
+ck('cp-multibyte-value', f == '中')
+ck('cp-multibyte-len-bytes', f.len-bytes() == 3)
+ck('cp-multibyte-len', f.len() == 1)
+
+f.push("文")
+ck('cp-multibyte-twice', f == '中文')
+ck('cp-multibyte-twice-bytes', f.len-bytes() == 6)
+ck('cp-multibyte-twice-len', f.len() == 2)
+
+; ── 6) 跨多次 realloc：2000 次单字节追加 ──
+g str = ''
+i <- [0..2000): {
+    g.push("x")
+}
+ck('many-push-len', g.len-bytes() == 2000)
+ck('many-push-value', g.len() == 2000)
+ck('many-push-head', g.byte(0) == 120)
+
+; ── 7) 结构体字段接收者：写回必须落在字段本身，而不是一份副本 ──
+box {
+    s str
+}
+p = box{
+    s: 'hi'
+}
+p.s.push-str('!')
+ck('struct-field-writeback', p.s == 'hi!')
+ck('struct-field-len', p.s.len-bytes() == 3)
+
+; ── 8) 借用视图接收者：必须 COW，不能污染原串 ──
+src str = 'abcdef'
+v str = src[0..2]
+v.push-str('XY')
+ck('view-receiver-value', v == 'abcXY')
+ck('view-receiver-len', v.len-bytes() == 5)
+ck('view-source-intact', src == 'abcdef')
+ck('view-source-len', src.len-bytes() == 6)
+
+; ── 9) 切片当源：按位元组追加，源不受影响 ──
+base str = 'ABCDEF'
+sv str = base[1..3]
+acc str = '>'
+acc.push-str(sv)
+ck('slice-source-value', acc == '>BCD')
+ck('slice-source-len', acc.len-bytes() == 4)
+ck('slice-source-intact', base == 'ABCDEF')
+
+print('---')
+print('str-push done')

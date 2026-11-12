@@ -128,7 +128,6 @@ regexp.emit = (op i64, arg1 i64, arg2 i64) {
 
         .arg2[.n] ?= arg2
 
-        #{overflow=wrap}
         .n = .n + 1: {
             ok -> it
 
@@ -285,7 +284,6 @@ regexp.alloc-class = () (cls-idx i64) {
         return
     }
 
-    #{overflow=wrap}
     .ncls = .ncls + 1: {
         ok -> it
 
@@ -490,7 +488,6 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
     c == 46 -> {
         .tmp-atom-type = RE-OP-ANY
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -519,7 +516,6 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-CHAR
         .tmp-atom-char = c
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -550,7 +546,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
     n = pattern.len-bytes()
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -565,7 +560,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     ; 檢查反向 ^
     negated = 0
 
-    #{overflow=wrap}
     ri < n -> {
         pattern[ri] == 94 -> {
             negated = 1
@@ -589,10 +583,8 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         c char = pattern[ri]
 
         ; 結束（非首字元）
-        #{overflow=wrap}
         c == 93 && first == 0 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -643,13 +635,11 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             }
         }
 
-        #{overflow=wrap}
         is-range == 0 -> {
 
             ; 跳脫序列
             c == 92 -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -686,7 +676,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     }
 
     ; 反向
-    #{overflow=wrap}
     negated == 1 -> {
 
         #{overflow=wrap}
@@ -725,7 +714,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
 
     n = pattern.len-bytes()
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -745,7 +733,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c char = pattern[ri]
 
     ; \d — 數字
-    #{overflow=wrap}
     c == 100 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-digits()
@@ -760,7 +747,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \D — 非數字
-    #{overflow=wrap}
     c == 68 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nondigits()
@@ -775,7 +761,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \w — 文字字元
-    #{overflow=wrap}
     c == 119 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-word()
@@ -790,7 +775,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \W — 非文字字元
-    #{overflow=wrap}
     c == 87 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonword()
@@ -805,7 +789,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \s — 空白字元
-    #{overflow=wrap}
     c == 115 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-space()
@@ -820,7 +803,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \S — 非空白字元
-    #{overflow=wrap}
     c == 83 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonspace()
@@ -835,7 +817,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \n
-    #{overflow=wrap}
     c == 110 -> {
         .tmp-atom-char = 10
         {
@@ -849,7 +830,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \t
-    #{overflow=wrap}
     c == 116 -> {
         .tmp-atom-char = 9
         {
@@ -863,7 +843,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; \r
-    #{overflow=wrap}
     c == 114 -> {
         .tmp-atom-char = 13
         {
@@ -877,7 +856,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     }
 
     ; 跳脫特殊字元或常字元
-    #{overflow=wrap}
     c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> {
         .tmp-atom-char = c
         {
@@ -919,7 +897,6 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
 
             .arg2[split-pc] ?= .n
 
-            #{overflow=wrap}
             .tmp-next-i = atom-i + 1: {
                 ok -> it
 
@@ -938,10 +915,8 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
 
-        #{overflow=wrap}
         .emit(RE-OP-SPLIT, l1, .n + 1)
 
-        #{overflow=wrap}
         .tmp-next-i = atom-i + 1: {
             ok -> it
 
@@ -962,7 +937,6 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
 
             .arg2[split-pc] ?= .n
 
-            #{overflow=wrap}
             .tmp-next-i = atom-i + 1: {
                 ok -> it
 
@@ -1015,7 +989,6 @@ regexp.compile = () {
         c char = pat[i]
 
         ; 預設前進 1
-        #{overflow=wrap}
         .tmp-next-i = i + 1: {
             ok -> it
 
@@ -1023,7 +996,6 @@ regexp.compile = () {
         }
 
         ; ^ — 行首錨點
-        #{overflow=wrap}
         c == 94 -> {
             .emit(RE-OP-START, 0, 0)
             .tmp-next-i = i + 1: {
@@ -1034,7 +1006,6 @@ regexp.compile = () {
         }
 
         ; $ — 行尾錨點
-        #{overflow=wrap}
         c == 36 -> {
             .emit(RE-OP-END, 0, 0)
             .tmp-next-i = i + 1: {
@@ -1182,7 +1153,6 @@ regexp.matches = (text str) (matched bool) {
             break
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1211,32 +1181,30 @@ regexp.find = (text str) (result str) {
         .match-end = -1
         ok = .match-at(0, sp, text)
 
-        #{overflow=wrap}
         ok -> {
 
             ; 提取匹配子串
             end = .match-end
             end < sp -> return
+            #{overflow=wrap}
             mlen = end - sp
             mlen == 0 -> return
 
             ; 注意：不可寫 `result[j]: { ok -> it = v }`——D9 的 place-match 以「讀」作閘門，
-            ; with-cap 出來的緩衝 len 為 0，讀 result[0] 越界回 nil，ok 臂永不執行，
-            ; 會靜默回空字串。with-cap 基底被 idxwrite lint 豁免，可直接下標寫入並增長。
-            result = with-cap(mlen)
+            ; 長度不足時讀 result[0] 越界回 nil，ok 臂永不執行，會靜默回空字串。
+            ; 過去的做法是 `result = with-cap(mlen)` + 下標直寫，靠 idxwrite 的
+            ; with-cap 豁免放行；該豁免已于 2026-11-11 取消（str 下標直寫全域禁用），
+            ; 故改用 []byte 緩衝承接位元組。
+            rb []byte = with-cap-len(mlen, mlen)
             j <- [0..mlen): {
 
                 #{overflow=wrap}
-                result[j] = text[sp + j]: {
-                    ok -> it
-
-                    -> _
-                }
+                rb[j] = text.byte(sp + j)
             }
+            result = rb.to-bytes-str()
             return
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

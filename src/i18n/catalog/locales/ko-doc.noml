@@ -987,14 +987,14 @@ decode와의 차이는 마지막 단계의 인덱스 연산뿐, 나머지 디코
 br bz-bit-reader: 비트 출처(매 라운드 1비트를 더 읽을 수 있음)
 sym i64: 디코딩한 심볼 값, -1=부적법 코드 또는 빈 테이블
 `
-  'bzip2.bzip2-compress': `
+  'bzip2.compress': `
 bzip2 형식으로 데이터 압축
 data: 원시 데이터 ([]byte)
 out: bzip2 압축 후 데이터 ([]byte)
 주의: 현재는 stored block의 기본 구현이며,
 완전한 BWT + MTF + Huffman 압축은 향후 구현 예정.
 `
-  'bzip2.bzip2-decompress': `
+  'bzip2.decompress': `
 bzip2 형식 데이터 해제
 data: bzip2 압축 데이터 ([]byte)
 out: 해제 후 데이터 ([]byte)
@@ -2850,12 +2850,12 @@ stored blocks를 사용한 DEFLATE 압축
 data: 원시 데이터 ([]byte)
 out: 압축 후 DEFLATE 데이터 ([]byte)
 `
-  'gzip.gzip-compress': `
+  'gzip.compress': `
 gzip 형식으로 데이터 압축
 data: 원시 데이터 ([]byte)
 out: gzip 압축 후 데이터 ([]byte)
 `
-  'gzip.gzip-decompress': `
+  'gzip.decompress': `
 gzip 형식 데이터 해제
 data: gzip 압축 데이터 ([]byte)
 out: 해제 후 데이터 ([]byte)
@@ -6289,12 +6289,12 @@ iterations i64: 반복 횟수; 클수록 총력 공격이 어렵고, 너무 작�
 key-len i64: 원하는 키 길이(바이트), 64바이트씩 블록 단위로 생성
 반환값 out []byte: 유도한 키, 길이는 정확히 key-len
 `
-  'pem.pem-decode': `
+  'pem.decode': `
 PEM 형식 문자열 해석(입력의 첫 BEGIN…END 블록만 취득)
 pem-str str: '-----BEGIN <label>-----' … '-----END <label>-----' 블록을 최소 하나 포함하는 텍스트
-result ?pem-block: ok=라벨과 디코딩 후 페이로드, nil=표식 없음, Base64 디코딩 실패 또는 내용이 너무 짧음
+result ?block: ok=라벨과 디코딩 후 페이로드, nil=표식 없음, Base64 디코딩 실패 또는 내용이 너무 짧음
 `
-  'pem.pem-encode': `
+  'pem.encode': `
 원시 바이트를 PEM 형식 문자열로 인코드한다
 label str: PEM 태그(예: 'CERTIFICATE', 'RSA PRIVATE KEY'), BEGIN/END와 일치해야 함
 data []byte: 원시 바이너리 데이터, base64.encode-std로 인코딩 후 64문자로 줄바꿈
@@ -8272,74 +8272,74 @@ sep str: 구분자
 반환 out str: 연결된 문자열
 
 `
-  'tar.tar-builder.add-bytes': `
+  'tar.builder.add-bytes': `
 원시 바이트 항목 추가
 name: 항목 이름
 content: 항목 내용 바이트
 typ: 항목 유형 코드(TAR-TYPE-FILE / TAR-TYPE-DIR)
 `
-  'tar.tar-builder.add-dir': `
+  'tar.builder.add-dir': `
 디렉터리 항목 추가
 name: 디렉터리 이름(관례적으로 /로 끝내며 내용 영역 없음)
 `
-  'tar.tar-builder.add-file': `
+  'tar.builder.add-file': `
 파일 항목 추가
 name: 파일 이름(헤더 name 필드에 기록)
 content: 파일 내용(기록 후 0으로 채워 512바이트 경계에 정렬)
 `
-  'tar.tar-builder.finish': `
+  'tar.builder.finish': `
 구성을 마치고 종료 표기를 기록한 뒤 tar 아카이브 반환
 archive: 전부 0인 종료 블록 2개를 포함한 tar 읽기 전용 뷰
 `
-  'tar.tar-builder.pre-alloc': `
+  'tar.builder.pre-alloc': `
 버퍼 사전 할당(로컬 변수로 push해 구조체 필드 push 제한을 회피)
 size: 사전 할당할 버퍼 바이트 수(해당 길이까지 0으로 채움)
 `
-  'tar.tar-builder.write-header': `
+  'tar.builder.write-header': `
 512바이트 header 기록(내부 메서드)
 name: 파일 이름(헤더 오프셋 0에 기록)
 typ: typeflag 문자 코드(48=파일, 53=디렉터리)
 sz: 내용 바이트 수(8진수로 size 필드에 기록)
 `
-  'tar.tar-builder.write-octal': `
+  'tar.builder.write-octal': `
 지정 오프셋에 8진수 숫자 기록(내부 메서드)
 offset: 필드의 현재 헤더 블록 내 오프셋
 width: 필드 너비(8진수를 우측 정렬하고 왼쪽을 공백으로 채움)
 val: 인코딩할 정수 값(블록 끝에 NUL을 따로 채움)
 `
-  'tar.tar-entry.is-dir': `
+  'tar.entry.is-dir': `
 디렉터리인지 판단
 yes: 해당 항목이 디렉터리인지
 `
-  'tar.tar-entry.is-file': `
+  'tar.entry.is-file': `
 일반 파일인지 판단
 yes: 해당 항목이 일반 파일인지
 `
-  'tar.tar-entry.mode': `
+  'tar.entry.mode': `
 항목 권한 읽기
 mode: 권한 비트(8진수 디코딩)
 `
-  'tar.tar-entry.mtime': `
+  'tar.entry.mtime': `
 항목 수정 시간 읽기
 ts: 수정 시간(Unix 초, 8진수 디코딩)
 `
-  'tar.tar-entry.name': `
+  'tar.entry.name': `
 항목 파일 이름 읽기
 name: 해당 항목의 파일 이름
 `
-  'tar.tar-entry.read': `
+  'tar.entry.read': `
 항목 내용 추출
 out: 항목 내용 바이트(디렉터리는 비어 있음)
 `
-  'tar.tar-entry.size': `
+  'tar.entry.size': `
 항목 파일 크기 읽기
 sz: 항목 원시 바이트 수
 `
-  'tar.tar-entry.type': `
+  'tar.entry.type': `
 항목 유형 읽기
 typ: 유형 문자열("file", "dir" 또는 "unknown")
 `
-  'tar.tar-open-gz': `
+  'tar.open-gz': `
 gzip 압축 데이터에서 tar 뷰 생성(.tar.gz)
 gz-data: gzip 압축된 tar 데이터([]byte)
 archive: 압축 해제한 tar 아카이브
@@ -9155,111 +9155,111 @@ TOML 1.0 문법으로 파일에 출력; array-of-tables는 [[table]] 헤더로 �
 doc: 직렬화할 문서
 out: TOML 1.0 문법 텍스트(항목과 테이블 헤더를 차례로 출력)
 `
-  'toml.toml-array-name': `
+  'toml.array-name': `
 테이블 배열의 이름을 읽는다.
 t: 읽을 array-of-tables 기록
 s: 해당 배열 표의 이름
 `
-  'toml.toml-doc.put': `
+  'toml.put': `
 원시 TOML 리터럴을 설정한다.
 value 는 배열이나 날짜/시각 같은 TOML 문법이어도 되며, 모듈은 앞뒤에 따옴표를 붙이지 않는다.
 key: 키(키를 정규화할 수 없으면 실패)
 value: TOML 원시 리터럴(문법 검증 후 저장)
 ok: true=쓰기 성공, false=키 오류／값 오류／가득 참
 `
-  'toml.toml-entry-key': `
+  'toml.entry-key': `
 정규화된 키를 읽는다.
-e: 읽을 toml-entry
+e: 읽을 entry
 s: 항목의 canonical key(표준화된 점 구분 형식)
 `
-  'toml.toml-entry-key-eq': `
+  'toml.entry-key-eq': `
 엔트리의 키를 문자열과 비교한다.
-e: 비교할 toml-entry
+e: 비교할 entry
 key: 비교할 키 문자열
 same: 항목 키가 key와 같은지
 `
-  'toml.toml-entry-value': `
+  'toml.entry-value': `
 원시 TOML 값을 읽는다.
-e: 읽을 toml-entry
+e: 읽을 entry
 s: 원시 TOML value 리터럴(미디코딩)
 `
-  'toml.toml-find-eq': `
+  'toml.find-eq': `
 따옴표 밖에 있는 첫 번째 등호를 찾는다
 s: 파싱할 키-값 줄
 pos: 첫 따옴표 밖 등호의 바이트 위치(없으면 -1 반환)
 `
-  'toml.toml-make-entry': `
+  'toml.make-entry': `
 키/값을 고정 크기 버퍼에 복사한다.
 key: 키 문자열
 value: 값 문자열
 e: 키값을 고정 버퍼에 복사한 후의 새 항목
 `
-  'toml.toml-next-array-table': `
+  'toml.next-array-table': `
 테이블 배열의 다음 인덱스를 반환하고 등록한다.
 doc: 현재 문서
 name: array-of-tables 이름
 idx: ok=본 요소의 인덱스(자동 증가로 등록), nil=동명 테이블을 찾지 못했고 용량도 가득 참
 `
-  'toml.toml-normalize-key': `
+  'toml.normalize-key': `
 맨 키·따옴표 키·점 구분 키를 파스하고 정규화된 점 구분 키를 출력한다.
 s: 원시 키 텍스트(bare / quoted / dotted)
 key: ok=정규화된 점 표기 키, nil=잘못된 키의 오류 메시지
 `
-  'toml.toml-parse-bool': `
+  'toml.parse-bool': `
 불리언을 파스한다
 s: 불리언 리터럴 텍스트(true/false만)
 value: ok=불리언 값, err=불리언 리터럴이 아님
 `
-  'toml.toml-parse-f64': `
+  'toml.parse-f64': `
 부동소수점을 파스한다
 s: 실수 리터럴 텍스트(밑줄 구분자는 자동 제거)
 value: ok=수치, err=형식 불법
 `
-  'toml.toml-parse-i64': `
+  'toml.parse-i64': `
 10 진·16 진·8 진·2 진 리터럴과 밑줄 구분자를 지원한다.
 s: 정수 리터럴 텍스트
 value: ok=수치, nil=빈 텍스트, err=형식 불법 또는 넘침
 `
-  'toml.toml-register-table': `
+  'toml.register-table': `
 정의된 테이블을 기록한다; 두 번 정의되면 false 를 반환한다.
 doc: 등록 대상 문서
 name: 테이블 이름
 ok: true=첫 정의, false=중복 정의
 `
-  'toml.toml-resolve-section': `
+  'toml.resolve-section': `
 테이블 배열의 서브 테이블을 가장 최근 원소로 해석한다.
 doc: 현재 문서
 name: 파싱할 단락 이름
 resolved: 키가 array-of-tables 하위 키일 때 base[색인].접미사로 고쳐 쓰고, 아니면 그대로 반환
 `
-  'toml.toml-strip-comment': `
+  'toml.strip-comment': `
 문자열 밖의 # 주석을 제거하고 트림한다; 여러 줄 문자열도 지원한다.
 s: 원시 줄 텍스트(여러 줄 문자열 안의 # 지원)
 out: 문자열 밖 주석 제거와 trim 후 내용
 `
-  'toml.toml-table-eq': `
+  'toml.table-eq': `
 고정 크기 버퍼에 담긴 테이블 이름을 비교한다.
 name: 테이블 이름을 담는 고정 버퍼
 name-len: 이름의 실제 바이트 길이
 s: 비교할 표 이름
 same: 두 값이 바이트 단위로 동일한지
 `
-  'toml.toml-table-name': `
+  'toml.table-name': `
 테이블 이름을 읽는다.
 t: 읽을 표
 s: 표 이름
 `
-  'toml.toml-unquote': `
+  'toml.unquote': `
 TOML 기본 문자열 또는 리터럴 문자열을 디코드한다
 raw: 따옴표가 붙은 원시 문자열
 value: ok=디코딩된 내용, nil=문자열 리터럴 아님, err=따옴표/이스케이프 불법
 `
-  'toml.toml-valid-value': `
+  'toml.valid-value': `
 TOML 1.0 스칼라, 배열, 인라인 테이블, 날짜/시각 리터럴을 허용한다.
 raw: 값의 원시 텍스트
 valid: TOML 1.0 문자열 리터럴 문법에 부합하는지
 `
-  'toml.toml-value-complete': `
+  'toml.value-complete': `
 값이 닫혔는지 판단; 다중 행 배열, inline table, multiline string에 사용.
 raw: 값의 원시 텍스트
 complete: 따옴표／대괄호가 닫혔는지（다중 줄 값 읽기에서 종료 가능 여부 결정）
@@ -10793,14 +10793,14 @@ data: 제어 바이트를 포함한 LZMA2 데이터 스트림
 start-pos: 데이터 스트림의 시작 오프셋
 out: 압축 해제한 평문 바이트 스트림(명명된 출력 파라미터, 함수 끝에서 한 번에 인도)
 `
-  'xz.xz-compress': `
+  'xz.compress': `
 xz 형식으로 데이터 압축(기본 구현)
 data: 원시 데이터([]byte)
 out: xz로 압축한 데이터([]byte)
 주의: 현재는 stored block의 기본 구현을 사용하며,
 완전한 LZMA2 압축은 추후 구현 예정입니다.
 `
-  'xz.xz-decompress': `
+  'xz.decompress': `
 .xz 형식:
 - Stream Header: 6 bytes magic + 2 bytes stream flags
 - Blocks: Block Header + Compressed Data + Block Padding + Check
@@ -11028,13 +11028,13 @@ yes: 원문 텍스트를 파싱할 수 있음
 i: 키-값 쌍 번호(0부터)
 out: i번째 키-값 쌍의 값 노드(nil=범위 밖 또는 매핑 아님)
 `
-  'yaml.yaml-apply-tag': `
+  'yaml.apply-tag': `
 명시 태그로 노드 타입 결정
 tag: 정규화 후 태그명
 kind: 내용에서 추정한 노드 종류
 k: 태그 덮어쓰기 후의 최종 종류(태그 미인식 시 원래 kind 반환)
 `
-  'yaml.yaml-emit': `
+  'yaml.emit': `
 노드를 블록 스타일 YAML로 출력(끝줄 바꿈 미포함)
 pool: 노드 풀
 idx: 출력할 노드 인덱스
@@ -11042,58 +11042,58 @@ indent: 단계별 들여쓰기 공백 수
 depth: 현재 중첩 깊이
 out: 블록 스타일 YAML 텍스트(끝 개행 없음)
 `
-  'yaml.yaml-f-is-inf': `
+  'yaml.f-is-inf': `
 리터럴 비교를 쓰지 않음: Nolang 수치 리터럴은 지수를 지원하지 않는다(`1e308`은 `1` + `e308`로 잘린다).
 무한대 판정 기준은 '비영이며 절반으로 줄여도 불변'; 먼저 `x != x`로 NaN을 제외.
 x: 검사할 f64 값
 yes: x가 양/음 무한대(0이 아니고 절반으로 줄여도 불변)
 `
-  'yaml.yaml-f-is-nan': '부동소수가 NaN인지(NaN != NaN)\n`float.is-nan`을 쓰지 않음: 모듈 내 수신자식 호출은 MIR 백엔드에서 해당 메서드를 해석하지 못한다.\nx: 검사할 f64 값\nyes: x가 NaN(NaN != NaN 판단 기준)'
-  'yaml.yaml-hex-char': `
+  'yaml.f-is-nan': '부동소수가 NaN인지(NaN != NaN)\n`float.is-nan`을 쓰지 않음: 모듈 내 수신자식 호출은 MIR 백엔드에서 해당 메서드를 해석하지 못한다.\nx: 검사할 f64 값\nyes: x가 NaN(NaN != NaN 판단 기준)'
+  'yaml.hex-char': `
 16진 숫자 하나(0-15)를 문자로 변환
 v: 16진 자리의 숫자 값 0-15
 ch: 대응하는 16진 문자（'0'-'f'）
 `
-  'yaml.yaml-hex-digit': `
+  'yaml.hex-digit': `
 16진 문자를 수치로 변환, 비16진 반환은 -1
 c: 문자의 ASCII 코드
 d: 해당 16진 자리가 나타내는 값 0-15（-1=잘못된 16진 문자）
 `
-  'yaml.yaml-inf': `
+  'yaml.inf': `
 양무한대
 v: 양무한대 값
 `
-  'yaml.yaml-json-escape': `
+  'yaml.json-escape': `
 JSON 문자열 이스케이프
 s: 원시 문자열
 out: 이스케이프 후 JSON 문자열(양쪽 큰따옴표 포함)
 `
-  'yaml.yaml-json-of': `
+  'yaml.json-of': `
 노드를 JSON으로 변환
 pool: 노드 풀
 idx: 변환할 노드 인덱스
 depth: 남은 재귀 깊이（별명 루프 방지）
 out: 해당 노드에 대응하는 JSON 텍스트
 `
-  'yaml.yaml-key-eq': `
+  'yaml.key-eq': `
 두 키 노드가 동치인지(스칼라 텍스트 비교)
 a: 키 노드 a
 b: 키 노드 b
 yes: 두 노드의 스칼라 텍스트가 같음
 `
-  'yaml.yaml-key-text-eq': `
+  'yaml.key-text-eq': `
 스칼라 키 텍스트가 지정 문자열과 같은지
 nd: 비교할 노드(그 스칼라 텍스트를 취함)
 key: 대상 텍스트
 yes: nd의 스칼라 텍스트가 key와 같음
 `
-  'yaml.yaml-nan': `
+  'yaml.nan': `
 실행기 나눗셈을 통과해야 함: 컴파일 상수 접힘은 `0.0 / 0.0`을 직접 0으로 계산한다.
 국소 변수를 경유하면 접힘을 피해 진정한 NaN을 얻는다(`x != x`가 참).
 v: NaN 값(실행 시 0.0/0.0에서 발생, 상수 접힘 되지 않음)
 `
-  'yaml.yaml-node-is-nan': '`.nan`의 fval은 yaml-nan()이 진짜 NaN을 채우므로 값으로 판정（NaN != NaN）。\n노드 원문 판정은 폴백으로 사용: 태그 재작성 등 경로는 text만 바꾸고 fval을 재계산하지 않을 수 있다.\nnd: 검사할 노드\nyes: 노드가 .nan'
-  'yaml.yaml-parse-radix': `
+  'yaml.node-is-nan': '`.nan`의 fval은 nan()이 진짜 NaN을 채우므로 값으로 판정（NaN != NaN）。\n노드 원문 판정은 폴백으로 사용: 태그 재작성 등 경로는 text만 바꾸고 fval을 재계산하지 않을 수 있다.\nnd: 검사할 노드\nyes: 노드가 .nan'
+  'yaml.parse-radix': `
 radix 진법 정수 해석(_ 무시)
 t: 숫자를 포함하는 텍스트
 start: 숫자 시작 오프셋
@@ -11101,72 +11101,72 @@ radix: 진법 기수(2/8/16)
 kind: 성공=YAML-KIND-INT, 실패=YAML-KIND-STR
 v: 변환된 정수 값
 `
-  'yaml.yaml-parser.advance': '한 바이트 전진'
-  'yaml.yaml-parser.anchor-id': `
+  'yaml.parser.advance': '한 바이트 전진'
+  'yaml.parser.anchor-id': `
 앵커 검색, 못 찾으면 -1 반환
 name: 앵커 이름
 idx: 대응하는 노드 인덱스(-1=미등록)
 `
-  'yaml.yaml-parser.at': `
+  'yaml.parser.at': `
 현재 위치 대비 k 바이트 오프셋
 k: 현재 위치 대비 오프셋(범위 밖은 0으로 처리)
 c: pos+k 위치의 바이트 값
 `
-  'yaml.yaml-parser.at-doc-marker': `
+  'yaml.parser.at-doc-marker': `
 현재 위치가 --- (1)인지 ... (2)인지
 which: 1='---', 2='...', 0=문서 표시 아님
 `
-  'yaml.yaml-parser.at-eol': `
+  'yaml.parser.at-eol': `
 행끝에 있는지(EOF 포함)
 yes: 현재 바이트가 \n이거나 입력 끝에 도달함
 `
-  'yaml.yaml-parser.byte-at': `
+  'yaml.parser.byte-at': `
 src[i] 를 반환하고, 범위를 벗어나면 0
 i: 목표 인덱스
 c: 해당 위치의 바이트 값（범위 초과 시 0）
 `
-  'yaml.yaml-parser.cur': `
+  'yaml.parser.cur': `
 현재 바이트
 c: 현재 pos가 가리키는 바이트（EOF일 때 0）
 `
-  'yaml.yaml-parser.eof': `
+  'yaml.parser.eof': `
 입력 끝에 도달했는지
 yes: pos가 입력 끝에 도달함
 `
-  'yaml.yaml-parser.fail': `
+  'yaml.parser.fail': `
 해석 오류 기록
 msg: 오류 설명(파서의 오류 정보에 저장)
 `
-  'yaml.yaml-parser.fail-at': `
+  'yaml.parser.fail-at': `
 위치 포함 해석 오류 기록
 msg: 오류 설명(현재 위치 정보 자동 부가)
 `
-  'yaml.yaml-parser.indent-at': `
+  'yaml.parser.indent-at': `
 행앞 공백을 건너뛴 뒤 세기: 호출 지점은 거의 모두 skip-blank-lines() 직후,
 이때 pos는 행두(열 0)에 멈추므로, 그대로 빼면 항시 0이 되어 중첩 블록은 '들여쓰기 없음'으로 오인판정된다.
 스킵 후 pos는 첫 비공백 문자에서 멈춤, 후속 is-seq-dash / looks-like-map-entry /
 at-doc-marker도 이 위치가 필요합니다.
 ind: 현재 줄 행두에서 첫 번째 비공백 문자까지의 공백 열 수
 `
-  'yaml.yaml-parser.is-seq-dash': `
+  'yaml.parser.is-seq-dash': `
 현재 위치가 순서 항목 표시자 '- '인지
 yes: 현재 위치가 순서 항목 표시자('- ' 또는 행말미의 '-')
 `
-  'yaml.yaml-parser.line-end-of': `
+  'yaml.parser.line-end-of': `
 i가 속한 행의 행끝 오프셋 반환(줄바꿈 또는 n을 가리킴)
 i: 목표 줄 내 임의의 바이트 오프셋
 le: 줄 끝 오프셋(개행 문자를 가리킴; 개행 없으면 입력 길이와 같음)
 `
-  'yaml.yaml-parser.line-start-of': `
+  'yaml.parser.line-start-of': `
 i 를 포함하는 줄의 시작 오프셋을 반환한다
 i: 목표 줄 내 임의의 바이트 오프셋
 ls: i가 속한 줄의 행두 바이트 오프셋
 `
-  'yaml.yaml-parser.looks-like-map-entry': `
+  'yaml.parser.looks-like-map-entry': `
 본 행에 최상위 ': ' 또는 행끝 ':' 또는 명시 키 '? '가 있는지
 yes: 이 줄에 매핑 키 표시자가 있어 매핑 항목으로 처리 가능
 `
-  'yaml.yaml-parser.merge-into': `
+  'yaml.parser.merge-into': `
 키 << 처리 병합(매핑 또는 매핑 순서 지원)
 keys: 대상 매핑의 키 노드 인덱스 목록
 vals: 대상 매핑의 값 노드 인덱스 목록
@@ -11174,7 +11174,7 @@ src: 결합 키(<<)의 값 노드 인덱스(MAP 또는 MAP 순서)
 ok-keys: 병합 후 키 목록
 ok-vals: 병합 후 값 목록
 `
-  'yaml.yaml-parser.merge-one': `
+  'yaml.parser.merge-one': `
 어떤 매핑의 항목을 keys/vals에 병합(기존 키는 덮어쓰지 않음)
 설명: MIR 백엔드는 입력 vec를 다른 vec에 직접 move 하는 것을 허용하지 않음(빌림/소유권 보호),
 그래서 요소를 하나씩 복사하며, ok-keys = keys가 아니다.
@@ -11184,93 +11184,93 @@ src: 결합할 맵핑 노드의 인덱스(MAP 종류여야 함)
 ok-keys: 병합 후 키 목록(기존 키 우선 보존)
 ok-vals: 병합 후 값 목록
 `
-  'yaml.yaml-parser.newline': `
+  'yaml.parser.newline': `
 개행 하나 소비(\n 또는 \r\n)
 yes: 개행 하나를 소비함; false=개행 위치 아님, 위치 불변
 `
-  'yaml.yaml-parser.parse-alias': `
+  'yaml.parser.parse-alias': `
 별칭 *name 을 파스한다
 idx: 별칭이 가리키는 노드 인덱스(-1=앵커 없음, 오류 기록됨)
 `
-  'yaml.yaml-parser.parse-block': `
+  'yaml.parser.parse-block': `
 블록 컨텍스트 노드 하나 해석(현재 위치가 노드 시작 열)
 indent: 노드 시작 열
 cont-min: 자식 노드에 전달할 최소 계속 줄 들여쓰기
 idx: 파싱된 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-block-indented': `
+  'yaml.parser.parse-block-indented': `
 더 들여쓴 후속 행을 값으로 해석
 parent-indent: 부모 키 행의 들여쓰기 열(후속 행이 이보다 더 깊어야 값으로 봄)
 idx: 파싱된 값 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-block-map': `
+  'yaml.parser.parse-block-map': `
 블록 맵핑 해석
 indent: 매핑 키의 들여쓰기 열(같은 층 키와 되돌리기 판단 기준)
 idx: 새로 만든 매핑 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-block-scalar': `
+  'yaml.parser.parse-block-scalar': `
 블록 스칼라 | 와 > 해석
 cont-min: 블록 내용이 도달해야 할 들여쓰기 열（호출 컨텍스트에서 전달）
 idx: 새로 만든 블록 스칼라 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-block-seq': `
+  'yaml.parser.parse-block-seq': `
 블록 시퀀스 해석
 indent: 시퀀스 항목 '-'의 들여쓰기 열(같은 단계 항목과 되돌리기 판단 기준)
 idx: 새로 만든 시퀀스 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-docs': `
+  'yaml.parser.parse-docs': `
 전체 문서 해석
 roots: 각 문서 루트 노드의 풀 인덱스 목록
 `
-  'yaml.yaml-parser.parse-document': `
+  'yaml.parser.parse-document': `
 문서 하나를 해석해 루트 노드 인덱스 반환
 idx: 본 문서 루트 노드의 풀 인덱스(-1=파싱 실패)
 `
-  'yaml.yaml-parser.parse-double': `
+  'yaml.parser.parse-double': `
 큰따옴표 스칼라 해석
 idx: 새로 만든 스칼라 노드의 풀 인덱스(이스케이프 처리됨)
 `
-  'yaml.yaml-parser.parse-flow-map': `
+  'yaml.parser.parse-flow-map': `
 {k: v, ...} 를 파스한다
 idx: 새로 만든 매핑 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-flow-node': `
+  'yaml.parser.parse-flow-node': `
 플로우 컨텍스트 노드 하나 해석
 cont-min: 중첩 스칼라 해석에 전달할 최소 계속 줄 들여쓰기
 key-mode: true=키 위치로 파싱
 flow: true=플로우 컨텍스트
 idx: 파싱된 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-flow-seq': `
+  'yaml.parser.parse-flow-seq': `
 [a, b, ...] 를 파스한다
 idx: 새로 만든 시퀀스 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-plain': `
+  'yaml.parser.parse-plain': `
 plain 스칼라 해석(행 걸친 접기 포함)
 cont-min: 다중 줄 접힘 계속에 필요한 최소 들여쓰기 열（0=줄넘김 계속 없음）
 key-mode: true=매핑 키로 파싱, ': ' 등 지시자를 만나면 종료
 flow: true=플로우 컨텍스트(',' '}' ']'도 종료시킴)
 idx: 새로 만든 스칼라 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.parse-props': `
+  'yaml.parser.parse-props': `
 노드 접두의 앵커와 태그 해석(순서 무관)
 tag: 읽은 태그(빈 문자열=없음)
 anchor: 읽은 앵커 이름（빈 문자열=없음; 비어 있지 않으면 앵커 테이블에 등록됨）
 `
-  'yaml.yaml-parser.parse-single': `
+  'yaml.parser.parse-single': `
 작은따옴표 스칼라 해석
 idx: 새로 만든 스칼라 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.push-node': `
+  'yaml.parser.push-node': `
 노드 추가 후 인덱스 반환
 nd: 추가할 노드
 idx: 노드 풀에서 해당 노드의 인덱스
 `
-  'yaml.yaml-parser.push-null': `
+  'yaml.parser.push-null': `
 빈 노드(null) 추가
 idx: 새로 만든 null 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.push-scalar': `
+  'yaml.parser.push-scalar': `
 스타일과 태그로 스칼라 노드 구성
 text: 스칼라 텍스트
 style: 스칼라 방식(YAML-STYLE-* 상수)
@@ -11278,46 +11278,46 @@ tag: 명시 태그(빈 값이면=core schema로 타입 추정)
 anchor: 앵커 이름（빈 문자열=없음）
 idx: 새 노드의 풀 인덱스
 `
-  'yaml.yaml-parser.read-line-content': `
+  'yaml.parser.read-line-content': `
 현재 위치에서 행끝까지 내용 읽기(행끝 공백과 주석 제거)
 out: 줄 끝까지 텍스트(줄 끝 공백과 # 주석 제거됨)
 `
-  'yaml.yaml-parser.read-tag': `
+  'yaml.parser.read-tag': `
 태그 하나 읽기(!!name / !name / !<verbatim> / !)
 out: 태그 전문(! 접두 포함; 맨 !는 ';!' 반환)
 `
-  'yaml.yaml-parser.read-token': `
+  'yaml.parser.read-token': `
 구분자 없는 생 token 하나 읽기
 out: 읽은 맨 토큰(공백/지시자를 만나면 종료)
 `
-  'yaml.yaml-parser.register-anchor': `
+  'yaml.parser.register-anchor': `
 앵커 등록
 name: 앵커 이름
 idx: 앵커가 가리키는 노드 인덱스
 `
-  'yaml.yaml-parser.set-props': `
+  'yaml.parser.set-props': `
 노드에 태그와 앵커를 부착(동시에 앵커 등록)
 idx: 목표 노드 풀 인덱스
 tag: 명시 태그(빈 문자열=없음)
 anchor: 앵커 이름（빈 문자열=없음; 비어 있지 않으면 동시에 등록）
 `
-  'yaml.yaml-parser.skip-blank-lines': '빈 행과 전체 행 주석 스킵, 다음 행 내용 시작에서 정지'
-  'yaml.yaml-parser.skip-doc-preamble': '빈 행, 주석, 지시 행 스킵'
-  'yaml.yaml-parser.skip-flow-ws': '플로우 문맥의 공백——행 안 공백, 개행과 주석'
-  'yaml.yaml-parser.skip-spaces': '인라인 공백과 탭 스킵'
-  'yaml.yaml-parser.skip-to-doc-boundary': '현재 문서 나머지 내용 스킵, 다음 --- 또는 입력 끝에서 정지'
-  'yaml.yaml-parser.skip-to-eol': '행끝 공백과 행 주석 스킵(줄바꿈은 소비하지 않음)'
-  'yaml.yaml-plain-safe': `
+  'yaml.parser.skip-blank-lines': '빈 행과 전체 행 주석 스킵, 다음 행 내용 시작에서 정지'
+  'yaml.parser.skip-doc-preamble': '빈 행, 주석, 지시 행 스킵'
+  'yaml.parser.skip-flow-ws': '플로우 문맥의 공백——행 안 공백, 개행과 주석'
+  'yaml.parser.skip-spaces': '인라인 공백과 탭 스킵'
+  'yaml.parser.skip-to-doc-boundary': '현재 문서 나머지 내용 스킵, 다음 --- 또는 입력 끝에서 정지'
+  'yaml.parser.skip-to-eol': '행끝 공백과 행 주석 스킵(줄바꿈은 소비하지 않음)'
+  'yaml.plain-safe': `
 텍스트가 plain 스칼라로 그대로 출력 가능한지
 s: 출력할 텍스트
 yes: plain 스칼라로 그대로 출력 가능(따옴표 불필요)
 `
-  'yaml.yaml-quote': `
+  'yaml.quote': `
 큰따옴표 YAML 스칼라 출력
 s: 원시 텍스트
 out: 큰따옴표로 감고 이스케이프한 YAML 스칼라 텍스트
 `
-  'yaml.yaml-resolve-plain': `
+  'yaml.resolve-plain': `
 core schema에 따라 plain 스칼라 타입을 추론
 text: plain 스칼라 원문
 kind: 추정된 노드 종류(null/bool/int/float/str 등)
@@ -11325,12 +11325,12 @@ ival: kind=INT일 때의 정수 값
 fval: kind=FLOAT일 때의 부동소수점 값
 bval: kind=BOOL일 때의 불리 값
 `
-  'yaml.yaml-scalar-repr': `
+  'yaml.scalar-repr': `
 스칼라의 YAML 표현
 nd: 스칼라 노드
 out: 종류와 스타일로 고른 YAML 표현 텍스트
 `
-  'yaml.yaml-scan-number': `
+  'yaml.scan-number': `
 텍스트를 정수 또는 부동소수로 파싱 시도
 반환 kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR(숫자 아님)
 t: 스칼라 텍스트
@@ -11338,12 +11338,12 @@ kind: 식별된 수치 종류(INT/FLOAT/STR)
 ival: kind=INT일 때의 정수 값
 fval: kind=FLOAT일 때의 부동소수점 값
 `
-  'yaml.yaml-spaces': `
+  'yaml.spaces': `
 공백 n 개 생성
 n: 공백 수
 out: 공백 n개로 이루어진 문자열
 `
-  'yaml.yaml-str-at': `
+  'yaml.str-at': `
 왜 이 helper가 필요한가: `arr[i]`(arr은 []str)는 기본으로 option<str>을 반환하고,
 그러나 MIR 백엔드는 option<str>을 호출 실인자/메서드 수신자로 쓸 때 불법 IR을 생성한다
 (%option_str과 %str-long이 불일치). 문자열 연결은 option을 자동 언박싱하고,
@@ -11352,22 +11352,22 @@ a: 대상 문자열 배열
 i: 원소 인덱스
 out: i번째 원소의 값(범위 밖은 빈 문자열 반환)
 `
-  'yaml.yaml-tag-name': `
+  'yaml.tag-name': `
 태그명 정규화(!!str / tag:yaml.org,2002:str → str)
 tag: 원시 태그(!!str / tag:yaml.org,2002:str 등 표기)
 name: 정규화된 짧은 태그 이름(str/int/seq...)
 `
-  'yaml.yaml-to-f64': `
+  'yaml.to-f64': `
 텍스트를 f64로 변환(nil 반환은 실패를 뜻함)
 t: 숫자 텍스트
 v: 변환 결과(nil=f64로 파싱 불가)
 `
-  'yaml.yaml-to-i64': `
+  'yaml.to-i64': `
 텍스트를 i64로 변환, 실패 시 -1 반환
 s: 정수 텍스트
 v: 변환 값(-1=변환 실패)
 `
-  'yaml.yaml-unescape-double': `
+  'yaml.unescape-double': `
 큰따옴표 이스케이프 순서 처리
 body: 큰따옴표 안의 문자열 내용（이스케이프 포함）
 out: 이스케이프 해제 후 텍스트(nil=부적법 이스케이프 포함)
@@ -11384,56 +11384,56 @@ data: ZIP 파일 바이트 배열
 off: 읽기 시작 위치(0 기준)
 v: 4바이트 리틀엔디안 부호 없음 정수(0 ~ 2^32-1)
 `
-  'zip.zip-entry.compressed-size': `
+  'zip.entry.compressed-size': `
 항목의 압축 후 크기 읽기
 csz: 압축 후 바이트 수
 `
-  'zip.zip-entry.extract': `
+  'zip.entry.extract': `
 항목 내용 추출(stored와 deflate)
 out: 압축 해제한 원시 바이트(stored는 그대로 복사, deflate는 자동 inflate)
 `
-  'zip.zip-entry.method': `
+  'zip.entry.method': `
 항목의 압축 방식 읽기(0=stored, 8=deflate)
 method: 압축 방식(0=stored, 8=deflate)
 `
-  'zip.zip-entry.name': `
+  'zip.entry.name': `
 항목 파일 이름 읽기
 name: 해당 항목의 파일 이름
 `
-  'zip.zip-entry.size': `
+  'zip.entry.size': `
 항목의 원시 크기 읽기
 sz: 압축 전 원시 바이트 수
 `
-  'zip.zip-writer.add-dir': `
+  'zip.writer.add-dir': `
 디렉터리 항목 추가
 name: 디렉터리 이름(/로 끝나지 않으면 자동으로 채워 넣음)
 `
-  'zip.zip-writer.add-file': `
+  'zip.writer.add-file': `
 파일을 아카이브에 추가(CRC32 자동 계산)
 name: 아카이브 안에 저장될 경로 이름
 content: 파일 내용(stored 방식으로 그대로 저장, CRC32 자동 계산)
 `
-  'zip.zip-writer.cd-put': `
+  'zip.writer.cd-put': `
 바이트 1개를 cd-data에 추가
 b: 추가할 바이트 값(하위 8비트를 취해 중앙 디렉터리 버퍼에 기록)
 `
-  'zip.zip-writer.cd-write-u16': `
+  'zip.writer.cd-write-u16': `
 2바이트 리틀엔디안 정수를 중앙 디렉터리에 기록
 v: 기록할 정수(하위 16비트를 취해 리틀엔디안으로 중앙 디렉터리 버퍼에 추가)
 `
-  'zip.zip-writer.cd-write-u32': `
+  'zip.writer.cd-write-u32': `
 4바이트 리틀엔디안 정수를 중앙 디렉터리에 기록
 v: 기록할 정수(하위 32비트를 취해 리틀엔디안으로 중앙 디렉터리 버퍼에 추가)
 `
-  'zip.zip-writer.finalize': `
+  'zip.writer.finalize': `
 중앙 디렉터리와 EOCD를 기록해 완전한 아카이브 데이터 반환
 out: 완전한 ZIP 아카이브 바이트(로컬 데이터 + 중앙 디렉터리 + EOCD)
 `
-  'zip.zip-writer.put': `
+  'zip.writer.put': `
 바이트 1개를 data에 추가(국소 변수로 push를 지원)
 b: 추가할 바이트 값(하위 8비트를 취해 로컬 데이터 영역에 기록)
 `
-  'zip.zip-writer.write-cd-entry': `
+  'zip.writer.write-cd-entry': `
 중앙 디렉터리 항목 기록
 name: 파일 이름
 offset: 해당 항목 로컬 파일 헤더의 시작 오프셋
@@ -11441,22 +11441,22 @@ size: 압축 전 크기
 compressed-size: 압축 후 크기
 crc: 내용의 CRC32 검사 값
 `
-  'zip.zip-writer.write-eocd': `
+  'zip.writer.write-eocd': `
 종료 레코드(End of Central Directory) 기록
 cd-offset: 중앙 디렉터리의 시작 오프셋
 cd-size: 중앙 디렉터리의 총 바이트 수
 `
-  'zip.zip-writer.write-local-file': `
+  'zip.writer.write-local-file': `
 로컬 파일 헤더와 내용 기록
 name: 파일 이름(헤더와 데이터 영역에 기록)
 content: 파일 내용(압축하지 않고 그대로 stored로 기록)
 crc: 내용의 CRC32 검사 값
 `
-  'zip.zip-writer.write-u16': `
+  'zip.writer.write-u16': `
 2바이트 리틀엔디안 정수 기록
 v: 기록할 정수(하위 16비트를 취해 리틀엔디안으로 추가)
 `
-  'zip.zip-writer.write-u32': `
+  'zip.writer.write-u32': `
 4바이트 리틀엔디안 정수 기록
 v: 기록할 정수(하위 32비트를 취해 리틀엔디안으로 추가)
 `
@@ -11472,7 +11472,7 @@ count: 항목 총수(아카이브가 손상되면 0)
   'zip.zip.entry': `
 idx번째 항목 획득
 idx: 항목 번호
-e: 해당 항목 오프셋에 바인딩한 zip-entry 핸들(그 메서드로 필드를 다시 읽음)
+e: 해당 항목 오프셋에 바인딩한 entry 핸들(그 메서드로 필드를 다시 읽음)
 `
   'zip.zip.entry-off': `
 idx번째 central directory 항목의 오프셋
@@ -11600,14 +11600,14 @@ max-symbol: 심볼 값 상한(lengths를 순회하는 종점, zstd 바이트 심
 br: 코드 비트를 읽는 비트 리더(코드워드는 MSB 쪽에서 비트별로 조립)
 sym: 디코딩한 심볼 값; 최대 코드 길이 안에서 어떤 코드에도 걸리지 않으면 0 반환
 `
-  'zstd.zstd-compress': `
+  'zstd.compress': `
 zstd 형식으로 데이터 압축(기본 구현)
 data: 원시 데이터([]byte)
 out: zstd로 압축한 데이터([]byte)
 주의: 현재는 raw block의 기본 구현을 사용하며,
 완전한 FSE + Huffman + LZ77 압축은 추후 구현 예정입니다.
 `
-  'zstd.zstd-decompress': `
+  'zstd.decompress': `
 Zstandard 형식 데이터의 압축 해제
 data: zstd 압축 데이터([]byte)
 out: 압축 해제한 데이터([]byte)

@@ -72,7 +72,6 @@ deque.push-back = (val i64) {
     n >= .cap -> return
     idx = .tail
 
-    #{overflow=wrap}
     {
         idx >= 0 -> {
             idx = idx % .cap: {
@@ -94,7 +93,6 @@ deque.push-back = (val i64) {
     {
         .buf[idx] ?= val
 
-        #{overflow=wrap}
         .tail = .tail + 1: {
             ok -> it
 
@@ -120,7 +118,6 @@ deque.pop-front = () (val ?i64) {
     }
     idx = .head
 
-    #{overflow=wrap}
     {
         idx >= 0 -> {
             idx = idx % .cap: {
@@ -145,7 +142,6 @@ deque.pop-front = () (val ?i64) {
         -> _
     }
 
-    #{overflow=wrap}
     .head = .head + 1: {
         ok -> it
 
@@ -173,7 +169,6 @@ deque.pop-back = () (val ?i64) {
     }
     idx = new-tail
 
-    #{overflow=wrap}
     {
         idx >= 0 -> {
             idx = idx % .cap: {
@@ -213,7 +208,6 @@ deque.peek-front = () (val ?i64) {
     }
     idx = .head
 
-    #{overflow=wrap}
     {
         idx >= 0 -> {
             idx = idx % .cap: {
@@ -254,7 +248,6 @@ deque.peek-back = () (val ?i64) {
     #{overflow=wrap}
     idx = .tail - 1
 
-    #{overflow=wrap}
     {
         idx >= 0 -> {
             idx = idx % .cap: {

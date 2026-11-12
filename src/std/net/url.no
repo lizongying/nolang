@@ -85,7 +85,6 @@ url-parse = (url-str str) (u url-info) {
     }
     u.scheme = url-str.slice(0, scheme-end)
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -100,7 +99,6 @@ url-parse = (url-str str) (u url-info) {
     ; 解析 fragment（#）
     frag-pos = url-str.index-from('#', pos)
 
-    #{overflow=wrap}
     frag-pos >= 0 -> {
 
         #{overflow=wrap}
@@ -111,7 +109,6 @@ url-parse = (url-str str) (u url-info) {
     ; 解析 query（?）
     query-pos = url-str.index-from('?', pos)
 
-    #{overflow=wrap}
     query-pos >= 0 && query-pos < n -> {
 
         #{overflow=wrap}
@@ -132,14 +129,15 @@ url-parse = (url-str str) (u url-info) {
     ; 解析 user:pass@
     at-pos = authority.index('@')
 
-    #{overflow=wrap}
     at-pos >= 0 -> {
         userinfo = authority.slice(0, at-pos)
+        #{overflow=wrap}
         authority = authority.slice(at-pos + 1, authority.len-bytes())
         colon-pos = userinfo.index(':')
         {
             colon-pos >= 0 -> {
                 u.user = userinfo.slice(0, colon-pos)
+                #{overflow=wrap}
                 u.password = userinfo.slice(colon-pos + 1, userinfo.len-bytes())
             }
 
@@ -150,10 +148,10 @@ url-parse = (url-str str) (u url-info) {
     ; 解析 host:port
     colon-pos = authority.index(':')
 
-    #{overflow=wrap}
     {
         colon-pos >= 0 -> {
             u.host = authority.slice(0, colon-pos)
+            #{overflow=wrap}
             ofs = colon-pos + 1: {
                 ok -> it
 
@@ -168,6 +166,7 @@ url-parse = (url-str str) (u url-info) {
                     valid = false
                     break
                 }
+                #{overflow=wrap}
                 p = p * 10 + ch - 48
             }
             valid -> u.port = p
@@ -206,10 +205,10 @@ url-info.get-query = (key str) (val ?str) {
         pair = q.slice(pos, pair-end)
         eq-pos = pair.index('=')
 
-        #{overflow=wrap}
         {
             eq-pos >= 0 -> {
                 k = pair.slice(0, eq-pos)
+                #{overflow=wrap}
                 v = pair.slice(eq-pos + 1, pair.len-bytes())
                 k == key -> {
                     val = url-decode(v)
@@ -353,11 +352,13 @@ url-info.to-str = () (out str) {
 url-encode = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
 
-    ; 每個字節最多編成 %XX 三個字節；容量先開好，後面用直接下標寫。
-    ; 不可寫 `out[out.len-bytes()]: { ok -> it = c }`：place-match 以「讀」作
-    ; 閘門，len=0 時讀 out[0] 越界回 nil，ok 臂永不執行 → 整串靜默為空。
+    ; 每個字節最多編成 %XX 三個字節；容量先開好。
+    ; str 下標直寫（含 `out[out.len-bytes()] = c` 這種靠寫入自動增長長度的形態）
+    ; 自 2026-11-11 起全域禁用 ⇒ 改用 `[]byte` 緩衝 + 顯式計數器，最後按實際長度回填。
     #{overflow=wrap}
-    out = with-cap(s.len-bytes() * 3 + 1)
+    on-cap = s.len-bytes() * 3 + 1
+    out-b []byte = with-cap-len(on-cap, on-cap)
+    on = 0
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
 
@@ -382,24 +383,55 @@ url-encode = (s str) (out str) {
         }
         {
             keep -> {
-                out[out.len-bytes()] = c
+                out-b[on] = c
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
             }
 
             -> {
-                out[out.len-bytes()] = 37
-                out[out.len-bytes()] = hex-chars[c >> 4]: {
+                out-b[on] = 37
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
+                h1 = hex-chars[c >> 4]: {
                     ok -> it
 
                     -> _
                 }
-                out[out.len-bytes()] = hex-chars[c & 15]: {
+                out-b[on] = h1
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
+                h2 = hex-chars[c & 15]: {
                     ok -> it
 
                     -> _
+                }
+                out-b[on] = h2
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
                 }
             }
         }
     }
+    out = out-b.slice(0, on).to-bytes-str()
 }
 
 ; URL 編碼（元件模式，也編碼 / 和 ?）
@@ -410,7 +442,9 @@ url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
 
     #{overflow=wrap}
-    out = with-cap(s.len-bytes() * 3 + 1)
+    on-cap = s.len-bytes() * 3 + 1
+    out-b []byte = with-cap-len(on-cap, on-cap)
+    on = 0
     i <- [0..s.len-bytes()): {
         c = s.byte(i)
 
@@ -435,24 +469,55 @@ url-encode-component = (s str) (out str) {
         }
         {
             keep -> {
-                out[out.len-bytes()] = c
+                out-b[on] = c
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
             }
 
             -> {
-                out[out.len-bytes()] = 37
-                out[out.len-bytes()] = hex-chars[c >> 4]: {
+                out-b[on] = 37
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
+                h1 = hex-chars[c >> 4]: {
                     ok -> it
 
                     -> _
                 }
-                out[out.len-bytes()] = hex-chars[c & 15]: {
+                out-b[on] = h1
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
+                h2 = hex-chars[c & 15]: {
                     ok -> it
 
                     -> _
+                }
+                out-b[on] = h2
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
                 }
             }
         }
     }
+    out = out-b.slice(0, on).to-bytes-str()
 }
 
 ; URL 解碼（百分號解碼）
@@ -460,12 +525,16 @@ url-encode-component = (s str) (out str) {
 ; 返回 out str: 解碼後的原始字符串
 ; [url-decode](#url.url-decode)
 url-decode = (s str) (out str) {
-    out = with-cap(s.len-bytes() + 1)
+
+    ; str 下標直寫自 2026-11-11 起全域禁用 ⇒ `[]byte` 緩衝 + 顯式計數器。
+    #{overflow=wrap}
+    out-cap = s.len-bytes() + 1
+    out-b []byte = with-cap-len(out-cap, out-cap)
+    on = 0
     i = 0
     (i < s.len-bytes()) {
         c = s.byte(i)
 
-        #{overflow=wrap}
         {
             c == 37 && i + 2 < s.len-bytes() -> {
 
@@ -480,6 +549,7 @@ url-decode = (s str) (out str) {
                     -> _
                 }
 
+                #{overflow=wrap}
                 h2-opt = s.byte(i + 2)
 
                 h2 i64 = h2-opt: {
@@ -566,9 +636,15 @@ url-decode = (s str) (out str) {
                 }
                 {
                     v1 >= 0 && v2 >= 0 -> {
-                        out[out.len-bytes()] = (v1 << 4) | v2
+                        out-b[on] = (v1 << 4) | v2
 
                         #{overflow=wrap}
+                        on = on + 1: {
+                            ok -> it
+
+                            -> on
+                        }
+
                         {
 
                             #{overflow=wrap}
@@ -582,7 +658,14 @@ url-decode = (s str) (out str) {
                     }
 
                     -> {
-                        out[out.len-bytes()] = c
+                        out-b[on] = c
+
+                        #{overflow=wrap}
+                        on = on + 1: {
+                            ok -> it
+
+                            -> on
+                        }
                     }
                 }
             }
@@ -590,15 +673,28 @@ url-decode = (s str) (out str) {
             c == 43 -> {
 
                 ; + 號轉空格
-                out[out.len-bytes()] = 32
+                out-b[on] = 32
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
             }
 
             -> {
-                out[out.len-bytes()] = c
+                out-b[on] = c
+
+                #{overflow=wrap}
+                on = on + 1: {
+                    ok -> it
+
+                    -> on
+                }
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -610,6 +706,7 @@ url-decode = (s str) (out str) {
             }
         }
     }
+    out = out-b.slice(0, on).to-bytes-str()
 }
 
 ; 查詢字串建構
@@ -688,7 +785,6 @@ url-join = (base str, path-str str) (out str) {
         i = i - 1
     }
 
-    #{overflow=wrap}
     {
         slash-pos >= 0 -> {; 確保不是 protocol:// 中的 //
             {
@@ -787,7 +883,6 @@ url-parse-basic-auth = (header str) (user str, password str) {
     pass-bytes []byte
     k = 0
 
-    #{overflow=wrap}
     j <- [colon + 1..raw.len()): {
         {
             pass-bytes[k] ?= raw[j]
@@ -797,7 +892,6 @@ url-parse-basic-auth = (header str) (user str, password str) {
             -> _
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

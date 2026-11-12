@@ -4280,7 +4280,7 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
 
                     ; s8r：module-path 接收者（Go type.go returnTypeFromCallExpr 的 module-path 臂）——
                     ;   當 recv IDENT【不是】變數（ps-var-type 空）時，把它當【套件限定名】，
-                    ;   查全名 `recv.method`（如 toml.new = () (doc toml-doc) registered as ms:toml.new）。
+                    ;   查全名 `recv.method`（如 toml.new = () (doc toml) registered as ms:toml.new）。
                     ;   克隆舆 rty!='' 臂同法（跳 token 重跑 ps-parse-type，未采用即孤兒零回歸）。
                     ;   ⚠️ 本臂局部變數一律 q 後綴，避免舆 rty!='' 臂同名串型別（s7l 教訓）。
                     rty == '' -> {

@@ -1021,7 +1021,7 @@ WASI sysroot no encontrado. Define $WASI_SYSROOT para apuntar a tu wasi-sysroot.
   'ttdybn5d': 'fmt: -md no se puede combinar con -fix (las correcciones automáticas solo aplican a fuentes .no)'
   'ttlxcrgt': 'se esperaba \'[\' o \'(\' o una cadena en la expresión de rango, se obtuvo %s'
   'u0g1w0d7': 'módulo de compatibilidad js no encontrado: %s'
-  'u3g4qexx': 'builtin chars-new: tipo de argumento incorrecto %s'
+  'u3g4qexx': 'builtin %s: tipo de argumento incorrecto %s'
   'u3if6wak': '  no fmt -fix=match -w src/       añadir in situ las ramas match que faltan'
   'u4oybn9r': '%s ya está instalado (%s); usa -u para reinstalar o actualizar'
   'u5qmp19f': 'el match de option debe manejar todas las ramas: err, nil, ok (falta: %s)'

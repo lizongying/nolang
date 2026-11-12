@@ -71,7 +71,6 @@ queue {
     sz >= q.cap - 1 -> return
     idx = q.tail
 
-    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
 
@@ -98,7 +97,6 @@ queue {
     }
     idx = q.head
 
-    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
 
@@ -124,7 +122,6 @@ queue {
     }
     idx = q.head
 
-    #{overflow=wrap}
     {
         idx >= 0 -> idx = idx % q.cap
 

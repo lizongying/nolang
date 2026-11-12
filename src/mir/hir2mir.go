@@ -179,9 +179,19 @@ type lowerer struct {
 	// lowered ("" for user-program code). resolveAlias needs it for the
 	// self-module carve-out: io.no's own `err(...)` means io.err, not the
 	// global `err` alias.
-	curMod    string
-	voidType  TypeID
-	curRecv   ValueID // current method's implicit `self` receiver value (first param)
+	curMod   string
+	voidType TypeID
+	curRecv  ValueID // current method's implicit `self` receiver value (first param)
+	// synthRecv is set when the receiver passed to lowerCallArgs was
+	// SYNTHESIZED (a `zero-recv` OpConst) because the call names a method
+	// through a namespace/type prefix (`txt.from-str(x)`) instead of through a
+	// value receiver. Such a call MUST prepend that synthesized receiver even
+	// when the first HIR argument happens to be the identifier `self`: there the
+	// `self` is a genuine INPUT argument (the enclosing method's own receiver),
+	// not the callee's receiver. Conflating the two handed the callee the wrong
+	// object — `txt.from-str(.)` inside a `str` method passed the %str-long*
+	// receiver where the callee expected a %txt* and SIGSEGV'd.
+	synthRecv bool
 	diags     []LowerDiag
 	loopStack []loopCtx // active for-loops, for break/continue targets
 
@@ -1465,7 +1475,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				//     zero-initialized shared state.
 				//
 				//  2. A CONSTANT array literal (`XZ-MAGIC = [0xfd, 0x37, ...]`)
-				//     read by a std function (std/archive/xz.no's xz-decompress
+				//     read by a std function (std/archive/xz.no's decompress
 				//     does `data[i] != XZ-MAGIC[i]`). Its inferred type is a slice
 				//     (`[]i64`) but foldConstText lowers the literal to a FIXED
 				//     array `[6 x i64] [...]`, so the global must be declared with
@@ -12839,6 +12849,14 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 						if recvTyp != NoType && recvTyp != l.voidType {
 							recvV = l.b.Emit(OpConst, recvTyp, nil, "")
 							l.mod.Values[recvV].Name = "zero-recv"
+							// Mark it as SYNTHESIZED so lowerCallArgs prepends it
+							// unconditionally: the HIR's first argument may be the
+							// literal identifier `self` (a bare `.` inside a
+							// method), which is an INPUT here, not this callee's
+							// receiver. See the synthRecv field comment.
+							savedSynth := l.synthRecv
+							l.synthRecv = true
+							defer func() { l.synthRecv = savedSynth }()
 						}
 						break // only the first KResult (self)
 					}
@@ -13526,8 +13544,20 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 		// op, arg1, arg2]). Only prepend when the HIR has NOT already supplied
 		// the receiver — i.e. explicit-receiver calls (`obj.method()`) whose
 		// first arg node is a real value, not the synthetic "self" ident.
+		//
+		// EXCEPTION: a SYNTHESIZED receiver (synthRecv) is never the one the HIR
+		// already supplied. It exists only for namespace/type-prefixed calls
+		// (`txt.from-str(x)`), whose HIR args are the callee's INPUTS — so a
+		// leading `self` there is the CALLER's receiver (the value being passed),
+		// not this callee's receiver. Refusing to prepend in that case handed the
+		// callee the caller's object as its own receiver: `txt.from-str(.)` in a
+		// `str` method passed a %str-long* where a %txt* was expected and
+		// SIGSEGV'd (the same call written as `s = self` / `txt.from-str(s)`
+		// worked, because the first arg was then a plain local, not `self`).
+		synth := l.synthRecv
+		l.synthRecv = false // nested argument expressions must not inherit it
 		firstIsSelf := false
-		if len(args) > 0 {
+		if !synth && len(args) > 0 {
 			if an := l.pkg.Node(args[0]); an != nil && an.Kind == hir.KIdent && l.pkg.Str(an.S) == "self" {
 				firstIsSelf = true
 			}

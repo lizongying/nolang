@@ -1862,7 +1862,26 @@ func fixOverflowSource(src string) (string, bool) {
 // fixOverflowSourceShape 是 fixOverflowInFile 的純字串版（正式路徑，糖形態）。
 // §4.3 已刪除 SkipUnwrapLowering / SkipSafeIndexLowering 兩旗標與 surface 形態，
 // 糖形態（SkipLowering）是唯一形態。
+//
+// 兩步：① 先摘掉寫在作用域級宿主（函式頭 / 塊頭）上的 #{overflow=...}——codegen 與
+// 編譯期檢查都不認它，它只是讓 `no vet` 以為整棵子樹已標註（見
+// stripScopeOverflowAnnotations 的實測），留著會讓 ② 看不到塊內真正缺標的
+// 運算；② 再按逐條陳述補行注解（原邏輯）。
 func fixOverflowSourceShape(src string) (string, bool) {
+	stripped, removed := stripScopeOverflowAnnotations(src)
+	if removed > 0 {
+		src = stripped
+	}
+	if out, inserted := insertLineOverflowAnnotations(src); inserted {
+		return out, true
+	}
+	return stripped, removed > 0
+}
+
+// insertLineOverflowAnnotations 對未標註 #{overflow} 的整數溢位運算做「手術式」
+// 文字插入：在該陳述首行上方插入 `#{overflow=wrap}`（若上方緊鄰已有其它單行註解，
+// 則合併為單行）。無可插入處回傳 ok=false。
+func insertLineOverflowAnnotations(src string) (string, bool) {
 	lx := lexer.New(src)
 	p := parser.New(lx)
 	p.SkipLowering = true
@@ -1923,20 +1942,287 @@ func fixOverflowSourceShape(src string) (string, bool) {
 	if len(inserts) == 0 && len(merges) == 0 {
 		return "", false
 	}
-	out := make([]string, 0, len(lines)+len(inserts))
-	for i := 1; i <= len(lines); i++ {
-		for _, ins := range inserts {
-			if ins.beforeLine == i {
-				out = append(out, ins.fullLine)
+	build := func(ops []insertOp) (string, map[int]int) {
+		// lineOf：beforeLine（原始行號）-> 插入行在結果中的 1-based 行號。
+		lineOf := map[int]int{}
+		out := make([]string, 0, len(lines)+len(ops))
+		for i := 1; i <= len(lines); i++ {
+			for _, ins := range ops {
+				if ins.beforeLine == i {
+					out = append(out, ins.fullLine)
+					lineOf[i] = len(out)
+				}
+			}
+			if add, ok := merges[i]; ok {
+				out = append(out, mergeAnnotationLine(lines[i-1], add))
+			} else {
+				out = append(out, lines[i-1])
 			}
 		}
-		if add, ok := merges[i]; ok {
-			out = append(out, mergeAnnotationLine(lines[i-1], add))
-		} else {
-			out = append(out, lines[i-1])
+		return strings.Join(out, "\n"), lineOf
+	}
+	out, lineOf := build(inserts)
+	// 自驗證：插完再解析一次，把「插了但沒附著上」的注解撤回。
+	//
+	// parser 只接受 IDENT / USE / IN / RARROW / 陣列型別方法起首的陳述為附加目標；
+	// findFixTargetNode 給回的目標可能起首是 `{`（語句位置裸塊、帶括號 match 的
+	// 臂組）或 `.`（接收者方法調用）。這兩種插了就是死行：實測把它放在
+	// `{` / `.n = .n + 1` 上方，站點照樣被 checker 報告。與其留死行，不如撤回——
+	// 該站點留給語言層放寬附加目標後再處理（見 docs/docs/lang/annotation-scope.md §7）。
+	// 撤回後不再重試，故第二趟 `--fix` 拿到的源碼不動，保持冪等。
+	if len(inserts) > 0 && out != src {
+		vp := parser.New(lexer.New(out))
+		vp.SkipLowering = true
+		vprog := vp.ParseProgram()
+		if len(vp.Errors()) == 0 {
+			if dead := overflowAnnotationDeadLines(vp, vprog, strings.Split(out, "\n")); len(dead) > 0 {
+				kept := make([]insertOp, 0, len(inserts))
+				for _, ins := range inserts {
+					if ln, ok := lineOf[ins.beforeLine]; ok && dead[ln] {
+						if os.Getenv("NOLANG_FIXDBG") != "" {
+							fmt.Fprintf(os.Stderr, "[FIXDBG] revert dead insert before=%d (result line %d)\n", ins.beforeLine, ln)
+						}
+						continue
+					}
+					kept = append(kept, ins)
+				}
+				if len(kept) != len(inserts) {
+					inserts = kept
+					if len(inserts) == 0 && len(merges) == 0 {
+						return "", false
+					}
+					out, _ = build(inserts)
+				}
+			}
 		}
 	}
-	return strings.Join(out, "\n"), true
+	return out, true
+}
+
+// scopeLevelOverflowHost 報告該陳述是否是「作用域級」的 overflow 宿主：
+// 函式/方法定義（L1），或塊頭陳述（L2：for、if 組、match、語句位置裸塊）。
+//
+// 只有**塊形式**才算——`cond -> 單條陳述` 的 body 與單行陳述等價（規範 §2.3），
+// 註解留在那裡是合法的 L3，摘掉再補會來回震盪（不冪等）。
+func scopeLevelOverflowHost(s parser.Statement) bool {
+	switch v := s.(type) {
+	case *parser.FunctionDefinition:
+		return true
+	case *parser.ForStatement:
+		return true
+	case *parser.BlockStatement:
+		return !v.IsInline // 語句位置裸塊（協程組）
+	case *parser.ExpressionStatement:
+		switch e := v.Expression.(type) {
+		case *parser.IfExpression:
+			return e.Consequence != nil && !e.Consequence.IsInline
+		case *parser.SurfaceMatch:
+			for i := range e.Arms {
+				if e.Arms[i].IsBlockBody {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
+// visitNestedStatementLists 下鑽一條陳述所擁有的全部**語句列表**（不進運算式）。
+// 作用域級宿主（函式 / for / 裸塊 / if / match / `{ ... }: { ... }`）只出現在語句
+// 位置，所以不必遞迴任意運算式，覆蓋這幾類容器即可。
+func visitNestedStatementLists(s parser.Statement, visit func([]parser.Statement)) {
+	switch v := s.(type) {
+	case *parser.FunctionDefinition:
+		if v.Body != nil {
+			visit(v.Body.Statements)
+		}
+	case *parser.ForStatement:
+		if v.Init != nil {
+			visit([]parser.Statement{v.Init})
+		}
+		if v.Update != nil {
+			visit([]parser.Statement{v.Update})
+		}
+		if v.Body != nil {
+			visit(v.Body.Statements)
+		}
+	case *parser.BlockStatement:
+		visit(v.Statements)
+	case *parser.BlockMatchStatement:
+		// `{ ... }: { ... }`（try/catch 形態）：語句在 Body，臂在 Match。
+		// 漏掉它會讓「塊內死行」與「塊內運算」整段隱形（heap.no 的 push 即此）。
+		if v.Body != nil {
+			visit(v.Body.Statements)
+		}
+		if v.Match != nil {
+			for i := range v.Match.Arms {
+				if v.Match.Arms[i].Body != nil {
+					visit(v.Match.Arms[i].Body.Statements)
+				}
+			}
+		}
+	case *parser.ExpressionStatement:
+		switch e := v.Expression.(type) {
+		case *parser.IfExpression:
+			if e.Consequence != nil {
+				visit(e.Consequence.Statements)
+			}
+			if e.Alternative != nil {
+				visit(e.Alternative.Statements)
+			}
+		case *parser.SurfaceMatch:
+			for i := range e.Arms {
+				if e.Arms[i].Body != nil {
+					visit(e.Arms[i].Body.Statements)
+				}
+			}
+		}
+	}
+}
+
+// isSoleOverflowAnnotationLine 報告該行是否為「只有 overflow 一個鍵」的獨立注解行。
+// 多鍵同行（`#{overflow=wrap, mac-arm64}`）與尾隨寫法保守不動：刪整行會連帶丟掉
+// 別的鍵，而逐鍵改寫屬於另一種編輯。
+func isSoleOverflowAnnotationLine(line string) bool {
+	t := strings.TrimSpace(line)
+	if !strings.HasPrefix(t, "#{") || !strings.HasSuffix(t, "}") {
+		return false
+	}
+	inner := strings.TrimSpace(t[2 : len(t)-1])
+	if strings.Contains(inner, ",") {
+		return false
+	}
+	if i := strings.IndexByte(inner, '='); i >= 0 {
+		inner = inner[:i]
+	}
+	return strings.TrimSpace(inner) == "overflow"
+}
+
+// overflowAnnotationDeadLines 回傳「死行」的行號集合：注解退化成獨立的
+// `*parser.AnnotationStatement`，沒有附著到任何節點。
+//
+// 判據是**結構**而非位置猜測：parser 的 parseAnnotationStatement 只認
+// IDENT / USE / IN / RARROW / 陣列型別方法起首的陳述為附加目標。起首 token 不在
+// 其中時（實測確認的兩種：語句位置裸塊 `{` 與帶括號 match 的 `{`、接收者方法調用
+// `.`），注解既沒掛到那條陳述上、也沒被丟棄，而是自成一條 AnnotationStatement。
+// 這種注解對 codegen、編譯期檢查、`no vet` 三者都是純死行：
+//
+//	#{overflow=wrap}      ; ← 死行（`{` 不在附加目標之列）
+//	{
+//	    .n = .n + 1
+//	}
+//
+// 驗證方式：把 `#{overflow=wrap}` 放在 `i + 1 >= n -> {` 上方（IDENT 起首，能掛）時
+// 站點閉嘴；同一個注解放在 `{` 或 `.n = .n + 1` 上方時站點照報。故「獨立
+// AnnotationStatement + 整行只有 overflow」⇒ 摘掉它不改變任何編譯/檢查結果。
+//
+// p 必須是解析出 program 的那個 parser（沿用其註解索引）；lines 是 src 的行切分。
+func overflowAnnotationDeadLines(p *parser.Parser, program *parser.Program, lines []string) map[int]bool {
+	dead := map[int]bool{}
+	if program == nil {
+		return dead
+	}
+	var visit func(stmts []parser.Statement)
+	visit = func(stmts []parser.Statement) {
+		for _, s := range stmts {
+			if s == nil {
+				continue
+			}
+			if as, ok := s.(*parser.AnnotationStatement); ok {
+				for _, e := range as.Entries {
+					if e == nil || e.Key != "overflow" || e.Trailing {
+						continue
+					}
+					ln := e.Pos().Line
+					if ln >= 1 && ln <= len(lines) && isSoleOverflowAnnotationLine(lines[ln-1]) {
+						dead[ln] = true
+					}
+				}
+			}
+			visitNestedStatementLists(s, visit)
+		}
+	}
+	visit(program.Statements)
+	return dead
+}
+
+// stripScopeOverflowAnnotations 移除**不起作用**的 #{overflow=...} 注解行，讓
+// --fix=overflow 的逐條插入成為唯一來源。兩類都摘：
+//
+//	① 掛在作用域級宿主上的（函式頭 L1、for 頭 / if 組頭 / match 臂頭 / 語句位置
+//	   裸塊 L2）。`#{overflow}` 只支持行作用域（單條陳述）。寫在函式頭（L1）或
+//	   塊頭（L2）時，codegen 不讀它、編譯期檢查也不認它——實測「`for` 頭加
+//	   #{overflow=wrap} 而體內寫 `x i8 = a + a`」與「刪掉那一行」報出逐字相同的
+//	   15w45dqk。它唯一的副作用是讓 `no vet` 的 stmtOverflowAnnotated →
+//	   effOverflow 一路閉嘴，即純遮蔽。不摘掉，逐條補齊那一步就看不到塊內真正
+//	   缺標的運算；摘掉之後塊內運算暴露出來，由逐條插入按 checker 的報告補回，
+//	   語意即作者在塊頭寫下的那個模式（wrap），而 codegen / vet / parser 自此
+//	   同一個答案。
+//
+//	② 死行：注解沒附著到任何節點、退化成獨立 `*parser.AnnotationStatement`
+//	   （`{` / `.` 起首的陳述不在 parser 的附加目標之列）。語意上與不存在等價，
+//	   留著只會讓「塊级注解下推」看起來沒做完。判據與實測見
+//	   overflowAnnotationDeadLines。
+//
+// 保守邊界：只刪「整行只有 overflow 一個鍵」的行（多鍵同行刪整行會連帶丟掉別的
+// 鍵），也不碰尾隨寫法（同一行後方的 `#{...}` 要就地改寫，屬另一種編輯；存量裡
+// 沒有作用域級尾隨注解）。
+//
+// 回傳（瘦身後源碼, 刪除條數）。解析失敗時原樣回傳。
+func stripScopeOverflowAnnotations(src string) (string, int) {
+	lx := lexer.New(src)
+	p := parser.New(lx)
+	p.SkipLowering = true
+	program := p.ParseProgram()
+	if len(p.Errors()) > 0 || program == nil {
+		return src, 0
+	}
+	lines := strings.Split(src, "\n")
+	// 形態②（死行）先併進來，形態①再補：兩者可能同時命中同一行（冗餘無害）。
+	drop := overflowAnnotationDeadLines(p, program, lines)
+	// markDrop 只刪「整行只有 overflow 一個鍵」的注解行；多鍵同行保守不動。
+	markDrop := func(e *parser.AnnotationEntry) {
+		if e == nil || e.Key != "overflow" || e.Trailing {
+			return
+		}
+		ln := e.Pos().Line
+		if ln < 1 || ln > len(lines) {
+			return
+		}
+		if isSoleOverflowAnnotationLine(lines[ln-1]) {
+			drop[ln] = true
+		}
+	}
+	var visit func([]parser.Statement)
+	visit = func(stmts []parser.Statement) {
+		for _, s := range stmts {
+			if s == nil {
+				continue
+			}
+			// 形態①：注解直接掛在作用域級宿主上（函式頭、for 頭、if 組頭、
+			// match 臂頭）。parseAnnotationStatement 的附加目標含 IDENT / IN /
+			// RARROW，這些頭的起首 token 都在其中。
+			if scopeLevelOverflowHost(s) {
+				for _, e := range p.RawAnnotationsOf(s) {
+					markDrop(e)
+				}
+			}
+			visitNestedStatementLists(s, visit)
+		}
+	}
+	visit(program.Statements)
+	if len(drop) == 0 {
+		return src, 0
+	}
+	out := make([]string, 0, len(lines)-len(drop))
+	for i := 1; i <= len(lines); i++ {
+		if drop[i] {
+			continue
+		}
+		out = append(out, lines[i-1])
+	}
+	return strings.Join(out, "\n"), len(drop)
 }
 
 // fixMatchArmsFixes 對 `no fmt --fix=match` 收集單檔/目錄下所有待修檔案的修復結果。
@@ -2116,15 +2402,21 @@ func isOverflowFixableType(s parser.Statement) bool {
 // 例如 `val[j] = .byte(start + j)` 跨多行時，取其最小 span 的陳述。
 // 找不到可標註節點（如同行只有 break 等非運算陳述）時回傳 nil（該報告跳過）。
 //
-// ⚠️ 刻意**不**下鑽 SurfaceMatch 的臂體（糖形態下的 match）：臂內報告的最小
-// 可標註節點會是臂體語句，而臂體常是行內形式（`w i64 -> w + 1`，語句與臂模式
-// 同一行）——把 `#{overflow=wrap}` 插到那一行上方等於插進 match 區塊、落在臂
-// 模式行之前，該位置能否被 parser/lowering 認可取決於註解附著細節，不安全。
-// 停在整個 match 語句（ExpressionStatement/LetStatement）上方反而正確：語句級
-// 註解對整棵子樹生效（checker 的 overflowAnnotatedNode 提前返回覆蓋臂體），
-// 且已實測編譯/運行/`no fmt` 保留/冪等四項均安全（見
-// no_fix_shape_gate_test.go 的 TestFixOverflowRuleIsShapeParityEndToEnd 註釋）。
-// 語料實測：糖形態下 0 條報告因此找不到目標。
+// 下鑽範圍：函式體、for 的 init/update/body、裸塊、if 的兩臂、函式字面量，
+// 以及 **塊形式臂體**（`cond -> {` 的 `{ ... }` 內）。最後一項是「把塊級註解
+// 下推進塊內」的前提：不下鑽時，臂體內的報告只能拿回整個 match/if 陳述，
+// 注解被插回塊頭（`cond -> {` 那行或裸塊的 `{` 那行）——那些位置 parser 無法
+// 附著，插了也是死行（實測：把 `#{overflow=wrap}` 放在 `i + 1 >= n -> {` 上方，
+// 該站點照樣被報告）。下鑽到臂體陳述後，注解落在真正的 L3 位置。
+//
+// ⚠️ **只下鑽塊形式臂**（IsBlockBody）。行內臂體（`w i64 -> w + 1`）的陳述與臂
+// 模式同一行，插到它上方等於插進 match、落在臂模式行之前，位置不可取；停在整個
+// match 陳述上方反而正確（語句級注解對整棵子樹生效，checker 的
+// overflowAnnotatedNode 提前返回即覆蓋臂體）。
+//
+// ⚠️ **臂條件**（`i + j >= n -> {` 的 `i + j`）仍拿不回可標註節點：它的行就是
+// 臂頭行，而臂模式不是陳述、parser 也不接受在臂頭上方附加注解。這類報告只能
+// 停在容器陳述上（現階段無解，需語言層放寬，見 docs/docs/lang/annotation-scope.md §7）。
 func findFixTargetNode(program *parser.Program, line int) parser.Statement {
 	var best parser.Statement
 	bestSpan := 1 << 30
@@ -2159,24 +2451,52 @@ func findFixTargetNode(program *parser.Program, line int) parser.Statement {
 				}
 			case *parser.BlockStatement:
 				walk(v.Statements)
-			case *parser.ExpressionStatement:
-				if ie, ok := v.Expression.(*parser.IfExpression); ok {
-					if ie.Consequence != nil {
-						walk(ie.Consequence.Statements)
-					}
-					if ie.Alternative != nil {
-						walk(ie.Alternative.Statements)
+			case *parser.BlockMatchStatement:
+				// `{ ... }: { ... }`：Body 內的陳述照常是插入目標；臂只認塊形式。
+				if v.Body != nil {
+					walk(v.Body.Statements)
+				}
+				if v.Match != nil {
+					for i := range v.Match.Arms {
+						if v.Match.Arms[i].IsBlockBody && v.Match.Arms[i].Body != nil {
+							walk(v.Match.Arms[i].Body.Statements)
+						}
 					}
 				}
+			case *parser.ExpressionStatement:
+				walkFixNestedExprBody(v.Expression, walk)
 			case *parser.LetStatement:
 				if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
 					walk(fl.Body.Statements)
 				}
+				walkFixNestedExprBody(v.Value, walk)
 			}
 		}
 	}
 	walk(program.Statements)
 	return best
+}
+
+// walkFixNestedExprBody 下鑽一條「陳述位置運算式」所擁有的**塊形式**語句列表：
+// if 的兩臂、match 的塊形式臂體。行內臂體與行內 body 一律跳過（理由見
+// findFixTargetNode 註釋）。
+func walkFixNestedExprBody(e parser.Expression, walk func([]parser.Statement)) {
+	switch v := e.(type) {
+	case *parser.IfExpression:
+		if v.Consequence != nil && !v.Consequence.IsInline {
+			walk(v.Consequence.Statements)
+		}
+		if v.Alternative != nil && !v.Alternative.IsInline {
+			walk(v.Alternative.Statements)
+		}
+	case *parser.SurfaceMatch:
+		for i := range v.Arms {
+			if !v.Arms[i].IsBlockBody || v.Arms[i].Body == nil {
+				continue
+			}
+			walk(v.Arms[i].Body.Statements)
+		}
+	}
 }
 
 // mergeAnnotationLine 在 `#{...}` 行的最後一個 `}` 前插入 add（如 ", overflow=wrap"），
@@ -3807,17 +4127,17 @@ func flattenLints(results []nbuild.LintResult) (diags []vetDiagnostic, errors, w
 				continue
 			}
 			seen[dedupKey] = true
-		diags = append(diags, vetDiagnostic{
-			File:      filePath,
-			Line:      l.Line,
-			Column:    l.Column,
-			EndColumn: l.EndColumn,
-			Severity:  string(l.Severity),
-			Rule:      l.Source,
-			Message:   l.Message,
-			TraceID:   l.TraceID,
-			Fix:       firstFix(l.Fixes),
-		})
+			diags = append(diags, vetDiagnostic{
+				File:      filePath,
+				Line:      l.Line,
+				Column:    l.Column,
+				EndColumn: l.EndColumn,
+				Severity:  string(l.Severity),
+				Rule:      l.Source,
+				Message:   l.Message,
+				TraceID:   l.TraceID,
+				Fix:       firstFix(l.Fixes),
+			})
 			switch l.Severity {
 			case nbuild.LintError:
 				errors++

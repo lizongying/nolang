@@ -121,6 +121,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
                 -> _
             }
 
+            #{overflow=wrap}
             ixout95c44 = v[j - 1]: {
                 ok -> it
 
@@ -133,7 +134,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
                 -> _
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -204,7 +204,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     ; 處理 AAD（每 16 位元組一區塊）
     pos = 0
 
-    #{overflow=wrap}
     (pos + 16 <= aad.len()) {
         i <- [0..16): {
             {
@@ -241,7 +240,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         y = ghash-mul(y, h)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -255,7 +253,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     }
 
     ; AAD 最後不完整區塊
-    #{overflow=wrap}
     pos < aad.len() -> {
         e2 <- blk: {
             e2: {
@@ -301,7 +298,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     ; 處理密文
     pos = 0
 
-    #{overflow=wrap}
     (pos + 16 <= cipher.len()) {
         i <- [0..16): {
             {
@@ -336,7 +332,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         y = ghash-mul(y, h)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -349,7 +344,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
     }
 
-    #{overflow=wrap}
     pos < cipher.len() -> {
         e3 <- blk: {
             e3: {
@@ -604,7 +598,6 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
 
         aes-ctr.ctr-inc(cb)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

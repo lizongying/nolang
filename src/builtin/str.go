@@ -157,6 +157,29 @@ func init() {
 		ForwardFunc:  "str-truncate",
 	})
 
+	// str.push-str: append a str IN PLACE (in-place growth, byte copy).
+	//
+	// This is the ONLY way to grow a str: `s[i] = v` is rejected by the checker
+	// (idxwrite) because a subscript write silently changes the length, and the
+	// public byte-level writer was retired to the private `_set-byte`. The std
+	// surface is `str.push(c char)` (UTF-8 encode then delegate here) plus this
+	// one; keep the qualified name (a void builtin goes through hir2mir's
+	// qualified branch, exactly like str.clear / str.truncate).
+	//
+	// Intercepted by the MIR codegen (emitBuiltinStrPushBytes, see
+	// builtin_str_push.go). The `#{buildin}` stub in src/std/str.no has an empty
+	// body, so the ONLY implementation is the emitter: if the lookup ever stopped
+	// resolving, the call would become a silent no-op. src/mir/str_push_test.go
+	// pins the emitted IR shape for exactly that reason.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "str.push-str",
+		Params:       []parser.Type{parser.TypeStr},
+		Return:       []parser.Type{},
+		Doc:          "Append a string in place (in-place growth, byte copy)",
+		ForwardFunc:  "str-push-bytes",
+	})
+
 	// with-cap: create a new str or vec with specified capacity (len=0)
 	// Builtin syntax: with-cap(cap) — type inferred from assignment LHS
 	//   s str = with-cap(256)   → str-long with cap=256

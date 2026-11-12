@@ -215,7 +215,6 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
 
         r = r | (bit << (n - 1 - i))
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -386,7 +385,6 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
 
     round <- [0..16): {
 
-        #{overflow=wrap}
         {
             encrypt == 1 -> sk-off = round * 6
 

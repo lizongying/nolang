@@ -185,12 +185,12 @@ raw []byte = [
 ]
 
 pem-out str
-pem-out = pem.pem-encode('TEST', raw)
+pem-out = pem.encode('TEST', raw)
 print('encoded:')
 print(pem-out)
 
 ; 解碼
-decoded = pem.pem-decode(pem-out)
+decoded = pem.decode(pem-out)
 decoded: {
     ok -> {
         blk = it

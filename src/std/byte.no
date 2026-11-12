@@ -82,42 +82,47 @@
     r str = with-len(0)
     i <- [0..n): {
         cp = .[i] & 0xff
-        seg str = with-cap(4)
 
-        ; 注意：seg 是 with-cap 出來的 len=0 緩衝，不可用 `seg[0]: { ok -> it = v }`
-        ; 這種 D9 place-match 寫入——它以「讀」作閘門，len=0 時讀 seg[0] 越界回 nil，
-        ; ok 臂永不執行，seg 永遠是空串（曾使本方法靜默回空字串）。
-        ; with-cap 基底被 idxwrite lint 豁免，可直接下標寫入。
+        ; 位移後的串接段必須是「恰好 seg-n 個位元組」的 str。這裡用 []byte 緩衝 +
+        ; 下標寫入 + 最後按 seg-n 切片，而不是 `seg str = with-cap(4)` 後直接寫下標：
+        ; str 的下標寫入已在 2026-11-11 被禁用（見 checker 的 str 直寫規則），
+        ; 而 []byte 的 with-cap-len 版本長度是顯式的，不需要靠寫入去「長大」。
+        seg-b []byte = with-cap-len(4, 4)
+        seg-n = 1
         {
             cp < 0x80 -> {
-                seg[0] = cp
+                seg-b[0] = cp
             }
 
             cp < 0x800 -> {
-                seg[0] = 0xc0 | ((cp >> 6) & 0x1f)
+                seg-b[0] = 0xc0 | ((cp >> 6) & 0x1f)
 
-                seg[1] = 0x80 | (cp & 0x3f)
+                seg-b[1] = 0x80 | (cp & 0x3f)
+                seg-n = 2
             }
 
             cp < 0x10000 -> {
-                seg[0] = 0xe0 | ((cp >> 12) & 0x0f)
+                seg-b[0] = 0xe0 | ((cp >> 12) & 0x0f)
 
-                seg[1] = 0x80 | ((cp >> 6) & 0x3f)
+                seg-b[1] = 0x80 | ((cp >> 6) & 0x3f)
 
-                seg[2] = 0x80 | (cp & 0x3f)
+                seg-b[2] = 0x80 | (cp & 0x3f)
+                seg-n = 3
             }
 
             -> {
-                seg[0] = 0xf0 | ((cp >> 18) & 0x07)
+                seg-b[0] = 0xf0 | ((cp >> 18) & 0x07)
 
-                seg[1] = 0x80 | ((cp >> 12) & 0x3f)
+                seg-b[1] = 0x80 | ((cp >> 12) & 0x3f)
 
-                seg[2] = 0x80 | ((cp >> 6) & 0x3f)
+                seg-b[2] = 0x80 | ((cp >> 6) & 0x3f)
 
-                seg[3] = 0x80 | (cp & 0x3f)
+                seg-b[3] = 0x80 | (cp & 0x3f)
+                seg-n = 4
             }
         }
 
+        seg = seg-b.slice(0, seg-n).to-bytes-str()
         r = r - seg
     }
     out = r
@@ -129,6 +134,7 @@
 ;
 ; 實現：走 str.from-chars —— 把每個字節當成 0~255 的碼點塞進 []char，再由內建
 ; 一次建成 len=cap=n 的 str（每 char 只取低 8 位，正好是 1:1 位元組拷貝）。
+
 ; 2026-11-11 前這裡是 `out = with-len(n)` + `out[i] = .[i]`；str 的下標寫入被禁用後，
 ; 這是唯一既能表達 1:1 拷貝、又不碰 `_set-byte`（私有）的公開路徑。
 ; [to-bytes-str](#bytes.to-bytes-str)
@@ -254,16 +260,18 @@ HEX-LOWER = '0123456789abcdef'
     n = .len()
 
     #{overflow=wrap}
-    out = with-len(n * 2)
+    m = n * 2
+    buf []byte = with-cap-len(m, m)
     i <- [0..n): {
         b = .[i]
 
         #{overflow=wrap}
-        out[i * 2] = HEX-UPPER[b >> 4]
+        buf[i * 2] = HEX-UPPER[b >> 4]
 
         #{overflow=wrap}
-        out[i * 2 + 1] = HEX-UPPER[b & 15]
+        buf[i * 2 + 1] = HEX-UPPER[b & 15]
     }
+    out = buf.to-bytes-str()
 }
 
 ; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
@@ -272,16 +280,18 @@ HEX-LOWER = '0123456789abcdef'
     n = .len()
 
     #{overflow=wrap}
-    out = with-len(n * 2)
+    m = n * 2
+    buf []byte = with-cap-len(m, m)
     i <- [0..n): {
         b = .[i]
 
         #{overflow=wrap}
-        out[i * 2] = HEX-LOWER[b >> 4]
+        buf[i * 2] = HEX-LOWER[b >> 4]
 
         #{overflow=wrap}
-        out[i * 2 + 1] = HEX-LOWER[b & 15]
+        buf[i * 2 + 1] = HEX-LOWER[b & 15]
     }
+    out = buf.to-bytes-str()
 }
 
 ; byte.to-str: 將 byte 轉為字串（"65" → "65"）
@@ -296,11 +306,13 @@ HEX-LOWER = '0123456789abcdef'
 ; 返回 out txt: 固定 256 字節的 txt 結構
 ; [to-txt](#bytes.to-txt)
 []byte.to-txt = () (out txt) {
+
     ; 委派 txt.from-bytes：clamp 到 255 + 逐位元組拷入內聯緩衝 + 設 len，
     ; 與原本手寫的迴圈等價。txt._set-byte 已私有（raqvyltn 擋跨模組），
     ; 這裡走公開構造器即可。
-    ; ⚠️ 必須先綁到區域變數再傳，不能寫 `txt.from-bytes(.)` / `(self)`：
-    ;   把 self 直接當實參會讓 codegen 段錯誤（2026-11-11 實測，見 str.to-txt）。
+    ; 歷史：`txt.from-bytes(.)` / `(self)` 曾讓 codegen 段錯誤（2026-11-11），
+    ; 根因與 str.to-txt 相同（hir2mir 的隱式 self 出參錯位），已修並由
+    ; tests/bare-self-arg.no 覆蓋；裸 `.` 現在可直傳，`b = self` 保留無害。
     b = self
     out = txt.from-bytes(b)
 }

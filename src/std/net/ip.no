@@ -119,7 +119,6 @@ ip-addr.parse = (s str) (ok bool) {
                 ; 點分隔符
                 has-digit == 0 -> return
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}

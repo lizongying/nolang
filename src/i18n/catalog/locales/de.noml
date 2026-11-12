@@ -1017,7 +1017,7 @@ WASI-sysroot nicht gefunden. Setzen Sie $WASI_SYSROOT, damit es auf Ihren wasi-s
   'ttdybn5d': 'fmt: -md lässt sich nicht mit -fix kombinieren (automatische Korrekturen gelten nur für .no-Quellen)'
   'ttlxcrgt': '\'[\' oder \'(\' oder Zeichenkette im Bereichsausdruck erwartet, stattdessen %s erhalten'
   'u0g1w0d7': 'js-Kompatibilitätsmodul nicht gefunden: %s'
-  'u3g4qexx': 'builtin chars-new: falscher Argument-Typ %s'
+  'u3g4qexx': 'builtin %s: falscher Argument-Typ %s'
   'u3if6wak': '  no fmt -fix=match -w src/       fehlende match-Arme direkt ergänzen'
   'u4oybn9r': '%s bereits installiert (%s); verwenden Sie -u zum Neuinstallieren oder Aktualisieren'
   'u5qmp19f': 'option-Match muss alle Zweige behandeln: err, nil, ok (fehlt: %s)'

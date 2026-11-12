@@ -1,7 +1,7 @@
 ; db — 词库内存索引
 ;
 ; 设计要点（都来自实测约束，改动前请先看注释）：
-;   1. []T 的元素**不携带 str**：golang 侧的 json-pool / noml-pool 都为此把字符串
+;   1. []T 的元素**不携带 str**：golang 侧的 json-pool / pool 都为此把字符串
 ;      挪进平行 []str（src/std/json.no:64、src/std/noml.no:68）。这里照做：
 ;      gl-term 全是 i64 下标，文本统一驻留在 DB.strs。
 ;   2. 不用 [K]V 做字段：结构体带 map 字段 + 方法 + 跨模块会触发
@@ -167,7 +167,7 @@ stem-of = (file str) (stem str) {
 ; tid: 词条 id（即 terms 对象里的键）
 ; dom: 所属语义域名
 ; [load-term](#db.load-term)
-load-term = (d noml-doc, tidx i64, tid str, dom str) {
+load-term = (d noml.doc, tidx i64, tid str, dom str) {
     t gl-term
     t.id = intern(tid)
     t.title = intern(nav.str-or(d, tidx, 'title', tid))
@@ -242,7 +242,7 @@ load-domain = (dir str, file str) (ok bool) {
     }
 
     r = noml.parse(txt)
-    d noml-doc
+    d noml.doc
     got = false
     r: {
         ok -> {
@@ -303,7 +303,7 @@ open = (dir str) (ok bool) {
     }
 
     r = noml.parse(txt)
-    d noml-doc
+    d noml.doc
     got = false
     r: {
         ok -> {

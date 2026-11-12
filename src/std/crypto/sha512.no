@@ -3337,7 +3337,6 @@ sha512 = (data []byte) (hash [64]byte) {
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

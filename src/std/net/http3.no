@@ -81,7 +81,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     ; 字面標頭前綴: 0010 0000（不使用靜態表參考，名稱為字面值）
     buf[pos] = QPACK-LITERAL-PREFIX
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -100,7 +99,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         name-bytes.len() < 64 -> {
             buf[pos] = name-bytes.len() & 255
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -121,7 +119,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             #{overflow=wrap}
             buf[pos + 1] = name-bytes.len() & 255
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -156,7 +153,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         value-bytes.len() < 64 -> {
             buf[pos] = value-bytes.len() & 255
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -175,7 +171,6 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             #{overflow=wrap}
             buf[pos + 1] = value-bytes.len() & 255
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -253,7 +248,6 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -287,7 +281,6 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
         -> 0
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -472,7 +465,6 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
         }
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -500,7 +492,6 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
         }
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -612,7 +603,6 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
         }
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}

@@ -995,14 +995,14 @@ decode との違いは最後のステップの索引計算のみで、それ以�
 br bz-bit-reader: ビットの供給元（各ラウンドで 1 ビット多く読む可能性があります）
 sym i64: デコードしたシンボル値、-1=不正なコードまたは空テーブル
 `
-  'bzip2.bzip2-compress': `
+  'bzip2.compress': `
 bzip2 形式でデータを圧縮します
 data: 生データ（[]byte）
 out: bzip2 圧縮後のデータ（[]byte）
 注意：現在の実装は stored block を用いた基本版で、
 完全な BWT + MTF + Huffman 圧縮は今後の実装を予定しています。
 `
-  'bzip2.bzip2-decompress': `
+  'bzip2.decompress': `
 bzip2 形式のデータを解凍します
 data: bzip2 圧縮データ（[]byte）
 out: 解凍後のデータ（[]byte）
@@ -2858,12 +2858,12 @@ stored blocks を使用した DEFLATE 圧縮
 data: 生データ（[]byte）
 out: 圧縮後の DEFLATE データ（[]byte）
 `
-  'gzip.gzip-compress': `
+  'gzip.compress': `
 gzip 形式でデータを圧縮します
 data: 生データ（[]byte）
 out: gzip 圧縮後のデータ（[]byte）
 `
-  'gzip.gzip-decompress': `
+  'gzip.decompress': `
 gzip 形式のデータを解凍します
 data: gzip 圧縮データ（[]byte）
 out: 解凍後のデータ（[]byte）
@@ -6293,12 +6293,12 @@ iterations i64: 反復回数；大きいほど総当たりが困難で、小さ�
 key-len i64: 期待する鍵長（バイト）。64 バイト 1 ブロックずつ生成
 返り値 out []byte: 導出した鍵、長さは正確に key-len
 `
-  'pem.pem-decode': `
+  'pem.decode': `
 PEM 形式文字列を解析（入力の最初の BEGIN…END ブロックのみ取る）
 pem-str str: '-----BEGIN <label>-----' … '-----END <label>-----' を少なくとも 1 区間含むテキスト
-result ?pem-block: ok=ラベルとデコード後ペイロード, nil=マーカー欠落、Base64 復号失敗、または内容が短すぎる
+result ?block: ok=ラベルとデコード後ペイロード, nil=マーカー欠落、Base64 復号失敗、または内容が短すぎる
 `
-  'pem.pem-encode': `
+  'pem.encode': `
 生のバイト列を PEM 形式の文字列にエンコードする
 label str: PEM ラベル（例 'CERTIFICATE', 'RSA PRIVATE KEY'）、BEGIN/END と一致必須
 data []byte: 生のバイナリデータ、base64.encode-std でエンコード後 64 文字で折り返し
@@ -8276,74 +8276,74 @@ sep str: 区切り文字
 戻り値 out str: 連結した文字列
 
 `
-  'tar.tar-builder.add-bytes': `
+  'tar.builder.add-bytes': `
 生バイトエントリを追加
 name: エントリ名
 content: エントリ内容バイト
 typ: エントリ種別コード（TAR-TYPE-FILE / TAR-TYPE-DIR）
 `
-  'tar.tar-builder.add-dir': `
+  'tar.builder.add-dir': `
 ディレクトリエントリを追加
 name: ディレクトリ名（慣例により / 末尾、内容領域なし）
 `
-  'tar.tar-builder.add-file': `
+  'tar.builder.add-file': `
 ファイルエントリを追加
 name: ファイル名（ヘッダ name フィールドへ書き込み）
 content: ファイル内容（書き込み後、512 バイト境界へゼロ埋め整列）
 `
-  'tar.tar-builder.finish': `
+  'tar.builder.finish': `
 構築を終了し、終了マークを書き込んで tar アーカイブを返します
 archive: 2 つの全ゼロ終了ブロックを含む tar 読み取り専用ビュー
 `
-  'tar.tar-builder.pre-alloc': `
+  'tar.builder.pre-alloc': `
 バッファを事前確保（構造体フィールド push の制限回避のため局所変数で push）
 size: 事前確保するバッファのバイト数（その長さへゼロ埋め）
 `
-  'tar.tar-builder.write-header': `
+  'tar.builder.write-header': `
 512 バイト header を書き込み（内部メソッド）
 name: ファイル名（ヘッダオフセット 0 へ書き込み）
 typ: typeflag 文字コード（48=ファイル、53=ディレクトリ）
 sz: 内容バイト数（8 進数で size フィールドへ書き込み）
 `
-  'tar.tar-builder.write-octal': `
+  'tar.builder.write-octal': `
 指定オフセットへ 8 進数値を書き込み（内部メソッド）
 offset: フィールドが現在のヘッダブロック内で占めるオフセット
 width: フィールド幅（8 進数字を右寄せ、左側を空白埋め）
 val: エンコードする整数値（ブロック末尾に別途 NUL を補う）
 `
-  'tar.tar-entry.is-dir': `
+  'tar.entry.is-dir': `
 ディレクトリかどうか判定
 yes: このエントリがディレクトリか
 `
-  'tar.tar-entry.is-file': `
+  'tar.entry.is-file': `
 通常ファイルかどうか判定
 yes: このエントリが通常ファイルか
 `
-  'tar.tar-entry.mode': `
+  'tar.entry.mode': `
 エントリの権限を読み取り
 mode: 権限ビット（8 進デコード）
 `
-  'tar.tar-entry.mtime': `
+  'tar.entry.mtime': `
 エントリの更新時刻を読み取り
 ts: 更新時刻（Unix 秒、8 進デコード）
 `
-  'tar.tar-entry.name': `
+  'tar.entry.name': `
 エントリのファイル名を読み取り
 name: このエントリのファイル名
 `
-  'tar.tar-entry.read': `
+  'tar.entry.read': `
 エントリ内容を抽出
 out: エントリ内容バイト（ディレクトリは空）
 `
-  'tar.tar-entry.size': `
+  'tar.entry.size': `
 エントリのファイルサイズを読み取り
 sz: エントリの元バイト数
 `
-  'tar.tar-entry.type': `
+  'tar.entry.type': `
 エントリの型を読み取り
 typ: 型文字列（"file"、"dir" または "unknown"）
 `
-  'tar.tar-open-gz': `
+  'tar.open-gz': `
 gzip 圧縮データから tar ビューを構築（.tar.gz）
 gz-data: gzip 圧縮された tar データ ([]byte)
 archive: 解凍後の tar アーカイブ
@@ -9159,111 +9159,111 @@ TOML 1.0 構文でファイルに出力する；array-of-tables は [[table]] �
 doc: シリアライズするドキュメント
 out: TOML 1.0 構文テキスト（エントリとテーブルヘッダーを順に出力）
 `
-  'toml.toml-array-name': `
+  'toml.array-name': `
 テーブルの配列の名前を読む。
 t: 読み取る array-of-tables レコード
 s: 当該配列表の名前
 `
-  'toml.toml-doc.put': `
+  'toml.put': `
 生の TOML リテラルを設定する。
 value は配列や日付/時刻などの TOML 構文でよい; モジュールは前後に引用符を付けない。
 key: キー（キーを正規化できない場合失敗）
 value: TOML 生リテラル（構文検証後に格納）
 ok: true=書き込み成功, false=キー不正／値不正／満杯
 `
-  'toml.toml-entry-key': `
+  'toml.entry-key': `
 正規化されたキーを読む。
-e: 読み取る toml-entry
+e: 読み取る entry
 s: エントリの canonical key（標準化されたドット区切り形）
 `
-  'toml.toml-entry-key-eq': `
+  'toml.entry-key-eq': `
 エントリのキーを文字列と比較する。
-e: 比較する toml-entry
+e: 比較する entry
 key: 比較するキー文字列
 same: エントリ鍵が key と一致するか
 `
-  'toml.toml-entry-value': `
+  'toml.entry-value': `
 生の TOML 値を読む。
-e: 読み取る toml-entry
+e: 読み取る entry
 s: 生の TOML value リテラル（未デコード）
 `
-  'toml.toml-find-eq': `
+  'toml.find-eq': `
 引用符の外にある最初の等号を探す
 s: 解析対象の鍵・値行
 pos: 最初の引用符外イコールのバイト位置（見つからなければ -1 を返す）
 `
-  'toml.toml-make-entry': `
+  'toml.make-entry': `
 キー/値を固定長バッファにコピーする。
 key: キー文字列
 value: 値の文字列
 e: キー値を固定バッファにコピーした後の新エントリ
 `
-  'toml.toml-next-array-table': `
+  'toml.next-array-table': `
 テーブルの配列の次のインデックスを返して登録する。
 doc: 現在のドキュメント
 name: array-of-tables 名
 idx: ok=本要素のインデックス（自動増分で登録）, nil=同名テーブルが見つからず容量も満杯
 `
-  'toml.toml-normalize-key': `
+  'toml.normalize-key': `
 裸・引用符付き・ドット区切りのキーをパースし、正規化したドット区切りキーを出力する。
 s: 生鍵テキスト（bare / quoted / dotted）
 key: ok=正規化されたドット記法キー, nil=不正キーのエラーメッセージ
 `
-  'toml.toml-parse-bool': `
+  'toml.parse-bool': `
 真偽値をパースする
 s: 真偽リテラルテキスト（true/false のみ）
 value: ok=真理値, err=ブールリテラルではない
 `
-  'toml.toml-parse-f64': `
+  'toml.parse-f64': `
 浮動小数点をパースする
 s: 浮動小数リテラルテキスト（アンダースコア区切りは自動除去）
 value: ok=数値, err=形式不正
 `
-  'toml.toml-parse-i64': `
+  'toml.parse-i64': `
 10 進・16 進・8 進・2 進のリテラルと、アンダースコア区切りに対応する。
 s: 整数リテラルテキスト
 value: ok=数値, nil=空テキスト, err=形式不正または溢れ
 `
-  'toml.toml-register-table': `
+  'toml.register-table': `
 定義済みのテーブルを記録する; 二重定義なら false を返す。
 doc: 登録先ドキュメント
 name: テーブル名
 ok: true=最初の定義, false=重複定義
 `
-  'toml.toml-resolve-section': `
+  'toml.resolve-section': `
 テーブルの配列のサブテーブルを最新の要素に解決する。
 doc: 現在のドキュメント
 name: 解析対象の段落名
 resolved: 鍵が array-of-tables の子鍵のとき base[index].接尾辞 形に書き換えて返す、そうでなければそのまま返す
 `
-  'toml.toml-strip-comment': `
+  'toml.strip-comment': `
 文字列の外にある # コメントを取り除いてトリムする; 複数行文字列にも対応する。
 s: 生行テキスト（複数行文字列内の # に対応）
 out: 文字列外の注釈除去と trim 後の内容
 `
-  'toml.toml-table-eq': `
+  'toml.table-eq': `
 固定長バッファに保持したテーブル名を比較する。
 name: テーブル名を保持する固定バッファ
 name-len: 名前の実際のバイト長
 s: 比較するテーブル名
 same: 両者がバイト単位で一致するか
 `
-  'toml.toml-table-name': `
+  'toml.table-name': `
 テーブル名を読む。
 t: 読み取るテーブル
 s: テーブル名
 `
-  'toml.toml-unquote': `
+  'toml.unquote': `
 TOML の基本文字列またはリテラル文字列をデコードする
 raw: 引用符付きの生文字列
 value: ok=デコード後の内容, nil=文字列リテラルではない, err=引用/エスケープが不正
 `
-  'toml.toml-valid-value': `
+  'toml.valid-value': `
 TOML 1.0 のスカラー、配列、インラインテーブル、日付/時刻リテラルを受け付ける。
 raw: 値の生テキスト
 valid: TOML 1.0 リテラル構文に適合するかどうか
 `
-  'toml.toml-value-complete': `
+  'toml.value-complete': `
 値が閉じたかどうかを判定；多行配列、inline table、multiline string に使う。
 raw: 値の生テキスト
 complete: 引用符／括弧が閉じたか（複数行値読み取り時に終了可否を決定）
@@ -10797,14 +10797,14 @@ data: 制御バイトを含む LZMA2 ストリーム
 start-pos: ストリームの開始オフセット
 out: 解凍した平文バイトストリーム（名前付き出力パラメータ、関数末尾で一括引き渡し）
 `
-  'xz.xz-compress': `
+  'xz.compress': `
 xz 形式でデータを圧縮（基本実装）
 data: 生データ ([]byte)
 out: xz 圧縮後のデータ ([]byte)
 注意：現在は stored block の基本実装であり、
 完全な LZMA2 圧縮は今後の実装予定です。
 `
-  'xz.xz-decompress': `
+  'xz.decompress': `
 .xz 形式：
 - Stream Header: 6 バイト magic + 2 バイト stream flags
 - Blocks: Block Header + Compressed Data + Block Padding + Check
@@ -11032,13 +11032,13 @@ yes: 源テキストが解析可能
 i: キー・値ペア番号（0 開始）
 out: i 番目の鍵・値ペアの値ノード（nil=範囲外またはマッピングでない）
 `
-  'yaml.yaml-apply-tag': `
+  'yaml.apply-tag': `
 明示タグでノード種類を決定
 tag: 正規化後のタグ名
 kind: 内容から推定したノード種類
 k: ラベル上書き後の最終種類（ラベルが未識別のときは元の kind を返す）
 `
-  'yaml.yaml-emit': `
+  'yaml.emit': `
 ノードをブロックスタイル YAML で出力（末尾改行を含まない）
 pool: ノードプール
 idx: 出力対象ノードインデックス
@@ -11046,58 +11046,58 @@ indent: 1段のインデントのスペース数
 depth: 現在のネスト深度
 out: ブロックスタイル YAML テキスト（末尾改行無し）
 `
-  'yaml.yaml-f-is-inf': `
+  'yaml.f-is-inf': `
 リテラル比較は使わない：Nolang の数値リテラルは指数非対応（`1e308` は `1` + `e308` に切られる）。
 無限大の判定基準は「非ゼロで半減後も不変」；まず `x != x` で NaN を除外。
 x: 検査する f64 値
 yes: x が正/負の無限大（非ゼロで半減後も不変）
 `
-  'yaml.yaml-f-is-nan': '浮動小数が NaN か（NaN != NaN）\n`float.is-nan` は使わない：モジュール内の受信者式呼び出しは MIR バックエンドでそのメソッドを解決できない。\nx: 検査する f64 値\nyes: x が NaN（NaN != NaN の判定基準）'
-  'yaml.yaml-hex-char': `
+  'yaml.f-is-nan': '浮動小数が NaN か（NaN != NaN）\n`float.is-nan` は使わない：モジュール内の受信者式呼び出しは MIR バックエンドでそのメソッドを解決できない。\nx: 検査する f64 値\nyes: x が NaN（NaN != NaN の判定基準）'
+  'yaml.hex-char': `
 単一の 16 進数字（0-15）を文字に変換
 v: 16 進桁の数値 0-15
 ch: 対応する 16 進文字（'0'-'f'）
 `
-  'yaml.yaml-hex-digit': `
+  'yaml.hex-digit': `
 16 進文字を数値に変換、非 16 進は -1 を返す
 c: 文字の ASCII コード
 d: 当該 16 進桁の表す値 0-15（-1=不正な 16 進文字）
 `
-  'yaml.yaml-inf': `
+  'yaml.inf': `
 正の無限大
 v: 正無限大値
 `
-  'yaml.yaml-json-escape': `
+  'yaml.json-escape': `
 JSON 文字列エスケープ
 s: 生文字列
 out: エスケープ後 JSON 文字列（首尾のダブルクォート含む）
 `
-  'yaml.yaml-json-of': `
+  'yaml.json-of': `
 ノードを JSON に変換
 pool: ノードプール
 idx: 変換対象ノードインデックス
 depth: 残り再帰深度（別名ループ防止）
 out: 当該ノードに対応する JSON テキスト
 `
-  'yaml.yaml-key-eq': `
+  'yaml.key-eq': `
 2 つのキーノードが等価か（スカラーテキストを比較）
 a: キーノード a
 b: キーノード b
 yes: 2 ノードのスカラーテキストが等しい
 `
-  'yaml.yaml-key-text-eq': `
+  'yaml.key-text-eq': `
 スカラーキーのテキストが指定文字列と等しいか
 nd: 比較対象ノード（そのスカラーテキストを取る）
 key: 対象テキスト
 yes: nd のスカラー文本が key と等しい
 `
-  'yaml.yaml-nan': `
+  'yaml.nan': `
 実行時の除算を通す必要がある：コンパイル時定数畳み込みは `0.0 / 0.0` を直接 0 に計算する。
 局所変数を経由すると畳み込みを避けられ、本物の NaN が得られる（`x != x` が真）。
 v: NaN 値（実行時に 0.0/0.0 で発生、定数畳み込みされていない）
 `
-  'yaml.yaml-node-is-nan': '`.nan` の fval は yaml-nan() が真の NaN を填入するため、値で判定（NaN != NaN）。\nノード原文判定はフォールバックとして使う：タグ書き換えなどの経路は text だけ変えて fval を再計算しないことがある。\nnd: 検査対象ノード\nyes: ノードが .nan'
-  'yaml.yaml-parse-radix': `
+  'yaml.node-is-nan': '`.nan` の fval は nan() が真の NaN を填入するため、値で判定（NaN != NaN）。\nノード原文判定はフォールバックとして使う：タグ書き換えなどの経路は text だけ変えて fval を再計算しないことがある。\nnd: 検査対象ノード\nyes: ノードが .nan'
+  'yaml.parse-radix': `
 radix 進数整数を解析（_ は無視）
 t: 数字を含むテキスト
 start: 数値開始オフセット
@@ -11105,72 +11105,72 @@ radix: 進数基数（2/8/16）
 kind: 成功=YAML-KIND-INT、失敗=YAML-KIND-STR
 v: 変換後の整数値
 `
-  'yaml.yaml-parser.advance': '1 バイト前進'
-  'yaml.yaml-parser.anchor-id': `
+  'yaml.parser.advance': '1 バイト前進'
+  'yaml.parser.anchor-id': `
 アンカーを検索、見つからなければ -1 返却
 name: アンカー名
 idx: 対応するノードインデックス（-1=未登録）
 `
-  'yaml.yaml-parser.at': `
+  'yaml.parser.at': `
 現在位置からの相対で k バイトオフセット
 k: 現在位置からの相対オフセット（範囲外は 0 として扱う）
 c: pos+k のバイト値
 `
-  'yaml.yaml-parser.at-doc-marker': `
+  'yaml.parser.at-doc-marker': `
 現在位置が --- (1) または ... (2) か
 which: 1='---'、2='...'、0=ドキュメント標記ではない
 `
-  'yaml.yaml-parser.at-eol': `
+  'yaml.parser.at-eol': `
 行末にあるか（EOF 含む）
 yes: 現在のバイトが \n または入力末尾に到達済み
 `
-  'yaml.yaml-parser.byte-at': `
+  'yaml.parser.byte-at': `
 src[i] を返し、範囲外なら 0
 i: 目標インデックス
 c: 該当位置のバイト値（範囲外は 0）
 `
-  'yaml.yaml-parser.cur': `
+  'yaml.parser.cur': `
 現在のバイト
 c: 現在の pos の指すバイト（EOF 時は 0）
 `
-  'yaml.yaml-parser.eof': `
+  'yaml.parser.eof': `
 入力末尾に到達したか
 yes: pos が入力末尾に到達した
 `
-  'yaml.yaml-parser.fail': `
+  'yaml.parser.fail': `
 解析エラーを記録
 msg: エラー説明（パーサのエラー情報へ保存）
 `
-  'yaml.yaml-parser.fail-at': `
+  'yaml.parser.fail-at': `
 位置付き解析エラーを記録
 msg: エラー説明（現在位置情報を自動付加）
 `
-  'yaml.yaml-parser.indent-at': `
+  'yaml.parser.indent-at': `
 先頭空白を飛ばしてから数える：呼び出し点はほぼすべて skip-blank-lines() の直後、
 このとき pos は行頭（列 0）で停止し、そのまま減算すると常に 0 となり、入れ子ブロックは「インデントなし」と誤判定される。
 スキップ後 pos は最初の非空白文字で停止、後続の is-seq-dash / looks-like-map-entry /
 at-doc-marker もこの位置を必要とします。
 ind: 現在の行頭で最初の非空白文字までのスペース桁数
 `
-  'yaml.yaml-parser.is-seq-dash': `
+  'yaml.parser.is-seq-dash': `
 現在位置がシーケンス項目指示子 '- ' か
 yes: 現在位置がシーケンス項目指示子（'- ' または行末の '-'）
 `
-  'yaml.yaml-parser.line-end-of': `
+  'yaml.parser.line-end-of': `
 i の所属行の行末オフセットを返す（改行または n を指す）
 i: 目標行内の任意のバイトオフセット
 le: 行末オフセット（改行を指す；改行無しなら入力長に等しい）
 `
-  'yaml.yaml-parser.line-start-of': `
+  'yaml.parser.line-start-of': `
 i を含む行の先頭オフセットを返す
 i: 目標行内の任意のバイトオフセット
 ls: i が属する行の行頭バイトオフセット
 `
-  'yaml.yaml-parser.looks-like-map-entry': `
+  'yaml.parser.looks-like-map-entry': `
 本行に最上位 ': ' または行末 ':' または明示キー '? ' があるか
 yes: この行にマッピングキー指示子があり、マッピング項目として処理できる
 `
-  'yaml.yaml-parser.merge-into': `
+  'yaml.parser.merge-into': `
 キー << の処理の統合（マッピングまたはマッピング序列をサポート）
 keys: 対象マッピングのキーノードインデックスリスト
 vals: 対象マッピングの値ノードインデックスのリスト
@@ -11178,7 +11178,7 @@ src: 結合鍵(<<)の値ノードインデックス（MAP または MAP 列）
 ok-keys: 統合後のキーリスト
 ok-vals: 統合後の値リスト
 `
-  'yaml.yaml-parser.merge-one': `
+  'yaml.parser.merge-one': `
 あるマッピングのエントリを keys/vals に統合（既存のキーは上書きしない）
 説明：MIR バックエンドは入力 vec を別 vec へ直接 move することを許さない（借用／所有権保護）、
 よって要素毎コピーをしており、ok-keys = keys ではない。
@@ -11188,93 +11188,93 @@ src: 結合するマッピングノードのインデックス（MAP 種類で�
 ok-keys: 統合後のキーリスト（既存キーを優先保持）
 ok-vals: 統合後の値リスト
 `
-  'yaml.yaml-parser.newline': `
+  'yaml.parser.newline': `
 改行を 1 つ消費（\n または \r\n）
 yes: 改行を 1 つ消費した；false=改行位置でない、位置は不変
 `
-  'yaml.yaml-parser.parse-alias': `
+  'yaml.parser.parse-alias': `
 エイリアス *name をパースする
 idx: エイリアスが指すノードインデックス（-1=アンカーが存在せず、エラーは記録済み）
 `
-  'yaml.yaml-parser.parse-block': `
+  'yaml.parser.parse-block': `
 ブロックコンテキストノード 1 つを解析（現在位置がノード開始列）
 indent: ノードの開始桁
 cont-min: 子ノードに渡す最小継続インデント
 idx: 解析されたノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-block-indented': `
+  'yaml.parser.parse-block-indented': `
 インデントが深い後続行を値として解析
 parent-indent: 親キー行のインデント列（後続行がこれより深い場合のみ値とみなす）
 idx: 解析された値ノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-block-map': `
+  'yaml.parser.parse-block-map': `
 ブロックマッピングを解析
 indent: マッピングキーのインデント桁（同層キーと巻き戻し判定の基準）
 idx: 新しいマッピングノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-block-scalar': `
+  'yaml.parser.parse-block-scalar': `
 ブロックスカラー | と > を解析
 cont-min: ブロック内容が届く必要があるインデント列（呼び出し文脈から伝達）
 idx: 新しいブロックスカラーノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-block-seq': `
+  'yaml.parser.parse-block-seq': `
 ブロックシーケンスを解析
 indent: シーケンス項目 '-' のインデント桁（同級項目と巻き戻し判定の基準）
 idx: 新しいシーケンスノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-docs': `
+  'yaml.parser.parse-docs': `
 全ドキュメントを解析
 roots: 各ドキュメントのルートノードのプールインデックス一覧
 `
-  'yaml.yaml-parser.parse-document': `
+  'yaml.parser.parse-document': `
 一ドキュメントを解析しルートノード索引を返す
 idx: 本ドキュメント根部ノードのプールインデックス（-1=解析失敗）
 `
-  'yaml.yaml-parser.parse-double': `
+  'yaml.parser.parse-double': `
 ダブルクォートスカラーを解析
 idx: 新しいスカラーノードのプールインデックス（エスケープ処理済み）
 `
-  'yaml.yaml-parser.parse-flow-map': `
+  'yaml.parser.parse-flow-map': `
 {k: v, ...} をパースする
 idx: 新しいマッピングノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-flow-node': `
+  'yaml.parser.parse-flow-node': `
 フローコンテキストノード 1 つを解析
 cont-min: ネストしたスカラー解析に渡す最小継続インデント
 key-mode: true=キー位置として解析
 flow: true=フロー文脈
 idx: 解析されたノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-flow-seq': `
+  'yaml.parser.parse-flow-seq': `
 [a, b, ...] をパースする
 idx: 新しいシーケンスノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-plain': `
+  'yaml.parser.parse-plain': `
 plain スカラーを解析（複数行フォールディング含む）
 cont-min: 複数行折りたたみの継続に必要な最小インデント列（0=行跨ぎ継続なし）
 key-mode: true=マッピングキーとして解析、': ' などの指示子で終了
 flow: true=フロー文脈（',' '}' ']' も終了させる）
 idx: 新しいスカラーノードのプールインデックス
 `
-  'yaml.yaml-parser.parse-props': `
+  'yaml.parser.parse-props': `
 ノード接頭辞のアンカーとタグを解析（順不同）
 tag: 読んだタグ（空文字列=無し）
 anchor: 読み取ったアンカー名（空=なし；空でないならアンカーテーブルに登録済み）
 `
-  'yaml.yaml-parser.parse-single': `
+  'yaml.parser.parse-single': `
 シングルクォートスカラーを解析
 idx: 新しいスカラーノードのプールインデックス
 `
-  'yaml.yaml-parser.push-node': `
+  'yaml.parser.push-node': `
 ノードを追加し索引を返す
 nd: 追加対象ノード
 idx: ノードプール内における当該ノードのインデックス
 `
-  'yaml.yaml-parser.push-null': `
+  'yaml.parser.push-null': `
 空ノード（null）を追加
 idx: 新しい null ノードのプールインデックス
 `
-  'yaml.yaml-parser.push-scalar': `
+  'yaml.parser.push-scalar': `
 スタイルとタグからスカラーノードを構築
 text: スカラーテキスト
 style: スカラー様式（YAML-STYLE-* 定数）
@@ -11282,46 +11282,46 @@ tag: 明示タグ（空=core schema で型を推定）
 anchor: アンカー名（空=なし）
 idx: 新しいノードのプールインデックス
 `
-  'yaml.yaml-parser.read-line-content': `
+  'yaml.parser.read-line-content': `
 現在位置から行末までの内容を読む（行末空白とコメント除去）
 out: 行末までのテキスト（行末空白と # 注釈を除去済み）
 `
-  'yaml.yaml-parser.read-tag': `
+  'yaml.parser.read-tag': `
 タグを 1 つ読む（!!name / !name / !<verbatim> / !）
 out: タグ全文（! 接頭辞を含む；裸の ! は ';!' を返す）
 `
-  'yaml.yaml-parser.read-token': `
+  'yaml.parser.read-token': `
 区切りを含まない生 token を 1 つ読む
 out: 読んだ裸トークン（空白/指示子で終了）
 `
-  'yaml.yaml-parser.register-anchor': `
+  'yaml.parser.register-anchor': `
 アンカーを登記
 name: アンカー名
 idx: アンカーが指すノードインデックス
 `
-  'yaml.yaml-parser.set-props': `
+  'yaml.parser.set-props': `
 ノードにタグとアンカーを付与（同時にアンカーを登記）
 idx: 目標ノードプールインデックス
 tag: 明示タグ（空文字列=無し）
 anchor: アンカー名（空=なし；空でないなら同時に登録）
 `
-  'yaml.yaml-parser.skip-blank-lines': '空行と全行コメントをスキップし、次行内容開始で停止'
-  'yaml.yaml-parser.skip-doc-preamble': '空行・コメント・指令行をスキップ'
-  'yaml.yaml-parser.skip-flow-ws': 'フロー文脈内の空白——行内スペース、改行とコメント'
-  'yaml.yaml-parser.skip-spaces': '行内スペースとタブをスキップ'
-  'yaml.yaml-parser.skip-to-doc-boundary': '現在ドキュメントの残り内容をスキップし、次の --- または入力末尾で停止'
-  'yaml.yaml-parser.skip-to-eol': '行末空白と行コメントをスキップ（改行は消費しない）'
-  'yaml.yaml-plain-safe': `
+  'yaml.parser.skip-blank-lines': '空行と全行コメントをスキップし、次行内容開始で停止'
+  'yaml.parser.skip-doc-preamble': '空行・コメント・指令行をスキップ'
+  'yaml.parser.skip-flow-ws': 'フロー文脈内の空白——行内スペース、改行とコメント'
+  'yaml.parser.skip-spaces': '行内スペースとタブをスキップ'
+  'yaml.parser.skip-to-doc-boundary': '現在ドキュメントの残り内容をスキップし、次の --- または入力末尾で停止'
+  'yaml.parser.skip-to-eol': '行末空白と行コメントをスキップ（改行は消費しない）'
+  'yaml.plain-safe': `
 テキストが plain スカラーとしてそのまま出力可能か
 s: 出力するテキスト
 yes: plain スカラーとしてそのまま出力できる（引用符不要）
 `
-  'yaml.yaml-quote': `
+  'yaml.quote': `
 ダブルクォート YAML スカラーを出力
 s: 生テキスト
 out: ダブルクォートで包みエスケープした YAML スカラーテキスト
 `
-  'yaml.yaml-resolve-plain': `
+  'yaml.resolve-plain': `
 core schema に従い plain スカラーの型を推論
 text: plain スカラーの原文
 kind: 推定されたノード種類（null/bool/int/float/str など）
@@ -11329,12 +11329,12 @@ ival: kind=INT のときの整数値
 fval: kind=FLOAT のときの浮動小数値
 bval: kind=BOOL のときのブール値
 `
-  'yaml.yaml-scalar-repr': `
+  'yaml.scalar-repr': `
 スカラーの YAML 表現
 nd: スカラーノード
 out: 種類とスタイルで選択された YAML 表現テキスト
 `
-  'yaml.yaml-scan-number': `
+  'yaml.scan-number': `
 テキストを整数または浮動小数として解析を試みる
 返す kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR（数字ではない）
 t: スカラーテキスト
@@ -11342,12 +11342,12 @@ kind: 識別された数値種類（INT/FLOAT/STR）
 ival: kind=INT のときの整数値
 fval: kind=FLOAT のときの浮動小数値
 `
-  'yaml.yaml-spaces': `
+  'yaml.spaces': `
 スペース n 個を生成
 n: スペース数
 out: n 個のスペースからなる文字列
 `
-  'yaml.yaml-str-at': `
+  'yaml.str-at': `
 なぜこの helper が必要：`arr[i]`（arr は []str）は既定で option<str> を返し、
 しかし MIR バックエンドは option<str> を呼び出し実引数／メソッドレシーバにすると不正な IR を生成する
 （%option_str と %str-long は不一致）。文字列連結は option を自動 unpack し、
@@ -11356,22 +11356,22 @@ a: 対象の文字列配列
 i: 要素インデックス
 out: i 番目の要素の値（範囲外は空文字列を返す）
 `
-  'yaml.yaml-tag-name': `
+  'yaml.tag-name': `
 タグ名を正規化（!!str / tag:yaml.org,2002:str → str）
 tag: 生のタグ（!!str / tag:yaml.org,2002:str などの表記）
 name: 正規化後の短タグ名（str/int/seq...）
 `
-  'yaml.yaml-to-f64': `
+  'yaml.to-f64': `
 テキストを f64 に変換（nil 返却は失敗を意味する）
 t: 数字テキスト
 v: 変換結果（nil=f64 として解析不能）
 `
-  'yaml.yaml-to-i64': `
+  'yaml.to-i64': `
 テキストを i64 に変換、失敗時 -1 返却
 s: 整数テキスト
 v: 変換値（-1=変換失敗）
 `
-  'yaml.yaml-unescape-double': `
+  'yaml.unescape-double': `
 ダブルクォートのエスケープ列を処理
 body: 二重引用符内の文字列内容（エスケープシーケンス含む）
 out: エスケープ解除後のテキスト（nil=不正エスケープ含む）
@@ -11388,56 +11388,56 @@ data: ZIP ファイルのバイト配列
 off: 読み取り開始位置（0 始まり）
 v: 4 バイトのリトルエンディアン符号なし整数（0 ~ 2^32-1）
 `
-  'zip.zip-entry.compressed-size': `
+  'zip.entry.compressed-size': `
 エントリの圧縮後サイズを読み取り
 csz: 圧縮後のバイト数
 `
-  'zip.zip-entry.extract': `
+  'zip.entry.extract': `
 エントリ内容を取り出す（stored と deflate 両対応）
 out: 解凍後の生バイト（stored はそのままコピー、deflate は自動 inflate）
 `
-  'zip.zip-entry.method': `
+  'zip.entry.method': `
 エントリの圧縮方式を読み取り（0=stored, 8=deflate）
 method: 圧縮方式（0=stored、8=deflate）
 `
-  'zip.zip-entry.name': `
+  'zip.entry.name': `
 エントリのファイル名を読み取り
 name: このエントリのファイル名
 `
-  'zip.zip-entry.size': `
+  'zip.entry.size': `
 エントリの元サイズを読み取り
 sz: 圧縮前の元のバイト数
 `
-  'zip.zip-writer.add-dir': `
+  'zip.writer.add-dir': `
 ディレクトリエントリを追加
 name: ディレクトリ名（/ で終わらない場合は自動で付加）
 `
-  'zip.zip-writer.add-file': `
+  'zip.writer.add-file': `
 ファイルをアーカイブへ追加（CRC32 を自動計算）
 name: アーカイブ内に保存されるパス名
 content: ファイル内容（stored 方式でそのまま保存、CRC32 を自動計算）
 `
-  'zip.zip-writer.cd-put': `
+  'zip.writer.cd-put': `
 cd-data へ 1 バイト追加
 b: 追加するバイト値（下位 8 ビットを取り中央ディレクトリバッファへ書き込み）
 `
-  'zip.zip-writer.cd-write-u16': `
+  'zip.writer.cd-write-u16': `
 2 バイトのリトルエンディアン整数を中央ディレクトリへ書き込み
 v: 書き込む整数（下位 16 ビットを取りリトルエンディアンで中央ディレクトリバッファへ追加）
 `
-  'zip.zip-writer.cd-write-u32': `
+  'zip.writer.cd-write-u32': `
 4 バイトのリトルエンディアン整数を中央ディレクトリへ書き込み
 v: 書き込む整数（下位 32 ビットを取りリトルエンディアンで中央ディレクトリバッファへ追加）
 `
-  'zip.zip-writer.finalize': `
+  'zip.writer.finalize': `
 中央ディレクトリと EOCD を書き込み、完全なアーカイブデータを返します
 out: 完全な ZIP アーカイブバイト（ローカルデータ + 中央ディレクトリ + EOCD）
 `
-  'zip.zip-writer.put': `
+  'zip.writer.put': `
 data へ 1 バイト追加（ローカル変数を介して push に対応）
 b: 追加するバイト値（下位 8 ビットを取りローカルデータ領域へ書き込み）
 `
-  'zip.zip-writer.write-cd-entry': `
+  'zip.writer.write-cd-entry': `
 中央ディレクトリエントリを書き込み
 name: ファイル名
 offset: このエントリのローカルファイルヘッダの開始オフセット
@@ -11445,22 +11445,22 @@ size: 圧縮前サイズ
 compressed-size: 圧縮後サイズ
 crc: 内容の CRC32 チェック値
 `
-  'zip.zip-writer.write-eocd': `
+  'zip.writer.write-eocd': `
 終了レコード (End of Central Directory) を書き込み
 cd-offset: 中央ディレクトリの開始オフセット
 cd-size: 中央ディレクトリの合計バイト数
 `
-  'zip.zip-writer.write-local-file': `
+  'zip.writer.write-local-file': `
 ローカルファイルヘッダと内容を書き込み
 name: ファイル名（ヘッダとデータ領域へ書き込み）
 content: ファイル内容（圧縮せず、そのまま stored で書き込み）
 crc: 内容の CRC32 チェック値
 `
-  'zip.zip-writer.write-u16': `
+  'zip.writer.write-u16': `
 2 バイトのリトルエンディアン整数を書き込み
 v: 書き込む整数（下位 16 ビットを取りリトルエンディアンで追加）
 `
-  'zip.zip-writer.write-u32': `
+  'zip.writer.write-u32': `
 4 バイトのリトルエンディアン整数を書き込み
 v: 書き込む整数（下位 32 ビットを取りリトルエンディアンで追加）
 `
@@ -11476,7 +11476,7 @@ count: エントリの総数（アーカイブが破損している場合 0）
   'zip.zip.entry': `
 idx 番目のエントリを取得
 idx: エントリ番号
-e: このエントリのオフセットにバインドされた zip-entry ハンドル（さらにそのメソッドでフィールドを読み取り）
+e: このエントリのオフセットにバインドされた entry ハンドル（さらにそのメソッドでフィールドを読み取り）
 `
   'zip.zip.entry-off': `
 idx 番目の central directory エントリのオフセット
@@ -11604,14 +11604,14 @@ max-symbol: 記号値の上限（lengths 走査の終点。zstd のバイト記�
 br: コードビットを読み取るビットリーダ（コードワードを MSB 側から 1 ビットずつ組み出します）
 sym: 復号した記号値。最大コード長内でどのコードにも命中しなかった場合 0 を返します
 `
-  'zstd.zstd-compress': `
+  'zstd.compress': `
 zstd 形式でデータを圧縮（基本実装）
 data: 生データ ([]byte)
 out: zstd 圧縮後のデータ ([]byte)
 注意：現在は raw block の基本実装であり、
 完全な FSE + Huffman + LZ77 圧縮は今後の実装予定です。
 `
-  'zstd.zstd-decompress': `
+  'zstd.decompress': `
 Zstandard 形式のデータを解凍
 data: zstd 圧縮データ ([]byte)
 out: 解凍後のデータ ([]byte)

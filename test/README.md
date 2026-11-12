@@ -334,7 +334,110 @@ segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（
 先通過官方/標準向量自檢 → 再取金標**。這一步是必要的：`scrypt` 的
 `salsa20-8-core` 金標就靠「Python 實作能重現 RFC 7914 A.1/A.2」才取得信任。
 
-### 5.0y 快照：2026-11-11 傍晚（`%str-long` 收 16B / u32 header，**當前**）
+### 5.0zb 快照：2026-11-12 上午（`net/tls` 记录层 + 服务器端，**當前**）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 / `test/std/*.no` | 119 / 119 / 118 |
+| API 面（函數 + 方法） | 2049（分母沿用 §5.0z） |
+| 已覆蓋 | 1869 + 26 = **1895 ≈ 92.5%** |
+| `net/tls` 自身 | **20/97 → 46/97**（`test/std/tls.no` 66 → **156 斷言**，19 TEST） |
+
+本輪新增 10 個 TEST，全部不需要真 TLS 握手（`net/tls` 97 個符號裡絕大多數要真對端）：
+
+| 層 | 覆蓋的符號 | 做法 |
+|---|---|---|
+| 白盒 | `conn.init` / `get-fd` / `close` / `send` / `recv` | 結構體公開 ⇒ 直接斷言 `fd = -1`、各 seq 歸零、`rand-state` 非零；未連線時 `send` 回 nil、`recv` 回 -1 |
+| 交握緩衝 | `conn.append-hs` / `append-hs-from` | 累加語意、`hs-buf.len` 同步、`append-hs-from` 只取 `src[offset..offset+n)` |
+| 記錄層 1.2 | `encrypt/decrypt-record-gcm` | loopback 上發 → 對端 `read-record` 讀回頭 5 位元組（ct=23、版本 3/3、長度 28 = 8 顯式 nonce + 4 + 16 tag）→ 解密回原 4 位元組；`expected-ct` 或 `seq` 不符必須 `ct = -1` 且輸出為空 |
+| 記錄層 1.3 | `encrypt/decrypt-record-13` | 同上，但長度 21 = 4 + 1(inner type) + 16，無顯式 nonce；換 key 必須認證失敗 |
+| 讀端 | `send-raw` / `recv-n` / `read-record` / `net-recv-wait` | `send-raw` 不加密（ct 原樣、長度 4）；`recv-n` 精確讀 n 位元組、其餘位置保持 0；對端 FIN ⇒ `read-record` 回 `(-1, 0)`、`net-recv-wait` 回 `0` |
+| 伺服器端 | `server-init` / `server-listen` / `server-accept` / `https-serve-once` | `server-init(-1)` 不碰 socket，仍建出 RSA-2048 + 自簽憑證（模數 256 位元組、e=65537、cert > 100 位元組）；`server-listen` 佔用/釋放/重綁；客戶端連上就 FIN ⇒ `server-accept` 回 nil、`https-serve-once` 回 false |
+| 客戶端失敗臂 | `dial` / `dial-12` / `conn.connect` / `conn.connect-12` | 對無人監聽的埠 ⇒ `nil` / `false` 且 `fd` 保持 -1 |
+| 伺服器白盒 | `server-conn.close` / `append-hs` / `append-hs-from` | 零值 fd=0、close 後 -1；`server-conn.append-hs` 需先自備 `hs-buf` 容量（沒有 `init`） |
+
+⚠️ 兩個坑（都不是 std 缺陷）：
+
+- **`read-record` 看不到 FIN 當緩衝裡還有上一條記錄的尾巴**：`recv-n(sfd, buf, 2)` 只讀了記錄頭的 2 位元組，剩下 5 位元組還在 socket 裡，接著 `close` 對端再 `read-record`，它會先把那 5 位元組當成新記錄頭讀走 ⇒ 永遠走不到 FIN 臂。測試裡必須先 `recv-n` 把殘留讀乾。
+- **`server-init(fd)` 不檢查 fd**：傳 -1 也會完整生成金鑰與憑證（約 683 位元組 cert），所以它是本輪最便宜的伺服器側覆蓋入口。
+
+`net/tls` 剩 51 個未覆蓋符號，全是**必須真握手**的內部步驟（`send-client-hello` / `read-server-hello` /
+`derive-keys` / `handshake*` / `rsa-pkcs1-*` / `gen-x25519-keypair` / `gen-p256-keypair` /
+`server-conn.read-client-hello` …）。要覆蓋它們得先有一個能講 TLS 的對端（例如內建一組
+固定的 ClientHello/ServerHello 位元組流），屬下一輪的獨立課題。
+
+### 5.0za 快照：2026-11-12 上午（`net/quic` 收 11/14 + 三處 RFC 偏差，數字已被 5.0zb 取代）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 / `test/std/*.no` | 119 / 119 / **118**（`ls` 實測） |
+| API 面（函數 + 方法） | 2049（分母沿用 §5.0z；本輪只動 `net/quic`） |
+| 已覆蓋 | 1858 + 11 = **1869 ≈ 91.2%** |
+| 私有 / 不可達（不計入分母） | 90 |
+| 平台不適用（宿主 mac-arm64） | 18 |
+
+本輪新增 `test/std/quic.no`（11 TEST / **122 斷言**）—— `net/quic` 由 **0/14** 收成 **11/14**：
+
+- 純函式層直接餵位元組：`varint-encode` / `varint-decode`（含 1/2/4/8 位元組分界與
+  `next-pos = -1` 的三條錯誤臂）、`gen-cid`、`parse-frames`、`derive-initial-keys`
+  （確定性 + client/server 角色不同 + 不同 CID 不同）、`apply/remove-header-protection`、
+  `decode-packet-number`；
+- 公開結構體 `quic.conn` 白盒：`init` / `close` 的欄位初值與 `fd` 歸 -1；
+- `dial` 走 UDP，對任意本機埠都會成功 ⇒ 斷言「回 ok + `fd >= 0` + close 後歸 -1」。
+
+未覆蓋 3 個：`conn.build-initial-packet` / `conn.recv-initial` / `conn.recv-raw`
+（需要真的 QUIC + TLS 1.3 握手，本檔造不出對端）。
+
+🔧 **本輪修掉 4 處 std 缺陷，全部是「照 RFC 註解寫、但實作錯位」**（詳見 §5.1v）：
+
+| 位置 | 症狀 | 修法 |
+|---|---|---|
+| `apply/remove-header-protection` | 遮的是 `packet[pn-offset]`（封包號碼最高位元組），**真正的第一位元組從未被遮** | 改遮 `packet[0]`（RFC 9001 §5.4.1） |
+| `decode-packet-number` | 長度位讀 `packet[pn-offset] & 3` ⇒ pn-len 與號碼雙雙解錯 | 改讀 `packet[0] & 3` |
+| 同上（重建） | 遮罩/窗口各少一位（`0x7f`/`128`）⇒ 最高位為 1 的截斷號碼被削一半 | 改 `0xff`/`256`（A.3：`1 << (pn_len*8)`） |
+| 同上（錯誤臂） | 資料不足時先賦 `pn-len` 再 `return` ⇒ 假成功 | 先算 `need`、守衛過了才落地 |
+| `conn.recv-initial` | `pn-len <= 0 -> .largest-initial-pn = pn` 條件反向，成功封包永不推進窗口 | 改 `pn-len > 0 ->` |
+
+⚠️ 兩個新踩的坑（都不是 std 的錯，但都會讓測試「假綠」）：
+**§5.2 #104** `gen-cid` 同微秒內連呼兩次得到**完全相同**的 CID（種子 = `time.now-ns() ^ pid`，
+而 now-ns 實測解析度 1µs）；
+**§5.2 #105** 「純函式 + 全字面量實參」會被 comptime 折疊，而折疊器對 `[]byte` 下標讀取
+會落到**失敗臂**（`at(buf, 0)` 回 -1）—— 本檔所有下標一律走變數。
+
+### 5.0z 快照：2026-11-11/12（`net/server` + `net/pool` 收 100%，數字已被 5.0za 取代）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 / 測試檔 | 119 / 119 / 116 |
+| API 面（函數 + 方法） | 2049（762 + 1287） |
+| 已覆蓋 | 1858 = **90.7%**（上輪 1809/2047 = 88.4%） |
+| 私有 / 不可達（不計入分母） | 90 |
+| 平台不適用（宿主 mac-arm64） | 18 |
+| 無專用測試檔的模組 | 8（`net/client` `net/http2` `net/proxy` `net/quic` `net/sse` `net/unix` `collection/static-hashmap` `embed`） |
+
+本輪新增兩個測試檔：
+- `test/std/server.no`（22 TEST / 122 斷言）—— `net/server` 由 0/41 收成 **3/3 函數 + 38/38 方法**；
+- `test/std/pool.no`（8 TEST / 51 斷言）—— `net/pool` 由 0/10 收成 **2/2 函數 + 8/8 方法**。
+
+`net/server` 測法分四層：① `secure-compare` 純函式；② `server` / `server-conn` / `https-server` /
+`https-server-conn` 全是公開結構體 ⇒ 無 socket 白盒構造，逐個打方法的失敗臂
+（`fd = -1` 時 `write-*` 全 false、`recv-more` 回 -1、`parse` 回 false、`reset` 清空 8 個欄位）；
+③ `listen` / `listen-on` / `accept` / `accept-nb` 用 loopback 真跑（先 `net.net-dial`
+讓三次握手落進 accept 佇列，`accept` 就不阻塞）；④ `https-server.listen` 只是
+`tls.server-listen` = `net.net-listen` 的薄包裝，同樣能綁定；TLS 握手需要憑證，
+`https-server.accept` 只覆蓋「明文請求 ⇒ nil」的失敗臂。
+
+🔑 **兩個坑（都已解，見 §5.2 #100 / #101）**：① loopback 上單次 `net-recv` **只拿得到回應的第一段**
+（`write-text` 一次回應 6 次 `send`）—— 第一版因此 105 通過 / **17 假紅**，改用 `drain(fd)`
+迴圈收到對端關閉 + 順序固定「寫完 → close → drain」後 **122/122 全綠**；
+② std 的 `tls.recv-wait` 逾時會 `print('RECVWAIT giveup tries=')` 污染 stdout（**已修**，§5.2 #100）。
+
+⚠️ 本輪開工時整批 std 測試曾因 `str` 方法在 MIR 端失效而全紅（`unsupported builtin str.str.byte` /
+`%str_str`），已用隔離 worktree 確認**不是 HEAD 引入**（`0fbbe684` / `70908f79` / `0e055e11` 三者同症狀），
+當日下午由並行 session 修復 —— 完整症狀與歸屬見 **§5.2 #97**（現標記為已修）。
+恢復後回歸：`server` 122/122、`str` 179/179、`ws` 94/94、`txt` 166/166、`path` 90/90、`base64` 33/33。
+
+### 5.0y 快照：2026-11-11 傍晚（`%str-long` 收 16B / u32 header，數字已被 5.0z 取代）
 
 `str` 描述符從 `{ i64 len, i64 cap, i8* data }`（24B）改為 `{ i32 len, i32 cap, i8* data }`（16B）。
 內部 len / cap 是 `u32`，**對外 API 全部仍是 `i64`**（讀 `zext i32→i64`、寫 `trunc i64→i32`）。
@@ -777,7 +880,7 @@ vs `.no` 的 `?str`，未修，测试改用双值形态）；#86 上面的 `?=` 
 | 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
 |---|---|---|---|
 | `math` | 9 → **19 / 19（100%）**（函數 17 + 2 條豁免） | 126（+7 `TEST`） | `pow-int`/`atan-kernel`/`atan2`/`char-to-str`/`rotate`(rotl・rotr)/`arr-zero`/`store-le-u32`；`swap` 與 `arr-zero` 的分母問題見 5.2 #65 |
-| `txt` | 10 → **61 / 61（100%）**（函數 2 + 方法 59） | 167（+8 `TEST`） | `set-byte`/`new`/`to-unsigned`/`to-u64-byte`/`to-f32`/`to-bool`/`hex-val`/`to-bigint` |
+| `txt` | 10 → **61 / 61（100%）**（函數 2 + 方法 59） | 167（+8 `TEST`） | `cp-write`（原名 `set-byte`，2026-11-11 私有化後改為碼點寫入並改名）/`new`/`to-unsigned`/`to-u64-byte`/`to-f32`/`to-bool`/`hex-val`/`to-bigint` |
 
 15 個新 `TEST`。**本輪同時修掉 `txt.to-bigint` 對任何有效數字都回 0 的真 bug**
 （`d = <call>()` 未標註 ⇒ 在 `acc + d` 的重載聯集臂派發裡被當成 bigint 臂，
@@ -2014,6 +2117,81 @@ yaml-parser.skip-to-eol = () {
 **一次迭代內部**，守衛救不了 —— 這也說明「有防滯守衛」不等於「不會卡死」。
 
 
+### 5.1v 本輪修好的 std 缺陷（`src/std/net/quic.no` 的標頭保護與封包號碼解碼）
+
+五處，全部是「doc 註解照 RFC 寫、實作卻錯位」。發現方式是先把 `net/quic` 的純函式
+逐位元組餵進去測（`test/std/quic.no`），一測就露出「解出來的 pn 不是餵進去的 pn」。
+
+**① `apply-header-protection` 遮錯位元組**（`2026-11-12`）
+
+```no
+; 修前
+ixout518c20 = packet[pn-offset]: { ok -> it -> 0 }
+packet[pn-offset]: { ok -> it = ixout518c20 ^ (ixout518c41 & mask-bits) -> _ }
+; 修後：第一位元組永遠在 packet[0]
+```
+
+RFC 9001 §5.4.1 遮的是 *the first byte of the packet*；`pn-offset` 只是封包號碼欄位的
+起點，兩者之間還隔著 version / CID / length。修前被破壞的是**封包號碼的最高位元組**，
+而帶 pn-len 位的真正第一位元組從未被遮 ⇒ 與任何 RFC 對端都不通，且 `decode-packet-number`
+讀到的是被自己遮壞的號碼。
+
+**② `decode-packet-number` 的長度位來源錯**
+
+```no
+; 修前
+first = packet[pn-offset]: { ok -> it -> 0 }
+pn-len = (first & 3) + 1
+; 修後
+first = packet[0]: { ok -> it -> 0 }
+```
+
+`pn-offset = 0` 時兩者重合，所以舊測試（`pn-offset = 0` 的迷你緩衝）看不出問題；
+換成真實佈局（`pn-offset = 10`）立刻暴露：`byte0 = 0x43`（pn-len 4）會被解成
+`pn-len = 1`、`pn = 0`。
+
+**③ 重建遮罩與窗口各少一位**
+
+```no
+mask   : 0x7f / 0x3fff / 0x1fffff / 0x3fffffff   → 0xff / 0xffff / 0xffffff / 0xffffffff
+pn-win : 128  / 32768  / 8388608  / 2147483648   → 256  / 65536  / 16777216 / 4294967296
+```
+
+RFC 9000 附錄 A.3 是 `pn_win = 1 << (pn_len * 8)`、`pn_mask = pn_win - 1`。少一位的直接後果：
+截斷號碼最高位為 1 就被削掉一半 —— `pn-len 1` 的 `0xff` 解成 `127`（修後 `255`），
+`largest = 65535` + `0x0002` 的解碼窗口也整體偏移。
+
+**④ 錯誤臂留下「假成功」**
+
+```no
+; 修前：守衛在賦值之後 ⇒ 資料不足時 pn-len 已是 1..4
+pn-len = (first & 3) + 1
+pn-offset + pn-len > packet.len() -> return
+; 修後：先算到 need，守衛過了才落地
+need = (first & 3) + 1
+pn-offset + need > packet.len() -> return
+pn-len = need
+```
+
+呼叫方 `conn.recv-initial` 正是以 `pn-len` 判定成敗，所以舊行為等於把「截斷封包」
+當成功交給 AEAD。
+
+**⑤ `conn.recv-initial` 的窗口更新條件反向**
+
+```no
+pn-len <= 0 -> .largest-initial-pn = pn    ; 修前：只在失敗時更新
+pn-len > 0  -> .largest-initial-pn = pn    ; 修後：成功才推進窗口
+```
+
+`largest-initial-pn` 是下一個封包的**重建基準**，只在失敗時更新等於永遠停在初值 -1。
+
+**驗證**：`test/std/quic.no` 11 TEST / 122 斷言全綠；測試端不硬編碼 AES 輸出，
+而是自己用同一個 hp 對同一段取樣算一次 mask，再斷言「第一位元組只動低 4/5 位、
+pn 四個位元組各 XOR `mask[1..4]`、中間位元組不動、取樣區不被遮罩」——
+所以這五處任一回退都會紅。回歸：`quic` 122、`ws` 94、`server` 122、`pool` 51、
+`tls` 66、`net` 86、`http` 42、`http3` 91、`str` 179、`txt` 166 全綠。
+
+
 ### 5.1d 本輪修好的 std bug（CBC 模式殘塊越界寫）
 
 **症狀**：CBC 加密在輸入長度不是塊大小整數倍時，輸出長度 = **向上取整**到塊的倍數，
@@ -2112,7 +2290,7 @@ blk = 0
 | A3 | `tar.write-octal` | 填充位元組寫成空格（32）而非 `'0'`；同時踩到同一個丟寫 ⇒ 整個 header 的校驗和欄位全錯 | 重寫：先鋪 `'0'`，再從右往左寫八進位，`?=` 直寫 |
 | A4 | `zip.find-eocd` | `! n >= 22 -> return`（恆真，直接返回）＋ 裸塊雙重賦值，兩缺陷疊加 ⇒ **永遠回 -1**，所有 zip 都讀不到中央目錄 | 重寫成「正向掃 `PK\x05\x06`，每命中就覆寫 `off`」⇒ 留下最後一個命中，即真 EOCD（**刻意避開迴圈內減法**：`start - i` 在 `no vet` 是 `?i64`、在 `no test` 是純 i64，套 match 會在單檔模式靜默取 0） |
 | A5 | `zip.entry-off` | 裸塊 match 臂賦值丟寫 ⇒ 偏移不前進，回錯條目 | `cur = ct: { ok -> it; -> cur }` |
-| A6 | `zstd-compress` | 幀頭寫 `0xA0`（聲稱帶 4-byte FCS）卻只寫 1 位元組 ⇒ 解壓端多吃 3 位元組 | 依 `n <= 255` / `n > 255` 分別寫 `0x20`(+1 byte) / `0x60`(+2 bytes) |
+| A6 | `compress` | 幀頭寫 `0xA0`（聲稱帶 4-byte FCS）卻只寫 1 位元組 ⇒ 解壓端多吃 3 位元組 | 依 `n <= 255` / `n > 255` 分別寫 `0x20`(+1 byte) / `0x60`(+2 bytes) |
 | A7 | `zstd.bits-for-count` | 裸塊丟寫 ⇒ 回傳值恆為初值 | 兩步解包 |
 | A8 | `xz` 的 4 個 `update-state-{literal,match,rep,shortrep}` | **裸塊內多個條件臂會依序全部執行**（不是 if/else-if）⇒ 狀態機一次跳好幾格 | 改成 `cond -> { … ; return }` early return |
 
@@ -2167,12 +2345,12 @@ blk = 0
 | 11 | **模組函數名與另一模組別名撞名 ⇒ 函數體內無法調用**：函數體內寫 `fnv.fnv-1a-32(...)` 報 `EmitLLVM: unknown callee fnv-1a-32`（函數名 = 模組別名 `fnv-1a-32`）；同一調用在**頂層**正常 | `test/std/fnv.no`、`test/std/fnv-1a-32.no` 檔頭 |
 | 12 | **固定長度陣列的切片若直接接在表達式裡**（`h.slice(0,4).to-hex()`）會退化成未特化的 `[]t.slice` → `unknown callee []t.slice`；先落到局部變數就正常 | `test/std/sha3.no` 註解 |
 | 13 | **浮點的 `num.abs` 回 0**（`abs(-3.5)` → `0.0`，`abs(3.5)` → `3.5`）；`0.0 - x` 直接算正常 ⇒ 問題在 `num.abs` 的 f64 單態化裡那句 `r = 0 - .` | `test/std/num.no` 檔頭 |
-| 14 | **LZMA 解碼器未完成**：`lzma-decoder.decode` 對真 LZMA1 位元流（Python `lzma` FORMAT_RAW 產生）產出的不是原文；`xz.lzma-decompress` 對合法 `.lzma` 回 0 位元組；`xz-compress` 產出的流缺正確 CRC32（真 `xz -d` 判 corrupt）；真 `.xz`（LZMA2 壓縮塊）解不出 | `test/std/xz.no` 檔頭、`t-lzma-decode` |
+| 14 | **LZMA 解碼器未完成**：`lzma-decoder.decode` 對真 LZMA1 位元流（Python `lzma` FORMAT_RAW 產生）產出的不是原文；`xz.lzma-decompress` 對合法 `.lzma` 回 0 位元組；`compress` 產出的流缺正確 CRC32（真 `xz -d` 判 corrupt）；真 `.xz`（LZMA2 壓縮塊）解不出 | `test/std/xz.no` 檔頭、`t-lzma-decode` |
 | 15 | **編譯器根因：裸塊 + 臨時變數 + match 臂賦值會靜默丟寫**。`{ p-opt = p + 1; p-opt: { ok -> p = it; -> } }` 裡 `p` 不變；同樣形態在 `!!` 循環內、`while` 內、函式內都會踩。<br>⚠️ **2026-11-11 復測未能重現**：`tmp/sh/wzr.no` 的 C 形狀（裸塊 + `h3-opt = h3 + 4` + 值位 match 寫回）、`tmp/sh/wzs.no`（條件塊內兩層）、`tmp/sh/wzu.no`（複合條件 `v < n && s[v] == 32 ->` 內）**全部正確寫回**（→ 6 / 9）。猜測差別在 `p + 1` 是 plain 還是 `?T`（`p` 來自 `len()` 時是 plain），觸發條件比原記錄窄，**待細分**；寫測試時別直接引用本條當定論 | §5.1b A2/A3/A5/A7；反例 `tmp/sh/wzr.no` / `wzs.no` / `wzu.no` |
 | 16 | **編譯器根因：裸塊內多個條件臂會依序全部執行**（不是 if/else-if），只有最後成立的臂結果留下 | §5.1b A8 的 `xz` 狀態機 |
 | 17 | **`x = <非 option 表達式>: { ok -> it; -> 預設 }` 會靜默走「預設」臂**。最易踩的是資料依賴 `len()` 的減法：`len()` 保證非負 ⇒ `n - 22` 被推成純 i64，套 match 只會拿到預設值 | `zip.find-eocd` 修復過程 |
 | 18 | `zlib-decompress` **不驗證 Adler-32**（尾端 4 位元組只當邊界，數值錯照樣回資料）；FDICT 只跳過 4-byte DICTID，不套用字典 | `test/std/zlib.no` 檔頭 |
-| 19 | `bzip2-compress` 只寫 24 位元組檔頭，**不產生任何真實區塊** ⇒ 輸出無法被 `bzip2 -d` 解開（反向可用：真實 `bzip2` 的流本模組解得開） | `test/std/bzip2.no` |
+| 19 | `bzip2.compress` 只寫 24 位元組檔頭，**不產生任何真實區塊** ⇒ 輸出無法被 `bzip2 -d` 解開（反向可用：真實 `bzip2` 的流本模組解得開） | `test/std/bzip2.no` |
 | 20 | **真 zstd 壓縮塊（block type 2）解不出**：解壓端只實作了 raw/RLE 與自產的 stored 幀 | `test/std/zstd.no` |
 | 21 | **同一段程式在 `no vet`（包上下文）與 `no test`（單檔）對 `x - i` 的型別推論相反**：包上下文判 `?i64`（於是 `off = idx` 報 `15w45dqk`），單檔判純 i64（於是套 `{ ok -> it; -> 0 }` **靜默取 0**）。任何一種寫法都無法同時通過兩者，只能繞開（避免在迴圈裡做減法） | `src/std/archive/zip.no` 的 `find-eocd` 註解 |
 | 22 | **`>>` 對 i64 的語意不固定且與註解相反**：`x = -9` 這種字面量來源的 i64 是**算術**右移（`-9 >> 26 == -1`），但從 `arr[i]: { ok -> it; -> 0 }` 取出、或帶 `i64` 註解的值卻是**邏輯**右移（`== 274877906943`）。`src/std/crypto/x25519.no` 的註解因此寫錯了兩年（「`>>` 對 i64 是邏輯右移」），並據此加了 `- ((x >> 63) << (64-b))` 的 floor 補償項 ⇒ 對負數反而算錯。**寫 floor 除法請一律先加 2^40 抬正** | §5.1c C3、探針 `/tmp/x5.no` vs `/tmp/x9.no` |
@@ -2254,9 +2432,22 @@ blk = 0
 | 95 | ✅ **已修（編譯器）**：`net-recv-nb` 在 `src/mir/builtin_call.go::emitBuiltinNetRecvNb` 把 `recv(2)` 的 flag 硬寫成 `i32 64`。`64 = 0x40` 在 **macOS 是 `MSG_WAITALL`**（阻塞到緩衝滿），`MSG_DONTWAIT` 在 darwin 上是 **`0x80`** ⇒ 「非阻塞收」在 mac 上退化成阻塞，任何非阻塞輪詢器（`net/ws.recv-nb`、`net/poll`、`net/server`）都會掛死。改 `targetGOOS() == "darwin" → 128`，Linux 維持 64 | `tmp/sh/wq1.no`：修前 exit 124（60s 掛死、零輸出），修後連三次 `-2 / 5 / -2`（無資料 would-block、有資料 5 位元組、再無資料 would-block）；`test/std/ws.no::t-recv-nb` |
 | 96 | ⚠️ **陷阱（非 bug，但極易誤判）：`(cond) { }` 是「條件循環（while）」，不是「條件塊（if）」**。Nolang 沒有 C 式 `for(;;)`：條件循環 = `(cond) { }`、無限循環 = `!! { }`（=`true { }`）、不執行 = `! { }`（=`false { }`），見 `glossary/data/syntax.noml` 的 `syntax-for-range` / `syntax-forever` 與 `docs/docs/lang/symbol.md:13,21`。<br>所以 `(true) { z = 5 }` **不是「恆真條件塊」，而是無限循環**：`no run` 永遠不返回 ⇒ 表現在外就是「測試掛死 / 無輸出 / exit 137（被沙箱殺掉）」。同理 `(z == 0) { z = 5 }` 之所以「正常」，是因為迴圈體把 `z` 改成 5 之後條件轉假 —— 看起來像 if，其實是 while。<br>**要「跑一次」請用裸塊 `{ }` 或 `cond -> { }`；要「真的 if」就用 `cond -> { }`。**<br>本輪我在這裡繞掉一小時：`tmp/sh/wz9.no` 用 `(true) { z = 5 }` 探「區塊內賦值是否寫回」，每次都 exit 137 靜默收場，被誤讀成「區塊內新建局部不可靠」（#93 的錯誤版本）；換成 `{ z = 5 }` / `true -> { z = 5 }` 立刻正常 | `tmp/sh/wz9.no`（`(true) { }` → 無限循環 exit 137）、`tmp/sh/wzc.no`（`(z == 0) { }` 迴圈一次後條件轉假）、`tmp/sh/wzg.no`（`(false) { }` → 體不執行）、`tmp/sh/wza.no` / `tmp/sh/wzb.no`（裸塊 / `true -> { }` → 正常） |
 
+| 97 | 🟢 **（2026-11-12 已由並行 session 修復，本條保留作歷史）** `str` 的方法調用在 MIR 端曾大面積失效 ⇒ `test/std/{str,ws,server}.no` 全部編不過（只有完全不碰 str 方法的檔還能過，如 `base64` 33/33）。三種症狀，都靜默、無 LLVM verifier 訊息：<br>① `s.byte(i)`（任何經 `.byte()` 的路徑）⇒ `EmitLLVM: unsupported builtin str.str.byte [2kqboupo]` —— callee 是**雙前綴** `str.str.byte`，而 `src/mir/codegen.go:14225` 是**精確比較** `callee == "str.byte"`，命中不了；`lookupBuiltin` 只剝一層前綴 → 落到裸 `byte`（`Intercepted: true`、無 ForwardFunc）→ `emitBuiltin` 的 default 分支。<br>② `s.index('b')` / `s.contains('b')` ⇒ `builtin str-len-bytes receiver %str_str: unsupported receiver type %str_str [aywuxg5w]` —— `str` 在該上下文被當成**普通結構體**（`%str_str`），而 `emitBuiltinLen` 只認 `%str-long`。<br>③ `s.to-i64()` / `s.cap()` ⇒ `unknown callee str.to-i64 [4qhyyund]`（連帶：`s.slice()` 因為函式體用 `.byte()` 而整條 emit 不出來，調用點也報 unknown callee）。<br>**但 `s.len-bytes()` 單獨用是正常的**（`print(s.len-bytes())` → `3`），所以不是「str 整體壞掉」。<br>🔴 **歸屬已用隔離 worktree 釘死：不是 HEAD `0e055e11` 引入的**。`0fbbe684`（`bb42c518` 的父提交）、`70908f79`、`0e055e11` 三個版本各自 `make FORCE=1 no` 後跑同一支探針，**三個都報同樣的 `str.str.byte` 與 `%str_str`** ⇒ 破壞點早於 D2 反轉提交 `bb42c518`。<br>**代碼事實（已核）**：`src/builtin/builtin.go` 的 `Intercepted` 欄位在 `src/mir/` **沒有任何讀取點**（Grep 全倉確認，即當時 `Intercepted: true` 的條目沒有攔截路徑）；`src/parser/annotation.go` 的 `buildin` 分支只處理 **FuncDecl** 與 **TaggedEnumDefinition**，**沒有 StructDefinition 分支**。<br>**恢復驗證（2026-11-12）**：同一支探針 → `str.slice` 輸出 `hello`；`test/std/server.no` 122/122、`str` 179/179、`ws` 94/94、`txt` 166/166、`path` 90/90、`base64` 33/33 全綠。 | 探針 `tmp/sh/z1o.no`（`str.str.byte`）、`tmp/sh/m1.no`（`str.cap` / `to-i64`）；worktree `/tmp/no-prev`(0fbbe684)、`/tmp/no-head`(70908f79)、主樹(0e055e11) 三處複現 |
+| 98 | ⚠️ **API 表面不一致（非 bug）：`server.accept` 與 `https-server.accept` 的 option 返回型別一個全限定、一個裸名**。`server.server.accept()` 回 `?server.server-conn`，`server.https-server.accept()` 回 `?https-server-conn`（裸名）。寫測試時把兩者放進同一個輔助函式的形參會直接撞 `6fgg3htw: expected '?server-conn', got '?server.server-conn'`，必須各寫一個（`?` 形參的裸名/限定名不對等同於兩個名義型別） | `test/std/server.no` 的 `flags-of-conn` / `flags-of-https-conn` |
+| 99 | 🔴 **對 `str` 迭代（`for ch <- s`）在 MIR 端 LLVM 校驗就失敗 ⇒ 任何「逐碼點走字串」的程式都編不過**（**既有缺陷**，HEAD `0e055e11` 的二進位同樣復現）。最小復現只有三行：<br>`s = 'Hi There'` ⏎ `ch <- s: {` ⏎ `    print(ch)` ⏎ `}` ⇒<br>`error: '%le.28' defined with type 'i32' but expected 'i64'` / `store i64 %le.28, i64* %v15.s` ⇒ `build error: linking failed [wjju8z98]`。<br>型別對不上很直白：`char` 是 **i32**、元素槽是 **i64**，迴圈把 i32 的 `%le.N` 直接往 i64 槽存。<br>⚠️ **`ch char <- s:` 這種「帶型別的迭代變數」不是繞法**——解析期就報 `'ch' is not defined [4bek3xc6]`；`str.to-chars()` 也不存在（`unknown callee str.to-chars [4qhyyund]`）。目前**沒有用戶態繞法**，只能避開（改用 `s.byte(i)` + `[0..s.len-bytes())`）。<br>**受害者**：`tests/str.no`（`; merged from tests/str-order.no` 段的 `ch <- s: { … }`，即該檔第 71 行）——它在 HEAD 上先被 #97 擋住、越過 #97 之後就被本條擋住，所以「`tests/str.no` 編不過」**不是本輪 str 遷移造成的**（已用 `head -N` 前綴二分 + 把遷移 hunk 換回 place-match 兩種方式隔離） | 前綴二分 `head -68`(OK) / `head -82`(炸)；最小檔 `$TMP/m1.no`；HEAD 二進位同檔同樣報錯 |
+| 100 | 🔴 **std 往用戶 stdout 打除錯資訊（已修，2026-11-11）**：`src/std/net/tls.no:587` 在 TLS 讀取逾時（`tries > 4000` 忙等）時 `print('RECVWAIT giveup tries=')` + `print(tries)`。任何用 TLS 的程式在讀取逾時後，輸出裡會多出一行 `RECVWAIT giveup tries=4001`。實測來源：跑 `test/std/server.no` 的 `server.https-accept-nil`（明文請求丟給 TLS 服務端 ⇒ 必然逾時）時，總結前多出這兩行。<br>**修法**：刪掉兩行 `print`，保留 `done = true`（逾時語意 = 這次等待沒拿到資料，交給呼叫方按短讀處理），並在原位置留註解說明「std 不得往 stdout 寫」。**這是可複用的一條規矩：std 內除錯只能用回傳值，不能 print。** | `src/std/net/tls.no`（修前 587–588）；`no test test/std/server.no` 的 `server.https-accept-nil` |
+| 101 | ⚠️ **測試寫法陷阱（非 bug）：loopback 上單次 `net-recv` 只拿得到應用的第一段**，會讓整批斷言「假紅」。`net/server` 的 `write-status` / `write-header` / `write-body` 是**逐個獨立 `net-send`**（`write-text` 一次回應就 6 次 send），客戶端若只 `net-recv` 一次，實測**只收到狀態行**，`Content-Type` / `Content-Length` / `Server` / `Location` / `Set-Cookie` / 本體全缺 ⇒ 我第一版 `test/std/server.no` 因此 105 通過 / **17 假紅**。<br>**修法**：寫一個 `drain(fd)` 迴圈收（收到 `recv` 回 `<= 0` 為止），且順序固定為「**服務端寫完 → 服務端 close → 客戶端 drain**」—— 不 close 就 drain 會一直阻塞（`net-recv` 是等待式）。改完 122/122 全綠。<br>連帶發現：std 裡 `tls.recv-wait` 逾時會 `print('RECVWAIT giveup tries=')`（見 #99），那行噪音正是這個測試路徑打出來的（見 #100）。 | `test/std/server.no` 的 `drain`；修前 122 條中 17 紅 |
+| 102 | ⚠️ **lint 噪音：`#{overflow=wrap}` 掛在「沒有算術的語句」上會被判 `nolang-overflow-ineffective`**。<br>**當前來源（2026-11-12 复核）**：`src/std/fmt.no:931` 與 `:949` 的 `#{overflow=wrap}` 掛在 `cb = digits.byte(i)`（純呼叫，無算術；真正的算術在下一行 `new-digits-b[1 + i] = cb`），所以每次 `no vet <任何檔>` 都會帶出 **2 條 warning，行號固定 932/950** —— 因為 lint 跑在「被測檔 + std 全部展開」的合併單元上，行號不是被測檔的（連 5 行的探針也報同兩行）。<br>**原記載位置已失效**：本條最初寫的是 `src/std/net/http.no:340` / `:573` 的 `colon-pos >= 0 -> {`，那兩處在並行 session 之後的版本裡已不再觸發。<br>⚠️ **都不是我的檔案、且乾淨 HEAD `0e055e11` 上就有**，故未修（避免與並行 session 的 `src/std` 改動衝突）。修法很簡單：把註解移到真正做算術的那一行（或直接刪）。<br>另一面已驗：`#{overflow=wrap}` 用在 `s.slice(a + 4, …)` 這類「算術當實參」的地方是**必需**的——不加會報 `xmicjezl`（要求宣告溢出行為）；加了 lint 不會判 ineffective（探針 `tmp/sh/ov1.no` vs `ov2.no`）。 | `tmp/sh/ov1.no`（有註解：無 ineffective）、`tmp/sh/ov2.no`（無註解：`xmicjezl`）；`./bin/no vet test/std/quic.no`（固定報 932/950） |
+| 103 | 🔴 **`pool.pool{}` + `p.init(...)` 從模組外呼叫時，接收者寫入不完整 —— 「搬移」類欄位操作會靜默失效**（2026-11-12）。最小复現 `tmp/sh/pl7.no`：`p = pool.pool{}` → `p.init('127.0.0.1', 39337, 4)` → 兩次 `p.get()` → `p.close-conn(0)`，結果 `p.total-count() == 1` 正確，但 **`p.conns[0]` 仍是剛被 close 的那條（fd = -1），`conns[1]` 沒有被搬到槽 0**；把同一段換成 `p = pool.create('127.0.0.1', 39337, 4)`（`tmp/sh/pl5.no`）就完全正常（`slot0-valid`）。差異只在 callee 名：模組內呼叫是裸 `init`，模組外是 `pool.pool.init`（**雙前綴**，與 §5.2 #97 同源）——更早一步它甚至是硬錯誤 `unknown callee pool.pool.init [4qhyyund]`（`tmp/sh/pl1.no`）。<br>**測試側繞法**：`test/std/pool.no` 的 `close-conn` / `get-put` / `put-unknown` / `max-size-cap` 一律用 `pool.create(...)`；`pool.init` 本身仍由 `t-create` 直接呼叫（只斷言 host/port/max-size/count 這些標量欄位，不碰 `conns` 搬移）。<br>⚠️ 順帶更正一條我寫錯的推論：`_ = p.get()` 丟棄 `?net.conn` **不會**關閉連接（`net.conn` 只有一個 fd、無析構函式），`tmp/sh/pl8.no` 實測丟棄後 slot0/slot1 的 fd 仍有效。最初把「搬移失敗」歸因於 `_ =` 是錯的。 | `tmp/sh/pl7.no`（init → `slot0-dead`）、`tmp/sh/pl5.no`（create → `slot0-valid`）、`tmp/sh/pl1.no`（`unknown callee pool.pool.init`）、`tmp/sh/pl8.no`（`_ =` 無害） |
+| 104 | 🔴 **`quic.gen-cid` 在同一微秒內連呼兩次會回完全相同的 CID**（2026-11-12，**未修**）。種子是 `state = time.now-ns() ^ os.get-pid()`，每次呼叫都從時鐘重取 ⇒ 只要兩次呼叫落在同一微秒，xorshift 的輸入相同、輸出自然相同。實測 `time.now-ns()` 在 macOS 上的解析度就是 **1µs**：連呼 2000 次只得 33 個不同值（總跨度 32µs）。<br>**影響**：QUIC 的 Connection ID 必須一條連線一個（RFC 9000 §5.1），「同一條時間軸上連續開兩條連線」在真機上幾乎必然撞號。<br>**沒修的原因**：`gen-cid` 是自由函式、std 沒有模組級可變狀態，要嘛改簽名（多傳一份熵，如 `conn.init` 把自己的計數器餵進來），要嘛接受碰撞 —— 屬 API 決策，留給作者。<br>**測試側處理**：`test/std/quic.no::t-gen-cid` 只斷言「間隔 >1µs 的兩次生成不同」，並在斷言旁註明本條，避免把缺陷寫成期望值。 | `tmp/sh/q9.no`（同微秒兩次 `gen-cid(8)` 逐位元組相同）、`tmp/sh/q10.no`（2000 次 `now-ns()` 只得 33 個不同值、跨 32000ns） |
+| 105 | 🔴 **編譯器 comptime 折疊：純函式 + 全字面量實參 + `[]byte` 下標讀 ⇒ 落到失敗臂（靜默給錯值）**（2026-11-12，**未修**）。最小復現 `tmp/sh/q15.no`：`f-at = (b []byte, i i64) (v i64) { v = -1  b[i]: { ok -> v = it  -> _ } }`，呼叫 `f-at(pk, 4)`（`pk` 是 `[]byte` 變數、索引是**字面量**）回 **-1**；把索引換成變數 `k = 4` 後回 14；在函式體裡加一行 `print` 讓它不純，也回 14。同樣形態對 `[16]byte`（定長陣列）正常。⇒ 折疊器把 `[]byte` 型別的實參當成「無法求值」，下標讀於是不走 `ok` 臂。<br>**影響**：任何「純工具函式 + 字面量下標」的呼叫都會被靜默算錯，這正好是測試 helper（`at(buf, 0)`）最常見的形狀 —— 我先前的 `at(pk, 4) != at(orig, 4)` 因此恆等、斷言假綠。<br>**未碰的原因**：實作在 `src/mir/hir2mir.go` 的 `comptimeFold` / `evalConst`（`src/mir/comptime_reassigned_local_test.go` 已釘過同一個求值器的另一條 soundness bug），而 `src/mir/hir2mir.go` **正被並行 session 修改**，不宜同時動。<br>**測試側繞法**：`test/std/quic.no` 所有 `at()` 下標一律先落變數（`k0 = 0 …`），並在檔頭與 §5.0za 註明原因。 | `tmp/sh/q15.no`（`at-lit=-1 / at-var=14 / at2-lit=14 / arr-lit=4`）、`tmp/sh/q14.no`（加 `print` 即恢復正常）、`tmp/sh/q13.no`（內聯下標 `pk[4]` = 14，經 helper 呼叫 = -1） |
+| 106 | 🔴 **「空 `str`」的 `data` 是 NULL，`str.eq(x, n)` 只要 `n > 0` 就崩**（2026-11-12，**未修**）。`str.eq` 是 `#{buildin} eq-raw`，落到 `src/mir/builtin_call.go:1207 emitBuiltinEqRaw`，那裡直接 `call i32 @memcmp(i8* dataA, i8* dataB, i64 n)`，**不檢查指標是否為 NULL**；而空串的 `data` 正是 NULL ⇒ `memcmp(NULL, p, 1)` 必崩。<br>實測（v0.4.19-45）：`e = ''` + `e.eq('de', 0)` ⇒ `true`（n=0 時 `memcmp(NULL, …, 0)` 合法）；`e.eq('de', 1)` ⇒ `trace/BPT trap`；`runner.str-eq(e, 'de', 2, …)` 與 `runner.str-eq('de', e, 2, …)`（NULL 放右邊一樣）⇒ `segmentation fault`。<br>**最常見的踩點是 `str.slice`**：`src/std/str.no:631` 的 `r-start >= r-end -> return` 是**提前 return**，`val str` 停在零值 ⇒ `s.slice(3, 3)` / `s.slice(6, 8)` / 任何越界切片拿到的都是 NULL-data 空串：`len-bytes()` 回 0、`byte(0)` 回 `nil`、`print` 印空，看起來「就是個空串」，要等配上 `n > 0` 的 `eq` 才爆。<br>**修法**：`emitBuiltinEqRaw` 開頭加一支「任一 data 為 NULL ⇒ 結果 = `n == 0`（否則 false）」，別對 NULL 做有長度的 memcmp。**測試側繞法**：空串一律 `n = 0`（語料現況正好都是這樣，所以這條一直沒被踩到）。與 §5.2 #84（`eq` 不檢查長度）同族，差別是本條**必崩**、不會靜默。 | 探針 `/tmp/psprobe/w1.no`（`''` + n=2 崩）、`x2.no`（n=1 → `trace/BPT trap`）、`x1.no`（n=0 → true）、`x3.no`（NULL 在右側同樣崩）、`x4.no`（`slice(3,3)` 同現象）；`test/std/str.no` 的 `t-push` 註解 |
+
 > #9–#91 都在 `bin/no`（v0.4.19-40-g72e157cb-dirty，2026-11-10）上複現；
 > #92–#96 在 2026-11-11 的 `v0.4.19-44-g70908f79-dirty` 上複現（後者已含本輪的
-> `net-recv-nb` 平台常量修復，故 #95 是「已修」而非「待修」）。
+> `net-recv-nb` 平台常量修復，故 #95 是「已修」而非「待修」）；
+> #97–#106 在 2026-11-12 的 `v0.4.19-45-g0e055e11-dirty` 上複現（含 `txt` 下標寫禁令
+> 與 `push` 家族；#97 / #100 已由並行 session 或本輪修掉，其餘仍待修）。
 > 注意：該 binary 由**共享工作區**建出，含其它 session 未提交的
 > `src/parser/*`、`src/checker/checker.go` 改動；那批改動落地後應重測一遍。
 
@@ -2380,6 +2571,472 @@ archive 輪全量執行（108 檔）只剩 **1 個紅檔**（`dns.no`、`ecdsa.n
 **待 `str` 穩定後的驗收順序**：`make gen no` → `cd src && go test ./checker -run TestStdASTBlobCarriesParseConfig -count=1`
 → 全量 `./bin/no test test/std/`（確認第四輪 +22 條 `http3` 長標頭斷言仍在、114 檔全綠）
 → 再回頭評估 `build` / `parser` 紅包是否已自行轉綠。
+
+### 5.2f 2026-11-11 第六輪：兩條與 `str` 無關的門禁紅檔
+
+> 使用者：**`str還沒完事 先做別的`**。邊界不變：不碰 `src/std/str.no` / `src/std/txt.no`、
+> 不重編 `bin/no`、不跑依賴 std codegen 的全量 std。只修 Go 側、讀磁碟源碼的門禁。
+
+| 項目 | 根因 | 處置 | 驗證 |
+|---|---|---|---|
+| `build::TestASTWriteInventoryPinned` | `astWriteCorpus` 14 檔有 8 檔已被 `15618c3c`「語料合併成 37 類」刪掉：`1.no` `2.no` `simple-match.no` `number-generic.no` `string-union.no` `std-net-ext.no` `heap.no` `sha3.no`。測試在第一檔 `os.ReadFile` 就 Fatal，根本走不到 pin 比較 | 改指合併後的承載檔（每檔都帶 `merged from tests/<原名>` 標記，成員逐字搬入、覆蓋不變）：`1.no`+`2.no`→`misc1.no`、`simple-match`→`match.no`、`number-generic`→`number.no`、`string-union`→`str.no`（**`tests/str.no`**，不是 `src/std/str.no`）、`std-net-ext`→`net.no`、`heap`→`memory.no`、`sha3`→`sha.no`。14 檔→13 檔（`1.no`/`2.no` 併為一檔） | `-run 'TestASTWriteInventoryPinned\|TestASTAuditGateIsWired'` = **PASS / PASS**（55.51s + 1.62s） |
+| 為何改語料不需重標 pin | `astWriteInventorySeed` 是**空 slice**（S5 stage 6「assembly working-copy isolation」之後基線就是 0 keys）。門禁語義是「任何寫到 parse 輸出的欄位都算新 key」，故換語料不改 pin；**真出現 `--- got ---` 反而說明有 §1.4 回歸**，不該用放寬語料掩蓋 | 註解寫明此點，並移除對不存在測試 `TestASTWriteCensus` 的錯誤指引 | — |
+| `i18n/catalog::TestEnCatalogFresh` | 同一個 i18n ID `u3g4qexx` 配了兩條不同文本：`src/mir/builtin_call.go:1686` 寫死 `"builtin chars-new: bad arg type %s"`，`src/mir/builtin_str_bytes.go:102` 用通用 `"builtin %s: bad arg type %s"`（`ff` 為 forward-func 名）。`msgscan.Texts` 判為「一 ID 兩文本」硬錯誤 | 統一成通用模板：`builtin_call.go` 改 `Errorf("u3g4qexx", "builtin %s: bad arg type %s", "chars-new", ct)`——**實際渲染輸出與原本完全相同**，兩處共用同一條翻譯。10 個 locale 的 `u3g4qexx` 同步改成含 2 個 `%s` 的通用形式（`builtin %s: … %s`） | `TestEnCatalogFresh` **PASS**；`TestLocaleKeysAndVerbs` 9/9、`TestEveryLocaleCoversEn` 9/9 全 PASS；`go build ./mir/` rc=0；`gofmt -l` 乾淨 |
+
+**順帶查清、明確不改的**：
+
+- `src/package/paths_test.go` 的 `tests/u128.no` / `tests/jp7.no` / `tests/_.no` 只是
+  `ValidateSourcePathName` 的**字串輸入**，不讀檔，不是失效引用（別誤改）。
+- `i18n/catalog` 的 doc/alias 四項紅（`TestEnDocCatalogFresh` / `TestDocCatalogKeys` /
+  `TestEnAliasCatalogFresh` / `TestAliasCatalogKeys`）全指向
+  `str.set-byte` / `str.eq-raw` / `txt.set-byte` 三個 key。真因是 **API 私有化更名**
+  （`txt.no:73`：「2026-11-11 由公開的 `set-byte` 收歸模組內」，現為 `_set-byte`），
+  加上 19:50 有人批量重寫 20 個 `*-doc/alias.noml` 的中間態。刪 locale 舊 key 會丟翻譯、
+  且 API 若定稿前後又變還得加回 ⇒ **等 str/txt 收工後跑 `make i18n` prune**，本輪不動。
+- `build::TestUnwrapMethodCallRHS`（`unknown callee str.to-i64`）與 `parser` 三紅
+  （parse-time fact 未過 gob 往返）仍分別屬 str 中間態與別的 session 的 annotation 重構。
+
+### 5.2g 2026-11-11 晚間：不碰 `str` 的三項體檢 + 待遷移清單
+
+> 仍是「`str` 未完事，先做別的」。本節沒有改任何 `.no` 代碼，只做只讀體檢並把
+> **等 `str`/`txt` 定稿後必須處理的位置**釘下來。
+
+| 體檢 | 結果 |
+|---|---|
+| `./bin/no vet src/std` | **0 error / 0 warning**，801 hint。hint 絕大多數是 `src/std/str.no` 的 `nolang-overflow` 未宣告（`xmicjezl` / `ovfhndld`）——屬使用者正在改的檔案，不動；餘下 4 條 lint：`txt.no:307` 冗餘 `i64` 標註、`uuid.no:12/16` 兩個未使用常量、`yaml.no:1356` 冗餘標註 |
+| `cd src && go vet ./...` | **乾淨（rc=0）** |
+| `./glossary/dist/glossary check` | **0 error / 0 warning** |
+| `python3 scripts/std_test_coverage.py` | **API 面 2049（764 函數 + 1285 方法）、已覆蓋 1850 = 90.3%**，與 §5.0z 完全一致；私有/不可達 90、平台不適用 18、無測試檔模組 9。⚠️ 其中 `net/server` 的 3+38 項是 §5.0z 說的**紙面覆蓋**（`test/std/server.no` 因 str 方法失效整檔跑不起來），實際可執行覆蓋低於 1850 |
+| `gofmt -l src/` | 58 檔有偏差，但全是在建改動（大量 `M`），**不批量 `gofmt -w`**：會覆蓋別的 session 未提交的工作 |
+
+**✅ 已收口（2026-11-11）：公開 `set-byte` 私有化的 20 處舊調用全部處置完畢**
+
+`src/std/str.no` / `txt.no` 只提供 `str._set-byte` / `txt._set-byte`（`txt.no` 註明
+「2026-11-11 由公開的 `set-byte` 收歸模組內」）。checker 的 `raqvyltn` / `8w3q93g2`
+禁止用戶碼調私有符號，下列 20 處原本會編譯失敗，現已全部改成公開路徑：
+
+| 檔案 | 原行 | 處數 | 處置 |
+|---|---|---:|---|
+| `test/std/txt.no` | 791 / 801 / 810 / 818 | 4 | 整塊 `t-set-byte` 改寫為 `t-cp-write`（`runner.test('txt.cp-write', …)`）：測**碼點**原位寫（place-match），保留「超界寫入被跳過、不改變長度、不破壞尾端」 |
+| `tests/byte.no` | 193 / 203 / 209 / 216 / 228 / 267 / 291 / 301 / 323 / 332 | 10 | 接收者寫回組（`ok 1`–`ok 7`）改用 `str.fill(val byte)` / `txt[i] = <char>` —— 兩者走同一條 `lvalueAddrOf` 寫回路徑，7 案例全綠；「可失敗 `?bool` 契約」組已無法從用戶碼觸達，改由 Go 單測 `src/mir/raw_byte_put_oob_test.go` 釘住發出的 IR 形態（scratch alloca + 兩個 select + 無號比較） |
+| `tests/re.no` | 191 / 200 / 238 | 3 | 單一定義投影的對照組（`ok 3` / `ok 4` / `ok 7`）改用 `fill` |
+| `tests/txt-3.no` | 113 | 1 | 改 `r[0] = "Z"`（ASCII 碼點值 == 位元組值，`setbyte-raw` / `setbyte-cp` / `setbyte-len` 三項仍全綠） |
+| `tests/txt-4.no` | 17 / 34 | 2 | `[]txt.myjoin`（逐**位元組**拼接、`out.len = pos`）改 `[]byte` 緩衝 + `txt.from-bytes`（超過 255 位元組自動截斷），`real` / `mine` 輸出仍逐字相同 |
+
+> 順帶修掉的坑：`tests/byte.no` 的 `cond -> print(ok)` + 空行 + `-> print(fail)`
+> 在**頂層**不是 if/else —— 兩行都會執行（`fail` 行永遠印出）。本輪改寫處一律用顯式
+> 塊 `{ cond -> { … } -> { … } }`。這是既有語料裡的普遍寫法問題，未全面清掃。
+
+> 註：`_set-byte` 自身的「越界回 `nil` 且跳過寫入」契約現在只能由 Go 單測覆蓋，
+> 語料層已無可達路徑。
+
+**`str[i] = v` / `t[i] = c` 禁令的四个登記點**（缺一個就漏報，都是實測踩出來的；
+第 4 點是 2026-11-12 收 txt 時補的）
+
+| # | 位置 | 為什麼原本漏 | 補法 |
+|---|---|---|---|
+| 1 | 函式內局部變數 | —— | `IdxLocalTypes` 本來就查得到（含 `x str = …` 標註）；txt 靠 `ContainerElemType("txt") == "char"` 走通用容器分支 |
+| 2 | **頂層腳本裸名** | `IdxLocalTypes` 按函式作用域登記，頂層的鍵是空串，恆查不到 ⇒ `s str = with-cap(4)` ⏎ `s[0] = 89` 一直放行 | `collectTopLevelVarRawForIdx` 出「頂層變數原始型別表」+ `topIndexBaseRaw` 解析基底 |
+| 3 | **頂層 struct 欄位基底** `b.t[0] = "J"` | 上一版只認 `*parser.Identifier` 基底；且 `collectTopLevelLets` 對無標註的 let 走 `registerInferredNonIntLet`，那裡只登記 `nonInt` / `f32|f64` / `[]` / `[` 前綴，**struct 名永不登記** ⇒ `b = box{…}` 之後的欄位寫永遠查不到型別（`tests/byte.no:226` 的洞） | 同一條 `topIndexBaseRaw`：`collectTopLevelVarRawForIdx` 額外認 `*parser.StructLiteral` 的型別名，再按鍵查 `structFields` |
+| 4 | **結果參數** `f = () (out str)` | 體內寫成不帶標註的 `out = with-cap(n)` 時同樣查不到 ⇒ std 最常見的緩衝建造形狀整條漏報（舊 docs 的 `str.to-upper` 範例就是這形狀） | `collectStrTxtResultParams` 出一份 `resStrTxtParams`（str 與 txt 都收） |
+
+兜底只認 `str` / `txt`，不碰其它容器（`[]byte` / `[]T` / 固定陣列）的**同類歷史缺口**
+——那是獨立議題，別順手一起收緊（會把大量 `tests/*.no` 的頂層 `[]T` 寫入翻成錯誤）。
+
+🔴 **頂層那兩處只能當謂詞用**：`if r := topIndexBaseRaw(...); r == "str" || r == "txt" { lt = r }`。
+**絕不能**寫成 `lt = topIndexBaseRaw(...)` —— 一旦 `lt` 被填上，頂層 `[]byte` / `[]T` /
+`[N]T` 的直寫就會掉進 `isContainerWriteBase` 末尾的 `return true`（頂層 `curFunc` 是空串、
+`capBases` 沒有條目、也沒有函式名可豁免），大批語料會翻紅。
+`TestIndexWriteTopLevelNonStrTxtNotReported` 就是這條邊界的警報器（5 個 case）。
+另：`collectTopLevelVarRawForIdx` **無標註時只認 struct 字面量**，刻意不做一般表達式推斷
+—— 把 `c = s` 推斷成 str 會順帶收緊頂層裸賦值的推斷缺口，直接翻紅
+`tests/rule1-binding.no` 這類**依賴**該缺口的語料（見 §5.2 盲區 1）。
+
+落地時 A/B 掃全語料（`no` vs 停用這兩處兜底的 `no-topstr`，361 個 `tests/`+`test/`+
+`example/` 檔各跑兩次 `no vet`，另對 119 個 `src/std/**/*.no` 各掃一次），比對
+`[idxwrite]` 計數，翻出 **63 處 / 11 個檔**（其餘候選檔前後完全一致）：
+
+| 檔案 | 處數 | 形狀 | 處置 |
+|---|---:|---|---|
+| `src/std/uuid.no` | 8 | `out = with-len(36)` + `out[8] = 45`（打字連字號） | `out[8]: { ok -> it = 45 }` place-match（純 ASCII，一格一碼點） |
+| `src/std/time.no` | 20 | `format-date` 的 `out[pos + N] = …` | place-match（同上，都是打字數字） |
+| `src/std/path.no` | 1 | `split` 的 `f[i] = .p.byte(start + i)` | **`[]byte` + `to-bytes-str()`**（檔名可能非 ASCII，見下方陷阱） |
+| `src/std/net/hpack.no` | 6 | `encode-int` / `encode-str` 的 `out[i] = …`（`>= 0x80` 的延續位元組） | `[]byte`（位元組保真） |
+| `src/std/net/unix.no` | 1 | `recv-all` 跨多個 recv 累積 `content[total + i]` | `[]byte` + `push`（自動擴容，不會像 with-cap 那樣越界） |
+| `src/std/crypto/rand.no` | 1 | `rand-str` 的 `s[i] = chars[r % 62]: { … }` | `[]byte` |
+| `src/std/collection/map.no` | 1 | `for-each` 的 `k[j] = src.byte(j)`（`k` 進來時 len=0） | `[]byte` |
+| `src/std/collection/static-hashmap.no` | 1 | 同上 | `[]byte` |
+| `src/std/toml.no` | 4 | `entry-key` / `entry-value` / `table-name` / `array-name` | `[]byte`（鍵名可能非 ASCII） |
+| `src/std/net/url.no` | 12 | `url-encode` / `url-encode-component` / `url-decode` 的 `out[out.len-bytes()] = …`（邊算邊增長長度） | `[]byte` + 顯式計數器 `on`（`out-b[on] = …`），收尾 `slice(0, on).to-bytes-str()`；**計數器自增必須用解包形態**，見陷阱 3 |
+| `tests/tls-suite-2.no` | 5 | 頂層 `buf2[0] = 0xab`（`buf2 = space.repeat(8)` 推斷為 str） | `[]byte` + 尾端補空格 |
+| `tests/mem-safety/bug19-…no` | 17 | 頂層 `test-raw[0] = 49` … 逐位元組造 `"100644 file1.txt\0"` | `[]byte` + 尾端 20 個 0 |
+
+**這兩條陷阱是這輪踩出來的（重要，選寫法時按「內容是位元組還是碼點」決定）：**
+
+1. **`place-match` 的閘門是「碼點」不是「位元組」**：閘門就是 `s[i]` 這個讀，而 `str`
+   的下標讀取按碼點計。所以 place-match 只適合 ASCII、一格一碼點的場景（打連字號 /
+   打數字 / hex 查表）。實測 `f = with-len(8)` 後用 place-match 依次寫 224..231，
+   **只有前 4 格落盤**，其餘被閘門靜默跳過。`path.split` 一開始遷成 place-match，
+   `test/std/path.no` 的「split 非 ASCII 檔名」立刻紅（輸出 `ファイ` + 垃圾，len 仍
+   16）——改回 `[]byte` 才恢復 90/90。
+2. **`[]byte` 的元素存值在「`#overflow=wrap` + 複合算術右值」下會存進錯值**（**既有
+   缺陷**，`/tmp/no-clean` 的 HEAD 二進位同樣復現）：`b[0] = (yr / 1000) % 10 + 48`
+   （yr=2026，期望 50）實測存成 **56**；先 `x = <expr>` 再 `b[0] = x` 才是 50。
+   `str` 側沒有這個問題。所以 `time.format-date` 最後用 str + place-match，而不是
+   先前試過的 `[]byte`（那個版本把 `2026` 印成 `8026`）。位元運算（`|` / `&` / `>>`）
+   不受影響——`hpack.encode-int` 的 `ob[0] = prefix-byte | val` 實測全對。
+3. **計數器自增 `on = on + 1` 在 `{}` 臂塊裡，加了 `#{overflow=wrap}` 也編不過**
+   （§5.2 #93 的直接推論：注解只管「新建局部」，重綁是另一回事）⇒ `cannot assign
+   ?i64 value to i64 variable 'on' [15w45dqk]`，報錯還特別長。`url.no` 一遷就冒出
+   **12 個 error**，全在 `{ keep -> { … } }` / `-> { … }` 的臂塊內。可靠寫法是
+   **把 option 就地解包**（`src/std/path.no` 本來就這樣寫）：
+   ```no
+   #{overflow=wrap}
+   on = on + 1: {
+       ok -> it
+
+       -> on
+   }
+   ```
+   `-> on` 兜底是「溢出就原地不動」，比 `-> 0` 安全（`-> 0` 會讓後續寫入全部打進第 0 格）。
+
+回歸釘：`src/checker/index_write_test.go` 的 `TestIndexWriteStrTopLevelReported`
+（含「頂層 `[]byte` + with-cap 仍豁免」這條邊界守門）、
+`TestIndexWriteStrResultParamReported`（`untyped-rebind` / `typed-bind` 兩條路都要報）、
+`TestIndexWriteTxtReported`（函式內 / 頂層 / 結果參數）、
+`TestIndexWriteStrTxtStructFieldTopLevelReported`（`b.s[0]` 與 `b.t[0]` 各一條 + 兩條全報）
+與 `TestIndexWriteTopLevelNonStrTxtNotReported`（防過界，5 個 case 必須 0 條）。
+
+**同時留意（別誤碰）**：`compiler/src/ck-sig.no` 19:54 仍在被改（selfhost 簽名表跟著
+`str` 重構走，里面還留著 `str.eq-raw` / `eq-raw` 的舊條目）；`src/i18n/catalog/locales/*`
+的 doc/alias 20 檔是 19:50 別人批量重寫的，`str.set-byte` / `str.eq-raw` / `txt.set-byte`
+三個 orphan key 屬上面同一場重構，等定稿後 `make i18n` prune。
+
+### 5.2h 2026-11-11：編譯器修復 —— 裸 `.` / `self` 直接當實參 ⇒ SEGV
+
+**症狀**：方法體內寫 `txt.from-str(.)` 或 `txt.from-str(self)`（同理
+`txt.from-bytes(.)`），編譯**成功**，運行時 **EXIT=139（SIGSEGV）**，連一行輸出都沒有。
+改成 `s = self` 再傳 `s` 就正常，所以 `src/std/str.no::to-txt` 與
+`src/std/byte.no::to-txt` 一度用「先綁局部變數」繞開。
+
+**IR 證據**（`no build -v`，`str.viatxt = () (out txt) { out = txt.from-str(.) }`）：
+
+```llvm
+; ❌ 壞：arg0 是呼叫者的接收者 %p0（%str-long*），卻被標成 %txt*；
+;    真正的 str 實參因下標越界退化成 zeroinitializer
+call void @txt_from_str(%txt* %p0, %str-long zeroinitializer, %txt* %cres.51)
+
+; ✅ 好（`s = self` / 修復後）
+call void @txt_from_str(%txt* %v2.s, %str-long* %carg.55, %txt* %cres.56)
+```
+
+**根因**：`txt.from-str` 是 `txt.` 前綴的**靜態方法**，編譯器為它插了隱式
+`self`（HIR：`result s=self t=txt`，位於 `ResultParams[0]`）。`hir2mir` 對
+「模組／型別名前綴呼叫」（`resolveCallee` 走 namespace 分支、`recvV = NoVal`）會
+合成一個 `zero-recv` 接收者（`OpConst`），但 `lowerCallArgsWith` 的
+`firstIsSelf` 啟發式——「HIR 第一個實參節點名為 `self` 就代表接收者已提供，別再
+prepend」——把這裡的裸 `.` 誤判成「已提供的接收者」，於是合成的接收者被丟棄，
+`inst.Args[0]`（呼叫者自己的 self，型別 `%str-long`）被 codegen 當成被調方法的
+`%txt*` self 出參傳入 ⇒ 段錯誤。`s = self` 之所以能繞，只因為第一個實參換成了
+區域變數名，`firstIsSelf` 自然為 false。
+
+**修法**（`src/mir/hir2mir.go`，共 3 處小改）：
+
+1. `lowerer` 新增 `synthRecv bool`，語義是「本次 `recvV` 是合成出來的，必須
+   無條件 prepend」。
+2. `lowerCall` 的 `needSynthRecv` 分支在 `Emit(OpConst, recvTyp)` 後置位
+   （`defer` 還原原值）。
+3. `lowerCallArgsWith` 讀取並**立即清零**該標誌（巢狀實參運算式不得繼承），
+   `firstIsSelf` 只在 `!synth` 時才生效。
+
+**回歸**：新增 `tests/bare-self-arg.no`（4 斷言：`(.)`、`(self)`、`s = self`
+對照組、`.tag` 欄位實參）。基線 binary 在該檔 **segmentation fault**，
+修復後 4/4 通過。
+
+**驗證口徑**（本輪主幹正處於別人的 `str` 重構中間態，端到端套件大面積紅）：
+
+| 檢查 | 結果 |
+|---|---|
+| `cd src && go test ./mir/` | **ok** |
+| `./bin/no vet src/std` | **0 error / 0 warning**（801 hint 同 §5.2g） |
+| `test/std` 全量（116 檔） | 修復前後 **FAIL 集合逐行相同（78 = 78，`diff` 空）** ⇒ 無回歸。這 78 檔的紅全是預存狀態：`unknown callee str.copy` / `str.to-bytes` / `builtin str-len-bytes receiver %str_str`，用 **HEAD 乾淨 worktree 重建的 binary** 跑同樣語料也是同一組紅，與本修復無關 |
+| `tests/bare-self-arg.no` | **4/4 PASSED**（基線 SIGSEGV） |
+
+> ⚠️ 這 78 檔的紅屬於 `str` 重構（`str.eq-raw` / `set-byte` 私有化 / 方法全限定
+> 名 `str.str.<m>`）的收尾範圍，等定稿後重跑本節即可；屆時若 `str.to-txt` /
+> `[]byte.to-txt` 想改回裸 `.` 直傳，上面兩處「先綁局部」的中間變數可以刪掉。
+
+### 5.2i 2026-11-12：模組前綴回歸 —— `hashmap-*` / `err` 的方法名與 struct 名錯開
+
+**症狀**：五個 std 測試檔編譯失敗，報的是兩種看似無關的錯：
+
+```text
+test/std/map.no      : unknown callee hashmap-str-i64.init in func t-str-init [4qhyyund]
+test/std/err.no      : unknown callee err.err.msg in func t-from-errno [4qhyyund]
+test/std/option.no   : unknown callee err.err.msg in func t-err
+test/std/index-out.no: unknown callee err.err.msg in func t-arr-oob-msg
+```
+
+**先排除的兩個方向**（都走過，都不成立）：
+
+1. **不是 `?=` 語義**。錯誤推進到 `unknown callee` 之後就與 `?=` 無關了 ——
+   但那條路上我一度做過一次**假修**，見本節末「⚠️ 假修紀錄」。
+2. **不是 `monomorphizeGenericStructs` 本身**。`m [str]i64 = { }` 解析出的
+   AST 正是它期望的形状（`no ast` 確認：`LetStatement{type: MapType}`），
+   `scanStmtForMapTypes` 的 `*parser.LetStatement` 分支命中。
+
+**關鍵鑑別實驗**（把「struct 沒生成」與「方法沒生成」分開）：
+
+| 探針 | 結果 | 說明 |
+|---|---|---|
+| `m [str]i64 = { }` + `m.cap` | **Build successful** | 欄位可達 ⇒ `hashmap-str-i64` struct **已生成** |
+| 同上 + `m.init()` | unknown callee `hashmap-str-i64.init` | 方法**沒生成** |
+| `v = m.init`（無括號） | Build successful | ⚠️ 這只是方法**引用**，不 emit 呼叫 —— 用它驗證會得到假綠 |
+
+**根因**：`src/build/module_prefix.go` 兩個階段對「是否加模組前綴」的判定不一致。
+
+- **Phase 2**（`prefixModuleStatements` 改名 type def）**沒有**任何內建型別豁免 ⇒
+  `hashmap-str-tmpl` 被改名為 `map.hashmap-str-tmpl`、`err` 被改名為 `err.err`。
+- **Phase 3**（同函數改方法名）與 `prefixMethodNames` 在 11-11 20:39 新增了
+  `if isModulePrefixBuiltinType(typePrefix) { continue }`（原本是為了修
+  `str.copy` → `str.str.copy` 的簽名錯開）。但 `isModulePrefixBuiltinType` 的
+  **前綴啟發式**也命中 `hashmap-*`，而 `err` 本來就登記在
+  `modulePrefixBuiltinTypes` 集合裡 ⇒ 這兩類方法保持裸名。
+
+於是出現「struct 帶前綴、方法不帶前綴」：
+
+- `hashmap-str-tmpl.init`：`monomorphizeGenericStructs` 用
+  `strings.HasPrefix(fd.Name, tmplName+".")` 分組模板方法，此時 `tmplName`
+  已是 `map.hashmap-str-tmpl`，裸名一個都匹配不上 ⇒ `templateMethods` 為空
+  ⇒ **只生成 struct、不生成任何方法**（`specializeGenericStruct` 收到 nil 方法表，
+  靜默通過，不報錯）。這是最惡性的一種：沒有錯誤訊息，只有下游的 unknown callee。
+- `err.msg`：MIR 解析接收者得到 `err.err`（struct 已改名），callee 拼成
+  `err.err.msg`；而定義仍是 `err.msg` ⇒ 所有 `.msg()` / `.code()` 找不到。
+
+> 簽名表（`src/checker/stdsig_gen.go`）同時登記 `err.err.msg` 與 `err.msg`
+> 兩種形式，所以**光看簽名表存在會誤判成「已定義」**——真正的落點是合併程式裡
+> `FuncByName` 的鍵。
+
+**歸屬釘死**（隔離 worktree `/tmp/no-head2`，`0e055e11` 乾淨樹）：
+
+| 步驟 | 結果 |
+|---|---|
+| HEAD 乾淨 binary（11-11 20:33）跑探針 | **Build successful** |
+| 只把工作區的髒 `module_prefix.go` 覆蓋進去（其餘皆 HEAD） | **復現** `unknown callee hashmap-str-i64.put` |
+| 再套用本節修法 | 通過；`test/std/map.no` **82/82** |
+
+⇒ 回歸 100% 由該檔那一處改動引入，與 `str` 重構、`?=` 收緊、MIR 都無關。
+
+**修法**（`src/build/module_prefix.go`，新增一個判定函數，兩處呼叫點改用它）：
+
+```go
+func modulePrefixKeepsBareMethodName(name string) bool {
+	if strings.HasPrefix(name, "hashmap-") || name == "err" {
+		return false
+	}
+	return isModulePrefixBuiltinType(name)
+}
+```
+
+語義：只有「MIR 以**基礎型別名**註冊接收者」的語言內建型別（`str` / `[]T` /
+`[N]T` / 標量 …）才保持裸名。`hashmap-*` 與 `err` 都是**本模組定義的 struct**
+（前者是泛型模板，後者是 std/err.no 的普通 struct），呼叫端用的是改名後的
+`hashmap-str-i64.init` / `err.err.msg`，定義側跳過就會錯開。
+
+**驗證**：
+
+| 檢查 | 結果 |
+|---|---|
+| `test/std/map.no` | **82/82 PASSED** |
+| `test/std/map-index.no` | **15/15 PASSED** |
+| `test/std/index-out.no` | **23/23 PASSED** |
+| `test/std/option.no` | **25/25 PASSED** |
+| `test/std/err.no` | **14/14 PASSED** |
+| `cd src && go test ./build -run 'ModulePrefix\|GenericStruct\|Monomorph'` | **ok 21.8s**（含別人新加的 `module_prefix_builtin_recv_test.go`） |
+| `gofmt -d src/build/module_prefix.go` | 只餘 681 行既有的註釋列表縮排偏差（非本次改動，未動） |
+
+**同檔並存的兩條 `build` 套件紅（**預存**，本輪只定性未修）**：
+
+`TestVetCrossModulePositionReliability` / `TestVetImportedModuleDiagnosticsNotAttributedToMainFile`
+都因 2 條 `nolang-overflow-ineffective` 被歸因到主檔（行號 932 / 950，主檔只有 6–9 行）。
+
+- 泄漏源頭是 `src/std/fmt.no:932` 與 `:950` 的 `#{overflow=wrap}`：它們治理的
+  語句是 `cb = digits.byte(i)`（**無**整數算術），算術其實在下一行
+  `new-digits-b[1 + i] = cb` ⇒ 註解掛錯了語句，lint 的 "ineffective" 判定是對的。
+- HEAD 乾淨 worktree 跑同一探針得到**同樣兩條**（932/950）⇒ 預存，非本輪引入。
+  也證明回報的行號不隨主檔內容變化，是 std 座標系原樣泄漏。
+- 未修的原因：`src/std/fmt.no` 正在被別人改（mtime 07:39，`git diff` 284 行）。
+- 兩條可選修法，留給該檔 owner 定：
+  1. 把 932 / 950 兩處 `#{overflow=wrap}` 下移到 `new-digits-b[1 + i] = cb`
+     上方（或刪除）；這是 lint 自己建議的動作。
+  2. 編譯器側：`File` 為空的診斷不應回退歸因到主檔（測試註釋已記錄這個
+     修復意圖，現狀屬於該修復的回歸面）。
+
+### 5.2j 2026-11-12：`txt` 下標寫禁令 + `str`/`txt` 的 `push` 家族
+
+**起因（使用者原話）**：「txt 也要如此處理，因為 txt[i] 無法處理長度，很危險；另外
+str 和 txt 都用 push，之前叫 append 不如 push 簡潔」。
+
+兩件事一起做，因為它們互為前提：禁掉下標寫之後必須有**顯式增長入口**，否則語料
+（`tests/txt-3.no` 的「在 count 處追加」、`test/std/txt.no` 的 `t.append`）集體無解；
+而把舊 `append` 改名成 `push` 正好讓兩側 API 對齊。
+
+#### 最終 API 面
+
+| 方法 | 實作 | 語義 |
+|---|---|---|
+| `str.push(c char)` | std（2 行） | 按碼點追加，UTF-8 編碼，原地增長 |
+| `str.push-str(s str)` | `#{buildin}` + codegen | 按**位元組**追加，原地增長；`s.push-str(s)` 安全 |
+| `txt.push(c char)` | std | 按碼點追加，**all-or-nothing**（位元組裝不下 255 就整條丟棄） |
+| `txt.push-str(s str)` | std（原 `append-str`） | 按位元組追加，超過 255 **按位元組截斷** |
+| `txt.push-txt(t txt)` | std（原 `append-txt`） | 同上 |
+| ~~`txt.append(b byte)`~~ | **刪除** | 位元組級追加整條消失；按位元組構造走 `txt.from-bytes(b []byte)` |
+
+`txt.push` 不做成 `push-txt(c.to-txt())`：那會在 255 邊界把一個多位元組 UTF-8 序列
+從中間切斷。`push` 是 all-or-nothing，`push-str` / `push-txt` 是按位元組截斷，兩者
+邊界語義不同，文件與註解都寫明了。
+
+#### 為什麼 `txt` 也要禁（與 `str` 的理由不同）
+
+`str` 的理由是「越界寫入已配置緩衝之外」（`ensureStrLongBuffer` 那道護欄就是為它寫的）。
+`txt` 沒有堆、沒有擴容、`_set-byte` 也只寫既有槽位，所以越界不是問題；**它的问题是
+長度**：`t[i] = c` 是「按碼點重新 UTF-8 編碼寫回」，`i` 等於碼點數時等價追加、超過
+255 的部分靜默丟棄 —— 一次下標寫就把長度改了，而且沒有任何運行時護欄會提醒你。
+禁止掉之後，唯一能改長度的通道就是 `push` 家族（顯式、可審計）。
+
+#### 阶段顺序（每一步都保持可编译，禁令最后才开）
+
+```
+① str.push-str 的 codegen → ② std API → ③ 消费方改名 → ④ make gen no / make i18n
+→ ⑤ 迁移 6 处现场 → ⑥ 打开 checker 禁令 → ⑦ 测试 → ⑧ 文档/词条 → ⑨ 全量门
+```
+
+`③` 必須在刪 `txt.append` 之前想清楚：先刪再改名，語料就編不過。`⑥` 必須在 `⑤`
+之後，否則禁令一開就半紅。`⑤` 之所以能提前做，是因為 `push` 與 place-match 都已可用。
+
+#### `push-str` 的 codegen（`src/mir/builtin_str_push.go`）
+
+`str.push-str` 是唯一需要 IR 的新方法（`txt` 側純 std）。發射順序**不可調換**：
+
+1. **取接收者真實槽位**：`resolveReceiverSlot` + `lvalueAddrOf` 投影寫回，**必須帶
+   佈局相等守衛**（`c.llvmTypeOf(pt) == "%str-long"`）—— `%txt` 是
+   `{ [255 x i8], i8 }`，缺守衛會把 txt 槽當 str 寫。
+2. **源先載值並 retain**：這是 `s.push-str(s)` 別名安全的**唯一**保證 —— 增長路徑會
+   `@nolang_free(old)`，retain 把 rc 由 1 抬到 2，`sptr` 不會懸空。
+3. **零長度源直接跳 done**：否則 `data == null` 的接收者會被憑空分配 1024 位元組。
+4. 載入接收者 `len` / `cap` / `data`。
+5. **借用視圖 COW（必須先於 ensure）**：`cap == 0 && data != NULL` 是借用視圖標記，
+   `ensureStrLongBuffer` 刻意跳過這一格；這裡補 `max(1024, len+slen)` 的新緩衝 +
+   memcpy，寫回槽位，**絕不 `@nolang_free(old)`**（那是別人的存儲）。
+6. **復用 `ensureStrLongBuffer(slot, recv, len+slen-1)`**：它算 `need = idx+1`。
+   傳 `len+slen` 會多分配 1 位元組；傳 `len` 則是 `need = len+1`，長源直接 heap overflow。
+7. **重新載入 data**（第 4 步的值在擴容後已失效）。
+8. **`llvm.memmove`**（不是 memcpy：自追加時 src/dest 重疊）+ `strHeaderStoreI64(len+slen)`
+   （不用 `emitExtendLen`，它寫 `max(len, idx+1)`，語義不同）+ 與第 2 步配對的
+   `@str_free`（**無條件**發出，靜態分不清別名；兩邊對 `cap==0` 跳過條件一致，恆平衡）。
+
+IR 形狀由 `src/mir/str_push_test.go` 釘住：`slbG.`（真的增長）、`@nolang_free`（不洩漏
+舊緩衝）、`@llvm.memmove`（重疊安全）、`@str_retain` + `@str_free`（成對）、`spsvw.`
+（借用視圖 COW 分支存在且**不含** `@nolang_free`），外加「零長度分支直達 done、
+done 裡有 `@str_free`」的結構斷言。這道門的另一半作用是防「std 空 body 被繞過
+⇒ 靜默 no-op」：`#{buildin}` stub 沒有函式體，查找一旦失效，呼叫會編譯通過、退出 0、
+什麼都不追加。
+
+#### 6 處禁令現場遷移
+
+規則：**就地改值（`i < count`）→ place-match**；**在末尾追加（`i == count`）→ `push`**；
+**越界 → place-match 的 nil 臂天然跳過**。
+
+| 檔案:行 | 原寫法 | 遷移 | 斷言 |
+|---|---|---|---|
+| `tests/txt-3.no:80` | `g[0] = "中"`（1→3 位元組增長） | place-match | 不變 |
+| `tests/txt-3.no:88` | `s[0] = "a"`（收縮） | place-match | 不變 |
+| `tests/txt-3.no:95` | `w[2] = "中"`（`i == count`，閘門返 nil） | **`w.push("中")`** | 不變 |
+| `tests/txt-3.no:107` | `b[255] = "中"`（越界丟棄） | place-match（靠閘門 nil 保持「丟棄」） | 不變 |
+| `tests/txt-3.no:115` | `r[0] = "Z"` | place-match | 不變 |
+| `tests/byte.no:226` | `b.t[0] = "J"`（struct 欄位接收者） | place-match（**D9 接受 DotExpression 基底**，實測 `Ji` 正確） | 不變 |
+
+`tests/byte.no` 的這一節要**用 `< /dev/null` 跑**：該檔中段有
+`line, ok = fs.get-line()` + `ok == false -> { print('no input') return }`，沒有 stdin
+就從此 `return`，後面（含這一節）全是死代碼 —— 遷移後仍然要靠 Go 單測
+`TestIndexWriteStrTxtStructFieldTopLevelReported` 與探針檔覆蓋，不能只看這個檔。
+
+#### 測試
+
+- `src/checker/index_write_test.go`：`TestIndexWriteTxtReported`（函式內 / 頂層 /
+  結果參數）、`TestIndexWriteStrTxtStructFieldTopLevelReported`（str 欄位 / txt 欄位 /
+  兩個都寫 = 2 條）、`TestIndexWriteTopLevelNonStrTxtNotReported`（頂層 `[]byte` +
+  `with-len`、`[]byte` + `with-cap`、`[]i64`、`[4]i64`、非 str/txt 的 struct 欄位
+  共 5 個 case 必須 **0 條**）。
+- `src/mir/str_push_test.go`：上面那組 IR 形狀斷言。
+- 新 `tests/str-push.no`：30 條 `ok` 斷言（`cap==len` 字面量、空 str 起手、空源、
+  自我追加兩次、多字節碼點 `len-bytes` +3 / `len` +1、2000 次 push、
+  struct 欄位寫回、借用視圖 COW 不污染原串、切片當源）。
+- `test/std/txt.no`：`t-append` → `t-push`，新增多字節 push 與「255 上限處
+  all-or-nothing 丟棄」兩組斷言（169/169）。
+- `test/std/str.no`：新增 `p39`（該檔尾部的 `p1..p38` 統計是**手工維護**的，
+  加測試必須同時加 `p39` 與 `passed = passed + p39`）→ 188/188。
+
+#### 這輪順帶量到的兩件事
+
+1. **`txt.append` 家族的呼叫點很少**，全語料只有 6 處：`tests/txt.no:132`、
+   `tests/txt-3.no:103`、`test/std/txt.no:262 / 265 / 269 / 823`。改名成本低正是
+   這次能順手把 API 對齊的原因。
+2. **「空 `str`」的 `data` 是 NULL，`eq(x, n)` 只要 `n > 0` 就崩**（**新發現，未修**，
+   見 §5.2 #106）。寫 `test/std/str.no` 時想用 `runner.str-eq(s.slice(6, 8), 'de', 2, …)`
+   驗 push 之後的尾端內容 ⇒ `segmentation fault`。追下去發現**跟 push、跟 slice 都無關**：
+   `e = ''` + `e.eq('de', 0)` 回 `true`，`e.eq('de', 1)` 就 `trace/BPT trap`；
+   `s.slice(3, 3)` 之所以同病，只是因為 `str.slice` 的 `r-start >= r-end -> return`
+   是**提前 return**，`val` 停在零值（`data == NULL`）。根因是
+   `src/mir/builtin_call.go:1207 emitBuiltinEqRaw` 直接 `memcmp(dataA, dataB, n)`。
+   ⇒ 測試裡對空串一律 `n = 0`，尾端內容改由 `tests/str-push.no` 釘住。
+
+**⚠️ 假修紀錄：`?=` → `=` 是錯的，正解是 place-match（本節收尾時自我更正）**
+
+本節最初為了讓 `test/std/map.no` 能編，把 `src/std/collection/map.no` 的 21 處
+**索引寫** `?=` 改成 `=`。當時 `no test` 全綠，就以為過了 —— 其實是**假綠**：
+
+- `no test` 用的 std 來自 `bin/no` 內嵌的 **AST blob**（磁碟 `src/std` 改了要
+  `make gen no` 才生效），而 `no vet` 讀的是**磁碟**。兩邊看的是不同份原始碼，
+  於是「測試綠、vet 紅」可以同時成立。
+- 補跑 `no vet src/std` 立刻爆出 **21 error**，全是
+  `cannot assign through an index directly: `self.vals[idx] = val``（D11 idxwrite）。
+  也就是說 `=` 這個寫法本來就是語言明令禁止的，我只是把錯誤從編譯期推遲到 vet。
+
+三種寫法實測（獨立探針 `box { vals []i64 }` + 回傳 `bool` 的方法）：
+
+| 寫法 | 結果 |
+|---|---|
+| `.vals[i] ?= v` | ❌ `?=` can only be used inside a function with an option-typed result param `[jib2tpel]` —— `put`／`rehash` 回 `bool`，沒有可上拋的 option 結果參數 |
+| `.vals[i] = v` | ❌ `cannot assign through an index directly` `[idxwrite]` |
+| `.vals[i]: { ok -> it = v` ⏎ ⏎ `-> _ }` | ✅ **0 error** |
+
+**最終修法**：21 處一律改成 place-match，臂體照 std 既有慣例
+（`src/std/net/http.no:111` / `src/std/json.no:197` 同款，`ok` 臂與 `-> _` 之間空行）：
+
+```no
+.vals[idx]: {
+    ok -> it = val
+
+    -> _
+}
+```
+
+語意上 `-> _` 是「越界就跳過」；map 的索引全部來自 `.hash(key) & mask` 或
+`insert-idx`（恆在 `cap` 內），不存在越界分支，所以與原意等價。
+
+**收尾驗證**（重烤後，兩邊一致）：
+
+| 檢查 | 結果 |
+|---|---|
+| `./bin/no vet src/std` | **0 error / 52 warning / 814 hint（rc=0）** |
+| `./bin/no vet src/std/collection/map.no` | **0 error / 0 warning** |
+| `./bin/no fmt -d src/std/collection/map.no` | **0 行偏差** |
+| `test/std/map.no` / `map-index.no` / `index-out.no` | **82/82** / **15/15** / **23/23** |
+
+> 教訓（可複用）：本倉庫 **`no test` 不讀磁碟 `src/std`**。任何「改了 `src/std`
+> 之後測試轉綠」的結論，都必須先 `make gen no` 重烤，並且**同時**用
+> `no vet src/std` 對磁碟原文驗一遍 —— 只信 `no test` 會得到本文這種假修。
 
 ### 5.3 歷史快照（2026-09-26，保留供對照）
 
@@ -2573,6 +3230,27 @@ GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default bash scripts/mir_golden.
 （同一支 binary 跑 6 次出現 2 種 hash），所以會在 SAME 與 DIVERGE 之間抖動，
 屬已知噪聲，不要拿它當訊號。另外三次都有的 3 筆 DIVERGE
 （`net-client` / `slice-heavy` / `test-div-mod-option`）是既有偏差。
+
+### golden 的「stdout 污染守門」誤報（2026-11-11 實例）
+
+`scripts/mir_golden.sh` 在跑之前會挑一條「golden 裡 `rc=0` 且 stdout 為空」的檔案當探針，
+要求它**現在**仍是「rc=0 + 空 stdout」，否則判定編譯器把 `fmt.Printf` 漏在 stdout 上。
+探針取的是 `awk '… {print $3; exit}'` 的**第一條**——而第一條 `tests/1-test.no`
+早已被語料清理刪掉，對不存在路徑 `no run` 回 rc=1 ⇒ 守門**每次都炸**：
+
+```
+ERROR: stdout pollution guard tripped on 'tests/1-test.no'.
+       The golden records rc=0 with EMPTY stdout; got rc=1 sha=e3b0…
+```
+
+症狀極具誤導性（訊息指向「編譯器污染 stdout」，真因是「基準裡有死條目」），
+而且它擋死所有 `-update` 重烤。修法：探針要挑**第一條仍在磁碟上**的（`[ -f "$p" ]`）。
+
+> 量級：舊基準 327 條裡有 **160 條的檔案已不存在**（`find tests -name '*.no'` 現在只有
+> **228 檔**），所以任何一次全量重烤都會同時「刪 160 條、加 61 條」。
+> 那不是回歸，是語料搬遷；但**別在別的 session 正在改 parser/mir 時重烤**——
+> 會把他們在飛的破損狀態烘成新基準，永久洗掉回歸證據。
+> 暫存候選：`GOLDEN_OUT=/tmp/mir-baseline.candidate.tsv … -update`（不碰 repo）。
 
 ### 改完 std 後的驗收順序
 

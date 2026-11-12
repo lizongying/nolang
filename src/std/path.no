@@ -120,8 +120,10 @@ path.current = () (out path) {
 ; 恰好永遠越界（out-n == len），於是**整條拼接被靜默丟棄**：`path{p:'/a/b'}.join('c.txt')`
 ; 回傳 `/a/b`。改成 `.p[out-n] = v`（普通下標寫）又會踩另一個既有缺陷：需要擴容時
 ; 這個路徑不可靠（實測長後綴寫出垃圾並 segfault，見 tests/std-byte-indexing.no）。
-; 唯一可靠的形態是「先 with-cap(N) 配置足量緩衝，再從索引 0 起**順序**寫入」——
-; base()/ext() 即此形態。故本方法建新緩衝，最後整體指派回 .p。
+; 唯一可靠的形態是「先按上界配置 `[]byte` 緩衝，再從索引 0 起**順序**寫入，
+; 最後按實際長度切片轉回 str」—— base()/ext() 即此形態。故本方法建新緩衝，
+; 最後整體指派回 .p。（str 下標直寫自 2026-11-11 起全域禁用，連 with-cap 基底
+; 也不再豁免，所以緩衝必須是 `[]byte` 而不是 `str`。）
 ; b: 拼接到 .p 末尾的路徑元素
 ; out: 處理首尾斜線後拼接完成的完整路徑字串（同時原地更新 .p）
 ; [join](#path.join)
@@ -153,18 +155,22 @@ path.join = (b str) (out str) {
     ; 輸出上界：a + '/' + b。
     ; 用 clamp0 而不是 wrap：這是**容量**，溢出時寧可拿到 0（空緩衝，後續寫入
     ; 失敗走各自的失敗臂）也不要拿到負數（會被當成巨大容量去配置）。
+    ;
+    ; str 下標直寫自 2026-11-11 起全域禁用（連 with-cap 基底也不再豁免），
+    ; 故緩衝改用 `[]byte`，寫完再按實際長度切片轉回 str。
     #{overflow=clamp0}
-    o str = with-cap(.p.len-bytes() + b.len-bytes() + 2)
+    o-cap = .p.len-bytes() + b.len-bytes() + 2
+    o-b []byte = with-cap-len(o-cap, o-cap)
 
     ; 1) 複製 a
     i <- [0..an): {
-        o[i] = .p.byte(i)
+        o-b[i] = .p.byte(i)
     }
     off = an
 
     ; 2) 需要時插入分隔符
     need-sep == 1 -> {
-        o[an] = SEP-BYTE
+        o-b[an] = SEP-BYTE
 
         #{overflow=wrap}
         off = an + 1
@@ -176,10 +182,12 @@ path.join = (b str) (out str) {
     j <- [0..bs): {
 
         #{overflow=wrap}
-        o[off + j] = b.byte(start-b + j)
+        o-b[off + j] = b.byte(start-b + j)
     }
 
-    .p = o
+    #{overflow=wrap}
+    olen = off + bs
+    .p = o-b.slice(0, olen).to-bytes-str()
     out = .p
 }
 
@@ -204,12 +212,13 @@ path.base = () (out str) {
 
     #{overflow=wrap}
     out-n = .p.len-bytes() - start
-    out = with-cap(.p.len-bytes())
+    ob []byte = with-cap-len(.p.len-bytes(), .p.len-bytes())
     i <- [0..out-n): {
 
         #{overflow=wrap}
-        out[i] = .p.byte(start + i)
+        ob[i] = .p.byte(start + i)
     }
+    out = ob.slice(0, out-n).to-bytes-str()
 }
 
 ; 取出路徑的目錄部分
@@ -286,12 +295,13 @@ path.ext = () (out str) {
 
     #{overflow=wrap}
     out-n = .p.len-bytes() - start
-    out = with-cap(.p.len-bytes())
+    ob []byte = with-cap-len(.p.len-bytes(), .p.len-bytes())
     i <- [0..out-n): {
 
         #{overflow=wrap}
-        out[i] = .p.byte(start + i)
+        ob[i] = .p.byte(start + i)
     }
+    out = ob.slice(0, out-n).to-bytes-str()
 }
 
 ; 路徑判斷
@@ -323,8 +333,9 @@ path.is-abs = () (yes bool) {
 ;   - 結果為空時回 '.'（相對）或 '/'（絕對）—— 空路徑不是合法路徑
 ;
 ; ⚠️ 實作約束：不得用 `o[o.len-bytes()] = v` 逐位元組成長（需擴容時不可靠，
-; 見 tests/std-byte-indexing.no），必須先 with-cap 再從索引 0 起**順序**寫入，
-; 最後整體指派回 .p。輸出永遠不比輸入長，故 len-bytes() 就是安全上界。
+; 見 tests/std-byte-indexing.no），必須先配置 `[]byte` 上界緩衝再從索引 0 起
+; **順序**寫入，最後按實際長度切片轉回 str 並整體指派回 .p。
+; 輸出永遠不比輸入長，故 len-bytes() 就是安全上界。
 ; [clean](#path.clean)
 path.clean = () {
     n = .p.len-bytes()
@@ -335,10 +346,10 @@ path.clean = () {
         .p.byte(0) == SEP-BYTE -> rooted = true
     }
 
-    o str = with-cap(n)
+    o-b []byte = with-cap-len(n, n)
     on = 0
     rooted -> {
-        o[0] = SEP-BYTE
+        o-b[0] = SEP-BYTE
         on = 1
     }
 
@@ -375,7 +386,6 @@ path.clean = () {
                 seg-n == 2 -> {
                     .p.byte(seg-start) == DOT-BYTE -> {
 
-                        #{overflow=wrap}
                         .p.byte(seg-start + 1) == DOT-BYTE -> kind = 2
                     }
                 }
@@ -405,7 +415,14 @@ path.clean = () {
 
                             -> p
                         }
-                        o.byte(p) == SEP-BYTE -> {
+
+                        ; o-b[p] 是裸索引 → ?byte（D11），必須就地解包再比較
+                        at-p = o-b[p]: {
+                            ok -> it
+
+                            -> _
+                        }
+                        at-p == SEP-BYTE -> {
                             on = p
                             found = true
                             p = 1
@@ -431,8 +448,15 @@ path.clean = () {
 
                         #{overflow=wrap}
                         prev-idx = on - 1
-                        o.byte(prev-idx) != SEP-BYTE -> {
-                            o[on] = SEP-BYTE
+
+                        ; 同上：裸索引帶 ?byte，先就地解包
+                        prev-at = o-b[prev-idx]: {
+                            ok -> it
+
+                            -> _
+                        }
+                        prev-at != SEP-BYTE -> {
+                            o-b[on] = SEP-BYTE
 
                             #{overflow=wrap}
                             on = on + 1: {
@@ -446,7 +470,7 @@ path.clean = () {
                     t <- [0..seg-n): {
 
                         #{overflow=wrap}
-                        o[on + t] = .p.byte(seg-start + t)
+                        o-b[on + t] = .p.byte(seg-start + t)
                     }
 
                     #{overflow=wrap}
@@ -484,10 +508,9 @@ path.clean = () {
 
         on > 0 -> {
 
-            ; ⚠ 必須按 on 重新取一次：with-cap 緩衝的 len 只隨寫入**增長**，回退段之後
-            ; 不會自己變短（且 .len 是只讀欄位，不能直接改），整塊指派 `.p = o` 會把
-            ; 歷史尾巴一起帶出去（實測 'abc/../de' → 'dec'）。
-            .p = o.slice-bytes(0, on)
+            ; ⚠ 必須按 on 重新取一次：緩衝的長度是配置上界 n，回退段之後實際內容
+            ; 只到 on，整塊取用會把歷史尾巴一起帶出去（實測 'abc/../de' → 'dec'）。
+            .p = o-b.slice(0, on).to-bytes-str()
         }
     }
 }
@@ -516,12 +539,17 @@ path.split = () (f str) {
 
     #{overflow=wrap}
     out-n = .p.len-bytes() - start
-    f = with-len(out-n)
+
+    ; 逐**位元組**拷貝：不能寫 place-match `f[i]: { ok -> it = … }`——str 的
+    ; 下標以「碼點」為閘門，非 ASCII 檔名（日本語 / ファイル）在 i 越過已寫入的
+    ; 碼點數後會靜默跳過寫入，尾部留垃圾。[]byte 才是位元組保真的路徑。
+    f-b []byte = with-cap-len(out-n, out-n)
     i <- [0..out-n): {
 
         #{overflow=wrap}
-        f[i] = .p.byte(start + i)
+        f-b[i] = .p.byte(start + i)
     }
+    f = f-b.to-bytes-str()
 
     ; 原地修改 .p 為目錄部分
     {

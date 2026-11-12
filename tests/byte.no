@@ -165,19 +165,24 @@ bad4 -> print('FAIL: 4 []byte[i] vs str.byte(i) differ')
 bad4 == false -> print('PASS: 4 []byte[i] == str.byte(i)')
 
 ; merged from tests/set-byte-receiver-writeback.no
-; set-byte-receiver-writeback.no — 接收者寫回：`set-byte` 必須寫進真正的欄位/元素
+; receiver write-back — 接收者寫回：原位變更必須寫進真正的欄位/元素
 ;
-; `txt.set-byte(i, b)` / `str.set-byte(i, b)` 是 raw-byte 寫入器（與 `.byte(i)` 配對），
-; txt 索引碼點化之後 std 的逐位元組填充都靠它。原本 emitBuiltinRawBytePut 直接拿
-; `valSlot[Args[0]]` 當接收者，而當接收者是「從結構體欄位 / 容器元素讀出來的」值時，
-; 那個槽位只是一份**副本**，於是寫入被丟棄：
-;   b.s.set-byte(0, 72)   ; b.s 仍是 'hello'（應為 'Hello'）
-; 修法：改用 lvalueAddrOf 投影回真實位址，並以「投影型別必須與接收者自身佈局相同」
-; 為護欄（%str-long 是 {len,cap,data} 堆指標，%txt 是 255 位元組內聯緩衝 + i8 長度，
-; 兩者不可互換）。
+; 歷史上本組測的是 `str.set-byte(i, b)` / `txt.set-byte(i, b)`。該內建已於
+; 2026-11-11 私有化為 `_set-byte`（僅 std 內部可用），公開面的「原位變更」
+; 改由 `str.fill(val byte)` 與 `txt[i] = <char>` 承擔 —— 兩者同樣要把接收者
+; 投影回真實位址（emitCallBody 的 lvalueAddrOf；emitBuiltinRawBytePut 另帶
+; 「投影型別必須與接收者佈局相同」的護欄，因為 %str-long 是 {len,cap,data}
+; 堆指標、%txt 是 255 位元組內聯緩衝 + i8 長度，兩者不可互換）。
+; 因此本組改用公開 API 驗證同一類寫回缺陷：
+;   b.s.fill(72)   ; b.s 必須變成 'HHHHH'，而不是只改到一份副本
 ;
 ; 對照組（必須始終正確）：純區域變數接收者。
-...
+;
+; `_set-byte` 自身的「越界回 nil 且跳過寫入」契約已無法從用戶代碼觸達，
+; 改由 Go 單元測試 src/mir/raw_byte_put_oob_test.go 釘住發出的 IR 形態。
+;
+; 註：分支一律寫成 `{ cond -> { … } -> { … } }` 的顯式塊。頂層的
+;     `cond -> X` + 空行 + `-> Y` 不是 if/else —— 那兩行都會執行。
 
 box {
     s str
@@ -190,33 +195,63 @@ wrap {
 
 ; (1) 純區域變數 str 接收者（既有行為，對照組）
 a = 'hello'
-a.set-byte(0, 72)
-a == 'Hello' -> print('ok 1: local str receiver')
+a.fill(72)
+{
+    a == 'HHHHH' -> {
+        print('ok 1: local str receiver')
+    }
 
--> print('fail 1: local str receiver got={a}')
+    -> {
+        print('fail 1: local str receiver got={a}')
+    }
+}
 
 ; (2) 結構體 str 欄位接收者：寫回必須到達欄位本身
 b = box{
     s: 'hello'
     t: 'hi'
 }
-b.s.set-byte(0, 72)
-b.s == 'Hello' -> print('ok 2: struct str field receiver')
+b.s.fill(72)
+{
+    b.s == 'HHHHH' -> {
+        print('ok 2: struct str field receiver')
+    }
 
--> print('fail 2: struct str field receiver got={b.s}')
+    -> {
+        print('fail 2: struct str field receiver got={b.s}')
+    }
+}
 
 ; (3) 結構體 txt 欄位接收者（%txt 佈局：內聯緩衝，與 %str-long 不同）
-b.t.set-byte(0, 74)
-b.t == 'Ji' -> print('ok 3: struct txt field receiver')
+; 2026-11-12 起 `b.t[0] = "J"` 被 idxwrite 全域禁用（連頂層 struct 字段基底一併收口，
+; 這正是本行原本漏報的洞）。place-match 同樣證明寫回落在欄位本身。
+b.t[0]: {
+    ok -> it = "J"
 
--> print('fail 3: struct txt field receiver got={b.t}')
+    -> _
+}
+{
+    b.t == 'Ji' -> {
+        print('ok 3: struct txt field receiver')
+    }
+
+    -> {
+        print('fail 3: struct txt field receiver got={b.t}')
+    }
+}
 
 ; (4) 切片元素接收者
 rows = ['x', 'y']
-rows[0].set-byte(0, 90)
-rows[0] == 'Z' -> print('ok 4: slice element receiver')
+rows[0].fill(90)
+{
+    rows[0] == 'Z' -> {
+        print('ok 4: slice element receiver')
+    }
 
--> print('fail 4: slice element receiver got={rows[0]}')
+    -> {
+        print('fail 4: slice element receiver got={rows[0]}')
+    }
+}
 
 ; (5) 巢狀結構體欄位接收者（兩層投影）
 w = wrap{
@@ -225,126 +260,37 @@ w = wrap{
         t: 'bb'
     }
 }
-w.b.s.set-byte(1, 88)
-w.b.s == 'aX' -> print('ok 5: nested struct field receiver')
-
--> print('fail 5: nested struct field receiver got=' - w.b.s)
-
-; (6) 寫入不得影響其他欄位
-w.b.t == 'bb' -> print('ok 6: sibling field untouched')
-
--> print('fail 6: sibling field got=' - w.b.t)
-
-; (7) set-byte 不改長度（raw byte 寫入）
-b.s.len-bytes() == 5 -> print('ok 7: set-byte keeps the length')
-
--> print('fail 7: set-byte length got=' - b.s.len-bytes().to-str())
-
-; merged from tests/setbyte-fallible.no
-; test-setbyte-fallible: set-byte 的可失敗語意（MIR 後端）
-;
-; txt.set-byte / str.set-byte 簽名為 (i i64, b byte) (ok ?bool)：
-;   - 索引在「實體容量」內 → 回傳 some(true) 且真的寫入
-;   - 索引越界（>= 容量，或負數）→ 回傳 nil 且「跳過寫入」（緩衝區不變、不野寫）
-; 邊界以實體容量為準（txt 固定 255、%str-long 用 cap），而非 len。
-; 每次 `no run` 輸出應為純 ok 行；任何 FAIL 行都代表回歸。
-...
-
-; 斷言小工具：條件成立印 'ok'，不成立印 'FAIL'，方便逐行看出哪一項回歸
-; label str: 該項檢查的名稱，輸出時原樣印出
-; cond bool: 檢查結果，false 視為失敗
-ck = (label str, cond bool) {
-    ! cond -> print('FAIL', label)
-    cond -> print('ok', label)
-}
-
-; ── txt：255 位元組固定容量 ──
-t txt = 'abc'
-
-; 範圍內：some(true)
-present = false
-value = false
-r1 = t.set-byte(0, 90)
-r1: {
-    ok -> {
-        present = true
-        value = it
+w.b.s.fill(88)
+{
+    w.b.s == 'XX' -> {
+        print('ok 5: nested struct field receiver')
     }
 
-    -> present = false
+    -> {
+        print('fail 5: nested struct field receiver got=' - w.b.s)
+    }
 }
-ck('txt-in-range-present', present)
-ck('txt-in-range-true', present && value)
 
-; 寫入生效
-after = false
-w0 = t.byte(0)
-after = w0: {
-    ok -> (it == 90)
+; (6) 寫入不得影響其他欄位
+{
+    w.b.t == 'bb' -> {
+        print('ok 6: sibling field untouched')
+    }
 
-    -> false
+    -> {
+        print('fail 6: sibling field got=' - w.b.t)
+    }
 }
-ck('txt-write-effect', after)
 
-; 越界（255 >= 容量）：nil
-oob = false
-r2 = t.set-byte(255, 71)
-oob = r2: {
-    ok -> true
+; (7) 原位變更不改長度（fill 只覆寫既有 len 個位元組）
+{
+    b.s.len-bytes() == 5 -> {
+        print('ok 7: in-place write keeps the length')
+    }
 
-    -> false
+    -> {
+        print('fail 7: in-place write length got=' - b.s.len-bytes().to-str())
+    }
 }
-ck('txt-oob-nil', ! oob)
-
-; 負數索引：nil
-neg = false
-r3 = t.set-byte(-1, 71)
-neg = r3: {
-    ok -> true
-
-    -> false
-}
-ck('txt-neg-nil', ! neg)
-
-; 越界寫入不改變既有內容（byte 0 仍是 90）
-keep = false
-b0 = t.byte(0)
-keep = b0: {
-    ok -> (it == 90)
-
-    -> false
-}
-ck('txt-oob-untouched', keep)
-
-; ── str：堆上長字串，容量取自 cap 欄位 ──
-s-1 = 'hello world this is a longer string that is definitely stored as a str-long buffer'
-
-sp = false
-r4 = s-1.set-byte(0, 72)
-sp = r4: {
-    ok -> true
-
-    -> false
-}
-ck('str-in-range-present', sp)
-
-so = false
-r5 = s-1.set-byte(99999, 71)
-so = r5: {
-    ok -> true
-
-    -> false
-}
-ck('str-oob-nil', ! so)
-
-; str 寫入生效：首字元改為 'H'（72）
-se = false
-c0 = s-1.byte(0)
-se = c0: {
-    ok -> (it == 72)
-
-    -> false
-}
-ck('str-write-effect', se)
 
 print('done')

@@ -163,24 +163,30 @@ OP-VECGET = 21
 ; OP-OPTISOK：dst = i64 值 id；a = option 值 id。tag==0 ? 1 : 0（icmp eq + zext）。
 ; OP-OPTGET ：dst = i64 值 id；a = option 值 id。发 extractvalue %option, 1, 0（slot[0] 当 i64）。
 ;             ⚠️ 只覆盖 **i64 载荷**；str/vec 载荷由 OP-OPTMKSTR/OP-OPTGETSTR 走内联
-;             （%str-long/%vec 恰 24 字节 = [3 x i64] 槽，逐字段 extractvalue/insertvalue 互转），见上。
+;             （slot 仍是 24B `[3 x i64]`；%vec 仍恰 24B 1:1，%str-long 自 B28 起改为 16B、
+;              只占前 16B，len/cap 走 zext/trunc），见下。
 OP-OPTNONE = 22
 OP-OPTSOME = 23
 OP-OPTTAG = 24
 OP-OPTISOK = 25
 OP-OPTGET = 26
 
-; ── option 的 str 载荷（M4-c 续件 s28；%str-long 恰 24 字节，内联进 [3 x i64] 槽，无堆装箱）──
-; %option 的 payload slot 是 [3 x i64] = 24 字节；%str-long = { i64, i64, i8* } 也恰 24 字节、
-; 全 8 字节字段无 padding ⇒ 二者布局兼容，可逐字段 extractvalue/insertvalue 互转，免内存；
-; ⚠️ 但 data 指针字段（i8*）与 i64 槽的型别不同，不能用 bitcast（LLVM 不允许指针<->整数），
-;   须 ptrtoint/inttoptr 在「i8* ⇄ i64」之间转换（见 cg.no 的 OPTMKSTR/OPTGETSTR）。
-; OP-OPTMKSTR：dst = option 值 id；a = 字符串值 id（TY-STR）。发 tag=0 + 把 %str-long 的 3 个 i64
-;              字段（len/cap/data）逐字段 insertvalue 进 slot[0..2]。⚠️ 本 op 只【存储】，不自动 retain；
-;              选项取得所有权须由调用方紧接 OP-RETAIN（与 s26/s27 的 RC 原语同一规矩）。
-; OP-OPTGETSTR：dst = 字符串值 id（TY-STR）；a = option 值 id。从 slot[0..2] 取 3 个 i64 字段，
-;               逐字段 insertvalue 重建 %str-long。读出的 %str-long 与原串共享同一 data 指针。
-; ⚠️ vec 载荷（%vec = { i64, i64, i64 } 也恰 24 字节）走完全同构的内联路径，本件只做 str；
+; ── option 的 str 载荷（M4-c 续件 s28；B28 2026-11-12 改为 16B，仍内联进 24B 槽、免堆装箱）──
+; ⚠️ B28（2026-11-11 Go 后端变更）：%str-long = { i32, i32, i8* }（u32 len/u32 cap/data，16B），
+;    外部 API 仍是 i64。旧注释「恰 24 字节 = [3 x i64] 槽、全 8 字节字段 1:1 逐字段互转」
+;    **只适用于 2026-11-11 之前**，其余章节若仍如此描述属历史论证。
+; %option 的 payload slot **仍是** [3 x i64] = 24 字节（Go optSlotDefaultBytes = 24 未变），
+; 16B ≤ 24B ⇒ ?str **仍是 inline、仍免堆装箱**，但只占槽的前 16 字节、不再是三栏 1:1 对应：
+;   len/cap 是 i32，存进 i64 槽前须 zext i32→i64、读回后须 trunc i64→i32；
+;   data 指针（i8*）仍须 ptrtoint/inttoptr 在「i8* ⇄ i64」之间转换（LLVM 不允许指针<->整数 bitcast）。
+;   Go 现行走「把 slot 位址 bitcast 成 <payload>*」取 inline 载荷，selfhost 仍逐字段 insertvalue。
+; OP-OPTMKSTR：dst = option 值 id；a = 字符串值 id（TY-STR）。发 tag=0 + 把 %str-long 的
+;              len/cap（i32→zext i64）与 data（ptrtoint i8*→i64）写进 slot[0..2]。
+;              ⚠️ 本 op 只【存储】，不自动 retain；取得所有权须由调用方紧接 OP-RETAIN。
+; OP-OPTGETSTR：dst = 字符串值 id（TY-STR）；a = option 值 id。从 slot[0..2] 取回 i64，
+;               len/cap 先 trunc i64→i32 再 insertvalue 重建 16B %str-long；data 走 inttoptr。
+;               读出的 %str-long 与原串共享同一 data 指针。
+; ⚠️ vec 载荷（%vec = { i64, i64, i64 } 仍恰 24 字节）走同构的内联路径且不需 trunc/zext；
 ;    >24 字节的载荷（tag==0 才解引用）仍走堆上装箱，属后续。
 OP-OPTMKSTR = 29
 OP-OPTGETSTR = 30

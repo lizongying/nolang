@@ -206,6 +206,7 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         pcopy(r, tmp)
 
         ; bit t 為 1 → R = R + P
+        #{overflow=wrap}
         ixout204c16 = scalar[t / 8]: {
             ok -> it
 
@@ -219,7 +220,6 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
             pcopy(r, tmp)
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -278,6 +278,7 @@ fe-pow = (base []i64, e [32]byte) (out []i64) {
     (t >= 0) {
         out = x25519.fe-sq-v(out)
 
+        #{overflow=wrap}
         ixout251c16 = e[t / 8]: {
             ok -> it
 
@@ -290,7 +291,6 @@ fe-pow = (base []i64, e [32]byte) (out []i64) {
             out = x25519.fe-mul-v(out, base)
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -445,7 +445,6 @@ sc-ge-l = (acc []i64) (ge i64) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -473,6 +472,7 @@ sc-reduce = (s []byte) (out [32]byte) {
     #{overflow=wrap}
     i = nb - 1
     (i >= 0) {
+        #{overflow=wrap}
         ixout404c16 = s[i / 8]: {
             ok -> it
 
@@ -535,7 +535,6 @@ sc-reduce = (s []byte) (out [32]byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -682,7 +681,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
 
         carry = v >> 8
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1047,7 +1045,6 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
             ixout875c14 < ED-L[i] -> break
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

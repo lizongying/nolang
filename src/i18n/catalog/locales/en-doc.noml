@@ -973,18 +973,6 @@ Differs from decode only in the final index arithmetic; the rest of the decoding
 br bz-bit-reader: bit source (may read 1 extra bit per round)
 sym i64: decoded symbol value, -1 = illegal code or empty table
 `
-  'bzip2.bzip2-compress': `
-Compress data using the bzip2 format
-data: raw data ([]byte)
-out: bzip2-compressed data ([]byte)
-Note: currently a basic implementation using stored blocks;
-full BWT + MTF + Huffman compression is left for a later implementation.
-`
-  'bzip2.bzip2-decompress': `
-Decompress data in bzip2 format
-data: bzip2 compressed data ([]byte)
-out: decompressed data ([]byte)
-`
   'chacha20-poly1305.chacha20-block': `
 Generate one 64-byte keystream block
 key [32]byte: 256-bit key
@@ -2832,16 +2820,6 @@ DEFLATE compression using stored blocks
 data: raw data ([]byte)
 out: compressed DEFLATE data ([]byte)
 `
-  'gzip.gzip-compress': `
-Compress data using the gzip format
-data: raw data ([]byte)
-out: gzip-compressed data ([]byte)
-`
-  'gzip.gzip-decompress': `
-Decompress data in gzip format
-data: gzip compressed data ([]byte)
-out: decompressed data ([]byte)
-`
   'gzip.huffman.build': `
 Build a Huffman code table from a code-length array
 Uses direct indexed assignment to fixed array fields, avoiding dangling pointers caused by local vec assignment
@@ -3828,131 +3806,6 @@ yes: the root node type is JSON-KIND-OBJ
   'json.is-str': `
 reports whether it is a string
 yes: the root node type is JSON-KIND-STR
-`
-  'json.json-clone-tree': `
-Why a deep copy is required: json.pool is a #{inline=false} pointer field, and the compiler's pointer-field
-Copying still lacks borrow semantics (see the copy-tree comment and the hybrid-ownership notes in src/mir),
-Doing `child = json { pool: .pool, ... }` directly leaves parent and child each holding a vec header but sharing the same
-the data buffer; once any handle triggers a vec realloc, the other handle's vec header points to freed
-the freed old buffer → dangling read (stringify returns null / garbled data). After switching to an independent deep copy,
-each side's alloc/growth writes its own buffer without affecting the other.
-src: the source pool
-idx: index of the subtree root within src
-out: a new json holding a copied subtree (out.root=new root index; root=-1 when idx is invalid)
-`
-  'json.json-pool.add-child': `
-attaches the child node child-idx (key name key; pass the empty string for arrays) to node node-idx
-Implements the variable-length child list as a linked edge table, so no node has a fixed child limit
-node-idx: index of the parent node (a new edge is appended to its first/last linked lists)
-child-idx: child node index
-key: the key on the edge (for object children; arrays pass an empty string)
-`
-  'json.json-pool.alloc': `
-allocates a new node and returns its index (the heap vec grows automatically, so the pool is no longer bounded)
-idx: index of the new node (kind=null, no children; the heap vec grows automatically and cannot fail)
-`
-  'json.json-pool.arr-get': `
-gets the child node at an index of an array node
-returns val-idx = the child node index, ok = success
-arr-idx: array node index
-elem: the element ordinal (walk the edge list to the elem-th edge)
-val-idx: ok=the child node index, nil=not an array / invalid index / out of range
-`
-  'json.json-pool.arr-len': `
-gets the array length
-arr-idx: node index
-n: number of children (returned for non-arrays too; 0 when the index is invalid)
-`
-  'json.json-pool.copy-tree': `
-Pool identity cannot rely on `src.id == .id`: module-level bindings are not rebindable (see the JSON-POOL-NEXT-ID comment),
-the id of every pool is always 1; this check once mistook every cross-pool copy as same-pool, so
-the subtree root returned by json.arr-get / json.get was always -1. Callers now guarantee instead:
-- json-clone-tree: the receiver is a brand-new pool straight out of init;
-- json.set-key: first copies val into a temporary new pool (json-clone-tree), then copies directly from the relay pool
-into the receiver; the two copies' ends must be in different pools, so self-references are safe too.
-src: the source pool (must not be the receiver's own pool, otherwise the shared vec buffer breaks)
-node-idx: index of the subtree root in the source pool
-dst-idx: the new root index in the receiver pool (-1=source index invalid)
-`
-  'json.json-pool.get-bool': `
-gets the boolean value
-returns val = the boolean, ok = success
-node-idx: node index
-val: ok=bool-val, nil=not a boolean node
-`
-  'json.json-pool.get-key': `
-gets the index of the child node for a key of an object node
-returns val-idx = the child node index, ok = found
-obj-idx: index of the object node
-key: the key name
-val-idx: ok=the child node index, nil=not an object / invalid index / key miss
-`
-  'json.json-pool.get-kind': `
-gets the node kind
-node-idx: node index
-kind: JSON-KIND-* constant (NULL when the index is invalid)
-`
-  'json.json-pool.get-num': `
-gets the numeric value
-node-idx: node index
-val: ok=num-val (integers and fractions both stored as f64), nil=not a number node
-`
-  'json.json-pool.get-str': `
-gets the string value
-returns out = a copy of the string, ok = success
-node-idx: node index
-out: ok=a copy of the string value, nil=not a string node or invalid index
-`
-  'json.json-pool.init': 'initialises the node pool (the heap vec has to be initialised to non-nil before use so that push is safe)'
-  'json.json-pool.parse': `
-parses a JSON value starting at position pos of the string
-returns node-idx = the root node index, next-pos = the following position, ok = success
-s: JSON string
-pos: byte position where this value starts
-node-idx: index of the root node (-1 on failure)
-next-pos: the byte position following the value
-ok: true=parsed successfully
-`
-  'json.json-pool.parse-num': `
-parses a JSON number
-node-idx: index of the node receiving the numeric value
-s: JSON string
-pos: start position of the number
-next-pos: ok=position where the number ends (value already written to the node's num-val), nil=illegal format
-`
-  'json.json-pool.parse-str': `
-parses a JSON string (starting at the opening quote)
-node-idx: index of the node receiving the string value
-s: JSON string
-pos: position of the opening quote
-next-pos: ok=position after the closing quote, nil=quote not closed or illegal escape
-`
-  'json.json-pool.set-key': `
-sets a key on an object node
-returns ok = success
-obj-idx: index of the object node
-key: the key name
-val-idx: the new value node index
-ok: true=an existing key was updated or a new one appended; false=invalid index or not an object
-`
-  'json.json-pool.skip-ws': `
-skips whitespace
-s: JSON string
-pos: starting byte position
-p: position of the first non-whitespace (space/Tab/LF/CR) character; end of string when all whitespace
-`
-  'json.json-pool.str-eq': `
-compares two str values for equality
-Implemented uniformly through str.eq-full
-a: string to compare
-b: string to compare
-eq: 1=equal, 0=unequal
-`
-  'json.json-pool.stringify': `
-serialises the node into a string
-returns out str: the serialised string
-node-idx: index of the subtree root
-out: serialized JSON text (empty string when the index is invalid)
 `
   'json.kind': `
 gets the node kind
@@ -5093,570 +4946,6 @@ d.put(o, 'name', d.new-str('nolang'))
 d.set-root(o)
 d: a new document with an initialized pool and root = -1
 `
-  'noml.noml-doc.ann': `
-Get the raw `#{...}` annotation of the root node
-v: ok = annotation text, nil = root has no annotation
-`
-  'noml.noml-doc.ann-value': `
-Get the value of a key in the root node's annotation
-key: annotation key
-v: ok = value, nil = the key does not exist
-`
-  'noml.noml-doc.at': `
-Get a root array element's node index by position
-i: element subscript (0-based)
-child: ok = element node index, nil = root is not an array or the index is out of range
-`
-  'noml.noml-doc.bool': `
-Get the root's bool value
-v: ok = bool value, nil = root is not a bool
-`
-  'noml.noml-doc.get': `
-Get a root object member's node index by key
-key: key name
-child: ok = child node index, nil = root is not an object or the key does not exist
-`
-  'noml.noml-doc.get-bool': `
-Get a root object member's bool value by key
-key: key name
-v: ok = bool value, nil = key missing or value not a bool
-`
-  'noml.noml-doc.get-f64': `
-Get a root object member's numeric value by key
-key: key name
-v: ok = numeric value, nil = key missing or value not a number
-`
-  'noml.noml-doc.get-i64': `
-Get a root object member's integer value by key (fraction truncated)
-key: key name
-v: ok = integer, nil = key missing or value not a number
-`
-  'noml.noml-doc.get-str': `
-Get a root object member's string value by key
-key: key name
-v: ok = string content, nil = key missing or value not a string
-`
-  'noml.noml-doc.has': `
-Whether the root object has the key
-key: key name
-found: true = present
-`
-  'noml.noml-doc.i64': `
-Get the root's integer value (fraction truncated)
-v: ok = integer, nil = root is not a number
-`
-  'noml.noml-doc.is-arr': `
-Whether the root is an array
-yes: true = root is an array
-`
-  'noml.noml-doc.is-bool': `
-Whether the root is a bool
-yes: true = root is a bool
-`
-  'noml.noml-doc.is-nil': `
-Whether the root is nil
-yes: true = root is nil
-`
-  'noml.noml-doc.is-num': `
-Whether the root is a number
-yes: true = root is a number
-`
-  'noml.noml-doc.is-obj': `
-Whether the root is an object
-yes: true = root is an object
-`
-  'noml.noml-doc.is-str': `
-Whether the root is a string
-yes: true = root is a string
-`
-  'noml.noml-doc.key': `
-Get a root object member's key name by position
-i: member subscript (0-based, in file order)
-key: ok = key name, nil = root is not an object or the index is out of range
-`
-  'noml.noml-doc.kind': `
-The root node's kind
-k: NOML-KIND-*; NOML-KIND-NIL when the root is invalid
-`
-  'noml.noml-doc.len': `
-Number of children of the root node (object member count or array length)
-n: number of children
-`
-  'noml.noml-doc.new-arr': `
-Create an empty array node
-idx: new node index
-`
-  'noml.noml-doc.new-bool': `
-Create a bool node
-v bool: the bool value to store in the node
-idx i64: the new node's index in the pool, for the caller to graft subtrees
-`
-  'noml.noml-doc.new-nil': `
-Create a nil node
-idx: new node index
-`
-  'noml.noml-doc.new-num': `
-Create a number node
-v f64: the numeric value stored in the node (integers and fractions share one node kind)
-idx i64: the new node's index in the pool, for the caller to graft subtrees
-`
-  'noml.noml-doc.new-obj': `
-Create an empty object node
-idx: new node index
-`
-  'noml.noml-doc.new-str': `
-Create a string node
-v: string content
-idx: new node index
-`
-  'noml.noml-doc.num': `
-Get the root's numeric value
-v: ok = numeric value, nil = root is not a number
-`
-  'noml.noml-doc.push': `
-Append an element at the end of an array (child must belong to the same document)
-arr: array node index
-child: child node index
-ok: true = appended; false = arr is not an array
-`
-  'noml.noml-doc.put': `
-Put a member into an object (child must belong to the same document)
-obj: object node index
-key: key name
-child: child node index
-ok: true = written; false = obj is not an object
-`
-  'noml.noml-doc.root-index': `
-The root node's index (-1 for an empty document)
-idx: root node index
-`
-  'noml.noml-doc.set-ann': `
-Set the root node's raw `#{...}` annotation (empty string = remove it)
-text: annotation text (without `#{` and `}`)
-ok: true = written
-`
-  'noml.noml-doc.set-root': `
-Set the root node
-idx: node index
-`
-  'noml.noml-doc.str': `
-Get the root's string value
-v: ok = string content, nil = root is not a string
-`
-  'noml.noml-doc.stringify': `
-Serialize the whole document (the document-level annotation is emitted above the root node)
-out: NOML text (empty string when the root is invalid)
-`
-  'noml.noml-doc.stringify-node': `
-Serialize an arbitrary subtree
-idx: subtree root index
-out: NOML text (empty string when the index is invalid)
-`
-  'noml.noml-pool.add-child': `
-Append a child node to a parent (children are a mutable-length singly linked list via the edge table)
-node-idx: parent node index
-child-idx: child node index
-key: key name on the edge (for object children; arrays pass an empty string)
-`
-  'noml.noml-pool.alloc': `
-Allocate a new node (kind=nil, no children)
-idx: new node index
-`
-  'noml.noml-pool.ann': `
-Get the node's raw `#{...}` annotation text (without `#{` and `}`)
-idx: node index
-v: ok = annotation text, nil = the node has no annotation
-`
-  'noml.noml-pool.ann-literal': `
-Read an annotation value literal: single-quoted strings lose their quotes, everything else is returned as-is
-body: annotation text
-pos: value start position
-v: ok = value, nil = malformed
-`
-  'noml.noml-pool.ann-value': `
-Get the value of a key in the node's annotation (single-quoted strings lose their quotes, everything else is returned as-is)
-idx: node index
-key: annotation key (e.g. 'type')
-v: ok = value, nil = the key does not exist
-`
-  'noml.noml-pool.at': `
-Get an array element's node index by position
-idx: array node index
-i: element subscript (0-based)
-child: ok = element node index, nil = not an array or the index is out of range
-`
-  'noml.noml-pool.at-line-start': `
-Whether the position is at the start of a line (only blanks before it)
-s: source text
-pos: byte offset to test
-yes: true = no non-whitespace character has appeared on this line yet
-`
-  'noml.noml-pool.decode-escape': `
-Decode an escape sequence (`\\'` `\\\\` `\\/` `\\n` `\\r` `\\t` `\\uXXXX`)
-s: source text
-pos: position of the backslash
-val: decoded string (a single code point)
-next: position after the escape sequence
-ok: true = decoded successfully
-`
-  'noml.noml-pool.fail': `
-Record a parse error with line number and return false
-s: source text
-pos: error position
-msg: message (without the position prefix)
-ok: always false (convenient for `ok = .fail(...)`)
-`
-  'noml.noml-pool.fmt-key': `
-Produce a key literal (quoted when it does not match the bare-key rules)
-k: key name
-out: NOML key literal
-`
-  'noml.noml-pool.fmt-num': `
-Produce a number literal (integral values carry no decimal point)
-When the value lies within ±1e15 and rounding restores it (i.to-f64() == n), integer notation is emitted; otherwise the result of n.to-str() is kept.
-n f64: the value to serialize
-out str: number literal (e.g. '42' or '3.14')
-`
-  'noml.noml-pool.get': `
-Get a child node index by key
-idx: object node index
-key: key name
-child: ok = child node index, nil = not an object or the key does not exist
-`
-  'noml.noml-pool.get-bool': `
-Get a bool value by key
-idx: object node index
-key: key name
-v: ok = bool value, nil = key missing or value not a bool
-`
-  'noml.noml-pool.get-f64': `
-Get a numeric value by key
-idx: object node index
-key: key name
-v: ok = numeric value, nil = key missing or value not a number
-`
-  'noml.noml-pool.get-i64': `
-Get an integer value by key (fraction truncated)
-idx: object node index
-key: key name
-v: ok = truncated integer, nil = key missing or value not a number
-`
-  'noml.noml-pool.get-str': `
-Get a string value by key
-idx: object node index
-key: key name
-v: ok = string content, nil = key missing or value not a string
-`
-  'noml.noml-pool.has': `
-Whether the object has the key
-idx: object node index
-key: key name
-found: true = present
-`
-  'noml.noml-pool.has-byte': `
-Scan raw bytes for a given value (byte-by-byte comparison, not code points)
-s str: text to scan
-target i64: byte value to look for, 0–255 (e.g. 10 = '\n', 96 = '`')
-yes bool: true = appears at least once, false = byte absent (empty string is always false)
-`
-  'noml.noml-pool.has-key': `
-Whether the object already has a member with the same name (duplicate keys are an error)
-obj-idx: object node index
-key: key name
-found: true = a member with the same name exists
-`
-  'noml.noml-pool.hex4': `
-Read a 4-digit hexadecimal code point
-s: source text
-pos: position of the first digit
-code: 0~0xFFFF; -1 = malformed
-`
-  'noml.noml-pool.init': 'Initialize the node pool (the heap vec must be initialized to non-nil before it can be pushed safely)'
-  'noml.noml-pool.is-arr': `
-Whether it is an array
-idx: node index
-yes: true = value is an array
-`
-  'noml.noml-pool.is-bool': `
-Whether it is a bool
-idx: node index
-yes: true = value is a bool
-`
-  'noml.noml-pool.is-nil': `
-Whether it is nil
-idx: node index
-yes: true = value is nil
-`
-  'noml.noml-pool.is-num': `
-Whether it is a number
-idx: node index
-yes: true = value is a number
-`
-  'noml.noml-pool.is-obj': `
-Whether it is an object
-idx: node index
-yes: true = value is an object
-`
-  'noml.noml-pool.is-str': `
-Whether it is a string
-idx: node index
-yes: true = value is a string (single-quoted or raw string)
-`
-  'noml.noml-pool.join-ann': `
-Merge two annotation texts (multiple annotation groups joined with ", ")
-cur: accumulated text (may be empty)
-add: text to add
-out: merged result
-`
-  'noml.noml-pool.key': `
-Get an object member's key name by position
-idx: object node index
-i: member subscript (0-based, in file order)
-key: ok = key name, nil = not an object or the index is out of range
-`
-  'noml.noml-pool.kind': `
-The node's kind
-idx: node index
-k: NOML-KIND-*; NOML-KIND-NIL when the index is invalid
-`
-  'noml.noml-pool.len': `
-Number of children (object member count or array length, 0 otherwise)
-idx: node index
-n: number of children
-`
-  'noml.noml-pool.line-of': `
-Line number of a position (1-based)
-s: source text
-pos: byte offset whose line number is to be looked up (automatically clamped when out of range)
-line: line number
-`
-  'noml.noml-pool.match-kw': `
-Match a bare keyword (not immediately followed by identifier characters)
-s: source text
-pos: byte offset to attempt a match at
-kw: keyword
-next: position after the keyword; -1 = no match
-`
-  'noml.noml-pool.parse': `
-Parse a whole document (document-level annotation and trailing annotations on top-level values included)
-s: source text
-idx: root node index; -1 = failure
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-array': `
-Parse an array `[ element, ... ]` (comma separated, trailing comma allowed)
-s: source text
-pos: position of `[`
-idx: array node index; -1 = failure
-next: position after `]`
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-bool': `
-Parse true/false
-s str: full source text
-pos i64: start position of the literal (pointing at t or f)
-val bool: the parsed bool value; fixed to false when ok=false
-next i64: position after the literal; returns the original pos when ok=false
-ok bool: true = parsed, false = not true/false here (fail has been called to record the error)
-`
-  'noml.noml-pool.parse-bool-node': `
-Parse a bool value and materialize it as a node
-s: source text
-pos: start position of the literal
-idx: node index; -1 = failure
-next: position after the value
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-key': `
-Parse a key (bare identifier or single-quoted string)
-s: source text
-pos: start position of the key
-key: key name
-next: position after the key
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-nil-node': `
-Parse a nil value and materialize it as a node
-s: source text
-pos: start position of the literal
-idx: node index; -1 = failure
-next: position after the value
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-num': `
-Parse a number literal (integer / decimal / scientific notation, leading '-' allowed, '+' not accepted)
-Consumes only the bytes that form the number itself, stopping at any other character; no separator required
-s str: full source text
-pos i64: byte index where the number starts
-val f64: parsed value (NOML has one number type; integers are also stored as f64)
-next i64: byte index after the number (on failure stops at the error position for .fail to mark)
-ok bool: true = parsed, false = syntax error (no integer part, no fraction after '.', no digits in exponent)
-`
-  'noml.noml-pool.parse-num-node': `
-Parse a number value and materialize it as a node
-s: source text
-pos: start position of the number
-idx: node index; -1 = failure
-next: position after the value
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-object': `
-Parse an object `{ member... }` (members separated by newlines, no commas)
-s: source text
-pos: position of `{`
-idx: object node index; -1 = failure
-next: position after `}`
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-raw': `
-Parse a backtick raw string (the opening ` must be followed by a newline; the closing ` must be alone on its line)
-s: source text
-pos: position of the opening quote
-val: verbatim content (no escape parsing)
-next: position after the closing backtick
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-raw-node': `
-Parse a raw string value and materialize it as a node
-s: source text
-pos: position of the opening quote
-idx: node index; -1 = failure
-next: position after the value
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-str': `
-Parse a single-quoted string (with `\\` escapes)
-Built by concatenating segments rather than a byte buffer: each escape point cuts a segment, and segments plus decoded results are concatenated directly, so no capacity estimate is needed and no buffer-view lifetime issues arise.
-s: source text
-pos: position of the opening quote
-val: the decoded string
-next: position after the closing quote
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-str-node': `
-Parse a string value and materialize it as a node
-s: source text
-pos: position of the opening quote
-idx: node index; -1 = failure
-next: position after the value
-ok: true = parsed successfully
-`
-  'noml.noml-pool.parse-value': `
-Parse a value
-s: source text
-pos: start position of the value
-idx: node index; -1 = failure
-next: position after the value
-ok: true = parsed successfully
-`
-  'noml.noml-pool.quote': `
-Produce a single-quoted string literal (with escapes)
-Escaping rules: '\'' and '\\' get a preceding backslash, LF / CR / TAB are written as \n \r \t,
-other control bytes below 0x20 are written as \u00XX; the output buffer reserves n*6+2 (worst case 6 characters per byte).
-s str: raw content (any bytes allowed, valid UTF-8 not required)
-out str: literal wrapped in single quotes with the interior escaped
-`
-  'noml.noml-pool.quote-value': `
-Produce a string literal in the simplest form suitable for the content
-Defaults to .quote(); when the content contains LF and passes .raw-safe(), a backtick raw string is used, preserving the original newlines.
-s str: raw content
-out str: text literal ready to write into a .noml file (single-quoted escaped form or '`' raw string)
-`
-  'noml.noml-pool.raw-safe': `
-Decide whether the content can be put into a backtick raw string and retrieved verbatim
-Unusable when any of these occur: empty string, first or last byte is LF, contains CR,
-or any line (after stripping leading blanks: space / TAB / CR) starts with '`' (it would be mistaken for the terminator).
-s str: content to serialize
-yes bool: true = can be safely wrapped as '`\n' + s + '\n`', false = the single-quoted escaped form must be used
-`
-  'noml.noml-pool.require-end': `
-Member-end validation: only intra-line blanks, newline, `;` comment, or container close may follow
-s: source text
-pos: position after the value
-key: member key name (used only in error messages)
-next: position after the newline (or `}`)
-ok: true = legal
-`
-  'noml.noml-pool.scan-ann': `
-Scan one `#{...}` group, returning the position after `}` (validates structure only, does not parse entries)
-s: source text
-pos: position of `#`
-next: position after `}`; -1 = not an annotation or unclosed
-`
-  'noml.noml-pool.scan-quote': `
-Scan from `'` to just past the next unescaped `'`
-s: source text
-pos: position of the opening quote
-next: position after the closing quote; -1 = unclosed
-`
-  'noml.noml-pool.scan-raw': `
-Scan from a backtick to just past the closing backtick that is alone on its line
-s: source text
-pos: position of the opening quote
-next: position after the closing backtick; -1 = unclosed
-`
-  'noml.noml-pool.set-ann': `
-Set the node's raw `#{...}` annotation text (empty string = remove it)
-idx: node index
-text: annotation text (without `#{` and `}`)
-ok: true = written
-`
-  'noml.noml-pool.skip-ann-value': `
-Skip one annotation value (string / array / bare value), returning the position after it
-body: annotation text
-pos: value start position
-next: position after the value; -1 = malformed
-`
-  'noml.noml-pool.skip-blanks': `
-Skip only intra-line blanks (spaces and tabs), not newlines
-s: source text
-pos: byte offset to start scanning from
-p: position of the first non-blank character
-`
-  'noml.noml-pool.skip-trivia': `
-Skip whitespace (including newlines) and `;` line comments
-s: source text
-pos: byte offset to start scanning from
-p: position of the first meaningful character (end of string when all blanks)
-`
-  'noml.noml-pool.stringify': `
-Serialize a subtree
-idx: subtree root index
-indent: indentation level (two spaces per level)
-out: NOML text (empty string when the index is invalid)
-`
-  'noml.noml-pool.stringify-arr': `
-Serialize an array (one element per line, with trailing commas)
-idx: array node index
-indent: indentation level
-out: NOML text
-`
-  'noml.noml-pool.stringify-obj': `
-Serialize an object (one member per line, annotations emitted above the member)
-idx: object node index
-indent: indentation level
-out: NOML text
-`
-  'noml.noml-pool.val-bool': `
-Get the bool value
-idx: node index
-v: ok = bool value, nil = value not a bool
-`
-  'noml.noml-pool.val-i64': `
-Get the integer value (fraction truncated)
-idx: node index
-v: ok = truncated integer, nil = value not a number
-`
-  'noml.noml-pool.val-num': `
-Get the numeric value
-idx: node index
-v: ok = numeric value, nil = value not a number
-`
-  'noml.noml-pool.val-str': `
-Get the string value
-idx: node index
-v: ok = string content, nil = value not a string
-`
   'noml.parse': `
 Parse NOML text
 Usage:
@@ -6280,17 +5569,6 @@ salt []byte: salt, at least 16 bytes and unique per account recommended
 iterations i64: iteration count; larger resists brute force, too small is insecure
 key-len i64: desired key length in bytes, generated block by block of 64 bytes
 returns out []byte: derived key, exactly key-len bytes long
-`
-  'pem.pem-decode': `
-parses a PEM-format string (takes only the first BEGIN…END block in the input)
-pem-str str: text containing at least one '-----BEGIN <label>-----' … '-----END <label>-----' block
-result ?pem-block: ok=the label and the decoded payload, nil=missing marker, Base64 decode failure, or content too short
-`
-  'pem.pem-encode': `
-Encodes raw bytes as a PEM-formatted string
-label str: PEM label (e.g. 'CERTIFICATE', 'RSA PRIVATE KEY'), must match the BEGIN/END line
-data []byte: raw binary data, encoded by base64.encode-std then wrapped at 64 characters
-out str: full PEM text including the BEGIN/END lines and a trailing newline on every line
 `
   'pool.create': `
 Create and initialize a connection pool
@@ -7889,13 +7167,6 @@ compares two strings for exact equality
 b str: the other string
 returns yes bool: true = equal, false = not equal
 `
-  'str.eq-raw': `
-str.eq: compare whether the first n bytes of two strings are equal
-returns true = equal, false = not equal
-b: the target string to compare against
-n: number of bytes to compare
-eq: true=the receiver and b are byte-identical over the first n bytes
-`
   'str.fields': `
 splits the string on one or more consecutive whitespace characters
 Whitespace: space (32), tab (9), newline (10), carriage return (13)
@@ -7961,6 +7232,21 @@ No byte-by-byte .no loop. str is a builtin type whose bytes/length cannot be man
 cs: the code point slice ([]char)
 s: the str after byte-by-byte re-encoding
 `
+  'str.push': `
+appends one code point (grows in place, UTF-8 encoded)
+After the global ban on `s[i] = v` this is the only variable-length write entry point:
+index writes were dangerous because they changed the length implicitly; growth must be
+one explicit, auditable call.
+c: the code point to append
+`
+  'str.push-str': `
+appends a string (grows in place, byte copy)
+Handled by the compiler as a builtin (#{buildin}, ForwardFunc "str-push-bytes", no std body):
+it reallocates %str-long's buffer in place (doubling + memmove) instead of building a new
+string and concatenating, which would cost O(N) per call. Self-append `s.push-str(s)` is
+safe (retain first, then copy).
+s: the string to append
+`
   'str.repeat': `
 Repeat a string times times
 returns the new string
@@ -8011,14 +7297,6 @@ Same semantics as Python's rfind(target, from): searches [from, .len) for the la
 target str: the substring to look for
 from i64: the starting position (inclusive lower bound, in code points)
 returns pos i64: the code point (character) position found, or -1
-`
-  'str.set-byte': `
-Returns ?bool (may fail): out of range (i < 0 or i >= the entity's capacity cap) returns nil and **skips the write**,
-On success returns some(true). The bound uses %str-long's cap (entity capacity) rather than len, so "fill the buffer first,
-the "then set len" build program still works as before. Callers may legally discard the ?bool with a bare statement (optunuse only tracks binding names).
-i: byte index
-b: the byte value to write
-ok: ok=true=write succeeded, nil=i out of range (write skipped)
 `
   'str.slice': `
 takes the substring [start, end), with indices as CHARACTER (code point) positions
@@ -8220,74 +7498,74 @@ out: a new string with the given length and capacity
 sep str: the separator
 returns out str: the joined string
 `
-  'tar.tar-builder.add-bytes': `
+  'tar.builder.add-bytes': `
 Add a raw byte entry
 name: entry name
 content: entry content bytes
 typ: entry type code (TAR-TYPE-FILE / TAR-TYPE-DIR)
 `
-  'tar.tar-builder.add-dir': `
+  'tar.builder.add-dir': `
 Add a directory entry
 name: directory name (conventionally ending with /, no content area)
 `
-  'tar.tar-builder.add-file': `
+  'tar.builder.add-file': `
 Add a file entry
 name: file name (written to the header name field)
 content: file content (written, then zero-padded to the 512-byte boundary)
 `
-  'tar.tar-builder.finish': `
+  'tar.builder.finish': `
 Finish building, write the end marker and return the tar archive
 archive: read-only tar view containing the two all-zero end blocks
 `
-  'tar.tar-builder.pre-alloc': `
+  'tar.builder.pre-alloc': `
 Pre-allocate the buffer (push via a local variable to work around the struct-field push limitation)
 size: number of bytes to pre-allocate in the buffer (zero-filled to this length)
 `
-  'tar.tar-builder.write-header': `
+  'tar.builder.write-header': `
 Write the 512-byte header (internal method)
 name: file name (written at header offset 0)
 typ: typeflag character code (48=file, 53=directory)
 sz: content byte count (written to the size field in octal)
 `
-  'tar.tar-builder.write-octal': `
+  'tar.builder.write-octal': `
 Write an octal number at the given offset (internal method)
 offset: field offset within the current header block
 width: field width (octal digits right-aligned, left padded with spaces)
 val: integer value to encode (a NUL is appended at the block end)
 `
-  'tar.tar-entry.is-dir': `
+  'tar.entry.is-dir': `
 Whether the entry is a directory
 yes: whether this entry is a directory
 `
-  'tar.tar-entry.is-file': `
+  'tar.entry.is-file': `
 Whether the entry is a regular file
 yes: whether this entry is a regular file
 `
-  'tar.tar-entry.mode': `
+  'tar.entry.mode': `
 Read the entry permissions
 mode: permission bits (octal decoded)
 `
-  'tar.tar-entry.mtime': `
+  'tar.entry.mtime': `
 Read the entry modification time
 ts: modification time (Unix seconds, octal decoded)
 `
-  'tar.tar-entry.name': `
+  'tar.entry.name': `
 Read the entry file name
 name: this entry's file name
 `
-  'tar.tar-entry.read': `
+  'tar.entry.read': `
 Extract the entry content
 out: entry content bytes (empty for directories)
 `
-  'tar.tar-entry.size': `
+  'tar.entry.size': `
 Read the entry file size
 sz: entry's raw byte count
 `
-  'tar.tar-entry.type': `
+  'tar.entry.type': `
 Read the entry type
 typ: type string ("file", "dir" or "unknown")
 `
-  'tar.tar-open-gz': `
+  'tar.open-gz': `
 Create a tar view from gzip-compressed data (.tar.gz)
 gz-data: gzip-compressed tar data ([]byte)
 archive: the decompressed tar archive
@@ -9103,115 +8381,6 @@ Writes the file using TOML 1.0 syntax; array-of-tables is restored as [[table]] 
 doc: the document to serialize
 out: TOML 1.0 syntax text (emitted entry by entry with table headers)
 `
-  'toml.toml-array-name': `
-Reads an array-of-tables name.
-t: the array-of-tables record to read
-s: the name of that array-of-tables table
-`
-  'toml.toml-doc.put': `
-sets the raw TOML literal value.
-value may be an array, datetime, etc. per TOML syntax; the module does not quote it.
-key: the key (fails when the key cannot be normalized)
-value: the raw TOML literal (stored after syntax validation)
-ok: true=write succeeded, false=illegal key/illegal value/full
-`
-  'toml.toml-entry-key': `
-Reads the canonical key.
-e: the toml-entry to read
-s: the entry's canonical key (normalized dot-separated form)
-`
-  'toml.toml-entry-key-eq': `
-Compares an entry key with a string.
-e: the toml-entry to compare
-key: the key string to compare
-same: whether the entry key equals key
-`
-  'toml.toml-entry-value': `
-Reads the raw TOML value.
-e: the toml-entry to read
-s: the raw TOML value literal (undecoded)
-`
-  'toml.toml-find-eq': `
-Finds the first equals sign that is not inside quotes
-s: the key-value line to parse
-pos: byte position of the first '=' outside quotes (-1 when not found)
-`
-  'toml.toml-make-entry': `
-Copies key/value into a fixed-size buffer.
-key: the key string
-value: the value string
-e: the new entry after the key/value was copied into the fixed buffer
-`
-  'toml.toml-next-array-table': `
-Returns and registers the next index of an array of tables.
-doc: the current document
-name: name of the array-of-tables
-idx: ok=index of this entry (registered with an auto-increment), nil=named table not found and capacity is full
-`
-  'toml.toml-normalize-key': `
-Parses a bare, quoted, or dotted key and emits the canonical dotted key.
-s: the raw key text (bare / quoted / dotted)
-key: ok=normalized dot-notation key, nil=error message for an invalid key
-`
-  'toml.toml-parse-bool': `
-Parses a boolean
-s: boolean literal text (only true/false)
-value: ok=the boolean, err=not a boolean literal
-`
-  'toml.toml-parse-f64': `
-Parses a float
-s: float literal text (underscore separators removed automatically)
-value: ok=the numeric value, err=illegal format
-`
-  'toml.toml-parse-i64': `
-Supports decimal, hexadecimal, octal, and binary literals, plus underscore separators.
-s: integer literal text
-value: ok=the numeric value, nil=empty text, err=illegal format or overflow
-`
-  'toml.toml-register-table': `
-Records a defined table; returns false when it is defined twice.
-doc: the document to register into
-name: the table name
-ok: true=first definition, false=duplicate definition
-`
-  'toml.toml-resolve-section': `
-Resolves a sub-table of an array of tables onto the most recent element.
-doc: the current document
-name: the paragraph name to parse
-resolved: rewritten as base[index].suffix when the key is an array-of-tables subkey, returned unchanged otherwise
-`
-  'toml.toml-strip-comment': `
-Strips # comments outside strings and trims; multiline strings are supported.
-s: the raw line text (supports # inside multi-line strings)
-out: content after stripping out-of-string comments and trimming
-`
-  'toml.toml-table-eq': `
-Compares table names held in fixed-size buffers.
-name: fixed buffer holding the table name
-name-len: actual byte length of the name
-s: the table name to compare against
-same: whether the two are byte-for-byte identical
-`
-  'toml.toml-table-name': `
-Reads a table name.
-t: the table to read from
-s: the table name
-`
-  'toml.toml-unquote': `
-Decodes a basic or literal TOML string
-raw: the quoted raw string
-value: ok=the decoded content, nil=not a string literal, err=illegal quoting/escaping
-`
-  'toml.toml-valid-value': `
-Accepts TOML 1.0 scalars, arrays, inline tables, and date/time literals.
-raw: raw text of the value
-valid: whether it conforms to TOML 1.0 literal syntax
-`
-  'toml.toml-value-complete': `
-Determine whether the value is closed; used for multiline arrays, inline tables, and multiline strings.
-raw: raw text of the value
-complete: whether quotes/brackets are closed (decides if a multi-line value can end)
-`
   'tree-map.tree-map.alloc-node': `
 Allocates a node from the free pool
 Returns idx i64: the node index, or -1 when the pool is full
@@ -9434,18 +8603,6 @@ converts a single digit character (0-15) to its value; an invalid character retu
 c: the code point of a digit character
 d: 0~15; invalid characters return -1
 `
-  'txt.append': `
-appends a byte (never exceeding the 255 limit)
-b: the byte to append (ignored when it exceeds the 255 limit)
-`
-  'txt.append-str': `
-appends a str (without exceeding the 255 limit)
-s: the str to append (truncated when the 255 limit would be exceeded)
-`
-  'txt.append-txt': `
-appends a txt (without exceeding the 255 limit)
-t: the txt to append (truncated when the 255 limit would be exceeded)
-`
   'txt.at': `
 [deprecated] txt.at: character (code point) index read — use t[idx] instead (native indexing, returns ?char)
 txt.at: gets the code point value at a character position (for a byte offset use t.byte(i))
@@ -9588,6 +8745,23 @@ anything beyond 255 bytes is dropped automatically (the length byte is clamped t
 cs: the code point slice ([]char)
 t: the txt after byte-by-byte re-encoding (parts beyond 255 bytes dropped automatically)
 `
+  'txt.push': `
+appends one code point (UTF-8 encoded; dropped entirely when the whole character does not fit under the 255 limit)
+all-or-nothing: a multi-byte code point is either written whole or not at all — this
+matches what the old `t[i] = v` did at i == code point count, and avoids cutting a UTF-8
+sequence in half (that is .push-str's semantics; the two differ on the boundary case).
+c: the code point to append
+`
+  'txt.push-str': `
+appends a str (byte copy, does not exceed the 255 limit; truncates BY BYTES when it would)
+⚠️ truncation can cut a multi-byte UTF-8 sequence in half; use .push(c char) when you want
+"drop the whole character if it does not fit".
+s: the str to append (truncated when it exceeds the 255 limit)
+`
+  'txt.push-txt': `
+appends a txt (byte copy, does not exceed the 255 limit; truncates by bytes when it would)
+t: the txt to append (truncated when it exceeds the 255 limit)
+`
   'txt.repeat': `
 repeats the content times times (capped at 255 bytes)
 returns a new txt
@@ -9631,15 +8805,6 @@ reverse search for a substring starting at from (returns the last occurrence at 
 target: the sub-txt to look for
 from: the reverse-search lower bound (inclusive, code points)
 pos: code point position of the last occurrence (>= from), -1 when not found
-`
-  'txt.set-byte': `
-Returns ?bool (it can fail): nil when out of range (i < 0 or i >= the 255-byte physical capacity), and the write is SKIPPED;
-some(true) on success. The bound is the physical capacity (a txt is a fixed 255-byte buffer) rather than
-len, so builders that "fill the buffer first, then set len" (fill / from-str / to-hex / join) keep working as before.
-A caller may discard the ?bool as a bare statement (optunuse only covers bound names).
-i: byte index
-b: the byte value to write
-ok: ok=true=write succeeded, nil=i out of range (write skipped)
 `
   'txt.slice': `
 takes the substring [start, end) and returns a new txt
@@ -10685,20 +9850,6 @@ data: the LZMA2 stream including control bytes
 start-pos: starting offset of the stream
 out: decompressed plaintext byte stream (named output parameter, delivered once at the end)
 `
-  'xz.xz-compress': `
-Compress data in xz format (basic implementation)
-data: raw data ([]byte)
-out: xz-compressed data ([]byte)
-Note: currently a basic implementation using stored blocks;
-full LZMA2 compression is left for a later implementation.
-`
-  'xz.xz-decompress': `
-.xz format:
-- Stream Header: 6 bytes magic + 2 bytes stream flags
-- Blocks: Block Header + Compressed Data + Block Padding + Check
-- Index
-- Stream Footer: 12 bytes
-`
   'yaml.anchor': `
 The anchor name of the current node
 a: the node's anchor name (empty = none)
@@ -10920,355 +10071,6 @@ Get the value node of the i-th key of a mapping
 i: key/value pair ordinal (0-based)
 out: value node of the i-th key pair (nil=out of range or not a mapping)
 `
-  'yaml.yaml-apply-tag': `
-Decide the node type by the explicit tag
-tag: the normalized tag name
-kind: node kind inferred from the content
-k: final kind after label override (original kind returned when the label is unrecognized)
-`
-  'yaml.yaml-emit': `
-emits a node as block-style YAML (no trailing newline)
-pool: the node pool
-idx: index of the node to emit
-indent: number of spaces per indent level
-depth: the current nesting depth
-out: block-style YAML text (no trailing newline)
-`
-  'yaml.yaml-f-is-inf': `
-Does not use literal comparison: Nolang numeric literals do not support exponents (`1e308` is cut into `1` + `e308`).
-The test for infinity is "nonzero and unchanged after halving"; NaN is excluded first with `x != x`.
-x: the f64 value to test
-yes: x is positive/negative infinity (nonzero and unchanged after halving)
-`
-  'yaml.yaml-f-is-nan': `
-Whether the float is NaN (NaN != NaN)
-Does not use `float.is-nan`: receiver-style calls inside the module cannot resolve that method in the MIR backend.
-x: the f64 value to test
-yes: x is NaN (the NaN != NaN test)
-`
-  'yaml.yaml-hex-char': `
-Convert a single hex digit (0-15) to a character
-v: the numeric value of a hex digit, 0-15
-ch: the corresponding hex character ('0'-'f')
-`
-  'yaml.yaml-hex-digit': `
-Convert a hex character to its value; non-hex returns -1
-c: the ASCII code of the character
-d: the value 0-15 represented by this hex digit (-1=invalid hex character)
-`
-  'yaml.yaml-inf': `
-Positive infinity
-v: positive infinity
-`
-  'yaml.yaml-json-escape': `
-JSON string escaping
-s: the raw string
-out: escaped JSON string (with enclosing double quotes)
-`
-  'yaml.yaml-json-of': `
-converts a node to JSON
-pool: the node pool
-idx: index of the node to convert
-depth: remaining recursion depth (prevents alias cycles)
-out: the JSON text corresponding to that node
-`
-  'yaml.yaml-key-eq': `
-Whether two key nodes are equivalent (compares scalar text)
-a: key node a
-b: key node b
-yes: the two nodes' scalar texts are equal
-`
-  'yaml.yaml-key-text-eq': `
-Whether the scalar key text equals the given string
-nd: the node to compare (its scalar text is taken)
-key: the target text
-yes: nd's scalar text equals key
-`
-  'yaml.yaml-nan': `
-Must go through runtime division: compile-time constant folding computes `0.0 / 0.0` directly as 0.
-Routing through a local variable avoids folding and yields a real NaN (`x != x` is true).
-v: the NaN value (produced at runtime by 0.0/0.0, not constant-folded)
-`
-  'yaml.yaml-node-is-nan': '`.nan`\'s fval is filled with a real NaN by yaml-nan(), so it is compared by value (NaN != NaN).\nnode raw-text check as fallback: paths like tag rewriting may change only text without recomputing fval.\nnd: the node to inspect\nyes: the node is .nan'
-  'yaml.yaml-parse-radix': `
-parses a radix-base integer (underscores ignored)
-t: text containing digits
-start: start offset of the number
-radix: radix base (2/8/16)
-kind: success=YAML-KIND-INT, failure=YAML-KIND-STR
-v: the integer value converted out
-`
-  'yaml.yaml-parser.advance': 'Advance one byte'
-  'yaml.yaml-parser.anchor-id': `
-Search for an anchor; returns -1 if not found
-name: anchor name
-idx: the corresponding node index (-1=not registered)
-`
-  'yaml.yaml-parser.at': `
-The byte offset k relative to the current position
-k: offset relative to the current position (out-of-range reads yield 0)
-c: the byte value at pos+k
-`
-  'yaml.yaml-parser.at-doc-marker': `
-Whether the current position is --- (1) or ... (2)
-which: 1='---', 2='...', 0=not a document marker
-`
-  'yaml.yaml-parser.at-eol': `
-Whether it is at the end of the line (EOF included)
-yes: the current byte is \n or the end of input has been reached
-`
-  'yaml.yaml-parser.byte-at': `
-Returns src[i], or 0 when out of range
-i: the target index
-c: the byte value at that position (0 when out of range)
-`
-  'yaml.yaml-parser.cur': `
-The current byte
-c: the byte currently at pos (0 at EOF)
-`
-  'yaml.yaml-parser.eof': `
-Whether the end of the input has been reached
-yes: pos has reached the end of the input
-`
-  'yaml.yaml-parser.fail': `
-records a parse error
-msg: error description (stored into the parser's error message)
-`
-  'yaml.yaml-parser.fail-at': `
-records a parse error with position
-msg: error description (current position info appended automatically)
-`
-  'yaml.yaml-parser.indent-at': `
-Skips leading spaces before counting: call sites almost always follow skip-blank-lines() directly,
-Here pos stops at the line start (column 0), so subtracting directly always yields 0, making nested blocks judged as "not indented".
-after skipping, pos stops at the first non-space character; the later is-seq-dash / looks-like-map-entry /
-at-doc-marker also needs this position.
-ind: number of spaces before the first non-space character on the current line
-`
-  'yaml.yaml-parser.is-seq-dash': `
-Whether the current position is the sequence-item indicator '- '
-yes: the current position is a sequence-item indicator ('- ' or a '-' at end of line)
-`
-  'yaml.yaml-parser.line-end-of': `
-returns the end-of-line offset of the line containing i (pointing at the newline or n)
-i: any byte offset within the target line
-le: end-of-line offset (points at the newline; equals the input length when there is none)
-`
-  'yaml.yaml-parser.line-start-of': `
-Returns the start offset of the line containing i
-i: any byte offset within the target line
-ls: byte offset of the start of the line containing i
-`
-  'yaml.yaml-parser.looks-like-map-entry': `
-Whether this line has a top-level ': ', a trailing ':', or an explicit key '? '
-yes: this line has a mapping-key indicator and can be treated as a mapping entry
-`
-  'yaml.yaml-parser.merge-into': `
-Merge handling of key << (supports mappings or sequences of mappings)
-keys: list of key node indices of the target mapping
-vals: the list of value-node indices of the target mapping
-src: value node index of the merge key (<<) (a MAP or a MAP sequence)
-ok-keys: merged key list
-ok-vals: merged value list
-`
-  'yaml.yaml-parser.merge-one': `
-Merge one mapping's entries into keys/vals (existing keys are not overwritten)
-note: the MIR backend does not allow moving an input vec directly into another vec (borrow/ownership protection),
-So this copies element by element rather than ok-keys = keys.
-keys: list of key node indices of the target mapping
-vals: the list of value-node indices of the target mapping
-src: index of the mapping node to merge (must be of kind MAP)
-ok-keys: merged key list (existing keys are kept first)
-ok-vals: merged value list
-`
-  'yaml.yaml-parser.newline': `
-Consume one newline (\n or \r\n)
-yes: consumed one newline; false=not at a newline, position unchanged
-`
-  'yaml.yaml-parser.parse-alias': `
-Parses the alias *name
-idx: node index the alias points to (-1=anchor absent, error already recorded)
-`
-  'yaml.yaml-parser.parse-block': `
-parses one block-context node (the current position is the node's start column)
-indent: the node's starting column
-cont-min: the minimum continuation indent passed to child nodes
-idx: pool index of the parsed node
-`
-  'yaml.yaml-parser.parse-block-indented': `
-parses deeper-indented following lines as the value
-parent-indent: indentation column of the parent key line (later lines must be deeper to count as values)
-idx: pool index of the parsed value node
-`
-  'yaml.yaml-parser.parse-block-map': `
-parses a block mapping
-indent: the indent column of the mapping key (basis for same-level keys and dedent decisions)
-idx: pool index of the new mapping node
-`
-  'yaml.yaml-parser.parse-block-scalar': `
-parses block scalars | and >
-cont-min: the indent column the block content must reach (passed in by the calling context)
-idx: pool index of the new block-scalar node
-`
-  'yaml.yaml-parser.parse-block-seq': `
-parses a block sequence
-indent: the indent column of the sequence item '-' (basis for sibling and dedent decisions)
-idx: pool index of the new sequence node
-`
-  'yaml.yaml-parser.parse-docs': `
-parses all documents
-roots: pool index list of each document's root node
-`
-  'yaml.yaml-parser.parse-document': `
-parses one document and returns the root node index
-idx: pool index of this document's root node (-1=parse failure)
-`
-  'yaml.yaml-parser.parse-double': `
-parses a double-quoted scalar
-idx: pool index of the new scalar node (escapes already processed)
-`
-  'yaml.yaml-parser.parse-flow-map': `
-Parses {k: v, ...}
-idx: pool index of the new mapping node
-`
-  'yaml.yaml-parser.parse-flow-node': `
-parses one flow-context node
-cont-min: the minimum continuation indent passed to nested scalar parsing
-key-mode: true=parse at a key position
-flow: true=flow context
-idx: pool index of the parsed node
-`
-  'yaml.yaml-parser.parse-flow-seq': `
-Parses [a, b, ...]
-idx: pool index of the new sequence node
-`
-  'yaml.yaml-parser.parse-plain': `
-parses a plain scalar (multi-line folding included)
-cont-min: the minimum indent column required for multi-line folded continuations (0=no cross-line continuation)
-key-mode: true=parse as a mapping key, terminating at indicators such as ': '
-flow: true=flow context (',' '}' ']' also terminate)
-idx: pool index of the new scalar node
-`
-  'yaml.yaml-parser.parse-props': `
-parses the node-prefix anchor and tag (in either order)
-tag: the tag read (empty string=none)
-anchor: the anchor name read (empty = none; non-empty means it has been registered in the anchor table)
-`
-  'yaml.yaml-parser.parse-single': `
-parses a single-quoted scalar
-idx: pool index of the new scalar node
-`
-  'yaml.yaml-parser.push-node': `
-appends a node and returns its index
-nd: the node to append
-idx: the node's index in the node pool
-`
-  'yaml.yaml-parser.push-null': `
-appends an empty node (null)
-idx: pool index of the new null node
-`
-  'yaml.yaml-parser.push-scalar': `
-Builds a scalar node from the style and the tag
-text: scalar text
-style: scalar style (YAML-STYLE-* constants)
-tag: explicit tag (empty=type inferred by the core schema)
-anchor: anchor name (empty = none)
-idx: pool index of the new node
-`
-  'yaml.yaml-parser.read-line-content': `
-reads from the current position to the end of line (trailing whitespace and comments stripped)
-out: text up to the end of line (trailing whitespace and # comments removed)
-`
-  'yaml.yaml-parser.read-tag': `
-reads a tag (!!name / !name / !<verbatim> / !)
-out: full tag text (with the ! prefix; a bare ! returns ';!')
-`
-  'yaml.yaml-parser.read-token': `
-reads a bare token containing no delimiters
-out: the bare token read (terminates at whitespace/indicators)
-`
-  'yaml.yaml-parser.register-anchor': `
-Register an anchor
-name: anchor name
-idx: the node index the anchor points to
-`
-  'yaml.yaml-parser.set-props': `
-Attach a tag and an anchor to a node (and register the anchor)
-idx: the target node-pool index
-tag: explicit tag (empty string=none)
-anchor: anchor name (empty = none; non-empty is registered too)
-`
-  'yaml.yaml-parser.skip-blank-lines': 'skips blank lines and full-line comments, stopping at the start of the next content line'
-  'yaml.yaml-parser.skip-doc-preamble': 'skips blank lines, comments, and directive lines'
-  'yaml.yaml-parser.skip-flow-ws': 'Whitespace inside flow contexts — in-line spaces, newlines and comments'
-  'yaml.yaml-parser.skip-spaces': 'skips inline spaces and tabs'
-  'yaml.yaml-parser.skip-to-doc-boundary': 'skips the rest of the current document, stopping at the next --- or end of input'
-  'yaml.yaml-parser.skip-to-eol': 'skips trailing whitespace and line comments (does not consume the newline)'
-  'yaml.yaml-plain-safe': `
-Whether the text can be output as-is as a plain scalar
-s: the text to output
-yes: can be output as-is as a plain scalar (no quoting needed)
-`
-  'yaml.yaml-quote': `
-emits a double-quoted YAML scalar
-s: the raw text
-out: YAML scalar text wrapped in double quotes and escaped
-`
-  'yaml.yaml-resolve-plain': `
-Infer the plain scalar type by the core schema
-text: the plain scalar raw text
-kind: inferred node kind (null/bool/int/float/str etc.)
-ival: the integer value when kind=INT
-fval: the floating-point value when kind=FLOAT
-bval: the boolean value when kind=BOOL
-`
-  'yaml.yaml-scalar-repr': `
-The YAML representation of the scalar
-nd: scalar node
-out: the YAML representation text chosen by kind and style
-`
-  'yaml.yaml-scan-number': `
-Try to parse the text as an integer or a float
-returns kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR (not a number)
-t: scalar text
-kind: recognized number kind (INT/FLOAT/STR)
-ival: the integer value when kind=INT
-fval: the floating-point value when kind=FLOAT
-`
-  'yaml.yaml-spaces': `
-Generate n spaces
-n: number of spaces
-out: a string of n spaces
-`
-  'yaml.yaml-str-at': `
-Why this helper is needed: `arr[i]` (arr being []str) returns option<str> by default,
-while the MIR backend emits invalid IR when option<str> is used as a call argument / method receiver
-(%option_str does not match %str-long). String concatenation auto-unwraps the option,
-So here `out = out - a[i]` takes the element, which both unpacks and satisfies `no vet`'s out-of-bounds check.
-a: target string array
-i: element index
-out: value of the i-th element (empty string when out of range)
-`
-  'yaml.yaml-tag-name': `
-Normalize a tag name (!!str / tag:yaml.org,2002:str → str)
-tag: the raw tag (spellings like !!str / tag:yaml.org,2002:str)
-name: normalized short tag name (str/int/seq...)
-`
-  'yaml.yaml-to-f64': `
-Convert text to f64 (returning nil means failure)
-t: digit text
-v: the conversion result (nil=cannot be parsed as f64)
-`
-  'yaml.yaml-to-i64': `
-Convert text to i64; returns -1 on failure
-s: integer text
-v: the converted value (-1=conversion failed)
-`
-  'yaml.yaml-unescape-double': `
-handles double-quote escape sequences
-body: the string content inside double quotes (escape sequences included)
-out: unescaped text (nil=contains illegal escapes)
-`
   'zip.u16le': `
 Read a 2-byte little-endian unsigned integer
 data: byte array to read from
@@ -11280,82 +10082,6 @@ Read a 4-byte little-endian unsigned integer
 data: ZIP file byte array
 off: start position (0-based)
 v: the 4-byte little-endian unsigned integer (0 ~ 2^32-1)
-`
-  'zip.zip-entry.compressed-size': `
-Read the entry's compressed size
-csz: compressed byte count
-`
-  'zip.zip-entry.extract': `
-Extract the entry content (stored and deflate)
-out: decompressed raw bytes (stored copied directly, deflate inflated automatically)
-`
-  'zip.zip-entry.method': `
-Read the entry's compression method (0=stored, 8=deflate)
-method: compression method (0=stored, 8=deflate)
-`
-  'zip.zip-entry.name': `
-Read the entry's file name
-name: this entry's file name
-`
-  'zip.zip-entry.size': `
-Read the entry's original size
-sz: original byte count before compression
-`
-  'zip.zip-writer.add-dir': `
-Add a directory entry
-name: directory name (a trailing / is appended automatically when missing)
-`
-  'zip.zip-writer.add-file': `
-Add a file to the archive (CRC32 computed automatically)
-name: path name stored inside the archive
-content: file content (stored verbatim with the stored method; CRC32 computed automatically)
-`
-  'zip.zip-writer.cd-put': `
-Append one byte to cd-data
-b: byte value to append (low 8 bits written to the central directory buffer)
-`
-  'zip.zip-writer.cd-write-u16': `
-Write a 2-byte little-endian integer to the central directory
-v: integer to write (low 16 bits appended little-endian to the central directory buffer)
-`
-  'zip.zip-writer.cd-write-u32': `
-Write a 4-byte little-endian integer to the central directory
-v: integer to write (low 32 bits appended little-endian to the central directory buffer)
-`
-  'zip.zip-writer.finalize': `
-Write the central directory and EOCD, returning the complete archive data
-out: complete ZIP archive bytes (local data + central directory + EOCD)
-`
-  'zip.zip-writer.put': `
-Append one byte to data (push via a local variable)
-b: byte value to append (low 8 bits written to the local data area)
-`
-  'zip.zip-writer.write-cd-entry': `
-Write a central directory entry
-name: file name
-offset: starting offset of the entry's local file header
-size: size before compression
-compressed-size: size after compression
-crc: CRC32 checksum of the content
-`
-  'zip.zip-writer.write-eocd': `
-Write the End of Central Directory record
-cd-offset: starting offset of the central directory
-cd-size: total bytes of the central directory
-`
-  'zip.zip-writer.write-local-file': `
-Write the local file header and content
-name: file name (written into the header and data area)
-content: file content (uncompressed, written verbatim as stored)
-crc: CRC32 checksum of the content
-`
-  'zip.zip-writer.write-u16': `
-Write a 2-byte little-endian integer
-v: integer to write (low 16 bits appended little-endian)
-`
-  'zip.zip-writer.write-u32': `
-Write a 4-byte little-endian integer
-v: integer to write (low 32 bits appended little-endian)
 `
   'zip.zip.compressed-size': `
 Compressed size
@@ -11369,7 +10095,7 @@ count: total entries (0 when the archive is corrupt)
   'zip.zip.entry': `
 Get the idx-th entry
 idx: entry ordinal
-e: zip-entry handle bound to the entry's offset (fields read via its methods)
+e: entry handle bound to the entry's offset (fields read via its methods)
 `
   'zip.zip.entry-off': `
 Offset of the idx-th central directory entry
@@ -11413,31 +10139,6 @@ Compute the Adler-32 checksum
 data: input data ([]byte)
 n: number of bytes actually included in the computation (i64)
 returns sum: 32-bit checksum (i64), b in the high half and a in the low half, comparable with RFC 1950 implementations
-`
-  'zlib.zlib-compress': `
-Build a zlib stream using stored blocks (BTYPE=00):
-- 2-byte zlib header (78 9c)
-- DEFLATE stored blocks (at most 65535 bytes each)
-- 4-byte big-endian Adler-32 checksum
-out []byte: complete zlib stream (2-byte header + stored blocks + 4-byte Adler-32)
-`
-  'zlib.zlib-consumed-stored': `
-Compute the bytes consumed by a stored-block zlib stream
-data: zlib stream starting at offset 0 ([]byte)
-returns consumed: total bytes consumed (including header and Adler-32), 0 when a block is not stored
-Accumulates per block: 5-byte block header + data length + 4-byte checksum, stopping at BFINAL or a non-stored block
-`
-  'zlib.zlib-decompress': `
-Supports all DEFLATE block types (stored, fixed Huffman, dynamic Huffman)
-Decompresses through gzip.inflate-decompress.
-Tries the stored-block scan first (fast path), falling back to inflate on failure.
-out ?[]byte: decompressed data (ok); nil when shorter than 6 bytes, header invalid, or decompression fails
-`
-  'zlib.zlib-decompress-stored': `
-Decompress only stored-block zlib streams
-data: zlib stream containing only BTYPE=00 blocks ([]byte)
-returns out ?[]byte: decompressed data (some); nil for non-stored blocks or on failure
-out ?[]byte: bytes decoded from BTYPE=00 blocks only; nil as soon as another block type or a mismatched end appears
 `
   'zstd.bits-for-count': `
 Compute the number of bits needed for count
@@ -11496,17 +10197,5 @@ max-symbol: upper bound of symbol values (end of the lengths traversal; 255 for 
 Decode one symbol
 br: bit reader supplying the code bits (the codeword assembled bit by bit from the MSB end)
 sym: decoded symbol value; 0 when no code matches within the maximum code length
-`
-  'zstd.zstd-compress': `
-Compress data in zstd format (basic implementation)
-data: raw data ([]byte)
-out: zstd-compressed data ([]byte)
-Note: currently a basic implementation using raw blocks;
-full FSE + Huffman + LZ77 compression is left for a later implementation.
-`
-  'zstd.zstd-decompress': `
-Decompress data in Zstandard format
-data: zstd compressed data ([]byte)
-out: decompressed data ([]byte)
 `
 }

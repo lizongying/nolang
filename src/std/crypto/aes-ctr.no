@@ -41,7 +41,6 @@ ctr-inc = (cb []byte) {
             break
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -79,7 +78,6 @@ ctr-inc = (cb []byte) {
         -> _
     }
 
-    #{overflow=wrap}
     ixout44c7 == 0 && ixout44c22 == 0 && ixout44c37 == 0 && ixout44c52 == 0 -> {
         j = 11
         (j >= 0) {
@@ -104,7 +102,6 @@ ctr-inc = (cb []byte) {
                 break
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -187,7 +184,6 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
         ctr-inc(cb)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

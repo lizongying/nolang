@@ -125,7 +125,6 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
                 first-tomb < 0 -> first-tomb = idx
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -149,7 +148,6 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
         .occ[insert-idx] ?= 1
 
-        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -233,7 +231,6 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
                 }
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -299,9 +296,15 @@ static-hashmap-str-tmpl.for-each = () (k str, v v) {
                 ; 上界必須顯式寫出接收者（self.keys[i]）；三點 `[0...keys[i])` 是
                 ; 語法錯誤——`...` 是佔位陳述 token，不是「`..` 接隱式 self」。
                 src ?= .keys[i]
-                j <- [0..src.len-bytes()): {
-                    k[j] = src.byte(j)
+
+                ; 2026-11-11：str 下標直寫已全域禁用。k 是結果參數、進來時 len=0，
+                ; 逐位元組長度只能靠 []byte 緩衝承接（位元組保真），再整體轉回 str。
+                sl = src.len-bytes()
+                kb []byte = with-cap-len(sl, sl)
+                j <- [0..sl): {
+                    kb[j] = src.byte(j)
                 }
+                k = kb.to-bytes-str()
 
                 v = .vals[i]
             }
@@ -389,7 +392,6 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
                 first-tomb < 0 -> first-tomb = idx
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -411,7 +413,6 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
         .occ[insert-idx] ?= 1
 
-        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -493,7 +494,6 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
                 }
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -641,7 +641,6 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 
         .occ[idx] ?= 1
 
-        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -698,7 +697,6 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
         used == 1 -> {
             .occ[idx] ?= 2
 
-            #{overflow=wrap}
             .size = .size - 1: {
                 ok -> it
 

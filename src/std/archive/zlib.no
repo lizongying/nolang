@@ -10,8 +10,8 @@
 ;
 ; 用法：
 ;   data = fs.read-file('blob')          ; 讀取為 []byte
-;   compressed = zlib-compress(data)     ; 壓縮為 zlib 格式
-;   decompressed, ok = zlib-decompress(compressed)  ; 解壓 zlib 格式
+;   compressed = compress(data)     ; 壓縮為 zlib 格式
+;   decompressed, ok = decompress(compressed)  ; 解壓 zlib 格式
 ;
 ; 演算法參考：RFC 1950 (zlib), RFC 1951 (DEFLATE)
 ; [zlib](#zlib)
@@ -38,7 +38,6 @@ adler-32 = (data []byte, n i64) (sum i64) {
         #{overflow=wrap}
         a = (a + ixout34c18) % mod-base
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -65,8 +64,8 @@ adler-32 = (data []byte, n i64) (sum i64) {
 ;   - DEFLATE stored blocks（每塊最大 65535 bytes）
 ;   - 4-byte big-endian Adler-32 checksum
 ; out []byte: 完整 zlib 串流（2-byte header + stored blocks + 4-byte Adler-32）
-; [zlib-compress](#zlib.zlib-compress)
-zlib-compress = (data []byte) (out []byte) {
+; [compress](#zlib.compress)
+compress = (data []byte) (out []byte) {
     result []byte
 
     ; zlib header: CMF=0x78 (CM=8, CINFO=7), FLG=0x9c (FCHECK, no dict)
@@ -100,8 +99,8 @@ zlib-compress = (data []byte) (out []byte) {
 ; 透過 gzip.inflate-decompress 進行解壓。
 ; 先嘗試 stored-block 掃描（快速路徑），失敗則使用 inflate 解壓。
 ; out ?[]byte: 解壓後資料（ok）；長度不足 6、header 非法或解壓失敗皆為 nil
-; [zlib-decompress](#zlib.zlib-decompress)
-zlib-decompress = (data []byte) (out ?[]byte) {
+; [decompress](#zlib.decompress)
+decompress = (data []byte) (out ?[]byte) {
     out = nil
     data.len() < 6 -> return
 
@@ -172,8 +171,8 @@ zlib-decompress = (data []byte) (out ?[]byte) {
 ;   data: 僅含 BTYPE=00 區塊的 zlib 串流 ([]byte)
 ;   返回 out ?[]byte: 解壓後資料（some），非 stored 區塊或失敗為 nil
 ; out ?[]byte: 僅由 BTYPE=00 區塊解出的位元組；遇其他區塊類型或結尾不符即回 nil
-; [zlib-decompress-stored](#zlib.zlib-decompress-stored)
-zlib-decompress-stored = (data []byte) (out ?[]byte) {
+; [decompress-stored](#zlib.decompress-stored)
+decompress-stored = (data []byte) (out ?[]byte) {
     out = nil
     data.len() < 6 -> return
 
@@ -200,6 +199,7 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout163c34 = data[p + 1]: {
             ok -> it
 
@@ -235,8 +235,8 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
 ;   data: 從偏移 0 開始的 zlib 串流 ([]byte)
 ;   返回 consumed: 總消耗位元組數（含 header 和 Adler-32），0 表示非 stored 區塊
 ;     逐塊累加 5 位元組塊頭 + 資料長度 + 4 位元組校驗和，遇到 BFINAL 或非 stored 區塊即停止
-; [zlib-consumed-stored](#zlib.zlib-consumed-stored)
-zlib-consumed-stored = (data []byte) (consumed i64) {
+; [consumed-stored](#zlib.consumed-stored)
+consumed-stored = (data []byte) (consumed i64) {
     consumed = 0
     data.len() < 6 -> return
 
@@ -261,7 +261,6 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
         btype i64 = (ixout199c22 >> 1) & 3
         btype != 0 -> return
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -279,6 +278,7 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout206c43 = data[p + 1]: {
             ok -> it
 
@@ -287,7 +287,6 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
 
         blk-len i64 = (ixout206c24 & 255) | ((ixout206c43 & 255) << 8)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -302,7 +301,6 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
     }
 
     ; p 現在指向 Adler-32（4 bytes）
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}

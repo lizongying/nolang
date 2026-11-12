@@ -649,11 +649,11 @@ text = toml.stringify(doc)
 
 Common APIs:
 
-- `toml.new()` — create an empty `toml-doc`
-- `toml.parse(text)` — parse TOML and return `?toml-doc`
+- `toml.new()` — create an empty `toml`
+- `toml.parse(text)` — parse TOML and return `?toml`
 - `doc.put(key, raw-value)` — insert or update a raw TOML value; invalid values are rejected
-- `toml.get(doc, key)` — retrieve the raw value (`?str`)
-- `toml.get-str(doc, key)`, `toml.get-i64(doc, key)`, `toml.get-f64(doc, key)`, `toml.get-bool(doc, key)` — retrieve converted scalar values
+- `get(doc, key)` — retrieve the raw value (`?str`)
+- `get-str(doc, key)`, `get-i64(doc, key)`, `get-f64(doc, key)`, `get-bool(doc, key)` — retrieve converted scalar values
 - `toml.stringify(doc)` — serialize TOML; array-of-tables are emitted with `[[...]]` headers
 
 The current document model supports up to 4 keys, 2 ordinary tables, and 2 array-of-tables per document. A key is limited to 32 bytes and a value to 128 bytes.
@@ -2395,14 +2395,24 @@ type.method-name = (params) (results) {
 #{fmt-skip}
 ; str method
 str.to-upper = () (out str) {
-    out = with-cap(.len-bytes())
-    i <- [0..self.len-bytes()): {
-        c = .byte(i)
+    n = .len-bytes()
+    b []byte = with-cap-len(n, n)
+    i <- [0..n): {
+        c ?byte = .byte(i)
+        v = c: {
+            ok -> it
+
+            nil -> 0
+
+            err -> 0
+        }
         {
-            c >= 97 && c <= 122 -> out[i] = c - 32
-            -> out[i] = c
+            v >= 97 && v <= 122 -> b[i] = v - 32
+
+            -> b[i] = v
         }
     }
+    out = b.to-bytes-str()
 }
 
 ; char method

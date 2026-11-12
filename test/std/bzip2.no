@@ -1,7 +1,7 @@
 ; std-bzip2.no — archive/bzip2 模組測試
 ;
 ; 執行：no test test/std/bzip2.no
-; 覆蓋：bzip2.bzip2-decompress —— 以系統 bzip2 -9 產生的真實串流做黃金比對，
+; 覆蓋：bzip2.decompress —— 以系統 bzip2 -9 產生的真實串流做黃金比對，
 ;       完整走過 Huffman 碼表建構（len-count / base / limit / perm）、
 ;       symbol map（in-use-16 / in-use）、MTF 與 BWT 反變換（count / cum / rank / lf）
 
@@ -44,7 +44,7 @@ BZ2-EXP []byte = [
 
 ; 黃金比對：解壓真實 bzip2 串流，逐位元組對比期望輸出
 t-decompress-golden = () {
-    out = bzip2.bzip2-decompress(BZ2-REF)
+    out = bzip2.decompress(BZ2-REF)
     runner.eq(out.len(), 82, 'decompressed len == 82')
     n = out.len()
     m = 0
@@ -73,7 +73,7 @@ t-decompress-golden = () {
 ; 邊界：空輸入不產生任何位元組
 t-decompress-empty = () {
     raw []byte = []
-    out = bzip2.bzip2-decompress(raw)
+    out = bzip2.decompress(raw)
     runner.eq(out.len(), 0, 'empty input -> empty output')
 }
 
@@ -142,7 +142,7 @@ t-huffman = () {
 ; 產出僅 24 位元組且會讓本模組的解壓端卡住等資料；此處只驗魔數。
 t-compress-prefix = () {
     src = 'hello hello hello world'.to-bytes()
-    z = bzip2.bzip2-compress(src)
+    z = bzip2.compress(src)
 
     head = z.slice(0, 4)
     runner.str-eq(head.to-hex(), '425A6839', 8, 'BZh9 魔數（block-size 9 = 900k）')

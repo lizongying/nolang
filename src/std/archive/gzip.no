@@ -10,8 +10,8 @@
 ;
 ; 用法：
 ;   data = [104, 101, 108, 108, 111]  // []byte
-;   compressed = gzip-compress(data)
-;   decompressed = gzip-decompress(compressed)
+;   compressed = compress(data)
+;   decompressed = decompress(compressed)
 ;   raw = inflate-decompress(deflate-data, expected-size)
 ; [gzip](#gzip)
 
@@ -37,7 +37,6 @@ bit-reader {
 ; [read-bit](#gzip.bit-reader.read-bit)
 bit-reader.read-bit = () (bit i64) {
 
-    #{overflow=wrap}
     .bit-cnt == 0 -> .pos < .data.len() -> {
         .bit-buf = .data[.pos]: {
             ok -> it
@@ -54,7 +53,6 @@ bit-reader.read-bit = () (bit i64) {
     bit = .bit-buf & 1
     .bit-buf = .bit-buf >> 1
 
-    #{overflow=wrap}
     .bit-cnt = .bit-cnt - 1: {
         ok -> it
 
@@ -91,7 +89,6 @@ bit-reader.read-u16-le = () (v i64) {
         -> _
     }
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -104,7 +101,6 @@ bit-reader.read-u16-le = () (v i64) {
         -> _
     }
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -143,7 +139,6 @@ huffman.build = (lengths []i64, n i64) {
             cl ?= lengths[i]
             old ?= .count[cl]
 
-            #{overflow=wrap}
             .count[cl] ?= old + 1
         }
 
@@ -338,7 +333,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     (idx < total) {
         sym = clcodec.decode(br)
 
-        #{overflow=wrap}
         {
 
             sym < 16 -> {
@@ -363,6 +357,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 #{overflow=wrap}
                 cnt = br.read-bits(2) + 3
 
+                #{overflow=wrap}
                 prev = lengths[idx - 1]: {
                     ok -> it
 
@@ -617,7 +612,6 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                     sym > 256 -> {
 
                         ; 長度/距離回參考
-                        #{overflow=wrap}
                         {
 
                             #{overflow=wrap}
@@ -745,7 +739,6 @@ deflate-stored = (data []byte) (out []byte) {
             result.push(ixout616c25)
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -766,8 +759,8 @@ deflate-stored = (data []byte) (out []byte) {
 ; 使用 gzip 格式壓縮資料
 ;   data: 原始資料 ([]byte)
 ;   out: gzip 壓縮後的資料 ([]byte)
-; [gzip-compress](#gzip.gzip-compress)
-gzip-compress = (data []byte) (out []byte) {
+; [compress](#gzip.compress)
+compress = (data []byte) (out []byte) {
     result []byte
 
     ; GZIP 標頭 (10 bytes)
@@ -808,8 +801,8 @@ gzip-compress = (data []byte) (out []byte) {
 ; 解壓縮 gzip 格式的資料
 ;   data: gzip 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
-; [gzip-decompress](#gzip.gzip-decompress)
-gzip-decompress = (data []byte) (out []byte) {
+; [decompress](#gzip.decompress)
+decompress = (data []byte) (out []byte) {
 
     ; 跳過 GZIP 標頭（至少 10 bytes）
     ; ID1(1) + ID2(1) + CM(1) + FLG(1) + MTIME(4) + XFL(1) + OS(1) = 10
@@ -823,7 +816,6 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FEXTRA (bit 2)
-    #{overflow=wrap}
     (flg & 4) != 0 -> {
         xlen = data[pos]: {
             ok -> it
@@ -857,7 +849,6 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FNAME (bit 3) — 以 \0 結尾的字串
-    #{overflow=wrap}
     (flg & 8) != 0 -> {
         (pos < data.len()) {
             c = data[pos]: {
@@ -878,7 +869,6 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FCOMMENT (bit 4) — 以 \0 結尾的字串
-    #{overflow=wrap}
     (flg & 16) != 0 -> {
         (pos < data.len()) {
             c = data[pos]: {
@@ -899,7 +889,6 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; FHCRC (bit 0) — 2 bytes CRC16
-    #{overflow=wrap}
     (flg & 1) != 0 -> {
         {
 
@@ -931,24 +920,28 @@ gzip-decompress = (data []byte) (out []byte) {
     }
 
     ; 預期大小 = ISIZE（最後 4 bytes）
+    #{overflow=wrap}
     ixout748c14 = data[data.len() - 4]: {
         ok -> it
 
         -> _
     }
 
+    #{overflow=wrap}
     ixout748c40 = data[data.len() - 3]: {
         ok -> it
 
         -> _
     }
 
+    #{overflow=wrap}
     ixout748c72 = data[data.len() - 2]: {
         ok -> it
 
         -> _
     }
 
+    #{overflow=wrap}
     ixout748c105 = data[data.len() - 1]: {
         ok -> it
 

@@ -30,7 +30,7 @@ Nolang 型別到 LLVM 的對映關係：
 - **變長數組 `[]t`**：底層 `{ t*, i64 }`（data, len）
 - **定長數組 `[n]t`**：LLVM 固定大小陣列
 - **字串 `str`**：堆分配的位元組序列，描述符 `{ u32 len, u32 cap, i8* data }`（64 位元下 16 字節）；支援 `s[i]`、`s[i..j]`、`s + t`。長度／容量對外以 `i64` 呈現（`s.len-bytes()` / `s.cap()`），內部以 `u32` 存放
-- **固定字串 `txt`**：固定 256 字節結構 `{ [255]byte data, byte len }`，前 255 字節存儲數據，最後 1 字節存儲**字節**長度（0-255），無需堆分配，必須類型標註（`t txt = 'abc'`）；`t.len()` 回傳 code point 數量（與 `str` 對齊，等價 `t.count()`），`t.len-bytes()` 回傳字節數量；索引 `t[i]` 讀寫均以**碼點**為單位——讀回該碼點的 `char`（越界回傳 `-1`），寫入 `t[i] = c` 會把 `c` 重新 UTF-8 編碼並後移尾部字節（`i` 等於碼點數時為追加，總字節長超過 255 的部分丟棄）；字節級原始讀寫使用成對的 `t.byte(i)`（回傳 `?byte`，越界回傳 nil）/ `t.set-byte(i, b byte)`（回傳 `?bool`：索引超出 255 字節**實體容量**時回傳 nil 並跳過寫入，成功回傳 `some(true)`；邊界以實體容量而非 `len` 為準，故「先填緩衝再 set len」的逐字節構建照常可用）。注意 `str` 的 `s[i] = v` 仍是**字節級**寫入，與 `txt` 在此有意分叉
+- **固定字串 `txt`**：固定 256 字節結構 `{ [255]byte data, byte len }`，前 255 字節存儲數據，最後 1 字節存儲**字節**長度（0-255），無需堆分配，必須類型標註（`t txt = 'abc'`）；`t.len()` 回傳 code point 數量（與 `str` 對齊，等價 `t.count()`），`t.len-bytes()` 回傳字節數量；索引 `t[i]` **讀取**以**碼點**為單位（讀回該碼點的 `char`，越界回傳 `-1`）；**寫入 `t[i] = c` 自 2026-11-12 起全域禁用**（編譯錯誤 `idxwrite`）—— 它會把 `c` 重新 UTF-8 編碼並後移尾部字節，長度隨寫入隱式改變（`i` 等於碼點數時為追加、超過 255 的部分靜默丟棄）；要變長請用 `t.push(c char)` / `t.push-str(s)` / `t.push-txt(u)`，要就地改值請用 place-match `t[i]: { ok -> it = c }`；字節級讀取用 `t.byte(i)`（回傳 `?byte`，越界回傳 nil）；要按字節拼裝就直接攢 `[]byte`，再 `txt.from-bytes(b)` 一次拷入（超過 255 字節截斷，長度按實際字節數設定）。字節級寫入器 `txt._set-byte` 自 2026-11-11 起是 **std 私有**，用戶代碼不可調用。`str` 的 `s[i] = v` 已於 2026-11-11 **全域禁用**（編譯錯誤 `idxwrite`，`with-cap` 基底也不再豁免），`str` 側只剩 `s.fill(val byte)`、place-match `s[i]: { ok -> it = v }` 與增長用的 `s.push(c)` / `s.push-str(s)`
 - **列舉/Union**：`option` tagged enum（`ok t` / `nil` / `err str`）
 - **結構體**：必須多行定義，欄位不加逗號
 - **配列**：底層 linked-hash-map

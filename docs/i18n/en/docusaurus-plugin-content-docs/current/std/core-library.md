@@ -244,9 +244,9 @@ pos = t.index(sub txt)       ; Find substring
 ok = t.contains(sub txt)     ; Contains
 ok = t.starts-with(sub txt)  ; Prefix check
 ok = t.ends-with(sub txt)    ; Suffix check
-t.append(b byte)             ; Append a single byte
-t.append-str(s str)          ; Append str
-t.append-txt(t2 txt)         ; Append txt
+t.push(c char)              ; Append one code point (dropped entirely if it cannot fit the 255-byte cap)
+t.push-str(s str)            ; Append str (truncated by BYTE at 255)
+t.push-txt(t2 txt)           ; Append txt (truncated by BYTE at 255)
 out = t.reverse()            ; Reverse
 out = t.slice(start, end)    ; Slice [start, end)
 r = t.compare(b txt)         ; Lexicographic comparison (-1/0/1)

@@ -42,16 +42,16 @@ PEM 格式廣泛用於 X.509 憑證、RSA/ECDSA 金鑰等。
 
 ```no
 ; 結構體
-pem-block {
+block {
     label str
     data []byte
 }
 
 ; 編碼
-out = pem.pem-encode(label, data); 將原始位元組編碼為 PEM 字串
+out = pem.encode(label, data); 將原始位元組編碼為 PEM 字串
 
 ; 解碼
-result = pem.pem-decode(pem-str); 解析 PEM 字串（?pem-block，nil=解析失敗）
+result = pem.decode(pem-str); 解析 PEM 字串（?block，nil=解析失敗）
 ; 成功時可存取 result.label 和 result.data
 ```
 

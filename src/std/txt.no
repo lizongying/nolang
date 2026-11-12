@@ -13,9 +13,11 @@
 ;
 ; 索引語義（按碼點，與 str 的讀取行為對齊）：
 ;   - txt[i] 讀取：返回碼點索引 i 處的 char（UTF-8 解碼），越界返回 -1
-;   - txt[i] = v 寫入：把 v 作為碼點重新 UTF-8 編碼寫回，後移尾部字節；
-;     i == 碼點數時等價追加；總字節長超過 255 的部分丟棄
-;     （注意：str 的 s[i] = v 仍是字節級寫入，兩者在此有意分叉）
+;   - txt[i] = v 寫入：**已全域禁用**（checker 的 idxwrite，2026-11-12）。舊寫入會把
+;     v 重新 UTF-8 編碼後移動尾部字節，i == 碼點數時隱式追加、超出 255 的部分靜默丟棄
+;     —— 長度被寫入操作偷偷改變，正是這條禁令的理由。要改內容請用 place-match
+;     （`t[i]: { ok -> it = "x" }`，閘門返 nil 即自動跳過），要變長請用 .push(c) /
+;     .push-str(s) / .push-txt(t)（str 側的 s[i] = v 同樣禁用，兩側語義一致）
 ;   - 字節級原始讀寫用 .byte(i) / ._set-byte(i, b) 成對方法（緩衝區構建代碼專用）
 ;
 ; 用法（必須類型標注）：
@@ -47,8 +49,9 @@ txt.len = () (n i64) {
     n = .count()
 }
 
-; txt[i]: 按碼點索引讀取，返回 char（UTF-8 解碼，越界返回 -1）；
-; txt[i] = v 按碼點索引寫入（重新 UTF-8 編碼並移動尾部字節，超 255 字節部分丟棄）。
+; txt[i]: 按碼點索引讀取，返回 char（UTF-8 解碼，越界返回 -1）。
+; txt[i] = v 寫入**已全域禁用**（idxwrite，2026-11-12）：它會隱式改變長度（i 等於碼點數
+; 即追加、超 255 靜默丟棄）。改內容用 place-match，變長用 .push / .push-str / .push-txt。
 ; 字節級原始訪問請用 .byte(i) / ._set-byte(i, b)。
 ; build-in
 ; txt[i] = (i i64) (c byte) {
@@ -71,8 +74,9 @@ txt.byte = (i i64) (c ?byte) {
 ;
 ; txt._set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
 ; 🔒 私有（`_` 前綴，2026-11-11 由公開的 `set-byte` 收歸模組內）：跨模組呼叫會被
-; checker 以 raqvyltn 拒絕。與 str 不同，txt **沒有**禁用 `t[i] = v` —— 那是按碼點的
-; 重新編碼寫入，語意自洽；只有需要「逐位元組填緩衝」時才用本方法。
+; checker 以 raqvyltn 拒絕。與 str 一致，txt 的 `t[i] = v` 自 2026-11-12 起也被 idxwrite
+; 全域禁止（見檔頭）；本方法是唯一剩下的「逐位元組填緩衝」通道，專供 fill / from-str /
+; to-hex / join 這類「先填緩衝再設 len」的構建程式使用。
 ;
 ; b 宣告為 byte：表層實參若是 option（.byte(i)、hex-table[..] 等）由內建參數檢查直接
 ; 放過（funcargs.go 的 `?` 跳過）；若為純 i64/char（如 bv、hex-table[..] 的 char）則在
@@ -146,6 +150,7 @@ txt.empty = () (yes bool) {
 ; out: 等內容的 str（按實際位元組長度新建堆緩衝）
 ; [to-str](#txt.to-str)
 txt.to-str = () (out str) {
+
     ; 兩跳：txt → []byte（本模組內的逐位元組拷貝，用 txt._set-byte 合法）→ str
     ; （[]byte.to-bytes-str 是公開的 1:1 拷貝）。舊寫法直接往 str 上 _set-byte，
     ; 那是跨模組呼叫 str 的私有符號（8w3q93g2），2026-11-11 起一律拒絕。
@@ -177,6 +182,7 @@ txt.to-bytes = () (out []byte) {
 ; out: 每位元組轉兩個小寫十六進位字元的 str
 ; [to-hex](#txt.to-hex)
 txt.to-hex = () (out str) {
+
     ; 委派 []byte.to-hex（大寫，與原 hex-table 的 '0123456789ABCDEF' 一致）。
     ; 舊寫法 out._set-byte(i*2, hex-table[…]) 是跨模組呼叫 str 的私有符號
     ; （8w3q93g2），2026-11-11 起一律拒絕。
@@ -288,22 +294,39 @@ txt.ends-with = (sub txt) (yes bool) {
 ; 修改操作
 ...
 
-; 追加字節（不超出 255 限制）
-; b: 追加的位元組（超出 255 上限則忽略）
-; [append](#txt.append)
-txt.append = (b byte) {
+; 追加一個碼點（UTF-8 編碼；整字元裝不下 255 上限則整條忽略）
+; all-or-nothing：一個多字節碼點要嘛完整寫入，要嘛完全不寫 —— 這與舊的
+; `t[i] = v` 在 i == 碼點數時的行為一致，也避免把 UTF-8 序列從中間切斷
+; （那是 .push-str 的語義，兩者邊界行為不同）。
+; c: 追加的碼點
+; [push](#txt.push)
+txt.push = (c char) {
+    e txt = c.to-txt()
+    en i64 = e.len-bytes()
     n i64 = .len-bytes()
-    n >= 255 -> return
-    ._set-byte(n, b)
 
+    ; D1：`-` 的結果恆為 `?i64`，room 當普通整數用 → 兩段式解包（同 push-str）。
     #{overflow=wrap}
-    .len = n + 1
+    room = 255 - n: {
+        ok -> it
+
+        -> 0
+    }
+    en > room -> return
+    i <- [0..en): {
+
+        ._set-byte(n + i, e.byte(i))
+    }
+
+    .len = n + en
 }
 
-; 追加 str（不超出 255 限制）
+; 追加 str（位元組拷貝，不超出 255 限制；超過則**按位元組截斷**）
+; ⚠️ 截斷可能把一個多字節 UTF-8 序列從中間切斷；需要「整字元裝不下就丟棄」請用
+; .push(c char)。
 ; s: 追加的 str（超出 255 上限則截斷追加）
-; [append-str](#txt.append-str)
-txt.append-str = (s str) {
+; [push-str](#txt.push-str)
+txt.push-str = (s str) {
     sn i64 = s.len-bytes()
     n i64 = .len-bytes()
 
@@ -317,18 +340,16 @@ txt.append-str = (s str) {
     sn > remain -> sn = remain
     i <- [0..sn): {
 
-        #{overflow=wrap}
         ._set-byte(n + i, s.byte(i))
     }
 
-    #{overflow=wrap}
     .len = n + sn
 }
 
-; 追加 txt（不超出 255 限制）
+; 追加 txt（位元組拷貝，不超出 255 限制；超過則按位元組截斷）
 ; t: 追加的 txt（超出 255 上限則截斷追加）
-; [append-txt](#txt.append-txt)
-txt.append-txt = (t txt) {
+; [push-txt](#txt.push-txt)
+txt.push-txt = (t txt) {
     tn = t.len-bytes()
     n i64 = .len-bytes()
 
@@ -337,11 +358,9 @@ txt.append-txt = (t txt) {
     tn > remain -> tn = remain
     i <- [0..tn): {
 
-        #{overflow=wrap}
         ._set-byte(n + i, t.byte(i))
     }
 
-    #{overflow=wrap}
     .len = n + tn
 }
 
@@ -585,7 +604,6 @@ txt.trim = () (val txt) {
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -600,7 +618,6 @@ txt.trim = () (val txt) {
         c = .byte(end)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -663,7 +680,6 @@ txt.trim-char = (ch char) (val txt) {
         }
         cp != ch -> break
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -707,7 +723,6 @@ txt.trim-char = (ch char) (val txt) {
             }
         }
 
-        #{overflow=wrap}
         cp != ch -> {
             {
 
@@ -721,7 +736,6 @@ txt.trim-char = (ch char) (val txt) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -766,7 +780,6 @@ txt.repeat = (times i64) (val txt) {
             pos < cap -> {
                 val._set-byte(pos, .byte(j))
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -796,7 +809,6 @@ txt.count = () (cnt i64) {
     (i < n) {
         b = .byte(i)
 
-        #{overflow=wrap}
         {
             b < 0x80 -> {
                 {
@@ -843,7 +855,6 @@ txt.count = () (cnt i64) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -918,7 +929,6 @@ txt.rindex = (target txt) (pos i64) {
     limit = n - m
     i <- [0..n]: {
 
-        #{overflow=wrap}
         i <= limit -> {
             ok = 1
             k = 0
@@ -927,6 +937,7 @@ txt.rindex = (target txt) (pos i64) {
                 #{overflow=wrap}
                 c = .byte(i + k) - target.byte(k)
                 c != 0 -> ok = 0
+                #{overflow=wrap}
                 k == m - 1 -> ok == 1 -> pos = i
                 {
                     k-opt2 = k + 1
@@ -1015,7 +1026,6 @@ txt.to-i8 = () (val ?i8) {
         ok -> {
             n = it
 
-            #{overflow=wrap}
             {
                 n >= 0 - 128 && n <= 127 -> val = n
 
@@ -1038,7 +1048,6 @@ txt.to-i16 = () (val ?i16) {
         ok -> {
             n = it
 
-            #{overflow=wrap}
             {
                 n >= 0 - 32768 && n <= 32767 -> val = n
 
@@ -1061,7 +1070,6 @@ txt.to-i32 = () (val ?i32) {
         ok -> {
             n = it
 
-            #{overflow=wrap}
             {
                 n >= 0 - 2147483648 && n <= 2147483647 -> val = n
 
@@ -1387,7 +1395,6 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
             }
         }
 
-        #{overflow=wrap}
         {
             cp == old-ch -> {
 
@@ -1465,7 +1472,6 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1508,13 +1514,11 @@ txt.replace-str = (old txt, new txt) (val txt) {
                 break
             }
 
-            #{overflow=wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = 0
                 break
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1530,7 +1534,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
             match -> {
                 k <- [0..new-len): {
 
-                    #{overflow=wrap}
                     pos < cap -> {
                         val._set-byte(pos, new.byte(k))
                         {
@@ -1550,7 +1553,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
             -> {
 
-                #{overflow=wrap}
                 pos < cap -> {
                     val._set-byte(pos, .byte(i))
                     {
@@ -1563,7 +1565,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
                     }
                 }
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -1609,7 +1610,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
     total = 0
     i <- [0..np): {
 
-        #{overflow=wrap}
         i > 0 -> {
 
             ; ⚠️ 原本寫成 `i <= repl -> total = total + new.len() -> total = total + old.len()`。
@@ -1642,7 +1642,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
     pos = 0
     i <- [0..np): {
 
-        #{overflow=wrap}
         i > 0 -> {
             sep = new
             i > repl -> sep = old
@@ -1671,7 +1670,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
         }
         j <- [0..s.len-bytes()): {
 
-            #{overflow=wrap}
             pos < cap -> {
                 val._set-byte(pos, s.byte(j))
                 {
@@ -1746,7 +1744,6 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
         #{overflow=wrap}
         start = pos + sep.len-bytes()
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1845,7 +1842,6 @@ txt.lines = () (out []txt) {
     (i < n) {
         c = .byte(i)
 
-        #{overflow=wrap}
         c == 10 -> {
             end = i
             i > start -> {
@@ -1874,7 +1870,6 @@ txt.lines = () (out []txt) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1902,7 +1897,6 @@ txt-hex-val = (c i64) (v i64) {
     {
         c >= 48 && c <= 57 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1918,7 +1912,6 @@ txt-hex-val = (c i64) (v i64) {
 
         c >= 65 && c <= 70 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1934,7 +1927,6 @@ txt-hex-val = (c i64) (v i64) {
 
         c >= 97 && c <= 102 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1998,7 +1990,6 @@ _txt-dig-val = (c i64) (d i64) {
     {
         c >= 48 && c <= 57 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -2014,7 +2005,6 @@ _txt-dig-val = (c i64) (d i64) {
 
         c >= 65 && c <= 70 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -2030,7 +2020,6 @@ _txt-dig-val = (c i64) (d i64) {
 
         c >= 97 && c <= 102 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -2131,8 +2120,10 @@ txt.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
+        #{overflow=wrap}
         acc = acc * radix
 
+        #{overflow=wrap}
         acc = acc + d
         started = 1
 

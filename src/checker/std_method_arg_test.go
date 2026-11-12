@@ -218,7 +218,7 @@ print(v.len())
 // the argument at the receiver's element stride (emitBuiltinVecPush /
 // elemTypeOfReceiver, pinned by tests/push-narrow.no), so pushing an i64
 // into a []byte truncates to one byte by design. src/std depends on it —
-// zip-writer.put takes `b i64` and pushes it into a []byte — so integer-vs-
+// writer.put takes `b i64` and pushes it into a []byte — so integer-vs-
 // integer must never be reported. Only a mismatch of KIND is (see
 // TestStdMethodArgBuiltinPushElementDerived).
 func TestStdMethodArgPushIntegerStrideAllowed(t *testing.T) {

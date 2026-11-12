@@ -3207,6 +3207,7 @@ fe-tobytes = (s [32]byte, h []i64) {
     q = num-floor(num-add(h8, q), 26)
     q = num-floor(num-add(h9, q), 25)
 
+    #{overflow=wrap}
     h0 = num-add(h0, 19 * q)
 
     ; ---- 逐級進位，把每個 limb 規約到 [0, 2^bits) ----
@@ -3619,7 +3620,6 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         fe-add(z2, z2, a)
 
         ; 結束 Montgomery ladder step
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -3841,7 +3841,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
         fe-mul(z2, e, aa)
         fe-add(z2, z2, a)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

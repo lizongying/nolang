@@ -1,0 +1,594 @@
+; std-quic.no — net/quic 模組測試
+;
+; 執行：no test test/std/quic.no
+;
+; 為什麼能測 14 個符號中的 11 個：
+;   QUIC 的**編解碼層全是純函式**（不碰 socket），照 RFC 9000 §16 / §17.1 /
+;   RFC 9001 §5.4 的定義直接餵位元組就能斷言：
+;     varint-encode / varint-decode —— 1/2/4/8 位元組四個分界與往返；
+;     parse-frames                  —— 手寫 frame 位元組流；
+;     gen-cid                       —— 長度與隨機性；
+;     derive-initial-keys           —— 確定性 + client/server 角色差異；
+;     apply/remove-header-protection—— XOR 對稱，apply 後 remove 必須還原；
+;     decode-packet-number          —— pn-len 1/2/3/4 四種前綴。
+;   `conn` 是公開結構體 ⇒ init / close 白盒；`dial` 走 UDP，對任意本機埠都會成功，
+;   因此測「回 ok + fd >= 0 + close 後歸 -1」。
+;
+;   未覆蓋（需要真 QUIC 握手，本檔造不出來）：
+;     conn.build-initial-packet / conn.recv-initial / conn.recv-raw
+;
+; 寫法備註：
+;   - `varint-encode` 的 buf 是**輸出參數**，必須先備好夠長的緩衝再綁定：
+;     `ibuf []byte = with-len(8)` → `iout []byte = ibuf` → `iout, n = quic.varint-encode(v)`。
+;     直接留空會被當成新建空 vec，寫 `buf[0]` 就無處可寫。
+;   - `[32]frame` 這類定長陣列**不要**寫型別標註（`fr [32]quic.frame` 會被 parser 判
+;     `expected assignment operator`）；讓輸出參數自己推出型別即可。
+;   - `apply-header-protection` 就地改封包，必須先複製一份原值才能驗「改了」與「還原了」。
+;   - 底下 `at()` 的下標**一律先落變數**：`at(buf, 0)` 這種「純函式 + 全字面量實參」
+;     會被 comptime 折疊，而折疊器對 `[]byte` 下標讀取會落到失敗臂（實測回 -1），
+;     斷言於是恆等假綠 —— 見 test/README.md §5.2 #105。
+
+# /test/runner
+
+; 讀 []byte 的第 i 個位元組（裸下標回 ?T，當普通值用會報 idxbruse）
+at = (b []byte, i i64) (v i64) {
+    v = -1
+    b[i]: {
+        ok -> v = it
+
+        -> _
+    }
+}
+
+; ── varint 編解碼（RFC 9000 §16）────────────────────────
+
+; 把 v 編碼後回傳 (實際位元組數, 首位元組, 末位元組)
+enc-of = (v i64) (n i64, b0 i64, blast i64) {
+    ibuf []byte = with-len(8)
+    iout = ibuf
+    n = 0
+    iout, n = quic.varint-encode(v)
+    b0 = at(iout, 0)
+    blast = at(iout, n - 1)
+}
+
+t-varint-encode = () {
+
+    ; 1 位元組：0..63，高位為 00
+    n0 = 0
+    a0 = 0
+    z0 = 0
+    n0, a0, z0 = enc-of(0)
+    runner.eq(n0, 1, 'varint-encode: 0 ⇒ 1 位元組')
+    runner.eq(a0, 0x00, 'varint-encode: 0 ⇒ 0x00')
+
+    n1 = 0
+    a1 = 0
+    z1 = 0
+    n1, a1, z1 = enc-of(1)
+    runner.eq(n1, 1, 'varint-encode: 1 ⇒ 1 位元組')
+    runner.eq(a1, 0x01, 'varint-encode: 1 ⇒ 0x01')
+
+    n63 = 0
+    a63 = 0
+    z63 = 0
+    n63, a63, z63 = enc-of(63)
+    runner.eq(n63, 1, 'varint-encode: 63 ⇒ 1 位元組（1 位元組上界）')
+    runner.eq(a63, 0x3f, 'varint-encode: 63 ⇒ 0x3f')
+
+    ; 2 位元組：64..16383，首 byte 高位 01
+    n64 = 0
+    a64 = 0
+    z64 = 0
+    n64, a64, z64 = enc-of(64)
+    runner.eq(n64, 2, 'varint-encode: 64 ⇒ 2 位元組（跨界）')
+    runner.eq(a64, 0x40, 'varint-encode: 64 ⇒ 首 byte 0x40')
+    runner.eq(z64, 0x40, 'varint-encode: 64 ⇒ 末 byte 0x40')
+
+    n16383 = 0
+    a16383 = 0
+    z16383 = 0
+    n16383, a16383, z16383 = enc-of(16383)
+    runner.eq(n16383, 2, 'varint-encode: 16383 ⇒ 2 位元組（上界）')
+    runner.eq(a16383, 0x7f, 'varint-encode: 16383 ⇒ 首 byte 0x7f')
+    runner.eq(z16383, 0xff, 'varint-encode: 16383 ⇒ 末 byte 0xff')
+
+    ; 4 位元組：16384..1073741823，首 byte 高位 10
+    n16384 = 0
+    a16384 = 0
+    z16384 = 0
+    n16384, a16384, z16384 = enc-of(16384)
+    runner.eq(n16384, 4, 'varint-encode: 16384 ⇒ 4 位元組（跨界）')
+    runner.eq(a16384, 0x80, 'varint-encode: 16384 ⇒ 首 byte 0x80')
+    runner.eq(z16384, 0x00, 'varint-encode: 16384 ⇒ 末 byte 0x00')
+
+    nmax4 = 0
+    amax4 = 0
+    zmax4 = 0
+    nmax4, amax4, zmax4 = enc-of(1073741823)
+    runner.eq(nmax4, 4, 'varint-encode: 2^30-1 ⇒ 4 位元組（上界）')
+    runner.eq(amax4, 0xbf, 'varint-encode: 2^30-1 ⇒ 首 byte 0xbf')
+    runner.eq(zmax4, 0xff, 'varint-encode: 2^30-1 ⇒ 末 byte 0xff')
+
+    ; 8 位元組：1073741824 以上，首 byte 高位 11
+    n8 = 0
+    a8 = 0
+    z8 = 0
+    n8, a8, z8 = enc-of(1073741824)
+    runner.eq(n8, 8, 'varint-encode: 2^30 ⇒ 8 位元組（跨界）')
+    runner.eq(a8, 0xc0, 'varint-encode: 2^30 ⇒ 首 byte 0xc0')
+    runner.eq(z8, 0x00, 'varint-encode: 2^30 ⇒ 末 byte 0x00')
+}
+
+; 編碼 → 解碼必須回到原值，且 next-pos 等於編碼長度
+roundtrip = (v i64, tag str) {
+    ibuf []byte = with-len(8)
+    iout = ibuf
+    n = 0
+    iout, n = quic.varint-encode(v)
+    dval = 0
+    dpos = 0
+    dval, dpos = quic.varint-decode(iout, 0)
+    runner.eq(dval, v, tag - ': 解碼回原值')
+    runner.eq(dpos, n, tag - ': next-pos = 編碼長度')
+}
+
+t-varint-roundtrip = () {
+    roundtrip(0, 'roundtrip 0')
+    roundtrip(1, 'roundtrip 1')
+    roundtrip(63, 'roundtrip 63')
+    roundtrip(64, 'roundtrip 64')
+    roundtrip(16383, 'roundtrip 16383')
+    roundtrip(16384, 'roundtrip 16384')
+    roundtrip(1073741823, 'roundtrip 2^30-1')
+    roundtrip(1073741824, 'roundtrip 2^30')
+}
+
+; 錯誤臂：pos 越界 ⇒ next-pos = -1
+t-varint-decode-err = () {
+    b []byte = [0x00]
+    v1 = -9
+    p1 = 0
+    v1, p1 = quic.varint-decode(b, 1)
+    runner.eq(p1, -1, 'varint-decode: pos = len ⇒ next-pos = -1')
+
+    v2 = -9
+    p2 = 0
+    v2, p2 = quic.varint-decode(b, 99)
+    runner.eq(p2, -1, 'varint-decode: pos 遠超 len ⇒ next-pos = -1')
+
+    ; 空緩衝
+    eb []byte = with-len(0)
+    v3 = -9
+    p3 = 0
+    v3, p3 = quic.varint-decode(eb, 0)
+    runner.eq(p3, -1, 'varint-decode: 空緩衝 ⇒ next-pos = -1')
+
+    ; 2 位元組前綴但只有 1 位元組資料 ⇒ 也必須是錯誤
+    cut []byte = [0x40]
+    v4 = -9
+    p4 = 0
+    v4, p4 = quic.varint-decode(cut, 0)
+    runner.eq(p4, -1, 'varint-decode: 前綴要求 2 位元組但資料不足 ⇒ next-pos = -1')
+}
+
+; ── gen-cid ──────────────────────────────────────────────
+
+t-gen-cid = () {
+    c8 = quic.gen-cid(8)
+    runner.eq(c8.len(), 8, 'gen-cid: len = 8')
+    c20 = quic.gen-cid(20)
+    runner.eq(c20.len(), 20, 'gen-cid: len = 20（QUIC-MAX-CID-LEN）')
+    c0 = quic.gen-cid(0)
+    runner.eq(c0.len(), 0, 'gen-cid: len = 0 ⇒ 空')
+
+    nz = 0
+    i <- [0..20): {
+        at(c20, i) != 0 -> nz = 1
+    }
+    runner.eq(nz, 1, 'gen-cid: 20 位元組不全為 0（種子非零）')
+
+    ; 兩次生成必須不同 —— 但**必須間隔 > 1µs**：gen-cid 的種子是
+    ; `time.now-ns() ^ os.get-pid()`，而 now-ns 在 macOS 上的實測解析度是 1µs
+    ; （2000 次連呼只跨 32µs、只得 33 個不同值），同一微秒內連呼兩次會拿到
+    ; **完全相同**的 CID。這是真缺陷（同一條時間軸上開兩條連線會撞 CID），
+    ; 已記於 test/README.md §5.2 #104，此處只釘住「換了微秒就換 CID」的現狀。
+    sleep-us(2000)
+    a = quic.gen-cid(8)
+    sleep-us(2000)
+    b = quic.gen-cid(8)
+    diff = 0
+    i <- [0..8): {
+        at(a, i) != at(b, i) -> diff = 1
+    }
+    runner.eq(diff, 1, 'gen-cid: 間隔 >1µs 的兩次生成內容不同')
+}
+
+; ── parse-frames ─────────────────────────────────────────
+
+t-parse-frames = () {
+
+    ; PADDING(0x00) 與 PING(0x01) 都是無載荷 frame，各佔 1 位元組
+    fb []byte = [0x00, 0x01]
+    cnt = 0
+    fr, cnt = quic.parse-frames(fb, 0, 2)
+    runner.eq(cnt, 2, 'parse-frames: 兩個 1 位元組 frame ⇒ count = 2')
+    runner.eq(fr[0].frame-type, 0, 'parse-frames: 第一個是 PADDING(0)')
+    runner.eq(fr[1].frame-type, 1, 'parse-frames: 第二個是 PING(1)')
+
+    ; 只解析前 1 位元組 ⇒ 只看到一個 frame
+    cnt1 = 0
+    fr1, cnt1 = quic.parse-frames(fb, 0, 1)
+    runner.eq(cnt1, 1, 'parse-frames: end = 1 ⇒ count = 1')
+
+    ; pos = end ⇒ 一個都不解析
+    cnt0 = 0
+    fr0, cnt0 = quic.parse-frames(fb, 2, 2)
+    runner.eq(cnt0, 0, 'parse-frames: pos = end ⇒ count = 0')
+
+    ; 錯誤臂：end 超出緩衝 ⇒ varint-decode 失敗 ⇒ count = -1
+    cnt-bad = 0
+    fr-bad, cnt-bad = quic.parse-frames(fb, 0, 9)
+    runner.eq(cnt-bad, -1, 'parse-frames: end 超出緩衝 ⇒ count = -1')
+}
+
+; ── derive-initial-keys（RFC 9001 §5.2）─────────────────
+
+t-derive-initial-keys = () {
+    cid []byte = [1, 2, 3, 4, 5, 6, 7, 8]
+
+    k1 [16]byte
+    iv1 [12]byte
+    hp1 [16]byte
+    k1, iv1, hp1 = quic.derive-initial-keys(cid, true)
+
+    ; 確定性：同輸入必得同輸出（HKDF 純函式）
+    k2 [16]byte
+    iv2 [12]byte
+    hp2 [16]byte
+    k2, iv2, hp2 = quic.derive-initial-keys(cid, true)
+
+    same = 1
+    i <- [0..16): {
+        at(k1, i) != at(k2, i) -> same = 0
+    }
+    runner.eq(same, 1, 'derive-initial-keys: 同輸入 ⇒ key 完全相同')
+
+    same-iv = 1
+    i <- [0..12): {
+        at(iv1, i) != at(iv2, i) -> same-iv = 0
+    }
+    runner.eq(same-iv, 1, 'derive-initial-keys: 同輸入 ⇒ iv 完全相同')
+
+    same-hp = 1
+    i <- [0..16): {
+        at(hp1, i) != at(hp2, i) -> same-hp = 0
+    }
+    runner.eq(same-hp, 1, 'derive-initial-keys: 同輸入 ⇒ hp 完全相同')
+
+    ; client / server 角色必須派生不同金鑰
+    k3 [16]byte
+    iv3 [12]byte
+    hp3 [16]byte
+    k3, iv3, hp3 = quic.derive-initial-keys(cid, false)
+
+    differs = 0
+    i <- [0..16): {
+        at(k1, i) != at(k3, i) -> differs = 1
+    }
+    runner.eq(differs, 1, 'derive-initial-keys: client 與 server 的 key 不同')
+
+    ; 不同 CID 也必須不同
+    cid2 []byte = [9, 9, 9, 9, 9, 9, 9, 9]
+    k4 [16]byte
+    iv4 [12]byte
+    hp4 [16]byte
+    k4, iv4, hp4 = quic.derive-initial-keys(cid2, true)
+
+    differs2 = 0
+    i <- [0..16): {
+        at(k1, i) != at(k4, i) -> differs2 = 1
+    }
+    runner.eq(differs2, 1, 'derive-initial-keys: 不同 CID ⇒ key 不同')
+}
+
+; ── header protection：XOR 對稱 + 只遮「封包第一位元組」的低 4/5 位 ──
+;
+; 斷言只依賴「遮了哪幾個位」而不硬編碼 AES 輸出：測試端自己用同一個 hp
+; 對同一個 16 位元組取樣再算一次 mask，期望值由 mask 現算。
+;
+; 2026-11-12 修：原實作的 apply/remove 遮的是 `packet[pn-offset]`（封包號碼的
+; 最高位元組），真正的第一位元組從未被遮 —— 與 RFC 9001 §5.4.1
+; 「the least significant bits of the first byte of the packet」相反。
+; 修好之後本段才有「第一位元組被遮、pn 位元組被遮、中間位元組不動」三件事可分開驗。
+
+t-header-protection = () {
+
+    ; len >= pn-offset + 4 + 16（取樣從 pn-offset+4 起 16 位元組）⇒ 24 位元組剛好。
+    ; ⚠️ 全部用**字面量**初始化，不能用 `buf[i] = v` 循环填：`[]byte` / `[16]byte`
+    ; 的下标写一律要求显式消费（idxwrite / jib2tpel），而 `?=` 又只能在带
+    ; option 结果参数的函数里用 —— 测试函数 `t-*` 没有结果参数，所以只能字面量。
+    ;
+    ; 第一位元組取 0xff：低 4 位 / 低 5 位遮罩的結果才會不同（長短標頭可分辨）。
+    orig []byte = [
+        0xff, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23,
+    ]
+    pl []byte = [
+        0xff, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23,
+    ]
+    ps []byte = [
+        0xff, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23,
+    ]
+
+    ; hp = 0x55 * 16 ⇒ AES 出來的 mask[0] = 0xfa（低 4 位 10、低 5 位 26）
+    hp [16]byte = [
+        0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+        0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+    ]
+    sample [16]byte = [
+        8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23,
+    ]
+    mk []byte = aes.enc-128(sample, hp)
+
+    ; ⚠️ 下標一律走變數：`at(mk, 0)` 這種「純函式 + 全字面量實參」會被 comptime
+    ; 折疊，而折疊器對 []byte 的下標讀取會落到失敗臂（實測回 -1）— §5.2 #105。
+    k0 = 0
+    k1 = 1
+    k2 = 2
+    k3 = 3
+    k4 = 4
+    k5 = 5
+    k6 = 6
+    k7 = 7
+    m0 = at(mk, k0)
+
+    quic.apply-header-protection(pl, k4, hp, true)
+
+    ; 第一位元組：只動低 4 位（長標頭），高 4 位原樣
+    runner.eq(at(pl, k0), 0xff ^ (m0 & 0x0f), 'apply-header-protection: 第一位元組只遮低 4 位（長標頭）')
+    runner.eq(at(pl, k0) & 0xf0, 0xf0, 'apply-header-protection: 第一位元組高 4 位不動')
+
+    ; 第一位元組與 pn 之間（version / CID / length …）不參與遮罩
+    i <- [1..4): {
+        runner.eq(at(pl, i), at(orig, i), 'apply-header-protection: 第一位元組與 pn 之間的位元組不動')
+    }
+
+    ; pn 四個位元組 = 原值 XOR mask[1..4]（mask[0] 不參與 pn）
+    runner.eq(at(pl, k4), at(orig, k4) ^ at(mk, k1), 'apply-header-protection: pn[0] XOR mask[1]')
+    runner.eq(at(pl, k5), at(orig, k5) ^ at(mk, k2), 'apply-header-protection: pn[1] XOR mask[2]')
+    runner.eq(at(pl, k6), at(orig, k6) ^ at(mk, k3), 'apply-header-protection: pn[2] XOR mask[3]')
+    runner.eq(at(pl, k7), at(orig, k7) ^ at(mk, k4), 'apply-header-protection: pn[3] XOR mask[4]')
+
+    ; 取樣區自身不被遮罩
+    i <- [8..24): {
+        runner.eq(at(pl, i), at(orig, i), 'apply-header-protection: 取樣區不被遮罩')
+    }
+
+    quic.remove-header-protection(pl, k4, hp, true)
+    restored = 1
+    i <- [0..24): {
+        at(pl, i) != at(orig, i) -> restored = 0
+    }
+    runner.eq(restored, 1, 'remove-header-protection: 再套一次即還原（XOR 對稱）')
+
+    ; 短標頭（低 5 位）也要能往返，且遮罩寬度不同 ⇒ 第一位元組結果不同
+    quic.apply-header-protection(ps, k4, hp, false)
+    runner.eq(at(ps, k0), 0xff ^ (m0 & 0x1f), 'apply-header-protection: 第一位元組遮低 5 位（短標頭）')
+    runner.eq(at(ps, k0) & 0xe0, 0xe0, 'apply-header-protection: 短標頭高 3 位不動')
+    runner.ne(at(ps, k0), at(pl, k0), 'apply-header-protection: 短標頭遮罩寬度與長標頭不同')
+
+    quic.remove-header-protection(ps, k4, hp, false)
+    restored2 = 1
+    i <- [0..24): {
+        at(ps, i) != at(orig, i) -> restored2 = 0
+    }
+    runner.eq(restored2, 1, '短標頭: 往返還原')
+
+    ; 太短的封包必須安全返回（不越界、不崩）
+    short []byte = with-len(4)
+    quic.apply-header-protection(short, k4, hp, true)
+    quic.remove-header-protection(short, k0, hp, true)
+    runner.eq(short.len(), 4, 'apply-header-protection: 封包過短時原樣返回')
+}
+
+; ── decode-packet-number（RFC 9000 §17.1 / 附錄 A.3）──────
+;
+; 佈局照真實 Long Header 擺：第一位元組 + version(4) + DCID len(1) + DCID(8)
+; + SCID len(1) + … ⇒ **pn-offset = 10**，pn 欄位在 10..13。
+; 這是本段的關鍵：長度位在封包第一位元組上，不在 pn-offset 處。原實作讀
+; `packet[pn-offset] & 3`，把 pn 的最高位元組當長度位（pn-offset = 0 時
+; 兩者重合所以看不出來），2026-11-12 修。
+;
+; 併修同一函式的另外兩處：
+;   - 重建遮罩少一位（0x7f/0x3fff/… → 0xff/0xffff/…），高位為 1 的截斷號碼
+;     會被削掉一半；
+;   - pn_win 同樣少一位（128/32768/… → 256/65536/…，A.3 是 1 << (8*pn_len)）；
+;   - 資料不足時先賦 pn-len 再 return，留下 1..4 的「假成功」⇒ 改為保持 0。
+
+t-decode-pn = () {
+    k10 = 10
+    lz = 0
+    p1 = 0
+    l1 = 0
+    p2 = 0
+    l2 = 0
+    p3 = 0
+    l3 = 0
+    p4 = 0
+    l4 = 0
+
+    ; pn-len 1（低 2 位 00），pn = 7
+    b1 []byte = [
+        0x40, 0, 0, 0, 1, 8, 1, 2,
+        3, 4, 7, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    p1, l1 = quic.decode-packet-number(b1, k10, lz)
+    runner.eq(l1, 1, 'decode-packet-number: 低 2 位 00 ⇒ pn-len 1')
+    runner.eq(p1, 7, 'decode-packet-number: pn-len 1 值 = 7')
+
+    ; pn-len 2（01），pn = 0x0102
+    b2 []byte = [
+        0x41, 0, 0, 0, 1, 8, 1, 2,
+        3, 4, 1, 2, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    p2, l2 = quic.decode-packet-number(b2, k10, lz)
+    runner.eq(l2, 2, 'decode-packet-number: 低 2 位 01 ⇒ pn-len 2')
+    runner.eq(p2, 258, 'decode-packet-number: pn-len 2 值 = 0x0102')
+
+    ; pn-len 3（10），pn = 0x010203
+    b3 []byte = [
+        0x42, 0, 0, 0, 1, 8, 1, 2,
+        3, 4, 1, 2, 3, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    p3, l3 = quic.decode-packet-number(b3, k10, lz)
+    runner.eq(l3, 3, 'decode-packet-number: 低 2 位 10 ⇒ pn-len 3')
+    runner.eq(p3, 66051, 'decode-packet-number: pn-len 3 值 = 0x010203')
+
+    ; pn-len 4（11），pn = 9
+    b4 []byte = [
+        0x43, 0, 0, 0, 1, 8, 1, 2,
+        3, 4, 0, 0, 0, 9, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    p4, l4 = quic.decode-packet-number(b4, k10, lz)
+    runner.eq(l4, 4, 'decode-packet-number: 低 2 位 11 ⇒ pn-len 4')
+    runner.eq(p4, 9, 'decode-packet-number: pn-len 4 值 = 9')
+
+    ; 截斷號碼最高位為 1：pn-len 1 的 pn 欄位是**完整 8 位**，0xff 必須解成 255
+    ; （舊遮罩 0x7f 會解成 127）
+    bh []byte = [
+        0x40, 0, 0, 0, 1, 8, 1, 2,
+        3, 4, 0xff, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    ph = 0
+    lh = 0
+    ph, lh = quic.decode-packet-number(bh, k10, lz)
+    runner.eq(lh, 1, 'decode-packet-number: 0xff 的長度位仍是 1')
+    runner.eq(ph, 255, 'decode-packet-number: 高位置位不被遮罩削掉（0xff ⇒ 255）')
+
+    ; 窗口回退：expected = largest+1 = 261，截斷值 0xf0 ⇒ 496 > 261+128 ⇒ 減 256
+    bw []byte = [
+        0x40, 0, 0, 0, 1, 8, 1, 2,
+        3, 4, 0xf0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    l260 = 260
+    pw = 0
+    lw = 0
+    pw, lw = quic.decode-packet-number(bw, k10, l260)
+    runner.eq(lw, 1, 'decode-packet-number: 窗口回退案例的 pn-len')
+    runner.eq(pw, 240, 'decode-packet-number: 窗口回退（largest=260, 0xf0 ⇒ 240）')
+
+    ; 跨 2^16：largest = 65535，pn-len 2，截斷值 2 ⇒ 0x10000 + 2
+    bx []byte = [
+        0x41, 0, 0, 0, 1, 8, 1, 2,
+        3, 4, 0, 2, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    l65535 = 65535
+    px = 0
+    lx = 0
+    px, lx = quic.decode-packet-number(bx, k10, l65535)
+    runner.eq(lx, 2, 'decode-packet-number: 跨 2^16 案例的 pn-len')
+    runner.eq(px, 65538, 'decode-packet-number: 跨 2^16（largest=65535, 0x0002 ⇒ 65538）')
+
+    ; 越界臂：pn-offset >= len ⇒ (0, 0)
+    empty []byte = with-len(0)
+    p5 = -9
+    l5 = -9
+    p5, l5 = quic.decode-packet-number(empty, lz, lz)
+    runner.eq(l5, 0, 'decode-packet-number: 空封包 ⇒ pn-len 0')
+    runner.eq(p5, 0, 'decode-packet-number: 空封包 ⇒ pn 0')
+
+    ; 前綴宣稱 4 位元組但資料不足 ⇒ 失敗訊號必須是 (0, 0)
+    cut []byte = [0x43, 0]
+    p6 = -9
+    l6 = -9
+    p6, l6 = quic.decode-packet-number(cut, lz, lz)
+    runner.eq(l6, 0, 'decode-packet-number: 資料不足 ⇒ pn-len 0（不留下假成功）')
+    runner.eq(p6, 0, 'decode-packet-number: 資料不足 ⇒ pn 0')
+}
+
+; ── conn 白盒 ────────────────────────────────────────────
+
+t-conn-init = () {
+    c = quic.conn{}
+    c.init()
+
+    runner.eq(c.fd, -1, 'conn.init: fd = -1')
+    runner.eq(c.state, 0, 'conn.init: state = QUIC-STATE-NEW(0)')
+    runner.is-false(c.connected, 'conn.init: connected = false')
+    runner.eq(c.initial-pn, 0, 'conn.init: initial-pn = 0')
+    runner.eq(c.handshake-pn, 0, 'conn.init: handshake-pn = 0')
+    runner.eq(c.app-pn, 0, 'conn.init: app-pn = 0')
+    runner.eq(c.largest-initial-pn, -1, 'conn.init: largest-initial-pn = -1')
+    runner.eq(c.largest-handshake-pn, -1, 'conn.init: largest-handshake-pn = -1')
+    runner.eq(c.largest-app-pn, -1, 'conn.init: largest-app-pn = -1')
+    runner.eq(c.hs-buf-len, 0, 'conn.init: hs-buf-len = 0')
+}
+
+t-conn-close = () {
+    c = quic.conn{}
+    c.init()
+    c.connected = true
+
+    c.close()
+    runner.eq(c.fd, -1, 'conn.close: 未開啟時 fd 仍 -1（冪等）')
+    runner.is-false(c.connected, 'conn.close: connected 歸 false')
+
+    ; 再關一次也不能出問題
+    c.close()
+    runner.eq(c.fd, -1, 'conn.close: 重複呼叫仍 -1')
+}
+
+; ── dial（UDP，本機任意埠都會成功）─────────────────────
+
+t-dial = () {
+    o = quic.dial('127.0.0.1', 39341)
+    got = 0
+    o: {
+        ok -> {
+            c = it
+            got = 1
+            runner.eq(c.fd >= 0, 1, 'quic.dial: 回 ok 且 fd >= 0')
+            c.close()
+            runner.eq(c.fd, -1, 'quic.dial: 回傳的 conn 可正常關閉')
+        }
+
+        -> got = -1
+    }
+    runner.eq(got, 1, 'quic.dial: UDP 到本機埠 ⇒ 回 ok')
+}
+
+; ── 執行 ──────────────────────────────────────────────────
+
+p1, f1 = runner.test('quic.varint-encode', t-varint-encode)
+p2, f2 = runner.test('quic.varint-roundtrip', t-varint-roundtrip)
+p3, f3 = runner.test('quic.varint-decode-err', t-varint-decode-err)
+p4, f4 = runner.test('quic.gen-cid', t-gen-cid)
+p5, f5 = runner.test('quic.parse-frames', t-parse-frames)
+p6, f6 = runner.test('quic.derive-initial-keys', t-derive-initial-keys)
+p7, f7 = runner.test('quic.header-protection', t-header-protection)
+p8, f8 = runner.test('quic.decode-pn', t-decode-pn)
+p9, f9 = runner.test('quic.conn-init', t-conn-init)
+p10, f10 = runner.test('quic.conn-close', t-conn-close)
+p11, f11 = runner.test('quic.dial', t-dial)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

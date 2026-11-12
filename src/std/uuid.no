@@ -44,22 +44,23 @@ new-v4 = (state i64) (out uuid) {
 
         out.bytes[i] = r & 255
 
-        #{overflow=wrap}
         {
             i + 1 < 16 -> {
+                #{overflow=wrap}
                 out.bytes[i + 1] = (r >> 8) & 255
             }
 
             i + 2 < 16 -> {
+                #{overflow=wrap}
                 out.bytes[i + 2] = (r >> 16) & 255
             }
 
             i + 3 < 16 -> {
+                #{overflow=wrap}
                 out.bytes[i + 3] = (r >> 24) & 255
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -105,7 +106,11 @@ uuid.to-str = () (out str) {
         hex-byte(b, 6, out)
 
         ; 連字號
-        out[8] = 45
+        out[8]: {
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[4]
         hex-byte(b, 9, out)
@@ -114,7 +119,11 @@ uuid.to-str = () (out str) {
         hex-byte(b, 11, out)
 
         ; 連字號
-        out[13] = 45
+        out[13]: {
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[6]
         hex-byte(b, 14, out)
@@ -123,7 +132,11 @@ uuid.to-str = () (out str) {
         hex-byte(b, 16, out)
 
         ; 連字號
-        out[18] = 45
+        out[18]: {
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[8]
         hex-byte(b, 19, out)
@@ -132,7 +145,11 @@ uuid.to-str = () (out str) {
         hex-byte(b, 21, out)
 
         ; 連字號
-        out[23] = 45
+        out[23]: {
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[10]
         hex-byte(b, 24, out)
@@ -198,7 +215,12 @@ uuid.to-str-upper = () (out str) {
         b ?= .bytes[3]
         hex-byte-upper(b, 6, out, hex-u)
 
-        out[8] = 45
+        out[8]: {
+
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[4]
         hex-byte-upper(b, 9, out, hex-u)
@@ -206,7 +228,12 @@ uuid.to-str-upper = () (out str) {
         b ?= .bytes[5]
         hex-byte-upper(b, 11, out, hex-u)
 
-        out[13] = 45
+        out[13]: {
+
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[6]
         hex-byte-upper(b, 14, out, hex-u)
@@ -214,7 +241,12 @@ uuid.to-str-upper = () (out str) {
         b ?= .bytes[7]
         hex-byte-upper(b, 16, out, hex-u)
 
-        out[18] = 45
+        out[18]: {
+
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[8]
         hex-byte-upper(b, 19, out, hex-u)
@@ -222,7 +254,12 @@ uuid.to-str-upper = () (out str) {
         b ?= .bytes[9]
         hex-byte-upper(b, 21, out, hex-u)
 
-        out[23] = 45
+        out[23]: {
+
+            ok -> it = 45
+
+            -> _
+        }
 
         b ?= .bytes[10]
         hex-byte-upper(b, 24, out, hex-u)
@@ -875,7 +912,6 @@ hex-val = (c i64) (v i64) {
     {
         c >= 48 && c <= 57 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -891,7 +927,6 @@ hex-val = (c i64) (v i64) {
 
         c >= 65 && c <= 70 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -907,7 +942,6 @@ hex-val = (c i64) (v i64) {
 
         c >= 97 && c <= 102 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}

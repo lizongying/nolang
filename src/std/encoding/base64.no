@@ -31,11 +31,10 @@ encode = (data []byte, table str) (out str) {
 
     #{overflow=wrap}
     out-cap = (n + 2) / 3 * 4
-    out = with-cap(out-cap)
+    out-b []byte = with-cap-len(out-cap, out-cap)
     i = 0
     j = 0
 
-    #{overflow=wrap}
     (i + 3 <= n) {
         b0 = data[i]: {
             ok -> it
@@ -57,7 +56,7 @@ encode = (data []byte, table str) (out str) {
             -> 0
         }
 
-        out[j] = table[b0 >> 2]: {
+        out-b[j] = table[b0 >> 2]: {
             ok -> it
 
             -> _
@@ -65,27 +64,26 @@ encode = (data []byte, table str) (out str) {
 
         ; 下標算術（j + 1）與移位折疊都要宣告溢位取值，否則 checker 發 xmicjezl
         #{overflow=wrap}
-        out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]: {
+        out-b[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        out[j + 2] = table[((b1 & 15) << 2) | (b2 >> 6)]: {
+        out-b[j + 2] = table[((b1 & 15) << 2) | (b2 >> 6)]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        out[j + 3] = table[b2 & 63]: {
+        out-b[j + 3] = table[b2 & 63]: {
             ok -> it
 
             -> _
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -97,7 +95,6 @@ encode = (data []byte, table str) (out str) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -114,7 +111,6 @@ encode = (data []byte, table str) (out str) {
     #{overflow=wrap}
     rem = n - i
 
-    #{overflow=wrap}
     {
         rem == 1 -> {
             b0 = data[i]: {
@@ -123,24 +119,24 @@ encode = (data []byte, table str) (out str) {
                 -> 0
             }
 
-            out[j] = table[b0 >> 2]: {
+            out-b[j] = table[b0 >> 2]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[j + 1] = table[(b0 & 3) << 4]: {
+            out-b[j + 1] = table[(b0 & 3) << 4]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[j + 2] = PAD
+            out-b[j + 2] = PAD
 
             #{overflow=wrap}
-            out[j + 3] = PAD
+            out-b[j + 3] = PAD
         }
 
         rem == 2 -> {
@@ -157,30 +153,31 @@ encode = (data []byte, table str) (out str) {
                 -> 0
             }
 
-            out[j] = table[b0 >> 2]: {
+            out-b[j] = table[b0 >> 2]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]: {
+            out-b[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[j + 2] = table[(b1 & 15) << 2]: {
+            out-b[j + 2] = table[(b1 & 15) << 2]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[j + 3] = PAD
+            out-b[j + 3] = PAD
         }
     }
+    out = out-b.slice(0, out-cap).to-bytes-str()
 }
 
 ; 使用標準字母表（A-Za-z0-9+/）編碼
@@ -214,7 +211,6 @@ decode = (s str, table str) (out ?[]byte) {
     ; 計算填充數
     pad-count = 0
 
-    #{overflow=wrap}
     {
         n > 0 -> {
 
@@ -239,7 +235,6 @@ decode = (s str, table str) (out ?[]byte) {
     #{overflow=wrap}
     buf []byte = with-len(n * 3 / 4 + 3)
 
-    #{overflow=wrap}
     (i + 4 <= n) {
 
         ; D6：`s[i]` 的結果是 ?char。b64-val 吃的是 i64，option 不能隱式解包，
@@ -277,6 +272,7 @@ decode = (s str, table str) (out ?[]byte) {
                 return
             }
 
+            #{overflow=wrap}
             buf[j + 1]: {
                 ok -> it = ((v1 & 15) << 4) | (v2 >> 2)
 
@@ -291,6 +287,7 @@ decode = (s str, table str) (out ?[]byte) {
                 return
             }
 
+            #{overflow=wrap}
             buf[j + 2]: {
                 ok -> it = ((v2 & 3) << 6) | v3
 

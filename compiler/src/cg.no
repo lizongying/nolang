@@ -9,7 +9,7 @@
 ;   SALLOC / SSTORE / SLOAD（%str-long 跨基本块走 alloca，无 PHI）
 ;   VECNEW / VECPUSH / VECLEN / VECGET（%vec，元素仅 i64）
 ;   OPTNONE / OPTSOME / OPTTAG / OPTISOK / OPTGET（%option，i64 载荷）
-;   OPTMKSTR / OPTGETSTR（%option，str 载荷内联；%str-long 恰 24B = [3 x i64] 槽）
+;   OPTMKSTR / OPTGETSTR（%option，str 载荷内联；B28：16B %str-long 只占 24B [3 x i64] 槽前 16B，len/cap 走 zext/trunc）
 ;   OPTMKVEC / OPTGETVEC（%option，vec 载荷内联 s40；%vec 三字段全 i64 恰 24B，无需 ptrtoint）
 ;   OPTMKF64 / OPTGETF64（%option，f64/double 载荷内联 s46；f64 与 [3 x i64] 槽元素等宽，bitcast double<->i64 落/取 slot[0]，无需 ptrtoint/helper）
 ;   OPTALLOC / OPTSTORE / OPTLOAD（%option 跨基本块走 alloca %option，第八命名空间 %os，无 PHI s41）
@@ -22,7 +22,7 @@
 ;   STEREQ / STNEQ（str 结构相等 s42：操作数在 %sv，走运行时 @str_eq；icmp %str-long 非法故用专用 op）
 ;   VECEQ（vec 元素相等 s43：操作数在 %vc，走运行时 @__nolang_vec_eq_i64；icmp %vec 非法故用专用 op，仅适用元素型 i64）
 ;   OPTEQ / OPTNEQ（option 值相等 s44：操作数在 %op，发 tag icmp eq AND payload(i64) icmp eq 再 and；单块降级无需 helper，仅适用 i64 载荷）
-;   OPTEQSTR / OPTNEQSTR（option 的 str 载荷相等 s45：操作数在 %op，发 tag icmp eq AND 从 [3 x i64] 槽重建 %str-long 后 call @str_eq 再 and；单块降级，复用 s42 @str_eq 无需新增 helper，仅适用 str 载荷）
+;   OPTEQSTR / OPTNEQSTR（option 的 str 载荷相等 s45：操作数在 %op，发 tag icmp eq AND 从 [3 x i64] 槽重建 %str-long 后 call @str_eq 再 and；单块降级，复用 s42 @str_eq 无需新增 helper，仅适用 str 载荷）。B28：重建前 slot[0..1] 须 trunc i64→i32
 ;   OPTEQF64 / OPTNEQF64（option 的 f64/double 载荷相等 s47：操作数在 %op，发 tag icmp eq AND 取 slot[0]（i64）各 bitcast i64→double 后 fcmp oeq 再 and；单块降级无需 helper，仅适用 f64 载荷；镜像 Go emitOptionValueEq 的 double 分支）
 ;   OPTLT / OPTLE / OPTGT / OPTGE（option 排序 s51：操作数在 %op，只取两侧 slot[0]（i64 载荷）发 icmp slt/sle/sgt/sge 再 zext；【无 tag 项、无 and】——Go emitOptionValueOrder 原函即只比值；单块降级无 helper，仅适用 i64 载荷）
 ;   OPTLTF64 / OPTLEF64 / OPTGTF64 / OPTGEF64（option 的 f64/double 载荷排序 s52：操作数在 %op，取两侧 slot[0] 循 s47 bitcast i64→double 后发 fcmp olt/ole/ogt/oge 再 zext；【无 tag 项、无 and】同 s51 int 翼纪律，镜像 Go emitOptionValueOrder 的 double 分支；单块降级无 helper，仅适用 f64 载荷）
@@ -35,8 +35,8 @@
 ;     但 fdiv/frem 无護栏）。TY-F64 是真独立型别，须进两张映射
 ;   一元 ALU（s48）：NEG / NOT——NEG 复用 s37 的值型别分派（vty[d]==TY-F64⇒fneg double %fd…，否则⇒sub i64 0, %v…），
 ;     NOT⇒xor i64 1, %v…（翻转 0/1 布尔）。均单块降级、无 helper；忠实 Go emitNeg（非 option 路不插溢出护栏）／emitNot
-;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec
-;   str 容量欄（s50）：OP-STRCAP——extractvalue %str-long field 1（与 OP-STRLEN 的 field 0 成对，Go 原以 fieldIdx 分派）；单块降级、无 helper；忠实 Go emitLenCap 的 OpCap/KindStr 分支
+;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec。B28：len/cap 須先 trunc i64→i32（Go strLongFromParts）
+;   str 容量欄（s50）：OP-STRCAP——extractvalue %str-long field 1（与 OP-STRLEN 的 field 0 成对，Go 原以 fieldIdx 分派）；单块降级、无 helper；忠实 Go emitLenCap 的 OpCap/KindStr 分支。B28：讀出後 zext i32→i64
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
@@ -1395,6 +1395,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             ; xa[k] = 左 option 值 id；bs[k] = 右 option 值 id；dst = i64 结果（0/1）。
             ; 镜像 Go emitOptionValueEq 的 %str-long 分支：先比 tag（field 0），再从 [3 x i64] 槽重建两侧 %str-long call @str_eq，两者 and。
             ; 重建与 OPTGETSTR 同形：slot[0]=len / slot[1]=cap / slot[2]=data 指针整数（inttoptr 还原）。
+            ; ⚠️ B28：slot[0..1] 存的是 zext 過的 i64 ⇒ 重建 %str-long 前各須 trunc i64→i32。
             b.push('\t%otx')
             b.push(k.to-str())
             b.push(' = extractvalue %option %op')
@@ -1426,15 +1427,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = inttoptr i64 %olx2')
             b.push(k.to-str())
             b.push(' to i8*')
-            b.push('\n\t%orx0')
+            b.push('\n\t%olx0i')
             b.push(k.to-str())
-            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %olx0')
+            b.push(' = trunc i64 %olx0')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%olx1i')
+            b.push(k.to-str())
+            b.push(' = trunc i64 %olx1')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%orx0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %olx0i')
             b.push(k.to-str())
             b.push(', 0\n\t%orx1')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %orx0')
             b.push(k.to-str())
-            b.push(', i64 %olx1')
+            b.push(', i32 %olx1i')
             b.push(k.to-str())
             b.push(', 1\n\t%osx')
             b.push(k.to-str())
@@ -1460,15 +1469,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = inttoptr i64 %oly2')
             b.push(k.to-str())
             b.push(' to i8*')
-            b.push('\n\t%ory0')
+            b.push('\n\t%oly0i')
             b.push(k.to-str())
-            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %oly0')
+            b.push(' = trunc i64 %oly0')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%oly1i')
+            b.push(k.to-str())
+            b.push(' = trunc i64 %oly1')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%ory0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %oly0i')
             b.push(k.to-str())
             b.push(', 0\n\t%ory1')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %ory0')
             b.push(k.to-str())
-            b.push(', i64 %oly1')
+            b.push(', i32 %oly1i')
             b.push(k.to-str())
             b.push(', 1\n\t%osy')
             b.push(k.to-str())
@@ -1529,15 +1546,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = inttoptr i64 %olx2')
             b.push(k.to-str())
             b.push(' to i8*')
-            b.push('\n\t%orx0')
+            b.push('\n\t%olx0i')
             b.push(k.to-str())
-            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %olx0')
+            b.push(' = trunc i64 %olx0')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%olx1i')
+            b.push(k.to-str())
+            b.push(' = trunc i64 %olx1')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%orx0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %olx0i')
             b.push(k.to-str())
             b.push(', 0\n\t%orx1')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %orx0')
             b.push(k.to-str())
-            b.push(', i64 %olx1')
+            b.push(', i32 %olx1i')
             b.push(k.to-str())
             b.push(', 1\n\t%osx')
             b.push(k.to-str())
@@ -1563,15 +1588,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = inttoptr i64 %oly2')
             b.push(k.to-str())
             b.push(' to i8*')
-            b.push('\n\t%ory0')
+            b.push('\n\t%oly0i')
             b.push(k.to-str())
-            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %oly0')
+            b.push(' = trunc i64 %oly0')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%oly1i')
+            b.push(k.to-str())
+            b.push(' = trunc i64 %oly1')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%ory0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %oly0i')
             b.push(k.to-str())
             b.push(', 0\n\t%ory1')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %ory0')
             b.push(k.to-str())
-            b.push(', i64 %oly1')
+            b.push(', i32 %oly1i')
             b.push(k.to-str())
             b.push(', 1\n\t%osy')
             b.push(k.to-str())
@@ -1784,6 +1817,8 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push('\n')
         }
         op == OP-STRCONST -> {
+            ; B28：len/cap 是 u32 欄。此處是字串字面量常數 ⇒ 直接發 i32 常數
+            ;   （Go strU32Trunc 對數值字面量原樣放行，不額外發 trunc）。
             t = syms[k]
             b.push('\t%p')
             b.push(k.to-str())
@@ -1796,14 +1831,14 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', i64 0, i64 0\n')
             b.push('\t%q')
             b.push(k.to-str())
-            b.push(' = insertvalue %str-long undef, i64 ')
+            b.push(' = insertvalue %str-long undef, i32 ')
             b.push(t.len-bytes().to-str())
             b.push(', 0\n')
             b.push('\t%r')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %q')
             b.push(k.to-str())
-            b.push(', i64 ')
+            b.push(', i32 ')
             b.push(t.len-bytes().to-str())
             b.push(', 1\n')
             b.push('\t%sv')
@@ -1815,21 +1850,32 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', 2\n')
         }
         op == OP-STRLEN -> {
-            b.push('\t%v')
-            b.push(d.to-str())
+            ; B28：field 0 是 u32 ⇒ 先 extractvalue 到 i32 暫存 %slr<k>，再 zext 回外部 API 的 i64。
+            ;   暫存名按指令下標 k 編號，避免 multiple definition。
+            b.push('\t%slr')
+            b.push(k.to-str())
             b.push(' = extractvalue %str-long %sv')
             b.push(x.to-str())
-            b.push(', 0\n')
+            b.push(', 0\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i32 %slr')
+            b.push(k.to-str())
+            b.push(' to i64\n')
         }
         op == OP-STRCAP -> {
 
-            ; s50（鏡像 Go emitLenCap 的 OpCap/KindStr 分支，codegen.go:11848：fieldIdx=1）：dst = i64 值 id；x = 字符串值 id（TY-STR）。
+            ; s50（鏡像 Go emitLenCap 的 OpCap/KindStr 分支：fieldIdx=1）：dst = i64 值 id；x = 字符串值 id（TY-STR）。
             ; 與 OP-STRLEN 同一條 extractvalue、僅欄下標 0/1 之別（Go 原即以 fieldIdx 分派）；純單塊、無 helper。
-            b.push('\t%v')
-            b.push(d.to-str())
+            ; B28：field 1 是 u32 ⇒ extractvalue 到 i32 暫存 %scr<k> 後 zext i32→i64。
+            b.push('\t%scr')
+            b.push(k.to-str())
             b.push(' = extractvalue %str-long %sv')
             b.push(x.to-str())
-            b.push(', 1\n')
+            b.push(', 1\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i32 %scr')
+            b.push(k.to-str())
+            b.push(' to i64\n')
         }
         op == OP-STRCAT -> {
             b.push('\t%sv')
@@ -1900,7 +1946,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         op == OP-STRFROMVEC -> {
 
             ; s49（鏡像 Go emitStrFromVec, codegen.go:13069）：dst = 字符串值 id；x = 向量值 id（TY-VEC）。
-            ; %vec→%str-long 逐欄位重interpret：f0=len、f1=cap 直接 i64→i64；f2=dat 是整數指針（i64）⇒ inttoptr i64→i8*。
+            ; %vec→%str-long 逐欄位重interpret：f0/f1 是 i64 的 len/cap ⇒ B28 須先 trunc i64→i32；f2=dat 是整數指針（i64）⇒ inttoptr i64→i8*。
             ; ⚠️ 同 OPTGETSTR：bitcast 不能指針⇄整數，故 f2 必須 inttoptr；中間步 %sfl/%sfc/%sfd/%sfp/%sfs0/%sfs1 按下標 k，最後一步才落規範 %sv<d>（規避 multiple definition）。
             ; ⚠️ 純單块降級、無需 helper；僅存欄位，dat 與原 vec 共享同一緩冲（不拷貝、不 retain）。
             b.push('\t%sfl')
@@ -1919,15 +1965,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(' = inttoptr i64 %sfd')
             b.push(k.to-str())
-            b.push(' to i8*\n\t%sfs0')
+            b.push(' to i8*\n\t%sfli')
             b.push(k.to-str())
-            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %sfl')
+            b.push(' = trunc i64 %sfl')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%sfci')
+            b.push(k.to-str())
+            b.push(' = trunc i64 %sfc')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%sfs0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %sfli')
             b.push(k.to-str())
             b.push(', 0\n\t%sfs1')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %sfs0')
             b.push(k.to-str())
-            b.push(', i64 %sfc')
+            b.push(', i32 %sfci')
             b.push(k.to-str())
             b.push(', 1\n\t%sv')
             b.push(d.to-str())
@@ -1980,7 +2034,9 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         }
         op == OP-OPTMKSTR -> {
 
-            ; dst = option 值 id；x = 字符串值 id。tag=0 + 把 %str-long 的 3 个 i64 字段逐字段 insertvalue 进 slot[0..2]。
+            ; dst = option 值 id；x = 字符串值 id。tag=0 + 把 %str-long 逐欄位 insertvalue 进 slot[0..2]。
+            ; ⚠️ B28：%str-long 是 16B { i32, i32, i8* }，但 slot 仍是 24B [3 x i64] ⇒ 不再 1:1。
+            ;    field 0/1 是 i32，須 zext i32→i64 才存得進 slot；field 2 是 i8* ⇒ ptrtoint。
             ; ⚠️ 不能把同一本地名 %op<d> 复用为多步 insertvalue 的输出（LLVM 报 multiple definition），
             ;   故中间步用 %om0<k>/%om1<k>/%om2<k>，最后一步才落到规范的 %op<d>。
             ; ⚠️ 字段 2 是 i8*（data 指针），但槽是 i64 数组 ⇒ 必须 ptrtoint/inttoptr（bitcast 不能指针<->整数）。
@@ -2004,17 +2060,25 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(' = ptrtoint i8* %ol2')
             b.push(k.to-str())
+            b.push(' to i64\n\t%ol0w')
+            b.push(k.to-str())
+            b.push(' = zext i32 %ol0')
+            b.push(k.to-str())
+            b.push(' to i64\n\t%ol1w')
+            b.push(k.to-str())
+            b.push(' = zext i32 %ol1')
+            b.push(k.to-str())
             b.push(' to i64\n\t%om1')
             b.push(k.to-str())
             b.push(' = insertvalue %option %om0')
             b.push(k.to-str())
-            b.push(', i64 %ol0')
+            b.push(', i64 %ol0w')
             b.push(k.to-str())
             b.push(', 1, 0\n\t%om2')
             b.push(k.to-str())
             b.push(' = insertvalue %option %om1')
             b.push(k.to-str())
-            b.push(', i64 %ol1')
+            b.push(', i64 %ol1w')
             b.push(k.to-str())
             b.push(', 1, 1\n\t%op')
             b.push(d.to-str())
@@ -2027,6 +2091,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         op == OP-OPTGETSTR -> {
 
             ; dst = 字符串值 id；x = option 值 id。从 slot[0..2] 取 3 个 i64 字段，逐字段 insertvalue 重建 %str-long。
+            ; ⚠️ B28：slot[0..1] 存的是 zext 過的 i64 ⇒ 重建前須 trunc i64→i32；field 2 仍 inttoptr 還原 i8*。
             ; ⚠️ 同 OPTMKSTR：中间步用 %og0<k>/%og1<k>，最后一步才落到规范的 %sv<d>；data 指针字段须 inttoptr。
             ; 命名空间 %ol0<k>/%ol1<k>/%ol2<k>/%ol2b<k>/%og0<k>/%og1<k> 按指令下标 k。
             b.push('\t%ol0')
@@ -2045,15 +2110,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(' = inttoptr i64 %ol2')
             b.push(k.to-str())
-            b.push(' to i8*\n\t%og0')
+            b.push(' to i8*\n\t%ol0i')
             b.push(k.to-str())
-            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %ol0')
+            b.push(' = trunc i64 %ol0')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%ol1i')
+            b.push(k.to-str())
+            b.push(' = trunc i64 %ol1')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%og0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %ol0i')
             b.push(k.to-str())
             b.push(', 0\n\t%og1')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %og0')
             b.push(k.to-str())
-            b.push(', i64 %ol1')
+            b.push(', i32 %ol1i')
             b.push(k.to-str())
             b.push(', 1\n\t%sv')
             b.push(d.to-str())

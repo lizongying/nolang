@@ -104,9 +104,9 @@ parse-set = (set-cookie-str str) (c cookie) {
     first-pair = set-cookie-str
     rest = ''
 
-    #{overflow=wrap}
     semi-pos >= 0 -> {
         first-pair = set-cookie-str.slice(0, semi-pos)
+        #{overflow=wrap}
         rest = set-cookie-str.slice(semi-pos + 1, set-cookie-str.len-bytes())
     }
 
@@ -132,7 +132,6 @@ parse-set = (set-cookie-str str) (c cookie) {
         ; 跳過前導空格
         (pos < rest.len-bytes() && rest[pos] == 32) {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -157,7 +156,6 @@ parse-set = (set-cookie-str str) (c cookie) {
         ; 解析屬性
         attr-eq = attr.index('=')
 
-        #{overflow=wrap}
         {
             attr-eq >= 0 -> {
                 attr-name = attr.slice(0, attr-eq)
@@ -166,6 +164,7 @@ parse-set = (set-cookie-str str) (c cookie) {
 
                 ; D6：`attr-eq + 1` 的型別是 ?i64，直接把 option 當 slice 實參會把
                 ; 回傳型別污染成 ?str。先解包成 plain 區域變數再取切片。
+                #{overflow=wrap}
                 ofs = attr-eq + 1: {
                     ok -> it
 
@@ -188,6 +187,7 @@ parse-set = (set-cookie-str str) (c cookie) {
                                 valid = false
                                 break
                             }
+                            #{overflow=wrap}
                             ma = ma * 10 + ch - 48
                         }
                         valid -> c.max-age = ma
@@ -246,7 +246,6 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         ; 跳過空格
         (pos < cookie-header.len-bytes() && cookie-header[pos] == 32) {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -269,10 +268,10 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         pair = pair.trim()
         eq-pos = pair.index('=')
 
-        #{overflow=wrap}
         eq-pos >= 0 && count < 16 -> {
             names[count] = pair.slice(0, eq-pos)
 
+            #{overflow=wrap}
             values[count] = pair.slice(eq-pos + 1, pair.len-bytes())
             {
                 count-opt = count + 1
@@ -384,7 +383,6 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
 
             .paths[.count] ?= path
 
-            #{overflow=wrap}
             .count = .count + 1: {
                 ok -> it
 
@@ -479,7 +477,6 @@ jar.delete = (name str, domain str, path str) {
                     .paths[i] ?= .paths[last]
                 }
 
-                #{overflow=wrap}
                 .count = .count - 1: {
                     ok -> it
 

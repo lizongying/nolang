@@ -104,7 +104,6 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -200,7 +199,6 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -240,6 +238,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     }
 
     ; 只處理完整區塊：不足 8 位元組的尾部丟棄（輸出長度 = (in.len()/8)*8）
+    #{overflow=wrap}
     out = with-len((in.len() / 8) * 8)
     blk = 0
     (blk + 8 <= in.len()) {
@@ -247,6 +246,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         ; XOR 當前區塊與 prev
         xored [8]byte
         i <- [0..8): {
+            #{overflow=wrap}
             ixout191c29 = in[blk + i]: {
                 ok -> it
 
@@ -291,7 +291,6 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -327,6 +326,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     }
 
     ; 只處理完整區塊：不足 8 位元組的尾部丟棄（輸出長度 = (in.len()/8)*8）
+    #{overflow=wrap}
     out = with-len((in.len() / 8) * 8)
     blk = 0
     (blk + 8 <= in.len()) {
@@ -372,7 +372,6 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

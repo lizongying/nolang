@@ -278,7 +278,6 @@ conn.recv-all = () (content str, total i64) {
         ; （實測 total 對、content 卻恆空）。見 test/README.md §5.2 #66。
         content = content - buf.slice(0, chunk-n)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -667,7 +666,6 @@ enc-conn.init = (c conn, key [32]byte) {
 ; [gen-iv](#net.enc-conn.gen-iv)
 enc-conn.gen-iv = () (iv [12]byte) {
 
-    #{overflow=wrap}
     .send-seq = .send-seq + 1: {
         ok -> it
 
@@ -1049,6 +1047,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
                 -> _
             }
 
+            #{overflow=wrap}
             ixout990c37 = data[i + 1]: {
                 ok -> it
 
@@ -1056,13 +1055,14 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
             }
 
             w = ((ixout990c19) << 8) | (ixout990c37)
+            #{overflow=wrap}
             checksum = checksum + w
 
             ; 處理進位
+            #{overflow=wrap}
             checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1076,7 +1076,6 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
     }
 
     ; 奇數長度：補零處理最後一個位元組
-    #{overflow=wrap}
     len & 1 == 1 -> {
 
         #{overflow=wrap}
@@ -1088,6 +1087,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 
         #{overflow=wrap}
         checksum = checksum + ((ixout1006c33) << 8)
+        #{overflow=wrap}
         checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
     }
 
@@ -1111,7 +1111,6 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     ; 建構 ICMP Echo Request
     pkt []byte = with-len(ICMP-PACKET-SIZE)
 
-    #{overflow=wrap}
     .seq = .seq + 1: {
         ok -> it
 
@@ -1137,7 +1136,6 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     ; 判斷是否有 IP 標頭（Linux SOCK_RAW 回傳 IP+ICMP，macOS SOCK_DGRAM 只回傳 ICMP）
     offset = 0
 
-    #{overflow=wrap}
     {
         n >= 20 -> {
 
@@ -1179,12 +1177,14 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier
+    #{overflow=wrap}
     ixout1084c20 = recv-buf[offset + 4]: {
         ok -> it
 
         -> _
     }
 
+    #{overflow=wrap}
     ixout1084c51 = recv-buf[offset + 5]: {
         ok -> it
 
@@ -1195,12 +1195,14 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     recv-ident != .ident -> return
 
     ; 驗證 Sequence（只比較低 16 位）
+    #{overflow=wrap}
     ixout1089c18 = recv-buf[offset + 6]: {
         ok -> it
 
         -> _
     }
 
+    #{overflow=wrap}
     ixout1089c49 = recv-buf[offset + 7]: {
         ok -> it
 
@@ -1578,7 +1580,6 @@ split-ws = (s str) (out []str) {
                 {
                     c == 32 || c == 9 -> {
 
-                        #{overflow=wrap}
                         {
 
                             #{overflow=wrap}
@@ -1604,7 +1605,6 @@ split-ws = (s str) (out []str) {
                 c = s[i]
                 c == 32 || c == 9 -> break
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}

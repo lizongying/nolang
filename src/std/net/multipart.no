@@ -68,17 +68,18 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     ; 那是「固定內容的字串」而非 with-cap 緩衝，len=18 已滿，`?=` 先按 len 判越界 ⇒
     ; 恆走 err 臂 ⇒ 被 `err -> _` 吞掉，尾碼一個字都沒進去，邊界恆為 18 字元前綴
     ; （見 test/README §5.1s 與詞條 `with-cap-str-unwrap-write-dropped`）。
-    suffix str = with-cap(16)
+    suffix-b []byte = with-cap-len(16, 16)
     i <- [0..16): {
         seed, r = rand.rand(seed)
 
-        suffix[i] = chars[r % 36]: {
+        suffix-b[i] = chars[r % 36]: {
             ok -> it
 
             -> _
         }
     }
-    boundary = MULTIPART-BOUNDARY-PREFIX - suffix
+    #{overflow=wrap}
+    boundary = MULTIPART-BOUNDARY-PREFIX - suffix-b.to-bytes-str()
 }
 
 ; multipart-writer 結構體
@@ -355,6 +356,7 @@ multipart-reader.next = () (has-part bool) {
     #{overflow=wrap}
     header-start + 1 < .end -> {
         .data[header-start] == 13 && .data[header-start + 1] == 10 -> {
+            #{overflow=wrap}
             header-start = header-start + 2
         }
     }
@@ -469,7 +471,6 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
     bstart = bpos + boundary-marker.len-bytes()
 
     ; 處理可能的引號
-    #{overflow=wrap}
     {
         bstart < content-type.len-bytes() -> {
             content-type[bstart] == 34 -> {
@@ -512,7 +513,6 @@ multipart-extract-boundary = (content-type str) (boundary str) {
     #{overflow=wrap}
     bstart = bpos + boundary-marker.len-bytes()
 
-    #{overflow=wrap}
     {
         bstart < content-type.len-bytes() -> {
             content-type[bstart] == 34 -> {
@@ -522,6 +522,7 @@ multipart-extract-boundary = (content-type str) (boundary str) {
                 ; 靜默丟棄（見 test/README §5.2 #29 / MEMORY-LANG 值位 match 條），
                 ; 於是 bstart 不前進、index-from 又找到同一顆引號，邊界恆為空字串。
                 ; 把 match 直接掛在運算式上才有寫回。
+                #{overflow=wrap}
                 bstart = bstart + 1: {
                     ok -> it
 
@@ -594,7 +595,6 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
         }
     }
 
-    #{overflow=wrap}
     _ = 12 + sealed-n
     enc-str = base64.encode-std(combined)
     cr = '\r'
@@ -654,7 +654,6 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
         }
     }
 
-    #{overflow=wrap}
     _ = 12 + sealed-n
     enc-str = base64.encode-std(combined)
     cr = '\r'

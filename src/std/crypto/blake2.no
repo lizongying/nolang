@@ -295,42 +295,49 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout196c41 = block[off + 1]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout196c67 = block[off + 2]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout196c94 = block[off + 3]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout196c121 = block[off + 4]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout196c148 = block[off + 5]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout196c175 = block[off + 6]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout196c202 = block[off + 7]: {
             ok -> it
 
@@ -583,6 +590,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout248c39 = v[8 + i]: {
             ok -> it
 
@@ -646,13 +654,11 @@ b = (data []byte) (hash [64]byte) {
     ; 處理完整區塊（while loop: 只在有完整 128-byte 區塊時才執行）
     offset = 0
 
-    #{overflow=wrap}
     (offset + 128 < dlen) {
         t = (t + 128) & BLAKE2B-MASK
 
         b-compress(h, data[offset..], t, 0)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -797,13 +803,11 @@ b-256 = (data []byte) (hash [32]byte) {
 
     offset = 0
 
-    #{overflow=wrap}
     (offset + 128 < dlen) {
         t = (t + 128) & BLAKE2B-MASK
 
         b-compress(h, data[offset..], t, 0)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1266,18 +1270,21 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout652c41 = block[off + 1]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout652c67 = block[off + 2]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout652c94 = block[off + 3]: {
             ok -> it
 
@@ -1526,6 +1533,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout700c39 = v[8 + i]: {
             ok -> it
 
@@ -1564,13 +1572,11 @@ s = (data []byte) (hash [32]byte) {
 
     offset = 0
 
-    #{overflow=wrap}
     (offset + 64 < dlen) {
         t = (t + 64) & BLAKE2S-MASK
 
         s-compress(h, data[offset..], t, 0)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

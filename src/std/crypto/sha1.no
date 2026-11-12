@@ -1564,7 +1564,6 @@ sha1 = (data []byte) (hash [20]byte) {
         }
         h0, h1, h2, h3, h4 = sha1-block(block, h0, h1, h2, h3, h4)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

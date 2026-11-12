@@ -869,14 +869,14 @@ sym i64: 解出的符號值，-1=非法碼或空表
 br bz-bit-reader: 位元來源（每輪可能多讀 1 位元）
 sym i64: 解出的符號值，-1=非法碼或空表
 `
-  'bzip2.bzip2-compress': `
+  'bzip2.compress': `
 使用 bzip2 格式壓縮資料
 data: 原始資料 ([]byte)
 out: bzip2 壓縮後的資料 ([]byte)
 注意：目前使用 stored block 的基本實現，
 完整 BWT + MTF + Huffman 壓縮待後續實現。
 `
-  'bzip2.bzip2-decompress': `
+  'bzip2.decompress': `
 解壓縮 bzip2 格式的資料
 data: bzip2 壓縮資料 ([]byte)
 out: 解壓後的資料 ([]byte)
@@ -2133,12 +2133,12 @@ dc huffman: 輸出參數，寫入 30 符號的距離碼表
 data: 原始資料 ([]byte)
 out: 壓縮後的 DEFLATE 資料 ([]byte)
 `
-  'gzip.gzip-compress': `
+  'gzip.compress': `
 使用 gzip 格式壓縮資料
 data: 原始資料 ([]byte)
 out: gzip 壓縮後的資料 ([]byte)
 `
-  'gzip.gzip-decompress': `
+  'gzip.decompress': `
 解壓縮 gzip 格式的資料
 data: gzip 壓縮資料 ([]byte)
 out: 解壓後的資料 ([]byte)
@@ -4903,13 +4903,13 @@ iterations i64: 迭代次數；越大越難暴力破解，太小則不安全
 key-len i64: 期望金鑰長度（位元組），按 64 位元組一塊逐塊生成
 返回 out []byte: 推導出的金鑰，長度恰為 key-len
 `
-  'pem.pem-decode': `
+  'pem.decode': `
 解析 PEM 格式字串
 pem-str: PEM 格式字串
-回傳 ?pem-block: ok=解析成功, nil=解析失敗
+回傳 ?block: ok=解析成功, nil=解析失敗
 
 `
-  'pem.pem-encode': `
+  'pem.encode': `
 將原始位元組編碼為 PEM 格式字串
 label str: PEM 標籤（如 'CERTIFICATE'、'RSA PRIVATE KEY'）
 data []byte: 原始二進位資料
@@ -6585,74 +6585,74 @@ sep str: 分隔符
 回傳 out str: 連接後的字串
 
 `
-  'tar.tar-builder.add-bytes': `
+  'tar.builder.add-bytes': `
 新增原始位元組條目
 name: 條目名
 content: 條目內容位元組
 typ: 條目型別碼（TAR-TYPE-FILE / TAR-TYPE-DIR）
 `
-  'tar.tar-builder.add-dir': `
+  'tar.builder.add-dir': `
 新增目錄條目
 name: 目錄名（慣例以 / 結尾，無內容區）
 `
-  'tar.tar-builder.add-file': `
+  'tar.builder.add-file': `
 新增檔案條目
 name: 檔名（寫入標頭 name 欄）
 content: 檔案內容（寫入後補零對齊 512 位元組邊界）
 `
-  'tar.tar-builder.finish': `
+  'tar.builder.finish': `
 結束建構，寫入結束標記並返回 tar 歸檔
 archive: 含兩個全零結束區塊的 tar 唯讀視圖
 `
-  'tar.tar-builder.pre-alloc': `
+  'tar.builder.pre-alloc': `
 預分配緩衝區（用局部變數 push，避免結構體欄位 push 限制）
 size: 預分配的緩衝區位元組數（零填充至該長度）
 `
-  'tar.tar-builder.write-header': `
+  'tar.builder.write-header': `
 寫入 512 位元組 header（內部方法）
 name: 檔名（寫入標頭偏移 0）
 typ: typeflag 字元碼（48=檔案、53=目錄）
 sz: 內容位元組數（以八進位寫入 size 欄）
 `
-  'tar.tar-builder.write-octal': `
+  'tar.builder.write-octal': `
 在指定偏移寫入八進制數字（內部方法）
 offset: 欄位在當前標頭區塊內的偏移
 width: 欄位寬度（右對齊八進位數字、左側補空白）
 val: 待編碼的整數值（區塊尾另補 NUL）
 `
-  'tar.tar-entry.is-dir': `
+  'tar.entry.is-dir': `
 判斷是否為目錄
 yes: 該條目是否為目錄
 `
-  'tar.tar-entry.is-file': `
+  'tar.entry.is-file': `
 判斷是否為普通檔案
 yes: 該條目是否為普通檔案
 `
-  'tar.tar-entry.mode': `
+  'tar.entry.mode': `
 讀取條目權限
 mode: 權限位元（八進位解碼）
 `
-  'tar.tar-entry.mtime': `
+  'tar.entry.mtime': `
 讀取條目修改時間
 ts: 修改時間（Unix 秒，八進位解碼）
 `
-  'tar.tar-entry.name': `
+  'tar.entry.name': `
 讀取條目檔名
 name: 該條目的檔名
 `
-  'tar.tar-entry.read': `
+  'tar.entry.read': `
 提取條目內容
 out: 條目內容位元組（目錄為空）
 `
-  'tar.tar-entry.size': `
+  'tar.entry.size': `
 讀取條目檔案大小
 sz: 條目原始位元組數
 `
-  'tar.tar-entry.type': `
+  'tar.entry.type': `
 讀取條目類型
 typ: 型別字串（"file"、"dir" 或 "unknown"）
 `
-  'tar.tar-open-gz': `
+  'tar.open-gz': `
 從 gzip 壓縮資料建立 tar 視圖（.tar.gz）
 gz-data: gzip 壓縮的 tar 資料 ([]byte)
 archive: 解壓後的 tar 歸檔
@@ -7327,30 +7327,30 @@ in []byte: 解密後的資料（content || MAC || padding）
   'toml.new': '建立空 TOML 文件'
   'toml.parse': '解析 TOML 文件，失敗回傳 err(message)'
   'toml.stringify': '以 TOML 1.0 語法輸出文件；array-of-tables 會還原為 [[table]] 標頭。'
-  'toml.toml-array-name': '讀取 array-of-tables 名稱。'
-  'toml.toml-doc.put': `
+  'toml.array-name': '讀取 array-of-tables 名稱。'
+  'toml.put': `
 設定原始 TOML 字面值。
 value 可為陣列、日期時間等 TOML 語法，模組不會替它加引號。
 
 `
-  'toml.toml-entry-key': '讀取 canonical key。'
-  'toml.toml-entry-key-eq': '比較 entry key 與字串。'
-  'toml.toml-entry-value': '讀取原始 TOML value。'
-  'toml.toml-find-eq': '找到未被引號包住的第一個等號'
-  'toml.toml-make-entry': '將 key/value 複製到固定緩衝區。'
-  'toml.toml-next-array-table': '取得並登記 array-of-tables 的下一個索引。'
-  'toml.toml-normalize-key': '解析 bare / quoted / dotted key，輸出 canonical dotted key。'
-  'toml.toml-parse-bool': '解析布林值'
-  'toml.toml-parse-f64': '解析浮點數'
-  'toml.toml-parse-i64': '支援十進位、十六進位、八進位、二進位與下劃線分隔。'
-  'toml.toml-register-table': '記錄已定義表格，重複定義回傳 false。'
-  'toml.toml-resolve-section': '將 array-of-tables 的子表解析到最近一筆元素。'
-  'toml.toml-strip-comment': '移除字串外的 # 註解並 trim；支援 multiline string。'
-  'toml.toml-table-eq': '比較固定緩衝區中的表格名稱。'
-  'toml.toml-table-name': '讀取表格名稱。'
-  'toml.toml-unquote': '解碼 basic/literal TOML 字串'
-  'toml.toml-valid-value': '接受 TOML 1.0 的 scalar、array、inline table 與日期時間字面值。'
-  'toml.toml-value-complete': '判斷值是否已閉合；用於多行陣列、inline table、multiline string。'
+  'toml.entry-key': '讀取 canonical key。'
+  'toml.entry-key-eq': '比較 entry key 與字串。'
+  'toml.entry-value': '讀取原始 TOML value。'
+  'toml.find-eq': '找到未被引號包住的第一個等號'
+  'toml.make-entry': '將 key/value 複製到固定緩衝區。'
+  'toml.next-array-table': '取得並登記 array-of-tables 的下一個索引。'
+  'toml.normalize-key': '解析 bare / quoted / dotted key，輸出 canonical dotted key。'
+  'toml.parse-bool': '解析布林值'
+  'toml.parse-f64': '解析浮點數'
+  'toml.parse-i64': '支援十進位、十六進位、八進位、二進位與下劃線分隔。'
+  'toml.register-table': '記錄已定義表格，重複定義回傳 false。'
+  'toml.resolve-section': '將 array-of-tables 的子表解析到最近一筆元素。'
+  'toml.strip-comment': '移除字串外的 # 註解並 trim；支援 multiline string。'
+  'toml.table-eq': '比較固定緩衝區中的表格名稱。'
+  'toml.table-name': '讀取表格名稱。'
+  'toml.unquote': '解碼 basic/literal TOML 字串'
+  'toml.valid-value': '接受 TOML 1.0 的 scalar、array、inline table 與日期時間字面值。'
+  'toml.value-complete': '判斷值是否已閉合；用於多行陣列、inline table、multiline string。'
   'tree-map.tree-map.alloc-node': `
 從空閒池分配節點
 回傳 idx i64: 節點索引，-1=池已滿
@@ -8684,14 +8684,14 @@ data: 含控制位元組的 LZMA2 資料流
 start-pos: 資料流的起始偏移
 out: 解壓出的明文位元組流（具名輸出參數，函式末一次性交付）
 `
-  'xz.xz-compress': `
+  'xz.compress': `
 使用 xz 格式壓縮資料（基本實現）
 data: 原始資料 ([]byte)
 out: xz 壓縮後的資料 ([]byte)
 注意：目前使用 stored block 的基本實現，
 完整 LZMA2 壓縮待後續實現。
 `
-  'xz.xz-decompress': `
+  'xz.decompress': `
 .xz 格式：
 - Stream Header: 6 bytes magic + 2 bytes stream flags
 - Blocks: Block Header + Compressed Data + Block Padding + Check
@@ -8764,114 +8764,114 @@ yaml.is-float: 是否為浮點
   'yaml.valid': '本文件是否解析成功（能拿到 yaml 值即成功）'
   'yaml.valid-of': '來源文字是否可解析（不建構文件）'
   'yaml.value': '取得映射第 i 個鍵對應的值節點'
-  'yaml.yaml-apply-tag': '按顯式標籤決定節點類型'
-  'yaml.yaml-emit': '節點轉塊風格 YAML（不含尾隨換行）'
-  'yaml.yaml-f-is-inf': `
+  'yaml.apply-tag': '按顯式標籤決定節點類型'
+  'yaml.emit': '節點轉塊風格 YAML（不含尾隨換行）'
+  'yaml.f-is-inf': `
 不用字面量比較：Nolang 的數值字面量不支援指數（`1e308` 會被切成 `1` + `e308`）。
 無窮的判據是「非零且減半後不變」；先用 `x != x` 排除 NaN。
 
 `
-  'yaml.yaml-f-is-nan': `
+  'yaml.f-is-nan': `
 浮點是否為 NaN（NaN != NaN）
 不用 `float.is-nan`：模組內的接收者式呼叫在 MIR 後端解析不到該方法。
 
 `
-  'yaml.yaml-hex-char': '單一十六進位數字（0-15）轉字元'
-  'yaml.yaml-hex-digit': '十六進位字元轉數值，非十六進位回傳 -1'
-  'yaml.yaml-inf': '正無窮'
-  'yaml.yaml-json-escape': 'JSON 字串轉義'
-  'yaml.yaml-json-of': '節點轉 JSON'
-  'yaml.yaml-key-eq': '兩個鍵節點是否等價（比較純量文字）'
-  'yaml.yaml-key-text-eq': '純量鍵文字是否等於給定字串'
-  'yaml.yaml-nan': `
+  'yaml.hex-char': '單一十六進位數字（0-15）轉字元'
+  'yaml.hex-digit': '十六進位字元轉數值，非十六進位回傳 -1'
+  'yaml.inf': '正無窮'
+  'yaml.json-escape': 'JSON 字串轉義'
+  'yaml.json-of': '節點轉 JSON'
+  'yaml.key-eq': '兩個鍵節點是否等價（比較純量文字）'
+  'yaml.key-text-eq': '純量鍵文字是否等於給定字串'
+  'yaml.nan': `
 必須走執行期除法：編譯期常量折疊會把 `0.0 / 0.0` 直接算成 0。
 借道區域變數可避免折疊，得到真正的 NaN（`x != x` 為真）。
 
 `
-  'yaml.yaml-node-is-nan': `
-nan 節點（`.nan`）的 fval 由 yaml-nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。
+  'yaml.node-is-nan': `
+nan 節點（`.nan`）的 fval 由 nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。
 節點原文判定作為兜底：標籤改寫等路徑可能只改 text 而不重算 fval。
 `
-  'yaml.yaml-parse-radix': '解析 radix 進位整數（忽略 _）'
-  'yaml.yaml-parser.advance': '前進一個位元組'
-  'yaml.yaml-parser.anchor-id': '查找錨點，未找到回傳 -1'
-  'yaml.yaml-parser.at': '相對目前位置偏移 k 的位元組'
-  'yaml.yaml-parser.at-doc-marker': '目前位置是否為 --- (1) 或 ... (2)'
-  'yaml.yaml-parser.at-eol': '是否位於行尾（含 EOF）'
-  'yaml.yaml-parser.byte-at': '取得 src[i]，越界回傳 0'
-  'yaml.yaml-parser.cur': '目前位元組'
-  'yaml.yaml-parser.eof': '是否到達輸入末尾'
-  'yaml.yaml-parser.fail': '記錄解析錯誤'
-  'yaml.yaml-parser.fail-at': '記錄帶位置的解析錯誤'
-  'yaml.yaml-parser.indent-at': `
+  'yaml.parse-radix': '解析 radix 進位整數（忽略 _）'
+  'yaml.parser.advance': '前進一個位元組'
+  'yaml.parser.anchor-id': '查找錨點，未找到回傳 -1'
+  'yaml.parser.at': '相對目前位置偏移 k 的位元組'
+  'yaml.parser.at-doc-marker': '目前位置是否為 --- (1) 或 ... (2)'
+  'yaml.parser.at-eol': '是否位於行尾（含 EOF）'
+  'yaml.parser.byte-at': '取得 src[i]，越界回傳 0'
+  'yaml.parser.cur': '目前位元組'
+  'yaml.parser.eof': '是否到達輸入末尾'
+  'yaml.parser.fail': '記錄解析錯誤'
+  'yaml.parser.fail-at': '記錄帶位置的解析錯誤'
+  'yaml.parser.indent-at': `
 先跳過行首空格再計數：呼叫點幾乎都緊跟在 skip-blank-lines() 之後，
 此時 pos 停在行首（欄 0），直接相減會恆得 0，導致巢狀塊被判成「不縮排」。
 跳過後 pos 停在首個非空格字元，後續的 is-seq-dash / looks-like-map-entry /
 at-doc-marker 也都需要這個位置。
 
 `
-  'yaml.yaml-parser.is-seq-dash': '目前位置是否為序列項指示符 \'- \''
-  'yaml.yaml-parser.line-end-of': '回傳 i 所在行的行尾偏移（指向換行或 n）'
-  'yaml.yaml-parser.line-start-of': '回傳 i 所在行的起始偏移'
-  'yaml.yaml-parser.looks-like-map-entry': '本行是否存在頂層 \': \' 或行尾 \':\' 或顯式鍵 \'? \''
-  'yaml.yaml-parser.merge-into': '合併鍵 << 的處理（支援映射或映射序列）'
-  'yaml.yaml-parser.merge-one': `
+  'yaml.parser.is-seq-dash': '目前位置是否為序列項指示符 \'- \''
+  'yaml.parser.line-end-of': '回傳 i 所在行的行尾偏移（指向換行或 n）'
+  'yaml.parser.line-start-of': '回傳 i 所在行的起始偏移'
+  'yaml.parser.looks-like-map-entry': '本行是否存在頂層 \': \' 或行尾 \':\' 或顯式鍵 \'? \''
+  'yaml.parser.merge-into': '合併鍵 << 的處理（支援映射或映射序列）'
+  'yaml.parser.merge-one': `
 把一個映射的條目合併進 keys/vals（不覆蓋已有鍵）
 說明：MIR 後端不允許把入參 vec 直接 move 進另一個 vec（借用/所有權保護），
 因此這裡逐元素複製，而不是 ok-keys = keys。
 
 `
-  'yaml.yaml-parser.newline': '消費一個換行（\\n 或 \\r\\n）'
-  'yaml.yaml-parser.parse-alias': '解析別名 *name'
-  'yaml.yaml-parser.parse-block': '解析一個塊上下文節點（目前位置即節點起始欄）'
-  'yaml.yaml-parser.parse-block-indented': '解析縮排更深的後續行作為值'
-  'yaml.yaml-parser.parse-block-map': '解析塊映射'
-  'yaml.yaml-parser.parse-block-scalar': '解析塊純量 | 與 >'
-  'yaml.yaml-parser.parse-block-seq': '解析塊序列'
-  'yaml.yaml-parser.parse-docs': '解析全部文件'
-  'yaml.yaml-parser.parse-document': '解析一份文件，回傳根節點索引'
-  'yaml.yaml-parser.parse-double': '解析雙引號純量'
-  'yaml.yaml-parser.parse-flow-map': '解析 {k: v, ...}'
-  'yaml.yaml-parser.parse-flow-node': '解析一個流上下文節點'
-  'yaml.yaml-parser.parse-flow-seq': '解析 [a, b, ...]'
-  'yaml.yaml-parser.parse-plain': '解析 plain 純量（含跨行折疊）'
-  'yaml.yaml-parser.parse-props': '解析節點前綴的錨點與標籤（順序任意）'
-  'yaml.yaml-parser.parse-single': '解析單引號純量'
-  'yaml.yaml-parser.push-node': '追加節點並回傳索引'
-  'yaml.yaml-parser.push-null': '追加空節點（null）'
-  'yaml.yaml-parser.push-scalar': '依據風格與標籤建構純量節點'
-  'yaml.yaml-parser.read-line-content': '讀取目前位置到行尾的內容（去掉行尾空白與註解）'
-  'yaml.yaml-parser.read-tag': '讀取一個標籤（!!name / !name / !<verbatim> / !）'
-  'yaml.yaml-parser.read-token': '讀取一個不含分隔符的裸 token'
-  'yaml.yaml-parser.register-anchor': '登記錨點'
-  'yaml.yaml-parser.set-props': '為節點附加標籤與錨點（並登記錨點）'
-  'yaml.yaml-parser.skip-blank-lines': '跳過空行與整行註解，停在下一行內容起始處'
-  'yaml.yaml-parser.skip-doc-preamble': '跳過空行、註解與指令行'
-  'yaml.yaml-parser.skip-flow-ws': '流式上下文的空白——行內空格、換行與註解'
-  'yaml.yaml-parser.skip-spaces': '跳過行內空格與製表字元'
-  'yaml.yaml-parser.skip-to-doc-boundary': '跳過目前文件剩餘內容，停在下一個 --- 或輸入末尾'
-  'yaml.yaml-parser.skip-to-eol': '跳過行尾空白與行註解（不消費換行）'
-  'yaml.yaml-plain-safe': '文字可否作為 plain 純量原樣輸出'
-  'yaml.yaml-quote': '輸出雙引號 YAML 純量'
-  'yaml.yaml-resolve-plain': '按 core schema 推斷 plain 純量類型'
-  'yaml.yaml-scalar-repr': '純量的 YAML 表示'
-  'yaml.yaml-scan-number': `
+  'yaml.parser.newline': '消費一個換行（\\n 或 \\r\\n）'
+  'yaml.parser.parse-alias': '解析別名 *name'
+  'yaml.parser.parse-block': '解析一個塊上下文節點（目前位置即節點起始欄）'
+  'yaml.parser.parse-block-indented': '解析縮排更深的後續行作為值'
+  'yaml.parser.parse-block-map': '解析塊映射'
+  'yaml.parser.parse-block-scalar': '解析塊純量 | 與 >'
+  'yaml.parser.parse-block-seq': '解析塊序列'
+  'yaml.parser.parse-docs': '解析全部文件'
+  'yaml.parser.parse-document': '解析一份文件，回傳根節點索引'
+  'yaml.parser.parse-double': '解析雙引號純量'
+  'yaml.parser.parse-flow-map': '解析 {k: v, ...}'
+  'yaml.parser.parse-flow-node': '解析一個流上下文節點'
+  'yaml.parser.parse-flow-seq': '解析 [a, b, ...]'
+  'yaml.parser.parse-plain': '解析 plain 純量（含跨行折疊）'
+  'yaml.parser.parse-props': '解析節點前綴的錨點與標籤（順序任意）'
+  'yaml.parser.parse-single': '解析單引號純量'
+  'yaml.parser.push-node': '追加節點並回傳索引'
+  'yaml.parser.push-null': '追加空節點（null）'
+  'yaml.parser.push-scalar': '依據風格與標籤建構純量節點'
+  'yaml.parser.read-line-content': '讀取目前位置到行尾的內容（去掉行尾空白與註解）'
+  'yaml.parser.read-tag': '讀取一個標籤（!!name / !name / !<verbatim> / !）'
+  'yaml.parser.read-token': '讀取一個不含分隔符的裸 token'
+  'yaml.parser.register-anchor': '登記錨點'
+  'yaml.parser.set-props': '為節點附加標籤與錨點（並登記錨點）'
+  'yaml.parser.skip-blank-lines': '跳過空行與整行註解，停在下一行內容起始處'
+  'yaml.parser.skip-doc-preamble': '跳過空行、註解與指令行'
+  'yaml.parser.skip-flow-ws': '流式上下文的空白——行內空格、換行與註解'
+  'yaml.parser.skip-spaces': '跳過行內空格與製表字元'
+  'yaml.parser.skip-to-doc-boundary': '跳過目前文件剩餘內容，停在下一個 --- 或輸入末尾'
+  'yaml.parser.skip-to-eol': '跳過行尾空白與行註解（不消費換行）'
+  'yaml.plain-safe': '文字可否作為 plain 純量原樣輸出'
+  'yaml.quote': '輸出雙引號 YAML 純量'
+  'yaml.resolve-plain': '按 core schema 推斷 plain 純量類型'
+  'yaml.scalar-repr': '純量的 YAML 表示'
+  'yaml.scan-number': `
 嘗試把文字解析為整數或浮點數
 回傳 kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR（不是數字）
 
 `
-  'yaml.yaml-spaces': '產生 n 個空格'
-  'yaml.yaml-str-at': `
+  'yaml.spaces': '產生 n 個空格'
+  'yaml.str-at': `
 為什麼需要這個 helper：`arr[i]`（arr 為 []str）預設回傳 option<str>，
 而 MIR 後端在把 option<str> 當作呼叫實參/方法接收者時會產生非法 IR
 （%option_str 與 %str-long 不匹配）。字串串接會自動解包 option，
 因此這裡用 `out = out - a[i]` 取元素，既解包又滿足 `no vet` 的越界檢查。
 
 `
-  'yaml.yaml-tag-name': '正規化標籤名（!!str / tag:yaml.org,2002:str → str）'
-  'yaml.yaml-to-f64': '文字轉 f64（回傳 nil 表示失敗）'
-  'yaml.yaml-to-i64': '文字轉 i64，失敗回傳 -1'
-  'yaml.yaml-unescape-double': '處理雙引號轉義序列'
+  'yaml.tag-name': '正規化標籤名（!!str / tag:yaml.org,2002:str → str）'
+  'yaml.to-f64': '文字轉 f64（回傳 nil 表示失敗）'
+  'yaml.to-i64': '文字轉 i64，失敗回傳 -1'
+  'yaml.unescape-double': '處理雙引號轉義序列'
   'zip.u16le': `
 讀取 2 位元組小端序無號整數
 data: 待讀取的位元組陣列
@@ -8884,56 +8884,56 @@ data: ZIP 檔案位元組陣列
 off: 讀取起始位置（0 起始）
 v: 4 位元組小端序無號整數（0 ~ 2^32-1）
 `
-  'zip.zip-entry.compressed-size': `
+  'zip.entry.compressed-size': `
 讀取條目壓縮後大小
 csz: 壓縮後的位元組數
 `
-  'zip.zip-entry.extract': `
+  'zip.entry.extract': `
 提取條目內容（stored 和 deflate）
 out: 解壓後的原始位元組（stored 直接拷貝、deflate 自動 inflate）
 `
-  'zip.zip-entry.method': `
+  'zip.entry.method': `
 讀取條目壓縮方式（0=stored, 8=deflate）
 method: 壓縮方式（0=stored、8=deflate）
 `
-  'zip.zip-entry.name': `
+  'zip.entry.name': `
 讀取條目檔名
 name: 該條目的檔名
 `
-  'zip.zip-entry.size': `
+  'zip.entry.size': `
 讀取條目原始大小
 sz: 壓縮前的原始位元組數
 `
-  'zip.zip-writer.add-dir': `
+  'zip.writer.add-dir': `
 添加目錄條目
 name: 目錄名（未以 / 結尾時自動補上）
 `
-  'zip.zip-writer.add-file': `
+  'zip.writer.add-file': `
 添加檔案到歸檔（自動計算 CRC32）
 name: 歸檔內儲存的路徑名
 content: 檔案內容（以 stored 方式原樣儲存，自動計算 CRC32）
 `
-  'zip.zip-writer.cd-put': `
+  'zip.writer.cd-put': `
 追加一個位元組到 cd-data
 b: 待追加的位元組值（取低 8 位寫入中央目錄緩衝）
 `
-  'zip.zip-writer.cd-write-u16': `
+  'zip.writer.cd-write-u16': `
 寫入 2 位元組小端序整數到中央目錄
 v: 待寫入整數（取低 16 位以小端序追加到中央目錄緩衝）
 `
-  'zip.zip-writer.cd-write-u32': `
+  'zip.writer.cd-write-u32': `
 寫入 4 位元組小端序整數到中央目錄
 v: 待寫入整數（取低 32 位以小端序追加到中央目錄緩衝）
 `
-  'zip.zip-writer.finalize': `
+  'zip.writer.finalize': `
 寫入中央目錄和 EOCD，返回完整歸檔資料
 out: 完整 ZIP 歸檔位元組（本地資料 + 中央目錄 + EOCD）
 `
-  'zip.zip-writer.put': `
+  'zip.writer.put': `
 追加一個位元組到 data（透過局部變數支援 push）
 b: 待追加的位元組值（取低 8 位寫入本地資料區）
 `
-  'zip.zip-writer.write-cd-entry': `
+  'zip.writer.write-cd-entry': `
 寫入中央目錄條目
 name: 檔名
 offset: 該條目本地檔案標頭的起始偏移
@@ -8941,22 +8941,22 @@ size: 壓縮前大小
 compressed-size: 壓縮後大小
 crc: 內容的 CRC32 校驗值
 `
-  'zip.zip-writer.write-eocd': `
+  'zip.writer.write-eocd': `
 寫入結束記錄 (End of Central Directory)
 cd-offset: 中央目錄的起始偏移
 cd-size: 中央目錄的總位元組數
 `
-  'zip.zip-writer.write-local-file': `
+  'zip.writer.write-local-file': `
 寫入本地檔案標頭和內容
 name: 檔名（寫入標頭與資料區）
 content: 檔案內容（不壓縮、原樣 stored 寫入）
 crc: 內容的 CRC32 校驗值
 `
-  'zip.zip-writer.write-u16': `
+  'zip.writer.write-u16': `
 寫入 2 位元組小端序整數
 v: 待寫入整數（取低 16 位以小端序追加）
 `
-  'zip.zip-writer.write-u32': `
+  'zip.writer.write-u32': `
 寫入 4 位元組小端序整數
 v: 待寫入整數（取低 32 位以小端序追加）
 `
@@ -8972,7 +8972,7 @@ count: 條目總數（歸檔損壞時為 0）
   'zip.zip.entry': `
 取得第 idx 個條目
 idx: 條目序號
-e: 綁定該條目偏移的 zip-entry 句柄（再經其方法讀欄位）
+e: 綁定該條目偏移的 entry 句柄（再經其方法讀欄位）
 `
   'zip.zip.entry-off': `
 第 idx 個 central directory 條目的偏移
@@ -9100,14 +9100,14 @@ max-symbol: 符號值上界（遍歷 lengths 的終點，zstd 字節符號通常
 br: 讀取碼位的位元讀取器（碼字從 MSB 端逐位元拼出）
 sym: 解出的符號值；在最大碼長內未命中任何碼時返回 0
 `
-  'zstd.zstd-compress': `
+  'zstd.compress': `
 使用 zstd 格式壓縮資料（基本實現）
 data: 原始資料 ([]byte)
 out: zstd 壓縮後的資料 ([]byte)
 注意：目前使用 raw block 的基本實現，
 完整 FSE + Huffman + LZ77 壓縮待後續實現。
 `
-  'zstd.zstd-decompress': `
+  'zstd.decompress': `
 解壓縮 Zstandard 格式的資料
 data: zstd 壓縮資料 ([]byte)
 out: 解壓後的資料 ([]byte)

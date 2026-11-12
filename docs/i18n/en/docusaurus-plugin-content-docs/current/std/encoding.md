@@ -49,16 +49,16 @@ PEM (Privacy-Enhanced Mail) format encoding/decoding, widely used for X.509 cert
 PEM-LINE-LEN = 64                    ; Max Base64 characters per line
 
 ; Struct
-pem-block {
+block {
     label str                         ; PEM label (e.g. 'CERTIFICATE', 'RSA PRIVATE KEY')
     data []byte                       ; Raw binary data
 }
 
 ; Encoding
-pem-str = pem.pem-encode(label, data)              ; Encode raw bytes to PEM string
+pem-str = pem.encode(label, data)              ; Encode raw bytes to PEM string
 
 ; Decoding
-result = pem.pem-decode(pem-str)                    ; Decode PEM string (?pem-block)
+result = pem.decode(pem-str)                    ; Decode PEM string (?block)
 ;   ok -> result.label, result.data
 ;   nil -> invalid format
 ```

@@ -1,0 +1,74 @@
+; 出參（result param）的 owned 槽必須以「型別零值」起步，而不是棧上殘留
+;
+; 背景（2026-11-11）：出參槽只在 `owned || structSlotNeedsZero(lt)` 成立時才清零。
+; `owned` 對結構體恆為 false（Type.Owned 只對 str/vec/[]T/map/?owned 為真），而
+; `structSlotNeedsZero` 對「欄位是 []byte」的結構體也回 false —— 所有權分析不把
+; 這個欄位當 owned leaf。於是**出參結構體的槽是上一個棧框留下的垃圾**，而
+; `b.data.push(x)` 必須先讀 {len, cap, data} 才能決定要不要成長：
+;   - data 是垃圾 ⇒ grow 路徑 `nolang_free(<隨機指標>)`
+;     → `pointer being freed was not allocated` / abort trap（本檔在修前就是這條）
+;   - len/cap 看起來像樣 ⇒ 依垃圾值成長、釋放
+;     → 記憶體無限增長，`no run` 被 kill
+;
+; 修法：出參槽一律存零值（src/mir/codegen.go 的 allocaFor，`c.resultParam[v]`），
+; 讓「沒被寫過的出參讀回零值」成為硬不變量，而不是靠棧上剛好是 0。
+;
+; 同時把回報的原始形態（純 `[]byte` 出參 + push）釘成回歸：那個形態一直是好的，
+; 差別只在「[]byte 在外」還是「[]byte 在出參結構體的欄位裡」。
+
+box {
+    data []byte
+    tag i64
+}
+
+; 把 4096 位元組的 vec 標頭留在棧上：出參槽若不清零，就會接手這份垃圾
+dirty = (n i64) () {
+    tmp []byte = with-cap(n)
+    i <- [0..n): {
+        tmp.push(65)
+    }
+}
+
+; []byte 在出參結構體的欄位裡
+; n: 要 push 的元素個數
+; b: data 長度為 n、tag 等於 n 的結構體
+fill-box = (n i64) (b box) {
+    i <- [0..n): {
+        b.data.push(65)
+    }
+    b.tag = b.data.len()
+}
+
+; 純 []byte 出參（回報的原始形態）
+; n: 要 push 的元素個數
+; out: 長度為 n 的位元組切片
+fill-bytes = (n i64) (out []byte) {
+    i <- [0..n): {
+        out.push(66)
+    }
+}
+
+; 完全不寫出參：呼叫端讀回的必須是零值
+; b: data 為空、tag 為 0
+untouched = () (b box) {
+}
+
+n i64 = 1000
+
+dirty(4096)
+
+r1 box
+r1 = fill-box(n)
+r1.data.len() != n -> exit(1)
+r1.tag != n -> exit(2)
+
+r2 []byte = []
+r2 = fill-bytes(n)
+r2.len() != n -> exit(3)
+
+r3 box
+r3 = untouched()
+r3.data.len() != 0 -> exit(4)
+r3.tag != 0 -> exit(5)
+
+print('out-param-owned-slot: ok')

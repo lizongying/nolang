@@ -38,21 +38,31 @@ func repoRoot(t *testing.T) string {
 // conversion, top-level statements, interface devirtualisation, match
 // lowering. Keep it broad: a narrower corpus makes the pinned inventory
 // flaky rather than smaller.
+//
+// Paths point at the 37-category merge (15618c3c, "tests: merge similar cases
+// into single files"). Eight entries this gate was pinned against — 1.no,
+// 2.no, simple-match.no, number-generic.no, string-union.no, std-net-ext.no,
+// heap.no, sha3.no — were folded into category files and deleted, so the
+// originals no longer exist. Each replacement carries its original member
+// verbatim (the `merged from tests/<name>` marker in the file names it), so
+// the assembly-pass coverage below is unchanged; only the containing file
+// moved. Run the pinned test with -v after touching this: it logs the census
+// verbatim, and a non-empty `--- got ---` means a write site reached a parse
+// output (a §1.4 violation), not that the corpus needs relaxing.
 var astWriteCorpus = []string{
-	"tests/1.no",
-	"tests/2.no",
-	"tests/simple-match.no",
-	"tests/embed.no",
-	"tests/set.no",
-	"tests/map-generics.no",
-	"tests/generics.no",
-	"tests/number-generic.no",
-	"tests/string-union.no",
-	"tests/database-sql.no",
-	"tests/std-net-ext.no",
-	"tests/json.no",
-	"tests/heap.no",
-	"tests/sha3.no",
+	"tests/misc1.no",        // was 1.no + 2.no
+	"tests/match.no",        // was simple-match.no (match lowering)
+	"tests/embed.no",        // embeds
+	"tests/set.no",          // slice-struct monomorphisation
+	"tests/map-generics.no", // generic-struct monomorphisation
+	"tests/generics.no",     // generic-struct monomorphisation
+	"tests/number.no",       // was number-generic.no (union: num = int | float)
+	"tests/str.no",          // was string-union.no (union: string = str | txt)
+	"tests/database-sql.no", // module merge (# std/...)
+	"tests/net.no",          // was std-net-ext.no (cross-file imports)
+	"tests/json.no",         // multi-assign conversion
+	"tests/memory.no",       // was heap.no
+	"tests/sha.no",          // was sha3.no
 }
 
 // runASTAudit compiles one file in vet mode with the AST-write gate enabled

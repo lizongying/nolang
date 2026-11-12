@@ -203,18 +203,30 @@ unix-conn.recv-all = () (content str, total i64) {
     total = 0
     .fd < 0 -> return
     buf str = with-len(UNIX-BUF-SIZE)
+
+    ; 2026-11-11：str 下標直寫已全域禁用。content 是結果參數、進來時 len=0，
+    ; 而且要跨多個 recv 分塊累積 —— 用 []byte + push 承接（自動擴容，不會像
+    ; with-cap 那樣在超過初始容量時越界），收尾一次轉回 str。
+    cb []byte
     !! {
         chunk-n = net.net-recv(.fd, buf, UNIX-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {
+            bv ?byte = buf.byte(i)
+            b0 byte = bv: {
+                ok -> it
 
-            #{overflow=wrap}
-            content[total + i] = buf.byte(i)
+                nil -> 0
+
+                err -> 0
+            }
+            cb.push(b0)
         }
 
         #{overflow=wrap}
         total = total + chunk-n
     }
+    content = cb.to-bytes-str()
 }
 
 ; 設定接收逾時

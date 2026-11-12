@@ -175,10 +175,12 @@ t-join-non-ascii = () {
 ; 迴歸：601 位元組長後綴。舊實作直接在 .p 上逐位元組成長，需要擴容時內容變垃圾
 ; 並 segfault（tests/std-byte-indexing.no 有記載），故必須留一個強迫擴容的斷言。
 t-join-long = () {
-    long str = with-cap(601)
+    ; str 下標直寫已全域禁用 ⇒ 用 []byte 緩衝造出 601 位元組長後綴
+    long-b []byte = with-cap-len(601, 601)
     i <- [0..601): {
-        long[i] = 97
+        long-b[i] = 97
     }
+    long = long-b.to-bytes-str()
     p = mk('/tmp/aaa')
     j = p.join(long)
     runner.eq(j.len-bytes(), 610, 'join 長後綴總長 == 9 + 601')

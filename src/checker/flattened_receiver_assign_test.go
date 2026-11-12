@@ -212,7 +212,7 @@ func TestStaticMethodCallRewriteRecordsCalleeMethod(t *testing.T) {
 	typeOwner := map[string]string{"net.enc-conn": "enc-conn"}
 	definedMethods := map[string]bool{"net.enc-conn.init": true}
 
-	out := resolveMethodCallsInExpr(ce, sem, typeOwner, definedMethods)
+	out := resolveMethodCallsInExpr(ce, sem, typeOwner, definedMethods, nil)
 	call, ok := out.(*parser.CallExpression)
 	if !ok {
 		t.Fatalf("rewrite must keep the CallExpression, got %#v", out)
@@ -229,6 +229,113 @@ func TestStaticMethodCallRewriteRecordsCalleeMethod(t *testing.T) {
 	collectAssignedNamesInExpr(ce, assigned, sem)
 	if !assigned["ec"] {
 		t.Fatalf("the explicitly written receiver `ec` must count as assigned, got %v", assigned)
+	}
+}
+
+// A LOCAL BINDING that happens to share a struct type's bare name must win over
+// the static-form rewrite. `doc = it` (with std's `noml.doc` in scope) followed
+// by `doc.get-str('b')` is an ordinary METHOD call: the receiver is the local,
+// written BEFORE the dot. The static form's contract is the opposite one — the
+// caller writes the receiver as Arguments[0] — so rewriting without a receiver
+// to prepend drops it entirely, and the MIR lowerer then fills the missing
+// `self` with a zero constant.
+//
+// Measured: the call read a freshly-allocated empty pool, `get-str` answered
+// nil, and the []str walk it eventually reached segfaulted (test/std/noml.no
+// t-parse-obj). Renaming the local to anything else made all 346 assertions
+// pass, which is what isolated this pass rather than codegen.
+func TestLocalBindingShadowsTypeNameKeepsReceiver(t *testing.T) {
+	sem := parser.NewSemanticContext()
+	typeOwner := map[string]string{"noml.doc": "doc"}
+	definedMethods := map[string]bool{"noml.doc.get-str": true}
+
+	newCall := func() *parser.CallExpression {
+		return &parser.CallExpression{
+			Function: &parser.DotExpression{
+				Receiver: &parser.Identifier{Value: "doc"},
+				Property: "get-str",
+			},
+			Arguments: []parser.Expression{&parser.Identifier{Value: "b"}},
+		}
+	}
+
+	// Negative control: with no binding the static form still gets completed,
+	// otherwise this test would "pass" by disabling the rewrite wholesale.
+	out := resolveMethodCallsInExpr(newCall(), sem, typeOwner, definedMethods, &localScope{})
+	unbound, ok := out.(*parser.CallExpression)
+	if !ok {
+		t.Fatalf("rewrite must keep the CallExpression, got %#v", out)
+	}
+	if id, ok := unbound.Function.(*parser.Identifier); !ok || id.Value != "noml.doc.get-str" {
+		t.Fatalf("without a binding the static form must still flatten, got %#v", unbound.Function)
+	}
+
+	sc := &localScope{}
+	sc.push()
+	sc.bind("doc")
+
+	out = resolveMethodCallsInExpr(newCall(), sem, typeOwner, definedMethods, sc)
+	call, ok := out.(*parser.CallExpression)
+	if !ok {
+		t.Fatalf("got %#v", out)
+	}
+	dot, ok := call.Function.(*parser.DotExpression)
+	if !ok {
+		t.Fatalf("a shadowed receiver must stay a method call (DotExpression); flattening to %#v "+
+			"drops the receiver, which MIR can only replace with a zero constant", call.Function)
+	}
+	if recv, ok := dot.Receiver.(*parser.Identifier); !ok || recv.Value != "doc" {
+		t.Fatalf("receiver must be preserved, got %#v", dot.Receiver)
+	}
+	if len(call.Arguments) != 1 {
+		t.Fatalf("arguments must be untouched (1 arg), got %d: %#v", len(call.Arguments), call.Arguments)
+	}
+	if got := sem.CalleeOf(call); got != parser.CalleeUnknown {
+		t.Fatalf("no rewrite ⇒ no Callee record, got %v", got)
+	}
+
+	// The binding is lexical: once the frame is popped the name is a type again.
+	sc.pop()
+	out = resolveMethodCallsInExpr(newCall(), sem, typeOwner, definedMethods, sc)
+	afterPop, ok := out.(*parser.CallExpression)
+	if !ok {
+		t.Fatalf("got %#v", out)
+	}
+	if id, ok := afterPop.Function.(*parser.Identifier); !ok || id.Value != "noml.doc.get-str" {
+		t.Fatalf("after the scope is popped the static form must flatten again, got %#v", afterPop.Function)
+	}
+}
+
+// The scope stack itself: innermost frame wins, pop restores the outer view, and
+// a nil scope (the single-node unit-test entry point) answers "unknown" instead
+// of panicking.
+func TestLocalScopeBindPopAndNil(t *testing.T) {
+	var nilScope *localScope
+	nilScope.push() // must not panic
+	nilScope.bind("x")
+	nilScope.pop()
+	if nilScope.bound("x") {
+		t.Fatalf("a nil scope must know no bindings")
+	}
+
+	sc := &localScope{}
+	// A binding written before the first push() has no frame to live in; it must
+	// be dropped rather than panic (defensive: the walker always pushes first).
+	sc.bind("stray")
+	if sc.bound("stray") {
+		t.Fatalf("bind without a frame must be a no-op, got stray bound")
+	}
+
+	sc.push()
+	sc.bind("doc")
+	sc.push()
+	if !sc.bound("doc") {
+		t.Fatalf("outer frame must stay visible inside a nested block")
+	}
+	sc.pop()
+	sc.pop()
+	if sc.bound("doc") {
+		t.Fatalf("popping the frame must retire its bindings")
 	}
 }
 

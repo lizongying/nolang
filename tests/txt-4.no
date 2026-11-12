@@ -8,13 +8,18 @@
     parts = .
     n = parts.len()
     n == 0 -> return
-    cap = 255
+    cap-b = 255
+    ; 本函數是逐**位元組**拼接（不是碼點），原本靠 `out.set-byte(pos, b)` 直寫。
+    ; 該內建已於 2026-11-11 私有化為 `_set-byte`（僅 std 可用）⇒ 改用 []byte
+    ; 緩衝承接位元組，收尾用 txt.from-bytes 一次拷入（超過 255 位元組自動截斷，
+    ; 長度由 from-bytes 依實際位元組數設定，與原本的 `out.len = pos` 等價）。
+    ob []byte = with-cap-len(cap-b, cap-b)
     pos = 0
     i <- [0..n): {
         i > 0 -> {
             sj <- [0..sep.len-bytes()): {
-                pos < cap -> {
-                    out.set-byte(pos, sep.byte(sj))
+                pos < cap-b -> {
+                    ob[pos] = sep.byte(sj)
                     pos = pos + 1
                 }
             }
@@ -30,13 +35,13 @@
         }
         sl i64 = q.len-bytes()
         sj <- [0..sl): {
-            pos < cap -> {
-                out.set-byte(pos, q.byte(sj))
+            pos < cap-b -> {
+                ob[pos] = q.byte(sj)
                 pos = pos + 1
             }
         }
     }
-    out.len = pos
+    out = txt.from-bytes(ob.slice(0, pos))
 }
 
 s txt = 'a-b-c-d'

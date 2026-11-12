@@ -1491,9 +1491,12 @@ int.to-str = () (out str) {
     out = ''
     n = .
     ; ... conversion logic using `n` (not `.` directly after first use)
-    ; Allocate the result up front (e.g. `out = with-cap(digits)`) and fill it
-    ; by index. The str length is read-only: read it with `.len()` /
-    ; `.len-bytes()`, never assign `out.len = n`.
+    ; Allocate a `[]byte` buffer up front (`b []byte = with-cap-len(k, k)`) and
+    ; fill it by index; convert once at the end with `b.slice(0, used).to-bytes-str()`.
+    ; Do NOT use `out str = with-cap(...)` + `out[i] = v`: `s[i] = v` on a str is a
+    ; compile error (`idxwrite`) since 2026-11-11, with-cap base or not.
+    ; The str length is read-only: read it with `.len()` / `.len-bytes()`,
+    ; never assign `out.len = n`.
 }
 ```
 
@@ -2772,17 +2775,26 @@ Methods are defined on types, using `.` to reference the receiver. The receiver 
 **Examples:**
 
 ```no
-; str method
+; str method — byte-wise build via a []byte buffer (str index writes are banned)
 str.to-upper = () (out str) {
-    out = with-cap(.len-bytes())
-    i <- [0..self.len-bytes()): {
-        c = .byte(i)
-        {
-            c >= 97 && c <= 122 -> out[i] = c - 32
+    n = .len-bytes()
+    b []byte = with-cap-len(n, n)
+    i <- [0..n): {
+        c ?byte = .byte(i)
+        v = c: {
+            ok -> it
 
-            -> out[i] = c
+            nil -> 0
+
+            err -> 0
+        }
+        {
+            v >= 97 && v <= 122 -> b[i] = v - 32
+
+            -> b[i] = v
         }
     }
+    out = b.to-bytes-str()
 }
 
 ; char method
@@ -3494,10 +3506,15 @@ print('a={val}', val); a=42 42
 
 ```no
 ; Capacity/length constructors (no prefix)
-s str = with-cap(256); ✅ pre-allocate 256 bytes for str
+b []byte = with-cap(256); ✅ pre-allocate 256 byte slots (index-writable, grows len)
 v []i64 = with-cap(100); ✅ pre-allocate 100 elements for slice
 v []i64 = with-cap-len(200, 100); ✅ capacity 200, length 100
 v []i64 = with-len(100); ✅ length 100 slice
+
+; `x str = with-cap(n)` + s.push(...) / s.push-str(...): GROWS in place (doubling
+;    realloc) since 2026-11-12. You still cannot index-write a str (idxwrite), and
+;    place-match only overwrites IN RANGE. For byte-exact assembly use a []byte:
+;      s = b.slice(0, used).to-bytes-str()
 
 ; Output/formatting (no prefix)
 print('hello {n}'); ✅ auto-newline
@@ -4033,7 +4050,10 @@ is a compile error, not harmless redundancy. `#{overflow}` is the one restricted
 > One line, one annotation; `no fmt --fix=overflow` and the LSP quick fixes emit exactly that form.
 > Writing it on a function head / block head is illegal. ⚠️ Current hole: a function-head annotation
 > still makes `no vet` skip the whole function (codegen keeps `err`), and a block-head one silences
-> `no vet` by downward inheritance.
+> `no vet` by downward inheritance. None of the three readers honour it for compilation — a `for`-head
+> annotation and its absence produce byte-identical `15w45dqk` errors, so L1/L2 `overflow` is pure
+> lint shadow. `no fmt --fix=overflow` therefore pushes it down: it strips the scope-level line and
+> re-emits one L3 annotation per statement the checker actually reports.
 
 Full rules, the key×level matrix and the measured gaps: `docs/docs/lang/annotation-scope.md`.
 

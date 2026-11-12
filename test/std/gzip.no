@@ -1,7 +1,7 @@
 ; std-gzip.no — archive/gzip 模組測試
 ;
 ; 執行：no test test/std/gzip.no
-; 覆蓋：gzip.gzip-compress / gzip.gzip-decompress / gzip.deflate-stored /
+; 覆蓋：gzip.compress / gzip.decompress / gzip.deflate-stored /
 ;       gzip.inflate-decompress
 
 # /test/runner
@@ -13,17 +13,17 @@ dynhex = '7D955D6E03310884AFB257B3D5A8A9B46923354F9C3ECAE2846F00EDC37AFD070C3006
 ; 壓縮：'Hello' 應產生非空的 gzip 串流（含標頭與尾部 CRC/ISIZE）
 t-compress = () {
     data []byte = [1, 2, 3, 4, 5]
-    compressed = gzip.gzip-compress(data)
+    compressed = gzip.compress(data)
     runner.gt(compressed.len(), 0, 'compressed len > 0')
 }
 
 ; 往返：gzip 串流長度應大於 10（固定標頭 10 位元組），解壓後還原 5 位元組 'Hello'
 t-compress-decompress = () {
     data []byte = [72, 101, 108, 108, 111]; "Hello"
-    compressed = gzip.gzip-compress(data)
+    compressed = gzip.compress(data)
     runner.gt(compressed.len(), 10, 'compressed len > 10 (gzip header)')
 
-    decompressed = gzip.gzip-decompress(compressed)
+    decompressed = gzip.decompress(compressed)
     runner.eq(decompressed.len(), 5, 'decompressed len == 5')
     ixout24c27 = decompressed[0]: {
         ok -> it
@@ -75,10 +75,10 @@ t-empty = () {
     runner.eq(len(d), 5, '空輸入 deflate-stored = 5 位元組（1+2+2）')
     runner.str-eq(d.to-hex(), '010000FFFF', 10, '空輸入 = BFINAL=1 / LEN=0 / NLEN=0xFFFF')
 
-    g = gzip.gzip-compress(none)
+    g = gzip.compress(none)
     runner.eq(len(g), 23, 'gzip 空串流 = 10(header) + 5(body) + 8(trailer)')
 
-    back = gzip.gzip-decompress(g)
+    back = gzip.decompress(g)
     runner.eq(len(back), 0, 'gzip 空串流可還原為 0 位元組')
 }
 

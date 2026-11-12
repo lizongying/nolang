@@ -64,7 +64,7 @@ YAML-CHOMP-KEEP = 2
 ; 數據結構
 ...
 
-; yaml-node: 樹節點
+; node: 樹節點
 ;   kind   節點類型（YAML-KIND-*）
 ;   style  標量/集合風格（YAML-STYLE-*）
 ;   tag    顯式標簽原文（無標簽為 ''）
@@ -72,8 +72,8 @@ YAML-CHOMP-KEEP = 2
 ;   text   標量原文（引號已解轉義）；集合為空
 ;   ival/fval/bval 解析後的標量值
 ;   keys   映射键節點索引；kids 序列元素 / 映射值節點索引
-; [yaml-node](#yaml.yaml-node)
-yaml-node {
+; [node](#yaml.node)
+node {
     kind i64
     style i64
     tag str
@@ -88,29 +88,29 @@ yaml-node {
     col i64
 }
 
-; yaml-pool: 節點池
-; [yaml-pool](#yaml.yaml-pool)
-yaml-pool {
-    nodes []yaml-node
+; node-pool: 節點池
+; [pool](#yaml.node-pool)
+pool {
+    nodes []node
 }
 
 ; yaml: 已解析文檔（可含多份文檔）
 ; [yaml](#yaml.yaml)
 yaml {
-    pool yaml-pool
+    node-pool pool
     root i64
     roots []i64
     source str
 }
 
-; yaml-parser: 解析器状態（方法接收者為引用，可原地推進）
-; [yaml-parser](#yaml.yaml-parser)
-yaml-parser {
+; parser: 解析器状態（方法接收者為引用，可原地推進）
+; [parser](#yaml.parser)
+parser {
     src str
     n i64
     pos i64
     line i64
-    nodes []yaml-node
+    nodes []node
     anchor-names []str
     anchor-ids []i64
     err str
@@ -123,8 +123,8 @@ yaml-parser {
 ; 取 src[i]，越界返回 0
 ; i: 目標索引
 ; c: 該位置的位元組值（越界時為 0）
-; [byte-at](#yaml.yaml-parser.byte-at)
-yaml-parser.byte-at = (i i64) (c i64) {
+; [byte-at](#yaml.parser.byte-at)
+parser.byte-at = (i i64) (c i64) {
     c = 0
     i < 0 -> return
     i >= .n -> return
@@ -137,16 +137,16 @@ yaml-parser.byte-at = (i i64) (c i64) {
 
 ; 當前字節
 ; c: 當前 pos 指向的位元組（EOF 時為 0）
-; [cur](#yaml.yaml-parser.cur)
-yaml-parser.cur = () (c i64) {
+; [cur](#yaml.parser.cur)
+parser.cur = () (c i64) {
     c = .byte-at(.pos)
 }
 
 ; 相對當前位置偏移 k 的字節
 ; k: 相對當前位置的偏移量（越界按 0 處理）
 ; c: pos+k 處的位元組值
-; [at](#yaml.yaml-parser.at)
-yaml-parser.at = (k i64) (c i64) {
+; [at](#yaml.parser.at)
+parser.at = (k i64) (c i64) {
 
     #{overflow=wrap}
     i = .pos + k
@@ -155,16 +155,15 @@ yaml-parser.at = (k i64) (c i64) {
 
 ; 是否到達输入末尾
 ; yes: pos 已到達输入末尾
-; [eof](#yaml.yaml-parser.eof)
-yaml-parser.eof = () (yes bool) {
+; [eof](#yaml.parser.eof)
+parser.eof = () (yes bool) {
     yes = .pos >= .n
 }
 
 ; 前進一個字節
-; [advance](#yaml.yaml-parser.advance)
-yaml-parser.advance = () {
+; [advance](#yaml.parser.advance)
+parser.advance = () {
 
-    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -174,8 +173,8 @@ yaml-parser.advance = () {
 
 ; 消費一個換行（\n 或 \r\n）
 ; yes: 消費了一個換行；false=不在換行處，位置不變
-; [newline](#yaml.yaml-parser.newline)
-yaml-parser.newline = () (yes bool) {
+; [newline](#yaml.parser.newline)
+parser.newline = () (yes bool) {
     yes = false
     c = .cur()
     c == 13 -> {
@@ -183,7 +182,6 @@ yaml-parser.newline = () (yes bool) {
         .cur() == 10 -> .advance()
         yes = true
 
-        #{overflow=wrap}
         .line = .line + 1: {
             ok -> it
 
@@ -195,7 +193,6 @@ yaml-parser.newline = () (yes bool) {
         .advance()
         yes = true
 
-        #{overflow=wrap}
         .line = .line + 1: {
             ok -> it
 
@@ -206,15 +203,15 @@ yaml-parser.newline = () (yes bool) {
 
 ; 是否位於行尾（含 EOF）
 ; yes: 當前位元組是 \n 或已到输入末尾
-; [at-eol](#yaml.yaml-parser.at-eol)
-yaml-parser.at-eol = () (yes bool) {
+; [at-eol](#yaml.parser.at-eol)
+parser.at-eol = () (yes bool) {
     c = .cur()
     yes = c == 0 || c == 10 || c == 13
 }
 
 ; 跳過行內空格與制表符
-; [skip-spaces](#yaml.yaml-parser.skip-spaces)
-yaml-parser.skip-spaces = () {
+; [skip-spaces](#yaml.parser.skip-spaces)
+parser.skip-spaces = () {
     !! {
         c = .cur()
         c == 32 -> {
@@ -230,8 +227,8 @@ yaml-parser.skip-spaces = () {
 }
 
 ; 跳過行尾空白與行注释（不消費換行）
-; [skip-to-eol](#yaml.yaml-parser.skip-to-eol)
-yaml-parser.skip-to-eol = () {
+; [skip-to-eol](#yaml.parser.skip-to-eol)
+parser.skip-to-eol = () {
     .skip-spaces()
     c = .cur()
     c == 35 -> {
@@ -245,15 +242,14 @@ yaml-parser.skip-to-eol = () {
 ; 返回 i 所在行的行尾偏移（指向換行或 n）
 ; i: 目標行內任意位元組偏移
 ; le: 行尾偏移（指向換行符；無換行時等於输入長度）
-; [line-end-of](#yaml.yaml-parser.line-end-of)
-yaml-parser.line-end-of = (i i64) (le i64) {
+; [line-end-of](#yaml.parser.line-end-of)
+parser.line-end-of = (i i64) (le i64) {
     le = i
     (le < .n) {
         le >= .n -> return
         c = .byte-at(le)
         c == 10 || c == 13 -> return
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -270,8 +266,8 @@ yaml-parser.line-end-of = (i i64) (le i64) {
 ; 返回 i 所在行的起始偏移
 ; i: 目標行內任意位元組偏移
 ; ls: i 所在行的行首位元組偏移
-; [line-start-of](#yaml.yaml-parser.line-start-of)
-yaml-parser.line-start-of = (i i64) (ls i64) {
+; [line-start-of](#yaml.parser.line-start-of)
+parser.line-start-of = (i i64) (ls i64) {
     ls = i
     (ls > 0) {
         ls <= 0 -> return
@@ -296,8 +292,8 @@ yaml-parser.line-start-of = (i i64) (ls i64) {
 ; 跳過後 pos 停在首個非空格字符，後續的 is-seq-dash / looks-like-map-entry /
 ; at-doc-marker 也都需要這個位置。
 ; ind: 當前行首個非空字符前的空格列數
-; [indent-at](#yaml.yaml-parser.indent-at)
-yaml-parser.indent-at = () (ind i64) {
+; [indent-at](#yaml.parser.indent-at)
+parser.indent-at = () (ind i64) {
     .skip-spaces()
     ls = .line-start-of(.pos)
 
@@ -311,8 +307,8 @@ yaml-parser.indent-at = () (ind i64) {
 
 ; 記錄解析錯誤
 ; msg: 錯誤描述（存入解析器錯誤信息）
-; [fail](#yaml.yaml-parser.fail)
-yaml-parser.fail = (msg str) {
+; [fail](#yaml.parser.fail)
+parser.fail = (msg str) {
     .failed -> return
     .failed = true
     .err = msg
@@ -320,8 +316,8 @@ yaml-parser.fail = (msg str) {
 
 ; 記錄帶位置的解析錯誤
 ; msg: 錯誤描述（自動附加當前位置信息）
-; [fail-at](#yaml.yaml-parser.fail-at)
-yaml-parser.fail-at = (msg str) {
+; [fail-at](#yaml.parser.fail-at)
+parser.fail-at = (msg str) {
     .failed -> return
     .failed = true
 
@@ -334,8 +330,8 @@ yaml-parser.fail-at = (msg str) {
 ; 追加節點並返回索引
 ; nd: 待追加的節點
 ; idx: 該節點在節點池中的索引
-; [push-node](#yaml.yaml-parser.push-node)
-yaml-parser.push-node = (nd yaml-node) (idx i64) {
+; [push-node](#yaml.parser.push-node)
+parser.push-node = (nd node) (idx i64) {
     .nodes.push(nd)
 
     #{overflow=wrap}
@@ -344,9 +340,9 @@ yaml-parser.push-node = (nd yaml-node) (idx i64) {
 
 ; 追加空節點（null）
 ; idx: 新建 null 節點的池索引
-; [push-null](#yaml.yaml-parser.push-null)
-yaml-parser.push-null = () (idx i64) {
-    nd = yaml-node{
+; [push-null](#yaml.parser.push-null)
+parser.push-null = () (idx i64) {
+    nd = node{
         kind: YAML-KIND-NULL
         style: YAML-STYLE-PLAIN
         tag: ''
@@ -365,8 +361,8 @@ yaml-parser.push-null = () (idx i64) {
 ; idx: 目標節點池索引
 ; tag: 顯式標簽（空串=無）
 ; anchor: 锚點名（空串=無；非空時同時登記）
-; [set-props](#yaml.yaml-parser.set-props)
-yaml-parser.set-props = (idx i64, tag str, anchor str) {
+; [set-props](#yaml.parser.set-props)
+parser.set-props = (idx i64, tag str, anchor str) {
     .nodes[idx].tag = tag
 
     .nodes[idx].anchor = anchor
@@ -387,8 +383,8 @@ yaml-parser.set-props = (idx i64, tag str, anchor str) {
 ; 集合節點（seq/map）只保留標簽原文，不改 kind —— `!!seq` / `!!map` 不改變
 ; 解析結構，而 `!!str` 套在集合上在 YAML 裡本就是非良構寫法。
 ; idx: 節點池索引
-; [apply-tag-at](#yaml.yaml-parser.apply-tag-at)
-yaml-parser.apply-tag-at = (idx i64) {
+; [apply-tag-at](#yaml.parser.apply-tag-at)
+parser.apply-tag-at = (idx i64) {
 
     ; 讀取走 `?=` 綁定：裸下標 `arr[i]` 回的是 `?T`，不能在這裡當普通值用
     ; （idxbruse）。失敗（索引越界）就直接放棄，什麼也不改。
@@ -399,7 +395,7 @@ yaml-parser.apply-tag-at = (idx i64) {
             kind = nd.kind
             is-coll = kind == YAML-KIND-SEQ || kind == YAML-KIND-MAP
             is-coll == false -> {
-                k = yaml-apply-tag(tag, kind)
+                k = apply-tag(tag, kind)
                 k != kind -> {
                     text = nd.text
                     .nodes[idx].kind = k
@@ -412,11 +408,11 @@ yaml-parser.apply-tag-at = (idx i64) {
                         iv = 0
                         iv2 = 0
                         fv2 = 0.0
-                        iv2, iv, fv2 = yaml-scan-number(text)
+                        iv2, iv, fv2 = scan-number(text)
                         .nodes[idx].ival = iv
                     }
                     k == YAML-KIND-FLOAT -> {
-                        fv ?f64 = yaml-to-f64(text)
+                        fv ?f64 = to-f64(text)
                         {
                             .nodes[idx].fval = 0.0
                             fv: {
@@ -450,8 +446,8 @@ yaml-parser.apply-tag-at = (idx i64) {
 ; 登記锚點
 ; name: 锚點名
 ; idx: 锚點指向的節點索引
-; [register-anchor](#yaml.yaml-parser.register-anchor)
-yaml-parser.register-anchor = (name str, idx i64) {
+; [register-anchor](#yaml.parser.register-anchor)
+parser.register-anchor = (name str, idx i64) {
     .anchor-names.push(name)
     .anchor-ids.push(idx)
 }
@@ -459,12 +455,12 @@ yaml-parser.register-anchor = (name str, idx i64) {
 ; 查找锚點，未找到返回 -1
 ; name: 锚點名
 ; idx: 對應的節點索引（-1=未登記）
-; [anchor-id](#yaml.yaml-parser.anchor-id)
-yaml-parser.anchor-id = (name str) (idx i64) {
+; [anchor-id](#yaml.parser.anchor-id)
+parser.anchor-id = (name str) (idx i64) {
     idx = -1
     total = .anchor-names.len()
     i <- [0..total): {
-        nm = yaml-str-at(.anchor-names, i)
+        nm = str-at(.anchor-names, i)
         nm.eq-full(name) -> {
             idx = .anchor-ids[i]: {
                 ok -> it
@@ -488,8 +484,8 @@ yaml-parser.anchor-id = (name str) (idx i64) {
 ; a: 目標字符串數組
 ; i: 元素下標
 ; out: 第 i 個元素的值（越界返回空串）
-; [yaml-str-at](#yaml.yaml-str-at)
-yaml-str-at = (a []str, i i64) (out str) {
+; [str-at](#yaml.str-at)
+str-at = (a []str, i i64) (out str) {
     out = ''
     i < 0 -> return
     i >= a.len() -> return
@@ -506,8 +502,8 @@ yaml-str-at = (a []str, i i64) (out str) {
 ; 不用 `float.is-nan`：模塊內的接收者式調用在 MIR 後端解析不到該方法。
 ; x: 待檢測的 f64 值
 ; yes: x 為 NaN（NaN != NaN 判據）
-; [yaml-f-is-nan](#yaml.yaml-f-is-nan)
-yaml-f-is-nan = (x f64) (yes bool) {
+; [f-is-nan](#yaml.f-is-nan)
+f-is-nan = (x f64) (yes bool) {
     yes = x != x
 }
 
@@ -517,8 +513,8 @@ yaml-f-is-nan = (x f64) (yes bool) {
 ; 無窮的判據是「非零且減半後不變」；先用 `x != x` 排除 NaN。
 ; x: 待檢測的 f64 值
 ; yes: x 為正/負無窮（非零且減半後不變）
-; [yaml-f-is-inf](#yaml.yaml-f-is-inf)
-yaml-f-is-inf = (x f64) (yes bool) {
+; [f-is-inf](#yaml.f-is-inf)
+f-is-inf = (x f64) (yes bool) {
     yes = false
     x != x -> return
     x == 0.0 -> return
@@ -531,8 +527,8 @@ yaml-f-is-inf = (x f64) (yes bool) {
 
 ; 正無窮
 ; v: 正無窮大值
-; [yaml-inf](#yaml.yaml-inf)
-yaml-inf = () (v f64) {
+; [inf](#yaml.inf)
+inf = () (v f64) {
     v = 1.0 / 0.0
 }
 
@@ -541,8 +537,8 @@ yaml-inf = () (v f64) {
 ; 必須走運行期除法：編譯期常量摺疊會把 `0.0 / 0.0` 直接算成 0。
 ; 借道局部變量可避免摺疊，得到真正的 NaN（`x != x` 為真）。
 ; v: NaN 值（運行期 0.0/0.0 產生，未被常量摺疊）
-; [yaml-nan](#yaml.yaml-nan)
-yaml-nan = () (v f64) {
+; [nan](#yaml.nan)
+nan = () (v f64) {
     zero = 0.0
     v = zero / zero
 }
@@ -550,12 +546,11 @@ yaml-nan = () (v f64) {
 ; 十六進制字符轉數值，非十六進制返回 -1
 ; c: 字符的 ASCII 碼
 ; d: 該十六進制位代表的數值 0-15（-1=非法十六進制字符）
-; [yaml-hex-digit](#yaml.yaml-hex-digit)
-yaml-hex-digit = (c i64) (d i64) {
+; [hex-digit](#yaml.hex-digit)
+hex-digit = (c i64) (d i64) {
     d = -1
     c >= 48 && c <= 57 -> {
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -570,7 +565,6 @@ yaml-hex-digit = (c i64) (d i64) {
     }
     c >= 97 && c <= 102 -> {
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -585,7 +579,6 @@ yaml-hex-digit = (c i64) (d i64) {
     }
     c >= 65 && c <= 70 -> {
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -605,8 +598,8 @@ yaml-hex-digit = (c i64) (d i64) {
 ; radix: 進制基數（2/8/16）
 ; kind: 成功=YAML-KIND-INT，失败=YAML-KIND-STR
 ; v: 轉換出的整數值
-; [yaml-parse-radix](#yaml.yaml-parse-radix)
-yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
+; [parse-radix](#yaml.parse-radix)
+parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
     kind = YAML-KIND-STR
     v = 0
     i = start
@@ -621,7 +614,6 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         }
         c == 95 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -634,11 +626,10 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
             }
             continue
         }
-        d = yaml-hex-digit(c)
+        d = hex-digit(c)
         d < 0 -> return
         d >= radix -> return
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -650,7 +641,6 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -662,7 +652,6 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -681,8 +670,8 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
 ; 文本轉 f64（返回 nil 表示失败）
 ; t: 數字文本
 ; v: 轉換結果（nil=無法解析為 f64）
-; [yaml-to-f64](#yaml.yaml-to-f64)
-yaml-to-f64 = (t str) (v ?f64) {
+; [to-f64](#yaml.to-f64)
+to-f64 = (t str) (v ?f64) {
     v = nil
     r = t.to-f64()
     r: {
@@ -700,8 +689,8 @@ yaml-to-f64 = (t str) (v ?f64) {
 ; kind: 識别出的數字種類（INT/FLOAT/STR）
 ; ival: kind=INT 時的整數值
 ; fval: kind=FLOAT 時的浮點值
-; [yaml-scan-number](#yaml.yaml-scan-number)
-yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
+; [scan-number](#yaml.scan-number)
+scan-number = (t str) (kind i64, ival i64, fval f64) {
     kind = YAML-KIND-STR
     ival = 0
     fval = 0.0
@@ -734,10 +723,9 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                 s = j + 1
                 k = YAML-KIND-STR
                 v = 0
-                k, v = yaml-parse-radix(t, s, 16)
+                k, v = parse-radix(t, s, 16)
                 k == YAML-KIND-INT -> {
 
-                    #{overflow=wrap}
                     neg -> {
                         {
 
@@ -757,7 +745,6 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
             }
             x == 111 || x == 79 -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -770,10 +757,9 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                 }
                 k = YAML-KIND-STR
                 v = 0
-                k, v = yaml-parse-radix(t, s, 8)
+                k, v = parse-radix(t, s, 8)
                 k == YAML-KIND-INT -> {
 
-                    #{overflow=wrap}
                     neg -> {
                         {
 
@@ -803,7 +789,6 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
         c = t.byte(i)
         c == 95 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -818,7 +803,6 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
         }
         c >= 48 && c <= 57 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -830,7 +814,6 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                 }
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -847,7 +830,6 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
             has-dot -> break
             has-dot = true
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -865,7 +847,6 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
             digits == 0 -> break
             has-exp = true
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -883,7 +864,6 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                     -> 0
                 }
 
-                #{overflow=wrap}
                 s == 45 || s == 43 -> {
                     {
 
@@ -906,7 +886,7 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
     digits == 0 -> return
 
     has-dot || has-exp -> {
-        fv ?f64 = yaml-to-f64(t)
+        fv ?f64 = to-f64(t)
         fv: {
             nil -> return
 
@@ -922,10 +902,9 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 
     k = YAML-KIND-STR
     v = 0
-    k, v = yaml-parse-radix(t, start, 10)
+    k, v = parse-radix(t, start, 10)
     k == YAML-KIND-INT -> {
 
-        #{overflow=wrap}
         neg -> {
             {
 
@@ -949,8 +928,8 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 ; ival: kind=INT 時的整數值
 ; fval: kind=FLOAT 時的浮點值
 ; bval: kind=BOOL 時的布爾值
-; [yaml-resolve-plain](#yaml.yaml-resolve-plain)
-yaml-resolve-plain = (text str) (kind i64, ival i64, fval f64, bval bool) {
+; [resolve-plain](#yaml.resolve-plain)
+resolve-plain = (text str) (kind i64, ival i64, fval f64, bval bool) {
     kind = YAML-KIND-STR
     ival = 0
     fval = 0.0
@@ -979,32 +958,32 @@ yaml-resolve-plain = (text str) (kind i64, ival i64, fval f64, bval bool) {
 
         text == '.inf' || text == '.Inf' || text == '.INF' -> {
             kind = YAML-KIND-FLOAT
-            fval = yaml-inf()
+            fval = inf()
             return
         }
 
         text == '+.inf' || text == '+.Inf' || text == '+.INF' -> {
             kind = YAML-KIND-FLOAT
-            fval = yaml-inf()
+            fval = inf()
             return
         }
 
         text == '-.inf' || text == '-.Inf' || text == '-.INF' -> {
             kind = YAML-KIND-FLOAT
-            fval = 0.0 - yaml-inf()
+            fval = 0.0 - inf()
             return
         }
 
         text == '.nan' || text == '.NaN' || text == '.NAN' -> {
             kind = YAML-KIND-FLOAT
-            fval = yaml-nan()
+            fval = nan()
             return
         }
     }
     k = YAML-KIND-STR
     iv = 0
     fv = 0.0
-    k, iv, fv = yaml-scan-number(text)
+    k, iv, fv = scan-number(text)
     {
         k == YAML-KIND-INT -> {
             kind = k
@@ -1022,8 +1001,8 @@ yaml-resolve-plain = (text str) (kind i64, ival i64, fval f64, bval bool) {
 ; 歸一化標簽名（!!str / tag:yaml.org,2002:str → str）
 ; tag: 原始標簽（!!str / tag:yaml.org,2002:str 等寫法）
 ; name: 歸一化後的短標簽名（str/int/seq...）
-; [yaml-tag-name](#yaml.yaml-tag-name)
-yaml-tag-name = (tag str) (name str) {
+; [tag-name](#yaml.tag-name)
+tag-name = (tag str) (name str) {
     name = tag
     name.starts-with('!<') -> {
         n = name.len-bytes()
@@ -1039,10 +1018,10 @@ yaml-tag-name = (tag str) (name str) {
 ; tag: 歸一化標簽名
 ; kind: 按內容推斷的節點種類
 ; k: 標簽覆蓋後的最終種類（標簽未識别時返回原 kind）
-; [yaml-apply-tag](#yaml.yaml-apply-tag)
-yaml-apply-tag = (tag str, kind i64) (k i64) {
+; [apply-tag](#yaml.apply-tag)
+apply-tag = (tag str, kind i64) (k i64) {
     k = kind
-    name = yaml-tag-name(tag)
+    name = tag-name(tag)
     {
         name == 'str' -> {
             k = YAML-KIND-STR
@@ -1076,8 +1055,8 @@ yaml-apply-tag = (tag str, kind i64) (k i64) {
 ; 處理雙引號轉義序列
 ; body: 雙引號內的字符串內容（含轉義序列）
 ; out: 反轉義後的文本（nil=含非法轉義）
-; [yaml-unescape-double](#yaml.yaml-unescape-double)
-yaml-unescape-double = (body str) (out ?str) {
+; [unescape-double](#yaml.unescape-double)
+unescape-double = (body str) (out ?str) {
     acc = ''
     i = 0
     n = body.len-bytes()
@@ -1140,7 +1119,7 @@ yaml-unescape-double = (body str) (out ?str) {
                     k <- [0..2): {
 
                         #{overflow=wrap}
-                        d = yaml-hex-digit(body.byte(i + k))
+                        d = hex-digit(body.byte(i + k))
                         d < 0 -> return
 
                         #{overflow=wrap}
@@ -1167,7 +1146,7 @@ yaml-unescape-double = (body str) (out ?str) {
                     k <- [0..4): {
 
                         #{overflow=wrap}
-                        d = yaml-hex-digit(body.byte(i + k))
+                        d = hex-digit(body.byte(i + k))
                         d < 0 -> return
 
                         #{overflow=wrap}
@@ -1194,7 +1173,7 @@ yaml-unescape-double = (body str) (out ?str) {
                     k <- [0..8): {
 
                         #{overflow=wrap}
-                        d = yaml-hex-digit(body.byte(i + k))
+                        d = hex-digit(body.byte(i + k))
                         d < 0 -> return
 
                         #{overflow=wrap}
@@ -1229,16 +1208,16 @@ yaml-unescape-double = (body str) (out ?str) {
 ; tag: 顯式標簽（空=按 core schema 推斷類型）
 ; anchor: 锚點名（空=無）
 ; idx: 新建節點的池索引
-; [push-scalar](#yaml.yaml-parser.push-scalar)
-yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
+; [push-scalar](#yaml.parser.push-scalar)
+parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
     kind = YAML-KIND-STR
     ival = 0
     fval = 0.0
     bval = false
     style == YAML-STYLE-PLAIN -> {
-        kind, ival, fval, bval = yaml-resolve-plain(text)
+        kind, ival, fval, bval = resolve-plain(text)
     }
-    nd = yaml-node{
+    nd = node{
         kind: kind
         style: style
         tag: tag
@@ -1262,8 +1241,8 @@ yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
 
 ; 讀取一個不含分隔符的裸 token
 ; out: 讀到的裸 token（遇空白/指示符即終止）
-; [read-token](#yaml.yaml-parser.read-token)
-yaml-parser.read-token = () (out str) {
+; [read-token](#yaml.parser.read-token)
+parser.read-token = () (out str) {
     start = .pos
     !! {
         c = .cur()
@@ -1276,8 +1255,8 @@ yaml-parser.read-token = () (out str) {
 
 ; 讀取一個標簽（!!name / !name / !<verbatim> / !）
 ; out: 標簽全文（含 ! 前綴；裸 ! 返回 ';!'）
-; [read-tag](#yaml.yaml-parser.read-tag)
-yaml-parser.read-tag = () (out str) {
+; [read-tag](#yaml.parser.read-tag)
+parser.read-tag = () (out str) {
     start = .pos
     .at(1) == 60 -> {
         .advance()
@@ -1307,8 +1286,8 @@ yaml-parser.read-tag = () (out str) {
 ; 解析節點前綴的锚點與標簽（順序任意）
 ; tag: 讀到的標簽（空串=無）
 ; anchor: 讀到的锚點名（空串=無；非空時已登記入锚點表）
-; [parse-props](#yaml.yaml-parser.parse-props)
-yaml-parser.parse-props = () (tag str, anchor str) {
+; [parse-props](#yaml.parser.parse-props)
+parser.parse-props = () (tag str, anchor str) {
     tag = ''
     anchor = ''
     !! {
@@ -1333,8 +1312,8 @@ yaml-parser.parse-props = () (tag str, anchor str) {
 
 ; 當前位置是否為序列项指示符 '- '
 ; yes: 當前位置是序列项指示符（'- ' 或行尾的 '-'）
-; [is-seq-dash](#yaml.yaml-parser.is-seq-dash)
-yaml-parser.is-seq-dash = () (yes bool) {
+; [is-seq-dash](#yaml.parser.is-seq-dash)
+parser.is-seq-dash = () (yes bool) {
     yes = false
     .cur() != 45 -> return
     c = .at(1)
@@ -1343,8 +1322,8 @@ yaml-parser.is-seq-dash = () (yes bool) {
 
 ; 本行是否存在頂層 ': ' 或行尾 ':' 或顯式键 '? '
 ; yes: 本行存在映射键指示符，可作映射條目處理
-; [looks-like-map-entry](#yaml.yaml-parser.looks-like-map-entry)
-yaml-parser.looks-like-map-entry = () (yes bool) {
+; [looks-like-map-entry](#yaml.parser.looks-like-map-entry)
+parser.looks-like-map-entry = () (yes bool) {
     yes = false
 
     ; 計數器必須顯式標註 i64。寫成 `i = .pos` 由欄位推斷型別時，本函式下方
@@ -1369,7 +1348,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 j < .n -> {
                     .src.byte(j) == 39 -> {
 
-                        #{overflow=wrap}
                         {
 
                             #{overflow=wrap}
@@ -1386,7 +1364,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 in-s = false
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1402,7 +1379,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
         in-d -> {
             c == 92 -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -1417,7 +1393,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
             }
             c == 34 -> in-d = false
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1433,7 +1408,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
         c == 39 -> {
             in-s = true
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1449,7 +1423,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
         c == 34 -> {
             in-d = true
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1464,7 +1437,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
         }
         c == 91 || c == 123 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1476,7 +1448,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 }
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1491,7 +1462,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
         }
         c == 93 || c == 125 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1503,7 +1473,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 }
             }
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1525,7 +1494,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
         }
         depth == 0 && c == 58 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1548,7 +1516,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
         }
         depth == 0 && c == 63 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1570,7 +1537,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1588,8 +1554,8 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 ...
 
 ; 跳過空行與整行注释，停在下一行內容起始處
-; [skip-blank-lines](#yaml.yaml-parser.skip-blank-lines)
-yaml-parser.skip-blank-lines = () {
+; [skip-blank-lines](#yaml.parser.skip-blank-lines)
+parser.skip-blank-lines = () {
     !! {
         .eof() -> break
         save = .pos
@@ -1610,8 +1576,8 @@ yaml-parser.skip-blank-lines = () {
 
 ; 讀取當前位置到行尾的內容（去掉行尾空白與注释）
 ; out: 到行尾的文本（已去行尾空白與 # 注释）
-; [read-line-content](#yaml.yaml-parser.read-line-content)
-yaml-parser.read-line-content = () (out str) {
+; [read-line-content](#yaml.parser.read-line-content)
+parser.read-line-content = () (out str) {
     start = .pos
     !! {
         .at-eol() -> break
@@ -1636,8 +1602,8 @@ yaml-parser.read-line-content = () (out str) {
 ; key-mode: true=作映射键解析，遇 ': ' 等指示符即終止
 ; flow: true=流上下文（',' '}' ']' 亦終止）
 ; idx: 新建標量節點的池索引
-; [parse-plain](#yaml.yaml-parser.parse-plain)
-yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
+; [parse-plain](#yaml.parser.parse-plain)
+parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
     start = .pos
     !! {
         .at-eol() -> break
@@ -1693,7 +1659,6 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
             .at-eol() -> {
                 .newline()
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -1743,8 +1708,8 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
 
 ; 解析單引號標量
 ; idx: 新建標量節點的池索引
-; [parse-single](#yaml.yaml-parser.parse-single)
-yaml-parser.parse-single = () (idx i64) {
+; [parse-single](#yaml.parser.parse-single)
+parser.parse-single = () (idx i64) {
     .advance()
     out = ''
     closed = false
@@ -1778,8 +1743,8 @@ yaml-parser.parse-single = () (idx i64) {
 
 ; 解析雙引號標量
 ; idx: 新建標量節點的池索引（轉義已處理）
-; [parse-double](#yaml.yaml-parser.parse-double)
-yaml-parser.parse-double = () (idx i64) {
+; [parse-double](#yaml.parser.parse-double)
+parser.parse-double = () (idx i64) {
     .advance()
     raw = ''
     closed = false
@@ -1825,7 +1790,7 @@ yaml-parser.parse-double = () (idx i64) {
         return
     }
     text = ''
-    uopt = yaml-unescape-double(raw)
+    uopt = unescape-double(raw)
     uopt: {
         ok -> text = it
 
@@ -1836,8 +1801,8 @@ yaml-parser.parse-double = () (idx i64) {
 
 ; 解析别名 *name
 ; idx: 别名指向的節點索引（-1=锚點不存在，已記錄錯誤）
-; [parse-alias](#yaml.yaml-parser.parse-alias)
-yaml-parser.parse-alias = () (idx i64) {
+; [parse-alias](#yaml.parser.parse-alias)
+parser.parse-alias = () (idx i64) {
     .advance()
     name = .read-token()
     target = .anchor-id(name)
@@ -1851,7 +1816,7 @@ yaml-parser.parse-alias = () (idx i64) {
 
         -> _
     }
-    nd = yaml-node{
+    nd = node{
         kind: src.kind
         style: YAML-STYLE-ALIAS
         tag: src.tag
@@ -1871,8 +1836,8 @@ yaml-parser.parse-alias = () (idx i64) {
 ; 解析塊標量 | 與 >
 ; cont-min: 塊內容必須達到的縮進列（由調用上下文傳入）
 ; idx: 新建塊標量節點的池索引
-; [parse-block-scalar](#yaml.yaml-parser.parse-block-scalar)
-yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
+; [parse-block-scalar](#yaml.parser.parse-block-scalar)
+parser.parse-block-scalar = (cont-min i64) (idx i64) {
     style = YAML-STYLE-LITERAL
     .cur() == 62 -> style = YAML-STYLE-FOLDED
     .advance()
@@ -1892,7 +1857,6 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
         }
         c >= 49 && c <= 57 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -1926,7 +1890,6 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     content-ind = 0
     ind-ind > 0 -> {
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1993,10 +1956,9 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
         #{overflow=wrap}
         last = lines.len() - 1 - trail
         last < 0 -> break
-        tail = yaml-str-at(lines, last)
+        tail = str-at(lines, last)
         tail.len-bytes() == 0 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -2015,7 +1977,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     content = ''
     style == YAML-STYLE-LITERAL -> {
         i <- [0..lines.len()): {
-            content = content - yaml-str-at(lines, i) - '\n'
+            content = content - str-at(lines, i) - '\n'
         }
         content.len-bytes() > 0 -> {
 
@@ -2027,10 +1989,9 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
         pending = 0
         first = true
         i <- [0..lines.len()): {
-            ln = yaml-str-at(lines, i)
+            ln = str-at(lines, i)
             ln.len-bytes() == 0 -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -2092,8 +2053,8 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
 ; key-mode: true=按键位置解析
 ; flow: true=流上下文
 ; idx: 解析出的節點池索引
-; [parse-flow-node](#yaml.yaml-parser.parse-flow-node)
-yaml-parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64) {
+; [parse-flow-node](#yaml.parser.parse-flow-node)
+parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64) {
     tag = ''
     anchor = ''
     tag, anchor = .parse-props()
@@ -2138,8 +2099,8 @@ yaml-parser.parse-flow-node = (cont-min i64, key-mode bool, flow bool) (idx i64)
 }
 
 ; 流式上下文的空白——行內空格、換行與注释
-; [skip-flow-ws](#yaml.yaml-parser.skip-flow-ws)
-yaml-parser.skip-flow-ws = () {
+; [skip-flow-ws](#yaml.parser.skip-flow-ws)
+parser.skip-flow-ws = () {
     !! {
         .skip-spaces()
 
@@ -2161,8 +2122,8 @@ yaml-parser.skip-flow-ws = () {
 
 ; 解析 [a, b, ...]
 ; idx: 新建序列節點的池索引
-; [parse-flow-seq](#yaml.yaml-parser.parse-flow-seq)
-yaml-parser.parse-flow-seq = () (idx i64) {
+; [parse-flow-seq](#yaml.parser.parse-flow-seq)
+parser.parse-flow-seq = () (idx i64) {
     .advance()
     kids []i64 = with-len(0)
     !! {
@@ -2202,7 +2163,7 @@ yaml-parser.parse-flow-seq = () (idx i64) {
         .fail-at('expected , or ] in flow sequence')
         break
     }
-    nd = yaml-node{
+    nd = node{
         kind: YAML-KIND-SEQ
         style: YAML-STYLE-FLOW
         tag: ''
@@ -2220,8 +2181,8 @@ yaml-parser.parse-flow-seq = () (idx i64) {
 
 ; 解析 {k: v, ...}
 ; idx: 新建映射節點的池索引
-; [parse-flow-map](#yaml.yaml-parser.parse-flow-map)
-yaml-parser.parse-flow-map = () (idx i64) {
+; [parse-flow-map](#yaml.parser.parse-flow-map)
+parser.parse-flow-map = () (idx i64) {
     .advance()
     keys []i64 = with-len(0)
     vals []i64 = with-len(0)
@@ -2277,7 +2238,7 @@ yaml-parser.parse-flow-map = () (idx i64) {
         .fail-at('expected , or } in flow mapping')
         break
     }
-    nd = yaml-node{
+    nd = node{
         kind: YAML-KIND-MAP
         style: YAML-STYLE-FLOW
         tag: ''
@@ -2300,8 +2261,8 @@ yaml-parser.parse-flow-map = () (idx i64) {
 ; 解析縮進更深的後續行作為值
 ; parent-indent: 父键行縮進列（後續行須比它更深才視為值）
 ; idx: 解析出的值節點池索引
-; [parse-block-indented](#yaml.yaml-parser.parse-block-indented)
-yaml-parser.parse-block-indented = (parent-indent i64) (idx i64) {
+; [parse-block-indented](#yaml.parser.parse-block-indented)
+parser.parse-block-indented = (parent-indent i64) (idx i64) {
     .skip-blank-lines()
     .eof() -> {
         idx = .push-null()
@@ -2328,8 +2289,8 @@ yaml-parser.parse-block-indented = (parent-indent i64) (idx i64) {
 ; 解析塊序列
 ; indent: 序列项 '-' 的縮進列（同級项與回退判定基準）
 ; idx: 新建序列節點的池索引
-; [parse-block-seq](#yaml.yaml-parser.parse-block-seq)
-yaml-parser.parse-block-seq = (indent i64) (idx i64) {
+; [parse-block-seq](#yaml.parser.parse-block-seq)
+parser.parse-block-seq = (indent i64) (idx i64) {
     kids []i64 = with-len(0)
     !! {
 
@@ -2366,7 +2327,7 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
         .is-seq-dash() -> continue
         break
     }
-    nd = yaml-node{
+    nd = node{
         kind: YAML-KIND-SEQ
         style: YAML-STYLE-BLOCK
         tag: ''
@@ -2390,8 +2351,8 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
 ; src: 待合並映射節點的索引（須為 MAP 種類）
 ; ok-keys: 合並後的键列表（已有键優先保留）
 ; ok-vals: 合並後的值列表
-; [merge-one](#yaml.yaml-parser.merge-one)
-yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
+; [merge-one](#yaml.parser.merge-one)
+parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
     ok-keys = with-len(0)
     ok-vals = with-len(0)
     base = keys.len()
@@ -2424,7 +2385,7 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
                 k2 = ok-keys[j]
                 nk ?= .nodes[k]
                 nk2 ?= .nodes[k2]
-                yaml-key-eq(nk, nk2) -> dup = true
+                key-eq(nk, nk2) -> dup = true
             }
             dup == false -> {
                 ok-keys.push(k)
@@ -2445,8 +2406,8 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
 ; src: 合並键(<<)的值節點索引（MAP 或 MAP 序列）
 ; ok-keys: 合並後的键列表
 ; ok-vals: 合並後的值列表
-; [merge-into](#yaml.yaml-parser.merge-into)
-yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
+; [merge-into](#yaml.parser.merge-into)
+parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-vals []i64) {
     ok-keys = with-len(0)
     ok-vals = with-len(0)
     base = keys.len()
@@ -2491,8 +2452,8 @@ yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-va
 ; 解析塊映射
 ; indent: 映射键的縮進列（同層键與回退判定基準）
 ; idx: 新建映射節點的池索引
-; [parse-block-map](#yaml.yaml-parser.parse-block-map)
-yaml-parser.parse-block-map = (indent i64) (idx i64) {
+; [parse-block-map](#yaml.parser.parse-block-map)
+parser.parse-block-map = (indent i64) (idx i64) {
     keys []i64 = with-len(0)
     vals []i64 = with-len(0)
     !! {
@@ -2587,7 +2548,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
                 }
                 {
                     nkj ?= .nodes[kj]
-                    yaml-key-eq(nk, nkj) -> {
+                    key-eq(nk, nkj) -> {
                         dup = j
                         break
                     }
@@ -2616,7 +2577,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
         .looks-like-map-entry() -> continue
         break
     }
-    nd = yaml-node{
+    nd = node{
         kind: YAML-KIND-MAP
         style: YAML-STYLE-BLOCK
         tag: ''
@@ -2637,8 +2598,8 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
 ; indent: 節點起始列
 ; cont-min: 傳遞給子節點的最小續行縮進
 ; idx: 解析出的節點池索引
-; [parse-block](#yaml.yaml-parser.parse-block)
-yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
+; [parse-block](#yaml.parser.parse-block)
+parser.parse-block = (indent i64, cont-min i64) (idx i64) {
     tag = ''
     anchor = ''
     tag, anchor = .parse-props()
@@ -2676,8 +2637,8 @@ yaml-parser.parse-block = (indent i64, cont-min i64) (idx i64) {
 ...
 
 ; 跳過空行、注释與指令行
-; [skip-doc-preamble](#yaml.yaml-parser.skip-doc-preamble)
-yaml-parser.skip-doc-preamble = () {
+; [skip-doc-preamble](#yaml.parser.skip-doc-preamble)
+parser.skip-doc-preamble = () {
     !! {
         .eof() -> break
         save = .pos
@@ -2708,8 +2669,8 @@ yaml-parser.skip-doc-preamble = () {
 
 ; 當前位置是否為 --- (1) 或 ... (2)
 ; which: 1='---'、2='...'、0=非文檔標記
-; [at-doc-marker](#yaml.yaml-parser.at-doc-marker)
-yaml-parser.at-doc-marker = () (which i64) {
+; [at-doc-marker](#yaml.parser.at-doc-marker)
+parser.at-doc-marker = () (which i64) {
     which = 0
     .at(0) == 45 && .at(1) == 45 && .at(2) == 45 -> {
         which = 1
@@ -2719,8 +2680,8 @@ yaml-parser.at-doc-marker = () (which i64) {
 }
 
 ; 跳過當前文檔剩餘內容，停在下一個 --- 或输入末尾
-; [skip-to-doc-boundary](#yaml.yaml-parser.skip-to-doc-boundary)
-yaml-parser.skip-to-doc-boundary = () {
+; [skip-to-doc-boundary](#yaml.parser.skip-to-doc-boundary)
+parser.skip-to-doc-boundary = () {
     !! {
         .eof() -> break
         .skip-to-eol()
@@ -2747,8 +2708,8 @@ yaml-parser.skip-to-doc-boundary = () {
 
 ; 解析一份文檔，返回根節點索引
 ; idx: 本文檔根節點的池索引（-1=解析失败）
-; [parse-document](#yaml.yaml-parser.parse-document)
-yaml-parser.parse-document = () (idx i64) {
+; [parse-document](#yaml.parser.parse-document)
+parser.parse-document = () (idx i64) {
     w = .at-doc-marker()
     w == 1 -> {
         .advance()
@@ -2797,8 +2758,8 @@ yaml-parser.parse-document = () (idx i64) {
 
 ; 解析全部文檔
 ; roots: 各文檔根節點的池索引列表
-; [parse-docs](#yaml.yaml-parser.parse-docs)
-yaml-parser.parse-docs = () (roots []i64) {
+; [parse-docs](#yaml.parser.parse-docs)
+parser.parse-docs = () (roots []i64) {
     roots = with-len(0)
     prev = -1
     !! {
@@ -2833,7 +2794,7 @@ yaml.parse = (source str) (out ?yaml) {
 yaml.parse-all = (source str) (out ?yaml) {
     out = nil
     src = yaml.strip-bom(source)
-    p = yaml-parser{
+    p = parser{
         src: src
         n: src.len-bytes()
         pos: 0
@@ -2864,7 +2825,7 @@ yaml.parse-all = (source str) (out ?yaml) {
         }
     }
     doc = yaml{
-        pool: yaml-pool{
+        node-pool: pool{
             nodes: p.nodes
         }
         root: root
@@ -2914,7 +2875,7 @@ yaml.error = () (msg str) {
 yaml.valid-of = (source str) (yes bool) {
     yes = false
     s = yaml.strip-bom(source)
-    p = yaml-parser{
+    p = parser{
         src: s
         n: s.len-bytes()
         pos: 0
@@ -2934,7 +2895,7 @@ yaml.valid-of = (source str) (yes bool) {
 yaml.error-of = (source str) (msg str) {
     msg = ''
     s = yaml.strip-bom(source)
-    p = yaml-parser{
+    p = parser{
         src: s
         n: s.len-bytes()
         pos: 0
@@ -2968,7 +2929,7 @@ yaml.doc = (i i64) (out ?yaml) {
         -> _
     }
     out = yaml{
-        pool: .pool
+        node-pool: .node-pool
         root: r
         roots: .roots
         source: .source
@@ -2979,7 +2940,7 @@ yaml.doc = (i i64) (out ?yaml) {
 ; n: 節點池中的節點總數
 ; [node-count](#yaml.node-count)
 yaml.node-count = () (n i64) {
-    n = .pool.nodes.len()
+    n = .node-pool.nodes.len()
 }
 
 ; 當前節點類型
@@ -2988,9 +2949,9 @@ yaml.node-count = () (n i64) {
 yaml.kind = () (k i64) {
     k = YAML-KIND-NULL
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
+        nd ?= .node-pool.nodes[.root]
         k = nd.kind
     }: {
         err -> return
@@ -3005,9 +2966,9 @@ yaml.kind = () (k i64) {
 yaml.style = () (s i64) {
     s = YAML-STYLE-PLAIN
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
+        nd ?= .node-pool.nodes[.root]
         s = nd.style
     }: {
         err -> return
@@ -3022,9 +2983,9 @@ yaml.style = () (s i64) {
 yaml.tag = () (t str) {
     t = ''
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
+        nd ?= .node-pool.nodes[.root]
         t = nd.tag
     }: {
         err -> return
@@ -3039,9 +3000,9 @@ yaml.tag = () (t str) {
 yaml.anchor = () (a str) {
     a = ''
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
+        nd ?= .node-pool.nodes[.root]
         a = nd.anchor
     }: {
         err -> return
@@ -3056,9 +3017,9 @@ yaml.anchor = () (a str) {
 yaml.line-of = () (n i64) {
     n = 0
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
+        nd ?= .node-pool.nodes[.root]
         n = nd.line
     }: {
         err -> return
@@ -3095,10 +3056,10 @@ yaml.is-int = () (yes bool) {
 yaml.is-nan = () (yes bool) {
     yes = false
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
-        yes = yaml-node-is-nan(nd)
+        nd ?= .node-pool.nodes[.root]
+        yes = node-is-nan(nd)
     }: {
         err -> return
 
@@ -3148,9 +3109,9 @@ yaml.is-map = () (yes bool) {
 yaml.len = () (n i64) {
     n = 0
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
+        nd ?= .node-pool.nodes[.root]
         n = nd.kids.len()
     }: {
         err -> return
@@ -3165,9 +3126,9 @@ yaml.len = () (n i64) {
 yaml.text = () (t str) {
     t = ''
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
+    .root >= .node-pool.nodes.len() -> return
     {
-        nd ?= .pool.nodes[.root]
+        nd ?= .node-pool.nodes[.root]
         t = nd.text
     }: {
         err -> return
@@ -3181,10 +3142,10 @@ yaml.text = () (t str) {
 ; [str](#yaml.str)
 yaml.str = () (val ?str) {
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    k ?= .pool.nodes[.root].kind
+    .root >= .node-pool.nodes.len() -> return
+    k ?= .node-pool.nodes[.root].kind
     k == YAML-KIND-SEQ || k == YAML-KIND-MAP || k == YAML-KIND-NULL -> return
-    val ?= .pool.nodes[.root].text
+    val ?= .node-pool.nodes[.root].text
 }
 
 ; 取整數值
@@ -3192,16 +3153,16 @@ yaml.str = () (val ?str) {
 ; [i64](#yaml.i64)
 yaml.i64 = () (val ?i64) {
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    k ?= .pool.nodes[.root].kind
+    .root >= .node-pool.nodes.len() -> return
+    k ?= .node-pool.nodes[.root].kind
     k == YAML-KIND-INT -> {
-        val ?= .pool.nodes[.root].ival
+        val ?= .node-pool.nodes[.root].ival
         return
     }
     k == YAML-KIND-FLOAT -> {
 
         ; val 是 i64 出參，fval 是 f64：必須顯式轉換，不能靠隱式截斷
-        val ?= .pool.nodes[.root].fval.to-i64()
+        val ?= .node-pool.nodes[.root].fval.to-i64()
     }
 }
 
@@ -3210,14 +3171,14 @@ yaml.i64 = () (val ?i64) {
 ; [f64](#yaml.f64)
 yaml.f64 = () (val ?f64) {
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    k ?= .pool.nodes[.root].kind
+    .root >= .node-pool.nodes.len() -> return
+    k ?= .node-pool.nodes[.root].kind
     k == YAML-KIND-FLOAT -> {
-        val ?= .pool.nodes[.root].fval
+        val ?= .node-pool.nodes[.root].fval
         return
     }
     k == YAML-KIND-INT -> {
-        val ?= .pool.nodes[.root].ival.to-f64()
+        val ?= .node-pool.nodes[.root].ival.to-f64()
     }
 }
 
@@ -3226,10 +3187,10 @@ yaml.f64 = () (val ?f64) {
 ; [bool](#yaml.bool)
 yaml.bool = () (val ?bool) {
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    k ?= .pool.nodes[.root].kind
+    .root >= .node-pool.nodes.len() -> return
+    k ?= .node-pool.nodes[.root].kind
     k == YAML-KIND-BOOL -> {
-        val ?= .pool.nodes[.root].bval
+        val ?= .node-pool.nodes[.root].bval
     }
 }
 
@@ -3240,13 +3201,13 @@ yaml.bool = () (val ?bool) {
 yaml.at = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    nd ?= .pool.nodes[.root]
+    .root >= .node-pool.nodes.len() -> return
+    nd ?= .node-pool.nodes[.root]
     cnt = nd.kids.len()
     i >= cnt -> return
     k ?= nd.kids[i]
     out = yaml{
-        pool: .pool
+        node-pool: .node-pool
         root: k
         roots: .roots
         source: .source
@@ -3260,13 +3221,13 @@ yaml.at = (i i64) (out ?yaml) {
 yaml.key-node = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    nd ?= .pool.nodes[.root]
+    .root >= .node-pool.nodes.len() -> return
+    nd ?= .node-pool.nodes[.root]
     cnt = nd.keys.len()
     i >= cnt -> return
     k ?= nd.keys[i]
     out = yaml{
-        pool: .pool
+        node-pool: .node-pool
         root: k
         roots: .roots
         source: .source
@@ -3300,17 +3261,17 @@ yaml.value = (i i64) (out ?yaml) {
 ; [get](#yaml.get)
 yaml.get = (key str) (out ?yaml) {
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    nd ?= .pool.nodes[.root]
+    .root >= .node-pool.nodes.len() -> return
+    nd ?= .node-pool.nodes[.root]
     nd.kind != YAML-KIND-MAP -> return
     cnt = nd.keys.len()
     i <- [0..cnt): {
         k ?= nd.keys[i]
-        nk ?= .pool.nodes[k]
-        yaml-key-text-eq(nk, key) -> {
+        nk ?= .node-pool.nodes[k]
+        key-text-eq(nk, key) -> {
             v ?= nd.kids[i]
             out = yaml{
-                pool: .pool
+                node-pool: .node-pool
                 root: v
                 roots: .roots
                 source: .source
@@ -3377,10 +3338,10 @@ yaml.get-bool = (key str) (out ?bool) {
 ; [scalar-text](#yaml.scalar-text)
 yaml.scalar-text = () (out ?str) {
     .root < 0 -> return
-    .root >= .pool.nodes.len() -> return
-    k ?= .pool.nodes[.root].kind
+    .root >= .node-pool.nodes.len() -> return
+    k ?= .node-pool.nodes[.root].kind
     k == YAML-KIND-SEQ || k == YAML-KIND-MAP -> return
-    out ?= .pool.nodes[.root].text
+    out ?= .node-pool.nodes[.root].text
 }
 
 ; 按點號路径查找（序列可用數字下標）
@@ -3393,8 +3354,8 @@ yaml.find = (path str) (out ?yaml) {
     parts = path.split('.')
     i <- [0..parts.len()): {
         cur < 0 -> return
-        seg = yaml-str-at(parts, i)
-        nd ?= .pool.nodes[cur]
+        seg = str-at(parts, i)
+        nd ?= .node-pool.nodes[cur]
         k = nd.kind
         k == YAML-KIND-MAP -> {
             found = -1
@@ -3402,7 +3363,7 @@ yaml.find = (path str) (out ?yaml) {
             j <- [0..cnt): {
                 (found < 0) -> {
                     kn ?= nd.keys[j]
-                    nkn ?= .pool.nodes[kn]
+                    nkn ?= .node-pool.nodes[kn]
                     kk = nkn.kind
                     is-scalar = kk != YAML-KIND-SEQ && kk != YAML-KIND-MAP
                     hit = 0
@@ -3418,7 +3379,7 @@ yaml.find = (path str) (out ?yaml) {
             continue
         }
         k == YAML-KIND-SEQ -> {
-            idx = yaml-to-i64(seg)
+            idx = to-i64(seg)
             idx < 0 -> {
                 cur = -1
                 break
@@ -3438,7 +3399,7 @@ yaml.find = (path str) (out ?yaml) {
     (true)
     cur < 0 -> return
     out = yaml{
-        pool: .pool
+        node-pool: .node-pool
         root: cur
         roots: .roots
         source: .source
@@ -3504,8 +3465,8 @@ yaml.find-bool = (path str) (out ?bool) {
 ; nd: 待比較的節點（取其標量文本）
 ; key: 目標文本
 ; yes: nd 的標量文本與 key 相等
-; [yaml-key-text-eq](#yaml.yaml-key-text-eq)
-yaml-key-text-eq = (nd yaml-node, key str) (yes bool) {
+; [key-text-eq](#yaml.key-text-eq)
+key-text-eq = (nd node, key str) (yes bool) {
     yes = false
     nd.kind == YAML-KIND-SEQ || nd.kind == YAML-KIND-MAP -> return
     yes = nd.text.eq-full(key)
@@ -3515,8 +3476,8 @@ yaml-key-text-eq = (nd yaml-node, key str) (yes bool) {
 ; a: 键節點 a
 ; b: 键節點 b
 ; yes: 兩節點的標量文本相等
-; [yaml-key-eq](#yaml.yaml-key-eq)
-yaml-key-eq = (a yaml-node, b yaml-node) (yes bool) {
+; [key-eq](#yaml.key-eq)
+key-eq = (a node, b node) (yes bool) {
     yes = false
     a.kind == YAML-KIND-SEQ || a.kind == YAML-KIND-MAP -> return
     b.kind == YAML-KIND-SEQ || b.kind == YAML-KIND-MAP -> return
@@ -3526,8 +3487,8 @@ yaml-key-eq = (a yaml-node, b yaml-node) (yes bool) {
 ; 文本轉 i64，失败返回 -1
 ; s: 整數文本
 ; v: 轉換值（-1=轉換失败）
-; [yaml-to-i64](#yaml.yaml-to-i64)
-yaml-to-i64 = (s str) (v i64) {
+; [to-i64](#yaml.to-i64)
+to-i64 = (s str) (v i64) {
     v = -1
     n = s.len-bytes()
     n == 0 -> return
@@ -3541,7 +3502,6 @@ yaml-to-i64 = (s str) (v i64) {
         #{overflow=wrap}
         acc = acc * 10 + c - 48
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -3561,12 +3521,12 @@ yaml-to-i64 = (s str) (v i64) {
 
 ; 節點是否為 .nan
 ;
-; `.nan` 的 fval 由 yaml-nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。
+; `.nan` 的 fval 由 nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。
 ; 節點原文判定作為兜底：標簽改寫等路径可能只改 text 而不重算 fval。
 ; nd: 待檢測節點
 ; yes: 該節點為 .nan
-; [yaml-node-is-nan](#yaml.yaml-node-is-nan)
-yaml-node-is-nan = (nd yaml-node) (yes bool) {
+; [node-is-nan](#yaml.node-is-nan)
+node-is-nan = (nd node) (yes bool) {
     yes = false
     nd.kind != YAML-KIND-FLOAT -> return
     nd.fval != nd.fval -> {
@@ -3579,11 +3539,10 @@ yaml-node-is-nan = (nd yaml-node) (yes bool) {
 ; 單個十六進制數字（0-15）轉字符
 ; v: 十六進制位的數值 0-15
 ; ch: 對應的十六進制字符（'0'-'f'）
-; [yaml-hex-char](#yaml.yaml-hex-char)
-yaml-hex-char = (v i64) (ch str) {
+; [hex-char](#yaml.hex-char)
+hex-char = (v i64) (ch str) {
     ch = '0'
 
-    #{overflow=wrap}
     v < 10 -> {
         h1 char = 0
         {
@@ -3617,8 +3576,8 @@ yaml-hex-char = (v i64) (ch str) {
 ; JSON 字符串轉義
 ; s: 原始字符串
 ; out: 轉義後的 JSON 字符串（含首尾雙引號）
-; [yaml-json-escape](#yaml.yaml-json-escape)
-yaml-json-escape = (s str) (out str) {
+; [json-escape](#yaml.json-escape)
+json-escape = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
         c = s.byte(i): {
@@ -3654,7 +3613,7 @@ yaml-json-escape = (s str) (out str) {
 
                 #{overflow=wrap}
                 lo = c - hi * 16
-                out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
+                out = out - '\\' - 'u' - '0' - '0' - hex-char(hi) - hex-char(lo)
             }
 
             -> {
@@ -3667,17 +3626,17 @@ yaml-json-escape = (s str) (out str) {
 }
 
 ; 節點轉 JSON
-; pool: 節點池
+; node-pool: 節點池
 ; idx: 待轉換節點的索引
 ; depth: 剩餘遞歸深度（防别名循环）
 ; out: 該節點對應的 JSON 文本
-; [yaml-json-of](#yaml.yaml-json-of)
-yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
+; [json-of](#yaml.json-of)
+json-of = (npool pool, idx i64, depth i64) (out str) {
     out = 'null'
     idx < 0 -> return
-    idx >= pool.nodes.len() -> return
+    idx >= npool.nodes.len() -> return
     depth > YAML-MAX-DEPTH -> return
-    nd = pool.nodes[idx]
+    nd = npool.nodes[idx]
     {
         nd.kind == YAML-KIND-NULL -> {
             out = 'null'
@@ -3696,11 +3655,11 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
         }
 
         nd.kind == YAML-KIND-FLOAT -> {
-            yaml-node-is-nan(nd) -> {
+            node-is-nan(nd) -> {
                 out = 'null'
                 return
             }
-            yaml-f-is-inf(nd.fval) -> {
+            f-is-inf(nd.fval) -> {
                 out = 'null'
                 return
             }
@@ -3709,14 +3668,14 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
         }
 
         nd.kind == YAML-KIND-STR -> {
-            out = yaml-json-escape(nd.text)
+            out = json-escape(nd.text)
             return
         }
 
         nd.kind == YAML-KIND-SEQ -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
+            ; （否則它會被當成 option 傳給 json-of / emit 的 i64 參數）。
             #{overflow=wrap}
             d = depth + 1: {
                 ok -> it
@@ -3727,7 +3686,7 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
                 k = nd.kids[i]
-                out = out - yaml-json-of(pool, k, d)
+                out = out - json-of(npool, k, d)
             }
             out = out - ']'
             return
@@ -3736,8 +3695,7 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
         nd.kind == YAML-KIND-MAP -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
-            #{overflow=wrap}
+            ; （否則它會被當成 option 傳給 json-of / emit 的 i64 參數）。
             {
 
                 #{overflow=wrap}
@@ -3759,10 +3717,10 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
                 i > 0 -> out = out - ','
                 {
                     kn ?= nd.keys[i]
-                    knn ?= pool.nodes[kn]
-                    out = out - yaml-json-escape(knn.text) - ':'
+                    knn ?= npool.nodes[kn]
+                    out = out - json-escape(knn.text) - ':'
                     ki ?= nd.kids[i]
-                    out = out - yaml-json-of(pool, ki, d)
+                    out = out - json-of(npool, ki, d)
                 }: {
                     err -> _
 
@@ -3780,7 +3738,7 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
 yaml.to-json = () (out str) {
     out = 'null'
     .root < 0 -> return
-    out = yaml-json-of(.pool, .root, 0)
+    out = json-of(.node-pool, .root, 0)
 }
 
 ; 全部文檔轉 JSON 數組
@@ -3793,7 +3751,7 @@ yaml.to-json-all = () (out str) {
         i > 0 -> out = out - ','
         {
             ri ?= .roots[i]
-            out = out - yaml-json-of(.pool, ri, 1)
+            out = out - json-of(.node-pool, ri, 1)
         }: {
             err -> _
 
@@ -3809,8 +3767,8 @@ yaml.to-json-all = () (out str) {
 ; 生成 n 個空格
 ; n: 空格個數
 ; out: n 個空格組成的字符串
-; [yaml-spaces](#yaml.yaml-spaces)
-yaml-spaces = (n i64) (out str) {
+; [spaces](#yaml.spaces)
+spaces = (n i64) (out str) {
     out = ''
     i <- [0..n): out = out - ' '
 }
@@ -3818,8 +3776,8 @@ yaml-spaces = (n i64) (out str) {
 ; 文本可否作為 plain 標量原樣输出
 ; s: 待输出的文本
 ; yes: 可作 plain 標量原樣输出（無需加引號）
-; [yaml-plain-safe](#yaml.yaml-plain-safe)
-yaml-plain-safe = (s str) (yes bool) {
+; [plain-safe](#yaml.plain-safe)
+plain-safe = (s str) (yes bool) {
     yes = false
     n = s.len-bytes()
     n == 0 -> return
@@ -3858,15 +3816,15 @@ yaml-plain-safe = (s str) (yes bool) {
     iv = 0
     fv = 0.0
     bv = false
-    kind, iv, fv, bv = yaml-resolve-plain(s)
+    kind, iv, fv, bv = resolve-plain(s)
     yes = kind == YAML-KIND-STR
 }
 
 ; 输出雙引號 YAML 標量
 ; s: 原始文本
 ; out: 加雙引號並轉義後的 YAML 標量文本
-; [yaml-quote](#yaml.yaml-quote)
-yaml-quote = (s str) (out str) {
+; [quote](#yaml.quote)
+quote = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
         c = s.byte(i): {
@@ -3902,7 +3860,7 @@ yaml-quote = (s str) (out str) {
 
                 #{overflow=wrap}
                 lo = c - hi * 16
-                out = out - '\\' - 'u' - '0' - '0' - yaml-hex-char(hi) - yaml-hex-char(lo)
+                out = out - '\\' - 'u' - '0' - '0' - hex-char(hi) - hex-char(lo)
             }
 
             -> {
@@ -3917,8 +3875,8 @@ yaml-quote = (s str) (out str) {
 ; 標量的 YAML 表示
 ; nd: 標量節點
 ; out: 按種類與風格選定的 YAML 表示文本
-; [yaml-scalar-repr](#yaml.yaml-scalar-repr)
-yaml-scalar-repr = (nd yaml-node) (out str) {
+; [scalar-repr](#yaml.scalar-repr)
+scalar-repr = (nd node) (out str) {
     out = ''
     {
         nd.kind == YAML-KIND-NULL -> {
@@ -3938,11 +3896,11 @@ yaml-scalar-repr = (nd yaml-node) (out str) {
         }
 
         nd.kind == YAML-KIND-FLOAT -> {
-            yaml-node-is-nan(nd) -> {
+            node-is-nan(nd) -> {
                 out = '.nan'
                 return
             }
-            yaml-f-is-inf(nd.fval) -> {
+            f-is-inf(nd.fval) -> {
                 out = '.inf'
                 nd.fval < 0.0 -> out = '-.inf'
                 return
@@ -3952,33 +3910,33 @@ yaml-scalar-repr = (nd yaml-node) (out str) {
         }
 
         -> {
-            yaml-plain-safe(nd.text) -> {
+            plain-safe(nd.text) -> {
                 out = nd.text
                 return
             }
-            out = yaml-quote(nd.text)
+            out = quote(nd.text)
         }
     }
 }
 
 ; 節點轉塊風格 YAML（不含尾随換行）
-; pool: 節點池
+; node-pool: 節點池
 ; idx: 待输出節點的索引
 ; indent: 每級縮進的空格數
 ; depth: 當前嵌套深度
 ; out: 塊風格 YAML 文本（無尾随換行）
-; [yaml-emit](#yaml.yaml-emit)
-yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
+; [emit](#yaml.emit)
+emit = (npool pool, idx i64, indent i64, depth i64) (out str) {
     out = ''
     idx < 0 -> return
-    idx >= pool.nodes.len() -> return
+    idx >= npool.nodes.len() -> return
     depth > YAML-MAX-DEPTH -> return
-    nd = pool.nodes[idx]
+    nd = npool.nodes[idx]
     {
         nd.kind == YAML-KIND-SEQ -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
+            ; （否則它會被當成 option 傳給 json-of / emit 的 i64 參數）。
             #{overflow=wrap}
             d = depth + 1: {
                 ok -> it
@@ -3992,10 +3950,10 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             total = nd.kids.len()
             i <- [0..total): {
                 i > 0 -> out = out - '\n'
-                out = out - yaml-spaces(indent) - '-'
+                out = out - spaces(indent) - '-'
                 {
                     k ?= nd.kids[i]
-                    nk ?= pool.nodes[k]
+                    nk ?= npool.nodes[k]
                     ck = nk.kind
                     container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
                     container -> {
@@ -4015,18 +3973,18 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
 
                                 -> 0
                             }
-                            inner = yaml-emit(pool, k, cut, d)
+                            inner = emit(npool, k, cut, d)
                             inner.len-bytes() > 0 -> {
                                 rest = inner.slice-bytes(cut, inner.len-bytes())
                                 out = out - ' ' - rest
                             }
                             inner.len-bytes() == 0 -> {
-                                out = out - ' ' - yaml-scalar-repr(nk)
+                                out = out - ' ' - scalar-repr(nk)
                             }
                         }
                     }
                     container == false -> {
-                        out = out - ' ' - yaml-scalar-repr(nk)
+                        out = out - ' ' - scalar-repr(nk)
                     }
                 }: {
                     err -> _
@@ -4040,8 +3998,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
         nd.kind == YAML-KIND-MAP -> {
 
             ; D1：`+` 的結果恆為 `?i64`；depth 是普通整數，以兩段式 match 解包
-            ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
-            #{overflow=wrap}
+            ; （否則它會被當成 option 傳給 json-of / emit 的 i64 參數）。
             {
 
                 #{overflow=wrap}
@@ -4067,11 +4024,11 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                 i > 0 -> out = out - '\n'
                 {
                     kn ?= nd.keys[i]
-                    knn ?= pool.nodes[kn]
-                    ktext = yaml-scalar-repr(knn)
-                    out = out - yaml-spaces(indent) - ktext - ':'
+                    knn ?= npool.nodes[kn]
+                    ktext = scalar-repr(knn)
+                    out = out - spaces(indent) - ktext - ':'
                     k ?= nd.kids[i]
-                    nk ?= pool.nodes[k]
+                    nk ?= npool.nodes[k]
                     ck = nk.kind
                     container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
                     container -> {
@@ -4085,15 +4042,15 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                         nk.kids.len() > 0 -> {
 
                             #{overflow=wrap}
-                            inner = yaml-emit(pool, k, indent + 2, d)
+                            inner = emit(npool, k, indent + 2, d)
                             inner.len-bytes() > 0 -> out = out - '\n' - inner
                             inner.len-bytes() == 0 -> {
-                                out = out - ' ' - yaml-scalar-repr(nk)
+                                out = out - ' ' - scalar-repr(nk)
                             }
                         }
                     }
                     container == false -> {
-                        out = out - ' ' - yaml-scalar-repr(nk)
+                        out = out - ' ' - scalar-repr(nk)
                     }
                 }: {
                     err -> _
@@ -4104,7 +4061,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             return
         }
 
-        -> out = yaml-scalar-repr(nd)
+        -> out = scalar-repr(nd)
     }
 }
 
@@ -4114,7 +4071,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
 yaml.to-yaml = () (out str) {
     out = ''
     .root < 0 -> return
-    out = yaml-emit(.pool, .root, 0, 0)
+    out = emit(.node-pool, .root, 0, 0)
 }
 
 ; 别名，等同 to-yaml

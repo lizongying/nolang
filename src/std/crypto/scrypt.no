@@ -47,18 +47,21 @@ salsa20-8-core = (block []byte) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout46c41 = block[off + 1]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout46c67 = block[off + 2]: {
             ok -> it
 
             -> _
         }
 
+        #{overflow=wrap}
         ixout46c94 = block[off + 3]: {
             ok -> it
 
@@ -933,6 +936,7 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
         ; X = B[i] XOR X
         j <- [0..64): {
+            #{overflow=wrap}
             ixout323c29 = b[i * 64 + j]: {
                 ok -> it
 
@@ -1068,7 +1072,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1115,6 +1118,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
                 -> _
             }
 
+            #{overflow=wrap}
             ixout457c38 = v[j * block-bytes + i]: {
                 ok -> it
 
@@ -1140,7 +1144,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

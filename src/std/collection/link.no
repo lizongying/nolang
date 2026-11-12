@@ -71,7 +71,6 @@ link {
     l.prev = prv
 
     ; 初始化空閒鏈結串列: 0→1→2→...→n-1→-1
-    #{overflow=wrap}
     i <- [0..n - 1): {
 
         #{overflow=wrap}
@@ -257,7 +256,6 @@ link {
 
     {
 
-        #{overflow=wrap}
         {
             pos < 0 || pos > l.size -> return
 
@@ -278,6 +276,7 @@ link {
                 }
                 l.head = idx
                 l.tail < 0 -> l.tail = idx
+                #{overflow=wrap}
                 l.size = l.size + 1
                 ok = true
                 return
@@ -300,6 +299,7 @@ link {
                 }
                 l.tail = idx
                 l.head < 0 -> l.head = idx
+                #{overflow=wrap}
                 l.size = l.size + 1
                 ok = true
                 return
@@ -348,7 +348,6 @@ link {
 [n]t.link-remove-at = (l link, pos i64) (val ?t) {
     {
 
-        #{overflow=wrap}
         {
             pos < 0 || pos >= l.size -> {
                 val = nil
@@ -372,6 +371,7 @@ link {
 
                 l.next[idx] ?= l.free-head
                 l.free-head = idx
+                #{overflow=wrap}
                 l.size = l.size - 1
                 return
             }
@@ -393,6 +393,7 @@ link {
 
                 l.next[idx] ?= l.free-head
                 l.free-head = idx
+                #{overflow=wrap}
                 l.size = l.size - 1
                 return
             }

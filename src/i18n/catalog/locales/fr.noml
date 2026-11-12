@@ -1024,7 +1024,7 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'ttdybn5d': 'fmt: -md ne peut pas être combiné avec -fix (les corrections automatiques ne concernent que les sources .no)'
   'ttlxcrgt': '« [ » ou « ( » ou une chaîne attendu dans l’expression de plage, %s obtenu'
   'u0g1w0d7': 'module de compatibilité js introuvable : %s'
-  'u3g4qexx': 'builtin chars-new : type d’argument invalide %s'
+  'u3g4qexx': 'builtin %s : type d’argument invalide %s'
   'u3if6wak': '  no fmt -fix=match -w src/       ajouter sur place les bras match manquants'
   'u4oybn9r': '%s est déjà installé (%s) ; utilisez -u pour réinstaller ou mettre à jour'
   'u5qmp19f': 'le match d’option doit gérer toutes les branches : err, nil, ok (manquant : %s)'

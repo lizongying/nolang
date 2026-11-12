@@ -2,9 +2,9 @@
 ;
 ; 執行：no test test/std/tar.no
 ; 覆蓋：tar 唯讀視圖（count/offset/entry/name/size/type/is-dir/is-file/
-;       read/mode/mtime）＋ tar-entry 全部方法 ＋ tar-builder 全部方法
+;       read/mode/mtime）＋ entry 全部方法 ＋ builder 全部方法
 ;       （pre-alloc/add-file/add-dir/add-bytes/write-header/write-octal/finish）
-;       ＋ tar-open-gz
+;       ＋ open-gz
 ;
 ; 判準：標頭各欄位的期望位元組由 ustar 規範獨立推導（Python 依規格生成，
 ;       不拿本模組輸出當金標）；`chksum` 期望值＝標頭總和（chksum 槽視為 8 空格）。
@@ -28,7 +28,7 @@ mk-fill = (n i64, ch i64) (out []byte) {
 ; ── 1. write-octal 單元（前導零填充 + 尾端 NUL）────────────────────────
 ; 420 → "0000644\0"、0 → "00000000\0"、511 → "00000777\0"、11 → "00000000013\0"
 t-octal = () {
-    b = tar-builder{}
+    b = builder{}
     b.pre-alloc(64)
     b.write-octal(0, 7, 420)
     b.write-octal(8, 8, 0)
@@ -70,7 +70,7 @@ t-octal = () {
 ; ── 2. write-header 單元（欄位配置 vs ustar 規範）──────────────────────
 ; 情境：name='x.txt'、typeflag='0'、size=5、uid/gid/mtime 全 0
 t-header = () {
-    b = tar-builder{}
+    b = builder{}
     b.write-header('x.txt', 48, 5)
 
     runner.eq(b.pos, 512, 'write-header 推進一個 TAR-BLOCK')
@@ -123,7 +123,7 @@ t-header = () {
 ; 情境：name='abc.txt'、typeflag='0'、size=3
 ; 規範總和 = 0o7064 = 3636；欄位內容應為 "007064\0 "
 t-checksum = () {
-    b = tar-builder{}
+    b = builder{}
     b.write-header('abc.txt', 48, 3)
     h = b.buf.slice(0, 512)
 
@@ -137,7 +137,7 @@ t-checksum = () {
 ; ── 4. builder round-trip：讀回自身產出的歸檔 ──────────────────────────
 ; 條目：0 a.txt(5B) / 1 dir/（目錄） / 2 raw.bin(3B, add-bytes) / 3 empty(0B)
 t-roundtrip = () {
-    b = tar-builder{}
+    b = builder{}
     b.pre-alloc(1024)
     b.add-file('a.txt', 'hello'.to-bytes())
     b.add-dir('dir/')
@@ -177,7 +177,7 @@ t-roundtrip = () {
     runner.eq(ar.mode(0), 420, 'mode(0) = 0o644')
     runner.eq(ar.mtime(0), 0, 'mtime(0) = 0（builder 未寫時間戳）')
 
-    ; tar-entry 視圖必須與 tar.* 一致
+    ; entry 視圖必須與 tar.* 一致
     e0 = ar.entry(0)
     e1 = ar.entry(1)
     e2 = ar.entry(2)
@@ -200,7 +200,7 @@ t-roundtrip = () {
 t-big = () {
     big = mk-fill(1200, 90)
 
-    b = tar-builder{}
+    b = builder{}
     b.add-file('big.bin', big)
     b.add-file('after.txt', 'tail'.to-bytes())
     ar = b.finish()
@@ -215,26 +215,26 @@ t-big = () {
     runner.str-eq(ar.read(1).to-str(), 'tail', 4, 'read(1) 內容')
 }
 
-; ── 6. tar-open-gz：gzip 包裝的 tar ────────────────────────────────────
+; ── 6. open-gz：gzip 包裝的 tar ────────────────────────────────────
 t-open-gz = () {
-    b = tar-builder{}
+    b = builder{}
     b.add-file('gz.txt', 'gzipped tar'.to-bytes())
     ar = b.finish()
 
-    gz = gzip.gzip-compress(ar.data)
-    runner.gt(len(gz), 0, 'gzip-compress 產出非空')
+    gz = gzip.compress(ar.data)
+    runner.gt(len(gz), 0, 'compress 產出非空')
 
-    back = tar.tar-open-gz(gz)
-    runner.eq(back.count(), 1, 'tar-open-gz：count = 1')
-    runner.str-eq(back.name(0), 'gz.txt', 6, 'tar-open-gz：name')
-    runner.str-eq(back.read(0).to-str(), 'gzipped tar', 11, 'tar-open-gz：內容還原')
+    back = tar.open-gz(gz)
+    runner.eq(back.count(), 1, 'open-gz：count = 1')
+    runner.str-eq(back.name(0), 'gz.txt', 6, 'open-gz：name')
+    runner.str-eq(back.read(0).to-str(), 'gzipped tar', 11, 'open-gz：內容還原')
 }
 
 ; ── 7. 讀取器容忍 BSD/GNU tar 的空格填數字欄 ──────────────────────────
 ; macOS bsdtar 寫出的是 "000644 \0"（末位空格）與 "00000000243 "（無 NUL），
 ; 本模組的解析只取 48~57，故須照樣讀對。
 t-space-padded = () {
-    b = tar-builder{}
+    b = builder{}
     b.add-file('f.txt', 'hello'.to-bytes())
     ar = b.finish()
 
@@ -254,7 +254,7 @@ p2 = runner.test('tar.write-header', t-header)
 p3 = runner.test('tar.checksum', t-checksum)
 p4 = runner.test('tar.builder round-trip', t-roundtrip)
 p5 = runner.test('tar.big content', t-big)
-p6 = runner.test('tar-open-gz', t-open-gz)
+p6 = runner.test('open-gz', t-open-gz)
 p7 = runner.test('tar.space-padded fields', t-space-padded)
 total = runner.summary()
 f = runner.failed-count()

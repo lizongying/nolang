@@ -543,7 +543,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     ; 如果需要用戶名/密碼認證
-    #{overflow=wrap}
     method == SOCKS5-METHOD-USER-PASS -> {
         auth-req []byte
         pos = 0
@@ -652,7 +651,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -670,7 +668,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -688,7 +685,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -707,7 +703,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -725,7 +720,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -743,7 +737,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             -> _
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -762,7 +755,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -780,7 +772,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}

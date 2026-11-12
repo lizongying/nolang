@@ -1,0 +1,280 @@
+; cg-str16-test.no — B28 氣闩：selfhost `%str-long` 16B 對齊（§11.2 B28）
+;
+; 執行：
+;   ./bin/no run compiler/tests/cg-str16-test.no          # L0 文字斷言閘
+;   ./bin/no run compiler/tests/cg-str16-test.no dump > /tmp/m.ll
+;   opt -passes=verify -disable-output /tmp/m.ll          # LLVM 驗證
+;   clang /tmp/m.ll <main.c> -o /tmp/m && /tmp/m          # 行為驗證
+;
+; ⚠️ runner 斷言失敗不改退出碼，本檔結尾必須自己 exit(1)。
+; ⚠️ 訊息一律用單引號字串；nolang 的 "..." 是 char 字面量，不是字串。
+; ⚠️ 陳述一律**一行一條**：nolang 不以 ';' 作陳述分隔符，擠在同一行只會執行第一條。
+;
+; 權威：src/mir/codegen.go emitPrelude / strU32Trunc / strU32Widen /
+;   strLongFromParts / strLenI64 / strCapI64 / emitStrFromVec。
+;   %str-long = { i32, i32, i8* }（16B），外部 API 仍是 i64；
+;   %vec 與 %option 的 24B inline payload 槽【未變】（optSlotDefaultBytes = 24）。
+
+# /test/runner.eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/cg-runtime
+# /compiler/src/cg
+# /compiler/src/mir
+
+; ── 以真實 MIR op 序列發一個函式（全部落入 block 0）──────────
+emit-fn = (name str, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
+    n = ops.len()
+    blks []i64 = []
+    i <- [0..n): {
+        blks.push(0)
+    }
+    r = cg-emit-cfg(name, 0, blks, ops, dsts, xa, bs, syms, [])
+}
+
+; ── 四個覆蓋所有受影響發射點的函式 ─────────────────────────
+; f-len：STRCONST（i32 字面量）+ STRLEN/STRCAP（zext i32→i64）
+str16-len = () (r str) {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('abc')
+    ops.push(OP-STRLEN)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-STRCAP)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    r = emit-fn('f-len', ops, dsts, xa, bs, syms)
+}
+
+; f-cat：STRCAT（@str_concat）+ STEREQ（@str_eq）走 u32 header helper
+str16-cat = () (r str) {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('cd')
+    ops.push(OP-STRCAT)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-STEREQ)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(3)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    r = emit-fn('f-cat', ops, dsts, xa, bs, syms)
+}
+
+; f-opt：OPTMKSTR（zext 存槽）→ OPTGETSTR（trunc 重建）→ OPTEQSTR（兩側 trunc 重建）
+str16-opt = () (r str) {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('xy')
+    ops.push(OP-OPTMKSTR)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-OPTGETSTR)
+    dsts.push(3)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-OPTEQSTR)
+    dsts.push(4)
+    xa.push(2)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-STRLEN)
+    dsts.push(5)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    r = emit-fn('f-opt', ops, dsts, xa, bs, syms)
+}
+
+; f-vec：VECNEW → STRFROMVEC（%vec 的 i64 len/cap 先 trunc i64→i32）
+str16-vec = () (r str) {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-VECNEW)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-STRFROMVEC)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-STRLEN)
+    dsts.push(3)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    r = emit-fn('f-vec', ops, dsts, xa, bs, syms)
+}
+
+; ── 完整模組（供 opt / clang 外部驗證）──────────────────────
+cg-str16-module = () (r str) {
+    r = cg-runtime-prelude-full() + str16-len() + str16-cat() + str16-opt() + str16-vec()
+}
+
+; ── 斷言 ──────────────────────────────────────────────────
+test-str16-prelude = () {
+    m = cg-str16-module()
+    runner.eq(m.contains('%str-long = type { i32, i32, i8* }'), 1, 'str-long is 16B u32 header')
+    runner.eq(m.contains('%str-long = type { i64, i64, i8* }'), 0, 'no legacy 24B str-long')
+    runner.eq(m.contains('%vec = type { i64, i64, i64 }'), 1, 'vec unchanged')
+    runner.eq(m.contains('%option = type { i64, [3 x i64] }'), 1, 'option 24B slot unchanged')
+    runner.eq(m.contains('%la = zext i32 %la.i32 to i64'), 1, 'str_eq widens len')
+    runner.eq(m.contains('%r0.i32 = trunc i64 %total to i32'), 1, 'str_concat truncs total')
+    runner.eq(m.contains('{ i32 0, i32 0, i8* null }'), 1, 'i32 aggregate constant')
+    runner.eq(m.contains('{ i64 0, i64 0, i8* null }'), 0, 'no 24B aggregate left in module')
+    runner.eq(m.contains('insertvalue %str-long undef, i64'), 0, 'no i64 literal insert left')
+}
+
+test-str16-len-cap = () {
+    s = str16-len()
+    runner.eq(s.contains('%q0 = insertvalue %str-long undef, i32 3, 0'), 1, 'STRCONST len is i32 literal')
+    runner.eq(s.contains('%r0 = insertvalue %str-long %q0, i32 3, 1'), 1, 'STRCONST cap is i32 literal')
+    runner.eq(s.contains('%sv1 = insertvalue %str-long %r0, i8* %p0, 2'), 1, 'STRCONST data stays i8*')
+    runner.eq(s.contains('%slr1 = extractvalue %str-long %sv1, 0'), 1, 'STRLEN reads i32 field 0')
+    runner.eq(s.contains('%v2 = zext i32 %slr1 to i64'), 1, 'STRLEN widens to i64 API')
+    runner.eq(s.contains('%scr2 = extractvalue %str-long %sv1, 1'), 1, 'STRCAP reads i32 field 1')
+    runner.eq(s.contains('%v3 = zext i32 %scr2 to i64'), 1, 'STRCAP widens to i64 API')
+    runner.eq(s.contains('%v2 = extractvalue %str-long %sv1, 0'), 0, 'no legacy direct i64 strlen')
+}
+
+test-str16-cat = () {
+    s = str16-cat()
+    runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'STRCAT call shape')
+    runner.eq(s.contains('%se3 = call i1 @str_eq(%str-long %sv1, %str-long %sv3)'), 1, 'STEREQ call shape')
+}
+
+test-str16-opt = () {
+    s = str16-opt()
+    ; OPTMKSTR：u32 欄 zext 後才存進 [3 x i64] 槽
+    runner.eq(s.contains('%ol0w1 = zext i32 %ol01 to i64'), 1, 'OPTMKSTR widens len')
+    runner.eq(s.contains('%ol1w1 = zext i32 %ol11 to i64'), 1, 'OPTMKSTR widens cap')
+    runner.eq(s.contains('%om11 = insertvalue %option %om01, i64 %ol0w1, 1, 0'), 1, 'OPTMKSTR stores widened len')
+    runner.eq(s.contains('%om21 = insertvalue %option %om11, i64 %ol1w1, 1, 1'), 1, 'OPTMKSTR stores widened cap')
+    runner.eq(s.contains('%op2 = insertvalue %option %om21, i64 %ol2b1, 1, 2'), 1, 'OPTMKSTR data still ptrtoint')
+
+    ; OPTGETSTR：槽值是 i64 ⇒ trunc 還原 i32 才重建描述子
+    runner.eq(s.contains('%ol0i2 = trunc i64 %ol02 to i32'), 1, 'OPTGETSTR truncs len')
+    runner.eq(s.contains('%ol1i2 = trunc i64 %ol12 to i32'), 1, 'OPTGETSTR truncs cap')
+    runner.eq(s.contains('%og02 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %ol0i2, 0'), 1, 'OPTGETSTR rebuilds i32 len')
+    runner.eq(s.contains('%og12 = insertvalue %str-long %og02, i32 %ol1i2, 1'), 1, 'OPTGETSTR rebuilds i32 cap')
+
+    ; OPTEQSTR：左右兩側各 trunc；且**定義必須早於使用**（SSA 順序）
+    runner.eq(s.contains('%olx0i3 = trunc i64 %olx03 to i32'), 1, 'OPTEQSTR left len trunc')
+    runner.eq(s.contains('%olx1i3 = trunc i64 %olx13 to i32'), 1, 'OPTEQSTR left cap trunc')
+    runner.eq(s.contains('%oly0i3 = trunc i64 %oly03 to i32'), 1, 'OPTEQSTR right len trunc')
+    runner.eq(s.contains('%oly1i3 = trunc i64 %oly13 to i32'), 1, 'OPTEQSTR right cap trunc')
+    runner.eq(s.contains('%orx03 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %olx0i3, 0'), 1, 'OPTEQSTR left rebuild')
+    runner.eq(s.contains('%ory03 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %oly0i3, 0'), 1, 'OPTEQSTR right rebuild')
+    dl = s.index('%olx0i3 = trunc')
+    ul = s.index('%orx03 = insertvalue')
+    dr = s.index('%oly0i3 = trunc')
+    ur = s.index('%ory03 = insertvalue')
+    runner.eq(dl >= 0 && dl < ul, 1, 'left trunc defined before use')
+    runner.eq(dr >= 0 && dr < ur, 1, 'right trunc defined before use')
+}
+
+test-str16-vec = () {
+    s = str16-vec()
+    runner.eq(s.contains('%sfli1 = trunc i64 %sfl1 to i32'), 1, 'STRFROMVEC truncs len')
+    runner.eq(s.contains('%sfci1 = trunc i64 %sfc1 to i32'), 1, 'STRFROMVEC truncs cap')
+    runner.eq(s.contains('%sfs01 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %sfli1, 0'), 1, 'STRFROMVEC i32 len field')
+    runner.eq(s.contains('%sfs11 = insertvalue %str-long %sfs01, i32 %sfci1, 1'), 1, 'STRFROMVEC i32 cap field')
+    runner.eq(s.contains('%sfp1 = inttoptr i64 %sfd1 to i8*'), 1, 'STRFROMVEC data still inttoptr')
+}
+
+; ── dump 模式（供 shell 取 .ll 送 opt / clang）──────────────
+dump-mode = () (yes bool) {
+    yes = false
+    a = os.arg(1)
+    a: {
+        ok(v) -> {
+            v == 'dump' -> yes = true
+            ->
+        }
+        ->
+    }
+}
+
+{
+    dump-mode() -> {
+        print(cg-str16-module())
+        exit(0)
+    }
+
+    -> {
+        test-str16-prelude()
+        test-str16-len-cap()
+        test-str16-cat()
+        test-str16-opt()
+        test-str16-vec()
+        runner.summary()
+        f = runner.failed-count()
+        {
+            f > 0 -> exit(1)
+
+            -> exit(0)
+        }
+    }
+}

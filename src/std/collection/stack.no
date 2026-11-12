@@ -32,7 +32,6 @@ stack.push = (val i64) {
     {
         .data[.n] ?= val
 
-        #{overflow=wrap}
         .n = .n + 1: {
             ok -> it
 
@@ -54,7 +53,6 @@ stack.pop = () (val ?i64) {
         return
     }
 
-    #{overflow=wrap}
     .n = .n - 1: {
         ok -> it
 

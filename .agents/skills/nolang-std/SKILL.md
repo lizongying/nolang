@@ -448,19 +448,24 @@ pos = t.index(sub txt)       ; Find substring position
 ok = t.contains(sub txt)     ; Contains
 ok = t.starts-with(sub txt)  ; Prefix check
 ok = t.ends-with(sub txt)    ; Suffix check
-t.append(b byte)            ; Append single byte
-t.append-str(s str)          ; Append str
-t.append-txt(t2 txt)         ; Append txt
+t.push(c char)              ; Append one code point (dropped entirely if it cannot fit the 255-byte cap)
+t.push-str(s str)            ; Append str (byte copy, truncates by BYTE at 255)
+t.push-txt(t2 txt)           ; Append txt (byte copy, truncates by BYTE at 255)
 t.truncate(n i64)            ; Truncate to n bytes
 out = t.reverse()            ; Reverse content
 out = t.slice(start, end)   ; Slice [start, end)
 r = t.compare(b txt)        ; Lexicographic comparison (-1/0/1)
 b = t.at(idx i64)           ; Safe index access
 c = t.byte(i i64)           ; Raw BYTE read → ?byte (nil when out of range)
-ok = t.set-byte(i i64, b byte)  ; Raw BYTE write → ?bool (nil + store skipped when i >= 255 physical capacity, some(true) on success)
+out = txt.from-bytes(b []byte)  ; Build a txt from raw bytes (truncates at 255, len = byte count)
+s.fill(val byte)            ; In-place overwrite of the first `len` bytes (length unchanged)
 ```
 
-> **Raw byte pair (buffer-build escape hatch):** `t[i]` is code-point indexed; `t.byte(i)` / `t.set-byte(i, b)` are the paired BYTE-level reader/writer. `set-byte`'s bounds are checked against the receiver's **physical capacity** (a `txt` is a fixed 255-byte buffer; a `%str-long` uses its `cap` field), NOT the logical `len` — so the fill-then-set-len idiom (`out.set-byte(i, …)` in a loop, then `out.len = n`) keeps working. Out-of-range returns `nil` and the write is skipped; callers that discard the `?bool` as a bare statement are fine (optunuse only fires on bound names). Plain i64/char value args must be narrowed with `& 255`; option args (e.g. `s.byte(i)`) pass directly.
+> **Raw BYTE reads, code-point reads, NO subscript writes.** `t[i]` reads the code point at index `i`; `t.byte(i)` is the paired BYTE-level reader. **`t[i] = v` has been banned globally since 2026-11-12** (compile error `idxwrite`): it re-encodes the code point and writes it back, so the length changes as a side effect (appends when `i` == code-point count, silently drops anything past 255 bytes). Grow with `t.push(c)` / `t.push-str(s)` / `t.push-txt(u)`; overwrite in place with place-match `t[i]: { ok -> it = c }`; overwrite all `len` bytes with `fill(val byte)`.
+>
+> The byte-level WRITER `set-byte` was made **std-private** (`_set-byte`) on 2026-11-11: user code can no longer call it (it is used only by `str.fill` / `txt.push` inside std). To build a `txt` byte-by-byte, accumulate into a `[]byte` and hand it to `txt.from-bytes(b)` — it copies 1:1, truncates at the 255-byte physical capacity, and sets the byte length from the actual byte count.
+>
+> `str` notes: `s[i] = v` is a compile error (`idxwrite`) — the `with-cap` exemption was revoked on 2026-11-11. Growth is `s.push(c char)` / `s.push-str(s str)` (in-place realloc, doubling; `t.push-str(t)` self-append is safe). Byte-wise construction is `b []byte = with-cap-len(n, n)` + `b[i] = x` + `b.slice(0, k).to-bytes-str()`; `s.slice(0, k)` is a CODE-POINT slice while `s.slice-bytes(0, k)` is a BYTE slice.
 
 > **`string` union alias (std/str.no):** `string = str | txt` mirrors `num = int | float` (std/num.no, with member aliases in std/int.no and std/float.no). Usable as function parameter/return type — the compiler monomorphizes per concrete argument type (`f__str` / `f__txt`). Same limitations as `num`: no union-typed variables, no member-method calls on the union parameter inside the body (use `len(s)` global or split concrete overloads), and never define alias methods colliding with member names (`string.len` would hijack `str.len`/`txt.len` and self-recurse).
 

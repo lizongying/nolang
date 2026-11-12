@@ -1,0 +1,82 @@
+; bare-self-arg.no — 裸 `.` / `self` 直接当实参
+;
+; 回归（§5.1 已修）：方法体内写 `txt.from-str(.)` 或 `txt.from-str(self)`，
+; MIR lowering 曾把**调用者的接收者**当成 callee 的 self 出参——
+; `txt.from-str` 是 `txt.` 前缀的静态方法，编译器为它插了隐式 self（t=txt），
+; 于是 `inst.Args[0]`（其实是调用者的 %str-long* 接收者）被当作 `%txt*` 传入，
+; 而真正的 str 实参因下标越界退化成 `%str-long zeroinitializer` ⇒ SEGV。
+;
+; 症状：进程直接 EXIT=139，连一行输出都没有；改成 `s = self` 再传 `s` 就正常，
+; 所以 std 里一度用「先绑局部变量」绕开（见 src/std/str.no 的 to-txt）。
+;
+; 修法（src/mir/hir2mir.go）：模块/类型名前缀调用合成的接收者
+; （零值 `zero-recv`）必须无条件 prepend —— 那里 HIR 的第一个实参即使写成
+; 标识符 `self`，语义上也是**输入参数**，不是被调方法的接收者。
+
+# /test/runner
+
+; 裸 `.` 当实参
+str.via-bare-dot = () (out txt) {
+    out = txt.from-str(.)
+}
+
+; 显式 self 当实参
+str.via-explicit-self = () (out txt) {
+    out = txt.from-str(self)
+}
+
+; 对照组：先绑局部变量（修复前唯一可行的写法）
+str.via-local = () (out txt) {
+    s = self
+    out = txt.from-str(s)
+}
+
+box-mark {
+    tag str
+}
+
+box-mark.init = (tag str) (b box-mark) {
+    b.tag = tag
+}
+
+; 字段接收者当实参（`.tag`，同样是 str）
+box-mark.via-field = () (out txt) {
+    out = txt.from-str(.tag)
+}
+
+t-bare-dot = () {
+    s = 'abc'
+    r = s.via-bare-dot()
+    runner.str-eq(r.to-str(), 'abc', 3, 'txt.from-str(.)')
+}
+
+t-explicit-self = () {
+    s = 'xyz'
+    r = s.via-explicit-self()
+    runner.str-eq(r.to-str(), 'xyz', 3, 'txt.from-str(self)')
+}
+
+t-local-control = () {
+    s = 'ctl'
+    r = s.via-local()
+    runner.str-eq(r.to-str(), 'ctl', 3, 'txt.from-str(s) 对照组')
+}
+
+t-field-arg = () {
+    b = box-mark.init('fld')
+    r = b.via-field()
+    runner.str-eq(r.to-str(), 'fld', 3, 'txt.from-str(.tag)')
+}
+
+p1, f1 = runner.test('bare dot arg', t-bare-dot)
+p2, f2 = runner.test('explicit self arg', t-explicit-self)
+p3, f3 = runner.test('local var control', t-local-control)
+p4, f4 = runner.test('field arg', t-field-arg)
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

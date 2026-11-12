@@ -24,7 +24,10 @@
 ;   1. 純量 i64 output parameter 在條件區塊內指派時不會生效（編譯器 bug），
 ;      因此 fmt-parse-spec 使用本地 -v 變數進行運算，最後在頂層指派給 output params。
 ;   2. with-cap() 在無類型標注時預設推斷為 vec 而非 str，
-;      因此所有本地 str 變數須以 `x str = with-cap(n)` 顯式標注類型。
+;      因此本地緩衝須顯式標注型別。
+;   3. str 下標直寫（`s[i] = v`）自 2026-11-11 起全域禁用（連 with-cap 基底
+;      也不再豁免），逐位元組構造一律 `x []byte = with-cap-len(n, n)` +
+;      `x[i] = b` + `x.to-bytes-str()`。
 ; [fmt](#fmt)
 
 ; 內建函數（編譯器 ForwardFunc）
@@ -122,7 +125,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         c == 43 || c == 45 || c == 32 -> {
             sign-v = c
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -141,7 +143,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         spec[i] == 35 -> {
             alt-v = 1
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -160,7 +161,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         spec[i] == 48 -> {
             zero-v = 1
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -202,7 +202,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         c == 44 || c == 95 -> {
             grouping-v = c
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -220,7 +219,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     i < n -> {
         spec[i] == 46 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -292,57 +290,59 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
     #{overflow=wrap}
     pad = width - slen
 
-    #{overflow=wrap}
+    ; str 下標直寫已全域禁用 ⇒ 先在 []byte 緩衝裡排好，最後整體轉回 str。
+    ob []byte = with-cap-len(width, width)
+
     {
         align == 60 -> {
 
             ; 左對齊：s + fill*pad
-            out = with-cap(width)
             i <- [0..slen): {
-                out[i] = s.byte(i)
+                ob[i] = s.byte(i)
             }
             i <- [0..pad): {
 
                 #{overflow=wrap}
-                out[slen + i] = fill
+                ob[slen + i] = fill
             }
         }
 
         align == 94 -> {
 
             ; 置中：fill*left + s + fill*right
-            out = with-cap(width)
+            #{overflow=wrap}
             left = pad / 2
+            #{overflow=wrap}
             right = pad - left
             i <- [0..left): {
-                out[i] = fill
+                ob[i] = fill
             }
             i <- [0..slen): {
 
                 #{overflow=wrap}
-                out[left + i] = s.byte(i)
+                ob[left + i] = s.byte(i)
             }
             i <- [0..right): {
 
                 #{overflow=wrap}
-                out[left + slen + i] = fill
+                ob[left + slen + i] = fill
             }
         }
 
         -> {
 
             ; 右對齊或預設：fill*pad + s
-            out = with-cap(width)
             i <- [0..pad): {
-                out[i] = fill
+                ob[i] = fill
             }
             i <- [0..slen): {
 
                 #{overflow=wrap}
-                out[pad + i] = s.byte(i)
+                ob[pad + i] = s.byte(i)
             }
         }
     }
+    out = ob.slice(0, width).to-bytes-str()
 }
 
 ; 進制轉換
@@ -372,16 +372,16 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
         ru = u
 
         ru == 0 -> {
-            out = with-cap(1)
+            z1 []byte = with-cap-len(1, 1)
 
-            out[0] = 48
+            z1[0] = 48
+            out = z1.to-bytes-str()
             return
         }
         tmp u64 = ru
         digits = 0
         (tmp > 0) {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -396,7 +396,7 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
             #{overflow=wrap}
             tmp = tmp / base
         }
-        out = with-cap(digits)
+        ob []byte = with-cap-len(digits, digits)
 
         #{overflow=wrap}
         pos = digits - 1
@@ -405,22 +405,23 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
             #{overflow=wrap}
             d = ru % base
 
-            #{overflow=wrap}
             {
                 d < 10 -> {
-                    out[pos] = d + 48
+                    #{overflow=wrap}
+                    ob[pos] = d + 48
                 }
 
                 -> {
 
-                    #{overflow=wrap}
                     {
                         upper == true -> {
-                            out[pos] = d - 10 + 65
+                            #{overflow=wrap}
+                            ob[pos] = d - 10 + 65
                         }
 
                         -> {
-                            out[pos] = d - 10 + 97
+                            #{overflow=wrap}
+                            ob[pos] = d - 10 + 97
                         }
                     }
                 }
@@ -429,7 +430,6 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
             #{overflow=wrap}
             ru = ru / base
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -441,6 +441,7 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
                 }
             }
         }
+        out = ob.slice(0, digits).to-bytes-str()
         return
     }
 
@@ -487,22 +488,22 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 
     ; 全為零 -> "0"
     seen == 0 -> {
-        out = with-cap(1)
+        z2 []byte = with-cap-len(1, 1)
 
-        out[0] = 48
+        z2[0] = 48
+        out = z2.to-bytes-str()
         return
     }
 
     ; 由高到低逐位輸出
     #{overflow=wrap}
     n = maxd - start
-    out = with-cap(n)
+    ob2 []byte = with-cap-len(n, n)
     k <- [0..n): {
 
         #{overflow=wrap}
         sh = bpd * (maxd - 1 - start - k)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -514,7 +515,6 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -531,17 +531,18 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 
         d = (u >> sh) & m
 
-        #{overflow=wrap}
         {
-            d < 10 -> out[k] = d + 48
+            d < 10 -> ob2[k] = d + 48
 
+            #{overflow=wrap}
             -> {
-                upper == true -> out[k] = d - 10 + 65
+                upper == true -> ob2[k] = d - 10 + 65
 
-                -> out[k] = d - 10 + 97
+                -> ob2[k] = d - 10 + 97
             }
         }
     }
+    out = ob2.slice(0, n).to-bytes-str()
 }
 
 ; 整數格式化
@@ -576,12 +577,11 @@ fmt-group-digits = (digits str, sep i64) (out str) {
 
     #{overflow=wrap}
     total = n + ngroups - 1
-    out = with-cap(total)
+    gb []byte = with-cap-len(total, total)
     pos = 0
     i <- [0..first): {
-        out[pos] = digits.byte(i)
+        gb[pos] = digits.byte(i)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -594,9 +594,8 @@ fmt-group-digits = (digits str, sep i64) (out str) {
         }
     }
     g <- [1..ngroups): {
-        out[pos] = sep
+        gb[pos] = sep
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -610,9 +609,8 @@ fmt-group-digits = (digits str, sep i64) (out str) {
         k <- [0..3): {
 
             #{overflow=wrap}
-            out[pos] = digits.byte(first + (g - 1) * 3 + k)
+            gb[pos] = digits.byte(first + (g - 1) * 3 + k)
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -625,6 +623,7 @@ fmt-group-digits = (digits str, sep i64) (out str) {
             }
         }
     }
+    out = gb.slice(0, total).to-bytes-str()
 }
 
 ; 有號整數格式化
@@ -644,10 +643,13 @@ fmt-int = (n i64, spec str) (out str) {
 
     ; c 類型：將整數轉為單一字元
     typ == 99 -> {
-        body str = with-cap(1)
 
-        body[0] = n & 255
-        out = fmt-apply-spec(body, fill, align, width)
+        ; str 下標直寫已于 2026-11-11 全域禁用（with-cap 豁免一併取消），
+        ; 故逐位元組構造一律走 `[]byte` 緩衝 + to-bytes-str()。
+        body-b []byte = with-cap-len(1, 1)
+
+        body-b[0] = n & 255
+        out = fmt-apply-spec(body-b.to-bytes-str(), fill, align, width)
         return
     }
 
@@ -662,22 +664,19 @@ fmt-int = (n i64, spec str) (out str) {
     sign-char = 0
     full = n.to-str()
     flen = full.len-bytes()
-    digits str = with-cap(flen)
+    digits-b []byte = with-cap-len(flen, flen)
     dlen-v = 0
 
-    #{overflow=wrap}
     {
         n < 0 -> {
             sign-char = 45
+            #{overflow=wrap}
             dlen-v = flen - 1
             i <- [0..dlen-v): {
 
                 #{overflow=wrap}
-                digits[i] = full[i + 1]: {
-                    ok -> it
-
-                    -> _
-                }
+                cb = full.byte(i + 1)
+                digits-b[i] = cb
             }
         }
 
@@ -686,14 +685,12 @@ fmt-int = (n i64, spec str) (out str) {
             sign == 32 -> sign-char = 32
             dlen-v = flen
             i <- [0..dlen-v): {
-                digits[i] = full[i]: {
-                    ok -> it
-
-                    -> _
-                }
+                cb = full.byte(i)
+                digits-b[i] = cb
             }
         }
     }
+    digits = digits-b.slice(0, dlen-v).to-bytes-str()
 
     ; 千分位分組（',' = 44 / '_' = 95）：必須在「零填充之前」套用，
     ; 否則會把補零也算進去（f'{1234567:012,d}' 應為 0001,234,567，而非 000,001,234,567）。
@@ -703,7 +700,6 @@ fmt-int = (n i64, spec str) (out str) {
     }
 
     ; 零填充：在符號後、數字前補 0
-    #{overflow=wrap}
     zero == 1 -> {
         sign-len = 0
         sign-char != 0 -> sign-len = 1
@@ -712,20 +708,18 @@ fmt-int = (n i64, spec str) (out str) {
 
             #{overflow=wrap}
             pad = target - dlen-v
-            new-digits str = with-cap(target)
+            new-digits-b []byte = with-cap-len(target, target)
             i <- [0..pad): {
-                new-digits[i] = 48
+                new-digits-b[i] = 48
             }
             i <- [0..dlen-v): {
 
                 #{overflow=wrap}
-                new-digits[pad + i] = digits[i]: {
-                    ok -> it
-
-                    -> _
-                }
+                cb = digits.byte(i)
+                #{overflow=wrap}
+                new-digits-b[pad + i] = cb
             }
-            digits = new-digits
+            digits = new-digits-b.slice(0, target).to-bytes-str()
             dlen-v = target
         }
     }
@@ -733,7 +727,6 @@ fmt-int = (n i64, spec str) (out str) {
     ; 組合 body = sign-char + digits
     body-len = dlen-v
 
-    #{overflow=wrap}
     sign-char != 0 -> {
         {
 
@@ -746,24 +739,22 @@ fmt-int = (n i64, spec str) (out str) {
             }
         }
     }
-    body str = with-cap(body-len)
+    body-b []byte = with-cap-len(body-len, body-len)
     pos = 0
     sign-char != 0 -> {
-        body[0] = sign-char
+        body-b[0] = sign-char
         pos = 1
     }
     i <- [0..dlen-v): {
 
         #{overflow=wrap}
-        body[pos + i] = digits[i]: {
-            ok -> it
-
-            -> _
-        }
+        cb = digits.byte(i)
+        #{overflow=wrap}
+        body-b[pos + i] = cb
     }
 
     ; 套用寬度/對齊（零填充已填滿時為 no-op）
-    out = fmt-apply-spec(body, fill, align, width)
+    out = fmt-apply-spec(body-b.slice(0, body-len).to-bytes-str(), fill, align, width)
 }
 
 ; 無號整數格式化
@@ -782,16 +773,16 @@ fmt-uint = (u u64, spec str) (out str) {
     }
 
     ; 依 type 轉換
-    digits str = with-cap(21)
-    prefix str = with-cap(2)
+    digits str = ''
+    prefix-b []byte = with-cap-len(2, 2)
     prefix-len = 0
     {
         typ == 98 -> {
             digits = fmt-uint-base(u, 2, false)
             alt == 1 -> {
-                prefix[0] = 48
+                prefix-b[0] = 48
 
-                prefix[1] = 98
+                prefix-b[1] = 98
                 prefix-len = 2
             }
         }
@@ -799,9 +790,9 @@ fmt-uint = (u u64, spec str) (out str) {
         typ == 111 -> {
             digits = fmt-uint-base(u, 8, false)
             alt == 1 -> {
-                prefix[0] = 48
+                prefix-b[0] = 48
 
-                prefix[1] = 111
+                prefix-b[1] = 111
                 prefix-len = 2
             }
         }
@@ -809,9 +800,9 @@ fmt-uint = (u u64, spec str) (out str) {
         typ == 120 -> {
             digits = fmt-uint-base(u, 16, false)
             alt == 1 -> {
-                prefix[0] = 48
+                prefix-b[0] = 48
 
-                prefix[1] = 120
+                prefix-b[1] = 120
                 prefix-len = 2
             }
         }
@@ -821,29 +812,29 @@ fmt-uint = (u u64, spec str) (out str) {
             ; p: 指針地址，十六進制小寫，強制 0x 前綴
             digits = fmt-uint-base(u, 16, false)
 
-            prefix[0] = 48
+            prefix-b[0] = 48
 
-            prefix[1] = 120
+            prefix-b[1] = 120
             prefix-len = 2
         }
 
         typ == 88 -> {
             digits = fmt-uint-base(u, 16, true)
             alt == 1 -> {
-                prefix[0] = 48
+                prefix-b[0] = 48
 
-                prefix[1] = 88
+                prefix-b[1] = 88
                 prefix-len = 2
             }
         }
 
         -> digits = u.to-str()
     }
+    prefix = prefix-b.slice(0, prefix-len).to-bytes-str()
 
     ; 零填充
     dlen = digits.len-bytes()
 
-    #{overflow=wrap}
     zero == 1 -> {
 
         #{overflow=wrap}
@@ -852,20 +843,18 @@ fmt-uint = (u u64, spec str) (out str) {
 
             #{overflow=wrap}
             pad = target - dlen
-            new-digits str = with-cap(target)
+            new-digits-b []byte = with-cap-len(target, target)
             i <- [0..pad): {
-                new-digits[i] = 48
+                new-digits-b[i] = 48
             }
             i <- [0..dlen): {
 
                 #{overflow=wrap}
-                new-digits[pad + i] = digits[i]: {
-                    ok -> it
-
-                    -> _
-                }
+                cb = digits.byte(i)
+                #{overflow=wrap}
+                new-digits-b[pad + i] = cb
             }
-            digits = new-digits
+            digits = new-digits-b.slice(0, target).to-bytes-str()
             dlen = target
         }
     }
@@ -880,26 +869,21 @@ fmt-uint = (u u64, spec str) (out str) {
     ; 組合 body = prefix + digits
     #{overflow=wrap}
     body-len = dlen + prefix-len
-    body str = with-cap(body-len)
+    body-b []byte = with-cap-len(body-len, body-len)
     i <- [0..prefix-len): {
-        body[i] = prefix[i]: {
-            ok -> it
-
-            -> _
-        }
+        cb = prefix.byte(i)
+        body-b[i] = cb
     }
     i <- [0..dlen): {
 
         #{overflow=wrap}
-        body[prefix-len + i] = digits[i]: {
-            ok -> it
-
-            -> _
-        }
+        cb = digits.byte(i)
+        #{overflow=wrap}
+        body-b[prefix-len + i] = cb
     }
 
     ; 套用寬度/對齊
-    out = fmt-apply-spec(body, fill, align, width)
+    out = fmt-apply-spec(body-b.slice(0, body-len).to-bytes-str(), fill, align, width)
 }
 
 ; 浮點數格式化
@@ -924,7 +908,7 @@ fmt-f64 = (x f64, spec str) (out str) {
     prec < 0 -> prec = 6
 
     ; 依 type 轉換
-    digits str = with-cap(32)
+    digits str = ''
     {
         typ == 102 || typ == 70 -> digits = x.to-str-fixed(prec)
 
@@ -942,19 +926,17 @@ fmt-f64 = (x f64, spec str) (out str) {
                 dlen = digits.len-bytes()
 
                 #{overflow=wrap}
-                new-digits str = with-cap(dlen + 1)
+                new-digits-b []byte = with-cap-len(dlen + 1, dlen + 1)
 
-                new-digits[0] = 43
+                new-digits-b[0] = 43
                 i <- [0..dlen): {
 
                     #{overflow=wrap}
-                    new-digits[1 + i] = digits[i]: {
-                        ok -> it
-
-                        -> _
-                    }
+                    cb = digits.byte(i)
+                    #{overflow=wrap}
+                    new-digits-b[1 + i] = cb
                 }
-                digits = new-digits
+                digits = new-digits-b.slice(0, dlen + 1).to-bytes-str()
             }
         }
 
@@ -963,19 +945,17 @@ fmt-f64 = (x f64, spec str) (out str) {
                 dlen = digits.len-bytes()
 
                 #{overflow=wrap}
-                new-digits str = with-cap(dlen + 1)
+                new-digits-b []byte = with-cap-len(dlen + 1, dlen + 1)
 
-                new-digits[0] = 32
+                new-digits-b[0] = 32
                 i <- [0..dlen): {
 
                     #{overflow=wrap}
-                    new-digits[1 + i] = digits[i]: {
-                        ok -> it
-
-                        -> _
-                    }
+                    cb = digits.byte(i)
+                    #{overflow=wrap}
+                    new-digits-b[1 + i] = cb
                 }
-                digits = new-digits
+                digits = new-digits-b.slice(0, dlen + 1).to-bytes-str()
             }
         }
     }
@@ -998,29 +978,24 @@ fmt-f64 = (x f64, spec str) (out str) {
 
             #{overflow=wrap}
             pad = target - need
-            new-digits str = with-cap(width)
+            new-digits-b []byte = with-cap-len(width, width)
             i <- [0..sign-len): {
-                new-digits[i] = digits[i]: {
-                    ok -> it
-
-                    -> _
-                }
+                cb = digits.byte(i)
+                new-digits-b[i] = cb
             }
             i <- [0..pad): {
 
                 #{overflow=wrap}
-                new-digits[sign-len + i] = 48
+                new-digits-b[sign-len + i] = 48
             }
             i <- [0..need): {
 
                 #{overflow=wrap}
-                new-digits[sign-len + pad + i] = digits[sign-len + i]: {
-                    ok -> it
-
-                    -> _
-                }
+                cb = digits.byte(sign-len + i)
+                #{overflow=wrap}
+                new-digits-b[sign-len + pad + i] = cb
             }
-            digits = new-digits
+            digits = new-digits-b.slice(0, width).to-bytes-str()
         }
     }
 
@@ -1049,10 +1024,12 @@ fmt-str = (s str, spec str) (out str) {
     ; precision 截斷
     body = s.copy()
     precision >= 0 && precision < s.len-bytes() -> {
-        body = with-cap(precision)
+        body-b []byte = with-cap-len(precision, precision)
         i <- [0..precision): {
-            body[i] = s.byte(i)
+            cb = s.byte(i)
+            body-b[i] = cb
         }
+        body = body-b.slice(0, precision).to-bytes-str()
     }
 
     ; v 類型：字面量值 —— 字串以單引號包裹（{s:v} -> 'hello'）
@@ -1060,20 +1037,22 @@ fmt-str = (s str, spec str) (out str) {
         blen = body.len-bytes()
 
         #{overflow=wrap}
-        quoted str = with-cap(blen + 2)
+        quoted-b []byte = with-cap-len(blen + 2, blen + 2)
 
-        quoted[0] = 39
+        quoted-b[0] = 39
         i <- [0..blen): {
 
             #{overflow=wrap}
-            quoted[1 + i] = body.byte(i)
+            cb = body.byte(i)
+            #{overflow=wrap}
+            quoted-b[1 + i] = cb
         }
 
         #{overflow=wrap}
-        quoted[blen + 1] = 39
+        quoted-b[blen + 1] = 39
 
         ; 套用寬度/對齊（含引號在內計算寬度）
-        out = fmt-apply-spec(quoted, fill, align, width)
+        out = fmt-apply-spec(quoted-b.slice(0, blen + 2).to-bytes-str(), fill, align, width)
         return
     }
 
@@ -1099,31 +1078,34 @@ fmt-bool = (b bool, spec str) (out str) {
         return
     }
 
-    body str = with-cap(5)
+    body-b []byte = with-cap-len(5, 5)
+    blen = 0
     {
         b == true -> {
-            body[0] = 116
+            body-b[0] = 116
 
-            body[1] = 114
+            body-b[1] = 114
 
-            body[2] = 117
+            body-b[2] = 117
 
-            body[3] = 101
+            body-b[3] = 101
+            blen = 4
         }
 
         -> {
-            body[0] = 102
+            body-b[0] = 102
 
-            body[1] = 97
+            body-b[1] = 97
 
-            body[2] = 108
+            body-b[2] = 108
 
-            body[3] = 115
+            body-b[3] = 115
 
-            body[4] = 101
+            body-b[4] = 101
+            blen = 5
         }
     }
 
     ; 套用寬度/對齊
-    out = fmt-apply-spec(body, fill, align, width)
+    out = fmt-apply-spec(body-b.slice(0, blen).to-bytes-str(), fill, align, width)
 }

@@ -150,7 +150,6 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -162,7 +161,6 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -299,7 +297,6 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -311,7 +308,6 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -449,7 +445,6 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -461,7 +456,6 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

@@ -76,7 +76,7 @@ print('DONE — any FAIL above is the tracked §5.3 defect, not a new regression
 ; merged from tests/json.no
 ; json.no — JSON 模組測試
 ;
-; 測試 json-pool 的剖析、存取、序列化功能。
+; 測試 pool 的剖析、存取、序列化功能。
 ; 本測試為純計算，不需網路，可實際執行。
 ...
 
@@ -100,7 +100,7 @@ out-n = 0
 result = ''
 
 ; ── 測試 1: 剖析物件 ──
-p = json-pool{}
+p = pool{}
 p.init()
 root, next, ok = p.parse(json-str, 0)
 {
@@ -212,7 +212,7 @@ active-opt: {
 }
 
 ; ── 測試 6: stringify ──
-; json-pool.stringify(node-idx) → str（舊的三參 out-buf 版本已移除）
+; pool.stringify(node-idx) → str（舊的三參 out-buf 版本已移除）
 result = p.stringify(root)
 {
     result.len() > 0 -> print('ok: stringify={result}')

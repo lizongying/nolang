@@ -50,7 +50,7 @@ c: {
       title: 'str'
       kind: 'type'
       status: 'stable'
-      summary: 'UTF-8 字符串，堆分配 {i8*, u32, u32}（data, len, cap）；切片仍是 str 视图。'
+      summary: 'UTF-8 字符串，堆分配 {i8*, u32, u32}（data, len, cap）；切片仍是 str 视图；增长只能调用 push 家族。'
       aliases: ['字符串', 'string']
       definition: `
 UTF-8 编码的字节序列，底层是堆分配的 {data, len, cap}。
@@ -61,6 +61,13 @@ UTF-8 编码的字节序列，底层是堆分配的 {data, len, cap}。
 byte(i) / slice-bytes(a,b) / to-bytes() 视图，混用口径会错位。
 
 字面量用单引号；双引号只用于字符字面量。反引号是原始串（不转义、可跨行）。
+
+内容改写只有三条路，下标直写已被 idxwrite 禁用（2026-11-11，with-cap 基底也
+不豁免）：
+  原地覆写   s.fill(val byte) / place-match s[i]: { ok -> it = v }
+  增长       s.push(c char)（按码点，UTF-8）/ s.push-str(s str)（按字节，原地扩容）
+  重建       []byte 缓冲 + to-bytes-str()
+自我追加（s.push-str(s)）是安全的：编译器先 retain 源，再用 memmove 拷。
 `
       syntax: `
 s = 'hello'
@@ -436,13 +443,18 @@ x float = y
       title: 'txt'
       kind: 'type'
       status: 'stable'
-      summary: '定长文本：{byte 字段, 长度}，长度固定、内容原地改写。'
+      summary: '定长文本：{byte 字段, 长度}，容量固定 255 字节；增长只能调用 push 家族，下标直写已禁用。'
       aliases: ['文本', '固定长度文本']
       definition: `
 std/txt.no 的定长文本型别。与 str 的差别是「容量固定、可原地改写」，
 适合反复覆写的缓冲场景（例如逐行读入的处理管线）。
 
 txt.byte(i) 与 str.byte(i) 语义相同（字段 1 即字节长度）。
+
+读 t[i] 按码点；但写 t[i] = c 自 2026-11-12 起被 idxwrite 全域禁用 —— 那是按码点
+重新编码写回，长度会随写入隐式改变（i 等于码点数即追加、超 255 的部分静默丢弃）。
+变长入口：t.push(c char)（整字元装不下就整条忽略）/ t.push-str(s) /
+t.push-txt(u)（后两者按字节截断到 255）。就地改值用 place-match。
 `
       syntax: `
 t txt = with-len(64)

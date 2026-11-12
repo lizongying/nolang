@@ -1,7 +1,7 @@
 ; test/std/zstd.no — archive/zstd 模組測試
 ;
 ; 執行：no test test/std/zstd.no
-; 覆蓋：zstd-compress / zstd-decompress、zs-bit-reader 全部方法、
+; 覆蓋：compress / decompress、zs-bit-reader 全部方法、
 ;       bits-for-count、fse-table.build/decode、zs-huffman.build/decode、
 ;       zs-frame.read-frame-header/decode-block/decode-compressed-block
 ;
@@ -99,7 +99,7 @@ t-huffman = () {
 ; ── 5. 幀頭解析 + raw 區塊解碼 ───────────────────────────────────────
 t-frame = () {
     src = 'hello hello hello world'.to-bytes()
-    frame = zstd.zstd-compress(src)
+    frame = zstd.compress(src)
 
     ; 幀頭：magic(4) + FHD(1) + FCS(1，fcs_flag=0) → 6
     f = zs-frame{}
@@ -124,9 +124,9 @@ t-frame = () {
 ; ── 6. 壓縮 / 解壓 round-trip（含 fcs_flag=1 的 2 位元組長度路徑）────
 t-roundtrip = () {
     small = 'hello hello hello world'.to-bytes()
-    z1 = zstd.zstd-compress(small)
+    z1 = zstd.compress(small)
     runner.eq(len(z1), 32, '23 位元組 → 32 位元組幀（4 magic + 2 頭 + 3 區塊頭 + 23）')
-    r1 = zstd.zstd-decompress(z1)
+    r1 = zstd.decompress(z1)
     runner.eq(len(r1), 23, '小型輸入 round-trip 長度')
     runner.str-eq(r1.to-str(), 'hello hello hello world', 23, '小型輸入 round-trip 內容')
 
@@ -138,11 +138,11 @@ t-roundtrip = () {
             -> _
         }
     }
-    z2 = zstd.zstd-compress(big)
+    z2 = zstd.compress(big)
 
     ; 300 > 255 → fcs_flag=1，2 位元組 FCS
     runner.eq(len(z2), 310, '300 位元組 → 310 位元組幀（4 magic + 1 FHD + 2 FCS + 3 區塊頭 + 300）')
-    r2 = zstd.zstd-decompress(z2)
+    r2 = zstd.decompress(z2)
     runner.eq(len(r2), 300, '大型輸入 round-trip 長度')
     head = r2.slice(0, 4)
     runner.str-eq(head.to-str(), 'ABCD', 4, '大型輸入 round-trip 開頭內容')

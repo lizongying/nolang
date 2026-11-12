@@ -1204,6 +1204,12 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 	// error channel, so two of them make `?=` unable to say which value failed.
 	results = append(results, ValidateMultiOptionResults(program)...)
 
+	// 未知欄位 / 成員：接收者型別已知是 struct，卻存取了它沒有的成員。
+	// 這類寫法以前沒有任何診斷，會以 str-len / bug #85 / 靜默垃圾值三種面具
+	// 出現（見 unknown_field.go 開頭的動機）。語料普查（src/std + test +
+	// tests + example，約 600 檔）零誤報後才開成硬錯誤。
+	results = append(results, ValidateUnknownFields(program)...)
+
 	return results
 }
 func ValidateUnionTypes(program *parser.Program) (map[string]*parser.TypeAlias, []ValidateResult) {
@@ -3876,8 +3882,9 @@ var overflowArithOps = map[string]bool{
 //     非整數（str / float 等）則跳過（該運算非整數算術）。
 //   - /：僅當至少一側為有號整數時提示（無號除法永不溢出；有號除法 INT_MIN / -1 溢出）。
 //
-// line 為包容此表達式的「葉」語句所在行（插入註解的位置）；sem 用於遞迴進入 if
-// 分支區塊時對其中的子語句做註解感知掃描。
+// line 為包容此表達式的「葉」語句所在行，僅作**回退值**：上報行號優先取運算子的
+// 自身行（見下方 emit 處。容器可跨多行，用容器行會把塊內站點全塌到 header）。
+// sem 用於遞迴進入 if 分支區塊時對其中的子語句做註解感知掃描。
 func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int)) {
 	if e == nil {
 		return
@@ -3898,7 +3905,19 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 					prompt = true
 				}
 				if prompt {
-					emit(file, line, x.Token.Column)
+					// 行號取**運算子自身**的行，而不是容器的行。容器可以跨多行
+					// （`cond -> { … }` 的臂、語句位置裸塊、if 組），若一律用
+					// `stmt.Pos().Line`，塊內每個站點的報告都會塌到 header 行：
+					//   · 診斷指錯位置（`no vet` 顯示在 `cond -> {` 那行）；
+					//   · `no fmt --fix=overflow` 的 findFixTargetNode 取「包含該行
+					//     的最內層陳述」，只能拿回容器，注解被插回塊頭——於是
+					//     「塊級注解下推成逐條」永遠做不到（std 裡 162 處殘留即此故）。
+					// Token 行號缺失時（少量合成節點）回退到容器行，保持舊行為。
+					emitLine := x.Token.Line
+					if emitLine == 0 {
+						emitLine = line
+					}
+					emit(file, emitLine, x.Token.Column)
 				}
 			}
 		}
@@ -3953,8 +3972,11 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 }
 
 // walkStmtForOverflow 註解感知地遍歷語句樹，對每個未標註的「葉」語句掃描其表達式
-// 內的有號整數相減，並以該語句所在行（插入註解的位置）呼叫 emit(file, line, col)。
-// col 為運算子的欄位，供 LSP 高亮；file 為語句所屬來源檔。
+// 內的有號整數相減，並以**運算子所在行**（也就是註解該插入的位置）呼叫
+// emit(file, line, col)。col 為運算子的欄位，供 LSP 高亮；file 為語句所屬來源檔。
+//
+// 行號用運算子而非容器陳述：容器可跨多行，用容器行會讓塊內每個站點都塌到 header，
+// 診斷位置錯、逐條插入也插不回內層陳述（詳見 walkExprForIntOverflow 的 emit 處）。
 //
 // file 由外層（頂層函式 / 語句）逐層傳入，而非取節點自身的 SourceFile：合併模式下
 // 只有頂層語句被 SetSourceFile 標記，嵌套語句的 SourceFile 為空；若在此處取空值，
@@ -6656,6 +6678,10 @@ func ValidateIndexWrite(program *parser.Program, mainFile string) []ValidateResu
 // ⇒ 結果是 `""`、len=0）。若把 with-cap-len 排除在豁免外，`with-cap-len(n, 0)`
 // 就會被要求改成一種必然靜默出錯的寫法。
 //
+// 適用範圍（2026-11-11 收窄）：**僅限非 str 容器** —— `[]byte` / `[]T` / 固定
+// 陣列。`str` 已於同日全域禁止下標直寫（見 isContainerWriteBase 裡先於本豁免的
+// 那次返回），逐位元組構造改走 `[]byte` 緩衝，所以 str 不再受益於此例外。
+//
 // `with-len(n)` 構造的是 len 已就位的緩衝：place-match 讀 i（i < len）落在 ok 臂、
 // 寫回同位，行為與直接下標寫完全等價，因此**不豁免** —— 它與任何其他容器一樣
 // 必須顯式解包。
@@ -6675,20 +6701,129 @@ func isWithCapCall(e parser.Expression) bool {
 	return false
 }
 
+// collectStrTxtResultParams 回傳某函式結果參數中**型別為 str 或 txt** 的名字集合。
+//
+// 用途（idxwrite 的第三個補漏）：IdxLocalTypes 只登記函式體內的 `x T = …`
+// 顯式標註，所以
+//
+//	f = () (out str) {
+//	    out = with-cap(4)          ; 沒有標註 ⇒ IdxLocalTypes 查不到
+//	    out[0] = 65                ; 於是整條漏報
+//	}
+//
+// 這種「結果參數 + with-cap 建造 str 緩衝」是 std 裡最常見的形狀之一
+// （舊 docs 的 str.to-upper 範例就是），正是本輪禁用 str 下標直寫要堵的對象。
+// 體內若已寫 `out str = …`，IdxLocalTypes 本就能查到，這裡只是補上缺標註那條。
+//
+// 2026-11-12：謂詞扩到 txt（`f = () (out txt) { out[0] = "中" }` 同樣是
+// 「隱式改長度」的危險寫法）。其它容器的同類漏報屬既有的獨立缺口，不在此一併收緊。
+func collectStrTxtResultParams(view *THIRView, fn *parser.FunctionDefinition) map[string]bool {
+	set := map[string]bool{}
+	if fn == nil {
+		return set
+	}
+	for _, p := range fn.Results {
+		if p == nil || p.Name == "" || p.Type == nil {
+			continue
+		}
+		if st := declTypeOf(view, p, p.Type.String()); st != nil {
+			switch ty.StripOptionRaw(st.Raw()) {
+			case "str", "txt":
+				set[p.Name] = true
+			}
+		}
+	}
+	return set
+}
+
+// collectTopLevelVarRawForIdx 採集頂層腳本變數的原始型別，**只服務**
+// runIndexWriteCore 的 str|txt 判定（頂層裸名 / 頂層 struct 欄位兩種基底）。
+//
+// 刻意不復用 collectTopLevelLets：後者對無標註的 let 走
+// registerInferredNonIntLet，那裡只登記 nonIntTypeNames / `f32|f64` / `[]` /
+// `[` 前綴，**struct 名永不登記** —— 於是
+//
+//	b = box{ t: 'hi' }        ; 無標註 ⇒ 型別查不到
+//	b.t[0] = "J"              ; 於是整條漏報（tests/byte.no 的洞）
+//
+// 這種「頂層 struct 字面量 + 欄位下標寫」是本輪收口 txt 時補的第四個登記點。
+//
+// 🔴 無標註時**只認 struct 字面量**，絕不做一般表達式推斷：`c = s`（s 是 str）
+// 一旦被推斷成 str，頂層裸賦值的 str 推斷缺口就順帶收緊了，會直接翻紅
+// tests/rule1-binding.no 這類**依賴**該缺口的語料 —— 那是獨立議題
+// （test/README §5.2 盲區 1），不在本輪範圍內。
+func collectTopLevelVarRawForIdx(program *parser.Program, view *THIRView) map[string]string {
+	types := map[string]string{}
+	if program == nil {
+		return types
+	}
+	for _, stmt := range program.Statements {
+		ls, ok := stmt.(*parser.LetStatement)
+		if !ok || ls.Name == nil || ls.Name.Value == "" {
+			continue
+		}
+		if ls.Type != nil {
+			if nt, ok := ls.Type.(*parser.NamedType); ok {
+				types[ls.Name.Value] = declTypeOfRaw(view, ls, nt.Value)
+			} else {
+				types[ls.Name.Value] = declTypeOfRaw(view, ls, ls.Type.String())
+			}
+			continue
+		}
+		if sl, ok := ls.Value.(*parser.StructLiteral); ok && sl.Type != "" {
+			types[ls.Name.Value] = sl.Type
+		}
+	}
+	return types
+}
+
+// topIndexBaseRaw 是頂層（curFunc == ""）版的 indexBaseExprRaw：同樣支援
+// 直接變數 / 括號 / `.field` 鏈，差別只在變數型別來自上面那張頂層表。
+//
+// 呼叫方**只准**把它當「r == "str" || r == "txt"」的謂詞用，絕不能拿返回值
+// 整體賦給 lt —— 一旦 lt 被填上，頂層 `[]byte` / `[]T` / `[N]T` 的直寫就會
+// 掉進 isContainerWriteBase 末尾的 return true，而 capBases 只按函式名建鍵
+// （頂層 curFunc 為空，沒有豁免），會把大批 tests/*.no 的頂層陣列寫翻紅。
+func topIndexBaseRaw(topTypes map[string]string, structFields map[string]map[string]string, e parser.Expression) string {
+	switch b := e.(type) {
+	case *parser.Identifier:
+		if raw, ok := topTypes[b.Value]; ok && raw != "" {
+			return ty.StripOptionRaw(raw)
+		}
+	case *parser.GroupedExpression:
+		return topIndexBaseRaw(topTypes, structFields, b.Expression)
+	case *parser.DotExpression:
+		if b == nil {
+			return ""
+		}
+		if rt := topIndexBaseRaw(topTypes, structFields, b.Receiver); rt != "" {
+			if fs, ok := structFields[rt]; ok {
+				if ft, ok := fs[b.Property]; ok && ft != "" {
+					return ty.StripOptionRaw(ft)
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // collectWithCapBases 走查一個函式體（不下钻巢狀函式定義——那是另一個作用域、
 // 另有自己的鍵），回傳「曾被 `with-cap(...)` 指派過」的識別符名稱集合。
 //
 // 背景（idxwrite 誤報）：with-cap 建立的是 len=0 的容量緩衝，標準的「逐位元組填充」
-// 構造慣例靠直接下標寫入 `buf[i] = b` 把長度增長起來（見 number.no u64.to-str）。
+// 構造慣例靠直接下標寫入 `buf[i] = b` 把長度增長起來（見 []byte 側的填充代碼）。
 // checker 建議的兩種替代形體對 len=0 緩衝都會靜默產出空字串——
 //   - place-match `buf[i]: { ok -> it = v / -> _ }`：讀取 i 越界為 nil，ok 臂永不執行；
-//   - `buf.set-byte(i, v)`：只寫既有 in-bounds 槽位，不增長長度。
+//   - set-byte（現為私有的 `_set-byte`）：只寫既有 in-bounds 槽位，不增長長度。
 //
 // 因此「以 with-cap 建立、再用直接下標寫入增長」是這個慣例唯一能正確執行的寫法，
 // idxwrite 不得對其報錯。本集合讓 ValidateIndexWrite 精確豁免這類基底：只有确实
 // 由 with-cap 構造過的變數才豁免；以字面量陣列 / 固定陣列 / 切片 / **with-len**
 // 建立的基底仍照報——with-len 的 len 已就位，place-match 讀 i 落在 ok 臂、寫回同位，
 // 與直接下標寫完全等價（見 isWithCapCall），豁免它只是給直寫留一個無理由的後門。
+//
+// 2026-11-11：`str` 已全域退出本豁免（isContainerWriteBase 先判 str 並直接報錯），
+// 本集合因此只服務 `[]byte` / `[]T` / 固定陣列。
 func collectWithCapBases(body *parser.BlockStatement) map[string]bool {
 	set := map[string]bool{}
 	if body == nil {
@@ -6863,14 +6998,93 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		return indexBaseContainerType(sem, structFields, curFunc, selfType, idx)
 	}
 
+	// 頂層腳本（curFunc == ""）的 str / txt 直寫補漏。
+	//
+	// indexBaseVarRaw 只查 IdxLocalTypes（按函數作用域），頂層 curFunc 是空字串
+	// 恆查不到型別 —— 於是 `s str = with-cap(4)` ⏎ `s[0] = 89` 這種**腳本層**寫入
+	// 一直是漏報，全域禁用 str 下標寫在腳本層形同開後門。
+	//
+	// 2026-11-12 起改用 collectTopLevelVarRawForIdx（頂層變數原始型別表），
+	// 因為舊的 topStrNames 只處理 `*parser.Identifier` 基底，`b.t[0] = v`
+	// （struct 欄位基底）永遠查不到。基底解析交給 topIndexBaseRaw。
+	//
+	// 🔴 仍然只認 str / txt 兩種型別，刻意不把頂層納入一般的容器判定：其它容器
+	//（[]byte / []T / 固定陣列）的頂層判定是另一條獨立的歷史缺口
+	//（見 indexBaseVarRaw 註解「頂層腳本是否納入是獨立議題」），本輪不動，
+	// 以免順手把大量 `tests/*.no` 的頂層 []T 寫入一併翻成錯誤。
+	topIdxTypes := collectTopLevelVarRawForIdx(program, view)
+	// 結果參數（`f = () (out str) { … }`）的 str/txt 名單，理由同上。
+	//
+	// IdxLocalTypes 只登記函式體內的 `x T = …` 顯式標註，結果參數若在體內寫成
+	// `out = with-cap(n)`（不帶標註）就查不到型別 —— `out[i] = v` 這個 str 緩衝
+	// 建造的**經典形狀**因此整條漏報。這正是把 str 下標直寫禁掉要堵的那類代碼
+	//（docs 舊範例 str.to-upper 就是 `out = with-cap(...)` + `out[i] = c`）。
+	resStrTxtParams := map[string]map[string]bool{}
+
 	// isContainerWriteBase 判定這個下標寫入是否落在 arr/vec/slice/str/txt 的
 	// 容器基底上（**map 放行**：`m[k] = v` 是 put，任何鍵恒有定義、沒有越界分支）。
 	// 基底形態不限於變數：`.limit[i]`（隱式 self）、`self.f[i]`、`a.b.f[i]` 一律
 	// 納入 —— D11 之後「索引讀一律 option」的對稱要求，寫側不得再有 struct 欄位
 	// 豁免區。
 	isContainerWriteBase := func(curFunc, selfType string, idx *parser.IndexExpression) bool {
+		// 基底型別必須先取：str / txt 的判定要排在 with-cap 豁免之前。
+		lt := baseTypeOf(curFunc, selfType, idx)
+		// 頂層腳本：IdxLocalTypes 查不到，改查頂層變數原始型別表（含 struct 欄位）。
+		// 🔴 只允許把 str / txt 填進 lt，絕不寫 `lt = topIndexBaseRaw(...)` 的整體
+		// 賦值 —— 那會讓頂層 []byte / []T / [N]T 的直寫一起翻紅（見該函式註解）。
+		if lt == "" && curFunc == "" {
+			if r := topIndexBaseRaw(topIdxTypes, structFields, idx.Left); r == "str" || r == "txt" {
+				lt = r
+			}
+		}
+		// 結果參數：`out = with-cap(n)` 沒標註時 IdxLocalTypes 查不到（見 resStrTxtParams）。
+		if lt == "" && curFunc != "" {
+			if id, ok := idx.Left.(*parser.Identifier); ok {
+				funcKeys := []string{curFunc}
+				if i := strings.Index(curFunc, "."); i >= 0 {
+					funcKeys = append(funcKeys, curFunc[i+1:])
+				}
+				for _, cf := range funcKeys {
+					if set, ok := resStrTxtParams[cf]; ok && set[id.Value] {
+						// 這裡只需「非空且會命中下方早退」；str 與 txt 在此完全等價，
+						// 故填 str 即可（不要據此字串做別的判斷）。
+						lt = "str"
+						break
+					}
+				}
+			}
+		}
+		// str / txt 全域禁直寫（str 2026-11-11，txt 2026-11-12）：
+		//
+		// `s[i] = v` 過去靠下面的 with-cap 豁免放行，而該豁免同時也是「越界寫入
+		// 已配置緩衝之外」的唯一來源 —— len=0 緩衝靠直寫增長，寫到 i >= cap 時
+		// 就跨出配置區（見 codegen 的 ensureStrLongBuffer 增長護欄）。現在把這條
+		// 豁免整條撤掉：
+		//   - 逐位元組「構造」：一律 `x []byte = with-cap-len(n, n)` + `x[i] = b`
+		//     + `x.slice(0, k).to-bytes-str()`（或 `x.to-bytes-str()`）；
+		//   - 原位「變更」：`s.fill(val byte)` / place-match；
+		//   - 增長：`s.push(c char)` / `s.push-str(s str)`（str）、
+		//     `t.push(c char)` / `t.push-str(s)` / `t.push-txt(t)`（txt）。
+		//
+		// txt 與 str 同案處理的理由：`t[i] = v` 是**按碼點重編碼寫回**，長度會隨
+		// 寫入隱式改變（i == 碼點數時等價追加、超 255 的部分靜默丟棄）—— 「一次
+		// 下標寫偷偷改了長度」正是這條禁令要消滅的東西。txt 雖然沒有堆、沒有
+		// 擴容，`_set-byte` 也只寫既有槽位，但長度照樣會被隱式改掉。
+		//
+		// 下標寫只剩 place-match `s[i]: { ok -> it = v }` —— 它由 D9 降糖產生的
+		// 合成節點承載（IsSynthetic），本規則本來就跳過，且它以「讀」作閘門
+		// （i >= len 靜默跳過），不會越界，也永不改變長度。
+		//
+		// 這不是「再多一種容器」：str 的元素是 char、txt 的元素也是 char，元素型別
+		// 本身不是 option，所以下面「槽位即 option」的放行分支不會蓋到它們，
+		// 這裡必須先返回。
+		if lt == "str" || lt == "txt" {
+			return true
+		}
 		// with-cap 豁免：基底若在本函式內曾被 `with-cap(...)` 指派過，它是
 		// len=0 的容量緩衝，直接下標寫入是唯一能正確增長的寫法，不報 idxwrite。
+		// 註：2026-11-11 起 str 已在上面提前返回，本豁免實際只服務
+		// vec / []byte / arr 等非 str 容器。
 		if ident, ok := idx.Left.(*parser.Identifier); ok && ident.Value != "" {
 			funcKeys := []string{curFunc}
 			if i := strings.Index(curFunc, "."); i >= 0 {
@@ -6882,7 +7096,6 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 				}
 			}
 		}
-		lt := baseTypeOf(curFunc, selfType, idx)
 		if lt == "" {
 			return false
 		}
@@ -6965,6 +7178,10 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 			fcf := resolveFile(program.Sem.SourceFileOf(s), curFile)
 			// 收集本函式內 by with-cap 構造過的基底，供 isContainerWriteBase 豁免。
 			capBases[s.Name] = collectWithCapBases(s.Body)
+			// 本函式的結果參數裡型別為 str / txt 的名字（見 resStrTxtParams）。
+			if rs := collectStrTxtResultParams(view, s); len(rs) > 0 {
+				resStrTxtParams[s.Name] = rs
+			}
 			// 方法接收者型別（見 indexBaseContainerType）：`.limit[i] = v` 這類
 			// 欄位基底的容器型別全靠它查 struct 欄位表。
 			fnSelf := ""
@@ -12201,6 +12418,63 @@ func resolveSelfMethodCalls(program *parser.Program) {
 		}
 	}
 }
+
+// dbgShadowSkip 開啟時把「因為接收者是局部綁定而跳過的靜態形態改寫」印到
+// stderr。僅供落地前的語料掃描使用。
+var dbgShadowSkip = os.Getenv("NOLANG_DBG_SHADOW") != ""
+
+// localScope 是 resolveMethodCalls 走訪時可見的區域綁定堆疊。它存在只為了一個
+// 判斷：靜態形態改寫 `Type.method(recv, …)` 不得在 `Type` 其實是**同名局部
+// 變數**時觸發。
+//
+// 這不是理論問題。`doc = it`（局部變數名與 std 結構 `noml.doc` 撞名）之後的
+// `doc.get-str('b')` 曾被改寫成 `noml.doc.get-str('b')`——靜態形態的契約是
+// 「接收者由呼叫方自己寫在實參首位」，於是接收者被整條丟掉，MIR 只能依
+// synthRecv 的既有語意給缺失的 `self` 補一個零值常量：這次呼叫讀到一份剛配置
+// 的空 pool，`get-str` 靜默回 nil，而走到 `strs []str` 的取值路徑就是 SIGSEGV
+// （test/std/noml.no t-parse-obj 的原始病徵；一度被誤判為 []str 的 codegen 缺陷）。
+// 把該處的局部變數改名後 346 條斷言全綠，才把責任定位到這裡而不是 MIR。
+//
+// 詞法作用域優先於型別名：局部綁定存在時，接收者是值，不是型別引用。
+type localScope struct {
+	frames []map[string]bool
+}
+
+func (s *localScope) push() {
+	if s == nil {
+		return
+	}
+	s.frames = append(s.frames, make(map[string]bool, 4))
+}
+
+func (s *localScope) pop() {
+	if s == nil || len(s.frames) == 0 {
+		return
+	}
+	s.frames = s.frames[:len(s.frames)-1]
+}
+
+func (s *localScope) bind(name string) {
+	if s == nil || name == "" || len(s.frames) == 0 {
+		return
+	}
+	s.frames[len(s.frames)-1][name] = true
+}
+
+// bound 回報 name 在當前位置是否解析到一個局部綁定。nil 作用域（只出現在
+// resolveMethodCallsInExpr 的直接單元測試裡）等於「一無所知」，保持舊行為。
+func (s *localScope) bound(name string) bool {
+	if s == nil || name == "" {
+		return false
+	}
+	for i := len(s.frames) - 1; i >= 0; i-- {
+		if s.frames[i][name] {
+			return true
+		}
+	}
+	return false
+}
+
 func resolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
 	if len(typeOwner) == 0 {
 		return
@@ -12216,64 +12490,118 @@ func resolveMethodCalls(program *parser.Program, typeOwner map[string]string) {
 			}
 		}
 	}
+	sc := &localScope{}
 	for _, stmt := range program.Statements {
-		resolveMethodCallsInStmt(stmt, program.Sem, typeOwner, definedMethods)
+		resolveMethodCallsInStmt(stmt, program.Sem, typeOwner, definedMethods, sc)
 	}
 }
-func resolveMethodCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext, typeOwner map[string]string, definedMethods map[string]bool) {
+func resolveMethodCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext, typeOwner map[string]string, definedMethods map[string]bool, sc *localScope) {
 	if stmt == nil {
 		return
 	}
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			s.Expression = resolveMethodCallsInExpr(s.Expression, sem, typeOwner, definedMethods)
+			s.Expression = resolveMethodCallsInExpr(s.Expression, sem, typeOwner, definedMethods, sc)
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			s.Value = resolveMethodCallsInExpr(s.Value, sem, typeOwner, definedMethods)
+			s.Value = resolveMethodCallsInExpr(s.Value, sem, typeOwner, definedMethods, sc)
+		}
+		// 綁定在右式之後才生效（`doc = doc.make()` 的右式仍看到舊作用域）。
+		// match 臂的 `it` / `ok(v)` 綁定也是合成 LetStatement（IsArmBinding），
+		// 因此這裡一併覆蓋，不必另外走臂。
+		if s.Name != nil {
+			sc.bind(s.Name.Value)
 		}
 	case *parser.MultiAssignStatement:
 		if s.Value != nil {
-			s.Value = resolveMethodCallsInExpr(s.Value, sem, typeOwner, definedMethods)
+			s.Value = resolveMethodCallsInExpr(s.Value, sem, typeOwner, definedMethods, sc)
+		}
+		for _, t := range s.Targets {
+			if id, ok := t.(*parser.Identifier); ok {
+				sc.bind(id.Value)
+			}
 		}
 	case *parser.FunctionDefinition:
+		// 每個函式一份新作用域：參數與結果參數名可以與型別同名（std 大量
+		// 使用 `pool` / `doc` / `file` 這類名字），不得被當成型別引用。
+		sc.push()
+		defer sc.pop()
+		for _, p := range s.Parameters {
+			if p != nil {
+				sc.bind(p.Name)
+			}
+		}
+		for _, p := range s.Results {
+			if p != nil {
+				sc.bind(p.Name)
+			}
+		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods, sc)
 			}
 		}
 	case *parser.BlockStatement:
+		sc.push()
+		defer sc.pop()
 		for _, bodyStmt := range s.Statements {
-			resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
+			resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods, sc)
 		}
 	case *parser.BlockMatchStatement:
 		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
 		for _, bodyStmt := range blockMatchChildStatements(s) {
-			resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
+			resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods, sc)
 		}
 	case *parser.ForStatement:
+		// 迭代變數是普通局部綁定（`doc <- docs:` 之後 doc 就是元素值）。
+		sc.push()
+		defer sc.pop()
+		if s.IterRange != nil {
+			sc.bind(s.IterRange.Variable)
+		}
 		if s.Condition != nil {
-			s.Condition = resolveMethodCallsInExpr(s.Condition, sem, typeOwner, definedMethods)
+			s.Condition = resolveMethodCallsInExpr(s.Condition, sem, typeOwner, definedMethods, sc)
 		}
 		if s.Init != nil {
-			resolveMethodCallsInStmt(s.Init, sem, typeOwner, definedMethods)
+			resolveMethodCallsInStmt(s.Init, sem, typeOwner, definedMethods, sc)
 		}
 		if s.Update != nil {
-			resolveMethodCallsInStmt(s.Update, sem, typeOwner, definedMethods)
+			resolveMethodCallsInStmt(s.Update, sem, typeOwner, definedMethods, sc)
 		}
 		if s.Body != nil {
 			for _, bodyStmt := range s.Body.Statements {
-				resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods, sc)
 			}
 		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
-			s.ReturnValue = resolveMethodCallsInExpr(s.ReturnValue, sem, typeOwner, definedMethods)
+			s.ReturnValue = resolveMethodCallsInExpr(s.ReturnValue, sem, typeOwner, definedMethods, sc)
 		}
 	}
 }
-func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContext, typeOwner map[string]string, definedMethods map[string]bool) parser.Expression {
+
+// staticMethodTarget 回報 `typeName.method` 是否是一個可改寫的靜態形態方法
+// 呼叫，命中時回傳完整限定名 `module.typeName.method`。
+//
+// 「靜態形態」指源碼把接收者自己寫在實參首位（`Type.method(recv, …)`），因此
+// 改寫只補被呼叫者、不動實參。呼叫方必須先排除「typeName 其實是局部變數」
+// 的情形（見 localScope）。
+func staticMethodTarget(typeName, method string, typeOwner map[string]string, definedMethods map[string]bool) (string, bool) {
+	for k, v := range typeOwner {
+		if v != typeName {
+			continue
+		}
+		fullName := k + "." + method
+		if definedMethods[fullName] {
+			return fullName, true
+		}
+	}
+	return "", false
+}
+
+func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContext, typeOwner map[string]string, definedMethods map[string]bool, sc *localScope) parser.Expression {
 	if expr == nil {
 		return nil
 	}
@@ -12288,24 +12616,27 @@ func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				typeName := recv.Value
 				if !strings.Contains(typeName, ".") {
-					for k, v := range typeOwner {
-						if v != typeName {
-							continue
+					fullName, isStatic := staticMethodTarget(typeName, dot.Property, typeOwner, definedMethods)
+					// 局部綁定優先於型別名。`doc = it` 之後的 `doc.get-str('b')` 是
+					// 普通方法呼叫：接收者必須留在 AST 上（DotExpression）交給 MIR
+					// 當 self。這裡若照靜態形態改寫，接收者會被整條丟掉（該形態要求
+					// 呼叫方自己把它寫在實參首位），MIR 只好給缺失的 self 補零值
+					// 常量。詳見 localScope 的註釋與 test/std/noml.no t-parse-obj。
+					if isStatic && sc.bound(typeName) && dbgShadowSkip {
+						fmt.Fprintf(os.Stderr, "[shadow-skip] %s.%s (would flatten to %s)\n",
+							typeName, dot.Property, fullName)
+					}
+					if isStatic && !sc.bound(typeName) {
+						e.Function = &parser.Identifier{
+							Token: lexer.Token{Type: lexer.IDENT, Literal: fullName},
+							Value: fullName,
 						}
-						fullName := k + "." + dot.Property
-						if definedMethods[fullName] {
-							e.Function = &parser.Identifier{
-								Token: lexer.Token{Type: lexer.IDENT, Literal: fullName},
-								Value: fullName,
-							}
-							// 這也是**方法呼叫**：源碼寫 `Type.method(recv, …)` 時，
-							// 接收者是使用者自己寫在實參表首位的，改寫只是把被呼叫
-							// 者補成完整限定名，實參不動 ⇒ Arguments[0] 仍是接收者，
-							// 與攤平形態語意相同（故同樣記 CalleeMethod）。
-							if sem != nil {
-								sem.SetCallee(e, parser.CalleeMethod)
-							}
-							break
+						// 這也是**方法呼叫**：源碼寫 `Type.method(recv, …)` 時，
+						// 接收者是使用者自己寫在實參表首位的，改寫只是把被呼叫
+						// 者補成完整限定名，實參不動 ⇒ Arguments[0] 仍是接收者，
+						// 與攤平形態語意相同（故同樣記 CalleeMethod）。
+						if sem != nil {
+							sem.SetCallee(e, parser.CalleeMethod)
 						}
 					}
 				}
@@ -12313,34 +12644,34 @@ func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 		}
 		// Recurse into arguments and nested calls
 		if innerCall, ok := e.Function.(*parser.CallExpression); ok {
-			e.Function = resolveMethodCallsInExpr(innerCall, sem, typeOwner, definedMethods)
+			e.Function = resolveMethodCallsInExpr(innerCall, sem, typeOwner, definedMethods, sc)
 		}
 		for i, arg := range e.Arguments {
-			e.Arguments[i] = resolveMethodCallsInExpr(arg, sem, typeOwner, definedMethods)
+			e.Arguments[i] = resolveMethodCallsInExpr(arg, sem, typeOwner, definedMethods, sc)
 		}
 		return e
 	case *parser.DotExpression:
-		e.Receiver = resolveMethodCallsInExpr(e.Receiver, sem, typeOwner, definedMethods)
+		e.Receiver = resolveMethodCallsInExpr(e.Receiver, sem, typeOwner, definedMethods, sc)
 		return e
 	case *parser.InfixExpression:
 		if e.Left != nil {
-			e.Left = resolveMethodCallsInExpr(e.Left, sem, typeOwner, definedMethods)
+			e.Left = resolveMethodCallsInExpr(e.Left, sem, typeOwner, definedMethods, sc)
 		}
 		if e.Right != nil {
-			e.Right = resolveMethodCallsInExpr(e.Right, sem, typeOwner, definedMethods)
+			e.Right = resolveMethodCallsInExpr(e.Right, sem, typeOwner, definedMethods, sc)
 		}
 		return e
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			e.Right = resolveMethodCallsInExpr(e.Right, sem, typeOwner, definedMethods)
+			e.Right = resolveMethodCallsInExpr(e.Right, sem, typeOwner, definedMethods, sc)
 		}
 		return e
 	case *parser.IndexExpression:
 		if e.Left != nil {
-			e.Left = resolveMethodCallsInExpr(e.Left, sem, typeOwner, definedMethods)
+			e.Left = resolveMethodCallsInExpr(e.Left, sem, typeOwner, definedMethods, sc)
 		}
 		if e.Index != nil {
-			e.Index = resolveMethodCallsInExpr(e.Index, sem, typeOwner, definedMethods)
+			e.Index = resolveMethodCallsInExpr(e.Index, sem, typeOwner, definedMethods, sc)
 		}
 		return e
 	case *parser.SurfaceMatch:
@@ -12349,44 +12680,44 @@ func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 		for i := range e.Arms {
 			arm := &e.Arms[i]
 			if arm.Condition != nil {
-				arm.Condition = resolveMethodCallsInExpr(arm.Condition, sem, typeOwner, definedMethods)
+				arm.Condition = resolveMethodCallsInExpr(arm.Condition, sem, typeOwner, definedMethods, sc)
 			}
 			for j, vp := range arm.MultiValuePatterns {
 				if vp != nil {
-					arm.MultiValuePatterns[j] = resolveMethodCallsInExpr(vp, sem, typeOwner, definedMethods)
+					arm.MultiValuePatterns[j] = resolveMethodCallsInExpr(vp, sem, typeOwner, definedMethods, sc)
 				}
 			}
 			if arm.Body != nil {
 				for _, bs := range arm.Body.Statements {
-					resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods)
+					resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods, sc)
 				}
 			}
 		}
 		return e
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			e.Condition = resolveMethodCallsInExpr(e.Condition, sem, typeOwner, definedMethods)
+			e.Condition = resolveMethodCallsInExpr(e.Condition, sem, typeOwner, definedMethods, sc)
 		}
 		if e.Consequence != nil {
 			for _, bs := range e.Consequence.Statements {
-				resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods, sc)
 			}
 		}
 		if e.Alternative != nil {
 			for _, bs := range e.Alternative.Statements {
-				resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods)
+				resolveMethodCallsInStmt(bs, sem, typeOwner, definedMethods, sc)
 			}
 		}
 		return e
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			e.Condition = resolveMethodCallsInExpr(e.Condition, sem, typeOwner, definedMethods)
+			e.Condition = resolveMethodCallsInExpr(e.Condition, sem, typeOwner, definedMethods, sc)
 		}
 		if e.Consequence != nil {
-			e.Consequence = resolveMethodCallsInExpr(e.Consequence, sem, typeOwner, definedMethods)
+			e.Consequence = resolveMethodCallsInExpr(e.Consequence, sem, typeOwner, definedMethods, sc)
 		}
 		if e.Alternative != nil {
-			e.Alternative = resolveMethodCallsInExpr(e.Alternative, sem, typeOwner, definedMethods)
+			e.Alternative = resolveMethodCallsInExpr(e.Alternative, sem, typeOwner, definedMethods, sc)
 		}
 		return e
 	}

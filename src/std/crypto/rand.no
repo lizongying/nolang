@@ -36,13 +36,18 @@ rand = (state i64) (new-state i64, r i64) {
 rand-str = (state i64, n i64) (s str) {
     chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     r = 0
+
+    ; 2026-11-11：str 下標直寫已全域禁用 ⇒ 用 []byte 緩衝承接，收尾整體轉回 str。
+    ; （這裡不能用 place-match：它對 str 是「碼點」閘門，不保證位元組保真。）
+    sb []byte = with-cap-len(n, n)
     i <- [0..n): {
         r = 0
         state, r = rand(state)
-        s[i] = chars[r % 62]: {
+        sb[i] = chars[r % 62]: {
             ok -> it
 
-            -> _
+            -> "A"
         }
     }
+    s = sb.to-bytes-str()
 }

@@ -1023,7 +1023,7 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'ttdybn5d': 'fmt: -md と -fix は併用できません（自動修正は .no ソースのみが対象）'
   'ttlxcrgt': '範囲式内に \'[\' または \'(\' または文字列を期待しましたが %s でした'
   'u0g1w0d7': 'js 互換モジュールが見つかりません: %s'
-  'u3g4qexx': 'builtin chars-new: 不正な引数型 %s です'
+  'u3g4qexx': 'builtin %s: 不正な引数型 %s です'
   'u3if6wak': '  no fmt -fix=match -w src/       不足している match の腕をその場で補う'
   'u4oybn9r': '%s は既にインストールされています（%s）。再インストールまたは更新には -u を使用してください'
   'u5qmp19f': 'option の match はすべてのブランチ（err、nil、ok）を処理する必要があります（不足: %s）'

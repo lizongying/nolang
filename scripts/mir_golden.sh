@@ -359,7 +359,17 @@ if [ ! -x "$NO" ]; then
   exit 4
 fi
 if [ -f "$GOLDEN" ]; then
-  probe=$(awk -v e="$EMPTY_SHA" '$1=="0" && $2==e {print $3; exit}' "$GOLDEN")
+  # Pick the FIRST such entry that STILL EXISTS ON DISK. The golden is a frozen
+  # artefact and the corpus is not: 160 of its 327 entries were deleted by later
+  # corpus pruning, and `tests/1-test.no` (rc=0, empty stdout) is one of them.
+  # Running `no run` on a missing path exits non-zero with empty stdout, so a
+  # naive `exit` on the first match made the guard fire on EVERY invocation —
+  # a permanent, self-inflicted "stdout pollution" false positive that blocks
+  # all -update re-freezes. Measured 2026-11-11.
+  probe=$(awk -v e="$EMPTY_SHA" '$1=="0" && $2==e {print $3}' "$GOLDEN" \
+    | while IFS= read -r p; do
+        if [ -f "$p" ]; then printf '%s\n' "$p"; break; fi
+      done)
   if [ -n "$probe" ]; then
     run_to 120 "$NO" run "$probe" >"$WORKDIR/pollution.probe" 2>/dev/null
     prc=$?

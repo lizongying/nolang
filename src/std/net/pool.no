@@ -108,7 +108,6 @@ pool.get = () (c ?net.conn) {
 
             .in-use[.count] ?= true
 
-            #{overflow=wrap}
             .count = .count + 1: {
                 ok -> it
 
@@ -173,7 +172,6 @@ pool.close-conn = (idx i64) {
         }
     }
 
-    #{overflow=wrap}
     .count = .count - 1: {
         ok -> it
 
@@ -207,7 +205,6 @@ pool.active-count = () (n i64) {
             in-use-val ?= .in-use[i]
             in-use-val -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -237,7 +234,6 @@ pool.idle-count = () (n i64) {
             in-use-val ?= .in-use[i]
             in-use-val == false -> {
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}

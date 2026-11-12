@@ -130,7 +130,6 @@ sha224 = (data []byte) (hash [28]byte) {
 
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256.sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

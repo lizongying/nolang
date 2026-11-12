@@ -24,16 +24,16 @@ mode = archive.mode(idx)
 ts = archive.mtime(idx)
 
 ; Read .tar.gz (auto-decompress)
-archive = tar.tar-open-gz(gz-data)
+archive = tar.open-gz(gz-data)
 
-; tar-entry methods
+; entry methods
 name = e.name()
 sz = e.size()
 typ = e.type()
 out = e.read()
 
 ; Write tar
-builder = tar-builder{}
+builder = builder{}
 builder.add-file(name, content)
 builder.add-dir(name)
 archive = builder.finish()
@@ -47,14 +47,14 @@ archive = zip{
     data: raw-bytes
 }
 count = archive.count()                        ; Number of entries
-e = archive.entry(idx)                         ; Get zip-entry
+e = archive.entry(idx)                         ; Get entry
 name = archive.name(idx)                       ; Filename
 sz = archive.size(idx)                         ; Original size
 csz = archive.compressed-size(idx)             ; Compressed size
 method = archive.method(idx)                   ; 0=stored, 8=deflate
 out = archive.extract(idx)                     ; stored and deflate modes
 
-; zip-entry methods
+; entry methods
 name = e.name()
 sz = e.size()
 csz = e.compressed-size()
@@ -66,8 +66,8 @@ out = e.extract()
 
 ```no
 #{fmt-skip}
-out = gzip.gzip-compress(data)                      ; zlib compression
-out = gzip.gzip-decompress(data)                    ; zlib decompression
+out = gzip.compress(data)                      ; zlib compression
+out = gzip.decompress(data)                    ; zlib decompression
 out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression (ZIP method 8)
 ```
 
@@ -77,7 +77,7 @@ Pure Nolang implementation of BZIP2 decompression, including BWT inverse transfo
 
 ```no
 #{fmt-skip}
-out = bzip2.bzip2-decompress(data)                  ; Decompress .bz2 data
+out = bzip2.decompress(data)                  ; Decompress .bz2 data
 ```
 
 ### archive/xz — XZ/LZMA Decompression (Pure Nolang)
@@ -86,7 +86,7 @@ Pure Nolang implementation of LZMA2 decompression, supporting both .xz container
 
 ```no
 #{fmt-skip}
-out = xz.xz-decompress(data)                        ; Decompress .xz data
+out = xz.decompress(data)                        ; Decompress .xz data
 out = xz.lzma-decompress(data)                      ; Decompress legacy .lzma data
 ```
 
@@ -107,7 +107,7 @@ Pure Nolang implementation of Zstandard (zstd) decompression, including FSE deco
 
 ```no
 #{fmt-skip}
-out = zstd.zstd-decompress(data)                    ; Decompress .zst data
+out = zstd.decompress(data)                    ; Decompress .zst data
 ```
 
 ---

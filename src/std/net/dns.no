@@ -100,7 +100,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = 1
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -118,7 +117,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = 0x00
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -136,7 +134,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = 1
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -154,7 +151,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = 0
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -172,7 +168,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = 0
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -190,7 +185,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = 0
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -215,7 +209,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
             }
         }
 
-        #{overflow=wrap}
         is-dot -> {
 
             #{overflow=wrap}
@@ -258,7 +251,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
             }
         }
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -274,7 +266,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     ; 終止零標籤
     query[pos] = 0
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -292,7 +283,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = qtype & 255
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -310,7 +300,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     #{overflow=wrap}
     query[pos + 1] = 1
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}
@@ -357,10 +346,8 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
             -> 0
         }
 
-        #{overflow=wrap}
         len-byte == 0 -> {
 
-            #{overflow=wrap}
             {
 
                 #{overflow=wrap}
@@ -376,11 +363,9 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         }
 
         ; 檢查是否為壓縮指標（前兩位為 11）
-        #{overflow=wrap}
         {
             (len-byte & 0xc0) == 0xc0 -> {
 
-                #{overflow=wrap}
                 jumped == false -> {
                     {
 
@@ -394,6 +379,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                     }
                 }
 
+                #{overflow=wrap}
                 ixout256c59 = data[pos + 1]: {
                     ok -> it
 
@@ -466,8 +452,8 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     }
 
     ; 移除末尾的點
-    #{overflow=wrap}
     buf-pos > 0 -> {
+        #{overflow=wrap}
         ixout305c12 = buf[buf-pos - 1]: {
             ok -> it
 
@@ -581,6 +567,7 @@ parse-response = (data []byte) (ip ?str) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout367c39 = data[pos + 1]: {
             ok -> it
 
@@ -607,6 +594,7 @@ parse-response = (data []byte) (ip ?str) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout382c42 = data[pos + 1]: {
             ok -> it
 
@@ -622,7 +610,6 @@ parse-response = (data []byte) (ip ?str) {
         pos + rdlength > data.len() -> return
 
         ; A 記錄（4 bytes IPv4）
-        #{overflow=wrap}
         rtype == DNS-TYPE-A && rdlength == 4 -> {
             a = data[pos]: {
                 ok -> it
@@ -630,18 +617,21 @@ parse-response = (data []byte) (ip ?str) {
                 -> 0
             }
 
+            #{overflow=wrap}
             b = data[pos + 1]: {
                 ok -> it
 
                 -> 0
             }
 
+            #{overflow=wrap}
             c = data[pos + 2]: {
                 ok -> it
 
                 -> 0
             }
 
+            #{overflow=wrap}
             d = data[pos + 3]: {
                 ok -> it
 

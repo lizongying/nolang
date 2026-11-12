@@ -93,8 +93,10 @@ hex-chars = '0123456789abcdef'
 bhex = (data []byte) (hex str) {
     n = data.len()
 
+    ; 2026-11-11：str 下標直寫已全域禁用 ⇒ 用 []byte 緩衝承接（位元組保真），
+    ; 收尾整體 to-bytes-str()。
     #{overflow=wrap}
-    hex = with-len(n * 2)
+    hex-b []byte = with-cap-len(n * 2, n * 2)
     i <- [0..n): {
         b = data[i]: {
             ok -> it
@@ -114,11 +116,12 @@ bhex = (data []byte) (hex str) {
         }
 
         #{overflow=wrap}
-        hex[i * 2] = hi
+        hex-b[i * 2] = hi
 
         #{overflow=wrap}
-        hex[i * 2 + 1] = lo
+        hex-b[i * 2 + 1] = lo
     }
+    hex = hex-b.to-bytes-str()
 }
 
 ; hex → []byte（失敗時回空 vec，讓後續斷言以長度先失敗）

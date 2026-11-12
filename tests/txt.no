@@ -129,7 +129,7 @@ print(q.len())
 
 r = t
 print(r)
-r.append-str('!')
+r.push-str('!')
 print(r)
 
 ; bug 4：[]txt 的元素是 256-byte 的 %txt，但 str 字面量降成 %str-long（24 bytes）。

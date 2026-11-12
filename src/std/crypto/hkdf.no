@@ -67,7 +67,6 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     #{overflow=wrap}
     msg-len = t-len + info.len()
 
-    #{overflow=wrap}
     counter > 0 -> {
         {
 
@@ -102,8 +101,8 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
         }
     }
 
-    #{overflow=wrap}
     counter > 0 -> {
+        #{overflow=wrap}
         msg[t-len + info.len()]: {
             ok -> it = counter & 255
 
@@ -207,7 +206,6 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                     }
                 }
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -219,7 +217,6 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                     }
                 }
 
-                #{overflow=wrap}
                 {
 
                     #{overflow=wrap}
@@ -305,7 +302,6 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
         -> _
     }
 
-    #{overflow=wrap}
     {
 
         #{overflow=wrap}

@@ -23,16 +23,16 @@ mode = archive.mode(idx)
 ts = archive.mtime(idx)
 
 ; 讀取 .tar.gz（自動解壓縮）
-archive = tar.tar-open-gz(gz-data)
+archive = tar.open-gz(gz-data)
 
-; tar-entry 方法
+; entry 方法
 name = e.name()
 sz = e.size()
 typ = e.type()
 out = e.read()
 
 ; 寫入 tar
-builder = tar-builder {}
+builder = builder {}
 builder.add-file(name, content)
 builder.add-dir(name)
 archive = builder.finish()
@@ -45,14 +45,14 @@ archive = zip {
     data: raw-bytes
 }
 count = archive.count(); 條目數
-e = archive.entry(idx); 取得 zip-entry
+e = archive.entry(idx); 取得 entry
 name = archive.name(idx); 檔名
 sz = archive.size(idx); 原始大小
 csz = archive.compressed-size(idx); 壓縮後大小
 method = archive.method(idx); 0=stored, 8=deflate
 out = archive.extract(idx); stored 和 deflate 模式
 
-; zip-entry 方法
+; entry 方法
 name = e.name()
 sz = e.size()
 csz = e.compressed-size()
@@ -63,8 +63,8 @@ out = e.extract()
 ### archive/gzip — GZIP 壓縮與原始 DEFLATE
 
 ```no
-out = gzip.gzip-compress(data); zlib 壓縮
-out = gzip.gzip-decompress(data); zlib 解壓縮
+out = gzip.compress(data); zlib 壓縮
+out = gzip.decompress(data); zlib 解壓縮
 out = gzip.inflate-decompress(data, out-size); 原始 DEFLATE 解壓縮（ZIP method 8）
 ```
 
@@ -73,7 +73,7 @@ out = gzip.inflate-decompress(data, out-size); 原始 DEFLATE 解壓縮（ZIP me
 純 Nolang 實現 BZIP2 解壓縮，包含 BWT 反變換、MTF 反變換、Huffman 解碼與 RLE 解碼：
 
 ```no
-out = bzip2.bzip2-decompress(data); 解壓 .bz2 資料
+out = bzip2.decompress(data); 解壓 .bz2 資料
 ```
 
 ### archive/xz — XZ/LZMA 解壓縮（純 Nolang 實現）
@@ -81,7 +81,7 @@ out = bzip2.bzip2-decompress(data); 解壓 .bz2 資料
 純 Nolang 實現 LZMA2 解壓縮，支援 .xz 容器與傳統 .lzma 格式：
 
 ```no
-out = xz.xz-decompress(data); 解壓 .xz 格式
+out = xz.decompress(data); 解壓 .xz 格式
 out = xz.lzma-decompress(data); 解壓傳統 .lzma 格式
 ```
 
@@ -100,7 +100,7 @@ sum = zlib.adler-32(data, n); 計算 Adler-32 校驗碼
 純 Nolang 實現 Zstandard (zstd) 解壓縮，包含 FSE 解碼、Huffman 解碼、LZ77 序列解碼：
 
 ```no
-out = zstd.zstd-decompress(data); 解壓 .zst 格式
+out = zstd.decompress(data); 解壓 .zst 格式
 ```
 
 ---

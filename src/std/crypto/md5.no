@@ -475,7 +475,6 @@ md5 = (data []byte) (out [16]byte) {
     ; 處理剩餘 0-3 位元組
     copy-rem = dremain % 4
 
-    #{overflow=wrap}
     copy-rem > 0 -> {
 
         #{overflow=wrap}

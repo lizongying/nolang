@@ -1,8 +1,8 @@
 ; probe — Phase 0 探针
 ;
 ; 验证 glossary 依赖的三个前提，任一失败就说明主选方案要换：
-;   1. 跨模块访问 noml-doc 的 pool 字段并按节点索引取子节点
-;      （noml-doc 的访问器全部写死 .root，遍历 terms 必须走 noml-pool）
+;   1. 跨模块访问 doc 的 pool 字段并按节点索引取子节点
+;      （doc 的访问器全部写死 .root，遍历 terms 必须走 pool）
 ;   2. 全 i64 字段的结构体放进 []T，push 与索引读（?T 解包）可用
 ;   3. 文件级 #{embed} 的路径基准与 []byte 返回（目录级 fs.embed 在本二进制
 ;      实测不可用：count 恒 0、read 方法不派发，故数据自包含走逐文件嵌入）
@@ -40,7 +40,7 @@ pass-note = (what str) {
 probe-pool = () {
     text = '{\nterms: {\noption: {\nsummary: \'hello-sentinel\'\n}\n}\n}'
     r = noml.parse(text)
-    d noml-doc
+    d noml.doc
     parsed = false
     r: {
         ok -> {
@@ -82,7 +82,7 @@ probe-pool = () {
 
     ; 关键：按节点索引取子节点，必须走 pool
     ci = -1
-    cv = d.pool.get(ti, 'option')
+    cv = d.node-pool.get(ti, 'option')
     cv: {
         ok -> ci = it
 
@@ -92,15 +92,15 @@ probe-pool = () {
     }
     ci: {
         -1 -> {
-            fail-note('d.pool.get(terms, option) 不可用 —— 需切备选方案')
+            fail-note('d.node-pool.get(terms, option) 不可用 —— 需切备选方案')
             return
         }
 
-        -> pass-note('d.pool.get(terms, option) 取到子节点 ' - ci.to-str())
+        -> pass-note('d.node-pool.get(terms, option) 取到子节点 ' - ci.to-str())
     }
 
     ; 关键：按节点索引取字符串值
-    sv = d.pool.get-str(ci, 'summary')
+    sv = d.node-pool.get-str(ci, 'summary')
     s = ''
     hit = false
     sv: {
@@ -114,16 +114,16 @@ probe-pool = () {
         err -> _
     }
     hit: {
-        false -> fail-note('d.pool.get-str(option, summary) 不可用')
+        false -> fail-note('d.node-pool.get-str(option, summary) 不可用')
 
         true -> {
 
             ; match 主题必须是裸标识符，先把呼叫结果落到变量
             same = s.eq-full('hello-sentinel')
             same: {
-                true -> pass-note('d.pool.get-str 取到 summary=' - s)
+                true -> pass-note('d.node-pool.get-str 取到 summary=' - s)
 
-                false -> fail-note('d.pool.get-str 取到的值不对: ' - s)
+                false -> fail-note('d.node-pool.get-str 取到的值不对: ' - s)
             }
         }
     }
@@ -200,7 +200,7 @@ probe-embed()
 print('---')
 {
     bad-total == 0 -> {
-        print('PROBE PASS (binding: noml-doc.pool indexed access works)')
+        print('PROBE PASS (binding: doc.pool indexed access works)')
         exit(0)
     }
 

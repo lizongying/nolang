@@ -741,22 +741,27 @@ c = port-str[i]
       title: 'with-len 缓冲的下标写入不豁免'
       kind: 'trap'
       status: 'stable'
-      summary: 'idxwrite 只豁免 with-cap（len=0）；with-len / with-cap-len 的写入仍须 place-match 或 ?=。'
+      summary: 'idxwrite 对 str 一律不豁免（2026-11-11 起，连 with-cap 也不豁免）；with-cap 的 len=0 豁免只剩 []byte / []T / 固定数组。'
       aliases: ['idxwrite', 'with-len', 'with-cap', 'with-cap-len', '下标直写', '预分配缓冲']
       definition: `
-下標直寫 buf[i] = v 是編譯錯誤 idxwrite（裸 OOB 寫，無邊界檢查）。唯一的豁免是
-with-cap(n) 構造的緩衝：它構造 len=0 的緩衝，逐位元組下標寫入是唯一能把長度增長
-起來的寫法，而 checker 建議的兩種正確形體（place-match、?=）對 len=0 緩衝都會
-靜默產空字串（place-match 讀 i 越界回 nil，ok 臂永不執行）。這一點在 str 緩衝上
-尤其致命，見 with-cap-str-unwrap-write-dropped。
+下標直寫 buf[i] = v 是編譯錯誤 idxwrite（裸 OOB 寫，無邊界檢查）。2026-11-11 之後
+豁免面只剩**非 str 容器**（[]byte / []T / 固定陣列）的 with-cap / with-cap-len 基底：
+它們構造 len=0 的緩衝，逐位元組下標寫入是唯一能把長度增長起來的寫法，而 checker
+建議的兩種正確形體（place-match、?=）對 len=0 緩衝都會靜默產空字串（place-match
+讀 i 越界回 nil，ok 臂永不執行）。
+
+**str 完全不豁免**：同日 `s[i] = v` 被全域禁用，連 with-cap 基底也不再例外，理由是
+它同時是「越界寫入已配置緩衝之外」的唯一來源（見 str-index-write-banned）。str 的
+逐位元組構造改走 `x []byte = with-cap-len(n, n)`、`x[i] = b`、`x.slice(0, k).to-bytes-str()`
+三件套，原位覆寫走 `s.fill(val byte)`，下標寫只剩 place-match。
 
 with-len(n) 與 with-cap-len(cap, len) 沒有豁免（2026-11-10 全量收口移除 with-len；
 with-cap-len 的 len 也由參數給定，同罪）。理由：len 已就位時，place-match 讀 i
 （i < len）落在 ok 臂、寫回同位，行為與直寫完全等價，沒有任何理由給它留後門。
 因此 bhex 這類「with-len 緩衝逐位元組填充」現在必須寫成 place-match 或 ?=。
 
-另一個易錯點：with-len 的緩衝是 str 時，讀取下標走碼點、寫入走原始位元組，
-非 ASCII 內容下兩者不對齊 —— 這也是要求顯式解包的動力之一。
+另一個易錯點：str 的讀取下標走碼點、寫入走原始位元組，非 ASCII 內容下兩者不對齊
+—— 這也是要求顯式解包的動力之一。
 `
       syntax: `
 buf str = with-len(n)
@@ -785,54 +790,181 @@ buf[i * 2 + 1] ?= ch
       refs: ['src/checker/checker.go', 'test/std/scrypt.no', 'src/std/str.no']
     }
     'with-cap-str-unwrap-write-dropped': {
-      title: 'str 的 with-cap 缓冲上写 ?= 会被静默丢弃（[]byte 不会）'
+      title: 'str 的 with-cap 缓冲上写下标会静默丢写（[]byte 不会）—— 现已由编译错误堵住'
       kind: 'trap'
       status: 'stable'
-      summary: 'str + with-cap（len=0）+ 下标 ?= 恒走 err 臂，一个字节都不写；同一写法在 []byte 上正常增长。'
+      summary: 'str + with-cap（len=0）+ 下标 ?= 恒走 err 臂，一个字节都不写；同一写法在 []byte 上正常增长。2026-11-11 起该写法本身即 idxwrite 编译错误。'
       aliases: ['with-cap ?=', 'to-hex 回空串', 'base64 encode 只写第一个字节', 'fmt 零填充失效', 'str 缓冲丢写']
       definition: `
+**现状（2026-11-11 起）：这条陷阱已被编译错误堵死。** `s[i] = v` 与 `s[i] ?= v`
+在 str 上一律报 idxwrite（连 with-cap 基底也不再豁免，见 str-index-write-banned），
+所以「静默丢写」这条运行期症状不再可达。下面记录的是它曾经的样子，供读懂旧代码 /
+旧文档用。
+
 ?= 的语义是「先按 len 做越界检查读出元素，再写回位置」。with-cap(n) 的 len == 0，
 所以任何下标都越界 ⇒ 恒上抛 ⇒ 外层 { … }: { err -> _ } 吞掉 ⇒ 静默丢写，长度停在 0。
-no vet / no build 都不报。
+no vet / no build 都不报（当时）。
 
 关键区别：这件事只发生在 str 上。[]byte / vec 的下标写本来就会把长度长到 idx+1，
 所以 nil 或 with-cap 的 []byte 用 ?= 完全正常 —— scrypt / argon2 / x509 / tls /
 quic / http3 里三十多处 x[i] ?= v 都是对的，不要照语法形状批量改。
 
-str 的唯一正确写法就是直写（docs lang/str.md 明写 idxwrite 对 with-cap 豁免，
-因为那是唯一能把 len 长起来的写法）；右值本身是 ?char 读取时，用值位 match 挂在
-右值上解包。正确形态在每个出问题的文件里本来就有（base64.encode 的尾段、
-fmt 的 new-digits[i] = 48），只是被机械替换成了 ?=。
-
-std 侧受影响面 12 站点 / 3 档：encoding/base64.encode 3（每组只写进第 0 个字符）、
-str.to-hex 2（整个函数回空串）、fmt 7（零填充 / 对齐 / 分组全失效）。
-2026-11-11 已全部改回直写，7 个红档转绿，全量 4919 条断言 0 失败。
-
-残留风险：编译器仍允许这个必然失败的组合通过静态检查，复制粘贴就会再犯；
-建议 checker 对「str + with-cap + 下标 ?=」直接报错。
+历史处置：std 侧受影响面 12 站点 / 3 档（encoding/base64.encode 3、str.to-hex 2、
+fmt 7），当时靠「改回下标直写」修复。2026-11-11 禁用直写后，这批写法统一迁移成
+「`x []byte = with-cap-len(n, n)` + `x[i] = b` + `x.slice(0, k).to-bytes-str()`」三件套，
+迁移后 fmt 35/35、base64 13/13、number 190/190 全绿（base64 原本 8/13，迁移顺带修好）。
 `
       syntax: `
-out[j + 1] = table[x]: {
-    ok -> it
+; 现在 str 唯一合法的下标记法（place-match，i >= len 时静默跳过）
+s[i]: {
+    ok -> it = v
 
     -> _
 }
+
+; 逐字节构造
+b []byte = with-cap-len(n, n)
+b[i] = x
+s = b.slice(0, k).to-bytes-str()
 `
       example: `
-; 三段对照（实测输出：2 / str err 0 / byte other 1）
-
+; 历史对照（2026-11-11 之前；现在 a[0] = 65 / b[0] ?= 65 都直接报 idxwrite）
 a str = with-cap(8)
 a[0] = 65
-a[1] = 66                              ; len 2，直写会增长
+a[1] = 66                              ; 曾经：len 2，直写会增长
 
 b str = with-cap(8)
-b[0] ?= 65                             ; 走 err 臂，len 仍 0
+b[0] ?= 65                             ; 曾经：走 err 臂，len 仍 0
 
 d []byte = with-cap(8)
-d[0] ?= 65                             ; 正常，len 1
+d[0] ?= 65                             ; []byte 一直正常，len 1
+
+; 现在的写法
+c []byte = with-cap-len(8, 8)
+c[0] = 65
+c[1] = 66
+s = c.slice(0, 2).to-bytes-str()
 `
       related: ['with-len-write-not-exempt', 'idxbruse-both-sides', 'index-read-err-vs-nil']
       refs: ['src/std/str.no', 'src/std/fmt.no', 'src/std/encoding/base64.no', 'test/README.md']
+    }
+    'str-index-write-banned': {
+      title: 'str / txt 下标直写已全域禁用（str 2026-11-11，txt 2026-11-12；连 with-cap 基底也不豁免）'
+      kind: 'trap'
+      status: 'stable'
+      summary: 's[i] = v / t[i] = c 一律报 idxwrite；增长走 push 家族，逐字节构造走 []byte + to-bytes-str，原位覆写走 fill / place-match。'
+      aliases: ['str[i] = v', 'txt[i] = c', '下标直写禁用', 'idxwrite txt', 'with-cap str 死路', 'set-byte 私有化', 'push 取代 append']
+      definition: `
+s[i] = v 曾是 str 唯一的「边写边增长」写法，靠 checker 对 with-cap 基底的豁免放行。
+2026-11-11 撤销该豁免：str 下标直写一律报 idxwrite，with-cap / with-len /
+with-cap-len 三种基底都不例外。
+
+理由：它是「越界写入已配置缓冲之外」的唯一来源 —— len=0 的缓冲靠直写增长，写到
+i >= cap 就跨出配置区（codegen 的 ensureStrLongBuffer 增长护栏就是为它写的）。
+禁用后该护栏不再对用户代码可达，只保留作防御性代码，由 Go 单测
+src/mir/raw_byte_put_oob_test.go 与 src/mir/str_index_grow_test.go 钉住 IR 形态。
+
+txt 在 2026-11-12 同案禁止（理由不同但同罪）：t[i] = c 是按码点**重编码写回**，
+长度会随写入隐式改变 —— i 等于码点数时等价追加、总字节长超过 255 的部分静默丢弃。
+txt 没有堆、没有扩容，但「一次下标写偷偷改了长度」是同一类危险，而且它比 str 更
+隐蔽：没有 ensureStrLongBuffer 那样的护栏会在运行时拦你，只会在长到 255 时悄悄
+少几个字节。txt 的变长入口是 t.push(c char) / t.push-str(s) / t.push-txt(u)。
+
+替代写法（str 与 txt 通用，除了 ① 是 []byte 专属）：
+  ① 逐字节构造：x []byte = with-cap-len(n, n) + x[i] = b + x.slice(0, k).to-bytes-str()
+  ② 原位覆写：s.fill(val byte)（覆盖前 len 个字节，长度不变）
+  ③ 下标写只剩 place-match：s[i]: { ok -> it = v / -> _ }（以「读」作闸门，
+     i >= len 静默跳过 —— 它由 D9 降糖的合成节点承载，本规则本就跳过）
+
+⚠️ place-match 的闸门是「码点」不是「字节」—— 因为闸门就是 s[i] 这个读，而 str 的
+下标读取按码点计。所以 ③ 只适合 ASCII、一格一码点的场景（打连字符 / 打数字 /
+hex 查表：uuid.to-str、time.format-date 就是这种）。逐字节（>= 0x80、或任何可能
+非 ASCII 的源串）必须走 ①。实测：f = with-len(8) 后用 place-match 依次写
+224..231，只有前 4 格落盘，其余被闸门静默跳过；std 的 path.split 迁到 place-match
+后「非 ASCII 檔名」当场被截断（test/std/path.no 的 split 非 ASCII 檔名断言），
+改回 []byte 才恢复。同一坑的另一半：[]byte 的元素存值在「#overflow=wrap + 复合
+算术右值」下会存进错值（b[0] = (yr/1000)%10+48 得 56 而非 50，str 侧无此问题），
+所以 time.format-date 最终用 str + place-match、path.split 用 []byte、uuid 用
+place-match —— 按「内容是字节还是码点」选，不是按哪个代码短选。
+
+连带变更：str._set-byte / txt._set-byte 同日私有化（checker 的 raqvyltn / 8w3q93g2
+禁止用户码调用私有符号）；txt 侧按字节拼装改走 txt.from-bytes(b []byte)。
+
+「全域」是四个登记点合起来才成立的，缺一个就是漏洞（都是实测过的）：
+  1. 函数体内的局部变量 —— IdxLocalTypes 本来就查得到（含 `x str = …` 标注）。
+  2. 顶层脚本的裸名（curFunc == ""）—— IdxLocalTypes 按函数作用域登记，顶层的
+     键是空串，恒查不到。补法：collectTopLevelVarRawForIdx 出一份「顶层变量原始
+     类型表」，topIndexBaseRaw 解析基底。缺这点时脚本层的
+     s str = with-cap(4) ⏎ s[0] = 89 漏报。
+  3. 顶层 struct 字段基底（`b.t[0] = "J"`）—— 上一版只处理 Identifier 基底，且
+     collectTopLevelLets 的推断登记只认 nonInt / []/[ 前缀，**struct 名永不登记**，
+     所以 `b = box{…}` 后面那条字段写永远查不到类型（tests/byte.no:226 的洞）。
+     补法同上：collectTopLevelVarRawForIdx 额外认 StructLiteral 的类型名，
+     topIndexBaseRaw 再按键查 structFields。注意「无标注时只认 struct 字面量」，
+     不做一般表达式推断 —— 一旦把 `c = s` 推断成 str，顶层裸赋值的 str 推断缺口
+     就顺带收紧了，会翻红 tests/rule1-binding.no 这类**依赖**该缺口的语料。
+  4. 结果参数（`f = () (out str)`）—— 体内写成不帶标注的 `out = with-cap(n)`
+     时 IdxLocalTypes 同样查不到。补法：collectStrTxtResultParams 出一份
+     resStrTxtParams（str 与 txt 都收）。缺这点时 std 最常见的缓冲建造形状整条
+     漏报，旧 docs 的 str.to-upper 范例就是这形状。
+四条兜底都只认 str / txt，不碰其它容器的同类历史缺口（那是独立议题）。
+🔴 顶层那两处只能当「r == "str" || r == "txt"」的谓词用，绝不能写成
+lt = topIndexBaseRaw(...)：一旦 lt 被填上，顶层 []byte / []T / [N]T 的直写就会
+掉进 isContainerWriteBase 末尾的 return true（顶层 capBases 没有条目），大批语料
+翻红。Go 单测 TestIndexWriteTopLevelNonStrTxtNotReported 就是这条边界的警报器。
+
+注意 x str = with-cap(n) 不再是死路：2026-11-12 起 s.push(c) / s.push-str(s)
+原地扩容（倍增），with-cap 建好的容量直接被第一次 push 用上。需要逐字节保真时
+仍推荐 []byte。txt 侧对应 t.push / t.push-str / t.push-txt（旧的 append 家族已
+全部改名，字节版 append(b byte) 直接删除 —— 按字节构造走 txt.from-bytes）。
+
+迁移时必踩的一条：显式计数器 on = on + 1 即使加了 #{overflow=wrap} 也编不过
+（cannot assign ?i64 value to i64 variable [15w45dqk]），而且 {} 臂块里报错位置
+还在别处。可靠写法是把 option 就地解包：on = on + 1: { ok -> it / -> on }。
+兜底臂用 -> on（溢出就原地不动），不要用 -> 0（会让后续写入全打进第 0 格）。
+std/net/url.no 的 url-encode / url-encode-component / url-decode 共 12 处都是
+这个改法；path.no 本来就这么写。
+`
+      syntax: `
+; ① 构造
+b []byte = with-cap-len(n, n)
+b[i] = src.byte(i): {
+    ok -> it
+
+    -> 0
+}
+s = b.slice(0, k).to-bytes-str()
+
+; ② 原位覆写
+s = 'hello'
+s.fill(72); 'HHHHH'
+
+; ③ 下标记法只剩 place-match
+s[i]: {
+    ok -> it = v
+
+    -> _
+}
+
+; ④ 增长：push 家族
+s.push("中");      按码点（UTF-8）
+s.push-str('de');  按位元组（原地扩容）
+`
+      example: `
+; 错误（idxwrite）
+s str = with-cap(4)
+s[0] = 65
+
+; 正确
+b []byte = with-cap-len(4, 4)
+b[0] = 65
+s = b.to-bytes-str()
+
+; slice 的口径差异：s.slice 是码点，s.slice-bytes 是字节；
+; b.slice（[]byte 上）自然是字节。
+`
+      related: ['with-cap-str-unwrap-write-dropped', 'with-len-write-not-exempt']
+      refs: ['src/checker/checker.go', 'src/mir/codegen.go', 'docs/docs/lang/str.md', 'test/README.md']
     }
     'builtin-read-does-not-grow-len': {
       title: '内建读写不更新 len：with-cap 缓冲接 fs.read 后 slice 恒为空'
@@ -1014,14 +1146,14 @@ add-i64 = (acc bigint, v i64) (out bigint) {
 
   - 用户定义的结构体：no vet 回 No issues found，no run 才撞
     MIR codegen could not handle ... consumer reads value 0 (NoVal) ... (zodppsnm)。
-  - std 结构体（如 yaml.yaml-parser）：连 MIR 都不崩，**所有字段静默保持零值**
+  - std 结构体（如 yaml.parser）：连 MIR 都不崩，**所有字段静默保持零值**
     —— p.src 是空串、p.n 是 0，后续所有判断都基于空文档，且没有任何诊断。
 
 判別法：字段「写了没生效」或「结构体内容全是零值」，第一件事看分隔符是不是写成了等号。
-2026-11-11 就是因为这个把 yaml-parser 误判成「用户码构造不出 std 结构体」，白丢了一轮。
+2026-11-11 就是因为这个把 parser 误判成「用户码构造不出 std 结构体」，白丢了一轮。
 `
       syntax: `
-p yaml.yaml-parser = yaml.yaml-parser{
+p yaml.parser = yaml.parser{
     src: 'a: 1'
     n: 4
     pos: 0
@@ -1030,10 +1162,10 @@ p yaml.yaml-parser = yaml.yaml-parser{
 `
       example: `
 ; 错误：字段全留在零值，且无任何诊断
-p = yaml.yaml-parser { src: 'a: 1' }
+p = yaml.parser { src: 'a: 1' }
 
 ; 正解：冒号 + 型别标注
-p yaml.yaml-parser = yaml.yaml-parser {
+p yaml.parser = yaml.parser {
     src: 'a: 1'
     n: 4
 }
@@ -1046,36 +1178,36 @@ p yaml.yaml-parser = yaml.yaml-parser {
       kind: 'trap'
       status: 'stable'
       summary: 'p = T{...} 推出的是宽松型别，p.m() 在 MIR 报 unknown callee（vet 不报）；std 结构体名必须写 module.type，裸名 not defined。'
-      aliases: ['unknown callee', '4qhyyund', 'ol0l3ova', 'yaml-parser', 'yaml-node', '名义型别']
+      aliases: ['unknown callee', '4qhyyund', 'ol0l3ova', 'parser', 'node', '名义型别']
       definition: `
 两条独立规则，常同时踩：
 
 一、变量必须写型别标注，方法才找得到。
 
-    p = yaml.yaml-parser { ... }      ; 推断出的不是名义型别
-    p.cur()                           ; EmitLLVM: unknown callee yaml.yaml-parser.cur (4qhyyund)
+    p = yaml.parser { ... }      ; 推断出的不是名义型别
+    p.cur()                           ; EmitLLVM: unknown callee yaml.parser.cur (4qhyyund)
     ; no vet 说 No issues found，只有 codegen 才炸
 
-    p yaml.yaml-parser = yaml.yaml-parser { ... }   ; 加上标注立刻正常
+    p yaml.parser = yaml.parser { ... }   ; 加上标注立刻正常
 
 二、std 结构体的型别名必须带模块前缀。
 
-    probe = (v yaml-node) {}          ; type 'yaml-node' not found;
-                                      ; did you mean 'yaml.yaml-node'? (ol0l3ova)
-    x yaml-node = ...                 ; 'yaml-node' is not defined (4bek3xc6)
+    probe = (v node) {}          ; type 'node' not found;
+                                      ; did you mean 'yaml.node'? (ol0l3ova)
+    x node = ...                 ; 'node' is not defined (4bek3xc6)
 
-    probe = (v yaml.yaml-node) {}     ; 正解
+    probe = (v yaml.node) {}     ; 正解
 
 能不能裸用取决于该型别是否被公开签名暴露过：yaml 型别裸名可用（d yaml = it 正常），
 err 必须写 err.err。不要凭印象，先写一行编译看报错。
 
-实测结论（2026-11-11）：std 的内部结构体（yaml-parser / yaml-node 之类）**是**可以
+实测结论（2026-11-11）：std 的内部结构体（parser / node 之类）**是**可以
 在用户码里构造并逐方法驱动的，只要守这两条。凡是以「内部结构体不可测」为由跳过的
 模块，都可能只是没找到入口。
 `
       syntax: `
-mk-p = (src str) (p yaml.yaml-parser) {
-    p = yaml.yaml-parser {
+mk-p = (src str) (p yaml.parser) {
+    p = yaml.parser {
         src: src
         n: src.len-bytes()
         pos: 0
@@ -1085,14 +1217,14 @@ mk-p = (src str) (p yaml.yaml-parser) {
 `
       example: `
 ; 错误一：没有标注 -> unknown callee
-p = yaml.yaml-parser { src: 'ab' }
+p = yaml.parser { src: 'ab' }
 print(p.cur())
 
 ; 错误二：裸型别名 -> not defined / not found
-probe = (v yaml-parser) {}
+probe = (v parser) {}
 
 ; 正解：标注 + 全限定
-p yaml.yaml-parser = yaml.yaml-parser { src: 'ab' }
+p yaml.parser = yaml.parser { src: 'ab' }
 print(p.cur())
 `
       related: ['struct-literal-colon', 'multi-arg-call-not-receiver']
@@ -1146,7 +1278,7 @@ print(s.len-bytes())
       summary: 'yaml 的 skip-to-eol 只在当前字节是 # 时前进；拿它跳 %YAML 指令行则原地不动，外层 continue 变成永久卡死。'
       aliases: ['yaml.parse 卡死', '%YAML', 'skip-to-eol', 'skip-doc-preamble', '死循环']
       definition: `
-yaml-parser.skip-to-eol 的语义是「跳过行尾空白与行注释」，实现上只在
+parser.skip-to-eol 的语义是「跳过行尾空白与行注释」，实现上只在
 当前字节是 35（#）时才 advance：
 
     skip-to-eol = () {
@@ -1200,8 +1332,8 @@ a: 1')
       title: '从模块外按下标读 std 结构体的 []str 字段会静默给 nil，甚至段错误'
       kind: 'trap'
       status: 'stable'
-      summary: 'd.pool.strs[0] 在 strs.len() 确实是 3 的情况下回 nil；换到有内容的那格直接 SIGSEGV。同一个结构体的 []noml-value 却读得对。'
-      aliases: ['白盒', '白盒测试', 'std 结构体字段', 'strs 读到 nil', '段错误', 'white box']
+      summary: 'd.pool.strs[0] 在 strs.len() 确实是 3 的情况下回 nil；换到有内容的那格直接 SIGSEGV。同一个结构体的 []noml-value 却读得对。（2026-11-12 更正：该现象在 HEAD 上重现不出来，真因见 definition 末「旧归因作废」—— 当时那次 SIGSEGV 是 checker 静态形态改写丢了接收者。）'
+      aliases: ['白盒', '白盒测试', 'std 结构体字段', 'strs 读到 nil', '段错误', 'white box', '接收者被丢弃', '静态形态改写', 'str-len missing receiver']
       definition: `
 想给 std 模块的内部结构体写白盒测试（直接驱动它的方法）时，**只能呼方法，
 不能读字段**：
@@ -1218,6 +1350,9 @@ a: 1')
 所以坏的不是下标越界判定，而是**元素跨模块取用**（stride / 所有权不一致，
 Go 侧尚未定位）。判別法：同一个数组的 .len() 对、[i] 不对，就是这条。
 
+⚠ 2026-11-12 更正：上面这段归因**不成立**，判別法也是错的 —— 见本条末尾
+「旧归因作废」。
+
 安全做法：一切通过方法取值 —— kind / len / key / at / get / val-str / val-num /
 val-bool / stringify。noml 的 49 个 noml-pool 方法全靠这组 API 就达到 100% 覆盖，
 一个字段都不用碰。
@@ -1226,6 +1361,46 @@ val-bool / stringify。noml 的 49 个 noml-pool 方法全靠这组 API 就达�
 p noml.noml-pool = noml.noml-pool{ nodes: [] ... } 能编译、能解析，但解析出来的
 字符串会在同一个 frame 之后变成空串（stringify 印 b: ''）。改用 noml.new().pool
 才稳。
+
+── 旧归因作废（2026-11-12 复核）────────────────────────────
+
+**这条记录里的 d.pool 根本不存在。** src/std/noml.no 的 doc 只有两个栏位：
+node-pool pool #{inline=false} 与 root i64；没有任何叫 pool 的栏位，也没有
+doc.pool 方法。所以上面整段「[]str 元素跨模块取用」的归因无从谈起 —— 当时
+真正在发生的是「读一个不存在的成员」，编译器却一字不发。
+
+按现在的树逐项重测，症状全部由这一个错误派生：
+
+1. 内联写法 io.outln(d.pool.strs.len()) 连 MIR 下降都过不去，报
+   consumer reads value 0 (NoVal), which no instruction produced（bug #85）。
+2. 落成变量 n = d.pool.strs.len() 能编译，但运行期是 UB：多数是
+   signal: bus error，也见过静默无输出、退出码 0。
+3. **与元素型别无关**：把字段换成 nodes / ec / ek，症状一模一样。
+4. p = d.pool 之后 p.nodes.len() 报 builtin str-len: missing receiver ——
+   因为 p 的型别推不出来（右式解析失败），callee 退化成点分名字落到 str 内建。
+   换成**真实存在的**字段就正常：p = d.node-pool ⏎ p.err.len() 得 0。
+
+也就是说「读 std 结构体字段」本身没有毛病，坏的是**打错的成员名一路静默到底**。
+
+同一个根因（局部变量名与型别名撞名）之外，t-parse-obj 那次 SIGSEGV 还有第二
+层原因，已单独修好：局部变量名字就叫 doc，与 std 结构体 noml.doc 同名，于是
+doc = it 之后的 doc.get-str('b') 被 checker 的「静态形态」改写当成
+noml.doc.get-str(...) 完成，接收者被整条丢掉（该形态的契约是「接收者由调用方
+写在实参首位」），MIR 只能按 synthRecv 给缺失的 self 补一个零值常量 —— 读到空
+pool，get-str 静默回 nil，再往 strs []str 取值就是 SIGSEGV。修法在 src/checker：
+新增词法作用域栈，局部绑定存在时不改写（绑定优先于同名型别）。修好后
+no test test/std/noml.no 346 条断言全绿。
+
+第二轮修复（同期落地）：**未知成员现在会编译错误**。src/checker/unknown_field.go
+新增 ValidateUnknownFields（trace o4x247ya）：接收者型别已知是 struct、成员
+既不是栏位也不是方法（也不在 std 方法表 / 内建方法名里）时报
+「struct 'X' has no field or method 'Y'」。上面这段代码今天会直接停在编译期，
+而不是变成 bus error 或静默 0。落地前对 src/std + test + tests + example
+（约 600 档）做过普查，零误报。
+
+结论要再改一次：**白盒测试只呼方法、不读字段**这条建议仍然可用，但它已经不
+是「读字段会崩」，而是「读字段会把错误从编译期推迟到运行期」；成员名写错现在
+有诊断兜底了。
 `
       syntax: `
 d = noml.new()

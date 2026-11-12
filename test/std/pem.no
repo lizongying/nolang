@@ -1,25 +1,25 @@
 ; std-pem.no — encoding/pem 模組測試
 ;
 ; 執行：no test test/std/pem.no
-; 覆蓋：pem.pem-encode / pem.pem-decode
+; 覆蓋：pem.encode / pem.decode
 
 # /test/runner
 
 ; 編碼：DER 內容應產生含標頭與 base64 主體的 PEM 文字（長度 > 10）
 t-encode = () {
     data []byte = [65, 66, 67]
-    s = pem.pem-encode('TEST', data)
+    s = pem.encode('TEST', data)
     runner.gt(s.len(), 10, 'encoded len > 10')
 }
 
 ; 往返：PEM 解碼後應與原始 DER 位元組完全一致
 t-encode-decode = () {
     data []byte = [1, 2, 3, 4, 5]
-    encoded = pem.pem-encode('CERTIFICATE', data)
+    encoded = pem.encode('CERTIFICATE', data)
     runner.gt(encoded.len(), 0, 'encoded len > 0')
 
     ok = false
-    result = pem.pem-decode(encoded)
+    result = pem.decode(encoded)
     result: {
         ok -> {
             match = it.data.len() == 5

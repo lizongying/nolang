@@ -1013,6 +1013,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinPrivateField(inst, bm.ForwardFunc)
 	case "str-clear":
 		return c.emitBuiltinStrClear(inst)
+	case "str-push-bytes":
+		return c.emitBuiltinStrPushBytes(inst)
 	case "math-clamp":
 		return c.emitBuiltinMath(inst, bm.ForwardFunc)
 	case "str-to-bool":
@@ -1683,7 +1685,7 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 	ct, cv := c.loadVal(inst.Args[0])
 	if ct != "%vec" {
 		c.fail("builtin chars-new: expected []char slice, got %s", ct)
-		return i18n.Errorf("u3g4qexx", "builtin chars-new: bad arg type %s", ct)
+		return i18n.Errorf("u3g4qexx", "builtin %s: bad arg type %s", "chars-new", ct)
 	}
 	// n = vec field 0 (element count); data = vec field 2 (i64-held pointer).
 	nReg := c.treg("cn")

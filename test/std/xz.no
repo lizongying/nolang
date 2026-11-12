@@ -1,7 +1,7 @@
 ; test/std/xz.no — archive/xz（XZ / LZMA2）模組測試
 ;
 ; 執行：no test test/std/xz.no
-; 覆蓋：xz-compress / xz-decompress / lzma-decompress / lzma2-decompress-stream、
+; 覆蓋：compress / decompress / lzma-decompress / lzma2-decompress-stream、
 ;       lzma-rd.{init,normalize,decode-bit,decode-direct-bits,decode-bit-tree,
 ;                decode-reverse-bit-tree}、
 ;       lzma-decoder.{init-probs,update-state-literal,update-state-match,
@@ -12,8 +12,8 @@
 ;       （跳過首個標記位元組、讀 4 位元組進 code、range=0xFFFFFFFF）。
 ;
 ; 已知缺陷（test/README.md §5.2 #14）：
-;   1. xz-compress 產出的流缺乏正確的 Stream Header / Block Header / Index CRC32，
-;      真實 `xz -d` 會判為 corrupt（本模組自己的 xz-decompress 可讀）。
+;   1. compress 產出的流缺乏正確的 Stream Header / Block Header / Index CRC32，
+;      真實 `xz -d` 會判為 corrupt（本模組自己的 decompress 可讀）。
 ;   2. 真實 .xz（LZMA2 壓縮區塊）解不出來：lzma-decoder 的狀態機與
 ;      prob 表初始化尚未完成（len-coder 是長度 0 的切片）。
 ;   故此檔對內部解碼器只驗「可被呼叫且回傳形狀正確」，語意斷言待解碼器補完。
@@ -148,12 +148,12 @@ t-decoder-entries = () {
 t-roundtrip = () {
     src = 'hello hello hello world'.to-bytes()
 
-    xo = xz.xz-compress(src)
-    runner.gt(len(xo), 12, 'xz-compress 產出非空流')
+    xo = xz.compress(src)
+    runner.gt(len(xo), 12, 'compress 產出非空流')
     head = xo.slice(0, 6)
     runner.str-eq(head.to-hex(), 'FD377A585A00', 12, 'xz magic = FD 37 7A 58 5A 00')
 
-    back = xz.xz-decompress(xo)
+    back = xz.decompress(xo)
     runner.eq(len(back), 23, 'xz round-trip 長度')
     runner.str-eq(back.to-str(), 'hello hello hello world', 23, 'xz round-trip 內容')
 

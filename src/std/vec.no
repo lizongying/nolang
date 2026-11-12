@@ -218,7 +218,6 @@ vec-clear = () {
         i >= .len() -> {
             cur = .len()
 
-            #{overflow=wrap}
             .len = cur + 1
             .[cur] = val
         }
@@ -232,7 +231,6 @@ vec-clear = () {
             last = last - 1
             cur = .len()
 
-            #{overflow=wrap}
             .len = cur + 1
             .[cur] = .[last]
 
@@ -243,7 +241,6 @@ vec-clear = () {
             k = k - 2
             (k >= i) {
 
-                #{overflow=wrap}
                 .[k + 1] = .[k]
 
                 #{overflow=wrap}
@@ -275,7 +272,6 @@ vec-clear = () {
                 #{overflow=wrap}
                 j = j + 1
 
-                #{overflow=wrap}
                 .[j - 1] = .[j]
             }
             newlen = .len()
@@ -432,7 +428,6 @@ vec-clear = () {
         i >= blen -> break
         cur = .len()
 
-        #{overflow=wrap}
         .len = cur + 1
 
         .[cur] = b[i]: {

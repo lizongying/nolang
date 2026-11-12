@@ -547,8 +547,8 @@ t-pool-copy-tree = () {
     runner.eq(dst.nodes.len(), 2, 'copy-tree 只拷貝可達節點（obj + num）')
 }
 
-; clone-json-tree：返回持有獨立池的新 json
-t-clone-json-tree = () {
+; clone-tree：返回持有獨立池的新 json
+t-clone-tree = () {
     g = json.parse('{"m":1,"n":[2,3]}')
     gv = json.new()
     g: {
@@ -556,7 +556,7 @@ t-clone-json-tree = () {
 
         -> _
     }
-    cl = json.clone-json-tree(gv.pool, gv.root)
+    cl = json.clone-tree(gv.pool, gv.root)
     runner.eq(cl.kind(), json.JSON-KIND-OBJ, 'clone 根為物件')
     runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3]}', 17, 'clone 內容一致')
 
@@ -873,14 +873,14 @@ p17, f17 = runner.test('json.set-num', t-set-num)
 p18, f18 = runner.test('json.set-i64', t-set-i64)
 p19, f19 = runner.test('json.set-bool', t-set-bool)
 p20, f20 = runner.test('json.roundtrip', t-roundtrip)
-p21, f21 = runner.test('json.json-pool.init / alloc', t-pool-init-alloc)
-p22, f22 = runner.test('json.json-pool.skip-ws', t-pool-skip-ws)
-p23, f23 = runner.test('json.json-pool.parse-str', t-pool-parse-str)
-p24, f24 = runner.test('json.json-pool.parse-num', t-pool-parse-num)
-p25, f25 = runner.test('json.json-pool.get-kind', t-pool-get-kind)
-p26, f26 = runner.test('json.json-pool.set-key / get-key / add-child', t-pool-set-get-key)
-p27, f27 = runner.test('json.json-pool.copy-tree', t-pool-copy-tree)
-p28, f28 = runner.test('json.clone-json-tree', t-clone-json-tree)
+p21, f21 = runner.test('json.pool.init / alloc', t-pool-init-alloc)
+p22, f22 = runner.test('json.pool.skip-ws', t-pool-skip-ws)
+p23, f23 = runner.test('json.pool.parse-str', t-pool-parse-str)
+p24, f24 = runner.test('json.pool.parse-num', t-pool-parse-num)
+p25, f25 = runner.test('json.pool.get-kind', t-pool-get-kind)
+p26, f26 = runner.test('json.pool.set-key / get-key / add-child', t-pool-set-get-key)
+p27, f27 = runner.test('json.pool.copy-tree', t-pool-copy-tree)
+p28, f28 = runner.test('json.clone-tree', t-clone-tree)
 p29, f29 = runner.test('json.kind', t-kind)
 p30, f30 = runner.test('json.overflowed', t-overflowed)
 p31, f31 = runner.test('json.num / bool / i64 / str-val', t-scalar-getters)

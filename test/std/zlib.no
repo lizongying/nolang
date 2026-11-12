@@ -1,18 +1,18 @@
 ; test/std/zlib.no — archive/zlib 模組測試
 ;
 ; 執行：no test test/std/zlib.no
-; 覆蓋：zlib.adler-32 / zlib.zlib-compress / zlib.zlib-decompress /
-;       zlib.zlib-decompress-stored / zlib.zlib-consumed-stored
+; 覆蓋：zlib.adler-32 / zlib.compress / zlib.decompress /
+;       zlib.decompress-stored / zlib.consumed-stored
 ;
 ; 判準：
 ;   - Adler-32 金標取自 CPython `zlib.adler32`。
-;   - zlib-compress 產生的串流另以 Python `zlib.decompress` 交叉驗證可解
+;   - compress 產生的串流另以 Python `zlib.decompress` 交叉驗證可解
 ;     （見 test/README.md §5.1），故此處只驗內部佈局：
 ;     2-byte header(78 9C) + N 個 stored block(1+2+2+len) + 4-byte Adler-32(大端)。
-;   - zlib-decompress 同時覆蓋兩條路徑：stored-only 的快速路徑與
+;   - decompress 同時覆蓋兩條路徑：stored-only 的快速路徑與
 ;     `gzip.inflate-decompress` 的完整 DEFLATE 路徑（fixed Huffman 樣本）。
 ;
-; 已知缺陷（見 test/README.md §5.2）：zlib-decompress 只用 Adler-32 界定尾端，
+; 已知缺陷（見 test/README.md §5.2）：decompress 只用 Adler-32 界定尾端，
 ;   不驗證校驗和，故尾端數值錯也不會回 nil；FDICT 只跳過 4-byte DICTID，
 ;   不會真的套用預設字典。
 
@@ -33,11 +33,11 @@ t-adler-32 = () {
     runner.eq(zlib.adler-32(upper, 5), 0x058c01f5, 'adler-32 "Hello" = 0x058C01F5（大小寫敏感）')
 }
 
-; ── 2. zlib-compress 輸出佈局 ────────────────────────────────────────
+; ── 2. compress 輸出佈局 ────────────────────────────────────────
 
 t-compress = () {
     data []byte = [104, 101, 108, 108, 111]
-    comp = zlib.zlib-compress(data)
+    comp = zlib.compress(data)
 
     runner.eq(len(comp), 16, 'len = 2(header) + 5(block hdr) + 5(data) + 4(adler)')
 
@@ -70,17 +70,17 @@ t-compress = () {
 
     ; 空輸入仍然要有合法骨架
     none []byte = with-cap(0)
-    empty-comp = zlib.zlib-compress(none)
+    empty-comp = zlib.compress(none)
     runner.eq(len(empty-comp), 11, '空輸入：2 + 5 + 0 + 4 = 11')
 }
 
-; ── 3. zlib-decompress-stored：單塊 / 多塊 / 失敗 ────────────────────
+; ── 3. decompress-stored：單塊 / 多塊 / 失敗 ────────────────────
 
 t-stored-single = () {
     data []byte = [72, 101, 108, 108, 111]
-    comp = zlib.zlib-compress(data)
+    comp = zlib.compress(data)
 
-    o = zlib.zlib-decompress-stored(comp)
+    o = zlib.decompress-stored(comp)
     back []byte = with-len(0)
     back = o: {
         ok -> it
@@ -95,10 +95,10 @@ t-stored-multi = () {
 
     ; 200000 > 65535 → 4 個 stored block（65535, 65535, 65535, 3395）
     big []byte = with-len(200000)
-    comp = zlib.zlib-compress(big)
+    comp = zlib.compress(big)
     runner.eq(len(comp), 200026, '多塊：2 + 4*5 + 200000 + 4 = 200026')
 
-    o = zlib.zlib-decompress-stored(comp)
+    o = zlib.decompress-stored(comp)
     back []byte = with-len(0)
     back = o: {
         ok -> it
@@ -112,7 +112,7 @@ t-stored-nil = () {
 
     ; 太短：< 6 位元組
     tiny []byte = [0x78, 0x9c, 0x00]
-    o1 = zlib.zlib-decompress-stored(tiny)
+    o1 = zlib.decompress-stored(tiny)
     n1 = o1: {
         ok -> 1
 
@@ -129,7 +129,7 @@ t-stored-nil = () {
 
         -> fixed
     }
-    o2 = zlib.zlib-decompress-stored(fixed)
+    o2 = zlib.decompress-stored(fixed)
     n2 = o2: {
         ok -> 1
 
@@ -138,23 +138,23 @@ t-stored-nil = () {
     runner.eq(n2, 0, 'BTYPE=01（fixed Huffman）→ nil')
 }
 
-; ── 4. zlib-decompress：完整路徑 ────────────────────────────────────
+; ── 4. decompress：完整路徑 ────────────────────────────────────
 
 t-decompress-stored = () {
     data []byte = [
         104, 101, 108, 108, 111, 32, 119, 111,
         114, 108, 100,
     ]
-    comp = zlib.zlib-compress(data)
+    comp = zlib.compress(data)
 
-    o = zlib.zlib-decompress(comp)
+    o = zlib.decompress(comp)
     back []byte = with-len(0)
     back = o: {
         ok -> it
 
         -> back
     }
-    runner.eq(len(back), 11, 'stored 串流經 zlib-decompress 還原 11 位元組')
+    runner.eq(len(back), 11, 'stored 串流經 decompress 還原 11 位元組')
     runner.str-eq(back.to-str(), 'hello world', 11, 'stored 串流內容')
 }
 
@@ -171,7 +171,7 @@ t-decompress-inflate = () {
     }
     runner.eq(len(raw), 23, '樣本 23 位元組 = 2 + 17 + 4')
 
-    o = zlib.zlib-decompress(raw)
+    o = zlib.decompress(raw)
     back []byte = with-len(0)
     back = o: {
         ok -> it
@@ -186,7 +186,7 @@ t-decompress-nil = () {
 
     ; 太短
     tiny []byte = [0x78, 0x9c, 0x00]
-    o1 = zlib.zlib-decompress(tiny)
+    o1 = zlib.decompress(tiny)
     n1 = o1: {
         ok -> 1
 
@@ -196,7 +196,7 @@ t-decompress-nil = () {
 
     ; CM(低 4 位) != 8
     badcm []byte = [0x11, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-    o2 = zlib.zlib-decompress(badcm)
+    o2 = zlib.decompress(badcm)
     n2 = o2: {
         ok -> 1
 
@@ -206,7 +206,7 @@ t-decompress-nil = () {
 
     ; CINFO(高 4 位) > 7
     badcinfo []byte = [0x88, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-    o3 = zlib.zlib-decompress(badcinfo)
+    o3 = zlib.decompress(badcinfo)
     n3 = o3: {
         ok -> 1
 
@@ -227,7 +227,7 @@ t-decompress-fdict = () {
     }
     runner.eq(len(raw), 27, 'FDICT 樣本 = 2 + 4(DICTID) + 17 + 4')
 
-    o = zlib.zlib-decompress(raw)
+    o = zlib.decompress(raw)
     back []byte = with-len(0)
     back = o: {
         ok -> it
@@ -237,17 +237,17 @@ t-decompress-fdict = () {
     runner.eq(len(back), 29, 'FDICT 標頭被跳過，DEFLATE 主體仍能解出')
 }
 
-; ── 5. zlib-consumed-stored ─────────────────────────────────────────
+; ── 5. consumed-stored ─────────────────────────────────────────
 
 t-consumed = () {
     data []byte = [72, 101, 108, 108, 111]
-    comp = zlib.zlib-compress(data)
+    comp = zlib.compress(data)
     runner.eq(len(comp), 16, '對照：單塊串流 16 位元組')
-    runner.eq(zlib.zlib-consumed-stored(comp), 16, 'consumed = 16（含 header 與 Adler-32）')
+    runner.eq(zlib.consumed-stored(comp), 16, 'consumed = 16（含 header 與 Adler-32）')
 
     big []byte = with-len(200000)
-    bigc = zlib.zlib-compress(big)
-    runner.eq(zlib.zlib-consumed-stored(bigc), 200026, 'consumed 跨 4 個 stored block')
+    bigc = zlib.compress(big)
+    runner.eq(zlib.consumed-stored(bigc), 200026, 'consumed 跨 4 個 stored block')
 
     ; 資料前面不動、後面接尾隨資料：consumed 仍只算到第一個串流的尾端
     joined []byte = with-len(0)
@@ -258,12 +258,12 @@ t-consumed = () {
         joined.push(junk)
     }
     runner.eq(len(joined), 32, '拼接後 32 位元組')
-    runner.eq(zlib.zlib-consumed-stored(joined), 16, 'consumed 不受尾隨資料影響')
+    runner.eq(zlib.consumed-stored(joined), 16, 'consumed 不受尾隨資料影響')
 }
 
 t-consumed-zero = () {
     tiny []byte = [0x78, 0x9c, 0x00]
-    runner.eq(zlib.zlib-consumed-stored(tiny), 0, 'len < 6 → 0')
+    runner.eq(zlib.consumed-stored(tiny), 0, 'len < 6 → 0')
 
     hex = '789CCB48CDC9C957C84022CBF38B7252206C00A4020AF9'
     opt = hex.from-hex()
@@ -273,22 +273,22 @@ t-consumed-zero = () {
 
         -> fixed
     }
-    runner.eq(zlib.zlib-consumed-stored(fixed), 0, 'BTYPE=01 → 0')
+    runner.eq(zlib.consumed-stored(fixed), 0, 'BTYPE=01 → 0')
 }
 
 ; ── 執行 ────────────────────────────────────────────────────────────
 
 p1, f1 = runner.test('zlib.adler-32', t-adler-32)
-p2, f2 = runner.test('zlib.zlib-compress', t-compress)
-p3, f3 = runner.test('zlib-decompress-stored single', t-stored-single)
-p4, f4 = runner.test('zlib-decompress-stored multi', t-stored-multi)
-p5, f5 = runner.test('zlib-decompress-stored nil', t-stored-nil)
-p6, f6 = runner.test('zlib-decompress stored stream', t-decompress-stored)
-p7, f7 = runner.test('zlib-decompress inflate', t-decompress-inflate)
-p8, f8 = runner.test('zlib-decompress nil', t-decompress-nil)
-p9, f9 = runner.test('zlib-decompress fdict', t-decompress-fdict)
-p10, f10 = runner.test('zlib-consumed-stored', t-consumed)
-p11, f11 = runner.test('zlib-consumed-stored 0', t-consumed-zero)
+p2, f2 = runner.test('zlib.compress', t-compress)
+p3, f3 = runner.test('decompress-stored single', t-stored-single)
+p4, f4 = runner.test('decompress-stored multi', t-stored-multi)
+p5, f5 = runner.test('decompress-stored nil', t-stored-nil)
+p6, f6 = runner.test('decompress stored stream', t-decompress-stored)
+p7, f7 = runner.test('decompress inflate', t-decompress-inflate)
+p8, f8 = runner.test('decompress nil', t-decompress-nil)
+p9, f9 = runner.test('decompress fdict', t-decompress-fdict)
+p10, f10 = runner.test('consumed-stored', t-consumed)
+p11, f11 = runner.test('consumed-stored 0', t-consumed-zero)
 
 total = runner.summary()
 f = runner.failed-count()

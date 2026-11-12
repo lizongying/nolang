@@ -171,14 +171,12 @@
         (j >= 0) {
             .[j] <= key -> break
 
-            #{overflow=wrap}
             .[j + 1] = .[j]
 
             #{overflow=wrap}
             j = j - 1
         }
 
-        #{overflow=wrap}
         .[j + 1] = key
     }
 }
@@ -194,14 +192,12 @@
         (j >= 0) {
             .[j] >= key -> break
 
-            #{overflow=wrap}
             .[j + 1] = .[j]
 
             #{overflow=wrap}
             j = j - 1
         }
 
-        #{overflow=wrap}
         .[j + 1] = key
     }
 }
@@ -223,7 +219,6 @@
     cnt = 0
     i <- [0..n): {
 
-        #{overflow=wrap}
         .[i] == val -> cnt = cnt + 1
     }
 }

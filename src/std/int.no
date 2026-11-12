@@ -18,9 +18,10 @@ int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 ; [to-str](#int.to-str)
 int.to-str = () (out str) {
     . == 0 -> {
-        out = with-cap(1)
+        z []byte = with-cap-len(1, 1)
 
-        out[0] = 48
+        z[0] = 48
+        out = z.to-bytes-str()
         return
     }
     neg = 0
@@ -30,7 +31,6 @@ int.to-str = () (out str) {
     tmp = n
     (tmp != 0) {
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -47,7 +47,6 @@ int.to-str = () (out str) {
     }
     total = digits
 
-    #{overflow=wrap}
     neg == 1 -> {
         {
 
@@ -60,7 +59,9 @@ int.to-str = () (out str) {
             }
         }
     }
-    out = with-cap(total)
+
+    ; str 下標直寫已全域禁用（連 with-cap 基底也不再豁免）⇒ 用 []byte 緩衝承接。
+    ob []byte = with-cap-len(total, total)
 
     #{overflow=wrap}
     pos = digits - 1
@@ -76,12 +77,11 @@ int.to-str = () (out str) {
         #{overflow=wrap}
         ascii = d + 48
 
-        out[pos] = ascii
+        ob[pos] = ascii
 
         #{overflow=wrap}
         n = n / 10
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -94,8 +94,9 @@ int.to-str = () (out str) {
         }
     }
     neg == 1 -> {
-        out[0] = 45
+        ob[0] = 45
     }
+    out = ob.slice(0, total).to-bytes-str()
 }
 
 ; 整數除法，回傳商（a ÷ b）

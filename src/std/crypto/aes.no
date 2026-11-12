@@ -986,7 +986,6 @@ key-expand = (key [16]byte) (ek []byte) {
         #{overflow=wrap}
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
 
-        #{overflow=wrap}
         {
             i % 4 == 0 -> {
                 rw = 0
@@ -994,6 +993,7 @@ key-expand = (key [16]byte) (ek []byte) {
                 rc = 0
                 rw = rot-word(w)
                 sw = sub-word(rw)
+                #{overflow=wrap}
                 rc = rcon-val(i / 4)
                 w-prev = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
                 w = (w-prev ^ sw ^ (rc << 24)) & 4294967295
@@ -1050,7 +1050,6 @@ key-expand-256 = (key [32]byte) (ek []byte) {
         #{overflow=wrap}
         w = (ek[off] << 24) | (ek[off + 1] << 16) | (ek[off + 2] << 8) | ek[off + 3]
 
-        #{overflow=wrap}
         {
             i % 8 == 0 -> {
                 rw = 0
@@ -1058,6 +1057,7 @@ key-expand-256 = (key [32]byte) (ek []byte) {
                 rc = 0
                 rw = rot-word(w)
                 sw = sub-word(rw)
+                #{overflow=wrap}
                 rc = rcon-val(i / 8)
                 w-prev8 = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]
                 w = (w-prev8 ^ sw ^ (rc << 24)) & 4294967295
@@ -1113,6 +1113,7 @@ add-round-key-at = (state []byte, rk []byte, off i64) {
             -> _
         }
 
+        #{overflow=wrap}
         ixout885c38 = rk[off + i]: {
             ok -> it
 
@@ -1211,7 +1212,6 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
         inv-shift-rows(st)
         inv-sub-bytes(st, 16)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}
@@ -1225,7 +1225,6 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
         add-round-key-at(st, ek, rk-off)
         inv-mix-columns(st)
 
-        #{overflow=wrap}
         {
 
             #{overflow=wrap}

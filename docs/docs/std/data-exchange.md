@@ -67,7 +67,7 @@ print(j2.stringify())
 
 ### toml — TOML 1.0 解析與產生
 
-`toml` 以 `toml-doc` 保存 TOML 文件，支援註解、bare/quoted/dotted keys、普通表格、array-of-tables、basic/literal/multiline strings、各種整數進位、浮點數、布林值、日期時間、陣列與 inline table。未提供專用 Nolang 型別的值會保留原始字面值。
+`toml` 以 `toml` 保存 TOML 文件，支援註解、bare/quoted/dotted keys、普通表格、array-of-tables、basic/literal/multiline strings、各種整數進位、浮點數、布林值、日期時間、陣列與 inline table。未提供專用 Nolang 型別的值會保留原始字面值。
 
 ```no
 cfg = toml.parse('title = "Nolang"\n[server]\nport = 8080\n[[server.backends]]\nname = "local"')
@@ -83,17 +83,17 @@ text = toml.stringify(doc)
 常用函式：
 
 - `toml.new()` — 建立空文件
-- `toml.parse(text)` — 解析並回傳 `?toml-doc`
+- `toml.parse(text)` — 解析並回傳 `?toml`
 - `doc.put(key, raw-value)` — 驗證並新增/更新 TOML 值
-- `toml.get(doc, key)` — 取得原始值
-- `toml.get-str`、`toml.get-i64`、`toml.get-f64`、`toml.get-bool` — 取得 scalar 值
+- `get(doc, key)` — 取得原始值
+- `get-str`、`get-i64`、`get-f64`、`get-bool` — 取得 scalar 值
 - `toml.stringify(doc)` — 序列化文件
 
 文件上限為 4 個 key、2 個普通表格、2 個 array-of-tables；key 最長 32 bytes，value 最長 128 bytes。
 
 ### yaml — YAML 1.2 解析與產生
 
-`yaml` 以節點池（`yaml-pool`）保存 YAML 1.2 core schema 的文件樹，支援塊映射、塊序列、流式集合（`[...]` / `{...}`）、單引號/雙引號/plain 標量、塊標量（`|` / `>` 與 `-` / `+` chomping）、註解、文件標記（`---` / `...`）與多文檔、錨點（`&`）與別名（`*`）、合併鍵 `<<`、顯式鍵（`? k`）、型別推斷（null / bool / int / float / `.inf` / `.nan`）、點號路徑查詢，以及 JSON / YAML 序列化。
+`yaml` 以節點池（`pool`）保存 YAML 1.2 core schema 的文件樹，支援塊映射、塊序列、流式集合（`[...]` / `{...}`）、單引號/雙引號/plain 標量、塊標量（`|` / `>` 與 `-` / `+` chomping）、註解、文件標記（`---` / `...`）與多文檔、錨點（`&`）與別名（`*`）、合併鍵 `<<`、顯式鍵（`? k`）、型別推斷（null / bool / int / float / `.inf` / `.nan`）、點號路徑查詢，以及 JSON / YAML 序列化。
 
 ```no
 doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')

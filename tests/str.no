@@ -129,13 +129,14 @@ word[3] = 108
 word[4] = 111
 wlen = 5
 
-tmp-word = ''
-tmp-word = with-cap(64)
+; str 下標直寫已全域禁用 ⇒ 用 []byte 緩衝承接，再整體轉回 str
+tmp-b []byte = with-cap-len(64, 64)
 print('tmp-word type test')
 k = 0
 k <- [0..wlen): {
-    tmp-word[k] = word[k]
+    tmp-b[k] = word[k]
 }
+tmp-word = tmp-b.slice(0, wlen).to-bytes-str()
 print('after assign')
 print(tmp-word)
 

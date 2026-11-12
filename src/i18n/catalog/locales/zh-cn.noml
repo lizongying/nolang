@@ -1017,7 +1017,7 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'ttdybn5d': 'fmt: -md 不能与 -fix 同时使用（自动修复只适用于 .no 源文件）'
   'ttlxcrgt': '区间表达式中应为 \'[\'、\'(\' 或字符串，实际得到 %s'
   'u0g1w0d7': '找不到 js 兼容模块: %s'
-  'u3g4qexx': 'builtin chars-new: 参数类型 %s 无效'
+  'u3g4qexx': 'builtin %s: 参数类型 %s 无效'
   'u3if6wak': '  no fmt -fix=match -w src/       就地补全缺失的 match 分支'
   'u4oybn9r': '%s 已安装（%s）；请使用 -u 重新安装或更新'
   'u5qmp19f': 'option match 必须处理所有分支: err、nil、ok（缺少: %s）'
