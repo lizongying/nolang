@@ -509,6 +509,13 @@ c = a + b #{overflow=wrap}
 
 - **方法挂载式**：类型相关行为写成 `类型.方法`，而非自由函数传类型参数。
 - **buildin 方法**：性能敏感或需 codegen 拦截的方法（如 `str.byte`）用 `#{buildin}` 标注，函数体为空。
+- **`#{buildin}` 的三种载体**：① 函数桩（实现由编译器或 FFI 提供）；② 标签枚举（如 `option`，变体供穷尽性检查）；
+  ③ **布局结构体**——`src/std/{str,vec,txt,arr}.no` 开头那份 `#{buildin} txt { data [255]byte; len u8 }`
+  **只是布局文档**（LSP hover / docs 用），语义上不存在，真实布局在 MIR 手写描述符或编译期常量里。
+  因此：布局结构体**只能**用 `str` / `vec` / `txt` / `arr` 这四个名字，而**用这四个名字声明 struct 必须带 `#{buildin}`**。
+  两条由 `checker.ValidateBuiltinStructDecls` 报错（`1a8m445h` 缺注解 / `3lu6n4np` 注解贴在别的 struct 上）；
+  漏掉就会生成 `%txt_txt` 之类的影子结构体（症状：`unknown callee txt.to-str`、
+  `unsupported receiver type %txt_txt`）。详见 `docs/docs/lang/annotation-scope.md` §4.0。
 - **union 别名**：联合类型抽成 `alias = ...`，方法写在成员类型上，调用点编译期单态化。
 
 ---

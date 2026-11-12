@@ -215,7 +215,7 @@ always = () {
 | --- | --- | --- | --- | --- |
 | `overflow` | ✗ | ✗ | ✗ | ✓ |
 | 平台鍵（`mac-arm64` 等） | ✓ | ✓ | ✓ | ✓ |
-| `buildin` | ✗ | ✓ 函式 / 標籤列舉 | ✗ | ✗ |
+| `buildin` | ✗ | ✓ 函式 / 標籤列舉 / 佈局結構體 | ✗ | ✗ |
 | `inline` | ✗ | ✓ 結構體 / 欄位 / 變體 / 函式 | ✗ | ✓ 成員尾隨 |
 | `generic` | ✗ | ✓ 函式 / 結構體 | ✗ | ✗ |
 | `track-caller` | ✗ | ✓ 函式 | ✗ | ✗ |
@@ -228,6 +228,42 @@ always = () {
 
 「非法」與「無意義」都必須**報錯**，不能靜默失效：一條寫在 for 迴圈上方的
 `#{buildin}` 若被悄悄忽略，作者會以為內建聲明生效了。
+
+### 4.0 `#{buildin}` 的三個載體，以及「佈局結構體」的特殊性
+
+`#{buildin}` 標在宣告上，但它對三種載體的語義完全不同：
+
+| 載體 | 語義 | 例子 |
+| --- | --- | --- |
+| 函式 | 空體樁：編譯器 / FFI 提供實現，Nolang 側不生成函式體 | `#{buildin}`<br>`fs.remove = (p str) (ok bool) { }` |
+| 標籤列舉 | 變體供匹配與窮盡性檢查，底層表示與構造由內建 runtime 提供 | `#{buildin}`<br>`option { ok(v t), nil, err(e err.err), }` |
+| **佈局結構體** | **只是佈局文檔**：這份 `struct` 在語義上不存在 | `#{buildin}`<br>`txt { data [255]byte; len u8 }` |
+
+第三種要單獨說清楚，因為它與前兩種的方向相反：函式樁與標籤列舉都是「編譯器真的
+要用這份聲明」，而佈局結構體是「編譯器**不用**這份聲明，它只給 LSP hover 與
+docs 一個可引用的形狀」。真實佈局在別處：
+
+| 型別 | 真實佈局的來源 |
+| --- | --- |
+| `str` | MIR 手寫描述符 `%str-long = { i32 len, i32 cap, i8* data }` |
+| `vec` | MIR 手寫描述符 `%vec = { i32 len, i32 cap, i64 data }` |
+| `txt` | MIR 手寫描述符 `%txt = { [255 x i8] data, i8 len }` |
+| `arr` | 沒有描述符：`[n]t` 就是裸聚合 `[N x T]`，`.len` 是編譯期常量 `n` |
+
+由此得出兩條硬性規則，任一被破壞都會立刻產生一份與真實佈局矛盾的「影子結構體」：
+
+1. **帶 `#{buildin}` 的 struct 必須用內建佈局名**（`str` / `vec` / `txt` / `arr`）。
+   貼在別的 struct 上是錯誤：那份聲明會被 MIR 當「佈局由編譯器持有」而跳過，
+   欄位全部不生效，留給作者的是一堆 `unknown field`。
+2. **用內建佈局名宣告 struct 必須帶 `#{buildin}`**。使用者若寫一份裸的
+   `str { … }`，它會被當成本模組的普通型別加前綴（`m.str`），codegen 於是生成
+   一個與 `%str-long` 打架的 `%m_str`。
+
+兩條都由 `checker.ValidateBuiltinStructDecls` 報錯（`1a8m445h` / `3lu6n4np`），
+`no build` 與 `no vet` 都會命中。反過來，**只有** `#{buildin}` + 佈局名的組合會被
+模組前綴階段與 MIR 的 `collectStructFields` 跳過（見 `src/build/module_prefix.go`
+的 Phase 1 與 `src/mir/hir2mir.go` 的 `isBuiltinLayoutStruct`）——判據是「註解 +
+名字」這個組合，不是名字本身。
 
 ### 4.1 為什麼 `overflow` 只給 L3
 

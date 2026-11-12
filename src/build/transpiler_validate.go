@@ -1528,6 +1528,14 @@ func validateEntryProgram(program *parser.Program, sourcePath string, varTypes m
 	// Stage 6D：已遷移 validator 經 THIR 型別副表視圖（BuildTHIRView，含 H0
 	// 副作用隔離——validators 看到的 program 狀態與 legacy 路徑完全一致）。
 	var lints []checker.LintResult
+	// `#{buildin}` 佈局聲明與內建型別名的配對檢查（見 checker/builtin_struct_decl.go）。
+	// 放在 THIR 視圖之前：它只看聲明形態，不需要型別推斷，越早報越不容易被
+	// 後續「影子佈局」的二次症狀蓋掉（真正的崩點會遠在 MIR codegen）。
+	if builtinStructErrs := checker.ValidateBuiltinStructDecls(program); len(builtinStructErrs) > 0 {
+		for _, e := range builtinStructErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
 	thirView := checker.BuildTHIRView(program)
 	if typeErrs := checker.ValidateTypesTHIR(program, thirView); len(typeErrs) > 0 {
 		for _, e := range typeErrs {
@@ -1658,6 +1666,17 @@ func validateMergedProgram(merged *parser.Program) error {
 	// 必須在模組合併後執行，才能檢查到導入模組（如 md5.no）中的問題
 	if err := validateLoopScopedVars(merged); err != nil {
 		return err
+	}
+	// `#{buildin}` 佈局聲明與內建型別名的配對（同 validateEntryProgram）。
+	// 合併後再跑一次是因為導入模組的 struct 聲明此刻才進 merged：使用者若在
+	// 自己的模組檔裡宣告 `struct txt`，前綴階段會把它變成 `m.txt`，只有在
+	// 合併後的整份程式裡才看得到「裸名仍是內建名」這件事。
+	if builtinStructErrs := checker.ValidateBuiltinStructDecls(merged); len(builtinStructErrs) > 0 {
+		var lints []checker.LintResult
+		for _, e := range builtinStructErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+		return &DiagnosticError{Lints: lints}
 	}
 	// Bug 22: 跨模組 with-len/with-cap/with-cap-len 無類型標註漏檢。
 	// 單文件時 ValidateTypes/ValidateFuncArgs 會檢查，但模組合併發生在驗證之後，

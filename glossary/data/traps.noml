@@ -2176,5 +2176,75 @@ f = () {
       related: ['value-match-var-subject-dropped', 'loop-accumulator-value-match-dropped']
       refs: ['test/README.md', 'tmp/sh/wz9.no', 'tmp/sh/wza.no']
     }
+    'buildin-layout-struct-is-not-a-type': {
+      title: '#{buildin} 的布局结构体不是「本模块的型别」'
+      kind: 'trap'
+      status: 'stable'
+      summary: '`#{buildin}` 贴在 struct 上只是布局文档（LSP hover / docs 用），语义上不存在。它不能参与模块前缀，也不能覆盖 MIR 手写的布局描述符；两头任漏一处就产出影子结构体 %txt_txt，症状是 unknown callee txt.to-str 或 unsupported receiver type %txt_txt。'
+      aliases: ['buildin struct', '%txt_txt', 'unknown callee txt.to-str', 'unsupported receiver type', '布局声明', 'module prefix shadow struct', '4qhyyund', 'aywuxg5w', '1a8m445h', '3lu6n4np']
+      definition: `
+背景：src/std/{str,vec,txt,arr}.no 开头各有一份布局声明，形如
+
+#{buildin}
+txt { data [255]byte; len u8 }
+
+它的唯一用途是给 LSP hover 与 docs 一个可引用的形状，真实布局在别处：
+str 是 MIR 手写描述符 %str-long = { i32 len, i32 cap, i8* data }，
+vec 是 %vec = { i32 len, i32 cap, i64 data }，txt 是 %txt = { [255 x i8], i8 }，
+arr 根本没有描述符（[n]t 就是裸聚合 [N x T]，.len 是编译期常量 n）。
+
+事故形状（2026-11-12）：这份声明被当成「本模块定义了一个叫 txt 的结构体」，
+module_prefix.go 的三个阶段连锁出错 ——
+  Phase 1 把 txt 收进 moduleTypes；
+  Phase 2 把声明改名成 txt.txt（影子结构体 %txt_txt）；
+  Phase 3 把方法名改成 txt.txt.to-str（调用端仍写 txt.to-str）；
+  Phase 4 把型别引用改成 txt.txt（unsupported receiver type %txt_txt）。
+str 之所以「看起来没事」，只是因为 Phase 3 对 str 短路了；str.str 一直都在。
+
+修法（三处识别 + 一处反向门禁）：
+  parser 给 StructDefinition 加 Builtin 栏位；
+  module_prefix Phase 1 跳过「Builtin 且布局名」，于是 Phase 2/3/4 自然全落空；
+  MIR collectStructFields 两趟都跳过布局名，不覆盖手写描述符；
+  checker.ValidateBuiltinStructDecls 反向要求「内建名」与「#{buildin}」成对出现
+  （1a8m445h 缺注解 / 3lu6n4np 注解贴错地方）。
+
+为什么不能「合并时把声明删掉」：checker 的 validationStructFields 只从合并后的
+程式收集栏位型别，删了就没有 t.len 的 u8 来源，t.len = n 之类的赋值检查全部失控。
+
+MIR 那一条是必需的，不是纵深防御：hir2mir 先手写 StructFields["str"|"vec"|"txt"]，
+紧接着 collectStructFields() 会用同名 HIR 节点无条件覆盖。str 之前幸存仅仅因为
+它的声明已被改名成 str.str；Phase 1 修好后覆盖会真的发生（str.data 的 Inline
+标记被抹掉 ⇒ drop 走访双重释放）。
+`
+      syntax: `
+; 对：布局文档（只存在于 std，且名字必须是 str / vec / txt / arr）
+#{buildin}
+txt {
+    data [255]byte
+    len u8
+}
+
+; 错（1a8m445h）：用内建名声明普通 struct
+txt {
+    data [255]byte
+    len u8
+}
+
+; 错（3lu6n4np）：给普通 struct 贴 #{buildin}
+#{buildin}
+foo {
+    a i64
+}
+`
+      example: `
+; 用户侧不需要写任何布局声明：直接用 txt / str / vec / arr 即可。
+t txt = 'hi'
+s str = 'yo'
+v []i64 = [1, 2, 3]
+print(t.to-str(), s.len-bytes(), v.len())
+`
+      related: ['hashmap-method-prefix-mismatch', 'self-receiver-and-module-prefix']
+      refs: ['src/build/module_prefix.go', 'src/mir/hir2mir.go', 'src/checker/builtin_struct_decl.go', 'docs/docs/lang/annotation-scope.md', 'test/README.md']
+    }
   }
 }

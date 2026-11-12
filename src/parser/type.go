@@ -795,6 +795,28 @@ func isTypeName(literal string) bool {
 // ty.Resolver (the checker's IsTypeName needs the same vocabulary).
 func IsBuiltinTypeName(name string) bool { return isBuiltinTypeName(name) }
 
+// IsBuiltinLayoutStructName reports whether name is a compiler-owned layout
+// descriptor type — i.e. a type whose `#{buildin}` struct declaration in src/std
+// is documentation only (LSP hover / docs), while the real layout comes from
+// MIR's hand-written descriptors (str / vec / txt) or from a compile-time
+// constant (arr's `.len` is `n`, not a runtime field).
+//
+// 與 IsBuiltinTypeName 的分工：
+//   - IsBuiltinTypeName 是「可作型別詞彙的內建名」（str / txt / 標量 / bool…），
+//     用於 map key/value 歧義消解；
+//   - 本函數是「src/std 用 `#{buildin}` 聲明的佈局 stub」，額外包含 vec / arr。
+//
+// 兩個集合都必須與 src/std 的實際聲明保持一致：新增一份 `#{buildin} <name> {…}`
+// 就要同步這裡，否則模組前綴會把它當普通 struct 改名（症狀：
+// `unknown callee <name>.<method>` / `unsupported receiver type %<mod>_<name>`）。
+func IsBuiltinLayoutStructName(name string) bool {
+	switch name {
+	case "str", "vec", "txt", "arr":
+		return true
+	}
+	return false
+}
+
 // isBuiltinTypeName reports whether name is a builtin type name usable as a
 // map key or value type (e.g. [str]i64).
 func isBuiltinTypeName(name string) bool {

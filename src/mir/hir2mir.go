@@ -761,6 +761,33 @@ func (l *lowerer) enumVariantOf(prefer, variant string) (*TaggedEnumInfo, *Varia
 	return found, vi
 }
 
+// builtinLayoutStructs 是「佈局由編譯器持有、不來自 HIR」的內建型別名。
+//
+// std 裡這幾個名字各有一份 `#{buildin}` 佈局聲明（`str { len cap data }`、
+// `vec { … }`、`txt { data len }`、`arr { len }`）。它們**只是佈局文檔**：
+// LSP hover / docs 需要一份「這個型別長什麼樣」的宣告，但真實佈局由本檔的
+// 手寫描述符（str / vec / txt）或編譯期常量（arr 的 .len）提供。
+//
+// 因此這裡必須把它們從 collectStructFields 裡排除，否則 Pass 2 會用 HIR 的
+// 欄位（型別字串是 Nolang 面向使用者的那一套）覆蓋手寫描述符：
+//   - `str.data` 的手寫描述符刻意標 Inline，HIR 版本沒有 tag ⇒ drop 走訪會
+//     把同一塊緩衝釋放兩次；
+//   - `vec.data` 的真實型別是 i64（ptrtoint 編碼），HIR 宣告成 `i64` 也對，
+//     但 `txt` 的 `[255]byte` 會讓 GEP 索引與 %txt 的實際佈局錯開。
+//
+// 這個判定用「名字」而不是「`#{buildin}` 標記」是刻意的：HIR 的 KStructDef
+// 不帶註解（註解的消費點在 parser / build），而這四個名字是語言保留的內建
+// 型別名 —— build 的模組前綴階段已拒絕給它們加前綴，checker 的
+// ValidateBuiltinStructDecls 也會拒絕使用者用這些名字宣告 struct。所以到達
+// MIR 的同名 KStructDef 只可能是那份佈局聲明。
+func isBuiltinLayoutStruct(name string) bool {
+	switch name {
+	case "str", "vec", "txt", "arr":
+		return true
+	}
+	return false
+}
+
 // collectStructFields scans the HIR package for struct definitions and records
 // their ordered fields into mod.StructFields (name + nolang type string), so
 // OpGetField/OpSetField can resolve field indices and codegen can emit LLVM
@@ -789,7 +816,7 @@ func (l *lowerer) collectStructFields() {
 		if n == nil || n.Kind != hir.KStructDef {
 			continue
 		}
-		if name := l.pkg.Str(n.S); name != "" {
+		if name := l.pkg.Str(n.S); name != "" && !isBuiltinLayoutStruct(name) {
 			l.mod.StructNames[name] = true
 		}
 	}
@@ -801,7 +828,7 @@ func (l *lowerer) collectStructFields() {
 			continue
 		}
 		name := l.pkg.Str(n.S)
-		if name == "" {
+		if name == "" || isBuiltinLayoutStruct(name) {
 			continue
 		}
 		var fields []FieldInfo

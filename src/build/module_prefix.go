@@ -9,12 +9,17 @@ import (
 
 // modulePrefixBuiltinTypes is the set of built-in type names that must never
 // receive a module prefix.
+//
+// 這份白名單在 Phase 1 之後多半只是**縱深防禦**：`#{buildin}` 佈局聲明
+// （str / vec / txt / arr）已在 Phase 1 被攔下，不會進 moduleTypes；標量名
+// 則根本不可能作為 typedef 名（parser 不允許）。保留它的目的是：即便某天
+// 有人重新把內建型別塞進 moduleTypes，方法名與型別引用仍不會被誤加前綴。
 var modulePrefixBuiltinTypes = map[string]bool{
 	"i8": true, "i16": true, "i32": true, "i64": true, "i128": true,
 	"u8": true, "u16": true, "u32": true, "u64": true, "u128": true,
 	"bool": true, "byte": true, "char": true,
 	"f32": true, "f64": true,
-	"str": true, "ptr": true,
+	"str": true, "ptr": true, "txt": true,
 	"arr": true, "vec": true, "option": true,
 	"any": true, "err": true, "nil": true,
 }
@@ -113,6 +118,23 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 	// --- Phase 1: collect this module's bare type names ---
 	moduleTypes := make(map[string]bool)
 	for _, stmt := range stmts {
+		// `#{buildin}` 佈局聲明（`str` / `vec` / `txt` / `arr`）不屬於「本模組
+		// 定義的型別」：它只是編譯器內建佈局的文檔 / 連結載體（LSP hover、
+		// docs 用），語義實體在 MIR 手寫描述符裡。
+		//
+		// 一旦收進 moduleTypes，後面三個階段會連鎖出錯：
+		//   Phase 2 生成影子結構體 `txt.txt`
+		//   Phase 3 把方法名改成 `txt.txt.to-str`（呼叫端仍是 `txt.to-str`）
+		//   Phase 4 把型別引用改成 `%txt_txt`
+		// 症狀就是 `unknown callee txt.to-str` 與
+		// `unsupported receiver type %txt_txt`。
+		//
+		// 這裡只跳過「內建佈局名 + 帶註解」的組合：使用者自己寫的 `struct str`
+		// 仍照常加前綴（並由 checker 的 ValidateBuiltinStructDecls 報錯）。
+		if sd, ok := stmt.(*parser.StructDefinition); ok &&
+			sd.Builtin && parser.IsBuiltinLayoutStructName(sd.Name) {
+			continue
+		}
 		if name := getTypeDefName(stmt); name != "" && !strings.Contains(name, ".") {
 			moduleTypes[name] = true
 		}
@@ -153,10 +175,11 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 		// 內建型別（str / vec / txt / 各標量）的方法，前綴是**基礎型別**，
 		// 不是本模組定義的 struct。
 		//
-		// `std/str.no` 開頭那份 `#{buildin} str { len u32; cap u32; data []byte }`
-		// 只是內建 str 的佈局聲明（Phase 2 仍會把它改名為 `str.str`，以免同名
-		// 覆蓋 MIR 手工註冊的描述符 —— 那份描述符的 data 欄位刻意標 Inline），
-		// 但 `str.copy = () (dst str) { … }` 的接收者型別是基礎型別 `str`。
+		// 那份 `#{buildin} str { len u32; cap u32; data []byte }` 佈局聲明已由
+		// Phase 1 擋在 moduleTypes 之外（既不改名，也不登記 typeOwner），所以
+		// 正常情況下 moduleTypes[typePrefix] 本來就是 false。這裡的白名單判定
+		// 是**縱深防禦**：即使日後有人重新把佈局聲明收進 moduleTypes，方法名
+		// 也不能被加上前綴。
 		//
 		// 若不跳過，定義名被改成 `str.str.copy`、self 型別被改成 `str.str`，
 		// 而呼叫端 `s.copy()` 仍是 `str.copy`（prefixTypeName 對內建名短路），

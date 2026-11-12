@@ -41,7 +41,7 @@ WASMTIME  ?= wasmtime
 # unique 8-char random base36 string via perl.  If a real ID is
 # already in place, it is a no-op so repeated `make` keeps the
 # same IDs.
-TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/checker/unknown_field.go src/lsp/vet.go
+TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/checker/unknown_field.go src/checker/builtin_struct_decl.go src/lsp/vet.go
 
 .PHONY: all no force lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke playground-demos gen stamp-traceid install test
 

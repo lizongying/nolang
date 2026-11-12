@@ -2168,6 +2168,14 @@ type StructDefinition struct {
 	Name       string
 	Implements []string // 實現的介面列表（空 = 無）
 	Fields     []*StructField
+	// Builtin 標記 `#{buildin}`：這份 struct 聲明只是「編譯器內建佈局」的文檔 /
+	// 連結載體（LSP hover、docs 用）。真實佈局由 MIR 手寫描述符（str / vec / txt）
+	// 或編譯期常量（arr 的 .len）提供。
+	//
+	// 它不得參與模組前綴（否則聲明被改名成 txt.txt ⇒ %txt_txt、方法被改名成
+	// txt.txt.to-str ⇒ unknown callee txt.to-str），也不得覆蓋 MIR 佈局表。
+	// 換言之：帶此標記的 struct 在語義上不存在，只在 AST 裡存在。
+	Builtin bool
 	CommentedNode
 }
 

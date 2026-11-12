@@ -40,6 +40,7 @@ Updated %s
   '170bewkb': 'cannot infer type from nil for variable \'%s\''
   '17mbz8cw': 'expected \'}\' to close annotation, got %s'
   '18uic4sz': 'Use -v to emit LLVM IR (.ll) files for analysis alongside the build.'
+  '1a8m445h': '\'%s\' is a compiler-owned builtin type and cannot be declared as a struct: its layout is fixed by the compiler (the #{buildin} declaration in src/std documents it for the LSP only). A user declaration would silently disagree with the real layout. Rename the type.'
   '1b3u924y': 'read-file: cannot marshal path as C string'
   '1cg8g9ic': 'Validate Nolang source files without producing output.'
   '1ea3hwsu': '  link JS modules. No flag needed; the manifest drives it.'
@@ -135,6 +136,7 @@ cannot assign through an index directly: `%s = %s`. An index read returns an opt
      }
   2) propagate the error (the enclosing function needs an option result parameter): `%s ?= %s`
 `
+  '3lu6n4np': '\'#{buildin}\' on struct \'%s\' does nothing: only the compiler-owned layout declarations (str / vec / txt / arr) may carry it, because only their layout is supplied by the compiler. A user struct\'s layout always comes from its own fields, so the annotation would make the compiler skip this declaration and leave every field unbindable. Remove \'#{buildin}\'.'
   '3nktiaae': 'setfield: field %q not found on %q (struct key %q)'
   '3owkeirf': 'parsing release info for %s/%s: %w'
   '3pry7fmd': 'expected comma or right parenthesis, got %s instead'

@@ -392,7 +392,11 @@ import (
 // OverflowMode。同一份原始碼的 AST 形狀因此改變（少一條 AnnotationStatement、
 // 目標陳述多一條 side-table 記錄與 OverflowMode），舊 blob 重用會維持死行語義
 // ——`src/std` 有 152 處 `#{overflow=wrap}` 因此從未生效。故必 bump。
-const ASTVersion = "2026-11-12.1"
+// 2026-11-12.2：StructDefinition 新增 Builtin 欄位（`#{buildin}` 佈局聲明標記）。
+// 舊 blob 沒有這個位元，重用會讓 str / txt / vec / arr 的佈局聲明重新被當成普通
+// struct 參與模組前綴（改名成 `txt.txt`、方法改名成 `txt.txt.to-str`、型別引用
+// 改寫成 `txt.txt`）⇒ `unknown callee txt.to-str` 與 `%txt_txt` 全面復發。
+const ASTVersion = "2026-11-12.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

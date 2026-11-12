@@ -2549,6 +2549,7 @@ blk = 0
 | 104 | 🔴 **`quic.gen-cid` 在同一微秒內連呼兩次會回完全相同的 CID**（2026-11-12，**未修**）。種子是 `state = time.now-ns() ^ os.get-pid()`，每次呼叫都從時鐘重取 ⇒ 只要兩次呼叫落在同一微秒，xorshift 的輸入相同、輸出自然相同。實測 `time.now-ns()` 在 macOS 上的解析度就是 **1µs**：連呼 2000 次只得 33 個不同值（總跨度 32µs）。<br>**影響**：QUIC 的 Connection ID 必須一條連線一個（RFC 9000 §5.1），「同一條時間軸上連續開兩條連線」在真機上幾乎必然撞號。<br>**沒修的原因**：`gen-cid` 是自由函式、std 沒有模組級可變狀態，要嘛改簽名（多傳一份熵，如 `conn.init` 把自己的計數器餵進來），要嘛接受碰撞 —— 屬 API 決策，留給作者。<br>**測試側處理**：`test/std/quic.no::t-gen-cid` 只斷言「間隔 >1µs 的兩次生成不同」，並在斷言旁註明本條，避免把缺陷寫成期望值。 | `tmp/sh/q9.no`（同微秒兩次 `gen-cid(8)` 逐位元組相同）、`tmp/sh/q10.no`（2000 次 `now-ns()` 只得 33 個不同值、跨 32000ns） |
 | 105 | 🔴 **編譯器 comptime 折疊：純函式 + 全字面量實參 + `[]byte` 下標讀 ⇒ 落到失敗臂（靜默給錯值）**（2026-11-12，**未修**）。最小復現 `tmp/sh/q15.no`：`f-at = (b []byte, i i64) (v i64) { v = -1  b[i]: { ok -> v = it  -> _ } }`，呼叫 `f-at(pk, 4)`（`pk` 是 `[]byte` 變數、索引是**字面量**）回 **-1**；把索引換成變數 `k = 4` 後回 14；在函式體裡加一行 `print` 讓它不純，也回 14。同樣形態對 `[16]byte`（定長陣列）正常。⇒ 折疊器把 `[]byte` 型別的實參當成「無法求值」，下標讀於是不走 `ok` 臂。<br>**影響**：任何「純工具函式 + 字面量下標」的呼叫都會被靜默算錯，這正好是測試 helper（`at(buf, 0)`）最常見的形狀 —— 我先前的 `at(pk, 4) != at(orig, 4)` 因此恆等、斷言假綠。<br>**未碰的原因**：實作在 `src/mir/hir2mir.go` 的 `comptimeFold` / `evalConst`（`src/mir/comptime_reassigned_local_test.go` 已釘過同一個求值器的另一條 soundness bug），而 `src/mir/hir2mir.go` **正被並行 session 修改**，不宜同時動。<br>**測試側繞法**：`test/std/quic.no` 所有 `at()` 下標一律先落變數（`k0 = 0 …`），並在檔頭與 §5.0za 註明原因。 | `tmp/sh/q15.no`（`at-lit=-1 / at-var=14 / at2-lit=14 / arr-lit=4`）、`tmp/sh/q14.no`（加 `print` 即恢復正常）、`tmp/sh/q13.no`（內聯下標 `pk[4]` = 14，經 helper 呼叫 = -1） |
 | 106 | 🔴 **「空 `str`」的 `data` 是 NULL，`str.eq(x, n)` 只要 `n > 0` 就崩**（2026-11-12，**未修**）。`str.eq` 是 `#{buildin} eq-raw`，落到 `src/mir/builtin_call.go:1207 emitBuiltinEqRaw`，那裡直接 `call i32 @memcmp(i8* dataA, i8* dataB, i64 n)`，**不檢查指標是否為 NULL**；而空串的 `data` 正是 NULL ⇒ `memcmp(NULL, p, 1)` 必崩。<br>實測（v0.4.19-45）：`e = ''` + `e.eq('de', 0)` ⇒ `true`（n=0 時 `memcmp(NULL, …, 0)` 合法）；`e.eq('de', 1)` ⇒ `trace/BPT trap`；`runner.str-eq(e, 'de', 2, …)` 與 `runner.str-eq('de', e, 2, …)`（NULL 放右邊一樣）⇒ `segmentation fault`。<br>**最常見的踩點是 `str.slice`**：`src/std/str.no:631` 的 `r-start >= r-end -> return` 是**提前 return**，`val str` 停在零值 ⇒ `s.slice(3, 3)` / `s.slice(6, 8)` / 任何越界切片拿到的都是 NULL-data 空串：`len-bytes()` 回 0、`byte(0)` 回 `nil`、`print` 印空，看起來「就是個空串」，要等配上 `n > 0` 的 `eq` 才爆。<br>**修法**：`emitBuiltinEqRaw` 開頭加一支「任一 data 為 NULL ⇒ 結果 = `n == 0`（否則 false）」，別對 NULL 做有長度的 memcmp。**測試側繞法**：空串一律 `n = 0`（語料現況正好都是這樣，所以這條一直沒被踩到）。與 §5.2 #84（`eq` 不檢查長度）同族，差別是本條**必崩**、不會靜默。 | 探針 `/tmp/psprobe/w1.no`（`''` + n=2 崩）、`x2.no`（n=1 → `trace/BPT trap`）、`x1.no`（n=0 → true）、`x3.no`（NULL 在右側同樣崩）、`x4.no`（`slice(3,3)` 同現象）；`test/std/str.no` 的 `t-push` 註解 |
+| 107 | ✅ **`#{buildin} txt` 佈局聲明被當成模組型別 ⇒ `test/std/txt.no` 整檔無法編譯**（2026-11-12，**已修**，見 §5.2k）。症狀固定是 `EmitLLVM: unknown callee txt.to-str in func <名>`，根因**不是**缺 builtin 登記（`%txt` 與 `txt.*` 的 MIR 支援一直都在），而是 `src/build/module_prefix.go` 的 Phase 1 把 `#{buildin} txt { … }` 收進了 `moduleTypes`，于是聲明被改名成 `txt.txt`（⇒ `%txt_txt`）、方法被改名成 `txt.txt.to-str`（⇒ 呼叫端 `txt.to-str` 找不到）。<br>**排除紀錄**：在隔離 worktree（`git worktree add /tmp/nolang-head-check HEAD` + `make no`）用 HEAD 版原始碼複現同一條紅 ⇒ 與本輪 unix 改動無關。<br>**修法**：`parser` 給 `StructDefinition` 加 `Builtin` 欄位，模組前綴 Phase 1 / MIR `collectStructFields` 都跳過「注解 + 佈局名」的組合，並用 `checker.ValidateBuiltinStructDecls` 反向要求兩者成對出現。 | `./bin/no run test/std/txt.no`（修前 `4qhyyund`；修後 169/169） |
 
 > #9–#91 都在 `bin/no`（v0.4.19-40-g72e157cb-dirty，2026-11-10）上複現；
 > #92–#96 在 2026-11-11 的 `v0.4.19-44-g70908f79-dirty` 上複現（後者已含本輪的
@@ -3169,6 +3170,83 @@ SUMMARY pass=117 fail=1 timeout=0
 `src/std/archive/zip.no` 的 mtime 是 08:54，正在做與 `json` / `pem` / `xz` /
 `bzip2` / `tar` 同批的「去掉模組內冗餘前綴」rename，屬該檔 owner 的收尾範圍，
 本輪不動。
+
+### 5.2k 2026-11-12：`#{buildin}` 佈局聲明不應參與模組前綴（`%txt_txt` 迴歸）
+
+**症狀**（`src/std/txt.no` 開頭加了一份佈局文檔聲明之後）：
+
+```text
+$ ./bin/no run test/std/txt.no
+Error: compilation error: MIR codegen could not handle test/std/txt.no:
+  EmitLLVM: unknown callee txt.to-str in func t-from [4qhyyund]
+```
+
+把那份聲明臨時刪掉，`txt.to-str` 立刻恢復 —— 所以肇事者就是這四行：
+
+```no
+#{buildin}
+txt {
+    data [255]byte; 數據區域
+    len u8; 字節長度（0-255）
+}
+```
+
+**根因**：`#{buildin}` 在此之前只有兩個載體（`FunctionDefinition.BuiltinStub`、
+`TaggedEnumDefinition.Builtin`），`StructDefinition` **既沒有欄位也沒有消費方**，
+於是這份「只是文檔」的聲明被當成「本模組定義了一個叫 txt 的結構體」，
+`src/build/module_prefix.go` 的三個階段連鎖出錯：
+
+| 階段 | 動作 | 後果 |
+| --- | --- | --- |
+| Phase 1 | 把 `txt` 收進 `moduleTypes` | 承認它是本模組型別 |
+| Phase 2 | `txt` → `txt.txt` | 影子結構體 `%txt_txt` |
+| Phase 3 | `txt.to-str` → `txt.txt.to-str` | 呼叫端仍寫 `txt.to-str` ⇒ `unknown callee` |
+| Phase 4 | 型別引用 `txt` → `txt.txt` | `unsupported receiver type %txt_txt [aywuxg5w]` |
+
+`str` 之所以「看起來沒事」，只是因為 Phase 3 的 `modulePrefixKeepsBareMethodName`
+對 `str` 短路了；`str.str` 這份影子結構體一直都在，只是沒有呼叫端踩到。
+
+**修法**：給 `StructDefinition` 加 `Builtin bool`，讓「佈局聲明」在三個地方都被識別成
+**語義上不存在**：
+
+| 位置 | 改動 |
+| --- | --- |
+| `src/parser/annotation.go` | `#{buildin}` 對 `StructDefinition` 置 `Builtin`（並 bump `ASTVersion` → `2026-11-12.2`） |
+| `src/parser/type.go` | 新增 `IsBuiltinLayoutStructName`（str / vec / txt / arr） |
+| `src/build/module_prefix.go` Phase 1 | `Builtin && 佈局名` ⇒ **不進** `moduleTypes`（Phase 2/3/4 因 `moduleTypes`/`typeOwner` 為空而自然全部落空） |
+| `src/mir/hir2mir.go` `collectStructFields` | `isBuiltinLayoutStruct(name)` ⇒ 兩趟都跳過，**不覆蓋**手寫描述符 `mod.StructFields["str"|"vec"|"txt"]` |
+| `src/checker/builtin_struct_decl.go`（新） | 雙向門禁：內建名必須帶注解（`1a8m445h`）、注解只能貼在內建名上（`3lu6n4np`） |
+
+MIR 那一條是**必需的**而不是防禦性的：`hir2mir.go` 先手寫
+`StructFields["str"|"vec"|"txt"]`，接著 `collectStructFields()` 會用同名 HIR 節點
+**無條件覆蓋**。`str` 之前倖免僅僅因為它的聲明已被改名成 `str.str`；Phase 1 修好之後
+覆蓋就會真的發生（`str.data` 的 `Inline` 標記會被抹掉 ⇒ drop 走訪雙重釋放）。
+
+**為什麼不是「合併時把這四份聲明刪掉」**：`checker.go:1123` 的
+`validationStructFields = collectStructFields(program)` 只從**合併後**的程式收集
+欄位型別。刪掉聲明，`t.len` 的 `u8` 就沒了型別來源，`t.len = n` 之類的賦值檢查
+會全部失控。保留聲明、只取消它的「模組型別」身分，嚴格優於刪除。
+
+**驗證**：
+
+| 檢查 | 結果 |
+|---|---|
+| `test/std/txt.no` | **169/169**（修前整個檔編不過） |
+| `test/std/str.no` | **188/188** |
+| IR 自查（`%txt` / `%str-long` / `%vec` + 影子名） | 三種真實型別各 **1** 份；`txt_txt` / `str_str` / `arr_arr` / `vec_vec` **各 0**；`@txt_to_str` 在、`@txt_txt_to_str` 不在 |
+| `./bin/no vet src/std` | **1 error**（`txt.no:489` 的 `out.len = n`，`txt.slice` 內、屬別人的在建改動；與本輪無關，修前即是這 1 條） |
+| 新 Go 測試 | `TestBuiltinLayoutStructsEmitNoShadowTypes`（跑真 IR）、`TestPrefixModuleStatementsSkipsAllLayoutDecls`（四型別）、`TestPrefixModuleStatementsPrefersUnannotatedStruct`、`TestValidateBuiltinStructDecls_*`、`TestBareTypeName`、`TestLintStepsIncludeBuiltinStructDecl` |
+
+**教訓（可複用）**：
+
+1. **一個沒有任何消費方的註解開關等於不存在。** `#{buildin}` 在 struct 上「被接受、
+   被靜默忽略」，比報錯更糟——它讓作者以為宣告生效了，實際上是往模組前綴餵了一個
+   假的型別定義。
+2. **`src/std` 的佈局聲明有兩種讀者，需求相反**：docs/LSP 要它存在（可懸停、可引用），
+   codegen 要它不存在。用「一個布林欄位 + 三個地方的識別」比「兩個地方各寫一份真相」
+   便宜得多。
+3. 誰在覆蓋誰要實測：`StructFields` 有**手寫**與 **HIR 收集**兩個寫入者，且無條件後者
+   勝。只看「手寫那一段存在」就判定安全，是這次幾乎踩空的坑。
 
 ### 5.3 歷史快照（2026-09-26，保留供對照）
 

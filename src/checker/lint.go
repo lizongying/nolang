@@ -297,6 +297,7 @@ var lintSteps = []lintStep{
 	{"char-arith", false, runLintCharArith},
 	{"print-format", true, runLintPrintFormat},
 	{"cross-module-type-refs", true, runLintCrossModuleTypeRefs},
+	{"builtin-struct-decl", true, runLintBuiltinStructDecl},
 	{"unresolved-module-calls", true, runLintUnresolvedModuleCalls},
 	{"int-overflow", false, runLintIntOverflow},
 	{"div-by-zero", false, runLintDivByZero},
@@ -946,6 +947,21 @@ func runLintPrintFormat(program *parser.Program, opts LintOptions) []LintResult 
 func runLintCrossModuleTypeRefs(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, u := range ValidateCrossModuleTypeRefs(program) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintError, Source: "nolang-type-checker",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintBuiltinStructDecl — 21b. `#{buildin}` 佈局聲明與內建型別名必須成對出現
+// （見 builtin_struct_decl.go 的完整推導）。兩條都是 ERROR：兩端任一漏檢都會
+// 讓編譯器生成一份與真實佈局矛盾的影子結構體。
+func runLintBuiltinStructDecl(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateBuiltinStructDecls(program) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-type-checker",
