@@ -67,26 +67,36 @@ func TestOverflowRelevantSet(t *testing.T) {
 }
 
 // TestOverflowGovernedMap verifies that standalone #{overflow=...} annotation
-// nodes (those that cannot be attached to an IDENT-initial statement — here,
-// ones above DOT-initial field assignments inside a struct method) are mapped
-// to the statement they govern, and that the governed statement's membership in
-// the relevant set correctly flags the annotation as effective or ineffective.
+// nodes are mapped to the statement they govern, and that the governed
+// statement's membership in the relevant set correctly flags the annotation as
+// effective or ineffective.
+//
+// A standalone node only arises when the following statement's first token is
+// NOT an attachable one (IDENT / USE / IN / RARROW / DOT / array-type method).
+// The shape used here is the bare block in statement position — `{` stays
+// unattachable on purpose: it is an L2 block host, and `#{overflow}` is L3-only
+// (see docs/docs/lang/annotation-scope.md §8 step 4b). DOT-initial statements
+// became attachable in ASTVersion 2026-11-12.1, so they no longer produce
+// standalone nodes — that side is pinned by TestOverflowDotInitialAttaches.
 func TestOverflowGovernedMap(t *testing.T) {
-	// `.x = .x + 1` is integer arithmetic → overflow effective.
-	// `.s = "a" - "b"` is char concatenation (`-` is concat, not subtraction) →
-	// overflow ineffective. Both are DOT-initial so the overflow annotations stay
-	// as standalone AnnotationStatement nodes (cannot be attached).
+	// The first block contains integer arithmetic → overflow effective.
+	// The second contains only char concatenation (`-` is concat, not
+	// subtraction) → overflow ineffective.
 	src := "Point = {\n" +
 		"  x i64\n" +
 		"  s str\n" +
 		"}\n" +
 		"Point.inc = (self Point) (self Point) {\n" +
 		"  #{overflow=wrap}\n" +
-		"  .x = .x + 1\n" +
+		"  {\n" +
+		"    .x = .x + 1\n" +
+		"  }\n" +
 		"}\n" +
 		"Point.cat = (self Point) (self Point) {\n" +
 		"  #{overflow=wrap}\n" +
-		"  .s = \"a\" - \"b\"\n" +
+		"  {\n" +
+		"    .s = \"a\" - \"b\"\n" +
+		"  }\n" +
 		"}\n"
 
 	lx := lexer.New(src)
@@ -102,9 +112,10 @@ func TestOverflowGovernedMap(t *testing.T) {
 		t.Fatal("expected non-nil relevant set")
 	}
 
-	// Collect standalone annotation nodes present in the method bodies.
+	// Collect standalone annotation nodes and the block statements in the
+	// method bodies, then classify each block by what it contains.
 	var annoNodes []*parser.AnnotationStatement
-	var concatStmt, arithStmt parser.Statement
+	var arithBlock, concatBlock *parser.BlockStatement
 	for _, fn := range program.Statements {
 		fd, ok := fn.(*parser.FunctionDefinition)
 		if !ok || fd.Body == nil {
@@ -113,34 +124,49 @@ func TestOverflowGovernedMap(t *testing.T) {
 		for _, s := range fd.Body.Statements {
 			if as, ok := s.(*parser.AnnotationStatement); ok {
 				annoNodes = append(annoNodes, as)
-			}
-			v := statementValue(s)
-			if v == nil {
 				continue
 			}
-			if isStringConcatExpr(v) {
-				concatStmt = s
-			} else if isIntArithExpr(v) {
-				arithStmt = s
+			bs, ok := s.(*parser.BlockStatement)
+			if !ok {
+				continue
+			}
+			isConcat, isArith := false, false
+			for _, inner := range bs.Statements {
+				v := statementValue(inner)
+				if v == nil {
+					continue
+				}
+				// Order matters: `-` is both concat and arithmetic, so check the
+				// string-only shape first (same precedence as OverflowRelevantSet).
+				if isStringConcatExpr(v) {
+					isConcat = true
+				} else if isIntArithExpr(v) {
+					isArith = true
+				}
+			}
+			if isConcat {
+				concatBlock = bs
+			} else if isArith {
+				arithBlock = bs
 			}
 		}
 	}
 	if len(annoNodes) != 2 {
 		t.Fatalf("expected 2 standalone annotation nodes, got %d", len(annoNodes))
 	}
-	if concatStmt == nil || arithStmt == nil {
-		t.Fatal("could not locate the two governed statements")
+	if concatBlock == nil || arithBlock == nil {
+		t.Fatal("could not locate the two governed block statements")
 	}
 
-	if relevant[concatStmt] {
-		t.Errorf("concat statement should not be in relevant set")
+	if relevant[concatBlock] {
+		t.Errorf("block with only concat should not be in relevant set")
 	}
-	if !relevant[arithStmt] {
-		t.Errorf("arithmetic statement must be in relevant set")
+	if !relevant[arithBlock] {
+		t.Errorf("block with integer arithmetic must be in relevant set")
 	}
 
-	// Each standalone overflow node must govern exactly one of the statements,
-	// and its effectiveness must follow `relevant`.
+	// Each standalone overflow node must govern exactly one of the blocks, and
+	// its effectiveness must follow `relevant`.
 	effective, ineffective := 0, 0
 	for _, as := range annoNodes {
 		gov, ok := governed[as]
@@ -152,15 +178,15 @@ func TestOverflowGovernedMap(t *testing.T) {
 			t.Errorf("governed statement is nil for a standalone overflow node")
 			continue
 		}
-		if gov == concatStmt {
+		if gov == concatBlock {
 			ineffective++
 			if relevant[gov] {
-				t.Errorf("overflow over concat statement must be ineffective")
+				t.Errorf("overflow over concat block must be ineffective")
 			}
-		} else if gov == arithStmt {
+		} else if gov == arithBlock {
 			effective++
 			if !relevant[gov] {
-				t.Errorf("overflow over arithmetic statement must be effective")
+				t.Errorf("overflow over arithmetic block must be effective")
 			}
 		} else {
 			t.Errorf("overflow node governs an unexpected statement %T", gov)
@@ -168,6 +194,57 @@ func TestOverflowGovernedMap(t *testing.T) {
 	}
 	if effective != 1 || ineffective != 1 {
 		t.Errorf("expected 1 effective and 1 ineffective, got effective=%d ineffective=%d", effective, ineffective)
+	}
+}
+
+// TestOverflowDotInitialAttaches pins the ASTVersion 2026-11-12.1 behaviour:
+// `#{overflow=...}` above a DOT-initial statement (`.x = .x + 1`) attaches to
+// that statement — OverflowMode is set on it and no standalone
+// AnnotationStatement is left behind. Before the DOT attach target was added the
+// annotation degraded into a dead line (a standalone node nobody reads), which is
+// why the checker kept reporting the site.
+func TestOverflowDotInitialAttaches(t *testing.T) {
+	src := "Point = {\n" +
+		"  x i64\n" +
+		"}\n" +
+		"Point.inc = (self Point) (self Point) {\n" +
+		"  #{overflow=wrap}\n" +
+		"  .x = .x + 1\n" +
+		"}\n"
+
+	lx := lexer.New(src)
+	p := parser.New(lx)
+	p.SkipLowering = true
+	program := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parse errors: %v", p.Errors())
+	}
+
+	var attached int
+	var standalone int
+	for _, fn := range program.Statements {
+		fd, ok := fn.(*parser.FunctionDefinition)
+		if !ok || fd.Body == nil {
+			continue
+		}
+		for _, s := range fd.Body.Statements {
+			if _, ok := s.(*parser.AnnotationStatement); ok {
+				standalone++
+				continue
+			}
+			if es, ok := s.(*parser.ExpressionStatement); ok && es.OverflowMode != "" {
+				attached++
+				if es.OverflowMode != "wrap" {
+					t.Errorf("expected OverflowMode=wrap, got %q", es.OverflowMode)
+				}
+			}
+		}
+	}
+	if standalone != 0 {
+		t.Errorf("expected 0 standalone annotation nodes, got %d", standalone)
+	}
+	if attached != 1 {
+		t.Errorf("expected 1 statement carrying OverflowMode, got %d", attached)
 	}
 }
 
