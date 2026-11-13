@@ -762,16 +762,17 @@ drv.pkg-ll = (path str) (r str) {
     ; 整包 emit-once：同名函式只產一次（自舉源碼存在重複定義，如 ps.no 的 ps-is-builtin-type
     ;   在 3434 與 7321 各定義一次；整包路徑首次完整降級 ps.no 才暴露。emit-once 兼顧跨模組同名碰撞。
     emitted = ':'
-    k2 = 0
-    (k2 < nfiles) {
-        f = files[k2]
+    ; 全域 sg（切片 5 跨模組呼叫查表用）：先逐模組把所有函式簽名收進【同一份】sg，
+    ;   再逐模組 emit 時用這份全域表解析 `mod.fn` 點號呼叫（不再逐模組隔離）。
+    sg = h2m-sigs-new()
+    k = 0
+    (k < nfiles) {
+        f = files[k]
+        mod = drv.mod-name(f)
         src = drv.read-mod(f)
         t = ast.make()
         p = ps.new(src)
         root = ps.parse(t, p)
-
-        ; 本模組 sg（簽名表；切片 4 不跨模組呼叫，逐模組即可）
-        sg = h2m-sigs-new()
         nd = ast.nd-at(t, root)
         nk = nd.nkid
         base = nd.kid0
@@ -781,12 +782,35 @@ drv.pkg-ll = (path str) (r str) {
             kd = ast.nd-at(t, kid)
             kd.kind == asp.K-FUNCTION-DEFINITION -> {
                 nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
-                bd == 0 -> h2m-sig-add(sg, nm, rt, ap, dp)
+                bd == 0 -> {
+                    ; 與 drv.pkg-sigs 同口径：key = mod.short（剝 module 前綴後重組），
+                    ;   使點號呼叫 emit 的 `mod.fn` 能在此全域表命中（切片 5 ⑥）。
+                    short = nm
+                    pre-dot = mod - '.'
+                    pre-hyp = mod - '-'
+                    nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
+                    nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
+                    key = mod - '.' - short
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, rt, ap, dp)
+                }
             }
 
             #{overflow=wrap}
             m = m + 1
         }
+
+        #{overflow=wrap}
+        k = k + 1
+    }
+
+    ; 逐模組 emit 各函式（入口額外合成 main），body 串接，用全域 sg 解析跨模組呼叫
+    k2 = 0
+    (k2 < nfiles) {
+        f = files[k2]
+        src = drv.read-mod(f)
+        t = ast.make()
+        p = ps.new(src)
+        root = ps.parse(t, p)
 
         ; 入口模組：合成 main（其餘模組直接用原 Program root）
         target = root

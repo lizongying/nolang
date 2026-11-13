@@ -1,0 +1,9 @@
+; testmod.no — ⑭ 切片 5 受控「被呼叫」模組
+;   採【連字號名】`testmod-bar` 定義：自舉 parser 只對【點號】名把 c5 多算 1（drv.no:709 註），
+;   連字號名 c5 不虛增 ⇒ c5=0、bad=0，正常進全域 sg 與產碼。
+;   全域 sg key 構造（drv.pkg-ll 切片 5 改）：mod=`testmod`、nm=`testmod-bar`
+;   → 剝 `mod-` 前綴得 short=`bar` → key=`testmod.bar`，與呼叫方點號呼叫
+;   `testmod.bar(x)` 拼出的 cn 完全一致（切片 5 ⑥ 命名接線）。
+;   空 body ⇒ h2m 直接發射 @testmod-bar（回傳 i64 預設 0）。
+testmod-bar = (x i64) {
+}

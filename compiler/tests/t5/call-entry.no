@@ -1,0 +1,4 @@
+; call-entry.no — ⑭ 切片 5 受控入口：import 兩個受控模組（callee + caller）
+;   供 drv.pkg-ll 整包降級成同一份 .ll；本檔無任何頂層陳述 ⇒ 不產函式。
+# /compiler/tests/t5/testmod.no
+# /compiler/tests/t5/caller.no

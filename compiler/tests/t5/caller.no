@@ -1,0 +1,12 @@
+; caller.no — ⑭ 切片 5 受控「呼叫方」模組
+;   採【連字號名】`caller-run` 定義：自舉 parser 對連字號名 c5 不虛增 ⇒ c5=0、bad=0，
+;   正確識別為 K-FUNCTION-DEFINITION 並產碼為 @caller-run。
+;   本體只含一條【陳述位點號呼叫】`testmod.bar(x)`（K-EXPRESSION-STATEMENT → K-CALL-EXPRESSION，
+;   走 h2m s93 路徑降級）；h2m-lower-expr 的 K-DOT-EXPRESSION 臂拼出 cn=`testmod.bar`，
+;   查全域 sg 命中 ⇒ 體內 emit 出 `call @testmod.bar` —— 即切片 5 ⑥「點號呼叫查全域表」的實證產物。
+;   ⚠️ 自舉 emit 名 = 源名 verbatim（@testmod-bar，連字號），故 `call @testmod.bar`（點號）與被呼叫者
+;   @testmod-bar 之間存在命名錯位；此錯位與 ps.parse(呼叫) vs 其實際 emit 同源，屬 emit 名未統一成
+;   mod.fn 的已知限制（切片 4 ⑨ 已將其列為延後項）。opt 報 undefined-value 在此允許，不計失敗。
+caller-run = (x i64) {
+    testmod.bar(x)
+}

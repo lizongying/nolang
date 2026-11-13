@@ -2117,20 +2117,38 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == 0 || lv == 0 || rv == 0 || (ok-i == 0 && ok-f == 0 && ok-u == 0 && ok-s == 0 && ok-e == 0) -> h2m-mark(c)
         }
 
-        ; 调用降级：kid 序 = [被调用者][实参…]，c0 = 实参个数；
-        ;   被调用者限 K-IDENTIFIER（方点/方法调用不在本件），实参个数与型别查签名表；
-        ;   s64：实参值 id 逐个追加进侧池 c.args，CALL 只带「池基址 + 个数」，不再校验 id 连续性
-        d.kind == asp.K-CALL-EXPRESSION -> {
-            na = d.c0
-            ck = ast.kid-at(t, d.kid0)
-            cd = ast.nd-at(t, ck)
-            ok-call = 1
-            ok-print = 0
-            cd.kind != asp.K-IDENTIFIER -> ok-call = 0
-            cn = ''
-            si = -1
-            ok-call == 1 -> cn = ast.str-at(t, cd.s0)
-
+            ; 调用降级：c0 = 实参个数；实参个数与型别查签名表；
+            ;   s64：实参值 id 逐个追加进侧池 c.args，CALL 只带「池基址 + 个数」，不再校验 id 连续性。
+            ;   自举 parser 对两种呼叫形态的解析不同（⑥ 跨模組點號呼叫關鍵）：
+            ;   ─ 純量呼叫 `f(x)`：call.child[0]=callee(IDENTIFIER f)、child[1..]=實參
+            ;     ⇒ name=f、實參基址=call.kid0+1。
+            ;   ─ 點號呼叫 `mod.fn(x)`：call.child[0]=K-DOT-EXPRESSION(fn)（整個 `mod.fn` 作為 callee，
+            ;     fn=dot.s0、模組名 mod 在 dot 子節點[0]）、child[1..]=實參（與純量同構，仍是 CALL 直接子節點）
+            ;     ⇒ name=dot.base.s0 . '.' . dot.s0=mod.fn、實參基址=call.kid0+1（同純量）。
+            d.kind == asp.K-CALL-EXPRESSION -> {
+                na = d.c0
+                ck = ast.kid-at(t, d.kid0)
+                cd = ast.nd-at(t, ck)
+                ok-call = 1
+                ok-print = 0
+                cn = ''
+                si = -1
+                argbase = d.kid0 + 1
+                ; ⑥ 點號呼叫（跨模組）：callee 是單個 K-DOT-EXPRESSION（`mod.fn`），
+                ;   name = base.fn，其中 base 是 dot 的子節點[0]（K-IDENTIFIER mod）、fn = dot.s0。
+                ;   實參仍是 CALL 的直接子節點（child[1..]），與純量呼叫 f(x) 完全同構
+                ;   ⇒ argbase 保持 d.kid0+1，na 仍取 d.c0。
+                ;   （差異只在 cn 的拼法：純量取 child[0] 的 s0；點號取 dot.base.s0 . '.' . dot.s0。）
+                has-dot = 0
+                cd.kind == asp.K-DOT-EXPRESSION -> {
+                    has-dot = 1
+                    base-nd = ast.nd-at(t, ast.kid-at(t, cd.kid0))
+                    cn = ast.str-at(t, base-nd.s0) - '.' - ast.str-at(t, cd.s0)
+                }
+                cd.kind != asp.K-DOT-EXPRESSION -> {
+                    cd.kind == asp.K-IDENTIFIER -> cn = ast.str-at(t, cd.s0)
+                    cd.kind != asp.K-IDENTIFIER -> ok-call = 0
+                }
             ; s100：print / eprint 是内建（自举无 builtin 签名表）⇒ 在签名查找前单点认领。
             ;   语句位由 s93 路径丢弃结果值（hd=1，不查 v）；表达式位若被当值用，
             ;   v 留 0 会让外层调用 / 赋值入门禁，退化成 unsup（诚实门禁不绕）。
@@ -2165,10 +2183,8 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 (j < want-n && ok-call == 1) {
                     ak = 0
                     j < na -> {
-                        ap = d.kid0
-
-                        #{overflow=wrap}
-                        ap = ap + 1
+                        ; 實參基址：純量呼叫 = call.kid0+1；⑥ 方法呼叫 = method.kid0（實參嵌在 method 子節點）
+                        ap = argbase
 
                         #{overflow=wrap}
                         ap = ap + j

@@ -7226,7 +7226,7 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
 | 閘 | 改前 | 改後（預期） |
 | --- | --- | --- |
 | `noc build compiler`（入口 main.no） | rc=0、產 34,632 B、version 不印 | **rc=0、執行 `version` 印 `noc v0.0.1-m0`** |
-| 跨模組函式呼叫（如 `drv.dispatch` → `ps.parse`） | unsup | **產碼、`call @ps.parse` 等可連結** |
+| 跨模組函式呼叫（如 `drv.dispatch` → `ps.parse`） | unsup | **切片 5：點號呼叫機制已通（emit `call @mod.fn` 經全域 sg 解析）；定義/呼叫名統一可連結留切片 6** |
 | 既有測試 | `h2m-test` 1080/1086 等 | **維持全綠（零回歸）** |
 | `noc` 自編自己（S1 預備） | 不可行（導入被忽略） | **`noc` 能編出可執行、行為對齊 S0 的二進位** |
 
@@ -7238,7 +7238,10 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
    - ⚠️ **key 構造坑（實踩）**：自舉各模組函式名前綴慣例不一致——`drv.build-package`/`ps.parse`/`ast.str-at` 用**點號**前綴，`h2m-sig-add`/`ps-parse-use` 用**連字**前綴。故 key 須先剝掉 `mod.` 或 `mod-` 模組前綴得 short，再組 `mod.short` 規範 key，與切片 5 點號呼叫 emit `call @<mod.fn>` 的查表 key 對齊（否則 `h2m-sig-add` 會被錯拼成 `h2m.h2m-sig-add`）。
    - ⚠️ **`drv.*` 模組函式暫不入表（已知自舉 parser 缺陷，留待切片 5 前置修）**：`drv.no` 用 `drv.x = (...)` 點號名定義，自舉 `ps.parse` 對此類函式定義的 signature 計數有 bug（`d.c5` 多算 1：`drv.name = () (r str)` 被算成 c5=2、`drv.usage` 無回傳被算成 c5=1 且回傳型別 rc=-1），致 `h2m-func-sig` 全判 `bad=1` 而略過。裸名模組（ps/ast/h2m/lx/…）不受影響，故切片 3 驗收（ps.parse/ast.str-at）達標；但 `drv.dispatch`→`ps.parse` 這類跨模組點號呼叫要通，必須先修這個 parser 計數 bug（見切片 5 前置）。
 4. **多模組 body 串接 + `@<mod>.<fn>` 命名**（⑤ D／⑦）— **✅ 已實作（2026-11-13）**。機制驗收：同一份 `.ll` 串接 ps/h2m/lx/ast(nd)/ck/cg-runtime 多模組 body（實測 **67 個 define** 跨多模組），`@<mod>.<fn>` 命名（連字前綴 → `@ps-bump`、點號前綴 → `@ps.parse` 經全域簽名表 key 證明接線正確），`@main` 由 `drv.pkg-ll` 合成；`cg-emit-cfg-t` 字串全域改為二進位安全 `[N x i8] [i8 ...]` 整數陣（s99o，補陣列結尾 `]`），`opt` 不再報語法錯誤。回歸 `compiler/tests/pkg-ll-test.no` **10/10 全綠**（含 `process.cmd` 呼叫 `opt -passes=verify` 斷言無語法錯誤）。⚠️ **字面驗收（`@ps.parse`/`@ast.str-at` 本體進 `.ll` 且 `opt rc=0`）延後至切片 5+**：h2m 當前僅能降級極少數函式本體（整包 **5749 unsupported**），`ps.parse`/`ast.str-at` 本體含未支援構造 ⇒ `h2m-lower-func` 回 `''` 不發射，其被呼叫者（`h2m-byte-at`/`h2m-synth-main`/`h2m-lower-program`/`lx-*`/`ps-*` 等 **17 個**未定義引用）亦未定義 ⇒ `opt` 報 `use of undefined value`。此屬 h2m 降級能力缺口，非串接 bug；stub 偽造 rc=0 違反設計 ⑨ 誠實邊界，故不取。實作見 `compiler/src/drv.no` 的 `drv.pkg-ll`／`compiler/src/h2m.no` 的 `h2m-synth-main`／`h2m-struct-resolve-range`／`compiler/src/cg.no` 的 `cg-emit-cfg-t`。
-5. **`h2m-lower-expr` 點號呼叫查全域表**（⑥）。驗收：`drv.dispatch` 體內的 `ps.parse(...)` emit `call @ps.parse`。
+5. **`h2m-lower-expr` 點號呼叫查全域表**（⑥）— **✅ 已實作（2026-11-13 本輪）**。機制驗收（受控切面包 `compiler/tests/t5/`：`call-entry.no`→`testmod.no`+`caller.no`，驅動測試 `compiler/tests/pkg-ll-call-test.no` **4/4 全綠**）：`caller-run` 體內的 `testmod.bar(x)` 點號呼叫 ⇒ `.ll` 實測產出 `call i64 @testmod.bar(i64 %v1)`，證明「點號呼叫經全域 sg 解析並 emit `call @<mod.fn>`」接線正確。
+   - ⚠️ **AST 結構實測（與初判不同，已更正）**：`mod.fn(x)` 解析為 CALL（`c0=1`、nkid=2）其**子節點[0] 就是單個 `K-DOT-EXPRESSION`**（整個 `mod.fn` 作為 callee：`s0="fn"`、`mod` 在 dot 子節點[0] 的 `K-IDENTIFIER`）；**實參 `x` 是 CALL 的直接子節點 child[1]**（與純量呼叫 `f(x)` 同構，並非嵌在 dot 節點內）。故 `cn = dot.base.s0 - '.' - dot.s0`（得 `mod.fn`），`argbase` 沿用 `d.kid0+1`（實參為 CALL 直接子節點），`na` 仍取 `d.c0`。`h2m-lower-expr` 的 `K-CALL-EXPRESSION` 臂現對「callee 為 `K-DOT-EXPRESSION`」與「callee 為 `K-IDENTIFIER`（純量）」兩形態統一處理（實作見 `compiler/src/h2m.no`）。
+   - ⚠️ **emit 名 / 呼叫名錯位（已知限制，留待切片 6）**：受控被呼叫者 `testmod.no` 以【連字號名】`testmod-bar` 定義（自舉 parser 對【點號】名多算 `c5=1` 致 `h2m-func-sig` 誤判 `bad=1` 不產碼、不入表，故受控模組須用連字號名），其 emit 名為 `@testmod-bar`（連字號）；而呼叫名 `cn` 是 `testmod.bar`（點號）⇒ `.ll` 出現「定義 `@testmod-bar`、呼叫 `@testmod.bar`」的未定義引用，`opt -passes=verify` 報 `use of undefined value '@testmod.bar'`。切片 5 驗收只斷言「點號呼叫經全域 sg 解析並 emit 出 `call @testmod.bar`」機制成立（語法合法、rc 容許 undefined-value），**統一 emit 名成 `mod.fn`（讓定義名與呼叫名一致）屬切片 6 範疇**，見下方 ⑫ 本輪不收。
+   - 回歸零新增：`cg-test` **359/359**、`cg-runtime-test` **86/86**、`drv-build-test` **63/63**、`pkg-sigs-test` **5/5**、`build-package-test` **8/8**、`h2m-test` **1080/1086**（6 紅為既有 `s98 optmatch`）、`pkg-ll-test` **9/10**（1 紅為既有 `@h2m-lower-module`，均與本切片無關）。
 6. **端到端閘 + L4 對拍**（⑩）。驗收：`noc build compiler` 產物執行 `version` 印出版本；抽 `tests/` SHS 子集跑 L4。
 
 **⑫ 本輪不收（留待 M5 後續）**
