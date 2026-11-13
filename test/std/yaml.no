@@ -793,7 +793,10 @@ t-helper-prims = () {
     runner.eq(yaml.to-i64('x'), -1, 'to-i64 bad')
     runner.eq(yaml.to-i64(''), -1, 'to-i64 empty')
     runner.f64-eq(f-of(yaml.to-f64('1.5')), 1.5, 0.0001, 'to-f64 ok')
-    eq-str(s-of(yaml.to-f64('abc')), '<nil>', 'to-f64 bad nil')
+
+    ; to-f64 回的是 ?f64 ⇒ 用 f-of（?f64 哨兵 -12345）斷言 nil，
+    ; 不能拿 s-of（?str）去接：兩者的 option 佈局不同（見 test/README §5.2n）
+    runner.f64-eq(f-of(yaml.to-f64('abc')), -12345.0, 0.0001, 'to-f64 bad nil')
     ue = yaml.unescape-double('a\\nb')
     ue: {
         ok -> runner.eq(it.len-bytes(), 3, 'unescape doubles nl')

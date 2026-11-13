@@ -385,6 +385,415 @@ drv.build-ll = (src []byte) (r str) {
     r = b.str()
 }
 
+; ═══════════════════════════════════════════════════════════════════
+; ⑭ 切片 2（2026-11-13）：`#` 模組導入解析——整包載入器（入口 → 依序模組清單）
+;   路徑解析（④）：`# /X` 去前導 `/`；尾 `.sb` ⇒ `.no`；尾 `/` ⇒ `main.no`；否則補 `.no`。
+;   ⚠️ 僅處理 compiler 單包；跨包 / workspace 合併留待 M5 後續（⑫）。
+;   遞迴 + cycle 檢測：祖先鏈 pathchain（str，`:`-分隔）防真循環；r 清單兼作 diamond 去重；cyc 截斷。
+;   本件只回傳「依序模組路徑清單（str，`:`-分隔，前置 cycle 旗標 0:/1:）」，
+;   不含 (ast, root)——後者留待切片 2b。
+;
+;   ⚠️ 本輪實踩的兩個 self-host codegen / API 坑（都修掉了）：
+;   ① bug #85 兄弟模組常數陷阱：drv.build-package 內部呼叫 ps.parse，而 ps.parse 依賴的兄弟模組
+;      （lx/tok/asp/…）頂層常數，只有在「入口檔直接 import」這些模組時才會生成（drv-build-test.no:11
+;      同款註釋）。若入口只 import drv（或只 import ast+ps），codegen 會報
+;      `func parse: consumer reads value 0`。⇨ 所有呼叫 build-package 的測試必須直接 import 全套
+;      傳遞依賴（與 drv-build-test.no 同款 import 區塊）。
+;   ② AST 子節點迭代 API：kid-at 吃「扁平 kids 陣列的位置索引」，不是 (node, k)。必須先 nd-at 取
+;      rootnd.kid0（基址）與 rootnd.nkid（子數），再 kid-at(t, base + k)。原 3 參版 kid-at(t, root, k)
+;      會把 root 當位置索引、k 被吞，讀到錯節點甚至越界 → SIGTRAP（trace/BPT trap）。
+;   ③ cycle 檢測：早期用 seen 集（任何重複都報 cycle）會對 diamond（A→B, A→C→B）誤報 cycle；
+;      改為 pathchain（祖先鏈）參數，只在「重訪節點落在祖先鏈上」時才報真循環。
+;   設計權衡（仍成立）：全程 str 串接累積（r / pathchain），不對 []str 下標；build-package 回傳單一
+;     str，bp-walk 回傳單一 bpctx struct（欄位皆 str / bool）；membership 用 str.contains。
+; ═══════════════════════════════════════════════════════════════════
+
+; bp-walk 共享上下文（str 欄位，避免 []str 下標）：
+;   r：依序模組路徑清單，`:`-分隔（首項前也有 `:`）；同時兼作「已處理」集合（diamond 去重）
+;   cyc：本子樹是否觸發 cycle
+;   ⚠️ cycle 檢測改用「祖先鏈 pathchain」參數（見 bp-walk），不靠 seen：
+;      重複訪問若落在祖先鏈上＝真循環；若只是已在 r 清單中＝diamond（無環，跳過不報）。
+bpctx {
+    r   str
+    cyc bool
+}
+
+; 入口 .no 檔路徑 → 依賴順序的模組路徑清單（`:`-分隔，前置 cycle 旗標 0:/1:）。
+;   path: 入口檔（相對 cwd = workspace 根）
+;   r: `0:`/`1:` + `:`-分隔模組路徑（入口在最前）；'' = 失敗（已 eprint）
+drv.build-package = (path str) (r str) {
+    c = bpctx{
+        r: ''
+        cyc: false
+    }
+    c = drv.bp-walk(path, c, ':')
+    flag = '0'
+    c.cyc == true -> flag = '1'
+    ; 輸出：`0:`/`1:` + `:`-分隔模組路徑（入口在最前）
+    result = flag - ':' - c.r
+    r = result
+}
+
+; 整包結果是否含某模組路徑（str 子串比對，免 []str 下標）
+drv.pkg-contains = (mods str, want str) (r bool) {
+    wsep = ':' - want - ':'
+    r = mods.contains(wsep)
+}
+
+; 遞迴走訪：把 path 及其依賴依序塞進 ctx.r；祖先鏈 pathchain 做 cycle 偵測，r 清單兼作 diamond 去重。
+;   ⚠️ 所有旗標頂層初始化、條件賦值走直線（self-host codegen 單趟配置器陷阱，見 ⑭ ③ 追記）。
+;   ⚠️ bug #85 繞行：每個 concat / call 結果先綁到中間變數再使用（含 base + k 這類直接表達式運算元）。
+;   ⚠️ AST 子節點迭代：kid-at 吃「扁平 kids 陣列的位置索引」，不是 (node, k)。必須先 nd-at 取
+;      rootnd.kid0（基址）與 rootnd.nkid（子數），再 kid-at(t, base + k)。原 3 參版 kid-at(t, root, k)
+;      會把 root 當位置索引、k 被吞，讀到錯節點甚至越界 → SIGTRAP。
+drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
+    r = ctx
+    probe = ':' - path - ':'
+    ; cycle：path 已在祖先鏈上 ⇒ 真循環（A→B→A）
+    onstack = pathchain.contains(probe)
+    onstack == true -> {
+        r.cyc = true
+        return
+    }
+    ; diamond：path 已處理過（在 r 清單中）⇒ 跳過重複，不報 cycle（A→B, A→C→B）
+    done = r.r.contains(probe)
+    done == true -> {
+        return
+    }
+    ; 加入依序清單（DFS 前序，入口最先）
+    newr = r.r - path
+    r.r = newr - ':'
+    ; 讀檔
+    c = fs.read-bytes(path)
+    ok-read = false
+    src []byte = with-cap(0)
+    c: {
+        ok -> {
+            src = it
+            ok-read = true
+        }
+        nil -> {
+            ok-read = true
+        }
+        err -> {
+        }
+    }
+    ok-read == false -> {
+        eprint(NOC-NAME - ': cannot read ' - path)
+        return
+    }
+    ; parse
+    t = ast.make()
+    p = ps.new(src)
+    root = ps.parse(t, p)
+    ; 遍歷根節點的子節點，找 K-USE-STATEMENT
+    rootnd = ast.nd-at(t, root)
+    nk = rootnd.nkid
+    base = rootnd.kid0
+    k = 0
+    (k < nk) {
+        ch = ast.kid-at(t, base + k)
+        kind = ast.kind-at(t, ch)
+        kind == asp.K-USE-STATEMENT -> {
+            sid = ast.slot-at(t, ch, 0)
+            imp = ast.str-at(t, sid)
+            file = drv.bp-resolve(imp)
+            childchain = pathchain - probe
+            sub = drv.bp-walk(file, r, childchain)
+            subcyc = sub.cyc
+            subcyc == true -> r.cyc = true
+            r = sub
+        }
+        k = k + 1
+    }
+}
+
+; `# <imp>` 的 imp 路徑 → 實體 .no 檔路徑（④）
+drv.bp-resolve = (imp str) (file str) {
+    file = imp
+    imp.starts-with('/') -> file = imp.slice-bytes(1, imp.len-bytes())
+    file.ends-with('.no') -> return
+    file.ends-with('.sb') -> {
+        file = file.slice-bytes(0, file.len-bytes() - 3) + '.no'
+        return
+    }
+    file.ends-with('/') -> {
+        file = file + 'main.no'
+        return
+    }
+    file = file + '.no'
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; ⑭ 切片 3（2026-11-13）：全域簽名表 + 單 `agg` struct 註冊（⑤ B／C）
+;   目標：整包所有模組的結構體定義登記進【同一份】agg（共享結構體名→sid 表），
+;        每個頂層函式以 `mod.fn` 為 key 登記進【同一份】簽名表 sg；
+;        供切片 4（多模組 body 串接＋`@<mod.fn>` 命名）與切片 5（dotted-call 查全域表）使用。
+;   設計對照（⑭ ⑪ ③）：本件即「h2m-sig-add 擴充為帶 mod 限定、key = mod.fn」的落地；
+;       為不動既有 h2m-lower-program 單模組路徑（保 drv-build-test 63/63 零回歸），
+;       mod 限定在呼叫點拼成完整 key 字串傳入 h2m-sig-add（fname 即 `mod.fn`），語意等價。
+;
+;   ⚠️ 兩遍結構：先【全部】模組 struct-register（跨模組結構體名都就位），再【全部】func-sig
+;      抽取——避免「消費者模組先於其依賴模組被處理」時 h2m-func-sig 查不到結構體名（e.g. drv 先於 ast）。
+;   ⚠️ 本件【只抽取簽名 + 登記結構體名→sid】，不做欄位型別解析（stft）與 emit；
+;      欄位型別解析（h2m-struct-resolve 須按各模組 t 跑）與 emit 留待切片 4/5。
+;   ⚠️ bin/no codegen 坑（同切片 2 註 ①）：入口必須直接 import 全套傳遞依賴（drv/ast/ps/asp/lx/tok/
+;      mir/cg/cg-runtime/cg-rc/h2m/link/util·sb/diag/ck/ck-sig），否則 h2m.* 頂層常數不生成、
+;      pkg-sigs 內部 h2m-* 呼叫 codegen 失敗（consumer reads value 0）。
+;   ⚠️ key 構造坑（實踩）：自舉各模組函式名前綴慣例不一致——`drv.build-package`/`ps.parse`/`ast.str-at`
+;      用【點號】前綴，`h2m-sig-add`/`ps-parse-use` 用【連字】前綴。故 key 先剝掉 `mod.` 或 `mod-` 模組
+;      前綴得 short，再組 `mod.short` 規範 key，與切片 5 點號呼叫 emit `call @<mod.fn>` 查表 key 對齊。
+;   ⚠️ `drv.*` 模組函式暫不入表（已知自舉 parser 缺陷）：`drv.no` 用 `drv.x = (...)` 點號名定義，
+;      自舉 `ps.parse` 對此類定義的 signature 計數有 bug（c5 多算 1），致 h2m-func-sig 全判 bad=1 略過。
+;      裸名模組（ps/ast/h2m/lx/…）不受影響，切片 3 驗收（ps.parse/ast.str-at）達標；要讓
+;      `drv.dispatch`→`ps.parse` 這類跨模組點號呼叫通，須先修該 parser 計數 bug（切片 5 前置）。
+; ═══════════════════════════════════════════════════════════════════
+
+; 讀模組檔 → 原始位元組（option 錯誤靜默成空，由呼叫方判空）
+drv.read-mod = (f str) (src []byte) {
+    c = fs.read-bytes(f)
+    ok-read = false
+    c: {
+        ok -> {
+            src = it
+            ok-read = true
+        }
+        nil -> {
+            ok-read = true
+        }
+        err -> {
+        }
+    }
+    ok-read == false -> {
+        eprint(NOC-NAME - ': cannot read ' - f)
+        return
+    }
+}
+
+; 模組檔路徑 → 模組短名（basename 去 .no/.sb）：compiler/src/ps.no → ps；compiler/src/util/sb.no → sb
+drv.mod-name = (f str) (r str) {
+    n = f.len-bytes()
+    last = -1
+    k = 0
+    (k < n) {
+        c = f.slice-bytes(k, k + 1)
+        c == '/' -> last = k
+        #{overflow=wrap}
+        k = k + 1
+    }
+    base = f.slice-bytes(last + 1, n)
+    bn = base.len-bytes()
+    r = base
+    bn >= 3 -> {
+        suf = base.slice-bytes(bn - 3, bn)
+        suf == '.no' -> r = base.slice-bytes(0, bn - 3)
+        suf == '.sb' -> r = base.slice-bytes(0, bn - 3)
+    }
+}
+
+; `:`-分隔（帶前導 `:`）的模組清單 → []str；空段跳過
+drv.pkg-split = (s str) (r []str) {
+    r = with-cap(32)
+    n = s.len-bytes()
+    start = 0
+    i = 0
+    (i < n) {
+        c = s.slice-bytes(i, i + 1)
+        c == ':' -> {
+            seg = s.slice-bytes(start, i)
+            seg.len-bytes() > 0 -> r.push(seg)
+            start = i + 1
+        }
+        #{overflow=wrap}
+        i = i + 1
+    }
+    last = s.slice-bytes(start, n)
+    last.len-bytes() > 0 -> r.push(last)
+}
+
+; 入口 .no 檔 → 整包全域簽名表（key = `mod.fn`，存於 sg.fname）。
+;   單一 agg 共享整包結構體名→sid；單一 sg 收整包函式簽名。
+;   path: 入口檔（相對 cwd = workspace 根）
+;   sg: 全域簽名表；空表（len 0）＝失敗（已 eprint）
+drv.pkg-sigs = (path str) (sg h2m-sigs) {
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    pkg = drv.build-package(path)
+    body = pkg.slice-bytes(1, pkg.len-bytes())
+    files = drv.pkg-split(body)
+    ; pass 1：全部模組 struct 名→sid 登記進共享 agg（跨模組結構體表統一）
+    f <- files: {
+        src = drv.read-mod(f)
+        t = ast.make()
+        p = ps.new(src)
+        root = ps.parse(t, p)
+        rootnd = ast.nd-at(t, root)
+        nk = rootnd.nkid
+        base = rootnd.kid0
+        k = 0
+        (k < nk) {
+            kid = ast.kid-at(t, base + k)
+            kk = ast.nd-at(t, kid)
+            kk.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
+            #{overflow=wrap}
+            k = k + 1
+        }
+    }
+    ; pass 2：函式簽名抽取，key = mod.fn
+    f <- files: {
+        mod = drv.mod-name(f)
+        src = drv.read-mod(f)
+        t = ast.make()
+        p = ps.new(src)
+        root = ps.parse(t, p)
+        rootnd = ast.nd-at(t, root)
+        nk = rootnd.nkid
+        base = rootnd.kid0
+        k = 0
+        (k < nk) {
+            kid = ast.kid-at(t, base + k)
+            kk = ast.nd-at(t, kid)
+            kk.kind == asp.K-FUNCTION-DEFINITION -> {
+                nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
+                bd == 0 -> {
+                    ; 模組源碼函式名慣例不一致：有的帶 `mod.` 點號前綴（drv.build-package / ps.parse /
+                    ;   ast.str-at），有的帶 `mod-` 連字前綴（h2m-sig-add / ps-parse-use）。
+                    ;   剝掉模組前綴（點或連字）得 short，再組 `mod.short` 規範 key，
+                    ;   與切片 5 點號呼叫 emit `call @<mod.fn>` 的查表 key 對齊；無前綴則 short = nm。
+                    short = nm
+                    pre-dot = mod - '.'
+                    pre-hyp = mod - '-'
+                    nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
+                    nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
+                    key = mod - '.' - short
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, rt, ap, dp)
+                }
+            }
+            #{overflow=wrap}
+            k = k + 1
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; ⑭ 切片 4（2026-11-13）：整包降級——多模組 body 串接 + @<mod>.<fn> 命名（⑤ D／⑦）
+;   目標：整包所有模組降成【同一份】.ll，函式以 @<mod.fn> 命名（入口 main 仍 @main），
+;         body 串接，供 opt -passes=verify 與 clang 連結。
+;   設計對照（⑭ ⑪ ④）：本件即「逐模組呼叫 h2m-lower-func、共享 agg、emit @<mod.fn>」的落地；
+;        為不動既有 h2m-lower-program 單模組 emit（保 drv-build-test 63/63 零回歸），
+;        整包路徑【不】走 h2m-lower-program（它會重複登記 struct、重複 emit 宣告、且每模組一份），
+;        改由本函數統一：① 全模組 struct 登記進共享 agg；② 逐模組用自身 t 解欄位型別；
+;        ③ 全域 struct 宣告 emit 一次；④ 逐模組建本模組 sg、emit 各函式（入口額外合成 main）。
+;
+;   ⚠️ 共享 agg × 逐模組解：struct 欄位型別節點在各模組自己的 AST，故解時必須用「該模組的 t」
+;      （h2m-struct-resolve-range 按模組區間解，避免跨模組讀錯節點）。
+;   ⚠️ 函式名即 h2m-func-sig 回傳名：dot 前綴模組（ps.parse / ast.str-at）天然 emit @ps.parse；
+;      連字前綴（h2m-sig-add）emit @h2m-sig-add；drv.* 因 parser 缺陷（切片 3 註）全 bad=1 不產碼。
+;   ⚠️ 跨模組呼叫（drv.dispatch → ps.parse）留待切片 5；本件只做 body 串接與命名，
+;      故入口 main 若含跨模組呼叫會計 unsup（真 compiler/main.no 即如此）——切片 5 前置修 parser 後才通。
+;   ⚠️ bin/no codegen 坑（同切片 2／3）：呼叫 drv.pkg-ll 的測試必須直接 import 全套傳遞依賴，
+;      否則 drv.* 內部 h2m-*／ast.*／ps.* 呼叫 codegen 失敗（consumer reads value 0）。
+; ═══════════════════════════════════════════════════════════════════
+
+; 入口 .no 檔 → 整包完整 LLVM IR 模組文字（多模組 body 串接、函式 @<mod.fn>、入口 @main）。
+;   path: 入口檔（相對 cwd = workspace 根）
+;   r: 完整 .ll（prelude + 全域 struct 宣告 + 各模組函式）；'' = 失敗（已 eprint）
+drv.pkg-ll = (path str) (r str) {
+    r = ''
+    pkg = drv.build-package(path)
+    body0 = pkg.slice-bytes(1, pkg.len-bytes())
+    files = drv.pkg-split(body0)
+    nfiles = files.len()
+    agg = h2m-new()
+    ; pass 1：全模組 struct 登記進共享 agg，逐模組用自身 t 解欄位型別（避免跨 AST 讀錯節點）
+    k = 0
+    (k < nfiles) {
+        f = files[k]
+        src = drv.read-mod(f)
+        t = ast.make()
+        p = ps.new(src)
+        root = ps.parse(t, p)
+        nd = ast.nd-at(t, root)
+        nk = nd.nkid
+        base = nd.kid0
+        before = agg.stn.len()
+        m = 0
+        (m < nk) {
+            kid = ast.kid-at(t, base + m)
+            kd = ast.nd-at(t, kid)
+            kd.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
+            #{overflow=wrap}
+            m = m + 1
+        }
+        after = agg.stn.len()
+        after > before -> h2m-struct-resolve-range(agg, t, before, after)
+        #{overflow=wrap}
+        k = k + 1
+    }
+    ; 全域結構體宣告一次（§11 B10 唯一裝配點，多模組不可分散 emit 否則 redefinition）
+    decls = h2m-struct-decls(agg)
+    ; pass 2：逐模組 emit 各函式（入口額外合成 main），body 串接
+    body = ''
+    body = body - decls
+    ; 整包 emit-once：同名函式只產一次（自舉源碼存在重複定義，如 ps.no 的 ps-is-builtin-type
+    ;   在 3434 與 7321 各定義一次；整包路徑首次完整降級 ps.no 才暴露。emit-once 兼顧跨模組同名碰撞。
+    emitted = ':'
+    k2 = 0
+    (k2 < nfiles) {
+        f = files[k2]
+        src = drv.read-mod(f)
+        t = ast.make()
+        p = ps.new(src)
+        root = ps.parse(t, p)
+        ; 本模組 sg（簽名表；切片 4 不跨模組呼叫，逐模組即可）
+        sg = h2m-sigs-new()
+        nd = ast.nd-at(t, root)
+        nk = nd.nkid
+        base = nd.kid0
+        m = 0
+        (m < nk) {
+            kid = ast.kid-at(t, base + m)
+            kd = ast.nd-at(t, kid)
+            kd.kind == asp.K-FUNCTION-DEFINITION -> {
+                nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
+                bd == 0 -> h2m-sig-add(sg, nm, rt, ap, dp)
+            }
+            #{overflow=wrap}
+            m = m + 1
+        }
+        ; 入口模組：合成 main（其餘模組直接用原 Program root）
+        target = root
+        k2 == 0 -> target = h2m-synth-main(t, root)
+        tnd = ast.nd-at(t, target)
+        tnk = tnd.nkid
+        tbase = tnd.kid0
+        m2 = 0
+        (m2 < tnk) {
+            kid = ast.kid-at(t, tbase + m2)
+            kd = ast.nd-at(t, kid)
+            kd.kind == asp.K-FUNCTION-DEFINITION -> {
+                nm, _, _, _, _ = h2m-func-sig(t, agg, kid)
+                key = ':' - nm - ':'
+                emitted.contains(key) == false -> {
+                    one = h2m-lower-func(t, agg, sg, kid)
+                    one != '' -> {
+                        body = body - one - '\n'
+                        emitted = emitted - key
+                    }
+                }
+            }
+            #{overflow=wrap}
+            m2 = m2 + 1
+        }
+        #{overflow=wrap}
+        k2 = k2 + 1
+    }
+    r = cg-runtime-prelude-full() - '\n' - body - '\n'
+    agg.unsup > 0 -> {
+        eprint(NOC-NAME - ': unsupported constructs: ' - agg.unsup.to-str() - ' (pkg-ll)')
+    }
+}
+
 ; 取 argv 第 i 項（越界／nil ⇒ ''）
 ; i: 下標
 ; r: 引數文字

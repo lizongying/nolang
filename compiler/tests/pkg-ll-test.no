@@ -1,0 +1,91 @@
+; pkg-ll-test.no — ⑭ 切片 4 閘：整包降級 → 多模組 body 串接 + @<mod>.<fn> 命名 + @main 合成
+;
+; 執行：
+;   ./bin/no run compiler/tests/pkg-ll-test.no
+;   opt -passes=verify -disable-output /tmp/m5d.ll        # 外部 LLVM 驗證（見下方 ④e 說明）
+;
+; 驗收口徑（⑭ ⑪ ④，as-built 回填；設計原列「@ps.parse/@ast.str-at/opt rc=0」為預期，待回填）：
+;   ✅ 機制：同一份 .ll 串接 ps/h2m/lx/ast(nd)/ck/cg-runtime 多模組 body；
+;      @<mod>.<fn> 命名（連字形式 @ps-bump 等已實測發射；點號形式 ps.parse/ast.str-at
+;      經全域簽名表 key 證明命名接線正確）；@main 由 drv.pkg-ll 合成。
+;   ✅ IR 語法合法：cg-emit-cfg-t 字串全域改為 [N x i8] [i8 ...] 整數陣（s99o），opt 不再報
+;      "expected end of array constant" / "constant expression type mismatch" / "redefinition"；
+;      本測試以 process.cmd 呼叫 opt -passes=verify，斷言無上述「語法錯誤」。
+;   ⏳ 延後（h2m 能力缺口，切片 5+）：@ps.parse/@ast.str-at 函式「本體」進 .ll 且 opt rc=0。
+;      根因：h2m 當前僅能降級極少數函式本體（整包共 5749 unsupported），
+;      ps.parse/ast.str-at 本體含 h2m 尚未支援的構造 ⇒ h2m-lower-func 回 '' 不發射；
+;      其被呼叫者（h2m-byte-at 等）亦未發射 ⇒ opt 報 "use of undefined value"。
+;      此為 h2m 降級能力缺口，非串接 bug；stub 偽造 rc=0 違反設計 ⑨ 誠實邊界，故不取。
+;
+; ⚠️ 直接導入所有傳遞依賴：drv.pkg-ll 內部呼叫 h2m-struct-register / h2m-func-sig / ast.* / ps.*，
+;   這些 self-host 函式的頂層常量只有在入口檔直接 import 時才會生成（bug #85）。
+; ⚠️ 訊息一律用單引號字串；nolang 的 "..." 是 char 字面量，不是字串。
+
+# /test/runner.is-true
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/drv
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+
+ll = drv.pkg-ll('compiler/tests/pkg-ll-entry.no')
+print('pkg-ll: produced ' - ll.len-bytes().to-str() - ' bytes of IR')
+
+; 切片 4 驗收（⑭ ⑪ ④，as-built）
+; ④a @main 合成（入口無頂層陳述 ⇒ 合成空 main，LLVM/C runtime 約定必須是 @main）
+runner.is-true(ll.contains('@main'), 'pkg-ll .ll contains @main (synthesized)')
+
+; ④b 多模組 body 串接：至少 4 個不同模組的函式進同一份 .ll
+runner.is-true(ll.contains('@ps-bump'), 'pkg-ll concatenates ps module (@ps-bump)')
+runner.is-true(ll.contains('@h2m-lower-module'), 'pkg-ll concatenates h2m module (@h2m-lower-module)')
+runner.is-true(ll.contains('@lx-in-range'), 'pkg-ll concatenates lx module (@lx-in-range)')
+runner.is-true(ll.contains('@zero-nd') || ll.contains('@nd-put'), 'pkg-ll concatenates ast module (@nd-* / @*-ast)')
+runner.is-true(ll.contains('@nolang_rc_alloc') || ll.contains('@str_eq'), 'pkg-ll concatenates cg-runtime helpers')
+
+; ④c @<mod>.<fn> 命名（兩種形式）
+; 連字形式：實測發射 @ps-bump ⇒ 命名接線正確（點號前綴 → @mod.fn，連字前綴 → @mod-fn）
+runner.is-true(ll.contains('@ps-bump'), 'pkg-ll emits @<mod>-<fn> hyphen naming')
+; 點號形式：全域簽名表 key 證明 ps.parse / ast.str-at 命名接線正確（本體降級待切片 5+）
+sg = drv.pkg-sigs('compiler/tests/pkg-ll-entry.no')
+runner.is-true(h2m-sig-find(sg, 'ps.parse') >= 0, 'pkg-ll dot naming wired: ps.parse in global sig table')
+runner.is-true(h2m-sig-find(sg, 'ast.str-at') >= 0, 'pkg-ll dot naming wired: ast.str-at in global sig table')
+
+; ④d IR 語法合法（s99o 字串全域修復）：opt 不得報任何「語法/型別」錯誤
+;   （"use of undefined value" 是 h2m 能力缺口的語義錯誤，允許出現，不在此斷言範圍）
+optargs []str = []
+optargs.push('-passes=verify')
+optargs.push('-disable-output')
+optargs.push('/tmp/m5d.ll')
+oo, oe, ocode, oerr = process.cmd('opt', optargs, '', '', [], 0, false)
+syntax-bad = oe.contains('expected ') || oe.contains('redefinition of') || oe.contains('type mismatch')
+runner.is-true(!syntax-bad, 'pkg-ll opt: no SYNTAX errors (only undefined-value allowed)')
+print('pkg-ll opt rc=' - ocode.to-str() - ' (undefined-value refs = h2m capability gap, deferred to slice 5+)')
+oe.len-bytes() > 0 -> print('pkg-ll opt stderr (first 240 chars): ' - oe.slice-bytes(0, 240))
+
+; 落到磁碟供外部 opt / clang 檢視
+w = fs.write-bytes('/tmp/m5d.ll', ll.to-bytes())
+w: {
+    ok -> { print('pkg-ll: wrote /tmp/m5d.ll') }
+    nil -> { eprint('pkg-ll: write-bytes returned nil') }
+    err -> { eprint('pkg-ll: write-bytes error') }
+}
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+    -> exit(0)
+}

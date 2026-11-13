@@ -396,7 +396,10 @@ import (
 // 舊 blob 沒有這個位元，重用會讓 str / txt / vec / arr 的佈局聲明重新被當成普通
 // struct 參與模組前綴（改名成 `txt.txt`、方法改名成 `txt.txt.to-str`、型別引用
 // 改寫成 `txt.txt`）⇒ `unknown callee txt.to-str` 與 `%txt_txt` 全面復發。
-const ASTVersion = "2026-11-12.2"
+// 2026-11-13.1：FuncVarTypes 的 blob 口徑改為「解析期快照」（見 semviews.go
+// 坑 7）。舊 blob 帶的是 lowerProgram 跑完的最終表，重用會讓重建走查起點多出
+// 推斷條目 ⇒ ?T 推斷分叉（std/bigint.no / dom.no / yaml.no）。故必 bump。
+const ASTVersion = "2026-11-13.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

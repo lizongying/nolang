@@ -78,12 +78,20 @@ func TestCachedASTLowersToIdenticalHIR(t *testing.T) {
 
 	// Anti-vacuity: a glob that silently matched nothing, or a corpus that
 	// turned out to be all syntax errors, would make this gate pass forever.
-	// Floor is ~20% below the 311 top-level files the merged corpus holds.
-	if checked < 250 {
-		t.Fatalf("only %d files round-tripped (%d skipped); expected the bulk of the 311-file corpus", checked, skipped)
+	//
+	// 門檻用**比例**，不用寫死的檔數。這裡原本是 `checked < 250`，註釋說語料
+	// 有 311 檔；但 `tests/*.no` 現在只剩 174 檔（語料整理時搬走了一批），於是
+	// 這條門檻永遠紅，而紅的理由跟它要守的東西無關 —— 「全部對拍成功」被讀成
+	// 「語料太小」。比例式門檻對語料增刪免疫，仍然擋得住「整批解析失敗」。
+	if len(files) < 50 {
+		t.Fatalf("corpus glob matched only %d files; expected the bulk of tests/", len(files))
+	}
+	if checked < len(files)*4/5 {
+		t.Fatalf("only %d of %d files round-tripped (%d skipped); expected the bulk of the corpus",
+			checked, len(files), skipped)
 	}
 	// Only claim a clean sweep when there was one — the count alone is not the
-	// verdict (a run can round-trip 311 files and still diverge on 2 of them).
+	// verdict (a run can round-trip every file and still diverge on 2 of them).
 	if diverged == 0 {
 		t.Logf("%d files lowered identically from a decoded AST (%d skipped)", checked, skipped)
 	}

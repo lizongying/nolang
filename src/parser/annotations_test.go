@@ -391,8 +391,15 @@ func TestAnnotationsLiveOnAST(t *testing.T) {
 		})
 	}
 
-	if checked < 400 {
-		t.Fatalf("only %d files parsed cleanly; expected the bulk of the corpus", checked)
+	// 門檻用**比例**，不用寫死的檔數。原值是 `checked < 400`（當時語料更大），
+	// 但語料整理後 `tests/*.no` 174 檔 + `src/std/**` 約 119 檔，門檻永遠紅，
+	// 且紅的理由與它要守的東西無關 —— 「語料全部解析成功」被讀成「語料太小」。
+	// 比例式門檻對語料增刪免疫，仍擋得住「整批解析失敗」這種退化。
+	if len(files) < 50 {
+		t.Fatalf("corpus glob matched only %d files; expected the bulk of tests/ + src/std", len(files))
+	}
+	if checked < len(files)*4/5 {
+		t.Fatalf("only %d of %d files parsed cleanly; expected the bulk of the corpus", checked, len(files))
 	}
 	if annotatedNodes < 500 {
 		t.Fatalf("only %d annotated nodes found across %d files; the node-field write "+

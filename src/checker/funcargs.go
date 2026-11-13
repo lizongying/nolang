@@ -906,6 +906,203 @@ func resolveExprType(expr parser.Expression, varTypes map[string]string, structF
 	}
 }
 
+// resolveArgExprType 在 resolveExprType 之上補一層「實參本身是一次呼叫」的解析。
+//
+// 為什麼需要：resolveExprType 的 default 分支呼叫的是
+// inferExprType(expr, varTypes, nil, "")，函式回傳型別表刻意傳 nil。於是
+// **任何使用者函式/方法的呼叫結果**當實參時都解析成空字串，呼叫端兩道檢查
+// （?T 裸傳檢查 3604icnf、型別相容檢查 6fgg3htw）雙雙 `continue` 跳過。
+//
+// 後果不只是漏報，而是把錯誤推到 codegen：`?f64` 傳給 `?str` 參數時，
+// `?f64` 的 LLVM 佈局是 `{ i8, [1 x i64] }`、`?str`（`%str-long` 內聯）是
+// `{ i8, [2 x i64] }`，emit 到 `store %option__x25str_x2dlong %lv.XXXX` 才由
+// LLVM 驗證器擋下，訊息是 "different aggregate layouts cannot be passed by
+// pointer"，完全看不出是哪一行原始碼寫錯。
+//
+// 最小復現（2026-11-12 實測）：
+//
+//	p = (v str) { print(v) }
+//	q = () (out i64) { out = 42 }
+//	p(q())        ; 檢查期靜默通過，執行期印出 42（把指標當 i64 讀）
+//
+// 呼叫的結果型別在檢查期其實**已知** —— sigs 就是被呼叫者的簽名表，只是沒被
+// 傳進 resolveExprType。這裡補上查表，找不到或候選互相矛盾時仍回空字串
+// （維持原有的「不確定就沉默」契約）。
+func resolveArgExprType(arg parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string) string {
+	if t := resolveExprType(arg, varTypes, structFields); t != "" {
+		return t
+	}
+	arg = ungroupExpr(arg)
+	call, ok := arg.(*parser.CallExpression)
+	if !ok || call.Function == nil {
+		return ""
+	}
+	return calleeResultType(call, sigs, varTypes)
+}
+
+// calleeResultType 解析一次呼叫的第一回傳型別，兩張表依序查：
+//  1. sigs —— 本 program 的簽名表，含 build 時已合併進來的模組；
+//  2. std / Go builtin 簽名表 —— 單檔 vet、或 std 尚未合併時的唯一來源
+//     （`it.obj-key(3)` 這種跨模組方法呼叫就只在這張表裡）。
+//
+// 上一層的 resolveArgExprType 只在呼叫端拿到**空**型別時才會走到這裡，所以
+// 這條路徑不會覆蓋 resolveExprType 已有的結論。
+func calleeResultType(call *parser.CallExpression, sigs map[string]*funcSig, varTypes map[string]string) string {
+	if t := funcSigFirstReturnType(lookupCalleeSig(call, sigs, varTypes)); t != "" {
+		return t
+	}
+	return stdCalleeResultType(call, varTypes)
+}
+
+// lookupCalleeSig 依呼叫形態在 sigs 裡找被呼叫者的簽名，找不到回 nil。
+//
+// 三種形態（與 lookupReturnCount 同口徑）：
+//  1. 裸名呼叫 f(...)          ⇒ sigs["f"]
+//  2. 具型別接收者的方法        ⇒ sigs[<接收者基底型別>.<方法>]，
+//     例如 `it.obj-key(3)`，it 的型別是 ?json ⇒ sigs["json.obj-key"]
+//  3. 模組限定呼叫 m.f(...)     ⇒ sigs["m.f"]（如 yaml.to-f64）
+//
+// 接收者型別查不到時（`it` 這類 match 綁定在部分走查路徑沒有登記型別），
+// 退化为「方法名後綴唯一」查表：只有全部候選的回傳型別一致才採用，有歧義
+// 就回 nil —— 宁可沉默，也不要把別的結構體同名方法的回傳型別套上去。
+func lookupCalleeSig(call *parser.CallExpression, sigs map[string]*funcSig, varTypes map[string]string) *funcSig {
+	if call == nil || len(sigs) == 0 {
+		return nil
+	}
+	switch fn := call.Function.(type) {
+	case *parser.Identifier:
+		if sig, ok := sigs[fn.Value]; ok {
+			return sig
+		}
+		return nil
+	case *parser.DotExpression:
+		if recv, ok := fn.Receiver.(*parser.Identifier); ok {
+			recvType, isVar := varTypes[recv.Value]
+			if isVar {
+				if sig, ok := sigs[baseTypeNameForMethod(recvType)+"."+fn.Property]; ok {
+					return sig
+				}
+			} else if sig, ok := sigs[recv.Value+"."+fn.Property]; ok {
+				// 接收者不是變數 ⇒ 模組名（yaml.to-f64）。
+				return sig
+			}
+		}
+		return uniqueMethodSuffixSig(sigs, fn.Property)
+	default:
+		return nil
+	}
+}
+
+// uniqueMethodSuffixSig 在 sigs 裡找「.<method>」後綴的全部候選；只有當
+// 每個候選的第一回傳型別都相同時才回傳其中之一，否則回 nil。
+func uniqueMethodSuffixSig(sigs map[string]*funcSig, method string) *funcSig {
+	suffix := "." + method
+	var chosen *funcSig
+	ret := ""
+	seen := false
+	for k, sig := range sigs {
+		if !strings.HasSuffix(k, suffix) {
+			continue
+		}
+		t := funcSigFirstReturnType(sig)
+		if !seen {
+			chosen, ret, seen = sig, t, true
+			continue
+		}
+		if t != ret {
+			return nil
+		}
+	}
+	return chosen
+}
+
+// stdCalleeResultType 在 std / Go builtin 簽名表裡解析一次呼叫的回傳型別。
+// 鍵的拼法與 stdMethodParamTypes 一致（模組前綴、結構體方法雙鍵都在表裡）。
+func stdCalleeResultType(call *parser.CallExpression, varTypes map[string]string) string {
+	CollectStdModuleSignatures() // warm the caches (sync.Once)
+	switch fn := call.Function.(type) {
+	case *parser.Identifier:
+		return stdEntryResultType(fn.Value)
+	case *parser.DotExpression:
+		if recv, ok := fn.Receiver.(*parser.Identifier); ok {
+			if recvType, isVar := varTypes[recv.Value]; isVar {
+				return stdEntryResultType(baseTypeNameForMethod(recvType) + "." + fn.Property)
+			}
+			// 接收者不是變數：模組限定呼叫（yaml.to-f64 / json.parse）。
+			if t := stdEntryResultType(recv.Value + "." + fn.Property); t != "" {
+				return t
+			}
+		}
+		return stdMethodSuffixResultType(fn.Property)
+	}
+	return ""
+}
+
+// stdEntryResultType 查單一鍵的第一回傳型別；鍵在 std 表裡被多個模組同時
+// 定義（structMethodIsAmbiguous）時不採信。回傳型別仍帶未綁定的型別變數
+// （泛型 `?v`）時也回空字串 —— 那個型別不能拿來判相容性。
+func stdEntryResultType(key string) string {
+	if key == "" || structMethodIsAmbiguous(key) {
+		return ""
+	}
+	for _, results := range [][]string{entryResults(stdMethodSigsCache, key), entryResults(stdSigsCache, key)} {
+		if len(results) > 0 {
+			if mentionsTypeVar(results[0]) {
+				return ""
+			}
+			return results[0]
+		}
+	}
+	if bi := builtin.FindBuiltinMethod(key); bi != nil && len(bi.Return) > 0 {
+		t := bi.Return[0].String()
+		if mentionsTypeVar(t) {
+			return ""
+		}
+		return t
+	}
+	return ""
+}
+
+func entryResults(table map[string]StdSigEntry, key string) []string {
+	if e, ok := table[key]; ok {
+		return e.Results
+	}
+	return nil
+}
+
+// stdMethodSuffixResultType 在接收者型別未知時，按「.<method>」後綴在兩張
+// std 表裡找全部候選；只有候選的第一回傳型別全一致（且不歧義、不含型別
+// 變數）才採用，否則回空字串。
+func stdMethodSuffixResultType(method string) string {
+	if method == "" {
+		return ""
+	}
+	suffix := "." + method
+	ret := ""
+	seen := false
+	for _, table := range []map[string]StdSigEntry{stdMethodSigsCache, stdSigsCache} {
+		for k, e := range table {
+			if !strings.HasSuffix(k, suffix) || len(e.Results) == 0 {
+				continue
+			}
+			if structMethodIsAmbiguous(k) || mentionsTypeVar(e.Results[0]) {
+				return ""
+			}
+			if !seen {
+				ret, seen = e.Results[0], true
+				continue
+			}
+			if e.Results[0] != ret {
+				return ""
+			}
+		}
+	}
+	if !seen {
+		return ""
+	}
+	return ret
+}
+
 // isIntegerLiteral checks if an expression is an integer literal.
 func isIntegerLiteral(expr parser.Expression) bool {
 	_, ok := expr.(*parser.IntegerLiteral)
@@ -2244,7 +2441,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if pi >= len(sig.ParamTypes) || (i >= len(sig.ParamTypes) && variadicAt < 0) {
 							break
 						}
-						argType := resolveExprType(arg, varTypes, structFields)
+						argType := resolveArgExprType(arg, sigs, varTypes, structFields)
 						expectedType := sig.ParamTypes[pi].Type
 						if variadicAt >= 0 && pi == variadicAt {
 							expectedType = strings.TrimPrefix(expectedType, "[]")
@@ -2311,6 +2508,17 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 							continue
 						}
 						if !isArgTypeCompatible(expectedType, argType, arg) {
+							// resolveArgExprType 讓「實參是呼叫」也能解析出型別，
+							// 於是 `?byte` 傳給 i64 參數這類既有寫法第一次被看見
+							// （std 有 13 處 `.byte(i)` 直接當整數用）。這不是佈局
+							// 問題：codegen 對「?T → T（含整數拓寬、模組前綴）」
+							// 會自動取 payload，與 3604icnf 的隱式拆包禁令（同型
+							// `?T` → `T`）分屬兩條規則。維持原本的沉默，避免把
+							// 既有 5 個 std 模組打成編譯錯誤。
+							if ty.IsOptionRaw(argType) &&
+								isArgTypeCompatible(expectedType, ty.StripOptionRaw(argType), arg) {
+								continue
+							}
 							results = append(results, ValidateResult{
 								TraceID: "6fgg3htw",
 								Line:    e.Token.Line,

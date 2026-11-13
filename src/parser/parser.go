@@ -1865,6 +1865,14 @@ func (p *Parser) ParseProgram() *Program {
 	// 「'->' 臂不可達」診斷：解析期判定（parser/match_warn.go），兩條形態都跑，
 	// 且必須在降糖之前——它讀的是 SurfaceMatch 自己的語法欄位。
 	p.warnUnreachableMatchArms(program)
+	// 快取協定（見 semviews.go 坑 7）：在 LowerSurface 之前拍下解析期
+	// FuncVarTypes。ParseProgram 回傳的 program.Sem 仍帶「最終表」（所有編譯
+	// 消費者都讀它），但序列化時 detFromSem 只把這份快照放上線；解碼後由
+	// BuildSemViews 補跑 lowerProgram 把最終表算回來。
+	// SkipLowering 也要拍：該路徑沒有 lowerProgram，快照與最終表本就相同。
+	if program.Sem != nil {
+		program.Sem.funcVarTypesParsed = cloneFuncVarTypes(program.Sem.FuncVarTypes)
+	}
 	if !p.SkipLowering {
 		p.LowerSurface(program)
 	}

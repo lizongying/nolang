@@ -722,6 +722,55 @@ test-struct-field-all-commented = () {
 
 test-struct-field-all-commented()
 
+; ═══════════════════════════════════════════════
+; N. use 陳述解析：`# path[.symbol] [as alias]` / 裸 alias
+;    對應 Go parseUseStatement（stmt.go:626）；nolang-selfhost ⑭ slice 1 修正點。
+;    所有 want 由 L2 oracle（`bin/no run compiler/tests/use-probe.no`）實測取得。
+;    ⚠️ 裸 alias 的 token 在路徑結束時【未經消費】，不得併入 path
+;      （舊版 `(cond){}` 迴圈遇緊跟 IDENT 會重入並把 alias 接進 path）。
+; ═══════════════════════════════════════════════
+
+; 測試 use-fn-symbol
+test-use-fn-symbol = () {
+    got = parse-dump('# /compiler/src/drv.dispatch\n')
+    want = 'Program{}\n    UseStatement{path: /compiler/src/drv, function: dispatch, alias: }'
+    runner.is-true(got.eq-full(want), '# /compiler/src/drv.dispatch -> path=/compiler/src/drv, function=dispatch')
+}
+
+; 測試 use-path-only
+test-use-path-only = () {
+    got = parse-dump('# /compiler/src/asp\n')
+    want = 'Program{}\n    UseStatement{path: /compiler/src/asp, function: , alias: }'
+    runner.is-true(got.eq-full(want), '# /compiler/src/asp -> path-only, function empty')
+}
+
+; 測試 use-as-alias
+test-use-as-alias = () {
+    got = parse-dump('# /compiler/src/drv.dispatch as d\n')
+    want = 'Program{}\n    UseStatement{path: /compiler/src/drv, function: dispatch, alias: d, as: true}'
+    runner.is-true(got.eq-full(want), '# /compiler/src/drv.dispatch as d -> function=dispatch, alias=d, as=true')
+}
+
+; 測試 use-bare-alias
+test-use-bare-alias = () {
+    got = parse-dump('# /compiler/src/asp cfg\n')
+    want = 'Program{}\n    UseStatement{path: /compiler/src/asp, function: , alias: cfg}'
+    runner.is-true(got.eq-full(want), '# /compiler/src/asp cfg -> path NOT contaminated, alias=cfg')
+}
+
+; 測試 use-bare-alias-std
+test-use-bare-alias-std = () {
+    got = parse-dump('# std/err error\n')
+    want = 'Program{}\n    UseStatement{path: std/err, function: , alias: error}'
+    runner.is-true(got.eq-full(want), '# std/err error -> path=std/err, alias=error')
+}
+
+test-use-fn-symbol()
+test-use-path-only()
+test-use-as-alias()
+test-use-bare-alias()
+test-use-bare-alias-std()
+
 runner.summary()
 f = runner.failed-count()
 {

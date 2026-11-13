@@ -1366,7 +1366,7 @@
   'tar.entry.read': ['read', 'r', 'r']
   'tar.entry.size': ['size', 's', 's']
   'tar.entry.type': ['type', 't', 't']
-  'tar.open-gz': ['tar-open-gz', 'tog', 'tog']
+  'tar.open-gz': ['tar-open-gz', 'og', 'tog']
   'tar.tar.count': ['count', 'c', 'c']
   'tar.tar.entry': ['entry', 'e', 'e']
   'tar.tar.is-dir': ['is-dir', 'id', 'id']

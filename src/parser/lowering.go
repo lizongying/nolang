@@ -3469,13 +3469,14 @@ func hasOptionMatchArm(arms []MatchArm) bool {
 // alias (`mixed = num | str` ⇒ i64) is found because i64 is ALSO a direct
 // member of num.
 func (p *Parser) isUnionMemberName(name string) bool {
-	if name == "" || p.unionMembers == nil {
+	tbl := p.unionTable()
+	if name == "" || tbl == nil {
 		return false
 	}
 	// 前綴化具體型別（`bigint.bigint`）與裸名成員（`bigint`）末段一致即同一型別；
 	// 內建純量末段==原名，比對退化为精確匹配，无行为变化。
 	nameTail := matchTypeTail(name)
-	for _, members := range p.unionMembers {
+	for _, members := range tbl {
 		for _, m := range members {
 			if m == name || matchTypeTail(m) == nameTail {
 				return true

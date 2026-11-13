@@ -327,6 +327,14 @@ func detTypesMap(m map[string]map[string]string) map[string]map[string]*ty.Type 
 // ---- struct -> shadow ----
 
 func detFromSem(s *SemanticContext) detSem {
+	// 快取協定：FuncVarTypes 上線的是「解析期」快照，不是 lowerProgram 跑完
+	// 的最終表。理由見 semviews.go 坑 7：最終表同時是推斷走查的輸入與輸出，
+	// 拿它當重建起點會讓 std/bigint、dom、yaml 等檔的 ?T 推斷分叉。
+	// 手動建出、未經 ParseProgram 的 Program 沒有快照 ⇒ 回退到原本行為。
+	fvt := s.FuncVarTypes
+	if s.funcVarTypesParsed != nil {
+		fvt = s.funcVarTypesParsed
+	}
 	return detSem{
 		VarTypes:           detSortStrStr(detStrings(s.VarTypes)),
 		EnumVariants:       detSortStrStrs(s.EnumVariants),
@@ -334,7 +342,7 @@ func detFromSem(s *SemanticContext) detSem {
 		EnumVariantPayload: detSortStrMapStr(detStringsMap(s.EnumVariantPayload)),
 		EnumVariantFields:  detSortStrMapStrs(s.EnumVariantFields),
 		IfaceImpls:         detSortStrStrs(s.IfaceImpls),
-		FuncVarTypes:       detSortStrMapStr(detStringsMap(s.FuncVarTypes)),
+		FuncVarTypes:       detSortStrMapStr(detStringsMap(fvt)),
 		FuncDeclaredVars:   detSortStrMapBool(s.FuncDeclaredVars),
 		IdxLocalTypes:      detSortStrMapStr(detStringsMap(s.IdxLocalTypes)),
 		UnionMembers:       detSortStrStrs(s.UnionMembers),
@@ -342,6 +350,14 @@ func detFromSem(s *SemanticContext) detSem {
 }
 
 func detToSem(d detSem) *SemanticContext {
+	// FuncVarTypes 是重建起點（解析期表）；funcVarTypesParsed 另留一份獨立拷貝，
+	// 讓「解碼 → BuildSemViews（lowerProgram 改寫 FuncVarTypes）→ 再編碼」
+	// 仍逐位元組相同，也不會把衍生表誤當解析期表再次上線。
+	fvt := detTypesMap(detRebuildStrMapStr(d.FuncVarTypes))
+	parsed := cloneFuncVarTypes(fvt)
+	if parsed == nil {
+		parsed = make(map[string]map[string]*ty.Type)
+	}
 	return &SemanticContext{
 		VarTypes:           detTypes(detRebuildStrStr(d.VarTypes)),
 		EnumVariants:       detRebuildStrStrs(d.EnumVariants),
@@ -349,10 +365,11 @@ func detToSem(d detSem) *SemanticContext {
 		EnumVariantPayload: detTypesMap(detRebuildStrMapStr(d.EnumVariantPayload)),
 		EnumVariantFields:  detRebuildStrMapStrs(d.EnumVariantFields),
 		IfaceImpls:         detRebuildStrStrs(d.IfaceImpls),
-		FuncVarTypes:       detTypesMap(detRebuildStrMapStr(d.FuncVarTypes)),
+		FuncVarTypes:       fvt,
 		FuncDeclaredVars:   detRebuildStrMapBool(d.FuncDeclaredVars),
 		IdxLocalTypes:      detTypesMap(detRebuildStrMapStr(d.IdxLocalTypes)),
 		UnionMembers:       detRebuildStrStrs(d.UnionMembers),
+		funcVarTypesParsed: parsed,
 	}
 }
 

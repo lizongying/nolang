@@ -274,8 +274,27 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 				if _, isVar := varTypes[recv.Value]; !isVar {
 					// 模組限定函數呼叫（如 math.sin、sha1.sha1）：
-					// 接收者為模組名而非變數，直接以裸函數名查 funcTypes。
+					// 接收者為模組名而非變數，以裸函數名查 funcTypes。
+					//
+					// 🔴 裸名 key 在合併後的 program 裡是**跨模組共用**的：
+					// `dns.dial`、`quic.dial`、`proxy.dial` 都叫 `dial`，回傳型別
+					// 卻分別是 `fd` / `?conn` / `fd`。命中裸名之後必須用 std 簽名
+					// 表的**全名** `m.f` 對一次帳：兩者不一致就說明裸名命中的是別的
+					// 模組的同名函式，此時寧可沉默（回空字串 ⇒ 下游跳過型別檢查），
+					// 也不要把別人的型別套上去。
+					//
+					// 實際症狀（tls.no:5186/5242）：`tcpfd = dns.dial(host, port)`
+					// 被記成 `?conn`，接著 `.fd = tcpfd` 報「cannot assign ?conn
+					// value to fd field target」(15w45dqk) —— 而 dns.dial 其實回
+					// 普通 `fd`（見 src/std/net/tls.no:5179 與 test/README §5.2m ②）。
+					//
+					// 注意這裡**不做正向查表**：std 表能解析出大量先前未知的型別，
+					// 一律採用會把 `fd = net.net-dial(...)`（fd 是 i64 的 newtype）
+					// 這類既有寫法打成硬錯誤。只在裸名已命中時做否決。
 					if retType, exists := funcTypes[dot.Property]; exists {
+						if t := stdEntryResultType(recv.Value + "." + dot.Property); t != "" && t != retType {
+							return ""
+						}
 						return retType
 					}
 					switch recv.Value + "." + dot.Property {

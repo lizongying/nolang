@@ -6047,6 +6047,7 @@ echo "  用法：--l1-ctl /path/to/dumper   （必須支援 `<dumper> tokens <fi
 | B26 | 🟡 **`OP-STRUCT-SET` 的新欄位值 id 仍走自帶連續約定（`xa[k]`=舊結構體值 id、`xa[k]+1`=新欄位值 id），s64 的側池只摘了 `OP-CALL` 一條**：`mir.no:393` 註已改口「本 op 自帶連續約定，⚠️ s64 後與 `OP-CALL` 非同形」；發射側仍按兩個相鄰 id 讀舊值與新值（s30 形制，§5.3.4.bj） | `h2m` 落地結構體寫欄位時必須先自證「舊結構體值 id 與新欄位值 id 恰相鄰」，不得假設任意散布；或把本 op 也併入側池形制（需同步 `cg` 的 STRUCT-SET 臂與 `cg-test` 斷言）**約束**：`h2m` 現對 `STRUCT-SET` 全計 `unsup` 不產碼，故本項暫無實彈路徑，落地形參／返回值結構體欄位寫入時才觸發 | §5.3.4.cs（s64 關鍵點 6）／§5.3.4.bj（s30 SET 連續約定源頭） |
 | B27 | 🟡 **Go 嵌套 match 的 `it` 海森堡（no-print 得 2、print 下得 3）**：`n: { 1 -> { t0 = it; m: { 2 -> r = it; -> r = 9 }; r = r + t0 }  -> r = 0 }` 在 Go v0.4.13 與 HEAD 上無 print 時得 **2**（外 `it` 被內層 `it` 騎絕），語義值應為 **3**（外 it=1、內 it=2、`r = it + t0 = 3`）；向函式內任一處加 `print` 後鏈語轉到 3，noc 側恆穩 3。探針對不齊時 **不改合法源碼繞過**（黃金法則），改探針為「一切內層計算全放內臂」的 `2 -> r = it + t0` 穩形；證據文件 `tmp/s65-sem.no`/`s65-sem2..6.no`/`s65-sem4.no`/`s65-sem5w.no` | 未修（屬 Go 側 S0 hir/mir/checker 在途，非自舉線）；待 Go 側回銷後可重新以舊形開探針差分 | §5.3.4.ct（s65 驗證環境 Go oracle 對拍段） |
 | B28 | ✅ **已清償（2026-11-12）：selfhost `%str-long` 由 24B `{ i64, i64, i8* }` 同步為 16B `{ i32, i32, i8* }`**（原記帳：`compiler/src/cg-runtime.no:44` 發 24B 型別、`:163` 發 `{ i64 0, i64 0, i8* null }, i64 %total, 0`；`cg.no` 檔頭寫「`%str-long` 恰 24B = `[3 x i64]` 槽」；`OP-OPTMKSTR`／`OP-OPTGETSTR` 按三欄 i64 逐欄 `insertvalue`） | **落地**：① prelude 型別改 `{ i32, i32, i8* }`；② `OP-STRCONST` 字面量直接給 `i32`、`OP-STRFROMVEC` 補 `trunc i64→i32`；③ `OP-STRLEN`／`OP-STRCAP` 補 `zext i32→i64`；④ `@str_eq`／`@str_concat` 欄位型別與 `{ i32 0, i32 0, i8* null }` 聚合常數同步，其函式本文與 Go `emitPrelude` **byte-identical**；⑤ `OP-OPTMKSTR` 存前 `zext i32→i64`、`OP-OPTGETSTR` 讀後 `trunc i64→i32`，`OP-OPTEQSTR`／`OP-OPTNEQSTR` 兩側重建 16B `%str-long` 並修掉 trunc 的 SSA def-before-use；`mir.no` 註釋一併改口。`%option` 的 24B slot（`optSlotDefaultBytes = 24`）**未變** ⇒ `?str` 仍 inline、只佔前 16 字節（結論不變、理由已更新）。**門禁**：`cg-runtime-test` 84/84、新增 `cg-str16-test` 41/41、完整 `.ll` 的 `opt -passes=verify` rc=0、`clang`＋C main 端到端 4/4 期望值、`h2m-test` 1031/1037 與基線一致無回歸。**殘差已清（⑦，2026-11-12 第四輪）**：`cg-test.no` 的 24B 時代文字斷言與 `15w45dqk` 編譯阻斷已一併校正，整檔 **358/358 全綠**；清償後 selfhost `.ll` 已可與現行 Go 後端做 L4 行為對拍 | §5.3.4.ax／§5.3.4.bh／§11 B8／§11 後 ⑥／⑦／`docs/docs/lang/memory.md`〈型別佈局〉 |
+| B29 | 🔴 **`#` 模組導入（M5 入場券，自舉唯一剩餘結構性缺口）**：`ps-parse-use`（ps.no:985）不拆 `<path>.<symbol>`（把 `.dispatch` 符號吞進 path）、`h2m-sigs` 逐模組建（h2m.no:3952）、`h2m-lower-expr` 點號呼叫全擋（`cd.kind != asp.K-IDENTIFIER -> ok-call = 0`，h2m.no:2095）⇒ 611 條點號呼叫與 37 條 `K-USE-STATEMENT` 完全不被消費，`noc build compiler` 產物執行 `version` 不印 | **設計已立（2026-11-12，⑭）**：whole-program 降級（共享單 `agg = h2m-new()` + 全域簽名表 `key = mod.fn` + 多模組 body 串接 emit `@<mod>.<fn>`）；呼叫側 `K-DOT-EXPRESSION` 查全域表 emit `call @<mod.fn>`；**待實施**（⑭ ⑪ 六切片，首片＝`ps-parse-use` 拆分 `<path>.<symbol>`＋`as`，見 ⑭ ③ 修正點 1） | ⑭（2026-11-12 前向設計） |
 
 
 ### 2026-11-08 追記：表達式主語的值位 match（B25 第一項已於 Go 側解除）
@@ -7126,11 +7127,126 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
 
 **⑧ 仍未收（依本輪量測重排）**
 
-- **`#` 模組導入**——仍是唯一結構性缺口（⑫ ⑩）。本輪修的解析器 bug 恰好證明它有多硬：**連「一個模組自己的結構體」都登記不全**，談跨模組之前先把單模組擺正。
+- **`#` 模組導入**——仍是唯一結構性缺口（⑫ ⑩），但**設計與實施計劃已立於 ⑭**（whole-program 降級：單 `agg` + 全域簽名表 `key=mod.fn` + 多模組 body 串接 `@<mod>.<fn>`，含 6 個可獨立驗收的最小切片，見 ⑭ ⑪）。本輪修的解析器 bug 恰好證明它有多硬：**連「一個模組自己的結構體」都登記不全**，談跨模組之前先把單模組擺正——這正是 ⑭ 修正點 1（`ps-parse-use` 拆分 `<path>.<symbol>`）的動機。
 - **空 match 臂 `->`**、**裸塊陳述 `{ … }`**——⑦ 已釘到最小重現。
 - **`[]T` 元素型別只有 `i64`**：簽名側 20 條 `62:false`（`h2m-param-ty` / `h2m-tynode-code` 的 `enm == 'i64'` 門）。⚠️ 這與 ⑫ ⑨ 的 `[]str` 結構體欄位是同一個門的兩側：欄位側放行會讓 `%vec` 欄位被 i64 helper 誤讀，故**不能只放行不解釋**。
 - `multiout(2/3/5)` 28 條＋`outvec` 3 條——多返回值是 MIR 級工程，不是降級臂。
 - ⑫ ⑪ 的其餘各條（`K-EXPRESSION-STATEMENT` 233、`K-INDEX-EXPRESSION` 33、`print(bool)`、插值剩餘形、B19 裁決）。
+
+---
+
+### ⑭ 2026-11-12 追記（續）：`#` 模組導入——自舉唯一剩餘的結構性閘門（**設計＋實施計劃**，尚未實作）
+
+> 本節是**前向設計**，不是 as-built：以下數字若未標「實測」均為**預期／待測**，待本輪落地後回填 ⑩ 的閘表。所有代碼行號均為 2026-11-12 現況（`compiler/src` 狀態 `3589ebb1`），可據以動工，但本節**不動任何源碼**。
+
+**① 為什麼這是唯一的結構性缺口（現狀摘要，引用 ⑫ ⑩／⑬ ⑪）**
+
+- `noc build compiler`（入口 `compiler/main.no`，見 `compiler/main.no:3` 的構建命令）目前 rc=0、產出 34,632 位元組、執行 `version` **什麼都不印**——因 `#` 導入整條被忽略。
+- 611 條 `K-CALL-EXPRESSION` 標記裡絕大多數是 `ast.str-at(...)` / `b.push(...)` 這類**點號被調用者**；`h2m-lower-expr` 呼叫臂第一行即是 `cd.kind != asp.K-IDENTIFIER -> ok-call = 0`（h2m.no:2095），點號呼叫全被擋下。
+- 即便放行點號呼叫，被調函式本體在**別的模組**，`h2m-sigs` 是**逐模組**建的（`h2m-lower-program` 只掃自己那棵 Program，h2m.no:3952–3993），簽名查不到、IR 裡也沒有定義。
+- 37 條 `K-USE-STATEMENT`（parser 已產出，`ps-parse-use` ps.no:987）＋上述 611 條點號呼叫＝「同一塊」——而它們目前**完全不被消費**。
+
+⇒ `#` 導入是 M5 的入場券，也是「自舉」二字目前唯一還空著的結構性缺口（⑫ ⑩／⑬ ⑪ 同判）。
+
+**② 目標形態（M5 完成後）**
+
+從入口 `compiler/main.no` 出發 → 遞歸解析其 `#` 導入的各模組 → 全部函式降成**同一份** `.ll` → 點號呼叫 `mod.fn` 走**全域簽名表**查到並 emit `call @<mod.fn>`；`link.compile`（link.no:24）**不變**（仍只餵一份 `.ll` 給 clang）。
+
+**③ 入口與導入語法的現狀（實測）**
+
+`compiler/main.no` 的導入有兩種形：
+
+```text
+# /compiler/src/drv.dispatch        ← 帶 .symbol（第 8 行）
+# /compiler/src/asp                ← 純路徑（第 15–29 行）
+```
+
+`ps-parse-use`（ps.no:987）舊版只抓 `path`（s0），把 `function`/`alias`（s1/s2）**恆置空**，檔頭註釋還寫「語料恆為純路徑（無 .fn / as）」。但 `compiler/main.no:8` 的 `# /compiler/src/drv.dispatch` **帶 `.dispatch` 符號**⇒ 舊版會把整串 `/compiler/src/drv.dispatch` 吞進 `path`，`drv` 模組永遠解析不到。
+
+🔴 **修正點 1（必做）**：`ps-parse-use` 必須把 `<path>.<symbol>` 拆成 `path` + `function`（以及 `as` 別名，雖 compiler 自身不用但 std 跨包導入會用）。這與 ⑬ 的「欄位尾 `;` 註釋」是同一類——**parser 保真度決定了 selfhost 能走多遠**。
+
+📌 **追記（2026-11-13，slice 1 實作輪次）**：修正點 1 已落地（`compiler/src/ps.no` `ps-parse-use`，行 987）。現 `<path>.<symbol>` 正確拆成 `path` + `function`，並支援 `as alias` 與裸 `alias`；裸 alias 的 token 在路徑結束時【未經消費】（用 `-> break` 退出路徑迴圈，避免被當成下一路徑段併入 `path`）。實測 `ast.dump`：
+
+- `# /compiler/src/drv.dispatch` → `path: /compiler/src/drv, function: dispatch`
+- `# /compiler/src/drv.dispatch as d` → `alias: d, as: true`
+- `# /compiler/src/asp cfg`（裸 alias）→ `path: /compiler/src/asp, alias: cfg`（path **未被污染**）
+- `# std/err error`（裸 alias）→ `path: std/err, alias: error`
+
+迴歸測試見 `compiler/tests/ps-test.no` 的 `test-use-*`（5 條全綠，即本輪的 L2 oracle）。
+
+⚠️ **self-host codegen 陷阱（本輪實踩）**：初版把 `as-kw`/`alias` 等旗標的賦值寫在嵌套 `cond -> { }` 分支臂內、又在一個【不同】分支臂讀取 ⇒ MIR 單趟配置器無法解析變數初始化路徑，報 `EmitLLVM: unknown callee ps-parse-stmt`。修法：所有旗標（`is-fn-sep`/`as-kw`/`alias`/`function`/`path`）**一律在函式頂層初始化**、條件賦值走直線程式碼（不在分支臂內讀取跨臂寫入的變數）；`-> break`/`-> continue` 也須包成合法 if-group（裸 `-> break` 緊跟 `cond -> { }` 臂會被當成 else 臂報 `m7vq3xrt`）。
+
+**④ 路徑解析（open issue，需先定義）**
+
+- 路徑相對於 **workspace 根**（§2.1：`#` 導入路徑是 workspace 相對，非檔案系統根）。`# /compiler/src/drv` ⇒ 實體檔 `compiler/src/drv.no`。
+- 尾碼約定需明確：`# /compiler/src/util/sb.sb`（main.no:26）導的是 `compiler/src/util/sb.no`——這裡 `.sb` 是**模組名尾碼**還是**符號**？Go 側 `no` 怎麼解就照抄（黃金法則：不改 S0 語義），但 `ps-parse-use` 與驅動層 resolver 必須一致。建議：路徑尾若為 `.no`/`.sb` 或目錄，統一對映到 `<path>.no` 或 `<path>/main.no`。
+- 遞迴解析需做 **cycle 檢測**（A→B→A），否則互相導入會無限遞迴。
+
+**⑤ 整體架構（whole-program 降級：單 `agg` + 全域簽名表）**
+
+自舉編譯器本身是一個「程式」，故最簡且最穩的切法是**整包一次降級**（對照 M4 的「誠實門禁」哲學，先求正確再求裁剪）：
+
+| 階段 | 現有接縫 | 本輪動工點 |
+| --- | --- | --- |
+| A. 套件載入 | `drv.build-ll(src)` 只 parse 單檔（drv.no:365–369） | 新增 `drv.build-package(src)`：parse 入口 → 收 `K-USE-STATEMENT` → 路徑解析 → 遞迴 parse 依賴 → 回傳依序 `(ast, root)` 清單（含 cycle 檢測） |
+| B. 結構體表 | `h2m-struct-register`/`h2m-struct-resolve`（h2m.no:948 起）逐模組跑在 `h2m-lower-program` 前置 pass | **共享同一 `agg = h2m-new()`**（h2m.no:204）給全包：各模組 struct 全註冊進同一張表 ⇒ 跨模組結構體型別（如 `ast.node` 被 `ps`/`h2m` 引用）天然可查 |
+| C. 全域簽名表 | `h2m-sigs` 逐模組建、`h2m-sig-add(sg, name, ...)` 只帶 `name`（h2m.no:1252） | `h2m-sig-add` 擴充為帶 `mod` 限定，`key = mod.fn`；`h2m-func-sig`（h2m.no:3673）產 signature 不變 |
+| D. 降級全部模組 | `h2m-lower-program`（h2m.no:3952）只降自己那棵 | 逐模組呼叫對等邏輯，emit `@<mod>.<fn>`（入口 `main` 仍 `@main`，見 ⑦），body 串接 |
+| E. 接線 | `drv.build-ll` 組 `prelude + body`（drv.no:380–385） | `build-package` 取代 `build-ll` 的單檔路徑；`link.compile` 不變 |
+
+**⑥ 呼叫降級（h2m-lower-expr）**
+
+把 h2m.no:2095 的 `cd.kind != asp.K-IDENTIFIER -> ok-call = 0` 改為：
+
+- callee `cd` 為 `K-DOT-EXPRESSION`（asp.no:555 = 24；`ast.str-at` 的 base=`ast`、field=`str-at`，遞迴取名的邏輯見 `ps-dotted-name` ps.no:4674）：
+  - base 是**模組短名**、rhs 是函式名 ⇒ 查 `<mod>.<fn>` 全域簽名表；
+  - 命中 ⇒ emit `call @<mod.fn>(...)`，arity／型別檢查沿用 s56 的連續 id／側池 `args` 契約（§11 B16）；
+  - 未命中 ⇒ `ok-call = 0` → 整函式 `unsup`（誠實門，與今日同）。
+- 純 `K-IDENTIFIER` 呼叫仍走原邏輯（本模組內或已 import 的符號）。
+
+⚠️ `b.push(...)` 的 `b` 是局部 `vec` 變數、不是模組名 ⇒ 這類「值的方法」不在本輪範圍（對應 SHS 禁動態分派，且 `vec.push` 在 Go 側是內建方法、非跨模組呼叫）；遇 `K-DOT-EXPRESSION` 而 base 不是模組名時仍計 `unsup`，不靜默錯譯。
+
+**⑦ 函式命名唯一性（§11 B10 同族）**
+
+- 跨模組 emit `@<mod>.<fn>`，避免 `init`/`main` 等撞名（B10 曾因 `%struct.point`、全域 `@.s<k>` 同名撞車而踩過）。
+- 入口 `main.no` 合成的 `main`（`h2m-lower-module` h2m.no:4355–4444）**必須保持 `@main`**——LLVM／C runtime 約定。
+- 結構體型別宣告已由 `h2m-struct-decls` 的「唯一裝配點」保證（h2m.no:4026–4031，§11 B10）；函式名需在生成側補同等約束（同一 `fn` 名只在所屬模組 emit 一次）。
+
+**⑧ 跨模組結構體欄位型別**
+
+單 `agg` 已統一 struct 表，但需驗證：`h2m-tynode-code` 的 struct 回退查表（§11 B8 提過）在跨模組引用時能正確命中——例如 `ps` 模組函式簽名裡的 `ast.node`、欄位型別 `[]ast.node`。現行 `agg` 是全域 ctx，理應直接命中；**落地時以 `noc build compiler` 的 `define` 行數（對照 ⑬ ⑤ 的「產碼函式數」指標）確認未被漏登記**。
+
+**⑨ 誠實邊界（沿用既有紀律）**
+
+- 查不到的 `mod.fn` / 未實作模組 / 非模組 base 的點號呼叫 ⇒ `unsup`，`agg.unsup > 0` ⇒ `drv.build-ll` 直接 rc=1（drv.no:372–374），**不靜默產錯碼**。
+- 與 ⑬ ⑤ 一致：unsup 上升不是退步，是「更多函式被嘗試」；判據須同時看 `define` 行數。
+
+**⑩ 驗收閘（預期，M5 里程碑；數字待落地回填）**
+
+| 閘 | 改前 | 改後（預期） |
+| --- | --- | --- |
+| `noc build compiler`（入口 main.no） | rc=0、產 34,632 B、version 不印 | **rc=0、執行 `version` 印 `noc v0.0.1-m0`** |
+| 跨模組函式呼叫（如 `drv.dispatch` → `ps.parse`） | unsup | **產碼、`call @ps.parse` 等可連結** |
+| 既有測試 | `h2m-test` 1080/1086 等 | **維持全綠（零回歸）** |
+| `noc` 自編自己（S1 預備） | 不可行（導入被忽略） | **`noc` 能編出可執行、行為對齊 S0 的二進位** |
+
+**⑪ 實施順序（最小切片，每片可獨立驗收）**
+
+1. **`ps-parse-use` 拆分 `<path>.<symbol>` + `as`**（修正點 1，③）— **✅ 已實作（2026-11-13）**。驗收：`compiler/tests/ps-test.no` 的 `test-use-*` 5 條全綠：`# /compiler/src/drv.dispatch` → `path=/compiler/src/drv, function=dispatch`；`# /compiler/src/drv.dispatch as d` → `alias=d, as=true`；裸 alias `# /compiler/src/asp cfg` → `path` 不被污染、`alias=cfg`（見③ 追記）。注：`no ast` 是 Go 側 parser，本驗收以自舉 `ps` 的 `ast.dump` 為準。
+2. **`drv.build-package` + 路徑解析 + cycle 檢測**（⑤ A／④）— **✅ 已實作（2026-11-13）**。驗收：對 `compiler/main.no` 跑 `drv.build-package` 回傳依序模組清單（前置 cycle 旗標 `0:`＋`:` 分隔），實測 = 入口 `compiler/main.no` + **16 個 compiler 套件模組**（drv/lx/tok/util·sb/ast/asp/ps/diag/ck/ck-sig/mir/cg/cg-runtime/cg-rc/h2m/link），無循環（`cyc=0`；設計原列 15 為筆誤，實為 16 imported＋入口共 17 項）。回歸測試 `compiler/tests/build-package-test.no` **8/8 全綠**（cycle 旗標＝0 ＋ 關鍵模組 membership）。⚠️ 本切片只回傳「模組路徑清單」這張結構性閘，`(ast, root)` 留待切片 2b；路徑解析（④，`.sb`→`.no`／去前導 `/`／補 `.no`）與祖先鏈 cycle 檢測（pathchain 參數，diamond 不誤報）均已落地，實作見 `compiler/src/drv.no` 的 `drv.build-package` / `drv.bp-walk` / `drv.bp-resolve` / `drv.pkg-contains`。
+3. **全域簽名表 + 單 `agg` struct 註冊**（⑤ B／C）— **✅ 已實作（2026-11-13）**。驗收：對 `compiler/main.no` 跑 `drv.pkg-sigs` 回傳整包全域簽名表（實測 **395** 條），`h2m-sig-find(sg, 'ps.parse')` / `'ast.str-at')` / `'h2m.sig-add'` / `'ast.make'` 皆命中；偽 key `'ps.parsex'` 查不到。回歸測試 `compiler/tests/pkg-sigs-test.no` **5/5 全綠**。實作見 `compiler/src/drv.no` 的 `drv.pkg-sigs` / `drv.read-mod` / `drv.mod-name` / `drv.pkg-split`；單一 `agg=h2m-new()` 共享整包結構體名→sid，單一 `sg=h2m-sigs-new()` 收整包 `mod.fn` 簽名（兩遍：先全模組 struct-register，再全模組 func-sig，避免消費者先於依賴被處理時查不到結構體名）。
+   - ⚠️ **key 構造坑（實踩）**：自舉各模組函式名前綴慣例不一致——`drv.build-package`/`ps.parse`/`ast.str-at` 用**點號**前綴，`h2m-sig-add`/`ps-parse-use` 用**連字**前綴。故 key 須先剝掉 `mod.` 或 `mod-` 模組前綴得 short，再組 `mod.short` 規範 key，與切片 5 點號呼叫 emit `call @<mod.fn>` 的查表 key 對齊（否則 `h2m-sig-add` 會被錯拼成 `h2m.h2m-sig-add`）。
+   - ⚠️ **`drv.*` 模組函式暫不入表（已知自舉 parser 缺陷，留待切片 5 前置修）**：`drv.no` 用 `drv.x = (...)` 點號名定義，自舉 `ps.parse` 對此類函式定義的 signature 計數有 bug（`d.c5` 多算 1：`drv.name = () (r str)` 被算成 c5=2、`drv.usage` 無回傳被算成 c5=1 且回傳型別 rc=-1），致 `h2m-func-sig` 全判 `bad=1` 而略過。裸名模組（ps/ast/h2m/lx/…）不受影響，故切片 3 驗收（ps.parse/ast.str-at）達標；但 `drv.dispatch`→`ps.parse` 這類跨模組點號呼叫要通，必須先修這個 parser 計數 bug（見切片 5 前置）。
+4. **多模組 body 串接 + `@<mod>.<fn>` 命名**（⑤ D／⑦）。驗收：同一份 `.ll` 含 `@ps.parse`/`@ast.str-at`/`@main`，`opt -passes=verify` rc=0。
+5. **`h2m-lower-expr` 點號呼叫查全域表**（⑥）。驗收：`drv.dispatch` 體內的 `ps.parse(...)` emit `call @ps.parse`。
+6. **端到端閘 + L4 對拍**（⑩）。驗收：`noc build compiler` 產物執行 `version` 印出版本；抽 `tests/` SHS 子集跑 L4。
+
+**⑫ 本輪不收（留待 M5 後續）**
+
+- workspace / package 合併、`target` 解析、快取（`drv.no:357` 明確 M4-d 不做）。
+- 多 package 的 `#` 跨包解析（自舉只需 compiler 單包）。
+- `as` 別名重綁（compiler 自身不用；std 跨包導入才需要）。
+- whole-program 降級的體積／重複 emit 優化（未用函式也降級）——可後續改 reachability-based 按需 emit，但非 M5 必須。
 
 ---
 

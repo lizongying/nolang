@@ -462,14 +462,18 @@ func (a *compileAssembly) mergeModules() error {
 			}
 			continue
 		}
+		// 主檔自身語句同樣要 Deep 標記（與導入模組側同口徑）：只標頂層語句時，
+		// 函式體內的語句 SourceFile 留空，lint 端無法區分「主檔語句」與「溯源
+		// 丟失的合併副本」，只能一律當作不可歸因（LintIneffectiveOverflow 的
+		// merged 分支直接 continue），於是主檔自己真有的診斷被靜音。
 		if _, ok := stmt.(*parser.FunctionDefinition); ok {
 			a.merged.Statements = append(a.merged.Statements, stmt)
-			a.merged.Sem.SetSourceFileOf(stmt, a.t.sourcePath)
+			a.merged.Sem.SetSourceFileDeep(stmt, a.t.sourcePath)
 		}
 		if es, ok := stmt.(*parser.ExternStatement); ok {
 			// FFI extern 宣告 — 收集至 merged 供後續 codegen 使用（目前尚未實作）
 			a.merged.Statements = append(a.merged.Statements, es)
-			a.merged.Sem.SetSourceFileOf(es, a.t.sourcePath)
+			a.merged.Sem.SetSourceFileDeep(es, a.t.sourcePath)
 		}
 	}
 	// Process transitive imports: drain the pendingUses worklist.
@@ -625,6 +629,10 @@ func (a *compileAssembly) appendTopLevelStatements() {
 			continue
 		}
 		a.merged.Statements = append(a.merged.Statements, stmt)
+		// 主檔頂層語句（`f = (..) { .. }` 是 LetStatement + FunctionLiteral）
+		// 同樣 Deep 標記，理由見 mergeModules：不然頂層函式字面量的整個函式體
+		// 都拿不到來源檔，lint 只能回退成「不可歸因」。
+		a.merged.Sem.SetSourceFileDeep(stmt, a.t.sourcePath)
 	}
 }
 

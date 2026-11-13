@@ -478,8 +478,15 @@ txt.slice = (start i64, end i64) (out txt) {
         return
     }
 
+    ; D1：`-` 的結果恆為 `?i64`，n 當普通整數用（下標上界、`out.len`）⇒ 兩段式
+    ; 解包。與本檔 push / push-str 的 `room` / `remain` 同一寫法：`#{overflow=wrap}`
+    ; 只保證不會走 err 分支，型別仍是 option，直接賦給 u8 欄位會被 15w45dqk 攔下。
     #{overflow=wrap}
-    n = r-end - r-start
+    n = r-end - r-start: {
+        ok -> it
+
+        -> 0
+    }
     n > 255 -> n = 255
     i <- [0..n): {
 

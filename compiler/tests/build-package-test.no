@@ -1,0 +1,61 @@
+; build-package-test.no — compiler/src/drv 的 `#` 導入整包解析迴歸測試
+;
+; 執行： ./bin/no run compiler/tests/build-package-test.no
+;
+; ⚠️ 結尾必須自己 exit(1)（失敗時），否則差分 harness 會把失敗讀成通過。
+;
+; 本檔釘住 ⑭ 切片 2（drv.build-package：路徑解析 + 遞迴 + cycle 檢測）：
+;   對 compiler/main.no 跑整包解析，確認回傳依序模組清單、含關鍵模組、無循環。
+;
+; ⚠️ build-package 回傳單一 str：前置 cycle 旗標（0:/1:）+ `:`-分隔的模組路徑清單。
+;   membership 用 drv.pkg-contains（str.contains，免 []str 下標，跨 bin/no codegen 限制）。
+;
+; ⚠️ 必須直接 import 全部傳遞依賴（與 drv-build-test.no 同款 import 區塊）：
+;   drv.build-package 內部呼叫 ps.parse，而 ps.parse 依賴的兄弟模組頂層常量
+;   只有在入口檔「直接 import」這些模組時才會生成（bug #85），否則 codegen 報
+;   consumer reads value 0。故下面把 ast/ps/asp/lx/tok/mir/cg/... 全列上。
+
+# /test/runner.is-true
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/drv
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+
+test-build-package = () {
+    pkg = drv.build-package('compiler/main.no')
+    print('build-package: ' - pkg)
+    ; 前置 cycle 旗標應為 '0'（compiler 套件無循環）
+    runner.is-true(pkg.slice-bytes(0, 1) == '0', 'compiler/main.no import graph has no cycle')
+    ; 至少含入口模組
+    runner.is-true(drv.pkg-contains(pkg, 'compiler/main.no'), 'contains compiler/main.no')
+    runner.is-true(drv.pkg-contains(pkg, 'compiler/src/drv.no'), 'contains compiler/src/drv.no')
+    runner.is-true(drv.pkg-contains(pkg, 'compiler/src/asp.no'), 'contains compiler/src/asp.no')
+    runner.is-true(drv.pkg-contains(pkg, 'compiler/src/ast.no'), 'contains compiler/src/ast.no')
+    runner.is-true(drv.pkg-contains(pkg, 'compiler/src/ps.no'), 'contains compiler/src/ps.no')
+    runner.is-true(drv.pkg-contains(pkg, 'compiler/src/tok.no'), 'contains compiler/src/tok.no')
+    runner.is-true(drv.pkg-contains(pkg, 'compiler/src/lx.no'), 'contains compiler/src/lx.no')
+}
+
+test-build-package()
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

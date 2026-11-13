@@ -2859,11 +2859,6 @@ Rellena las longitudes de código fijas según la especificación DEFLATE §3.2.
 lc huffman: parámetro de salida, escribe la tabla de códigos de literal/longitud de 288 símbolos
 dc huffman: parámetro de salida, escribe la tabla de códigos de distancia de 30 símbolos
 `
-  'gzip.deflate-stored': `
-Compresión DEFLATE usando bloques stored
-data: datos originales ([]byte)
-out: datos DEFLATE comprimidos ([]byte)
-`
   'gzip.compress': `
 Comprime datos con el formato gzip
 data: datos originales ([]byte)
@@ -2873,6 +2868,11 @@ out: datos comprimidos en gzip ([]byte)
 Descomprime datos en formato gzip
 data: datos comprimidos en gzip ([]byte)
 out: datos descomprimidos ([]byte)
+`
+  'gzip.deflate-stored': `
+Compresión DEFLATE usando bloques stored
+data: datos originales ([]byte)
+out: datos DEFLATE comprimidos ([]byte)
 `
   'gzip.huffman.build': `
 Construye la tabla de códigos Huffman a partir del arreglo de longitudes de código
@@ -3766,6 +3766,17 @@ obtiene el valor booleano (cuando la raíz es un booleano)
 devuelve val bool, ok bool: ok = éxito
 val: ok=el valor booleano del nodo raíz, nil=la raíz no es booleana
 `
+  'json.clone-tree': `
+Por qué la copia profunda es obligatoria: json.pool es un campo puntero #{inline=false}, y los campos puntero del compilador
+La copia aún carece de semántica de préstamo (ver el comentario de copy-tree y las notas de hybrid-ownership en src/mir),
+Hacer `child = json { pool: .pool, ... }` directamente deja que padre e hijo sostengan cada uno una cabecera vec compartiendo el mismo
+el búfer data; en cuanto un manejo provoca un realloc del vec, la cabecera vec del otro manejo apunta a memoria liberada
+el búfer viejo liberado → lectura colgada (stringify devuelve null / datos alterados). Tras cambiar a una copia profunda independiente,
+El alloc/crecimiento de cada lado escribe en su propio búfer, sin afectarse mutuamente.
+src: el pool de origen
+idx: índice de la raíz del subárbol en src
+out: nuevo json que posee una copia del subárbol (out.root=índice de la nueva raíz; root=-1 si idx es inválido)
+`
   'json.delete-key': `
 elimina una clave de un objeto
 devuelve ok bool: ok = éxito (la clave existía y se eliminó)
@@ -3850,131 +3861,6 @@ yes: el tipo del nodo raíz es JSON-KIND-OBJ
 indica si es una cadena
 yes: el tipo del nodo raíz es JSON-KIND-STR
 `
-  'json.json-clone-tree': `
-Por qué la copia profunda es obligatoria: json.pool es un campo puntero #{inline=false}, y los campos puntero del compilador
-La copia aún carece de semántica de préstamo (ver el comentario de copy-tree y las notas de hybrid-ownership en src/mir),
-Hacer `child = json { pool: .pool, ... }` directamente deja que padre e hijo sostengan cada uno una cabecera vec compartiendo el mismo
-el búfer data; en cuanto un manejo provoca un realloc del vec, la cabecera vec del otro manejo apunta a memoria liberada
-el búfer viejo liberado → lectura colgada (stringify devuelve null / datos alterados). Tras cambiar a una copia profunda independiente,
-El alloc/crecimiento de cada lado escribe en su propio búfer, sin afectarse mutuamente.
-src: el pool de origen
-idx: índice de la raíz del subárbol en src
-out: nuevo json que posee una copia del subárbol (out.root=índice de la nueva raíz; root=-1 si idx es inválido)
-`
-  'json.json-pool.add-child': `
-enlaza el nodo hijo child-idx (nombre de clave key; pasa la cadena vacía para arrays) al nodo node-idx
-Implementa la lista de hijos de longitud variable como una tabla de aristas enlazada, así que ningún nodo tiene un límite fijo de hijos
-node-idx: índice del nodo padre (al final de sus listas enlazadas first/last se engancha la nueva arista)
-child-idx: índice del nodo hijo
-key: nombre de la clave en la arista (para hijos de objeto; las matrices pasan cadena vacía)
-`
-  'json.json-pool.alloc': `
-asigna un nodo nuevo y devuelve su índice (el vec del heap crece solo, así que el pool ya no está acotado)
-idx: índice del nuevo nodo (kind=null, sin hijos; el vec del montón crece automáticamente y no puede fallar)
-`
-  'json.json-pool.arr-get': `
-obtiene el nodo hijo en un índice de un nodo array
-devuelve val-idx = el índice del nodo hijo, ok = éxito
-arr-idx: índice del nodo de matriz
-elem: ordinal del elemento (recorre la lista de aristas hasta la arista número elem)
-val-idx: ok=índice del nodo hijo, nil=no es arreglo / índice inválido / fuera de rango
-`
-  'json.json-pool.arr-len': `
-obtiene la longitud del array
-arr-idx: índice del nodo
-n: número de elementos hijos (se devuelve su count también para no arreglos; 0 si el índice es inválido)
-`
-  'json.json-pool.copy-tree': `
-La identidad de pool no puede apoyarse en `src.id == .id`: los vínculos de nivel de módulo no se re-vinculan (ver el comentario JSON-POOL-NEXT-ID),
-el id de todos los pools es siempre 1; este juicio tomó cada copia entre pools como del mismo pool, así que
-la raíz del subárbol devuelta por json.arr-get / json.get era siempre -1. Ahora el llamador garantiza:
-- json-clone-tree: el receptor es un pool recién init;
-- json.set-key: primero copia val a un pool nuevo temporal (json-clone-tree) y luego copia directo desde el pool intermediario
-en el receptor; los extremos de las dos copias están en pools distintos, así que la autorreferencia también es segura.
-src: el pool de origen (no debe ser el mismo pool del receptor, o el búfer vec compartido deja de funcionar)
-node-idx: índice de la raíz del subárbol en el pool de origen
-dst-idx: nuevo índice raíz en el pool del receptor (-1=índice de origen inválido)
-`
-  'json.json-pool.get-bool': `
-obtiene el valor booleano
-devuelve val = el booleano, ok = éxito
-node-idx: índice del nodo
-val: ok=bool-val, nil=no es un nodo booleano
-`
-  'json.json-pool.get-key': `
-obtiene el índice del nodo hijo de una clave de un nodo objeto
-devuelve val-idx = el índice del nodo hijo, ok = encontrado
-obj-idx: índice del nodo objeto
-key: nombre de la clave
-val-idx: ok=índice del nodo hijo, nil=no es objeto / índice inválido / clave no encontrada
-`
-  'json.json-pool.get-kind': `
-obtiene el tipo de nodo
-node-idx: índice del nodo
-kind: constante JSON-KIND-* (NULL cuando el índice es inválido)
-`
-  'json.json-pool.get-num': `
-obtiene el valor numérico
-node-idx: índice del nodo
-val: ok=num-val (enteros y decimales se guardan ambos como f64), nil=no es un nodo numérico
-`
-  'json.json-pool.get-str': `
-obtiene el valor de cadena
-devuelve out = una copia de la cadena, ok = éxito
-node-idx: índice del nodo
-out: ok=copia del valor de cadena, nil=no es nodo de cadena o índice inválido
-`
-  'json.json-pool.init': 'inicializa el pool de nodos (el vec del heap debe quedar no nulo antes de usarlo para que push sea seguro)'
-  'json.json-pool.parse': `
-analiza un valor JSON a partir de la posición pos de la cadena
-devuelve node-idx = el índice del nodo raíz, next-pos = la posición siguiente, ok = éxito
-s: cadena JSON
-pos: posición de byte donde comienza este valor
-node-idx: índice del nodo raíz (-1 en caso de fallo)
-next-pos: posición en bytes siguiente al valor
-ok: true=análisis exitoso
-`
-  'json.json-pool.parse-num': `
-analiza un número JSON
-node-idx: índice del nodo que recibirá el valor numérico
-s: cadena JSON
-pos: posición inicial del número
-next-pos: ok=posición donde termina el número (valor ya escrito en num-val del nodo), nil=formato inválido
-`
-  'json.json-pool.parse-str': `
-analiza una cadena JSON (a partir de la comilla de apertura)
-node-idx: índice del nodo que recibirá el valor de cadena
-s: cadena JSON
-pos: posición de la comilla de apertura inicial
-next-pos: ok=posición tras la comilla de cierre, nil=comilla sin cerrar o escape inválido
-`
-  'json.json-pool.set-key': `
-asigna una clave a un nodo objeto
-devuelve ok = éxito
-obj-idx: índice del nodo objeto
-key: nombre de la clave
-val-idx: índice del nuevo nodo de valor
-ok: true=se actualizó una clave existente o se añadió una nueva; false=índice inválido o no es un objeto
-`
-  'json.json-pool.skip-ws': `
-salta el espacio en blanco
-s: cadena JSON
-pos: posición de byte inicial
-p: posición del primer carácter no espacio en blanco (espacio/Tab/LF/CR); fin de la cadena si todo es espacio en blanco
-`
-  'json.json-pool.str-eq': `
-compara dos valores str por igualdad
-Implementado de forma uniforme mediante str.eq-full
-a: cadena a comparar
-b: cadena a comparar
-eq: 1=igual, 0=distinto
-`
-  'json.json-pool.stringify': `
-serializa el nodo en una cadena
-devuelve out str: la cadena serializada
-node-idx: índice de la raíz del subárbol
-out: texto JSON serializado (cadena vacía si el índice es inválido)
-`
   'json.kind': `
 obtiene el tipo de nodo
 devuelve la constante de tipo JSON
@@ -4023,6 +3909,120 @@ uso:
 ok = j.set('k', v)
 ok == false && j.overflowed() -> print('pool full')
 yes: marcador de desbordamiento del pool (la alloc de vec en heap ya no lo dispara, casi siempre false)
+`
+  'json.pool.add-child': `
+enlaza el nodo hijo child-idx (nombre de clave key; pasa la cadena vacía para arrays) al nodo node-idx
+Implementa la lista de hijos de longitud variable como una tabla de aristas enlazada, así que ningún nodo tiene un límite fijo de hijos
+node-idx: índice del nodo padre (al final de sus listas enlazadas first/last se engancha la nueva arista)
+child-idx: índice del nodo hijo
+key: nombre de la clave en la arista (para hijos de objeto; las matrices pasan cadena vacía)
+`
+  'json.pool.alloc': `
+asigna un nodo nuevo y devuelve su índice (el vec del heap crece solo, así que el pool ya no está acotado)
+idx: índice del nuevo nodo (kind=null, sin hijos; el vec del montón crece automáticamente y no puede fallar)
+`
+  'json.pool.arr-get': `
+obtiene el nodo hijo en un índice de un nodo array
+devuelve val-idx = el índice del nodo hijo, ok = éxito
+arr-idx: índice del nodo de matriz
+elem: ordinal del elemento (recorre la lista de aristas hasta la arista número elem)
+val-idx: ok=índice del nodo hijo, nil=no es arreglo / índice inválido / fuera de rango
+`
+  'json.pool.arr-len': `
+obtiene la longitud del array
+arr-idx: índice del nodo
+n: número de elementos hijos (se devuelve su count también para no arreglos; 0 si el índice es inválido)
+`
+  'json.pool.copy-tree': `
+La identidad de pool no puede apoyarse en `src.id == .id`: los vínculos de nivel de módulo no se re-vinculan (ver el comentario JSON-POOL-NEXT-ID),
+el id de todos los pools es siempre 1; este juicio tomó cada copia entre pools como del mismo pool, así que
+la raíz del subárbol devuelta por json.arr-get / json.get era siempre -1. Ahora el llamador garantiza:
+- json-clone-tree: el receptor es un pool recién init;
+- json.set-key: primero copia val a un pool nuevo temporal (json-clone-tree) y luego copia directo desde el pool intermediario
+en el receptor; los extremos de las dos copias están en pools distintos, así que la autorreferencia también es segura.
+src: el pool de origen (no debe ser el mismo pool del receptor, o el búfer vec compartido deja de funcionar)
+node-idx: índice de la raíz del subárbol en el pool de origen
+dst-idx: nuevo índice raíz en el pool del receptor (-1=índice de origen inválido)
+`
+  'json.pool.get-bool': `
+obtiene el valor booleano
+devuelve val = el booleano, ok = éxito
+node-idx: índice del nodo
+val: ok=bool-val, nil=no es un nodo booleano
+`
+  'json.pool.get-key': `
+obtiene el índice del nodo hijo de una clave de un nodo objeto
+devuelve val-idx = el índice del nodo hijo, ok = encontrado
+obj-idx: índice del nodo objeto
+key: nombre de la clave
+val-idx: ok=índice del nodo hijo, nil=no es objeto / índice inválido / clave no encontrada
+`
+  'json.pool.get-kind': `
+obtiene el tipo de nodo
+node-idx: índice del nodo
+kind: constante JSON-KIND-* (NULL cuando el índice es inválido)
+`
+  'json.pool.get-num': `
+obtiene el valor numérico
+node-idx: índice del nodo
+val: ok=num-val (enteros y decimales se guardan ambos como f64), nil=no es un nodo numérico
+`
+  'json.pool.get-str': `
+obtiene el valor de cadena
+devuelve out = una copia de la cadena, ok = éxito
+node-idx: índice del nodo
+out: ok=copia del valor de cadena, nil=no es nodo de cadena o índice inválido
+`
+  'json.pool.init': 'inicializa el pool de nodos (el vec del heap debe quedar no nulo antes de usarlo para que push sea seguro)'
+  'json.pool.parse': `
+analiza un valor JSON a partir de la posición pos de la cadena
+devuelve node-idx = el índice del nodo raíz, next-pos = la posición siguiente, ok = éxito
+s: cadena JSON
+pos: posición de byte donde comienza este valor
+node-idx: índice del nodo raíz (-1 en caso de fallo)
+next-pos: posición en bytes siguiente al valor
+ok: true=análisis exitoso
+`
+  'json.pool.parse-num': `
+analiza un número JSON
+node-idx: índice del nodo que recibirá el valor numérico
+s: cadena JSON
+pos: posición inicial del número
+next-pos: ok=posición donde termina el número (valor ya escrito en num-val del nodo), nil=formato inválido
+`
+  'json.pool.parse-str': `
+analiza una cadena JSON (a partir de la comilla de apertura)
+node-idx: índice del nodo que recibirá el valor de cadena
+s: cadena JSON
+pos: posición de la comilla de apertura inicial
+next-pos: ok=posición tras la comilla de cierre, nil=comilla sin cerrar o escape inválido
+`
+  'json.pool.set-key': `
+asigna una clave a un nodo objeto
+devuelve ok = éxito
+obj-idx: índice del nodo objeto
+key: nombre de la clave
+val-idx: índice del nuevo nodo de valor
+ok: true=se actualizó una clave existente o se añadió una nueva; false=índice inválido o no es un objeto
+`
+  'json.pool.skip-ws': `
+salta el espacio en blanco
+s: cadena JSON
+pos: posición de byte inicial
+p: posición del primer carácter no espacio en blanco (espacio/Tab/LF/CR); fin de la cadena si todo es espacio en blanco
+`
+  'json.pool.str-eq': `
+compara dos valores str por igualdad
+Implementado de forma uniforme mediante str.eq-full
+a: cadena a comparar
+b: cadena a comparar
+eq: 1=igual, 0=distinto
+`
+  'json.pool.stringify': `
+serializa el nodo en una cadena
+devuelve out str: la cadena serializada
+node-idx: índice de la raíz del subárbol
+out: texto JSON serializado (cadena vacía si el índice es inválido)
 `
   'json.set': `
 asigna una clave en un objeto (el valor es otro nodo json)
@@ -5084,6 +5084,165 @@ host str: dirección IP de destino
 port i64: número de puerto de destino
 Retorno c ?udp-conn: ok = conexión, nil = fallo
 `
+  'noml.doc.ann': `
+Obtiene el texto original del comentario `#{...}` del nodo raíz
+v: ok = texto original del comentario, nil = la raíz no tiene comentario
+`
+  'noml.doc.ann-value': `
+Obtiene el valor de una clave dentro del comentario del nodo raíz
+key: clave del comentario
+v: ok = valor, nil = esa clave no existe
+`
+  'noml.doc.at': `
+Obtiene por posición el índice de nodo de un elemento del arreglo raíz
+i: índice del elemento (contado desde 0)
+child: ok = índice de nodo del elemento, nil = la raíz no es un arreglo o el índice está fuera de rango
+`
+  'noml.doc.bool': `
+Obtiene el valor booleano de la raíz
+v: ok = valor booleano, nil = la raíz no es booleano
+`
+  'noml.doc.get': `
+Obtiene por clave el índice de nodo de un miembro del objeto raíz
+key: nombre de la clave
+child: ok = índice del nodo hijo, nil = la raíz no es un objeto o la clave no existe
+`
+  'noml.doc.get-bool': `
+Obtiene por clave el valor booleano de un miembro del objeto raíz
+key: nombre de la clave
+v: ok = valor booleano, nil = la clave no existe o el valor no es booleano
+`
+  'noml.doc.get-f64': `
+Obtiene por clave el valor numérico de un miembro del objeto raíz
+key: nombre de la clave
+v: ok = valor numérico, nil = la clave no existe o el valor no es número
+`
+  'noml.doc.get-i64': `
+Obtiene por clave el valor entero de un miembro del objeto raíz (trunca el decimal)
+key: nombre de la clave
+v: ok = entero, nil = la clave no existe o el valor no es número
+`
+  'noml.doc.get-str': `
+Obtiene por clave el valor de cadena de un miembro del objeto raíz
+key: nombre de la clave
+v: ok = contenido de la cadena, nil = la clave no existe o el valor no es cadena
+`
+  'noml.doc.has': `
+¿Tiene el objeto raíz esa clave?
+key: nombre de la clave
+found: true = existe
+`
+  'noml.doc.i64': `
+Obtiene el valor entero de la raíz (trunca el decimal)
+v: ok = entero, nil = la raíz no es número
+`
+  'noml.doc.is-arr': `
+¿Es la raíz un arreglo?
+yes: true = la raíz es un arreglo
+`
+  'noml.doc.is-bool': `
+Si la raíz es booleana
+yes: true = la raíz es booleana
+`
+  'noml.doc.is-nil': `
+¿Es la raíz nil?
+yes: true = la raíz es nil
+`
+  'noml.doc.is-num': `
+¿Es la raíz un número?
+yes: true = la raíz es un número
+`
+  'noml.doc.is-obj': `
+¿Es la raíz un objeto?
+yes: true = la raíz es un objeto
+`
+  'noml.doc.is-str': `
+¿Es la raíz una cadena?
+yes: true = la raíz es una cadena
+`
+  'noml.doc.key': `
+Obtiene por posición el nombre de clave de un miembro del objeto raíz
+i: índice del miembro (contado desde 0, según el orden del archivo)
+key: ok = nombre de la clave, nil = la raíz no es un objeto o el índice está fuera de rango
+`
+  'noml.doc.kind': `
+Tipo del nodo raíz
+k: NOML-KIND-*; NOML-KIND-NIL cuando la raíz es inválida
+`
+  'noml.doc.len': `
+Número de elementos hijos del nodo raíz (cantidad de miembros del objeto o longitud del arreglo)
+n: número de elementos hijos
+`
+  'noml.doc.new-arr': `
+Crea un nodo de arreglo vacío
+idx: índice del nuevo nodo
+`
+  'noml.doc.new-bool': `
+Crea un nodo booleano
+v bool: valor booleano a almacenar en el nodo
+idx i64: índice del nuevo nodo en el conjunto, para que el llamador enganche su subárbol
+`
+  'noml.doc.new-nil': `
+Crea un nodo nil
+idx: índice del nuevo nodo
+`
+  'noml.doc.new-num': `
+Crea un nodo numérico
+v f64: valor numérico almacenado en el nodo (enteros y decimales comparten el mismo tipo de nodo)
+idx i64: índice del nuevo nodo en el conjunto, para que el llamador enganche su subárbol
+`
+  'noml.doc.new-obj': `
+Crea un nodo de objeto vacío
+idx: índice del nuevo nodo
+`
+  'noml.doc.new-str': `
+Crea un nodo de cadena
+v: contenido de la cadena
+idx: índice del nuevo nodo
+`
+  'noml.doc.num': `
+Obtiene el valor numérico de la raíz
+v: ok = valor numérico, nil = la raíz no es un número
+`
+  'noml.doc.push': `
+Añade un elemento al final del arreglo (child debe pertenecer al mismo documento)
+arr: índice del nodo de arreglo
+child: índice del nodo hijo
+ok: true = añadido; false = arr no es un arreglo
+`
+  'noml.doc.put': `
+Coloca un miembro en el objeto (child debe pertenecer al mismo documento)
+obj: índice del nodo de objeto
+key: nombre de la clave
+child: índice del nodo hijo
+ok: true = escrito; false = obj no es un objeto
+`
+  'noml.doc.root-index': `
+Índice del nodo raíz (-1 en un documento vacío)
+idx: índice del nodo raíz
+`
+  'noml.doc.set-ann': `
+Configura el texto original del comentario `#{...}` del nodo raíz (cadena vacía = eliminarlo)
+text: texto original del comentario (sin `#{` ni `}`)
+ok: true = escrito
+`
+  'noml.doc.set-root': `
+Configura el nodo raíz
+idx: índice del nodo
+`
+  'noml.doc.str': `
+Obtiene el valor de cadena de la raíz
+v: ok = contenido de la cadena, nil = la raíz no es una cadena
+`
+  'noml.doc.stringify': `
+Serializa todo el documento (encima del nodo raíz emite el comentario de nivel de documento)
+out: texto NOML (cadena vacía cuando root es inválido)
+`
+  'noml.doc.stringify-node': `
+Serializa cualquier subárbol
+idx: índice de la raíz del subárbol
+out: texto NOML (cadena vacía cuando el índice es inválido)
+`
   'noml.hex-char': `
 Convierte un valor 0~15 al byte de carácter hexadecimal
 d: 0~15
@@ -5118,572 +5277,6 @@ d.put(o, 'name', d.new-str('nolang'))
 d.set-root(o)
 d: nuevo documento con el conjunto de nodos inicializado y root=-1
 `
-  'noml.noml-doc.ann': `
-Obtiene el texto original del comentario `#{...}` del nodo raíz
-v: ok = texto original del comentario, nil = la raíz no tiene comentario
-`
-  'noml.noml-doc.ann-value': `
-Obtiene el valor de una clave dentro del comentario del nodo raíz
-key: clave del comentario
-v: ok = valor, nil = esa clave no existe
-`
-  'noml.noml-doc.at': `
-Obtiene por posición el índice de nodo de un elemento del arreglo raíz
-i: índice del elemento (contado desde 0)
-child: ok = índice de nodo del elemento, nil = la raíz no es un arreglo o el índice está fuera de rango
-`
-  'noml.noml-doc.bool': `
-Obtiene el valor booleano de la raíz
-v: ok = valor booleano, nil = la raíz no es booleano
-`
-  'noml.noml-doc.get': `
-Obtiene por clave el índice de nodo de un miembro del objeto raíz
-key: nombre de la clave
-child: ok = índice del nodo hijo, nil = la raíz no es un objeto o la clave no existe
-`
-  'noml.noml-doc.get-bool': `
-Obtiene por clave el valor booleano de un miembro del objeto raíz
-key: nombre de la clave
-v: ok = valor booleano, nil = la clave no existe o el valor no es booleano
-`
-  'noml.noml-doc.get-f64': `
-Obtiene por clave el valor numérico de un miembro del objeto raíz
-key: nombre de la clave
-v: ok = valor numérico, nil = la clave no existe o el valor no es número
-`
-  'noml.noml-doc.get-i64': `
-Obtiene por clave el valor entero de un miembro del objeto raíz (trunca el decimal)
-key: nombre de la clave
-v: ok = entero, nil = la clave no existe o el valor no es número
-`
-  'noml.noml-doc.get-str': `
-Obtiene por clave el valor de cadena de un miembro del objeto raíz
-key: nombre de la clave
-v: ok = contenido de la cadena, nil = la clave no existe o el valor no es cadena
-`
-  'noml.noml-doc.has': `
-¿Tiene el objeto raíz esa clave?
-key: nombre de la clave
-found: true = existe
-`
-  'noml.noml-doc.i64': `
-Obtiene el valor entero de la raíz (trunca el decimal)
-v: ok = entero, nil = la raíz no es número
-`
-  'noml.noml-doc.is-arr': `
-¿Es la raíz un arreglo?
-yes: true = la raíz es un arreglo
-`
-  'noml.noml-doc.is-bool': `
-Si la raíz es booleana
-yes: true = la raíz es booleana
-`
-  'noml.noml-doc.is-nil': `
-¿Es la raíz nil?
-yes: true = la raíz es nil
-`
-  'noml.noml-doc.is-num': `
-¿Es la raíz un número?
-yes: true = la raíz es un número
-`
-  'noml.noml-doc.is-obj': `
-¿Es la raíz un objeto?
-yes: true = la raíz es un objeto
-`
-  'noml.noml-doc.is-str': `
-¿Es la raíz una cadena?
-yes: true = la raíz es una cadena
-`
-  'noml.noml-doc.key': `
-Obtiene por posición el nombre de clave de un miembro del objeto raíz
-i: índice del miembro (contado desde 0, según el orden del archivo)
-key: ok = nombre de la clave, nil = la raíz no es un objeto o el índice está fuera de rango
-`
-  'noml.noml-doc.kind': `
-Tipo del nodo raíz
-k: NOML-KIND-*; NOML-KIND-NIL cuando la raíz es inválida
-`
-  'noml.noml-doc.len': `
-Número de elementos hijos del nodo raíz (cantidad de miembros del objeto o longitud del arreglo)
-n: número de elementos hijos
-`
-  'noml.noml-doc.new-arr': `
-Crea un nodo de arreglo vacío
-idx: índice del nuevo nodo
-`
-  'noml.noml-doc.new-bool': `
-Crea un nodo booleano
-v bool: valor booleano a almacenar en el nodo
-idx i64: índice del nuevo nodo en el conjunto, para que el llamador enganche su subárbol
-`
-  'noml.noml-doc.new-nil': `
-Crea un nodo nil
-idx: índice del nuevo nodo
-`
-  'noml.noml-doc.new-num': `
-Crea un nodo numérico
-v f64: valor numérico almacenado en el nodo (enteros y decimales comparten el mismo tipo de nodo)
-idx i64: índice del nuevo nodo en el conjunto, para que el llamador enganche su subárbol
-`
-  'noml.noml-doc.new-obj': `
-Crea un nodo de objeto vacío
-idx: índice del nuevo nodo
-`
-  'noml.noml-doc.new-str': `
-Crea un nodo de cadena
-v: contenido de la cadena
-idx: índice del nuevo nodo
-`
-  'noml.noml-doc.num': `
-Obtiene el valor numérico de la raíz
-v: ok = valor numérico, nil = la raíz no es un número
-`
-  'noml.noml-doc.push': `
-Añade un elemento al final del arreglo (child debe pertenecer al mismo documento)
-arr: índice del nodo de arreglo
-child: índice del nodo hijo
-ok: true = añadido; false = arr no es un arreglo
-`
-  'noml.noml-doc.put': `
-Coloca un miembro en el objeto (child debe pertenecer al mismo documento)
-obj: índice del nodo de objeto
-key: nombre de la clave
-child: índice del nodo hijo
-ok: true = escrito; false = obj no es un objeto
-`
-  'noml.noml-doc.root-index': `
-Índice del nodo raíz (-1 en un documento vacío)
-idx: índice del nodo raíz
-`
-  'noml.noml-doc.set-ann': `
-Configura el texto original del comentario `#{...}` del nodo raíz (cadena vacía = eliminarlo)
-text: texto original del comentario (sin `#{` ni `}`)
-ok: true = escrito
-`
-  'noml.noml-doc.set-root': `
-Configura el nodo raíz
-idx: índice del nodo
-`
-  'noml.noml-doc.str': `
-Obtiene el valor de cadena de la raíz
-v: ok = contenido de la cadena, nil = la raíz no es una cadena
-`
-  'noml.noml-doc.stringify': `
-Serializa todo el documento (encima del nodo raíz emite el comentario de nivel de documento)
-out: texto NOML (cadena vacía cuando root es inválido)
-`
-  'noml.noml-doc.stringify-node': `
-Serializa cualquier subárbol
-idx: índice de la raíz del subárbol
-out: texto NOML (cadena vacía cuando el índice es inválido)
-`
-  'noml.noml-pool.add-child': `
-Adjunta el nodo hijo al nodo padre (implementa elementos hijos de longitud variable mediante una lista enlazada unidireccional de aristas)
-node-idx: índice del nodo padre
-child-idx: índice del nodo hijo
-key: nombre de la clave sobre la arista (para hijos de objeto; el arreglo pasa cadena vacía)
-`
-  'noml.noml-pool.alloc': `
-Asigna un nuevo nodo (kind=nil, sin nodos hijos)
-idx: índice del nuevo nodo
-`
-  'noml.noml-pool.ann': `
-Obtiene el texto original del comentario `#{...}` del nodo (sin `#{` ni `}`)
-idx: índice del nodo
-v: ok = texto original del comentario, nil = ese nodo no tiene comentario
-`
-  'noml.noml-pool.ann-literal': `
-Lee el valor literal de un comentario: las cadenas entre comillas simples se despuntan, el resto devuelve el texto original
-body: texto original del comentario
-pos: posición inicial del valor
-v: ok = valor, nil = formato inválido
-`
-  'noml.noml-pool.ann-value': `
-Obtiene el valor de una clave dentro del comentario (si el valor es una cadena entre comillas simples se despunta, el resto devuelve el texto original)
-idx: índice del nodo
-key: clave del comentario (p. ej. 'type')
-v: ok = valor, nil = esa clave no existe
-`
-  'noml.noml-pool.at': `
-Obtiene por posición el índice de un elemento del arreglo
-idx: índice del nodo de arreglo
-i: índice del elemento (contado desde 0)
-child: ok = índice del nodo del elemento, nil = no es un arreglo o el índice está fuera de rango
-`
-  'noml.noml-pool.at-line-start': `
-¿Está la posición al inicio de la línea (solo hay blancos antes)?
-s: texto fuente
-pos: posición
-yes: true = aún no ha aparecido ningún carácter no blanco en esta línea
-`
-  'noml.noml-pool.decode-escape': `
-Decodifica una secuencia de escape (`\'` `\\` `\/` `\n` `\r` `\t` `\uXXXX`)
-s: texto fuente
-pos: posición de la barra invertida
-val: cadena resuelta (un solo punto de código)
-next: posición tras la secuencia de escape
-ok: true = decodificación exitosa
-`
-  'noml.noml-pool.fail': `
-Registra un error de análisis con número de línea y devuelve false
-s: texto fuente
-pos: posición del error
-msg: mensaje (sin prefijo de posición)
-ok: siempre false (cómodo para `ok = .fail(...)`)
-`
-  'noml.noml-pool.fmt-key': `
-Produce el literal de la clave (añade comillas si no cumple la regla de clave desnuda)
-k: nombre de la clave
-out: literal de clave NOML
-`
-  'noml.noml-pool.fmt-num': `
-Produce el literal numérico (los valores enteros sin punto decimal)
-Si cae dentro de ±1e15 y al truncar se puede restaurar (i.to-f64() == n) emite la forma entera,
-caso contrario conserva el resultado de n.to-str().
-n f64: valor numérico a serializar
-out str: literal numérico (p. ej. '42' o '3.14')
-`
-  'noml.noml-pool.get': `
-Obtiene por clave el índice del nodo hijo
-idx: índice del nodo de objeto
-key: nombre de la clave
-child: ok = índice del nodo hijo, nil = no es un objeto o la clave no existe
-`
-  'noml.noml-pool.get-bool': `
-Obtiene por clave el valor booleano
-idx: índice del nodo de objeto
-key: nombre de la clave
-v: ok = valor booleano, nil = la clave no existe o el valor no es booleano
-`
-  'noml.noml-pool.get-f64': `
-Obtiene por clave el valor numérico
-idx: índice del nodo de objeto
-key: nombre de la clave
-v: ok = valor numérico, nil = la clave no existe o el valor no es número
-`
-  'noml.noml-pool.get-i64': `
-Obtiene por clave el valor entero (trunca el decimal)
-idx: índice del nodo de objeto
-key: nombre de la clave
-v: ok = entero truncado, nil = la clave no existe o el valor no es número
-`
-  'noml.noml-pool.get-str': `
-Obtiene por clave el valor de cadena
-idx: índice del nodo de objeto
-key: nombre de la clave
-v: ok = contenido de la cadena, nil = la clave no existe o el valor no es cadena
-`
-  'noml.noml-pool.has': `
-¿Tiene el objeto esa clave?
-idx: índice del nodo de objeto
-key: nombre de la clave
-found: true = existe
-`
-  'noml.noml-pool.has-byte': `
-Recorre los bytes crudos para determinar si aparece el valor especificado (comparación byte a byte, no por punto de código)
-s str: texto a recorrer
-target i64: valor de byte a comparar, toma un valor 0–255 (p. ej. 10 = '\n', 96 = '`')
-yes bool: true = aparece al menos una vez, false = no contiene ese byte en absoluto (una cadena vacía siempre da false)
-`
-  'noml.noml-pool.has-key': `
-¿Ya tiene el objeto un miembro con el mismo nombre (clave duplicada → error)?
-obj-idx: índice del nodo de objeto
-key: nombre de la clave
-found: true = ya existe un miembro homónimo
-`
-  'noml.noml-pool.hex4': `
-Lee un punto de código hexadecimal de 4 dígitos
-s: texto fuente
-pos: posición del primer dígito
-code: 0~0xFFFF; -1 = formato inválido
-`
-  'noml.noml-pool.init': 'Inicializa el conjunto de nodos (el vec en montículo debe inicializarse a no-nil para poder hacer push de forma segura)'
-  'noml.noml-pool.is-arr': `
-¿Es un arreglo?
-idx: índice del nodo
-yes: true = el valor es un arreglo
-`
-  'noml.noml-pool.is-bool': `
-¿Es booleano?
-idx: índice del nodo
-yes: true = el valor es booleano
-`
-  'noml.noml-pool.is-nil': `
-¿Es nil?
-idx: índice del nodo
-yes: true = el valor es nil
-`
-  'noml.noml-pool.is-num': `
-¿Es un número?
-idx: índice del nodo
-yes: true = el valor es un número
-`
-  'noml.noml-pool.is-obj': `
-¿Es un objeto?
-idx: índice del nodo
-yes: true = el valor es un objeto
-`
-  'noml.noml-pool.is-str': `
-¿Es una cadena?
-idx: índice del nodo
-yes: true = el valor es una cadena (cadena entre comillas simples o cadena cruda)
-`
-  'noml.noml-pool.join-ann': `
-Fusiona dos trozos de texto original de comentario (varios grupos de comentarios se unen con ", ")
-cur: texto original ya acumulado (puede ser vacío)
-add: texto original nuevo a añadir
-out: resultado de la fusión
-`
-  'noml.noml-pool.key': `
-Obtiene por posición el nombre de clave del objeto
-idx: índice del nodo de objeto
-i: índice del miembro (contado desde 0, según el orden del archivo)
-key: ok = nombre de la clave, nil = no es un objeto o el índice está fuera de rango
-`
-  'noml.noml-pool.kind': `
-Tipo del nodo
-idx: índice del nodo
-k: NOML-KIND-*; NOML-KIND-NIL cuando el índice es inválido
-`
-  'noml.noml-pool.len': `
-Número de elementos hijos (cantidad de miembros del objeto o longitud del arreglo, 0 para los demás)
-idx: índice del nodo
-n: número de elementos hijos
-`
-  'noml.noml-pool.line-of': `
-Número de línea donde cae la posición (contado desde 1)
-s: texto fuente
-pos: posición
-line: número de línea
-`
-  'noml.noml-pool.match-kw': `
-Empareja una palabra clave desnuda (no debe ir seguida inmediatamente por un carácter identificador)
-s: texto fuente
-pos: posición inicial
-kw: palabra clave
-next: posición tras la palabra clave; -1 = no empareja
-`
-  'noml.noml-pool.parse': `
-Analiza todo el documento (incluye el comentario de nivel de documento y el comentario colgante del valor de nivel superior)
-s: texto fuente
-idx: índice del nodo raíz; -1 = fallo
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-array': `
-Analiza un arreglo `[ elemento, ... ]` (separado por comas, permite coma final)
-s: texto fuente
-pos: posición de `[`
-idx: índice del nodo de arreglo; -1 = fallo
-next: posición tras `]`
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-bool': `
-Analiza true/false
-s str: texto fuente completo
-pos i64: posición inicial del literal (apunta a t o f)
-val bool: valor booleano analizado; siempre false cuando ok=false
-next i64: posición tras el literal; devuelve el mismo pos cuando ok=false
-ok bool: true = análisis exitoso, false = aquí no es true/false (ya llamó a fail para registrar el error)
-`
-  'noml.noml-pool.parse-bool-node': `
-Analiza un valor booleano y lo materializa en un nodo
-s: texto fuente
-pos: posición inicial del literal
-idx: índice del nodo; -1 = fallo
-next: posición tras el valor
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-key': `
-Analiza una clave (identificador desnudo o cadena entre comillas simples)
-s: texto fuente
-pos: posición inicial de la clave
-key: nombre de la clave
-next: posición tras la clave
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-nil-node': `
-Analiza un valor nil y lo materializa en un nodo
-s: texto fuente
-pos: posición inicial del literal
-idx: índice del nodo; -1 = fallo
-next: posición tras el valor
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-num': `
-Analiza un literal numérico (entero / decimal / notación científica, permite '-' inicial, no acepta '+')
-Solo consume los bytes que constituyen el número en sí, se detiene al encontrar cualquier otro carácter, no exige separador
-s str: texto fuente completo
-pos i64: índice de bytes donde inicia el número
-val f64: valor numérico analizado (NOML tiene un solo tipo de número, los enteros también se guardan como f64)
-next i64: índice de bytes tras el fin del número (en fallo se detiene en la posición del error, para que .fail la marque)
-ok bool: true = análisis exitoso, false = error de sintaxis (sin parte entera, sin decimales tras '.', exponente sin dígitos)
-`
-  'noml.noml-pool.parse-num-node': `
-Analiza un valor numérico y lo materializa en un nodo
-s: texto fuente
-pos: posición inicial del número
-idx: índice del nodo; -1 = fallo
-next: posición tras el valor
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-object': `
-Analiza un objeto `{ miembro... }` (los miembros se separan por salto de línea, sin comas)
-s: texto fuente
-pos: posición de `{`
-idx: índice del nodo de objeto; -1 = fallo
-next: posición tras `}`
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-raw': `
-Analiza una cadena cruda entre backticks (tras el ` inicial debe seguir un salto de línea; el ` final debe ir solo en su línea)
-s: texto fuente
-pos: posición de la comilla inicial
-val: contenido tal cual (sin analizar escapes)
-next: posición tras el backtick de cierre
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-raw-node': `
-Analiza un valor de cadena cruda y lo materializa en un nodo
-s: texto fuente
-pos: posición de la comilla inicial
-idx: índice del nodo; -1 = fallo
-next: posición tras el valor
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-str': `
-Analiza una cadena entre comillas simples (con escapes `\`)
-Se construye por «concatenación de fragmentos» en lugar de un búfer de bytes: cada punto de escape corta un fragmento, y los fragmentos se concatenan directamente con el resultado decodificado,
-así no hace falta estimar la capacidad por adelantado ni aparecen problemas de ciclo de vida de la vista del búfer.
-s: texto fuente
-pos: posición de la comilla inicial
-val: cadena resuelta
-next: posición tras la comilla de cierre
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-str-node': `
-Analiza un valor de cadena y lo materializa en un nodo
-s: texto fuente
-pos: posición de la comilla inicial
-idx: índice del nodo; -1 = fallo
-next: posición tras el valor
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.parse-value': `
-Analiza un valor
-s: texto fuente
-pos: posición inicial del valor
-idx: índice del nodo; -1 = fallo
-next: posición tras el valor
-ok: true = análisis exitoso
-`
-  'noml.noml-pool.quote': `
-Produce un literal de cadena entre comillas simples (con escapes)
-Reglas de escape: se añade barra invertida antes de `\'` y `\\`, LF / CR / TAB se escriben como \n \r \t,
-el resto de bytes de control < 0x20 se escriben como \u00XX; el búfer de salida reserva n*6+2 (el peor caso por byte es 6 caracteres).
-s str: contenido crudo (admite cualquier byte, no exige UTF-8 válido)
-out str: literal con una comilla simple al inicio y al final, y su interior ya escapado
-`
-  'noml.noml-pool.quote-value': `
-Produce un literal de cadena eligiendo la forma más simple según el contenido
-Por defecto usa .quote(); si contiene LF y pasa .raw-safe() cambia a una cadena cruda entre backticks, conservando los saltos de línea originales.
-s str: contenido crudo
-out str: literal de texto escribible directamente en .noml (forma escapada entre comillas simples o cadena cruda '`')
-`
-  'noml.noml-pool.raw-safe': `
-Determina si el contenido puede meterse en una cadena cruda entre backticks y recuperarse tal cual
-No es utilizable si aparece cualquiera de estos casos: cadena vacía, primer o último byte es LF, contiene CR,
-o alguna línea, tras quitar los blancos iniciales (espacio / TAB / CR), empieza con '`' (se confundiría con el marcador de fin).
-s str: contenido a serializar
-yes bool: true = se puede envolver con seguridad en '`\n' + s + '\n`', false = hay que usar la forma escapada entre comillas simples
-`
-  'noml.noml-pool.require-end': `
-Validación de fin de miembro: después solo se permiten blancos dentro de la línea, salto de línea, comentario `;` o el cierre del contenedor
-s: texto fuente
-pos: posición tras el valor
-key: nombre de la clave del miembro (solo para el mensaje de error)
-next: posición tras el salto de línea (o `}`)
-ok: true = legal
-`
-  'noml.noml-pool.scan-ann': `
-Recorre un grupo `#{...}`, devuelve la posición tras `}` (solo valida la estructura, no analiza las entradas)
-s: texto fuente
-pos: posición de `#`
-next: posición tras `}`; -1 = no es un comentario o no está cerrado
-`
-  'noml.noml-pool.scan-quote': `
-Recorre desde `'` hasta más allá del siguiente `'` sin escapar
-s: texto fuente
-pos: posición de la comilla inicial
-next: posición tras la comilla de cierre; -1 = sin cerrar
-`
-  'noml.noml-pool.scan-raw': `
-Recorre desde el backtick hasta más allá del backtick de cierre que va solo en su línea
-s: texto fuente
-pos: posición de la comilla inicial
-next: posición tras el backtick de cierre; -1 = sin cerrar
-`
-  'noml.noml-pool.set-ann': `
-Configura el texto original del comentario `#{...}` del nodo (cadena vacía = eliminarlo)
-idx: índice del nodo
-text: texto original del comentario (sin `#{` ni `}`)
-ok: true = escrito
-`
-  'noml.noml-pool.skip-ann-value': `
-Salta un valor de comentario (cadena/arreglo/valor desnudo), devuelve la posición tras él
-body: texto original del comentario
-pos: posición inicial del valor
-next: posición tras el valor; -1 = formato inválido
-`
-  'noml.noml-pool.skip-blanks': `
-Solo salta los blancos dentro de la línea (espacio y Tab), sin cruzar el salto de línea
-s: texto fuente
-pos: posición inicial
-p: posición del primer carácter no blanco
-`
-  'noml.noml-pool.skip-trivia': `
-Salta los blancos (incluidos los saltos de línea) y los comentarios de línea `;`
-s: texto fuente
-pos: posición inicial
-p: posición del primer carácter significativo (el final de la cadena si todo son blancos)
-`
-  'noml.noml-pool.stringify': `
-Serializa un subárbol
-idx: índice de la raíz del subárbol
-indent: nivel de sangrado (dos espacios por nivel)
-out: texto NOML (cadena vacía cuando el índice es inválido)
-`
-  'noml.noml-pool.stringify-arr': `
-Serializa un arreglo (cada elemento en una línea, con coma final)
-idx: índice del nodo de arreglo
-indent: nivel de sangrado
-out: texto NOML
-`
-  'noml.noml-pool.stringify-obj': `
-Serializa un objeto (cada miembro en una línea, el comentario se emite encima del miembro)
-idx: índice del nodo de objeto
-indent: nivel de sangrado
-out: texto NOML
-`
-  'noml.noml-pool.val-bool': `
-Obtiene el valor booleano
-idx: índice del nodo
-v: ok = valor booleano, nil = el valor no es booleano
-`
-  'noml.noml-pool.val-i64': `
-Obtiene el valor entero (trunca el decimal)
-idx: índice del nodo
-v: ok = entero truncado, nil = el valor no es número
-`
-  'noml.noml-pool.val-num': `
-Obtiene el valor numérico
-idx: índice del nodo
-v: ok = valor numérico, nil = el valor no es número
-`
-  'noml.noml-pool.val-str': `
-Obtiene el valor de cadena
-idx: índice del nodo
-v: ok = contenido de la cadena, nil = el valor no es cadena
-`
   'noml.parse': `
 Analiza texto NOML
 Uso:
@@ -5694,6 +5287,413 @@ err -> print(it)
 }
 s: texto NOML completo (los blancos del inicio y del final se saltan)
 result: ok = documento analizado, err(mensaje con número de línea) = error de sintaxis
+`
+  'noml.pool.add-child': `
+Adjunta el nodo hijo al nodo padre (implementa elementos hijos de longitud variable mediante una lista enlazada unidireccional de aristas)
+node-idx: índice del nodo padre
+child-idx: índice del nodo hijo
+key: nombre de la clave sobre la arista (para hijos de objeto; el arreglo pasa cadena vacía)
+`
+  'noml.pool.alloc': `
+Asigna un nuevo nodo (kind=nil, sin nodos hijos)
+idx: índice del nuevo nodo
+`
+  'noml.pool.ann': `
+Obtiene el texto original del comentario `#{...}` del nodo (sin `#{` ni `}`)
+idx: índice del nodo
+v: ok = texto original del comentario, nil = ese nodo no tiene comentario
+`
+  'noml.pool.ann-literal': `
+Lee el valor literal de un comentario: las cadenas entre comillas simples se despuntan, el resto devuelve el texto original
+body: texto original del comentario
+pos: posición inicial del valor
+v: ok = valor, nil = formato inválido
+`
+  'noml.pool.ann-value': `
+Obtiene el valor de una clave dentro del comentario (si el valor es una cadena entre comillas simples se despunta, el resto devuelve el texto original)
+idx: índice del nodo
+key: clave del comentario (p. ej. 'type')
+v: ok = valor, nil = esa clave no existe
+`
+  'noml.pool.at': `
+Obtiene por posición el índice de un elemento del arreglo
+idx: índice del nodo de arreglo
+i: índice del elemento (contado desde 0)
+child: ok = índice del nodo del elemento, nil = no es un arreglo o el índice está fuera de rango
+`
+  'noml.pool.at-line-start': `
+¿Está la posición al inicio de la línea (solo hay blancos antes)?
+s: texto fuente
+pos: posición
+yes: true = aún no ha aparecido ningún carácter no blanco en esta línea
+`
+  'noml.pool.decode-escape': `
+Decodifica una secuencia de escape (`\'` `\\` `\/` `\n` `\r` `\t` `\uXXXX`)
+s: texto fuente
+pos: posición de la barra invertida
+val: cadena resuelta (un solo punto de código)
+next: posición tras la secuencia de escape
+ok: true = decodificación exitosa
+`
+  'noml.pool.fail': `
+Registra un error de análisis con número de línea y devuelve false
+s: texto fuente
+pos: posición del error
+msg: mensaje (sin prefijo de posición)
+ok: siempre false (cómodo para `ok = .fail(...)`)
+`
+  'noml.pool.fmt-key': `
+Produce el literal de la clave (añade comillas si no cumple la regla de clave desnuda)
+k: nombre de la clave
+out: literal de clave NOML
+`
+  'noml.pool.fmt-num': `
+Produce el literal numérico (los valores enteros sin punto decimal)
+Si cae dentro de ±1e15 y al truncar se puede restaurar (i.to-f64() == n) emite la forma entera,
+caso contrario conserva el resultado de n.to-str().
+n f64: valor numérico a serializar
+out str: literal numérico (p. ej. '42' o '3.14')
+`
+  'noml.pool.get': `
+Obtiene por clave el índice del nodo hijo
+idx: índice del nodo de objeto
+key: nombre de la clave
+child: ok = índice del nodo hijo, nil = no es un objeto o la clave no existe
+`
+  'noml.pool.get-bool': `
+Obtiene por clave el valor booleano
+idx: índice del nodo de objeto
+key: nombre de la clave
+v: ok = valor booleano, nil = la clave no existe o el valor no es booleano
+`
+  'noml.pool.get-f64': `
+Obtiene por clave el valor numérico
+idx: índice del nodo de objeto
+key: nombre de la clave
+v: ok = valor numérico, nil = la clave no existe o el valor no es número
+`
+  'noml.pool.get-i64': `
+Obtiene por clave el valor entero (trunca el decimal)
+idx: índice del nodo de objeto
+key: nombre de la clave
+v: ok = entero truncado, nil = la clave no existe o el valor no es número
+`
+  'noml.pool.get-str': `
+Obtiene por clave el valor de cadena
+idx: índice del nodo de objeto
+key: nombre de la clave
+v: ok = contenido de la cadena, nil = la clave no existe o el valor no es cadena
+`
+  'noml.pool.has': `
+¿Tiene el objeto esa clave?
+idx: índice del nodo de objeto
+key: nombre de la clave
+found: true = existe
+`
+  'noml.pool.has-byte': `
+Recorre los bytes crudos para determinar si aparece el valor especificado (comparación byte a byte, no por punto de código)
+s str: texto a recorrer
+target i64: valor de byte a comparar, toma un valor 0–255 (p. ej. 10 = '\n', 96 = '`')
+yes bool: true = aparece al menos una vez, false = no contiene ese byte en absoluto (una cadena vacía siempre da false)
+`
+  'noml.pool.has-key': `
+¿Ya tiene el objeto un miembro con el mismo nombre (clave duplicada → error)?
+obj-idx: índice del nodo de objeto
+key: nombre de la clave
+found: true = ya existe un miembro homónimo
+`
+  'noml.pool.hex4': `
+Lee un punto de código hexadecimal de 4 dígitos
+s: texto fuente
+pos: posición del primer dígito
+code: 0~0xFFFF; -1 = formato inválido
+`
+  'noml.pool.init': 'Inicializa el conjunto de nodos (el vec en montículo debe inicializarse a no-nil para poder hacer push de forma segura)'
+  'noml.pool.is-arr': `
+¿Es un arreglo?
+idx: índice del nodo
+yes: true = el valor es un arreglo
+`
+  'noml.pool.is-bool': `
+¿Es booleano?
+idx: índice del nodo
+yes: true = el valor es booleano
+`
+  'noml.pool.is-nil': `
+¿Es nil?
+idx: índice del nodo
+yes: true = el valor es nil
+`
+  'noml.pool.is-num': `
+¿Es un número?
+idx: índice del nodo
+yes: true = el valor es un número
+`
+  'noml.pool.is-obj': `
+¿Es un objeto?
+idx: índice del nodo
+yes: true = el valor es un objeto
+`
+  'noml.pool.is-str': `
+¿Es una cadena?
+idx: índice del nodo
+yes: true = el valor es una cadena (cadena entre comillas simples o cadena cruda)
+`
+  'noml.pool.join-ann': `
+Fusiona dos trozos de texto original de comentario (varios grupos de comentarios se unen con ", ")
+cur: texto original ya acumulado (puede ser vacío)
+add: texto original nuevo a añadir
+out: resultado de la fusión
+`
+  'noml.pool.key': `
+Obtiene por posición el nombre de clave del objeto
+idx: índice del nodo de objeto
+i: índice del miembro (contado desde 0, según el orden del archivo)
+key: ok = nombre de la clave, nil = no es un objeto o el índice está fuera de rango
+`
+  'noml.pool.kind': `
+Tipo del nodo
+idx: índice del nodo
+k: NOML-KIND-*; NOML-KIND-NIL cuando el índice es inválido
+`
+  'noml.pool.len': `
+Número de elementos hijos (cantidad de miembros del objeto o longitud del arreglo, 0 para los demás)
+idx: índice del nodo
+n: número de elementos hijos
+`
+  'noml.pool.line-of': `
+Número de línea donde cae la posición (contado desde 1)
+s: texto fuente
+pos: posición
+line: número de línea
+`
+  'noml.pool.match-kw': `
+Empareja una palabra clave desnuda (no debe ir seguida inmediatamente por un carácter identificador)
+s: texto fuente
+pos: posición inicial
+kw: palabra clave
+next: posición tras la palabra clave; -1 = no empareja
+`
+  'noml.pool.parse': `
+Analiza todo el documento (incluye el comentario de nivel de documento y el comentario colgante del valor de nivel superior)
+s: texto fuente
+idx: índice del nodo raíz; -1 = fallo
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-array': `
+Analiza un arreglo `[ elemento, ... ]` (separado por comas, permite coma final)
+s: texto fuente
+pos: posición de `[`
+idx: índice del nodo de arreglo; -1 = fallo
+next: posición tras `]`
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-bool': `
+Analiza true/false
+s str: texto fuente completo
+pos i64: posición inicial del literal (apunta a t o f)
+val bool: valor booleano analizado; siempre false cuando ok=false
+next i64: posición tras el literal; devuelve el mismo pos cuando ok=false
+ok bool: true = análisis exitoso, false = aquí no es true/false (ya llamó a fail para registrar el error)
+`
+  'noml.pool.parse-bool-node': `
+Analiza un valor booleano y lo materializa en un nodo
+s: texto fuente
+pos: posición inicial del literal
+idx: índice del nodo; -1 = fallo
+next: posición tras el valor
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-key': `
+Analiza una clave (identificador desnudo o cadena entre comillas simples)
+s: texto fuente
+pos: posición inicial de la clave
+key: nombre de la clave
+next: posición tras la clave
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-nil-node': `
+Analiza un valor nil y lo materializa en un nodo
+s: texto fuente
+pos: posición inicial del literal
+idx: índice del nodo; -1 = fallo
+next: posición tras el valor
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-num': `
+Analiza un literal numérico (entero / decimal / notación científica, permite '-' inicial, no acepta '+')
+Solo consume los bytes que constituyen el número en sí, se detiene al encontrar cualquier otro carácter, no exige separador
+s str: texto fuente completo
+pos i64: índice de bytes donde inicia el número
+val f64: valor numérico analizado (NOML tiene un solo tipo de número, los enteros también se guardan como f64)
+next i64: índice de bytes tras el fin del número (en fallo se detiene en la posición del error, para que .fail la marque)
+ok bool: true = análisis exitoso, false = error de sintaxis (sin parte entera, sin decimales tras '.', exponente sin dígitos)
+`
+  'noml.pool.parse-num-node': `
+Analiza un valor numérico y lo materializa en un nodo
+s: texto fuente
+pos: posición inicial del número
+idx: índice del nodo; -1 = fallo
+next: posición tras el valor
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-object': `
+Analiza un objeto `{ miembro... }` (los miembros se separan por salto de línea, sin comas)
+s: texto fuente
+pos: posición de `{`
+idx: índice del nodo de objeto; -1 = fallo
+next: posición tras `}`
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-raw': `
+Analiza una cadena cruda entre backticks (tras el ` inicial debe seguir un salto de línea; el ` final debe ir solo en su línea)
+s: texto fuente
+pos: posición de la comilla inicial
+val: contenido tal cual (sin analizar escapes)
+next: posición tras el backtick de cierre
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-raw-node': `
+Analiza un valor de cadena cruda y lo materializa en un nodo
+s: texto fuente
+pos: posición de la comilla inicial
+idx: índice del nodo; -1 = fallo
+next: posición tras el valor
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-str': `
+Analiza una cadena entre comillas simples (con escapes `\`)
+Se construye por «concatenación de fragmentos» en lugar de un búfer de bytes: cada punto de escape corta un fragmento, y los fragmentos se concatenan directamente con el resultado decodificado,
+así no hace falta estimar la capacidad por adelantado ni aparecen problemas de ciclo de vida de la vista del búfer.
+s: texto fuente
+pos: posición de la comilla inicial
+val: cadena resuelta
+next: posición tras la comilla de cierre
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-str-node': `
+Analiza un valor de cadena y lo materializa en un nodo
+s: texto fuente
+pos: posición de la comilla inicial
+idx: índice del nodo; -1 = fallo
+next: posición tras el valor
+ok: true = análisis exitoso
+`
+  'noml.pool.parse-value': `
+Analiza un valor
+s: texto fuente
+pos: posición inicial del valor
+idx: índice del nodo; -1 = fallo
+next: posición tras el valor
+ok: true = análisis exitoso
+`
+  'noml.pool.quote': `
+Produce un literal de cadena entre comillas simples (con escapes)
+Reglas de escape: se añade barra invertida antes de `\'` y `\\`, LF / CR / TAB se escriben como \n \r \t,
+el resto de bytes de control < 0x20 se escriben como \u00XX; el búfer de salida reserva n*6+2 (el peor caso por byte es 6 caracteres).
+s str: contenido crudo (admite cualquier byte, no exige UTF-8 válido)
+out str: literal con una comilla simple al inicio y al final, y su interior ya escapado
+`
+  'noml.pool.quote-value': `
+Produce un literal de cadena eligiendo la forma más simple según el contenido
+Por defecto usa .quote(); si contiene LF y pasa .raw-safe() cambia a una cadena cruda entre backticks, conservando los saltos de línea originales.
+s str: contenido crudo
+out str: literal de texto escribible directamente en .noml (forma escapada entre comillas simples o cadena cruda '`')
+`
+  'noml.pool.raw-safe': `
+Determina si el contenido puede meterse en una cadena cruda entre backticks y recuperarse tal cual
+No es utilizable si aparece cualquiera de estos casos: cadena vacía, primer o último byte es LF, contiene CR,
+o alguna línea, tras quitar los blancos iniciales (espacio / TAB / CR), empieza con '`' (se confundiría con el marcador de fin).
+s str: contenido a serializar
+yes bool: true = se puede envolver con seguridad en '`\n' + s + '\n`', false = hay que usar la forma escapada entre comillas simples
+`
+  'noml.pool.require-end': `
+Validación de fin de miembro: después solo se permiten blancos dentro de la línea, salto de línea, comentario `;` o el cierre del contenedor
+s: texto fuente
+pos: posición tras el valor
+key: nombre de la clave del miembro (solo para el mensaje de error)
+next: posición tras el salto de línea (o `}`)
+ok: true = legal
+`
+  'noml.pool.scan-ann': `
+Recorre un grupo `#{...}`, devuelve la posición tras `}` (solo valida la estructura, no analiza las entradas)
+s: texto fuente
+pos: posición de `#`
+next: posición tras `}`; -1 = no es un comentario o no está cerrado
+`
+  'noml.pool.scan-quote': `
+Recorre desde `'` hasta más allá del siguiente `'` sin escapar
+s: texto fuente
+pos: posición de la comilla inicial
+next: posición tras la comilla de cierre; -1 = sin cerrar
+`
+  'noml.pool.scan-raw': `
+Recorre desde el backtick hasta más allá del backtick de cierre que va solo en su línea
+s: texto fuente
+pos: posición de la comilla inicial
+next: posición tras el backtick de cierre; -1 = sin cerrar
+`
+  'noml.pool.set-ann': `
+Configura el texto original del comentario `#{...}` del nodo (cadena vacía = eliminarlo)
+idx: índice del nodo
+text: texto original del comentario (sin `#{` ni `}`)
+ok: true = escrito
+`
+  'noml.pool.skip-ann-value': `
+Salta un valor de comentario (cadena/arreglo/valor desnudo), devuelve la posición tras él
+body: texto original del comentario
+pos: posición inicial del valor
+next: posición tras el valor; -1 = formato inválido
+`
+  'noml.pool.skip-blanks': `
+Solo salta los blancos dentro de la línea (espacio y Tab), sin cruzar el salto de línea
+s: texto fuente
+pos: posición inicial
+p: posición del primer carácter no blanco
+`
+  'noml.pool.skip-trivia': `
+Salta los blancos (incluidos los saltos de línea) y los comentarios de línea `;`
+s: texto fuente
+pos: posición inicial
+p: posición del primer carácter significativo (el final de la cadena si todo son blancos)
+`
+  'noml.pool.stringify': `
+Serializa un subárbol
+idx: índice de la raíz del subárbol
+indent: nivel de sangrado (dos espacios por nivel)
+out: texto NOML (cadena vacía cuando el índice es inválido)
+`
+  'noml.pool.stringify-arr': `
+Serializa un arreglo (cada elemento en una línea, con coma final)
+idx: índice del nodo de arreglo
+indent: nivel de sangrado
+out: texto NOML
+`
+  'noml.pool.stringify-obj': `
+Serializa un objeto (cada miembro en una línea, el comentario se emite encima del miembro)
+idx: índice del nodo de objeto
+indent: nivel de sangrado
+out: texto NOML
+`
+  'noml.pool.val-bool': `
+Obtiene el valor booleano
+idx: índice del nodo
+v: ok = valor booleano, nil = el valor no es booleano
+`
+  'noml.pool.val-i64': `
+Obtiene el valor entero (trunca el decimal)
+idx: índice del nodo
+v: ok = entero truncado, nil = el valor no es número
+`
+  'noml.pool.val-num': `
+Obtiene el valor numérico
+idx: índice del nodo
+v: ok = valor numérico, nil = el valor no es número
+`
+  'noml.pool.val-str': `
+Obtiene el valor de cadena
+idx: índice del nodo
+v: ok = contenido de la cadena, nil = el valor no es cadena
 `
   'num.abs': `
 valor absoluto — sirve para todos los tipos num (enteros y flotantes)
@@ -9112,6 +9112,32 @@ Quitar relleno CBC TLS 1.2
 in []byte: datos descifrados (content || MAC || padding)
 Retorno out-n i64: longitud tras quitar el relleno (content+MAC), -1 = error de relleno
 `
+  'toml.array-name': `
+Lee el nombre de un array de tablas.
+t: el registro array-of-tables a leer
+s: el nombre de esa tabla de matriz de tablas
+`
+  'toml.entry-key': `
+Lee la clave canónica.
+e: la entry a leer
+s: la clave canonical de la entrada (forma normalizada separada por puntos)
+`
+  'toml.entry-key-eq': `
+Compara la clave de una entrada con una cadena.
+e: la entry a comparar
+key: cadena de clave a comparar
+same: si la clave de la entrada es igual a key
+`
+  'toml.entry-value': `
+Lee el valor TOML en bruto.
+e: la entry a leer
+s: literal de valor TOML crudo (sin decodificar)
+`
+  'toml.find-eq': `
+Encuentra el primer signo igual que no está dentro de comillas
+s: la línea clave-valor a parsear
+pos: posición de byte del primer '=' fuera de comillas (-1 si no se encuentra)
+`
   'toml.get': `
 Devuelve el literal TOML en bruto
 Aquí son accesibles los valores que no se han convertido, como arrays y fechas/horas.
@@ -9149,58 +9175,15 @@ doc: el documento a comprobar
 key: la clave a consultar
 found: si el documento contiene esa clave
 `
-  'toml.new': `
-Crea un documento TOML vacío
-doc: un documento TOML vacío (0 entradas, 0 tablas)
-`
-  'toml.parse': `
-Analiza un documento TOML; devuelve err(message) en caso de fallo
-s: texto TOML completo
-result: ok=archivo parseado, err=mensaje de error con la causa
-`
-  'toml.stringify': `
-Escribe el archivo con sintaxis TOML 1.0; array-of-tables se restaura como cabeceras [[table]].
-doc: el documento a serializar
-out: texto con sintaxis TOML 1.0 (emitido entrada por entrada con cabeceras de tabla)
-`
-  'toml.array-name': `
-Lee el nombre de un array de tablas.
-t: el registro array-of-tables a leer
-s: el nombre de esa tabla de matriz de tablas
-`
-  'toml.put': `
-Fija el valor literal TOML crudo.
-value puede ser una matriz, fecha-hora, etc. según la sintaxis TOML; el módulo no lo entrecomilla.
-key: la clave (falla si la clave no puede normalizarse)
-value: el literal TOML crudo (guardado tras la validación sintáctica)
-ok: true=escritura exitosa, false=clave inválida/valor inválido/lleno
-`
-  'toml.entry-key': `
-Lee la clave canónica.
-e: la entry a leer
-s: la clave canonical de la entrada (forma normalizada separada por puntos)
-`
-  'toml.entry-key-eq': `
-Compara la clave de una entrada con una cadena.
-e: la entry a comparar
-key: cadena de clave a comparar
-same: si la clave de la entrada es igual a key
-`
-  'toml.entry-value': `
-Lee el valor TOML en bruto.
-e: la entry a leer
-s: literal de valor TOML crudo (sin decodificar)
-`
-  'toml.find-eq': `
-Encuentra el primer signo igual que no está dentro de comillas
-s: la línea clave-valor a parsear
-pos: posición de byte del primer '=' fuera de comillas (-1 si no se encuentra)
-`
   'toml.make-entry': `
 Copia clave/valor en un búfer de tamaño fijo.
 key: cadena de clave
 value: la cadena de valor
 e: la nueva entrada tras copiar clave/valor al búfer fijo
+`
+  'toml.new': `
+Crea un documento TOML vacío
+doc: un documento TOML vacío (0 entradas, 0 tablas)
 `
   'toml.next-array-table': `
 Devuelve y registra el siguiente índice de un array de tablas.
@@ -9212,6 +9195,11 @@ idx: ok=índice de esta entrada (registro con autoincremento), nil=tabla homóni
 Analiza una clave desnuda, entre comillas o con puntos y emite la clave con puntos canónica.
 s: texto de clave crudo (bare / quoted / dotted)
 key: ok=clave normalizada en notación de puntos, nil=mensaje de error por clave inválida
+`
+  'toml.parse': `
+Analiza un documento TOML; devuelve err(message) en caso de fallo
+s: texto TOML completo
+result: ok=archivo parseado, err=mensaje de error con la causa
 `
   'toml.parse-bool': `
 Analiza un booleano
@@ -9228,6 +9216,13 @@ Soporta literales decimales, hexadecimales, octales y binarios, además de separ
 s: texto de literal entero
 value: ok=el valor numérico, nil=texto vacío, err=formato ilegal o desbordamiento
 `
+  'toml.put': `
+Fija el valor literal TOML crudo.
+value puede ser una matriz, fecha-hora, etc. según la sintaxis TOML; el módulo no lo entrecomilla.
+key: la clave (falla si la clave no puede normalizarse)
+value: el literal TOML crudo (guardado tras la validación sintáctica)
+ok: true=escritura exitosa, false=clave inválida/valor inválido/lleno
+`
   'toml.register-table': `
 Registra una tabla definida; devuelve false cuando ya está definida dos veces.
 doc: el documento donde inscribir el registro
@@ -9239,6 +9234,11 @@ Resuelve una subtabla de un array de tablas sobre el elemento más reciente.
 doc: el documento actual
 name: nombre del párrafo a analizar
 resolved: reescrito como base[índice].sufijo cuando la clave es una subclave array-of-tables, devuelto sin cambios en caso contrario
+`
+  'toml.stringify': `
+Escribe el archivo con sintaxis TOML 1.0; array-of-tables se restaura como cabeceras [[table]].
+doc: el documento a serializar
+out: texto con sintaxis TOML 1.0 (emitido entrada por entrada con cabeceras de tabla)
 `
   'toml.strip-comment': `
 Elimina los comentarios # fuera de las cadenas y recorta; se soportan cadenas multilínea.
@@ -10706,6 +10706,20 @@ data: certificado codificado en DER
 start: posición inicial TBS de salida (incluye la etiqueta SEQUENCE)
 end: posición final TBS de salida (exclusiva, es el inicio del siguiente elemento)
 `
+  'xz.compress': `
+Comprime datos usando el formato xz (implementación básica)
+data: datos crudos ([]byte)
+out: datos comprimidos con xz ([]byte)
+Nota: actualmente usa una implementación básica de stored block;
+la compresión LZMA2 completa queda pendiente para una versión futura.
+`
+  'xz.decompress': `
+Formato .xz:
+- Stream Header: 6 bytes de magic + 2 bytes de stream flags
+- Blocks: Block Header + Compressed Data + Block Padding + Check
+- Index
+- Stream Footer: 12 bytes
+`
   'xz.lzma-decoder.decode': `
 Bucle principal de decodificación LZMA
 data: datos comprimidos, start-pos: posición inicial de los datos
@@ -10777,23 +10791,15 @@ data: flujo LZMA2 con bytes de control
 start-pos: desplazamiento inicial del flujo
 out: flujo de bytes en texto plano descomprimido (parámetro de salida con nombre, entregado de golpe al final de la función)
 `
-  'xz.compress': `
-Comprime datos usando el formato xz (implementación básica)
-data: datos crudos ([]byte)
-out: datos comprimidos con xz ([]byte)
-Nota: actualmente usa una implementación básica de stored block;
-la compresión LZMA2 completa queda pendiente para una versión futura.
-`
-  'xz.decompress': `
-Formato .xz:
-- Stream Header: 6 bytes de magic + 2 bytes de stream flags
-- Blocks: Block Header + Compressed Data + Block Padding + Check
-- Index
-- Stream Footer: 12 bytes
-`
   'yaml.anchor': `
 El nombre de ancla del nodo actual
 a: nombre del ancla del nodo (cadena vacía = sin ancla)
+`
+  'yaml.apply-tag': `
+Decide el tipo de nodo por la etiqueta explícita
+tag: nombre de etiqueta normalizado
+kind: tipo de nodo inferido por el contenido
+k: tipo final tras la sobreescritura por etiqueta (se devuelve el kind original si la etiqueta no se reconoce)
 `
   'yaml.at': `
 Obtiene un elemento de secuencia / el i-ésimo valor de un mapeo
@@ -10814,6 +10820,14 @@ out: manejador del documento i (nil=fuera de rango)
 El número de documentos
 n: cantidad de documentos contenidos en este conjunto de documentos
 `
+  'yaml.emit': `
+Emite un nodo como YAML de estilo bloque (sin salto de línea final)
+pool: el pool de nodos
+idx: índice del nodo a emitir
+indent: número de espacios por nivel de sangría
+depth: profundidad de anidamiento actual
+out: texto YAML de estilo de bloque (sin salto de línea final)
+`
   'yaml.error': `
 El error de parseo de este documento (siempre cadena vacía cuando el parseo tuvo éxito)
 Nota: al fallar el parseo, yaml.parse devuelve err y no se obtiene valor yaml;
@@ -10824,6 +10838,18 @@ msg: mensaje de error (siempre vacío cuando el análisis tiene éxito)
 Parsea el texto fuente y devuelve el mensaje de error (cadena vacía si tiene éxito)
 source: texto fuente YAML
 msg: mensaje de error de análisis (cadena vacía=éxito)
+`
+  'yaml.f-is-inf': `
+No se usa comparación con literales: los literales numéricos de Nolang no soportan exponentes (`1e308` se corta en `1` + `e308`).
+El criterio de infinito es «no nulo e invariable tras reducirlo a la mitad»; primero se excluye NaN con `x != x`.
+x: el valor f64 a comprobar
+yes: x es infinito positivo/negativo (no nulo e invariable tras reducirlo a la mitad)
+`
+  'yaml.f-is-nan': `
+Si el flotante es NaN (NaN != NaN)
+No se usa `float.is-nan`: las llamadas con receptor dentro del módulo no resuelven ese método en el backend MIR.
+x: el valor f64 a comprobar
+yes: x es NaN (el criterio NaN != NaN)
 `
   'yaml.f64': `
 Obtiene el valor de punto flotante
@@ -10879,9 +10905,23 @@ Obtiene una cadena por clave escalar
 key: texto de clave escalar a buscar
 out: forma de cadena del valor correspondiente (nil=clave ausente o no es valor de cadena)
 `
+  'yaml.hex-char': `
+Convierte un solo dígito hex (0-15) a carácter
+v: el valor numérico de un dígito hex, 0-15
+ch: el carácter hexadecimal correspondiente ('0'-'f')
+`
+  'yaml.hex-digit': `
+Convierte un carácter hex a su valor; los no hex devuelven -1
+c: código ASCII del carácter
+d: el valor 0-15 que representa este dígito hex (-1=carácter hex inválido)
+`
   'yaml.i64': `
 Obtiene el valor entero
 val: el valor entero (nil=no es un nodo entero)
+`
+  'yaml.inf': `
+Infinito positivo
+v: el valor de infinito positivo
 `
   'yaml.is-bool': `
 Si es booleano
@@ -10916,15 +10956,39 @@ yes: el nodo es secuencia
 Si es cadena
 yes: el nodo es cadena
 `
+  'yaml.json-escape': `
+Escapado de cadenas JSON
+s: la cadena cruda
+out: cadena JSON escapada (con las dobles comillas envolventes)
+`
+  'yaml.json-of': `
+Convierte un nodo a JSON
+pool: el pool de nodos
+idx: índice del nodo a convertir
+depth: profundidad de recursión restante (evita ciclos de alias)
+out: texto JSON correspondiente a ese nodo
+`
   'yaml.key': `
 Obtiene el texto de la i-ésima clave del mapeo
 i: número de par clave/valor (desde 0)
 out: texto escalar de la clave i (nil=fuera de rango o no es un mapeo)
 `
+  'yaml.key-eq': `
+Si dos nodos clave son equivalentes (compara el texto escalar)
+a: nodo clave a
+b: nodo clave b
+yes: los textos escalares de ambos nodos son iguales
+`
   'yaml.key-node': `
 Obtiene el nodo de la i-ésima clave del mapeo
 i: número de par clave/valor (desde 0)
 out: nodo de la clave i (nil=fuera de rango o no es un mapeo)
+`
+  'yaml.key-text-eq': `
+Si el texto de la clave escalar es igual a la cadena dada
+nd: nodo a comparar (se toma su texto escalar)
+key: texto destino
+yes: el texto escalar de nd es igual a key
 `
   'yaml.kind': `
 El tipo del nodo actual
@@ -10938,9 +11002,20 @@ n: número de elementos de secuencia o de pares clave/valor de mapeo (0 para otr
 La línea inicial del nodo actual
 n: número de línea donde comienza el nodo
 `
+  'yaml.nan': `
+Debe usarse división en tiempo de ejecución: el plegado de constantes calcula `0.0 / 0.0` directamente como 0.
+Pasar por una variable local evita el plegado y obtiene un NaN real (`x != x` es verdadero).
+v: el valor NaN (producido en tiempo de ejecución por 0.0/0.0, sin plegado de constantes)
+`
   'yaml.node-count': `
 Número total de nodos
 n: número total de nodos en el pool de nodos
+`
+  'yaml.node-is-nan': `
+el fval de `.nan` lo rellena nan() con un NaN real, así que se juzga por valor (NaN != NaN).
+La comprobación del texto crudo del nodo sirve de respaldo: rutas como la reescritura de etiquetas pueden cambiar solo text sin recalcular fval.
+nd: nodo a inspeccionar
+yes: el nodo es .nan
 `
   'yaml.parse': `
 Parsea texto YAML y devuelve el primer documento
@@ -10952,140 +11027,6 @@ out: manejador del primer documento (err=mensaje de fallo de parseo)
 Parsea todos los documentos
 source: texto fuente YAML con múltiples documentos
 out: manejador del conjunto de documentos (acceda a cada uno con .doc(i))
-`
-  'yaml.scalar-text': `
-El texto escalar del nodo actual (los contenedores devuelven ok=false)
-out: texto escalar (nil=nodo contenedor)
-`
-  'yaml.source-of': `
-El texto de entrada original
-out: texto de entrada original en el momento del parseo
-`
-  'yaml.str': `
-Obtiene el valor de cadena (números/booleanos devuelven su texto crudo)
-val: el texto crudo del escalar (nil=nodo contenedor)
-`
-  'yaml.stringify': `
-Alias de to-yaml
-out: la misma salida que to-yaml
-`
-  'yaml.strip-bom': `
-Quita un BOM UTF-8 inicial
-s: texto que puede llevar BOM
-out: texto con el EF BB BF inicial eliminado
-`
-  'yaml.style': `
-El estilo del nodo actual
-s: la constante de estilo YAML-STYLE-* de ese nodo
-`
-  'yaml.tag': `
-La etiqueta explícita del nodo actual
-t: la etiqueta explícita del nodo (cadena vacía=ninguna)
-`
-  'yaml.text': `
-El texto crudo del escalar del nodo actual
-t: texto crudo del escalar (cadena vacía en nodos contenedor)
-`
-  'yaml.to-json': `
-Convierte el documento actual a JSON
-out: texto JSON del nodo raíz del documento actual
-`
-  'yaml.to-json-all': `
-Convierte todos los documentos en una matriz JSON
-out: texto de arreglo JSON con todos los documentos
-`
-  'yaml.to-yaml': `
-Reemite el documento actual como YAML
-out: texto YAML del documento actual reemitido
-`
-  'yaml.valid': `
-Si este documento se parseó bien (obtener un valor yaml significa éxito)
-yes: el manipulador trae un documento parseado con éxito
-`
-  'yaml.valid-of': `
-Si el texto fuente puede parsearse (sin construir documento)
-source: el texto fuente YAML a validar
-yes: el texto fuente puede parsearse
-`
-  'yaml.value': `
-Obtiene el nodo de valor de la i-ésima clave del mapeo
-i: número de par clave/valor (desde 0)
-out: nodo de valor del par clave i (nil=fuera de rango o no es un mapeo)
-`
-  'yaml.apply-tag': `
-Decide el tipo de nodo por la etiqueta explícita
-tag: nombre de etiqueta normalizado
-kind: tipo de nodo inferido por el contenido
-k: tipo final tras la sobreescritura por etiqueta (se devuelve el kind original si la etiqueta no se reconoce)
-`
-  'yaml.emit': `
-Emite un nodo como YAML de estilo bloque (sin salto de línea final)
-pool: el pool de nodos
-idx: índice del nodo a emitir
-indent: número de espacios por nivel de sangría
-depth: profundidad de anidamiento actual
-out: texto YAML de estilo de bloque (sin salto de línea final)
-`
-  'yaml.f-is-inf': `
-No se usa comparación con literales: los literales numéricos de Nolang no soportan exponentes (`1e308` se corta en `1` + `e308`).
-El criterio de infinito es «no nulo e invariable tras reducirlo a la mitad»; primero se excluye NaN con `x != x`.
-x: el valor f64 a comprobar
-yes: x es infinito positivo/negativo (no nulo e invariable tras reducirlo a la mitad)
-`
-  'yaml.f-is-nan': `
-Si el flotante es NaN (NaN != NaN)
-No se usa `float.is-nan`: las llamadas con receptor dentro del módulo no resuelven ese método en el backend MIR.
-x: el valor f64 a comprobar
-yes: x es NaN (el criterio NaN != NaN)
-`
-  'yaml.hex-char': `
-Convierte un solo dígito hex (0-15) a carácter
-v: el valor numérico de un dígito hex, 0-15
-ch: el carácter hexadecimal correspondiente ('0'-'f')
-`
-  'yaml.hex-digit': `
-Convierte un carácter hex a su valor; los no hex devuelven -1
-c: código ASCII del carácter
-d: el valor 0-15 que representa este dígito hex (-1=carácter hex inválido)
-`
-  'yaml.inf': `
-Infinito positivo
-v: el valor de infinito positivo
-`
-  'yaml.json-escape': `
-Escapado de cadenas JSON
-s: la cadena cruda
-out: cadena JSON escapada (con las dobles comillas envolventes)
-`
-  'yaml.json-of': `
-Convierte un nodo a JSON
-pool: el pool de nodos
-idx: índice del nodo a convertir
-depth: profundidad de recursión restante (evita ciclos de alias)
-out: texto JSON correspondiente a ese nodo
-`
-  'yaml.key-eq': `
-Si dos nodos clave son equivalentes (compara el texto escalar)
-a: nodo clave a
-b: nodo clave b
-yes: los textos escalares de ambos nodos son iguales
-`
-  'yaml.key-text-eq': `
-Si el texto de la clave escalar es igual a la cadena dada
-nd: nodo a comparar (se toma su texto escalar)
-key: texto destino
-yes: el texto escalar de nd es igual a key
-`
-  'yaml.nan': `
-Debe usarse división en tiempo de ejecución: el plegado de constantes calcula `0.0 / 0.0` directamente como 0.
-Pasar por una variable local evita el plegado y obtiene un NaN real (`x != x` es verdadero).
-v: el valor NaN (producido en tiempo de ejecución por 0.0/0.0, sin plegado de constantes)
-`
-  'yaml.node-is-nan': `
-el fval de `.nan` lo rellena nan() con un NaN real, así que se juzga por valor (NaN != NaN).
-La comprobación del texto crudo del nodo sirve de respaldo: rutas como la reescritura de etiquetas pueden cambiar solo text sin recalcular fval.
-nd: nodo a inspeccionar
-yes: el nodo es .nan
 `
   'yaml.parse-radix': `
 Parsea un entero en base radix (ignora _)
@@ -11324,6 +11265,10 @@ La representación YAML del escalar
 nd: nodo escalar
 out: texto de representación YAML elegido según tipo y estilo
 `
+  'yaml.scalar-text': `
+El texto escalar del nodo actual (los contenedores devuelven ok=false)
+out: texto escalar (nil=nodo contenedor)
+`
   'yaml.scan-number': `
 Intenta parsear el texto como entero o flotante
 Devuelve kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR (no es número)
@@ -11332,10 +11277,18 @@ kind: tipo numérico reconocido (INT/FLOAT/STR)
 ival: valor entero cuando kind=INT
 fval: valor de punto flotante cuando kind=FLOAT
 `
+  'yaml.source-of': `
+El texto de entrada original
+out: texto de entrada original en el momento del parseo
+`
   'yaml.spaces': `
 Genera n espacios
 n: número de espacios
 out: una cadena de n espacios
+`
+  'yaml.str': `
+Obtiene el valor de cadena (números/booleanos devuelven su texto crudo)
+val: el texto crudo del escalar (nil=nodo contenedor)
 `
   'yaml.str-at': `
 Por qué hace falta este helper: `arr[i]` (con arr siendo []str) devuelve option<str> por defecto,
@@ -11346,10 +11299,31 @@ a: matriz de cadenas destino
 i: índice del elemento
 out: valor del elemento i (cadena vacía si está fuera de rango)
 `
+  'yaml.stringify': `
+Alias de to-yaml
+out: la misma salida que to-yaml
+`
+  'yaml.strip-bom': `
+Quita un BOM UTF-8 inicial
+s: texto que puede llevar BOM
+out: texto con el EF BB BF inicial eliminado
+`
+  'yaml.style': `
+El estilo del nodo actual
+s: la constante de estilo YAML-STYLE-* de ese nodo
+`
+  'yaml.tag': `
+La etiqueta explícita del nodo actual
+t: la etiqueta explícita del nodo (cadena vacía=ninguna)
+`
   'yaml.tag-name': `
 Normaliza el nombre de etiqueta (!!str / tag:yaml.org,2002:str → str)
 tag: la etiqueta cruda (escrituras como !!str / tag:yaml.org,2002:str)
 name: nombre de etiqueta corto normalizado (str/int/seq...)
+`
+  'yaml.text': `
+El texto crudo del escalar del nodo actual
+t: texto crudo del escalar (cadena vacía en nodos contenedor)
 `
   'yaml.to-f64': `
 Convierte texto a f64 (devolver nil significa fallo)
@@ -11361,22 +11335,36 @@ Convierte texto a i64; devuelve -1 si falla
 s: texto entero
 v: el valor convertido (-1=conversión fallida)
 `
+  'yaml.to-json': `
+Convierte el documento actual a JSON
+out: texto JSON del nodo raíz del documento actual
+`
+  'yaml.to-json-all': `
+Convierte todos los documentos en una matriz JSON
+out: texto de arreglo JSON con todos los documentos
+`
+  'yaml.to-yaml': `
+Reemite el documento actual como YAML
+out: texto YAML del documento actual reemitido
+`
   'yaml.unescape-double': `
 Procesa secuencias de escape dentro de comillas dobles
 body: contenido de la cadena entre comillas dobles (incluye secuencias de escape)
 out: texto desescapado (nil=contiene escapes ilegales)
 `
-  'zip.u16le': `
-Lee un entero sin signo little-endian de 2 bytes
-data: arreglo de bytes a leer
-off: posición inicial de lectura (base 0)
-v: entero sin signo little-endian de 2 bytes (0 ~ 65535)
+  'yaml.valid': `
+Si este documento se parseó bien (obtener un valor yaml significa éxito)
+yes: el manipulador trae un documento parseado con éxito
 `
-  'zip.u32le': `
-Lee un entero sin signo little-endian de 4 bytes
-data: arreglo de bytes del archivo ZIP
-off: posición inicial de lectura (base 0)
-v: entero sin signo little-endian de 4 bytes (0 ~ 2^32-1)
+  'yaml.valid-of': `
+Si el texto fuente puede parsearse (sin construir documento)
+source: el texto fuente YAML a validar
+yes: el texto fuente puede parsearse
+`
+  'yaml.value': `
+Obtiene el nodo de valor de la i-ésima clave del mapeo
+i: número de par clave/valor (desde 0)
+out: nodo de valor del par clave i (nil=fuera de rango o no es un mapeo)
 `
   'zip.entry.compressed-size': `
 Lee el tamaño comprimido de la entrada
@@ -11397,6 +11385,18 @@ name: el nombre de archivo de esa entrada
   'zip.entry.size': `
 Lee el tamaño original de la entrada
 sz: número de bytes originales antes de comprimir
+`
+  'zip.u16le': `
+Lee un entero sin signo little-endian de 2 bytes
+data: arreglo de bytes a leer
+off: posición inicial de lectura (base 0)
+v: entero sin signo little-endian de 2 bytes (0 ~ 65535)
+`
+  'zip.u32le': `
+Lee un entero sin signo little-endian de 4 bytes
+data: arreglo de bytes del archivo ZIP
+off: posición inicial de lectura (base 0)
+v: entero sin signo little-endian de 4 bytes (0 ~ 2^32-1)
 `
   'zip.writer.add-dir': `
 Añade una entrada de directorio
@@ -11511,26 +11511,26 @@ data: datos de entrada ([]byte)
 n: número real de bytes que participan en el cálculo (i64)
 Retorno sum: suma de verificación de 32 bits (i64), el bit alto es b y el bajo es a, comparable con implementaciones conforme a RFC 1950
 `
-  'zlib.zlib-compress': `
+  'zlib.compress': `
 Construye un flujo zlib usando stored blocks (BTYPE=00):
 - cabecera zlib de 2 bytes (78 9c)
 - DEFLATE stored blocks (máximo 65535 bytes por bloque)
 - suma de verificación Adler-32 big-endian de 4 bytes
 out []byte: flujo zlib completo (cabecera de 2 bytes + stored blocks + Adler-32 de 4 bytes)
 `
-  'zlib.zlib-consumed-stored': `
+  'zlib.consumed-stored': `
 Calcula los bytes consumidos por un flujo zlib de stored blocks
 data: flujo zlib desde el desplazamiento 0 ([]byte)
 Retorno consumed: número total de bytes consumidos (incluye la cabecera y Adler-32), 0 indica que no es un bloque stored
 Acumula bloque a bloque la cabecera de bloque de 5 bytes + longitud de datos + suma de verificación de 4 bytes, y se detiene al encontrar BFINAL o un bloque no stored
 `
-  'zlib.zlib-decompress': `
+  'zlib.decompress': `
 Admite todos los tipos de bloque DEFLATE (stored, Huffman fijo, Huffman dinámico)
 Descomprime mediante gzip.inflate-decompress.
 Primero intenta el barrido de stored blocks (vía rápida); si falla, descomprime con inflate.
 out ?[]byte: datos descomprimidos (ok); devuelve nil si la longitud es menor de 6, la cabecera es inválida o la descompresión falla
 `
-  'zlib.zlib-decompress-stored': `
+  'zlib.decompress-stored': `
 Descomprime solo flujos zlib de stored blocks
 data: flujo zlib que solo contiene bloques BTYPE=00 ([]byte)
 Retorno out ?[]byte: datos descomprimidos (some); devuelve nil ante un bloque no stored o un fallo
@@ -11542,6 +11542,18 @@ count > 0: devuelve los dígitos significativos de count (floor(log2(count)) + 1
 count <= 0: devuelve 0
 count: recuento de frecuencia de un símbolo en la tabla de normalización FSE
 n: número mínimo de bits que necesita count (el llamante obtiene tableLog - n para los bits extra de ese estado)
+`
+  'zstd.compress': `
+Comprime datos usando el formato zstd (implementación básica)
+data: datos crudos ([]byte)
+out: datos comprimidos con zstd ([]byte)
+Nota: actualmente usa una implementación básica de raw block;
+la compresión completa FSE + Huffman + LZ77 queda pendiente para una versión futura.
+`
+  'zstd.decompress': `
+Descomprime datos en formato Zstandard
+data: datos comprimidos con zstd ([]byte)
+out: datos descomprimidos ([]byte)
 `
   'zstd.fse-table.build': `
 Construye la tabla FSE a partir de recuentos normalizados
@@ -11593,17 +11605,5 @@ max-symbol: límite superior del valor de símbolo (punto final al recorrer leng
 Decodifica un símbolo
 br: lector de bits que lee los bits del código (la palabra de código se ensambla bit a bit desde el extremo MSB)
 sym: valor del símbolo decodificado; devuelve 0 si no acierta con ningún código dentro de la longitud de código máxima
-`
-  'zstd.compress': `
-Comprime datos usando el formato zstd (implementación básica)
-data: datos crudos ([]byte)
-out: datos comprimidos con zstd ([]byte)
-Nota: actualmente usa una implementación básica de raw block;
-la compresión completa FSE + Huffman + LZ77 queda pendiente para una versión futura.
-`
-  'zstd.decompress': `
-Descomprime datos en formato Zstandard
-data: datos comprimidos con zstd ([]byte)
-out: datos descomprimidos ([]byte)
 `
 }

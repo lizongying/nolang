@@ -1996,11 +1996,6 @@ dc huffman: 输出参数，写入距离码表
 lc huffman: 输出参数，写入 288 符号的字面/长度码表
 dc huffman: 输出参数，写入 30 符号的距离码表
 `
-  'gzip.deflate-stored': `
-使用 stored blocks 的 DEFLATE 压缩
-data: 原始资料 ([]byte)
-out: 压缩后的 DEFLATE 资料 ([]byte)
-`
   'gzip.compress': `
 使用 gzip 格式压缩资料
 data: 原始资料 ([]byte)
@@ -2010,6 +2005,11 @@ out: gzip 压缩后的资料 ([]byte)
 解压缩 gzip 格式的资料
 data: gzip 压缩资料 ([]byte)
 out: 解压后的资料 ([]byte)
+`
+  'gzip.deflate-stored': `
+使用 stored blocks 的 DEFLATE 压缩
+data: 原始资料 ([]byte)
+out: 压缩后的 DEFLATE 资料 ([]byte)
 `
   'gzip.huffman.build': `
 从码长度阵列建构 Huffman 码表
@@ -2811,6 +2811,14 @@ j.arr-push(item)
 取得布尔值（当 root 为布尔值时）
 返回 val bool, ok bool: ok=成功
 `
+  'json.clone-tree': `
+为何必须深拷贝：json.pool 是 #{inline=false} 指针字段，而编译器的指针字段
+拷贝目前尚缺借用语义（见 copy-tree 注释与 src/mir 的 hybrid-ownership 说明），
+直接 `child = json { pool: .pool, ... }` 会让父子各持一份 vec 头但共享同一
+data 缓冲；一旦任一 handle 触发 vec realloc，另一 handle 的 vec 头即指向已
+释放的旧缓冲 -> 悬垂读（stringify 返回 null / 数据错乱）。改为独立深拷贝后，
+双方的 alloc/扩容各写自有缓冲，互不影响。
+`
   'json.delete-key': `
 从对象中删除指定键
 返回 ok bool: ok=成功（键存在且已删除）
@@ -2864,66 +2872,6 @@ found -> print(s)
   'json.is-num': '判断是否为数字'
   'json.is-obj': '判断是否为对象'
   'json.is-str': '判断是否为字符串'
-  'json.json-clone-tree': `
-为何必须深拷贝：json.pool 是 #{inline=false} 指针字段，而编译器的指针字段
-拷贝目前尚缺借用语义（见 copy-tree 注释与 src/mir 的 hybrid-ownership 说明），
-直接 `child = json { pool: .pool, ... }` 会让父子各持一份 vec 头但共享同一
-data 缓冲；一旦任一 handle 触发 vec realloc，另一 handle 的 vec 头即指向已
-释放的旧缓冲 -> 悬垂读（stringify 返回 null / 数据错乱）。改为独立深拷贝后，
-双方的 alloc/扩容各写自有缓冲，互不影响。
-`
-  'json.json-pool.add-child': `
-将子节点 child-idx（键名 key，数组传空字符串）附加到节点 node-idx
-以边表单向链表实现可变长子元素，无每节点上限
-`
-  'json.json-pool.alloc': '分配新节点，返回索引（堆 vec 自动扩容，不再有池满上限）'
-  'json.json-pool.arr-get': `
-从数组节点取得指定索引的子节点
-返回 val-idx=子节点索引, ok=成功
-`
-  'json.json-pool.arr-len': '取得数组长度'
-  'json.json-pool.copy-tree': `
-池身份不能靠 `src.id == .id`：模块级绑定不可重绑（见 JSON-POOL-NEXT-ID 注释），
-所有池的 id 恒为 1，这个判定曾把每一次跨池拷贝都误当成同池，使
-json.arr-get / json.get 返回的子树 root 恒为 -1。现在改由调用端保证：
-- json-clone-tree：接收者是刚 init 的全新池；
-- json.set-key：先把 val 拷进临时新池（json-clone-tree），再从中转池直拷
-进接收者，两次拷贝的两端都必不同池，自引用也安全。
-`
-  'json.json-pool.get-bool': `
-取得布尔值
-返回 val=布尔值, ok=成功
-`
-  'json.json-pool.get-key': `
-从对象节点取得键对应的子节点索引
-返回 val-idx=子节点索引, ok=找到
-`
-  'json.json-pool.get-kind': '取得节点类型'
-  'json.json-pool.get-num': '取得数值'
-  'json.json-pool.get-str': `
-取得字符串值
-返回 out=字符串副本, ok=成功
-`
-  'json.json-pool.init': '初始化节点池（堆 vec 需在使用前先初始化为非 nil，方能安全 push）'
-  'json.json-pool.parse': `
-从字符串位置 pos 解析 JSON 值
-返回 node-idx=根节点索引, next-pos=下一位置, ok=成功
-`
-  'json.json-pool.parse-num': '解析 JSON 数字'
-  'json.json-pool.parse-str': '解析 JSON 字符串（从开引号开始）'
-  'json.json-pool.set-key': `
-在对象节点设置键值
-返回 ok=成功
-`
-  'json.json-pool.skip-ws': '跳过空白字符'
-  'json.json-pool.str-eq': `
-比较两个 str 是否相等
-使用 str.eq-full 统一实现
-`
-  'json.json-pool.stringify': `
-将节点序列化为字符串
-返回 out str: 序列化后的字符串
-`
   'json.kind': `
 取得节点类型
 返回 JSON kind 常量值
@@ -2965,6 +2913,58 @@ key: ok=键名, nil=越界或根非对象
 用法：
 ok = j.set('k', v)
 ok == false && j.overflowed() -> print('pool full')
+`
+  'json.pool.add-child': `
+将子节点 child-idx（键名 key，数组传空字符串）附加到节点 node-idx
+以边表单向链表实现可变长子元素，无每节点上限
+`
+  'json.pool.alloc': '分配新节点，返回索引（堆 vec 自动扩容，不再有池满上限）'
+  'json.pool.arr-get': `
+从数组节点取得指定索引的子节点
+返回 val-idx=子节点索引, ok=成功
+`
+  'json.pool.arr-len': '取得数组长度'
+  'json.pool.copy-tree': `
+池身份不能靠 `src.id == .id`：模块级绑定不可重绑（见 JSON-POOL-NEXT-ID 注释），
+所有池的 id 恒为 1，这个判定曾把每一次跨池拷贝都误当成同池，使
+json.arr-get / json.get 返回的子树 root 恒为 -1。现在改由调用端保证：
+- json-clone-tree：接收者是刚 init 的全新池；
+- json.set-key：先把 val 拷进临时新池（json-clone-tree），再从中转池直拷
+进接收者，两次拷贝的两端都必不同池，自引用也安全。
+`
+  'json.pool.get-bool': `
+取得布尔值
+返回 val=布尔值, ok=成功
+`
+  'json.pool.get-key': `
+从对象节点取得键对应的子节点索引
+返回 val-idx=子节点索引, ok=找到
+`
+  'json.pool.get-kind': '取得节点类型'
+  'json.pool.get-num': '取得数值'
+  'json.pool.get-str': `
+取得字符串值
+返回 out=字符串副本, ok=成功
+`
+  'json.pool.init': '初始化节点池（堆 vec 需在使用前先初始化为非 nil，方能安全 push）'
+  'json.pool.parse': `
+从字符串位置 pos 解析 JSON 值
+返回 node-idx=根节点索引, next-pos=下一位置, ok=成功
+`
+  'json.pool.parse-num': '解析 JSON 数字'
+  'json.pool.parse-str': '解析 JSON 字符串（从开引号开始）'
+  'json.pool.set-key': `
+在对象节点设置键值
+返回 ok=成功
+`
+  'json.pool.skip-ws': '跳过空白字符'
+  'json.pool.str-eq': `
+比较两个 str 是否相等
+使用 str.eq-full 统一实现
+`
+  'json.pool.stringify': `
+将节点序列化为字符串
+返回 out str: 序列化后的字符串
 `
   'json.set': `
 在对象中设置键值（值为另一个 json 节点）
@@ -3649,6 +3649,165 @@ host str: 目标 IP 地址
 port i64: 目标埠号
 返回 c ?udp-conn: ok=连接, nil=失败
 `
+  'noml.doc.ann': `
+取根节点的 `#{...}` 注解原文
+v: ok=注解原文, nil=根没有注解
+`
+  'noml.doc.ann-value': `
+取根节点注解中某个键的值
+key: 注解键
+v: ok=值, nil=该键不存在
+`
+  'noml.doc.at': `
+按位置取根阵列元素的节点索引
+i: 元素下标（0 起算）
+child: ok=元素节点索引, nil=根非阵列或下标越界
+`
+  'noml.doc.bool': `
+取根的布林值
+v: ok=布林值, nil=根非布林
+`
+  'noml.doc.get': `
+按键取根物件成员的节点索引
+key: 键名
+child: ok=子节点索引, nil=根非物件或键不存在
+`
+  'noml.doc.get-bool': `
+按键取根物件成员的布林值
+key: 键名
+v: ok=布林值, nil=键不存在或值非布林
+`
+  'noml.doc.get-f64': `
+按键取根物件成员的数值
+key: 键名
+v: ok=数值, nil=键不存在或值非数字
+`
+  'noml.doc.get-i64': `
+按键取根物件成员的整数值（截断小数）
+key: 键名
+v: ok=整数, nil=键不存在或值非数字
+`
+  'noml.doc.get-str': `
+按键取根物件成员的字串值
+key: 键名
+v: ok=字串内容, nil=键不存在或值非字串
+`
+  'noml.doc.has': `
+根物件是否有该键
+key: 键名
+found: true=存在
+`
+  'noml.doc.i64': `
+取根的整数值（截断小数）
+v: ok=整数, nil=根非数字
+`
+  'noml.doc.is-arr': `
+根是否阵列
+yes: true=根为阵列
+`
+  'noml.doc.is-bool': `
+根是否布林
+yes: true=根为布林
+`
+  'noml.doc.is-nil': `
+根是否 nil
+yes: true=根为 nil
+`
+  'noml.doc.is-num': `
+根是否数字
+yes: true=根为数字
+`
+  'noml.doc.is-obj': `
+根是否物件
+yes: true=根为物件
+`
+  'noml.doc.is-str': `
+根是否字串
+yes: true=根为字串
+`
+  'noml.doc.key': `
+按位置取根物件成员的键名
+i: 成员下标（0 起算，依档案顺序）
+key: ok=键名, nil=根非物件或下标越界
+`
+  'noml.doc.kind': `
+根节点种类
+k: NOML-KIND-*；根无效时为 NOML-KIND-NIL
+`
+  'noml.doc.len': `
+根节点的子元素数量（物件成员数或阵列长度）
+n: 子元素数量
+`
+  'noml.doc.new-arr': `
+建立空阵列节点
+idx: 新节点索引
+`
+  'noml.doc.new-bool': `
+建立布林节点
+v bool: 要存入节点的布林值
+idx i64: 新节点在池中的下标，供呼叫方挂接子树
+`
+  'noml.doc.new-nil': `
+建立 nil 节点
+idx: 新节点索引
+`
+  'noml.doc.new-num': `
+建立数字节点
+v f64: 节点储存的数值（整数与小数共用同一种节点型别）
+idx i64: 新节点在池中的下标，供呼叫方挂接子树
+`
+  'noml.doc.new-obj': `
+建立空物件节点
+idx: 新节点索引
+`
+  'noml.doc.new-str': `
+建立字串节点
+v: 字串内容
+idx: 新节点索引
+`
+  'noml.doc.num': `
+取根的数值
+v: ok=数值, nil=根非数字
+`
+  'noml.doc.push': `
+在阵列末尾追加元素（child 须属同一文件）
+arr: 阵列节点索引
+child: 子节点索引
+ok: true=已追加；false=arr 不是阵列
+`
+  'noml.doc.put': `
+在物件中放入成员（child 须属同一文件）
+obj: 物件节点索引
+key: 键名
+child: 子节点索引
+ok: true=已写入；false=obj 不是物件
+`
+  'noml.doc.root-index': `
+根节点索引（空文件为 -1）
+idx: 根节点索引
+`
+  'noml.doc.set-ann': `
+设定根节点的 `#{...}` 注解原文（空字串＝移除）
+text: 注解原文（不含 `#{` 与 `}`）
+ok: true=已写入
+`
+  'noml.doc.set-root': `
+设定根节点
+idx: 节点索引
+`
+  'noml.doc.str': `
+取根的字串值
+v: ok=字串内容, nil=根非字串
+`
+  'noml.doc.stringify': `
+序列化整份文件（根节点上方输出文件级注解）
+out: NOML 文字（root 无效时为空字串）
+`
+  'noml.doc.stringify-node': `
+序列化任意子树
+idx: 子树根索引
+out: NOML 文字（索引无效时为空字串）
+`
   'noml.hex-char': `
 数值 0~15 转十六进位字元位元组
 d: 0~15
@@ -3683,572 +3842,6 @@ d.put(o, 'name', d.new-str('nolang'))
 d.set-root(o)
 d: 池已初始化、root=-1 的新文件
 `
-  'noml.noml-doc.ann': `
-取根节点的 `#{...}` 注解原文
-v: ok=注解原文, nil=根没有注解
-`
-  'noml.noml-doc.ann-value': `
-取根节点注解中某个键的值
-key: 注解键
-v: ok=值, nil=该键不存在
-`
-  'noml.noml-doc.at': `
-按位置取根阵列元素的节点索引
-i: 元素下标（0 起算）
-child: ok=元素节点索引, nil=根非阵列或下标越界
-`
-  'noml.noml-doc.bool': `
-取根的布林值
-v: ok=布林值, nil=根非布林
-`
-  'noml.noml-doc.get': `
-按键取根物件成员的节点索引
-key: 键名
-child: ok=子节点索引, nil=根非物件或键不存在
-`
-  'noml.noml-doc.get-bool': `
-按键取根物件成员的布林值
-key: 键名
-v: ok=布林值, nil=键不存在或值非布林
-`
-  'noml.noml-doc.get-f64': `
-按键取根物件成员的数值
-key: 键名
-v: ok=数值, nil=键不存在或值非数字
-`
-  'noml.noml-doc.get-i64': `
-按键取根物件成员的整数值（截断小数）
-key: 键名
-v: ok=整数, nil=键不存在或值非数字
-`
-  'noml.noml-doc.get-str': `
-按键取根物件成员的字串值
-key: 键名
-v: ok=字串内容, nil=键不存在或值非字串
-`
-  'noml.noml-doc.has': `
-根物件是否有该键
-key: 键名
-found: true=存在
-`
-  'noml.noml-doc.i64': `
-取根的整数值（截断小数）
-v: ok=整数, nil=根非数字
-`
-  'noml.noml-doc.is-arr': `
-根是否阵列
-yes: true=根为阵列
-`
-  'noml.noml-doc.is-bool': `
-根是否布林
-yes: true=根为布林
-`
-  'noml.noml-doc.is-nil': `
-根是否 nil
-yes: true=根为 nil
-`
-  'noml.noml-doc.is-num': `
-根是否数字
-yes: true=根为数字
-`
-  'noml.noml-doc.is-obj': `
-根是否物件
-yes: true=根为物件
-`
-  'noml.noml-doc.is-str': `
-根是否字串
-yes: true=根为字串
-`
-  'noml.noml-doc.key': `
-按位置取根物件成员的键名
-i: 成员下标（0 起算，依档案顺序）
-key: ok=键名, nil=根非物件或下标越界
-`
-  'noml.noml-doc.kind': `
-根节点种类
-k: NOML-KIND-*；根无效时为 NOML-KIND-NIL
-`
-  'noml.noml-doc.len': `
-根节点的子元素数量（物件成员数或阵列长度）
-n: 子元素数量
-`
-  'noml.noml-doc.new-arr': `
-建立空阵列节点
-idx: 新节点索引
-`
-  'noml.noml-doc.new-bool': `
-建立布林节点
-v bool: 要存入节点的布林值
-idx i64: 新节点在池中的下标，供呼叫方挂接子树
-`
-  'noml.noml-doc.new-nil': `
-建立 nil 节点
-idx: 新节点索引
-`
-  'noml.noml-doc.new-num': `
-建立数字节点
-v f64: 节点储存的数值（整数与小数共用同一种节点型别）
-idx i64: 新节点在池中的下标，供呼叫方挂接子树
-`
-  'noml.noml-doc.new-obj': `
-建立空物件节点
-idx: 新节点索引
-`
-  'noml.noml-doc.new-str': `
-建立字串节点
-v: 字串内容
-idx: 新节点索引
-`
-  'noml.noml-doc.num': `
-取根的数值
-v: ok=数值, nil=根非数字
-`
-  'noml.noml-doc.push': `
-在阵列末尾追加元素（child 须属同一文件）
-arr: 阵列节点索引
-child: 子节点索引
-ok: true=已追加；false=arr 不是阵列
-`
-  'noml.noml-doc.put': `
-在物件中放入成员（child 须属同一文件）
-obj: 物件节点索引
-key: 键名
-child: 子节点索引
-ok: true=已写入；false=obj 不是物件
-`
-  'noml.noml-doc.root-index': `
-根节点索引（空文件为 -1）
-idx: 根节点索引
-`
-  'noml.noml-doc.set-ann': `
-设定根节点的 `#{...}` 注解原文（空字串＝移除）
-text: 注解原文（不含 `#{` 与 `}`）
-ok: true=已写入
-`
-  'noml.noml-doc.set-root': `
-设定根节点
-idx: 节点索引
-`
-  'noml.noml-doc.str': `
-取根的字串值
-v: ok=字串内容, nil=根非字串
-`
-  'noml.noml-doc.stringify': `
-序列化整份文件（根节点上方输出文件级注解）
-out: NOML 文字（root 无效时为空字串）
-`
-  'noml.noml-doc.stringify-node': `
-序列化任意子树
-idx: 子树根索引
-out: NOML 文字（索引无效时为空字串）
-`
-  'noml.noml-pool.add-child': `
-将子节点附加到父节点（以边表单向链表实作可变长子元素）
-node-idx: 父节点索引
-child-idx: 子节点索引
-key: 边上的键名（物件子节点用；阵列传空字串）
-`
-  'noml.noml-pool.alloc': `
-分配新节点（kind=nil、无子节点）
-idx: 新节点索引
-`
-  'noml.noml-pool.ann': `
-取节点的 `#{...}` 注解原文（不含 `#{` 与 `}`）
-idx: 节点索引
-v: ok=注解原文, nil=该节点没有注解
-`
-  'noml.noml-pool.ann-literal': `
-读取注解值面值：单引号串去引号，其余回传原文
-body: 注解原文
-pos: 值起始位置
-v: ok=值, nil=格式非法
-`
-  'noml.noml-pool.ann-value': `
-取注解中某个键的值（值为单引号串时去引号，其余回传原文）
-idx: 节点索引
-key: 注解键（如 'type'）
-v: ok=值, nil=该键不存在
-`
-  'noml.noml-pool.at': `
-按位置取阵列元素索引
-idx: 阵列节点索引
-i: 元素下标（0 起算）
-child: ok=元素节点索引, nil=非阵列或下标越界
-`
-  'noml.noml-pool.at-line-start': `
-位置是否在行首（其前只有空白）
-s: 来源文字
-pos: 待判断的字节偏移
-yes: true=本行尚未出现过非空白字元
-`
-  'noml.noml-pool.decode-escape': `
-解码一个转义序列（`\\'` `\\\\` `\\/` `\\n` `\\r` `\\t` `\\uXXXX`）
-s: 来源文字
-pos: 反斜线所在位置
-val: 解出的字串（单一码点）
-next: 转义序列之后的位置
-ok: true=解码成功
-`
-  'noml.noml-pool.fail': `
-记录一则带行号的解析错误并回传 false
-s: 来源文字
-pos: 出错位置
-msg: 讯息（不含位置前缀）
-ok: 恒为 false（便于 `ok = .fail(...)`）
-`
-  'noml.noml-pool.fmt-key': `
-产生键面值（不合裸键规则时加引号）
-k: 键名
-out: NOML 键面值
-`
-  'noml.noml-pool.fmt-num': `
-产生数字面值（整值不带小数点）
-落在 ±1e15 内、且取整后能还原（i.to-f64() == n）时输出整数写法，
-否则保留 n.to-str() 的结果。
-n f64: 要序列化的数值
-out str: 数字面值（如 '42' 或 '3.14'）
-`
-  'noml.noml-pool.get': `
-按键取子节点索引
-idx: 物件节点索引
-key: 键名
-child: ok=子节点索引, nil=非物件或键不存在
-`
-  'noml.noml-pool.get-bool': `
-按键取布林值
-idx: 物件节点索引
-key: 键名
-v: ok=布林值, nil=键不存在或值非布林
-`
-  'noml.noml-pool.get-f64': `
-按键取数值
-idx: 物件节点索引
-key: 键名
-v: ok=数值, nil=键不存在或值非数字
-`
-  'noml.noml-pool.get-i64': `
-按键取整数值（截断小数）
-idx: 物件节点索引
-key: 键名
-v: ok=截断后的整数, nil=键不存在或值非数字
-`
-  'noml.noml-pool.get-str': `
-按键取字串值
-idx: 物件节点索引
-key: 键名
-v: ok=字串内容, nil=键不存在或值非字串
-`
-  'noml.noml-pool.has': `
-物件是否有该键
-idx: 物件节点索引
-key: 键名
-found: true=存在
-`
-  'noml.noml-pool.has-byte': `
-扫描原始位元组，判断是否出现指定值（逐位元组比对，不按码点）
-s str: 要扫描的文字
-target i64: 要比对的位元组值，取值 0–255（如 10 = '\n'、96 = '`'）
-yes bool: true=至少出现一次, false=完全不含该位元组（空字串必得 false）
-`
-  'noml.noml-pool.has-key': `
-物件是否已有同名成员（重复键报错）
-obj-idx: 物件节点索引
-key: 键名
-found: true=已有同名成员
-`
-  'noml.noml-pool.hex4': `
-读取 4 位十六进位码位
-s: 来源文字
-pos: 第一位数字的位置
-code: 0~0xFFFF；-1=格式非法
-`
-  'noml.noml-pool.init': '初始化节点池（堆 vec 需先初始化为非 nil 才能安全 push）'
-  'noml.noml-pool.is-arr': `
-是否阵列
-idx: 节点索引
-yes: true=值为阵列
-`
-  'noml.noml-pool.is-bool': `
-是否布林
-idx: 节点索引
-yes: true=值为布林
-`
-  'noml.noml-pool.is-nil': `
-是否 nil
-idx: 节点索引
-yes: true=值为 nil
-`
-  'noml.noml-pool.is-num': `
-是否数字
-idx: 节点索引
-yes: true=值为数字
-`
-  'noml.noml-pool.is-obj': `
-是否物件
-idx: 节点索引
-yes: true=值为物件
-`
-  'noml.noml-pool.is-str': `
-是否字串
-idx: 节点索引
-yes: true=值为字串（单引号串或原始串）
-`
-  'noml.noml-pool.join-ann': `
-合并两段注解原文（多组注解以 ", " 连接）
-cur: 已累积的原文（可为空）
-add: 新增的原文
-out: 合并结果
-`
-  'noml.noml-pool.key': `
-按位置取物件键名
-idx: 物件节点索引
-i: 成员下标（0 起算，依档案顺序）
-key: ok=键名, nil=非物件或下标越界
-`
-  'noml.noml-pool.kind': `
-节点种类
-idx: 节点索引
-k: NOML-KIND-*；索引无效时为 NOML-KIND-NIL
-`
-  'noml.noml-pool.len': `
-子元素数量（物件成员数或阵列长度，其余为 0）
-idx: 节点索引
-n: 子元素数量
-`
-  'noml.noml-pool.line-of': `
-位置所在的行号（从 1 起算）
-s: 来源文字
-pos: 待查行号的字节偏移（超出范围时自动 clamp）
-line: 行号
-`
-  'noml.noml-pool.match-kw': `
-匹配裸关键字（其后不得紧接识别符字元）
-s: 来源文字
-pos: 尝试匹配的字节偏移
-kw: 关键字
-next: 关键字之后的位置；-1=不匹配
-`
-  'noml.noml-pool.parse': `
-解析整份文件（含文件级注解与顶层值的尾随注解）
-s: 来源文字
-idx: 根节点索引；-1=失败
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-array': `
-解析阵列 `[ 元素, ... ]`（逗号分隔，允许尾随逗号）
-s: 来源文字
-pos: `[` 所在位置
-idx: 阵列节点索引；-1=失败
-next: `]` 之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-bool': `
-解析 true/false
-s str: 完整来源文字
-pos i64: 字面量起始位置（指向 t 或 f）
-val bool: 解析出的布林值；ok=false 时固定为 false
-next i64: 字面量之后的位置；ok=false 时回原 pos
-ok bool: true=解析成功，false=此处不是 true/false（已呼叫 fail 记录错误）
-`
-  'noml.noml-pool.parse-bool-node': `
-解析布林值并落地成节点
-s: 来源文字
-pos: 字面量起始位置
-idx: 节点索引；-1=失败
-next: 值之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-key': `
-解析键（裸识别符或单引号字串）
-s: 来源文字
-pos: 键的起始位置
-key: 键名
-next: 键之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-nil-node': `
-解析 nil 值并落地成节点
-s: 来源文字
-pos: 字面量起始位置
-idx: 节点索引；-1=失败
-next: 值之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-num': `
-解析数字面值（整数 / 小数 / 科学记号，允许前导 '-'，不接受 '+'）
-只吃掉构成数字本身的位元组，遇到其他字元即停，不要求分隔符
-s str: 来源全文
-pos i64: 数字起始的位元组下标
-val f64: 解析出的数值（NOML 只有一种数字型别，整数亦以 f64 存放）
-next i64: 数字结束后的位元组下标（失败时停在出错位置，供 .fail 标记）
-ok bool: true=解析成功, false=语法错误（无整数位、'.' 后无小数位、指数无位数）
-`
-  'noml.noml-pool.parse-num-node': `
-解析数字值并落地成节点
-s: 来源文字
-pos: 数字起始位置
-idx: 节点索引；-1=失败
-next: 值之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-object': `
-解析物件 `{ 成员... }`（成员以换行分隔，无逗号）
-s: 来源文字
-pos: `{` 所在位置
-idx: 物件节点索引；-1=失败
-next: `}` 之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-raw': `
-解析反引号原始串（开头 ` 后必须紧跟换行；结尾 ` 必须单独成行）
-s: 来源文字
-pos: 开引号位置
-val: 原样内容（不做转义解析）
-next: 收尾反引号之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-raw-node': `
-解析原始串值并落地成节点
-s: 来源文字
-pos: 开引号位置
-idx: 节点索引；-1=失败
-next: 值之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-str': `
-解析单引号字串（含 `\\` 转义）
-以「片段拼接」而非位元组缓冲建构：每个转义点切一段，段与解码结果直接串接，
-因此不需要预先估算容量，也不会出现缓冲视图的生命周期问题。
-s: 来源文字
-pos: 开引号位置
-val: 解出的字串
-next: 闭引号之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-str-node': `
-解析字串值并落地成节点
-s: 来源文字
-pos: 开引号位置
-idx: 节点索引；-1=失败
-next: 值之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.parse-value': `
-解析一个值
-s: 来源文字
-pos: 值的起始位置
-idx: 节点索引；-1=失败
-next: 值之后的位置
-ok: true=解析成功
-`
-  'noml.noml-pool.quote': `
-产生单引号字串面值（含转义）
-转义规则：'\'' 与 '\\' 前加反斜线，LF / CR / TAB 写成 \n \r \t，
-其余 < 0x20 的控制位元组写成 \u00XX；输出缓冲预留 n*6+2（每位元组最坏 6 字元）。
-s str: 原始内容（允许任意位元组，不要求合法 UTF-8）
-out str: 首尾各加一个单引号、内部已转义的面值
-`
-  'noml.noml-pool.quote-value': `
-依内容挑选最简形式产生字串面值
-预设走 .quote()；含 LF 且通过 .raw-safe() 时改用反引号原始串，保留原换行。
-s str: 原始内容
-out str: 可直接写进 .noml 的文字面值（单引号转义形式或 '`' 原始串）
-`
-  'noml.noml-pool.raw-safe': `
-判断内容能否放进反引号原始串后原样取回
-出现下列任一情形即不可用：空字串、首或末位元组为 LF、含 CR、
-任一行去掉前导空白（空白 / TAB / CR）后以 '`' 开头（会被误认为结束标记）。
-s str: 待序列化的内容
-yes bool: true=可安全包成 '`\n' + s + '\n`', false=须改用单引号转义形式
-`
-  'noml.noml-pool.require-end': `
-成员结束校验：之后只允许行内空白、换行、`;` 注解或容器闭合
-s: 来源文字
-pos: 值之后的位置
-key: 成员键名（仅用于错误讯息）
-next: 换行之后（或 `}`）的位置
-ok: true=合法
-`
-  'noml.noml-pool.scan-ann': `
-扫过一组 `#{...}`，回传 `}` 之后的位置（仅校验结构，不解析条目）
-s: 来源文字
-pos: `#` 所在位置
-next: `}` 之后的位置；-1=不是注解或未闭合
-`
-  'noml.noml-pool.scan-quote': `
-从 `'` 扫到下一个未转义的 `'` 之后
-s: 来源文字
-pos: 开引号位置
-next: 闭引号之后的位置；-1=未闭合
-`
-  'noml.noml-pool.scan-raw': `
-从反引号扫到单独成行的收尾反引号之后
-s: 来源文字
-pos: 开引号位置
-next: 收尾反引号之后的位置；-1=未闭合
-`
-  'noml.noml-pool.set-ann': `
-设定节点的 `#{...}` 注解原文（空字串＝移除）
-idx: 节点索引
-text: 注解原文（不含 `#{` 与 `}`）
-ok: true=已写入
-`
-  'noml.noml-pool.skip-ann-value': `
-跳过一个注解值（字串/阵列/裸值），回传其后的位置
-body: 注解原文
-pos: 值起始位置
-next: 值之后的位置；-1=格式非法
-`
-  'noml.noml-pool.skip-blanks': `
-只跳过行内空白（空格与 Tab），不跨越换行
-s: 来源文字
-pos: 开始扫描的字节偏移
-p: 第一个非空白字元的位置
-`
-  'noml.noml-pool.skip-trivia': `
-跳过空白（含换行）与 `;` 行注解
-s: 来源文字
-pos: 开始扫描的字节偏移
-p: 第一个有效字元的位置（全为空白时为字串尾）
-`
-  'noml.noml-pool.stringify': `
-序列化子树
-idx: 子树根索引
-indent: 缩排层级（每层两空格）
-out: NOML 文字（索引无效时为空字串）
-`
-  'noml.noml-pool.stringify-arr': `
-序列化阵列（每个元素一行，带尾随逗号）
-idx: 阵列节点索引
-indent: 缩排层级
-out: NOML 文字
-`
-  'noml.noml-pool.stringify-obj': `
-序列化物件（每个成员一行，注解输出在成员上方）
-idx: 物件节点索引
-indent: 缩排层级
-out: NOML 文字
-`
-  'noml.noml-pool.val-bool': `
-取布林值
-idx: 节点索引
-v: ok=布林值, nil=值非布林
-`
-  'noml.noml-pool.val-i64': `
-取整数值（截断小数）
-idx: 节点索引
-v: ok=截断后的整数, nil=值非数字
-`
-  'noml.noml-pool.val-num': `
-取数值
-idx: 节点索引
-v: ok=数值, nil=值非数字
-`
-  'noml.noml-pool.val-str': `
-取字串值
-idx: 节点索引
-v: ok=字串内容, nil=值非字串
-`
   'noml.parse': `
 解析 NOML 文字
 用法：
@@ -4259,6 +3852,413 @@ err -> print(it)
 }
 s: 完整 NOML 文字（首尾空白会被跳过）
 result: ok=解析出的文件, err(带行号的讯息)=语法错误
+`
+  'noml.pool.add-child': `
+将子节点附加到父节点（以边表单向链表实作可变长子元素）
+node-idx: 父节点索引
+child-idx: 子节点索引
+key: 边上的键名（物件子节点用；阵列传空字串）
+`
+  'noml.pool.alloc': `
+分配新节点（kind=nil、无子节点）
+idx: 新节点索引
+`
+  'noml.pool.ann': `
+取节点的 `#{...}` 注解原文（不含 `#{` 与 `}`）
+idx: 节点索引
+v: ok=注解原文, nil=该节点没有注解
+`
+  'noml.pool.ann-literal': `
+读取注解值面值：单引号串去引号，其余回传原文
+body: 注解原文
+pos: 值起始位置
+v: ok=值, nil=格式非法
+`
+  'noml.pool.ann-value': `
+取注解中某个键的值（值为单引号串时去引号，其余回传原文）
+idx: 节点索引
+key: 注解键（如 'type'）
+v: ok=值, nil=该键不存在
+`
+  'noml.pool.at': `
+按位置取阵列元素索引
+idx: 阵列节点索引
+i: 元素下标（0 起算）
+child: ok=元素节点索引, nil=非阵列或下标越界
+`
+  'noml.pool.at-line-start': `
+位置是否在行首（其前只有空白）
+s: 来源文字
+pos: 待判断的字节偏移
+yes: true=本行尚未出现过非空白字元
+`
+  'noml.pool.decode-escape': `
+解码一个转义序列（`\\'` `\\\\` `\\/` `\\n` `\\r` `\\t` `\\uXXXX`）
+s: 来源文字
+pos: 反斜线所在位置
+val: 解出的字串（单一码点）
+next: 转义序列之后的位置
+ok: true=解码成功
+`
+  'noml.pool.fail': `
+记录一则带行号的解析错误并回传 false
+s: 来源文字
+pos: 出错位置
+msg: 讯息（不含位置前缀）
+ok: 恒为 false（便于 `ok = .fail(...)`）
+`
+  'noml.pool.fmt-key': `
+产生键面值（不合裸键规则时加引号）
+k: 键名
+out: NOML 键面值
+`
+  'noml.pool.fmt-num': `
+产生数字面值（整值不带小数点）
+落在 ±1e15 内、且取整后能还原（i.to-f64() == n）时输出整数写法，
+否则保留 n.to-str() 的结果。
+n f64: 要序列化的数值
+out str: 数字面值（如 '42' 或 '3.14'）
+`
+  'noml.pool.get': `
+按键取子节点索引
+idx: 物件节点索引
+key: 键名
+child: ok=子节点索引, nil=非物件或键不存在
+`
+  'noml.pool.get-bool': `
+按键取布林值
+idx: 物件节点索引
+key: 键名
+v: ok=布林值, nil=键不存在或值非布林
+`
+  'noml.pool.get-f64': `
+按键取数值
+idx: 物件节点索引
+key: 键名
+v: ok=数值, nil=键不存在或值非数字
+`
+  'noml.pool.get-i64': `
+按键取整数值（截断小数）
+idx: 物件节点索引
+key: 键名
+v: ok=截断后的整数, nil=键不存在或值非数字
+`
+  'noml.pool.get-str': `
+按键取字串值
+idx: 物件节点索引
+key: 键名
+v: ok=字串内容, nil=键不存在或值非字串
+`
+  'noml.pool.has': `
+物件是否有该键
+idx: 物件节点索引
+key: 键名
+found: true=存在
+`
+  'noml.pool.has-byte': `
+扫描原始位元组，判断是否出现指定值（逐位元组比对，不按码点）
+s str: 要扫描的文字
+target i64: 要比对的位元组值，取值 0–255（如 10 = '\n'、96 = '`'）
+yes bool: true=至少出现一次, false=完全不含该位元组（空字串必得 false）
+`
+  'noml.pool.has-key': `
+物件是否已有同名成员（重复键报错）
+obj-idx: 物件节点索引
+key: 键名
+found: true=已有同名成员
+`
+  'noml.pool.hex4': `
+读取 4 位十六进位码位
+s: 来源文字
+pos: 第一位数字的位置
+code: 0~0xFFFF；-1=格式非法
+`
+  'noml.pool.init': '初始化节点池（堆 vec 需先初始化为非 nil 才能安全 push）'
+  'noml.pool.is-arr': `
+是否阵列
+idx: 节点索引
+yes: true=值为阵列
+`
+  'noml.pool.is-bool': `
+是否布林
+idx: 节点索引
+yes: true=值为布林
+`
+  'noml.pool.is-nil': `
+是否 nil
+idx: 节点索引
+yes: true=值为 nil
+`
+  'noml.pool.is-num': `
+是否数字
+idx: 节点索引
+yes: true=值为数字
+`
+  'noml.pool.is-obj': `
+是否物件
+idx: 节点索引
+yes: true=值为物件
+`
+  'noml.pool.is-str': `
+是否字串
+idx: 节点索引
+yes: true=值为字串（单引号串或原始串）
+`
+  'noml.pool.join-ann': `
+合并两段注解原文（多组注解以 ", " 连接）
+cur: 已累积的原文（可为空）
+add: 新增的原文
+out: 合并结果
+`
+  'noml.pool.key': `
+按位置取物件键名
+idx: 物件节点索引
+i: 成员下标（0 起算，依档案顺序）
+key: ok=键名, nil=非物件或下标越界
+`
+  'noml.pool.kind': `
+节点种类
+idx: 节点索引
+k: NOML-KIND-*；索引无效时为 NOML-KIND-NIL
+`
+  'noml.pool.len': `
+子元素数量（物件成员数或阵列长度，其余为 0）
+idx: 节点索引
+n: 子元素数量
+`
+  'noml.pool.line-of': `
+位置所在的行号（从 1 起算）
+s: 来源文字
+pos: 待查行号的字节偏移（超出范围时自动 clamp）
+line: 行号
+`
+  'noml.pool.match-kw': `
+匹配裸关键字（其后不得紧接识别符字元）
+s: 来源文字
+pos: 尝试匹配的字节偏移
+kw: 关键字
+next: 关键字之后的位置；-1=不匹配
+`
+  'noml.pool.parse': `
+解析整份文件（含文件级注解与顶层值的尾随注解）
+s: 来源文字
+idx: 根节点索引；-1=失败
+ok: true=解析成功
+`
+  'noml.pool.parse-array': `
+解析阵列 `[ 元素, ... ]`（逗号分隔，允许尾随逗号）
+s: 来源文字
+pos: `[` 所在位置
+idx: 阵列节点索引；-1=失败
+next: `]` 之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-bool': `
+解析 true/false
+s str: 完整来源文字
+pos i64: 字面量起始位置（指向 t 或 f）
+val bool: 解析出的布林值；ok=false 时固定为 false
+next i64: 字面量之后的位置；ok=false 时回原 pos
+ok bool: true=解析成功，false=此处不是 true/false（已呼叫 fail 记录错误）
+`
+  'noml.pool.parse-bool-node': `
+解析布林值并落地成节点
+s: 来源文字
+pos: 字面量起始位置
+idx: 节点索引；-1=失败
+next: 值之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-key': `
+解析键（裸识别符或单引号字串）
+s: 来源文字
+pos: 键的起始位置
+key: 键名
+next: 键之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-nil-node': `
+解析 nil 值并落地成节点
+s: 来源文字
+pos: 字面量起始位置
+idx: 节点索引；-1=失败
+next: 值之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-num': `
+解析数字面值（整数 / 小数 / 科学记号，允许前导 '-'，不接受 '+'）
+只吃掉构成数字本身的位元组，遇到其他字元即停，不要求分隔符
+s str: 来源全文
+pos i64: 数字起始的位元组下标
+val f64: 解析出的数值（NOML 只有一种数字型别，整数亦以 f64 存放）
+next i64: 数字结束后的位元组下标（失败时停在出错位置，供 .fail 标记）
+ok bool: true=解析成功, false=语法错误（无整数位、'.' 后无小数位、指数无位数）
+`
+  'noml.pool.parse-num-node': `
+解析数字值并落地成节点
+s: 来源文字
+pos: 数字起始位置
+idx: 节点索引；-1=失败
+next: 值之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-object': `
+解析物件 `{ 成员... }`（成员以换行分隔，无逗号）
+s: 来源文字
+pos: `{` 所在位置
+idx: 物件节点索引；-1=失败
+next: `}` 之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-raw': `
+解析反引号原始串（开头 ` 后必须紧跟换行；结尾 ` 必须单独成行）
+s: 来源文字
+pos: 开引号位置
+val: 原样内容（不做转义解析）
+next: 收尾反引号之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-raw-node': `
+解析原始串值并落地成节点
+s: 来源文字
+pos: 开引号位置
+idx: 节点索引；-1=失败
+next: 值之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-str': `
+解析单引号字串（含 `\\` 转义）
+以「片段拼接」而非位元组缓冲建构：每个转义点切一段，段与解码结果直接串接，
+因此不需要预先估算容量，也不会出现缓冲视图的生命周期问题。
+s: 来源文字
+pos: 开引号位置
+val: 解出的字串
+next: 闭引号之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-str-node': `
+解析字串值并落地成节点
+s: 来源文字
+pos: 开引号位置
+idx: 节点索引；-1=失败
+next: 值之后的位置
+ok: true=解析成功
+`
+  'noml.pool.parse-value': `
+解析一个值
+s: 来源文字
+pos: 值的起始位置
+idx: 节点索引；-1=失败
+next: 值之后的位置
+ok: true=解析成功
+`
+  'noml.pool.quote': `
+产生单引号字串面值（含转义）
+转义规则：'\'' 与 '\\' 前加反斜线，LF / CR / TAB 写成 \n \r \t，
+其余 < 0x20 的控制位元组写成 \u00XX；输出缓冲预留 n*6+2（每位元组最坏 6 字元）。
+s str: 原始内容（允许任意位元组，不要求合法 UTF-8）
+out str: 首尾各加一个单引号、内部已转义的面值
+`
+  'noml.pool.quote-value': `
+依内容挑选最简形式产生字串面值
+预设走 .quote()；含 LF 且通过 .raw-safe() 时改用反引号原始串，保留原换行。
+s str: 原始内容
+out str: 可直接写进 .noml 的文字面值（单引号转义形式或 '`' 原始串）
+`
+  'noml.pool.raw-safe': `
+判断内容能否放进反引号原始串后原样取回
+出现下列任一情形即不可用：空字串、首或末位元组为 LF、含 CR、
+任一行去掉前导空白（空白 / TAB / CR）后以 '`' 开头（会被误认为结束标记）。
+s str: 待序列化的内容
+yes bool: true=可安全包成 '`\n' + s + '\n`', false=须改用单引号转义形式
+`
+  'noml.pool.require-end': `
+成员结束校验：之后只允许行内空白、换行、`;` 注解或容器闭合
+s: 来源文字
+pos: 值之后的位置
+key: 成员键名（仅用于错误讯息）
+next: 换行之后（或 `}`）的位置
+ok: true=合法
+`
+  'noml.pool.scan-ann': `
+扫过一组 `#{...}`，回传 `}` 之后的位置（仅校验结构，不解析条目）
+s: 来源文字
+pos: `#` 所在位置
+next: `}` 之后的位置；-1=不是注解或未闭合
+`
+  'noml.pool.scan-quote': `
+从 `'` 扫到下一个未转义的 `'` 之后
+s: 来源文字
+pos: 开引号位置
+next: 闭引号之后的位置；-1=未闭合
+`
+  'noml.pool.scan-raw': `
+从反引号扫到单独成行的收尾反引号之后
+s: 来源文字
+pos: 开引号位置
+next: 收尾反引号之后的位置；-1=未闭合
+`
+  'noml.pool.set-ann': `
+设定节点的 `#{...}` 注解原文（空字串＝移除）
+idx: 节点索引
+text: 注解原文（不含 `#{` 与 `}`）
+ok: true=已写入
+`
+  'noml.pool.skip-ann-value': `
+跳过一个注解值（字串/阵列/裸值），回传其后的位置
+body: 注解原文
+pos: 值起始位置
+next: 值之后的位置；-1=格式非法
+`
+  'noml.pool.skip-blanks': `
+只跳过行内空白（空格与 Tab），不跨越换行
+s: 来源文字
+pos: 开始扫描的字节偏移
+p: 第一个非空白字元的位置
+`
+  'noml.pool.skip-trivia': `
+跳过空白（含换行）与 `;` 行注解
+s: 来源文字
+pos: 开始扫描的字节偏移
+p: 第一个有效字元的位置（全为空白时为字串尾）
+`
+  'noml.pool.stringify': `
+序列化子树
+idx: 子树根索引
+indent: 缩排层级（每层两空格）
+out: NOML 文字（索引无效时为空字串）
+`
+  'noml.pool.stringify-arr': `
+序列化阵列（每个元素一行，带尾随逗号）
+idx: 阵列节点索引
+indent: 缩排层级
+out: NOML 文字
+`
+  'noml.pool.stringify-obj': `
+序列化物件（每个成员一行，注解输出在成员上方）
+idx: 物件节点索引
+indent: 缩排层级
+out: NOML 文字
+`
+  'noml.pool.val-bool': `
+取布林值
+idx: 节点索引
+v: ok=布林值, nil=值非布林
+`
+  'noml.pool.val-i64': `
+取整数值（截断小数）
+idx: 节点索引
+v: ok=截断后的整数, nil=值非数字
+`
+  'noml.pool.val-num': `
+取数值
+idx: 节点索引
+v: ok=数值, nil=值非数字
+`
+  'noml.pool.val-str': `
+取字串值
+idx: 节点索引
+v: ok=字串内容, nil=值非字串
 `
   'num.abs': `
 绝对值 — 对所有 num 类型（整数与浮点）通用
@@ -6872,6 +6872,11 @@ TLS 1.2 CBC 去填充
 in []byte: 解密后的资料（content || MAC || padding）
 返回 out-n i64: 去除填充后的长度（content+MAC），-1=填充错误
 `
+  'toml.array-name': '读取 array-of-tables 名称。'
+  'toml.entry-key': '读取 canonical key。'
+  'toml.entry-key-eq': '比较 entry key 与字符串。'
+  'toml.entry-value': '读取原始 TOML value。'
+  'toml.find-eq': '找到未被引号包住的第一个等号'
   'toml.get': `
 获取原始 TOML 字面值
 例如数组、日期时间等尚未转型的值可由此获取。
@@ -6881,26 +6886,21 @@ in []byte: 解密后的资料（content || MAC || padding）
   'toml.get-i64': '获取十进制整数（允许 TOML 的下划线分隔）'
   'toml.get-str': '获取并解码字符串值'
   'toml.has': '判断键是否存在'
+  'toml.make-entry': '将 key/value 复制到固定缓冲区。'
   'toml.new': '建立空 TOML 文档'
+  'toml.next-array-table': '获取并登记 array-of-tables 的下一个索引。'
+  'toml.normalize-key': '解析 bare / quoted / dotted key，输出 canonical dotted key。'
   'toml.parse': '解析 TOML 文档，失败返回 err(message)'
-  'toml.stringify': '以 TOML 1.0 语法输出文档；array-of-tables 会还原为 [[table]] 标头。'
-  'toml.array-name': '读取 array-of-tables 名称。'
+  'toml.parse-bool': '解析布尔值'
+  'toml.parse-f64': '解析浮点数'
+  'toml.parse-i64': '支持十进制、十六进制、八进制、二进制与下划线分隔。'
   'toml.put': `
 设置原始 TOML 字面值。
 value 可为数组、日期时间等 TOML 语法，模块不会替它加引号。
 `
-  'toml.entry-key': '读取 canonical key。'
-  'toml.entry-key-eq': '比较 entry key 与字符串。'
-  'toml.entry-value': '读取原始 TOML value。'
-  'toml.find-eq': '找到未被引号包住的第一个等号'
-  'toml.make-entry': '将 key/value 复制到固定缓冲区。'
-  'toml.next-array-table': '获取并登记 array-of-tables 的下一个索引。'
-  'toml.normalize-key': '解析 bare / quoted / dotted key，输出 canonical dotted key。'
-  'toml.parse-bool': '解析布尔值'
-  'toml.parse-f64': '解析浮点数'
-  'toml.parse-i64': '支持十进制、十六进制、八进制、二进制与下划线分隔。'
   'toml.register-table': '记录已定义表格，重复定义返回 false。'
   'toml.resolve-section': '将 array-of-tables 的子表解析到最近一笔元素。'
+  'toml.stringify': '以 TOML 1.0 语法输出文档；array-of-tables 会还原为 [[table]] 标头。'
   'toml.strip-comment': '移除字符串外的 # 注释并 trim；支持 multiline string。'
   'toml.table-eq': '比较固定缓冲区中的表格名称。'
   'toml.table-name': '读取表格名称。'
@@ -8069,6 +8069,20 @@ data: DER 编码憑证
 start: 输出 TBS 起始位置（含 SEQUENCE 标签）
 end: 输出 TBS 结束位置（不含，即下个元素的起始）
 `
+  'xz.compress': `
+使用 xz 格式压缩资料（基本实现）
+data: 原始资料 ([]byte)
+out: xz 压缩后的资料 ([]byte)
+注意：目前使用 stored block 的基本实现，
+完整 LZMA2 压缩待后续实现。
+`
+  'xz.decompress': `
+.xz 格式：
+- Stream Header: 6 bytes magic + 2 bytes stream flags
+- Blocks: Block Header + Compressed Data + Block Padding + Check
+- Index
+- Stream Footer: 12 bytes
+`
   'xz.lzma-decoder.decode': `
 LZMA 解码主回圈
 data: 压缩资料，start-pos: 资料起始位置
@@ -8142,21 +8156,8 @@ data: 含控制位元组的 LZMA2 资料流
 start-pos: 资料流的起始偏移
 out: 解压出的明文位元组流（具名输出参数，函式末一次性交付）
 `
-  'xz.compress': `
-使用 xz 格式压缩资料（基本实现）
-data: 原始资料 ([]byte)
-out: xz 压缩后的资料 ([]byte)
-注意：目前使用 stored block 的基本实现，
-完整 LZMA2 压缩待后续实现。
-`
-  'xz.decompress': `
-.xz 格式：
-- Stream Header: 6 bytes magic + 2 bytes stream flags
-- Blocks: Block Header + Compressed Data + Block Padding + Check
-- Index
-- Stream Footer: 12 bytes
-`
   'yaml.anchor': '当前节点锚点名'
+  'yaml.apply-tag': '按显式标签决定节点类型'
   'yaml.at': '取序列元素 / 映射第 i 个值'
   'yaml.bool': '取布尔值'
   'yaml.doc': `
@@ -8164,12 +8165,21 @@ out: xz 压缩后的资料 ([]byte)
 说明：子节点视图以 ?yaml 返回，供调用方 match 解包。
 `
   'yaml.doc-count': '文档数量'
+  'yaml.emit': '节点转块风格 YAML（不含尾随换行）'
   'yaml.error': `
 本文档的解析错误（解析成功时恒为空串）
 说明：解析失败时 yaml.parse 返回 err，拿不到 yaml 值；
 失败原因请用 yaml.error-of(source) 获取。
 `
   'yaml.error-of': '解析源文本并返回错误消息（成功时为空串）'
+  'yaml.f-is-inf': `
+不用字面量比较：Nolang 的数值字面量不支持指数（`1e308` 会被切成 `1` + `e308`）。
+无穷的判据是「非零且减半后不变」；先用 `x != x` 排除 NaN。
+`
+  'yaml.f-is-nan': `
+浮点是否为 NaN（NaN != NaN）
+不用 `float.is-nan`：模块内的接收者式调用在 MIR 后端解析不到该方法。
+`
   'yaml.f64': '取浮点值'
   'yaml.find': '按点号路径查找（序列可用数字下标）'
   'yaml.find-bool': '路径取布尔'
@@ -8181,7 +8191,10 @@ out: xz 压缩后的资料 ([]byte)
   'yaml.get-f64': '按标量键取浮点'
   'yaml.get-i64': '按标量键取整数'
   'yaml.get-str': '按标量键取字符串'
+  'yaml.hex-char': '单个十六进制数字（0-15）转字符'
+  'yaml.hex-digit': '十六进制字符转数值，非十六进制返回 -1'
   'yaml.i64': '取整数值'
+  'yaml.inf': '正无穷'
   'yaml.is-bool': '是否为布尔'
   'yaml.is-int': '是否为整数'
   'yaml.is-map': '是否为映射'
@@ -8193,53 +8206,26 @@ yaml.is-float: 是否为浮点
   'yaml.is-num': '是否为数值'
   'yaml.is-seq': '是否为序列'
   'yaml.is-str': '是否为字符串'
+  'yaml.json-escape': 'JSON 字符串转义'
+  'yaml.json-of': '节点转 JSON'
   'yaml.key': '取映射第 i 个键的文本'
+  'yaml.key-eq': '两个键节点是否等价（比较标量文本）'
   'yaml.key-node': '取映射第 i 个键节点'
+  'yaml.key-text-eq': '标量键文本是否等于给定字符串'
   'yaml.kind': '当前节点类型'
   'yaml.len': '序列元素数 / 映射条目数'
   'yaml.line-of': '当前节点起始行'
+  'yaml.nan': `
+必须走运行期除法：编译期常量折叠会把 `0.0 / 0.0` 直接算成 0。
+借道局部变量可避免折叠，得到真正的 NaN（`x != x` 为真）。
+`
   'yaml.node-count': '节点总数'
+  'yaml.node-is-nan': '`.nan` 的 fval 由 nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。\n节点原文判定作为兜底：标签改写等路径可能只改 text 而不重算 fval。'
   'yaml.parse': `
 解析 YAML 文本，返回第一份文档
 返回 ok(yaml) / err(消息)
 `
   'yaml.parse-all': '解析全部文档'
-  'yaml.scalar-text': '当前节点的标量文本（容器返回 ok=false）'
-  'yaml.source-of': '原始输入文本'
-  'yaml.str': '取字符串值（数值/布尔返回其原文）'
-  'yaml.stringify': '别名，等同 to-yaml'
-  'yaml.strip-bom': '去掉开头的 UTF-8 BOM'
-  'yaml.style': '当前节点风格'
-  'yaml.tag': '当前节点显式标签'
-  'yaml.text': '当前节点的标量原文'
-  'yaml.to-json': '当前文档转 JSON'
-  'yaml.to-json-all': '全部文档转 JSON 数组'
-  'yaml.to-yaml': '当前文档重新输出为 YAML'
-  'yaml.valid': '本文档是否解析成功（能拿到 yaml 值即成功）'
-  'yaml.valid-of': '源文本是否可解析（不构造文档）'
-  'yaml.value': '取映射第 i 个键对应的值节点'
-  'yaml.apply-tag': '按显式标签决定节点类型'
-  'yaml.emit': '节点转块风格 YAML（不含尾随换行）'
-  'yaml.f-is-inf': `
-不用字面量比较：Nolang 的数值字面量不支持指数（`1e308` 会被切成 `1` + `e308`）。
-无穷的判据是「非零且减半后不变」；先用 `x != x` 排除 NaN。
-`
-  'yaml.f-is-nan': `
-浮点是否为 NaN（NaN != NaN）
-不用 `float.is-nan`：模块内的接收者式调用在 MIR 后端解析不到该方法。
-`
-  'yaml.hex-char': '单个十六进制数字（0-15）转字符'
-  'yaml.hex-digit': '十六进制字符转数值，非十六进制返回 -1'
-  'yaml.inf': '正无穷'
-  'yaml.json-escape': 'JSON 字符串转义'
-  'yaml.json-of': '节点转 JSON'
-  'yaml.key-eq': '两个键节点是否等价（比较标量文本）'
-  'yaml.key-text-eq': '标量键文本是否等于给定字符串'
-  'yaml.nan': `
-必须走运行期除法：编译期常量折叠会把 `0.0 / 0.0` 直接算成 0。
-借道局部变量可避免折叠，得到真正的 NaN（`x != x` 为真）。
-`
-  'yaml.node-is-nan': '`.nan` 的 fval 由 nan() 填入真正的 NaN，所以按值判定（NaN != NaN）。\n节点原文判定作为兜底：标签改写等路径可能只改 text 而不重算 fval。'
   'yaml.parse-radix': '解析 radix 进制整数（忽略 _）'
   'yaml.parser.advance': '前进一个字节'
   'yaml.parser.anchor-id': '查找锚点，未找到返回 -1'
@@ -8301,33 +8287,35 @@ at-doc-marker 也都需要这个位置。
   'yaml.quote': '输出双引号 YAML 标量'
   'yaml.resolve-plain': '按 core schema 推断 plain 标量类型'
   'yaml.scalar-repr': '标量的 YAML 表示'
+  'yaml.scalar-text': '当前节点的标量文本（容器返回 ok=false）'
   'yaml.scan-number': `
 尝试把文本解析为整数或浮点数
 返回 kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR（不是数字）
 `
+  'yaml.source-of': '原始输入文本'
   'yaml.spaces': '生成 n 个空格'
+  'yaml.str': '取字符串值（数值/布尔返回其原文）'
   'yaml.str-at': `
 为什么需要这个 helper：`arr[i]`（arr 为 []str）默认返回 option<str>，
 而 MIR 后端在把 option<str> 当作调用实参/方法接收者时会产生非法 IR
 （%option_str 与 %str-long 不匹配）。字符串拼接会自动解包 option，
 因此这里用 `out = out - a[i]` 取元素，既解包又满足 `no vet` 的越界检查。
 `
+  'yaml.stringify': '别名，等同 to-yaml'
+  'yaml.strip-bom': '去掉开头的 UTF-8 BOM'
+  'yaml.style': '当前节点风格'
+  'yaml.tag': '当前节点显式标签'
   'yaml.tag-name': '归一化标签名（!!str / tag:yaml.org,2002:str → str）'
+  'yaml.text': '当前节点的标量原文'
   'yaml.to-f64': '文本转 f64（返回 nil 表示失败）'
   'yaml.to-i64': '文本转 i64，失败返回 -1'
+  'yaml.to-json': '当前文档转 JSON'
+  'yaml.to-json-all': '全部文档转 JSON 数组'
+  'yaml.to-yaml': '当前文档重新输出为 YAML'
   'yaml.unescape-double': '处理双引号转义序列'
-  'zip.u16le': `
-读取 2 位元组小端序无号整数
-data: 待读取的位元组阵列
-off: 读取起始位置（0 起始）
-v: 2 位元组小端序无号整数（0 ~ 65535）
-`
-  'zip.u32le': `
-读取 4 位元组小端序无号整数
-data: ZIP 档案位元组阵列
-off: 读取起始位置（0 起始）
-v: 4 位元组小端序无号整数（0 ~ 2^32-1）
-`
+  'yaml.valid': '本文档是否解析成功（能拿到 yaml 值即成功）'
+  'yaml.valid-of': '源文本是否可解析（不构造文档）'
+  'yaml.value': '取映射第 i 个键对应的值节点'
   'zip.entry.compressed-size': `
 读取条目压缩后大小
 csz: 压缩后的位元组数
@@ -8347,6 +8335,18 @@ name: 该条目的档名
   'zip.entry.size': `
 读取条目原始大小
 sz: 压缩前的原始位元组数
+`
+  'zip.u16le': `
+读取 2 位元组小端序无号整数
+data: 待读取的位元组阵列
+off: 读取起始位置（0 起始）
+v: 2 位元组小端序无号整数（0 ~ 65535）
+`
+  'zip.u32le': `
+读取 4 位元组小端序无号整数
+data: ZIP 档案位元组阵列
+off: 读取起始位置（0 起始）
+v: 4 位元组小端序无号整数（0 ~ 2^32-1）
 `
   'zip.writer.add-dir': `
 添加目录条目
@@ -8461,26 +8461,26 @@ data: 输入资料 ([]byte)
 n: 实际参与计算的位元组数 (i64)
 返回 sum: 32 位元校验和 (i64)，高位为 b、低位为 a，可与 RFC 1950 的实作互相比对
 `
-  'zlib.zlib-compress': `
+  'zlib.compress': `
 使用 stored blocks (BTYPE=00) 构造 zlib 串流：
 - 2-byte zlib header (78 9c)
 - DEFLATE stored blocks（每块最大 65535 bytes）
 - 4-byte big-endian Adler-32 checksum
 out []byte: 完整 zlib 串流（2-byte header + stored blocks + 4-byte Adler-32）
 `
-  'zlib.zlib-consumed-stored': `
+  'zlib.consumed-stored': `
 计算 stored-block zlib 串流的消耗位元组数
 data: 从偏移 0 开始的 zlib 串流 ([]byte)
 返回 consumed: 总消耗位元组数（含 header 和 Adler-32），0 表示非 stored 区块
 逐块累加 5 位元组块头 + 资料长度 + 4 位元组校验和，遇到 BFINAL 或非 stored 区块即停止
 `
-  'zlib.zlib-decompress': `
+  'zlib.decompress': `
 支援所有 DEFLATE 区块类型（stored, fixed Huffman, dynamic Huffman）
 透过 gzip.inflate-decompress 进行解压。
 先尝试 stored-block 扫描（快速路径），失败则使用 inflate 解压。
 out ?[]byte: 解压后资料（ok）；长度不足 6、header 非法或解压失败皆为 nil
 `
-  'zlib.zlib-decompress-stored': `
+  'zlib.decompress-stored': `
 仅解压 stored-block 的 zlib 串流
 data: 仅含 BTYPE=00 区块的 zlib 串流 ([]byte)
 返回 out ?[]byte: 解压后资料（some），非 stored 区块或失败为 nil
@@ -8492,6 +8492,18 @@ count > 0: 返回 count 的有效位数（floor(log2(count)) + 1）
 count <= 0: 返回 0
 count: FSE 归一化表中某符号的頻率计数
 n: count 所需的最少位元数（调用端用 tableLog - n 得该状态的额外位元数）
+`
+  'zstd.compress': `
+使用 zstd 格式压缩资料（基本实现）
+data: 原始资料 ([]byte)
+out: zstd 压缩后的资料 ([]byte)
+注意：目前使用 raw block 的基本实现，
+完整 FSE + Huffman + LZ77 压缩待后续实现。
+`
+  'zstd.decompress': `
+解压缩 Zstandard 格式的资料
+data: zstd 压缩资料 ([]byte)
+out: 解压后的资料 ([]byte)
 `
   'zstd.fse-table.build': `
 从正规化计数建构 FSE 表
@@ -8543,17 +8555,5 @@ max-symbol: 符号值上界（遍历 lengths 的终点，zstd 字节符号通常
 解码一个符号
 br: 读取码位的位元读取器（码字从 MSB 端逐位元拼出）
 sym: 解出的符号值；在最大码长内未命中任何码时返回 0
-`
-  'zstd.compress': `
-使用 zstd 格式压缩资料（基本实现）
-data: 原始资料 ([]byte)
-out: zstd 压缩后的资料 ([]byte)
-注意：目前使用 raw block 的基本实现，
-完整 FSE + Huffman + LZ77 压缩待后续实现。
-`
-  'zstd.decompress': `
-解压缩 Zstandard 格式的资料
-data: zstd 压缩资料 ([]byte)
-out: 解压后的资料 ([]byte)
 `
 }

@@ -30,6 +30,16 @@ import (
 
 // TestBuildSemViewsMatchesFreshParse is the corpus sweep.
 func TestBuildSemViewsMatchesFreshParse(t *testing.T) {
+	// 門禁必須跑在**生產軌**（S3-c 後 HIRCaptureEnabled=true，見 capturefacts.go）。
+	// 同包較早的 capturefacts_test.go 至今仍以 `defer ... = false` 把這個全域
+	// 開關留在舊的 AST 降糖軌，且 option_capture_test.go 等 6 條測試隱式依賴
+	// 那個外溢值；因此本測試不能靠「套件內測試順序」拿到正確設定，必須自己釘住。
+	// 不這麼做的話，整包 `go test ./parser` 會在 number.no / str.no / yaml.no
+	// 出現 HIR 分叉，而單跑本測試卻是全綠 —— 那個分叉是軌道設定，不是重建缺陷。
+	prevCaptureTrack := HIRCaptureEnabled
+	HIRCaptureEnabled = true
+	defer func() { HIRCaptureEnabled = prevCaptureTrack }()
+
 	files, err := filepath.Glob(filepath.Join("..", "..", "tests", "*.no"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no corpus found under ../../tests: %v", err)
@@ -114,11 +124,17 @@ func TestBuildSemViewsMatchesFreshParse(t *testing.T) {
 	}
 
 	// Anti-vacuity #1: a glob that matched nothing, or a corpus that turned out
-	// to be all syntax errors, would let this gate pass forever. Floor is ~20%
-	// below the 355 files the merged corpus yields (313 top-level tests + src/std).
-	if checked < 280 {
-		t.Fatalf("only %d files round-tripped (%d skipped); expected the bulk of the corpus",
-			checked, skipped)
+	// to be all syntax errors, would let this gate pass forever.
+	//
+	// 門檻用**比例**，不用寫死的檔數 —— 原值是 `checked < 280`（註釋說合併語料
+	// 355 檔），但 `tests/*.no` 現在 174 檔、`src/std/*.no` 42 檔，合計 216，
+	// 門檻永遠紅且理由與守的東西無關。比例式對語料增刪免疫。
+	if len(files) < 50 {
+		t.Fatalf("corpus glob matched only %d files; expected the bulk of tests/ + src/std", len(files))
+	}
+	if checked < len(files)*4/5 {
+		t.Fatalf("only %d of %d files round-tripped (%d skipped); expected the bulk of the corpus",
+			checked, len(files), skipped)
 	}
 	// Anti-vacuity #2: if the corpus produced no facts at all, comparing fact
 	// fingerprints proves nothing.

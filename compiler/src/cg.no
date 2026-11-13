@@ -282,9 +282,26 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(cg-lit-name(name, g))
             b.push(' = private unnamed_addr constant [')
             b.push(cg-strlen1(t).to-str())
-            b.push(' x i8] c"')
-            b.push(t)
-            b.push('\\00"\n')
+            b.push(' x i8] [')
+            ; s99o：以「i8 整數陣」形式逐位元組寫入，對任意位元組（含反斜線、NUL、控制字元）都合法，
+            ;   避免 c"..." 形式把字串內的 \6E 等文字誤當跳脫序列（自舉碼產生器把 IR 片段存成字串常數，
+            ;   其內含 \6E 等，原 c"..." 形式會讓 opt 報 constant expression type mismatch）。
+            nb = t.len-bytes()
+            si = 0
+            (si < nb) {
+                si > 0 -> b.push(', ')
+                bv = t.byte(si)
+                bv: {
+                    ok(v) -> b.push('i8 ' - v.to-str())
+                    -> _
+                }
+                #{overflow=wrap}
+                si = si + 1
+            }
+            nb > 0 -> b.push(', i8 0')
+            nb == 0 -> b.push('i8 0')
+            b.push(']')
+            b.push('\n')
         }
     }
     b.push('define ')

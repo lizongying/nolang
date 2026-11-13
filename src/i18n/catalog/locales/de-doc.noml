@@ -2827,11 +2827,6 @@ Füllt die festen Code-Längen gemäß DEFLATE-Spezifikation §3.2.6: 0-143 Län
 lc huffman: Ausgabeparameter, mit der 288-Symbol-Literal-/Längen-Tabelle gefüllt
 dc huffman: Ausgabeparameter, mit der 30-Symbol-Distanz-Tabelle gefüllt
 `
-  'gzip.deflate-stored': `
-DEFLATE-Kompression mit Stored-Blöcken
-data: Rohdaten ([]byte)
-out: komprimierte DEFLATE-Daten ([]byte)
-`
   'gzip.compress': `
 Komprimiert Daten im gzip-Format
 data: Rohdaten ([]byte)
@@ -2841,6 +2836,11 @@ out: gzip-komprimierte Daten ([]byte)
 Dekomprimiert Daten im gzip-Format
 data: gzip-komprimierte Daten ([]byte)
 out: dekomprimierte Daten ([]byte)
+`
+  'gzip.deflate-stored': `
+DEFLATE-Kompression mit Stored-Blöcken
+data: Rohdaten ([]byte)
+out: komprimierte DEFLATE-Daten ([]byte)
 `
   'gzip.huffman.build': `
 Baut eine Huffman-Codetabelle aus einem Code-Längen-Feld
@@ -3750,6 +3750,17 @@ holt den Boolean-Wert (wenn root ein Boolean ist)
 Rückgabe val bool, ok bool: ok = Erfolg
 val: ok=der Boolean-Wert des Root-Knotens, nil=root ist kein Boolean
 `
+  'json.clone-tree': `
+Warum eine tiefe Kopie nötig ist: json.pool ist ein #{inline=false}-Zeigerfeld, und dem Kopieren
+von Zeigerfeldern des Compilers fehlen weiterhin Leih-Semantiken (siehe den copy-tree-Kommentar und die Hybrid-Eigentums-Notizen in src/mir),
+ein direktes `child = json { pool: .pool, ... }` belässt Eltern und Kind je mit einem vec-Header, die sich aber denselben
+Datenpuffer teilen; sobald ein Handle ein vec-realloc auslöst, zeigt der vec-Header des anderen Handles auf
+den freigegebenen alten Puffer → hängendes Lesen (stringify gibt null / verstümmelte Daten zurück). Nach dem Wechsel zu einer unabhängigen tiefen Kopie
+schreibt jede Seite bei alloc/Wachstum ihren eigenen Puffer, ohne die andere zu beeinflussen.
+src: der Quell-Pool
+idx: Index des Unterbaum-Roots innerhalb von src
+out: ein neues json mit einem kopierten Unterbaum (out.root=neuer Root-Index; root=-1, wenn idx ungültig ist)
+`
   'json.delete-key': `
 löscht einen Schlüssel aus einem Objekt
 Rückgabe ok bool: ok = Erfolg (der Schlüssel existierte und wurde gelöscht)
@@ -3834,131 +3845,6 @@ yes: der Root-Knotentyp ist JSON-KIND-OBJ
 meldet, ob es ein String ist
 yes: der Root-Knotentyp ist JSON-KIND-STR
 `
-  'json.json-clone-tree': `
-Warum eine tiefe Kopie nötig ist: json.pool ist ein #{inline=false}-Zeigerfeld, und dem Kopieren
-von Zeigerfeldern des Compilers fehlen weiterhin Leih-Semantiken (siehe den copy-tree-Kommentar und die Hybrid-Eigentums-Notizen in src/mir),
-ein direktes `child = json { pool: .pool, ... }` belässt Eltern und Kind je mit einem vec-Header, die sich aber denselben
-Datenpuffer teilen; sobald ein Handle ein vec-realloc auslöst, zeigt der vec-Header des anderen Handles auf
-den freigegebenen alten Puffer → hängendes Lesen (stringify gibt null / verstümmelte Daten zurück). Nach dem Wechsel zu einer unabhängigen tiefen Kopie
-schreibt jede Seite bei alloc/Wachstum ihren eigenen Puffer, ohne die andere zu beeinflussen.
-src: der Quell-Pool
-idx: Index des Unterbaum-Roots innerhalb von src
-out: ein neues json mit einem kopierten Unterbaum (out.root=neuer Root-Index; root=-1, wenn idx ungültig ist)
-`
-  'json.json-pool.add-child': `
-hängt den Kindknoten child-idx (Schlüsselname key; für Arrays den leeren String übergeben) an den Knoten node-idx
-Implementiert die variable Kind-Liste als verknüpfte Kantentafel, sodass kein Knoten eine feste Kinder-Grenze hat
-node-idx: Index des Elternknotens (eine neue Kante wird an seine first/last-Verknüpfungslisten angehängt)
-child-idx: Kindknoten-Index
-key: der Schlüssel auf der Kante (für Objekt-Kinder; Arrays übergeben einen leeren String)
-`
-  'json.json-pool.alloc': `
-allokiert einen neuen Knoten und gibt seinen Index zurück (der heap-vec wächst automatisch, daher ist der Pool nicht mehr begrenzt)
-idx: Index des neuen Knotens (kind=null, keine Kinder; der heap-vec wächst automatisch und kann nicht fehlschlagen)
-`
-  'json.json-pool.arr-get': `
-holt den Kindknoten bei einem Index eines Array-Knotens
-Rückgabe val-idx = der Kindknoten-Index, ok = Erfolg
-arr-idx: Array-Knoten-Index
-elem: die Element-Rangfolge (laufe die Kantenliste zur elem-ten Kante ab)
-val-idx: ok=der Kindknoten-Index, nil=kein Array / ungültiger Index / außerhalb des Bereichs
-`
-  'json.json-pool.arr-len': `
-holt die Array-Länge
-arr-idx: Knoten-Index
-n: Anzahl der Kinder (wird auch für Nicht-Arrays zurückgegeben; 0, wenn der Index ungültig ist)
-`
-  'json.json-pool.copy-tree': `
-Die Pool-Identität kann sich nicht auf `src.id == .id` stützen: Modul-Bindungen sind nicht neu bindbar (siehe den JSON-POOL-NEXT-ID-Kommentar),
-die id jedes Pools ist immer 1; diese Prüfung hielt einst jede Pool-übergreifende Kopie für dieselbe, sodass
-der von json.arr-get / json.get zurückgegebene Unterbaum-Root immer -1 war. Aufrufer sichern nun stattdessen zu:
-- json-clone-tree: der Empfänger ist ein brandneuer Pool direkt aus init;
-- json.set-key: kopiert val zuerst in einen vorübergehenden neuen Pool (json-clone-tree) und kopiert dann direkt aus dem Relais-Pool
-in den Empfänger; die Enden der beiden Kopien müssen in verschiedenen Pools liegen, daher sind Selbstverweise ebenfalls sicher.
-src: der Quell-Pool (darf nicht der eigene Pool des Empfängers sein, sonst bricht der geteilte vec-Puffer)
-node-idx: Index des Unterbaum-Roots im Quell-Pool
-dst-idx: der neue Root-Index im Empfänger-Pool (-1=Quell-Index ungültig)
-`
-  'json.json-pool.get-bool': `
-holt den Boolean-Wert
-Rückgabe val = der Boolean, ok = Erfolg
-node-idx: Knoten-Index
-val: ok=bool-val, nil=kein Boolean-Knoten
-`
-  'json.json-pool.get-key': `
-holt den Index des Kindknotens für einen Schlüssel eines Objekt-Knotens
-Rückgabe val-idx = der Kindknoten-Index, ok = gefunden
-obj-idx: Index des Objekt-Knotens
-key: der Schlüsselname
-val-idx: ok=der Kindknoten-Index, nil=kein Objekt / ungültiger Index / Schlüssel verfehlt
-`
-  'json.json-pool.get-kind': `
-holt die Knoten-Art
-node-idx: Knoten-Index
-kind: JSON-KIND-*-Konstante (NULL, wenn der Index ungültig ist)
-`
-  'json.json-pool.get-num': `
-holt den Zahlenwert
-node-idx: Knoten-Index
-val: ok=num-val (Ganzzahlen und Brüche beide als f64 gespeichert), nil=kein Zahlen-Knoten
-`
-  'json.json-pool.get-str': `
-holt den String-Wert
-Rückgabe out = eine Kopie des Strings, ok = Erfolg
-node-idx: Knoten-Index
-out: ok=eine Kopie des String-Werts, nil=kein String-Knoten oder ungültiger Index
-`
-  'json.json-pool.init': 'initialisiert den Knoten-Pool (der heap-vec muss vor Benutzung zu nicht-nil initialisiert werden, damit push sicher ist)'
-  'json.json-pool.parse': `
-parst einen JSON-Wert ab der Position pos des Strings
-Rückgabe node-idx = der Root-Knoten-Index, next-pos = die folgende Position, ok = Erfolg
-s: JSON-String
-pos: Byte-Position, wo dieser Wert beginnt
-node-idx: Index des Root-Knotens (-1 bei Fehlschlag)
-next-pos: die Byte-Position nach dem Wert
-ok: true=Erfolgreich geparst
-`
-  'json.json-pool.parse-num': `
-parst eine JSON-Zahl
-node-idx: Index des Knotens, der den Zahlenwert empfängt
-s: JSON-String
-pos: Startposition der Zahl
-next-pos: ok=Position, wo die Zahl endet (Wert bereits in num-val des Knotens geschrieben), nil=ungültiges Format
-`
-  'json.json-pool.parse-str': `
-parst einen JSON-String (beginnt beim öffnenden Anführungszeichen)
-node-idx: Index des Knotens, der den String-Wert empfängt
-s: JSON-String
-pos: Position des öffnenden Anführungszeichens
-next-pos: ok=Position nach dem schließenden Anführungszeichen, nil=Anführungszeichen nicht geschlossen oder ungültige Escape-Folge
-`
-  'json.json-pool.set-key': `
-setzt einen Schlüssel auf einem Objekt-Knoten
-Rückgabe ok = Erfolg
-obj-idx: Index des Objekt-Knotens
-key: der Schlüsselname
-val-idx: der neue Wertknoten-Index
-ok: true=ein vorhandener Schlüssel wurde aktualisiert oder ein neuer angehängt; false=ungültiger Index oder kein Objekt
-`
-  'json.json-pool.skip-ws': `
-überspringt Leerraum
-s: JSON-String
-pos: Start-Byte-Position
-p: Position des ersten Nicht-Leerraum-Zeichens (Leerzeichen/Tab/LF/CR); Ende des Strings, wenn nur Leerraum
-`
-  'json.json-pool.str-eq': `
-vergleicht zwei str-Werte auf Gleichheit
-Einheitlich über str.eq-full implementiert
-a: zu vergleichender String
-b: zu vergleichender String
-eq: 1=gleich, 0=ungleich
-`
-  'json.json-pool.stringify': `
-serialisiert den Knoten in einen String
-Rückgabe out str: der serialisierte String
-node-idx: Index des Unterbaum-Roots
-out: serialisierter JSON-Text (leerer String, wenn der Index ungültig ist)
-`
   'json.kind': `
 holt die Knoten-Art
 Rückgabe die JSON-Art-Konstante
@@ -4007,6 +3893,120 @@ Verwendung:
 ok = j.set('k', v)
 ok == false && j.overflowed() -> print('pool full')
 yes: Pool-Überlauf-Flag (der heap-vec-alloc löst es nicht mehr aus, fast immer false)
+`
+  'json.pool.add-child': `
+hängt den Kindknoten child-idx (Schlüsselname key; für Arrays den leeren String übergeben) an den Knoten node-idx
+Implementiert die variable Kind-Liste als verknüpfte Kantentafel, sodass kein Knoten eine feste Kinder-Grenze hat
+node-idx: Index des Elternknotens (eine neue Kante wird an seine first/last-Verknüpfungslisten angehängt)
+child-idx: Kindknoten-Index
+key: der Schlüssel auf der Kante (für Objekt-Kinder; Arrays übergeben einen leeren String)
+`
+  'json.pool.alloc': `
+allokiert einen neuen Knoten und gibt seinen Index zurück (der heap-vec wächst automatisch, daher ist der Pool nicht mehr begrenzt)
+idx: Index des neuen Knotens (kind=null, keine Kinder; der heap-vec wächst automatisch und kann nicht fehlschlagen)
+`
+  'json.pool.arr-get': `
+holt den Kindknoten bei einem Index eines Array-Knotens
+Rückgabe val-idx = der Kindknoten-Index, ok = Erfolg
+arr-idx: Array-Knoten-Index
+elem: die Element-Rangfolge (laufe die Kantenliste zur elem-ten Kante ab)
+val-idx: ok=der Kindknoten-Index, nil=kein Array / ungültiger Index / außerhalb des Bereichs
+`
+  'json.pool.arr-len': `
+holt die Array-Länge
+arr-idx: Knoten-Index
+n: Anzahl der Kinder (wird auch für Nicht-Arrays zurückgegeben; 0, wenn der Index ungültig ist)
+`
+  'json.pool.copy-tree': `
+Die Pool-Identität kann sich nicht auf `src.id == .id` stützen: Modul-Bindungen sind nicht neu bindbar (siehe den JSON-POOL-NEXT-ID-Kommentar),
+die id jedes Pools ist immer 1; diese Prüfung hielt einst jede Pool-übergreifende Kopie für dieselbe, sodass
+der von json.arr-get / json.get zurückgegebene Unterbaum-Root immer -1 war. Aufrufer sichern nun stattdessen zu:
+- json-clone-tree: der Empfänger ist ein brandneuer Pool direkt aus init;
+- json.set-key: kopiert val zuerst in einen vorübergehenden neuen Pool (json-clone-tree) und kopiert dann direkt aus dem Relais-Pool
+in den Empfänger; die Enden der beiden Kopien müssen in verschiedenen Pools liegen, daher sind Selbstverweise ebenfalls sicher.
+src: der Quell-Pool (darf nicht der eigene Pool des Empfängers sein, sonst bricht der geteilte vec-Puffer)
+node-idx: Index des Unterbaum-Roots im Quell-Pool
+dst-idx: der neue Root-Index im Empfänger-Pool (-1=Quell-Index ungültig)
+`
+  'json.pool.get-bool': `
+holt den Boolean-Wert
+Rückgabe val = der Boolean, ok = Erfolg
+node-idx: Knoten-Index
+val: ok=bool-val, nil=kein Boolean-Knoten
+`
+  'json.pool.get-key': `
+holt den Index des Kindknotens für einen Schlüssel eines Objekt-Knotens
+Rückgabe val-idx = der Kindknoten-Index, ok = gefunden
+obj-idx: Index des Objekt-Knotens
+key: der Schlüsselname
+val-idx: ok=der Kindknoten-Index, nil=kein Objekt / ungültiger Index / Schlüssel verfehlt
+`
+  'json.pool.get-kind': `
+holt die Knoten-Art
+node-idx: Knoten-Index
+kind: JSON-KIND-*-Konstante (NULL, wenn der Index ungültig ist)
+`
+  'json.pool.get-num': `
+holt den Zahlenwert
+node-idx: Knoten-Index
+val: ok=num-val (Ganzzahlen und Brüche beide als f64 gespeichert), nil=kein Zahlen-Knoten
+`
+  'json.pool.get-str': `
+holt den String-Wert
+Rückgabe out = eine Kopie des Strings, ok = Erfolg
+node-idx: Knoten-Index
+out: ok=eine Kopie des String-Werts, nil=kein String-Knoten oder ungültiger Index
+`
+  'json.pool.init': 'initialisiert den Knoten-Pool (der heap-vec muss vor Benutzung zu nicht-nil initialisiert werden, damit push sicher ist)'
+  'json.pool.parse': `
+parst einen JSON-Wert ab der Position pos des Strings
+Rückgabe node-idx = der Root-Knoten-Index, next-pos = die folgende Position, ok = Erfolg
+s: JSON-String
+pos: Byte-Position, wo dieser Wert beginnt
+node-idx: Index des Root-Knotens (-1 bei Fehlschlag)
+next-pos: die Byte-Position nach dem Wert
+ok: true=Erfolgreich geparst
+`
+  'json.pool.parse-num': `
+parst eine JSON-Zahl
+node-idx: Index des Knotens, der den Zahlenwert empfängt
+s: JSON-String
+pos: Startposition der Zahl
+next-pos: ok=Position, wo die Zahl endet (Wert bereits in num-val des Knotens geschrieben), nil=ungültiges Format
+`
+  'json.pool.parse-str': `
+parst einen JSON-String (beginnt beim öffnenden Anführungszeichen)
+node-idx: Index des Knotens, der den String-Wert empfängt
+s: JSON-String
+pos: Position des öffnenden Anführungszeichens
+next-pos: ok=Position nach dem schließenden Anführungszeichen, nil=Anführungszeichen nicht geschlossen oder ungültige Escape-Folge
+`
+  'json.pool.set-key': `
+setzt einen Schlüssel auf einem Objekt-Knoten
+Rückgabe ok = Erfolg
+obj-idx: Index des Objekt-Knotens
+key: der Schlüsselname
+val-idx: der neue Wertknoten-Index
+ok: true=ein vorhandener Schlüssel wurde aktualisiert oder ein neuer angehängt; false=ungültiger Index oder kein Objekt
+`
+  'json.pool.skip-ws': `
+überspringt Leerraum
+s: JSON-String
+pos: Start-Byte-Position
+p: Position des ersten Nicht-Leerraum-Zeichens (Leerzeichen/Tab/LF/CR); Ende des Strings, wenn nur Leerraum
+`
+  'json.pool.str-eq': `
+vergleicht zwei str-Werte auf Gleichheit
+Einheitlich über str.eq-full implementiert
+a: zu vergleichender String
+b: zu vergleichender String
+eq: 1=gleich, 0=ungleich
+`
+  'json.pool.stringify': `
+serialisiert den Knoten in einen String
+Rückgabe out str: der serialisierte String
+node-idx: Index des Unterbaum-Roots
+out: serialisierter JSON-Text (leerer String, wenn der Index ungültig ist)
 `
   'json.set': `
 setzt einen Schlüssel in einem Objekt (der Wert ist ein anderer json-Knoten)
@@ -5064,6 +5064,165 @@ host str: Ziel-IP-Adresse
 port i64: Ziel-Port
 Rückgabe c ?udp-conn: ok = Verbindung, nil = Fehlschlag
 `
+  'noml.doc.ann': `
+Holt die rohe `#{...}`-Annotation des root-Knotens
+v: ok = Annotationstext, nil = root hat keine Annotation
+`
+  'noml.doc.ann-value': `
+Holt den Wert eines Schlüssels in der Annotation des root-Knotens
+key: Annotationsschlüssel
+v: ok = Wert, nil = der Schlüssel existiert nicht
+`
+  'noml.doc.at': `
+Holt den Knoten-Index eines root-Array-Elements per Position
+i: Elementindex (0-basiert)
+child: ok = Elementknoten-Index, nil = root ist kein Array oder der Index ist außerhalb des Bereichs
+`
+  'noml.doc.bool': `
+Holt den bool-Wert von root
+v: ok = bool-Wert, nil = root ist kein bool
+`
+  'noml.doc.get': `
+Holt den Knoten-Index eines root-Objekt-Mitglieds per Schlüssel
+key: Schlüsselname
+child: ok = Kindknoten-Index, nil = root ist kein Objekt oder der Schlüssel existiert nicht
+`
+  'noml.doc.get-bool': `
+Holt den bool-Wert eines root-Objekt-Mitglieds per Schlüssel
+key: Schlüsselname
+v: ok = bool-Wert, nil = Schlüssel fehlt oder Wert kein bool
+`
+  'noml.doc.get-f64': `
+Holt den Zahlenwert eines root-Objekt-Mitglieds per Schlüssel
+key: Schlüsselname
+v: ok = Zahlenwert, nil = Schlüssel fehlt oder Wert keine Zahl
+`
+  'noml.doc.get-i64': `
+Holt den Ganzzahlwert eines root-Objekt-Mitglieds per Schlüssel (Bruch gekürzt)
+key: Schlüsselname
+v: ok = Ganzzahl, nil = Schlüssel fehlt oder Wert keine Zahl
+`
+  'noml.doc.get-str': `
+Holt den String-Wert eines root-Objekt-Mitglieds per Schlüssel
+key: Schlüsselname
+v: ok = String-Inhalt, nil = Schlüssel fehlt oder Wert kein String
+`
+  'noml.doc.has': `
+Ob das root-Objekt den Schlüssel hat
+key: Schlüsselname
+found: true = vorhanden
+`
+  'noml.doc.i64': `
+Holt den Ganzzahlwert von root (Bruch gekürzt)
+v: ok = Ganzzahl, nil = root ist keine Zahl
+`
+  'noml.doc.is-arr': `
+Ob root ein Array ist
+yes: true = root ist ein Array
+`
+  'noml.doc.is-bool': `
+Ob root ein bool ist
+yes: true = root ist ein bool
+`
+  'noml.doc.is-nil': `
+Ob root nil ist
+yes: true = root ist nil
+`
+  'noml.doc.is-num': `
+Ob root eine Zahl ist
+yes: true = root ist eine Zahl
+`
+  'noml.doc.is-obj': `
+Ob root ein Objekt ist
+yes: true = root ist ein Objekt
+`
+  'noml.doc.is-str': `
+Ob root ein String ist
+yes: true = root ist ein String
+`
+  'noml.doc.key': `
+Holt den Schlüsselnamen eines root-Objekt-Mitglieds per Position
+i: Mitgliedindex (0-basiert, in Dateireihenfolge)
+key: ok = Schlüsselname, nil = root ist kein Objekt oder der Index ist außerhalb des Bereichs
+`
+  'noml.doc.kind': `
+Die Art des root-Knotens
+k: NOML-KIND-*; NOML-KIND-NIL wenn root ungültig ist
+`
+  'noml.doc.len': `
+Anzahl der Kinder des root-Knotens (Objekt-Mitgliedanzahl oder Array-Länge)
+n: Anzahl der Kinder
+`
+  'noml.doc.new-arr': `
+Erstellt einen leeren Array-Knoten
+idx: neuer Knoten-Index
+`
+  'noml.doc.new-bool': `
+Erstellt einen bool-Knoten
+v bool: der bool-Wert, der im Knoten gespeichert wird
+idx i64: der Index des neuen Knotens im Pool, damit der Aufrufer Unterbäume anpfropft
+`
+  'noml.doc.new-nil': `
+Erstellt einen nil-Knoten
+idx: neuer Knoten-Index
+`
+  'noml.doc.new-num': `
+Erstellt einen Zahlen-Knoten
+v f64: der Zahlenwert, der im Knoten gespeichert wird (Ganzzahlen und Brüche teilen sich eine Knotenart)
+idx i64: der Index des neuen Knotens im Pool, damit der Aufrufer Unterbäume anpfropft
+`
+  'noml.doc.new-obj': `
+Erstellt einen leeren Objekt-Knoten
+idx: neuer Knoten-Index
+`
+  'noml.doc.new-str': `
+Erstellt einen String-Knoten
+v: String-Inhalt
+idx: neuer Knoten-Index
+`
+  'noml.doc.num': `
+Holt den Zahlenwert von root
+v: ok = Zahlenwert, nil = root ist keine Zahl
+`
+  'noml.doc.push': `
+Hängt ein Element am Ende eines Arrays an (child muss zu demselben Dokument gehören)
+arr: Array-Knoten-Index
+child: Kindknoten-Index
+ok: true = angehängt; false = arr ist kein Array
+`
+  'noml.doc.put': `
+Setzt ein Mitglied in ein Objekt (child muss zu demselben Dokument gehören)
+obj: Objekt-Knoten-Index
+key: Schlüsselname
+child: Kindknoten-Index
+ok: true = geschrieben; false = obj ist kein Objekt
+`
+  'noml.doc.root-index': `
+Der Index des root-Knotens (-1 für ein leeres Dokument)
+idx: root-Knoten-Index
+`
+  'noml.doc.set-ann': `
+Setzt die rohe `#{...}`-Annotation des root-Knotens (leerer String = entferne sie)
+text: Annotationstext (ohne `#{` und `}`)
+ok: true = geschrieben
+`
+  'noml.doc.set-root': `
+Setzt den root-Knoten
+idx: Knoten-Index
+`
+  'noml.doc.str': `
+Holt den String-Wert von root
+v: ok = String-Inhalt, nil = root ist kein String
+`
+  'noml.doc.stringify': `
+Serialisiert das ganze Dokument (die Dokument-Level-Annotation wird über dem root-Knoten ausgegeben)
+out: NOML-Text (leerer String wenn root ungültig ist)
+`
+  'noml.doc.stringify-node': `
+Serialisiert einen beliebigen Unterbaum
+idx: Unterbaum-root-Index
+out: NOML-Text (leerer String wenn der Index ungültig ist)
+`
   'noml.hex-char': `
 Wandelt einen Wert 0~15 in sein Hexadezimalzeichen-Byte um
 d: 0~15
@@ -5098,570 +5257,6 @@ d.put(o, 'name', d.new-str('nolang'))
 d.set-root(o)
 d: ein neues Dokument mit initialisiertem Pool und root = -1
 `
-  'noml.noml-doc.ann': `
-Holt die rohe `#{...}`-Annotation des root-Knotens
-v: ok = Annotationstext, nil = root hat keine Annotation
-`
-  'noml.noml-doc.ann-value': `
-Holt den Wert eines Schlüssels in der Annotation des root-Knotens
-key: Annotationsschlüssel
-v: ok = Wert, nil = der Schlüssel existiert nicht
-`
-  'noml.noml-doc.at': `
-Holt den Knoten-Index eines root-Array-Elements per Position
-i: Elementindex (0-basiert)
-child: ok = Elementknoten-Index, nil = root ist kein Array oder der Index ist außerhalb des Bereichs
-`
-  'noml.noml-doc.bool': `
-Holt den bool-Wert von root
-v: ok = bool-Wert, nil = root ist kein bool
-`
-  'noml.noml-doc.get': `
-Holt den Knoten-Index eines root-Objekt-Mitglieds per Schlüssel
-key: Schlüsselname
-child: ok = Kindknoten-Index, nil = root ist kein Objekt oder der Schlüssel existiert nicht
-`
-  'noml.noml-doc.get-bool': `
-Holt den bool-Wert eines root-Objekt-Mitglieds per Schlüssel
-key: Schlüsselname
-v: ok = bool-Wert, nil = Schlüssel fehlt oder Wert kein bool
-`
-  'noml.noml-doc.get-f64': `
-Holt den Zahlenwert eines root-Objekt-Mitglieds per Schlüssel
-key: Schlüsselname
-v: ok = Zahlenwert, nil = Schlüssel fehlt oder Wert keine Zahl
-`
-  'noml.noml-doc.get-i64': `
-Holt den Ganzzahlwert eines root-Objekt-Mitglieds per Schlüssel (Bruch gekürzt)
-key: Schlüsselname
-v: ok = Ganzzahl, nil = Schlüssel fehlt oder Wert keine Zahl
-`
-  'noml.noml-doc.get-str': `
-Holt den String-Wert eines root-Objekt-Mitglieds per Schlüssel
-key: Schlüsselname
-v: ok = String-Inhalt, nil = Schlüssel fehlt oder Wert kein String
-`
-  'noml.noml-doc.has': `
-Ob das root-Objekt den Schlüssel hat
-key: Schlüsselname
-found: true = vorhanden
-`
-  'noml.noml-doc.i64': `
-Holt den Ganzzahlwert von root (Bruch gekürzt)
-v: ok = Ganzzahl, nil = root ist keine Zahl
-`
-  'noml.noml-doc.is-arr': `
-Ob root ein Array ist
-yes: true = root ist ein Array
-`
-  'noml.noml-doc.is-bool': `
-Ob root ein bool ist
-yes: true = root ist ein bool
-`
-  'noml.noml-doc.is-nil': `
-Ob root nil ist
-yes: true = root ist nil
-`
-  'noml.noml-doc.is-num': `
-Ob root eine Zahl ist
-yes: true = root ist eine Zahl
-`
-  'noml.noml-doc.is-obj': `
-Ob root ein Objekt ist
-yes: true = root ist ein Objekt
-`
-  'noml.noml-doc.is-str': `
-Ob root ein String ist
-yes: true = root ist ein String
-`
-  'noml.noml-doc.key': `
-Holt den Schlüsselnamen eines root-Objekt-Mitglieds per Position
-i: Mitgliedindex (0-basiert, in Dateireihenfolge)
-key: ok = Schlüsselname, nil = root ist kein Objekt oder der Index ist außerhalb des Bereichs
-`
-  'noml.noml-doc.kind': `
-Die Art des root-Knotens
-k: NOML-KIND-*; NOML-KIND-NIL wenn root ungültig ist
-`
-  'noml.noml-doc.len': `
-Anzahl der Kinder des root-Knotens (Objekt-Mitgliedanzahl oder Array-Länge)
-n: Anzahl der Kinder
-`
-  'noml.noml-doc.new-arr': `
-Erstellt einen leeren Array-Knoten
-idx: neuer Knoten-Index
-`
-  'noml.noml-doc.new-bool': `
-Erstellt einen bool-Knoten
-v bool: der bool-Wert, der im Knoten gespeichert wird
-idx i64: der Index des neuen Knotens im Pool, damit der Aufrufer Unterbäume anpfropft
-`
-  'noml.noml-doc.new-nil': `
-Erstellt einen nil-Knoten
-idx: neuer Knoten-Index
-`
-  'noml.noml-doc.new-num': `
-Erstellt einen Zahlen-Knoten
-v f64: der Zahlenwert, der im Knoten gespeichert wird (Ganzzahlen und Brüche teilen sich eine Knotenart)
-idx i64: der Index des neuen Knotens im Pool, damit der Aufrufer Unterbäume anpfropft
-`
-  'noml.noml-doc.new-obj': `
-Erstellt einen leeren Objekt-Knoten
-idx: neuer Knoten-Index
-`
-  'noml.noml-doc.new-str': `
-Erstellt einen String-Knoten
-v: String-Inhalt
-idx: neuer Knoten-Index
-`
-  'noml.noml-doc.num': `
-Holt den Zahlenwert von root
-v: ok = Zahlenwert, nil = root ist keine Zahl
-`
-  'noml.noml-doc.push': `
-Hängt ein Element am Ende eines Arrays an (child muss zu demselben Dokument gehören)
-arr: Array-Knoten-Index
-child: Kindknoten-Index
-ok: true = angehängt; false = arr ist kein Array
-`
-  'noml.noml-doc.put': `
-Setzt ein Mitglied in ein Objekt (child muss zu demselben Dokument gehören)
-obj: Objekt-Knoten-Index
-key: Schlüsselname
-child: Kindknoten-Index
-ok: true = geschrieben; false = obj ist kein Objekt
-`
-  'noml.noml-doc.root-index': `
-Der Index des root-Knotens (-1 für ein leeres Dokument)
-idx: root-Knoten-Index
-`
-  'noml.noml-doc.set-ann': `
-Setzt die rohe `#{...}`-Annotation des root-Knotens (leerer String = entferne sie)
-text: Annotationstext (ohne `#{` und `}`)
-ok: true = geschrieben
-`
-  'noml.noml-doc.set-root': `
-Setzt den root-Knoten
-idx: Knoten-Index
-`
-  'noml.noml-doc.str': `
-Holt den String-Wert von root
-v: ok = String-Inhalt, nil = root ist kein String
-`
-  'noml.noml-doc.stringify': `
-Serialisiert das ganze Dokument (die Dokument-Level-Annotation wird über dem root-Knoten ausgegeben)
-out: NOML-Text (leerer String wenn root ungültig ist)
-`
-  'noml.noml-doc.stringify-node': `
-Serialisiert einen beliebigen Unterbaum
-idx: Unterbaum-root-Index
-out: NOML-Text (leerer String wenn der Index ungültig ist)
-`
-  'noml.noml-pool.add-child': `
-Hängt einen Kindknoten an einen Elternknoten an (Kinder sind eine einfach verkettete Liste variabler Länge über die Kantentafel)
-node-idx: Elternknoten-Index
-child-idx: Kindknoten-Index
-key: Schlüsselname auf der Kante (für Objekt-Kinder; Arrays übergeben einen leeren String)
-`
-  'noml.noml-pool.alloc': `
-Allokiert einen neuen Knoten (kind=nil, keine Kinder)
-idx: neuer Knoten-Index
-`
-  'noml.noml-pool.ann': `
-Holt den rohen `#{...}`-Annotationstext des Knotens (ohne `#{` und `}`)
-idx: Knoten-Index
-v: ok = Annotationstext, nil = der Knoten hat keine Annotation
-`
-  'noml.noml-pool.ann-literal': `
-Liest ein Annotationswert-Literal: einfach maskierte Strings verlieren ihre Anführungszeichen, alles andere wird unverändert zurückgegeben
-body: Annotationstext
-pos: Wert-Startposition
-v: ok = Wert, nil = fehlerhafte Form
-`
-  'noml.noml-pool.ann-value': `
-Holt den Wert eines Schlüssels in der Annotation des Knotens (einfach maskierte Strings verlieren ihre Anführungszeichen, alles andere wird unverändert zurückgegeben)
-idx: Knoten-Index
-key: Annotationsschlüssel (z. B. 'type')
-v: ok = Wert, nil = der Schlüssel existiert nicht
-`
-  'noml.noml-pool.at': `
-Holt den Knoten-Index eines Array-Elements per Position
-idx: Array-Knoten-Index
-i: Elementindex (0-basiert)
-child: ok = Elementknoten-Index, nil = kein Array oder der Index ist außerhalb des Bereichs
-`
-  'noml.noml-pool.at-line-start': `
-Ob die Position am Zeilenanfang liegt (nur Leerstellen davor)
-s: Quelltext
-pos: zu prüfender Byte-Offset
-yes: true = auf dieser Zeile ist noch kein Nicht-Leerraumzeichen erschienen
-`
-  'noml.noml-pool.decode-escape': `
-Decodiert eine Escape-Folge (`\\'` `\\\\` `\\/` `\\n` `\\r` `\\t` `\\uXXXX`)
-s: Quelltext
-pos: Position des Backslashes
-val: decodierter String (ein einzelner Codepunkt)
-next: Position nach der Escape-Folge
-ok: true = erfolgreich decodiert
-`
-  'noml.noml-pool.fail': `
-Zeichnet einen Parse-Fehler mit Zeilennummer auf und gibt false zurück
-s: Quelltext
-pos: Fehlerposition
-msg: Meldung (ohne Positions-Präfix)
-ok: immer false (praktisch für `ok = .fail(...)`)
-`
-  'noml.noml-pool.fmt-key': `
-Erzeugt ein Schlüssel-Literal (maskiert, wenn es nicht den kahlen Schlüsselregeln entspricht)
-k: Schlüsselname
-out: NOML-Schlüssel-Literal
-`
-  'noml.noml-pool.fmt-num': `
-Erzeugt ein Zahlen-Literal (Ganzzahlwerte tragen keinen Dezimalpunkt)
-Wenn der Wert innerhalb von ±1e15 liegt und Rundung ihn wiederherstellt (i.to-f64() == n), wird Ganzzahlschreibweise ausgegeben; sonst bleibt das Ergebnis von n.to-str() erhalten.
-n f64: der zu serialisierende Wert
-out str: Zahlen-Literal (z. B. '42' oder '3.14')
-`
-  'noml.noml-pool.get': `
-Holt einen Kindknoten-Index per Schlüssel
-idx: Objekt-Knoten-Index
-key: Schlüsselname
-child: ok = Kindknoten-Index, nil = kein Objekt oder der Schlüssel existiert nicht
-`
-  'noml.noml-pool.get-bool': `
-Holt einen bool-Wert per Schlüssel
-idx: Objekt-Knoten-Index
-key: Schlüsselname
-v: ok = bool-Wert, nil = Schlüssel fehlt oder Wert kein bool
-`
-  'noml.noml-pool.get-f64': `
-Holt einen Zahlenwert per Schlüssel
-idx: Objekt-Knoten-Index
-key: Schlüsselname
-v: ok = Zahlenwert, nil = Schlüssel fehlt oder Wert keine Zahl
-`
-  'noml.noml-pool.get-i64': `
-Holt einen Ganzzahlwert per Schlüssel (Bruch gekürzt)
-idx: Objekt-Knoten-Index
-key: Schlüsselname
-v: ok = gekürzte Ganzzahl, nil = Schlüssel fehlt oder Wert keine Zahl
-`
-  'noml.noml-pool.get-str': `
-Holt einen String-Wert per Schlüssel
-idx: Objekt-Knoten-Index
-key: Schlüsselname
-v: ok = String-Inhalt, nil = Schlüssel fehlt oder Wert kein String
-`
-  'noml.noml-pool.has': `
-Ob das Objekt den Schlüssel hat
-idx: Objekt-Knoten-Index
-key: Schlüsselname
-found: true = vorhanden
-`
-  'noml.noml-pool.has-byte': `
-Scannt Rohbytes nach einem angegebenen Wert (Byte-für-Byte-Vergleich, keine Codepunkte)
-s str: zu scannender Text
-target i64: zu suchender Byte-Wert, 0–255 (z. B. 10 = '\n', 96 = '`')
-yes bool: true = erscheint mindestens einmal, false = Byte abwesend (leerer String ist immer false)
-`
-  'noml.noml-pool.has-key': `
-Ob das Objekt bereits ein gleichnamiges Mitglied hat (doppelte Schlüssel sind ein Fehler)
-obj-idx: Objekt-Knoten-Index
-key: Schlüsselname
-found: true = ein gleichnamiges Mitglied existiert
-`
-  'noml.noml-pool.hex4': `
-Liest einen 4-stelligen hexadezimalen Codepunkt
-s: Quelltext
-pos: Position der ersten Ziffer
-code: 0~0xFFFF; -1 = fehlerhafte Form
-`
-  'noml.noml-pool.init': 'Initialisiert den Knoten-Pool (der heap-vec muss vor der Benutzung zu nicht-nil initialisiert werden, damit push sicher ist)'
-  'noml.noml-pool.is-arr': `
-Ob es ein Array ist
-idx: Knoten-Index
-yes: true = Wert ist ein Array
-`
-  'noml.noml-pool.is-bool': `
-Ob es ein bool ist
-idx: Knoten-Index
-yes: true = Wert ist ein bool
-`
-  'noml.noml-pool.is-nil': `
-Ob es nil ist
-idx: Knoten-Index
-yes: true = Wert ist nil
-`
-  'noml.noml-pool.is-num': `
-Ob es eine Zahl ist
-idx: Knoten-Index
-yes: true = Wert ist eine Zahl
-`
-  'noml.noml-pool.is-obj': `
-Ob es ein Objekt ist
-idx: Knoten-Index
-yes: true = Wert ist ein Objekt
-`
-  'noml.noml-pool.is-str': `
-Ob es ein String ist
-idx: Knoten-Index
-yes: true = Wert ist ein String (einfach maskierter oder roher String)
-`
-  'noml.noml-pool.join-ann': `
-Führt zwei Annotationstexte zusammen (mehrere Annotationsgruppen mit ", " verbunden)
-cur: angesammelter Text (darf leer sein)
-add: hinzuzufügender Text
-out: zusammengeführtes Ergebnis
-`
-  'noml.noml-pool.key': `
-Holt den Schlüsselnamen eines Objekt-Mitglieds per Position
-idx: Objekt-Knoten-Index
-i: Mitgliedindex (0-basiert, in Dateireihenfolge)
-key: ok = Schlüsselname, nil = kein Objekt oder der Index ist außerhalb des Bereichs
-`
-  'noml.noml-pool.kind': `
-Die Art des Knotens
-idx: Knoten-Index
-k: NOML-KIND-*; NOML-KIND-NIL wenn der Index ungültig ist
-`
-  'noml.noml-pool.len': `
-Anzahl der Kinder (Objekt-Mitgliedanzahl oder Array-Länge, sonst 0)
-idx: Knoten-Index
-n: Anzahl der Kinder
-`
-  'noml.noml-pool.line-of': `
-Zeilennummer einer Position (1-basiert)
-s: Quelltext
-pos: Byte-Offset, dessen Zeilennummer nachgeschlagen wird (automatisch eingeklemmt bei Bereichsüberschreitung)
-line: Zeilennummer
-`
-  'noml.noml-pool.match-kw': `
-Gleicht ein kahles Schlüsselwort ab (nicht unmittelbar gefolgt von Kennzeichnern)
-s: Quelltext
-pos: Byte-Offset, an dem ein Abgleich versucht wird
-kw: Schlüsselwort
-next: Position nach dem Schlüsselwort; -1 = keine Übereinstimmung
-`
-  'noml.noml-pool.parse': `
-Parst ein ganzes Dokument (Dokument-Level-Annotation und abschließende Annotationen auf Top-Level-Werte eingeschlossen)
-s: Quelltext
-idx: root-Knoten-Index; -1 = Fehlschlag
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-array': `
-Parst ein Array `[ Element, ... ]` (Komma-getrennt, abschließendes Komma erlaubt)
-s: Quelltext
-pos: Position von `[`
-idx: Array-Knoten-Index; -1 = Fehlschlag
-next: Position nach `]`
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-bool': `
-Parst true/false
-s str: vollständiger Quelltext
-pos i64: Startposition des Literals (zeigt auf t oder f)
-val bool: der geparste bool-Wert; fest auf false wenn ok=false
-next i64: Position nach dem Literal; gibt den ursprünglichen pos zurück wenn ok=false
-ok bool: true = geparst, false = hier nicht true/false (fail wurde aufgerufen, um den Fehler aufzuzeichnen)
-`
-  'noml.noml-pool.parse-bool-node': `
-Parst einen bool-Wert und materialisiert ihn als Knoten
-s: Quelltext
-pos: Startposition des Literals
-idx: Knoten-Index; -1 = Fehlschlag
-next: Position nach dem Wert
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-key': `
-Parst einen Schlüssel (kahler Kennzeichner oder einfach maskierter String)
-s: Quelltext
-pos: Startposition des Schlüssels
-key: Schlüsselname
-next: Position nach dem Schlüssel
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-nil-node': `
-Parst einen nil-Wert und materialisiert ihn als Knoten
-s: Quelltext
-pos: Startposition des Literals
-idx: Knoten-Index; -1 = Fehlschlag
-next: Position nach dem Wert
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-num': `
-Parst ein Zahlen-Literal (Ganzzahl / Dezimalzahl / wissenschaftliche Schreibweise, führender '-' erlaubt, '+' nicht akzeptiert)
-Verbraucht nur die Bytes, die die Zahl selbst bilden, haltend bei jedem anderen Zeichen; kein Trenner erforderlich
-s str: vollständiger Quelltext
-pos i64: Byte-Index, wo die Zahl beginnt
-val f64: geparster Wert (NOML hat einen Zahlen-Typ; Ganzzahlen werden auch als f64 gespeichert)
-next i64: Byte-Index nach der Zahl (bei Fehlschlag hält es an der Fehlerposition für .fail zum Markieren)
-ok bool: true = geparst, false = Syntaxfehler (kein Ganzzahlteil, kein Bruch nach '.', keine Ziffern im Exponenten)
-`
-  'noml.noml-pool.parse-num-node': `
-Parst einen Zahlenwert und materialisiert ihn als Knoten
-s: Quelltext
-pos: Startposition der Zahl
-idx: Knoten-Index; -1 = Fehlschlag
-next: Position nach dem Wert
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-object': `
-Parst ein Objekt `{ Mitglied... }` (Mitglieder durch Zeilenumbrüche getrennt, keine Kommas)
-s: Quelltext
-pos: Position von `{`
-idx: Objekt-Knoten-Index; -1 = Fehlschlag
-next: Position nach `}`
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-raw': `
-Parst einen Backtick-Rohstring (auf den öffnenden ` muss ein Zeilenumbruch folgen; der schließende ` muss allein auf seiner Zeile stehen)
-s: Quelltext
-pos: Position des öffnenden Anführungszeichens
-val: wortgetreuer Inhalt (keine Escape-Parsung)
-next: Position nach dem schließenden Backtick
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-raw-node': `
-Parst einen Rohstring-Wert und materialisiert ihn als Knoten
-s: Quelltext
-pos: Position des öffnenden Anführungszeichens
-idx: Knoten-Index; -1 = Fehlschlag
-next: Position nach dem Wert
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-str': `
-Parst einen einfach maskierten String (mit `\\`-Escapes)
-Wird durch Aneinanderreihen von Segmenten gebaut statt eines Byte-Puffers: jeder Escape-Punkt schneidet ein Segment, und Segmente plus decodierte Ergebnisse werden direkt aneinandergereiht, daher ist keine Kapazitätsschätzung nötig und es entstehen keine Puffer-Ansichts-Lebenszeit-Probleme.
-s: Quelltext
-pos: Position des öffnenden Anführungszeichens
-val: der decodierte String
-next: Position nach dem schließenden Anführungszeichen
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-str-node': `
-Parst einen String-Wert und materialisiert ihn als Knoten
-s: Quelltext
-pos: Position des öffnenden Anführungszeichens
-idx: Knoten-Index; -1 = Fehlschlag
-next: Position nach dem Wert
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.parse-value': `
-Parst einen Wert
-s: Quelltext
-pos: Startposition des Werts
-idx: Knoten-Index; -1 = Fehlschlag
-next: Position nach dem Wert
-ok: true = erfolgreich geparst
-`
-  'noml.noml-pool.quote': `
-Erzeugt ein einfach maskiertes String-Literal (mit Escapes)
-Maskierungsregeln: '\'' und '\\' bekommen einen vorangestellten Backslash, LF / CR / TAB werden als \n \r \t geschrieben,
-andere Steuerbytes unterhalb 0x20 werden als \u00XX geschrieben; der Ausgabepuffer reserviert n*6+2 (ungünstigster Fall 6 Zeichen pro Byte).
-s str: Rohinhalt (irgendwelche Bytes erlaubt, gültiges UTF-8 nicht erforderlich)
-out str: in einfache Anführungszeichen gehülltes Literal mit maskiertem Innenleben
-`
-  'noml.noml-pool.quote-value': `
-Erzeugt ein String-Literal in der einfachsten für den Inhalt passenden Form
-Standardmäßig .quote(); wenn der Inhalt LF enthält und .raw-safe() passiert, wird ein Backtick-Rohstring verwendet, der die ursprünglichen Zeilenumbrüche bewahrt.
-s str: Rohinhalt
-out str: Textliteral, bereit zum Schreiben in eine .noml-Datei (einfach maskierte escape-Form oder '`' Rohstring)
-`
-  'noml.noml-pool.raw-safe': `
-Entscheidet, ob der Inhalt in einen Backtick-Rohstring gesetzt und wortgetreu zurückgewonnen werden kann
-Unbrauchbar, wenn eines davon auftritt: leerer String, erstes oder letztes Byte ist LF, enthält CR,
-oder irgendeine Zeile (nach Entfernen führender Leerstellen: Leerzeichen / TAB / CR) mit '`' beginnt (sie würde als Terminator missdeutet).
-s str: zu serialisierender Inhalt
-yes bool: true = kann sicher als '`\n' + s + '\n`' gehüllt werden, false = die einfach maskierte escape-Form muss verwendet werden
-`
-  'noml.noml-pool.require-end': `
-Mitglieds-Ende-Validierung: nur Zeileninterne Leerstellen, Zeilenumbruch, `;`-Kommentar oder Containerschluss dürfen folgen
-s: Quelltext
-pos: Position nach dem Wert
-key: Mitglied-Schlüsselname (nur in Fehlermeldungen genutzt)
-next: Position nach dem Zeilenumbruch (oder `}`)
-ok: true = legal
-`
-  'noml.noml-pool.scan-ann': `
-Scannt eine `#{...}`-Gruppe, gibt die Position nach `}` zurück (validiert nur die Struktur, parst keine Einträge)
-s: Quelltext
-pos: Position von `#`
-next: Position nach `}`; -1 = keine Annotation oder nicht geschlossen
-`
-  'noml.noml-pool.scan-quote': `
-Scannt von `'` bis knapp nach dem nächsten unmaskierten `'`
-s: Quelltext
-pos: Position des öffnenden Anführungszeichens
-next: Position nach dem schließenden Anführungszeichen; -1 = nicht geschlossen
-`
-  'noml.noml-pool.scan-raw': `
-Scannt von einem Backtick bis knapp nach dem schließenden, allein auf seiner Zeile stehenden Backtick
-s: Quelltext
-pos: Position des öffnenden Anführungszeichens
-next: Position nach dem schließenden Backtick; -1 = nicht geschlossen
-`
-  'noml.noml-pool.set-ann': `
-Setzt den rohen `#{...}`-Annotationstext des Knotens (leerer String = entferne ihn)
-idx: Knoten-Index
-text: Annotationstext (ohne `#{` und `}`)
-ok: true = geschrieben
-`
-  'noml.noml-pool.skip-ann-value': `
-Überspringt einen Annotationswert (String / Array / kahler Wert), gibt die Position nach ihm zurück
-body: Annotationstext
-pos: Wert-Startposition
-next: Position nach dem Wert; -1 = fehlerhafte Form
-`
-  'noml.noml-pool.skip-blanks': `
-Überspringt nur zeileninterne Leerstellen (Leerzeichen und Tabulatoren), keine Zeilenumbrüche
-s: Quelltext
-pos: Byte-Offset, von dem an gescannt wird
-p: Position des ersten Nicht-Leerraumzeichens
-`
-  'noml.noml-pool.skip-trivia': `
-Überspringt Leerraum (Zeilenumbrüche eingeschlossen) und `;`-Zeilenkommentare
-s: Quelltext
-pos: Byte-Offset, von dem an gescannt wird
-p: Position des ersten bedeutsamen Zeichens (Ende des Strings, wenn nur Leerraum)
-`
-  'noml.noml-pool.stringify': `
-Serialisiert einen Unterbaum
-idx: Unterbaum-root-Index
-indent: Einrückungsstufe (zwei Leerzeichen pro Stufe)
-out: NOML-Text (leerer String wenn der Index ungültig ist)
-`
-  'noml.noml-pool.stringify-arr': `
-Serialisiert ein Array (ein Element pro Zeile, mit abschließenden Kommas)
-idx: Array-Knoten-Index
-indent: Einrückungsstufe
-out: NOML-Text
-`
-  'noml.noml-pool.stringify-obj': `
-Serialisiert ein Objekt (ein Mitglied pro Zeile, Annotationen über dem Mitglied ausgegeben)
-idx: Objekt-Knoten-Index
-indent: Einrückungsstufe
-out: NOML-Text
-`
-  'noml.noml-pool.val-bool': `
-Holt den bool-Wert
-idx: Knoten-Index
-v: ok = bool-Wert, nil = Wert kein bool
-`
-  'noml.noml-pool.val-i64': `
-Holt den Ganzzahlwert (Bruch gekürzt)
-idx: Knoten-Index
-v: ok = gekürzte Ganzzahl, nil = Wert keine Zahl
-`
-  'noml.noml-pool.val-num': `
-Holt den Zahlenwert
-idx: Knoten-Index
-v: ok = Zahlenwert, nil = Wert keine Zahl
-`
-  'noml.noml-pool.val-str': `
-Holt den String-Wert
-idx: Knoten-Index
-v: ok = String-Inhalt, nil = Wert kein String
-`
   'noml.parse': `
 Parst NOML-Text
 Verwendung:
@@ -5672,6 +5267,411 @@ err -> print(it)
 }
 s: vollständiger NOML-Text (führender und abschließender Leerraum wird übersprungen)
 result: ok = geparstes Dokument, err (Meldung mit Zeilennummer) = Syntaxfehler
+`
+  'noml.pool.add-child': `
+Hängt einen Kindknoten an einen Elternknoten an (Kinder sind eine einfach verkettete Liste variabler Länge über die Kantentafel)
+node-idx: Elternknoten-Index
+child-idx: Kindknoten-Index
+key: Schlüsselname auf der Kante (für Objekt-Kinder; Arrays übergeben einen leeren String)
+`
+  'noml.pool.alloc': `
+Allokiert einen neuen Knoten (kind=nil, keine Kinder)
+idx: neuer Knoten-Index
+`
+  'noml.pool.ann': `
+Holt den rohen `#{...}`-Annotationstext des Knotens (ohne `#{` und `}`)
+idx: Knoten-Index
+v: ok = Annotationstext, nil = der Knoten hat keine Annotation
+`
+  'noml.pool.ann-literal': `
+Liest ein Annotationswert-Literal: einfach maskierte Strings verlieren ihre Anführungszeichen, alles andere wird unverändert zurückgegeben
+body: Annotationstext
+pos: Wert-Startposition
+v: ok = Wert, nil = fehlerhafte Form
+`
+  'noml.pool.ann-value': `
+Holt den Wert eines Schlüssels in der Annotation des Knotens (einfach maskierte Strings verlieren ihre Anführungszeichen, alles andere wird unverändert zurückgegeben)
+idx: Knoten-Index
+key: Annotationsschlüssel (z. B. 'type')
+v: ok = Wert, nil = der Schlüssel existiert nicht
+`
+  'noml.pool.at': `
+Holt den Knoten-Index eines Array-Elements per Position
+idx: Array-Knoten-Index
+i: Elementindex (0-basiert)
+child: ok = Elementknoten-Index, nil = kein Array oder der Index ist außerhalb des Bereichs
+`
+  'noml.pool.at-line-start': `
+Ob die Position am Zeilenanfang liegt (nur Leerstellen davor)
+s: Quelltext
+pos: zu prüfender Byte-Offset
+yes: true = auf dieser Zeile ist noch kein Nicht-Leerraumzeichen erschienen
+`
+  'noml.pool.decode-escape': `
+Decodiert eine Escape-Folge (`\\'` `\\\\` `\\/` `\\n` `\\r` `\\t` `\\uXXXX`)
+s: Quelltext
+pos: Position des Backslashes
+val: decodierter String (ein einzelner Codepunkt)
+next: Position nach der Escape-Folge
+ok: true = erfolgreich decodiert
+`
+  'noml.pool.fail': `
+Zeichnet einen Parse-Fehler mit Zeilennummer auf und gibt false zurück
+s: Quelltext
+pos: Fehlerposition
+msg: Meldung (ohne Positions-Präfix)
+ok: immer false (praktisch für `ok = .fail(...)`)
+`
+  'noml.pool.fmt-key': `
+Erzeugt ein Schlüssel-Literal (maskiert, wenn es nicht den kahlen Schlüsselregeln entspricht)
+k: Schlüsselname
+out: NOML-Schlüssel-Literal
+`
+  'noml.pool.fmt-num': `
+Erzeugt ein Zahlen-Literal (Ganzzahlwerte tragen keinen Dezimalpunkt)
+Wenn der Wert innerhalb von ±1e15 liegt und Rundung ihn wiederherstellt (i.to-f64() == n), wird Ganzzahlschreibweise ausgegeben; sonst bleibt das Ergebnis von n.to-str() erhalten.
+n f64: der zu serialisierende Wert
+out str: Zahlen-Literal (z. B. '42' oder '3.14')
+`
+  'noml.pool.get': `
+Holt einen Kindknoten-Index per Schlüssel
+idx: Objekt-Knoten-Index
+key: Schlüsselname
+child: ok = Kindknoten-Index, nil = kein Objekt oder der Schlüssel existiert nicht
+`
+  'noml.pool.get-bool': `
+Holt einen bool-Wert per Schlüssel
+idx: Objekt-Knoten-Index
+key: Schlüsselname
+v: ok = bool-Wert, nil = Schlüssel fehlt oder Wert kein bool
+`
+  'noml.pool.get-f64': `
+Holt einen Zahlenwert per Schlüssel
+idx: Objekt-Knoten-Index
+key: Schlüsselname
+v: ok = Zahlenwert, nil = Schlüssel fehlt oder Wert keine Zahl
+`
+  'noml.pool.get-i64': `
+Holt einen Ganzzahlwert per Schlüssel (Bruch gekürzt)
+idx: Objekt-Knoten-Index
+key: Schlüsselname
+v: ok = gekürzte Ganzzahl, nil = Schlüssel fehlt oder Wert keine Zahl
+`
+  'noml.pool.get-str': `
+Holt einen String-Wert per Schlüssel
+idx: Objekt-Knoten-Index
+key: Schlüsselname
+v: ok = String-Inhalt, nil = Schlüssel fehlt oder Wert kein String
+`
+  'noml.pool.has': `
+Ob das Objekt den Schlüssel hat
+idx: Objekt-Knoten-Index
+key: Schlüsselname
+found: true = vorhanden
+`
+  'noml.pool.has-byte': `
+Scannt Rohbytes nach einem angegebenen Wert (Byte-für-Byte-Vergleich, keine Codepunkte)
+s str: zu scannender Text
+target i64: zu suchender Byte-Wert, 0–255 (z. B. 10 = '\n', 96 = '`')
+yes bool: true = erscheint mindestens einmal, false = Byte abwesend (leerer String ist immer false)
+`
+  'noml.pool.has-key': `
+Ob das Objekt bereits ein gleichnamiges Mitglied hat (doppelte Schlüssel sind ein Fehler)
+obj-idx: Objekt-Knoten-Index
+key: Schlüsselname
+found: true = ein gleichnamiges Mitglied existiert
+`
+  'noml.pool.hex4': `
+Liest einen 4-stelligen hexadezimalen Codepunkt
+s: Quelltext
+pos: Position der ersten Ziffer
+code: 0~0xFFFF; -1 = fehlerhafte Form
+`
+  'noml.pool.init': 'Initialisiert den Knoten-Pool (der heap-vec muss vor der Benutzung zu nicht-nil initialisiert werden, damit push sicher ist)'
+  'noml.pool.is-arr': `
+Ob es ein Array ist
+idx: Knoten-Index
+yes: true = Wert ist ein Array
+`
+  'noml.pool.is-bool': `
+Ob es ein bool ist
+idx: Knoten-Index
+yes: true = Wert ist ein bool
+`
+  'noml.pool.is-nil': `
+Ob es nil ist
+idx: Knoten-Index
+yes: true = Wert ist nil
+`
+  'noml.pool.is-num': `
+Ob es eine Zahl ist
+idx: Knoten-Index
+yes: true = Wert ist eine Zahl
+`
+  'noml.pool.is-obj': `
+Ob es ein Objekt ist
+idx: Knoten-Index
+yes: true = Wert ist ein Objekt
+`
+  'noml.pool.is-str': `
+Ob es ein String ist
+idx: Knoten-Index
+yes: true = Wert ist ein String (einfach maskierter oder roher String)
+`
+  'noml.pool.join-ann': `
+Führt zwei Annotationstexte zusammen (mehrere Annotationsgruppen mit ", " verbunden)
+cur: angesammelter Text (darf leer sein)
+add: hinzuzufügender Text
+out: zusammengeführtes Ergebnis
+`
+  'noml.pool.key': `
+Holt den Schlüsselnamen eines Objekt-Mitglieds per Position
+idx: Objekt-Knoten-Index
+i: Mitgliedindex (0-basiert, in Dateireihenfolge)
+key: ok = Schlüsselname, nil = kein Objekt oder der Index ist außerhalb des Bereichs
+`
+  'noml.pool.kind': `
+Die Art des Knotens
+idx: Knoten-Index
+k: NOML-KIND-*; NOML-KIND-NIL wenn der Index ungültig ist
+`
+  'noml.pool.len': `
+Anzahl der Kinder (Objekt-Mitgliedanzahl oder Array-Länge, sonst 0)
+idx: Knoten-Index
+n: Anzahl der Kinder
+`
+  'noml.pool.line-of': `
+Zeilennummer einer Position (1-basiert)
+s: Quelltext
+pos: Byte-Offset, dessen Zeilennummer nachgeschlagen wird (automatisch eingeklemmt bei Bereichsüberschreitung)
+line: Zeilennummer
+`
+  'noml.pool.match-kw': `
+Gleicht ein kahles Schlüsselwort ab (nicht unmittelbar gefolgt von Kennzeichnern)
+s: Quelltext
+pos: Byte-Offset, an dem ein Abgleich versucht wird
+kw: Schlüsselwort
+next: Position nach dem Schlüsselwort; -1 = keine Übereinstimmung
+`
+  'noml.pool.parse': `
+Parst ein ganzes Dokument (Dokument-Level-Annotation und abschließende Annotationen auf Top-Level-Werte eingeschlossen)
+s: Quelltext
+idx: root-Knoten-Index; -1 = Fehlschlag
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-array': `
+Parst ein Array `[ Element, ... ]` (Komma-getrennt, abschließendes Komma erlaubt)
+s: Quelltext
+pos: Position von `[`
+idx: Array-Knoten-Index; -1 = Fehlschlag
+next: Position nach `]`
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-bool': `
+Parst true/false
+s str: vollständiger Quelltext
+pos i64: Startposition des Literals (zeigt auf t oder f)
+val bool: der geparste bool-Wert; fest auf false wenn ok=false
+next i64: Position nach dem Literal; gibt den ursprünglichen pos zurück wenn ok=false
+ok bool: true = geparst, false = hier nicht true/false (fail wurde aufgerufen, um den Fehler aufzuzeichnen)
+`
+  'noml.pool.parse-bool-node': `
+Parst einen bool-Wert und materialisiert ihn als Knoten
+s: Quelltext
+pos: Startposition des Literals
+idx: Knoten-Index; -1 = Fehlschlag
+next: Position nach dem Wert
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-key': `
+Parst einen Schlüssel (kahler Kennzeichner oder einfach maskierter String)
+s: Quelltext
+pos: Startposition des Schlüssels
+key: Schlüsselname
+next: Position nach dem Schlüssel
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-nil-node': `
+Parst einen nil-Wert und materialisiert ihn als Knoten
+s: Quelltext
+pos: Startposition des Literals
+idx: Knoten-Index; -1 = Fehlschlag
+next: Position nach dem Wert
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-num': `
+Parst ein Zahlen-Literal (Ganzzahl / Dezimalzahl / wissenschaftliche Schreibweise, führender '-' erlaubt, '+' nicht akzeptiert)
+Verbraucht nur die Bytes, die die Zahl selbst bilden, haltend bei jedem anderen Zeichen; kein Trenner erforderlich
+s str: vollständiger Quelltext
+pos i64: Byte-Index, wo die Zahl beginnt
+val f64: geparster Wert (NOML hat einen Zahlen-Typ; Ganzzahlen werden auch als f64 gespeichert)
+next i64: Byte-Index nach der Zahl (bei Fehlschlag hält es an der Fehlerposition für .fail zum Markieren)
+ok bool: true = geparst, false = Syntaxfehler (kein Ganzzahlteil, kein Bruch nach '.', keine Ziffern im Exponenten)
+`
+  'noml.pool.parse-num-node': `
+Parst einen Zahlenwert und materialisiert ihn als Knoten
+s: Quelltext
+pos: Startposition der Zahl
+idx: Knoten-Index; -1 = Fehlschlag
+next: Position nach dem Wert
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-object': `
+Parst ein Objekt `{ Mitglied... }` (Mitglieder durch Zeilenumbrüche getrennt, keine Kommas)
+s: Quelltext
+pos: Position von `{`
+idx: Objekt-Knoten-Index; -1 = Fehlschlag
+next: Position nach `}`
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-raw': `
+Parst einen Backtick-Rohstring (auf den öffnenden ` muss ein Zeilenumbruch folgen; der schließende ` muss allein auf seiner Zeile stehen)
+s: Quelltext
+pos: Position des öffnenden Anführungszeichens
+val: wortgetreuer Inhalt (keine Escape-Parsung)
+next: Position nach dem schließenden Backtick
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-raw-node': `
+Parst einen Rohstring-Wert und materialisiert ihn als Knoten
+s: Quelltext
+pos: Position des öffnenden Anführungszeichens
+idx: Knoten-Index; -1 = Fehlschlag
+next: Position nach dem Wert
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-str': `
+Parst einen einfach maskierten String (mit `\\`-Escapes)
+Wird durch Aneinanderreihen von Segmenten gebaut statt eines Byte-Puffers: jeder Escape-Punkt schneidet ein Segment, und Segmente plus decodierte Ergebnisse werden direkt aneinandergereiht, daher ist keine Kapazitätsschätzung nötig und es entstehen keine Puffer-Ansichts-Lebenszeit-Probleme.
+s: Quelltext
+pos: Position des öffnenden Anführungszeichens
+val: der decodierte String
+next: Position nach dem schließenden Anführungszeichen
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-str-node': `
+Parst einen String-Wert und materialisiert ihn als Knoten
+s: Quelltext
+pos: Position des öffnenden Anführungszeichens
+idx: Knoten-Index; -1 = Fehlschlag
+next: Position nach dem Wert
+ok: true = erfolgreich geparst
+`
+  'noml.pool.parse-value': `
+Parst einen Wert
+s: Quelltext
+pos: Startposition des Werts
+idx: Knoten-Index; -1 = Fehlschlag
+next: Position nach dem Wert
+ok: true = erfolgreich geparst
+`
+  'noml.pool.quote': `
+Erzeugt ein einfach maskiertes String-Literal (mit Escapes)
+Maskierungsregeln: '\'' und '\\' bekommen einen vorangestellten Backslash, LF / CR / TAB werden als \n \r \t geschrieben,
+andere Steuerbytes unterhalb 0x20 werden als \u00XX geschrieben; der Ausgabepuffer reserviert n*6+2 (ungünstigster Fall 6 Zeichen pro Byte).
+s str: Rohinhalt (irgendwelche Bytes erlaubt, gültiges UTF-8 nicht erforderlich)
+out str: in einfache Anführungszeichen gehülltes Literal mit maskiertem Innenleben
+`
+  'noml.pool.quote-value': `
+Erzeugt ein String-Literal in der einfachsten für den Inhalt passenden Form
+Standardmäßig .quote(); wenn der Inhalt LF enthält und .raw-safe() passiert, wird ein Backtick-Rohstring verwendet, der die ursprünglichen Zeilenumbrüche bewahrt.
+s str: Rohinhalt
+out str: Textliteral, bereit zum Schreiben in eine .noml-Datei (einfach maskierte escape-Form oder '`' Rohstring)
+`
+  'noml.pool.raw-safe': `
+Entscheidet, ob der Inhalt in einen Backtick-Rohstring gesetzt und wortgetreu zurückgewonnen werden kann
+Unbrauchbar, wenn eines davon auftritt: leerer String, erstes oder letztes Byte ist LF, enthält CR,
+oder irgendeine Zeile (nach Entfernen führender Leerstellen: Leerzeichen / TAB / CR) mit '`' beginnt (sie würde als Terminator missdeutet).
+s str: zu serialisierender Inhalt
+yes bool: true = kann sicher als '`\n' + s + '\n`' gehüllt werden, false = die einfach maskierte escape-Form muss verwendet werden
+`
+  'noml.pool.require-end': `
+Mitglieds-Ende-Validierung: nur Zeileninterne Leerstellen, Zeilenumbruch, `;`-Kommentar oder Containerschluss dürfen folgen
+s: Quelltext
+pos: Position nach dem Wert
+key: Mitglied-Schlüsselname (nur in Fehlermeldungen genutzt)
+next: Position nach dem Zeilenumbruch (oder `}`)
+ok: true = legal
+`
+  'noml.pool.scan-ann': `
+Scannt eine `#{...}`-Gruppe, gibt die Position nach `}` zurück (validiert nur die Struktur, parst keine Einträge)
+s: Quelltext
+pos: Position von `#`
+next: Position nach `}`; -1 = keine Annotation oder nicht geschlossen
+`
+  'noml.pool.scan-quote': `
+Scannt von `'` bis knapp nach dem nächsten unmaskierten `'`
+s: Quelltext
+pos: Position des öffnenden Anführungszeichens
+next: Position nach dem schließenden Anführungszeichen; -1 = nicht geschlossen
+`
+  'noml.pool.scan-raw': `
+Scannt von einem Backtick bis knapp nach dem schließenden, allein auf seiner Zeile stehenden Backtick
+s: Quelltext
+pos: Position des öffnenden Anführungszeichens
+next: Position nach dem schließenden Backtick; -1 = nicht geschlossen
+`
+  'noml.pool.set-ann': `
+Setzt den rohen `#{...}`-Annotationstext des Knotens (leerer String = entferne ihn)
+idx: Knoten-Index
+text: Annotationstext (ohne `#{` und `}`)
+ok: true = geschrieben
+`
+  'noml.pool.skip-ann-value': `
+Überspringt einen Annotationswert (String / Array / kahler Wert), gibt die Position nach ihm zurück
+body: Annotationstext
+pos: Wert-Startposition
+next: Position nach dem Wert; -1 = fehlerhafte Form
+`
+  'noml.pool.skip-blanks': `
+Überspringt nur zeileninterne Leerstellen (Leerzeichen und Tabulatoren), keine Zeilenumbrüche
+s: Quelltext
+pos: Byte-Offset, von dem an gescannt wird
+p: Position des ersten Nicht-Leerraumzeichens
+`
+  'noml.pool.skip-trivia': `
+Überspringt Leerraum (Zeilenumbrüche eingeschlossen) und `;`-Zeilenkommentare
+s: Quelltext
+pos: Byte-Offset, von dem an gescannt wird
+p: Position des ersten bedeutsamen Zeichens (Ende des Strings, wenn nur Leerraum)
+`
+  'noml.pool.stringify': `
+Serialisiert einen Unterbaum
+idx: Unterbaum-root-Index
+indent: Einrückungsstufe (zwei Leerzeichen pro Stufe)
+out: NOML-Text (leerer String wenn der Index ungültig ist)
+`
+  'noml.pool.stringify-arr': `
+Serialisiert ein Array (ein Element pro Zeile, mit abschließenden Kommas)
+idx: Array-Knoten-Index
+indent: Einrückungsstufe
+out: NOML-Text
+`
+  'noml.pool.stringify-obj': `
+Serialisiert ein Objekt (ein Mitglied pro Zeile, Annotationen über dem Mitglied ausgegeben)
+idx: Objekt-Knoten-Index
+indent: Einrückungsstufe
+out: NOML-Text
+`
+  'noml.pool.val-bool': `
+Holt den bool-Wert
+idx: Knoten-Index
+v: ok = bool-Wert, nil = Wert kein bool
+`
+  'noml.pool.val-i64': `
+Holt den Ganzzahlwert (Bruch gekürzt)
+idx: Knoten-Index
+v: ok = gekürzte Ganzzahl, nil = Wert keine Zahl
+`
+  'noml.pool.val-num': `
+Holt den Zahlenwert
+idx: Knoten-Index
+v: ok = Zahlenwert, nil = Wert keine Zahl
+`
+  'noml.pool.val-str': `
+Holt den String-Wert
+idx: Knoten-Index
+v: ok = String-Inhalt, nil = Wert kein String
 `
   'num.abs': `
 Absolutbetrag — funktioniert für jeden num-Typ (Ganzzahlen und Fließkommazahlen)
@@ -9042,6 +9042,32 @@ TLS-1.2-CBC-Entauffüllung
 in []byte: entschlüsselte Daten (content || MAC || padding)
 gibt zurück out-n i64: Länge nach Entfernen der Auffüllung (content+MAC), -1 = Auffüllungsfehler
 `
+  'toml.array-name': `
+Liest den Namen eines array-of-tables.
+t: der zu lesende array-of-tables-Datensatz
+s: der Name dieser array-of-tables-Tabelle
+`
+  'toml.entry-key': `
+Liest den kanonischen Schlüssel.
+e: der zu lesende entry
+s: der kanonische Schlüssel des Eintrags (normalisierte punktgetrennte Form)
+`
+  'toml.entry-key-eq': `
+Vergleicht einen Eintragsschlüssel mit einer Zeichenkette.
+e: der zu vergleichende entry
+key: der zu vergleichende Schlüsseltext
+same: ob der Eintragsschlüssel gleich key ist
+`
+  'toml.entry-value': `
+Liest den rohen TOML-Wert.
+e: der zu lesende entry
+s: das rohe TOML-Wert-Literal (undekodiert)
+`
+  'toml.find-eq': `
+Findet das erste Gleichheitszeichen, das nicht innerhalb von Anführungszeichen liegt
+s: die zu parstende Schlüssel-Wert-Zeile
+pos: Byte-Position des ersten '=' außerhalb von Anführungszeichen (-1, wenn nicht gefunden)
+`
   'toml.get': `
 Gibt das rohe TOML-Literal zurück
 Nicht umgewandelte Werte wie Felder und Datums-/Zeitangaben sind hier erreichbar.
@@ -9079,58 +9105,15 @@ doc: das zu prüfende Dokument
 key: der abzufragende Schlüssel
 found: ob das Dokument diesen Schlüssel enthält
 `
-  'toml.new': `
-Erstellt ein leeres TOML-Dokument
-doc: ein leeres TOML-Dokument (0 Einträge, 0 Tabellen)
-`
-  'toml.parse': `
-Parst ein TOML-Dokument; gibt bei Fehlschlag err(Meldung) zurück
-s: vollständiger TOML-Text
-result: ok=das geparste Dokument, err=Fehlermeldung mit der Ursache
-`
-  'toml.stringify': `
-Schreibt die Datei mit TOML-1.0-Syntax; array-of-tables wird als [[table]]-Header wiederhergestellt.
-doc: das zu serialisierende Dokument
-out: Text in TOML-1.0-Syntax (Eintrag für Eintrag mit Tabellen-Headern ausgegeben)
-`
-  'toml.array-name': `
-Liest den Namen eines array-of-tables.
-t: der zu lesende array-of-tables-Datensatz
-s: der Name dieser array-of-tables-Tabelle
-`
-  'toml.put': `
-setzt den rohen TOML-Literalwert.
-Der Wert kann gemäß TOML-Syntax ein Feld, eine Datumszeit usw. sein; das Modul setzt keine Anführungszeichen.
-key: der Schlüssel (schlägt fehl, wenn der Schlüssel nicht normalisiert werden kann)
-value: das rohe TOML-Literal (nach Syntaxprüfung gespeichert)
-ok: true=Schreiben gelungen, false=unzulässiger Schlüssel/unzulässiger Wert/voll
-`
-  'toml.entry-key': `
-Liest den kanonischen Schlüssel.
-e: der zu lesende entry
-s: der kanonische Schlüssel des Eintrags (normalisierte punktgetrennte Form)
-`
-  'toml.entry-key-eq': `
-Vergleicht einen Eintragsschlüssel mit einer Zeichenkette.
-e: der zu vergleichende entry
-key: der zu vergleichende Schlüsseltext
-same: ob der Eintragsschlüssel gleich key ist
-`
-  'toml.entry-value': `
-Liest den rohen TOML-Wert.
-e: der zu lesende entry
-s: das rohe TOML-Wert-Literal (undekodiert)
-`
-  'toml.find-eq': `
-Findet das erste Gleichheitszeichen, das nicht innerhalb von Anführungszeichen liegt
-s: die zu parstende Schlüssel-Wert-Zeile
-pos: Byte-Position des ersten '=' außerhalb von Anführungszeichen (-1, wenn nicht gefunden)
-`
   'toml.make-entry': `
 Kopiert key/value in einen fest dimensionierten Puffer.
 key: der Schlüsseltext
 value: der Werttext
 e: der neue Eintrag, nachdem key/value in den festen Puffer kopiert wurde
+`
+  'toml.new': `
+Erstellt ein leeres TOML-Dokument
+doc: ein leeres TOML-Dokument (0 Einträge, 0 Tabellen)
 `
   'toml.next-array-table': `
 Gibt den nächsten Index eines array-of-tables zurück und registriert ihn.
@@ -9142,6 +9125,11 @@ idx: ok=Index dieses Eintrags (mit Auto-Inkrement registriert), nil=benannte Tab
 Parst einen nackten, quotierten oder gepunkteten Schlüssel und gibt den kanonischen Punktsschlüssel aus.
 s: der rohe Schlüsseltext (nackt / quotiert / gepunktet)
 key: ok=normalisierter Punkt-Notation-Schlüssel, nil=Fehlermeldung für einen unzulässigen Schlüssel
+`
+  'toml.parse': `
+Parst ein TOML-Dokument; gibt bei Fehlschlag err(Meldung) zurück
+s: vollständiger TOML-Text
+result: ok=das geparste Dokument, err=Fehlermeldung mit der Ursache
 `
   'toml.parse-bool': `
 Parst einen Boolesch-Wert
@@ -9158,6 +9146,13 @@ Unterstützt Dezimal-, Hexadezimal-, Oktal- und Binärliterale sowie Unterstrich
 s: Ganzzahl-Literaltext
 value: ok=der Zahlenwert, nil=leerer Text, err=unzulässiges Format oder Überlauf
 `
+  'toml.put': `
+setzt den rohen TOML-Literalwert.
+Der Wert kann gemäß TOML-Syntax ein Feld, eine Datumszeit usw. sein; das Modul setzt keine Anführungszeichen.
+key: der Schlüssel (schlägt fehl, wenn der Schlüssel nicht normalisiert werden kann)
+value: das rohe TOML-Literal (nach Syntaxprüfung gespeichert)
+ok: true=Schreiben gelungen, false=unzulässiger Schlüssel/unzulässiger Wert/voll
+`
   'toml.register-table': `
 Zeichnet eine definierte Tabelle auf; gibt false zurück, wenn sie zweimal definiert ist.
 doc: das Dokument, in das registriert wird
@@ -9169,6 +9164,11 @@ Löst eine Untertabelle eines array-of-tables auf das neueste Element auf.
 doc: das aktuelle Dokument
 name: der zu parsende Absatzname
 resolved: als base[index].suffix umgeschrieben, wenn der Schlüssel ein array-of-tables-Unterschlüssel ist, sonst unverändert zurückgegeben
+`
+  'toml.stringify': `
+Schreibt die Datei mit TOML-1.0-Syntax; array-of-tables wird als [[table]]-Header wiederhergestellt.
+doc: das zu serialisierende Dokument
+out: Text in TOML-1.0-Syntax (Eintrag für Eintrag mit Tabellen-Headern ausgegeben)
 `
   'toml.strip-comment': `
 Entfernt #-Kommentare außerhalb von Zeichenketten und schneidet zu; mehrzeilige Zeichenketten werden unterstützt.
@@ -10581,6 +10581,20 @@ data: DER-kodiertes Zertifikat
 start: Ausgabe-TBS-Startposition (einschließlich des SEQUENCE-Tags)
 end: Ausgabe-TBS-Endposition (ausschließlich, d. h. der Anfang des nächsten Elements)
 `
+  'xz.compress': `
+Komprimiert Daten im xz-Format (Grundimplementierung)
+data: rohe Daten ([]byte)
+out: xz-komprimierte Daten ([]byte)
+Hinweis: derzeit eine Grundimplementierung mit gespeicherten Blöcken;
+die vollständige LZMA2-Kompression bleibt einer späteren Implementierung überlassen.
+`
+  'xz.decompress': `
+.xz-Format:
+- Stream-Header: 6 Bytes Magie + 2 Bytes Strom-Flags
+- Blöcke: Block-Header + komprimierte Daten + Block-Auffüllung + Check
+- Index
+- Stream-Footer: 12 Bytes
+`
   'xz.lzma-decoder.decode': `
 LZMA-Decodierung Hauptschleife
 data: komprimierte Daten, start-pos: Daten-Startposition
@@ -10654,23 +10668,15 @@ data: der LZMA2-Strom einschließlich Steuer-Bytes
 start-pos: Anfangsversatz des Stroms
 out: dekomprimierter Klartext-Byte-Strom (benannter Ausgabeparameter, am Ende einmal geliefert)
 `
-  'xz.compress': `
-Komprimiert Daten im xz-Format (Grundimplementierung)
-data: rohe Daten ([]byte)
-out: xz-komprimierte Daten ([]byte)
-Hinweis: derzeit eine Grundimplementierung mit gespeicherten Blöcken;
-die vollständige LZMA2-Kompression bleibt einer späteren Implementierung überlassen.
-`
-  'xz.decompress': `
-.xz-Format:
-- Stream-Header: 6 Bytes Magie + 2 Bytes Strom-Flags
-- Blöcke: Block-Header + komprimierte Daten + Block-Auffüllung + Check
-- Index
-- Stream-Footer: 12 Bytes
-`
   'yaml.anchor': `
 Der Ankername des aktuellen Knotens
 a: der Ankername des Knotens (leer = keiner)
+`
+  'yaml.apply-tag': `
+Entscheidet den Knotentyp über das explizite Tag
+tag: der normalisierte Tag-Name
+kind: aus dem Inhalt erschlossene Knotenart
+k: endgültige Art nach Überschreibung durch die Bezeichnung (Originalart zurückgegeben, wenn die Bezeichnung unbekannt ist)
 `
   'yaml.at': `
 Holt ein Sequenz-Element / den i-ten Wert einer Zuordnung
@@ -10691,6 +10697,14 @@ out: Handle des Dokuments i (nil=außerhalb des Bereichs)
 Die Anzahl der Dokumente
 n: Anzahl der Dokumente, die dieser Dokumentensatz enthält
 `
+  'yaml.emit': `
+gibt einen Knoten als YAML im Blockstil aus (kein abschließender Zeilenumbruch)
+pool: der Knotenpool
+idx: Index des auszugebenden Knotens
+indent: Anzahl der Leerzeichen pro Einrückungsstufe
+depth: die aktuelle Verschachtelungstiefe
+out: YAML-Text im Blockstil (kein abschließender Zeilenumbruch)
+`
   'yaml.error': `
 Der Parse-Fehler dieses Dokuments (bei erfolgreichem Parsen immer ein leerer String)
 Hinweis: bei Parse-Fehlschlag gibt yaml.parse err zurück, sodass kein yaml-Wert erhalten wird;
@@ -10701,6 +10715,18 @@ msg: Fehlermeldung (bei erfolgreichem Parsen immer leer)
 parst den Quelltext und gibt die Fehlermeldung zurück (leerer String bei Erfolg)
 source: YAML-Quelltext
 msg: Parse-Fehlermeldung (leerer String=Erfolg)
+`
+  'yaml.f-is-inf': `
+Nutzt keinen Literalvergleich: Nolang-Zahlenliterale unterstützen keine Exponenten (`1e308` wird in `1` + `e308` geschnitten).
+Der Test auf Unendlichkeit ist «ungleich Null und unverändert nach Halbierung»; NaN wird zuerst mit `x != x` ausgeschlossen.
+x: der zu testende f64-Wert
+yes: x ist positiv/negativ unendlich (ungleich Null und unverändert nach Halbierung)
+`
+  'yaml.f-is-nan': `
+Ob der Gleitkommawert NaN ist (NaN != NaN)
+Nutzt kein `float.is-nan`: Empfängerartige Aufrufe innerhalb des Moduls können diese Methode im MIR-Backend nicht auflösen.
+x: der zu testende f64-Wert
+yes: x ist NaN (der Test NaN != NaN)
 `
   'yaml.f64': `
 Holt den Gleitkommawert
@@ -10756,9 +10782,23 @@ Holt eine Zeichenkette über einen skalaren Schlüssel
 key: der zu suchende skalare Schlüsseltext
 out: Zeichenkettenform des entsprechenden Werts (nil=Schlüssel fehlt oder kein Zeichenkettenwert)
 `
+  'yaml.hex-char': `
+Wandelt eine einzelne Hexadezimalziffer (0-15) in ein Zeichen um
+v: der Zahlenwert einer Hexadezimalziffer, 0-15
+ch: das entsprechende Hexadezimalzeichen ('0'-'f')
+`
+  'yaml.hex-digit': `
+Wandelt ein Hexadezimalzeichen in seinen Wert um; ein Nicht-Hexadezimalzeichen ergibt -1
+c: der ASCII-Code des Zeichens
+d: der von dieser Hexadezimalziffer dargestellte Wert 0-15 (-1=ungültiges Hexadezimalzeichen)
+`
   'yaml.i64': `
 Holt den Ganzzahlwert
 val: der Ganzzahlwert (nil=kein Ganzzahl-Knoten)
+`
+  'yaml.inf': `
+Positive Unendlichkeit
+v: positive Unendlichkeit
 `
   'yaml.is-bool': `
 Ob es ein Boolesch-Wert ist
@@ -10793,15 +10833,39 @@ yes: der Knoten ist eine Sequenz
 Ob es eine Zeichenkette ist
 yes: der Knoten ist eine Zeichenkette
 `
+  'yaml.json-escape': `
+JSON-Zeichenketten-Escaping
+s: die rohe Zeichenkette
+out: escapete JSON-Zeichenkette (mit umschließenden doppelten Anführungszeichen)
+`
+  'yaml.json-of': `
+wandelt einen Knoten in JSON um
+pool: der Knotenpool
+idx: Index des umzuwandelnden Knotens
+depth: verbleibende Rekursionstiefe (verhindert Alias-Zyklen)
+out: der JSON-Text, der diesem Knoten entspricht
+`
   'yaml.key': `
 Holt den Text des i-ten Schlüssels einer Zuordnung
 i: Schlüssel/Wert-Paar-Rangfolge (0-basiert)
 out: skalarer Text des i-ten Schlüssels (nil=außerhalb des Bereichs oder keine Zuordnung)
 `
+  'yaml.key-eq': `
+Ob zwei Schlüsselknoten gleichwertig sind (vergleicht skalaren Text)
+a: Schlüsselknoten a
+b: Schlüsselknoten b
+yes: die skalaren Texte der beiden Knoten sind gleich
+`
   'yaml.key-node': `
 Holt den i-ten Schlüsselknoten einer Zuordnung
 i: Schlüssel/Wert-Paar-Rangfolge (0-basiert)
 out: der i-te Schlüsselknoten (nil=außerhalb des Bereichs oder keine Zuordnung)
+`
+  'yaml.key-text-eq': `
+Ob der skalare Schlüsseltext der angegebenen Zeichenkette gleich ist
+nd: der zu vergleichende Knoten (sein skalarer Text wird genommen)
+key: der Zieltext
+yes: der skalare Text von nd ist gleich key
 `
   'yaml.kind': `
 Der Typ des aktuellen Knotens
@@ -10815,10 +10879,16 @@ n: Elementanzahl einer Sequenz oder Paaranzahl einer Zuordnung (0 für andere Ar
 Die Anfangszeile des aktuellen Knotens
 n: die Zeilennummer, in der der Knoten beginnt
 `
+  'yaml.nan': `
+Muss über Laufzeitdivision laufen: Kompilierzeit-Konstantenfaltung berechnet `0.0 / 0.0` direkt als 0.
+Das Umleiten über eine lokale Variable vermeidet die Faltung und ergibt ein echtes NaN (`x != x` ist wahr).
+v: der NaN-Wert (zur Laufzeit durch 0.0/0.0 erzeugt, nicht konstantgefaltet)
+`
   'yaml.node-count': `
 Knoten-Gesamtanzahl
 n: Gesamtanzahl der Knoten im Knotenpool
 `
+  'yaml.node-is-nan': '`.nan`\'s fval wird von nan() mit einem echten NaN gefüllt, daher wird es per Wert verglichen (NaN != NaN).\nRohtextprüfung des Knotens als Rückfall: Pfade wie Tag-Umschreibung können nur den Text ändern, ohne fval neu zu berechnen.\nnd: der zu untersuchende Knoten\nyes: der Knoten ist .nan'
   'yaml.parse': `
 parst YAML-Text und gibt das erste Dokument zurück
 Gibt ok(yaml) oder err(Meldung) zurück
@@ -10830,135 +10900,6 @@ parst alle Dokumente
 source: YAML-Quelltext mit mehreren Dokumenten
 out: Dokumentensatz-Handle (jedes Dokument über .doc(i) erreichen)
 `
-  'yaml.scalar-text': `
-Der skalare Text des aktuellen Knotens (Container geben ok=false zurück)
-out: skalarer Text (nil=Container-Knoten)
-`
-  'yaml.source-of': `
-Der ursprüngliche Eingabetext
-out: der ursprüngliche Eingabetext zum Parse-Zeitpunkt
-`
-  'yaml.str': `
-Holt den Zeichenkettenwert (Zahlen/Boolesch-Werte geben ihren Rohtext zurück)
-val: der skalare Rohtext (nil=Container-Knoten)
-`
-  'yaml.stringify': `
-Alias für to-yaml
-out: gleiche Ausgabe wie to-yaml
-`
-  'yaml.strip-bom': `
-Entfernt ein führendes UTF-8-BOM
-s: Text, der ein BOM tragen kann
-out: Text mit entfernten führenden EF BB BF
-`
-  'yaml.style': `
-Der Stil des aktuellen Knotens
-s: die YAML-STYLE-*-Stil-Konstante dieses Knotens
-`
-  'yaml.tag': `
-Das explizite Tag des aktuellen Knotens
-t: das explizite Tag des Knotens (leere Zeichenkette = keines)
-`
-  'yaml.text': `
-Der skalare Rohtext des aktuellen Knotens
-t: skalarer Rohtext (leere Zeichenkette für Container-Knoten)
-`
-  'yaml.to-json': `
-Wandelt das aktuelle Dokument in JSON um
-out: JSON-Text des Wurzelknotens des aktuellen Dokuments
-`
-  'yaml.to-json-all': `
-Wandelt alle Dokumente in ein JSON-Feld um
-out: JSON-Feld-Text aller Dokumente
-`
-  'yaml.to-yaml': `
-Gibt das aktuelle Dokument erneut als YAML aus
-out: der wieder ausgegebene YAML-Text des aktuellen Dokuments
-`
-  'yaml.valid': `
-Ob dieses Dokument erfolgreich geparst wurde (einen yaml-Wert zu erhalten bedeutet Erfolg)
-yes: das Handle trägt ein erfolgreich geparstes Dokument
-`
-  'yaml.valid-of': `
-Ob der Quelltext geparst werden kann (ohne ein Dokument aufzubauen)
-source: der zu validierende YAML-Quelltext
-yes: der Quelltext kann geparst werden
-`
-  'yaml.value': `
-Holt den Wertknoten des i-ten Schlüssels einer Zuordnung
-i: Schlüssel/Wert-Paar-Rangfolge (0-basiert)
-out: Wertknoten des i-ten Schlüsselpaars (nil=außerhalb des Bereichs oder keine Zuordnung)
-`
-  'yaml.apply-tag': `
-Entscheidet den Knotentyp über das explizite Tag
-tag: der normalisierte Tag-Name
-kind: aus dem Inhalt erschlossene Knotenart
-k: endgültige Art nach Überschreibung durch die Bezeichnung (Originalart zurückgegeben, wenn die Bezeichnung unbekannt ist)
-`
-  'yaml.emit': `
-gibt einen Knoten als YAML im Blockstil aus (kein abschließender Zeilenumbruch)
-pool: der Knotenpool
-idx: Index des auszugebenden Knotens
-indent: Anzahl der Leerzeichen pro Einrückungsstufe
-depth: die aktuelle Verschachtelungstiefe
-out: YAML-Text im Blockstil (kein abschließender Zeilenumbruch)
-`
-  'yaml.f-is-inf': `
-Nutzt keinen Literalvergleich: Nolang-Zahlenliterale unterstützen keine Exponenten (`1e308` wird in `1` + `e308` geschnitten).
-Der Test auf Unendlichkeit ist «ungleich Null und unverändert nach Halbierung»; NaN wird zuerst mit `x != x` ausgeschlossen.
-x: der zu testende f64-Wert
-yes: x ist positiv/negativ unendlich (ungleich Null und unverändert nach Halbierung)
-`
-  'yaml.f-is-nan': `
-Ob der Gleitkommawert NaN ist (NaN != NaN)
-Nutzt kein `float.is-nan`: Empfängerartige Aufrufe innerhalb des Moduls können diese Methode im MIR-Backend nicht auflösen.
-x: der zu testende f64-Wert
-yes: x ist NaN (der Test NaN != NaN)
-`
-  'yaml.hex-char': `
-Wandelt eine einzelne Hexadezimalziffer (0-15) in ein Zeichen um
-v: der Zahlenwert einer Hexadezimalziffer, 0-15
-ch: das entsprechende Hexadezimalzeichen ('0'-'f')
-`
-  'yaml.hex-digit': `
-Wandelt ein Hexadezimalzeichen in seinen Wert um; ein Nicht-Hexadezimalzeichen ergibt -1
-c: der ASCII-Code des Zeichens
-d: der von dieser Hexadezimalziffer dargestellte Wert 0-15 (-1=ungültiges Hexadezimalzeichen)
-`
-  'yaml.inf': `
-Positive Unendlichkeit
-v: positive Unendlichkeit
-`
-  'yaml.json-escape': `
-JSON-Zeichenketten-Escaping
-s: die rohe Zeichenkette
-out: escapete JSON-Zeichenkette (mit umschließenden doppelten Anführungszeichen)
-`
-  'yaml.json-of': `
-wandelt einen Knoten in JSON um
-pool: der Knotenpool
-idx: Index des umzuwandelnden Knotens
-depth: verbleibende Rekursionstiefe (verhindert Alias-Zyklen)
-out: der JSON-Text, der diesem Knoten entspricht
-`
-  'yaml.key-eq': `
-Ob zwei Schlüsselknoten gleichwertig sind (vergleicht skalaren Text)
-a: Schlüsselknoten a
-b: Schlüsselknoten b
-yes: die skalaren Texte der beiden Knoten sind gleich
-`
-  'yaml.key-text-eq': `
-Ob der skalare Schlüsseltext der angegebenen Zeichenkette gleich ist
-nd: der zu vergleichende Knoten (sein skalarer Text wird genommen)
-key: der Zieltext
-yes: der skalare Text von nd ist gleich key
-`
-  'yaml.nan': `
-Muss über Laufzeitdivision laufen: Kompilierzeit-Konstantenfaltung berechnet `0.0 / 0.0` direkt als 0.
-Das Umleiten über eine lokale Variable vermeidet die Faltung und ergibt ein echtes NaN (`x != x` ist wahr).
-v: der NaN-Wert (zur Laufzeit durch 0.0/0.0 erzeugt, nicht konstantgefaltet)
-`
-  'yaml.node-is-nan': '`.nan`\'s fval wird von nan() mit einem echten NaN gefüllt, daher wird es per Wert verglichen (NaN != NaN).\nRohtextprüfung des Knotens als Rückfall: Pfade wie Tag-Umschreibung können nur den Text ändern, ohne fval neu zu berechnen.\nnd: der zu untersuchende Knoten\nyes: der Knoten ist .nan'
   'yaml.parse-radix': `
 parst eine Ganzzahl zur Basis (Unterstriche werden ignoriert)
 t: Text mit Ziffern
@@ -11197,6 +11138,10 @@ Die YAML-Repräsentation des Skalars
 nd: Skalarknoten
 out: der nach Art und Stil gewählte YAML-Repräsentationstext
 `
+  'yaml.scalar-text': `
+Der skalare Text des aktuellen Knotens (Container geben ok=false zurück)
+out: skalarer Text (nil=Container-Knoten)
+`
   'yaml.scan-number': `
 Versucht, den Text als Ganzzahl oder Gleitkommazahl zu parsen
 gibt zurück kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR (keine Zahl)
@@ -11205,10 +11150,18 @@ kind: anerkannte Zahlenart (INT/FLOAT/STR)
 ival: der Ganzzahlwert, wenn kind=INT
 fval: der Gleitkommawert, wenn kind=FLOAT
 `
+  'yaml.source-of': `
+Der ursprüngliche Eingabetext
+out: der ursprüngliche Eingabetext zum Parse-Zeitpunkt
+`
   'yaml.spaces': `
 Erzeugt n Leerzeichen
 n: Anzahl der Leerzeichen
 out: eine Zeichenkette aus n Leerzeichen
+`
+  'yaml.str': `
+Holt den Zeichenkettenwert (Zahlen/Boolesch-Werte geben ihren Rohtext zurück)
+val: der skalare Rohtext (nil=Container-Knoten)
 `
   'yaml.str-at': `
 Warum diese Hilfsfunktion nötig ist: `arr[i]` (wobei arr ein []str ist) gibt standardmäßig option<str> zurück,
@@ -11219,10 +11172,31 @@ a: das Zielzeichenketten-Feld
 i: Elementindex
 out: Wert des i-ten Elements (leere Zeichenkette außerhalb des Bereichs)
 `
+  'yaml.stringify': `
+Alias für to-yaml
+out: gleiche Ausgabe wie to-yaml
+`
+  'yaml.strip-bom': `
+Entfernt ein führendes UTF-8-BOM
+s: Text, der ein BOM tragen kann
+out: Text mit entfernten führenden EF BB BF
+`
+  'yaml.style': `
+Der Stil des aktuellen Knotens
+s: die YAML-STYLE-*-Stil-Konstante dieses Knotens
+`
+  'yaml.tag': `
+Das explizite Tag des aktuellen Knotens
+t: das explizite Tag des Knotens (leere Zeichenkette = keines)
+`
   'yaml.tag-name': `
 Normalisiert einen Tag-Namen (!!str / tag:yaml.org,2002:str → str)
 tag: das rohe Tag (Schreibweisen wie !!str / tag:yaml.org,2002:str)
 name: normalisierter kurzer Tag-Name (str/int/seq...)
+`
+  'yaml.text': `
+Der skalare Rohtext des aktuellen Knotens
+t: skalarer Rohtext (leere Zeichenkette für Container-Knoten)
 `
   'yaml.to-f64': `
 Wandelt Text in f64 um (ein nil zurückzugeben bedeutet Fehlschlag)
@@ -11234,22 +11208,36 @@ Wandelt Text in i64 um; gibt -1 bei Fehlschlag zurück
 s: Ganzzahltext
 v: der umgewandelte Wert (-1=Umwandlung fehlgeschlagen)
 `
+  'yaml.to-json': `
+Wandelt das aktuelle Dokument in JSON um
+out: JSON-Text des Wurzelknotens des aktuellen Dokuments
+`
+  'yaml.to-json-all': `
+Wandelt alle Dokumente in ein JSON-Feld um
+out: JSON-Feld-Text aller Dokumente
+`
+  'yaml.to-yaml': `
+Gibt das aktuelle Dokument erneut als YAML aus
+out: der wieder ausgegebene YAML-Text des aktuellen Dokuments
+`
   'yaml.unescape-double': `
 behandelt Doppel-Anführungszeichen-Escape-Folgen
 body: der Zeichenketteninhalt in doppelten Anführungszeichen (einschließlich Escape-Folgen)
 out: entescapter Text (nil=enthält unzulässige Escapes)
 `
-  'zip.u16le': `
-Liest eine 2-Byte-Little-Endian-Vorzeichenlose Ganzzahl
-data: das zu lesende Bytefeld
-off: Startposition (0-basiert)
-v: die 2-Byte-Little-Endian-Vorzeichenlose Ganzzahl (0 ~ 65535)
+  'yaml.valid': `
+Ob dieses Dokument erfolgreich geparst wurde (einen yaml-Wert zu erhalten bedeutet Erfolg)
+yes: das Handle trägt ein erfolgreich geparstes Dokument
 `
-  'zip.u32le': `
-Liest eine 4-Byte-Little-Endian-Vorzeichenlose Ganzzahl
-data: ZIP-Datei-Bytefeld
-off: Startposition (0-basiert)
-v: die 4-Byte-Little-Endian-Vorzeichenlose Ganzzahl (0 ~ 2^32-1)
+  'yaml.valid-of': `
+Ob der Quelltext geparst werden kann (ohne ein Dokument aufzubauen)
+source: der zu validierende YAML-Quelltext
+yes: der Quelltext kann geparst werden
+`
+  'yaml.value': `
+Holt den Wertknoten des i-ten Schlüssels einer Zuordnung
+i: Schlüssel/Wert-Paar-Rangfolge (0-basiert)
+out: Wertknoten des i-ten Schlüsselpaars (nil=außerhalb des Bereichs oder keine Zuordnung)
 `
   'zip.entry.compressed-size': `
 Liest die komprimierte Größe des Eintrags
@@ -11270,6 +11258,18 @@ name: der Dateiname dieses Eintrags
   'zip.entry.size': `
 Liest die Originalgröße des Eintrags
 sz: Original-Byteanzahl vor der Kompression
+`
+  'zip.u16le': `
+Liest eine 2-Byte-Little-Endian-Vorzeichenlose Ganzzahl
+data: das zu lesende Bytefeld
+off: Startposition (0-basiert)
+v: die 2-Byte-Little-Endian-Vorzeichenlose Ganzzahl (0 ~ 65535)
+`
+  'zip.u32le': `
+Liest eine 4-Byte-Little-Endian-Vorzeichenlose Ganzzahl
+data: ZIP-Datei-Bytefeld
+off: Startposition (0-basiert)
+v: die 4-Byte-Little-Endian-Vorzeichenlose Ganzzahl (0 ~ 2^32-1)
 `
   'zip.writer.add-dir': `
 Fügt einen Verzeichniseintrag hinzu
@@ -11384,26 +11384,26 @@ data: Eingabedaten ([]byte)
 n: Anzahl der tatsächlich in die Berechnung einbezogenen Bytes (i64)
 gibt zurück sum: 32-Bit-Prüfsumme (i64), b in der oberen Hälfte und a in der unteren, vergleichbar mit RFC-1950-Implementierungen
 `
-  'zlib.zlib-compress': `
+  'zlib.compress': `
 Baut einen zlib-Strom mit gespeicherten Blöcken (BTYPE=00):
 - 2-Byte-zlib-Header (78 9c)
 - DEFLATE-gespeicherte Blöcke (höchstens 65535 Bytes jeder)
 - 4-Byte-Big-Endian-Adler-32-Prüfsumme
 out []byte: vollständiger zlib-Strom (2-Byte-Header + gespeicherte Blöcke + 4-Byte-Adler-32)
 `
-  'zlib.zlib-consumed-stored': `
+  'zlib.consumed-stored': `
 Berechnet die von einem gespeicherten-Block-zlib-Strom verbrauchten Bytes
 data: zlib-Strom, der bei Versatz 0 beginnt ([]byte)
 gibt zurück consumed: Gesamtverbrauch der Bytes (einschließlich Header und Adler-32), 0 wenn ein Block nicht stored ist
 Akkumuliert pro Block: 5-Byte-Block-Header + Datenlänge + 4-Byte-Prüfsumme, stoppt bei BFINAL oder einem nicht gespeicherten Block
 `
-  'zlib.zlib-decompress': `
+  'zlib.decompress': `
 Unterstützt alle DEFLATE-Blocktypen (stored, fixed Huffman, dynamic Huffman)
 Dekomprimiert über gzip.inflate-decompress.
 Versucht zuerst die gespeicherte-Block-Durchsuchung (schneller Pfad) und fällt bei Fehlschlag auf inflate zurück.
 out ?[]byte: dekomprimierte Daten (ok); nil, wenn kürzer als 6 Bytes, der Header unzulässig oder die Dekompression fehlschlägt
 `
-  'zlib.zlib-decompress-stored': `
+  'zlib.decompress-stored': `
 Dekomprimiert nur gespeicherte-Block-zlib-Ströme
 data: zlib-Strom, der nur BTYPE=00-Blöcke enthält ([]byte)
 gibt zurück out ?[]byte: dekomprimierte Daten (some); nil für nicht gespeicherte Blöcke oder bei Fehlschlag
@@ -11415,6 +11415,18 @@ count > 0: gibt die Bitanzahl des signifikanten Teils von count zurück (floor(l
 count <= 0: gibt 0 zurück
 count: Häufigkeit eines Symbols in der normalisierten FSE-Tabelle
 n: Mindestbitanzahl für count (Aufrufer verwenden tableLog - n, um die Extra-Bits dieses Zustands zu erhalten)
+`
+  'zstd.compress': `
+Komprimiert Daten im zstd-Format (Grundimplementierung)
+data: rohe Daten ([]byte)
+out: zstd-komprimierte Daten ([]byte)
+Hinweis: derzeit eine Grundimplementierung mit Roh-Blöcken;
+die vollständige FSE + Huffman + LZ77-Kompression bleibt einer späteren Implementierung überlassen.
+`
+  'zstd.decompress': `
+Dekomprimiert Daten im Zstandard-Format
+data: zstd-komprimierte Daten ([]byte)
+out: dekomprimierte Daten ([]byte)
 `
   'zstd.fse-table.build': `
 Baut die FSE-Tabelle aus normalisierten Häufigkeiten
@@ -11466,17 +11478,5 @@ max-symbol: Obergrenze der Symbolwerte (Ende der Längen-Durchlauf; 255 für zst
 Dekodiert ein Symbol
 br: Bit-Leser, der die Code-Bits liefert (das Codewort bit für Bit vom MSB-Ende zusammengesetzt)
 sym: dekodeierter Symbolwert; 0, wenn innerhalb der maximalen Code-Länge kein Code passt
-`
-  'zstd.compress': `
-Komprimiert Daten im zstd-Format (Grundimplementierung)
-data: rohe Daten ([]byte)
-out: zstd-komprimierte Daten ([]byte)
-Hinweis: derzeit eine Grundimplementierung mit Roh-Blöcken;
-die vollständige FSE + Huffman + LZ77-Kompression bleibt einer späteren Implementierung überlassen.
-`
-  'zstd.decompress': `
-Dekomprimiert Daten im Zstandard-Format
-data: zstd-komprimierte Daten ([]byte)
-out: dekomprimierte Daten ([]byte)
 `
 }

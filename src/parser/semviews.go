@@ -112,6 +112,19 @@ func BuildSemViews(prog *Program, cfg SemRebuildConfig) {
 	p := New(lexer.New(""))
 	// 坑 1：先重指 sem，再 Apply —— SetExternSignatures 會往 p.sem 寫快照。
 	p.sem = prog.Sem
+	// 坑 6：`astLocalVarType` 的 AST 回放兜底要 `p.prog`（lowering.go:3053 開頭
+	// 就 `p.prog == nil` 直接回空）。生產路徑由 LowerSurface 綁定（見 lowering.go:102
+	// 的長註釋），但本函式自建 Parser、不走那條路 —— 不補的話整條兜底靜默失效。
+	//
+	// 症狀是「只有宣告在迭代陳述上的變數丟型別」：走查會把 let 綁定的型別寫進
+	// FuncVarTypes（publishInferredType / publishPlainType），卻沒有任何一步
+	// 登記 `i <- [0..n)` 的迭代變數，那個型別只存在於解析期的語義副表裡。
+	// tests/diff-debug.no 的 `start = i + 1`（`#{overflow=wrap}`）因此解不出
+	// 左運算元型別 ⇒ 不發 `?i64` ⇒ TestBuildSemViewsMatchesFreshParse /
+	// TestCachedASTLowersToIdenticalHIR 各差一個 fact。
+	//
+	// 綁定的是「重建對象本身」，與 LowerSurface 語義一致；AST 已凍結，安全。
+	p.prog = prog
 	cfg.Apply(p)
 
 	// 坑 4：本檔 struct 欄位表。解析路徑在**宣告當下**填 Parser.structFields
@@ -146,6 +159,36 @@ func BuildSemViews(prog *Program, cfg SemRebuildConfig) {
 	// `?T` 推斷（`TypeFacts.InferredType` + `FuncVarTypes`）。與 ParseProgram
 	// 的 `prepareInferredTypes` 是同一個 analysisOnly 走查。
 	p.prepareInferredTypes(prog)
+
+	// 坑 7（2026-11-13）：blob 上的 FuncVarTypes 是**解析期快照**，而 fresh
+	// parse 回傳的是 lowerProgram 跑完的「最終表」。兩者同時是推斷走查的輸入
+	// 與輸出：analysisOnly 那一趟（`prepareInferredTypes`）必須在解析期表上跑
+	// 才會和 fresh 同結果，但 codegen / checker / ASTToHIR 讀的是最終表。
+	//
+	// ParseProgram 的順序是「prepareInferredTypes → LowerSurface(lowerProgram)」；
+	// 解碼後少了第二步，只做第一步會讓：
+	//   - std/bigint.no 多推一條 i64、std/dom.no / std/yaml.no 少推一條 ?i64；
+	//   - HIR 因合成暫存 / 捕獲變數沒有型別而差數十 bytes ~ 數 KB。
+	// 故這裡補跑同一個權威走查，把最終表（以及 CaptureFacts / 相關 InferredType）
+	// 算回來。`funcVarTypesParsed != nil` 正是「這棵樹來自 blob」的標記；手動建
+	// 出、直接呼叫 BuildSemViews 的測試程式沒有它，行為維持不變。
+	//
+	// 全語料 216 檔實測（`TestBuildSemViewsMatchesFreshParse`）：只換解析期表
+	// 不補跑走查 = 2 fact / 3 HIR 分叉；換表 + 補跑 = 0 / 0。
+	if prog.Sem.funcVarTypesParsed != nil {
+		// 必須用一個**全新的 Parser**：上面 p 已跑過 prepareInBoundsMetadata /
+		// prepareInferredTypes，idxLocalTypes 與走查狀態都帶著上一趟的殘留；
+		// 直接 p.lowerProgram 實測會讓 number.no / str.no / yaml.no 的最終表
+		// 與 fresh 不同（HIR 差 0.8~16 KB）。全新 Parser 與 ParseProgram 的
+		// LowerSurface 起點一致，全語料 216 檔 0 fact / 0 HIR 分叉。
+		q := New(lexer.New(""))
+		q.sem = prog.Sem
+		q.prog = prog
+		cfg.Apply(q)
+		q.mergeLocalStructFields(collectStructFieldsFromProg(prog))
+		q.rebuildLocalSignatures(prog)
+		q.lowerProgram(prog)
+	}
 }
 
 // rebuildGrowWriteFacts 補回 place-write 降糖產物上的 GrowWrite 標記。

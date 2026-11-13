@@ -1,0 +1,22 @@
+; pkg-ll-entry.no — ⑭ 切片 4 受控入口：直接 import 全套模組（供整包降級成同一份 .ll），
+;   無任何頂層陳述 ⇒ 合成 main 為空（`__noc_r = 0`），確保 @main 產碼；
+;   各模組函式（@ps.parse / @ast.str-at / …）串接進同一份 .ll，供 opt -passes=verify 驗證。
+; ⚠️ 本檔只用於 `drv.pkg-ll` 的整包降級測試，不是真正的編譯入口（真入口是 compiler/main.no，
+;   其 main 含 `drv.dispatch()` 跨模組呼叫，須切片 5 才能產 @main）。
+
+# /compiler/src/drv.dispatch
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig

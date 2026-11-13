@@ -4153,6 +4153,273 @@ now >= deadline -> break
 一併改成裸 `+` 的 match。踩到這類「match 的 `ok` 臂不命中」時，先懷疑
 `#{overflow=wrap}` 與 `?T` 的組合，別懷疑自己的算術。
 
+**2026-11-12 補充：定位到一部分了。** 只在**函式體最頂層**（沒有中間變數、直接拿
+參數算）觸發，形態是：
+
+```no
+f = (a i64, b i64) (out txt) {
+    #{overflow=wrap}
+    n = a - b      ; ← 這一行的結果被當成 %option_i64 存進 alloca
+    out.len = n
+}
+```
+
+emit 出來的 IR 是「先 `store %option_i64 …, ptr %n`，接著想當 i64 用時卻生成
+`icmp slt i64 %lv.58, …`」，而 `%lv.58` 的型別正是 `%option_i64` ⇒ LLVM 驗證器
+擋下。插一行 `x = a` 再算 `n = x - b` 就不觸發，所以和「直接讀參數」有關。
+**未定位到 lowering 的哪一步**，先按兩段式解包繞開 —— `src/std/txt.no` 的
+`txt.slice` 就是這個坑（`n = r-end - r-start` 直接餵給下標上界與 `out.len`，
+vet 報 `cannot assign ?i64 value to u8 field target`）：
+
+```no
+#{overflow=wrap}
+n = r-end - r-start: {
+    ok -> it
+
+    -> 0
+}
+```
+
+與同檔 `push` / `push-str` 的 `room` / `remain` 同一寫法。附帶結論：
+`#{overflow=wrap}` **只改溢出時的取值、不改結果型別**，算術結果恆為 `?i64`，
+任何要當普通整數用的地方都得 match 一次。
+
+#### ④ 實參是「一次呼叫」⇒ 型別解析成空字串，兩道檢查同時 `continue`
+
+`src/checker/funcargs.go` 的 `resolveExprType` 在 `default` 分支呼叫
+`inferExprType(expr, varTypes, nil, "")` —— 函式回傳型別表**刻意傳 nil**。於是
+「實參本身是一次使用者函式/方法呼叫」全部解析成 `""`，呼叫端兩道檢查
+（`3604icnf` 的 `?T` 裸傳、`6fgg3htw` 的型別不相容）雙雙 `continue`：
+
+```no
+p = (v str) { print(v) }
+q = () (out i64) { out = 42 }
+p(q())     ; 檢查期靜默通過，執行期把指標當 i64 讀
+```
+
+真正的代價不是漏報，而是把錯誤推到 codegen：`?f64` 傳給 `?str` 參數時，
+`?f64` 的佈局是 `{ i8, [1 x i64] }`、內聯 `%str-long` 的 `?str` 是 `{ i8, [2 x i64] }`，
+emit 到 `store %option__x25str_x2dlong %lv.XXXX` 才被 LLVM 驗證器擋下，訊息是
+「different aggregate layouts cannot be passed by pointer」，看不出原始碼哪一行錯。
+
+修法：新增 `resolveArgExprType`，只在 `resolveExprType` 回空時才往下補查
+（不覆蓋既有結論），依序查兩張表 —— 本 program 的 `sigs`（`lookupCalleeSig`：
+裸名 / `接收者型別.方法` / `模組名.函式` 三種形態）與 std + Go builtin 簽名表
+（`stdCalleeResultType`）。接收者型別未知時退「方法名後綴唯一」查表，
+候選回傳型別不一致就回 `""`（維持「不確定就沉默」契約）。
+
+⚠️ 一個必要的豁免：放開之後 `no vet src/std` 從 3 個 error 漲到 19 個，全是 std
+裡 `hex-digit(body.byte(i))` 這類**把 `?byte` 直接當整數傳**的既有寫法（13 處）。
+那不是佈局問題 —— codegen 對「`?T` → `T`（含整數拓寬、模組前綴）」會自動取
+payload，與 `3604icnf` 的隱私拆包禁令分屬兩條規則。所以在 `6fgg3htw` 前加一條：
+`ty.IsOptionRaw(argType)` 且去掉 option 後相容 ⇒ 放行。
+
+回歸鎖：`src/checker/call_arg_type_from_callee_test.go`（`TestCallArgTypeResolvedFromCallee`
+/ `TestCallArgTypeLegalShapes`）。注意要走 **`ValidateFuncArgs`** 而不是
+`ValidateTypes` —— 實參檢查在 `runFuncArgsCore`。
+
+#### ⑤ 跨模組裸名撞名：`dial` 有四個模組叫這名字
+
+`inferExprType` 處理「模組限定呼叫 `m.f(...)`」時，接收者不是變數 ⇒ 拿**裸名**
+去 `funcTypes[dot.Property]` 查。但合併後的 program 裡裸名 key 是**跨模組共用**的：
+`dns.dial` / `quic.dial` / `proxy.dial` 都叫 `dial`，回傳型別分別是 `fd` / `?conn` / `fd`。
+於是 `tcpfd = dns.dial(host, port)` 被記成 `?conn`，接著 `.fd = tcpfd` 報
+「cannot assign ?conn value to fd field target」(15w45dqk)（`src/std/net/tls.no:5186/5242`）。
+
+修法：命中裸名之後，用 std 簽名表的**全名** `m.f` 對一次帳，不一致就回 `""`。
+
+⚠️ 這裡**只做否決、不做正向查表**。試過「`funcTypes[m.f]` 沒有就查 `stdEntryResultType(m.f)`」
+全量採用，結果把 `fd = net.net-dial(...)` 那 5 處既有寫法打成
+「cannot assign fd value to i64 variable」—— `fd` 是 i64 的 newtype 且
+`isAliasPair` 強制互斥，std 表能解析出的型別不能無差別信任。
+
+#### ⑥ 測試檔自己接錯 option 佈局（修好 ④ 之後才暴露）
+
+`test/std/json.no` 用 `i64-of(it.obj-key(3))` 斷言越界 —— 但 `obj-key` 回 `?str`；
+`test/std/yaml.no` 用 `s-of(yaml.to-f64('abc'))` —— 但 `to-f64` 回 `?f64`。
+這兩處過去因為 ④ 漏檢而一路活到 codegen，分別炸成
+「`parameter '?i64' expects '%option_i64' but the argument is '%option__x25str_x2dlong'`」
+與 IR 驗證錯。改法：各自換成**同型別**的哨兵助手
+（`str-of` 的 `'nil'` / `f-of` 的 `-12345.0`）。
+
+#### ⑦ 兩個門禁寫死了語料檔數（「全部通過」被讀成「語料太小」）
+
+`TestCachedASTLowersToIdenticalHIR` 用 `checked < 250`（註釋說語料 311 檔）、
+`TestBuildSemViewsMatchesFreshParse` 用 `checked < 280`（說 355 檔）、
+`TestAnnotationsLiveOnAST` 用 `checked < 400`。但語料整理後
+`tests/*.no` 只剩 **174** 檔、`src/std/**/*.no` 約 **119** 檔 ⇒ 三條門禁永遠紅，
+而且紅的理由與它們要守的東西無關（`174 files lowered identically` 已經全綠，
+卻因為「174 < 250」被判失敗）。
+
+修法：門檻改成**比例**（`checked < len(files)*4/5` + `len(files) < 50`）。
+比例式對語料增刪免疫，仍擋得住「globbing 失敗 / 整批解析壞掉」這兩種退化。
+
+#### ⑧ `SetSourceFileDeep` 不下潛 `FunctionLiteral` ⇒ 模組頂層函式體全無來源檔
+
+模組頂層寫 `resolve-plain = (text str) (kind i64, …) { … }`，在 AST 上是
+**LetStatement，值是 `*FunctionLiteral`**（不是 `*FunctionDefinition`）。
+`SetSourceFileDeep` 的 `LetStatement` 分支轉給 `setSourceFileDeepOnExpr`，
+而後者只認 `IfExpression` / `GroupedExpression` ⇒ **整個函式體一條語句都沒被
+標記 `SourceFile`**。舊註釋把這裡寫成「已知缺口、沒有可觀測後果，本輪不修」，
+但實際有：這些語句上的 `#{overflow=wrap}` 被 lint 判為無效註解後，
+`LintIneffectiveOverflow` 的回退歸因把**模組行號貼到被 vet 的主檔**上
+（`main.no:934`，而主檔只有 9 行）⇒ `TestVetCrossModulePositionReliability` /
+`TestVetImportedModuleDiagnosticsNotAttributedToMainFile` 雙紅。
+
+修法：`setSourceFileDeepOnExpr` 增加 `case *FunctionLiteral:
+SetSourceFileDeepOnBlock(x.Body, file)`。
+
+#### ⑨ lint 的回退歸因：合併程式裡「溯源丟了」不能填主檔
+
+`LintIneffectiveOverflow` 兩條分支都有 `if file == "" { file = sourcePath }`。
+單檔 / LSP 路徑下這是對的（缺 `SourceFile` == 主檔語句），但**多檔合併**的程式
+裡缺 `SourceFile` 只代表溯源丟了（深層節點沒標到，或標記後被 clone），
+此時填 `sourcePath` 卻仍用模組座標的 `Line` ⇒ 報出主檔沒有的行號。
+⑧ 修好之後仍可能有別處漏標，所以這裡補一道：偵測到合併程式
+（存在來源檔 != sourcePath 的頂層陳述）時，**無法歸因就不報**。
+目錄模式下每個檔案自己也會作為主檔被 vet，覆蓋不會丟。
+
+順帶效果：`no vet src/std` 的 warning 從 **54 → 8**，少掉的全是同一條診斷
+在每個 import 該模組的檔案裡重複貼一次（`src/std/json.no` 那 2 條單檔 vet 時
+根本不存在，就是誤貼）。
+
+#### ⑩ `BuildSemViews` 自建 Parser 卻沒綁 `p.prog` ⇒ AST 回放兜底靜默失效
+
+`astLocalVarType` 開頭是 `p.prog == nil` 直接回空。生產路徑由 `LowerSurface`
+綁定（lowering.go:102 有長註釋說明這個坑），但 `BuildSemViews` 自己
+`New(lexer.New(""))` 起一個 Parser，不走那條路 ⇒ 「語義副表查不到就回放 AST」
+整條兜底在重建路徑上恆回空字串。受影響的是**迭代變數**這類沒有 LetStatement
+可登記的綁定：`i <- [0..n)` 的型別只存在於解析期解析出來的回放路徑裡。
+症狀：`tests/diff-debug.no` 的 `start = i + 1` 推不出左運算元型別 ⇒ 不發 `?i64`。
+
+修法：`BuildSemViews` 裡 `p.prog = prog`（與 `LowerSurface` 同語義，AST 已凍結）。
+`TestCachedASTLowersToIdenticalHIR` 由此 **174/174 全綠**。
+
+#### ⑪ `Sem.UnionMembers` 是單向鏡像：寫進去，但沒有人讀回來
+
+`ParseProgram` 末尾把 `*Parser.unionMembers` 鏡像到 `Program.Sem.UnionMembers`
+（註釋寫明「parser 實例在 ParseProgram 返回後即被丟棄，不導出整張表會消失」），
+可是 `isUnionType` / `lookupUnionByTail` / `flattenUnion` / `recoverUnionFromMember` /
+`isUnionMemberName` 五處全都只讀 `p.unionMembers` —— **導出端沒有讀者**。
+於是任何不經 parse 期 Parser 的入口（`BuildSemViews` 重建、H0 只拿到 Program）
+`isUnionType` 一律回 false。後果不只是 type-match 退化成執行期比較：
+`computeAstLocalVarType` 的「方法是 union 別名 ⇒ 不套用 self 型別」守衛失效，
+模板體裡 `x = n / 10` 被發成 `?int`（`std/int.no` 實測，HIR 差 4.5KB）。
+
+修法：新增 `(*Parser).unionTable()`，`len(p.unionMembers) > 0` 時用它，
+否則回退 `p.sem.UnionMembers`；五個消費點統一走這支。
+
+#### ⑫ 仍未修：重建路徑的 `FuncVarTypes` 是「走查的輸入也是輸出」
+
+修完 ⑩⑪ 後 `TestBuildSemViewsMatchesFreshParse` 只剩 **3 個 std 檔**
+（`bigint.no` / `dom.no` / `yaml.no`），每個差一個 fact，且方向不一致
+（rebuilt 多推 / 少推各半）。已定位的機制：`FuncVarTypes` 同時是走查的**輸入**
+（`captureTargetAllowsOption` → `localDefinitelyNonOption` 會讀它）與**輸出**
+（`publishInferredType` / `publishPlainType` 會寫它），而 blob 帶的是**走查跑完
+之後**的狀態 ⇒ 重建時走查的起點比 fresh 那次更「富」，同一條陳述可能因此被
+否決（`cannot assign` 那側）或反之。
+
+實測佐證（同一棵樹、同一份型別表，只清 `TypeFacts` 再跑 `BuildSemViews`）：
+`dom.no` 的 `k = i + 1` 在 fresh parse 得到 `?i64`，在 `BuildSemViews` 得到 `""`，
+所以分叉不是 gob 造成的，是**走查狀態**造成的。
+
+本輪把機制**釘到單一條目**：`InferredType` 全庫唯一的寫入點是
+`publishInferredType`（`lowering.go:1641`），fresh 那條 fact 是**結構走查**
+（`lowerProgram`）發的 —— 那一刻 `FuncVarTypes["decode-entities"]` 裡還沒有 `k`
+這條。走查跑完，`k` 就被寫成 `i64` 並隨 blob 一起落地；重建只跑 analysisOnly
+走查，`captureTargetAllowsOption` → `localDefinitelyNonOption` 讀到這條 ⇒
+「已宣告為非 option」⇒ 否決推斷。實驗：解碼後 `delete(FuncVarTypes["decode-entities"], "k")`
+再 `BuildSemViews`，`k` 立刻恢復 `?i64`，TypeFacts 由 63 條變 64 條（與 fresh 一致）。
+
+也試過「放寬守衛」（`!declaredLocals[name]` 分支只認參數 / 出參 / `self`，不認
+走查寫下的條目）——**方向錯**：`dom.no` 的 fact 是對上了、`yaml.no` 也轉綠，但
+HIR 從「差 21 bytes」惡化成「差 7.7 KB」，因為大量臨時變數（`it` 綁定、`__cap_N`、
+迭代變數）本來就**該**被走查寫下的條目擋住，放寬後全被多發了 `?T`。已回退。
+
+當時的判断是「要真修得讓 `FuncVarTypes` 能區分『宣告得來的型別』與『走查
+推斷出來的型別』（`FuncDeclaredVars` 已是半成品，但它對每個 let 目標都置 true，
+分不出這兩者），讓 blob 只帶前者」。**這個方向已於 2026-11-13 上午落地，見下方
+「第四次」** —— 但落地方式不是給 `FuncDeclaredVars` 加來源標記，而是直接在
+序列化層把整張表換成解析期快照。
+
+第三次嘗試（2026-11-13 凌晨）也失敗，記錄下來免得重複：在 `BuildSemViews` 裡
+於 `prepareInferredTypes` 之前，按 `inferOptionArith` 的識別特徵（無標註 + option
+算術中綴）把對應的 `FuncVarTypes` 條目刪掉，讓重建起點回到「沒推斷過」。
+預期只影響那 3 檔，實測**變成 5 檔、且方向雙向**：
+`tests/all.no` / `tests/match-2.no` 的 fact 被刪後走查沒重寫回來（fresh 有、
+rebuilt 空），`tests/index-heavy.no` / `tests/misc1.no` 反而多出一條 `?i64`，
+`std/bigint.no` 的 HIR 從差 30 bytes 惡化到差 4.6 KB。結論：那些條目**不是**
+只由這一個走查寫的，按「let 形狀」反推來源不成立。已完整回退
+（`src/parser/semviews.go` 只剩 ⑩ 的 `p.prog = prog` 13 行）。
+
+**第四次（2026-11-13 上午）已修：改用「解析期快照 + 補跑權威走查」的快取協定。**
+
+先做全語料協定探針（216 檔，`tests/*.no` 174 + `src/std/*.no` 42），把每個策略
+都比對 `factFingerprint` 與 `ASTToHIR(...).Dump()`。除了下面兩條，所有「從最終表
+反推解析期表」的啟發式全敗：
+
+| 策略 | fact 分叉 | HIR 分叉 |
+|---|---|---|
+| asis / asis+lower / prep / lower-only / clean+lower-only | 3~4 | 3~4 |
+| option-only / option-or-synthetic / no-plain-overwrite | 9~11 | 9~11 |
+| seeds+lower / decl+restore+lower / empty+restore+lower | 10~18 | 10~17 |
+| restore-opt-only / strict-decl+restore / rollback | 34~40 | 15~40 |
+| **clean+prep+lower / swap+restore+lower** | **0** | **0** |
+
+決定性結論：**`lowerProgram` 不可省**。只把解析期表換給 `prepareInferredTypes`、
+不補跑權威走查，`number.no` / `str.no` / `yaml.no` 的 HIR 仍差 0.8~16 KB ——
+合成暫存（`__cap_N` / `__opt_N` / 迭代變數）的型別條目與 `CaptureFacts` 都是
+那一趟寫的，analysisOnly 走查只補 `InferredType`。
+
+落地（**不動 `CachedProgram` envelope、不加任何導出欄位**，`TestCachedProgramCarriesProgOnly`
+與 `TestDetSemCoversEverySemMapField` 都不用改）：
+
+| 檔案 | 改動 |
+|---|---|
+| `src/parser/resolver.go` | `SemanticContext` 加**未導出** `funcVarTypesParsed`（gob 不搬、反射門禁也不要求它進 `detSem`）+ `cloneFuncVarTypes`；`Merge` 清掉快照（合併後不再是單檔解析結果，回退到既有行為） |
+| `src/parser/parser.go` | `ParseProgram` 在 `prepareInferredTypes` 之後、`LowerSurface` 之前拍快照；回傳的 `Sem.FuncVarTypes` 仍是所有編譯消費者讀的最終表，`SkipLowering` 也拍 |
+| `src/parser/astcache_det.go` | `CachedProgram` 真正上線的是 `GobEncode` 的 `detCached` 影子：`detFromSem` 把 `FuncVarTypes` 換成解析期快照；`detToSem` 另留一份獨立拷貝，保證「解碼 → 重建 → 再編碼」逐位元組相同 |
+| `src/parser/semviews.go` | 坑 7：`prepareInferredTypes` 之後用**全新 Parser**（`q.sem` / `q.prog` / `cfg.Apply` / `mergeLocalStructFields` / `rebuildLocalSignatures`）補跑 `lowerProgram`。用同一個已跑過 `prepareInBoundsMetadata` 的 `p` 會讓 3 檔 HIR 差 0.8~16 KB |
+| `src/parser/astdiskcache.go` | `ASTVersion` `2026-11-12.2` → `2026-11-13.1`（舊 blob 帶最終表，重用會讓重建起點多出推斷條目） |
+
+**副作用反而修正了架構邊界**：以前 blob 的 `FuncVarTypes` 是 lowerProgram 跑完的
+最終表（既是走查輸入也是輸出，正是本條缺陷）；現在只帶解析期符號表，最終表由
+`BuildSemViews` 重建，更貼近 `semviews.go` 檔頭「blob 是結構化源碼」的原則。
+
+**另一個被這輪逼出來的預存缺陷（未修，只讓門禁自洽）**：`capturefacts_test.go`
+六處 `defer func() { HIRCaptureEnabled = false }()` 是 S3-c（2026-10-25 起生產
+預設改 `true`）之前留下的陳舊復位，會把同包後面的測試全留在舊 AST 降糖軌。
+症狀是「單跑 `TestBuildSemViewsMatchesFreshParse` 全綠、整包 `go test ./parser`
+卻在 `number.no` / `str.no` / `yaml.no` 出現 HIR 分叉」。把它們改成還原 `prev`
+會打破 `option_capture_test.go` 5 條 + `s3_inferred_side_table_test.go` 1 條
+隱式依賴外溢值的測試（它們斷言 AST 裡的 `__cap_N`，H0 軌不注入節點），
+故本輪**不改那六處**，改在 `semviews_test.go` 讓門禁自己顯式釘在
+`HIRCaptureEnabled = true` 並在結束時還原，與測試順序解耦。
+
+驗證：`make test` **rc=0 / 36 包全綠**（`parser` 最後一條紅收掉）；
+`go test ./parser -count=1` 整包 ok；`./bin/no vet src/std` 0 error /
+16 warning / 627 hint；`./bin/no test test/std` **129 綠 / 0 紅，7479 斷言，rc=0**。
+
+#### ⑬ 主檔（被 vet 的那個檔）自身的語句也沒 Deep 標記
+
+⑨ 只修了 lint 端的回退歸因，真正的源頭在裝配側：`mergeModules` / `appendTopLevelStatements`
+對**主程式**的語句只做 `SetSourceFileOf`（淺層），導入模組側才是 `SetSourceFileDeep`。
+於是主檔自己函式體內（尤其是 `f = (..) {..}` —— LetStatement + FunctionLiteral）
+的語句 SourceFile 一律為空。
+
+兩處後果：
+
+- ⑨ 的 `merged` 判斷只能一律「不可歸因 ⇒ 不報」，把主檔自己真有的診斷一起靜音。
+  `TestVetIneffectiveOverflowReportedForMainFile` 立刻抓到：同一份 fixture 當主檔
+  vet 時 `lints=0`（反向保障測試正是為了防「靠閉嘴通過」）。
+- 任何以 `SourceFileOf` 為依據的歸因/分組都會漏掉主檔深層語句。
+
+修法：`transpiler_merge.go` 兩處 `SetSourceFileOf` → `SetSourceFileDeep`
+（`mergeModules` 的 FunctionDefinition / ExternStatement，`appendTopLevelStatements`
+的頂層語句）。修完 `TestVetIneffectiveOverflowReportedForMainFile` 與
+`TestVetImportedModuleDiagnosticsNotAttributedToMainFile` 同時綠，build 包全綠。
+
+
 ---
 
 ## 6. 其他相關的驗證入口

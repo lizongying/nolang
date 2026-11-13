@@ -161,6 +161,14 @@ type SemanticContext struct {
 	FuncVarTypes     map[string]map[string]*ty.Type
 	FuncDeclaredVars map[string]map[string]bool
 
+	// funcVarTypesParsed 是 ParseProgram 在 LowerSurface 之前拍下的 FuncVarTypes
+	// 快照（宣告 + prepareInferredTypes 的結果，尚無 lowerProgram 的寫入）。
+	// 它不是「某次編譯的衍生事實」，而是解析期符號表；AST blob 只帶這一份，
+	// 最終表由 BuildSemViews 補跑 lowerProgram 重建（見 semviews.go 坑 7）。
+	// 刻意未導出：gob 不搬、TestDetSemCoversEverySemMapField 也不要求它進
+	// detSem；只有 detFromSem / detToSem 這條明確的序列化協定會讀寫它。
+	funcVarTypesParsed map[string]map[string]*ty.Type
+
 	// IdxLocalTypes 是「安全索引專用」的解析器本地型別表（函數作用域）：
 	// 記錄由 to-vec() 等 RHS 推導出的容器型別（如 `av = a.to-vec()` → []i64），
 	// 供 checker 的 ValidateUnhandledIndex 判定索引基底是否為 arr/vec/slice。
@@ -229,10 +237,29 @@ func NewSemanticContext() *SemanticContext {
 // 模塊的 AST 節點，各節點的語義信息也必須匯集到同一張 side-table）。
 // 四張 node-keyed 表以節點指針為鍵，不會衝突；名稱級映射（VarTypes 等）僅在
 // 本表缺失時填入。
+// cloneFuncVarTypes 深拷貝兩層 map；*ty.Type 是 intern 後不可變的值，可共用。
+func cloneFuncVarTypes(src map[string]map[string]*ty.Type) map[string]map[string]*ty.Type {
+	if src == nil {
+		return nil
+	}
+	out := make(map[string]map[string]*ty.Type, len(src))
+	for fn, vars := range src {
+		m := make(map[string]*ty.Type, len(vars))
+		for k, v := range vars {
+			m[k] = v
+		}
+		out[fn] = m
+	}
+	return out
+}
+
 func (s *SemanticContext) Merge(other *SemanticContext) {
 	if s == nil || other == nil {
 		return
 	}
+	// 合併後已不是單一檔案的解析結果，解析期快照不再權威：清掉，讓序列化
+	// 回退到當下的 FuncVarTypes（等同本改動前的行為）。
+	s.funcVarTypesParsed = nil
 	// 合併型別事實表／節點事實表／捕獲事實表（不覆蓋既有條目）。
 	// 實例化／合併期三張表都可能為 nil（反序列化重建的 Sem 不帶表），
 	// ensure 惰性建立。
@@ -658,15 +685,16 @@ func (s *SemanticContext) SetSourceFileDeepOnBlock(b *BlockStatement, file strin
 }
 
 // setSourceFileDeepOnExpr 下潛能攜帶巢狀語句的表達式：IfExpression 的
-// Consequence/Alternative 臂、GroupedExpression。
+// Consequence/Alternative 臂、GroupedExpression、以及**函式字面量**的 Body。
 //
-// ⚠️ 已知缺口（2026-10-26 發現，**未**在本輪修）：`*FunctionLiteral` 的 Body 不在
-// 這裡下潛。實測本語料裡 `name = (params) (results) { ... }` 全部解析成
-// `*FunctionDefinition`（由 `SetSourceFileDeep` 的第一個 case 覆蓋），所以目前
-// 沒有可觀測後果——補上這一臂對 `./parser ./checker ./build` 全量測試零差異。
-// 但模組頂層的**匿名**函式字面量（值型別是 FunctionLiteral 而非 FunctionDefinition）
-// 仍會漏標來源檔，lint 端會把它的行號歸到主檔。真要修需先有可證偽的語料，
-// 不宜夾帶進註解重構這一輪。
+// ⚠️ 最後一類是 2026-11-12 補的（原本註釋寫成「已知缺口、未在本輪修」）。
+// 缺口是真的有可觀測後果：模組頂層 `f = (params) (out T) { ... }` 在 AST 上是
+// **LetStatement，值是 FunctionLiteral**，走的是本函式而不是 SetSourceFileDeep
+// 的 `*FunctionDefinition` case ⇒ 整個函式體一條都沒被標記 SourceFile。
+// std/yaml.no 的 `resolve-plain` 實測：函式體內的 `#{overflow=wrap}` 陳述
+// SourceFile 為空 ⇒ LintIneffectiveOverflow 的回退歸因把模組行號貼到被 vet 的
+// 主檔上（main.no:934，而主檔只有 9 行），TestVetCrossModulePositionReliability /
+// TestVetImportedModuleDiagnosticsNotAttributedToMainFile 雙雙紅。
 func (s *SemanticContext) setSourceFileDeepOnExpr(e Expression, file string) {
 	if s == nil || e == nil {
 		return
@@ -677,6 +705,8 @@ func (s *SemanticContext) setSourceFileDeepOnExpr(e Expression, file string) {
 		s.SetSourceFileDeepOnBlock(x.Alternative, file)
 	case *GroupedExpression:
 		s.setSourceFileDeepOnExpr(x.Expression, file)
+	case *FunctionLiteral:
+		s.SetSourceFileDeepOnBlock(x.Body, file)
 	}
 }
 

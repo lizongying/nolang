@@ -26,12 +26,34 @@ func (p *Parser) matchedIsOption(matched Expression) bool {
 	return false // 未知變數預設不觸發完整性檢查
 }
 
+// unionTable 回傳「union 別名名 → 直接成員型別名」查表。
+//
+// 登記點是 parse 期的 *Parser.unionMembers（type.go 的 parseTypeAlias），而
+// ParseProgram 末尾會把整張表鏡像到 Program.Sem.UnionMembers（parser.go 的
+// 「union 別名表」段）—— 因為 Parser 實例在 ParseProgram 返回後即被丟棄。
+//
+// 這裡是那個鏡像的讀回點：凡是**不經 parse 期 Parser** 的入口（BuildSemViews
+// 從 AST blob 重建、H0 只拿到 Program）都只有 Sem 那份。少了這層回退，
+// isUnionType 一律回 false，後果不只是 match 改走執行期比較 ——
+// computeAstLocalVarType 的「方法是 union 別名 ⇒ 不套用 self 型別」守衛也會失效，
+// 模板體裡 `x = n / 10` 被發成 `?int`（std/int.no、bigint.no 實測），
+// TestBuildSemViewsMatchesFreshParse 立刻分叉。
+func (p *Parser) unionTable() map[string][]string {
+	if len(p.unionMembers) > 0 {
+		return p.unionMembers
+	}
+	if p.sem != nil && len(p.sem.UnionMembers) > 0 {
+		return p.sem.UnionMembers
+	}
+	return p.unionMembers
+}
+
 // isUnionType 判斷型別名是否為 union 別名（如 num / int / float）。
 func (p *Parser) isUnionType(name string) bool {
 	if name == "" {
 		return false
 	}
-	if _, ok := p.unionMembers[name]; ok {
+	if _, ok := p.unionTable()[name]; ok {
 		return true
 	}
 	_, members := p.lookupUnionByTail(name)
@@ -47,7 +69,7 @@ func (p *Parser) lookupUnionByTail(name string) (string, []string) {
 	if tail == "" {
 		return "", nil
 	}
-	for u, members := range p.unionMembers {
+	for u, members := range p.unionTable() {
 		if matchTypeTail(u) == tail {
 			return u, members
 		}
@@ -79,7 +101,7 @@ func (p *Parser) flattenUnion(name string, visited map[string]bool) []string {
 		return nil
 	}
 	visited[name] = true
-	direct, ok := p.unionMembers[name]
+	direct, ok := p.unionTable()[name]
 	if !ok {
 		// 前綴化主體型別（如 `bigint.big`）按末段回查 union 條目（`big`）。
 		if _, byTail := p.lookupUnionByTail(name); byTail != nil {
@@ -127,7 +149,7 @@ func (p *Parser) recoverUnionFromMember(name string, armPatterns []string) strin
 		members map[string]bool
 	}
 	var cands []cand
-	for u := range p.unionMembers {
+	for u := range p.unionTable() {
 		flat := p.flattenUnion(u, nil)
 		// 成員集按「去前綴末段」建索引：unionMembers 存裸名（`bigint`），而傳入
 		// name 可能是前綴化具體型別（`bigint.bigint`），armPatterns 則是源碼裸名

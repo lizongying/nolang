@@ -1010,6 +1010,37 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
     }
 }
 
+; ⑭ 切片 4（2026-11-13）：逐模組結構體欄位型別解析（共享 agg 時，每個模組必須用「自己那棵 AST」
+;   解析，否則跨模組結構體欄位型別節點讀到錯 AST 會解錯）。只解 [from, to) 區間的結構體並 push 進
+;   共享 stft，與 h2m-struct-resolve（解全部）同序同偏移；供 drv.pkg-ll 在「全模組登記完」後，按模組順序
+;   逐段解（每段用該模組自己的 t）。
+h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
+    n = c.stn.len()
+    off = 0
+    i0 = 0
+    (i0 < from) {
+        off = off + c.stfc[i0]
+        #{overflow=wrap}
+        i0 = i0 + 1
+    }
+    i = from
+    (i < to) {
+        fc = c.stfc[i]
+        j = 0
+        (j < fc) {
+            ftn = c.stftn[off + j]
+            fty = h2m-tynode-code(t, c, ftn)
+            fty < 0 -> h2m-mark(c)
+            c.stft.push(fty)
+            #{overflow=wrap}
+            j = j + 1
+        }
+        off = off + fc
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
 ; s99：模块级结构体型别声明串（§11 B10 唯一装配点）。id 升序、nf>0 才发；
 ;   型别名经 cg.cg-ty-name 唯一映射（与 cg 发射端 %struct.s<id> 同源），避免两处各写一份。
 ;   stft 是按 id 升序拼接的字段型别表，需按 stfc 计数跳过前 sid 个结构体的字段求偏移。
@@ -4352,8 +4383,22 @@ h2m-lower-print = (t ast, c h2m-ctx, sg h2m-sigs, n i64, name str) (r i64) {
 ; agg: 模块级计数器（呼叫方以 agg.unsup == 0 判定產碼可信）
 ; root: 原始 Program 節點 id
 ; r: 模組函式文本（含 define i64 @main()，**不含** prelude；unsup>0 ⇒ ''）
+; ⑭ 切片 4（2026-11-13）：M4-d 模块级降级入口——合成 @main。本件拆成「合成 Program」與「整包」兩段：
+;   ① 合成邏輯抽到 h2m-synth-main（供 drv.pkg-ll 整包路徑複用，整包時不重複做 struct 登記／解／emit）；
+;   ② 本函數只對「單一模組」負責：h2m-synth-main 合成 prog 後，交 h2m-lower-program（內含 struct 登記／解／emit）。
+; 與既有單模組呼叫點（s62 探針、h2m-test、drv-build-test）逐字節不變：仍是 h2m-lower-program 產碼。
 h2m-lower-module = (t ast, agg h2m-ctx, root i64) (r str) {
     r = ''
+    prog = h2m-synth-main(t, root)
+    r = h2m-lower-program(t, agg, prog)
+    agg.unsup > 0 -> r = ''
+}
+
+; ⑭ 切片 4（2026-11-13）：從頂層陳述合成 `main` 的 Program 節點（只做 AST 手術，不含 struct 登記／解／emit，
+;   那些由呼叫方統一處理）。邏輯等同舊 h2m-lower-module 的合成段，抽出供整包路徑複用。
+;   ① 找末位 exit(E)；② 合成 __noc_r 輸出參；③ 末位 let 把 E 綁到 __noc_r；
+;   ④ 合成 main body（非定義、非 exit 頂層陳述 + 末位 let）；⑤ 合成 main 定義；⑥ 合成 Program（定義 + main）。
+h2m-synth-main = (t ast, root i64) (prog i64) {
     d = ast.nd-at(t, root)
     n = d.nkid
 
@@ -4414,7 +4459,7 @@ h2m-lower-module = (t ast, agg h2m-ctx, root i64) (r str) {
         kp = kp + q
         kid = ast.kid-at(t, kp)
         kd = ast.nd-at(t, kid)
-        q != nex && kd.kind != asp.K-FUNCTION-DEFINITION && kd.kind != asp.K-STRUCT-DEFINITION -> {
+        q != nex && kd.kind != asp.K-FUNCTION-DEFINITION && kd.kind != asp.K-STRUCT-DEFINITION && kd.kind != asp.K-USE-STATEMENT -> {
             ast.kid-add(t, blk, kid)
         }
     }
@@ -4441,7 +4486,4 @@ h2m-lower-module = (t ast, agg h2m-ctx, root i64) (r str) {
         }
     }
     ast.kid-add(t, prog, fn)
-
-    r = h2m-lower-program(t, agg, prog)
-    agg.unsup > 0 -> r = ''
 }

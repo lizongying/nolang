@@ -2861,11 +2861,6 @@ Remplit les longueurs de code fixes selon DEFLATE §3.2.6 : 0–143 longueur 8, 
 lc huffman: paramètre de sortie, écrit la table littéral/longueur de 288 symboles
 dc huffman: paramètre de sortie, écrit la table de distance de 30 symboles
 `
-  'gzip.deflate-stored': `
-Compression DEFLATE utilisant des blocs stored
-data: données brutes ([]byte)
-out: données compressées DEFLATE ([]byte)
-`
   'gzip.compress': `
 Compresse les données au format gzip
 data: données brutes ([]byte)
@@ -2875,6 +2870,11 @@ out: données compressées en gzip ([]byte)
 Décompresse des données au format gzip
 data: données compressées en gzip ([]byte)
 out: données décompressées ([]byte)
+`
+  'gzip.deflate-stored': `
+Compression DEFLATE utilisant des blocs stored
+data: données brutes ([]byte)
+out: données compressées DEFLATE ([]byte)
 `
   'gzip.huffman.build': `
 Construit la table de code Huffman depuis un tableau de longueurs
@@ -3768,6 +3768,17 @@ obtient la valeur booléenne (quand la racine est un booléen)
 renvoie val bool, ok bool: ok = succès
 val: ok=la valeur booléenne du nœud racine, nil=la racine n'est pas booléenne
 `
+  'json.clone-tree': `
+Pourquoi la copie profonde est obligatoire : json.pool est un champ pointeur #{inline=false}, et les champs pointeur du compilateur
+La copie manque encore de sémantique d'emprunt (voir le commentaire de copy-tree et les notes hybrid-ownership de src/mir),
+Écrire `child = json { pool: .pool, ... }` directement laisse père et fils tenir chacun un en-tête vec tout en partageant le même
+le tampon data ; dès qu'un handle déclenche un realloc du vec, l'en-tête vec de l'autre handle pointe vers de la mémoire libérée
+le tampon ancien libéré → lecture pendante (stringify renvoie null / données incohérentes). Après passage à une copie profonde indépendante,
+L'alloc/croissance de chacun écrit dans son propre tampon, sans interaction.
+src: le pool source
+idx: index de la racine du sous-arbre dans src
+out: nouveau json portant une copie du sous-arbre (out.root=index de la nouvelle racine ; root=-1 si idx est invalide)
+`
   'json.delete-key': `
 supprime une clé d'un objet
 renvoie ok bool: ok = succès (la clé existait et a été supprimée)
@@ -3852,131 +3863,6 @@ yes: le type du nœud racine est JSON-KIND-OBJ
 indique si c'est une chaîne
 yes: le type du nœud racine est JSON-KIND-STR
 `
-  'json.json-clone-tree': `
-Pourquoi la copie profonde est obligatoire : json.pool est un champ pointeur #{inline=false}, et les champs pointeur du compilateur
-La copie manque encore de sémantique d'emprunt (voir le commentaire de copy-tree et les notes hybrid-ownership de src/mir),
-Écrire `child = json { pool: .pool, ... }` directement laisse père et fils tenir chacun un en-tête vec tout en partageant le même
-le tampon data ; dès qu'un handle déclenche un realloc du vec, l'en-tête vec de l'autre handle pointe vers de la mémoire libérée
-le tampon ancien libéré → lecture pendante (stringify renvoie null / données incohérentes). Après passage à une copie profonde indépendante,
-L'alloc/croissance de chacun écrit dans son propre tampon, sans interaction.
-src: le pool source
-idx: index de la racine du sous-arbre dans src
-out: nouveau json portant une copie du sous-arbre (out.root=index de la nouvelle racine ; root=-1 si idx est invalide)
-`
-  'json.json-pool.add-child': `
-attache le nœud enfant child-idx (nom de clé key; passez la chaîne vide pour les tableaux) au nœud node-idx
-Implémente la liste d'enfants de longueur variable comme une table d'arêtes chaînée, donc aucun nœud n'a de limite fixe d'enfants
-node-idx: index du nœud père (une nouvelle arête est accrochée en fin de ses listes chaînées first/last)
-child-idx : index du nœud fils
-key: nom de la clé sur l'arête (pour les fils d'objet ; les tableaux passent une chaîne vide)
-`
-  'json.json-pool.alloc': `
-alloue un nouveau nœud et renvoie son indice (le vec du tas grandit automatiquement, le pool n'est donc plus borné)
-idx: index du nouveau nœud (kind=null, sans fils ; le vec du tas grandit automatiquement et ne peut échouer)
-`
-  'json.json-pool.arr-get': `
-obtient le nœud enfant à un indice d'un nœud tableau
-renvoie val-idx = l'indice du nœud enfant, ok = succès
-arr-idx : index du nœud de tableau
-elem : ordinal de l'élément (parcourir la liste d'arêtes jusqu'à la arête n° elem)
-val-idx: ok=index du nœud enfant, nil=pas un tableau / index invalide / hors plage
-`
-  'json.json-pool.arr-len': `
-obtient la longueur du tableau
-arr-idx : index du nœud
-n: nombre d'enfants (renvoyé aussi pour les non-tableaux ; 0 si l'index est invalide)
-`
-  'json.json-pool.copy-tree': `
-L'identité de pool ne peut pas reposer sur `src.id == .id` : les liaisons de niveau module ne se relient pas (voir le commentaire JSON-POOL-NEXT-ID),
-l'id de tous les pools vaut toujours 1 ; ce test a pris chaque copie entre pools comme une copie dans le même pool, si bien
-la racine du sous-arbre renvoyée par json.arr-get / json.get était toujours -1. Désormais l'appelant garantit que :
-- json-clone-tree: le récepteur est un pool tout neuf sorti de init;
-- json.set-key : copie d'abord val dans une pool temporaire neuve (json-clone-tree), puis copie directe depuis la pool relais
-dans le récepteur ; les deux bouts des deux copies sont forcément dans des pools différents, l'auto-référence est sûre aussi.
-src: le pool source (ne doit pas être le même pool que le récepteur, sinon le tampon vec partagé devient invalide)
-node-idx: index de la racine du sous-arbre dans le pool source
-dst-idx : nouvel index racine dans la pool du récepteur (-1=index source invalide)
-`
-  'json.json-pool.get-bool': `
-obtient la valeur booléenne
-renvoie val = le booléen, ok = succès
-node-idx: index du nœud
-val: ok=bool-val, nil=pas un nœud booléen
-`
-  'json.json-pool.get-key': `
-obtient l'indice du nœud enfant d'une clé d'un nœud objet
-renvoie val-idx = l'indice du nœud enfant, ok = trouvé
-obj-idx: index du nœud objet
-key: nom de la clé
-val-idx: ok=index du nœud enfant, nil=pas un objet / index invalide / clé non touchée
-`
-  'json.json-pool.get-kind': `
-obtient le type de nœud
-node-idx: index du nœud
-kind: constante JSON-KIND-* (NULL quand l'index est invalide)
-`
-  'json.json-pool.get-num': `
-obtient la valeur numérique
-node-idx: index du nœud
-val: ok=num-val (entiers et décimaux stockés tous deux en f64), nil=pas un nœud numérique
-`
-  'json.json-pool.get-str': `
-obtient la valeur chaîne
-renvoie out = une copie de la chaîne, ok = succès
-node-idx: index du nœud
-out: ok=copie de la valeur chaîne, nil=pas un nœud chaîne ou index invalide
-`
-  'json.json-pool.init': 'initialise le pool de nœuds (le vec du tas doit être initialisé à une valeur non nulle avant utilisation pour que push soit sûr)'
-  'json.json-pool.parse': `
-analyse une valeur JSON à partir de la position pos de la chaîne
-renvoie node-idx = l'indice du nœud racine, next-pos = la position suivante, ok = succès
-s: chaîne JSON
-pos: position octet où commence cette valeur
-node-idx: index du nœud racine (-1 en cas d'échec)
-next-pos: position octet suivant la valeur
-ok: true=analyse réussie
-`
-  'json.json-pool.parse-num': `
-analyse un nombre JSON
-node-idx: index du nœud recevant la valeur numérique
-s: chaîne JSON
-pos: position de départ du nombre
-next-pos: ok=position où finit le nombre (valeur déjà écrite dans num-val du nœud), nil=format invalide
-`
-  'json.json-pool.parse-str': `
-analyse une chaîne JSON (à partir du guillemet ouvrant)
-node-idx: index du nœud recevant la valeur texte
-s: chaîne JSON
-pos: position du guillemet ouvrant initial
-next-pos: ok=position après le guillemet fermant, nil=guillemet non fermé ou escape invalide
-`
-  'json.json-pool.set-key': `
-fixe une clé sur un nœud objet
-renvoie ok = succès
-obj-idx: index du nœud objet
-key: nom de la clé
-val-idx: index du nouveau nœud de valeur
-ok: true=clé existante mise à jour ou nouvelle clé ajoutée ; false=index invalide ou non-objet
-`
-  'json.json-pool.skip-ws': `
-saute les espaces blancs
-s: chaîne JSON
-pos: position octet de départ
-p: position du premier caractère non blanc (espace/Tab/LF/CR) ; fin de chaîne si tout est blanc
-`
-  'json.json-pool.str-eq': `
-compare deux valeurs str pour l'égalité
-Implémenté uniformément via str.eq-full
-a : chaîne à comparer
-b : chaîne à comparer
-eq : 1=égal, 0=inégal
-`
-  'json.json-pool.stringify': `
-sérialise le nœud en chaîne
-renvoie out str: la chaîne sérialisée
-node-idx: index de la racine du sous-arbre
-out: texte JSON sérialisé (chaîne vide si l'index est invalide)
-`
   'json.kind': `
 obtient le type de nœud
 renvoie la constante de type JSON
@@ -4025,6 +3911,120 @@ utilisation:
 ok = j.set('k', v)
 ok == false && j.overflowed() -> print('pool full')
 yes: drapeau de dépassement du pool (l'alloc version vec tas ne le déclenche plus, quasiment toujours false)
+`
+  'json.pool.add-child': `
+attache le nœud enfant child-idx (nom de clé key; passez la chaîne vide pour les tableaux) au nœud node-idx
+Implémente la liste d'enfants de longueur variable comme une table d'arêtes chaînée, donc aucun nœud n'a de limite fixe d'enfants
+node-idx: index du nœud père (une nouvelle arête est accrochée en fin de ses listes chaînées first/last)
+child-idx : index du nœud fils
+key: nom de la clé sur l'arête (pour les fils d'objet ; les tableaux passent une chaîne vide)
+`
+  'json.pool.alloc': `
+alloue un nouveau nœud et renvoie son indice (le vec du tas grandit automatiquement, le pool n'est donc plus borné)
+idx: index du nouveau nœud (kind=null, sans fils ; le vec du tas grandit automatiquement et ne peut échouer)
+`
+  'json.pool.arr-get': `
+obtient le nœud enfant à un indice d'un nœud tableau
+renvoie val-idx = l'indice du nœud enfant, ok = succès
+arr-idx : index du nœud de tableau
+elem : ordinal de l'élément (parcourir la liste d'arêtes jusqu'à la arête n° elem)
+val-idx: ok=index du nœud enfant, nil=pas un tableau / index invalide / hors plage
+`
+  'json.pool.arr-len': `
+obtient la longueur du tableau
+arr-idx : index du nœud
+n: nombre d'enfants (renvoyé aussi pour les non-tableaux ; 0 si l'index est invalide)
+`
+  'json.pool.copy-tree': `
+L'identité de pool ne peut pas reposer sur `src.id == .id` : les liaisons de niveau module ne se relient pas (voir le commentaire JSON-POOL-NEXT-ID),
+l'id de tous les pools vaut toujours 1 ; ce test a pris chaque copie entre pools comme une copie dans le même pool, si bien
+la racine du sous-arbre renvoyée par json.arr-get / json.get était toujours -1. Désormais l'appelant garantit que :
+- json-clone-tree: le récepteur est un pool tout neuf sorti de init;
+- json.set-key : copie d'abord val dans une pool temporaire neuve (json-clone-tree), puis copie directe depuis la pool relais
+dans le récepteur ; les deux bouts des deux copies sont forcément dans des pools différents, l'auto-référence est sûre aussi.
+src: le pool source (ne doit pas être le même pool que le récepteur, sinon le tampon vec partagé devient invalide)
+node-idx: index de la racine du sous-arbre dans le pool source
+dst-idx : nouvel index racine dans la pool du récepteur (-1=index source invalide)
+`
+  'json.pool.get-bool': `
+obtient la valeur booléenne
+renvoie val = le booléen, ok = succès
+node-idx: index du nœud
+val: ok=bool-val, nil=pas un nœud booléen
+`
+  'json.pool.get-key': `
+obtient l'indice du nœud enfant d'une clé d'un nœud objet
+renvoie val-idx = l'indice du nœud enfant, ok = trouvé
+obj-idx: index du nœud objet
+key: nom de la clé
+val-idx: ok=index du nœud enfant, nil=pas un objet / index invalide / clé non touchée
+`
+  'json.pool.get-kind': `
+obtient le type de nœud
+node-idx: index du nœud
+kind: constante JSON-KIND-* (NULL quand l'index est invalide)
+`
+  'json.pool.get-num': `
+obtient la valeur numérique
+node-idx: index du nœud
+val: ok=num-val (entiers et décimaux stockés tous deux en f64), nil=pas un nœud numérique
+`
+  'json.pool.get-str': `
+obtient la valeur chaîne
+renvoie out = une copie de la chaîne, ok = succès
+node-idx: index du nœud
+out: ok=copie de la valeur chaîne, nil=pas un nœud chaîne ou index invalide
+`
+  'json.pool.init': 'initialise le pool de nœuds (le vec du tas doit être initialisé à une valeur non nulle avant utilisation pour que push soit sûr)'
+  'json.pool.parse': `
+analyse une valeur JSON à partir de la position pos de la chaîne
+renvoie node-idx = l'indice du nœud racine, next-pos = la position suivante, ok = succès
+s: chaîne JSON
+pos: position octet où commence cette valeur
+node-idx: index du nœud racine (-1 en cas d'échec)
+next-pos: position octet suivant la valeur
+ok: true=analyse réussie
+`
+  'json.pool.parse-num': `
+analyse un nombre JSON
+node-idx: index du nœud recevant la valeur numérique
+s: chaîne JSON
+pos: position de départ du nombre
+next-pos: ok=position où finit le nombre (valeur déjà écrite dans num-val du nœud), nil=format invalide
+`
+  'json.pool.parse-str': `
+analyse une chaîne JSON (à partir du guillemet ouvrant)
+node-idx: index du nœud recevant la valeur texte
+s: chaîne JSON
+pos: position du guillemet ouvrant initial
+next-pos: ok=position après le guillemet fermant, nil=guillemet non fermé ou escape invalide
+`
+  'json.pool.set-key': `
+fixe une clé sur un nœud objet
+renvoie ok = succès
+obj-idx: index du nœud objet
+key: nom de la clé
+val-idx: index du nouveau nœud de valeur
+ok: true=clé existante mise à jour ou nouvelle clé ajoutée ; false=index invalide ou non-objet
+`
+  'json.pool.skip-ws': `
+saute les espaces blancs
+s: chaîne JSON
+pos: position octet de départ
+p: position du premier caractère non blanc (espace/Tab/LF/CR) ; fin de chaîne si tout est blanc
+`
+  'json.pool.str-eq': `
+compare deux valeurs str pour l'égalité
+Implémenté uniformément via str.eq-full
+a : chaîne à comparer
+b : chaîne à comparer
+eq : 1=égal, 0=inégal
+`
+  'json.pool.stringify': `
+sérialise le nœud en chaîne
+renvoie out str: la chaîne sérialisée
+node-idx: index de la racine du sous-arbre
+out: texte JSON sérialisé (chaîne vide si l'index est invalide)
 `
   'json.set': `
 fixe une clé dans un objet (la valeur est un autre nœud json)
@@ -5086,6 +5086,165 @@ host str: adresse IP cible
 port i64: numéro de port cible
 Retour c ?udp-conn: ok = connexion, nil = échec
 `
+  'noml.doc.ann': `
+Récupère le texte du commentaire `#{...}` du nœud racine
+v: ok = texte du commentaire, nil = la racine n'a pas de commentaire
+`
+  'noml.doc.ann-value': `
+Récupère la valeur d'une clé dans le commentaire de la racine
+key: clé du commentaire
+v: ok = valeur, nil = cette clé est absente
+`
+  'noml.doc.at': `
+Récupère l'index du nœud d'un élément du tableau racine par position
+i: indice de l'élément (à partir de 0)
+child: ok = index du nœud élément, nil = racine non-tableau ou indice hors bornes
+`
+  'noml.doc.bool': `
+Récupère la valeur booléenne de la racine
+v: ok = booléen, nil = racine non booléenne
+`
+  'noml.doc.get': `
+Récupère l'index d'un membre de l'objet racine par clé
+key: nom de la clé
+child: ok = index du nœud enfant, nil = racine non-objet ou clé absente
+`
+  'noml.doc.get-bool': `
+Récupère la valeur booléenne d'un membre de l'objet racine par clé
+key: nom de la clé
+v: ok = booléen, nil = clé absente ou valeur non booléenne
+`
+  'noml.doc.get-f64': `
+Récupère la valeur numérique d'un membre de l'objet racine par clé
+key: nom de la clé
+v: ok = valeur numérique, nil = clé absente ou valeur non numérique
+`
+  'noml.doc.get-i64': `
+Récupère la valeur entière d'un membre de l'objet racine par clé (tronque la partie décimale)
+key: nom de la clé
+v: ok = entier, nil = clé absente ou valeur non numérique
+`
+  'noml.doc.get-str': `
+Récupère la valeur chaîne d'un membre de l'objet racine par clé
+key: nom de la clé
+v: ok = contenu de la chaîne, nil = clé absente ou valeur non chaîne
+`
+  'noml.doc.has': `
+L'objet racine possède-t-il cette clé
+key: nom de la clé
+found: true = présente
+`
+  'noml.doc.i64': `
+Récupère la valeur entière de la racine (tronque la partie décimale)
+v: ok = entier, nil = racine non numérique
+`
+  'noml.doc.is-arr': `
+La racine est-elle un tableau
+yes: true = la racine est un tableau
+`
+  'noml.doc.is-bool': `
+Si la racine est booléenne
+yes : true = la racine est booléenne
+`
+  'noml.doc.is-nil': `
+La racine est-elle nil
+yes: true = la racine est nil
+`
+  'noml.doc.is-num': `
+La racine est-elle un nombre
+yes: true = la racine est un nombre
+`
+  'noml.doc.is-obj': `
+La racine est-elle un objet
+yes: true = la racine est un objet
+`
+  'noml.doc.is-str': `
+La racine est-elle une chaîne
+yes: true = la racine est une chaîne
+`
+  'noml.doc.key': `
+Récupère le nom de la clé d'un membre de l'objet racine par position
+i: indice du membre (à partir de 0, selon l'ordre du fichier)
+key: ok = nom de la clé, nil = racine non-objet ou indice hors bornes
+`
+  'noml.doc.kind': `
+Catégorie du nœud racine
+k: NOML-KIND-* ; NOML-KIND-NIL quand la racine est invalide
+`
+  'noml.doc.len': `
+Nombre d'enfants du nœud racine (nombre de membres de l'objet ou longueur du tableau)
+n: nombre d'enfants
+`
+  'noml.doc.new-arr': `
+Crée un nœud tableau vide
+idx: index du nouveau nœud
+`
+  'noml.doc.new-bool': `
+Crée un nœud booléen
+v bool: valeur booléenne à stocker dans le nœud
+idx i64: index du nouveau nœud dans le pool, pour que l'appelant y raccroche des sous-arbres
+`
+  'noml.doc.new-nil': `
+Crée un nœud nil
+idx: index du nouveau nœud
+`
+  'noml.doc.new-num': `
+Crée un nœud nombre
+v f64: valeur numérique stockée dans le nœud (entiers et décimaux partagent le même type de nœud)
+idx i64: index du nouveau nœud dans le pool, pour que l'appelant y raccroche des sous-arbres
+`
+  'noml.doc.new-obj': `
+Crée un nœud objet vide
+idx: index du nouveau nœud
+`
+  'noml.doc.new-str': `
+Crée un nœud chaîne
+v: contenu de la chaîne
+idx: index du nouveau nœud
+`
+  'noml.doc.num': `
+Récupère la valeur numérique de la racine
+v: ok = valeur numérique, nil = racine non numérique
+`
+  'noml.doc.push': `
+Ajoute un élément en fin de tableau (child doit appartenir au même document)
+arr: index du nœud tableau
+child: index du nœud enfant
+ok: true = ajouté ; false = arr n'est pas un tableau
+`
+  'noml.doc.put': `
+Insère un membre dans l'objet (child doit appartenir au même document)
+obj: index du nœud objet
+key: nom de la clé
+child: index du nœud enfant
+ok: true = écrit ; false = obj n'est pas un objet
+`
+  'noml.doc.root-index': `
+Index du nœud racine (-1 pour un document vide)
+idx: index du nœud racine
+`
+  'noml.doc.set-ann': `
+Fixe le texte du commentaire `#{...}` du nœud racine (chaîne vide = le retirer)
+text: texte du commentaire (sans `#{` ni `}`)
+ok: true = écrit
+`
+  'noml.doc.set-root': `
+Fixe le nœud racine
+idx: index du nœud
+`
+  'noml.doc.str': `
+Récupère la valeur chaîne de la racine
+v: ok = contenu de la chaîne, nil = racine non chaîne
+`
+  'noml.doc.stringify': `
+Sérialise tout le document (au-dessus du nœud racine, sortie du commentaire de niveau document)
+out: texte NOML (chaîne vide quand root est invalide)
+`
+  'noml.doc.stringify-node': `
+Sérialise n'importe quel sous-arbre
+idx: index de la racine du sous-arbre
+out: texte NOML (chaîne vide si l'index est invalide)
+`
   'noml.hex-char': `
 Convertit une valeur 0~15 en octet caractère hexadécimal
 d: 0~15
@@ -5120,572 +5279,6 @@ d.put(o, 'name', d.new-str('nolang'))
 d.set-root(o)
 d: nouveau document avec pool initialisé et root = -1
 `
-  'noml.noml-doc.ann': `
-Récupère le texte du commentaire `#{...}` du nœud racine
-v: ok = texte du commentaire, nil = la racine n'a pas de commentaire
-`
-  'noml.noml-doc.ann-value': `
-Récupère la valeur d'une clé dans le commentaire de la racine
-key: clé du commentaire
-v: ok = valeur, nil = cette clé est absente
-`
-  'noml.noml-doc.at': `
-Récupère l'index du nœud d'un élément du tableau racine par position
-i: indice de l'élément (à partir de 0)
-child: ok = index du nœud élément, nil = racine non-tableau ou indice hors bornes
-`
-  'noml.noml-doc.bool': `
-Récupère la valeur booléenne de la racine
-v: ok = booléen, nil = racine non booléenne
-`
-  'noml.noml-doc.get': `
-Récupère l'index d'un membre de l'objet racine par clé
-key: nom de la clé
-child: ok = index du nœud enfant, nil = racine non-objet ou clé absente
-`
-  'noml.noml-doc.get-bool': `
-Récupère la valeur booléenne d'un membre de l'objet racine par clé
-key: nom de la clé
-v: ok = booléen, nil = clé absente ou valeur non booléenne
-`
-  'noml.noml-doc.get-f64': `
-Récupère la valeur numérique d'un membre de l'objet racine par clé
-key: nom de la clé
-v: ok = valeur numérique, nil = clé absente ou valeur non numérique
-`
-  'noml.noml-doc.get-i64': `
-Récupère la valeur entière d'un membre de l'objet racine par clé (tronque la partie décimale)
-key: nom de la clé
-v: ok = entier, nil = clé absente ou valeur non numérique
-`
-  'noml.noml-doc.get-str': `
-Récupère la valeur chaîne d'un membre de l'objet racine par clé
-key: nom de la clé
-v: ok = contenu de la chaîne, nil = clé absente ou valeur non chaîne
-`
-  'noml.noml-doc.has': `
-L'objet racine possède-t-il cette clé
-key: nom de la clé
-found: true = présente
-`
-  'noml.noml-doc.i64': `
-Récupère la valeur entière de la racine (tronque la partie décimale)
-v: ok = entier, nil = racine non numérique
-`
-  'noml.noml-doc.is-arr': `
-La racine est-elle un tableau
-yes: true = la racine est un tableau
-`
-  'noml.noml-doc.is-bool': `
-Si la racine est booléenne
-yes : true = la racine est booléenne
-`
-  'noml.noml-doc.is-nil': `
-La racine est-elle nil
-yes: true = la racine est nil
-`
-  'noml.noml-doc.is-num': `
-La racine est-elle un nombre
-yes: true = la racine est un nombre
-`
-  'noml.noml-doc.is-obj': `
-La racine est-elle un objet
-yes: true = la racine est un objet
-`
-  'noml.noml-doc.is-str': `
-La racine est-elle une chaîne
-yes: true = la racine est une chaîne
-`
-  'noml.noml-doc.key': `
-Récupère le nom de la clé d'un membre de l'objet racine par position
-i: indice du membre (à partir de 0, selon l'ordre du fichier)
-key: ok = nom de la clé, nil = racine non-objet ou indice hors bornes
-`
-  'noml.noml-doc.kind': `
-Catégorie du nœud racine
-k: NOML-KIND-* ; NOML-KIND-NIL quand la racine est invalide
-`
-  'noml.noml-doc.len': `
-Nombre d'enfants du nœud racine (nombre de membres de l'objet ou longueur du tableau)
-n: nombre d'enfants
-`
-  'noml.noml-doc.new-arr': `
-Crée un nœud tableau vide
-idx: index du nouveau nœud
-`
-  'noml.noml-doc.new-bool': `
-Crée un nœud booléen
-v bool: valeur booléenne à stocker dans le nœud
-idx i64: index du nouveau nœud dans le pool, pour que l'appelant y raccroche des sous-arbres
-`
-  'noml.noml-doc.new-nil': `
-Crée un nœud nil
-idx: index du nouveau nœud
-`
-  'noml.noml-doc.new-num': `
-Crée un nœud nombre
-v f64: valeur numérique stockée dans le nœud (entiers et décimaux partagent le même type de nœud)
-idx i64: index du nouveau nœud dans le pool, pour que l'appelant y raccroche des sous-arbres
-`
-  'noml.noml-doc.new-obj': `
-Crée un nœud objet vide
-idx: index du nouveau nœud
-`
-  'noml.noml-doc.new-str': `
-Crée un nœud chaîne
-v: contenu de la chaîne
-idx: index du nouveau nœud
-`
-  'noml.noml-doc.num': `
-Récupère la valeur numérique de la racine
-v: ok = valeur numérique, nil = racine non numérique
-`
-  'noml.noml-doc.push': `
-Ajoute un élément en fin de tableau (child doit appartenir au même document)
-arr: index du nœud tableau
-child: index du nœud enfant
-ok: true = ajouté ; false = arr n'est pas un tableau
-`
-  'noml.noml-doc.put': `
-Insère un membre dans l'objet (child doit appartenir au même document)
-obj: index du nœud objet
-key: nom de la clé
-child: index du nœud enfant
-ok: true = écrit ; false = obj n'est pas un objet
-`
-  'noml.noml-doc.root-index': `
-Index du nœud racine (-1 pour un document vide)
-idx: index du nœud racine
-`
-  'noml.noml-doc.set-ann': `
-Fixe le texte du commentaire `#{...}` du nœud racine (chaîne vide = le retirer)
-text: texte du commentaire (sans `#{` ni `}`)
-ok: true = écrit
-`
-  'noml.noml-doc.set-root': `
-Fixe le nœud racine
-idx: index du nœud
-`
-  'noml.noml-doc.str': `
-Récupère la valeur chaîne de la racine
-v: ok = contenu de la chaîne, nil = racine non chaîne
-`
-  'noml.noml-doc.stringify': `
-Sérialise tout le document (au-dessus du nœud racine, sortie du commentaire de niveau document)
-out: texte NOML (chaîne vide quand root est invalide)
-`
-  'noml.noml-doc.stringify-node': `
-Sérialise n'importe quel sous-arbre
-idx: index de la racine du sous-arbre
-out: texte NOML (chaîne vide si l'index est invalide)
-`
-  'noml.noml-pool.add-child': `
-Attache un nœud enfant à un nœud parent (implémentation en liste chaînée via table d'arêtes pour des enfants de longueur variable)
-node-idx: index du nœud parent
-child-idx: index du nœud enfant
-key: nom de la clé sur l'arête (utilisé pour les enfants d'objet ; passer une chaîne vide pour un tableau)
-`
-  'noml.noml-pool.alloc': `
-Alloue un nouveau nœud (kind = nil, sans enfants)
-idx: index du nouveau nœud
-`
-  'noml.noml-pool.ann': `
-Récupère le texte du commentaire `#{...}` du nœud (sans `#{` ni `}`)
-idx: index du nœud
-v: ok = texte du commentaire, nil = le nœud n'a pas de commentaire
-`
-  'noml.noml-pool.ann-literal': `
-Lit une valeur littérale de commentaire : une chaîne entre quotes simples est déquotée, le reste est renvoyé tel quel
-body: texte du commentaire
-pos: position de départ de la valeur
-v: ok = valeur, nil = format illégal
-`
-  'noml.noml-pool.ann-value': `
-Récupère la valeur d'une clé dans le commentaire (une chaîne entre quotes simples est déquotée, le reste est renvoyé tel quel)
-idx: index du nœud
-key: clé du commentaire (par ex. 'type')
-v: ok = valeur, nil = cette clé est absente
-`
-  'noml.noml-pool.at': `
-Récupère l'index d'un élément de tableau par position
-idx: index du nœud tableau
-i: indice de l'élément (à partir de 0)
-child: ok = index du nœud élément, nil = non-tableau ou indice hors bornes
-`
-  'noml.noml-pool.at-line-start': `
-La position est-elle en tête de ligne (rien que des blancs avant)
-s: texte source
-pos: position
-yes: true = aucun caractère non-blanc n'est encore apparu sur cette ligne
-`
-  'noml.noml-pool.decode-escape': `
-Décode une séquence d'échappement (`\'` `\\` `\/` `\n` `\r` `\t` `\uXXXX`)
-s: texte source
-pos: position de la barre oblique inverse
-val: chaîne décodée (un seul codepoint)
-next: position après la séquence d'échappement
-ok: true = décodage réussi
-`
-  'noml.noml-pool.fail': `
-Enregistre une erreur d'analyse avec numéro de ligne et retourne false
-s: texte source
-pos: position de l'erreur
-msg: message (sans préfixe de position)
-ok: toujours false (pratique pour `ok = .fail(...)`)
-`
-  'noml.noml-pool.fmt-key': `
-Produit un littéral de clé (ajoute des quotes si les règles de clé nue ne sont pas respectées)
-k: nom de la clé
-out: littéral de clé NOML
-`
-  'noml.noml-pool.fmt-num': `
-Produit un littéral numérique (pas de point décimal si la valeur est entière)
-Si la valeur tombe dans ±1e15 et que l'arrondi à l'entier se défait (i.to-f64() == n), on écrit en entier,
-sinon on garde le résultat de n.to-str().
-n f64: valeur numérique à sérialiser
-out str: littéral numérique (par ex. '42' ou '3.14')
-`
-  'noml.noml-pool.get': `
-Récupère l'index d'un nœud enfant par clé
-idx: index du nœud objet
-key: nom de la clé
-child: ok = index du nœud enfant, nil = non-objet ou clé absente
-`
-  'noml.noml-pool.get-bool': `
-Récupère une valeur booléenne par clé
-idx: index du nœud objet
-key: nom de la clé
-v: ok = booléen, nil = clé absente ou valeur non booléenne
-`
-  'noml.noml-pool.get-f64': `
-Récupère une valeur numérique par clé
-idx: index du nœud objet
-key: nom de la clé
-v: ok = valeur numérique, nil = clé absente ou valeur non numérique
-`
-  'noml.noml-pool.get-i64': `
-Récupère une valeur entière par clé (tronque la partie décimale)
-idx: index du nœud objet
-key: nom de la clé
-v: ok = entier tronqué, nil = clé absente ou valeur non numérique
-`
-  'noml.noml-pool.get-str': `
-Récupère une valeur chaîne par clé
-idx: index du nœud objet
-key: nom de la clé
-v: ok = contenu de la chaîne, nil = clé absente ou valeur non chaîne
-`
-  'noml.noml-pool.has': `
-L'objet possède-t-il cette clé
-idx: index du nœud objet
-key: nom de la clé
-found: true = présente
-`
-  'noml.noml-pool.has-byte': `
-Parcourt les octets bruts et teste si la valeur spécifiée apparaît (comparaison octet par octet, pas par codepoint)
-s str: texte à parcourir
-target i64: valeur d'octet à comparer, entre 0 et 255 (par ex. 10 = '\n', 96 = '`')
-yes bool: true = au moins une occurrence, false = aucun tel octet (une chaîne vide donne toujours false)
-`
-  'noml.noml-pool.has-key': `
-L'objet a-t-il déjà un membre du même nom (un doublon de clé provoque une erreur)
-obj-idx: index du nœud objet
-key: nom de la clé
-found: true = un membre du même nom existe
-`
-  'noml.noml-pool.hex4': `
-Lit quatre chiffres hexadécimaux d'un codepoint
-s: texte source
-pos: position du premier chiffre
-code: 0~0xFFFF ; -1 = format illégal
-`
-  'noml.noml-pool.init': 'Initialise le pool de nœuds (un vec en monticule doit être initialisé hors nil pour pouvoir push en sécurité)'
-  'noml.noml-pool.is-arr': `
-Est-ce un tableau
-idx: index du nœud
-yes: true = la valeur est un tableau
-`
-  'noml.noml-pool.is-bool': `
-Est-ce un booléen
-idx: index du nœud
-yes: true = la valeur est un booléen
-`
-  'noml.noml-pool.is-nil': `
-Est-ce nil
-idx: index du nœud
-yes: true = la valeur est nil
-`
-  'noml.noml-pool.is-num': `
-Est-ce un nombre
-idx: index du nœud
-yes: true = la valeur est un nombre
-`
-  'noml.noml-pool.is-obj': `
-Est-ce un objet
-idx: index du nœud
-yes: true = la valeur est un objet
-`
-  'noml.noml-pool.is-str': `
-Est-ce une chaîne
-idx: index du nœud
-yes: true = la valeur est une chaîne (entre quotes simples ou chaîne brute)
-`
-  'noml.noml-pool.join-ann': `
-Fusionne deux segments de texte de commentaire (plusieurs groupes sont joints par « , »)
-cur: texte déjà accumulé (peut être vide)
-add: texte à ajouter
-out: résultat fusionné
-`
-  'noml.noml-pool.key': `
-Récupère le nom de clé d'un objet par position
-idx: index du nœud objet
-i: indice du membre (à partir de 0, selon l'ordre du fichier)
-key: ok = nom de la clé, nil = non-objet ou indice hors bornes
-`
-  'noml.noml-pool.kind': `
-Catégorie du nœud
-idx: index du nœud
-k: NOML-KIND-* ; NOML-KIND-NIL si l'index est invalide
-`
-  'noml.noml-pool.len': `
-Nombre d'enfants (nombre de membres d'un objet ou longueur d'un tableau, 0 pour les autres)
-idx: index du nœud
-n: nombre d'enfants
-`
-  'noml.noml-pool.line-of': `
-Numéro de ligne contenant la position (à partir de 1)
-s: texte source
-pos: position
-line: numéro de ligne
-`
-  'noml.noml-pool.match-kw': `
-Fait correspondre un mot-clé nu (non suivi immédiatement d'un caractère d'identifiant)
-s: texte source
-pos: position de départ
-kw: mot-clé
-next: position après le mot-clé ; -1 = pas de correspondance
-`
-  'noml.noml-pool.parse': `
-Analyse tout le document (commentaire de niveau document et commentaire traînant de la valeur de tête inclus)
-s: texte source
-idx: index du nœud racine ; -1 = échec
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-array': `
-Analyse un tableau `[ élément, ... ]` (séparé par virgules, virgule de fin autorisée)
-s: texte source
-pos: position de `[`
-idx: index du nœud tableau ; -1 = échec
-next: position après `]`
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-bool': `
-Analyse true/false
-s str: texte source complet
-pos i64: position initiale du littéral (pointe sur t ou f)
-val bool: booléen analysé ; toujours false quand ok=false
-next i64: position après le littéral ; renvoie le même pos quand ok=false
-ok bool: true = analyse réussie, false = ici ce n'est pas true/false (a déjà appelé fail pour enregistrer l'erreur)
-`
-  'noml.noml-pool.parse-bool-node': `
-Analyse un booléen et le matérialise en un nœud
-s: texte source
-pos: position initiale du littéral
-idx: index du nœud ; -1 = échec
-next: position après la valeur
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-key': `
-Analyse une clé (identifiant nu ou chaîne entre quotes simples)
-s: texte source
-pos: position initiale de la clé
-key: nom de la clé
-next: position après la clé
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-nil-node': `
-Analyse une valeur nil et la matérialise en un nœud
-s: texte source
-pos: position initiale du littéral
-idx: index du nœud ; -1 = échec
-next: position après la valeur
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-num': `
-Analyse un littéral numérique (entier / décimal / notation scientifique, autorise un '-' initial, n'accepte pas '+')
-Ne consomme que les octets constituant le nombre lui-même, s'arrête à tout autre caractère, n'exige pas de séparateur
-s str: texte source complet
-pos i64: index d'octet où commence le nombre
-val f64: valeur numérique analysée (NOML n'a qu'un seul type de nombre, les entiers sont aussi stockés en f64)
-next i64: index d'octet après la fin du nombre (en cas d'échec, s'arrête à la position de l'erreur, pour que .fail la marque)
-ok bool: true = analyse réussie, false = erreur de syntaxe (pas de partie entière, pas de décimales après '.', exposant sans chiffre)
-`
-  'noml.noml-pool.parse-num-node': `
-Analyse une valeur numérique et la matérialise en un nœud
-s: texte source
-pos: position initiale du nombre
-idx: index du nœud ; -1 = échec
-next: position après la valeur
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-object': `
-Analyse un objet `{ membre... }` (les membres sont séparés par saut de ligne, sans virgules)
-s: texte source
-pos: position de `{`
-idx: index du nœud objet ; -1 = échec
-next: position après `}`
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-raw': `
-Analyse une chaîne brute entre backticks (après le ` initial il faut immédiatement un saut de ligne ; le ` final doit être seul sur sa ligne)
-s: texte source
-pos: position du backtick ouvrant
-val: contenu tel quel (aucune analyse d'échappement)
-next: position après le backtick fermant
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-raw-node': `
-Analyse une valeur chaîne brute et la matérialise en un nœud
-s: texte source
-pos: position du backtick ouvrant
-idx: index du nœud ; -1 = échec
-next: position après la valeur
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-str': `
-Analyse une chaîne entre quotes simples (avec échappement `\\`)
-Se construit par « concaténation de segments » plutôt qu'avec un tampon d'octets : chaque point d'échappement coupe un segment, et les segments sont concaténés directement avec le résultat décodé,
-donc pas besoin d'estimer la capacité à l'avance ni de problème de cycle de vie de la vue du tampon.
-s: texte source
-pos: position du guillemet ouvrant
-val: chaîne résolue
-next: position après le guillemet fermant
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-str-node': `
-Analyse une valeur chaîne et la matérialise en un nœud
-s: texte source
-pos: position du guillemet ouvrant
-idx: index du nœud ; -1 = échec
-next: position après la valeur
-ok: true = analyse réussie
-`
-  'noml.noml-pool.parse-value': `
-Analyse une valeur
-s: texte source
-pos: position initiale de la valeur
-idx: index du nœud ; -1 = échec
-next: position après la valeur
-ok: true = analyse réussie
-`
-  'noml.noml-pool.quote': `
-Produit un littéral de chaîne entre quotes simples (avec échappement)
-Règles d'échappement : on ajoute une barre oblique inverse devant `\'` et `\\`, LF / CR / TAB s'écrivent \n \r \t,
-les autres octets de contrôle < 0x20 s'écrivent \u00XX ; le tampon de sortie réserve n*6+2 (au pire 6 caractères par octet).
-s str: contenu brut (accepte tout octet, n'exige pas d'UTF-8 valide)
-out str: littéral entouré d'une quote simple au début et à la fin, avec l'intérieur déjà échappé
-`
-  'noml.noml-pool.quote-value': `
-Produit un littéral de chaîne en choisissant la forme la plus simple selon le contenu
-Par défaut utilise .quote() ; si le contenu contient LF et passe .raw-safe(), bascule sur une chaîne brute entre backticks, en conservant les sauts de ligne d'origine.
-s str: contenu brut
-out str: littéral textuel directement écrivable dans un .noml (forme échappée entre quotes simples ou chaîne brute '`')
-`
-  'noml.noml-pool.raw-safe': `
-Détermine si le contenu peut être rangé dans une chaîne brute entre backticks et récupéré tel quel
-Inutilisable si l'un des cas suivants apparaît : chaîne vide, premier ou dernier octet est LF, contient CR,
-ou une ligne qui, après retrait des blancs initiaux (espace / TAB / CR), commence par '`' (serait confondu avec le marqueur de fin).
-s str: contenu à sérialiser
-yes bool: true = on peut l'encerler sûrement en '`\\n' + s + '\\n`', false = il faut utiliser la forme échappée entre quotes simples
-`
-  'noml.noml-pool.require-end': `
-Validation de fin de membre : après, seuls sont permis des blancs dans la ligne, un saut de ligne, un commentaire `;` ou la fermeture du conteneur
-s: texte source
-pos: position après la valeur
-key: nom de la clé du membre (utilisé seulement pour le message d'erreur)
-next: position après le saut de ligne (ou après `}`)
-ok: true = légal
-`
-  'noml.noml-pool.scan-ann': `
-Parcourt un groupe `#{...}`, renvoie la position après `}` (ne valide que la structure, n'analyse pas les entrées)
-s: texte source
-pos: position de `#`
-next: position après `}` ; -1 = n'est pas un commentaire ou n'est pas fermé
-`
-  'noml.noml-pool.scan-quote': `
-Parcourt depuis `'` jusqu'au-delà du prochain `'` non échappé
-s: texte source
-pos: position du guillemet ouvrant
-next: position après le guillemet fermant ; -1 = non fermé
-`
-  'noml.noml-pool.scan-raw': `
-Parcourt depuis le backtick jusqu'au-delà du backtick fermant qui est seul sur sa ligne
-s: texte source
-pos: position du backtick ouvrant
-next: position après le backtick fermant ; -1 = non fermé
-`
-  'noml.noml-pool.set-ann': `
-Fixe le texte du commentaire `#{...}` du nœud (chaîne vide = le retirer)
-idx: index du nœud
-text: texte du commentaire (sans `#{` ni `}`)
-ok: true = écrit
-`
-  'noml.noml-pool.skip-ann-value': `
-Saute une valeur de commentaire (chaîne / tableau / valeur nue) et renvoie la position après celle-ci
-body: texte brut du commentaire
-pos: position initiale de la valeur
-next: position après la valeur ; -1 = format illégal
-`
-  'noml.noml-pool.skip-blanks': `
-Ne saute que les blancs de la ligne (espace et tabulation), sans franchir le saut de ligne
-s: texte source
-pos: position initiale
-p: position du premier caractère non blanc
-`
-  'noml.noml-pool.skip-trivia': `
-Saute les blancs (y compris les sauts de ligne) et les commentaires de ligne `;`
-s: texte source
-pos: position initiale
-p: position du premier caractère significatif (la fin de la chaîne si tout est blanc)
-`
-  'noml.noml-pool.stringify': `
-Sérialise un sous-arbre
-idx: index de la racine du sous-arbre
-indent: niveau d'indentation (deux espaces par niveau)
-out: texte NOML (chaîne vide quand l'index est invalide)
-`
-  'noml.noml-pool.stringify-arr': `
-Sérialise un tableau (chaque élément sur une ligne, avec virgule de fin)
-idx: index du nœud tableau
-indent: niveau d'indentation
-out: texte NOML
-`
-  'noml.noml-pool.stringify-obj': `
-Sérialise un objet (chaque membre sur une ligne, le commentaire est émis au-dessus du membre)
-idx: index du nœud objet
-indent: niveau d'indentation
-out: texte NOML
-`
-  'noml.noml-pool.val-bool': `
-Récupère la valeur booléenne
-idx: index du nœud
-v: ok = booléen, nil = la valeur n'est pas booléenne
-`
-  'noml.noml-pool.val-i64': `
-Récupère la valeur entière (tronque le décimal)
-idx: index du nœud
-v: ok = entier tronqué, nil = la valeur n'est pas un nombre
-`
-  'noml.noml-pool.val-num': `
-Récupère la valeur numérique
-idx: index du nœud
-v: ok = valeur numérique, nil = la valeur n'est pas un nombre
-`
-  'noml.noml-pool.val-str': `
-Récupère la valeur chaîne
-idx: index du nœud
-v: ok = contenu de la chaîne, nil = la valeur n'est pas une chaîne
-`
   'noml.parse': `
 Analyse un texte NOML
 Usage :
@@ -5696,6 +5289,413 @@ err -> print(it)
 }
 s: texte NOML complet (les blancs du début et de la fin sont ignorés)
 result: ok = document analysé, err(message avec numéro de ligne) = erreur de syntaxe
+`
+  'noml.pool.add-child': `
+Attache un nœud enfant à un nœud parent (implémentation en liste chaînée via table d'arêtes pour des enfants de longueur variable)
+node-idx: index du nœud parent
+child-idx: index du nœud enfant
+key: nom de la clé sur l'arête (utilisé pour les enfants d'objet ; passer une chaîne vide pour un tableau)
+`
+  'noml.pool.alloc': `
+Alloue un nouveau nœud (kind = nil, sans enfants)
+idx: index du nouveau nœud
+`
+  'noml.pool.ann': `
+Récupère le texte du commentaire `#{...}` du nœud (sans `#{` ni `}`)
+idx: index du nœud
+v: ok = texte du commentaire, nil = le nœud n'a pas de commentaire
+`
+  'noml.pool.ann-literal': `
+Lit une valeur littérale de commentaire : une chaîne entre quotes simples est déquotée, le reste est renvoyé tel quel
+body: texte du commentaire
+pos: position de départ de la valeur
+v: ok = valeur, nil = format illégal
+`
+  'noml.pool.ann-value': `
+Récupère la valeur d'une clé dans le commentaire (une chaîne entre quotes simples est déquotée, le reste est renvoyé tel quel)
+idx: index du nœud
+key: clé du commentaire (par ex. 'type')
+v: ok = valeur, nil = cette clé est absente
+`
+  'noml.pool.at': `
+Récupère l'index d'un élément de tableau par position
+idx: index du nœud tableau
+i: indice de l'élément (à partir de 0)
+child: ok = index du nœud élément, nil = non-tableau ou indice hors bornes
+`
+  'noml.pool.at-line-start': `
+La position est-elle en tête de ligne (rien que des blancs avant)
+s: texte source
+pos: position
+yes: true = aucun caractère non-blanc n'est encore apparu sur cette ligne
+`
+  'noml.pool.decode-escape': `
+Décode une séquence d'échappement (`\'` `\\` `\/` `\n` `\r` `\t` `\uXXXX`)
+s: texte source
+pos: position de la barre oblique inverse
+val: chaîne décodée (un seul codepoint)
+next: position après la séquence d'échappement
+ok: true = décodage réussi
+`
+  'noml.pool.fail': `
+Enregistre une erreur d'analyse avec numéro de ligne et retourne false
+s: texte source
+pos: position de l'erreur
+msg: message (sans préfixe de position)
+ok: toujours false (pratique pour `ok = .fail(...)`)
+`
+  'noml.pool.fmt-key': `
+Produit un littéral de clé (ajoute des quotes si les règles de clé nue ne sont pas respectées)
+k: nom de la clé
+out: littéral de clé NOML
+`
+  'noml.pool.fmt-num': `
+Produit un littéral numérique (pas de point décimal si la valeur est entière)
+Si la valeur tombe dans ±1e15 et que l'arrondi à l'entier se défait (i.to-f64() == n), on écrit en entier,
+sinon on garde le résultat de n.to-str().
+n f64: valeur numérique à sérialiser
+out str: littéral numérique (par ex. '42' ou '3.14')
+`
+  'noml.pool.get': `
+Récupère l'index d'un nœud enfant par clé
+idx: index du nœud objet
+key: nom de la clé
+child: ok = index du nœud enfant, nil = non-objet ou clé absente
+`
+  'noml.pool.get-bool': `
+Récupère une valeur booléenne par clé
+idx: index du nœud objet
+key: nom de la clé
+v: ok = booléen, nil = clé absente ou valeur non booléenne
+`
+  'noml.pool.get-f64': `
+Récupère une valeur numérique par clé
+idx: index du nœud objet
+key: nom de la clé
+v: ok = valeur numérique, nil = clé absente ou valeur non numérique
+`
+  'noml.pool.get-i64': `
+Récupère une valeur entière par clé (tronque la partie décimale)
+idx: index du nœud objet
+key: nom de la clé
+v: ok = entier tronqué, nil = clé absente ou valeur non numérique
+`
+  'noml.pool.get-str': `
+Récupère une valeur chaîne par clé
+idx: index du nœud objet
+key: nom de la clé
+v: ok = contenu de la chaîne, nil = clé absente ou valeur non chaîne
+`
+  'noml.pool.has': `
+L'objet possède-t-il cette clé
+idx: index du nœud objet
+key: nom de la clé
+found: true = présente
+`
+  'noml.pool.has-byte': `
+Parcourt les octets bruts et teste si la valeur spécifiée apparaît (comparaison octet par octet, pas par codepoint)
+s str: texte à parcourir
+target i64: valeur d'octet à comparer, entre 0 et 255 (par ex. 10 = '\n', 96 = '`')
+yes bool: true = au moins une occurrence, false = aucun tel octet (une chaîne vide donne toujours false)
+`
+  'noml.pool.has-key': `
+L'objet a-t-il déjà un membre du même nom (un doublon de clé provoque une erreur)
+obj-idx: index du nœud objet
+key: nom de la clé
+found: true = un membre du même nom existe
+`
+  'noml.pool.hex4': `
+Lit quatre chiffres hexadécimaux d'un codepoint
+s: texte source
+pos: position du premier chiffre
+code: 0~0xFFFF ; -1 = format illégal
+`
+  'noml.pool.init': 'Initialise le pool de nœuds (un vec en monticule doit être initialisé hors nil pour pouvoir push en sécurité)'
+  'noml.pool.is-arr': `
+Est-ce un tableau
+idx: index du nœud
+yes: true = la valeur est un tableau
+`
+  'noml.pool.is-bool': `
+Est-ce un booléen
+idx: index du nœud
+yes: true = la valeur est un booléen
+`
+  'noml.pool.is-nil': `
+Est-ce nil
+idx: index du nœud
+yes: true = la valeur est nil
+`
+  'noml.pool.is-num': `
+Est-ce un nombre
+idx: index du nœud
+yes: true = la valeur est un nombre
+`
+  'noml.pool.is-obj': `
+Est-ce un objet
+idx: index du nœud
+yes: true = la valeur est un objet
+`
+  'noml.pool.is-str': `
+Est-ce une chaîne
+idx: index du nœud
+yes: true = la valeur est une chaîne (entre quotes simples ou chaîne brute)
+`
+  'noml.pool.join-ann': `
+Fusionne deux segments de texte de commentaire (plusieurs groupes sont joints par « , »)
+cur: texte déjà accumulé (peut être vide)
+add: texte à ajouter
+out: résultat fusionné
+`
+  'noml.pool.key': `
+Récupère le nom de clé d'un objet par position
+idx: index du nœud objet
+i: indice du membre (à partir de 0, selon l'ordre du fichier)
+key: ok = nom de la clé, nil = non-objet ou indice hors bornes
+`
+  'noml.pool.kind': `
+Catégorie du nœud
+idx: index du nœud
+k: NOML-KIND-* ; NOML-KIND-NIL si l'index est invalide
+`
+  'noml.pool.len': `
+Nombre d'enfants (nombre de membres d'un objet ou longueur d'un tableau, 0 pour les autres)
+idx: index du nœud
+n: nombre d'enfants
+`
+  'noml.pool.line-of': `
+Numéro de ligne contenant la position (à partir de 1)
+s: texte source
+pos: position
+line: numéro de ligne
+`
+  'noml.pool.match-kw': `
+Fait correspondre un mot-clé nu (non suivi immédiatement d'un caractère d'identifiant)
+s: texte source
+pos: position de départ
+kw: mot-clé
+next: position après le mot-clé ; -1 = pas de correspondance
+`
+  'noml.pool.parse': `
+Analyse tout le document (commentaire de niveau document et commentaire traînant de la valeur de tête inclus)
+s: texte source
+idx: index du nœud racine ; -1 = échec
+ok: true = analyse réussie
+`
+  'noml.pool.parse-array': `
+Analyse un tableau `[ élément, ... ]` (séparé par virgules, virgule de fin autorisée)
+s: texte source
+pos: position de `[`
+idx: index du nœud tableau ; -1 = échec
+next: position après `]`
+ok: true = analyse réussie
+`
+  'noml.pool.parse-bool': `
+Analyse true/false
+s str: texte source complet
+pos i64: position initiale du littéral (pointe sur t ou f)
+val bool: booléen analysé ; toujours false quand ok=false
+next i64: position après le littéral ; renvoie le même pos quand ok=false
+ok bool: true = analyse réussie, false = ici ce n'est pas true/false (a déjà appelé fail pour enregistrer l'erreur)
+`
+  'noml.pool.parse-bool-node': `
+Analyse un booléen et le matérialise en un nœud
+s: texte source
+pos: position initiale du littéral
+idx: index du nœud ; -1 = échec
+next: position après la valeur
+ok: true = analyse réussie
+`
+  'noml.pool.parse-key': `
+Analyse une clé (identifiant nu ou chaîne entre quotes simples)
+s: texte source
+pos: position initiale de la clé
+key: nom de la clé
+next: position après la clé
+ok: true = analyse réussie
+`
+  'noml.pool.parse-nil-node': `
+Analyse une valeur nil et la matérialise en un nœud
+s: texte source
+pos: position initiale du littéral
+idx: index du nœud ; -1 = échec
+next: position après la valeur
+ok: true = analyse réussie
+`
+  'noml.pool.parse-num': `
+Analyse un littéral numérique (entier / décimal / notation scientifique, autorise un '-' initial, n'accepte pas '+')
+Ne consomme que les octets constituant le nombre lui-même, s'arrête à tout autre caractère, n'exige pas de séparateur
+s str: texte source complet
+pos i64: index d'octet où commence le nombre
+val f64: valeur numérique analysée (NOML n'a qu'un seul type de nombre, les entiers sont aussi stockés en f64)
+next i64: index d'octet après la fin du nombre (en cas d'échec, s'arrête à la position de l'erreur, pour que .fail la marque)
+ok bool: true = analyse réussie, false = erreur de syntaxe (pas de partie entière, pas de décimales après '.', exposant sans chiffre)
+`
+  'noml.pool.parse-num-node': `
+Analyse une valeur numérique et la matérialise en un nœud
+s: texte source
+pos: position initiale du nombre
+idx: index du nœud ; -1 = échec
+next: position après la valeur
+ok: true = analyse réussie
+`
+  'noml.pool.parse-object': `
+Analyse un objet `{ membre... }` (les membres sont séparés par saut de ligne, sans virgules)
+s: texte source
+pos: position de `{`
+idx: index du nœud objet ; -1 = échec
+next: position après `}`
+ok: true = analyse réussie
+`
+  'noml.pool.parse-raw': `
+Analyse une chaîne brute entre backticks (après le ` initial il faut immédiatement un saut de ligne ; le ` final doit être seul sur sa ligne)
+s: texte source
+pos: position du backtick ouvrant
+val: contenu tel quel (aucune analyse d'échappement)
+next: position après le backtick fermant
+ok: true = analyse réussie
+`
+  'noml.pool.parse-raw-node': `
+Analyse une valeur chaîne brute et la matérialise en un nœud
+s: texte source
+pos: position du backtick ouvrant
+idx: index du nœud ; -1 = échec
+next: position après la valeur
+ok: true = analyse réussie
+`
+  'noml.pool.parse-str': `
+Analyse une chaîne entre quotes simples (avec échappement `\\`)
+Se construit par « concaténation de segments » plutôt qu'avec un tampon d'octets : chaque point d'échappement coupe un segment, et les segments sont concaténés directement avec le résultat décodé,
+donc pas besoin d'estimer la capacité à l'avance ni de problème de cycle de vie de la vue du tampon.
+s: texte source
+pos: position du guillemet ouvrant
+val: chaîne résolue
+next: position après le guillemet fermant
+ok: true = analyse réussie
+`
+  'noml.pool.parse-str-node': `
+Analyse une valeur chaîne et la matérialise en un nœud
+s: texte source
+pos: position du guillemet ouvrant
+idx: index du nœud ; -1 = échec
+next: position après la valeur
+ok: true = analyse réussie
+`
+  'noml.pool.parse-value': `
+Analyse une valeur
+s: texte source
+pos: position initiale de la valeur
+idx: index du nœud ; -1 = échec
+next: position après la valeur
+ok: true = analyse réussie
+`
+  'noml.pool.quote': `
+Produit un littéral de chaîne entre quotes simples (avec échappement)
+Règles d'échappement : on ajoute une barre oblique inverse devant `\'` et `\\`, LF / CR / TAB s'écrivent \n \r \t,
+les autres octets de contrôle < 0x20 s'écrivent \u00XX ; le tampon de sortie réserve n*6+2 (au pire 6 caractères par octet).
+s str: contenu brut (accepte tout octet, n'exige pas d'UTF-8 valide)
+out str: littéral entouré d'une quote simple au début et à la fin, avec l'intérieur déjà échappé
+`
+  'noml.pool.quote-value': `
+Produit un littéral de chaîne en choisissant la forme la plus simple selon le contenu
+Par défaut utilise .quote() ; si le contenu contient LF et passe .raw-safe(), bascule sur une chaîne brute entre backticks, en conservant les sauts de ligne d'origine.
+s str: contenu brut
+out str: littéral textuel directement écrivable dans un .noml (forme échappée entre quotes simples ou chaîne brute '`')
+`
+  'noml.pool.raw-safe': `
+Détermine si le contenu peut être rangé dans une chaîne brute entre backticks et récupéré tel quel
+Inutilisable si l'un des cas suivants apparaît : chaîne vide, premier ou dernier octet est LF, contient CR,
+ou une ligne qui, après retrait des blancs initiaux (espace / TAB / CR), commence par '`' (serait confondu avec le marqueur de fin).
+s str: contenu à sérialiser
+yes bool: true = on peut l'encerler sûrement en '`\\n' + s + '\\n`', false = il faut utiliser la forme échappée entre quotes simples
+`
+  'noml.pool.require-end': `
+Validation de fin de membre : après, seuls sont permis des blancs dans la ligne, un saut de ligne, un commentaire `;` ou la fermeture du conteneur
+s: texte source
+pos: position après la valeur
+key: nom de la clé du membre (utilisé seulement pour le message d'erreur)
+next: position après le saut de ligne (ou après `}`)
+ok: true = légal
+`
+  'noml.pool.scan-ann': `
+Parcourt un groupe `#{...}`, renvoie la position après `}` (ne valide que la structure, n'analyse pas les entrées)
+s: texte source
+pos: position de `#`
+next: position après `}` ; -1 = n'est pas un commentaire ou n'est pas fermé
+`
+  'noml.pool.scan-quote': `
+Parcourt depuis `'` jusqu'au-delà du prochain `'` non échappé
+s: texte source
+pos: position du guillemet ouvrant
+next: position après le guillemet fermant ; -1 = non fermé
+`
+  'noml.pool.scan-raw': `
+Parcourt depuis le backtick jusqu'au-delà du backtick fermant qui est seul sur sa ligne
+s: texte source
+pos: position du backtick ouvrant
+next: position après le backtick fermant ; -1 = non fermé
+`
+  'noml.pool.set-ann': `
+Fixe le texte du commentaire `#{...}` du nœud (chaîne vide = le retirer)
+idx: index du nœud
+text: texte du commentaire (sans `#{` ni `}`)
+ok: true = écrit
+`
+  'noml.pool.skip-ann-value': `
+Saute une valeur de commentaire (chaîne / tableau / valeur nue) et renvoie la position après celle-ci
+body: texte brut du commentaire
+pos: position initiale de la valeur
+next: position après la valeur ; -1 = format illégal
+`
+  'noml.pool.skip-blanks': `
+Ne saute que les blancs de la ligne (espace et tabulation), sans franchir le saut de ligne
+s: texte source
+pos: position initiale
+p: position du premier caractère non blanc
+`
+  'noml.pool.skip-trivia': `
+Saute les blancs (y compris les sauts de ligne) et les commentaires de ligne `;`
+s: texte source
+pos: position initiale
+p: position du premier caractère significatif (la fin de la chaîne si tout est blanc)
+`
+  'noml.pool.stringify': `
+Sérialise un sous-arbre
+idx: index de la racine du sous-arbre
+indent: niveau d'indentation (deux espaces par niveau)
+out: texte NOML (chaîne vide quand l'index est invalide)
+`
+  'noml.pool.stringify-arr': `
+Sérialise un tableau (chaque élément sur une ligne, avec virgule de fin)
+idx: index du nœud tableau
+indent: niveau d'indentation
+out: texte NOML
+`
+  'noml.pool.stringify-obj': `
+Sérialise un objet (chaque membre sur une ligne, le commentaire est émis au-dessus du membre)
+idx: index du nœud objet
+indent: niveau d'indentation
+out: texte NOML
+`
+  'noml.pool.val-bool': `
+Récupère la valeur booléenne
+idx: index du nœud
+v: ok = booléen, nil = la valeur n'est pas booléenne
+`
+  'noml.pool.val-i64': `
+Récupère la valeur entière (tronque le décimal)
+idx: index du nœud
+v: ok = entier tronqué, nil = la valeur n'est pas un nombre
+`
+  'noml.pool.val-num': `
+Récupère la valeur numérique
+idx: index du nœud
+v: ok = valeur numérique, nil = la valeur n'est pas un nombre
+`
+  'noml.pool.val-str': `
+Récupère la valeur chaîne
+idx: index du nœud
+v: ok = contenu de la chaîne, nil = la valeur n'est pas une chaîne
 `
   'num.abs': `
 valeur absolue — fonctionne pour tous les types num (entiers et flottants)
@@ -9114,6 +9114,32 @@ Retrait du bourrage CBC TLS 1.2
 in []byte : données déchiffrées (content || MAC || padding)
 Retour out-n i64 : longueur après retrait du bourrage (content+MAC), -1 = erreur de bourrage
 `
+  'toml.array-name': `
+Lit le nom d'un tableau de tables.
+t: l'enregistrement array-of-tables à lire
+s: le nom de cette table de tableau de tables
+`
+  'toml.entry-key': `
+Lit la clé canonique.
+e : la entry à lire
+s: la clé canonique de l'entrée (forme normalisée séparée par des points)
+`
+  'toml.entry-key-eq': `
+Compare la clé d'une entrée avec une chaîne.
+e : la entry à comparer
+key: chaîne de clé à comparer
+same: si la clé de l'entrée égale key
+`
+  'toml.entry-value': `
+Lit la valeur TOML brute.
+e : la entry à lire
+s: littéral de valeur TOML brut (non décodé)
+`
+  'toml.find-eq': `
+Trouve le premier signe égal qui n'est pas entre guillemets
+s: la ligne clé-valeur à analyser
+pos: position octet du premier '=' hors guillemets (-1 si non trouvé)
+`
   'toml.get': `
 Renvoie le littéral TOML brut
 Les valeurs non converties, comme les tableaux et les dates/heures, sont accessibles ici.
@@ -9151,58 +9177,15 @@ doc : le document à vérifier
 key: la clé à rechercher
 found: le document contient cette clé
 `
-  'toml.new': `
-Crée un document TOML vide
-doc : un document TOML vide (0 entrées, 0 tables)
-`
-  'toml.parse': `
-Analyse un document TOML; renvoie err(message) en cas d'échec
-s: texte TOML complet
-result: ok=fichier analysé, err=message d'erreur portant la cause
-`
-  'toml.stringify': `
-Écrit le fichier en syntaxe TOML 1.0 ; array-of-tables est restauré en en-têtes [[table]].
-doc : le document à sérialiser
-out: texte syntaxique TOML 1.0 (émis entrée par entrée avec les en-têtes de table)
-`
-  'toml.array-name': `
-Lit le nom d'un tableau de tables.
-t: l'enregistrement array-of-tables à lire
-s: le nom de cette table de tableau de tables
-`
-  'toml.put': `
-Fixe la valeur littérale TOML brute.
-value peut être un tableau, une date-heure, etc. selon la syntaxe TOML ; le module n'ajoute pas de guillemets.
-key: la clé (échoue si la clé ne peut pas être normalisée)
-value: le littéral TOML brut (stocké après validation syntaxique)
-ok: true=écriture réussie, false=clé invalide/valeur invalide/plein
-`
-  'toml.entry-key': `
-Lit la clé canonique.
-e : la entry à lire
-s: la clé canonique de l'entrée (forme normalisée séparée par des points)
-`
-  'toml.entry-key-eq': `
-Compare la clé d'une entrée avec une chaîne.
-e : la entry à comparer
-key: chaîne de clé à comparer
-same: si la clé de l'entrée égale key
-`
-  'toml.entry-value': `
-Lit la valeur TOML brute.
-e : la entry à lire
-s: littéral de valeur TOML brut (non décodé)
-`
-  'toml.find-eq': `
-Trouve le premier signe égal qui n'est pas entre guillemets
-s: la ligne clé-valeur à analyser
-pos: position octet du premier '=' hors guillemets (-1 si non trouvé)
-`
   'toml.make-entry': `
 Copie clé/valeur dans un tampon de taille fixe.
 key: chaîne de clé
 value: la chaîne de valeur
 e : la nouvelle entrée après copie de la clé/valeur dans le tampon fixe
+`
+  'toml.new': `
+Crée un document TOML vide
+doc : un document TOML vide (0 entrées, 0 tables)
 `
   'toml.next-array-table': `
 Renvoie et enregistre l'indice suivant d'un tableau de tables.
@@ -9214,6 +9197,11 @@ idx: ok=index de cet élément (enregistrement avec auto-incrément), nil=table 
 Analyse une clé nue, entre guillemets ou pointée et émet la clé pointée canonique.
 s: texte de clé brut (bare / quoted / dotted)
 key: ok=clé normalisée en notation pointée, nil=message d'erreur pour clé invalide
+`
+  'toml.parse': `
+Analyse un document TOML; renvoie err(message) en cas d'échec
+s: texte TOML complet
+result: ok=fichier analysé, err=message d'erreur portant la cause
 `
   'toml.parse-bool': `
 Analyse un booléen
@@ -9230,6 +9218,13 @@ Prend en charge les littéraux décimaux, hexadécimaux, octaux et binaires, ain
 s: texte de littéral entier
 value: ok=la valeur numérique, nil=texte vide, err=format illégal ou dépassement
 `
+  'toml.put': `
+Fixe la valeur littérale TOML brute.
+value peut être un tableau, une date-heure, etc. selon la syntaxe TOML ; le module n'ajoute pas de guillemets.
+key: la clé (échoue si la clé ne peut pas être normalisée)
+value: le littéral TOML brut (stocké après validation syntaxique)
+ok: true=écriture réussie, false=clé invalide/valeur invalide/plein
+`
   'toml.register-table': `
 Enregistre une table définie; renvoie false quand elle est définie deux fois.
 doc : le document d'enregistrement
@@ -9241,6 +9236,11 @@ Résout une sous-table d'un tableau de tables sur l'élément le plus récent.
 doc : le document courant
 name: nom du paragraphe à analyser
 resolved: réécrit en base[indice].suffixe quand la clé est une sous-clé array-of-tables, renvoyé tel quel sinon
+`
+  'toml.stringify': `
+Écrit le fichier en syntaxe TOML 1.0 ; array-of-tables est restauré en en-têtes [[table]].
+doc : le document à sérialiser
+out: texte syntaxique TOML 1.0 (émis entrée par entrée avec les en-têtes de table)
 `
   'toml.strip-comment': `
 Supprime les commentaires # hors des chaînes et rogne; les chaînes multilignes sont prises en charge.
@@ -10708,6 +10708,20 @@ data : certificat encodé DER
 start : position initiale TBS en sortie (avec l'étiquette SEQUENCE)
 end : position finale TBS en sortie (exclusive, c'est-à-dire le début de l'élément suivant)
 `
+  'xz.compress': `
+Compresse des données au format xz (implémentation de base)
+data : données brutes ([]byte)
+out : données compressées en xz ([]byte)
+Note : utilise actuellement une implémentation de base à bloc stocké (stored block),
+la compression LZMA2 complète reste à implémenter ultérieurement.
+`
+  'xz.decompress': `
+Format .xz :
+- En-tête de flux : 6 octets de magie + 2 octets d'attributs de flux
+- Blocs : En-tête de bloc + Données compressées + Remplissage de bloc + Contrôle
+- Index
+- Pied de flux : 12 octets
+`
   'xz.lzma-decoder.decode': `
 Boucle principale du décodeur LZMA
 data : données compressées, start-pos : position initiale des données
@@ -10780,23 +10794,15 @@ data : flux LZMA2 contenant les octets de contrôle
 start-pos : décalage initial du flux
 out : flux d'octets en clair décompressé (paramètre de sortie nommé, livré en une fois en fin de fonction)
 `
-  'xz.compress': `
-Compresse des données au format xz (implémentation de base)
-data : données brutes ([]byte)
-out : données compressées en xz ([]byte)
-Note : utilise actuellement une implémentation de base à bloc stocké (stored block),
-la compression LZMA2 complète reste à implémenter ultérieurement.
-`
-  'xz.decompress': `
-Format .xz :
-- En-tête de flux : 6 octets de magie + 2 octets d'attributs de flux
-- Blocs : En-tête de bloc + Données compressées + Remplissage de bloc + Contrôle
-- Index
-- Pied de flux : 12 octets
-`
   'yaml.anchor': `
 Le nom d'ancre du nœud courant
 a : nom de l'ancre du nœud (chaîne vide = aucune)
+`
+  'yaml.apply-tag': `
+Détermine le type de nœud par la balise explicite
+tag: nom d'étiquette normalisé
+kind: sorte de nœud déduite du contenu
+k: type final après écrasement par l'étiquette (le kind d'origine est renvoyé si l'étiquette est inconnue)
 `
   'yaml.at': `
 Obtient un élément de séquence / la i-ème valeur d'un mapping
@@ -10817,6 +10823,14 @@ out: handle du document i (nil=hors plage)
 Le nombre de documents
 n: nombre de documents contenus dans cet ensemble de documents
 `
+  'yaml.emit': `
+Émet un nœud en YAML style bloc (sans saut de ligne final)
+pool: la pool de nœuds
+idx: index du nœud à émettre
+indent: nombre d'espaces par niveau d'indentation
+depth : profondeur d'imbrication courante
+out: texte YAML de style bloc (sans saut de ligne final)
+`
   'yaml.error': `
 L'erreur de parse de ce document (toujours chaîne vide quand le parse a réussi)
 Note : en cas d'échec de parse, yaml.parse renvoie err et aucune valeur yaml n'est obtenue ;
@@ -10827,6 +10841,18 @@ msg: message d'erreur (toujours vide quand l'analyse réussit)
 Parse le texte source et renvoie le message d'erreur (chaîne vide en cas de succès)
 source: texte source YAML
 msg: message d'erreur d'analyse (chaîne vide=succès)
+`
+  'yaml.f-is-inf': `
+On n'utilise pas la comparaison par littéral : les littéraux numériques Nolang ne supportent pas les exposants (`1e308` est coupé en `1` + `e308`).
+Le critère d'infini est « non nul et invariable après division par deux » ; on exclut d'abord NaN avec `x != x`.
+x: la valeur f64 à détecter
+yes: x est l'infini positif/négatif (non nul et inchangé après division par deux)
+`
+  'yaml.f-is-nan': `
+Si le flottant est NaN (NaN != NaN)
+On n'utilise pas `float.is-nan` : les appels à récepteur dans le module ne résolvent pas cette méthode dans le backend MIR.
+x: la valeur f64 à détecter
+yes: x est NaN (le critère NaN != NaN)
 `
   'yaml.f64': `
 Obtient la valeur flottante
@@ -10882,9 +10908,23 @@ Obtient une chaîne par clé scalaire
 key: texte de clé scalaire à chercher
 out: forme chaîne de la valeur correspondante (nil=clé absente ou valeur non chaîne)
 `
+  'yaml.hex-char': `
+Convertit un unique chiffre hex (0-15) en caractère
+v: la valeur numérique d'un chiffre hex, 0-15
+ch : le caractère hexadécimal correspondant ('0'-'f')
+`
+  'yaml.hex-digit': `
+Convertit un caractère hex en sa valeur ; les non-hex renvoient -1
+c : code ASCII du caractère
+d : la valeur 0-15 représentée par ce chiffre hex (-1=caractère hex invalide)
+`
   'yaml.i64': `
 Obtient la valeur entière
 val: la valeur entière (nil=pas un nœud entier)
+`
+  'yaml.inf': `
+Infini positif
+v: la valeur d'infini positif
 `
   'yaml.is-bool': `
 S'il est booléen
@@ -10919,15 +10959,39 @@ yes: le nœud est une séquence
 S'il est chaîne
 yes: le nœud est une chaîne
 `
+  'yaml.json-escape': `
+Échappement des chaînes JSON
+s: la chaîne brute
+out: chaîne JSON échappée (avec les guillemets doubles englobants)
+`
+  'yaml.json-of': `
+Convertit un nœud en JSON
+pool: la pool de nœuds
+idx: index du nœud à convertir
+depth : profondeur de récursion restante (évite les cycles d'alias)
+out: le texte JSON correspondant à ce nœud
+`
   'yaml.key': `
 Obtient le texte de la i-ème clé du mapping
 i: numéro de paire clé/valeur (à partir de 0)
 out: texte scalaire de la i-ème clé (nil=hors plage ou pas un mapping)
 `
+  'yaml.key-eq': `
+Si deux nœuds clés sont équivalents (compare les textes scalaires)
+a : nœud-clé a
+b : nœud-clé b
+yes: les textes bruts scalaires des deux nœuds sont égaux
+`
   'yaml.key-node': `
 Obtient le nœud de la i-ème clé du mapping
 i: numéro de paire clé/valeur (à partir de 0)
 out: nœud de la i-ème clé (nil=hors plage ou pas un mapping)
+`
+  'yaml.key-text-eq': `
+Si le texte de la clé scalaire est égal à la chaîne donnée
+nd: nœud à comparer (son texte scalaire est pris)
+key: texte cible
+yes: le texte brut du scalaire de nd est égal à key
 `
   'yaml.kind': `
 Le type du nœud courant
@@ -10941,9 +11005,20 @@ n: nombre d'éléments de séquence ou de paires clé/valeur de mapping (0 pour 
 La ligne de départ du nœud courant
 n: numéro de ligne où commence le nœud
 `
+  'yaml.nan': `
+Doit passer par la division à l'exécution : le pliage de constantes calcule `0.0 / 0.0` directement comme 0.
+Passer par une variable locale évite le pliage et obtient un vrai NaN (`x != x` est vrai).
+v: la valeur NaN (produite à l'exécution par 0.0/0.0, pas plié en constant)
+`
   'yaml.node-count': `
 Nombre total de nœuds
 n: nombre total de nœuds dans le pool de nœuds
+`
+  'yaml.node-is-nan': `
+le fval de `.nan` est rempli par nan() avec un vrai NaN, donc jugé par valeur (NaN != NaN).
+Le test du texte brut du nœud sert de repli : des chemins comme la réécriture de balise peuvent ne changer que text sans recalculer fval.
+nd: nœud à inspecter
+yes: le nœud est .nan
 `
   'yaml.parse': `
 Parse le texte YAML et renvoie le premier document
@@ -10955,140 +11030,6 @@ out: handle du premier document (err=message d'échec d'analyse)
 Parse tous les documents
 source: texte source YAML contenant plusieurs documents
 out: handle du jeu de documents (accès à chacun via .doc(i))
-`
-  'yaml.scalar-text': `
-Le texte scalaire du nœud courant (les conteneurs renvoient ok=false)
-out: texte scalaire (nil=nœud conteneur)
-`
-  'yaml.source-of': `
-Le texte d'entrée d'origine
-out: texte d'entrée original au moment de l'analyse
-`
-  'yaml.str': `
-Obtient la valeur chaîne (nombres/booléens renvoient leur texte brut)
-val: le texte brut du scalaire (nil=nœud conteneur)
-`
-  'yaml.stringify': `
-Alias de to-yaml
-out: la même sortie que to-yaml
-`
-  'yaml.strip-bom': `
-Retire un BOM UTF-8 en tête
-s: texte pouvant porter un BOM
-out: texte avec le EF BB BF initial retiré
-`
-  'yaml.style': `
-Le style du nœud courant
-s: la constante de style YAML-STYLE-* de ce nœud
-`
-  'yaml.tag': `
-La balise explicite du nœud courant
-t: l'étiquette explicite du nœud (chaîne vide=aucune)
-`
-  'yaml.text': `
-Le texte brut du scalaire du nœud courant
-t: texte brut du scalaire (chaîne vide pour les nœuds conteneurs)
-`
-  'yaml.to-json': `
-Convertit le document courant en JSON
-out: texte JSON du nœud racine du document courant
-`
-  'yaml.to-json-all': `
-Convertit tous les documents en un tableau JSON
-out: texte de tableau JSON de tous les documents
-`
-  'yaml.to-yaml': `
-Réémet le document courant comme YAML
-out: texte YAML du document courant réémis
-`
-  'yaml.valid': `
-Si ce document a été parseé avec succès (obtenir une valeur yaml signifie succès)
-yes: le handle porte un document analysé avec succès
-`
-  'yaml.valid-of': `
-Si le texte source est parsable (sans construire de document)
-source: le texte source YAML à valider
-yes: le texte source peut être analysé
-`
-  'yaml.value': `
-Obtient le nœud de valeur de la i-ème clé du mapping
-i: numéro de paire clé/valeur (à partir de 0)
-out: nœud de valeur de la i-ème paire clé (nil=hors plage ou pas un mapping)
-`
-  'yaml.apply-tag': `
-Détermine le type de nœud par la balise explicite
-tag: nom d'étiquette normalisé
-kind: sorte de nœud déduite du contenu
-k: type final après écrasement par l'étiquette (le kind d'origine est renvoyé si l'étiquette est inconnue)
-`
-  'yaml.emit': `
-Émet un nœud en YAML style bloc (sans saut de ligne final)
-pool: la pool de nœuds
-idx: index du nœud à émettre
-indent: nombre d'espaces par niveau d'indentation
-depth : profondeur d'imbrication courante
-out: texte YAML de style bloc (sans saut de ligne final)
-`
-  'yaml.f-is-inf': `
-On n'utilise pas la comparaison par littéral : les littéraux numériques Nolang ne supportent pas les exposants (`1e308` est coupé en `1` + `e308`).
-Le critère d'infini est « non nul et invariable après division par deux » ; on exclut d'abord NaN avec `x != x`.
-x: la valeur f64 à détecter
-yes: x est l'infini positif/négatif (non nul et inchangé après division par deux)
-`
-  'yaml.f-is-nan': `
-Si le flottant est NaN (NaN != NaN)
-On n'utilise pas `float.is-nan` : les appels à récepteur dans le module ne résolvent pas cette méthode dans le backend MIR.
-x: la valeur f64 à détecter
-yes: x est NaN (le critère NaN != NaN)
-`
-  'yaml.hex-char': `
-Convertit un unique chiffre hex (0-15) en caractère
-v: la valeur numérique d'un chiffre hex, 0-15
-ch : le caractère hexadécimal correspondant ('0'-'f')
-`
-  'yaml.hex-digit': `
-Convertit un caractère hex en sa valeur ; les non-hex renvoient -1
-c : code ASCII du caractère
-d : la valeur 0-15 représentée par ce chiffre hex (-1=caractère hex invalide)
-`
-  'yaml.inf': `
-Infini positif
-v: la valeur d'infini positif
-`
-  'yaml.json-escape': `
-Échappement des chaînes JSON
-s: la chaîne brute
-out: chaîne JSON échappée (avec les guillemets doubles englobants)
-`
-  'yaml.json-of': `
-Convertit un nœud en JSON
-pool: la pool de nœuds
-idx: index du nœud à convertir
-depth : profondeur de récursion restante (évite les cycles d'alias)
-out: le texte JSON correspondant à ce nœud
-`
-  'yaml.key-eq': `
-Si deux nœuds clés sont équivalents (compare les textes scalaires)
-a : nœud-clé a
-b : nœud-clé b
-yes: les textes bruts scalaires des deux nœuds sont égaux
-`
-  'yaml.key-text-eq': `
-Si le texte de la clé scalaire est égal à la chaîne donnée
-nd: nœud à comparer (son texte scalaire est pris)
-key: texte cible
-yes: le texte brut du scalaire de nd est égal à key
-`
-  'yaml.nan': `
-Doit passer par la division à l'exécution : le pliage de constantes calcule `0.0 / 0.0` directement comme 0.
-Passer par une variable locale évite le pliage et obtient un vrai NaN (`x != x` est vrai).
-v: la valeur NaN (produite à l'exécution par 0.0/0.0, pas plié en constant)
-`
-  'yaml.node-is-nan': `
-le fval de `.nan` est rempli par nan() avec un vrai NaN, donc jugé par valeur (NaN != NaN).
-Le test du texte brut du nœud sert de repli : des chemins comme la réécriture de balise peuvent ne changer que text sans recalculer fval.
-nd: nœud à inspecter
-yes: le nœud est .nan
 `
   'yaml.parse-radix': `
 Parse un entier en base radix (ignore _)
@@ -11327,6 +11268,10 @@ La représentation YAML du scalaire
 nd: nœud scalaire
 out: texte de représentation YAML choisi selon le genre et le style
 `
+  'yaml.scalar-text': `
+Le texte scalaire du nœud courant (les conteneurs renvoient ok=false)
+out: texte scalaire (nil=nœud conteneur)
+`
   'yaml.scan-number': `
 Tente de parser le texte comme entier ou flottant
 Renvoie kind = YAML-KIND-INT / YAML-KIND-FLOAT / YAML-KIND-STR (pas un nombre)
@@ -11335,10 +11280,18 @@ kind: sorte numérique reconnue (INT/FLOAT/STR)
 ival: valeur entière quand kind=INT
 fval: valeur flottante quand kind=FLOAT
 `
+  'yaml.source-of': `
+Le texte d'entrée d'origine
+out: texte d'entrée original au moment de l'analyse
+`
   'yaml.spaces': `
 Génère n espaces
 n: nombre d'espaces
 out: une chaîne de n espaces
+`
+  'yaml.str': `
+Obtient la valeur chaîne (nombres/booléens renvoient leur texte brut)
+val: le texte brut du scalaire (nil=nœud conteneur)
 `
   'yaml.str-at': `
 Pourquoi cet helper est nécessaire : `arr[i]` (arr étant []str) renvoie option<str> par défaut,
@@ -11349,10 +11302,31 @@ a : tableau de chaînes cible
 i: index de l'élément
 out: valeur du i-ème élément (chaîne vide si hors plage)
 `
+  'yaml.stringify': `
+Alias de to-yaml
+out: la même sortie que to-yaml
+`
+  'yaml.strip-bom': `
+Retire un BOM UTF-8 en tête
+s: texte pouvant porter un BOM
+out: texte avec le EF BB BF initial retiré
+`
+  'yaml.style': `
+Le style du nœud courant
+s: la constante de style YAML-STYLE-* de ce nœud
+`
+  'yaml.tag': `
+La balise explicite du nœud courant
+t: l'étiquette explicite du nœud (chaîne vide=aucune)
+`
   'yaml.tag-name': `
 Normalise le nom de balise (!!str / tag:yaml.org,2002:str → str)
 tag: l'étiquette brute (notations comme !!str / tag:yaml.org,2002:str)
 name: nom court de balise normalisé (str/int/seq...)
+`
+  'yaml.text': `
+Le texte brut du scalaire du nœud courant
+t: texte brut du scalaire (chaîne vide pour les nœuds conteneurs)
 `
   'yaml.to-f64': `
 Convertit le texte en f64 (renvoyer nil signifie un échec)
@@ -11364,22 +11338,36 @@ Convertit le texte en i64, renvoie -1 en cas d'échec
 s: texte entier
 v: la valeur convertie (-1=conversion échouée)
 `
+  'yaml.to-json': `
+Convertit le document courant en JSON
+out: texte JSON du nœud racine du document courant
+`
+  'yaml.to-json-all': `
+Convertit tous les documents en un tableau JSON
+out: texte de tableau JSON de tous les documents
+`
+  'yaml.to-yaml': `
+Réémet le document courant comme YAML
+out: texte YAML du document courant réémis
+`
   'yaml.unescape-double': `
 Traite les séquences d'échappement dans les guillemets doubles
 body : contenu de la chaîne entre guillemets doubles (séquences d'échappement comprises)
 out: texte déséchappé (nil=contient des échappements illégaux)
 `
-  'zip.u16le': `
-Lit un entier non signé little-endian de 2 octets
-data : tableau d'octets à lire
-off : position initiale de lecture (0-based)
-v : entier non signé little-endian de 2 octets (0 ~ 65535)
+  'yaml.valid': `
+Si ce document a été parseé avec succès (obtenir une valeur yaml signifie succès)
+yes: le handle porte un document analysé avec succès
 `
-  'zip.u32le': `
-Lit un entier non signé little-endian de 4 octets
-data : tableau d'octets du fichier ZIP
-off : position initiale de lecture (0-based)
-v : entier non signé little-endian de 4 octets (0 ~ 2^32-1)
+  'yaml.valid-of': `
+Si le texte source est parsable (sans construire de document)
+source: le texte source YAML à valider
+yes: le texte source peut être analysé
+`
+  'yaml.value': `
+Obtient le nœud de valeur de la i-ème clé du mapping
+i: numéro de paire clé/valeur (à partir de 0)
+out: nœud de valeur de la i-ème paire clé (nil=hors plage ou pas un mapping)
 `
   'zip.entry.compressed-size': `
 Lit la taille compressée de l'entrée
@@ -11400,6 +11388,18 @@ name : nom du fichier de cette entrée
   'zip.entry.size': `
 Lit la taille brute de l'entrée
 sz : nombre d'octets bruts avant compression
+`
+  'zip.u16le': `
+Lit un entier non signé little-endian de 2 octets
+data : tableau d'octets à lire
+off : position initiale de lecture (0-based)
+v : entier non signé little-endian de 2 octets (0 ~ 65535)
+`
+  'zip.u32le': `
+Lit un entier non signé little-endian de 4 octets
+data : tableau d'octets du fichier ZIP
+off : position initiale de lecture (0-based)
+v : entier non signé little-endian de 4 octets (0 ~ 2^32-1)
 `
   'zip.writer.add-dir': `
 Ajoute une entrée de répertoire
@@ -11514,26 +11514,26 @@ data : données d'entrée ([]byte)
 n : nombre réel d'octets participant au calcul (i64)
 Retour sum : somme de contrôle de 32 bits (i64), poids fort = b, poids faible = a, comparable aux implémentations RFC 1950
 `
-  'zlib.zlib-compress': `
+  'zlib.compress': `
 Construit un flux zlib à l'aide de blocs stockés (BTYPE=00) :
 - en-tête zlib de 2 octets (78 9c)
 - blocs DEFLATE stockés (65535 octets max par bloc)
 - somme de contrôle Adler-32 big-endian de 4 octets
 out []byte : flux zlib complet (en-tête 2 octets + blocs stockés + Adler-32 de 4 octets)
 `
-  'zlib.zlib-consumed-stored': `
+  'zlib.consumed-stored': `
 Calcule le nombre d'octets consommés par un flux zlib à blocs stockés
 data : flux zlib démarrant à l'offset 0 ([]byte)
 Retour consumed : nombre total d'octets consommés (avec en-tête et Adler-32), 0 indique un bloc non-stored
 Accumule bloc par bloc l'en-tête de bloc de 5 octets + la longueur des données + la somme de contrôle de 4 octets, s'arrête dès BFINAL ou un bloc non-stored
 `
-  'zlib.zlib-decompress': `
+  'zlib.decompress': `
 Gère tous les types de bloc DEFLATE (stored, Huffman fixe, Huffman dynamique)
 Décompresse via gzip.inflate-decompress.
 Tente d'abord le balayage de bloc stocké (chemin rapide), puis décompresse par inflate en cas d'échec.
 out ?[]byte : données décompressées (ok) ; longueur inférieure à 6, en-tête invalide ou échec de décompression = nil
 `
-  'zlib.zlib-decompress-stored': `
+  'zlib.decompress-stored': `
 Décompresse uniquement les flux zlib à blocs stockés
 data : flux zlib ne contenant que des blocs BTYPE=00 ([]byte)
 Retour out ?[]byte : données décompressées (some), bloc non-stored ou échec = nil
@@ -11545,6 +11545,18 @@ count > 0 : renvoie le nombre de bits significatifs de count (floor(log2(count))
 count <= 0 : renvoie 0
 count : compteur de fréquence d'un symbole dans la table normalisée FSE
 n : nombre minimal de bits requis pour count (l'appelant utilise tableLog - n pour obtenir les bits supplémentaires de cet état)
+`
+  'zstd.compress': `
+Compresse des données au format zstd (implémentation de base)
+data : données brutes ([]byte)
+out : données compressées en zstd ([]byte)
+Note : utilise actuellement une implémentation de base à bloc brut (raw block),
+la compression FSE + Huffman + LZ77 complète reste à implémenter ultérieurement.
+`
+  'zstd.decompress': `
+Décompresse des données au format Zstandard
+data : données compressées zstd ([]byte)
+out : données décompressées ([]byte)
 `
   'zstd.fse-table.build': `
 Construit la table FSE à partir des compteurs normalisés
@@ -11596,17 +11608,5 @@ max-symbol : borne supérieure de la valeur de symbole (point final du parcours 
 Décode un symbole
 br : lecteur de bits lisant les bits du code (le mot de code est assemblé bit par bit depuis le bout MSB)
 sym : valeur de symbole décodée ; renvoie 0 si aucun code n'est atteint dans la longueur de code maximale
-`
-  'zstd.compress': `
-Compresse des données au format zstd (implémentation de base)
-data : données brutes ([]byte)
-out : données compressées en zstd ([]byte)
-Note : utilise actuellement une implémentation de base à bloc brut (raw block),
-la compression FSE + Huffman + LZ77 complète reste à implémenter ultérieurement.
-`
-  'zstd.decompress': `
-Décompresse des données au format Zstandard
-data : données compressées zstd ([]byte)
-out : données décompressées ([]byte)
 `
 }

@@ -132,6 +132,23 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 		}
 		return absFile != absMain
 	}
+	// merged 表示這是一份「多檔合併」的程式（存在來源檔 != sourcePath 的頂層陳述）。
+	//
+	// 用途：SourceFile 缺失時的回退歸因。單檔 / LSP 路徑下「缺 SourceFile」就是
+	// 「主檔語句」，回退成 sourcePath 是正確的；但合併程式裡缺 SourceFile 意味著
+	// **這條陳述的溯源丟了**（深層節點沒被 SetSourceFileDeep 標到，或它在標記之後
+	// 被 clone 出來），此時把 sourcePath 填上去，行號卻仍取自模組座標 ⇒ 報出
+	// 「main.no:934」這種主檔根本沒有的行號。這種情況寧可不報 —— 目錄模式下每個
+	// 檔案自己也會被 vet，覆蓋不會丟。
+	merged := false
+	if sourcePath != "" {
+		for _, stmt := range program.Statements {
+			if f := program.Sem.SourceFileOf(stmt); f != "" && isImportedCopy(f) {
+				merged = true
+				break
+			}
+		}
+	}
 	msg := i18n.T("0cccc2ei", "the statement governed by this #{overflow=...} annotation contains no integer arithmetic (e.g. the line only concatenates strings), so it can never overflow; consider removing the annotation.")
 	var results []LintResult
 	// 獨立成行註解節點：governed 直接給出管轄陳述。
@@ -146,6 +163,9 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 				continue
 			}
 			if file == "" {
+				if merged {
+					continue
+				}
 				file = sourcePath
 			}
 			results = append(results, LintResult{
@@ -176,6 +196,9 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 								continue
 							}
 							if file == "" {
+								if merged {
+									continue
+								}
 								file = sourcePath
 							}
 							results = append(results, LintResult{

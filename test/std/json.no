@@ -712,7 +712,10 @@ t-obj-iter = () {
             runner.eq(it.obj-len(), 3, 'obj-len == 3')
             runner.str-eq(str-of(it.obj-key(0)), 'a', 1, 'obj-key(0) == a')
             runner.str-eq(str-of(it.obj-key(2)), 'c', 1, 'obj-key(2) == c')
-            runner.eq(i64-of(it.obj-key(3)), 9000001, 'obj-key 越界回 nil')
+
+            ; obj-key 回的是 ?str ⇒ 用 str-of 的 'nil' 哨兵斷言越界，
+            ; i64-of 收的是 ?i64，兩者 option 佈局不同（見 test/README §5.2n）
+            runner.str-eq(str-of(it.obj-key(3)), 'nil', 3, 'obj-key 越界回 nil')
             runner.str-eq(it.obj-keys-str(), 'a\nb\nc\n', 6, 'obj-keys-str 依序拼接')
         }
 

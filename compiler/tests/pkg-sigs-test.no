@@ -1,0 +1,60 @@
+; pkg-sigs-test.no — ⑭ 切片 3 閘：整包全域簽名表（key = mod.fn）
+;
+; 執行：
+;   ./bin/no run compiler/tests/pkg-sigs-test.no
+;
+; ⚠️ 直接導入所有傳遞依賴：模組頂層常量只有在入口檔直接 import 時才會生成（bug #85）。
+;   drv.pkg-sigs 內部呼叫 h2m-struct-register / h2m-func-sig / ast.* / ps.*，缺一不可。
+; ⚠️ 訊息一律用單引號字串；nolang 的 "..." 是 char 字面量，不是字串。
+;
+; 驗收（⑭ ⑪ ③）：簽名表 key 含 `ps.parse` / `ast.str-at` 等；h2m-sig-find 命中。
+;   ⚠️ drv.* 模組函式（drv.no 用 `drv.x = (...)` 點號名）因自舉 parser 對「點號名函式定義」
+;      的 signature 計數有 bug（c5 多算 1），暫不入表——屬切片 5 的前置 parser 缺陷，本件不收。
+
+# /test/runner.is-true
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/drv
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+
+sg = drv.pkg-sigs('compiler/main.no')
+n = sg.fname.len()
+print('pkg-sigs: collected ' - n.to-str() - ' signatures')
+
+; 關鍵跨模組函式必須以 mod.fn 入表（裸名模組：ps / ast / h2m）
+i = h2m-sig-find(sg, 'ps.parse')
+runner.is-true(i >= 0, 'ps.parse in global sig table')
+
+j = h2m-sig-find(sg, 'ast.str-at')
+runner.is-true(j >= 0, 'ast.str-at in global sig table')
+
+h = h2m-sig-find(sg, 'h2m.sig-add')
+runner.is-true(h >= 0, 'h2m.sig-add in global sig table')
+
+m = h2m-sig-find(sg, 'ast.make')
+runner.is-true(m >= 0, 'ast.make in global sig table')
+
+; 不應存在的 key 必須查不到
+x = h2m-sig-find(sg, 'ps.parsex')
+runner.is-true(x < 0, 'bogus key ps.parsex not found')
+
+runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+    -> exit(0)
+}
