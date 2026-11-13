@@ -1262,6 +1262,7 @@ h2m-sigs {
     fbase []i64
     farg []i64
     fdef []i64
+    femit []str
 }
 
 ; 新建签名表
@@ -1274,18 +1275,22 @@ h2m-sigs-new = () (s h2m-sigs) {
         fbase: []
         farg: []
         fdef: []
+        femit: []
     }
 }
 
 ; 登记一个函数签名；argt 逐项拷进拼接表 farg（值复制，与呼叫方分离）
 ; s: 签名表
-; name: 函数名
+; name: 查表键（切片 5 全域 sg 用 `mod.fn` 点号键；单模組 h2m-lower-program 用裸名）
+; emit: 定义 emit 名（LLVM 符号名，即 h2m-func-sig 回传的裸 AST 名 nm）——呼叫点 emit `call @<emit>`
+;       与定义 `define @<emit>` 对齐；切片 6 统一 emit 名，根除「定义/呼叫名错位」未定义引用。
 ; ret: 返回型别码
 ; argt: 输入型别表（顺序即 LLVM 形参序）
 ; deft: 默认值表达式节点表（与 argt 平行，0 = 无默认值；s92 调用点回填用）
-h2m-sig-add = (s h2m-sigs, name str, ret i64, argt []i64, deft []i64) {
+h2m-sig-add = (s h2m-sigs, name str, emit str, ret i64, argt []i64, deft []i64) {
     b = s.farg.len()
     s.fname.push(name)
+    s.femit.push(emit)
     s.fret.push(ret)
     s.fnarg.push(argt.len())
     s.fbase.push(b)
@@ -2164,6 +2169,10 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ok-call == 1 && cn != 'print' && cn != 'eprint' -> {
                 si = h2m-sig-find(sg, cn)
                 si < 0 -> ok-call = 0
+                ; 切片 6：命中後把 cn 覆寫為【定義 emit 名】（femit），使 call 符號與
+                ;   define 符號一致（根除「定義 @testmod-bar / 呼叫 @testmod.bar」錯位）。
+                ;   單模組路徑 femit==fname==nm，故與舊行為等價、零回歸。
+                si >= 0 -> cn = sg.femit[si]
             }
             ok-call == 1 -> {
                 want-n = sg.fnarg[si]
@@ -4035,7 +4044,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
             nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
-            bd == 0 -> h2m-sig-add(sg, nm, rt, ap, dp)
+            bd == 0 -> h2m-sig-add(sg, nm, nm, rt, ap, dp)
         }
 
         #{overflow=wrap}

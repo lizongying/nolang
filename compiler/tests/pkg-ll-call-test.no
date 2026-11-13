@@ -1,18 +1,19 @@
-; pkg-ll-call-test.no — ⑭ 切片 5 閘：點號呼叫查全域簽名表 ⇒ emit `call @<mod.fn>`
+; pkg-ll-call-test.no — ⑭ 切片 6 閘：點號呼叫查全域簽名表 ⇒ emit `call @<定義名>`（emit 名統一可連結）
 ;
 ; 執行：
 ;   ./bin/no run compiler/tests/pkg-ll-call-test.no
 ;   opt -passes=verify -disable-output /tmp/m5call.ll      # 外部 LLVM 驗證（見 ④e）
 ;
-; 驗收口徑（⑭ ⑪ ⑥，as-built 回填）：
+; 驗收口徑（⑭ ⑪ ⑥→切片 6，as-built 回填）：
 ;   ✅ 機制：caller-run 體內的 `testmod.bar(x)` 點號呼叫，其 callee 是【單個 K-DOT-EXPRESSION】（`mod.fn`）——
 ;      `mod` 在 dot 子節點[0]（K-IDENTIFIER）、`fn` = dot.s0；h2m-lower-expr 拼出 cn = 'testmod.bar'，
-;      在【全域 sg】（drv.pkg-ll 切片 5 改為先掃全模組建一份）命中，emit 出 `call i64 @testmod.bar(...)`。
-;      被呼叫者 testmod-bar 自身亦進 .ll（空 body ⇒ @testmod-bar）。
-;   ✅ 命名接線：全域 sg key = mod.short（與 ⑥ 點號呼叫 cn 同構），故 `h2m-sig-find(sg,'testmod.bar') >= 0`。
-;   ✅ IR 語法合法：cg 字串全域為整數陣（s99o），opt 不報「語法/型別」錯誤（undefined-value 在此允許，
-;      因 @testmod-bar（定義名，連字號）與 call @testmod.bar（呼叫名，點號）間的 emit 名/呼叫名錯位屬已知限制，
-;      統一 emit 名成 mod.fn 留待切片 6，見下方追記）。
+;      在【全域 sg】（drv.pkg-ll 切片 5 建）命中，查表得【定義 emit 名】= 'testmod-bar'（裸 AST 名），
+;      emit 出 `call i64 @testmod-bar(...)`。
+;   ✅ emit 名統一（切片 6）：呼叫符號 @testmod-bar 與定義符號 @testmod-bar 一致（受控被呼叫者以連字號名
+;      testmod-bar 定義，emit 名即裸名；呼叫點經 sg.femit 取回同一裸名），故 .ll 可連結、
+;      `opt -passes=verify` 乾淨通過（不再報 use of undefined value）。
+;   ✅ 命名接線：全域 sg key = mod.short = `testmod.bar`，與 ⑥ 點號呼叫 cn 同構，故
+;      `h2m-sig-find(sg,'testmod.bar') >= 0`。
 ;
 ; ⚠️ 直接導入所有傳遞依賴：drv.pkg-ll 內部呼叫 h2m-struct-register / h2m-func-sig / ast.* / ps.*，
 ;   這些 self-host 函式的頂層常量只有在入口檔直接 import 時才會生成（bug #85）。
@@ -45,33 +46,7 @@
 ll = drv.pkg-ll('compiler/tests/t5/call-entry.no')
 print('pkg-ll-call: produced ' - ll.len-bytes().to-str() - ' bytes of IR')
 
-; 切片 5 ⑥ 驗收（核心機制）：點號呼叫 `testmod.bar(x)` ⇒ emit `call i64 @testmod.bar`
-;   （呼叫名 cn='testmod.bar' 經全域 sg 命中，證明「點號呼叫查全域表」接線正確）
-;   注意：實際 IR 為 `call i64 @testmod.bar(...)`（返回型別在 `call` 與 `@` 之間），
-;   故用子串 `@testmod.bar` 精確斷言呼叫目標名（連字號定義名 `@testmod-bar` 不含此子串）。
-runner.is-true(ll.contains('@testmod.bar'), 'slice5: dot-call emits call @testmod.bar (resolved via global sg)')
-
-; 呼叫方整函式產碼（證明 body 內的點號呼叫確實被降級，而非整函式被誠實門禁擋掉）
-runner.is-true(ll.contains('@caller-run'), 'slice5: caller @caller-run lowered & emitted')
-
-; 命名接線：全域 sg key = mod.short = `testmod.bar`，與 ⑥ 點號呼叫 cn 同構
-sg = drv.pkg-sigs('compiler/tests/t5/call-entry.no')
-runner.is-true(h2m-sig-find(sg, 'testmod.bar') >= 0, 'slice5: callee testmod.bar wired into global sig table')
-
-; IR 語法合法（s99o 字串全域修復）：opt 不得報任何「語法/型別」錯誤
-;   （use of undefined value 是 emit 名(@testmod-bar) 與呼叫名(@testmod.bar) 錯位所致，
-;    屬 emit 名未統一成 mod.fn 的既有限制，allow 不計失敗，同切片 4 對 ps.parse 本體降級的延後口徑）
-optargs []str = []
-optargs.push('-passes=verify')
-optargs.push('-disable-output')
-optargs.push('/tmp/m5call.ll')
-oo, oe, ocode, oerr = process.cmd('opt', optargs, '', '', [], 0, false)
-syntax-bad = oe.contains('expected ') || oe.contains('redefinition of') || oe.contains('type mismatch')
-runner.is-true(! syntax-bad, 'pkg-ll-call opt: no SYNTAX errors')
-print('pkg-ll-call opt rc=' - ocode.to-str() - (ocode == 0 ? ' (clean: caller lowered)' : ' (undefined-value = emit/callee name mismatch, deferred)'))
-oe.len-bytes() > 0 -> print('pkg-ll-call opt stderr (first 240 chars): ' - oe.slice-bytes(0, 240))
-
-; 先落到磁碟，再交 opt 驗證（避免 opt 讀不到檔）
+; 先落到磁碟，再交 opt 驗證（避免 opt 讀不到檔、讀到陳舊檔）
 w = fs.write-bytes('/tmp/m5call.ll', ll.to-bytes())
 w: {
     ok -> {
@@ -86,6 +61,31 @@ w: {
         eprint('pkg-ll-call: write-bytes error')
     }
 }
+
+; 切片 6 驗收（emit 名統一）：點號呼叫 `testmod.bar(x)` ⇒ emit `call i64 @testmod-bar(...)`，
+;   與定義符號 @testmod-bar 完全一致（切片 5 的 @testmod.bar 錯位已根除）。
+;   實際 IR 形如 `call i64 @testmod-bar(i64 %v1)`。
+runner.is-true(ll.contains('@testmod-bar'), 'slice6: callee @testmod-bar defined (def emit name)')
+runner.is-true(ll.contains('call i64 @testmod-bar'), 'slice6: dot-call emits call @testmod-bar (emit name unified with definition)')
+
+; 呼叫方整函式產碼（證明 body 內的點號呼叫確實被降級，而非整函式被誠實門禁擋掉）
+runner.is-true(ll.contains('@caller-run'), 'slice6: caller @caller-run lowered & emitted')
+
+; 命名接線：全域 sg key = mod.short = `testmod.bar`，與 ⑥ 點號呼叫 cn 同構
+sg = drv.pkg-sigs('compiler/tests/t5/call-entry.no')
+runner.is-true(h2m-sig-find(sg, 'testmod.bar') >= 0, 'slice6: callee testmod.bar wired into global sig table')
+
+; IR 可連結（切片 6 核心）：opt -passes=verify 必須【乾淨通過】——
+;   不得有語法錯誤，亦不得有 use of undefined value（那正是切片 5 emit 名/呼叫名錯位的症狀，現已根除）。
+optargs []str = []
+optargs.push('-passes=verify')
+optargs.push('-disable-output')
+optargs.push('/tmp/m5call.ll')
+oo, oe, ocode, oerr = process.cmd('opt', optargs, '', '', [], 0, false)
+syntax-bad = oe.contains('expected ') || oe.contains('redefinition of') || oe.contains('type mismatch') || oe.contains('undefined value') || oe.contains('use of undefined')
+runner.is-true(! syntax-bad, 'slice6: opt -passes=verify clean (caller + callee linked, no undefined value)')
+print('pkg-ll-call opt rc=' - ocode.to-str() - (ocode == 0 && ! syntax-bad ? ' (clean: caller + callee linked)' : ' (FAILED)'))
+oe.len-bytes() > 0 -> print('pkg-ll-call opt stderr (first 240 chars): ' - oe.slice-bytes(0, 240))
 
 runner.summary()
 f = runner.failed-count()

@@ -683,7 +683,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
                     nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     key = mod - '.' - short
-                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, rt, ap, dp)
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, dp)
                 }
             }
 
@@ -791,7 +791,7 @@ drv.pkg-ll = (path str) (r str) {
                     nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     key = mod - '.' - short
-                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, rt, ap, dp)
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, dp)
                 }
             }
 
