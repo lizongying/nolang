@@ -498,9 +498,17 @@ print(data[1])
 print('done')
 
 ; from vec-str-to-str.no — []str.to-str 依長度格式化且不得崩潰
-sstA = ['a', 'b', 'c']
+sstA = [
+    'a',
+    'b',
+    'c',
+]
 print(sstA.to-str())
-sstV = ['hello', 'world', 'foo']
+sstV = [
+    'hello',
+    'world',
+    'foo',
+]
 print(sstV[0])
 print(sstV.to-str())
 

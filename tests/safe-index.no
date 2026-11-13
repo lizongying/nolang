@@ -213,7 +213,11 @@ io.out(fok)
 print('')
 
 ; 6) str 預設值 + 範圍內
-sa = ['a', 'b', 'c']
+sa = [
+    'a',
+    'b',
+    'c',
+]
 sdef = get-default-str(sa, 9)
 io.out('get-default-str OOB -> ')
 io.out(sdef)

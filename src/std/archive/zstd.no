@@ -304,7 +304,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         }
 
         {
-
             .nb-bits[i] ?= table-log - bits-for-count(nc)
 
             nb = .nb-bits[i]: {
@@ -712,6 +711,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
             -> _
         }
+
         #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
@@ -723,6 +723,7 @@ zs-frame.read-frame-header = () (ok bool) {
         exponent = wd >> 3
         mantissa = wd & 7
         base = 1 << (10 + exponent)
+
         #{overflow=wrap}
         .window-size = base + mantissa * base
     }
@@ -730,6 +731,7 @@ zs-frame.read-frame-header = () (ok bool) {
     ; Dictionary ID（如果存在）
     dict-id-flag > 0 -> {
         dict-id-size = 1 << (dict-id-flag - 1)
+
         #{overflow=wrap}
         .pos = .pos + dict-id-size: {
             ok -> it
@@ -747,6 +749,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 .pos = .pos + 1: {
                     ok -> it
@@ -762,6 +765,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
                 -> _
             }
+
             #{overflow=wrap}
             hi = .data[.pos + 1]: {
                 ok -> it
@@ -769,12 +773,14 @@ zs-frame.read-frame-header = () (ok bool) {
                 -> _
             }
             fcs = lo | (hi << 8)
+
             #{overflow=wrap}
             .pos = .pos + 2: {
                 ok -> it
 
                 ->
             }
+
             #{overflow=wrap}
             fcs = fcs + 256
         }
@@ -785,18 +791,21 @@ zs-frame.read-frame-header = () (ok bool) {
 
                 -> _
             }
+
             #{overflow=wrap}
             e1 = .data[.pos + 1]: {
                 ok -> it
 
                 -> _
             }
+
             #{overflow=wrap}
             e2 = .data[.pos + 2]: {
                 ok -> it
 
                 -> _
             }
+
             #{overflow=wrap}
             e3 = .data[.pos + 3]: {
                 ok -> it
@@ -804,6 +813,7 @@ zs-frame.read-frame-header = () (ok bool) {
                 -> _
             }
             fcs = e0 | (e1 << 8) | (e2 << 16) | (e3 << 24)
+
             #{overflow=wrap}
             .pos = .pos + 4: {
                 ok -> it
@@ -854,6 +864,7 @@ zs-frame.read-frame-header = () (ok bool) {
             }
 
             fcs = fcs | (g4 << 32)
+
             #{overflow=wrap}
             .pos = .pos + 5: {
                 ok -> it
@@ -935,6 +946,7 @@ zs-frame.decode-block = () (last-block ?bool) {
 
                 -> _
             }
+
             #{overflow=wrap}
             .pos = .pos + 1: {
                 ok -> it
@@ -1010,6 +1022,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
                 -> _
             }
         }
+
         #{overflow=wrap}
         br.pos = br.pos + lit-size: {
             ok -> it

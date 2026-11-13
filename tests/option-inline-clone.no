@@ -60,10 +60,10 @@ pick-text = (p pool, i i64) (out str) {
 take-and-drop = (p pool, i i64) (gone bool) {
     gone = false
     nd = p.nodes[i]
-    nd: {
-        ok -> gone = true
+    gone = nd: {
+        ok -> true
 
-        -> gone = false
+        -> false
     }
 }
 

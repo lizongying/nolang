@@ -472,6 +472,7 @@ sc-reduce = (s []byte) (out [32]byte) {
     #{overflow=wrap}
     i = nb - 1
     (i >= 0) {
+
         #{overflow=wrap}
         ixout404c16 = s[i / 8]: {
             ok -> it

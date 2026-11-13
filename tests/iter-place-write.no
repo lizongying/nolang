@@ -209,7 +209,11 @@ sub-ok != iter-ok -> exit(21)
 sub-nil != iter-nil -> exit(22)
 
 ; 8. 擁有所有權的元素（str）：覆蓋寫入必須丟棄舊元素、只丟一次
-t = ['x', 'y', 'z']
+t = [
+    'x',
+    'y',
+    'z',
+]
 tv <- t: {
     tv = 'q'
 }

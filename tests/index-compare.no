@@ -92,7 +92,10 @@ print('ok: []?T element comparison')
 c []byte = [65, 66]
 expect(c[0] == 65, 25)
 reject(c[1] == 65, 26)
-d = ['aa', 'bb']
+d = [
+    'aa',
+    'bb',
+]
 expect(d[0] == 'aa', 27)
 reject(d[1] == 'aa', 28)
 print('ok: byte and str element comparison')
@@ -191,9 +194,18 @@ reject(m1[1] == m2[1], 50)
 reject(m1 == m2, 51)
 
 ; 元素是 str：必須比內容，不是比 data 指標
-sa = ['ab', 'cd']
-sb = ['ab', 'cd']
-sc = ['ab', 'ce']
+sa = [
+    'ab',
+    'cd',
+]
+sb = [
+    'ab',
+    'cd',
+]
+sc = [
+    'ab',
+    'ce',
+]
 expect(sa == sb, 52)
 reject(sa == sc, 53)
 print('ok: container equality is structural')

@@ -102,6 +102,7 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     }
 
     counter > 0 -> {
+
         #{overflow=wrap}
         msg[t-len + info.len()]: {
             ok -> it = counter & 255

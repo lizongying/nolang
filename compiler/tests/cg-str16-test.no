@@ -207,6 +207,7 @@ test-str16-cat = () {
 
 test-str16-opt = () {
     s = str16-opt()
+
     ; OPTMKSTR：u32 欄 zext 後才存進 [3 x i64] 槽
     runner.eq(s.contains('%ol0w1 = zext i32 %ol01 to i64'), 1, 'OPTMKSTR widens len')
     runner.eq(s.contains('%ol1w1 = zext i32 %ol11 to i64'), 1, 'OPTMKSTR widens cap')
@@ -251,8 +252,10 @@ dump-mode = () (yes bool) {
     a: {
         ok(v) -> {
             v == 'dump' -> yes = true
+
             ->
         }
+
         ->
     }
 }

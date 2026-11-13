@@ -6,6 +6,7 @@
 ; 設計文檔：docs/design/nolang-selfhost.md
 
 # /compiler/src/drv.dispatch
+
 ; ⚠️ 直接（未使用）導入所有子模組：見 docs/design/nolang-selfhost.md §2.2.8。
 ;   模組的頂層綁定（常量 / 全局）**只有在入口檔直接 import 它時才會被生成**；
 ;   只被間接依賴（main → drv → ps → asp/ast/lx）時，從子模組內讀到的跨模組常量

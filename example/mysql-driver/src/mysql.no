@@ -81,6 +81,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         read-n = net.net-recv(fd, tmp, remaining)
         {
             read-n <= 0 -> {
+
                 ; 中途失敗：回傳已收到的部分（對齊原本 with-cap 逐寫增長的語義）
                 data = data-b.slice(0, total).to-bytes-str()
                 return
@@ -1037,6 +1038,7 @@ open = (dsn str) (d db-mysql) {
 
     ; 發送握手回應（把 []byte 緩衝按實際寫入量 wpos 轉成 str）
     resp = resp-b.slice(0, wpos).to-bytes-str()
+
     #{overflow=wrap}
     send-ok = mysql-pkt-send(fd, hs-seq + 1, resp, wpos)
     {

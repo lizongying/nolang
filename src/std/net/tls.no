@@ -46,7 +46,7 @@ TLS-CT-APP-DATA = 23
 ; 一定超時，表現為 read-change-cipher-spec / read-finished 回 false。
 ; 20000 = 10 秒留足餘量；只有對端真的死掉時才會多等這段時間。
 ; 迴歸：test/std/tls.no 的 'handshake fork 1.2'。
-RECV-WAIT-TRIES i64 = 20000
+RECV-WAIT-TRIES = 20000
 
 ; Handshake message types
 ; [TLS-HS-CLIENT-HELLO](#tls.tls-hs-client-hello)
@@ -401,7 +401,6 @@ bn-to-bytes = (num []i64) (out []byte) {
 
     ; 移除前導零
     (out-n > 1 && out[0] == 0) {
-
         i <- [0..out-n - 1): {
 
             #{overflow=wrap}
@@ -578,7 +577,6 @@ net-recv-wait = (fd fd, buf str, n i64) (r i64) {
     tries = 0
     done = false
     (done == false) {
-
         {
 
             #{overflow=wrap}
@@ -590,6 +588,7 @@ net-recv-wait = (fd fd, buf str, n i64) (r i64) {
             }
         }
         tries > RECV-WAIT-TRIES -> {
+
             ; ⚠️ 這裡**不能** print 任何東西：std 往 stdout 寫會污染使用者程式的輸出
             ; （原先是 `print('RECVWAIT giveup tries=')` + `print(tries)` 的除錯殘留，
             ; 任何 TLS 讀取逾時都會在用戶輸出裡插一行，2026-11-11 移除）。
@@ -819,7 +818,6 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
         #{overflow=wrap}
         hs-wr-idx = .hs-buf-len + i
         {
-
             .hs-buf[hs-wr-idx] ?= buf[offset + i]
         }: {
             err -> _
@@ -897,6 +895,7 @@ tls-unpad = (in []byte) (out-n i64) {
 
     ; 驗證被移除的每個位元組都等於 pad-val
     i <- [0..strip): {
+
         #{overflow=wrap}
         ixout745c10 = in[in.len() - 1 - i]: {
             ok -> it
@@ -1550,6 +1549,7 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
             ; 建立新緩衝區, 左側補零
             out = with-len(mod-n)
+
             #{overflow=wrap}
             shift = mod-n - raw.len()
             i <- [0..shift): {
@@ -1572,6 +1572,7 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
             ; 結果比模數長（不應發生）, 截斷
             out = with-len(mod-n)
+
             #{overflow=wrap}
             off = raw.len() - mod-n
             i <- [0..mod-n): {
@@ -2412,7 +2413,6 @@ conn.read-server-hello = () (ok bool) {
     ; random (32 bytes)
     i <- [0..32): {
         {
-
             .server-random[i] ?= buf[pos + i]
         }: {
             err -> _
@@ -2617,7 +2617,6 @@ conn.read-server-key-exchange = () (ok bool) {
         ixout1953c9 != 4 -> return
         i <- [0..65): {
             {
-
                 .peer-p256[i] ?= buf[pos + 4 + i]
             }: {
                 err -> _
@@ -2631,7 +2630,6 @@ conn.read-server-key-exchange = () (ok bool) {
     plen == 32 -> {
         i <- [0..32): {
             {
-
                 .server-pub[i] ?= buf[pos + 4 + i]
             }: {
                 err -> _
@@ -2656,7 +2654,6 @@ conn.read-server-key-exchange = () (ok bool) {
         ixout1976c9 != 4 -> return
         i <- [0..32): {
             {
-
                 .server-pub[i] ?= buf[pos + 5 + i]
             }: {
                 err -> _
@@ -3066,7 +3063,6 @@ conn.derive-keys = (premaster []byte) {
         }
         i <- [0..16): {
             {
-
                 .server-enc-key[i] ?= key-block[16 + i]
             }: {
                 err -> _
@@ -3076,7 +3072,6 @@ conn.derive-keys = (premaster []byte) {
         }
         i <- [0..4): {
             {
-
                 .client-gcm-salt[i] ?= key-block[32 + i]
             }: {
                 err -> _
@@ -3086,7 +3081,6 @@ conn.derive-keys = (premaster []byte) {
         }
         i <- [0..4): {
             {
-
                 .server-gcm-salt[i] ?= key-block[36 + i]
             }: {
                 err -> _
@@ -3119,7 +3113,6 @@ conn.derive-keys = (premaster []byte) {
     ; server_write_MAC_key (32)
     i <- [0..32): {
         {
-
             .server-mac-key[i] ?= key-block[32 + i]
         }: {
             err -> _
@@ -3131,7 +3124,6 @@ conn.derive-keys = (premaster []byte) {
     ; client_write key (16)
     i <- [0..16): {
         {
-
             .client-enc-key[i] ?= key-block[64 + i]
         }: {
             err -> _
@@ -3143,7 +3135,6 @@ conn.derive-keys = (premaster []byte) {
     ; server_write key (16)
     i <- [0..16): {
         {
-
             .server-enc-key[i] ?= key-block[80 + i]
         }: {
             err -> _
@@ -4158,7 +4149,6 @@ conn.read-server-hello-13 = () (ok bool) {
     ; random (32 bytes)
     i <- [0..32): {
         {
-
             .server-random[i] ?= buf[pos + i]
         }: {
             err -> _
@@ -4294,12 +4284,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
                 ; key_share: 2 bytes group + 2 bytes key length + key
                 ks-group = get-u16(buf, pos)
+
                 #{overflow=wrap}
                 ks-len i64 = get-u16(buf, pos + 2)
                 ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
                     i <- [0..32): {
                         {
-
                             .server-pub[i] ?= buf[pos + 4 + i]
                         }: {
                             err -> _
@@ -4904,6 +4894,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
+
         #{overflow=wrap}
         .hs-read-seq = .hs-read-seq + 1: {
             ok -> it
@@ -5178,6 +5169,7 @@ conn.connect = (host str, port i64) (ok bool) {
     ; 1. TCP 連線（使用 dns-dial 支援 hostname 解析）
     tcpfd = dns.dial(host, port)
     tcpfd < 0 -> return
+
     ; ⚠️ 2026-11-12 修：此處原本寫成 `tcpfd: { ok -> .fd = it  -> _ }`。
     ; dns.dial 回的是**普通 `fd`**（非 `?fd`），普通值不會匹配 `ok` 臂
     ; （實測 `f: { ok -> … }` 對 fd 恆走 `->` 臂），所以 `.fd` 一直是 -1，
@@ -5238,6 +5230,7 @@ conn.connect-12 = (host str, port i64) (ok bool) {
     ; 1. TCP 連線
     tcpfd = dns.dial(host, port)
     tcpfd < 0 -> return
+
     ; 同 conn.connect：dns.dial 回普通 fd，不能用 `ok` 臂接（否則 .fd = -1）
     .fd = tcpfd
     .connected = true
@@ -5554,7 +5547,6 @@ server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
         #{overflow=wrap}
         hs-wr-idx = .hs-buf-len + i
         {
-
             .hs-buf[hs-wr-idx] ?= buf[offset + i]
         }: {
             err -> _
@@ -5595,7 +5587,6 @@ server-conn.read-client-hello = () (ok bool) {
     ; client random (32 bytes)
     i <- [0..32): {
         {
-
             .client-random[i] ?= buf[pos + i]
         }: {
             err -> _
@@ -5653,7 +5644,6 @@ server-conn.read-client-hello = () (ok bool) {
     found-13 = false
     j = 0
     (j < cs-len) {
-
         j < cs-len -> {
 
             #{overflow=wrap}
@@ -5726,6 +5716,7 @@ server-conn.read-client-hello = () (ok bool) {
                 ->
             }
         }
+
         #{overflow=wrap}
         ext-end = pos + ext-total: {
             ok -> it
@@ -5736,6 +5727,7 @@ server-conn.read-client-hello = () (ok bool) {
 
             #{overflow=wrap}
             pos + 4 <= ext-end -> {
+
                 ; 擴展型別（2 bytes）——2026-11-12 修：此處原本漏了賦值。
                 ; 未定義識別符在**運算式**位置會被檢查器靜默降級成 undef
                 ; （不報 4bek3xc6，只在 LLVM 端出現 `add void undef`），
@@ -5743,6 +5735,7 @@ server-conn.read-client-hello = () (ok bool) {
                 ; supported_versions / key_share，is-tls13 恆為 false，
                 ; 之後的 1.3 記錄必然解密失敗。迴歸 test/std/tls.no。
                 ext-type = get-u16(buf, pos)
+
                 #{overflow=wrap}
                 edl-pos = pos + 2: {
                     ok -> it
@@ -5773,6 +5766,7 @@ server-conn.read-client-hello = () (ok bool) {
 
                         -> _
                     }
+
                     #{overflow=wrap}
                     sv-pos = pos + 1: {
                         ok -> it
@@ -5808,14 +5802,17 @@ server-conn.read-client-hello = () (ok bool) {
                 ; key_share (51)
                 ext-type == TLS-EXT-KEY-SHARE -> {
                     ks-list-len = get-u16(buf, pos)
+
                     #{overflow=wrap}
                     ks-pos = pos + 2: {
                         ok -> it
 
                         -> 0
                     }
+
                     ; group（2 bytes）——同樣漏了賦值，與上面的 ext-type 同源
                     ks-group = get-u16(buf, ks-pos)
+
                     #{overflow=wrap}
                     ks-end = ks-pos + ks-list-len: {
                         ok -> it
@@ -5826,6 +5823,7 @@ server-conn.read-client-hello = () (ok bool) {
 
                         #{overflow=wrap}
                         ks-pos + 4 <= ks-end -> {
+
                             #{overflow=wrap}
                             kkl-pos = ks-pos + 2: {
                                 ok -> it
@@ -5836,7 +5834,6 @@ server-conn.read-client-hello = () (ok bool) {
                             ks-group == TLS-GROUP-X25519 && ks-key-len == 32 -> {
                                 i <- [0..32): {
                                     {
-
                                         .client-pub[i] ?= buf[ks-pos + 4 + i]
                                     }: {
                                         err -> _
@@ -5857,6 +5854,7 @@ server-conn.read-client-hello = () (ok bool) {
                     }
                 }
                 {
+
                     #{overflow=wrap}
                     pos-opt111 = pos + ext-data-len
                     pos-opt111: {
@@ -6135,6 +6133,7 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
 
         raw.len() < mod-len -> {
             m-bytes = with-len(mod-len)
+
             #{overflow=wrap}
             shift = mod-len - raw.len()
             i <- [0..shift): {
@@ -6159,6 +6158,7 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
 
         raw.len() > mod-len -> {
             m-bytes = with-len(mod-len)
+
             #{overflow=wrap}
             off = raw.len() - mod-len
             i <- [0..mod-len): {
@@ -6199,7 +6199,6 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     sep-pos = 2
     found-sep = false
     (sep-pos < mod-len && found-sep == false) {
-
         sep-pos < mod-len -> {
             ixout5094c20 = m-bytes[sep-pos]: {
                 ok -> it
@@ -6385,7 +6384,6 @@ server-conn.derive-keys = (premaster []byte) {
     ; server_write_MAC_key (32)
     i <- [0..32): {
         {
-
             .server-mac-key[i] ?= key-block[32 + i]
         }: {
             err -> _
@@ -6397,7 +6395,6 @@ server-conn.derive-keys = (premaster []byte) {
     ; client_write key (16)
     i <- [0..16): {
         {
-
             .client-enc-key[i] ?= key-block[64 + i]
         }: {
             err -> _
@@ -6409,7 +6406,6 @@ server-conn.derive-keys = (premaster []byte) {
     ; server_write key (16)
     i <- [0..16): {
         {
-
             .server-enc-key[i] ?= key-block[80 + i]
         }: {
             err -> _
@@ -7788,6 +7784,7 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-client-key, .hs-client-iv, .hs-read-seq)
+
         #{overflow=wrap}
         .hs-read-seq = .hs-read-seq + 1: {
             ok -> it

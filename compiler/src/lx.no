@@ -55,6 +55,7 @@
 ;    漏掉的話：`typ = tok.IDENT` 會靜默得到 0（= ILLEGAL），而
 ;    `p == tok.X ->` 這種「常數當運算元」的寫法會**硬編譯失敗**（NoVal）。
 ;    最小重現與完整判準：docs/design/nolang-selfhost.md §2.2.8 / §8 P0-⑤。
+
 # /compiler/src/tok
 # /compiler/src/util/sb.sb
 

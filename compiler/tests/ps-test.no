@@ -29,6 +29,7 @@
 ;    （MIR 降成 const void + eq NoVal ⇒ bug #85 類 EmitLLVM 失敗）；補上直接
 ;    導入後即恢復。这是 oracle 端的跨模組常量解析範圍缺陷（先於本檔存在），
 ;    此處以導入清單繞開，缺陷本身待獨立立项。
+
 # /test/runner.eq
 # /test/runner.is-true
 # /test/runner.failed-count

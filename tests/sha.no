@@ -1,3 +1,5 @@
+# std/crypto/sha3
+
 ; merged category 'sha' -- members: ok-shadow.no, sha256-block-abc.no, sha256.no, sha3.no
 ; (originals backed up under tests/_archive/sha/)
 ; merged from tests/ok-shadow.no
@@ -74,8 +76,6 @@ print('done')
 ; 執行：./bin/no run tests/sha3.no
 ; 通過時每一行皆為 PASS。
 ...
-
-# std/crypto/sha3
 
 ; 比對 got 與 want，輸出 PASS 或 FAIL
 ; label str: 這項比對的名稱（如演算法 + 輸入長度），輸出時原樣印出

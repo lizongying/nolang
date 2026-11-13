@@ -53,6 +53,7 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ; XOR 當前區塊與 prev
         xored [16]byte
         i <- [0..16): {
+
             #{overflow=wrap}
             ixout52c29 = in[blk + i]: {
                 ok -> it
@@ -302,6 +303,7 @@ pkcs7-unpad = (in []byte) (out-n i64) {
 
     ; 驗證填充
     i <- [0..pad-len): {
+
         #{overflow=wrap}
         ixout263c12 = in[in.len() - 1 - i]: {
             ok -> it

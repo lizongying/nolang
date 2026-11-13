@@ -102,6 +102,7 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
     {
         .code < bound -> {
             .range = bound
+
             #{overflow=wrap}
             new-prob = prob + ((0x800 - prob) >> 5)
             bit = 0
@@ -115,12 +116,14 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
 
                 ->
             }
+
             #{overflow=wrap}
             .code = .code - bound: {
                 ok -> it
 
                 ->
             }
+
             #{overflow=wrap}
             new-prob = prob - (prob >> 5)
             bit = 1
@@ -494,6 +497,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
         }
         sym = .rd.decode-bit-tree(sub-probs, 3)
         {
+
             #{overflow=wrap}
             length-opt = sym + 8
             length-opt: {
@@ -587,6 +591,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
         }
         sym = .rd.decode-reverse-bit-tree(sub-probs, num-direct-bits)
         {
+
             #{overflow=wrap}
             dist-opt = base + sym
             dist-opt: {
@@ -1265,6 +1270,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
                 res.push(ixout891c26)
             }
+
             #{overflow=wrap}
             pos = pos + size
         }
@@ -1307,6 +1313,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
                 res.push(ixout907c26)
             }
+
             #{overflow=wrap}
             pos = pos + size
         }

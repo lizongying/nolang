@@ -1056,6 +1056,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
             }
 
             w = ((ixout990c19) << 8) | (ixout990c37)
+
             #{overflow=wrap}
             checksum = checksum + w
 
@@ -1088,6 +1089,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 
         #{overflow=wrap}
         checksum = checksum + ((ixout1006c33) << 8)
+
         #{overflow=wrap}
         checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
     }
@@ -1581,7 +1583,6 @@ split-ws = (s str) (out []str) {
                 c = s[i]
                 {
                     c == 32 || c == 9 -> {
-
                         {
 
                             #{overflow=wrap}

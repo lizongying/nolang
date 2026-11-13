@@ -22,7 +22,7 @@ box {
 }
 
 ; 把 4096 位元組的 vec 標頭留在棧上：出參槽若不清零，就會接手這份垃圾
-dirty = (n i64) () {
+dirty = (n i64) {
     tmp []byte = with-cap(n)
     i <- [0..n): {
         tmp.push(65)
@@ -53,7 +53,7 @@ fill-bytes = (n i64) (out []byte) {
 untouched = () (b box) {
 }
 
-n i64 = 1000
+n = 1000
 
 dirty(4096)
 

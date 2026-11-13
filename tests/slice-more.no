@@ -50,7 +50,11 @@ print(soi-w[0], soi-w[1], soi-w[2], soi-w[3])
 print(soi-v[1..4].len())
 
 ; from slice-to-str.no — slice / array 的預設 to-str
-sts-s = ['a', 'b', 'c']
+sts-s = [
+    'a',
+    'b',
+    'c',
+]
 print(sts-s); expect: [a, b, c]
 
 sts-e []i64 = []

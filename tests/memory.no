@@ -1,3 +1,5 @@
+# std/heap
+
 ; merged category 'memory' -- 2 source files
 ; sources: heap.no, malloc.no
 ; originals recoverable from git HEAD (ed7b5236)
@@ -13,8 +15,6 @@
 ; 覆蓋：heap.init / push / pop / peek / size / empty
 ;       並以 i64 與 f64 兩種元素型別驗證泛型單態化推斷。
 ...
-
-# std/heap
 
 ; 純函數，印出結果並回傳布林值（不可在函式內改動全域變數）
 ; cond bool: 這項斷言的結果，決定印 'ok:' 還是 'FAIL:'

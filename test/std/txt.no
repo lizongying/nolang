@@ -269,10 +269,12 @@ t-push = () {
     t.push-txt(u)
     runner.eq(t.len(), 7, 'push-txt len == 7')
     runner.str-eq(t.to-str(), 'abcdeFG', 7, 'push-txt value')
+
     ; 多字節碼點：len-bytes 增 3（UTF-8），len（碼點數）增 1
     t.push("中")
     runner.eq(t.len-bytes(), 10, 'push 多字節 len-bytes == 10')
     runner.eq(t.len(), 8, 'push 多字節 len == 8')
+
     ; all-or-nothing：255 上限處放不下一個 3 位元組碼點就整條忽略
     full txt = ''
     k <- [0..254): {

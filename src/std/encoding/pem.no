@@ -224,6 +224,7 @@ pem.decode = (pem-str str) (result ?block) {
     ; 跳過換行符
     b64-start < n -> {
         pem-str[b64-start] == 10 -> {
+
             #{overflow=wrap}
             b64-start = b64-start + 1
         }

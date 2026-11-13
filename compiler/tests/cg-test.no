@@ -103,6 +103,7 @@ test-alu = () {
     syms.push('')
     ptyps []i64 = []
     vty []i64 = []
+
     ; 15 個 TY-I64 值槽：用語言原生計數循環，避免 `j = j + 1` 的 `?i64 → i64`（15w45dqk）
     15 * {
         vty.push(TY-I64)
@@ -215,6 +216,7 @@ test-alu-unsigned = () {
     ptyps []i64 = []
     ptyps.push(TY-U64)
     vty []i64 = []
+
     ; 同上：10 個 TY-U64 值槽
     10 * {
         vty.push(TY-U64)
@@ -1136,6 +1138,7 @@ test-struct-nested = () {
     cty.push(TY-I64)
     cty.push(TY-I64)
     blks []i64 = []
+
     ; 每條指令一個基本塊（zq 為一次性迭代變數，避免 `?i64 → i64`）
     n = ops.len()
     zq <- [0..n): {
@@ -1307,6 +1310,7 @@ test-call-scatter = () {
     xa.push(10)
     bs.push(0)
     syms.push('')
+
     ; ⚠️ `[] .with-len(n)` 只保留容量不設長度 ⇒ 按下標讀到未初始化記憶體（s99o 修）
     vty = cg-zeros(11)
     cty = cg-zeros(2)
@@ -1342,6 +1346,7 @@ test-call-scatter = () {
     bs2.push(0)
     syms2.push('')
     vty2 []i64 = []
+
     ; 同上：7 個 TY-I64 值槽
     7 * {
         vty2.push(TY-I64)
@@ -1669,7 +1674,7 @@ test-string = () {
     bs.push(0)
     syms.push('')
     s = cg-emit-cfg('slen', 0, blks, ops, dsts, xa, bs, syms, [])
-    runner.eq(s.contains('@.s.slen.0 = private unnamed_addr constant [4 x i8] c"abc\\00"'), 1, 'global literal')
+    runner.eq(s.contains('@.s.slen.0 = private unnamed_addr constant [4 x i8] [i8 97, i8 98, i8 99, i8 0]'), 1, 'global literal')
     runner.eq(s.contains('getelementptr inbounds [4 x i8]'), 1, 'gep')
     runner.eq(s.contains('%q0 = insertvalue %str-long undef, i32 3, 0'), 1, 'len field')
     runner.eq(s.contains('%r0 = insertvalue %str-long %q0, i32 3, 1'), 1, 'cap field')
@@ -1728,8 +1733,8 @@ test-strcat = () {
     bs.push(0)
     syms.push('')
     s = cg-emit-cfg('cat', 0, blks, ops, dsts, xa, bs, syms, [])
-    runner.eq(s.contains('@.s.cat.0 = private unnamed_addr constant [3 x i8] c"ab\\00"'), 1, 'left literal')
-    runner.eq(s.contains('@.s.cat.1 = private unnamed_addr constant [3 x i8] c"cd\\00"'), 1, 'right literal')
+    runner.eq(s.contains('@.s.cat.0 = private unnamed_addr constant [3 x i8] [i8 97, i8 98, i8 0]'), 1, 'left literal')
+    runner.eq(s.contains('@.s.cat.1 = private unnamed_addr constant [3 x i8] [i8 99, i8 100, i8 0]'), 1, 'right literal')
     runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'strcat call')
     runner.eq(s.contains('%v4 = zext i32 %slr3 to i64'), 1, 'len of result')
     runner.eq(s.contains('ret i64 %v4'), 1, 'ret v4')
@@ -4101,6 +4106,7 @@ test-struct-mk-noncontig = () {
     cty.push(TY-STRUCT-BASE); k7 st8
     cty.push(TY-STRUCT-BASE); k8 ret
     blks []i64 = []
+
     ; 每條指令一個基本塊（zq 為一次性迭代變數，避免 `?i64 → i64`）
     n = ops.len()
     zq <- [0..n): {

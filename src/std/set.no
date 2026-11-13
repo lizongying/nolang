@@ -80,6 +80,7 @@ set.add = (val t) (new-size i64) {
 
     {
         .data[sz] ?= val
+
         #{overflow=wrap}
         .size = sz + 1
     }: {
@@ -180,6 +181,7 @@ set.union = (other []t, osize i64) (new-size i64) {
             .size < .cap -> {
                 {
                     .data[.size] ?= ov
+
                     #{overflow=wrap}
                     .size = .size + 1
                 }: {

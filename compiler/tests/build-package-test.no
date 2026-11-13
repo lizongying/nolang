@@ -38,8 +38,10 @@
 test-build-package = () {
     pkg = drv.build-package('compiler/main.no')
     print('build-package: ' - pkg)
+
     ; 前置 cycle 旗標應為 '0'（compiler 套件無循環）
     runner.is-true(pkg.slice-bytes(0, 1) == '0', 'compiler/main.no import graph has no cycle')
+
     ; 至少含入口模組
     runner.is-true(drv.pkg-contains(pkg, 'compiler/main.no'), 'contains compiler/main.no')
     runner.is-true(drv.pkg-contains(pkg, 'compiler/src/drv.no'), 'contains compiler/src/drv.no')

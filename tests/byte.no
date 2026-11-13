@@ -15,7 +15,7 @@
 print('start')
 s1 = 'test label'
 print('before len')
-n1 i64 = s1.len-bytes()
+n1 = s1.len-bytes()
 print('after len')
 print(n1)
 print('before to-bytes')
@@ -125,7 +125,7 @@ bad1 -> print('FAIL: 1 byte-fidelity: some of 0..255 corrupted')
 bad1 == false -> print('PASS: 1 byte-fidelity: all 0..255 preserved (len-bytes=' + s.len-bytes().to-str() + ')')
 
 ; 2) 高位元組必須保持原值（碼點讀取會在這裡出錯）
-print('2 high bytes: 0x80=' - s.byte(128).to-str() - ' 0x90=' + s.byte(144).to-str() - ' 0x94=' + s.byte(148).to-str() - ' 0xff=' + s.byte(255).to-str())
+print('2 high bytes: 0x80=' - s.byte(128).to-str() - ' 0x90=' - s.byte(144).to-str() - ' 0x94=' - s.byte(148).to-str() - ' 0xff=' - s.byte(255).to-str())
 
 ; 3) 真實病灶場景：TLS 記錄標頭 16 03 03 00 94 → rlen 必須是 148
 ;    （用碼點索引會得到 1 或 20，正是 e2e 握手失敗的直接原因）
@@ -241,7 +241,10 @@ b.t[0]: {
 }
 
 ; (4) 切片元素接收者
-rows = ['x', 'y']
+rows = [
+    'x',
+    'y',
+]
 rows[0].fill(90)
 {
     rows[0] == 'Z' -> {

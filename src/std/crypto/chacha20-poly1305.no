@@ -448,6 +448,7 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     hi = bigint.shr(out, 130)
     (! hi.is-zero()) {
         lo bigint.bigint = out._sub(bigint.shl(hi, 130))
+
         #{overflow=wrap}
         out = lo + (hi * 5)
         hi = bigint.shr(out, 130)
@@ -483,6 +484,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             i == 4 || i == 8 || i == 12 -> bvr = bvr & 252
         }
+
         #{overflow=wrap}
         r = r * 256 + bigint.from-i64(bvr)
     }
@@ -498,6 +500,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
             -> _
         }
+
         #{overflow=wrap}
         s = s * 256 + bigint.from-i64(bvs)
     }
@@ -524,6 +527,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
                 -> 0
             }
+
             #{overflow=wrap}
             c = c * 256 + bigint.from-i64(bvk)
         }
@@ -608,12 +612,15 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     ; 為「界內才寫」的 option 語義，空 vec 會靜默略過所有寫入，令 mac-input 恆為空、
     ; poly1305 對 0 位元組運算而得到全零 tag。
     mac-input []byte
+
     #{overflow=wrap}
     pad-aad i64 = 16 - (aad.len() % 16)
     pad-aad == 16 -> pad-aad = 0
+
     #{overflow=wrap}
     pad-cipher i64 = 16 - (cipher.len() % 16)
     pad-cipher == 16 -> pad-cipher = 0
+
     #{overflow=wrap}
     mac-input = with-len(aad.len() + pad-aad + cipher.len() + pad-cipher + 16)
     pos = 0
@@ -913,12 +920,15 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     ; 同 seal：先 with-len 填出 mac-input 總長度，否則 `mac-input[k]: { ok -> it = … }`
     ; 對空 vec 靜默略過，mac-input 恆空。
     mac-input []byte
+
     #{overflow=wrap}
     pad-aad i64 = 16 - (aad.len() % 16)
     pad-aad == 16 -> pad-aad = 0
+
     #{overflow=wrap}
     pad-cipher i64 = 16 - (cipher.len() % 16)
     pad-cipher == 16 -> pad-cipher = 0
+
     #{overflow=wrap}
     mac-input = with-len(aad.len() + pad-aad + cipher.len() + pad-cipher + 16)
     pos = 0

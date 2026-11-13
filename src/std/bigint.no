@@ -415,12 +415,16 @@ bigint.mul-bigint = (b bigint) (c bigint) {
                 -> 0
             }
             bv u64 = (bv0 & MASK)
+
             #{overflow=wrap}
             p u64 = av * bv
+
             #{overflow=wrap}
             p = p + (c.limbs[i + j] & MASK)
+
             #{overflow=wrap}
             p = p + carry
+
             #{overflow=wrap}
             c.limbs[i + j] = (p & 4294967295)
             carry = p >> 32
@@ -646,6 +650,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
         ac == 0 -> {
             q = one()
+
             #{overflow=wrap}
             q.sign = .sign * b.sign: {
                 ok -> it
@@ -676,6 +681,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             -> _
         }
         r.len = 1
+
         #{overflow=wrap}
         q.sign = .sign * b.sign: {
             ok -> it
@@ -784,6 +790,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         an2 u64 = (norm-a.limbs[qi + bl - 2] & MASK)
 
         BASE u64 = 4294967296
+
         #{overflow=wrap}
         ixout662c27 = norm-b[bl - 1]: {
             ok -> it
@@ -793,6 +800,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
         bt-u u64 = (ixout662c27 & MASK)
         bt1 u64 = 0
+
         #{overflow=wrap}
         ixout664c33 = norm-b[bl - 2]: {
             ok -> it
@@ -808,6 +816,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
         ; 極端情形 qhat 可能 == BASE，壓回 BASE-1
         qhat >> 32 > 0 -> {
+
             #{overflow=wrap}
             qhat = BASE - 1
         }
@@ -818,8 +827,10 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         ; 但該情形下不等式必為假（c1 < BASE^2 ≤ c1 真值），跳過判定即可，不進位減。
         #{overflow=wrap}
         rhat u64 = (an * BASE + an1) - qhat * bt-u
+
         #{overflow=wrap}
         c1 u64 = qhat * bt1
+
         #{overflow=wrap}
         c2 u64 = rhat * BASE + an2
         dec = 0
@@ -834,12 +845,16 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             }
         }
         dec == 1 -> {
+
             #{overflow=wrap}
             qhat = qhat - 1
+
             #{overflow=wrap}
             rhat = rhat + bt-u
+
             #{overflow=wrap}
             c1 = qhat * bt1
+
             #{overflow=wrap}
             c2 = rhat * BASE + an2
             dec = 0
@@ -854,8 +869,10 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
                 }
             }
             dec == 1 -> {
+
                 #{overflow=wrap}
                 qhat = qhat - 1
+
                 #{overflow=wrap}
                 rhat = rhat + bt-u
             }
@@ -872,22 +889,27 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
             #{overflow=wrap}
             p u64 = qhat * (ixout717c35 & MASK)
+
             #{overflow=wrap}
             p = p + borrow
             pl = p & 4294967295
             limb u64 = (norm-a.limbs[qi + bj] & MASK)
             {
                 (limb >= pl) -> {
+
                     #{overflow=wrap}
                     norm-a.limbs[qi + bj] = (limb - pl)
                     borrow = p >> 32
                 }
 
                 -> {
+
                     #{overflow=wrap}
                     sub-limb u64 = limb + BASE - pl
+
                     #{overflow=wrap}
                     norm-a.limbs[qi + bj] = (sub-limb & 4294967295)
+
                     #{overflow=wrap}
                     borrow = (p >> 32) + 1
                 }
@@ -898,6 +920,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         top u64 = (norm-a.limbs[qi + bl] & MASK)
         {
             (top >= borrow) -> {
+
                 #{overflow=wrap}
                 norm-a.limbs[qi + bl] = (top - borrow)
                 q.limbs[qi]: {
@@ -908,10 +931,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             }
 
             -> {
+
                 #{overflow=wrap}
                 sub-top u64 = top + BASE - borrow
+
                 #{overflow=wrap}
                 norm-a.limbs[qi + bl] = (sub-top & 4294967295)
+
                 #{overflow=wrap}
                 qhat = qhat - 1
                 carry2 u64 = 0
@@ -924,11 +950,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
                     #{overflow=wrap}
                     s u64 = (norm-a.limbs[qi + bj2] & MASK) + (ixout749c70 & MASK) + carry2
+
                     #{overflow=wrap}
                     norm-a.limbs[qi + bj2] = (s & 4294967295)
                     carry2 = s >> 32
                 }
                 carry2-i i64 = carry2
+
                 #{overflow=wrap}
                 norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry2-i
                 q.limbs[qi]: {
@@ -965,6 +993,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
     ; 餘數取自正規化後的 norm-a，必須右移 shift 還原（原本直接複製，導致 r 可能 >= b）
     rc = 0
+
     #{overflow=wrap}
     ri = b.len - 1
     (ri >= 0) {

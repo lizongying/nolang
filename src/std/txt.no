@@ -303,7 +303,7 @@ txt.ends-with = (sub txt) (yes bool) {
 ; c: 追加的碼點
 ; [push](#txt.push)
 txt.push = (c char) {
-    e txt = c.to-txt()
+    e = c.to-txt()
     en i64 = e.len-bytes()
     n i64 = .len-bytes()
 
@@ -338,7 +338,7 @@ txt.push = (c char) {
 ; s: 追加的 str（超出 255 上限則截斷追加）
 ; [push-str](#txt.push-str)
 txt.push-str = (s str) {
-    sn i64 = s.len-bytes()
+    sn = s.len-bytes()
     n i64 = .len-bytes()
 
     ; D1：`-` 的結果恆為 `?i64`，remain 當普通整數用 → 兩段式 match 解包。
@@ -966,7 +966,6 @@ txt.rindex = (target txt) (pos i64) {
     #{overflow=wrap}
     limit = n - m
     i <- [0..n]: {
-
         i <= limit -> {
             ok = 1
             k = 0
@@ -975,6 +974,7 @@ txt.rindex = (target txt) (pos i64) {
                 #{overflow=wrap}
                 c = .byte(i + k) - target.byte(k)
                 c != 0 -> ok = 0
+
                 #{overflow=wrap}
                 k == m - 1 -> ok == 1 -> pos = i
                 {
@@ -1572,7 +1572,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
         {
             match -> {
                 k <- [0..new-len): {
-
                     pos < cap -> {
                         val._set-byte(pos, new.byte(k))
                         {
@@ -1591,7 +1590,6 @@ txt.replace-str = (old txt, new txt) (val txt) {
             }
 
             -> {
-
                 pos < cap -> {
                     val._set-byte(pos, .byte(i))
                     {
@@ -1648,7 +1646,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
     repl > n -> repl = n
     total = 0
     i <- [0..np): {
-
         i > 0 -> {
 
             ; ⚠️ 原本寫成 `i <= repl -> total = total + new.len() -> total = total + old.len()`。
@@ -1680,7 +1677,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
     cap = 255
     pos = 0
     i <- [0..np): {
-
         i > 0 -> {
             sep = new
             i > repl -> sep = old
@@ -1708,7 +1704,6 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             }
         }
         j <- [0..s.len-bytes()): {
-
             pos < cap -> {
                 val._set-byte(pos, s.byte(j))
                 {
@@ -1935,7 +1930,6 @@ txt-hex-val = (c i64) (v i64) {
     v = -1
     {
         c >= 48 && c <= 57 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1950,7 +1944,6 @@ txt-hex-val = (c i64) (v i64) {
         }
 
         c >= 65 && c <= 70 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1965,7 +1958,6 @@ txt-hex-val = (c i64) (v i64) {
         }
 
         c >= 97 && c <= 102 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2028,7 +2020,6 @@ _txt-dig-val = (c i64) (d i64) {
     d = -1
     {
         c >= 48 && c <= 57 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2043,7 +2034,6 @@ _txt-dig-val = (c i64) (d i64) {
         }
 
         c >= 65 && c <= 70 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2058,7 +2048,6 @@ _txt-dig-val = (c i64) (d i64) {
         }
 
         c >= 97 && c <= 102 -> {
-
             {
 
                 #{overflow=wrap}

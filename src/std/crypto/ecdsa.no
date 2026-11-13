@@ -170,7 +170,6 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
 
         {
             val < 0 -> {
-
                 {
 
                     #{overflow=wrap}
@@ -412,6 +411,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         ; hi = work[pos+32]（越界視為 0）
         hi = 0
         (pos + 32 < 64) -> {
+
             #{overflow=wrap}
             hi = work[pos + 32]: {
                 ok -> it
@@ -479,7 +479,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
                     {
                         val < 0 -> {
-
                             {
 
                                 #{overflow=wrap}
@@ -509,6 +508,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         (corr < 4) {
             chi = 0
             (pos + 32 < 64) -> {
+
                 #{overflow=wrap}
                 chi = work[pos + 32]: {
                     ok -> it
@@ -523,6 +523,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             (chi == 0) -> {
                 ge = 1
                 j <- [31..0]: {
+
                     #{overflow=wrap}
                     wj = work[pos + j]: {
                         ok -> it
@@ -568,7 +569,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     val = wv - (ixout495c34) - borrow
                     {
                         val < 0 -> {
-
                             {
 
                                 #{overflow=wrap}
@@ -618,7 +618,6 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         }
                         {
                             val < 0 -> {
-
                                 {
 
                                     #{overflow=wrap}
@@ -734,7 +733,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; （迴圈條件 > 0 + 頂部先 -1，故實際會處理到 shift-byte=0）
     shift-byte = 33
     (shift-byte > 0) {
-
         {
 
             #{overflow=wrap}
@@ -753,6 +751,7 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         can-sub = 1
         hi = 0
         (shift-byte + 32 < 64) -> {
+
             #{overflow=wrap}
             hi = acc[shift-byte + 32]: {
                 ok -> it
@@ -765,6 +764,7 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             #{overflow=wrap}
             shift-byte + i < 64 -> {
+
                 #{overflow=wrap}
                 wi = acc[shift-byte + i]: {
                     ok -> it
@@ -813,7 +813,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         val = av - (ixout661c38) - borrow
                         {
                             val < 0 -> {
-
                                 {
 
                                     #{overflow=wrap}
@@ -857,7 +856,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             }
                             {
                                 val < 0 -> {
-
                                     {
 
                                         #{overflow=wrap}
@@ -883,7 +881,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
                 }
             }
-
 
             ; 傳播最後的借位到上位元組（強制減時窗口可能 < m 而產生借位）
             (borrow != 0) {
@@ -914,7 +911,6 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
                     {
                         val < 0 -> {
-
                             {
 
                                 #{overflow=wrap}
@@ -1084,6 +1080,7 @@ ec-point-double = (p []byte) (r []byte) {
     ; 如果 Y == 0，返回無窮遠點
     is-zero = 1
     i <- [0..32): {
+
         #{overflow=wrap}
         ixout858c10 = p[32 + i]: {
             ok -> it

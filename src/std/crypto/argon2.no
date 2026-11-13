@@ -1416,7 +1416,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     pass <- [1..time-cost): {
         curr-idx = 0
         (curr-idx < blocks-per-lane) {
-
             {
 
                 #{overflow=wrap}

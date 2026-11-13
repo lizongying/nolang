@@ -548,6 +548,7 @@ decompress = (data []byte) (out []byte) {
                                 -> _
                             }
                             {
+
                                 #{overflow=wrap}
                                 n-in-use = n-in-use + 1: {
                                     ok -> it
@@ -578,6 +579,7 @@ decompress = (data []byte) (out []byte) {
                         -> _
                     }
                     {
+
                         #{overflow=wrap}
                         k = k + 1: {
                             ok -> it
@@ -707,7 +709,6 @@ decompress = (data []byte) (out []byte) {
                         bit2 = br.read-bit()
                         {
                             bit2 == 0 -> {
-
                                 {
 
                                     #{overflow=wrap}
@@ -720,7 +721,6 @@ decompress = (data []byte) (out []byte) {
                             }
 
                             bit2 == 1 -> {
-
                                 {
 
                                     #{overflow=wrap}
@@ -822,6 +822,7 @@ decompress = (data []byte) (out []byte) {
                 ; 每多一個符號權重翻倍（bzip2：es += val*N; N *= 2，RUNA=1、RUNB=2）。
                 sym == 0 -> {
                     {
+
                         #{overflow=wrap}
                         run-len = run-len + run-n: {
                             ok -> it
@@ -830,6 +831,7 @@ decompress = (data []byte) (out []byte) {
                         }
                     }
                     {
+
                         #{overflow=wrap}
                         run-n = run-n * 2: {
                             ok -> it
@@ -841,6 +843,7 @@ decompress = (data []byte) (out []byte) {
 
                 sym == 1 -> {
                     {
+
                         #{overflow=wrap}
                         run-len = run-len + 2 * run-n: {
                             ok -> it
@@ -849,6 +852,7 @@ decompress = (data []byte) (out []byte) {
                         }
                     }
                     {
+
                         #{overflow=wrap}
                         run-n = run-n * 2: {
                             ok -> it
@@ -1075,7 +1079,6 @@ decompress = (data []byte) (out []byte) {
             rle-data []i64
             ri = bwt-n
             (ri > 0) {
-
                 {
 
                     #{overflow=wrap}
@@ -1119,6 +1122,7 @@ decompress = (data []byte) (out []byte) {
                 {
                     v == last-b -> {
                         {
+
                             #{overflow=wrap}
                             rep = rep + 1: {
                                 ok -> it

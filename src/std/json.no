@@ -757,6 +757,7 @@ pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                     i ?= i + 1
                 }
                 c == 43 -> i
+
                 #{overflow=wrap}
                 i + 1
             }

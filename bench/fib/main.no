@@ -1,4 +1,5 @@
 ; main.no — 入口文件
+
 # /bench/fib/fab.fib
 
 fib()

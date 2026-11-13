@@ -1,3 +1,5 @@
+# /test/runner
+
 ; merged category 'txt' -- 2 source files
 ; sources: txt-more.no, jp8.no
 ; originals recoverable from git HEAD (ed7b5236)
@@ -66,7 +68,9 @@ ck = (label str, cond bool) {
 oob-is-err = (t txt, i i64) (bad bool) {
     t[i]: {
         ok -> bad = false
+
         nil -> bad = false
+
         err -> bad = true
     }
 }
@@ -150,8 +154,6 @@ print('done')
 
 ; merged from tests/jp8.no
 ...
-
-# /test/runner
 
 t-join = () {
     s txt = 'a-b-c-d'

@@ -384,7 +384,6 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     r = ip & 4294967295
 
     round <- [0..16): {
-
         {
             encrypt == 1 -> sk-off = round * 6
 

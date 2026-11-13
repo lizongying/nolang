@@ -936,6 +936,7 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
         ; X = B[i] XOR X
         j <- [0..64): {
+
             #{overflow=wrap}
             ixout323c29 = b[i * 64 + j]: {
                 ok -> it

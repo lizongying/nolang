@@ -22,12 +22,12 @@ str.via-bare-dot = () (out txt) {
 
 ; 显式 self 当实参
 str.via-explicit-self = () (out txt) {
-    out = txt.from-str(self)
+    out = txt.from-str(.)
 }
 
 ; 对照组：先绑局部变量（修复前唯一可行的写法）
 str.via-local = () (out txt) {
-    s = self
+    s = .
     out = txt.from-str(s)
 }
 

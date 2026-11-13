@@ -173,7 +173,6 @@ markdown.thematic-break = (line str) (yes bool) {
             -> _
         }
         c == 32 || c == 9 -> {
-
             {
 
                 #{overflow=wrap}
@@ -790,7 +789,6 @@ markdown.read-line = (source str, pos i64) (out line) {
         line-v = source.slice-bytes(pos, end-v)
         {
             end-v < n -> {
-
                 {
 
                     #{overflow=wrap}

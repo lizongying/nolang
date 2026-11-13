@@ -1,3 +1,5 @@
+# /test/runner
+
 ; merged category 'txt' -- 2 source files
 ; sources: jp6.no, jp11.no
 ; originals recoverable from git HEAD (ed7b5236)
@@ -9,6 +11,7 @@
     n = parts.len()
     n == 0 -> return
     cap-b = 255
+
     ; 本函數是逐**位元組**拼接（不是碼點），原本靠 `out.set-byte(pos, b)` 直寫。
     ; 該內建已於 2026-11-11 私有化為 `_set-byte`（僅 std 可用）⇒ 改用 []byte
     ; 緩衝承接位元組，收尾用 txt.from-bytes 一次拷入（超過 255 位元組自動截斷，
@@ -51,8 +54,6 @@ print('mine :', parts.myjoin('.').to-str())
 
 ; merged from tests/jp11.no
 ...
-
-# /test/runner
 
 t-join = () {
     s txt = 'a-b-c-d'

@@ -993,6 +993,7 @@ key-expand = (key [16]byte) (ek []byte) {
                 rc = 0
                 rw = rot-word(w)
                 sw = sub-word(rw)
+
                 #{overflow=wrap}
                 rc = rcon-val(i / 4)
                 w-prev = (ek[(i - 4) * 4] << 24) | (ek[(i - 4) * 4 + 1] << 16) | (ek[(i - 4) * 4 + 2] << 8) | ek[(i - 4) * 4 + 3]
@@ -1057,6 +1058,7 @@ key-expand-256 = (key [32]byte) (ek []byte) {
                 rc = 0
                 rw = rot-word(w)
                 sw = sub-word(rw)
+
                 #{overflow=wrap}
                 rc = rcon-val(i / 8)
                 w-prev8 = (ek[(i - 8) * 4] << 24) | (ek[(i - 8) * 4 + 1] << 16) | (ek[(i - 8) * 4 + 2] << 8) | ek[(i - 8) * 4 + 3]

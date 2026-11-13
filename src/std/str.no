@@ -37,7 +37,7 @@ string = str | txt
 ; [len-bytes](#str.len-bytes)
 #{buildin}
 str.len-bytes = () (n i64) {
-   n = .len.to-i64()
+    n = .len.to-i64()
 }
 
 ; 返回字串的「字符（碼點）數量」
@@ -52,7 +52,7 @@ str.len = () (n i64) {
 ; 返回堆緩衝區容量
 #{buildin}
 str.cap = () (n int64) {
-   n = .cap
+    n = .cap
 }
 
 ; 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
@@ -247,7 +247,6 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
         matched = 1
         j <- [0..m): {
 
-
             #{overflow=wrap}
             .byte(i + j) != target.byte(j) -> {
                 matched = 0
@@ -288,7 +287,6 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
     (i >= r-from) {
         matched = 1
         j <- [0..target.len-bytes()): {
-
 
             #{overflow=wrap}
             .byte(i + j) != target.byte(j) -> {
@@ -369,7 +367,6 @@ str.byte-index = (cp-pos i64) (byte i64) {
             }
 
             -> {
-
                 {
                     b >= 0xf0 -> {
                         {
@@ -1121,6 +1118,7 @@ str.to-byte = () (val ?byte) {
 ; [bigint-bitlen](#str.bigint-bitlen)
 bigint-bitlen = (b bigint) (out i64) {
     bm = 4294967295
+
     #{overflow=wrap}
     out = (b.len - 1) * 32
     top = (b.limbs[b.len - 1] & bm)
@@ -1152,7 +1150,7 @@ bigint-bitlen = (b bigint) (out i64) {
 ; result: 解析得到的 f64（合法性由呼叫端 to-f64 先行校驗）
 ; [str-to-f64](#str.str-to-f64)
 str-to-f64 = (s str) (result f64) {
-    n i64 = s.len-bytes()
+    n = s.len-bytes()
     n == 0 -> return
     i = 0
     sign = 1
@@ -1367,7 +1365,6 @@ str-to-f64 = (s str) (result f64) {
                     }
                     {
                         c >= 48 && c <= 57 -> {
-
                             {
 
                                 #{overflow=wrap}
@@ -1410,6 +1407,7 @@ str-to-f64 = (s str) (result f64) {
 
         -> {
             t10d bigint = bigint.from-i64(10)
+
             #{overflow=wrap}
             den = t10d.pow(0 - exp-adj)
         }
@@ -1432,6 +1430,7 @@ str-to-f64 = (s str) (result f64) {
         e >= 0 -> {
             (bigint.shl(den, e).cmp(num) > 0) -> {
                 {
+
                     #{overflow=wrap}
                     e-opt = e - 1
                     e-opt: {
@@ -1446,6 +1445,7 @@ str-to-f64 = (s str) (result f64) {
         -> {
             (bigint.shl(num, 0 - e).cmp(den) < 0) -> {
                 {
+
                     #{overflow=wrap}
                     e-opt2 = e - 1
                     e-opt2: {
@@ -1524,6 +1524,7 @@ str-to-f64 = (s str) (result f64) {
         }
 
         -> {
+
             #{overflow=wrap}
             num-s = bigint.shl(num, 52 - e)
             den-s = den.copy()
@@ -1548,6 +1549,7 @@ str-to-f64 = (s str) (result f64) {
     ; 溢位保護：wv >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
     (wv.cmp(two53) >= 0) -> {
         {
+
             #{overflow=wrap}
             e-opt3 = e + 1
             e-opt3: {
@@ -1587,6 +1589,7 @@ str-to-f64 = (s str) (result f64) {
     (e > 0) {
         scale = scale * 2.0
         {
+
             #{overflow=wrap}
             e-opt4 = e - 1
             e-opt4: {
@@ -1599,6 +1602,7 @@ str-to-f64 = (s str) (result f64) {
     (e < 0) {
         scale = scale / 2.0
         {
+
             #{overflow=wrap}
             e-opt5 = e + 1
             e-opt5: {
@@ -1637,22 +1641,18 @@ str.to-f64 = () (val ?f64) {
             c >= 48 && c <= 57 -> has-digit = 1
 
             c == 46 -> {
-
                 ; 小數點 - 允許
             }
 
             c == 101 || c == 69 -> {
-
                 ; 科學記號 e/E - 允許
             }
 
             c == 43 || c == 45 -> {
-
                 ; 正負號（首位或指數位）- 允許
             }
 
             c == 32 || c == 9 || c == 10 || c == 13 -> {
-
                 ; 前後空白 - 允許（str-to-f64 自行跳過）
             }
 
@@ -1900,7 +1900,6 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
         {
             cp == old-ch -> {
-
                 {
                     new-ch < 0x80 -> {
                         {
@@ -2022,6 +2021,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
                 new-ch < 0x800 -> {
                     buf[j] = 0xc0 | ((new-ch >> 6) & 0x1f)
+
                     #{overflow=wrap}
                     buf[j + 1] = 0x80 | (new-ch & 0x3f)
                     {
@@ -2036,8 +2036,10 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
                 new-ch < 0x10000 -> {
                     buf[j] = 0xe0 | ((new-ch >> 12) & 0x0f)
+
                     #{overflow=wrap}
                     buf[j + 1] = 0x80 | ((new-ch >> 6) & 0x3f)
+
                     #{overflow=wrap}
                     buf[j + 2] = 0x80 | (new-ch & 0x3f)
                     {
@@ -2052,10 +2054,13 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
                 -> {
                     buf[j] = 0xf0 | ((new-ch >> 18) & 0x07)
+
                     #{overflow=wrap}
                     buf[j + 1] = 0x80 | ((new-ch >> 12) & 0x3f)
+
                     #{overflow=wrap}
                     buf[j + 2] = 0x80 | ((new-ch >> 6) & 0x3f)
+
                     #{overflow=wrap}
                     buf[j + 3] = 0x80 | (new-ch & 0x3f)
                     {
@@ -2307,7 +2312,6 @@ str-hex-val = (c i64) (v i64) {
     v = -1
     {
         c >= 48 && c <= 57 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2322,7 +2326,6 @@ str-hex-val = (c i64) (v i64) {
         }
 
         c >= 65 && c <= 70 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2337,7 +2340,6 @@ str-hex-val = (c i64) (v i64) {
         }
 
         c >= 97 && c <= 102 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2407,7 +2409,6 @@ _str-dig-val = (c i64) (d i64) {
     d = -1
     {
         c >= 48 && c <= 57 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2422,7 +2423,6 @@ _str-dig-val = (c i64) (d i64) {
         }
 
         c >= 65 && c <= 70 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2437,7 +2437,6 @@ _str-dig-val = (c i64) (d i64) {
         }
 
         c >= 97 && c <= 102 -> {
-
             {
 
                 #{overflow=wrap}
@@ -2497,6 +2496,7 @@ str.to-bigint = () (out ?bigint) {
 
     ; 進位制前綴
     radix = 10
+
     #{overflow=wrap}
     pos + 1 < n -> {
         c0 = .byte(pos)
@@ -2687,7 +2687,6 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             -> {
-
                 {
 
                     #{overflow=wrap}
@@ -2920,7 +2919,6 @@ str.replace-n = (old str, new str, n i64) (val str) {
     repl > n -> repl = n
     total = 0
     i <- [0..np): {
-
         i > 0 -> {
 
             ; 分隔符長度：前 repl 段用 new，其餘段用 old（與第二遍的 sep 選擇一致）。
@@ -2946,7 +2944,6 @@ str.replace-n = (old str, new str, n i64) (val str) {
     buf []byte = with-cap-len(total, total)
     pos = 0
     i <- [0..np): {
-
         i > 0 -> {
             sep = new
             i > repl -> sep = old
@@ -3172,7 +3169,7 @@ str.to-txt = () (out ?txt) {
     ; 用），所以這裡一度寫成「先綁 s = self 再傳」。該 lowering bug 已修
     ; （src/mir/hir2mir.go 的 synthRecv 強制 prepend，回歸 tests/bare-self-arg.no），
     ; 裸 `.` 現在可以直傳；保留 `s = self` 只是無害的中間變數。
-    s = self
+    s = .
     t = txt.from-str(s)
     out = t
 }

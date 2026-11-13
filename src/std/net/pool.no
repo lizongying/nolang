@@ -206,7 +206,6 @@ pool.active-count = () (n i64) {
         {
             in-use-val ?= .in-use[i]
             in-use-val -> {
-
                 {
 
                     #{overflow=wrap}
@@ -235,7 +234,6 @@ pool.idle-count = () (n i64) {
         {
             in-use-val ?= .in-use[i]
             in-use-val == false -> {
-
                 {
 
                     #{overflow=wrap}

@@ -510,9 +510,17 @@ test-insert-nested-clone = () (ok bool) {
 ; ok: [][]str 經 insert 插入後元素為獨立拷貝、來源释放後仍可讀時為 true
 test-insert-nested-str-clone = () (ok bool) {
     outer [][]str
-    inner = ['a', 'b', 'c']
+    inner = [
+        'a',
+        'b',
+        'c',
+    ]
     outer.insert(0, inner)
-    inner = ['x', 'y', 'z']
+    inner = [
+        'x',
+        'y',
+        'z',
+    ]
 
     got = outer[0]: {
         ok -> it

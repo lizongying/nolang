@@ -177,6 +177,7 @@ encode = (data []byte) (out str) {
             }
         }
         remainder >= 2 -> {
+
             #{overflow=wrap}
             b1 = data[pos + 1]: {
                 ok -> it
@@ -185,6 +186,7 @@ encode = (data []byte) (out str) {
             }
         }
         remainder >= 3 -> {
+
             #{overflow=wrap}
             b2 = data[pos + 2]: {
                 ok -> it
@@ -193,6 +195,7 @@ encode = (data []byte) (out str) {
             }
         }
         remainder >= 4 -> {
+
             #{overflow=wrap}
             b3 = data[pos + 3]: {
                 ok -> it
@@ -426,7 +429,6 @@ decode = (in str) (out []byte) {
     #{overflow=wrap}
     i = in-len - 1
     (i >= 0) {
-
         {
             in[i] == "=" -> {
                 {

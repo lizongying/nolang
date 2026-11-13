@@ -19,11 +19,13 @@ test-runtime-types = () {
     p = cg-runtime-prelude()
     runner.eq(p.contains('%nolang_hdr = type { i64, i64 }'), 1, 'hdr type present')
     runner.eq(p.contains('%task = type'), 1, 'task type present')
+
     ; B28（2026-11-11 後端變更）：%str-long 是 16B { i32, i32, i8* }，外部 API 仍是 i64。
     runner.eq(p.contains('%str-long = type { i32, i32, i8* }'), 1, 'str type present (16B u32 header)')
     runner.eq(p.contains('%str-long = type { i64, i64, i8* }'), 0, 'no legacy 24B str type')
     runner.eq(p.contains('%vec = type { i32, i32, i64 }'), 1, 'vec type present (16B u32 header)')
     runner.eq(p.contains('%vec = type { i64, i64, i64 }'), 0, 'no legacy 24B vec type')
+
     ; ⚠️ option 的 24B inline payload 槽【未變】（Go optSlotDefaultBytes = 24）；
     ;    16B 的 %vec / %str-long 都裝得下，只是不再是 [3 x i64] 的 1:1 對應。
     runner.eq(p.contains('%option = type { i64, [3 x i64] }'), 1, 'option type present (24B slot unchanged)')
@@ -146,6 +148,7 @@ test-str-eq-helper = () {
 
     ; 绝不对 %str-long 本体发 icmp（非法）：str_eq 体内只比 zext 後的 i64 len 与 memcmp
     runner.eq(e.contains('icmp %str-long'), 0, 'no icmp on struct')
+
     ; B28：u32 欄不可直接當 i64 用 ⇒ 不得殘留舊的 i64 extractvalue
     runner.eq(e.contains('%la = extractvalue %str-long %a, 0'), 0, 'no legacy i64 len extract')
 }

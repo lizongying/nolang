@@ -20,6 +20,7 @@ res {
 pick = (a bool) (r res) {
     {
         a -> r = good('hello')
+
         -> r = bad('boom')
     }
 }

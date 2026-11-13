@@ -1,3 +1,5 @@
+# /test/runner
+
 ; merged category 'option' -- members: match-index-option.no, option-elem-container.no, option-index.no, option-more.no, option-test.no, option.no
 ; (originals backed up under tests/_archive/option/)
 ; merged from tests/match-index-option.no
@@ -12,8 +14,6 @@
 ;       `s = it` 变 void，codegen 报 "receiver has no slot"。现归一化为合成 ?elem
 ;       变量（安全索引 → %option）后走识别符 option-match 路径。
 ...
-
-# /test/runner
 
 ; in-bounds：ok 臂取到 payload
 t-in-bounds = () {
@@ -70,7 +70,12 @@ t-join = () {
 ; 崩溃（trace/BPT trap）。现 parser 为 SliceLiteral/ArrayLiteral 赋值登记
 ; []elem 型别，使其被识别为 slice 基底、归一化为安全索引（%option）。
 t-literal-in-bounds = () {
-    parts = ['a', 'b', 'c', 'd']
+    parts = [
+        'a',
+        'b',
+        'c',
+        'd',
+    ]
     i = 1
     parts[i]: {
         ok -> {
@@ -86,7 +91,12 @@ t-literal-in-bounds = () {
 
 ; 字面量陣列越界：下標 9 應落進 nil 臂（p 取得 'OOB'），不得崩潰
 t-literal-out-of-bounds = () {
-    parts = ['a', 'b', 'c', 'd']
+    parts = [
+        'a',
+        'b',
+        'c',
+        'd',
+    ]
     j = 9
     parts[j]: {
         ok -> {

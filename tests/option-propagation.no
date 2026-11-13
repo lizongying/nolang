@@ -60,7 +60,9 @@ pick = (p pool) (out ?i64) {
 read-i64 = (o ?i64) (r i64) {
     r = o: {
         ok -> it
+
         nil -> -1000
+
         err -> -2000
     }
 }
@@ -94,14 +96,16 @@ pick-text = (p pool) (out ?str) {
 err-msg-len = (o ?str) (r i64) {
     r = o: {
         ok -> 0
+
         nil -> -1
+
         err -> it.msg.len-bytes()
     }
 }
 
 t-err-msg = () {
     empty pool
-    m ?str = pick-text(empty)
+    m = pick-text(empty)
     ck('err-msg-survives', err-msg-len(m) > 0)
 }
 
@@ -112,7 +116,9 @@ probe = (o ?i64) (out ?str) {
     n ?= o
     n: {
         ok -> out = 'got'
+
         nil -> out = 'nil'
+
         err -> out = 'err'
     }
 }
@@ -120,7 +126,9 @@ probe = (o ?i64) (out ?str) {
 str-of = (o ?str) (r str) {
     r = o: {
         ok -> it
+
         nil -> '<nil>'
+
         err -> '<err>'
     }
 }
@@ -128,9 +136,10 @@ str-of = (o ?str) (r str) {
 t-non-chain = () {
     some ?i64 = ok(1)
     none ?i64 = nil
-    a ?str = probe(some)
-    b ?str = probe(none)
+    a = probe(some)
+    b = probe(none)
     ck('non-chain-ok', str-of(a) == 'got')
+
     ; nil 臂里的传播是 `out = <裸 option>`，目标直接变成 nil（不是保留 'start'）。
     ; 这一步正是**跨载荷**传播的 nil 方向：`?i64` 的 tag 落进 `?str` 的槽。
     ck('non-chain-nil', str-of(b) == '<nil>')
@@ -149,13 +158,15 @@ fwd = (k i64) (out ?str) {
 msg-of = (o ?str) (r str) {
     r = o: {
         ok -> 'ok:' + it
+
         nil -> '<nil>'
+
         err -> 'E:' + it.msg
     }
 }
 
 t-same-payload = () {
-    m ?str = fwd(1)
+    m = fwd(1)
     ck('same-payload-err', msg-of(m) == 'E:boom')
 }
 

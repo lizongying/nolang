@@ -66,9 +66,7 @@ tree-map.init = () {
     .size = 0
 
     {
-
         i <- [0..TM-CAP - 1): {
-
             .left[i] ?= i + 1
         }
 
@@ -902,9 +900,7 @@ tree-map.clear = () {
     .size = 0
 
     {
-
         i <- [0..TM-CAP - 1): {
-
             .left[i] ?= i + 1
         }
 

@@ -17,12 +17,21 @@
 ;    逐位元組寫入必須落盤；未寫位置保持零初始化值。
 test-str-place-in-range = () (ok bool) {
     s str = with-cap-len(8, 8)
-    s[0]: { ok -> it = "a"
-           -> _ }
-    s[3]: { ok -> it = "d"
-           -> _ }
-    s[7]: { ok -> it = "h"
-           -> _ }
+    s[0]: {
+        ok -> it = "a"
+
+        -> _
+    }
+    s[3]: {
+        ok -> it = "d"
+
+        -> _
+    }
+    s[7]: {
+        ok -> it = "h"
+
+        -> _
+    }
 
     n = s.len-bytes()
     b0 = s.byte(0)

@@ -227,6 +227,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
 
                         -> _
                     }
+
                     #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it
@@ -549,6 +550,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
 
                         -> _
                     }
+
                     #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it

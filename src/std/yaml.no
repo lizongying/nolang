@@ -553,7 +553,6 @@ nan = () (v f64) {
 hex-digit = (c i64) (d i64) {
     d = -1
     c >= 48 && c <= 57 -> {
-
         {
 
             #{overflow=wrap}
@@ -567,7 +566,6 @@ hex-digit = (c i64) (d i64) {
         return
     }
     c >= 97 && c <= 102 -> {
-
         {
 
             #{overflow=wrap}
@@ -581,7 +579,6 @@ hex-digit = (c i64) (d i64) {
         return
     }
     c >= 65 && c <= 70 -> {
-
         {
 
             #{overflow=wrap}
@@ -616,7 +613,6 @@ parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
             -> _
         }
         c == 95 -> {
-
             {
 
                 #{overflow=wrap}
@@ -728,7 +724,6 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
                 v = 0
                 k, v = parse-radix(t, s, 16)
                 k == YAML-KIND-INT -> {
-
                     neg -> {
                         {
 
@@ -747,7 +742,6 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
                 return
             }
             x == 111 || x == 79 -> {
-
                 {
 
                     #{overflow=wrap}
@@ -762,7 +756,6 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
                 v = 0
                 k, v = parse-radix(t, s, 8)
                 k == YAML-KIND-INT -> {
-
                     neg -> {
                         {
 
@@ -791,7 +784,6 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
         i >= n -> break
         c = t.byte(i)
         c == 95 -> {
-
             {
 
                 #{overflow=wrap}
@@ -805,7 +797,6 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
             continue
         }
         c >= 48 && c <= 57 -> {
-
             {
 
                 #{overflow=wrap}
@@ -907,7 +898,6 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
     v = 0
     k, v = parse-radix(t, start, 10)
     k == YAML-KIND-INT -> {
-
         neg -> {
             {
 
@@ -1350,7 +1340,6 @@ parser.looks-like-map-entry = () (yes bool) {
                 j = i + 1
                 j < .n -> {
                     .src.byte(j) == 39 -> {
-
                         {
 
                             #{overflow=wrap}
@@ -1381,7 +1370,6 @@ parser.looks-like-map-entry = () (yes bool) {
         }
         in-d -> {
             c == 92 -> {
-
                 {
 
                     #{overflow=wrap}
@@ -1439,7 +1427,6 @@ parser.looks-like-map-entry = () (yes bool) {
             continue
         }
         c == 91 || c == 123 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1464,7 +1451,6 @@ parser.looks-like-map-entry = () (yes bool) {
             continue
         }
         c == 93 || c == 125 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1496,7 +1482,6 @@ parser.looks-like-map-entry = () (yes bool) {
             prev == 32 || prev == 9 -> return
         }
         depth == 0 && c == 58 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1518,7 +1503,6 @@ parser.looks-like-map-entry = () (yes bool) {
             }
         }
         depth == 0 && c == 63 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1859,7 +1843,6 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
             continue
         }
         c >= 49 && c <= 57 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1892,7 +1875,6 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
 
     content-ind = 0
     ind-ind > 0 -> {
-
         {
 
             #{overflow=wrap}
@@ -1961,7 +1943,6 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
         last < 0 -> break
         tail = str-at(lines, last)
         tail.len-bytes() == 0 -> {
-
             {
 
                 #{overflow=wrap}
@@ -1994,7 +1975,6 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
         i <- [0..lines.len()): {
             ln = str-at(lines, i)
             ln.len-bytes() == 0 -> {
-
                 {
 
                     #{overflow=wrap}

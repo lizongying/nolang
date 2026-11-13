@@ -347,7 +347,6 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         }
 
         len-byte == 0 -> {
-
             {
 
                 #{overflow=wrap}
@@ -365,7 +364,6 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         ; 檢查是否為壓縮指標（前兩位為 11）
         {
             (len-byte & 0xc0) == 0xc0 -> {
-
                 jumped == false -> {
                     {
 
@@ -453,6 +451,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
     ; 移除末尾的點
     buf-pos > 0 -> {
+
         #{overflow=wrap}
         ixout305c12 = buf[buf-pos - 1]: {
             ok -> it

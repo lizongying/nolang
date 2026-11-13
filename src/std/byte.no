@@ -313,6 +313,6 @@ HEX-LOWER = '0123456789abcdef'
     ; 歷史：`txt.from-bytes(.)` / `(self)` 曾讓 codegen 段錯誤（2026-11-11），
     ; 根因與 str.to-txt 相同（hir2mir 的隱式 self 出參錯位），已修並由
     ; tests/bare-self-arg.no 覆蓋；裸 `.` 現在可直傳，`b = self` 保留無害。
-    b = self
+    b = .
     out = txt.from-bytes(b)
 }

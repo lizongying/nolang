@@ -414,7 +414,7 @@ drv.build-ll = (src []byte) (r str) {
 ;   ⚠️ cycle 檢測改用「祖先鏈 pathchain」參數（見 bp-walk），不靠 seen：
 ;      重複訪問若落在祖先鏈上＝真循環；若只是已在 r 清單中＝diamond（無環，跳過不報）。
 bpctx {
-    r   str
+    r str
     cyc bool
 }
 
@@ -429,6 +429,7 @@ drv.build-package = (path str) (r str) {
     c = drv.bp-walk(path, c, ':')
     flag = '0'
     c.cyc == true -> flag = '1'
+
     ; 輸出：`0:`/`1:` + `:`-分隔模組路徑（入口在最前）
     result = flag - ':' - c.r
     r = result
@@ -449,20 +450,24 @@ drv.pkg-contains = (mods str, want str) (r bool) {
 drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
     r = ctx
     probe = ':' - path - ':'
+
     ; cycle：path 已在祖先鏈上 ⇒ 真循環（A→B→A）
     onstack = pathchain.contains(probe)
     onstack == true -> {
         r.cyc = true
         return
     }
+
     ; diamond：path 已處理過（在 r 清單中）⇒ 跳過重複，不報 cycle（A→B, A→C→B）
     done = r.r.contains(probe)
     done == true -> {
         return
     }
+
     ; 加入依序清單（DFS 前序，入口最先）
     newr = r.r - path
     r.r = newr - ':'
+
     ; 讀檔
     c = fs.read-bytes(path)
     ok-read = false
@@ -472,9 +477,11 @@ drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
             src = it
             ok-read = true
         }
+
         nil -> {
             ok-read = true
         }
+
         err -> {
         }
     }
@@ -482,10 +489,12 @@ drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
         eprint(NOC-NAME - ': cannot read ' - path)
         return
     }
+
     ; parse
     t = ast.make()
     p = ps.new(src)
     root = ps.parse(t, p)
+
     ; 遍歷根節點的子節點，找 K-USE-STATEMENT
     rootnd = ast.nd-at(t, root)
     nk = rootnd.nkid
@@ -521,7 +530,7 @@ drv.bp-resolve = (imp str) (file str) {
         file = file + 'main.no'
         return
     }
-    file = file + '.no'
+    file = file - '.no'
 }
 
 ; ═══════════════════════════════════════════════════════════════════
@@ -558,9 +567,11 @@ drv.read-mod = (f str) (src []byte) {
             src = it
             ok-read = true
         }
+
         nil -> {
             ok-read = true
         }
+
         err -> {
         }
     }
@@ -578,6 +589,7 @@ drv.mod-name = (f str) (r str) {
     (k < n) {
         c = f.slice-bytes(k, k + 1)
         c == '/' -> last = k
+
         #{overflow=wrap}
         k = k + 1
     }
@@ -604,6 +616,7 @@ drv.pkg-split = (s str) (r []str) {
             seg.len-bytes() > 0 -> r.push(seg)
             start = i + 1
         }
+
         #{overflow=wrap}
         i = i + 1
     }
@@ -621,6 +634,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
     pkg = drv.build-package(path)
     body = pkg.slice-bytes(1, pkg.len-bytes())
     files = drv.pkg-split(body)
+
     ; pass 1：全部模組 struct 名→sid 登記進共享 agg（跨模組結構體表統一）
     f <- files: {
         src = drv.read-mod(f)
@@ -635,10 +649,12 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
             kid = ast.kid-at(t, base + k)
             kk = ast.nd-at(t, kid)
             kk.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
+
             #{overflow=wrap}
             k = k + 1
         }
     }
+
     ; pass 2：函式簽名抽取，key = mod.fn
     f <- files: {
         mod = drv.mod-name(f)
@@ -656,6 +672,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
             kk.kind == asp.K-FUNCTION-DEFINITION -> {
                 nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
                 bd == 0 -> {
+
                     ; 模組源碼函式名慣例不一致：有的帶 `mod.` 點號前綴（drv.build-package / ps.parse /
                     ;   ast.str-at），有的帶 `mod-` 連字前綴（h2m-sig-add / ps-parse-use）。
                     ;   剝掉模組前綴（點或連字）得 short，再組 `mod.short` 規範 key，
@@ -669,6 +686,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
                     h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, rt, ap, dp)
                 }
             }
+
             #{overflow=wrap}
             k = k + 1
         }
@@ -705,6 +723,7 @@ drv.pkg-ll = (path str) (r str) {
     files = drv.pkg-split(body0)
     nfiles = files.len()
     agg = h2m-new()
+
     ; pass 1：全模組 struct 登記進共享 agg，逐模組用自身 t 解欄位型別（避免跨 AST 讀錯節點）
     k = 0
     (k < nfiles) {
@@ -722,19 +741,24 @@ drv.pkg-ll = (path str) (r str) {
             kid = ast.kid-at(t, base + m)
             kd = ast.nd-at(t, kid)
             kd.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
+
             #{overflow=wrap}
             m = m + 1
         }
         after = agg.stn.len()
         after > before -> h2m-struct-resolve-range(agg, t, before, after)
+
         #{overflow=wrap}
         k = k + 1
     }
+
     ; 全域結構體宣告一次（§11 B10 唯一裝配點，多模組不可分散 emit 否則 redefinition）
     decls = h2m-struct-decls(agg)
+
     ; pass 2：逐模組 emit 各函式（入口額外合成 main），body 串接
     body = ''
     body = body - decls
+
     ; 整包 emit-once：同名函式只產一次（自舉源碼存在重複定義，如 ps.no 的 ps-is-builtin-type
     ;   在 3434 與 7321 各定義一次；整包路徑首次完整降級 ps.no 才暴露。emit-once 兼顧跨模組同名碰撞。
     emitted = ':'
@@ -745,6 +769,7 @@ drv.pkg-ll = (path str) (r str) {
         t = ast.make()
         p = ps.new(src)
         root = ps.parse(t, p)
+
         ; 本模組 sg（簽名表；切片 4 不跨模組呼叫，逐模組即可）
         sg = h2m-sigs-new()
         nd = ast.nd-at(t, root)
@@ -758,9 +783,11 @@ drv.pkg-ll = (path str) (r str) {
                 nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
                 bd == 0 -> h2m-sig-add(sg, nm, rt, ap, dp)
             }
+
             #{overflow=wrap}
             m = m + 1
         }
+
         ; 入口模組：合成 main（其餘模組直接用原 Program root）
         target = root
         k2 == 0 -> target = h2m-synth-main(t, root)
@@ -782,9 +809,11 @@ drv.pkg-ll = (path str) (r str) {
                     }
                 }
             }
+
             #{overflow=wrap}
             m2 = m2 + 1
         }
+
         #{overflow=wrap}
         k2 = k2 + 1
     }

@@ -75,7 +75,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
     i = 0
     j = 0
     pos <- [0..in.len()): {
-
         {
 
             #{overflow=wrap}

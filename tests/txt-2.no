@@ -1,11 +1,11 @@
+# /test/runner
+
 ; merged category 'txt' -- 2 source files
 ; sources: jp7.no, jp15.no
 ; originals recoverable from git HEAD (ed7b5236)
 
 ; merged from tests/jp7.no
 ...
-
-# /test/runner
 
 t-in-bounds = () {
     s txt = 'a-b-c'

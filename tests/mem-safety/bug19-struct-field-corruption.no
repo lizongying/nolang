@@ -57,7 +57,7 @@ pass-direct = (raw str) (s str) {
             break
         }
     }
-    nl i64 = src.len-bytes()
+    nl = src.len-bytes()
 
     j <- [sp + 1..src.len-bytes()): {
         src[j] == 0 -> {
@@ -89,6 +89,7 @@ test-raw-b[13] = 116; t
 test-raw-b[14] = 120; x
 test-raw-b[15] = 116; t
 test-raw-b[16] = 0; null
+
 ; 尾端 20 個位元組補 0：with-cap-len 的緩衝不保證清零，補上才與原本的
 ; 「<20 bytes>」語義一致（解析在 NUL 就停，但不留未定義內容）。
 k <- [17..37): {

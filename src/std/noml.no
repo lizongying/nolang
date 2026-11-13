@@ -274,6 +274,7 @@ pool.add-child = (node-idx i64, child-idx i64, key str) {
 
         -> _
     }
+
     #{overflow=wrap}
     .nodes[node-idx].count = c + 1: {
         ok -> it
@@ -395,6 +396,7 @@ pool.at-line-start = (s str, pos i64) (yes bool) {
     yes = true
     i = pos
     (i > 0) {
+
         #{overflow=wrap}
         c = s.byte(i - 1)
         {
@@ -590,9 +592,11 @@ pool.scan-raw = (s str, pos i64) (next i64) {
 pool.scan-ann = (s str, pos i64) (next i64) {
     next = -1
     sn = s.len-bytes()
+
     #{overflow=wrap}
     pos + 1 >= sn -> return
     s.byte(pos) != 35 -> return
+
     #{overflow=wrap}
     s.byte(pos + 1) != 123 -> return
     p = pos + 2
@@ -730,6 +734,7 @@ pool.parse = (s str) (idx i64, ok bool) {
             ok = .fail(s, p, 'unterminated annotation')
             return
         }
+
         #{overflow=wrap}
         ann = .join-ann(ann, s.slice-bytes(p + 2, an - 1))
         lq = .skip-blanks(s, an)
@@ -830,6 +835,7 @@ pool.parse-value = (s str, pos i64) (idx i64, next i64, ok bool) {
         c == 35 -> ok = .fail(s, p, '`#{...}` must be on its own line above the member, or trailing on the member\'s line')
 
         -> {
+
             #{overflow=wrap}
             ch = s.slice-bytes(p, p + 1)
             ok = .fail(s, p, 'unexpected character \'' - ch - '\' in value')
@@ -885,6 +891,7 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
                 ok = .fail(s, p, 'unterminated annotation')
                 return
             }
+
             #{overflow=wrap}
             ann = .join-ann(ann, s.slice-bytes(p + 2, np - 1))
             q = .skip-blanks(s, np)
@@ -913,6 +920,7 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
             ok = .fail(s, p, 'expected \':\' after key \'' - key - '\'')
             return
         }
+
         #{overflow=wrap}
         child, cnext, cok = .parse-value(s, p + 1)
         cok == false -> return
@@ -924,6 +932,7 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
                 ok = .fail(s, p, 'unterminated annotation')
                 return
             }
+
             #{overflow=wrap}
             ann = .join-ann(ann, s.slice-bytes(p + 2, np - 1))
             p = .skip-blanks(s, np)
@@ -1222,11 +1231,13 @@ pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
     next = pos
     ok = false
     sn = s.len-bytes()
+
     #{overflow=wrap}
     pos + 1 >= sn -> {
         ok = .fail(s, pos, 'unexpected end of input in string escape')
         return
     }
+
     #{overflow=wrap}
     e = s.byte(pos + 1)
     {
@@ -1252,6 +1263,7 @@ pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
         e == 116 -> val = '\t'
 
         e == 117 -> {
+
             #{overflow=wrap}
             code = .hex4(s, pos + 2)
             code < 0 -> {
@@ -1287,6 +1299,7 @@ pool.hex4 = (s str, pos i64) (code i64) {
     code = -1
     sn = s.len-bytes()
     pos < 0 -> return
+
     #{overflow=wrap}
     pos + 4 > sn -> return
     v = 0
@@ -1319,6 +1332,7 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
     sn = s.len-bytes()
     pos >= sn -> return
     s.byte(pos) != 96 -> return
+
     #{overflow=wrap}
     p = pos + 1
     p >= sn -> {
@@ -1355,6 +1369,7 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
             return
         }
     }
+
     #{overflow=wrap}
     buf str = with-len(sn - p)
     k = 0
@@ -1666,14 +1681,18 @@ pool.match-kw = (s str, pos i64, kw str) (next i64) {
     next = -1
     sn = s.len-bytes()
     kn = kw.len-bytes()
+
     #{overflow=wrap}
     pos + kn > sn -> return
     s.slice-bytes(pos, pos + kn).eq-full(kw) == false -> return
+
     #{overflow=wrap}
     pos + kn < sn -> {
+
         #{overflow=wrap}
         is-ident-char(s.byte(pos + kn)) -> return
     }
+
     #{overflow=wrap}
     next = pos + kn
 }
@@ -1874,6 +1893,7 @@ pool.raw-safe = (s str) (yes bool) {
 ; [quote](#noml.pool.quote)
 pool.quote = (s str) (out str) {
     n = s.len-bytes()
+
     #{overflow=wrap}
     buf str = with-len(n * 6 + 2)
     k = 0
@@ -1899,6 +1919,7 @@ pool.quote = (s str) (out str) {
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 1]: {
                     ok -> it = 39
@@ -1921,6 +1942,7 @@ pool.quote = (s str) (out str) {
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 1]: {
                     ok -> it = 92
@@ -1943,6 +1965,7 @@ pool.quote = (s str) (out str) {
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 1]: {
                     ok -> it = 110
@@ -1965,6 +1988,7 @@ pool.quote = (s str) (out str) {
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 1]: {
                     ok -> it = 114
@@ -1987,6 +2011,7 @@ pool.quote = (s str) (out str) {
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 1]: {
                     ok -> it = 116
@@ -2015,30 +2040,35 @@ pool.quote = (s str) (out str) {
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 1]: {
                     ok -> it = 117
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 2]: {
                     ok -> it = 48
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 3]: {
                     ok -> it = 48
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 4]: {
                     ok -> it = hex-char(cvv >> 4)
 
                     -> _
                 }
+
                 #{overflow=wrap}
                 buf[k + 5]: {
                     ok -> it = hex-char(cvv & 15)
@@ -2192,6 +2222,7 @@ pool.stringify-obj = (idx i64, indent i64) (out str) {
         -> _
     }
     e < 0 -> return
+
     #{overflow=wrap}
     pad = '  '.repeat(indent + 1)
     out = '{\n'
@@ -2212,6 +2243,7 @@ pool.stringify-obj = (idx i64, indent i64) (out str) {
 
             -> ''
         }
+
         #{overflow=wrap}
         out = out - pad - .fmt-key(kk) - ': ' - .stringify(c, indent + 1) - '\n'
         e = .en[e]: {
@@ -2241,6 +2273,7 @@ pool.stringify-arr = (idx i64, indent i64) (out str) {
         -> _
     }
     e < 0 -> return
+
     #{overflow=wrap}
     pad = '  '.repeat(indent + 1)
     out = '[\n'
@@ -2250,6 +2283,7 @@ pool.stringify-arr = (idx i64, indent i64) (out str) {
 
             -> -1
         }
+
         #{overflow=wrap}
         out = out - pad - .stringify(c, indent + 1) - ',\n'
         e = .en[e]: {

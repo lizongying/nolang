@@ -56,6 +56,7 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     n = b & 127
     len = 0
     i <- [0..n): {
+
         #{overflow=wrap}
         ixout59c29 = data[pos + 1 + i]: {
             ok -> it
@@ -233,6 +234,7 @@ x509-serial = (data []byte) (serial i64) {
     ; 讀取序號值
     val = 0
     i <- [0..int-len): {
+
         #{overflow=wrap}
         ixout200c29 = data[p + 1 + adv + i]: {
             ok -> it
@@ -356,6 +358,7 @@ x509-rsa-e = (data []byte) (e i64) {
     }
     val = 0
     i <- [0..exp-len): {
+
         #{overflow=wrap}
         ixout310c29 = data[rsa-start + 1 + adv + i]: {
             ok -> it
@@ -457,7 +460,6 @@ x509-rsa-n = (data []byte) (out []byte) {
         }
 
         (ixout392c10) == 0 -> {
-
             {
 
                 #{overflow=wrap}
@@ -468,6 +470,7 @@ x509-rsa-n = (data []byte) (out []byte) {
                     ->
                 }
             }
+
             #{overflow=wrap}
             actual-len = mod-len - 1
         }
@@ -2495,7 +2498,6 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     tmp = val
     n = 0
     (tmp != 0) {
-
         {
 
             #{overflow=wrap}
@@ -3407,16 +3409,19 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
 
         {
             out-pos > 0 -> {
+
                 #{overflow=wrap}
                 sig[out-pos - 1] = limb-byte-1
             }
 
             out-pos > 1 -> {
+
                 #{overflow=wrap}
                 sig[out-pos - 2] = limb-byte-2
             }
 
             out-pos > 2 -> {
+
                 #{overflow=wrap}
                 sig[out-pos - 3] = limb-byte-3
             }

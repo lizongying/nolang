@@ -222,6 +222,7 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
                 eq = .str-eq(k, key)
                 eq -> {
                     .occ[idx] ?= 2
+
                     #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it
@@ -487,6 +488,7 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
                 kk ?= .keys[idx]
                 kk == key -> {
                     .occ[idx] ?= 2
+
                     #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it

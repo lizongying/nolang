@@ -21,30 +21,30 @@ ck = (label str, cond bool) {
 }
 
 ; ── 1) 从字面量起手（cap == len，第一次追加必然触发扩容）──
-a str = 'ab'
+a = 'ab'
 a.push-str('cd')
 ck('literal-append', a == 'abcd')
 ck('literal-len-bytes', a.len-bytes() == 4)
 ck('literal-len', a.len() == 4)
 
 ; ── 2) 空 str 起手（data == null，走 alloc 分支）──
-b str = ''
+b = ''
 b.push-str('xyz')
 ck('empty-receiver', b == 'xyz')
 ck('empty-receiver-len', b.len-bytes() == 3)
 
 ; ── 3) 空源：不追加、也不分配 ──
-c str = ''
+c = ''
 c.push-str('')
 ck('empty-source-stays-empty', c.len-bytes() == 0)
 
-d str = 'keep'
+d = 'keep'
 d.push-str('')
 ck('empty-source-keeps-value', d == 'keep')
 ck('empty-source-keeps-len', d.len-bytes() == 4)
 
 ; ── 4) 自我追加：源与接收者是同一块缓冲，必须靠 retain + memmove 活下来 ──
-e str = 'zz'
+e = 'zz'
 e.push-str(e)
 ck('self-append', e == 'zzzz')
 ck('self-append-len', e.len-bytes() == 4)
@@ -55,7 +55,7 @@ ck('self-append-again', e == 'zzzzzzzz')
 ck('self-append-again-len', e.len-bytes() == 8)
 
 ; ── 5) 多字节码点：len-bytes 增 3，len 增 1 ──
-f str = ''
+f = ''
 f.push("中")
 ck('cp-multibyte-value', f == '中')
 ck('cp-multibyte-len-bytes', f.len-bytes() == 3)
@@ -67,7 +67,7 @@ ck('cp-multibyte-twice-bytes', f.len-bytes() == 6)
 ck('cp-multibyte-twice-len', f.len() == 2)
 
 ; ── 6) 跨多次 realloc：2000 次单字节追加 ──
-g str = ''
+g = ''
 i <- [0..2000): {
     g.push("x")
 }
@@ -87,8 +87,8 @@ ck('struct-field-writeback', p.s == 'hi!')
 ck('struct-field-len', p.s.len-bytes() == 3)
 
 ; ── 8) 借用视图接收者：必须 COW，不能污染原串 ──
-src str = 'abcdef'
-v str = src[0..2]
+src = 'abcdef'
+v = src[0..2]
 v.push-str('XY')
 ck('view-receiver-value', v == 'abcXY')
 ck('view-receiver-len', v.len-bytes() == 5)
@@ -96,9 +96,9 @@ ck('view-source-intact', src == 'abcdef')
 ck('view-source-len', src.len-bytes() == 6)
 
 ; ── 9) 切片当源：按位元组追加，源不受影响 ──
-base str = 'ABCDEF'
-sv str = base[1..3]
-acc str = '>'
+base = 'ABCDEF'
+sv = base[1..3]
+acc = '>'
 acc.push-str(sv)
 ck('slice-source-value', acc == '>BCD')
 ck('slice-source-len', acc.len-bytes() == 4)

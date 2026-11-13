@@ -131,12 +131,14 @@ url-parse = (url-str str) (u url-info) {
 
     at-pos >= 0 -> {
         userinfo = authority.slice(0, at-pos)
+
         #{overflow=wrap}
         authority = authority.slice(at-pos + 1, authority.len-bytes())
         colon-pos = userinfo.index(':')
         {
             colon-pos >= 0 -> {
                 u.user = userinfo.slice(0, colon-pos)
+
                 #{overflow=wrap}
                 u.password = userinfo.slice(colon-pos + 1, userinfo.len-bytes())
             }
@@ -151,6 +153,7 @@ url-parse = (url-str str) (u url-info) {
     {
         colon-pos >= 0 -> {
             u.host = authority.slice(0, colon-pos)
+
             #{overflow=wrap}
             ofs = colon-pos + 1: {
                 ok -> it
@@ -166,6 +169,7 @@ url-parse = (url-str str) (u url-info) {
                     valid = false
                     break
                 }
+
                 #{overflow=wrap}
                 p = p * 10 + ch - 48
             }
@@ -208,6 +212,7 @@ url-info.get-query = (key str) (val ?str) {
         {
             eq-pos >= 0 -> {
                 k = pair.slice(0, eq-pos)
+
                 #{overflow=wrap}
                 v = pair.slice(eq-pos + 1, pair.len-bytes())
                 k == key -> {

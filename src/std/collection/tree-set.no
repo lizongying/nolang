@@ -64,9 +64,7 @@ tree-set.init = () {
     .size = 0
 
     {
-
         i <- [0..TS-CAP - 1): {
-
             .left[i] ?= i + 1
         }
 
@@ -839,9 +837,7 @@ tree-set.clear = () {
     .size = 0
 
     {
-
         i <- [0..TS-CAP - 1): {
-
             .left[i] ?= i + 1
         }
 

@@ -741,6 +741,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
 
         #{overflow=wrap}
         pn-offset + j < packet.len() -> {
+
             #{overflow=wrap}
             ixout532c28 = packet[pn-offset + j]: {
                 ok -> it
@@ -820,6 +821,7 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     pn-len = need
     truncated-pn = 0
     i <- [0..pn-len): {
+
         #{overflow=wrap}
         ixout581c47 = packet[pn-offset + i]: {
             ok -> it

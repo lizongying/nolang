@@ -30,7 +30,6 @@ int.to-str = () (out str) {
     digits = 0
     tmp = n
     (tmp != 0) {
-
         {
 
             #{overflow=wrap}

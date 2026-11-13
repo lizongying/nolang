@@ -197,12 +197,14 @@ response.parse-headers = () {
 
                 ; 用 slice 複製 name/value（建立獨立緩衝區，避免逐位元組寫入溢出）
                 name-str = hs.slice(pos, colon-pos)
+
                 #{overflow=wrap}
                 val-str = hs.slice(colon-pos + 2, line-end)
 
                 {
                     .header-names[cnt] ?= name-str
                     .header-values[cnt] ?= val-str
+
                     #{overflow=wrap}
                     .header-count = cnt + 1: {
                         ok -> it
@@ -473,6 +475,7 @@ do = (method str, url str, body str) (resp ?response) {
 
         -> {
             status-line = head.slice(0, first-line-end)
+
             #{overflow=wrap}
             r.headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
         }
@@ -716,6 +719,7 @@ do-req = (req request) (resp ?response) {
 
         -> {
             status-line = head.slice(0, first-line-end)
+
             #{overflow=wrap}
             r.headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
         }

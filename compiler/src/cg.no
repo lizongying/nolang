@@ -283,6 +283,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = private unnamed_addr constant [')
             b.push(cg-strlen1(t).to-str())
             b.push(' x i8] [')
+
             ; s99o：以「i8 整數陣」形式逐位元組寫入，對任意位元組（含反斜線、NUL、控制字元）都合法，
             ;   避免 c"..." 形式把字串內的 \6E 等文字誤當跳脫序列（自舉碼產生器把 IR 片段存成字串常數，
             ;   其內含 \6E 等，原 c"..." 形式會讓 opt 報 constant expression type mismatch）。
@@ -293,8 +294,10 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 bv = t.byte(si)
                 bv: {
                     ok(v) -> b.push('i8 ' - v.to-str())
+
                     -> _
                 }
+
                 #{overflow=wrap}
                 si = si + 1
             }
@@ -1848,6 +1851,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push('\n')
         }
         op == OP-STRCONST -> {
+
             ; B28：len/cap 是 u32 欄。此處是字串字面量常數 ⇒ 直接發 i32 常數
             ;   （Go strU32Trunc 對數值字面量原樣放行，不額外發 trunc）。
             t = syms[k]
@@ -1881,6 +1885,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', 2\n')
         }
         op == OP-STRLEN -> {
+
             ; B28：field 0 是 u32 ⇒ 先 extractvalue 到 i32 暫存 %slr<k>，再 zext 回外部 API 的 i64。
             ;   暫存名按指令下標 k 編號，避免 multiple definition。
             b.push('\t%slr')

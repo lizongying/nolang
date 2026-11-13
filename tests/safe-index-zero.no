@@ -92,7 +92,11 @@ io.out('bool OOB -> ')
 io.out(z-bool(ba, 9))
 print('')
 
-sa = ['a', 'b', 'c']
+sa = [
+    'a',
+    'b',
+    'c',
+]
 io.out('str OOB -> [')
 io.out(z-str(sa, 9))
 io.out(']')

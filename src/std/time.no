@@ -89,7 +89,6 @@ sleep-ns = (ns i64) {
 ; diff: end - start（秒，溢出回繞）
 ; [duration-between](#time.duration-between)
 duration-between = (start i64, end i64) (diff i64) {
-
     {
 
         #{overflow=wrap}
@@ -108,7 +107,6 @@ duration-between = (start i64, end i64) (diff i64) {
 ; diff: end - start（毫秒，溢出回繞）
 ; [duration-ms-between](#time.duration-ms-between)
 duration-ms-between = (start i64, end i64) (diff i64) {
-
     {
 
         #{overflow=wrap}
@@ -127,7 +125,6 @@ duration-ms-between = (start i64, end i64) (diff i64) {
 ; diff: end - start（微秒，溢出回繞）
 ; [duration-us-between](#time.duration-us-between)
 duration-us-between = (start i64, end i64) (diff i64) {
-
     {
 
         #{overflow=wrap}
@@ -378,7 +375,6 @@ unix-to-date = (ts i64) (d date) {
     rem = ts % 86400
 
     rem < 0 -> {
-
         {
 
             #{overflow=wrap}
@@ -460,6 +456,7 @@ unix-to-date = (ts i64) (d date) {
     }
 
     mp >= 10 -> {
+
         #{overflow=wrap}
         d.month = mp - 9: {
             ok -> it
@@ -470,6 +467,7 @@ unix-to-date = (ts i64) (d date) {
 
     {
         d.month <= 2 -> {
+
             #{overflow=wrap}
             d.year = y + 1: {
                 ok -> it

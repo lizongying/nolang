@@ -58,6 +58,7 @@ runner.is-true(ll.contains('@nolang_rc_alloc') || ll.contains('@str_eq'), 'pkg-l
 ; ④c @<mod>.<fn> 命名（兩種形式）
 ; 連字形式：實測發射 @ps-bump ⇒ 命名接線正確（點號前綴 → @mod.fn，連字前綴 → @mod-fn）
 runner.is-true(ll.contains('@ps-bump'), 'pkg-ll emits @<mod>-<fn> hyphen naming')
+
 ; 點號形式：全域簽名表 key 證明 ps.parse / ast.str-at 命名接線正確（本體降級待切片 5+）
 sg = drv.pkg-sigs('compiler/tests/pkg-ll-entry.no')
 runner.is-true(h2m-sig-find(sg, 'ps.parse') >= 0, 'pkg-ll dot naming wired: ps.parse in global sig table')
@@ -71,21 +72,30 @@ optargs.push('-disable-output')
 optargs.push('/tmp/m5d.ll')
 oo, oe, ocode, oerr = process.cmd('opt', optargs, '', '', [], 0, false)
 syntax-bad = oe.contains('expected ') || oe.contains('redefinition of') || oe.contains('type mismatch')
-runner.is-true(!syntax-bad, 'pkg-ll opt: no SYNTAX errors (only undefined-value allowed)')
+runner.is-true(! syntax-bad, 'pkg-ll opt: no SYNTAX errors (only undefined-value allowed)')
 print('pkg-ll opt rc=' - ocode.to-str() - ' (undefined-value refs = h2m capability gap, deferred to slice 5+)')
 oe.len-bytes() > 0 -> print('pkg-ll opt stderr (first 240 chars): ' - oe.slice-bytes(0, 240))
 
 ; 落到磁碟供外部 opt / clang 檢視
 w = fs.write-bytes('/tmp/m5d.ll', ll.to-bytes())
 w: {
-    ok -> { print('pkg-ll: wrote /tmp/m5d.ll') }
-    nil -> { eprint('pkg-ll: write-bytes returned nil') }
-    err -> { eprint('pkg-ll: write-bytes error') }
+    ok -> {
+        print('pkg-ll: wrote /tmp/m5d.ll')
+    }
+
+    nil -> {
+        eprint('pkg-ll: write-bytes returned nil')
+    }
+
+    err -> {
+        eprint('pkg-ll: write-bytes error')
+    }
 }
 
 runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)
+
     -> exit(0)
 }

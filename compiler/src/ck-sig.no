@@ -45,7 +45,7 @@ ck-sig {
 ; ── 表构造（首块字面量整賦＋余块 push 链，仿 asp.no strs/tape 形制）──
 
 ck-sig.new = () (t ck-sig) {
-    t = ck-sig {
+    t = ck-sig{
         fk: []
         fp: []
         fr: []
@@ -977,7 +977,7 @@ ck-sig-fill-fk = (t ck-sig) {
         'zlib.decompress-stored',
         'zstd.bits-for-count',
         'zstd.compress',
-        'zstd.decompress'
+        'zstd.decompress',
     ]
 }
 
@@ -1870,7 +1870,7 @@ ck-sig-fill-fp = (t ck-sig) {
         '[]byte',
         'i64',
         '[]byte',
-        '[]byte'
+        '[]byte',
     ]
 }
 
@@ -2763,7 +2763,7 @@ ck-sig-fill-fr = (t ck-sig) {
         '?[]byte',
         'i64',
         '[]byte',
-        '[]byte'
+        '[]byte',
     ]
 }
 
@@ -5390,7 +5390,7 @@ ck-sig-fill-mk = (t ck-sig) {
         'zstd.zs-frame.decode-compressed-block',
         'zstd.zs-frame.read-frame-header',
         'zstd.zs-huffman.build',
-        'zstd.zs-huffman.decode'
+        'zstd.zs-huffman.decode',
     ]
 }
 
@@ -8017,7 +8017,7 @@ ck-sig-fill-mp = (t ck-sig) {
         'i64',
         '',
         '[]i64,i64',
-        'zs-bit-reader'
+        'zs-bit-reader',
     ]
 }
 
@@ -10644,7 +10644,7 @@ ck-sig-fill-mr = (t ck-sig) {
         'bool',
         'bool',
         '',
-        'i64'
+        'i64',
     ]
 }
 
@@ -11404,7 +11404,7 @@ ck-sig-fill-sfk = (t ck-sig) {
         'zs-huffman.lengths',
         'zs-huffman.max-symbol',
         'zs-huffman.symbol',
-        'zs-huffman.table-log'
+        'zs-huffman.table-log',
     ]
 }
 
@@ -12164,19 +12164,19 @@ ck-sig-fill-sft = (t ck-sig) {
         '[256]i64',
         'i64',
         '[256]i64',
-        'i64'
+        'i64',
     ]
 }
 
 ck-sig-fill-alk = (t ck-sig) {
     t.alk = [
-        'fd'
+        'fd',
     ]
 }
 
 ck-sig-fill-alt = (t ck-sig) {
     t.alt = [
-        'i64'
+        'i64',
     ]
 }
 
@@ -12283,7 +12283,7 @@ ck-sig-fill-smk = (t ck-sig) {
         'zip',
         'zs-bit-reader',
         'zs-frame',
-        'zs-huffman'
+        'zs-huffman',
     ]
 }
 
@@ -12390,7 +12390,7 @@ ck-sig-fill-smt = (t ck-sig) {
         'zip',
         'zstd',
         'zstd',
-        'zstd'
+        'zstd',
     ]
 }
 
@@ -12398,7 +12398,7 @@ ck-sig-fill-evk = (t ck-sig) {
     t.evk = [
         'code',
         'file-mode',
-        'file-perm'
+        'file-perm',
     ]
 }
 
@@ -12406,7 +12406,7 @@ ck-sig-fill-evt = (t ck-sig) {
     t.evt = [
         'ok,not-found,permission,io,timeout,parse,invalid,overflow,index-out,unknown',
         'read,write,append,read-write',
-        'perm-600,perm-644,perm-664,perm-666,perm-755,perm-777'
+        'perm-600,perm-644,perm-664,perm-666,perm-755,perm-777',
     ]
 }
 
@@ -12530,7 +12530,7 @@ ck-sig-fill-mok = (t ck-sig) {
         'yaml',
         'zip',
         'zlib',
-        'zstd'
+        'zstd',
     ]
 }
 
@@ -12654,7 +12654,7 @@ ck-sig-fill-moo = (t ck-sig) {
         'yaml',
         'archive/zip',
         'archive/zlib',
-        'archive/zstd'
+        'archive/zstd',
     ]
 }
 
@@ -14423,7 +14423,7 @@ ck-sig-fill-bk = (t ck-sig) {
         'xml-skip-ws',
         'year',
         'yes',
-        'zero'
+        'zero',
     ]
 }
 
@@ -16192,7 +16192,7 @@ ck-sig-fill-bv = (t ck-sig) {
         'dom',
         '',
         '',
-        'bigint'
+        'bigint',
     ]
 }
 
@@ -17961,10 +17961,9 @@ ck-sig-fill-bo = (t ck-sig) {
         'dom',
         '',
         '',
-        'bigint'
+        'bigint',
     ]
 }
-
 
 ; ── 查找層 ──
 
@@ -18007,10 +18006,12 @@ ck-sig-lt = (a str, b str) (lt i64) {
         ob = b.byte(i)
         ca = oa: {
             ok -> it
+
             -> 0
         }
         cb = ob: {
             ok -> it
+
             -> 0
         }
         ca < cb -> {
@@ -18108,4 +18109,3 @@ ck-sig-types = (s str) (r []str) {
         r = s.split(',')
     }
 }
-

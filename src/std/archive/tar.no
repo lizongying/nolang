@@ -561,6 +561,7 @@ builder.add-file = (name str, content []byte) {
                 -> _
             }
         }
+
         #{overflow=wrap}
         .pos = .pos + pad
     }
@@ -622,6 +623,7 @@ builder.add-bytes = (name str, content []byte, typ i64) {
                 -> _
             }
         }
+
         #{overflow=wrap}
         .pos = .pos + pad
     }

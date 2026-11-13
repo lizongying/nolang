@@ -171,7 +171,9 @@ holder {
 }
 
 ; (1) 重綁定的視圖：長度必須是 trim 之後的長度
-lines = ['  a  ']
+lines = [
+    '  a  ',
+]
 
 line = lines[0]: {
     ok -> it
@@ -189,7 +191,10 @@ line == 'a' -> print('ok 2: rebound view content')
 -> print('fail 2: rebound view content got=[{line}]')
 
 ; (3) 對照組：單一定義的切片元素接收者，原位變更必須寫回元素本身
-rows = ['x', 'y']
+rows = [
+    'x',
+    'y',
+]
 rows[0].fill(90)
 rows[0] == 'Z' -> print('ok 3: single-def element receiver writes back')
 
@@ -215,7 +220,10 @@ g.len() == 2 -> print('ok 5: rebound field view length')
 -> print('fail 5: rebound field view length got={g.len()}')
 
 ; (6) 重綁定到**另一個**元素後，不得再讀到第一個元素
-ls = ['aaaa', 'b']
+ls = [
+    'aaaa',
+    'b',
+]
 
 v = ls[0]: {
     ok -> it
@@ -243,14 +251,18 @@ box.f == 'ZZ' -> print('ok 7: single-def view still projects to the field')
 -> print('fail 7: field got=[{box.f}]')
 
 ; (8) **容器本身**被重新綁定：投影指向 &ls[0]，容器換了它就指向別的字串
-ls2 = ['aaaa']
+ls2 = [
+    'aaaa',
+]
 
 ln2 = ls2[0]: {
     ok -> it
 
     -> ''
 }
-ls2 = ['bb']
+ls2 = [
+    'bb',
+]
 ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')
 
 -> print('fail 8: rebound container got={ln2.len()}')

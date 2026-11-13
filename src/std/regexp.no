@@ -586,7 +586,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
         ; 結束（非首字元）
         c == 93 && first == 0 -> {
-
             {
 
                 #{overflow=wrap}
@@ -641,7 +640,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
             ; 跳脫序列
             c == 92 -> {
-
                 {
 
                     #{overflow=wrap}
@@ -1005,6 +1003,7 @@ regexp.compile = () {
         ; ^ — 行首錨點
         c == 94 -> {
             .emit(RE-OP-START, 0, 0)
+
             #{overflow=wrap}
             .tmp-next-i = i + 1: {
                 ok -> it
@@ -1016,6 +1015,7 @@ regexp.compile = () {
         ; $ — 行尾錨點
         c == 36 -> {
             .emit(RE-OP-END, 0, 0)
+
             #{overflow=wrap}
             .tmp-next-i = i + 1: {
                 ok -> it
@@ -1195,6 +1195,7 @@ regexp.find = (text str) (result str) {
             ; 提取匹配子串
             end = .match-end
             end < sp -> return
+
             #{overflow=wrap}
             mlen = end - sp
             mlen == 0 -> return

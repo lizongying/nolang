@@ -995,15 +995,17 @@ ps-parse-use = (t ast, p psst) (idx i64) {
     after = 0
     is-term = 0
     tk = 0
+
     ; 前導 /
     ps-peek(p) == tok.QUO -> {
         path = path + '/'
         ps-bump(p)
     }
+
     ; 主迴圈：每輪消費一個 IDENT 路徑段；段後必須是 / 或 . 才續，否則路徑結束
     ; （鏡 Go parseUseStatement stmt.go:643：段後非 QUO/DOT 即 break，緊跟者為別名或終止符）。
     (ps-peek(p) == tok.IDENT) {
-        path = path + ps-cur-lit(p)
+        path = path - ps-cur-lit(p)
         ps-bump(p)
         {
             ps-peek(p) == tok.QUO -> {
@@ -1011,6 +1013,7 @@ ps-parse-use = (t ast, p psst) (idx i64) {
                 ps-bump(p)
                 -> continue
             }
+
             ps-peek(p) == tok.DOT -> {
                 nf = ps-peek-at(p, 1)
                 after = ps-peek-at(p, 2)
@@ -1029,10 +1032,12 @@ ps-parse-use = (t ast, p psst) (idx i64) {
                     -> continue
                 }
             }
+
             ; 段後非 / 非 . ⇒ 路徑結束（緊跟者為別名或 NEWLINE/EOF/AS/RBRACE）
             -> break
         }
     }
+
     ; 可選別名：緊跟路徑/函數後的 `as alias` 或裸 `alias`（Go stmt.go:687-730）。
     ;   tk 在路徑結束時恰指向下一個 token（別名或終止符），未經消費。
     tk = ps-peek(p)

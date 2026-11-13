@@ -1020,6 +1020,7 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
     i0 = 0
     (i0 < from) {
         off = off + c.stfc[i0]
+
         #{overflow=wrap}
         i0 = i0 + 1
     }
@@ -1032,10 +1033,12 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
             fty = h2m-tynode-code(t, c, ftn)
             fty < 0 -> h2m-mark(c)
             c.stft.push(fty)
+
             #{overflow=wrap}
             j = j + 1
         }
         off = off + fc
+
         #{overflow=wrap}
         i = i + 1
     }

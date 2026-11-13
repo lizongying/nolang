@@ -965,13 +965,16 @@ print-struct-to-str = () {
     print(p)
     g = sgroup{
         name: 'team'
-        pts: [spoint{
-            x: 1
-            y: 2
-        }, spoint{
-            x: 3
-            y: 4
-        }]
+        pts: [
+            spoint{
+                x: 1
+                y: 2
+            },
+            spoint{
+                x: 3
+                y: 4
+            },
+        ]
     }
     print(g)
     print('p={p}')

@@ -46,16 +46,19 @@ new-v4 = (state i64) (out uuid) {
 
         {
             i + 1 < 16 -> {
+
                 #{overflow=wrap}
                 out.bytes[i + 1] = (r >> 8) & 255
             }
 
             i + 2 < 16 -> {
+
                 #{overflow=wrap}
                 out.bytes[i + 2] = (r >> 16) & 255
             }
 
             i + 3 < 16 -> {
+
                 #{overflow=wrap}
                 out.bytes[i + 3] = (r >> 24) & 255
             }
@@ -911,7 +914,6 @@ hex-val = (c i64) (v i64) {
     v = -1
     {
         c >= 48 && c <= 57 -> {
-
             {
 
                 #{overflow=wrap}
@@ -926,7 +928,6 @@ hex-val = (c i64) (v i64) {
         }
 
         c >= 65 && c <= 70 -> {
-
             {
 
                 #{overflow=wrap}
@@ -941,7 +942,6 @@ hex-val = (c i64) (v i64) {
         }
 
         c >= 97 && c <= 102 -> {
-
             {
 
                 #{overflow=wrap}

@@ -132,7 +132,6 @@ u64.to-str = () (out str) {
     tmp = ru
     digits = 0
     (tmp > 0) {
-
         {
 
             #{overflow=wrap}
@@ -258,8 +257,10 @@ f64.to-str = () (out str) {
 
     ; 位元分解：value = M * 2^e2（M 為整數有效數，含隱含位；e2 使得 value 精確等於此式）
     one64 u64 = 1
+
     #{overflow=wrap}
     mask11 u64 = (one64 << 11) - 1
+
     #{overflow=wrap}
     mask52 u64 = (one64 << 52) - 1
     bit52 = (one64 << 52)
@@ -371,7 +372,6 @@ f64.to-str = () (out str) {
                 best-k = k-ten
             }
             found == 0 -> {
-
                 {
 
                     #{overflow=wrap}
@@ -467,9 +467,11 @@ f64.to-str = () (out str) {
                 stz = 0
             }
             sk > 1 -> {
+
                 #{overflow=wrap}
                 slb = n-str[sk - 1]
                 slb == 48 -> {
+
                     #{overflow=wrap}
                     sk = sk - 1
                 }
@@ -479,12 +481,14 @@ f64.to-str = () (out str) {
             }
         }
         exp-abs = E
+
         #{overflow=wrap}
         exp-abs < 0 -> exp-abs = 0 - exp-abs
         expstr = exp-abs.to-str()
         elen = expstr.len-bytes()
         elen < 2 -> elen = 2
         cap = 1
+
         #{overflow=wrap}
         sk > 1 -> cap = cap + 1 + (sk - 1)
         {
@@ -663,9 +667,11 @@ f64.to-str = () (out str) {
 
     ; 固定記號
     E >= 0 -> {
+
         #{overflow=wrap}
         int-digits = E + 1
         cap = int-digits
+
         #{overflow=wrap}
         best-k > 0 -> cap = int-digits + 1 + best-k
         neg == 1 -> {
@@ -774,6 +780,7 @@ f64.to-str = () (out str) {
     ; E < 0：0.00...d
     #{overflow=wrap}
     zeros = 0 - E - 1
+
     #{overflow=wrap}
     cap = 2 + zeros + k
     neg == 1 -> {
@@ -1074,13 +1081,13 @@ f64.to-str-fixed = (precision i64) (out str) {
 
     ; 整數部分
     j <- [0..int-len): {
-
         {
             j < pad -> {
                 obf[pos] = 48
             }
 
             -> {
+
                 #{overflow=wrap}
                 obf[pos] = mstr.byte(j - pad)
             }
@@ -1119,6 +1126,7 @@ f64.to-str-fixed = (precision i64) (out str) {
                 }
 
                 -> {
+
                     #{overflow=wrap}
                     obf[pos] = mstr.byte(idx - pad)
                 }
@@ -1680,6 +1688,7 @@ f64.to-str-general = (precision i64) (out str) {
     pad = 0
 
     mn < precision -> {
+
         #{overflow=wrap}
         pad = precision - mn: {
             ok -> it
@@ -1927,6 +1936,7 @@ f64.to-str-general = (precision i64) (out str) {
             ; 否則 %g 輸出成 `10.`（Go 是 `10`）。原本的守衛寫成 `end > dot-pos + 1`
             ; 恰好把這個邊界排除在外，等於永遠不執行。
             end > dot-pos -> {
+
                 #{overflow=wrap}
                 s.byte(end - 1) == 46 -> end = end - 1
             }
@@ -2355,7 +2365,6 @@ pow = (base i64, n i64) (res i64) {
     res = 1
     b = base
     (rn > 0) {
-
         rn & 1 == 1 -> {
             {
 
@@ -2906,7 +2915,6 @@ i64.sqrt = () (r i64) {
             }
 
             -> {
-
                 {
 
                     #{overflow=wrap}
@@ -3063,7 +3071,6 @@ i8.sqrt = () (r i8) {
             }
 
             -> {
-
                 {
 
                     #{overflow=wrap}
@@ -3212,7 +3219,6 @@ i16.sqrt = () (r i16) {
             }
 
             -> {
-
                 {
 
                     #{overflow=wrap}
@@ -3360,7 +3366,6 @@ i32.sqrt = () (r i32) {
             }
 
             -> {
-
                 {
 
                     #{overflow=wrap}
