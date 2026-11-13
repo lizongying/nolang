@@ -1,16 +1,26 @@
 # 更新日誌
 
-## 未發布
+## v0.4.20
 
-- feat(mir): `[]T` 描述符从 24B 改为 16B —— `%vec = { i32 len, i32 cap, i64 data }`，内部 len/cap 为 `u32`，对外 `v.len()` 仍是 `i64`（边界 `zext`/`trunc`）；data 字段刻意保持 `i64`（`ptrtoint`），不与 `%str-long` 共享布局。同步 `elemInfoOfVec` stride、四张尺寸表、`os.args()` / `fs.read-file` / `getgroups` / `ensureVecBuffer` 等全部 header 读写点（统一走 `vecLenI64` / `vecCapI64` / `vecHeaderLoadI64` / `vecHeaderStoreI64` / `vecFromParts`）；顺带修正 `enumRawSlots` 对 `str` 返回 3（与 `enumFieldSlots` 的 2 不一致）的越界写隐患。`std/vec.no` 与 `std/arr.no` 新增 `#{buildin}` 布局声明供 LSP 查看；自举镜像 `compiler/src/cg-runtime.no` 与 `cg.no` 同步；docs 更新 lang/memory、std/basic-types、std/core-library 及英文 i18n 副本
-- feat(mir): `str` 描述符从 24B 改为 16B —— `%str-long = { i32 len, i32 cap, i8* data }`，内部 len/cap 为 `u32`，对外 API（`len-bytes()` / `len()` / `cap()` / `_len` / `_cap` / `_set-len` / `_set-cap`）仍为 `i64`；同步 `[]str` stride、`os.args()`、`?str`/enum payload slots、全局字符串常量与运行时 helper；`txt` 保持 256B 不变。docs 同步 lang/str、lang/memory、std/basic-types、std/core-library 及英文 i18n 副本
-- **BREAKING(D11)**: 废弃并移除 `#{index-out=DEF}` 注解 —— `a[i]` 恒返回 `?T`，只能以 match 或 `?=` 显式消费；残留注解报专用错误；显式 plain 型别逃生口 `v i64 = a[i]` 同时废除，把 `?T` 当普通值用（`crc ^ s[i]`）升级为阻断 `no build` 的硬错误。全仓 90 个被跟踪 `.no` 文件 / 1029 行注解站点一次性迁移；`no fmt --fix=index-out` 作为迁移工具随 D11 退役
-- feat(lang): `?=` 简写在「函式有 `?T` 结果参数」**或**「陈述位于陈述层级块 match 主体内」两种情形之一即可使用；`err -> _` / `-> _` 两臂是无 `?T` 结果参数函式的标准兜底，AGENTS.md / syntax 指南 / nolang-syntax skill 已同步
-- docs(design): `option-unified.md` 加 D11 取代横幅，D4 / D7 / D9 / D10 与 map 规则继续有效
-- feat(parser): 块 match 的 `it = <值 match>` 具备 place-write 写回语义（修 `rewriteItPlaceWrites` 漏判）
-- feat(parser): add the block form of match subject `{ body }: { arms }` — captures `?=` failures inside the body so functions without a `?T` result param can handle errors locally; nearest (innermost) block match wins, one failure stops the whole body, standard three-state exhaustiveness applies
-- feat(fmt): round-trip `}: {` verbatim and keep the sugar AST pristine across H0 expansion
-- docs(lang): document the three match subject forms (value / expression / block) in the syntax guide, AGENTS.md and the nolang-syntax skill
+- feat(pkg): implement package module loading and multi-module codegen, resolving cross-package imports from `workspace.noml`
+- refactor(compiler): BREAKING -- remove support for default parameter values in function signatures
+- feat(mir): shrink the `str` and `[]T` descriptors from 24B to 16B (`i32 len`, `i32 cap`, `i64 data` / `i8* data`) while the public API stays `i64`
+- refactor(compiler): BREAKING(D11) -- remove the `#{index-out=DEF}` annotation; `a[i]` always yields `?T` and must be consumed by match or `?=`, and using it as a plain value is now a hard error
+- feat(parser): add the block form of a match subject `{ body }: { arms }` so a `?=` failure inside the body is handled locally
+- feat(parser): allow the `?=` shorthand inside a statement-level block match body, with `err -> _` / `-> _` as the standard fallbacks when the function has no `?T` result
+- feat(h2m): add scope-exit release for str and vec ownership across straight-line and control-flow functions, including struct fields
+- feat(compiler): support `#{overflow=wrap}` on arithmetic statements, including DOT-leading statements, and keep the annotation across `no fmt`
+- fix(parser): complete the option arithmetic type chain, range-for iteration typing, value-match call subjects, and union monomorphization inference
+- fix(checker): resolve the `?T` receiver of a desugared operator chain so the union-argument guard fires again
+- feat(checker): move index and `?T` len/cap diagnostics into the checker and attach DiagnosticFix suggestions for `no vet`
+- refactor(std): ban `s[i] = v` index writes in favour of the `push` family, place-match, `fill`, and `[]byte`
+- feat(fmt): fold same-target arm assignments into value-context matches
+- feat(glossary): add the structured glossary knowledge base with a Nolang CLI and MCP front end
+- feat(cli): default `no test -timeout` to 60s so hung processes do not leave orphans
+- feat(playground): rework the browser playground with 24 demos and Direct-WASM alignment
+- fix(checker): rewrite the range-index loop hint to separate the read and write forms of container iteration
+- test: merge similar cases into themed clusters and drop batch placeholder names
+- docs: ban section divider banners and attach standalone comments with a `...` placeholder statement
 
 ## v0.4.19
 

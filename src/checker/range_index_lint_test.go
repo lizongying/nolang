@@ -1,6 +1,9 @@
 package checker
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestRangeIndexLoopHint：`for i <- [a..b) { … arr[i] … }` 這種「手動按下標遍歷」
 // 會被建議改用容器迭代（trace rngidx，HINT）。
@@ -206,5 +209,39 @@ func TestRangeIndexLoopHintForProvisionedVec(t *testing.T) {
 	counts := lintCounts(t, src)
 	if counts[rngidxTraceID] != 1 {
 		t.Fatalf("expected 1 rngidx hint for with-len(32) + [0..32), got %v", counts)
+	}
+}
+
+// TestRangeIndexLoopHintForPlaceWrite：**寫入態**同樣是一張兌現得了的支票 ——
+// 容器迭代的迴圈變數是元素的 place，`x = v` 直接落回元素，與
+// `base[i]: { ok -> it = v }` 等價（`src/std/crypto/ecdsa.no` 的清零迴圈就是
+// 這一態）。提示詞必須照這態給例子，不能只給 option 解包形。
+//
+// 同時釘住「文案真的渲染出來了」：i18n.T 的實參個數與模板動詞數必須對得上，
+// 少給一個就是使用者看到的 `%!s(MISSING)` —— 而 catalog 的動詞門禁只比對
+// en 與各語系（兩邊同錯也照樣通過），抓不到呼叫點這一步。
+func TestRangeIndexLoopHintForPlaceWrite(t *testing.T) {
+	src := `f = () (out [8]byte) {
+    i <- [0..8): {
+        out[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}`
+	lints := RunAllLints(parseProg(t, src), LintOptions{SourcePath: "src/app.no"})
+	hints := 0
+	for _, l := range lints {
+		if l.TraceID != rngidxTraceID {
+			continue
+		}
+		hints++
+		if strings.Contains(l.Message, "%!") {
+			t.Errorf("hint message has a format verb without an argument: %q", l.Message)
+		}
+	}
+	if hints != 1 {
+		t.Fatalf("place write over the whole container should be hinted once, got %d", hints)
 	}
 }

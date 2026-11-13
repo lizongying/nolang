@@ -732,20 +732,14 @@ Sortie ESM servie sur %s (Ctrl+C pour arrêter)
   'm17ikt3w': 'builtin %s : impossible de stocker %s dans %s'
   'm1yd7r5x': 'le token suivant devait être %s, %s obtenu'
   'm2fh7rfg': `
-boucle avec index de plage : « %s[%s] » lit par index à la main dans `%s <- [a..b):` ; si vous n’avez pas besoin de l’index, itérez le conteneur avec `x <- %s` (sans index, pas de vérification de limites ni d’option à déballer). Par exemple, réécrivez
-     %s <- [0..n): {
-         %s[%s]: {
-             ok -> it = 0
-             -> _
-         }
+boucle avec index de plage : « %s[%s] » est accédé par index à la main dans `%s <- [a..b):` ; si vous n’avez pas besoin de l’index, itérez le conteneur avec `x <- %s` — sans index, pas de vérification de limites ni d’option à déballer. La variable de boucle est la place de l’élément, une seule forme couvre donc les deux sens :
+     lecture: x <- %s: {
+         print(x)      ; x est un élément brut, pas un `?T`
      }
-   en
-     x <- %s: {
-         x: {
-             ok -> it = 0
-             -> _
-         }
+     écriture: x <- %s: {
+         x = 0x00      ; l’affectation revient dans l’élément
      }
+     remplissage: %s.fill(0x00)      ; tout le conteneur à la même valeur, sans boucle
 `
   'm4mu624f': 'sérialisation du fichier de verrouillage : %w'
   'm4re9802': `

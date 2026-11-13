@@ -556,6 +556,66 @@ func TestIndexOutAdviceRemovedFromAllLocales(t *testing.T) {
 	}
 }
 
+// TestRangeIndexHintShowsBothDirections pins the read/write wording of
+// m2fh7rfg, the range-index HINT. The message used to show exactly one
+// example — `x: { ok -> it = 0 }` — which is the shape of an INDEX read
+// (`?T` that has to be unwrapped). The loop variable of `x <- arr` is a bare
+// element bound to its place, so that snippet neither compiles nor covers the
+// zeroing loop people actually write (`out[i]: { ok -> it = 0 }`). Every
+// locale must therefore show the read form, the write form AND the fill
+// shortcut. Only the prose around the code is translated, so the fragments
+// are the same tokens in every locale.
+//
+// The ARGUMENT ORDER is checked as well: `verbs()` compares conversion
+// characters only, so a translation that moves `%s <- [a..b):` in front of
+// `'%s[%s]'` passes every other gate while printing `out <- [a..b):` の中で
+// 'i[i]'. Rendering with distinguishable placeholders is the only way to see
+// a permutation. (That is not hypothetical: ja and ko write the sentence
+// base-first.)
+func TestRangeIndexHintShowsBothDirections(t *testing.T) {
+	const id = "m2fh7rfg"
+	// print(x): reading the element needs no unwrap.
+	// x = 0x00:  the loop variable is a place, so the store lands back.
+	// .fill(0x00): the one-line way to give every element the same value.
+	markers := []string{"print(x)", "x = 0x00", ".fill(0x00)"}
+	// The call site passes base, index, index, then base four more times.
+	const base, idx = "__BASE__", "__IDX__"
+	args := []any{base, idx, idx, base, base, base, base}
+	for _, tag := range catalog.Locales() {
+		t.Run(tag, func(t *testing.T) {
+			cat, err := catalog.Load(nil, tag)
+			if err != nil {
+				t.Fatalf("load %s: %v", tag, err)
+			}
+			msg, ok := cat[id]
+			if !ok {
+				t.Fatalf("%s.noml is missing %s", tag, id)
+			}
+			for _, m := range markers {
+				if !strings.Contains(msg, m) {
+					t.Errorf("%s.noml %s is missing the %q example: %q", tag, id, m, msg)
+				}
+			}
+			out := fmt.Sprintf(msg, args...)
+			if strings.Contains(out, "%!") {
+				t.Errorf("%s.noml %s renders a format error: %q", tag, id, out)
+			}
+			// '%s[%s]' names the container and the index; `%s <- [a..b):` is
+			// the LOOP VARIABLE (the index, not the container). Both iteration
+			// examples must then iterate that same container.
+			if !strings.Contains(out, base+"["+idx+"]") {
+				t.Errorf("%s.noml %s: '%s[%s]' did not render as %s[%s]: %q", tag, id, "%s", "%s", base, idx, out)
+			}
+			if !strings.Contains(out, "`"+idx+" <- [a..b):`") {
+				t.Errorf("%s.noml %s: `%s <- [a..b):` must hold the loop variable, got %q", tag, id, "%s", out)
+			}
+			if n := strings.Count(out, "x <- "+base+":"); n != 2 {
+				t.Errorf("%s.noml %s: want 2 iteration examples over %s, got %d: %q", tag, id, base, n, out)
+			}
+		})
+	}
+}
+
 // usageLineRe matches a help-text example line: two spaces of indent, then the
 // thing the user types. The `echo 'x=1' | no fmt` pipeline counts as well.
 var usageLineRe = regexp.MustCompile(`^  (no |echo )`)

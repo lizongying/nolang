@@ -27,6 +27,12 @@ const rngidxTraceID = "m2fh7rfg"
 // 只充當同一個容器的下標、沒被當值使用、沒有 `base[i] = v` 直寫、基底是可迭代
 // 的裸變數、且區間可證明恰好覆蓋整個容器。判定見 range_index_convert.go。
 //
+// 提示詞按「讀 / 寫」兩態分別舉例（2026-11-13）：容器迭代的迴圈變數是**元素的
+// place**、型別是裸值 `T`，因此讀（無需解包）與寫（`x = v` 直接落回元素）都用
+// 同一個 `x`。舊文案只給了一種 option 解包形（`x: { ok -> it = 0 }`），那是把
+// 「按下標讀到 `?T`」的形狀硬套到迭代元素上 —— 照抄編不過，而真正要清零的迴圈
+// （`out[i]: { ok -> it = 0 }`）反而正是該看「寫」那一態的場景。
+//
 // 不做的事：不自動改寫。是否真的想換寫法仍交給人工決定。
 func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []ValidateResult {
 	if program == nil {
@@ -168,8 +174,8 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 									Column:  idx.Pos().Column,
 									File:    file,
 									TraceID: "m2fh7rfg",
-									Message: i18n.T("m2fh7rfg", "range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s:` (no index means no bounds check and no option to unwrap). e.g. rewrite\n     %s <- [0..n): {\n         %s[%s]: {\n             ok -> it = 0\n             -> _\n         }\n     }\n   as\n     x <- %s: {\n         x: {\n             ok -> it = 0\n             -> _\n         }\n     }",
-										base, name, name, base, name, base, name, base),
+									Message: i18n.T("m2fh7rfg", "range-index loop: '%s[%s]' is accessed by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` — no index means no bounds check and no option to unwrap. The loop variable is the element's place, so one form covers both directions:\n     read:  x <- %s: {\n         print(x)      ; x is a bare element, not `?T`\n     }\n     write: x <- %s: {\n         x = 0x00      ; the store lands back in the element\n     }\n     fill:  %s.fill(0x00)      ; every element the same value, no loop",
+										base, name, name, base, base, base, base),
 								})
 							}
 						}

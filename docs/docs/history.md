@@ -6,13 +6,27 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
-## 未發布
+## v0.4.20
 
-- feat(mir)：`[]T` 描述符從 24B 改為 16B —— `%vec = { i32 len, i32 cap, i64 data }`，內部 len/cap 為 `u32`，對外 `v.len()` 仍是 `i64`（邊界 `zext`/`trunc`）；data 欄位刻意保持 `i64`（`ptrtoint`），不與 `%str-long` 共享佈局。同步 `elemInfoOfVec` stride、四張尺寸表、`os.args()` / `fs.read-file` / `getgroups` / `ensureVecBuffer` 等全部 header 讀寫點（統一走 `vecLenI64` / `vecCapI64` / `vecHeaderLoadI64` / `vecHeaderStoreI64` / `vecFromParts`）；順帶修正 `enumRawSlots` 對 `str` 返回 3（與 `enumFieldSlots` 的 2 不一致）的越界寫隱患。`std/vec.no` 與 `std/arr.no` 新增 `#{buildin}` 佈局聲明供 LSP 查看；自舉鏡像 `compiler/src/cg-runtime.no` 與 `cg.no` 同步；docs 更新 lang/memory、std/basic-types、std/core-library 與英文 i18n 副本
-- feat(mir)：`str` 描述符從 24B 改為 16B —— `%str-long = { i32 len, i32 cap, i8* data }`，內部 len/cap 為 `u32`，對外 API（`len-bytes()` / `len()` / `cap()` / `_len` / `_cap` / `_set-len` / `_set-cap`）仍為 `i64`；同步 `[]str` stride、`os.args()`、`?str` / enum payload slots、全域字串常量與 runtime helper；`txt` 維持 256B 不變。docs 同步 lang/str、lang/memory、std/basic-types、std/core-library 與英文 i18n 副本
-- feat(parser): 新增 match 主語的塊形態 `{ body }: { arms }`，捕捉主體內 `?=` 的失敗，讓沒有 `?T` 結果參數的函式也能就地處理錯誤；最近的（最內層）塊 match 優先，一次失敗停住整個主體，窮盡性沿用標準三態 `?T` 規則
-- feat(fmt): `}: {` 逐位元往返；H0 展開不再改寫糖 AST
-- docs(lang): 於語法指南、AGENTS.md 與 nolang-syntax skill 補上 match 主語三種形態（值 / 表達式 / 塊）
+- feat(pkg): implement package module loading and multi-module codegen, resolving cross-package imports from `workspace.noml`
+- refactor(compiler): BREAKING -- remove support for default parameter values in function signatures
+- feat(mir): shrink the `str` and `[]T` descriptors from 24B to 16B (`i32 len`, `i32 cap`, `i64 data` / `i8* data`) while the public API stays `i64`
+- refactor(compiler): BREAKING(D11) -- remove the `#{index-out=DEF}` annotation; `a[i]` always yields `?T` and must be consumed by match or `?=`, and using it as a plain value is now a hard error
+- feat(parser): add the block form of a match subject `{ body }: { arms }` so a `?=` failure inside the body is handled locally
+- feat(parser): allow the `?=` shorthand inside a statement-level block match body, with `err -> _` / `-> _` as the standard fallbacks when the function has no `?T` result
+- feat(h2m): add scope-exit release for str and vec ownership across straight-line and control-flow functions, including struct fields
+- feat(compiler): support `#{overflow=wrap}` on arithmetic statements, including DOT-leading statements, and keep the annotation across `no fmt`
+- fix(parser): complete the option arithmetic type chain, range-for iteration typing, value-match call subjects, and union monomorphization inference
+- fix(checker): resolve the `?T` receiver of a desugared operator chain so the union-argument guard fires again
+- feat(checker): move index and `?T` len/cap diagnostics into the checker and attach DiagnosticFix suggestions for `no vet`
+- refactor(std): ban `s[i] = v` index writes in favour of the `push` family, place-match, `fill`, and `[]byte`
+- feat(fmt): fold same-target arm assignments into value-context matches
+- feat(glossary): add the structured glossary knowledge base with a Nolang CLI and MCP front end
+- feat(cli): default `no test -timeout` to 60s so hung processes do not leave orphans
+- feat(playground): rework the browser playground with 24 demos and Direct-WASM alignment
+- fix(checker): rewrite the range-index loop hint to separate the read and write forms of container iteration
+- test: merge similar cases into themed clusters and drop batch placeholder names
+- docs: ban section divider banners and attach standalone comments with a `...` placeholder statement
 
 ## v0.4.19
 

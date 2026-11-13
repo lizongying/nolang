@@ -729,20 +729,14 @@ Serving ESM output at %s (Ctrl+C to stop)
   'm17ikt3w': 'builtin %s: cannot store %s into %s'
   'm1yd7r5x': 'expected next token to be %s, got %s instead'
   'm2fh7rfg': `
-range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s:` (no index means no bounds check and no option to unwrap). e.g. rewrite
-     %s <- [0..n): {
-         %s[%s]: {
-             ok -> it = 0
-             -> _
-         }
+range-index loop: '%s[%s]' is accessed by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` — no index means no bounds check and no option to unwrap. The loop variable is the element's place, so one form covers both directions:
+     read:  x <- %s: {
+         print(x)      ; x is a bare element, not `?T`
      }
-   as
-     x <- %s: {
-         x: {
-             ok -> it = 0
-             -> _
-         }
+     write: x <- %s: {
+         x = 0x00      ; the store lands back in the element
      }
+     fill:  %s.fill(0x00)      ; every element the same value, no loop
 `
   'm4mu624f': 'marshaling lock file: %w'
   'm4re9802': `

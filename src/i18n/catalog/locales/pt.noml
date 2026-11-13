@@ -727,20 +727,14 @@ Servindo a saída ESM em %s (Ctrl+C para parar)
   'm17ikt3w': 'builtin %s: não é possível armazenar %s em %s'
   'm1yd7r5x': 'esperado que o próximo token fosse %s, obtido %s em vez disso'
   'm2fh7rfg': `
-laço de índice por intervalo: '%s[%s]' lê por índice manualmente dentro de `%s <- [a..b):`; se não precisa do próprio índice, itere o contêiner com `x <- %s` (sem índice significa sem verificação de limites e sem option a desencapsular). Exemplo: reescreva
-     %s <- [0..n): {
-         %s[%s]: {
-             ok -> it = 0
-             -> _
-         }
+laço de índice por intervalo: '%s[%s]' é acessado por índice manualmente dentro de `%s <- [a..b):`; se não precisa do próprio índice, itere o contêiner com `x <- %s` — sem índice significa sem verificação de limites e sem option a desencapsular. A variável do laço é o place do elemento, então uma só forma cobre os dois sentidos:
+     leitura: x <- %s: {
+         print(x)      ; x é um elemento puro, não um `?T`
      }
-   como
-     x <- %s: {
-         x: {
-             ok -> it = 0
-             -> _
-         }
+     escrita: x <- %s: {
+         x = 0x00      ; a atribuição volta para o próprio elemento
      }
+     preenchimento: %s.fill(0x00)      ; todo o contêiner com o mesmo valor, sem laço
 `
   'm4mu624f': 'marshalling do arquivo lock: %w'
   'm4re9802': `

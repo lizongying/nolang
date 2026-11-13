@@ -729,20 +729,14 @@ Sirviendo la salida ESM en %s (Ctrl+C para parar)
   'm17ikt3w': 'builtin %s: no se puede almacenar %s en %s'
   'm1yd7r5x': 'se esperaba que el siguiente token fuese %s, se obtuvo %s'
   'm2fh7rfg': `
-bucle con índice de rango: '%s[%s]' lee por índice a mano dentro de `%s <- [a..b):`; si no necesitas el índice, itera el contenedor con `x <- %s` (sin índice no hay comprobación de límites ni option que desempaquetar). Ejemplo: reescriba
-     %s <- [0..n): {
-         %s[%s]: {
-             ok -> it = 0
-             -> _
-         }
+bucle con índice de rango: se accede a '%s[%s]' por índice a mano dentro de `%s <- [a..b):`; si no necesitas el índice, itera el contenedor con `x <- %s` — sin índice no hay comprobación de límites ni option que desempaquetar. La variable de bucle es el place del elemento, así que una sola forma cubre ambos sentidos:
+     lectura: x <- %s: {
+         print(x)      ; x es un elemento desnudo, no un `?T`
      }
-   como
-     x <- %s: {
-         x: {
-             ok -> it = 0
-             -> _
-         }
+     escritura: x <- %s: {
+         x = 0x00      ; la asignación vuelve al propio elemento
      }
+     relleno: %s.fill(0x00)      ; todo el contenedor con el mismo valor, sin bucle
 `
   'm4mu624f': 'serializando el archivo de bloqueo: %w'
   'm4re9802': `

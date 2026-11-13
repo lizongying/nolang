@@ -245,15 +245,15 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 				// This runs on the MERGED program where method calls have already
 				// been rewritten, so extra args are expected and legitimate.
 				if len(e.Arguments) < minArgs {
-				results = append(results, ValidateResult{
-					TraceID: "j7dzteja",
-					Line:    e.Token.Line,
-					Column:  e.Token.Column,
-					Message: i18n.T("j7dzteja", "function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
-					Fixes: []parser.DiagnosticFix{{
-						Description: fmt.Sprintf("add %d more argument(s) to the call", minArgs-len(e.Arguments)),
-					}},
-				})
+					results = append(results, ValidateResult{
+						TraceID: "j7dzteja",
+						Line:    e.Token.Line,
+						Column:  e.Token.Column,
+						Message: i18n.T("j7dzteja", "function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
+						Fixes: []parser.DiagnosticFix{{
+							Description: fmt.Sprintf("add %d more argument(s) to the call", minArgs-len(e.Arguments)),
+						}},
+					})
 				}
 			}
 		}
@@ -2171,22 +2171,32 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 	recvType := resolveExprType(dot.Receiver, varTypes, structFields)
 	params, key, storage := stdMethodParamTypes(recvType, dot.Property)
 	if len(params) == 0 {
-		// 降糖運算符鏈 `(m._mul(10))._add(x)`：接收者本身是運算符呼叫，通用解析
-		// 回 ""（表裡沒有 `(呼叫).方法` 這種鍵），上面那張參數表就查不到。對
-		// union 形參而言這正是缺陷的原始形狀，故單獨補一次接收者解析；其餘判定
-		// （stdargtyp 等）保持原樣不動，避免改動既有診斷面。
+		// 降糖運算符鏈 `(m._mul(10))._add(x)`：接收者本身是運算符呼叫，上面那張
+		// 參數表就查不到它的方法。對 union 形參而言這正是缺陷的原始形狀，故單獨
+		// 補一次接收者解析；其餘判定（stdargtyp 等）保持原樣不動，避免改動既有
+		// 診斷面。
+		//
+		// 兩條鍵都要試，缺一不可：運算符呼叫的結果型別是 `?T`（算術帶溢出檢查），
+		// 而 std 方法表以裸 `T` 為鍵（`bigint._add`）。所以 `?bigint` 查不到時必須
+		// 退回載荷型別 `bigint`，否則守衛會在自己存在的理由上失聲（實測
+		// `TestUnionArgDesugaredOperatorChain` 全程 0 診斷）。
 		altRecv := resolveArgType(dot.Receiver, varTypes, structFields)
-		if altRecv != "" {
-			if altParams, _, _ := stdMethodParamTypes(altRecv, dot.Property); len(altParams) > 0 {
-				for i, arg := range e.Arguments {
-					if i >= len(altParams) || altParams[i] == "" {
-						break
-					}
-					arg = ungroupExpr(arg)
-					if us := checkUnionMemberArg(arg, altParams[i], resolveArgType(arg, varTypes, structFields),
-						altRecv+"."+dot.Property, i+1); len(us) > 0 {
-						return us
-					}
+		for _, recv := range []string{altRecv, strings.TrimPrefix(altRecv, "?")} {
+			if recv == "" {
+				continue
+			}
+			altParams, _, _ := stdMethodParamTypes(recv, dot.Property)
+			if len(altParams) == 0 {
+				continue
+			}
+			for i, arg := range e.Arguments {
+				if i >= len(altParams) || altParams[i] == "" {
+					break
+				}
+				arg = ungroupExpr(arg)
+				if us := checkUnionMemberArg(arg, altParams[i], resolveArgType(arg, varTypes, structFields),
+					recv+"."+dot.Property, i+1); len(us) > 0 {
+					return us
 				}
 			}
 		}

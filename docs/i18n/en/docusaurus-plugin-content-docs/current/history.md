@@ -6,12 +6,27 @@ sidebar_position: 2
 
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
-## Unreleased
+## v0.4.20
 
-- feat(mir): shrink the `str` descriptor from 24B to 16B — `%str-long = { i32 len, i32 cap, i8* data }` with `u32` len/cap internally while every public API (`len-bytes()` / `len()` / `cap()` / `_len` / `_cap` / `_set-len` / `_set-cap`) stays `i64`; the `[]str` stride, `os.args()`, `?str`/enum payload slots, global string constants and runtime helpers follow the new layout; `txt` keeps its 256B layout. Docs updated for lang/str, lang/memory, std/basic-types, std/core-library and their English i18n copies
-- feat(parser): add the block form of match subject `{ body }: { arms }` — captures `?=` failures inside the body so functions without a `?T` result param can handle errors locally; nearest (innermost) block match wins, one failure stops the whole body, standard three-state exhaustiveness applies
-- feat(fmt): round-trip `}: {` verbatim and keep the sugar AST pristine across H0 expansion
-- docs(lang): document the three match subject forms (value / expression / block) in the syntax guide, AGENTS.md and the nolang-syntax skill
+- feat(pkg): implement package module loading and multi-module codegen, resolving cross-package imports from `workspace.noml`
+- refactor(compiler): BREAKING -- remove support for default parameter values in function signatures
+- feat(mir): shrink the `str` and `[]T` descriptors from 24B to 16B (`i32 len`, `i32 cap`, `i64 data` / `i8* data`) while the public API stays `i64`
+- refactor(compiler): BREAKING(D11) -- remove the `#{index-out=DEF}` annotation; `a[i]` always yields `?T` and must be consumed by match or `?=`, and using it as a plain value is now a hard error
+- feat(parser): add the block form of a match subject `{ body }: { arms }` so a `?=` failure inside the body is handled locally
+- feat(parser): allow the `?=` shorthand inside a statement-level block match body, with `err -> _` / `-> _` as the standard fallbacks when the function has no `?T` result
+- feat(h2m): add scope-exit release for str and vec ownership across straight-line and control-flow functions, including struct fields
+- feat(compiler): support `#{overflow=wrap}` on arithmetic statements, including DOT-leading statements, and keep the annotation across `no fmt`
+- fix(parser): complete the option arithmetic type chain, range-for iteration typing, value-match call subjects, and union monomorphization inference
+- fix(checker): resolve the `?T` receiver of a desugared operator chain so the union-argument guard fires again
+- feat(checker): move index and `?T` len/cap diagnostics into the checker and attach DiagnosticFix suggestions for `no vet`
+- refactor(std): ban `s[i] = v` index writes in favour of the `push` family, place-match, `fill`, and `[]byte`
+- feat(fmt): fold same-target arm assignments into value-context matches
+- feat(glossary): add the structured glossary knowledge base with a Nolang CLI and MCP front end
+- feat(cli): default `no test -timeout` to 60s so hung processes do not leave orphans
+- feat(playground): rework the browser playground with 24 demos and Direct-WASM alignment
+- fix(checker): rewrite the range-index loop hint to separate the read and write forms of container iteration
+- test: merge similar cases into themed clusters and drop batch placeholder names
+- docs: ban section divider banners and attach standalone comments with a `...` placeholder statement
 
 ## v0.4.19
 

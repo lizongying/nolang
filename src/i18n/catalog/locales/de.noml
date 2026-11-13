@@ -727,20 +727,14 @@ ESM-Ausgabe unter %s (Ctrl+C zum Beenden)
   'm17ikt3w': 'builtin %s: %s kann nicht in %s gespeichert werden'
   'm1yd7r5x': 'nächstes Token sollte %s sein, stattdessen %s erhalten'
   'm2fh7rfg': `
-Bereichsindex-Schleife: '%s[%s]' liest per Hand anhand eines Index innerhalb von `%s <- [a..b):`; wenn Sie den Index selbst nicht brauchen, durchlaufen Sie den Container mit `x <- %s` (kein Index bedeutet keine Bereichsprüfung und keine option zum Entpacken). Beispiel:
-     %s <- [0..n): {
-         %s[%s]: {
-             ok -> it = 0
-             -> _
-         }
+Bereichsindex-Schleife: auf '%s[%s]' wird innerhalb von `%s <- [a..b):` von Hand per Index zugegriffen; wenn Sie den Index selbst nicht brauchen, durchlaufen Sie den Container mit `x <- %s` — kein Index bedeutet keine Bereichsprüfung und keine option zum Entpacken. Die Schleifenvariable ist der place des Elements, also deckt eine Form beide Richtungen ab:
+     lesen: x <- %s: {
+         print(x)      ; x ist ein nacktes Element, kein `?T`
      }
-   umschreiben als
-     x <- %s: {
-         x: {
-             ok -> it = 0
-             -> _
-         }
+     schreiben: x <- %s: {
+         x = 0x00      ; die Zuweisung landet wieder im Element
      }
+     füllen: %s.fill(0x00)      ; jedes Element derselbe Wert, ohne Schleife
 `
   'm4mu624f': 'lock-Datei wird marshalled: %w'
   'm4re9802': `
