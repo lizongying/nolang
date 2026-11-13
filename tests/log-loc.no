@@ -8,18 +8,18 @@
 
 ; 標記 #{track-caller}，回傳注入的 loc 槽，便於斷言而無需擷取 stderr
 ; msg str: 訊息內容，本測試傳 'first' / 'second'
-; loc str: 由呼叫端位置注入的字串（預設 ''），應以 'log-loc.no:' 開頭
+; loc str: 由呼叫端位置注入的字串（無默認值；呼叫方可省略，由編譯器注入），應以 'log-loc.no:' 開頭
 ; out str: 原樣回傳 loc，供斷言檢查
 #{track-caller}
-probe = (msg str, loc str = '') (out str) {
+probe = (msg str, loc str) (out str) {
     out = loc
 }
 
-; 未標記，省略的末位應維持預設 ''（證明注入只對 track-caller 生效）
+; 未標記，位置槽不存在，末位參數必須顯式傳入（證明注入只對 track-caller 生效）
 ; msg str: 訊息內容
-; extra str: 末端參數，省略時維持預設 ''
+; extra str: 末端參數，呼叫端顯式傳入
 ; out str: 原樣回傳 extra
-plain = (msg str, extra str = '') (out str) {
+plain = (msg str, extra str) (out str) {
     out = extra
 }
 
@@ -37,8 +37,8 @@ a == b -> exit(3)
 c = probe('x', 'MY-LOC')
 c != 'MY-LOC' -> exit(4)
 
-; 4. 非 track-caller 省略末位 → 維持預設空字串
-d = plain('x')
+; 4. 非 track-caller 的末位參數不會被注入（顯式傳空串即得空串）
+d = plain('x', '')
 ! d.empty() -> exit(5)
 
 ; 5. std/log 整合：格式位 + 分級輸出（含注入呼叫點）正常執行不崩潰

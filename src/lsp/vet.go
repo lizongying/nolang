@@ -227,9 +227,9 @@ func FormatVetResults(results []VetResult) int {
 			errorCount++
 		}
 		if r.Line > 0 {
-			fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n", r.File, r.Line, r.Column, sev, r.Source, r.Message, r.TraceID)
+			fmt.Printf("%s:%d:%d: [%s] %s: %s%s\n", r.File, r.Line, r.Column, sev, r.Source, r.Message, checker.TraceSuffix(r.TraceID))
 		} else {
-			fmt.Printf("%s: [%s] %s: %s [%s]\n", r.File, sev, r.Source, r.Message, r.TraceID)
+			fmt.Printf("%s: [%s] %s: %s%s\n", r.File, sev, r.Source, r.Message, checker.TraceSuffix(r.TraceID))
 		}
 	}
 	return errorCount

@@ -741,7 +741,6 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			}
 			for _, p := range ex.Parameters {
 				walkType(p.Type)
-				walkExpr(p.DefaultExpr)
 			}
 			for _, r := range ex.Results {
 				walkType(r.Type)
@@ -833,9 +832,6 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 				for _, bs := range st.Body.Statements {
 					walkStmt(bs)
 				}
-			}
-			for _, p := range st.Parameters {
-				walkExpr(p.DefaultExpr)
 			}
 		case *parser.ReturnStatement:
 			walkExpr(st.ReturnValue)

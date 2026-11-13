@@ -1483,13 +1483,7 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 
     ; 先把輸出清零：無窮遠點（Z=0）走下面的提前 return，若不預清就會把
     ; 未初始化的固定陣列內容當成編碼回傳（曾觀測到 `0421 0000…` 這類殘留）。
-    i <- [0..65): {
-        out[i]: {
-            ok -> it = 0
-
-            -> _
-        }
-    }
+    out.fill(0x00)
 
     px = p[0..32]
     py = p[32..64]
@@ -1925,14 +1919,8 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     ; 檢查 r, s ∈ [1, n-1]
     ; r != 0
     r-zero = 1
-    i <- [0..32): {
-        ixout1628c14 = r-val[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout1628c14 != 0 -> {
+    rv <- r-val: {
+        rv != 0 -> {
             r-zero = 0
         }
     }
@@ -1943,14 +1931,8 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ; s != 0
     s-zero = 1
-    i <- [0..32): {
-        ixout1640c14 = s-val[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout1640c14 != 0 -> {
+    sv <- s-val: {
+        sv != 0 -> {
             s-zero = 0
         }
     }

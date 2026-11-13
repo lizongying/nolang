@@ -317,3 +317,104 @@ func parseForTest(src string) *parser.Program {
 	p.SkipLowering = true
 	return p.ParseProgram()
 }
+
+// TestFormatRemovesIneffectiveOverflowOnBigint covers the bigint side: `acc` is
+// an arbitrary-precision integer, so `acc * radix` cannot overflow a fixed-width
+// integer and the annotation above it must be stripped. The neighbouring i64
+// arithmetic must keep its annotation (control), proving the rule keys on operand
+// type rather than blanket-deleting in bigint-containing functions.
+func TestFormatRemovesIneffectiveOverflowOnBigint(t *testing.T) {
+	input := "main = () {\n" +
+		"    acc = bigint.zero()\n" +
+		"    radix = 10\n" +
+		"    #{overflow=wrap}\n" +
+		"    acc = acc * radix\n" +
+		"    #{overflow=wrap}\n" +
+		"    n = 1 + 2\n" +
+		"}\n"
+	expected := "main = () {\n" +
+		"    acc = bigint.zero()\n" +
+		"    radix = 10\n" +
+		"    acc = acc * radix\n" +
+		"\n" +
+		"    #{overflow=wrap}\n" +
+		"    n = 1 + 2\n" +
+		"}\n"
+
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(program)
+	out := FormatProgramWithOverflow(program, input, relevant, governed)
+	if out != expected {
+		t.Errorf("FormatProgramWithOverflow()\n--- got ---\n%s\n--- want ---\n%s", out, expected)
+	}
+}
+
+// TestFormatRemovesIneffectiveOverflowOnSelfStrField 回归钉：方法体内「self 的 str
+// 字段参与的中划线链」是字串拼接（`-` 做拼接、不产生 option），管它的
+// #{overflow=wrap} 必须被 `no fmt` 移除；同一函数里 i64 字段的算术（对照组）
+// 必须保留注解，证明规则按字段型别判定，而不是整块方法一刀切。
+//
+// 两个叠加缺陷（均已修）：
+//
+//	(a) checker.methodSelfType 读 Parameters[0]，但 parser 把接收者 `self` 插在
+//	    **Results[0]**（out-param，见 decl.go 的 `Results = append([]*Parameter{selfParam}, ...)`）。
+//	    于是「带至少一个输入参数」的方法拿到第一个**输入**参数的型别（本例
+//	    `(name str)` → "str"），`inferExprType(.body)` 在错误的型别上查不到字段
+//	    ⇒ 回 "" ⇒ isIntExpr 对「型别未知」保守判为整数。
+//	(b) 单档 `no fmt` 解析时包级 validationStructFields 为 nil（它平常是
+//	    ValidateTypes 跑 build / vet 管道的副作用）⇒ 即便 selfType 正确，
+//	    `.body` 也查不到 str。StatementsWithIntOverflow 现在在本次调用内临时建表。
+//
+// 真实受害者：src/std/net/multipart.no 的 `.body = .body - enc-str - crlf` ——
+// `no vet` 报 nolang-overflow-ineffective，而 `no fmt` 依同一 relevant 集合却
+// 判定「有效」拒绝移除，两边口径分裂。
+func TestFormatRemovesIneffectiveOverflowOnSelfStrField(t *testing.T) {
+	input := "w {\n" +
+		"    body str\n" +
+		"    n i64\n" +
+		"}\n" +
+		"\n" +
+		"w.append = (name str) (ok bool) {\n" +
+		"    #{overflow=wrap}\n" +
+		"    .body = .body - name\n" +
+		"    #{overflow=wrap}\n" +
+		"    .n = .n + 1\n" +
+		"    ok = true\n" +
+		"}\n"
+	// 移除第一处注解后按既有 gap 逻辑留下一个空行（与其它无效注解移除的形态一致）；
+	// 第二处（i64 字段算术）必须原样保留。
+	expected := "w {\n" +
+		"    body str\n" +
+		"    n i64\n" +
+		"}\n" +
+		"\n" +
+		"w.append = (name str) (ok bool) {\n" +
+		"    .body = .body - name\n" +
+		"\n" +
+		"    #{overflow=wrap}\n" +
+		"    .n = .n + 1\n" +
+		"    ok = true\n" +
+		"}\n"
+
+	program := parseForTest(input)
+	if program == nil {
+		t.Fatal("failed to parse test input")
+	}
+	relevant, governed := checker.OverflowAnnotationRelevance(program)
+	out := FormatProgramWithOverflow(program, input, relevant, governed)
+	if out != expected {
+		t.Errorf("FormatProgramWithOverflow()\n--- got ---\n%s\n--- want ---\n%s", out, expected)
+	}
+	// 幂等：二次格式化不得再变动。
+	program2 := parseForTest(out)
+	if program2 == nil {
+		t.Fatal("failed to re-parse formatted output")
+	}
+	relevant2, governed2 := checker.OverflowAnnotationRelevance(program2)
+	if out2 := FormatProgramWithOverflow(program2, out, relevant2, governed2); out2 != out {
+		t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+	}
+}

@@ -399,7 +399,10 @@ import (
 // 2026-11-13.1：FuncVarTypes 的 blob 口徑改為「解析期快照」（見 semviews.go
 // 坑 7）。舊 blob 帶的是 lowerProgram 跑完的最終表，重用會讓重建走查起點多出
 // 推斷條目 ⇒ ?T 推斷分叉（std/bigint.no / dom.no / yaml.no）。故必 bump。
-const ASTVersion = "2026-11-13.1"
+// 2026-11-13.2：Parameter 刪除 DefaultExpr 欄位（參數默認值語法整體移除）。
+// gob blob 形狀改變，舊 blob 重用會把已刪欄位當成 trailing data 或直接解碼失敗。
+// 故必 bump。
+const ASTVersion = "2026-11-13.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

@@ -883,10 +883,12 @@ func (c *hirConv) param(p *Parameter, kind hir.Kind) int32 {
 		return hir.NoID
 	}
 	id := c.b.Add(hir.Node{
-		Kind:  kind,
-		S:     c.b.Intern(p.Name),
-		Type:  c.typeID(p.Type),
-		First: c.expr(p.DefaultExpr),
+		Kind: kind,
+		S:    c.b.Intern(p.Name),
+		Type: c.typeID(p.Type),
+		// 參數默認值已從語言移除：KParam.First 不再承載默認表達式（顯式寫
+		// hir.NoID，不依賴零值）。`#{track-caller}` 的位置槽走 FlagTrackCaller。
+		First: hir.NoID,
 		Line:  int32(p.Token.Line), Col: int32(p.Token.Column),
 	})
 	c.remember(p, id)

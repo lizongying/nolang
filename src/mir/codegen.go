@@ -1529,6 +1529,15 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 		return "double"
 	case "i64", "i8", "i1", "byte", "u8", "char", "bool", "":
 		return "i64"
+	// `code` is std's plain error-code enum: it is inlined as an integer
+	// everywhere else (errCodeValue emits its discriminant as an i64/code
+	// scalar), so `?code`'s payload must be i64 too. Without this case it fell
+	// through to structLLVMType("code"), which does a SUFFIX match over
+	// StructFields (builtin_call.go) and can therefore pick an unrelated struct
+	// whose name merely ends in "code" — a wrong payload layout, i.e. the same
+	// class of bug the `?txt` case above documents.
+	case "code":
+		return "i64"
 	}
 	if strings.HasPrefix(elemRaw, "[]") {
 		return "%vec"

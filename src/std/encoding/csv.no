@@ -245,14 +245,22 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 ; 解析一行 CSV 文字
 ; 反覆呼叫 parse-field 直到行尾或欄位數達到上限，未滿的容量用 truncate 截掉。
 ; s str: 待解析的單行文字（不應包含行尾換行）
-; max-fields i64: 最多解析幾個欄位（預設 1024）；達到上限後剩餘內容被丟棄
+; max-fields ?i64: 最多解析幾個欄位，明確可選（`ok(n)` 指定；`nil` / `err` → 1024）
 ; 返回 fields []str: 解析出的欄位列表，長度 ≤ max-fields
 ; [parse-line](#csv.parse-line)
-parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+parse-line = (s str, max-fields ?i64) (fields []str) {
+    limit = 1024
+    max-fields: {
+        ok(v) -> limit = v
+
+        nil ->
+
+        err ->
+    }
     n = 0
     pos = 0
-    fields = with-cap(max-fields)
-    (pos < s.len-bytes() && n < max-fields) {
+    fields = with-cap(limit)
+    (pos < s.len-bytes() && n < limit) {
         fields[n], pos = parse-field(s, pos)
 
         {

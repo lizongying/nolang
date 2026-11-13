@@ -449,7 +449,6 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     (! hi.is-zero()) {
         lo bigint.bigint = out._sub(bigint.shl(hi, 130))
 
-        #{overflow=wrap}
         out = lo + (hi * 5)
         hi = bigint.shr(out, 130)
     }
@@ -485,7 +484,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
             i == 4 || i == 8 || i == 12 -> bvr = bvr & 252
         }
 
-        #{overflow=wrap}
         r = r * 256 + bigint.from-i64(bvr)
     }
 
@@ -501,7 +499,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
             -> _
         }
 
-        #{overflow=wrap}
         s = s * 256 + bigint.from-i64(bvs)
     }
 
@@ -528,7 +525,6 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
                 -> 0
             }
 
-            #{overflow=wrap}
             c = c * 256 + bigint.from-i64(bvk)
         }
 

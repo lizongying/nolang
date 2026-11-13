@@ -87,6 +87,13 @@ print(f('4'))
 // parameter list comes back empty, and the guard used to be skipped precisely on
 // the shape it exists for. The handler therefore re-resolves the receiver through
 // operator calls — this test fails if that fallback is removed.
+//
+// ⚠️ 本用例**必須能單獨通過**（`go test -run TestUnionArgDesugaredOperatorChain`）。
+// 它直接調 checkStdMethodCallArgs，不經 ValidateTypes / runFuncArgsCore，因此
+// validationUnionTypeAliases 此時仍是 nil。守衛曾在此處 `return nil`，於是
+// 「有沒有診斷」取決於同一包裡有沒有別的用例先跑過（實測單跑必紅、跟著
+// TestUnionArgNonMemberRejected 跑就綠）。checkUnionMemberArg 已改為 nil 時回落
+// 到 CollectStdUnionAliases()；不要把它改回沉默，也別在本用例裡手工填全域。
 func TestUnionArgDesugaredOperatorChain(t *testing.T) {
 	if StdSigKey == "" {
 		t.Skip("std signature tables not baked; run via `make test`")

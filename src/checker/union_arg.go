@@ -185,7 +185,21 @@ func checkUnionMemberArg(arg parser.Expression, paramType, argType, callDesc str
 	if arg == nil || argType == "" || paramType == "" {
 		return nil
 	}
+	// 別名表平常由 ValidateTypes / runFuncArgsCore 預先填好（含 std 別名）。
+	// 但本守衛也可能在**那兩者之前**被到達——單元測試直接調
+	// checkStdMethodCallArgs 就是這種形狀。此時不能直接沉默：
+	// 本守衛存在的理由正是攔下一個否則只會在 codegen 以
+	// `EmitLLVM: unknown callee bigint.bigint._add` 收場的缺陷，靜默返回 nil
+	// 等於把它原樣放回去，而且「有沒有診斷」會取決於測試執行順序（實測
+	// `-run TestUnionArgDesugaredOperatorChain` 單跑時守衛全程不發作）。
+	//
+	// 回落只用 std union 別名（sync.Once 快取，讀取不需要 program），且**不寫回
+	// 全域**——寫回會繞過 validationMu，並行構建下就是資料競爭。全域已填時
+	// 行為與先前逐位元組相同。
 	aliases := validationUnionTypeAliases
+	if aliases == nil {
+		aliases = CollectStdUnionAliases()
+	}
 	if aliases == nil {
 		return nil
 	}

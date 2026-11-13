@@ -12,7 +12,7 @@ Erreur : %v
   '081adx9q': 'net-accept-nb : aucun emplacement de résultat'
   '09qseik5': 'identifiant attendu après le point, %s obtenu'
   '0acp587k': 'readlink : un argument de chemin est requis'
-  '0cccc2ei': 'l’instruction régie par cette annotation #{overflow=...} ne contient aucune arithmétique entière (par exemple la ligne ne fait que concaténer des chaînes), elle ne peut donc jamais déborder ; envisagez de supprimer l’annotation.'
+  '0cccc2ei': 'l’instruction régie par cette annotation #{overflow=...} ne déborde jamais un entier de largeur fixe (la ligne ne fait que concaténer des chaînes, ou les opérandes sont des entiers de précision arbitraire bigint) ; l’annotation est donc sans effet, envisagez de la supprimer.'
   '0coyzo4x': 'vec.sort : aucun emplacement de récepteur'
   '0ewki0e0': '« } » attendu pour fermer l’annotation de variante, %s obtenu'
   '0gl7izq7': 'les sorties navigateur les résolvent via une import map ; pointez-la vers'

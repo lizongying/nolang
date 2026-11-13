@@ -80,10 +80,16 @@ err {
 
 ; 建立錯誤
 ; msg: 寫入錯誤實例的描述文本
-; ec: 錯誤碼（code 枚舉值，如 code.io；省略時為 code.unknown）
+; ec: 錯誤碼（code 枚舉值）；沒有具體錯誤碼時明確傳 `code.unknown`
 ; e: 構造出的錯誤實例（位置字段留空）
+;
+; 參數默認值已從語言中移除，故 ec 是**必填**參數，沒有隱式回退。
+; 刻意不用 `ec ?code`：`?` + 模組前綴枚舉（合併後的 `err.code`）目前不會被
+; 當成 option 承載——IR 裡參數退化成裸 i64、tag 丟失（2026-11-13 實測：
+; `err.new('x', ok(code.io))` 的 code 讀回 `code.ok`）。用裸 `code` 參數
+; 既避開該缺陷，也讓「沒有錯誤碼」在呼叫端一眼可見。
 ; [new](#err.new)
-new = (msg str, ec code = code.unknown) (e err) {
+new = (msg str, ec code) (e err) {
     e = err{
         code: ec
         msg: msg

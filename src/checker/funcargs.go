@@ -226,7 +226,10 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 		var results []ValidateResult
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			if sig, ok := sigs[ident.Value]; ok {
-				// Compute minimum required arguments (excluding params with defaults)
+				// Compute minimum required arguments. Parameter default values no
+				// longer exist, so every declared parameter is mandatory — except
+				// the trailing caller-location slot of a `#{track-caller}` callee,
+				// which the MIR lowerer injects when omitted.
 				minArgs := len(sig.ParamTypes)
 				// Method calls (e.g. ec.init(c, key) rewritten to net.enc-conn.init(c, key))
 				// have an implicit self receiver as the first parameter in the signature,
@@ -234,12 +237,8 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 				if len(sig.ParamTypes) > 0 && sig.ParamTypes[0].Name == "self" {
 					minArgs--
 				}
-				for j := len(sig.ParamTypes) - 1; j >= 0; j-- {
-					if sig.ParamTypes[j].HasDefault {
-						minArgs = j
-					} else {
-						break
-					}
+				if sig.TrackCaller && minArgs > 0 {
+					minArgs--
 				}
 				// Allow more args than params (could be output param binding or
 				// method-call receiver rewritten to type.method(receiver, ...)).
@@ -1473,6 +1472,18 @@ func isArgTypeCompatible(expectedType, argType string, arg parser.Expression) bo
 	if argType == expectedType {
 		return true
 	}
+	// nil 字面量 → 任何 ?T：`nil` 就是每個 option 型別的 none 變體，不存在
+	// 「型別對不上」的可能，故與 expectedType 是不是 ?T 無關地一律放行。
+	//
+	// 為什麼需要這條（2026-11-13 實測）：inferExprType 沒有 *parser.NilLiteral
+	// 分支，落進 default 後回的是整數家族預設值，於是 `f('x', nil)` 對
+	// `f = (s str, n ?i64)` 報 `argument 2 of 'f': expected '?i64', got 'i64'`
+	// ——把 nil 誤認成 i64。等值/隱式解包/前綴那幾條都救不了它（`IsOptionRaw("i64")`
+	// 為假），只能在此按 AST 形狀直接放行。這也讓 `?T` 形參有了唯一的
+	// 「不傳值」寫法：`nil`（`ok(...)` 當實參本就解析成空字串被跳過）。
+	if _, isNil := arg.(*parser.NilLiteral); isNil && ty.IsOptionRaw(expectedType) {
+		return true
+	}
 	// B5: 浮點隱式拓寬 — f32 → f64 放行。f32 的值域與精度都是 f64 的子集，
 	// 拓宽无损（底层 MIR 以 double 承载所有浮点），与整数的隐式拓宽同一口径。
 	// 反向 f64 → f32 刻意**不**放行：会丢精度，必须显式 .to-f32()（std/number.no，
@@ -2378,7 +2389,8 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 				return results
 			}
 			if sig, ok := sigs[ident.Value]; ok {
-				// Check argument count (allow fewer args when default values exist)
+				// Check argument count. Defaults are gone: only the trailing
+				// caller-location slot of a `#{track-caller}` callee is optional.
 				minArgs := len(sig.ParamTypes)
 				// Method calls (e.g. ec.init(c, key) rewritten to net.enc-conn.init(c, key))
 				// have an implicit self receiver as the first parameter in the signature,
@@ -2386,12 +2398,8 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 				if len(sig.ParamTypes) > 0 && sig.ParamTypes[0].Name == "self" {
 					minArgs--
 				}
-				for j := len(sig.ParamTypes) - 1; j >= 0; j-- {
-					if sig.ParamTypes[j].HasDefault {
-						minArgs = j
-					} else {
-						break
-					}
+				if sig.TrackCaller && minArgs > 0 {
+					minArgs--
 				}
 				// Method calls have implicit self in signature but not in expr.Arguments
 				maxArgs := len(sig.ParamTypes)

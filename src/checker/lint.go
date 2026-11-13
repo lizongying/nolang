@@ -90,9 +90,22 @@ type LintOptions struct {
 	// RunAllLints 直接以 program.Sem.SourceFileOf(stmt) 讀取。
 }
 
+// TraceSuffix 把診斷的 TraceID 渲染成輸出尾綴 ` [id]`；TraceID 為空時回空字串。
+//
+// 不是每條診斷都帶 TraceID（工具在內部合成的補充診斷、尚未配號的新 lint 等）。
+// 過去各輸出端直接拼死模板 `[%s]`，空 ID 就渲染成一個裸的 `[]`，看起來像欄位
+// 壞掉。凡是要印 `[...]` 尾綴的地方一律走這裡，空 ID 就整段不出現。
+func TraceSuffix(id string) string {
+	if id == "" {
+		return ""
+	}
+	return " [" + id + "]"
+}
+
 // LintIneffectiveOverflow 報告「無效」的 #{overflow = ...} 註解：其管轄陳述不含
-// 整數溢出運算（例如整行僅字串拼接，中劃線是拼接而非減法），註解對溢出毫無作用，
-// 應建議刪除。採 WARNING 層級（不強制），與「未標註整數運算」的 ERROR 區分。
+// 整數溢出運算（例如整行僅字串拼接，中劃線是拼接而非減法；或運算元是 bigint
+// 任意精度整數，永不溢位），註解對溢出毫無作用，應建議刪除。採 WARNING 層級
+// （不強制），與「未標註整數運算」的 ERROR 區分。
 //
 // 採用 OverflowAnnotationRelevance 的保守（超集）語意：relevant 集合中的陳述未必
 // 真的需要註解，但不在其中的陳述註解必定無效——因此本 lint 只會對「確定無效」的
@@ -149,7 +162,7 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 			}
 		}
 	}
-	msg := i18n.T("0cccc2ei", "the statement governed by this #{overflow=...} annotation contains no integer arithmetic (e.g. the line only concatenates strings), so it can never overflow; consider removing the annotation.")
+	msg := i18n.T("0cccc2ei", "the statement governed by this #{overflow=...} annotation never overflows a fixed-width integer (the line is string concatenation, or the operands are bigint arbitrary-precision integers), so the annotation has no effect; consider removing it.")
 	var results []LintResult
 	// 獨立成行註解節點：governed 直接給出管轄陳述。
 	for as, gov := range governed {
@@ -174,6 +187,7 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 				Severity: LintWarning,
 				Source:   "nolang-overflow-ineffective",
 				Message:  msg,
+				TraceID:  "0cccc2ei",
 				File:     file,
 			})
 		}
@@ -207,6 +221,7 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 								Severity: LintWarning,
 								Source:   "nolang-overflow-ineffective",
 								Message:  msg,
+								TraceID:  "0cccc2ei",
 								File:     file,
 							})
 						}

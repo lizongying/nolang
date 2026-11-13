@@ -1737,8 +1737,9 @@ w = log.get-writer()                   ; Current output target as an io.writer
 
 > The `F-LOC` "file:line:col" is auto-injected by the compiler at each call site
 > via the `#{track-caller}` function annotation: `debug/info/warn/error/fatal`
-> declare a trailing optional `loc str = ''` slot; when the caller omits it, the
-> MIR lowerer bakes a compile-time `"file:line:col"` string from the call node.
+> declare a trailing `loc str` slot (no default value — parameter defaults do not
+> exist); when the caller omits it, the MIR lowerer bakes a compile-time
+> `"file:line:col"` string from the call node.
 > Passing `loc` explicitly overrides the injection (for wrapper forwarding).
 > Any user function may use `#{track-caller}` the same way.
 
@@ -3081,7 +3082,7 @@ error {
 }
 
 ; Functions
-e = err.new(code.io, msg); Create error
+e = err.new(msg, code.io); Create error (code is REQUIRED; pass code.unknown when there is none)
 e = err.err-from-errno(errno); Create from C errno
 c = err.errno-to-code(errno); Convert C errno to error code
 yes = e.is(code.io); Check error code (method)

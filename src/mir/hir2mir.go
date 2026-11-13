@@ -10261,13 +10261,13 @@ func (l *lowerer) paramRawTypesOfCallee(callee string) []string {
 }
 
 // paramNodesOfCallee returns the callee's real (non-receiver) KParam node IDs
-// in declaration order. Each such node's First child is the default-value
-// expression (hir.NoID when the parameter has no default). This is used by
-// lowerCallArgs to synthesize default arguments for trailing parameters the
-// caller omitted — e.g. `csv.parse-line(s)` fills `max-fields = 1024`. The
-// returned order matches paramRawTypesOfCallee's entries *excluding* the
-// prepended receiver (for methods the receiver is a KResult, not a KParam, so
-// it is absent here by construction).
+// in declaration order. Parameter default values no longer exist, so these
+// nodes carry no default expression; the list is used only to count declared
+// parameters and to locate the trailing caller-location slot of a
+// `#{track-caller}` callee (see lowerCallArgs). The returned order matches
+// paramRawTypesOfCallee's entries *excluding* the prepended receiver (for
+// methods the receiver is a KResult, not a KParam, so it is absent here by
+// construction).
 func (l *lowerer) paramNodesOfCallee(callee string) []int32 {
 	if callee == "" {
 		return nil
@@ -13693,60 +13693,28 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 		}
 		argv = append(argv, v)
 	}
-	// Fill trailing omitted parameters with their default expressions.
-	// `args` are the caller-supplied argument nodes (NOT counting an implicit
-	// receiver); `paramNodes` are the real parameters. When the caller passes
-	// fewer than declared, the remaining ones must take their declared defaults
-	// (e.g. `csv.parse-line(s)` → `max-fields = 1024`). Variadic callees are
-	// skipped: their trailing args are packed into the %vec, not bound to named
-	// params, so synthesizing defaults would corrupt the variadic spread.
+	// Parameter default values are GONE from the language: nothing is
+	// synthesized from a parameter declaration anymore, so the per-call-site
+	// default-expression lowering (and the monomorphisation blow-up it caused)
+	// is gone with them.
 	//
-	// A `#{track-caller}` callee (e.g. std/log debug/info/...) has its LAST
-	// parameter as a caller-location slot (`loc str = ''`). When the caller
-	// omits it, override the default with a compile-time "file:line:col" string
-	// built from this call node (see hir.Node.S2 / hir.FlagTrackCaller). When
-	// the caller supplies it explicitly, the fill loop is skipped and the given
-	// value wins — so a wrapper forwarding its own loc is never overwritten.
+	// The ONLY reason a caller may pass fewer arguments than declared is
+	// `#{track-caller}` (std/log debug/info/...). Its LAST parameter is a
+	// caller-location slot (`loc str`, no default); when the caller omits
+	// exactly that one, inject a compile-time "file:line:col" string built from
+	// this call node (see hir.Node.S2 / hir.FlagTrackCaller). An empty location
+	// (call node without a source file) injects "" — the same value the old
+	// `loc str = ''` default produced, so std/log's `!loc.empty()` guard is
+	// unchanged. When the caller supplies the slot explicitly the counts match
+	// and nothing is injected, so a wrapper forwarding its own loc is never
+	// overwritten. Variadic callees are skipped: their trailing args are real.
 	if fid, ok := l.funcNames[callee]; ok {
-		trackCaller := false
-		if fdef := l.pkg.Node(fid); fdef != nil {
-			trackCaller = fdef.Has(hir.FlagTrackCaller)
-		}
-		if fdef := l.pkg.Node(fid); fdef != nil && fdef.Has(hir.FlagVariadic) {
-			// variadic: trailing args are real, do not synthesize defaults
-		} else if len(args) < len(paramNodes) {
-			for pi := len(args); pi < len(paramNodes); pi++ {
-				pn := l.pkg.Node(paramNodes[pi])
-				if pn == nil {
-					continue
-				}
-				if trackCaller && pi == len(paramNodes)-1 {
-					if loc := l.callerLocation(n); loc != "" {
-						argv = append(argv, l.b.EmitStr(OpConst, l.b.Type("str"), loc, ""))
-						continue
-					}
-				}
-				deID := pn.First
-				if deID == hir.NoID {
-					// Caller omitted a parameter that has no default: the checker
-					// should have rejected this; skip rather than emit garbage.
-					continue
-				}
-				saved := l.typeHint
-				if pi+argOffset < len(paramRaws) {
-					if raw := paramRaws[pi+argOffset]; raw != "" {
-						if t := l.b.Type(raw); t != NoType && t != l.voidType {
-							l.typeHint = t
-						}
-					}
-				}
-				dv := l.lowerExpr(deID)
-				l.typeHint = saved
-				if dv == NoVal {
-					continue
-				}
-				argv = append(argv, dv)
-			}
+		if fdef := l.pkg.Node(fid); fdef != nil &&
+			!fdef.Has(hir.FlagVariadic) &&
+			fdef.Has(hir.FlagTrackCaller) &&
+			len(args) == len(paramNodes)-1 {
+			loc := l.callerLocation(n)
+			argv = append(argv, l.b.EmitStr(OpConst, l.b.Type("str"), loc, ""))
 		}
 	}
 	return argv
@@ -13827,8 +13795,9 @@ func (l *lowerer) buildErrValue(n *hir.Node, argv []ValueID) ValueID {
 }
 
 // errCodeValue returns the `code` argument of `err(msg, code)` when one was
-// given, and the `code.unknown` discriminant otherwise — the default the std
-// constructor `err.new` declares.
+// given, and the `code.unknown` discriminant otherwise. This is the option
+// err-variant constructor's own fallback; it is independent of std's `err.new`
+// (which now takes an explicit `?code` and unwraps it itself).
 func (l *lowerer) errCodeValue(argv []ValueID) ValueID {
 	if len(argv) > 1 && argv[1] != NoVal {
 		return argv[1]
@@ -13853,8 +13822,8 @@ func (l *lowerer) errCodeValue(argv []ValueID) ValueID {
 
 // callerLocation builds a "file:line:col" string from a call node, for
 // `#{track-caller}` callees (see lowerCallArgs). Returns "" when the node lacks
-// a source file (KCall S2 is NoID), so the callee's own `loc str = ”` default
-// stands in and the location field is simply omitted.
+// a source file (KCall S2 is NoID); the caller injects that empty string, which
+// makes std/log omit the location prefix.
 func (l *lowerer) callerLocation(n *hir.Node) string {
 	if n == nil || n.S2 == hir.NoID {
 		return ""

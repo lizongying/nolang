@@ -64,8 +64,8 @@ err = err.new          ; assignment-style
 
 ```no
 #{fmt-skip}
-e = err('disk full')        ; same as e = err.new('disk full')
-m = e.msg()                 ; 'disk full'
+e = err('disk full', code.io)   ; same as e = err.new('disk full', code.io)
+m = e.msg()                     ; 'disk full'
 ```
 
 Rules:

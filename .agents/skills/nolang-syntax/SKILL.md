@@ -1088,7 +1088,7 @@ name = (inputs) (outputs) {}
 - Functions have no return value by default; all data interaction is through output parameters only
 - Variables inside a function are automatically destroyed when the function exits
 - **Prefer `?t` option over `(val, ok bool)`** for functions that may fail or return empty
-- **Parameter default values**: use `name type = expr` syntax. Parameters with defaults can be omitted at the call site. Default parameters must be the last parameters.
+- **Parameter default values are NOT supported**: `name type = expr` in a parameter list (e.g. `foo = (a i64, b ?i64 = 10)`) is a syntax error (`E_DEFAULT_PARAM`). Express optionality with `?T` and have the caller pass `nil` / `ok(...)` explicitly, handling it with `match` in the body.
 - **Parameter and result count limit**: max 64 parameters and 64 results per function (u64 bitmap limit for move tracking). Exceeding the limit produces a compile error — use a container type (`vec`/`arr`/struct) to bundle multiple values.
 
 **Alias rule**: An input read-only reference and an output slot may point to the same object. As long as writes occur only in the output area and inputs are only read, this is legal; the compiler does not perform static alias checking.
@@ -1102,14 +1102,22 @@ add = (a i64, b i64) (result i64) {
     result = a + b
 }
 
-; Default parameter value
-parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+; Optional parameter: ?T, passed explicitly by the caller
+parse-line = (s str, max-fields ?i64) (fields []str) {
+    limit = 1024
+    max-fields: {
+        ok(v) -> limit = v
+
+        nil ->
+
+        err ->
+    }
     ...
 }
 
-; Both calls are valid:
-fields = csv.parse-line(line); max-fields defaults to 1024
-fields = csv.parse-line(line, 256); max-fields = 256
+; The caller must pass the argument explicitly:
+fields = csv.parse-line(line, nil); falls back to 1024
+fields = csv.parse-line(line, ok(256)); cap is 256
 
 ; Variadic parameters
 add3 = (a ..i64) {

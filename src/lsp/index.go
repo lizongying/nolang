@@ -30,9 +30,8 @@ type IndexEntry struct {
 }
 
 type ParamInfo struct {
-	Name         string
-	Type         string
-	DefaultValue string // 參數默認值的字串表示（如 "1024"），空串表示無默認值
+	Name string
+	Type string
 }
 
 // scopeRange 記錄一個函式（或方法）宣告在檔案中的行號區間，用於把游標位置

@@ -117,6 +117,22 @@ func TestFixRedundantTypeInFile(t *testing.T) {
 				"}\n",
 			want: "",
 		},
+		// 回歸：欄位讀取右值上的整數標註是 option 算術的語意開關。
+		// src/std/yaml.no:1328 的 `i i64 = .pos` 一旦被移除，下方
+		// `i-optN = i + N` 不再產生 `?i64`、ok 臂永不命中 → yaml.parse 死循環。
+		// 舊版 `no vet` 報 tcpoxtfd，而 `--fix=redundant` 的 Path 2（package-context
+		// vet）會照報告刪掉 i64。此案例同時走 Path 1 + Path 2，必須「無可移除」。
+		{
+			name: "field access annotation preserved (option-arithmetic load-bearing)",
+			src: "box {\n  pos i64\n}\n" +
+				"box.probe = () (yes bool) {\n" +
+				"  i i64 = .pos\n" +
+				"  yes = i == 0\n" +
+				"}\n" +
+				"b = box { pos: 0 }\n" +
+				"print(b.probe())\n",
+			want: "",
+		},
 	}
 
 	for _, c := range cases {
@@ -162,6 +178,45 @@ func TestFixRedundantTypeFixesDirectory(t *testing.T) {
 	}
 	if _, ok := fixes[filepath.Clean(abs2)]; ok {
 		t.Errorf("did not expect a fix for %s (implicit conversion)", p2)
+	}
+}
+
+// TestFixRedundantTypeSourceFieldAccess 回歸：預設 `no fmt` 的 Path 1
+// （fixRedundantTypeSource）也必須保留欄位讀取右值上的型別標註。
+// 刻意直接打 Path 1：走 fixRedundantTypeInFile 會被 Path 2 兜底蓋過，
+// 單獨釘住單檔管道才不會退化成「只有 vet 修得動、fmt 修不動」的分歧。
+func TestFixRedundantTypeSourceFieldAccess(t *testing.T) {
+	const fieldSrc = "box {\n  pos i64\n}\n" +
+		"box.probe = () (yes bool) {\n" +
+		"  i i64 = .pos\n" +
+		"  yes = i == 0\n" +
+		"}\n"
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{name: "implicit self field kept", src: fieldSrc, want: ""},
+		{name: "explicit receiver field kept", src: fieldSrc + "b = box { pos: 0 }\nf = () () {\n  i i64 = b.pos\n}\n", want: ""},
+		// 尺子：一般純量標註仍要照常移除，證明測試不是空洞。
+		{name: "scalar literal still removed", src: "f = () () {\n  n i64 = 42\n}\n", want: "f = () () {\n  n = 42\n}\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := fixRedundantTypeSource(c.src)
+			if c.want == "" {
+				if ok {
+					t.Errorf("expected NO fix (ok=false), got ok=true result=%q", got)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("expected a fix (ok=true), got ok=false")
+			}
+			if got != c.want {
+				t.Errorf("fixRedundantTypeSource =\n%q\nwant\n%q", got, c.want)
+			}
+		})
 	}
 }
 

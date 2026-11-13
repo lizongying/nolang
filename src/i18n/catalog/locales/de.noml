@@ -12,7 +12,7 @@ Fehler: %v
   '081adx9q': 'net-accept-nb: kein Ergebnis-Slot'
   '09qseik5': 'Bezeichner nach dem Punkt erwartet, stattdessen %s erhalten'
   '0acp587k': 'readlink: benötigt ein Pfadargument'
-  '0cccc2ei': 'die Anweisung, die von dieser #{overflow=...}-Anmerkung geregelt wird, enthält keine Ganzzahlarithmetik (z. B. verkettet die Zeile nur Zeichenketten), daher kann sie niemals überlaufen; erwägen Sie, die Anmerkung zu entfernen.'
+  '0cccc2ei': 'Die von dieser #{overflow=...}-Anmerkung geregelte Anweisung kann eine Ganzzahl fester Breite nicht überlaufen (die Zeile verkettet nur Zeichenketten, oder die Operanden sind bigint-Ganzzahlen beliebiger Genauigkeit); die Anmerkung ist wirkungslos, erwägen Sie, sie zu entfernen.'
   '0coyzo4x': 'vec.sort: kein Empfänger-Slot'
   '0ewki0e0': '\'}\' zum Schließen der Varianten-Anmerkung erwartet, stattdessen %s erhalten'
   '0gl7izq7': 'Browser-Ausgaben lösen sie über eine Import-Map auf; zeige sie auf'

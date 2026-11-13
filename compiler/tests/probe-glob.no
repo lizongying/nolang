@@ -1,0 +1,32 @@
+; 探针：验证模块级 []str 全局 push 持久 + getter 解包读回
+h2m-cov-buf []str
+
+h2m-cov-add = (s str) {
+    h2m-cov-buf.push(s)
+}
+
+h2m-cov-report = () (out str) {
+    out = ''
+    n = h2m-cov-buf.len(): {
+        ok -> it
+
+        -> 0
+    }
+    i = 0
+    (i < n) {
+        e = h2m-cov-buf[i]: {
+            ok -> it
+
+            -> _
+        }
+        out = out - e - '\n'
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+h2m-cov-add('a:12')
+h2m-cov-add('b:18')
+print('REPORT-START')
+print(h2m-cov-report())
+print('REPORT-END')

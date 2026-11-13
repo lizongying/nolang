@@ -1302,7 +1302,7 @@ func validateProgram(program *parser.Program, inputPath string) error {
 	}
 	var b strings.Builder
 	for _, e := range errs {
-		fmt.Fprintf(&b, "  %s:%d:%d: %s [%s]\n", filepath.Base(inputPath), e.Line, e.Column, e.Message, e.TraceID)
+		fmt.Fprintf(&b, "  %s:%d:%d: %s%s\n", filepath.Base(inputPath), e.Line, e.Column, e.Message, checker.TraceSuffix(e.TraceID))
 	}
 	return i18n.Errorf("w308jsag", "%s: validation failed:\n%s", inputPath, b.String())
 }

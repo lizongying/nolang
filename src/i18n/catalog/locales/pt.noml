@@ -12,7 +12,7 @@ Erro: %v
   '081adx9q': 'net-accept-nb: sem espaço (slot) de resultado'
   '09qseik5': 'esperado identificador após o ponto, obtido %s em vez disso'
   '0acp587k': 'readlink: precisa de um argumento de caminho'
-  '0cccc2ei': 'a instrução regida por esta anotação #{overflow=...} não contém aritmética inteira (por exemplo, a linha apenas concatena strings), de modo que nunca pode transbordar; considere remover a anotação.'
+  '0cccc2ei': 'a instrução regida por esta anotação #{overflow=...} nunca transborda um inteiro de largura fixa (a linha apenas concatena strings, ou os operandos são inteiros de precisão arbitrária bigint), então a anotação não tem efeito; considere removê-la.'
   '0coyzo4x': 'vec.sort: sem espaço (slot) de receptor'
   '0ewki0e0': 'esperado \'}\' para fechar a anotação de variante, obtido %s em vez disso'
   '0gl7izq7': 'as saídas de navegador resolvem por um import map; aponte-o para'

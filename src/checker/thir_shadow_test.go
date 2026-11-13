@@ -38,9 +38,11 @@ func shadowBuildView(t *testing.T, src string) (*parser.Program, *THIRView) {
 // 不断言诊断有无（那是各规则自身测试的职责）。语法遵循 Nolang：字符串字面量
 // 用单引号（双引号是 char），`ident < ident` 有泛型歧义（比较用 >= / <=）。
 var shadowSynth = []struct{ name, src string }{
-	// FuncArgCount：少参 / 默认参数 / 多参（容许）/ 糖形态 match 臂内呼叫
+	// FuncArgCount：少参 / #{track-caller} 末位省略（唯一容许的少参）/ 多参（容许）/
+	// 糖形态 match 臂内呼叫。参数默认值已从语言移除，旧的 args-default 语料改由
+	// parser 负例测试承担（src/parser/default_param_rejected_test.go）。
 	{"args-short", "foo = (a i64, b i64) {\n}\nmain = () {\n\tfoo(1)\n}\n"},
-	{"args-default", "foo = (a i64, b i64 = 2) {\n}\nmain = () {\n\tfoo(1)\n}\n"},
+	{"args-track-caller", "#{track-caller}\nfoo = (a i64, loc str) {\n}\nmain = () {\n\tfoo(1)\n}\n"},
 	{"args-ok", "foo = (a i64, b i64) {\n}\nmain = () {\n\tfoo(1, 2)\n}\n"},
 	{"args-in-match", "foo = (a i64) {\n}\nmain = (x ?i64) {\n\tx: {\n\t\ti64 -> foo()\n\t\t-> {}\n\t}\n}\n"},
 	// DivByZero：触发 / 浮点字面除数不触发 / 取模 / 负零
@@ -123,12 +125,12 @@ var shadowSynth = []struct{ name, src string }{
 	{"ixw-fire", "set = () () {\n\ta [3]i64 = [1, 2, 3]\n\ta[1] = 2\n}\n"},
 	{"ixw-map", "set = (m [str]i64) () {\n\tm['k'] = 1\n}\n"},
 	// FuncArgs（實參型別相容，與 FuncArgCount 不同規則）：型別不符觸發 / 相符不觸發 /
-	// let+param 註冊後不符觸發（登記值是活數據）/ 預設參數不觸發 / 回傳數不符觸發
+	// let+param 註冊後不符觸發（登記值是活數據）/ track-caller 位置槽顯式傳參 / 回傳數不符觸發
 	// （sigs 換源判別力：faca-rfcnt 若簽名表錯值會翻轉 rfzrw1nh）。
 	{"faca-mismatch", "f = (a i64) {\n}\nmain = () {\n\ts str = 'x'\n\tf(s)\n}\n"},
 	{"faca-ok", "f = (a i64) {\n}\nmain = () {\n\tf(1)\n}\n"},
 	{"faca-param-reg", "g = (b str) {\n}\nf = (x i64, y str) {\n\tg(y)\n\tg(x)\n}\n"},
-	{"faca-default", "foo = (a i64, b i64 = 2) {\n}\nmain = () {\n\tfoo(1)\n}\n"},
+	{"faca-track-caller", "#{track-caller}\nfoo = (a i64, loc str) {\n}\nmain = () {\n\tfoo(1, 'L')\n}\n"},
 	{"faca-rfcnt", "two = () (p i64, q i64) {\n\tp = 1\n\tq = 2\n}\nmain = () {\n\ta, b = two()\n\ta, b, c = two()\n}\n"},
 	// ValidateTypes：型別不符指派觸發 / nil 指派觸發 / 相符不觸發 / 推斷後不符觸發
 	// （funcTypes+varTypes 是活數據）/ 重複定義觸發（簽名鍵換源判別力）。

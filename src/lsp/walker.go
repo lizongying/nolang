@@ -527,34 +527,6 @@ func (w *ASTWalker) addReference(name string, token any) {
 	w.index.references[name] = append(w.index.references[name], loc)
 }
 
-// defaultExprString 將參數默認值表達式轉為字串表示。
-func defaultExprString(expr parser.Expression) string {
-	if expr == nil {
-		return ""
-	}
-	switch e := expr.(type) {
-	case *parser.Identifier:
-		return e.Value
-	case *parser.IntegerLiteral:
-		return e.Token.Literal
-	case *parser.FloatLiteral:
-		return e.Token.Literal
-	case *parser.StringLiteral:
-		return "'" + e.Value + "'"
-	case *parser.BooleanLiteral:
-		if e.Value {
-			return "true"
-		}
-		return "false"
-	case *parser.InfixExpression:
-		return defaultExprString(e.Left) + " " + e.Operator + " " + defaultExprString(e.Right)
-	case *parser.PrefixExpression:
-		return e.Operator + defaultExprString(e.Right)
-	default:
-		return ""
-	}
-}
-
 func (w *ASTWalker) formatFuncLitDetail(fl *parser.FunctionLiteral) string {
 	return fnSignature(buildParamInfos(fl.Parameters, fl.IsVariadic), buildParamInfos(fl.Results, false))
 }

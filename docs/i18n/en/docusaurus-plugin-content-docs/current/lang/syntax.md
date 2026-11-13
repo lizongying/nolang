@@ -727,12 +727,12 @@ result parameter names in the definition are only placeholders, and the caller's
 
 ```no
 #{fmt-skip}
-parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+parse-line = (s str, max-fields ?i64) (fields []str) {
     ...            ; the body assigns to fields
 }
 
 ; The call site defines the receiving variable (LHS binding; the type is inferred from the signature)
-fields = parse-line(line)
+fields = parse-line(line, nil)
 ; Multiple results bind in order
 a, b = swap(x, y)
 ; Or the trailing-argument form: res is passed in as an extra output argument
@@ -751,18 +751,27 @@ Nolang functions have the following characteristics:
 
 ### Parameter Default Values
 
-Function parameters can specify default values using the `name type = expr` syntax. Parameters with default values can be omitted when called; the compiler will automatically fill in the default value. Parameters with default values must be placed at the end of the parameter list.
+**Not supported.** `name type = expr` in a parameter list (for example `foo = (a i64, b ?i64 = 10)`) is a **syntax error** (`E_DEFAULT_PARAM`): the compiler does not parse the default expression and never fills in a default at any call site. This removes the ambiguity of "one declaration, many legal arities" and avoids the monomorphisation blow-up caused by re-lowering a default expression at every call site.
+
+To express optionality, declare the parameter as an option type `?T` and have the caller pass `nil` / `ok(...)` **explicitly**; the body handles it with `match`:
 
 ```no
 #{fmt-skip}
-; Function definition with default values
-parse-line = (s str, max-fields i64 = 1024) (fields []str) {
-    ...
+parse-line = (s str, max-fields ?i64) (fields []str) {
+    limit = 1024
+    max-fields: {
+        ok(v) -> limit = v
+
+        nil ->
+
+        err ->
+    }
+    ...            ; limit is the cap
 }
 
-; Both of the following calls are valid:
-fields = csv.parse-line(line)              ; max-fields defaults to 1024
-fields = csv.parse-line(line, 256)         ; max-fields = 256
+; The caller must pass the argument explicitly
+fields = csv.parse-line(line, nil)         ; falls back to 1024
+fields = csv.parse-line(line, ok(256))     ; cap is 256
 ```
 
 ```no
@@ -2932,9 +2941,11 @@ option {
 ```
 
 The `err` variant's payload is **not a `str`** — it is the `err` struct from `std/err`
-(`code` / `msg` / `file` / `line` / `col`). `err('msg')` is the alias constructor for
-`err.new('msg')` and defaults to `code.unknown`; write `err('msg', code.io)` to set an error
-code. The position fields are injected by the compiler at the `err(...)` construction site.
+(`code` / `msg` / `file` / `line` / `col`). `err('msg', code)` is the alias constructor for
+`err.new('msg', code)` — the error code is a **required** argument (parameter default values no
+longer exist), so pass `code.unknown` explicitly when there is no specific code. The position
+fields are injected by the compiler at the `err(...)` construction site. A one-argument
+`err('msg')` is *not* this alias — it is the option's `err` variant constructor (see below).
 
 `#{buildin}` means the underlying representation and construction are provided by the built-in runtime (the
 `%option_<key>` type, and the `ok(...)`/`nil`/`err(...)` constructors); the `option` enum declaration exists only for
@@ -3381,6 +3392,7 @@ Key rules:
 - Forms **without a type annotation** (e.g. `d = 'x'`) are never reported in the first place, so they are left alone.
 - **Fixed-size array annotations `[N]T` / `[?]T` are always kept** (never treated as redundant). `[N]` is not a mere type hint — it is the switch that selects the **representation**: only with it written does the `[...]` literal on the right parse as a fixed-length stack array, and only with it written does the inference come out "equal to" the annotation (a circular argument the annotation itself creates). Re-parsing the line after deleting it yields a heap-backed growable slice `[]T`, changing the semantics: `fixed [3]char = ["x", "y", "z"]` ignores `.push()` (`.len()` stays 3), whereas the degraded `fixed = ["x", "y", "z"]` grows to `.len()` 4. Slice annotations `[]T` are not in this category — removing one still leaves a slice, so it is genuinely redundant.
 - **Any value containing a hexadecimal literal always keeps its annotation** (a conservative exception). `no vet`'s type inference uses an "infer as `byte`" heuristic for `0xNN`, which differs from the compiler's actual semantics ("integer literals default to `i64` when unannotated"), so `IP-TBL [64]byte = [0x3a, ...]` and `s []byte = [0x50, 0x4b]` are misjudged as redundant; once removed, the literals degrade to `i64` elements and produce type errors like `expected '[]byte', got '[]i64'`. So whenever `0x`/`0X` appears in the value expression text, neither the hint nor the removal happens.
+- **Annotations on a field-access right-hand side are always kept** (a conservative exception). In `i i64 = .pos` the annotation is not a mere type hint: it is the switch that decides whether downstream integer arithmetic produces `?T`. Without it `i + N` is no longer signed arithmetic and stops returning `?i64`, the `ok` arm of the two-step unwrap never matches, and the loop counter never advances. Concretely, in `src/std/yaml.no`'s `parser.looks-like-map-entry`, removing `i64` makes `yaml.parse('abc')` loop forever. Therefore `x = .field` and `x = obj.field` (including grouped or prefix-wrapped forms) are never reported by `tcpoxtfd` and are never removed by either the default `no fmt` or `--fix=redundant`.
 
 Whether via the default `no fmt` or `--fix=redundant`, removal only deletes the reported type annotation and its leading whitespace, and re-running is idempotent (already-removed ones do not change again). After fixing, it is recommended to run `no vet` once more to confirm `tcpoxtfd` reaches zero.
 

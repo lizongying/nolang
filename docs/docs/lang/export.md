@@ -64,7 +64,7 @@ err = err.new; 賦值式
 ```
 
 ```no
-e = err('disk full'); 等同 e = err.new('disk full')
+e = err('disk full', code.io); 等同 e = err.new('disk full', code.io)
 m = e.msg(); 'disk full'
 ```
 

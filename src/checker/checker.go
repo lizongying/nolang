@@ -135,6 +135,14 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		}
 		return "" // 未知變數
 	case *parser.CallExpression:
+		// bigint 家族呼叫的型別補斷必須放在所有查表**之前**：下方 ident 分支
+		// 有多處提前 return ""，而單檔 `no fmt` 解析時 funcTypes 為空、std
+		// 尚未合併，`acc = bigint.zero()` 會推不出型別 ⇒ acc 被保守視為整數
+		// ⇒ `acc = acc * radix` 上的 #{overflow=wrap} 被誤判為「有效」而保留。
+		// 詳見 inferBigintCallType（只認確定回傳 bigint 的呼叫）。
+		if t := inferBigintCallType(e, varTypes); t != "" {
+			return t
+		}
 		// 1. 檢查內建函數
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			for _, m := range builtin.BuiltinMethodList {
@@ -3244,6 +3252,20 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
 	validationMu.Lock()
 	defer validationMu.Unlock()
+	// inferExprType 的 DotExpression / self 欄位分支讀包級 validationStructFields。
+	// 那張表平常是 ValidateTypes（build / vet 管道）的副作用：合併 vet 跑到
+	// runLintRedundantTypeAnnot 時已填好，方法的隱式 `self` 又以 RESULT "self" T
+	// 登記在 localTypes，故 `i i64 = .pos` 能被推斷成 i64 並報 tcpoxtfd；
+	// 但預設 `no fmt` 的 fixRedundantTypeSource 是在全新單檔 parse 上直接呼叫
+	// 本函式，表仍是 nil ⇒ 所有 `x = .field` 右值都推不出型別 ⇒ 提示靜默消失、
+	// diff 全無。這正是「vet 有、fmt 沒有」的根因（與解析形態、std 合併無關）。
+	//
+	// 這裡在本次呼叫內自行建表：只在原本為空時補，避免覆蓋合併管道已算好的表；
+	// 結束後還原，讓兩條管道看到同一份程式，也不污染後續 lint 步驟。
+	if validationStructFields == nil {
+		validationStructFields = collectStructFields(program)
+		defer func() { validationStructFields = nil }()
+	}
 	var results []ValidateResult
 	// Build funcTypes for inferExprType
 	validationFuncTypes = make(map[string]string)
@@ -3328,6 +3350,42 @@ func producesOptionIndex(e parser.Expression) bool {
 	return ok
 }
 
+// isFieldAccessValue 報告 let 右值是否為欄位讀取（`.pos` / `cfg.pos`）。
+//
+// 這類右值上的型別標註**不是**單純的型別提示，而是 D1 option 算術的語意開關：
+// 由欄位推斷型別時，下游 `i + N` 不再是「有號運算」、不產生 `?i64`，整批
+// `i-optN = i + N` ＋ `i-optN: { ok -> i = it ... }` 的兩步解包退化成普通 i64；
+// ok 臂變成「值與 ok 標籤常數比較」而永不命中，迴圈計數器原地不動。
+//
+// 實例（src/std/yaml.no:1328，parser.looks-like-map-entry）：
+//
+//	i i64 = .pos   → yaml.parse('abc') 正常
+//	i = .pos       → 計數器不推進，!! 無限迴圈（實測被 SIGTERM 殺掉）
+//
+// `no vet` 曾對這行報 tcpoxtfd，`no fmt -fix=redundant` 甚至會照提示把 i64
+// 刪掉 —— 那是把可用的 std 函式改成死循環的誤報，而 `no fmt` 因推斷上下文
+// 缺失（見 ValidateRedundantTypeAnnotation）恰好沒刪，才沒釀成災。
+//
+// 與 producesOptionIndex 同口徑：只看右值形狀、不做下游資料流分析。欄位型別
+// 也可能是 i64 的 newtype 別名，無法在單檔 cheaply 判定；寧可漏報一條風格
+// 提示，也不能讓工具鏈改壞語義。
+func isFieldAccessValue(e parser.Expression) bool {
+	for {
+		switch v := e.(type) {
+		case *parser.GroupedExpression:
+			e = v.Expression
+		case *parser.PrefixExpression:
+			e = v.Right
+		case *parser.DotExpression:
+			return true
+		case *parser.ConditionalExpression:
+			return isFieldAccessValue(v.Consequence) || isFieldAccessValue(v.Alternative)
+		default:
+			return false
+		}
+	}
+}
+
 func checkRedundantTypeInStmt(sem *parser.SemanticContext, stmt parser.Statement, file string, varTypes map[string]string) []ValidateResult {
 	if stmt == nil {
 		return nil
@@ -3342,7 +3400,10 @@ func checkRedundantTypeInStmt(sem *parser.SemanticContext, stmt parser.Statement
 			annotatedType := s.Type.String()
 			// 定長陣列標註決定表示形式（固定棧陣列 vs 堆切片），刪掉會改語意：不報冗餘。
 			// map 字面量同理：沒了 `[K]V` 標註，`{ 'k': v }` 會被當成 block 解析。
-			if !isFixedArrayAnnotation(s.Type) && !isMapLiteralValue(s.Value) {
+			// 欄位讀取右值同理：標註是下游 `i + N` 是否產生 `?T` 的開關（見
+			// isFieldAccessValue），刪掉會把 yaml.parse 改成死循環。
+			if !isFixedArrayAnnotation(s.Type) && !isMapLiteralValue(s.Value) &&
+				!isFieldAccessValue(s.Value) {
 				inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
 				if inferredType == "" {
 					// 單檔解析（預設 `no fmt` / 單檔 vet）沒有合併 std 模組：跨模組
@@ -3753,6 +3814,22 @@ var nonIntTypeNames = map[string]bool{
 	"str": true, "txt": true, "char": true, "bool": true, "byte": true, "rune": true,
 }
 
+// isBigintTypeName 判斷型別拼寫是否屬於 bigint（任意精度整數）家族。
+//
+// bigint 不是固定寬度整數：它內部以 vec 存位元組、按需擴容，運算永不回傳
+// option<int>，因此 `#{overflow=...}` 對 bigint 算術沒有任何作用。把它與
+// i8–i128 / u8–u128 區分開，是 `nolang-overflow-ineffective` 判定的前提。
+//
+// 兩種拼寫都要認：單檔解析是 `bigint`，合併 std 後 struct 名帶模組前綴
+// （`bigint.bigint`）。option 包裹（`?bigint`）先剝一層再比對。
+func isBigintTypeName(t string) bool {
+	if t == "" {
+		return false
+	}
+	t = ty.StripOptionRaw(t)
+	return t == "bigint" || t == "bigint.bigint"
+}
+
 // overflowAnnotatedNode 報告節點是否攜帶 #{overflow = ...} 註解。
 //
 // 與編譯期檢查 stmtOverflowAnnotated（ValidateUnhandledOverflow 使用）嚴格一致：
@@ -3860,12 +3937,36 @@ func operandIntKind(e parser.Expression, declared map[string]string) string {
 		if unsignedIntTypeNames[t] {
 			return "unsigned"
 		}
-		if nonIntTypeNames[t] {
+		if nonIntTypeNames[t] || isBigintTypeName(t) {
 			return ""
 		}
 		return "signed" // 其他已宣告型別（如 struct 別名）：保守視為有號
 	}
-	return "signed" // 呼叫 / 索引 / 成員等：保守視為可能是有號整數
+	// 成員存取運算元（`.body - enc-str`、`b.n + 1`）：型別可由
+	// validationStructFields + declared["self"] 解析出來時，按欄位型別分類。
+	// 過去一律落到尾部「呼叫 / 索引 / 成員：保守視為可能是有號整數」，於是
+	// str 欄位參與的 `-`（字串拼接）在**單檔** `no fmt` 語境被當成整數算術 ⇒
+	// 該陳述被算進 relevant（超集）集合 ⇒ `no vet` 報 nolang-overflow-ineffective
+	// 的註解，`no fmt` 依同一集合卻判定「有效」而拒絕移除
+	// （src/std/net/multipart.no:616 / 676 的 `.body = .body - … - crlf`）。
+	// 型別仍解析不出來（t == ""）時保持原來的保守判定，方向不變。
+	if dot, ok := e.(*parser.DotExpression); ok {
+		t := inferExprType(dot, declared, nil, "")
+		if t == "" {
+			return "signed" // 未知型別：與 Identifier 分支同口徑
+		}
+		if signedIntTypeNames[t] {
+			return "signed"
+		}
+		if unsignedIntTypeNames[t] {
+			return "unsigned"
+		}
+		if nonIntTypeNames[t] || isBigintTypeName(t) {
+			return "" // 確定非整數（str / txt / char / bool / float / bigint…）
+		}
+		return "signed" // 其他已知型別（如 struct 別名）：保守視為有號
+	}
+	return "signed" // 呼叫 / 索引等：保守視為可能是有號整數
 }
 
 // overflowArithOps 是會因整數溢出而（預設）回傳 option<int> 的二元運算子。
@@ -4129,6 +4230,15 @@ func collectFuncDeclared(fn *parser.FunctionDefinition, funcTypes map[string]str
 	return types
 }
 
+// structFieldsMissing 在 validationMu 下回報 validationStructFields 尚未建立。
+// 供 StatementsWithIntOverflow 決定是否要在本次呼叫內臨時建表（單檔 fmt / LSP
+// 路徑），避免對已由 ValidateTypes 填好的合併表做無謂覆蓋。
+func structFieldsMissing() bool {
+	validationMu.Lock()
+	defer validationMu.Unlock()
+	return validationStructFields == nil
+}
+
 // snapshotValidationFuncTypes 在 validationMu 下拍一份 validationFuncTypes 快照，
 // 供不持锁的型別收集路径（registerInferredNonIntLet）安全使用。写入方均在
 // validationMu 下重建，故快照是一致视图。
@@ -4167,6 +4277,65 @@ var stdPrimitiveFloatMethodTypes = map[string]string{
 	"f32.ceil": "f32", "f32.floor": "f32", "f32.round": "f32", "f32.trunc": "f32",
 }
 
+// inferBigintCallType 只對「確定回傳 bigint 家族」的 std 呼叫補斷型別。
+//
+// 背景（nolang-overflow-ineffective 兩條管道的口徑不一致）：std/bigint.no 的
+// bigint.zero() / bigint.from-i64() / bigint.shr() 等回傳 bigint（任意精度整數）。
+// `no vet` 跑在合併程式上，validationFuncTypes 已裝好，能判出 acc 是 bigint，
+// 故把 `acc = acc * radix` 上的 #{overflow=wrap} 正確判為無效；但 `no fmt` 跑在
+// **單檔原始 AST** 上，funcTypes 為空、std 未合併，inferExprType 查表全落空 ⇒
+// acc 型別未知 ⇒ operandIntKind / isIntExpr 都保守視為整數 ⇒ 註解被判「有效」
+// 而保留。這正是 `./bin/no fmt -d src/std/txt.no` 沒有 diff 的原因。
+//
+// 直接查 embeddedStd*Sigs（由 stdsig_gen.go 的 init() 填入），不呼叫
+// CollectStdModuleSignatures：後者在 StdSigKey 為空的場景（`go test ./fmt/`
+// 等）會 os.Exit(1)。查表範圍刻意收窄到 bigint 模組 / bigint 變數的呼叫，且
+// **只接受 bigint 家族回傳型別**，不改變其他呼叫的既有推斷結果。
+func inferBigintCallType(call *parser.CallExpression, varTypes map[string]string) string {
+	if call == nil {
+		return ""
+	}
+	keys := make([]string, 0, 3)
+	switch fn := call.Function.(type) {
+	case *parser.Identifier:
+		// 合併 / 攤平後的模組限定呼叫（bigint.zero）。
+		if !strings.HasPrefix(fn.Value, "bigint.") {
+			return ""
+		}
+		keys = append(keys, fn.Value)
+	case *parser.DotExpression:
+		recv, ok := fn.Receiver.(*parser.Identifier)
+		if !ok {
+			return ""
+		}
+		if t, isVar := varTypes[recv.Value]; isVar {
+			if !isBigintTypeName(t) {
+				return ""
+			}
+			// 合併語境的 struct 名帶模組前綴（bigint.bigint），兩張表都有對應鍵。
+			keys = append(keys, ty.StripOptionRaw(t)+"."+fn.Property, "bigint."+fn.Property)
+		} else if recv.Value == "bigint" || recv.Value == "self" {
+			// 模組限定呼叫 bigint.zero()，或 bigint 方法體內的 self.foo()。
+			if t := varTypes["self"]; isBigintTypeName(t) {
+				keys = append(keys, ty.StripOptionRaw(t)+"."+fn.Property)
+			}
+			keys = append(keys, recv.Value+"."+fn.Property)
+		} else {
+			return ""
+		}
+	default:
+		return ""
+	}
+	for _, key := range keys {
+		for _, table := range []map[string]StdSigEntry{embeddedStdMethodSigs, embeddedStdFuncSigs} {
+			if e, ok := table[key]; ok && len(e.Results) > 0 && isBigintTypeName(e.Results[0]) {
+				return e.Results[0]
+			}
+		}
+	}
+	return ""
+}
+
 // registerInferredNonIntLet 對「未標註型別的 let」補一層推斷：僅當右值推斷結果
 // 確定為非整數家族時才登記進型別表。整數家族（i64/u8/…）刻意不登記，維持既有
 // 「未知 → 保守視為有號整數」口徑，避免把真正的未處理整數溢位洗白成漏報
@@ -4202,7 +4371,7 @@ func registerInferredNonIntLet(s *parser.LetStatement, types map[string]string, 
 	if signedIntTypeNames[it] || unsignedIntTypeNames[it] || ty.IsOptionRaw(it) || strings.HasPrefix(it, "fn") {
 		return
 	}
-	if nonIntTypeNames[it] || strings.HasPrefix(it, "f32") || strings.HasPrefix(it, "f64") || strings.HasPrefix(it, "[]") || strings.HasPrefix(it, "[") {
+	if nonIntTypeNames[it] || isBigintTypeName(it) || strings.HasPrefix(it, "f32") || strings.HasPrefix(it, "f64") || strings.HasPrefix(it, "[]") || strings.HasPrefix(it, "[") {
 		types[s.Name.Value] = it
 	}
 }
@@ -4419,6 +4588,34 @@ func runIntOverflowCore(program *parser.Program, view *THIRView) []ValidateResul
 func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]bool {
 	if program == nil {
 		return nil
+	}
+	// inferExprType 的 DotExpression / self 欄位分支讀包級 validationStructFields。
+	// 那張表平常是 ValidateTypes（build / vet 管道）的副作用，合併 vet 跑到
+	// LintIneffectiveOverflow 時已填好；但預設 `no fmt`（fmtProcessFile）與 LSP
+	// 是在全新單檔 parse 上直接呼叫本函式，表仍是 nil ⇒ 所有 `.field` 右值都推不出
+	// 型別 ⇒ isIntExpr 對「型別未知」保守判為整數 ⇒ 純字串拼接的陳述被算進
+	// relevant ⇒ 註解被判定「有效」而無法自動移除，即使 `no vet` 同一份程式已經
+	// 報 nolang-overflow-ineffective。
+	//
+	// 這裡在本次呼叫內自行建表：只在原本為空時補（避免覆蓋合併管道已算好的表，
+	// 那張表含 std 模組的結構），結束後還原，讓兩條管道看到同一份程式。
+	// 與 ValidateRedundantTypeAnnotation 的同一處理同口徑（短臨界區，不跨
+	// snapshotValidationFuncTypes 持鎖，避免非可重入互斥鎖自鎖）。
+	if structFieldsMissing() {
+		validationMu.Lock()
+		restore := false
+		if validationStructFields == nil {
+			validationStructFields = collectStructFields(program)
+			restore = true
+		}
+		validationMu.Unlock()
+		if restore {
+			defer func() {
+				validationMu.Lock()
+				validationStructFields = nil
+				validationMu.Unlock()
+			}()
+		}
 	}
 	relevant := map[parser.Statement]bool{}
 	// 快照一次供闭包内 collectFuncDeclared 与主迴圈共用（同 ValidateIntOverflow）。
@@ -4790,14 +4987,26 @@ func hasOverflowEntry(entries []*parser.AnnotationEntry) bool {
 	return false
 }
 
-// methodSelfType 回傳方法定義接收者 self 的型別字串（如 "str"），供
+// methodSelfType 回傳方法定義接收者 self 的型別字串（如 "multipart-writer"），供
 // inferExprType 推斷 self.x 成員型別；非方法定義回傳 ""。
+//
+// 🔴 接收者 `self` 是 parser 插到 **Results[0]** 的 out-param（decl.go 三處
+// `Results = append([]*Parameter{selfParam}, ...)` 的註釋：「self 放在 Results 使
+// codegen 將其 alias 到調用方的 receiver 指針」），**不是** Parameters[0]。舊實作讀
+// Parameters[0] ⇒ 每個「帶至少一個輸入參數」的方法都拿到第一個**輸入**參數的型別
+// （`multipart-writer.write-encrypted-file = (name str, ...)` 拿到 "str"），無參數
+// 方法則拿到 ""。後果：`inferExprType(.field)` 在錯誤的型別上查不到欄位 ⇒ 回 "" ⇒
+// isIntExpr 對「型別未知」保守判為整數 ⇒ `#{overflow=wrap}` 管轄的純字串拼接陳述
+// 被算進 relevant（超集）集合 ⇒ `no vet` 報 nolang-overflow-ineffective，但
+// `no fmt` 依同一集合判定「有效」而拒絕移除（src/std/net/multipart.no:616、676）。
 func methodSelfType(fn *parser.FunctionDefinition) string {
 	if fn == nil || !fn.IsMethodDef {
 		return ""
 	}
-	if len(fn.FuncSignature.Parameters) > 0 && fn.FuncSignature.Parameters[0].Type != nil {
-		return fn.FuncSignature.Parameters[0].Type.String()
+	if len(fn.FuncSignature.Results) > 0 {
+		if r := fn.FuncSignature.Results[0]; r != nil && r.Name == "self" && r.Type != nil {
+			return r.Type.String()
+		}
 	}
 	return ""
 }
@@ -13302,7 +13511,7 @@ func funcSigFromDef(fd *parser.FunctionDefinition) *funcSig {
 		if p != nil && p.Type != nil {
 			t = p.Type.String()
 		}
-		params[i] = paramInfo{Name: p.Name, Type: t, HasDefault: p.DefaultExpr != nil}
+		params[i] = paramInfo{Name: p.Name, Type: t}
 	}
 	// Method definitions have self as the first output parameter (Results[0]).
 	// Exclude it from ResultTypes so return-count validation (lookupReturnCount)
@@ -13319,7 +13528,7 @@ func funcSigFromDef(fd *parser.FunctionDefinition) *funcSig {
 		}
 		results[i] = paramInfo{Name: r.Name, Type: t}
 	}
-	return &funcSig{ParamTypes: params, ResultTypes: results, Variadic: fd.IsVariadic}
+	return &funcSig{ParamTypes: params, ResultTypes: results, Variadic: fd.IsVariadic, TrackCaller: fd.TrackCaller}
 }
 func funcSigFirstReturnType(sig *funcSig) string {
 	if sig == nil || len(sig.ResultTypes) == 0 {
@@ -13338,6 +13547,13 @@ type funcSig struct {
 	// parameter is written the same way and must keep the strict count.
 	Variadic    bool
 	ResultTypes []paramInfo
+	// TrackCaller marks a `#{track-caller}` callee: its LAST parameter is the
+	// caller-location slot, which the caller may omit and the MIR lowerer fills
+	// in. It is the ONLY sanctioned arity relaxation now that parameter default
+	// values are gone. Set from FunctionDefinition.TrackCaller (AST path) and
+	// from hir.FlagTrackCaller (HIR path); both derive from the same annotation,
+	// so the shadow double-run sees identical signatures.
+	TrackCaller bool
 }
 
 var validationStructFields map[string]map[string]string
@@ -13358,9 +13574,8 @@ func isValidationIntType(t string) bool {
 }
 
 type paramInfo struct {
-	Name       string
-	Type       string
-	HasDefault bool // 參數是否有默認值
+	Name string
+	Type string
 }
 
 func intTypeBits(t string) int {

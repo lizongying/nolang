@@ -12,7 +12,7 @@ Error: %v
   '081adx9q': 'net-accept-nb: no result slot'
   '09qseik5': 'expected identifier after dot, got %s instead'
   '0acp587k': 'readlink: needs a path argument'
-  '0cccc2ei': 'the statement governed by this #{overflow=...} annotation contains no integer arithmetic (e.g. the line only concatenates strings), so it can never overflow; consider removing the annotation.'
+  '0cccc2ei': 'the statement governed by this #{overflow=...} annotation never overflows a fixed-width integer (the line is string concatenation, or the operands are bigint arbitrary-precision integers), so the annotation has no effect; consider removing it.'
   '0coyzo4x': 'vec.sort: no receiver slot'
   '0ewki0e0': 'expected \'}\' to close variant annotation, got %s instead'
   '0gl7izq7': 'Browser output resolves them through an import map; point it at'
@@ -729,7 +729,7 @@ Serving ESM output at %s (Ctrl+C to stop)
   'm17ikt3w': 'builtin %s: cannot store %s into %s'
   'm1yd7r5x': 'expected next token to be %s, got %s instead'
   'm2fh7rfg': `
-range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` (no index means no bounds check and no option to unwrap). e.g. rewrite
+range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s:` (no index means no bounds check and no option to unwrap). e.g. rewrite
      %s <- [0..n): {
          %s[%s]: {
              ok -> it = 0

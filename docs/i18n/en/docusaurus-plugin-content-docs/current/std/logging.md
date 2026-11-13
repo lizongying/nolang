@@ -38,8 +38,9 @@ log.info('server started')             ; 2026-.. ..:.. [INFO] app.no:7:5 server 
 
 The `F-LOC` "file:line:col" is injected automatically by the compiler at the call
 site via `#{track-caller}` — no manual argument needed. Each of `debug / info /
-warn / error / fatal` has a trailing optional `loc str = ''` slot (when passed
-explicitly the given value wins, so wrappers can forward their own location).
+warn / error / fatal` has a trailing `loc str` slot (no default value; the caller
+may omit it, and an explicitly passed value wins so wrappers can forward their own
+location).
 
 ### Output target (stderr / file)
 

@@ -35,8 +35,8 @@ log.info('server started'); 2026-.. ..:.. [INFO] app.no:7:5 server started
 ```
 
 `F-LOC` 的「檔案:行:列」由編譯器透過 `#{track-caller}` 在呼叫點自動注入，
-無需手動傳參；`debug / info / warn / error / fatal` 末位都有一個可選的
-`loc str = ''` 位置槽（顯式傳入則以傳入值為準，供封裝轉發使用）。
+無需手動傳參；`debug / info / warn / error / fatal` 末位都有一個 `loc str`
+位置槽（無默認值，呼叫方可省略；顯式傳入則以傳入值為準，供封裝轉發使用）。
 
 ### 輸出目標（stderr / 檔案）
 

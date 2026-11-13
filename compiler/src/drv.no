@@ -722,7 +722,6 @@ drv.pkg-ll = (path str) (r str) {
     body0 = pkg.slice-bytes(1, pkg.len-bytes())
     files = drv.pkg-split(body0)
     nfiles = files.len()
-    agg = h2m-new()
 
     ; pass 1：全模組 struct 登記進共享 agg，逐模組用自身 t 解欄位型別（避免跨 AST 讀錯節點）
     k = 0
@@ -845,6 +844,21 @@ drv.pkg-ll = (path str) (r str) {
     agg.unsup > 0 -> {
         eprint(NOC-NAME - ': unsupported constructs: ' - agg.unsup.to-str() - ' (pkg-ll)')
     }
+}
+
+; pkg-ll 对外接口：只回 .ll（与既有测试契约一致）
+; path: 入口档案路径
+; r: 完整 .ll；'' = 失敗（已 eprint）
+drv.pkg-ll = (path str) (r str) {
+    r, _ = drv.pkg-ll-internal(path)
+}
+
+; 覆盖度量接口（切片 6 ② 前置）：回 unsupported 构造日志（每行 "fn:kind"，kind 为 asp 常量整数）
+; path: 入口档案路径
+; cov: 拼接好的日志文本（空 = 无 unsupported）
+drv.pkg-ll-cov = (path str) (cov str) {
+    _, agg = drv.pkg-ll-internal(path)
+    cov = h2m-cov-join()
 }
 
 ; 取 argv 第 i 項（越界／nil ⇒ ''）

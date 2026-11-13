@@ -37,7 +37,7 @@ func (e *DiagnosticError) Error() string {
 	}
 	parts := make([]string, 0, len(e.Lints))
 	for _, l := range e.Lints {
-		parts = append(parts, fmt.Sprintf("line %d, column %d: %s [%s]", l.Line, l.Column, l.Message, l.TraceID))
+		parts = append(parts, fmt.Sprintf("line %d, column %d: %s%s", l.Line, l.Column, l.Message, checker.TraceSuffix(l.TraceID)))
 	}
 	return prefix + ": " + strings.Join(parts, "; ")
 }

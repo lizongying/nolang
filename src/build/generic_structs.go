@@ -309,20 +309,18 @@ func cloneMethod(sem *parser.SemanticContext, fd *parser.FunctionDefinition, sub
 	newParams := make([]*parser.Parameter, len(fd.Parameters))
 	for i, p := range fd.Parameters {
 		newParams[i] = &parser.Parameter{
-			Token:       p.Token,
-			Name:        p.Name,
-			Type:        substituteType(p.Type, subst),
-			DefaultExpr: p.DefaultExpr,
+			Token: p.Token,
+			Name:  p.Name,
+			Type:  substituteType(p.Type, subst),
 		}
 	}
 
 	newResults := make([]*parser.Parameter, len(fd.Results))
 	for i, r := range fd.Results {
 		newResults[i] = &parser.Parameter{
-			Token:       r.Token,
-			Name:        r.Name,
-			Type:        substituteType(r.Type, subst),
-			DefaultExpr: r.DefaultExpr,
+			Token: r.Token,
+			Name:  r.Name,
+			Type:  substituteType(r.Type, subst),
 		}
 	}
 

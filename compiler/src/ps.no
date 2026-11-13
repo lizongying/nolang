@@ -118,7 +118,7 @@ psst {
 ; s8d：「註解行與目標陳述之間」的註釋（Go annotation.go:229-267 between）⇒ 掛成目標陳述的 Doc 並覆寫外層行前 Doc
 ; s8g：IsFuncDeclared 追蹤鍵（''⇒用 p.fn；`recv.method = (…)` 形 Go 以**裸方法名**為鍵且事後不隨 FuncVarTypes 遷移，decl.go:56-82 ⇒ 同名方法跨接收者共享宣告集，實測 mD/mE）
 ; 變參標記（ps-parse-param 檢測 `name ..T` 時置 1；呼叫端建 FunctionDefinition 時寫入 varflag 槽，對齊 Go IsVariadic / dump 的 Variadic{}）
-; 解析**回傳值**參數時為 1（Go decl.go:1693-1698 的 Results 路徑**不**解析默認值；只有 Parameters 路徑 decl.go:362-366 / :1631-1635 才解析 `= expr`）
+; 解析**回傳值**參數時為 1（回傳值從來沒有默認值；參數默認值語法已整體移除，輸入參數的 `= expr` 由 ps-parse-param 消費後丟棄並報硬錯）
 ; s10：診斷收集器（對齊 Go parser.diags []Diagnostic）——錯誤行號
 ; 錯誤列號
 ; 錯誤正文（【不含】位置前綴；渲染由呼叫端負責）
@@ -3762,8 +3762,7 @@ ps-parse-ftype-param = (t ast, p psst) (idx i64) {
         }
     }
     idx > 0 -> {
-        ast.kid-add(t, idx, typ); CHILD=Type
-        ast.kid-add(t, idx, 0); CHILD=DefaultExpr 缺席佔位
+        ast.kid-add(t, idx, typ); CHILD=Type（DefaultExpr 已隨語法移除，不再佔位）
     }
 }
 
@@ -5221,7 +5220,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     opos []i64 = with-cap(4)
     ps-peek(p) == tok.LPAREN -> {
         ps-bump(p); 消費第二個 LPAREN
-        p.res-param = 1; 回傳值路徑不解析默認值（Go decl.go:1693-1698）
+        p.res-param = 1; 回傳值路徑（回傳值本來就沒有默認值）
         (ps-peek(p) != tok.RPAREN) {
             ro = ps-parse-param(t, p)
             ro > 0 -> {
@@ -5363,7 +5362,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
 ;     · name = 點分全名（'recv-type.method'）、methodDef 欄位 = 'true'（FunctionDefinition slot2）。
 ;     · self 合成為【首個輸出參數】（Results，非 inputs）：Parameter{name:'self', Type:NamedType{recv-type}}。
 ;       ⇒ kid 區序 [inputs…][self][results…][body]，set-sig 的 results 數 = 1 + 宣告的 outs 數。
-;   ⚠️ Parameter 有 2 個 guarded CHILD（Type、DefaultExpr）：Type=selfnt、DefaultExpr=0 佔位。
+;   ⚠️ Parameter 只有 1 個 guarded CHILD（Type）：Type=selfnt（DefaultExpr 已隨語法移除）。
 ; s64：recv-node —— 接收者型別【節點】（>0 時直接用，如 `[n]t` 的 ArrayType）；
 ;   <=0 則依 recv-type 字串建 NamedType（普通 `Recv.method` 路徑，行為不變）。
 ; s8g：ifd-key —— IsFuncDeclared 追蹤鍵。`recv.method = (…)` 形傳【裸方法名】
@@ -5401,7 +5400,7 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
     opos []i64 = with-cap(4); s58：同步記回傳值型別起始 token（方法推斷用）
     ps-peek(p) == tok.LPAREN -> {
         ps-bump(p); 消費第二個 LPAREN
-        p.res-param = 1; 回傳值路徑不解析默認值（Go decl.go:1693-1698）
+        p.res-param = 1; 回傳值路徑（回傳值本來就沒有默認值）
         (ps-peek(p) != tok.RPAREN) {
             ro = ps-parse-param(t, p)
             ro > 0 -> {
@@ -8248,7 +8247,7 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
                     go -> {
                         ps-bump(p); 消費 (
 
-                        ; 參數：interface 的參數**不解析默認值**（Go decl.go:920-1030）⇒ res-param=1
+                        ; 參數：interface 的參數不走默認值路徑（參數默認值語法已移除）⇒ res-param=1
                         p.res-param = 1
                         prm = 1
                         (prm) {
@@ -8864,38 +8863,24 @@ ps-parse-param = (t ast, p psst) (idx i64) {
     ; ⚠️ **節點建立順序**（先建子、後建父）：ast.add 把節點的 kid0 記為「當下的 kids.len()」，
     ;   而 ast.kid-add 是 **append 到 kids 陣列尾部** ⇒ 某節點的子節點必須在
     ;   「該節點 ast.add 之後、中間沒有別的節點 push 子節點」的前提下才落在它自己的槽位。
-    ;   ⚠️ 預設值表達式會 **push 自己的子節點**（如 InfixExpression 的兩個 IntegerLiteral）
-    ;   ⇒ Parameter 節點必須在**預設值解析完成之後**才 ast.add，否則 Parameter.kid0
-    ;   落在預設值子節點之前、它的兩個子節點被擠到後面 ⇒ 位置式 dumper 讀錯槽位
-    ;   （實測 `a i64 = 1 + 2`：oracle 印 NamedType + InfixExpression，
-    ;     SUT 印兩個 IntegerLiteral、且 type: 變成 *parser.IntegerLiteral）。
     ;   與 ps-parse-type（MapType/SliceType）同一套路：子樹先建、父節點最後 ast.add。
-    ; ⚠️ Parameter spec 有兩個 guarded CHILD（Type、DefaultExpr），dumper 是**位置式**讀 kid0/kid0+1；
-    ;   少 push 一槽 ⇒ kid0+1 读到下一個全域 kid（如 body 的 Identifier）⇒ 多出一個幽影子節點。
-    ;   Type 缺席時也 push 0 佔位。
-    ; ── 參數默認值 `name T = expr`（Go decl.go:362-366 / :1631-1635）：
-    ;   oracle 在**型別解析之後**檢查 currentToken == ASSIGN，命中則 nextToken()
-    ;   並 parseExpression(LOWEST) 存成 param.DefaultExpr；dump.go:634-636 再把它
-    ;   印成 Parameter 的第二個子節點（StringLiteral{value: } 等）。
-    ;   ⚠️ 檢查位置不可提前：型別本身可含 `=`（如泛型預設？），且 `name T` 與 `name T = v`
-    ;   在 token 流上前綴相同 ⇒ 只有在型別吃完後才判斷 `=` 是不是默認值。
-    ;   ⚠️ 只有**輸入參數**（Parameters）路徑解析默認值；**回傳值**（Results）路徑
-    ;   （Go decl.go:1693-1698）不解析 ⇒ 用 p.res-param 區分，否則 `(out str = '')`
-    ;   這種回傳值會被 SUT 誤挂 DefaultExpr（oracle 不挂）⇒ 差一行。
-    ;   與 dump 的 guarded CHILD 對齊：無默認值 ⇒ push 0 佔位（缺席）。
-    dflt = 0
+    ; ⚠️ Parameter spec 現在只有 **一個** guarded CHILD（Type）：參數默認值
+    ;   `name T = expr` 已從語言移除（Go 側是 E_DEFAULT_PARAM 硬錯），DefaultExpr
+    ;   欄位與 dump 的第二個子節點都不存在了。Type 缺席時仍 push 0 佔位。
+    ; ── 已移除語法的錯誤恢復：仍消費 `=` 與其後的表達式（保證 token 流前進、
+    ;   參數邊界正確），但**不寫入 AST**。oracle 在這種輸入上直接報錯，因此
+    ;   這裡的 AST 形狀不再需要與任何默認值節點對齊。
     p.res-param == 0 -> {
         ps-peek(p) == tok.ASSIGN -> {
             ps-bump(p); 消費 =
-            dflt = ps-parse-expr(t, p)
+            ps-parse-expr(t, p); 丟棄默認值（不再掛 DefaultExpr）
         }
     }
 
-    ; ⚠️ Parameter 節點必須在**預設值解析之後**才 ast.add（見上方「節點建立順序」）。
+    ; ⚠️ Parameter 節點必須在子樹建立之後才 ast.add（見上方「節點建立順序」）。
     idx = ast.add(t, asp.K-PARAMETER)
     ast.set-slot(t, idx, 0, ast.put-str(t, pname))
     ast.kid-add(t, idx, typ)
-    ast.kid-add(t, idx, dflt)
     idx
 }
 

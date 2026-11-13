@@ -12,7 +12,7 @@ Error: %v
   '081adx9q': 'net-accept-nb: no hay ranura para el resultado'
   '09qseik5': 'se esperaba un identificador después del punto, se obtuvo %s'
   '0acp587k': 'readlink: necesita un argumento de ruta'
-  '0cccc2ei': 'la sentencia regida por esta anotación #{overflow=...} no contiene aritmética entera (p. ej. la línea solo concatena cadenas), así que nunca puede desbordarse; considera quitar la anotación.'
+  '0cccc2ei': 'la sentencia regida por esta anotación #{overflow=...} nunca desborda un entero de ancho fijo (la línea solo concatena cadenas, o los operandos son enteros de precisión arbitraria bigint), así que la anotación no tiene efecto; considera quitarla.'
   '0coyzo4x': 'vec.sort: no hay ranura para el receptor'
   '0ewki0e0': 'se esperaba \'}\' para cerrar la anotación de variante, se obtuvo %s'
   '0gl7izq7': 'las salidas de navegador los resuelven con un import map; apúntalo a'

@@ -153,47 +153,47 @@ log-emit = (tag str, msg str, loc str) {
 
 ; debug: 輸出 DEBUG 級別日誌
 ; msg: 日誌正文
-; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入；呼叫方可省略，顯式傳入則以傳入值為準）
 ; [debug](#log.debug)
 #{track-caller}
-debug = (msg str, loc str = '') {
+debug = (msg str, loc str) {
     LEVEL <= 0 -> log-emit('DEBUG', msg, loc)
 }
 
 ; info: 輸出 INFO 級別日誌
 ; msg: 日誌正文
-; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入；呼叫方可省略，顯式傳入則以傳入值為準）
 ; [info](#log.info)
 #{track-caller}
-info = (msg str, loc str = '') {
+info = (msg str, loc str) {
     LEVEL <= 1 -> log-emit('INFO', msg, loc)
 }
 
 ; warn: 輸出 WARN 級別日誌
 ; msg: 日誌正文
-; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入；呼叫方可省略，顯式傳入則以傳入值為準）
 ; [warn](#log.warn)
 #{track-caller}
-warn = (msg str, loc str = '') {
+warn = (msg str, loc str) {
     LEVEL <= 2 -> log-emit('WARN', msg, loc)
 }
 
 ; error: 輸出 ERROR 級別日誌
 ; msg: 日誌正文
-; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入；呼叫方可省略，顯式傳入則以傳入值為準）
 ; [error](#log.error)
 #{track-caller}
-error = (msg str, loc str = '') {
+error = (msg str, loc str) {
     LEVEL <= 3 -> log-emit('ERROR', msg, loc)
 }
 
 ; fatal: 輸出 FATAL 級別日誌並退出
 ; msg: 日誌正文
 ; code: 輸出後傳給 exit 的進程結束狀態碼
-; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入；呼叫方可省略，顯式傳入則以傳入值為準）
 ; [fatal](#log.fatal)
 #{track-caller}
-fatal = (msg str, code i64, loc str = '') {
+fatal = (msg str, code i64, loc str) {
     log-emit('FATAL', msg, loc)
     exit(code)
 }

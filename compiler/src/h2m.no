@@ -11,7 +11,7 @@
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
 ;         Identifier / IntegerLiteral / BooleanLiteral（s90：true/false ⇒ OP-CONST(TY-I64, 0/1)，镜像 Go hir2mir.go KBoolLit；自举 bool 走 i64 宽 0/1，与 s57 比较族「布尔=i64 0/1」同口径）/ CharLiteral（s91：双引号单码点 ⇒ UTF-8 首码点解码 ⇒ OP-CONST(TY-I64, cp)，镜像 Go lowerCharLit；自举 char 走 i64 码点、无 i32 槽，同 bool 宽口径）/ GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67，s79 起 u64 亦放行——uty 下 >> 重映射 OP-SHRU 发 lshr、其余发裸 and/or/xor/shl i64；s80：'>>' 无条件重映射 OP-SHRU——i64 侧亦发 lshr，镜像 Go OpShr 恒逻辑移位，s35 的 i64=ashr 设计被推翻，cg 的 ashr 臂转死代码）；逻辑 && || s68，复用 OP-AND/OR（s83 起 u64 亦放行——Go 对 u64 逻辑族即裸位形 and/or 非短路，探针实钉）；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' s87 放行 ⇒ OP-MOD 入 is-arith 发 frem double（AArch64 llc 降为 libm fmod：trunc 语义，与 Go 同 IR 形制同 lowering；oracle 实钉 7.0%2.5=2.0），f64 算术 + - * / % 族收齐）/
 ;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量；s81：u64 主体 -x ⇒ OP-NEG(dest TY-U64)、~x ⇒ OP-CONST(-1)+OP-XOR(dest TY-U64)，cg 整数臂发 sub i64 0 / xor i64（二补回绕/bit-not，与 i64 同 IR 形）；s88：'!' 于 i64／u64 一律先 OP-CONST(1)＋OP-AND 归位低 bit 再 OP-NOT（镜像 Go emitNot `xor i1 1, trunc i64→i1` 的 bool 域 (x&1)^1；旧 s66 全宽 xor i64 1 仅操作数∈{0,1} 同值），f64 主体 '!' 仍门禁——Go 侧 double→i1 退化恒 true，无可镜像稳定语义；s89 裁定纪实＋哨兵：非整型主体 '!' 三面（f64 poison／str 运行路 build fail／字面量恒真折叠）均无权威，门禁维持）/
-;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），缺省实参按签名 fdef 表在调用点降默认式回填（s92，镜像 Go hir2mir.go:13175 尾部回填），返回型别查模块级签名表）/
+;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），实参个数必须与签名相等：参数默认值已从语言移除，缺参即入门禁，返回型别查模块级签名表）/
 ;         语句位调用（s93）：K-EXPRESSION-STATEMENT 包 K-CALL-EXPRESSION ⇒ 走 h2m-lower-expr 后【丢弃结果值】，
 ;         镜像 Go hir2mir.go:3790 KExprStmt 的 else 分支（l.stmtVal = l.lowerExpr(child)，非取值位置不发绑定）；
 ;         无输出参被调沿用既有「void ⇒ define i64 + 尾部 ret 0」约定 ⇒ 陈述位发 call i64 并把值 id 丢掉（LLVM 容未用值）；
@@ -69,7 +69,7 @@
 ;   不支持（一律计入 unsup，绝不静默略过）：值位 K-SURFACE-MATCH 的【非 i64 臂值 / 非单表达式臂体】
 ;         （s103：`r = { c -> 1  -> 0 }` 已放行——逐臂 STORE 进 entry 结果槽、汇聚块 LOAD；str/vec
 ;         臂值与多陈述臂体仍计 unsup）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
-;         多输出参数、泛型（c3 > 0）（s92：带默认值的参数已放行——调用点尾部回填，见上 CallExpression；带默认值的输出参与无默认值而被缺的形参仍入门禁）、
+;         多输出参数、泛型（c3 > 0）（参数默认值已从语言移除 ⇒ 缺参一律入门禁，见上 CallExpression）、
 ;         非具名型别（map / *t / 别名／[]非 i64／s62 起只 []i64 形参入形）、vec 形参作返回值（s62）、
 ;         复合赋值、非函数定义语句、方法调用（点号）、
 ;         容器遍历的非 vec 容器源——str（Go 逐码点走 utf8_at，需 OP-UTF8AT）／定长数组 [n]t（无运行期长度）／
@@ -457,7 +457,6 @@ h2m-set-block = (c h2m-ctx, id i64) {
 ; 记一条「本切片不支持」的构造（诚实门禁，不是静默略过）
 ; c: 上下文
 h2m-mark = (c h2m-ctx) {
-
     #{overflow=wrap}
     c.unsup = c.unsup + 1
 }
@@ -1261,7 +1260,6 @@ h2m-sigs {
     fnarg []i64
     fbase []i64
     farg []i64
-    fdef []i64
     femit []str
 }
 
@@ -1274,7 +1272,6 @@ h2m-sigs-new = () (s h2m-sigs) {
         fnarg: []
         fbase: []
         farg: []
-        fdef: []
         femit: []
     }
 }
@@ -1286,8 +1283,7 @@ h2m-sigs-new = () (s h2m-sigs) {
 ;       与定义 `define @<emit>` 对齐；切片 6 统一 emit 名，根除「定义/呼叫名错位」未定义引用。
 ; ret: 返回型别码
 ; argt: 输入型别表（顺序即 LLVM 形参序）
-; deft: 默认值表达式节点表（与 argt 平行，0 = 无默认值；s92 调用点回填用）
-h2m-sig-add = (s h2m-sigs, name str, emit str, ret i64, argt []i64, deft []i64) {
+h2m-sig-add = (s h2m-sigs, name str, emit str, ret i64, argt []i64) {
     b = s.farg.len()
     s.fname.push(name)
     s.femit.push(emit)
@@ -1302,12 +1298,6 @@ h2m-sig-add = (s h2m-sigs, name str, emit str, ret i64, argt []i64, deft []i64) 
             -> _
         }
         s.farg.push(at)
-        dt = deft[i]: {
-            ok -> it
-
-            -> _
-        }
-        s.fdef.push(dt)
 
         #{overflow=wrap}
         i = i + 1
@@ -1341,19 +1331,6 @@ h2m-sig-arg = (s h2m-sigs, i i64, j i64) (t i64) {
     #{overflow=wrap}
     fb = fb + j
     t = s.farg[fb]
-}
-
-; 读签名 i 的第 j 个输入的默认值表达式 AST 节点 id（s92：调用点尾部回填）
-; s: 签名表
-; i: 签名下标
-; j: 形参序
-; k: 默认值表达式节点 id（0 = 无默认值）
-h2m-sig-def = (s h2m-sigs, i i64, j i64) (k i64) {
-    fb = s.fbase[i]
-
-    #{overflow=wrap}
-    fb = fb + j
-    k = s.fdef[fb]
 }
 
 ; ── 前扫描（s57：mem 模式定槽宽 + 控制流探测）───────────────────
@@ -2177,7 +2154,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ok-call == 1 -> {
                 want-n = sg.fnarg[si]
 
-                ; s92：实参少于形参不再 arity 拒——尾部缺口走默认值回填（Go hir2mir.go:13175）；
+                ; 实参个数必须与形参相等：参数默认值已从语言移除，缺参不再回填，
                 ;   超供仍入门禁（输出绑定／方法 receiver 改写不在本路覆盖面）
                 na > want-n -> ok-call = 0
             }
@@ -2200,13 +2177,10 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         ak = ast.kid-at(t, ap)
                     }
 
-                    ; s92 尾部缺省：拿签名登记的默认值表达式节点降级进呼叫者块
-                    ;   （镜像 Go lowerExpr(deID)，每个调用点拷开一份）；
-                    ;   「被缺且无默认值」ak=0 → 入门禁计 unsup（Go 靠 checker 前置拒，自举无 checker，在此兜住）
-                    j >= na -> {
-                        ak = h2m-sig-def(sg, si, j)
-                        ak == 0 -> ok-call = 0
-                    }
+                    ; 参数默认值已从语言移除：被缺的形参没有可回填的表达式，
+                    ;   入门禁计 unsup（Go 由 parser 的 E_DEFAULT_PARAM + checker 前置拒，
+                    ;   自举无 checker，在此兜住）。
+                    j >= na -> ok-call = 0
                     ok-call == 1 -> {
                         av = h2m-lower-expr(t, c, sg, ak)
                         av == 0 -> ok-call = 0
@@ -3668,20 +3642,16 @@ h2m-lower-term-stmt = (t ast, c h2m-ctx, sg h2m-sigs, kid i64, last i64) (hd i64
     }
 }
 
-; 单个 K-PARAMETER 节点 → 型别码（实测 kid 序 = [Type, DefaultExpr]）
+; 单个 K-PARAMETER 节点 → 型别码（kid 序 = [Type]；DefaultExpr 已随语法移除）
 ; 非具名型别（除 []i64）/ 未知型别名 ⇒ bad = 1
-; s92：带默认值不再不入形——de 交默认值表达式节点 id，由调用点降级后回填 argv
-;   （镜像 Go hir2mir.go:13175-13207 尾部回填；旧门禁「默认值会让 arity 判定失效」是无回填通路时的保守判断）
 ; s62：[]i64（K-SLICE-TYPE）入形→ TY-VEC；【非】具名型别的其它形（map / *t / 别名／元素非 i64 的 vec）仍不入
 ; t: AST arena
 ; p: 参数节点 id
 ; code: 型别码（-1 = 不在覆盖面）
 ; bad: 形状不合格标记
-; de: 默认值表达式 AST 节点 id（0 = 无默认值）
-h2m-param-ty = (t ast, agg h2m-ctx, p i64) (code i64, bad i64, de i64) {
+h2m-param-ty = (t ast, agg h2m-ctx, p i64) (code i64, bad i64) {
     bad = 1
     code = -1
-    de = 0
     pd = ast.nd-at(t, p)
     tk = ast.kid-at(t, pd.kid0)
     tk > 0 -> {
@@ -3709,27 +3679,19 @@ h2m-param-ty = (t ast, agg h2m-ctx, p i64) (code i64, bad i64, de i64) {
             }
         }
     }
-    dp = pd.kid0
-
-    #{overflow=wrap}
-    dp = dp + 1
-    dv = ast.kid-at(t, dp)
-    dv != 0 -> de = dv
 }
 
-; 读取函数定义节点的签名：名字 / 返回型别码 / 输入型别表 / 默认值表 / 形状门禁
+; 读取函数定义节点的签名：名字 / 返回型别码 / 输入型别表 / 形状门禁
 ; kid 区序 = [泛型…][输入…][输出…][body]（实测：nkid == c3 + c4 + c5 + 1）
-; bad = 1 表示不在本件覆盖面（泛型、多输出、非具名型别、带默认值的输出参、未知型别名）；
+; bad = 1 表示不在本件覆盖面（泛型、多输出、非具名型别、未知型别名）；
 ;   这里不计 unsup，由呼叫方计——前置 pass 与产码 pass 共用一份判据
-; s92：带默认值的【输入】参入形，deft 与 argt 平行交默认值表达式节点 id，调用点回填
 ; t: AST arena
 ; n: 函数定义节点 id
 ; name: 函数名
 ; ret: 返回型别码（无输出参数时按 TY-I64）
 ; argt: 输入型别表（顺序即 LLVM 形参序）
-; deft: 默认值表达式节点表（与 argt 平行，0 = 无默认值；s92）
 ; bad: 形状不合格标记
-h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, deft []i64, bad i64) {
+h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i64) {
     bad = 0
     ret = TY-I64
     d = ast.nd-at(t, n)
@@ -3746,10 +3708,9 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, deft 
         #{overflow=wrap}
         p = p + i
         pk = ast.kid-at(t, p)
-        pc, pb, pde = h2m-param-ty(t, agg, pk)
+        pc, pb = h2m-param-ty(t, agg, pk)
         pb != 0 -> bad = 1
         pb == 0 -> argt.push(pc)
-        pb == 0 -> deft.push(pde)
 
         #{overflow=wrap}
         i = i + 1
@@ -3763,12 +3724,8 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, deft 
         #{overflow=wrap}
         rp = rp + d.c4
         rk = ast.kid-at(t, rp)
-        rc, rb, rde = h2m-param-ty(t, agg, rk)
+        rc, rb = h2m-param-ty(t, agg, rk)
         rb != 0 -> bad = 1
-
-        ; s92：输出参带默认值不入形——Go 回填循环只遍输入参（hir2mir.go:13176 paramNodes），
-        ;   且自举未建模输出绑定的调用形制，宁缺勿错
-        rb == 0 && rde != 0 -> bad = 1
 
         ; s62：[]i64 作为【输入】形参已入形，但 vec 返回不入形——noc 侧无产出 vec 值的途径
         ;   （无 %vec 槽、无 vec 字面量降级），且 OP-RET/CALL 的 %vec 返回从未经端到端验证，宁缺勿错
@@ -3799,7 +3756,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     c.stfldn = agg.stfldn
     c.stftn = agg.stftn
     d = ast.nd-at(t, n)
-    fnm, frt, fap, fdp, fb = h2m-func-sig(t, agg, n)
+    fnm, frt, fap, fb = h2m-func-sig(t, agg, n)
     fb != 0 -> {
         h2m-mark(c)
     }
@@ -4043,8 +4000,8 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kid = ast.kid-at(t, p)
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
-            nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
-            bd == 0 -> h2m-sig-add(sg, nm, nm, rt, ap, dp)
+            nm, rt, ap, bd = h2m-func-sig(t, agg, kid)
+            bd == 0 -> h2m-sig-add(sg, nm, nm, rt, ap)
         }
 
         #{overflow=wrap}
@@ -4061,7 +4018,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kid = ast.kid-at(t, p)
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
-            nm2, rt2, ap2, dp2, bd2 = h2m-func-sig(t, agg, kid)
+            nm2, rt2, ap2, bd2 = h2m-func-sig(t, agg, kid)
             bd2 != 0 -> {
                 h2m-mark(agg)
             }

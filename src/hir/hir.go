@@ -224,8 +224,9 @@ const (
 	// ends, so a nested match cannot make the outer arm read the inner payload.
 	FlagArmBinding uint32 = 1 << 30
 	// FlagTrackCaller marks a function whose LAST parameter is a caller-location
-	// slot (declared as `loc str = ''`). The MIR lowerer overrides an omitted
-	// trailing argument with a compile-time "file:line:col" string literal built
+	// slot (declared as a plain `loc str` — parameter default values no longer
+	// exist). The checker lets the caller omit that trailing argument, and the
+	// MIR lowerer injects a compile-time "file:line:col" string literal built
 	// from the call node's S2/Line/Col (S2 carries the interned source-file base
 	// name on KCall — see Node.S2). Used by std/log to attribute log lines to the
 	// caller without a runtime backtrace.

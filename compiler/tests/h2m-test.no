@@ -174,7 +174,8 @@ test-gate = () {
     ir2 = h2m-lower-program(t2, agg2, r2)
     runner.eq(agg2.unsup > 0, 1, 'gate unknown name counted')
 
-    ; s92 翻正：带默认值的参数入形（旧门禁「默认值让 arity 判定失效」被调用点回填路推翻）——定义自身产码
+    ; 參數默認值語法已移除：ps.no 仍消費 `= expr`（保證 token 流前進）但不寫入 AST，
+    ;   因此定義自身仍按「單形參」降級產碼；缺參呼叫由下面的門禁測試覆蓋。
     src-def = 'i = (x i64 = 5) (r i64) {\n    r = x\n}\n'
     t3 = ast.make()
     p3 = ps.new(src-def.to-bytes())
@@ -2744,33 +2745,32 @@ test-char-param-tycode = () {
     runner.eq(ir.contains('define'), 1, 'char-param code')
 }
 
-; s92 裁决：默认参数放行——镜像 Go hir2mir.go:13175-13207 调用点尾部回填
-;   （实参缺于形参 ⇒ 缺失尾参逐个 lowerExpr(默认值 expr) 入 argv）
-;   单参缺省调用 ⇒ 默认常量 5 在调用者块降级并整段入池
-test-default-param-fill = () {
+; 參數默認值已從語言移除（Go 側是 E_DEFAULT_PARAM 硬錯）：
+;   自舉解析器只消費並丟棄 `= expr`，因此「缺參呼叫」沒有任何可回填的表達式 ⇒ 入門禁。
+;   本測試釘住：帶默認值語法的定義本身仍可降級（單形參），但 `q7d()` 這種缺參呼叫被拒。
+test-default-param-removed = () {
     src = 'q7d = (n i64 = 5) (r i64) {\n    r = n\n}\nw7d = () (r i64) {\n    r = q7d()\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup, 0, 'default-fill unsup')
-    runner.eq(ir.contains('add i64 0, 5'), 1, 'default-fill const 5')
-    runner.eq(ir.contains('call i64 @q7d('), 1, 'default-fill call')
+    runner.eq(agg.unsup > 0, 1, 'default-removed missing counted')
+    runner.eq(ir.contains('call i64 @q7d'), 0, 'default-removed no call')
 }
 
-; 多参尾缺省：f(1) ⇒ 实参 1 + 回填默认 20
-test-default-param-trailing = () {
-    src = 'q7e = (a i64, b i64 = 20) (r i64) {\n    r = a + b\n}\nw7e = () (r i64) {\n    r = q7e(1)\n}\n'
+; 顯式傳齊實參仍正常產碼（可選性改由 ?T + 呼叫端顯式傳 nil/ok(...) 表達）
+test-explicit-arg-ok = () {
+    src = 'q7e = (a i64, b i64) (r i64) {\n    r = a + b\n}\nw7e = () (r i64) {\n    r = q7e(1, 20)\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup, 0, 'default-trailing unsup')
-    runner.eq(ir.contains('add i64 0, 20'), 1, 'default-trailing const 20')
-    runner.eq(ir.contains('define'), 1, 'default-trailing code')
+    runner.eq(agg.unsup, 0, 'explicit-arg unsup')
+    runner.eq(ir.contains('call i64 @q7e('), 1, 'explicit-arg call')
+    runner.eq(ir.contains('define'), 1, 'explicit-arg code')
 }
 
-; 负例门禁：无默认值形参被缺 ⇒ 仍拒（对齐 Go：checker 拒 + lowerer skip，不发垃圾）
+; 负例门禁：缺参 ⇒ 拒（对齐 Go：parser/checker 前置拒，自举无 checker 在此兜住）
 test-default-param-missing-gate = () {
     src = 'q7f = (n i64) (r i64) {\n    r = n\n}\nw7f = () (r i64) {\n    r = q7f()\n}\n'
     t = ast.make()
@@ -4249,8 +4249,8 @@ test-bool-param-tycode()
 test-char-lit-ascii()
 test-char-lit-cjk()
 test-char-param-tycode()
-test-default-param-fill()
-test-default-param-trailing()
+test-default-param-removed()
+test-explicit-arg-ok()
 test-default-param-missing-gate()
 test-stmt-call-void()
 test-stmt-call-discard()

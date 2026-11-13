@@ -197,3 +197,34 @@ func paramNames(ps []*parser.Parameter) []string {
 	}
 	return names
 }
+
+// TestMethodSelfTypeReadsReceiverResult 釘住 methodSelfType 取的是 **Results[0]**
+// 的 `self`，而不是 Parameters[0]。
+//
+// 方法 `huff.probe = (n i64) (name str)` 的接收者型別是 `huff`，第一個輸入參數
+// 卻是 i64；舊實作讀 Parameters[0] 回 "i64"（真實案例：multipart.no 的
+// `(name str, …)` 方法回 "str"），方法體內每條 `.field` 的型別推斷都落在錯誤的
+// 型別上 ⇒ `inferExprType` 查不到欄位 ⇒ 回 "" ⇒ isIntExpr 對「型別未知」保守判為
+// 整數 ⇒ 純字串拼接的陳述被算進 StatementsWithIntOverflow 的 relevant 集合，
+// `no fmt` 因此拒絕移除 `no vet` 已判定無效的 #{overflow=wrap}。
+func TestMethodSelfTypeReadsReceiverResult(t *testing.T) {
+	const src = `huff {
+    tab []i64
+    name str
+}
+
+huff.probe = (n i64) (name str) {
+    name = .name
+}`
+	for _, stmt := range parseProg(t, src).Statements {
+		fd, ok := stmt.(*parser.FunctionDefinition)
+		if !ok || fd.Name != "huff.probe" {
+			continue
+		}
+		if got := methodSelfType(fd); got != "huff" {
+			t.Fatalf("methodSelfType(%s) = %q, want %q", fd.Name, got, "huff")
+		}
+		return
+	}
+	t.Fatal("method definition huff.probe not found in parsed program")
+}

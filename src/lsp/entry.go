@@ -23,7 +23,7 @@ func buildParamInfos(params []*parser.Parameter, isVariadic bool) []ParamInfo {
 		if p.Type != nil {
 			typeStr = p.Type.String()
 		}
-		infos[i] = ParamInfo{Name: p.Name, Type: typeStr, DefaultValue: defaultExprString(p.DefaultExpr)}
+		infos[i] = ParamInfo{Name: p.Name, Type: typeStr}
 	}
 	if isVariadic && len(infos) > 0 {
 		last := &infos[len(infos)-1]
@@ -35,9 +35,9 @@ func buildParamInfos(params []*parser.Parameter, isVariadic bool) []ParamInfo {
 }
 
 // fnSignature renders the canonical function signature string used in hover,
-// completion detail and the symbol index: fn(a i64, b i64 = 10) (r i64).
-// Parameter default values are included; result names/types are appended in
-// a trailing parenthesized group when present.
+// completion detail and the symbol index: fn(a i64, b ?i64) (r i64).
+// Parameter default values no longer exist in the language; result names/types
+// are appended in a trailing parenthesized group when present.
 func fnSignature(params, results []ParamInfo) string {
 	var b strings.Builder
 	b.WriteString("fn(")
@@ -49,10 +49,6 @@ func fnSignature(params, results []ParamInfo) string {
 		if p.Type != "" {
 			b.WriteString(" ")
 			b.WriteString(p.Type)
-		}
-		if p.DefaultValue != "" {
-			b.WriteString(" = ")
-			b.WriteString(p.DefaultValue)
 		}
 	}
 	b.WriteString(")")

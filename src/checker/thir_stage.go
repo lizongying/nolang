@@ -13,8 +13,8 @@ package checker
 //   - THIRView：idMap（AST 节点 → HIR id）× 副表的查询门户。TypeOf 是
 //     类型结论的唯一入口；FuncSigs / FuncResultTypes 是宣告事实的 HIR 侧
 //     提取（KFuncDef / KExtern → 签名 / 回传型别）。
-//   - ValidateFuncArgCountTHIR：签名表改由 HIR 提取（KParam.First 恢复
-//     HasDefault），call-site walker（checkArgCountInStmt/Expr）不动。
+//   - ValidateFuncArgCountTHIR：签名表改由 HIR 提取（含 FlagTrackCaller），
+//     call-site walker（checkArgCountInStmt/Expr）不动。
 //   - ValidateDivByZeroTHIR：触发条件纯语法（isLiteralZeroDivisor）+ 型别
 //     精化（浮点被除数跳过、窄型别域里被截断成 0 的除数字面量补报），
 //     型别结论读 TypeOf / TypeRefOf（表达式级副表），见 checker.go 的
@@ -295,13 +295,15 @@ func (v *THIRView) TypeRefOf(n parser.Node) *ty.Type {
 // THIR-side replacement for building the map from AST FunctionDefinitions via
 // funcSigFromDef。与 funcSigFromDef 逐字段对齐：
 //
-//   - ParamTypes：KParam 子节点（Name=S、Type=interned Type），
-//     HasDefault 由 KParam.First 恢复（默认表达式降糖后挂 First，
-//     NoID 即无默认值——tohir.go param()）。
+//   - ParamTypes：KParam 子节点（Name=S、Type=interned Type）。参数默认值已
+//     从语言移除，KParam.First 恒为 hir.NoID；唯一允许省略的末位实参由
+//     TrackCaller 表达（见下）。
 //   - ResultTypes：KResult 子节点；方法的隐式 self 是第一个 KResult
 //     （funcLike 先发 self 再发 KParam），按 FlagMethod+名 "self" 跳过，
 //     与 funcSigFromDef 的 Results[0] 剔除逻辑一致。
 //   - Variadic：KFuncDef 的 FlagVariadic。
+//   - TrackCaller：KFuncDef 的 FlagTrackCaller（与 AST 路径的
+//     FunctionDefinition.TrackCaller 同源于 #{track-caller} 注解）。
 //
 // 只收集 KFuncDef（ValidateFuncArgCount 的签名表同样只收
 // FunctionDefinition，不含 extern——保持逐字口径）。
@@ -318,6 +320,7 @@ func (v *THIRView) FuncSigs() map[string]*funcSig {
 		}
 		sig := &funcSig{
 			Variadic:    n.Has(hir.FlagVariadic),
+			TrackCaller: n.Has(hir.FlagTrackCaller),
 			ParamTypes:  make([]paramInfo, 0),
 			ResultTypes: make([]paramInfo, 0),
 		}
@@ -327,9 +330,8 @@ func (v *THIRView) FuncSigs() map[string]*funcSig {
 			switch cn.Kind {
 			case hir.KParam:
 				sig.ParamTypes = append(sig.ParamTypes, paramInfo{
-					Name:       pkg.Str(cn.S),
-					Type:       pkg.Type(cn.Type),
-					HasDefault: cn.First != hir.NoID,
+					Name: pkg.Str(cn.S),
+					Type: pkg.Type(cn.Type),
 				})
 			case hir.KResult:
 				if selfPending {

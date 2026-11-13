@@ -4176,11 +4176,11 @@ func printLintResults(results []nbuild.LintResult) int {
 	for _, d := range diags {
 		sev := strings.ToUpper(d.Severity)
 		if d.Line > 0 {
-			fmt.Printf("%s:%d:%d: [%s] %s: %s [%s]\n",
-				d.File, d.Line, d.Column, sev, d.Rule, d.Message, d.TraceID)
+			fmt.Printf("%s:%d:%d: [%s] %s: %s%s\n",
+				d.File, d.Line, d.Column, sev, d.Rule, d.Message, checker.TraceSuffix(d.TraceID))
 		} else {
-			fmt.Printf("%s: [%s] %s: %s [%s]\n",
-				d.File, sev, d.Rule, d.Message, d.TraceID)
+			fmt.Printf("%s: [%s] %s: %s%s\n",
+				d.File, sev, d.Rule, d.Message, checker.TraceSuffix(d.TraceID))
 		}
 		// 建議修復：在錯誤行下方縮進打印可套用代碼片段（Fixes 為結構化欄位，
 		// 不進入 [traceID] 尾綴，故不破壞既有輸出契約）。

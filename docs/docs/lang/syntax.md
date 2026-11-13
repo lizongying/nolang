@@ -713,12 +713,12 @@ Nolang 的函數定義形式為 `name = (in-params) (out-params) { body }`：第
 變數：
 
 ```no
-parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+parse-line = (s str, max-fields ?i64) (fields []str) {
     ...; 函數體內對 fields 賦值
 }
 
 ; 調用處定義接收變數（LHS 綁定，型別由簽名推斷）
-fields = parse-line(line)
+fields = parse-line(line, nil)
 
 ; 多結果按順序綁定
 a, b = swap(x, y)
@@ -767,17 +767,26 @@ r = msq
 
 ### 參數默認值
 
-函數參數可以使用 `name type = expr` 語法指定默認值。帶有默認值的參數在調用時可以省略，編譯器會自動填充默認值。帶默認值的參數必須放在參數列表末尾。
+**不支援**。參數列表中的 `name type = expr`（例如 `foo = (a i64, b ?i64 = 10)`）是**語法錯誤**（`E_DEFAULT_PARAM`）：編譯器不解析默認表達式，也不會在任何調用點填充默認值。這消除了「一個宣告、多種合法 arity」的歧義，也避免了在每個調用點重複降級默認表達式造成的單態膨脹。
+
+需要可選語義時，把參數宣告成 option 型別 `?T`，由呼叫端**顯式**傳 `nil` / `ok(...)`，函數體用 `match` 處理：
 
 ```no
-; 帶默認值的函數定義
-parse-line = (s str, max-fields i64 = 1024) (fields []str) {
-    ...
+parse-line = (s str, max-fields ?i64) (fields []str) {
+    limit = 1024
+    max-fields: {
+        ok(v) -> limit = v
+
+        nil ->
+
+        err ->
+    }
+    ...; limit 即上限
 }
 
-; 以下兩種調用方式都合法：
-fields = csv.parse-line(line); max-fields 默認為 1024
-fields = csv.parse-line(line, 256); max-fields = 256
+; 調用端必須顯式傳參
+fields = csv.parse-line(line, nil); 回退 1024
+fields = csv.parse-line(line, ok(256)); 上限 256
 ```
 
 ```no
@@ -2895,8 +2904,10 @@ option {
 ```
 
 `err` 變體的載荷**不是 `str`**，而是 `std/err` 的 `err` 結構體（`code` / `msg` / `file` / `line` / `col`）。
-`err('msg')` 是 `err.new('msg')` 的別名構造器，預設 `code.unknown`；可寫 `err('msg', code.io)` 指定錯誤碼；
-位置欄位由編譯器在構造點自動注入。
+`err('msg', code)` 是 `err.new('msg', code)` 的別名構造器——錯誤碼 `code` 是**必填**參數
+（參數默認值已從語言移除），沒有具體錯誤碼時明確傳 `code.unknown`；
+位置欄位由編譯器在構造點自動注入。只寫一個參數的 `err('msg')` 不是這個別名，
+而是 option 的 `err` 變體構造器（見下）。
 
 `#{buildin}` 表示底層表示與構造由內建 runtime 提供（`%option` 型別、`ok(...)`/`nil`/`err(...)`  
 構造器），`option` 的列舉聲明僅用於匹配與窮盡性檢查。詳見「標籤列舉」與「內建標籤列舉」。
@@ -3296,6 +3307,7 @@ m = make-map()
 - **無型別標註**的寫法（如 `d = 'x'`）本就不會被報，自然也不動。
 - **定長陣列標註 `[N]T` / `[?]T` 一律保留**（永不視為冗餘）。`[N]` 不是單純的型別提示，而是決定**表示形式**的開關：寫了它，右側的 `[...]` 字面量才會被解析成固定長度的棧陣列；寫了它，推斷結果才會「剛好等於」標註——這是標註自己造出來的循環論證。刪掉後同一行重解析就變成堆上可增長的切片 `[]T`，語意隨之改變：`fixed [3]char = ["x", "y", "z"]` 的 `.push()` 無效（`.len()` 恆為 3），退化成 `fixed = ["x", "y", "z"]` 後 `.push()` 會讓 `.len()` 變 4。切片標註 `[]T` 不在其列——它刪掉後仍是切片，屬真冗餘。
 - **含十六進位字面量的值一律保留標註**（保守例外）。`no vet` 的型別推斷對 `0xNN` 採用「推斷為 `byte`」的啟發式，與編譯器「無標註時整数字面量預設 `i64`」的實際語義不同，因此 `IP-TBL [64]byte = [0x3a, ...]`、`s []byte = [0x50, 0x4b]` 會被誤判為冗餘；一旦移除，字面量會退化成 `i64` 元素而產生 `expected '[]byte', got '[]i64'` 之類的型別錯誤。故只要值運算式文本中出現 `0x`/`0X`，hint 與移除都不會發生。
+- **右值為欄位讀取時一律保留標註**（保守例外）。`i i64 = .pos` 這類寫法的標註不是單純的型別提示，而是下游整數算術是否產生 `?T` 的開關：改由欄位推斷型別時，`i + N` 不再是「有號運算」、不回傳 `?i64`，兩段式解包的 `ok` 臂永不命中、迴圈計數器原地不動。實例 `src/std/yaml.no` 的 `parser.looks-like-map-entry`：刪掉 `i64` 會讓 `yaml.parse('abc')` 陷入死循環。故 `x = .field`、`x = obj.field`（含括號或前綴包裹）上的標註既不報 `tcpoxtfd`，也不會被預設 `no fmt` 或 `--fix=redundant` 刪除。
 
 不論走預設 `no fmt` 還是 `--fix=redundant`，移除都只刪除被報告的那個型別標註及其前導空白、重跑冪等（已移除者不再變動）。修復後建議再跑一次 `no vet` 確認 `tcpoxtfd` 歸零。
 

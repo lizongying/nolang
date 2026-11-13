@@ -2537,10 +2537,8 @@ str.to-bigint = () (out ?bigint) {
         d < 0 -> break
         d >= radix -> break
 
-        #{overflow=wrap}
         acc = acc * radix
 
-        #{overflow=wrap}
         acc = acc + d
         started = 1
 

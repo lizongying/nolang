@@ -35,7 +35,7 @@ out-n = base64.decode(s, n, table, out)   ; Base64 decoding (?i64, nil=invalid i
 ```no
 #{fmt-skip}
 fn, new-pos = csv.parse-field(s, sn, pos, field)  ; Parse a single field
-n = csv.parse-line(s, sn, fields, max)             ; Parse one line
+fields = csv.parse-line(s, nil)                    ; Parse one line (nil -> cap 1024)
 out-n = csv.encode-field(field, fn, out)           ; Encode field
 ```
 

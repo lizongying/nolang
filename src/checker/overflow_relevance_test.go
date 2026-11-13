@@ -283,6 +283,11 @@ func TestLintIneffectiveOverflow(t *testing.T) {
 		if r.Severity != LintWarning {
 			t.Errorf("expected LintWarning, got %v", r.Severity)
 		}
+		// Every emitted diagnostic must carry its TraceID: the CLI / LSP print it
+		// as a `[id]` suffix, and an empty one used to render as a bare `[]`.
+		if r.TraceID == "" {
+			t.Errorf("ineffective-overflow warning must carry a TraceID, got empty")
+		}
 		warnings++
 	}
 	// Exactly one ineffective annotation (over `.s = "a" - "b"`); the effective
@@ -340,4 +345,85 @@ func isIntArithExpr(e parser.Expression) bool {
 		return false
 	}
 	return infix.Operator == "+" || infix.Operator == "-"
+}
+
+// TestOverflowBigintArithmeticIsIrrelevant pins the bigint half of the
+// classifier: `bigint` is an arbitrary-precision integer, so `acc * radix` on a
+// bigint accumulator can never overflow a fixed-width integer and an
+// `#{overflow=...}` annotation governing it is dead weight.
+//
+// Regression for the two-pipeline mismatch that made `no vet` report
+// nolang-overflow-ineffective on src/std/txt.no while `no fmt -d` kept the
+// annotations: the single-file fmt path has an empty validationFuncTypes, so
+// `acc = bigint.zero()` used to infer nothing and `acc` fell back to the
+// conservative "unknown ⇒ signed integer" branch.
+func TestOverflowBigintArithmeticIsIrrelevant(t *testing.T) {
+	src := "f = () (out ?bigint) {\n" +
+		"    acc = bigint.zero()\n" +
+		"    radix = 10\n" +
+		"    #{overflow=wrap}\n" +
+		"    acc = acc * radix\n" +
+		"    n i64 = 1\n" +
+		"    #{overflow=wrap}\n" +
+		"    n = n * radix\n" +
+		"    out = acc\n" +
+		"}\n"
+
+	lx := lexer.New(src)
+	p := parser.New(lx)
+	p.SkipLowering = true
+	program := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parse errors: %v", p.Errors())
+	}
+
+	fd, ok := program.Statements[0].(*parser.FunctionDefinition)
+	if !ok || fd.Body == nil {
+		t.Fatal("expected a function definition with a body")
+	}
+	declared := collectFuncDeclared(fd, nil, nil)
+	if got := declared["acc"]; got != "bigint" {
+		t.Fatalf("acc should infer as bigint, got %q (declared=%v)", got, declared)
+	}
+
+	relevant, _ := OverflowAnnotationRelevance(program)
+	var bigintStmt, intStmt parser.Statement
+	for _, s := range fd.Body.Statements {
+		ls, ok := s.(*parser.LetStatement)
+		if !ok || ls.Name == nil {
+			continue
+		}
+		switch ls.Name.Value {
+		case "acc":
+			if _, isMul := ls.Value.(*parser.InfixExpression); isMul {
+				bigintStmt = s
+			}
+		case "n":
+			if _, isMul := ls.Value.(*parser.InfixExpression); isMul {
+				intStmt = s
+			}
+		}
+	}
+	if bigintStmt == nil || intStmt == nil {
+		t.Fatalf("could not locate both assignment statements (bigint=%v int=%v)", bigintStmt, intStmt)
+	}
+	if relevant[bigintStmt] {
+		t.Errorf("bigint arithmetic must NOT be in the relevant set")
+	}
+	if !relevant[intStmt] {
+		t.Errorf("i64 arithmetic must stay in the relevant set")
+	}
+}
+
+// TestTraceSuffix pins the empty-TraceID contract of the human-readable
+// diagnostic suffix. An unassigned TraceID must render as nothing at all, not as
+// a bare `[]` (the shape that made `no vet` look broken on
+// nolang-overflow-ineffective before it was given an ID).
+func TestTraceSuffix(t *testing.T) {
+	if got := TraceSuffix(""); got != "" {
+		t.Errorf("empty TraceID must render no suffix, got %q", got)
+	}
+	if got := TraceSuffix("0cccc2ei"); got != " [0cccc2ei]" {
+		t.Errorf("TraceSuffix mismatch: %q", got)
+	}
 }

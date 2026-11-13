@@ -228,6 +228,22 @@ func (p *Parser) addDiagnostic(d Diagnostic) {
 	p.diags = append(p.diags, d)
 }
 
+// rejectDefaultParam reports the removed `name type = expr` parameter syntax.
+//
+// It calls emit with an EMPTY ID ON PURPOSE: this is a programmatic rule code
+// (E_DEFAULT_PARAM), not a translatable message. Do NOT route this through
+// saveErrorf / errorf — msgscan treats an empty string literal ID as a real
+// catalog entry, which would make en.noml stale and force every locale to
+// mirror an empty key. lookup("") and recordMissing("") both return early, so
+// the message stays inline English and no i18n catalog is touched.
+func (p *Parser) rejectDefaultParam(tok lexer.Token) {
+	p.emit("", SeverityError, "E_DEFAULT_PARAM", tok.Line, tok.Column,
+		[]DiagnosticFix{{
+			Description: "remove the '= expr' default; declare the parameter as ?T, pass nil / ok(...) explicitly at every call site, and handle it with match in the body",
+		}},
+		"default parameter values are not supported; use ?T with explicit nil / ok(...) arguments and a match in the body")
+}
+
 // saveErrorAt 在給定位置記錄一條帶消息 ID 的錯誤。
 func (p *Parser) saveErrorAt(id string, line, col int, format string, args ...any) {
 	p.emit(id, SeverityError, "E_GENERAL", line, col, nil, format, args...)

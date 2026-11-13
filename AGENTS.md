@@ -243,7 +243,9 @@ Nolang 函数是 **read-only input / writable output** 模型：`name = (inputs)
 - **输入只读**：标量按值、复合类型按只读引用传入；函数内禁止写输入参数或其子字段。
 - **输出可写**：命名输出参数是可写的；调用方绑定已有变量则直接改其内存，留空则生成新值。
 - **默认无返回值**：所有数据交互只经输出参数（系统函数有语法糖返回，底层仍是输出参数）。
-- **参数默认值**：`name type = expr`，必须放在最后；变参 `..t`（如 `..i64`）。
+- **参数默认值：不支持**。`name type = expr`（如 `foo = (a i64, b ?i64 = 10)`）是语法错误
+  `E_DEFAULT_PARAM`；可选性用 `?T` + 调用端显式传 `nil` / `ok(...)` + 函数体 `match`。
+  变参 `..t`（如 `..i64`）仍然支持。
 - **参数 / 结果上限 64 个**（u64 位图限制 move 追踪）。
 - **方法**：`type.method = (inputs) (rest-outputs...) {}` 糖化为 `(inputs) (self type, ...)`，
   体内用 `.` 指代 `self`，写 `self` 直接改原实例。
@@ -255,7 +257,7 @@ add = (a i64, b i64) (result i64) {
     result = a + b
 }
 
-parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+parse-line = (s str, max-fields ?i64) (fields []str) {
 }
 
 user.greet = () {
@@ -521,7 +523,7 @@ c = a + b #{overflow=wrap}
 | `txt` | `.len()`(码点数) `.len-bytes()` `.byte(i) ?byte` `.to-str()` `.to-bytes()` `.index()` `.contains()` `.slice()` `.fill()` **`.push(c char)` `.push-str(s)` `.push-txt(t)`**；`t[i]` 码点索引读；**`t[i] = v` 自 2026-11-12 起同样禁用**（增长只走 push 家族） |
 | `vec` / `arr` | `vec-create(n, val)`；`[]t.eq(b)`；原地排序 `.asc()` `.desc()`；切片视图 `v[a..b)` |
 | `int` / `float` / `num` | `int.to-str()` `div` `mod`；`f64.sin() cos() tan() degrees() radians()`；`math.PI` `math.E`；具体类型转换见 `number` |
-| `err` | `err.new(msg, code=code.unknown)` `from-errno(errno)`；`code` 枚举（ok/not-found/permission/io/timeout/parse/invalid/overflow/unknown）；`e.is(ec)` `e.msg()` `e.code()` `e.format()`；**`?t` 的 `err ->` 臂绑定的 `it` 就是这个 `err.err`（消息靠 `it.msg()`）** |
+| `err` | `err.new(msg, code)` `from-errno(errno)`；`code` 必填（无默认参数，无错误码时传 `code.unknown`）；`code` 枚举（ok/not-found/permission/io/timeout/parse/invalid/overflow/unknown）；`e.is(ec)` `e.msg()` `e.code()` `e.format()`；**`?t` 的 `err ->` 臂绑定的 `it` 就是这个 `err.err`（消息靠 `it.msg()`）** |
 | `fmt` / `log` | `print(...)` `format('{x}')`（仅认简单标识符，不解析 `.field`）；`log.debug/info/warn/error(msg)` `log.fatal(msg, code)`（**无**裸 `log(x)` 调用） |
 | `json` / `yaml` / `toml` | `t.to-json()` `t.to-noml()` 等序列化方法（接口方法，由实现类型提供） |
 | `fs` / `io` / `os` | `file` 结构体、`fs.list-dir`（**含 `.`/`..`，递归删除须用 `fs.dir-entries` 或显式跳过**）、`os.strerror(errno)` |

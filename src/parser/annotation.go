@@ -355,6 +355,9 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 	if fd, ok := stmt.(*FunctionDefinition); ok {
 		for _, e := range entries {
 			switch {
+			case e.Key == "track-caller":
+				// 末位呼叫點位置槽；checker 允許呼叫方省略它，MIR 注入位置字串。
+				fd.TrackCaller = true
 			case e.Key == "overflow" && e.Value != nil:
 				var raw string
 				switch v := e.Value.(type) {

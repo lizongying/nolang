@@ -931,10 +931,9 @@ func (bm *BlockMatchStatement) String() string {
 }
 
 type Parameter struct {
-	Token       lexer.Token
-	Name        string
-	Type        Type
-	DefaultExpr Expression // 參數默認值表達式（如 `max-fields i64 = 1024` 中的 `1024`），nil 表示無默認值
+	Token lexer.Token
+	Name  string
+	Type  Type
 }
 
 func (p *Parameter) expressionNode()        {}
@@ -1001,6 +1000,11 @@ type FunctionDefinition struct {
 	// 使 generic/union 複本的方法體內相減不遺失模式（HIR 模式下註解只存於
 	// hirPkg.Anns，side-table 拷貝無效，故必須以 AST 節點欄位攜帶）。
 	OverflowMode string
+	// TrackCaller 攜帶 #{track-caller} 註解：函式的最後一個參數是呼叫點位置槽
+	// （`loc str`，無默認值），呼叫方可省略它，由編譯器注入 "file:line:col"。
+	// 此欄位由 attachAnnotations 填寫，與 OverflowMode 同機制，使單態化複本
+	// 與 HIR 路徑的 FlagTrackCaller 保持同源。
+	TrackCaller bool
 	// BuiltinStub 標記此函式被 #{buildin=NAME} 註解修飾：它只是標準庫內建函式的
 	// 簽名聲明（真實實作位於 Go runtime 的 BuiltinMethod 表，透過 ForwardFunc /
 	// CLibCall / LLVMIntrinsic 等接線），nolang 源碼中的函式體（通常為空 {}）不會

@@ -657,9 +657,6 @@ func (d *dumper) node(node parser.Node, depth int) {
 		if n.Type != nil {
 			d.node(n.Type, depth+1)
 		}
-		if n.DefaultExpr != nil {
-			d.node(n.DefaultExpr, depth+1)
-		}
 
 	// ── types ────────────────────────────────────────────────────────────────
 

@@ -102,7 +102,6 @@ func validateTypeNameNaming(program *parser.Program) []ValidateResult {
 				continue
 			}
 			checkType(p.Type, file)
-			walkExpr(p.DefaultExpr, file)
 		}
 	}
 

@@ -351,10 +351,9 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				Type:  buildType(paramType, paramToken),
 			}
 
-			// 參數默認值：name type = expr
+			// 參數默認值語法已移除：`name type = expr` 是硬錯，只報一次並恢復。
 			if p.currentToken.Type == lexer.ASSIGN {
-				p.nextToken() // skip =
-				param.DefaultExpr = p.parseExpression(LOWEST)
+				p.skipRemovedDefaultParam()
 			}
 
 			def.Parameters = append(def.Parameters, param)
@@ -633,16 +632,19 @@ func (p *Parser) isFunctionDefinition() bool {
 	// 選用的結果列表 `(...)`，因此在關閉參數列表後需允許緊接的一個 `(...)`
 	// 作為結果列表。
 	parenDepth := 0
-	prevIdent := false           // 上一個 token 是 IDENT（可能是參數名，後接函式型別 `(`）
-	allowFnResultsParen := false // 允許函式型別關閉參數列表後的結果列表 LPAREN
-	skippingDefault := false     // 正在跳過參數默認值表達式
+	prevIdent := false              // 上一個 token 是 IDENT（可能是參數名，後接函式型別 `(`）
+	allowFnResultsParen := false    // 允許函式型別關閉參數列表後的結果列表 LPAREN
+	skippingRemovedDefault := false // 正在跳過已移除的參數默認值表達式（僅為錯誤恢復）
 	for (p.currentToken.Type != lexer.RPAREN || parenDepth > 0) && p.currentToken.Type != lexer.EOF {
-		// 跳過參數默認值表達式：遇到 ASSIGN 後，跳到下一個 COMMA 或 RPAREN（depth 0）
-		if skippingDefault {
+		// 跳過已移除的參數默認值表達式：遇到 ASSIGN 後，跳到下一個 COMMA 或 RPAREN（depth 0）。
+		// 保留此前瞻的唯一目的是「錯誤恢復與函式定義分類」：含 `= expr` 的陳述仍要
+		// 被識別為函式定義，才能進入 parseFunctionBody 報 E_DEFAULT_PARAM；默認值
+		// 本身已被語言移除，絕不解析、絕不存儲。
+		if skippingRemovedDefault {
 			if p.currentToken.Type == lexer.COMMA && parenDepth == 0 {
-				skippingDefault = false
+				skippingRemovedDefault = false
 			} else if p.currentToken.Type == lexer.RPAREN && parenDepth == 0 {
-				skippingDefault = false
+				skippingRemovedDefault = false
 				continue // 不消耗 RPAREN，讓迴圈條件判斷
 			} else if p.currentToken.Type == lexer.LPAREN {
 				parenDepth++
@@ -653,7 +655,7 @@ func (p *Parser) isFunctionDefinition() bool {
 			continue
 		}
 		if p.currentToken.Type == lexer.ASSIGN {
-			skippingDefault = true
+			skippingRemovedDefault = true
 			prevIdent = false
 			allowFnResultsParen = false
 			p.nextToken()
@@ -1627,6 +1629,41 @@ func (p *Parser) parseFunctionDefinition() Statement {
 	return def
 }
 
+// skipRemovedDefaultParam reports and discards a removed `= expr` parameter
+// default. It assumes currentToken is the '='.
+//
+// The expression is NEVER parsed or stored: parameter default values are gone
+// from the language (they made a function's arity ambiguous and forced the MIR
+// lowerer to re-lower a default expression at every call site). We only
+// re-synchronise at the next parameter boundary so the rest of the parameter
+// list still parses and the user gets ONE precise E_DEFAULT_PARAM instead of a
+// cascade of "expected expression" errors.
+//
+// Depth tracking is load-bearing: `b i64 = foo(1, 2)` must not stop at the
+// comma inside the call, and `c []i64 = [1, 2]` must not stop inside the
+// array literal. Brackets and braces are counted for the same reason.
+func (p *Parser) skipRemovedDefaultParam() {
+	p.rejectDefaultParam(p.currentToken) // currentToken is '='
+	p.nextToken()                        // consume '='
+	depth := 0
+	for p.currentToken.Type != lexer.EOF {
+		switch p.currentToken.Type {
+		case lexer.LPAREN, lexer.LBRACKET, lexer.LBRACE:
+			depth++
+		case lexer.RPAREN, lexer.RBRACKET, lexer.RBRACE:
+			if depth == 0 {
+				return // leave the delimiter for the parameter loop
+			}
+			depth--
+		case lexer.COMMA:
+			if depth == 0 {
+				return // leave the comma for the parameter loop
+			}
+		}
+		p.nextToken()
+	}
+}
+
 // parseFunctionBody parses the parameter list, result parameters, and body block.
 // It assumes currentToken is the token after the '=' or ':' that introduces the body.
 func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
@@ -1690,10 +1727,9 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				Type:  paramTypeParsed,
 			}
 
-			// 參數默認值：name type = expr
+			// 參數默認值語法已移除：`name type = expr` 是硬錯，只報一次並恢復。
 			if p.currentToken.Type == lexer.ASSIGN {
-				p.nextToken() // skip =
-				param.DefaultExpr = p.parseExpression(LOWEST)
+				p.skipRemovedDefaultParam()
 			}
 
 			def.Parameters = append(def.Parameters, param)

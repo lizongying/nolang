@@ -32,7 +32,7 @@ out-n = base64.decode(s, n, table, out); Base64 解碼（?i64, nil=無效輸入�
 
 ```no
 fn, new-pos = csv.parse-field(s, sn, pos, field); 解析單個欄位
-n = csv.parse-line(s, sn, fields, max); 解析一行
+fields = csv.parse-line(s, nil); 解析一行（nil → 上限 1024）
 out-n = csv.encode-field(field, fn, out); 編碼欄位
 ```
 

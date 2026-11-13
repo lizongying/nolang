@@ -714,10 +714,6 @@ func (f *formatter) formatParameters(params []*parser.Parameter, isVariadic bool
 				f.write(p.Type.String())
 			}
 		}
-		if p.DefaultExpr != nil {
-			f.write(" = ")
-			f.formatExpression(p.DefaultExpr)
-		}
 	}
 }
 

@@ -4527,3 +4527,41 @@ GOLDEN=tests/golden/mir-baseline.tsv GOLDEN_MIR=default bash scripts/mir_golden.
 > 不能拿它當對照組。要指名 SHA、用 `git archive <SHA>` 建乾淨快照再自建 binary
 > （`/tmp/no_std_before` 就是這樣來的）。另外 `ps`/`pgrep` 的訊號受限，「看不到行程」
 > **不等於跑完了**，判斷完成要看輸出檔。
+
+### `no vet` 報 overflow-ineffective 但 `no fmt` 不刪（2026-11-13 實例）
+
+症狀：`./bin/no vet src/std` 對 `src/std/net/multipart.no` 的兩處
+`.body = .body - enc-str - crlf` 報 `nolang-overflow-ineffective`（`0cccc2ei`），
+但 `./bin/no fmt -d src/std/net/multipart.no` 一片空白——**同一份程式、同一條判據，
+vet 說無效、fmt 說有效**。兩邊其實共用 `checker.OverflowAnnotationRelevance`，
+分裂來自該函式在兩條管道看到的輸入不同，且下面兩個缺陷必須**同時**修掉才會一致：
+
+1. 🔴 `checker.methodSelfType` 讀 `Parameters[0]`，但 parser 把接收者 `self` 插在
+   **`Results[0]`**（`decl.go` 三處 `Results = append([]*Parameter{selfParam}, …)`）。
+   於是「帶至少一個輸入參數」的方法拿到第一個**輸入**參數的型別——
+   `multipart-writer.write-encrypted-file = (name str, …)` 拿回 `"str"`，
+   無參數方法拿回 `""`。`inferExprType(.body)` 因此在錯誤的型別上查欄位 ⇒ `""`。
+   修法：改讀 `Results[0].Name == "self"`（與 `checker.go` 的 `validateStmtTypes`、
+   `parser.DeclaredResults` 同口徑）。
+2. 🔴 單檔 `no fmt` 解析時包級 `validationStructFields` 是 nil——它平常是
+   `ValidateTypes`（build / vet 管道）的副作用。所以就算 selfType 正確，`.body`
+   也查不到 `str`。修法：`StatementsWithIntOverflow` 在原本為空時臨時建表
+   （`collectStructFields(program)`）並在結束前還原，與
+   `ValidateRedundantTypeAnnotation` 的既有處理同口徑（短臨界區，不跨
+   `snapshotValidationFuncTypes` 持鎖，避免非可重入互斥鎖自鎖）。
+3. 配套：`operandIntKind` 原本對**成員存取**一律落到尾部「保守視為有號整數」。
+   型別現在可解析了，就按欄位型別分類（`str`/`txt`/`char`/`bool`/`float`/`bigint`
+   回 `""`、無號回 `"unsigned"`、仍未知才保持 `"signed"`）——只往「不報」方向變，
+   不會新增任何診斷。
+
+迴歸釘：`src/fmt/overflow_ineffective_test.go` 的
+`TestFormatRemovesIneffectiveOverflowOnSelfStrField`（對照組是同函式 i64 欄位
+算術必須保留註解）、`src/checker/method_self_result_test.go` 的
+`TestMethodSelfTypeReadsReceiverResult`。
+
+**殘留 1 條相反方向的誤報**：`src/std/math.no:327`（`div` 的 `r = a / b`，`a`/`b`
+是 union 別名 `int`）vet 報無效、fmt 保留。這次是 **vet 錯**：實測拿掉該註解後
+vet 立刻由 0 error 變成 `ovfhndld` HINT（`r` 綁到行為未宣告的 `?T`）＋多一條
+`xmicjezl`，即註解**確實生效**。根因是 lint 跑在 lowering **之後**的樹上，
+union 別名的 `/` 已被降成别的形状、對不上 infix 判定；fmt 讀的是糖形態（仍有
+infix），所以保守保留是正確行為。修 lint 側不在本輪範圍。

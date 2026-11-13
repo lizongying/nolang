@@ -41,9 +41,6 @@ func (sp *SignatureHelpProvider) GetSignatureHelp(position Position) (*Signature
 		if p.Type != "" {
 			label += " " + p.Type
 		}
-		if p.DefaultValue != "" {
-			label += " = " + p.DefaultValue
-		}
 		paramsInfo = append(paramsInfo, ParameterInformation{
 			Label: label,
 		})
