@@ -105,14 +105,12 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            blk-opt = blk + 8
-            blk-opt: {
-                ok -> blk = it
+            blk ?= blk + 8
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -200,14 +198,12 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            blk-opt2 = blk + 8
-            blk-opt2: {
-                ok -> blk = it
+            blk ?= blk + 8
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -248,20 +244,20 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         i <- [0..8): {
 
             #{overflow=wrap}
-            ixout191c29 = in[blk + i]: {
+            in-blk-i = in[blk + i]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout191c45 = prev[i]: {
+            prev-i = prev[i]: {
                 ok -> it
 
                 -> _
             }
 
             xored[i]: {
-                ok -> it = (ixout191c29) ^ (ixout191c45)
+                ok -> it = (in-blk-i) ^ (prev-i)
 
                 -> _
             }
@@ -293,14 +289,12 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            blk-opt3 = blk + 8
-            blk-opt3: {
-                ok -> blk = it
+            blk ?= blk + 8
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -347,20 +341,20 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         dec-block = tdes-dec(cipher-block, 8, key)
 
         i <- [0..8): {
-            ixout255c29 = dec-block[i]: {
+            dec-block-i = dec-block[i]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout255c46 = prev[i]: {
+            prev-i = prev[i]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[blk + i] = (ixout255c29) ^ (ixout255c46)
+            out[blk + i] = (dec-block-i) ^ (prev-i)
 
             prev[i]: {
                 ok -> it = cipher-block[i]: {
@@ -374,14 +368,12 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            blk-opt4 = blk + 8
-            blk-opt4: {
-                ok -> blk = it
+            blk ?= blk + 8
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }

@@ -48,14 +48,12 @@ from-i64 = (v i64) (out bigint) {
             out.sign = -1
 
             {
-
                 #{overflow=wrap}
-                r-v-opt = 0 - r-v
-                r-v-opt: {
-                    ok -> r-v = it
+                r-v ?= 0 - r-v
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -589,12 +587,11 @@ bigint._mul-i64 = (v i64) (c bigint) {
     r-v < 0 -> {
         sign = -sign
         {
-            r-v-opt2 = 0 - r-v
-            r-v-opt2: {
-                ok -> r-v = it
+            r-v ?= 0 - r-v
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -721,12 +718,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     (bt >> 31 == 0) {
         bt = bt << 1
         {
-            shift-opt = shift + 1
-            shift-opt: {
-                ok -> shift = it
+            shift ?= shift + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -792,23 +788,23 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         BASE u64 = 4294967296
 
         #{overflow=wrap}
-        ixout662c27 = norm-b[bl - 1]: {
+        b-top-limb = norm-b[bl - 1]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
-        bt-u u64 = (ixout662c27 & MASK)
+        bt-u u64 = (b-top-limb & MASK)
         bt1 u64 = 0
 
         #{overflow=wrap}
-        ixout664c33 = norm-b[bl - 2]: {
+        b-next-limb = norm-b[bl - 2]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
-        bl >= 2 -> bt1 = (ixout664c33 & MASK)
+        bl >= 2 -> bt1 = (b-next-limb & MASK)
 
         ; qhat = floor((an*BASE + an1) / bt)，全程 u64 避免 an*BASE 溢出 i64
         #{overflow=wrap}
@@ -881,14 +877,14 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         ; 乘減：norm-a[qi..qi+bl] -= qhat * norm-b[0..bl-1]
         borrow u64 = 0
         bj <- [0..bl): {
-            ixout717c35 = norm-b[bj]: {
+            norm-b-bj = norm-b[bj]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            p u64 = qhat * (ixout717c35 & MASK)
+            p u64 = qhat * (norm-b-bj & MASK)
 
             #{overflow=wrap}
             p = p + borrow
@@ -942,14 +938,14 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
                 qhat = qhat - 1
                 carry2 u64 = 0
                 bj2 <- [0..bl): {
-                    ixout749c70 = norm-b[bj2]: {
+                    norm-b-bj2 = norm-b[bj2]: {
                         ok -> it
 
                         -> _
                     }
 
                     #{overflow=wrap}
-                    s u64 = (norm-a.limbs[qi + bj2] & MASK) + (ixout749c70 & MASK) + carry2
+                    s u64 = (norm-a.limbs[qi + bj2] & MASK) + (norm-b-bj2 & MASK) + carry2
 
                     #{overflow=wrap}
                     norm-a.limbs[qi + bj2] = (s & 4294967295)
@@ -968,14 +964,12 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         }
 
         {
-
             #{overflow=wrap}
-            qi-opt = qi - 1
-            qi-opt: {
-                ok -> qi = it
+            qi ?= qi - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1005,12 +999,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         }
         rc = ((rcur & ((1 << shift) - 1)) << (32 - shift)) & MASK
         {
-            ri-opt = ri - 1
-            ri-opt: {
-                ok -> ri = it
+            ri ?= ri - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     r.normalize()
@@ -1025,14 +1018,12 @@ bigint._div-i64 = (v i64) (q bigint) {
 
     r-v < 0 -> {
         {
-
             #{overflow=wrap}
-            r-v-opt3 = 0 - r-v
-            r-v-opt3: {
-                ok -> r-v = it
+            r-v ?= 0 - r-v
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     q.sign = .sign
@@ -1051,12 +1042,11 @@ bigint._div-i64 = (v i64) (q bigint) {
         #{overflow=wrap}
         q.limbs[i] = cur / r-v
         {
-            rem-opt = cur % r-v
-            rem-opt: {
-                ok -> rem = it
+            rem ?= cur % r-v
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     q.normalize()
@@ -1073,14 +1063,12 @@ bigint._mod-i64 = (v i64) (r ?i64) {
 
     r-v < 0 -> {
         {
-
             #{overflow=wrap}
-            r-v-opt4 = 0 - r-v
-            r-v-opt4: {
-                ok -> r-v = it
+            r-v ?= 0 - r-v
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     rem = 0
@@ -1144,14 +1132,12 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
         tv = tv >> 1
 
         {
-
             #{overflow=wrap}
-            lead-opt = lead + 1
-            lead-opt: {
-                ok -> lead = it
+            lead ?= lead + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1386,22 +1372,18 @@ bigint.to-str = () (out str) {
             -> 0
         }
 
-        #{overflow=wrap}
-        buf[bufn]: {
-            ok -> it = d + 48
-
-            -> _
-        }
-
+        ; 換算成 ASCII 並寫回：下標讀取與算術各自都是 option，用一個塊形態
+        ; match 一併處理，失敗就停止轉換（回傳已寫入的部分）。
         {
+            #{overflow=wrap}
+            buf[bufn] ?= d + 48
 
             #{overflow=wrap}
-            bufn-opt = bufn + 1
-            bufn-opt: {
-                ok -> bufn = it
+            bufn ?= bufn + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         next = tmp._div-i64(10)
         tmp = next
@@ -1417,25 +1399,21 @@ bigint.to-str = () (out str) {
         }
 
         {
-
             #{overflow=wrap}
-            out-n-opt = out-n + 1
-            out-n-opt: {
-                ok -> out-n = it
+            out-n ?= out-n + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            j-opt = j - 1
-            j-opt: {
-                ok -> j = it
+            j ?= j - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out = ob.slice(0, out-n).to-bytes-str()

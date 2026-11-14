@@ -294,13 +294,13 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     {
         program == 'sh' -> {
             args.len() >= 2 -> {
-                ixout301c27 = args[0]: {
+                first-arg = args[0]: {
                     ok -> it
 
-                    -> _
+                    -> ''
                 }
 
-                is-sh-c = ixout301c27 == '-c'
+                is-sh-c = first-arg == '-c'
             }
         }
     }
@@ -797,13 +797,13 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     #{overflow=wrap}
     slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes())
     args.len() >= 2 -> {
-        ixout808c9 = args[0]: {
+        first-arg = args[0]: {
             ok -> it
 
-            -> _
+            -> ''
         }
 
-        ixout808c9 == '-c' -> {
+        first-arg == '-c' -> {
             base == 'sh' -> is-sh-c = true
             base == 'bash' -> is-sh-c = true
             base == 'zsh' -> is-sh-c = true

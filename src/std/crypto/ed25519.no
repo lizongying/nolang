@@ -206,29 +206,34 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
         pcopy(r, tmp)
 
         ; bit t 為 1 → R = R + P
-        #{overflow=wrap}
-        ixout204c16 = scalar[t / 8]: {
-            ok -> it
+        {
+            #{overflow=wrap}
+            byte-at ?= t / 8
+
+            #{overflow=wrap}
+            bit-at ?= t % 8
+
+            scalar-byte ?= scalar[byte-at]
+
+            bit = (scalar-byte >> bit-at) & 1
+
+            bit == 1 -> {
+                ge-add(tmp, r, p)
+                pcopy(r, tmp)
+            }
+        }: {
+            err -> _
 
             -> _
         }
 
-        bit = (ixout204c16 >> (t % 8)) & 1
-
-        bit == 1 -> {
-            ge-add(tmp, r, p)
-            pcopy(r, tmp)
-        }
-
         {
-
             #{overflow=wrap}
-            t-opt = t - 1
-            t-opt: {
-                ok -> t = it
+            t ?= t - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -248,20 +253,18 @@ ge-pack = (p []i64) (out [32]byte) {
     out = x25519.fe-tobytes-v(y)
     xb = x25519.fe-tobytes-v(x)
 
-    ixout249c23 = out[31]: {
-        ok -> it
+    ; 最高位塞入 x 的符號位
+    {
+        top-byte ?= out[31]
+        sign-byte ?= xb[0]
 
-        -> _
-    }
+        out[31]: {
+            ok -> it = top-byte | ((sign-byte & 1) << 7)
 
-    ixout249c34 = xb[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    out[31]: {
-        ok -> it = ixout249c23 | ((ixout249c34 & 1) << 7)
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -278,28 +281,33 @@ fe-pow = (base []i64, e [32]byte) (out []i64) {
     (t >= 0) {
         out = x25519.fe-sq-v(out)
 
-        #{overflow=wrap}
-        ixout251c16 = e[t / 8]: {
-            ok -> it
+        {
+            #{overflow=wrap}
+            byte-at ?= t / 8
+
+            #{overflow=wrap}
+            bit-at ?= t % 8
+
+            exponent-byte ?= e[byte-at]
+
+            bit = (exponent-byte >> bit-at) & 1
+
+            bit == 1 -> {
+                out = x25519.fe-mul-v(out, base)
+            }
+        }: {
+            err -> _
 
             -> _
         }
 
-        bit = (ixout251c16 >> (t % 8)) & 1
-
-        bit == 1 -> {
-            out = x25519.fe-mul-v(out, base)
-        }
-
         {
-
             #{overflow=wrap}
-            t-opt2 = t - 1
-            t-opt2: {
-                ok -> t = it
+            t ?= t - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -312,33 +320,45 @@ fe-pow = (base []i64, e [32]byte) (out []i64) {
 ge-unpack = (s [32]byte) (ok i64, p []i64) {
     p = with-len(40)
 
-    ixout291c14 = s[31]: {
-        ok -> it
+    ; y 的最高位是 x 的符號位，其餘位元組原樣複製後清掉該位
+    sign = 0
+    {
+        top-byte ?= s[31]
+
+        sign = (top-byte >> 7) & 1
+    }: {
+        err -> _
 
         -> _
     }
 
-    sign = (ixout291c14 >> 7) & 1
     sc [32]byte
     i <- [0..32): {
-        sc[i]: {
-            ok -> it = s[i]: {
-                ok -> it
+        {
+            byte-value ?= s[i]
+
+            sc[i]: {
+                ok -> it = byte-value
 
                 -> _
             }
+        }: {
+            err -> _
 
             -> _
         }
     }
-    ixout301c22 = sc[31]: {
-        ok -> it
 
-        -> _
-    }
+    {
+        sign-byte ?= sc[31]
 
-    sc[31]: {
-        ok -> it = ixout301c22 & 127
+        sc[31]: {
+            ok -> it = sign-byte & 127
+
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -375,14 +395,16 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     ; 符號修正：x 最低位 != sign → 取負
     xb = x25519.fe-tobytes-v(x)
-    ixout338c8 = xb[0]: {
-        ok -> it
+    {
+        x-low-byte ?= xb[0]
+
+        (x-low-byte & 1) != sign -> {
+            x = x25519.fe-sub-v(x25519.fe-zero-v(), x)
+        }
+    }: {
+        err -> _
 
         -> _
-    }
-
-    (ixout338c8 & 1) != sign -> {
-        x = x25519.fe-sub-v(x25519.fe-zero-v(), x)
     }
 
     ; 組裝點 (X,Y,Z,T) = (x, y, 1, x*y)
@@ -446,14 +468,12 @@ sc-ge-l = (acc []i64) (ge i64) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt = i - 1
-            i-opt: {
-                ok -> i = it
+            i ?= i - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -473,14 +493,22 @@ sc-reduce = (s []byte) (out [32]byte) {
     i = nb - 1
     (i >= 0) {
 
-        #{overflow=wrap}
-        ixout404c16 = s[i / 8]: {
-            ok -> it
+        bit = 0
+        {
+            #{overflow=wrap}
+            byte-at ?= i / 8
+
+            #{overflow=wrap}
+            bit-at ?= i % 8
+
+            scalar-byte ?= s[byte-at]
+
+            bit = (scalar-byte >> bit-at) & 1
+        }: {
+            err -> _
 
             -> _
         }
-
-        bit = (ixout404c16 >> (i % 8)) & 1
 
         ; acc = acc*2 + bit
         carry = bit
@@ -509,14 +537,14 @@ sc-reduce = (s []byte) (out [32]byte) {
                     -> 0
                 }
 
-                ixout460c25 = acc[j]: {
+                acc-j = acc[j]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                dv = ixout460c25 - lv - borrow
+                dv = acc-j - lv - borrow
                 {
                     dv < 0 -> {
 
@@ -537,14 +565,12 @@ sc-reduce = (s []byte) (out [32]byte) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt2 = i - 1
-            i-opt2: {
-                ok -> i = it
+            i ?= i - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     i <- [0..32): {
@@ -577,7 +603,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             ; MIR lowering 已修正巢狀安全索引 match 的延續邊（lowerIf 在 arm body
             ; 切換 current block 時補 br mergeBlk），不再於迴圈內提前 return 零值，
             ; 故無需先以 `pv = prod[idx]` 預載為 plain i64。
-            ixout484c17 = prod[idx]: {
+            prod-idx = prod[idx]: {
                 ok -> it
 
                 -> _
@@ -600,7 +626,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             }
 
             #{overflow=wrap}
-            v = ixout484c17 + ai * bi + carry
+            v = prod-idx + ai * bi + carry
 
             prod[idx]: {
                 ok -> it = v & 255
@@ -614,14 +640,14 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         #{overflow=wrap}
         k = i + 32
         (k < 64 && carry != 0) {
-            ixout500c17 = prod[k]: {
+            prod-k = prod[k]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            v = ixout500c17 + carry
+            v = prod-k + carry
 
             prod[k]: {
                 ok -> it = v & 255
@@ -639,58 +665,60 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     ; 加上 c
     carry = 0
     i <- [0..32): {
-        ixout520c13 = prod[i]: {
-            ok -> it
+        {
+            prod-byte ?= prod[i]
+
+            ; c[i] 同样是 byte，进 64 位域后再加，避免 256 回绕吃掉进位
+            c-limb i64 = c[i]: {
+                ok -> it
+
+                -> 0
+            }
+
+            #{overflow=wrap}
+            v = prod-byte + c-limb + carry
+
+            prod[i]: {
+                ok -> it = v & 255
+
+                -> _
+            }
+
+            carry = v >> 8
+        }: {
+            err -> _
 
             -> _
         }
-
-        ; c[i] 同样是 byte，进 64 位域后再加，避免 256 回绕吃掉进位
-        ci i64 = c[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        v = ixout520c13 + ci + carry
-
-        prod[i]: {
-            ok -> it = v & 255
-
-            -> _
-        }
-
-        carry = v >> 8
     }
     i = 32
     (i < 64 && carry != 0) {
-        ixout534c13 = prod[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        v = ixout534c13 + carry
-
-        prod[i]: {
-            ok -> it = v & 255
-
-            -> _
-        }
-
-        carry = v >> 8
-
         {
+            prod-byte ?= prod[i]
 
             #{overflow=wrap}
-            i-opt3 = i + 1
-            i-opt3: {
-                ok -> i = it
+            v = prod-byte + carry
 
-                ->
+            prod[i]: {
+                ok -> it = v & 255
+
+                -> _
             }
+
+            carry = v >> 8
+        }: {
+            err -> _
+
+            -> _
+        }
+
+        {
+            #{overflow=wrap}
+            i ?= i + 1
+        }: {
+            err -> _
+
+            -> _
         }
     }
 
@@ -733,36 +761,33 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
             -> _
         }
     }
-    ixout649c21 = a[0]: {
-        ok -> it
+    ; 純量 clamp：清低 3 位、清最高位、置次高位（RFC 8032 §5.1.5）
+    {
+        low-byte ?= a[0]
 
-        -> _
-    }
+        a[0]: {
+            ok -> it = low-byte & 248
 
-    a[0]: {
-        ok -> it = ixout649c21 & 248
+            -> _
+        }
 
-        -> _
-    }
-    ixout654c21 = a[31]: {
-        ok -> it
+        top-byte ?= a[31]
 
-        -> _
-    }
+        a[31]: {
+            ok -> it = top-byte & 127
 
-    a[31]: {
-        ok -> it = ixout654c21 & 127
+            -> _
+        }
 
-        -> _
-    }
-    ixout659c21 = a[31]: {
-        ok -> it
+        middle-byte ?= a[31]
 
-        -> _
-    }
+        a[31]: {
+            ok -> it = middle-byte | 64
 
-    a[31]: {
-        ok -> it = ixout659c21 | 64
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -793,36 +818,33 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
             -> _
         }
     }
-    ixout687c21 = a[0]: {
-        ok -> it
+    ; 純量 clamp：清低 3 位、清最高位、置次高位（RFC 8032 §5.1.5）
+    {
+        low-byte ?= a[0]
 
-        -> _
-    }
+        a[0]: {
+            ok -> it = low-byte & 248
 
-    a[0]: {
-        ok -> it = ixout687c21 & 248
+            -> _
+        }
 
-        -> _
-    }
-    ixout692c21 = a[31]: {
-        ok -> it
+        top-byte ?= a[31]
 
-        -> _
-    }
+        a[31]: {
+            ok -> it = top-byte & 127
 
-    a[31]: {
-        ok -> it = ixout692c21 & 127
+            -> _
+        }
 
-        -> _
-    }
-    ixout697c21 = a[31]: {
-        ok -> it
+        middle-byte ?= a[31]
 
-        -> _
-    }
+        a[31]: {
+            ok -> it = middle-byte | 64
 
-    a[31]: {
-        ok -> it = ixout697c21 | 64
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -1022,40 +1044,37 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         }
     }
 
-    ; 檢查 S < L
+    ; 檢查 S < L（從高位逐位元組比較，第一個不同就定案；之後的位元組不再改判）
+    verdict = 0
     i = 31
     (i >= 0) {
         {
-            ixout870c14 = s[i]: {
-                ok -> it
+            s-byte ?= s[i]
 
-                -> _
-            }
+            limit-byte ?= ED-L[i]
 
-            ixout870c14 > ED-L[i] -> {
-                ok = 0
-                return
-            }
+            verdict == 0 && s-byte > limit-byte -> verdict = 1
 
-            ixout875c14 = s[i]: {
-                ok -> it
+            verdict == 0 && s-byte < limit-byte -> verdict = -1
+        }: {
+            err -> _
 
-                -> _
-            }
-
-            ixout875c14 < ED-L[i] -> break
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            i-opt4 = i - 1
-            i-opt4: {
-                ok -> i = it
+            i ?= i - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
+    }
+
+    verdict > 0 -> {
+        ok = 0
+        return
     }
 
     ; 解壓 A、R

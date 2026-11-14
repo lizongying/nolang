@@ -24,7 +24,7 @@ bhex = (data []byte) (hex str) {
     #{overflow=wrap}
     hex str = with-len(n * 2)
     i <- [0..n): {
-        ixout29c37 = data[i]: {
+        data-i = data[i]: {
             ok -> it
 
             -> _
@@ -33,14 +33,14 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(ixout29c37 >> 4) & 15]
+            hex[i * 2] ?= hex-chars[(data-i >> 4) & 15]
         }: {
             err -> _
 
             -> _
         }
 
-        ixout32c40 = data[i]: {
+        data-i-2 = data[i]: {
             ok -> it
 
             -> _
@@ -49,7 +49,7 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[ixout32c40 & 15]
+            hex[i * 2 + 1] ?= hex-chars[data-i-2 & 15]
         }: {
             err -> _
 
@@ -266,9 +266,13 @@ t-rotr32 = () {
 ; 金標由 python 依 RFC 7693 G 定義（加法 mod 2^64 + 右轉 32/24/16/63）算出。
 t-b-g = () {
     v []u64 = with-len(16)
+    ; `i + 1` 是 ?i64，下標也是 ?u64 —— place-match 的 `it = <expr>` 會把算術
+    ; 那層 err 丟掉，所以改用塊形態 match 的 ?= 一次解兩層。
     i <- [0..16): {
-        v[i]: {
-            ok -> it = i + 1
+        {
+            v[i] ?= i + 1
+        }: {
+            err -> _
 
             -> _
         }
@@ -289,8 +293,10 @@ t-b-g = () {
 t-s-g = () {
     v []u32 = with-len(16)
     i <- [0..16): {
-        v[i]: {
-            ok -> it = i + 1
+        {
+            v[i] ?= i + 1
+        }: {
+            err -> _
 
             -> _
         }

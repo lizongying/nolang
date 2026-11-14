@@ -160,14 +160,12 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = first & 63
 
             {
-
                 #{overflow=wrap}
-                next-pos-opt = pos + 1
-                next-pos-opt: {
-                    ok -> next-pos = it
+                next-pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -176,24 +174,24 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             #{overflow=wrap}
             pos + 1 >= buf.len() -> return
 
-            #{overflow=wrap}
-            ixout157c42 = buf[pos + 1]: {
-                ok -> it
+            {
+                #{overflow=wrap}
+                second-byte ?= buf[pos + 1]
+
+                val = ((first & 63) << 8) | second-byte
+            }: {
+                err -> _
 
                 -> _
             }
 
-            val = ((first & 63) << 8) | (ixout157c42)
-
             {
-
                 #{overflow=wrap}
-                next-pos-opt2 = pos + 2
-                next-pos-opt2: {
-                    ok -> next-pos = it
+                next-pos ?= pos + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -201,44 +199,36 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             #{overflow=wrap}
             pos + 3 >= buf.len() -> return
-            val = ((first & 63) << 24)
 
-            #{overflow=wrap}
-            ixout170c27 = buf[pos + 1]: {
-                ok -> it
+            ; 大端拼接剩下的 3 個位元組
+            val = first & 63
+            j <- [1..4): {
+                {
+                    #{overflow=wrap}
+                    at ?= pos + j
 
-                -> _
+                    byte-val = buf[at]: {
+                        ok -> it
+
+                        -> 0
+                    }
+
+                    #{overflow=wrap}
+                    val = (val << 8) | byte-val
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
-
-            val = val | ((ixout170c27) << 16)
-
-            #{overflow=wrap}
-            ixout173c27 = buf[pos + 2]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | ((ixout173c27) << 8)
-
-            #{overflow=wrap}
-            ixout176c26 = buf[pos + 3]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | (ixout176c26)
 
             {
-
                 #{overflow=wrap}
-                next-pos-opt3 = pos + 4
-                next-pos-opt3: {
-                    ok -> next-pos = it
+                next-pos ?= pos + 4
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -246,80 +236,36 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             #{overflow=wrap}
             pos + 7 >= buf.len() -> return
-            val = ((first & 63) << 56)
 
-            #{overflow=wrap}
-            ixout189c27 = buf[pos + 1]: {
-                ok -> it
+            ; 大端拼接剩下的 7 個位元組
+            val = first & 63
+            j <- [1..8): {
+                {
+                    #{overflow=wrap}
+                    at ?= pos + j
 
-                -> _
+                    byte-val = buf[at]: {
+                        ok -> it
+
+                        -> 0
+                    }
+
+                    #{overflow=wrap}
+                    val = (val << 8) | byte-val
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
-
-            val = val | ((ixout189c27) << 48)
-
-            #{overflow=wrap}
-            ixout192c27 = buf[pos + 2]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | ((ixout192c27) << 40)
-
-            #{overflow=wrap}
-            ixout195c27 = buf[pos + 3]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | ((ixout195c27) << 32)
-
-            #{overflow=wrap}
-            ixout198c27 = buf[pos + 4]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | ((ixout198c27) << 24)
-
-            #{overflow=wrap}
-            ixout201c27 = buf[pos + 5]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | ((ixout201c27) << 16)
-
-            #{overflow=wrap}
-            ixout204c27 = buf[pos + 6]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | ((ixout204c27) << 8)
-
-            #{overflow=wrap}
-            ixout207c26 = buf[pos + 7]: {
-                ok -> it
-
-                -> _
-            }
-
-            val = val | (ixout207c26)
 
             {
-
                 #{overflow=wrap}
-                next-pos-opt4 = pos + 8
-                next-pos-opt4: {
-                    ok -> next-pos = it
+                next-pos ?= pos + 8
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -411,14 +357,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         }
 
         {
-
             #{overflow=wrap}
-            count-opt = count + 1
-            count-opt: {
-                ok -> count = it
+            count ?= count + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -452,27 +396,23 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             {
-
                 #{overflow=wrap}
-                r-pos-opt = rl-np + rl-val
-                r-pos-opt: {
-                    ok -> r-pos = it
+                r-pos ?= rl-np + rl-val
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
 
             frames[count].length = 0
 
             {
-
                 #{overflow=wrap}
-                count-opt2 = count + 1
-                count-opt2: {
-                    ok -> count = it
+                count ?= count + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -497,27 +437,23 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             {
-
                 #{overflow=wrap}
-                r-pos-opt2 = rl-np + rl-val
-                r-pos-opt2: {
-                    ok -> r-pos = it
+                r-pos ?= rl-np + rl-val
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
 
             frames[count].length = 0
 
             {
-
                 #{overflow=wrap}
-                count-opt3 = count + 1
-                count-opt3: {
-                    ok -> count = it
+                count ?= count + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -528,14 +464,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             {
-
                 #{overflow=wrap}
-                count-opt4 = count + 1
-                count-opt4: {
-                    ok -> count = it
+                count ?= count + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -552,27 +486,23 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             {
-
                 #{overflow=wrap}
-                r-pos-opt3 = tl-np + tl-val
-                r-pos-opt3: {
-                    ok -> r-pos = it
+                r-pos ?= tl-np + tl-val
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
 
             frames[count].length = 0
 
             {
-
                 #{overflow=wrap}
-                count-opt5 = count + 1
-                count-opt5: {
-                    ok -> count = it
+                count ?= count + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -592,14 +522,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             {
-
                 #{overflow=wrap}
-                count-opt6 = count + 1
-                count-opt6: {
-                    ok -> count = it
+                count ?= count + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -717,20 +645,17 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     mask-bits = 0x1f
     is-long-header -> mask-bits = 0x0f
 
-    ixout518c20 = packet[0]: {
-        ok -> it
+    {
+        packet-first ?= packet[0]
+        mask-first ?= mask[0]
 
-        -> _
-    }
+        packet[0]: {
+            ok -> it = packet-first ^ (mask-first & mask-bits)
 
-    ixout518c41 = mask[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    packet[0]: {
-        ok -> it = ixout518c20 ^ (ixout518c41 & mask-bits)
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -738,41 +663,42 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     ; XOR 封包號碼的 4 位元組
     j = 0
     (j < 4) {
-
-        #{overflow=wrap}
-        pn-offset + j < packet.len() -> {
-
+        {
             #{overflow=wrap}
-            ixout532c28 = packet[pn-offset + j]: {
-                ok -> it
+            pn-at ?= pn-offset + j
 
-                -> _
+            pn-at < packet.len() -> {
+                {
+                    #{overflow=wrap}
+                    pn-byte ?= packet[pn-at]
+
+                    #{overflow=wrap}
+                    mask-byte ?= mask[mask-offset + j]
+
+                    packet[pn-at]: {
+                        ok -> it = pn-byte ^ mask-byte
+
+                        -> _
+                    }
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
+        }: {
+            err -> _
 
-            #{overflow=wrap}
-            ixout532c52 = mask[mask-offset + j]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            packet[pn-offset + j]: {
-                ok -> it = ixout532c28 ^ ixout532c52
-
-                -> _
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            j-opt = j + 1
-            j-opt: {
-                ok -> j = it
+            j ?= j + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -823,13 +749,13 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     i <- [0..pn-len): {
 
         #{overflow=wrap}
-        ixout581c47 = packet[pn-offset + i]: {
+        packet-pn-offset-i = packet[pn-offset + i]: {
             ok -> it
 
             -> _
         }
 
-        truncated-pn = (truncated-pn << 8) | (ixout581c47)
+        truncated-pn = (truncated-pn << 8) | (packet-pn-offset-i)
     }
 
     ; 清除長度位元
@@ -879,23 +805,21 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     {
         candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> {
             {
-                candidate-pn-opt = candidate-pn + pn-win
-                candidate-pn-opt: {
-                    ok -> candidate-pn = it
+                candidate-pn ?= candidate-pn + pn-win
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win -> {
             {
-                candidate-pn-opt2 = candidate-pn - pn-win
-                candidate-pn-opt2: {
-                    ok -> candidate-pn = it
+                candidate-pn ?= candidate-pn - pn-win
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -1148,14 +1072,12 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; 再減掉 length 欄位之後（含 2 位元組 varint 自身）的起點。
     length-val = 0
     {
-
         #{overflow=wrap}
-        lv-opt = QUIC-MAX-PACKET-SIZE - length-pos - 2
-        lv-opt: {
-            ok -> length-val = it
+        length-val ?= QUIC-MAX-PACKET-SIZE - length-pos - 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     len-buf []byte
     len-n = 0
@@ -1183,7 +1105,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     i <- [0..8): {
 
         #{overflow=wrap}
-        ixout894c24 = nonce[4 + i]: {
+        nonce-4-i = nonce[4 + i]: {
             ok -> it
 
             -> _
@@ -1191,7 +1113,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
         #{overflow=wrap}
         nonce[4 + i]: {
-            ok -> it = ixout894c24 ^ ((pn >> ((7 - i) * 8)) & 255)
+            ok -> it = nonce-4-i ^ ((pn >> ((7 - i) * 8)) & 255)
 
             -> _
         }
@@ -1205,14 +1127,12 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; 聽不懂，更不可能與真實伺服器互通。
     pn-end = 0
     {
-
         #{overflow=wrap}
-        pn-end-opt = pn-offset + pn-len
-        pn-end-opt: {
-            ok -> pn-end = it
+        pn-end ?= pn-offset + pn-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     aad []byte
     i <- [0..pn-end): {
@@ -1232,14 +1152,12 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
     plain-len = 0
     {
-
         #{overflow=wrap}
-        plain-len-opt = pos - pn-end
-        plain-len-opt: {
-            ok -> plain-len = it
+        plain-len ?= pos - pn-end
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     i <- [0..plain-len): {
         plain[i]: {
@@ -1319,14 +1237,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     ; 跳過 Version (4 bytes)
     {
-
         #{overflow=wrap}
-        pos-opt = pos + 4
-        pos-opt: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; Destination CID
@@ -1339,14 +1255,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt2 = pos + 1 + dcid-len
-        pos-opt2: {
-            ok -> pos = it
+        pos ?= pos + 1 + dcid-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; Source CID
@@ -1359,14 +1273,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt3 = pos + 1 + scid-len
-        pos-opt3: {
-            ok -> pos = it
+        pos ?= pos + 1 + scid-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; Token length (varint)
@@ -1376,14 +1288,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     token-np < 0 -> return
 
     {
-
         #{overflow=wrap}
-        pos-opt4 = token-np + token-len
-        pos-opt4: {
-            ok -> pos = it
+        pos ?= token-np + token-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; Length (varint)
@@ -1423,18 +1333,23 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
             -> _
         }
     }
+    ; nonce = iv，其中第 4..11 位元組再與封包號碼（大端）XOR
     i <- [0..8): {
+        {
+            #{overflow=wrap}
+            iv-byte ?= nonce[4 + i]
 
-        #{overflow=wrap}
-        ixout1053c24 = nonce[4 + i]: {
-            ok -> it
+            #{overflow=wrap}
+            pn-byte = (pn >> ((7 - i) * 8)) & 255
 
-            -> _
-        }
+            #{overflow=wrap}
+            nonce[4 + i]: {
+                ok -> it = iv-byte ^ pn-byte
 
-        #{overflow=wrap}
-        nonce[4 + i]: {
-            ok -> it = ixout1053c24 ^ ((pn >> ((7 - i) * 8)) & 255)
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -1446,14 +1361,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; 對「PN 在哪」的假設不一致，nonce 就對不上，tag 永遠驗不過。
     pn-end = 0
     {
-
         #{overflow=wrap}
-        pn-end-opt = pn-offset + pn-len
-        pn-end-opt: {
-            ok -> pn-end = it
+        pn-end ?= pn-offset + pn-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     aad []byte
     i <- [0..pn-end): {
@@ -1469,14 +1382,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; Ciphertext = buf[pn_end..pn_offset+length_val]（length 含 PN 欄位）
     payload-len = 0
     {
-
         #{overflow=wrap}
-        payload-len-opt = length-val - pn-len
-        payload-len-opt: {
-            ok -> payload-len = it
+        payload-len ?= length-val - pn-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     sealed []byte
     i <- [0..payload-len): {

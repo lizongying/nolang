@@ -32,863 +32,190 @@ rotl32 = (x u32, n i64) (r u32) {
 ; 先讀入 16 個小端 32-bit 字，執行 8 輪 add-rotate-xor 後再與原值相加並寫回。
 ; block []byte: 64 位元組輸入/輸出；原地修改，少於 64 位元組時缺失部分按 0 處理
 ; [salsa20-8-core](#scrypt.salsa20-8-core)
+; Salsa20 四分之一輪（原位更新 16 字工作向量）
+; 依 RFC 7914 §3.1 的 QR(a,b,c,d)：b/c/d/a 依次以 7/9/13/18 位左旋混合
+; x []u32: 16 字工作向量（原地更新）
+; a i64, b i64, c i64, d i64: 本輪四個字在向量中的下標
+; mask u32: 32 位遮罩
+; 每一步都讀上一步剛寫入的字，故各自具名讀出，不共用暫存。
+; [salsa-quarter-round](#scrypt.salsa-quarter-round)
+salsa-quarter-round = (x []u32, a i64, b i64, c i64, d i64, mask u32) {
+    {
+        ; b ^= rotl(a + d, 7)
+        a-base ?= x[a]
+        d-base ?= x[d]
+        b-before ?= x[b]
+
+        x[b]: {
+            ok -> it = (b-before ^ rotl32((a-base + d-base) & mask, 7)) & mask
+
+            -> _
+        }
+
+        ; c ^= rotl(b + a, 9)
+        b-after ?= x[b]
+        a-second ?= x[a]
+        c-before ?= x[c]
+
+        x[c]: {
+            ok -> it = (c-before ^ rotl32((b-after + a-second) & mask, 9)) & mask
+
+            -> _
+        }
+
+        ; d ^= rotl(c + b, 13)
+        c-after ?= x[c]
+        b-second ?= x[b]
+        d-before ?= x[d]
+
+        x[d]: {
+            ok -> it = (d-before ^ rotl32((c-after + b-second) & mask, 13)) & mask
+
+            -> _
+        }
+
+        ; a ^= rotl(d + c, 18)
+        d-after ?= x[d]
+        c-second ?= x[c]
+        a-third ?= x[a]
+
+        x[a]: {
+            ok -> it = (a-third ^ rotl32((d-after + c-second) & mask, 18)) & mask
+
+            -> _
+        }
+    }: {
+        err -> _
+
+        -> _
+    }
+}
+
+; 處理一個 64 位元組區塊（Salsa20/8：4 次雙輪 = 8 輪，RFC 7914 §3）
+; 輸出為 core(block) + block（逐字模 2^32 相加），寫回同一區塊
+; block []byte: 64 位元組區塊（原地更新）
+; [salsa20-8-core](#scrypt.salsa20-8-core)
 salsa20-8-core = (block []byte) {
 
     ; 載入 16 個 32-bit 字（小端序）
     x [16]u32
     i <- [0..16): {
+        {
+            #{overflow=wrap}
+            word-start ?= i * 4
 
-        #{overflow=wrap}
-        off = i * 4
+            ; 逐位元組小端組字：第 j 個位元組佔 bit [8j, 8j+8)
+            word u32 = 0
+            j <- [0..4): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= word-start + j
 
-        ixout46c25 = block[off]: {
-            ok -> it
+                    raw-byte ?= block[byte-at]
 
-            -> _
-        }
+                    #{overflow=wrap}
+                    bit-shift ?= j * 8
 
-        #{overflow=wrap}
-        ixout46c41 = block[off + 1]: {
-            ok -> it
+                    word = word | (raw-byte << bit-shift)
+                }: {
+                    err -> _
 
-            -> _
-        }
+                    -> _
+                }
+            }
 
-        #{overflow=wrap}
-        ixout46c67 = block[off + 2]: {
-            ok -> it
+            x[i]: {
+                ok -> it = word
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout46c94 = block[off + 3]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[i]: {
-            ok -> it = (ixout46c25) | ((ixout46c41) << 8) | ((ixout46c67) << 16) | ((ixout46c94) << 24)
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
     }
 
-    ; 保存初始值
+    ; 保存初始值（8 輪後要加回來）
     init [16]u32
     i <- [0..16): {
-        init[i]: {
-            ok -> it = x[i]: {
-                ok -> it
+        {
+            word ?= x[i]
+
+            init[i]: {
+                ok -> it = word
+
+                -> _
+            }
+        }: {
+            err -> _
+
+            -> _
+        }
+    }
+
+    ; 4 次雙輪：先 4 個列四分之一輪，再 4 個行四分之一輪
+    mask u32 = 4294967295
+    round <- [0..4): {
+        ; 列
+        salsa-quarter-round(x, 0, 4, 8, 12, mask)
+        salsa-quarter-round(x, 5, 9, 13, 1, mask)
+        salsa-quarter-round(x, 10, 14, 2, 6, mask)
+        salsa-quarter-round(x, 15, 3, 7, 11, mask)
+
+        ; 行
+        salsa-quarter-round(x, 0, 1, 2, 3, mask)
+        salsa-quarter-round(x, 5, 6, 7, 4, mask)
+        salsa-quarter-round(x, 10, 11, 8, 9, mask)
+        salsa-quarter-round(x, 15, 12, 13, 14, mask)
+    }
+
+    ; x += init，再以小端序寫回 64 位元組
+    i <- [0..16): {
+        {
+            word ?= x[i]
+            base ?= init[i]
+
+            #{overflow=wrap}
+            sum = (word + base) & 4294967295
+
+            #{overflow=wrap}
+            word-start ?= i * 4
+
+            block[word-start]: {
+                ok -> it = sum & 255
 
                 -> _
             }
 
-            -> _
-        }
-    }
+            #{overflow=wrap}
+            second-byte-at ?= word-start + 1
 
-    ; 8 輪（4 次雙輪）
-    mask u32 = 4294967295
-    round <- [0..4): {
+            block[second-byte-at]: {
+                ok -> it = (sum >> 8) & 255
 
-        ; 列輪
-        ; QR(x[0], x[4], x[8], x[12])
-        ixout92c26 = x[4]: {
-            ok -> it
+                -> _
+            }
 
-            -> _
-        }
+            #{overflow=wrap}
+            third-byte-at ?= word-start + 2
 
-        ixout92c42 = x[0]: {
-            ok -> it
+            block[third-byte-at]: {
+                ok -> it = (sum >> 16) & 255
 
-            -> _
-        }
+                -> _
+            }
 
-        ixout92c49 = x[12]: {
-            ok -> it
+            #{overflow=wrap}
+            fourth-byte-at ?= word-start + 3
 
-            -> _
-        }
+            block[fourth-byte-at]: {
+                ok -> it = (sum >> 24) & 255
 
-        x[4]: {
-            ok -> it = (ixout92c26 ^ (rotl32((ixout92c42 + ixout92c49) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout97c26 = x[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout97c42 = x[4]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout97c49 = x[0]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[8]: {
-            ok -> it = (ixout97c26 ^ (rotl32((ixout97c42 + ixout97c49) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout102c26 = x[12]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout102c43 = x[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout102c50 = x[4]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[12]: {
-            ok -> it = (ixout102c26 ^ (rotl32((ixout102c43 + ixout102c50) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout107c26 = x[0]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout107c42 = x[12]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout107c50 = x[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[0]: {
-            ok -> it = (ixout107c26 ^ (rotl32((ixout107c42 + ixout107c50) & mask, 18))) & mask
-
-            -> _
-        }
-
-        ; QR(x[5], x[9], x[13], x[1])
-        ixout114c26 = x[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout114c42 = x[5]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout114c49 = x[1]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[9]: {
-            ok -> it = (ixout114c26 ^ (rotl32((ixout114c42 + ixout114c49) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout119c26 = x[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout119c43 = x[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout119c50 = x[5]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[13]: {
-            ok -> it = (ixout119c26 ^ (rotl32((ixout119c43 + ixout119c50) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout124c26 = x[1]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout124c42 = x[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout124c50 = x[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[1]: {
-            ok -> it = (ixout124c26 ^ (rotl32((ixout124c42 + ixout124c50) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout129c26 = x[5]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout129c42 = x[1]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout129c49 = x[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[5]: {
-            ok -> it = (ixout129c26 ^ (rotl32((ixout129c42 + ixout129c49) & mask, 18))) & mask
-
-            -> _
-        }
-
-        ; QR(x[10], x[14], x[2], x[6])
-        ixout136c26 = x[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout136c43 = x[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout136c51 = x[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[14]: {
-            ok -> it = (ixout136c26 ^ (rotl32((ixout136c43 + ixout136c51) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout141c26 = x[2]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout141c42 = x[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout141c50 = x[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[2]: {
-            ok -> it = (ixout141c26 ^ (rotl32((ixout141c42 + ixout141c50) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout146c26 = x[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout146c42 = x[2]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout146c49 = x[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[6]: {
-            ok -> it = (ixout146c26 ^ (rotl32((ixout146c42 + ixout146c49) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout151c26 = x[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout151c43 = x[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout151c50 = x[2]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[10]: {
-            ok -> it = (ixout151c26 ^ (rotl32((ixout151c43 + ixout151c50) & mask, 18))) & mask
-
-            -> _
-        }
-
-        ; QR(x[15], x[3], x[7], x[11])
-        ixout158c26 = x[3]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout158c42 = x[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout158c50 = x[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[3]: {
-            ok -> it = (ixout158c26 ^ (rotl32((ixout158c42 + ixout158c50) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout163c26 = x[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout163c42 = x[3]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout163c49 = x[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[7]: {
-            ok -> it = (ixout163c26 ^ (rotl32((ixout163c42 + ixout163c49) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout168c26 = x[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout168c43 = x[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout168c50 = x[3]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[11]: {
-            ok -> it = (ixout168c26 ^ (rotl32((ixout168c43 + ixout168c50) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout173c26 = x[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout173c43 = x[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout173c51 = x[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[15]: {
-            ok -> it = (ixout173c26 ^ (rotl32((ixout173c43 + ixout173c51) & mask, 18))) & mask
-
-            -> _
-        }
-
-        ; 行輪
-        ; QR(x[0], x[1], x[2], x[3])
-        ixout181c26 = x[1]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout181c42 = x[0]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout181c49 = x[3]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[1]: {
-            ok -> it = (ixout181c26 ^ (rotl32((ixout181c42 + ixout181c49) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout186c26 = x[2]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout186c42 = x[1]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout186c49 = x[0]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[2]: {
-            ok -> it = (ixout186c26 ^ (rotl32((ixout186c42 + ixout186c49) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout191c26 = x[3]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout191c42 = x[2]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout191c49 = x[1]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[3]: {
-            ok -> it = (ixout191c26 ^ (rotl32((ixout191c42 + ixout191c49) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout196c26 = x[0]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout196c42 = x[3]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout196c49 = x[2]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[0]: {
-            ok -> it = (ixout196c26 ^ (rotl32((ixout196c42 + ixout196c49) & mask, 18))) & mask
-
-            -> _
-        }
-
-        ; QR(x[5], x[6], x[7], x[4])
-        ixout203c26 = x[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout203c42 = x[5]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout203c49 = x[4]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[6]: {
-            ok -> it = (ixout203c26 ^ (rotl32((ixout203c42 + ixout203c49) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout208c26 = x[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout208c42 = x[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout208c49 = x[5]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[7]: {
-            ok -> it = (ixout208c26 ^ (rotl32((ixout208c42 + ixout208c49) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout213c26 = x[4]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout213c42 = x[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout213c49 = x[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[4]: {
-            ok -> it = (ixout213c26 ^ (rotl32((ixout213c42 + ixout213c49) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout218c26 = x[5]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout218c42 = x[4]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout218c49 = x[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[5]: {
-            ok -> it = (ixout218c26 ^ (rotl32((ixout218c42 + ixout218c49) & mask, 18))) & mask
-
-            -> _
-        }
-
-        ; QR(x[10], x[11], x[8], x[9])
-        ixout225c26 = x[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout225c43 = x[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout225c51 = x[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[11]: {
-            ok -> it = (ixout225c26 ^ (rotl32((ixout225c43 + ixout225c51) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout230c26 = x[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout230c42 = x[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout230c50 = x[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[8]: {
-            ok -> it = (ixout230c26 ^ (rotl32((ixout230c42 + ixout230c50) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout235c26 = x[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout235c42 = x[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout235c49 = x[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[9]: {
-            ok -> it = (ixout235c26 ^ (rotl32((ixout235c42 + ixout235c49) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout240c26 = x[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout240c43 = x[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout240c50 = x[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[10]: {
-            ok -> it = (ixout240c26 ^ (rotl32((ixout240c43 + ixout240c50) & mask, 18))) & mask
-
-            -> _
-        }
-
-        ; QR(x[15], x[12], x[13], x[14])
-        ixout247c26 = x[12]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout247c43 = x[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout247c51 = x[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[12]: {
-            ok -> it = (ixout247c26 ^ (rotl32((ixout247c43 + ixout247c51) & mask, 7))) & mask
-
-            -> _
-        }
-        ixout252c26 = x[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout252c43 = x[12]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout252c51 = x[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[13]: {
-            ok -> it = (ixout252c26 ^ (rotl32((ixout252c43 + ixout252c51) & mask, 9))) & mask
-
-            -> _
-        }
-        ixout257c26 = x[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout257c43 = x[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout257c51 = x[12]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[14]: {
-            ok -> it = (ixout257c26 ^ (rotl32((ixout257c43 + ixout257c51) & mask, 13))) & mask
-
-            -> _
-        }
-        ixout262c26 = x[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout262c43 = x[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout262c51 = x[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[15]: {
-            ok -> it = (ixout262c26 ^ (rotl32((ixout262c43 + ixout262c51) & mask, 18))) & mask
-
-            -> _
-        }
-    }
-
-    ; 加上初始值並寫回（小端序）
-    i <- [0..16): {
-        ixout270c17 = x[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout270c27 = init[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        val = (ixout270c17 + ixout270c27) & 4294967295
-
-        #{overflow=wrap}
-        off = i * 4
-        block[off]: {
-            ok -> it = val & 255
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        block[off + 1]: {
-            ok -> it = (val >> 8) & 255
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        block[off + 2]: {
-            ok -> it = (val >> 16) & 255
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        block[off + 3]: {
-            ok -> it = (val >> 24) & 255
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -938,20 +265,20 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
         j <- [0..64): {
 
             #{overflow=wrap}
-            ixout323c29 = b[i * 64 + j]: {
+            b-i-64-j = b[i * 64 + j]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout323c47 = x[j]: {
+            x-j = x[j]: {
                 ok -> it
 
                 -> _
             }
 
             x[j]: {
-                ok -> it = (ixout323c29) ^ (ixout323c47)
+                ok -> it = (b-i-64-j) ^ (x-j)
 
                 -> _
             }
@@ -1074,14 +401,12 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            n-idx-opt = n-idx + 1
-            n-idx-opt: {
-                ok -> n-idx = it
+            n-idx ?= n-idx + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1101,33 +426,33 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         k <- [0..8): {
 
             #{overflow=wrap}
-            ixout449c28 = x[base-j + (7 - k)]: {
+            x-base-j-7-k = x[base-j + (7 - k)]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            j = (j * 256 + ixout449c28) % n
+            j = (j * 256 + x-base-j-7-k) % n
         }
 
         ; X = X XOR V[j]
         i <- [0..block-bytes): {
-            ixout457c29 = x[i]: {
+            x-i = x[i]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            ixout457c38 = v[j * block-bytes + i]: {
+            v-j-block-bytes-i = v[j * block-bytes + i]: {
                 ok -> it
 
                 -> _
             }
 
             x[i]: {
-                ok -> it = (ixout457c29) ^ (ixout457c38)
+                ok -> it = (x-i) ^ (v-j-block-bytes-i)
 
                 -> _
             }
@@ -1146,14 +471,12 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            n-idx-opt2 = n-idx + 1
-            n-idx-opt2: {
-                ok -> n-idx = it
+            n-idx ?= n-idx + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 

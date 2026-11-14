@@ -4565,3 +4565,751 @@ vet 立刻由 0 error 變成 `ovfhndld` HINT（`r` 綁到行為未宣告的 `?T`
 `xmicjezl`，即註解**確實生效**。根因是 lint 跑在 lowering **之後**的樹上，
 union 別名的 `/` 已被降成别的形状、對不上 infix 判定；fmt 讀的是糖形態（仍有
 infix），所以保守保留是正確行為。修 lint 側不在本輪範圍。
+
+### 5.2o 2026-11-13：`?=` 块的臂是独立帧 —— 【2026-11-14 复核：四条症状全部不成立，本节已作废】
+
+**结论**：本节原先记录的四条症状，在 2026-11-14 用当前 `bin/no`（v0.4.20 工作区）逐条重测，
+**一条都复现不出来**。手臂（arm）体就是普通块，写回 / `return` / `break` / `continue` 全部照常。
+无法断定是「当时确有缺陷、之后被别的 session 顺手修掉」还是「当时诊断就错了」——
+当时的二进制已不可得，**只以本节结论为准，下文「原记录」仅作对照留档**。
+
+**重测证据**（`/tmp/bm3.no`、`/tmp/bm4.no`、`/tmp/bm7.no`）：
+
+| 臂内写法 | 原记录「实际」 | 2026-11-14 实测 |
+|---|---|---|
+| `err -> x = 5`（`x` 是外层 i64） | 写丢失，`x` 保持 0 | **写回成功**（`err-arm(1,0)=5`） |
+| `err -> { v = 3  return }` | 不返回 | **正常返回**（`ret-check(1,0)=3`，非错误路径 `=42`） |
+| `err -> break` | 不跳出循环 | **正常跳出**（`brk-check()=2`：i=3 时越界即停） |
+| `err -> continue` | —— | **正常跳过本次**（`cont-check()=4`） |
+| 两条臂先后都执行，后者胜出 | 是 | **互斥**：`{ err -> x = 5  -> x = 9 }` 失败路径得 `5` |
+
+MIR 层也是正确形态：`x` 的槽是**同一个 alloca**，err 臂里 `store i64 5, i64* %v3.s`，
+合并块里 `%mv71 = load i64, i64* %v3.s`。顺带纠正原 §5.2o 的一个错误推断——
+「`OpConst` 没有存储槽，`EmitMoveInto` 写进去没人读」**不成立**：`emitConst` 会发
+`store <imm>, <lt>* %slot`，`loadVal` 也从槽里 `load`，const 有真实存储。
+（`src/mir/builder.go` 里据此加的 `constVals` / `IsConstValue` 已删除。）
+
+#### 唯一真实、且**属于设计**的行为：nil 上抛与「主体走完」在 arms 里同形
+
+`src/parser/block_match.go` 的展开是
+
+```
+let __bm_N      ?i64 = nil
+let __bm_N_halt i64  = 0
+<CPS(body)>          // 每次 `?=` 失败：__bm_N = <该 option>；__bm_N_halt = 1
+__bm_N: { <用户 arms> }
+```
+
+于是三种结局在 arms 眼里只有两种值：
+
+| 结局 | `__bm_N` | arms 命中 |
+|---|---|---|
+| `?=` 失败为 **err** | err | `err ->` 臂 |
+| `?=` 失败为 **nil** | nil | 兜底 `->` 臂 |
+| 主体**顺利走完** | 初值 nil（没写过） | 兜底 `->` 臂 |
+
+后两者**不可区分是契约，不是缺陷**：`tests/block-match.no` 明确钉住
+`check('success', success(2), 'nil+ran')` 与 `check('fail-nil', fail-nil(), 'nil')`，
+两者都期望 `nil`，差别只在 `ran`（即 halt）。halt 保证的是
+「一次失败后**主体剩下的陈述、以及后续每一次迴圈 iteration 全部不执行**，
+arms 只跑一次」——`check('loop-stop', loop-stop(0), 'err+n=0')` 钉这条。
+
+⇒ 原记录里的 `print(arm-assign(-1))   // 期望 5` 本身就是误读：nil 走兜底臂，
+`x` 保持 0 **才是**契约值。
+
+#### 附带修掉：`tests/block-match.no` 的两条陈旧断言
+
+`fail-nil` 原来拿 `v ?= arr[9]`（安全索引越界）当「nil 上抛」的样本，但 D11 起越界读回的是
+**err**（§5.2「`t[i]` / `s[i]` 越界读是 err 不是 -1」），于是这条断言恒红：
+`fail: fail-nil got=[err] want=[nil]` ⇒ `exit(1)`，后面 8 条 `check` 全被跳过 —— 所以一直没人发现。
+修法（`tests/block-match.no`）：
+
+- `fail-nil` 改用真的回 nil 的函数 `none-i`（正数回 `ok(7)`，`0` 回 `nil`）；
+- 新增 `fail-oob` 钉「越界索引 ⇒ **err**」这条 D11 契约，期望 `err`。
+
+现在 `./bin/no run tests/block-match.no` 的 15 条 `check` 全绿、末行 `block-match: all ok`。
+
+#### 原记录（已作废，仅留档）
+
+**症状**：`{ ... }: { err -> ...  -> ... }` 这种「块内上抛」形态，
+**臂（arm）体在独立帧里执行**，于是臂内的三类副作用全部不生效：
+
+| 臂内写法 | 期望 | 原记「实际」 |
+|---|---|---|
+| `err -> return` / `err -> { ... return }` | 退出所在函数 | 不返回，继续往下走 |
+| `err -> break` | 跳出外层 `!!` / 循环 | 不跳出（外层循环继续） |
+| `err -> x = 5` | 写回外层 `x` | 写丢失（`x` 保持原值） |
+
+原「安全用法」三条**不再是必须**（臂体可以正常赋值 / `return` / `break` / `continue`）。
+`src/std` 里已经按旧口径改写成「臂体只写 `_`」的地方**不必回改**：那种写法本身更清楚，
+且这些位置的真实工作本来就在块体里。
+
+**当时的「本轮误踩与修复」**（保留，因为它记录的是 std 端的形态选择，不是缺陷）：
+`src/std` 命名清洗时把 `fs.list-dir`（POSIX / Windows / WASI 三份）
+与 `zstd` 的块解码改成了 `{ name ?= read-dir(dirp) … }: { err -> more = false … }`，
+`more` 写不进去 ⇒ `(more == true)` 死循环 ⇒ `fs.no` 整档 300s 超时。已退回语句位
+match（中间量命名为 `item` / `block-result`）。同类已改回语句位 match 的还有
+`toml`（4 处，err 臂要 `return`）、`tls.server-accept` / `tls.https-serve-once`
+（`nil`/`err` 臂要 `fs.close` + `return`）、`net/http.upload-put`、
+`json.get-i64` / `json.i64`（改用 `found` 旗标）。
+
+**命名清洗口径（本轮）**：`src/std` 内 `no fix --fix=unwrap` 生成的 `X-opt[N]`
+临时量已清零（约 1200 处），一律换成块内 `?=` 或值位 match；剩余带数字的
+`y4-times-8` / `g1-times-19` / `SHA-256` 一类是**算法本身的名字**，保留。
+
+---
+
+### 5.2p 2026-11-14：`#` 导入模块的两处空洞（① 函数体不过检查器 ② 结构体键只能正向解析）
+
+#### ① 导入模块的函数体完全绕开检查器（未修，架构级）
+
+`src/build/transpiler.go:396` 的 `validateEntryProgram()`（七个类型验证器 +
+`ValidateTypes`）跑在 `asm.mergeModules()`（402 行）**之前**，而 `#` 导入的模块体
+正是 merge 阶段才解析装载的。合并后只有 `validateMergedProgram()`（424 行）跑
+一遍**收窄的子集**（D16 边界 / loop-scoped / LHS-inferred / arg-count / div-zero），
+类型面、未定义名、裸下标消费这些全部不再复查。
+
+**取证（`tmp/probe-*` 三段）**：
+
+| 路径 | `x i64 = 'not-a-number'` 所在文件 | 结果 |
+|---|---|---|
+| `no build probe-mod.no`（直接编译） | 主程序 | `[ERROR] cannot assign str value to i64 variable 'x' [15w45dqk]` |
+| `no build probe-use.no`（`# /tmp/probe-mod` 导入） | 导入模块 | **Build successful** |
+| `no vet probe-use2.no`（导入并调用） | 导入模块 | **No issues found** |
+| `no run probe-use2.no` | 导入模块 | 打印 `51539607564`（str 指针当 i64 用），rc=0 |
+
+「缺返回值」同样静默（`no-ret = () (x i64) { y = 1 }` 导入后编译通过）。
+
+**后果**：模块里的类型错误只能等到 MIR lowering 才炸，且炸点与真因完全无关；
+若这段代码类型上「碰巧合法」（如 str 赋给 i64 只是指针位宽不同），则**一声不响
+地生成错误代码**。典型样本 `compiler/src/util/intern.no:102`
+（`t.cnt = t.cnt + 1`，`?i64` 直接写 i64 字段）：单独编译报 15w45dqk，
+被 `util-test.no` 导入时一路放行。该行本轮已改成块内 `t.cnt ?= t.cnt + 1`，
+`no build compiler/src/util/intern.no` 通过。
+（注意：`util-test` 之前崩在 `setfield: field "cnt" not found on "intern.itab"`
+**不是**这条类型错误的后果，而是下面 ② 的导入行问题——两个独立缺陷撞在同一个
+报错签名上，别把它们当成一条。）
+
+**为什么不顺手修**：把 `validateEntryProgram` / `RunAllLints` 挪到 merge 之后，
+会把 `compiler/src/*.no` 与用户工程的**存量**错误一次性放出来（`src/std` 靠
+`no vet src/std` 逐档覆盖，用户模块没有任何门禁），必须先扫一遍存量、定好
+只报 `mainFile` 以外文件的策略，再单独开一轮。**在那之前，改任何被导入的
+`.no` 都要额外用 `no build <该文件>` 单独验一遍检查器**——这是目前唯一能
+触达它的路径。
+
+#### ② `# path.member` 的成员名写错 ⇒ 类型定义被**静默跳过**（已定位，未加门禁）
+
+**症状**：在导入模块内部（或对导入的结构体）读写字段，构建死在 codegen：
+
+```
+Error: compilation error: MIR codegen could not handle compiler/tests/util-test.no:
+  EmitLLVM: setfield: field "cnt" not found on "intern.itab" (struct key "intern.itab") [3nktiaae]
+```
+
+**真因**不在结构体键解析（`StructKeyOf` 的「裸名→限定名」扫描是对的），而在
+`src/build/transpiler_merge.go:417` 的合并条件：
+
+```go
+if use.Function == "" || getTypeDefName(ms) == useModShort+"."+use.Function {
+    // 只有这一支才把 Struct/Interface/TypeAlias/Enum 併进 merged
+}
+```
+
+即：**整模块导入**（`# path`，`use.Function == ""`）合并类型定义；
+**成员式导入**（`# path.name`）只在 `name` 恰好是某个**类型名**时才合并。
+成员名写成一个不存在的类型（`# /compiler/src/util/intern.intern`，而该文件的
+结构体叫 `itab`——改名正是为了避开与模块短名 `intern` 冲突）⇒ 条件恒假 ⇒
+KStructDef 不进 merged ⇒ `StructFields` 里没有该结构体 ⇒ `getfield`/`setfield`
+一起崩。**全流程没有任何诊断**，因为「成员不存在」这件事没人查。
+
+**取证**：`NO_MIR_DEBUG` 一行的临时 dump（改 `codegen.go` 的 setfield 失败分支，
+打印 `c.mod.StructFields` 全量键）显示被导入的编译单元里 `StructFields` 只有
+std/builtin 那 11 个键（`str` / `vec` / `txt` / `err` / `fs.file` / `os.utsname` …），
+**用户程序自己的结构体一个都没有**。
+
+**正确写法（两种都验过）**：
+
+| 导入行 | 结果 |
+|---|---|
+| `# /compiler/src/util/intern`（整模块） | `intern.put` / `count` 正常，打印 `1 1` |
+| `# /compiler/src/util/intern.itab`（成员名 = 真实类型名） | 同上 |
+
+**已修的三处**：`compiler/tests/util-test.no` 的导入行 `.intern` → `.itab`；
+`compiler/src/util/intern.no:102` 的 `t.cnt = t.cnt + 1`（`?i64` 直接写 i64 字段，
+见 ①）改成块内 `t.cnt ?= t.cnt + 1`；`compiler/tests/tok-test.no` /
+`ps-err-test.no` 的 `X = X + 1`（同一 `?i64` 口径）。
+
+**建议（未做，需设计决定）**：成员式导入时若 `use.Function` 既不是类型名、
+也不是该模块的函数名，应当报错或至少 warning——现状是「静默少合并一类语句」，
+排查成本极高（本轮从 `setfield` 报错回溯到导入行花了 40 分钟）。加诊断要新增
+i18n 消息（9 语言 catalog），所以先记账。
+
+#### ③ `compiler/tests` 六个档：全部为预存红（基线对照）
+
+用 `git worktree add /tmp/no-base 297aa2a0 && make -C /tmp/no-base gen no` 建
+**HEAD 基线二进制**，跑同一份测试档，结果与本轮工作区逐档一致 ⇒ 与本轮
+`-opt` 清洗无关：
+
+| 档 | HEAD 基线 | 本轮处理 |
+|---|---|---|
+| `tok-test.no` | 62 档编译失败（`59:23` `bad`） | 已修（块内 `bad ?= bad + 1`）→ **62/62 绿** |
+| `ps-err-test.no` | 编译失败（`117:19` `q`） | 已修（块内 `q ?= q + 1`）→ **46/46 绿** |
+| `util-test.no` | 编译失败（`119:37` `ok-count` + `111:32` 裸下标） | 修三处（`ok-count` / `keys[k]` 值位 match / 导入行 `.intern`→`.itab`）→ **27/27 绿** |
+| `ps-test.no` | 46 过 / 3 败（`is-true` 的 match 臂 `blockBody`/`inline` 双旗） | 未修，属 `compiler/src/ps.no` 与 oracle 的口径差 |
+| `h2m-test.no` | 1079 过 / 6 败 | 未修，属 MIR 链接口差 |
+| `ast-test.no` | `bug #85` NoVal（`test_type_string` 等） | 未修，MIR lowering 缺 Dst |
+
+`compiler/tests` 不在 CI（`.github/workflows/test.yml` 只跑 `go-build` /
+`corpus-smoke` / `std-test` / `vet-gate`），所以这批红不会拦发布，但它们是
+「导入模块不检查」这条空洞最密集的下游症状，修 ① 之前不宜逐个打补丁。
+
+---
+
+### 5.2q 2026-11-14：容器深拷贝之后，`?=` 块里再读绑定变量 ⇒ void / 垃圾值【2026-11-14 已修，见文末】
+
+**症状 A（编译失败）**：LLVM 验证器报
+
+```
+deep-clone.ll:4514:19: error: void type only allowed for function results
+ 4514 |   %c263 = icmp eq void undef, %lv.1362
+```
+
+`icmp` 的第一个操作数是 `void undef` —— `?=` 绑定的那个变量在 MIR 里**没有 Dst**，
+读取端拿到的就是 void。
+
+**症状 B（更坏：静默错答案）**：把同样的代码挪到「不参与比较」的位置，编译能过，
+但读出来是 0/垃圾，`original == 10` 恒 false（`deep-clone.no` 的
+`test-clone-vec` 原本就打印 `false`，因为该测试自己不检查退出码，corpus 的
+「只编译不运行」门禁抓不到）。
+
+**最小复现（12 行，`c = s` 那一行是必需的）**：
+
+```
+t4 = () (ok bool) {
+    s []str
+    s.push('hello')
+    c = s
+    {
+        c0 ?= c[0]
+        c0 == 'hello' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
+}
+
+print(t4())     // 期望 true；实际 LLVM 验证失败
+```
+
+**触发条件（实测二分）**：
+
+| 变体 | 结果 |
+|---|---|
+| 有 `c = s`（[]str 深拷贝）+ 块内 `c0 ?= c[0]` 再比较 | **炸** |
+| 无 clone，`s0 ?= s[0]` / `c0 ?= s[0]` 两个都从 `s` 读 | 正常 `true` |
+| 写成块外普通语句 `c0 ?= c[0]` | 检查器直接拒（`?=` 只能在形态块里） |
+| 四个 `?=` 连写再比较 | 炸（同一条） |
+
+即：**clone 会产生额外的临时量/重命名，之后块内对 `?=` 变量的引用解析不到槽位**。
+
+**规避（当时采用，现已不必）**：只读一次就用的元素读取，一律值位 match
+
+```
+c0 = c[0]: {
+    ok -> it
+
+    -> ''
+}
+```
+
+`tests/mem-safety/deep-clone.no` 的 `test-clone-vec` / `test-clone-str-vec` 已按此
+改写，四个断言现在全部 `true`（`no run` 输出 4×true）。**这些改写无需回退**——
+值位 match 仍是更收敛的写法。
+
+#### 2026-11-14 已修：根因是「別名容器的型別没进 idxLocalTypes」
+
+原记录的归因（「clone 产生额外临时量 / 重命名，槽位解析不到」）是错的：MIR 里
+`c` 的型別一直是对的（`move dst=20:[]str`），`c[0]` 也拿到 `index dst=24:str`。
+真正断链的是**解析期**：
+
+1. `collectLocalTypes`（`src/parser/lowering.go`）预扫函式体，把「未标注但能推出
+   容器型别」的区域变量写进 `idxLocalTypes`（安全索引专用表）。它原本只处理
+   `to-vec()`（2b）与切片表达式（2c）。
+2. `c = s` 是**纯別名**，而纯別名的型别推断 `inferAliasType` 只登记纯量
+   （容器带所有权语义，写进 `sem.VarTypes` 会打乱 MIR 的 retain/release 配对）。
+   于是 `c` 在 `indexBaseVarType` 的三层查表（`idxLocalTypes` / `FuncVarType` /
+   `VarTypes`）全 miss ⇒ `c[0]` **不是安全索引**，走裸读。
+3. `?=` 降糖里 `inferIndexElemType(c[0])` 因此回 `""` ⇒ 合成的 `__unwrap_N`
+   不挂型别 ⇒ ok 臂 `c0 = it` 在 MIR 里取不到载荷，退化成 `const c0:void`
+   （症状 A 的 `icmp eq void undef`），或静默给默认值（症状 B）。
+   同一处「型别未知 ⇒ 静默 void」也是 §5.2q 症状 B 的直接来源。
+
+修法：`collectLocalTypes` 新增 2d 分支，把「纯別名到已知位置型容器」的型别
+**只写进 `idxLocalTypes`**（不碰 `stmt.Type` / `sem.VarTypes`，所以 codegen 的
+clone / ownership 判定完全不受影响）。`map` 刻意不登记——写侧 `m[k] ?= v`
+有自己的硬错误路径，那里「未知型别 ⇒ 走通用路径」是既有行为。
+
+**连带效果（属 D11 补齐，不是回归）**：`x = <容器>; y = x[0]` 这类写法过去因为
+型别推不出而走**未检查的裸读**，现在按 D11 契约返回 `?T`，必须显式消费。
+`no vet src/std` 仍是 0 error；`no vet tests` 新暴露的存量位置已修（见下）。
+
+- `tests/slice-2.no` 的 `test1`：`b0 = b[0]` 后直接 `b0.push/len/[2]`，改为值位
+  match 解包。
+- 新增回归档 `tests/option-alias-index.no`：钉住 `[]str` / `[]i64` / `[][]i64`
+  三种元素的「別名容器下标」，覆盖块内 `?=`、值位 match、別名的別名（`d = c`）
+  与比较语境，6 条断言全绿、末行 `option-alias-index: all ok`。
+- `ASTVersion` bump 到 `2026-11-14.1`（旧 blob 的 `IdxLocalTypes` 少这批条目）。
+- **Go 侧的连带**：`src/mir/borrow_release_test.go` 的
+  `TestBorrowReadEmitsPairedRelease` 因此红了（`make test` 里 `mir` 包唯一一条）。
+  夹具是 `b = a; b0 = b[0]; b0.push(100)` —— 2d 生效后 `b0` 是 `?[]i64`，
+  旧的 `b0.push(...)` 只靠 checker/parser 型别表分岔（§5.2s）才编得过，
+  MIR 里是 `move dst=13:[]i64 args=[option 槽]` 的错位。更关键的是断言口径：
+  D6 之下借用的引用由 **option 载荷的析构**归还，不再是一条独立的
+  `OpRelease`，所以「OpRelease 计数 == OpRetain」必然落空（实测 1 retain /
+  0 release）。已按 `TestReleaseIsShallowForNestedElementType` 的勘误口径改写
+  ——夹具改成 D11 解包形态，断言换成 IR 判据（`@vec_retain` 必须出现，且必须有
+  对应的 refcount 归还：`@nolang_free` / `@vec_free` / `@__nolang_vec_free_`
+  三者之一）。`@nolang_free` 本身就是「减计数、到零才 free」
+  （`src/mir/codegen.go` 的 `@vec_retain` 段注释），把它当成「裸 free」会误判。
+  改完 `go test ./mir/` 全绿，运行期探针仍印 `3`。
+
+`tests/mem-safety/nested-container-clone.no` / `slice-view-escape.no` 同批位置
+由并行 session 在做 D11 迁移，未碰。
+
+### 5.2r 2026-11-14：顶层（文件作用域）标籤枚举变量被整条丢掉 ⇒ 实参是 `undef`
+
+**症状**：`tests/tagged-enum-alias.no` 跑起来先错答案、再 `signal: bus error`：
+
+```
+show: one / two / two / three / four / four
+show:                      <-- 该是 "show: fail"，ok 臂拿到空 str
+Error: signal: bus error    <-- 之后把垃圾当 str 用
+```
+
+该档 10 个 case 都是**顶层**语句（`a5 e-res = fail` / `b5 = a5` / `show(b5)`）。
+把同样的 case 搬进函数体就一切正常 —— 所以这是**文件作用域独有的**。
+
+**最小复现（16 行，`no run` 无任何输出、rc=0）**：
+
+```
+e-num {
+    hi(v i64),
+    lo,
+}
+
+take = (q e-num) {
+    q: {
+        hi(v) -> print('hi {v}')
+
+        lo -> print('lo')
+    }
+}
+
+a e-num = lo
+take(a)
+```
+
+**根因**（`src/mir/hir2mir.go` `synthesizeMainForTopLevel`）：顶层 `let` 分三条路 ——
+① 常量折叠成功 ⇒ 留作模块全局；② 初值是**调用** ⇒ 无条件内联进合成 `main`；
+③ 其余看 `isInlineableLetType(raw)`，不是可内联类型就 `continue`（**整条丢掉**）。
+
+`isInlineableLetType` 只认**普通枚举**（`isEnumTypeName`，查 `enumVariants`）与
+`StructFields` 里登记的结构体；**标籤枚举**（`TaggedEnums`）两边都不在 ⇒ 落进 ③ 被丢。
+于是 `a` 在 `main` 里既没 alloca 也没 store，之后每次读都降成 `undef`：
+
+```
+ store %tenum_e_num undef, %tenum_e_num* %carg.22
+ call void @show(%tenum_e_num* %carg.22)
+```
+
+`undef` 是「随便什么都行」，所以 tag 读到什么完全看栈上残留 —— 同一份代码
+可能走 ok 臂、可能走 fail 臂、也可能把垃圾指针当 `str` 解引用（bus error）。
+注意 `a e-num = hi(42)`（初值是调用）从来不出问题，走的正是 ② 那条路。
+
+**修法**：`isInlineableLetType` 里补一条 `TaggedEnums` 命中（`strings.TrimPrefix(raw, "%")`）。
+标籤枚举的顶层绑定与函数内局部绑定降糖完全一致（构造子自己 alloca + 存 tag/payload），
+所以内联是对的；只加一个 `return true`，不动三条路的优先级。
+
+**验收（全部单档，未跑全量）**：
+
+| 档 | 结果 |
+|---|---|
+| `tests/tagged-enum-alias.no` | rc=0，10 个 case 输出全对（`show: fail` ×3、`show-list` ×3） |
+| `tests/tagged-enum{,-cross-fn,-payload-ownership,-two-match,-zero-match}.no` | 6/6 rc=0 |
+| `tests/enum{,-annotation,-owning-str,-tight-union}.no` + `tests/match*.no` | 7/7 rc=0 |
+| `test/std/{enum-cross,err,option,unwrap-value-match}.no` | 2/27/25/5 全绿 |
+| `test/std/{json,yaml,toml,fmt}.no` | 129/445/97/40 全绿 |
+
+**相邻的未修限制（同源，别混）**：**函数体读不到顶层聚合绑定**。同一份文件里
+`r rec = rec{n: 7}` 在 `main` 里读是 7，放进函数读就是 **0**；顶层标籤枚举
+`a e-num = lo` 放进函数读则什么臂都不进（rc=0 但零输出）。原因是函数里的读走
+`lowerGlobalRef`，而聚合初值 `foldConstText` 折不出来 ⇒ `ConstText` 为空 ⇒
+全局只有声明没有初值。`a e-num = hi(42)` 也一样（它同样被内联成 main 的局部量）。
+修这条要给标籤枚举/结构体做常量初值折叠（`foldOptionGlobalConst` 的同类），
+本轮没做。
+
+### 5.2s 2026-11-14：实参里塞算术式 ⇒ 整条绑定被捕获成 `?T`，而 checker 仍按 `T` 检查 ⇒ `push` 静默写垃圾
+
+**这是 `compiler/tests/h2m-test.no` 里 s98（option 三态臂）六条红的根因**，也是
+`coll-gate-ret-vec` 之外唯一还红的一族。
+
+**症状（一行之差，结果从 194 变 0）**：
+
+```
+box { xs []i64 }
+pick = (n i64) (r i64) { r = n }
+
+va = (b box, hb i64) { v = pick(hb)      b.xs.push(v) }   ; → 194 ✅
+vb = (b box, hb i64) { v = pick(hb + 0)  b.xs.push(v) }   ; → 0   ❌
+```
+
+**为什么会这样**：`hb + 0` 的型别是 `?i64`（有号整数算术恒 `?T`）。lowering 的
+`maybeCaptureOptionAssign`（`src/parser/lowering.go` 的 `case *CallExpression:
+inner = rt` 之后调 `collectCaptureNodes`）把「可错源在**实参**里」的绑定整体升级
+成捕获：`v` 变成 `?i64`，RHS 变成 `__cap_N` + match 链。这一步是**有意设计**
+（注释原话：「`a = g(b / c)` 的捕获点在引数内，结果型别仍是 g 的回传型别」）。
+
+问题在**两边型别表分岔**：checker 侧 `inferExprType(CallExpression)` 只查被调用者
+签名 ⇒ `v` 是 `i64`；MIR 侧读 parser 的推断副表 ⇒ `v` 是 `?i64`。于是
+`b.xs.push(v)` 的实参检查（`5lycdtsz`「argument 1 of `[]?i64.push`: expected
+`?i64`, got `i64`」那套）**放行**，MIR 里 `emitBuiltinVecPush` 撞上
+`elemTy(%option_i64) != elemLL(i64)`，而该处的守卫刻意对 option 开了豁免
+（`!isOptionType(elemTy) && !isOptionType(elemLL)`），落到 `else` 分支
+`elemLL = elemTy` —— 按 16 字节步长 + `store %option_i64` 写进按 8 字节读的
+`[]i64`。索引读回只取到 tag 那 8 字节，恒 0：
+
+```
+%vpby.172 = mul i64 ... , 16              ; 步长来自 option 布局
+%vpeb = bitcast i8* %vpnb to %option_i64*
+store %option_i64 %lv.160, %option_i64* %vpep    ; 写整颗 option
+...
+%mvep = load i64, i64* ...                ; 读端仍按 i64
+```
+
+`v = pick(hb + 0)` 之后**再加一行显式型别**（`v i64 = pick(hb + 0)`）就正常 ——
+`ls.Type != nil && !IsOptionRaw` 会让捕获整条短路，两边回到同一个 `i64`。
+
+**本轮的处理**：`compiler/src/h2m.no` 的 s98 ok 臂原本写
+`bidx = ast.aux-at(t, hb + 0)`，改成 `ast.aux-at(t, hb)`（`hb + 0` 本来就是恒等式，
+没有语义变化），并在原位留了长注释说明「实参不能写算术式」。改完
+`compiler/tests/h2m-test.no` **1085/1085 全绿**（s98 六条 + `coll-gate-ret-vec`
+两条；后者是并行 session 把 vec 返回值放行后测试期望过期，已按新契约改成
+`unsup == 0` + `define %vec @ge` 的正向钉子）。
+
+**没修的部分（要设计决定）**：
+
+1. **checker 与 parser 的推断表要合一**。现在是「checker 认为 `i64`、MIR 认为
+   `?i64`」，所有依赖 checker 型别的诊断（内建方法实参、`15w45dqk` 的 option
+   赋值检查…）在这类变量上全部失效。真要修，得让 checker 的 `varTypes` 读
+   `sem.FuncVarType` 的捕获结果，属于推断链路的改造。
+2. **`emitBuiltinVecPush` 的 option 豁免分支**。它在 `elemTy != elemLL` 时才进，
+   而 option↔option 相等、`[]?T.push(<非 option>)` 已被 checker 挡（`5lycdtsz`）
+   ⇒ 这个豁免今天只服务「静默写垃圾」这一种情形。**2026-11-14 已改成 `c.fail(...)`**
+   （`src/mir/builtin_call.go`）：宁可「编不过」也不要「错答案」。影响面实测为
+   `h2m-test` 的 s98 六条红转绿，`make test` / `test/std` / `corpus-smoke` 无新增红。
+   改成硬错后的第一个存量违规者是 `src/std/archive/xz.no` 的 `compress`
+   （`out.push(XZ-MAGIC[i])` 把 `?byte` 直接塞进 `[]byte`），已改成先解包再
+   `push`；同一函数里 `data.len() - 1` / `(0 - data.len()) & 0x3` 也一并解包
+   （见 §5.2v 与文末注记）。
+
+### 5.2t 2026-11-14：`parser/dump` 的 census 撞上 `HIRCaptureEnabled` 外溢（整包红、单跑绿）
+
+**症状**：`make test` 只有一条红：
+
+```
+--- FAIL: TestCheckerSugarDriftIsWithinKnownSet
+  STOPPED firing: 3604icnf (5×)
+```
+
+单独跑这一条 **PASS**，整包跑才红 ⇒ 又一条隔离缺陷（与 `src/parser` 里
+`capturefacts_test.go` 那六处 `defer ... = false` 同一族，只是换了包）。
+
+**根因**：同包的 `hir_equivalence_test.go:442` / `capture_checker_parity_test.go:43,115`
+都是 `defer func() { parser.HIRCaptureEnabled = false }()` —— 把全域开关**钉成
+false** 而不是还原成原值。生产预设是 **true**（S3-c 之后捕获在 HIR 轨做）。于是
+同一个包里排在其后的 census 拿到的是**旧 AST 降糖轨**：AST 轨保留 option、
+HIR 轨已就地解包，`tests/` 里恰好 5 处「裸 `?T` 传给标量形参」被 AST 轨报成
+`3604icnf`，而 sugar 轨（SkipLowering）本来就不报 ⇒ 记成 unexplained drift。
+
+**修法**（`src/parser/dump/checker_on_sugar_test.go`，与 `src/parser/semviews_test.go:39-41`
+同一手法）：census 自己钉住生产轨并还原
+
+```go
+prevCaptureTrack := parser.HIRCaptureEnabled
+parser.HIRCaptureEnabled = true
+defer func() { parser.HIRCaptureEnabled = prevCaptureTrack }()
+```
+
+**为什么不去改那六处 `defer ... = false`**：`option_capture_test.go` 5 条 +
+`s3_inferred_side_table_test.go` 1 条**隐式依赖**这个外溢值（实测改成还原 `prev`
+会打破那 6 条）。所以规矩是「凡是要跑生产轨的门禁，自己钉住 + 自己还原」。
+
+**顺带记下定位手法**（比读代码快）：在 `src/parser/dump/` 临时放一个只有
+15 行的探针测试，复用 `shapeCensus` 把「lowered 有、sugar 没有」的 `3604icnf`
+逐档 `t.Logf` 出来 —— 结果是 **零条**，正好证明与语料无关、纯粹是轨设置。用完即删。
+注意 `go test` 直跑会因 `StdSigKey` 为空而 SKIP，必须带
+`-ldflags "-X .../checker.StdSigKey=<make test 里那串>"`。
+
+
+### 5.2u 2026-11-14：`out = a` 之后再 `g = a` —— 移动后使用未诊断 ⇒ 双释放
+
+**症状**：`tests/tmp-wrapclone/probe.no`（仓库里保留的最小复现）跑起来先印出
+一串空格、退出时 `signal: trace/BPT trap`（双释放）：
+
+```
+f = (s str) (out ?str) {
+    a = s
+    out = a
+    g = a
+    print(g)
+}
+print(f('hello'))
+```
+
+**判读**：`out = a` 把 `a` 移动进 option 结果参数之后，`g = a` 又读了一次 `a`，
+而 `movedVar` 追踪没有把它判成「移动后使用」。运行期 `g` 拿到已被移走的缓冲，
+作用域退出时 `g` 与结果各自 drop 同一块堆 ⇒ 双释放。
+
+**为什么本轮不修**：这正是用户规划中的那块改造（把 `movedVar` 从单一全域 bitmap
+改成基于 CFG 的 dataflow `MovedFact` 集合）。当下的 `tests/tmp-wrapclone/` 里
+`min.no` / `min2.no` / `repro.no` / `repro2.no` 四个探针已经**跑通**，只剩
+`probe.no` 这一条；它是**已知缺陷的复现档**，不是断言测试，`no test tests`
+因此会一直报这一条红 —— 看板上的「tests 全绿」要带上这个注记。
+
+**同族已有修法可参照**：`emitMove` 的「借用入参不得转移所有权」护栏
+（`src/mir/codegen.go`，`fn foo(a str) str = a` 那条注释），以及
+`optCloneInlinePayloadInto`（§5.2l 第 6 条）。两者都是「谁拥有堆」的判定，
+与本条同源。
+
+### 5.2v 2026-11-14：值位 match 的主语是**调用**参与的算术 ⇒ 落到兜底臂，`it` 恒 0【已修】
+
+**症状**：同一段语义，换个主语写法就差一个答案。
+
+```
+probe  = (len i64)     (out i64) { n = len - 1:        { ok -> it  -> 0 }  out = n }
+probe2 = (data []i64)  (out i64) { n = data.len() - 1: { ok -> it  -> 0 }  out = n }
+
+print(probe(3))            ; → 2   ✅
+print(probe2([1, 2, 3]))   ; → 0   ❌（应为 2）
+```
+
+**MIR 证据**（`NOLANG_MIR_DUMP_MIR=1`，错的那个）：
+
+```
+call  dst=23:i64 args=[17]         ; data.len()
+const dst=24:i64
+sub   dst=25:i64 args=[23 24]      ; ← 主体在 MIR 是裸 i64，不是 ?i64
+const dst=26:i64
+eq    dst=27:bool args=[25 26]     ; 于是「nil 测试」退化成 payload == 0
+```
+
+`sub` 一旦是裸 `i64`，`eq 25, 26` 比的就是**载荷与 0**：`len - 1 = 2` 不等于 0
+⇒ 走兜底臂 ⇒ 观测值恒为 `0`。`it` 因为主语不是 option 而没有 `let it` 绑定，
+即使误进 ok 臂也只会读到零填。
+
+**根因**：option 算术主语要在 `resolveSubjectMatch` 里归一化成
+`__match_subj_L_C ?T = <orig>`（不归一化就没有 tag 比较、没有 `it` 绑定），
+而归一化的判据是 `inferOptionArithSubjectElem` → `optionArithElem`。后者的
+`operandAllowsIntFallbackWith` 明确只认「整数字面量 / 识别字 / 同类中缀」，
+**呼叫、索引、字段读取一律拒收**（当初是为了不把 `str-fn() + 1` 误判成整数
+算术）。`len - 1` 的 `len` 是识别字 ⇒ 归一化；`data.len() - 1` 的左边是呼叫
+⇒ 整条推不出 ⇒ 不归一化。同一族的识别字形态早有修复记录（`close + 1`、
+markdown.inline 死循环），呼叫形态是漏掉的那一格。
+
+**修法**（`src/parser/lowering.go`）：`inferOptionArithSubjectElem` 在
+`optionArithElem` 落空后补一次 `inferCallArithSubjectElem`，后者用
+`callArithOperandInt` 把「呼叫」这一格补进证据链 —— 依据是
+`returnTypeFromCallExpr`（签名表 / 模块限定名 / `.len()`、`.cap()` 这类内建
+容器方法都已覆盖）。**只放行「回传型别可查、且去 option 后是有号整数」的
+呼叫**：查不到型别、回传 `str` / 容器的，一律维持原样，所以 `str-fn() + 1`
+仍然不会被当成整数算术。既有判定与回退顺序完全没动，新增的只有原本恒
+`false` 的那一格。
+
+**判别力**：`src/parser/value_match_expr_subject_test.go` 新增三条 ——
+
+- `TestValueMatchExprSubjectCallOperand`：`n = data.len() - 1: { ok -> it  -> 0 }`
+  的 HIR 必须出现 `let s=__match_subj_` 与 `let s=it t=i64`。把
+  `inferCallArithSubjectElem` 那段回退临时换成 `return ""`，本测试立刻红
+  （实测）。
+- `TestValueMatchExprSubjectCallOperandStr`：回传 `str` 的呼叫（`.to-str() + 'x'`）
+  必须**不**归一化。少了这条对照，「呼叫一律放行」也能让上面那条通过。
+- `TestValueMatchExprSubjectOptionCall`：回传 `?i64` 的呼叫（`g(v) - 1`）同样要
+  归一化 —— 算術把失败标籤往外传，主语仍是 `?T`、payload 是 `T`，与 `?T`
+  变数同口径（`operandAllowsIntFallbackWith` 早就 `StripOptionRaw`）。
+
+**运行期回归**：新增 `tests/option-call-arith.no`（4 条断言 +
+`option-call-arith: all ok`），覆盖内建方法（`data.len() - 1` → 2）、
+回传 `?i64` 的呼叫（`echo-opt(ok(5)) - 1` → 4）、两侧都是呼叫
+（`a.len() - b.len()` → 2），以及位元运算必须走 `?=`（`pad-bits` → 1）。
+
+**连带**：`parser.ASTVersion` bump 到 `2026-11-14.2`（旧 blob 的
+`__match_subj_*` 型别条目缺这批，重用会把 bug 带回来）。
+
+**还没修的那一格（同一族的下一步）**：值位 match 形态**不把运算元自己的 nil
+往外传**。
+
+```
+pick2 = (v ?i64) (out i64) { n = v - 1: { ok -> it  -> 0 }  out = n }
+print(pick2(ok(5)))   ; 4  ✅
+print(pick2(nil))     ; -1 ❌（应为 0）
+```
+
+`?=` 的块形态是对的（同一程序改写成 `{ n ?= v - 1 }: { err -> _  -> _ }`，
+`ok(5) → 4`、`nil → 0` 全对），因为守卫链（`__cap_N` + if）是
+`maybeCaptureOptionAssign` 的职责，而值位 match 的主语只做了
+`__match_subj ?T = <orig>` 这一层归约、没有挂守卫。补它要动捕获那一整块
+（`CaptureFacts` 的重建契约），不属于本轮范围；`tests/option-call-arith.no`
+的文件头已经把「需要失败传播就写 `?=`」记在档里。
+
+**顺带记一个还没修的边界**：`&`、`|`、`^`、`<<`、`>>` 这些位元运算不参与 D6 的
+option 算术（只有 `+ - * / %`）。所以
+
+```
+pad = (0 - data.len()) & 0x3: { ok -> it  -> 0 }   ; ❌ 静默得 0
+```
+
+这种写法会把**纯量当标签比**，永远走兜底臂；`src/std/archive/xz.no` 的
+`compress` 一开始就是这么改的，实测压出来的长度是 48（Block 没对齐，正确是
+49），复位成 `{ pad ?= ... }` 后才对。位元运算主语该不该也归一化是设计问题
+（它本身不会溢出，也就没有 option），现在不动，只把「别这么写」记在这里。
+
+### 5.2w 2026-11-14：模块级全域名被函数内的迭代绑定「遮蔽失败」⇒ 解析到全局
+
+**症状**（`/tmp/shadow1.no` 的最小复现）：
+
+```
+b []byte = [9]                       ; 模块级全局
+
+probe = (data []byte) (n i64) {
+    out []byte = []
+    b <- data: {                     ; 迭代绑定，元素是 byte
+        out.push(b)
+    }
+    n = out.len()
+}
+payload []byte = [1, 2]
+print(probe(payload))
+```
+
+```
+ERROR nolang-compile: argument 1 of '[]byte.push': expected 'byte', got '[]byte'
+```
+
+**判读**：函数体内的迭代绑定 `b` 没有进语义副表，`b` 的类型查询因此回退到
+模块级 `b []byte`，`push` 的实参检查拿到的就是 `[]byte`。把全局改个名
+（`payload`）立刻恢复正常 —— 也就是说这是**遮蔽失败**，不是迭代绑定本身坏了。
+
+**影响面**：编译期硬错，不会静默算错；`src/std` 里没有「模块级名与迭代绑定
+同名」的组合，所以门禁看不到。判据与 §5.2v 同源（名字查表的两级来源缺一级
+时回退得太宽），真要修得让迭代绑定在函数作用域里显式登记，属于名字解析的
+改造 —— 本轮只登记，不动。
+
+**同时记一笔**：`compress` 的独立复现 `/tmp/xzc.no` 一开始就是把全局命名成
+`b`，于是撞上本条，报的错和 `compress` 的真实问题一模一样（同一个
+`5lycdtsz`），排查时极易误判成「还有第二处 option push」。定位这类错要先用
+最小档确认，再看名字。
+
+### 5.2x 2026-11-14：`v = view` 丢掉视图的深拷贝 ⇒ 读已释放缓冲，静默给 0【已修】
+
+**症状**：切片视图复制给另一个局部变量后，若原视图不再被使用，读出来的值全是 0。
+
+```
+a-only = () {
+    local = [10, 20, 30, 40, 50]
+    view = local[1..4]
+    v = view
+    print(v.len())      ; 4  —— 长度对，说明描述符确实复制过去了
+    {
+        x ?= v[0]
+        print(x)        ; 0  —— 修前；应为 20
+    }: {
+        err -> _
+
+        -> _
+    }
+}
+a-only()
+```
+
+**最迷惑的一点**：在 `v = view` 与读取之间插一句 `print(view.len())`，输出就
+恢复正常。差别只在「`view` 之后还有没有别的用途」。
+
+**MIR 证据**（`-v` 出的 `.ll`）：
+
+```
+store %vec %vlh2.325, %vec* %v14.s     ; view = local[1..4]（指向 local 的堆缓冲）
+%mv42 = load %vec, %vec* %v14.s
+store %vec %mv42, %vec* %v15.s         ; v = view —— 只拷描述符，没有 retain/clone
+...
+%lv.339 = load %vec, %vec* %v2.s
+call void @vec_free(%vec %lv.339)      ; local 在这里就被释放
+br ...
+a_only.bb1:
+  %epi.343 = load i64, i64* %eg.342    ; 再从 v15 的 data 指针读 → UAF
+```
+
+**根因不在 liveness，而在 `lowerDeadSourceCopiesToMoves`**。hir2mir 把
+`v = view` 降成 `OpClone`（深拷贝，正确），随后 `insertDrops` 里这条规则看到
+「`view` 之后已死」，就把 `clone` 改写成 `move` 省一次拷贝。但**视图不拥有它
+指向的缓冲**——拥有者是容器 `local`。于是 move 把 `v` 变成别名，而 `local`
+的 drop 被排在它自己的最后一次使用处（在读取之前），`v` 读到已释放内存。
+
+守卫本来就有，只是只覆盖了「固定数组切片」那一半：
+
+```go
+if di := defInst[src]; di != nil && (m.isBorrowRead(f, di) || m.isSliceViewOfArray(f, di)) {
+```
+
+`isSliceViewOfArray` 要求接收者是 `KindArray`，`[]T`（vec）上的视图直接漏过。
+
+**修法**：新增谓词 `isLiveSliceView(inst)`（`OpSliceOp` 且 `SliceFlagView` 还在），
+把它加进上面那个守卫；`buildViewSrc` 也改用它，让「视图→容器」这一条事实只有
+一个来源，liveness 与 ownership 两条规则不会各自漂移。
+
+**判别力测试**：`src/mir/alias_forward_test.go` 的
+`TestCopyOfSliceViewIsClonedNotMoved` —— 断言 `v = view` 必须留下 `OpClone`、
+且不存在以该视图为源的 `OpMove`。把守卫里的 `|| isLiveSliceView(di)` 去掉，
+实测该测试失败（dump 里能直接看到 `sliceop` 后面跟着 `move`）。
+
+**stdout 侧**：`tests/mem-safety/slice-view-escape.no` 的测试 2 原先期望
+`20 / 30 / 40`，修前实打实印出 `0 / 0 / 0`（该档此前因 D11 的 `idxbruse`
+根本编不过，所以这个静默错答一直没被看到）。
+
+### 5.2y 2026-11-14：并行 session 的 D11 迁移遗留 —— 3 个 `tests/` 档 + 4 处 `src/std`【已修】
+
+昨晚 23:05–23:11 与今早 02:47–03:43 的 D11 迁移改到一半就停了，工作区留着
+`no vet` 红：
+
+| 档 | 条数 | 形态 | 修法 |
+|---|---|---|---|
+| `tests/mem-safety/nested-container-clone.no` | 13 | `b0 = b[0]` 未解包，随后 `b0[0]` / `b0.len()` | 四个子切片合成一个块形态 match，连续 `?=` |
+| `tests/mem-safety/slice-view-escape.no` | 3 | `print(v[0])` | 同上（该档测试 5 本来就是这写法） |
+| `tests/rule1-binding.no` | 3 | `b[0] = 99` 下标直写 + `print(b[0])` | place-match `ok -> it = 99` + 块 `?=` |
+| `src/std/time.no`（`format-date`） | 14 | `out[pos]: { ok -> it = (yr/1000)%10 + 48 }` | 14 个 place-match 合成一个块 match，连续 `?=` |
+| `src/std/bigint.no` | 1 | `buf[bufn]: { ok -> it = d + 48 }` | 与相邻的 `bufn ?= bufn + 1` 合并成一个块 match |
+| `src/std/crypto/rsa.no` | 2 | `q[0] = 0` / `r[0] = 0` | place-match |
+| `src/std/net/tls.no` | 2 | `out[i] = 0` / `out[i] = raw[off + i]: {…}` | 块 `?=`（读与写两跳一个 match） |
+| `test/std/blake2.no` | 2 | `v[i]: { ok -> it = i + 1 }` | 块 `?=` |
+| `test/std/multipart.no` | 7 | `key[i]: { ok -> it = 65 + (i % 26) }` | 块 `?=` |
+| `test/std/quic.no` | 1 | `cd[i]: { ok -> it = 65 + i }` | 块 `?=` |
+
+`time.no` / `bigint.no` / `blake2.no` / `multipart.no` / `quic.no` 那 22 条是
+`itovf9a1`：`#{overflow=wrap}` **只改溢出时取的值、不改结果型别**，所以
+`it = (yr/1000)%10 + 48` 的 RHS 仍然是 `?i64`，place-match 的 `it = …` 把这一层
+err 丢掉了。写成 `out[pos] ?= …` 就两层一起解。
+
+🔴 **这批错误是被 AST 磁盘缓存盖住的**：`no test test/std` 直接跑（`StdSigKey`
+未变）会复用缓存的 AST，把这些潜伏的 `itovf9a1` 全部跳过 —— 上一轮全量 129 档
+全绿就是这么来的。只有 `make gen no` 改了 `StdSigKey`、缓存整体失效之后才翻出来。
+**验 `test/std` 前先 `make gen no`**，否则绿灯不可信。
+
+**验收**：`no vet tests` = 0 error / `no vet src/std` = 0 error；三个 `tests/` 档
+实跑输出全部符合 `expect:`；`test/std/{time,bigint,rsa,tls,blake2,multipart,quic}.no`
+= 95 / 112 / 61 / 230 / 49 / 99 / 176 全绿。
+
+⚠️ **`test/std` 不能与其他重活并发跑**。同一批里 `fs.no`（`os.mkdir`）、
+`path.no`（`make-dir` / `rename` / `remove`）、`proxy.no`（listener 39354/39355
+未起）会失败，单跑同一个二进制却全绿 —— 是本机临时目录与硬编码端口被抢占，
+不是回归。验收时串行跑。
+

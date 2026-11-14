@@ -11,100 +11,100 @@
 t-parse-simple = () {
     fields = csv.parse-line('a,b,c', 16)
     runner.eq(fields.len(), 3, 'parse a,b,c len == 3')
-    ixout14c25 = fields[0]: {
+    fields-0 = fields[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout14c25, 'a', 1, 'field 0 == a')
-    ixout15c25 = fields[1]: {
+    runner.str-eq(fields-0, 'a', 1, 'field 0 == a')
+    fields-1 = fields[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout15c25, 'b', 1, 'field 1 == b')
-    ixout16c25 = fields[2]: {
+    runner.str-eq(fields-1, 'b', 1, 'field 1 == b')
+    fields-2 = fields[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout16c25, 'c', 1, 'field 2 == c')
+    runner.str-eq(fields-2, 'c', 1, 'field 2 == c')
 }
 
 ; 驗證中空欄位（「a,,c」）仍解析為三個欄位，其間欄位為空串
 t-parse-empty-fields = () {
     fields = csv.parse-line('a,,c', 16)
     runner.eq(fields.len(), 3, 'parse a,,c len == 3')
-    ixout23c25 = fields[0]: {
+    fields-0 = fields[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout23c25, 'a', 1, 'field 0 == a')
-    ixout24c21 = fields[1]: {
+    runner.str-eq(fields-0, 'a', 1, 'field 0 == a')
+    fields-1 = fields[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout24c21.len(), 0, 'field 1 empty')
-    ixout25c25 = fields[2]: {
+    runner.eq(fields-1.len(), 0, 'field 1 empty')
+    fields-2 = fields[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout25c25, 'c', 1, 'field 2 == c')
+    runner.str-eq(fields-2, 'c', 1, 'field 2 == c')
 }
 
 ; 驗證引號內的逗號不作分隔——帶引號欄位保留「hello,world」原文
 t-parse-quoted = () {
     fields = csv.parse-line('"hello,world","test"', 16)
     runner.eq(fields.len(), 2, 'parse quoted len == 2')
-    ixout32c25 = fields[0]: {
+    fields-0 = fields[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout32c25, 'hello,world', 11, 'quoted field 0 == hello,world')
-    ixout33c25 = fields[1]: {
+    runner.str-eq(fields-0, 'hello,world', 11, 'quoted field 0 == hello,world')
+    fields-1 = fields[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout33c25, 'test', 4, 'quoted field 1 == test')
+    runner.str-eq(fields-1, 'test', 4, 'quoted field 1 == test')
 }
 
 ; 驗證引號內的雙引號轉義（成對 "" 還原為單個 "），「say ""hi""" 解析為 say "hi"
 t-parse-escaped-quote = () {
     fields = csv.parse-line('"say ""hi"""', 16)
     runner.eq(fields.len(), 1, 'parse escaped quote len == 1')
-    ixout40c25 = fields[0]: {
+    fields-0 = fields[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout40c25, 'say "hi"', 8, 'escaped quote field == say "hi"')
+    runner.str-eq(fields-0, 'say "hi"', 8, 'escaped quote field == say "hi"')
 }
 
 ; 驗證不含逗號的單欄行解析為長度 1 的欄位數組
 t-parse-single = () {
     fields = csv.parse-line('only', 16)
     runner.eq(fields.len(), 1, 'parse single len == 1')
-    ixout47c25 = fields[0]: {
+    fields-0 = fields[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout47c25, 'only', 4, 'single field == only')
+    runner.str-eq(fields-0, 'only', 4, 'single field == only')
 }
 
 ; 驗證空行解析為 0 個欄位

@@ -47,8 +47,16 @@ test-local-vec = () {
 
     ; v 是 %vec 局部變數，prologue 已 malloc(256*8)
     v = [10, 20, 30, 40, 50]; 覆蓋 v，prologue buffer 應被 free
-    print(v[0])
-    print(v[4])
+    {
+        first ?= v[0]
+        last ?= v[4]
+        print(first)
+        print(last)
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 test-local-vec()
 

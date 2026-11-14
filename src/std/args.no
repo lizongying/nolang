@@ -159,12 +159,11 @@ get-positional = (idx i64) (val ?str) {
                 nc = next[0]
                 nc != 45 -> {
                     {
-                        j-opt = j + 1
-                        j-opt: {
-                            ok -> j = it
+                        j ?= j + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }

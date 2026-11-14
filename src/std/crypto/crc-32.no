@@ -14,13 +14,13 @@
 new = (s []byte, n i64) (crc i64) {
     crc = 4294967295
     i <- [0..n): {
-        ixout18c21 = s[i]: {
+        s-i = s[i]: {
             ok -> it
 
             -> _
         }
 
-        crc = crc ^ ixout18c21
+        crc = crc ^ s-i
         j <- [0..8): {
             {
                 crc & 1 == 1 -> crc = (crc >> 1) ^ 3988292384

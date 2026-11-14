@@ -201,13 +201,13 @@ table-eq = (name [32]byte, name-len i64, s str) (same bool) {
     same = false
     name-len != s.len-bytes() -> return
     i <- [0..name-len): {
-        ixout164c9 = name[i]: {
+        name-i = name[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout164c9 != s.byte(i) -> return
+        name-i != s.byte(i) -> return
     }
     same = true
 }
@@ -251,14 +251,12 @@ find-eq = (s str) (pos i64) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt2 = i + 1
-            i-opt2: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -298,14 +296,12 @@ strip-comment = (s str) (out str) {
                         quote = 0
 
                         {
-
                             #{overflow=wrap}
-                            i-opt3 = i + 2
-                            i-opt3: {
-                                ok -> i = it
+                            i ?= i + 2
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
                 }
@@ -317,14 +313,12 @@ strip-comment = (s str) (out str) {
                         quote = 0
 
                         {
-
                             #{overflow=wrap}
-                            i-opt4 = i + 2
-                            i-opt4: {
-                                ok -> i = it
+                            i ?= i + 2
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
                 }
@@ -341,14 +335,12 @@ strip-comment = (s str) (out str) {
                                 quote = 3
 
                                 {
-
                                     #{overflow=wrap}
-                                    i-opt5 = i + 2
-                                    i-opt5: {
-                                        ok -> i = it
+                                    i ?= i + 2
+                                }: {
+                                    err -> _
 
-                                        ->
-                                    }
+                                    -> _
                                 }
                             }
 
@@ -362,14 +354,12 @@ strip-comment = (s str) (out str) {
                                 quote = 4
 
                                 {
-
                                     #{overflow=wrap}
-                                    i-opt6 = i + 2
-                                    i-opt6: {
-                                        ok -> i = it
+                                    i ?= i + 2
+                                }: {
+                                    err -> _
 
-                                        ->
-                                    }
+                                    -> _
                                 }
                             }
 
@@ -386,14 +376,12 @@ strip-comment = (s str) (out str) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt7 = i + 1
-            i-opt7: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out = s.slice-bytes(0, end).trim()
@@ -530,14 +518,12 @@ value-complete = (raw str) (complete bool) {
                         q = 0
 
                         {
-
                             #{overflow=wrap}
-                            i-opt8 = i + 2
-                            i-opt8: {
-                                ok -> i = it
+                            i ?= i + 2
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
                 }
@@ -549,14 +535,12 @@ value-complete = (raw str) (complete bool) {
                         q = 0
 
                         {
-
                             #{overflow=wrap}
-                            i-opt9 = i + 2
-                            i-opt9: {
-                                ok -> i = it
+                            i ?= i + 2
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
                 }
@@ -573,14 +557,12 @@ value-complete = (raw str) (complete bool) {
                                 q = 3
 
                                 {
-
                                     #{overflow=wrap}
-                                    i-opt10 = i + 2
-                                    i-opt10: {
-                                        ok -> i = it
+                                    i ?= i + 2
+                                }: {
+                                    err -> _
 
-                                        ->
-                                    }
+                                    -> _
                                 }
                             }
 
@@ -594,14 +576,12 @@ value-complete = (raw str) (complete bool) {
                                 q = 4
 
                                 {
-
                                     #{overflow=wrap}
-                                    i-opt11 = i + 2
-                                    i-opt11: {
-                                        ok -> i = it
+                                    i ?= i + 2
+                                }: {
+                                    err -> _
 
-                                        ->
-                                    }
+                                    -> _
                                 }
                             }
 
@@ -611,27 +591,23 @@ value-complete = (raw str) (complete bool) {
 
                     c == 91 || c == 123 -> {
                         {
-
                             #{overflow=wrap}
-                            depth-opt = depth + 1
-                            depth-opt: {
-                                ok -> depth = it
+                            depth ?= depth + 1
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     c == 93 || c == 125 -> {
                         {
-
                             #{overflow=wrap}
-                            depth-opt2 = depth - 1
-                            depth-opt2: {
-                                ok -> depth = it
+                            depth ?= depth - 1
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                         depth < 0 -> return
                     }
@@ -640,14 +616,12 @@ value-complete = (raw str) (complete bool) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt12 = i + 1
-            i-opt12: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     complete = q == 0 && depth == 0
@@ -850,8 +824,10 @@ toml.parse = (s str) (result ?toml) {
                 return
             }
             raw-section = line.slice-bytes(start-pos, end-pos).trim()
-            norm-opt = normalize-key(raw-section)
-            norm-opt: {
+            ; ⚠️ err 臂要 return，只能用语句 match：`?=` 块的臂是独立帧，
+            ; 臂内的 return 不会退出所在函数（见 test/README.md §5.2o）。
+            normalized-section = normalize-key(raw-section)
+            normalized-section: {
                 ok -> section = it
 
                 -> {
@@ -861,9 +837,9 @@ toml.parse = (s str) (result ?toml) {
             }
             {
                 is-array-table -> {
-                    array-opt = next-array-table(doc, section)
+                    array-table-index = next-array-table(doc, section)
                     array-index = 0
-                    array-opt: {
+                    array-table-index: {
                         ok -> array-index = it
 
                         -> {
@@ -898,9 +874,9 @@ toml.parse = (s str) (result ?toml) {
             return
         }
         raw-key = line.slice-bytes(0, eq).trim()
-        key-opt = normalize-key(raw-key)
+        normalized-key = normalize-key(raw-key)
         key = ''
-        key-opt: {
+        normalized-key: {
             ok -> key = it
 
             -> {
@@ -1056,8 +1032,8 @@ stringify = (doc toml) (out str) {
 ; [put](#toml.put)
 toml.put = (key str, value str) (ok bool) {
     ok = false
-    norm-opt = normalize-key(key)
-    norm-opt: {
+    normalized-key = normalize-key(key)
+    normalized-key: {
         ok -> key = it
 
         -> return

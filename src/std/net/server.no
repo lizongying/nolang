@@ -385,37 +385,36 @@ server-conn.parse = () (ok bool) {
 
     ; 讀取請求體（如有 Content-Length）
     .body = ''
-    cl-opt = .get-header('Content-Length')
+    {
+        cl-str ?= .get-header('Content-Length')
 
-    cl-opt: {
-        ok -> {
-            cl-str = it
-            content-len = 0
-            j <- [0..cl-str.len-bytes()): {
-                ch = cl-str[j]
+        content-len = 0
+        j <- [0..cl-str.len-bytes()): {
+            ch = cl-str[j]
 
-                #{overflow=wrap}
-                ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
-            }
-            content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
+            #{overflow=wrap}
+            ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
+        }
+        content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
 
-                ; 標頭後已接收的資料
+            ; 標頭後已接收的資料
+            #{overflow=wrap}
+            available = .recv-buf-len - body-start
+
+            ; 如果不足，繼續接收
+            (available < content-len) {
+                n = .recv-more()
+                n <= 0 -> return
+
                 #{overflow=wrap}
                 available = .recv-buf-len - body-start
-
-                ; 如果不足，繼續接收
-                (available < content-len) {
-                    n = .recv-more()
-                    n <= 0 -> return
-
-                    #{overflow=wrap}
-                    available = .recv-buf-len - body-start
-                }
-
-                #{overflow=wrap}
-                .body = .recv-buf.slice(body-start, body-start + content-len)
             }
+
+            #{overflow=wrap}
+            .body = .recv-buf.slice(body-start, body-start + content-len)
         }
+    }: {
+        err -> _
 
         -> _
     }
@@ -882,30 +881,28 @@ https-server.accept = () (c ?https-server-conn) {
     ; server-accept 使用局部變數進行交握，返回的結構體含完整金鑰。
     ; 將 TLS 連線存入 https-server-conn.tls 欄位，
     ; 後續透過 .tls.send/recv/close 方法操作（方法接收者為局部變數，位址一致）。
-    accept-opt = tls.server-accept(.fd)
-    accept-opt: {
-        nil -> return
+    {
+        tls-conn-val ?= tls.server-accept(.fd)
 
+        buf str = with-len(HTTP-SRV-BUF-SIZE)
+        conn = https-server-conn{
+            tls: tls-conn-val
+            method: ''
+            path: ''
+            query: ''
+            version: ''
+            headers: ''
+            header-count: 0
+            body: ''
+            keep-alive: false
+            recv-buf: buf
+            recv-buf-len: 0
+        }
+        c = conn
+    }: {
         err -> return
 
-        ok -> {
-            tls-conn-val = it
-            buf str = with-len(HTTP-SRV-BUF-SIZE)
-            conn = https-server-conn{
-                tls: tls-conn-val
-                method: ''
-                path: ''
-                query: ''
-                version: ''
-                headers: ''
-                header-count: 0
-                body: ''
-                keep-alive: false
-                recv-buf: buf
-                recv-buf-len: 0
-            }
-            c = conn
-        }
+        -> _
     }
 }
 
@@ -1111,34 +1108,33 @@ https-server-conn.parse = () (ok bool) {
 
     ; 讀取請求體
     .body = ''
-    cl-opt = .get-header('Content-Length')
+    {
+        cl-str ?= .get-header('Content-Length')
 
-    cl-opt: {
-        ok -> {
-            cl-str = it
-            content-len = 0
-            j <- [0..cl-str.len-bytes()): {
-                ch = cl-str[j]
+        content-len = 0
+        j <- [0..cl-str.len-bytes()): {
+            ch = cl-str[j]
 
-                #{overflow=wrap}
-                ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
-            }
-            content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
+            #{overflow=wrap}
+            ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
+        }
+        content-len > 0 && content-len <= HTTP-SRV-MAX-BODY -> {
+
+            #{overflow=wrap}
+            available = .recv-buf-len - body-start
+            (available < content-len) {
+                n = .recv-more()
+                n <= 0 -> return
 
                 #{overflow=wrap}
                 available = .recv-buf-len - body-start
-                (available < content-len) {
-                    n = .recv-more()
-                    n <= 0 -> return
-
-                    #{overflow=wrap}
-                    available = .recv-buf-len - body-start
-                }
-
-                #{overflow=wrap}
-                .body = .recv-buf.slice(body-start, body-start + content-len)
             }
+
+            #{overflow=wrap}
+            .body = .recv-buf.slice(body-start, body-start + content-len)
         }
+    }: {
+        err -> _
 
         -> _
     }

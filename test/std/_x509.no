@@ -1,0 +1,539 @@
+; ============================================================
+; 過濾存檔（filtered copy）— 此檔不參與 vet / test / build
+; ------------------------------------------------------------
+; 檔名以 '_' 開頭：nolang 的 IsIgnoredSourcePath 慣例會忽略它，
+; `no vet` / `no test` / `no build` 的目錄遍歷都跳過本檔。
+;
+; 來源：x509.no 的原樣副本，未改動任何一行程式碼。
+; 保留原因：MOD_HEX 是OpenSSL 導出期望值的原始常數名，
+; 依「不修改合法源碼」原則原樣保存，供日後對照向量來源。
+;
+; 實際執行且 `no vet` 0 error 的版本：x509.no
+; （識別字已改為 kebab-case / 已修掉診斷）。改向量時請兩份一起對照。
+; ============================================================
+
+; test/std/x509.no — crypto/x509 模組測試
+;
+; 執行：no test test/std/x509.no
+; 覆蓋：憑證解析（x509-tbs-range / x509-serial / x509-rsa-e / x509-rsa-n /
+;       x509-fingerprint）、DER 讀取原語（der-tag / der-len / der-skip）、
+;       DER 編碼原語（der-enc-*）、大數打包（x509-bytes-to-bn）、
+;       sha256-compress、PKCS#1 簽章（rsa-pkcs1-sign-sha256）與整條
+;       自簽憑證建構鏈（x509-build-* / x509-build-self-signed-cert）。
+; 向量來源：
+;   1. OpenSSL 產生之 RSA-1024 自簽憑證（DER, 512 bytes）；
+;   2. 本檔末端另一個 RSA-1024 金鑰，其自簽憑證經 `openssl verify` 驗證通過，
+;      並以 `openssl dgst -sha256 -sign` 交叉驗證 PKCS#1 簽章；
+;   3. 各 DER 原語的期望值以 Python 按 X.690 規則獨立算出。
+
+# /test/runner
+
+hex-chars = '0123456789abcdef'
+
+; 位元組陣列 → hex 字串（逐字元建構，小寫、每 byte 兩位）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個 byte
+bhex = (data []byte) (hex str) {
+    n = data.len()
+
+    #{overflow=wrap}
+    hex = with-len(n * 2)
+    i <- [0..n): {
+        data-i = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(data-i >> 4) & 15]
+        }: {
+            err -> _
+
+            -> _
+        }
+
+        data-i-2 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[data-i-2 & 15]
+        }: {
+            err -> _
+
+            -> _
+        }
+    }
+}
+
+; [32]byte → hex 字串
+; a [32]byte: 待格式化的摘要
+; s str: 64 字元 hex
+hx32 = (a [32]byte) (s str) {
+    v []byte = a.slice(0, 32)
+    s = bhex(v)
+}
+
+; hex 字串 → []byte
+; h str: 偶數長度的 hex
+; b []byte: 解出的位元組
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 讀 []i64 的第 i 個元素（越界回 -999999 以便在斷言中暴露）
+; v []i64: 大整數 limb 陣列
+; i i64: 索引
+; x i64: limb 值
+limb = (v []i64, i i64) (x i64) {
+    x = v[i]: {
+        ok -> it
+
+        -> -999999
+    }
+}
+
+; 8 個 32-bit 大端字 → 32 位元組 hex（供 sha256 類回傳值比較）
+; h0..h7 i64: 8 個大端 32-bit 字（高位在前）
+; s str: 64 字元 hex
+w8hex = (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) (s str) {
+    buf []byte = with-len(32)
+    ws [8]i64 = [h0, h1, h2, h3, h4, h5, h6, h7]
+    wi <- [0..8): {
+        w = ws[wi]: {
+            ok -> it
+
+            -> 0
+        }
+
+        #{overflow=wrap}
+        base = wi * 4
+
+        #{overflow=wrap}
+        buf[base + 0]: {
+            ok -> it = (w >> 24) & 255
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        buf[base + 1]: {
+            ok -> it = (w >> 16) & 255
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        buf[base + 2]: {
+            ok -> it = (w >> 8) & 255
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        buf[base + 3]: {
+            ok -> it = w & 255
+
+            -> _
+        }
+    }
+    s = bhex(buf)
+}
+
+; 固定 [512]byte → []byte 檢視（每次複製到新 vec，避免全域 slice 突變）
+; a [512]byte: 來源固定陣列（DER 憑證原始位元組）
+; v []byte: 長度 512、內容逐位元組複製的切片
+arr512 = (a [512]byte) (v []byte) {
+    v = with-len(512)
+    i <- [0..512): {
+        v[i] = a[i]: {
+            ok -> it
+
+            -> _
+        }
+    }
+}
+
+; OpenSSL 產生之 RSA-1024 自簽 DER 憑證（大端序原始位元組）
+DER [512]byte = [
+    0x30, 0x82, 0x01, 0xfc, 0x30, 0x82, 0x01, 0x65,
+    0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x02, 0x12,
+    0x34, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48,
+    0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b, 0x05, 0x00,
+    0x30, 0x19, 0x31, 0x17, 0x30, 0x15, 0x06, 0x03,
+    0x55, 0x04, 0x03, 0x0c, 0x0e, 0x4e, 0x6f, 0x6c,
+    0x61, 0x6e, 0x67, 0x58, 0x35, 0x30, 0x39, 0x54,
+    0x65, 0x73, 0x74, 0x30, 0x1e, 0x17, 0x0d, 0x32,
+    0x36, 0x31, 0x30, 0x30, 0x35, 0x30, 0x38, 0x30,
+    0x39, 0x31, 0x30, 0x5a, 0x17, 0x0d, 0x33, 0x36,
+    0x31, 0x30, 0x30, 0x32, 0x30, 0x38, 0x30, 0x39,
+    0x31, 0x30, 0x5a, 0x30, 0x19, 0x31, 0x17, 0x30,
+    0x15, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0c, 0x0e,
+    0x4e, 0x6f, 0x6c, 0x61, 0x6e, 0x67, 0x58, 0x35,
+    0x30, 0x39, 0x54, 0x65, 0x73, 0x74, 0x30, 0x81,
+    0x9f, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48,
+    0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
+    0x03, 0x81, 0x8d, 0x00, 0x30, 0x81, 0x89, 0x02,
+    0x81, 0x81, 0x00, 0xcb, 0xac, 0x4e, 0x71, 0xd8,
+    0xa8, 0x7e, 0x75, 0x52, 0x82, 0x3c, 0xa6, 0x54,
+    0x44, 0x81, 0x8e, 0x46, 0xb8, 0x66, 0xc0, 0x24,
+    0xbf, 0x88, 0x65, 0x79, 0xf3, 0xca, 0x50, 0x7c,
+    0x82, 0xd3, 0x59, 0x48, 0x8d, 0x7b, 0xa2, 0x03,
+    0xad, 0x5c, 0xd3, 0xff, 0x8a, 0x3f, 0x9b, 0x3e,
+    0xb4, 0x9b, 0x31, 0xc3, 0x2a, 0x11, 0x26, 0x68,
+    0x51, 0x75, 0xa8, 0xcf, 0x25, 0x6e, 0x38, 0x59,
+    0x12, 0xd2, 0xb0, 0xd9, 0x0f, 0x9a, 0xa7, 0x7e,
+    0x4f, 0xea, 0xd0, 0x3c, 0xf2, 0x8b, 0x1a, 0x84,
+    0x7f, 0xe3, 0x59, 0xda, 0x40, 0xb6, 0xbf, 0x6c,
+    0x9b, 0x53, 0xef, 0x7c, 0xc7, 0x77, 0xd1, 0xf4,
+    0x24, 0xd7, 0xbf, 0xf1, 0xdd, 0x0d, 0x9b, 0x2c,
+    0xad, 0x35, 0xc2, 0x5f, 0x6c, 0x55, 0x69, 0xb8,
+    0x05, 0x82, 0x32, 0xdb, 0xe9, 0xba, 0x07, 0x42,
+    0x5d, 0x5d, 0xba, 0x96, 0xe5, 0xf0, 0x9d, 0xfc,
+    0x35, 0xf5, 0xc5, 0x02, 0x03, 0x01, 0x00, 0x01,
+    0xa3, 0x53, 0x30, 0x51, 0x30, 0x1d, 0x06, 0x03,
+    0x55, 0x1d, 0x0e, 0x04, 0x16, 0x04, 0x14, 0x9f,
+    0x1a, 0x29, 0x3d, 0xcc, 0x0a, 0x9d, 0xcb, 0x69,
+    0x6d, 0x6d, 0x76, 0x61, 0x0e, 0x40, 0x44, 0x31,
+    0x80, 0x01, 0xba, 0x30, 0x1f, 0x06, 0x03, 0x55,
+    0x1d, 0x23, 0x04, 0x18, 0x30, 0x16, 0x80, 0x14,
+    0x9f, 0x1a, 0x29, 0x3d, 0xcc, 0x0a, 0x9d, 0xcb,
+    0x69, 0x6d, 0x6d, 0x76, 0x61, 0x0e, 0x40, 0x44,
+    0x31, 0x80, 0x01, 0xba, 0x30, 0x0f, 0x06, 0x03,
+    0x55, 0x1d, 0x13, 0x01, 0x01, 0xff, 0x04, 0x05,
+    0x30, 0x03, 0x01, 0x01, 0xff, 0x30, 0x0d, 0x06,
+    0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
+    0x01, 0x0b, 0x05, 0x00, 0x03, 0x81, 0x81, 0x00,
+    0xb4, 0xb7, 0x96, 0xc3, 0x25, 0xd2, 0xcb, 0x8a,
+    0xed, 0xd3, 0x58, 0x2f, 0xa8, 0xd0, 0xaf, 0xb2,
+    0x24, 0x9e, 0x6e, 0xed, 0xcd, 0x19, 0x05, 0x91,
+    0x70, 0x2d, 0xed, 0x3a, 0x42, 0xd0, 0xd8, 0x8e,
+    0x73, 0xfb, 0xe0, 0xb6, 0xf1, 0xff, 0x91, 0xfa,
+    0x84, 0x2c, 0xa3, 0x78, 0x2a, 0x85, 0x96, 0x7e,
+    0x8d, 0x39, 0x2d, 0xf0, 0x77, 0x4c, 0x48, 0xfa,
+    0xf3, 0x9a, 0xf3, 0xb9, 0x33, 0x73, 0x9a, 0xd2,
+    0x7b, 0xb3, 0x0a, 0x5c, 0xc0, 0x20, 0x16, 0x61,
+    0xbc, 0xc3, 0xff, 0x9e, 0x4b, 0x0b, 0xcb, 0x17,
+    0x9c, 0xe8, 0x69, 0x35, 0x26, 0x58, 0x04, 0x26,
+    0x98, 0xae, 0xd2, 0x16, 0xde, 0x53, 0x05, 0x3c,
+    0xf7, 0x71, 0xe6, 0x89, 0xaa, 0x60, 0xf3, 0xc4,
+    0x2f, 0x13, 0x6d, 0x0a, 0xa1, 0x34, 0x41, 0x48,
+    0xd7, 0x25, 0xd0, 0xb0, 0xfe, 0x41, 0x18, 0xe9,
+    0x38, 0x00, 0x11, 0x6c, 0x28, 0xbe, 0x2d, 0x2f,
+]
+
+; OpenSSL 導出之期望值
+MOD_HEX = 'cbac4e71d8a87e7552823ca65444818e46b866c024bf886579f3ca507c82d359488d7ba203ad5cd3ff8a3f9b3eb49b31c32a1126685175a8cf256e385912d2b0d90f9aa77e4fead03cf28b1a847fe359da40b6bf6c9b53ef7cc777d1f424d7bff1dd0d9b2cad35c25f6c5569b8058232dbe9ba07425d5dba96e5f09dfc35f5c5'
+
+; TBSCertificate 之 SHA-256（openssl dgst），以 8 個大端 32-bit 字表示
+FP = 'feed7a6de5a9a299ba84ada12e2a157d04de84ead0db84d596058a84712f043f'
+
+; TBS 範圍應指向內層 SEQUENCE（跳過外層 SEQUENCE 標籤+長度）
+t-tbs-range = () {
+    start, end = x509.x509-tbs-range(arr512(DER))
+    runner.eq(start, 4, 'tbs start = 4')
+    runner.eq(end, 365, 'tbs end = 365')
+}
+
+; 序號 = 0x1234 = 4660
+t-serial = () {
+    s = x509.x509-serial(arr512(DER))
+    runner.eq(s, 4660, 'serial = 4660')
+}
+
+; RSA 公開指數 = 65537
+t-rsa-e = () {
+    e = x509.x509-rsa-e(arr512(DER))
+    runner.eq(e, 65537, 'rsa exponent = 65537')
+}
+
+; RSA 模數（大端序、去前導 0x00）必須逐位元組匹配 OpenSSL
+t-rsa-n = () {
+    n = x509.x509-rsa-n(arr512(DER))
+    runner.eq(n.len(), 128, 'modulus length = 128')
+    runner.str-eq(bhex(n), MOD_HEX, 256, 'modulus matches OpenSSL')
+}
+
+; 指紋（TBS 之 SHA-256）必須匹配 OpenSSL；以 hex 重组 8 個字後比較
+t-fingerprint = () {
+    h0, h1, h2, h3, h4, h5, h6, h7 = x509.x509-fingerprint(arr512(DER))
+    buf []byte = with-len(32)
+    ws [8]i64 = [h0, h1, h2, h3, h4, h5, h6, h7]
+    wi <- [0..8): {
+
+        #{overflow=wrap}
+        base = wi * 4
+        w = ws[wi]
+
+        #{overflow=wrap}
+        buf[base + 0]: {
+            ok -> it = (w >> 24) & 255
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        buf[base + 1]: {
+            ok -> it = (w >> 16) & 255
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        buf[base + 2]: {
+            ok -> it = (w >> 8) & 255
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        buf[base + 3]: {
+            ok -> it = w & 255
+
+            -> _
+        }
+    }
+    runner.str-eq(bhex(buf), FP, 64, 'fingerprint matches OpenSSL sha256(tbs)')
+}
+
+; 非憑證輸入應安全回傳預設值（不外洬、不崩潰）
+t-invalid = () {
+    junk []byte = with-len(4)
+    junk[0]: {
+        ok -> it = 0x01
+
+        -> _
+    }
+    junk[1]: {
+        ok -> it = 0x02
+
+        -> _
+    }
+    junk[2]: {
+        ok -> it = 0x03
+
+        -> _
+    }
+    junk[3]: {
+        ok -> it = 0x04
+
+        -> _
+    }
+    runner.eq(x509.x509-serial(junk), 0, 'serial on non-cert = 0')
+    runner.eq(x509.x509-rsa-e(junk), 0, 'rsa-e on non-cert = 0')
+    start, end = x509.x509-tbs-range(junk)
+    runner.eq(start, 0, 'tbs-range start on non-cert = 0')
+    runner.eq(end, 0, 'tbs-range end on non-cert = 0')
+}
+
+; ---- DER 讀取原語（der-tag / der-len / der-skip）----
+t-parse = () {
+    d = arr512(DER)
+    runner.eq(x509.der-tag(d, 0), 48, 'der-tag 外層 SEQUENCE')
+    runner.eq(x509.der-tag(d, 4), 48, 'der-tag TBS SEQUENCE')
+
+    l, adv = x509.der-len(d, 1)
+    runner.eq(l, 508, 'der-len 長格式 508')
+    runner.eq(adv, 3, 'der-len 長格式 adv=3')
+
+    runner.eq(x509.der-skip(d, 0), 512, 'der-skip 整個憑證')
+    runner.eq(x509.der-skip(d, 4), 365, 'der-skip 跳過 TBS')
+
+    ; 短格式
+    s []byte = [2, 1, 5]
+    runner.eq(x509.der-tag(s, 0), 2, 'der-tag 短格式 INTEGER')
+    l2, adv2 = x509.der-len(s, 1)
+    runner.eq(l2, 1, 'der-len 短格式 1')
+    runner.eq(adv2, 1, 'der-len 短格式 adv=1')
+    runner.eq(x509.der-skip(s, 0), 3, 'der-skip 短格式')
+}
+
+; ---- DER 長度編碼 ----
+t-enc-len = () {
+    runner.str-eq(bhex(x509.der-enc-len(0)), '00', 2, 'der-enc-len 0')
+    runner.str-eq(bhex(x509.der-enc-len(5)), '05', 2, 'der-enc-len 5')
+    runner.str-eq(bhex(x509.der-enc-len(127)), '7f', 2, 'der-enc-len 127（短格式上限）')
+    runner.str-eq(bhex(x509.der-enc-len(128)), '8180', 4, 'der-enc-len 128（長格式起點）')
+    runner.str-eq(bhex(x509.der-enc-len(255)), '81ff', 4, 'der-enc-len 255')
+    runner.str-eq(bhex(x509.der-enc-len(256)), '820100', 6, 'der-enc-len 256')
+    runner.str-eq(bhex(x509.der-enc-len(1024)), '820400', 6, 'der-enc-len 1024')
+    runner.str-eq(bhex(x509.der-enc-len(65535)), '82ffff', 6, 'der-enc-len 65535')
+    runner.str-eq(bhex(x509.der-enc-len(65536)), '83010000', 8, 'der-enc-len 65536')
+}
+
+; ---- DER 編碼原語 ----
+t-enc = () {
+    empty []byte = with-len(0)
+
+    two []byte = [1, 2]
+    runner.str-eq(bhex(x509.der-enc-tlv(2, two)), '02020102', 8, 'der-enc-tlv INTEGER 0102')
+    runner.str-eq(bhex(x509.der-enc-tlv(48, empty)), '3000', 4, 'der-enc-tlv 空內容 SEQUENCE')
+
+    runner.str-eq(bhex(x509.der-enc-null()), '0500', 4, 'der-enc-null')
+
+    ; INTEGER（i64）
+    runner.str-eq(bhex(x509.der-enc-integer-i64(0)), '020100', 6, 'integer-i64 0')
+    runner.str-eq(bhex(x509.der-enc-integer-i64(1)), '020101', 6, 'integer-i64 1')
+    runner.str-eq(bhex(x509.der-enc-integer-i64(127)), '02017f', 6, 'integer-i64 127')
+    runner.str-eq(bhex(x509.der-enc-integer-i64(128)), '02020080', 8, 'integer-i64 128（補前導 0）')
+    runner.str-eq(bhex(x509.der-enc-integer-i64(255)), '020200ff', 8, 'integer-i64 255（補前導 0）')
+    runner.str-eq(bhex(x509.der-enc-integer-i64(256)), '02020100', 8, 'integer-i64 256')
+    runner.str-eq(bhex(x509.der-enc-integer-i64(65537)), '0203010001', 10, 'integer-i64 65537')
+
+    ; INTEGER（big-endian 位元組）
+    b-lead []byte = [0, 0, 1]
+    runner.str-eq(bhex(x509.der-enc-integer-bytes(b-lead)), '020101', 6, 'integer-bytes 去前導零')
+    b-hi []byte = [128]
+    runner.str-eq(bhex(x509.der-enc-integer-bytes(b-hi)), '02020080', 8, 'integer-bytes MSB 補零')
+    runner.str-eq(bhex(x509.der-enc-integer-bytes(empty)), '020100', 6, 'integer-bytes 空 -> 0')
+
+    three []byte = [1, 2, 3]
+    runner.str-eq(bhex(x509.der-enc-sequence(three)), '3003010203', 10, 'der-enc-sequence')
+    runner.str-eq(bhex(x509.der-enc-set(three)), '3103010203', 10, 'der-enc-set')
+
+    one-aa []byte = [0xaa]
+    runner.str-eq(bhex(x509.der-enc-bitstring(one-aa)), '030200aa', 8, 'der-enc-bitstring（補未用位數 0）')
+    runner.str-eq(bhex(x509.der-enc-bitstring(empty)), '030100', 6, 'der-enc-bitstring 空')
+
+    dead []byte = [0xde, 0xad]
+    runner.str-eq(bhex(x509.der-enc-octetstring(dead)), '0402dead', 8, 'der-enc-octetstring')
+
+    runner.str-eq(bhex(x509.der-enc-printablestring('abc')), '1303616263', 10, 'der-enc-printablestring abc')
+    runner.str-eq(bhex(x509.der-enc-utctime('240101000000Z')), '170d3234303130313030303030305a', 30, 'der-enc-utctime')
+
+    int-tlv []byte = [2, 1, 2]
+    runner.str-eq(bhex(x509.der-enc-explicit(0, int-tlv)), 'a003020102', 10, 'der-enc-explicit [0]')
+
+    oid []byte = [0x55, 0x04, 0x03]
+    runner.str-eq(bhex(x509.der-enc-oid-raw(oid)), '0603550403', 10, 'der-enc-oid-raw 2.5.4.3')
+
+    runner.str-eq(bhex(x509.alg-id-rsa-encryption()), '300d06092a864886f70d0101010500', 30, 'alg-id rsaEncryption')
+    runner.str-eq(bhex(x509.alg-id-sha256-with-rsa()), '300d06092a864886f70d01010b0500', 30, 'alg-id sha256WithRSAEncryption')
+}
+
+; ---- 大數打包（big-endian 位元組 -> little-endian 32-bit limb）----
+t-bn = () {
+    a []byte = [1]
+    v1 = x509.x509-bytes-to-bn(a)
+    runner.eq(v1.len(), 1, 'bytes-to-bn [01] limb 數')
+    runner.eq(limb(v1, 0), 1, 'bytes-to-bn [01] -> 1')
+
+    b []byte = [0, 0, 0, 1]
+    v2 = x509.x509-bytes-to-bn(b)
+    runner.eq(v2.len(), 1, 'bytes-to-bn 四字節 1 limb')
+    runner.eq(limb(v2, 0), 1, 'bytes-to-bn 00000001 -> 1')
+
+    ; 大端序檢查：bytes 從左到右是高→低，故 0x00010000 應落在 limb0 的 bit16
+    f []byte = [0, 1, 0, 0]
+    v5 = x509.x509-bytes-to-bn(f)
+    runner.eq(limb(v5, 0), 65536, 'bytes-to-bn 00010000 -> 1<<16')
+
+    c []byte = [1, 2, 3, 4, 5]
+    v3 = x509.x509-bytes-to-bn(c)
+    runner.eq(v3.len(), 2, 'bytes-to-bn 五字節 2 limb')
+    runner.eq(limb(v3, 0), 33752069, 'bytes-to-bn 低位 limb = 0x02030405')
+    runner.eq(limb(v3, 1), 1, 'bytes-to-bn 高位 limb = 0x01')
+
+    e []byte = with-len(0)
+    v4 = x509.x509-bytes-to-bn(e)
+    runner.eq(v4.len(), 0, 'bytes-to-bn 空 -> 0 limb')
+}
+
+; ---- 憑證建構積木（用小模數讓期望值可手算）----
+t-buildparts = () {
+    n3 []byte = [1, 2, 3]
+
+    runner.str-eq(bhex(x509.x509-build-rsa-public-key(n3, 65537)), '300a02030102030203010001', 24, 'build-rsa-public-key')
+    runner.str-eq(bhex(x509.x509-build-spki(n3, 65537)), '301e300d06092a864886f70d0101010500030d00300a02030102030203010001', 60, 'build-spki')
+    runner.str-eq(bhex(x509.x509-build-name-cn('A')), '300c310a30080603550403130141', 28, 'build-name-cn A')
+    runner.str-eq(bhex(x509.x509-build-validity('240101000000Z', '400101000000Z')), '301e170d3234303130313030303030305a170d3430303130313030303030305a', 60, 'build-validity')
+
+    tbs = x509.x509-build-tbs(n3, 65537, 'A', '240101000000Z', '400101000000Z')
+    runner.eq(tbs.len(), 117, 'build-tbs 長度 117')
+    runner.str-eq(bhex(tbs), '3073a003020102020101300d06092a864886f70d01010b0500300c310a30080603550403130141301e170d3234303130313030303030305a170d3430303130313030303030305a300c310a30080603550403130141301e300d06092a864886f70d0101010500030d00300a02030102030203010001', 234, 'build-tbs 逐位元組')
+}
+
+; ---- sha256 壓縮函式（單區塊）----
+; 用 'abc' 的補齊區塊：w0 = 0x61626380、w15 = 24（位元長度）、其餘 0，
+; 初值為標準 IV。輸出必須等於 SHA-256("abc")。
+t-compress = () {
+    c0, c1, c2, c3, c4, c5, c6, c7 = x509.sha256-compress(1633837952, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225)
+    runner.str-eq(w8hex(c0, c1, c2, c3, c4, c5, c6, c7), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 64, 'sha256-compress("abc" 區塊)')
+}
+
+; ---- PKCS#1 v1.5 SHA-256 簽章（與 openssl 交叉驗證）----
+RSA-N = 'dc110d8418e6eead93469c3eb8318527b124587f47b4b00600999f7f78252ab0e51d150d0b6be57e2489cb5731340a84161362926bfb4d7fccb95709c684624d422a2027e8470daa494641462f96f89e057a441708eb3e4d2dec06ef4672ef3b7f2609431583f6d3f138412d2209fc9fb686b7d6540ffbd5876c89b0e4aa15b9'
+RSA-D = '442ce8420730ebba4c48f0b8a1797de5d90408828de5552ed6dac0c5cda3be010549a82edd5df4bfca7401d1a6459808698a61dc38a5a6d1b3cbab423504e82ab1bbca31db63e30055d8cfcac44f54fb81e113a4d591a53cb4bf2a00148927897510eae44116b93756e1a3f72a441f6e33b7b10d953176e01b55976c2db96eb1'
+
+; openssl dgst -sha256 -sign（同一把金鑰、訊息 "abc"）
+SIG-ABC = 'c9233aa55bdc63184e709228d42073a857c95bf1d7c53b3ce773ff41e94da45c95143550f1cd2ec9b01036b359724e87045ba869a03e8d41d347a0fbd1513af40d72def43ff2759d54dd25b7cb7f73dc7afc51124b7dcc9f402269f8cd834f5f934c23f56defcad38440ee2cf44d13121b505f0caa852036e0dc2ed085009b8e'
+
+t-sign = () {
+    n = mkb(RSA-N)
+    d = mkb(RSA-D)
+    runner.eq(n.len(), 128, '簽章用模數 128 字節')
+    runner.eq(d.len(), 128, '簽章用私鑰指數 128 字節')
+
+    msg []byte = [97, 98, 99]
+    sig = x509.rsa-pkcs1-sign-sha256(msg, n, d)
+    runner.eq(sig.len(), 128, 'PKCS#1 簽章長度 = 模數長度')
+    runner.str-eq(bhex(sig), SIG-ABC, 256, 'PKCS#1 簽章與 openssl 一致')
+}
+
+; ---- 自簽憑證端到端（openssl verify 通過）----
+; 期望值：openssl 對整份 DER 算出的 SHA-256；序列號固定 1、
+; validity 固定 2024-01-01 ~ 2040-01-01、CN=NolangSelfSigned，故輸出完全確定。
+CERT-FP = '9a684fb5c8e0b6855e0b90c1b735e2a616b2c25523132a5c0efa42109245f7e2'
+
+t-cert = () {
+    n = mkb(RSA-N)
+    d = mkb(RSA-D)
+    cert = x509.x509-build-self-signed-cert(n, 65537, d, 'NolangSelfSigned')
+
+    runner.eq(cert.len(), 430, '自簽憑證長度 430')
+    runner.str-eq(hx32(sha256.sha256(cert)), CERT-FP, 64, '憑證 SHA-256 與 openssl 一致')
+
+    ; 反解析（用模組自己的解析器回讀）
+    runner.eq(x509.x509-serial(cert), 1, '自簽憑證 serial = 1')
+    runner.eq(x509.x509-rsa-e(cert), 65537, '自簽憑證 exponent = 65537')
+    nb = x509.x509-rsa-n(cert)
+    runner.str-eq(bhex(nb), RSA-N, 256, '自簽憑證模數回讀一致')
+
+    start, end = x509.x509-tbs-range(cert)
+    runner.eq(start, 4, '自簽憑證 tbs start')
+    runner.eq(end, 283, '自簽憑證 tbs end = 4 + 279（含 4 位元組長格式標頭）')
+}
+
+p1 = runner.test('x509.tbs-range', t-tbs-range)
+p2 = runner.test('x509.serial', t-serial)
+p3 = runner.test('x509.rsa-e', t-rsa-e)
+p4 = runner.test('x509.rsa-n', t-rsa-n)
+p5 = runner.test('x509.fingerprint', t-fingerprint)
+p6 = runner.test('x509.invalid', t-invalid)
+p7 = runner.test('x509.parse', t-parse)
+p8 = runner.test('x509.enc-len', t-enc-len)
+p9 = runner.test('x509.enc', t-enc)
+p10 = runner.test('x509.bn', t-bn)
+p11 = runner.test('x509.buildparts', t-buildparts)
+p12 = runner.test('x509.compress', t-compress)
+p13 = runner.test('x509.sign', t-sign)
+p14 = runner.test('x509.cert', t-cert)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

@@ -412,209 +412,58 @@ mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
 ; state: 16 位元組狀態（每 4 個連續位元組視為一欄，逐欄原位混合）
 ; [mix-columns](#aes.mix-columns)
 mix-columns = (state []byte) {
-    d0 = 0
-    d1 = 0
-    d2 = 0
-    d3 = 0
+    ; 逐欄處理：第 column 欄佔 state[4*column .. 4*column+4)
+    column <- [0..4): {
+        {
+            #{overflow=wrap}
+            col-start ?= column * 4
 
-    ixout400c30 = state[0]: {
-        ok -> it
+            #{overflow=wrap}
+            b0 ?= state[col-start]
 
-        -> _
-    }
+            #{overflow=wrap}
+            b1 ?= state[col-start + 1]
 
-    ixout400c40 = state[1]: {
-        ok -> it
+            #{overflow=wrap}
+            b2 ?= state[col-start + 2]
 
-        -> _
-    }
+            #{overflow=wrap}
+            b3 ?= state[col-start + 3]
 
-    ixout400c50 = state[2]: {
-        ok -> it
+            d0, d1, d2, d3 = mix-col(b0, b1, b2, b3)
 
-        -> _
-    }
+            #{overflow=wrap}
+            state[col-start]: {
+                ok -> it = d0
 
-    ixout400c60 = state[3]: {
-        ok -> it
+                -> _
+            }
 
-        -> _
-    }
+            #{overflow=wrap}
+            state[col-start + 1]: {
+                ok -> it = d1
 
-    d0, d1, d2, d3 = mix-col(ixout400c30, ixout400c40, ixout400c50, ixout400c60)
+                -> _
+            }
 
-    state[0]: {
-        ok -> it = d0
+            #{overflow=wrap}
+            state[col-start + 2]: {
+                ok -> it = d2
 
-        -> _
-    }
+                -> _
+            }
 
-    state[1]: {
-        ok -> it = d1
+            #{overflow=wrap}
+            state[col-start + 3]: {
+                ok -> it = d3
 
-        -> _
-    }
+                -> _
+            }
+        }: {
+            err -> _
 
-    state[2]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[3]: {
-        ok -> it = d3
-
-        -> _
-    }
-
-    ixout427c30 = state[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout427c40 = state[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout427c50 = state[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout427c60 = state[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    d0, d1, d2, d3 = mix-col(ixout427c30, ixout427c40, ixout427c50, ixout427c60)
-
-    state[4]: {
-        ok -> it = d0
-
-        -> _
-    }
-
-    state[5]: {
-        ok -> it = d1
-
-        -> _
-    }
-
-    state[6]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[7]: {
-        ok -> it = d3
-
-        -> _
-    }
-
-    ixout454c30 = state[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout454c40 = state[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout454c50 = state[10]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout454c61 = state[11]: {
-        ok -> it
-
-        -> _
-    }
-
-    d0, d1, d2, d3 = mix-col(ixout454c30, ixout454c40, ixout454c50, ixout454c61)
-
-    state[8]: {
-        ok -> it = d0
-
-        -> _
-    }
-
-    state[9]: {
-        ok -> it = d1
-
-        -> _
-    }
-
-    state[10]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[11]: {
-        ok -> it = d3
-
-        -> _
-    }
-
-    ixout481c30 = state[12]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout481c41 = state[13]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout481c52 = state[14]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout481c63 = state[15]: {
-        ok -> it
-
-        -> _
-    }
-
-    d0, d1, d2, d3 = mix-col(ixout481c30, ixout481c41, ixout481c52, ixout481c63)
-
-    state[12]: {
-        ok -> it = d0
-
-        -> _
-    }
-
-    state[13]: {
-        ok -> it = d1
-
-        -> _
-    }
-
-    state[14]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[15]: {
-        ok -> it = d3
-
-        -> _
+            -> _
+        }
     }
 }
 
@@ -663,209 +512,58 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
 ; state: 16 位元組狀態（每 4 個連續位元組視為一欄，逐欄原位逆混合）
 ; [inv-mix-columns](#aes.inv-mix-columns)
 inv-mix-columns = (state []byte) {
-    d0 = 0
-    d1 = 0
-    d2 = 0
-    d3 = 0
+    ; 逐欄處理：第 column 欄佔 state[4*column .. 4*column+4)
+    column <- [0..4): {
+        {
+            #{overflow=wrap}
+            col-start ?= column * 4
 
-    ixout559c34 = state[0]: {
-        ok -> it
+            #{overflow=wrap}
+            b0 ?= state[col-start]
 
-        -> _
-    }
+            #{overflow=wrap}
+            b1 ?= state[col-start + 1]
 
-    ixout559c44 = state[1]: {
-        ok -> it
+            #{overflow=wrap}
+            b2 ?= state[col-start + 2]
 
-        -> _
-    }
+            #{overflow=wrap}
+            b3 ?= state[col-start + 3]
 
-    ixout559c54 = state[2]: {
-        ok -> it
+            d0, d1, d2, d3 = inv-mix-col(b0, b1, b2, b3)
 
-        -> _
-    }
+            #{overflow=wrap}
+            state[col-start]: {
+                ok -> it = d0
 
-    ixout559c64 = state[3]: {
-        ok -> it
+                -> _
+            }
 
-        -> _
-    }
+            #{overflow=wrap}
+            state[col-start + 1]: {
+                ok -> it = d1
 
-    d0, d1, d2, d3 = inv-mix-col(ixout559c34, ixout559c44, ixout559c54, ixout559c64)
+                -> _
+            }
 
-    state[0]: {
-        ok -> it = d0
+            #{overflow=wrap}
+            state[col-start + 2]: {
+                ok -> it = d2
 
-        -> _
-    }
+                -> _
+            }
 
-    state[1]: {
-        ok -> it = d1
+            #{overflow=wrap}
+            state[col-start + 3]: {
+                ok -> it = d3
 
-        -> _
-    }
+                -> _
+            }
+        }: {
+            err -> _
 
-    state[2]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[3]: {
-        ok -> it = d3
-
-        -> _
-    }
-
-    ixout586c34 = state[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout586c44 = state[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout586c54 = state[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout586c64 = state[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    d0, d1, d2, d3 = inv-mix-col(ixout586c34, ixout586c44, ixout586c54, ixout586c64)
-
-    state[4]: {
-        ok -> it = d0
-
-        -> _
-    }
-
-    state[5]: {
-        ok -> it = d1
-
-        -> _
-    }
-
-    state[6]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[7]: {
-        ok -> it = d3
-
-        -> _
-    }
-
-    ixout613c34 = state[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout613c44 = state[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout613c54 = state[10]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout613c65 = state[11]: {
-        ok -> it
-
-        -> _
-    }
-
-    d0, d1, d2, d3 = inv-mix-col(ixout613c34, ixout613c44, ixout613c54, ixout613c65)
-
-    state[8]: {
-        ok -> it = d0
-
-        -> _
-    }
-
-    state[9]: {
-        ok -> it = d1
-
-        -> _
-    }
-
-    state[10]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[11]: {
-        ok -> it = d3
-
-        -> _
-    }
-
-    ixout640c34 = state[12]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout640c45 = state[13]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout640c56 = state[14]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout640c67 = state[15]: {
-        ok -> it
-
-        -> _
-    }
-
-    d0, d1, d2, d3 = inv-mix-col(ixout640c34, ixout640c45, ixout640c56, ixout640c67)
-
-    state[12]: {
-        ok -> it = d0
-
-        -> _
-    }
-
-    state[13]: {
-        ok -> it = d1
-
-        -> _
-    }
-
-    state[14]: {
-        ok -> it = d2
-
-        -> _
-    }
-
-    state[15]: {
-        ok -> it = d3
-
-        -> _
+            -> _
+        }
     }
 }
 
@@ -875,20 +573,20 @@ inv-mix-columns = (state []byte) {
 ; [add-round-key](#aes.add-round-key)
 add-round-key = (state []byte, rk []byte) {
     i <- [0..16): {
-        ixout676c25 = state[i]: {
+        state-i = state[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout676c38 = rk[i]: {
+        rk-i = rk[i]: {
             ok -> it
 
             -> _
         }
 
         state[i]: {
-            ok -> it = (ixout676c25) ^ (ixout676c38)
+            ok -> it = (state-i) ^ (rk-i)
 
             -> _
         }
@@ -1109,21 +807,21 @@ key-expand-256 = (key [32]byte) (ek []byte) {
 ; [add-round-key-at](#aes.add-round-key-at)
 add-round-key-at = (state []byte, rk []byte, off i64) {
     i <- [0..16): {
-        ixout885c25 = state[i]: {
+        state-i = state[i]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        ixout885c38 = rk[off + i]: {
+        rk-off-i = rk[off + i]: {
             ok -> it
 
             -> _
         }
 
         state[i]: {
-            ok -> it = (ixout885c25) ^ (ixout885c38)
+            ok -> it = (state-i) ^ (rk-off-i)
 
             -> _
         }
@@ -1215,27 +913,23 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
         inv-sub-bytes(st, 16)
 
         {
-
             #{overflow=wrap}
-            rk-off-opt = round * 16
-            rk-off-opt: {
-                ok -> rk-off = it
+            rk-off ?= round * 16
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         add-round-key-at(st, ek, rk-off)
         inv-mix-columns(st)
 
         {
-
             #{overflow=wrap}
-            round-opt = round - 1
-            round-opt: {
-                ok -> round = it
+            round ?= round - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     inv-shift-rows(st)

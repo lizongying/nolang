@@ -90,14 +90,12 @@ sleep-ns = (ns i64) {
 ; [duration-between](#time.duration-between)
 duration-between = (start i64, end i64) (diff i64) {
     {
-
         #{overflow=wrap}
-        diff-opt = end - start
-        diff-opt: {
-            ok -> diff = it
+        diff ?= end - start
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -108,14 +106,12 @@ duration-between = (start i64, end i64) (diff i64) {
 ; [duration-ms-between](#time.duration-ms-between)
 duration-ms-between = (start i64, end i64) (diff i64) {
     {
-
         #{overflow=wrap}
-        diff-opt2 = end - start
-        diff-opt2: {
-            ok -> diff = it
+        diff ?= end - start
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -126,14 +122,12 @@ duration-ms-between = (start i64, end i64) (diff i64) {
 ; [duration-us-between](#time.duration-us-between)
 duration-us-between = (start i64, end i64) (diff i64) {
     {
-
         #{overflow=wrap}
-        diff-opt3 = end - start
-        diff-opt3: {
-            ok -> diff = it
+        diff ?= end - start
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -156,14 +150,12 @@ since-ms = (start i64) (diff i64) {
     end = now-ms()
 
     {
-
         #{overflow=wrap}
-        diff-opt4 = end - start
-        diff-opt4: {
-            ok -> diff = it
+        diff ?= end - start
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -175,14 +167,12 @@ since-us = (start i64) (diff i64) {
     end = now-us()
 
     {
-
         #{overflow=wrap}
-        diff-opt5 = end - start
-        diff-opt5: {
-            ok -> diff = it
+        diff ?= end - start
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -376,14 +366,12 @@ unix-to-date = (ts i64) (d date) {
 
     rem < 0 -> {
         {
-
             #{overflow=wrap}
-            days-opt = days - 1
-            days-opt: {
-                ok -> days = it
+            days ?= days - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         rem = rem + 86400
     }
@@ -406,14 +394,12 @@ unix-to-date = (ts i64) (d date) {
 
     z < 0 && z % 146097 != 0 -> {
         {
-
             #{overflow=wrap}
-            era-opt = era - 1
-            era-opt: {
-                ok -> era = it
+            era ?= era - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -507,14 +493,12 @@ date-to-unix = (d date) (ts i64) {
     ; 調整：3月為年初
     m <= 2 -> {
         {
-
             #{overflow=wrap}
-            y-opt = y - 1
-            y-opt: {
-                ok -> y = it
+            y ?= y - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -523,14 +507,12 @@ date-to-unix = (d date) (ts i64) {
 
     y < 0 && y % 400 != 0 -> {
         {
-
             #{overflow=wrap}
-            era-opt2 = era - 1
-            era-opt2: {
-                ok -> era = it
+            era ?= era - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -541,23 +523,21 @@ date-to-unix = (d date) (ts i64) {
     {
         m2 > 2 -> {
             {
-                m2-opt = m2 - 3
-                m2-opt: {
-                    ok -> m2 = it
+                m2 ?= m2 - 3
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         -> {
             {
-                m2-opt2 = m2 + 9
-                m2-opt2: {
-                    ok -> m2 = it
+                m2 ?= m2 + 9
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -595,12 +575,11 @@ format-date = (d date) (out str) {
     yr < 0 -> {
         neg = 1
         {
-            yr-opt = 0 - yr
-            yr-opt: {
-                ok -> yr = it
+            yr ?= 0 - yr
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out-len = 19
@@ -616,140 +595,69 @@ format-date = (d date) (out str) {
         pos = 1
     }
 
-    #{overflow=wrap}
-    out[pos]: {
-        ok -> it = (yr / 1000) % 10 + 48
+    ; 逐位寫入。每個下標讀取都是 ?byte（越界為 err），每個算術都是 ?i64
+    ; （#{overflow=wrap} 只改溢出時取的值，不改結果型別），所以 place-match 的
+    ; `it = <expr>` 會把算術那層 err 丟掉。用一個塊形態 match 把這些 ?= 併起來：
+    ; 任一處失敗就整體放棄這次格式化，不必為每個字元各寫一個 match。
+    {
+        #{overflow=wrap}
+        out[pos] ?= (yr / 1000) % 10 + 48
 
-        -> _
-    }
+        #{overflow=wrap}
+        out[pos + 1] ?= (yr / 100) % 10 + 48
 
-    #{overflow=wrap}
-    out[pos + 1]: {
-        ok -> it = (yr / 100) % 10 + 48
+        #{overflow=wrap}
+        out[pos + 2] ?= (yr / 10) % 10 + 48
 
-        -> _
-    }
+        #{overflow=wrap}
+        out[pos + 3] ?= yr % 10 + 48
 
-    #{overflow=wrap}
-    out[pos + 2]: {
-        ok -> it = (yr / 10) % 10 + 48
+        out[pos + 4] ?= 45
 
-        -> _
-    }
+        ; 月
+        #{overflow=wrap}
+        out[pos + 5] ?= d.month / 10 + 48
 
-    #{overflow=wrap}
-    out[pos + 3]: {
-        ok -> it = yr % 10 + 48
+        #{overflow=wrap}
+        out[pos + 6] ?= d.month % 10 + 48
 
-        -> _
-    }
+        out[pos + 7] ?= 45
 
-    #{overflow=wrap}
-    out[pos + 4]: {
-        ok -> it = 45
+        ; 日
+        #{overflow=wrap}
+        out[pos + 8] ?= d.day / 10 + 48
 
-        -> _
-    }
+        #{overflow=wrap}
+        out[pos + 9] ?= d.day % 10 + 48
 
-    ; 月
-    #{overflow=wrap}
-    out[pos + 5]: {
-        ok -> it = d.month / 10 + 48
+        out[pos + 10] ?= 32
 
-        -> _
-    }
+        ; 時
+        #{overflow=wrap}
+        out[pos + 11] ?= d.hour / 10 + 48
 
-    #{overflow=wrap}
-    out[pos + 6]: {
-        ok -> it = d.month % 10 + 48
+        #{overflow=wrap}
+        out[pos + 12] ?= d.hour % 10 + 48
 
-        -> _
-    }
+        out[pos + 13] ?= 58
 
-    #{overflow=wrap}
-    out[pos + 7]: {
-        ok -> it = 45
+        ; 分
+        #{overflow=wrap}
+        out[pos + 14] ?= d.min / 10 + 48
 
-        -> _
-    }
+        #{overflow=wrap}
+        out[pos + 15] ?= d.min % 10 + 48
 
-    ; 日
-    #{overflow=wrap}
-    out[pos + 8]: {
-        ok -> it = d.day / 10 + 48
+        out[pos + 16] ?= 58
 
-        -> _
-    }
+        ; 秒
+        #{overflow=wrap}
+        out[pos + 17] ?= d.sec / 10 + 48
 
-    #{overflow=wrap}
-    out[pos + 9]: {
-        ok -> it = d.day % 10 + 48
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    out[pos + 10]: {
-        ok -> it = 32
-
-        -> _
-    }
-
-    ; 時
-    #{overflow=wrap}
-    out[pos + 11]: {
-        ok -> it = d.hour / 10 + 48
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    out[pos + 12]: {
-        ok -> it = d.hour % 10 + 48
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    out[pos + 13]: {
-        ok -> it = 58
-
-        -> _
-    }
-
-    ; 分
-    #{overflow=wrap}
-    out[pos + 14]: {
-        ok -> it = d.min / 10 + 48
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    out[pos + 15]: {
-        ok -> it = d.min % 10 + 48
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    out[pos + 16]: {
-        ok -> it = 58
-
-        -> _
-    }
-
-    ; 秒
-    #{overflow=wrap}
-    out[pos + 17]: {
-        ok -> it = d.sec / 10 + 48
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    out[pos + 18]: {
-        ok -> it = d.sec % 10 + 48
+        #{overflow=wrap}
+        out[pos + 18] ?= d.sec % 10 + 48
+    }: {
+        err -> _
 
         -> _
     }

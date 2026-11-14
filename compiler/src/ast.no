@@ -409,8 +409,7 @@ ast-str-hash = (sx str) (h i64) {
     i = 0
     n = sx.len-bytes()
     (i < n) {
-        c-opt = sx.byte(i)
-        c = c-opt: {
+        c = sx.byte(i): {
             ok -> it
 
             -> 0
@@ -778,8 +777,7 @@ sub = (s str, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
     (i < b) {
-        sb-opt = s.byte(i)
-        sbv = sb-opt: {
+        sbv = s.byte(i): {
             ok -> it
 
             -> 0
@@ -800,8 +798,7 @@ trim-nl = (s str) (r str) {
     (n > 0) {
 
         #{overflow=wrap}
-        b-opt = s.byte(n - 1)
-        b = b-opt: {
+        b = s.byte(n - 1): {
             ok -> it
 
             -> 0

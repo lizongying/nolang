@@ -100,7 +100,7 @@ out-n = 0
 result = ''
 
 ; ── 測試 1: 剖析物件 ──
-p = pool{}
+p = json.pool{}
 p.init()
 root, next, ok = p.parse(json-str, 0)
 {

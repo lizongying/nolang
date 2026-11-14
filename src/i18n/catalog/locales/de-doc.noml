@@ -407,7 +407,7 @@ Rückgabe ok bool: true = Erfolg, false = der Stapel ist voll
 `
   'arr.asc': '[n]t.asc: sortiert aufsteigend an Ort und Stelle (Einfügungssortierung)'
   'arr.at': `
-[n]t.at: sicherer indexierter Zugriff
+[veraltet] [n]t.at: sicherer indexierter Zugriff — verwende stattdessen a[i] (native Indizierung, gibt ?t zurück; außerhalb des Bereichs ergibt err)
 i i64: der Index
 Rückgabe val ?t: nil bei außerhalb des Bereichs
 `
@@ -9983,7 +9983,7 @@ Gibt die UUID-Version zurück
 v: die UUID-Versionsnummer (die obersten 4 Bits von byte6, 4 bei v4)
 `
   'vec.at': `
-[]t.at: sicherer indizierter Zugriff; nil außerhalb des Bereichs
+[veraltet] []t.at: sicherer indizierter Zugriff; nil außerhalb des Bereichs — verwende stattdessen v[i] (native Indizierung, gibt ?t zurück; außerhalb des Bereichs ergibt err)
 Hinweis: sz = .len() erzwingt den vec-Selbsttyp, sodass er nicht versehentlich zu einer arr-Methode spezialisiert wird
 `
   'vec.clone': '[]t.clone: kopiert das Slice'

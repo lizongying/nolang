@@ -77,42 +77,25 @@ keccak-f1600 = (state []u64) {
         ; θ (theta)
         c [5]u64
         x <- [0..5): {
-            ixout81c28 = state[x]: {
-                ok -> it
+            ; 每列的 5 個 lane 依 stride 5 展開後 XOR 起來
+            column u64 = 0
+            k <- [0..5): {
+                {
+                    #{overflow=wrap}
+                    lane-at ?= x + k * 5
 
-                -> _
-            }
+                    lane ?= state[lane-at]
 
-            #{overflow=wrap}
-            ixout81c39 = state[x + 5]: {
-                ok -> it
+                    column = column ^ lane
+                }: {
+                    err -> _
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout81c54 = state[x + 10]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout81c70 = state[x + 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout81c86 = state[x + 20]: {
-                ok -> it
-
-                -> _
+                    -> _
+                }
             }
 
             c[x]: {
-                ok -> it = ixout81c28 ^ ixout81c39 ^ ixout81c54 ^ ixout81c70 ^ ixout81c86
+                ok -> it = column
 
                 -> _
             }
@@ -126,20 +109,20 @@ keccak-f1600 = (state []u64) {
             #{overflow=wrap}
             x4 = (x + 4) % 5
 
-            ixout97c28 = c[x4]: {
+            c-x4 = c[x4]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout97c43 = c[x1]: {
+            c-x1 = c[x1]: {
                 ok -> it
 
                 -> _
             }
 
             d[x]: {
-                ok -> it = ixout97c28 ^ rotl64(ixout97c43, 1)
+                ok -> it = c-x4 ^ rotl64(c-x1, 1)
 
                 -> _
             }
@@ -148,13 +131,13 @@ keccak-f1600 = (state []u64) {
             y <- [0..5): {
 
                 #{overflow=wrap}
-                ixout107c32 = state[x + 5 * y]: {
+                state-x-5-y = state[x + 5 * y]: {
                     ok -> it
 
                     -> _
                 }
 
-                ixout107c51 = d[x]: {
+                d-x = d[x]: {
                     ok -> it
 
                     -> _
@@ -162,7 +145,7 @@ keccak-f1600 = (state []u64) {
 
                 #{overflow=wrap}
                 state[x + 5 * y]: {
-                    ok -> it = ixout107c32 ^ ixout107c51
+                    ok -> it = state-x-5-y ^ d-x
 
                     -> _
                 }
@@ -212,21 +195,21 @@ keccak-f1600 = (state []u64) {
                 x2 = (x + 2) % 5
 
                 #{overflow=wrap}
-                ixout158c32 = b[x + 5 * y]: {
+                b-x-5-y = b[x + 5 * y]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                ixout158c63 = b[x1 + 5 * y]: {
+                b-x1-5-y = b[x1 + 5 * y]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                ixout158c80 = b[x2 + 5 * y]: {
+                b-x2-5-y = b[x2 + 5 * y]: {
                     ok -> it
 
                     -> _
@@ -234,7 +217,7 @@ keccak-f1600 = (state []u64) {
 
                 #{overflow=wrap}
                 state[x + 5 * y]: {
-                    ok -> it = ixout158c32 ^ ((SHA3-MASK64 ^ ixout158c63) & ixout158c80)
+                    ok -> it = b-x-5-y ^ ((SHA3-MASK64 ^ b-x1-5-y) & b-x2-5-y)
 
                     -> _
                 }
@@ -242,20 +225,20 @@ keccak-f1600 = (state []u64) {
         }
 
         ; ι (iota)
-        ixout168c24 = state[0]: {
+        lane-zero = state[0]: {
             ok -> it
 
             -> _
         }
 
-        ixout168c35 = KECCAK-RC[round]: {
+        keccak-rc-round = KECCAK-RC[round]: {
             ok -> it
 
             -> _
         }
 
         state[0]: {
-            ok -> it = ixout168c24 ^ ixout168c35
+            ok -> it = lane-zero ^ keccak-rc-round
 
             -> _
         }
@@ -309,14 +292,14 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
                 -> 0
             }
 
-            ixout226c28 = state[lane-idx]: {
+            state-lane-idx = state[lane-idx]: {
                 ok -> it
 
                 -> _
             }
 
             state[lane-idx]: {
-                ok -> it = ixout226c28 ^ (w << (byte-idx * 8))
+                ok -> it = state-lane-idx ^ (w << (byte-idx * 8))
 
                 -> _
             }
@@ -325,14 +308,12 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         keccak-f1600(state)
 
         {
-
             #{overflow=wrap}
-            absorbed-opt = absorbed + rate
-            absorbed-opt: {
-                ok -> absorbed = it
+            absorbed ?= absorbed + rate
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -355,14 +336,14 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
                 -> 0
             }
 
-            ixout259c28 = state[lane-idx]: {
+            state-lane-idx = state[lane-idx]: {
                 ok -> it
 
                 -> _
             }
 
             state[lane-idx]: {
-                ok -> it = ixout259c28 ^ (w << (byte-idx * 8))
+                ok -> it = state-lane-idx ^ (w << (byte-idx * 8))
 
                 -> _
             }
@@ -381,14 +362,14 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     #{overflow=wrap}
     pad-byte-idx = remaining % 8
 
-    ixout280c20 = state[pad-lane-idx]: {
+    state-pad-lane-idx = state[pad-lane-idx]: {
         ok -> it
 
         -> _
     }
 
     state[pad-lane-idx]: {
-        ok -> it = ixout280c20 ^ (s-term << (pad-byte-idx * 8))
+        ok -> it = state-pad-lane-idx ^ (s-term << (pad-byte-idx * 8))
 
         -> _
     }
@@ -399,14 +380,14 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
     #{overflow=wrap}
     last-byte-idx = (rate - 1) % 8
 
-    ixout293c20 = state[last-lane-idx]: {
+    state-last-lane-idx = state[last-lane-idx]: {
         ok -> it
 
         -> _
     }
 
     state[last-lane-idx]: {
-        ok -> it = ixout293c20 ^ (SHA3-PAD-HIGH << (last-byte-idx * 8))
+        ok -> it = state-last-lane-idx ^ (SHA3-PAD-HIGH << (last-byte-idx * 8))
 
         -> _
     }
@@ -427,26 +408,28 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
                 #{overflow=wrap}
                 byte-idx = i % 8
 
-                ixout315c38 = state[lane-idx]: {
+                state-lane-idx = state[lane-idx]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                out[squeezed + i] = (ixout315c38 >> (byte-idx * 8)) & 255
+                out[squeezed + i]: {
+                    ok -> it = (state-lane-idx >> (byte-idx * 8)) & 255
+
+                    -> _
+                }
             }
         }
 
         {
-
             #{overflow=wrap}
-            squeezed-opt = squeezed + rate
-            squeezed-opt: {
-                ok -> squeezed = it
+            squeezed ?= squeezed + rate
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         squeezed < out-len -> keccak-f1600(state)
     }
@@ -527,36 +510,16 @@ sha3-224-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(56)
     i <- [0..28): {
-        ixout532c39 = hash[i]: {
-            ok -> it
+        {
+            word ?= hash[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex[i * 2]: {
-            ok -> it = hex-chars[(ixout532c39 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout539c38 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout539c38 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }
@@ -572,36 +535,16 @@ sha3-256-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(64)
     i <- [0..32): {
-        ixout558c39 = hash[i]: {
-            ok -> it
+        {
+            word ?= hash[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex[i * 2]: {
-            ok -> it = hex-chars[(ixout558c39 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout565c38 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout565c38 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }
@@ -617,36 +560,16 @@ sha3-384-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(96)
     i <- [0..48): {
-        ixout584c39 = hash[i]: {
-            ok -> it
+        {
+            word ?= hash[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex[i * 2]: {
-            ok -> it = hex-chars[(ixout584c39 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout591c38 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout591c38 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }
@@ -662,36 +585,16 @@ sha3-512-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex str = with-len(128)
     i <- [0..64): {
-        ixout610c39 = hash[i]: {
-            ok -> it
+        {
+            word ?= hash[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex[i * 2]: {
-            ok -> it = hex-chars[(ixout610c39 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout617c38 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout617c38 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }

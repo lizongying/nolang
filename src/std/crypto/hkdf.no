@@ -69,14 +69,12 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
 
     counter > 0 -> {
         {
-
             #{overflow=wrap}
-            msg-len-opt = msg-len + 1
-            msg-len-opt: {
-                ok -> msg-len = it
+            msg-len ?= msg-len + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     msg []byte = with-len(msg-len)
@@ -185,14 +183,12 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 #{overflow=wrap}
                 off + copy-n > out-len -> {
                     {
-
                         #{overflow=wrap}
-                        copy-n-opt = out-len - off
-                        copy-n-opt: {
-                            ok -> copy-n = it
+                        copy-n ?= out-len - off
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
                 i <- [0..copy-n): {
@@ -208,25 +204,21 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 }
 
                 {
-
                     #{overflow=wrap}
-                    off-opt = off + copy-n
-                    off-opt: {
-                        ok -> off = it
+                    off ?= off + copy-n
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
 
                 {
-
                     #{overflow=wrap}
-                    counter-opt = counter + 1
-                    counter-opt: {
-                        ok -> counter = it
+                    counter ?= counter + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -304,14 +296,12 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt = pos + 1
-        pos-opt: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; context bytes

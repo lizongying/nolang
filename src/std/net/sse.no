@@ -462,14 +462,12 @@ client.reconnect = () (ok bool) {
         }
 
         {
-
             #{overflow=wrap}
-            total-opt = total + n
-            total-opt: {
-                ok -> total = it
+            total ?= total + n
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         data = raw.slice(0, total)
         sep-pos = data.index(separator)

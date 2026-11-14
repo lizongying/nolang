@@ -86,14 +86,12 @@ url-parse = (url-str str) (u url-info) {
     u.scheme = url-str.slice(0, scheme-end)
 
     {
-
         #{overflow=wrap}
-        pos-opt = scheme-end + 3
-        pos-opt: {
-            ok -> pos = it
+        pos ?= scheme-end + 3
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 解析 fragment（#）
@@ -546,18 +544,14 @@ url-decode = (s str) (out str) {
                 ; %XX（僅當後兩字節均為有效十六進位才解碼，否則直通 '%'）
 
                 #{overflow=wrap}
-                h1-opt = s.byte(i + 1)
-
-                h1 i64 = h1-opt: {
+                h1 i64 = s.byte(i + 1): {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                h2-opt = s.byte(i + 2)
-
-                h2 i64 = h2-opt: {
+                h2 i64 = s.byte(i + 2): {
                     ok -> it
 
                     -> _
@@ -570,34 +564,31 @@ url-decode = (s str) (out str) {
                 {
                     h1 >= 48 && h1 <= 57 -> {
                         {
-                            v1-opt = h1 - 48
-                            v1-opt: {
-                                ok -> v1 = it
+                            v1 ?= h1 - 48
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     h1 >= 65 && h1 <= 70 -> {
                         {
-                            v1-opt2 = h1 - 55
-                            v1-opt2: {
-                                ok -> v1 = it
+                            v1 ?= h1 - 55
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     h1 >= 97 && h1 <= 102 -> {
                         {
-                            v1-opt3 = h1 - 87
-                            v1-opt3: {
-                                ok -> v1 = it
+                            v1 ?= h1 - 87
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
@@ -606,34 +597,31 @@ url-decode = (s str) (out str) {
                 {
                     h2 >= 48 && h2 <= 57 -> {
                         {
-                            v2-opt = h2 - 48
-                            v2-opt: {
-                                ok -> v2 = it
+                            v2 ?= h2 - 48
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     h2 >= 65 && h2 <= 70 -> {
                         {
-                            v2-opt2 = h2 - 55
-                            v2-opt2: {
-                                ok -> v2 = it
+                            v2 ?= h2 - 55
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     h2 >= 97 && h2 <= 102 -> {
                         {
-                            v2-opt3 = h2 - 87
-                            v2-opt3: {
-                                ok -> v2 = it
+                            v2 ?= h2 - 87
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
@@ -651,14 +639,12 @@ url-decode = (s str) (out str) {
                         }
 
                         {
-
                             #{overflow=wrap}
-                            i-opt = i + 2
-                            i-opt: {
-                                ok -> i = it
+                            i ?= i + 2
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
@@ -701,14 +687,12 @@ url-decode = (s str) (out str) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt2 = i + 1
-            i-opt2: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out = out-b.slice(0, on).to-bytes-str()
@@ -853,13 +837,13 @@ url-parse-basic-auth = (header str) (user str, password str) {
     ; 尋找冒號分隔符
     colon = -1
     i <- [0..raw.len()): {
-        ixout657c12 = raw[i]: {
+        raw-i = raw[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout657c12 == 58 -> {
+        raw-i == 58 -> {
             colon = i
             break
         }
@@ -878,12 +862,11 @@ url-parse-basic-auth = (header str) (user str, password str) {
         }
     }
     {
-        user-opt = user-bytes.to-str()
-        user-opt: {
-            ok -> user = it
+        user ?= user-bytes.to-str()
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     pass-bytes []byte
     k = 0
@@ -898,22 +881,19 @@ url-parse-basic-auth = (header str) (user str, password str) {
         }
 
         {
-
             #{overflow=wrap}
-            k-opt = k + 1
-            k-opt: {
-                ok -> k = it
+            k ?= k + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     {
-        password-opt = pass-bytes.to-str()
-        password-opt: {
-            ok -> password = it
+        password ?= pass-bytes.to-str()
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }

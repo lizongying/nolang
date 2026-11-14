@@ -43,7 +43,7 @@
 # /compiler/src/ck
 # /compiler/src/ck-sig
 
-ll = drv.pkg-ll('compiler/tests/t5/call-entry.no')
+ll = drv.pkg-ll('compiler/tests/t5/call-entry.no', false)
 print('pkg-ll-call: produced ' - ll.len-bytes().to-str() - ' bytes of IR')
 
 ; 先落到磁碟，再交 opt 驗證（避免 opt 讀不到檔、讀到陳舊檔）

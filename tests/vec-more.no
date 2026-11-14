@@ -11,10 +11,20 @@ test-vec-reverse-4 = () {
     v.push(3)
     v.push(4)
     v.reverse()
-    print(v[0])
-    print(v[1])
-    print(v[2])
-    print(v[3])
+    {
+        rev-0 ?= v[0]
+        rev-1 ?= v[1]
+        rev-2 ?= v[2]
+        rev-3 ?= v[3]
+        print(rev-0)
+        print(rev-1)
+        print(rev-2)
+        print(rev-3)
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 3 元素反轉，應輸出 3 2 1
@@ -24,9 +34,18 @@ test-vec-reverse-3 = () {
     v.push(2)
     v.push(3)
     v.reverse()
-    print(v[0])
-    print(v[1])
-    print(v[2])
+    {
+        rev-0 ?= v[0]
+        rev-1 ?= v[1]
+        rev-2 ?= v[2]
+        print(rev-0)
+        print(rev-1)
+        print(rev-2)
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 空切片反轉不報錯
@@ -41,7 +60,14 @@ test-vec-reverse-single = () {
     v []i64 = with-cap(4)
     v.push(42)
     v.reverse()
-    print(v[0])
+    {
+        only ?= v[0]
+        print(only)
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 test-vec-reverse-4()
 print('---')
@@ -58,14 +84,35 @@ test-vec-insert = () {
     v.push(1)
     v.push(3)
     v.insert(1, 2)
-    print(v[0])
-    print(v[1])
-    print(v[2])
+    {
+        ins-0 ?= v[0]
+        ins-1 ?= v[1]
+        ins-2 ?= v[2]
+        print(ins-0)
+        print(ins-1)
+        print(ins-2)
+    }: {
+        err -> _
+
+        -> _
+    }
     v.insert(3, 4)
-    print(v[3])
+    v[3]: {
+        err -> _
+
+        -> print(it)
+    }
     v.insert(0, 0)
-    print(v[0])
-    print(v[1])
+    {
+        head-0 ?= v[0]
+        head-1 ?= v[1]
+        print(head-0)
+        print(head-1)
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 remove 刪除並返回，越界返回 nil
@@ -82,8 +129,16 @@ test-vec-remove = () {
 
         -> print(it)
     }
-    print(v[0])
-    print(v[1])
+    {
+        left-0 ?= v[0]
+        left-1 ?= v[1]
+        print(left-0)
+        print(left-1)
+    }: {
+        err -> _
+
+        -> _
+    }
     r2 = v.remove(99)
     r2: {
         nil -> print('nil ok')
@@ -141,7 +196,7 @@ test-vec-first-last = () {
     }
 }
 
-; 測試 at 安全索引，越界返回 nil
+; 測試 at 安全索引（界內保留覆蓋）；越界改用 v[i]，結果是 err 而非 nil
 test-vec-at = () {
     v []i64 = with-cap(8)
     v.push(10)
@@ -155,17 +210,17 @@ test-vec-at = () {
 
         -> print(it)
     }
-    a2 = v.at(5)
-    a2: {
-        nil -> print('nil ok')
+    v[5]: {
+        err -> print('err ok')
 
-        -> print('not nil')
+        -> print('not err')
     }
-    a3 = v.at(-1)
-    a3: {
-        nil -> print('nil ok')
+    #{overflow=wrap}
+    j = 0 - 1
+    v[j]: {
+        err -> print('err ok')
 
-        -> print('not nil')
+        -> print('not err')
     }
 }
 
@@ -176,9 +231,18 @@ test-vec-swap = () {
     v.push(2)
     v.push(3)
     v.swap(0, 2)
-    print(v[0])
-    print(v[1])
-    print(v[2])
+    {
+        sw-0 ?= v[0]
+        sw-1 ?= v[1]
+        sw-2 ?= v[2]
+        print(sw-0)
+        print(sw-1)
+        print(sw-2)
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 max / min，含空切片
@@ -233,8 +297,16 @@ test-vec-truncate = () {
     v.push(3)
     v.push(4)
     v.truncate(2)
-    print(v[0])
-    print(v[1])
+    {
+        kept-0 ?= v[0]
+        kept-1 ?= v[1]
+        print(kept-0)
+        print(kept-1)
+    }: {
+        err -> _
+
+        -> _
+    }
     print(v.len())
     v.truncate(10)
     print(v.len())
@@ -250,11 +322,22 @@ test-vec-extend = () {
     b.push(4)
     b.push(5)
     v.extend(b)
-    print(v[0])
-    print(v[1])
-    print(v[2])
-    print(v[3])
-    print(v[4])
+    {
+        ext-0 ?= v[0]
+        ext-1 ?= v[1]
+        ext-2 ?= v[2]
+        ext-3 ?= v[3]
+        ext-4 ?= v[4]
+        print(ext-0)
+        print(ext-1)
+        print(ext-2)
+        print(ext-3)
+        print(ext-4)
+    }: {
+        err -> _
+
+        -> _
+    }
     print(v.len())
 }
 
@@ -302,22 +385,46 @@ test-vec-to-str()
 test-vec-elem = () {
     outer [][]i64 = with-len(1)
     inner = [1, 2, 3]
-    outer[0] = inner
+    outer[0]: {
+        ok -> it = inner
+
+        -> _
+    }
     inner = [9, 9, 9]
-    print(outer[0][0]); 1
+    {
+        row ?= outer[0]
+        cell ?= row[0]
+        print(cell); 1
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 來源「原位寫入」（不是重綁）—— 深拷貝下容器應看到舊值
 test-vec-elem-inplace = () {
     outer [][]i64 = with-len(1)
     inner = [1, 2, 3]
-    outer[0] = inner
+    outer[0]: {
+        ok -> it = inner
+
+        -> _
+    }
     inner[0]: {
         ok -> it = 99
 
         -> _
     }
-    print(outer[0][0]); 1
+    {
+        row ?= outer[0]
+        cell ?= row[0]
+        print(cell); 1
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 兩層巢狀：外層元素是 []i64，內層元素是 i64
@@ -325,12 +432,30 @@ test-vec-nested = () {
     a = [7, 8]
     b = [1, 2]
     outer [][]i64 = with-len(2)
-    outer[0] = a
-    outer[1] = b
+    outer[0]: {
+        ok -> it = a
+
+        -> _
+    }
+    outer[1]: {
+        ok -> it = b
+
+        -> _
+    }
     a = [0, 0]
     b = [0, 0]
-    print(outer[0][0]); 7
-    print(outer[1][1]); 2
+    {
+        row-0 ?= outer[0]
+        row-1 ?= outer[1]
+        head-0 ?= row-0[0]
+        head-1 ?= row-1[1]
+        print(head-0); 7
+        print(head-1); 2
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; map 的值 + 來源重綁（同一元素寫入路徑）
@@ -355,7 +480,15 @@ test-push-control = () {
     inner = [5, 6]
     outer.push(inner)
     inner = [0, 0]
-    print(outer[0][0]); 5
+    {
+        row ?= outer[0]
+        cell ?= row[0]
+        print(cell); 5
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 test-vec-elem()
 test-vec-elem-inplace()
@@ -402,10 +535,20 @@ test-sum-min = () {
     print('len:')
     print(v.len())
     print('elems:')
-    print(v[0])
-    print(v[1])
-    print(v[2])
-    print(v[3])
+    {
+        elems-0 ?= v[0]
+        elems-1 ?= v[1]
+        elems-2 ?= v[2]
+        elems-3 ?= v[3]
+        print(elems-0)
+        print(elems-1)
+        print(elems-2)
+        print(elems-3)
+    }: {
+        err -> _
+
+        -> _
+    }
     s = v.sum()
     print('sum:')
     print(s)
@@ -414,64 +557,64 @@ test-sum-min()
 
 ; from vec-assign.no / vec-assign2.no — []u32 元素讀寫 + sha256-block
 ; 頂層片段：直接索引寫入僅在模組作用域合法，保留原語義。
-vaBlock []u32 = [
+va-block []u32 = [
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
 ]
 print('start')
 print('block init done')
-print(vaBlock[0])
-print(vaBlock[15])
-vaBlock[0] = 1
-vaBlock[1] = 2
+print(va-block[0])
+print(va-block[15])
+va-block[0] = 1
+va-block[1] = 2
 print('assign done')
-print(vaBlock[0])
-print(vaBlock[1])
-vaH0 u32 = 1779033703
-vaH1 u32 = 3144134277
-vaH2 u32 = 1013904242
-vaH3 u32 = 2773480762
-vaH4 u32 = 1359893119
-vaH5 u32 = 2600822924
-vaH6 u32 = 528734635
-vaH7 u32 = 1541459225
-sha256.sha256-block(vaBlock, vaH0, vaH1, vaH2, vaH3, vaH4, vaH5, vaH6, vaH7)
+print(va-block[0])
+print(va-block[1])
+va-h0 u32 = 1779033703
+va-h1 u32 = 3144134277
+va-h2 u32 = 1013904242
+va-h3 u32 = 2773480762
+va-h4 u32 = 1359893119
+va-h5 u32 = 2600822924
+va-h6 u32 = 528734635
+va-h7 u32 = 1541459225
+sha256.sha256-block(va-block, va-h0, va-h1, va-h2, va-h3, va-h4, va-h5, va-h6, va-h7)
 print('sha256-block done')
-print(vaH0)
+print(va-h0)
 print('done')
 
 ; from vec-u32-read.no — 驗證 []u32 元素讀取回傳正確值
-urBlock []u32 = [
+ur-block []u32 = [
     1633837952, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 24,
 ]
 print('start')
-print(urBlock[0])
-print(urBlock[15])
+print(ur-block[0])
+print(ur-block[15])
 print('done')
 
 ; from u32-vec.no — 測試 []u32 數組字面量寫入
-uvBlock []u32 = [
+uv-block []u32 = [
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
 ]
 print('start')
 print('after init')
-uvBlock[0] = 0x12345678
-print(uvBlock[0])
+uv-block[0] = 0x12345678
+print(uv-block[0])
 print('done')
 
 ; from vec-len.no — []byte 的 len 欄位與寫入增長
-vlMsg []byte = with-cap(2)
+vl-msg []byte = with-cap(2)
 print('start')
 print('before len')
-vlN = vlMsg.len()
+vl-n = vl-msg.len()
 print('after len')
-print(vlN)
-vlMsg[0] = 0x61
-vlMsg[1] = 0x62
-vlN = vlMsg.len()
-print(vlN)
+print(vl-n)
+vl-msg[0] = 0x61
+vl-msg[1] = 0x62
+vl-n = vl-msg.len()
+print(vl-n)
 print('done')
 
 ; from vec-push-clear.no — vec.push 與 vec.clear
@@ -498,26 +641,26 @@ print(data[1])
 print('done')
 
 ; from vec-str-to-str.no — []str.to-str 依長度格式化且不得崩潰
-sstA = [
+sst-a = [
     'a',
     'b',
     'c',
 ]
-print(sstA.to-str())
-sstV = [
+print(sst-a.to-str())
+sst-v = [
     'hello',
     'world',
     'foo',
 ]
-print(sstV[0])
-print(sstV.to-str())
+print(sst-v[0])
+print(sst-v.to-str())
 
 ; from vec-to-str-flaky.no — 多元素 []i64.to-str 必須確定性正確
-flakyV []i64 = with-cap(8)
-flakyV.push(1)
-flakyV.push(2)
-flakyV.push(3)
-flakyV.push(10)
-flakyV.push(20)
-flakyV.push(256)
-print(flakyV.to-str())
+flaky-v []i64 = with-cap(8)
+flaky-v.push(1)
+flaky-v.push(2)
+flaky-v.push(3)
+flaky-v.push(10)
+flaky-v.push(20)
+flaky-v.push(256)
+print(flaky-v.to-str())

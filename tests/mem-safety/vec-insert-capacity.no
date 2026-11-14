@@ -46,8 +46,16 @@ test-struct-insert-after-push = () (ok bool) {
     people.insert(0, a)
 
     people.len() == 2 -> ok = true
-    people[0].name == 'A' -> ok = true
-    people[1].name == 'A' -> ok = true
+    {
+        first ?= people[0]
+        second ?= people[1]
+        first.name == 'A' -> ok = true
+        second.name == 'A' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 2：push 4 次把 cap 撐到 4（1→2→4），此時 len==cap==4，
@@ -73,10 +81,23 @@ test-insert-when-len-equals-cap = () (ok bool) {
     people.push(p3)
 
     people.len() == 4 -> ok = true
-    people.insert(0, people[0])
+    head = people[0]: {
+        ok -> it
+
+        -> p0
+    }
+    people.insert(0, head)
     people.len() == 5 -> ok = true
-    people[0].name == 'n0' -> ok = true
-    people[4].name == 'n3' -> ok = true
+    {
+        head ?= people[0]
+        tail ?= people[4]
+        head.name == 'n0' -> ok = true
+        tail.name == 'n3' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 3：[]i64 —— 修復前「靠 malloc 餘量僥倖正確」，修復後必須真的正確
@@ -87,8 +108,16 @@ test-i64-insert-after-push = () (ok bool) {
     v.insert(0, 99)
 
     v.len() == 2 -> ok = true
-    v[0] == 99 -> ok = true
-    v[1] == 10 -> ok = true
+    {
+        first ?= v[0]
+        second ?= v[1]
+        first == 99 -> ok = true
+        second == 10 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 4：insert 到中間（非 append 分支），並確認擴容後舊元素沒有遺失
@@ -101,10 +130,20 @@ test-insert-middle-keeps-elements = () (ok bool) {
     v.insert(1, 99)
 
     v.len() == 4 -> ok = true
-    v[0] == 1 -> ok = true
-    v[1] == 99 -> ok = true
-    v[2] == 2 -> ok = true
-    v[3] == 3 -> ok = true
+    {
+        e0 ?= v[0]
+        e1 ?= v[1]
+        e2 ?= v[2]
+        e3 ?= v[3]
+        e0 == 1 -> ok = true
+        e1 == 99 -> ok = true
+        e2 == 2 -> ok = true
+        e3 == 3 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ok1 = test-struct-insert-after-push()

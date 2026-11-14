@@ -491,14 +491,12 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-ANY
 
         {
-
             #{overflow=wrap}
-            result-i-opt = i + 1
-            result-i-opt: {
-                ok -> result-i = it
+            result-i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -519,14 +517,12 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         .tmp-atom-char = c
 
         {
-
             #{overflow=wrap}
-            result-i-opt2 = i + 1
-            result-i-opt2: {
-                ok -> result-i = it
+            result-i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     new-i = result-i
@@ -549,14 +545,12 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     n = pattern.len-bytes()
 
     {
-
         #{overflow=wrap}
-        ri-opt2 = ri + 1
-        ri-opt2: {
-            ok -> ri = it
+        ri ?= ri + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 檢查反向 ^
@@ -566,12 +560,11 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         pattern[ri] == 94 -> {
             negated = 1
             {
-                ri-opt3 = ri + 1
-                ri-opt3: {
-                    ok -> ri = it
+                ri ?= ri + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -587,14 +580,12 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         ; 結束（非首字元）
         c == 93 && first == 0 -> {
             {
-
                 #{overflow=wrap}
-                ri-opt4 = ri + 1
-                ri-opt4: {
-                    ok -> ri = it
+                ri ?= ri + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             break
         }
@@ -625,12 +616,11 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                         k = k + 1
                     }
                     {
-                        next-i-opt = ri + 3
-                        next-i-opt: {
-                            ok -> next-i = it
+                        next-i ?= ri + 3
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
@@ -641,14 +631,12 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             ; 跳脫序列
             c == 92 -> {
                 {
-
                     #{overflow=wrap}
-                    next-i-opt2 = ri + 1
-                    next-i-opt2: {
-                        ok -> next-i = it
+                    next-i ?= ri + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 ri < n -> {
 
@@ -657,12 +645,11 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                     esc-c char = pattern[ri + 1]
                     .set-class-escape(cls-idx, esc-c)
                     {
-                        next-i-opt3 = ri + 2
-                        next-i-opt3: {
-                            ok -> next-i = it
+                        next-i ?= ri + 2
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
@@ -715,14 +702,12 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     n = pattern.len-bytes()
 
     {
-
         #{overflow=wrap}
-        ri-opt5 = ri + 1
-        ri-opt5: {
-            ok -> ri = it
+        ri ?= ri + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     ri >= n -> {
         new-i = result-i
@@ -737,12 +722,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-digits()
         {
-            result-i-opt3 = ri + 1
-            result-i-opt3: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -751,12 +735,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nondigits()
         {
-            result-i-opt4 = ri + 1
-            result-i-opt4: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -765,12 +748,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-word()
         {
-            result-i-opt5 = ri + 1
-            result-i-opt5: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -779,12 +761,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonword()
         {
-            result-i-opt6 = ri + 1
-            result-i-opt6: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -793,12 +774,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-space()
         {
-            result-i-opt7 = ri + 1
-            result-i-opt7: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -807,12 +787,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonspace()
         {
-            result-i-opt8 = ri + 1
-            result-i-opt8: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -820,12 +799,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 110 -> {
         .tmp-atom-char = 10
         {
-            result-i-opt9 = ri + 1
-            result-i-opt9: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -833,12 +811,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 116 -> {
         .tmp-atom-char = 9
         {
-            result-i-opt10 = ri + 1
-            result-i-opt10: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -846,12 +823,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 114 -> {
         .tmp-atom-char = 13
         {
-            result-i-opt11 = ri + 1
-            result-i-opt11: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -859,12 +835,11 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> {
         .tmp-atom-char = c
         {
-            result-i-opt12 = ri + 1
-            result-i-opt12: {
-                ok -> result-i = it
+            result-i ?= ri + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     new-i = result-i
@@ -1163,14 +1138,12 @@ regexp.matches = (text str) (matched bool) {
         }
 
         {
-
             #{overflow=wrap}
-            sp-opt = sp + 1
-            sp-opt: {
-                ok -> sp = it
+            sp ?= sp + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     matched = result-matched
@@ -1216,14 +1189,12 @@ regexp.find = (text str) (result str) {
         }
 
         {
-
             #{overflow=wrap}
-            sp-opt2 = sp + 1
-            sp-opt2: {
-                ok -> sp = it
+            sp ?= sp + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }

@@ -37,27 +37,27 @@ t-hex-twoblock = () {
 ; 位元組介面與 hex 介面一致：前兩位元組應為 0xa9 / 0x99，末位元組 0x9d
 t-bytes-match-hex = () {
     h = sha1.sha1(ABC.to-bytes())
-    ixout40c16 = h[0]: {
+    h-0 = h[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout40c16, 0xa9, 'sha1 byte[0]')
-    ixout41c16 = h[1]: {
+    runner.eq(h-0, 0xa9, 'sha1 byte[0]')
+    h-1 = h[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout41c16, 0x99, 'sha1 byte[1]')
-    ixout42c16 = h[19]: {
+    runner.eq(h-1, 0x99, 'sha1 byte[1]')
+    h-19 = h[19]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout42c16, 0x9d, 'sha1 byte[19] == 0x9d')
+    runner.eq(h-19, 0x9d, 'sha1 byte[19] == 0x9d')
 }
 
 p1 = runner.test('sha1.digest-len', t-len)

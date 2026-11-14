@@ -138,7 +138,7 @@ hex-chars = '0123456789abcdef'
 #{ascii}
 got str = with-len(64)
 i <- [0..32): {
-    ixout67c29 = h-1[i]: {
+    h-1-i = h-1[i]: {
         ok -> it
 
         -> _
@@ -147,14 +147,14 @@ i <- [0..32): {
     {
 
         #{overflow=wrap}
-        got[i * 2] ?= hex-chars[(ixout67c29 >> 4) & 15]
+        got[i * 2] ?= hex-chars[(h-1-i >> 4) & 15]
     }: {
         err -> _
 
         -> _
     }
 
-    ixout70c32 = h-1[i]: {
+    h-1-i-2 = h-1[i]: {
         ok -> it
 
         -> _
@@ -163,7 +163,7 @@ i <- [0..32): {
     {
 
         #{overflow=wrap}
-        got[i * 2 + 1] ?= hex-chars[ixout70c32 & 15]
+        got[i * 2 + 1] ?= hex-chars[h-1-i-2 & 15]
     }: {
         err -> _
 

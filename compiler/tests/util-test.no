@@ -11,7 +11,7 @@
 # /test/runner.failed-count
 # /test/runner.summary
 # /compiler/src/util/sb.sb
-# /compiler/src/util/intern.intern
+# /compiler/src/util/intern.itab
 
 ; ═══════════════════════════════════════════════
 ; sb — 字串構建器
@@ -108,15 +108,25 @@ test-intern-many = () {
     ; 每個鍵都要查得到，且 id == k+1
     ok-count = 0
     k <- [0..100): {
-        id = intern.get(t, keys[k])
+        key = keys[k]: {
+            ok -> it
+
+            -> ''
+        }
+        id = intern.get(t, key)
 
         #{overflow=wrap}
         expect = k + 1
         {
             id == expect -> {
 
-                #{overflow=wrap}
-                ok-count = ok-count + 1
+                {
+                    #{overflow=wrap}
+                    ok-count ?= ok-count + 1
+                }: { err -> _
+
+                    -> _
+                }
             }
 
             -> {

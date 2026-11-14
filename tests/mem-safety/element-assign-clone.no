@@ -25,8 +25,16 @@ test-vec-str-assign = () (ok bool) {
     }
     a = 'changed'
 
-    s[0] == 'original' -> ok = true
-    s[1] == 'world' -> ok = true
+    {
+        first ?= s[0]
+        second ?= s[1]
+        first == 'original' -> ok = true
+        second == 'world' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 2：vec[i] = strVar — 反覆賦值同一索引（驗證釋放舊值，不洩漏）
@@ -55,8 +63,16 @@ test-vec-str-reassign = () (ok bool) {
         -> _
     }
 
-    s[0] == 'ccc' -> ok = true
-    s[1] == 'second' -> ok = true
+    {
+        first ?= s[0]
+        second ?= s[1]
+        first == 'ccc' -> ok = true
+        second == 'second' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 3：vec[i] = '字串字面量' — 指標載入 + deep clone
@@ -72,12 +88,20 @@ test-vec-str-literal = () (ok bool) {
         -> _
     }
 
-    s[0] == 'literal value' -> ok = true
-    s[1] == 'keep' -> ok = true
+    {
+        first ?= s[0]
+        second ?= s[1]
+        first == 'literal value' -> ok = true
+        second == 'keep' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 4：struct field str 賦值 — 獨立性驗證
-DataHolder {
+data-holder {
     name str
     items []i64
 }
@@ -85,7 +109,7 @@ DataHolder {
 ; 測試 struct-str-field
 ; ok bool: 把來源改成 'changed' 後 d.name 仍是 'field value'，且 items[0] 為 1 才為 true
 test-struct-str-field = () (ok bool) {
-    d = DataHolder{
+    d = data-holder{
         name: 'old'
         items: [1, 2, 3]
     }
@@ -113,10 +137,20 @@ test-multi-call = () (ok bool) {
     v1 = make-str-vec()
     v2 = make-str-vec()
 
-    v1[0] == 'a' -> ok = true
-    v1[1] == 'b' -> ok = true
-    v2[0] == 'a' -> ok = true
-    v2[1] == 'b' -> ok = true
+    {
+        a0 ?= v1[0]
+        a1 ?= v1[1]
+        b0 ?= v2[0]
+        b1 ?= v2[1]
+        a0 == 'a' -> ok = true
+        a1 == 'b' -> ok = true
+        b0 == 'a' -> ok = true
+        b1 == 'b' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ok1 = test-vec-str-assign()

@@ -113,7 +113,12 @@ test1 = () (ok bool) {
     a [][]i64
     a.push(make-vec2(1, 2))
     b = a
-    b0 = b[0]
+    ; b 是 a 的深拷貝，`b[0]` 與任何下標讀取一樣回 ?[]i64，必須解包
+    b0 = b[0]: {
+        ok -> it
+
+        -> []
+    }
     b0.push(100)
     b0.len() == 3 -> ok = true
     b0[2] == 100 -> ok = true

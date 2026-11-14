@@ -65,14 +65,12 @@ new-v4 = (state i64) (out uuid) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt = i + 4
-            i-opt: {
-                ok -> i = it
+            i ?= i + 4
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -361,44 +359,26 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     v0 = parse-hex-byte(s, pos)
 
     #{overflow=wrap}
-    ppos2-opt = pos + 2
-    ppos2 = 0
-    ppos2-opt: {
-        ok -> {
-            ppos2 = it
-        }
+    ppos2 = pos + 2: {
+        ok -> it
 
-        -> {
-            ppos2 = 0
-        }
+        -> 0
     }
     v1 = parse-hex-byte(s, ppos2)
 
     #{overflow=wrap}
-    ppos4-opt = pos + 4
-    ppos4 = 0
-    ppos4-opt: {
-        ok -> {
-            ppos4 = it
-        }
+    ppos4 = pos + 4: {
+        ok -> it
 
-        -> {
-            ppos4 = 0
-        }
+        -> 0
     }
     v2 = parse-hex-byte(s, ppos4)
 
     #{overflow=wrap}
-    ppos6-opt = pos + 6
-    ppos6 = 0
-    ppos6-opt: {
-        ok -> {
-            ppos6 = it
-        }
+    ppos6 = pos + 6: {
+        ok -> it
 
-        -> {
-            ppos6 = 0
-        }
+        -> 0
     }
     v3 = parse-hex-byte(s, ppos6)
 
@@ -439,30 +419,18 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos9-opt = pos + 9
-    ppos9 = 0
-    ppos9-opt: {
-        ok -> {
-            ppos9 = it
-        }
+    ppos9 = pos + 9: {
+        ok -> it
 
-        -> {
-            ppos9 = 0
-        }
+        -> 0
     }
     v4 = parse-hex-byte(s, ppos9)
 
     #{overflow=wrap}
-    ppos11-opt = pos + 11
-    ppos11 = 0
-    ppos11-opt: {
-        ok -> {
-            ppos11 = it
-        }
+    ppos11 = pos + 11: {
+        ok -> it
 
-        -> {
-            ppos11 = 0
-        }
+        -> 0
     }
     v5 = parse-hex-byte(s, ppos11)
 
@@ -490,30 +458,18 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos14-opt = pos + 14
-    ppos14 = 0
-    ppos14-opt: {
-        ok -> {
-            ppos14 = it
-        }
+    ppos14 = pos + 14: {
+        ok -> it
 
-        -> {
-            ppos14 = 0
-        }
+        -> 0
     }
     v6 = parse-hex-byte(s, ppos14)
 
     #{overflow=wrap}
-    ppos16-opt = pos + 16
-    ppos16 = 0
-    ppos16-opt: {
-        ok -> {
-            ppos16 = it
-        }
+    ppos16 = pos + 16: {
+        ok -> it
 
-        -> {
-            ppos16 = 0
-        }
+        -> 0
     }
     v7 = parse-hex-byte(s, ppos16)
 
@@ -541,30 +497,18 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos19-opt = pos + 19
-    ppos19 = 0
-    ppos19-opt: {
-        ok -> {
-            ppos19 = it
-        }
+    ppos19 = pos + 19: {
+        ok -> it
 
-        -> {
-            ppos19 = 0
-        }
+        -> 0
     }
     v8 = parse-hex-byte(s, ppos19)
 
     #{overflow=wrap}
-    ppos21-opt = pos + 21
-    ppos21 = 0
-    ppos21-opt: {
-        ok -> {
-            ppos21 = it
-        }
+    ppos21 = pos + 21: {
+        ok -> it
 
-        -> {
-            ppos21 = 0
-        }
+        -> 0
     }
     v9 = parse-hex-byte(s, ppos21)
 
@@ -592,86 +536,50 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
 
     #{overflow=wrap}
-    ppos24-opt = pos + 24
-    ppos24 = 0
-    ppos24-opt: {
-        ok -> {
-            ppos24 = it
-        }
+    ppos24 = pos + 24: {
+        ok -> it
 
-        -> {
-            ppos24 = 0
-        }
+        -> 0
     }
     v10 = parse-hex-byte(s, ppos24)
 
     #{overflow=wrap}
-    ppos26-opt = pos + 26
-    ppos26 = 0
-    ppos26-opt: {
-        ok -> {
-            ppos26 = it
-        }
+    ppos26 = pos + 26: {
+        ok -> it
 
-        -> {
-            ppos26 = 0
-        }
+        -> 0
     }
     v11 = parse-hex-byte(s, ppos26)
 
     #{overflow=wrap}
-    ppos28-opt = pos + 28
-    ppos28 = 0
-    ppos28-opt: {
-        ok -> {
-            ppos28 = it
-        }
+    ppos28 = pos + 28: {
+        ok -> it
 
-        -> {
-            ppos28 = 0
-        }
+        -> 0
     }
     v12 = parse-hex-byte(s, ppos28)
 
     #{overflow=wrap}
-    ppos30-opt = pos + 30
-    ppos30 = 0
-    ppos30-opt: {
-        ok -> {
-            ppos30 = it
-        }
+    ppos30 = pos + 30: {
+        ok -> it
 
-        -> {
-            ppos30 = 0
-        }
+        -> 0
     }
     v13 = parse-hex-byte(s, ppos30)
 
     #{overflow=wrap}
-    ppos32-opt = pos + 32
-    ppos32 = 0
-    ppos32-opt: {
-        ok -> {
-            ppos32 = it
-        }
+    ppos32 = pos + 32: {
+        ok -> it
 
-        -> {
-            ppos32 = 0
-        }
+        -> 0
     }
     v14 = parse-hex-byte(s, ppos32)
 
     #{overflow=wrap}
-    ppos34-opt = pos + 34
-    ppos34 = 0
-    ppos34-opt: {
-        ok -> {
-            ppos34 = it
-        }
+    ppos34 = pos + 34: {
+        ok -> it
 
-        -> {
-            ppos34 = 0
-        }
+        -> 0
     }
     v15 = parse-hex-byte(s, ppos34)
 
@@ -749,22 +657,18 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
 ; [parse-hex-byte](#uuid.parse-hex-byte)
 parse-hex-byte = (s str, pos i64) (v i64) {
 
-    ; s.byte 回傳 ?byte（越界為 nil）：先兩段式解包成 i64 再交給 hex-val。
-    c0-opt = s.byte(pos)
-    c0 = -1
-    c0-opt: {
-        ok -> c0 = it
+    ; s.byte 回傳 ?byte（越界為 nil）：越界時退回 -1（hex-val 會判非法）
+    c0 = s.byte(pos): {
+        ok -> it
 
-        -> _
+        -> -1
     }
 
     #{overflow=wrap}
-    c1-opt = s.byte(pos + 1)
-    c1 = -1
-    c1-opt: {
-        ok -> c1 = it
+    c1 = s.byte(pos + 1): {
+        ok -> it
 
-        -> _
+        -> -1
     }
     h0 = hex-val(c0)
     h1 = hex-val(c1)
@@ -915,42 +819,36 @@ hex-val = (c i64) (v i64) {
     {
         c >= 48 && c <= 57 -> {
             {
-
                 #{overflow=wrap}
-                v-opt = c - 48
-                v-opt: {
-                    ok -> v = it
+                v ?= c - 48
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             return
         }
 
         c >= 65 && c <= 70 -> {
             {
-
                 #{overflow=wrap}
-                v-opt2 = c - 65 + 10
-                v-opt2: {
-                    ok -> v = it
+                v ?= c - 65 + 10
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             return
         }
 
         c >= 97 && c <= 102 -> {
             {
-
                 #{overflow=wrap}
-                v-opt3 = c - 97 + 10
-                v-opt3: {
-                    ok -> v = it
+                v ?= c - 97 + 10
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }

@@ -126,14 +126,12 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
             }
 
             {
-
                 #{overflow=wrap}
-                idx-opt = idx + 1
-                idx-opt: {
-                    ok -> idx = it
+                idx ?= idx + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             idx >= .cap -> idx = 0
         }
@@ -235,14 +233,12 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
             }
 
             {
-
                 #{overflow=wrap}
-                idx-opt2 = idx + 1
-                idx-opt2: {
-                    ok -> idx = it
+                idx ?= idx + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             idx >= .cap -> idx = 0
         }
@@ -396,14 +392,12 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
             }
 
             {
-
                 #{overflow=wrap}
-                idx-opt3 = idx + 1
-                idx-opt3: {
-                    ok -> idx = it
+                idx ?= idx + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             idx >= .cap -> idx = 0
         }
@@ -501,14 +495,12 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
             }
 
             {
-
                 #{overflow=wrap}
-                idx-opt4 = idx + 1
-                idx-opt4: {
-                    ok -> idx = it
+                idx ?= idx + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             idx >= .cap -> idx = 0
         }

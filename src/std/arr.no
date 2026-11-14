@@ -48,13 +48,13 @@ arr {
 [n]t.eq = (b [n]t) (yes bool) {
     yes = true
     i <- [0..n): {
-        ixout46c18 = b[i]: {
+        b-i = b[i]: {
             ok -> it
 
             -> _
         }
 
-        .[i] != ixout46c18 -> {
+        .[i] != b-i -> {
             yes = false
             return
         }
@@ -233,7 +233,7 @@ arr {
     }
 }
 
-; [n]t.at: 安全索引訪問
+; [deprecated] [n]t.at: 安全索引訪問——請改用 a[i]（原生索引，回傳 ?t，越界為 err）
 ; i i64: 索引
 ; 返回 val ?t: 越界返回 nil
 ; [at](#arr.at)

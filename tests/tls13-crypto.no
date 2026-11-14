@@ -15,7 +15,14 @@ test-hkdf-extract = () {
     ; RFC 5869 Test Case 1: PRK should not be all zeros
     has-nonzero = 0
     i <- [0..32): {
-        prk[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= prk[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: hkdf-extract output all zeros')
@@ -28,10 +35,12 @@ test-hkdf-extract = () {
 test-hkdf-expand = () {
     prk [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        prk[i]: {
-            ok -> it = i + 1
+            #{overflow=wrap}
+            prk[i] ?= i + 1
+        }: {
+            err -> _
 
             -> _
         }
@@ -45,7 +54,14 @@ test-hkdf-expand = () {
     ; 輸出應為 32 bytes 且不為全零
     has-nonzero = 0
     i <- [0..32): {
-        okm[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= okm[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: hkdf-expand output all zeros')
@@ -58,10 +74,12 @@ test-hkdf-expand = () {
 test-hkdf-expand-label = () {
     prk [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        prk[i]: {
-            ok -> it = i + 1
+            #{overflow=wrap}
+            prk[i] ?= i + 1
+        }: {
+            err -> _
 
             -> _
         }
@@ -75,7 +93,14 @@ test-hkdf-expand-label = () {
     ; 輸出應為 32 bytes 且不為全零
     has-nonzero = 0
     i <- [0..32): {
-        okm[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= okm[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: hkdf-expand-label output all zeros')
@@ -90,10 +115,12 @@ test-aes-gcm-seal-open = () {
     ; 16-byte key
     key [16]byte
     i <- [0..16): {
+        {
 
-        #{overflow=wrap}
-        key[i]: {
-            ok -> it = i + 1
+            #{overflow=wrap}
+            key[i] ?= i + 1
+        }: {
+            err -> _
 
             -> _
         }
@@ -102,10 +129,12 @@ test-aes-gcm-seal-open = () {
     ; 12-byte IV
     iv [12]byte
     i <- [0..12): {
+        {
 
-        #{overflow=wrap}
-        iv[i]: {
-            ok -> it = i + 10
+            #{overflow=wrap}
+            iv[i] ?= i + 10
+        }: {
+            err -> _
 
             -> _
         }
@@ -134,7 +163,14 @@ test-aes-gcm-seal-open = () {
     expected-len = plain.len() + 16
     sealed-nonzero = 0
     i <- [0..expected-len): {
-        sealed[i] != 0 -> sealed-nonzero = 1
+        {
+            elem ?= sealed[i]
+            elem != 0 -> sealed-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     sealed-nonzero == 0 -> {
         print('FAIL: aes-gcm-seal output all zeros')
@@ -147,9 +183,17 @@ test-aes-gcm-seal-open = () {
 
     ; 驗證解密結果與原文一致
     i <- [0..plain.len()): {
-        opened[i] != plain[i] -> {
-            print('FAIL: aes-gcm-open mismatch')
-            return
+        {
+            x ?= opened[i]
+            y ?= plain[i]
+            x != y -> {
+                print('FAIL: aes-gcm-open mismatch')
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     print('PASS: aes-gcm-seal-open')
@@ -161,10 +205,12 @@ test-x25519-scalarmult = () {
     ; 生成私鑰（固定值）
     priv [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        priv[i]: {
-            ok -> it = i + 1
+            #{overflow=wrap}
+            priv[i] ?= i + 1
+        }: {
+            err -> _
 
             -> _
         }
@@ -177,7 +223,14 @@ test-x25519-scalarmult = () {
     ; 公鑰不應為全零
     has-nonzero = 0
     i <- [0..32): {
-        pub[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= pub[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: x25519-scalarmult-base output all zeros')
@@ -189,7 +242,14 @@ test-x25519-scalarmult = () {
     shared = x25519.x25519-scalarmult(priv, pub)
     has-nonzero = 0
     i <- [0..32): {
-        shared[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= shared[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: x25519-scalarmult output all zeros')
@@ -205,23 +265,38 @@ test-x25519-keypair = () {
     priv, pub = x25519.x25519-gen-keypair(123456789)
 
     ; 私鑰應已 clamping
-    (priv[0] & 7) != 0 -> {
-        print('FAIL: private key not clamped (low 3 bits)')
-        return
-    }
-    (priv[31] & 128) != 0 -> {
-        print('FAIL: private key not clamped (high bit)')
-        return
-    }
-    (priv[31] & 64) != 64 -> {
-        print('FAIL: private key not clamped (bit 254)')
-        return
+    {
+        low ?= priv[0]
+        high ?= priv[31]
+        (low & 7) != 0 -> {
+            print('FAIL: private key not clamped (low 3 bits)')
+            return
+        }
+        (high & 128) != 0 -> {
+            print('FAIL: private key not clamped (high bit)')
+            return
+        }
+        (high & 64) != 64 -> {
+            print('FAIL: private key not clamped (bit 254)')
+            return
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 
     ; 公鑰不應為全零
     has-nonzero = 0
     i <- [0..32): {
-        pub[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= pub[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: x25519-gen-keypair pub all zeros')

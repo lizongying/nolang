@@ -1,7 +1,7 @@
 ; merged category 'arr' -- members: arr-at-minimal.no, arr-test-tmp.no, arr.no, push-narrow.no
 ; (originals backed up under tests/_archive/arr/)
 ; merged from tests/arr-at-minimal.no
-; minimal test for [n]t.at method
+; minimal test for [n]t.at method（已 deprecated：界內保留覆蓋，越界語義見 a[i] 的 err）
 ...
 a = [1, 2, 3]
 v = a.at(0)

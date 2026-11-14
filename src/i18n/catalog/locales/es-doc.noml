@@ -411,7 +411,7 @@ Devuelve ok bool: true = éxito, false = la pila está llena
 `
   'arr.asc': '[n]t.asc: ordena ascendente en el sitio (ordenación por inserción)'
   'arr.at': `
-[n]t.at: acceso indexado seguro
+[obsoleto] [n]t.at: acceso indexado seguro — usa a[i] en su lugar (indexación nativa, devuelve ?t; fuera de rango produce err)
 i i64: el índice
 Devuelve val ?t: nil si está fuera de rango
 
@@ -10097,7 +10097,7 @@ Devuelve la versión del UUID
 v: el número de versión del UUID (los 4 bits altos de byte6, 4 para v4)
 `
   'vec.at': `
-[]t.at: acceso indexado seguro; nil cuando está fuera de rango
+[obsoleto] []t.at: acceso indexado seguro; nil cuando está fuera de rango — usa v[i] en su lugar (indexación nativa, devuelve ?t; fuera de rango produce err)
 Nota: sz = .len() fuerza el tipo self vec, para que no se especialice por error en un método de arr
 
 `

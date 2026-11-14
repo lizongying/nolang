@@ -197,6 +197,16 @@ h2m-ctx {
     rdval i64; 最近一次 var-read 交出的值 id（供 var-write 判定「右值是否就是某次读」以传 owner）
     rdown i64; 最近一次 var-read 的 owner（该名字当时的 owner）
     retset []i64; 「可能被回传」的 owner 集合（may-return：任一次写输出槽的 owner 并入；释放时跳过）
+    callee []str; 发射闭包：本函数体内 OP-CALL 命中的被调函数 emit 名（每个函数降级时清空）
+    cgf []str; 发射闭包（模块级）：已发射函数名，按发射序
+    cgb []i64; 发射闭包（模块级）：cgf[k] 的被调表起点
+    cgc []i64; 发射闭包（模块级）：cgf[k] 的被调函数个数
+    cgl []str; 发射闭包（模块级）：被调函数名拼接表
+    ; 切片 6 ②：unsupported 逐条记录（供 h2m-cov-join 拼 "fn:kind" 日志）
+    cur-fn str; 当前降级中的 HIR 函数名（h2m-lower-func 入口设置），h2m-mark 记录 fn 用
+    cur-k i64; 当前降级中的构造 AST 节点 K（各 h2m-lower-* 入口设置），h2m-mark 记录 kind 用
+    unsf []str; unsupported 逐条：函数名（与 unsk 同序、同下标）
+    unsk []i64; unsupported 逐条：构造 K 型别码
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -253,6 +263,15 @@ h2m-new = () (c h2m-ctx) {
         rdval: 0
         rdown: 0
         retset: []
+        callee: []
+        cgf: []
+        cgb: []
+        cgc: []
+        cgl: []
+        cur-fn: ''
+        cur-k: 0
+        unsf: []
+        unsk: []
     }
     c.vty.push(TY-I64)
 }
@@ -459,6 +478,64 @@ h2m-set-block = (c h2m-ctx, id i64) {
 h2m-mark = (c h2m-ctx) {
     #{overflow=wrap}
     c.unsup = c.unsup + 1
+    ; 切片 6 ②：逐条记录 (fn, kind)，供 h2m-cov-join 拼日志
+    c.unsf.push(c.cur-fn)
+    c.unsk.push(c.cur-k)
+}
+
+; 切片 6 ②：设置当前降级构造的 AST 节点 K（供 h2m-mark 记录 kind）
+; c: 上下文；t: AST；n: 节点 id
+h2m-set-cur-k = (c h2m-ctx, t ast, n i64) {
+    dk = ast.nd-at(t, n)
+    c.cur-k = dk.kind
+}
+
+; 覆盖度量：把逐条 unsupported 记录 (fn:kind) 拼成日志串
+; 切片 6 ②：把 AST 节点 K 码归为「型别 / 构造」两类，供覆盖率日志标注。
+; 判定：asp.kind-name 以 'Type' 结尾 ⇒ 型别（SliceType / NamedType / FunctionType …）；
+;       例外 'TypeAlias'（名字含 Alias 非 Type，但本质是型别别名）亦归型别；
+;       其余（表达式 / 语句 / 字面量 / 定义 / match …）归构造。
+h2m-kind-cat = (k i64) (r str) {
+    nm = asp.kind-name(k)
+    {
+        nm.ends-with('Type') == true -> { r = 'type' }
+        nm == 'TypeAlias' -> { r = 'type' }
+        -> { r = 'construct' }
+    }
+}
+
+; 覆盖度量：把逐条 unsupported 记录 (fn, K 码) 拼成「fn:KindName:category」日志串。
+;   K 码经 asp.kind-name 映射为可读名（如 SliceType / FunctionDefinition），不再输出裸整数；
+;   category 标 type/construct（见 h2m-kind-cat），便于按「型别不支持 vs 构造不支持」分类。
+;   输出按 K 码数值升序分组（同 K 内按出现序）：稳定、确定性、且天然按「构造型别」归类，
+;   便于按 kind 浏览 / grep。⚠️ 不依赖字符串比较排序：host 降级路径缺 @str_cmp
+;   （str.compare 运行时未链入，lines.asc() 会报 undefined value '@str_cmp'），故用数值 K 分组。
+; ⚠️ 接收切片而非 agg 结构体（host 降级对「返回大结构体 / 双返回 + 重型函数体」有 codegen 缺陷、
+;   模块级全局变量写入不可 codegen、fs.* 对大文件回传/写出脏数据）；drv.pkg-ll 调用本函数后
+;   把结果经 print 到 stdout（可靠通道）作覆盖率日志，并 best-effort 写 /tmp/h2m-cov.log
+;   （大日志头部可能被 host 大缓冲 bug 损坏，以 stdout 为准）。无文件读回。
+; unsf: 函数名数组（与 unsk 同序）；unsk: 构造 K 码数组
+; cov: 每行 "fn:KindName:category" 拼接的文本；空 ⇒ ''
+h2m-cov-join = (unsf []str, unsk []i64) (cov str) {
+    cov = ''
+    ; 求 max K 作为分组上界（避免依赖 KIND-COUNT 常量名 / 硬编码上限）
+    maxk = 0
+    i = 0
+    (i < unsk.len()) {
+        unsk[i] > maxk -> { maxk = unsk[i] }
+        i = i + 1
+    }
+    k = 1
+    (k <= maxk) {
+        i = 0
+        (i < unsf.len()) {
+            unsk[i] == k -> {
+                cov = cov - unsf[i] - ':' - asp.kind-name(unsk[i]) - ':' - h2m-kind-cat(unsk[i]) - '\n'
+            }
+            i = i + 1
+        }
+        k = k + 1
+    }
 }
 
 ; 查变量绑定的值 id
@@ -946,6 +1023,8 @@ h2m-struct-field-idx = (c h2m-ctx, sid i64, fname str) (fi i64) {
 ; 字段型别覆盖面见 h2m-struct-resolve（i64/u64/f64/str/bool/char/嵌套结构体；vec/函數指標等不支援⇒计 unsup）。
 h2m-struct-register = (c h2m-ctx, t ast, n i64) {
     d = ast.nd-at(t, n)
+    ; 切片 6 ②：入口即设 cur-k 为「结构体定义」节点 kind，使其内部不支持 mark（字段型别解析失败等）带上构造码而非 0
+    h2m-set-cur-k(c, t, n)
 
     ; ps-parse-struct-def 把名字存进 slot0（s1=implements 数、s2=fields 数），故此处读 s0
     sname = ast.str-at(t, d.s0)
@@ -996,7 +1075,14 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
         (j < fc) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
-            fty < 0 -> h2m-mark(c)
+            fty < 0 -> {
+                ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
+                ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
+                c.cur-fn = c.stn[i] - '.' - c.stfldn[off + j]
+                c.cur-k = (ast.nd-at(t, ftn)).kind
+                h2m-mark(c)
+                c.cur-fn = ''
+            }
             c.stft.push(fty)
 
             #{overflow=wrap}
@@ -1030,7 +1116,14 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
         (j < fc) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
-            fty < 0 -> h2m-mark(c)
+            fty < 0 -> {
+                ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
+                ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
+                c.cur-fn = c.stn[i] - '.' - c.stfldn[off + j]
+                c.cur-k = (ast.nd-at(t, ftn)).kind
+                h2m-mark(c)
+                c.cur-fn = ''
+            }
             c.stft.push(fty)
 
             #{overflow=wrap}
@@ -1687,6 +1780,7 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
 ; n: 表达式节点 id
 ; v: 值 id
 h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
+    h2m-set-cur-k(c, t, n)
     v = 0
     d = ast.nd-at(t, n)
     {
@@ -2113,6 +2207,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 cd = ast.nd-at(t, ck)
                 ok-call = 1
                 ok-print = 0
+                ok-method = 0
                 cn = ''
                 si = -1
                 argbase = d.kid0 + 1
@@ -2124,8 +2219,58 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 has-dot = 0
                 cd.kind == asp.K-DOT-EXPRESSION -> {
                     has-dot = 1
-                    base-nd = ast.nd-at(t, ast.kid-at(t, cd.kid0))
-                    cn = ast.str-at(t, base-nd.s0) - '.' - ast.str-at(t, cd.s0)
+                    recv-id = ast.kid-at(t, cd.kid0)
+                    recv-nd = ast.nd-at(t, recv-id)
+                    mname = ast.str-at(t, cd.s0)
+                    ; 接收者若是【已绑定值】⇒ 方法调用（vec/str 内建分派）；
+                    ;   否则（模块名）⇒ 跨模組调用，走下方 cn 拼接。
+                    recv-is-value = 0
+                    ; 沿点号链走到最左端标识符，判断它是否是个已绑定值（局部 / 形参）；
+                    ;   agg.stn.len() → 头是形参 agg ⇒ 值；drv.build-out → 头是模块 drv ⇒ 跨模組；
+                    ;   args.get() → 头是全局 args（非局部）⇒ 跨模組（全局变量支援另议）。
+                    ;   只判「能否是值」、不在此降级，避免对模块名误记 unsup。
+                    head = recv-nd
+                    head.kind == asp.K-DOT-EXPRESSION -> head = ast.nd-at(t, ast.kid-at(t, head.kid0))
+                    head.kind == asp.K-IDENTIFIER -> {
+                        rn = ast.str-at(t, head.s0)
+                        h2m-name-find(c, rn) >= 0 -> recv-is-value = 1
+                    }
+                    recv-is-value == 1 -> {
+                        ; ── 内建型别方法分派（只读 / 取值类，无签名表查询）──
+                        ;   注：push/get 暂不收——push 运行时返回【新】vec（非原地改），
+                        ;   作为语句会丢结果；get 真实用例是 []str（需元素型别泛化，当前只有 vec_get_i64）。
+                        ;   两者都留待元素型别泛化 / push 语义落地後再做。
+                        rv = h2m-lower-expr(t, c, sg, recv-id)
+                        rv > 0 -> {
+                            rty = h2m-vty-at(c, rv)
+                            ; vec 方法：len() 取计数（与元素型别无关，全元素型别安全）
+                            rty == TY-VEC -> {
+                                mname == 'len' -> {
+                                    cid = h2m-alloc(c, TY-I64)
+                                    h2m-emit(c, OP-VECLEN, cid, rv, 0, '', TY-I64)
+                                    v = cid
+                                    ok-method = 1
+                                    ok-call = 0
+                                }
+                            }
+                            ; str 方法：len-bytes() 取字节长
+                            rty == TY-STR -> {
+                                mname == 'len-bytes' -> {
+                                    cid = h2m-alloc(c, TY-I64)
+                                    h2m-emit(c, OP-STRLEN, cid, rv, 0, '', TY-I64)
+                                    v = cid
+                                    ok-method = 1
+                                    ok-call = 0
+                                }
+                            }
+                        }
+                        ; 接收者是值但方法不支持 / 降级失败 ⇒ 落闸门（不进跨模組 cn 路径，避免误当模块调用）
+                        ok-method == 0 -> ok-call = 0
+                    }
+                    recv-is-value == 0 -> {
+                        base-nd = recv-nd
+                        cn = ast.str-at(t, base-nd.s0) - '.' - mname
+                    }
                 }
                 cd.kind != asp.K-DOT-EXPRESSION -> {
                     cd.kind == asp.K-IDENTIFIER -> cn = ast.str-at(t, cd.s0)
@@ -2210,11 +2355,14 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 rt = sg.fret[si]
                 cid = h2m-alloc(c, rt)
 
+                ; 发射闭包：记下本函数引用的被调 emit 名（drv.pkg-ll 收尾按它做「未发射剔除」闭包）
+                c.callee.push(cn)
+
                 ; s92：入池实参个数是回填后的 want-n（非 AST 原实基数 na），OP-CALL 计数与 args 段长对齐
                 h2m-emit(c, OP-CALL, cid, base, want-n, cn, rt)
                 v = cid
             }
-            ok-call == 0 && ok-print == 0 -> h2m-mark(c)
+            ok-call == 0 && ok-print == 0 && ok-method == 0 -> h2m-mark(c)
         }
 
         ; s66：前缀表达式 -x / !x（镜像 Go emitNeg/emitNot hir2mir.go:5503/5505）
@@ -2484,6 +2632,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 ; sg: 模块级签名表
 ; n: 语句节点 id
 h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    h2m-set-cur-k(c, t, n)
     d = ast.nd-at(t, n)
     d.nkid == 0 -> h2m-mark(c)
     d.nkid > 0 -> {
@@ -2533,6 +2682,7 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; sg: 模块级签名表
 ; n: 块节点 id
 h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    h2m-set-cur-k(c, t, n)
     d = ast.nd-at(t, n)
     i = 0
     (i < d.nkid) {
@@ -2675,6 +2825,7 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; sg: 模块级签名表
 ; n: 体节点 id
 h2m-lower-branch = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    h2m-set-cur-k(c, t, n)
     n <= 0 -> h2m-mark(c)
     n > 0 -> {
         d = ast.nd-at(t, n)
@@ -2704,6 +2855,7 @@ h2m-lower-branch = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; sg: 模块级签名表
 ; n: IfExpression 节点 id
 h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    h2m-set-cur-k(c, t, n)
     ck = h2m-kid-i(t, n, 0)
     tk = h2m-kid-i(t, n, 1)
     ek = h2m-kid-i(t, n, 2)
@@ -2750,6 +2902,7 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; sg: 模块级签名表
 ; n: ForStatement 节点 id
 h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    h2m-set-cur-k(c, t, n)
     d = ast.nd-at(t, n)
     init = h2m-kid-i(t, n, 0)
     cond = h2m-kid-i(t, n, 1)
@@ -3078,6 +3231,7 @@ h2m-lower-range = (t ast, c h2m-ctx, sg h2m-sigs, rg i64, body i64, vn str) {
 ; body: 循环体 BlockStatement 节点 id
 ; vn: 循环变量名
 h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn str) {
+    h2m-set-cur-k(c, t, n)
     bad = 0
     sd = ast.nd-at(t, src)
     cnm = ast.str-at(t, sd.s0)
@@ -3267,6 +3421,7 @@ h2m-subtree-uses-it = (t ast, n i64) (u i64) {
 ; snm: 值位结果槽的合成名（'' = 陈述位，不发值）
 ; r: 交出的值 id（0 = 陈述位或降级失败）
 h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
+    h2m-set-cur-k(c, t, n)
     d = ast.nd-at(t, n)
     arms = d.hcount
     sname = ''
@@ -3468,7 +3623,16 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                                 ; ok(v)：payload 绑定到臂局部名（跨 mem 直返 SSA，出臂 pop 还原）
                                 bvar == 'ok' -> {
-                                    bidx = ast.aux-at(t, hb + 0)
+                                    ; ⚠️ 实参**不能**写成算术式（哪怕 `hb + 0` 这种恒等式）：
+                                    ;   实参含算术 ⇒ 整條 let 被 option 捕获改写成 `?i64`
+                                    ;   （lowering 的 maybeCaptureOptionAssign，见
+                                    ;   「a = g(b / c) 的捕获点在引数内」），而 checker 侧的
+                                    ;   该名字仍是 i64 ⇒ 两边型别表分岔；接着
+                                    ;   `c.alidx.push(bidx)` 把 option 结构体按 16 字节步长
+                                    ;   写进 []i64（emitBuiltinVecPush 的 option 豁免分支），
+                                    ;   索引读回只取到 tag 那 8 字节 ⇒ 查表恒 miss。
+                                    ;   hb 本身就是 i64，直接传。
+                                    bidx = ast.aux-at(t, hb)
                                     pv = h2m-alloc(c, TY-I64)
                                     h2m-emit(c, OP-OPTGET, pv, sv, 0, '', TY-I64)
                                     c.alidx.push(bidx)
@@ -3572,6 +3736,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 ; n: 终结形节点 id
 ; k: 节点 kind（RETURN/BREAK/CONTINUE）
 h2m-lower-term = (t ast, c h2m-ctx, n i64, k i64) {
+    h2m-set-cur-k(c, t, n)
     d = ast.nd-at(t, n)
     ok-t = 1
 
@@ -3632,6 +3797,7 @@ h2m-lower-term = (t ast, c h2m-ctx, n i64, k i64) {
 ; last: 1 = 本块最后一条陈述
 ; hd: 1 = 已分派（呼叫方据此不再计 unsup）
 h2m-lower-term-stmt = (t ast, c h2m-ctx, sg h2m-sigs, kid i64, last i64) (hd i64) {
+    h2m-set-cur-k(c, t, kid)
     hd = 0
     kk = ast.nd-at(t, kid)
     k = kk.kind
@@ -3696,8 +3862,22 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
     ret = TY-I64
     d = ast.nd-at(t, n)
     name = ast.str-at(t, d.s0)
-    d.c3 > 0 -> bad = 1
-    d.c5 > 1 -> bad = 1
+
+    ; s6b：方法語法（'recv.method'）會在輸出區[0]合成 self 參數（ps-parse-method-func，
+    ;   set-sig 的 results = 1 + 宣告 outs），真實回傳值從輸出區[1]起算。故「有效輸出數」
+    ;   須扣掉 self，才不會把單回傳方法誤判成多回傳。slice 6 ② 前置：Step 1 只放行
+    ;   realOuts<=1；realOuts>1（真·多回傳，hyphen/無前綴函式）留 Step 2 做結構體聚合回傳。
+    isM = (ast.str-at(t, d.s2) == 'true')
+    realOut = 0
+    isM -> realOut = 1
+    realOuts = d.c5
+
+    #{overflow=wrap}
+    realOuts = realOuts - realOut
+
+    d.c3 > 0 -> {
+        bad = 1
+    }
     i = 0
     (i < d.c4 && bad == 0) {
         p = d.kid0
@@ -3715,7 +3895,7 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
         #{overflow=wrap}
         i = i + 1
     }
-    bad == 0 && d.c5 == 1 -> {
+    bad == 0 && realOuts == 1 -> {
         rp = d.kid0
 
         #{overflow=wrap}
@@ -3723,14 +3903,58 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
 
         #{overflow=wrap}
         rp = rp + d.c4
+
+        #{overflow=wrap}
+        rp = rp + realOut
         rk = ast.kid-at(t, rp)
         rc, rb = h2m-param-ty(t, agg, rk)
         rb != 0 -> bad = 1
 
-        ; s62：[]i64 作为【输入】形参已入形，但 vec 返回不入形——noc 侧无产出 vec 值的途径
-        ;   （无 %vec 槽、无 vec 字面量降级），且 OP-RET/CALL 的 %vec 返回从未经端到端验证，宁缺勿错
-        rb == 0 && rc == TY-VEC -> bad = 1
-        rb == 0 && rc != TY-VEC -> ret = rc
+        ; s62：[]i64 作为【输入】形参已入形；返回側 slice 6 ② 起放行——vec 返回亦放行
+        ;   （OP-RET 走 cg 通用分支，返回的 %vec 由调用方持有，所有权移交不双 free）
+        rb == 0 -> ret = rc
+    }
+
+    ; s6c：真·多回傳（realOuts>1）⇒ 合成聚合結構體作回傳型別（适配 297aa2a0：h2m-param-ty 已無 s92 預設值參數）
+    ;   結構體名唯一（'__mr__'<fn>），欄位 = 各真實輸出參（realOut 起算）；欄位型別節點 id 先登進 stftn
+    ;   （與 K-STRUCT-DEFINITION 同機制），型別碼由 h2m-lower-program 的 resolve-range 在 pre-pass ② 之後
+    ;   統一解析。ret 設 TY-STRUCT-BASE + sid；解包（OP-STRUCT-GET 散到各 LHS 變量）留 Step 2b 接 CALL 子特徵。
+    ;   ⚠️ 重入冪等：靠 h2m-struct-find 去重避免雙註冊。
+    bad == 0 && realOuts > 1 -> {
+        mrname = '__mr__' - name
+        mrsid = h2m-struct-find(agg, mrname)
+        mrsid < 0 -> {
+            mrsid = agg.stn.len()
+            agg.stn.push(mrname)
+            agg.stid.push(mrsid)
+            k = 0
+            (k < realOuts) {
+                opn = d.kid0
+
+                #{overflow=wrap}
+                opn = opn + d.c3
+
+                #{overflow=wrap}
+                opn = opn + d.c4
+
+                #{overflow=wrap}
+                opn = opn + realOut
+
+                #{overflow=wrap}
+                opn = opn + k
+                okn = ast.kid-at(t, opn)
+                odn = ast.nd-at(t, okn)
+                ftn = ast.kid-at(t, odn.kid0); 輸出參型別節點 id（NamedType 等）
+                fnn = ast.str-at(t, odn.s0)
+                agg.stftn.push(ftn)
+                agg.stfldn.push(fnn)
+
+                #{overflow=wrap}
+                k = k + 1
+            }
+            agg.stfc.push(realOuts)
+        }
+        ret = TY-STRUCT-BASE + mrsid
     }
 }
 
@@ -3747,6 +3971,10 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
 h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     r = ''
     c = h2m-new()
+    ; 切片 6 ②：入口即设 cur-k 为「函数定义」节点 kind——本函数内所有不支持 mark
+    ;   （含 setup 期调用的辅助函数 h2m-func-sig/h2m-scan/...）都带上正确构造码而非初始 0；
+    ;   嵌套构造降级（h2m-lower-expr 等）会用各自 h2m-set-cur-k 覆盖为更精确的构造 kind。
+    h2m-set-cur-k(c, t, n)
 
     ; s99：模块级结构体表从 agg 浅拷进函数 ctx（只增不写，函数体只读）。MK/GET/SET 降级时按名字查 id 与字段
     c.stn = agg.stn
@@ -3756,7 +3984,15 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     c.stfldn = agg.stfldn
     c.stftn = agg.stftn
     d = ast.nd-at(t, n)
+    ; s6b：與 h2m-func-sig 同口徑計算 realOuts（方法語法扣 self），供下方輸出處理各支使用
+    isM = (ast.str-at(t, d.s2) == 'true')
+    realOut = 0
+    isM -> realOut = 1
+    realOuts = d.c5
+    #{overflow=wrap}
+    realOuts = realOuts - realOut
     fnm, frt, fap, fb = h2m-func-sig(t, agg, n)
+    c.cur-fn = fnm; 切片 6 ②：本函数名，供 h2m-mark 记录 fn
     fb != 0 -> {
         h2m-mark(c)
     }
@@ -3810,7 +4046,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         ; s97：option 输出参的槽必须按【声明型 TY-OPT】铺（nil-init），但 h2m-scan 把体内 `r = <payload>`
         ;   当 LetStatement 登记 ⇒ 槽型被按 RHS 推成整/f64（正是 some(0) 错形之源）。故 mem==1 且回值型为
         ;   option 时，铺槽前按声明覆写该名为 TY-OPT（h2m-lst-add 的 i>=0 分支就地改型、位次不变，仍排在形参后）
-        c.mem == 1 && frt == TY-OPT && d.c5 == 1 -> {
+        c.mem == 1 && frt == TY-OPT && realOuts == 1 -> {
             oop = d.kid0
 
             #{overflow=wrap}
@@ -3818,6 +4054,9 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
             #{overflow=wrap}
             oop = oop + d.c4
+
+            #{overflow=wrap}
+            oop = oop + realOut
             ook = ast.kid-at(t, oop)
             ood = ast.nd-at(t, ook)
             oonm = ast.str-at(t, ood.s0)
@@ -3850,7 +4089,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
         ; s99k：提前算出输出变量名，供 body 降级时 h2m-var-write 识别「写入输出槽」并记录 outsv
         ;   （out-name 原在 body 之后才求，但 h2m-var-write 在 body 降级期就会用到，故此处先定）
-        d.c5 == 1 -> {
+        realOuts == 1 -> {
             op2 = d.kid0
 
             #{overflow=wrap}
@@ -3858,6 +4097,9 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
             #{overflow=wrap}
             op2 = op2 + d.c4
+
+            #{overflow=wrap}
+            op2 = op2 + realOut
             ok2 = ast.kid-at(t, op2)
             od2 = ast.nd-at(t, ok2)
             c.outn = ast.str-at(t, od2.s0)
@@ -3866,7 +4108,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
         ; 恰一个输出参数时：它绑定的值 id 即返回值
         rid = 0
-        d.c5 == 1 -> {
+        realOuts == 1 -> {
             rp = d.kid0
 
             #{overflow=wrap}
@@ -3874,6 +4116,9 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
             #{overflow=wrap}
             rp = rp + d.c4
+
+            #{overflow=wrap}
+            rp = rp + realOut
             pk = ast.kid-at(t, rp)
             pd = ast.nd-at(t, pk)
             out-name = ast.str-at(t, pd.s0)
@@ -3924,11 +4169,11 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             h2m-emit(c, OP-BR, 0, c.ret, 0, '', 0)
             h2m-set-block(c, c.ret)
             zc2 = 0
-            d.c5 == 1 -> {
+            realOuts == 1 -> {
                 oi2 = h2m-name-find(c, out-name)
                 oi2 >= 0 -> zc2 = h2m-var-read(c, out-name)
             }
-            d.c5 == 0 -> {
+            realOuts == 0 -> {
                 zc2 = h2m-alloc(c, TY-I64)
                 h2m-emit(c, OP-CONST, zc2, 0, 0, '', TY-I64)
             }
@@ -3953,10 +4198,35 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
     ; 本函数体内有任何不支持构造 ⇒ 整函数不产码（宁缺勿错），并把计数并入模块级
     inc = c.unsup
+    ; 切片 6 ②：把本函数的 unsupported 逐条记录 (fn, kind) 并回模块级（与 unsup 同口径）
+    qi = 0
+    (qi < c.unsf.len()) {
+        agg.unsf.push(c.unsf[qi])
+        agg.unsk.push(c.unsk[qi])
+        qi = qi + 1
+    }
+    fnok = 1
 
     #{overflow=wrap}
     agg.unsup = agg.unsup + inc
-    inc > 0 -> r = ''
+    inc > 0 -> {
+        r = ''
+        fnok = 0
+    }
+
+    ; 发射闭包：只有【真正产码】的函数才登记进调用图（失败函数无 IR，其被调表无意义）
+    fnok == 1 -> {
+        agg.cgf.push(fnm)
+        agg.cgb.push(agg.cgl.len())
+        agg.cgc.push(c.callee.len())
+        q2 = 0
+        (q2 < c.callee.len()) {
+            agg.cgl.push(c.callee[q2])
+
+            #{overflow=wrap}
+            q2 = q2 + 1
+        }
+    }
 }
 
 ; 整个 Program 降级：先扫一遍签名表（调用可前向引用），再逐函数产码并拼接
@@ -3991,6 +4261,10 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
     h2m-struct-resolve(agg, t)
 
     ; 前置 pass ②：登记合格函数签名（调用可前向引用；此时结构体表已全就绪）
+    ;   s6c：真·多回傳會在 h2m-func-sig 內合成聚合結構體（追加進 agg.stn/stfc/stftn/stfldn），
+    ;   但 h2m-struct-resolve（①b）已先跑完；故記下 ② 前的結構體數 n0，跑完 ② 後用
+    ;   h2m-struct-resolve-range 只解 [n0, len) 的新合成結構體，避免重解既有結構體（stft 不重複 append）。
+    n0 = agg.stn.len()
     i = 0
     (i < d.nkid) {
         p = d.kid0
@@ -4007,6 +4281,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         #{overflow=wrap}
         i = i + 1
     }
+    agg.stn.len() > n0 -> h2m-struct-resolve-range(agg, t, n0, agg.stn.len())
 
     ; 产码 pass：逐个函数降级
     j = 0
@@ -4020,7 +4295,11 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
             nm2, rt2, ap2, bd2 = h2m-func-sig(t, agg, kid)
             bd2 != 0 -> {
+                ; 切片 6 ②：模块级 mark 带上「被拒函数定义」节点 kind 与函数名（而非初始 0 / 空 fn）
+                agg.cur-fn = nm2
+                agg.cur-k = kk.kind
                 h2m-mark(agg)
+                agg.cur-fn = ''
             }
             bd2 == 0 -> {
                 one = h2m-lower-func(t, agg, sg, kid)
@@ -4032,6 +4311,8 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
 
         ; s99：结构体定义不是函数、也不是不支持构造——前扫描已登记，此处跳过（不计入 unsup）
         kk.kind != asp.K-FUNCTION-DEFINITION && kk.kind != asp.K-STRUCT-DEFINITION -> {
+            ; 切片 6 ②：模块级 mark 带上「被拒顶层节点」自身 kind（而非初始 0）
+            agg.cur-k = kk.kind
             h2m-mark(agg)
         }
 

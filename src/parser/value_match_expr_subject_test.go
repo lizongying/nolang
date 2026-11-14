@@ -67,7 +67,7 @@ const valueMatchExprSubjectChainSrc = `two = (a i64, b i64) (out i64) {
 // 方法鏈（ax.log10 → lg10.floor → flr.to-i64），parser 的 AST 回放推不出
 // 接收者型別、語義副表也沒有 e 的條目。少了 `e i64 = …` 的標註，
 // `precision - 1 - e: { … }` 就不會歸一化成 `__match_subj ?i64`，ok 臂
-// 沒有 `let it` ⇒ MIR 零填 ⇒ dec-places 恆為 0 ⇒ fmt.fmt-f64(2.5, '')
+// 沒有 `let it` ⇒ MIR 零填 ⇒ dec-places 恆為 0 ⇒ fmt.fmt-f64(2.5, ”)
 // 從 '2.5' 退化成 '3'（test/std/fmt.no 的 fmt-f64 default）。
 const valueMatchExprSubjectASTAnnotatedSrc = `f = (precision i64) (out i64) {
     e i64 = flr.to-i64()
@@ -233,5 +233,88 @@ func TestOptionArithSubjectOperandIntFallsBackToAST(t *testing.T) {
 	// 對照組：回退不是「放行一切」，真正的非整數宣告仍須拒絕。
 	if got, ok := p.optionArithSubjectOperandInt(&Identifier{Value: "label"}); ok || got != "" {
 		t.Fatalf("a str-typed operand must still be rejected (got %q, ok=%v)", got, ok)
+	}
+}
+
+// 呼叫運算元：`n = data.len() - 1: { ok -> it  -> 0 }`。
+//
+// operandAllowsIntFallback 一律拒收呼叫（避免把 `str-fn() + 1` 當整數算術），
+// 於是主體不歸一化成 `__match_subj ?i64`，ok 臂沒有 `let it`，觀測值恆為
+// fallback 臂的 0（實測 `data.len() - 1` 得 0，而同值的 `len - 1` 得 2）。
+// 呼叫的回傳型別其實靜態可查（簽名表／模組限定名／`.len()`、`.cap()` 這類內建
+// 容器方法），故 inferCallArithSubjectElem 把它補回證據鏈。
+const valueMatchExprSubjectCallOperandSrc = `f = (data []i64) (out i64) {
+    n = data.len() - 1: {
+        ok -> it
+
+        -> 0
+    }
+    out = n
+}
+`
+
+// 對照組：回傳 str 的呼叫參與 `+` 是字串拼接，不得被當成整數算術歸一化。
+const valueMatchExprSubjectCallOperandStrSrc = `f = (data []i64) (out i64) {
+    n = data.len().to-str() + 'x': {
+        ok -> it
+
+        -> 0
+    }
+    out = n
+}
+`
+
+// 回傳 `?T` 的呼叫：算術把失敗標籤往外傳，主體仍是 `?T`、payload 是 `T`。
+// 與 `?T` 區域變數同口徑（operandAllowsIntFallbackWith 早就 StripOptionRaw）。
+const valueMatchExprSubjectOptionCallSrc = `g = (v ?i64) (out ?i64) {
+    out = v
+}
+
+f = (v ?i64) (out i64) {
+    n = g(v) - 1: {
+        ok -> it
+
+        -> 0
+    }
+    out = n
+}
+`
+
+// TestValueMatchExprSubjectCallOperand：呼叫運算元的主體必須與識別字運算元
+// 同口徑 —— 歸一化成 `__match_subj_*`，且 ok 臂的 `it` 帶 i64 型別。
+//
+// 判別力：把 inferOptionArithSubjectElem 的 inferCallArithSubjectElem 回退
+// 拿掉，第一個斷言立刻失敗（HIR 裡不會有 `__match_subj_`）。
+func TestValueMatchExprSubjectCallOperand(t *testing.T) {
+	dump := dumpHIR(t, valueMatchExprSubjectCallOperandSrc)
+	if !strings.Contains(dump, "let s=__match_subj_") {
+		t.Fatalf("a call operand (`data.len() - 1`) must be normalised into a "+
+			"`__match_subj_*` temp; the ok arm would have no `it` binding.\n--- HIR ---\n%s", dump)
+	}
+	if !strings.Contains(dump, "let s=it t=i64") {
+		t.Fatalf("ok arm `it` binding has no i64 type; MIR will zero-fill it.\n--- HIR ---\n%s", dump)
+	}
+}
+
+// TestValueMatchExprSubjectCallOperandStr：回傳 str 的呼叫不走整數算術路徑。
+// 少了這條對照，把「呼叫一律放行」寫成 fallback 也能讓上面的門禁通過。
+func TestValueMatchExprSubjectCallOperandStr(t *testing.T) {
+	dump := dumpHIR(t, valueMatchExprSubjectCallOperandStrSrc)
+	if strings.Contains(dump, "let s=__match_subj_") {
+		t.Fatalf("a str-returning call operand must NOT be normalised as integer "+
+			"arith.\n--- HIR ---\n%s", dump)
+	}
+}
+
+// TestValueMatchExprSubjectOptionCall：回傳 `?T` 的呼叫也要歸一化，payload 取 T。
+// 判別力：把 callArithOperandInt 的 StripOptionRaw 拿掉（回 false），本測試失敗。
+func TestValueMatchExprSubjectOptionCall(t *testing.T) {
+	dump := dumpHIR(t, valueMatchExprSubjectOptionCallSrc)
+	if !strings.Contains(dump, "let s=__match_subj_") {
+		t.Fatalf("an option-returning call operand must be normalised; the ok arm "+
+			"would have no `it` binding.\n--- HIR ---\n%s", dump)
+	}
+	if !strings.Contains(dump, "let s=it t=i64") {
+		t.Fatalf("ok arm `it` binding has no i64 type.\n--- HIR ---\n%s", dump)
 	}
 }

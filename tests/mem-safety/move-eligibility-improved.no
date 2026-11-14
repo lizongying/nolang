@@ -84,7 +84,11 @@ loop-body-read = () (out i64) {
     a = [1, 2, 3]
     b = a; 应 clone（a 在循环体内被读取）
     i <- [0, 1, 2]: {
-        print(a[i]); 循环体内读 a → 阻止 move
+        a[i]: {
+            err -> _
+
+            -> print(it); 循环体内读 a → 阻止 move
+        }
     }
 
     out = a[0]: {

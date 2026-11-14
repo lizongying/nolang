@@ -1560,7 +1560,36 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				if referencedByFunc && raw == "str" {
 					constStr = l.topLevelStrConst(n)
 				}
-				if !(referencedByFunc && (declOnly || constArr || constStr)) {
+				//  4. A top-level TAGGED-ENUM constant (`a e-num = lo`,
+				//     `b e-num = hi(42)`) read from a helper function.
+				//     foldConstText has no constructor case (a variant is built
+				//     by OpEnumNew at run time), so the `foldConstText == ""`
+				//     test below rejected it and the binding was never
+				//     registered. Every read inside a function then fell through
+				//     to the unresolved-identifier path and produced a `void`
+				//     const, which surfaced as `icmp eq void undef, %lv` (bug
+				//     #85's guard) from clang, or — before that guard — as a
+				//     match whose arms never fired. lowerGlobalRef folds the
+				//     variant into a constant, so registering is enough.
+				constEnum := false
+				if referencedByFunc && raw != "" {
+					if ei, isEnum := l.mod.TaggedEnums[raw]; isEnum {
+						// Gate on foldability: an unfoldable variant (non-scalar
+						// payload) must NOT become a zeroinitialized global —
+						// that would be tag 0, i.e. a DIFFERENT variant.
+						constEnum = l.foldTaggedEnumConst(l.letInitNode(n), ei) != ""
+					}
+				}
+				//  5. A top-level STRUCT-LITERAL binding (`pr point = point{n: 7}`)
+				//     read from a helper function. Same shape as the enum case:
+				//     foldConstText cannot fold a struct literal, so without this
+				//     the binding stayed a zeroinitialized global and every field
+				//     read outside the synthetic main returned 0.
+				constStruct := false
+				if referencedByFunc && raw != "" {
+					constStruct = l.foldStructLitConst(l.letInitNode(n), raw, gname) != ""
+				}
+				if !(referencedByFunc && (declOnly || constArr || constStr || constEnum || constStruct)) {
 					if raw == "" || l.foldConstText(n, raw) == "" {
 						continue
 					}
@@ -1861,12 +1890,23 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 		}
 		return l.inferredTypeOf(n)
 	case hir.KIdent:
-		if v, ok := l.locals[l.pkg.Str(n.S)]; ok {
+		name := l.pkg.Str(n.S)
+		if v, ok := l.locals[name]; ok {
 			if f := l.mod.Func(l.curFunc); f != nil {
 				if t, ok := f.LocalTypes[v]; ok {
 					return t
 				}
 			}
+		}
+		// A module-level binding has no local slot, so its type comes from the
+		// registered global type. This matters for match subjects: an arm's
+		// variant name (`fail`) is disambiguated by the SUBJECT's enum type
+		// (lowerIf), and with the subject typed as void that lookup fell back
+		// to a whole-program variant scan — `fail` exists in two enums, so it
+		// resolved to nothing and the arm condition became
+		// `icmp eq %tenum_a_res %lv, undef`.
+		if raw := l.globalTypes[name]; raw != "" && raw != "void" {
+			return l.b.Type(raw)
 		}
 	case hir.KIndex:
 		// array/vec/str element read `a[i]`. The element type is the indexed
@@ -2097,6 +2137,27 @@ func (l *lowerer) isInlineableLetType(raw string) bool {
 	// Enum types (`code`, `file-mode`, `file-perm`) lower to i64 and inline
 	// cleanly into the synthetic `main`.
 	if l.isEnumTypeName(raw) {
+		return true
+	}
+	// TAGGED enums (`e-res`, `e-num`) are `%tenum_<name>` aggregates, not
+	// scalars, but a top-level binding of one lowers exactly like a
+	// function-local one: the variant constructor allocates the slot and stores
+	// tag + payload. They are NOT in StructFields, so before this branch they
+	// fell into the "non-inlineable, not a registered struct" case below and the
+	// whole `let` was dropped from the synthetic `main` — every later read then
+	// lowered to `undef`:
+	//
+	//	e-num { hi(v i64), lo }
+	//	a e-num = lo            ; dropped
+	//	take(a)                 -> store %tenum_e_num undef + call
+	//
+	// Consequence was silent, not loud: the argument slot holds whatever the
+	// stack did, so the match could take ANY arm — `tests/tagged-enum-alias.no`
+	// printed the ok-arm text for its `fail` cases and finally died with
+	// `signal: bus error` when the garbage payload was used as a `str`.
+	// An enum initialised from a CALL (`a e-num = hi(42)`) never hit this,
+	// because letValueIsCall's branch above inlines it unconditionally.
+	if _, ok := l.mod.TaggedEnums[strings.TrimPrefix(raw, "%")]; ok {
 		return true
 	}
 	return false
@@ -6663,6 +6724,22 @@ func (l *lowerer) lowerGlobalRef(name string) ValueID {
 				if ct := l.foldOptionGlobalConst(nn, initNode, elemRaw, name); ct != "" {
 					l.setGlobalConstText(gv, ct)
 				}
+			} else if ei := l.mod.TaggedEnums[gtype]; ei != nil {
+				// Tagged-enum module constant (`a e-num = lo`, `b e-num = hi(42)`):
+				// spell the variant out as a constant of the enum's own layout.
+				// Without this the global stayed zeroinitialized, i.e. tag 0 —
+				// the FIRST declared variant — so `a e-num = lo` read back as
+				// `hi(0)` in any function that named it.
+				if ct := l.foldTaggedEnumConst(initNode, ei); ct != "" {
+					l.setGlobalConstText(gv, ct)
+				}
+			} else if initNode.Kind == hir.KStructLit {
+				// Struct-literal module constant (`pr point = point{n: 7}`):
+				// spell the fields out so a helper function reads 7 instead of
+				// the zeroinitializer default.
+				if ct := l.foldStructLitConst(initNode, gtype, name); ct != "" {
+					l.setGlobalConstText(gv, ct)
+				}
 			} else if initNode.Kind == hir.KStrLit {
 				// Module-level `VERSION = '...'` (and any top-level str constant):
 				// emit a backing byte-array constant plus a %str-long struct
@@ -6702,12 +6779,26 @@ func (l *lowerer) foldStrLitConst(initNode *hir.Node, name string) string {
 	text := l.pkg.Str(initNode.S)
 	nb := len([]byte(text))
 	backing := ".gstr." + name
+	l.addStrBackingGlobal(backing, text)
+	return fmt.Sprintf("%%str-long { i32 %d, i32 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
+}
+
+// addStrBackingGlobal registers the byte-array global that holds a folded string
+// literal's characters. Idempotent on `backing`: the same binding may be folded
+// more than once (a registration probe followed by the real materialization),
+// and a second declaration of the same symbol would make the module ill-formed.
+func (l *lowerer) addStrBackingGlobal(backing, text string) {
+	for _, g := range l.mod.Globals {
+		if g.Name == backing {
+			return
+		}
+	}
+	nb := len([]byte(text))
 	l.mod.Globals = append(l.mod.Globals, GlobalDecl{
 		Name:      backing,
 		Type:      l.b.Type("str"),
 		ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
 	})
-	return fmt.Sprintf("%%str-long { i32 %d, i32 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
 }
 
 // foldOptionGlobalConst folds a top-level option-typed `let` (e.g. `v ?i64 = 7`)
@@ -6739,11 +6830,7 @@ func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name st
 		text := l.pkg.Str(initNode.S)
 		nb := len([]byte(text))
 		backing := ".gstr." + name
-		l.mod.Globals = append(l.mod.Globals, GlobalDecl{
-			Name:      backing,
-			Type:      l.b.Type("str"),
-			ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
-		})
+		l.addStrBackingGlobal(backing, text)
 		if n < 2 {
 			return "" // a 16-byte %str-long cannot fit a smaller payload slot
 		}
@@ -6781,6 +6868,180 @@ func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name st
 		slot = fmt.Sprintf("[%d x i64] zeroinitializer", n)
 	}
 	return fmt.Sprintf("%s { i8 0, %s }", lay.LLVM, slot)
+}
+
+// foldTaggedEnumConst folds a top-level tagged-enum binding's initializer
+// (`a e-num = lo`, `b e-num = hi(42)`) into a constant of the enum's own
+// `%tenum_<name> { iN tag, [K x i64] payload }` layout.
+//
+// The generic foldConstText cannot do this: a variant value is produced by
+// OpEnumNew at run time (tag write + payload store), not by folding the
+// constructor expression. Without this fold the module global was emitted as
+// `zeroinitializer`, which for a tagged enum means tag 0 — the FIRST declared
+// variant — so `a e-num = lo` was read back as `hi(<zero payload>)` by any
+// helper function, and a match on it took the wrong arm.
+//
+// The payload words are filled for SCALAR fields (the common case, and the only
+// one that folds to a plain i64). Anything else (str/struct/vec payload, or a
+// field whose initializer is not constant) stays zeroed: the tag is still
+// right, so the match dispatches correctly, and a zeroed payload reads as a
+// zero scalar / empty str rather than as another variant's data.
+func (l *lowerer) foldTaggedEnumConst(initNode *hir.Node, ei *TaggedEnumInfo) string {
+	if initNode == nil || ei == nil {
+		return ""
+	}
+	// The initializer is either a bare unit variant (`lo`) or a constructor
+	// call (`hi(42)`). Anything else is not a variant value at all.
+	variant := ""
+	var argIDs []int32
+	switch initNode.Kind {
+	case hir.KIdent:
+		variant = l.pkg.Str(initNode.S)
+	case hir.KCall:
+		if fn := l.pkg.Node(l.slot(initNode.Id, "fn")); fn != nil && fn.Kind == hir.KIdent {
+			variant = l.pkg.Str(fn.S)
+		}
+		argIDs = l.slotArgs(initNode.Id, "arg")
+	default:
+		return ""
+	}
+	_, vi := l.enumVariantOf(ei.Name, variant)
+	if vi == nil {
+		return ""
+	}
+	tag := fmt.Sprintf("%s %d", ei.TagLT, vi.Tag)
+	// The initializer text carries its own type — GlobalDecl.ConstText is
+	// written verbatim after `private global` (see codegen's emitGlobal).
+	enumLT := "%tenum_" + sanitize(ei.Name)
+	if !enumHasPayload(ei) {
+		return fmt.Sprintf("%s { %s }", enumLT, tag)
+	}
+	words := make([]string, enumWords(ei))
+	for i := range words {
+		words[i] = "i64 0"
+	}
+	if len(argIDs) < len(vi.Fields) {
+		// A partially written variant cannot be spelled as a constant.
+		return ""
+	}
+	for i := 0; i < len(vi.Fields); i++ {
+		arg := l.pkg.Node(argIDs[i])
+		if arg == nil {
+			return ""
+		}
+		// Place the value where OpEnumNew places it: the field's naturally
+		// aligned BYTE offset inside the payload union, i.e. word
+		// FieldOffsets[i]/8 of the `[K x i64]`.
+		off := int64(0)
+		if i < len(vi.FieldOffsets) {
+			off = vi.FieldOffsets[i]
+		}
+		ct := l.foldConstText(arg, vi.Fields[i])
+		if off%8 != 0 || !isScalarConst(ct) {
+			// A non-scalar payload (a str/vec/struct field) is deliberately
+			// NOT folded: the payload would point into static storage, and a
+			// match on the global loads a COPY and drops it, so the enum drop
+			// helper would free a static buffer (observed as `trace/BPT trap`
+			// right after the first match). Such a binding stays unresolved
+			// instead of becoming a global that crashes when read — the same
+			// state it was in before this fold existed.
+			return ""
+		}
+		if w := off / 8; w >= 0 && w < int64(len(words)) {
+			words[w] = scalarConstToI64(ct)
+		}
+	}
+	return fmt.Sprintf("%s { %s, %s [%s] }", enumLT, tag, enumPayloadLT(enumWords(ei)), strings.Join(words, ", "))
+}
+
+// foldStructLitConst folds a top-level struct-literal binding (`pr point =
+// point{n: 7}`) into a constant of the struct's own `%<struct>` layout, so a
+// helper function reading the binding sees the real field values instead of
+// zeroes.
+//
+// foldConstText has no KStructLit case (a struct literal lowers to
+// OpStructLit + per-field stores, not to an expression fold), so the global was
+// either never registered or materialized with an EMPTY ConstText —
+// `private global <T> zeroinitializer`. Every read of `pr.n` from a function
+// then returned 0 while the same read in the synthetic main (which inlines the
+// binding as a local) returned 7.
+//
+// Returns "" when any field would need a heap pointer (a pointerized field
+// cannot live in a static constant), leaving the previous zero-initialized
+// behaviour intact rather than emitting a wrong constant.
+func (l *lowerer) foldStructLitConst(initNode *hir.Node, raw, name string) string {
+	if initNode == nil || initNode.Kind != hir.KStructLit || raw == "" {
+		return ""
+	}
+	key := l.canonStructRaw(raw)
+	fields := l.mod.StructFields[key]
+	if len(fields) == 0 {
+		return ""
+	}
+	lc := l.layoutCg()
+	// A struct literal may name its fields in any order, so index the value
+	// nodes by name rather than relying on positional equality.
+	valOf := make(map[string]int32, len(fields))
+	for _, fID := range l.pkg.Children(initNode.Id) {
+		fn := l.pkg.Node(fID)
+		if fn == nil || fn.Kind != hir.KStructField {
+			continue
+		}
+		for _, c := range l.pkg.Children(fID) {
+			valOf[l.pkg.Str(fn.S)] = c
+			break
+		}
+	}
+	parts := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if l.mod.FieldIsPointer(f) {
+			return ""
+		}
+		ft := l.mod.Type(l.mod.internType(f.TypeRaw))
+		if ft == nil {
+			return ""
+		}
+		lt := lc.llvmTypeOf(ft)
+		if lt == "" || lt == "void" {
+			return ""
+		}
+		ct := ""
+		if vid, ok := valOf[f.Name]; ok {
+			if vn := l.pkg.Node(vid); vn != nil {
+				if vn.Kind == hir.KStrLit {
+					ct = l.foldStrLitConst(vn, name+"."+f.Name)
+				} else {
+					ct = l.foldConstText(vn, f.TypeRaw)
+				}
+			}
+		}
+		// A field that does not fold (or folds to a different LLVM type) keeps
+		// its zero value — `zeroinitializer` is a legal element constant for
+		// every type, so the enclosing struct literal stays well-formed.
+		if ct == "" || !strings.HasPrefix(ct, lt+" ") {
+			ct = lt + " zeroinitializer"
+		}
+		parts = append(parts, ct)
+	}
+	return fmt.Sprintf("%%%s { %s }", sanitize(key), strings.Join(parts, ", "))
+}
+
+// letInitNode returns the initializer expression of a top-level KLet — the
+// node every constant folder works on — or nil when the binding has none (a
+// declaration-only `x []byte`).
+func (l *lowerer) letInitNode(n *hir.Node) *hir.Node {
+	for n != nil && n.Kind == hir.KLet {
+		var next *hir.Node
+		for _, c := range l.pkg.Children(n.Id) {
+			next = l.pkg.Node(c)
+			break
+		}
+		if next == nil {
+			return nil
+		}
+		n = next
+	}
+	return n
 }
 
 // isScalarConst reports whether ct is a scalar LLVM constant (i1/i8/i16/i32/i64/
@@ -8717,7 +8978,23 @@ func (l *lowerer) evalConstIfBranch(ifID int32, env map[string]comptimeVal, stac
 	}
 	res, rok := l.evalConstBody(taken, env, stack, resultName)
 	if !rok {
-		return comptimeVal{}, false, true
+		// The TAKEN branch is where the `if` goes, but the evaluator refused
+		// something inside it. Reporting this as "fell through" (returned =
+		// false, ok = true) let the caller keep scanning PAST a body it never
+		// evaluated — so every binding the branch makes was silently skipped
+		// while the value bound before the `if` survived:
+		//
+		//	yes = 1
+		//	{ pol == asp.P-NON-EMPTY -> { yes = 0
+		//	                             val.len-bytes() > 0 -> yes = 1 } }
+		//
+		// folded to 1 for EVERY `pol`, because `val.len-bytes() > 0` is a call
+		// the folder cannot interpret, the whole then-block was abandoned, and
+		// the scan resumed after it (ast-test's `wanted` assertions). The
+		// caller MUST abandon the whole fold instead — that is the contract
+		// documented on evalConstIfBranch, and `undef`/wrong constants are the
+		// price of breaking it.
+		return comptimeVal{}, false, false
 	}
 	return res, true, true
 }
@@ -9195,8 +9472,23 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			// plain const of the enum type, leaving the arm to compare against
 			// discriminant 0 regardless of the variant's real tag
 			// (tests/tagged-enum.no prints `0` instead of `hi`).
-			if ei, vi := l.enumVariantOf(l.enumPrefer(), name); ei != nil && vi != nil {
-				return l.lowerEnumUnit(ei, vi)
+			//
+			// ⚠️ But NOT in an option-tag TEST context. There the subject is a
+			// `?T`, so a bare `ok` is ALWAYS the option's "some" discriminant —
+			// an enum constructor of that name could never type-check against
+			// `?T`. Letting the enum win here corrupted every option match in
+			// std once the program declared an enum with an `ok` variant: the
+			// arm compared the option tag against a ZERO-INITIALISED value of
+			// that enum (`icmp eq i64 %tag, %enumstruct`, ill-typed IR →
+			// `linking failed [wjju8z98]`). `enumPrefer()` fell back to the
+			// stale `armEnumPrefer` of an enclosing user enum match, so the
+			// leak crossed module boundaries into `std/fmt.no`'s
+			// `c char = spec[i]` unwrap — that is why four `tests/tagged-enum*`
+			// files failed to LINK while the enum-free corpus was green.
+			if !variantCtx {
+				if ei, vi := l.enumVariantOf(l.enumPrefer(), name); ei != nil && vi != nil {
+					return l.lowerEnumUnit(ei, vi)
+				}
 			}
 			// Genuine bare variant keyword. Determine the option type from the
 			// surrounding context (the matched subject's type).
@@ -10919,6 +11211,44 @@ func typeConstantText128(typeName, field string) (string, string, bool) {
 	return maxTxt, typeName, true
 }
 
+// lowerModuleScopedBinding resolves `<module>.<name>` in VALUE position: the
+// leftmost ident is a module NAMESPACE (neither a local nor a global), so the
+// property names a module-level binding owned by that module.
+//
+// The merged HIR registers a module's top-level `let` under its BARE name
+// (`K-PROGRAM`) and records the owner separately in globalOwners, because the
+// cross-module merge keeps only the first `let` of a given name. Both
+// spellings are therefore tried, and the recorded owner is enforced so a
+// namespace can never reach another module's same-named binding.
+func (l *lowerer) lowerModuleScopedBinding(module, name string) (ValueID, bool) {
+	if module == "" || name == "" {
+		return NoVal, false
+	}
+	// A real value binding of the same spelling shadows the namespace reading.
+	if _, bound := l.locals[module]; bound {
+		return NoVal, false
+	}
+	if _, gbound := l.globals[module]; gbound {
+		return NoVal, false
+	}
+	qualified := module + "." + name
+	if _, ok := l.globals[qualified]; ok {
+		return l.lowerGlobalRef(qualified), true
+	}
+	if _, declared := l.globals[name]; !declared {
+		return NoVal, false
+	}
+	if _, tracked := l.globalOwners[name]; tracked {
+		if owner := l.globalOwners[name]; owner != "" && owner != module {
+			return NoVal, false
+		}
+	}
+	if !l.globalVisible(name) {
+		return NoVal, false
+	}
+	return l.lowerGlobalRef(name), true
+}
+
 func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 	fieldName := l.pkg.Str(n.S)
 
@@ -10947,6 +11277,20 @@ func (l *lowerer) lowerDotRead(n *hir.Node) ValueID {
 			}
 			if v, ok := typeConstantValue(tname, fieldName); ok {
 				return l.b.EmitInt(OpConst, l.b.Type("i64"), v, "")
+			}
+			// Module-scoped binding read (`asp.K-PROGRAM`, `fs.SEEK-SET`).
+			// The receiver is a MODULE NAMESPACE, not a value: a bare ident
+			// that is neither a local nor a global names the module that owns
+			// the property. Treating it as a value made the receiver lower to
+			// an "unresolved identifier" void const, the field read then had
+			// no receiver, and the whole expression became NoVal — which
+			// surfaces far away as
+			//   EmitLLVM: func ...: consumer reads value 0 (NoVal)  (bug #85)
+			// e.g. `print(asp.K-PROGRAM)` / `runner.eq(asp.KIND-COUNT, …)`.
+			// The call form (`asp.kind-name(x)`) already has this branch in
+			// resolveCallee; this is its value-position counterpart.
+			if v, ok := l.lowerModuleScopedBinding(tname, fieldName); ok {
+				return v
 			}
 		}
 	}

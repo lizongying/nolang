@@ -440,14 +440,21 @@ t-fill = () {
 
 ; ── 位元組存取 ────────────────────────────────
 
-; 驗證 byte / at 依位元組下標取值，越界一律回 nil（不做越界讀）
+; 驗證 byte / at 依位元組下標取值：byte 越界回 nil（逃生艙口），
+; 容器索引 s[i] 越界回 err（code.index-out）；at(i) 為 deprecated，僅保留界內覆蓋
 t-byte-at = () {
     s = 'abc'
     runner.eq(byte-at(s, 0, -1), 97, 'byte(0) == a')
     runner.eq(byte-at(s, 2, -1), 99, 'byte(2) == c')
     runner.eq(byte-at(s, 3, -1), -1, 'byte(3) out of range == nil')
     runner.eq(at-x(s, 1, -1), 98, 'at(1) == b')
-    runner.eq(at-x(s, 3, -1), -1, 'at(3) out of range == nil')
+    is-err = false
+    s[3]: {
+        err -> is-err = true
+
+        -> _
+    }
+    runner.is-true(is-err, 's[3] out of range == err')
 }
 
 ; str.set-byte 已于 2026-11-11 私有化（`str._set-byte`），用户码调用会被 checker

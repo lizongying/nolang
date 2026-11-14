@@ -279,14 +279,12 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
     mask -> {
         {
-
             #{overflow=wrap}
-            header-len-opt = header-len + 4
-            header-len-opt: {
-                ok -> header-len = it
+            header-len ?= header-len + 4
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1085,14 +1083,12 @@ server-conn.recv-nb = () (msg ?message) {
 
     masked -> {
         {
-
             #{overflow=wrap}
-            payload-start-opt = mask-start + 4
-            payload-start-opt: {
-                ok -> payload-start = it
+            payload-start ?= mask-start + 4
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     payload str = with-len(payload-len)

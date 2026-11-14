@@ -391,7 +391,7 @@ val t: 要推入的值
 `
   'arr.asc': '[n]t.asc: 升冪原地排序（插入排序）'
   'arr.at': `
-[n]t.at: 安全索引存取
+[deprecated] [n]t.at: 安全索引存取——請改用 a[i]（原生索引，回傳 ?t，越界為 err）
 i i64: 索引
 回傳 val ?t: 越界時回傳 nil
 
@@ -7981,7 +7981,7 @@ out: 生成的 v4 隨機 UUID（state 隨 xorshift32 推進）
   'uuid.variant': '取得 UUID 變體'
   'uuid.version': '取得 UUID 版本'
   'vec.at': `
-[]t.at: 安全索引存取，越界回傳 nil
+[deprecated] []t.at: 安全索引存取，越界回傳 nil——請改用 v[i]（原生索引，回傳 ?t，越界為 err）
 注意：sz = .len() 強制 vec self 型別，避免錯誤特化為 arr 方法
 
 `

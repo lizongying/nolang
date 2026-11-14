@@ -109,14 +109,12 @@ zs-bit-reader.read-varint = () (v i64) {
         (b & 0x80) == 0 -> break
 
         {
-
             #{overflow=wrap}
-            shift-opt = shift + 7
-            shift-opt: {
-                ok -> shift = it
+            shift ?= shift + 7
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -206,25 +204,23 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     pos = 0
 
     i <- [0..max-symbol + 1): {
-        ixout179c19 = norm-count[i]: {
+        norm-count-i = norm-count[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout179c19 == -1 -> {
+        norm-count-i == -1 -> {
             {
                 .symbol[high-thresh] ?= i
 
                 {
-
                     #{overflow=wrap}
-                    high-thresh-opt = high-thresh - 1
-                    high-thresh-opt: {
-                        ok -> high-thresh = it
+                    high-thresh ?= high-thresh - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }: {
                 err -> _
@@ -249,14 +245,12 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
         nc > 0 -> {
             {
-
                 #{overflow=wrap}
-                pos-opt = pos + nc
-                pos-opt: {
-                    ok -> pos = it
+                pos ?= pos + nc
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -273,14 +267,14 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
         nc > 0 -> {
             j <- [0..nc): {
-                ixout214c25 = positions[i]: {
+                positions-i = positions[i]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                .symbol[ixout214c25 + j]: {
+                .symbol[positions-i + j]: {
                     ok -> it = i
 
                     -> _
@@ -312,13 +306,13 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
                 -> _
             }
 
-            ixout233c53 = positions[sym]: {
+            positions-sym = positions[sym]: {
                 ok -> it
 
                 -> _
             }
 
-            .next-state[i] ?= (nc << nb) + (i - ixout233c53)
+            .next-state[i] ?= (nc << nb) + (i - positions-sym)
         }: {
             err -> _
 
@@ -382,14 +376,12 @@ fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
     }
 
     {
-
         #{overflow=wrap}
-        new-state-opt = base + extra
-        new-state-opt: {
-            ok -> new-state = it
+        new-state ?= base + extra
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -426,13 +418,13 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 
             -> _
         }
-        ixout331c16 = lengths[i]: {
+        lengths-i = lengths[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout331c16 > .table-log -> {
+        lengths-i > .table-log -> {
             .table-log = lengths[i]: {
                 ok -> it
 
@@ -484,14 +476,12 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         }
 
         {
-
             #{overflow=wrap}
-            pp-opt = pp + cnt-i
-            pp-opt: {
-                ok -> pp = it
+            pp ?= pp + cnt-i
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -517,27 +507,20 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         }
 
         l > 0 -> {
-            ixout364c21 = tmp-base[l]: {
-                ok -> it
+            {
+                ; 該碼長的下一個待填位置，用過即前移
+                slot-start ?= tmp-base[l]
 
-                -> _
-            }
+                .symbol[slot-start]: {
+                    ok -> it = i
 
-            .symbol[ixout364c21]: {
-                ok -> it = i
+                    -> _
+                }
 
-                -> _
-            }
-
-            ixout368c28 = tmp-base[l]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            tmp-base[l]: {
-                ok -> it = ixout368c28 + 1
+                #{overflow=wrap}
+                tmp-base[l] ?= slot-start + 1
+            }: {
+                err -> _
 
                 -> _
             }
@@ -585,14 +568,12 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
         }
 
         {
-
             #{overflow=wrap}
-            len-opt = len + 1
-            len-opt: {
-                ok -> len = it
+            len ?= len + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -1083,43 +1064,24 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
 decompress = (data []byte) (out []byte) {
     data.len() < 4 -> return
 
-    ; 檢查 Zstandard magic number (小端序)
-    ixout722c9 = data[0]: {
-        ok -> it
+    ; 檢查 Zstandard magic number（小端序：ZS-MAGIC 的 4 個位元組）
+    magic-value i64 = 0
+    i <- [0..4): {
+        {
+            magic-byte ?= data[i]
 
-        -> _
+            #{overflow=wrap}
+            bit-shift ?= i * 8
+
+            magic-value = magic-value | (magic-byte << bit-shift)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
-    ixout722c9 != 0x28 -> {
-        return
-    }
-    ixout725c9 = data[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout725c9 != 0xb5 -> {
-        return
-    }
-    ixout728c9 = data[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout728c9 != 0x2f -> {
-        return
-    }
-    ixout731c9 = data[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout731c9 != 0xfd -> {
-        return
-    }
+    magic-value != ZS-MAGIC -> { return }
 
     ; 建立 frame 解碼器
     frame = zs-frame{
@@ -1134,19 +1096,20 @@ decompress = (data []byte) (out []byte) {
 
     ; 解碼區塊
     !! {
-        lb-opt = frame.decode-block()
-        success = false
+        ; ⚠️ err 臂要改兩個旗標，只能用語句 match（`?=` 块的臂是獨立幀，臂內寫入不生效）
+        block-result = frame.decode-block()
         last-block = false
-        lb-opt: {
+        decoded = false
+        block-result: {
             ok -> {
                 last-block = it
-                success = true
+                decoded = true
             }
 
-            -> success = false
+            -> decoded = false
         }
 
-        success == false -> break
+        decoded == false -> break
         last-block == true -> break
     }
 

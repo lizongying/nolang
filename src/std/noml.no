@@ -120,34 +120,31 @@ hex-digit = (c i64) (d i64) {
     {
         c >= 48 && c <= 57 -> {
             {
-                d-opt = c - 48
-                d-opt: {
-                    ok -> d = it
+                d ?= c - 48
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         c >= 97 && c <= 102 -> {
             {
-                d-opt2 = c - 87
-                d-opt2: {
-                    ok -> d = it
+                d ?= c - 87
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         c >= 65 && c <= 70 -> {
             {
-                d-opt3 = c - 55
-                d-opt3: {
-                    ok -> d = it
+                d ?= c - 55
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -163,22 +160,20 @@ hex-char = (d i64) (c i64) {
     c = 48
     d >= 10 -> {
         {
-            c-opt = 87 + d
-            c-opt: {
-                ok -> c = it
+            c ?= 87 + d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     d < 10 -> {
         {
-            c-opt2 = 48 + d
-            c-opt2: {
-                ok -> c = it
+            c ?= 48 + d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -333,24 +328,22 @@ pool.skip-trivia = (s str, pos i64) (p i64) {
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> {
                 {
-                    p-opt = p + 1
-                    p-opt: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             c == 59 -> {
                 (p < sn && s.byte(p) != 10) {
                     {
-                        p-opt2 = p + 1
-                        p-opt2: {
-                            ok -> p = it
+                        p ?= p + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
@@ -373,12 +366,11 @@ pool.skip-blanks = (s str, pos i64) (p i64) {
         {
             (c == 32 || c == 9) -> {
                 {
-                    p-opt3 = p + 1
-                    p-opt3: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -404,12 +396,11 @@ pool.at-line-start = (s str, pos i64) (yes bool) {
 
             c == 32 || c == 9 || c == 13 -> {
                 {
-                    i-opt = i - 1
-                    i-opt: {
-                        ok -> i = it
+                    i ?= i - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -435,12 +426,11 @@ pool.line-of = (s str, pos i64) (line i64) {
     i <- [0..n): {
         s.byte(i) == 10 -> {
             {
-                line-opt = line + 1
-                line-opt: {
-                    ok -> line = it
+                line ?= line + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -471,23 +461,21 @@ pool.scan-quote = (s str, pos i64) (next i64) {
         {
             c == 92 -> {
                 {
-                    p-opt4 = p + 2
-                    p-opt4: {
-                        ok -> p = it
+                    p ?= p + 2
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             c == 39 -> {
                 {
-                    next-opt = p + 1
-                    next-opt: {
-                        ok -> next = it
+                    next ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 return
             }
@@ -496,12 +484,11 @@ pool.scan-quote = (s str, pos i64) (next i64) {
 
             -> {
                 {
-                    p-opt5 = p + 1
-                    p-opt5: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -520,12 +507,11 @@ pool.scan-raw = (s str, pos i64) (next i64) {
     p >= sn -> return
     s.byte(p) != 10 -> return
     {
-        p-opt6 = p + 1
-        p-opt6: {
-            ok -> p = it
+        p ?= p + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     (p < sn) {
         c = s.byte(p)
@@ -537,12 +523,11 @@ pool.scan-raw = (s str, pos i64) (next i64) {
                     {
                         (cc == 32 || cc == 9 || cc == 13) -> {
                             {
-                                j-opt = j + 1
-                                j-opt: {
-                                    ok -> j = it
+                                j ?= j + 1
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                         }
 
@@ -551,33 +536,30 @@ pool.scan-raw = (s str, pos i64) (next i64) {
                 }
                 (j < sn && s.byte(j) == 96) -> {
                     {
-                        next-opt2 = j + 1
-                        next-opt2: {
-                            ok -> next = it
+                        next ?= j + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                     return
                 }
                 {
-                    p-opt7 = p + 1
-                    p-opt7: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-                    p-opt8 = p + 1
-                    p-opt8: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -616,82 +598,74 @@ pool.scan-ann = (s str, pos i64) (next i64) {
 
             c == 91 || c == 123 -> {
                 {
-                    depth-opt = depth + 1
-                    depth-opt: {
-                        ok -> depth = it
+                    depth ?= depth + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    p-opt9 = p + 1
-                    p-opt9: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             c == 93 -> {
                 depth > 0 -> {
                     {
-                        depth-opt2 = depth - 1
-                        depth-opt2: {
-                            ok -> depth = it
+                        depth ?= depth - 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
                 {
-                    p-opt10 = p + 1
-                    p-opt10: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             c == 125 -> {
                 depth == 0 -> {
                     {
-                        next-opt3 = p + 1
-                        next-opt3: {
-                            ok -> next = it
+                        next ?= p + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                     return
                 }
                 {
-                    depth-opt3 = depth - 1
-                    depth-opt3: {
-                        ok -> depth = it
+                    depth ?= depth - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    p-opt11 = p + 1
-                    p-opt11: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-                    p-opt12 = p + 1
-                    p-opt12: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -870,12 +844,11 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
         }
         s.byte(p) == 125 -> {
             {
-                next-opt4 = p + 1
-                next-opt4: {
-                    ok -> next = it
+                next ?= p + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             ok = true
             return
@@ -976,12 +949,11 @@ pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
         }
         s.byte(p) == 93 -> {
             {
-                next-opt5 = p + 1
-                next-opt5: {
-                    ok -> next = it
+                next ?= p + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             ok = true
             return
@@ -998,23 +970,21 @@ pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
         {
             c == 44 -> {
                 {
-                    p-opt13 = p + 1
-                    p-opt13: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             c == 93 -> {
                 {
-                    next-opt6 = p + 1
-                    next-opt6: {
-                        ok -> next = it
+                    next ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 ok = true
                 return
@@ -1046,23 +1016,21 @@ pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
         {
             c == 32 || c == 9 || c == 13 -> {
                 {
-                    pos-opt = pos + 1
-                    pos-opt: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             c == 10 -> {
                 {
-                    next-opt7 = pos + 1
-                    next-opt7: {
-                        ok -> next = it
+                    next ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 ok = true
                 return
@@ -1077,22 +1045,20 @@ pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
             c == 59 -> {
                 (pos < sn && s.byte(pos) != 10) {
                     {
-                        pos-opt2 = pos + 1
-                        pos-opt2: {
-                            ok -> pos = it
+                        pos ?= pos + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
                 pos < sn -> {
                     {
-                        next-opt8 = pos + 1
-                        next-opt8: {
-                            ok -> next = it
+                        next ?= pos + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                     ok = true
                     return
@@ -1137,12 +1103,11 @@ pool.parse-key = (s str, pos i64) (key str, next i64, ok bool) {
     p = pos
     (p < sn && is-ident-char(s.byte(p))) {
         {
-            p-opt14 = p + 1
-            p-opt14: {
-                ok -> p = it
+            p ?= p + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     key = s.slice-bytes(pos, p)
@@ -1177,12 +1142,11 @@ pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
             c == 39 -> {
                 val = val - s.slice-bytes(seg, p)
                 {
-                    next-opt9 = p + 1
-                    next-opt9: {
-                        ok -> next = it
+                    next ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 ok = true
                 return
@@ -1206,12 +1170,11 @@ pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
 
             -> {
                 {
-                    p-opt15 = p + 1
-                    p-opt15: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -1241,12 +1204,11 @@ pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
     #{overflow=wrap}
     e = s.byte(pos + 1)
     {
-        next-opt10 = pos + 2
-        next-opt10: {
-            ok -> next = it
+        next ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     ok = true
     {
@@ -1272,12 +1234,11 @@ pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
                 return
             }
             {
-                next-opt11 = pos + 6
-                next-opt11: {
-                    ok -> next = it
+                next ?= pos + 6
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             ch char = code
             val = ch.to-str()
@@ -1307,12 +1268,11 @@ pool.hex4 = (s str, pos i64) (code i64) {
         d = hex-digit(s.byte(i))
         d < 0 -> return
         {
-            v-opt = v * 16 + d
-            v-opt: {
-                ok -> v = it
+            v ?= v * 16 + d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     code = v
@@ -1344,23 +1304,21 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
     {
         p + 1 < sn && s.byte(p) == 13 && s.byte(p + 1) == 10 -> {
             {
-                p-opt16 = p + 2
-                p-opt16: {
-                    ok -> p = it
+                p ?= p + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         s.byte(p) == 10 -> {
             {
-                p-opt17 = p + 1
-                p-opt17: {
-                    ok -> p = it
+                p ?= p + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -1386,22 +1344,20 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                 j = p + 1
                 (j < sn && (s.byte(j) == 32 || s.byte(j) == 9 || s.byte(j) == 13)) {
                     {
-                        j-opt2 = j + 1
-                        j-opt2: {
-                            ok -> j = it
+                        j ?= j + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
                 (j < sn && s.byte(j) == 96) -> {
                     {
-                        next-opt12 = j + 1
-                        next-opt12: {
-                            ok -> next = it
+                        next ?= j + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                     ok = true
                     val = buf.slice-bytes(0, k)
@@ -1413,32 +1369,29 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                     -> _
                 }
                 {
-                    k-opt = k + 1
-                    k-opt: {
-                        ok -> k = it
+                    k ?= k + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    p-opt18 = p + 1
-                    p-opt18: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             ; CR 丟棄：CRLF 與 LF 來源得到相同的值（與 src/lexer、src/package 同口徑）
             c == 13 -> {
                 {
-                    p-opt19 = p + 1
-                    p-opt19: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -1449,20 +1402,18 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                     -> _
                 }
                 {
-                    k-opt2 = k + 1
-                    k-opt2: {
-                        ok -> k = it
+                    k ?= k + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    p-opt20 = p + 1
-                    p-opt20: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -1490,12 +1441,11 @@ pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
     s.byte(i) == 45 -> {
         negative = true
         {
-            i-opt2 = i + 1
-            i-opt2: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     (i < sn) {
@@ -1508,20 +1458,18 @@ pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
         c < 48 || c > 57 -> break
         val = val * 10.0 + (c - 48)
         {
-            digits-opt = digits + 1
-            digits-opt: {
-                ok -> digits = it
+            digits ?= digits + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         {
-            i-opt3 = i + 1
-            i-opt3: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     digits == 0 -> {
@@ -1530,12 +1478,11 @@ pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
     }
     (i < sn && s.byte(i) == 46) {
         {
-            i-opt4 = i + 1
-            i-opt4: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         frac = 0.1
         fd = 0
@@ -1550,20 +1497,18 @@ pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             val = val + frac * (c - 48)
             frac = frac * 0.1
             {
-                fd-opt = fd + 1
-                fd-opt: {
-                    ok -> fd = it
+                fd ?= fd + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             {
-                i-opt5 = i + 1
-                i-opt5: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         fd == 0 -> {
@@ -1573,23 +1518,21 @@ pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
     }
     (i < sn && (s.byte(i) == 101 || s.byte(i) == 69)) {
         {
-            i-opt6 = i + 1
-            i-opt6: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         sign = 1
         (i < sn && (s.byte(i) == 43 || s.byte(i) == 45)) {
             s.byte(i) == 45 -> sign = -1
             {
-                i-opt7 = i + 1
-                i-opt7: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         ev = 0
@@ -1603,28 +1546,25 @@ pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             }
             c < 48 || c > 57 -> break
             {
-                ev-opt = ev * 10 + (c - 48)
-                ev-opt: {
-                    ok -> ev = it
+                ev ?= ev * 10 + (c - 48)
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             {
-                ed-opt = ed + 1
-                ed-opt: {
-                    ok -> ed = it
+                ed ?= ed + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             {
-                i-opt8 = i + 1
-                i-opt8: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         ed == 0 -> {
@@ -1857,12 +1797,11 @@ pool.raw-safe = (s str) (yes bool) {
                 {
                     (c == 32 || c == 9 || c == 13) -> {
                         {
-                            j-opt3 = j + 1
-                            j-opt3: {
-                                ok -> j = it
+                            j ?= j + 1
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
@@ -1875,12 +1814,11 @@ pool.raw-safe = (s str) (yes bool) {
             }
         }
         {
-            i-opt9 = i + 1
-            i-opt9: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -1903,12 +1841,11 @@ pool.quote = (s str) (out str) {
         -> _
     }
     {
-        k-opt3 = k + 1
-        k-opt3: {
-            ok -> k = it
+        k ?= k + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     i <- [0..n): {
         c = s.byte(i)
@@ -1927,12 +1864,11 @@ pool.quote = (s str) (out str) {
                     -> _
                 }
                 {
-                    k-opt4 = k + 2
-                    k-opt4: {
-                        ok -> k = it
+                    k ?= k + 2
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -1950,12 +1886,11 @@ pool.quote = (s str) (out str) {
                     -> _
                 }
                 {
-                    k-opt5 = k + 2
-                    k-opt5: {
-                        ok -> k = it
+                    k ?= k + 2
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -1973,12 +1908,11 @@ pool.quote = (s str) (out str) {
                     -> _
                 }
                 {
-                    k-opt6 = k + 2
-                    k-opt6: {
-                        ok -> k = it
+                    k ?= k + 2
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -1996,12 +1930,11 @@ pool.quote = (s str) (out str) {
                     -> _
                 }
                 {
-                    k-opt7 = k + 2
-                    k-opt7: {
-                        ok -> k = it
+                    k ?= k + 2
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -2019,12 +1952,11 @@ pool.quote = (s str) (out str) {
                     -> _
                 }
                 {
-                    k-opt8 = k + 2
-                    k-opt8: {
-                        ok -> k = it
+                    k ?= k + 2
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -2076,12 +2008,11 @@ pool.quote = (s str) (out str) {
                     -> _
                 }
                 {
-                    k-opt9 = k + 6
-                    k-opt9: {
-                        ok -> k = it
+                    k ?= k + 6
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -2092,12 +2023,11 @@ pool.quote = (s str) (out str) {
                     -> _
                 }
                 {
-                    k-opt10 = k + 1
-                    k-opt10: {
-                        ok -> k = it
+                    k ?= k + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -2108,12 +2038,11 @@ pool.quote = (s str) (out str) {
         -> _
     }
     {
-        k-opt11 = k + 1
-        k-opt11: {
-            ok -> k = it
+        k ?= k + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     out = buf.slice-bytes(0, k)
 }
@@ -2795,20 +2724,18 @@ pool.skip-ann-value = (body str, pos i64) (next i64) {
 
             cc == 91 || cc == 123 -> {
                 {
-                    depth-opt4 = depth + 1
-                    depth-opt4: {
-                        ok -> depth = it
+                    depth ?= depth + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    p-opt21 = p + 1
-                    p-opt21: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -2818,53 +2745,48 @@ pool.skip-ann-value = (body str, pos i64) (next i64) {
                     return
                 }
                 {
-                    depth-opt5 = depth - 1
-                    depth-opt5: {
-                        ok -> depth = it
+                    depth ?= depth - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    p-opt22 = p + 1
-                    p-opt22: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             cc == 44 -> {
                 depth == 0 -> {
                     {
-                        next-opt13 = p + 1
-                        next-opt13: {
-                            ok -> next = it
+                        next ?= p + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                     return
                 }
                 {
-                    p-opt23 = p + 1
-                    p-opt23: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-                    p-opt24 = p + 1
-                    p-opt24: {
-                        ok -> p = it
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }

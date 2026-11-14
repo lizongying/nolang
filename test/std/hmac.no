@@ -16,7 +16,7 @@ bhex = (data []byte) (hex str) {
     #{overflow=wrap}
     hex str = with-len(n * 2)
     i <- [0..n): {
-        ixout21c37 = data[i]: {
+        data-i = data[i]: {
             ok -> it
 
             -> _
@@ -25,14 +25,14 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(ixout21c37 >> 4) & 15]
+            hex[i * 2] ?= hex-chars[(data-i >> 4) & 15]
         }: {
             err -> _
 
             -> _
         }
 
-        ixout24c40 = data[i]: {
+        data-i-2 = data[i]: {
             ok -> it
 
             -> _
@@ -41,7 +41,7 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[ixout24c40 & 15]
+            hex[i * 2 + 1] ?= hex-chars[data-i-2 & 15]
         }: {
             err -> _
 
@@ -161,17 +161,17 @@ h16 = (a [16]byte) (s str) {
 t-fixed-all = () {
     h512 = hmac.hmac-sha512(K1, D1.to-bytes())
     runner.str-eq(h64(h512), '87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854', 128, 'hmac-sha512 定長 TC1')
-    v512 = hmac.hmac-sha512-vec(K1-slice(), D1.to-bytes())
+    v512 = hmac.hmac-sha512-vec(k1-slice(), D1.to-bytes())
     runner.str-eq(bhex(v512), '87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854', 128, 'hmac-sha512-vec TC1 一致')
 
     h384 = hmac.hmac-sha384(K1, D1.to-bytes())
     runner.str-eq(h48(h384), 'afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6', 96, 'hmac-sha384 定長 TC1')
-    v384 = hmac.hmac-sha384-vec(K1-slice(), D1.to-bytes())
+    v384 = hmac.hmac-sha384-vec(k1-slice(), D1.to-bytes())
     runner.str-eq(bhex(v384), 'afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6', 96, 'hmac-sha384-vec TC1 一致')
 
     hmd5 = hmac.hmac-md5(K1, D1.to-bytes())
     runner.str-eq(h16(hmd5), '5ccec34ea9656392457fa1ac27f08fbc', 32, 'hmac-md5 定長 TC1')
-    vmd5 = hmac.hmac-md5-vec(K1-slice(), D1.to-bytes())
+    vmd5 = hmac.hmac-md5-vec(k1-slice(), D1.to-bytes())
     runner.str-eq(bhex(vmd5), '5ccec34ea9656392457fa1ac27f08fbc', 32, 'hmac-md5-vec TC1 一致')
 }
 
@@ -186,7 +186,7 @@ t-tc2-384-md5 = () {
 }
 
 ; K1 的 slice 形式（定長介面吃 [20]byte，vec 介面吃 []byte）
-K1-slice = () (v []byte) {
+k1-slice = () (v []byte) {
     v = with-len(20)
     i <- [0..20): {
         x = K1[i]: {

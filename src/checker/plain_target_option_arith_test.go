@@ -607,3 +607,140 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestPlaceWriteOptionArithMustBeExplicit 釘住 D9 place-match 的溢位漏洞：
+// `a[i]: { ok -> it = x + 1 }` 的臂內指派會被降糖成合成的 `it = <expr>`，
+// 目標槽位是 plain T。若 expr 是 option 算術，過去直接取 payload，
+// 溢位 err 被靜默丟掉（實測 i64::MAX + 1 得到 2's 補數回繞而非 err）。
+// 現在必須由作者改用 `a[i] ?= x + 1` + 塊 match 顯式消費 option。
+// 判據是 checker.go SurfaceMatch 分支的 itovf9a1。
+func TestPlaceWriteOptionArithMustBeExplicit(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want int
+	}{
+		{
+			name: "place_match_it_add",
+			src: `f = (a i64) {
+    arr [2]i64
+    arr[0]: {
+        ok -> it = a + 1
+
+        -> _
+    }
+}`,
+			want: 1,
+		},
+		{
+			name: "place_match_it_add_with_wrap_annotation",
+			src: `f = (a i64) {
+    arr [2]i64
+    #{overflow=wrap}
+    arr[0]: {
+        ok -> it = a + 1
+
+        -> _
+    }
+}`,
+			want: 1,
+		},
+		{
+			// 使用者點名的 src/std/archive/bzip2.no 形狀：運算元是值位 match
+			// 解包出來的變數，checker 的 varTypes 查不到它的型別，精確判定
+			// 會漏報，必須由保守兜底攔下。
+			name: "place_match_it_add_value_match_operand",
+			src: `f = () {
+    tmp-base [24]i64
+    l = 2
+    slot-at = tmp-base[l]: {
+        ok -> it
+
+        -> _
+    }
+    #{overflow=wrap}
+    tmp-base[l]: {
+        ok -> it = slot-at + 1
+
+        -> _
+    }
+}`,
+			want: 1,
+		},
+		{
+			name: "explicit_question_assign_in_block_match",
+			src: `f = (a i64) {
+    arr [2]i64
+    {
+        #{overflow=wrap}
+        arr[0] ?= a + 1
+    }: {
+        err -> _
+
+        -> _
+    }
+}`,
+			want: 0,
+		},
+		{
+			// `-` 也是字串串接；src/std/net/http.no 刻意用 place-match 直寫
+			// `it = name - ': ' - value`，不能被整數溢位門禁誤報。
+			name: "place_match_it_string_concat_is_not_overflow",
+			src: `f = (name str, value str) {
+    headers [4]str
+    idx = 0
+    headers[idx]: {
+        ok -> it = name - ': ' - value
+
+        -> _
+    }
+}`,
+			want: 0,
+		},
+		{
+			// 字串串接（`+` 也是 str 連接符）同樣不能被整數溢位門禁誤報。
+			name: "place_match_it_string_plus_concat_is_not_overflow",
+			src: `f = (s str) {
+    items [2]str
+    items[0]: {
+        ok -> it = it + '!'
+
+        -> _
+    }
+}`,
+			want: 0,
+		},
+		{
+			name: "place_match_it_plain_value",
+			src: `f = (a i64) {
+    arr [2]i64
+    arr[0]: {
+        ok -> it = a
+
+        -> _
+    }
+}`,
+			want: 0,
+		},
+		{
+			name: "place_match_it_byte_arith_is_plain",
+			src: `f = (b byte) {
+    arr [2]byte
+    arr[0]: {
+        ok -> it = b + 1
+
+        -> _
+    }
+}`,
+			want: 0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			results := ValidateTypes(parseProg(t, c.src))
+			if n := countTrace(results, "itovf9a1"); n != c.want {
+				t.Fatalf("place-write option gate: want %d diagnostic(s), got %d: %v", c.want, n, results)
+			}
+		})
+	}
+}

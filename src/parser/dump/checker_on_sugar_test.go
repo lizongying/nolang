@@ -813,6 +813,19 @@ var sugarDriftAllowlist = map[string]string{
 func TestCheckerSugarDriftIsWithinKnownSet(t *testing.T) {
 	requireCensusPreconditions(t)
 
+	// The census must run on the PRODUCTION track: since S3-c the capture pass
+	// lives in HIR (parser.HIRCaptureEnabled == true, see parser/capturefacts.go).
+	// Same-package tests (hir_equivalence_test.go, capture_checker_parity_test.go)
+	// still leave that global at false via `defer ... = false`, so a whole-package
+	// `go test ./parser/dump` hands this test the legacy AST-lowering track. The
+	// lowered shape then reports 5 extra 3604icnf (bare `?T` passed to a scalar
+	// parameter: the AST rewrite keeps the option where the HIR track unwraps it),
+	// which reads as unexplained drift here while the test is green when run alone.
+	// Pin the production value instead of relying on within-package test order.
+	prevCaptureTrack := parser.HIRCaptureEnabled
+	parser.HIRCaptureEnabled = true
+	defer func() { parser.HIRCaptureEnabled = prevCaptureTrack }()
+
 	shapes := []shape{loweredShape(), sugarShape()}
 	lostTraces := map[string]int{}
 	gainedTraces := map[string]int{}

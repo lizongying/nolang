@@ -258,12 +258,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         }
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
-        #{overflow=wrap}
-        p-opt = p + 1
-        p-opt: {
-            ok -> p = it
+        {
+            #{overflow=wrap}
+            p ?= p + 1
+        }: {
+            err -> _
 
-            ->
+            -> _
         }
     }
     p >= sn -> return
@@ -283,12 +284,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c == 110 -> {
             .nodes[node-idx].kind = JSON-KIND-NULL
 
-            #{overflow=wrap}
-            next-pos-opt2 = p + 4
-            next-pos-opt2: {
-                ok -> next-pos = it
+            {
+                #{overflow=wrap}
+                next-pos ?= p + 4
+            }: {
+                err -> _
 
-                ->
+                -> _
             }
             ok = true
             return
@@ -301,12 +303,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             .nodes[node-idx].bool-val = true
 
-            #{overflow=wrap}
-            next-pos-opt3 = p + 4
-            next-pos-opt3: {
-                ok -> next-pos = it
+            {
+                #{overflow=wrap}
+                next-pos ?= p + 4
+            }: {
+                err -> _
 
-                ->
+                -> _
             }
             ok = true
             return
@@ -319,12 +322,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             .nodes[node-idx].bool-val = false
 
-            #{overflow=wrap}
-            next-pos-opt4 = p + 5
-            next-pos-opt4: {
-                ok -> next-pos = it
+            {
+                #{overflow=wrap}
+                next-pos ?= p + 5
+            }: {
+                err -> _
 
-                ->
+                -> _
             }
             ok = true
             return
@@ -383,12 +387,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             .nodes[node-idx].count = 0
 
-            #{overflow=wrap}
-            p-opt2 = p + 1
-            p-opt2: {
-                ok -> p = it
+            {
+                #{overflow=wrap}
+                p ?= p + 1
+            }: {
+                err -> _
 
-                ->
+                -> _
             }
             p = .skip-ws(s, p)
             p >= sn -> return
@@ -396,12 +401,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             ; empty array
             s.byte(p) == 93 -> {
 
-                #{overflow=wrap}
-                next-pos-opt5 = p + 1
-                next-pos-opt5: {
-                    ok -> next-pos = it
+                {
+                    #{overflow=wrap}
+                    next-pos ?= p + 1
+                }: {
+                    err -> _
 
-                    ->
+                    -> _
                 }
                 ok = true
                 return
@@ -428,12 +434,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 }
                 c2 == 93 -> {
 
-                    #{overflow=wrap}
-                    next-pos-opt6 = p + 1
-                    next-pos-opt6: {
-                        ok -> next-pos = it
+                    {
+                        #{overflow=wrap}
+                        next-pos ?= p + 1
+                    }: {
+                        err -> _
 
-                        ->
+                        -> _
                     }
                     ok = true
                     return
@@ -441,12 +448,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 {
                     c2 == 44 -> {
 
-                        #{overflow=wrap}
-                        p-opt3 = p + 1
-                        p-opt3: {
-                            ok -> p = it
+                        {
+                            #{overflow=wrap}
+                            p ?= p + 1
+                        }: {
+                            err -> _
 
-                            ->
+                            -> _
                         }
                     }
 
@@ -462,12 +470,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             .nodes[node-idx].count = 0
 
-            #{overflow=wrap}
-            p-opt4 = p + 1
-            p-opt4: {
-                ok -> p = it
+            {
+                #{overflow=wrap}
+                p ?= p + 1
+            }: {
+                err -> _
 
-                ->
+                -> _
             }
             p = .skip-ws(s, p)
             p >= sn -> return
@@ -475,12 +484,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             ; empty object
             s.byte(p) == 125 -> {
 
-                #{overflow=wrap}
-                next-pos-opt7 = p + 1
-                next-pos-opt7: {
-                    ok -> next-pos = it
+                {
+                    #{overflow=wrap}
+                    next-pos ?= p + 1
+                }: {
+                    err -> _
 
-                    ->
+                    -> _
                 }
                 ok = true
                 return
@@ -507,12 +517,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     return
                 }
 
-                #{overflow=wrap}
-                p-opt5 = p + 1
-                p-opt5: {
-                    ok -> p = it
+                {
+                    #{overflow=wrap}
+                    p ?= p + 1
+                }: {
+                    err -> _
 
-                    ->
+                    -> _
                 }
                 val-idx, val-next, val-ok = .parse(s, p)
                 val-ok == false -> return
@@ -535,12 +546,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 }
                 c2 == 125 -> {
 
-                    #{overflow=wrap}
-                    next-pos-opt8 = p + 1
-                    next-pos-opt8: {
-                        ok -> next-pos = it
+                    {
+                        #{overflow=wrap}
+                        next-pos ?= p + 1
+                    }: {
+                        err -> _
 
-                        ->
+                        -> _
                     }
                     ok = true
                     return
@@ -548,12 +560,13 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 {
                     c2 == 44 -> {
 
-                        #{overflow=wrap}
-                        p-opt6 = p + 1
-                        p-opt6: {
-                            ok -> p = it
+                        {
+                            #{overflow=wrap}
+                            p ?= p + 1
+                        }: {
+                            err -> _
 
-                            ->
+                            -> _
                         }
                     }
 
@@ -1190,12 +1203,13 @@ pool.stringify = (node-idx i64) (out str) {
                     }
                 }
 
-                #{overflow=wrap}
-                j-opt = j + 1
-                j-opt: {
-                    ok -> j = it
+                {
+                    #{overflow=wrap}
+                    j ?= j + 1
+                }: {
+                    err -> _
 
-                    ->
+                    -> _
                 }
             }
             out = out - '"'
@@ -1524,16 +1538,16 @@ json.get-bool = (key str) (val ?bool) {
 ; val: ok=數值截斷取整（先 .get-num 再 to-i64，不做位元重解）, nil=鍵不存在或值非數字
 ; [get-i64](#json.get-i64)
 json.get-i64 = (key str) (val ?i64) {
-    f-opt = .get-num(key)
     f = 0.0
     found = false
-    f-opt: {
-        ok -> {
-            found = true
-            f = it
-        }
+    {
+        f ?= .get-num(key)
 
-        -> found = false
+        found = true
+    }: {
+        err -> _
+
+        -> _
     }
     found == false -> return
 
@@ -1841,16 +1855,16 @@ json.bool = () (val ?bool) {
 ; val: ok=根數值截斷取整, nil=根非數字
 ; [i64](#json.i64)
 json.i64 = () (val ?i64) {
-    f-opt = .num()
     f = 0.0
     found = false
-    f-opt: {
-        ok -> {
-            found = true
-            f = it
-        }
+    {
+        f ?= .num()
 
-        -> found = false
+        found = true
+    }: {
+        err -> _
+
+        -> _
     }
     found == false -> return
     val = f.to-i64()

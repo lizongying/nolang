@@ -82,14 +82,12 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     buf[pos] = QPACK-LITERAL-PREFIX
 
     {
-
         #{overflow=wrap}
-        pos-opt = pos + 1
-        pos-opt: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 名稱長度：<64 寫單位元組；>=64 寫兩位元組（0x40 標記 + 高 6 位、低 8 位）。
@@ -100,14 +98,12 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos] = name-bytes.len() & 255
 
             {
-
                 #{overflow=wrap}
-                pos-opt2 = pos + 1
-                pos-opt2: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -120,14 +116,12 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos + 1] = name-bytes.len() & 255
 
             {
-
                 #{overflow=wrap}
-                pos-opt3 = pos + 2
-                pos-opt3: {
-                    ok -> pos = it
+                pos ?= pos + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -154,14 +148,12 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos] = value-bytes.len() & 255
 
             {
-
                 #{overflow=wrap}
-                pos-opt4 = pos + 1
-                pos-opt4: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -172,14 +164,12 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos + 1] = value-bytes.len() & 255
 
             {
-
                 #{overflow=wrap}
-                pos-opt5 = pos + 2
-                pos-opt5: {
-                    ok -> pos = it
+                pos ?= pos + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -223,19 +213,19 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
         hdr-buf []byte
         hdr-n = 0
 
-        ixout167c40 = names[i]: {
+        names-i = names[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout167c50 = values[i]: {
+        values-i = values[i]: {
             ok -> it
 
             -> _
         }
 
-        hdr-buf, hdr-n = encode-header(ixout167c40, ixout167c50)
+        hdr-buf, hdr-n = encode-header(names-i, values-i)
         j <- [0..hdr-n): {
             {
 
@@ -249,14 +239,12 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
         }
 
         {
-
             #{overflow=wrap}
-            pos-opt6 = pos + hdr-n
-            pos-opt6: {
-                ok -> pos = it
+            pos ?= pos + hdr-n
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     n = pos
@@ -282,14 +270,12 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     }
 
     {
-
         #{overflow=wrap}
-        r-pos-opt = r-pos + 1
-        r-pos-opt: {
-            ok -> r-pos = it
+        r-pos ?= r-pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 檢查是否為字面標頭（001x xxxx）
@@ -355,8 +341,8 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     ; 兩臂都不命中、name 恆為空（且若把切片型別硬推出來，這個呼叫會變成 SIGSEGV，
     ; 因為切片視圖傳進 builtin 踩到 vecFromArraySink 視圖懸垂）。先落變數再兩步解包。
     name-seg = buf[r-pos..r-pos + name-len)
-    name-opt = name-seg.to-str()
-    name = name-opt: {
+    raw-name = name-seg.to-str()
+    name = raw-name: {
         ok -> it
 
         -> ''
@@ -420,8 +406,8 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
     ; 讀取值（同樣必須兩步解包，見上方「讀取名稱」的說明）
     value-seg = buf[r-pos..r-pos + value-len)
-    value-opt = value-seg.to-str()
-    value = value-opt: {
+    raw-value = value-seg.to-str()
+    value = raw-value: {
         ok -> it
 
         -> ''
@@ -466,14 +452,12 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt7 = pos + ft-n
-        pos-opt7: {
-            ok -> pos = it
+        pos ?= pos + ft-n
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 影格長度（varint）
@@ -493,14 +477,12 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt8 = pos + len-n
-        pos-opt8: {
-            ok -> pos = it
+        pos ?= pos + len-n
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 影格資料
@@ -604,14 +586,12 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
     }
 
     {
-
         #{overflow=wrap}
-        next-pos-opt = r-pos + len-val
-        next-pos-opt: {
-            ok -> next-pos = it
+        next-pos ?= r-pos + len-val
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 

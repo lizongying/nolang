@@ -128,7 +128,15 @@ func (m *Module) lowerDeadSourceCopiesToMoves(f *Function) {
 			// peel; measured, tests/tagged-enum-two-match.no changed its output
 			// and tests/tagged-enum-zero-match.no crashed (rc=133), while the
 			// unit tests were green — only the corpus caught it.
-			if di := defInst[src]; di != nil && (m.isBorrowRead(f, di) || m.isSliceViewOfArray(f, di)) {
+			//
+			// isLiveSliceView is the `[]T` half of the same rule. The guard used
+			// to cover only a slice of a FIXED array (isSliceViewOfArray,
+			// receiver KindArray), so `v = view` on a vec slipped through: the
+			// clone became a move, `v` was left pointing into the container's
+			// buffer, and the container's drop — placed at its own last use —
+			// freed it before `v` was read. Measured: prints 0 instead of 20,
+			// silently, because a freed small buffer still reads back.
+			if di := defInst[src]; di != nil && (m.isBorrowRead(f, di) || m.isSliceViewOfArray(f, di) || isLiveSliceView(di)) {
 				reasons["src-is-borrow"]++
 				continue
 			}

@@ -203,27 +203,25 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
     (i < n) {
-        ixout195c24 = tbl[i]: {
+        tbl-i = tbl[i]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        pos = width - (ixout195c24)
+        pos = width - (tbl-i)
         bit = (input >> pos) & 1
 
         r = r | (bit << (n - 1 - i))
 
         {
-
             #{overflow=wrap}
-            i-opt = i + 1
-            i-opt: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -242,13 +240,13 @@ sbox-lookup = (input i64, box []byte) (r i64) {
     col = (v >> 1) & 15
 
     #{overflow=wrap}
-    ixout219c9 = box[row * 16 + col]: {
+    box-row-16-col = box[row * 16 + col]: {
         ok -> it
 
         -> _
     }
 
-    r = ixout219c9 & 15
+    r = box-row-16-col & 15
 }
 
 ; Feistel 輪函數
@@ -368,13 +366,13 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
-        ixout338c33 = in[i]: {
+        in-i = in[i]: {
             ok -> it
 
             -> _
         }
 
-        block = (block << 8) | (ixout338c33)
+        block = (block << 8) | (in-i)
     }
     ip = 0
     fout = 0
@@ -391,54 +389,25 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
         }
         sk = 0
 
-        ; 索引讀取回傳 ?T，需以值 match 顯式消費（本行的所有 ks[...] 讀取逐一
-        ; 消費）。注意：`#{...}` 必須自成一行置於目標陳述「上方」——若把它
-        ; 插在多行運算式的續行之間（換行 + `#{...}` + 續行運算元），語句會在該處
-        ; 被切斷，後續陳述被收編到外層區塊，函式體因而被靜默截斷。
-        ixout362c15 = ks[sk-off]: {
-            ok -> it
+        ; 取出本輪 6 位元組子金鑰並組成大端 48-bit 整數
+        j <- [0..6): {
+            {
+                #{overflow=wrap}
+                byte-at ?= sk-off + j
 
-            -> _
+                subkey-byte ?= ks[byte-at]
+
+                #{overflow=wrap}
+                bit-shift ?= (5 - j) * 8
+
+                sk = (sk << 8) | subkey-byte
+            }: {
+                err -> _
+
+                -> _
+            }
         }
 
-        #{overflow=wrap}
-        ixout362c36 = ks[sk-off + 1]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout362c61 = ks[sk-off + 2]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout363c2 = ks[sk-off + 3]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout364c2 = ks[sk-off + 4]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout364c25 = ks[sk-off + 5]: {
-            ok -> it
-
-            -> _
-        }
-
-        sk = (ixout362c15 << 40) | (ixout362c36 << 32) | (ixout362c61 << 24) |
-(ixout363c2 << 16) |
-(ixout364c2 << 8) | ixout364c25
         fout = f(r, sk)
         new-l = r
         r = l ^ fout

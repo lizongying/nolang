@@ -6,8 +6,16 @@
 test-forward-slice = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[1..3]
-    b[0] == 20 -> ok = true
-    b[1] == 30 -> ok = true
+    {
+        elem-0 ?= b[0]
+        elem-1 ?= b[1]
+        elem-0 == 20 -> ok = true
+        elem-1 == 30 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
     b.len() == 2 -> ok = true
 }
 
@@ -16,9 +24,18 @@ test-forward-slice = () (ok bool) {
 test-vec-reverse-inclusive = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[3..1]
-    b[0] == 40 -> ok = true
-    b[1] == 30 -> ok = true
-    b[2] == 20 -> ok = true
+    {
+        elem-0 ?= b[0]
+        elem-1 ?= b[1]
+        elem-2 ?= b[2]
+        elem-0 == 40 -> ok = true
+        elem-1 == 30 -> ok = true
+        elem-2 == 20 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
     b.len() == 3 -> ok = true
 }
 
@@ -27,8 +44,16 @@ test-vec-reverse-inclusive = () (ok bool) {
 test-vec-reverse-exclusive = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[3..1)
-    b[0] == 40 -> ok = true
-    b[1] == 30 -> ok = true
+    {
+        elem-0 ?= b[0]
+        elem-1 ?= b[1]
+        elem-0 == 40 -> ok = true
+        elem-1 == 30 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
     b.len() == 2 -> ok = true
 }
 
@@ -37,10 +62,20 @@ test-vec-reverse-exclusive = () (ok bool) {
 test-vec-reverse-left-excl = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a(3..1]
-    b[0] == 50 -> ok = true
-    b[1] == 40 -> ok = true
-    b[2] == 30 -> ok = true
-    b[3] == 20 -> ok = true
+    {
+        elem-0 ?= b[0]
+        elem-1 ?= b[1]
+        elem-2 ?= b[2]
+        elem-3 ?= b[3]
+        elem-0 == 50 -> ok = true
+        elem-1 == 40 -> ok = true
+        elem-2 == 30 -> ok = true
+        elem-3 == 20 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
     b.len() == 4 -> ok = true
 }
 
@@ -67,8 +102,16 @@ test-vec-reverse-independence = () (ok bool) {
 
         -> _
     }
-    b[4] == 10 -> ok = true
-    b[0] == 50 -> ok = true
+    {
+        head ?= b[4]
+        tail ?= b[0]
+        head == 10 -> ok = true
+        tail == 50 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 7：vec 反向切片字面量索引 [4..2]
@@ -76,9 +119,18 @@ test-vec-reverse-independence = () (ok bool) {
 test-vec-reverse-simple = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[4..2]
-    b[0] == 50 -> ok = true
-    b[1] == 40 -> ok = true
-    b[2] == 30 -> ok = true
+    {
+        elem-0 ?= b[0]
+        elem-1 ?= b[1]
+        elem-2 ?= b[2]
+        elem-0 == 50 -> ok = true
+        elem-1 == 40 -> ok = true
+        elem-2 == 30 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
     b.len() == 3 -> ok = true
 }
 

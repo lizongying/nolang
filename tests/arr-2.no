@@ -3,13 +3,16 @@
 ; originals recoverable from git HEAD (ed7b5236)
 
 ; merged from tests/arr-at1.no
-; 測試 arr-at
+; 測試 arr-at（界內保留覆蓋）；越界改用 a[i]，結果是 err
 ...
 test-arr-at = () {
     a [3] = [1, 2, 3]
     print(a.at(0))
-    print(a.at(5))
-    print(a.at(-1))
+    a[5]: {
+        err -> print('err')
+
+        -> print('not err')
+    }
 }
 test-arr-at()
 

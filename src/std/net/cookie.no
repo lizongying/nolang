@@ -133,14 +133,12 @@ parse-set = (set-cookie-str str) (c cookie) {
         ; 跳過前導空格
         (pos < rest.len-bytes() && rest[pos] == 32) {
             {
-
                 #{overflow=wrap}
-                pos-opt = pos + 1
-                pos-opt: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -247,14 +245,12 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         ; 跳過空格
         (pos < cookie-header.len-bytes() && cookie-header[pos] == 32) {
             {
-
                 #{overflow=wrap}
-                pos-opt2 = pos + 1
-                pos-opt2: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -274,12 +270,11 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
             #{overflow=wrap}
             values[count] = pair.slice(eq-pos + 1, pair.len-bytes())
             {
-                count-opt = count + 1
-                count-opt: {
-                    ok -> count = it
+                count ?= count + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         next-semi < 0 -> break
@@ -326,19 +321,19 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
     i <- [0..count): {
         out.len-bytes() > 0 -> out = out - '; '
 
-        ixout290c21 = names[i]: {
+        names-i = names[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout290c38 = values[i]: {
+        values-i = values[i]: {
             ok -> it
 
             -> _
         }
 
-        out = out - ixout290c21 - '=' - ixout290c38
+        out = out - names-i - '=' - values-i
     }
 }
 
@@ -624,36 +619,16 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     hex-chars = '0123456789abcdef'
     hex-str str = with-len(64)
     i <- [0..32): {
-        ixout544c38 = mac[i]: {
-            ok -> it
+        {
+            word ?= mac[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex-str[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex-str[i * 2]: {
-            ok -> it = hex-chars[(ixout544c38 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout551c37 = mac[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex-str[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout551c37 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex-str[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }

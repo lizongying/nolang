@@ -1,20 +1,45 @@
 ; 測試 arr-sort-asc
+; 定長陣列的裸下標讀 `a[i]` 在 D11 起回傳 `?i64`，必須顯式消費
+; （此處用 place/block match，越界走 catch-all 臂），不能直接丟給 print。
 test-arr-sort-asc = () {
     a [5] = [3, 1, 4, 1, 5]
     a.asc()
-    print(a[0])
-    print(a[1])
-    print(a[2])
-    print(a[3])
-    print(a[4])
+    a[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[4]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
-; 測試 arr-at
+; 測試 arr-at（界內保留覆蓋）；越界改用 b[i]，結果是 err
 test-arr-at = () {
     b [3] = [1, 2, 3]
     print(b.at(0))
-    print(b.at(5))
-    print(b.at(-1))
+    b[5]: {
+        err -> print('err')
+
+        -> print('not err')
+    }
 }
 test-arr-sort-asc()
 print('---')

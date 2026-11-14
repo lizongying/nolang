@@ -319,13 +319,13 @@ read-stdin = () (content ?[]byte) {
         n = read(STDIN-FD, tmp, 4096)
         n <= 0 -> break
         i <- [0..n): {
-            ixout326c22 = tmp[i]: {
+            tmp-i = tmp[i]: {
                 ok -> it
 
                 -> _
             }
 
-            buf.push(ixout326c22)
+            buf.push(tmp-i)
         }
     }
     buf.len() == 0 -> {
@@ -1041,8 +1041,9 @@ list-dir = (dirpath str) (entries []str) {
     result []str
     more = true
     (more == true) {
-        name-opt = read-dir(dirp)
-        name-opt: {
+        ; ⚠️ err 臂要寫 `more`，只能用語句 match（`?=` 块的臂是獨立幀，臂內寫入不生效）
+        item = read-dir(dirp)
+        item: {
             ok -> result.push(it)
 
             -> more = false
@@ -1067,8 +1068,8 @@ list-dir = (dirpath str) (entries []str) {
     result []str
     more = true
     (more == true) {
-        name-opt = os.win-find-next-file(bufptr)
-        name-opt: {
+        item = os.win-find-next-file(bufptr)
+        item: {
             ok -> result.push(it)
 
             -> more = false
@@ -1092,8 +1093,9 @@ list-dir = (dirpath str) (entries []str) {
     result []str
     more = true
     (more == true) {
-        name-opt = read-dir(dirp)
-        name-opt: {
+        ; ⚠️ err 臂要寫 `more`，只能用語句 match（`?=` 块的臂是獨立幀，臂內寫入不生效）
+        item = read-dir(dirp)
+        item: {
             ok -> result.push(it)
 
             -> more = false

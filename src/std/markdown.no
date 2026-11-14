@@ -73,14 +73,12 @@ markdown.prefix-count = (s str, c i64) (n i64) {
         s.byte(n) != c -> break
 
         {
-
             #{overflow=wrap}
-            n-opt = n + 1
-            n-opt: {
-                ok -> n = it
+            n ?= n + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -136,14 +134,12 @@ markdown.setext-level = (line str) (level i64) {
         i >= n || s.byte(i) != c -> break
 
         {
-
             #{overflow=wrap}
-            i-opt2 = i + 1
-            i-opt2: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     i == n -> {
@@ -174,14 +170,12 @@ markdown.thematic-break = (line str) (yes bool) {
         }
         c == 32 || c == 9 -> {
             {
-
                 #{overflow=wrap}
-                i-opt3 = i + 1
-                i-opt3: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             continue
         }
@@ -190,25 +184,21 @@ markdown.thematic-break = (line str) (yes bool) {
         marker != 45 && marker != 42 && marker != 95 -> return
 
         {
-
             #{overflow=wrap}
-            count-opt = count + 1
-            count-opt: {
-                ok -> count = it
+            count ?= count + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            i-opt4 = i + 1
-            i-opt4: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     yes = count >= 3
@@ -238,14 +228,12 @@ markdown.list-item = (line str) (out list) {
             i >= n || s.byte(i) < 48 || s.byte(i) > 57 -> break
 
             {
-
                 #{overflow=wrap}
-                i-opt5 = i + 1
-                i-opt5: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -262,14 +250,12 @@ markdown.list-item = (line str) (out list) {
                 index-v = index-v * 10 + digits.byte(d) - 48
 
                 {
-
                     #{overflow=wrap}
-                    d-opt = d + 1
-                    d-opt: {
-                        ok -> d = it
+                    d ?= d + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -433,8 +419,7 @@ markdown.inline = (s str) (out str) {
     n = s.len-bytes()
     (i < n) {
         i >= n -> break
-        c-opt = s.byte(i)
-        c char = c-opt: {
+        c char = s.byte(i): {
             ok -> it
 
             -> _
@@ -448,14 +433,12 @@ markdown.inline = (s str) (out str) {
             result = result - markdown.escape-html(s.slice-bytes(i + 1, i + 2))
 
             {
-
                 #{overflow=wrap}
-                i-opt6 = i + 2
-                i-opt6: {
-                    ok -> i = it
+                i ?= i + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             continue
         }
@@ -605,14 +588,12 @@ markdown.inline = (s str) (out str) {
             strike = strike == false
 
             {
-
                 #{overflow=wrap}
-                i-opt7 = i + 2
-                i-opt7: {
-                    ok -> i = it
+                i ?= i + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             continue
         }
@@ -627,14 +608,12 @@ markdown.inline = (s str) (out str) {
             strong = strong == false
 
             {
-
                 #{overflow=wrap}
-                i-opt8 = i + 2
-                i-opt8: {
-                    ok -> i = it
+                i ?= i + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             continue
         }
@@ -649,14 +628,12 @@ markdown.inline = (s str) (out str) {
             strong = strong == false
 
             {
-
                 #{overflow=wrap}
-                i-opt9 = i + 2
-                i-opt9: {
-                    ok -> i = it
+                i ?= i + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             continue
         }
@@ -673,14 +650,12 @@ markdown.inline = (s str) (out str) {
                 result = result - '_'
 
                 {
-
                     #{overflow=wrap}
-                    i-opt10 = i + 1
-                    i-opt10: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 continue
             }
@@ -692,28 +667,24 @@ markdown.inline = (s str) (out str) {
             emphasis = emphasis == false
 
             {
-
                 #{overflow=wrap}
-                i-opt11 = i + 1
-                i-opt11: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             continue
         }
         result = result - markdown.escape-html(c.to-str())
 
         {
-
             #{overflow=wrap}
-            i-opt12 = i + 1
-            i-opt12: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     code -> result = result - '</code>'
@@ -776,28 +747,24 @@ markdown.read-line = (source str, pos i64) (out line) {
             }
 
             {
-
                 #{overflow=wrap}
-                j-opt = j + 1
-                j-opt: {
-                    ok -> j = it
+                j ?= j + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         line-v = source.slice-bytes(pos, end-v)
         {
             end-v < n -> {
                 {
-
                     #{overflow=wrap}
-                    next-v-opt = end-v + 1
-                    next-v-opt: {
-                        ok -> next-v = it
+                    next-v ?= end-v + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 

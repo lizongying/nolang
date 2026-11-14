@@ -407,7 +407,7 @@ Retorno ok bool: true = sucesso, false = a pilha está cheia
 `
   'arr.asc': '[n]t.asc: ordena em ordem crescente no lugar (insertion sort)'
   'arr.at': `
-[n]t.at: acesso indexado seguro
+[obsoleto] [n]t.at: acesso indexado seguro — use a[i] em vez (indexação nativa, retorna ?t; fora do intervalo gera err)
 i i64: o índice
 Retorno val ?t: nil quando fora do intervalo
 `
@@ -9982,7 +9982,7 @@ Retorna a versão do UUID
 v: o número da versão do UUID (os 4 bits altos de byte6, 4 para v4)
 `
   'vec.at': `
-[]t.at: acesso indexado seguro; nil quando fora do intervalo
+[obsoleto] []t.at: acesso indexado seguro; nil quando fora do intervalo — use v[i] em vez (indexação nativa, retorna ?t; fora do intervalo gera err)
 Nota: sz = .len() força o tipo self de vec, para que não seja especializado por engano num método arr
 `
   'vec.clone': '[]t.clone: copia a fatia'

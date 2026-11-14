@@ -16,7 +16,7 @@ json-str = '"hello"'
 root = -1
 next = 0
 ok = false
-p = pool{}
+p = json.pool{}
 p.init()
 root, next, ok = p.parse(json-str, 0)
 {

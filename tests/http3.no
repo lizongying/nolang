@@ -17,10 +17,17 @@ test-quic-varint-1byte = () {
         print(n.to-str())
         return
     }
-    (buf[0]) != 37 -> {
-        print('FAIL: quic-varint-encode(37) expected byte=37, got ')
-        print((buf[0]).to-str())
-        return
+    {
+        head ?= buf[0]
+        head != 37 -> {
+            print('FAIL: quic-varint-encode(37) expected byte=37, got ')
+            print(head.to-str())
+            return
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     val = 0
     np = 0
@@ -169,7 +176,14 @@ test-quic-derive-initial-keys = () {
     ; 檢查金鑰不為全零
     has-nonzero = 0
     i <- [0..16): {
-        key[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= key[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: quic-derive-initial-keys client key all zeros')
@@ -263,16 +277,31 @@ test-quic-derive-initial-keys = () {
 
     match-val = 1
     i <- [0..16): {
-        key[i] != expected-key[i] -> {
-            match-val = 0
-            break
+        {
+            actual ?= key[i]
+            expect ?= expected-key[i]
+            actual != expect -> {
+                match-val = 0
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     match-val: {
         0 -> {
             print('FAIL: quic-derive-initial-keys client key mismatch')
             i <- [0..16): {
-                print((key[i]).to-str())
+                {
+                    elem ?= key[i]
+                    print(elem.to-str())
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
             print('')
             return
@@ -296,7 +325,14 @@ test-quic-gen-cid = () {
     ; 檢查不為全零（機率極低）
     has-nonzero = 0
     i <- [0..8): {
-        cid[i] != 0 -> has-nonzero = 1
+        {
+            elem ?= cid[i]
+            elem != 0 -> has-nonzero = 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     has-nonzero == 0 -> {
         print('FAIL: quic-gen-cid all zeros')

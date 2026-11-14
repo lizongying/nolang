@@ -384,7 +384,7 @@ val t: 要推入的值
 `
   'arr.asc': '[n]t.asc: 升序原地排序（插入排序）'
   'arr.at': `
-[n]t.at: 安全索引访问
+[deprecated] [n]t.at: 安全索引访问——请改用 a[i]（原生索引，返回 ?t，越界为 err）
 i i64: 索引
 返回 val ?t: 越界返回 nil
 `
@@ -7477,7 +7477,7 @@ out: 生成的 v4 随机 UUID（state 随 xorshift32 推进）
   'uuid.variant': '获取 UUID 变体'
   'uuid.version': '获取 UUID 版本'
   'vec.at': `
-[]t.at: 安全索引访问，越界返回 nil
+[deprecated] []t.at: 安全索引访问，越界返回 nil——请改用 v[i]（原生索引，返回 ?t，越界为 err）
 注意：sz = .len() 强制 vec self 类型，避免错误特化为 arr 方法
 `
   'vec.clone': '[]t.clone: 复制切片'

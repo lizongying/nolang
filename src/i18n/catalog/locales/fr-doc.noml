@@ -411,7 +411,7 @@ renvoie ok bool: true = succès, false = la pile est pleine
 `
   'arr.asc': '[n]t.asc: trie par ordre croissant sur place (tri par insertion)'
   'arr.at': `
-[n]t.at: accès indexé sûr
+[obsolète] [n]t.at: accès indexé sûr — utilisez plutôt a[i] (indexation native, renvoie ?t ; hors bornes donne err)
 i i64: l'indice
 renvoie val ?t: nil hors bornes
 
@@ -10099,7 +10099,7 @@ Renvoie la version de l'UUID
 v: le numéro de version de l'UUID (les 4 bits de poids fort de byte6, 4 pour v4)
 `
   'vec.at': `
-[]t.at: accès indexé sûr; nil hors bornes
+[obsolète] []t.at: accès indexé sûr; nil hors bornes — utilisez plutôt v[i] (indexation native, renvoie ?t ; hors bornes donne err)
 Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
 
 `

@@ -1,0 +1,116 @@
+; ============================================================
+; 過濾存檔（filtered copy）— 此檔不參與 vet / test / build
+; ------------------------------------------------------------
+; 檔名以 '_' 開頭：nolang 的 IsIgnoredSourcePath 慣例會忽略它，
+; `no vet` / `no test` / `no build` 的目錄遍歷都跳過本檔。
+;
+; 來源：str-bytes.no 的原樣副本，未改動任何一行程式碼。
+; 保留原因：eb（重複宣告） 是原始寫法的重複宣告，
+; 依「不修改合法源碼」原則原樣保存，供日後對照向量來源。
+;
+; 實際執行且 `no vet` 0 error 的版本：str-bytes.no
+; （識別字已改為 kebab-case / 已修掉診斷）。改向量時請兩份一起對照。
+; ============================================================
+
+; std-str-bytes.no — 字串族 bytes/chars 構造器測試（str + txt）
+;
+; 執行：no run test/std/str-bytes.no
+; 覆蓋：str.bytes()（零拷貝視圖、共享緩衝、空串、UTF-8）、
+;       str.from-chars（新緩衝、每 char 寫 1 個原始位元組）、
+;       txt.from-bytes / txt.from-chars（內聯拷貝、255 位元組硬上限）
+;
+; 不測 str._from-bytes / txt._from-bytes：`_` 前綴是模組私有，使用者程式無法呼叫
+; （checkPrivateStdCall / raqvyltn），只能由各自模組內部使用。
+;
+; 本檔刻意不依賴 str.to-bytes()：該方法目前報 `unknown callee str.to-bytes`
+; （既有紅燈，見 test/README.md），與本次新增的 builtin 無關。
+
+# /test/runner
+
+; ── bytes：長度與逐位元組 ──
+s = 'abc'
+b = s.bytes()
+runner.eq(b.len(), 3, 'bytes().len() == 3')
+runner.eq(b[0], 97, 'bytes()[0] == a')
+runner.eq(b[1], 98, 'bytes()[1] == b')
+runner.eq(b[2], 99, 'bytes()[2] == c')
+
+; ── bytes：零拷貝，寫視圖即寫原字串 ──
+b[0] = 122
+runner.str-eq(s, 'zbc', 3, 'bytes() 視圖共享原 str 緩衝')
+
+; ── bytes：空串 ──
+e = ''
+eb = e.bytes()
+runner.eq(eb.len(), 0, '空串 bytes().len() == 0')
+
+; ── bytes：多字節 UTF-8（'中' = e4 b8 ad）──
+u = '中'
+ub = u.bytes()
+runner.eq(ub.len(), 3, 'UTF-8 bytes().len() == 3')
+runner.eq(ub[0], 228, 'UTF-8 byte 0')
+runner.eq(ub[1], 184, 'UTF-8 byte 1')
+runner.eq(ub[2], 173, 'UTF-8 byte 2')
+
+; ── from-chars：公開安全構造器（每 char 低 8 位寫 1 個位元組、新緩衝）──
+; 用 push 構造 []char：`["h","i"]` 字面量目前有既有 codegen bug
+; （`@cs = global [3 x i64] [i32 ...]`，與本 builtin 無關）。
+cs []char
+cs.push("h")
+cs.push("i")
+cs.push("!")
+t = str.from-chars(cs)
+runner.eq(t.len-bytes(), 3, 'from-chars 長度')
+runner.str-eq(t, 'hi!', 3, 'from-chars 內容')
+
+; char 只取低 8 位（'中' = U+4E2D → 0x2D = 45），不做 UTF-8 重編碼
+cs2 []char
+cs2.push("中")
+t2 = str.from-chars(cs2)
+runner.eq(t2.len-bytes(), 1, 'from-chars 多字節 char 只寫 1 位元組')
+
+; ── txt 側同族構造器：from-bytes / from-chars ──
+; txt 是固定 256 位元組的內聯結構（data [255]byte; len byte），沒有外部緩衝可接管，
+; 所以 txt._from-bytes 是「逐位元組拷貝」，與 str._from-bytes 的零拷貝語義不同（只名字對齊）。
+; _from-bytes 是私有符號，用戶碼不可直呼（raqvyltn），故只測公開的 from-bytes。
+tb []byte
+tb.push(65)
+tb.push(66)
+tt = txt.from-bytes(tb)
+runner.eq(tt.len-bytes(), 2, 'txt.from-bytes 長度')
+runner.str-eq(tt.to-str(), 'AB', 2, 'txt.from-bytes 內容')
+
+; 255 硬上限：300 位元組截到 255
+bigb []byte
+i <- [0..300): {
+    bigb.push(67)
+}
+tcap = txt.from-bytes(bigb)
+runner.eq(tcap.len-bytes(), 255, 'txt.from-bytes 300 → 255')
+
+; 空 []byte → 空 txt
+eb []byte
+tempty = txt.from-bytes(eb)
+runner.eq(tempty.len-bytes(), 0, 'txt.from-bytes 空 → 0')
+
+; from-chars：簽名是 ?txt 但恆為 some（見 txt.no 中 txt.from-chars 的 doc）
+tcs []char
+tcs.push("h")
+tcs.push("i")
+tcs.push("!")
+tch = txt.from-chars(tcs)
+tch: {
+    ok(v) -> {
+        runner.eq(v.len-bytes(), 3, 'txt.from-chars 長度')
+        runner.str-eq(v.to-str(), 'hi!', 3, 'txt.from-chars 內容')
+    }
+
+    nil -> runner.is-true(false, 'txt.from-chars 不該回 nil')
+
+    err -> runner.is-true(false, 'txt.from-chars 不該回 err')
+}
+
+runner.summary()
+f = runner.failed-count()
+f > 0 -> exit(1)
+exit(0)

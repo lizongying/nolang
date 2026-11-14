@@ -14,7 +14,7 @@
 ; SSA 值**（⇒ 同一個 buffer、同一個 drop），所以寫 `c` 連 `s` 一起改：
 ; 實測印出 `Hello` / `Hello`；現在印 `hello` / `Hello`。
 
-MyData {
+my-data {
     name str
     value i64
 }
@@ -40,22 +40,51 @@ test-str-readonly = () {
 test-vec-independence = () {
     a = [10, 20, 30]
     b = a
-    b[0] = 99
-    print(a[0]); expect: 10
-    print(b[0]); expect: 99
+    ; 下標直寫 `b[0] = 99` 被 D11 禁止：下標讀回的是 option（越界為 err），
+    ; 直寫就把「越界讀」變成「未檢查的越界寫」。place-match 的 ok 臂裡 `it`
+    ; 就是元素位置本身，可讀可寫。
+    b[0]: {
+        ok -> it = 99
+
+        -> _
+    }
+    a[0]: {
+        err -> _
+
+        -> print(it); expect: 10
+    }
+    {
+        first ?= b[0]
+        print(first); expect: 99
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 4. []i64：只讀別名。舊版會被前向成共用 buffer；輸出相同，差別只在深拷貝的有無。
 test-vec-readonly = () {
     a = [10, 20, 30]
     b = a
-    print(a[0]); expect: 10
-    print(b[0]); expect: 10
+    a[0]: {
+        err -> _
+
+        -> print(it); expect: 10
+    }
+    {
+        first ?= b[0]
+        print(first); expect: 10
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 5. struct：寫別名不得影響源（struct 本來就走 OpMove，這條是防止它退化）
 test-struct-independence = () {
-    d = MyData{
+    d = my-data{
         name: 'test'
         value: 42
     }

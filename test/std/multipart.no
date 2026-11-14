@@ -153,16 +153,22 @@ t-reader = () {
 t-encrypted = () {
     key [32]byte
     iv [12]byte
+    ; 下標與算術各自都是 option（下標越界 / 溢出），place-match 的
+    ; `it = <expr>` 只解一層，改用塊形態 match 的 ?= 一次解兩層。
     i <- [0..32): {
-        key[i]: {
-            ok -> it = 65 + (i % 26)
+        {
+            key[i] ?= 65 + (i % 26)
+        }: {
+            err -> _
 
             -> _
         }
     }
     i <- [0..12): {
-        iv[i]: {
-            ok -> it = 48 + i
+        {
+            iv[i] ?= 48 + i
+        }: {
+            err -> _
 
             -> _
         }
@@ -216,8 +222,10 @@ t-encrypted = () {
     }
     key2 [32]byte
     i <- [0..32): {
-        key2[i]: {
-            ok -> it = 66 + (i % 26)
+        {
+            key2[i] ?= 66 + (i % 26)
+        }: {
+            err -> _
 
             -> _
         }
@@ -290,15 +298,19 @@ t-encrypted-file = () {
     key [32]byte
     iv [12]byte
     i <- [0..32): {
-        key[i]: {
-            ok -> it = 65 + (i % 26)
+        {
+            key[i] ?= 65 + (i % 26)
+        }: {
+            err -> _
 
             -> _
         }
     }
     i <- [0..12): {
-        iv[i]: {
-            ok -> it = 48 + i
+        {
+            iv[i] ?= 48 + i
+        }: {
+            err -> _
 
             -> _
         }
@@ -355,15 +367,19 @@ t-enc-non-ascii = () {
     key [32]byte
     iv [12]byte
     i <- [0..32): {
-        key[i]: {
-            ok -> it = 65 + (i % 26)
+        {
+            key[i] ?= 65 + (i % 26)
+        }: {
+            err -> _
 
             -> _
         }
     }
     i <- [0..12): {
-        iv[i]: {
-            ok -> it = 48 + i
+        {
+            iv[i] ?= 48 + i
+        }: {
+            err -> _
 
             -> _
         }

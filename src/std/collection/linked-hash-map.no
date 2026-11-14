@@ -88,14 +88,12 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
             }
 
             {
-
                 #{overflow=wrap}
-                idx-opt = idx + 1
-                idx-opt: {
-                    ok -> idx = it
+                idx ?= idx + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             idx >= .cap -> idx = 0
         }
@@ -226,14 +224,12 @@ linked-hash-map.remove = (key i64) (removed bool) {
             }
 
             {
-
                 #{overflow=wrap}
-                idx-opt2 = idx + 1
-                idx-opt2: {
-                    ok -> idx = it
+                idx ?= idx + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             idx >= .cap -> idx = 0
         }

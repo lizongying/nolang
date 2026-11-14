@@ -17,7 +17,7 @@ bhex = (data []byte) (hex str) {
     #{overflow=wrap}
     hex str = with-len(n * 2)
     i <- [0..n): {
-        ixout21c37 = data[i]: {
+        data-i = data[i]: {
             ok -> it
 
             -> _
@@ -26,14 +26,14 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(ixout21c37 >> 4) & 15]
+            hex[i * 2] ?= hex-chars[(data-i >> 4) & 15]
         }: {
             err -> _
 
             -> _
         }
 
-        ixout24c40 = data[i]: {
+        data-i-2 = data[i]: {
             ok -> it
 
             -> _
@@ -42,7 +42,7 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[ixout24c40 & 15]
+            hex[i * 2 + 1] ?= hex-chars[data-i-2 & 15]
         }: {
             err -> _
 

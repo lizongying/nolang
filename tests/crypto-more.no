@@ -235,8 +235,15 @@ feo-fe-print = (label str, h []i64) {
     eprint(label)
     eprint(': ')
     i <- [0..10): {
-        eprint(h[i])
-        eprint(' ')
+        {
+            elem ?= h[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -247,11 +254,19 @@ feo-test-fe-mul = () (pass bool) {
 
     ; 2 = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     a []i64 = with-len(10)
-    a[0] = 2
+    a[0]: {
+        ok -> it = 2
+
+        -> _
+    }
 
     ; 3 = [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     b []i64 = with-len(10)
-    b[0] = 3
+    b[0]: {
+        ok -> it = 3
+
+        -> _
+    }
 
     ; result = a * b
     r []i64 = with-len(10)
@@ -259,14 +274,28 @@ feo-test-fe-mul = () (pass bool) {
     feo-fe-print('fe-mul(2,3)', r)
 
     ; 預期: 6 = [6, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    r[0] != 6 -> {
-        print('FAIL: fe-mul(2,3) != 6')
-        return
+    {
+        head ?= r[0]
+        head != 6 -> {
+            print('FAIL: fe-mul(2,3) != 6')
+            return
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     i <- [1..10): {
-        r[i] != 0 -> {
-            print('FAIL: fe-mul(2,3) has non-zero high limbs')
-            return
+        {
+            elem ?= r[i]
+            elem != 0 -> {
+                print('FAIL: fe-mul(2,3) has non-zero high limbs')
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     pass = true
@@ -278,15 +307,26 @@ feo-test-fe-sq = () (pass bool) {
     pass = false
 
     a []i64 = with-len(10)
-    a[0] = 3
+    a[0]: {
+        ok -> it = 3
+
+        -> _
+    }
 
     r []i64 = with-len(10)
     x25519.fe-sq(r, a)
     feo-fe-print('fe-sq(3)', r)
 
-    r[0] != 9 -> {
-        print('FAIL: fe-sq(3) != 9')
-        return
+    {
+        head ?= r[0]
+        head != 9 -> {
+            print('FAIL: fe-sq(3) != 9')
+            return
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     pass = true
 }
@@ -297,18 +337,33 @@ feo-test-fe-add = () (pass bool) {
     pass = false
 
     a []i64 = with-len(10)
-    a[0] = 2
+    a[0]: {
+        ok -> it = 2
+
+        -> _
+    }
 
     b []i64 = with-len(10)
-    b[0] = 3
+    b[0]: {
+        ok -> it = 3
+
+        -> _
+    }
 
     r []i64 = with-len(10)
     x25519.fe-add(r, a, b)
     feo-fe-print('fe-add(2,3)', r)
 
-    r[0] != 5 -> {
-        print('FAIL: fe-add(2,3) != 5')
-        return
+    {
+        head ?= r[0]
+        head != 5 -> {
+            print('FAIL: fe-add(2,3) != 5')
+            return
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     pass = true
 }
@@ -336,14 +391,28 @@ feo-test-fe-frombytes = () (pass bool) {
     x25519.fe-frombytes(r, base)
     feo-fe-print('fe-frombytes(9)', r)
 
-    r[0] != 9 -> {
-        print('FAIL: fe-frombytes(9)[0] != 9')
-        return
+    {
+        head ?= r[0]
+        head != 9 -> {
+            print('FAIL: fe-frombytes(9)[0] != 9')
+            return
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     i <- [1..10): {
-        r[i] != 0 -> {
-            print('FAIL: fe-frombytes(9) has non-zero high limbs')
-            return
+        {
+            elem ?= r[i]
+            elem != 0 -> {
+                print('FAIL: fe-frombytes(9) has non-zero high limbs')
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     pass = true
@@ -412,19 +481,41 @@ feo-test-scalarmult-base = () (pass bool) {
 
     eprint('Computed pub:')
     i <- [0..32): {
-        eprint(' ')
-        eprint(pub[i])
+        {
+            elem ?= pub[i]
+            eprint(' ')
+            eprint(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     eprint('Expected pub:')
     i <- [0..32): {
-        eprint(' ')
-        eprint(expected[i])
+        {
+            elem ?= expected[i]
+            eprint(' ')
+            eprint(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     match-val = 1
     i <- [0..32): {
-        (pub[i]) != expected[i] -> {
-            match-val = 0
-            break
+        {
+            x ?= pub[i]
+            y ?= expected[i]
+            x != y -> {
+                match-val = 0
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     match-val: {

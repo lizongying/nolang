@@ -1,0 +1,36 @@
+; cov-measure.no — 切片 6 ②：整体自举编译器降级覆盖率度量（函数级差集，无插桩）
+;
+; 执行：
+;   ./bin/no run compiler/tests/cov-measure.no 2>&1 | grep -E '^[a-z].*:[0-9]+$'
+;
+;   覆盖率日志（逐条 fn:kind）由 drv.pkg-ll 经 emit-cov 参数 print 到 stdout；
+;   本档以返回 IR 长度判定 pkg-ll 产码成功，并以 stdout 上的逐条日志做覆盖率审查。
+;
+; ⚠️ 直接导入所有传递依赖：drv.pkg-ll 内部呼叫 h2m-struct-register / h2m-func-sig / ast.* / ps.*，
+;   这些 self-host 函数的顶层常量只有在入口档直接 import 时才会生成（bug #85）。
+; ⚠️ 讯息一律用单引号字符串；nolang 的 "..." 是 char 字面量，不是字符串。
+
+# /test/runner.is-true
+# /test/runner.summary
+# /compiler/src/drv
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+
+ll = drv.pkg-ll-cov('compiler/src/drv.no')
+runner.is-true(ll.len-bytes() > 0, 'cov-measure: drv.pkg-ll-cov produced non-empty IR')
+print('cov-measure: pkg-ll-cov IR bytes = ' - ll.len-bytes().to-str())
+print('cov-measure: coverage log (fn:kind) printed above via drv.pkg-ll emit-cov=true')
+runner.summary()

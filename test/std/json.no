@@ -519,14 +519,22 @@ t-pool-set-get-key = () {
     runner.is-true(p.set-key(oi, 'a', ci), 'pool.set-key 掛子節點')
     runner.eq(p.get-key(oi, 'a'), ci, 'pool.get-key 取回子節點索引')
     runner.eq(i64-of(p.get-key(oi, 'zz')), 9000001, 'pool.get-key 未命中回 nil')
-    runner.eq(p.nodes[oi].count, 1, 'set-key 後父節點 count == 1')
+    p.nodes[oi]: {
+        ok -> runner.eq(it.count, 1, 'set-key 後父節點 count == 1')
+
+        -> _
+    }
 
     ; add-child 直呼：空鍵邊（陣列語義）
     ai = p.alloc()
     p.nodes[ai].kind = json.JSON-KIND-ARR
     p.add-child(ai, ci, '')
     runner.eq(p.arr-len(ai), 1, 'add-child 後 arr-len == 1')
-    runner.eq(p.nodes[ai].count, 1, 'add-child 更新父節點 count')
+    p.nodes[ai]: {
+        ok -> runner.eq(it.count, 1, 'add-child 更新父節點 count')
+
+        -> _
+    }
 }
 
 ; copy-tree：把子樹深拷貝到另一池

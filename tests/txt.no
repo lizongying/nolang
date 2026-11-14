@@ -102,7 +102,11 @@ print(t.contains('lo'))
 print(t.starts-with('Hello'))
 print(t.ends-with('World'))
 print(t.reverse())
-print(t.at(0))
+t[0]: {
+    ok -> print(it.to-str())
+
+    -> print('nil')
+}
 print(t.count())
 
 ; bug 2：參數是 txt（'o' / '0' 這種 str 字面量要轉成 txt）

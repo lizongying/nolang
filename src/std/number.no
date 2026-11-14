@@ -133,14 +133,12 @@ u64.to-str = () (out str) {
     digits = 0
     (tmp > 0) {
         {
-
             #{overflow=wrap}
-            digits-opt = digits + 1
-            digits-opt: {
-                ok -> digits = it
+            digits ?= digits + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         #{overflow=wrap}
@@ -166,14 +164,12 @@ u64.to-str = () (out str) {
         ru = ru / 10
 
         {
-
             #{overflow=wrap}
-            pos-opt = pos - 1
-            pos-opt: {
-                ok -> pos = it
+            pos ?= pos - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out = ob.slice(0, digits).to-bytes-str()
@@ -284,12 +280,11 @@ f64.to-str = () (out str) {
             ; 規約：M = (1<<52) | frac, e2 = exp-bits - 1023 - 52 = exp-bits - 1075
             mant-val = bit52 | frac
             {
-                e2-opt = exp-i - 1075
-                e2-opt: {
-                    ok -> e2 = it
+                e2 ?= exp-i - 1075
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -373,14 +368,12 @@ f64.to-str = () (out str) {
             }
             found == 0 -> {
                 {
-
                     #{overflow=wrap}
-                    k-ten-opt = k-ten + 1
-                    k-ten-opt: {
-                        ok -> k-ten = it
+                    k-ten ?= k-ten + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 pow10 = pow10._mul(ten)
             }
@@ -421,25 +414,21 @@ f64.to-str = () (out str) {
             best-n = n-big
 
             {
-
                 #{overflow=wrap}
-                best-k-opt = 0 - trim-m
-                best-k-opt: {
-                    ok -> best-k = it
+                best-k ?= 0 - trim-m
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
 
             {
-
                 #{overflow=wrap}
-                trim-m-opt = trim-m + 1
-                trim-m-opt: {
-                    ok -> trim-m = it
+                trim-m ?= trim-m + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             div10 = div10._mul(ten)
         }
@@ -492,21 +481,19 @@ f64.to-str = () (out str) {
         #{overflow=wrap}
         sk > 1 -> cap = cap + 1 + (sk - 1)
         {
-            cap-opt = cap + 1 + 1 + elen
-            cap-opt: {
-                ok -> cap = it
+            cap ?= cap + 1 + 1 + elen
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         neg == 1 -> {
             {
-                cap-opt2 = cap + 1
-                cap-opt2: {
-                    ok -> cap = it
+                cap ?= cap + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         out = with-len(cap)
@@ -518,12 +505,11 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt2 = pos + 1
-                pos-opt2: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         out[pos]: {
@@ -532,12 +518,11 @@ f64.to-str = () (out str) {
             -> _
         }
         {
-            pos-opt3 = pos + 1
-            pos-opt3: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         sk > 1 -> {
             out[pos]: {
@@ -546,12 +531,11 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt4 = pos + 1
-                pos-opt4: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             j = 1
             (j < sk) {
@@ -561,20 +545,18 @@ f64.to-str = () (out str) {
                     -> _
                 }
                 {
-                    pos-opt5 = pos + 1
-                    pos-opt5: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    j-opt = j + 1
-                    j-opt: {
-                        ok -> j = it
+                    j ?= j + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -584,12 +566,11 @@ f64.to-str = () (out str) {
             -> _
         }
         {
-            pos-opt6 = pos + 1
-            pos-opt6: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         E >= 0 -> {
             out[pos]: {
@@ -598,12 +579,11 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt7 = pos + 1
-                pos-opt7: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         E < 0 -> {
@@ -613,12 +593,11 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt8 = pos + 1
-                pos-opt8: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -630,12 +609,11 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt9 = pos + 1
-                pos-opt9: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         e = 0
@@ -646,20 +624,18 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt10 = pos + 1
-                pos-opt10: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             {
-                e-opt = e + 1
-                e-opt: {
-                    ok -> e = it
+                e ?= e + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         return
@@ -676,12 +652,11 @@ f64.to-str = () (out str) {
         best-k > 0 -> cap = int-digits + 1 + best-k
         neg == 1 -> {
             {
-                cap-opt3 = cap + 1
-                cap-opt3: {
-                    ok -> cap = it
+                cap ?= cap + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         out = with-len(cap)
@@ -693,12 +668,11 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt11 = pos + 1
-                pos-opt11: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         i = 0
@@ -719,20 +693,18 @@ f64.to-str = () (out str) {
                 }
             }
             {
-                pos-opt12 = pos + 1
-                pos-opt12: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             {
-                i-opt2 = i + 1
-                i-opt2: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         best-k > 0 -> {
@@ -742,12 +714,11 @@ f64.to-str = () (out str) {
                 -> _
             }
             {
-                pos-opt13 = pos + 1
-                pos-opt13: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             j = int-digits
             (j < k) {
@@ -757,20 +728,18 @@ f64.to-str = () (out str) {
                     -> _
                 }
                 {
-                    pos-opt14 = pos + 1
-                    pos-opt14: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 {
-                    j-opt2 = j + 1
-                    j-opt2: {
-                        ok -> j = it
+                    j ?= j + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -785,12 +754,11 @@ f64.to-str = () (out str) {
     cap = 2 + zeros + k
     neg == 1 -> {
         {
-            cap-opt4 = cap + 1
-            cap-opt4: {
-                ok -> cap = it
+            cap ?= cap + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out = with-len(cap)
@@ -802,12 +770,11 @@ f64.to-str = () (out str) {
             -> _
         }
         {
-            pos-opt15 = pos + 1
-            pos-opt15: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out[pos]: {
@@ -816,12 +783,11 @@ f64.to-str = () (out str) {
         -> _
     }
     {
-        pos-opt16 = pos + 1
-        pos-opt16: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     out[pos]: {
         ok -> it = 46
@@ -829,12 +795,11 @@ f64.to-str = () (out str) {
         -> _
     }
     {
-        pos-opt17 = pos + 1
-        pos-opt17: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     z = 0
     (z < zeros) {
@@ -844,20 +809,18 @@ f64.to-str = () (out str) {
             -> _
         }
         {
-            pos-opt18 = pos + 1
-            pos-opt18: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         {
-            z-opt = z + 1
-            z-opt: {
-                ok -> z = it
+            z ?= z + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     i = 0
@@ -868,20 +831,18 @@ f64.to-str = () (out str) {
             -> _
         }
         {
-            pos-opt19 = pos + 1
-            pos-opt19: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         {
-            i-opt3 = i + 1
-            i-opt3: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     return
@@ -921,22 +882,20 @@ f64.to-str-fixed = (precision i64) (out str) {
             total = 1
             neg == 1 -> {
                 {
-                    total-opt = total + 1
-                    total-opt: {
-                        ok -> total = it
+                    total ?= total + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             precision > 0 -> {
                 {
-                    total-opt2 = total + 1 + precision
-                    total-opt2: {
-                        ok -> total = it
+                    total ?= total + 1 + precision
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -946,42 +905,38 @@ f64.to-str-fixed = (precision i64) (out str) {
             neg == 1 -> {
                 obz[pos] = 45
                 {
-                    pos-opt20 = pos + 1
-                    pos-opt20: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             obz[pos] = 48
             {
-                pos-opt21 = pos + 1
-                pos-opt21: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             precision > 0 -> {
                 obz[pos] = 46
                 {
-                    pos-opt22 = pos + 1
-                    pos-opt22: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 i <- [0..precision): {
                     obz[pos] = 48
                     {
-                        pos-opt23 = pos + 1
-                        pos-opt23: {
-                            ok -> pos = it
+                        pos ?= pos + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
@@ -1039,27 +994,23 @@ f64.to-str-fixed = (precision i64) (out str) {
 
     neg == 1 -> {
         {
-
             #{overflow=wrap}
-            total-opt3 = total + 1
-            total-opt3: {
-                ok -> total = it
+            total ?= total + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
     precision > 0 -> {
         {
-
             #{overflow=wrap}
-            total-opt4 = total + 1
-            total-opt4: {
-                ok -> total = it
+            total ?= total + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1070,12 +1021,11 @@ f64.to-str-fixed = (precision i64) (out str) {
     neg == 1 -> {
         obf[pos] = 45
         {
-            pos-opt24 = pos + 1
-            pos-opt24: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1094,14 +1044,12 @@ f64.to-str-fixed = (precision i64) (out str) {
         }
 
         {
-
             #{overflow=wrap}
-            pos-opt25 = pos + 1
-            pos-opt25: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1109,12 +1057,11 @@ f64.to-str-fixed = (precision i64) (out str) {
     precision > 0 -> {
         obf[pos] = 46
         {
-            pos-opt26 = pos + 1
-            pos-opt26: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         j <- [0..precision): {
 
@@ -1132,12 +1079,11 @@ f64.to-str-fixed = (precision i64) (out str) {
                 }
             }
             {
-                pos-opt27 = pos + 1
-                pos-opt27: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -1220,22 +1166,20 @@ f64.to-str-sci = (precision i64) (out str) {
             total = 5
             neg == 1 -> {
                 {
-                    total-opt5 = total + 1
-                    total-opt5: {
-                        ok -> total = it
+                    total ?= total + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             precision > 0 -> {
                 {
-                    total-opt6 = total + 1 + precision
-                    total-opt6: {
-                        ok -> total = it
+                    total ?= total + 1 + precision
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             obs1 []byte = with-cap-len(total, total)
@@ -1243,71 +1187,64 @@ f64.to-str-sci = (precision i64) (out str) {
             neg == 1 -> {
                 obs1[pos] = 45
                 {
-                    pos-opt28 = pos + 1
-                    pos-opt28: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             obs1[pos] = 48
             {
-                pos-opt29 = pos + 1
-                pos-opt29: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             precision > 0 -> {
                 obs1[pos] = 46
                 {
-                    pos-opt30 = pos + 1
-                    pos-opt30: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 i <- [0..precision): {
                     obs1[pos] = 48
                     {
-                        pos-opt31 = pos + 1
-                        pos-opt31: {
-                            ok -> pos = it
+                        pos ?= pos + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
             obs1[pos] = 101
             {
-                pos-opt32 = pos + 1
-                pos-opt32: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             obs1[pos] = 43
             {
-                pos-opt33 = pos + 1
-                pos-opt33: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             obs1[pos] = 48
             {
-                pos-opt34 = pos + 1
-                pos-opt34: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             obs1[pos] = 48
             out = obs1.slice(0, total).to-bytes-str()
@@ -1402,51 +1339,43 @@ f64.to-str-sci = (precision i64) (out str) {
 
     neg == 1 -> {
         {
-
             #{overflow=wrap}
-            total-opt7 = total + 1
-            total-opt7: {
-                ok -> total = it
+            total ?= total + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
     precision > 0 -> {
         {
-
             #{overflow=wrap}
-            total-opt8 = total + 1
-            total-opt8: {
-                ok -> total = it
+            total ?= total + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
     {
-
         #{overflow=wrap}
-        total-opt9 = total + 2 + elen
-        total-opt9: {
-            ok -> total = it
+        total ?= total + 2 + elen
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     elen < 2 -> {
         {
-
             #{overflow=wrap}
-            total-opt10 = total + 1
-            total-opt10: {
-                ok -> total = it
+            total ?= total + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     obs2 []byte = with-cap-len(total, total)
@@ -1455,12 +1384,11 @@ f64.to-str-sci = (precision i64) (out str) {
     neg == 1 -> {
         obs2[pos] = 45
         {
-            pos-opt35 = pos + 1
-            pos-opt35: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1468,26 +1396,23 @@ f64.to-str-sci = (precision i64) (out str) {
     obs2[pos] = mstr.byte(0)
 
     {
-
         #{overflow=wrap}
-        pos-opt36 = pos + 1
-        pos-opt36: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 小數部分
     precision > 0 -> {
         obs2[pos] = 46
         {
-            pos-opt37 = pos + 1
-            pos-opt37: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         j <- [0..precision): {
 
@@ -1503,12 +1428,11 @@ f64.to-str-sci = (precision i64) (out str) {
                 }
             }
             {
-                pos-opt38 = pos + 1
-                pos-opt38: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -1517,14 +1441,12 @@ f64.to-str-sci = (precision i64) (out str) {
     obs2[pos] = 101
 
     {
-
         #{overflow=wrap}
-        pos-opt39 = pos + 1
-        pos-opt39: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     {
         e < 0 -> {
@@ -1537,14 +1459,12 @@ f64.to-str-sci = (precision i64) (out str) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt40 = pos + 1
-        pos-opt40: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 指數位數（至少 2 位，前導補零）
@@ -1554,26 +1474,23 @@ f64.to-str-sci = (precision i64) (out str) {
     elen2 == 1 -> {
         obs2[pos] = 48
         {
-            pos-opt41 = pos + 1
-            pos-opt41: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     j <- [0..elen2): {
         obs2[pos] = estr.byte(j)
 
         {
-
             #{overflow=wrap}
-            pos-opt42 = pos + 1
-            pos-opt42: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out = obs2.slice(0, total).to-bytes-str()
@@ -1603,12 +1520,11 @@ f64.to-str-general = (precision i64) (out str) {
             neg == 1 -> {
                 obs3[pos] = 45
                 {
-                    pos-opt43 = pos + 1
-                    pos-opt43: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             obs3[pos] = 48
@@ -1664,9 +1580,9 @@ f64.to-str-general = (precision i64) (out str) {
 
     ; m = round(ax / base * 10^(precision-1))
     #{overflow=wrap}
-    p-1 = precision - 1
+    top-index = precision - 1
     scale = 1.0
-    pi <- [0..p-1): {
+    pi <- [0..top-index): {
         scale = scale * 10.0
     }
     m i64 = (ax / base * scale + 0.5).to-i64()
@@ -1717,14 +1633,12 @@ f64.to-str-general = (precision i64) (out str) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt4 = i - 1
-            i-opt4: {
-                ok -> i = it
+            i ?= i - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1742,12 +1656,11 @@ f64.to-str-general = (precision i64) (out str) {
         ae i64 = e
         e < 0 -> {
             {
-                ae-opt2 = 0 - ae
-                ae-opt2: {
-                    ok -> ae = it
+                ae ?= 0 - ae
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         elen = 1
@@ -1756,40 +1669,36 @@ f64.to-str-general = (precision i64) (out str) {
         total = 1
         neg == 1 -> {
             {
-                total-opt11 = total + 1
-                total-opt11: {
-                    ok -> total = it
+                total ?= total + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         last-nz >= 1 -> {
             {
-                total-opt12 = total + 1 + last-nz
-                total-opt12: {
-                    ok -> total = it
+                total ?= total + 1 + last-nz
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         {
-            total-opt13 = total + 2 + elen
-            total-opt13: {
-                ok -> total = it
+            total ?= total + 2 + elen
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         elen < 2 -> {
             {
-                total-opt14 = total + 1
-                total-opt14: {
-                    ok -> total = it
+                total ?= total + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         obs4 []byte = with-cap-len(total, total)
@@ -1797,12 +1706,11 @@ f64.to-str-general = (precision i64) (out str) {
         neg == 1 -> {
             obs4[pos] = 45
             {
-                pos-opt44 = pos + 1
-                pos-opt44: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -1813,24 +1721,22 @@ f64.to-str-general = (precision i64) (out str) {
             -> obs4[pos] = mstr.byte(0)
         }
         {
-            pos-opt45 = pos + 1
-            pos-opt45: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         ; 小數部分
         last-nz >= 1 -> {
             obs4[pos] = 46
             {
-                pos-opt46 = pos + 1
-                pos-opt46: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             j <- [1..last-nz + 1): {
 
@@ -1842,12 +1748,11 @@ f64.to-str-general = (precision i64) (out str) {
                     -> obs4[pos] = 48
                 }
                 {
-                    pos-opt47 = pos + 1
-                    pos-opt47: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -1855,12 +1760,11 @@ f64.to-str-general = (precision i64) (out str) {
         ; 'e' 和符號
         obs4[pos] = 101
         {
-            pos-opt48 = pos + 1
-            pos-opt48: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         {
             e < 0 -> obs4[pos] = 45
@@ -1868,12 +1772,11 @@ f64.to-str-general = (precision i64) (out str) {
             -> obs4[pos] = 43
         }
         {
-            pos-opt49 = pos + 1
-            pos-opt49: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         ; 指數位數（至少 2 位）
@@ -1882,23 +1785,21 @@ f64.to-str-general = (precision i64) (out str) {
         elen2 == 1 -> {
             obs4[pos] = 48
             {
-                pos-opt50 = pos + 1
-                pos-opt50: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         j <- [0..elen2): {
             obs4[pos] = estr.byte(j)
             {
-                pos-opt51 = pos + 1
-                pos-opt51: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         out = obs4.slice(0, total).to-bytes-str()
@@ -1953,26 +1854,22 @@ f64.to-str-general = (precision i64) (out str) {
     lead-zeros = 0 - e - 1
 
     {
-
         #{overflow=wrap}
-        total-opt15 = 2 + lead-zeros + last-nz + 1
-        total-opt15: {
-            ok -> total = it
+        total ?= 2 + lead-zeros + last-nz + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     neg == 1 -> {
         {
-
             #{overflow=wrap}
-            total-opt16 = total + 1
-            total-opt16: {
-                ok -> total = it
+            total ?= total + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     obs5 []byte = with-cap-len(total, total)
@@ -1981,50 +1878,43 @@ f64.to-str-general = (precision i64) (out str) {
     neg == 1 -> {
         obs5[pos] = 45
         {
-            pos-opt52 = pos + 1
-            pos-opt52: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     obs5[pos] = 48
 
     {
-
         #{overflow=wrap}
-        pos-opt53 = pos + 1
-        pos-opt53: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     obs5[pos] = 46
 
     {
-
         #{overflow=wrap}
-        pos-opt54 = pos + 1
-        pos-opt54: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     j <- [0..lead-zeros): {
         obs5[pos] = 48
 
         {
-
             #{overflow=wrap}
-            pos-opt55 = pos + 1
-            pos-opt55: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -2039,14 +1929,12 @@ f64.to-str-general = (precision i64) (out str) {
         }
 
         {
-
             #{overflow=wrap}
-            pos-opt56 = pos + 1
-            pos-opt56: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out = obs5.slice(0, total).to-bytes-str()
@@ -2367,26 +2255,22 @@ pow = (base i64, n i64) (res i64) {
     (rn > 0) {
         rn & 1 == 1 -> {
             {
-
                 #{overflow=wrap}
-                res-opt = res * b
-                res-opt: {
-                    ok -> res = it
+                res ?= res * b
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         {
-
             #{overflow=wrap}
-            b-opt = b * b
-            b-opt: {
-                ok -> b = it
+            b ?= b * b
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         rn = rn >> 1
     }
@@ -2749,14 +2633,12 @@ f64.log = () (res f64) {
         x = x / 2.0
 
         {
-
             #{overflow=wrap}
-            k-opt = k + 1
-            k-opt: {
-                ok -> k = it
+            k ?= k + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     i <- [0..2000): {
@@ -2764,14 +2646,12 @@ f64.log = () (res f64) {
         x = x * 2.0
 
         {
-
             #{overflow=wrap}
-            k-opt2 = k - 1
-            k-opt2: {
-                ok -> k = it
+            k ?= k - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     i <- [0..20): {
@@ -2779,14 +2659,12 @@ f64.log = () (res f64) {
         x = x / 2.0
 
         {
-
             #{overflow=wrap}
-            k-opt3 = k + 1
-            k-opt3: {
-                ok -> k = it
+            k ?= k + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     z = (x - 1.0) / (x + 1.0)
@@ -2903,27 +2781,23 @@ i64.sqrt = () (r i64) {
                 r = mid
 
                 {
-
                     #{overflow=wrap}
-                    lo-opt = mid + 1
-                    lo-opt: {
-                        ok -> lo = it
+                    lo ?= mid + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-
                     #{overflow=wrap}
-                    hi-opt = mid - 1
-                    hi-opt: {
-                        ok -> hi = it
+                    hi ?= mid - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -2962,25 +2836,21 @@ i64.is-prime = () (yes bool) {
         }
 
         {
-
             #{overflow=wrap}
-            d-opt = d + 2
-            d-opt: {
-                ok -> d = it
+            d ?= d + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            lim-opt = n / d
-            lim-opt: {
-                ok -> lim = it
+            lim ?= n / d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     yes = true
@@ -3033,53 +2903,45 @@ i8.sqrt = () (r i8) {
         mid i8 = 0
 
         {
-
             #{overflow=wrap}
-            mid-opt = (lo + hi) / 2
-            mid-opt: {
-                ok -> mid = it
+            mid ?= (lo + hi) / 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         q i8 = 0
 
         {
-
             #{overflow=wrap}
-            q-opt = n / mid
-            q-opt: {
-                ok -> q = it
+            q ?= n / mid
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         {
             mid <= q -> {
                 r = mid
 
                 {
-
                     #{overflow=wrap}
-                    lo-opt2 ?i8 = mid + 1
-                    lo-opt2: {
-                        ok -> lo = it
+                    lo ?= mid + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-
                     #{overflow=wrap}
-                    hi-opt2 = mid - 1
-                    hi-opt2: {
-                        ok -> hi = it
+                    hi ?= mid - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -3098,14 +2960,12 @@ i8.is-prime = () (yes bool) {
     m2 i8 = 0
 
     {
-
         #{overflow=wrap}
-        m2-opt = n % 2
-        m2-opt: {
-            ok -> m2 = it
+        m2 ?= n % 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     m2 == 0 -> {
         yes = (n == 2)
@@ -3119,14 +2979,12 @@ i8.is-prime = () (yes bool) {
         md i8 = 0
 
         {
-
             #{overflow=wrap}
-            md-opt = n % d
-            md-opt: {
-                ok -> md = it
+            md ?= n % d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         md == 0 -> {
             yes = false
@@ -3134,25 +2992,21 @@ i8.is-prime = () (yes bool) {
         }
 
         {
-
             #{overflow=wrap}
-            d-opt2 ?i8 = d + 2
-            d-opt2: {
-                ok -> d = it
+            d ?= d + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            lim-opt2 = n / d
-            lim-opt2: {
-                ok -> lim = it
+            lim ?= n / d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     yes = true
@@ -3180,54 +3034,46 @@ i16.sqrt = () (r i16) {
         mid i16 = 0
 
         {
-
             #{overflow=wrap}
-            mid-opt2 = (lo + hi) / 2
-            mid-opt2: {
-                ok -> mid = it
+            mid ?= (lo + hi) / 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         q i16 = 0
 
         {
-
             #{overflow=wrap}
-            q-opt2 = n / mid
-            q-opt2: {
-                ok -> q = it
+            q ?= n / mid
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         {
             mid <= q -> {
                 r = mid
 
                 {
-
                     #{overflow=wrap}
-                    lo-opt3 = mid + 1
-                    lo-opt3: {
-                        ok -> lo = it
+                    lo ?= mid + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-
                     #{overflow=wrap}
-                    hi-opt3 = mid - 1
-                    hi-opt3: {
-                        ok -> hi = it
+                    hi ?= mid - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -3246,14 +3092,12 @@ i16.is-prime = () (yes bool) {
     m2 i16 = 0
 
     {
-
         #{overflow=wrap}
-        m2-opt2 = n % 2
-        m2-opt2: {
-            ok -> m2 = it
+        m2 ?= n % 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     m2 == 0 -> {
         yes = (n == 2)
@@ -3267,14 +3111,12 @@ i16.is-prime = () (yes bool) {
         md i16 = 0
 
         {
-
             #{overflow=wrap}
-            md-opt2 = n % d
-            md-opt2: {
-                ok -> md = it
+            md ?= n % d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         md == 0 -> {
             yes = false
@@ -3282,25 +3124,21 @@ i16.is-prime = () (yes bool) {
         }
 
         {
-
             #{overflow=wrap}
-            d-opt3 = d + 2
-            d-opt3: {
-                ok -> d = it
+            d ?= d + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            lim-opt3 = n / d
-            lim-opt3: {
-                ok -> lim = it
+            lim ?= n / d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     yes = true
@@ -3328,53 +3166,45 @@ i32.sqrt = () (r i32) {
         mid i32 = 0
 
         {
-
             #{overflow=wrap}
-            mid-opt3 = (lo + hi) / 2
-            mid-opt3: {
-                ok -> mid = it
+            mid ?= (lo + hi) / 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         q i32 = 0
 
         {
-
             #{overflow=wrap}
-            q-opt3 = n / mid
-            q-opt3: {
-                ok -> q = it
+            q ?= n / mid
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         {
             mid <= q -> {
                 r = mid
 
                 {
-
                     #{overflow=wrap}
-                    lo-opt4 = mid + 1
-                    lo-opt4: {
-                        ok -> lo = it
+                    lo ?= mid + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-
                     #{overflow=wrap}
-                    hi-opt4 = mid - 1
-                    hi-opt4: {
-                        ok -> hi = it
+                    hi ?= mid - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -3393,14 +3223,12 @@ i32.is-prime = () (yes bool) {
     m2 i32 = 0
 
     {
-
         #{overflow=wrap}
-        m2-opt3 = n % 2
-        m2-opt3: {
-            ok -> m2 = it
+        m2 ?= n % 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     m2 == 0 -> {
         yes = (n == 2)
@@ -3414,14 +3242,12 @@ i32.is-prime = () (yes bool) {
         md i32 = 0
 
         {
-
             #{overflow=wrap}
-            md-opt3 = n % d
-            md-opt3: {
-                ok -> md = it
+            md ?= n % d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         md == 0 -> {
             yes = false
@@ -3429,25 +3255,21 @@ i32.is-prime = () (yes bool) {
         }
 
         {
-
             #{overflow=wrap}
-            d-opt4 = d + 2
-            d-opt4: {
-                ok -> d = it
+            d ?= d + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            lim-opt4 = n / d
-            lim-opt4: {
-                ok -> lim = it
+            lim ?= n / d
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     yes = true

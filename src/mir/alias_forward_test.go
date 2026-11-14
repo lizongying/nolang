@@ -576,3 +576,50 @@ main = () {
 		t.Errorf("alias written and then escaped to a callee was NOT cloned: clones=0\n%s", dump)
 	}
 }
+
+// TestCopyOfSliceViewIsClonedNotMoved pins the `[]T` half of the "the source
+// must OWN its buffer" guard in lowerDeadSourceCopiesToMoves.
+//
+//	local = [10, 20, 30, 40, 50]
+//	view = local[1..4]          ; a VIEW: cap == 0, data == local.data + 8
+//	v = view                    ; the view is dead after this copy
+//	print(v[0])
+//
+// Because `view` was dead, rule 1's "dead source ⇒ move" rewrite fired and the
+// copy became an OpMove — but a view does not OWN the buffer; the container
+// does. So v was left aliasing storage that local's drop freed at local's own
+// last use, which sits BEFORE the read: measured, `print(v[0])` printed 0
+// instead of 20, silently, because a freed small buffer still reads back.
+//
+// The guard already covered a slice of a FIXED array (isSliceViewOfArray); this
+// is the vec case, which went through the same hole.
+func TestCopyOfSliceViewIsClonedNotMoved(t *testing.T) {
+	mod := lowerForTest(t, `
+main = () {
+    local = [10, 20, 30, 40, 50]
+    view = local[1..4]
+    v = view
+    print(v[0])
+}
+`)
+	view := NoVal
+	for i := range mod.Insts {
+		if isLiveSliceView(&mod.Insts[i]) && mod.Insts[i].Dst > NoVal {
+			view = mod.Insts[i].Dst
+			break
+		}
+	}
+	if view == NoVal {
+		t.Fatal("no surviving slice view — the shape under test did not lower as expected")
+	}
+	clones, _, dump := aliasCounts(t, mod, "main")
+	if clones == 0 {
+		t.Fatalf("the copy of a slice VIEW was not cloned: clones=0\n%s", dump)
+	}
+	for i := range mod.Insts {
+		inst := &mod.Insts[i]
+		if inst.Op == OpMove && moveSrc(inst) == view {
+			t.Fatalf("the copy of a slice VIEW (value %d) was lowered to a MOVE: a view does not own its buffer, so the destination aliases storage its container frees\n%s", view, dump)
+		}
+	}
+}

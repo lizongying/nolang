@@ -58,24 +58,22 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        ixout59c29 = data[pos + 1 + i]: {
+        data-pos-1-i = data[pos + 1 + i]: {
             ok -> it
 
             -> _
         }
 
-        len = (len << 8) | (ixout59c29)
+        len = (len << 8) | (data-pos-1-i)
     }
 
     {
-
         #{overflow=wrap}
-        adv-opt = 1 + n
-        adv-opt: {
-            ok -> adv = it
+        adv ?= 1 + n
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -137,51 +135,6 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
         return
     }
 
-    ; 印出 TBS 標頭位元組以驗證
-    {
-
-        #{overflow=wrap}
-        b0-opt = data[start + 1]: {
-            ok -> it
-
-            -> 0
-        }
-        b0-opt: {
-            ok -> b0 = it
-
-            ->
-        }
-    }
-
-    {
-
-        #{overflow=wrap}
-        b1-opt = data[start + 2]: {
-            ok -> it
-
-            -> 0
-        }
-        b1-opt: {
-            ok -> b1 = it
-
-            ->
-        }
-    }
-
-    {
-
-        #{overflow=wrap}
-        b2-opt = data[start + 3]: {
-            ok -> it
-
-            -> 0
-        }
-        b2-opt: {
-            ok -> b2 = it
-
-            ->
-        }
-    }
     end = der-skip(data, start)
 }
 
@@ -236,13 +189,13 @@ x509-serial = (data []byte) (serial i64) {
     i <- [0..int-len): {
 
         #{overflow=wrap}
-        ixout200c29 = data[p + 1 + adv + i]: {
+        data-p-1-adv-i = data[p + 1 + adv + i]: {
             ok -> it
 
             -> _
         }
 
-        val = (val << 8) | (ixout200c29)
+        val = (val << 8) | (data-p-1-adv-i)
     }
     serial = val
 }
@@ -290,14 +243,12 @@ x509-rsa-e = (data []byte) (e i64) {
 
     ; 步驟 7：進入 SPKI 內容（跳過 SPKI SEQUENCE 標籤 + 長度）
     {
-
         #{overflow=wrap}
-        p-opt2 = p + 1
-        p-opt2: {
-            ok -> p = it
+        p ?= p + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     spki-len, adv = der-len(data, p)
 
@@ -360,13 +311,13 @@ x509-rsa-e = (data []byte) (e i64) {
     i <- [0..exp-len): {
 
         #{overflow=wrap}
-        ixout310c29 = data[rsa-start + 1 + adv + i]: {
+        data-rsa-start-1-adv-i = data[rsa-start + 1 + adv + i]: {
             ok -> it
 
             -> _
         }
 
-        val = (val << 8) | (ixout310c29)
+        val = (val << 8) | (data-rsa-start-1-adv-i)
     }
     e = val
 }
@@ -399,14 +350,12 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     ; 進入 SPKI
     {
-
         #{overflow=wrap}
-        p-opt3 = p + 1
-        p-opt3: {
-            ok -> p = it
+        p ?= p + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     spki-len, adv = der-len(data, p)
 
@@ -453,22 +402,20 @@ x509-rsa-n = (data []byte) (out []byte) {
     actual-len = mod-len
 
     mod-len > 0 -> {
-        ixout392c10 = data[mod-val-start]: {
+        data-mod-val-start = data[mod-val-start]: {
             ok -> it
 
             -> _
         }
 
-        (ixout392c10) == 0 -> {
+        (data-mod-val-start) == 0 -> {
             {
-
                 #{overflow=wrap}
-                actual-start-opt = mod-val-start + 1
-                actual-start-opt: {
-                    ok -> actual-start = it
+                actual-start ?= mod-val-start + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
 
             #{overflow=wrap}
@@ -2393,30 +2340,22 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
 
     ; 跳過前導零
     start = 0
+    skipping = 1
+    (start < n - 1 && skipping == 1) {
+        {
+            #{overflow=wrap}
+            first-byte ?= data[start]
 
-    ixout2346c27 = data[start]: {
-        ok -> it
+            first-byte == 0 -> {
+                #{overflow=wrap}
+                start ?= start + 1
+            }
 
-        -> _
-    }
-
-    (start < n - 1 && ixout2346c27 == 0) {
-        ixout2349c30 = data[start]: {
-            ok -> it
+            first-byte != 0 -> skipping = 0
+        }: {
+            err -> _
 
             -> _
-        }
-
-        #{overflow=wrap}
-        start < n - 1 && ixout2349c30 == 0 -> {
-            {
-                start-opt = start + 1
-                start-opt: {
-                    ok -> start = it
-
-                    ->
-                }
-            }
         }
     }
 
@@ -2425,14 +2364,14 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
 
     ; 若 MSB 為 1，需補 0x00 以保持正號
     need-pad = 0
-    ixout2359c10 = data[start]: {
-        ok -> it
+    {
+        top-byte ?= data[start]
+
+        (top-byte & 128) != 0 -> need-pad = 1
+    }: {
+        err -> _
 
         -> _
-    }
-
-    (ixout2359c10 & 128) != 0 -> {
-        need-pad = 1
     }
 
     #{overflow=wrap}
@@ -2499,14 +2438,12 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     n = 0
     (tmp != 0) {
         {
-
             #{overflow=wrap}
-            n-opt = n + 1
-            n-opt: {
-                ok -> n = it
+            n ?= n + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         tmp = tmp >> 8
     }
@@ -2608,19 +2545,19 @@ x509-bytes-to-bn = (data []byte) (out []i64) {
         #{overflow=wrap}
         shift = (byte-from-lsb % 4) * 8
 
-        ixout2476c21 = out[limb]: {
+        out-limb = out[limb]: {
             ok -> it
 
             -> _
         }
 
-        ixout2476c35 = data[i]: {
+        data-i = data[i]: {
             ok -> it
 
             -> _
         }
 
-        out[limb] = ixout2476c21 | ((ixout2476c35) << shift)
+        out[limb] = out-limb | ((data-i) << shift)
     }
     out.truncate(limb-count)
 }
@@ -3388,43 +3325,40 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
         sig[i] = 0
     }
 
-    ; 將 limb 轉為位元組
+    ; 將 limb 轉為位元組（little-endian limb → big-endian 輸出）
+    ; 第 i 個 limb 對應位元組 (mod-len - 1 - i*4) 起的低 4 個位元組；
+    ; 越界（負下標）由 place-match 的 err 分支自然略過
     i <- [0..rn): {
-        limb = result[i]: {
-            ok -> it
-
-            -> 0
-        }
-        limb-byte-0 = limb & 255
-        limb-byte-1 = (limb >> 8) & 255
-        limb-byte-2 = (limb >> 16) & 255
-        limb-byte-3 = (limb >> 24) & 255
-
-        ; little-endian limb: byte 0 = LSB
-        ; big-endian 輸出: 在 mod-len 中，limb i 對應位元組 (mod-len - 1 - i*4 .. mod-len - 1 - i*4 - 3)
-        #{overflow=wrap}
-        out-pos = mod-len - 1 - i * 4
-
-        sig[out-pos] = limb-byte-0
-
         {
-            out-pos > 0 -> {
+            limb = result[i]: {
+                ok -> it
 
-                #{overflow=wrap}
-                sig[out-pos - 1] = limb-byte-1
+                -> 0
             }
 
-            out-pos > 1 -> {
+            j <- [0..4): {
+                {
+                    #{overflow=wrap}
+                    out-pos ?= mod-len - 1 - i * 4 - j
 
-                #{overflow=wrap}
-                sig[out-pos - 2] = limb-byte-2
+                    #{overflow=wrap}
+                    byte-value = (limb >> (j * 8)) & 255
+
+                    sig[out-pos]: {
+                        ok -> it = byte-value
+
+                        -> _
+                    }
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
+        }: {
+            err -> _
 
-            out-pos > 2 -> {
-
-                #{overflow=wrap}
-                sig[out-pos - 3] = limb-byte-3
-            }
+            -> _
         }
     }
     sig.truncate(mod-len)

@@ -223,8 +223,7 @@ ps-enum-row = (p psst, en str, v str) (r i64) {
         d = -1
         j = en.len-bytes() - 1
         (j >= 0 && d < 0) {
-            eb-opt = en.byte(j)
-            eb = eb-opt: {
+            eb = en.byte(j): {
                 ok -> it
 
                 -> 0
@@ -265,8 +264,7 @@ ps-enum-has = (p psst, en str) (r i64) {
         d = -1
         j = en.len-bytes() - 1
         (j >= 0 && d < 0) {
-            eb-opt = en.byte(j)
-            eb = eb-opt: {
+            eb = en.byte(j): {
                 ok -> it
 
                 -> 0
@@ -807,8 +805,7 @@ ps-semi-eat-count = (p psst) (n i64) {
                 j = 0
                 jl = lit.len-bytes()
                 (j < jl) {
-                    b-opt = lit.byte(j)
-                    b = b-opt: {
+                    b = lit.byte(j): {
                         ok -> it
 
                         -> 0
@@ -1142,8 +1139,7 @@ ps-is-op-overload-name = (nm str) (r i64) {
     d = -1
     j = nm.len-bytes() - 1
     (j >= 0 && d < 0) {
-        nb-opt = nm.byte(j)
-        nb = nb-opt: {
+        nb = nm.byte(j): {
             ok -> it
 
             -> 0
@@ -2121,14 +2117,12 @@ ps-int-lit-value = (raw str) (out str) {
     ; 偵測 base 與其實位元起始（跳過 `0x`/`0X` 前綴）
     start = 0
     base = 10
-    b0-opt = raw.byte(0)
-    b0 = b0-opt: {
+    b0 = raw.byte(0): {
         ok -> it
 
         -> 0
     }
-    b1-opt = raw.byte(1)
-    b1 = b1-opt: {
+    b1 = raw.byte(1): {
         ok -> it
 
         -> 0
@@ -2143,8 +2137,7 @@ ps-int-lit-value = (raw str) (out str) {
 
     #{overflow=wrap}
     (s < len) {
-        lead-opt = raw.byte(s)
-        lead = lead-opt: {
+        lead = raw.byte(s): {
             ok -> it
 
             -> 0
@@ -2171,14 +2164,12 @@ ps-int-lit-value = (raw str) (out str) {
             i = 0
             cmp = 0
             (i < 20 && cmp == 0) {
-                d-opt = raw.byte(s + i)
-                d = d-opt: {
+                d = raw.byte(s + i): {
                     ok -> it
 
                     -> 0
                 }
-                m-opt = maxd.byte(i)
-                m = m-opt: {
+                m = maxd.byte(i): {
                     ok -> it
 
                     -> 0
@@ -2201,8 +2192,7 @@ ps-int-lit-value = (raw str) (out str) {
 
     #{overflow=wrap}
     (j < len) {
-        c-opt = raw.byte(j)
-        c = c-opt: {
+        c = raw.byte(j): {
             ok -> it
 
             -> 0
@@ -2965,8 +2955,7 @@ ps-hash = (s str) (h i64) {
     i = 0
     n = s.len-bytes()
     (i < n) {
-        c-opt = s.byte(i)
-        c = c-opt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -4804,14 +4793,12 @@ ps-parse-struct-lit = (t ast, p psst, ty str) (idx i64) {
 ; r: 結果數值
 ps-intlit-hex = (raw str) (r i64) {
     r = 0
-    h0-opt = raw.byte(0)
-    h0 = h0-opt: {
+    h0 = raw.byte(0): {
         ok -> it
 
         -> 0
     }
-    h1-opt = raw.byte(1)
-    h1 = h1-opt: {
+    h1 = raw.byte(1): {
         ok -> it
 
         -> 0
@@ -4891,15 +4878,13 @@ ps-infer-type = (t ast, val i64) (r str) {
 ps-idx-elem-of = (ty str) (r str) {
     r = ''
     n = ty.len-bytes()
-    c0-opt = ty.byte(0)
-    c0 = c0-opt: {
+    c0 = ty.byte(0): {
         ok -> it
 
         -> 0
     }
     n > 2 -> c0 == 91 -> {
-        c1-opt = ty.byte(1)
-        c1 = c1-opt: {
+        c1 = ty.byte(1): {
             ok -> it
 
             -> 0
@@ -4915,8 +4900,7 @@ ps-idx-elem-of = (ty str) (r str) {
             i = 2
             go = true
             (go && i < n) {
-                ci-opt = ty.byte(i)
-                ci = ci-opt: {
+                ci = ty.byte(i): {
                     ok -> it
 
                     -> 0
@@ -4960,16 +4944,14 @@ ps-elem-shape = (e str) (shape i64) {
     shape = 0
     n = e.len-bytes()
     n > 0 -> {
-        c0-opt = e.byte(0)
-        c0 = c0-opt: {
+        c0 = e.byte(0): {
             ok -> it
 
             -> 0
         }
         c0 == 63 -> shape = 1
         c0 == 91 -> {
-            c1-opt = e.byte(1)
-            c1 = c1-opt: {
+            c1 = e.byte(1): {
                 ok -> it
 
                 -> 0
@@ -4992,8 +4974,7 @@ ps-elem-arr-size = (e str) (r str) {
     i = 1
     go = true
     (go && i < n) {
-        cb-opt = e.byte(i)
-        cb = cb-opt: {
+        cb = e.byte(i): {
             ok -> it
 
             -> 0
@@ -5017,8 +4998,7 @@ ps-elem-arr-elem = (e str) (r str) {
     i = 1
     go = true
     (go && i < n) {
-        cb-opt = e.byte(i)
-        cb = cb-opt: {
+        cb = e.byte(i): {
             ok -> it
 
             -> 0
@@ -5079,8 +5059,7 @@ ps-detect-generic = (t ast, i i64, g []str) {
     {
         k == asp.K-NAMED-TYPE -> {
             nm = ast.str-at(t, d.s0)
-            nm0-opt = nm.byte(0)
-            nm0 = nm0-opt: {
+            nm0 = nm.byte(0): {
                 ok -> it
 
                 -> 0
@@ -5099,8 +5078,7 @@ ps-detect-generic = (t ast, i i64, g []str) {
                 sd = ast.nd-at(t, sz)
                 sd.kind == asp.K-IDENTIFIER -> {
                     nm2 = ast.str-at(t, sd.s0)
-                    nm2b-opt = nm2.byte(0)
-                    nm2b = nm2b-opt: {
+                    nm2b = nm2.byte(0): {
                         ok -> it
 
                         -> 0
@@ -9215,8 +9193,7 @@ ps-tv-recv-elem = (ty str) (r str) {
     r = ''
     n = ty.len-bytes()
     n > 0 -> {
-        c0-opt = ty.byte(0)
-        c0 = c0-opt: {
+        c0 = ty.byte(0): {
             ok -> it
 
             -> 0

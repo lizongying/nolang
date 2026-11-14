@@ -45,13 +45,13 @@
 []t.eq = (b []t) (eq bool) {
     eq = true
     i <- [0..self.len()): {
-        ixout47c18 = b[i]: {
+        b-i = b[i]: {
             ok -> it
 
             -> _
         }
 
-        .[i] != ixout47c18 -> {
+        .[i] != b-i -> {
             eq = false
             return
         }
@@ -339,7 +339,7 @@ vec-clear = () {
     }
 }
 
-; []t.at: 安全索引訪問，越界返回 nil
+; [deprecated] []t.at: 安全索引訪問，越界返回 nil——請改用 v[i]（原生索引，回傳 ?t，越界為 err）
 ; 注意：sz = .len() 強制 vec self 類型，避免錯誤特化為 arr 方法
 ; [at](#vec.at)
 []t.at = (i i64) (val ?t) {

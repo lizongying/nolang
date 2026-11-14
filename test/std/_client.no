@@ -1,0 +1,325 @@
+; ============================================================
+; 過濾存檔（filtered copy）— 此檔不參與 vet / test / build
+; ------------------------------------------------------------
+; 檔名以 '_' 開頭：nolang 的 IsIgnoredSourcePath 慣例會忽略它，
+; `no vet` / `no test` / `no build` 的目錄遍歷都跳過本檔。
+;
+; 來源：client.no 的原樣副本，未改動任何一行程式碼。
+; 保留原因：P 是連接埠變數沿用原文大寫記號，
+; 依「不修改合法源碼」原則原樣保存，供日後對照向量來源。
+;
+; 實際執行且 `no vet` 0 error 的版本：client.no
+; （識別字已改為 kebab-case / 已修掉診斷）。改向量時請兩份一起對照。
+; ============================================================
+
+; test/std/client.no — net/client 模組測試
+;
+; 執行：no test test/std/client.no
+;
+; 為什麼這個檔存在：`net/client` 整模組沒有任何測試。它只是 `net.conn` 的薄封裝
+; （連接狀態追蹤 + 重連 + 請求-回應），所以測試策略是「一對真實的 TCP 回環」：
+; 127.0.0.1 上 net-listen → client.connect → net-accept，之後對端用 net-send
+; 寫、被測方 recv。所有 recv 一律先設逾時，實作有缺陷也只會回 -1 / nil，
+; 不會把測試掛死。
+;
+; 覆蓋清單（10 個公開符號）：
+;   結構體：client（c / host / port / connected 四欄）
+;   方法：connect reconnect send recv recv-line request send-line is-connected close
+;   函式：client-create
+;
+; 每個方法都測兩條路：「未連接」早退回 -1 / nil，以及「已連接」的正常路徑。
+;
+; 寫法備註：
+;   - 跨模組 std 結構體變數必須顯式標型別（`cl client`），否則 unknown callee。
+;   - `?str` 收成 1 / 0 用兩步賦值（先 `v = 0` 再 `v = o: { … }`），單行的 `it`
+;     型別會串到外層。
+;   - `client.request` 內是「先 send、再 recv-all 到 EOF」，單執行緒無法在
+;     recv-all 阻塞期間從對端寫回應 ⇒ 必須在呼叫 request **之前**把回應塞進
+;     核心緩衝，並對客戶端 fd 設 recv 逾時讓 recv-all 收尾。
+;   - 位元組比對一律用 seq()（先比長度再比內容），避開 str-eq 的 n 超界讀。
+
+# /test/runner
+
+; ── helpers ──────────────────────────────────────────────────────
+
+; 字串比較：先比長度（避開 str-eq 的 n 超界讀），再逐位元組
+seq = (a str, b str, msg str) {
+    la = a.len-bytes()
+    lb = b.len-bytes()
+    runner.eq(la, lb, msg - ' / 長度')
+    la == lb -> runner.is-true(a.eq(b, la), msg)
+}
+
+; ?str → 1=ok / 0=nil-or-err
+cst = (o ?str) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+; ?str → 值（非 ok 回空字串）
+stv = (o ?str) (s str) {
+    s = ''
+    s = o: {
+        ok -> it
+
+        -> ''
+    }
+}
+
+; ?client → 1=ok / 0=nil-or-err
+cvo = (o ?client.client) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+; ?client → 值（非 ok 回零值 client）
+cvv = (o ?client.client) (c client) {
+    nc net.conn
+    d = client{
+        c: nc
+        host: ''
+        port: 0
+        connected: false
+    }
+    c = d
+    c = o: {
+        ok -> it
+
+        -> d
+    }
+}
+
+; ── 1. 結構體零值 ─────────────────────────────────────────────────
+
+t-struct = () {
+    cl = client{}
+    runner.is-false(cl.connected, 'client{}: connected 零值 = false')
+    seq(cl.host, '', 'client{}: host 零值 = 空字串')
+    runner.eq(cl.port, 0, 'client{}: port 零值 = 0')
+}
+
+; ── 2. 未連接時所有方法的早退 ─────────────────────────────────────
+
+t-unconnected = () {
+    cl = client{}
+    buf str = with-len(16)
+
+    runner.eq(cl.send('x'), -1, 'send: 未連接 ⇒ -1')
+    runner.eq(cl.recv(buf, 16), -1, 'recv: 未連接 ⇒ -1')
+    runner.eq(cst(cl.recv-line()), 0, 'recv-line: 未連接 ⇒ nil')
+    runner.eq(cst(cl.request('x')), 0, 'request: 未連接 ⇒ nil')
+    runner.eq(cl.send-line('x'), -1, 'send-line: 未連接 ⇒ -1')
+    runner.is-false(cl.is-connected(), 'is-connected: 未連接 ⇒ false')
+
+    ; 未記錄 host 的 reconnect 直接 false（不嘗試撥號）
+    runner.is-false(cl.reconnect(), 'reconnect: 無記錄 host ⇒ false')
+
+    ; 未連接時 close 無副作用
+    cl.close()
+    runner.is-false(cl.connected, 'close: 未連接 ⇒ 仍是 false')
+    runner.eq(cst(cl.recv-line()), 0, 'close 後 recv-line ⇒ 仍 nil')
+}
+
+; ── 3. connect / is-connected ────────────────────────────────────
+
+t-connect = () {
+    P = 39321
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 已起（39321）')
+
+    cl = client{}
+    ok = cl.connect('127.0.0.1', P)
+    runner.is-true(ok, 'connect: 回 true')
+    runner.is-true(cl.connected, 'connect: connected = true')
+    seq(cl.host, '127.0.0.1', 'connect: host 落地')
+    runner.eq(cl.port, P, 'connect: port 落地')
+    runner.is-true(cl.c.fd >= 0, 'connect: 底層 fd 有效')
+    runner.is-true(cl.is-connected(), 'is-connected: 已連接 ⇒ true')
+
+    af = net.net-accept(lf)
+    runner.is-true(af >= 0, '前置：已 accept')
+    net.net-set-recv-timeout(af, 300)
+
+    ; 已連接後再 connect 到不通的埠 ⇒ false，且 connected 被清掉
+    ok2 = cl.connect('127.0.0.1', 1)
+    runner.is-false(ok2, 'connect: 埠不通 ⇒ false')
+    runner.is-false(cl.connected, 'connect: 失敗後 connected = false')
+    runner.eq(cl.c.fd, -1, 'connect: 失敗後底層 fd = -1')
+
+    ; 非法位址
+    cl3 = client{}
+    runner.is-false(cl3.connect('256.256.256.256', P), 'connect: 非法位址 ⇒ false')
+    runner.is-false(cl3.connected, 'connect: 非法位址後 connected = false')
+
+    net.close(af)
+    net.close(lf)
+}
+
+; ── 4. send / recv / recv-line / send-line ───────────────────────
+
+t-send-recv = () {
+    P = 39322
+    lf = net.net-listen('127.0.0.1', P)
+    cl = client{}
+    runner.is-true(cl.connect('127.0.0.1', P), '前置：連線（39322）')
+    af = net.net-accept(lf)
+    runner.is-true(af >= 0, '前置：已 accept')
+    net.net-set-recv-timeout(af, 400)
+
+    ; send：回傳寫入位元組數，對端內容一致
+    runner.eq(cl.send('hello'), 5, 'send: 回寫入位元組數 5')
+    rbuf str = with-len(64)
+    rn = net.net-recv(af, rbuf, 64)
+    runner.eq(rn, 5, 'send: 對端收到 5 位元組')
+    seq(rbuf.slice(0, rn), 'hello', 'send: 對端內容 = hello')
+
+    ; recv：對端寫、被測方讀
+    pong = 'pong'
+    net.net-send(af, pong, pong.len-bytes())
+    buf str = with-len(64)
+    n = cl.recv(buf, 64)
+    runner.eq(n, 4, 'recv: 回實際位元組數 4')
+    seq(buf.slice(0, n), 'pong', 'recv: 內容 = pong')
+
+    ; recv-line：單次 net-recv 的結果（不做行切分），行尾一併帶回
+    payload = 'l1' - '\n'
+    net.net-send(af, payload, payload.len-bytes())
+    r = cl.recv-line()
+    runner.eq(cst(r), 1, 'recv-line: 有資料 ⇒ ok')
+    expect-line = 'l1' - '\n'
+    seq(stv(r), expect-line, 'recv-line: 內容含行尾換行')
+
+    ; send-line：自動附加 \n
+    runner.eq(cl.send-line('abc'), 4, 'send-line: 附加 \\n ⇒ 4 位元組')
+    buf2 str = with-len(64)
+    n2 = net.net-recv(af, buf2, 64)
+    runner.eq(n2, 4, 'send-line: 對端收到 4 位元組')
+    expect-abc = 'abc' - '\n'
+    seq(buf2.slice(0, n2), expect-abc, 'send-line: 內容 = abc + 換行')
+
+    ; close 之後全部回到早退值
+    cl.close()
+    runner.is-false(cl.connected, 'close: connected 清掉')
+    runner.eq(cl.send('x'), -1, 'close 後 send ⇒ -1')
+    runner.eq(cl.recv(buf, 64), -1, 'close 後 recv ⇒ -1')
+    runner.eq(cst(cl.recv-line()), 0, 'close 後 recv-line ⇒ nil')
+    cl.close()
+    runner.is-false(cl.connected, 'close: 重複呼叫無副作用')
+
+    net.close(af)
+    net.close(lf)
+}
+
+; ── 5. request（請求-回應模式）────────────────────────────────────
+
+t-request = () {
+    P = 39323
+    lf = net.net-listen('127.0.0.1', P)
+    cl = client{}
+    runner.is-true(cl.connect('127.0.0.1', P), '前置：連線（39323）')
+    af = net.net-accept(lf)
+    runner.is-true(af >= 0, '前置：已 accept')
+
+    ; 單執行緒：必須在 request 之前把回應塞進核心緩衝，並對客戶端 fd 設
+    ; 逾時，讓 recv-all 在資料收完後以「逾時 ⇒ break」收尾。
+    resp = 'HTTP/1.1 200 OK'
+    sent = net.net-send(af, resp, resp.len-bytes())
+    runner.eq(sent, resp.len-bytes(), '前置：對端回應已寫出')
+    net.net-set-recv-timeout(cl.c.fd, 250)
+
+    r = cl.request('ping')
+    runner.eq(cst(r), 1, 'request: 回 ok')
+    seq(stv(r), resp, 'request: 回應內容完整')
+
+    ; 請求確實送達對端
+    rbuf str = with-len(64)
+    net.net-set-recv-timeout(af, 300)
+    rn = net.net-recv(af, rbuf, 64)
+    runner.eq(rn, 4, 'request: 請求已送出 4 位元組')
+    seq(rbuf.slice(0, rn), 'ping', 'request: 請求內容 = ping')
+
+    net.close(af)
+    net.close(lf)
+}
+
+; ── 6. reconnect ─────────────────────────────────────────────────
+
+t-reconnect = () {
+    P = 39324
+    lf = net.net-listen('127.0.0.1', P)
+
+    cl = client{}
+    runner.is-true(cl.connect('127.0.0.1', P), '前置：首次連線（39324）')
+    a1 = net.net-accept(lf)
+    runner.is-true(a1 >= 0, '前置：首次 accept')
+
+    ; 已連接 ⇒ 先關舊連再重撥
+    ok = cl.reconnect()
+    runner.is-true(ok, 'reconnect: 已連接 ⇒ 關舊再撥 ⇒ true')
+    runner.is-true(cl.connected, 'reconnect: connected = true')
+    a2 = net.net-accept(lf)
+    runner.is-true(a2 >= 0, 'reconnect: 新連線可 accept')
+    runner.is-true(cl.c.fd >= 0, 'reconnect: 底層 fd 有效')
+
+    ; listener 關閉後重撥 ⇒ false，且 connected 被清
+    net.close(a1)
+    net.close(lf)
+    ok2 = cl.reconnect()
+    runner.is-false(ok2, 'reconnect: listener 關閉 ⇒ false')
+    runner.is-false(cl.connected, 'reconnect: 失敗後 connected = false')
+
+    net.close(a2)
+}
+
+; ── 7. client-create ─────────────────────────────────────────────
+
+t-client-create = () {
+    P = 39325
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 已起（39325）')
+
+    o = client.client-create('127.0.0.1', P)
+    runner.eq(cvo(o), 1, 'client-create: 成功 ⇒ ok')
+
+    cl = cvv(o)
+    runner.is-true(cl.connected, 'client-create: connected = true')
+    seq(cl.host, '127.0.0.1', 'client-create: host 落地')
+    runner.eq(cl.port, P, 'client-create: port 落地')
+
+    af = net.net-accept(lf)
+    runner.is-true(af >= 0, 'client-create: 對端可 accept')
+    cl.close()
+
+    ; 埠不通 ⇒ nil
+    o2 = client.client-create('127.0.0.1', 1)
+    runner.eq(cvo(o2), 0, 'client-create: 埠不通 ⇒ nil')
+
+    net.close(af)
+    net.close(lf)
+}
+
+; ── 執行 ─────────────────────────────────────────────────────────
+
+p1, f1 = runner.test('client.struct', t-struct)
+p2, f2 = runner.test('client.unconnected', t-unconnected)
+p3, f3 = runner.test('client.connect', t-connect)
+p4, f4 = runner.test('client.send-recv', t-send-recv)
+p5, f5 = runner.test('client.request', t-request)
+p6, f6 = runner.test('client.reconnect', t-reconnect)
+p7, f7 = runner.test('client.create', t-client-create)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

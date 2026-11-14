@@ -85,17 +85,50 @@ fail-err = (d i64) (out str) {
     ran -> out = out - '+ran'
 }
 
-; 4. `?=` 失敗為 nil（安全索引越界）：同樣停住主體
+; 4. `?=` 失敗為 nil（被調函式自己回 nil）：同樣停住主體，
+;    且 arms 看到的是 nil —— 「nil 上拋」與「主體跑完」在 arms 裡同形，
+;    這是塊主語的既定語意（見檔案頭：主體走完也是 nil），差別只在 halt。
 ...
+
+; n i64: 0 時回 nil，正數時回 ok(n)
+; v ?i64: nil 或 ok(n)
+none-i = (n i64) (v ?i64) {
+    if n > 0 {
+        v = 7
+        return
+    }
+    v = nil
+}
 
 ; out str: 觀察到的變體 + 主體是否被停住
 fail-nil = () (out str) {
+    ran = false
+    out = ''
+    {
+        v ?= none-i(0)
+        print('  fail-nil v=' - v.to-str())
+        ran = true
+    }: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        ok -> out = 'ok'
+    }
+    ran -> out = out - '+ran'
+}
+
+; 4b. 越界索引的 `?=` 失敗是 err（D11 起不再回 nil）：同樣停住主體
+...
+
+; out str: 觀察到的變體 + 主體是否被停住
+fail-oob = () (out str) {
     arr = [10, 20, 30]
     ran = false
     out = ''
     {
         v ?= arr[9]
-        print('  fail-nil v=' - v.to-str())
+        print('  fail-oob v=' - v.to-str())
         ran = true
     }: {
         nil -> out = 'nil'
@@ -252,6 +285,7 @@ check('success', success(2), 'nil+ran')
 check('fail-err', fail-err(2), 'nil+ran')
 check('fail-err-zero', fail-err(0), 'err')
 check('fail-nil', fail-nil(), 'nil')
+check('fail-oob', fail-oob(), 'err')
 check('nested', nested(0), 'inner-err|outer-nil')
 sr, so = shadow(0)
 check('shadow', so, 'err')

@@ -670,7 +670,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
             kid = ast.kid-at(t, base + k)
             kk = ast.nd-at(t, kid)
             kk.kind == asp.K-FUNCTION-DEFINITION -> {
-                nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
+                nm, rt, ap, bd = h2m-func-sig(t, agg, kid)
                 bd == 0 -> {
 
                     ; 模組源碼函式名慣例不一致：有的帶 `mod.` 點號前綴（drv.build-package / ps.parse /
@@ -683,7 +683,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
                     nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     key = mod - '.' - short
-                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, dp)
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap)
                 }
             }
 
@@ -716,8 +716,15 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
 ; 入口 .no 檔 → 整包完整 LLVM IR 模組文字（多模組 body 串接、函式 @<mod.fn>、入口 @main）。
 ;   path: 入口檔（相對 cwd = workspace 根）
 ;   r: 完整 .ll（prelude + 全域 struct 宣告 + 各模組函式）；'' = 失敗（已 eprint）
-drv.pkg-ll = (path str) (r str) {
+;   ⚠️ 覆盖率信号（切片 6 ② 逐条 fn:kind 日志）：host 降级对「返回大结构体 / 双返回 +
+;      重型函数体」有 codegen 缺陷（运行时 segfault），且模块级全局变量写入不可 codegen
+;      （EmitLLVM: setfield slot），fs.read-* 对 ~147KB 大文件又回传脏数据；故日志不靠
+;      「全局回传 / 双返回 / 回读文件」，而由 drv.pkg-ll 在 emit-cov 参数为 true 时直接
+;      print 到 stdout（可靠）并写 /tmp/h2m-cov.log。agg 仅含 unsup 计数与 unsf/unsk 逐条记录。
+;   emit-cov: true ⇒ 末尾把逐条 (fn,kind) 日志 print 到 stdout + 写 /tmp/h2m-cov.log
+drv.pkg-ll = (path str, emit-cov bool) (r str) {
     r = ''
+    agg h2m-ctx = h2m-new()
     pkg = drv.build-package(path)
     body0 = pkg.slice-bytes(1, pkg.len-bytes())
     files = drv.pkg-split(body0)
@@ -751,12 +758,12 @@ drv.pkg-ll = (path str) (r str) {
         k = k + 1
     }
 
-    ; 全域結構體宣告一次（§11 B10 唯一裝配點，多模組不可分散 emit 否則 redefinition）
-    decls = h2m-struct-decls(agg)
-
     ; pass 2：逐模組 emit 各函式（入口額外合成 main），body 串接
     body = ''
-    body = body - decls
+    ; 发射闭包用的分片表：parts[i] 与 pnames[i] 一一对应，且与 agg.cgf[i]/agg.cgb[i] 同序
+    ;   （h2m-lower-func 只在真正产码时登记 cgf，因此下标天然对齐）
+    parts []str = []
+    pnames []str = []
 
     ; 整包 emit-once：同名函式只產一次（自舉源碼存在重複定義，如 ps.no 的 ps-is-builtin-type
     ;   在 3434 與 7321 各定義一次；整包路徑首次完整降級 ps.no 才暴露。emit-once 兼顧跨模組同名碰撞。
@@ -775,12 +782,13 @@ drv.pkg-ll = (path str) (r str) {
         nd = ast.nd-at(t, root)
         nk = nd.nkid
         base = nd.kid0
+        before2 = agg.stn.len()
         m = 0
         (m < nk) {
             kid = ast.kid-at(t, base + m)
             kd = ast.nd-at(t, kid)
             kd.kind == asp.K-FUNCTION-DEFINITION -> {
-                nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
+                nm, rt, ap, bd = h2m-func-sig(t, agg, kid)
                 bd == 0 -> {
                     ; 與 drv.pkg-sigs 同口径：key = mod.short（剝 module 前綴後重組），
                     ;   使點號呼叫 emit 的 `mod.fn` 能在此全域表命中（切片 5 ⑥）。
@@ -790,7 +798,7 @@ drv.pkg-ll = (path str) (r str) {
                     nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     key = mod - '.' - short
-                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, dp)
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap)
                 }
             }
 
@@ -798,9 +806,19 @@ drv.pkg-ll = (path str) (r str) {
             m = m + 1
         }
 
+        ; 切片 6 ②：h2m-func-sig 對真·多回傳會登記合成聚合結構體（'__mr__'<fn>），
+        ;   欄位型別節點屬於【本模組】這棵 AST ⇒ 必須用同一個 t 就地解析（跨模組讀會解錯）。
+        after2 = agg.stn.len()
+        after2 > before2 -> h2m-struct-resolve-range(agg, t, before2, after2)
+
         #{overflow=wrap}
         k = k + 1
     }
+
+    ; 全域結構體宣告一次（§11 B10 唯一裝配點，多模組不可分散 emit 否則 redefinition）；
+    ;   ⚠️ 必須排在上列 sg 前置 pass 之後——合成聚合結構體是在該 pass 內才登記的。
+    decls = h2m-struct-decls(agg)
+    body = body - decls
 
     ; 逐模組 emit 各函式（入口額外合成 main），body 串接，用全域 sg 解析跨模組呼叫
     k2 = 0
@@ -822,12 +840,15 @@ drv.pkg-ll = (path str) (r str) {
             kid = ast.kid-at(t, tbase + m2)
             kd = ast.nd-at(t, kid)
             kd.kind == asp.K-FUNCTION-DEFINITION -> {
-                nm, _, _, _, _ = h2m-func-sig(t, agg, kid)
+                nm, _, _, _ = h2m-func-sig(t, agg, kid)
                 key = ':' - nm - ':'
                 emitted.contains(key) == false -> {
                     one = h2m-lower-func(t, agg, sg, kid)
                     one != '' -> {
-                        body = body - one - '\n'
+                        ; 只有【真正产码】的函数进 parts/pnames（与 agg.cgf 只记成功者严格同序同长）；
+                        ;   h2m-lower-func 对含不支持构造的函数直接回 ''，已被外层 one != '' 挡在门外。
+                        parts.push(one)
+                        pnames.push(nm)
                         emitted = emitted - key
                     }
                 }
@@ -840,25 +861,98 @@ drv.pkg-ll = (path str) (r str) {
         #{overflow=wrap}
         k2 = k2 + 1
     }
+
+    ; ── 发射闭包（切片 6 ② 前置）：剔除「引用了未发射函数」的函数 ──────────────
+    ;   动机：签名闸门只看【签名】，函数体内仍可能有 unsup ⇒ 被调方不产码；
+    ;     若调用方照发 call 就得到未定义符号（实测 `use of undefined value '@drv.out-arg'`）。
+    ;   做法：在【文本层】按已记录的调用图反复剔除，直到不动点（单调递减 ⇒ 必收敛）。
+    ;   宁缺勿错：宁可少一个函数（并计入 unsup），也不输出 LLVM 验不过的 IR。
+    alive []i64 = []
+    a0 = 0
+    (a0 < parts.len()) {
+        alive.push(1)
+
+        #{overflow=wrap}
+        a0 = a0 + 1
+    }
+    changed = 1
+    rounds = 0
+    (changed == 1 && rounds < 16) {
+        changed = 0
+        nalive []i64 = []
+        bi = 0
+        (bi < parts.len()) {
+            ; 防御：调用图与文本分片必须同序同长（上面已按 `define ` 前缀对齐）；越界即视为不可保留
+            keep = 0
+            bi < agg.cgf.len() -> keep = alive[bi]
+            keep == 1 -> {
+                bb = agg.cgb[bi]
+                bn = agg.cgc[bi]
+                bj = 0
+                (bj < bn && keep == 1) {
+                    tg = agg.cgl[bb + bj]
+                    found = 0
+                    bk = 0
+                    (bk < pnames.len() && found == 0) {
+                        pnames[bk] == tg && alive[bk] == 1 -> found = 1
+
+                        #{overflow=wrap}
+                        bk = bk + 1
+                    }
+                    found == 0 -> {
+                        keep = 0
+                        changed = 1
+                    }
+
+                    #{overflow=wrap}
+                    bj = bj + 1
+                }
+            }
+            nalive.push(keep)
+
+            #{overflow=wrap}
+            bi = bi + 1
+        }
+        alive = nalive
+
+        #{overflow=wrap}
+        rounds = rounds + 1
+    }
+    ji = 0
+    (ji < parts.len()) {
+        alive[ji] == 1 -> body = body - parts[ji] - '\n'
+        alive[ji] == 0 -> {
+            ; 被剔除 = 该函数本可产码，但引用了不可降级的函数 ⇒ 等价于不可降级
+            agg.unsup = agg.unsup + 1
+            eprint(NOC-NAME - ': dropped (calls unsupported): ' - pnames[ji])
+        }
+
+        #{overflow=wrap}
+        ji = ji + 1
+    }
     r = cg-runtime-prelude-full() - '\n' - body - '\n'
     agg.unsup > 0 -> {
         eprint(NOC-NAME - ': unsupported constructs: ' - agg.unsup.to-str() - ' (pkg-ll)')
     }
+    ; 切片 6 ②：把逐条 (fn,kind) 拼成覆盖率日志串。
+    ; ⚠️ 仅当 emit-cov 为 true（由 drv.pkg-ll-cov 传 true）才输出，避免污染正常 pkg-ll
+    ;   调用与真实 no build 的 stdout。输出走 print 到 stdout（可靠通道）＋ best-effort 写
+    ;   /tmp/h2m-cov.log；大日志头部可能被 host 大缓冲 bug 损坏（实测 ~62 行 :0 占据文件头），
+    ;   故覆盖率审查一律以 stdout 上的逐条日志为准。
+    emit-cov == true -> {
+        cov = h2m-cov-join(agg.unsf, agg.unsk)
+        print(cov)
+        fs.write-file('/tmp/h2m-cov.log', cov.to-bytes())
+    }
 }
 
-; pkg-ll 对外接口：只回 .ll（与既有测试契约一致）
-; path: 入口档案路径
-; r: 完整 .ll；'' = 失敗（已 eprint）
-drv.pkg-ll = (path str) (r str) {
-    r, _ = drv.pkg-ll-internal(path)
-}
-
-; 覆盖度量接口（切片 6 ② 前置）：回 unsupported 构造日志（每行 "fn:kind"，kind 为 asp 常量整数）
-; path: 入口档案路径
-; cov: 拼接好的日志文本（空 = 无 unsupported）
-drv.pkg-ll-cov = (path str) (cov str) {
-    _, agg = drv.pkg-ll-internal(path)
-    cov = h2m-cov-join()
+; 覆盖度量入口（切片 6 ②）：以 emit-cov=true 复跑 drv.pkg-ll，使其把逐条 "fn:K"
+;   覆盖率日志 print 到 stdout 并写 /tmp/h2m-cov.log；本函数仍回传完整 .ll（与 drv.pkg-ll
+;   同义），让呼叫方以 IR 长度判定产码成功，并以 stdout 上的逐条日志做覆盖率审查。
+;   ⚠️ 不靠「全局回传 / 双返回 / 回读文件」：模块全局写入不可 codegen（setfield slot）、
+;   双返回 + 重型函数体 segfault、fs.read-* 大文件回传脏数据；故走参数 + print 到 stdout。
+drv.pkg-ll-cov = (path str) (r str) {
+    r = drv.pkg-ll(path, true)
 }
 
 ; 取 argv 第 i 項（越界／nil ⇒ ''）

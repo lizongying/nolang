@@ -666,14 +666,12 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
         t = t >> 7
 
         {
-
             #{overflow=wrap}
-            n-opt = n + 1
-            n-opt: {
-                ok -> n = it
+            n ?= n + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -686,28 +684,24 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     ob[0] = prefix-byte | max-prefix
 
     {
-
         #{overflow=wrap}
-        r-val-opt = r-val - max-prefix
-        r-val-opt: {
-            ok -> r-val = it
+        r-val ?= r-val - max-prefix
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     i = 1
     (r-val >= 128) {
         ob[i] = (r-val & 127) | 128
 
         {
-
             #{overflow=wrap}
-            i-opt2 = i + 1
-            i-opt2: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         r-val = r-val >> 7
     }
@@ -742,14 +736,12 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     val = first
 
     {
-
         #{overflow=wrap}
-        next-pos-opt = pos + 1
-        next-pos-opt: {
-            ok -> next-pos = it
+        next-pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     first < max-prefix -> return
 
@@ -764,28 +756,24 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
         b = data.byte(next-pos)
 
         {
-
             #{overflow=wrap}
-            next-pos-opt2 = next-pos + 1
-            next-pos-opt2: {
-                ok -> next-pos = it
+            next-pos ?= next-pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         #{overflow=wrap}
         val = val + ((b & 127) << m)
 
         {
-
             #{overflow=wrap}
-            m-opt = m + 7
-            m-opt: {
-                ok -> m = it
+            m ?= m + 7
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         (b & 128) == 0 -> break
         m >= 35 -> {
@@ -839,22 +827,8 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
         return
     }
 
-    first-opt = data.byte(pos)
-    {
-        first-opt2 = first-opt: {
-            ok -> it
-
-            -> _
-        }
-        first-opt2: {
-            ok -> first = it
-
-            ->
-        }
-    }
-
-    ; H bit = first & 128，本實作不支援 Huffman
-    ; 長度用 7-bit prefix
+    ; 長度用 7-bit prefix；H bit（首 byte 的 128 位）為 Huffman 標記，
+    ; 本實作不支援 Huffman 編碼，故不解析該位元。
     len = 0
     p = 0
     len, p = decode-int(data, pos, 7)
@@ -880,14 +854,12 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
 
     {
-
         #{overflow=wrap}
-        next-pos-opt3 = p + len
-        next-pos-opt3: {
-            ok -> next-pos = it
+        next-pos ?= p + len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     out = out-b.slice(0, len).to-bytes-str()
 }
@@ -1045,14 +1017,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = lv-tmp
 
                 {
-
                     #{overflow=wrap}
-                    count-opt = count + 1
-                    count-opt: {
-                        ok -> count = it
+                    count ?= count + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 pos = next
             }
@@ -1109,14 +1079,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 {
-
                     #{overflow=wrap}
-                    count-opt2 = count + 1
-                    count-opt2: {
-                        ok -> count = it
+                    count ?= count + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
 
                 ; 加入動態表
@@ -1173,14 +1141,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 {
-
                     #{overflow=wrap}
-                    count-opt3 = count + 1
-                    count-opt3: {
-                        ok -> count = it
+                    count ?= count + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -1234,14 +1200,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 {
-
                     #{overflow=wrap}
-                    count-opt4 = count + 1
-                    count-opt4: {
-                        ok -> count = it
+                    count ?= count + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 

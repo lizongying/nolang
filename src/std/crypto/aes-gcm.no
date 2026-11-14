@@ -72,31 +72,31 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         #{overflow=wrap}
         bit-idx = 7 - (i % 8)
 
-        ixout73c15 = x[byte-idx]: {
+        x-byte-idx = x[byte-idx]: {
             ok -> it
 
             -> _
         }
 
-        xi = (ixout73c15 >> bit-idx) & 1
+        xi = (x-byte-idx >> bit-idx) & 1
 
         ; z = z XOR (xi * v) — 僅在 xi == 1 時執行
         xi == 1 -> {
             j <- [0..16): {
-                ixout84c33 = z[j]: {
+                z-j = z[j]: {
                     ok -> it
 
                     -> _
                 }
 
-                ixout84c40 = v[j]: {
+                v-j = v[j]: {
                     ok -> it
 
                     -> _
                 }
 
                 z[j]: {
-                    ok -> it = ixout84c33 ^ ixout84c40
+                    ok -> it = z-j ^ v-j
 
                     -> _
                 }
@@ -104,70 +104,68 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         }
 
         ; 判斷 v 的最低位元
-        ixout92c18 = v[15]: {
+        top-byte = v[15]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
-        v-lsb = ixout92c18 & 1
+        v-lsb = top-byte & 1
 
-        ; v = v >> 1
+        ; v = v >> 1（高位元組右移，補進低位元組的最低位）
         j = 15
         (j > 0) {
-            ixout95c29 = v[j]: {
-                ok -> it
+            {
+                high-byte ?= v[j]
+                low-byte ?= v[j - 1]
 
-                -> _
-            }
+                v[j]: {
+                    ok -> it = (high-byte >> 1) | ((low-byte & 1) << 7)
 
-            #{overflow=wrap}
-            ixout95c44 = v[j - 1]: {
-                ok -> it
-
-                -> _
-            }
-
-            v[j]: {
-                ok -> it = (ixout95c29 >> 1) | ((ixout95c44 & 1) << 7)
+                    -> _
+                }
+            }: {
+                err -> _
 
                 -> _
             }
 
             {
-
                 #{overflow=wrap}
-                j-opt = j - 1
-                j-opt: {
-                    ok -> j = it
+                j ?= j - 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
-        ixout121c25 = v[0]: {
-            ok -> it
+        {
+            first-byte ?= v[0]
 
-            -> _
-        }
+            v[0]: {
+                ok -> it = first-byte >> 1
 
-        v[0]: {
-            ok -> it = ixout121c25 >> 1
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
 
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
         v-lsb == 1 -> {
-            ixout129c29 = v[0]: {
-                ok -> it
+            {
+                reduced-byte ?= v[0]
 
-                -> _
-            }
+                v[0]: {
+                    ok -> it = reduced-byte ^ 225
 
-            v[0]: {
-                ok -> it = ixout129c29 ^ 225
+                    -> _
+                }
+            }: {
+                err -> _
 
                 -> _
             }
@@ -193,8 +191,8 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     ; y = 0
     y [16]byte
     blk [16]byte
-    e1 <- y: {
-        e1: {
+    i <- [0..16): {
+        y[i]: {
             ok -> it = 0
 
             -> _
@@ -219,20 +217,20 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         ; y = (y XOR block) * H
         i <- [0..16): {
-            ixout183c29 = y[i]: {
+            y-i = y[i]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout183c38 = blk[i]: {
+            blk-i = blk[i]: {
                 ok -> it
 
                 -> _
             }
 
             y[i]: {
-                ok -> it = ixout183c29 ^ ixout183c38
+                ok -> it = y-i ^ blk-i
 
                 -> _
             }
@@ -241,21 +239,20 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         y = ghash-mul(y, h)
 
         {
-
             #{overflow=wrap}
-            pos-opt = pos + 16
-            pos-opt: {
-                ok -> pos = it
+            pos ?= pos + 16
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
     ; AAD 最後不完整區塊
     pos < aad.len() -> {
-        e2 <- blk: {
-            e2: {
+        ; 尾端不足一塊：blk 先清零再填入剩下的位元組
+        i <- [0..16): {
+            blk[i]: {
                 ok -> it = 0
 
                 -> _
@@ -273,20 +270,17 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..16): {
-            ixout222c29 = y[i]: {
-                ok -> it
+            {
+                y-byte ?= y[i]
+                blk-byte ?= blk[i]
 
-                -> _
-            }
+                y[i]: {
+                    ok -> it = y-byte ^ blk-byte
 
-            ixout222c38 = blk[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            y[i]: {
-                ok -> it = ixout222c29 ^ ixout222c38
+                    -> _
+                }
+            }: {
+                err -> _
 
                 -> _
             }
@@ -311,20 +305,17 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..16): {
-            ixout253c29 = y[i]: {
-                ok -> it
+            {
+                y-byte ?= y[i]
+                blk-byte ?= blk[i]
 
-                -> _
-            }
+                y[i]: {
+                    ok -> it = y-byte ^ blk-byte
 
-            ixout253c38 = blk[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            y[i]: {
-                ok -> it = ixout253c29 ^ ixout253c38
+                    -> _
+                }
+            }: {
+                err -> _
 
                 -> _
             }
@@ -333,20 +324,19 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         y = ghash-mul(y, h)
 
         {
-
             #{overflow=wrap}
-            pos-opt2 = pos + 16
-            pos-opt2: {
-                ok -> pos = it
+            pos ?= pos + 16
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
     pos < cipher.len() -> {
-        e3 <- blk: {
-            e3: {
+        ; 尾端不足一塊：blk 先清零再填入剩下的位元組
+        i <- [0..16): {
+            blk[i]: {
                 ok -> it = 0
 
                 -> _
@@ -364,20 +354,17 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..16): {
-            ixout291c29 = y[i]: {
-                ok -> it
+            {
+                y-byte ?= y[i]
+                blk-byte ?= blk[i]
 
-                -> _
-            }
+                y[i]: {
+                    ok -> it = y-byte ^ blk-byte
 
-            ixout291c38 = blk[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            y[i]: {
-                ok -> it = ixout291c29 ^ ixout291c38
+                    -> _
+                }
+            }: {
+                err -> _
 
                 -> _
             }
@@ -388,8 +375,8 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     ; 最後區塊: len(AAD)_64bit || len(cipher)_64bit（以位元為單位）
     len-blk [16]byte
-    e4 <- len-blk: {
-        e4: {
+    i <- [0..16): {
+        len-blk[i]: {
             ok -> it = 0
 
             -> _
@@ -500,21 +487,19 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         -> _
     }
 
+    ; y ^= len-blk（長度區塊）
     i <- [0..16): {
-        ixout416c25 = y[i]: {
-            ok -> it
+        {
+            y-byte ?= y[i]
+            len-byte ?= len-blk[i]
 
-            -> _
-        }
+            y[i]: {
+                ok -> it = y-byte ^ len-byte
 
-        ixout416c38 = len-blk[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        y[i]: {
-            ok -> it = ixout416c25 ^ ixout416c38
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -580,33 +565,31 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         i <- [0..n): {
 
             #{overflow=wrap}
-            ixout431c29 = data[pos + i]: {
+            data-pos-i = data[pos + i]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout431c47 = ks[i]: {
+            ks-i = ks[i]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[pos + i] = (ixout431c29) ^ (ixout431c47)
+            out[pos + i] = (data-pos-i) ^ (ks-i)
         }
 
         aes-ctr.ctr-inc(cb)
 
         {
-
             #{overflow=wrap}
-            pos-opt3 = pos + n
-            pos-opt3: {
-                ok -> pos = it
+            pos ?= pos + n
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -642,8 +625,8 @@ gcm-j0 = (iv [12]byte) (j0 [16]byte) {
 ; [gcm-h](#aes-gcm.gcm-h)
 gcm-h = (ek []byte) (h [16]byte) {
     zero-block [16]byte
-    e5 <- zero-block: {
-        e5: {
+    i <- [0..16): {
+        zero-block[i]: {
             ok -> it = 0
 
             -> _
@@ -696,20 +679,20 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     j0-enc = aes.enc-block(j0, ek)
     tag [16]byte
     i <- [0..16): {
-        ixout573c31 = j0-enc[i]: {
+        j0-enc-i = j0-enc[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout573c48 = ghash-out[i]: {
+        ghash-out-i = ghash-out[i]: {
             ok -> it
 
             -> _
         }
 
         tag[i]: {
-            ok -> it = (ixout573c31) ^ (ixout573c48)
+            ok -> it = (j0-enc-i) ^ (ghash-out-i)
 
             -> _
         }
@@ -790,20 +773,20 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     j0-enc = aes.enc-block(j0, ek)
     exp-tag [16]byte
     i <- [0..16): {
-        ixout661c31 = j0-enc[i]: {
+        j0-enc-i = j0-enc[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout661c48 = ghash-out[i]: {
+        ghash-out-i = ghash-out[i]: {
             ok -> it
 
             -> _
         }
 
         exp-tag[i]: {
-            ok -> it = (ixout661c31) ^ (ixout661c48)
+            ok -> it = (j0-enc-i) ^ (ghash-out-i)
 
             -> _
         }
@@ -812,19 +795,19 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ; 常數時間比較
     diff = 0
     i <- [0..16): {
-        ixout670c27 = tag[i]: {
+        tag-i = tag[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout670c40 = exp-tag[i]: {
+        exp-tag-i = exp-tag[i]: {
             ok -> it
 
             -> _
         }
 
-        diff = diff | (ixout670c27 ^ ixout670c40)
+        diff = diff | (tag-i ^ exp-tag-i)
     }
     diff != 0 -> {
 

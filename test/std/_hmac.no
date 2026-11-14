@@ -1,0 +1,228 @@
+; ============================================================
+; 過濾存檔（filtered copy）— 此檔不參與 vet / test / build
+; ------------------------------------------------------------
+; 檔名以 '_' 開頭：nolang 的 IsIgnoredSourcePath 慣例會忽略它，
+; `no vet` / `no test` / `no build` 的目錄遍歷都跳過本檔。
+;
+; 來源：hmac.no 的原樣副本，未改動任何一行程式碼。
+; 保留原因：K1-slice 是RFC 4231 向量記號 K1 的衍生名，
+; 依「不修改合法源碼」原則原樣保存，供日後對照向量來源。
+;
+; 實際執行且 `no vet` 0 error 的版本：hmac.no
+; （識別字已改為 kebab-case / 已修掉診斷）。改向量時請兩份一起對照。
+; ============================================================
+
+; test/std/hmac.no — crypto/hmac 模組測試
+;
+; 執行：no test test/std/hmac.no
+; 覆蓋：hmac-sha1-vec、hmac-sha256-vec、hmac-sha512-vec
+; 向量來源：RFC 4231 標準測試向量，並與 python hashlib.hmac 交叉核對
+
+# /test/runner
+
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串
+bhex = (data []byte) (hex str) {
+    hex-chars = '0123456789abcdef'
+    n = data.len()
+
+    #{overflow=wrap}
+    hex str = with-len(n * 2)
+    i <- [0..n): {
+        data-i = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(data-i >> 4) & 15]
+        }: {
+            err -> _
+
+            -> _
+        }
+
+        data-i-2 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[data-i-2 & 15]
+        }: {
+            err -> _
+
+            -> _
+        }
+    }
+}
+D1 = 'Hi There'
+K1 []byte = [
+    0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+    0x0b, 0x0b, 0x0b, 0x0b,
+]
+
+; RFC 4231 Test Case 1: key = 0x0b * 20, data = "Hi There"
+t-hmac-sha1 = () {
+    k []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    out = hmac.hmac-sha1-vec(k, D1.to-bytes())
+    runner.str-eq(bhex(out), 'b617318655057264e28bc0b6fb378c8ef146be00', 40, 'hmac-sha1 TC1')
+}
+
+; RFC 4231 TC1：key = 0x0b*20、data = 'Hi There' 的 HMAC-SHA256
+t-hmac-sha256 = () {
+    k []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    out = hmac.hmac-sha256-vec(k, D1.to-bytes())
+    runner.str-eq(bhex(out), 'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7', 64, 'hmac-sha256 TC1')
+}
+
+; RFC 4231 TC1 的 HMAC-SHA512（輸出 128 位元組摘要）
+t-hmac-sha512 = () {
+    k []byte = [
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+        0x0b, 0x0b, 0x0b, 0x0b,
+    ]
+    out = hmac.hmac-sha512-vec(k, D1.to-bytes())
+    runner.str-eq(bhex(out), '87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854', 128, 'hmac-sha512 TC1')
+}
+
+; RFC 4231 Test Case 2: key = "Jefe", data = "what do ya want for nothing?"
+t-hmac-sha256-tc2 = () {
+    d = 'what do ya want for nothing?'
+    out = hmac.hmac-sha256-vec('Jefe'.to-bytes(), d.to-bytes())
+    runner.str-eq(bhex(out), '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843', 64, 'hmac-sha256 TC2')
+}
+
+; 定長摘要介面：SHA-256 版本給 32 位元組、SHA-1 版本給 20 位元組
+t-hmac-fixed-len = () {
+    h32 = hmac.hmac-sha256(K1, D1.to-bytes())
+    runner.eq(h32.len(), 32, 'hmac-sha256 fixed digest len 32')
+    h20 = hmac.hmac-sha1(K1, D1.to-bytes())
+    runner.eq(h20.len(), 20, 'hmac-sha1 fixed digest len 20')
+}
+
+; 定長陣列 → hex（bhex 只吃 []byte）
+h64 = (a [64]byte) (s str) {
+    v []byte = with-len(64)
+    i <- [0..64): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+    s = bhex(v)
+}
+
+h48 = (a [48]byte) (s str) {
+    v []byte = with-len(48)
+    i <- [0..48): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+    s = bhex(v)
+}
+
+h16 = (a [16]byte) (s str) {
+    v []byte = with-len(16)
+    i <- [0..16): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+    s = bhex(v)
+}
+
+; RFC 4231 TC1（key = 0x0b*20、data = "Hi There"）：定長介面與 vec 介面
+; 必須給出同一摘要，且 sha384 / md5 兩族也要與 hashlib.hmac 一致。
+t-fixed-all = () {
+    h512 = hmac.hmac-sha512(K1, D1.to-bytes())
+    runner.str-eq(h64(h512), '87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854', 128, 'hmac-sha512 定長 TC1')
+    v512 = hmac.hmac-sha512-vec(K1-slice(), D1.to-bytes())
+    runner.str-eq(bhex(v512), '87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854', 128, 'hmac-sha512-vec TC1 一致')
+
+    h384 = hmac.hmac-sha384(K1, D1.to-bytes())
+    runner.str-eq(h48(h384), 'afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6', 96, 'hmac-sha384 定長 TC1')
+    v384 = hmac.hmac-sha384-vec(K1-slice(), D1.to-bytes())
+    runner.str-eq(bhex(v384), 'afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6', 96, 'hmac-sha384-vec TC1 一致')
+
+    hmd5 = hmac.hmac-md5(K1, D1.to-bytes())
+    runner.str-eq(h16(hmd5), '5ccec34ea9656392457fa1ac27f08fbc', 32, 'hmac-md5 定長 TC1')
+    vmd5 = hmac.hmac-md5-vec(K1-slice(), D1.to-bytes())
+    runner.str-eq(bhex(vmd5), '5ccec34ea9656392457fa1ac27f08fbc', 32, 'hmac-md5-vec TC1 一致')
+}
+
+; RFC 4231 TC2（key = "Jefe"、data = "what do ya want for nothing?"）
+t-tc2-384-md5 = () {
+    d = 'what do ya want for nothing?'
+    k []byte = 'Jefe'.to-bytes()
+    h384 = hmac.hmac-sha384-vec(k, d.to-bytes())
+    runner.str-eq(bhex(h384), 'af45d2e376484031617f78d2b58a6b1b9c7ef464f5a01b47e42ec3736322445e8e2240ca5e69e2c78b3239ecfab21649', 96, 'hmac-sha384 TC2')
+    hmd5 = hmac.hmac-md5-vec(k, d.to-bytes())
+    runner.str-eq(bhex(hmd5), '750c783e6ab0b503eaa86e310a5db738', 32, 'hmac-md5 TC2')
+}
+
+; K1 的 slice 形式（定長介面吃 [20]byte，vec 介面吃 []byte）
+K1-slice = () (v []byte) {
+    v = with-len(20)
+    i <- [0..20): {
+        x = K1[i]: {
+            ok -> it
+
+            -> 0
+        }
+        v[i] = x
+    }
+}
+
+p1 = runner.test('hmac.sha1', t-hmac-sha1)
+p2 = runner.test('hmac.sha256', t-hmac-sha256)
+p3 = runner.test('hmac.sha512', t-hmac-sha512)
+p4 = runner.test('hmac.sha256.tc2', t-hmac-sha256-tc2)
+p5 = runner.test('hmac.fixed-len', t-hmac-fixed-len)
+p6 = runner.test('hmac.fixed-all', t-fixed-all)
+p7 = runner.test('hmac.tc2-384-md5', t-tc2-384-md5)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

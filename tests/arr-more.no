@@ -53,9 +53,21 @@ test-arr-eq = () {
 test-arr-fill = () {
     a [3] = [0, 0, 0]
     a.fill(99)
-    print(a[0])
-    print(a[1])
-    print(a[2])
+    a[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; 反轉陣列
@@ -64,10 +76,26 @@ test-arr-fill = () {
 test-arr-reverse = () {
     arr [4] = [1, 2, 3, 4]
     arr.reverse()
-    print(arr[0])
-    print(arr[1])
-    print(arr[2])
-    print(arr[3])
+    arr[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; 是否包含值
@@ -85,9 +113,21 @@ test-arr-contains = () {
 test-arr-to-vec = () {
     a [3] = [10, 20, 30]
     v = a.to-vec()
-    print(v[0])
-    print(v[1])
-    print(v[2])
+    v[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    v[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    v[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; 最大值、最小值、總和
@@ -128,11 +168,31 @@ test-arr-last-first = () {
 test-arr-sort-asc = () {
     arr [5] = [3, 1, 4, 1, 5]
     arr.asc()
-    print(arr[0])
-    print(arr[1])
-    print(arr[2])
-    print(arr[3])
-    print(arr[4])
+    arr[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[4]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; 降序排序
@@ -141,11 +201,31 @@ test-arr-sort-asc = () {
 test-arr-sort-desc = () {
     arr [5] = [3, 1, 4, 1, 5]
     arr.desc()
-    print(arr[0])
-    print(arr[1])
-    print(arr[2])
-    print(arr[3])
-    print(arr[4])
+    arr[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    arr[4]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; 交換元素
@@ -153,9 +233,21 @@ test-arr-sort-desc = () {
 test-arr-swap = () {
     a [3] = [1, 2, 3]
     a.swap(0, 2)
-    print(a[0])
-    print(a[1])
-    print(a[2])
+    a[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; 統計值出現次數
@@ -168,27 +260,20 @@ test-arr-count = () {
     print(c2)
 }
 
-; 安全索引訪問
+; 安全索引訪問：at() 已 deprecated（界內保留覆蓋）；越界一律改用 a[i]，結果是 err
 ...
 test-arr-at = () {
     a [3] = [1, 2, 3]
     v0 = a.at(0)
-    v5 = a.at(5)
-    v-1 = a.at(-1)
     v0: {
         nil -> print('nil')
 
         -> print('ok')
     }
-    v5: {
-        nil -> print('nil')
+    a[5]: {
+        err -> print('err')
 
-        -> print('ok')
-    }
-    v-1: {
-        nil -> print('nil')
-
-        -> print('ok')
+        -> print('not err')
     }
 }
 
@@ -203,12 +288,15 @@ test-arr-to-str = () {
 ; 吸收變體（自 arr-*.no 碎檔）
 ...
 
-; from arr-at1.no：直接 print option 結果
+; from arr-at1.no：界內保留 print(at) 覆蓋；越界改用 a[i]（err）
 print-arr-at = () {
     xs [3] = [1, 2, 3]
     print(xs.at(0))
-    print(xs.at(5))
-    print(xs.at(-1))
+    xs[5]: {
+        err -> print('err')
+
+        -> print('not err')
+    }
 }
 
 ; from arr-byte.no：[32]byte 固定陣量宣告後下標寫入（函數域内需 place-match 寫回）
@@ -264,7 +352,11 @@ oid {
 ; from arr-j1.no / arr-j2.no：[5] 宣告取中間元素
 test-arr-index-mid = () {
     a [5] = [1, 2, 3, 4, 5]
-    print(a[3])
+    a[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; from arr-len-print.no：print 直接嵌 arr.len()
@@ -315,29 +407,49 @@ test-arr-iterate = () {
 test-arr-reverse-void = () {
     a [3] = [1, 2, 3]
     a.reverse()
-    print(a[0])
+    a[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; from arr-f1.no 等：asc 後只打首元素
 test-arr-sort-asc-first = () {
     a [5] = [3, 1, 4, 1, 5]
     a.asc()
-    print(a[0])
+    a[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; from arr-k1.no / arr-h1.no：asc 後只打中段元素
 test-arr-sort-asc-mid = () {
     a [5] = [3, 1, 4, 1, 5]
     a.asc()
-    print(a[3])
+    a[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; from arr-g1.no：asc 後打首+中段兩元素
 test-arr-sort-asc-two = () {
     a [5] = [3, 1, 4, 1, 5]
     a.asc()
-    print(a[0])
-    print(a[3])
+    a[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    a[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; from arr-i1.no / arr-i2.no：print 直接嵌 index-of()
@@ -362,38 +474,134 @@ test-arr-to-str-5 = () {
 test-arr-slice-views = () {
     a [5] = [10, 20, 30, 40, 50]
     b = a[..]
-    print(b[0])
-    print(b[1])
-    print(b[2])
-    print(b[3])
-    print(b[4])
+    b[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    b[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    b[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    b[3]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    b[4]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     c = a[2..]
-    print(c[0])
-    print(c[1])
-    print(c[2])
+    c[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    c[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    c[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     d = a[..3]
-    print(d[0])
-    print(d[1])
-    print(d[2])
+    d[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    d[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    d[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     e = a[1..4]
-    print(e[0])
-    print(e[1])
-    print(e[2])
+    e[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    e[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    e[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     f = a[1..4)
-    print(f[0])
-    print(f[1])
-    print(f[2])
+    f[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    f[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    f[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     g = a(1..4]
-    print(g[0])
-    print(g[1])
-    print(g[2])
+    g[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    g[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    g[2]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     h = a(1..4)
-    print(h[0])
-    print(h[1])
+    h[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
+    h[1]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     i = a[..1)
-    print(i[0])
+    i[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
     j = a[1..2)
-    print(j[0])
+    j[0]: {
+        ok -> print(it)
+
+        -> print('index-out')
+    }
 }
 
 ; from arr-param.no：[32]byte 經兩層輸出參數傳遞（重現 X25519 fe-tobytes 前 8 bytes 歸零 bug）
@@ -413,9 +621,16 @@ test-arr-via-inner = () (pass bool) {
     arr = outer-call()
     i <- [0..8): {
         expected = (i + 1) & 255
-        arr[i] != expected -> {
-            print('FAIL: via inner byte mismatch')
-            return
+        {
+            elem ?= arr[i]
+            elem != expected -> {
+                print('FAIL: via inner byte mismatch')
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     pass = true
@@ -423,7 +638,14 @@ test-arr-via-inner = () (pass bool) {
 
 inner-write-i64 = (h []i64) (s [32]byte) {
     i <- [0..32): {
-        s[i] = (h[i % 10]) & 255
+        {
+            source ?= h[i % 10]
+            s[i] = source & 255
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -432,7 +654,18 @@ outer-call-i64 = () (out [32]byte) {
     i <- [0..10): {
 
         #{overflow=wrap}
-        h[i] = (i + 1) * 10
+        {
+            value ?= (i + 1) * 10
+            h[i]: {
+                ok -> it = value
+
+                -> _
+            }
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     out = inner-write-i64(h)
 }
@@ -443,9 +676,16 @@ test-arr-via-i64 = () (pass bool) {
     arr = outer-call-i64()
     i <- [0..8): {
         expected = (i + 1) * 10
-        arr[i] != expected -> {
-            print('FAIL: via i64 byte mismatch')
-            return
+        {
+            elem ?= arr[i]
+            elem != expected -> {
+                print('FAIL: via i64 byte mismatch')
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     pass = true
@@ -458,9 +698,16 @@ test-arr-direct-return = () (pass bool) {
     arr = fill-bytes()
     i <- [0..8): {
         expected = (i + 1) & 255
-        arr[i] != expected -> {
-            print('FAIL: direct return byte mismatch at index')
-            return
+        {
+            elem ?= arr[i]
+            elem != expected -> {
+                print('FAIL: direct return byte mismatch at index')
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     pass = true
@@ -484,9 +731,16 @@ test-arr-param-pass = () (pass bool) {
     arr = fill-bytes-param()
     i <- [0..8): {
         expected = (i + 100) & 255
-        arr[i] != expected -> {
-            print('FAIL: param pass byte mismatch at index')
-            return
+        {
+            elem ?= arr[i]
+            elem != expected -> {
+                print('FAIL: param pass byte mismatch at index')
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     pass = true

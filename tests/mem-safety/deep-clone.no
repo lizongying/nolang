@@ -5,9 +5,24 @@
 test-clone-vec = () (ok bool) {
     a = [10, 20, 30]
     b = a
-    b[0] = 99
-    a[0] == 10 -> ok = true
-    b[0] == 99 -> ok = true
+    b[0]: {
+        ok -> it = 99
+
+        -> _
+    }
+    ; 同 test-clone-str-vec：clone 之後不要用 `?=` 塊讀元素（§5.2q），改值位 match
+    original = a[0]: {
+        ok -> it
+
+        -> 0
+    }
+    changed = b[0]: {
+        ok -> it
+
+        -> 0
+    }
+    original == 10 -> ok = true
+    changed == 99 -> ok = true
 }
 
 ; 測試 2：[]str 深層 clone
@@ -17,10 +32,34 @@ test-clone-str-vec = () (ok bool) {
     s.push('hello')
     s.push('world')
     c = s
-    s[0] == 'hello' -> ok = true
-    c[0] == 'hello' -> ok = true
-    s[1] == 'world' -> ok = true
-    c[1] == 'world' -> ok = true
+    ; ⚠️ 不要寫成 `{ s0 ?= s[0] … }: { err -> _  -> _ }`：`c = s`（[]str 深拷貝）
+    ;   之後，塊內 `?=` 綁定的變數再讀會拿到 void，MIR 發出
+    ;   `icmp eq void undef, <'hello'>` ⇒ LLVM 驗證失敗（最小複現見
+    ;   test/README.md §5.2q）。`?=` 只適合緊接著用，這裡改成值位 match。
+    s0 = s[0]: {
+        ok -> it
+
+        -> ''
+    }
+    c0 = c[0]: {
+        ok -> it
+
+        -> ''
+    }
+    s1 = s[1]: {
+        ok -> it
+
+        -> ''
+    }
+    c1 = c[1]: {
+        ok -> it
+
+        -> ''
+    }
+    s0 == 'hello' -> ok = true
+    c0 == 'hello' -> ok = true
+    s1 == 'world' -> ok = true
+    c1 == 'world' -> ok = true
     s.len() == 2 -> ok = true
     c.len() == 2 -> ok = true
 }
@@ -35,7 +74,7 @@ test-clone-str = () (ok bool) {
 }
 
 ; 測試 4：用戶結構體深層 clone
-MyData {
+my-data {
     name str
     value i64
 }
@@ -43,7 +82,7 @@ MyData {
 ; 測試 clone-struct
 ; ok bool: 來源與副本的 value 都是 42、name 都是 'test' 才為 true
 test-clone-struct = () (ok bool) {
-    d = MyData{
+    d = my-data{
         name: 'test'
         value: 42
     }

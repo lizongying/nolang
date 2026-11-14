@@ -316,27 +316,23 @@ str.cp-index = (byte-pos i64) (cp i64) {
 
         b < 0x80 -> {
             {
-
                 #{overflow=wrap}
-                cp-opt = cp + 1
-                cp-opt: {
-                    ok -> cp = it
+                cp ?= cp + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         b >= 0x80 && (b & 0xc0) == 0xc0 -> {
             {
-
                 #{overflow=wrap}
-                cp-opt2 = cp + 1
-                cp-opt2: {
-                    ok -> cp = it
+                cp ?= cp + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -357,12 +353,11 @@ str.byte-index = (cp-pos i64) (byte i64) {
         {
             b < 0x80 -> {
                 {
-                    byte-opt = byte + 1
-                    byte-opt: {
-                        ok -> byte = it
+                    byte ?= byte + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -370,34 +365,31 @@ str.byte-index = (cp-pos i64) (byte i64) {
                 {
                     b >= 0xf0 -> {
                         {
-                            byte-opt2 = byte + 4
-                            byte-opt2: {
-                                ok -> byte = it
+                            byte ?= byte + 4
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     b >= 0xe0 -> {
                         {
-                            byte-opt3 = byte + 3
-                            byte-opt3: {
-                                ok -> byte = it
+                            byte ?= byte + 3
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     -> {
                         {
-                            byte-opt4 = byte + 2
-                            byte-opt4: {
-                                ok -> byte = it
+                            byte ?= byte + 2
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
                 }
@@ -405,14 +397,12 @@ str.byte-index = (cp-pos i64) (byte i64) {
         }
 
         {
-
             #{overflow=wrap}
-            cp-opt3 = cp + 1
-            cp-opt3: {
-                ok -> cp = it
+            cp ?= cp + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     byte = .len-bytes()
@@ -804,14 +794,12 @@ str.to-i64 = () (val ?i64) {
 
     neg == 1 -> {
         {
-
             #{overflow=wrap}
-            n-opt = 0 - n
-            n-opt: {
-                ok -> n = it
+            n ?= 0 - n
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     val = n
@@ -1127,21 +1115,19 @@ bigint-bitlen = (b bigint) (out i64) {
     (t > 0) {
         t = t >> 1
         {
-            sh-opt = sh + 1
-            sh-opt: {
-                ok -> sh = it
+            sh ?= sh + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     {
-        out-opt = out + sh
-        out-opt: {
-            ok -> out = it
+        out ?= out + sh
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 }
 
@@ -1172,12 +1158,11 @@ str-to-f64 = (s str) (result f64) {
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> {
                 {
-                    i-opt = i + 1
-                    i-opt: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -1196,23 +1181,21 @@ str-to-f64 = (s str) (result f64) {
         c == 45 -> {
             sign = -1
             {
-                i-opt2 = i + 1
-                i-opt2: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         c == 43 -> {
             {
-                i-opt3 = i + 1
-                i-opt3: {
-                    ok -> i = it
+                i ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -1235,12 +1218,11 @@ str-to-f64 = (s str) (result f64) {
                 int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
                 has-digit = 1
                 {
-                    i-opt4 = i + 1
-                    i-opt4: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -1258,12 +1240,11 @@ str-to-f64 = (s str) (result f64) {
         {
             c == 46 -> {
                 {
-                    i-opt5 = i + 1
-                    i-opt5: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 (i < n) {
                     c = s.byte(i): {
@@ -1279,21 +1260,19 @@ str-to-f64 = (s str) (result f64) {
                             dig = bigint.from-i64(c - 48)
                             int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
                             {
-                                frac-count-opt = frac-count + 1
-                                frac-count-opt: {
-                                    ok -> frac-count = it
+                                frac-count ?= frac-count + 1
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                             has-digit = 1
                             {
-                                i-opt6 = i + 1
-                                i-opt6: {
-                                    ok -> i = it
+                                i ?= i + 1
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                         }
 
@@ -1317,12 +1296,11 @@ str-to-f64 = (s str) (result f64) {
         {
             c == 101 || c == 69 -> {
                 {
-                    i-opt7 = i + 1
-                    i-opt7: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 (i < n) {
                     c = s.byte(i): {
@@ -1334,23 +1312,21 @@ str-to-f64 = (s str) (result f64) {
                         c == 45 -> {
                             exp-sign = -1
                             {
-                                i-opt8 = i + 1
-                                i-opt8: {
-                                    ok -> i = it
+                                i ?= i + 1
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                         }
 
                         c == 43 -> {
                             {
-                                i-opt9 = i + 1
-                                i-opt9: {
-                                    ok -> i = it
+                                i ?= i + 1
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                         }
 
@@ -1366,22 +1342,19 @@ str-to-f64 = (s str) (result f64) {
                     {
                         c >= 48 && c <= 57 -> {
                             {
-
                                 #{overflow=wrap}
-                                exp-val-opt = exp-val * 10 + (c - 48)
-                                exp-val-opt: {
-                                    ok -> exp-val = it
+                                exp-val ?= exp-val * 10 + (c - 48)
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                             {
-                                i-opt10 = i + 1
-                                i-opt10: {
-                                    ok -> i = it
+                                i ?= i + 1
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                         }
 
@@ -1430,14 +1403,12 @@ str-to-f64 = (s str) (result f64) {
         e >= 0 -> {
             (bigint.shl(den, e).cmp(num) > 0) -> {
                 {
-
                     #{overflow=wrap}
-                    e-opt = e - 1
-                    e-opt: {
-                        ok -> e = it
+                    e ?= e - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -1445,14 +1416,12 @@ str-to-f64 = (s str) (result f64) {
         -> {
             (bigint.shl(num, 0 - e).cmp(den) < 0) -> {
                 {
-
                     #{overflow=wrap}
-                    e-opt2 = e - 1
-                    e-opt2: {
-                        ok -> e = it
+                    e ?= e - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -1499,12 +1468,11 @@ str-to-f64 = (s str) (result f64) {
             (j < 1074) {
                 inv1074f = inv1074f / 2.0
                 {
-                    j-opt = j + 1
-                    j-opt: {
-                        ok -> j = it
+                    j ?= j + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             frac-f64 f64 = frac-b.to-i64(): {
@@ -1549,14 +1517,12 @@ str-to-f64 = (s str) (result f64) {
     ; 溢位保護：wv >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
     (wv.cmp(two53) >= 0) -> {
         {
-
             #{overflow=wrap}
-            e-opt3 = e + 1
-            e-opt3: {
-                ok -> e = it
+            e ?= e + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         wv = two52.copy()
     }
@@ -1576,12 +1542,11 @@ str-to-f64 = (s str) (result f64) {
     (k < 52) {
         two52f = two52f * 2.0
         {
-            k-opt = k + 1
-            k-opt: {
-                ok -> k = it
+            k ?= k + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     val-f = 1.0 + (mv / two52f)
@@ -1589,27 +1554,23 @@ str-to-f64 = (s str) (result f64) {
     (e > 0) {
         scale = scale * 2.0
         {
-
             #{overflow=wrap}
-            e-opt4 = e - 1
-            e-opt4: {
-                ok -> e = it
+            e ?= e - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     (e < 0) {
         scale = scale / 2.0
         {
-
             #{overflow=wrap}
-            e-opt5 = e + 1
-            e-opt5: {
-                ok -> e = it
+            e ?= e + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     result = val-f * scale
@@ -1798,58 +1759,52 @@ str.count = () (cnt i64) {
         {
             b < 0x80 -> {
                 {
-                    i-opt11 = i + 1
-                    i-opt11: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             b < 0xe0 -> {
                 {
-                    i-opt12 = i + 2
-                    i-opt12: {
-                        ok -> i = it
+                    i ?= i + 2
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             b < 0xf0 -> {
                 {
-                    i-opt13 = i + 3
-                    i-opt13: {
-                        ok -> i = it
+                    i ?= i + 3
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
             -> {
                 {
-                    i-opt14 = i + 4
-                    i-opt14: {
-                        ok -> i = it
+                    i ?= i + 4
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
 
         {
-
             #{overflow=wrap}
-            cnt-opt = cnt + 1
-            cnt-opt: {
-                ok -> cnt = it
+            cnt ?= cnt + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -1903,45 +1858,41 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 {
                     new-ch < 0x80 -> {
                         {
-                            out-n-opt = out-n + 1
-                            out-n-opt: {
-                                ok -> out-n = it
+                            out-n ?= out-n + 1
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     new-ch < 0x800 -> {
                         {
-                            out-n-opt2 = out-n + 2
-                            out-n-opt2: {
-                                ok -> out-n = it
+                            out-n ?= out-n + 2
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     new-ch < 0x10000 -> {
                         {
-                            out-n-opt3 = out-n + 3
-                            out-n-opt3: {
-                                ok -> out-n = it
+                            out-n ?= out-n + 3
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
                     -> {
                         {
-                            out-n-opt4 = out-n + 4
-                            out-n-opt4: {
-                                ok -> out-n = it
+                            out-n ?= out-n + 4
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
                 }
@@ -1949,25 +1900,22 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
             -> {
                 {
-                    out-n-opt5 = out-n + clen
-                    out-n-opt5: {
-                        ok -> out-n = it
+                    out-n ?= out-n + clen
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
 
         {
-
             #{overflow=wrap}
-            i-opt15 = i + clen
-            i-opt15: {
-                ok -> i = it
+            i ?= i + clen
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -2010,12 +1958,11 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 new-ch < 0x80 -> {
                     buf[j] = new-ch
                     {
-                        j-opt2 = j + 1
-                        j-opt2: {
-                            ok -> j = it
+                        j ?= j + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
 
@@ -2025,12 +1972,11 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                     #{overflow=wrap}
                     buf[j + 1] = 0x80 | (new-ch & 0x3f)
                     {
-                        j-opt3 = j + 2
-                        j-opt3: {
-                            ok -> j = it
+                        j ?= j + 2
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
 
@@ -2043,12 +1989,11 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                     #{overflow=wrap}
                     buf[j + 2] = 0x80 | (new-ch & 0x3f)
                     {
-                        j-opt4 = j + 3
-                        j-opt4: {
-                            ok -> j = it
+                        j ?= j + 3
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
 
@@ -2064,12 +2009,11 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                     #{overflow=wrap}
                     buf[j + 3] = 0x80 | (new-ch & 0x3f)
                     {
-                        j-opt5 = j + 4
-                        j-opt5: {
-                            ok -> j = it
+                        j ?= j + 4
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
@@ -2082,27 +2026,23 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 }
 
                 {
-
                     #{overflow=wrap}
-                    j-opt6 = j + clen
-                    j-opt6: {
-                        ok -> j = it
+                    j ?= j + clen
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
 
         {
-
             #{overflow=wrap}
-            i-opt16 = i + clen
-            i-opt16: {
-                ok -> i = it
+            i ?= i + clen
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     val = buf.to-bytes-str()
@@ -2151,14 +2091,12 @@ str.trim-char = (ch char) (val str) {
         cp != ch -> break
 
         {
-
             #{overflow=wrap}
-            start-opt = start + clen
-            start-opt: {
-                ok -> start = it
+            start ?= start + clen
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -2197,26 +2135,22 @@ str.trim-char = (ch char) (val str) {
 
         cp != ch -> {
             {
-
                 #{overflow=wrap}
-                end-opt = i + clen
-                end-opt: {
-                    ok -> end = it
+                end ?= i + clen
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         {
-
             #{overflow=wrap}
-            i-opt17 = i + clen
-            i-opt17: {
-                ok -> i = it
+            i ?= i + clen
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -2313,42 +2247,36 @@ str-hex-val = (c i64) (v i64) {
     {
         c >= 48 && c <= 57 -> {
             {
-
                 #{overflow=wrap}
-                v-opt = c - 48
-                v-opt: {
-                    ok -> v = it
+                v ?= c - 48
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             return
         }
 
         c >= 65 && c <= 70 -> {
             {
-
                 #{overflow=wrap}
-                v-opt2 = c - 65 + 10
-                v-opt2: {
-                    ok -> v = it
+                v ?= c - 65 + 10
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             return
         }
 
         c >= 97 && c <= 102 -> {
             {
-
                 #{overflow=wrap}
-                v-opt3 = c - 97 + 10
-                v-opt3: {
-                    ok -> v = it
+                v ?= c - 97 + 10
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -2410,42 +2338,36 @@ _str-dig-val = (c i64) (d i64) {
     {
         c >= 48 && c <= 57 -> {
             {
-
                 #{overflow=wrap}
-                d-opt = c - 48
-                d-opt: {
-                    ok -> d = it
+                d ?= c - 48
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             return
         }
 
         c >= 65 && c <= 70 -> {
             {
-
                 #{overflow=wrap}
-                d-opt2 = c - 55
-                d-opt2: {
-                    ok -> d = it
+                d ?= c - 55
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
             return
         }
 
         c >= 97 && c <= 102 -> {
             {
-
                 #{overflow=wrap}
-                d-opt3 = c - 87
-                d-opt3: {
-                    ok -> d = it
+                d ?= c - 87
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -2664,14 +2586,12 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             {
-
                 #{overflow=wrap}
-                j-opt7 = j + 1
-                j-opt7: {
-                    ok -> j = it
+                j ?= j + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         {
@@ -2686,25 +2606,21 @@ str.replace-str = (old str, new str) (val str) {
 
             -> {
                 {
-
                     #{overflow=wrap}
-                    out-len-opt = out-len + 1
-                    out-len-opt: {
-                        ok -> out-len = it
+                    out-len ?= out-len + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
 
                 {
-
                     #{overflow=wrap}
-                    i-opt18 = i + 1
-                    i-opt18: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -2734,14 +2650,12 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             {
-
                 #{overflow=wrap}
-                j-opt8 = j + 1
-                j-opt8: {
-                    ok -> j = it
+                j ?= j + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         {
@@ -2750,14 +2664,12 @@ str.replace-str = (old str, new str) (val str) {
                     buf[pos] = new.byte(k)
 
                     {
-
                         #{overflow=wrap}
-                        pos-opt = pos + 1
-                        pos-opt: {
-                            ok -> pos = it
+                        pos ?= pos + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
 
@@ -2769,25 +2681,21 @@ str.replace-str = (old str, new str) (val str) {
                 buf[pos] = .byte(i)
 
                 {
-
                     #{overflow=wrap}
-                    pos-opt2 = pos + 1
-                    pos-opt2: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
 
                 {
-
                     #{overflow=wrap}
-                    i-opt19 = i + 1
-                    i-opt19: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -2930,14 +2838,14 @@ str.replace-n = (old str, new str, n i64) (val str) {
             total = total + sep-len
         }
 
-        ixout2352c25 = parts[i]: {
+        parts-i = parts[i]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        total = total + ixout2352c25.len-bytes()
+        total = total + parts-i.len-bytes()
     }
     buf []byte = with-cap-len(total, total)
     pos = 0
@@ -2948,12 +2856,11 @@ str.replace-n = (old str, new str, n i64) (val str) {
             j <- [0..sep.len-bytes()): {
                 buf[pos] = sep.byte(j)
                 {
-                    pos-opt3 = pos + 1
-                    pos-opt3: {
-                        ok -> pos = it
+                    pos ?= pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -2967,14 +2874,12 @@ str.replace-n = (old str, new str, n i64) (val str) {
             buf[pos] = s.byte(j)
 
             {
-
                 #{overflow=wrap}
-                pos-opt4 = pos + 1
-                pos-opt4: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
@@ -3015,14 +2920,12 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
         start = pos + sep.len-bytes()
 
         {
-
             #{overflow=wrap}
-            count-opt = count + 1
-            count-opt: {
-                ok -> count = it
+            count ?= count + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         pos = .find-byte-from(sep, start)
     }
@@ -3053,35 +2956,31 @@ str.lines = () (out []str) {
                 prev = .byte(i - 1)
                 prev == 13 -> {
                     {
-                        end-opt2 = i - 1
-                        end-opt2: {
-                            ok -> end = it
+                        end ?= i - 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
             result.push(.slice-bytes(start, end))
             {
-                start-opt2 = i + 1
-                start-opt2: {
-                    ok -> start = it
+                start ?= i + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         {
-
             #{overflow=wrap}
-            i-opt20 = i + 1
-            i-opt20: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     start < .len-bytes() -> result.push(.slice-bytes(start, .len-bytes()))

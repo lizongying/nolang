@@ -74,146 +74,96 @@ rotr64 = (x u64, n i64) (r u64) {
 ; y: 第二條訊息字（併入 a 的次輪加法）
 ; [b-g](#blake2.b-g)
 b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
-    ixout78c21 = v[a]: {
-        ok -> it
+    ; ---- 第一輪：併入訊息字 x ----
+    ; v[a] 與 v[d] 寫回後立刻被下一步讀取，故每一步各自具名讀出，不共用暫存。
+    {
+        a-old-1 ?= v[a]
+        b-old-1 ?= v[b]
+
+        v[a]: {
+            ok -> it = (a-old-1 + b-old-1 + x) & BLAKE2B-MASK
+
+            -> _
+        }
+
+        d-old-1 ?= v[d]
+        a-new-1 ?= v[a]
+
+        v[d]: {
+            ok -> it = rotr64(d-old-1 ^ a-new-1, 32)
+
+            -> _
+        }
+
+        c-old-1 ?= v[c]
+        d-new-1 ?= v[d]
+
+        v[c]: {
+            ok -> it = (c-old-1 + d-new-1) & BLAKE2B-MASK
+
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout78c28 = v[b]: {
-        ok -> it
+    ; ---- 第一輪收尾：b 的旋轉 ----
+    {
+        b-old-2 ?= v[b]
+        c-new-1 ?= v[c]
+
+        v[b]: {
+            ok -> it = rotr64(b-old-2 ^ c-new-1, 24)
+
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
 
-    v[a]: {
-        ok -> it = (ixout78c21 + ixout78c28 + x) & BLAKE2B-MASK
+    ; ---- 第二輪：併入訊息字 y ----
+    {
+        a-old-2 ?= v[a]
+        b-new-1 ?= v[b]
 
-        -> _
-    }
+        v[a]: {
+            ok -> it = (a-old-2 + b-new-1 + y) & BLAKE2B-MASK
 
-    ixout85c27 = v[d]: {
-        ok -> it
+            -> _
+        }
 
-        -> _
-    }
+        d-old-2 ?= v[d]
+        a-new-2 ?= v[a]
 
-    ixout85c34 = v[a]: {
-        ok -> it
+        v[d]: {
+            ok -> it = rotr64(d-old-2 ^ a-new-2, 16)
 
-        -> _
-    }
+            -> _
+        }
 
-    v[d]: {
-        ok -> it = rotr64(ixout85c27 ^ ixout85c34, 32)
+        c-old-2 ?= v[c]
+        d-new-2 ?= v[d]
 
-        -> _
-    }
+        v[c]: {
+            ok -> it = (c-old-2 + d-new-2) & BLAKE2B-MASK
 
-    ixout92c21 = v[c]: {
-        ok -> it
+            -> _
+        }
 
-        -> _
-    }
+        b-old-3 ?= v[b]
+        c-new-2 ?= v[c]
 
-    ixout92c28 = v[d]: {
-        ok -> it
+        v[b]: {
+            ok -> it = rotr64(b-old-3 ^ c-new-2, 63)
 
-        -> _
-    }
-
-    v[c]: {
-        ok -> it = (ixout92c21 + ixout92c28) & BLAKE2B-MASK
-
-        -> _
-    }
-
-    ixout99c27 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout99c34 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[b]: {
-        ok -> it = rotr64(ixout99c27 ^ ixout99c34, 24)
-
-        -> _
-    }
-
-    ixout106c21 = v[a]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout106c28 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[a]: {
-        ok -> it = (ixout106c21 + ixout106c28 + y) & BLAKE2B-MASK
-
-        -> _
-    }
-
-    ixout113c27 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout113c34 = v[a]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[d]: {
-        ok -> it = rotr64(ixout113c27 ^ ixout113c34, 16)
-
-        -> _
-    }
-
-    ixout120c21 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout120c28 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[c]: {
-        ok -> it = (ixout120c21 + ixout120c28) & BLAKE2B-MASK
-
-        -> _
-    }
-
-    ixout127c27 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout127c34 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[b]: {
-        ok -> it = rotr64(ixout127c27 ^ ixout127c34, 63)
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -252,14 +202,14 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     }
 
     ; v[12] ^= t（低位）
-    ixout168c21 = v[12]: {
+    counter-low = v[12]: {
         ok -> it
 
         -> _
     }
 
     v[12]: {
-        ok -> it = (ixout168c21 ^ (t & BLAKE2B-MASK)) & BLAKE2B-MASK
+        ok -> it = (counter-low ^ (t & BLAKE2B-MASK)) & BLAKE2B-MASK
 
         -> _
     }
@@ -269,14 +219,14 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 
     ; 如果是最後一個區塊，反轉 v[14]
     last != 0 -> {
-        ixout181c24 = v[14]: {
+        final-flag = v[14]: {
             ok -> it
 
             -> _
         }
 
         v[14]: {
-            ok -> it = ixout181c24 ^ BLAKE2B-MASK
+            ok -> it = final-flag ^ BLAKE2B-MASK
 
             -> _
         }
@@ -285,67 +235,37 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     ; 載入訊息字（16 個 u64，小端序）
     m [16]u64
     i <- [0..16): {
+        {
+            #{overflow=wrap}
+            word-start ?= i * 8
 
-        #{overflow=wrap}
-        off = i * 8
+            ; 逐位元組小端組字：第 j 個位元組佔 bit [8j, 8j+8)
+            word u64 = 0
+            j <- [0..8): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= word-start + j
 
-        ixout196c25 = block[off]: {
-            ok -> it
+                    raw-byte ?= block[byte-at]
 
-            -> _
-        }
+                    #{overflow=wrap}
+                    bit-shift ?= j * 8
 
-        #{overflow=wrap}
-        ixout196c41 = block[off + 1]: {
-            ok -> it
+                    word = word | (raw-byte << bit-shift)
+                }: {
+                    err -> _
 
-            -> _
-        }
+                    -> _
+                }
+            }
 
-        #{overflow=wrap}
-        ixout196c67 = block[off + 2]: {
-            ok -> it
+            m[i]: {
+                ok -> it = word
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout196c94 = block[off + 3]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout196c121 = block[off + 4]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout196c148 = block[off + 5]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout196c175 = block[off + 6]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout196c202 = block[off + 7]: {
-            ok -> it
-
-            -> _
-        }
-
-        m[i]: {
-            ok -> it = (ixout196c25) | ((ixout196c41) << 8) | ((ixout196c67) << 16) | ((ixout196c94) << 24) | ((ixout196c121) << 32) | ((ixout196c148) << 40) | ((ixout196c175) << 48) | ((ixout196c202) << 56)
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -367,238 +287,145 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
             }
         }
 
-        ixout219c31 = s[0]: {
-            ok -> it
+        ; 8 次 G 混合：σ 給出本輪各步要併入的兩個訊息字下標，
+        ; 每個區塊各自取字（同層區塊互不干擾，故可共用 slot-a/word-a 這組名字）
+        ; G(v0, v4, v8,  v12)
+        {
+            slot-a ?= s[0]
+            slot-b ?= s[1]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            b-g(v, 0, 4, 8, 12, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout219c29 = m[ixout219c31]: {
-            ok -> it
+        ; G(v1, v5, v9,  v13)
+        {
+            slot-a ?= s[2]
+            slot-b ?= s[3]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            b-g(v, 1, 5, 9, 13, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout219c40 = s[1]: {
-            ok -> it
+        ; G(v2, v6, v10, v14)
+        {
+            slot-a ?= s[4]
+            slot-b ?= s[5]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            b-g(v, 2, 6, 10, 14, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout219c38 = m[ixout219c40]: {
-            ok -> it
+        ; G(v3, v7, v11, v15)
+        {
+            slot-a ?= s[6]
+            slot-b ?= s[7]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            b-g(v, 3, 7, 11, 15, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        b-g(v, 0, 4, 8, 12, ixout219c29, ixout219c38)
+        ; G(v0, v5, v10, v15)
+        {
+            slot-a ?= s[8]
+            slot-b ?= s[9]
 
-        ixout222c31 = s[2]: {
-            ok -> it
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
 
-            -> _
-        }
-
-        ixout222c29 = m[ixout222c31]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout222c40 = s[3]: {
-            ok -> it
+            b-g(v, 0, 5, 10, 15, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout222c38 = m[ixout222c40]: {
-            ok -> it
+        ; G(v1, v6, v11, v12)
+        {
+            slot-a ?= s[10]
+            slot-b ?= s[11]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            b-g(v, 1, 6, 11, 12, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        b-g(v, 1, 5, 9, 13, ixout222c29, ixout222c38)
+        ; G(v2, v7, v8, v13)
+        {
+            slot-a ?= s[12]
+            slot-b ?= s[13]
 
-        ixout225c32 = s[4]: {
-            ok -> it
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
 
-            -> _
-        }
-
-        ixout225c30 = m[ixout225c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout225c41 = s[5]: {
-            ok -> it
+            b-g(v, 2, 7, 8, 13, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout225c39 = m[ixout225c41]: {
-            ok -> it
+        ; G(v3, v4, v9, v14)
+        {
+            slot-a ?= s[14]
+            slot-b ?= s[15]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            b-g(v, 3, 4, 9, 14, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
-
-        b-g(v, 2, 6, 10, 14, ixout225c30, ixout225c39)
-
-        ixout228c32 = s[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout228c30 = m[ixout228c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout228c41 = s[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout228c39 = m[ixout228c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        b-g(v, 3, 7, 11, 15, ixout228c30, ixout228c39)
-
-        ixout231c32 = s[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout231c30 = m[ixout231c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout231c41 = s[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout231c39 = m[ixout231c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        b-g(v, 0, 5, 10, 15, ixout231c30, ixout231c39)
-
-        ixout234c32 = s[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout234c30 = m[ixout234c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout234c42 = s[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout234c40 = m[ixout234c42]: {
-            ok -> it
-
-            -> _
-        }
-
-        b-g(v, 1, 6, 11, 12, ixout234c30, ixout234c40)
-
-        ixout237c31 = s[12]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout237c29 = m[ixout237c31]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout237c41 = s[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout237c39 = m[ixout237c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        b-g(v, 2, 7, 8, 13, ixout237c29, ixout237c39)
-
-        ixout240c31 = s[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout240c29 = m[ixout240c31]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout240c41 = s[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout240c39 = m[ixout240c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        b-g(v, 3, 4, 9, 14, ixout240c29, ixout240c39)
     }
 
     ; 最終化: h[i] ^= v[i] ^ v[i+8]
     i <- [0..8): {
-        ixout248c25 = h[i]: {
-            ok -> it
+        {
+            h-old ?= h[i]
+            v-low ?= v[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            v-high ?= v[8 + i]
 
-        ixout248c32 = v[i]: {
-            ok -> it
+            h[i]: {
+                ok -> it = (h-old ^ v-low ^ v-high) & BLAKE2B-MASK
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout248c39 = v[8 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        h[i]: {
-            ok -> it = (ixout248c25 ^ ixout248c32 ^ ixout248c39) & BLAKE2B-MASK
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -636,14 +463,17 @@ b = (data []byte) (hash [64]byte) {
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | out_len
     h = b-state()
 
-    ixout289c21 = h[0]: {
-        ok -> it
+    ; 0x01010000 = digest 長度上限欄位之前的固定前綴（key 長度 0、fanout 1、depth 1）
+    {
+        iv-first ?= h[0]
 
-        -> _
-    }
+        h[0]: {
+            ok -> it = (iv-first ^ 16842816) & BLAKE2B-MASK
 
-    h[0]: {
-        ok -> it = (ixout289c21 ^ 16842816) & BLAKE2B-MASK
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -660,14 +490,11 @@ b = (data []byte) (hash [64]byte) {
         b-compress(h, data[offset..], t, 0)
 
         {
+            offset ?= offset + 128
+        }: {
+            err -> _
 
-            #{overflow=wrap}
-            offset-opt = offset + 128
-            offset-opt: {
-                ok -> offset = it
-
-                ->
-            }
+            -> _
         }
     }
 
@@ -700,80 +527,35 @@ b = (data []byte) (hash [64]byte) {
     t = (t + remaining) & BLAKE2B-MASK
     b-compress(h, last-block, t, 1)
 
-    ; 輸出（小端序）
+    ; 輸出（小端序）：每個狀態字拆成 8 個位元組
     i <- [0..8): {
+        {
+            word ?= h[i]
 
-        #{overflow=wrap}
-        off = i * 8
+            j <- [0..8): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= i * 8 + j
 
-        hash[off] = h[i]: {
-            ok -> it
+                    #{overflow=wrap}
+                    bit-shift ?= j * 8
 
-            -> _
-        }
+                    hash[byte-at]: {
+                        ok -> it = (word >> bit-shift) & 255
 
-        ixout347c26 = h[i]: {
-            ok -> it
+                        -> _
+                    }
+                }: {
+                    err -> _
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 1] = (ixout347c26 >> 8) & 255
-
-        ixout350c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 2] = (ixout350c26 >> 16) & 255
-
-        ixout353c26 = h[i]: {
-            ok -> it
+                    -> _
+                }
+            }
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hash[off + 3] = (ixout353c26 >> 24) & 255
-
-        ixout356c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 4] = (ixout356c26 >> 32) & 255
-
-        ixout359c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 5] = (ixout359c26 >> 40) & 255
-
-        ixout362c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 6] = (ixout362c26 >> 48) & 255
-
-        ixout365c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 7] = (ixout365c26 >> 56) & 255
     }
 }
 
@@ -786,14 +568,17 @@ b-256 = (data []byte) (hash [32]byte) {
     ; 初始化狀態: h = IV，h[0] ^= 0x01010000 | 32
     h = b-state()
 
-    ixout380c21 = h[0]: {
-        ok -> it
+    ; 0x01010000 = digest 長度上限欄位之前的固定前綴（key 長度 0、fanout 1、depth 1）
+    {
+        iv-first ?= h[0]
 
-        -> _
-    }
+        h[0]: {
+            ok -> it = (iv-first ^ 16842784) & BLAKE2B-MASK
 
-    h[0]: {
-        ok -> it = (ixout380c21 ^ 16842784) & BLAKE2B-MASK
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -809,14 +594,11 @@ b-256 = (data []byte) (hash [32]byte) {
         b-compress(h, data[offset..], t, 0)
 
         {
+            offset ?= offset + 128
+        }: {
+            err -> _
 
-            #{overflow=wrap}
-            offset-opt2 = offset + 128
-            offset-opt2: {
-                ok -> offset = it
-
-                ->
-            }
+            -> _
         }
     }
     last-block []byte = with-len(128)
@@ -847,78 +629,33 @@ b-256 = (data []byte) (hash [32]byte) {
 
     ; 輸出前 32 位元組（小端序）
     i <- [0..4): {
+        {
+            word ?= h[i]
 
-        #{overflow=wrap}
-        off = i * 8
+            j <- [0..8): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= i * 8 + j
 
-        hash[off] = h[i]: {
-            ok -> it
+                    #{overflow=wrap}
+                    bit-shift ?= j * 8
 
-            -> _
-        }
+                    hash[byte-at]: {
+                        ok -> it = (word >> bit-shift) & 255
 
-        ixout433c26 = h[i]: {
-            ok -> it
+                        -> _
+                    }
+                }: {
+                    err -> _
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 1] = (ixout433c26 >> 8) & 255
-
-        ixout436c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 2] = (ixout436c26 >> 16) & 255
-
-        ixout439c26 = h[i]: {
-            ok -> it
+                    -> _
+                }
+            }
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hash[off + 3] = (ixout439c26 >> 24) & 255
-
-        ixout442c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 4] = (ixout442c26 >> 32) & 255
-
-        ixout445c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 5] = (ixout445c26 >> 40) & 255
-
-        ixout448c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 6] = (ixout448c26 >> 48) & 255
-
-        ixout451c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 7] = (ixout451c26 >> 56) & 255
     }
 }
 
@@ -931,32 +668,14 @@ b-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(128)
     i <- [0..64): {
-        ixout933c37 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
+            word ?= hash[i]
 
             #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(ixout933c37 >> 4) & 15]
-        }: {
-            err -> _
-
-            -> _
-        }
-
-        ixout936c40 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        {
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
             #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[ixout936c40 & 15]
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
         }: {
             err -> _
 
@@ -974,32 +693,14 @@ b-256-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(64)
     i <- [0..32): {
-        ixout951c37 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
+            word ?= hash[i]
 
             #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(ixout951c37 >> 4) & 15]
-        }: {
-            err -> _
-
-            -> _
-        }
-
-        ixout954c40 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        {
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
             #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[ixout954c40 & 15]
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
         }: {
             err -> _
 
@@ -1062,146 +763,96 @@ rotr32 = (x u32, n i64) (r u32) {
 ; y: 第二條訊息字（u32）
 ; [s-g](#blake2.s-g)
 s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
-    ixout547c21 = v[a]: {
-        ok -> it
+    ; ---- 第一輪：併入訊息字 x ----
+    ; v[a] 與 v[d] 寫回後立刻被下一步讀取，故每一步各自具名讀出，不共用暫存。
+    {
+        a-old-1 ?= v[a]
+        b-old-1 ?= v[b]
+
+        v[a]: {
+            ok -> it = (a-old-1 + b-old-1 + x) & BLAKE2S-MASK
+
+            -> _
+        }
+
+        d-old-1 ?= v[d]
+        a-new-1 ?= v[a]
+
+        v[d]: {
+            ok -> it = rotr32(d-old-1 ^ a-new-1, 16)
+
+            -> _
+        }
+
+        c-old-1 ?= v[c]
+        d-new-1 ?= v[d]
+
+        v[c]: {
+            ok -> it = (c-old-1 + d-new-1) & BLAKE2S-MASK
+
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout547c28 = v[b]: {
-        ok -> it
+    ; ---- 第一輪收尾：b 的旋轉 ----
+    {
+        b-old-2 ?= v[b]
+        c-new-1 ?= v[c]
+
+        v[b]: {
+            ok -> it = rotr32(b-old-2 ^ c-new-1, 12)
+
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
 
-    v[a]: {
-        ok -> it = (ixout547c21 + ixout547c28 + x) & BLAKE2S-MASK
+    ; ---- 第二輪：併入訊息字 y ----
+    {
+        a-old-2 ?= v[a]
+        b-new-1 ?= v[b]
 
-        -> _
-    }
+        v[a]: {
+            ok -> it = (a-old-2 + b-new-1 + y) & BLAKE2S-MASK
 
-    ixout554c27 = v[d]: {
-        ok -> it
+            -> _
+        }
 
-        -> _
-    }
+        d-old-2 ?= v[d]
+        a-new-2 ?= v[a]
 
-    ixout554c34 = v[a]: {
-        ok -> it
+        v[d]: {
+            ok -> it = rotr32(d-old-2 ^ a-new-2, 8)
 
-        -> _
-    }
+            -> _
+        }
 
-    v[d]: {
-        ok -> it = rotr32(ixout554c27 ^ ixout554c34, 16)
+        c-old-2 ?= v[c]
+        d-new-2 ?= v[d]
 
-        -> _
-    }
+        v[c]: {
+            ok -> it = (c-old-2 + d-new-2) & BLAKE2S-MASK
 
-    ixout561c21 = v[c]: {
-        ok -> it
+            -> _
+        }
 
-        -> _
-    }
+        b-old-3 ?= v[b]
+        c-new-2 ?= v[c]
 
-    ixout561c28 = v[d]: {
-        ok -> it
+        v[b]: {
+            ok -> it = rotr32(b-old-3 ^ c-new-2, 7)
 
-        -> _
-    }
-
-    v[c]: {
-        ok -> it = (ixout561c21 + ixout561c28) & BLAKE2S-MASK
-
-        -> _
-    }
-
-    ixout568c27 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout568c34 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[b]: {
-        ok -> it = rotr32(ixout568c27 ^ ixout568c34, 12)
-
-        -> _
-    }
-
-    ixout575c21 = v[a]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout575c28 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[a]: {
-        ok -> it = (ixout575c21 + ixout575c28 + y) & BLAKE2S-MASK
-
-        -> _
-    }
-
-    ixout582c27 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout582c34 = v[a]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[d]: {
-        ok -> it = rotr32(ixout582c27 ^ ixout582c34, 8)
-
-        -> _
-    }
-
-    ixout589c21 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout589c28 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[c]: {
-        ok -> it = (ixout589c21 + ixout589c28) & BLAKE2S-MASK
-
-        -> _
-    }
-
-    ixout596c27 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout596c34 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[b]: {
-        ok -> it = rotr32(ixout596c27 ^ ixout596c34, 7)
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -1234,65 +885,68 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         }
     }
 
-    ixout631c21 = v[12]: {
+    ; v[12] ^= t（低位）
+    counter-low = v[12]: {
         ok -> it
 
         -> _
     }
 
     v[12]: {
-        ok -> it = (ixout631c21 ^ t) & BLAKE2S-MASK
+        ok -> it = (counter-low ^ t) & BLAKE2S-MASK
 
         -> _
     }
+
+    ; 如果是最後一個區塊，反轉 v[14]
     last != 0 -> {
-        ixout639c24 = v[14]: {
+        final-flag = v[14]: {
             ok -> it
 
             -> _
         }
 
         v[14]: {
-            ok -> it = ixout639c24 ^ BLAKE2S-MASK
+            ok -> it = final-flag ^ BLAKE2S-MASK
 
             -> _
         }
     }
+
+    ; 載入訊息字（16 個 u32，小端序）
     m [16]u32
     i <- [0..16): {
+        {
+            #{overflow=wrap}
+            word-start ?= i * 4
 
-        #{overflow=wrap}
-        off = i * 4
+            ; 逐位元組小端組字：第 j 個位元組佔 bit [8j, 8j+8)
+            word u32 = 0
+            j <- [0..4): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= word-start + j
 
-        ixout652c25 = block[off]: {
-            ok -> it
+                    raw-byte ?= block[byte-at]
 
-            -> _
-        }
+                    #{overflow=wrap}
+                    bit-shift ?= j * 8
 
-        #{overflow=wrap}
-        ixout652c41 = block[off + 1]: {
-            ok -> it
+                    word = word | (raw-byte << bit-shift)
+                }: {
+                    err -> _
 
-            -> _
-        }
+                    -> _
+                }
+            }
 
-        #{overflow=wrap}
-        ixout652c67 = block[off + 2]: {
-            ok -> it
+            m[i]: {
+                ok -> it = word
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout652c94 = block[off + 3]: {
-            ok -> it
-
-            -> _
-        }
-
-        m[i]: {
-            ok -> it = (ixout652c25) | ((ixout652c41) << 8) | ((ixout652c67) << 16) | ((ixout652c94) << 24)
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -1312,236 +966,143 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
             }
         }
 
-        ixout673c31 = s[0]: {
-            ok -> it
+        ; 8 次 G 混合：σ 給出本輪各步要併入的兩個訊息字下標，
+        ; 每個區塊各自取字（同層區塊互不干擾，故可共用 slot-a/word-a 這組名字）
+        ; G(v0, v4, v8,  v12)
+        {
+            slot-a ?= s[0]
+            slot-b ?= s[1]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            s-g(v, 0, 4, 8, 12, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout673c29 = m[ixout673c31]: {
-            ok -> it
+        ; G(v1, v5, v9,  v13)
+        {
+            slot-a ?= s[2]
+            slot-b ?= s[3]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            s-g(v, 1, 5, 9, 13, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout673c40 = s[1]: {
-            ok -> it
+        ; G(v2, v6, v10, v14)
+        {
+            slot-a ?= s[4]
+            slot-b ?= s[5]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            s-g(v, 2, 6, 10, 14, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout673c38 = m[ixout673c40]: {
-            ok -> it
+        ; G(v3, v7, v11, v15)
+        {
+            slot-a ?= s[6]
+            slot-b ?= s[7]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            s-g(v, 3, 7, 11, 15, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        s-g(v, 0, 4, 8, 12, ixout673c29, ixout673c38)
+        ; G(v0, v5, v10, v15)
+        {
+            slot-a ?= s[8]
+            slot-b ?= s[9]
 
-        ixout676c31 = s[2]: {
-            ok -> it
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
 
-            -> _
-        }
-
-        ixout676c29 = m[ixout676c31]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout676c40 = s[3]: {
-            ok -> it
+            s-g(v, 0, 5, 10, 15, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout676c38 = m[ixout676c40]: {
-            ok -> it
+        ; G(v1, v6, v11, v12)
+        {
+            slot-a ?= s[10]
+            slot-b ?= s[11]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            s-g(v, 1, 6, 11, 12, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        s-g(v, 1, 5, 9, 13, ixout676c29, ixout676c38)
+        ; G(v2, v7, v8, v13)
+        {
+            slot-a ?= s[12]
+            slot-b ?= s[13]
 
-        ixout679c32 = s[4]: {
-            ok -> it
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
 
-            -> _
-        }
-
-        ixout679c30 = m[ixout679c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout679c41 = s[5]: {
-            ok -> it
+            s-g(v, 2, 7, 8, 13, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
 
-        ixout679c39 = m[ixout679c41]: {
-            ok -> it
+        ; G(v3, v4, v9, v14)
+        {
+            slot-a ?= s[14]
+            slot-b ?= s[15]
+
+            word-a ?= m[slot-a]
+            word-b ?= m[slot-b]
+
+            s-g(v, 3, 4, 9, 14, word-a, word-b)
+        }: {
+            err -> _
 
             -> _
         }
-
-        s-g(v, 2, 6, 10, 14, ixout679c30, ixout679c39)
-
-        ixout682c32 = s[6]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout682c30 = m[ixout682c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout682c41 = s[7]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout682c39 = m[ixout682c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        s-g(v, 3, 7, 11, 15, ixout682c30, ixout682c39)
-
-        ixout685c32 = s[8]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout685c30 = m[ixout685c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout685c41 = s[9]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout685c39 = m[ixout685c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        s-g(v, 0, 5, 10, 15, ixout685c30, ixout685c39)
-
-        ixout688c32 = s[10]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout688c30 = m[ixout688c32]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout688c42 = s[11]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout688c40 = m[ixout688c42]: {
-            ok -> it
-
-            -> _
-        }
-
-        s-g(v, 1, 6, 11, 12, ixout688c30, ixout688c40)
-
-        ixout691c31 = s[12]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout691c29 = m[ixout691c31]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout691c41 = s[13]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout691c39 = m[ixout691c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        s-g(v, 2, 7, 8, 13, ixout691c29, ixout691c39)
-
-        ixout694c31 = s[14]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout694c29 = m[ixout694c31]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout694c41 = s[15]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout694c39 = m[ixout694c41]: {
-            ok -> it
-
-            -> _
-        }
-
-        s-g(v, 3, 4, 9, 14, ixout694c29, ixout694c39)
     }
     i <- [0..8): {
-        ixout700c25 = h[i]: {
-            ok -> it
+        {
+            h-old ?= h[i]
+            v-low ?= v[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            v-high ?= v[8 + i]
 
-        ixout700c32 = v[i]: {
-            ok -> it
+            h[i]: {
+                ok -> it = (h-old ^ v-low ^ v-high) & BLAKE2S-MASK
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout700c39 = v[8 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        h[i]: {
-            ok -> it = (ixout700c25 ^ ixout700c32 ^ ixout700c39) & BLAKE2S-MASK
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -1555,14 +1116,17 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
 s = (data []byte) (hash [32]byte) {
     h = s-state()
 
-    ixout716c21 = h[0]: {
-        ok -> it
+    ; 0x01010000 = digest 長度上限欄位之前的固定前綴（key 長度 0、fanout 1、depth 1）
+    {
+        iv-first ?= h[0]
 
-        -> _
-    }
+        h[0]: {
+            ok -> it = (iv-first ^ 16842784) & BLAKE2S-MASK
 
-    h[0]: {
-        ok -> it = (ixout716c21 ^ 16842784) & BLAKE2S-MASK
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -1578,14 +1142,11 @@ s = (data []byte) (hash [32]byte) {
         s-compress(h, data[offset..], t, 0)
 
         {
+            offset ?= offset + 64
+        }: {
+            err -> _
 
-            #{overflow=wrap}
-            offset-opt3 = offset + 64
-            offset-opt3: {
-                ok -> offset = it
-
-                ->
-            }
+            -> _
         }
     }
     last-block []byte = with-len(64)
@@ -1614,43 +1175,35 @@ s = (data []byte) (hash [32]byte) {
     t = (t + remaining) & BLAKE2S-MASK
     s-compress(h, last-block, t, 1)
 
+    ; 輸出（小端序）：每個 32-bit 狀態字拆成 4 個位元組
     i <- [0..8): {
+        {
+            word ?= h[i]
 
-        #{overflow=wrap}
-        off = i * 4
+            j <- [0..4): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= i * 4 + j
 
-        hash[off] = h[i]: {
-            ok -> it
+                    #{overflow=wrap}
+                    bit-shift ?= j * 8
 
-            -> _
-        }
+                    hash[byte-at]: {
+                        ok -> it = (word >> bit-shift) & 255
 
-        ixout768c26 = h[i]: {
-            ok -> it
+                        -> _
+                    }
+                }: {
+                    err -> _
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 1] = (ixout768c26 >> 8) & 255
-
-        ixout771c26 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hash[off + 2] = (ixout771c26 >> 16) & 255
-
-        ixout774c26 = h[i]: {
-            ok -> it
+                    -> _
+                }
+            }
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hash[off + 3] = (ixout774c26 >> 24) & 255
     }
 }
 
@@ -1663,32 +1216,14 @@ s-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(64)
     i <- [0..32): {
-        ixout1617c37 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
+            word ?= hash[i]
 
             #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(ixout1617c37 >> 4) & 15]
-        }: {
-            err -> _
-
-            -> _
-        }
-
-        ixout1620c40 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        {
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
             #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[ixout1620c40 & 15]
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
         }: {
             err -> _
 

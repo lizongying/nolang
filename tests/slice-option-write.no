@@ -18,7 +18,14 @@ t-slice-write-simple = () {
 
         -> _
     }
-    runner.eq(h[0], 999, 'slice+option-write: h[0] == 999')
+    {
+        first ?= h[0]
+        runner.eq(first, 999, 'slice+option-write: h[0] == 999')
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 2) 切片 + for 迴圈 + 值 match 消費 ?T + option 寫
@@ -31,27 +38,42 @@ t-slice-write-loop = () {
             -> _
         }
     }
-    runner.eq(h[0], 999, 'slice+loop+option: h[0] == 999')
-    runner.eq(h[7], 999, 'slice+loop+option: h[7] == 999')
+    {
+        first ?= h[0]
+        last ?= h[7]
+        runner.eq(first, 999, 'slice+loop+option: h[0] == 999')
+        runner.eq(last, 999, 'slice+loop+option: h[7] == 999')
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 3) 切片自身讀改寫（RHS 含下標讀，觸發索引讀降糖）
 t-slice-write-self-rmw = () {
     h = IV[..8)
     i <- [0..8): {
-        ixout45c24 = h[i]: {
+        h-i = h[i]: {
             ok -> it
 
             -> _
         }
 
         h[i]: {
-            ok -> it = ixout45c24 ^ 1
+            ok -> it = h-i ^ 1
 
             -> _
         }
     }
-    runner.eq(h[0], 10, 'slice self read-modify-write: 11 ^ 1 == 10')
+    {
+        first ?= h[0]
+        runner.eq(first, 10, 'slice self read-modify-write: 11 ^ 1 == 10')
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 4) 函數返回切片 + option 寫（忠實重現 b-state 語境）
@@ -70,7 +92,14 @@ mk-state = () (h []u64) {
 ; 函式回傳的切片再做 option 寫：mk-state 已把全元素寫成 999，這裡確認取回後仍是 999
 t-slice-write-fn-return = () {
     h = mk-state()
-    runner.eq(h[0], 999, 'fn-return slice + option-write: h[0] == 999')
+    {
+        first ?= h[0]
+        runner.eq(first, 999, 'fn-return slice + option-write: h[0] == 999')
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 p1, f1 = runner.test('slice-write-simple', t-slice-write-simple)

@@ -102,14 +102,12 @@ tar.count = () (count i64) {
         empty == 1 -> return
 
         {
-
             #{overflow=wrap}
-            count-opt = count + 1
-            count-opt: {
-                ok -> count = it
+            count ?= count + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         ; 讀取 size 欄位（偏移 124，12 位元組八進制）

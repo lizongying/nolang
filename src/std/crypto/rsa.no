@@ -56,45 +56,23 @@ _rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
                 i = an - 1
                 (cmp == 0 && i >= 0) {
                     cmp == 0 -> {
-                        ixout58c26 = a[i]: {
-                            ok -> it
+                        {
+                            a-limb ?= a[i]
+                            b-limb ?= b[i]
 
-                            -> _
-                        }
+                            a-limb > b-limb -> cmp = 1
 
-                        ixout58c33 = b[i]: {
-                            ok -> it
+                            a-limb < b-limb -> cmp = -1
 
-                            -> _
-                        }
-
-                        ixout58c26 > ixout58c33 -> {
-                            cmp = 1
-                        }
-                        ixout61c26 = a[i]: {
-                            ok -> it
-
-                            -> _
-                        }
-
-                        ixout61c33 = b[i]: {
-                            ok -> it
-
-                            -> _
-                        }
-
-                        ixout61c26 < ixout61c33 -> {
-                            cmp = -1
-                        }
-                        cmp == 0 -> {
-                            {
-                                i-opt = i - 1
-                                i-opt: {
-                                    ok -> i = it
-
-                                    ->
-                                }
+                            ; 這一位相等才需要繼續比下一位
+                            a-limb == b-limb -> {
+                                #{overflow=wrap}
+                                i ?= i - 1
                             }
+                        }: {
+                            err -> _
+
+                            -> _
                         }
                     }
                 }
@@ -129,25 +107,25 @@ _rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
         {
             i < an -> {
-                ixout100c29 = a[i]: {
+                a-i = a[i]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                sum = sum + ixout100c29
+                sum = sum + a-i
             }
 
             i < bn -> {
-                ixout106c29 = b[i]: {
+                b-i = b[i]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                sum = sum + ixout106c29
+                sum = sum + b-i
             }
         }
 
@@ -155,14 +133,12 @@ _rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         carry = sum >> 32
 
         {
-
             #{overflow=wrap}
-            i-opt2 = i + 1
-            i-opt2: {
-                ok -> i = it
+            i ?= i + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     cn = i
@@ -186,23 +162,23 @@ _rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     c = with-len(an + 2)
     borrow = 0
     i <- [0..an): {
-        ixout138c16 = a[i]: {
+        a-i = a[i]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        diff = ixout138c16 - borrow
+        diff = a-i - borrow
 
         i < bn -> {
-            ixout144c27 = b[i]: {
+            b-i = b[i]: {
                 ok -> it
 
                 -> _
             }
 
-            diff = diff - ixout144c27
+            diff = diff - b-i
         }
 
         {
@@ -229,12 +205,11 @@ _rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
                 #{overflow=wrap}
                 c[local-cn - 1] == 0 -> {
                     {
-                        local-cn-opt2 = local-cn - 1
-                        local-cn-opt2: {
-                            ok -> local-cn = it
+                        local-cn ?= local-cn - 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
 
@@ -270,43 +245,40 @@ _rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
         c[i] = 0
     }
     i <- [0..an): {
-        ixout226c10 = a[i]: {
+        a-limb = a[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout226c10 == 0 -> {
+        a-limb == 0 -> {
             continue
         }
         carry = 0
         j <- [0..bn): {
+            {
+                #{overflow=wrap}
+                sum-at ?= i + j
 
-            #{overflow=wrap}
-            ixout212c21 = c[i + j]: {
-                ok -> it
+                c-limb ?= c[sum-at]
+                b-limb ?= b[j]
+
+                #{overflow=wrap}
+                prod = (c-limb & 4294967295) + (a-limb & 4294967295) * (b-limb & 4294967295) + carry
+
+                #{overflow=wrap}
+                c[sum-at]: {
+                    ok -> it = prod & 4294967295
+
+                    -> _
+                }
+
+                carry = prod >> 32
+            }: {
+                err -> _
 
                 -> _
             }
-
-            ixout212c47 = a[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            ixout212c69 = b[j]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            prod = (ixout212c21 & 4294967295) + (ixout212c47 & 4294967295) * (ixout212c69 & 4294967295) + carry
-
-            #{overflow=wrap}
-            c[i + j] = prod & 4294967295
-            carry = prod >> 32
         }
 
         #{overflow=wrap}
@@ -325,22 +297,20 @@ _rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     (keep-trimming) {
         keep-trimming -> {
             local-cn > 1 -> {
+                {
+                    #{overflow=wrap}
+                    top-limb ?= c[local-cn - 1]
 
-                #{overflow=wrap}
-                c[local-cn - 1] == 0 -> {
-                    {
-                        local-cn-opt3 = local-cn - 1
-                        local-cn-opt3: {
-                            ok -> local-cn = it
+                    top-limb != 0 -> keep-trimming = false
 
-                            ->
-                        }
+                    top-limb == 0 -> {
+                        #{overflow=wrap}
+                        local-cn ?= local-cn - 1
                     }
-                }
+                }: {
+                    err -> _
 
-                #{overflow=wrap}
-                c[local-cn - 1] != 0 -> {
-                    keep-trimming = false
+                    -> _
                 }
             }
             local-cn <= 1 -> keep-trimming = false
@@ -360,24 +330,23 @@ _rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 _rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i <- [0..an): {
-        ixout266c20 = a[i]: {
-            ok -> it
+        {
+            #{overflow=wrap}
+            limb ?= a[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            shifted = (limb << 1) | carry
 
-        new-val = (ixout266c20 << 1) | carry
+            carry = limb >> 31
 
-        ixout269c17 = a[i]: {
-            ok -> it
+            #{overflow=wrap}
+            a[i]: {
+                ok -> it = shifted & 4294967295
 
-            -> _
-        }
-
-        carry = ixout269c17 >> 31
-
-        a[i]: {
-            ok -> it = new-val & 4294967295
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -391,14 +360,12 @@ _rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
         }
 
         {
-
             #{overflow=wrap}
-            new-an-opt = an + 1
-            new-an-opt: {
-                ok -> new-an = it
+            new-an ?= an + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -417,37 +384,33 @@ _rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
     #{overflow=wrap}
     i = an - 1
     (i >= 0) {
-        ixout305c36 = a[i]: {
-            ok -> it
+        {
+            #{overflow=wrap}
+            limb ?= a[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            shifted = (carry << 31) | (limb >> 1)
 
-        new-val = (carry << 31) | (ixout305c36 >> 1)
+            carry = limb & 1
 
-        ixout308c17 = a[i]: {
-            ok -> it
+            a[i]: {
+                ok -> it = shifted & 4294967295
 
-            -> _
-        }
-
-        carry = ixout308c17 & 1
-
-        a[i]: {
-            ok -> it = new-val & 4294967295
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
 
         {
-
             #{overflow=wrap}
-            i-opt3 = i - 1
-            i-opt3: {
-                ok -> i = it
+            i ?= i - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     local-an = an
@@ -457,34 +420,20 @@ _rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
     (keep-trimming) {
         keep-trimming -> {
             local-an > 1 -> {
+                {
+                    #{overflow=wrap}
+                    top-limb ?= a[local-an - 1]
 
-                #{overflow=wrap}
-                ixout390c18 = a[local-an - 1]: {
-                    ok -> it
+                    top-limb != 0 -> keep-trimming = false
 
-                    -> _
-                }
-
-                ixout390c18 == 0 -> {
-                    {
-                        local-an-opt = local-an - 1
-                        local-an-opt: {
-                            ok -> local-an = it
-
-                            ->
-                        }
+                    top-limb == 0 -> {
+                        #{overflow=wrap}
+                        local-an ?= local-an - 1
                     }
-                }
-
-                #{overflow=wrap}
-                ixout393c18 = a[local-an - 1]: {
-                    ok -> it
+                }: {
+                    err -> _
 
                     -> _
-                }
-
-                ixout393c18 != 0 -> {
-                    keep-trimming = false
                 }
             }
             local-an <= 1 -> keep-trimming = false
@@ -509,19 +458,29 @@ _rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
 
     ; 處理 b = 0
-    ixout418c17 = b[0]: {
+    b-first = b[0]: {
         ok -> it
 
         -> _
     }
 
-    bn == 1 && ixout418c17 == 0 -> {
+    bn == 1 && b-first == 0 -> {
         q = with-len(1)
 
-        q[0] = 0
+        ; 下標直寫被 D11 禁止（下標讀回的是 option，直寫就把越界讀變成未檢查的
+        ; 越界寫）；place-match 的 ok 臂裡 `it` 就是可寫的元素位置。
+        q[0]: {
+            ok -> it = 0
+
+            -> _
+        }
         r = with-len(1)
 
-        r[0] = 0
+        r[0]: {
+            ok -> it = 0
+
+            -> _
+        }
         qn = 0
         rn = 0
         return
@@ -534,14 +493,12 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
     bn > buf-len -> buf-len = bn
 
     {
-
         #{overflow=wrap}
-        buf-len-opt = buf-len + 2
-        buf-len-opt: {
-            ok -> buf-len = it
+        buf-len ?= buf-len + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     local-r []i64 = with-len(buf-len)
     local-q []i64 = with-len(buf-len)
@@ -576,14 +533,12 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
         tmp = tmp >> 1
 
         {
-
             #{overflow=wrap}
-            lead-opt = lead + 1
-            lead-opt: {
-                ok -> lead = it
+            lead ?= lead + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     an > 0 && top == 0 -> lead = 0
@@ -599,24 +554,23 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
         ; r = r << 1
         carry-shl = 0
         j <- [0..local-rn): {
-            ixout428c24 = local-r[j]: {
-                ok -> it
+            {
+                #{overflow=wrap}
+                limb ?= local-r[j]
 
-                -> _
-            }
+                #{overflow=wrap}
+                shifted = (limb << 1) | carry-shl
 
-            new-val = (ixout428c24 << 1) | carry-shl
+                carry-shl = limb >> 31
 
-            ixout431c25 = local-r[j]: {
-                ok -> it
+                #{overflow=wrap}
+                local-r[j]: {
+                    ok -> it = shifted & 4294967295
 
-                -> _
-            }
-
-            carry-shl = ixout431c25 >> 31
-
-            local-r[j]: {
-                ok -> it = new-val & 4294967295
+                    -> _
+                }
+            }: {
+                err -> _
 
                 -> _
             }
@@ -629,12 +583,11 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
                 -> _
             }
             {
-                local-rn-opt = local-rn + 1
-                local-rn-opt: {
-                    ok -> local-rn = it
+                local-rn ?= local-rn + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
@@ -643,22 +596,24 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
         limb = i / 32
         bit-pos = i % 32
 
-        ixout456c18 = a[limb]: {
+        a-limb = a[limb]: {
             ok -> it
 
             -> _
         }
 
-        a-bit = (ixout456c18 >> bit-pos) & 1
+        a-bit = (a-limb >> bit-pos) & 1
 
-        ixout460c24 = local-r[0]: {
-            ok -> it
+        {
+            low-limb ?= local-r[0]
 
-            -> _
-        }
+            local-r[0]: {
+                ok -> it = low-limb | a-bit
 
-        local-r[0]: {
-            ok -> it = ixout460c24 | a-bit
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -693,12 +648,11 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
                         -> _
                     }
                     {
-                        k-opt = k + 1
-                        k-opt: {
-                            ok -> k = it
+                        k ?= k + 1
+                    }: {
+                        err -> _
 
-                            ->
-                        }
+                        -> _
                     }
                 }
             }
@@ -706,28 +660,28 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
             q-limb = i / 32
             q-bit = i % 32
 
-            ixout506c28 = local-q[q-limb]: {
-                ok -> it
+            {
+                q-old ?= local-q[q-limb]
 
-                -> _
-            }
+                local-q[q-limb]: {
+                    ok -> it = q-old | (1 << q-bit)
 
-            local-q[q-limb]: {
-                ok -> it = ixout506c28 | (1 << q-bit)
+                    -> _
+                }
+            }: {
+                err -> _
 
                 -> _
             }
         }
 
         {
-
             #{overflow=wrap}
-            i-opt4 = i - 1
-            i-opt4: {
-                ok -> i = it
+            i ?= i - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -742,34 +696,20 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
     (keep-trimming) {
         keep-trimming -> {
             local-qn > 1 -> {
+                {
+                    #{overflow=wrap}
+                    top-limb ?= local-q[local-qn - 1]
 
-                #{overflow=wrap}
-                ixout622c24 = local-q[local-qn - 1]: {
-                    ok -> it
+                    top-limb != 0 -> keep-trimming = false
 
-                    -> _
-                }
-
-                ixout622c24 == 0 -> {
-                    {
-                        local-qn-opt = local-qn - 1
-                        local-qn-opt: {
-                            ok -> local-qn = it
-
-                            ->
-                        }
+                    top-limb == 0 -> {
+                        #{overflow=wrap}
+                        local-qn ?= local-qn - 1
                     }
-                }
-
-                #{overflow=wrap}
-                ixout625c24 = local-q[local-qn - 1]: {
-                    ok -> it
+                }: {
+                    err -> _
 
                     -> _
-                }
-
-                ixout625c24 != 0 -> {
-                    keep-trimming = false
                 }
             }
             local-qn <= 1 -> keep-trimming = false
@@ -870,14 +810,12 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         tmp = tmp >> 1
 
         {
-
             #{overflow=wrap}
-            lead-opt2 = lead + 1
-            lead-opt2: {
-                ok -> lead = it
+            lead ?= lead + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     en > 0 && top == 0 -> lead = 0
@@ -894,13 +832,13 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         e-limb = i / 32
         e-bit = i % 32
 
-        ixout653c20 = exp[e-limb]: {
+        exp-e-limb = exp[e-limb]: {
             ok -> it
 
             -> _
         }
 
-        exp-bit = (ixout653c20 >> e-bit) & 1
+        exp-bit = (exp-e-limb >> e-bit) & 1
 
         new-result []i64
         new-rn = 0
@@ -909,14 +847,12 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
         local-rn = new-rn
 
         {
-
             #{overflow=wrap}
-            i-opt5 = i - 1
-            i-opt5: {
-                ok -> i = it
+            i ?= i - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     result = local-result
@@ -998,13 +934,13 @@ _bytes-to-limbs = (v []byte) (out []i64) {
         limb = bit-pos / 32
         shift = bit-pos % 32
         b64 i64
-        ixout828c16 = v[i]: {
+        v-i = v[i]: {
             ok -> it
 
             -> _
         }
 
-        b64 = ixout828c16 & 255
+        b64 = v-i & 255
         out[limb] = out[limb] | (b64 << shift)
     }
 }
@@ -1019,14 +955,14 @@ _limbs-to-bytes = (v []i64) (out []byte) {
     ; 有效 limb 數 top = 最高非零 limb 下標 + 1（全零時為 1）
     top = 1
     k <- [0..n): {
-        ixout750c9 = v[k]: {
+        v-k = v[k]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        ixout750c9 != 0 -> top = k + 1
+        v-k != 0 -> top = k + 1
     }
 
     ; 最高 limb 的有效位元組數 hb（不含前導零位元組；hi==0 時保留 1）

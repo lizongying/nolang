@@ -36,8 +36,7 @@ sb.init = (cap i64) (r sb) {
 ; s: 字串
 sb.push = (s str) {
     i <- [0..s.len-bytes()): {
-        b-opt = s.byte(i)
-        b = b-opt: {
+        b = s.byte(i): {
             ok -> it
 
             -> 0

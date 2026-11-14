@@ -279,13 +279,13 @@ t-parse = () {
 ; ── next-event：真 socket IO + 跨封包拼接 + EOF ─────────────────
 
 t-io = () {
-    P = 39303
-    lf-fd = net.net-listen('127.0.0.1', P)
+    p = 39303
+    lf-fd = net.net-listen('127.0.0.1', p)
     lf-fd < 0 -> {
         runner.is-true(true, 'io: 埠 39303 不可用，跳過')
         return
     }
-    cf = net.net-dial('127.0.0.1', P)
+    cf = net.net-dial('127.0.0.1', p)
     af = net.net-accept(lf-fd)
     runner.is-true(af >= 0, 'io: 取得已連線 fd')
     net.net-set-recv-timeout(af, 300)
@@ -333,13 +333,13 @@ t-io = () {
 ; ── client.close / is-connected / reconnect（失敗臂）──────────────
 
 t-client-misc = () {
-    P = 39304
-    lf-fd = net.net-listen('127.0.0.1', P)
+    p = 39304
+    lf-fd = net.net-listen('127.0.0.1', p)
     lf-fd < 0 -> {
         runner.is-true(true, 'client: 埠 39304 不可用，跳過')
         return
     }
-    cf = net.net-dial('127.0.0.1', P)
+    cf = net.net-dial('127.0.0.1', p)
     af = net.net-accept(lf-fd)
 
     c = mk-client(af, '')
@@ -398,8 +398,8 @@ t-connect-err = () {
 ; ── server.listen / listen-on / close ────────────────────────────
 
 t-server = () {
-    P = 39301
-    s = sse.listen-on('127.0.0.1', P)
+    p = 39301
+    s = sse.listen-on('127.0.0.1', p)
     runner.eq(srvv(s), 1, 'listen-on: 回 ok')
     srv = s: {
         ok -> it
@@ -408,25 +408,25 @@ t-server = () {
     }
     runner.is-true(srv.fd >= 0, 'listen-on: fd 有效')
     seq(srv.host, '127.0.0.1', 'listen-on: host 落地')
-    runner.eq(srv.port, P, 'listen-on: port 落地')
+    runner.eq(srv.port, p, 'listen-on: port 落地')
 
     ; 同埠重複監聽 ⇒ nil
-    s2 = sse.listen-on('127.0.0.1', P)
+    s2 = sse.listen-on('127.0.0.1', p)
     runner.eq(srvv(s2), 0, 'listen-on: 同埠重複 ⇒ 非 ok')
 
     ; 直接調 server.listen 在同一個被佔用的埠上 ⇒ false 且 fd = -1
     s3 = sse.server{}
-    runner.is-false(s3.listen('127.0.0.1', P), 'server.listen: 埠被佔 ⇒ false')
+    runner.is-false(s3.listen('127.0.0.1', p), 'server.listen: 埠被佔 ⇒ false')
     runner.eq(s3.fd, -1, 'server.listen: 失敗後 fd = -1')
 
     ; 非法位址 ⇒ false（getaddrinfo 失敗）
     s4 = sse.server{}
-    runner.is-false(s4.listen('256.256.256.256', P), 'server.listen: 非法位址 ⇒ false')
+    runner.is-false(s4.listen('256.256.256.256', p), 'server.listen: 非法位址 ⇒ false')
 
     ; close 之後 fd 歸 -1，且同埠可以重新監聽
     srv.close()
     runner.eq(srv.fd, -1, 'server.close: fd 歸 -1')
-    s5 = sse.listen-on('127.0.0.1', P)
+    s5 = sse.listen-on('127.0.0.1', p)
     runner.eq(srvv(s5), 1, 'server.close 後同埠可重新監聽')
     s5b = s5: {
         ok -> it
@@ -440,14 +440,14 @@ t-server = () {
 ; ── server.accept + server-conn 全鏈路 ───────────────────────────
 
 t-accept = () {
-    P = 39301
+    p = 39301
     nl = '\n'
     cr = '\r'
     crlf = cr - nl
     crlf2 = crlf - crlf
     nl2 = nl - nl
 
-    s = sse.listen-on('127.0.0.1', P)
+    s = sse.listen-on('127.0.0.1', p)
     srv = s: {
         ok -> it
 
@@ -462,7 +462,7 @@ t-accept = () {
     dead = sse.server{}
     runner.eq(scv(dead.accept()), 0, 'accept: fd = -1 的 server ⇒ nil')
 
-    cf = net.net-dial('127.0.0.1', P)
+    cf = net.net-dial('127.0.0.1', p)
     runner.is-true(cf >= 0, 'accept: 裸客戶端已連上')
     net.net-set-recv-timeout(cf, 120)
 
@@ -527,7 +527,7 @@ t-accept = () {
 ; ── handshake 的失敗臂 ───────────────────────────────────────────
 
 t-handshake-fail = () {
-    P = 39302
+    p = 39302
     cr = '\r'
     nl = '\n'
     crlf = cr - nl
@@ -541,7 +541,7 @@ t-handshake-fail = () {
     runner.is-false(c0.handshake(), 'handshake: fd = -1 ⇒ false')
     runner.is-false(c0.connected, 'handshake: fd = -1 ⇒ connected 保持 false')
 
-    s = sse.listen-on('127.0.0.1', P)
+    s = sse.listen-on('127.0.0.1', p)
     srv = s: {
         ok -> it
 
@@ -553,7 +553,7 @@ t-handshake-fail = () {
     }
 
     ; 非 GET ⇒ 405，且 accept 回 nil
-    cf = net.net-dial('127.0.0.1', P)
+    cf = net.net-dial('127.0.0.1', p)
     net.net-set-recv-timeout(cf, 120)
     req = 'POST /events HTTP/1.1' - crlf - 'Host: h' - crlf2
     net.net-send(cf, req, req.len-bytes())
@@ -565,7 +565,7 @@ t-handshake-fail = () {
     fs.close(cf)
 
     ; 請求行沒有空白 ⇒ false
-    cf2 = net.net-dial('127.0.0.1', P)
+    cf2 = net.net-dial('127.0.0.1', p)
     net.net-set-recv-timeout(cf2, 120)
     garbage = 'GARBAGE' - crlf2
     net.net-send(cf2, garbage, garbage.len-bytes())
@@ -574,7 +574,7 @@ t-handshake-fail = () {
     fs.close(cf2)
 
     ; 對端立刻關閉（一進去就 EOF）⇒ false
-    cf3 = net.net-dial('127.0.0.1', P)
+    cf3 = net.net-dial('127.0.0.1', p)
     fs.close(cf3)
     r3 = srv.accept()
     runner.eq(scv(r3), 0, 'accept: 對端立刻關閉 ⇒ nil')

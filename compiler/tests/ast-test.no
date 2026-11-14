@@ -48,14 +48,14 @@
 build-forty-two = () (t ast, root i64) {
     t = ast.make()
 
-    lit = ast.add(t, asp.K_INTEGER_LITERAL)
+    lit = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, lit, 0, ast.put-str(t, '42'))
     ast.set-slot(t, lit, 1, ast.put-str(t, '42'))
 
-    es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+    es = ast.add(t, asp.K-EXPRESSION-STATEMENT)
     ast.kid-add(t, es, lit)
 
-    root = ast.add(t, asp.K_PROGRAM)
+    root = ast.add(t, asp.K-PROGRAM)
     ast.set-count(t, root, 0, 1)
     ast.set-slot(t, root, 0, ast.put-str(t, '0'))
     ast.kid-add(t, root, es)
@@ -141,63 +141,63 @@ test-type-string = () {
     t = ast.make()
 
     ; []str
-    el = ast.add(t, asp.K_NAMED_TYPE)
+    el = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, el, 0, ast.put-str(t, 'str'))
-    sl = ast.add(t, asp.K_SLICE_TYPE)
+    sl = ast.add(t, asp.K-SLICE-TYPE)
     ast.kid-add(t, sl, el)
     runner.is-true(ast.type-string(t, sl).eq-full('[]str'), 'SliceType -> []str')
 
     ; ?i64
-    nt = ast.add(t, asp.K_NAMED_TYPE)
+    nt = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, nt, 0, ast.put-str(t, 'i64'))
-    nu = ast.add(t, asp.K_NULLABLE_TYPE)
+    nu = ast.add(t, asp.K-NULLABLE-TYPE)
     ast.kid-add(t, nu, nt)
     runner.is-true(ast.type-string(t, nu).eq-full('?i64'), 'NullableType -> ?i64')
 
     ; *i64 / &i64
-    nt2 = ast.add(t, asp.K_NAMED_TYPE)
+    nt2 = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, nt2, 0, ast.put-str(t, 'i64'))
-    pt = ast.add(t, asp.K_POINTER_TYPE)
+    pt = ast.add(t, asp.K-POINTER-TYPE)
     ast.kid-add(t, pt, nt2)
     runner.is-true(ast.type-string(t, pt).eq-full('*i64'), 'PointerType -> *i64')
 
-    nt3 = ast.add(t, asp.K_NAMED_TYPE)
+    nt3 = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, nt3, 0, ast.put-str(t, 'i64'))
-    vt = ast.add(t, asp.K_VIEW_TYPE)
+    vt = ast.add(t, asp.K-VIEW-TYPE)
     ast.kid-add(t, vt, nt3)
     runner.is-true(ast.type-string(t, vt).eq-full('&i64'), 'ViewType -> &i64')
 
     ; [str]i64
-    k = ast.add(t, asp.K_NAMED_TYPE)
+    k = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, k, 0, ast.put-str(t, 'str'))
-    v = ast.add(t, asp.K_NAMED_TYPE)
+    v = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, v, 0, ast.put-str(t, 'i64'))
-    mp = ast.add(t, asp.K_MAP_TYPE)
+    mp = ast.add(t, asp.K-MAP-TYPE)
     ast.kid-add(t, mp, k)
     ast.kid-add(t, mp, v)
     runner.is-true(ast.type-string(t, mp).eq-full('[str]i64'), 'MapType -> [str]i64')
 
     ; [4]i64（大小是 IntegerLiteral ⇒ exprToString 走 value 分支）
-    sz = ast.add(t, asp.K_INTEGER_LITERAL)
+    sz = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, sz, 0, ast.put-str(t, '4'))
     ast.set-slot(t, sz, 1, ast.put-str(t, '4'))
-    e2 = ast.add(t, asp.K_NAMED_TYPE)
+    e2 = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, e2, 0, ast.put-str(t, 'i64'))
-    ar = ast.add(t, asp.K_ARRAY_TYPE)
+    ar = ast.add(t, asp.K-ARRAY-TYPE)
     ast.kid-add(t, ar, sz)
     ast.kid-add(t, ar, e2)
     runner.is-true(ast.type-string(t, ar).eq-full('[4]i64'), 'ArrayType -> [4]i64')
 
     ; [?]i64（Size == nil）
-    e3 = ast.add(t, asp.K_NAMED_TYPE)
+    e3 = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, e3, 0, ast.put-str(t, 'i64'))
-    ar2 = ast.add(t, asp.K_ARRAY_TYPE)
+    ar2 = ast.add(t, asp.K-ARRAY-TYPE)
     ast.kid-add(t, ar2, 0)
     ast.kid-add(t, ar2, e3)
     runner.is-true(ast.type-string(t, ar2).eq-full('[?]i64'), 'ArrayType with nil Size -> [?]i64')
 
     ; UnionType 不在 typeString 的 switch 內 ⇒ Go 的 default 印 %T
-    un = ast.add(t, asp.K_UNION_TYPE)
+    un = ast.add(t, asp.K-UNION-TYPE)
     runner.is-true(ast.type-string(t, un).eq-full('*parser.UnionType'), 'UnionType -> *parser.UnionType (%T)')
     runner.eq(ast.gaps(t), 0, 'type-string does not count gaps')
 }
@@ -214,66 +214,66 @@ test-expr-string = () {
     t = ast.make()
 
     ; 160 + 16 → 176
-    l = ast.add(t, asp.K_INTEGER_LITERAL)
+    l = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, l, 0, ast.put-str(t, '160'))
-    r = ast.add(t, asp.K_INTEGER_LITERAL)
+    r = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, r, 0, ast.put-str(t, '16'))
-    ie = ast.add(t, asp.K_INFIX_EXPRESSION)
+    ie = ast.add(t, asp.K-INFIX-EXPRESSION)
     ast.set-slot(t, ie, 0, ast.put-str(t, '+'))
     ast.kid-add(t, ie, l)
     ast.kid-add(t, ie, r)
     runner.is-true(ast.expr-string(t, ie).eq-full('176'), '160+16 folds to 176')
 
     ; 160 - 16 → 144
-    l2 = ast.add(t, asp.K_INTEGER_LITERAL)
+    l2 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, l2, 0, ast.put-str(t, '160'))
-    r2 = ast.add(t, asp.K_INTEGER_LITERAL)
+    r2 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, r2, 0, ast.put-str(t, '16'))
-    ie2 = ast.add(t, asp.K_INFIX_EXPRESSION)
+    ie2 = ast.add(t, asp.K-INFIX-EXPRESSION)
     ast.set-slot(t, ie2, 0, ast.put-str(t, '-'))
     ast.kid-add(t, ie2, l2)
     ast.kid-add(t, ie2, r2)
     runner.is-true(ast.expr-string(t, ie2).eq-full('144'), '160-16 folds to 144')
 
     ; 160 * 16 → 2560
-    l3 = ast.add(t, asp.K_INTEGER_LITERAL)
+    l3 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, l3, 0, ast.put-str(t, '160'))
-    r3 = ast.add(t, asp.K_INTEGER_LITERAL)
+    r3 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, r3, 0, ast.put-str(t, '16'))
-    ie3 = ast.add(t, asp.K_INFIX_EXPRESSION)
+    ie3 = ast.add(t, asp.K-INFIX-EXPRESSION)
     ast.set-slot(t, ie3, 0, ast.put-str(t, '*'))
     ast.kid-add(t, ie3, l3)
     ast.kid-add(t, ie3, r3)
     runner.is-true(ast.expr-string(t, ie3).eq-full('2560'), '160*16 folds to 2560')
 
     ; 160 / 16 → 10
-    l4 = ast.add(t, asp.K_INTEGER_LITERAL)
+    l4 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, l4, 0, ast.put-str(t, '160'))
-    r4 = ast.add(t, asp.K_INTEGER_LITERAL)
+    r4 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, r4, 0, ast.put-str(t, '16'))
-    ie4 = ast.add(t, asp.K_INFIX_EXPRESSION)
+    ie4 = ast.add(t, asp.K-INFIX-EXPRESSION)
     ast.set-slot(t, ie4, 0, ast.put-str(t, '/'))
     ast.kid-add(t, ie4, l4)
     ast.kid-add(t, ie4, r4)
     runner.is-true(ast.expr-string(t, ie4).eq-full('10'), '160/16 folds to 10')
 
     ; 160 / 0 → 不折疊（Go 的 evalConstIntExpr 在除數為 0 時回 false）
-    l5 = ast.add(t, asp.K_INTEGER_LITERAL)
+    l5 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, l5, 0, ast.put-str(t, '160'))
-    r5 = ast.add(t, asp.K_INTEGER_LITERAL)
+    r5 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, r5, 0, ast.put-str(t, '0'))
-    ie5 = ast.add(t, asp.K_INFIX_EXPRESSION)
+    ie5 = ast.add(t, asp.K-INFIX-EXPRESSION)
     ast.set-slot(t, ie5, 0, ast.put-str(t, '/'))
     ast.kid-add(t, ie5, l5)
     ast.kid-add(t, ie5, r5)
     runner.is-true(ast.expr-string(t, ie5).eq-full('160 / 0'), '160/0 does NOT fold')
 
     ; a + b → 不折疊（運算元不是整數字面量）
-    la = ast.add(t, asp.K_IDENTIFIER)
+    la = ast.add(t, asp.K-IDENTIFIER)
     ast.set-slot(t, la, 0, ast.put-str(t, 'a'))
-    rb = ast.add(t, asp.K_IDENTIFIER)
+    rb = ast.add(t, asp.K-IDENTIFIER)
     ast.set-slot(t, rb, 0, ast.put-str(t, 'b'))
-    ie6 = ast.add(t, asp.K_INFIX_EXPRESSION)
+    ie6 = ast.add(t, asp.K-INFIX-EXPRESSION)
     ast.set-slot(t, ie6, 0, ast.put-str(t, '+'))
     ast.kid-add(t, ie6, la)
     ast.kid-add(t, ie6, rb)
@@ -282,7 +282,7 @@ test-expr-string = () {
     ; 'x' 字串字面量：Raw 空 ⇒ 用單引號包住 value
     ; ⚠️ nolang 的 "..." 是 char 字面量，所以「單引號字元」寫成 "'"，
     ;    不能寫成 '\''（也不必跳脫）。
-    ss = ast.add(t, asp.K_STRING_LITERAL)
+    ss = ast.add(t, asp.K-STRING-LITERAL)
     ast.set-slot(t, ss, 0, ast.put-str(t, 'x'))
     runner.is-true(ast.expr-string(t, ss).eq-full("'" - 'x' - "'"), 'StringLiteral without Raw -> quoted x')
 }
@@ -299,43 +299,47 @@ test-expr-string = () {
 ; 測試 unsupported-is-live
 test-unsupported-is-live = () {
     t = ast.make()
-    v = ast.add(t, asp.K_ANNOTATION_STRUCT_VALUE)
+    v = ast.add(t, asp.K-ANNOTATION-STRUCT-VALUE)
     _ = ast.dump(t, v)
     runner.eq(ast.unsupported(t), 1, 'annotationStructField helper is counted as unsupported')
 }
 
 ; ═══════════════════════════════════════════════
-; 8. 語料覆蓋：72 種節點都有 id 且名字唯一
+; 8. 語料覆蓋：74 種節點都有 id 且名字唯一
 ; ═══════════════════════════════════════════════
 
 ; 測試 kind-table
 test-kind-table = () {
 
-    ; ⚠️ 這裡必須先把跨模組常量落到區域變數。
-    ;    已實測的 src/ 缺陷（bug #85 家族，見 docs/design/nolang-selfhost.md §9）：
-    ;       runner.is-true(asp.kind-name(asp.K_PROGRAM).eq-full('Program'), 'a')
-    ;       ⇒ EmitLLVM: MIR->LLVM: func tk: consumer reads value 0 (NoVal)
-    ;    把常量參數換成**字面量**（asp.kind-name(53)）或先存成區域變數都正常；
-    ;    `print(asp.kind-name(asp.K_PROGRAM))` 也正常。
-    ;    觸發條件＝「跨模組常量當作**嵌套呼叫**的引數」。
-    kprog = asp.K_PROGRAM
-    runner.eq(asp.KIND-COUNT, 72, 'KIND-COUNT = 72')
-    runner.eq(kprog, 53, 'Program is kind 53')
+    ; 這幾條原本寫成「跨模組常量直接當呼叫引數」，會撞上一個已修的編譯器缺陷
+    ; （bug #85 家族，見 docs/design/nolang-selfhost.md §9）：
+    ;   print(asp.kind-name(asp.K-PROGRAM))
+    ;   ⇒ EmitLLVM: MIR->LLVM: func ...: consumer reads value 0 (NoVal)
+    ; 根因有兩個，都已修掉：
+    ;   1. `<模組>.<常量>` 在**值位置**沒有解析路徑（lowerDotRead 只認型別常量和
+    ;      結構體欄位），模組名被當成值降成 void 常量 ⇒ 整個表達式 NoVal；
+    ;      現在 lowerModuleScopedBinding 會把它接到該模組的 global。
+    ;   2. comptime 折疊把「taken 分支裡有不可折疊語句」誤判成「分支沒執行」，
+    ;      於是折出錯的常量（evalConstIfBranch）。現在改成一律放棄折疊。
+    ; 下面仍先落到區域變數，只是為了讓失敗訊息看得懂，不再有繞路作用。
+    kprog = asp.K-PROGRAM
+    runner.eq(asp.KIND-COUNT, 74, 'KIND-COUNT = 74')
+    runner.eq(kprog, 55, 'Program is kind 55')
 
     ; SurfaceMatch 是 2026-10-16 新增的種類（dump.go 的 SurfaceMatch case）。
-    ; 它被**追加在 switch 尾端**（default: 之前），所以 id 65 之後的種類才位移，
-    ; 上面釘的 53/35/39 都在位移區之前，必須保持不變。
-    ; ⚠️ 如果不釘它，KIND-COUNT 就算寫錯 71 也只會被數字比對抓到，
+    ; 它被**追加在 switch 尾端**（default: 之前），之後的種類才位移。目前它在
+    ; 67（前面又多了 K-STRUCT-FIELD 等兩個種類，所以舊值 65 已不成立）。
+    ; ⚠️ 如果不釘它，KIND-COUNT 就算寫錯也只會被數字比對抓到，
     ;    而 kind-name / kind-id 兩張表對這個種類的條目會是**死條目**——
     ;    沒有任何人呼叫它，位移錯了也沒人報警。
-    ksrf = asp.K_SURFACE_MATCH
-    runner.eq(ksrf, 65, 'SurfaceMatch is kind 65')
+    ksrf = asp.K-SURFACE-MATCH
+    runner.eq(ksrf, 67, 'SurfaceMatch is kind 67')
     runner.eq(asp.kind-id('SurfaceMatch'), ksrf, 'kind-id(SurfaceMatch) round-trips')
-    runner.is-true(asp.kind-name(ksrf).eq-full('SurfaceMatch'), 'kind-name(65) = SurfaceMatch')
-    runner.eq(asp.K_IDENTIFIER, 35, 'Identifier is kind 35')
-    runner.eq(asp.K_INTEGER_LITERAL, 39, 'IntegerLiteral is kind 39')
+    runner.is-true(asp.kind-name(ksrf).eq-full('SurfaceMatch'), 'kind-name(67) = SurfaceMatch')
+    runner.eq(asp.K-IDENTIFIER, 37, 'Identifier is kind 37')
+    runner.eq(asp.K-INTEGER-LITERAL, 41, 'IntegerLiteral is kind 41')
     runner.eq(asp.kind-id('Program'), kprog, 'kind-id(Program) round-trips')
-    runner.is-true(asp.kind-name(kprog).eq-full('Program'), 'kind-name(53) = Program')
+    runner.is-true(asp.kind-name(kprog).eq-full('Program'), 'kind-name(55) = Program')
     runner.eq(asp.kind-id('NoSuchNode'), 0, 'kind-id of an unknown name is 0')
 }
 
@@ -359,29 +363,29 @@ build-surface-match = () (t ast, root i64) {
     t = ast.make()
 
     ; Matched = IndexExpression{ Identifier{h}, IntegerLiteral{0} }
-    idh = ast.add(t, asp.K_IDENTIFIER)
+    idh = ast.add(t, asp.K-IDENTIFIER)
     ast.set-slot(t, idh, 0, ast.put-str(t, 'h'))
-    ix0 = ast.add(t, asp.K_INTEGER_LITERAL)
+    ix0 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, ix0, 0, ast.put-str(t, '0'))
     ast.set-slot(t, ix0, 1, ast.put-str(t, '0'))
-    ix = ast.add(t, asp.K_INDEX_EXPRESSION)
+    ix = ast.add(t, asp.K-INDEX-EXPRESSION)
     ast.kid-add(t, ix, idh)
     ast.kid-add(t, ix, ix0)
 
     ; 臂 1 體：BlockStatement{inline: true} [ LetStatement{name: it, type: i64, value: 0} ]
     ;   type / value 是 OF-TYPE / OF-LOCAL(nodeString) ⇒ ast.no 依 CHILD 序號
     ;   自行算出，不需手填槽位。
-    nt = ast.add(t, asp.K_NAMED_TYPE)
+    nt = ast.add(t, asp.K-NAMED-TYPE)
     ast.set-slot(t, nt, 0, ast.put-str(t, 'i64'))
     ast.set-slot(t, nt, 1, ast.put-str(t, 'true'))
-    lv0 = ast.add(t, asp.K_INTEGER_LITERAL)
+    lv0 = ast.add(t, asp.K-INTEGER-LITERAL)
     ast.set-slot(t, lv0, 0, ast.put-str(t, '0'))
     ast.set-slot(t, lv0, 1, ast.put-str(t, '0'))
-    lt = ast.add(t, asp.K_LET_STATEMENT)
+    lt = ast.add(t, asp.K-LET-STATEMENT)
     ast.set-slot(t, lt, 0, ast.put-str(t, 'it'))
     ast.kid-add(t, lt, nt)
     ast.kid-add(t, lt, lv0)
-    blk1 = ast.add(t, asp.K_BLOCK_STATEMENT)
+    blk1 = ast.add(t, asp.K-BLOCK-STATEMENT)
     ast.set-slot(t, blk1, 0, ast.put-str(t, 'true'))
     ast.set-count(t, blk1, 0, 1)
     ast.kid-add(t, blk1, lt)
@@ -394,15 +398,15 @@ build-surface-match = () (t ast, root i64) {
     ;    挂起，rc=137）。先 kid-add(…, 0) 佔住那一格即可解除自別名。
     ;    這不是 ast.no 的缺陷，而是 arena 構造的硬性次序要求：
     ;    「建父節點後立刻 kid-add 其子」對**無子節點**者仍不夠。
-    esnil = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+    esnil = ast.add(t, asp.K-EXPRESSION-STATEMENT)
     ast.kid-add(t, esnil, 0)
-    blk2 = ast.add(t, asp.K_BLOCK_STATEMENT)
+    blk2 = ast.add(t, asp.K-BLOCK-STATEMENT)
     ast.set-slot(t, blk2, 0, ast.put-str(t, 'true'))
     ast.set-count(t, blk2, 0, 1)
     ast.kid-add(t, blk2, esnil)
 
     ; SurfaceMatch{arms: 2}：Matched 走 kid，兩臂資料走 aux（每臂 12 個值）
-    sm = ast.add(t, asp.K_SURFACE_MATCH)
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
     ast.set-slot(t, sm, 0, ast.put-str(t, '2'))
     ast.kid-add(t, sm, ix)
     ast.helper-begin(t, sm, 2)
@@ -435,10 +439,10 @@ build-surface-match = () (t ast, root i64) {
     ast.aux-add(t, 0)
     ast.aux-add(t, blk2)
 
-    es = ast.add(t, asp.K_EXPRESSION_STATEMENT)
+    es = ast.add(t, asp.K-EXPRESSION-STATEMENT)
     ast.kid-add(t, es, sm)
 
-    root = ast.add(t, asp.K_PROGRAM)
+    root = ast.add(t, asp.K-PROGRAM)
     ast.set-slot(t, root, 0, ast.put-str(t, '0'))
     ast.set-count(t, root, 0, 1)
     ast.kid-add(t, root, es)

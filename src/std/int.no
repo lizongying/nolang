@@ -31,14 +31,12 @@ int.to-str = () (out str) {
     tmp = n
     (tmp != 0) {
         {
-
             #{overflow=wrap}
-            digits-opt = digits + 1
-            digits-opt: {
-                ok -> digits = it
+            digits ?= digits + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         #{overflow=wrap}
@@ -48,14 +46,12 @@ int.to-str = () (out str) {
 
     neg == 1 -> {
         {
-
             #{overflow=wrap}
-            total-opt = total + 1
-            total-opt: {
-                ok -> total = it
+            total ?= total + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -82,14 +78,12 @@ int.to-str = () (out str) {
         n = n / 10
 
         {
-
             #{overflow=wrap}
-            pos-opt = pos - 1
-            pos-opt: {
-                ok -> pos = it
+            pos ?= pos - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     neg == 1 -> {

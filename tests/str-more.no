@@ -564,19 +564,40 @@ test-split-n = () {
     n1 = parts1.len()
     print(n1); expect: 2
     i <- [0..n1): {
-        print(parts1[i])
+        {
+            elem ?= parts1[i]
+            print(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     parts2 = 'a-b-c'.split-n('-', 0)
     n2 = parts2.len()
     print(n2); expect: 3 (unlimited)
     i <- [0..n2): {
-        print(parts2[i])
+        {
+            elem ?= parts2[i]
+            print(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     parts3 = 'abc'.split-n('-', 1)
     n3 = parts3.len()
     print(n3); expect: 1 (no sep found)
     i <- [0..n3): {
-        print(parts3[i])
+        {
+            elem ?= parts3[i]
+            print(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 test-split-n()
@@ -589,13 +610,27 @@ test-lines = () {
     n1 = lines1.len()
     print(n1); expect: 3
     i <- [0..n1): {
-        print(lines1[i])
+        {
+            elem ?= lines1[i]
+            print(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     lines2 = 'a\r\nb'.lines()
     n2 = lines2.len()
     print(n2); expect: 2
     i <- [0..n2): {
-        print(lines2[i])
+        {
+            elem ?= lines2[i]
+            print(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     lines3 = 'a\nb\n'.lines()
     n3 = lines3.len()
@@ -627,7 +662,7 @@ test-to-hex = () {
 test-to-hex()
 print('---')
 
-; 测试 str.at (方法)
+; 测试 at 方法（界内保留覆盖）；越界改用 s[i]，结果是 err 而非 nil
 ...
 test-at = () {
     v1 = 'abc'.at(0)
@@ -641,27 +676,13 @@ test-at = () {
 
     ; expect: 97
 
-    v2 = 'abc'.at(5)
-    v2: {
-        nil -> print('nil')
-
+    'abc'[5]: {
         err -> print('err')
 
-        -> print(it)
+        -> print('not err')
     }
 
-    ; expect: nil
-
-    v3 = 'abc'.at(-1)
-    v3: {
-        nil -> print('nil')
-
-        err -> print('err')
-
-        -> print(it)
-    }
-
-    ; expect: nil
+    ; expect: err
 
     v4 = 'abc'.at(2)
     v4: {

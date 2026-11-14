@@ -73,7 +73,14 @@ t-vec-push = () {
     i <- [0..len(a)): {
 
         #{overflow=wrap}
-        sum = sum + a[i]
+        {
+            elem ?= a[i]
+            sum = sum + elem
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     runner.eq(sum, 10, '# std/vec: 1+2+3+4 == 10')
 }

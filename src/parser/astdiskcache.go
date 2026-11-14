@@ -402,7 +402,16 @@ import (
 // 2026-11-13.2：Parameter 刪除 DefaultExpr 欄位（參數默認值語法整體移除）。
 // gob blob 形狀改變，舊 blob 重用會把已刪欄位當成 trailing data 或直接解碼失敗。
 // 故必 bump。
-const ASTVersion = "2026-11-13.2"
+// 2026-11-14.1：collectLocalTypes 新增「純別名到已知位置型容器」（`c = s`）的
+// idxLocalTypes 登記。舊 blob 的 IdxLocalTypes 少這批條目，重用會讓
+// `c0 ?= c[0]` 的元素型別重新推不出 ⇒ `__unwrap_N` 無型別 ⇒ ok 臂綁成
+// `const c0:void`（§5.2q 的 deep-clone t4）。故必 bump。
+// 2026-11-14.2：option 算術主體的型別推斷（optionArithOperandInt 系列）新增
+// 「呼叫運算元」這一格（inferCallArithSubjectElem；回傳 `?T` 的呼叫取 T）。
+// 舊 blob 帶的 `__match_subj_L_C` 型別條目少這批，重用會讓
+// `n = data.len() - 1: { ok -> it }` 這類主體不歸一化 ⇒ ok 臂的 `it` 無綁定
+// ⇒ 觀測值恆為 fallback 臂（§5.2v）。故必 bump。
+const ASTVersion = "2026-11-14.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

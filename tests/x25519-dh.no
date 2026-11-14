@@ -78,9 +78,17 @@ test-dh = () (pass bool) {
     ; 檢查 Alice 公鑰
     alice-pub-ok = true
     i <- [0..32): {
-        alice.pub[i] != alice-pub-expected[i] -> {
-            alice-pub-ok = false
-            break
+        {
+            actual ?= alice.pub[i]
+            expect ?= alice-pub-expected[i]
+            actual != expect -> {
+                alice-pub-ok = false
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     alice-pub-ok == false -> {
@@ -91,9 +99,17 @@ test-dh = () (pass bool) {
     ; 檢查 Bob 公鑰
     bob-pub-ok = true
     i <- [0..32): {
-        bob.pub[i] != bob-pub-expected[i] -> {
-            bob-pub-ok = false
-            break
+        {
+            actual ?= bob.pub[i]
+            expect ?= bob-pub-expected[i]
+            actual != expect -> {
+                bob-pub-ok = false
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     bob-pub-ok == false -> {
@@ -135,9 +151,17 @@ test-dh = () (pass bool) {
     shared-expected = hex-to-bytes('4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742')
     shared-ok = true
     i <- [0..32): {
-        alice.shared[i] != shared-expected[i] -> {
-            shared-ok = false
-            break
+        {
+            actual ?= alice.shared[i]
+            expect ?= shared-expected[i]
+            actual != expect -> {
+                shared-ok = false
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     shared-ok == false -> {

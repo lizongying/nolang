@@ -5553,6 +5553,78 @@ func ovfOptionArithPayloadType(v parser.Expression, varTypes map[string]string, 
 	return lt
 }
 
+// placeWriteMayDropOverflow 判斷 place-match 臂內 `it = v` 的 v 是否會在寫回
+// plain 槽位時丟掉溢位 err。
+//
+// 第一優先交給 ovfOptionArithPayloadType（靜態型別可見時最精確）。但它要求
+// 兩個運算元都能從 varTypes 推出有號整數型別；實務上「值位 match 解包出來的
+// 變數」（如 bzip2 的 `slot-at = tmp-base[l]: { ok -> it ... }`）在 checker 的
+// varTypes 裡沒有紀錄，精確判定會回空而漏報 —— 偏偏那正是使用者點名的形狀。
+//
+// 因此補一條保守語法兜底：根運算子是 + - * / %、不是純字面量算術、
+// 且算術樹裡不是「每個可辨識的非常數葉子都是 byte/char」（byte/char 算術不受
+// option 管轄）時，一律視為 ?i64 並要求作者顯式消費。查不到型別的葉子按
+// 預設整數 i64 處理 —— 寧可要求一行 `?=`，不可再靜默回繞。
+func placeWriteMayDropOverflow(v parser.Expression, varTypes map[string]string, selfType string) (string, bool) {
+	if p := ovfOptionArithPayloadType(v, varTypes, selfType); p != "" {
+		return p, true
+	}
+	root := v
+	for {
+		g, ok := root.(*parser.GroupedExpression)
+		if !ok {
+			break
+		}
+		root = g.Expression
+	}
+	inf, ok := root.(*parser.InfixExpression)
+	if !ok || !ovfOptionArithRootOps[inf.Operator] || isPureLiteralArith(v) {
+		return "", false
+	}
+	// `-` 同時是字串串接運算子：`name - ': ' - value` 這類 place-match
+	// 直寫（src/std/net/http.no 的 add-header）不是整數算術，不可誤報。
+	if t := inferExprType(root, varTypes, nil, selfType); t != "" {
+		if plain := stripModulePrefix(ty.StripOptionRaw(t)); !isIntType(plain) {
+			return "", false
+		}
+	}
+	allByte := true
+	seen := false
+	sawString := false
+	var scan func(parser.Expression)
+	scan = func(e parser.Expression) {
+		switch x := e.(type) {
+		case *parser.GroupedExpression:
+			scan(x.Expression)
+		case *parser.InfixExpression:
+			scan(x.Left)
+			scan(x.Right)
+		case *parser.Identifier:
+			seen = true
+			t := varTypes[x.Value]
+			if t != "byte" && t != "char" {
+				allByte = false
+			}
+		case *parser.StringLiteral:
+			// `it + '!'`、`name - ': ' - value` 是字串串接，不是整數算術。
+			sawString = true
+		case *parser.IntegerLiteral, *parser.FloatLiteral, *parser.BooleanLiteral:
+			// 常數葉子既不提供 byte 證據，也不推翻 byte 判定。
+		default:
+			seen = true
+			allByte = false
+		}
+	}
+	scan(v)
+	if sawString {
+		return "", false
+	}
+	if !seen || !allByte {
+		return "i64", true
+	}
+	return "", false
+}
+
 // isPureLiteralArith 回報一棵算術樹是否「葉子全是字面量」，與 parser/lowering.go
 // 的 infixAllLiterals 逐字同構（那正是 rhsDefinitelyNonOption 用來拒絕 `?=` 的判據）。
 //
@@ -10998,6 +11070,37 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			if id, ok := sm.Matched.(*parser.Identifier); ok {
 				mt = varTypes[id.Value]
 			}
+			// D9 place-match：subject 是索引／欄位時，臂內的 `it = v` 是對
+			// plain 槽位的寫回（parser/lowering.go rewriteItPlaceWritesStmts）。
+			// v 若本質是 option 算術（D6：+ - * / % 的結果恆 ?T，
+			// #{overflow=wrap} 只改溢位取值、不改結果型別），寫回只取 payload，
+			// 溢位 err 被靜默丟掉：實測 `it = a + 1`（a = i64::MAX，無注解）
+			// 得到 2's 補數回繞而非 err。要求作者改用 `a[i] ?= v` + 塊 match
+			// 顯式消費 option。
+			switch sm.Matched.(type) {
+			case *parser.IndexExpression, *parser.DotExpression:
+				for _, arm := range sm.Arms {
+					if arm.Body == nil {
+						continue
+					}
+					for _, bStmt := range arm.Body.Statements {
+						let, ok := bStmt.(*parser.LetStatement)
+						if !ok || let.Name == nil || let.Name.Value != "it" ||
+							let.Value == nil || isPureLiteralArith(let.Value) {
+							continue
+						}
+						if p, bad := placeWriteMayDropOverflow(let.Value, varTypes, selfType); bad {
+							pos := let.Value.Pos()
+							results = append(results, ValidateResult{
+								TraceID: "itovf9a1",
+								Line:    pos.Line,
+								Column:  pos.Column,
+								Message: fmt.Sprintf("place-match write `it = ...` discards the overflow err of ?%s; use `a[i] ?= <expr>` inside a block match to handle it explicitly", p) + optionUnwrapAssignHint("?"+p),
+							})
+						}
+					}
+				}
+			}
 			for _, arm := range sm.Arms {
 				for _, b := range matchArmBindings(sm, &arm, mt) {
 					if b.Name != "" {
@@ -11067,6 +11170,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						// ok 臂、#{index-out} 的 match 臂）右值也都是 `it`／字面量，不是
 						// option 算術。留下來只會是一條永不執行、卻會在未來 parser 改動時
 						// 誤開火的死規則。
+						//
+						// place-match 臂內 `it = <option 算術>` 的門禁在 SurfaceMatch
+						// 分支（itovf9a1），那裡才看得見使用者寫的糖形態。
 						//
 						// 有符號整數相減溢位：未標註時預設回傳 option<int>。
 						subDefaultOpt := false

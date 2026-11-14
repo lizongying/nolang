@@ -116,20 +116,20 @@ t-convert = () {
     ; 這兩條斷言就是該修復的迴歸釘（見檔頭「已修 1」）。
     b = t.to-bytes()
     runner.eq(b.len(), 12, 'to-bytes len == 12')
-    ixout111c16 = b[0]: {
+    b-0 = b[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout111c16, 72, 'to-bytes[0] == 72 (H)')
-    ixout112c16 = b[11]: {
+    runner.eq(b-0, 72, 'to-bytes[0] == 72 (H)')
+    b-11 = b[11]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout112c16, 100, 'to-bytes[11] == 100 (d)')
+    runner.eq(b-11, 100, 'to-bytes[11] == 100 (d)')
     h = t.to-hex()
     runner.str-eq(h, '48656C6C6F2C20576F726C64', 24, 'to-hex uppercase')
 }
@@ -152,20 +152,20 @@ t-to-bytes-semantics = () {
         }
     }
     runner.eq(b.len(), 12, 'byte-loop len == 12')
-    ixout135c16 = b[0]: {
+    b-0 = b[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout135c16, 72, 'byte-loop [0] == 72 (H)')
-    ixout136c16 = b[11]: {
+    runner.eq(b-0, 72, 'byte-loop [0] == 72 (H)')
+    b-11 = b[11]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout136c16, 100, 'byte-loop [11] == 100 (d)')
+    runner.eq(b-11, 100, 'byte-loop [11] == 100 (d)')
 }
 
 ; 構造斷言：txt.from-str / from-bytes / from-chars 產生長度與內容正確的 txt（from-chars 回傳 ?txt）
@@ -232,10 +232,17 @@ t-slice-at = () {
     b = t.slice(7, 12)
     runner.str-eq(b.to-str(), 'World', 5, 'slice(7,12)')
 
-    ; txt.at 已廢棄：字符（碼點）索引、回傳 ?byte、越界 nil —— 新代碼請用 t[i]
+    ; txt.at 已廢棄：界內仍可用（保留覆蓋）；越界斷言改用推薦寫法 t[i]，
+    ; 結果是 err（code.index-out），不再是 nil
     runner.eq(at-or(t.at(0), -1), 72, 'at(0) == 72')
     runner.eq(at-or(t.at(1), -1), 101, 'at(1) == 101')
-    runner.eq(at-or(t.at(99), -7), -7, 'at(99) nil on out of bounds')
+    is-err = false
+    t[99]: {
+        err -> is-err = true
+
+        -> _
+    }
+    runner.is-true(is-err, 't[99] out of range == err')
     cp, clen = t.decode-cp(0)
     runner.eq(cp, 72, 'decode-cp(0) codepoint == 72')
     runner.eq(clen, 1, 'decode-cp(0) byte length == 1')
@@ -466,76 +473,76 @@ t-split = () {
     t txt = 'a,b,c'
     p = t.split(',')
     runner.eq(p.len(), 3, 'split len == 3')
-    ixout424c20 = p[0]: {
+    p-0 = p[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout424c20.to-str(), 'a', 1, 'split[0]')
-    ixout425c20 = p[1]: {
+    runner.str-eq(p-0.to-str(), 'a', 1, 'split[0]')
+    p-1 = p[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout425c20.to-str(), 'b', 1, 'split[1]')
-    ixout426c20 = p[2]: {
+    runner.str-eq(p-1.to-str(), 'b', 1, 'split[1]')
+    p-2 = p[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout426c20.to-str(), 'c', 1, 'split[2]')
+    runner.str-eq(p-2.to-str(), 'c', 1, 'split[2]')
 
     ; 分隔符不存在 -> 單一元素（原文）
     q = t.split(';')
     runner.eq(q.len(), 1, 'split no-match len == 1')
-    ixout431c20 = q[0]: {
+    q-0 = q[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout431c20.to-str(), 'a,b,c', 5, 'split no-match keeps whole')
+    runner.str-eq(q-0.to-str(), 'a,b,c', 5, 'split no-match keeps whole')
 
     ; 前導 / 尾隨 / 相鄰分隔符 -> **空元素**，來源是 `txt.slice(x, x)`。
     ; ⚠️ slice 原本對空區間不設 `out.len`（回傳未初始化 txt、非決定性），
     ;    已修（見檔頭「已修 3」）—— 這三條斷言就是該修復的迴歸釘。
     r []txt = txt.from-str(',a,').split(',')
     runner.eq(r.len(), 3, 'split leading/trailing len == 3')
-    ixout438c16 = r[0]: {
+    r-0 = r[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout438c16.len(), 0, 'split leading empty')
-    ixout439c16 = r[2]: {
+    runner.eq(r-0.len(), 0, 'split leading empty')
+    r-2 = r[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout439c16.len(), 0, 'split trailing empty')
-    ixout440c20 = r[1]: {
+    runner.eq(r-2.len(), 0, 'split trailing empty')
+    r-1 = r[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout440c20.to-str(), 'a', 1, 'split middle == a')
+    runner.str-eq(r-1.to-str(), 'a', 1, 'split middle == a')
 
     ; 相鄰分隔符 -> 中間也是空元素
     adj []txt = txt.from-str('a,,b').split(',')
     runner.eq(adj.len(), 3, 'split adjacent len == 3')
-    ixout445c18 = adj[1]: {
+    adj-1 = adj[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout445c18.len(), 0, 'split adjacent middle empty')
+    runner.eq(adj-1.len(), 0, 'split adjacent middle empty')
 
     ; slice(x, x) 直接呼叫也要是長度 0
     runner.eq(txt.from-str('abcdef').slice(0, 0).len(), 0, 'slice(0,0).len() == 0')
@@ -544,94 +551,94 @@ t-split = () {
     ; split-n
     s = t.split-n(',', 1)
     runner.eq(s.len(), 2, 'split-n maxsplit=1 len == 2')
-    ixout454c20 = s[0]: {
+    s-0 = s[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout454c20.to-str(), 'a', 1, 'split-n[0]')
-    ixout455c20 = s[1]: {
+    runner.str-eq(s-0.to-str(), 'a', 1, 'split-n[0]')
+    s-1 = s[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout455c20.to-str(), 'b,c', 3, 'split-n[1] keeps rest')
+    runner.str-eq(s-1.to-str(), 'b,c', 3, 'split-n[1] keeps rest')
 
     ; fields：任意空白（含 tab）分段，且吃掉前後空白
     fs = txt.from-str('  one\ttwo  three ')
     print('DBG fromstr=[' - fs.to-str() - ']')
     f []txt = fs.fields()
     print('DBG f.len=' - f.len().to-str())
-    ixout462c25 = f[0]: {
+    f-0 = f[0]: {
         ok -> it
 
         -> _
     }
 
-    print('DBG f0=[' - ixout462c25.to-str() - ']')
-    ixout463c25 = f[1]: {
+    print('DBG f0=[' - f-0.to-str() - ']')
+    f-1 = f[1]: {
         ok -> it
 
         -> _
     }
 
-    print('DBG f1=[' - ixout463c25.to-str() - ']')
-    ixout464c25 = f[2]: {
+    print('DBG f1=[' - f-1.to-str() - ']')
+    f-2 = f[2]: {
         ok -> it
 
         -> _
     }
 
-    print('DBG f2=[' - ixout464c25.to-str() - ']')
+    print('DBG f2=[' - f-2.to-str() - ']')
     runner.eq(f.len(), 3, 'fields len == 3')
-    ixout466c20 = f[0]: {
+    f-0-2 = f[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout466c20.to-str(), 'one', 3, 'fields[0]')
-    ixout467c20 = f[1]: {
+    runner.str-eq(f-0-2.to-str(), 'one', 3, 'fields[0]')
+    f-1-2 = f[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout467c20.to-str(), 'two', 3, 'fields[1]')
-    ixout468c20 = f[2]: {
+    runner.str-eq(f-1-2.to-str(), 'two', 3, 'fields[1]')
+    f-2-2 = f[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout468c20.to-str(), 'three', 5, 'fields[2]')
+    runner.str-eq(f-2-2.to-str(), 'three', 5, 'fields[2]')
 
     ; lines：\n 與 \r\n 都要切
     l []txt = txt.from-str('a\nb\r\nc').lines()
     runner.eq(l.len(), 3, 'lines len == 3')
-    ixout473c20 = l[0]: {
+    l-0 = l[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout473c20.to-str(), 'a', 1, 'lines[0]')
-    ixout474c20 = l[1]: {
+    runner.str-eq(l-0.to-str(), 'a', 1, 'lines[0]')
+    l-1 = l[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout474c20.to-str(), 'b', 1, 'lines[1] strips CR')
-    ixout475c20 = l[2]: {
+    runner.str-eq(l-1.to-str(), 'b', 1, 'lines[1] strips CR')
+    l-2 = l[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(ixout475c20.to-str(), 'c', 1, 'lines[2]')
+    runner.str-eq(l-2.to-str(), 'c', 1, 'lines[2]')
 }
 
 ; ── hex / 相等 / 邊界 ──────────────────────────

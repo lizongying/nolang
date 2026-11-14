@@ -62,9 +62,17 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
 bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     eq = true
     i <- [0..32): {
-        a[i] != b[i] -> {
-            eq = false
-            break
+        {
+            x ?= a[i]
+            y ?= b[i]
+            x != y -> {
+                eq = false
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
 }
@@ -73,8 +81,15 @@ bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
 print-bytes = (label str, a [32]byte) {
     eprint(label)
     i <- [0..32): {
-        eprint(' ')
-        eprint(a[i])
+        {
+            elem ?= a[i]
+            eprint(' ')
+            eprint(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -83,14 +98,28 @@ x-alice-only = () {
     alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
     eprint('alice-priv: ')
     i <- [0..32): {
-        eprint(alice-priv[i])
-        eprint(' ')
+        {
+            elem ?= alice-priv[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     alice-pub = x25519.x25519-scalarmult-base(alice-priv)
     eprint('alice-pub: ')
     i <- [0..32): {
-        eprint(alice-pub[i])
-        eprint(' ')
+        {
+            elem ?= alice-pub[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
     ok = bytes-eq(alice-pub, alice-pub-expected)
@@ -106,14 +135,28 @@ x-bob-only = () {
     bob-priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
     eprint('bob-priv: ')
     i <- [0..32): {
-        eprint(bob-priv[i])
-        eprint(' ')
+        {
+            elem ?= bob-priv[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     bob-pub = x25519.x25519-scalarmult-base(bob-priv)
     eprint('bob-pub: ')
     i <- [0..32): {
-        eprint(bob-pub[i])
-        eprint(' ')
+        {
+            elem ?= bob-pub[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
     ok = bytes-eq(bob-pub, bob-pub-expected)
@@ -167,14 +210,28 @@ x-global = () {
     eprint('g-priv: ')
     s = ''
     i <- [0..32): {
-        s = s - (g-priv[i]).to-str() - ' '
+        {
+            elem ?= g-priv[i]
+            s = s - elem.to-str() - ' '
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     eprint(s)
     global-pub = x25519.x25519-scalarmult-base(g-priv)
     eprint('global-pub: ')
     s = ''
     i <- [0..32): {
-        s = s - (global-pub[i]).to-str() - ' '
+        {
+            elem ?= global-pub[i]
+            s = s - elem.to-str() - ' '
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     eprint(s)
     ok2 = bytes-eq(global-pub, expected-pub)
@@ -238,16 +295,37 @@ xm-min = () (pass bool) {
     alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
     eprint('alice-priv[0..7]: ')
     i <- [0..8): {
-        eprint(alice-priv[i])
-        eprint(' ')
+        {
+            elem ?= alice-priv[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     alice-pub = x25519.x25519-scalarmult-base(alice-priv)
     eprint('alice-pub: ')
     i <- [0..32): {
-        eprint(alice-pub[i])
-        eprint(' ')
+        {
+            elem ?= alice-pub[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
-    alice-pub[0] == 133 -> pass = true
+    {
+        head ?= alice-pub[0]
+        head == 133 -> pass = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 x-main-minimal = () {
@@ -310,14 +388,29 @@ xs-struct-field = () (pass bool) {
     ]
     eprint('Struct field test pub:')
     i <- [0..32): {
-        eprint(' ')
-        eprint(kh.pub[i])
+        {
+            elem ?= kh.pub[i]
+            eprint(' ')
+            eprint(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     match-val = 1
     i <- [0..32): {
-        (kh.pub[i]) != expected[i] -> {
-            match-val = 0
-            break
+        {
+            x ?= kh.pub[i]
+            y ?= expected[i]
+            x != y -> {
+                match-val = 0
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     match-val: {
@@ -334,8 +427,15 @@ xs-func-output = () (pass bool) {
     alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
     eprint('alice-priv[0..7]: ')
     i <- [0..8): {
-        eprint(alice-priv[i])
-        eprint(' ')
+        {
+            elem ?= alice-priv[i]
+            eprint(elem)
+            eprint(' ')
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     alice-pub = x25519.x25519-scalarmult-base(alice-priv)
     expected = [
@@ -346,14 +446,29 @@ xs-func-output = () (pass bool) {
     ]
     eprint('Func output test pub:')
     i <- [0..32): {
-        eprint(' ')
-        eprint(alice-pub[i])
+        {
+            elem ?= alice-pub[i]
+            eprint(' ')
+            eprint(elem)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     match-val = 1
     i <- [0..32): {
-        (alice-pub[i]) != expected[i] -> {
-            match-val = 0
-            break
+        {
+            x ?= alice-pub[i]
+            y ?= expected[i]
+            x != y -> {
+                match-val = 0
+                break
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     match-val: {

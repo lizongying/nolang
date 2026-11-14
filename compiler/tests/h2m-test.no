@@ -2150,7 +2150,9 @@ test-coll-nested = () {
     runner.eq(ir.contains('bb8:\n\tbr label %bb3'), 1, 'coll-nested inner exit falls to outer update')
 }
 
-; ── s62 门禁：六类不入形的容器源／用法（均计 unsup 且不产码）──
+; ── s62 门禁：容器源／用法的入形边界 ──
+;   五类仍不入形（str 源 / 体内改写循环变量 / 嵌套同名 / 标量源 / 元素非 i64）：
+;   均计 unsup 且不产码；第六类「vec 作返回值」已由切片 6 ② 放行，末条反过来钉住它。
 test-coll-gate = () {
 
     ; str 源：Go 逐码点走 lowerStrRangeFor（utf8_at + 宽度三颗槽），noc 无该 op
@@ -2189,14 +2191,16 @@ test-coll-gate = () {
     runner.eq(agg4.unsup > 0, 1, 'coll-gate-scalar counted')
     runner.eq(ir4.contains('define'), 0, 'coll-gate-scalar no code')
 
-    ; vec 作返回值：本件无产出 vec 值的途径，且 %vec 返回未经端到端验证
+    ; vec 作返回值：切片 6 ② 起**放行**（h2m-func-sig 的 return 侧不再拒 TY-VEC）。
+    ;   OP-RET 走 cg 通用分支，返回的 %vec 由调用方持有，所有权移交、不双 free。
+    ;   本条是「门禁已撤」的反向钉子：再有人在签名侧把 TY-VEC 挡回去，这里会红。
     src-r = 'ge = (xs []i64) (r []i64) {\n    r = xs\n}\n'
     t5 = ast.make()
     r5 = ps.parse(t5, ps.new(src-r.to-bytes()))
     agg5 = h2m-new()
     ir5 = h2m-lower-program(t5, agg5, r5)
-    runner.eq(agg5.unsup > 0, 1, 'coll-gate-ret-vec counted')
-    runner.eq(ir5.contains('define'), 0, 'coll-gate-ret-vec no code')
+    runner.eq(agg5.unsup, 0, 'coll-gate-ret-vec gate lifted (unsup==0)')
+    runner.eq(ir5.contains('define %vec @ge'), 1, 'coll-gate-ret-vec returns %vec')
 
     ; 元素非 i64 的 vec（[]str）：@vec_get_i64 是单型 helper ⇒ 签名侧就不入形
     src-e = 'gf = (xs []str) (r i64) {\n    r = 0\n    v <- xs: {\n        r = r + 1\n    }\n}\n'

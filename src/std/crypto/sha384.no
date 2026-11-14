@@ -99,67 +99,31 @@ sha384 = (data []byte) (hash [48]byte) {
     offset = 0
     (offset < total-len) {
 
-        ; 注意：必須用普通賦值；option 寫入 ok 分支主體內讀 []byte 會被編譯器錯算 GEP（+0x100）→ digest 錯。
+        ; 注意：讀 padded 必須在 block[i] 的寫入分支之外；option 寫入 ok 分支主體內讀 []byte
+        ; 會被編譯器錯算 GEP（+0x100）→ digest 錯。
         i <- [0..16): {
+            ; 逐位元組大端組字：第 j 個位元組佔 bit [8*(7-j), 8*(7-j)+8)
+            word u64 = 0
+            j <- [0..8): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= offset + i * 8 + j
 
-            #{overflow=wrap}
-            ixout105c25 = padded[offset + i * 8]: {
-                ok -> it
+                    raw-byte ?= padded[byte-at]
 
-                -> _
-            }
+                    #{overflow=wrap}
+                    bit-shift ?= (7 - j) * 8
 
-            #{overflow=wrap}
-            ixout105c58 = padded[offset + i * 8 + 1]: {
-                ok -> it
+                    word = word | (raw-byte << bit-shift)
+                }: {
+                    err -> _
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout105c95 = padded[offset + i * 8 + 2]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout105c132 = padded[offset + i * 8 + 3]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout105c169 = padded[offset + i * 8 + 4]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout105c206 = padded[offset + i * 8 + 5]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout105c243 = padded[offset + i * 8 + 6]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout105c278 = padded[offset + i * 8 + 7]: {
-                ok -> it
-
-                -> _
+                    -> _
+                }
             }
 
             block[i]: {
-                ok -> it = (ixout105c25 << 56) | (ixout105c58 << 48) | (ixout105c95 << 40) | (ixout105c132 << 32) | (ixout105c169 << 24) | (ixout105c206 << 16) | (ixout105c243 << 8) | ixout105c278
+                ok -> it = word
 
                 -> _
             }
@@ -168,14 +132,12 @@ sha384 = (data []byte) (hash [48]byte) {
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
         {
-
             #{overflow=wrap}
-            offset-opt = offset + 128
-            offset-opt: {
-                ok -> offset = it
+            offset ?= offset + 128
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -288,36 +250,16 @@ sha384-hex = (data []byte) (hex str) {
     hex str = with-len(96)
 
     i <- [0..48): {
-        ixout286c39 = hash[i]: {
-            ok -> it
+        {
+            word ?= hash[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex[i * 2]: {
-            ok -> it = hex-chars[(ixout286c39 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout293c38 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout293c38 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }

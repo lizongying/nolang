@@ -28,30 +28,28 @@ test-nested-clone-vec = () (ok bool) {
     a.push(make-vec3(4, 5, 6))
     b = a
 
-    ; 驗證 a 和 b 的內容相同（透過臨時變數避免嵌套索引讀取）
-    a0 = a[0]: {
-        ok -> it
+    ; 嵌套元素讀取和任何下標讀取一樣是 ?[]i64（D11），四個子切片用一個塊形態
+    ; match 一併解包，免得每個元素各寫一個值位 match。
+    {
+        a0 ?= a[0]
+        b0 ?= b[0]
+        a1 ?= a[1]
+        b1 ?= b[1]
+        a0[0] == 1 -> ok = true
+        b0[0] == 1 -> ok = true
+        a0[2] == 3 -> ok = true
+        b0[2] == 3 -> ok = true
+        a1[1] == 5 -> ok = true
+        b1[1] == 5 -> ok = true
+        a.len() == 2 -> ok = true
+        b.len() == 2 -> ok = true
+        a0.len() == 3 -> ok = true
+        b0.len() == 3 -> ok = true
+    }: {
+        err -> _
 
-        -> []
+        -> _
     }
-    b0 = b[0]
-    a0[0] == 1 -> ok = true
-    b0[0] == 1 -> ok = true
-    a0[2] == 3 -> ok = true
-    b0[2] == 3 -> ok = true
-
-    a1 = a[1]: {
-        ok -> it
-
-        -> []
-    }
-    b1 = b[1]
-    a1[1] == 5 -> ok = true
-    b1[1] == 5 -> ok = true
-    a.len() == 2 -> ok = true
-    b.len() == 2 -> ok = true
-    a0.len() == 3 -> ok = true
-    b0.len() == 3 -> ok = true
 }
 
 ; 測試 2：[][]i64 深層 clone — 修改子切片長度
@@ -62,33 +60,31 @@ test-nested-clone-modify = () (ok bool) {
     a.push(make-vec2(3, 4))
     b = a
 
-    ; 對 b 的第一個子切片 push 新元素（透過臨時變數避免嵌套索引方法調用）
-    b0 = b[0]
+    ; 四個子切片同樣是 ?[]i64（D11），用一個塊形態 match 一併解包。
+    {
+        a0 ?= a[0]
+        b0 ?= b[0]
+        a1 ?= a[1]
+        b1 ?= b[1]
 
-    ; a 的第一個子切片長度應仍為 2
-    a0 = a[0]: {
-        ok -> it
+        ; a 的第一個子切片長度應仍為 2
+        a0.len() == 2 -> ok = true
 
-        -> []
+        ; b 的第一個子切片長度應為 2
+        b0.len() == 2 -> ok = true
+
+        ; 驗證值
+        b0[0] == 1 -> ok = true
+        b0[1] == 2 -> ok = true
+
+        ; a 的第二個子切片不變
+        a1[0] == 3 -> ok = true
+        b1[0] == 3 -> ok = true
+    }: {
+        err -> _
+
+        -> _
     }
-    a0.len() == 2 -> ok = true
-
-    ; b 的第一個子切片長度應為 2
-    b0.len() == 2 -> ok = true
-
-    ; 驗證值
-    b0[0] == 1 -> ok = true
-    b0[1] == 2 -> ok = true
-
-    ; a 的第二個子切片不變
-    a1 = a[1]: {
-        ok -> it
-
-        -> []
-    }
-    b1 = b[1]
-    a1[0] == 3 -> ok = true
-    b1[0] == 3 -> ok = true
 }
 
 ; 測試 3：嵌套容器元素賦值 — x = nested[i]
@@ -130,24 +126,20 @@ test-nested-reassign = () (ok bool) {
 
     ; 重複賦值 b 觸發舊值深層釋放（測試深層 free 不 double-free）
     b = a
-    b0 = b[0]
-    b1 = b[1]
+    {
+        b0 ?= b[0]
+        b1 ?= b[1]
+        a0 ?= a[0]
+        a1 ?= a[1]
+        b0[0] == 1 -> ok = true
+        b1[1] == 4 -> ok = true
+        a0[0] == 1 -> ok = true
+        a1[1] == 4 -> ok = true
+    }: {
+        err -> _
 
-    a0 = a[0]: {
-        ok -> it
-
-        -> []
+        -> _
     }
-
-    a1 = a[1]: {
-        ok -> it
-
-        -> []
-    }
-    b0[0] == 1 -> ok = true
-    b1[1] == 4 -> ok = true
-    a0[0] == 1 -> ok = true
-    a1[1] == 4 -> ok = true
 }
 
 ; 測試 5：[][]str 深層 clone — 字串嵌套容器的深拷貝
@@ -164,27 +156,24 @@ test-nested-clone-str = () (ok bool) {
     s.push(sub2)
     c = s
 
-    s0 = s[0]: {
-        ok -> it
+    {
+        s0 ?= s[0]
+        c0 ?= c[0]
+        s1 ?= s[1]
+        c1 ?= c[1]
+        s0[0] == 'hello' -> ok = true
+        c0[0] == 'hello' -> ok = true
+        s0[1] == 'world' -> ok = true
+        c0[1] == 'world' -> ok = true
+        s1[0] == 'foo' -> ok = true
+        c1[0] == 'foo' -> ok = true
+        s.len() == 2 -> ok = true
+        c.len() == 2 -> ok = true
+    }: {
+        err -> _
 
-        -> []
+        -> _
     }
-    c0 = c[0]
-    s0[0] == 'hello' -> ok = true
-    c0[0] == 'hello' -> ok = true
-    s0[1] == 'world' -> ok = true
-    c0[1] == 'world' -> ok = true
-
-    s1 = s[1]: {
-        ok -> it
-
-        -> []
-    }
-    c1 = c[1]
-    s1[0] == 'foo' -> ok = true
-    c1[0] == 'foo' -> ok = true
-    s.len() == 2 -> ok = true
-    c.len() == 2 -> ok = true
 }
 
 ; 測試 6：struct 含 []str 欄位的深拷貝
@@ -418,12 +407,32 @@ test-struct-nested-vec-clone = () (ok bool) {
     m2.rows.len() == 2 -> ok = true
 
     ; 修改 m2 的嵌套容器不影響 m1
-    r0 = m2.rows[0]
-    m1r0 = m1.rows[0]
-    m1r0.len() == 2 -> ok = true
-    r0.len() == 2 -> ok = true
-    r0[0] == 'a' -> ok = true
-    r0[1] == 'b' -> ok = true
+    r0 = m2.rows[0]: {
+        ok -> it
+
+        -> []
+    }
+    m1r0 = m1.rows[0]: {
+        ok -> it
+
+        -> []
+    }
+    {
+        head ?= r0[0]
+        tail ?= r0[1]
+        copied-head ?= m1r0[0]
+        copied-tail ?= m1r0[1]
+        m1r0.len() == 2 -> ok = true
+        r0.len() == 2 -> ok = true
+        head == 'a' -> ok = true
+        tail == 'b' -> ok = true
+        copied-head == 'a' -> ok = true
+        copied-tail == 'b' -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 測試 12：person struct 數組 — []person 的深拷貝

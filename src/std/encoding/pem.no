@@ -86,28 +86,24 @@ pem.encode = (label str, data []byte) (out str) {
         out-b[pos] = header.byte(i)
 
         {
-
             #{overflow=wrap}
-            pos-opt = pos + 1
-            pos-opt: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
     out-b[pos] = 10
 
     {
-
         #{overflow=wrap}
-        pos-opt2 = pos + 1
-        pos-opt2: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 寫入 Base64（每行 64 字元）
@@ -129,28 +125,24 @@ pem.encode = (label str, data []byte) (out str) {
             }
 
             {
-
                 #{overflow=wrap}
-                pos-opt3 = pos + 1
-                pos-opt3: {
-                    ok -> pos = it
+                pos ?= pos + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
 
         out-b[pos] = 10
 
         {
-
             #{overflow=wrap}
-            pos-opt4 = pos + 1
-            pos-opt4: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         #{overflow=wrap}
@@ -162,28 +154,24 @@ pem.encode = (label str, data []byte) (out str) {
         out-b[pos] = footer.byte(i)
 
         {
-
             #{overflow=wrap}
-            pos-opt5 = pos + 1
-            pos-opt5: {
-                ok -> pos = it
+            pos ?= pos + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
     out-b[pos] = 10
 
     {
-
         #{overflow=wrap}
-        pos-opt6 = pos + 1
-        pos-opt6: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 收尾的換行寫在 pos 位置但不遞增 pos，故長度是 pos + 1

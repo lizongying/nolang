@@ -32,21 +32,21 @@ rc4 = (in []byte, key []byte) (out []byte) {
     key-len = key.len()
     j = 0
     i <- [0..256): {
-        ixout36c19 = s[i]: {
+        s-i = s[i]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        ixout36c28 = key[i % key-len]: {
+        key-i-key-len = key[i % key-len]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        j = (j + (ixout36c19) + (ixout36c28)) % 256
+        j = (j + (s-i) + (key-i-key-len)) % 256
 
         ; Swap s[i] and s[j]
         t = s[i]: {
@@ -76,24 +76,28 @@ rc4 = (in []byte, key []byte) (out []byte) {
     j = 0
     pos <- [0..in.len()): {
         {
-
             #{overflow=wrap}
-            i-opt = (i + 1) % 256
-            i-opt: {
-                ok -> i = it
-
-                ->
-            }
-        }
-
-        ixout65c19 = s[i]: {
-            ok -> it
+            i ?= (i + 1) % 256
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        j = (j + (ixout65c19)) % 256
+        s-at-i = s[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        {
+            #{overflow=wrap}
+            j ?= (j + s-at-i) % 256
+        }: {
+            err -> _
+
+            -> _
+        }
 
         ; Swap s[i] and s[j]
         t = s[i]: {
@@ -137,12 +141,12 @@ rc4 = (in []byte, key []byte) (out []byte) {
         #{overflow=wrap}
         k = s[(si + sj) % 256]
 
-        ixout107c21 = in[pos]: {
+        in-pos = in[pos]: {
             ok -> it
 
             -> _
         }
 
-        out[pos] = (ixout107c21) ^ (k & 255)
+        out[pos] = (in-pos) ^ (k & 255)
     }
 }

@@ -1,0 +1,33 @@
+# /test/runner.eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/tok
+# /compiler/src/ps
+# /compiler/src/h2m
+# /compiler/src/mir
+
+; ⚠️ 導入清單必須含 ps 的【傳遞依賴】（asp / lx / tok）——實測（s55）：只導入
+;    ast / ps / h2m 時，跨模組常量（asp.K-INTEGER-LITERAL 等）解析不到，行程
+;    表現為【無限循環掛起】而非報錯；補全直接導入後恢復。同族缺陷的報錯形態見
+;    compiler/tests/ps-test.no 檔頭（oracle 端跨模組常量解析範圍缺陷，先於本檔存在）。
+
+
+probe = (src str) {
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    hd = ir.contains('define')
+    print('=== unsup', agg.unsup, 'hasdefine', hd)
+}
+print('readv-into-local')
+probe('qS = (o ?i64) (r i64) {\n    o: {\n        ok(v) -> {\n            z = v\n            r = 1\n        }\n    }\n}\n')
+print('readv-into-r')
+probe('qS = (o ?i64) (r i64) {\n    o: {\n        ok(v) -> r = v\n    }\n}\n')
+print('readit')
+probe('qS = (o ?i64) (r i64) {\n    o: {\n        ok -> r = 1\n    }\n}\n')

@@ -1,0 +1,49 @@
+; top-level-aggregate-init.no — 頂層聚合字面量綁定在「函式內」讀取
+;
+; 頂層 `let` 的初值若不能常量折疊，過去要麼整條不註冊（函式內讀成 void），
+; 要麼註冊成 zeroinitializer（標籤枚舉 ⇒ tag 0，也就是「第一個變體」）。
+; 兩種都會靜默給出錯值。本檔釘住折疊後的常量：
+;   * 結構體字面量 → `%point { i64 7 }`
+;   * 標籤枚舉單位變體 → `{ i8 1, … }`（lo 是第二個變體）
+;   * 標籤枚舉帶載荷 → `{ i8 0, [1 x i64] [i64 42] }`（hi 是第一個變體）
+
+point {
+    n i64
+}
+
+pr point = point{n: 7}
+
+e-num {
+    hi(v i64),
+    lo,
+}
+
+a e-num = lo
+b e-num = hi(42)
+
+; 三種讀法都必須看到初值：欄位讀、單位變體匹配、載荷綁定。
+read-pr = () (out i64) {
+    out = pr.n
+}
+
+read-a = () (out i64) {
+    out = 0
+    a: {
+        hi(v) -> out = v
+
+        lo -> out = 99
+    }
+}
+
+read-b = () (out i64) {
+    out = 0
+    b: {
+        hi(v) -> out = v
+
+        lo -> out = 99
+    }
+}
+
+print('pr=', read-pr(), ' expect 7')
+print('a=', read-a(), ' expect 99')
+print('b=', read-b(), ' expect 42')

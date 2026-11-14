@@ -77,14 +77,14 @@ keep-trimming = true
         cn > 1 -> {
 
             #{overflow=wrap}
-            ixout53c13 = arr[cn - 1]: {
+            arr-cn-1 = arr[cn - 1]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            ixout53c13 == 0 -> {
+            arr-cn-1 == 0 -> {
 
                 #{overflow=wrap}
                 {
@@ -100,13 +100,13 @@ keep-trimming = true
             }
 
             #{overflow=wrap}
-            ixout60c13 = arr[cn - 1]: {
+            arr-cn-1-2 = arr[cn - 1]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout60c13 != 0 -> keep-trimming = false
+            arr-cn-1-2 != 0 -> keep-trimming = false
         }
         cn <= 1 -> keep-trimming = false
     }

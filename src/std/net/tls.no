@@ -246,20 +246,27 @@ put-u24 = (buf []byte, pos i64, val i64) {
 ; val i64: 解出的 16-bit 大端值（位元組越界時以零計）
 ; [get-u16](#tls.get-u16)
 get-u16 = (buf []byte, pos i64) (val i64) {
-    ixout235c13 = buf[pos]: {
-        ok -> it
+    ; 逐位元組大端拼接（越界以 0 計）
+    val = 0
+    j <- [0..2): {
+        {
+            #{overflow=wrap}
+            at ?= pos + j
 
-        -> _
+            byte-val = buf[at]: {
+                ok -> it
+
+                -> 0
+            }
+
+            #{overflow=wrap}
+            val = (val << 8) | byte-val
+        }: {
+            err -> _
+
+            -> _
+        }
     }
-
-    #{overflow=wrap}
-    ixout235c32 = buf[pos + 1]: {
-        ok -> it
-
-        -> _
-    }
-
-    val = ((ixout235c13) << 8) | (ixout235c32)
 }
 
 ; 從緩衝區讀取 24-bit 大端序值
@@ -268,27 +275,27 @@ get-u16 = (buf []byte, pos i64) (val i64) {
 ; val i64: 解出的 24-bit 大端值（位元組越界時以零計）
 ; [get-u24](#tls.get-u24)
 get-u24 = (buf []byte, pos i64) (val i64) {
-    ixout246c13 = buf[pos]: {
-        ok -> it
+    ; 逐位元組大端拼接（越界以 0 計）
+    val = 0
+    j <- [0..3): {
+        {
+            #{overflow=wrap}
+            at ?= pos + j
 
-        -> _
+            byte-val = buf[at]: {
+                ok -> it
+
+                -> 0
+            }
+
+            #{overflow=wrap}
+            val = (val << 8) | byte-val
+        }: {
+            err -> _
+
+            -> _
+        }
     }
-
-    #{overflow=wrap}
-    ixout246c34 = buf[pos + 1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    ixout246c57 = buf[pos + 2]: {
-        ok -> it
-
-        -> _
-    }
-
-    val = ((ixout246c13) << 16) | ((ixout246c34) << 8) | (ixout246c57)
 }
 
 ; 串接兩個位元組陣列
@@ -352,19 +359,19 @@ bytes-to-bn = (data []byte) (out []i64) {
         #{overflow=wrap}
         shift = (byte-from-lsb % 4) * 8
 
-        ixout304c21 = out[limb]: {
+        out-limb = out[limb]: {
             ok -> it
 
             -> _
         }
 
-        ixout304c35 = data[i]: {
+        data-i = data[i]: {
             ok -> it
 
             -> _
         }
 
-        out[limb] = ixout304c21 | ((ixout304c35) << shift)
+        out[limb] = out-limb | ((data-i) << shift)
     }
     out.truncate(limb-count)
 }
@@ -390,13 +397,13 @@ bn-to-bytes = (num []i64) (out []byte) {
         #{overflow=wrap}
         shift = (byte-from-lsb % 4) * 8
 
-        ixout331c19 = num[limb]: {
+        num-limb = num[limb]: {
             ok -> it
 
             -> _
         }
 
-        out[i] = (ixout331c19 >> shift) & 255
+        out[i] = (num-limb >> shift) & 255
     }
 
     ; 移除前導零
@@ -408,14 +415,12 @@ bn-to-bytes = (num []i64) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            out-n-opt = out-n - 1
-            out-n-opt: {
-                ok -> out-n = it
+            out-n ?= out-n - 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     out.truncate(out-n)
@@ -465,14 +470,12 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         #{overflow=wrap}
         out-off + copy-n > out-len -> {
             {
-
                 #{overflow=wrap}
-                copy-n-opt = out-len - out-off
-                copy-n-opt: {
-                    ok -> copy-n = it
+                copy-n ?= out-len - out-off
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
         i <- [0..copy-n): {
@@ -488,14 +491,12 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         }
 
         {
-
             #{overflow=wrap}
-            out-off-opt = out-off + copy-n
-            out-off-opt: {
-                ok -> out-off = it
+            out-off ?= out-off + copy-n
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         ; A(i+1) = HMAC(secret, A(i))
@@ -551,14 +552,12 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
         }
 
         {
-
             #{overflow=wrap}
-            total-opt = total + r
-            total-opt: {
-                ok -> total = it
+            total ?= total + r
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     ok = true
@@ -578,14 +577,12 @@ net-recv-wait = (fd fd, buf str, n i64) (r i64) {
     done = false
     (done == false) {
         {
-
             #{overflow=wrap}
-            tries-opt = tries + 1
-            tries-opt: {
-                ok -> tries = it
+            tries ?= tries + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         tries > RECV-WAIT-TRIES -> {
 
@@ -662,14 +659,12 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         }
 
         {
-
             #{overflow=wrap}
-            hdr-total-opt = hdr-total + r
-            hdr-total-opt: {
-                ok -> hdr-total = it
+            hdr-total ?= hdr-total + r
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -721,14 +716,12 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         }
 
         {
-
             #{overflow=wrap}
-            body-total-opt = body-total + r
-            body-total-opt: {
-                ok -> body-total = it
+            body-total ?= body-total + r
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     ; 注意：不修改 buf.len（vet 禁止修改 slice 的 len 欄位）。
@@ -897,13 +890,13 @@ tls-unpad = (in []byte) (out-n i64) {
     i <- [0..strip): {
 
         #{overflow=wrap}
-        ixout745c10 = in[in.len() - 1 - i]: {
+        in-in-len-1-i = in[in.len() - 1 - i]: {
             ok -> it
 
             -> _
         }
 
-        (ixout745c10) != pad-val -> {
+        (in-in-len-1-i) != pad-val -> {
             out-n = -1
             return
         }
@@ -1553,7 +1546,15 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
             #{overflow=wrap}
             shift = mod-n - raw.len()
             i <- [0..shift): {
-                out[i] = 0
+                ; 下標直寫被 D11 禁止；`?=` 只把下標可能越界的 err 上拋，
+                ; 由塊形態 match 收掉。
+                {
+                    out[i] ?= 0
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
             i <- [0..raw.len()): {
                 {
@@ -1577,9 +1578,15 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
             off = raw.len() - mod-n
             i <- [0..mod-n): {
 
-                #{overflow=wrap}
-                out[i] = raw[off + i]: {
-                    ok -> it
+                ; 下標讀取與下標寫入各自都是 option；用一個塊形態 match 把
+                ; 「讀出位元組」與「寫入 out[i]」兩步併起來。
+                {
+                    #{overflow=wrap}
+                    keep ?= raw[off + i]
+
+                    out[i] ?= keep
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -1738,14 +1745,12 @@ conn.send-client-hello = () (ok bool) {
     put-u16(hs, pos, TLS-VERSION)
 
     {
-
         #{overflow=wrap}
-        pos-opt = pos + 2
-        pos-opt: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; random (32 bytes)
@@ -1778,14 +1783,12 @@ conn.send-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt2 = pos + 32
-        pos-opt2: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; session_id_length = 0
@@ -1797,90 +1800,76 @@ conn.send-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt3 = pos + 1
-        pos-opt3: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; cipher_suites_length = 10 (5 個套件)
     put-u16(hs, pos, 10)
 
     {
-
         #{overflow=wrap}
-        pos-opt4 = pos + 2
-        pos-opt4: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ECDHE-GCM（真實伺服器首選）> ECDHE-CBC-SHA256 > static-RSA-CBC-SHA256（相容回退）
     put-u16(hs, pos, TLS-CIPHER-ECDHE-RSA-AES128-GCM-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt5 = pos + 2
-        pos-opt5: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-CIPHER-ECDHE-ECDSA-AES128-GCM-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt6 = pos + 2
-        pos-opt6: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-CIPHER-ECDHE-RSA-AES128-CBC-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt7 = pos + 2
-        pos-opt7: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-CIPHER-ECDHE-ECDSA-AES128-CBC-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt8 = pos + 2
-        pos-opt8: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt9 = pos + 2
-        pos-opt9: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; compression_methods_length = 1
@@ -1892,14 +1881,12 @@ conn.send-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt10 = pos + 1
-        pos-opt10: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; compression_method = 0 (null)
@@ -1911,42 +1898,36 @@ conn.send-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt11 = pos + 1
-        pos-opt11: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; === 擴展（先記錄總長度位置，稍後填入）===
     ext-len-pos = pos
 
     {
-
         #{overflow=wrap}
-        pos-opt12 = pos + 2
-        pos-opt12: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 1: server_name (SNI, 0) — 虛擬主機路由的伺服器必要
     put-u16(hs, pos, TLS-EXT-SERVER-NAME)
 
     {
-
         #{overflow=wrap}
-        pos-opt13 = pos + 2
-        pos-opt13: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     host-n = .host.len-bytes()
 
@@ -1957,14 +1938,12 @@ conn.send-client-hello = () (ok bool) {
     put-u16(hs, pos, sni-ext-len)
 
     {
-
         #{overflow=wrap}
-        pos-opt14 = pos + 2
-        pos-opt14: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; server name list length = 1 + 2 + host-n
@@ -1974,14 +1953,12 @@ conn.send-client-hello = () (ok bool) {
     put-u16(hs, pos, sni-list-len)
 
     {
-
         #{overflow=wrap}
-        pos-opt15 = pos + 2
-        pos-opt15: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; name type = 0 (host_name)
@@ -1993,28 +1970,24 @@ conn.send-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt16 = pos + 1
-        pos-opt16: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; name length
     put-u16(hs, pos, host-n)
 
     {
-
         #{overflow=wrap}
-        pos-opt17 = pos + 2
-        pos-opt17: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; name
@@ -2037,98 +2010,84 @@ conn.send-client-hello = () (ok bool) {
     put-u16(hs, pos, TLS-EXT-SUPPORTED-GROUPS)
 
     {
-
         #{overflow=wrap}
-        pos-opt18 = pos + 2
-        pos-opt18: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 6（列表長度 2 + 曲線 2×2）
     put-u16(hs, pos, 6)
 
     {
-
         #{overflow=wrap}
-        pos-opt19 = pos + 2
-        pos-opt19: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; groups list length = 4
     put-u16(hs, pos, 4)
 
     {
-
         #{overflow=wrap}
-        pos-opt20 = pos + 2
-        pos-opt20: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; x25519 = 0x001D
     put-u16(hs, pos, TLS-GROUP-X25519)
 
     {
-
         #{overflow=wrap}
-        pos-opt21 = pos + 2
-        pos-opt21: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; secp256r1 = 0x0017
     put-u16(hs, pos, TLS-GROUP-SECP256R1)
 
     {
-
         #{overflow=wrap}
-        pos-opt22 = pos + 2
-        pos-opt22: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 3: ec_point_formats (11) — 0 = uncompressed（OpenSSL 必要）
     put-u16(hs, pos, TLS-EXT-EC-POINT-FORMATS)
 
     {
-
         #{overflow=wrap}
-        pos-opt23 = pos + 2
-        pos-opt23: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 2（列表長度 1 + 格式 1）
     put-u16(hs, pos, 2)
 
     {
-
         #{overflow=wrap}
-        pos-opt24 = pos + 2
-        pos-opt24: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; formats list length = 1
@@ -2140,14 +2099,12 @@ conn.send-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt25 = pos + 1
-        pos-opt25: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; format 0 = uncompressed
@@ -2159,166 +2116,140 @@ conn.send-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt26 = pos + 1
-        pos-opt26: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 4: signature_algorithms (13) — 9 個演算法
     put-u16(hs, pos, TLS-EXT-SIGNATURE-ALGORITHMS)
 
     {
-
         #{overflow=wrap}
-        pos-opt27 = pos + 2
-        pos-opt27: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 9 個演算法 = 18 bytes; ext data length = 2 (list len) + 18 = 20
     put-u16(hs, pos, 20)
 
     {
-
         #{overflow=wrap}
-        pos-opt28 = pos + 2
-        pos-opt28: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; sig algs list length = 18
     put-u16(hs, pos, 18)
 
     {
-
         #{overflow=wrap}
-        pos-opt29 = pos + 2
-        pos-opt29: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 依優先順序：RSA-PSS（現代首選）> ECDSA > RSA-PKCS1
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt30 = pos + 2
-        pos-opt30: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP256R1-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt31 = pos + 2
-        pos-opt31: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA384)
 
     {
-
         #{overflow=wrap}
-        pos-opt32 = pos + 2
-        pos-opt32: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP384R1-SHA384)
 
     {
-
         #{overflow=wrap}
-        pos-opt33 = pos + 2
-        pos-opt33: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA512)
 
     {
-
         #{overflow=wrap}
-        pos-opt34 = pos + 2
-        pos-opt34: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP521R1-SHA512)
 
     {
-
         #{overflow=wrap}
-        pos-opt35 = pos + 2
-        pos-opt35: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt36 = pos + 2
-        pos-opt36: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA384)
 
     {
-
         #{overflow=wrap}
-        pos-opt37 = pos + 2
-        pos-opt37: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA512)
 
     {
-
         #{overflow=wrap}
-        pos-opt38 = pos + 2
-        pos-opt38: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 填入擴展總長度
@@ -2400,14 +2331,12 @@ conn.read-server-hello = () (ok bool) {
     ; version（buf[9..10]）
 
     {
-
         #{overflow=wrap}
-        pos-opt39 = pos + 2
-        pos-opt39: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; random (32 bytes)
@@ -2422,14 +2351,12 @@ conn.read-server-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt40 = pos + 32
-        pos-opt40: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; session_id
@@ -2441,28 +2368,24 @@ conn.read-server-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt41 = pos + 1 + sid-len
-        pos-opt41: {
-            ok -> pos = it
+        pos ?= pos + 1 + sid-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; cipher_suite — 必須是我方支援的 TLS 1.2 套件
     cipher = get-u16(buf, pos)
 
     {
-
         #{overflow=wrap}
-        pos-opt42 = pos + 2
-        pos-opt42: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     supported = cipher == TLS-CIPHER-RSA-AES128-CBC-SHA256
     supported = supported || cipher-is-ecdhe(cipher)
@@ -2478,14 +2401,12 @@ conn.read-server-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt43 = pos + 1
-        pos-opt43: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     comp != 0 -> return
     ok = true
@@ -2514,28 +2435,24 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
     total-len = get-u24(buf, pos)
 
     {
-
         #{overflow=wrap}
-        pos-opt44 = pos + 3
-        pos-opt44: {
-            ok -> pos = it
+        pos ?= pos + 3
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; first cert length (3 bytes)
     cert-len = get-u24(buf, pos)
 
     {
-
         #{overflow=wrap}
-        pos-opt45 = pos + 3
-        pos-opt45: {
-            ok -> pos = it
+        pos ?= pos + 3
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 複製憑證
@@ -2608,13 +2525,13 @@ conn.read-server-key-exchange = () (ok bool) {
         plen != 65 -> return
 
         #{overflow=wrap}
-        ixout1953c9 = buf[pos + 4]: {
+        point-prefix = buf[pos + 4]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
-        ixout1953c9 != 4 -> return
+        point-prefix != 4 -> return
         i <- [0..65): {
             {
                 .peer-p256[i] ?= buf[pos + 4 + i]
@@ -2645,13 +2562,13 @@ conn.read-server-key-exchange = () (ok bool) {
         ; 0x04 || raw32：剝離前綴
 
         #{overflow=wrap}
-        ixout1976c9 = buf[pos + 4]: {
+        point-prefix = buf[pos + 4]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
-        ixout1976c9 != 4 -> return
+        point-prefix != 4 -> return
         i <- [0..32): {
             {
                 .server-pub[i] ?= buf[pos + 5 + i]
@@ -2916,15 +2833,13 @@ conn.read-change-cipher-spec = () (ok bool) {
     ct, rlen = read-record(.fd, buf)
     ct != TLS-CT-CCS -> return
     rlen != 1 -> return
-    ixout2473c9 = buf[5]: {
+    ccs-value = buf[5]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    (ixout2473c9) != 1 -> {
-        return
-    }
+    ccs-value != 1 -> return
     ok = true
 }
 
@@ -3310,14 +3225,12 @@ conn.send-client-hello-13 = () (ok bool) {
     put-u16(hs, pos, TLS-VERSION)
 
     {
-
         #{overflow=wrap}
-        pos-opt46 = pos + 2
-        pos-opt46: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; random (32 bytes)
@@ -3350,14 +3263,12 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt47 = pos + 32
-        pos-opt47: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; session_id_length = 0
@@ -3369,112 +3280,96 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt48 = pos + 1
-        pos-opt48: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; cipher_suites: 6 suites = 12 bytes
     put-u16(hs, pos, 12)
 
     {
-
         #{overflow=wrap}
-        pos-opt49 = pos + 2
-        pos-opt49: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; TLS_AES_128_GCM_SHA256 (TLS 1.3, 0x1301)
     put-u16(hs, pos, TLS-CIPHER-AES128-GCM-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt50 = pos + 2
-        pos-opt50: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (TLS 1.2, 0xC02F)
     put-u16(hs, pos, TLS-CIPHER-ECDHE-RSA-AES128-GCM-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt51 = pos + 2
-        pos-opt51: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (TLS 1.2, 0xC02B)
     put-u16(hs, pos, TLS-CIPHER-ECDHE-ECDSA-AES128-GCM-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt52 = pos + 2
-        pos-opt52: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 (TLS 1.2, 0xC027)
     put-u16(hs, pos, TLS-CIPHER-ECDHE-RSA-AES128-CBC-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt53 = pos + 2
-        pos-opt53: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 (TLS 1.2, 0xC023)
     put-u16(hs, pos, TLS-CIPHER-ECDHE-ECDSA-AES128-CBC-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt54 = pos + 2
-        pos-opt54: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; TLS_RSA_WITH_AES_128_CBC_SHA256 (TLS 1.2, 0x003C)
     put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt55 = pos + 2
-        pos-opt55: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; compression_methods_length = 1
@@ -3486,14 +3381,12 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt56 = pos + 1
-        pos-opt56: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     hs[pos]: {
@@ -3503,14 +3396,12 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt57 = pos + 1
-        pos-opt57: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; === 擴展 ===
@@ -3518,42 +3409,36 @@ conn.send-client-hello-13 = () (ok bool) {
     ext-len-pos = pos
 
     {
-
         #{overflow=wrap}
-        pos-opt58 = pos + 2
-        pos-opt58: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 1: supported_versions (43)
     put-u16(hs, pos, TLS-EXT-SUPPORTED-VERSIONS)
 
     {
-
         #{overflow=wrap}
-        pos-opt59 = pos + 2
-        pos-opt59: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 3
     put-u16(hs, pos, 3)
 
     {
-
         #{overflow=wrap}
-        pos-opt60 = pos + 2
-        pos-opt60: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; versions list length = 2
@@ -3565,126 +3450,108 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt61 = pos + 1
-        pos-opt61: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; TLS 1.3 = 0x0304
     put-u16(hs, pos, TLS-VERSION-1-3)
 
     {
-
         #{overflow=wrap}
-        pos-opt62 = pos + 2
-        pos-opt62: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 2: supported_groups (10) — x25519 + secp256r1（ECDSA 套件資格所需；key_share 仍僅 x25519）
     put-u16(hs, pos, TLS-EXT-SUPPORTED-GROUPS)
 
     {
-
         #{overflow=wrap}
-        pos-opt63 = pos + 2
-        pos-opt63: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 6（列表長度 2 + 曲線 2×2）
     put-u16(hs, pos, 6)
 
     {
-
         #{overflow=wrap}
-        pos-opt64 = pos + 2
-        pos-opt64: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; groups list length = 4
     put-u16(hs, pos, 4)
 
     {
-
         #{overflow=wrap}
-        pos-opt65 = pos + 2
-        pos-opt65: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; x25519 = 0x001D
     put-u16(hs, pos, TLS-GROUP-X25519)
 
     {
-
         #{overflow=wrap}
-        pos-opt66 = pos + 2
-        pos-opt66: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; secp256r1 = 0x0017
     put-u16(hs, pos, TLS-GROUP-SECP256R1)
 
     {
-
         #{overflow=wrap}
-        pos-opt67 = pos + 2
-        pos-opt67: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展: ec_point_formats (11) — TLS 1.2 ECDHE fallback 需要
     put-u16(hs, pos, TLS-EXT-EC-POINT-FORMATS)
 
     {
-
         #{overflow=wrap}
-        pos-opt68 = pos + 2
-        pos-opt68: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 2（列表長度 1 + 格式 1）
     put-u16(hs, pos, 2)
 
     {
-
         #{overflow=wrap}
-        pos-opt69 = pos + 2
-        pos-opt69: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; formats list length = 1
@@ -3696,14 +3563,12 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt70 = pos + 1
-        pos-opt70: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; format 0 = uncompressed
@@ -3715,236 +3580,200 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt71 = pos + 1
-        pos-opt71: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 3: signature_algorithms (13)
     put-u16(hs, pos, TLS-EXT-SIGNATURE-ALGORITHMS)
 
     {
-
         #{overflow=wrap}
-        pos-opt72 = pos + 2
-        pos-opt72: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 9 個演算法 = 18 bytes; ext data length = 2 (list len) + 18 = 20
     put-u16(hs, pos, 20)
 
     {
-
         #{overflow=wrap}
-        pos-opt73 = pos + 2
-        pos-opt73: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; sig algs list length = 18
     put-u16(hs, pos, 18)
 
     {
-
         #{overflow=wrap}
-        pos-opt74 = pos + 2
-        pos-opt74: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 依優先順序：RSA-PSS（現代首選）> ECDSA > RSA-PKCS1
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt75 = pos + 2
-        pos-opt75: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP256R1-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt76 = pos + 2
-        pos-opt76: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA384)
 
     {
-
         #{overflow=wrap}
-        pos-opt77 = pos + 2
-        pos-opt77: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP384R1-SHA384)
 
     {
-
         #{overflow=wrap}
-        pos-opt78 = pos + 2
-        pos-opt78: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PSS-RSAE-SHA512)
 
     {
-
         #{overflow=wrap}
-        pos-opt79 = pos + 2
-        pos-opt79: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-ECDSA-SECP521R1-SHA512)
 
     {
-
         #{overflow=wrap}
-        pos-opt80 = pos + 2
-        pos-opt80: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt81 = pos + 2
-        pos-opt81: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA384)
 
     {
-
         #{overflow=wrap}
-        pos-opt82 = pos + 2
-        pos-opt82: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-SIG-RSA-PKCS1-SHA512)
 
     {
-
         #{overflow=wrap}
-        pos-opt83 = pos + 2
-        pos-opt83: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 4: key_share (51)
     put-u16(hs, pos, TLS-EXT-KEY-SHARE)
 
     {
-
         #{overflow=wrap}
-        pos-opt84 = pos + 2
-        pos-opt84: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 2 (client_shares_len) + 2 (group) + 2 (key_len) + 32 (key) = 38
     put-u16(hs, pos, 38)
 
     {
-
         #{overflow=wrap}
-        pos-opt85 = pos + 2
-        pos-opt85: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; client key shares length = 2 (group) + 2 (key_len) + 32 (key) = 36
     put-u16(hs, pos, 36)
 
     {
-
         #{overflow=wrap}
-        pos-opt86 = pos + 2
-        pos-opt86: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; group = x25519
     put-u16(hs, pos, TLS-GROUP-X25519)
 
     {
-
         #{overflow=wrap}
-        pos-opt87 = pos + 2
-        pos-opt87: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; key = 32 bytes
     put-u16(hs, pos, 32)
 
     {
-
         #{overflow=wrap}
-        pos-opt88 = pos + 2
-        pos-opt88: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     i <- [0..32): {
 
@@ -3961,28 +3790,24 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt89 = pos + 32
-        pos-opt89: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 5: server_name (SNI, 0) — 必須包含，否則伺服器可能拒絕
     put-u16(hs, pos, 0)
 
     {
-
         #{overflow=wrap}
-        pos-opt90 = pos + 2
-        pos-opt90: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 2 + 1 + 2 + host.len
@@ -3992,14 +3817,12 @@ conn.send-client-hello-13 = () (ok bool) {
     put-u16(hs, pos, sni-ext-len)
 
     {
-
         #{overflow=wrap}
-        pos-opt91 = pos + 2
-        pos-opt91: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; server name list length = 1 + 2 + host.len
@@ -4009,14 +3832,12 @@ conn.send-client-hello-13 = () (ok bool) {
     put-u16(hs, pos, sni-list-len)
 
     {
-
         #{overflow=wrap}
-        pos-opt92 = pos + 2
-        pos-opt92: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; name type = 0 (host_name)
@@ -4028,28 +3849,24 @@ conn.send-client-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt93 = pos + 1
-        pos-opt93: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; name length
     put-u16(hs, pos, .host.len-bytes())
 
     {
-
         #{overflow=wrap}
-        pos-opt94 = pos + 2
-        pos-opt94: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; name
@@ -4095,13 +3912,13 @@ conn.send-client-hello-13 = () (ok bool) {
     ; DBG dump ClientHello bytes
     dmp = ''
     i <- [0..pos): {
-        ixout3246c29 = hs[i]: {
+        hs-i = hs[i]: {
             ok -> it
 
             -> _
         }
 
-        dmp = dmp - ' ' - ixout3246c29.to-str()
+        dmp = dmp - ' ' - hs-i.to-str()
     }
 
     ; 發送
@@ -4136,14 +3953,12 @@ conn.read-server-hello-13 = () (ok bool) {
     ; server version（TLS 1.3 中為 0x0303，實際版本在擴展中）
 
     {
-
         #{overflow=wrap}
-        pos-opt95 = pos + 2
-        pos-opt95: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; random (32 bytes)
@@ -4158,14 +3973,12 @@ conn.read-server-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt96 = pos + 32
-        pos-opt96: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; session_id
@@ -4177,41 +3990,35 @@ conn.read-server-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt97 = pos + 1 + sid-len
-        pos-opt97: {
-            ok -> pos = it
+        pos ?= pos + 1 + sid-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; cipher_suite
     cipher = get-u16(buf, pos)
 
     {
-
         #{overflow=wrap}
-        pos-opt98 = pos + 2
-        pos-opt98: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; compression_method
 
     {
-
         #{overflow=wrap}
-        pos-opt99 = pos + 1
-        pos-opt99: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 檢查是否有擴展
@@ -4227,14 +4034,12 @@ conn.read-server-hello-13 = () (ok bool) {
     ext-len = get-u16(buf, pos)
 
     {
-
         #{overflow=wrap}
-        pos-opt100 = pos + 2
-        pos-opt100: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     #{overflow=wrap}
@@ -4246,26 +4051,22 @@ conn.read-server-hello-13 = () (ok bool) {
         ext-type i64 = get-u16(buf, pos)
 
         {
-
             #{overflow=wrap}
-            pos-opt101 = pos + 2
-            pos-opt101: {
-                ok -> pos = it
+            pos ?= pos + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
         ext-data-len i64 = get-u16(buf, pos)
 
         {
-
             #{overflow=wrap}
-            pos-opt102 = pos + 2
-            pos-opt102: {
-                ok -> pos = it
+            pos ?= pos + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
@@ -4302,14 +4103,12 @@ conn.read-server-hello-13 = () (ok bool) {
         }
 
         {
-
             #{overflow=wrap}
-            pos-opt103 = pos + ext-data-len
-            pos-opt103: {
-                ok -> pos = it
+            pos ?= pos + ext-data-len
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     {
@@ -4832,14 +4631,12 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     }
 
     {
-
         #{overflow=wrap}
-        plain-len-opt = plain-len - 1
-        plain-len-opt: {
-            ok -> plain-len = it
+        plain-len ?= plain-len - 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     out = with-len(plain-len)
     i <- [0..plain-len): {
@@ -5596,14 +5393,12 @@ server-conn.read-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt104 = pos + 32
-        pos-opt104: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; session_id
@@ -5615,33 +5410,29 @@ server-conn.read-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt105 = pos + 1 + sid-len
-        pos-opt105: {
-            ok -> pos = it
+        pos ?= pos + 1 + sid-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; cipher_suites
     cs-len = get-u16(buf, pos)
 
     {
-
         #{overflow=wrap}
-        pos-opt106 = pos + 2
-        pos-opt106: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 檢查是否包含 TLS 1.2 或 TLS 1.3 cipher suite
-    found-12 = false
-    found-13 = false
+    supports-tls12 = false
+    supports-tls13 = false
     j = 0
     (j < cs-len) {
         j < cs-len -> {
@@ -5654,31 +5445,29 @@ server-conn.read-client-hello = () (ok bool) {
             }
             cs = get-u16(buf, cs-pos)
             {
-                cs == TLS-CIPHER-RSA-AES128-CBC-SHA256 -> found-12 = true
+                cs == TLS-CIPHER-RSA-AES128-CBC-SHA256 -> supports-tls12 = true
 
-                cs == TLS-CIPHER-AES128-GCM-SHA256 -> found-13 = true
+                cs == TLS-CIPHER-AES128-GCM-SHA256 -> supports-tls13 = true
             }
             {
-                j-opt = j + 2
-                j-opt: {
-                    ok -> j = it
+                #{overflow=wrap}
+                j ?= j + 2
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }
-    found-12 == false && found-13 == false -> return
+    supports-tls12 == false && supports-tls13 == false -> return
 
     {
-
         #{overflow=wrap}
-        pos-opt107 = pos + cs-len
-        pos-opt107: {
-            ok -> pos = it
+        pos ?= pos + cs-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; compression methods（跳過）
@@ -5690,14 +5479,12 @@ server-conn.read-client-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt108 = pos + 1 + comp-len
-        pos-opt108: {
-            ok -> pos = it
+        pos ?= pos + 1 + comp-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 預設 TLS 1.2
@@ -5709,12 +5496,11 @@ server-conn.read-client-hello = () (ok bool) {
     pos + 2 <= rlen + 5 -> {
         ext-total = get-u16(buf, pos)
         {
-            pos-opt109 = pos + 2
-            pos-opt109: {
-                ok -> pos = it
+            pos ?= pos + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         #{overflow=wrap}
@@ -5744,12 +5530,11 @@ server-conn.read-client-hello = () (ok bool) {
                 }
                 ext-data-len = get-u16(buf, edl-pos)
                 {
-                    pos-opt110 = pos + 4
-                    pos-opt110: {
-                        ok -> pos = it
+                    pos ?= pos + 4
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
 
                 ; supported_versions (43)
@@ -5788,12 +5573,11 @@ server-conn.read-client-hello = () (ok bool) {
                                 .version = TLS-VERSION-1-3
                             }
                             {
-                                sv-pos-opt2 = sv-pos + 2
-                                sv-pos-opt2: {
-                                    ok -> sv-pos = it
+                                sv-pos ?= sv-pos + 2
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                         }
                     }
@@ -5843,25 +5627,22 @@ server-conn.read-client-hello = () (ok bool) {
                                 }
                             }
                             {
-                                ks-pos-opt2 = ks-pos + 4 + ks-key-len
-                                ks-pos-opt2: {
-                                    ok -> ks-pos = it
+                                ks-pos ?= ks-pos + 4 + ks-key-len
+                            }: {
+                                err -> _
 
-                                    ->
-                                }
+                                -> _
                             }
                         }
                     }
                 }
                 {
-
                     #{overflow=wrap}
-                    pos-opt111 = pos + ext-data-len
-                    pos-opt111: {
-                        ok -> pos = it
+                    pos ?= pos + ext-data-len
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -5912,14 +5693,12 @@ server-conn.send-server-hello = () (ok bool) {
     put-u16(hs, pos, TLS-VERSION)
 
     {
-
         #{overflow=wrap}
-        pos-opt112 = pos + 2
-        pos-opt112: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; random (32 bytes)
@@ -5952,14 +5731,12 @@ server-conn.send-server-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt113 = pos + 32
-        pos-opt113: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; session_id_length = 0
@@ -5971,28 +5748,24 @@ server-conn.send-server-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt114 = pos + 1
-        pos-opt114: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; cipher_suite = TLS_RSA_WITH_AES_128_CBC_SHA256
     put-u16(hs, pos, TLS-CIPHER-RSA-AES128-CBC-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt115 = pos + 2
-        pos-opt115: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; compression_method = 0
@@ -6004,14 +5777,12 @@ server-conn.send-server-hello = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt116 = pos + 1
-        pos-opt116: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 填入 length
@@ -6176,47 +5947,44 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     }
 
     ; 驗證 PKCS#1 v1.5 填充: 0x00 0x02 PS 0x00 message
-    ixout5080c12 = m-bytes[0]: {
+    leading-byte = m-bytes[0]: {
         ok -> it
 
-        -> _
+        -> -1
     }
 
-    ixout5080c12 != 0 -> {
-        return
-    }
-    ixout5083c12 = m-bytes[1]: {
+    leading-byte != 0 -> return
+
+    block-type = m-bytes[1]: {
         ok -> it
 
-        -> _
+        -> -1
     }
 
-    ixout5083c12 != 2 -> {
-        return
-    }
+    block-type != 2 -> return
 
     ; 尋找 0x00 分隔符（從位置 2 開始）
     sep-pos = 2
     found-sep = false
     (sep-pos < mod-len && found-sep == false) {
         sep-pos < mod-len -> {
-            ixout5094c20 = m-bytes[sep-pos]: {
+            sep-byte = m-bytes[sep-pos]: {
                 ok -> it
 
-                -> _
+                -> 1
             }
 
-            ixout5094c20 == 0 -> {
+            sep-byte == 0 -> {
                 found-sep = true
             }
             found-sep == false -> {
                 {
-                    sep-pos-opt = sep-pos + 1
-                    sep-pos-opt: {
-                        ok -> sep-pos = it
+                    #{overflow=wrap}
+                    sep-pos ?= sep-pos + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }
@@ -6766,15 +6534,13 @@ server-conn.read-change-cipher-spec = () (ok bool) {
     ct, rlen = read-record(.fd, buf)
     ct != TLS-CT-CCS -> return
     rlen != 1 -> return
-    ixout5660c9 = buf[5]: {
+    ccs-value = buf[5]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    (ixout5660c9) != 1 -> {
-        return
-    }
+    ccs-value != 1 -> return
     ok = true
 }
 
@@ -6977,14 +6743,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
     put-u16(hs, pos, TLS-VERSION)
 
     {
-
         #{overflow=wrap}
-        pos-opt117 = pos + 2
-        pos-opt117: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; random (32 bytes)
@@ -7017,14 +6781,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt118 = pos + 32
-        pos-opt118: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; session_id_length = 0
@@ -7036,28 +6798,24 @@ server-conn.send-server-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt119 = pos + 1
-        pos-opt119: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; cipher_suite = TLS_AES_128_GCM_SHA256 (0x1301)
     put-u16(hs, pos, TLS-CIPHER-AES128-GCM-SHA256)
 
     {
-
         #{overflow=wrap}
-        pos-opt120 = pos + 2
-        pos-opt120: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; compression_method = 0
@@ -7069,118 +6827,100 @@ server-conn.send-server-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt121 = pos + 1
-        pos-opt121: {
-            ok -> pos = it
+        pos ?= pos + 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; === 擴展 ===
     ext-len-pos = pos
 
     {
-
         #{overflow=wrap}
-        pos-opt122 = pos + 2
-        pos-opt122: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 1: supported_versions (43)
     put-u16(hs, pos, TLS-EXT-SUPPORTED-VERSIONS)
 
     {
-
         #{overflow=wrap}
-        pos-opt123 = pos + 2
-        pos-opt123: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, 2)
 
     {
-
         #{overflow=wrap}
-        pos-opt124 = pos + 2
-        pos-opt124: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-VERSION-1-3)
 
     {
-
         #{overflow=wrap}
-        pos-opt125 = pos + 2
-        pos-opt125: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 擴展 2: key_share (51)
     put-u16(hs, pos, TLS-EXT-KEY-SHARE)
 
     {
-
         #{overflow=wrap}
-        pos-opt126 = pos + 2
-        pos-opt126: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; ext data length = 2 (group) + 2 (key_len) + 32 (key) = 36
     put-u16(hs, pos, 36)
 
     {
-
         #{overflow=wrap}
-        pos-opt127 = pos + 2
-        pos-opt127: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, TLS-GROUP-X25519)
 
     {
-
         #{overflow=wrap}
-        pos-opt128 = pos + 2
-        pos-opt128: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     put-u16(hs, pos, 32)
 
     {
-
         #{overflow=wrap}
-        pos-opt129 = pos + 2
-        pos-opt129: {
-            ok -> pos = it
+        pos ?= pos + 2
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     i <- [0..32): {
 
@@ -7197,14 +6937,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt130 = pos + 32
-        pos-opt130: {
-            ok -> pos = it
+        pos ?= pos + 32
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; 填入擴展總長度
@@ -7727,14 +7465,12 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     }
 
     {
-
         #{overflow=wrap}
-        plain-len-opt2 = plain-len - 1
-        plain-len-opt2: {
-            ok -> plain-len = it
+        plain-len ?= plain-len - 1
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     out = with-len(plain-len)
     i <- [0..plain-len): {
@@ -8362,8 +8098,10 @@ server-accept = (listen-fd fd) (conn ?server-conn) {
     client-fd < 0 -> return
 
     ; 初始化伺服器連線（返回 ?server-conn）
-    init-opt = server-init(client-fd)
-    init-opt: {
+    ; ⚠️ nil/err 臂要 return，只能用語句 match：`?=` 块的臂是獨立幀，
+    ; 臂內的 return 不會退出所在函式（見 test/README.md §5.2o）。
+    init-result = server-init(client-fd)
+    init-result: {
         nil -> {
             fs.close(client-fd)
             return
@@ -8404,8 +8142,10 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
     client-fd < 0 -> return
 
     ; 2. 初始化 TLS 連線
-    init-opt = server-init(client-fd)
-    init-opt: {
+    ; ⚠️ nil/err 臂要 return，只能用语句 match：`?=` 块的臂是獨立幀，
+    ; 臂內的 return 不會退出所在函式（見 test/README.md §5.2o）。
+    init-result = server-init(client-fd)
+    init-result: {
         nil -> {
             fs.close(client-fd)
             return
@@ -8458,14 +8198,12 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
                 }
 
                 {
-
                     #{overflow=wrap}
-                    recv-len-opt = recv-len + rn
-                    recv-len-opt: {
-                        ok -> recv-len = it
+                    recv-len ?= recv-len + rn
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
                 data = recv-buf.slice(0, recv-len)
                 pos = data.index(separator)

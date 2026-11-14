@@ -403,7 +403,7 @@ func (m *Module) buildViewSrc() map[ValueID]ValueID {
 	direct := map[ValueID]ValueID{}
 	for i := range m.Insts {
 		inst := &m.Insts[i]
-		if inst.Op != OpSliceOp || inst.Int&SliceFlagView == 0 || inst.Dst <= NoVal {
+		if !isLiveSliceView(inst) || inst.Dst <= NoVal {
 			continue
 		}
 		if len(inst.Args) == 0 || inst.Args[0] <= NoVal {
@@ -425,6 +425,21 @@ func (m *Module) buildViewSrc() map[ValueID]ValueID {
 		}
 	}
 	return resolved
+}
+
+// isLiveSliceView reports whether inst produces a slice VIEW that survived
+// demoteUnsafeSliceViews: a sub-range aliasing its receiver's backing buffer and
+// carrying cap == 0, so it is never itself freed.
+//
+// Such a value does NOT own what it points at — the RECEIVER frees the buffer —
+// which gives two rules that must not drift apart:
+//
+//	liveness  the receiver must stay alive while the view is used
+//	          (buildViewSrc / defUse);
+//	ownership an assignment `v = view` is a COPY, never an ownership transfer
+//	          (lowerDeadSourceCopiesToMoves).
+func isLiveSliceView(inst *Inst) bool {
+	return inst != nil && inst.Op == OpSliceOp && inst.Int&SliceFlagView != 0
 }
 
 func (m *Module) Analyze() *Report {

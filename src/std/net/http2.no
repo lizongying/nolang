@@ -378,55 +378,37 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     block str = with-len(HTTP2-MAX-PAYLOAD)
     block-n = 0
     i <- [0..count): {
+        {
+            ; 用 slice 載入值（避開 IndexExpression codegen 問題）
+            name-sw ?= names[i]
+            value-sw ?= values[i]
 
-        ; 用 slice 載入值（避開 IndexExpression codegen 問題）
-        ixout364c16 = names[i]: {
-            ok -> it
+            nlen = name-sw.len-bytes()
+            vlen = value-sw.len-bytes()
 
-            -> _
-        }
+            n str = name-sw.slice(0, nlen)
+            v str = value-sw.slice(0, vlen)
+            hdr-out = ' '
+            hdr-out = .hpack.encode-header(n, v)
 
-        nlen = ixout364c16.len-bytes()
+            ; 複製到 block
+            j <- [0..hdr-out.len-bytes()): {
 
-        ixout367c16 = values[i]: {
-            ok -> it
+                #{overflow=wrap}
+                block[block-n + j]: {
+                    ok -> it = hdr-out.byte(j)
 
-            -> _
-        }
-
-        vlen = ixout367c16.len-bytes()
-
-        ixout370c17 = names[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        n str = ixout370c17.slice(0, nlen)
-
-        ixout373c17 = values[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        v str = ixout373c17.slice(0, vlen)
-        hdr-out = ' '
-        hdr-out = .hpack.encode-header(n, v)
-
-        ; 複製到 block
-        j <- [0..hdr-out.len-bytes()): {
+                    -> _
+                }
+            }
 
             #{overflow=wrap}
-            block[block-n + j]: {
-                ok -> it = hdr-out.byte(j)
+            block-n = block-n + hdr-out.len-bytes()
+        }: {
+            err -> _
 
-                -> _
-            }
+            -> _
         }
-
-        #{overflow=wrap}
-        block-n = block-n + hdr-out.len-bytes()
     }
 
     ; 構建 HEADERS 影格
@@ -769,37 +751,17 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 i <- [0..dec-count): {
                     i >= 32 -> break
 
-                    ixout707c37 = dec-names[i]: {
-                        ok -> it
+                    {
+                        name-sw ?= dec-names[i]
+                        value-sw ?= dec-values[i]
+
+                        names[i] = name-sw.slice(0, name-sw.len-bytes())
+                        values[i] = value-sw.slice(0, value-sw.len-bytes())
+                    }: {
+                        err -> _
 
                         -> _
                     }
-
-                    nlen = ixout707c37.len-bytes()
-
-                    ixout709c38 = dec-values[i]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    vlen = ixout709c38.len-bytes()
-
-                    ixout711c41 = dec-names[i]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    names[i] = ixout711c41.slice(0, nlen)
-
-                    ixout713c43 = dec-values[i]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    values[i] = ixout713c43.slice(0, vlen)
                 }
                 {
                     dec-count <= 32 -> header-count = dec-count
@@ -982,75 +944,49 @@ do-req = (method str, url str, body str) (resp ?http.response) {
     ; 複製標頭到 r（用 slice 載入值）
     r.header-count = header-count
     i <- [0..header-count): {
-        ixout873c16 = names[i]: {
-            ok -> it
+        {
+            name-sw ?= names[i]
+            value-sw ?= values[i]
 
-            -> _
-        }
+            nlen = name-sw.len-bytes()
+            vlen = value-sw.len-bytes()
 
-        nlen = ixout873c16.len-bytes()
+            r.header-names[i] ?= name-sw.slice(0, nlen)
+            r.header-values[i] ?= value-sw.slice(0, vlen)
 
-        ixout876c16 = values[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        vlen = ixout876c16.len-bytes()
-
-        ixout879c29 = names[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        r.header-names[i] ?= ixout879c29.slice(0, nlen)
-
-        ixout882c30 = values[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        r.header-values[i] ?= ixout882c30.slice(0, vlen)
-
-        ; 尋找 :status
-        nlen == 7 -> {
-            is-status = 1
-            status-hdr = ':status'
-            j <- [0..7): {
-                ixout929c22 = names[i]: {
-                    ok -> it
-
-                    -> _
+            ; 尋找 :status（固定 7 個字元）
+            nlen == 7 -> {
+                is-status = 1
+                status-hdr = ':status'
+                j <- [0..7): {
+                    name-sw[j] != status-hdr[j] -> {
+                        is-status = 0
+                        break
+                    }
                 }
+                is-status == 1 -> {
+                    r.status-code = 0
+                    j <- [0..vlen): {
+                        {
+                            #{overflow=wrap}
+                            digit ?= value-sw[j]
 
-                ixout929c22[j] != status-hdr[j] -> {
-                    is-status = 0
-                    break
-                }
-            }
-            is-status == 1 -> {
-                r.status-code = 0
-                j <- [0..vlen): {
-                    ixout939c65 = values[i]: {
-                        ok -> it
+                            #{overflow=wrap}
+                            r.status-code = r.status-code * 10 + (digit - 48)
+                        }: {
+                            err -> _
 
-                        -> _
+                            -> _
+                        }
                     }
 
-                    #{overflow=wrap}
-                    r.status-code = r.status-code * 10 + (ixout939c65[j] - 48)
+                    r.status-text = value-sw.slice(0, vlen)
                 }
-
-                ixout903c33 = values[i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                r.status-text = ixout903c33.slice(0, vlen)
             }
+        }: {
+            err -> _
+
+            -> _
         }
     }
 

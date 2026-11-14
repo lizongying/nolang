@@ -152,15 +152,17 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             -> 0
         }
 
-        ixout133c24 = len-count[l]: {
+        len-count-l = len-count[l]: {
             ok -> it
 
             -> _
         }
 
-        #{overflow=wrap}
-        len-count[l]: {
-            ok -> it = ixout133c24 + 1
+        {
+            #{overflow=wrap}
+            len-count[l] ?= len-count-l + 1
+        }: {
+            err -> _
 
             -> _
         }
@@ -183,14 +185,14 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             -> _
         }
 
-        ixout157c28 = len-count[i]: {
+        count-at-length = len-count[i]: {
             ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
-        pp = pp + ixout157c28
+        pp = pp + count-at-length
     }
 
     ; 計算 limit 陣列
@@ -199,26 +201,21 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; first-code[len+1] = (first-code[len] + count[len]) << 1
     vec = 0
     i <- [0..24): {
-        ixout166c36 = len-count[i]: {
+        count-at-length = len-count[i]: {
             ok -> it
 
             -> _
         }
 
         {
-            .limit[i] ?= vec + ixout166c36 - 1
+            .limit[i] ?= vec + count-at-length - 1
         }: {
             err -> _
 
             -> _
         }
-        ixout167c31 = len-count[i]: {
-            ok -> it
 
-            -> _
-        }
-
-        vec = (vec + ixout167c31) << 1
+        vec = (vec + count-at-length) << 1
     }
 
     ; 填充 perm 陣列
@@ -242,29 +239,26 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             -> 0
         }
 
-        ixout182c15 = tmp-base[l]: {
+        ; 該碼長在 perm 中的下一個待填位置，用過即前移
+        slot-at = tmp-base[l]: {
             ok -> it
 
             -> _
         }
 
         {
-            .perm[ixout182c15] ?= i
+            .perm[slot-at] ?= i
         }: {
             err -> _
 
             -> _
         }
 
-        ixout186c24 = tmp-base[l]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        tmp-base[l]: {
-            ok -> it = ixout186c24 + 1
+        {
+            #{overflow=wrap}
+            tmp-base[l] ?= slot-at + 1
+        }: {
+            err -> _
 
             -> _
         }
@@ -413,65 +407,35 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
 ; [decompress](#bzip2.decompress)
 decompress = (data []byte) (out []byte) {
 
-    ; 檢查標頭: "BZh" + block_size_char
+    ; 檢查標頭："BZh" + block size 字元
     data.len() < 4 -> return
-    ixout304c9 = data[0]: {
-        ok -> it
 
-        -> _
+    header-magic = [66, 90, 104]
+    i <- [0..3): {
+        {
+            magic-byte ?= data[i]
+
+            expected-byte ?= header-magic[i]
+
+            magic-byte != expected-byte -> { return }
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
-    ixout304c9 != 66 -> {
-
-        ; 'B'
-        return
-    }
-    ixout309c9 = data[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout309c9 != 90 -> {
-
-        ; 'Z'
-        return
-    }
-    ixout314c9 = data[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout314c9 != 104 -> {
-
-        ; 'h'
-        return
-    }
+    ; block size 字元必須落在 '1'..'9'
     {
-        ixout320c13 = data[3]: {
-            ok -> it
+        size-char ?= data[3]
 
-            -> _
-        }
+        size-char < 49 -> { return }
 
-        ixout320c13 < 49 -> {
+        size-char > 57 -> { return }
+    }: {
+        err -> _
 
-            ; '1'
-            return
-        }
-
-        ixout326c13 = data[3]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout326c13 > 57 -> {
-
-            ; '9'
-            return
-        }
+        -> _
     }
 
     ; 建立位元讀取器（跳過 4 位元組標頭）
@@ -530,13 +494,13 @@ decompress = (data []byte) (out []byte) {
             }
             n-in-use = 0
             i <- [0..16): {
-                ixout391c26 = in-use-16[i]: {
+                in-use-16-i = in-use-16[i]: {
                     ok -> it
 
                     -> _
                 }
 
-                ixout391c26 == 1 -> {
+                in-use-16-i == 1 -> {
                     j <- [0..16): {
                         bit = br.read-bit()
                         bit == 1 -> {
@@ -566,13 +530,13 @@ decompress = (data []byte) (out []byte) {
             seq-to-unseq [256]i64
             k = 0
             i <- [0..256): {
-                ixout415c23 = in-use[i]: {
+                in-use-i = in-use[i]: {
                     ok -> it
 
                     -> _
                 }
 
-                ixout415c23 == 1 -> {
+                in-use-i == 1 -> {
                     seq-to-unseq[k]: {
                         ok -> it = i
 
@@ -867,14 +831,16 @@ decompress = (data []byte) (out []byte) {
 
                     ; 輸出剩餘的 run
                     run-len > 0 -> {
-                        i <- [0..run-len): {
-                            ixout643c49 = mtf-pos[0]: {
-                                ok -> it
+                        {
+                            front-symbol ?= mtf-pos[0]
 
-                                -> _
+                            i <- [0..run-len): {
+                                bwt-out.push(front-symbol)
                             }
+                        }: {
+                            err -> _
 
-                            bwt-out.push(ixout643c49)
+                            -> _
                         }
                     }
                     block-done = 1
@@ -885,14 +851,16 @@ decompress = (data []byte) (out []byte) {
 
                     ; 輸出累積的 run
                     run-len > 0 -> {
-                        i <- [0..run-len): {
-                            ixout655c49 = mtf-pos[0]: {
-                                ok -> it
+                        {
+                            front-symbol ?= mtf-pos[0]
 
-                                -> _
+                            i <- [0..run-len): {
+                                bwt-out.push(front-symbol)
                             }
+                        }: {
+                            err -> _
 
-                            bwt-out.push(ixout655c49)
+                            -> _
                         }
                         run-len = 0
                         run-n = 1
@@ -952,15 +920,17 @@ decompress = (data []byte) (out []byte) {
                 }
                 v >= 0 -> {
                     v < 256 -> {
-                        ixout687c40 = count[v]: {
+                        count-v = count[v]: {
                             ok -> it
 
                             -> _
                         }
 
-                        #{overflow=wrap}
-                        count[v]: {
-                            ok -> it = ixout687c40 + 1
+                        {
+                            #{overflow=wrap}
+                            count[v] ?= count-v + 1
+                        }: {
+                            err -> _
 
                             -> _
                         }
@@ -978,14 +948,14 @@ decompress = (data []byte) (out []byte) {
                     -> _
                 }
 
-                ixout748c38 = count[i]: {
+                count-i = count[i]: {
                     ok -> it
 
                     -> _
                 }
 
                 #{overflow=wrap}
-                total = total + ixout748c38
+                total = total + count-i
             }
 
             ; 計算 LF mapping
@@ -1010,34 +980,23 @@ decompress = (data []byte) (out []byte) {
                     -> 0
                 }
                 v >= 0 -> v < 256 -> {
-                    ixout734c36 = cum[v]: {
+                    cum-v = cum[v]: {
                         ok -> it
 
                         -> _
                     }
 
-                    ixout734c45 = rank[v]: {
-                        ok -> it
+                    {
+                        ; 該字元此前已出現的個數，用過即累加
+                        seen-count ?= rank[v]
 
-                        -> _
-                    }
+                        #{overflow=wrap}
+                        lf[i] ?= cum-v + seen-count
 
-                    #{overflow=wrap}
-                    lf[i]: {
-                        ok -> it = ixout734c36 + ixout734c45
-
-                        -> _
-                    }
-
-                    ixout741c36 = rank[v]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    #{overflow=wrap}
-                    rank[v]: {
-                        ok -> it = ixout741c36 + 1
+                        #{overflow=wrap}
+                        rank[v] ?= seen-count + 1
+                    }: {
+                        err -> _
 
                         -> _
                     }

@@ -117,16 +117,16 @@ t-unconnected = () {
 ; ── 3. connect / is-connected ────────────────────────────────────
 
 t-connect = () {
-    P = 39321
-    lf = net.net-listen('127.0.0.1', P)
+    p = 39321
+    lf = net.net-listen('127.0.0.1', p)
     runner.is-true(lf >= 0, '前置：listener 已起（39321）')
 
     cl = client{}
-    ok = cl.connect('127.0.0.1', P)
+    ok = cl.connect('127.0.0.1', p)
     runner.is-true(ok, 'connect: 回 true')
     runner.is-true(cl.connected, 'connect: connected = true')
     seq(cl.host, '127.0.0.1', 'connect: host 落地')
-    runner.eq(cl.port, P, 'connect: port 落地')
+    runner.eq(cl.port, p, 'connect: port 落地')
     runner.is-true(cl.c.fd >= 0, 'connect: 底層 fd 有效')
     runner.is-true(cl.is-connected(), 'is-connected: 已連接 ⇒ true')
 
@@ -142,7 +142,7 @@ t-connect = () {
 
     ; 非法位址
     cl3 = client{}
-    runner.is-false(cl3.connect('256.256.256.256', P), 'connect: 非法位址 ⇒ false')
+    runner.is-false(cl3.connect('256.256.256.256', p), 'connect: 非法位址 ⇒ false')
     runner.is-false(cl3.connected, 'connect: 非法位址後 connected = false')
 
     net.close(af)
@@ -152,10 +152,10 @@ t-connect = () {
 ; ── 4. send / recv / recv-line / send-line ───────────────────────
 
 t-send-recv = () {
-    P = 39322
-    lf = net.net-listen('127.0.0.1', P)
+    p = 39322
+    lf = net.net-listen('127.0.0.1', p)
     cl = client{}
-    runner.is-true(cl.connect('127.0.0.1', P), '前置：連線（39322）')
+    runner.is-true(cl.connect('127.0.0.1', p), '前置：連線（39322）')
     af = net.net-accept(lf)
     runner.is-true(af >= 0, '前置：已 accept')
     net.net-set-recv-timeout(af, 400)
@@ -207,10 +207,10 @@ t-send-recv = () {
 ; ── 5. request（請求-回應模式）────────────────────────────────────
 
 t-request = () {
-    P = 39323
-    lf = net.net-listen('127.0.0.1', P)
+    p = 39323
+    lf = net.net-listen('127.0.0.1', p)
     cl = client{}
-    runner.is-true(cl.connect('127.0.0.1', P), '前置：連線（39323）')
+    runner.is-true(cl.connect('127.0.0.1', p), '前置：連線（39323）')
     af = net.net-accept(lf)
     runner.is-true(af >= 0, '前置：已 accept')
 
@@ -239,11 +239,11 @@ t-request = () {
 ; ── 6. reconnect ─────────────────────────────────────────────────
 
 t-reconnect = () {
-    P = 39324
-    lf = net.net-listen('127.0.0.1', P)
+    p = 39324
+    lf = net.net-listen('127.0.0.1', p)
 
     cl = client{}
-    runner.is-true(cl.connect('127.0.0.1', P), '前置：首次連線（39324）')
+    runner.is-true(cl.connect('127.0.0.1', p), '前置：首次連線（39324）')
     a1 = net.net-accept(lf)
     runner.is-true(a1 >= 0, '前置：首次 accept')
 
@@ -268,17 +268,17 @@ t-reconnect = () {
 ; ── 7. client-create ─────────────────────────────────────────────
 
 t-client-create = () {
-    P = 39325
-    lf = net.net-listen('127.0.0.1', P)
+    p = 39325
+    lf = net.net-listen('127.0.0.1', p)
     runner.is-true(lf >= 0, '前置：listener 已起（39325）')
 
-    o = client.client-create('127.0.0.1', P)
+    o = client.client-create('127.0.0.1', p)
     runner.eq(cvo(o), 1, 'client-create: 成功 ⇒ ok')
 
     cl = cvv(o)
     runner.is-true(cl.connected, 'client-create: connected = true')
     seq(cl.host, '127.0.0.1', 'client-create: host 落地')
-    runner.eq(cl.port, P, 'client-create: port 落地')
+    runner.eq(cl.port, p, 'client-create: port 落地')
 
     af = net.net-accept(lf)
     runner.is-true(af >= 0, 'client-create: 對端可 accept')

@@ -35,13 +35,13 @@ max = (a ..num) (r num) {
     }
     n = len(a)
     i <- [1..n): {
-        ixout40c10 = a[i]: {
+        a-i = a[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout40c10 > r -> {
+        a-i > r -> {
             r = a[i]: {
                 ok -> it
 
@@ -63,13 +63,13 @@ min = (a ..num) (r num) {
     }
     n = len(a)
     i <- [1..n): {
-        ixout68c10 = a[i]: {
+        a-i = a[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout68c10 < r -> {
+        a-i < r -> {
             r = a[i]: {
                 ok -> it
 

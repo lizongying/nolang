@@ -40,6 +40,33 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     g = h6
     h = h7
 
+    ; 訊息排程 W[0..15] 直接取自區塊輸入；W[16..63] 由後段的 σ 展開式算出
+    {
+        w0 ?= s[0]
+        w1 ?= s[1]
+        w2 ?= s[2]
+        w3 ?= s[3]
+
+        w4 ?= s[4]
+        w5 ?= s[5]
+        w6 ?= s[6]
+        w7 ?= s[7]
+
+        w8 ?= s[8]
+        w9 ?= s[9]
+        w10 ?= s[10]
+        w11 ?= s[11]
+
+        w12 ?= s[12]
+        w13 ?= s[13]
+        w14 ?= s[14]
+        w15 ?= s[15]
+    }: {
+        err -> _
+
+        -> _
+    }
+
     ; ---- 第 0 輪 (K = 0x428A2F98 = 1116352408) ----
     s1 = ((e >> 6) | (e << 26)) & mask
     s1 = (s1 ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))) & mask
@@ -48,13 +75,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout51c38 = s[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 1116352408 + ixout51c38) & mask
+    t1 = (h + s1 + ch + 1116352408 + w0) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -76,13 +97,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout74c38 = s[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 1899447441 + ixout74c38) & mask
+    t1 = (h + s1 + ch + 1899447441 + w1) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -104,13 +119,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout97c38 = s[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 3049323471 + ixout97c38) & mask
+    t1 = (h + s1 + ch + 3049323471 + w2) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -132,13 +141,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout120c38 = s[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 3921009573 + ixout120c38) & mask
+    t1 = (h + s1 + ch + 3921009573 + w3) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -160,13 +163,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout143c37 = s[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 961987163 + ixout143c37) & mask
+    t1 = (h + s1 + ch + 961987163 + w4) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -188,13 +185,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout166c38 = s[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 1508970993 + ixout166c38) & mask
+    t1 = (h + s1 + ch + 1508970993 + w5) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -216,13 +207,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout189c38 = s[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 2453635748 + ixout189c38) & mask
+    t1 = (h + s1 + ch + 2453635748 + w6) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -244,13 +229,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout212c38 = s[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 2870763221 + ixout212c38) & mask
+    t1 = (h + s1 + ch + 2870763221 + w7) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -272,13 +251,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout235c38 = s[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 3624381080 + ixout235c38) & mask
+    t1 = (h + s1 + ch + 3624381080 + w8) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -300,13 +273,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout258c37 = s[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 310598401 + ixout258c37) & mask
+    t1 = (h + s1 + ch + 310598401 + w9) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -328,13 +295,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout281c37 = s[10]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 607225278 + ixout281c37) & mask
+    t1 = (h + s1 + ch + 607225278 + w10) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -356,13 +317,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout304c38 = s[11]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 1426881987 + ixout304c38) & mask
+    t1 = (h + s1 + ch + 1426881987 + w11) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -384,13 +339,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout327c38 = s[12]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 1925078388 + ixout327c38) & mask
+    t1 = (h + s1 + ch + 1925078388 + w12) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -412,13 +361,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout350c38 = s[13]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 2162078206 + ixout350c38) & mask
+    t1 = (h + s1 + ch + 2162078206 + w13) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -440,13 +383,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout373c38 = s[14]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 2614888103 + ixout373c38) & mask
+    t1 = (h + s1 + ch + 2614888103 + w14) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -468,13 +405,7 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout396c38 = s[15]: {
-        ok -> it
-
-        -> _
-    }
-
-    t1 = (h + s1 + ch + 3248222580 + ixout396c38) & mask
+    t1 = (h + s1 + ch + 3248222580 + w15) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -489,103 +420,6 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     a = (t1 + t2) & mask
 
     ; ---- 第 16-63 輪：擴展訊息排程 + 壓縮 ----
-    ; 預計算所有 W[16..63]
-    w0 = s[0]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w1 = s[1]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w2 = s[2]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w3 = s[3]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w4 = s[4]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w5 = s[5]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w6 = s[6]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w7 = s[7]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w8 = s[8]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w9 = s[9]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w10 = s[10]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w11 = s[11]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w12 = s[12]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w13 = s[13]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w14 = s[14]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w15 = s[15]: {
-        ok -> it
-
-        -> 0
-    }
-
     ; W[16]: σ1(w14) + w9 + σ0(w1) + w0
     s0-r7 = ((w1 >> 7) | (w1 << 25)) & mask
     s0-r18 = ((w1 >> 18) | (w1 << 14)) & mask
@@ -2335,42 +2169,31 @@ sha256 = (data []byte) (hash [32]byte) {
     (offset < total-len) {
 
         ; 將 64 位元組轉為 16 個 32-bit big-endian 字
-        ; 注意：必須用「普通賦值」`block[i] = …`，不能用 option 寫入
-        ; `block[i]: { ok -> it = … }`。編譯器在函式上下文中，對 option 寫入
-        ; ok 分支主體內的陣列讀取（來源 []byte 與目標 []u32 元素寬不同）
-        ; 會算錯 GEP，讀到 +0x100 錯位的值，組出的 block 是垃圾 → digest 錯。
+        ; 注意：讀 padded 必須在 block[i] 的寫入分支之外；option 寫入 ok 分支主體內
+        ; 讀 []byte 會被編譯器錯算 GEP（+0x100）→ 組出的 block 是垃圾 → digest 錯。
         i <- [0..16): {
+            ; 逐位元組大端組字：第 j 個位元組佔 bit [8*(3-j), 8*(3-j)+8)
+            word u32 = 0
+            j <- [0..4): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= offset + i * 4 + j
 
-            #{overflow=wrap}
-            ixout2264c25 = padded[offset + i * 4]: {
-                ok -> it
+                    raw-byte ?= padded[byte-at]
 
-                -> _
-            }
+                    #{overflow=wrap}
+                    bit-shift ?= (3 - j) * 8
 
-            #{overflow=wrap}
-            ixout2264c58 = padded[offset + i * 4 + 1]: {
-                ok -> it
+                    word = word | (raw-byte << bit-shift)
+                }: {
+                    err -> _
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout2264c95 = padded[offset + i * 4 + 2]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout2264c130 = padded[offset + i * 4 + 3]: {
-                ok -> it
-
-                -> _
+                    -> _
+                }
             }
 
             block[i]: {
-                ok -> it = (ixout2264c25 << 24) | (ixout2264c58 << 16) | (ixout2264c95 << 8) | ixout2264c130
+                ok -> it = word
 
                 -> _
             }
@@ -2378,14 +2201,12 @@ sha256 = (data []byte) (hash [32]byte) {
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
         {
-
             #{overflow=wrap}
-            offset-opt = offset + 64
-            offset-opt: {
-                ok -> offset = it
+            offset ?= offset + 64
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -2466,36 +2287,16 @@ sha256-hex = (data []byte) (hex str) {
     hex str = with-len(64)
 
     i <- [0..32): {
-        ixout2464c39 = hash[i]: {
-            ok -> it
+        {
+            word ?= hash[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex[i * 2]: {
-            ok -> it = hex-chars[(ixout2464c39 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout2471c38 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout2471c38 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }

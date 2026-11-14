@@ -98,8 +98,14 @@ intern.put = (t itab, s str) (id i64) {
     }
     t.pool.push(s)
 
-    #{overflow=wrap}
-    t.cnt = t.cnt + 1
+    {
+        ; 欄位自增同變數自增：`t.cnt + 1` 是 ?i64，必須先解包才能寫回 i64 欄位
+        #{overflow=wrap}
+        t.cnt ?= t.cnt + 1
+    }: { err -> _
+
+        -> _
+    }
     id = t.cnt
 }
 

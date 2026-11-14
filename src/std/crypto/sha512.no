@@ -42,6 +42,33 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     g = h6
     h = h7
 
+    ; 訊息排程 W[0..15] 直接取自區塊輸入；W[16..79] 由後段的 σ 展開式算出
+    {
+        w0 ?= s[0]
+        w1 ?= s[1]
+        w2 ?= s[2]
+        w3 ?= s[3]
+
+        w4 ?= s[4]
+        w5 ?= s[5]
+        w6 ?= s[6]
+        w7 ?= s[7]
+
+        w8 ?= s[8]
+        w9 ?= s[9]
+        w10 ?= s[10]
+        w11 ?= s[11]
+
+        w12 ?= s[12]
+        w13 ?= s[13]
+        w14 ?= s[14]
+        w15 ?= s[15]
+    }: {
+        err -> _
+
+        -> _
+    }
+
     ; 第 0 輪 (K0 = 0x428A2F98D728AE22)
 
     s1 = ((e >> 14) | (e << 50))
@@ -51,14 +78,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout54c50 = s[0]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 u64 = h + s1 + ch + 4794697086780616226 + ixout54c50
+    t1 u64 = h + s1 + ch + 4794697086780616226 + w0
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -83,14 +104,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout80c46 = s[1]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 8158064640168781261 + ixout80c46
+    t1 = h + s1 + ch + 8158064640168781261 + w1
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -115,14 +130,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout106c47 = s[2]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 13096744586834688815 + ixout106c47
+    t1 = h + s1 + ch + 13096744586834688815 + w2
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -147,14 +156,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout132c47 = s[3]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 16840607885511220156 + ixout132c47
+    t1 = h + s1 + ch + 16840607885511220156 + w3
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -179,14 +182,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout158c46 = s[4]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 4131703408338449720 + ixout158c46
+    t1 = h + s1 + ch + 4131703408338449720 + w4
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -211,14 +208,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout184c46 = s[5]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 6480981068601479193 + ixout184c46
+    t1 = h + s1 + ch + 6480981068601479193 + w5
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -243,14 +234,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout210c47 = s[6]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 10538285296894168987 + ixout210c47
+    t1 = h + s1 + ch + 10538285296894168987 + w6
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -275,14 +260,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout236c47 = s[7]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 12329834152419229976 + ixout236c47
+    t1 = h + s1 + ch + 12329834152419229976 + w7
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -307,14 +286,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout262c47 = s[8]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 15566598209576043074 + ixout262c47
+    t1 = h + s1 + ch + 15566598209576043074 + w8
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -339,14 +312,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout288c46 = s[9]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 1334009975649890238 + ixout288c46
+    t1 = h + s1 + ch + 1334009975649890238 + w9
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -371,14 +338,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout314c46 = s[10]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 2608012711638119052 + ixout314c46
+    t1 = h + s1 + ch + 2608012711638119052 + w10
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -403,14 +364,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout340c46 = s[11]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 6128411473006802146 + ixout340c46
+    t1 = h + s1 + ch + 6128411473006802146 + w11
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -435,14 +390,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout366c46 = s[12]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 8268148722764581231 + ixout366c46
+    t1 = h + s1 + ch + 8268148722764581231 + w12
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -467,14 +416,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout392c46 = s[13]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 9286055187155687089 + ixout392c46
+    t1 = h + s1 + ch + 9286055187155687089 + w13
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -499,14 +442,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout418c47 = s[14]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 11230858885718282805 + ixout418c47
+    t1 = h + s1 + ch + 11230858885718282805 + w14
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -531,14 +468,8 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     s0 = s0 ^ ((a >> 34) | (a << 30)) ^ ((a >> 39) | (a << 25))
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    ixout444c47 = s[15]: {
-        ok -> it
-
-        -> _
-    }
-
     #{overflow=wrap}
-    t1 = h + s1 + ch + 13951009754708518548 + ixout444c47
+    t1 = h + s1 + ch + 13951009754708518548 + w15
 
     #{overflow=wrap}
     t2 = s0 + maj
@@ -556,103 +487,7 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
     a = t1 + t2
 
     ; ---- 第 16-79 輪：擴展訊息排程 + 壓縮 ----
-    ; 預計算所有 W[16..79]
-    w0 = s[0]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w1 = s[1]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w2 = s[2]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w3 = s[3]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w4 = s[4]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w5 = s[5]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w6 = s[6]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w7 = s[7]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w8 = s[8]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w9 = s[9]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w10 = s[10]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w11 = s[11]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w12 = s[12]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w13 = s[13]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w14 = s[14]: {
-        ok -> it
-
-        -> 0
-    }
-
-    w15 = s[15]: {
-        ok -> it
-
-        -> 0
-    }
-
+    ; 擴展訊息排程：W[16..79]
     ; W[16]: σ1(w14) + w9 + σ0(w1) + w0
     s0-r1 = ((w1 >> 1) | (w1 << 63))
     s0-r8 = ((w1 >> 8) | (w1 << 56))
@@ -3270,67 +3105,31 @@ sha512 = (data []byte) (hash [64]byte) {
     (offset < total-len) {
 
         ; 將 128 位元組轉為 16 個 64-bit big-endian 字
-        ; 注意：必須用普通賦值；option 寫入 ok 分支主體內讀 []byte 會被編譯器錯算 GEP（+0x100）→ digest 錯。
+        ; 注意：讀 padded 必須在 block[i] 的寫入分支之外；option 寫入 ok 分支主體內讀 []byte
+        ; 會被編譯器錯算 GEP（+0x100）→ digest 錯。
         i <- [0..16): {
+            ; 逐位元組大端組字：第 j 個位元組佔 bit [8*(7-j), 8*(7-j)+8)
+            word u64 = 0
+            j <- [0..8): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= offset + i * 8 + j
 
-            #{overflow=wrap}
-            ixout3180c25 = padded[offset + i * 8]: {
-                ok -> it
+                    raw-byte ?= padded[byte-at]
 
-                -> _
-            }
+                    #{overflow=wrap}
+                    bit-shift ?= (7 - j) * 8
 
-            #{overflow=wrap}
-            ixout3180c58 = padded[offset + i * 8 + 1]: {
-                ok -> it
+                    word = word | (raw-byte << bit-shift)
+                }: {
+                    err -> _
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout3180c95 = padded[offset + i * 8 + 2]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout3180c132 = padded[offset + i * 8 + 3]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout3180c169 = padded[offset + i * 8 + 4]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout3180c206 = padded[offset + i * 8 + 5]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout3180c243 = padded[offset + i * 8 + 6]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            ixout3180c278 = padded[offset + i * 8 + 7]: {
-                ok -> it
-
-                -> _
+                    -> _
+                }
             }
 
             block[i]: {
-                ok -> it = (ixout3180c25 << 56) | (ixout3180c58 << 48) | (ixout3180c95 << 40) | (ixout3180c132 << 32) | (ixout3180c169 << 24) | (ixout3180c206 << 16) | (ixout3180c243 << 8) | ixout3180c278
+                ok -> it = word
 
                 -> _
             }
@@ -3338,14 +3137,12 @@ sha512 = (data []byte) (hash [64]byte) {
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
         {
-
             #{overflow=wrap}
-            offset-opt = offset + 128
-            offset-opt: {
-                ok -> offset = it
+            offset ?= offset + 128
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -3490,36 +3287,16 @@ sha512-hex = (data []byte) (hex str) {
     hex str = with-len(128)
 
     i <- [0..64): {
-        ixout3488c39 = hash[i]: {
-            ok -> it
+        {
+            word ?= hash[i]
 
-            -> _
-        }
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
 
-        #{overflow=wrap}
-        hex[i * 2]: {
-            ok -> it = hex-chars[(ixout3488c39 >> 4) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
-
-        ixout3495c38 = hash[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout3495c38 & 15]: {
-                ok -> it
-
-                -> _
-            }
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[word & 15]
+        }: {
+            err -> _
 
             -> _
         }

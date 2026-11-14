@@ -41,7 +41,7 @@
 # /compiler/src/ck
 # /compiler/src/ck-sig
 
-ll = drv.pkg-ll('compiler/tests/pkg-ll-entry.no')
+ll = drv.pkg-ll('compiler/tests/pkg-ll-entry.no', false)
 print('pkg-ll: produced ' - ll.len-bytes().to-str() - ' bytes of IR')
 
 ; 切片 4 驗收（⑭ ⑪ ④，as-built）

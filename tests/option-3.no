@@ -32,20 +32,40 @@ fill-str = () (out ?str) {
 
 ; (1) option 包 slice：.len() 必須是 3，不是 tag 0
 v = fill-slice()
-v.len() == 3 -> print('ok: ?[]i64 len peels the option')
+pieces = v: {
+    ok -> it
 
--> print('fail: ?[]i64 len got={v.len()}')
+    -> []
+}
+pieces.len() == 3 -> print('ok: ?[]i64 len peels the option')
+
+-> print('fail: ?[]i64 len got={pieces.len()}')
 
 ; (2) 讀回元素也要正確（走同一個 self 剝殼）
-v[0] == 10 && v[2] == 30 -> print('ok: ?[]i64 element read')
+first = pieces[0]: {
+    ok -> it
+
+    -> 0
+}
+third = pieces[2]: {
+    ok -> it
+
+    -> 0
+}
+first == 10 && third == 30 -> print('ok: ?[]i64 element read')
 
 -> print('fail: ?[]i64 element read')
 
 ; (3) option 包 str：.len() 是位元組數 5
 s = fill-str()
-s.len() == 5 -> print('ok: ?str len peels the option')
+text = s: {
+    ok -> it
 
--> print('fail: ?str len got={s.len()}')
+    -> ''
+}
+text.len() == 5 -> print('ok: ?str len peels the option')
+
+-> print('fail: ?str len got={text.len()}')
 
 ; (4) 標量 option 不受影響（本來就走別的路徑）
 n = scalar-opt()
@@ -55,20 +75,35 @@ n == 42 -> print('ok: ?i64 scalar unchanged')
 
 ; (5) nil option 的 .len() 不應崩潰
 e = empty-slice()
-e.len() == 0 -> print('ok: nil ?[]i64 len is 0')
+nothing = e: {
+    ok -> it
 
--> print('fail: nil ?[]i64 len got={e.len()}')
+    -> []
+}
+nothing.len() == 0 -> print('ok: nil ?[]i64 len is 0')
+
+-> print('fail: nil ?[]i64 len got={nothing.len()}')
 
 ; (6) 剝殼出來的 slice 是**借用**，不是所有權轉移：先讀 .len() 再取元素，
 ;     緩衝區不能被中途釋放（曾經把 option 當成 move source，讀出的副本
 ;     成了唯一的釋放點 → 後面的 v[i] 讀到已釋放的記憶體，印出 0）
 w = fill-slice()
-print('peel len={w.len()}')
+row = w: {
+    ok -> it
+
+    -> []
+}
+print('peel len={row.len()}')
 i <- [0..3): {
+    elem = row[i]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     {
-        w[i] == 10 + i * 10 -> {
+        elem == 10 + i * 10 -> {
         }
 
         -> print('fail: borrow peel freed the buffer at {i.to-str()}')

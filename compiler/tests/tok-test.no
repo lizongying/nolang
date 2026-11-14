@@ -55,8 +55,13 @@ test-names-cover-all = () {
         unk = tok.str-eq(nm, 'UNKNOWN')
         unk -> {
 
-            #{overflow=wrap}
-            bad = bad + 1
+            {
+                #{overflow=wrap}
+                bad ?= bad + 1
+            }: { err -> _
+
+                -> _
+            }
         }
     }
     runner.eq(bad, 0, 'every code 0..91 has a name, no UNKNOWN')

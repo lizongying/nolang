@@ -105,8 +105,16 @@ vs-f = () {
     s = [1, 2, 3, 4, 5]
     w = s[1..3]
     s = [9, 9, 9]; 舊 buffer 被釋放，w 必須已是獨立副本
-    print(w[0]); 2
-    print(w[1]); 3
+    {
+        first ?= w[0]
+        second ?= w[1]
+        print(first); 2
+        print(second); 3
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 vs-f()
 

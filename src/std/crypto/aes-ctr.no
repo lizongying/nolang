@@ -18,100 +18,39 @@
 ; cb []byte: 16 位元組計數器區塊，原地修改；只會動到後 4 位元組（下標 12–15）
 ; [ctr-inc](#aes-ctr.ctr-inc)
 ctr-inc = (cb []byte) {
+    ; 大端計數器加 1：從最低位元組往上加，位元組回繞成 0 才繼續進位
+    carry = 1
     j = 15
-    (j >= 12) {
-        ixout25c25 = cb[j]: {
-            ok -> it
+    (j >= 0 && carry == 1) {
+        {
+            #{overflow=wrap}
+            old-byte ?= cb[j]
+
+            #{overflow=wrap}
+            new-byte = (old-byte + carry) & 255
+
+            cb[j]: {
+                ok -> it = new-byte
+
+                -> _
+            }
+
+            carry = 0
+
+            new-byte == 0 -> carry = 1
+        }: {
+            err -> _
 
             -> _
-        }
-
-        cb[j]: {
-            ok -> it = (ixout25c25 + 1) & 255
-
-            -> _
-        }
-        ixout34c11 = cb[j]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout34c11 != 0 -> {
-            break
         }
 
         {
-
             #{overflow=wrap}
-            j-opt = j - 1
-            j-opt: {
-                ok -> j = it
+            j ?= j - 1
+        }: {
+            err -> _
 
-                ->
-            }
-        }
-    }
-
-    ; 進位傳播
-    ixout44c7 = cb[12]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout44c22 = cb[13]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout44c37 = cb[14]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout44c52 = cb[15]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout44c7 == 0 && ixout44c22 == 0 && ixout44c37 == 0 && ixout44c52 == 0 -> {
-        j = 11
-        (j >= 0) {
-            ixout45c29 = cb[j]: {
-                ok -> it
-
-                -> _
-            }
-
-            cb[j]: {
-                ok -> it = (ixout45c29 + 1) & 255
-
-                -> _
-            }
-            ixout59c15 = cb[j]: {
-                ok -> it
-
-                -> _
-            }
-
-            ixout59c15 != 0 -> {
-                break
-            }
-
-            {
-
-                #{overflow=wrap}
-                j-opt2 = j - 1
-                j-opt2: {
-                    ok -> j = it
-
-                    ->
-                }
-            }
+            -> _
         }
     }
 }
@@ -166,33 +105,31 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         i <- [0..n): {
 
             #{overflow=wrap}
-            ixout101c29 = in[pos + i]: {
+            in-pos-i = in[pos + i]: {
                 ok -> it
 
                 -> _
             }
 
-            ixout101c45 = ks[i]: {
+            ks-i = ks[i]: {
                 ok -> it
 
                 -> _
             }
 
             #{overflow=wrap}
-            out[pos + i] = (ixout101c29) ^ (ixout101c45)
+            out[pos + i] = (in-pos-i) ^ (ks-i)
         }
 
         ctr-inc(cb)
 
         {
-
             #{overflow=wrap}
-            pos-opt = pos + n
-            pos-opt: {
-                ok -> pos = it
+            pos ?= pos + n
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }

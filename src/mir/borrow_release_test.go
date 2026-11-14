@@ -24,19 +24,34 @@ import (
 // the grow frees a buffer `b` still points at (measured: tests/vec-slice-more.no
 // aborts 20/20 without the retain). And the retain must be given back when b0
 // dies, or the buffer is pinned forever.
+//
+// 🔴 2026-11-14 勘误：`b = a` 这条别名让主语进入 idxLocalTypes（§5.2q 的修复：
+// 别名容器的型别要登记，否则 `b[0]` 的元素型别推不出来），于是 `b[0]` 与其他
+// 下标读取同口径 —— 返回 `?[]i64`，值位 match 去解包。旧夹具 `b0 = b[0]` 直接
+// 当 `[]i64` 用，靠的是 checker 与 parser 型别表分岔（§5.2s）才编得过，
+// MIR 里是 `move dst=13:[]i64 args=[option槽]` 这种型别错位。这里按 D11 写成
+// 解包形态，语义不变（`-> []` 只在越界时走，且原夹具本来也没处理越界）。
 const borrowReleaseSrc = `
 mk = () (v []i64) {
     v.push(1)
     v.push(2)
 }
 
+probe = (a [][]i64) (n i64) {
+    b = a
+    b0 = b[0]: {
+        ok -> it
+
+        -> []
+    }
+    b0.push(100)
+    n = b0.len()
+}
+
 main = () {
     a [][]i64
     a.push(mk())
-    b = a
-    b0 = b[0]
-    b0.push(100)
-    print(b0.len())
+    print(probe(a))
 }
 `
 
@@ -184,16 +199,48 @@ func opCountsInFunc(t *testing.T, mod *Module, name string) map[Op]int {
 
 // TestBorrowReadEmitsPairedRelease pins the pairing itself: a borrow read of an
 // owned slice retains, and the value's death gives that reference back.
+//
+// 🔴 2026-11-14 勘误（与 TestReleaseIsShallowForNestedElementType 同一口径）：
+// D6 之下索引读取产出 option，借用的引用交给 **option 载荷**的析构归还，
+// 不再是一条独立的 OpRelease（实测 @probe 里是 `vec_retain` 一次、归还由
+// `b0` 增长时替换旧缓冲的 `@nolang_free` 承担）。所以断言从「OpRelease 计数
+// == OpRetain」换成 IR 层判据：**retain 必须出现，且必须有对应的 refcount
+// 归还**。@nolang_free 本身就是「减计数、到零才 free」（codegen.go 的
+// @vec_retain 段注释），故它是合格的归还；@vec_free / @__nolang_vec_free_
+// 同理。不能只看 OpRelease 计数，否则会把这类合法归还误判成泄漏。
+//
+// 判别力：把 insertBorrowRetains 的 slice 分支关掉，第一个与第三个断言都失败。
 func TestBorrowReadEmitsPairedRelease(t *testing.T) {
 	mod := lowerForTest(t, borrowReleaseSrc)
-	c := opCountsInFunc(t, mod, "main")
+	c := opCountsInFunc(t, mod, "probe")
 	if c[OpRetain] == 0 {
 		t.Fatalf("a borrow read of an owned slice was not retained:\n%s", mod.DumpAnnotated())
 	}
-	if c[OpRelease] != c[OpRetain] {
-		t.Errorf("retain/release are unpaired in main: %d retain vs %d release — "+
+	// 旧口径（D6 之前）要求一条独立的 OpRelease；现在只在借用值没走 option
+	// 载荷析构时才出现，所以有就必须与 retain 配平。
+	if c[OpRelease] != 0 && c[OpRelease] != c[OpRetain] {
+		t.Errorf("retain/release are unpaired in probe: %d retain vs %d release — "+
 			"an unmatched retain pins the buffer forever (@nolang_free frees only at zero)\n%s",
 			c[OpRetain], c[OpRelease], mod.DumpAnnotated())
+	}
+
+	ir := mustEmit(t, borrowReleaseSrc)
+	body := irFunc(ir, "probe")
+	if body == "" {
+		t.Fatalf("could not locate @probe in the emitted IR")
+	}
+	if !strings.Contains(body, "call void @vec_retain(") {
+		t.Errorf("the borrow read is not refcounted; without the retain a grow of the owner "+
+			"frees a buffer this value still points at:\n%s", body)
+	}
+	// 归还必须走 refcount 判据：三者都在 rc>1 时只做减计数，这正是 borrow
+	// 需要的「浅归还」。缺了它，retain 过的缓冲永远不会被回收。
+	givenBack := strings.Contains(body, "call void @nolang_free(i8* ") ||
+		strings.Contains(body, "call void @vec_free(") ||
+		strings.Contains(body, "@__nolang_vec_free_")
+	if !givenBack {
+		t.Errorf("the retained borrow is never given back (no refcount decrement); an "+
+			"unreleased retain pins the buffer forever:\n%s", body)
 	}
 }
 

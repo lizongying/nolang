@@ -17,170 +17,170 @@
 t-slice-sort-asc = () {
     v = [5, 3, 8, 1, 9, 2, 7]
     v.asc()
-    ixout19c16 = v[0]: {
+    v-0 = v[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout19c16, 1, 'sort-asc [0] == 1')
-    ixout20c16 = v[1]: {
+    runner.eq(v-0, 1, 'sort-asc [0] == 1')
+    v-1 = v[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout20c16, 2, 'sort-asc [1] == 2')
-    ixout21c16 = v[2]: {
+    runner.eq(v-1, 2, 'sort-asc [1] == 2')
+    v-2 = v[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout21c16, 3, 'sort-asc [2] == 3')
-    ixout22c16 = v[3]: {
+    runner.eq(v-2, 3, 'sort-asc [2] == 3')
+    v-3 = v[3]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout22c16, 5, 'sort-asc [3] == 5')
-    ixout23c16 = v[4]: {
+    runner.eq(v-3, 5, 'sort-asc [3] == 5')
+    v-4 = v[4]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout23c16, 7, 'sort-asc [4] == 7')
-    ixout24c16 = v[5]: {
+    runner.eq(v-4, 7, 'sort-asc [4] == 7')
+    v-5 = v[5]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout24c16, 8, 'sort-asc [5] == 8')
-    ixout25c16 = v[6]: {
+    runner.eq(v-5, 8, 'sort-asc [5] == 8')
+    v-6 = v[6]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout25c16, 9, 'sort-asc [6] == 9')
+    runner.eq(v-6, 9, 'sort-asc [6] == 9')
 }
 
 ; 動態切片降冪：desc() 原地重排，同一組元素應得到 9,8,7,5,3,2,1
 t-slice-sort-desc = () {
     v = [5, 3, 8, 1, 9, 2, 7]
     v.desc()
-    ixout32c16 = v[0]: {
+    v-0 = v[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout32c16, 9, 'sort-desc [0] == 9')
-    ixout33c16 = v[1]: {
+    runner.eq(v-0, 9, 'sort-desc [0] == 9')
+    v-1 = v[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout33c16, 8, 'sort-desc [1] == 8')
-    ixout34c16 = v[2]: {
+    runner.eq(v-1, 8, 'sort-desc [1] == 8')
+    v-2 = v[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout34c16, 7, 'sort-desc [2] == 7')
-    ixout35c16 = v[3]: {
+    runner.eq(v-2, 7, 'sort-desc [2] == 7')
+    v-3 = v[3]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout35c16, 5, 'sort-desc [3] == 5')
-    ixout36c16 = v[6]: {
+    runner.eq(v-3, 5, 'sort-desc [3] == 5')
+    v-6 = v[6]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout36c16, 1, 'sort-desc [6] == 1')
+    runner.eq(v-6, 1, 'sort-desc [6] == 1')
 }
 
 ; 兩個元素的邊界案例：只需一次比較即可交換成升冪
 t-slice-sort-two = () {
     v = [2, 1]
     v.asc()
-    ixout43c16 = v[0]: {
+    v-0 = v[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout43c16, 1, 'sort-asc two [0] == 1')
-    ixout44c16 = v[1]: {
+    runner.eq(v-0, 1, 'sort-asc two [0] == 1')
+    v-1 = v[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout44c16, 2, 'sort-asc two [1] == 2')
+    runner.eq(v-1, 2, 'sort-asc two [1] == 2')
 }
 
 ; 單元素切片：沒有任何可比較物件，元素必須原樣保留
 t-slice-sort-single = () {
     v = [42]
     v.asc()
-    ixout51c16 = v[0]: {
+    v-0 = v[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout51c16, 42, 'sort-asc single == 42')
+    runner.eq(v-0, 42, 'sort-asc single == 42')
 }
 
 ; 重複元素：相等值不參與交換，結果為 1,1,3,3,3（排序需容忍重複）
 t-slice-sort-duplicates = () {
     v = [3, 1, 3, 1, 3]
     v.asc()
-    ixout58c16 = v[0]: {
+    v-0 = v[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout58c16, 1, 'sort-asc dup [0] == 1')
-    ixout59c16 = v[1]: {
+    runner.eq(v-0, 1, 'sort-asc dup [0] == 1')
+    v-1 = v[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout59c16, 1, 'sort-asc dup [1] == 1')
-    ixout60c16 = v[2]: {
+    runner.eq(v-1, 1, 'sort-asc dup [1] == 1')
+    v-2 = v[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout60c16, 3, 'sort-asc dup [2] == 3')
-    ixout61c16 = v[3]: {
+    runner.eq(v-2, 3, 'sort-asc dup [2] == 3')
+    v-3 = v[3]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout61c16, 3, 'sort-asc dup [3] == 3')
-    ixout62c16 = v[4]: {
+    runner.eq(v-3, 3, 'sort-asc dup [3] == 3')
+    v-4 = v[4]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout62c16, 3, 'sort-asc dup [4] == 3')
+    runner.eq(v-4, 3, 'sort-asc dup [4] == 3')
 }
 
 ; ── 固定陣列排序 ──────────────────────────────
@@ -189,82 +189,82 @@ t-slice-sort-duplicates = () {
 t-array-sort-asc = () {
     a = [5, 3, 8, 1, 9, 2, 7, 4]
     a.asc()
-    ixout71c16 = a[0]: {
+    a-0 = a[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout71c16, 1, 'array sort-asc [0] == 1')
-    ixout72c16 = a[1]: {
+    runner.eq(a-0, 1, 'array sort-asc [0] == 1')
+    a-1 = a[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout72c16, 2, 'array sort-asc [1] == 2')
-    ixout73c16 = a[2]: {
+    runner.eq(a-1, 2, 'array sort-asc [1] == 2')
+    a-2 = a[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout73c16, 3, 'array sort-asc [2] == 3')
-    ixout74c16 = a[3]: {
+    runner.eq(a-2, 3, 'array sort-asc [2] == 3')
+    a-3 = a[3]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout74c16, 4, 'array sort-asc [3] == 4')
-    ixout75c16 = a[4]: {
+    runner.eq(a-3, 4, 'array sort-asc [3] == 4')
+    a-4 = a[4]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout75c16, 5, 'array sort-asc [4] == 5')
-    ixout76c16 = a[5]: {
+    runner.eq(a-4, 5, 'array sort-asc [4] == 5')
+    a-5 = a[5]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout76c16, 7, 'array sort-asc [5] == 7')
-    ixout77c16 = a[6]: {
+    runner.eq(a-5, 7, 'array sort-asc [5] == 7')
+    a-6 = a[6]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout77c16, 8, 'array sort-asc [6] == 8')
-    ixout78c16 = a[7]: {
+    runner.eq(a-6, 8, 'array sort-asc [6] == 8')
+    a-7 = a[7]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout78c16, 9, 'array sort-asc [7] == 9')
+    runner.eq(a-7, 9, 'array sort-asc [7] == 9')
 }
 
 ; 固定陣列降冪：desc() 後首元素為最大值 9、末元素為最小值 1
 t-array-sort-desc = () {
     a = [5, 3, 8, 1, 9, 2, 7, 4]
     a.desc()
-    ixout85c16 = a[0]: {
+    a-0 = a[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout85c16, 9, 'array sort-desc [0] == 9')
-    ixout86c16 = a[7]: {
+    runner.eq(a-0, 9, 'array sort-desc [0] == 9')
+    a-7 = a[7]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout86c16, 1, 'array sort-desc [7] == 1')
+    runner.eq(a-7, 1, 'array sort-desc [7] == 1')
 }
 
 ; ── i64.gt 比較 ────────────────────────────────

@@ -1,0 +1,625 @@
+; ============================================================
+; 過濾存檔（filtered copy）— 此檔不參與 vet / test / build
+; ------------------------------------------------------------
+; 檔名以 '_' 開頭：nolang 的 IsIgnoredSourcePath 慣例會忽略它，
+; `no vet` / `no test` / `no build` 的目錄遍歷都跳過本檔。
+;
+; 來源：sse.no 的原樣副本，未改動任何一行程式碼。
+; 保留原因：P 是連接埠變數沿用原文大寫記號，
+; 依「不修改合法源碼」原則原樣保存，供日後對照向量來源。
+;
+; 實際執行且 `no vet` 0 error 的版本：sse.no
+; （識別字已改為 kebab-case / 已修掉診斷）。改向量時請兩份一起對照。
+; ============================================================
+
+; test/std/sse.no — net/sse 模組測試
+;
+; 執行：no test test/std/sse.no
+;
+; 為什麼這個檔存在：`net/sse` 整模組沒有任何測試，而它是 W3C EventSource 的兩端
+; （客戶端解析 + 服務端發送）。本檔把「解析」與「發送」分開釘住：
+;
+;   - 解析側（client.next-event）不需要網路：直接造一個 connected=true 的 client，
+;     把 recv-buf 預先填好完整事件，next-event 就在緩衝區裡就地切分返回，一個 recv
+;     都不做。這樣可以精確覆蓋 data / event / id / retry / 多行 data / 註解行 /
+;     \r\n 分隔 / 「只有 event 沒有 data 要跳過」/ 緩衝區過大 這八種分支。
+;   - IO 側用 127.0.0.1 上的一對 TCP fd（listen → dial → accept），對端先 net-send
+;     再由被測方 recv，因此不會阻塞；並且一律先 net-set-recv-timeout，
+;     即使實作有缺陷也只會回 nil 而不會掛死測試。
+;
+; 覆蓋清單（18 個公開符號）：
+;   常數：SSE-BUF-SIZE SSE-RECV-SIZE SSE-DEFAULT-PORT SSE-DEFAULT-TLS-PORT
+;   結構體：event（4 欄）client server server-conn
+;   client：next-event close is-connected reconnect
+;   server：listen accept close
+;   server-conn：handshake send-event send-comment is-connected close
+;   函式：sse-connect listen-on
+;
+; ⚠️ 未覆蓋（需真握手 / 需並發，本檔刻意不碰）：
+;   client.reconnect 的**成功**臂、sse-connect 的**成功**臂 —— 兩者都是「先 dial、
+;   再 send、再阻塞等回應標頭」，單執行緒內無法在等待的同時從對端寫回應，
+;   所以只測失敗臂（URL 非法 / 埠不通）。要補成功臂得先有並發手段
+;   （fork 一個假伺服器），見 test/README.md 的待辦。
+;
+; 寫法備註：
+;   - `?T` 收成 1 / 0 用兩步賦值（先 `v = 0` 再 `v = o: { … }`），單行的 `it`
+;     型別會串到外層。
+;   - 跨模組 std 結構體變數必須顯式標型別（`c sse.client`），否則 unknown callee。
+;   - `str.byte(i)` 回 `?byte`，一律經 sb() 取值。
+;   - 本語言**沒有 char.to-str**，單字元的 str 一律由 ch1() 造
+;     （否則期望值只能用 '\n\n' 這種兩位元組的寫法，表達不了單個換行）。
+;   - 造 recv-buf 一律 `seed - with-len(8192 - seed.len-bytes())`：用連接而不是
+;     下標寫入，避開「結構體 str 欄位下標寫入被靜默丟棄」那條 codegen 缺陷。
+
+# /test/runner
+
+; ── helpers ──────────────────────────────────────────────────────
+
+; 取 str 的位元組（str.byte(i) 回 ?byte）
+sb = (s str, i i64) (v i64) {
+    v = s.byte(i): {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; ?sse.client → 1=ok / 0=nil-or-err
+cvv = (o ?sse.client) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+; ?sse.client 的 err 訊息（非 err 回 ''）
+cerr = (o ?sse.client) (m str) {
+    m = ''
+    m = o: {
+        err -> it.msg
+
+        -> ''
+    }
+}
+
+; ?sse.server → 1=ok / 0=nil
+srvv = (o ?sse.server) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+; ?sse.server-conn → 1=ok / 0=nil
+scv = (o ?sse.server-conn) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+; ?event → 1=ok / 0=nil / 2=err
+evv = (o ?event) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        nil -> 0
+
+        err -> 2
+    }
+}
+
+; ?event 的 err 訊息（非 err 回 ''）
+eerr = (o ?event) (m str) {
+    m = ''
+    m = o: {
+        err -> it.msg()
+
+        -> ''
+    }
+}
+
+; 字串比較：先比長度（避開 str-eq 的 n 超界讀），再逐位元組
+seq = (a str, b str, msg str) {
+    la = a.len-bytes()
+    lb = b.len-bytes()
+    runner.eq(la, lb, msg - ' / 長度')
+    la == lb -> runner.is-true(a.eq(b, la), msg)
+}
+
+; 造一個「已連線」的 client：recv-buf 固定 8192 位元組，前段填 seed
+mk-client = (f i64, seed str) (c sse.client) {
+    tc tls.conn
+    pad-n = sse.SSE-BUF-SIZE - seed.len-bytes()
+    buf = seed
+    pad-n > 0 -> {
+        pad str = with-len(pad-n)
+        buf = seed - pad
+    }
+    c = sse.client{
+        fd: f
+        tls-c: tc
+        use-tls: false
+        connected: true
+        host: '127.0.0.1'
+        port: 80
+        path: '/events'
+        last-event-id: ''
+        recv-buf: buf
+        recv-buf-len: seed.len-bytes()
+    }
+}
+
+; 從 fd 讀到至少 want 位元組（或對端關閉 / 逾時），用連接累積避免下標寫入
+readn = (f i64, want i64) (s str) {
+    s = ''
+    got = 0
+    !! {
+        tmp str = with-len(4096)
+        n = net.net-recv(f, tmp, 4096)
+        n <= 0 -> break
+        s = s - tmp.slice(0, n)
+        got = got + n
+        got >= want -> break
+    }
+}
+
+; ── 常數 / event 結構體 ──────────────────────────────────────────
+
+t-const = () {
+    runner.eq(sse.SSE-BUF-SIZE, 8192, 'SSE-BUF-SIZE = 8192')
+    runner.eq(sse.SSE-RECV-SIZE, 4096, 'SSE-RECV-SIZE = 4096')
+    runner.eq(sse.SSE-DEFAULT-PORT, 80, 'SSE-DEFAULT-PORT = 80')
+    runner.eq(sse.SSE-DEFAULT-TLS-PORT, 443, 'SSE-DEFAULT-TLS-PORT = 443')
+
+    e = sse.event{
+        event: 'message'
+        data: 'body'
+        id: '7'
+        retry: 1500
+    }
+    seq(e.event, 'message', 'event.event 落地')
+    seq(e.data, 'body', 'event.data 落地')
+    seq(e.id, '7', 'event.id 落地')
+    runner.eq(e.retry, 1500, 'event.retry 落地')
+}
+
+; ── next-event：純緩衝區解析（不碰網路）───────────────────────────
+
+t-parse = () {
+    nl = '\n'
+    cr = '\r'
+    crlf = cr - nl
+    nl2 = nl - nl
+    crlf2 = crlf - crlf
+
+    ; ① 最小事件
+    a = mk-client(-1, 'data: hello' - nl2)
+    ra = a.next-event()
+    runner.eq(evv(ra), 1, 'next-event: data only ⇒ ok')
+    ra: {
+        ok -> {
+            seq(it.event, 'message', 'next-event: 無 event 欄 ⇒ 預設 message')
+            seq(it.data, 'hello', 'next-event: data 落地')
+            seq(it.id, '', 'next-event: 無 id 欄 ⇒ 空')
+            runner.eq(it.retry, -1, 'next-event: 無 retry 欄 ⇒ -1')
+        }
+
+        -> runner.is-false(true, 'next-event: data only 應為 ok')
+    }
+    runner.eq(a.recv-buf-len, 0, 'next-event: 整個事件被消費 ⇒ recv-buf-len = 0')
+
+    ; ② event / 多行 data / id / retry（用 \r\n 分行，順帶驗證行尾 \r 被剝掉）
+    b = mk-client(-1, 'event: note' - crlf - 'data: l1' - crlf - 'data: l2' - crlf - 'id: 42' - crlf - 'retry: 1500' - crlf2)
+    rb = b.next-event()
+    runner.eq(evv(rb), 1, 'next-event: 全欄位 ⇒ ok')
+    rb: {
+        ok -> {
+            seq(it.event, 'note', 'next-event: event 落地')
+            seq(it.data, 'l1' - nl - 'l2', 'next-event: 多行 data 以 \\n 連接')
+            seq(it.id, '42', 'next-event: id 落地')
+            runner.eq(it.retry, 1500, 'next-event: retry 落地')
+        }
+
+        -> runner.is-false(true, 'next-event: 全欄位 應為 ok')
+    }
+    seq(b.last-event-id, '42', 'next-event: id 同步寫入 last-event-id')
+
+    ; retry 非數字 ⇒ -1（value.to-i64() 的失敗臂）
+    b2 = mk-client(-1, 'data: x' - crlf - 'retry: abc' - crlf2)
+    rb2 = b2.next-event()
+    rb2: {
+        ok -> runner.eq(it.retry, -1, 'next-event: retry 非數字 ⇒ -1')
+
+        -> runner.is-false(true, 'next-event: retry 非數字 應為 ok')
+    }
+
+    ; ③ 註解行（: 開頭）不算欄位，且無 data 的區塊要跳過、繼續取下一塊
+    c = mk-client(-1, ':' - ' heartbeat' - crlf2 - 'data: after-comment' - crlf2)
+    rc = c.next-event()
+    runner.eq(evv(rc), 1, 'next-event: 跳過註解區塊 ⇒ 回下一塊')
+    rc: {
+        ok -> seq(it.data, 'after-comment', 'next-event: 註解後的事件 data 正確')
+
+        -> runner.is-false(true, 'next-event: 註解後 應為 ok')
+    }
+
+    ; ④ 只有 event 沒有 data ⇒ 不回傳，緩衝區耗盡後 recv 失敗（fd=-1）⇒ nil
+    d = mk-client(-1, 'event: only' - crlf2)
+    runner.eq(evv(d.next-event()), 0, 'next-event: 無 data 的區塊跳過，緩衝區空後回 nil')
+
+    ; ⑤ \r\n 分隔符
+    e5 = mk-client(-1, 'data: crlf' - crlf2)
+    r5 = e5.next-event()
+    runner.eq(evv(r5), 1, 'next-event: \\r\\n\\r\\n 分隔 ⇒ ok')
+    r5: {
+        ok -> seq(it.data, 'crlf', 'next-event: \\r\\n 事件的行尾 \\r 被剝掉')
+
+        -> runner.is-false(true, 'next-event: \\r\\n 分隔 應為 ok')
+    }
+
+    ; ⑥ 冒號後無空格（規範允許）
+    f6 = mk-client(-1, 'data:tight' - nl2)
+    r6 = f6.next-event()
+    runner.eq(evv(r6), 1, 'next-event: 冒號後直接接值 ⇒ ok')
+    r6: {
+        ok -> seq(it.data, 'tight', 'next-event: 無空格時值不被吃掉')
+
+        -> runner.is-false(true, 'next-event: 冒號後直接接值 應為 ok')
+    }
+
+    ; ⑦ 未連線
+    g = mk-client(-1, '')
+    g.connected = false
+    rg = g.next-event()
+    runner.eq(evv(rg), 2, 'next-event: 未連線 ⇒ err')
+    seq(eerr(rg), 'not connected', 'next-event: 未連線的訊息')
+
+    ; ⑧ 緩衝區滿且無分隔符 ⇒ event too large
+    big str = with-len(sse.SSE-BUF-SIZE)
+    h = mk-client(-1, big)
+    rh = h.next-event()
+    runner.eq(evv(rh), 2, 'next-event: 緩衝區滿 ⇒ err')
+    seq(eerr(rh), 'event too large', 'next-event: 緩衝區滿的訊息')
+}
+
+; ── next-event：真 socket IO + 跨封包拼接 + EOF ─────────────────
+
+t-io = () {
+    P = 39303
+    lf-fd = net.net-listen('127.0.0.1', P)
+    lf-fd < 0 -> {
+        runner.is-true(true, 'io: 埠 39303 不可用，跳過')
+        return
+    }
+    cf = net.net-dial('127.0.0.1', P)
+    af = net.net-accept(lf-fd)
+    runner.is-true(af >= 0, 'io: 取得已連線 fd')
+    net.net-set-recv-timeout(af, 300)
+
+    c = mk-client(af, '')
+    runner.eq(c.recv-buf-len, 0, 'io: 起始 recv-buf-len = 0')
+
+    ; 對端先寫，被測方再讀 ⇒ 不會阻塞
+    msg = 'data: from-sock' - '\n' - '\n'
+    w = net.net-send(cf, msg, msg.len-bytes())
+    runner.eq(w, msg.len-bytes(), 'io: 對端寫入完整')
+
+    r = c.next-event()
+    runner.eq(evv(r), 1, 'io: 從 socket 拼出一個完整事件')
+    r: {
+        ok -> seq(it.data, 'from-sock', 'io: socket 事件的 data')
+
+        -> runner.is-false(true, 'io: socket 事件 應為 ok')
+    }
+    runner.eq(c.recv-buf-len, 0, 'io: 事件消費後緩衝區清空')
+
+    ; 兩段封包拼成一個事件（第一次 recv 拿不到分隔符 ⇒ 迴圈再 recv）
+    half = 'data: par'
+    net.net-send(cf, half, half.len-bytes())
+    rest = 'tial' - '\n' - '\n'
+    net.net-send(cf, rest, rest.len-bytes())
+    r2 = c.next-event()
+    runner.eq(evv(r2), 1, 'io: 兩段封包拼成一個事件')
+    r2: {
+        ok -> seq(it.data, 'partial', 'io: 跨封包拼接正確')
+
+        -> runner.is-false(true, 'io: 跨封包 應為 ok')
+    }
+
+    ; 對端關閉 ⇒ nil，且 connected 轉 false
+    fs.close(cf)
+    r3 = c.next-event()
+    runner.eq(evv(r3), 0, 'io: 對端關閉 ⇒ nil')
+    runner.is-false(c.connected, 'io: 對端關閉後 connected = false')
+
+    fs.close(af)
+    fs.close(lf-fd)
+}
+
+; ── client.close / is-connected / reconnect（失敗臂）──────────────
+
+t-client-misc = () {
+    P = 39304
+    lf-fd = net.net-listen('127.0.0.1', P)
+    lf-fd < 0 -> {
+        runner.is-true(true, 'client: 埠 39304 不可用，跳過')
+        return
+    }
+    cf = net.net-dial('127.0.0.1', P)
+    af = net.net-accept(lf-fd)
+
+    c = mk-client(af, '')
+    runner.is-true(c.is-connected(), 'is-connected: 已連線 ⇒ true')
+    c.close()
+    runner.eq(c.fd, -1, 'close: fd 歸 -1')
+    runner.is-false(c.is-connected(), 'is-connected: 關閉後 ⇒ false')
+
+    ; 冪等：再關一次不炸、狀態不變
+    c.close()
+    runner.eq(c.fd, -1, 'close: 重複呼叫保持 fd = -1')
+
+    ; 未連線時 close 是 no-op
+    d = mk-client(-1, '')
+    d.connected = false
+    d.close()
+    runner.eq(d.fd, -1, 'close: 未連線時 no-op')
+
+    ; reconnect 失敗臂：埠不通 ⇒ false（成功臂需並發對端，見檔頭說明）
+    e = mk-client(-1, '')
+    e.port = 1
+    runner.is-false(e.reconnect(), 'reconnect: 埠 1 不通 ⇒ false')
+
+    fs.close(cf)
+    fs.close(lf-fd)
+}
+
+; ── sse-connect 的錯誤臂 ─────────────────────────────────────────
+
+t-connect-err = () {
+    c1 = sse.sse-connect('ftp://127.0.0.1/x')
+    runner.eq(cvv(c1), 0, 'sse-connect: 非 http(s) scheme ⇒ 非 ok')
+    seq(cerr(c1), 'invalid URL: must start with http:// or https://', 'sse-connect: scheme 錯誤訊息')
+
+    c2 = sse.sse-connect('http:///x')
+    runner.eq(cvv(c2), 0, 'sse-connect: 空 host ⇒ 非 ok')
+    seq(cerr(c2), 'empty host', 'sse-connect: 空 host 訊息')
+
+    c3 = sse.sse-connect('http://')
+    runner.eq(cvv(c3), 0, 'sse-connect: 只有 scheme ⇒ 非 ok')
+    seq(cerr(c3), 'empty host', 'sse-connect: 只有 scheme 的訊息')
+
+    c4 = sse.sse-connect('http://127.0.0.1:abc/events')
+    runner.eq(cvv(c4), 0, 'sse-connect: 埠非數字 ⇒ 非 ok')
+    seq(cerr(c4), 'invalid port', 'sse-connect: 埠非數字訊息')
+
+    c5 = sse.sse-connect('http://127.0.0.1:1/events')
+    runner.eq(cvv(c5), 0, 'sse-connect: 埠 1 不通 ⇒ 非 ok')
+    seq(cerr(c5), 'TCP connection failed', 'sse-connect: TCP 失敗訊息')
+
+    c6 = sse.sse-connect('https://127.0.0.1:1/events')
+    runner.eq(cvv(c6), 0, 'sse-connect: https 埠 1 不通 ⇒ 非 ok')
+    seq(cerr(c6), 'TLS connection failed', 'sse-connect: TLS 失敗訊息')
+}
+
+; ── server.listen / listen-on / close ────────────────────────────
+
+t-server = () {
+    P = 39301
+    s = sse.listen-on('127.0.0.1', P)
+    runner.eq(srvv(s), 1, 'listen-on: 回 ok')
+    srv = s: {
+        ok -> it
+
+        -> sse.server{}
+    }
+    runner.is-true(srv.fd >= 0, 'listen-on: fd 有效')
+    seq(srv.host, '127.0.0.1', 'listen-on: host 落地')
+    runner.eq(srv.port, P, 'listen-on: port 落地')
+
+    ; 同埠重複監聽 ⇒ nil
+    s2 = sse.listen-on('127.0.0.1', P)
+    runner.eq(srvv(s2), 0, 'listen-on: 同埠重複 ⇒ 非 ok')
+
+    ; 直接調 server.listen 在同一個被佔用的埠上 ⇒ false 且 fd = -1
+    s3 = sse.server{}
+    runner.is-false(s3.listen('127.0.0.1', P), 'server.listen: 埠被佔 ⇒ false')
+    runner.eq(s3.fd, -1, 'server.listen: 失敗後 fd = -1')
+
+    ; 非法位址 ⇒ false（getaddrinfo 失敗）
+    s4 = sse.server{}
+    runner.is-false(s4.listen('256.256.256.256', P), 'server.listen: 非法位址 ⇒ false')
+
+    ; close 之後 fd 歸 -1，且同埠可以重新監聽
+    srv.close()
+    runner.eq(srv.fd, -1, 'server.close: fd 歸 -1')
+    s5 = sse.listen-on('127.0.0.1', P)
+    runner.eq(srvv(s5), 1, 'server.close 後同埠可重新監聽')
+    s5b = s5: {
+        ok -> it
+
+        -> sse.server{}
+    }
+    s5b.close()
+    runner.eq(s5b.fd, -1, 'server.close: 第二個 server 也歸 -1')
+}
+
+; ── server.accept + server-conn 全鏈路 ───────────────────────────
+
+t-accept = () {
+    P = 39301
+    nl = '\n'
+    cr = '\r'
+    crlf = cr - nl
+    crlf2 = crlf - crlf
+    nl2 = nl - nl
+
+    s = sse.listen-on('127.0.0.1', P)
+    srv = s: {
+        ok -> it
+
+        -> sse.server{}
+    }
+    srv.fd < 0 -> {
+        runner.is-true(true, 'accept: 埠 39301 不可用，跳過')
+        return
+    }
+
+    ; 已關閉的 server 上 accept ⇒ nil
+    dead = sse.server{}
+    runner.eq(scv(dead.accept()), 0, 'accept: fd = -1 的 server ⇒ nil')
+
+    cf = net.net-dial('127.0.0.1', P)
+    runner.is-true(cf >= 0, 'accept: 裸客戶端已連上')
+    net.net-set-recv-timeout(cf, 120)
+
+    req = 'GET /events HTTP/1.1' - crlf - 'Host: 127.0.0.1' - crlf - 'Accept: text/event-stream' - crlf2
+    net.net-send(cf, req, req.len-bytes())
+
+    c = srv.accept()
+    runner.eq(scv(c), 1, 'accept: 合法 GET ⇒ ok')
+    conn = c: {
+        ok -> it
+
+        -> sse.server-conn{}
+    }
+    runner.is-true(conn.connected, 'accept: connected = true')
+    runner.is-true(conn.is-connected(), 'server-conn.is-connected ⇒ true')
+
+    ; 交握回應必須是 200，且帶 SSE 標頭
+    head = readn(cf, 12)
+    runner.is-true(head.len-bytes() >= 12, 'handshake: 回應至少 12 位元組')
+    seq(head.slice(0, 12), 'HTTP/1.1 200', 'handshake: 回應 200')
+    tail-head = readn(cf, 120)
+    whole-head = head - tail-head
+    runner.is-true(whole-head.index('text/event-stream') >= 0, 'handshake: Content-Type: text/event-stream')
+    runner.is-true(whole-head.index('Cache-Control: no-cache') >= 0, 'handshake: Cache-Control: no-cache')
+
+    ; send-event：全欄位
+    runner.is-true(conn.send-event('msg', 'hi', '7', 100), 'send-event: 回 true')
+    exp = 'event: msg' - nl - 'data: hi' - nl - 'id: 7' - nl - 'retry: 100' - nl2
+    out = readn(cf, exp.len-bytes())
+    seq(out, exp, 'send-event: 全部欄位序列化正確')
+
+    ; send-event：多行 data（每行一個 data: 前綴）、無 event/id/retry
+    runner.is-true(conn.send-event('', 'a' - nl - 'b', '', -1), 'send-event: 多行 data 回 true')
+    mexp = 'data: a' - nl - 'data: b' - nl2
+    mout = readn(cf, mexp.len-bytes())
+    seq(mout, mexp, 'send-event: 多行 data 每行加前綴')
+
+    ; send-event：空 data 仍要發一個 data: 行
+    runner.is-true(conn.send-event('x', '', '', -1), 'send-event: 空 data 回 true')
+    eexp = 'event: x' - nl - 'data: ' - nl2
+    eout = readn(cf, eexp.len-bytes())
+    seq(eout, eexp, 'send-event: 空 data ⇒ 一個空 data: 行')
+
+    ; send-comment
+    runner.is-true(conn.send-comment('hb'), 'send-comment: 回 true')
+    cexp = ':' - 'hb' - nl2
+    cout = readn(cf, cexp.len-bytes())
+    seq(cout, cexp, 'send-comment: 註解格式正確')
+
+    ; close
+    conn.close()
+    runner.eq(conn.fd, -1, 'server-conn.close: fd 歸 -1')
+    runner.is-false(conn.is-connected(), 'server-conn.close: connected = false')
+    runner.is-false(conn.send-event('m', 'd', '', -1), 'send-event: 已關閉 ⇒ false')
+    runner.is-false(conn.send-comment('x'), 'send-comment: 已關閉 ⇒ false')
+
+    fs.close(cf)
+    srv.close()
+    runner.eq(scv(srv.accept()), 0, 'accept: server 關閉後 ⇒ nil')
+}
+
+; ── handshake 的失敗臂 ───────────────────────────────────────────
+
+t-handshake-fail = () {
+    P = 39302
+    cr = '\r'
+    nl = '\n'
+    crlf = cr - nl
+    crlf2 = crlf - crlf
+
+    ; fd = -1
+    c0 = sse.server-conn{
+        fd: -1
+        connected: false
+    }
+    runner.is-false(c0.handshake(), 'handshake: fd = -1 ⇒ false')
+    runner.is-false(c0.connected, 'handshake: fd = -1 ⇒ connected 保持 false')
+
+    s = sse.listen-on('127.0.0.1', P)
+    srv = s: {
+        ok -> it
+
+        -> sse.server{}
+    }
+    srv.fd < 0 -> {
+        runner.is-true(true, 'handshake: 埠 39302 不可用，跳過')
+        return
+    }
+
+    ; 非 GET ⇒ 405，且 accept 回 nil
+    cf = net.net-dial('127.0.0.1', P)
+    net.net-set-recv-timeout(cf, 120)
+    req = 'POST /events HTTP/1.1' - crlf - 'Host: h' - crlf2
+    net.net-send(cf, req, req.len-bytes())
+    r = srv.accept()
+    runner.eq(scv(r), 0, 'accept: 非 GET ⇒ nil')
+    resp = readn(cf, 40)
+    runner.is-true(resp.index('405') >= 0, 'handshake: 非 GET 回應 405')
+    runner.is-true(resp.index('Allow: GET') >= 0, 'handshake: 405 帶 Allow: GET')
+    fs.close(cf)
+
+    ; 請求行沒有空白 ⇒ false
+    cf2 = net.net-dial('127.0.0.1', P)
+    net.net-set-recv-timeout(cf2, 120)
+    garbage = 'GARBAGE' - crlf2
+    net.net-send(cf2, garbage, garbage.len-bytes())
+    r2 = srv.accept()
+    runner.eq(scv(r2), 0, 'accept: 請求行無空白 ⇒ nil')
+    fs.close(cf2)
+
+    ; 對端立刻關閉（一進去就 EOF）⇒ false
+    cf3 = net.net-dial('127.0.0.1', P)
+    fs.close(cf3)
+    r3 = srv.accept()
+    runner.eq(scv(r3), 0, 'accept: 對端立刻關閉 ⇒ nil')
+
+    ; 已關閉的 fd 上交握（connected 名義上還是 true）⇒ 失敗，且**不動** connected
+    ; （handshake 只在成功時把它設 true，早退路徑不會清）
+    c1 = sse.server-conn{
+        fd: -1
+        connected: true
+    }
+    runner.is-false(c1.handshake(), 'handshake: 已關閉 fd ⇒ false')
+    runner.is-true(c1.connected, 'handshake: 早退不動 connected（原值保留）')
+
+    srv.close()
+}
+
+; ── 執行 ─────────────────────────────────────────────────────────
+
+p1, f1 = runner.test('sse.const', t-const)
+p2, f2 = runner.test('sse.parse', t-parse)
+p3, f3 = runner.test('sse.io', t-io)
+p4, f4 = runner.test('sse.client-misc', t-client-misc)
+p5, f5 = runner.test('sse.connect-err', t-connect-err)
+p6, f6 = runner.test('sse.server', t-server)
+p7, f7 = runner.test('sse.accept', t-accept)
+p8, f8 = runner.test('sse.handshake-fail', t-handshake-fail)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

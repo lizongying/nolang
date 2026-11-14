@@ -2151,6 +2151,20 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 			c.fail("vec.push: cannot push a value of type '%s' into '%s': the element type is '%s' but the argument is '%s', and no conversion exists between them",
 				c.rawTypeOfValue(elem), c.rawTypeOfValue(recv), elemLL, elemTy)
 			return nil
+		} else if isOptionType(elemTy) != isOptionType(elemLL) {
+			// 一邊是 option、另一邊不是 —— 兩邊都不會走到上面的純量/聚合分支
+			// （那條明確排除 option），所以舊的 `else { elemLL = elemTy }` 會讓
+			// push 以 option 的寬度（%option_<T>，16 或 24 位元組）寫進按 T
+			// 的元素寬度（8 位元組）配置的緩衝區，而索引路徑仍按 T 讀：
+			//   v = pick(hb + 0)   ; 實參是 ?i64 ⇒ 整條綁定被捕獲成 ?i64
+			//   xs.push(v)         ; checker 以為 v 是 i64，放行
+			// 讀回只拿到 tag 那 8 位元組，於是查表恆 miss（h2m-test s98 六條紅）。
+			//
+			// 這種分岔只剩「checker 認為 T、MIR 認為 ?T」一條路（真·型別錯誤在
+			// checker 就被 5lycdtsz 擋掉了），所以在這裡明確拒絕，不要靜默寫垃圾。
+			c.fail("vec.push [in %s]: cannot push an option value of type '%s' into '%s' (element type '%s'): unwrap it first (`v ?= …`, a match arm, or `k = <expr>` then `k: { ok -> … }`)",
+				c.fname[c.cf], elemTy, c.rawTypeOfValue(recv), elemLL)
+			return nil
 		} else {
 			// 無法轉換的元素（結構體等）：沿用引數值型別，
 			// 保持與索引路徑相同的位元組寬度假設。

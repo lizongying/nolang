@@ -57,194 +57,92 @@ rotr = (x u64, n i64) (r u64) {
 ; 無返回值：結果留在 v[a]/v[b]/v[c]/v[d]
 ; [blake-g](#argon2.blake-g)
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
-    ixout60c21 = v[a]: {
-        ok -> it
+    ; GB 的 4 步 × 2 輪。每次寫回 v[i] 後下一步就讀新值，故各自具名讀出；
+    ; 乘數項取低 32 位（2 * lo32(x) * lo32(y)），與 RFC 9106 §3.5 一致。
+    ; x / y 為保留參數，本實作不使用。
+
+    ; ---- 第一輪 ----
+    {
+        a-old-1 ?= v[a]
+        b-old-1 ?= v[b]
+
+        v[a]: {
+            ok -> it = (a-old-1 + b-old-1 + 2 * (a-old-1 & 4294967295) * (b-old-1 & 4294967295)) & ARGON2-MASK
+
+            -> _
+        }
+
+        d-old-1 ?= v[d]
+        a-new-1 ?= v[a]
+
+        v[d]: {
+            ok -> it = rotr(d-old-1 ^ a-new-1, 32)
+
+            -> _
+        }
+
+        c-old-1 ?= v[c]
+        d-new-1 ?= v[d]
+
+        v[c]: {
+            ok -> it = (c-old-1 + d-new-1 + 2 * (c-old-1 & 4294967295) * (d-new-1 & 4294967295)) & ARGON2-MASK
+
+            -> _
+        }
+
+        b-old-2 ?= v[b]
+        c-new-1 ?= v[c]
+
+        v[b]: {
+            ok -> it = rotr(b-old-2 ^ c-new-1, 24)
+
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout60c28 = v[b]: {
-        ok -> it
+    ; ---- 第二輪 ----
+    {
+        a-old-2 ?= v[a]
+        b-new-1 ?= v[b]
 
-        -> _
-    }
+        v[a]: {
+            ok -> it = (a-old-2 + b-new-1 + 2 * (a-old-2 & 4294967295) * (b-new-1 & 4294967295)) & ARGON2-MASK
 
-    ixout60c40 = v[a]: {
-        ok -> it
+            -> _
+        }
 
-        -> _
-    }
+        d-old-2 ?= v[d]
+        a-new-2 ?= v[a]
 
-    ixout60c62 = v[b]: {
-        ok -> it
+        v[d]: {
+            ok -> it = rotr(d-old-2 ^ a-new-2, 16)
 
-        -> _
-    }
+            -> _
+        }
 
-    v[a]: {
-        ok -> it = (ixout60c21 + ixout60c28 + 2 * (ixout60c40 & 4294967295) * (ixout60c62 & 4294967295)) & ARGON2-MASK
+        c-old-2 ?= v[c]
+        d-new-2 ?= v[d]
 
-        -> _
-    }
+        v[c]: {
+            ok -> it = (c-old-2 + d-new-2 + 2 * (c-old-2 & 4294967295) * (d-new-2 & 4294967295)) & ARGON2-MASK
 
-    ixout67c25 = v[d]: {
-        ok -> it
+            -> _
+        }
 
-        -> _
-    }
+        b-old-3 ?= v[b]
+        c-new-2 ?= v[c]
 
-    ixout67c32 = v[a]: {
-        ok -> it
+        v[b]: {
+            ok -> it = rotr(b-old-3 ^ c-new-2, 63)
 
-        -> _
-    }
-
-    v[d]: {
-        ok -> it = rotr(ixout67c25 ^ ixout67c32, 32)
-
-        -> _
-    }
-
-    ixout74c21 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout74c28 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout74c40 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout74c62 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[c]: {
-        ok -> it = (ixout74c21 + ixout74c28 + 2 * (ixout74c40 & 4294967295) * (ixout74c62 & 4294967295)) & ARGON2-MASK
-
-        -> _
-    }
-
-    ixout81c25 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout81c32 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[b]: {
-        ok -> it = rotr(ixout81c25 ^ ixout81c32, 24)
-
-        -> _
-    }
-
-    ixout88c21 = v[a]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout88c28 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout88c40 = v[a]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout88c62 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[a]: {
-        ok -> it = (ixout88c21 + ixout88c28 + 2 * (ixout88c40 & 4294967295) * (ixout88c62 & 4294967295)) & ARGON2-MASK
-
-        -> _
-    }
-
-    ixout95c25 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout95c32 = v[a]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[d]: {
-        ok -> it = rotr(ixout95c25 ^ ixout95c32, 16)
-
-        -> _
-    }
-
-    ixout102c21 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout102c28 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout102c40 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout102c62 = v[d]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[c]: {
-        ok -> it = (ixout102c21 + ixout102c28 + 2 * (ixout102c40 & 4294967295) * (ixout102c62 & 4294967295)) & ARGON2-MASK
-
-        -> _
-    }
-
-    ixout109c25 = v[b]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout109c32 = v[c]: {
-        ok -> it
-
-        -> _
-    }
-
-    v[b]: {
-        ok -> it = rotr(ixout109c25 ^ ixout109c32, 63)
+            -> _
+        }
+    }: {
+        err -> _
 
         -> _
     }
@@ -451,25 +349,21 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 }
 
                 {
-
                     #{overflow=wrap}
-                    pos-opt = pos + 32
-                    pos-opt: {
-                        ok -> pos = it
+                    pos ?= pos + 32
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
 
                 {
-
                     #{overflow=wrap}
-                    remaining-opt = remaining - 32
-                    remaining-opt: {
-                        ok -> remaining = it
+                    remaining ?= remaining - 32
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
 
@@ -509,20 +403,20 @@ compress = (x []byte, y []byte) (out []byte) {
     ; 直接 `r[i]: { ok -> it = … }` 是越界寫 → SIGSEGV（compress 崩潰根因）。
     r []byte = with-len(1024)
     i <- [0..1024): {
-        ixout305c25 = x[i]: {
+        x-i = x[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout305c34 = y[i]: {
+        y-i = y[i]: {
             ok -> it
 
             -> _
         }
 
         r[i]: {
-            ok -> it = (ixout305c25) ^ (ixout305c34)
+            ok -> it = (x-i) ^ (y-i)
 
             -> _
         }
@@ -531,67 +425,28 @@ compress = (x []byte, y []byte) (out []byte) {
     ; 載入為 128 個 u64（16×8 矩陣）
     v [128]u64
     i <- [0..128): {
+        ; 逐位元組小端組字：第 j 個位元組佔 bit [8j, 8j+8)
+        word u64 = 0
+        j <- [0..8): {
+            {
+                #{overflow=wrap}
+                byte-at ?= i * 8 + j
 
-        #{overflow=wrap}
-        off = i * 8
+                raw-byte ?= r[byte-at]
 
-        ixout320c25 = r[off]: {
-            ok -> it
+                #{overflow=wrap}
+                bit-shift ?= j * 8
 
-            -> _
-        }
+                word = word | (raw-byte << bit-shift)
+            }: {
+                err -> _
 
-        #{overflow=wrap}
-        ixout320c37 = r[off + 1]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout320c59 = r[off + 2]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout320c82 = r[off + 3]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout320c105 = r[off + 4]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout320c128 = r[off + 5]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout320c151 = r[off + 6]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        ixout320c174 = r[off + 7]: {
-            ok -> it
-
-            -> _
+                -> _
+            }
         }
 
         v[i]: {
-            ok -> it = (ixout320c25) | ((ixout320c37) << 8) | ((ixout320c59) << 16) | ((ixout320c82) << 24) | ((ixout320c105) << 32) | ((ixout320c128) << 40) | ((ixout320c151) << 48) | ((ixout320c174) << 56)
+            ok -> it = word
 
             -> _
         }
@@ -661,89 +516,37 @@ compress = (x []byte, y []byte) (out []byte) {
 
     ; 輸出 = (X XOR Y) XOR Z（即 R XOR P(R)）
     i <- [0..128): {
+        {
+            val ?= v[i]
 
-        #{overflow=wrap}
-        off = i * 8
+            ; 逐位元組拆字並與原值 XOR：第 j 個位元組佔 bit [8j, 8j+8)
+            j <- [0..8): {
+                {
+                    #{overflow=wrap}
+                    byte-at ?= i * 8 + j
 
-        val = v[i]
+                    #{overflow=wrap}
+                    bit-shift ?= j * 8
 
-        ixout397c35 = r[off]: {
-            ok -> it
+                    old-byte ?= r[byte-at]
 
-            -> _
-        }
+                    #{overflow=wrap}
+                    out[byte-at]: {
+                        ok -> it = (((val >> bit-shift) & 255) ^ old-byte) & 255
 
-        out[off] = ((val & 255) ^ ixout397c35) & 255
+                        -> _
+                    }
+                }: {
+                    err -> _
 
-        #{overflow=wrap}
-        ixout400c46 = r[off + 1]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[off + 1] = (((val >> 8) & 255) ^ ixout400c46) & 255
-
-        #{overflow=wrap}
-        ixout403c47 = r[off + 2]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[off + 2] = (((val >> 16) & 255) ^ ixout403c47) & 255
-
-        #{overflow=wrap}
-        ixout406c47 = r[off + 3]: {
-            ok -> it
+                    -> _
+                }
+            }
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        out[off + 3] = (((val >> 24) & 255) ^ ixout406c47) & 255
-
-        #{overflow=wrap}
-        ixout409c47 = r[off + 4]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[off + 4] = (((val >> 32) & 255) ^ ixout409c47) & 255
-
-        #{overflow=wrap}
-        ixout412c47 = r[off + 5]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[off + 5] = (((val >> 40) & 255) ^ ixout412c47) & 255
-
-        #{overflow=wrap}
-        ixout415c47 = r[off + 6]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[off + 6] = (((val >> 48) & 255) ^ ixout415c47) & 255
-
-        #{overflow=wrap}
-        ixout418c47 = r[off + 7]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[off + 7] = (((val >> 56) & 255) ^ ixout418c47) & 255
     }
 }
 
@@ -776,14 +579,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     #{overflow=wrap}
     m < 8 * parallelism -> {
         {
-
             #{overflow=wrap}
-            m-opt2 = 8 * parallelism
-            m-opt2: {
-                ok -> m = it
+            m ?= 8 * parallelism
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
     lanes = parallelism
@@ -835,14 +636,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt2 = pos + 4
-        pos-opt2: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; out-len (32-bit LE)
@@ -875,14 +674,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt3 = pos + 4
-        pos-opt3: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; memory-cost m (32-bit LE)
@@ -915,14 +712,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt4 = pos + 4
-        pos-opt4: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; time-cost t (32-bit LE)
@@ -955,14 +750,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt5 = pos + 4
-        pos-opt5: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; version v (32-bit LE) = 0x13
@@ -995,14 +788,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt6 = pos + 4
-        pos-opt6: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; type y (32-bit LE) = 2 (Argon2id)
@@ -1035,14 +826,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt7 = pos + 4
-        pos-opt7: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; len(P) (32-bit LE) || P
@@ -1077,14 +866,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt8 = pos + 4
-        pos-opt8: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     i <- [0..pw-len): {
         {
@@ -1099,14 +886,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt9 = pos + pw-len
-        pos-opt9: {
-            ok -> pos = it
+        pos ?= pos + pw-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; len(S) (32-bit LE) || S
@@ -1141,14 +926,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt10 = pos + 4
-        pos-opt10: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
     i <- [0..salt-len): {
         {
@@ -1163,14 +946,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt11 = pos + salt-len
-        pos-opt11: {
-            ok -> pos = it
+        pos ?= pos + salt-len
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; len(K) = 0, len(X) = 0（不使用金鑰和關聯資料）
@@ -1203,14 +984,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt12 = pos + 4
-        pos-opt12: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     #{overflow=wrap}
@@ -1242,14 +1021,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
-
         #{overflow=wrap}
-        pos-opt13 = pos + 4
-        pos-opt13: {
-            ok -> pos = it
+        pos ?= pos + 4
+    }: {
+        err -> _
 
-            ->
-        }
+        -> _
     }
 
     ; H0 = Blake2b(h0-input)
@@ -1401,14 +1178,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         }
 
         {
-
             #{overflow=wrap}
-            curr-idx-opt = curr-idx + 1
-            curr-idx-opt: {
-                ok -> curr-idx = it
+            curr-idx ?= curr-idx + 1
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1417,26 +1192,22 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         curr-idx = 0
         (curr-idx < blocks-per-lane) {
             {
-
                 #{overflow=wrap}
-                prev-idx-opt = curr-idx - 1
-                prev-idx-opt: {
-                    ok -> prev-idx = it
+                prev-idx ?= curr-idx - 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
 
             prev-idx < 0 -> {
                 {
-
                     #{overflow=wrap}
-                    prev-idx-opt2 = blocks-per-lane - 1
-                    prev-idx-opt2: {
-                        ok -> prev-idx = it
+                    prev-idx ?= blocks-per-lane - 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
             ref-idx = curr-idx
@@ -1448,13 +1219,13 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
             i <- [0..1024): {
 
                 #{overflow=wrap}
-                ixout982c33 = mem[curr-idx * 1024 + i]: {
+                mem-curr-idx-1024-i = mem[curr-idx * 1024 + i]: {
                     ok -> it
 
                     -> _
                 }
 
-                ixout982c62 = new-block[i]: {
+                new-block-i = new-block[i]: {
                     ok -> it
 
                     -> _
@@ -1462,21 +1233,19 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
                 #{overflow=wrap}
                 mem[curr-idx * 1024 + i]: {
-                    ok -> it = (ixout982c33) ^ (ixout982c62)
+                    ok -> it = (mem-curr-idx-1024-i) ^ (new-block-i)
 
                     -> _
                 }
             }
 
             {
-
                 #{overflow=wrap}
-                curr-idx-opt2 = curr-idx + 1
-                curr-idx-opt2: {
-                    ok -> curr-idx = it
+                curr-idx ?= curr-idx + 1
+            }: {
+                err -> _
 
-                    ->
-                }
+                -> _
             }
         }
     }

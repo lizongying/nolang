@@ -284,12 +284,22 @@ test-decode-headers = () {
     }
 
     ; 第一個應該是 :method GET
-    n0l = names[0].len-bytes()
+    n0 = names[0]: {
+        ok -> it
+
+        -> ''
+    }
+    n0l = n0.len-bytes()
     n0l != 7 -> {
         print('FAIL: expected names[0].len-bytes()=7')
         return
     }
-    v0l = values[0].len-bytes()
+    v0 = values[0]: {
+        ok -> it
+
+        -> ''
+    }
+    v0l = v0.len-bytes()
     v0l != 3 -> {
         print('FAIL: expected values[0].len-bytes()=3')
         return

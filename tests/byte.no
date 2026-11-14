@@ -112,13 +112,13 @@ s = src.to-bytes-str()
 
 bad1 = false
 i2 <- [0..256): {
-    ixout26c19 = src[i2]: {
+    src-i2 = src[i2]: {
         ok -> it
 
         -> _
     }
 
-    s.byte(i2) != ixout26c19 -> bad1 = true
+    s.byte(i2) != src-i2 -> bad1 = true
 }
 
 bad1 -> print('FAIL: 1 byte-fidelity: some of 0..255 corrupted')
@@ -152,13 +152,13 @@ rlen != 148 -> print('FAIL: 3 tls record rlen=' + rlen.to-str() + ' (expect 148)
 ; 4) 對照：[]byte 的元素存取本來就是位元組（x[i]），應與 str 的 .byte(i) 一致
 bad4 = false
 i3 <- [0..5): {
-    ixout62c5 = hdr[i3]: {
+    hdr-i3 = hdr[i3]: {
         ok -> it
 
         -> _
     }
 
-    ixout62c5 != h.byte(i3) -> bad4 = true
+    hdr-i3 != h.byte(i3) -> bad4 = true
 }
 
 bad4 -> print('FAIL: 4 []byte[i] vs str.byte(i) differ')

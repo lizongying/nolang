@@ -407,7 +407,7 @@ returns ok bool: true = success, false = the stack is full
 `
   'arr.asc': '[n]t.asc: sorts ascending in place (insertion sort)'
   'arr.at': `
-[n]t.at: safe indexed access
+[deprecated] [n]t.at: safe indexed access — use a[i] instead (native indexing, returns ?t; out of range yields err)
 i i64: the index
 returns val ?t: nil when out of range
 `
@@ -9179,7 +9179,7 @@ Returns the UUID version
 v: the UUID version number (the high 4 bits of byte6, 4 for v4)
 `
   'vec.at': `
-[]t.at: safe indexed access; nil when out of range
+[deprecated] []t.at: safe indexed access; nil when out of range — use v[i] instead (native indexing, returns ?t; out of range yields err)
 Note: sz = .len() forces the vec self type, so it is not specialised into an arr method by mistake
 `
   'vec.clone': '[]t.clone: copies the slice'

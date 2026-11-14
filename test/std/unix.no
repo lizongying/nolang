@@ -20,7 +20,8 @@
 ; ⚠️ 兩個實測得到的坑（寫進斷言裡）：
 ;   1) AF_UNIX fd 的 `set-recv-timeout` 只在**對端還活著**時成功；對端 close 之後
 ;      setsockopt(SO_RCVTIMEO) 在 macOS 回 EINVAL（raw ret = -1，errno 22）。
-;      所以逾時相關斷言一律排在「對端未關」的時間窗內，關閉後只斷言 false。
+;      所以逾時相關斷言一律排在「對端未關」的時間窗內，關閉後那條只在 Darwin 斷言
+;      （Linux 的 fd 仍有效、setsockopt 會成功，不能套用 macOS 的 errno）。
 ;   2) `accept-with-timeout` 不能靠 SO_RCVTIMEO —— 對 accept(2) 無效，原實現會
 ;      永久阻塞（net.no 早就為同一個坑改成非阻塞輪詢，unix.no 漏改，本輪一併修）。
 ;      本檔用「無待連線時必須在 ~數百 ms 內回 nil」把它釘住。
@@ -247,9 +248,13 @@ t-conn-timeout = () {
     ; 還原阻塞模式後再收（阻塞路徑已在 t-conn-io 釘過，這裡只驗恢復成功）
     runner.is-true(av.set-recv-timeout(0), 'conn.set-recv-timeout(0): 還原成功')
 
-    ; 對端關閉後 setsockopt 在 macOS 回 EINVAL ⇒ 斷言 false 而不是 is-true
+    ; 對端關閉後 setsockopt 在 macOS 回 EINVAL ⇒ false。**這是 macOS 的 errno，不是
+    ; 跨平台契約**：Linux 上 fd 仍然有效，setsockopt(SO_RCVTIMEO) 會成功（回 true）。
+    ; 故只按 Darwin 釘死；其它平台不在此斷言值，免得把一端平台的 errno 當成全平台語義
+    ; （CI 是 ubuntu，2026-11-13 的 std-test 失敗即源於此斷言）。
     fs.close(cn.fd-of())
-    runner.is-false(av.set-recv-timeout(30), 'conn.set-recv-timeout: 對端已關閉時回 false（EINVAL）')
+    u = os.uname()
+    u.sysname.eq-full('Darwin') -> runner.is-false(av.set-recv-timeout(30), 'conn.set-recv-timeout: 對端已關閉時回 false（macOS EINVAL）')
 
     av.close()
     fs.close(lf)

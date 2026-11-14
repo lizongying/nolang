@@ -18,7 +18,15 @@ get-at = (arr [5]i64, i i64) (r i64) {
 sum-at = (arr [5]i64, i i64, j i64) (r i64) {
 
     #{overflow=wrap}
-    r = arr[i] + arr[j]
+    {
+        left ?= arr[i]
+        right ?= arr[j]
+        r = left + right
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 a = [10, 20, 30, 40, 50]

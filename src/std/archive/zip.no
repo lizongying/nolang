@@ -636,13 +636,13 @@ writer.write-local-file = (name str, content []byte, crc i64) {
     ; 簽名 PK\x03\x04
     sig = [0x50, 0x4b, 0x03, 0x04]
     i <- [0..4): {
-        ixout568c14 = sig[i]: {
+        sig-i = sig[i]: {
             ok -> it
 
             -> _
         }
 
-        .put(ixout568c14)
+        .put(sig-i)
     }
 
     ; 版本 (20)
@@ -715,13 +715,13 @@ writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64, cr
     ; 簽名 PK\x01\x02
     sig = [0x50, 0x4b, 0x01, 0x02]
     i <- [0..4): {
-        ixout643c17 = sig[i]: {
+        sig-byte = sig[i]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
-        .cd-put(ixout643c17)
+        .cd-put(sig-byte)
     }
 
     ; 版本 (20)
@@ -786,13 +786,13 @@ writer.write-eocd = (cd-offset i64, cd-size i64) {
     ; 簽名 PK\x05\x06
     sig = [0x50, 0x4b, 0x05, 0x06]
     i <- [0..4): {
-        ixout710c14 = sig[i]: {
+        sig-byte = sig[i]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
-        .put(ixout710c14)
+        .put(sig-byte)
     }
 
     ; 磁碟號 (0)

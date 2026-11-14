@@ -86,33 +86,26 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
         }
     }
 
-    ; ipad-key = K' ⊕ ipad
+    ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [64]byte
-    i <- [0..64): {
-        ixout88c26 = k[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ipad-key[i]: {
-            ok -> it = (ixout88c26) ^ HMAC-IPAD
-
-            -> _
-        }
-    }
-
-    ; opad-key = K' ⊕ opad
     opad-key [64]byte
     i <- [0..64): {
-        ixout98c26 = k[i]: {
-            ok -> it
+        {
+            key-byte ?= k[i]
 
-            -> _
-        }
+            ipad-key[i]: {
+                ok -> it = key-byte ^ HMAC-IPAD
 
-        opad-key[i]: {
-            ok -> it = (ixout98c26) ^ HMAC-OPAD
+                -> _
+            }
+
+            opad-key[i]: {
+                ok -> it = key-byte ^ HMAC-OPAD
+
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -242,30 +235,26 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
             }
         }
     }
+    ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [64]byte
-    i <- [0..64): {
-        ixout220c26 = k[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ipad-key[i]: {
-            ok -> it = (ixout220c26) ^ HMAC-IPAD
-
-            -> _
-        }
-    }
     opad-key [64]byte
     i <- [0..64): {
-        ixout228c26 = k[i]: {
-            ok -> it
+        {
+            key-byte ?= k[i]
 
-            -> _
-        }
+            ipad-key[i]: {
+                ok -> it = key-byte ^ HMAC-IPAD
 
-        opad-key[i]: {
-            ok -> it = (ixout228c26) ^ HMAC-OPAD
+                -> _
+            }
+
+            opad-key[i]: {
+                ok -> it = key-byte ^ HMAC-OPAD
+
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -393,30 +382,26 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
             }
         }
     }
+    ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [128]byte
-    i <- [0..128): {
-        ixout347c26 = k[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ipad-key[i]: {
-            ok -> it = (ixout347c26) ^ HMAC-IPAD
-
-            -> _
-        }
-    }
     opad-key [128]byte
     i <- [0..128): {
-        ixout355c26 = k[i]: {
-            ok -> it
+        {
+            key-byte ?= k[i]
 
-            -> _
-        }
+            ipad-key[i]: {
+                ok -> it = key-byte ^ HMAC-IPAD
 
-        opad-key[i]: {
-            ok -> it = (ixout355c26) ^ HMAC-OPAD
+                -> _
+            }
+
+            opad-key[i]: {
+                ok -> it = key-byte ^ HMAC-OPAD
+
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -535,30 +520,26 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
             }
         }
     }
+    ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [128]byte
-    i <- [0..128): {
-        ixout467c26 = k[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ipad-key[i]: {
-            ok -> it = (ixout467c26) ^ HMAC-IPAD
-
-            -> _
-        }
-    }
     opad-key [128]byte
     i <- [0..128): {
-        ixout475c26 = k[i]: {
-            ok -> it
+        {
+            key-byte ?= k[i]
 
-            -> _
-        }
+            ipad-key[i]: {
+                ok -> it = key-byte ^ HMAC-IPAD
 
-        opad-key[i]: {
-            ok -> it = (ixout475c26) ^ HMAC-OPAD
+                -> _
+            }
+
+            opad-key[i]: {
+                ok -> it = key-byte ^ HMAC-OPAD
+
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }
@@ -677,30 +658,26 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
             }
         }
     }
+    ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [64]byte
-    i <- [0..64): {
-        ixout587c26 = k[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ipad-key[i]: {
-            ok -> it = (ixout587c26) ^ HMAC-IPAD
-
-            -> _
-        }
-    }
     opad-key [64]byte
     i <- [0..64): {
-        ixout595c26 = k[i]: {
-            ok -> it
+        {
+            key-byte ?= k[i]
 
-            -> _
-        }
+            ipad-key[i]: {
+                ok -> it = key-byte ^ HMAC-IPAD
 
-        opad-key[i]: {
-            ok -> it = (ixout595c26) ^ HMAC-OPAD
+                -> _
+            }
+
+            opad-key[i]: {
+                ok -> it = key-byte ^ HMAC-OPAD
+
+                -> _
+            }
+        }: {
+            err -> _
 
             -> _
         }

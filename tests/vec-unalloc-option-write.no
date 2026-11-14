@@ -16,14 +16,26 @@
 t-unalloc-loop = () {
     v []u64
     i <- [0..4): {
-        v[i]: {
-            ok -> it = i + 1
+        {
+
+            #{overflow=wrap}
+            v[i] ?= i + 1
+        }: {
+            err -> _
 
             -> _
         }
     }
-    runner.eq(v[0], 1, 'unalloc loop: v[0] == 1')
-    runner.eq(v[3], 4, 'unalloc loop: v[3] == 4')
+    {
+        first ?= v[0]
+        fourth ?= v[3]
+        runner.eq(first, 1, 'unalloc loop: v[0] == 1')
+        runner.eq(fourth, 4, 'unalloc loop: v[3] == 4')
+    }: {
+        err -> _
+
+        -> _
+    }
     runner.eq(v.len(), 4, 'unalloc loop: len lifted to 4')
 }
 
@@ -35,7 +47,14 @@ t-unalloc-far-index = () {
 
         -> _
     }
-    runner.eq(v[1500], 77, 'far index: v[1500] == 77')
+    {
+        far ?= v[1500]
+        runner.eq(far, 77, 'far index: v[1500] == 77')
+    }: {
+        err -> _
+
+        -> _
+    }
     runner.eq(v.len(), 1501, 'far index: len lifted to 1501')
 }
 
@@ -47,7 +66,14 @@ t-withlen0 = () {
 
         -> _
     }
-    runner.eq(v[2], 9, 'with-len(0): v[2] == 9')
+    {
+        third ?= v[2]
+        runner.eq(third, 9, 'with-len(0): v[2] == 9')
+    }: {
+        err -> _
+
+        -> _
+    }
     runner.eq(v.len(), 3, 'with-len(0): len lifted to 3')
 }
 
@@ -89,15 +115,23 @@ WV [8]u64 = [1, 2, 3, 4, 5, 6, 7, 8]
 b-state-like = () (st []u64) {
     v []u64
     i <- [0..8): {
-        v[i]: {
-            ok -> it = WV[i] * 10
+        {
+
+            #{overflow=wrap}
+            v[i] ?= WV[i] * 10
+        }: {
+            err -> _
 
             -> _
         }
     }
     i <- [0..8): {
-        v[8 + i]: {
-            ok -> it = WV[i] + 100
+        {
+
+            #{overflow=wrap}
+            v[8 + i] ?= WV[i] + 100
+        }: {
+            err -> _
 
             -> _
         }
@@ -108,10 +142,20 @@ b-state-like = () (st []u64) {
 ; 承接返回的 vec：v[0]=10、v[7]=80、v[8]=101、v[15]=108，len 為 16
 t-blake2-like = () {
     st = b-state-like()
-    runner.eq(st[0], 10, 'blake2-like: v[0] == 10')
-    runner.eq(st[7], 80, 'blake2-like: v[7] == 80')
-    runner.eq(st[8], 101, 'blake2-like: v[8] == 101')
-    runner.eq(st[15], 108, 'blake2-like: v[15] == 108')
+    {
+        e0 ?= st[0]
+        e7 ?= st[7]
+        e8 ?= st[8]
+        e15 ?= st[15]
+        runner.eq(e0, 10, 'blake2-like: v[0] == 10')
+        runner.eq(e7, 80, 'blake2-like: v[7] == 80')
+        runner.eq(e8, 101, 'blake2-like: v[8] == 101')
+        runner.eq(e15, 108, 'blake2-like: v[15] == 108')
+    }: {
+        err -> _
+
+        -> _
+    }
     runner.eq(st.len(), 16, 'blake2-like: len == 16')
 }
 

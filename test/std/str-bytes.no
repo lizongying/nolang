@@ -75,8 +75,8 @@ tcap = txt.from-bytes(bigb)
 runner.eq(tcap.len-bytes(), 255, 'txt.from-bytes 300 → 255')
 
 ; 空 []byte → 空 txt
-eb []byte
-tempty = txt.from-bytes(eb)
+empty-bytes []byte
+tempty = txt.from-bytes(empty-bytes)
 runner.eq(tempty.len-bytes(), 0, 'txt.from-bytes 空 → 0')
 
 ; from-chars：簽名是 ?txt 但恆為 some（見 txt.no 中 txt.from-chars 的 doc）

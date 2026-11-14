@@ -6,7 +6,7 @@
 ; null，下一個 `[0] = 97` 就 SIGSEGV。這裡改用正常的字串指派，一樣能測到
 ; `p.nodes[i].keys[j]` 這種多層鏈式存取。
 
-json-kind {
+chain-kind {
     null,
     bool,
     num,
@@ -15,8 +15,8 @@ json-kind {
     obj,
 }
 
-json-value {
-    kind json-kind
+chain-value {
+    kind chain-kind
     str-val str
     num-val f64
     bool-val bool
@@ -25,27 +25,37 @@ json-value {
     count i64
 }
 
-json-pool {
-    nodes [4]json-value
+chain-pool {
+    nodes [4]chain-value
     count i64
 }
 
 ; 初始化
-json-pool.init = () {
+chain-pool.init = () {
     .count = 0
     i <- [0..4): {
-        .nodes[i].count = 0
-        .nodes[i].kind = json-kind.null
-        .nodes[i].str-val = ''
-        j <- [0..16): {
-            .nodes[i].keys[j] = ''
+        .nodes[i]: {
+            ok -> {
+                it.count = 0
+                it.kind = chain-kind.null
+                it.str-val = ''
+                j <- [0..16): {
+                    it.keys[j]: {
+                        ok -> it = ''
+
+                        -> _
+                    }
+                }
+            }
+
+            -> _
         }
     }
 }
 
 ; 配置下一個節點槽並回傳索引，同時把新節點的 count / kind / str-val 重設為初值
 ; idx i64: 新節點的索引；池已滿（.count >= 4）時為 -1 且 .count 不變
-json-pool.alloc = () (idx i64) {
+chain-pool.alloc = () (idx i64) {
     idx = -1
     .count >= 4 -> return
     idx = .count
@@ -57,11 +67,11 @@ json-pool.alloc = () (idx i64) {
         ->
     }
     .nodes[idx].count = 0
-    .nodes[idx].kind = json-kind.null
+    .nodes[idx].kind = chain-kind.null
     .nodes[idx].str-val = ''
 }
 print('start')
-p = json-pool{}
+p = chain-pool{}
 p.init()
 
 node-idx = 0
@@ -70,7 +80,7 @@ key-idx = 0
 node-idx = p.alloc()
 key-idx = p.alloc()
 
-p.nodes[key-idx].kind = json-kind.str
+p.nodes[key-idx].kind = chain-kind.str
 p.nodes[key-idx].str-val = 'a'
 
 print('before copy')

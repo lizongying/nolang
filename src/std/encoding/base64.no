@@ -85,25 +85,21 @@ encode = (data []byte, table str) (out str) {
         }
 
         {
-
             #{overflow=wrap}
-            i-opt = i + 3
-            i-opt: {
-                ok -> i = it
+            i ?= i + 3
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
 
         {
-
             #{overflow=wrap}
-            j-opt = j + 4
-            j-opt: {
-                ok -> j = it
+            j ?= j + 4
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 

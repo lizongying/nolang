@@ -32,6 +32,42 @@ diff-split-lines = (content str) (lines []str) {
     eprint('SPLIT: done, lines.len={ll}')
 }
 
+; dp 表讀：越界給 0
+; dp []i64: DP 表
+; k i64: 攤平後的索引
+; val i64: 該格的值，越界為 0
+dp-at = (dp []i64, k i64) (val i64) {
+    val = dp[k]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; dp 表寫：越界靜默忽略
+; dp []i64: DP 表
+; k i64: 攤平後的索引
+; val i64: 要寫入的值
+dp-set = (dp []i64, k i64, val i64) {
+    dp[k]: {
+        ok -> it = val
+
+        -> _
+    }
+}
+
+; 取第 k 行，越界給空串
+; lines []str: 行表
+; k i64: 行號
+; line str: 該行內容，越界為空串
+line-at = (lines []str, k i64) (line str) {
+    line = lines[k]: {
+        ok -> it
+
+        -> ''
+    }
+}
+
 ; full LCS-based diff
 ; a []str: 舊版每一行的 vec
 ; b []str: 新版每一行的 vec
@@ -54,30 +90,30 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
         aj <- [nb - 1..0]: {
 
             #{overflow=wrap}
-            a[ai].compare(b[aj]) == 0 -> dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
+            cur = dp-at(dp, ai * cols + aj)
 
             #{overflow=wrap}
-            cur = dp[ai * cols + aj]: {
-                ok -> it
-
-                -> 0
-            }
+            below = dp-at(dp, (ai + 1) * cols + aj)
 
             #{overflow=wrap}
-            below = dp[(ai + 1) * cols + aj]: {
-                ok -> it
+            right = dp-at(dp, ai * cols + (aj + 1))
+            line-a = line-at(a, ai)
+            line-b = line-at(b, aj)
+            line-a.compare(line-b) == 0 -> {
 
-                -> 0
+                #{overflow=wrap}
+                step = dp-at(dp, (ai + 1) * cols + (aj + 1)) + 1
+                step: {
+                    ok -> cur = it
+
+                    -> _
+                }
             }
-            cur < below -> dp[ai * cols + aj] = below
+            below > cur -> cur = below
+            right > cur -> cur = right
 
             #{overflow=wrap}
-            right = dp[ai * cols + (aj + 1)]: {
-                ok -> it
-
-                -> 0
-            }
-            cur < right -> dp[ai * cols + aj] = right
+            dp-set(dp, ai * cols + aj, cur)
         }
     }
 
@@ -106,8 +142,10 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
     i = 0
     j = 0
     (i < na || j < nb) {
+        line-a = line-at(a, i)
+        line-b = line-at(b, j)
         i < na && j < nb -> {
-            a[i].compare(b[j]) == 0 -> {
+            line-a.compare(line-b) == 0 -> {
                 op = diff-op{}
                 op.kind = 0
 
@@ -159,7 +197,11 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             }
 
             #{overflow=wrap}
-            dp[(i + 1) * cols + j] >= dp[i * cols + (j + 1)] -> {
+            down = dp-at(dp, (i + 1) * cols + j)
+
+            #{overflow=wrap}
+            across = dp-at(dp, i * cols + (j + 1))
+            down >= across -> {
                 op = diff-op{}
                 op.kind = 1
 
@@ -191,8 +233,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 }
             }
 
-            #{overflow=wrap}
-            dp[(i + 1) * cols + j] < dp[i * cols + (j + 1)] -> {
+            down < across -> {
                 op = diff-op{}
                 op.kind = 2
 

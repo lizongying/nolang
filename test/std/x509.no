@@ -25,7 +25,7 @@ bhex = (data []byte) (hex str) {
     #{overflow=wrap}
     hex = with-len(n * 2)
     i <- [0..n): {
-        ixout25c33 = data[i]: {
+        data-i = data[i]: {
             ok -> it
 
             -> _
@@ -34,14 +34,14 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(ixout25c33 >> 4) & 15]
+            hex[i * 2] ?= hex-chars[(data-i >> 4) & 15]
         }: {
             err -> _
 
             -> _
         }
 
-        ixout28c36 = data[i]: {
+        data-i-2 = data[i]: {
             ok -> it
 
             -> _
@@ -50,7 +50,7 @@ bhex = (data []byte) (hex str) {
         {
 
             #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[ixout28c36 & 15]
+            hex[i * 2 + 1] ?= hex-chars[data-i-2 & 15]
         }: {
             err -> _
 
@@ -221,7 +221,7 @@ DER [512]byte = [
 ]
 
 ; OpenSSL 導出之期望值
-MOD_HEX = 'cbac4e71d8a87e7552823ca65444818e46b866c024bf886579f3ca507c82d359488d7ba203ad5cd3ff8a3f9b3eb49b31c32a1126685175a8cf256e385912d2b0d90f9aa77e4fead03cf28b1a847fe359da40b6bf6c9b53ef7cc777d1f424d7bff1dd0d9b2cad35c25f6c5569b8058232dbe9ba07425d5dba96e5f09dfc35f5c5'
+mod-hex = 'cbac4e71d8a87e7552823ca65444818e46b866c024bf886579f3ca507c82d359488d7ba203ad5cd3ff8a3f9b3eb49b31c32a1126685175a8cf256e385912d2b0d90f9aa77e4fead03cf28b1a847fe359da40b6bf6c9b53ef7cc777d1f424d7bff1dd0d9b2cad35c25f6c5569b8058232dbe9ba07425d5dba96e5f09dfc35f5c5'
 
 ; TBSCertificate 之 SHA-256（openssl dgst），以 8 個大端 32-bit 字表示
 FP = 'feed7a6de5a9a299ba84ada12e2a157d04de84ead0db84d596058a84712f043f'
@@ -249,7 +249,7 @@ t-rsa-e = () {
 t-rsa-n = () {
     n = x509.x509-rsa-n(arr512(DER))
     runner.eq(n.len(), 128, 'modulus length = 128')
-    runner.str-eq(bhex(n), MOD_HEX, 256, 'modulus matches OpenSSL')
+    runner.str-eq(bhex(n), mod-hex, 256, 'modulus matches OpenSSL')
 }
 
 ; 指紋（TBS 之 SHA-256）必須匹配 OpenSSL；以 hex 重组 8 個字後比較

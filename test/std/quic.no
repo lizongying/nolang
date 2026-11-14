@@ -599,8 +599,10 @@ t-build-initial-packet = () {
     ; 8 位元組假 ClientHello 載荷（'A'..'H'）
     cd []byte = with-len(8)
     i <- [0..8): {
-        cd[i]: {
-            ok -> it = 65 + i
+        {
+            cd[i] ?= 65 + i
+        }: {
+            err -> _
 
             -> _
         }

@@ -21,10 +21,26 @@ _p jv-pool
 seed = () {
     _p.nodes = with-len(1)
     ks []i64 = with-len(4)
-    ks[0] = 1
-    ks[1] = 2
-    ks[2] = 3
-    ks[3] = 4
+    ks[0]: {
+        ok -> it = 1
+
+        -> _
+    }
+    ks[1]: {
+        ok -> it = 2
+
+        -> _
+    }
+    ks[2]: {
+        ok -> it = 3
+
+        -> _
+    }
+    ks[3]: {
+        ok -> it = 4
+
+        -> _
+    }
     _p.nodes[0].keys = ks
 }
 
@@ -36,7 +52,11 @@ del-via-copy = (i i64, drop i64) {
     nk []i64 = with-len(0)
     k = 0
     (k < node.keys.len()) {
-        kk i64 = node.keys[k]
+        kk = node.keys[k]: {
+            ok -> it
+
+            -> drop
+        }
         kk != drop -> nk.push(kk)
         {
             k-opt = k + 1 #{overflow=wrap}

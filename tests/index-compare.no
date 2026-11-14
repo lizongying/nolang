@@ -2,9 +2,9 @@
 ;
 ; 語言契約（docs/docs/lang/syntax.md 〈安全索引〉）：
 ;   「對 arr / vec / slice / 定長陣列 / str / txt 的索引 v[i]，結果一律是 ?T：
-;     越界時回傳 nil，在界內回傳 ok(值)，絕不會 abort。」
+;     越界時回傳 err（code.index-out），在界內回傳 ok(值)，絕不會 abort。」
 ;
-; 因此 `a[i] == 5` 是 **option 與字面量的比較**：比的是 payload，越界（nil）
+; 因此 `a[i] == 5` 是 **option 與字面量的比較**：比的是 payload，越界（err）
 ; 永遠不等於任何字面量。修復前比較語境的 `a[i]` 走的是裸讀
 ; （MIR `index dst:i64`，沒有界檢查、沒有 nil），越界即讀野內存，實測
 ; `if a[oob] != 5 { … }` 會 SIGTRAP；`s[0] == 'a'` 則是 char payload 沒被取出，
@@ -44,25 +44,27 @@ i = 2
 reject(a[i] != 7, 6)
 print('ok: variable subscript comparison')
 
-; 3. 越界：回 nil ⇒ 不等於任何字面量；且**不得崩潰**（修復前 SIGTRAP）
+; 3. 越界：回 err（D11 起不是 nil）⇒ 與任何值比較皆為假；且**不得崩潰**
+;    （修復前 SIGTRAP）
 oob = 9
 expect(a[oob] != 5, 7)
 reject(a[oob] == 5, 8)
 
-; nil 的 payload 是零值，與 `?i64 == 0` 同語義（既有規則，不是本檔引入的）
-expect(a[oob] == 0, 9)
-print('ok: out-of-range read yields nil (no crash, never equal)')
+; err 的 payload 不是零值：`a[oob] == 0` 同 `a[oob] == 5` 一樣為假
+; （docs〈安全索引〉：「越界時讀出 err，與任何值比較皆為假」）
+reject(a[oob] == 0, 9)
+print('ok: out-of-range read yields err (no crash, never equal)')
 
 ; 4. 負下標同樣是越界
 neg = -1
 expect(a[neg] != 5, 10)
-expect(a[neg] == 0, 11)
+reject(a[neg] == 0, 11)
 print('ok: negative index is out of range')
 
 ; 5. 關係比較也要有界檢查（`<` 的兩側都是讀取/字面量）
 expect(a[0] < a[1], 12)
 expect(a[2] > a[1], 13)
-expect(a[oob] < 6, 14)
+reject(a[oob] < 6, 14)
 print('ok: relational comparison')
 
 ; 6. 定長陣列

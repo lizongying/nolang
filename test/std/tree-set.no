@@ -153,13 +153,13 @@ t-stress-order = () {
         35, 45,
     ]
     i <- [0..10): {
-        ixout156c19 = vals[i]: {
+        vals-i = vals[i]: {
             ok -> it
 
             -> _
         }
 
-        s.add(ixout156c19)
+        s.add(vals-i)
     }
     runner.eq(s.size(), 10, 'stress size == 10')
 

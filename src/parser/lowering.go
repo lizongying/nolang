@@ -867,6 +867,37 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 				}
 			}
 		}
+		// 2c) RHS 為純別名 `c = s`（s 已是已知的位置型容器）：容器型別原樣
+		// 複製給目標。這條與 2b 同一個病根 —— `c` 沒有型別標註，而 parse 期的
+		// 純別名推斷（inferAliasType）**只登記純量**（容器/str/struct 帶所有權
+		// 語意，寫進 sem.VarTypes 會打亂 MIR 的 retain/release 配對），於是 `c`
+		// 在 indexBaseVarType 的三層查表（idxLocalTypes / FuncVarType /
+		// VarTypes）全 miss ⇒ `c0 ?= c[0]` 的元素型別推不出 ⇒ 合成的
+		// `__unwrap_N` 不掛型別 ⇒ ok 臂 `c0 = it` 取不到載荷，退化成
+		// `const c0:void` ⇒ 後續比較生成 `icmp eq void undef, …`，整個函式
+		// 連 LLVM 驗證都過不去（tests/mem-safety/deep-clone.no 的 t4：
+		// `s []str` + `c = s` + 塊內 `c0 ?= c[0]`）。
+		// 同 2b，只寫 idxLocalTypes，不動 stmt.Type / sem.VarTypes，所以
+		// codegen 的 clone/ownership 判定完全不受影響。map 刻意不登記：
+		// 寫側 `m[k] ?= v` 有自己的硬錯誤路徑（mapIndexBaseType），那裡的
+		// 「未知型別 ⇒ 走通用路徑」是既有行為，不在本條的修復範圍內。
+		if id, isID := ls.Value.(*Identifier); isID && id.Value != "" && id.Value != "self" {
+			src := localTypes[id.Value]
+			if src == "" && l.p.sem != nil {
+				if t, ok := l.p.sem.FuncVarType(fd.Name, id.Value); ok {
+					src = t
+				}
+				if src == "" {
+					src = l.p.sem.VarTypeRaw(id.Value)
+				}
+			}
+			srcRaw := ty.StripOptionRaw(src)
+			if isPositionContainerRaw(srcRaw) && !IsMapTypeString(srcRaw) && containerElemType(srcRaw) != "" {
+				localTypes[name] = srcRaw
+				l.recordIndexLocalType(fd.Name, name, srcRaw)
+				continue
+			}
+		}
 		// 3) RHS 為方法 receiver self（源碼 `parts = .`，parser 把獨立 `.` 解析成
 		// Identifier("self")）：登记方法 receiver 的容器型別。方法名形如
 		// `[]txt.join` / `str.upper`，最後一個 '.' 之前即 receiver 型別。
@@ -3960,7 +3991,80 @@ func (p *subjectMatchPrep) idxTypeRaw() string { return matchSubjectTypeRaw(p.id
 // 該運算就仍是整數算術，結果仍是 `?T`。故取已知側當 payload，詳見
 // operandAllowsIntFallback 的守衛。
 func (p *Parser) inferOptionArithSubjectElem(e Expression) string {
-	return optionArithElem(e, p.arithTypeLookup())
+	if elem := optionArithElem(e, p.arithTypeLookup()); elem != "" {
+		return elem
+	}
+	return p.inferCallArithSubjectElem(e)
+}
+
+// inferCallArithSubjectElem 補上 optionArithElem 刻意不認的那一類運算元：**呼叫**。
+//
+// operandAllowsIntFallback 把「呼叫、索引、欄位讀取」一律視為不可證明（避免把
+// `str-fn() + 1` 誤判成整數算術），但呼叫的回傳型別本來就是靜態可查的
+// —— returnTypeFromCallExpr 同時涵蓋簽名表、模組限定名與 `.len()` / `.cap()`
+// 這類內建容器方法。對「這段算術是不是有號整數」而言，這份證據與識別字的宣告
+// 型別同級，所以這裡按同一口徑補一條：只有「回傳型別可查且（去 option 後）
+// 是有號整數」的呼叫才放行；查不到型別、回傳 str / 容器的，一律維持原本的
+// 保守跳過。
+//
+// 少了這一支，`n = data.len() - 1: { ok -> it  -> 0 }` 的主體不會歸一化成
+// `__match_subj ?i64`，ok 臂因此沒有 `let it`，觀測值恆為 fallback 臂的 0。
+// 識別字形態（`len - 1`）早已被 optionArithOperandInt 覆蓋，只有呼叫形態漏掉。
+func (p *Parser) inferCallArithSubjectElem(e Expression) string {
+	inf, ok := unwrapLowerExpr(e).(*InfixExpression)
+	if !ok || !isOptionArithOperator(inf.Operator) {
+		return ""
+	}
+	lt, okL := p.callArithOperandInt(inf.Left)
+	rt, okR := p.callArithOperandInt(inf.Right)
+	if !okL || !okR {
+		return ""
+	}
+	if len(rt) > len(lt) {
+		return rt
+	}
+	return lt
+}
+
+// callArithOperandInt 是 optionArithOperandInt 再加上「呼叫運算元」的版本。
+// 先問原本那套（字面量／識別字／巢狀中綴），落空後才看呼叫與其巢狀：這樣既有
+// 判定與回退順序完全不動，新增的只有原本一律回 false 的那一格。
+func (p *Parser) callArithOperandInt(e Expression) (string, bool) {
+	if name, ok := optionArithOperandInt(e, p.arithTypeLookup()); ok {
+		return name, true
+	}
+	switch x := unwrapLowerExpr(e).(type) {
+	case *CallExpression:
+		raw := p.returnTypeFromCallExpr(x)
+		if raw == "" {
+			return "", false
+		}
+		// 回傳 `?T` 的呼叫與 `?T` 區域變數同口徑：算術會把失敗標籤往外傳，
+		// 主體因此是 `?T`，payload 就是 `T`。識別字那條路徑
+		// （operandAllowsIntFallbackWith 先 StripOptionRaw 再判）早就這樣處理，
+		// 這裡只是把呼叫補到同一口徑 —— 少了它，`maybe() - 1: { ok -> it }`
+		// 一樣靜默落兜底臂（實測 `pick(ok(5))` 得 0，應為 4）。
+		return lowerSignedIntName(ty.StripOptionRaw(raw))
+	case *InfixExpression:
+		if !isOptionArithOperator(x.Operator) {
+			return "", false
+		}
+		lt, okL := p.callArithOperandInt(x.Left)
+		rt, okR := p.callArithOperandInt(x.Right)
+		if !okL || !okR {
+			return "", false
+		}
+		if len(rt) > len(lt) {
+			return rt, true
+		}
+		return lt, true
+	case *PrefixExpression:
+		if x.Operator != "-" && x.Operator != "+" {
+			return "", false
+		}
+		return p.callArithOperandInt(x.Right)
+	}
+	return "", false
 }
 
 // arithTypeLookup 回報 name 在兩個型別來源裡的宣告型別：語義副表（semType）與

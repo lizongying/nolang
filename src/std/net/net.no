@@ -279,14 +279,12 @@ conn.recv-all = () (content str, total i64) {
         content = content - buf.slice(0, chunk-n)
 
         {
-
             #{overflow=wrap}
-            total-opt = total + chunk-n
-            total-opt: {
-                ok -> total = it
+            total ?= total + chunk-n
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 }
@@ -1040,40 +1038,35 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 
         #{overflow=wrap}
         i + 1 < len -> {
+            {
+                ; 16-bit word: data[i] << 8 | data[i+1]
+                word-high ?= data[i]
 
-            ; 16-bit word: data[i] << 8 | data[i+1]
-            ixout990c19 = data[i]: {
-                ok -> it
+                #{overflow=wrap}
+                word-low ?= data[i + 1]
+
+                w = (word-high << 8) | word-low
+
+                #{overflow=wrap}
+                checksum = checksum + w
+
+                ; 處理進位
+                #{overflow=wrap}
+                checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
+            }: {
+                err -> _
 
                 -> _
             }
-
-            #{overflow=wrap}
-            ixout990c37 = data[i + 1]: {
-                ok -> it
-
-                -> _
-            }
-
-            w = ((ixout990c19) << 8) | (ixout990c37)
-
-            #{overflow=wrap}
-            checksum = checksum + w
-
-            ; 處理進位
-            #{overflow=wrap}
-            checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
         }
 
         {
-
             #{overflow=wrap}
-            i-opt = i + 2
-            i-opt: {
-                ok -> i = it
+            i ?= i + 2
+        }: {
+            err -> _
 
-                ->
-            }
+            -> _
         }
     }
 
@@ -1081,14 +1074,14 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
     len & 1 == 1 -> {
 
         #{overflow=wrap}
-        ixout1006c33 = data[len - 1]: {
+        tail-byte = data[len - 1]: {
             ok -> it
 
-            -> _
+            -> 0
         }
 
         #{overflow=wrap}
-        checksum = checksum + ((ixout1006c33) << 8)
+        checksum = checksum + (tail-byte << 8)
 
         #{overflow=wrap}
         checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
@@ -1142,28 +1135,24 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 
     {
         n >= 20 -> {
+            ; IP 版本判斷與 IHL 都取自標頭第 0 個位元組
+            {
+                version-byte ?= recv-buf[0]
 
-            ; 檢查 IP 版本 (byte 0 >> 4 == 4 表示 IPv4)
-            ixout1058c20 = recv-buf[0]: {
-                ok -> it
+                ver = (version-byte >> 4) & 15
+
+                ver == 4 -> {
+                    ; IHL = (byte 0 & 0x0F) * 4
+                    ; D1：`*` 的結果恆為 `?i64`，此處要的是普通整數 → 顯式 plain i64。
+                    #{overflow=wrap}
+                    ihl i64 = (version-byte & 15) * 4
+
+                    offset = ihl
+                }
+            }: {
+                err -> _
 
                 -> _
-            }
-
-            ver = (ixout1058c20 >> 4) & 15
-            ver == 4 -> {
-
-                ; IHL = (byte 0 & 0x0F) * 4
-                ; D1：`*` 的結果恆為 `?i64`，此處要的是普通整數 → 顯式 plain i64。
-                ixout1064c28 = recv-buf[0]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                ihl i64 = (ixout1064c28 & 15) * 4
-                offset = ihl
             }
         }
     }
@@ -1180,40 +1169,40 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     }
     icmp-type != ICMP-ECHO-REPLY -> return
 
-    ; 驗證 Identifier
+    ; 驗證 Identifier（ICMP 標頭 offset+4..offset+6，大端）
     #{overflow=wrap}
-    ixout1084c20 = recv-buf[offset + 4]: {
+    ident-high = recv-buf[offset + 4]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
     #{overflow=wrap}
-    ixout1084c51 = recv-buf[offset + 5]: {
+    ident-low = recv-buf[offset + 5]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    recv-ident = ((ixout1084c20) << 8) | (ixout1084c51)
+    recv-ident = (ident-high << 8) | ident-low
     recv-ident != .ident -> return
 
-    ; 驗證 Sequence（只比較低 16 位）
+    ; 驗證 Sequence（只比較低 16 位；offset+6..offset+8，大端）
     #{overflow=wrap}
-    ixout1089c18 = recv-buf[offset + 6]: {
+    seq-high = recv-buf[offset + 6]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
     #{overflow=wrap}
-    ixout1089c49 = recv-buf[offset + 7]: {
+    seq-low = recv-buf[offset + 7]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    recv-seq = ((ixout1089c18) << 8) | (ixout1089c49)
+    recv-seq = (seq-high << 8) | seq-low
     recv-seq != (.seq & 65535) -> return
 
     ; 計算 RTT
@@ -1584,14 +1573,12 @@ split-ws = (s str) (out []str) {
                 {
                     c == 32 || c == 9 -> {
                         {
-
                             #{overflow=wrap}
-                            i-opt2 = i + 1
-                            i-opt2: {
-                                ok -> i = it
+                            i ?= i + 1
+                        }: {
+                            err -> _
 
-                                ->
-                            }
+                            -> _
                         }
                     }
 
@@ -1609,14 +1596,12 @@ split-ws = (s str) (out []str) {
                 c == 32 || c == 9 -> break
 
                 {
-
                     #{overflow=wrap}
-                    i-opt3 = i + 1
-                    i-opt3: {
-                        ok -> i = it
+                    i ?= i + 1
+                }: {
+                    err -> _
 
-                        ->
-                    }
+                    -> _
                 }
             }
         }

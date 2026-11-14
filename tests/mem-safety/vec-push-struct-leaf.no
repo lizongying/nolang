@@ -73,7 +73,11 @@ test-index-store-struct-leaf = () (ok bool) {
     p person
     p.name = 'Carol'
     p.age = 40
-    v[0] = p
+    v[0]: {
+        ok -> it = p
+
+        -> _
+    }
     p.name = 'Dave'
 
     e = v[0]

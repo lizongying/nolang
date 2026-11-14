@@ -6,6 +6,19 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.21
+
+- refactor(std): overhaul the standard library across ~80 modules, cutting ~6.6k lines while preserving the public API surface
+- fix(mir): lower module-level tagged-enum and struct-literal constants referenced from helper functions to their real variant and payload instead of a zeroinitializer, fixing silent wrong values and bug #85
+- fix(mir): resolve module-level binding types through the registered global type so match subjects type correctly
+- fix(checker): detect overflow option-arithmetic silently dropped by place-match writeback and require explicit `?=` consumption
+- fix(parser): improve block and value-match lowering and the AST disk cache
+- fix(test): guard macOS-only EINVAL assertions in the unix socket test behind a Darwin check
+- fix(docs): remove invalid `<br>` tokens from the annotation-scope reference
+- test(std): expand the standard-library functional suite to 129 files / ~7479 assertions at 100% API coverage
+- test(compiler): add codegen regression tests for mem-safety, tls13, x25519 and crypto, and update parser error-model tests
+- docs: update language references (annotation-scope, str, syntax, basic-types) and the history page
+
 ## v0.4.20
 
 - feat(pkg): implement package module loading and multi-module codegen, resolving cross-package imports from `workspace.noml`

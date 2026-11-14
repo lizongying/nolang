@@ -971,9 +971,10 @@ download = (url str, dest str) (ok bool) {
 ; [upload-put](#http.upload-put)
 upload-put = (url str, token str, file-path str) (ok bool) {
     ok = false
-    content-opt = fs.read-str(file-path)
     content = ''
-    content-opt: {
+    ; ⚠️ err/nil 臂要 return，只能用语句 match（`?=` 块的臂内 return 不生效）
+    content-result = fs.read-str(file-path)
+    content-result: {
         ok -> content = it
 
         nil -> return
@@ -1370,44 +1371,49 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     scan = 0
 
     (sep < 0 && (scan + 3) < alen) {
-        ixout1333c10 = acc[scan]: {
-            ok -> it
-
-            -> 0
-        }
-
-        #{overflow=wrap}
-        ixout1333c29 = acc[scan + 1]: {
-            ok -> it
-
-            -> 0
-        }
-
-        #{overflow=wrap}
-        ixout1333c52 = acc[scan + 2]: {
-            ok -> it
-
-            -> 0
-        }
-
-        #{overflow=wrap}
-        ixout1333c75 = acc[scan + 3]: {
-            ok -> it
-
-            -> 0
-        }
-
-        (ixout1333c10 == 13 && ixout1333c29 == 10 && ixout1333c52 == 13 && ixout1333c75 == 10) -> sep = scan
-
         {
+            b0 = acc[scan]: {
+                ok -> it
+
+                -> 0
+            }
 
             #{overflow=wrap}
-            scan-opt = scan + 1
-            scan-opt: {
-                ok -> scan = it
+            b1 = acc[scan + 1]: {
+                ok -> it
 
-                ->
+                -> 0
             }
+
+            #{overflow=wrap}
+            b2 = acc[scan + 2]: {
+                ok -> it
+
+                -> 0
+            }
+
+            #{overflow=wrap}
+            b3 = acc[scan + 3]: {
+                ok -> it
+
+                -> 0
+            }
+
+            ; CR LF CR LF 才是標頭結束
+            b0 == 13 && b1 == 10 && b2 == 13 && b3 == 10 -> sep = scan
+        }: {
+            err -> _
+
+            -> _
+        }
+
+        {
+            #{overflow=wrap}
+            scan ?= scan + 1
+        }: {
+            err -> _
+
+            -> _
         }
     }
     sep < 0 -> return
@@ -1422,13 +1428,13 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     ; ── 標頭文字（ASCII，取 [0..sep) 逐位元組）──
     hdr []byte
     hi <- [0..sep): {
-        ixout1354c18 = acc[hi]: {
+        acc-hi = acc[hi]: {
             ok -> it
 
             -> 0
         }
 
-        hdr.push(ixout1354c18)
+        hdr.push(acc-hi)
     }
     head-str = hdr.to-bytes-str()
 
@@ -1475,13 +1481,13 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     body []byte
     body-start < alen -> {
         yi <- [body-start..alen): {
-            ixout1401c23 = acc[yi]: {
+            acc-yi = acc[yi]: {
                 ok -> it
 
                 -> 0
             }
 
-            body.push(ixout1401c23)
+            body.push(acc-yi)
         }
     }
 
@@ -1674,13 +1680,13 @@ http-dl-dechunk = (b []byte) (out []byte) {
                 c == 13 -> {
                     pos = _dl-add(pos, 1)
 
-                    ixout1558c36 = b[pos]: {
+                    b-pos = b[pos]: {
                         ok -> it
 
                         -> 0
                     }
 
-                    (pos < blen && ixout1558c36 == 10) -> {
+                    (pos < blen && b-pos == 10) -> {
                         pos = _dl-add(pos, 1)
                     }
                     line-done = true
@@ -1694,13 +1700,16 @@ http-dl-dechunk = (b []byte) (out []byte) {
         size <= 0 -> break
 
         (pos < blen && size > 0) {
-            ixout1579c22 = b[pos]: {
-                ok -> it
+            {
+                chunk-byte ?= b[pos]
 
-                -> 0
+                out.push(chunk-byte)
+            }: {
+                err -> _
+
+                -> _
             }
 
-            out.push(ixout1579c22)
             pos = _dl-add(pos, 1)
             size = _dl-sub(size, 1)
         }

@@ -17,29 +17,29 @@ t-textbook = () {
     d []byte = [10, 193]
     ct = rsa.rsa-encrypt-bytes(m, e, n)
     runner.eq(ct.len(), 2, 'textbook ct bytes')
-    ixout20c17 = ct[0]: {
+    ct-0 = ct[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout20c17, 10, 'textbook ct == 2790 (hi)')
-    ixout21c17 = ct[1]: {
+    runner.eq(ct-0, 10, 'textbook ct == 2790 (hi)')
+    ct-1 = ct[1]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout21c17, 230, 'textbook ct == 2790 (lo)')
+    runner.eq(ct-1, 230, 'textbook ct == 2790 (lo)')
     pt = rsa.rsa-decrypt-bytes(ct, d, n)
     runner.eq(pt.len(), 1, 'textbook pt bytes')
-    ixout24c17 = pt[0]: {
+    pt-0 = pt[0]: {
         ok -> it
 
         -> _
     }
 
-    runner.eq(ixout24c17, 65, 'textbook round-trip == 65')
+    runner.eq(pt-0, 65, 'textbook round-trip == 65')
 }
 
 ; 雙 limb 金鑰，ct 需與 Python 一致，並解密回原 m
@@ -52,36 +52,36 @@ t-multilimb = () {
     ct-exp []byte = [14, 183, 65, 136, 140, 225, 19, 18]
     runner.eq(ct.len(), 8, 'multilimb ct bytes')
     a <- [0..8): {
-        ixout37c21 = ct[a]: {
+        ct-a = ct[a]: {
             ok -> it
 
             -> _
         }
 
-        ixout37c32 = ct-exp[a]: {
+        ct-exp-a = ct-exp[a]: {
             ok -> it
 
             -> _
         }
 
-        runner.eq(ixout37c21, ixout37c32, 'multilimb ct byte')
+        runner.eq(ct-a, ct-exp-a, 'multilimb ct byte')
     }
     pt = rsa.rsa-decrypt-bytes(ct, d, n)
     runner.eq(pt.len(), m.len(), 'multilimb pt bytes')
     b <- [0..pt.len()): {
-        ixout42c21 = pt[b]: {
+        pt-b = pt[b]: {
             ok -> it
 
             -> _
         }
 
-        ixout42c27 = m[b]: {
+        m-b = m[b]: {
             ok -> it
 
             -> _
         }
 
-        runner.eq(ixout42c21, ixout42c27, 'multilimb pt byte')
+        runner.eq(pt-b, m-b, 'multilimb pt byte')
     }
 }
 

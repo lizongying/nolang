@@ -132,8 +132,11 @@ t-roundtrip = () {
 
     big []byte = with-len(300)
     i <- [0..300): {
-        big[i]: {
-            ok -> it = 65 + (i % 26)
+        {
+            #{overflow=wrap}
+            big[i] ?= 65 + (i % 26)
+        }: {
+            err -> _
 
             -> _
         }
