@@ -28,6 +28,7 @@ print('data=[{data}]')
 ; Expected: data=[hello world test]
 
 ; Verify correctness
-data == 'hello world test\n' -> print('bug12: PASS')
-
--> print('bug12: FAIL')
+{
+    data == 'hello world test\n' -> { print('bug12: PASS') }
+    -> { print('bug12: FAIL') }
+}

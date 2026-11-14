@@ -113,6 +113,7 @@ print('bad: {bad-result}')
 ; Without fix: trace/BPT trap (crash)
 
 ; Verify result correctness
-bad-result == 'file1.txt' -> print('bug19: PASS')
-
--> print('bug19: FAIL')
+{
+    bad-result == 'file1.txt' -> { print('bug19: PASS') }
+    -> { print('bug19: FAIL') }
+}

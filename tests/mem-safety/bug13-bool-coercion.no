@@ -30,6 +30,7 @@ print('step3 ch=[{ch}]')
 ; Expected: step3 ch=[commit-1234567890abcdef]
 
 ; Verify correctness
-ch == 'commit-1234567890abcdef' -> print('bug13: PASS')
-
--> print('bug13: FAIL')
+{
+    ch == 'commit-1234567890abcdef' -> { print('bug13: PASS') }
+    -> { print('bug13: FAIL') }
+}
