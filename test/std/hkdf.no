@@ -10,8 +10,8 @@
 # /test/runner
 
 ; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
-; data []byte: 待格式化的位元組，可為空
-; hex str: 長度為 data.len()*2 的 hex 字串
+; data: 待格式化的位元組，可為空
+; hex: 長度為 data.len()*2 的 hex 字串
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -56,8 +56,8 @@ bhex = (data []byte) (hex str) {
 ; ---- 助手 ----
 
 ; hex 字串 → []byte（'0777…' → 32 位元組）；空字串回空切片
-; h str: 偶數長度的十六進位字串
-; b []byte: 解出的位元組序列
+; h: 偶數長度的十六進位字串
+; b: 解出的位元組序列
 mkb = (h str) (b []byte) {
     opt = h.from-hex()
     b = opt: {
@@ -123,8 +123,8 @@ h32 = (a [32]byte) (s str) {
 }
 
 ; 長度 n 的全零 []byte（with-len 已保證初始化為 0，這裡再顯式寫一次以免依賴該保證）
-; n i64: 想要的長度
-; v []byte: 長度為 n 的零填充切片
+; n: 想要的長度
+; v: 長度為 n 的零填充切片
 zeros = (n i64) (v []byte) {
     v = with-len(n)
     i <- [0..n): {

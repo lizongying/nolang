@@ -10,8 +10,8 @@
 # /test/runner
 
 ; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
-; data []byte: 待格式化的位元組，可為空
-; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
+; data: 待格式化的位元組，可為空
+; hex: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -48,16 +48,16 @@ bhex = (data []byte) (hex str) {
 }
 
 ; [32]byte -> 小寫 hex
-; a [32]byte: 待格式化的位元組陣列
-; s str: 64 字元 hex
+; a: 待格式化的位元組陣列
+; s: 64 字元 hex
 hx = (a [32]byte) (s str) {
     v []byte = a.slice(0, 32)
     s = bhex(v)
 }
 
 ; hex -> [32]byte（小端序）
-; h str: 64 字元 hex
-; s [32]byte: 解出的位元組陣列
+; h: 64 字元 hex
+; s: 解出的位元組陣列
 mk = (h str) (s [32]byte) {
     i <- [0..32): {
         s[i]: {
@@ -92,9 +92,9 @@ mk = (h str) (s [32]byte) {
 }
 
 ; 讀第 i 個 limb（越界回 -999999 以便在斷言中暴露）
-; v []i64: 域元素
-; i i64: limb 索引
-; x i64: limb 值
+; v: 域元素
+; i: limb 索引
+; x: limb 值
 limb = (v []i64, i i64) (x i64) {
     x = v[i]: {
         ok -> it
@@ -105,8 +105,8 @@ limb = (v []i64, i i64) (x i64) {
 
 ; hex -> （fe-frombytes-v）-> （fe-tobytes-v）-> hex
 ; 對 [0,p) 內的規範輸入應為恆等
-; h str: 32 位元組 hex
-; s str: 經過一輪域元素往返後的 hex
+; h: 32 位元組 hex
+; s: 經過一輪域元素往返後的 hex
 rt = (h str) (s str) {
     e [32]byte
     e = mk(h)
@@ -114,8 +114,8 @@ rt = (h str) (s str) {
 }
 
 ; 由 hex 造域元素（[]i64，長度 10）
-; h str: 32 位元組 hex
-; v []i64: 域元素
+; h: 32 位元組 hex
+; v: 域元素
 fv = (h str) (v []i64) {
     e [32]byte
     e = mk(h)

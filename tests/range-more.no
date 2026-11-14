@@ -331,7 +331,7 @@ mp-run()
 ; 包含遞增、遞減、常量、變量邊界
 
 ; 遞增 range (變量邊界)
-; r i64: i 走 [0..5) 的總和，0+1+2+3+4 = 10
+; r: i 走 [0..5) 的總和，0+1+2+3+4 = 10
 rt-test-ascending = () (r i64) {
     sum = 0
     n = 5
@@ -344,7 +344,7 @@ rt-test-ascending = () (r i64) {
 }
 
 ; 遞減 range (變量邊界)
-; r i64: i 走 [5..0) 的總和，5+4+3+2+1 = 15
+; r: i 走 [5..0) 的總和，5+4+3+2+1 = 15
 rt-test-descending = () (r i64) {
     sum = 0
     n = 0
@@ -357,7 +357,7 @@ rt-test-descending = () (r i64) {
 }
 
 ; 常量邊界 range
-; r i64: i 走 [0..10) 的總和，0+…+9 = 45
+; r: i 走 [0..10) 的總和，0+…+9 = 45
 rt-test-constant = () (r i64) {
     sum = 0
     i <- [0..10): {
@@ -369,7 +369,7 @@ rt-test-constant = () (r i64) {
 }
 
 ; 常量遞減 range
-; r i64: i 走 [5..0) 的總和，5+4+3+2+1 = 15
+; r: i 走 [5..0) 的總和，5+4+3+2+1 = 15
 rt-rt-test-constant-desc = () (r i64) {
     sum = 0
     i <- [5..0): {
@@ -381,7 +381,7 @@ rt-rt-test-constant-desc = () (r i64) {
 }
 
 ; 嵌套 range
-; r i64: 雙層 3×4 的累加值 (i*10+j)，6+46+86 = 138
+; r: 雙層 3×4 的累加值 (i*10+j)，6+46+86 = 138
 rt-test-nested = () (r i64) {
     sum = 0
     n = 3
@@ -397,7 +397,7 @@ rt-test-nested = () (r i64) {
 }
 
 ; range with break
-; r i64: i 走到 5 就跳出，累加 0+1+2+3+4 = 10
+; r: i 走到 5 就跳出，累加 0+1+2+3+4 = 10
 rt-test-break = () (r i64) {
     sum = 0
     n = 100

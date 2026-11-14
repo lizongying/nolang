@@ -57,8 +57,8 @@ MULTIPART-BOUNDARY-LEN = 32
 ...
 
 ; 生成隨機邊界字串
-; seed i64: 隨機種子（輸入/輸出）
-; 返回 boundary str: 邊界字串
+; seed: 隨機種子（輸入/輸出）
+; 返回 boundary: 邊界字串
 ; [multipart-gen-boundary](#multipart.multipart-gen-boundary)
 multipart-gen-boundary = (seed i64) (boundary str) {
     chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -87,10 +87,10 @@ multipart-gen-boundary = (seed i64) (boundary str) {
 ...
 
 ; multipart-writer: Multipart 表單編碼器
-; boundary str: 邊界字串
-; body str: 已建構的請求體
-; closed bool: 是否已關閉（已寫入結束邊界）
-; seed i64: 隨機種子
+; boundary: 邊界字串
+; body: 已建構的請求體
+; closed: 是否已關閉（已寫入結束邊界）
+; seed: 隨機種子
 ; [multipart-writer](#multipart.multipart-writer)
 multipart-writer {
     boundary str
@@ -100,7 +100,7 @@ multipart-writer {
 }
 
 ; 初始化編碼器（自動生成邊界）
-; 返回 ok bool: true=寫入成功
+; 返回 ok: true=寫入成功
 ; [init](#multipart.multipart-writer.init)
 multipart-writer.init = () (ok bool) {
     ok = true
@@ -111,7 +111,7 @@ multipart-writer.init = () (ok bool) {
 }
 
 ; 使用指定邊界初始化
-; boundary str: 邊界字串
+; boundary: 邊界字串
 ; [init-boundary](#multipart.multipart-writer.init-boundary)
 multipart-writer.init-boundary = (boundary str) {
     .boundary = boundary
@@ -121,9 +121,9 @@ multipart-writer.init-boundary = (boundary str) {
 }
 
 ; 寫入文字欄位
-; name str: 欄位名稱
-; value str: 欄位值
-; 返回 ok bool: true=寫入成功
+; name: 欄位名稱
+; value: 欄位值
+; 返回 ok: true=寫入成功
 ; [write-field](#multipart.multipart-writer.write-field)
 multipart-writer.write-field = (name str, value str) (ok bool) {
     ok = false
@@ -144,11 +144,11 @@ multipart-writer.write-field = (name str, value str) (ok bool) {
 }
 
 ; 寫入檔案欄位
-; name str: 欄位名稱
-; filename str: 檔案名稱
-; content-type str: 內容類型（如 'image/jpeg'）
-; content str: 檔案內容
-; 返回 ok bool: true=寫入成功
+; name: 欄位名稱
+; filename: 檔案名稱
+; content-type: 內容類型（如 'image/jpeg'）
+; content: 檔案內容
+; 返回 ok: true=寫入成功
 ; [write-file](#multipart.multipart-writer.write-file)
 multipart-writer.write-file = (name str, filename str, content-type str, content str) (ok bool) {
     ok = false
@@ -171,7 +171,7 @@ multipart-writer.write-file = (name str, filename str, content-type str, content
 }
 
 ; 寫入結束邊界，完成表單
-; 返回 ok bool: true=寫入成功
+; 返回 ok: true=寫入成功
 ; [close-form](#multipart.multipart-writer.close-form)
 multipart-writer.close-form = () (ok bool) {
     ok = false
@@ -187,21 +187,21 @@ multipart-writer.close-form = () (ok bool) {
 }
 
 ; 取得已建構的請求體
-; 返回 body str: 截至目前已寫入各部分組成的完整請求體
+; 返回 body: 截至目前已寫入各部分組成的完整請求體
 ; [body-of](#multipart.multipart-writer.body-of)
 multipart-writer.body-of = () (body str) {
     body = .body
 }
 
 ; 取得邊界字串
-; 返回 boundary str: 編碼器目前使用的邊界（不含 -- 前綴）
+; 返回 boundary: 編碼器目前使用的邊界（不含 -- 前綴）
 ; [boundary-of](#multipart.multipart-writer.boundary-of)
 multipart-writer.boundary-of = () (boundary str) {
     boundary = .boundary
 }
 
 ; 取得 Content-Type 標頭值
-; 返回 ct str: 如 'multipart/form-data; boundary=----NolangBoundary...'
+; 返回 ct: 如 'multipart/form-data; boundary=----NolangBoundary...'
 ; [content-type](#multipart.multipart-writer.content-type)
 multipart-writer.content-type = () (ct str) {
     ct = 'multipart/form-data; boundary=' - .boundary
@@ -211,10 +211,10 @@ multipart-writer.content-type = () (ct str) {
 ...
 
 ; multipart-part: 單個 multipart 部分
-; name str: 欄位名稱
-; filename str: 檔案名稱（空=非檔案）
-; content-type str: 內容類型（空=未指定）
-; data str: 部分資料
+; name: 欄位名稱
+; filename: 檔案名稱（空=非檔案）
+; content-type: 內容類型（空=未指定）
+; data: 部分資料
 ; [multipart-part](#multipart.multipart-part)
 multipart-part {
     name str
@@ -224,12 +224,12 @@ multipart-part {
 }
 
 ; multipart-reader: Multipart 表單解析器
-; boundary str: 邊界字串
-; data str: 原始資料
-; pos i64: 當前解析位置
-; end i64: 資料總長度
-; current multipart-part: 當前部分
-; has-current bool: 是否有當前部分
+; boundary: 邊界字串
+; data: 原始資料
+; pos: 當前解析位置
+; end: 資料總長度
+; current: 當前部分
+; has-current: 是否有當前部分
 ; [multipart-reader](#multipart.multipart-reader)
 multipart-reader {
     boundary str
@@ -241,8 +241,8 @@ multipart-reader {
 }
 
 ; 初始化解析器
-; boundary str: 邊界字串（不含 '--' 前綴）
-; data str: 原始資料
+; boundary: 邊界字串（不含 '--' 前綴）
+; data: 原始資料
 ; [init](#multipart.multipart-reader.init)
 multipart-reader.init = (boundary str, data str) {
     .boundary = boundary
@@ -253,8 +253,8 @@ multipart-reader.init = (boundary str, data str) {
 }
 
 ; 解析部分標頭
-; header-block str: 標頭區塊（不含結尾 CRLFCRLF）
-; part multipart-part: 輸出，解析結果
+; header-block: 標頭區塊（不含結尾 CRLFCRLF）
+; part: 輸出，解析結果
 ; [parse-headers](#multipart.multipart-reader.parse-headers)
 multipart-reader.parse-headers = (header-block str, part multipart-part) {
     cr = '\r'
@@ -281,8 +281,8 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
 }
 
 ; 解析單個標頭行
-; line str: 標頭行
-; part multipart-part: 輸出，解析結果
+; line: 標頭行
+; part: 輸出，解析結果
 ; [parse-header-line](#multipart.multipart-reader.parse-header-line)
 multipart-reader.parse-header-line = (line str, part multipart-part) {
 
@@ -322,7 +322,7 @@ multipart-reader.parse-header-line = (line str, part multipart-part) {
 }
 
 ; 前進到下一個部分
-; 返回 has-part bool: true=有下一個部分, false=已到結尾
+; 返回 has-part: true=有下一個部分, false=已到結尾
 ; [next](#multipart.multipart-reader.next)
 multipart-reader.next = () (has-part bool) {
     has-part = false
@@ -397,42 +397,42 @@ multipart-reader.next = () (has-part bool) {
 }
 
 ; 取得當前欄位名稱
-; 返回 name str: 當前部分 form-data 的 name（空=未指定）
+; 返回 name: 當前部分 form-data 的 name（空=未指定）
 ; [field-name](#multipart.multipart-reader.field-name)
 multipart-reader.field-name = () (name str) {
     name = .current.name
 }
 
 ; 取得當前檔案名稱
-; 返回 filename str: 空=非檔案欄位
+; 返回 filename: 空=非檔案欄位
 ; [field-filename](#multipart.multipart-reader.field-filename)
 multipart-reader.field-filename = () (filename str) {
     filename = .current.filename
 }
 
 ; 取得當前內容類型
-; 返回 ct str: 空=未指定
+; 返回 ct: 空=未指定
 ; [field-content-type](#multipart.multipart-reader.field-content-type)
 multipart-reader.field-content-type = () (ct str) {
     ct = .current.content-type
 }
 
 ; 取得當前欄位資料
-; 返回 data str: 當前部分的內容資料（含二進位位元組）
+; 返回 data: 當前部分的內容資料（含二進位位元組）
 ; [field-data](#multipart.multipart-reader.field-data)
 multipart-reader.field-data = () (data str) {
     data = .current.data
 }
 
 ; 判斷當前部分是否為檔案
-; 返回 yes bool: true=檔案
+; 返回 yes: true=檔案
 ; [is-file](#multipart.multipart-reader.is-file)
 multipart-reader.is-file = () (yes bool) {
     .current.filename.len-bytes() > 0 -> yes = true
 }
 
 ; 判斷是否有當前部分
-; 返回 yes bool: true=已定位到某部分可供讀取
+; 返回 yes: true=已定位到某部分可供讀取
 ; [has-current-part](#multipart.multipart-reader.has-current-part)
 multipart-reader.has-current-part = () (yes bool) {
     yes = .has-current
@@ -442,7 +442,7 @@ multipart-reader.has-current-part = () (yes bool) {
 ...
 
 ; 建立新的 multipart 編碼器
-; 返回 w ?multipart-writer: ok=編碼器, nil=失敗
+; 返回 w: ok=編碼器, nil=失敗
 ; [multipart-create](#multipart.multipart-create)
 multipart-create = () (w ?multipart-writer) {
     w = nil
@@ -453,17 +453,17 @@ multipart-create = () (w ?multipart-writer) {
 }
 
 ; 使用指定邊界建立編碼器
-; boundary str: 邊界字串（不含前導 --，寫入時自動加上）
-; w multipart-writer: 已設入該邊界、可直接寫入各段的編碼器
+; boundary: 邊界字串（不含前導 --，寫入時自動加上）
+; w: 已設入該邊界、可直接寫入各段的編碼器
 ; [multipart-create-boundary](#multipart.multipart-create-boundary)
 multipart-create-boundary = (boundary str) (w multipart-writer) {
     w.init-boundary(boundary)
 }
 
 ; 從 Content-Type 標頭和請求體解析 multipart
-; content-type str: Content-Type 標頭值（含 boundary=...）
-; body str: 請求體
-; 返回 r ?multipart-reader: ok=解析器, nil=失敗
+; content-type: Content-Type 標頭值（含 boundary=...）
+; body: 請求體
+; 返回 r: ok=解析器, nil=失敗
 ; [multipart-parse](#multipart.multipart-parse)
 multipart-parse = (content-type str, body str) (r ?multipart-reader) {
     r = nil
@@ -507,8 +507,8 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
 }
 
 ; 從 Content-Type 提取 boundary 值
-; content-type str: Content-Type 標頭值
-; 返回 boundary str: 邊界字串（空=未找到）
+; content-type: Content-Type 標頭值
+; 返回 boundary: 邊界字串（空=未找到）
 ; [multipart-extract-boundary](#multipart.multipart-extract-boundary)
 multipart-extract-boundary = (content-type str) (boundary str) {
     boundary = ''
@@ -555,13 +555,13 @@ multipart-extract-boundary = (content-type str) (boundary str) {
 ...
 
 ; 寫入 AES-256-GCM 加密檔案欄位
-; name str: 欄位名稱
-; filename str: 檔案名稱
-; content-type str: 內容類型
-; content str: 檔案明文內容
-; key [32]byte: AES-256 金鑰
-; iv [12]byte: GCM IV（nonce）
-; 返回 ok bool: true=寫入成功
+; name: 欄位名稱
+; filename: 檔案名稱
+; content-type: 內容類型
+; content: 檔案明文內容
+; key: AES-256 金鑰
+; iv: GCM IV（nonce）
+; 返回 ok: true=寫入成功
 ; [write-encrypted-file](#multipart.multipart-writer.write-encrypted-file)
 multipart-writer.write-encrypted-file = (name str, filename str, content-type str, content str, key [32]byte, iv [12]byte) (ok bool) {
     ok = false
@@ -618,11 +618,11 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
 }
 
 ; 寫入 AES-256-GCM 加密文字欄位
-; name str: 欄位名稱
-; value str: 明文值
-; key [32]byte: AES-256 金鑰
-; iv [12]byte: GCM IV
-; 返回 ok bool: true=寫入成功
+; name: 欄位名稱
+; value: 明文值
+; key: AES-256 金鑰
+; iv: GCM IV
+; 返回 ok: true=寫入成功
 ; [write-encrypted-field](#multipart.multipart-writer.write-encrypted-field)
 multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv [12]byte) (ok bool) {
     ok = false
@@ -677,10 +677,10 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
 }
 
 ; 解密加密的 multipart 欄位資料
-; encrypted-data str: Base64 編碼的加密資料（含 12 byte IV 前綴）
-; key [32]byte: AES-256 金鑰
-; aad []byte: 額外認證資料（欄位名稱）
-; 返回 plain ?str: ok=解密後明文, nil=解密失敗
+; encrypted-data: Base64 編碼的加密資料（含 12 byte IV 前綴）
+; key: AES-256 金鑰
+; aad: 額外認證資料（欄位名稱）
+; 返回 plain: ok=解密後明文, nil=解密失敗
 ; [multipart-decrypt-field](#multipart.multipart-decrypt-field)
 multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain ?str) {
     plain = nil

@@ -86,7 +86,7 @@ new-v4 = (state i64) (out uuid) {
 
 ; 將 UUID 格式化為標準字串
 ; 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
-; 返回 out str: UUID 字串
+; 返回 out: UUID 字串
 ; [to-str](#uuid.to-str)
 uuid.to-str = () (out str) {
 
@@ -177,9 +177,9 @@ uuid.to-str = () (out str) {
 }
 
 ; 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
-; b byte: 待編碼的位元組（高半字節先寫，低半字節後寫）
-; pos i64: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
-; out str: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
+; b: 待編碼的位元組（高半字節先寫，低半字節後寫）
+; pos: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
+; out: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
 ; [hex-byte](#uuid.hex-byte)
 hex-byte = (b byte, pos i64, out str) {
     out[pos]: {
@@ -197,7 +197,7 @@ hex-byte = (b byte, pos i64, out str) {
 }
 
 ; 將 UUID 格式化為大寫字串
-; 返回 out str: UUID 大寫字串
+; 返回 out: UUID 大寫字串
 ; [to-str-upper](#uuid.to-str-upper)
 uuid.to-str-upper = () (out str) {
     out = with-len(36)
@@ -320,9 +320,9 @@ hex-byte-upper = (b byte, pos i64, out str, table str) {
 
 ; 從字串解析 UUID
 ; 支援帶連字號（36 字元）和不帶連字號（32 字元）格式
-; s str: UUID 字串
-; out uuid: 輸出 UUID
-; 返回 ok bool: true=解析成功
+; s: UUID 字串
+; out: 輸出 UUID
+; 返回 ok: true=解析成功
 ; s: UUID 字串（36 字符帶連字符或 32 字符無連字符）
 ; out: 输出參數，解析成功時寫入 16 字節（原內容被覆蓋）
 ; ok: true=格式合法且已寫入, false=長度/字符非法

@@ -2482,8 +2482,8 @@ str.to-bigint = () (out ?bigint) {
 ...
 
 ; 用分隔符將字串分割為多個子字串
-; sep str: 切分點子串；在每個出現處切開，本身不進入結果
-; 返回 out []str: 分割後的子字串切片
+; sep: 切分點子串；在每個出現處切開，本身不進入結果
+; 返回 out: 分割後的子字串切片
 ; 空分隔符時返回整個字串作為唯一元素
 ; 注意：使用本地 result 切片再賦值給 out，避免 out.push 在輸出參數上不生效的編譯器 bug
 ; [split](#str.split)
@@ -2508,8 +2508,8 @@ str.split = (sep str) (out []str) {
 }
 
 ; []str.join: 用分隔符連接字串切片中的所有元素
-; sep str: 分隔符
-; 返回 out str: 連接後的字串
+; sep: 分隔符
+; 返回 out: 連接後的字串
 ; [join](#strs.join)
 []str.join = (sep str) (out str) {
     n = .len()
@@ -2549,9 +2549,9 @@ str.split = (sep str) (out []str) {
 ...
 
 ; 將 s 中所有 old 子串替換為 new 子串
-; old str: 要替換的子串
-; new str: 替換後的子串
-; 返回 val str: 替換後的結果字串
+; old: 要替換的子串
+; new: 替換後的子串
+; 返回 val: 替換後的結果字串
 ; 若 old 為空字串，直接返回原字串的副本
 ; [replace-str](#str.replace-str)
 str.replace-str = (old str, new str) (val str) {
@@ -2708,7 +2708,7 @@ str.replace-str = (old str, new str) (val str) {
 
 ; 按一個或多個連續空白字元分割字串
 ; 空白字元：空格(32)、定位(9)、換行(10)、歸位(13)
-; 返回 out []str: 分割後的非空子字串切片
+; 返回 out: 分割後的非空子字串切片
 ; 連續空白被視為單一分隔符，首尾空白不產生空元素
 ; [fields](#str.fields)
 str.fields = () (out []str) {
@@ -2741,8 +2741,8 @@ str.fields = () (out []str) {
 ...
 
 ; 全等比較兩個字串
-; b str: 比較目標
-; 返回 yes bool: true=相等 false=不相等
+; b: 比較目標
+; 返回 yes: true=相等 false=不相等
 ; [eq-full](#str.eq-full)
 str.eq-full = (b str) (yes bool) {
     .len-bytes() != b.len-bytes() -> return
@@ -2759,8 +2759,8 @@ str.eq-full = (b str) (yes bool) {
 ...
 
 ; 反向查找子串最後出現位置
-; target str: 要查找的子串
-; 返回 pos i64: 找到的碼點（字符）位置，未找到 -1
+; target: 要查找的子串
+; 返回 pos: 找到的碼點（字符）位置，未找到 -1
 ; [rindex](#str.rindex)
 str.rindex = (target str) (pos i64) {
     b = .rfind-byte-from(target, 0)
@@ -2772,8 +2772,8 @@ str.rindex = (target str) (pos i64) {
 }
 
 ; 反向查找子串最後出現位置（last-index 是 rindex 的別名）
-; target str: 要查找的子串
-; 返回 pos i64: 找到的碼點（字符）位置，未找到 -1
+; target: 要查找的子串
+; 返回 pos: 找到的碼點（字符）位置，未找到 -1
 ; [last-index](#str.last-index)
 str.last-index = (target str) (pos i64) {
     pos = .rindex(target)
@@ -2781,9 +2781,9 @@ str.last-index = (target str) (pos i64) {
 
 ; 從 from（碼點位置）反向查找子串
 ; 語義同 Python rfind(target, from)：在 [from, .len) 範圍內查找 target 最後出現位置
-; target str: 要查找的子串
-; from i64: 起始位置（含，下界，碼點）
-; 返回 pos i64: 找到的碼點（字符）位置，未找到 -1
+; target: 要查找的子串
+; from: 起始位置（含，下界，碼點）
+; 返回 pos: 找到的碼點（字符）位置，未找到 -1
 ; [rindex-from](#str.rindex-from)
 str.rindex-from = (target str, from i64) (pos i64) {
     fb = .byte-index(from)
@@ -2799,10 +2799,10 @@ str.rindex-from = (target str, from i64) (pos i64) {
 ...
 
 ; 限定替換次數
-; old str: 舊子串
-; new str: 新子串
-; n i64: 最大替換次數，n <= 0 不替換
-; 返回 val str: 替換後字串
+; old: 舊子串
+; new: 新子串
+; n: 最大替換次數，n <= 0 不替換
+; 返回 val: 替換後字串
 ; [replace-n](#str.replace-n)
 str.replace-n = (old str, new str, n i64) (val str) {
     n <= 0 -> {
@@ -2890,9 +2890,9 @@ str.replace-n = (old str, new str, n i64) (val str) {
 ...
 
 ; 限定分割次數
-; sep str: 切分點子串；在每個出現處切開，本身不進入結果
-; maxsplit i64: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
-; 返回 out []str: 分割結果
+; sep: 切分點子串；在每個出現處切開，本身不進入結果
+; maxsplit: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
+; 返回 out: 分割結果
 ; [split-n](#str.split-n)
 str.split-n = (sep str, maxsplit i64) (out []str) {
     result []str
@@ -2938,7 +2938,7 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
 
 ; 按換行符分割
 ; 支持 \n 與 \r\n
-; 返回 out []str: 行列表（末尾換行不產生空行）
+; 返回 out: 行列表（末尾換行不產生空行）
 ; [lines](#str.lines)
 str.lines = () (out []str) {
     .len-bytes() == 0 -> return
@@ -2992,7 +2992,7 @@ str.lines = () (out []str) {
 
 ; 字串轉十六進制編碼
 ; 每字節轉兩個十六進制字符（小寫）
-; 返回 out str: 十六進制字串
+; 返回 out: 十六進制字串
 ; [to-hex](#str.to-hex)
 str.to-hex = () (out str) {
     nb = .len-bytes()
@@ -3027,8 +3027,8 @@ str.to-hex = () (out str) {
 
 ; [deprecated] str.at: 字符（碼點）索引讀取——請改用 s[idx]（原生索引，回傳 ?char）
 ; 安全索引訪問（字符索引；位元組偏移請用 s.byte(i)）
-; i i64: 字符（碼點）索引
-; 返回 val ?byte: 該字符的碼點值（超出 byte 範圍時截斷）；越界返回 nil
+; i: 字符（碼點）索引
+; 返回 val: 該字符的碼點值（超出 byte 範圍時截斷）；越界返回 nil
 ; [at](#str.at)
 str.at = (i i64) (val ?byte) {
     {
@@ -3049,7 +3049,7 @@ str.at = (i i64) (val ?byte) {
 ...
 
 ; 將 str 轉換為 txt（最長 255 位元組）
-; 返回 out ?txt: ok(txt) / nil（超過 255 位元組，txt 容納不下，不再靜默截斷）
+; 返回 out: ok(txt) / nil（超過 255 位元組，txt 容納不下，不再靜默截斷）
 ; [to-txt](#str.to-txt)
 str.to-txt = () (out ?txt) {
     n = .len-bytes()

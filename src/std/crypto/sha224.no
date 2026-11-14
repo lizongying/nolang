@@ -10,8 +10,8 @@
 ; [sha224](#sha224)
 
 ; 計算 SHA-224 雜湊（含填充與多區塊處理；壓縮函數與 SHA-256 相同，初始值不同）
-; data []byte: 輸入位元組陣列（任意長度）
-; hash [28]byte: 224-bit 摘要（取 SHA-256 前 7 個狀態字），大端序存放
+; data: 輸入位元組陣列（任意長度）
+; hash: 224-bit 摘要（取 SHA-256 前 7 個狀態字），大端序存放
 ; [sha224](#sha224.sha224)
 sha224 = (data []byte) (hash [28]byte) {
 
@@ -191,8 +191,8 @@ sha224 = (data []byte) (hash [28]byte) {
 }
 
 ; 計算 SHA-224 雜湊並返回 hex 字串
-; data []byte: 輸入位元組陣列（任意長度）
-; hex str: 56 字元小寫十六進位摘要
+; data: 輸入位元組陣列（任意長度）
+; hex: 56 字元小寫十六進位摘要
 ; [sha224-hex](#sha224.sha224-hex)
 sha224-hex = (data []byte) (hex str) {
     hash = sha224(data)

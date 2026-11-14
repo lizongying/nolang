@@ -102,9 +102,9 @@ server-conn {
 ...
 
 ; 開始監聽
-; host str: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
-; port i64: 監聽埠號
-; 返回 ok bool: true=成功
+; host: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
+; port: 監聽埠號
+; 返回 ok: true=成功
 ; [listen](#server.server.listen)
 server.listen = (host str, port i64) (ok bool) {
     ok = false
@@ -118,7 +118,7 @@ server.listen = (host str, port i64) (ok bool) {
 }
 
 ; 接受新的 HTTP 連接
-; 返回 c ?server-conn: ok=連接, nil=失敗
+; 返回 c: ok=連接, nil=失敗
 ; [accept](#server.server.accept)
 server.accept = () (c ?server-conn) {
     c = nil
@@ -144,7 +144,7 @@ server.accept = () (c ?server-conn) {
 }
 
 ; 非阻塞接受新的連接（供協程事件循環輪詢）
-; 返回 c ?server-conn: 有連接=server-conn, 暫無連接或失敗=nil
+; 返回 c: 有連接=server-conn, 暫無連接或失敗=nil
 ; 與 server.accept 不同，本方法不阻塞，配合 async-yield() 實現可中斷的事件循環
 ; [accept-nb](#server.server.accept-nb)
 server.accept-nb = () (c ?server-conn) {
@@ -190,7 +190,7 @@ server.fd-of = () (fd fd) {
 ...
 
 ; 從 socket 接收更多資料到 recv-buf
-; 返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
+; 返回 n: 接收的位元組數（-1=錯誤, 0=連接關閉）
 ; [recv-more](#server.server-conn.recv-more)
 server-conn.recv-more = () (n i64) {
     n = -1
@@ -219,7 +219,7 @@ server-conn.recv-more = () (n i64) {
 
 ; 解析 HTTP 請求
 ; 讀取並解析完整的 HTTP 請求（請求行 + 標頭 + 可選的請求體）
-; 返回 ok bool: true=解析成功
+; 返回 ok: true=解析成功
 ; [parse](#server.server-conn.parse)
 server-conn.parse = () (ok bool) {
     ok = false
@@ -422,8 +422,8 @@ server-conn.parse = () (ok bool) {
 }
 
 ; 取得指定標頭值
-; name str: 標頭名（如 'Content-Type'）
-; 返回 val ?str: ok=標頭值, nil=未找到
+; name: 標頭名（如 'Content-Type'）
+; 返回 val: ok=標頭值, nil=未找到
 ; [get-header](#server.server-conn.get-header)
 server-conn.get-header = (name str) (val ?str) {
     val = nil
@@ -469,8 +469,8 @@ server-conn.get-header = (name str) (val ?str) {
 }
 
 ; 寫入 HTTP 狀態行
-; status i64: HTTP 狀態碼（如 200、404、500，自動附加對應Reason短語）
-; 返回 ok bool: true=成功
+; status: HTTP 狀態碼（如 200、404、500，自動附加對應Reason短語）
+; 返回 ok: true=成功
 ; [write-status](#server.server-conn.write-status)
 server-conn.write-status = (status i64) (ok bool) {
     ok = false
@@ -531,9 +531,9 @@ server-conn.write-status = (status i64) (ok bool) {
 }
 
 ; 寫入單個回應標頭
-; name str: 標頭名
-; value str: 標頭值
-; 返回 ok bool: true=成功
+; name: 標頭名
+; value: 標頭值
+; 返回 ok: true=成功
 ; [write-header](#server.server-conn.write-header)
 server-conn.write-header = (name str, value str) (ok bool) {
     ok = false
@@ -550,7 +550,7 @@ server-conn.write-header = (name str, value str) (ok bool) {
 }
 
 ; 寫入空行表示標頭結束
-; 返回 ok bool: true=成功
+; 返回 ok: true=成功
 ; [write-headers-done](#server.server-conn.write-headers-done)
 server-conn.write-headers-done = () (ok bool) {
     ok = false
@@ -565,8 +565,8 @@ server-conn.write-headers-done = () (ok bool) {
 }
 
 ; 寫入回應體
-; data str: 回應體資料
-; 返回 ok bool: true=成功
+; data: 回應體資料
+; 返回 ok: true=成功
 ; [write-body](#server.server-conn.write-body)
 server-conn.write-body = (data str) (ok bool) {
     ok = false
@@ -579,9 +579,9 @@ server-conn.write-body = (data str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入完整文字回應（自動附加 Content-Type=text/plain、Content-Length、Connection、Server 標頭）
-; status i64: HTTP 狀態碼
-; text str: 回應正文，以 UTF-8 純文字寫入
-; 返回 ok bool: true=成功
+; status: HTTP 狀態碼
+; text: 回應正文，以 UTF-8 純文字寫入
+; 返回 ok: true=成功
 ; [write-text](#server.server-conn.write-text)
 server-conn.write-text = (status i64, text str) (ok bool) {
     ok = false
@@ -616,9 +616,9 @@ server-conn.write-text = (status i64, text str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入 JSON 回應（自動附加 Content-Type=application/json、Content-Length、Connection、Server 標頭）
-; status i64: HTTP 狀態碼
-; json-str str: 已序列化的 JSON 字串
-; 返回 ok bool: true=成功
+; status: HTTP 狀態碼
+; json-str: 已序列化的 JSON 字串
+; 返回 ok: true=成功
 ; [write-json](#server.server-conn.write-json)
 server-conn.write-json = (status i64, json-str str) (ok bool) {
     ok = false
@@ -640,9 +640,9 @@ server-conn.write-json = (status i64, json-str str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入 HTML 回應（自動附加 Content-Type=text/html、Content-Length、Connection、Server 標頭）
-; status i64: HTTP 狀態碼
-; html str: HTML 頁面內容
-; 返回 ok bool: true=成功
+; status: HTTP 狀態碼
+; html: HTML 頁面內容
+; 返回 ok: true=成功
 ; [write-html](#server.server-conn.write-html)
 server-conn.write-html = (status i64, html str) (ok bool) {
     ok = false
@@ -664,9 +664,9 @@ server-conn.write-html = (status i64, html str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入重定向回應（無響應體，Content-Length=0，強制 Connection: close）
-; status i64: 重定向狀態碼（301 永久 / 302 臨時）
-; location str: 重定向目標 URL（寫入 Location 標頭）
-; 返回 ok bool: true=成功
+; status: 重定向狀態碼（301 永久 / 302 臨時）
+; location: 重定向目標 URL（寫入 Location 標頭）
+; 返回 ok: true=成功
 ; [write-redirect](#server.server-conn.write-redirect)
 server-conn.write-redirect = (status i64, location str) (ok bool) {
     ok = false
@@ -680,9 +680,9 @@ server-conn.write-redirect = (status i64, location str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入錯誤回應（以 text/plain 發送，強制 Connection: close）
-; status i64: 錯誤狀態碼（如 404、500）
-; message str: 錯誤訊息正文
-; 返回 ok bool: true=成功
+; status: 錯誤狀態碼（如 404、500）
+; message: 錯誤訊息正文
+; 返回 ok: true=成功
 ; [write-error](#server.server-conn.write-error)
 server-conn.write-error = (status i64, message str) (ok bool) {
     ok = false
@@ -725,9 +725,9 @@ server-conn.close = () {
 ...
 
 ; 建立 HTTP 伺服器並開始監聽
-; host str: 綁定的 IP 地址
-; port i64: 監聽埠號
-; 返回 s ?server: ok=伺服器, nil=失敗
+; host: 綁定的 IP 地址
+; port: 監聽埠號
+; 返回 s: ok=伺服器, nil=失敗
 ; [listen-on](#server.listen-on)
 listen-on = (host str, port i64) (s ?server) {
     s = nil
@@ -741,8 +741,8 @@ listen-on = (host str, port i64) (s ?server) {
 ...
 
 ; 從請求標頭取得指定 Cookie 值
-; name str: Cookie 名稱
-; 返回 val ?str: ok=Cookie 值, nil=未找到
+; name: Cookie 名稱
+; 返回 val: ok=Cookie 值, nil=未找到
 ; [get-cookie](#server.server-conn.get-cookie)
 server-conn.get-cookie = (name str) (val ?str) {
     val = nil
@@ -755,9 +755,9 @@ server-conn.get-cookie = (name str) (val ?str) {
 }
 
 ; 取得並驗證簽名 Cookie
-; name str: Cookie 名稱
-; key []byte: HMAC-SHA256 簽名金鑰
-; 返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
+; name: Cookie 名稱
+; key: HMAC-SHA256 簽名金鑰
+; 返回 val: ok=原始 Cookie 值, nil=未找到或驗證失敗
 ; [get-signed-cookie](#server.server-conn.get-signed-cookie)
 server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
     val = nil
@@ -768,9 +768,9 @@ server-conn.get-signed-cookie = (name str, key []byte) (val ?str) {
 }
 
 ; 驗證 HTTP Basic 認證
-; expected-user str: 期望的用戶名
-; expected-pass str: 期望的密碼
-; 返回 ok bool: true=認證通過
+; expected-user: 期望的用戶名
+; expected-pass: 期望的密碼
+; 返回 ok: true=認證通過
 ; [verify-basic-auth](#server.server-conn.verify-basic-auth)
 server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok bool) {
     ok = false
@@ -781,9 +781,9 @@ server-conn.verify-basic-auth = (expected-user str, expected-pass str) (ok bool)
 }
 
 ; 常數時間字串比較
-; a str: 字串 A
-; b str: 字串 B
-; 返回 ok bool: true=相等
+; a: 字串 A
+; b: 字串 B
+; 返回 ok: true=相等
 ; [secure-compare](#server.secure-compare)
 secure-compare = (a str, b str) (ok bool) {
     ok = false
@@ -796,9 +796,9 @@ secure-compare = (a str, b str) (ok bool) {
 }
 
 ; 設定簽名 Cookie 到回應
-; name str: Cookie 名稱
-; value str: Cookie 值
-; key []byte: HMAC-SHA256 簽名金鑰
+; name: Cookie 名稱
+; value: Cookie 值
+; key: HMAC-SHA256 簽名金鑰
 ; [set-signed-cookie](#server.server-conn.set-signed-cookie)
 server-conn.set-signed-cookie = (name str, value str, key []byte) {
     signed-value = cookie.cookie-sign(name, value, key)
@@ -856,9 +856,9 @@ https-server-conn {
 ...
 
 ; 開始監聽（TLS）
-; host str: 綁定的 IP 地址
-; port i64: 監聽埠號
-; 返回 ok bool: true=成功
+; host: 綁定的 IP 地址
+; port: 監聽埠號
+; 返回 ok: true=成功
 ; [listen](#server.https-server.listen)
 https-server.listen = (host str, port i64) (ok bool) {
     ok = false
@@ -872,7 +872,7 @@ https-server.listen = (host str, port i64) (ok bool) {
 }
 
 ; 接受新的 HTTPS 連接
-; 返回 c ?https-server-conn: ok=連接, nil=失敗
+; 返回 c: ok=連接, nil=失敗
 ; [accept](#server.https-server.accept)
 https-server.accept = () (c ?https-server-conn) {
     c = nil
@@ -919,7 +919,7 @@ https-server.close = () {
 ...
 
 ; 從 TLS 連接接收更多資料到 recv-buf
-; 返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
+; 返回 n: 接收的位元組數（-1=錯誤, 0=連接關閉）
 ; [recv-more](#server.https-server-conn.recv-more)
 https-server-conn.recv-more = () (n i64) {
     n = -1
@@ -946,7 +946,7 @@ https-server-conn.recv-more = () (n i64) {
 }
 
 ; 解析 HTTP 請求（透過 TLS 接收）
-; 返回 ok bool: true=解析成功
+; 返回 ok: true=解析成功
 ; [parse](#server.https-server-conn.parse)
 https-server-conn.parse = () (ok bool) {
     ok = false
@@ -1142,8 +1142,8 @@ https-server-conn.parse = () (ok bool) {
 }
 
 ; 取得指定標頭值
-; name str: 標頭名
-; 返回 val ?str: ok=標頭值, nil=未找到
+; name: 標頭名
+; 返回 val: ok=標頭值, nil=未找到
 ; [get-header](#server.https-server-conn.get-header)
 https-server-conn.get-header = (name str) (val ?str) {
     val = nil
@@ -1188,8 +1188,8 @@ https-server-conn.get-header = (name str) (val ?str) {
 }
 
 ; 寫入 HTTP 狀態行（透過 TLS）
-; status i64: HTTP 狀態碼（如 200、404）；內部映射出原因短語後寫成 "HTTP/1.1 <status> <reason>\r\n"，未知碼原因默認 'OK'
-; 返回 ok bool: true=成功
+; status: HTTP 狀態碼（如 200、404）；內部映射出原因短語後寫成 "HTTP/1.1 <status> <reason>\r\n"，未知碼原因默認 'OK'
+; 返回 ok: true=成功
 ; [write-status](#server.https-server-conn.write-status)
 https-server-conn.write-status = (status i64) (ok bool) {
     ok = false
@@ -1250,9 +1250,9 @@ https-server-conn.write-status = (status i64) (ok bool) {
 }
 
 ; 寫入單個回應標頭（透過 TLS）
-; name str: 標頭名
-; value str: 標頭值
-; 返回 ok bool: true=成功
+; name: 標頭名
+; value: 標頭值
+; 返回 ok: true=成功
 ; [write-header](#server.https-server-conn.write-header)
 https-server-conn.write-header = (name str, value str) (ok bool) {
     ok = false
@@ -1277,7 +1277,7 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
 }
 
 ; 寫入空行表示標頭結束（透過 TLS）
-; 返回 ok bool: true=成功
+; 返回 ok: true=成功
 ; [write-headers-done](#server.https-server-conn.write-headers-done)
 https-server-conn.write-headers-done = () (ok bool) {
     ok = false
@@ -1300,8 +1300,8 @@ https-server-conn.write-headers-done = () (ok bool) {
 }
 
 ; 寫入回應體（透過 TLS）
-; data str: 回應體資料
-; 返回 ok bool: true=成功
+; data: 回應體資料
+; 返回 ok: true=成功
 ; [write-body](#server.https-server-conn.write-body)
 https-server-conn.write-body = (data str) (ok bool) {
     ok = false
@@ -1323,9 +1323,9 @@ https-server-conn.write-body = (data str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入完整文字回應（透過 TLS）
-; status i64: HTTP 回應狀態碼（如 200、404）
-; text str: 回應文字
-; 返回 ok bool: true=成功
+; status: HTTP 回應狀態碼（如 200、404）
+; text: 回應文字
+; 返回 ok: true=成功
 ; [write-text](#server.https-server-conn.write-text)
 https-server-conn.write-text = (status i64, text str) (ok bool) {
     ok = false
@@ -1348,9 +1348,9 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入 JSON 回應（透過 TLS）
-; status i64: HTTP 回應狀態碼（如 200、404）
-; json-str str: JSON 字串
-; 返回 ok bool: true=成功
+; status: HTTP 回應狀態碼（如 200、404）
+; json-str: JSON 字串
+; 返回 ok: true=成功
 ; [write-json](#server.https-server-conn.write-json)
 https-server-conn.write-json = (status i64, json-str str) (ok bool) {
     ok = false
@@ -1371,9 +1371,9 @@ https-server-conn.write-json = (status i64, json-str str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入 HTML 回應（透過 TLS）
-; status i64: HTTP 回應狀態碼（如 200、404）
-; html str: HTML 內容
-; 返回 ok bool: true=成功
+; status: HTTP 回應狀態碼（如 200、404）
+; html: HTML 內容
+; 返回 ok: true=成功
 ; [write-html](#server.https-server-conn.write-html)
 https-server-conn.write-html = (status i64, html str) (ok bool) {
     ok = false
@@ -1416,9 +1416,9 @@ https-server-conn.close = () {
 ...
 
 ; 建立 HTTPS 伺服器並開始監聽
-; host str: 綁定的 IP 地址
-; port i64: 監聽埠號
-; 返回 s ?https-server: ok=伺服器, nil=失敗
+; host: 綁定的 IP 地址
+; port: 監聽埠號
+; 返回 s: ok=伺服器, nil=失敗
 ; [https-listen-on](#server.https-listen-on)
 https-listen-on = (host str, port i64) (s ?https-server) {
     s = nil

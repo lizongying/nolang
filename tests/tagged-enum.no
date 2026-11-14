@@ -12,8 +12,8 @@ box {
 }
 
 ; 把 color 枚舉變體轉成名稱字串
-; c color: 待查色的枚舉值（red/green/blue）
-; s str: 變體對應的名稱字串
+; c: 待查色的枚舉值（red/green/blue）
+; s: 變體對應的名稱字串
 color-name = (c color) (s str) {
     c: {
         red -> s = 'red'
@@ -33,8 +33,8 @@ shape {
 }
 
 ; 按變體計算圖形面積
-; s shape: 待求面積的圖形（circle 以 r×3.0 近似，dot 面積為 0）
-; a f64: 面積值
+; s: 待求面積的圖形（circle 以 r×3.0 近似，dot 面積為 0）
+; a: 面積值
 area = (s shape) (a f64) {
     s: {
         circle(r) -> {
@@ -65,7 +65,7 @@ b-res {
 ...
 
 ; 構造 rect(3.0, 4.0) 並經結果參數交還
-; s shape: 新生成的 rect 變體（w=3.0, h=4.0）
+; s: 新生成的 rect 變體（w=3.0, h=4.0）
 make-rect = () (s shape) {
     s = rect(3.0, 4.0)
 }

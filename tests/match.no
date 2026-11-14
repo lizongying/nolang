@@ -32,7 +32,7 @@ test-match()
 ...
 
 ; 用區間模式分級：驗證帶回傳值的函式體內 4 個臂（含默認臂）都走對
-; score i64: 分數；[0..60)→low、[60..70)→pass、[70..100)→high，其餘為 invalid
+; score: 分數；[0..60)→low、[60..70)→pass、[70..100)→high，其餘為 invalid
 score-of = (score i64) {
     grade = score: {
         [0..60) -> 'low'
@@ -175,8 +175,8 @@ num = i32 | i64 | f64
 mixed = num | bool
 
 ; (5) bool 上的值 match（P1 形態，由型別臂呼叫）
-; b bool: 待轉字串的布林
-; r str: true 為 'yes'、false 為 'no'
+; b: 待轉字串的布林
+; r: true 為 'yes'、false 為 'no'
 bool-str = (b bool) (r str) {
     r = b: {
         true -> 'yes'
@@ -191,8 +191,8 @@ bool-str = (b bool) (r str) {
 gi64 = 7
 
 ; 巢狀型別 match：外層對 mixed 判 bool，內層再對 union 別名 num 判具體寬度
-; a mixed: 外層要判型別的 union 值
-; r str: bool 臂回 'bool+<內層型別>'，其餘成員回 'bare-i64' / 'bare-i32' / 'bare-f64'，都不符則 'other'
+; a: 外層要判型別的 union 值
+; r: bool 臂回 'bool+<內層型別>'，其餘成員回 'bare-i64' / 'bare-i32' / 'bare-f64'，都不符則 'other'
 nested = (a mixed) (r str) {
     r = a: {
         v bool -> {
@@ -259,7 +259,7 @@ print(nested(b3)); -> bare-f64
 V ?i64 = 7
 
 ; 選項作為函式參數 + match：修復前借用 clone 誤用 str_clone，觸發 opt-verify 失敗
-; r ?str: 待匹配的選項；ok 時印出內含字串，nil / err 各印標記
+; r: 待匹配的選項；ok 時印出內含字串，nil / err 各印標記
 g-str = (r ?str) {
     r: {
         ok(s) -> print(s)
@@ -271,19 +271,19 @@ g-str = (r ?str) {
 }
 
 ; 回呼：產生 ok('hello') 的 ?str（驗證參數傳遞路徑）
-; r ?str: 內容為 'hello' 的 ok 選項
+; r: 內容為 'hello' 的 ok 選項
 mk-str = () (r ?str) {
     r = 'hello'
 }
 
 ; 回呼：產生 ok(true) 的 ?bool（回歸 2：剝殼後不得恒為 false）
-; r ?bool: 內容為 true 的 ok 選項
+; r: 內容為 true 的 ok 選項
 mk-bt = () (r ?bool) {
     r = true
 }
 
 ; 回呼：產生 ok(false) 的 ?bool（與 mk-bt 成對，驗證 true/false 都能正確剝殼）
-; r ?bool: 內容為 false 的 ok 選項
+; r: 內容為 false 的 ok 選項
 mk-bf = () (r ?bool) {
     r = false
 }
@@ -499,10 +499,10 @@ test1__1()
 num-1 = i32 | i64 | f64
 
 ; 用戶範例：按被匹配值的具體型別靜態選臂
-; x num: 被匹配的值，i32 與 i64 走不同臂、其餘走 catch-all
-; lo num: i32 臂要回傳的下界值
-; hi num: i64 臂要回傳的上界值
-; r num: 依 x 的具體型別選出的 lo / hi / x
+; x: 被匹配的值，i32 與 i64 走不同臂、其餘走 catch-all
+; lo: i32 臂要回傳的下界值
+; hi: i64 臂要回傳的上界值
+; r: 依 x 的具體型別選出的 lo / hi / x
 clamp0 = (x num-1, lo num-1, hi num-1) (r num-1) {
     r = x: {
         i32 -> lo
@@ -514,7 +514,7 @@ clamp0 = (x num-1, lo num-1, hi num-1) (r num-1) {
 }
 
 ; 帶綁定型別臂 + 預設臂
-; x num: 被匹配的 union 值；i64 / i32 / f64 臂各自具名綁定 v 取載荷，其餘落 catch-all
+; x: 被匹配的 union 值；i64 / i32 / f64 臂各自具名綁定 v 取載荷，其餘落 catch-all
 classify = (x num-1) {
     y = x: {
         v i64 -> v.to-str()
@@ -529,7 +529,7 @@ classify = (x num-1) {
 }
 
 ; 各臂回傳不同值，驗證確實選對臂
-; x num: 被匹配的 union 值；i64 臂 +1、i32 臂 +2、f64 臂 +3.0，其餘回 0
+; x: 被匹配的 union 值；i64 臂 +1、i32 臂 +2、f64 臂 +3.0，其餘回 0
 add1 = (x num-1) {
     r = x: {
         w i64 -> w + 1
@@ -589,9 +589,9 @@ add1(bf64); -> 13
 ...
 
 ; 檢查 str
-; name str: 這項檢查的名稱，輸出時原樣印出
-; got str: 實際取得的值
-; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
+; name: 這項檢查的名稱，輸出時原樣印出
+; got: 實際取得的值
+; want: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check-str = (name str, got str, want str) {
     {
         got == want -> print('ok: {name}')
@@ -601,19 +601,19 @@ check-str = (name str, got str, want str) {
 }
 
 ; 外層選項：固定回 ok(42)，供巢狀 match 的外層使用
-; out ?i64: 內容為 42 的 ok 選項
+; out: 內容為 42 的 ok 選項
 mk-outer = () (out ?i64) {
     out = 42
 }
 
 ; 內層選項：固定回 ok(7)，供巢狀 match 的內層使用
-; out ?i64: 內容為 7 的 ok 選項
+; out: 內容為 7 的 ok 選項
 mk-inner = () (out ?i64) {
     out = 7
 }
 
 ; 最小重現：兩層 option match
-; out str: 內外層都命中 ok 時的組合字串（外層 it 在內層結束後要還原成 42）
+; out: 內外層都命中 ok 時的組合字串（外層 it 在內層結束後要還原成 42）
 probe-min = () (out str) {
     out = ''
     a = mk-outer()
@@ -643,7 +643,7 @@ probe-min = () (out str) {
 }
 
 ; 三層巢狀：每一層的 it 都要各自還原
-; out str: 三層都命中 ok 時的組合字串
+; out: 三層都命中 ok 時的組合字串
 probe-deep = () (out str) {
     out = ''
     a = mk-outer()
@@ -683,7 +683,7 @@ probe-deep = () (out str) {
 }
 
 ; else 臂（wildcard）裡的巢狀 match 也要還原
-; out str: 巢狀 match 結束後應保留外層 it（42），而不是內層的值
+; out: 巢狀 match 結束後應保留外層 it（42），而不是內層的值
 probe-else = () (out str) {
     out = ''
     a = mk-outer()

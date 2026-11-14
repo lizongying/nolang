@@ -31,7 +31,7 @@ GCM-IV-SIZE = 12
 ; X = X * H mod P，其中 P = x^128 + x^7 + x^2 + x + 1
 ; x: 乘數（大端序位元的 128 位元塊）
 ; h: 雜湊子金鑰
-; 返回 out [16]byte: 乘積 X * H mod P
+; 返回 out: 乘積 X * H mod P
 ; [ghash-mul](#aes-gcm.ghash-mul)
 ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 
@@ -184,7 +184,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 ; h: 雜湊子金鑰（AES-enc(0^128)）
 ; aad: 額外認證資料
 ; cipher: 密文
-; 返回 out [16]byte: GHASH 值
+; 返回 out: GHASH 值
 ; [ghash](#aes-gcm.ghash)
 ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
@@ -519,10 +519,10 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 ...
 
 ; 以 AES-CTR 生成密鑰流並與資料 XOR
-; icb [16]byte: 初始計數器區塊 J0+1
-; data []byte: 要與密鑰流 XOR 的資料，長度即輸出長度（可為空）
-; ek []byte: aes.key-expand / aes.key-expand-256 的結果（輪鑰Expanded key）
-; 返回 out []byte: 與密鑰流 XOR 後的資料，長度與 data 相同
+; icb: 初始計數器區塊 J0+1
+; data: 要與密鑰流 XOR 的資料，長度即輸出長度（可為空）
+; ek: aes.key-expand / aes.key-expand-256 的結果（輪鑰Expanded key）
+; 返回 out: 與密鑰流 XOR 後的資料，長度與 data 相同
 ; [ctr-xor](#aes-gcm.ctr-xor)
 ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
@@ -640,7 +640,7 @@ gcm-h = (ek []byte) (h [16]byte) {
 ; aad: 額外認證資料
 ; plain: 明文
 ; ek: aes.key-expand / aes.key-expand-256 的結果
-; 返回 sealed []byte: 密文 + 16 位元組 tag
+; 返回 sealed: 密文 + 16 位元組 tag
 ; [gcm-seal](#aes-gcm.gcm-seal)
 gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
 
@@ -726,7 +726,7 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
 ; aad: 額外認證資料
 ; sealed: 密文 + 16 位元組 tag
 ; ek: aes.key-expand / aes.key-expand-256 的結果
-; 返回 plain []byte: 明文（認證失敗時長度為 0）
+; 返回 plain: 明文（認證失敗時長度為 0）
 ; [gcm-open](#aes-gcm.gcm-open)
 gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     sealed.len() < 16 -> return
@@ -841,7 +841,7 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
 ; iv: IV（nonce）
 ; aad: 額外認證資料
 ; plain: 明文
-; 返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
+; 返回 sealed: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
 ; [seal-128](#aes-gcm.seal-128)
 seal-128 = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
     ek = aes.key-expand(key)
@@ -853,7 +853,7 @@ seal-128 = (key [16]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte)
 ; iv: IV
 ; aad: 額外認證資料
 ; sealed: 密文 + 16 位元組 tag
-; 返回 plain []byte: 明文（認證失敗時長度為 0）
+; 返回 plain: 明文（認證失敗時長度為 0）
 ; [open-128](#aes-gcm.open-128)
 open-128 = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
     ek = aes.key-expand(key)
@@ -865,7 +865,7 @@ open-128 = (key [16]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte)
 ; iv: IV（nonce）
 ; aad: 額外認證資料
 ; plain: 明文
-; 返回 sealed []byte: 密文 + 16 位元組 tag
+; 返回 sealed: 密文 + 16 位元組 tag
 ; [seal-256](#aes-gcm.seal-256)
 seal-256 = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte) {
     ek = aes.key-expand-256(key)
@@ -877,7 +877,7 @@ seal-256 = (key [32]byte, iv [12]byte, aad []byte, plain []byte) (sealed []byte)
 ; iv: IV
 ; aad: 額外認證資料
 ; sealed: 密文 + 16 位元組 tag
-; 返回 plain []byte: 明文（認證失敗時長度為 0）
+; 返回 plain: 明文（認證失敗時長度為 0）
 ; [open-256](#aes-gcm.open-256)
 open-256 = (key [32]byte, iv [12]byte, aad []byte, sealed []byte) (plain []byte) {
     ek = aes.key-expand-256(key)

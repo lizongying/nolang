@@ -88,8 +88,8 @@ QUIC-MAX-FRAMES = 32
 
 ; 將 i64 編碼為 QUIC 變長整數
 ; val: 要編碼為變長整數的非負 i64 值
-; 返回 buf []byte: 編碼結果（1/2/4/8 位元組）
-; 返回 n i64: buf 中實際寫入的編碼位元組數
+; 返回 buf: 編碼結果（1/2/4/8 位元組）
+; 返回 n: buf 中實際寫入的編碼位元組數
 ; [varint-encode](#quic.varint-encode)
 varint-encode = (val i64) (buf []byte, n i64) {
     n = 0
@@ -141,8 +141,8 @@ varint-encode = (val i64) (buf []byte, n i64) {
 ; 從 buf 的 pos 位置解碼 QUIC 變長整數
 ; buf: 存放變長整數的資料緩衝區
 ; pos: 開始解碼的位元組偏移
-; 返回 val i64: 解碼得到的整數值
-; 返回 next-pos i64: 下一個位置（-1=錯誤）
+; 返回 val: 解碼得到的整數值
+; 返回 next-pos: 下一個位置（-1=錯誤）
 ; [varint-decode](#quic.varint-decode)
 varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     next-pos = -1
@@ -276,7 +276,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
 ; 生成隨機 Connection ID
 ; len: 欲生成的 CID 位元組長度（通常 8）
-; 返回 cid []byte: 隨機生成的 Connection ID 位元組
+; 返回 cid: 隨機生成的 Connection ID 位元組
 ; [gen-cid](#quic.gen-cid)
 gen-cid = (len i64) (cid []byte) {
 
@@ -297,11 +297,11 @@ gen-cid = (len i64) (cid []byte) {
 ...
 
 ; frame: QUIC 影格
-; frame-type i64: 影格類型
-; offset i64: CRYPTO/STREAM 影格的偏移量
-; length i64: 影格資料長度
-; stream-id i64: STREAM 影格的串流 ID
-; data []byte: 影格資料
+; frame-type: 影格類型
+; offset: CRYPTO/STREAM 影格的偏移量
+; length: 影格資料長度
+; stream-id: STREAM 影格的串流 ID
+; data: 影格資料
 ; [frame](#quic.frame)
 frame {
     frame-type i64
@@ -315,8 +315,8 @@ frame {
 ; buf: 含 QUIC 影格的資料緩衝區
 ; pos: 開始解析的位元組偏移
 ; end: 解析終止的位元組偏移（不含）
-; 返回 frames [32]frame: 解析出的影格陣列
-; 返回 count i64: 影格數量（-1=錯誤）
+; 返回 frames: 解析出的影格陣列
+; 返回 count: 影格數量（-1=錯誤）
 ; [parse-frames](#quic.parse-frames)
 parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
     r-pos = pos
@@ -540,9 +540,9 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 ; 從 Destination CID 推導 Initial 金鑰
 ; dst-cid: 對端（目標）Connection ID 位元組
 ; is-client: 為 true 推導客戶端金鑰，false 推導伺服器端金鑰
-; 返回 key [16]byte: AEAD 金鑰
-; 返回 iv [12]byte: AEAD IV
-; 返回 hp [16]byte: 標頭保護金鑰
+; 返回 key: AEAD 金鑰
+; 返回 iv: AEAD IV
+; 返回 hp: 標頭保護金鑰
 ; [derive-initial-keys](#quic.derive-initial-keys)
 derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byte, hp [16]byte) {
 
@@ -717,8 +717,8 @@ remove-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-h
 ; packet: 已移除標頭保護的封包資料
 ; pn-offset: 封包號碼在封包中的位元組偏移
 ; largest-pn: 之前成功解碼出的最大封包號碼（用於推斷高位）
-; 返回 pn i64: 完整封包號碼
-; 返回 pn-len i64: 封包號碼欄位佔用的位元組數
+; 返回 pn: 完整封包號碼
+; 返回 pn-len: 封包號碼欄位佔用的位元組數
 ; [decode-packet-number](#quic.decode-packet-number)
 decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, pn-len i64) {
     pn = 0
@@ -905,7 +905,7 @@ conn.close = () {
 
 ; quic-build-initial-packet: 構建 QUIC Initial 封包
 ; crypto-data: 待承載的 CRYPTO 影格資料（TLS ClientHello）
-; 返回 out ?[]byte: 成功則為完整 Initial 封包（已加密），失敗為 nil
+; 返回 out: 成功則為完整 Initial 封包（已加密），失敗為 nil
 ; [build-initial-packet](#quic.conn.build-initial-packet)
 conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     out = nil
@@ -1204,9 +1204,9 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 ...
 
 ; 接收並解密伺服器 Initial 封包
-; 返回 frames [32]frame: 解析出的影格
-; 返回 count i64: 影格數量（-1=錯誤）
-; 返回 ok bool: true=成功
+; 返回 frames: 解析出的影格
+; 返回 count: 影格數量（-1=錯誤）
+; 返回 ok: true=成功
 ; [recv-initial](#quic.conn.recv-initial)
 conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ok = false
@@ -1410,8 +1410,8 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 }
 
 ; conn.recv-packet: 接收任意 QUIC 封包
-; 返回 buf []byte: 收到的原始封包位元組
-; 返回 n i64: 接收位元組數（-1=錯誤, 0=逾時）
+; 返回 buf: 收到的原始封包位元組
+; 返回 n: 接收位元組數（-1=錯誤, 0=逾時）
 ; [recv-raw](#quic.conn.recv-raw)
 conn.recv-raw = () (buf []byte, n i64) {
     buf = with-len(QUIC-MAX-PACKET-SIZE)
@@ -1424,7 +1424,7 @@ conn.recv-raw = () (buf []byte, n i64) {
 ; 建立 QUIC 連線
 ; host: 伺服器主機名稱或 IP 位址
 ; port: 伺服器 UDP 埠號
-; 返回 conn ?conn: ok=已建立的連線, nil=失敗
+; 返回 conn: ok=已建立的連線, nil=失敗
 ; [dial](#quic.dial)
 dial = (host str, port i64) (conn ?conn) {
     conn = nil

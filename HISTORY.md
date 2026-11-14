@@ -1,5 +1,14 @@
 # 更新日誌
 
+## v0.4.22
+
+- fix(parser): infer value-match ok-arm tail type to fix option payload mismatch
+- docs(std): normalize doc-comment parameter and return lines to name-only style
+- fix(mir): free previous owned buffer on result-parameter reassignment
+- build: add NOLANG_LEAK_DETECT env gate for LeakSanitizer linking
+- test(memsafety): fix stale else-arm syntax in 3 regression tests
+- chore(compiler): remove stale h2m-probe debugging script
+
 ## v0.4.21
 
 - refactor(std): overhaul the standard library across ~80 modules, cutting ~6.6k lines while preserving the public API surface

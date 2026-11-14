@@ -8,7 +8,7 @@
 ...
 
 ; 取得環境變數
-; 返回 val ?str: ok=變數值, nil=未設定
+; 返回 val: ok=變數值, nil=未設定
 ; key: 環境變數名
 ; [get-env](#os.get-env)
 #{buildin}
@@ -311,7 +311,7 @@ ttyname = (fd fd) (name str) {
 }
 
 ; 取得檔案模式（包含權限與類型位元）
-; 返回 mode ?i64: ok=模式值, nil=取得失敗
+; 返回 mode: ok=模式值, nil=取得失敗
 ; path: 檔案路徑
 ; [stat-mode](#os.stat-mode)
 #{buildin}
@@ -319,7 +319,7 @@ stat-mode = (path str) (mode ?i64) {
 }
 
 ; 取得檔案擁有者 uid
-; 返回 uid ?i64: ok=uid, nil=取得失敗
+; 返回 uid: ok=uid, nil=取得失敗
 ; path: 檔案路徑
 ; [stat-uid](#os.stat-uid)
 #{buildin}
@@ -327,7 +327,7 @@ stat-uid = (path str) (uid ?i64) {
 }
 
 ; 取得檔案群組 gid
-; 返回 gid ?i64: ok=gid, nil=取得失敗
+; 返回 gid: ok=gid, nil=取得失敗
 ; path: 檔案路徑
 ; [stat-gid](#os.stat-gid)
 #{buildin}
@@ -335,7 +335,7 @@ stat-gid = (path str) (gid ?i64) {
 }
 
 ; 取得檔案修改時間（Unix 秒）
-; 返回 mtime ?i64: ok=修改時間, nil=取得失敗
+; 返回 mtime: ok=修改時間, nil=取得失敗
 ; path: 檔案路徑
 ; [stat-mtime](#os.stat-mtime)
 #{buildin}
@@ -375,7 +375,7 @@ set-priority = (which i64, who i64, prio i64) (ok bool) {
 ; 取得行程優先級
 ; which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
 ; who: 目標 ID（0 表示當前行程/群組/使用者）
-; 返回 prio ?i64: ok=優先級值(-20~19), nil=取得失敗
+; 返回 prio: ok=優先級值(-20~19), nil=取得失敗
 ; 注意：libc 約定返回 -1 並設定 errno 表示錯誤，但因優先級也可能為 -1，
 ;       需以 errno==0 區分。這裡以 ?i64 明確表達（nil 表示錯誤）。
 ; [get-priority](#os.get-priority)
@@ -403,7 +403,7 @@ flock = (fd fd, op i64) (ok bool) {
 
 ; 查詢系統控制參數（讀取字串值）
 ; name: 參數名稱（如 'kern.ostype'、'hw.model'）
-; 返回 val ?str: ok=值字串, nil=查詢失敗
+; 返回 val: ok=值字串, nil=查詢失敗
 ; 注意：Linux 上 /proc/sys 對應；macOS/BSD 走 sysctl(2) syscall
 ; [sysctl](#os.sysctl)
 #{buildin}

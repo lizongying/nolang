@@ -31,12 +31,12 @@ POOL-IDLE-TIMEOUT = 30000
 ...
 
 ; pool: TCP 連接池
-; host str: 目標主機
-; port i64: 目標埠號
-; max-size i64: 最大連接數
-; conns [32]conn: 連接陣列
-; in-use [32]bool: 連接是否在使用中
-; count i64: 當前連接數
+; host: 目標主機
+; port: 目標埠號
+; max-size: 最大連接數
+; conns: 連接陣列
+; in-use: 連接是否在使用中
+; count: 當前連接數
 ; [pool](#pool.pool)
 pool {
     host str
@@ -78,7 +78,7 @@ pool.init = (host str, port i64, max-size i64) {
 }
 
 ; 取得連接（優先複用空閒連接，否則新建）
-; 返回 c ?net.conn: ok=連接, nil=失敗
+; 返回 c: ok=連接, nil=失敗
 ; [get](#pool.pool.get)
 pool.get = () (c ?net.conn) {
     c = nil
@@ -198,7 +198,7 @@ pool.close-all = () {
 }
 
 ; 取得活躍連接數
-; 返回 n i64: 活躍連接數
+; 返回 n: 活躍連接數
 ; [active-count](#pool.pool.active-count)
 pool.active-count = () (n i64) {
     n = 0
@@ -224,7 +224,7 @@ pool.active-count = () (n i64) {
 }
 
 ; 取得空閒連接數
-; 返回 n i64: 空閒連接數
+; 返回 n: 空閒連接數
 ; [idle-count](#pool.pool.idle-count)
 pool.idle-count = () (n i64) {
     n = 0
@@ -250,7 +250,7 @@ pool.idle-count = () (n i64) {
 }
 
 ; 取得總連接數
-; 返回 n i64: 總連接數
+; 返回 n: 總連接數
 ; [total-count](#pool.pool.total-count)
 pool.total-count = () (n i64) {
     n = .count
@@ -263,7 +263,7 @@ pool.total-count = () (n i64) {
 ; host: 目標伺服器的主機名或 IP
 ; port: 目標伺服器的埠號
 ; max-size: 允許的最大連接數
-; 返回 p pool: 初始化完畢的連接池實例
+; 返回 p: 初始化完畢的連接池實例
 ; [create](#pool.create)
 create = (host str, port i64, max-size i64) (p pool) {
     p.init(host, port, max-size)
@@ -272,7 +272,7 @@ create = (host str, port i64, max-size i64) (p pool) {
 ; 使用預設大小建立連接池
 ; host: 目標伺服器的主機名或 IP
 ; port: 目標伺服器的埠號
-; 返回 p pool: 連接數上限為預設 8 的連接池
+; 返回 p: 連接數上限為預設 8 的連接池
 ; [with-size](#pool.with-size)
 with-size = (host str, port i64) (p pool) {
     p.init(host, port, 8)

@@ -7,9 +7,9 @@
 # /test/runner
 
 ; 把 ?i64 解成「是否命中 + 值」兩個輸出，未命中時值固定為哨兵 -999
-; v ?i64: get / first / last / lower-bound / upper-bound 的返回值
-; found bool: true=回傳 ok，false=nil 或 err
-; x i64: 命中時為解出的鍵，未命中為 -999
+; v: get / first / last / lower-bound / upper-bound 的返回值
+; found: true=回傳 ok，false=nil 或 err
+; x: 命中時為解出的鍵，未命中為 -999
 unwrap = (v ?i64) (found bool, x i64) {
     x = -999
     v: {

@@ -61,7 +61,7 @@ adler-32 = (data []byte, n i64) (sum i64) {
 ;   - 2-byte zlib header (78 9c)
 ;   - DEFLATE stored blocks（每塊最大 65535 bytes）
 ;   - 4-byte big-endian Adler-32 checksum
-; out []byte: 完整 zlib 串流（2-byte header + stored blocks + 4-byte Adler-32）
+; out: 完整 zlib 串流（2-byte header + stored blocks + 4-byte Adler-32）
 ; [compress](#zlib.compress)
 compress = (data []byte) (out []byte) {
     result []byte
@@ -91,12 +91,12 @@ compress = (data []byte) (out []byte) {
 
 ; 解壓 zlib 串流
 ;   data: zlib 串流 ([]byte)
-;   返回 out ?[]byte: 解壓後資料（some），失敗為 nil
+;   返回 out: 解壓後資料（some），失敗為 nil
 ;
 ; 支援所有 DEFLATE 區塊類型（stored, fixed Huffman, dynamic Huffman）
 ; 透過 gzip.inflate-decompress 進行解壓。
 ; 先嘗試 stored-block 掃描（快速路徑），失敗則使用 inflate 解壓。
-; out ?[]byte: 解壓後資料（ok）；長度不足 6、header 非法或解壓失敗皆為 nil
+; out: 解壓後資料（ok）；長度不足 6、header 非法或解壓失敗皆為 nil
 ; [decompress](#zlib.decompress)
 decompress = (data []byte) (out ?[]byte) {
     out = nil
@@ -163,8 +163,8 @@ decompress = (data []byte) (out ?[]byte) {
 
 ; 僅解壓 stored-block 的 zlib 串流
 ;   data: 僅含 BTYPE=00 區塊的 zlib 串流 ([]byte)
-;   返回 out ?[]byte: 解壓後資料（some），非 stored 區塊或失敗為 nil
-; out ?[]byte: 僅由 BTYPE=00 區塊解出的位元組；遇其他區塊類型或結尾不符即回 nil
+;   返回 out: 解壓後資料（some），非 stored 區塊或失敗為 nil
+; out: 僅由 BTYPE=00 區塊解出的位元組；遇其他區塊類型或結尾不符即回 nil
 ; [decompress-stored](#zlib.decompress-stored)
 decompress-stored = (data []byte) (out ?[]byte) {
     out = nil

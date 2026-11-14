@@ -861,8 +861,8 @@ f32.to-str = () (out str) {
 ...
 
 ; 定點格式轉換
-; precision i64: 小數位數（>= 0，建議 <= 17 以避免 i64 溢出）
-; 返回 out str: 字串表示（如 "3.14"、"-0.005"、"100"）
+; precision: 小數位數（>= 0，建議 <= 17 以避免 i64 溢出）
+; 返回 out: 字串表示（如 "3.14"、"-0.005"、"100"）
 ; [to-str-fixed](#number.f64.to-str-fixed)
 f64.to-str-fixed = (precision i64) (out str) {
     x = .
@@ -1091,8 +1091,8 @@ f64.to-str-fixed = (precision i64) (out str) {
 }
 
 ; 科學記號格式
-; precision i64: 小數部分位數（>= 0）
-; 返回 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
+; precision: 小數部分位數（>= 0）
+; 返回 out: 字串表示（如 "3.14e+2"、"-5.0e-3"）
 ; [to-str-sci](#number.f64.to-str-sci)
 ; 私有算術助手：`+ - * /` 在 Nolang 一律回 `?i64`，溢出時走 err。
 ;
@@ -1497,8 +1497,8 @@ f64.to-str-sci = (precision i64) (out str) {
 }
 
 ; 通用格式（自動選擇定點或科學記號）
-; precision i64: 最大有效數字位數（>= 1）
-; 返回 out str: 字串表示（自動去尾隨零）
+; precision: 最大有效數字位數（>= 1）
+; 返回 out: 字串表示（自動去尾隨零）
 ; [to-str-general](#number.f64.to-str-general)
 f64.to-str-general = (precision i64) (out str) {
     x = .

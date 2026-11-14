@@ -148,7 +148,9 @@ is-false = (val bool, msg str) {
 ; 整片 SIGSEGV 就是這條路徑）。目前不改語義，因為一旦改成「n 超過長度即判失敗」，
 ; 有 5 個檔（`json`/`noml`/`rc4`/`str-map`/`time`）的呼叫端把 n 寫大了幾個位元組
 ; （例如 `str-eq(h, 'bbf316e8d940af0ad3', 20, …)` —— 那條字面量其實是 18 位元組）
-; 會立刻翻紅。要收緊得先逐檔修 n。詳見 `test/README.md §5.2 #84`。
+; 會立刻翻紅。2026-11-14 已把這 5 檔寫大的 n 逐檔改回字面量精確位元組數，
+; 「收緊前先修 n」的前置條件已具備；但目前仍保留不檢查長度的語義。
+; 詳見 `test/README.md §5.2 #84`。
 str-eq = (a str, b str, n i64, msg str) {
     {
         a.eq(b, n) == false -> {

@@ -38,8 +38,8 @@ set {
 ...
 
 ; 工廠 — 以呼叫者提供的元素緩衝區建立空集合
-; data []t: 元素緩衝區（其長度即容量上限）
-; 返回 s set: 初始化後的集合實例
+; data: 元素緩衝區（其長度即容量上限）
+; 返回 s: 初始化後的集合實例
 ; [init](#set.init)
 set.init = (data []t) (s set) {
     s.data = data
@@ -48,8 +48,8 @@ set.init = (data []t) (s set) {
 }
 
 ; 加入元素到集合（若不存在）
-; val t: 要加入的元素
-; 返回 new-size i64: 新的大小
+; val: 要加入的元素
+; 返回 new-size: 新的大小
 ; [add](#set.add)
 set.add = (val t) (new-size i64) {
     sz = .size
@@ -93,8 +93,8 @@ set.add = (val t) (new-size i64) {
 
 ; 從集合移除元素
 ; 以最後一個元素填補被移除的位置（無序）
-; val t: 要移除的元素
-; 返回 new-size i64: 新的大小
+; val: 要移除的元素
+; 返回 new-size: 新的大小
 ; [remove](#set.remove)
 set.remove = (val t) (new-size i64) {
     sz = .size
@@ -132,8 +132,8 @@ set.remove = (val t) (new-size i64) {
 }
 
 ; 檢查元素是否存在於集合中
-; val t: 要查詢的元素
-; 返回 yes bool: true=存在, false=不存在
+; val: 要查詢的元素
+; 返回 yes: true=存在, false=不存在
 ; [contains](#set.contains)
 set.contains = (val t) (yes bool) {
     sz = .size
@@ -151,9 +151,9 @@ set.contains = (val t) (yes bool) {
 }
 
 ; 計算聯集（將 other 緩衝區中不在自身的元素加入自身）
-; other []t: 另一個集合的元素緩衝區
-; osize i64: 另一個集合的元素數量
-; 返回 new-size i64: 聯集後的大小
+; other: 另一個集合的元素緩衝區
+; osize: 另一個集合的元素數量
+; 返回 new-size: 聯集後的大小
 ; [union](#set.union)
 set.union = (other []t, osize i64) (new-size i64) {
     j <- [0..osize): {
@@ -197,10 +197,10 @@ set.union = (other []t, osize i64) (new-size i64) {
 
 ; 計算交集（自身與 other 的共同元素）
 ; 結果寫入呼叫者提供的 out 緩衝區，並回傳交集元素數量
-; other []t: 另一個集合的元素緩衝區
-; osize i64: 另一個集合的元素數量
-; out []t: 交集結果緩衝區
-; 返回 cnt i64: 交集元素數量
+; other: 另一個集合的元素緩衝區
+; osize: 另一個集合的元素數量
+; out: 交集結果緩衝區
+; 返回 cnt: 交集元素數量
 ; [intersection](#set.intersection)
 set.intersection = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
@@ -240,10 +240,10 @@ set.intersection = (other []t, osize i64, out []t) (cnt i64) {
 
 ; 計算差集（在自身中但不在 other 中）
 ; 結果寫入呼叫者提供的 out 緩衝區，並回傳差集元素數量
-; other []t: 另一個集合的元素緩衝區
-; osize i64: 另一個集合的元素數量
-; out []t: 差集結果緩衝區
-; 返回 cnt i64: 差集元素數量
+; other: 另一個集合的元素緩衝區
+; osize: 另一個集合的元素數量
+; out: 差集結果緩衝區
+; 返回 cnt: 差集元素數量
 ; [difference](#set.difference)
 set.difference = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
@@ -280,7 +280,7 @@ set.difference = (other []t, osize i64, out []t) (cnt i64) {
 }
 
 ; 將集合轉為切片（無序）
-; 返回 out []t: 集合元素切片（長度 = size）
+; 返回 out: 集合元素切片（長度 = size）
 ; [to-vec](#set.to-vec)
 set.to-vec = () (out []t) {
     sz = .size

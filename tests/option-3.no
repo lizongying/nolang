@@ -19,13 +19,13 @@
 ...
 
 ; 填充 slice
-; out ?[]i64: ok([10, 20, 30])，用來驗證 v.len() 能剝殼取得 3
+; out: ok([10, 20, 30])，用來驗證 v.len() 能剝殼取得 3
 fill-slice = () (out ?[]i64) {
     out = [10, 20, 30]
 }
 
 ; 填充 str
-; out ?str: ok('hello')，用來驗證 v.len() 能剝殼取得 5
+; out: ok('hello')，用來驗證 v.len() 能剝殼取得 5
 fill-str = () (out ?str) {
     out = 'hello'
 }
@@ -112,13 +112,13 @@ i <- [0..3): {
 print('ok: peel borrows, buffer survives len()')
 
 ; 純量選項（不涉及借用）：直接回 ok(42)，作為容器型的對照組
-; out ?i64: 內容為 42 的 ok 選項
+; out: 內容為 42 的 ok 選項
 scalar-opt = () (out ?i64) {
     out = 42
 }
 
 ; 空函式體：輸出參數延遲零值，?[]i64 未賦值即為 nil（不需手寫 out = nil）
-; out ?[]i64: 必為 nil
+; out: 必為 nil
 empty-slice = () (out ?[]i64) {
 }
 
@@ -135,13 +135,13 @@ view-point {
 }
 
 ; 返回 self 的視圖
-; v &view-point: 指向 self 的借用（與呼叫端實例同一塊記憶體，無拷貝、無分配）
+; v: 指向 self 的借用（與呼叫端實例同一塊記憶體，無拷貝、無分配）
 view-point.self-view = () (v &view-point) {
     v = .
 }
 
 ; 一般方法，用來驗證透過 view 呼叫方法
-; s i64: x + y 的結果（overflow 採 wrap）；p 為 (7, 9) 時得 16
+; s: x + y 的結果（overflow 採 wrap）；p 為 (7, 9) 時得 16
 view-point.sum = () (s i64) {
 
     #{overflow=wrap}

@@ -111,7 +111,7 @@ t-negative-index = () {
 WV [8]u64 = [1, 2, 3, 4, 5, 6, 7, 8]
 
 ; 重現 blake2 compress 的初始化形態：未配置 vec + 值 match 消費 ?T + RHS 下標讀 + 迴圈 + 返回
-; st []u64: 長度 16 的 vec；[0..8) 為 WV[i]*10，[8..16) 為 WV[i]+100
+; st: 長度 16 的 vec；[0..8) 為 WV[i]*10，[8..16) 為 WV[i]+100
 b-state-like = () (st []u64) {
     v []u64
     i <- [0..8): {

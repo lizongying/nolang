@@ -7,9 +7,9 @@
 # /test/runner
 
 ; 解包 ?i64：found=是否 ok，x=值（未找到時為 -999）
-; v ?i64: first / last / lower-bound / upper-bound 的返回值
-; found bool: true=回傳 ok，false=nil 或 err
-; x i64: 命中時為解出的值，未命中為 -999
+; v: first / last / lower-bound / upper-bound 的返回值
+; found: true=回傳 ok，false=nil 或 err
+; x: 命中時為解出的值，未命中為 -999
 unwrap = (v ?i64) (found bool, x i64) {
     x = -999
     v: {

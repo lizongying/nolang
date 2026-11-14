@@ -16,8 +16,8 @@
 ; [stack](#stack)
 
 ; stack: 堆疊狀態
-; data []i64: 底層儲存切片，容量上限 = len(data)
-; n i64: 目前元素數量；有效元素位於 data[0..n)
+; data: 底層儲存切片，容量上限 = len(data)
+; n: 目前元素數量；有效元素位於 data[0..n)
 ; [stack](#stack.stack)
 stack {
     data []i64
@@ -26,7 +26,7 @@ stack {
 
 ; 推入元素到堆疊頂端
 ; 注意：本方法不檢查容量，呼叫方需保證 n < len(data)。
-; val i64: 要壓入的值；寫入 data[n] 後 n 加 1
+; val: 要壓入的值；寫入 data[n] 後 n 加 1
 ; [push](#stack.stack.push)
 stack.push = (val i64) {
     {
@@ -46,7 +46,7 @@ stack.push = (val i64) {
 }
 
 ; 從堆疊頂端彈出元素
-; val ?i64: ok=原頂端元素（已移除）, nil=堆疊為空
+; val: ok=原頂端元素（已移除）, nil=堆疊為空
 ; [pop](#stack.stack.pop)
 stack.pop = () (val ?i64) {
     .n == 0 -> {
@@ -69,7 +69,7 @@ stack.pop = () (val ?i64) {
 }
 
 ; 查看堆疊頂端元素（不移除）
-; val ?i64: ok=data[n-1], nil=堆疊為空
+; val: ok=data[n-1], nil=堆疊為空
 ; [peek](#stack.stack.peek)
 stack.peek = () (val ?i64) {
     .n == 0 -> {
@@ -86,14 +86,14 @@ stack.peek = () (val ?i64) {
 }
 
 ; 返回堆疊目前元素數量
-; sz i64: 等於 n（0 表示空，最大不超過 len(data)）
+; sz: 等於 n（0 表示空，最大不超過 len(data)）
 ; [size](#stack.stack.size)
 stack.size = () (sz i64) {
     sz = .n
 }
 
 ; 判斷堆疊是否為空
-; yes bool: true 表示 n == 0
+; yes: true 表示 n == 0
 ; [empty](#stack.stack.empty)
 stack.empty = () (yes bool) {
     yes = .n == 0

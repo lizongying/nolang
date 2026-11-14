@@ -36,7 +36,7 @@ e-list {
 }
 
 ; 打印 e-res 的內容
-; q e-res: 待打印的枚舉值（ok 帶 str 載荷輸出，fail 打印 fail）
+; q: 待打印的枚舉值（ok 帶 str 載荷輸出，fail 打印 fail）
 show = (q e-res) {
     q: {
         ok(v) -> print('show: {v}')
@@ -46,7 +46,7 @@ show = (q e-res) {
 }
 
 ; 打印 e-list 的內容
-; q e-list: 待打印的枚舉值（ok2 帶 []i64 載荷逐項輸出，none 打印 none）
+; q: 待打印的枚舉值（ok2 帶 []i64 載荷逐項輸出，none 打印 none）
 show-list = (q e-list) {
     q: {
         ok2(v) -> {

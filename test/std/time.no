@@ -170,9 +170,9 @@ t-timer = () {
 ; 驗證 format-duration 將秒數格式化為 NhNmNs（含超過 24 小時）
 t-format-duration = () {
     s1 = time.format-duration(3661)
-    runner.str-eq(s1, '1h1m1s', 7, 'format-duration(3661) == 1h1m1s')
+    runner.str-eq(s1, '1h1m1s', 6, 'format-duration(3661) == 1h1m1s')
     s2 = time.format-duration(0)
-    runner.str-eq(s2, '0h0m0s', 7, 'format-duration(0) == 0h0m0s')
+    runner.str-eq(s2, '0h0m0s', 6, 'format-duration(0) == 0h0m0s')
     s3 = time.format-duration(90061)
     runner.str-eq(s3, '25h1m1s', 7, 'format-duration(90061) == 25h1m1s')
 }

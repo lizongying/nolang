@@ -1727,9 +1727,9 @@ fe-tobytes = (s [32]byte, h []i64) {
 ...
 
 ; X25519 純量乘法
-; scalar [32]byte: 純量（私鑰）
-; point [32]byte: 點座標（公鑰）
-; 返回 out [32]byte: 點乘結果（共享密鑰），小端序域元素位元組
+; scalar: 純量（私鑰）
+; point: 點座標（公鑰）
+; 返回 out: 點乘結果（共享密鑰），小端序域元素位元組
 ; [x25519-scalarmult](#x25519.x25519-scalarmult)
 x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
@@ -1929,8 +1929,8 @@ x25519-get-basepoint = () (base [32]byte) {
 }
 
 ; 計算純量 * 基點
-; scalar [32]byte: 純量（私鑰）
-; 返回 out [32]byte: 公鑰
+; scalar: 純量（私鑰）
+; 返回 out: 公鑰
 ; [x25519-scalarmult-base](#x25519.x25519-scalarmult-base)
 x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
     base [32]byte
@@ -1942,9 +1942,9 @@ x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
 ...
 
 ; X25519 純量乘法（[]byte 版本）
-; scalar []byte: 純量（私鑰，長度 32）
-; point []byte: 點座標（公鑰，長度 32）
-; 返回 out []byte: 結果（長度 32）
+; scalar: 純量（私鑰，長度 32）
+; point: 點座標（公鑰，長度 32）
+; 返回 out: 結果（長度 32）
 ; [x25519-scalarmult-bytes](#x25519.x25519-scalarmult-bytes)
 x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 
@@ -2110,8 +2110,8 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 }
 
 ; 計算純量 * 基點（[]byte 版本）
-; scalar []byte: 純量（私鑰，長度 32）
-; 返回 out []byte: 公鑰（長度 32）
+; scalar: 純量（私鑰，長度 32）
+; 返回 out: 公鑰（長度 32）
 ; [x25519-scalarmult-base-bytes](#x25519.x25519-scalarmult-base-bytes)
 x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
     base []byte = with-len(32)
@@ -2135,9 +2135,9 @@ x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
 ...
 
 ; 生成隨機金鑰對
-; seed i64: 隨機種子
-; 返回 priv [32]byte: 私鑰
-; 返回 pub [32]byte: 公鑰
+; seed: 隨機種子
+; 返回 priv: 私鑰
+; 返回 pub: 公鑰
 ; seed: rand 種子（決定私鑰；真實場景需以系統亂源注入）
 ; priv: 私鑰（已 clamp：bit0-2 清零、bit254 置 1、bit255 清零）
 ; pub: 對應公鑰（priv × 基點）

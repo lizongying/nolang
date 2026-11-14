@@ -167,7 +167,7 @@ listener.listen = (host str, port i64) (ok bool) {
 }
 
 ; 接受新的 TCP 連接
-; 返回 c ?conn: ok=連接結構體, nil=失敗
+; 返回 c: ok=連接結構體, nil=失敗
 ; c: ok=新連接（含已接受的 fd）, nil=接受失敗
 ; [accept](#net.listener.accept)
 listener.accept = () (c ?conn) {
@@ -245,7 +245,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
 }
 
 ; 接收一行資料（最多 NET-BUF-SIZE 位元組）
-; 返回 line ?str: ok=接收內容, nil=失敗或連接關閉
+; 返回 line: ok=接收內容, nil=失敗或連接關閉
 ; line: ok=單次收到的資料（一次 recv 的內容，並非按換行切分）, nil=未收到或連接無效
 ; [recv-line](#net.conn.recv-line)
 conn.recv-line = () (line ?str) {
@@ -309,7 +309,7 @@ conn.fd-of = () (fd fd) {
 ...
 
 ; 建立監聽器並開始監聽
-; 返回 l ?listener: ok=監聽器, nil=失敗
+; 返回 l: ok=監聽器, nil=失敗
 ; host: 綁定的 IPv4 點分位址
 ; port: 監聽埠號
 ; l: ok=可開始 accept 的監聽器, nil=監聽失敗
@@ -323,7 +323,7 @@ listen-on = (host str, port i64) (l ?listener) {
 }
 
 ; 建立連接並撥號
-; 返回 c ?conn: ok=連接, nil=失敗
+; 返回 c: ok=連接, nil=失敗
 ; host: 目標 IPv4 點分位址
 ; port: 目標埠號
 ; c: ok=已連接的連接器, nil=撥號失敗
@@ -414,8 +414,8 @@ udp-conn.open = () (ok bool) {
 }
 
 ; 設定接收逾時
-; timeout-ms i64: 逾時毫秒數（0=恢復阻塞）
-; ok bool: true=socket 選項設定成功（fd 無效或系統呼叫失敗時為 false）
+; timeout-ms: 逾時毫秒數（0=恢復阻塞）
+; ok: true=socket 選項設定成功（fd 無效或系統呼叫失敗時為 false）
 ; [set-timeout](#net.udp-conn.set-timeout)
 udp-conn.set-timeout = (timeout-ms i64) (ok bool) {
     ok = false
@@ -425,8 +425,8 @@ udp-conn.set-timeout = (timeout-ms i64) (ok bool) {
 }
 
 ; 發送 UDP 資料到 .host:.port
-; data str: 要發送的資料
-; written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
+; data: 要發送的資料
+; written: 實際發送位元組數（-1=fd 無效或發送失敗）
 ; [send](#net.udp-conn.send)
 udp-conn.send = (data str) (written i64) {
     written = -1
@@ -435,8 +435,8 @@ udp-conn.send = (data str) (written i64) {
 }
 
 ; 發送 UDP 位元組陣列到 .host:.port
-; data []byte: 要發送的資料
-; written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
+; data: 要發送的資料
+; written: 實際發送位元組數（-1=fd 無效或發送失敗）
 ; [send-bytes](#net.udp-conn.send-bytes)
 udp-conn.send-bytes = (data []byte) (written i64) {
     written = -1
@@ -445,9 +445,9 @@ udp-conn.send-bytes = (data []byte) (written i64) {
 }
 
 ; 接收 UDP 資料到緩衝區
-; buf str: 接收緩衝區
-; n i64: 最多接收的位元組數
-; read-n i64: 實際接收位元組數（-1=錯誤或逾時, 0=空資料報）
+; buf: 接收緩衝區
+; n: 最多接收的位元組數
+; read-n: 實際接收位元組數（-1=錯誤或逾時, 0=空資料報）
 ; [recv](#net.udp-conn.recv)
 udp-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
@@ -456,9 +456,9 @@ udp-conn.recv = (buf str, n i64) (read-n i64) {
 }
 
 ; 接收 UDP 資料到位元組陣列
-; buf []byte: 接收緩衝區
-; n i64: 最多接收的位元組數
-; read-n i64: 實際接收位元組數（-1=錯誤或逾時, 0=空資料報）
+; buf: 接收緩衝區
+; n: 最多接收的位元組數
+; read-n: 實際接收位元組數（-1=錯誤或逾時, 0=空資料報）
 ; [recv-bytes](#net.udp-conn.recv-bytes)
 udp-conn.recv-bytes = (buf []byte, n i64) (read-n i64) {
     read-n = -1
@@ -487,9 +487,9 @@ udp-conn.fd-of = () (fd fd) {
 ...
 
 ; 建立 UDP 連接並設定目標位址
-; host str: 目標 IP 地址
-; port i64: 目標埠號
-; 返回 c ?udp-conn: ok=連接, nil=失敗
+; host: 目標 IP 地址
+; port: 目標埠號
+; 返回 c: ok=連接, nil=失敗
 ; [udp-dial-to](#net.udp-dial-to)
 udp-dial-to = (host str, port i64) (c ?udp-conn) {
     c = nil
@@ -506,8 +506,8 @@ udp-dial-to = (host str, port i64) (c ?udp-conn) {
 ...
 
 ; 設定接收逾時
-; timeout-ms i64: 逾時毫秒數（0=阻塞, >0=逾時）
-; 返回 ok bool: true=成功
+; timeout-ms: 逾時毫秒數（0=阻塞, >0=逾時）
+; 返回 ok: true=成功
 ; [set-recv-timeout](#net.conn.set-recv-timeout)
 conn.set-recv-timeout = (timeout-ms i64) (ok bool) {
     ok = false
@@ -517,18 +517,18 @@ conn.set-recv-timeout = (timeout-ms i64) (ok bool) {
 }
 
 ; 設定接收逾時（別名，語義同 set-recv-timeout）
-; timeout-ms i64: 逾時毫秒數
-; 返回 ok bool: true=成功
+; timeout-ms: 逾時毫秒數
+; 返回 ok: true=成功
 ; [set-timeout](#net.conn.set-timeout)
 conn.set-timeout = (timeout-ms i64) (ok bool) {
     ok = .set-recv-timeout(timeout-ms)
 }
 
 ; 帶逾時的接收
-; buf str: 接收緩衝區
-; n i64: 最多接收的位元組數
-; timeout-ms i64: 逾時毫秒數
-; 返回 read-n i64: 實際接收位元組數（-1=錯誤或逾時, 0=對端關閉）
+; buf: 接收緩衝區
+; n: 最多接收的位元組數
+; timeout-ms: 逾時毫秒數
+; 返回 read-n: 實際接收位元組數（-1=錯誤或逾時, 0=對端關閉）
 ; [recv-with-timeout](#net.conn.recv-with-timeout)
 conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     read-n = -1
@@ -542,9 +542,9 @@ conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
 }
 
 ; 帶逾時的發送（目前直接發送，無獨立 send timeout）
-; data str: 要發送的資料
-; timeout-ms i64: 逾時毫秒數（目前忽略，僅設置 recv timeout 作為參考）
-; 返回 written i64: 實際發送位元組數（-1=錯誤）
+; data: 要發送的資料
+; timeout-ms: 逾時毫秒數（目前忽略，僅設置 recv timeout 作為參考）
+; 返回 written: 實際發送位元組數（-1=錯誤）
 ; [send-with-timeout](#net.conn.send-with-timeout)
 conn.send-with-timeout = (data str, timeout-ms i64) (written i64) {
     written = -1
@@ -557,8 +557,8 @@ conn.send-with-timeout = (data str, timeout-ms i64) (written i64) {
 }
 
 ; 設定 accept 逾時
-; timeout-ms i64: 逾時毫秒數
-; 返回 ok bool: true=成功
+; timeout-ms: 逾時毫秒數
+; 返回 ok: true=成功
 ; [set-timeout](#net.listener.set-timeout)
 listener.set-timeout = (timeout-ms i64) (ok bool) {
     ok = false
@@ -568,8 +568,8 @@ listener.set-timeout = (timeout-ms i64) (ok bool) {
 }
 
 ; 帶逾時的 accept
-; timeout-ms i64: 逾時毫秒數
-; 返回 c ?conn: ok=連接, nil=逾時或失敗
+; timeout-ms: 逾時毫秒數
+; 返回 c: ok=連接, nil=逾時或失敗
 ; [accept-with-timeout](#net.listener.accept-with-timeout)
 listener.accept-with-timeout = (timeout-ms i64) (c ?conn) {
     c = nil
@@ -608,10 +608,10 @@ listener.accept-with-timeout = (timeout-ms i64) (c ?conn) {
 ...
 
 ; 帶連接逾時的撥號
-; host str: 目標主機
-; port i64: 目標埠號
-; timeout-ms i64: 逾時毫秒數（目前用於連接後的 recv 逾時設定）
-; 返回 c ?conn: ok=連接, nil=失敗
+; host: 目標主機
+; port: 目標埠號
+; timeout-ms: 逾時毫秒數（目前用於連接後的 recv 逾時設定）
+; 返回 c: ok=連接, nil=失敗
 ; [dial-timeout](#net.dial-timeout)
 dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
     c = nil
@@ -632,11 +632,11 @@ dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
 ; 每條訊息格式: [4-byte length][12-byte IV][N-byte ciphertext+tag]
 ; length 欄位為 IV + ciphertext + tag 的總長度（大端序）。
 ;
-; underlying conn: 底層 TCP 連接
-; key [32]byte: AES-256 金鑰
-; send-seq i64: 發送序號（用於生成 IV）
-; recv-seed i64: 接收序號（用於驗證 IV 唯一性）
-; rand-seed i64: 隨機種子（用於生成 IV）
+; underlying: 底層 TCP 連接
+; key: AES-256 金鑰
+; send-seq: 發送序號（用於生成 IV）
+; recv-seed: 接收序號（用於驗證 IV 唯一性）
+; rand-seed: 隨機種子（用於生成 IV）
 ; [enc-conn](#net.enc-conn)
 enc-conn {
     underlying conn
@@ -647,8 +647,8 @@ enc-conn {
 }
 
 ; 初始化加密連接
-; c conn: 底層 TCP 連接
-; key [32]byte: AES-256 金鑰
+; c: 底層 TCP 連接
+; key: AES-256 金鑰
 ; [init](#net.enc-conn.init)
 enc-conn.init = (c conn, key [32]byte) {
     .underlying = c
@@ -659,7 +659,7 @@ enc-conn.init = (c conn, key [32]byte) {
 }
 
 ; 生成下一個 IV（nonce）
-; 返回 iv [12]byte: 12 位元組 IV
+; 返回 iv: 12 位元組 IV
 ; iv: 12 位元組 IV（前 4 位元組為遞增的發送序號，後 8 位元組取自隨機數）
 ; [gen-iv](#net.enc-conn.gen-iv)
 enc-conn.gen-iv = () (iv [12]byte) {
@@ -692,8 +692,8 @@ enc-conn.gen-iv = () (iv [12]byte) {
 }
 
 ; 加密並發送資料
-; data str: 明文資料
-; 返回 ok bool: true=成功
+; data: 明文資料
+; 返回 ok: true=成功
 ; [send-encrypted](#net.enc-conn.send-encrypted)
 enc-conn.send-encrypted = (data str) (ok bool) {
     ok = false
@@ -781,7 +781,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 }
 
 ; 接收並解密資料
-; 返回 data ?str: ok=解密後明文, nil=失敗
+; 返回 data: ok=解密後明文, nil=失敗
 ; [recv-encrypted](#net.enc-conn.recv-encrypted)
 enc-conn.recv-encrypted = () (data ?str) {
     data = nil
@@ -843,10 +843,10 @@ enc-conn.close = () {
 }
 
 ; 建立加密 TCP 連接
-; host str: 目標主機
-; port i64: 目標埠號
-; key [32]byte: AES-256 金鑰
-; 返回 ec ?enc-conn: ok=加密連接, nil=失敗
+; host: 目標主機
+; port: 目標埠號
+; key: AES-256 金鑰
+; 返回 ec: ok=加密連接, nil=失敗
 ; [enc-dial](#net.enc-dial)
 enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
     ec = nil
@@ -865,9 +865,9 @@ enc-dial = (host str, port i64, key [32]byte) (ec ?enc-conn) {
 }
 
 ; 在已接受的 TCP 連接上建立加密通道
-; c conn: 已接受的 TCP 連接
-; key [32]byte: AES-256 金鑰
-; 返回 ec enc-conn: 加密連接
+; c: 已接受的 TCP 連接
+; key: AES-256 金鑰
+; 返回 ec: 加密連接
 ; [enc-accept](#net.enc-accept)
 enc-accept = (c conn, key [32]byte) (ec enc-conn) {
     ec.init(c, key)
@@ -941,8 +941,8 @@ icmp-conn.close = () {
 }
 
 ; 建構 ICMP Echo Request 封包
-; pkt []byte: 輸出封包緩衝區（至少 64 位元組），由本函式原地填寫
-; seq i64: ICMP Echo 序號，寫入封包 seq 欄位用於配對應答
+; pkt: 輸出封包緩衝區（至少 64 位元組），由本函式原地填寫
+; seq: ICMP Echo 序號，寫入封包 seq 欄位用於配對應答
 ; [build-echo](#net.icmp-conn.build-echo)
 icmp-conn.build-echo = (pkt []byte, seq i64) {
 
@@ -1027,9 +1027,9 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
 }
 
 ; 計算 ICMP 校驗和（16 位元一補數和）
-; data []byte: 封包資料
-; len i64: 參與計算的位元組數（奇數時最後一個位元組補零成高位字節）
-; checksum i64: 16 位元一反補數結果（進位已摺疊，取反後低 16 位有效）
+; data: 封包資料
+; len: 參與計算的位元組數（奇數時最後一個位元組補零成高位字節）
+; checksum: 16 位元一反補數結果（進位已摺疊，取反後低 16 位有效）
 ; [icmp-checksum](#net.icmp-checksum)
 icmp-checksum = (data []byte, len i64) (checksum i64) {
     checksum = 0
@@ -1093,9 +1093,9 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 }
 
 ; 發送一次 ICMP Echo Request 並等待回應
-; host str: 目標 IP 地址
-; timeout-ms i64: 逾時毫秒數
-; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
+; host: 目標 IP 地址
+; timeout-ms: 逾時毫秒數
+; 返回 rtt: ok=往返延遲（微秒）, nil=失敗
 ; [ping-once](#net.icmp-conn.ping-once)
 icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     rtt = nil
@@ -1211,9 +1211,9 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 }
 
 ; 對指定主機發送多次 ping
-; host str: 目標 IP 地址
-; count i64: ping 次數
-; timeout-ms i64: 每次逾時毫秒數（預設 1000）
+; host: 目標 IP 地址
+; count: ping 次數
+; timeout-ms: 每次逾時毫秒數（預設 1000）
 ; [ping-host](#net.icmp-conn.ping-host)
 icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
     i <- [0..count): {
@@ -1236,8 +1236,8 @@ icmp-conn.ping-host = (host str, count i64, timeout-ms i64) {
 ...
 
 ; 單次 ping 便捷函數
-; host str: 目標 IP 地址
-; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
+; host: 目標 IP 地址
+; 返回 rtt: ok=往返延遲（微秒）, nil=失敗
 ; [ping](#net.ping)
 ping = (host str) (rtt ?i64) {
     rtt = nil
@@ -1249,8 +1249,8 @@ ping = (host str) (rtt ?i64) {
 }
 
 ; 多次 ping 便捷函數
-; host str: 目標 IP 地址
-; count i64: ping 次數
+; host: 目標 IP 地址
+; count: ping 次數
 ; [ping-count](#net.ping-count)
 ping-count = (host str, count i64) {
     ic icmp-conn
@@ -1284,7 +1284,7 @@ if-info {
 ; destination: 目的地網路（如 00000000=預設路由）
 ; mask: 子網遮罩
 ; gateway: 閘道
-; flags str: 旗標欄（/proc/net/route 第 4 欄的十六進位值，如 0003 = U|G）
+; flags: 旗標欄（/proc/net/route 第 4 欄的十六進位值，如 0003 = U|G）
 ; iface: 介面名稱
 ; [route-info](#net.route-info)
 route-info {
@@ -1298,7 +1298,7 @@ route-info {
 ; arp-info: ARP 表項
 ; ip: IP 地址
 ; hw-type: 硬體類型
-; flags str: 旗標欄（/proc/net/arp 第 3 欄的十六進位值，0x2 表 complete）
+; flags: 旗標欄（/proc/net/arp 第 3 欄的十六進位值，0x2 表 complete）
 ; mac: MAC 地址
 ; iface: 介面名稱
 ; [arp-info](#net.arp-info)
@@ -1558,8 +1558,8 @@ arp-list = () (arps []arp-info) {
 }
 
 ; 按空白字元（空格/定位字元）分割字串，跳過連續空白
-; s str: 輸入字串
-; 返回 out []str: 非空欄位列表
+; s: 輸入字串
+; 返回 out: 非空欄位列表
 ; [split-ws](#net.split-ws)
 split-ws = (s str) (out []str) {
     n = s.len-bytes()

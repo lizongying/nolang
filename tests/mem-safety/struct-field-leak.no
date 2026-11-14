@@ -41,7 +41,7 @@ my-type {
 }
 
 ; 產生帶堆欄位的結構體（name 為 'hello'、items 為 [1,2,3]），驗證回傳結構體時欄位資料是否被釋放
-; out my-type: 新結構體，其 name 與 items 各自擁有堆資料
+; out: 新結構體，其 name 與 items 各自擁有堆資料
 make-struct = () (out my-type) {
     out = my-type{
         name: 'hello'

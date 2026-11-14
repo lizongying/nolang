@@ -10,8 +10,8 @@ diff-op {
 }
 
 ; split content into lines
-; content str: 要切分的多行文字（以 '\n' 分隔）
-; lines []str: 每行一個元素的 vec；末尾行不足換行時也會被 push，空輸入得空 vec
+; content: 要切分的多行文字（以 '\n' 分隔）
+; lines: 每行一個元素的 vec；末尾行不足換行時也會被 push，空輸入得空 vec
 diff-split-lines = (content str) (lines []str) {
 
     ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
@@ -33,9 +33,9 @@ diff-split-lines = (content str) (lines []str) {
 }
 
 ; dp 表讀：越界給 0
-; dp []i64: DP 表
-; k i64: 攤平後的索引
-; val i64: 該格的值，越界為 0
+; dp: DP 表
+; k: 攤平後的索引
+; val: 該格的值，越界為 0
 dp-at = (dp []i64, k i64) (val i64) {
     val = dp[k]: {
         ok -> it
@@ -45,9 +45,9 @@ dp-at = (dp []i64, k i64) (val i64) {
 }
 
 ; dp 表寫：越界靜默忽略
-; dp []i64: DP 表
-; k i64: 攤平後的索引
-; val i64: 要寫入的值
+; dp: DP 表
+; k: 攤平後的索引
+; val: 要寫入的值
 dp-set = (dp []i64, k i64, val i64) {
     dp[k]: {
         ok -> it = val
@@ -57,9 +57,9 @@ dp-set = (dp []i64, k i64, val i64) {
 }
 
 ; 取第 k 行，越界給空串
-; lines []str: 行表
-; k i64: 行號
-; line str: 該行內容，越界為空串
+; lines: 行表
+; k: 行號
+; line: 該行內容，越界為空串
 line-at = (lines []str, k i64) (line str) {
     line = lines[k]: {
         ok -> it
@@ -69,9 +69,9 @@ line-at = (lines []str, k i64) (line str) {
 }
 
 ; full LCS-based diff
-; a []str: 舊版每一行的 vec
-; b []str: 新版每一行的 vec
-; ops []diff-op: 最小編輯序列，每項記錄 keep / delete / insert 及對應行號
+; a: 舊版每一行的 vec
+; b: 新版每一行的 vec
+; ops: 最小編輯序列，每項記錄 keep / delete / insert 及對應行號
 diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
     na = a.len()
     nb = b.len()

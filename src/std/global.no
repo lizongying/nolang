@@ -19,7 +19,7 @@
 ; 建立指定容量的字串或切片（len=0），型别由賦值左侧推斷
 ;   s str = with-cap(256)       → 预分配 256 位元組的 str
 ;   v []i64 = with-cap(100)     → 预分配 100 個元素的切片
-; cap i64: 要預分配的容量（str 為位元組數、vec 為元素個數），長度仍為 0
+; cap: 要預分配的容量（str 為位元組數、vec 為元素個數），長度仍為 0
 ; [with-cap](#global.with-cap)
 #{buildin}
 with-cap = (cap i64) {
@@ -28,7 +28,7 @@ with-cap = (cap i64) {
 ; 建立指定長度的字串或切片，型别由賦值左侧推斷
 ;   s str = with-len(10)        → 長度為 10 的 str
 ;   v []i64 = with-len(100)     → 長度為 100 的切片
-; len i64: 目標長度（str 為位元組數、vec 為元素個數），len=cap 一次配置好、可免 push 直接下標
+; len: 目標長度（str 為位元組數、vec 為元素個數），len=cap 一次配置好、可免 push 直接下標
 ; [with-len](#global.with-len)
 #{buildin}
 with-len = (len i64) {
@@ -36,8 +36,8 @@ with-len = (len i64) {
 
 ; 建立指定容量和長度的字串或切片，型别由賦值左侧推斷
 ;   v []i64 = with-cap-len(200, 100)  → 容量 200、長度 100 的切片
-; cap i64: 預分配容量（可大於 len，為後續 push 留空間）
-; len i64: 實際長度，可直接下標讀寫而不需先 push
+; cap: 預分配容量（可大於 len，為後續 push 留空間）
+; len: 實際長度，可直接下標讀寫而不需先 push
 ; [with-cap-len](#global.with-cap-len)
 #{buildin}
 with-cap-len = (cap i64, len i64) {
@@ -120,7 +120,7 @@ with-cap-len = (cap i64, len i64) {
 ;   多參數：print(a, b, c) 以空格分隔，整行末尾只有一個換行。
 ;   多參數時每個字串字面量各自是模板（見上方「多參數時，字面量默認是模板」）：
 ;     print('result={val}', 42, 'result={val}')  → result=42 42 result=42
-; s str: 格式模板字串；{name:spec} 會按同名字面量取值替換，後面可接任意多個具名實參依次填空
+; s: 格式模板字串；{name:spec} 會按同名字面量取值替換，後面可接任意多個具名實參依次填空
 ; [print](#global.print)
 #{buildin}
 print = (s str) {
@@ -130,7 +130,7 @@ print = (s str) {
 ;   eprint('error: {msg}')
 ;   多參數：eprint('err:', a, b) 以空格分隔，整行末尾只有一個換行；
 ;           每個字串字面量各自是模板（同 print）
-; s str: 格式模板字串（規則同 print）；後面可接任意多個具名實參依次填空
+; s: 格式模板字串（規則同 print）；後面可接任意多個具名實參依次填空
 ; [eprint](#global.eprint)
 #{buildin}
 eprint = (s str) {
@@ -140,8 +140,8 @@ eprint = (s str) {
 ;   s = format('{x:.2f}')       → '3.14'
 ;   s = format('{name} is {age}')  → 'Alice is 30'
 ;   ⚠️ 只接受單一格式字串（没有多參數形式）
-; s str: 格式模板字串（規則同 print），且只能傳這一個參數
-; out str: 模板展開後的新字串（不输出到任何串流）
+; s: 格式模板字串（規則同 print），且只能傳這一個參數
+; out: 模板展開後的新字串（不输出到任何串流）
 ; [format](#global.format)
 #{buildin}
 format = (s str) (out str) {
@@ -153,7 +153,7 @@ format = (s str) (out str) {
 ; 結束行程（以状態碼 c 終止當前進程）
 ;   exit(0)   → 正常退出
 ;   exit(1)   → 異常退出
-; c i64: 進程退出碼（0 表示成功，非 0 依慣例表示失敗；超出 0–255 的值由作業系統截斷）
+; c: 進程退出碼（0 表示成功，非 0 依慣例表示失敗；超出 0–255 的值由作業系統截斷）
 ; [exit](#global.exit)
 #{buildin}
 exit = (c i64) {

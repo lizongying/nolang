@@ -498,7 +498,7 @@ txt.slice = (start i64, end i64) (out txt) {
 
 ; [deprecated] txt.at: 字符（碼點）索引讀取——請改用 t[idx]（原生索引，回傳 ?char）
 ; 獲取指定字符位置的碼點值（位元組偏移請用 t.byte(i)）
-; 返回 b ?byte: 越界返回 nil；超出 byte 範圍的碼點截斷
+; 返回 b: 越界返回 nil；超出 byte 範圍的碼點截斷
 ; idx: 碼點（字符）下標
 ; b: ok=該碼點值（超 byte 範圍截斷）, nil=越界
 ; [at](#txt.at)
@@ -1588,7 +1588,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
 }
 
 ; 限定替換次數
-; old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
+; old, new, n: 最大替換次數（n<=0 不替換）
 ; old: 被替換的子 txt
 ; new: 替換後的子 txt
 ; n: 最大替換次數（n <= 0 不替換）
@@ -1715,7 +1715,7 @@ txt.split = (sep txt) (out []txt) {
 }
 
 ; 限定分割次數
-; sep txt, maxsplit i64: 最大分割次數（<=0 不限制）
+; sep, maxsplit: 最大分割次數（<=0 不限制）
 ; sep: 分隔符 txt
 ; maxsplit: 最大分割次數（<= 0 不限制）
 ; out: 分割結果切片（最多 maxsplit+1 段）
@@ -1760,8 +1760,8 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
 }
 
 ; []txt.join: 用分隔符連接 txt 切片（超過 255 位元組則截斷）
-; sep txt: 分隔符
-; 返回 out txt: 連接結果
+; sep: 分隔符
+; 返回 out: 連接結果
 ; [join](#txt.join)
 []txt.join = (sep txt) (out txt) {
     parts = .

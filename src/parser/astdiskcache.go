@@ -411,7 +411,13 @@ import (
 // 舊 blob 帶的 `__match_subj_L_C` 型別條目少這批，重用會讓
 // `n = data.len() - 1: { ok -> it }` 這類主體不歸一化 ⇒ ok 臂的 `it` 無綁定
 // ⇒ 觀測值恆為 fallback 臂（§5.2v）。故必 bump。
-const ASTVersion = "2026-11-14.2"
+// 2026-11-14.3：值位 match 的結果型別推斷（inferValueMatchResult）補上
+// 「臂尾轉型」這一格：臂尾型別可靜態判定且與主語 option payload 不同時，
+// 改登記臂尾型別（與 checker.inferExprType(*SurfaceMatch) 同口徑）。舊 blob
+// 把 `v = fields[0]: { ok -> it.to-i64()  -> _ }` 的 v 記成 `str`，重用會讓
+// src/std/net/net.no 的 Linux ifconfig-list 發出 `store i64 %str-long`
+// （corpus-smoke 在 ubuntu 上以此紅）。故必 bump。
+const ASTVersion = "2026-11-14.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

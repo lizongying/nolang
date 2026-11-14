@@ -19,10 +19,10 @@
 ...
 
 ; bit-reader: DEFLATE 位元讀取器（LSB-first）
-; data []byte: 待解碼的原始位元組緩衝
-; pos i64: 下一個要載入 bit-buf 的位元組下標
-; bit-buf i64: 位元緩衝；尚未消費的位元存在最低位，讀取時右移
-; bit-cnt i64: bit-buf 中仍可讀的位元數（0 表示需要載入下一個位元組）
+; data: 待解碼的原始位元組緩衝
+; pos: 下一個要載入 bit-buf 的位元組下標
+; bit-buf: 位元緩衝；尚未消費的位元存在最低位，讀取時右移
+; bit-cnt: bit-buf 中仍可讀的位元數（0 表示需要載入下一個位元組）
 ; [bit-reader](#gzip.bit-reader)
 bit-reader {
     data []byte
@@ -33,7 +33,7 @@ bit-reader {
 
 ; 讀取一個位元
 ; 越界時返回 0，避免 DEFLATE 解碼器讀超時崩潰
-; bit i64: 讀出的位元（0 或 1）；位元組耗盡後固定返回 0，不報錯
+; bit: 讀出的位元（0 或 1）；位元組耗盡後固定返回 0，不報錯
 ; [read-bit](#gzip.bit-reader.read-bit)
 bit-reader.read-bit = () (bit i64) {
 
@@ -63,8 +63,8 @@ bit-reader.read-bit = () (bit i64) {
 }
 
 ; 讀取 n 個位元（LSB-first）
-; n i64: 要連續讀取的位元數
-; v i64: 拼出的整數；先讀到的位元放在低位（第 i 個位元在位 i）
+; n: 要連續讀取的位元數
+; v: 拼出的整數；先讀到的位元放在低位（第 i 個位元在位 i）
 ; [read-bits](#gzip.bit-reader.read-bits)
 bit-reader.read-bits = (n i64) (v i64) {
     v = 0
@@ -82,7 +82,7 @@ bit-reader.skip-to-byte = () {
 
 ; 讀取 2 位元組小端序整數（位元組對齊時）
 ; 直接從 data[pos]、data[pos+1] 取值（不使用位元緩衝），並把 pos 前移 2。
-; v i64: 解出的 0..65535 整數
+; v: 解出的 0..65535 整數
 ; [read-u16-le](#gzip.bit-reader.read-u16-le)
 bit-reader.read-u16-le = () (v i64) {
     lo = .data[.pos]: {
@@ -117,8 +117,8 @@ bit-reader.read-u16-le = () (v i64) {
 ...
 
 ; huffman: 規範 Huffman 解碼碼表（DEFLATE）
-; count [17]i64: 各碼長（0–15）的符號個數；count[0] 在建表時被歸零、count[16] 僅作佔位
-; symbol [288]i64: 按碼長遞增、同長度按符號值遞增排序後的符號表
+; count: 各碼長（0–15）的符號個數；count[0] 在建表時被歸零、count[16] 僅作佔位
+; symbol: 按碼長遞增、同長度按符號值遞增排序後的符號表
 ; [huffman](#gzip.huffman)
 huffman {
     count [17]i64
@@ -127,8 +127,8 @@ huffman {
 
 ; 從碼長度陣列建構 Huffman 碼表
 ; 使用固定陣列欄位直接索引賦值，避免局部 vec 賦值導致懸空指標
-; lengths []i64: 每個符號的碼長，0 表示該符號未使用
-; n i64: 有效符號數（字面/長度表為 288，距離表為 30）；超出 n 的項不被讀取
+; lengths: 每個符號的碼長，0 表示該符號未使用
+; n: 有效符號數（字面/長度表為 288，距離表為 30）；超出 n 的項不被讀取
 ; [build](#gzip.huffman.build)
 huffman.build = (lengths []i64, n i64) {
     {
@@ -184,8 +184,8 @@ huffman.build = (lengths []i64, n i64) {
 
 ; 解碼一個符號
 ; 按位逐層擴展 canonical code，在 count[] 上做二分式定位；碼長超過 15 仍未命中時返回 -1。
-; br bit-reader: 位元來源；每輪從中取 1 位元
-; sym i64: 解出的符號值（字面/長度或距離），-1=非法碼
+; br: 位元來源；每輪從中取 1 位元
+; sym: 解出的符號值（字面/長度或距離），-1=非法碼
 ; [decode](#gzip.huffman.decode)
 huffman.decode = (br bit-reader) (sym i64) {
     code = 0
@@ -246,8 +246,8 @@ huffman.decode = (br bit-reader) (sym i64) {
 ; 建構固定 Huffman 表
 ; 依 DEFLATE 規範 §3.2.6 填入固定碼長：0–143 碼長 8、144–255 碼長 9、
 ; 256–279 碼長 7、280–287 碼長 8；距離碼全部 5 位元。
-; lc huffman: 輸出參數，寫入 288 符號的字面/長度碼表
-; dc huffman: 輸出參數，寫入 30 符號的距離碼表
+; lc: 輸出參數，寫入 288 符號的字面/長度碼表
+; dc: 輸出參數，寫入 30 符號的距離碼表
 ; [build-fixed](#gzip.build-fixed)
 build-fixed = (lc huffman, dc huffman) {
 
@@ -281,9 +281,9 @@ build-fixed = (lc huffman, dc huffman) {
 
 ; 從位元串流建構動態 Huffman 表
 ; 先讀 HLIT/HDIST/HCLEN，再按 code-order 讀碼長度碼，最後展開重複碼長得到字面/距離表。
-; br bit-reader: 位元來源（讀取位置會前移）
-; lc huffman: 輸出參數，寫入字面/長度碼表
-; dc huffman: 輸出參數，寫入距離碼表
+; br: 位元來源（讀取位置會前移）
+; lc: 輸出參數，寫入字面/長度碼表
+; dc: 輸出參數，寫入距離碼表
 ; [build-dynamic](#gzip.build-dynamic)
 build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 

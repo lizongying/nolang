@@ -60,7 +60,7 @@ i2 <- [0..n2): {
 ; 測試 fn
 ...
 
-; fd i64: net.net-icmp-open() 回傳的 socket 描述符；成功為非負、失敗為負值
+; fd: net.net-icmp-open() 回傳的 socket 描述符；成功為非負、失敗為負值
 test-fn = () (fd i64) {
     fd = net.net-icmp-open()
 }

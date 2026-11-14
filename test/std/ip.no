@@ -13,9 +13,9 @@
 # /test/runner
 
 ; 比較是否相等 str（先比位元組長度再逐字元比對）
-; got str: 實測得到的字串（to-str 等方法的輸出）
-; want str: 期望的字串，同時作為比對長度的基準
-; msg str: 斷言訊息前綴，長度不符時會附加 ' [len]'
+; got: 實測得到的字串（to-str 等方法的輸出）
+; want: 期望的字串，同時作為比對長度的基準
+; msg: 斷言訊息前綴，長度不符時會附加 ' [len]'
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)

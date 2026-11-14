@@ -80,7 +80,7 @@ t-hash-bytes-match-hex = () {
 }
 
 ; 低階單區塊壓縮：直接餵 "abc" 的填充區塊，輸出必須等於標準摘要字
-; s []u32: 16 個 32-bit 大端訊息字；h0..h7 u32: 進入本區塊前的狀態
+; s: 16 個 32-bit 大端訊息字；h0..h7 u32: 進入本區塊前的狀態
 ; 期望：sha256("abc") = ba7816bf 8f01cfea 414140de 5dae2223 b00361a3 96177a9c b410ff61 f20015ad
 t-block-abc = () {
     s []u32 = with-len(16)

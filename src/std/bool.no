@@ -6,7 +6,7 @@
 
 ; 將 bool 轉為字串 "true" 或 "false"
 ; LLVM: select i1 ., "true", "false"
-; out str: true → 'true'、false → 'false'（長度 4 或 5）
+; out: true → 'true'、false → 'false'（長度 4 或 5）
 ; [to-str](#bool.to-str)
 #{buildin}
 bool.to-str = () (out str) {

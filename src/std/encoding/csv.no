@@ -13,10 +13,10 @@
 ; 解析 CSV 中的一個欄位
 ; 從 s[pos] 開始解析，處理雙引號和逗號；雙引號內的 "" 會還原為單一 "，
 ; 引號外的逗號 / 行尾即為欄位邊界。
-; s str: CSV 文字
-; pos i64: 開始位置（位元組下標），通常為上一筆的 new-pos
-; 返回 field str: 解析出的欄位內容（已去掉外層引號、已還原轉義）
-; 返回 new-pos i64: 欄位結束後的位元組位置（跳過分隔逗號）
+; s: CSV 文字
+; pos: 開始位置（位元組下標），通常為上一筆的 new-pos
+; 返回 field: 解析出的欄位內容（已去掉外層引號、已還原轉義）
+; 返回 new-pos: 欄位結束後的位元組位置（跳過分隔逗號）
 ; [parse-field](#csv.parse-field)
 parse-field = (s str, pos i64) (field str, new-pos i64) {
     r-pos = pos
@@ -220,9 +220,9 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
 ; 解析一行 CSV 文字
 ; 反覆呼叫 parse-field 直到行尾或欄位數達到上限，未滿的容量用 truncate 截掉。
-; s str: 待解析的單行文字（不應包含行尾換行）
-; max-fields ?i64: 最多解析幾個欄位，明確可選（`ok(n)` 指定；`nil` / `err` → 1024）
-; 返回 fields []str: 解析出的欄位列表，長度 ≤ max-fields
+; s: 待解析的單行文字（不應包含行尾換行）
+; max-fields: 最多解析幾個欄位，明確可選（`ok(n)` 指定；`nil` / `err` → 1024）
+; 返回 fields: 解析出的欄位列表，長度 ≤ max-fields
 ; [parse-line](#csv.parse-line)
 parse-line = (s str, max-fields ?i64) (fields []str) {
     limit = 1024
@@ -253,8 +253,8 @@ parse-line = (s str, max-fields ?i64) (fields []str) {
 
 ; 將一個欄位編碼為 CSV 格式
 ; 若包含逗號、雙引號或換行，則用雙引號包圍並跳脫
-; field str: 要編碼的欄位原文
-; 返回 out str: 可直接寫入 CSV 的文字；需要時已加上雙引號並把 " 變成 ""
+; field: 要編碼的欄位原文
+; 返回 out: 可直接寫入 CSV 的文字；需要時已加上雙引號並把 " 變成 ""
 ; [encode-field](#csv.encode-field)
 encode-field = (field str) (out str) {
     need-quote = false

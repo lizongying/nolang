@@ -576,7 +576,7 @@ t-clone-tree = () {
 
     ; 深拷貝獨立性：改 clone 不得影響來源
     cl.set-str('extra', 'y')
-    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3],"extra":"y"}', 30, 'clone 可獨立擴充')
+    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3],"extra":"y"}', 29, 'clone 可獨立擴充')
     runner.str-eq(gv.stringify(), '{"m":1,"n":[2,3]}', 17, '來源未被 clone 改動')
 }
 
@@ -851,7 +851,7 @@ t-arr-push = () {
         -> runner.eq(-1, 0, 'parse [7] 失敗')
     }
     runner.eq(out.arr-len(), 2, '兩次 arr-push 後 arr-len == 2')
-    runner.str-eq(out.stringify(), '[{"x":1},[7]]', 14, '兩次 arr-push 序列化正確')
+    runner.str-eq(out.stringify(), '[{"x":1},[7]]', 13, '兩次 arr-push 序列化正確')
 }
 
 ; arr-push-str / arr-push-num / arr-push-bool：標量元素
@@ -861,7 +861,7 @@ t-arr-push-scalars = () {
     runner.is-true(a.arr-push-num(2.5), 'arr-push-num 成功')
     runner.is-true(a.arr-push-bool(true), 'arr-push-bool 成功')
     runner.eq(a.arr-len(), 3, '三個標量元素 arr-len == 3')
-    runner.str-eq(a.stringify(), '["s",2.5,true]', 15, '標量元素序列化')
+    runner.str-eq(a.stringify(), '["s",2.5,true]', 14, '標量元素序列化')
 
     a2 = json.new()
     a2.arr-push-bool(false)

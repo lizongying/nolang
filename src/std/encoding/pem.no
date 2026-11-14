@@ -31,8 +31,8 @@ PEM-LINE-LEN = 64
 ...
 
 ; block: PEM 解碼結果
-; label str: BEGIN/END 之間的標籤（如 'CERTIFICATE'）
-; data []byte: Base64 解碼後的二進位載荷
+; label: BEGIN/END 之間的標籤（如 'CERTIFICATE'）
+; data: Base64 解碼後的二進位載荷
 ; [block](#pem.block)
 block {
     label str
@@ -43,9 +43,9 @@ block {
 ...
 
 ; 將原始位元組編碼為 PEM 格式字串
-; label str: PEM 標籤（如 'CERTIFICATE', 'RSA PRIVATE KEY'），必須與 BEGIN/END 一致
-; data []byte: 原始二進制資料，由 base64.encode-std 編碼後按 64 字元折行
-; out str: 完整的 PEM 文字，包含 BEGIN/END 行與每行行尾換行
+; label: PEM 標籤（如 'CERTIFICATE', 'RSA PRIVATE KEY'），必須與 BEGIN/END 一致
+; data: 原始二進制資料，由 base64.encode-std 編碼後按 64 字元折行
+; out: 完整的 PEM 文字，包含 BEGIN/END 行與每行行尾換行
 ; [encode](#pem.encode)
 pem.encode = (label str, data []byte) (out str) {
 
@@ -182,8 +182,8 @@ pem.encode = (label str, data []byte) (out str) {
 ...
 
 ; 解析 PEM 格式字串（只取輸入中第一個 BEGIN…END 區塊）
-; pem-str str: 至少包含一段 '-----BEGIN <label>-----' … '-----END <label>-----' 的文字
-; result ?block: ok=標籤與解碼後的載荷, nil=缺少標記、Base64 解碼失敗或內容過短
+; pem-str: 至少包含一段 '-----BEGIN <label>-----' … '-----END <label>-----' 的文字
+; result: ok=標籤與解碼後的載荷, nil=缺少標記、Base64 解碼失敗或內容過短
 ; [decode](#pem.decode)
 pem.decode = (pem-str str) (result ?block) {
     n = pem-str.len-bytes()

@@ -61,7 +61,7 @@ reader.read = (buf []byte, n i64) (read-n i64) {
 }
 
 ; 讀取一個位元組
-; 返回 b ?i64: ok=位元組值, nil=EOF 或錯誤
+; 返回 b: ok=位元組值, nil=EOF 或錯誤
 ; b: ok=讀到的位元組值(0~255)，nil=EOF 或 fd 無效
 ; [read-byte](#io.reader.read-byte)
 reader.read-byte = () (b ?i64) {
@@ -75,7 +75,7 @@ reader.read-byte = () (b ?i64) {
 }
 
 ; 讀取一行（最多 4096 位元組）
-; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; 返回 line: ok=讀取內容, nil=EOF 或錯誤
 ; line: ok=讀到的一行內容(最多 4096 位元組)，nil=EOF 或 fd 無效
 ; [read-line](#io.reader.read-line)
 reader.read-line = () (line ?str) {
@@ -262,7 +262,7 @@ errln = (s str) (n i64) {
 }
 
 ; 從標準輸入讀取一行
-; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; 返回 line: ok=讀取內容, nil=EOF 或錯誤
 ; line: ok=自標準輸入讀取的一行，nil=EOF 或讀取失敗
 ; [read-line](#io.read-line)
 read-line = () (line ?str) {

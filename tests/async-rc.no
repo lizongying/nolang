@@ -10,8 +10,8 @@
 ; change in ownership surfaces as a changed hash instead of a silent leak.
 
 ; 協程：把數值乘二，用於觀察 handle 被複製到多個位置時的引用計數
-; n i64: 來源數值
-; r i64: n * 2（#{overflow=wrap}）
+; n: 來源數值
+; r: n * 2（#{overflow=wrap}）
 worker-async = (n i64) (r i64) {
 
     #{overflow=wrap}

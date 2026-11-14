@@ -1126,7 +1126,7 @@ t-noml-emit = () {
     ; quote-value：含 LF 且可安全放進原始串時改用反引號
     runner.str-eq(d.node-pool.quote-value('a'), '\'a\'', 3, 'quote-value plain')
     qv = d.node-pool.quote-value('a' - '\n' - 'b')
-    runner.str-eq(qv, '`\na\nb\n`', 8, 'quote-value multiline raw')
+    runner.str-eq(qv, '`\na\nb\n`', 7, 'quote-value multiline raw')
 
     ; fmt-num：整值不帶小數點
     runner.str-eq(d.node-pool.fmt-num(42.0), '42', 2, 'fmt-num int')

@@ -39,8 +39,8 @@
 ; [vec](#vec)
 
 ; []t.eq: 比較兩個切片是否相等（逐元素比較，不比較容量與來源）
-; b []t: 另一側切片；長度不同時直接返回 false
-; eq bool: true=長度與所有對應元素都相等（元素以 != 比較）
+; b: 另一側切片；長度不同時直接返回 false
+; eq: true=長度與所有對應元素都相等（元素以 != 比較）
 ; [eq](#vec.eq)
 []t.eq = (b []t) (eq bool) {
     eq = true
@@ -100,7 +100,7 @@ vec {
 ...
 
 ; []t.len: 回傳切片元素個數（不區分元素型別，與位元組數無關）
-; out i64: 目前的長度，取值範圍 0..cap
+; out: 目前的長度，取值範圍 0..cap
 ; [len](#vec.len)
 []t.len = () (out i64) {
     out = .len()
@@ -111,7 +111,7 @@ vec {
 ;   cap == 0 → new-cap = 4
 ;   cap < 1024 → new-cap = cap * 2
 ;   cap >= 1024 → new-cap = cap * 5 / 4
-; val t: 要追加的元素；型別由接收者切片的元素型別決定
+; val: 要追加的元素；型別由接收者切片的元素型別決定
 ; 追加後 .len 增加 1；擴容時既有元素搬到新緩衝區，舊緩衝區隨之釋放
 ; [vec-push](#vec.vec-push)
 #{buildin}

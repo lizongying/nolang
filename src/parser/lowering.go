@@ -1488,9 +1488,68 @@ func (l *lowerer) inferValueMatchResult(s *LetStatement) {
 	if !hasOkArm {
 		return
 	}
-	if t := l.p.optionSubjectElemType(l.curFuncName, sm.Matched); t != "" {
-		l.publishInferredType(s, t)
+	if subjElem := l.p.optionSubjectElemType(l.curFuncName, sm.Matched); subjElem != "" {
+		// 與 checker.inferExprType(*SurfaceMatch) 對齊：值位 match 的結果型別由
+		// 臂體末尾表達式決定，**不必**等於主語 option 的 payload。上面「結果型別
+		// == 主語 payload」的恆等式只在 `ok -> it` / `-> 0` 這類同型臂成立；臂內
+		// 一旦轉型（`v = fields[0]: { ok -> it.to-i64()  -> _ }`，主語 ?str、臂尾
+		// ?i64），舊路徑仍把 v 登記成 `str`，但槽裡實際裝的是 `?i64`。後續
+		// `v: { ok -> info.rx-bytes = it ... }` 便按 str 解包 payload、判空退化成
+		// str_eq，最後發出 `store i64 %str-long`（src/std/net/net.no 的 Linux
+		// ifconfig-list；corpus-smoke 在 ubuntu 上以此紅）。
+		//
+		// 只在臂尾型別能靜態判定且與主語 payload 不同時改登記；`ok -> it` 的
+		// operandPlainType 對裸 it 回 ""，會走回下面的原路徑，行為不變。
+		if armTy := l.valueMatchOkArmType(sm, subjElem); armTy != "" && armTy != subjElem {
+			l.publishInferredType(s, armTy)
+			return
+		}
+		l.publishInferredType(s, subjElem)
 	}
+}
+
+// valueMatchOkArmType 回報值位 match 的 ok 臂末尾表達式之靜態型別（可能帶
+// `?` 前綴）；推不出時回 ""，讓呼叫方保守回退到主語 payload，與
+// inferOptionArith 的「推不出就不改寫」同守則。
+//
+// `ok -> it.to-i64()` 這類臂內轉型是關鍵：接收者是隱含綁定 `it`，
+// resolveReceiverType 認不得它，returnTypeFromCallExpr 會回空。此時 `it` 的
+// 型別正是主語 option 的 payload，用它補查方法簽名表即可拿到 `?i64`。
+func (l *lowerer) valueMatchOkArmType(sm *SurfaceMatch, subjElem string) string {
+	for i := range sm.Arms {
+		a := &sm.Arms[i]
+		if !a.IsDotVal {
+			if id, ok := a.Condition.(*Identifier); !ok || id.Value != "ok" {
+				continue
+			}
+		}
+		if a.Body == nil || len(a.Body.Statements) == 0 {
+			continue
+		}
+		last, ok := a.Body.Statements[len(a.Body.Statements)-1].(*ExpressionStatement)
+		if !ok {
+			continue
+		}
+		expr := unwrapLowerExpr(last.Expression)
+		if t := l.operandPlainType(expr); t != "" {
+			return t
+		}
+		if c, ok := expr.(*CallExpression); ok && subjElem != "" {
+			if dot, ok := c.Function.(*DotExpression); ok {
+				if id, ok := dot.Receiver.(*Identifier); ok && (id.Value == "it" || id.Value == "_") {
+					key := subjElem + "." + dot.Property
+					if rets, ok := l.p.methodSignatures[key]; ok && len(rets) == 1 {
+						return rets[0]
+					}
+					if rets, ok := l.p.funcSignatures[key]; ok && len(rets) == 1 {
+						return rets[0]
+					}
+				}
+			}
+		}
+		return ""
+	}
+	return ""
 }
 
 // inferBitwiseResult 把「位元／移位運算的結果」登記為 plain 整數型別。

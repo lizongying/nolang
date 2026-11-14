@@ -303,7 +303,7 @@ HEX-LOWER = '0123456789abcdef'
 ...
 
 ; []byte.to-txt: 將 []byte 轉換為 txt（截斷至 255 字節）
-; 返回 out txt: 固定 256 字節的 txt 結構
+; 返回 out: 固定 256 字節的 txt 結構
 ; [to-txt](#bytes.to-txt)
 []byte.to-txt = () (out txt) {
 

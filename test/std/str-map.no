@@ -39,7 +39,7 @@ t-overwrite = () {
     n bool = m.put('k', 'v2')
     runner.is-false(n, 're-put same key not new')
     runner.eq(m.len(), 1, 'len stays 1 after overwrite')
-    runner.str-eq(m.to-str(), '{k: v2}', 8, 'overwrite updates value')
+    runner.str-eq(m.to-str(), '{k: v2}', 7, 'overwrite updates value')
 }
 
 ; get 命中時以 ok 回傳原值 'Tokyo'，查無此鍵時回 nil（不是空字串）

@@ -9,95 +9,95 @@
   'aes-cbc.cbc-dec': `
 CBC 복호화 코어(라운드 키는 호출측에서 한 번 전개)
 각 블록은 먼저 AES-ECB 복호화를 실행한 뒤 앞의 암호문 블록과 XOR합니다. 패딩은 검증하지 않습니다.
-in []byte: 입력 암호문(길이는 16의 배수여야 합니다)
-iv [16]byte: 초기 벡터, 암호화 때와 동일해야 합니다
-ek []byte: aes.key-expand / aes.key-expand-256으로 전개한 라운드 키
-반환값 out []byte: 복호화한 평문, 길이는 in과 동일(PKCS#7 패딩 그대로 포함)
+in: 입력 암호문(길이는 16의 배수여야 합니다)
+iv: 초기 벡터, 암호화 때와 동일해야 합니다
+ek: aes.key-expand / aes.key-expand-256으로 전개한 라운드 키
+반환값 out: 복호화한 평문, 길이는 in과 동일(PKCS#7 패딩 그대로 포함)
 `
   'aes-cbc.cbc-enc': `
 CBC 암호화 코어(라운드 키는 호출측에서 한 번 전개)
 각 블록은 앞의 암호문 블록과 XOR한 뒤 AES-ECB를 실행합니다. 패딩을 하지 않으며, 16바이트에 못 미치는 끝부분은 버려집니다.
-in []byte: 입력 데이터(길이는 16의 배수여야 합니다)
-iv [16]byte: 초기 벡터; 같은 키에서 재사용 불가
-ek []byte: aes.key-expand / aes.key-expand-256으로 전개한 라운드 키
-반환값 out []byte: 암호화한 암호문, 길이는 in과 동일
+in: 입력 데이터(길이는 16의 배수여야 합니다)
+iv: 초기 벡터; 같은 키에서 재사용 불가
+ek: aes.key-expand / aes.key-expand-256으로 전개한 라운드 키
+반환값 out: 암호화한 암호문, 길이는 in과 동일
 `
   'aes-cbc.dec-128': `
 AES-128-CBC 복호화
-in []byte: 입력 암호문(길이는 16의 배수여야 합니다)
-key [16]byte: 128-bit 키, 암호화 때와 일치해야 합니다
-iv [16]byte: 초기 벡터, 암호화 때와 일치해야 합니다
-반환값 out []byte: 복호화 결과(PKCS#7 패딩이 남아 있어 pkcs7-unpad로 제거해야 합니다)
+in: 입력 암호문(길이는 16의 배수여야 합니다)
+key: 128-bit 키, 암호화 때와 일치해야 합니다
+iv: 초기 벡터, 암호화 때와 일치해야 합니다
+반환값 out: 복호화 결과(PKCS#7 패딩이 남아 있어 pkcs7-unpad로 제거해야 합니다)
 `
   'aes-cbc.dec-256': `
 AES-256-CBC 복호화
-in []byte: 입력 암호문(길이는 16의 배수여야 합니다)
-key [32]byte: 256-bit 키, 암호화 때와 일치해야 합니다
-iv [16]byte: 초기 벡터, 암호화 때와 일치해야 합니다
-반환값 out []byte: 복호화 결과(PKCS#7 패딩이 남아 있어 pkcs7-unpad로 제거해야 합니다)
+in: 입력 암호문(길이는 16의 배수여야 합니다)
+key: 256-bit 키, 암호화 때와 일치해야 합니다
+iv: 초기 벡터, 암호화 때와 일치해야 합니다
+반환값 out: 복호화 결과(PKCS#7 패딩이 남아 있어 pkcs7-unpad로 제거해야 합니다)
 `
   'aes-cbc.enc-128': `
 AES-128-CBC 암호화
 16바이트 키를 전개한 뒤 cbc-enc를 실행합니다. 패딩을 하지 않으므로 평문 길이는 스스로 16의 배수로 맞춰야 합니다.
-in []byte: 입력 데이터(길이는 16의 배수여야 합니다)
-key [16]byte: 128-bit 키
-iv [16]byte: 초기 벡터, 각 메시지는 랜덤하고 고유해야 합니다
-반환값 out []byte: 암호화한 암호문, 길이는 in과 동일
+in: 입력 데이터(길이는 16의 배수여야 합니다)
+key: 128-bit 키
+iv: 초기 벡터, 각 메시지는 랜덤하고 고유해야 합니다
+반환값 out: 암호화한 암호문, 길이는 in과 동일
 `
   'aes-cbc.enc-256': `
 AES-256-CBC 암호화
 32바이트(14라운드) 키를 사용합니다. 나머지 동작은 enc-128과 동일합니다.
-in []byte: 입력 데이터(길이는 16의 배수여야 합니다)
-key [32]byte: 256-bit 키
-iv [16]byte: 초기 벡터, 각 메시지는 랜덤하고 고유해야 합니다
-반환값 out []byte: 암호화한 암호문, 길이는 in과 동일
+in: 입력 데이터(길이는 16의 배수여야 합니다)
+key: 256-bit 키
+iv: 초기 벡터, 각 메시지는 랜덤하고 고유해야 합니다
+반환값 out: 암호화한 암호문, 길이는 in과 동일
 `
   'aes-cbc.pkcs7-pad': `
 PKCS#7 패딩
 값이 n인 바이트를 항상 1–16개 추가합니다(평문이 이미 16의 배수이면 한 블록분 16바이트를 추가).
-in []byte: 입력 데이터
-반환값 out []byte: 패딩 후 데이터(길이는 16의 배수이며 원본 길이보다 반드시 큼)
+in: 입력 데이터
+반환값 out: 패딩 후 데이터(길이는 16의 배수이며 원본 길이보다 반드시 큼)
 `
   'aes-cbc.pkcs7-unpad': `
 PKCS#7 패딩 제거
 마지막 바이트를 패딩 길이로 읽고, 끝의 pad-len개 바이트가 모두 그 값과 같은지 검증합니다.
-in []byte: 복호화 후 데이터(PKCS#7 패딩 포함; 길이 0은 패딩 오류로 취급)
-out-n i64: 패딩 제거 후 유효 길이; 패딩 값이 부적법하거나 범위를 벗어나거나 검증 불일치이면 -1
+in: 복호화 후 데이터(PKCS#7 패딩 포함; 길이 0은 패딩 오류로 취급)
+out-n: 패딩 제거 후 유효 길이; 패딩 값이 부적법하거나 범위를 벗어나거나 검증 불일치이면 -1
 `
   'aes-ctr.crypt-128': `
 AES-128-CTR 암호화/복호화(대칭 연산)
 같은 키와 같은 iv(nonce)로 두 번 호출하면 복원됩니다; (key, iv) 조합의 재사용은 절대 금지.
-in []byte: 입력 데이터(임의 길이)
-key [16]byte: 128-bit 키
-iv [16]byte: 초기 카운터 값(nonce), 반드시 고유해야 합니다
-반환값 out []byte: in과 같은 길이의 출력
+in: 입력 데이터(임의 길이)
+key: 128-bit 키
+iv: 초기 카운터 값(nonce), 반드시 고유해야 합니다
+반환값 out: in과 같은 길이의 출력
 `
   'aes-ctr.crypt-256': `
 AES-256-CTR 암호화/복호화(대칭 연산)
 동작은 crypt-128과 동일하며, 키만 32바이트(14라운드)로 전개합니다.
-in []byte: 입력 데이터(임의 길이)
-key [32]byte: 256-bit 키
-iv [16]byte: 초기 카운터 값(nonce), 반드시 고유해야 합니다
-반환값 out []byte: in과 같은 길이의 출력
+in: 입력 데이터(임의 길이)
+key: 256-bit 키
+iv: 초기 카운터 값(nonce), 반드시 고유해야 합니다
+반환값 out: in과 같은 길이의 출력
 `
   'aes-ctr.ctr-crypt': `
 CTR 암호화/복호화 코어(라운드 키는 호출측에서 한 번 전개)
 각 카운터 값을 암호화한 뒤 평문과 XOR하므로 임의 길이가 가능하며, 암호화와 복호화가 같은 함수입니다.
-in []byte: 입력 데이터(임의 길이, 한 블록에 못 미치는 끝부분은 앞 n바이트만 XOR)
-iv [16]byte: 초기 카운터 값; 같은 키에서 재사용 금지
-ek []byte: aes.key-expand / aes.key-expand-256으로 전개한 라운드 키
-반환값 out []byte: in과 같은 길이의 출력(암호화 또는 복호화 결과)
+in: 입력 데이터(임의 길이, 한 블록에 못 미치는 끝부분은 앞 n바이트만 XOR)
+iv: 초기 카운터 값; 같은 키에서 재사용 금지
+ek: aes.key-expand / aes.key-expand-256으로 전개한 라운드 키
+반환값 out: in과 같은 길이의 출력(암호화 또는 복호화 결과)
 `
   'aes-ctr.ctr-inc': `
 카운터 증가(빅엔디안, 최하위 32비트에 먼저 더하고 올라가는 캐리를 상위 비트로 전파)
-cb []byte: 16바이트 카운터 블록, 제자리 수정; 뒤쪽 4바이트(인덱스 12–15)만 건드립니다
+cb: 16바이트 카운터 블록, 제자리 수정; 뒤쪽 4바이트(인덱스 12–15)만 건드립니다
 `
   'aes-gcm.ctr-xor': `
 AES-CTR로 키 스트림을 생성하고 데이터와 XOR
-icb [16]byte: 초기 카운터 블록 J0+1
-data []byte: 키 스트림과 XOR할 데이터, 길이가 곧 출력 길이(비어도 가능)
-ek []byte: aes.key-expand / aes.key-expand-256의 결과(전개된 라운드 키)
-반환값 out []byte: 키 스트림과 XOR한 데이터, 길이는 data와 동일
+icb: 초기 카운터 블록 J0+1
+data: 키 스트림과 XOR할 데이터, 길이가 곧 출력 길이(비어도 가능)
+ek: aes.key-expand / aes.key-expand-256의 결과(전개된 라운드 키)
+반환값 out: 키 스트림과 XOR한 데이터, 길이는 data와 동일
 `
   'aes-gcm.gcm-h': `
 해시 하위 키 H = AES-enc(0^128) 계산
@@ -115,7 +115,7 @@ iv: 12바이트 IV
 aad: 추가 인증 데이터
 sealed: 암호문 + 16바이트 태그
 ek: aes.key-expand / aes.key-expand-256의 결과
-반환값 plain []byte: 평문(인증 실패 시 길이 0)
+반환값 plain: 평문(인증 실패 시 길이 0)
 `
   'aes-gcm.gcm-seal': `
 GCM 암호화 코어
@@ -123,21 +123,21 @@ iv: 12바이트 IV(nonce)
 aad: 추가 인증 데이터
 plain: 평문
 ek: aes.key-expand / aes.key-expand-256의 결과
-반환값 sealed []byte: 암호문 + 16바이트 태그
+반환값 sealed: 암호문 + 16바이트 태그
 `
   'aes-gcm.ghash': `
 GHASH 계산
 h: 해시 하위 키(AES-enc(0^128))
 aad: 추가 인증 데이터
 cipher: 암호문
-반환값 out [16]byte: GHASH 값
+반환값 out: GHASH 값
 `
   'aes-gcm.ghash-mul': `
 GF(2^128) 곱셈(GHASH용)
 X = X * H mod P, 여기서 P = x^128 + x^7 + x^2 + x + 1
 x: 곱수(빅엔디안 비트의 128비트 블록)
 h: 해시 하위 키
-반환값 out [16]byte: 곱 X * H mod P
+반환값 out: 곱 X * H mod P
 `
   'aes-gcm.open-128': `
 AES-128-GCM 복호화
@@ -145,7 +145,7 @@ key: 16바이트 키
 iv: IV
 aad: 추가 인증 데이터
 sealed: 암호문 + 16바이트 태그
-반환값 plain []byte: 평문(인증 실패 시 길이 0)
+반환값 plain: 평문(인증 실패 시 길이 0)
 `
   'aes-gcm.open-256': `
 AES-256-GCM 복호화
@@ -153,7 +153,7 @@ key: 32바이트 키
 iv: IV
 aad: 추가 인증 데이터
 sealed: 암호문 + 16바이트 태그
-반환값 plain []byte: 평문(인증 실패 시 길이 0)
+반환값 plain: 평문(인증 실패 시 길이 0)
 `
   'aes-gcm.seal-128': `
 AES-128-GCM 암호화
@@ -161,7 +161,7 @@ key: 16바이트 키
 iv: IV(nonce)
 aad: 추가 인증 데이터
 plain: 평문
-반환값 sealed []byte: 암호문 + 16바이트 태그(길이 = plain.len() + 16)
+반환값 sealed: 암호문 + 16바이트 태그(길이 = plain.len() + 16)
 `
   'aes-gcm.seal-256': `
 AES-256-GCM 암호화
@@ -169,7 +169,7 @@ key: 32바이트 키
 iv: IV(nonce)
 aad: 추가 인증 데이터
 plain: 평문
-반환값 sealed []byte: 암호문 + 16바이트 태그
+반환값 sealed: 암호문 + 16바이트 태그
 `
   'aes.add-round-key': `
 상태를 라운드 키와 XOR
@@ -196,9 +196,9 @@ out: 16바이트 평문 블록
 `
   'aes.dec-block': `
 전개된 라운드 키로 16바이트 블록 복호화
-in [16]byte: 입력 블록
-ek []byte: 라운드 키(key-expand / key-expand-256의 결과)
-반환값 out [16]byte: 복호화한 블록
+in: 입력 블록
+ek: 라운드 키(key-expand / key-expand-256의 결과)
+반환값 out: 복호화한 블록
 `
   'aes.enc-128': `
 16바이트 블록 암호화(AES-128)
@@ -214,9 +214,9 @@ out: 16바이트 암호문 블록
 `
   'aes.enc-block': `
 전개된 라운드 키로 16바이트 블록 암호화
-in [16]byte: 입력 블록
-ek []byte: 라운드 키(key-expand / key-expand-256의 결과)
-반환값 out [16]byte: 암호화한 블록
+in: 입력 블록
+ek: 라운드 키(key-expand / key-expand-256의 결과)
+반환값 out: 암호화한 블록
 `
   'aes.gf-mul2': `
 GF(2^8)에서 x와 곱셈(즉 다항식 x)
@@ -249,13 +249,13 @@ n: 예약 파라미터(구현은 고정으로 16바이트 처리, 미사용)
 `
   'aes.key-expand': `
 16바이트 키를 176바이트 라운드 키로 전개(AES-128, 11조 라운드 키)
-key [16]byte: 128-bit 키
-반환값 ek []byte: 176바이트 라운드 키, enc-block / dec-block에 바로 전달
+key: 128-bit 키
+반환값 ek: 176바이트 라운드 키, enc-block / dec-block에 바로 전달
 `
   'aes.key-expand-256': `
 32바이트 키를 240바이트 라운드 키로 전개(AES-256, 15조 라운드 키)
-key [32]byte: 256-bit 키
-반환값 ek []byte: 240바이트 라운드 키
+key: 256-bit 키
+반환값 ek: 240바이트 라운드 키
 `
   'aes.mix-col': `
 단일 컬럼 믹스(4바이트)
@@ -289,139 +289,139 @@ n: 예약 파라미터(구현은 고정으로 16바이트 처리, 미사용)
   'argon2.blake-g': `
 Blake2b G 함수(Argon2 압축 함수의 기본 혼합 단계)
 v 배열에서 인덱스 a/b/c/d의 64비트 워드를 직접 제자리 수정(두씩 더하기, XOR, 회전).
-v []u64: 16워드 작업 영역(Argon2 블록), 제자리로 수정됨
-a i64: 인덱스 a(0..15)
-b i64: 인덱스 b
-c i64: 인덱스 c
-d i64: 인덱스 d
-x u64: 예약 파라미터(본 구현은 미사용; 혼합에 필요한 승수는 v[a]/v[b]의 하위 32비트에서 즉시 계산)
-y u64: 예약 파라미터(본 구현은 미사용)
+v: 16워드 작업 영역(Argon2 블록), 제자리로 수정됨
+a: 인덱스 a(0..15)
+b: 인덱스 b
+c: 인덱스 c
+d: 인덱스 d
+x: 예약 파라미터(본 구현은 미사용; 혼합에 필요한 승수는 v[a]/v[b]의 하위 32비트에서 즉시 계산)
+y: 예약 파라미터(본 구현은 미사용)
 반환값 없음: 결과는 v[a]/v[b]/v[c]/v[d]에 남습니다
 `
   'argon2.compress': `
 Argon2 압축 함수 G(X, Y)
 먼저 X XOR Y를 임시 r에 쓰고, r의 각 16-워드 열과 행마다 blake-g 한 라운드를 실행한 뒤,
 최종적으로 결과와 원래 r을 한 번 더 XOR해 out에 씁니다.
-x []byte: 1024바이트 블록 X
-y []byte: 1024바이트 블록 Y
-반환값 out []byte: 1024바이트 압축 결과
+x: 1024바이트 블록 X
+y: 1024바이트 블록 Y
+반환값 out: 1024바이트 압축 결과
 `
   'argon2.h-prime': `
 가변 길이 Blake2b(H'): Argon2는 이를 사용해 블록 요약을 임의 길이 출력으로 확장
-input []byte: 입력 데이터(일반적으로 64바이트 Blake2b 요약)
-out-len i64: 기대하는 출력 바이트 수; <=64이면 Blake2b 한 번이면 충분
-out []byte: 정확히 out-len바이트의 파생 결과
+input: 입력 데이터(일반적으로 64바이트 Blake2b 요약)
+out-len: 기대하는 출력 바이트 수; <=64이면 Blake2b 한 번이면 충분
+out: 정확히 out-len바이트의 파생 결과
 `
   'argon2.id': `
 Argon2id 키 파생(RFC 9106, Argon2id v=0x13)
 먼저 블록 수 m을 계산(4*parallelism의 배수로 내림, 최소 8*parallelism),
 h0를 초기화한 뒤 lane별로 블록을 채우고 time-cost 라운드만큼 혼합을 실행하며, 마지막에 out-len바이트를 추출합니다.
-password []byte: 비밀번호(UTF-8 바이트 시퀀스, 비어 있을 수 있음)
-salt []byte: 솔트, 최소 8바이트이고 계정마다 달라야 합니다
-time-cost i64: 시간 비용(반복 라운드 수, 예 3); 클수록 느리고 더 안전합니다
-memory-cost i64: 메모리 비용(KB, 예 65536 = 64MB); 너무 작으면 8*parallelism 블록으로 상향됩니다
-parallelism i64: 병렬 레인 수(예 1); ≥ 1 이어야 하며 블록 수의 내림 단위 결정
-out-len i64: 출력 키 길이(바이트, 일반적 32)
-반환값 out []byte: 파생된 키, 길이는 정확히 out-len
+password: 비밀번호(UTF-8 바이트 시퀀스, 비어 있을 수 있음)
+salt: 솔트, 최소 8바이트이고 계정마다 달라야 합니다
+time-cost: 시간 비용(반복 라운드 수, 예 3); 클수록 느리고 더 안전합니다
+memory-cost: 메모리 비용(KB, 예 65536 = 64MB); 너무 작으면 8*parallelism 블록으로 상향됩니다
+parallelism: 병렬 레인 수(예 1); ≥ 1 이어야 하며 블록 수의 내림 단위 결정
+out-len: 출력 키 길이(바이트, 일반적 32)
+반환값 out: 파생된 키, 길이는 정확히 out-len
 `
   'argon2.rotr': `
 rotr64: 64비트 순환 우측 이동
-x u64: 회전할 64비트 워드
-n i64: 우측 이동 비트 수(1–63; 0 또는 64이면 이동이 정의되지 않음)
-r u64: (x >> n) | (x << (64-n)), 하위 64비트만 유지
+x: 회전할 64비트 워드
+n: 우측 이동 비트 수(1–63; 0 또는 64이면 이동이 정의되지 않음)
+r: (x >> n) | (x << (64-n)), 하위 64비트만 유지
 `
   'args.count': `
 인수 개수(프로그램 이름 포함)
 os.args() builtin 에 위임한다(전체 argv 벡터를 반환하며, 그 길이를 취한다)
 반환 카운트에는 argv[0](프로그램 이름)이 포함되므로, 추가 인수가 없으면 최솟값은 1.
-n i64: argv 총 원소 수(명령줄 인수 개수 + 1)
+n: argv 총 원소 수(명령줄 인수 개수 + 1)
 `
   'args.get': `
 i번째 원시 인수 취득(플래그 / 위치 인수 해석 일절 않음)
 os.arg(i) builtin에 위임(main의 argv[i] 읽음).
-i i64: 인덱스, 0은 프로그램명, 1부터는 사용자가 입력한 인수
-val ?str: ok=argv[i], nil=첨자 범위 초과(음수 또는 ≥ 인자 수)
+i: 인덱스, 0은 프로그램명, 1부터는 사용자가 입력한 인수
+val: ok=argv[i], nil=첨자 범위 초과(음수 또는 ≥ 인자 수)
 `
   'args.get-option': `
 옵션 값을 가져온다(예: --output=xxx)
 argv[1..]를 하나하나 비교, key로 시작하고 바로 '='(0x3D)이 붙는 인자를 찾아,
 '=' 이후의 나머지 부분을 반환(바이트 슬라이스, 빈 문자열 가능). 첫 일치항만 취함.
-key str: 옵션 키(앞의 - 또는 -- 포함, 예: '--output')
-val ?str: ok='=' 뒤의 값(''일 수 있음), nil=key=...와 일치하는 매개변수 없음
+key: 옵션 키(앞의 - 또는 -- 포함, 예: '--output')
+val: ok='=' 뒤의 값(''일 수 있음), nil=key=...와 일치하는 매개변수 없음
 `
   'args.get-positional': `
 idx번째 위치 인수(0부터) 취득, 도중 모든 플래그 건너뜀
 argv[1..]를 훑음: '-'로 시작하는 인수는 모두 건너뜀; 그것이 단일 가로형(-o 등)이면,
 그 뒤의 '-'로 시작하지 않는 인자 하나도 추가로 스킵(해당 옵션의 값으로 봄);
 이중 가로형(--output=xxx 등)은 자기만 스킵. 나머지 인자는 출현 순서로 센다.
-idx i64: 위치 인수 번호, 0은 첫 비플래그 인수
-val ?str: ok=idx번째 위치 인자, nil=위치 인자 수 부족
+idx: 위치 인수 번호, 0은 첫 비플래그 인수
+val: ok=idx번째 위치 인자, nil=위치 인자 수 부족
 `
   'args.has-flag': `
 플래그가 있는지 판단한다(예: --verbose, -v)
 argv[1]부터 하나씩 flag와 문자 단위 완전 일치 비교(부분 문자열 일치 아님, --k=v 전개도 안 함).
 빈 문자열 flag는 결코 일치하지 않는다.
-flag str: 비교할 전체 플래그 문자열(앞의 - 또는 -- 포함)
-yes bool: true=argv에 flag와 완전히 같은 원소가 존재, false=존재하지 않음
+flag: 비교할 전체 플래그 문자열(앞의 - 또는 -- 포함)
+yes: true=argv에 flag와 완전히 같은 원소가 존재, false=존재하지 않음
 `
   'args.program': `
 프로그램명(0번째 인자, 즉 argv[0] 원본 그대로)
-name ?str: ok=argv[0](보통 실행 파일 경로, 디렉터리 포함 가능), nil=argv가 비어 있음
+name: ok=argv[0](보통 실행 파일 경로, 디렉터리 포함 가능), nil=argv가 비어 있음
 `
   'arr-stack.arr-stack.clear': '스택을 비운다'
   'arr-stack.arr-stack.empty': `
 스택이 비었는지 판단한다
-반환 yes bool: true=비어 있음, false=비어 있지 않음
-yes bool: true=top <= 0(아무것도 push하지 않았거나 이미 비워짐)
+반환 yes: true=비어 있음, false=비어 있지 않음
+yes: true=top <= 0(아무것도 push하지 않았거나 이미 비워짐)
 `
   'arr-stack.arr-stack.full': `
 스택이 가득 찼는지 판단한다
-반환 yes bool: true=가득 참, false=가득 차지 않음
-yes bool: true=top >= cap(다시 push하면 실패 또는 넘침, 먼저 pop해야 함)
+반환 yes: true=가득 참, false=가득 차지 않음
+yes: true=top >= cap(다시 push하면 실패 또는 넘침, 먼저 pop해야 함)
 `
   'arr-stack.arr-stack.size': `
 스택의 원소 개수를 반환한다
-반환 sz i64: 원소 개수
-sz i64: 현재 스택 깊이(즉 top 포인터), 빠진 빈 슬롯 불포함
+반환 sz: 원소 개수
+sz: 현재 스택 깊이(즉 top 포인터), 빠진 빈 슬롯 불포함
 `
   'arr.arr-stack-init': `
 [n]t.arr-stack-init: 스택 상태를 초기화한다
 cap 은 배열 크기 n 으로 자동 설정된다
-반환 s arr-stack: 초기화된 스택 상태
+반환 s: 초기화된 스택 상태
 
 `
   'arr.arr-stack-peek': `
 [n]t.arr-stack-peek: 꺼내지 않고 맨 위 원소를 본다
-s arr-stack: 스택 상태
-반환 val ?t: ok=맨 위 값, nil=스택이 비어 있음
+s: 스택 상태
+반환 val: ok=맨 위 값, nil=스택이 비어 있음
 
 `
   'arr.arr-stack-pop': `
 [n]t.arr-stack-pop: 스택 맨 위 원소를 꺼낸다
-s arr-stack: 스택 상태
-반환 val ?t: ok=꺼낸 값, nil=스택이 비어 있음
+s: 스택 상태
+반환 val: ok=꺼낸 값, nil=스택이 비어 있음
 
 `
   'arr.arr-stack-push': `
 [n]t.arr-stack-push: 스택 맨 위에 원소를 넣는다
-s arr-stack: 스택 상태
-val t: 넣을 값
-반환 ok bool: true=성공, false=스택이 가득 참
+s: 스택 상태
+val: 넣을 값
+반환 ok: true=성공, false=스택이 가득 참
 
 `
   'arr.asc': '[n]t.asc: 제자리에서 오름차순 정렬한다(삽입 정렬)'
   'arr.at': `
 [지원 중단] [n]t.at: 안전한 인덱스 접근 — 대신 a[i] 를 쓴다(네이티브 인덱싱, ?t 반환; 범위를 벗어나면 err)
-i i64: 인덱스
-반환 val ?t: 범위를 벗어나면 nil
+i: 인덱스
+반환 val: 범위를 벗어나면 nil
 
 `
   'arr.clone': '[n]t.clone: 배열을 dst 로 복사한다'
   'arr.contains': '[n]t.contains: 값 val 이 존재하는지 판단한다'
   'arr.count': `
 [n]t.count: 어떤 값의 출현 횟수를 센다
-val t: 셀 값
-반환 cnt i64: 출현 횟수
+val: 셀 값
+반환 cnt: 출현 횟수
 
 `
   'arr.desc': '[n]t.desc: 제자리에서 내림차순 정렬한다(삽입 정렬)'
@@ -437,95 +437,95 @@ val t: 셀 값
 `
   'arr.link-clear': `
 [n]t.link-clear: 연결 리스트를 비우고 모든 노드를 회수한다
-l link: 연결 리스트 상태
+l: 연결 리스트 상태
 
 `
   'arr.link-find': `
 [n]t.link-find: 값의 위치를 찾는다
-l link: 연결 리스트 상태
-val t: 찾을 값
-반환 pos i64: 위치 인덱스, -1=찾을 수 없음
+l: 연결 리스트 상태
+val: 찾을 값
+반환 pos: 위치 인덱스, -1=찾을 수 없음
 
 `
   'arr.link-get-at': `
 [n]t.link-get-at: 위치의 원소를 가져온다
-l link: 연결 리스트 상태
-pos i64: 위치
-반환 val ?t: ok=원소 값, nil=위치가 범위를 벗어남
+l: 연결 리스트 상태
+pos: 위치
+반환 val: ok=원소 값, nil=위치가 범위를 벗어남
 
 `
   'arr.link-init': `
 [n]t.link-init: 연결 리스트를 초기화한다
-nxt []i64: 다음 노드 인덱스 배열(호출자가 제공, 크기 >= n)
-prv []i64: 이전 노드 인덱스 배열(호출자가 제공, 크기 >= n)
-반환 l link: 초기화된 연결 리스트
+nxt: 다음 노드 인덱스 배열(호출자가 제공, 크기 >= n)
+prv: 이전 노드 인덱스 배열(호출자가 제공, 크기 >= n)
+반환 l: 초기화된 연결 리스트
 
 `
   'arr.link-insert-at': `
 [n]t.link-insert-at: 위치에 원소를 삽입한다
-l link: 연결 리스트 상태
-pos i64: 삽입 위치(0=머리, size=꼬리)
-val t: 삽입할 값
-반환 ok bool: true=성공, false=위치가 범위를 벗어남 또는 노드 풀이 가득 참
+l: 연결 리스트 상태
+pos: 삽입 위치(0=머리, size=꼬리)
+val: 삽입할 값
+반환 ok: true=성공, false=위치가 범위를 벗어남 또는 노드 풀이 가득 참
 
 `
   'arr.link-peek-back': `
 [n]t.link-peek-back: 꼬리 원소를 꺼내지 않고 본다
-l link: 연결 리스트 상태
-반환 val ?t: ok=꼬리 값, nil=리스트가 비어 있음
+l: 연결 리스트 상태
+반환 val: ok=꼬리 값, nil=리스트가 비어 있음
 
 `
   'arr.link-peek-front': `
 [n]t.link-peek-front: 머리 원소를 꺼내지 않고 본다
-l link: 연결 리스트 상태
-반환 val ?t: ok=머리 값, nil=리스트가 비어 있음
+l: 연결 리스트 상태
+반환 val: ok=머리 값, nil=리스트가 비어 있음
 
 `
   'arr.link-pop-back': `
 [n]t.link-pop-back: 연결 리스트 꼬리 원소를 꺼낸다
-l link: 연결 리스트 상태
-반환 val ?t: ok=꺼낸 값, nil=리스트가 비어 있음
+l: 연결 리스트 상태
+반환 val: ok=꺼낸 값, nil=리스트가 비어 있음
 
 `
   'arr.link-pop-front': `
 [n]t.link-pop-front: 연결 리스트 머리 원소를 꺼낸다
-l link: 연결 리스트 상태
-반환 val ?t: ok=꺼낸 값, nil=리스트가 비어 있음
+l: 연결 리스트 상태
+반환 val: ok=꺼낸 값, nil=리스트가 비어 있음
 
 `
   'arr.link-push-back': `
 [n]t.link-push-back: 연결 리스트 꼬리에 원소를 삽입한다
-l link: 연결 리스트 상태
-val t: 삽입할 값
-반환 ok bool: true=성공, false=노드 풀이 가득 참
+l: 연결 리스트 상태
+val: 삽입할 값
+반환 ok: true=성공, false=노드 풀이 가득 참
 
 `
   'arr.link-push-front': `
 [n]t.link-push-front: 연결 리스트 머리에 원소를 삽입한다
-l link: 연결 리스트 상태
-val t: 삽입할 값
-반환 ok bool: true=성공, false=노드 풀이 가득 참
+l: 연결 리스트 상태
+val: 삽입할 값
+반환 ok: true=성공, false=노드 풀이 가득 참
 
 `
   'arr.link-remove-at': `
 [n]t.link-remove-at: 위치의 원소를 제거한다
-l link: 연결 리스트 상태
-pos i64: 제거할 위치
-반환 val ?t: ok=제거된 값, nil=위치가 범위를 벗어남
+l: 연결 리스트 상태
+pos: 제거할 위치
+반환 val: ok=제거된 값, nil=위치가 범위를 벗어남
 
 `
   'arr.link-reverse': `
 [n]t.link-reverse: 연결 리스트를 뒤집는다
 모든 노드의 next/prev 를 바꾼 뒤 head/tail 을 바꾼다
-l link: 연결 리스트 상태
+l: 연결 리스트 상태
 
 `
   'arr.link-set-at': `
 [n]t.link-set-at: 위치의 원소를 설정한다
-l link: 연결 리스트 상태
-pos i64: 위치
-val t: 새 값
-반환 ok bool: true=성공, false=위치가 범위를 벗어남
+l: 연결 리스트 상태
+pos: 위치
+val: 새 값
+반환 ok: true=성공, false=위치가 범위를 벗어남
 
 `
   'arr.max': '[n]t.max: 배열의 최댓값'
@@ -533,38 +533,38 @@ val t: 새 값
   'arr.queue-init': `
 [n]t.queue-init: 큐 상태를 초기화한다
 cap 은 배열 크기 n 으로 자동 설정된다
-반환 q queue: 초기화된 큐 상태
+반환 q: 초기화된 큐 상태
 
 `
   'arr.queue-peek': `
 [n]t.queue-peek: 맨 앞 원소를 꺼내지 않고 본다
-q queue: 큐 상태
-반환 val ?t: ok=맨 앞 값, nil=큐가 비어 있음
+q: 큐 상태
+반환 val: ok=맨 앞 값, nil=큐가 비어 있음
 
 `
   'arr.queue-pop': `
 [n]t.queue-pop: 큐 맨 앞 원소를 꺼낸다
-q queue: 큐 상태
-반환 val ?t: ok=꺼낸 값, nil=큐가 비어 있음
+q: 큐 상태
+반환 val: ok=꺼낸 값, nil=큐가 비어 있음
 
 `
   'arr.queue-push': `
 [n]t.queue-push: 큐 꼬리에 원소를 넣는다
-q queue: 큐 상태
-val t: 넣을 값
-반환 ok bool: true=성공, false=큐가 가득 참
+q: 큐 상태
+val: 넣을 값
+반환 ok: true=성공, false=큐가 가득 참
 
 `
   'arr.reverse': '[n]t.reverse: 배열을 뒤집는다'
   'arr.sum': '[n]t.sum: 배열 원소의 합'
   'arr.swap': `
 [n]t.swap: 두 위치의 원소를 교환한다
-i i64, j i64: 위치
+i i64, j: 위치
 
 `
   'arr.to-str': `
 [n]t.to-str: 문자열 형태
-반환 out str: '[1, 2, 3]' 처럼 서식화된다
+반환 out: '[1, 2, 3]' 처럼 서식화된다
 각 원소는 저마다의 .to-str() 을 호출해 문자열화된다(구체 타입은 number.no 참고)
 
 `
@@ -581,47 +581,47 @@ task: 포인터
 ⚠️ 지원 중단: 직접 구현한 cancelled 는 지원 중단이니 코루틴 그룹(문장 위치의 중괄호 블록 { ... })을 사용한다.
 cancelled: 현재 실행 중인 비동기 작업이 취소되었는지 판단한다
 bool 을 반환한다. 비동기 작업 안(-async 함수가 이벤트 루프에 의해 스케줄됨)에서만 의미가 있다.
-cancelled bool: true=현재 작업에 취소가 요청됨, 자원을 즉시 풀고 반환해야 함; false=미취소
+cancelled: true=현재 작업에 취소가 요청됨, 자원을 즉시 풀고 반환해야 함; false=미취소
 `
   'base32.decode': `
 Base32 디코딩(끝의 '=' 패딩 수에 따라 결과를 잘라냅니다; 문자 세트 밖의 문자는 무조건 0으로 처리하고 오류를 내지 않음)
 주의: 길이가 8의 배수가 아닌 잔여 문자는 무시됩니다.
-in str: Base32 인코딩 문자열(일반적으로 ASCII)
-out []byte: 디코딩한 원시 바이트, 길이는 패딩이 차지한 바이트를 뺀 값
+in: Base32 인코딩 문자열(일반적으로 ASCII)
+out: 디코딩한 원시 바이트, 길이는 패딩이 차지한 바이트를 뺀 값
 `
   'base32.encode': `
 Base32 인코딩(RFC 4648 표준 문자 세트, 5비트씩 한 조, 끝을 '='로 8의 배수까지 채움)
-data []byte: 인코딩할 입력 바이트
-out str: 인코딩한 문자열, 길이는 8의 배수(빈 입력은 빈 문자열)
+data: 인코딩할 입력 바이트
+out: 인코딩한 문자열, 길이는 8의 배수(빈 입력은 빈 문자열)
 `
   'base64.b64-val': `
 단일 Base64 문자를 그 값으로 변환한다
 채움 문자 '='은 0 반환, 알파벳 밖 문자는 -1 반환
-c i64: 테이블 조회할 문자 코드포인트
-table str: 64문자 알파벳; 선형 탐색으로 대응 첨자를 찾음
-v i64: 0..63은 알파벳 첨자, -1은 잘못된 문자
+c: 테이블 조회할 문자 코드포인트
+table: 64문자 알파벳; 선형 탐색으로 대응 첨자를 찾음
+v: 0..63은 알파벳 첨자, -1은 잘못된 문자
 `
   'base64.decode': `
 주어진 알파벳으로 Base64 를 디코드한다
-s str: Base64 문자열(4의 배수여야 함; 한 조에 못 미치는 꼬리 문자는 무시됨)
-table str: 인코딩 때와 같은 64문자 알파벳
-out ?[]byte: ok=디코딩 후 데이터('=' 채운 수만큼 잘라냄), err=입력에 알파벳 밖 문자 포함
+s: Base64 문자열(4의 배수여야 함; 한 조에 못 미치는 꼬리 문자는 무시됨)
+table: 인코딩 때와 같은 64문자 알파벳
+out: ok=디코딩 후 데이터('=' 채운 수만큼 잘라냄), err=입력에 알파벳 밖 문자 포함
 `
   'base64.encode': `
 주어진 알파벳으로 Base64 를 인코드한다
-data []byte: 인코딩할 입력 바이트
-table str: 64문자 알파벳(표준은 A-Za-z0-9+/); URL 안전 알파벳은 +/ 대신 -_ 사용
-out str: 인코딩 후 문자열, 길이는 4의 배수, 모자람은 '='로 채움
+data: 인코딩할 입력 바이트
+table: 64문자 알파벳(표준은 A-Za-z0-9+/); URL 안전 알파벳은 +/ 대신 -_ 사용
+out: 인코딩 후 문자열, 길이는 4의 배수, 모자람은 '='로 채움
 `
   'base64.encode-std': `
 표준 알파벳(A-Za-z0-9+/)으로 인코딩
-data []byte: 인코딩할 입력 바이트
-out str: 표준 Base64 문자열('=' 채움)
+data: 인코딩할 입력 바이트
+out: 표준 Base64 문자열('=' 채움)
 `
   'base64.encode-url': `
 URL 안전 알파벳(A-Za-z0-9-_)으로 인코딩
-data []byte: 인코딩할 입력 바이트
-out str: URL 안전 Base64 문자열('=' 채움 유지)
+data: 인코딩할 입력 바이트
+out: URL 안전 Base64 문자열('=' 채움 유지)
 `
   'bigint._add': 'a + b（연산자 오버로드; ?bigint로 표기, 컴파일러는 bigint로 취급）\n경로 C: 연합 가인수 `(b big)` + 타입 분해 match. bigint 갈래는 `add-bigint`에 위임, i64 갈래는\n`_add-i64`에 위임. 핵심은 타입 갈래 안에 inline하지 않음: 실측 결과 match 갈래의 BlockStatement 안에서 이름 붙은 출력에\n가인수 `c`에서 먼저 `c = expr`한 뒤 `c.sign = ...` 필드 변경은 되쓰기되지 않음(부호 소실, 예 -100+7\n잘못되어 93을 얻음), 평범한 메서드에 위임 후 `c.sign` 변경 의미가 정상 회복(_mul이 mul-bigint에 위임한 것과 같은 이치).\nb: 우측 피연산자（bigint 또는 i64, 실제 타입으로 분기를 정적 선택）\nc: self + b의 합（?bigint는 연산자 오버로드 서명에 필요, 덧셈은 항상 ok）'
   'bigint._add-i64': `
@@ -782,7 +782,7 @@ c: self - b의 차（_sub의 bigint 분기 위임용）
 `
   'bigint.to-hex': `
 bigint 를 소문자 16 진 문자열로 서식화한다
-반환 out str: 16진 문자열(소문자, 0x 접두 없음, 음수는 '-'로 시작)
+반환 out: 16진 문자열(소문자, 0x 접두 없음, 음수는 '-'로 시작)
 `
   'bigint.to-i64': `
 왜 필요한가: `_mod-i64` / `_div-i64` 같은 소정수 빠른 경로는 본 모듈의 사유(참조
@@ -792,7 +792,7 @@ v: ok=값 범위 안의 i64, err=i64 범위 초과(고 비트를 몰래 잘라�
 `
   'bigint.to-str': `
 bigint 를 10 진 문자열로 서식화한다
-반환 out str: 10진 문자열(음수는 '-' 시작, 0은 "0")
+반환 out: 10진 문자열(음수는 '-' 시작, 0은 "0")
 `
   'bigint.zero': `
 0 인 bigint 를 만든다
@@ -801,17 +801,17 @@ out: 값이 0인 bigint(sign=1, limbs=[0])
   'blake2.b': `
 BLAKE2b 해시 계산(64바이트 출력)
 data: 해시할 입력 바이트
-반환값 hash [64]byte: BLAKE2b-512의 64바이트 해시 값
+반환값 hash: BLAKE2b-512의 64바이트 해시 값
 `
   'blake2.b-256': `
 BLAKE2b 해시 계산(32바이트 출력)
 data: 해시할 입력 바이트
-반환값 hash [32]byte: BLAKE2b를 32바이트로 절단한 해시 값
+반환값 hash: BLAKE2b를 32바이트로 절단한 해시 값
 `
   'blake2.b-256-hex': `
 BLAKE2b-256을 계산해 hex 문자열 반환
 data: 해시할 입력 바이트
-반환값 hex str: BLAKE2b-256 해시 값의 64문자 16진수 문자열
+반환값 hex: BLAKE2b-256 해시 값의 64문자 16진수 문자열
 `
   'blake2.b-compress': `
 압축 함수
@@ -833,7 +833,7 @@ y: 두 번째 메시지 워드(a의 두 번째 라운드 가셈에 병합)
   'blake2.b-hex': `
 BLAKE2b를 계산해 hex 문자열 반환
 data: 해시할 입력 바이트
-반환값 hex str: BLAKE2b-512 해시 값의 128문자 16진수 문자열
+반환값 hex: BLAKE2b-512 해시 값의 128문자 16진수 문자열
 `
   'blake2.b-state': `
 내력: 초기 컴파일러는 '배열 슬라이스 + option 형태 인덱스 쓰기 `h[i]: { ok -> it = ... }`'에 대해
@@ -857,7 +857,7 @@ r: 순환 우측 이동 후 결과(64비트 마스크 적용 완료)
   'blake2.s': `
 BLAKE2s 해시 계산(32바이트 출력)
 data: 해시할 입력 바이트
-반환값 hash [32]byte: BLAKE2s의 32바이트 해시 값
+반환값 hash: BLAKE2s의 32바이트 해시 값
 `
   'blake2.s-compress': `
 BLAKE2s 압축 함수
@@ -879,7 +879,7 @@ y: 두 번째 메시지 워드(u32)
   'blake2.s-hex': `
 BLAKE2s를 계산해 hex 문자열 반환
 data: 해시할 입력 바이트
-반환값 hex str: BLAKE2s 해시 값의 64문자 16진수 문자열
+반환값 hex: BLAKE2s 해시 값의 64문자 16진수 문자열
 `
   'blake2.s-state': `
 위와 동일, BLAKE2s 버전(BLAKE2s는 32비트 워드이므로 []u64가 아닌 []u32)
@@ -887,7 +887,7 @@ h: 새로 복사한 BLAKE2s 초기 상태(8개 u32)
 `
   'bool.to-str': `
 bool 을 문자열 "true" 또는 "false" 로 변환한다
-out str: true → 'true', false → 'false'(길이 4 또는 5)
+out: true → 'true', false → 'false'(길이 4 또는 5)
 `
   'bufio.reader.close': `
 리더 닫기(fd만 닫고 buf 해방하지 않음; buf는 호출 쪽 영역이 관리)
@@ -896,22 +896,22 @@ out str: true → 'true', false → 'false'(길이 4 또는 5)
   'bufio.reader.fill': `
 버퍼를 다시 채운다
 미소비 데이터 있음(avail > 0)은 그대로 재사용; 아니면 fd에서 1회 읽고 pos/avail을 재설정.
-ok bool: true=버퍼에 읽을 새 데이터 있음; false=EOF, 읽기 오류, 또는 fd 위치 무효
+ok: true=버퍼에 읽을 새 데이터 있음; false=EOF, 읽기 오류, 또는 fd 위치 무효
 `
   'bufio.reader.init': `
 버퍼 리더를 만든다
-fd fd: 열려서 읽을 수 있는 파일 디스크립터
-buf []byte: 전용 버퍼; 길이는 0이어도 됨, fill()은 buf.cap으로 읽음
-r reader: 초기화된 리더(pos=0, avail=0, 선행 읽기 없음)
+fd: 열려서 읽을 수 있는 파일 디스크립터
+buf: 전용 버퍼; 길이는 0이어도 됨, fill()은 buf.cap으로 읽음
+r: 초기화된 리더(pos=0, avail=0, 선행 읽기 없음)
 `
   'bufio.reader.read-byte': `
 1 바이트를 읽는다
-b ?byte: ok=다음 바이트, nil=EOF 또는 읽기 실패
+b: ok=다음 바이트, nil=EOF 또는 읽기 실패
 `
   'bufio.reader.read-line': `
 한 행 읽기('\n'에서 멈춤, 줄바꿈 문자는 결과에 미포함)
 행끝에 줄바꿈이 없으면 나머지 내용을 반환; file이 비어 있고 이번에 아무것도 못 읽었으면 nil 반환.
-line ?str: ok=해당 줄 텍스트('\n' 미포함), nil=EOF이면서 잔여 내용 없음
+line: ok=해당 줄 텍스트('\n' 미포함), nil=EOF이면서 잔여 내용 없음
 `
   'bytes.index': `
 []byte.index: []byte 에서 부분 문자열 target 을 찾는다
@@ -958,34 +958,34 @@ b.to-bytes-str()（아래 참조）, 또는 기초 슬라이스를 직접 사용
 `
   'bytes.to-txt': `
 []byte.to-txt: []byte를 txt로 변환（255바이트로 잘라냄）
-반환 out txt: 고정 256바이트 txt 구조
+반환 out: 고정 256바이트 txt 구조
 `
   'bzip2.bz-bit-reader.read-bit': `
 1비트 읽기(MSB-first), 범위 초과 시 0 반환
-bit i64: 읽은 비트(0 또는 1); 바이트 소진 후에는 고정으로 0을 반환하고 오류를 내지 않음
+bit: 읽은 비트(0 또는 1); 바이트 소진 후에는 고정으로 0을 반환하고 오류를 내지 않음
 `
   'bzip2.bz-bit-reader.read-bits': `
 n비트 읽기(MSB-first)
-n i64: 연속 읽을 비트 수
-v i64: 조립한 정수; 먼저 읽은 비트를 상위에 배치
+n: 연속 읽을 비트 수
+v: 조립한 정수; 먼저 읽은 비트를 상위에 배치
 `
   'bzip2.bz-huffman.build': `
 코드 길이 배열에서 Huffman 코드 테이블 구성
 먼저 각 코드 길이의 개수를 집계하고, 누적해 limit / base를 구한 뒤, 마지막으로 perm을 채웁니다.
-lengths []i64: 각 심볼의 코드 길이(0은 해당 심볼을 사용하지 않음을 의미)
-alpha-size i64: 알파벳 크기(유효 심볼 수 상한, ≤ 258)
+lengths: 각 심볼의 코드 길이(0은 해당 심볼을 사용하지 않음을 의미)
+alpha-size: 알파벳 크기(유효 심볼 수 상한, ≤ 258)
 `
   'bzip2.bz-huffman.decode': `
 1심볼 디코딩
 먼저 min-len비트를 읽고, 비트별로 확장해 limit 범위에 들어갈 때까지 진행; 범위 초과 또는 코드가 너무 길면 -1 반환.
-br bz-bit-reader: 비트 출처(매 라운드 1비트를 더 읽을 수 있음)
-sym i64: 디코딩한 심볼 값, -1=부적법 코드 또는 빈 테이블
+br: 비트 출처(매 라운드 1비트를 더 읽을 수 있음)
+sym: 디코딩한 심볼 값, -1=부적법 코드 또는 빈 테이블
 `
   'bzip2.bz-huffman.decode-symbol': `
 1심볼 디코딩(수정판: perm[zvec - base[zn]]로 직접 심볼을 취함)
 decode와의 차이는 마지막 단계의 인덱스 연산뿐, 나머지 디코딩 흐름은 동일; bzip2 메인 흐름은 이 버전을 사용합니다.
-br bz-bit-reader: 비트 출처(매 라운드 1비트를 더 읽을 수 있음)
-sym i64: 디코딩한 심볼 값, -1=부적법 코드 또는 빈 테이블
+br: 비트 출처(매 라운드 1비트를 더 읽을 수 있음)
+sym: 디코딩한 심볼 값, -1=부적법 코드 또는 빈 테이블
 `
   'bzip2.compress': `
 bzip2 형식으로 데이터 압축
@@ -1001,46 +1001,46 @@ out: 해제 후 데이터 ([]byte)
 `
   'chacha20-poly1305.chacha20-block': `
 64바이트 키 스트림 블록 생성
-key [32]byte: 256-bit 키
-counter u32: 블록 카운터
-nonce [12]byte: 96-bit nonce
-반환값 out [64]byte: 키 스트림
+key: 256-bit 키
+counter: 블록 카운터
+nonce: 96-bit nonce
+반환값 out: 키 스트림
 `
   'chacha20-poly1305.chacha20-poly1305-open': `
 ChaCha20-Poly1305 복호화
-key [32]byte: 키
-nonce [12]byte: nonce
-aad []byte: 추가 인증 데이터
-sealed []byte: 암호문 + 16바이트 태그
-반환값 plain []byte: 평문(인증 실패 시 길이 0)
+key: 키
+nonce: nonce
+aad: 추가 인증 데이터
+sealed: 암호문 + 16바이트 태그
+반환값 plain: 평문(인증 실패 시 길이 0)
 `
   'chacha20-poly1305.chacha20-poly1305-seal': `
 ChaCha20-Poly1305 암호화
-key [32]byte: 키
-nonce [12]byte: nonce
-aad []byte: 추가 인증 데이터
-plain []byte: 평문
-반환값 sealed []byte: 암호문 + 16바이트 태그
+key: 키
+nonce: nonce
+aad: 추가 인증 데이터
+plain: 평문
+반환값 sealed: 암호문 + 16바이트 태그
 `
   'chacha20-poly1305.chacha20-xor': `
 ChaCha20 스트림 암호화/복호화
-key [32]byte: 키
-counter u32: 초기 카운터
-nonce [12]byte: nonce
-data []byte: 입력 데이터
-반환값 out []byte: XOR 후 데이터
+key: 키
+counter: 초기 카운터
+nonce: nonce
+data: 입력 데이터
+반환값 out: XOR 후 데이터
 `
   'chacha20-poly1305.poly1305': `
 Poly1305 MAC 계산
-key [32]byte: 원타임 키(앞 16바이트는 r, 뒤 16바이트는 s)
-data []byte: 입력 데이터
-반환값 tag [16]byte: 16바이트 인증 태그
+key: 원타임 키(앞 16바이트는 r, 뒤 16바이트는 s)
+data: 입력 데이터
+반환값 tag: 16바이트 인증 태그
 `
   'chacha20-poly1305.poly1305-key-gen': `
 Poly1305 원타임 키 생성
-key [32]byte: ChaCha20 키
-nonce [12]byte: nonce
-반환값 otk [32]byte: 원타임 Poly1305 키
+key: ChaCha20 키
+nonce: nonce
+반환값 otk: 원타임 Poly1305 키
 `
   'chacha20-poly1305.poly1305-reduce': `
 x를 [0, 2^130-5)로 모듈로 감소
@@ -1128,7 +1128,7 @@ result: 소문자를 대문자로 바꾼 문자(a-z 아니면 그대로 반환)
 `
   'client.client-create': `
 클라이언트를 생성하고 접속
-반환값 c ?client: ok=클라이언트, nil=실패
+반환값 c: ok=클라이언트, nil=실패
 host: 대상 서버 주소
 port: 대상 서버 포트 번호
 `
@@ -1158,12 +1158,12 @@ n: 최대 수신 바이트 수
 `
   'client.client.recv-line': `
 한 줄 데이터 수신(최대 NET-BUF-SIZE 바이트)
-반환값 line ?str: ok=수신 내용, nil=실패 또는 접속 닫힘
+반환값 line: ok=수신 내용, nil=실패 또는 접속 닫힘
 `
   'client.client.request': `
 요청-응답 모드
 데이터를 보낸 뒤 접속이 닫힐 때까지 모든 응답을 수신
-반환값 response ?str: ok=응답 내용, nil=실패
+반환값 response: ok=응답 내용, nil=실패
 data: 보낼 요청 내용
 `
   'client.client.send': `
@@ -1181,12 +1181,12 @@ Cookie 요청 헤더 구성
 names: Cookie 이름 배열(고정 길이 [16]str, 앞 count항 사용)
 values: 대응하는 Cookie 값 배열(고정 길이 [16]str)
 count: 출력할 Cookie 쌍 수
-반환값 out str: 연결한 Cookie 요청 헤더 값(예 name1=val1; name2=val2)
+반환값 out: 연결한 Cookie 요청 헤더 값(예 name1=val1; name2=val2)
 `
   'cookie.build-set': `
 Set-Cookie 헤더 값 구성
 c: 직렬화할 cookie 구조체
-반환값 out str: 조립한 Set-Cookie 헤더 값 문자열
+반환값 out: 조립한 Set-Cookie 헤더 값 문자열
 `
   'cookie.cookie-sign': `
 Cookie 값에 HMAC-SHA256 서명
@@ -1195,26 +1195,26 @@ Cookie 값에 HMAC-SHA256 서명
 name: Cookie 이름(value와 함께 name=value로 HMAC 연산에 참여)
 value: 서명할 원본 Cookie 값
 key: HMAC-SHA256 서명 키
-반환값 signed str: 서명한 값(형식: value.hex-hmac)
+반환값 signed: 서명한 값(형식: value.hex-hmac)
 `
   'cookie.cookie-verify': `
 서명된 Cookie 검증
 name: Cookie 이름(서명 때와 일치해야 함, 다르면 재계산 서명이 불일치)
 signed-value: 검증할 서명 값(형식: value.hex-hmac)
 key: HMAC-SHA256 서명 키
-반환값 ok bool: true=서명 비교 통과(정수 시간 비교)
-반환값 value str: 서명을 벗긴 원본 Cookie 값(검증 실패 시 비어 있음)
+반환값 ok: true=서명 비교 통과(정수 시간 비교)
+반환값 value: 서명을 벗긴 원본 Cookie 값(검증 실패 시 비어 있음)
 `
   'cookie.jar.build-header': `
 조건에 맞는 Cookie 요청 헤더 구성
 domain: 요청 대상 도메인(해당 도메인에 매칭되는 Cookie로 필터링)
 path: 요청 대상 경로(해당 경로 접두사에 매칭되는 Cookie로 필터링)
-반환값 out str: 도메인/경로 조건에 맞는 모든 Cookie를 연결한 헤더 문자열
+반환값 out: 도메인/경로 조건에 맞는 모든 Cookie를 연결한 헤더 문자열
 `
   'cookie.jar.clear': 'Cookie Jar를 비움'
   'cookie.jar.count-of': `
 Cookie 수 획득
-반환값 n i64: jar에 현재 저장된 Cookie 수
+반환값 n: jar에 현재 저장된 Cookie 수
 `
   'cookie.jar.delete': `
 Cookie 삭제
@@ -1227,7 +1227,7 @@ Cookie 값 획득
 name: 조회할 Cookie 이름
 domain: 요청 대상 도메인(정확, 서브도메인 또는 빈 도메인으로 매칭)
 path: 요청 대상 경로(접두사 매칭, '/'는 전부 매칭)
-반환값 val ?str: ok=조건에 맞는 Cookie 값, nil=찾지 못함
+반환값 val: ok=조건에 맞는 Cookie 값, nil=찾지 못함
 `
   'cookie.jar.get-verified': `
 서명 Cookie를 획득하고 검증
@@ -1235,7 +1235,7 @@ name: 조회할 Cookie 이름
 domain: 요청 대상 도메인
 path: 요청 대상 경로
 key: 검증에 사용할 서명 키
-반환값 val ?str: ok=서명을 벗기고 검증 통과한 원본 값, nil=찾지 못하거나 검증 실패
+반환값 val: ok=서명을 벗기고 검증 통과한 원본 값, nil=찾지 못하거나 검증 실패
 `
   'cookie.jar.parse-response': `
 HTTP 응답의 Set-Cookie 헤더에서 Cookie를 해석해 저장
@@ -1246,81 +1246,81 @@ path: 응답 출처 경로(저장 Cookie의 소속 경로로 사용)
   'cookie.jar.set': `
 Cookie 설정
 같은 이름(name + domain + path 모두 동일)의 Cookie는 제자리에서 덮어쓰고 슬롯을 추가하지 않습니다.
-name str: Cookie 이름
-value str: Cookie 값(미서명 원문)
-domain str: 소속 도메인, 요청 대상 매칭에 사용
-path str: 소속 경로 접두사
-max-age i64: 최대 생존 초수(-1=미설정, 세션 수준에서 수명 결정)
+name: Cookie 이름
+value: Cookie 값(미서명 원문)
+domain: 소속 도메인, 요청 대상 매칭에 사용
+path: 소속 경로 접두사
+max-age: 최대 생존 초수(-1=미설정, 세션 수준에서 수명 결정)
 `
   'cookie.jar.set-signed': `
 서명 Cookie 설정
 저장되는 것은 cookie-sign(name, value, key)의 결과이며, 읽을 때 같은 key로 서명을 검증해야 합니다.
-name str: Cookie 이름(동시에 HMAC 계산에 참여)
-value str: 서명 전 Cookie 값(자동 서명한 뒤 jar에 저장)
-domain str: 소속 도메인
-path str: 소속 경로 접두사
-max-age i64: 최대 생존 초수(-1=미설정)
-key []byte: HMAC-SHA256 서명 키
+name: Cookie 이름(동시에 HMAC 계산에 참여)
+value: 서명 전 Cookie 값(자동 서명한 뒤 jar에 저장)
+domain: 소속 도메인
+path: 소속 경로 접두사
+max-age: 최대 생존 초수(-1=미설정)
+key: HMAC-SHA256 서명 키
 `
   'cookie.parse-header': `
 Cookie 요청 헤더 해석
 cookie-header: 요청 측의 Cookie 헤더 값(예 name1=val1; name2=val2)
 names: 출력 배열, 각 Cookie 이름을 채움(고정 길이 [16]str)
 values: 출력 배열, names와 일대일 대응하는 Cookie 값을 채움(고정 길이 [16]str)
-반환값 count i64: 실제로 해석된 Cookie 쌍 수(≤16)
+반환값 count: 실제로 해석된 Cookie 쌍 수(≤16)
 `
   'cookie.parse-set': `
 Set-Cookie 헤더 값 해석
 set-cookie-str: 단일 Set-Cookie 헤더 값(예 name=value; Path=/; HttpOnly)
-반환값 c cookie: 해석한 cookie 구조체(name/value/domain/path/max-age/secure 등 필드 포함)
+반환값 c: 해석한 cookie 구조체(name/value/domain/path/max-age/secure 등 필드 포함)
 `
   'crc-16.hex': `
 CRC-16을 계산해 4자리 소문자 hex 문자열 반환
-data []byte: 입력 바이트, 전부 계산에 참여
-hex str: 고정 4문자 16진수 표현(상위 비트 앞쪽, 0x 접두사 없음)
+data: 입력 바이트, 전부 계산에 참여
+hex: 고정 4문자 16진수 표현(상위 비트 앞쪽, 0x 접두사 없음)
 `
   'crc-16.new': `
 CRC-16-CCITT(다항식 0x1021, 초기값 0xFFFF) 체크섬 계산
-data []byte: 입력 바이트, 전부 계산에 참여
-crc i64: 16비트 체크섬(0..65535)
+data: 입력 바이트, 전부 계산에 참여
+crc: 16비트 체크섬(0..65535)
 `
   'crc-32.new': `
 CRC-32(IEEE 802.3, 반사 다항식 0xEDB88320) 체크섬 계산
-s []byte: 입력 바이트 버퍼
-n i64: 실제 계산에 참여하는 바이트 수(s 길이보다 작을 수 있음); s[0..n)만 스캔
-crc i64: 32비트 체크섬(최종 xorout 0xFFFFFFFF 적용 완료), 범위 0..4294967295
+s: 입력 바이트 버퍼
+n: 실제 계산에 참여하는 바이트 수(s 길이보다 작을 수 있음); s[0..n)만 스캔
+crc: 32비트 체크섬(최종 xorout 0xFFFFFFFF 적용 완료), 범위 0..4294967295
 `
   'crc-64.hex': `
 CRC-64를 계산해 16자리 소문자 hex 문자열 반환
-data []byte: 입력 바이트, 전부 계산에 참여
-hex str: 고정 16문자 16진수 표현(상위 비트 앞쪽, 0x 접두사 없음)
+data: 입력 바이트, 전부 계산에 참여
+hex: 고정 16문자 16진수 표현(상위 비트 앞쪽, 0x 접두사 없음)
 `
   'crc-64.new': `
 CRC-64/ECMA-182(반사 다항식 0xC96C5795D7870F42, 초기값 전부 1) 체크섬 계산
-data []byte: 입력 바이트, 전부 계산에 참여
-crc u64: 64비트 체크섬(최종 xorout 적용 완료)
+data: 입력 바이트, 전부 계산에 참여
+crc: 64비트 체크섬(최종 xorout 적용 완료)
 `
   'csv.encode-field': `
 한 필드를 CSV 로 인코드한다
 쉼표, 큰따옴표, 개행을 포함한 필드는 큰따옴표로 감싸고 이스케이프한다
-field str: 인코딩할 필드 원문
-반환 out str: CSV에 바로 쓸 수 있는 텍스트; 필요 시 큰따옴표로 감싸고 "를 ""로 변환함
+field: 인코딩할 필드 원문
+반환 out: CSV에 바로 쓸 수 있는 텍스트; 필요 시 큰따옴표로 감싸고 "를 ""로 변환함
 `
   'csv.parse-field': `
 한 CSV 필드를 파스한다
 s[pos]부터 파싱 시작, 큰따옴표와 쉼표 처리; 큰따옴표 안의 ""는 하나의 "로 복원,
 따옴표 밖의 쉼표 / 행끝이 필드 경계.
-s str: CSV 텍스트
-pos i64: 시작 위치(바이트 첨자), 보통 바로 앞 항목의 new-pos
-반환 field str: 해석된 필드 내용(바깥 인용부호 제거, 이스케이프 복원)
-반환 new-pos i64: 필드 종료 후 바이트 위치(구분 쉼표 스킵)
+s: CSV 텍스트
+pos: 시작 위치(바이트 첨자), 보통 바로 앞 항목의 new-pos
+반환 field: 해석된 필드 내용(바깥 인용부호 제거, 이스케이프 복원)
+반환 new-pos: 필드 종료 후 바이트 위치(구분 쉼표 스킵)
 `
   'csv.parse-line': `
 한 줄의 CSV 텍스트를 파스한다
 행끝 또는 칸 수 상한까지 parse-field를 반복 호출, 채우지 못한 용량은 truncate로 잘라냄
-s str: 파싱할 한 줄 텍스트(줄 끝 개행을 포함하지 않아야 함)
-max-fields i64: 파싱할 최대 필드 수(기본 1024); 상한 도달 후 잔여 내용은 버려짐
-반환 fields []str: 해석된 필드 목록, 길이 ≤ max-fields
+s: 파싱할 한 줄 텍스트(줄 끝 개행을 포함하지 않아야 함)
+max-fields: 파싱할 최대 필드 수(기본 1024); 상한 도달 후 잔여 내용은 버려짐
+반환 fields: 해석된 필드 목록, 길이 ≤ max-fields
 `
   'deque.deque.clear': `
 양방향 대기열 비움(tail을 head로 되돌림, buf는 해방하지 않고 head도 재설정 않음)
@@ -1328,142 +1328,142 @@ max-fields i64: 파싱할 최대 필드 수(기본 1024); 상한 도달 후 잔�
 `
   'deque.deque.empty': `
 덱이 비었는지 판단한다
-yes bool: true는 tail <= head(취할 원소가 없음)를 뜻함
+yes: true는 tail <= head(취할 원소가 없음)를 뜻함
 `
   'deque.deque.peek-back': `
 뒤쪽 원소를 꺼내지 않고 본다
-val ?i64: ok=현재 뒤편 원소, nil=대기열이 빔
+val: ok=현재 뒤편 원소, nil=대기열이 빔
 `
   'deque.deque.peek-front': `
 앞쪽 원소를 꺼내지 않고 본다
-val ?i64: ok=현재 앞단 원소, nil=대기열이 빔
+val: ok=현재 앞단 원소, nil=대기열이 빔
 `
   'deque.deque.pop-back': `
 뒤쪽에서 원소를 꺼낸다
-val ?i64: ok=본래 뒤편 원소(제거됨), nil=대기열이 빔
+val: ok=본래 뒤편 원소(제거됨), nil=대기열이 빔
 `
   'deque.deque.pop-front': `
 앞쪽에서 원소를 꺼낸다
-val ?i64: ok=본래 앞단 원소(제거됨), nil=대기열이 빔
+val: ok=본래 앞단 원소(제거됨), nil=대기열이 빔
 `
   'deque.deque.push-back': `
 뒤쪽에 원소를 넣는다
 대기열이 가득 참(원소 수 >= cap)이면 이번 push를 그대로 무시하고 오류도 보고하지 않음.
-val i64: 뒤편에 놓을 값
+val: 뒤편에 놓을 값
 `
   'deque.deque.push-front': `
 앞쪽에 원소를 넣는다
 대기열이 가득 참(원소 수 >= cap)이면 이번 push를 그대로 무시하고 오류도 보고하지 않음.
-val i64: 앞단에 놓을 값
+val: 앞단에 놓을 값
 `
   'deque.deque.size': `
 양방향 대기열 현재 원소 수 반환
-sz i64: tail - head(원소 존속 기간에 음수로 돌아가지 않음)
+sz: tail - head(원소 존속 기간에 음수로 돌아가지 않음)
 `
   'des.des-block': `
 DES 단일 블록 처리(범용)
 앞 8바이트를 읽기 → IP 치환 → 16라운드 Feistel → FP 치환 → 8바이트 결과 쓰기.
-in []byte: 입력 데이터, 앞 n바이트만 사용(통상 8)
-n i64: 처리할 바이트 수(일반적으로 8)
-ks [96]byte: des-key-schedule이 생성한 16조 서브키
-encrypt i64: 1=암호화(서브키 순서), 기타 값=복호화(서브키 역순)
-반환값 out []byte: 8바이트 결과 출력
+in: 입력 데이터, 앞 n바이트만 사용(통상 8)
+n: 처리할 바이트 수(일반적으로 8)
+ks: des-key-schedule이 생성한 16조 서브키
+encrypt: 1=암호화(서브키 순서), 기타 값=복호화(서브키 역순)
+반환값 out: 8바이트 결과 출력
 `
   'des.des-dec': `
 8바이트 블록 복호화
 des-enc와 동일하며, 다만 16조 서브키를 역순으로 사용(des-block(encrypt=0)).
-in []byte: 입력 암호문, 앞 8바이트만 사용
-n i64: 처리할 바이트 수(일반적으로 8)
-key [8]byte: 8바이트 DES 키, 암호화 때와 일치해야 합니다
-반환값 out []byte: 8바이트 평문
+in: 입력 암호문, 앞 8바이트만 사용
+n: 처리할 바이트 수(일반적으로 8)
+key: 8바이트 DES 키, 암호화 때와 일치해야 합니다
+반환값 out: 8바이트 평문
 `
   'des.des-enc': `
 8바이트 블록 암호화
 내부에서 먼저 키 스케줄을 전개한 뒤 des-block(encrypt=1)를 호출합니다.
-in []byte: 입력 평문, 앞 8바이트만 사용
-n i64: 처리할 바이트 수(일반적으로 8)
-key [8]byte: 8바이트 DES 키
-반환값 out []byte: 8바이트 암호문
+in: 입력 평문, 앞 8바이트만 사용
+n: 처리할 바이트 수(일반적으로 8)
+key: 8바이트 DES 키
+반환값 out: 8바이트 암호문
 `
   'des.des-key-schedule': `
 16개의 48비트 서브키 생성
 PC-1에 따라 64비트 키를 56비트로 압축하고 C/D 두 반으로 나눈 뒤, 각 라운드에 라운드 표에 따라 순환 좌측 이동하고,
 다시 PC-2로 48비트를 선택해 총 16조를 빅엔디안 순서로 ks에 씁니다(각 조 6바이트).
-key [8]byte: 8바이트 DES 키(패리티 비트 포함, 검증하지 않음)
-반환값 ks [96]byte: 16 × 6바이트 서브키 열(i번째 조는 ks[i*6 .. i*6+6))
+key: 8바이트 DES 키(패리티 비트 포함, 검증하지 않음)
+반환값 ks: 16 × 6바이트 서브키 열(i번째 조는 ks[i*6 .. i*6+6))
 `
   'des.f': `
 DES 라운드 함수 F(R, K)
 32비트 절반 R을 E로 48비트까지 확장한 뒤 48비트 서브키 K와 XOR하고 8개 S-box를 통과시키며,
 마지막에 P 치환으로 32비트 출력을 얻습니다.
-r i64: 오른쪽 절반(하위 32비트가 유효)
-k i64: 48비트 서브키(하위 48비트가 유효)
-반환값 out i64: F 함수 결과(하위 32비트가 유효)
+r: 오른쪽 절반(하위 32비트가 유효)
+k: 48비트 서브키(하위 48비트가 유효)
+반환값 out: F 함수 결과(하위 32비트가 유효)
 `
   'des.permute': `
 치환 표에 따라 비트를 추출하고 재정렬
 tbl은 표준 DES 1-인덱스 MSB 비트 번호(1..width)를 사용합니다; 출력은 MSB-first(표의 0번째 항 → 최상위 비트).
-input i64: 치환할 입력 값(하위 width비트만 사용)
-tbl []byte: 치환 표, 각 요소는 1-인덱스인 출처 비트 위치
-n i64: 치환에 참여하는 비트 수(tbl의 유효 길이와 같음)
-width i64: 입력 비트 폭(비트 위치 기준 결정, 예 64 / 56 / 48 / 32)
-r i64: 치환 결과, 0번째 표 항목이 최상위 비트를 차지
+input: 치환할 입력 값(하위 width비트만 사용)
+tbl: 치환 표, 각 요소는 1-인덱스인 출처 비트 위치
+n: 치환에 참여하는 비트 수(tbl의 유효 길이와 같음)
+width: 입력 비트 폭(비트 위치 기준 결정, 예 64 / 56 / 48 / 32)
+r: 치환 결과, 0번째 표 항목이 최상위 비트를 차지
 `
   'des.sbox-lookup': `
 S-box 조회
 input은 6비트 값(MSB-first), b1 b2 b3 b4 b5 b6; row = b1*2 + b6, col = b2b3b4b5.
-input i64: 6비트 S-box 입력(하위 6비트만 사용)
-box []byte: 64항 S-box 표(4행 × 16열 평면 저장)
-r i64: 표 조회로 얻은 4비트 출력
+input: 6비트 S-box 입력(하위 6비트만 사용)
+box: 64항 S-box 표(4행 × 16열 평면 저장)
+r: 표 조회로 얻은 4비트 출력
 `
   'dns.build-query': `
 DNS 질의 패킷 구성
-domain str: 질의할 도메인('.'로 구분, 마디별로 길이+레벨 형식으로 기록)
-qtype i64: 질의 유형(DNS-TYPE-A=1은 IPv4 주소)
-반환값 query []byte: 질의 패킷(12바이트 헤더 + 질문 영역), 끝의 여유 공간은 잘라내지 않음
-반환값 qlen i64: 패킷의 실제 유효 길이(앞 qlen바이트만 보내야 함)
+domain: 질의할 도메인('.'로 구분, 마디별로 길이+레벨 형식으로 기록)
+qtype: 질의 유형(DNS-TYPE-A=1은 IPv4 주소)
+반환값 query: 질의 패킷(12바이트 헤더 + 질문 영역), 끝의 여유 공간은 잘라내지 않음
+반환값 qlen: 패킷의 실제 유효 길이(앞 qlen바이트만 보내야 함)
 `
   'dns.dial': `
 도메인을 해석하고 TCP 접속 수립
 먼저 net-dial에 위임(내부에 이미 hostname 해석 지원); 실패하면 DNS로 IP를 얻어 한 번 재시도합니다.
-domain str: 도메인(또는 직접 IP 기록)
-port i64: 대상 포트 번호
-반환값 fd fd: 접속된 소켓 디스크립터, -1=두 방법 모두 실패
+domain: 도메인(또는 직접 IP 기록)
+port: 대상 포트 번호
+반환값 fd: 접속된 소켓 디스크립터, -1=두 방법 모두 실패
 `
   'dns.parse-name': `
 응답 패킷에서 도메인을 해석(압축 포인터 지원)
 마디별로 길이+레벨을 읽고, 길이 0에서 종료; 상위가 11인 압축 포인터를 만나면 읽기 위치를 포인터 대상으로 점프하며,
 연속 점프가 가능합니다. CLASS 등 필드는 검증에 참여하지 않습니다. 부적법 패킷(범위 초과 또는 부적법 레벨 길이)은 next-pos=-1 반환.
-data []byte: DNS 패킷
-offset i64: 도메인 시작 위치(바이트 인덱스)
-반환값 name str: 해석한 도메인, 각 레벨을 '.'로 연결
-반환값 next-pos i64: 이 도메인을 건너뛴 후 위치(압축 포인터가 있으면 포인터 이후 위치)
+data: DNS 패킷
+offset: 도메인 시작 위치(바이트 인덱스)
+반환값 name: 해석한 도메인, 각 레벨을 '.'로 연결
+반환값 next-pos: 이 도메인을 건너뛴 후 위치(압축 포인터가 있으면 포인터 이후 위치)
 `
   'dns.parse-response': `
 DNS 응답 패킷을 해석해 첫 A 레코드의 IP 반환
 먼저 RCODE를 확인(0이 아니면 즉시 포기), ANCCOUNT=0이면 즉시 포기, 질문 영역을 건너뛴 후 답변 레코드를 하나씩 읽습니다;
 TYPE=A이고 RDLENGTH=4인 레코드만 허용(CLASS는 검사하지 않음).
-data []byte: DNS 응답 패킷(최소 12바이트 헤더)
-반환값 ip ?str: ok=첫 A 레코드의 점수표기 10진수 IP, nil=A 레코드가 없거나 패킷이 부적법
+data: DNS 응답 패킷(최소 12바이트 헤더)
+반환값 ip: ok=첫 A 레코드의 점수표기 10진수 IP, nil=A 레코드가 없거나 패킷이 부적법
 `
   'dns.resolve': `
 기본 DNS 서버로 도메인을 해석
 먼저 DNS-DEFAULT-SERVER를 조회하고, 실패 후 DNS-BACKUP-SERVER를 시도합니다.
-domain str: 해석할 도메인
-반환값 ip ?str: ok=해석된 IPv4 주소, nil=두 서버 모두 실패
+domain: 해석할 도메인
+반환값 ip: ok=해석된 IPv4 주소, nil=두 서버 모두 실패
 `
   'dns.resolve-all': `
 도메인을 해석해 첫 A 레코드 반환
 resolve와의 차이: 보조 서버를 시도하지 않고 곧바로 DNS-DEFAULT-SERVER에 한 번 질의(resolve의 첫 라운드와 동일 동작).
-domain str: 해석할 도메인
-반환값 ip ?str: ok=해석된 IPv4 주소, nil=해석 실패
+domain: 해석할 도메인
+반환값 ip: ok=해석된 IPv4 주소, nil=해석 실패
 `
   'dns.resolve-from': `
 지정 DNS 서버로 도메인을 해석
 UDP를 사용하며, 단일 질의는 최대 DNS-TIMEOUT 밀리초만 기다리고 재시도하지 않습니다.
-server str: DNS 서버 IPv4 주소(예 '8.8.8.8', 포트 미포함)
-domain str: 해석할 도메인
-반환값 ip ?str: ok=해석된 IPv4 주소, nil=패킷 구성 실패, socket/전송 실패, 시간 초과 또는 A 레코드 없음
+server: DNS 서버 IPv4 주소(예 '8.8.8.8', 포트 미포함)
+domain: 해석할 도메인
+반환값 ip: ok=해석된 IPv4 주소, nil=패킷 구성 실패, socket/전송 실패, 시간 초과 또는 A 레코드 없음
 `
   'dom.append-child': `
 parent 의 자식 목록 끝에 자식 노드를 추가한다(또는 이동한다)
@@ -2025,8 +2025,8 @@ out: (a - b) mod m 결과(음수이면 m을 다시 더함, 32바이트)
 `
   'ecdsa.ec-bytes-to-point': `
 비압축 인코딩을 Jacobian 좌표로 변환
-in [65]byte: 04 || x || y(빅엔디안)
-반환값 out []byte: 96바이트
+in: 04 || x || y(빅엔디안)
+반환값 out: 96바이트
 `
   'ecdsa.ec-get-basepoint': `
 기준점 G의 Jacobian 좌표 획득
@@ -2034,49 +2034,49 @@ g: 기준점 G의 Jacobian 좌표(96바이트: X‖Y‖Z, 각각 32바이트 리
 `
   'ecdsa.ec-point-add': `
 점 덧셈 R = P + Q(P는 Jacobian, Q는 Jacobian)
-반환값 r []byte: 96바이트
+반환값 r: 96바이트
 p: 더하는 점(Jacobian 좌표, 96바이트 X‖Y‖Z 리틀엔디안)
 q: 더해지는 점(Jacobian 좌표, 96바이트)
 `
   'ecdsa.ec-point-double': `
 점 배승 R = 2*P(Jacobian 좌표)
-p []byte: 입력 점 (X, Y, Z), 각각 32바이트
-반환값 r []byte: 출력 점 (X, Y, Z), 96바이트
+p: 입력 점 (X, Y, Z), 각각 32바이트
+반환값 r: 출력 점 (X, Y, Z), 96바이트
 `
   'ecdsa.ec-point-to-bytes': `
 Jacobian 좌표를 비압축 인코딩으로 변환
-p []byte: Jacobian 점(96바이트)
-반환값 out [65]byte: 04 || x || y
+p: Jacobian 점(96바이트)
+반환값 out: 04 || x || y
 `
   'ecdsa.ec-scalar-mult': `
 스칼라 곱셈 R = k * P
-k [32]byte: 스칼라
-p []byte: 점(96바이트)
-반환값 r []byte: 96바이트
+k: 스칼라
+p: 점(96바이트)
+반환값 r: 96바이트
 `
   'ecdsa.ecdh-p256': `
 P-256(secp256r1) ECDH 공유 비밀
-priv [32]byte: 우리 측 개인키(빅엔디안)
-peer [65]byte: 상대 측 비압축 공개키(04 || x || y)
-반환값 shared []byte: 공유 비밀(R점의 x 좌표, 32바이트 빅엔디안); 비어 있음=부적법 입력
+priv: 우리 측 개인키(빅엔디안)
+peer: 상대 측 비압축 공개키(04 || x || y)
+반환값 shared: 공유 비밀(R점의 x 좌표, 32바이트 빅엔디안); 비어 있음=부적법 입력
 `
   'ecdsa.ecdsa-publickey': `
 개인키로부터 공개키 계산
-priv [32]byte: 개인키(빅엔디안)
-반환값 pub [65]byte: 비압축 공개키(04 || x || y)
+priv: 개인키(빅엔디안)
+반환값 pub: 비압축 공개키(04 || x || y)
 `
   'ecdsa.ecdsa-sign': `
 ECDSA 서명
-priv [32]byte: 개인키(빅엔디안)
-msg []byte: 메시지
-반환값 sig [64]byte: 서명(r || s, 각각 32바이트, 빅엔디안)
+priv: 개인키(빅엔디안)
+msg: 메시지
+반환값 sig: 서명(r || s, 각각 32바이트, 빅엔디안)
 `
   'ecdsa.ecdsa-verify': `
 ECDSA 서명 검증
-pub [65]byte: 공개키
-msg []byte: 메시지
-sig [64]byte: 서명(r || s)
-반환값 ok i64: 1=유효, 0=무효
+pub: 공개키
+msg: 메시지
+sig: 서명(r || s)
+반환값 ok: 1=유효, 0=무효
 `
   'ed25519.ed-d': `
 곡선 상수 d의 체 원소 반환
@@ -2174,48 +2174,48 @@ src: 기록할 체 원소(10 limb)
   'embed.exists': `
 embed.exists: 임베드된 파일 존재 여부 검사
 read와 동일한 선형 비교 로직이지만 내용을 가져오지 않습니다.
-path str: 파일 경로(임베드 디렉터리 기준 상대)
-yes bool: true=임베드 목록에 완전히 동일한 경로가 존재
+path: 파일 경로(임베드 디렉터리 기준 상대)
+yes: true=임베드 목록에 완전히 동일한 경로가 존재
 `
   'embed.read': `
 embed.read: 임베드된 파일 읽기(경로를 선형 비교한 뒤 blob에서 슬라이스해 반환)
-path str: 파일 경로(임베드 디렉터리 기준 상대, 예 'index.html'; 경로 구분자 포함)
-data ?[]byte: ok=파일 내용(blob에서 따온 슬라이스, 복사하지 않음), nil=경로 없음
+path: 파일 경로(임베드 디렉터리 기준 상대, 예 'index.html'; 경로 구분자 포함)
+data: ok=파일 내용(blob에서 따온 슬라이스, 복사하지 않음), nil=경로 없음
 주의: 반환값은 임베드 영역을 가리키므로 그 내용을 수정하지 마십시오.
 `
   'env.get': `
 환경 변수 값을 가져온다
-key str: 환경 변수명(대소문자 구분, 예: 'HOME' / 'PATH')
-val ?str: ok=변수 값(빈 문자열일 수 있음), nil=변수 미설정, err=읽기 실패
+key: 환경 변수명(대소문자 구분, 예: 'HOME' / 'PATH')
+val: ok=변수 값(빈 문자열일 수 있음), nil=변수 미설정, err=읽기 실패
 `
   'env.get-with-default': `
 환경 변수를 가져오고, 설정되지 않았으면 기본값을 반환한다
-key str: 환경 변수명
-default-str str: 변수 미설정 또는 읽기 실패 시 사용할 대체 값
-val str: 변수 값; 미설정(nil/err)이면 default-str와 같음
+key: 환경 변수명
+default-str: 변수 미설정 또는 읽기 실패 시 사용할 대체 값
+val: 변수 값; 미설정(nil/err)이면 default-str와 같음
 `
   'env.is-set': `
 환경 변수가 설정되었는지 판단한다
-key str: 환경 변수명
-yes bool: true=ok를 읽어들임(빈 문자열 값 포함), false=미설정 또는 읽기 실패
+key: 환경 변수명
+yes: true=ok를 읽어들임(빈 문자열 값 포함), false=미설정 또는 읽기 실패
 `
   'env.lookup': `
 환경 변수 값 취득(get의 동의어 별명, 동작은 완전 일치)
-key str: 환경 변수명
-val ?str: ok=변수 값, nil=변수 미설정, err=읽기 실패
+key: 환경 변수명
+val: ok=변수 값, nil=변수 미설정, err=읽기 실패
 `
   'env.set': `
 환경 변수를 설정한다
 같은 이름 기존 변수 덮어쓰기; 현재 프로세스와 그 이후 자식 프로세스에만 영향.
-key str: 환경 변수명, 비어 있을 수 없음
-val str: 쓸 값(빈 문자열은 빈값으로 설정한 것과 같음)
-ok bool: true=쓰기 성공, false=하위 set-env 실패(key가 비었거나 길이 초과 등)
+key: 환경 변수명, 비어 있을 수 없음
+val: 쓸 값(빈 문자열은 빈값으로 설정한 것과 같음)
+ok: true=쓰기 성공, false=하위 set-env 실패(key가 비었거나 길이 초과 등)
 `
   'env.unset': `
 환경 변수를 삭제한다(빈 문자열로 만든다)
 주의: 구현은 실제 unset이 아닌 빈 문자열 쓰기로, 변수는 여전히 존재하나 값이 빈다.
-key str: 환경 변수명
-ok bool: true=빈 값 쓰기 성공, false=하위 set-env 실패
+key: 환경 변수명
+ok: true=빈 값 쓰기 성공, false=하위 set-env 실패
 `
   'err._errno-to-code': `
 C errno 를 code 열거형에 매핑한다(모듈 비공개, from-errno 에서만 사용)
@@ -2257,7 +2257,7 @@ ec: 일치시킬 코드
 `
   'err.msg': `
 오류 메시지를 반환한다
-반환 msg str: 오류 객체가 담고 있는 메시지 텍스트, 오류 값이 아니면 빈 문자열
+반환 msg: 오류 객체가 담고 있는 메시지 텍스트, 오류 값이 아니면 빈 문자열
 `
   'err.new': `
 오류를 만든다
@@ -2277,19 +2277,19 @@ e: 완전한 위치 정보가 포함된 오류 인스턴스
   'float.div': `
 부동소수점 나눗셈, 몫을 반환한다(a ÷ b)
 IEEE-754 준수: 제수가 0.0이면 ±inf(0.0/0.0은 NaN), 오류도 절단도 내지 않는다.
-b float: 제수, 타입은 수신자와 동일하게 f32 또는 f64
-q float: 몫, 타입이 수신자를 따름(f32 입력이면 f32, f64 입력이면 f64)
+b: 제수, 타입은 수신자와 동일하게 f32 또는 f64
+q: 몫, 타입이 수신자를 따름(f32 입력이면 f32, f64 입력이면 f64)
 `
   'float.is-inf': `
 값이 무한인지 판단한다
 주의: `. + . == .` 로 쓰지 않는다 — ±0.0 에서도 성립(0+0==0)하므로 0 을 무한으로 잘못 보고한다.
 비영 검사를 더해야 필요충분이 된다(유한한 비영 x 는 x+x!=x 를 만족하고, NaN 과의 모든 비교는 거짓이다).
-yes bool: true=수신자가 +inf 또는 -inf; NaN, ±0.0, 유한수는 모두 false
+yes: true=수신자가 +inf 또는 -inf; NaN, ±0.0, 유한수는 모두 false
 `
   'float.is-nan': `
 값이 NaN 인지 판단한다
 IEEE-754의 'NaN은 자기와 같지 않다' 성질로 판정하므로, 어떤 NaN(다른 payload 포함)이든 true.
-yes bool: true=수신자가 NaN, false=유한수 또는 ±inf
+yes: true=수신자가 NaN, false=유한수 또는 ±inf
 `
   'fmt.eprintf': `
 제거됨(파싱이 계속 동작하도록 이름만 남긴다) — 호출하면 컴파일 오류다; 대신 eprint(줄바꿈 추가) 또는 io.err(줄바꿈 없음)를 쓴다
@@ -2378,19 +2378,19 @@ out: 포맷 후 출력 문자열
 `
   'fnv-1a-32.fnv-1a-32': `
 32비트 FNV-1a 해시 계산(offset basis 2166136261, prime 16777619)
-s []byte: 입력 바이트 버퍼
-n i64: 실제 계산에 참여하는 바이트 수; s[0..n)만 스캔
-h i64: 32비트 해시 값(각 단계 곱한 뒤 & 0xFFFFFFFF), 범위 0..4294967295
+s: 입력 바이트 버퍼
+n: 실제 계산에 참여하는 바이트 수; s[0..n)만 스캔
+h: 32비트 해시 값(각 단계 곱한 뒤 & 0xFFFFFFFF), 범위 0..4294967295
 `
   'fnv.fnv-1a-32': `
 FNV-1a 32비트 해시 계산(offset basis 2166136261, prime 16777619)
-data []byte: 입력 바이트, 전부 계산에 참여
-hash i64: 32비트 해시 값(각 단계 곱한 뒤 & 0xFFFFFFFF)
+data: 입력 바이트, 전부 계산에 참여
+hash: 32비트 해시 값(각 단계 곱한 뒤 & 0xFFFFFFFF)
 `
   'fnv.fnv-1a-64': `
 FNV-1a 64비트 해시 계산(offset basis 14695981039346656037, prime 1099511628211)
-data []byte: 입력 바이트, 전부 계산에 참여
-hash u64: 64비트 해시 값(각 단계 곱셈을 마스크로 64비트로 잘라냄)
+data: 입력 바이트, 전부 계산에 참여
+hash: 64비트 해시 값(각 단계 곱셈을 마스크로 64비트로 잘라냄)
 `
   'fs.close': `
 파일 디스크립터를 닫는다
@@ -2454,7 +2454,7 @@ read-n: 실제로 읽은 바이트 수(0=EOF, -1=오류 또는 열리지 않음)
 `
   'fs.file.read-bytes': `
 파일 전체를 []byte 로 읽는다(Rust 하이브리드 전략)
-반환 content ?[]byte:
+반환 content:
 ok([]byte) - 성공, 파일 내용 포함
 nil        - 파일이 비어 있음
 err        - 파일이 열려 있지 않거나 읽기에 실패함
@@ -2462,12 +2462,12 @@ content: ok=파일 내용, nil=파일 비어있음, err=미열기 또는 읽기 
 `
   'fs.file.read-line': `
 파일에서 한 줄을 읽는다(최대 4096 바이트)
-반환 line ?str: ok=줄, nil=EOF 또는 오류
+반환 line: ok=줄, nil=EOF 또는 오류
 line: ok=읽은 한 줄(개행 문자 미포함), nil=EOF, 4096바이트 초과, 또는 오류
 `
   'fs.file.read-str': `
 파일 전체를 문자열로 읽는다
-반환 content ?str:
+반환 content:
 ok(str) - 성공, 파일 내용 포함
 nil     - 파일이 비어 있음
 err     - 파일이 열려 있지 않거나 읽기에 실패함
@@ -2485,8 +2485,8 @@ written: 실제로 기록한 바이트 수(-1=오류 또는 미열림)
 `
   'fs.file.write-bytes': `
 []byte 를 파일에 쓴다(전체 덮어쓰기)
-data []byte: 쓸 바이트 배열
-반환 ok ?bool:
+data: 쓸 바이트 배열
+반환 ok:
 ok(true)  - 성공
 err       - 파일이 열려 있지 않거나 쓰기에 실패함
 data: 쓸 바이트（파일 전체 덮어쓰기）
@@ -2494,8 +2494,8 @@ ok: ok(true)=쓰기 성공, err=미열기 또는 쓰기 실패
 `
   'fs.file.write-str': `
 문자열을 파일에 쓴다(전체 덮어쓰기)
-data str: 쓸 문자열
-반환 ok ?bool:
+data: 쓸 문자열
+반환 ok:
 ok(true)  - 성공
 err       - 파일이 열려 있지 않거나 쓰기에 실패함
 data: 쓸 문자열（파일 전체 덮어쓰기, 원 내용 교체）
@@ -2619,8 +2619,8 @@ got: 실제로 읽은 바이트 수(0=EOF 도달, -1=오류)
 `
   'fs.read-bytes': `
 파일 전체를 []byte 로 읽는다
-p str: 파일 경로
-반환 content ?[]byte:
+p: 파일 경로
+반환 content:
 ok([]byte) - 성공, 파일 내용 포함
 nil        - 파일이 비어 있음
 err        - 읽기에 실패함
@@ -2635,7 +2635,7 @@ content: 파일 내용（빈 slice로는 「빈 파일」과 「읽기 실패」
 `
   'fs.read-stdin': `
 stdin 을 반복하며 전부 []byte 로 읽는다(stat/fstat 을 쓰지 않아 파이프에 안전하다)
-반환 content ?[]byte:
+반환 content:
 ok([]byte) - 성공, stdin 내용 포함
 nil        - stdin 이 비어 있음
 err        - 읽기에 실패함
@@ -2643,7 +2643,7 @@ content: ok=stdin의 전체 내용, nil=입력 없음, err=읽기 실패
 `
   'fs.read-stdin-str': `
 stdin 을 반복하며 전부 str 로 읽는다(stat/fstat 을 쓰지 않아 파이프에 안전하다)
-반환 content ?str:
+반환 content:
 ok(str) - 성공, stdin 내용 포함
 nil     - stdin 이 비어 있음
 err     - 읽기에 실패함
@@ -2651,8 +2651,8 @@ content: ok=stdin 전체 내용의 문자열화, nil=입력 없음, err=읽기 �
 `
   'fs.read-str': `
 파일 전체를 문자열로 읽는다
-p str: 파일 경로
-반환 content ?str:
+p: 파일 경로
+반환 content:
 ok(str) - 성공, 파일 내용 포함
 nil     - 파일이 비어 있음
 err     - 읽기에 실패함
@@ -2740,9 +2740,9 @@ written: 실제로 기록한 바이트 수(-1=오류; n보다 작으면 부분 �
 `
   'fs.write-bytes': `
 파일에 []byte 를 쓴다(덮어쓰기)
-p str: 파일 경로
-data []byte: 쓸 바이트 배열
-반환 ok ?bool:
+p: 파일 경로
+data: 쓸 바이트 배열
+반환 ok:
 ok(true) - 성공
 err      - 쓰기에 실패함
 p: 대상 경로(없으면 생성)
@@ -2758,9 +2758,9 @@ ok: 쓰기 성공 여부(부분 쓰기는 보고하지 않으므로 폐기 표�
 `
   'fs.write-str': `
 문자열을 파일에 쓴다(덮어쓰기)
-p str: 파일 경로
-data str: 쓸 문자열
-반환 ok ?bool:
+p: 파일 경로
+data: 쓸 문자열
+반환 ok:
 ok(true) - 성공
 err      - 쓰기에 실패함
 p: 대상 경로(없으면 생성)
@@ -2772,21 +2772,21 @@ ok: ok(true)=성공, err=쓰기 실패
 eprint('error: {msg}')
 다인수: eprint('err:', a, b)는 공백 구분, 행말미 개행은 전체에 하나;
 각 문자열 리터럴이 각자 템플릿(print와 동일)
-s str: 서식 템플릿 문자열(규칙은 print와 동일); 뒤에 임의 개수의 이름 지정된 실제 인자를 나열해 순서대로 채움
+s: 서식 템플릿 문자열(규칙은 print와 동일); 뒤에 임의 개수의 이름 지정된 실제 인자를 나열해 순서대로 채움
 `
   'global.exit': `
 실행 종료(상태 코드 c로 현재 프로세스를 종료)
 exit(0)   -> 정상 종료
 exit(1)   → 비정상 종료
-c i64: 프로세스 종료 코드（0=성공, 0이 아닌 값은 관례상 실패; 0–255 초과는 OS가 절단）
+c: 프로세스 종료 코드（0=성공, 0이 아닌 값은 관례상 실패; 0–255 초과는 OS가 절단）
 `
   'global.format': `
 {name:spec} 명명 필드로 문자열을 형식화하고 결과를 반환(sprintf 대체)
 s = format('{x:.2f}')          -> '3.14'
 s = format('{name} is {age}')  -> 'Alice is 30'
 ⚠️ 단일 형식 문자열만 허용(다인수 형식은 없음)
-s str: 서식 템플릿 문자열(규칙은 print와 동일), 이 인자 하나만 넘길 수 있음
-out str: 템플릿 전개 후 새 문자열(어떤 스트림에도 출력하지 않음)
+s: 서식 템플릿 문자열(규칙은 print와 동일), 이 인자 하나만 넘길 수 있음
+out: 템플릿 전개 후 새 문자열(어떤 스트림에도 출력하지 않음)
 `
   'global.print': `
 문자열을 표준 출력에 개행과 함께 출력, {name:spec} 명명 형식 필드 지원
@@ -2795,55 +2795,55 @@ print('{x:.2f}')            -> 3.14(x = 3.14159 일 때)
 다인수: print(a, b, c)는 공백 구분, 행말미 개행은 전체에 하나.
 다인수일 때 각 문자열 리터럴이 각자 템플릿(위쪽 '다인수일 때 리터럴 기본은 템플릿' 참조):
 print('result={val}', 42, 'result={val}')  -> result=42 42 result=42
-s str: 서식 템플릿 문자열; {name:spec}은 같은 이름 리터럴로 값을 취해 치환하고, 뒤에 임의 개수의 이름 지정된 실제 인자를 나열해 순서대로 채움
+s: 서식 템플릿 문자열; {name:spec}은 같은 이름 리터럴로 값을 취해 치환하고, 뒤에 임의 개수의 이름 지정된 실제 인자를 나열해 순서대로 채움
 `
   'global.with-cap': `
 지정 용량의 문자열 또는 슬라이스 생성(len=0), 타입은 대입 좌변에서 추론
 s str = with-cap(256)       → 256바이트를 미리 확보한 str
 v []i64 = with-cap(100)     → 100개 원소를 미리 확보한 조각
-cap i64: 사전 확보할 용량（str은 바이트 수, vec은 요소 수）, 길이는 여전히 0
+cap: 사전 확보할 용량（str은 바이트 수, vec은 요소 수）, 길이는 여전히 0
 `
   'global.with-cap-len': `
 지정 용량과 길이의 문자열 또는 슬라이스 생성, 타입은 대입 좌변에서 추론
 v []i64 = with-cap-len(200, 100)  → 용량 200, 길이 100인 조각
-cap i64: 사전 확보 용량（len보다 크게 가능, 이후 push를 위한 공간 확보）
-len i64: 실제 길이, push 없이 바로 인덱스로 읽고 쓰기 가능
+cap: 사전 확보 용량（len보다 크게 가능, 이후 push를 위한 공간 확보）
+len: 실제 길이, push 없이 바로 인덱스로 읽고 쓰기 가능
 `
   'global.with-len': `
 지정 길이의 문자열 또는 슬라이스 생성, 타입은 대입 좌변에서 추론
 s str = with-len(10)        → 길이가 10인 str
 v []i64 = with-len(100)     → 길이가 100인 조각
-len i64: 목표 길이(str은 바이트 수, vec은 원소 수), len=cap으로 한 번에 확보하면 push 없이 인덱스 직접 사용 가능
+len: 목표 길이(str은 바이트 수, vec은 원소 수), len=cap으로 한 번에 확보하면 push 없이 인덱스 직접 사용 가능
 `
   'gzip.bit-reader.read-bit': `
 1비트 읽기
 범위를 벗어나면 0을 반환해 DEFLATE 디코더가 초과 읽기로 충돌하는 것을 방지
-bit i64: 읽은 비트(0 또는 1); 바이트 소진 후에는 고정으로 0을 반환하고 오류를 내지 않음
+bit: 읽은 비트(0 또는 1); 바이트 소진 후에는 고정으로 0을 반환하고 오류를 내지 않음
 `
   'gzip.bit-reader.read-bits': `
 n비트 읽기(LSB-first)
-n i64: 연속 읽을 비트 수
-v i64: 조립한 정수; 먼저 읽은 비트를 하위에 배치(i번째 비트는 비트 i에)
+n: 연속 읽을 비트 수
+v: 조립한 정수; 먼저 읽은 비트를 하위에 배치(i번째 비트는 비트 i에)
 `
   'gzip.bit-reader.read-u16-le': `
 2바이트 리틀엔디안 정수 읽기(바이트 정렬 시)
 data[pos], data[pos+1]에서 직접 값을 가져오고(비트 버퍼를 사용하지 않음), pos를 2만큼 전진시킵니다.
-v i64: 디코딩한 0..65535 정수
+v: 디코딩한 0..65535 정수
 `
   'gzip.bit-reader.skip-to-byte': '다음 바이트 경계로 이동'
   'gzip.build-dynamic': `
 비트 스트림에서 동적 Huffman 테이블 구성
 먼저 HLIT/HDIST/HCLEN을 읽고, code-order에 따라 코드 길이 코드를 읽은 뒤, 마지막으로 반복 코드 길이를 펼쳐 리터럴/거리 테이블을 얻습니다.
-br bit-reader: 비트 출처(읽기 위치가 전진합니다)
-lc huffman: 출력 파라미터, 리터럴/길이 코드 테이블에 기록
-dc huffman: 출력 파라미터, 거리 코드 테이블에 기록
+br: 비트 출처(읽기 위치가 전진합니다)
+lc: 출력 파라미터, 리터럴/길이 코드 테이블에 기록
+dc: 출력 파라미터, 거리 코드 테이블에 기록
 `
   'gzip.build-fixed': `
 고정 Huffman 테이블 구성
 DEFLATE 규격 §3.2.6에 따라 고정 코드 길이를 채웁니다: 0–143 코드 길이 8, 144–255 코드 길이 9,
 256–279 코드 길이 7, 280–287 코드 길이 8; 거리 코드는 모두 5비트.
-lc huffman: 출력 파라미터, 288심볼의 리터럴/길이 코드 테이블에 기록
-dc huffman: 출력 파라미터, 30심볼의 거리 코드 테이블에 기록
+lc: 출력 파라미터, 288심볼의 리터럴/길이 코드 테이블에 기록
+dc: 출력 파라미터, 30심볼의 거리 코드 테이블에 기록
 `
   'gzip.compress': `
 gzip 형식으로 데이터 압축
@@ -2863,14 +2863,14 @@ out: 압축 후 DEFLATE 데이터 ([]byte)
   'gzip.huffman.build': `
 코드 길이 배열에서 Huffman 코드 테이블 구성
 고정 배열 필드에 직접 인덱스로 대입해, 지역 vec 대입으로 인한 댕글링 포인터를 방지합니다
-lengths []i64: 각 심볼의 코드 길이, 0은 해당 심볼 미사용을 의미
-n i64: 유효 심볼 수(리터럴/길이 테이블은 288, 거리 테이블은 30); n을 초과한 항목은 읽지 않음
+lengths: 각 심볼의 코드 길이, 0은 해당 심볼 미사용을 의미
+n: 유효 심볼 수(리터럴/길이 테이블은 288, 거리 테이블은 30); n을 초과한 항목은 읽지 않음
 `
   'gzip.huffman.decode': `
 1심볼 디코딩
 비트별로 canonical code를 층별로 확장하고 count[]에서 이분 위치를 찾습니다; 코드 길이가 15를 넘어도 일치하는 코드가 없으면 -1 반환.
-br bit-reader: 비트 출처; 매 라운드에서 1비트를 취함
-sym i64: 디코딩한 심볼 값(리터럴/길이 또는 거리), -1=부적법 코드
+br: 비트 출처; 매 라운드에서 1비트를 취함
+sym: 디코딩한 심볼 값(리터럴/길이 또는 거리), -1=부적법 코드
 `
   'gzip.inflate-decompress': `
 원시 DEFLATE 데이터 해제(RFC 1951, ZIP method 8)
@@ -2882,175 +2882,175 @@ out: 해제 후 데이터 ([]byte)
 원소를 추가한다; 삽입되었는지 반환한다
 선형 탐지로 빈 슬롯 찾기: 같은 key 중복 추가는 집합을 바꾸지 않고 false만 반환한다.
 표가 가득 차고 key가 없으면 탐지가 무한 루프, 호출 쪽이 적재율을 스스로 통제해야 한다.
-key i64: 추가할 원소
-is-new bool: true=기존에 없다가 삽입됨, false=이미 존재, 변경 없음
+key: 추가할 원소
+is-new: true=기존에 없다가 삽입됨, false=이미 존재, 변경 없음
 `
   'hash-set.hash-set.clear': '집합을 비운다'
   'hash-set.hash-set.contains': `
 원소가 존재하는지 판단한다
-key i64: 조회할 원소
-found bool: true=집합에 해당 원소가 존재, false=미존재(집합이 비어 있으면 바로 false 반환)
+key: 조회할 원소
+found: true=집합에 해당 원소가 존재, false=미존재(집합이 비어 있으면 바로 false 반환)
 `
   'hash-set.hash-set.for-each': `
 모든 원소를 순회한다
 슬롯 첨자 순(삽입 순 아님)으로 [0, cap)을 돌며, 점유 슬롯의 key를 차례로 val에 대입한다.
 본 언어엔 콜백이 없어, 함수 반환 시 val은 마지막 비어 있지 않은 슬롯의 원소에 멈춤;
 하나씩 처리해야 하면 인덱스 루프 + contains / .keys 접근으로 바꿔야 한다.
-val i64: 현재 슬롯의 원소 값(마지막 대입)
+val: 현재 슬롯의 원소 값(마지막 대입)
 `
   'hash-set.hash-set.hash': `
 슬롯 인덱스를 계산한다
-key i64: 해시할 키(이 집합은 i64만 수납)
-idx i64: key의 [0, cap) 내 초기 슬롯(key & (cap-1), cap은 2의 거듭제곱이어야 함)
+key: 해시할 키(이 집합은 i64만 수납)
+idx: key의 [0, cap) 내 초기 슬롯(key & (cap-1), cap은 2의 거듭제곱이어야 함)
 `
   'hash-set.hash-set.init': '집합을 초기화한다'
   'hash-set.hash-set.is-empty': `
 집합이 비었는지
-empty bool: true=size == 0, false=요소 남아있음
+empty: true=size == 0, false=요소 남아있음
 `
   'hash-set.hash-set.len': `
 원소 개수를 반환한다
-n i64: 집합에 현재 존재하는 원소 수(새 원소 add +1, 성공 remove −1)
+n: 집합에 현재 존재하는 원소 수(새 원소 add +1, 성공 remove −1)
 `
   'hash-set.hash-set.remove': `
 원소를 제거한다; 제거되었는지 반환한다
 해당 슬롯의 점유 표시만 클리어하고 탐지 사슬의 후속 재배치는 하지 않음; 같은 key를 다시 add하면 슬롯을 재사용할 수 있다.
-key i64: 삭제할 원소
-removed bool: true=찾아 삭제, false=없음
+key: 삭제할 원소
+removed: true=찾아 삭제, false=없음
 `
   'heap.empty': `
 힙이 비었는지 판단한다
-yes bool: true는 n == 0임을 뜻함(가득 참으로 무시된 push는 이 판단을 바꾸지 않음)
+yes: true는 n == 0임을 뜻함(가득 참으로 무시된 push는 이 판단을 바꾸지 않음)
 `
   'heap.init': `
 팩토리 — 호출자가 제공한 원소 버퍼 위에 빈 힙을 만든다
-data []t: 요소 버퍼, 그 길이가 힙 용량 상한을 결정（n은 0으로 재설정, 버퍼 내용 삭제하지 않음）
-h heap: 초기화된 힙 인스턴스, cap = len(data), n = 0
+data: 요소 버퍼, 그 길이가 힙 용량 상한을 결정（n은 0으로 재설정, 버퍼 내용 삭제하지 않음）
+h: 초기화된 힙 인스턴스, cap = len(data), n = 0
 `
   'heap.peek': `
 가장 작은 원소를 꺼내지 않고 본다
-val ?t: ok=현재 힙 꼭대기(최솟값), nil=힙이 빔
+val: ok=현재 힙 꼭대기(최솟값), nil=힙이 빔
 `
   'heap.pop': `
 가장 작은 원소를 꺼내고 아래로 내리며 재정렬한다
-val ?t: ok=현재 힙 꼭대기(최솟값), nil=힙이 빔
+val: ok=현재 힙 꼭대기(최솟값), nil=힙이 빔
 `
   'heap.push': `
 원소를 넣고 최소 힙 성질을 복원한다
-val t: 넣을 원소, 타입 t는 heap.init의 버퍼 타입이 결정
+val: 넣을 원소, 타입 t는 heap.init의 버퍼 타입이 결정
 힙이 가득 참(n >= cap)이면 이번 push를 그대로 무시하고 오류도 보고하지 않음
 `
   'heap.size': `
 힙에 현재 저장된 원소 수 반환
-sz i64: 넣었으나 아직 빼지 않은 원소 수(0..cap)
+sz: 넣었으나 아직 빼지 않은 원소 수(0..cap)
 `
   'hkdf.hkdf-derive-secret': `
 Derive-Secret(Secret, Label, Messages)(TLS 1.3 §7.1)
 hkdf-expand-label-vec(secret, label, messages, 32)와 동일합니다.
-secret []byte: 32바이트 키
-label str: 레이블("tls13 " 접두사 미포함)
-messages []byte: 핸드셰이크 메시지 해시(SHA-256 출력, context로 사용)
-out []byte: 32바이트 유도 키
+secret: 32바이트 키
+label: 레이블("tls13 " 접두사 미포함)
+messages: 핸드셰이크 메시지 해시(SHA-256 출력, context로 사용)
+out: 32바이트 유도 키
 `
   'hkdf.hkdf-expand': `
 HKDF-Expand(RFC 5869 §2.3)
-prk [32]byte: 유사 랜덤 키
-info []byte: 컨텍스트 정보(비어 있을 수 있음, 각 라운드 HMAC에 참여)
-out-len i64: 필요한 출력 길이; RFC 5869 상한은 255*32 = 8160, 초과 시 counter가 랩어라운드되어 결과가 규격에 맞지 않게 됩니다
-반환값 okm []byte: 전개한 키 재료(길이는 정확히 out-len)
+prk: 유사 랜덤 키
+info: 컨텍스트 정보(비어 있을 수 있음, 각 라운드 HMAC에 참여)
+out-len: 필요한 출력 길이; RFC 5869 상한은 255*32 = 8160, 초과 시 counter가 랩어라운드되어 결과가 규격에 맞지 않게 됩니다
+반환값 okm: 전개한 키 재료(길이는 정확히 out-len)
 `
   'hkdf.hkdf-expand-hmac': `
 HMAC-SHA256(prk, t-prefix || info || counter-byte) 계산
 hkdf-expand에서 slice.len()를 수정하지 않도록 하는 내부 보조 함수
-prk-vec []byte: 키(32바이트)
-t-data []byte: T(i) 접두사(비어 있을 수 있음, 길이는 t-len이 결정)
-t-len i64: T(i)의 유효 길이
-info []byte: 컨텍스트 정보(비어 있을 수 있음)
-counter i64: 카운터 바이트(RFC는 1–255 요구), 0은 이 바이트를 더하지 않음을 의미
-반환값 out [32]byte: HMAC-SHA256(prk, T(i-1) || info || counter)의 결과
+prk-vec: 키(32바이트)
+t-data: T(i) 접두사(비어 있을 수 있음, 길이는 t-len이 결정)
+t-len: T(i)의 유효 길이
+info: 컨텍스트 정보(비어 있을 수 있음)
+counter: 카운터 바이트(RFC는 1–255 요구), 0은 이 바이트를 더하지 않음을 의미
+반환값 out: HMAC-SHA256(prk, T(i-1) || info || counter)의 결과
 `
   'hkdf.hkdf-expand-label': `
 TLS 1.3 HKDF-Expand-Label(RFC 8446 §7.1)
 먼저 HkdfLabel 구조에 따라 info(length + "tls13 "+label + context)를 조립한 뒤, HKDF-Expand를 호출합니다.
-prk [32]byte: 유사 랜덤 키(32바이트, 일반적으로 HKDF-Extract에서 옴)
-label str: 레이블("tls13 " 접두사 미포함, 본문에서 자동 추가)
-context []byte: 컨텍스트(일반적으로 핸드셰이크 메시지 해시; 비어 있을 수 있음)
-out-len i64: 필요한 출력 바이트 수
-okm []byte: 전개한 키 재료, 길이는 정확히 out-len
+prk: 유사 랜덤 키(32바이트, 일반적으로 HKDF-Extract에서 옴)
+label: 레이블("tls13 " 접두사 미포함, 본문에서 자동 추가)
+context: 컨텍스트(일반적으로 핸드셰이크 메시지 해시; 비어 있을 수 있음)
+out-len: 필요한 출력 바이트 수
+okm: 전개한 키 재료, 길이는 정확히 out-len
 `
   'hkdf.hkdf-expand-label-vec': `
 hkdf-expand-label과 동일하지만 prk를 []byte로 받음(32바이트에 못 미치는 끝부분은 0으로 채움)
-prk []byte: 유사 랜덤 키, 앞 32바이트를 사용
-label str: 레이블("tls13 " 접두사 미포함)
-context []byte: 컨텍스트(비어 있을 수 있음)
-out-len i64: 필요한 출력 바이트 수
-okm []byte: 전개한 키 재료, 길이는 정확히 out-len
+prk: 유사 랜덤 키, 앞 32바이트를 사용
+label: 레이블("tls13 " 접두사 미포함)
+context: 컨텍스트(비어 있을 수 있음)
+out-len: 필요한 출력 바이트 수
+okm: 전개한 키 재료, 길이는 정확히 out-len
 `
   'hkdf.hkdf-extract': `
 HKDF-Extract(RFC 5869 §2.2)
-salt []byte: 솔트(비어 있을 수 있음; 비면 32개 0바이트로 대체)
-ikm []byte: 입력 키 재료(임의 길이)
-반환값 prk [32]byte: HMAC-SHA256(salt, IKM)으로 계산한 유사 랜덤 키
+salt: 솔트(비어 있을 수 있음; 비면 32개 0바이트로 대체)
+ikm: 입력 키 재료(임의 길이)
+반환값 prk: HMAC-SHA256(salt, IKM)으로 계산한 유사 랜덤 키
 `
   'hmac.hmac-md5': `
 HMAC-MD5 계산(MD5를 기저 해시로 사용, 블록 크기 64)
 key: 해시 키(64바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out [16]byte: 16바이트 HMAC 값
+반환값 out: 16바이트 HMAC 값
 `
   'hmac.hmac-md5-vec': `
 HMAC-MD5 계산, []byte 반환
 key: 해시 키(64바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out []byte: 16바이트 HMAC 값
+반환값 out: 16바이트 HMAC 값
 `
   'hmac.hmac-sha1': `
 HMAC-SHA1 계산
 key: 해시 키(64바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out [20]byte: 20바이트 HMAC 값
+반환값 out: 20바이트 HMAC 값
 `
   'hmac.hmac-sha1-vec': `
 HMAC-SHA1 계산, []byte 반환
 key: 해시 키(64바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out []byte: 20바이트 HMAC 값
+반환값 out: 20바이트 HMAC 값
 `
   'hmac.hmac-sha256': `
 HMAC-SHA256 계산
 key: 해시 키(기저 해시 블록 길이 64바이트를 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out [32]byte: 32바이트 HMAC 값
+반환값 out: 32바이트 HMAC 값
 `
   'hmac.hmac-sha256-vec': `
 HMAC-SHA256 계산, []byte 반환(연결에 편리)
 key: 해시 키(64바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out []byte: 32바이트 HMAC 값
+반환값 out: 32바이트 HMAC 값
 `
   'hmac.hmac-sha384': `
 HMAC-SHA384 계산(SHA-384를 기저 해시로 사용, 블록 크기 128)
 key: 해시 키(128바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out [48]byte: 48바이트 HMAC 값
+반환값 out: 48바이트 HMAC 값
 `
   'hmac.hmac-sha384-vec': `
 HMAC-SHA384 계산, []byte 반환
 key: 해시 키(128바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out []byte: 48바이트 HMAC 값
+반환값 out: 48바이트 HMAC 값
 `
   'hmac.hmac-sha512': `
 HMAC-SHA512 계산
 key: 해시 키(128바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out [64]byte: 64바이트 HMAC 값
+반환값 out: 64바이트 HMAC 값
 `
   'hmac.hmac-sha512-vec': `
 HMAC-SHA512 계산, []byte 반환
 key: 해시 키(128바이트 블록을 초과하면 먼저 해시로 축소, 부족하면 0으로 채움)
 msg: 인증할 메시지 바이트
-반환값 out []byte: 64바이트 HMAC 값
+반환값 out: 64바이트 HMAC 값
 `
   'hpack.decode-int': `
 data의 pos 위치에서 가변 길이 정수 디코딩
@@ -3117,19 +3117,19 @@ ok: idx가 유효 범위에 있어 성공적으로 꺼낸 경우 true
   'http.delete': `
 HTTP DELETE 요청 실행
 url: 전체 URL
-반환값 resp ?response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http.do': `
 HTTP 요청 실행
 method: HTTP 메서드(GET, POST, PUT, DELETE 등)
 url: 전체 URL(예 http://host:port/path)
 body: 요청 본문(GET은 빈 문자열을 전달해야 함)
-반환값 resp ?response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http.do-req': `
 request로 요청 전송(사용자 지정 헤더 지원)
 req: 초기화된 request(사용자 지정 헤더 포함)
-반환값 resp ?response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http.download': `
 스트림 다운로드(임의 크기 지원, 파일에 직접 기록)
@@ -3141,14 +3141,14 @@ dest str — 대상 파일 경로
   'http.get': `
 HTTP GET 요청 실행
 url: 전체 URL
-반환값 resp ?response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http.get-auth': `
 Basic 인증이 포함된 HTTP GET 요청 실행
-url str: 전체 URL
-user str: 사용자 이름
-password str: 비밀번호
-반환값 resp ?response: ok=응답, nil=실패
+url: 전체 URL
+user: 사용자 이름
+password: 비밀번호
+반환값 resp: ok=응답, nil=실패
 `
   'http.http-dl-dechunk': `
 chunked로 인코딩된 body를 원시 바이트로 디프레이밍
@@ -3185,7 +3185,7 @@ ok: true=쓰기 성공(?bool의 ok를 true로 접음; nil/err 모두 false)
 HTTP PATCH 요청 실행
 url: 전체 URL
 body: 요청 본문
-반환값 resp ?response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http.ping': `
 ping — 소스 파일과 임베드 표준 라이브러리 로딩을 구별하는 임시 프로브
@@ -3195,21 +3195,21 @@ s: 고정으로 pong 문자열을 반환, 로딩된 것이 소스 파일인지 �
 HTTP POST 요청 실행
 url: 전체 URL
 body: 요청 본문
-반환값 resp ?response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http.post-auth': `
 Basic 인증이 포함된 HTTP POST 요청 실행
-url str: 전체 URL
-body str: 요청 본문
-user str: 사용자 이름
-password str: 비밀번호
-반환값 resp ?response: ok=응답, nil=실패
+url: 전체 URL
+body: 요청 본문
+user: 사용자 이름
+password: 비밀번호
+반환값 resp: ok=응답, nil=실패
 `
   'http.put': `
 HTTP PUT 요청 실행
 url: 전체 URL
 body: 요청 본문
-반환값 resp ?response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http.request.add-header': `
 사용자 지정 헤더 추가
@@ -3225,7 +3225,7 @@ body: 요청 본문(GET/DELETE는 빈 문자열을 전달할 수 있음)
   'http.response.get-header': `
 지정 헤더 값 획득(선형 탐색)
 name: 헤더 이름(예 'Content-Type')
-반환값 val ?str: ok=헤더 값, nil=찾지 못함
+반환값 val: ok=헤더 값, nil=찾지 못함
 `
   'http.response.parse-headers': `
 headers 문자열을 header-names / header-values로 분리
@@ -3233,22 +3233,22 @@ headers 필드가 채워진 뒤에 호출해야 합니다(do / do-req 내부에�
 `
   'http.set-api-key': `
 요청에 API Key 헤더 추가
-req request: 요청 구조체
-header-name str: 헤더 이름(예 'X-API-Key')
-api-key str: API 키
+req: 요청 구조체
+header-name: 헤더 이름(예 'X-API-Key')
+api-key: API 키
 반환값 ok=true=성공
 `
   'http.set-basic-auth': `
 요청에 HTTP Basic 인증 헤더 추가
-req request: 요청 구조체
-user str: 사용자 이름
-password str: 비밀번호
+req: 요청 구조체
+user: 사용자 이름
+password: 비밀번호
 반환값 ok=true=성공
 `
   'http.set-bearer-auth': `
 요청에 Bearer Token 인증 헤더 추가
-req request: 요청 구조체
-token str: Bearer 토큰
+req: 요청 구조체
+token: Bearer 토큰
 반환값 ok=true=성공
 `
   'http.upload-put': `
@@ -3263,7 +3263,7 @@ file-path str — 업로드할 파일
   'http2.conn.init': '연결 상태 초기화'
   'http2.conn.recv-frame': `
 소켓에서 프레임 수신
-반환값 frame ?frame: ok=수신한 프레임, nil=실패
+반환값 frame: ok=수신한 프레임, nil=실패
 `
   'http2.conn.request': `
 HTTP/2 요청 실행
@@ -3306,20 +3306,20 @@ ok: true=전송 성공
   'http2.connect': `
 HTTP/2 h2c 연결 수립
 preface + SETTINGS를 보내고, 서버 SETTINGS를 수신해 ACK합니다
-반환값 conn ?conn: ok=연결, nil=실패
+반환값 conn: ok=연결, nil=실패
 host: 대상 서버의 호스트 이름 또는 IP
 port: 대상 TCP 포트 번호(h2c 평문 연결)
 `
   'http2.connect-tls': `
 HTTP/2 over TLS 연결 수립
 먼저 TLS 연결을 수립한 뒤, HTTP/2 preface + SETTINGS를 보냅니다
-반환값 conn ?conn: ok=연결, nil=실패
+반환값 conn: ok=연결, nil=실패
 host: 대상 서버의 호스트 이름 또는 IP
 port: 대상 TLS 포트 번호(통상 443)
 `
   'http2.delete': `
 HTTP/2 DELETE 요청
-반환값 resp ?http.response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 url: 요청 주소 'http://host:port/path'
 `
   'http2.do': `
@@ -3340,11 +3340,11 @@ HTTP/2 요청, ?http.response 반환
 method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
 url: 'http://host:port/path'
 body: 요청 본문(빈 문자열=본문 없음)
-반환값 resp ?http.response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 `
   'http2.frame.parse': `
 data의 pos 위치에서 9바이트 프레임 헤더를 해석
-반환값 next-pos ?i64: ok=다음 위치, nil=오류
+반환값 next-pos: ok=다음 위치, nil=오류
 data: HTTP/2 바이트 스트림(pos부터 9바이트 프레임 헤더 1건을 해석)
 pos: 이번 프레임 헤더의 data 내 시작 변위
 next-pos: ok=헤더 이후의 변위, nil=데이터 부족/해석 실패
@@ -3358,24 +3358,24 @@ next-pos: 직렬화 완료 후 다음 기록 가능 변위
 `
   'http2.get': `
 HTTP/2 GET 요청
-반환값 resp ?http.response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 url: 요청 주소 'http://host:port/path'(port 생략 가능, 기본값 80)
 `
   'http2.patch': `
 HTTP/2 PATCH 요청
-반환값 resp ?http.response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 url: 요청 주소
 body: 요청 본문(빈 문자열=본문 없음)
 `
   'http2.post': `
 HTTP/2 POST 요청
-반환값 resp ?http.response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 url: 요청 주소
 body: 요청 본문(빈 문자열=본문 없음)
 `
   'http2.put': `
 HTTP/2 PUT 요청
-반환값 resp ?http.response: ok=응답, nil=실패
+반환값 resp: ok=응답, nil=실패
 url: 요청 주소
 body: 요청 본문(빈 문자열=본문 없음)
 `
@@ -3383,95 +3383,95 @@ body: 요청 본문(빈 문자열=본문 없음)
 HTTP/3 연결 수립
 host: 서버 호스트 이름 또는 IP
 port: HTTP/3(QUIC/UDP) 포트 번호
-반환값 conn ?quic.conn: ok=수립된 QUIC 연결, nil/err=접속 실패
+반환값 conn: ok=수립된 QUIC 연결, nil/err=접속 실패
 `
   'http3.decode-header': `
 buf의 pos 위치에서 헤더 1건을 디코딩
 buf: 디코딩할 QPACK 바이트 버퍼
 pos: 이번 디코딩의 buf 내 시작 변위
-반환값 name str: 디코딩한 헤더 이름
-반환값 value str: 디코딩한 헤더 값
-반환값 next-pos i64: 다음 헤더의 시작 변위; -1은 데이터 부족 또는 형식 오류를 의미
+반환값 name: 디코딩한 헤더 이름
+반환값 value: 디코딩한 헤더 값
+반환값 next-pos: 다음 헤더의 시작 변위; -1은 데이터 부족 또는 형식 오류를 의미
 `
   'http3.encode-data-frame': `
 DATA 프레임 인코딩
 data: DATA 프레임에 넣을 요청/응답 본문 문자열
-반환값 buf []byte: 유형이 DATA(0x00), 페이로드가 data 바이트인 프레임 버퍼
-반환값 n i64: 프레임 총 바이트 수
+반환값 buf: 유형이 DATA(0x00), 페이로드가 data 바이트인 프레임 버퍼
+반환값 n: 프레임 총 바이트 수
 `
   'http3.encode-frame': `
 HTTP/3 프레임 인코딩
 frame-type: HTTP/3 프레임 유형 코드(varint 인코딩, 예 0x00 DATA, 0x01 HEADERS)
 payload: 프레임 페이로드 바이트(그 길이를 varint로 앞에 배치)
-반환값 buf []byte: 유형+길이+페이로드를 연결한 완전 프레임 버퍼
-반환값 n i64: 인코딩 후 프레임 총 바이트 수
+반환값 buf: 유형+길이+페이로드를 연결한 완전 프레임 버퍼
+반환값 n: 인코딩 후 프레임 총 바이트 수
 `
   'http3.encode-header': `
 단일 헤더를 QPACK 리터럴 형식으로 인코딩
 name: 헤더 이름(리터럴 값으로 인코딩, 정적 테이블을 거치지 않음)
 value: 헤더 값
-반환값 buf []byte: QPACK 리터럴 인코딩 후 바이트 버퍼
-반환값 n i64: buf에 기록한 실제 바이트 수
+반환값 buf: QPACK 리터럴 인코딩 후 바이트 버퍼
+반환값 n: buf에 기록한 실제 바이트 수
 `
   'http3.encode-headers': `
 여러 헤더 인코딩
 names: 앞 count항이 유효한 헤더 이름 배열(고정 길이 [16]str)
 values: names와 일대일 대응하는 헤더 값 배열(고정 길이 [16]str)
 count: 이번 배치에 인코딩할 헤더 쌍 수(≤16)
-반환값 buf []byte: 각 헤더의 QPACK 인코딩을 순서대로 연결한 바이트 버퍼
-반환값 n i64: 인코딩해 buf에 기록한 총 바이트 수
+반환값 buf: 각 헤더의 QPACK 인코딩을 순서대로 연결한 바이트 버퍼
+반환값 n: 인코딩해 buf에 기록한 총 바이트 수
 `
   'http3.encode-headers-frame': `
 HEADERS 프레임 인코딩
 names: 헤더 이름 배열(고정 길이 [16]str, 앞 count항을 취함)
 values: 대응하는 헤더 값 배열(고정 길이 [16]str)
 count: 인코딩할 헤더 쌍 수
-반환값 buf []byte: 유형이 HEADERS(0x01), 페이로드가 QPACK 헤더 블록인 프레임 버퍼
-반환값 n i64: 프레임 총 바이트 수
+반환값 buf: 유형이 HEADERS(0x01), 페이로드가 QPACK 헤더 블록인 프레임 버퍼
+반환값 n: 프레임 총 바이트 수
 `
   'http3.encode-settings-frame': `
 SETTINGS 프레임 인코딩(빈 설정)
-반환값 buf []byte: 빈 SETTINGS 프레임(유형 0x04+길이 0, 총 2바이트)
-반환값 n i64: 프레임 총 바이트 수(항상 2)
+반환값 buf: 빈 SETTINGS 프레임(유형 0x04+길이 0, 총 2바이트)
+반환값 n: 프레임 총 바이트 수(항상 2)
 `
   'http3.get': `
 HTTP/3 GET 요청 전송
 url: 전체 URL(예 https://example.com/path)
-반환값 resp ?response: ok=GET 응답, nil=URL 부적법/연결 실패/응답 없음
+반환값 resp: ok=GET 응답, nil=URL 부적법/연결 실패/응답 없음
 `
   'http3.http3-do': `
 일반 HTTP/3 요청 전송
 method: HTTP 메서드(GET, POST, PUT, DELETE 등)
 url: 전체 URL
 body: 요청 본문 문자열(빈 문자열은 본문 없음을 의미)
-반환값 resp ?response: ok=응답, nil=URL 부적법/연결 실패/응답 없음
+반환값 resp: ok=응답, nil=URL 부적법/연결 실패/응답 없음
 `
   'http3.parse-frame': `
 buf의 pos 위치에서 HTTP/3 프레임 1건을 해석
 buf: 하나 이상의 HTTP/3 프레임을 포함한 바이트 버퍼
 pos: 이번 해석의 buf 내 시작 변위
-반환값 frame-type i64: 해석한 프레임 유형 코드
-반환값 payload []byte: 프레임 페이로드 바이트 슬라이스
-반환값 next-pos i64: 다음 프레임의 시작 변위; -1은 데이터 부족 또는 형식 오류를 의미
+반환값 frame-type: 해석한 프레임 유형 코드
+반환값 payload: 프레임 페이로드 바이트 슬라이스
+반환값 next-pos: 다음 프레임의 시작 변위; -1은 데이터 부족 또는 형식 오류를 의미
 `
   'http3.parse-url': `
 HTTPS URL 해석
 url: 'https://'로 시작하는 전체 URL(예 https://host:port/path)
-반환값 host str: 포트 번호를 제거한 호스트 이름
-반환값 port i64: 포트 번호(URL에 포트가 없으면 HTTP3-DEFAULT-PORT)
-반환값 path str: 요청 경로(경로 없으면 '/')
-반환값 ok bool: true=해석 성공, false=접두사 부적법 또는 포트에 비숫자 포함
+반환값 host: 포트 번호를 제거한 호스트 이름
+반환값 port: 포트 번호(URL에 포트가 없으면 HTTP3-DEFAULT-PORT)
+반환값 path: 요청 경로(경로 없으면 '/')
+반환값 ok: true=해석 성공, false=접두사 부적법 또는 포트에 비숫자 포함
 `
   'http3.post': `
 HTTP/3 POST 요청 전송
 url: 전체 URL
 body: POST 요청 본문 문자열
-반환값 resp ?response: ok=POST 응답, nil=URL 부적법/연결 실패/응답 없음
+반환값 resp: ok=POST 응답, nil=URL 부적법/연결 실패/응답 없음
 `
   'http3.response.get-header': `
 헤더 값 획득
 name: 조회할 헤더 이름(비교 시 대소문자 구분 없음)
-반환값 val ?str: ok=대응 헤더 값, nil=해당 헤더 없음
+반환값 val: ok=대응 헤더 값, nil=해당 헤더 없음
 `
   'http3.send-request': `
 QUIC 연결에서 HTTP/3 요청 전송
@@ -3480,19 +3480,19 @@ method: HTTP 메서드(:method 헤더에 기록)
 path: 요청 경로(:path 헤더에 기록)
 host: 호스트 이름(:authority 헤더에 기록)
 body: 요청 본문 문자열(빈 문자열은 본문 없음을 의미)
-반환값 resp ?response: ok=해석 후 응답, nil=전송 또는 수신 실패
+반환값 resp: ok=해석 후 응답, nil=전송 또는 수신 실패
 `
   'int.div': `
 정수 나눗셈. 몫을 반환한다(a ÷ b)
 b 가 0 이면 err 를 반환한다(컴파일러가 삽입하는 0 나눗셈 가드이며 UB 가 아니다). 자세한 내용은 docs/docs/lang/syntax.md 의 〈0 으로 나누기〉
-b int: 제수, 타입은 피제수와 일치해야 함; 부호는 C의 0 방향 절단（-7 / 2 = -3）
-q ?int: ok=몫(타입은 수신자와 동일), err=제수가 0(nil 상황 없음)
+b: 제수, 타입은 피제수와 일치해야 함; 부호는 C의 0 방향 절단（-7 / 2 = -3）
+q: ok=몫(타입은 수신자와 동일), err=제수가 0(nil 상황 없음)
 `
   'int.mod': `
 정수 나머지 연산. 나머지를 반환한다(a % b)
 b 가 0 이면 err 를 반환한다(컴파일러가 삽입하는 0 나눗셈 가드이며 UB 가 아니다). 자세한 내용은 docs/docs/lang/syntax.md 의 〈0 으로 나누기〉
-b int: 제수（0 불가）; 나머지 부호는 피제수를 따름（-7 % 2 = -1）
-r ?int: ok=나머지(|r| < |b|), err=제수가 0(nil 상황 없음)
+b: 제수（0 불가）; 나머지 부호는 피제수를 따름（-7 % 2 = -1）
+r: ok=나머지(|r| < |b|), err=제수가 0(nil 상황 없음)
 `
   'int.to-str': `
 정수를 문자열로 변환한다(모든 정수 타입을 아우르는 유니온 타입 메서드)
@@ -3500,7 +3500,7 @@ transpiler 는 i64.to-str() 등을 int.to-str() 로 해석한다
 산술 연산을 직접 사용하므로 int -> u64 타입 변환 문제를 피한다
 주의: 음수의 절댓값을 취하지 않는다(0 - n 은 n = i64.MIN 일 때 오버플로한다).
 대신 음수 그대로 srem/sdiv(0 방향 절단)를 적용하고, 음의 나머지를 [0, 9] 로 사상한다.
-out str: 십진 표현 문자열, 예 42 / -17; 0은 '0' 출력, 음수는 앞의 '-' 붙음
+out: 십진 표현 문자열, 예 42 / -17; 0은 '0' 출력, 음수는 앞의 '-' 붙음
 `
   'io.err': `
 문자열을 표준 오류에 쓴다(줄바꿈 없음)
@@ -3524,7 +3524,7 @@ n: 문자열과 개행을 합쳐 쓴 바이트 수
 `
   'io.read-line': `
 표준 입력에서 한 줄을 읽는다
-반환 line ?str: ok=줄, nil=EOF 또는 오류
+반환 line: ok=줄, nil=EOF 또는 오류
 line: ok=표준 입력에서 읽은 한 줄, nil=EOF 또는 읽기 실패
 `
   'io.reader.from-fd': `
@@ -3552,12 +3552,12 @@ total: 실제로 읽어들인 바이트 수; 0은 EOF 또는 fd 잘못됨
 `
   'io.reader.read-byte': `
 1 바이트를 읽는다
-반환 b ?i64: ok=바이트 값, nil=EOF 또는 오류
+반환 b: ok=바이트 값, nil=EOF 또는 오류
 b: ok=읽은 바이트 값(0~255), nil=EOF 또는 잘못된 fd
 `
   'io.reader.read-line': `
 한 줄을 읽는다(최대 4096 바이트)
-반환 line ?str: ok=줄, nil=EOF 또는 오류
+반환 line: ok=줄, nil=EOF 또는 오류
 line: ok=읽은 한 줄 내용(최대 4096바이트), nil=EOF 또는 fd 무효
 `
   'io.writer.from-fd': `
@@ -3605,7 +3605,7 @@ yes: true=두 주소의 32비트 수치가 완전히 같음
 `
   'ip.ip-addr.from-str': `
 문자열에서 ip-addr 생성(정적 함수)
-반환값 addr ?ip-addr: ok=해석 결과, nil=해석 실패
+반환값 addr: ok=해석 결과, nil=해석 실패
 s: IPv4 점수표기 10진수 문자열(예 192.168.1.1)
 addr: ok=해석한 주소, nil=형식 부적법 또는 항 값 범위 초과
 `
@@ -3621,44 +3621,44 @@ prefix-len: 접두사 길이(0~32)
 `
   'ip.ip-addr.is-broadcast': `
 브로드캐스트 주소인지(255.255.255.255)
-yes bool: true는 네 항이 모두 255임을 의미
+yes: true는 네 항이 모두 255임을 의미
 `
   'ip.ip-addr.is-class-a': `
 A급 주소인지(1.0.0.0 ~ 126.255.255.255)
-yes bool: true는 첫 항이 1~126 범위에 있음(루프백 항 127 미포함)을 의미
+yes: true는 첫 항이 1~126 범위에 있음(루프백 항 127 미포함)을 의미
 `
   'ip.ip-addr.is-class-b': `
 B급 주소인지(128.0.0.0 ~ 191.255.255.255)
-yes bool: true는 첫 항이 128~191 범위에 있음을 의미
+yes: true는 첫 항이 128~191 범위에 있음을 의미
 `
   'ip.ip-addr.is-class-c': `
 C급 주소인지(192.0.0.0 ~ 223.255.255.255)
-yes bool: true는 첫 항이 192~223 범위에 있음을 의미
+yes: true는 첫 항이 192~223 범위에 있음을 의미
 `
   'ip.ip-addr.is-link-local': `
 링크 로컬 주소인지(169.254.0.0/16)
-yes bool: true는 a==169이고 b==254(IPv4 자동 구성 실패 시 사용)임을 의미
+yes: true는 a==169이고 b==254(IPv4 자동 구성 실패 시 사용)임을 의미
 `
   'ip.ip-addr.is-loopback': `
 루프백 주소인지(127.0.0.0/8)
-yes bool: true는 첫 항이 127과 같음을 의미
+yes: true는 첫 항이 127과 같음을 의미
 `
   'ip.ip-addr.is-multicast': `
 멀티캐스트 주소인지(224.0.0.0/4)
-yes bool: true는 첫 항이 224~239 범위에 있음을 의미
+yes: true는 첫 항이 224~239 범위에 있음을 의미
 `
   'ip.ip-addr.is-private': `
 프라이빗 주소인지
 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-yes bool: true는 위 세 RFC 1918 네트워크 구간 중 하나에 속함을 의미
+yes: true는 위 세 RFC 1918 네트워크 구간 중 하나에 속함을 의미
 `
   'ip.ip-addr.is-valid': `
 모든 옥텟이 유효 범위(0~255)인지 확인
-yes bool: true는 a/b/c/d 네 항이 모두 0~255 안에 있음을 의미
+yes: true는 a/b/c/d 네 항이 모두 0~255 안에 있음을 의미
 `
   'ip.ip-addr.is-zero': `
 전부 0인 주소인지(0.0.0.0)
-yes bool: true는 네 항이 모두 0(모든 네트워크 카드에 바인딩 가능)임을 의미
+yes: true는 네 항이 모두 0(모든 네트워크 카드에 바인딩 가능)임을 의미
 `
   'ip.ip-addr.parse': `
 문자열에서 IPv4 주소 해석
@@ -3687,7 +3687,7 @@ yes: true=해석 성공이고 10/8, 172.16/12, 192.168/16 프라이빗 네트워
 `
   'ip.ip-parse': `
 IP 문자열 신속 해석
-반환값 addr ?ip-addr: ok=해석 결과, nil=해석 실패
+반환값 addr: ok=해석 결과, nil=해석 실패
 s: 해석할 IP 문자열
 addr: ok=해석 결과, nil=해석 실패(동작은 ip-addr.from-str과 동일)
 `
@@ -3698,7 +3698,7 @@ idx: 본 풀에서 새로 할당한 노드 인덱스
 `
   'json.arr-get': `
 배열의 인덱스 위치 원소를 json 으로 가져온다
-반환 child ?json: ok=찾음, nil=없거나 배열이 아님
+반환 child: ok=찾음, nil=없거나 배열이 아님
 사용법:
 elem = j.arr-get(0)
 elem: {
@@ -3717,7 +3717,7 @@ n: 루트 배열의 자식 원소 수(배열 아니면 0)
 `
   'json.arr-push': `
 배열 끝에 원소를 덧붙인다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 사용법:
 j.arr-push(item)
 val: 요소 json(그 루트 하위 트리를 먼저 본 풀에 심층 복사한 뒤 빈 키로 추가)
@@ -3725,31 +3725,31 @@ ok: true=추가됨
 `
   'json.arr-push-bool': `
 배열 끝에 불리언 원소를 덧붙인다
-반환 ok bool: 추가 성공 여부
-val bool: 붙일 불리언 값(true / false)
-ok bool: true=불리언 원소로 배열 끝에 추가됨; false=노드 할당 또는 push 실패
+반환 ok: 추가 성공 여부
+val: 붙일 불리언 값(true / false)
+ok: true=불리언 원소로 배열 끝에 추가됨; false=노드 할당 또는 push 실패
 `
   'json.arr-push-idx': `
 노드 인덱스로 배열 끝에 원소를 덧붙인다(json 을 만들 때 풀 전체를 깊은 복사하지 않게 하는 내부 헬퍼)
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 child-idx: 값 노드 인덱스（본 풀 소속이어야 함）
 ok: true=추가됨; false=루트가 배열이 아니거나 인덱스 무효(child-idx가 가리키는 노드는 변경하지 않음)
 `
   'json.arr-push-num': `
 배열 끝에 숫자 원소를 덧붙인다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 val: 수치(노드 num-val에 기록; 정수와 소수 모두 f64로 저장)
 ok: true=숫자 원소로 추가됨
 `
   'json.arr-push-str': `
 배열 끝에 문자열 원소를 덧붙인다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 val: 문자열 값
 ok: true=문자열 원소로 추가됨
 `
   'json.bool': `
 불리언 값을 가져온다(root 가 불리언일 때)
-반환 val bool, ok bool: ok=성공
+반환 val, ok: ok=성공
 val: ok=근 노드의 불리언 값, nil=근이 불리언 아님
 `
   'json.clone-tree': `
@@ -3765,7 +3765,7 @@ out: 복사한 부분트리를 가진 새 json(out.root=새 루트 인덱스; id
 `
   'json.delete-key': `
 객체에서 키를 삭제한다
-반환 ok bool: ok=성공(키가 있었고 삭제되었다)
+반환 ok: ok=성공(키가 있었고 삭제되었다)
 key: 키 이름
 ok: true=일치했고 해당 가장자리를 링크 리스트에서 제거함(가장자리와 자식 노드의 점유 공간은 회수하지 않음); false=루트가 객체가 아니거나 키 불일치
 `
@@ -3773,7 +3773,7 @@ ok: true=일치했고 해당 가장자리를 링크 리스트에서 제거함(�
 객체의 자식 노드를 json 으로 가져온다
 child 는 json 자신의 자식이다(같은 노드 풀을 재사용하고 root 만 자식을 가리키게 한다)므로 새 객체를 만들지 않는다.
 없거나 객체가 아니면 nil 을 반환한다.
-반환 child ?json: ok=찾음, nil=없거나 객체가 아님
+반환 child: ok=찾음, nil=없거나 객체가 아님
 사용법:
 child = j.get('key')
 child: {
@@ -3785,32 +3785,32 @@ key: 키 이름
 `
   'json.get-bool': `
 객체에서 불리언 값을 가져온다
-반환 val bool, ok bool: ok=찾았고 불리언임
+반환 val, ok: ok=찾았고 불리언임
 key: 키 이름
 val: ok=자식 노드의 불리언 값, nil=키 없거나 값이 불리언 아님
 `
   'json.get-i64': `
 객체에서 정수 값을 가져온다
-반환 val i64, ok bool: ok=찾았고 숫자임
+반환 val, ok: ok=찾았고 숫자임
 key: 키 이름
 val: ok=값을 절단해 정수화(.get-num 후 to-i64, 비트 재해석 없음), nil=키 없거나 값이 숫자 아님
 `
   'json.get-key': `
 전역 함수 — json 오브젝트에서 키로 하위 노드 취득
-반환 child ?json: 자식 노드(nil은 부재를 뜻함)
+반환 child: 자식 노드(nil은 부재를 뜻함)
 obj: 원본 json(읽기 전용, 변경되지 않음)
 key: 키 이름
 child: ok=독립 딥카피된 서브트리 핸들（ 수정해도 obj에 영향 없음）, nil=루트가 객체가 아니거나 키 미조회
 `
   'json.get-num': `
 객체에서 숫자 값을 가져온다
-반환 val f64, ok bool: ok=찾았고 숫자임
+반환 val, ok: ok=찾았고 숫자임
 key: 키 이름
 val: ok=자식 노드의 숫자 값, nil=키 없거나 값이 숫자 아님
 `
   'json.get-str': `
 객체에서 문자열 값을 가져온다
-반환 val str, ok bool: ok=찾았고 문자열임
+반환 val, ok: ok=찾았고 문자열임
 사용법:
 s, found = j.get-str('name')
 found -> print(s)
@@ -3819,7 +3819,7 @@ val: ok=자식 노드의 문자열 값, nil=키 없거나 값이 문자열 아�
 `
   'json.i64': `
 정수 값을 가져온다(root 가 숫자일 때)
-반환 val i64, ok bool: ok=성공
+반환 val, ok: ok=성공
 val: ok=근 값을 절단해 정수화, nil=근이 숫자 아님
 `
   'json.is-arr': `
@@ -3869,23 +3869,23 @@ p: 초기화된 빈 노드 풀(각 힙 vec 길이 0, overflowed=false)
 `
   'json.num': `
 숫자 값을 가져온다(root 가 숫자일 때)
-반환 val f64, ok bool: ok=성공
+반환 val, ok: ok=성공
 val: ok=근 노드의 숫자 값, nil=근이 숫자 아님
 `
   'json.obj-key': `
 객체의 주어진 인덱스 키를 가져온다
-반환 key str: 키 문자열
+반환 key: 키 문자열
 idx: 키 번호(삽입 순서로 엣지 링크를 방문)
 key: ok=키 이름, nil=범위 밖 또는 루트가 객체가 아님
 `
   'json.obj-keys-str': `
 객체의 모든 키를 개행으로 구분한 새 문자열로 가져온다
-반환 keys str: 모든 키를 이어 붙인 것
+반환 keys: 모든 키를 이어 붙인 것
 keys: 모든 키 이름을 순서대로 \n 종결로 연결한 문자열(객체가 아니면 빈 문자열)
 `
   'json.obj-len': `
 객체의 키 개수를 가져온다
-반환 n i64: 키 개수(객체가 아니면 0)
+반환 n: 키 개수(객체가 아니면 0)
 n: 루트 객체의 키 수(객체 아니면 0)
 `
   'json.overflowed': `
@@ -4006,49 +4006,49 @@ eq: 1=같음, 0=다름
 `
   'json.pool.stringify': `
 노드를 문자열로 직렬화한다
-반환 out str: 직렬화된 문자열
+반환 out: 직렬화된 문자열
 node-idx: 부분트리 루트 인덱스
 out: 직렬화 후 JSON 텍스트(인덱스 무효 시 빈 문자열)
 `
   'json.set': `
 객체에 키를 설정한다(값은 다른 json 노드)
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 key: 키 이름
 val-idx: 값 노드 인덱스(본 풀에 속해야 함)
 ok: true=씀; false=루트가 객체가 아님(루트가 null이면 제자리에서 객체로 승격)
 `
   'json.set-bool': `
 객체에 불리언 값을 설정한다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 사용법:
 j.set-bool('active', true)
-key str: 속성명, 중복 시 동명 기존 멤버를 덮어씀
-val bool: 쓸 불리언 값(true / false)
-ok bool: true=객체 노드에 연결됨; false=노드 할당 실패 또는 연결 실패
+key: 속성명, 중복 시 동명 기존 멤버를 덮어씀
+val: 쓸 불리언 값(true / false)
+ok: true=객체 노드에 연결됨; false=노드 할당 실패 또는 연결 실패
 `
   'json.set-i64': `
 객체에 정수 값을 설정한다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 key: 키 이름
 val: 정수 값
 ok: true=씀
 `
   'json.set-key': `
 객체 키를 설정한다(val 에 json 값을 받는 설탕)
-반환 ok bool: ok=성공
+반환 ok: ok=성공
 key: 키 이름
 val: 값 json(임시의 새 풀에 심층 복사한 뒤 본 풀로 전이하므로 자기 참조 j.set(k, j)도 안전)
 ok: true=씀; false=val의 루트 인덱스 무효
 `
   'json.set-null': `
 객체에 null 값을 설정한다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 key: 키 이름
 ok: true=null 자식 노드를 씀
 `
   'json.set-num': `
 객체에 숫자 값을 설정한다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 사용법:
 j.set-num('age', 30.0)
 key: 키 이름
@@ -4057,7 +4057,7 @@ ok: true=씀
 `
   'json.set-str': `
 객체에 문자열 값을 설정한다
-반환 ok bool: 성공 여부
+반환 ok: 성공 여부
 사용법:
 j.set-str('name', 'Alice')
 key: 키 이름
@@ -4066,14 +4066,14 @@ ok: true=씀(root 판단은 json.set과 동일)
 `
   'json.str': `
 문자열 값을 가져온다(root 가 문자열일 때)
-반환 val str, ok bool: ok=성공
+반환 val, ok: ok=성공
 사용법:
 s, found = j.str()
 val: ok=근 노드의 문자열 값(사본), nil=근이 문자열 아님
 `
   'json.str-val': `
 문자열 노드의 값을 가져온다
-반환 val str: 문자열 값
+반환 val: 문자열 값
 val: 루트 노드의 문자열 값(문자열 아닌 노드는 빈 문자열 반환)
 `
   'json.stringify': `
@@ -4086,65 +4086,65 @@ out: JSON 텍스트(root 무효 시 빈 문자열)
 `
   'link.link.empty': `
 연결 리스트가 비었는지 판단한다
-반환 yes bool: true=비어 있음, false=비어 있지 않음
-yes bool: true=size <= 0(앞뒤 표시기가 모두 -1)
+반환 yes: true=비어 있음, false=비어 있지 않음
+yes: true=size <= 0(앞뒤 표시기가 모두 -1)
 `
   'link.link.full': `
 노드 풀이 가득 찼는지 판단한다
-반환 yes bool: true=가득 참, false=가득 차지 않음
-yes bool: true=free-head < 0(무료 링크가 고갈되어 이후 insert가 새 노드를 얻지 못함)
+반환 yes: true=가득 참, false=가득 차지 않음
+yes: true=free-head < 0(무료 링크가 고갈되어 이후 insert가 새 노드를 얻지 못함)
 `
   'link.link.size': `
 연결 리스트의 원소 개수를 반환한다
-반환 sz i64: 원소 개수
-sz i64: 현재 유효 노드 수(노드가 하나도 없을 때 0)
+반환 sz: 원소 개수
+sz: 현재 유효 노드 수(노드가 하나도 없을 때 0)
 `
   'linked-hash-map.linked-hash-map.clear': '맵을 비운다'
   'linked-hash-map.linked-hash-map.contains': `
 키가 존재하는지 판단한다
 get의 결과로 판정: ok만 존재로 칩(err / nil 모두 false).
-key i64: 검사할 키
-found bool: true=존재, false=존재하지 않음
+key: 검사할 키
+found: true=존재, false=존재하지 않음
 `
   'linked-hash-map.linked-hash-map.for-each': `
 삽입 순서로 모든 (키, 값) 쌍을 순회한다
 head → tail의 next 가리개를 따라 연결리스트 전체를 돌며 매 단계 노드를 k / v에 대입한다.
 본 언어엔 콜백이 없어, 함수 반환 시 k / v는 꼬리 노드(마지막으로 삽입된 키값 쌍)에 멈춤.
-k i64: 현재 노드의 키
-v i64: 현재 노드의 값
+k: 현재 노드의 키
+v: 현재 노드의 값
 `
   'linked-hash-map.linked-hash-map.get': `
 키를 검색해 ?i64 를 반환한다(nil=찾을 수 없음)
-key i64: 조회할 키
-result ?i64: ok=대응 값, nil=없음(테이블이 비어 있으면 탐색 없이 바로 반환)
+key: 조회할 키
+result: ok=대응 값, nil=없음(테이블이 비어 있으면 탐색 없이 바로 반환)
 `
   'linked-hash-map.linked-hash-map.hash': `
 슬롯 인덱스를 계산한다
-key i64: 해시할 키
-idx i64: key의 [0, cap) 내 초기 탐색 위치(key & (cap-1))
+key: 해시할 키
+idx: key의 [0, cap) 내 초기 탐색 위치(key & (cap-1))
 `
   'linked-hash-map.linked-hash-map.init': '해시 테이블을 초기화한다'
   'linked-hash-map.linked-hash-map.is-empty': `
 맵이 비었는지
-empty bool: true=size == 0, false=키값쌍 남아있음
+empty: true=size == 0, false=키값쌍 남아있음
 `
   'linked-hash-map.linked-hash-map.len': `
 원소 개수를 반환한다
-n i64: 현재 키-값 쌍 수(새 키 put +1, remove 성공 −1)
+n: 현재 키-값 쌍 수(새 키 put +1, remove 성공 −1)
 `
   'linked-hash-map.linked-hash-map.put': `
 key→value 를 삽입하거나 갱신한다
 선형 탐지로 슬롯 찾기: 같은 이름 key가 있으면 값만 갱신하고 기존 연결리스트 위치 유지(맨 끝으로 이동 안 함);
 새 key는 연결리스트 끝부분에 삽입. 표가 가득 차고 key가 없으면 탐지가 무한 루프이므로 적재율을 조절해야 함.
-key i64: 키
-val i64: 쓸 값(같은 이름 key는 덮어써짐)
-is-new bool: true=새로 삽입된 키, false=이미 존재하며 값만 갱신
+key: 키
+val: 쓸 값(같은 이름 key는 덮어써짐)
+is-new: true=새로 삽입된 키, false=이미 존재하며 값만 갱신
 `
   'linked-hash-map.linked-hash-map.remove': `
 키를 제거한다
 슬롯을 비우고 해당 노드를 양방향 연결리스트에서 떼어내며, 동시에 head / tail 갱신.
-key i64: 삭제할 키
-removed bool: true=찾아 삭제, false=키 없음
+key: 삭제할 키
+removed: true=찾아 삭제, false=키 없음
 `
   'log.get-output-fd': `
 현재 출력 대상의 fd 를 반환한다(디버깅용)
@@ -4189,28 +4189,28 @@ w: 대상 io.writer(내부에서는 fd 필드만 영구 저장으로 취함)
 `
   'magic.detect-by-extension': `
 확장자로 종류를 감지한다
-ext str: 소문자 확장자('.' 미포함, 예: 'png', 'json')
+ext: 소문자 확장자('.' 미포함, 예: 'png', 'json')
 반환 타입 설명, 알 수 없으면 빈 문자열
-kind str: 대응하는 유형 설명(예: 'PNG image'); 미수록 확장자는 ''
+kind: 대응하는 유형 설명(예: 'PNG image'); 미수록 확장자는 ''
 `
   'magic.detect-by-magic': `
 매직 바이트로 종류를 감지한다
-path str: 파일 경로; 비교를 위해 앞의 64바이트만 읽음
+path: 파일 경로; 비교를 위해 앞의 64바이트만 읽음
 반환 타입 설명, 알 수 없으면 빈 문자열
-kind str: 매직 넘버로 일치한 유형 설명; 파일을 열 수 없거나 4바이트 미만이면 ''
+kind: 매직 넘버로 일치한 유형 설명; 파일을 열 수 없거나 4바이트 미만이면 ''
 `
   'magic.detect-type': `
 파일 종류를 감지한다
-path str: 검사할 경로(디렉터리든 일반 파일이든 가능)
+path: 검사할 경로(디렉터리든 일반 파일이든 가능)
 반환 타입 설명(예: 'PNG image', 'ELF executable', 'ASCII text', 'directory', 'unknown')
 판정 순서: 디렉터리 > 일반 파일 아님 > 확장자 > 매직 넘버 > 기본 'data'.
-kind str: 'directory', 'unknown (not found)', 확장자 또는 매직 넘버로 일치한 설명, 또는 기본 'data'
+kind: 'directory', 'unknown (not found)', 확장자 또는 매직 넘버로 일치한 설명, 또는 기본 'data'
 `
   'magic.get-extension': `
 파일 확장자를 반환한다(소문자)
-path str: 파일 경로(디렉터리 포함 가능); 끝에서부터 뒤로 마지막 '.'를 찾고 '/'를 만나면 중지
+path: 파일 경로(디렉터리 포함 가능); 끝에서부터 뒤로 마지막 '.'를 찾고 '/'를 만나면 중지
 반환 '.' 을 뺀 확장자, 없으면 빈 문자열
-ext str: 소문자 확장자; '.'이 없거나, '.' 다음이 비었거나, '.'가 디렉터리 부분에만 있으면 ''
+ext: 소문자 확장자; '.'이 없거나, '.' 다음이 비었거나, '.'가 디렉터리 부분에만 있으면 ''
 `
   'map.hashmap-bool-tmpl.clear': '맵을 비운다(occ 벡터를 재할당한다)'
   'map.hashmap-bool-tmpl.contains': `
@@ -4352,119 +4352,119 @@ a: 첫 번째 문자열
 b: 두 번째 문자열
 eq: 양자가 바이트 단위로 같은지
 `
-  'markdown.blockquote': '인용 행의 행두 > 표기 제거.\n`> 뒤에 공백이 하나만 있으면 함께 제거; `>> 같은 중첩 형태는 남은 `>를 보존.\nline str: 원본 한 줄 텍스트\nout markdown-quote: yes는 해당 줄이 인용 줄임을 뜻하고, text는 행두 표지 제거 후 내용(인용 줄이 아니면 빈 문자열)'
+  'markdown.blockquote': '인용 행의 행두 > 표기 제거.\n`> 뒤에 공백이 하나만 있으면 함께 제거; `>> 같은 중첩 형태는 남은 `>를 보존.\nline: 원본 한 줄 텍스트\nout: yes는 해당 줄이 인용 줄임을 뜻하고, text는 행두 표지 제거 후 내용(인용 줄이 아니면 빈 문자열)'
   'markdown.code-close': `
 현재 행이 지정 fence를 닫는지 판단.
 CommonMark 일치: 같은 종 marker에 길이가 여는 펜스 폭 이상(최소 3)이어야 닫힌다.
-line str: 판단할 한 줄 텍스트
-marker i64: 여는 펜스의 marker byte(96 또는 126)
-width i64: 연 격자의 길이
-yes bool: true는 그 행이 현재 코드 블록을 닫음을 뜻함
+line: 판단할 한 줄 텍스트
+marker: 여는 펜스의 marker byte(96 또는 126)
+width: 연 격자의 길이
+yes: true는 그 행이 현재 코드 블록을 닫음을 뜻함
 `
   'markdown.escape-html': `
 HTML 텍스트와 속성 값 이스케이프(& < > " 네 글자; &를 먼저 바꿔야 후속 치환이 이중 이스케이프되지 않는다).
-s str: 원시 텍스트(본문 또는 속성 값)
-out str: HTML에 바로 끼워 넣을 수 있는 이스케이프 결과
+s: 원시 텍스트(본문 또는 속성 값)
+out: HTML에 바로 끼워 넣을 수 있는 이스케이프 결과
 `
   'markdown.fence': `
 fenced code block 표시 해석.
 여는 펜스 행은 trim 후 3개 이상의 백틱 또는 물결로 시작해야 하고 뒤쪽 텍스트는 언어 태그가 된다.
-line str: 원본 한 줄 텍스트
-out markdown-fence: yes는 펜스 줄임; marker는 96(`) 또는 126(~); width는 펜스 길이; info는 언어 태그, 없으면 빈 문자열
+line: 원본 한 줄 텍스트
+out: yes는 펜스 줄임; marker는 96(`) 또는 126(~); width는 펜스 길이; info는 언어 태그, 없으면 빈 문자열
 `
   'markdown.heading': `
 ATX 제목 등급과 제목 텍스트를 취득.
 '1–6개의 #에 공백 하나' 형식만 허용하며, 말미의 임의 '공백 + 연속 #'을 제거.
-line str: 원본 한 줄 텍스트
-out markdown-heading: level은 1–6(제목이 아니면 0), text는 접두와 끝 #을 제거한 제목 내용
+line: 원본 한 줄 텍스트
+out: level은 1–6(제목이 아니면 0), text는 접두와 끝 #을 제거한 제목 내용
 `
   'markdown.inline': `
 Markdown 인라인 문법 렌더링.
 굵게, 기울임, 취소선, 인라인 코드, 링크, 이미지, 자동 링크와 백슬래시 이스케이프 지원; 모든 텍스트는 HTML 이스케이프를 거치고, 닫히지 않은 표기는 끝에서 닫는 태그를 자동 보완.
-s str: 한 줄 안의 Markdown 텍스트(블록 수준 구문을 넘기지 말 것)
-out str: 인라인 HTML 조각(바깥 <p> 미포함)
+s: 한 줄 안의 Markdown 텍스트(블록 수준 구문을 넘기지 말 것)
+out: 인라인 HTML 조각(바깥 <p> 미포함)
 `
   'markdown.is-word-byte': `
 ASCII byte가 단어에 속하는지 판단.
-c i64: 판정할 byte 값（0–255, char가 아닌 정수로 직접 전달）
-yes bool: true는 c가 0-9 / A-Z / a-z임을 뜻함; 비ASCII와 구두점은 모두 false
+c: 판정할 byte 값（0–255, char가 아닌 정수로 직접 전달）
+yes: true는 c가 0-9 / A-Z / a-z임을 뜻함; 비ASCII와 구두점은 모두 false
 `
   'markdown.join-paragraph': `
 단락에 한 행 추가, 하드 줄바꿈을 전용 처리한다.
 hard-break가 true이면 줄 끝 공백 두 개를 <br>로 취급하여 내용에서 제거한 뒤 '<br>\n'으로 연결.
-paragraph str: 현재 누적된 단락 텍스트(빈 문자열은 새 단락을 뜻함)
-line str: 추가할 원본 줄; hard-break이면 끝에 공백 두 개 필수
-hard-break bool: true는 해당 줄 끝에 공백 두 개가 있어 하드 줄바꿈을 삽입해야 함을 의미
-out str: 추가 후 단락 텍스트
+paragraph: 현재 누적된 단락 텍스트(빈 문자열은 새 단락을 뜻함)
+line: 추가할 원본 줄; hard-break이면 끝에 공백 두 개 필수
+hard-break: true는 해당 줄 끝에 공백 두 개가 있어 하드 줄바꿈을 삽입해야 함을 의미
+out: 추가 후 단락 텍스트
 `
   'markdown.list-content': `
 작업 목록 내용 렌더링.
 GFM 작업 표식 '[ ] '와 '[x] ' / '[X] '를 식별하고 나머지 내용은 인라인 문법 렌더링.
-content str: 리스트 항목 본문（markdown-list의 text 유래）
-out str: disabled checkbox가 붙은 HTML 조각, 또는 일반 인라인 HTML
+content: 리스트 항목 본문（markdown-list의 text 유래）
+out: disabled checkbox가 붙은 HTML 조각, 또는 일반 인라인 HTML
 `
   'markdown.list-item': `
 목록 항목 해석. kind=1 순서 없음, kind=2 순서 있음.
 비순서 항목은 '- / * / + 에 공백 하나'; 순서 항목은 '최소 한 자리 숫자 + . 에 공백 하나'.
-line str: 원본 한 줄 텍스트
-out markdown-list: kind는 0(목록 항목 아님)/1(비순서)/2(순서), text는 표지 이후 항목 내용
+line: 원본 한 줄 텍스트
+out: kind는 0(목록 항목 아님)/1(비순서)/2(순서), text는 표지 이후 항목 내용
 `
   'markdown.prefix-count': `
 행두 연속 지정 문자 세기.
 0부터 바이트별로 비교, 다른 문자 또는 문자열 끝에 도달하면 멈춘다.
-s str: 스캔할 줄(보통 trim됨)
-c i64: 비교할 byte 값（예: 35는 '#', 96은 '`'）
-n i64: 접두어 길이; 일치가 전혀 없으면 0
+s: 스캔할 줄(보통 trim됨)
+c: 비교할 byte 값（예: 35는 '#', 96은 '`'）
+n: 접두어 길이; 일치가 전혀 없으면 0
 `
   'markdown.read-line': `
 바이트 커서에서 한 행 읽어, []str에 대한 안전하지 않은 동적 인덱싱 회피.
 '\n' 또는 문자열 끝까지 읽고 줄바꿈 문자는 포함하지 않는다.
-source str: 문서 전체의 Markdown 원문 텍스트
-pos i64: 현재 읽기 위치(바이트 오프셋, 0 시작)
-out markdown-line: text=해당 줄 내용; next-pos=다음 줄 시작 오프셋; valid=pos이 [0, len) 안에 있는지
+source: 문서 전체의 Markdown 원문 텍스트
+pos: 현재 읽기 위치(바이트 오프셋, 0 시작)
+out: text=해당 줄 내용; next-pos=다음 줄 시작 오프셋; valid=pos이 [0, len) 안에 있는지
 `
   'markdown.render': `
 to-html의 의미 별명, 출력이 완전히 일치한다.
-source str: 완전한 Markdown 원문 텍스트
-out str: 완전한 HTML 문서 조각
+source: 완전한 Markdown 원문 텍스트
+out: 완전한 HTML 문서 조각
 `
   'markdown.render-code': `
 코드 블록 출력.
 info가 비어 있지 않으면 <code>에 class="language-<info>"로 부여되고, 코드 내용은 전체 HTML 이스케이프.
-code str: 펜스 안에 쌓인 코드 본문（펜스 줄 제외）
-info str: 펜스 줄 끝의 언어 태그, 빈 문자열은 언어 없음
-out str: <pre><code…></code></pre>\n 조각
+code: 펜스 안에 쌓인 코드 본문（펜스 줄 제외）
+info: 펜스 줄 끝의 언어 태그, 빈 문자열은 언어 없음
+out: <pre><code…></code></pre>\n 조각
 `
   'markdown.setext-level': `
 Setext 제목 등급(=== 또는 ---)을 취득.
 해당 행은 trim 후 길이 ≥ 3, 처음부터 끝까지 같은 '=' 또는 '-'여야 한다.
-line str: 원본 한 줄 텍스트
-level i64: 1 = '=' 밑줄(1단계 제목), 2 = '-' 밑줄(2단계 제목), 0 = Setext 제목 아님
+line: 원본 한 줄 텍스트
+level: 1 = '=' 밑줄(1단계 제목), 2 = '-' 밑줄(2단계 제목), 0 = Setext 제목 아님
 `
   'markdown.table-row': `
 | 구분 행을 tr으로 렌더링.
 앞뒤의 '|'를 자동 제거하고 각 셀은 인라인 문법 렌더링 후 <tag>로 감싼다.
-line str: 테이블의 한 줄 텍스트
-tag str: 칸 태그명, 표헤더는 'th', 데이터 행은 'td'
-out str: 완전한 <tr>…</tr>\n 조각
+line: 테이블의 한 줄 텍스트
+tag: 칸 태그명, 표헤더는 'th', 데이터 행은 'td'
+out: 완전한 <tr>…</tr>\n 조각
 `
   'markdown.table-separator': `
 표 구분 행 판단.
 '|'로 분할한 뒤, 각 칸은 ':'와 '-'를 제거하면 비어 있어야 하고, 칸이 최소 하나는 있어야 한다.
-line str: 판단할 한 줄 텍스트(보통 헤더 다음 줄)
-yes bool: true는 |---|:--:| 유형의 표 구분 행임을 뜻함
+line: 판단할 한 줄 텍스트(보통 헤더 다음 줄)
+yes: true는 |---|:--:| 유형의 표 구분 행임을 뜻함
 `
   'markdown.thematic-break': `
 구분선인지 판단.
 trim 후 동일한 - / * / _가 3개 이상으로 구성, 중간에 공백과 tab 허용.
-line str: 원본 한 줄 텍스트
-yes bool: true는 그 행이 주제 구분선(<hr>)임을 뜻함
+line: 원본 한 줄 텍스트
+yes: true는 그 행이 주제 구분선(<hr>)임을 뜻함
 `
   'markdown.to-html': `
 Markdown 문서를 HTML로 렌더링.
 먼저 CRLF / CR을 LF로 정규화한 뒤, 행별로 블록 문법을 해석(제목, 목록, 인용, 코드 블록, 표, 구분선, 단락).
-source str: 완전한 Markdown 원문 텍스트
-out str: 완전한 HTML 문서 조각
+source: 완전한 Markdown 원문 텍스트
+out: 완전한 HTML 문서 조각
 `
   'math.arr-zero': `
 [n]num.zero / []num.zero — llvm.memset 으로 저장 공간을 0 으로 만든다
@@ -4475,16 +4475,16 @@ out str: 완전한 HTML 문서 조각
   'math.atan-kernel': `
 atan2: y/x의 역탄젠트（순수 .no 구현, libm 의존 회피）
 내부 atan-kernel: 먼저 |t|를 <= tan(pi/8)으로 귀착한 뒤 테일러 급수 사용
-t f64: 정규화된 입력 값; |t|가 너무 크면 급수 수렴이 느려지고 정밀도가 떨어짐
-r f64: atan의 근삿값(라디안, 값 범위는 대략 (-pi/2, pi/2))
+t: 정규화된 입력 값; |t|가 너무 크면 급수 수렴이 느려지고 정밀도가 떨어짐
+r: atan의 근삿값(라디안, 값 범위는 대략 (-pi/2, pi/2))
 `
   'math.char-to-str': `
 char(Unicode 코드 포인트)를 UTF-8 인코딩 문자열로 변환한다
 예전의 sprintf %c(단일 바이트 ASCII 만 처리)를 대체한다
 ⚠️ 지원 중단: 메서드 형태 char.to-str()(std/char.no 참고)를 권장한다.
 예: c char = 'A'; c.to-str(); 이 함수는 기존 호출 지점을 위해서만 남긴다.
-c char: 인코딩할 Unicode 코드포인트
-out str: 해당 코드 포인트의 1–4바이트 UTF-8 인코딩(with-cap(4)로 용량 확보, 길이는 실제 쓰기 분량)
+c: 인코딩할 Unicode 코드포인트
+out: 해당 코드 포인트의 1–4바이트 UTF-8 인코딩(with-cap(4)로 용량 확보, 길이는 실제 쓰기 분량)
 `
   'math.clamp': `
 ═══════════════════════════════════════════════
@@ -4492,89 +4492,89 @@ out str: 해당 코드 포인트의 1–4바이트 UTF-8 인코딩(with-cap(4)�
 ═══════════════════════════════════════════════
 clamp: 값을 [min, max] 범위로 제한한다
 상한을 먼저 비교하고 하한을 비교: min > max이면 결과는 min(두 select 중 뒤것이 승리)
-val i64: 제한할 값
-min i64: 하한; 결과가 이보다 작으면 min 사용
-max i64: 상한; 결과가 이를 넘으면 max 사용
-result i64: [min, max] 안의 i64(min > max이면 min)
+val: 제한할 값
+min: 하한; 결과가 이보다 작으면 min 사용
+max: 상한; 결과가 이를 넘으면 max 사용
+result: [min, max] 안의 i64(min > max이면 min)
 `
   'math.div': `
 -7 / 2 == -3 (-4 가 아니다: floor 의미가 필요하면 부호 검사를 직접 한다)
 ⚠️ b == 0 이면 맨 `/` 와 마찬가지로 트랩한다(실행 시 0 나눗셈 검사가 없다).
-a int: 피제수
-b int: 제수, 0 불가
-r int: 0 방향으로 절단한 몫
+a: 피제수
+b: 제수, 0 불가
+r: 0 방향으로 절단한 몫
 `
   'math.even': `
 값이 짝수인지 — 모든 정수 타입(부호 없는 타입 포함)에서 동작한다
-a int: 판정할 정수
-yes bool: true는 a가 2로 나누어떨어짐을 뜻함(0은 짝수)
+a: 판정할 정수
+yes: true는 a가 2로 나누어떨어짐을 뜻함(0은 짝수)
 `
   'math.fmod': `
 잡항
 부동소수 나머지 res = x - trunc(x/y) * y(C의 fmod 의미)
-x f64: 피제수
-y f64: 제수; y == 0.0이면 결과는 NaN
-res f64: 나머지, 부호는 x를 따르고 |res| < |y|
+x: 피제수
+y: 제수; y == 0.0이면 결과는 NaN
+res: 나머지, 부호는 x를 따르고 |res| < |y|
 `
   'math.gcd': `
 최대 공약수(유클리드 알고리즘)
 두 수 모두 절댓값을 취한 뒤 반복하므로 결과는 항상 비음수(gcd(0, 0) = 0)
-a int: 첫 번째 정수
-b int: 두 번째 정수
-r int: a와 b의 최대공약수, 비음
+a: 첫 번째 정수
+b: 두 번째 정수
+r: a와 b의 최대공약수, 비음
 `
   'math.hypot': `
 유클리드 노름 sqrt(x*x + y*y)
-x f64: 첫 번째 직각 변
-y f64: 두 번째 직각 변
-res f64: 빗변 길이; 먼저 제곱한 뒤 더하므로 |x| 또는 |y|가 f64 상한에 가까우면 중간값이 inf로 오버플로됨
+x: 첫 번째 직각 변
+y: 두 번째 직각 변
+res: 빗변 길이; 먼저 제곱한 뒤 더하므로 |x| 또는 |y|가 f64 상한에 가까우면 중간값이 inf로 오버플로됨
 `
   'math.lcm': `
 최소 공배수
 a / gcd(a, b) * b로 계산; 먼저 나눈 뒤 곱하면 중간값 넘침을 줄일 수 있음
-a int: 첫 번째 정수
-b int: 두 번째 정수; 어느 하나라도 0이면 결과는 0
-r int: a와 b의 최소공배수, 비음; 곱이 오버플로되면 #{overflow=wrap}로 되돌아감
+a: 첫 번째 정수
+b: 두 번째 정수; 어느 하나라도 0이면 결과는 0
+r: a와 b의 최소공배수, 비음; 곱이 오버플로되면 #{overflow=wrap}로 되돌아감
 `
   'math.max': `
 실인수 순서에서의 최댓값 반환(가변 인수 범용, num의 모든 구성 타입 공통)
 a ..num: 비교할 수치 순열; 최소 한 요소 전달（빈 순열이면 인덱스 범위 초과）
-r num: 수열의 최대 원소, 타입은 a의 멤버와 동일
+r: 수열의 최대 원소, 타입은 a의 멤버와 동일
 `
   'math.min': `
 실인수 순서에서의 최솟값 반환(가변 인수 범용, num의 모든 구성 타입 공통)
 a ..num: 비교할 수치 순열; 최소 한 요소 전달（빈 순열이면 인덱스 범위 초과）
-r num: 수열의 최소 원소, 타입은 a의 멤버와 동일
+r: 수열의 최소 원소, 타입은 a의 멤버와 동일
 `
   'math.mod': `
 -7 % 2 == -1 (floor-mod 의미가 필요하면 부호 검사를 직접 한다)
 ⚠️ b == 0 이면 맨 `%` 와 마찬가지로 트랩한다.
-a int: 피제수
-b int: 제수, 0 불가
-r int: 나머지, |r| < |b|이고 부호는 a와 동일
+a: 피제수
+b: 제수, 0 불가
+r: 나머지, |r| < |b|이고 부호는 a와 동일
 `
   'math.odd': `
 값이 홀수인지 — 모든 정수 타입(부호 없는 타입 포함)에서 동작한다
-a int: 판정할 정수
-yes bool: true는 a가 2로 나누어떨어지지 않음을 뜻함(음수 홀수도 마찬가지로 true)
+a: 판정할 정수
+yes: true는 a가 2로 나누어떨어지지 않음을 뜻함(음수 홀수도 마찬가지로 true)
 `
   'math.pow': `
 ⚠️ 알려진 제한(C pow와의 차이, 모두 극단 경계):
 1. |y| > 2^63이면 f64-to-i64 오버플로로 홀짝 판정이 왜곡 ⇒ inf의 부호가 반전될 수 있음.
 이때 mag 자체는 이미 inf/0이며, 부호에만 영향 준다.
 2. x==0.0이고 y<0이면 C pow는 +inf를 반환하지만 이 구현은 0.0을 반환（기존 동작 유지）。
-x f64: 밑수, 음수 가능(음수 밑수는 아래 부호 보정 분기를 탐)
-y f64: 지수; x<0일 때 y는 정수여야 하며, 아니면 결과가 NaN
-res f64: x의 y제곱; 0^0 = 1.0, x==0.0의 나머지 경우(y<0 포함)는 모두 0.0
+x: 밑수, 음수 가능(음수 밑수는 아래 부호 보정 분기를 탐)
+y: 지수; x<0일 때 y는 정수여야 하며, 아니면 결과가 NaN
+res: x의 y제곱; 0^0 = 1.0, x==0.0의 나머지 경우(y<0 포함)는 모두 0.0
 `
   'math.pow-int': `
 pow: 정수 거듭제곱 a^n (n >= 0) — 모든 정수 타입에서 동작한다
 빠른 거듭제곱을 써서 O(log n)
 ⚠️ math 로 옮기지 않았다: 이름이 std/math.no 의 pow(f64 거듭제곱 함수)와 충돌해
 한 모듈에 pow 정의를 둘 수 없다. 함수 형태 API 는 math 에 둔다는 규칙의 유일한 예외다.
-a int: 밑수
-n int: 지수; n <= 0이면 루프가 실행되지 않아 결과 항상 1
-r int: a의 n제곱; 곱셈은 #{overflow=wrap}로 되돌아감, 오버플로 보고 없음
+a: 밑수
+n: 지수; n <= 0이면 루프가 실행되지 않아 결과 항상 1
+r: a의 n제곱; 곱셈은 #{overflow=wrap}로 되돌아감, 오버플로 보고 없음
 `
   'math.rotate-left': `
 []num.zero = () {
@@ -4588,169 +4588,169 @@ i = i + 1
 비트 연산(내장)
 ═══════════════════════════════════════════════
 rotate-left: 정수를 n 비트 왼쪽으로 회전한다(llvm.fshl 로 ARM64 ROR 에 매핑된다)
-x i64: 회전시킬 64비트 정수
-n i64: 왼쪽 회전 비트 수, 64로 나눈 나머지(n은 음수 가능, 오른쪽 회전 |n|비트와 등가)
-r i64: 왼쪽 회전 후 결과
+x: 회전시킬 64비트 정수
+n: 왼쪽 회전 비트 수, 64로 나눈 나머지(n은 음수 가능, 오른쪽 회전 |n|비트와 등가)
+r: 왼쪽 회전 후 결과
 `
   'math.rotate-right': `
 정수를 n 비트 오른쪽으로 회전한다(llvm.fshr 로 ARM64 ROR 에 매핑된다)
-x i64: 회전시킬 64비트 정수
-n i64: 오른쪽 회전 비트 수, 64로 나눈 나머지(n은 음수 가능, 왼쪽 회전 |n|비트와 등가)
-r i64: 오른쪽 회전 후 결과
+x: 회전시킬 64비트 정수
+n: 오른쪽 회전 비트 수, 64로 나눈 나머지(n은 음수 가능, 왼쪽 회전 |n|비트와 등가)
+r: 오른쪽 회전 후 결과
 `
   'math.store-le-u32': `
 바이트 배열의 주어진 오프셋에 u32 값을 리틀엔디언으로 쓴다
-arr i64: 대상 바이트 배열의 시작 주소（i64로 전달）
-offset i64: 쓰기 위치의 arr 기준 바이트 오프셋; 호출 측에서 offset+4가 범위 밖이 아님을 보장해야 함
-val u32: 쓸 32비트 값, 낮은 8바이트가 먼저 배치
+arr: 대상 바이트 배열의 시작 주소（i64로 전달）
+offset: 쓰기 위치의 arr 기준 바이트 오프셋; 호출 측에서 offset+4가 범위 밖이 아님을 보장해야 함
+val: 쓸 32비트 값, 낮은 8바이트가 먼저 배치
 `
   'math.swap': `
 두 값 교환: 임시 변수로 a와 b를 맞바꿈, 범용 t
-a t: 출력 매개변수 1（호출 전 원값 보유, 반환 시 b의 원값 보유）
-b t: 출력 매개변수 2（호출 전 원값 보유, 반환 시 a의 원값 보유）
+a: 출력 매개변수 1（호출 전 원값 보유, 반환 시 b의 원값 보유）
+b: 출력 매개변수 2（호출 전 원값 보유, 반환 시 a의 원값 보유）
 `
   'md5.md5': `
 MD5 해시 계산(RFC 1321; 입력 임의 길이, 내부에서 스스로 512비트의 배수로 채움)
-data []byte: 다이제스트를 계산할 입력 바이트
-out [16]byte: 128비트 다이제스트, MD5 표준의 리틀엔디안 워드 순서로 저장
+data: 다이제스트를 계산할 입력 바이트
+out: 128비트 다이제스트, MD5 표준의 리틀엔디안 워드 순서로 저장
 `
   'md5.md5-rotl': `
 32비트 좌회전
 math.rotate-left는 64비트 폭이어서 MD5의 u32 라운드 함수에 적용할 수 없으므로, 시프트+마스크(0xFFFFFFFF)로 진정한 32비트 회전을 수작업으로 구현합니다.
-x u32: 회전할 32비트 값
-n i64: 좌회전 비트 수(1..31; 32는 시프트량이 오버플로됩니다)
-r u32: 좌회전 결과, 이미 & 0xFFFFFFFF
+x: 회전할 32비트 값
+n: 좌회전 비트 수(1..31; 32는 시프트량이 오버플로됩니다)
+r: 좌회전 결과, 이미 & 0xFFFFFFFF
 `
   'multipart.multipart-create': `
 새 multipart 인코더 생성
-반환값 w ?multipart-writer: ok=인코더, nil=실패
+반환값 w: ok=인코더, nil=실패
 `
   'multipart.multipart-create-boundary': `
 지정 경계로 인코더 생성
-boundary str: 경계 문자열
+boundary: 경계 문자열
 반환값 w multipart-writer
 `
   'multipart.multipart-decrypt-field': `
 암호화된 multipart 필드 데이터 복호화
-encrypted-data str: Base64 인코딩된 암호화 데이터(12바이트 IV 접두사 포함)
-key [32]byte: AES-256 키
-aad []byte: 추가 인증 데이터(필드 이름)
-반환값 plain ?str: ok=복호화 후 평문, nil=복호화 실패
+encrypted-data: Base64 인코딩된 암호화 데이터(12바이트 IV 접두사 포함)
+key: AES-256 키
+aad: 추가 인증 데이터(필드 이름)
+반환값 plain: ok=복호화 후 평문, nil=복호화 실패
 `
   'multipart.multipart-extract-boundary': `
 Content-Type에서 boundary 값 추출
-content-type str: Content-Type 헤더 값
-반환값 boundary str: 경계 문자열(비면 찾지 못함)
+content-type: Content-Type 헤더 값
+반환값 boundary: 경계 문자열(비면 찾지 못함)
 `
   'multipart.multipart-gen-boundary': `
 랜덤 경계 문자열 생성
-seed i64: 랜덤 시드(입력/출력)
-반환값 boundary str: 경계 문자열
+seed: 랜덤 시드(입력/출력)
+반환값 boundary: 경계 문자열
 `
   'multipart.multipart-parse': `
 Content-Type 헤더와 요청 본문에서 multipart 해석
-content-type str: Content-Type 헤더 값(boundary=... 포함)
-body str: 요청 본문
-반환값 r ?multipart-reader: ok=파서, nil=실패
+content-type: Content-Type 헤더 값(boundary=... 포함)
+body: 요청 본문
+반환값 r: ok=파서, nil=실패
 `
   'multipart.multipart-reader.field-content-type': `
 현재 콘텐츠 타입 획득
-반환값 ct str: 비면 미지정
+반환값 ct: 비면 미지정
 `
   'multipart.multipart-reader.field-data': `
 현재 필드 데이터 획득
-반환값 data str: 현재 파트의 콘텐츠 데이터(이진 바이트 포함)
+반환값 data: 현재 파트의 콘텐츠 데이터(이진 바이트 포함)
 `
   'multipart.multipart-reader.field-filename': `
 현재 파일 이름 획득
-반환값 filename str: 비면 파일 필드 아님
+반환값 filename: 비면 파일 필드 아님
 `
   'multipart.multipart-reader.field-name': `
 현재 필드 이름 획득
-반환값 name str: 현재 파트 form-data의 name(비면 미지정)
+반환값 name: 현재 파트 form-data의 name(비면 미지정)
 `
   'multipart.multipart-reader.has-current-part': `
 현재 파트가 있는지 판정
-반환값 yes bool: true=읽을 수 있는 특정 파트에 위치함
+반환값 yes: true=읽을 수 있는 특정 파트에 위치함
 `
   'multipart.multipart-reader.init': `
 파서 초기화
-boundary str: 경계 문자열('--' 접두사 미포함)
-data str: 원시 데이터
+boundary: 경계 문자열('--' 접두사 미포함)
+data: 원시 데이터
 `
   'multipart.multipart-reader.is-file': `
 현재 파트가 파일인지 판정
-반환값 yes bool: true=파일
+반환값 yes: true=파일
 `
   'multipart.multipart-reader.next': `
 다음 파트로 이동
-반환값 has-part bool: true=다음 파트 있음, false=끝에 도달
+반환값 has-part: true=다음 파트 있음, false=끝에 도달
 `
   'multipart.multipart-reader.parse-header-line': `
 단일 헤더 행 해석
-line str: 헤더 행
-part multipart-part: 출력, 해석 결과
+line: 헤더 행
+part: 출력, 해석 결과
 `
   'multipart.multipart-reader.parse-headers': `
 파트 헤더 해석
-header-block str: 헤더 블록(끝의 CRLFCRLF 미포함)
-part multipart-part: 출력, 해석 결과
+header-block: 헤더 블록(끝의 CRLFCRLF 미포함)
+part: 출력, 해석 결과
 `
   'multipart.multipart-writer.body-of': `
 구성된 요청 본문 획득
-반환값 body str: 지금까지 기록된 각 파트로 구성된 완전한 요청 본문
+반환값 body: 지금까지 기록된 각 파트로 구성된 완전한 요청 본문
 `
   'multipart.multipart-writer.boundary-of': `
 경계 문자열 획득
-반환값 boundary str: 인코더가 현재 사용하는 경계(-- 접두사 미포함)
+반환값 boundary: 인코더가 현재 사용하는 경계(-- 접두사 미포함)
 `
   'multipart.multipart-writer.close-form': `
 종료 경계 기록, 폼 완료
-반환값 ok bool: true=기록 성공
+반환값 ok: true=기록 성공
 `
   'multipart.multipart-writer.content-type': `
 Content-Type 헤더 값 획득
-반환값 ct str: 예 'multipart/form-data; boundary=----NolangBoundary...'
+반환값 ct: 예 'multipart/form-data; boundary=----NolangBoundary...'
 `
   'multipart.multipart-writer.init': `
 인코더 초기화(경계 자동 생성)
-반환값 ok bool: true=기록 성공
+반환값 ok: true=기록 성공
 `
   'multipart.multipart-writer.init-boundary': `
 지정 경계로 초기화
-boundary str: 경계 문자열
+boundary: 경계 문자열
 `
   'multipart.multipart-writer.write-encrypted-field': `
 AES-256-GCM 암호화 텍스트 필드 기록
-name str: 필드 이름
-value str: 평문 값
-key [32]byte: AES-256 키
-iv [12]byte: GCM IV
-반환값 ok bool: true=기록 성공
+name: 필드 이름
+value: 평문 값
+key: AES-256 키
+iv: GCM IV
+반환값 ok: true=기록 성공
 `
   'multipart.multipart-writer.write-encrypted-file': `
 AES-256-GCM 암호화 파일 필드 기록
-name str: 필드 이름
-filename str: 파일 이름
-content-type str: 콘텐츠 타입
-content str: 파일 평문 내용
-key [32]byte: AES-256 키
-iv [12]byte: GCM IV(nonce)
-반환값 ok bool: true=기록 성공
+name: 필드 이름
+filename: 파일 이름
+content-type: 콘텐츠 타입
+content: 파일 평문 내용
+key: AES-256 키
+iv: GCM IV(nonce)
+반환값 ok: true=기록 성공
 `
   'multipart.multipart-writer.write-field': `
 텍스트 필드 기록
-name str: 필드 이름
-value str: 필드 값
-반환값 ok bool: true=기록 성공
+name: 필드 이름
+value: 필드 값
+반환값 ok: true=기록 성공
 `
   'multipart.multipart-writer.write-file': `
 파일 필드 기록
-name str: 필드 이름
-filename str: 파일 이름
-content-type str: 콘텐츠 타입(예 'image/jpeg')
-content str: 파일 내용
-반환값 ok bool: true=기록 성공
+name: 필드 이름
+filename: 파일 이름
+content-type: 콘텐츠 타입(예 'image/jpeg')
+content: 파일 내용
+반환값 ok: true=기록 성공
 `
   'net.close': `
 파일 디스크립터 종료(fs 모듈에서 옴)
@@ -4784,15 +4784,15 @@ total: 누계로 받은 총 바이트 수
 `
   'net.conn.recv-line': `
 한 줄 데이터 수신(최대 NET-BUF-SIZE 바이트)
-반환값 line ?str: ok=수신 내용, nil=실패 또는 연결 종료
+반환값 line: ok=수신 내용, nil=실패 또는 연결 종료
 line: ok=단회 수신 데이터(한 번 recv의 내용, 개행으로 나눈 것이 아님), nil=수신 없음 또는 연결 부적법
 `
   'net.conn.recv-with-timeout': `
 시간 초과를 동반한 수신
-buf str: 수신 버퍼
-n i64: 최대 수신 바이트 수
-timeout-ms i64: 시간 초과 밀리초
-반환값 read-n i64: 실제 수신 바이트 수(-1=오류, 0=시간 초과 또는 연결 종료)
+buf: 수신 버퍼
+n: 최대 수신 바이트 수
+timeout-ms: 시간 초과 밀리초
+반환값 read-n: 실제 수신 바이트 수(-1=오류, 0=시간 초과 또는 연결 종료)
 `
   'net.conn.send': `
 문자열 데이터 전송
@@ -4802,77 +4802,77 @@ written: 실제 전송 바이트 수(-1=오류 또는 연결 부적법)
 `
   'net.conn.send-with-timeout': `
 시간 초과를 동반한 전송(현재는 직접 전송하며, 독립적인 send timeout이 없음)
-data str: 전송할 데이터
-timeout-ms i64: 시간 초과 밀리초(현재는 무시되고, recv timeout만 참고로 설정)
-반환값 written i64: 실제 전송 바이트 수(-1=오류)
+data: 전송할 데이터
+timeout-ms: 시간 초과 밀리초(현재는 무시되고, recv timeout만 참고로 설정)
+반환값 written: 실제 전송 바이트 수(-1=오류)
 `
   'net.conn.set-recv-timeout': `
 수신 시간 초과 설정
-timeout-ms i64: 시간 초과 밀리초(0=블로킹, >0=시간 초과)
-반환값 ok bool: true=성공
+timeout-ms: 시간 초과 밀리초(0=블로킹, >0=시간 초과)
+반환값 ok: true=성공
 `
   'net.conn.set-timeout': `
 수신 시간 초과 설정(별명, 의미는 set-recv-timeout과 동일)
-timeout-ms i64: 시간 초과 밀리초
-반환값 ok bool: true=성공
+timeout-ms: 시간 초과 밀리초
+반환값 ok: true=성공
 `
   'net.dial-timeout': `
 연결 시간 초과를 동반한 접속
-host str: 대상 호스트
-port i64: 대상 포트 번호
-timeout-ms i64: 시간 초과 밀리초(현재는 연결 후의 recv 시간 초과 설정에 사용)
-반환값 c ?conn: ok=연결, nil=실패
+host: 대상 호스트
+port: 대상 포트 번호
+timeout-ms: 시간 초과 밀리초(현재는 연결 후의 recv 시간 초과 설정에 사용)
+반환값 c: ok=연결, nil=실패
 `
   'net.dial-to': `
 연결을 만들고 접속
-반환값 c ?conn: ok=연결, nil=실패
+반환값 c: ok=연결, nil=실패
 host: 대상 IPv4 점수표기 주소
 port: 대상 포트 번호
 c: ok=연결된 커넥터, nil=접속 실패
 `
   'net.enc-accept': `
 수락된 TCP 연결 위에서 암호화 채널 수립
-c conn: 수락된 TCP 연결
-key [32]byte: AES-256 키
-반환값 ec enc-conn: 암호화 연결
+c: 수락된 TCP 연결
+key: AES-256 키
+반환값 ec: 암호화 연결
 `
   'net.enc-conn.close': '암호화 연결 종료(기저 TCP 연결도 함께 종료)'
   'net.enc-conn.gen-iv': `
 다음 IV(nonce) 생성
-반환값 iv [12]byte: 12바이트 IV
+반환값 iv: 12바이트 IV
 iv: 12바이트 IV(앞 4바이트는 증가하는 전송 순번, 뒤 8바이트는 랜덤값에서 옴)
 `
   'net.enc-conn.init': `
 암호화 연결 초기화
-c conn: 기저 TCP 연결
-key [32]byte: AES-256 키
+c: 기저 TCP 연결
+key: AES-256 키
 `
   'net.enc-conn.recv-encrypted': `
 데이터를 수신하고 복호화
-반환값 data ?str: ok=복호화 후 평문, nil=실패
+반환값 data: ok=복호화 후 평문, nil=실패
 `
   'net.enc-conn.send-encrypted': `
 데이터를 암호화해 전송
-data str: 평문 데이터
-반환값 ok bool: true=성공
+data: 평문 데이터
+반환값 ok: true=성공
 `
   'net.enc-dial': `
 암호화 TCP 연결 수립
-host str: 대상 호스트
-port i64: 대상 포트 번호
-key [32]byte: AES-256 키
-반환값 ec ?enc-conn: ok=암호화 연결, nil=실패
+host: 대상 호스트
+port: 대상 포트 번호
+key: AES-256 키
+반환값 ec: ok=암호화 연결, nil=실패
 `
   'net.icmp-checksum': `
 ICMP 체크섬 계산(16비트 1의 보수 합)
-data []byte: 패킷 데이터
-len i64: 패킷 길이
+data: 패킷 데이터
+len: 패킷 길이
 반환값 checksum i64(16비트)
 `
   'net.icmp-conn.build-echo': `
 ICMP Echo Request 패킷 구성
-pkt []byte: 출력 패킷 버퍼(최소 64바이트), 이 함수가 제자리에서 채웁니다
-seq i64: ICMP Echo 순번, 응답과 매칭하기 위해 패킷의 seq 필드에 기록
+pkt: 출력 패킷 버퍼(최소 64바이트), 이 함수가 제자리에서 채웁니다
+seq: ICMP Echo 순번, 응답과 매칭하기 위해 패킷의 seq 필드에 기록
 `
   'net.icmp-conn.close': 'ICMP socket 종료'
   'net.icmp-conn.open': `
@@ -4882,32 +4882,32 @@ ok: true=socket 생성 성공(그리고 ident와 순번 시작점을 기록)
 `
   'net.icmp-conn.ping-host': `
 지정 호스트로 여러 번 ping 전송
-host str: 대상 IP 주소
-count i64: ping 횟수
-timeout-ms i64: 회당 시간 초과 밀리초(기본값 1000)
+host: 대상 IP 주소
+count: ping 횟수
+timeout-ms: 회당 시간 초과 밀리초(기본값 1000)
 `
   'net.icmp-conn.ping-once': `
 ICMP Echo Request를 한 번 보내고 응답을 기다림
-host str: 대상 IP 주소
-timeout-ms i64: 시간 초과 밀리초
-반환값 rtt ?i64: ok=왕복 지연(마이크로초), nil=실패
+host: 대상 IP 주소
+timeout-ms: 시간 초과 밀리초
+반환값 rtt: ok=왕복 지연(마이크로초), nil=실패
 `
   'net.listen-on': `
 리스너를 만들고 리슨 시작
-반환값 l ?listener: ok=리스너, nil=실패
+반환값 l: ok=리스너, nil=실패
 host: 바인딩할 IPv4 점수표기 주소
 port: 리슨 포트 번호
 l: ok=accept를 시작할 수 있는 리스너, nil=리슨 실패
 `
   'net.listener.accept': `
 새 TCP 연결 수락
-반환값 c ?conn: ok=연결 구조체, nil=실패
+반환값 c: ok=연결 구조체, nil=실패
 c: ok=새 연결(수락된 fd 포함), nil=수락 실패
 `
   'net.listener.accept-with-timeout': `
 시간 초과를 동반한 accept
-timeout-ms i64: 시간 초과 밀리초
-반환값 c ?conn: ok=연결, nil=시간 초과 또는 실패
+timeout-ms: 시간 초과 밀리초
+반환값 c: ok=연결, nil=시간 초과 또는 실패
 `
   'net.listener.close': '리슨 socket 종료'
   'net.listener.fd-of': `
@@ -4923,8 +4923,8 @@ ok: true=바인딩 후 리슨 시작(실패 시 fd는 -1 유지)
 `
   'net.listener.set-timeout': `
 accept 시간 초과 설정
-timeout-ms i64: 시간 초과 밀리초
-반환값 ok bool: true=성공
+timeout-ms: 시간 초과 밀리초
+반환값 ok: true=성공
 `
   'net.net-accept': `
 TCP 연결 수락
@@ -5007,18 +5007,18 @@ written: 실제 전송 바이트 수(-1=오류)
 `
   'net.ping': `
 단회 ping 편의 함수
-host str: 대상 IP 주소
-반환값 rtt ?i64: ok=왕복 지연(마이크로초), nil=실패
+host: 대상 IP 주소
+반환값 rtt: ok=왕복 지연(마이크로초), nil=실패
 `
   'net.ping-count': `
 여러 번 ping 편의 함수
-host str: 대상 IP 주소
-count i64: ping 횟수
+host: 대상 IP 주소
+count: ping 횟수
 `
   'net.split-ws': `
 공백 문자(스페이스/탭)로 문자열을 분할하고 연속 공백은 건너뜀
-s str: 입력 문자열
-반환값 out []str: 빈 항목 아닌 필드 목록
+s: 입력 문자열
+반환값 out: 빈 항목 아닌 필드 목록
 `
   'net.udp-conn.close': 'UDP socket 종료'
   'net.udp-conn.fd-of': `
@@ -5033,36 +5033,36 @@ ok: true=UDP socket 생성 성공
 `
   'net.udp-conn.recv': `
 UDP 데이터를 버퍼로 수신
-buf str: 수신 버퍼
-n i64: 최대 수신 바이트 수
+buf: 수신 버퍼
+n: 최대 수신 바이트 수
 반환값 read-n=실제 수신 바이트 수(-1=오류, 0=시간 초과)
 `
   'net.udp-conn.recv-bytes': `
 UDP 데이터를 바이트 배열로 수신
-buf []byte: 수신 버퍼
-n i64: 최대 수신 바이트 수
+buf: 수신 버퍼
+n: 최대 수신 바이트 수
 반환값 read-n=실제 수신 바이트 수(-1=오류, 0=시간 초과)
 `
   'net.udp-conn.send': `
 UDP 데이터를 .host:.port로 전송
-data str: 전송할 데이터
+data: 전송할 데이터
 반환값 written=실제 전송 바이트 수(-1=오류)
 `
   'net.udp-conn.send-bytes': `
 UDP 바이트 배열을 .host:.port로 전송
-data []byte: 전송할 데이터
+data: 전송할 데이터
 반환값 written=실제 전송 바이트 수(-1=오류)
 `
   'net.udp-conn.set-timeout': `
 수신 시간 초과 설정
-timeout-ms i64: 시간 초과 밀리초
+timeout-ms: 시간 초과 밀리초
 반환값 ok=true=성공
 `
   'net.udp-dial-to': `
 UDP 연결을 만들고 목적 주소 설정
-host str: 대상 IP 주소
-port i64: 대상 포트 번호
-반환값 c ?udp-conn: ok=연결, nil=실패
+host: 대상 IP 주소
+port: 대상 포트 번호
+반환값 c: ok=연결, nil=실패
 `
   'noml.doc.ann': `
 루트 노드의 `#{...}` 주석 원문을 획득
@@ -5159,8 +5159,8 @@ idx: 새 노드 인덱스
 `
   'noml.doc.new-bool': `
 불린 노드 생성
-v bool: 노드에 저장할 불린 값
-idx i64: 풀 내 새 노드 인덱스, 호출자가 부분트리를 연결하는 데 사용
+v: 노드에 저장할 불린 값
+idx: 풀 내 새 노드 인덱스, 호출자가 부분트리를 연결하는 데 사용
 `
   'noml.doc.new-nil': `
 nil 노드 생성
@@ -5168,8 +5168,8 @@ idx: 새 노드 인덱스
 `
   'noml.doc.new-num': `
 숫자 노드 생성
-v f64: 노드가 저장하는 숫자 값(정수와 소수가 같은 노드 형식을 공유)
-idx i64: 풀 내 새 노드 인덱스, 호출자가 부분트리를 연결하는 데 사용
+v: 노드가 저장하는 숫자 값(정수와 소수가 같은 노드 형식을 공유)
+idx: 풀 내 새 노드 인덱스, 호출자가 부분트리를 연결하는 데 사용
 `
   'noml.doc.new-obj': `
 빈 객체 노드 생성
@@ -5331,8 +5331,8 @@ out: NOML 키 리터럴
 숫자 리터럴 생성(정수값은 소수점 없음)
 ±1e15 안에 있고, 정수화 후 복원이 되면(i.to-f64() == n) 정수 표기로 출력하고,
 그렇지 않으면 n.to-str() 결과를 보존합니다.
-n f64: 직렬화할 숫자 값
-out str: 숫자 리터럴(예 '42' 또는 '3.14')
+n: 직렬화할 숫자 값
+out: 숫자 리터럴(예 '42' 또는 '3.14')
 `
   'noml.pool.get': `
 키로 자 노드 인덱스 획득
@@ -5372,9 +5372,9 @@ found: true=존재
 `
   'noml.pool.has-byte': `
 원시 바이트를 스캔해 지정 값이 나타나는지 판정(바이트별 비교, 코드포인트 기준 아님)
-s str: 스캔할 텍스트
-target i64: 비교할 바이트 값, 범위 0–255(예 10 = '\n', 96 = '`')
-yes bool: true=최소 한 번 나타남, false=해당 바이트를 전혀 포함하지 않음(빈 문자열은 반드시 false)
+s: 스캔할 텍스트
+target: 비교할 바이트 값, 범위 0–255(예 10 = '\n', 96 = '`')
+yes: true=최소 한 번 나타남, false=해당 바이트를 전혀 포함하지 않음(빈 문자열은 반드시 false)
 `
   'noml.pool.has-key': `
 객체에 같은 이름의 멤버가 이미 있는지(중복 키는 오류 보고)
@@ -5470,11 +5470,11 @@ ok: true=해석 성공
 `
   'noml.pool.parse-bool': `
 true/false 해석
-s str: 완전한 원문 텍스트
-pos i64: 리터럴 시작 위치(t 또는 f를 가리킴)
-val bool: 해석한 불린 값; ok=false일 때는 고정으로 false
-next i64: 리터럴 이후의 위치; ok=false일 때는 원래 pos로 돌아감
-ok bool: true=해석 성공, false=여기가 true/false 아님(fail을 호출해 오류 기록)
+s: 완전한 원문 텍스트
+pos: 리터럴 시작 위치(t 또는 f를 가리킴)
+val: 해석한 불린 값; ok=false일 때는 고정으로 false
+next: 리터럴 이후의 위치; ok=false일 때는 원래 pos로 돌아감
+ok: true=해석 성공, false=여기가 true/false 아님(fail을 호출해 오류 기록)
 `
   'noml.pool.parse-bool-node': `
 불린 값을 해석해 노드로 떨어짐
@@ -5503,11 +5503,11 @@ ok: true=해석 성공
   'noml.pool.parse-num': `
 숫자 리터럴 해석(정수 / 소수 / 과학 표기, 선행 '-' 허용, '+'는 받지 않음)
 숫자 자체를 구성하는 바이트만 섭취하고, 다른 문자를 만나면 즉시 멈추며 구분자를 요구하지 않음
-s str: 원문 전체
-pos i64: 숫자 시작의 바이트 인덱스
-val f64: 해석한 숫자 값(NOML에는 숫자 형식이 하나뿐, 정수도 f64로 저장)
-next i64: 숫자 종료 이후의 바이트 인덱스(실패 시 오류 위치에 멈춰 .fail이 표시하도록 함)
-ok bool: true=해석 성공, false=문법 오류(정수부 없음, '.' 뒤에 소수부 없음, 지수에 자릿수 없음)
+s: 원문 전체
+pos: 숫자 시작의 바이트 인덱스
+val: 해석한 숫자 값(NOML에는 숫자 형식이 하나뿐, 정수도 f64로 저장)
+next: 숫자 종료 이후의 바이트 인덱스(실패 시 오류 위치에 멈춰 .fail이 표시하도록 함)
+ok: true=해석 성공, false=문법 오류(정수부 없음, '.' 뒤에 소수부 없음, 지수에 자릿수 없음)
 `
   'noml.pool.parse-num-node': `
 숫자 값을 해석해 노드로 떨어짐
@@ -5571,21 +5571,21 @@ ok: true=해석 성공
 작은따옴표 문자열 리터럴 생성(이스케이프 포함)
 이스케이프 규칙: '\'' 와 '\\' 앞에 역슬래시를 추가하고, LF / CR / TAB은 \n \r \t로 쓰며,
 나머지 < 0x20 제어 바이트는 \u00XX로 씁니다; 출력 버퍼는 n*6+2를 확보합니다(바이트당 최악 6문자).
-s str: 원시 내용(임의 바이트 허용, 완전한 UTF-8을 요구하지 않음)
-out str: 앞뒤에 작은따옴표를 하나씩 붙이고 내부를 이스케이프한 리터럴
+s: 원시 내용(임의 바이트 허용, 완전한 UTF-8을 요구하지 않음)
+out: 앞뒤에 작은따옴표를 하나씩 붙이고 내부를 이스케이프한 리터럴
 `
   'noml.pool.quote-value': `
 내용에 따라 가장 단순한 형식을 골라 문자열 리터럴 생성
 기본적으로 .quote()를 사용하고, LF를 포함하고 .raw-safe()를 통과하면 백틱 원시 문자열로 바꿔 원래 개행을 보존합니다.
-s str: 원시 내용
-out str: .noml에 바로 쓸 수 있는 텍스트 리터럴(작은따옴표 이스케이프 형식 또는 '`' 원시 문자열)
+s: 원시 내용
+out: .noml에 바로 쓸 수 있는 텍스트 리터럴(작은따옴표 이스케이프 형식 또는 '`' 원시 문자열)
 `
   'noml.pool.raw-safe': `
 내용을 백틱 원시 문자열에 넣은 뒤 원형 그대로 회수할 수 있는지 판정
 다음 중 하나가 나타나면 사용할 수 없음: 빈 문자열, 첫 또는 끝 바이트가 LF, CR 포함,
 어느 행이든 선행 공백(스페이스 / TAB / CR)을 제거한 뒤 '`'로 시작(종료 표시로 오인됨).
-s str: 직렬화할 내용
-yes bool: true=안전하게 '`\n' + s + '\n`'로 감쌀 수 있음, false=작은따옴표 이스케이프 형식으로 바꿔야 함
+s: 직렬화할 내용
+yes: true=안전하게 '`\n' + s + '\n`'로 감쌀 수 있음, false=작은따옴표 이스케이프 형식으로 바꿔야 함
 `
   'noml.pool.require-end': `
 멤버 종료 검사: 이후에는 행 내 공백, 개행, `;` 주석 또는 컨테이너 닫힘만 허용
@@ -5670,21 +5670,21 @@ v: ok=문자열 내용, nil=값이 문자열 아님
 호출 형태: abs(x) (x 가 리시버. num 의 0 인수 메서드는 현재 이 형태만 지원한다.
 x.abs() 점 형태는 중첩된 num 유니온이 리시버를 단형화하지 못해 지원되지 않는다. num.sign 과 같다);
 음수는 overflow=wrap 으로 되돌려 반전한다(i64.MIN 의 절댓값은 i64 범위를 벗어난다)
-r num: 비음은 그대로 반환; 음수는 부호 반전 결과 반환(최소 음정수는 자기 자신으로 되돌아와 여전히 음수)
+r: 비음은 그대로 반환; 음수는 부호 반전 결과 반환(최소 음정수는 자기 자신으로 되돌아와 여전히 음수)
 `
   'num.clamp': `
 [lo, hi] 범위 안으로 제한한다
 사용법: x.clamp(lo, hi, r)
 순서대로 단락 판정: 하한 먼저, 상한 그 다음 비교. 따라서 lo > hi(구간 역전)면 하한 우선,
 lo 미만 값은 lo로 끌어올리고, hi 초과 값은 hi로 내려놓는다.
-lo num: 하한(포함); 입력이 lo보다 작으면 lo를 결과로 사용
-hi num: 상한(포함); 입력이 hi보다 크면 hi를 결과로 사용
-r num: 클램프 후 수치, [lo, hi] 안에 떨어짐(구간이 역이면 {lo, hi} 중 하나)
+lo: 하한(포함); 입력이 lo보다 작으면 lo를 결과로 사용
+hi: 상한(포함); 입력이 hi보다 크면 hi를 결과로 사용
+r: 클램프 후 수치, [lo, hi] 안에 떨어짐(구간이 역이면 {lo, hi} 중 하나)
 `
   'num.sign': `
 부호(-1, 0, 1) — 모든 num 타입(정수와 부동소수점)에서 쓸 수 있다
 ±0.0과 여러 정수 타입을 받음; NaN은 두 비교가 모두 false라 0에 떨어짐.
-r num: 1=0보다 큼, -1=0보다 작음, 0=0과 같음(±0.0 포함, NaN은 else 분기)
+r: 1=0보다 큼, -1=0보다 작음, 0=0과 같음(±0.0 포함, NaN은 else 분기)
 `
   'number.byte.to-str': `
 byte 를 문자열로 변환한다(부호 없음; u64 로 넓혀 재사용한다)
@@ -5770,14 +5770,14 @@ out: 최단 왕복 십진 문자열(이 double을 유일하게 복원하는 최�
 `
   'number.f64.to-str-fixed': `
 고정 소수점 변환
-precision i64: 소수 자릿수(>= 0; i64 오버플로를 피하려면 17 이하로 둔다)
-반환 out str: 문자열 형태(예: "3.14", "-0.005", "100")
+precision: 소수 자릿수(>= 0; i64 오버플로를 피하려면 17 이하로 둔다)
+반환 out: 문자열 형태(예: "3.14", "-0.005", "100")
 
 `
   'number.f64.to-str-general': `
 일반 형식(고정 소수점 또는 과학 표기를 자동으로 고른다)
-precision i64: 최대 유효 자릿수(>= 1)
-반환 out str: 문자열 형태(뒤쪽 0 은 자동으로 제거된다)
+precision: 최대 유효 자릿수(>= 1)
+반환 out: 문자열 형태(뒤쪽 0 은 자동으로 제거된다)
 
 `
   'number.f64.to-u32': `
@@ -5968,7 +5968,7 @@ name: NIS 도메인 이름(실패 시 빈 문자열)
 `
   'os.get-env': `
 환경 변수를 가져온다
-반환 val ?str: ok=값, nil=설정되지 않음
+반환 val: ok=값, nil=설정되지 않음
 key: 환경 변수명
 `
   'os.get-errno': `
@@ -5996,7 +5996,7 @@ pid: 현재 프로세스 PID
 프로세스의 스케줄링 우선순위를 가져온다
 which: 대상 종류(0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER)
 who: 대상 ID(0 은 현재 프로세스/그룹/사용자)
-반환 prio ?i64: ok=우선순위(-20 ~ 19), nil=읽지 못함
+반환 prio: ok=우선순위(-20 ~ 19), nil=읽지 못함
 주의: libc 관례는 오류 시 -1 을 반환하고 errno 를 설정하지만, 우선순위도 정당하게 -1 이 될 수 있으므로
 errno==0 으로 구분한다. 여기서는 ?i64 로 이를 명시한다(nil 은 오류).
 
@@ -6102,22 +6102,22 @@ us: 수면 마이크로초 수
 `
   'os.stat-gid': `
 파일의 그룹 gid 를 가져온다
-반환 gid ?i64: ok=gid, nil=읽지 못함
+반환 gid: ok=gid, nil=읽지 못함
 path: 파일 경로
 `
   'os.stat-mode': `
 파일 모드(권한과 타입 비트)를 가져온다
-반환 mode ?i64: ok=모드 값, nil=읽지 못함
+반환 mode: ok=모드 값, nil=읽지 못함
 path: 파일 경로
 `
   'os.stat-mtime': `
 파일 수정 시각(Unix 초)을 가져온다
-반환 mtime ?i64: ok=수정 시각, nil=읽지 못함
+반환 mtime: ok=수정 시각, nil=읽지 못함
 path: 파일 경로
 `
   'os.stat-uid': `
 파일 소유자의 uid 를 가져온다
-반환 uid ?i64: ok=uid, nil=읽지 못함
+반환 uid: ok=uid, nil=읽지 못함
 path: 파일 경로
 `
   'os.strerror': `
@@ -6138,7 +6138,7 @@ val: 해당 _SC_ 항목의 값(실패 시 -1 반환)
   'os.sysctl': `
 시스템 제어 파라미터를 조회한다(문자열 값 읽기)
 name: 파라미터 이름(예: 'kern.ostype', 'hw.model')
-반환 val ?str: ok=값 문자열, nil=조회 실패
+반환 val: ok=값 문자열, nil=조회 실패
 주의: Linux 에서는 /proc/sys 로 매핑되고, macOS/BSD 는 sysctl(2) 시스템 콜을 거친다
 
 `
@@ -6267,49 +6267,49 @@ f: 분리된 파일명(.p는 제자리에서 그 디렉터리 부분으로 변�
   'pbkdf2.pbkdf2-hmac-sha1': `
 PBKDF2, HMAC-SHA1 사용
 레거시 프로토콜 호환용; 새 설계는 SHA-256 / SHA-512 버전을 사용하세요.
-password []byte: 비밀번호(UTF-8 바이트열)
-salt []byte: 솔트
-iterations i64: 반복 횟수; 클수록 총력 공격이 어렵고, 너무 작으면 안전하지 않음
-key-len i64: 원하는 키 길이(바이트), 20바이트씩 블록 단위로 생성
-반환값 out []byte: 유도한 키, 길이는 정확히 key-len
+password: 비밀번호(UTF-8 바이트열)
+salt: 솔트
+iterations: 반복 횟수; 클수록 총력 공격이 어렵고, 너무 작으면 안전하지 않음
+key-len: 원하는 키 길이(바이트), 20바이트씩 블록 단위로 생성
+반환값 out: 유도한 키, 길이는 정확히 key-len
 `
   'pbkdf2.pbkdf2-hmac-sha256': `
 PBKDF2, HMAC-SHA256 사용
-password []byte: 비밀번호(UTF-8 바이트열)
-salt []byte: 솔트, 최소 16바이트이고 계정마다 다른 것을 권장
-iterations i64: 반복 횟수; 클수록 총력 공격이 어렵고(일반적으로 100000 이상), 너무 작으면 안전하지 않음
-key-len i64: 원하는 키 길이(바이트), 32바이트씩 블록 단위로 생성
-반환값 out []byte: 유도한 키, 길이는 정확히 key-len
+password: 비밀번호(UTF-8 바이트열)
+salt: 솔트, 최소 16바이트이고 계정마다 다른 것을 권장
+iterations: 반복 횟수; 클수록 총력 공격이 어렵고(일반적으로 100000 이상), 너무 작으면 안전하지 않음
+key-len: 원하는 키 길이(바이트), 32바이트씩 블록 단위로 생성
+반환값 out: 유도한 키, 길이는 정확히 key-len
 `
   'pbkdf2.pbkdf2-hmac-sha512': `
 PBKDF2, HMAC-SHA512 사용
-password []byte: 비밀번호(UTF-8 바이트열)
-salt []byte: 솔트, 최소 16바이트이고 계정마다 다른 것을 권장
-iterations i64: 반복 횟수; 클수록 총력 공격이 어렵고, 너무 작으면 안전하지 않음
-key-len i64: 원하는 키 길이(바이트), 64바이트씩 블록 단위로 생성
-반환값 out []byte: 유도한 키, 길이는 정확히 key-len
+password: 비밀번호(UTF-8 바이트열)
+salt: 솔트, 최소 16바이트이고 계정마다 다른 것을 권장
+iterations: 반복 횟수; 클수록 총력 공격이 어렵고, 너무 작으면 안전하지 않음
+key-len: 원하는 키 길이(바이트), 64바이트씩 블록 단위로 생성
+반환값 out: 유도한 키, 길이는 정확히 key-len
 `
   'pem.decode': `
 PEM 형식 문자열 해석(입력의 첫 BEGIN…END 블록만 취득)
-pem-str str: '-----BEGIN <label>-----' … '-----END <label>-----' 블록을 최소 하나 포함하는 텍스트
-result ?block: ok=라벨과 디코딩 후 페이로드, nil=표식 없음, Base64 디코딩 실패 또는 내용이 너무 짧음
+pem-str: '-----BEGIN <label>-----' … '-----END <label>-----' 블록을 최소 하나 포함하는 텍스트
+result: ok=라벨과 디코딩 후 페이로드, nil=표식 없음, Base64 디코딩 실패 또는 내용이 너무 짧음
 `
   'pem.encode': `
 원시 바이트를 PEM 형식 문자열로 인코드한다
-label str: PEM 태그(예: 'CERTIFICATE', 'RSA PRIVATE KEY'), BEGIN/END와 일치해야 함
-data []byte: 원시 바이너리 데이터, base64.encode-std로 인코딩 후 64문자로 줄바꿈
-out str: BEGIN/END 줄과 각 줄 끝 개행을 포함한 완전한 PEM 텍스트
+label: PEM 태그(예: 'CERTIFICATE', 'RSA PRIVATE KEY'), BEGIN/END와 일치해야 함
+data: 원시 바이너리 데이터, base64.encode-std로 인코딩 후 64문자로 줄바꿈
+out: BEGIN/END 줄과 각 줄 끝 개행을 포함한 완전한 PEM 텍스트
 `
   'pool.create': `
 커넥션 풀을 만들고 초기화
 host: 대상 서버의 호스트 이름 또는 IP
 port: 대상 서버의 포트 번호
 max-size: 허용 최대 연결 수
-반환값 p pool: 초기화가 끝난 커넥션 풀 인스턴스
+반환값 p: 초기화가 끝난 커넥션 풀 인스턴스
 `
   'pool.pool.active-count': `
 활성 연결 수 획득
-반환값 n i64: 활성 연결 수
+반환값 n: 활성 연결 수
 `
   'pool.pool.close-all': '모든 연결 종료'
   'pool.pool.close-conn': `
@@ -6318,11 +6318,11 @@ idx: 풀에서 종료하고 제거할 연결 인덱스
 `
   'pool.pool.get': `
 연결 획득(유휴 연결 재사용 우선, 없으면 새로 생성)
-반환값 c ?net.conn: ok=연결, nil=실패
+반환값 c: ok=연결, nil=실패
 `
   'pool.pool.idle-count': `
 유휴 연결 수 획득
-반환값 n i64: 유휴 연결 수
+반환값 n: 유휴 연결 수
 `
   'pool.pool.init': `
 커넥션 풀 초기화
@@ -6336,13 +6336,13 @@ c: 풀에 반환할 연결(열린 상태 유지, 종료하지 않음)
 `
   'pool.pool.total-count': `
 총 연결 수 획득
-반환값 n i64: 총 연결 수
+반환값 n: 총 연결 수
 `
   'pool.with-size': `
 기본 크기로 커넥션 풀 생성
 host: 대상 서버의 호스트 이름 또는 IP
 port: 대상 서버의 포트 번호
-반환값 p pool: 연결 수 상한이 기본값 8인 커넥션 풀
+반환값 p: 연결 수 상한이 기본값 8인 커넥션 풀
 `
   'process.close': '모든 파이프를 닫고 자식 프로세스를 기다린다'
   'process.close-stderr': '자식의 stderr 파이프를 닫는다'
@@ -6516,7 +6516,7 @@ n: 총 읽은 바이트 수
 `
   'process.read-line': `
 자식의 stdout 에서 한 줄을 읽는다
-반환 line ?str: ok=줄, nil=EOF 또는 오류
+반환 line: ok=줄, nil=EOF 또는 오류
 line: 읽은 한 줄(nil=EOF, 오류, 또는 stdout 미연결)
 `
   'process.shell': `
@@ -6574,7 +6574,7 @@ status: 해당 PID의 종료 코드
 `
   'process.wait-nohang': `
 비블로킹 대기(폴링)
-반환 status ?i64: ok=자식이 끝났음(그 종료 상태), nil=아직 실행 중
+반환 status: ok=자식이 끝났음(그 종료 상태), nil=아직 실행 중
 status: 종료 후의 종료 코드; nil=아직 실행 중
 `
   'process.win-close-handle': `
@@ -6601,7 +6601,7 @@ status: CreateProcessA의 반환 상태
 `
   'process.win-get-exit-code': `
 프로세스의 종료 코드를 가져온다(GetExitCodeProcess)
-반환 exit-code ?i64: nil 은 아직 실행 중이라는 뜻
+반환 exit-code: nil 은 아직 실행 중이라는 뜻
 proc-handle: 자식 프로세스 handle
 exit-code: 프로세스 종료 코드(nil=실행 중)
 `
@@ -6648,94 +6648,94 @@ written: 실제로 기록한 바이트 수(0=stdin 미연결)
   'proxy.config.connect': `
 config로 프록시 연결 수립
 프록시 주소와 계정 비밀번호는 수신자에서 가져옵니다(.host / .port / .username / .password).
-target-host str: 관통할 대상 호스트 이름
-target-port i64: 대상 서비스 포트 번호
-반환값 fd fd: 수립된 터널 socket 디스크립터, -1=실패
+target-host: 관통할 대상 호스트 이름
+target-port: 대상 서비스 포트 번호
+반환값 fd: 수립된 터널 socket 디스크립터, -1=실패
 `
   'proxy.config.tls-connect': `
 config로 프록시 TLS 연결 수립
 먼저 수신자의 프록시 설정으로 CONNECT 터널을 뚫고, 그 터널 위에서 TLS 악수를 완료합니다.
-target-host str: TLS 서버 호스트 이름(SNI / 인증서 검증에 사용)
-target-port i64: TLS 서비스 포트 번호
-반환값 tc ?tls.conn: ok=악수를 완료한 TLS 연결, nil=실패
+target-host: TLS 서버 호스트 이름(SNI / 인증서 검증에 사용)
+target-port: TLS 서비스 포트 번호
+반환값 tc: ok=악수를 완료한 TLS 연결, nil=실패
 `
   'proxy.connect': `
 HTTP CONNECT로 프록시 터널 수립
 프록시에 접속한 뒤 CONNECT target-host:target-port를 보내고, 200을 받으면 악수 완료;
 username이 비어 있지 않으면 Basic 인증 헤더를 동반합니다.
-proxy-host str: 프록시 서버 호스트 이름 또는 IP
-proxy-port i64: 프록시 서버 포트 번호(HTTP 프록시는 통상 3128 / 8080)
-target-host str: 관통할 대상 호스트 이름
-target-port i64: 대상 서비스 포트 번호(예: HTTPS의 443)
-username str: Basic 인증 사용자 이름; 빈 문자열은 인증 헤더 없음
-password str: Basic 인증 비밀번호(username이 비면 무시)
-반환값 fd fd: 수립된 터널 socket 디스크립터, -1=연결 또는 악수 실패
+proxy-host: 프록시 서버 호스트 이름 또는 IP
+proxy-port: 프록시 서버 포트 번호(HTTP 프록시는 통상 3128 / 8080)
+target-host: 관통할 대상 호스트 이름
+target-port: 대상 서비스 포트 번호(예: HTTPS의 443)
+username: Basic 인증 사용자 이름; 빈 문자열은 인증 헤더 없음
+password: Basic 인증 비밀번호(username이 비면 무시)
+반환값 fd: 수립된 터널 socket 디스크립터, -1=연결 또는 악수 실패
 `
   'proxy.dial': `
 프록시를 통해 TCP 연결 수립(편의 함수, 인증 없음)
 connect(..., '', '')와 동일.
-proxy-host str: 프록시 서버 호스트 이름 또는 IP
-proxy-port i64: 프록시 서버 포트 번호
-target-host str: 관통할 대상 호스트 이름
-target-port i64: 대상 서비스 포트 번호
-반환값 fd fd: 수립된 터널 socket 디스크립터, -1=실패
+proxy-host: 프록시 서버 호스트 이름 또는 IP
+proxy-port: 프록시 서버 포트 번호
+target-host: 관통할 대상 호스트 이름
+target-port: 대상 서비스 포트 번호
+반환값 fd: 수립된 터널 socket 디스크립터, -1=실패
 `
   'proxy.dial-auth': `
 프록시를 통해 TCP 연결 수립(인증 포함)
 connect(...와 동일하며, 다만 계정 비밀번호를 명시적 파라미터로 적음.
-proxy-host str: 프록시 서버 호스트 이름 또는 IP
-proxy-port i64: 프록시 서버 포트 번호
-target-host str: 관통할 대상 호스트 이름
-target-port i64: 대상 서비스 포트 번호
-username str: Basic 인증 사용자 이름
-password str: Basic 인증 비밀번호
-반환값 fd fd: 수립된 터널 socket 디스크립터, -1=실패
+proxy-host: 프록시 서버 호스트 이름 또는 IP
+proxy-port: 프록시 서버 포트 번호
+target-host: 관통할 대상 호스트 이름
+target-port: 대상 서비스 포트 번호
+username: Basic 인증 사용자 이름
+password: Basic 인증 비밀번호
+반환값 fd: 수립된 터널 socket 디스크립터, -1=실패
 `
   'proxy.proxy-tls-dial': `
 프록시를 통해 TLS 연결 수립
 먼저 HTTP CONNECT(인증 없음)로 터널을 얻고, 그 터널 위에서 TLS 악수를 시작합니다.
-proxy-host str: 프록시 서버 호스트 이름 또는 IP
-proxy-port i64: 프록시 서버 포트 번호
-target-host str: TLS 서버 호스트 이름(악수 시 SNI / 인증서 검증에도 사용)
-target-port i64: TLS 서비스 포트 번호(통상 443)
-반환값 tc ?tls.conn: ok=터널 위에서 악수를 완료한 TLS 연결, nil=터널 또는 악수 어느 단계에서든 실패
+proxy-host: 프록시 서버 호스트 이름 또는 IP
+proxy-port: 프록시 서버 포트 번호
+target-host: TLS 서버 호스트 이름(악수 시 SNI / 인증서 검증에도 사용)
+target-port: TLS 서비스 포트 번호(통상 443)
+반환값 tc: ok=터널 위에서 악수를 완료한 TLS 연결, nil=터널 또는 악수 어느 단계에서든 실패
 `
   'proxy.socks5-connect': `
 SOCKS5 프록시로 연결 수립
 먼저 방법 협상(username이 비어 있지 않으면 0x02 사용자명/비밀번호 인증, 아니면 0x00 무인증),
 그 다음 CONNECT 명령으로 대상 주소를 프록시에 넘깁니다.
-proxy-host str: SOCKS5 프록시 호스트 이름 또는 IP
-proxy-port i64: SOCKS5 프록시 포트 번호(통상 1080)
-target-host str: 관통할 대상 호스트; IP 리터럴이 아니면 도메인 문자열로 프록시에 해석을 위임
-target-port i64: 대상 서비스 포트 번호
-username str: 사용자 이름; 빈 문자열은 무인증
-password str: 비밀번호(username이 비면 무시)
-반환값 fd fd: 수립된 터널 socket 디스크립터, -1=협상 또는 연결 실패
+proxy-host: SOCKS5 프록시 호스트 이름 또는 IP
+proxy-port: SOCKS5 프록시 포트 번호(통상 1080)
+target-host: 관통할 대상 호스트; IP 리터럴이 아니면 도메인 문자열로 프록시에 해석을 위임
+target-port: 대상 서비스 포트 번호
+username: 사용자 이름; 빈 문자열은 무인증
+password: 비밀번호(username이 비면 무시)
+반환값 fd: 수립된 터널 socket 디스크립터, -1=협상 또는 연결 실패
 `
   'proxy.socks5-dial': `
 SOCKS5 프록시로 연결 수립(편의 함수, 무인증)
 socks5-connect(..., '', '')와 동일하며, 0x00 무인증 협상을 사용.
-proxy-host str: SOCKS5 프록시 호스트 이름 또는 IP
-proxy-port i64: SOCKS5 프록시 포트 번호(통상 1080)
-target-host str: 관통할 대상 호스트; IP 리터럴이 아니면 도메인 문자열로 프록시에 해석을 위임
-target-port i64: 대상 서비스 포트 번호
-반환값 fd fd: 수립된 터널 socket 디스크립터, -1=실패
+proxy-host: SOCKS5 프록시 호스트 이름 또는 IP
+proxy-port: SOCKS5 프록시 포트 번호(통상 1080)
+target-host: 관통할 대상 호스트; IP 리터럴이 아니면 도메인 문자열로 프록시에 해석을 위임
+target-port: 대상 서비스 포트 번호
+반환값 fd: 수립된 터널 socket 디스크립터, -1=실패
 `
   'queue.queue.clear': '큐를 비운다'
   'queue.queue.empty': `
 큐가 비었는지 판단한다
-반환 yes bool: true=비어 있음, false=비어 있지 않음
-yes bool: true=tail <= head(디큐 대기 원소 없음)
+반환 yes: true=비어 있음, false=비어 있지 않음
+yes: true=tail <= head(디큐 대기 원소 없음)
 `
   'queue.queue.full': `
 큐가 가득 찼는지 판단한다
 링 버퍼는 '빔'과 '가득'을 구분하려 빈 슬롯을 항상 하나 남기므로, 수용 원소 상한은 cap-1.
-yes bool: true=tail - head >= cap - 1(가득 참, 다시 push하면 덮어쓰기 또는 실패), false=자리에 여유가 있음
+yes: true=tail - head >= cap - 1(가득 참, 다시 push하면 덮어쓰기 또는 실패), false=자리에 여유가 있음
 `
   'queue.queue.size': `
 큐의 원소 개수를 반환한다
-반환 sz i64: 원소 개수
-sz i64: tail - head, 곧 현재 대기 중 원소 수(빈 슬롯 불포함)
+반환 sz: 원소 개수
+sz: tail - head, 곧 현재 대기 중 원소 수(빈 슬롯 불포함)
 `
   'quic.apply-header-protection': `
 패킷에 헤더 보호를 적용/제거
@@ -6747,55 +6747,55 @@ is-long-header: Long Header 패킷인지
   'quic.conn.build-initial-packet': `
 quic-build-initial-packet: QUIC Initial 패킷 구성
 crypto-data: 담을 CRYPTO 프레임 데이터(TLS ClientHello)
-반환값 out ?[]byte: 성공 시 완전한 Initial 패킷(암호화됨), 실패는 nil
+반환값 out: 성공 시 완전한 Initial 패킷(암호화됨), 실패는 nil
 `
   'quic.conn.close': '연결 종료'
   'quic.conn.init': '연결 초기화'
   'quic.conn.recv-initial': `
 서버 Initial 패킷을 수신하고 복호화
-반환값 frames [32]frame: 해석한 프레임
-반환값 count i64: 프레임 수(-1=오류)
-반환값 ok bool: true=성공
+반환값 frames: 해석한 프레임
+반환값 count: 프레임 수(-1=오류)
+반환값 ok: true=성공
 `
   'quic.conn.recv-raw': `
 conn.recv-packet: 임의 QUIC 패킷 수신
-반환값 buf []byte: 수신한 원시 패킷 바이트
-반환값 n i64: 수신 바이트 수(-1=오류, 0=시간 초과)
+반환값 buf: 수신한 원시 패킷 바이트
+반환값 n: 수신 바이트 수(-1=오류, 0=시간 초과)
 `
   'quic.decode-packet-number': `
 패킷에서 패킷 번호를 디코딩
 packet: 헤더 보호를 제거한 패킷 데이터
 pn-offset: 패킷 번호의 패킷 내 바이트 오프셋
 largest-pn: 이전에 성공적으로 디코딩한 최대 패킷 번호(상위 비트 추정에 사용)
-반환값 pn i64: 완전한 패킷 번호
-반환값 pn-len i64: 패킷 번호 필드가 차지한 바이트 수
+반환값 pn: 완전한 패킷 번호
+반환값 pn-len: 패킷 번호 필드가 차지한 바이트 수
 `
   'quic.derive-initial-keys': `
 Destination CID에서 Initial 키 유도
 dst-cid: 상대측(목적) Connection ID 바이트
 is-client: true면 클라이언트 키, false면 서버 측 키를 유도
-반환값 key [16]byte: AEAD 키
-반환값 iv [12]byte: AEAD IV
-반환값 hp [16]byte: 헤더 보호 키
+반환값 key: AEAD 키
+반환값 iv: AEAD IV
+반환값 hp: 헤더 보호 키
 `
   'quic.dial': `
 QUIC 연결 수립
 host: 서버 호스트 이름 또는 IP 주소
 port: 서버 UDP 포트 번호
-반환값 conn ?conn: ok=수립된 연결, nil=실패
+반환값 conn: ok=수립된 연결, nil=실패
 `
   'quic.gen-cid': `
 랜덤 Connection ID 생성
 len: 생성할 CID 바이트 길이(통상 8)
-반환값 cid []byte: 랜덤 생성한 Connection ID 바이트
+반환값 cid: 랜덤 생성한 Connection ID 바이트
 `
   'quic.parse-frames': `
 buf의 pos 위치에서 모든 프레임 해석 시작
 buf: QUIC 프레임을 포함한 데이터 버퍼
 pos: 해석을 시작하는 바이트 오프셋
 end: 해석 종지의 바이트 오프셋(미포함)
-반환값 frames [32]frame: 해석한 프레임 배열
-반환값 count i64: 프레임 수(-1=오류)
+반환값 frames: 해석한 프레임 배열
+반환값 count: 프레임 수(-1=오류)
 `
   'quic.remove-header-protection': `
 헤더 보호 제거(apply와 동일, XOR 대칭)
@@ -6808,20 +6808,20 @@ is-long-header: Long Header 패킷인지
 buf의 pos 위치에서 QUIC 가변 길이 정수 디코딩
 buf: 가변 길이 정수를 담은 데이터 버퍼
 pos: 디코딩을 시작하는 바이트 오프셋
-반환값 val i64: 디코딩한 정수 값
-반환값 next-pos i64: 다음 위치(-1=오류)
+반환값 val: 디코딩한 정수 값
+반환값 next-pos: 다음 위치(-1=오류)
 `
   'quic.varint-encode': `
 i64를 QUIC 가변 길이 정수로 인코딩
 val: 가변 길이 정수로 인코딩할 음이 아닌 i64 값
-반환값 buf []byte: 인코딩 결과(1/2/4/8바이트)
-반환값 n i64: buf에 실제로 기록한 인코딩 바이트 수
+반환값 buf: 인코딩 결과(1/2/4/8바이트)
+반환값 n: buf에 실제로 기록한 인코딩 바이트 수
 `
   'rand.rand': `
 다음 의사 난수 생성(xorshift32)
-state i64: 입력 상태(임의의 0 아닌 시드; 내부에서 먼저 32비트로 자르고 모든 단계에서 다시 마스크)
-new-state i64: 갱신된 상태(32비트), 다음 호출의 시드로 사용
-r i64: 이번 출력 값(0..4294967295)
+state: 입력 상태(임의의 0 아닌 시드; 내부에서 먼저 32비트로 자르고 모든 단계에서 다시 마스크)
+new-state: 갱신된 상태(32비트), 다음 호출의 시드로 사용
+r: 이번 출력 값(0..4294967295)
 `
   'rand.rand-str': `
 지정 길이의 랜덤 영문숫자 문자열 생성
@@ -6833,169 +6833,169 @@ chars: 사용 가능 문자 집합 (A-Z a-z 0-9)
   'rc4.rc4': `
 RC4 암호화/복호화
 같은 함수가 암호화와 복호화를 모두 수행: out = in XOR 키 스트림, out에 한 번 더 실행하면 in을 복원합니다.
-in []byte: 입력 데이터(평문 또는 암호문, 길이 불변)
-key []byte: 키(1–256바이트); 비면 내부 인덱스가 범위 초과하므로 호출자가 스스로 비어 있지 않음을 보장해야 함
-반환값 out []byte: in과 같은 길이의 키 스트림 XOR 결과
+in: 입력 데이터(평문 또는 암호문, 길이 불변)
+key: 키(1–256바이트); 비면 내부 인덱스가 범위 초과하므로 호출자가 스스로 비어 있지 않음을 보장해야 함
+반환값 out: in과 같은 길이의 키 스트림 XOR 결과
 `
   'regexp.alloc-class': `
 새 문자 클래스를 할당하고 그 인덱스를 반환한다
-반환 cls-idx i64: 클래스 인덱스
+반환 cls-idx: 클래스 인덱스
 
 `
   'regexp.clear-class-bit': `
 비트를 지운다
-cls-idx i64: 클래스 인덱스
-c i64: 문자 값(0-255)
+cls-idx: 클래스 인덱스
+c: 문자 값(0-255)
 
 `
   'regexp.compile': '패턴 문자열을 명령어 열로 컴파일한다'
   'regexp.emit': `
 명령어 하나를 출력한다
-op i64: 명령어 종류
-arg1 i64: 인수 1
-arg2 i64: 인수 2
+op: 명령어 종류
+arg1: 인수 1
+arg2: 인수 2
 
 `
   'regexp.emit-atom': `
 아톰 명령어를 출력한다
-atom-type i64: 아톰 종류
-atom-char i64: 아톰 문자 값
-atom-cls i64: 아톰 클래스 인덱스
+atom-type: 아톰 종류
+atom-char: 아톰 문자 값
+atom-cls: 아톰 클래스 인덱스
 
 `
   'regexp.emit-quantized': `
 수량자에 따라 명령어를 출력한다
 .tmp-quant 필드에서 수량자의 내부 코드를 읽는다(1=*, 2=+, 3=?)
 LLVM 의 == 42 최적화 버그를 피하려고 1/2/3 을 비교 값으로 쓴다
-atom-type i64: 아톰 종류
-atom-char i64: 아톰 문자 값
-atom-cls i64: 아톰 클래스 인덱스
-atom-i i64: 아톰 뒤의 위치
+atom-type: 아톰 종류
+atom-char: 아톰 문자 값
+atom-cls: 아톰 클래스 인덱스
+atom-i: 아톰 뒤의 위치
 
 `
   'regexp.find': `
 .pattern 과 처음 일치하는 text 의 부분 문자열을 찾는다
-text str: 일치시킬 텍스트
-반환 result str: 일치한 부분 문자열, 없으면 빈 문자열
+text: 일치시킬 텍스트
+반환 result: 일치한 부분 문자열, 없으면 빈 문자열
 
 `
   'regexp.in-class': `
 문자가 클래스에 속하는지 검사한다
-cls-idx i64: 클래스 인덱스
-c i64: 문자 값(0-255)
-반환 yes bool: true = 클래스에 속함
+cls-idx: 클래스 인덱스
+c: 문자 값(0-255)
+반환 yes: true = 클래스에 속함
 
 `
   'regexp.init-class-all': `
 클래스 비트맵을 모두 1 로 초기화한다
-cls-idx i64: 클래스 인덱스
+cls-idx: 클래스 인덱스
 
 `
   'regexp.init-class-zero': `
 클래스 비트맵을 모두 0 으로 초기화한다
-cls-idx i64: 클래스 인덱스
+cls-idx: 클래스 인덱스
 
 `
   'regexp.make-class-digits': `
 숫자 클래스 \d [0-9] 를 만든다
-반환 cls-idx i64: 클래스 인덱스
+반환 cls-idx: 클래스 인덱스
 
 `
   'regexp.make-class-nondigits': `
 비숫자 클래스 \D 를 만든다
-반환 cls-idx i64: 클래스 인덱스
+반환 cls-idx: 클래스 인덱스
 
 `
   'regexp.make-class-nonspace': `
 비공백 클래스 \S 를 만든다
-반환 cls-idx i64: 클래스 인덱스
+반환 cls-idx: 클래스 인덱스
 
 `
   'regexp.make-class-nonword': `
 비단어 클래스 \W 를 만든다
-반환 cls-idx i64: 클래스 인덱스
+반환 cls-idx: 클래스 인덱스
 
 `
   'regexp.make-class-space': `
 공백 클래스 \s 를 만든다
-반환 cls-idx i64: 클래스 인덱스
+반환 cls-idx: 클래스 인덱스
 
 `
   'regexp.make-class-word': `
 단어 클래스 \w [a-zA-Z0-9_] 를 만든다
-반환 cls-idx i64: 클래스 인덱스
+반환 cls-idx: 클래스 인덱스
 
 `
   'regexp.match-at': `
 재귀 백트래킹 일치
-pc i64: 명령어 카운터
-sp i64: 텍스트 위치
-text str: 일치시킬 텍스트
-반환 ok bool: true = 일치
+pc: 명령어 카운터
+sp: 텍스트 위치
+text: 일치시킬 텍스트
+반환 ok: true = 일치
 부수 효과: 성공하면 .match-end = sp 를 설정한다
 
 `
   'regexp.matches': `
 .pattern 이 text 어디에서든 일치하는지 검사한다
-text str: 일치시킬 텍스트
-반환 matched bool: true = 일치
+text: 일치시킬 텍스트
+반환 matched: true = 일치
 
 `
   'regexp.parse-atom': `
 정규식 아톰 하나를 파스한다(명령어는 출력하지 않는다)
 결과를 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls 에 저장한다
-pattern str: 패턴 문자열
-i i64: 현재 위치
-반환 new-i i64: 파스 후 새 위치
+pattern: 패턴 문자열
+i: 현재 위치
+반환 new-i: 파스 후 새 위치
 
 `
   'regexp.parse-class': `
 [...] 문자 클래스를 파스한다
-pattern str: 패턴 문자열
-i i64: 현재 위치('[' 를 가리킨다)
-반환 new-i i64: 새 위치(']' 다음)
+pattern: 패턴 문자열
+i: 현재 위치('[' 를 가리킨다)
+반환 new-i: 새 위치(']' 다음)
 부수 효과: 새 문자 클래스를 만들어 그 인덱스를 .tmp-atom-cls 에 저장한다
 
 `
   'regexp.parse-escape': `
 \x 이스케이프 시퀀스를 파스한다
-pattern str: 패턴 문자열
-i i64: 현재 위치('\' 를 가리킨다)
-반환 new-i i64: 파스 후 새 위치
+pattern: 패턴 문자열
+i: 현재 위치('\' 를 가리킨다)
+반환 new-i: 파스 후 새 위치
 부수 효과: .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls 를 설정한다
 
 `
   'regexp.regexp-compile': `
 정규식 패턴을 컴파일해 컴파일된 regexp 인스턴스를 반환한다.
 정규식 리터럴 /pattern/ 이 쓴다: 리터럴은 codegen 중에 이 함수 호출로 풀어진다.
-pattern str: 정규식
-반환 re regexp: 컴파일된 정규식 인스턴스
+pattern: 정규식
+반환 re: 컴파일된 정규식 인스턴스
 
 `
   'regexp.regexp-find': `
 pattern 과 처음 일치하는 text 의 부분 문자열을 찾는다
-pattern str: 정규식
-text str: 일치시킬 텍스트
-반환 result str: 일치한 부분 문자열, 없으면 빈 문자열
+pattern: 정규식
+text: 일치시킬 텍스트
+반환 result: 일치한 부분 문자열, 없으면 빈 문자열
 
 `
   'regexp.regexp-match': `
 text 가 pattern 과 어디에서든 일치하는지 검사한다
-pattern str: 정규식
-text str: 일치시킬 텍스트
-반환 matched bool: true = 일치
+pattern: 정규식
+text: 일치시킬 텍스트
+반환 matched: true = 일치
 
 `
   'regexp.set-class-bit': `
 비트를 설정한다
-cls-idx i64: 클래스 인덱스
-c i64: 문자 값(0-255)
+cls-idx: 클래스 인덱스
+c: 문자 값(0-255)
 
 `
   'regexp.set-class-escape': `
 문자 클래스 안의 이스케이프 시퀀스를 처리한다
-cls-idx i64: 클래스 인덱스
-c i64: 이스케이프된 문자(예: 'd', 'w', 's')
+cls-idx: 클래스 인덱스
+c: 이스케이프된 문자(예: 'd', 'w', 's')
 
 `
   'rsa._rsa-bn-add': `
@@ -7107,221 +7107,221 @@ rn: result의 limb 수
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════
 32비트 순환 좌회전(Salsa20 quarter-round의 회전에 사용)
-x u32: 회전할 32비트 값
-n i64: 좌회전 비트 수(0..31; 32는 시프트량이 오버플로됩니다)
-r u32: 좌회전 결과, 이미 & 0xFFFFFFFF
+x: 회전할 32비트 값
+n: 좌회전 비트 수(0..31; 32는 시프트량이 오버플로됩니다)
+r: 좌회전 결과, 이미 & 0xFFFFFFFF
 `
   'scrypt.salsa20-8-core': `
 Salsa20/8 코어: 64바이트 블록을 8라운드 혼합
 먼저 16개의 리틀엔디안 32비트 워드를 읽고, 8라운드의 add-rotate-xor를 실행한 뒤 원래 값과 더해 다시 씁니다.
-block []byte: 64바이트 입력/출력; 제자리 수정, 64바이트보다 적으면 부족한 부분은 0으로 처리
+block: 64바이트 입력/출력; 제자리 수정, 64바이트보다 적으면 부족한 부분은 0으로 처리
 `
   'scrypt.scrypt': `
 Scrypt 키 유도(RFC 7914 §7)
 먼저 PBKDF2-HMAC-SHA256(반복 1회)로 비밀번호를 p*128*r 바이트로 전개하고,
 구간별로 ROMix를 수행한 뒤, 마지막에 PBKDF2를 한 라운드 더해 key-len 바이트를 출력합니다.
-password []byte: 비밀번호(UTF-8 바이트열)
-salt []byte: 솔트, 16바이트 이상이고 계정마다 다른 것을 권장
-n i64: CPU/메모리 비용, 1보다 큰 2의 거듭제곱이어야 함; 클수록 안전하지만 느림
-r i64: 블록 크기(예 8), n과 함께 메모리 사용량 128*n*r 바이트를 결정
-p i64: 병렬도(예 1), CPU 시간에 영향
-key-len i64: 원하는 키 길이(바이트)
-반환값 out []byte: 유도한 키, 길이는 정확히 key-len
+password: 비밀번호(UTF-8 바이트열)
+salt: 솔트, 16바이트 이상이고 계정마다 다른 것을 권장
+n: CPU/메모리 비용, 1보다 큰 2의 거듭제곱이어야 함; 클수록 안전하지만 느림
+r: 블록 크기(예 8), n과 함께 메모리 사용량 128*n*r 바이트를 결정
+p: 병렬도(예 1), CPU 시간에 영향
+key-len: 원하는 키 길이(바이트)
+반환값 out: 유도한 키, 길이는 정확히 key-len
 `
   'scrypt.scrypt-blockmix': `
 블록 혼합 함수(RFC 7914 §4)
 끝부분 64바이트를 초기 X로 삼아, 2r개의 64바이트 하위 블록에 Salsa20/8를 반복하고,
 짝수 블록은 앞부분, 홀수 블록은 뒷부분에 배치해 새로운 128*r 바이트 출력을 얻습니다.
-b []byte: 입력 블록(128*r 바이트)
-r i64: 블록 크기 파라미터(하위 블록마다 64바이트, 총 2r블록)
-반환값 out []byte: 혼합 후 블록(길이 128*r)
+b: 입력 블록(128*r 바이트)
+r: 블록 크기 파라미터(하위 블록마다 64바이트, 총 2r블록)
+반환값 out: 혼합 후 블록(길이 128*r)
 `
   'scrypt.scrypt-romix': `
 메모리 경화 혼합 함수(RFC 7914 §5, ROMix라고도 함)
 먼저 n개 블록의 V 테이블을 채우고, 그 다음 n번의 랜덤 인덱스 읽기 + BlockMix를 수행해 최종적으로 새로운 128*r 바이트를 얻습니다.
-b []byte: 입력 블록(128*r 바이트)
-n i64: CPU/메모리 비용 파라미터, 1보다 큰 2의 거듭제곱이어야 함(예 16384)
-r i64: 블록 크기 파라미터, 하위 블록의 64바이트 블록 수를 결정
-반환값 out []byte: 혼합 후 블록(길이 128*r)
+b: 입력 블록(128*r 바이트)
+n: CPU/메모리 비용 파라미터, 1보다 큰 2의 거듭제곱이어야 함(예 16384)
+r: 블록 크기 파라미터, 하위 블록의 64바이트 블록 수를 결정
+반환값 out: 혼합 후 블록(길이 128*r)
 `
   'server.https-listen-on': `
 HTTPS 서버를 만들고 리슨 시작
-host str: 바인딩할 IP 주소
-port i64: 리슨 포트 번호
-반환값 s ?https-server: ok=서버, nil=실패
+host: 바인딩할 IP 주소
+port: 리슨 포트 번호
+반환값 s: ok=서버, nil=실패
 `
   'server.https-server-conn.close': 'TLS 연결 종료'
   'server.https-server-conn.get-header': `
 지정 헤더 값 획득
-name str: 헤더 이름
-반환값 val ?str: ok=헤더 값, nil=찾지 못함
+name: 헤더 이름
+반환값 val: ok=헤더 값, nil=찾지 못함
 `
   'server.https-server-conn.parse': `
 HTTP 요청 해석(TLS로 수신)
-반환값 ok bool: true=해석 성공
+반환값 ok: true=해석 성공
 `
   'server.https-server-conn.recv-more': `
 TLS 연결에서 recv-buf로 추가 데이터 수신
-반환값 n i64: 수신 바이트 수(-1=오류, 0=연결 종료)
+반환값 n: 수신 바이트 수(-1=오류, 0=연결 종료)
 `
   'server.https-server-conn.reset': '재사용(Keep-Alive)을 위해 연결 상태 재설정'
   'server.https-server-conn.write-body': `
 응답 본문 기록(TLS 경유)
-data str: 응답 본문 데이터
-반환값 ok bool: true=성공
+data: 응답 본문 데이터
+반환값 ok: true=성공
 `
   'server.https-server-conn.write-header': `
 단일 응답 헤더 기록(TLS 경유)
-name str: 헤더 이름
-value str: 헤더 값
-반환값 ok bool: true=성공
+name: 헤더 이름
+value: 헤더 값
+반환값 ok: true=성공
 `
   'server.https-server-conn.write-headers-done': `
 빈 행을 기록해 헤더 종료 표시(TLS 경유)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'server.https-server-conn.write-html': `
 편의 메서드 — HTML 응답 기록(TLS 경유)
-status i64: 상태 코드
-html str: HTML 내용
-반환값 ok bool: true=성공
+status: 상태 코드
+html: HTML 내용
+반환값 ok: true=성공
 `
   'server.https-server-conn.write-json': `
 편의 메서드 — JSON 응답 기록(TLS 경유)
-status i64: 상태 코드
-json-str str: JSON 문자열
-반환값 ok bool: true=성공
+status: 상태 코드
+json-str: JSON 문자열
+반환값 ok: true=성공
 `
   'server.https-server-conn.write-status': `
 HTTP 상태 행 기록(TLS 경유)
-status i64: 상태 코드
-반환값 ok bool: true=성공
+status: 상태 코드
+반환값 ok: true=성공
 `
   'server.https-server-conn.write-text': `
 편의 메서드 — 완전한 텍스트 응답 기록(TLS 경유)
-status i64: 상태 코드
-text str: 응답 텍스트
-반환값 ok bool: true=성공
+status: 상태 코드
+text: 응답 텍스트
+반환값 ok: true=성공
 `
   'server.https-server.accept': `
 새 HTTPS 연결 수락
-반환값 c ?https-server-conn: ok=연결, nil=실패
+반환값 c: ok=연결, nil=실패
 `
   'server.https-server.close': '서버 종료'
   'server.https-server.listen': `
 리슨 시작(TLS)
-host str: 바인딩할 IP 주소
-port i64: 리슨 포트 번호
-반환값 ok bool: true=성공
+host: 바인딩할 IP 주소
+port: 리슨 포트 번호
+반환값 ok: true=성공
 `
   'server.listen-on': `
 HTTP 서버를 만들고 리슨 시작
-host str: 바인딩할 IP 주소
-port i64: 리슨 포트 번호
-반환값 s ?server: ok=서버, nil=실패
+host: 바인딩할 IP 주소
+port: 리슨 포트 번호
+반환값 s: ok=서버, nil=실패
 `
   'server.secure-compare': `
 상수 시간 문자열 비교
-a str: 문자열 A
-b str: 문자열 B
-반환값 ok bool: true=같음
+a: 문자열 A
+b: 문자열 B
+반환값 ok: true=같음
 `
   'server.server-conn.close': '연결 종료'
   'server.server-conn.get-cookie': `
 요청 헤더에서 지정 Cookie 값 획득
-name str: Cookie 이름
-반환값 val ?str: ok=Cookie 값, nil=찾지 못함
+name: Cookie 이름
+반환값 val: ok=Cookie 값, nil=찾지 못함
 `
   'server.server-conn.get-header': `
 지정 헤더 값 획득
-name str: 헤더 이름(예 'Content-Type')
-반환값 val ?str: ok=헤더 값, nil=찾지 못함
+name: 헤더 이름(예 'Content-Type')
+반환값 val: ok=헤더 값, nil=찾지 못함
 `
   'server.server-conn.get-signed-cookie': `
 서명된 Cookie를 획득하고 검증
-name str: Cookie 이름
-key []byte: HMAC-SHA256 서명 키
-반환값 val ?str: ok=원본 Cookie 값, nil=찾지 못하거나 검증 실패
+name: Cookie 이름
+key: HMAC-SHA256 서명 키
+반환값 val: ok=원본 Cookie 값, nil=찾지 못하거나 검증 실패
 `
   'server.server-conn.parse': `
 HTTP 요청 해석
 완전한 HTTP 요청을 읽고 해석(요청 행 + 헤더 + 선택적 요청 본문)
-반환값 ok bool: true=해석 성공
+반환값 ok: true=해석 성공
 `
   'server.server-conn.recv-more': `
 소켓에서 recv-buf로 추가 데이터 수신
-반환값 n i64: 수신 바이트 수(-1=오류, 0=연결 종료)
+반환값 n: 수신 바이트 수(-1=오류, 0=연결 종료)
 `
   'server.server-conn.reset': '재사용(Keep-Alive)을 위해 연결 상태 재설정'
   'server.server-conn.set-signed-cookie': `
 응답에 서명된 Cookie 설정
-name str: Cookie 이름
-value str: Cookie 값
-key []byte: HMAC-SHA256 서명 키
+name: Cookie 이름
+value: Cookie 값
+key: HMAC-SHA256 서명 키
 `
   'server.server-conn.verify-basic-auth': `
 HTTP Basic 인증 검증
-expected-user str: 기대한 사용자 이름
-expected-pass str: 기대한 비밀번호
-반환값 ok bool: true=인증 통과
+expected-user: 기대한 사용자 이름
+expected-pass: 기대한 비밀번호
+반환값 ok: true=인증 통과
 `
   'server.server-conn.write-body': `
 응답 본문 기록
-data str: 응답 본문 데이터
-반환값 ok bool: true=성공
+data: 응답 본문 데이터
+반환값 ok: true=성공
 `
   'server.server-conn.write-error': `
 편의 메서드 — 오류 응답 기록(text/plain으로 전송, Connection: close 강제)
-status i64: 오류 상태 코드(예 404, 500)
-message str: 오류 메시지 본문
-반환값 ok bool: true=성공
+status: 오류 상태 코드(예 404, 500)
+message: 오류 메시지 본문
+반환값 ok: true=성공
 `
   'server.server-conn.write-header': `
 단일 응답 헤더 기록
-name str: 헤더 이름
-value str: 헤더 값
-반환값 ok bool: true=성공
+name: 헤더 이름
+value: 헤더 값
+반환값 ok: true=성공
 `
   'server.server-conn.write-headers-done': `
 빈 행을 기록해 헤더 종료 표시
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'server.server-conn.write-html': `
 편의 메서드 — HTML 응답 기록(Content-Type=text/html, Content-Length, Connection, Server 헤더를 자동 첨부)
-status i64: HTTP 상태 코드
-html str: HTML 페이지 내용
-반환값 ok bool: true=성공
+status: HTTP 상태 코드
+html: HTML 페이지 내용
+반환값 ok: true=성공
 `
   'server.server-conn.write-json': `
 편의 메서드 — JSON 응답 기록(Content-Type=application/json, Content-Length, Connection, Server 헤더를 자동 첨부)
-status i64: HTTP 상태 코드
-json-str str: 직렬화된 JSON 문자열
-반환값 ok bool: true=성공
+status: HTTP 상태 코드
+json-str: 직렬화된 JSON 문자열
+반환값 ok: true=성공
 `
   'server.server-conn.write-redirect': `
 편의 메서드 — 리다이렉트 응답 기록(응답 본문 없음, Content-Length=0, Connection: close 강제)
-status i64: 리다이렉트 상태 코드(301 영구 / 302 임시)
-location str: 리다이렉트 대상 URL(Location 헤더에 기록)
-반환값 ok bool: true=성공
+status: 리다이렉트 상태 코드(301 영구 / 302 임시)
+location: 리다이렉트 대상 URL(Location 헤더에 기록)
+반환값 ok: true=성공
 `
   'server.server-conn.write-status': `
 HTTP 상태 행 기록
-status i64: HTTP 상태 코드(예 200, 404, 500, 대응하는 Reason 문구를 자동 첨부)
-반환값 ok bool: true=성공
+status: HTTP 상태 코드(예 200, 404, 500, 대응하는 Reason 문구를 자동 첨부)
+반환값 ok: true=성공
 `
   'server.server-conn.write-text': `
 편의 메서드 — 완전한 텍스트 응답 기록(Content-Type=text/plain, Content-Length, Connection, Server 헤더를 자동 첨부)
-status i64: HTTP 상태 코드
-text str: 응답 본문, UTF-8 평문으로 기록
-반환값 ok bool: true=성공
+status: HTTP 상태 코드
+text: 응답 본문, UTF-8 평문으로 기록
+반환값 ok: true=성공
 `
   'server.server.accept': `
 새 HTTP 연결 수락
-반환값 c ?server-conn: ok=연결, nil=실패
+반환값 c: ok=연결, nil=실패
 `
   'server.server.accept-nb': `
 비블로킹으로 새 연결 수락(코루틴 이벤트 루프의 폴링용)
-반환값 c ?server-conn: 연결 있음=server-conn, 연결 없음 또는 실패=nil
+반환값 c: 연결 있음=server-conn, 연결 없음 또는 실패=nil
 server.accept와 달리 이 메서드는 블로킹하지 않으며, async-yield()와 함께 중단 가능한 이벤트 루프를 구현합니다
 `
   'server.server.close': '서버 종료'
@@ -7331,44 +7331,44 @@ fd: 리슨 socket의 파일 디스크립터
 `
   'server.server.listen': `
 리슨 시작
-host str: 바인딩할 IP 주소(예 '0.0.0.0' 또는 '127.0.0.1')
-port i64: 리슨 포트 번호
-반환값 ok bool: true=성공
+host: 바인딩할 IP 주소(예 '0.0.0.0' 또는 '127.0.0.1')
+port: 리슨 포트 번호
+반환값 ok: true=성공
 `
   'set.add': `
 집합에 원소를 추가한다(없을 때만)
-val t: 추가할 원소
-반환 new-size i64: 새 크기
+val: 추가할 원소
+반환 new-size: 새 크기
 
 `
   'set.contains': `
 원소가 집합에 있는지 판단한다
-val t: 찾을 원소
-반환 yes bool: true=있음, false=없음
+val: 찾을 원소
+반환 yes: true=있음, false=없음
 
 `
   'set.difference': `
 차집합을 계산한다(이 집합에는 있고 other 에는 없는 원소)
 결과는 호출자가 제공한 out 버퍼에 쓰고 원소 개수를 반환한다
-other []t: 다른 집합의 원소 버퍼
-osize i64: 다른 집합의 원소 개수
-out []t: 차집합을 담을 버퍼
-반환 cnt i64: 차집합의 원소 개수
+other: 다른 집합의 원소 버퍼
+osize: 다른 집합의 원소 개수
+out: 차집합을 담을 버퍼
+반환 cnt: 차집합의 원소 개수
 
 `
   'set.init': `
 팩토리 — 호출자가 제공한 원소 버퍼 위에 빈 집합을 만든다
-data []t: 원소 버퍼(길이가 용량 상한이다)
-반환 s set: 초기화된 집합 인스턴스
+data: 원소 버퍼(길이가 용량 상한이다)
+반환 s: 초기화된 집합 인스턴스
 
 `
   'set.intersection': `
 교집합을 계산한다(이 집합과 other 양쪽에 있는 원소)
 결과는 호출자가 제공한 out 버퍼에 쓰고 원소 개수를 반환한다
-other []t: 다른 집합의 원소 버퍼
-osize i64: 다른 집합의 원소 개수
-out []t: 교집합을 담을 버퍼
-반환 cnt i64: 교집합의 원소 개수
+other: 다른 집합의 원소 버퍼
+osize: 다른 집합의 원소 개수
+out: 교집합을 담을 버퍼
+반환 cnt: 교집합의 원소 개수
 
 `
   'set.is-empty': `
@@ -7378,8 +7378,8 @@ yes: 집합에 원소가 하나도 없으면 true
   'set.remove': `
 집합에서 원소를 제거한다
 구멍을 마지막 원소로 채운다(따라서 순서는 보존되지 않는다)
-val t: 제거할 원소
-반환 new-size i64: 새 크기
+val: 제거할 원소
+반환 new-size: 새 크기
 
 `
   'set.size': `
@@ -7388,58 +7388,58 @@ sz: 집합이 현재 담고 있는 원소 수
 `
   'set.to-vec': `
 집합을 슬라이스로 변환한다(순서 없음)
-반환 out []t: 원소 슬라이스(길이 = size)
+반환 out: 원소 슬라이스(길이 = size)
 
 `
   'set.union': `
 합집합을 계산한다(other 버퍼의 원소 중 이 집합에 없는 것을 더한다)
-other []t: 다른 집합의 원소 버퍼
-osize i64: 다른 집합의 원소 개수
-반환 new-size i64: 합집합 후 크기
+other: 다른 집합의 원소 버퍼
+osize: 다른 집합의 원소 개수
+반환 new-size: 합집합 후 크기
 
 `
   'sha1.sha1': `
 SHA-1 해시 계산(패딩과 다중 블록 처리 포함)
-data []byte: 입력 바이트 배열(임의 길이)
-hash [20]byte: 160비트 다이제스트, FIPS 180-4가 정의한 빅엔디안으로 저장
+data: 입력 바이트 배열(임의 길이)
+hash: 160비트 다이제스트, FIPS 180-4가 정의한 빅엔디안으로 저장
 주의: SHA-1은 이미 충돌 안전성을 상실해, 레거시 프로토콜 호환 / 검증 용도로만 사용합니다
 `
   'sha1.sha1-block': `
 512비트 블록 1개 처리(80라운드 압축, FIPS 180-4)
-s []u32: 16개의 32비트 빅엔디안 메시지 워드(호출자가 이미 바이트에서 언팩함)
-h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 이 블록에 진입하기 전의 160비트 해시 상태
-r0 u32, r1 u32, r2 u32, r3 u32, r4 u32: 압축 후 새 상태(작업 변수를 입력 상태에 다시 더하고 2^32 모듈로)
+s: 16개의 32비트 빅엔디안 메시지 워드(호출자가 이미 바이트에서 언팩함)
+h0 u32, h1, h2, h3, h4: 이 블록에 진입하기 전의 160비트 해시 상태
+r0 u32, r1, r2, r3, r4: 압축 후 새 상태(작업 변수를 입력 상태에 다시 더하고 2^32 모듈로)
 `
   'sha1.sha1-hex': `
 SHA-1 해시를 계산하고 hex 문자열 반환
-data []byte: 입력 바이트 배열(임의 길이)
-hex str: 40문자 소문자 16진수 다이제스트
+data: 입력 바이트 배열(임의 길이)
+hex: 40문자 소문자 16진수 다이제스트
 `
   'sha224.sha224': `
 SHA-224 해시 계산(패딩과 다중 블록 처리 포함; 압축 함수는 SHA-256과 같고 초기값이 다름)
-data []byte: 입력 바이트 배열(임의 길이)
-hash [28]byte: 224비트 다이제스트(SHA-256 상태 워드 앞 7개를 취함), 빅엔디안으로 저장
+data: 입력 바이트 배열(임의 길이)
+hash: 224비트 다이제스트(SHA-256 상태 워드 앞 7개를 취함), 빅엔디안으로 저장
 `
   'sha224.sha224-hex': `
 SHA-224 해시를 계산하고 hex 문자열 반환
-data []byte: 입력 바이트 배열(임의 길이)
-hex str: 56문자 소문자 16진수 다이제스트
+data: 입력 바이트 배열(임의 길이)
+hex: 56문자 소문자 16진수 다이제스트
 `
   'sha256.sha256': `
 SHA-256 해시 계산(패딩과 다중 블록 처리 포함)
-data []byte: 입력 바이트 배열(임의 길이)
-hash [32]byte: 256비트 다이제스트, FIPS 180-4가 정의한 빅엔디안으로 저장
+data: 입력 바이트 배열(임의 길이)
+hash: 256비트 다이제스트, FIPS 180-4가 정의한 빅엔디안으로 저장
 `
   'sha256.sha256-block': `
 512비트 블록 1개 처리(64라운드 압축, FIPS 180-4)
-s []u32: 16개의 32비트 빅엔디안 메시지 워드(호출자가 이미 바이트에서 언팩함)
+s: 16개의 32비트 빅엔디안 메시지 워드(호출자가 이미 바이트에서 언팩함)
 h0 u32..h7 u32: 이 블록에 진입하기 전의 256비트 해시 상태(a..h의 초기값)
 r0 u32..r7 u32: 압축 후 새 상태(작업 변수를 입력 상태에 다시 더하고 2^32 모듈로)
 `
   'sha256.sha256-hex': `
 SHA-256 해시를 계산하고 hex 문자열 반환
-data []byte: 입력 바이트 배열(임의 길이)
-hex str: 64문자 소문자 16진수 다이제스트
+data: 입력 바이트 배열(임의 길이)
+hex: 64문자 소문자 16진수 다이제스트
 `
   'sha3.keccak-f1600': `
 Keccak-f[1600] 치환 실행(24라운드)
@@ -7447,12 +7447,12 @@ state: 25개 64비트 lane의 상태 배열(제자리 입력/출력)
 `
   'sha3.keccak-sponge': `
 Keccak 스폰지 함수
-data []byte: 스폰지 상태로 흡수(absorb)할 원시 바이트, 비어 있을 수 있음
+data: 스폰지 상태로 흡수(absorb)할 원시 바이트, 비어 있을 수 있음
 rate: 흡수율(바이트 단위, 반드시 8의 배수)
 capacity: 용량(바이트 단위, rate + capacity = 200)
 out-len: 원하는 출력 바이트 길이
 suffix: 패딩 접미(SHA-3 = 0x06, SHAKE = 0x1F)
-반환값 out []byte: 짜낸(squeeze) 해시/출력 바이트
+반환값 out: 짜낸(squeeze) 해시/출력 바이트
 `
   'sha3.rotl64': `
 64비트 순환 좌회전
@@ -7462,107 +7462,107 @@ r: 순환 좌회전 후 결과
 `
   'sha3.sha3-224': `
 SHA3-224 해시 계산
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hash [28]byte: 28바이트 해시 값
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hash: 28바이트 해시 값
 `
   'sha3.sha3-224-hex': `
 SHA3-224를 계산하고 hex 문자열 반환
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hex str: 56문자 hex 문자열
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hex: 56문자 hex 문자열
 `
   'sha3.sha3-256': `
 SHA3-256 해시 계산
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hash [32]byte: 32바이트 해시 값
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hash: 32바이트 해시 값
 `
   'sha3.sha3-256-hex': `
 SHA3-256를 계산하고 hex 문자열 반환
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hex str: 64문자 hex 문자열
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hex: 64문자 hex 문자열
 `
   'sha3.sha3-384': `
 SHA3-384 해시 계산
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hash [48]byte: 48바이트 해시 값
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hash: 48바이트 해시 값
 `
   'sha3.sha3-384-hex': `
 SHA3-384를 계산하고 hex 문자열 반환
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hex str: 96문자 hex 문자열
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hex: 96문자 hex 문자열
 `
   'sha3.sha3-512': `
 SHA3-512 해시 계산
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hash [64]byte: 64바이트 해시 값
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hash: 64바이트 해시 값
 `
   'sha3.sha3-512-hex': `
 SHA3-512를 계산하고 hex 문자열 반환
-data []byte: 해시할 원시 바이트, 비어 있을 수 있음
-반환값 hex str: 128문자 hex 문자열
+data: 해시할 원시 바이트, 비어 있을 수 있음
+반환값 hex: 128문자 hex 문자열
 `
   'sha384.sha384': `
 SHA-384 해시 계산(패딩과 다중 블록 처리 포함; 압축 함수는 SHA-512와 같고 초기값이 다름)
-data []byte: 입력 바이트 배열(임의 길이)
-hash [48]byte: 384비트 다이제스트(SHA-512 상태 워드 앞 6개를 취함), 빅엔디안으로 저장
+data: 입력 바이트 배열(임의 길이)
+hash: 384비트 다이제스트(SHA-512 상태 워드 앞 6개를 취함), 빅엔디안으로 저장
 `
   'sha384.sha384-hex': `
 SHA-384 해시를 계산하고 hex 문자열 반환
-data []byte: 입력 바이트 배열(임의 길이)
-hex str: 96문자 소문자 16진수 다이제스트
+data: 입력 바이트 배열(임의 길이)
+hex: 96문자 소문자 16진수 다이제스트
 `
   'sha512.sha512': `
 SHA-512 해시 계산(패딩과 다중 블록 처리 포함)
-data []byte: 입력 바이트 배열(임의 길이; 길이 상한 2^128-1 비트)
-hash [64]byte: 512비트 다이제스트, FIPS 180-4가 정의한 빅엔디안으로 저장
+data: 입력 바이트 배열(임의 길이; 길이 상한 2^128-1 비트)
+hash: 512비트 다이제스트, FIPS 180-4가 정의한 빅엔디안으로 저장
 `
   'sha512.sha512-block': `
 1024비트 블록 1개 처리(80라운드 압축, FIPS 180-4)
-s []u64: 16개의 64비트 빅엔디안 메시지 워드(호출자가 이미 바이트에서 언팩함)
+s: 16개의 64비트 빅엔디안 메시지 워드(호출자가 이미 바이트에서 언팩함)
 h0 u64..h7 u64: 이 블록에 진입하기 전의 512비트 해시 상태(a..h의 초기값)
 r0 u64..r7 u64: 압축 후 새 상태(작업 변수를 입력 상태에 다시 더하고, 2^64 모듈로)
 `
   'sha512.sha512-hex': `
 SHA-512 해시를 계산하고 hex 문자열 반환
-data []byte: 입력 바이트 배열(임의 길이)
-hex str: 128문자 소문자 16진수 다이제스트
+data: 입력 바이트 배열(임의 길이)
+hex: 128문자 소문자 16진수 다이제스트
 `
   'sse.client.close': 'SSE 연결 종료'
   'sse.client.is-connected': `
 연결 상태 확인
-반환값 yes bool: true=연결됨
+반환값 yes: true=연결됨
 `
   'sse.client.next-event': `
 다음 SSE 이벤트 읽기
 완전한 이벤트를 받거나 연결이 닫힐 때까지 블로킹합니다.
-반환값 ev ?event:
+반환값 ev:
 ok = 이벤트
 nil   = 연결이 닫힘(EOF)
 err = 오류
 `
   'sse.client.reconnect': `
 재연결(last-event-id를 사용해 수신 계속)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'sse.listen-on': `
 SSE 서버 측을 만들고 리슨 시작
 host: 바인딩할 IP 주소(예 '0.0.0.0')
 port: 리슨 포트 번호
-반환값 s ?server: ok=서버 측, nil=실패
+반환값 s: ok=서버 측, nil=실패
 `
   'sse.server-conn.close': '클라이언트 연결 종료'
   'sse.server-conn.handshake': `
 SSE HTTP 악수 완료
 클라이언트 HTTP 요청을 읽고, 메서드가 GET인지 검증한 뒤, SSE 응답 헤더를 보냅니다.
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'sse.server-conn.is-connected': `
 연결 상태 확인
-반환값 yes bool: true=연결됨
+반환값 yes: true=연결됨
 `
   'sse.server-conn.send-comment': `
 SSE 주석 전송(하트비트 유지용)
 comment: 주석 내용
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'sse.server-conn.send-event': `
 SSE 이벤트 전송
@@ -7570,23 +7570,23 @@ event: 이벤트 유형(빈 문자열= event 필드를 보내지 않고 기본�
 data: 이벤트 데이터(여러 줄 가능, 각 줄을 data: 접두사로 전송)
 id: 이벤트 ID(빈 문자열= id 필드를 보내지 않음)
 retry: 재연결 대기 밀리초(-1= retry 필드를 보내지 않음)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'sse.server.accept': `
 새 SSE 클라이언트 연결을 수락하고 HTTP 악수 완료
-반환값 c ?server-conn: ok=악수된 클라이언트, nil=실패
+반환값 c: ok=악수된 클라이언트, nil=실패
 `
   'sse.server.close': 'SSE 서버 측 종료'
   'sse.server.listen': `
 리슨 시작
 host: 바인딩할 IP 주소(예 '0.0.0.0' 또는 '127.0.0.1')
 port: 리슨 포트 번호
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'sse.sse-connect': `
 SSE 엔드포인트에 연결
 url: SSE 엔드포인트 URL(http://host:port/path 또는 https://host:port/path)
-반환값 client ?client:
+반환값 client:
 ok = 연결된 클라이언트
 nil   = 연결 실패
 err = 오류 메시지
@@ -7597,24 +7597,24 @@ err = 오류 메시지
 `
   'stack.stack.empty': `
 스택이 비었는지 판단한다
-yes bool: true는 n == 0임을 뜻함
+yes: true는 n == 0임을 뜻함
 `
   'stack.stack.peek': `
 맨 위 원소를 꺼내지 않고 본다
-val ?i64: ok=data[n-1], nil=스택이 빔
+val: ok=data[n-1], nil=스택이 빔
 `
   'stack.stack.pop': `
 스택 맨 위 원소를 꺼낸다
-val ?i64: ok=본래 꼭대기 원소(제거됨), nil=스택이 빔
+val: ok=본래 꼭대기 원소(제거됨), nil=스택이 빔
 `
   'stack.stack.push': `
 스택 맨 위에 원소를 넣는다
 주의: 본 메서드는 용량을 검사하지 않음, 호출 쪽이 n < len(data)를 보장해야 함.
-val i64: 넣을 값; data[n]에 쓴 뒤 n을 1 증가
+val: 넣을 값; data[n]에 쓴 뒤 n을 1 증가
 `
   'stack.stack.size': `
 스택 현재 원소 수 반환
-sz i64: n과 같음(0은 비어 있음을 뜻하며, 최대 len(data)를 넘지 않음)
+sz: n과 같음(0은 비어 있음을 뜻하며, 최대 len(data)를 넘지 않음)
 `
   'static-hashmap.static-hashmap-bool-tmpl.clear': '맵을 비운다'
   'static-hashmap.static-hashmap-bool-tmpl.contains': `
@@ -7797,47 +7797,47 @@ eq: 두 문자열이 바이트 단위로 완전히 같을 때 true
 원소를 추가한다; 삽입되었는지 반환한다
 선형 탐지로 슬롯 찾기: 동일 문자열이 있으면 중복 삽입하지 않는다.
 표가 가득 차고 문자열이 없으면 탐지가 무한 루프, 호출 쪽이 원소 수를 스스로 통제해야 한다.
-key str: 추가할 문자열(슬롯에 복사됨)
-is-new bool: true=기존에 없다가 삽입됨, false=이미 존재, 변경 없음
+key: 추가할 문자열(슬롯에 복사됨)
+is-new: true=기존에 없다가 삽입됨, false=이미 존재, 변경 없음
 `
   'str-set.str-set.clear': '집합을 비운다'
   'str-set.str-set.contains': `
 원소가 존재하는지 판단한다
-key str: 조회할 문자열
-found bool: true=집합에 해당 문자열이 존재, false=미존재(집합이 비어 있으면 바로 반환)
+key: 조회할 문자열
+found: true=집합에 해당 문자열이 존재, false=미존재(집합이 비어 있으면 바로 반환)
 `
   'str-set.str-set.for-each': `
 모든 원소를 순회한다
 슬롯 첨자 순(삽입 순 아님)으로 [0, cap)을 돌며, 점유 슬롯의 문자열을 차례로 val에 대입한다.
 본 언어엔 콜백이 없어, 함수 반환 시 val은 마지막 비어 있지 않은 슬롯의 원소에 멈춤.
-val str: 현재 슬롯의 문자열(마지막 대입)
+val: 현재 슬롯의 문자열(마지막 대입)
 `
   'str-set.str-set.hash': `
 FNV-1a 문자열 해시
-key str: 해시할 문자열(바이트 순회)
-idx i64: [0, cap) 내 슬롯 인덱스(해시 값 & (cap-1), 대소문자 무시)
+key: 해시할 문자열(바이트 순회)
+idx: [0, cap) 내 슬롯 인덱스(해시 값 & (cap-1), 대소문자 무시)
 `
   'str-set.str-set.init': '집합을 초기화한다'
   'str-set.str-set.is-empty': `
 집합이 비었는지
-empty bool: true=size == 0, false=요소 남아있음
+empty: true=size == 0, false=요소 남아있음
 `
   'str-set.str-set.len': `
 원소 개수를 반환한다
-n i64: 집합에 현재 존재하는 문자열 수
+n: 집합에 현재 존재하는 문자열 수
 `
   'str-set.str-set.remove': `
 원소를 제거한다
 슬롯의 occ와 keys[i].len을 비우고 탐지 사슬 후속 재배치는 하지 않음; 같은 key를 다시 add하면 슬롯 재사용 가능.
-key str: 삭제할 문자열
-removed bool: true=찾아 삭제, false=없음
+key: 삭제할 문자열
+removed: true=찾아 삭제, false=없음
 `
   'str-set.str-set.str-eq': `
 두 str 이 같은지 비교한다
 길이를 먼저 비교해 빠르게 부정하고, 이후 바이트별 대조(대소문자 무시 처리 안 함).
-a str: 좌측 피연산자
-b str: 우측 피연산자
-eq bool: true=길이와 모든 바이트 동일, false=다름
+a: 좌측 피연산자
+b: 우측 피연산자
+eq: true=길이와 모든 바이트 동일, false=다름
 `
   'str._str-dig-val': `
 1 문자 숫자(0-15)를 그 값으로 변환한다; 잘못된 문자는 -1 을 반환한다
@@ -7847,8 +7847,8 @@ d: 0~15；잘못된 문자는 -1 반환
   'str.at': `
 [지원 중단] str.at: 문자(코드 포인트) 단위 인덱스 읽기 — 대신 s[idx] 를 쓴다(네이티브 인덱싱, ?char 반환)
 str.at: 안전한 인덱스 접근(문자 인덱스 단위; 바이트 오프셋이 필요하면 s.byte(i) 를 쓴다)
-i i64: 문자(코드 포인트) 인덱스
-반환 val ?byte: 그 문자의 코드 포인트 값(바이트 범위를 넘으면 절단); 범위를 벗어나면 nil
+i: 문자(코드 포인트) 인덱스
+반환 val: 그 문자의 코드 포인트 값(바이트 범위를 넘으면 절단); 범위를 벗어나면 nil
 
 `
   'str.bigint-bitlen': `
@@ -7922,14 +7922,14 @@ yes: s가 target로 끝나는지
 `
   'str.eq-full': `
 두 문자열이 완전히 같은지 비교한다
-b str: 다른 문자열
-반환 yes bool: true=같음, false=다름
+b: 다른 문자열
+반환 yes: true=같음, false=다름
 
 `
   'str.fields': `
 하나 이상 연속된 공백 문자로 문자열을 나눈다
 공백 문자: 공백(32), 탭(9), 개행(10), 캐리지 리턴(13)
-반환 out []str: 비어 있지 않은 부분 문자열들
+반환 out: 비어 있지 않은 부분 문자열들
 연속된 공백은 하나의 구분자로 취급하며, 앞뒤 공백은 빈 원소를 만들지 않는다
 
 `
@@ -7972,8 +7972,8 @@ pos: 첫 출현의 코드 포인트 위치, 못 찾으면 -1
 `
   'str.last-index': `
 부분 문자열의 마지막 출현을 역방향으로 찾는다(last-index 는 rindex 의 별칭)
-target str: 찾을 부분 문자열
-반환 pos i64: 찾은 코드 포인트(문자) 위치, 또는 -1
+target: 찾을 부분 문자열
+반환 pos: 찾은 코드 포인트(문자) 위치, 또는 -1
 
 `
   'str.len': `
@@ -7984,7 +7984,7 @@ n: 코드 포인트(문자) 수(s[i] 인덱스 의미와 일치)
   'str.lines': `
 개행으로 나눈다
 \n 과 \r\n 을 지원한다
-반환 out []str: 줄 목록(끝의 개행은 빈 줄을 만들지 않는다)
+반환 out: 줄 목록(끝의 개행은 빈 줄을 만들지 않는다)
 
 `
   'str.new': `
@@ -8009,17 +8009,17 @@ val: 코드 포인트별 치환 후의 사본
 `
   'str.replace-n': `
 횟수를 제한한 치환
-old str: 예전 부분 문자열
-new str: 새 부분 문자열
-n i64: 최대 치환 횟수; n <= 0 이면 아무것도 치환하지 않는다
-반환 val str: 결과 문자열
+old: 예전 부분 문자열
+new: 새 부분 문자열
+n: 최대 치환 횟수; n <= 0 이면 아무것도 치환하지 않는다
+반환 val: 결과 문자열
 
 `
   'str.replace-str': `
 s 안의 부분 문자열 old 의 모든 출현을 new 로 바꾼다
-old str: 치환할 부분 문자열
-new str: 치환 후
-반환 val str: 결과 문자열
+old: 치환할 부분 문자열
+new: 치환 후
+반환 val: 결과 문자열
 old 가 빈 문자열이면 원래 문자열의 복사본을 그대로 반환한다
 
 `
@@ -8037,16 +8037,16 @@ pos: target 마지막 출현(>= from-byte)의 바이트 오프셋, 못 찾으면
 `
   'str.rindex': `
 부분 문자열의 마지막 출현을 역방향으로 찾는다
-target str: 찾을 부분 문자열
-반환 pos i64: 찾은 코드 포인트(문자) 위치, 또는 -1
+target: 찾을 부분 문자열
+반환 pos: 찾은 코드 포인트(문자) 위치, 또는 -1
 
 `
   'str.rindex-from': `
 from(코드 포인트 위치)부터 부분 문자열을 역방향으로 찾는다
 Python 의 rfind(target, from) 과 같은 의미: [from, .len) 안에서 target 의 마지막 출현을 찾는다
-target str: 찾을 부분 문자열
-from i64: 시작 위치(포함 하한, 코드 포인트 단위)
-반환 pos i64: 찾은 코드 포인트(문자) 위치, 또는 -1
+target: 찾을 부분 문자열
+from: 시작 위치(포함 하한, 코드 포인트 단위)
+반환 pos: 찾은 코드 포인트(문자) 위치, 또는 -1
 
 `
   'str.slice': `
@@ -8065,16 +8065,16 @@ val: 바이트 범위 [start,end)로 자른 부분 문자열 사본
 `
   'str.split': `
 구분자로 문자열을 여러 부분 문자열로 나눈다
-sep str: 분할 지점 부분 문자열, 각 나타나는 위치에서 나누고 자신은 결과에 들어가지 않는다
-반환 out []str: 분할 후의 부분 문자열 슬라이스
+sep: 분할 지점 부분 문자열, 각 나타나는 위치에서 나누고 자신은 결과에 들어가지 않는다
+반환 out: 분할 후의 부분 문자열 슬라이스
 구분자가 비어 있으면 문자열 전체를 유일한 요소로 반환한다
 주의: 지역 result 슬라이스를 낸 뒤 out 에 대입한다 — out.push 가 출력 파라미터에 적용되지 않는 컴파일러 버그를 피하기 위함
 `
   'str.split-n': `
 횟수를 제한한 분할
-sep str: 분할 지점 부분 문자열, 각 나타나는 위치에서 나누고 자신은 결과에 들어가지 않는다
-maxsplit i64: 최대 분할 횟수(maxsplit+1 개 원소 생성); maxsplit <= 0 은 무제한
-반환 out []str: 결과
+sep: 분할 지점 부분 문자열, 각 나타나는 위치에서 나누고 자신은 결과에 들어가지 않는다
+maxsplit: 최대 분할 횟수(maxsplit+1 개 원소 생성); maxsplit <= 0 은 무제한
+반환 out: 결과
 `
   'str.starts-with': `
 s가 target로 시작하는지 판단
@@ -8134,7 +8134,7 @@ val: ok=파싱된 f64, nil=빈 문자열, err=비숫자 문자 포함
   'str.to-hex': `
 문자열을 16 진으로 인코드한다
 각 바이트를 소문자 16 진 두 문자로 만든다
-반환 out str: 16 진 문자열
+반환 out: 16 진 문자열
 
 `
   'str.to-i16': `
@@ -8183,7 +8183,7 @@ out: 자기 자신(str은 불변, 값 의미로 기초 버퍼를 공유하고 �
 `
   'str.to-txt': `
 str을 txt로 변환(최대 255바이트)
-반환 out ?txt: ok(txt) / nil(255바이트 초과 시 txt에 못 담음, 더 이상 침묵 절단하지 않음)
+반환 out: ok(txt) / nil(255바이트 초과 시 txt에 못 담음, 더 이상 침묵 절단하지 않음)
 `
   'str.to-u16': `
 문자열을 u16 으로 파스한다
@@ -8253,8 +8253,8 @@ out: 지정 길이와 용량의 새 문자열
 `
   'strs.join': `
 []str.join: 문자열 슬라이스의 모든 원소를 구분자로 연결한다
-sep str: 구분자
-반환 out str: 연결된 문자열
+sep: 구분자
+반환 out: 연결된 문자열
 
 `
   'tar.builder.add-bytes': `
@@ -8387,35 +8387,35 @@ typ: 항목 유형 문자열(typeflag에 따라 "file", "dir" 또는 "unknown"�
   'tdes.tdes-cbc-dec': `
 Triple DES-CBC 복호화
 블록마다 먼저 3DES-ECB 복호화를 하고, 앞 섹션의 암호문(첫 블록은 iv)과 XOR해 평문을 복원합니다.
-in []byte: 입력 암호문(길이가 8의 배수여야 함)
-key [24]byte: 키(K1 || K2 || K3), 암호화와 반드시 일치해야 함
-iv [8]byte: 초기 벡터, 암호화와 반드시 동일해야 함
-반환값 out []byte: 복호화한 데이터, 길이는 in과 동일
+in: 입력 암호문(길이가 8의 배수여야 함)
+key: 키(K1 || K2 || K3), 암호화와 반드시 일치해야 함
+iv: 초기 벡터, 암호화와 반드시 동일해야 함
+반환값 out: 복호화한 데이터, 길이는 in과 동일
 `
   'tdes.tdes-cbc-enc': `
 Triple DES-CBC 암호화
 각 블록을 먼저 앞 블록의 암호문(첫 블록은 iv)과 XOR한 뒤 3DES-ECB를 거치므로,
 같은 평문이라도 서로 다른 iv에서 서로 다른 암호문을 얻습니다.
-in []byte: 입력 데이터(길이가 8의 배수여야 함)
-key [24]byte: 키(K1 || K2 || K3)
-iv [8]byte: 초기 벡터, 메시지마다 고유해야 함
-반환값 out []byte: 암호화한 데이터, 길이는 in과 동일
+in: 입력 데이터(길이가 8의 배수여야 함)
+key: 키(K1 || K2 || K3)
+iv: 초기 벡터, 메시지마다 고유해야 함
+반환값 out: 암호화한 데이터, 길이는 in과 동일
 `
   'tdes.tdes-dec': `
 Triple DES 복호화(ECB 모드)
 암호화와 반대: D_K3 → E_K2 → D_K1; 동일하게 8바이트 블록별로 독립 처리합니다.
-in []byte: 입력 암호문(길이가 8의 배수여야 함)
-n i64: 실제로 처리할 바이트 수(통상 in.len())
-key [24]byte: 키(K1 || K2 || K3), 암호화와 반드시 일치해야 함
-반환값 out []byte: 복호화한 데이터, 길이는 n과 동일
+in: 입력 암호문(길이가 8의 배수여야 함)
+n: 실제로 처리할 바이트 수(통상 in.len())
+key: 키(K1 || K2 || K3), 암호화와 반드시 일치해야 함
+반환값 out: 복호화한 데이터, 길이는 n과 동일
 `
   'tdes.tdes-enc': `
 Triple DES 암호화(ECB 모드)
 각 8바이트 블록에 E_K1 → D_K2 → E_K3를 실행하며 블록끼리 서로 영향이 없습니다(같은 평문은 같은 암호문이 됩니다).
-in []byte: 입력 데이터(길이가 8의 배수여야 함; 한 블록에 못 미치는 끝부분은 처리되지 않음)
-n i64: 실제로 처리할 바이트 수(통상 in.len())
-key [24]byte: 키(K1 || K2 || K3, 각 구간 8바이트)
-반환값 out []byte: 암호화한 데이터, 길이는 n과 동일
+in: 입력 데이터(길이가 8의 배수여야 함; 한 블록에 못 미치는 끝부분은 처리되지 않음)
+n: 실제로 처리할 바이트 수(통상 in.len())
+key: 키(K1 || K2 || K3, 각 구간 8바이트)
+반환값 out: 암호화한 데이터, 길이는 n과 동일
 `
   'time.add-seconds': `
 초를 더한 새 time 을 반환한다
@@ -8607,92 +8607,92 @@ t: 대응 시점(nsec=0)
 `
   'tls.bn-to-bytes': `
 []i64(리틀엔디안 base 2^32)→ 빅엔디안 바이트 배열
-num []i64: 큰 정수
-반환값 out []byte: 빅엔디안 바이트
+num: 큰 정수
+반환값 out: 빅엔디안 바이트
 `
   'tls.build-nonce': `
 AEAD nonce 구성
-iv [12]byte: 쓰기 키에서 파생한 AEAD IV
-seq i64: 레코드 번호(8바이트로 우측 정렬한 뒤 IV 끝 구간에 XOR해 넣음)
-nonce [12]byte: 이 레코드의 AEAD nonce
+iv: 쓰기 키에서 파생한 AEAD IV
+seq: 레코드 번호(8바이트로 우측 정렬한 뒤 IV 끝 구간에 XOR해 넣음)
+nonce: 이 레코드의 AEAD nonce
 `
   'tls.bytes-cat': `
 두 바이트 배열을 이어 붙임
-a []byte: 앞 배열
-b []byte: 뒤 배열(a 뒤에 이어 붙임)
-out []byte: 이어 붙인 새 배열(길이 = a.len() + b.len())
+a: 앞 배열
+b: 뒤 배열(a 뒤에 이어 붙임)
+out: 이어 붙인 새 배열(길이 = a.len() + b.len())
 `
   'tls.bytes-to-bn': `
 빅엔디안 바이트 배열 →[]i64(리틀엔디안 base 2^32)
-data []byte: 빅엔디안 바이트
-반환값 out []i64: 큰 정수(각 원소가 32비트 limb)
+data: 빅엔디안 바이트
+반환값 out: 큰 정수(각 원소가 32비트 limb)
 `
   'tls.cipher-is-ecdhe': `
 ECDHE 키 교환 TLS 1.2 암호 제품군인지
 현재 ECDHE-ECDSA/RSA에 AES128-CBC-SHA256과 AES128-GCM-SHA256을 조합한 네 가지를 포함합니다.
-c i64: 암호 제품군 코드(TLS-CIPHER-* 상수)
-r bool: true=위 네 가지 중 하나(ECDHE 키 교환 가능), false=다른 제품군
+c: 암호 제품군 코드(TLS-CIPHER-* 상수)
+r: true=위 네 가지 중 하나(ECDHE 키 교환 가능), false=다른 제품군
 `
   'tls.cipher-is-gcm': `
 AEAD(AES-GCM) 레코드 포맷 TLS 1.2 암호 제품군인지
 ECDHE-ECDSA-AES128-GCM-SHA256과 ECDHE-RSA-AES128-GCM-SHA256 두 가지입니다.
-c i64: 암호 제품군 코드(TLS-CIPHER-* 상수)
-r bool: true=AES-GCM 레코드 사용(explicit nonce로 인증 태그 검증), false=CBC + HMAC 포맷 사용
+c: 암호 제품군 코드(TLS-CIPHER-* 상수)
+r: true=AES-GCM 레코드 사용(explicit nonce로 인증 태그 검증), false=CBC + HMAC 포맷 사용
 `
   'tls.conn.append-hs': `
 악수 메시지를 버퍼에 추가
-data []byte: 악수 버퍼 끝부분에 추가할 메시지 바이트
+data: 악수 버퍼 끝부분에 추가할 메시지 바이트
 `
   'tls.conn.append-hs-from': `
 buf의 offset 위치에서 n바이트를 악수 버퍼에 추가
-buf []byte: 출처 버퍼(record header 포함)
-offset i64: 시작 오프셋(통상 5, record header를 건너뜀)
-n i64: 추가할 바이트 수
+buf: 출처 버퍼(record header 포함)
+offset: 시작 오프셋(통상 5, record header를 건너뜀)
+n: 추가할 바이트 수
 `
   'tls.conn.close': 'TLS 연결 종료'
   'tls.conn.compute-shared-secret-13': 'ECDHE 공유 키 계산'
   'tls.conn.connect': `
 TLS 연결 수립(1.3/1.2 자동 협상)
-host str: 서버 호스트 이름
-port i64: 포트 번호
-반환값 ok bool: true=성공
+host: 서버 호스트 이름
+port: 포트 번호
+반환값 ok: true=성공
 `
   'tls.conn.connect-12': `
 TLS 1.2 전체 악수(순수 TLS 1.2, supported_versions 확장를 보내지 않음)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 host: 서버 호스트 이름 또는 IP
 port: TCP 포트 번호
 ok: true=TLS 1.2 악수 완료
 `
   'tls.conn.connect-13': `
 TLS 1.3 전체 악수
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.decrypt-record': `
 레코드 복호화
-buf []byte: 수신한 레코드 데이터(헤더부터 시작)
-반환값 ct i64: 원본 content type(-1=오류)
-반환값 out []byte: 복호화한 평문
-expected-ct i64: 기대한 content type(복호화 후 비교해, 다르면 오류로 간주)
+buf: 수신한 레코드 데이터(헤더부터 시작)
+반환값 ct: 원본 content type(-1=오류)
+반환값 out: 복호화한 평문
+expected-ct: 기대한 content type(복호화 후 비교해, 다르면 오류로 간주)
 `
   'tls.conn.decrypt-record-13': `
 TLS 1.3 AEAD 레코드 복호화
-rec []byte: 수신한 레코드(헤더 포함)
-key [16]byte: AEAD 키
-iv [12]byte: AEAD IV
-seq i64: 이 레코드의 기대한 번호(nonce 파생에 참여, 순서가 어긋나면 AEAD 검증 실패)
-반환값 ct i64: 원본 content type(-1=오류)
-반환값 out []byte: 복호화한 평문(content type byte 제외)
+rec: 수신한 레코드(헤더 포함)
+key: AEAD 키
+iv: AEAD IV
+seq: 이 레코드의 기대한 번호(nonce 파생에 참여, 순서가 어긋나면 AEAD 검증 실패)
+반환값 ct: 원본 content type(-1=오류)
+반환값 out: 복호화한 평문(content type byte 제외)
 `
   'tls.conn.decrypt-record-gcm': `
 TLS 1.2 AES-128-GCM AEAD 레코드 복호화(RFC 5288)
-buf []byte: 수신한 레코드(헤더부터 시작)
-expected-ct i64: 기대한 content type(AAD용)
-key [16]byte: server_write_key
-salt [4]byte: server_write_IV(implicit salt)
-seq i64: 레코드 번호
-반환값 ct i64: 성공=expected-ct, -1=오류
-반환값 out []byte: 복호화한 평문
+buf: 수신한 레코드(헤더부터 시작)
+expected-ct: 기대한 content type(AAD용)
+key: server_write_key
+salt: server_write_IV(implicit salt)
+seq: 레코드 번호
+반환값 ct: 성공=expected-ct, -1=오류
+반환값 out: 복호화한 평문
 `
   'tls.conn.derive-application-keys-13': '응용 계층 키 파생'
   'tls.conn.derive-handshake-keys-13': `
@@ -8701,31 +8701,31 @@ HKDF 키 스케줄 사용(RFC 8446 §7.1)
 `
   'tls.conn.derive-keys': `
 premaster secret에서 모든 키 파생
-premaster []byte: premaster secret(static-RSA 48바이트 / ECDHE 32바이트)
+premaster: premaster secret(static-RSA 48바이트 / ECDHE 32바이트)
 `
   'tls.conn.encrypt-record': `
 레코드를 암호화해 전송
-ct i64: 원본 content type
-data []byte: 평문 데이터
-반환값 ok bool: true=성공
+ct: 원본 content type
+data: 평문 데이터
+반환값 ok: true=성공
 `
   'tls.conn.encrypt-record-13': `
 TLS 1.3 AEAD 레코드를 암호화해 전송
-ct i64: 원본 content type
-data []byte: 평문 데이터
-key [16]byte: AEAD 키
-iv [12]byte: AEAD IV
-seq i64: 이 레코드의 번호(전송마다 증가, nonce 파생에 참여)
-반환값 ok bool: true=성공
+ct: 원본 content type
+data: 평문 데이터
+key: AEAD 키
+iv: AEAD IV
+seq: 이 레코드의 번호(전송마다 증가, nonce 파생에 참여)
+반환값 ok: true=성공
 `
   'tls.conn.encrypt-record-gcm': `
 TLS 1.2 AES-128-GCM AEAD 레코드 암호화(RFC 5288)
-ct i64: content type
-data []byte: 평문
-key [16]byte: client/server_write_key
-salt [4]byte: client/server_write_IV(implicit salt)
-seq i64: 레코드 번호
-반환값 ok bool: true=성공
+ct: content type
+data: 평문
+key: client/server_write_key
+salt: client/server_write_IV(implicit salt)
+seq: 레코드 번호
+반환값 ok: true=성공
 `
   'tls.conn.gen-p256-keypair': `
 임시 P-256 개인키(빅엔디안)와 비압축 공개키 생성
@@ -8733,7 +8733,7 @@ seq i64: 레코드 번호
 `
   'tls.conn.gen-x25519-keypair': `
 send-client-hello: ClientHello 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 임시 X25519 키 쌍 생성(.client-priv/.client-pub에 저장)
 다중 반환값 [32]byte의 컴파일러 버그를 피하기 위해 인라인 구현
 `
@@ -8745,113 +8745,113 @@ fd: 하위 socket의 파일 디스크립터(진단 전용)
 ServerHello 이후의 TLS 1.2 전체 악수
 (Certificate → [ECDHE: ServerKeyExchange] → ServerHelloDone → 키 교환 → CCS/Finished)
 .cipher-id(read-server-hello / read-server-hello-13이 이미 기록)와 ECDHE 시의 .client-priv/.client-pub에 의존
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.init': '연결 초기화(미연결 상태)'
   'tls.conn.read-certificate': `
 Certificate 읽기
-cert-out []byte: 출력 인증서 DER 데이터
-반환값 ok bool: true=성공
+cert-out: 출력 인증서 DER 데이터
+반환값 ok: true=성공
 `
   'tls.conn.read-change-cipher-spec': `
 ChangeCipherSpec 읽기
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.read-encrypted-handshake-13': `
 암호화된 악수 메시지 읽기
 단일 레코드에 여러 악수 메시지가 포함되는 경우를 지원(남은 데이터는 hs-plain-buf 버퍼로 버퍼링)
-반환값 msg-type i64: 메시지 유형(-1=오류)
-반환값 msg-data []byte: 메시지 데이터(헤더 제외)
+반환값 msg-type: 메시지 유형(-1=오류)
+반환값 msg-data: 메시지 데이터(헤더 제외)
 `
   'tls.conn.read-encrypted-record-13': `
 TLS 1.3 레코드 1건을 읽고 복호화
-key [16]byte: AEAD 키
-iv [12]byte: AEAD IV
-seq i64: 번호(읽은 후 자동 증가)
-반환값 ct i64: 원본 content type(-1=오류)
-반환값 out []byte: 복호화한 평문
+key: AEAD 키
+iv: AEAD IV
+seq: 번호(읽은 후 자동 증가)
+반환값 ct: 원본 content type(-1=오류)
+반환값 out: 복호화한 평문
 `
   'tls.conn.read-finished': `
 암호화된 Finished 메시지 읽기
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.read-server-hello': `
 ServerHello 읽기
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.read-server-hello-13': `
 ServerHello를 읽고 TLS 버전 감지
-반환값 ok bool: true=TLS 1.3, false=TLS 1.2 또는 실패
+반환값 ok: true=TLS 1.3, false=TLS 1.2 또는 실패
 `
   'tls.conn.read-server-hello-done': `
 ServerHelloDone 읽기
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.read-server-key-exchange': `
 ECDHE ServerKeyExchange 읽기(ECDHE 제품군 전용)
 서버 임시 X25519 공개키를 파싱해 .server-pub에 저장(인증서와 서명은 검증하지 않으며, 본 구현의 신뢰 모델과 일치)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.send': `
 TLS로 데이터 전송
-data str: 전송할 평문
+data: 전송할 평문
 written: 기록한 바이트 수(nil=암호화 또는 전송 실패)
 `
   'tls.conn.send-change-cipher-spec': 'ChangeCipherSpec 전송'
   'tls.conn.send-client-hello': `
 TLS 1.2 ClientHello 전송(ECDHE 암호 제품군과 확장 포함)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.send-client-hello-13': `
 TLS 1.3 ClientHello 전송(확장 포함)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.send-client-key-exchange': `
 ClientKeyExchange 전송
-premaster []byte: premaster secret(static-RSA 제품군용, 48바이트; ECDHE 제품군은 무시)
-cert []byte: 서버 인증서 DER(static-RSA 제품군용)
-반환값 ok bool: true=성공
+premaster: premaster secret(static-RSA 제품군용, 48바이트; ECDHE 제품군은 무시)
+cert: 서버 인증서 DER(static-RSA 제품군용)
+반환값 ok: true=성공
 `
   'tls.conn.send-finished': `
 암호화된 Finished 메시지 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.conn.send-finished-13': `
 TLS 1.3 Finished 메시지 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.dial': `
 편의 함수, TLS 연결 수립
-host str: 서버 호스트 이름
-port i64: 포트 번호
-반환값 conn ?conn: 연결(nil=연결 실패)
+host: 서버 호스트 이름
+port: 포트 번호
+반환값 conn: 연결(nil=연결 실패)
 `
   'tls.dial-12': `
 TLS 1.2 연결(순수 TLS 1.2, 1.3을 협상하지 않음)
-host str: 호스트 이름 또는 IP
-port i64: 포트 번호
-반환값 conn ?conn: ok=연결, nil=실패
+host: 호스트 이름 또는 IP
+port: 포트 번호
+반환값 conn: ok=연결, nil=실패
 `
   'tls.get-u16': `
 버퍼에서 16비트 빅엔디안 값 읽기
-buf []byte: 출처 버퍼(buf[pos..pos+1] 읽음)
-pos i64: 읽기 시작 위치(높은 쪽 바이트가 앞)
-val i64: 디코딩한 16비트 빅엔디안 값(바이트 범위 초과 시 0으로 계산)
+buf: 출처 버퍼(buf[pos..pos+1] 읽음)
+pos: 읽기 시작 위치(높은 쪽 바이트가 앞)
+val: 디코딩한 16비트 빅엔디안 값(바이트 범위 초과 시 0으로 계산)
 `
   'tls.get-u24': `
 버퍼에서 24비트 빅엔디안 값 읽기
-buf []byte: 출처 버퍼(buf[pos..pos+2] 읽음)
-pos i64: 읽기 시작 위치(높은 쪽 바이트가 앞)
-val i64: 디코딩한 24비트 빅엔디안 값(바이트 범위 초과 시 0으로 계산)
+buf: 출처 버퍼(buf[pos..pos+2] 읽음)
+pos: 읽기 시작 위치(높은 쪽 바이트가 앞)
+val: 디코딩한 24비트 빅엔디안 값(바이트 범위 초과 시 0으로 계산)
 `
   'tls.https-serve-once': `
 완전한 HTTPS 요청-응답 주기(단일 함수)
 같은 함수 안에서 완료: accept + handshake + recv HTTP + send HTTP + close
 모든 TLS 상태를 국소 변수 c에 유지해 전역 변수 버그와 구조체 복사 버그를 회피합니다.
-listen-fd fd: 리슨 socket fd
-status i64: HTTP 응답 상태 코드
-body str: HTTP 응답 본문
-반환값 ok bool: true=성공
+listen-fd: 리슨 socket fd
+status: HTTP 응답 상태 코드
+body: HTTP 응답 본문
+반환값 ok: true=성공
 `
   'tls.net-recv-wait': `
 블로킹 수신(nb recv + 짧은 sleep 재시도 사용)
@@ -8864,216 +8864,216 @@ r: >0=수신 바이트 수, 0=상대 측 정상 종료(FIN), -1=오류
 `
   'tls.prf': `
 TLS 1.2 PRF(P_SHA256)
-secret []byte: 키 재료
-label str: 태그 문자열
-seed []byte: 시드
-out-len i64: 필요한 출력 길이
-반환값 out []byte: PRF 출력
+secret: 키 재료
+label: 태그 문자열
+seed: 시드
+out-len: 필요한 출력 길이
+반환값 out: PRF 출력
 `
   'tls.put-u16': `
 16비트 빅엔디안 값을 버퍼에 기록
-buf []byte: 대상 버퍼, buf[pos..pos+1]에 기록
-pos i64: 기록 시작 위치(높은 쪽 바이트가 앞)
-val i64: 기록할 16비트 정수 값
+buf: 대상 버퍼, buf[pos..pos+1]에 기록
+pos: 기록 시작 위치(높은 쪽 바이트가 앞)
+val: 기록할 16비트 정수 값
 `
   'tls.put-u24': `
 24비트 빅엔디안 값을 버퍼에 기록
-buf []byte: 대상 버퍼, buf[pos..pos+2]에 기록
-pos i64: 기록 시작 위치(높은 쪽 바이트가 앞)
-val i64: 기록할 24비트 정수 값
+buf: 대상 버퍼, buf[pos..pos+2]에 기록
+pos: 기록 시작 위치(높은 쪽 바이트가 앞)
+val: 기록할 24비트 정수 값
 `
   'tls.rand-bytes': `
 랜덤 바이트 생성
-n i64: 필요한 바이트 수
-반환값 out []byte: 랜덤 바이트 배열
-state i64: 난수 시드 상태(rand.rand 내부에서 바이트별로 진행)
+n: 필요한 바이트 수
+반환값 out: 랜덤 바이트 배열
+state: 난수 시드 상태(rand.rand 내부에서 바이트별로 진행)
 `
   'tls.read-record': `
 TLS 레코드 1건 읽기
-fd fd: socket fd
-buf []byte: 레코드 버퍼(헤더+데이터 포함, buf[0..4]=header, buf[5..]=body)
-반환값 ct i64: content type(-1=오류)
-반환값 rlen i64: 데이터 길이(헤더 제외)
+fd: socket fd
+buf: 레코드 버퍼(헤더+데이터 포함, buf[0..4]=header, buf[5..]=body)
+반환값 ct: content type(-1=오류)
+반환값 rlen: 데이터 길이(헤더 제외)
 `
   'tls.recv-n': `
 socket에서 정확히 n바이트 읽기
-fd fd: socket fd
-buf []byte: 수신 버퍼
-n i64: 읽어야 할 바이트 수
-반환값 ok bool: true=성공
+fd: socket fd
+buf: 수신 버퍼
+n: 읽어야 할 바이트 수
+반환값 ok: true=성공
 `
   'tls.rsa-pkcs1-decrypt': `
 RSA PKCS#1 v1.5 복호화
-ciphertext []byte: RSA로 암호화한 데이터
-n []byte: 모듈러스(빅엔디안)
-d []byte: 개인키 지수(빅엔디안)
-반환값 out []byte: 복호화한 평문(nil=실패)
+ciphertext: RSA로 암호화한 데이터
+n: 모듈러스(빅엔디안)
+d: 개인키 지수(빅엔디안)
+반환값 out: 복호화한 평문(nil=실패)
 `
   'tls.rsa-pkcs1-encrypt': `
 RSA PKCS#1 v1.5 암호화
-msg []byte: 메시지(premaster secret, 48바이트)
-mod-bytes []byte: RSA 모듈러스(빅엔디안)
-exp i64: RSA 공개키 지수
-반환값 out []byte: 암호화한 데이터(길이 = mod-bytes.len)
+msg: 메시지(premaster secret, 48바이트)
+mod-bytes: RSA 모듈러스(빅엔디안)
+exp: RSA 공개키 지수
+반환값 out: 암호화한 데이터(길이 = mod-bytes.len)
 `
   'tls.send-raw': `
 원시 TLS 레코드 전송(미암호화)
-fd fd: socket fd
-ct i64: content type(레코드 헤더 첫 byte에 기록)
-data []byte: 해당 레코드에 기록할 페이로드 바이트(이 함수는 암호화하지 않고 바로 보냄)
+fd: socket fd
+ct: content type(레코드 헤더 첫 byte에 기록)
+data: 해당 레코드에 기록할 페이로드 바이트(이 함수는 암호화하지 않고 바로 보냄)
 `
   'tls.server-accept': `
 TCP 연결을 수락하고 TLS 악수 실행
 국소 변수로 악수 진행(전역 변수에 컴파일러 버그: 함수 간 주소 불일치)
-listen-fd fd: 리슨 socket fd
-반환값 conn ?server-conn: ok=연결(악수 키 포함), nil=실패
+listen-fd: 리슨 socket fd
+반환값 conn: ok=연결(악수 키 포함), nil=실패
 `
   'tls.server-conn.append-hs': `
 악수 데이터를 버퍼에 추가
-data []byte: 악수 버퍼에 추가할 데이터
+data: 악수 버퍼에 추가할 데이터
 `
   'tls.server-conn.append-hs-from': `
 buf의 offset 위치에서 n바이트 추가
-buf []byte: 출처 버퍼
-offset i64: 읽기 시작 오프셋
-n i64: 추가할 바이트 수
+buf: 출처 버퍼
+offset: 읽기 시작 오프셋
+n: 추가할 바이트 수
 `
   'tls.server-conn.close': '연결 종료'
   'tls.server-conn.compute-shared-secret-13': 'ECDHE 공유 키 계산'
   'tls.server-conn.decrypt-record': `
 레코드 복호화(CLIENT 키 사용)
-buf []byte: 수신한 레코드 데이터(헤더부터 시작)
-expected-ct i64: 원본 content type(TLS-CT-HANDSHAKE 또는 TLS-CT-APP-DATA)
-반환값 ct i64: 원본 content type(-1=오류)
-반환값 out []byte: 복호화한 평문
+buf: 수신한 레코드 데이터(헤더부터 시작)
+expected-ct: 원본 content type(TLS-CT-HANDSHAKE 또는 TLS-CT-APP-DATA)
+반환값 ct: 원본 content type(-1=오류)
+반환값 out: 복호화한 평문
 `
   'tls.server-conn.decrypt-record-13': `
 TLS 1.3 AEAD 레코드 복호화
-rec []byte: 수신한 레코드(헤더 포함)
-key [16]byte: AEAD 키
-iv [12]byte: AEAD IV
-seq i64: 이 레코드의 기대한 번호(nonce 파생에 참여, 순서가 어긋나면 AEAD 검증 실패)
-반환값 ct i64: 원본 content type(-1=오류)
-반환값 out []byte: 복호화한 평문
+rec: 수신한 레코드(헤더 포함)
+key: AEAD 키
+iv: AEAD IV
+seq: 이 레코드의 기대한 번호(nonce 파생에 참여, 순서가 어긋나면 AEAD 검증 실패)
+반환값 ct: 원본 content type(-1=오류)
+반환값 out: 복호화한 평문
 `
   'tls.server-conn.derive-application-keys-13': '응용 계층 키 파생'
   'tls.server-conn.derive-handshake-keys-13': '악수 키 파생(HKDF 키 스케줄)'
   'tls.server-conn.derive-keys': `
 premaster에서 모든 키 파생
-premaster []byte: premaster secret(48바이트)
+premaster: premaster secret(48바이트)
 `
   'tls.server-conn.encrypt-record': `
 레코드를 암호화해 전송(SERVER 키 사용)
-ct i64: 원본 content type
-data []byte: 평문 데이터
-반환값 ok bool: true=성공
+ct: 원본 content type
+data: 평문 데이터
+반환값 ok: true=성공
 `
   'tls.server-conn.encrypt-record-13': `
 TLS 1.3 AEAD 레코드를 암호화해 전송
-ct i64: 원본 content type
-data []byte: 평문 데이터
-key [16]byte: AEAD 키
-iv [12]byte: AEAD IV
-seq i64: 이 레코드의 번호(전송마다 증가, nonce 파생에 참여)
-반환값 ok bool: true=성공
+ct: 원본 content type
+data: 평문 데이터
+key: AEAD 키
+iv: AEAD IV
+seq: 이 레코드의 번호(전송마다 증가, nonce 파생에 참여)
+반환값 ok: true=성공
 `
   'tls.server-conn.handshake': `
 TLS 서버 악수(1.3/1.2 자동 협상)
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.handshake-13': `
 TLS 1.3 서버 악수
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.read-change-cipher-spec': `
 ChangeCipherSpec 읽기
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.read-client-finished-13': `
 client Finished를 읽어 검증
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.read-client-hello': `
 ClientHello 읽기
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.read-client-key-exchange': `
 ClientKeyExchange를 읽어 premaster 복호화
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.read-encrypted-handshake-13': `
 암호화된 악수 메시지 읽기
-msg-type i64: 악수 메시지 유형(-1=오류)
-msg-data []byte: 메시지 내용(헤더 제외)
+msg-type: 악수 메시지 유형(-1=오류)
+msg-data: 메시지 내용(헤더 제외)
 `
   'tls.server-conn.read-encrypted-record-13': `
 TLS 1.3 레코드 1건을 읽고 복호화
 (CCS middlebox compatibility 레코드를 건너뜀)
-key [16]byte: AEAD 키
-iv [12]byte: AEAD IV
-seq i64: 레코드 번호(호출자가 읽은 후 증가)
-ct i64: 복호화한 원본 content type(-1=오류)
-out []byte: 복호화한 평문
+key: AEAD 키
+iv: AEAD IV
+seq: 레코드 번호(호출자가 읽은 후 증가)
+ct: 복호화한 원본 content type(-1=오류)
+out: 복호화한 평문
 `
   'tls.server-conn.read-finished': `
 암호화된 client Finished를 읽고 검증
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.recv': `
 데이터를 수신해 복호화
-buf str: 수신 버퍼
-n i64: 최대 수신 바이트 수
-반환값 read-n i64: 실제 수신 바이트 수(-1=오류)
+buf: 수신 버퍼
+n: 최대 수신 바이트 수
+반환값 read-n: 실제 수신 바이트 수(-1=오류)
 `
   'tls.server-conn.send': `
 TLS로 데이터 전송
-data str: 전송할 평문
+data: 전송할 평문
 written: 기록한 바이트 수(nil=실패)
 `
   'tls.server-conn.send-certificate': `
 Certificate 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.send-certificate-13': `
 TLS 1.3 Certificate 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.send-change-cipher-spec': 'ChangeCipherSpec 전송'
   'tls.server-conn.send-encrypted-extensions-13': `
 EncryptedExtensions 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.send-finished': `
 암호화된 server Finished 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.send-finished-13': `
 server Finished 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.send-server-hello': `
 ServerHello 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.send-server-hello-13': `
 TLS 1.3 ServerHello 전송
 X25519 키 쌍을 생성하고, supported_versions와 key_share 확장을 포함한 ServerHello 구성
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-conn.send-server-hello-done': `
 ServerHelloDone 전송
-반환값 ok bool: true=성공
+반환값 ok: true=성공
 `
   'tls.server-init': `
 서버 연결 초기화(인증서 생성, 키 설정)
-fd fd: 클라이언트 socket fd
-반환값 conn ?server-conn: 연결(nil=오류)
+fd: 클라이언트 socket fd
+반환값 conn: 연결(nil=오류)
 `
   'tls.server-listen': `
 리슨 socket 생성
-host str: 바인딩할 IP 주소
-port i64: 리슨 포트 번호
-반환값 fd fd: 리슨 socket fd(-1=실패)
+host: 바인딩할 IP 주소
+port: 리슨 포트 번호
+반환값 fd: 리슨 socket fd(-1=실패)
 `
   'tls.tls-pad': `
 TLS 1.2 CBC 패딩(RFC 5246 §6.2.3.2)——PKCS#7와 다름!
@@ -9081,13 +9081,13 @@ TLS 1.2 CBC 패딩(RFC 5246 §6.2.3.2)——PKCS#7와 다름!
 상대 측(예: OpenSSL)은 마지막 바이트 P를 읽은 뒤 P+1개의 바이트를 제거하며, 이 P+1개의 바이트가 모두 P와 같음을 요구합니다.
 PKCS#7(값 = pad-count)을 잘못 사용하면, 평문이 이미 블록의 정수배일 때 0x10을 16개 채우게 되어,
 상대 측은 17개의 바이트를 제거하려 하다 MAC 끝 바이트를 건드리게 됩니다 → bad record mac.
-in []byte: 평문(content || MAC)
-반환값 out []byte: 패딩 후 데이터(길이가 16의 배수)
+in: 평문(content || MAC)
+반환값 out: 패딩 후 데이터(길이가 16의 배수)
 `
   'tls.tls-unpad': `
 TLS 1.2 CBC 패딩 제거
-in []byte: 복호화한 데이터(content || MAC || padding)
-반환값 out-n i64: 패딩 제거 후 길이(content+MAC), -1=패딩 오류
+in: 복호화한 데이터(content || MAC || padding)
+반환값 out-n: 패딩 제거 후 길이(content+MAC), -1=패딩 오류
 `
   'toml.array-name': `
 테이블 배열의 이름을 읽는다.
@@ -9251,93 +9251,93 @@ complete: 따옴표／대괄호가 닫혔는지（다중 줄 값 읽기에서 �
 `
   'tree-map.tree-map.alloc-node': `
 빈 풀에서 노드를 할당한다
-반환 idx i64: 노드 인덱스, 풀이 가득 차면 -1
+반환 idx: 노드 인덱스, 풀이 가득 차면 -1
 
 `
   'tree-map.tree-map.bf': `
 균형 인수(왼쪽 높이 - 오른쪽 높이)를 반환한다
-idx i64: 노드 인덱스
-반환 b i64: 균형 인수
+idx: 노드 인덱스
+반환 b: 균형 인수
 
 `
   'tree-map.tree-map.clear': '모든 원소를 제거하고 빈 노드 풀을 다시 만든다'
   'tree-map.tree-map.contains': `
 키가 존재하는지 판단한다
-key i64: 키
-반환 yes bool: true=존재, false=존재하지 않음
+key: 키
+반환 yes: true=존재, false=존재하지 않음
 
 `
   'tree-map.tree-map.empty': `
 트리가 비었는지 판단한다
-반환 yes bool: true=비어 있음, false=비어 있지 않음
+반환 yes: true=비어 있음, false=비어 있지 않음
 
 `
   'tree-map.tree-map.first': `
 가장 작은 키를 반환한다
-반환 key ?i64: ok=가장 작은 키, nil=트리가 비어 있음
+반환 key: ok=가장 작은 키, nil=트리가 비어 있음
 
 `
   'tree-map.tree-map.for-each': `
 키 오름차순으로 모든 키/값 쌍을 순회한다
-k i64: 출력 키(원소마다 갱신된다)
-v i64: 출력 값(원소마다 갱신된다)
+k: 출력 키(원소마다 갱신된다)
+v: 출력 값(원소마다 갱신된다)
 
 `
   'tree-map.tree-map.free-node': `
 노드를 빈 풀로 되돌린다
-idx i64: 해제할 노드 인덱스
+idx: 해제할 노드 인덱스
 
 `
   'tree-map.tree-map.full': `
 노드 풀이 가득 찼는지 판단한다
-반환 yes bool: true=가득 참, false=가득 차지 않음
+반환 yes: true=가득 참, false=가득 차지 않음
 
 `
   'tree-map.tree-map.get': `
 키의 값을 검색한다
-key i64: 키
-반환 val ?i64: ok=찾음, nil=찾을 수 없음
+key: 키
+반환 val: ok=찾음, nil=찾을 수 없음
 
 `
   'tree-map.tree-map.ht': `
 노드의 높이를 반환한다(NIL = 0)
-idx i64: 노드 인덱스
-반환 h i64: 높이
+idx: 노드 인덱스
+반환 h: 높이
 
 `
   'tree-map.tree-map.init': '빈 트리와 그 빈 노드 풀을 초기화한다'
   'tree-map.tree-map.last': `
 가장 큰 키를 반환한다
-반환 key ?i64: ok=가장 큰 키, nil=트리가 비어 있음
+반환 key: ok=가장 큰 키, nil=트리가 비어 있음
 
 `
   'tree-map.tree-map.lower-bound': `
 target 이상인 첫 번째 키를 찾는다
-target i64: 목표 키
-반환 key ?i64: ok=찾음, nil=그런 키가 없음
+target: 목표 키
+반환 key: ok=찾음, nil=그런 키가 없음
 
 `
   'tree-map.tree-map.put': `
 key→value 를 삽입하거나 갱신한다
-key i64: 정렬 키
-val i64: 쓸 정수 값(키가 이미 존재하면 옛값을 덮어쓴다)
-반환 ok bool: true=삽입됨, false=기존 키를 갱신했거나 풀이 가득 참
+key: 정렬 키
+val: 쓸 정수 값(키가 이미 존재하면 옛값을 덮어쓴다)
+반환 ok: true=삽입됨, false=기존 키를 갱신했거나 풀이 가득 참
 `
   'tree-map.tree-map.rebalance': `
 노드 idx 의 균형을 검사하고 복구한다
-idx i64: 노드 인덱스
-반환 nr i64: 재균형 후 서브트리 루트 인덱스
+idx: 노드 인덱스
+반환 nr: 재균형 후 서브트리 루트 인덱스
 
 `
   'tree-map.tree-map.rebalance-up': `
 idx 에서 위로, 계층마다 재균형한다
-idx i64: 시작 노드 인덱스
+idx: 시작 노드 인덱스
 
 `
   'tree-map.tree-map.remove': `
 키를 제거한다
-key i64: 키
-반환 ok bool: true=제거됨, false=찾을 수 없음
+key: 키
+반환 ok: true=제거됨, false=찾을 수 없음
 
 `
   'tree-map.tree-map.rot-left': `
@@ -9347,7 +9347,7 @@ x                y
 a   y     =>     x   c
 / \          / \
 b   c        a   b
-x i64: 회전의 축이 되는 노드
+x: 회전의 축이 되는 노드
 
 `
   'tree-map.tree-map.rot-right': `
@@ -9357,113 +9357,113 @@ x              y
 y   c   =>     a   x
 / \                / \
 a   b              b   c
-x i64: 회전의 축이 되는 노드
+x: 회전의 축이 되는 노드
 
 `
   'tree-map.tree-map.size': `
 원소 개수를 반환한다
-반환 sz i64: 원소 개수
+반환 sz: 원소 개수
 
 `
   'tree-map.tree-map.successor': `
 노드의 infix 순 후속을 찾는다
-idx i64: 노드 인덱스
-반환 succ i64: 후속 인덱스, 없으면 -1
+idx: 노드 인덱스
+반환 succ: 후속 인덱스, 없으면 -1
 
 `
   'tree-map.tree-map.update-ht': `
 노드의 높이를 다시 계산한다
-idx i64: 노드 인덱스
+idx: 노드 인덱스
 
 `
   'tree-map.tree-map.upper-bound': `
 target 보다 큰 첫 번째 키를 찾는다
-target i64: 목표 키
-반환 key ?i64: ok=찾음, nil=그런 키가 없음
+target: 목표 키
+반환 key: ok=찾음, nil=그런 키가 없음
 
 `
   'tree-set.tree-set.add': `
 원소를 추가한다
-key i64: 추가할 값
-반환 ok bool: true=삽입됨, false=이미 존재하거나 풀이 가득 참
+key: 추가할 값
+반환 ok: true=삽입됨, false=이미 존재하거나 풀이 가득 참
 
 `
   'tree-set.tree-set.alloc-node': `
 빈 풀에서 노드를 할당한다
-반환 idx i64: 노드 인덱스, 풀이 가득 차면 -1
+반환 idx: 노드 인덱스, 풀이 가득 차면 -1
 
 `
   'tree-set.tree-set.bf': `
 균형 인수(왼쪽 높이 - 오른쪽 높이)를 반환한다
-idx i64: 노드 인덱스
-반환 b i64: 균형 인수
+idx: 노드 인덱스
+반환 b: 균형 인수
 
 `
   'tree-set.tree-set.clear': '모든 원소를 제거하고 빈 노드 풀을 다시 만든다'
   'tree-set.tree-set.contains': `
 값이 존재하는지 판단한다
-key i64: 검사할 값
-반환 yes bool: true=존재, false=존재하지 않음
+key: 검사할 값
+반환 yes: true=존재, false=존재하지 않음
 
 `
   'tree-set.tree-set.empty': `
 집합이 비었는지 판단한다
-반환 yes bool: true=비어 있음, false=비어 있지 않음
+반환 yes: true=비어 있음, false=비어 있지 않음
 
 `
   'tree-set.tree-set.first': `
 가장 작은 값을 반환한다
-반환 val ?i64: ok=가장 작은 값, nil=집합이 비어 있음
+반환 val: ok=가장 작은 값, nil=집합이 비어 있음
 
 `
   'tree-set.tree-set.for-each': `
 오름차순으로 모든 원소를 순회한다
-val i64: 출력 값(원소마다 갱신된다)
+val: 출력 값(원소마다 갱신된다)
 
 `
   'tree-set.tree-set.free-node': `
 노드를 빈 풀로 되돌린다
-idx i64: 해제할 노드 인덱스
+idx: 해제할 노드 인덱스
 
 `
   'tree-set.tree-set.full': `
 노드 풀이 가득 찼는지 판단한다
-반환 yes bool: true=가득 참, false=가득 차지 않음
+반환 yes: true=가득 참, false=가득 차지 않음
 
 `
   'tree-set.tree-set.ht': `
 노드의 높이를 반환한다(NIL = 0)
-idx i64: 노드 인덱스
-반환 h i64: 높이
+idx: 노드 인덱스
+반환 h: 높이
 
 `
   'tree-set.tree-set.init': '빈 트리와 그 빈 노드 풀을 초기화한다'
   'tree-set.tree-set.last': `
 가장 큰 값을 반환한다
-반환 val ?i64: ok=가장 큰 값, nil=집합이 비어 있음
+반환 val: ok=가장 큰 값, nil=집합이 비어 있음
 
 `
   'tree-set.tree-set.lower-bound': `
 target 이상인 첫 번째 원소를 찾는다
-target i64: 목표 값
-반환 val ?i64: ok=찾음, nil=그런 원소가 없음
+target: 목표 값
+반환 val: ok=찾음, nil=그런 원소가 없음
 
 `
   'tree-set.tree-set.rebalance': `
 노드 idx 의 균형을 검사하고 복구한다
-idx i64: 노드 인덱스
-반환 nr i64: 재균형 후 서브트리 루트 인덱스
+idx: 노드 인덱스
+반환 nr: 재균형 후 서브트리 루트 인덱스
 
 `
   'tree-set.tree-set.rebalance-up': `
 idx 에서 위로, 계층마다 재균형한다
-idx i64: 시작 노드 인덱스
+idx: 시작 노드 인덱스
 
 `
   'tree-set.tree-set.remove': `
 원소를 제거한다
-key i64: 제거할 값
-반환 ok bool: true=제거됨, false=찾을 수 없음
+key: 제거할 값
+반환 ok: true=제거됨, false=찾을 수 없음
 
 `
   'tree-set.tree-set.rot-left': `
@@ -9473,7 +9473,7 @@ x                y
 a   y     =>     x   c
 / \          / \
 b   c        a   b
-x i64: 회전의 축이 되는 노드
+x: 회전의 축이 되는 노드
 
 `
   'tree-set.tree-set.rot-right': `
@@ -9483,29 +9483,29 @@ x              y
 y   c   =>     a   x
 / \                / \
 a   b              b   c
-x i64: 회전의 축이 되는 노드
+x: 회전의 축이 되는 노드
 
 `
   'tree-set.tree-set.size': `
 원소 개수를 반환한다
-반환 sz i64: 원소 개수
+반환 sz: 원소 개수
 
 `
   'tree-set.tree-set.successor': `
 노드의 infix 순 후속을 찾는다
-idx i64: 노드 인덱스
-반환 succ i64: 후속 인덱스, 없으면 -1
+idx: 노드 인덱스
+반환 succ: 후속 인덱스, 없으면 -1
 
 `
   'tree-set.tree-set.update-ht': `
 노드의 높이를 다시 계산한다
-idx i64: 노드 인덱스
+idx: 노드 인덱스
 
 `
   'tree-set.tree-set.upper-bound': `
 target 보다 큰 첫 번째 원소를 찾는다
-target i64: 목표 값
-반환 val ?i64: ok=찾음, nil=그런 원소가 없음
+target: 목표 값
+반환 val: ok=찾음, nil=그런 원소가 없음
 
 `
   'txt._txt-dig-val': `
@@ -9516,7 +9516,7 @@ d: 0~15；잘못된 문자는 -1 반환
   'txt.at': `
 [지원 중단] txt.at: 문자(코드 포인트) 단위 인덱스 읽기 — 대신 t[idx] 를 쓴다(네이티브 인덱싱, ?char 반환)
 txt.at: 문자 위치의 코드 포인트 값을 가져온다(바이트 오프셋이 필요하면 t.byte(i) 를 쓴다)
-반환 b ?byte: 범위를 벗어나면 nil; 바이트 범위를 넘는 코드 포인트는 절단된다
+반환 b: 범위를 벗어나면 nil; 바이트 범위를 넘는 코드 포인트는 절단된다
 idx: 코드 포인트(문자) 인덱스
 b: ok=해당 코드포인트 값（byte 범위 초과 시 잘라냄）, nil=범위 초과
 `
@@ -9631,8 +9631,8 @@ pos: 첫 출현의 코드 포인트 위치, 못 찾으면 -1
 `
   'txt.join': `
 []txt.join: txt 슬라이스를 구분자로 연결한다(255 바이트를 넘는 부분은 잘린다)
-sep txt: 구분자
-반환 out txt: 연결 결과
+sep: 구분자
+반환 out: 연결 결과
 
 `
   'txt.last-index': `
@@ -9671,7 +9671,7 @@ val: 코드 포인트별 치환 후의 새 txt(255바이트 초과 시 절단)
 `
   'txt.replace-n': `
 횟수를 제한한 치환
-old txt, new txt, n i64: 최대 치환 횟수(n<=0 이면 아무것도 치환하지 않는다)
+old txt, new, n: 최대 치환 횟수(n<=0 이면 아무것도 치환하지 않는다)
 old: 교체된 자식 txt
 new: 교체 후 자식 txt
 n: 최대 치환 횟수(n <= 0이면 치환 안 함)
@@ -9713,7 +9713,7 @@ out: 나눈 자식 txt 슬라이스
 `
   'txt.split-n': `
 횟수를 제한한 분할
-sep txt, maxsplit i64: 최대 분할 횟수(<=0 은 무제한)
+sep txt, maxsplit: 최대 분할 횟수(<=0 은 무제한)
 sep: 구분자 txt
 maxsplit: 최대 분할 횟수(<= 0은 무제한)
 out: 분할 결과 슬라이스(최대 maxsplit+1개 구간)
@@ -9834,72 +9834,72 @@ path: 소켓 파일 경로(예 '/tmp/myapp.sock')
 `
   'unix.unix-conn.recv': `
 버퍼로 데이터 수신
-buf str: 수신 버퍼
-n i64: 최대 수신 바이트 수
-반환값 read-n i64: 실제 수신 바이트 수(-1=오류, 0=연결 종료)
+buf: 수신 버퍼
+n: 최대 수신 바이트 수
+반환값 read-n: 실제 수신 바이트 수(-1=오류, 0=연결 종료)
 `
   'unix.unix-conn.recv-all': `
 연결이 닫힐 때까지 모든 데이터 수신
-반환값 content str: 수신한 내용, total i64: 총 바이트 수
+반환값 content: 수신한 내용, total i64: 총 바이트 수
 `
   'unix.unix-conn.recv-with-timeout': `
 시간 초과를 둔 수신
-buf str: 수신 버퍼
-n i64: 최대 수신 바이트 수
-timeout-ms i64: 시간 초과 밀리초
-반환값 read-n i64: 실제 수신 바이트 수(-1=오류, 0=시간 초과 또는 연결 종료)
+buf: 수신 버퍼
+n: 최대 수신 바이트 수
+timeout-ms: 시간 초과 밀리초
+반환값 read-n: 실제 수신 바이트 수(-1=오류, 0=시간 초과 또는 연결 종료)
 `
   'unix.unix-conn.send': `
 문자열 데이터 전송
-data str: 전송할 문자열
-반환값 written i64: 실제 전송 바이트 수(-1=오류)
+data: 전송할 문자열
+반환값 written: 실제 전송 바이트 수(-1=오류)
 `
   'unix.unix-conn.set-recv-timeout': `
 수신 시간 초과 설정
-timeout-ms i64: 시간 초과 밀리초(0=블로킹, >0=시간 초과)
-반환값 ok bool: true=성공
+timeout-ms: 시간 초과 밀리초(0=블로킹, >0=시간 초과)
+반환값 ok: true=성공
 `
   'unix.unix-conn.set-timeout': `
 수신 시간 초과 설정(별명, 의미는 set-recv-timeout과 동일)
-timeout-ms i64: 시간 초과 밀리초
-반환값 ok bool: true=성공
+timeout-ms: 시간 초과 밀리초
+반환값 ok: true=성공
 `
   'unix.unix-dial': `
 Unix 도메인 소켓에 연결
 socket(AF_UNIX) + connect 실행
-path str: 대상 소켓 파일 경로
-fd fd: 연결된 디스크립터; 실패 시 -1
+path: 대상 소켓 파일 경로
+fd: 연결된 디스크립터; 실패 시 -1
 `
   'unix.unix-dial-timeout': `
 시간 초과를 둔 Unix 도메인 소켓 다이얼
-path str: 소켓 파일 경로
-timeout-ms i64: 연결 후 수신 시간 초과
-반환값 c ?unix-conn: ok=연결, nil=실패
+path: 소켓 파일 경로
+timeout-ms: 연결 후 수신 시간 초과
+반환값 c: ok=연결, nil=실패
 `
   'unix.unix-dial-to': `
 Unix 도메인 소켓 연결을 만들고 다이얼
-path str: 소켓 파일 경로
-반환값 c ?unix-conn: ok=연결, nil=실패
+path: 소켓 파일 경로
+반환값 c: ok=연결, nil=실패
 `
   'unix.unix-listen': `
 Unix 도메인 소켓 리슨 생성
 unlink + socket(AF_UNIX) + bind + listen 실행(먼저 unlink해 기존 경로 재사용을 가능하게 함)
-path str: 소켓 파일 경로; 길이는 UNIX-MAX-PATH 제한을 받음
-fd fd: 리슨 상태에 들어간 디스크립터; 실패 시 -1
+path: 소켓 파일 경로; 길이는 UNIX-MAX-PATH 제한을 받음
+fd: 리슨 상태에 들어간 디스크립터; 실패 시 -1
 `
   'unix.unix-listen-on': `
 Unix 도메인 소켓 리스너를 만들고 리슨 시작
-path str: 소켓 파일 경로
-반환값 l ?unix-listener: ok=리스너, nil=실패
+path: 소켓 파일 경로
+반환값 l: ok=리스너, nil=실패
 `
   'unix.unix-listener.accept': `
 새 Unix 도메인 소켓 연결 수락
-반환값 c ?unix-conn: ok=연결 구조체, nil=실패
+반환값 c: ok=연결 구조체, nil=실패
 `
   'unix.unix-listener.accept-with-timeout': `
 시간 초과를 둔 accept
-timeout-ms i64: 시간 초과 밀리초
-반환값 c ?unix-conn: ok=연결, nil=시간 초과 또는 실패
+timeout-ms: 시간 초과 밀리초
+반환값 c: ok=연결, nil=시간 초과 또는 실패
 `
   'unix.unix-listener.close': '리슨 소켓 종료(소켓 파일은 자동 삭제하지 않음)'
   'unix.unix-listener.fd-of': `
@@ -9917,41 +9917,41 @@ path: 소켓 파일 경로(예 '/tmp/myapp.sock')
 `
   'unix.unix-listener.set-timeout': `
 accept 시간 초과 설정
-timeout-ms i64: 시간 초과 밀리초
-반환값 ok bool: true=성공
+timeout-ms: 시간 초과 밀리초
+반환값 ok: true=성공
 `
   'url.url-basic-auth': `
 HTTP Basic 인증 헤더 값 생성
 user: 사용자 이름
 password: 비밀번호
-반환값 out str: 헤더 값(예 'Basic dXNlcjpwYXNz')
+반환값 out: 헤더 값(예 'Basic dXNlcjpwYXNz')
 `
   'url.url-build-query': `
 키-값 쌍에서 쿼리 문자열 구성
 keys: 키 배열(앞 count항 유효)
 values: 값 배열(keys와 일대일 대응)
 count: 유효 키-값 쌍 수
-반환값 out str: 쿼리 문자열(예 key1=val1&key2=val2)
+반환값 out: 쿼리 문자열(예 key1=val1&key2=val2)
 `
   'url.url-decode': `
 URL 디코딩(퍼센트 디코딩)
 s: 디코딩할 퍼센트 인코딩 문자열
-반환값 out str: 디코딩한 원시 문자열
+반환값 out: 디코딩한 원시 문자열
 `
   'url.url-encode': `
 URL 인코딩(퍼센트 인코딩)
 s: 인코딩할 원시 문자열
-반환값 out str: 퍼센트 인코딩한 문자열
+반환값 out: 퍼센트 인코딩한 문자열
 `
   'url.url-encode-component': `
 URL 인코딩(컴포넌트 모드, /와 ?도 인코딩)
 s: 인코딩할 원시 문자열
-반환값 out str: 퍼센트 인코딩한 문자열
+반환값 out: 퍼센트 인코딩한 문자열
 `
   'url.url-info.get-query': `
 쿼리 파라미터 값 획득
 key: 읽을 쿼리 파라미터 이름
-반환값 val ?str: ok=파라미터 값, nil=찾지 못함
+반환값 val: ok=파라미터 값, nil=찾지 못함
 `
   'url.url-info.set-query': `
 쿼리 파라미터 값 설정
@@ -9960,24 +9960,24 @@ value: 해당 파라미터의 새 값
 `
   'url.url-info.to-str': `
 URL을 문자열로 재조립
-반환값 out str: 조립한 완전한 URL
+반환값 out: 조립한 완전한 URL
 `
   'url.url-join': `
 기본 URL과 경로를 연결
 base: 기본 URL
 path-str: 끝부분에 추가할 경로
-반환값 out str: 연결한 완전한 URL
+반환값 out: 연결한 완전한 URL
 `
   'url.url-parse': `
 URL 문자열 해석
 url-str: 해석할 완전한 URL 문자열
-반환값 u url-info: 해석 결과(u.ok=true=성공)
+반환값 u: 해석 결과(u.ok=true=성공)
 `
   'url.url-parse-basic-auth': `
 HTTP Basic 인증 헤더 해석
 header: Authorization 헤더 값(예 'Basic dXNlcjpwYXNz')
-반환값 user str: 사용자 이름(비면=해석 실패)
-반환값 password str: 비밀번호
+반환값 user: 사용자 이름(비면=해석 실패)
+반환값 password: 비밀번호
 `
   'uuid.cmp': `
 두 UUID 를 사전순으로 비교한다
@@ -9992,18 +9992,18 @@ yes: true=두 UUID의 16바이트가 하나하나 동일
   'uuid.from-str': `
 문자열에서 UUID 를 파스한다
 하이픈 포함(36 문자)과 하이픈 없음(32 문자) 두 형식을 모두 받는다
-s str: UUID 문자열
-out uuid: 결과 UUID
-반환 ok bool: true=파스 성공
+s: UUID 문자열
+out: 결과 UUID
+반환 ok: true=파스 성공
 s: UUID 문자열(32자 하이픈 없음 또는 36자 하이픈 있음)
 out: 출력 매개변수, 파싱 성공 시 16바이트 기록(기존 내용 덮어씀)
 ok: true=형식이 합법적이고 이미 씀, false=길이/문자 오류
 `
   'uuid.hex-byte': `
 1 바이트를 2 문자 16 진으로 out 의 위치 pos 에 쓴다
-b byte: 인코딩할 바이트(상위 니블을 먼저, 하위 니블을 뒤에 쓴다)
-pos i64: out 에서 첫 hex 문자를 쓰는 오프셋(두 번째 문자는 pos+1 에 쓴다)
-out str: 대상 문자열, 제자리에서 두 칸을 씀(범위 초과 시 해당 칸 쓰기는 안전한 인덱스로 생략된다)
+b: 인코딩할 바이트(상위 니블을 먼저, 하위 니블을 뒤에 쓴다)
+pos: out 에서 첫 hex 문자를 쓰는 오프셋(두 번째 문자는 pos+1 에 쓴다)
+out: 대상 문자열, 제자리에서 두 칸을 씀(범위 초과 시 해당 칸 쓰기는 안전한 인덱스로 생략된다)
 `
   'uuid.hex-byte-upper': `
 1 바이트를 대문자 16 진으로 쓴다
@@ -10053,12 +10053,12 @@ ok: true=해당 구간 파싱 성공(하이픈 위치와 hex 문자 모두 합�
   'uuid.to-str': `
 UUID 를 표준 문자열로 서식화한다
 형식: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx(소문자)
-반환 out str: UUID 문자열
+반환 out: UUID 문자열
 
 `
   'uuid.to-str-upper': `
 UUID 를 대문자 문자열로 서식화한다
-반환 out str: 대문자 UUID 문자열
+반환 out: 대문자 UUID 문자열
 
 `
   'uuid.validate': `
@@ -10088,8 +10088,8 @@ v: UUID 버전 번호(byte6의 높은 4비트, v4는 4)
 `
   'vec.eq': `
 []t.eq: 두 슬라이스 비교（요소 단위 비교, 용량과 출처는 비교하지 않음）
-b []t: 반대쪽 슬라이스; 길이가 다르면 즉시 false
-eq bool: true=길이와 모든 대응 요소가 같음（요소는 != 로 비교）
+b: 반대쪽 슬라이스; 길이가 다르면 즉시 false
+eq: true=길이와 모든 대응 요소가 같음（요소는 != 로 비교）
 `
   'vec.extend': `
 []t.extend: 다른 슬라이스의 모든 원소를 추가한다
@@ -10123,7 +10123,7 @@ push 로직을 인라인했다(.len = cur + 1; .[cur] = val). 호출자는 충�
 `
   'vec.len': `
 []t.len: 슬라이스 요소 수를 반환（요소 타입 구분 없음, 바이트 수와 무관）
-out i64: 현재 길이, 값 범위 0..cap
+out: 현재 길이, 값 범위 0..cap
 `
   'vec.max': `
 []t.max: 최댓값; 빈 슬라이스는 nil 을 반환한다
@@ -10179,35 +10179,35 @@ out i64: 현재 길이, 값 범위 0..cap
 cap == 0 -> new-cap = 4
 cap < 1024 -> new-cap = cap * 2
 cap >= 1024 -> new-cap = cap * 5 / 4
-val t: 추가할 원소; 타입은 수신자 조각의 원소 타입이 결정
+val: 추가할 원소; 타입은 수신자 조각의 원소 타입이 결정
 추가 후 .len이 1 증가; 확장 시 기존 원소를 새 버퍼로 옮기고 옛 버퍼는 해방된다
 `
   'ws.build-frame': `
 WebSocket frame 조립
-opcode i64: 메시지 유형
-data str: 메시지 내용
-mask bool: mask를 적용할지(client은 반드시 true, server는 반드시 false)
-mask-key str: 4바이트 mask key(mask=true일 때 사용)
-반환값 frame str: 완전한 frame 문자열
+opcode: 메시지 유형
+data: 메시지 내용
+mask: mask를 적용할지(client은 반드시 true, server는 반드시 false)
+mask-key: 4바이트 mask key(mask=true일 때 사용)
+반환값 frame: 완전한 frame 문자열
 `
   'ws.client.close': '연결 종료'
   'ws.client.is-connected': `
 연결 상태 확인
-반환값 yes bool: true=연결됨
+반환값 yes: true=연결됨
 `
   'ws.client.recv': `
 완전한 WebSocket 메시지 1건을 블로킹 읽기
 server는 mask하지 않아 demask가 불필요(하지만 mask bit는 여전히 확인)
-반환값 msg ?message:
+반환값 msg:
 ok = 메시지
 nil = 연결이 닫힘
 err = 오류
 `
   'ws.client.send': `
 WebSocket 프레임 전송(client은 반드시 mask를 적용)
-opcode i64: 메시지 유형
-data str: 메시지 내용
-반환값 ok bool: true=성공
+opcode: 메시지 유형
+data: 메시지 내용
+반환값 ok: true=성공
 `
   'ws.client.send-binary': `
 바이너리 메시지 전송
@@ -10216,9 +10216,9 @@ ok: true=전송 성공
 `
   'ws.client.send-close': `
 close 프레임 전송
-close-code i64: 종료 상태 코드
-reason str: 종료 이유
-반환값 ok bool: true=성공
+close-code: 종료 상태 코드
+reason: 종료 이유
+반환값 ok: true=성공
 `
   'ws.client.send-ping': `
 ping 전송
@@ -10237,32 +10237,32 @@ ok: true=전송 성공
 `
   'ws.compute-accept': `
 Sec-WebSocket-Accept 값 계산
-key str: 클라이언트가 보낸 Sec-WebSocket-Key
-반환값 accept str: base64(sha1(key - WS-GUID))
+key: 클라이언트가 보낸 Sec-WebSocket-Key
+반환값 accept: base64(sha1(key - WS-GUID))
 `
   'ws.connect': `
 WebSocket 엔드포인트에 연결
-url str: WS/WSS 엔드포인트 URL(ws://host:port/path 또는 wss://host:port/path)
-반환값 c ?client:
+url: WS/WSS 엔드포인트 URL(ws://host:port/path 또는 wss://host:port/path)
+반환값 c:
 ok = 연결된 클라이언트
 nil = 연결 실패
 err = 오류 메시지
 `
   'ws.gen-client-key': `
 16바이트 Sec-WebSocket-Key를 생성해 base64 인코딩
-seed i64: 시드 값
-반환값 key str: base64 인코딩 문자열(24문자, padding 포함)
+seed: 시드 값
+반환값 key: base64 인코딩 문자열(24문자, padding 포함)
 `
   'ws.gen-mask-key': `
 4바이트 mask key 문자열 생성
-seed i64: 시드 값
-반환값 key str: 4문자 문자열
+seed: 시드 값
+반환값 key: 4문자 문자열
 `
   'ws.listen-on': `
 WebSocket 서버 측을 만들고 리슨 시작
-host str: 바인딩할 IP 주소(예 '0.0.0.0')
-port i64: 리슨 포트 번호
-반환값 s ?server: ok=서버 측, nil=실패
+host: 바인딩할 IP 주소(예 '0.0.0.0')
+port: 리슨 포트 번호
+반환값 s: ok=서버 측, nil=실패
 `
   'ws.next-rand': `
 다음 의사 난수 i64 생성
@@ -10277,13 +10277,13 @@ WebSocket HTTP 악수 완료
 `
   'ws.server-conn.is-connected': `
 연결 상태 확인
-반환값 yes bool: true=연결됨
+반환값 yes: true=연결됨
 `
   'ws.server-conn.recv': `
 완전한 WebSocket 메시지 1건을 블로킹 읽기
 분할 메시지(continuation opcode) 수집을 지원합니다.
 ping을 받으면 자동으로 pong을 회신하고, close를 받으면 connected=false로 설정한 뒤 nil을 반환합니다.
-반환값 msg ?message:
+반환값 msg:
 ok = 메시지
 nil = 연결이 닫힘
 err = 오류
@@ -10295,46 +10295,46 @@ err = 오류
 `
   'ws.server-conn.send': `
 WebSocket 프레임 전송(server는 mask를 적용하지 않음)
-opcode i64: 메시지 유형(WS-OP-TEXT / WS-OP-BINARY / ...)
-data str: 메시지 내용
-반환값 ok bool: true=성공
+opcode: 메시지 유형(WS-OP-TEXT / WS-OP-BINARY / ...)
+data: 메시지 내용
+반환값 ok: true=성공
 `
   'ws.server-conn.send-binary': `
 바이너리 메시지 전송
-data str: 메시지 내용
-반환값 ok bool: true=성공
+data: 메시지 내용
+반환값 ok: true=성공
 `
   'ws.server-conn.send-close': `
 close 프레임 전송
-close-code i64: 종료 상태 코드(예 1000)
-reason str: 종료 이유
-반환값 ok bool: true=성공
+close-code: 종료 상태 코드(예 1000)
+reason: 종료 이유
+반환값 ok: true=성공
 `
   'ws.server-conn.send-ping': `
 ping 전송
-data str: ping 내용
-반환값 ok bool: true=성공
+data: ping 내용
+반환값 ok: true=성공
 `
   'ws.server-conn.send-pong': `
 pong 전송
-data str: pong 내용
-반환값 ok bool: true=성공
+data: pong 내용
+반환값 ok: true=성공
 `
   'ws.server-conn.send-text': `
 텍스트 메시지 전송
-data str: 메시지 내용
-반환값 ok bool: true=성공
+data: 메시지 내용
+반환값 ok: true=성공
 `
   'ws.server.accept': `
 새 WebSocket 클라이언트 연결을 수락하고 악수 완료
-반환값 c ?server-conn: ok=악수된 클라이언트, nil=실패
+반환값 c: ok=악수된 클라이언트, nil=실패
 `
   'ws.server.close': 'WebSocket 서버 측 종료'
   'ws.server.listen': `
 리슨 시작
-host str: 바인딩할 IP 주소(예 '0.0.0.0')
-port i64: 리슨 포트 번호
-반환값 ok bool: true=성공
+host: 바인딩할 IP 주소(예 '0.0.0.0')
+port: 리슨 포트 번호
+반환값 ok: true=성공
 `
   'x25519.fe-add': `
 체 원소 덧셈 h = f + g
@@ -10462,9 +10462,9 @@ h: 새로 만든 영 체 원소(길이 10)
 `
   'x25519.x25519-gen-keypair': `
 랜덤 키 쌍 생성
-seed i64: 랜덤 시드
-반환값 priv [32]byte: 개인키
-반환값 pub [32]byte: 공개키
+seed: 랜덤 시드
+반환값 priv: 개인키
+반환값 pub: 공개키
 seed: rand 시드(개인키를 결정; 실제 환경에선 시스템 난수원으로 주입해야 함)
 priv: 개인키(이미 clamp: bit0-2를 0으로, bit254를 1로, bit255를 0으로)
 pub: 대응하는 공개키(priv × 기준점)
@@ -10475,61 +10475,61 @@ base: 기준점 u=9의 32바이트 리틀엔디안 인코딩
 `
   'x25519.x25519-scalarmult': `
 X25519 스칼라 곱셈
-scalar [32]byte: 스칼라(개인키)
-point [32]byte: 점 좌표(공개키)
-반환값 out [32]byte: 결과
+scalar: 스칼라(개인키)
+point: 점 좌표(공개키)
+반환값 out: 결과
 `
   'x25519.x25519-scalarmult-base': `
 스칼라 * 기준점 계산
-scalar [32]byte: 스칼라(개인키)
-반환값 out [32]byte: 공개키
+scalar: 스칼라(개인키)
+반환값 out: 공개키
 `
   'x25519.x25519-scalarmult-base-bytes': `
 스칼라 * 기준점 계산([]byte 버전)
-scalar []byte: 스칼라(개인키, 길이 32)
-반환값 out []byte: 공개키(길이 32)
+scalar: 스칼라(개인키, 길이 32)
+반환값 out: 공개키(길이 32)
 `
   'x25519.x25519-scalarmult-bytes': `
 X25519 스칼라 곱셈([]byte 버전)
-scalar []byte: 스칼라(개인키, 길이 32)
-point []byte: 점 좌표(공개키, 길이 32)
-반환값 out []byte: 결과(길이 32)
+scalar: 스칼라(개인키, 길이 32)
+point: 점 좌표(공개키, 길이 32)
+반환값 out: 결과(길이 32)
 `
   'x509.alg-id-rsa-encryption': `
 rsaEncryption의 AlgorithmIdentifier (1.2.840.113549.1.1.1)
-반환값 out []byte: SEQUENCE { OID rsaEncryption, NULL }
+반환값 out: SEQUENCE { OID rsaEncryption, NULL }
 `
   'x509.alg-id-sha256-with-rsa': `
 sha256WithRSAEncryption의 AlgorithmIdentifier (1.2.840.113549.1.1.11)
-반환값 out []byte: SEQUENCE { OID sha256WithRSAEncryption, NULL }
+반환값 out: SEQUENCE { OID sha256WithRSAEncryption, NULL }
 `
   'x509.der-enc-bitstring': `
 BIT STRING으로 감쌈
-data []byte: 바이트 데이터
-반환값 out []byte: DER BIT STRING
+data: 바이트 데이터
+반환값 out: DER BIT STRING
 data: 비트열 내용(바이트 정렬, 함수가 맨 앞의 '미사용 비트 수' 바이트 0을 자동으로 채움)
 out: tag=0x03인 DER BIT STRING(내용 길이가 data보다 1 많음)
 `
   'x509.der-enc-explicit': `
 EXPLICIT 컨텍스트 태그 [n]
-tag-num i64: 태그 번호(0, 1, 2, ...), 하위 5비트를 취한 뒤 0xA0와 합쳐 tag를 만듦
-content []byte: 이 컨텍스트 태그 안으로 감쌀 DER 내부 인코딩
-반환값 out []byte: DER [n] EXPLICIT(구성형 tag + 길이 + content)
+tag-num: 태그 번호(0, 1, 2, ...), 하위 5비트를 취한 뒤 0xA0와 합쳐 tag를 만듦
+content: 이 컨텍스트 태그 안으로 감쌀 DER 내부 인코딩
+반환값 out: DER [n] EXPLICIT(구성형 tag + 길이 + content)
 `
   'x509.der-enc-integer-bytes': `
 빅엔디안 바이트 배열을 DER INTEGER로 인코딩
-data []byte: 빅엔디안 바이트(양정수)
-반환값 out []byte: DER INTEGER(tag+length 포함)
+data: 빅엔디안 바이트(양정수)
+반환값 out: DER INTEGER(tag+length 포함)
 `
   'x509.der-enc-integer-i64': `
 i64를 DER INTEGER로 인코딩
-val i64: 정수 값
-반환값 out []byte: DER INTEGER
+val: 정수 값
+반환값 out: DER INTEGER
 `
   'x509.der-enc-len': `
 DER 길이 인코딩
-val i64: 길이 값
-반환값 out []byte: DER 길이 바이트
+val: 길이 값
+반환값 out: DER 길이 바이트
 `
   'x509.der-enc-null': `
 DER NULL 인코딩(내용은 항상 비어 있음)
@@ -10542,8 +10542,8 @@ out: tag=0x04인 DER OCTET STRING
 `
   'x509.der-enc-oid-raw': `
 원시 OID 내용 바이트에서 인코딩(tag+length 미포함)
-raw []byte: OID 내용 바이트(예: rsaEncryption = [0x2A, 0x86, 0x48, ...])
-반환값 out []byte: DER OBJECT IDENTIFIER(tag+length 포함)
+raw: OID 내용 바이트(예: rsaEncryption = [0x2A, 0x86, 0x48, ...])
+반환값 out: DER OBJECT IDENTIFIER(tag+length 포함)
 `
   'x509.der-enc-printablestring': `
 DER PrintableString 인코딩(문자열의 바이트를 그대로 내용으로 사용)
@@ -10562,9 +10562,9 @@ out: tag=0x31인 DER SET
 `
   'x509.der-enc-tlv': `
 TLV를 감쌈
-tag i64: 태그 바이트(예: 0x02 INTEGER, 0x17 UTCTime)
-content []byte: 감쌀 내용 바이트(비어 있을 수 있음, 길이가 0이어도 길이 필드는 씀)
-반환값 out []byte: 완전한 TLV(tag + DER 길이 + content)
+tag: 태그 바이트(예: 0x02 INTEGER, 0x17 UTCTime)
+content: 감쌀 내용 바이트(비어 있을 수 있음, 길이가 0이어도 길이 필드는 씀)
+반환값 out: 완전한 TLV(tag + DER 길이 + content)
 `
   'x509.der-enc-utctime': `
 DER UTCTime 인코딩
@@ -10590,10 +10590,10 @@ pos: 태그 바이트가 있는 오프셋(data[pos]만 읽고 앞으로 이동�
 `
   'x509.rsa-pkcs1-sign-sha256': `
 RSA PKCS#1 v1.5로 데이터 서명
-data []byte: 서명할 데이터
-n []byte: 모듈러스(빅엔디안)
-d []byte: 개인키 지수(빅엔디안)
-반환값 sig []byte: 서명(모듈러스 길이)
+data: 서명할 데이터
+n: 모듈러스(빅엔디안)
+d: 개인키 지수(빅엔디안)
+반환값 sig: 서명(모듈러스 길이)
 `
   'x509.sha256-compress': `
 SHA-256 단일 블록 압축
@@ -10604,49 +10604,49 @@ h0..h7 i64: 압축 후의 8개 32비트 상태 워드(hin + 작업 변수, 이�
 `
   'x509.x509-build-name-cn': `
 Name(오직 CN만) 구성
-cn str: commonName
-반환값 out []byte: RDNSequence
+cn: commonName
+반환값 out: RDNSequence
 `
   'x509.x509-build-rsa-public-key': `
 RSAPublicKey DER 구성
-n []byte: 모듈러스(빅엔디안, 선행 0x00 미포함)
-e i64: 공개키 지수
-반환값 out []byte: SEQUENCE { INTEGER n, INTEGER e }
+n: 모듈러스(빅엔디안, 선행 0x00 미포함)
+e: 공개키 지수
+반환값 out: SEQUENCE { INTEGER n, INTEGER e }
 `
   'x509.x509-build-self-signed-cert': `
 자기 서명 X.509 인증서 구성
-n []byte: RSA 모듈러스(빅엔디안)
-e i64: 공개키 지수
-d []byte: RSA 개인키 지수(빅엔디안)
-cn str: Common Name
-반환값 cert []byte: 완전한 DER 인코딩 인증서
+n: RSA 모듈러스(빅엔디안)
+e: 공개키 지수
+d: RSA 개인키 지수(빅엔디안)
+cn: Common Name
+반환값 cert: 완전한 DER 인코딩 인증서
 `
   'x509.x509-build-spki': `
 SubjectPublicKeyInfo 구성
-n []byte: 모듈러스
-e i64: 공개키 지수
-반환값 out []byte: SEQUENCE { AlgorithmIdentifier, BIT STRING RSAPublicKey }
+n: 모듈러스
+e: 공개키 지수
+반환값 out: SEQUENCE { AlgorithmIdentifier, BIT STRING RSAPublicKey }
 `
   'x509.x509-build-tbs': `
 TBSCertificate 구성
-n []byte: RSA 모듈러스
-e i64: 공개키 지수
-cn str: 인증서 CN
-not-before str: 시작 시간
-not-after str: 종료 시간
-반환값 out []byte: TBSCertificate DER
+n: RSA 모듈러스
+e: 공개키 지수
+cn: 인증서 CN
+not-before: 시작 시간
+not-after: 종료 시간
+반환값 out: TBSCertificate DER
 `
   'x509.x509-build-validity': `
 Validity 구성
-not-before str: UTCTime 문자열(예 "240101000000Z")
-not-after str: UTCTime 문자열
-반환값 out []byte: SEQUENCE { UTCTime, UTCTime }
+not-before: UTCTime 문자열(예 "240101000000Z")
+not-after: UTCTime 문자열
+반환값 out: SEQUENCE { UTCTime, UTCTime }
 `
   'x509.x509-bytes-to-bn': `
 빅엔디안 바이트 배열 →[]i64(리틀엔디안 base 2^32)
 로컬 사본으로 net/tls.no와의 순환 의존을 회피
-data []byte: 빅엔디안 바이트
-반환값 out []i64: 큰 정수(각 원소가 32비트 limb)
+data: 빅엔디안 바이트
+반환값 out: 큰 정수(각 원소가 32비트 limb)
 `
   'x509.x509-fingerprint': `
 x509-fingerprint: X.509 인증서의 SHA-256 지문 계산
@@ -10654,14 +10654,14 @@ x509-fingerprint: X.509 인증서의 SHA-256 지문 계산
 먼저 x509-tbs-range로 TBSCertificate 바이트를 위치시킨 뒤 sha256.sha256에 넘겨 계산하고,
 마지막으로 32비트 해시 결과를 8개의 빅엔디안 32비트 워드로 조립해 반환합니다.
 data: 인증서의 완전한 DER 바이트
-h0 i64: 지문의 최상위 32비트 워드(빅엔디안, TBSCertificate를 위치시킬 수 없으면 0)
-h1 i64: 순서에 따라 줄어드는 두 번째 32비트 워드
-h2 i64: 순서에 따라 줄어드는 세 번째 32비트 워드
-h3 i64: 순서에 따라 줄어드는 네 번째 32비트 워드
-h4 i64: 순서에 따라 줄어드는 다섯 번째 32비트 워드
-h5 i64: 순서에 따라 줄어드는 여섯 번째 32비트 워드
-h6 i64: 순서에 따라 줄어드는 일곱 번째 32비트 워드
-h7 i64: 최하위 32비트 워드(전부 0으로 채워지면 그 인증서에 해석 가능한 TBSCertificate가 없음을 뜻함)
+h0: 지문의 최상위 32비트 워드(빅엔디안, TBSCertificate를 위치시킬 수 없으면 0)
+h1: 순서에 따라 줄어드는 두 번째 32비트 워드
+h2: 순서에 따라 줄어드는 세 번째 32비트 워드
+h3: 순서에 따라 줄어드는 네 번째 32비트 워드
+h4: 순서에 따라 줄어드는 다섯 번째 32비트 워드
+h5: 순서에 따라 줄어드는 여섯 번째 32비트 워드
+h6: 순서에 따라 줄어드는 일곱 번째 32비트 워드
+h7: 최하위 32비트 워드(전부 0으로 채워지면 그 인증서에 해석 가능한 TBSCertificate가 없음을 뜻함)
 `
   'x509.x509-rsa-e': `
 RSA 공개키 지수 추출(통상 65537)
@@ -10670,8 +10670,8 @@ e: 출력 지수 값(0은 RSA가 아니거나 해석 실패를 뜻함)
 `
   'x509.x509-rsa-n': `
 RSA 공개키 모듈러스 추출(빅엔디안 바이트 배열)
-data []byte: DER 인코딩 인증서
-반환값 out []byte: 모듈러스 바이트(빅엔디안, 선행 0x00 미포함)
+data: DER 인코딩 인증서
+반환값 out: 모듈러스 바이트(빅엔디안, 선행 0x00 미포함)
 `
   'x509.x509-serial': `
 인증서 일련번호 추출(i64에 들어갈 경우)
@@ -11486,7 +11486,7 @@ stored blocks(BTYPE=00)를 사용해 zlib 스트림을 구성:
 - 2-byte zlib header(78 9c)
 - DEFLATE stored blocks(블록당 최대 65535 bytes)
 - 4-byte big-endian Adler-32 checksum
-out []byte: 완전한 zlib 스트림(2-byte header + stored blocks + 4-byte Adler-32)
+out: 완전한 zlib 스트림(2-byte header + stored blocks + 4-byte Adler-32)
 `
   'zlib.consumed-stored': `
 stored-block zlib 스트림의 소모 바이트 수 계산
@@ -11498,13 +11498,13 @@ data: 오프셋 0부터 시작하는 zlib 스트림([]byte)
 모든 DEFLATE 블록 유형 지원(stored, fixed Huffman, dynamic Huffman)
 gzip.inflate-decompress로 압축을 해제합니다.
 먼저 stored-block 탐색(빠른 경로)을 시도하고, 실패하면 inflate로 압축 해제합니다.
-out ?[]byte: 압축 해제한 데이터(ok); 길이가 6 미만, header 불법, 또는 압축 해제 실패는 모두 nil
+out: 압축 해제한 데이터(ok); 길이가 6 미만, header 불법, 또는 압축 해제 실패는 모두 nil
 `
   'zlib.decompress-stored': `
 stored-block만 있는 zlib 스트림의 압축만 해제
 data: BTYPE=00 블록만 포함한 zlib 스트림([]byte)
-반환값 out ?[]byte: 압축 해제한 데이터(some), stored가 아니거나 실패면 nil
-out ?[]byte: BTYPE=00 블록에서만 디코딩한 바이트; 다른 블록 유형을 만나거나 끝이 맞지 않으면 nil 반환
+반환값 out: 압축 해제한 데이터(some), stored가 아니거나 실패면 nil
+out: BTYPE=00 블록에서만 디코딩한 바이트; 다른 블록 유형을 만나거나 끝이 맞지 않으면 nil 반환
 `
   'zstd.bits-for-count': `
 count에 대응하는 비트 수 계산

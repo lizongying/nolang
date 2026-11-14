@@ -15,8 +15,8 @@
 # /test/runner
 
 ; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
-; data []byte: 待格式化的位元組，可為空
-; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
+; data: 待格式化的位元組，可為空
+; hex: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -59,8 +59,8 @@ bhex = (data []byte) (hex str) {
 }
 
 ; 產生固定內容的測試資料：第 i 個位元組為 i 的低 8 位
-; n i64: 要產生的位元組數，為 0 時得空切片
-; out []byte: 長度 n 的位元組切片（0, 1, 2, ..., 255, 0, 1, ...）
+; n: 要產生的位元組數，為 0 時得空切片
+; out: 長度 n 的位元組切片（0, 1, 2, ..., 255, 0, 1, ...）
 seq-bytes = (n i64) (out []byte) {
     out = with-len(n)
     i <- [0..n): {
@@ -69,7 +69,7 @@ seq-bytes = (n i64) (out []byte) {
 }
 
 ; 空輸入：在函式內局部建（全域零長 vec 傳參會踩到 MIR 已知問題）
-; out []byte: 長度 0 的位元組切片
+; out: 長度 0 的位元組切片
 empty-bytes = () (out []byte) {
     out = with-len(0)
 }
@@ -77,8 +77,8 @@ empty-bytes = () (out []byte) {
 ; ---- 內部構成（狀態 / G / 旋轉 / 壓縮）的助手 ----
 
 ; u64 → 16 字元大端 hex（供 rotr64 / b-g 之類回傳純量者比對）
-; x u64: 待輸出的值
-; s str: 16 字元 hex
+; x: 待輸出的值
+; s: 16 字元 hex
 u64-hex = (x u64) (s str) {
     b []byte = with-len(8)
     j <- [0..8): {
@@ -93,8 +93,8 @@ u64-hex = (x u64) (s str) {
 }
 
 ; u32 → 8 字元大端 hex
-; x u32: 待輸出的值
-; s str: 8 字元 hex
+; x: 待輸出的值
+; s: 8 字元 hex
 u32-hex = (x u32) (s str) {
     b []byte = with-len(4)
     j <- [0..4): {
@@ -109,9 +109,9 @@ u32-hex = (x u32) (s str) {
 }
 
 ; []u64 的第 i 項（裸下標讀是 option，這裡收斂成純量）
-; v []u64: 來源
-; i i64: 索引
-; x u64: 該項的值（越界時 0）
+; v: 來源
+; i: 索引
+; x: 該項的值（越界時 0）
 at64 = (v []u64, i i64) (x u64) {
     x = v[i]: {
         ok -> it
@@ -121,9 +121,9 @@ at64 = (v []u64, i i64) (x u64) {
 }
 
 ; []u32 的第 i 項
-; v []u32: 來源
-; i i64: 索引
-; x u32: 該項的值（越界時 0）
+; v: 來源
+; i: 索引
+; x: 該項的值（越界時 0）
 at32 = (v []u32, i i64) (x u32) {
     x = v[i]: {
         ok -> it
@@ -133,9 +133,9 @@ at32 = (v []u32, i i64) (x u32) {
 }
 
 ; []u64 狀態 → 小端序列化 hex（BLAKE2 的輸出慣例：每個字低位在前）
-; h []u64: 狀態
-; n i64: 取前 n 個字
-; s str: n*16 字元 hex
+; h: 狀態
+; n: 取前 n 個字
+; s: n*16 字元 hex
 state64-hex = (h []u64, n i64) (s str) {
     b []byte = with-len(n * 8)
     i <- [0..n): {
@@ -153,9 +153,9 @@ state64-hex = (h []u64, n i64) (s str) {
 }
 
 ; []u32 狀態 → 小端序列化 hex
-; h []u32: 狀態
-; n i64: 取前 n 個字
-; s str: n*8 字元 hex
+; h: 狀態
+; n: 取前 n 個字
+; s: n*8 字元 hex
 state32-hex = (h []u32, n i64) (s str) {
     b []byte = with-len(n * 4)
     i <- [0..n): {

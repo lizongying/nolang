@@ -77,7 +77,7 @@ t-slice-write-self-rmw = () {
 }
 
 ; 4) 函數返回切片 + option 寫（忠實重現 b-state 語境）
-; h []u64: IV[..8) 的切片副本，8 個元素全被 option 寫成 999
+; h: IV[..8) 的切片副本，8 個元素全被 option 寫成 999
 mk-state = () (h []u64) {
     h = IV[..8)
     i <- [0..8): {

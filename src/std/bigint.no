@@ -1330,7 +1330,7 @@ bigint.normalize = () {
 }
 
 ; 將 bigint 轉為十進制字串
-; 返回 out str: 十進制字串（負數以 '-' 開頭，零為 "0"）
+; 返回 out: 十進制字串（負數以 '-' 開頭，零為 "0"）
 ; [to-str](#bigint.to-str)
 bigint.to-str = () (out str) {
 
@@ -1492,7 +1492,7 @@ bigint.to-i64 = () (v ?i64) {
 
 ; 十六進制轉換
 ; 將 bigint 轉為十六進制字串（小寫）
-; 返回 out str: 十六進制字串（小寫、無 0x 前綴，負數以 '-' 開頭）
+; 返回 out: 十六進制字串（小寫、無 0x 前綴，負數以 '-' 開頭）
 ; [to-hex](#bigint.to-hex)
 bigint.to-hex = () (out str) {
 

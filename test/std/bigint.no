@@ -19,9 +19,9 @@
 # /test/runner
 
 ; 斷言字串相等（自動取 want 的長度，省去手數）
-; got str: 實際字串
-; want str: 期望字串
-; msg str: 斷言描述
+; got: 實際字串
+; want: 期望字串
+; msg: 斷言描述
 eq-str = (got str, want str, msg str) {
     runner.str-eq(got, want, want.len-bytes(), msg)
 }

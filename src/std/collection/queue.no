@@ -48,7 +48,7 @@ queue {
 
 ; [n]t.queue-init: 初始化佇列狀態
 ; cap 自動設為陣列大小 n
-; 返回 q queue: 初始化後的佇列狀態
+; 返回 q: 初始化後的佇列狀態
 ; [queue-init](#arr.queue-init)
 [n]t.queue-init = () (q queue) {
     q.cap = n
@@ -57,9 +57,9 @@ queue {
 }
 
 ; [n]t.queue-push: 推入元素到佇列尾端
-; q queue: 佇列狀態
-; val t: 要推入的值
-; 返回 ok bool: true=成功, false=佇列已滿
+; q: 佇列狀態
+; val: 要推入的值
+; 返回 ok: true=成功, false=佇列已滿
 ; [queue-push](#arr.queue-push)
 [n]t.queue-push = (q queue, val t) (ok bool) {
     ok = false
@@ -84,8 +84,8 @@ queue {
 }
 
 ; [n]t.queue-pop: 從佇列前端彈出元素
-; q queue: 佇列狀態
-; 返回 val ?t: ok=彈出值, nil=佇列為空
+; q: 佇列狀態
+; 返回 val: ok=彈出值, nil=佇列為空
 ; [queue-pop](#arr.queue-pop)
 [n]t.queue-pop = (q queue) (val ?t) {
 
@@ -109,8 +109,8 @@ queue {
 }
 
 ; [n]t.queue-peek: 查看隊首元素（不移除）
-; q queue: 佇列狀態
-; 返回 val ?t: ok=隊首值, nil=佇列為空
+; q: 佇列狀態
+; 返回 val: ok=隊首值, nil=佇列為空
 ; [queue-peek](#arr.queue-peek)
 [n]t.queue-peek = (q queue) (val ?t) {
 
@@ -134,8 +134,8 @@ queue {
 ...
 
 ; 返回佇列中元素數量
-; 返回 sz i64: 元素數量
-; sz i64: tail - head，即目前排隊中的元素個數（不包含空槽位）
+; 返回 sz: 元素數量
+; sz: tail - head，即目前排隊中的元素個數（不包含空槽位）
 ; [size](#queue.queue.size)
 queue.size = () (sz i64) {
 
@@ -148,8 +148,8 @@ queue.size = () (sz i64) {
 }
 
 ; 判斷佇列是否為空
-; 返回 yes bool: true=空, false=非空
-; yes bool: true=tail <= head（沒有待出佇元素）
+; 返回 yes: true=空, false=非空
+; yes: true=tail <= head（沒有待出佇元素）
 ; [empty](#queue.queue.empty)
 queue.empty = () (yes bool) {
     yes = .tail <= .head
@@ -157,7 +157,7 @@ queue.empty = () (yes bool) {
 
 ; 判斷佇列是否已滿
 ; 環形緩衝區永遠保留一個空槽位以區分「空」與「滿」，因此可容納的元素上限是 cap-1。
-; yes bool: true=tail - head >= cap - 1（已滿，再 push 會覆寫或失敗）, false=還有空位
+; yes: true=tail - head >= cap - 1（已滿，再 push 會覆寫或失敗）, false=還有空位
 ; [full](#queue.queue.full)
 queue.full = () (yes bool) {
 

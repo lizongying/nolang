@@ -57,7 +57,7 @@ cancel = (task *i8) {
 ; ⚠️ 已废弃：手写 cancelled 已废弃，请改用「协程组」（裸块 { ... }）。
 ; 检查当前正在执行的异步任务是否已被取消
 ; 返回 bool。仅在异步任务（事件循环调度的 -async 函数）内调用才有意义。
-; cancelled bool: true=當前任務已被請求取消，應盡快釋放資源並返回；false=未被取消
+; cancelled: true=當前任務已被請求取消，應盡快釋放資源並返回；false=未被取消
 ; [cancelled](#async.cancelled)
 #{buildin}
 cancelled = () (cancelled bool) {

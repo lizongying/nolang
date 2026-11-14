@@ -75,7 +75,7 @@ conn {
 ...
 
 ; 從 data 的 pos 位置解析 9-byte 影格標頭
-; 返回 next-pos ?i64: ok=下一個位置, nil=錯誤
+; 返回 next-pos: ok=下一個位置, nil=錯誤
 ; data: HTTP/2 位元組流（自 pos 起解析一筆 9 位元組影格標頭）
 ; pos: 本次影格標頭在 data 中的起始位移
 ; next-pos: ok=標頭之後的位移, nil=資料不足/解析失敗
@@ -250,7 +250,7 @@ conn.send-frame = (frame frame) (ok bool) {
 }
 
 ; 從 socket 接收影格
-; 返回 frame ?frame: ok=接收到的影格, nil=失敗
+; 返回 frame: ok=接收到的影格, nil=失敗
 ; [recv-frame](#http2.conn.recv-frame)
 conn.recv-frame = () (frame ?frame) {
     frame = nil
@@ -364,12 +364,12 @@ conn.send-settings = (ack bool) (ok bool) {
 }
 
 ; 發送 HEADERS 影格
-; stream-id i64: 本 HEADERS 影格所屬的串流識別號
-; names [64]str: 標頭字段名陣列，與 values 同下標配對
-; values [64]str: 標頭字段值陣列
-; count i64: 有效標頭條目數（只編碼前 count 對）
-; end-stream bool: true=附加 END_STREAM 旗標，表示本串流不再發送資料
-; ok bool: true=HPACK 編碼並發送成功
+; stream-id: 本 HEADERS 影格所屬的串流識別號
+; names: 標頭字段名陣列，與 values 同下標配對
+; values: 標頭字段值陣列
+; count: 有效標頭條目數（只編碼前 count 對）
+; end-stream: true=附加 END_STREAM 旗標，表示本串流不再發送資料
+; ok: true=HPACK 編碼並發送成功
 ; [send-headers](#http2.conn.send-headers)
 conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, end-stream bool) (ok bool) {
     ok = false
@@ -450,7 +450,7 @@ conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
 
 ; 建立 HTTP/2 h2c 連線
 ; 送出 preface + SETTINGS，接收並 ACK 伺服器 SETTINGS
-; 返回 conn ?conn: ok=連線, nil=失敗
+; 返回 conn: ok=連線, nil=失敗
 ; host: 目標伺服器的主機名或 IP
 ; port: 目標 TCP 埠號（h2c 純文字連線）
 ; [connect](#http2.connect)
@@ -516,7 +516,7 @@ connect = (host str, port i64) (conn ?conn) {
 
 ; 建立 HTTP/2 over TLS 連線
 ; 先建立 TLS 連線，再送出 HTTP/2 preface + SETTINGS
-; 返回 conn ?conn: ok=連線, nil=失敗
+; 返回 conn: ok=連線, nil=失敗
 ; host: 目標伺服器的主機名或 IP
 ; port: 目標 TLS 埠號（通常 443）
 ; [connect-tls](#http2.connect-tls)
@@ -927,7 +927,7 @@ do = (method str, url-str str, body str) (names [32]str, values [32]str, header-
 ; method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
 ; url: 'http://host:port/path'
 ; body: 請求主體（空字串=無主體）
-; 返回 resp ?http.response: ok=回應, nil=失敗
+; 返回 resp: ok=回應, nil=失敗
 ; [do-req](#http2.do-req)
 do-req = (method str, url str, body str) (resp ?http.response) {
     resp = nil
@@ -996,7 +996,7 @@ do-req = (method str, url str, body str) (resp ?http.response) {
 }
 
 ; HTTP/2 GET 請求
-; 返回 resp ?http.response: ok=回應, nil=失敗
+; 返回 resp: ok=回應, nil=失敗
 ; url: 請求位址 'http://host:port/path'（port 可省，預設 80）
 ; [get](#http2.get)
 get = (url str) (resp ?http.response) {
@@ -1004,7 +1004,7 @@ get = (url str) (resp ?http.response) {
 }
 
 ; HTTP/2 POST 請求
-; 返回 resp ?http.response: ok=回應, nil=失敗
+; 返回 resp: ok=回應, nil=失敗
 ; url: 請求位址
 ; body: 請求主體（空字串=無主體）
 ; [post](#http2.post)
@@ -1013,7 +1013,7 @@ post = (url str, body str) (resp ?http.response) {
 }
 
 ; HTTP/2 PUT 請求
-; 返回 resp ?http.response: ok=回應, nil=失敗
+; 返回 resp: ok=回應, nil=失敗
 ; url: 請求位址
 ; body: 請求主體（空字串=無主體）
 ; [put](#http2.put)
@@ -1022,7 +1022,7 @@ put = (url str, body str) (resp ?http.response) {
 }
 
 ; HTTP/2 DELETE 請求
-; 返回 resp ?http.response: ok=回應, nil=失敗
+; 返回 resp: ok=回應, nil=失敗
 ; url: 請求位址 'http://host:port/path'
 ; [delete](#http2.delete)
 delete = (url str) (resp ?http.response) {
@@ -1030,7 +1030,7 @@ delete = (url str) (resp ?http.response) {
 }
 
 ; HTTP/2 PATCH 請求
-; 返回 resp ?http.response: ok=回應, nil=失敗
+; 返回 resp: ok=回應, nil=失敗
 ; url: 請求位址
 ; body: 請求主體（空字串=無主體）
 ; [patch](#http2.patch)

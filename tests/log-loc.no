@@ -7,18 +7,18 @@
 ; 通过判準（no test 以結束碼 0 為通過）：以下任一斷言失敗即 exit(非0)。
 
 ; 標記 #{track-caller}，回傳注入的 loc 槽，便於斷言而無需擷取 stderr
-; msg str: 訊息內容，本測試傳 'first' / 'second'
-; loc str: 由呼叫端位置注入的字串（無默認值；呼叫方可省略，由編譯器注入），應以 'log-loc.no:' 開頭
-; out str: 原樣回傳 loc，供斷言檢查
+; msg: 訊息內容，本測試傳 'first' / 'second'
+; loc: 由呼叫端位置注入的字串（無默認值；呼叫方可省略，由編譯器注入），應以 'log-loc.no:' 開頭
+; out: 原樣回傳 loc，供斷言檢查
 #{track-caller}
 probe = (msg str, loc str) (out str) {
     out = loc
 }
 
 ; 未標記，位置槽不存在，末位參數必須顯式傳入（證明注入只對 track-caller 生效）
-; msg str: 訊息內容
-; extra str: 末端參數，呼叫端顯式傳入
-; out str: 原樣回傳 extra
+; msg: 訊息內容
+; extra: 末端參數，呼叫端顯式傳入
+; out: 原樣回傳 extra
 plain = (msg str, extra str) (out str) {
     out = extra
 }

@@ -212,7 +212,7 @@ arr {
 }
 
 ; [n]t.swap: 交換兩位置元素
-; i i64, j i64: 位置
+; i, j: 位置
 ; [swap](#arr.swap)
 [n]t.swap = (i i64, j i64) {
     tmp = .[i]
@@ -221,8 +221,8 @@ arr {
 }
 
 ; [n]t.count: 統計值出現次數
-; val t: 要統計的值
-; 返回 cnt i64: 出現次數
+; val: 要統計的值
+; 返回 cnt: 出現次數
 ; [count](#arr.count)
 [n]t.count = (val t) (cnt i64) {
     cnt = 0
@@ -234,8 +234,8 @@ arr {
 }
 
 ; [deprecated] [n]t.at: 安全索引訪問——請改用 a[i]（原生索引，回傳 ?t，越界為 err）
-; i i64: 索引
-; 返回 val ?t: 越界返回 nil
+; i: 索引
+; 返回 val: 越界返回 nil
 ; [at](#arr.at)
 [n]t.at = (i i64) (val ?t) {
     {
@@ -248,7 +248,7 @@ arr {
 }
 
 ; [n]t.to-str: 字串表示
-; 返回 out str: 格式如 '[1, 2, 3]'
+; 返回 out: 格式如 '[1, 2, 3]'
 ; 元素轉字串：逐元素呼叫其自身的 .to-str() 方法（具體型別見 number.no）
 ; [to-str](#arr.to-str)
 [n]t.to-str = () (out str) {

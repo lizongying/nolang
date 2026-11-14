@@ -18,16 +18,16 @@
 # /test/runner
 
 ; 斷言兩個字串等長且等內容，失敗訊息附帶 [len] 標記
-; got str: 實際字串
-; want str: 期望字串（長度與內容都以它為準）
-; msg str: 斷言描述，長度不符時自動加 ' [len]' 後綴
+; got: 實際字串
+; want: 期望字串（長度與內容都以它為準）
+; msg: 斷言描述，長度不符時自動加 ' [len]' 後綴
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
 ; 產生 CRLF 序列（本檔多處用它拼 multipart 協定文字）
-; crlf str: 兩字元的 '\r\n'
+; crlf: 兩字元的 '\r\n'
 crlf-of = () (crlf str) {
     crlf = '\r' - '\n'
 }

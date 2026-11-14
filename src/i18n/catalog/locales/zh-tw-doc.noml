@@ -9,95 +9,95 @@
   'aes-cbc.cbc-dec': `
 CBC 解密核心（輪金鑰由呼叫端展開一次）
 每塊先跑 AES-ECB 解密，再與前一段密文異或；不校驗填充。
-in []byte: 輸入密文（長度需為 16 的倍數）
-iv [16]byte: 初始向量，必須與加密時相同
-ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
-返回 out []byte: 解密後的明文，長度與 in 相同（仍帶著 PKCS#7 填充）
+in: 輸入密文（長度需為 16 的倍數）
+iv: 初始向量，必須與加密時相同
+ek: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
+返回 out: 解密後的明文，長度與 in 相同（仍帶著 PKCS#7 填充）
 `
   'aes-cbc.cbc-enc': `
 CBC 加密核心（輪金鑰由呼叫端展開一次）
 每塊先與前一段密文異或再跑 AES-ECB；不做填充，不足 16 位元組的尾部會被丟棄。
-in []byte: 輸入資料（長度需為 16 的倍數）
-iv [16]byte: 初始向量；同一金鑰下不可重複使用
-ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
-返回 out []byte: 加密後的密文，長度與 in 相同
+in: 輸入資料（長度需為 16 的倍數）
+iv: 初始向量；同一金鑰下不可重複使用
+ek: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
+返回 out: 加密後的密文，長度與 in 相同
 `
   'aes-cbc.dec-128': `
 AES-128-CBC 解密
-in []byte: 輸入密文（長度需為 16 的倍數）
-key [16]byte: 128-bit 金鑰，必須與加密時一致
-iv [16]byte: 初始向量，必須與加密時一致
-返回 out []byte: 解密結果（仍含 PKCS#7 填充，需再用 pkcs7-unpad 去除）
+in: 輸入密文（長度需為 16 的倍數）
+key: 128-bit 金鑰，必須與加密時一致
+iv: 初始向量，必須與加密時一致
+返回 out: 解密結果（仍含 PKCS#7 填充，需再用 pkcs7-unpad 去除）
 `
   'aes-cbc.dec-256': `
 AES-256-CBC 解密
-in []byte: 輸入密文（長度需為 16 的倍數）
-key [32]byte: 256-bit 金鑰，必須與加密時一致
-iv [16]byte: 初始向量，必須與加密時一致
-返回 out []byte: 解密結果（仍含 PKCS#7 填充，需再用 pkcs7-unpad 去除）
+in: 輸入密文（長度需為 16 的倍數）
+key: 256-bit 金鑰，必須與加密時一致
+iv: 初始向量，必須與加密時一致
+返回 out: 解密結果（仍含 PKCS#7 填充，需再用 pkcs7-unpad 去除）
 `
   'aes-cbc.enc-128': `
 AES-128-CBC 加密
 展開 16 位元組金鑰後走 cbc-enc；不做填充，明文長度需自行補到 16 的倍數。
-in []byte: 輸入資料（長度需為 16 的倍數）
-key [16]byte: 128-bit 金鑰
-iv [16]byte: 初始向量，每個訊息應隨機且唯一
-返回 out []byte: 加密後的密文，長度與 in 相同
+in: 輸入資料（長度需為 16 的倍數）
+key: 128-bit 金鑰
+iv: 初始向量，每個訊息應隨機且唯一
+返回 out: 加密後的密文，長度與 in 相同
 `
   'aes-cbc.enc-256': `
 AES-256-CBC 加密
 使用 32 位元組（14 輪）金鑰；其餘行為同 enc-128。
-in []byte: 輸入資料（長度需為 16 的倍數）
-key [32]byte: 256-bit 金鑰
-iv [16]byte: 初始向量，每個訊息應隨機且唯一
-返回 out []byte: 加密後的密文，長度與 in 相同
+in: 輸入資料（長度需為 16 的倍數）
+key: 256-bit 金鑰
+iv: 初始向量，每個訊息應隨機且唯一
+返回 out: 加密後的密文，長度與 in 相同
 `
   'aes-cbc.pkcs7-pad': `
 PKCS#7 填充
 總是追加 1–16 個值為 n 的位元組（明文已是 16 的倍數時追加一整塊 16）。
-in []byte: 輸入資料
-返回 out []byte: 填充後的資料（長度為 16 的倍數，且嚴格大於原長）
+in: 輸入資料
+返回 out: 填充後的資料（長度為 16 的倍數，且嚴格大於原長）
 `
   'aes-cbc.pkcs7-unpad': `
 PKCS#7 去填充
 讀取最後一個位元組作為填充長度，並校驗末尾 pad-len 個位元組都等於該值。
-in []byte: 解密後的資料（含 PKCS#7 填充；長度為 0 視為填充錯誤）
-out-n i64: 去填充後的有效長度；填充值非法、越界或校驗不符時為 -1
+in: 解密後的資料（含 PKCS#7 填充；長度為 0 視為填充錯誤）
+out-n: 去填充後的有效長度；填充值非法、越界或校驗不符時為 -1
 `
   'aes-ctr.crypt-128': `
 AES-128-CTR 加密/解密（對稱操作）
 用同一把金鑰與同一個 iv（nonce）呼叫兩次即可還原；絕不可重用 (key, iv) 組合。
-in []byte: 輸入資料（任意長度）
-key [16]byte: 128-bit 金鑰
-iv [16]byte: 初始計數器值（nonce），必須唯一
-返回 out []byte: 與 in 等長的輸出
+in: 輸入資料（任意長度）
+key: 128-bit 金鑰
+iv: 初始計數器值（nonce），必須唯一
+返回 out: 與 in 等長的輸出
 `
   'aes-ctr.crypt-256': `
 AES-256-CTR 加密/解密（對稱操作）
 行為同 crypt-128，只是金鑰展開為 32 位元組（14 輪）。
-in []byte: 輸入資料（任意長度）
-key [32]byte: 256-bit 金鑰
-iv [16]byte: 初始計數器值（nonce），必須唯一
-返回 out []byte: 與 in 等長的輸出
+in: 輸入資料（任意長度）
+key: 256-bit 金鑰
+iv: 初始計數器值（nonce），必須唯一
+返回 out: 與 in 等長的輸出
 `
   'aes-ctr.ctr-crypt': `
 CTR 加解密核心（輪金鑰由呼叫端展開一次）
 每個計數器值加密後與明文異或，因此任意長度皆可，且加解密同一個函式。
-in []byte: 輸入資料（任意長度，不足一塊的尾部只異或前 n 個位元組）
-iv [16]byte: 初始計數器值；同一金鑰下絕不可重複使用
-ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
-返回 out []byte: 與 in 等長的輸出（加密或解密結果）
+in: 輸入資料（任意長度，不足一塊的尾部只異或前 n 個位元組）
+iv: 初始計數器值；同一金鑰下絕不可重複使用
+ek: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
+返回 out: 與 in 等長的輸出（加密或解密結果）
 `
   'aes-ctr.ctr-inc': `
 計數器遞增（大端序，先加最低 32 位元，進位再往高位傳播）
-cb []byte: 16 位元組計數器區塊，原地修改；只會動到後 4 位元組（下標 12–15）
+cb: 16 位元組計數器區塊，原地修改；只會動到後 4 位元組（下標 12–15）
 `
   'aes-gcm.ctr-xor': `
 以 AES-CTR 生成密鑰流並與資料 XOR
-icb [16]byte: 初始計數器區塊 J0+1
-data []byte: 要與密鑰流 XOR 的資料，長度即輸出長度（可為空）
-ek []byte: aes.key-expand / aes.key-expand-256 的結果（輪鑰Expanded key）
-返回 out []byte: 與密鑰流 XOR 後的資料，長度與 data 相同
+icb: 初始計數器區塊 J0+1
+data: 要與密鑰流 XOR 的資料，長度即輸出長度（可為空）
+ek: aes.key-expand / aes.key-expand-256 的結果（輪鑰Expanded key）
+返回 out: 與密鑰流 XOR 後的資料，長度與 data 相同
 `
   'aes-gcm.gcm-h': `
 計算雜湊子金鑰 H = AES-enc(0^128)
@@ -115,7 +115,7 @@ iv: 12 位元組的 IV
 aad: 額外認證資料
 sealed: 密文 + 16 位元組 tag
 ek: aes.key-expand / aes.key-expand-256 的結果
-返回 plain []byte: 明文（認證失敗時長度為 0）
+返回 plain: 明文（認證失敗時長度為 0）
 `
   'aes-gcm.gcm-seal': `
 GCM 加密核心
@@ -123,21 +123,21 @@ iv: 12 位元組的 IV（nonce）
 aad: 額外認證資料
 plain: 明文
 ek: aes.key-expand / aes.key-expand-256 的結果
-返回 sealed []byte: 密文 + 16 位元組 tag
+返回 sealed: 密文 + 16 位元組 tag
 `
   'aes-gcm.ghash': `
 計算 GHASH
 h: 雜湊子金鑰（AES-enc(0^128)）
 aad: 額外認證資料
 cipher: 密文
-返回 out [16]byte: GHASH 值
+返回 out: GHASH 值
 `
   'aes-gcm.ghash-mul': `
 GF(2^128) 乘法（用於 GHASH）
 X = X * H mod P，其中 P = x^128 + x^7 + x^2 + x + 1
 x: 乘數（大端序位元的 128 位元塊）
 h: 雜湊子金鑰
-返回 out [16]byte: 乘積 X * H mod P
+返回 out: 乘積 X * H mod P
 `
   'aes-gcm.open-128': `
 AES-128-GCM 解密
@@ -145,7 +145,7 @@ key: 16 位元組金鑰
 iv: IV
 aad: 額外認證資料
 sealed: 密文 + 16 位元組 tag
-返回 plain []byte: 明文（認證失敗時長度為 0）
+返回 plain: 明文（認證失敗時長度為 0）
 `
   'aes-gcm.open-256': `
 AES-256-GCM 解密
@@ -153,7 +153,7 @@ key: 32 位元組金鑰
 iv: IV
 aad: 額外認證資料
 sealed: 密文 + 16 位元組 tag
-返回 plain []byte: 明文（認證失敗時長度為 0）
+返回 plain: 明文（認證失敗時長度為 0）
 `
   'aes-gcm.seal-128': `
 AES-128-GCM 加密
@@ -161,7 +161,7 @@ key: 16 位元組金鑰
 iv: IV（nonce）
 aad: 額外認證資料
 plain: 明文
-返回 sealed []byte: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
+返回 sealed: 密文 + 16 位元組 tag（長度 = plain.len() + 16）
 `
   'aes-gcm.seal-256': `
 AES-256-GCM 加密
@@ -169,7 +169,7 @@ key: 32 位元組金鑰
 iv: IV（nonce）
 aad: 額外認證資料
 plain: 明文
-返回 sealed []byte: 密文 + 16 位元組 tag
+返回 sealed: 密文 + 16 位元組 tag
 `
   'aes.add-round-key': `
 將狀態與輪金鑰 XOR
@@ -196,9 +196,9 @@ out: 16 位元組明文區塊
 `
   'aes.dec-block': `
 用已展開的輪金鑰解密一個 16-byte 區塊
-in [16]byte: 輸入區塊
-ek []byte: 輪金鑰（key-expand / key-expand-256 的結果）
-返回 out [16]byte: 解密後的區塊
+in: 輸入區塊
+ek: 輪金鑰（key-expand / key-expand-256 的結果）
+返回 out: 解密後的區塊
 `
   'aes.enc-128': `
 加密一個 16-byte 區塊（AES-128）
@@ -214,9 +214,9 @@ out: 16 位元組密文區塊
 `
   'aes.enc-block': `
 用已展開的輪金鑰加密一個 16-byte 區塊
-in [16]byte: 輸入區塊
-ek []byte: 輪金鑰（key-expand / key-expand-256 的結果）
-返回 out [16]byte: 加密後的區塊
+in: 輸入區塊
+ek: 輪金鑰（key-expand / key-expand-256 的結果）
+返回 out: 加密後的區塊
 `
   'aes.gf-mul2': `
 在 GF(2^8) 中乘以 x（即多項式 x）
@@ -249,13 +249,13 @@ n: 保留參數（實作固定處理 16 位元組，未使用）
 `
   'aes.key-expand': `
 將 16-byte 金鑰展開為 176-byte 輪金鑰（AES-128，11 組輪金鑰）
-key [16]byte: 128-bit 金鑰
-返回 ek []byte: 176 位元組輪金鑰，直接餵給 enc-block / dec-block
+key: 128-bit 金鑰
+返回 ek: 176 位元組輪金鑰，直接餵給 enc-block / dec-block
 `
   'aes.key-expand-256': `
 將 32-byte 金鑰展開為 240-byte 輪金鑰（AES-256，15 組輪金鑰）
-key [32]byte: 256-bit 金鑰
-返回 ek []byte: 240 位元組輪金鑰
+key: 256-bit 金鑰
+返回 ek: 240 位元組輪金鑰
 `
   'aes.mix-col': `
 混合單一欄（4 位元組）
@@ -289,46 +289,46 @@ n: 保留參數（實作固定處理 16 位元組，未使用）
   'argon2.blake-g': `
 Blake2b G 函數（Argon2 壓縮函數的基本混合步驟）
 直接原地修改 v 陣列中下標 a/b/c/d 的 64 位元字（兩兩相加、異或、旋轉）。
-v []u64: 16 字工作區（Argon2 區塊），會被原地修改
-a i64: 下標 a（0..15）
-b i64: 下標 b
-c i64: 下標 c
-d i64: 下標 d
-x u64: 保留參數（本實作未使用；混合所需的乘數由 v[a]/v[b] 的低 32 位即時算出）
-y u64: 保留參數（本實作未使用）
+v: 16 字工作區（Argon2 區塊），會被原地修改
+a: 下標 a（0..15）
+b: 下標 b
+c: 下標 c
+d: 下標 d
+x: 保留參數（本實作未使用；混合所需的乘數由 v[a]/v[b] 的低 32 位即時算出）
+y: 保留參數（本實作未使用）
 無返回值：結果留在 v[a]/v[b]/v[c]/v[d]
 `
   'argon2.compress': `
 Argon2 壓縮函數 G(X, Y)
 先把 X XOR Y 寫入暫存 r，對 r 的每個 16-word 列與行各跑一輪 blake-g，
 最後把結果與原 r 再 XOR 一次寫回 out。
-x []byte: 1024 位元組區塊 X
-y []byte: 1024 位元組區塊 Y
-返回 out []byte: 1024 位元組壓縮結果
+x: 1024 位元組區塊 X
+y: 1024 位元組區塊 Y
+返回 out: 1024 位元組壓縮結果
 `
   'argon2.h-prime': `
 可變長度 Blake2b（H'）：Argon2 用它把區塊摘要擴展成任意長度的輸出
-input []byte: 輸入資料（通常為 64 位元組的 Blake2b 摘要）
-out-len i64: 期望的輸出位元組數；<=64 時只需一次 Blake2b
-out []byte: 恰好 out-len 位元組的派生結果
+input: 輸入資料（通常為 64 位元組的 Blake2b 摘要）
+out-len: 期望的輸出位元組數；<=64 時只需一次 Blake2b
+out: 恰好 out-len 位元組的派生結果
 `
   'argon2.id': `
 Argon2id 金鑰推導（RFC 9106，Argon2id v=0x13）
 先算區塊數 m（向下取整到 4*parallelism 的倍數，且至少 8*parallelism），
 初始化 h0 後逐 lane 填塊、跑 time-cost 輪混合，最後抽出 out-len 位元組。
-password []byte: 密碼（UTF-8 位元組序列，可為空）
-salt []byte: 鹽值，至少 8 位元組且每帳號不同
-time-cost i64: 時間成本（迭代輪數，如 3）；越大越慢也越安全
-memory-cost i64: 記憶體成本（KB，如 65536 = 64MB）；過小會被提升到 8*parallelism 塊
-parallelism i64: 平行道數（如 1）；需 ≥ 1，且決定區塊數的取整粒度
-out-len i64: 輸出金鑰長度（位元組，常見 32）
-返回 out []byte: 推導出的金鑰，長度恰為 out-len
+password: 密碼（UTF-8 位元組序列，可為空）
+salt: 鹽值，至少 8 位元組且每帳號不同
+time-cost: 時間成本（迭代輪數，如 3）；越大越慢也越安全
+memory-cost: 記憶體成本（KB，如 65536 = 64MB）；過小會被提升到 8*parallelism 塊
+parallelism: 平行道數（如 1）；需 ≥ 1，且決定區塊數的取整粒度
+out-len: 輸出金鑰長度（位元組，常見 32）
+返回 out: 推導出的金鑰，長度恰為 out-len
 `
   'argon2.rotr': `
 rotr64: 64-bit 循環右移
-x u64: 要旋轉的 64-bit 字
-n i64: 右移位數（1–63；0 或 64 時移位未定義）
-r u64: (x >> n) | (x << (64-n))，只保留低 64 位
+x: 要旋轉的 64-bit 字
+n: 右移位數（1–63；0 或 64 時移位未定義）
+r: (x >> n) | (x << (64-n))，只保留低 64 位
 `
   'args.count': `
 參數數量（含程式名）
@@ -340,68 +340,68 @@ r u64: (x >> n) | (x << (64-n))，只保留低 64 位
 `
   'args.get-option': `
 取得選項值（如 --output=xxx）
-回傳 val ?str: ok=選項值, nil=未找到
+回傳 val: ok=選項值, nil=未找到
 `
   'args.get-positional': `
 取得第 i 個位置參數（跳過標記）
-回傳 val ?str: ok=位置參數值, nil=不存在
+回傳 val: ok=位置參數值, nil=不存在
 `
   'args.has-flag': '判斷標記是否存在（如 --verbose, -v）'
   'args.program': '程式名（第 0 個參數）'
   'arr-stack.arr-stack.clear': '清空堆疊'
   'arr-stack.arr-stack.empty': `
 判斷堆疊是否為空
-回傳 yes bool: true=空, false=非空
+回傳 yes: true=空, false=非空
 
 `
   'arr-stack.arr-stack.full': `
 判斷堆疊是否已滿
-回傳 yes bool: true=已滿, false=未滿
+回傳 yes: true=已滿, false=未滿
 
 `
   'arr-stack.arr-stack.size': `
 回傳堆疊中元素數量
-回傳 sz i64: 元素數量
+回傳 sz: 元素數量
 
 `
   'arr.arr-stack-init': `
 [n]t.arr-stack-init: 初始化堆疊狀態
 cap 自動設為陣列大小 n
-回傳 s arr-stack: 初始化後的堆疊狀態
+回傳 s: 初始化後的堆疊狀態
 
 `
   'arr.arr-stack-peek': `
 [n]t.arr-stack-peek: 檢視堆疊頂端元素（不移除）
-s arr-stack: 堆疊狀態
-回傳 val ?t: ok=頂端值, nil=堆疊為空
+s: 堆疊狀態
+回傳 val: ok=頂端值, nil=堆疊為空
 
 `
   'arr.arr-stack-pop': `
 [n]t.arr-stack-pop: 從堆疊頂端彈出元素
-s arr-stack: 堆疊狀態
-回傳 val ?t: ok=彈出值, nil=堆疊為空
+s: 堆疊狀態
+回傳 val: ok=彈出值, nil=堆疊為空
 
 `
   'arr.arr-stack-push': `
 [n]t.arr-stack-push: 將元素推入堆疊頂端
-s arr-stack: 堆疊狀態
-val t: 要推入的值
-回傳 ok bool: true=成功, false=堆疊已滿
+s: 堆疊狀態
+val: 要推入的值
+回傳 ok: true=成功, false=堆疊已滿
 
 `
   'arr.asc': '[n]t.asc: 升冪原地排序（插入排序）'
   'arr.at': `
 [deprecated] [n]t.at: 安全索引存取——請改用 a[i]（原生索引，回傳 ?t，越界為 err）
-i i64: 索引
-回傳 val ?t: 越界時回傳 nil
+i: 索引
+回傳 val: 越界時回傳 nil
 
 `
   'arr.clone': '[n]t.clone: 將陣列複製到 dst'
   'arr.contains': '[n]t.contains: 是否包含值 val'
   'arr.count': `
 [n]t.count: 統計值出現次數
-val t: 要統計的值
-回傳 cnt i64: 出現次數
+val: 要統計的值
+回傳 cnt: 出現次數
 
 `
   'arr.desc': '[n]t.desc: 降冪原地排序（插入排序）'
@@ -417,95 +417,95 @@ val t: 要統計的值
 `
   'arr.link-clear': `
 [n]t.link-clear: 清空鏈結串列，回收所有節點
-l link: 鏈結串列狀態
+l: 鏈結串列狀態
 
 `
   'arr.link-find': `
 [n]t.link-find: 尋找值的位置
-l link: 鏈結串列狀態
-val t: 要尋找的值
-回傳 pos i64: 位置索引, -1=未找到
+l: 鏈結串列狀態
+val: 要尋找的值
+回傳 pos: 位置索引, -1=未找到
 
 `
   'arr.link-get-at': `
 [n]t.link-get-at: 取得指定位置的元素
-l link: 鏈結串列狀態
-pos i64: 位置
-回傳 val ?t: ok=元素值, nil=位置越界
+l: 鏈結串列狀態
+pos: 位置
+回傳 val: ok=元素值, nil=位置越界
 
 `
   'arr.link-init': `
 [n]t.link-init: 初始化鏈結串列
-nxt []i64: 下一節點索引陣列（由呼叫方提供，大小 >= n）
-prv []i64: 前一節點索引陣列（由呼叫方提供，大小 >= n）
-回傳 l link: 初始化後的鏈結串列
+nxt: 下一節點索引陣列（由呼叫方提供，大小 >= n）
+prv: 前一節點索引陣列（由呼叫方提供，大小 >= n）
+回傳 l: 初始化後的鏈結串列
 
 `
   'arr.link-insert-at': `
 [n]t.link-insert-at: 在指定位置插入元素
-l link: 鏈結串列狀態
-pos i64: 插入位置（0=頭部, size=尾部）
-val t: 要插入的值
-回傳 ok bool: true=成功, false=位置越界或節點池已滿
+l: 鏈結串列狀態
+pos: 插入位置（0=頭部, size=尾部）
+val: 要插入的值
+回傳 ok: true=成功, false=位置越界或節點池已滿
 
 `
   'arr.link-peek-back': `
 [n]t.link-peek-back: 檢視尾端元素（不移除）
-l link: 鏈結串列狀態
-回傳 val ?t: ok=尾端值, nil=串列為空
+l: 鏈結串列狀態
+回傳 val: ok=尾端值, nil=串列為空
 
 `
   'arr.link-peek-front': `
 [n]t.link-peek-front: 檢視頭部元素（不移除）
-l link: 鏈結串列狀態
-回傳 val ?t: ok=頭部值, nil=串列為空
+l: 鏈結串列狀態
+回傳 val: ok=頭部值, nil=串列為空
 
 `
   'arr.link-pop-back': `
 [n]t.link-pop-back: 從鏈結串列尾端彈出元素
-l link: 鏈結串列狀態
-回傳 val ?t: ok=彈出值, nil=串列為空
+l: 鏈結串列狀態
+回傳 val: ok=彈出值, nil=串列為空
 
 `
   'arr.link-pop-front': `
 [n]t.link-pop-front: 從鏈結串列頭部彈出元素
-l link: 鏈結串列狀態
-回傳 val ?t: ok=彈出值, nil=串列為空
+l: 鏈結串列狀態
+回傳 val: ok=彈出值, nil=串列為空
 
 `
   'arr.link-push-back': `
 [n]t.link-push-back: 插入元素到鏈結串列尾端
-l link: 鏈結串列狀態
-val t: 要插入的值
-回傳 ok bool: true=成功, false=節點池已滿
+l: 鏈結串列狀態
+val: 要插入的值
+回傳 ok: true=成功, false=節點池已滿
 
 `
   'arr.link-push-front': `
 [n]t.link-push-front: 插入元素到鏈結串列頭部
-l link: 鏈結串列狀態
-val t: 要插入的值
-回傳 ok bool: true=成功, false=節點池已滿
+l: 鏈結串列狀態
+val: 要插入的值
+回傳 ok: true=成功, false=節點池已滿
 
 `
   'arr.link-remove-at': `
 [n]t.link-remove-at: 移除指定位置的元素
-l link: 鏈結串列狀態
-pos i64: 移除位置
-回傳 val ?t: ok=移除的值, nil=位置越界
+l: 鏈結串列狀態
+pos: 移除位置
+回傳 val: ok=移除的值, nil=位置越界
 
 `
   'arr.link-reverse': `
 [n]t.link-reverse: 反轉鏈結串列
 交換所有節點的 next/prev，然後交換 head/tail
-l link: 鏈結串列狀態
+l: 鏈結串列狀態
 
 `
   'arr.link-set-at': `
 [n]t.link-set-at: 設定指定位置的元素
-l link: 鏈結串列狀態
-pos i64: 位置
-val t: 新值
-回傳 ok bool: true=成功, false=位置越界
+l: 鏈結串列狀態
+pos: 位置
+val: 新值
+回傳 ok: true=成功, false=位置越界
 
 `
   'arr.max': '[n]t.max: 陣列中的最大值'
@@ -513,38 +513,38 @@ val t: 新值
   'arr.queue-init': `
 [n]t.queue-init: 初始化佇列狀態
 cap 自動設為陣列大小 n
-回傳 q queue: 初始化後的佇列狀態
+回傳 q: 初始化後的佇列狀態
 
 `
   'arr.queue-peek': `
 [n]t.queue-peek: 檢視佇列前端元素（不移除）
-q queue: 佇列狀態
-回傳 val ?t: ok=前端值, nil=佇列為空
+q: 佇列狀態
+回傳 val: ok=前端值, nil=佇列為空
 
 `
   'arr.queue-pop': `
 [n]t.queue-pop: 從佇列前端彈出元素
-q queue: 佇列狀態
-回傳 val ?t: ok=彈出值, nil=佇列為空
+q: 佇列狀態
+回傳 val: ok=彈出值, nil=佇列為空
 
 `
   'arr.queue-push': `
 [n]t.queue-push: 將元素推入佇列尾端
-q queue: 佇列狀態
-val t: 要推入的值
-回傳 ok bool: true=成功, false=佇列已滿
+q: 佇列狀態
+val: 要推入的值
+回傳 ok: true=成功, false=佇列已滿
 
 `
   'arr.reverse': '[n]t.reverse: 反轉陣列'
   'arr.sum': '[n]t.sum: 陣列元素總和'
   'arr.swap': `
 [n]t.swap: 交換兩位置元素
-i i64, j i64: 位置
+i i64, j: 位置
 
 `
   'arr.to-str': `
 [n]t.to-str: 字串表示
-回傳 out str: 格式如 '[1, 2, 3]'
+回傳 out: 格式如 '[1, 2, 3]'
 元素轉字串：逐元素呼叫其自身的 .to-str() 方法（具體型別見 number.no）
 
 `
@@ -566,13 +566,13 @@ cancelled: 檢查目前正在執行的非同步任務是否已被取消
   'base32.decode': `
 Base32 解碼（依末尾 '=' 填充數截短結果；字母表外的字元一律按 0 處理，不報錯）
 注意：長度不是 8 的倍數的殘餘字元會被忽略。
-in str: Base32 編碼字串（通常為 ASCII）
-out []byte: 解碼後的原始位元組，長度已扣除填充所佔的位元組
+in: Base32 編碼字串（通常為 ASCII）
+out: 解碼後的原始位元組，長度已扣除填充所佔的位元組
 `
   'base32.encode': `
 Base32 編碼（RFC 4648 標準字母表，每 5 位元一組，末尾以 '=' 補齊到 8 的倍數）
-data []byte: 待編碼的輸入位元組
-out str: 編碼後的字串，長度為 8 的倍數（空輸入對應空字串）
+data: 待編碼的輸入位元組
+out: 編碼後的字串，長度為 8 的倍數（空輸入對應空字串）
 `
   'base64.b64-val': `
 單一 Base64 字元轉數值
@@ -581,28 +581,28 @@ out str: 編碼後的字串，長度為 8 的倍數（空輸入對應空字串�
 `
   'base64.decode': `
 使用指定字母表進行 Base64 解碼
-s str: Base64 字串
-table str: Base64 字母表
-回傳 out ?[]byte: ok=解碼後資料, err=無效字元
+s: Base64 字串
+table: Base64 字母表
+回傳 out: ok=解碼後資料, err=無效字元
 
 `
   'base64.encode': `
 使用指定字母表進行 Base64 編碼
-data []byte: 輸入資料
-table str: Base64 字母表
-回傳 out str: Base64 編碼字串
+data: 輸入資料
+table: Base64 字母表
+回傳 out: Base64 編碼字串
 
 `
   'base64.encode-std': `
 使用標準字母表編碼
-data []byte: 輸入資料
-回傳 out str: Base64 編碼字串
+data: 輸入資料
+回傳 out: Base64 編碼字串
 
 `
   'base64.encode-url': `
 使用 URL 安全字母表編碼
-data []byte: 輸入資料
-回傳 out str: Base64 編碼字串
+data: 輸入資料
+回傳 out: Base64 編碼字串
 
 `
   'bigint._add': `
@@ -674,7 +674,7 @@ self + b 的 big⊕big 核心（普通具體方法，非運算子重載；供 _a
   'bigint.sub-bigint': 'self - b 的 big⊖big 核心（普通具體方法；供 _sub 委派）'
   'bigint.to-hex': `
 將 bigint 轉為十六進位字串（小寫）
-回傳 out str: 十六進位字串
+回傳 out: 十六進位字串
 
 `
   'bigint.to-i64': `
@@ -685,24 +685,24 @@ self + b 的 big⊕big 核心（普通具體方法，非運算子重載；供 _a
 `
   'bigint.to-str': `
 將 bigint 轉為十進位字串
-回傳 out str: 十進位字串
+回傳 out: 十進位字串
 
 `
   'bigint.zero': '建立零值 bigint'
   'blake2.b': `
 計算 BLAKE2b 雜湊（64 位元組輸出）
 data: 待雜湊的輸入位元組
-返回 hash [64]byte: BLAKE2b-512 的 64 位元組雜湊值
+返回 hash: BLAKE2b-512 的 64 位元組雜湊值
 `
   'blake2.b-256': `
 計算 BLAKE2b 雜湊（32 位元組輸出）
 data: 待雜湊的輸入位元組
-返回 hash [32]byte: BLAKE2b 截斷為 32 位元組的雜湊值
+返回 hash: BLAKE2b 截斷為 32 位元組的雜湊值
 `
   'blake2.b-256-hex': `
 計算 BLAKE2b-256 並返回 hex 字串
 data: 待雜湊的輸入位元組
-返回 hex str: BLAKE2b-256 雜湊值的 64 字元十六進位字串
+返回 hex: BLAKE2b-256 雜湊值的 64 字元十六進位字串
 `
   'blake2.b-compress': `
 壓縮函數
@@ -724,7 +724,7 @@ y: 第二條訊息字（併入 a 的次輪加法）
   'blake2.b-hex': `
 計算 BLAKE2b 並返回 hex 字串
 data: 待雜湊的輸入位元組
-返回 hex str: BLAKE2b-512 雜湊值的 128 字元十六進位字串
+返回 hex: BLAKE2b-512 雜湊值的 128 字元十六進位字串
 `
   'blake2.b-state': `
 歷史：早期編譯器對「陣列切片 + option 形式下標寫 `h[i]: { ok -> it = ... }`」
@@ -748,7 +748,7 @@ r: 循環右移後的結果（已套用 64 位元遮罩）
   'blake2.s': `
 計算 BLAKE2s 雜湊（32 位元組輸出）
 data: 待雜湊的輸入位元組
-返回 hash [32]byte: BLAKE2s 的 32 位元組雜湊值
+返回 hash: BLAKE2s 的 32 位元組雜湊值
 `
   'blake2.s-compress': `
 BLAKE2s 壓縮函數
@@ -770,7 +770,7 @@ y: 第二條訊息字（u32）
   'blake2.s-hex': `
 計算 BLAKE2s 並返回 hex 字串
 data: 待雜湊的輸入位元組
-返回 hex str: BLAKE2s 雜湊值的 64 字元十六進位字串
+返回 hex: BLAKE2s 雜湊值的 64 字元十六進位字串
 `
   'blake2.s-state': `
 同上，BLAKE2s 版（BLAKE2s 是 32 位元字，故為 []u32 而非 []u64）
@@ -782,12 +782,12 @@ h: 新拷貝的 BLAKE2s 初始狀態（8 個 u32）
   'bufio.reader.init': '建立緩衝讀取器'
   'bufio.reader.read-byte': `
 讀取一個位元組
-回傳 b ?byte: ok=位元組值, nil=EOF 或錯誤
+回傳 b: ok=位元組值, nil=EOF 或錯誤
 
 `
   'bufio.reader.read-line': `
 讀取一行
-回傳 line ?str: ok=讀取內容, nil=EOF 或錯誤
+回傳 line: ok=讀取內容, nil=EOF 或錯誤
 
 `
   'bytes.index': `
@@ -839,35 +839,35 @@ b.to-bytes-str()（見下方），或直接使用底層切片。
 `
   'bytes.to-txt': `
 []byte.to-txt: 將 []byte 轉換為 txt（截斷至 255 位元組）
-回傳 out txt: 固定 256 位元組的 txt 結構
+回傳 out: 固定 256 位元組的 txt 結構
 
 `
   'bzip2.bz-bit-reader.read-bit': `
 讀取一個位元（MSB-first），越界返回 0
-bit i64: 讀出的位元（0 或 1）；位元組耗盡後固定返回 0，不報錯
+bit: 讀出的位元（0 或 1）；位元組耗盡後固定返回 0，不報錯
 `
   'bzip2.bz-bit-reader.read-bits': `
 讀取 n 個位元（MSB-first）
-n i64: 要連續讀取的位元數
-v i64: 拼出的整數；先讀到的位元放在高位
+n: 要連續讀取的位元數
+v: 拼出的整數；先讀到的位元放在高位
 `
   'bzip2.bz-huffman.build': `
 從碼長度陣列建構 Huffman 碼表
 先統計各碼長個數，再累加出 limit / base，最後填 perm。
-lengths []i64: 每個符號的碼長（0 表示該符號不使用）
-alpha-size i64: 字母表大小（有效符號數上限，≤ 258）
+lengths: 每個符號的碼長（0 表示該符號不使用）
+alpha-size: 字母表大小（有效符號數上限，≤ 258）
 `
   'bzip2.bz-huffman.decode': `
 解碼一個符號
 先讀 min-len 位元，再逐位擴展直到落入 limit 範圍；越界或碼過長時回 -1。
-br bz-bit-reader: 位元來源（每輪可能多讀 1 位元）
-sym i64: 解出的符號值，-1=非法碼或空表
+br: 位元來源（每輪可能多讀 1 位元）
+sym: 解出的符號值，-1=非法碼或空表
 `
   'bzip2.bz-huffman.decode-symbol': `
 解碼一個符號（修正版：直接用 perm[zvec - base[zn]] 取符號）
 與 decode 的差異只在最後一步的索引運算，其餘解碼流程相同；bzip2 主流程用此版本。
-br bz-bit-reader: 位元來源（每輪可能多讀 1 位元）
-sym i64: 解出的符號值，-1=非法碼或空表
+br: 位元來源（每輪可能多讀 1 位元）
+sym: 解出的符號值，-1=非法碼或空表
 `
   'bzip2.compress': `
 使用 bzip2 格式壓縮資料
@@ -883,46 +883,46 @@ out: 解壓後的資料 ([]byte)
 `
   'chacha20-poly1305.chacha20-block': `
 生成一個 64-byte 密鑰流區塊
-key [32]byte: 256-bit 金鑰
-counter u32: 區塊計數器
-nonce [12]byte: 96-bit nonce
-返回 out [64]byte: 密鑰流
+key: 256-bit 金鑰
+counter: 區塊計數器
+nonce: 96-bit nonce
+返回 out: 密鑰流
 `
   'chacha20-poly1305.chacha20-poly1305-open': `
 ChaCha20-Poly1305 解密
-key [32]byte: 金鑰
-nonce [12]byte: nonce
-aad []byte: 額外認證資料
-sealed []byte: 密文 + 16 位元組 tag
-返回 plain []byte: 明文（認證失敗時長度為 0）
+key: 金鑰
+nonce: nonce
+aad: 額外認證資料
+sealed: 密文 + 16 位元組 tag
+返回 plain: 明文（認證失敗時長度為 0）
 `
   'chacha20-poly1305.chacha20-poly1305-seal': `
 ChaCha20-Poly1305 加密
-key [32]byte: 金鑰
-nonce [12]byte: nonce
-aad []byte: 額外認證資料
-plain []byte: 明文
-返回 sealed []byte: 密文 + 16 位元組 tag
+key: 金鑰
+nonce: nonce
+aad: 額外認證資料
+plain: 明文
+返回 sealed: 密文 + 16 位元組 tag
 `
   'chacha20-poly1305.chacha20-xor': `
 ChaCha20 串流加密/解密
-key [32]byte: 金鑰
-counter u32: 初始計數器
-nonce [12]byte: nonce
-data []byte: 輸入資料
-返回 out []byte: XOR 後的資料
+key: 金鑰
+counter: 初始計數器
+nonce: nonce
+data: 輸入資料
+返回 out: XOR 後的資料
 `
   'chacha20-poly1305.poly1305': `
 計算 Poly1305 MAC
-key [32]byte: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
-data []byte: 輸入資料
-返回 tag [16]byte: 16 位元組認證標籤
+key: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
+data: 輸入資料
+返回 tag: 16 位元組認證標籤
 `
   'chacha20-poly1305.poly1305-key-gen': `
 生成 Poly1305 一次性金鑰
-key [32]byte: ChaCha20 金鑰
-nonce [12]byte: nonce
-返回 otk [32]byte: 一次性 Poly1305 金鑰
+key: ChaCha20 金鑰
+nonce: nonce
+返回 otk: 一次性 Poly1305 金鑰
 `
   'chacha20-poly1305.poly1305-reduce': `
 將 x 約簡到 [0, 2^130-5)
@@ -981,7 +981,7 @@ is-letter 的別名
 `
   'client.client-create': `
 建立客戶端並連接
-返回 c ?client: ok=客戶端, nil=失敗
+返回 c: ok=客戶端, nil=失敗
 host: 目標伺服器位址
 port: 目標伺服器埠號
 `
@@ -989,56 +989,56 @@ port: 目標伺服器埠號
   'client.client.connect': `
 連接到指定主機與埠號
 記錄 host/port 供後續 reconnect 使用
-host str: 目標伺服器位址
-port i64: 目標伺服器埠號
-ok bool: true=已建立 TCP 連接，false=撥號失敗
+host: 目標伺服器位址
+port: 目標伺服器埠號
+ok: true=已建立 TCP 連接，false=撥號失敗
 `
   'client.client.is-connected': `
 檢查連接狀態
-yes bool: true=當前處於已連接狀態
+yes: true=當前處於已連接狀態
 `
   'client.client.reconnect': `
 使用已記錄的 host/port 重新連接
 先關閉舊連接（避免 fd 洩漏），再重新 dial
-ok bool: 以先前記錄的 host/port 重新撥號成功時為 true（未記錄過則直接回傳 false）
+ok: 以先前記錄的 host/port 重新撥號成功時為 true（未記錄過則直接回傳 false）
 `
   'client.client.recv': `
 接收資料到緩衝區
-buf str: 接收緩衝區（str）
-n i64: 最多接收的位元組數
-read-n i64: 實際接收位元組數（-1=未連接或錯誤, 0=連接關閉）
+buf: 接收緩衝區（str）
+n: 最多接收的位元組數
+read-n: 實際接收位元組數（-1=未連接或錯誤, 0=連接關閉）
 `
   'client.client.recv-line': `
 接收一行資料（最多 NET-BUF-SIZE 位元組）
-返回 line ?str: ok=接收內容, nil=失敗或連接關閉
+返回 line: ok=接收內容, nil=失敗或連接關閉
 `
   'client.client.request': `
 請求-回應模式
 發送資料後接收全部回應直到連接關閉
-返回 response ?str: ok=回應內容, nil=失敗
+返回 response: ok=回應內容, nil=失敗
 data: 要發送的請求內容
 `
   'client.client.send': `
 發送字串資料
-data str: 要發送的位元組內容字串
-written i64: 實際發送位元組數（-1=未連接或底層錯誤）
+data: 要發送的位元組內容字串
+written: 實際發送位元組數（-1=未連接或底層錯誤）
 `
   'client.client.send-line': `
 發送一行（附加換行符 \n）
-line str: 要發送的行文字（自動附加換行符）
-written i64: 實際發送位元組數（含換行符；-1=未連接或錯誤）
+line: 要發送的行文字（自動附加換行符）
+written: 實際發送位元組數（含換行符；-1=未連接或錯誤）
 `
   'cookie.build-header': `
 建構 Cookie 請求標頭
 names: Cookie 名稱陣列（定長 [16]str，取前 count 項）
 values: 對應的 Cookie 值陣列（定長 [16]str）
 count: 要輸出的 Cookie 對數量
-返回 out str: 串接後的 Cookie 請求標頭值（如 name1=val1; name2=val2）
+返回 out: 串接後的 Cookie 請求標頭值（如 name1=val1; name2=val2）
 `
   'cookie.build-set': `
 建構 Set-Cookie 標頭值
 c: 待序列化的 cookie 結構體
-返回 out str: 組裝好的 Set-Cookie 標頭值字串
+返回 out: 組裝好的 Set-Cookie 標頭值字串
 `
   'cookie.cookie-sign': `
 對 Cookie 值進行 HMAC-SHA256 簽名
@@ -1047,26 +1047,26 @@ c: 待序列化的 cookie 結構體
 name: Cookie 名稱（與 value 組成 name=value 參與 HMAC 運算）
 value: 待簽名的原始 Cookie 值
 key: HMAC-SHA256 簽名金鑰
-返回 signed str: 簽名後的值（格式: value.hex-hmac）
+返回 signed: 簽名後的值（格式: value.hex-hmac）
 `
   'cookie.cookie-verify': `
 驗證簽名 Cookie
 name: Cookie 名稱（須與簽名時一致，否則重算簽名不符）
 signed-value: 待驗證的簽名值（格式: value.hex-hmac）
 key: HMAC-SHA256 簽名金鑰
-返回 ok bool: true=簽名比對通過（常數時間比較）
-返回 value str: 剝離簽名後的原始 Cookie 值（驗證失敗時為空）
+返回 ok: true=簽名比對通過（常數時間比較）
+返回 value: 剝離簽名後的原始 Cookie 值（驗證失敗時為空）
 `
   'cookie.jar.build-header': `
 建構符合條件的 Cookie 請求標頭
 domain: 請求目標域名（篩選匹配該域名的 Cookie）
 path: 請求目標路徑（篩選匹配該路徑前綴的 Cookie）
-返回 out str: 串接所有符合域名/路徑條件 Cookie 的標頭字串
+返回 out: 串接所有符合域名/路徑條件 Cookie 的標頭字串
 `
   'cookie.jar.clear': '清空 Cookie Jar'
   'cookie.jar.count-of': `
 取得 Cookie 數量
-返回 n i64: jar 中目前已儲存的 Cookie 數量
+返回 n: jar 中目前已儲存的 Cookie 數量
 `
   'cookie.jar.delete': `
 刪除 Cookie
@@ -1079,7 +1079,7 @@ path: 所屬路徑（須精確相符；name/domain/path 三者全等才刪除）
 name: 要查詢的 Cookie 名稱
 domain: 請求目標域名（以精確、子域名或空域名匹配）
 path: 請求目標路徑（以前綴匹配，'/' 匹配全部）
-返回 val ?str: ok=符合條件的 Cookie 值, nil=未找到
+返回 val: ok=符合條件的 Cookie 值, nil=未找到
 `
   'cookie.jar.get-verified': `
 取得並驗證簽名 Cookie
@@ -1087,7 +1087,7 @@ name: 要查詢的 Cookie 名稱
 domain: 請求目標域名
 path: 請求目標路徑
 key: 用於驗證的簽名金鑰
-返回 val ?str: ok=剝離簽名且驗證通過的原始值, nil=未找到或驗證失敗
+返回 val: ok=剝離簽名且驗證通過的原始值, nil=未找到或驗證失敗
 `
   'cookie.jar.parse-response': `
 從 HTTP 回應的 Set-Cookie 標頭解析並存儲 Cookie
@@ -1098,81 +1098,81 @@ path: 回應來源路徑（作為儲存 Cookie 的歸屬路徑）
   'cookie.jar.set': `
 設定 Cookie
 同名（name + domain + path 都相同）的 Cookie 會被就地覆寫，不新增槽位。
-name str: Cookie 名稱
-value str: Cookie 值（未簽名原文）
-domain str: 所屬域名，用於匹配請求目標
-path str: 所屬路徑前綴
-max-age i64: 最大存活秒數（-1=未設定，由會話級別決定生命週期）
+name: Cookie 名稱
+value: Cookie 值（未簽名原文）
+domain: 所屬域名，用於匹配請求目標
+path: 所屬路徑前綴
+max-age: 最大存活秒數（-1=未設定，由會話級別決定生命週期）
 `
   'cookie.jar.set-signed': `
 設定簽名 Cookie
 儲存的是 cookie-sign(name, value, key) 的結果，讀取時需用同一把 key 驗簽。
-name str: Cookie 名稱（同時參與 HMAC 計算）
-value str: 簽名前的 Cookie 值（自動簽名後存入 jar）
-domain str: 所屬域名
-path str: 所屬路徑前綴
-max-age i64: 最大存活秒數（-1=未設定）
-key []byte: HMAC-SHA256 簽名金鑰
+name: Cookie 名稱（同時參與 HMAC 計算）
+value: 簽名前的 Cookie 值（自動簽名後存入 jar）
+domain: 所屬域名
+path: 所屬路徑前綴
+max-age: 最大存活秒數（-1=未設定）
+key: HMAC-SHA256 簽名金鑰
 `
   'cookie.parse-header': `
 解析 Cookie 請求標頭
 cookie-header: 請求端的 Cookie 標頭值（如 name1=val1; name2=val2）
 names: 輸出陣列，填入各 Cookie 名稱（定長 [16]str）
 values: 輸出陣列，填入與 names 一一對應的 Cookie 值（定長 [16]str）
-返回 count i64: 實際解析出的 Cookie 對數量（≤16）
+返回 count: 實際解析出的 Cookie 對數量（≤16）
 `
   'cookie.parse-set': `
 解析 Set-Cookie 標頭值
 set-cookie-str: 單條 Set-Cookie 標頭值（如 name=value; Path=/; HttpOnly）
-返回 c cookie: 解析出的 cookie 結構體（含 name/value/domain/path/max-age/secure 等欄位）
+返回 c: 解析出的 cookie 結構體（含 name/value/domain/path/max-age/secure 等欄位）
 `
   'crc-16.hex': `
 計算 CRC-16 並返回 4 位小寫 hex 字串
-data []byte: 輸入位元組，全部參與計算
-hex str: 固定 4 字元的十六進位表示（高位在前，不含 0x 前綴）
+data: 輸入位元組，全部參與計算
+hex: 固定 4 字元的十六進位表示（高位在前，不含 0x 前綴）
 `
   'crc-16.new': `
 計算 CRC-16-CCITT（多項式 0x1021，初值 0xFFFF）校驗和
-data []byte: 輸入位元組，全部參與計算
-crc i64: 16-bit 校驗和（0..65535）
+data: 輸入位元組，全部參與計算
+crc: 16-bit 校驗和（0..65535）
 `
   'crc-32.new': `
 計算 CRC-32（IEEE 802.3，反射多項式 0xEDB88320）校驗和
-s []byte: 輸入位元組緩衝區
-n i64: 實際參與計算的位元組數（可小於 s 的長度）；只掃描 s[0..n)
-crc i64: 32-bit 校驗和（已做最終 xorout 0xFFFFFFFF），範圍 0..4294967295
+s: 輸入位元組緩衝區
+n: 實際參與計算的位元組數（可小於 s 的長度）；只掃描 s[0..n)
+crc: 32-bit 校驗和（已做最終 xorout 0xFFFFFFFF），範圍 0..4294967295
 `
   'crc-64.hex': `
 計算 CRC-64 並返回 16 位小寫 hex 字串
-data []byte: 輸入位元組，全部參與計算
-hex str: 固定 16 字元的十六進位表示（高位在前，不含 0x 前綴）
+data: 輸入位元組，全部參與計算
+hex: 固定 16 字元的十六進位表示（高位在前，不含 0x 前綴）
 `
   'crc-64.new': `
 計算 CRC-64/ECMA-182（反射多項式 0xC96C5795D7870F42，初值全 1）校驗和
-data []byte: 輸入位元組，全部參與計算
-crc u64: 64-bit 校驗和（已做最終 xorout）
+data: 輸入位元組，全部參與計算
+crc: 64-bit 校驗和（已做最終 xorout）
 `
   'csv.encode-field': `
 將一個欄位編碼為 CSV 格式
 若包含逗號、雙引號或換行，則用雙引號包圍並轉義
-field str: 要編碼的欄位
-回傳 out str: CSV 編碼後的字串
+field: 要編碼的欄位
+回傳 out: CSV 編碼後的字串
 
 `
   'csv.parse-field': `
 解析 CSV 中的一個欄位
 從 s[pos] 開始解析，處理雙引號和逗號
-s str: CSV 文字
-pos i64: 開始位置
-回傳 field str: 解析出的欄位內容
-回傳 new-pos i64: 解析後的新位置
+s: CSV 文字
+pos: 開始位置
+回傳 field: 解析出的欄位內容
+回傳 new-pos: 解析後的新位置
 
 `
   'csv.parse-line': `
 解析一行 CSV 文字
-s str: CSV 文字
-max-fields i64: 最大欄位數
-回傳 fields []str: 解析出的欄位陣列
+s: CSV 文字
+max-fields: 最大欄位數
+回傳 fields: 解析出的欄位陣列
 
 `
   'deque.deque.clear': '清空雙端佇列'
@@ -1183,22 +1183,22 @@ max-fields i64: 最大欄位數
 `
   'deque.deque.peek-back': `
 檢視後端元素（不移除）
-回傳 val ?i64: ok=後端值, nil=佇列為空
+回傳 val: ok=後端值, nil=佇列為空
 
 `
   'deque.deque.peek-front': `
 檢視前端元素（不移除）
-回傳 val ?i64: ok=前端值, nil=佇列為空
+回傳 val: ok=前端值, nil=佇列為空
 
 `
   'deque.deque.pop-back': `
 從後端彈出元素
-回傳 val ?i64: ok=彈出值, nil=佇列為空
+回傳 val: ok=彈出值, nil=佇列為空
 
 `
   'deque.deque.pop-front': `
 從前端彈出元素
-回傳 val ?i64: ok=彈出值, nil=佇列為空
+回傳 val: ok=彈出值, nil=佇列為空
 
 `
   'deque.deque.push-back': '從後端推入元素'
@@ -1207,107 +1207,107 @@ max-fields i64: 最大欄位數
   'des.des-block': `
 DES 單區塊處理（通用）
 讀入首 8 位元組 → IP 置換 → 16 輪 Feistel → FP 置換 → 寫回 8 位元組結果。
-in []byte: 輸入資料，只取前 n 位元組（通常為 8）
-n i64: 要處理的位元組數（一般為 8）
-ks [96]byte: 由 des-key-schedule 產生的 16 組子金鑰
-encrypt i64: 1=加密（子金鑰正序）, 其他值=解密（子金鑰逆序）
-返回 out []byte: 8 位元組結果輸出
+in: 輸入資料，只取前 n 位元組（通常為 8）
+n: 要處理的位元組數（一般為 8）
+ks: 由 des-key-schedule 產生的 16 組子金鑰
+encrypt: 1=加密（子金鑰正序）, 其他值=解密（子金鑰逆序）
+返回 out: 8 位元組結果輸出
 `
   'des.des-dec': `
 解密一個 8-byte 區塊
 與 des-enc 相同，只是把 16 組子金鑰逆序使用（des-block(encrypt=0)）。
-in []byte: 輸入密文，只取首 8 位元組
-n i64: 要處理的位元組數（一般為 8）
-key [8]byte: 8 位元組 DES 金鑰，必須與加密時一致
-返回 out []byte: 8 位元組明文
+in: 輸入密文，只取首 8 位元組
+n: 要處理的位元組數（一般為 8）
+key: 8 位元組 DES 金鑰，必須與加密時一致
+返回 out: 8 位元組明文
 `
   'des.des-enc': `
 加密一個 8-byte 區塊
 內部先展開金鑰排程再呼叫 des-block(encrypt=1)。
-in []byte: 輸入明文，只取首 8 位元組
-n i64: 要處理的位元組數（一般為 8）
-key [8]byte: 8 位元組 DES 金鑰
-返回 out []byte: 8 位元組密文
+in: 輸入明文，只取首 8 位元組
+n: 要處理的位元組數（一般為 8）
+key: 8 位元組 DES 金鑰
+返回 out: 8 位元組密文
 `
   'des.des-key-schedule': `
 產生 16 個 48-bit 子金鑰
 依 PC-1 壓縮 64-bit 金鑰成 56 位，拆成 C/D 兩半，每輪按輪次表循環左移，
 再用 PC-2 選出 48 位，共 16 組按大端順序寫入 ks（每組 6 位元組）。
-key [8]byte: 8 位元組 DES 金鑰（含奇偶校驗位，不校驗）
-返回 ks [96]byte: 16 × 6 位元組子金鑰序列（第 i 組在 ks[i*6 .. i*6+6)）
+key: 8 位元組 DES 金鑰（含奇偶校驗位，不校驗）
+返回 ks: 16 × 6 位元組子金鑰序列（第 i 組在 ks[i*6 .. i*6+6)）
 `
   'des.f': `
 DES 輪函數 F(R, K)
 對 32-bit 半區 R 做 E 擴展到 48 位，與 48-bit 子金鑰 K 異或後過 8 個 S 盒，
 最後用 P 置換得到 32-bit 輸出。
-r i64: 右半區（低 32 位有效）
-k i64: 48-bit 子金鑰（低 48 位有效）
-返回 out i64: F 函數結果（低 32 位有效）
+r: 右半區（低 32 位有效）
+k: 48-bit 子金鑰（低 48 位有效）
+返回 out: F 函數結果（低 32 位有效）
 `
   'des.permute': `
 根據排列表提取並重排位元
 tbl 使用標準 DES 1-indexed MSB 位元編號（1..width）；輸出為 MSB-first（表第 0 項 → 最高位）。
-input i64: 待排列的輸入值（只取低 width 位元）
-tbl []byte: 排列表，每個元素是 1-indexed 的來源位元位置
-n i64: 參與排列的位元數（等於 tbl 的有效長度）
-width i64: 輸入位元寬度（決定位元位置基準，如 64 / 56 / 48 / 32）
-r i64: 排列結果，第 0 個表項佔最高位
+input: 待排列的輸入值（只取低 width 位元）
+tbl: 排列表，每個元素是 1-indexed 的來源位元位置
+n: 參與排列的位元數（等於 tbl 的有效長度）
+width: 輸入位元寬度（決定位元位置基準，如 64 / 56 / 48 / 32）
+r: 排列結果，第 0 個表項佔最高位
 `
   'des.sbox-lookup': `
 查詢 S-box
 input 為 6 位元值（MSB-first），b1 b2 b3 b4 b5 b6；row = b1*2 + b6，col = b2b3b4b5。
-input i64: 6 位元的 S-box 輸入（只取低 6 位元）
-box []byte: 64 項 S-box 表（4 列 × 16 欄扁平存放）
-r i64: 查表得到的 4 位元輸出
+input: 6 位元的 S-box 輸入（只取低 6 位元）
+box: 64 項 S-box 表（4 列 × 16 欄扁平存放）
+r: 查表得到的 4 位元輸出
 `
   'dns.build-query': `
 構建 DNS 查詢封包
-domain str: 要查詢的域名（以 '.' 分隔，逐段寫成 長度+標籤 格式）
-qtype i64: 查詢類型（DNS-TYPE-A=1 表示 IPv4 地址）
-返回 query []byte: 查詢封包（12 位元組標頭 + 問題區），尾部多餘空間未截短
-返回 qlen i64: 封包的實際有效長度（應只拿前 qlen 位元組發送）
+domain: 要查詢的域名（以 '.' 分隔，逐段寫成 長度+標籤 格式）
+qtype: 查詢類型（DNS-TYPE-A=1 表示 IPv4 地址）
+返回 query: 查詢封包（12 位元組標頭 + 問題區），尾部多餘空間未截短
+返回 qlen: 封包的實際有效長度（應只拿前 qlen 位元組發送）
 `
   'dns.dial': `
 解析域名並建立 TCP 連接
 先交給 net-dial（內部已支援 hostname 解析）；失敗才用 DNS 取得 IP 後重試一次。
-domain str: 域名（或直接寫 IP）
-port i64: 目標埠號
-返回 fd fd: 已連接的 socket 描述符，-1=兩種方式都失敗
+domain: 域名（或直接寫 IP）
+port: 目標埠號
+返回 fd: 已連接的 socket 描述符，-1=兩種方式都失敗
 `
   'dns.parse-name': `
 從回應封包中解析域名（支援壓縮指標）
 逐段讀取 長度+標籤，遇到長度 0 結束；遇到高位為 11 的壓縮指標則把讀取位置跳到指標目標，
 可連續跳轉；CLASS 等欄位不參與校驗。畸形封包（越界或非法標籤長度）回 next-pos=-1。
-data []byte: DNS 封包
-offset i64: 域名起始位置（位元組下標）
-返回 name str: 解析出的域名，各標籤以 '.' 連接
-返回 next-pos i64: 跳過本域名後的位置（有壓縮指標時為指標之後的位置）
+data: DNS 封包
+offset: 域名起始位置（位元組下標）
+返回 name: 解析出的域名，各標籤以 '.' 連接
+返回 next-pos: 跳過本域名後的位置（有壓縮指標時為指標之後的位置）
 `
   'dns.parse-response': `
 解析 DNS 回應封包，返回第一個 A 記錄的 IP
 先檢查 RCODE（非 0 直接放棄）、ANCCOUNT=0 直接放棄，跳過問題區後逐條讀取答案記錄；
 只接受 TYPE=A 且 RDLENGTH=4 的記錄（不檢查 CLASS）。
-data []byte: DNS 回應封包（至少 12 位元組標頭）
-返回 ip ?str: ok=第一個 A 記錄的點分十進位 IP, nil=沒有 A 記錄或封包非法
+data: DNS 回應封包（至少 12 位元組標頭）
+返回 ip: ok=第一個 A 記錄的點分十進位 IP, nil=沒有 A 記錄或封包非法
 `
   'dns.resolve': `
 使用預設 DNS 伺服器解析域名
 先查 DNS-DEFAULT-SERVER，失敗後再嘗試 DNS-BACKUP-SERVER。
-domain str: 要解析的域名
-返回 ip ?str: ok=解析到的 IPv4 地址, nil=兩台伺服器都失敗
+domain: 要解析的域名
+返回 ip: ok=解析到的 IPv4 地址, nil=兩台伺服器都失敗
 `
   'dns.resolve-all': `
 解析域名，返回第一個 A 記錄
 與 resolve 的差別：不嘗試備援伺服器，直接向 DNS-DEFAULT-SERVER 發一次查詢（行為與 resolve 的首輪相同）。
-domain str: 要解析的域名
-返回 ip ?str: ok=解析到的 IPv4 地址, nil=解析失敗
+domain: 要解析的域名
+返回 ip: ok=解析到的 IPv4 地址, nil=解析失敗
 `
   'dns.resolve-from': `
 使用指定 DNS 伺服器解析域名
 採用 UDP，單次查詢最多等待 DNS-TIMEOUT 毫秒，不重試。
-server str: DNS 伺服器 IPv4 地址（如 '8.8.8.8'，不含端口）
-domain str: 要解析的域名
-返回 ip ?str: ok=解析到的 IPv4 地址, nil=封包構建失敗、socket/發送失敗、超時或無 A 記錄
+server: DNS 伺服器 IPv4 地址（如 '8.8.8.8'，不含端口）
+domain: 要解析的域名
+返回 ip: ok=解析到的 IPv4 地址, nil=封包構建失敗、socket/發送失敗、超時或無 A 記錄
 `
   'dom.append-child': '附加（或移動）子節點到 parent 尾端'
   'dom.attribute-count': '屬性數量'
@@ -1493,8 +1493,8 @@ out: (a - b) mod m 結果（為負時回加 m，32 位元組）
 `
   'ecdsa.ec-bytes-to-point': `
 將未壓縮編碼轉為 Jacobian 座標
-in [65]byte: 04 || x || y（大端序）
-返回 out []byte: 96 位元組
+in: 04 || x || y（大端序）
+返回 out: 96 位元組
 `
   'ecdsa.ec-get-basepoint': `
 獲取基點 G 的 Jacobian 座標
@@ -1502,49 +1502,49 @@ g: 基點 G 的 Jacobian 座標（96 位元組：X‖Y‖Z，各 32 位元組小
 `
   'ecdsa.ec-point-add': `
 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
-返回 r []byte: 96 位元組
+返回 r: 96 位元組
 p: 加數點（Jacobian 座標，96 位元組 X‖Y‖Z 小端序）
 q: 被加點（Jacobian 座標，96 位元組）
 `
   'ecdsa.ec-point-double': `
 點倍乘 R = 2*P（Jacobian 座標）
-p []byte: 輸入點 (X, Y, Z)，各 32 位元組
-返回 r []byte: 輸出點 (X, Y, Z)，96 位元組
+p: 輸入點 (X, Y, Z)，各 32 位元組
+返回 r: 輸出點 (X, Y, Z)，96 位元組
 `
   'ecdsa.ec-point-to-bytes': `
 將 Jacobian 座標轉為未壓縮編碼
-p []byte: Jacobian 點 (96 位元組)
-返回 out [65]byte: 04 || x || y
+p: Jacobian 點 (96 位元組)
+返回 out: 04 || x || y
 `
   'ecdsa.ec-scalar-mult': `
 純量乘法 R = k * P
-k [32]byte: 純量
-p []byte: 點 (96 位元組)
-返回 r []byte: 96 位元組
+k: 純量
+p: 點 (96 位元組)
+返回 r: 96 位元組
 `
   'ecdsa.ecdh-p256': `
 P-256 (secp256r1) ECDH 共享秘密
-priv [32]byte: 我方私鑰（大端序）
-peer [65]byte: 對端未壓縮公鑰（04 || x || y）
-返回 shared []byte: 共享秘密（R 點之 x 座標, 32 bytes 大端序）；空=無效輸入
+priv: 我方私鑰（大端序）
+peer: 對端未壓縮公鑰（04 || x || y）
+返回 shared: 共享秘密（R 點之 x 座標, 32 bytes 大端序）；空=無效輸入
 `
   'ecdsa.ecdsa-publickey': `
 從私鑰計算公鑰
-priv [32]byte: 私鑰（大端序）
-返回 pub [65]byte: 未壓縮公鑰（04 || x || y）
+priv: 私鑰（大端序）
+返回 pub: 未壓縮公鑰（04 || x || y）
 `
   'ecdsa.ecdsa-sign': `
 ECDSA 簽名
-priv [32]byte: 私鑰（大端序）
-msg []byte: 待簽名原文（內部先做 SHA-256 再簽，非預哈希輸入）
-返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
+priv: 私鑰（大端序）
+msg: 待簽名原文（內部先做 SHA-256 再簽，非預哈希輸入）
+返回 sig: 簽名（r || s，各 32 位元組，大端序）
 `
   'ecdsa.ecdsa-verify': `
 ECDSA 驗簽
-pub [65]byte: 公鑰
-msg []byte: 待驗簽原文（內部先做 SHA-256，需與簽名時一致）
-sig [64]byte: 簽名（r || s）
-返回 ok i64: 1=有效, 0=無效
+pub: 公鑰
+msg: 待驗簽原文（內部先做 SHA-256，需與簽名時一致）
+sig: 簽名（r || s）
+返回 ok: 1=有效, 0=無效
 `
   'ed25519.ed-d': `
 回傳曲線常數 d 的域元素
@@ -1642,18 +1642,18 @@ src: 待寫入的域元素（10 limb）
   'embed.exists': `
 embed.exists: 檢查嵌入的文件是否存在
 與 read 相同的線性比對邏輯，但不取內容。
-path str: 文件路徑（相對於嵌入目錄）
-yes bool: true=嵌入清單中存在完全相同的路徑
+path: 文件路徑（相對於嵌入目錄）
+yes: true=嵌入清單中存在完全相同的路徑
 `
   'embed.read': `
 embed.read: 讀取嵌入的文件（線性比對路徑後從 blob 切片返回）
-path str: 文件路徑（相對於嵌入目錄，如 'index.html'；含路徑分隔符）
-data ?[]byte: ok=文件內容（blob 上的切片，不複製）, nil=路徑不存在
+path: 文件路徑（相對於嵌入目錄，如 'index.html'；含路徑分隔符）
+data: ok=文件內容（blob 上的切片，不複製）, nil=路徑不存在
 注意：返回值指向嵌入區，請勿修改其內容。
 `
   'env.get': `
 取得環境變數值
-回傳 val ?str: ok=變數值, nil=未設定（os.get-env 直接以 option 呈現）
+回傳 val: ok=變數值, nil=未設定（os.get-env 直接以 option 呈現）
 `
   'env.get-with-default': '取得環境變數，未設定時回傳預設值'
   'env.is-set': `
@@ -1662,7 +1662,7 @@ data ?[]byte: ok=文件內容（blob 上的切片，不複製）, nil=路徑不�
 `
   'env.lookup': `
 取得環境變數值
-回傳 val ?str: ok=變數值, nil=不存在
+回傳 val: ok=變數值, nil=不存在
 `
   'env.set': `
 設定環境變數
@@ -1708,7 +1708,7 @@ ec: 要比對的錯誤碼
 `
   'err.msg': `
 取得錯誤訊息
-回傳 msg str: 錯誤物件攜帶的訊息文字；非錯誤值時為空串
+回傳 msg: 錯誤物件攜帶的訊息文字；非錯誤值時為空串
 `
   'err.new': `
 建立錯誤
@@ -1776,19 +1776,19 @@ base: 2/8/10/16；upper: hex 是否大寫
   'fmt.sprintf': '已廢棄但仍可用，請改用 format'
   'fnv-1a-32.fnv-1a-32': `
 計算 32-bit FNV-1a 哈希（offset basis 2166136261、prime 16777619）
-s []byte: 輸入位元組緩衝區
-n i64: 實際參與計算的位元組數；只掃描 s[0..n)
-h i64: 32-bit 哈希值（每步乘積後 & 0xFFFFFFFF），範圍 0..4294967295
+s: 輸入位元組緩衝區
+n: 實際參與計算的位元組數；只掃描 s[0..n)
+h: 32-bit 哈希值（每步乘積後 & 0xFFFFFFFF），範圍 0..4294967295
 `
   'fnv.fnv-1a-32': `
 計算 FNV-1a 32-bit 哈希（offset basis 2166136261、prime 16777619）
-data []byte: 輸入位元組，全部參與計算
-hash i64: 32-bit 哈希值（每步乘積後 & 0xFFFFFFFF）
+data: 輸入位元組，全部參與計算
+hash: 32-bit 哈希值（每步乘積後 & 0xFFFFFFFF）
 `
   'fnv.fnv-1a-64': `
 計算 FNV-1a 64-bit 哈希（offset basis 14695981039346656037、prime 1099511628211）
-data []byte: 輸入位元組，全部參與計算
-hash u64: 64-bit 哈希值（每步乘法以 mask 截回 64 位元）
+data: 輸入位元組，全部參與計算
+hash: 64-bit 哈希值（每步乘法以 mask 截回 64 位元）
 `
   'fs.close': '關閉檔案描述符'
   'fs.copy-file': '複製檔案內容'
@@ -1826,7 +1826,7 @@ print(names[i])
   'fs.file.read': '從檔案讀取最多 n 位元組到 buf'
   'fs.file.read-bytes': `
 讀取整個檔案為 []byte（Rust 混合策略）
-回傳 content ?[]byte:
+回傳 content:
 ok([]byte) — 成功，含檔案內容
 nil        — 檔案為空
 err        — 檔案未開啟或讀取失敗
@@ -1834,12 +1834,12 @@ err        — 檔案未開啟或讀取失敗
 `
   'fs.file.read-line': `
 從檔案讀取一行（最多 4096 位元組）
-回傳 line ?str: ok=讀取內容, nil=EOF 或錯誤
+回傳 line: ok=讀取內容, nil=EOF 或錯誤
 
 `
   'fs.file.read-str': `
 讀取整個檔案為字串
-回傳 content ?str:
+回傳 content:
 ok(str) — 成功，含檔案內容
 nil     — 檔案為空
 err     — 檔案未開啟或讀取失敗
@@ -1849,16 +1849,16 @@ err     — 檔案未開啟或讀取失敗
   'fs.file.write': '將 data 的前 n 位元組寫入檔案'
   'fs.file.write-bytes': `
 將 []byte 寫入檔案（覆寫整個檔案）
-data []byte: 要寫入的位元組陣列
-回傳 ok ?bool:
+data: 要寫入的位元組陣列
+回傳 ok:
 ok(true)  — 成功
 err       — 檔案未開啟或寫入失敗
 
 `
   'fs.file.write-str': `
 將字串寫入檔案（覆寫整個檔案）
-data str: 要寫入的字串
-回傳 ok ?bool:
+data: 要寫入的字串
+回傳 ok:
 ok(true)  — 成功
 err       — 檔案未開啟或寫入失敗
 
@@ -1945,8 +1945,8 @@ opts: file-opts 結構
   'fs.read': '從檔案描述符讀取最多 n 位元組到 buf'
   'fs.read-bytes': `
 讀取整個檔案為 []byte
-p str: 檔案路徑
-回傳 content ?[]byte:
+p: 檔案路徑
+回傳 content:
 ok([]byte) — 成功，含檔案內容
 nil        — 檔案為空
 err        — 讀取失敗
@@ -1959,7 +1959,7 @@ read-file: 讀取整個檔案內容為 []byte（空 slice 表示失敗，無法�
 `
   'fs.read-stdin': `
 迴圈讀取 stdin 全部內容為 []byte（不依賴 stat/fstat，對管道安全）
-回傳 content ?[]byte:
+回傳 content:
 ok([]byte) — 成功，含 stdin 內容
 nil        — stdin 為空
 err        — 讀取失敗
@@ -1967,7 +1967,7 @@ err        — 讀取失敗
 `
   'fs.read-stdin-str': `
 迴圈讀取 stdin 全部內容為 str（不依賴 stat/fstat，對管道安全）
-回傳 content ?str:
+回傳 content:
 ok(str) — 成功，含 stdin 內容
 nil     — stdin 為空
 err     — 讀取失敗
@@ -1975,8 +1975,8 @@ err     — 讀取失敗
 `
   'fs.read-str': `
 讀取整個檔案為字串
-p str: 檔案路徑
-回傳 content ?str:
+p: 檔案路徑
+回傳 content:
 ok(str) — 成功，含檔案內容
 nil     — 檔案為空
 err     — 讀取失敗
@@ -2038,9 +2038,9 @@ print(paths[i])
   'fs.write': '將 data 的前 n 位元組寫入檔案描述符'
   'fs.write-bytes': `
 將 []byte 寫入檔案（覆寫）
-p str: 檔案路徑
-data []byte: 要寫入的位元組陣列
-回傳 ok ?bool:
+p: 檔案路徑
+data: 要寫入的位元組陣列
+回傳 ok:
 ok(true) — 成功
 err      — 寫入失敗
 
@@ -2052,9 +2052,9 @@ write-file: 將 []byte 寫入檔案（覆寫，無法區分部分寫入與完全
 `
   'fs.write-str': `
 將字串寫入檔案（覆寫）
-p str: 檔案路徑
-data str: 要寫入的字串
-回傳 ok ?bool:
+p: 檔案路徑
+data: 要寫入的字串
+回傳 ok:
 ok(true) — 成功
 err      — 寫入失敗
 
@@ -2101,32 +2101,32 @@ v []i64 = with-len(100)     -> 長度為 100 的切片
   'gzip.bit-reader.read-bit': `
 讀取一個位元
 越界時返回 0，避免 DEFLATE 解碼器讀超時崩潰
-bit i64: 讀出的位元（0 或 1）；位元組耗盡後固定返回 0，不報錯
+bit: 讀出的位元（0 或 1）；位元組耗盡後固定返回 0，不報錯
 `
   'gzip.bit-reader.read-bits': `
 讀取 n 個位元（LSB-first）
-n i64: 要連續讀取的位元數
-v i64: 拼出的整數；先讀到的位元放在低位（第 i 個位元在位 i）
+n: 要連續讀取的位元數
+v: 拼出的整數；先讀到的位元放在低位（第 i 個位元在位 i）
 `
   'gzip.bit-reader.read-u16-le': `
 讀取 2 位元組小端序整數（位元組對齊時）
 直接從 data[pos]、data[pos+1] 取值（不使用位元緩衝），並把 pos 前移 2。
-v i64: 解出的 0..65535 整數
+v: 解出的 0..65535 整數
 `
   'gzip.bit-reader.skip-to-byte': '跳到下一個位元組邊界'
   'gzip.build-dynamic': `
 從位元串流建構動態 Huffman 表
 先讀 HLIT/HDIST/HCLEN，再按 code-order 讀碼長度碼，最後展開重複碼長得到字面/距離表。
-br bit-reader: 位元來源（讀取位置會前移）
-lc huffman: 輸出參數，寫入字面/長度碼表
-dc huffman: 輸出參數，寫入距離碼表
+br: 位元來源（讀取位置會前移）
+lc: 輸出參數，寫入字面/長度碼表
+dc: 輸出參數，寫入距離碼表
 `
   'gzip.build-fixed': `
 建構固定 Huffman 表
 依 DEFLATE 規範 §3.2.6 填入固定碼長：0–143 碼長 8、144–255 碼長 9、
 256–279 碼長 7、280–287 碼長 8；距離碼全部 5 位元。
-lc huffman: 輸出參數，寫入 288 符號的字面/長度碼表
-dc huffman: 輸出參數，寫入 30 符號的距離碼表
+lc: 輸出參數，寫入 288 符號的字面/長度碼表
+dc: 輸出參數，寫入 30 符號的距離碼表
 `
   'gzip.compress': `
 使用 gzip 格式壓縮資料
@@ -2146,14 +2146,14 @@ out: 壓縮後的 DEFLATE 資料 ([]byte)
   'gzip.huffman.build': `
 從碼長度陣列建構 Huffman 碼表
 使用固定陣列欄位直接索引賦值，避免局部 vec 賦值導致懸空指標
-lengths []i64: 每個符號的碼長，0 表示該符號未使用
-n i64: 有效符號數（字面/長度表為 288，距離表為 30）；超出 n 的項不被讀取
+lengths: 每個符號的碼長，0 表示該符號未使用
+n: 有效符號數（字面/長度表為 288，距離表為 30）；超出 n 的項不被讀取
 `
   'gzip.huffman.decode': `
 解碼一個符號
 按位逐層擴展 canonical code，在 count[] 上做二分式定位；碼長超過 15 仍未命中時返回 -1。
-br bit-reader: 位元來源；每輪從中取 1 位元
-sym i64: 解出的符號值（字面/長度或距離），-1=非法碼
+br: 位元來源；每輪從中取 1 位元
+sym: 解出的符號值（字面/長度或距離），-1=非法碼
 `
   'gzip.inflate-decompress': `
 解壓縮原始 DEFLATE 資料（RFC 1951，ZIP method 8）
@@ -2173,168 +2173,168 @@ out: 解壓後的資料 ([]byte)
   'heap.empty': '判斷堆是否為空'
   'heap.init': `
 工廠 — 以呼叫者提供的元素緩衝區建立空堆
-data []t: 元素緩衝區（其長度即容量上限）
-回傳 h heap: 初始化後的堆實例
+data: 元素緩衝區（其長度即容量上限）
+回傳 h: 初始化後的堆實例
 
 `
   'heap.peek': `
 檢視最小元素（不移除）
-回傳 val ?t: ok=最小值, nil=堆為空
+回傳 val: ok=最小值, nil=堆為空
 
 `
   'heap.pop': `
 從堆彈出最小元素並向下調整
-回傳 val ?t: ok=最小值, nil=堆為空
+回傳 val: ok=最小值, nil=堆為空
 
 `
   'heap.push': `
 向堆推入一個元素並維持最小堆性質
-val t: 要推入的值
+val: 要推入的值
 
 `
   'heap.size': '回傳堆大小'
   'hkdf.hkdf-derive-secret': `
 Derive-Secret(Secret, Label, Messages)（TLS 1.3 §7.1）
 等同 hkdf-expand-label-vec(secret, label, messages, 32)。
-secret []byte: 32 位元組金鑰
-label str: 標籤（不含 "tls13 " 前綴）
-messages []byte: 交握訊息雜湊（SHA-256 的輸出，作為 context）
-out []byte: 32 位元組推導金鑰
+secret: 32 位元組金鑰
+label: 標籤（不含 "tls13 " 前綴）
+messages: 交握訊息雜湊（SHA-256 的輸出，作為 context）
+out: 32 位元組推導金鑰
 `
   'hkdf.hkdf-expand': `
 HKDF-Expand（RFC 5869 §2.3）
-prk [32]byte: 偽隨機金鑰
-info []byte: 上下文資訊（可為空，參與每一輪 HMAC）
-out-len i64: 需要的輸出長度；RFC 5869 上限為 255*32 = 8160，超過後 counter 會回繞，結果不再符合規範
-返回 okm []byte: 展開後的金鑰材料（長度恰為 out-len）
+prk: 偽隨機金鑰
+info: 上下文資訊（可為空，參與每一輪 HMAC）
+out-len: 需要的輸出長度；RFC 5869 上限為 255*32 = 8160，超過後 counter 會回繞，結果不再符合規範
+返回 okm: 展開後的金鑰材料（長度恰為 out-len）
 `
   'hkdf.hkdf-expand-hmac': `
 計算 HMAC-SHA256(prk, t-prefix || info || counter-byte)
 內部輔助函數，避免在 hkdf-expand 中修改 slice.len()
-prk-vec []byte: 金鑰（32 位元組）
-t-data []byte: T(i) 前綴（可為空，長度由 t-len 決定）
-t-len i64: T(i) 的有效長度
-info []byte: 上下文資訊（可為空）
-counter i64: 計數器位元組（RFC 要求 1–255），0 表示不加這個位元組
-返回 out [32]byte: HMAC-SHA256(prk, T(i-1) || info || counter) 的結果
+prk-vec: 金鑰（32 位元組）
+t-data: T(i) 前綴（可為空，長度由 t-len 決定）
+t-len: T(i) 的有效長度
+info: 上下文資訊（可為空）
+counter: 計數器位元組（RFC 要求 1–255），0 表示不加這個位元組
+返回 out: HMAC-SHA256(prk, T(i-1) || info || counter) 的結果
 `
   'hkdf.hkdf-expand-label': `
 TLS 1.3 HKDF-Expand-Label（RFC 8446 §7.1）
 先按 HkdfLabel 結構組出 info（length + "tls13 "+label + context），再調用 HKDF-Expand。
-prk [32]byte: 偽隨機金鑰（32 位元組，通常來自 HKDF-Extract）
-label str: 標籤（不含 "tls13 " 前綴，本文會自動補上）
-context []byte: 上下文（通常為交握訊息雜湊；可為空）
-out-len i64: 需要的輸出位元組數
-okm []byte: 展開後的金鑰材料，長度恰為 out-len
+prk: 偽隨機金鑰（32 位元組，通常來自 HKDF-Extract）
+label: 標籤（不含 "tls13 " 前綴，本文會自動補上）
+context: 上下文（通常為交握訊息雜湊；可為空）
+out-len: 需要的輸出位元組數
+okm: 展開後的金鑰材料，長度恰為 out-len
 `
   'hkdf.hkdf-expand-label-vec': `
 與 hkdf-expand-label 相同，但 prk 以 []byte 接收（不足 32 位元組的尾部以 0 補齊）
-prk []byte: 偽隨機金鑰，取前 32 位元組使用
-label str: 標籤（不含 "tls13 " 前綴）
-context []byte: 上下文（可為空）
-out-len i64: 需要的輸出位元組數
-okm []byte: 展開後的金鑰材料，長度恰為 out-len
+prk: 偽隨機金鑰，取前 32 位元組使用
+label: 標籤（不含 "tls13 " 前綴）
+context: 上下文（可為空）
+out-len: 需要的輸出位元組數
+okm: 展開後的金鑰材料，長度恰為 out-len
 `
   'hkdf.hkdf-extract': `
 HKDF-Extract（RFC 5869 §2.2）
-salt []byte: 鹽值（可為空；空時以 32 個零位元組代替）
-ikm []byte: 輸入金鑰材料（任意長度）
-返回 prk [32]byte: HMAC-SHA256(salt, IKM) 算出的偽隨機金鑰
+salt: 鹽值（可為空；空時以 32 個零位元組代替）
+ikm: 輸入金鑰材料（任意長度）
+返回 prk: HMAC-SHA256(salt, IKM) 算出的偽隨機金鑰
 `
   'hmac.hmac-md5': `
 計算 HMAC-MD5（使用 MD5 底層雜湊，區塊大小 64）
 key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out [16]byte: 16 位元組 HMAC 值
+返回 out: 16 位元組 HMAC 值
 `
   'hmac.hmac-md5-vec': `
 計算 HMAC-MD5，返回 []byte
 key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out []byte: 16 位元組 HMAC 值
+返回 out: 16 位元組 HMAC 值
 `
   'hmac.hmac-sha1': `
 計算 HMAC-SHA1
 key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out [20]byte: 20 位元組 HMAC 值
+返回 out: 20 位元組 HMAC 值
 `
   'hmac.hmac-sha1-vec': `
 計算 HMAC-SHA1，返回 []byte
 key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out []byte: 20 位元組 HMAC 值
+返回 out: 20 位元組 HMAC 值
 `
   'hmac.hmac-sha256': `
 計算 HMAC-SHA256
 key: 雜湊金鑰（超過底層雜湊區塊長度 64 位元組時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out [32]byte: 32 位元組 HMAC 值
+返回 out: 32 位元組 HMAC 值
 `
   'hmac.hmac-sha256-vec': `
 計算 HMAC-SHA256，返回 []byte（方便串接）
 key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out []byte: 32 位元組 HMAC 值
+返回 out: 32 位元組 HMAC 值
 `
   'hmac.hmac-sha384': `
 計算 HMAC-SHA384（使用 SHA-384 底層雜湊，區塊大小 128）
 key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out [48]byte: 48 位元組 HMAC 值
+返回 out: 48 位元組 HMAC 值
 `
   'hmac.hmac-sha384-vec': `
 計算 HMAC-SHA384，返回 []byte
 key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out []byte: 48 位元組 HMAC 值
+返回 out: 48 位元組 HMAC 值
 `
   'hmac.hmac-sha512': `
 計算 HMAC-SHA512
 key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out [64]byte: 64 位元組 HMAC 值
+返回 out: 64 位元組 HMAC 值
 `
   'hmac.hmac-sha512-vec': `
 計算 HMAC-SHA512，返回 []byte
 key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 msg: 待認證的訊息位元組
-返回 out []byte: 64 位元組 HMAC 值
+返回 out: 64 位元組 HMAC 值
 `
   'hpack.decode-int': `
 從 data 的 pos 位置解碼變長整數
-data str: HPACK 編碼資料
-pos i64: 首位元組所在位元組偏移
-prefix-bits i64: 前綴位數（與編碼端一致）
-val i64: 解碼出的整數值（錯誤時不保證）
-next-pos i64: 下一個未讀位元組偏移（-1=越界或 continuation 鏈過長）
+data: HPACK 編碼資料
+pos: 首位元組所在位元組偏移
+prefix-bits: 前綴位數（與編碼端一致）
+val: 解碼出的整數值（錯誤時不保證）
+next-pos: 下一個未讀位元組偏移（-1=越界或 continuation 鏈過長）
 `
   'hpack.decode-str': `
 從 data 的 pos 位置解碼字串
-data str: HPACK 編碼資料
-pos i64: 長度前綴首位元組所在偏移
-out str: 解碼出的字串原文（Huffman 編碼不支援）
-next-pos i64: 下一個未讀位元組偏移（-1=錯誤或資料不足）
+data: HPACK 編碼資料
+pos: 長度前綴首位元組所在偏移
+out: 解碼出的字串原文（Huffman 編碼不支援）
+next-pos: 下一個未讀位元組偏移（-1=錯誤或資料不足）
 `
   'hpack.encode-int': `
 編碼變長整數到 out
-val i64: 要編碼的非負整數
-prefix-bits i64: 首位元組可用前綴位數（1-8）；小於 2^prefix-bits-1 時單位元組即可完成
-prefix-byte i64: 已填好高位的前綴位元組（高 8-prefix-bits 位已設置，低 bits 留給前綴值）
-out str: 編碼結果（首位元組 + 若干 continuation 位元組，每位元組低 7 位承載數值、最高位為延續標誌）
+val: 要編碼的非負整數
+prefix-bits: 首位元組可用前綴位數（1-8）；小於 2^prefix-bits-1 時單位元組即可完成
+prefix-byte: 已填好高位的前綴位元組（高 8-prefix-bits 位已設置，低 bits 留給前綴值）
+out: 編碼結果（首位元組 + 若干 continuation 位元組，每位元組低 7 位承載數值、最高位為延續標誌）
 `
   'hpack.encode-str': `
 編碼字串（literal，H=0）
-s str: 待編碼的字串（長度 varint 前綴 + UTF-8 位元組）
-out str: 編碼結果位元組串（7-bit prefix 長度編碼拼接原文，不支援 Huffman）
+s: 待編碼的字串（長度 varint 前綴 + UTF-8 位元組）
+out: 編碼結果位元組串（7-bit prefix 長度編碼拼接原文，不支援 Huffman）
 `
   'hpack.tables.decode-headers': `
 解碼標頭塊
-data str: HPACK 編碼的標頭塊二進位資料
-names [128]str: 解碼出的標頭字段名，與 values 同下標對應（未用槽位為空串）
-values [128]str: 解碼出的標頭字段值
-count i64: 實際解碼出的標頭數（超過 128 條時截斷）
-ok bool: true=整塊解碼成功，false=中途遇錯或輸出槽位用完
+data: HPACK 編碼的標頭塊二進位資料
+names: 解碼出的標頭字段名，與 values 同下標對應（未用槽位為空串）
+values: 解碼出的標頭字段值
+count: 實際解碼出的標頭數（超過 128 條時截斷）
+ok: true=整塊解碼成功，false=中途遇錯或輸出槽位用完
 `
   'hpack.tables.dyn-add': `
 新增標頭到動態表（FIFO，新項在索引 0）
@@ -2345,9 +2345,9 @@ value: 該標頭字段的值
 編碼單個標頭
 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
 否則→literal with indexing（新 name）
-name str: 待編碼的標頭字段名（按查表結果選取索引或字面量形式）
-value str: 待編碼的標頭字段值
-out str: 編碼後的標頭位元組串，編碼結果同時加入動態表
+name: 待編碼的標頭字段名（按查表結果選取索引或字面量形式）
+value: 待編碼的標頭字段值
+out: 編碼後的標頭位元組串，編碼結果同時加入動態表
 `
   'hpack.tables.find': `
 完全匹配（name+value），返回全局索引（靜態 1-61，動態 62+）
@@ -2375,38 +2375,38 @@ ok: idx 落在有效範圍並成功取出時為 true
   'http.delete': `
 執行 HTTP DELETE 請求
 url: 完整 URL
-返回 resp ?response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http.do': `
 執行 HTTP 請求
 method: HTTP 方法（GET、POST、PUT、DELETE 等）
 url: 完整 URL（如 http://host:port/path）
 body: 請求主體（GET 應傳空字串）
-返回 resp ?response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http.do-req': `
 用 request 發送請求（支援自訂標頭）
 req: 已初始化的 request（含自訂標頭）
-返回 resp ?response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http.download': `
 串流下載（支援任意大小，直接寫入檔案）
 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
-url str: 完整 URL（http:// 走明文、https:// 走原生 TLS，其他 scheme 直接失敗）
-dest str: 目的地檔案路徑；成功時寫入回應內文，失敗時若已存在會被刪除
-ok bool: true=取得回應且 HTTP 狀態碼為 2xx，內文已寫入 dest
+url: 完整 URL（http:// 走明文、https:// 走原生 TLS，其他 scheme 直接失敗）
+dest: 目的地檔案路徑；成功時寫入回應內文，失敗時若已存在會被刪除
+ok: true=取得回應且 HTTP 狀態碼為 2xx，內文已寫入 dest
 `
   'http.get': `
 執行 HTTP GET 請求
 url: 完整 URL
-返回 resp ?response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http.get-auth': `
 執行帶 Basic 認證的 HTTP GET 請求
-url str: 完整 URL
-user str: 用戶名
-password str: 密碼
-返回 resp ?response: ok=回應, nil=失敗
+url: 完整 URL
+user: 用戶名
+password: 密碼
+返回 resp: ok=回應, nil=失敗
 `
   'http.http-dl-dechunk': `
 將 chunked 編碼的 body 解框為原始位元組
@@ -2443,7 +2443,7 @@ ok: true=寫入成功（把 ?bool 的 ok 摺疊為 true；nil/err 均為 false�
 執行 HTTP PATCH 請求
 url: 完整 URL
 body: 請求主體
-返回 resp ?response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http.ping': `
 ping — temporary probe to detect source vs embedded std loading
@@ -2453,28 +2453,28 @@ s: 固定回傳 pong 字串，用於辨識載入的是來源檔還是內嵌標�
 執行 HTTP POST 請求
 url: 完整 URL
 body: 請求主體
-返回 resp ?response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http.post-auth': `
 執行帶 Basic 認證的 HTTP POST 請求
-url str: 完整 URL
-body str: 請求主體
-user str: 用戶名
-password str: 密碼
-返回 resp ?response: ok=回應, nil=失敗
+url: 完整 URL
+body: 請求主體
+user: 用戶名
+password: 密碼
+返回 resp: ok=回應, nil=失敗
 `
   'http.put': `
 執行 HTTP PUT 請求
 url: 完整 URL
 body: 請求主體
-返回 resp ?response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http.request.add-header': `
 新增自訂標頭
 將 name 與 value 組裝成 'Name: Value' 存入 headers 陣列
-name str: 標頭字段名
-value str: 標頭字段值
-ok bool: true=已追加到 headers 並推進 header-count，false=標頭數已達 HTTP-MAX-REQ-HEADERS 上限
+name: 標頭字段名
+value: 標頭字段值
+ok: true=已追加到 headers 並推進 header-count，false=標頭數已達 HTTP-MAX-REQ-HEADERS 上限
 `
   'http.request.init': `
 初始化請求
@@ -2485,7 +2485,7 @@ body: 請求主體（GET/DELETE 可傳空字串）
   'http.response.get-header': `
 取得指定標頭值（線性搜尋）
 name: 標頭名（如 'Content-Type'）
-返回 val ?str: ok=標頭值, nil=未找到
+返回 val: ok=標頭值, nil=未找到
 `
   'http.response.parse-headers': `
 將 headers 字串拆分到 header-names / header-values
@@ -2493,37 +2493,37 @@ name: 標頭名（如 'Content-Type'）
 `
   'http.set-api-key': `
 為請求加入 API Key 標頭
-req request: 請求結構體
-header-name str: 標頭名稱（如 'X-API-Key'）
-api-key str: API 金鑰
-ok bool: true=已加入標頭，false=請求標頭槽位已滿
+req: 請求結構體
+header-name: 標頭名稱（如 'X-API-Key'）
+api-key: API 金鑰
+ok: true=已加入標頭，false=請求標頭槽位已滿
 `
   'http.set-basic-auth': `
 為請求加入 HTTP Basic 認證標頭
-req request: 請求結構體
-user str: 用戶名
-password str: 密碼
-ok bool: true=已加入標頭，false=請求標頭槽位已滿
+req: 請求結構體
+user: 用戶名
+password: 密碼
+ok: true=已加入標頭，false=請求標頭槽位已滿
 `
   'http.set-bearer-auth': `
 為請求加入 Bearer Token 認證標頭
-req request: 請求結構體
-token str: Bearer token
-ok bool: true=已加入標頭，false=請求標頭槽位已滿
+req: 請求結構體
+token: Bearer token
+ok: true=已加入標頭，false=請求標頭槽位已滿
 `
   'http.upload-put': `
 串流上傳檔案（PUT，原始二進位 body）
 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
-url str: 完整 URL（http:// 或 https://）
-token str: Bearer token，非空時附加 Authorization: Bearer 標頭
-file-path str: 要上傳的檔案路徑（先整讀為內容再發送）
-ok bool: true=上傳完成且 HTTP 狀態碼為 2xx；檔案讀不到或狀態非 2xx 為 false
+url: 完整 URL（http:// 或 https://）
+token: Bearer token，非空時附加 Authorization: Bearer 標頭
+file-path: 要上傳的檔案路徑（先整讀為內容再發送）
+ok: true=上傳完成且 HTTP 狀態碼為 2xx；檔案讀不到或狀態非 2xx 為 false
 `
   'http2.conn.close': '關閉連線（自動處理 TLS/明文）'
   'http2.conn.init': '初始化連線狀態'
   'http2.conn.recv-frame': `
 從 socket 接收影格
-返回 frame ?frame: ok=接收到的影格, nil=失敗
+返回 frame: ok=接收到的影格, nil=失敗
 `
   'http2.conn.request': `
 執行 HTTP/2 請求
@@ -2554,12 +2554,12 @@ ok: true=已寫入 socket, false=寫入錯誤
 `
   'http2.conn.send-headers': `
 發送 HEADERS 影格
-stream-id i64: 本 HEADERS 影格所屬的串流識別號
-names [64]str: 標頭字段名陣列，與 values 同下標配對
-values [64]str: 標頭字段值陣列
-count i64: 有效標頭條目數（只編碼前 count 對）
-end-stream bool: true=附加 END_STREAM 旗標，表示本串流不再發送資料
-ok bool: true=HPACK 編碼並發送成功
+stream-id: 本 HEADERS 影格所屬的串流識別號
+names: 標頭字段名陣列，與 values 同下標配對
+values: 標頭字段值陣列
+count: 有效標頭條目數（只編碼前 count 對）
+end-stream: true=附加 END_STREAM 旗標，表示本串流不再發送資料
+ok: true=HPACK 編碼並發送成功
 `
   'http2.conn.send-settings': `
 發送空 SETTINGS 影格
@@ -2569,20 +2569,20 @@ ok: true=發送成功
   'http2.connect': `
 建立 HTTP/2 h2c 連線
 送出 preface + SETTINGS，接收並 ACK 伺服器 SETTINGS
-返回 conn ?conn: ok=連線, nil=失敗
+返回 conn: ok=連線, nil=失敗
 host: 目標伺服器的主機名或 IP
 port: 目標 TCP 埠號（h2c 純文字連線）
 `
   'http2.connect-tls': `
 建立 HTTP/2 over TLS 連線
 先建立 TLS 連線，再送出 HTTP/2 preface + SETTINGS
-返回 conn ?conn: ok=連線, nil=失敗
+返回 conn: ok=連線, nil=失敗
 host: 目標伺服器的主機名或 IP
 port: 目標 TLS 埠號（通常 443）
 `
   'http2.delete': `
 HTTP/2 DELETE 請求
-返回 resp ?http.response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 url: 請求位址 'http://host:port/path'
 `
   'http2.do': `
@@ -2603,11 +2603,11 @@ HTTP/2 請求，返回 ?http.response
 method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
 url: 'http://host:port/path'
 body: 請求主體（空字串=無主體）
-返回 resp ?http.response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 `
   'http2.frame.parse': `
 從 data 的 pos 位置解析 9-byte 影格標頭
-返回 next-pos ?i64: ok=下一個位置, nil=錯誤
+返回 next-pos: ok=下一個位置, nil=錯誤
 data: HTTP/2 位元組流（自 pos 起解析一筆 9 位元組影格標頭）
 pos: 本次影格標頭在 data 中的起始位移
 next-pos: ok=標頭之後的位移, nil=資料不足/解析失敗
@@ -2621,24 +2621,24 @@ next-pos: 序列化完成後下一個可寫位移
 `
   'http2.get': `
 HTTP/2 GET 請求
-返回 resp ?http.response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 url: 請求位址 'http://host:port/path'（port 可省，預設 80）
 `
   'http2.patch': `
 HTTP/2 PATCH 請求
-返回 resp ?http.response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 url: 請求位址
 body: 請求主體（空字串=無主體）
 `
   'http2.post': `
 HTTP/2 POST 請求
-返回 resp ?http.response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 url: 請求位址
 body: 請求主體（空字串=無主體）
 `
   'http2.put': `
 HTTP/2 PUT 請求
-返回 resp ?http.response: ok=回應, nil=失敗
+返回 resp: ok=回應, nil=失敗
 url: 請求位址
 body: 請求主體（空字串=無主體）
 `
@@ -2646,95 +2646,95 @@ body: 請求主體（空字串=無主體）
 建立 HTTP/3 連線
 host: 伺服器主機名或 IP
 port: HTTP/3（QUIC/UDP）埠號
-返回 conn ?quic.conn: ok=已建立的 QUIC 連線, nil/err=撥接失敗
+返回 conn: ok=已建立的 QUIC 連線, nil/err=撥接失敗
 `
   'http3.decode-header': `
 從 buf 的 pos 位置解碼一個標頭
 buf: 待解碼的 QPACK 位元組緩衝
 pos: 本次解碼在 buf 中的起始位移
-返回 name str: 解出的標頭名稱
-返回 value str: 解出的標頭值
-返回 next-pos i64: 下一個標頭起始位移；-1 表示資料不足或格式錯誤
+返回 name: 解出的標頭名稱
+返回 value: 解出的標頭值
+返回 next-pos: 下一個標頭起始位移；-1 表示資料不足或格式錯誤
 `
   'http3.encode-data-frame': `
 編碼 DATA 影格
 data: 要放入 DATA 影格的請求／回應主體字串
-返回 buf []byte: 類型為 DATA(0x00)、負載為 data 位元組的影格緩衝
-返回 n i64: 影格總位元組數
+返回 buf: 類型為 DATA(0x00)、負載為 data 位元組的影格緩衝
+返回 n: 影格總位元組數
 `
   'http3.encode-frame': `
 編碼 HTTP/3 影格
 frame-type: HTTP/3 影格類型碼（varint 編碼，如 0x00 DATA、0x01 HEADERS）
 payload: 影格負載位元組（其長度以 varint 前置）
-返回 buf []byte: 類型＋長度＋負載串接後的完整影格緩衝
-返回 n i64: 編碼後的影格總位元組數
+返回 buf: 類型＋長度＋負載串接後的完整影格緩衝
+返回 n: 編碼後的影格總位元組數
 `
   'http3.encode-header': `
 將單個標頭編碼為 QPACK 字面格式
 name: 標頭名稱（以字面值編碼，不走靜態表）
 value: 標頭值
-返回 buf []byte: QPACK 字面編碼後的位元組緩衝
-返回 n i64: 寫入 buf 的實際位元組數
+返回 buf: QPACK 字面編碼後的位元組緩衝
+返回 n: 寫入 buf 的實際位元組數
 `
   'http3.encode-headers': `
 編碼多個標頭
 names: 前 count 項有效的標頭名稱陣列（定長 [16]str）
 values: 與 names 一一對應的標頭值陣列（定長 [16]str）
 count: 本批次要編碼的標頭對數量（≤16）
-返回 buf []byte: 依序拼接各標頭 QPACK 編碼的位元組緩衝
-返回 n i64: 編碼寫入 buf 的總位元組數
+返回 buf: 依序拼接各標頭 QPACK 編碼的位元組緩衝
+返回 n: 編碼寫入 buf 的總位元組數
 `
   'http3.encode-headers-frame': `
 編碼 HEADERS 影格
 names: 標頭名稱陣列（定長 [16]str，取前 count 項）
 values: 對應的標頭值陣列（定長 [16]str）
 count: 要編碼的標頭對數量
-返回 buf []byte: 類型為 HEADERS(0x01)、負載為 QPACK 標頭區塊的影格緩衝
-返回 n i64: 影格總位元組數
+返回 buf: 類型為 HEADERS(0x01)、負載為 QPACK 標頭區塊的影格緩衝
+返回 n: 影格總位元組數
 `
   'http3.encode-settings-frame': `
 編碼 SETTINGS 影格（空設定）
-返回 buf []byte: 空 SETTINGS 影格（類型 0x04＋長度 0，共 2 位元組）
-返回 n i64: 影格總位元組數（恆為 2）
+返回 buf: 空 SETTINGS 影格（類型 0x04＋長度 0，共 2 位元組）
+返回 n: 影格總位元組數（恆為 2）
 `
   'http3.get': `
 發送 HTTP/3 GET 請求
 url: 完整 URL（如 https://example.com/path）
-返回 resp ?response: ok=GET 回應, nil=URL 非法／連線失敗／無回應
+返回 resp: ok=GET 回應, nil=URL 非法／連線失敗／無回應
 `
   'http3.http3-do': `
 發送一般 HTTP/3 請求
 method: HTTP 方法（GET、POST、PUT、DELETE 等）
 url: 完整 URL
 body: 請求主體字串（空字串表示無主體）
-返回 resp ?response: ok=回應, nil=URL 非法／連線失敗／無回應
+返回 resp: ok=回應, nil=URL 非法／連線失敗／無回應
 `
   'http3.parse-frame': `
 從 buf 的 pos 位置解析一個 HTTP/3 影格
 buf: 含一個或多個 HTTP/3 影格的位元組緩衝
 pos: 本次解析在 buf 中的起始位移
-返回 frame-type i64: 解出的影格類型碼
-返回 payload []byte: 影格負載位元組切片
-返回 next-pos i64: 下一個影格起始位移；-1 表示資料不足或格式錯誤
+返回 frame-type: 解出的影格類型碼
+返回 payload: 影格負載位元組切片
+返回 next-pos: 下一個影格起始位移；-1 表示資料不足或格式錯誤
 `
   'http3.parse-url': `
 解析 HTTPS URL
 url: 以 'https://' 開頭的完整 URL（如 https://host:port/path）
-返回 host str: 剝除埠號後的主機名
-返回 port i64: 埠號（URL 未附埠號時為 HTTP3-DEFAULT-PORT）
-返回 path str: 請求路徑（無路徑時為 '/'）
-返回 ok bool: true=解析成功, false=前綴非法或埠號含非數字
+返回 host: 剝除埠號後的主機名
+返回 port: 埠號（URL 未附埠號時為 HTTP3-DEFAULT-PORT）
+返回 path: 請求路徑（無路徑時為 '/'）
+返回 ok: true=解析成功, false=前綴非法或埠號含非數字
 `
   'http3.post': `
 發送 HTTP/3 POST 請求
 url: 完整 URL
 body: POST 請求主體字串
-返回 resp ?response: ok=POST 回應, nil=URL 非法／連線失敗／無回應
+返回 resp: ok=POST 回應, nil=URL 非法／連線失敗／無回應
 `
   'http3.response.get-header': `
 取得標頭值
 name: 要查詢的標頭名稱（比對時不區分大小寫）
-返回 val ?str: ok=對應標頭值, nil=未找到該標頭
+返回 val: ok=對應標頭值, nil=未找到該標頭
 `
   'http3.send-request': `
 在 QUIC 連線上發送 HTTP/3 請求
@@ -2743,7 +2743,7 @@ method: HTTP 方法（填入 :method 標頭）
 path: 請求路徑（填入 :path 標頭）
 host: 主機名（填入 :authority 標頭）
 body: 請求主體字串（空字串表示無主體）
-返回 resp ?response: ok=解析後的回應, nil=傳送或接收失敗
+返回 resp: ok=解析後的回應, nil=傳送或接收失敗
 `
   'int.div': `
 整數除法，回傳商（a ÷ b）
@@ -2766,7 +2766,7 @@ transpiler 會將 i64.to-str() 等解析為 int.to-str()
   'io.outln': '寫入字串到標準輸出並換行'
   'io.read-line': `
 從標準輸入讀取一行
-回傳 line ?str: ok=讀取內容, nil=EOF 或錯誤
+回傳 line: ok=讀取內容, nil=EOF 或錯誤
 
 `
   'io.reader.from-fd': '從檔案描述符建立讀取器'
@@ -2783,12 +2783,12 @@ transpiler 會將 i64.to-str() 等解析為 int.to-str()
 `
   'io.reader.read-byte': `
 讀取一個位元組
-回傳 b ?i64: ok=位元組值, nil=EOF 或錯誤
+回傳 b: ok=位元組值, nil=EOF 或錯誤
 
 `
   'io.reader.read-line': `
 讀取一行（最多 4096 位元組）
-回傳 line ?str: ok=讀取內容, nil=EOF 或錯誤
+回傳 line: ok=讀取內容, nil=EOF 或錯誤
 
 `
   'io.writer.from-fd': '從檔案描述符建立寫入器'
@@ -2821,7 +2821,7 @@ yes: true=兩地址的 32 位數值完全相等
 `
   'ip.ip-addr.from-str': `
 從字串建立 ip-addr（靜態函數）
-返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
+返回 addr: ok=解析結果, nil=解析失敗
 s: IPv4 點分十進位字串（如 192.168.1.1）
 addr: ok=解析出的地址, nil=格式非法或段值越界
 `
@@ -2831,63 +2831,63 @@ v: 32 位無號整數值（按大端序拆為四段：a=v>>24、b=v>>16、c=v>>8
 `
   'ip.ip-addr.in-subnet': `
 檢查是否在指定子網內
-base ip-addr: 子網基地址
-prefix-len i64: 前綴長度（0~32；<=0 視為全域，>=32 退化為完全相等比較）
-yes bool: true=本地址與 base 在前 prefix-len 位網絡遮罩下同屬一個子網
+base: 子網基地址
+prefix-len: 前綴長度（0~32；<=0 視為全域，>=32 退化為完全相等比較）
+yes: true=本地址與 base 在前 prefix-len 位網絡遮罩下同屬一個子網
 `
   'ip.ip-addr.is-broadcast': `
 是否為廣播地址（255.255.255.255）
-yes bool: true 表示四個分段全為 255
+yes: true 表示四個分段全為 255
 `
   'ip.ip-addr.is-class-a': `
 是否為 A 類地址（1.0.0.0 ~ 126.255.255.255）
-yes bool: true 表示第一段落在 1~126（不含環回段 127）
+yes: true 表示第一段落在 1~126（不含環回段 127）
 `
   'ip.ip-addr.is-class-b': `
 是否為 B 類地址（128.0.0.0 ~ 191.255.255.255）
-yes bool: true 表示第一段落在 128~191
+yes: true 表示第一段落在 128~191
 `
   'ip.ip-addr.is-class-c': `
 是否為 C 類地址（192.0.0.0 ~ 223.255.255.255）
-yes bool: true 表示第一段落在 192~223
+yes: true 表示第一段落在 192~223
 `
   'ip.ip-addr.is-link-local': `
 是否為鏈路本地地址（169.254.0.0/16）
-yes bool: true 表示 a==169 且 b==254（IPv4 自動組態失敗時使用）
+yes: true 表示 a==169 且 b==254（IPv4 自動組態失敗時使用）
 `
   'ip.ip-addr.is-loopback': `
 是否為環回地址（127.0.0.0/8）
-yes bool: true 表示第一段等於 127
+yes: true 表示第一段等於 127
 `
   'ip.ip-addr.is-multicast': `
 是否為多播地址（224.0.0.0/4）
-yes bool: true 表示第一段落在 224~239
+yes: true 表示第一段落在 224~239
 `
   'ip.ip-addr.is-private': `
 是否為私有地址
 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-yes bool: true 表示落在上述三個 RFC 1918 網段之一
+yes: true 表示落在上述三個 RFC 1918 網段之一
 `
   'ip.ip-addr.is-valid': `
 檢查所有 octet 是否在有效範圍（0~255）
-yes bool: true 表示 a/b/c/d 四個分段都在 0~255 內
+yes: true 表示 a/b/c/d 四個分段都在 0~255 內
 `
   'ip.ip-addr.is-zero': `
 是否為全零地址（0.0.0.0）
-yes bool: true 表示四個分段全為 0（可綁定到所有網卡）
+yes: true 表示四個分段全為 0（可綁定到所有網卡）
 `
   'ip.ip-addr.parse': `
 從字串解析 IPv4 地址
 格式：A.B.C.D，每段 0~255
-s str: 點分十進位字串（四段以 '.' 分隔，每段 0~255）
-ok bool: true=解析成功且四段已寫入 a/b/c/d，false=格式非法（此時欄位已清零）
+s: 點分十進位字串（四段以 '.' 分隔，每段 0~255）
+ok: true=解析成功且四段已寫入 a/b/c/d，false=格式非法（此時欄位已清零）
 `
   'ip.ip-addr.to-str': `
 轉為字串表示（如 '192.168.1.1'）
 直接拼接四個十進位片段。舊實作靠 `out[n]: { ok -> it = 46 }` 在 len 處追加字元，
 但索引寫入是**邊界檢查寫**：n == len-bytes() 時 safe-index 判越界（nil），
 點號從未寫入，結果只剩第一個 octet（`192.168.1.1` → `192`）。
-out str: 四段十進位以 '.' 串接的地址字串（如 '192.168.1.1'）
+out: 四段十進位以 '.' 串接的地址字串（如 '192.168.1.1'）
 `
   'ip.ip-addr.to-u32': `
 轉為 32 位無號整數（大端序）
@@ -2905,7 +2905,7 @@ yes: true=解析成功且落在 10/8、172.16/12、192.168/16 私有網段之一
 `
   'ip.ip-parse': `
 快速解析 IP 字串
-返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
+返回 addr: ok=解析結果, nil=解析失敗
 s: 待解析的 IP 字串
 addr: ok=解析結果, nil=解析失敗（行爲同 ip-addr.from-str）
 `
@@ -2916,7 +2916,7 @@ addr: ok=解析結果, nil=解析失敗（行爲同 ip-addr.from-str）
 `
   'json.arr-get': `
 從陣列取得指定索引的元素作為 json
-回傳 child ?json: ok=找到, nil=未找到或非陣列
+回傳 child: ok=找到, nil=未找到或非陣列
 用法：
 elem = j.arr-get(0)
 elem: {
@@ -2935,34 +2935,34 @@ n = j.arr-len()
 `
   'json.arr-push': `
 向陣列末尾加入元素
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 用法：
 j.arr-push(item)
 
 `
   'json.arr-push-bool': `
 向陣列末尾加入布林元素
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 
 `
   'json.arr-push-idx': `
 以節點索引向陣列末尾附加元素（內部輔助，避免建構 json 時深拷貝整個池）
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 
 `
   'json.arr-push-num': `
 向陣列末尾加入數值元素
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 
 `
   'json.arr-push-str': `
 向陣列末尾加入字串元素
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 
 `
   'json.bool': `
 取得布林值（當 root 為布林值時）
-回傳 val bool, ok bool: ok=成功
+回傳 val, ok: ok=成功
 
 `
   'json.clone-tree': `
@@ -2976,14 +2976,14 @@ data 緩衝；一旦任一 handle 觸發 vec realloc，另一 handle 的 vec 頭
 `
   'json.delete-key': `
 從物件中刪除指定鍵
-回傳 ok bool: ok=成功（鍵存在且已刪除）
+回傳 ok: ok=成功（鍵存在且已刪除）
 
 `
   'json.get': `
 從物件取得子節點作為 json
 child 是 json 自身的子節點（沿用同一節點池，僅 root 指向子節點），
 不會新建物件；找不到或非物件時回傳 nil。
-回傳 child ?json: ok=找到, nil=未找到或非物件
+回傳 child: ok=找到, nil=未找到或非物件
 用法：
 child = j.get('key')
 child: {
@@ -2995,27 +2995,27 @@ s, found = it.get-str('sub-key')
 `
   'json.get-bool': `
 從物件取得布林值
-回傳 val bool, ok bool: ok=找到且為布林值
+回傳 val, ok: ok=找到且為布林值
 
 `
   'json.get-i64': `
 從物件取得整數值
-回傳 val i64, ok bool: ok=找到且為數字
+回傳 val, ok: ok=找到且為數字
 
 `
   'json.get-key': `
 全域函式 — 從 json 物件中按鍵取得子節點
-回傳 child ?json: 子節點（nil 表示不存在）
+回傳 child: 子節點（nil 表示不存在）
 
 `
   'json.get-num': `
 從物件取得數值
-回傳 val f64, ok bool: ok=找到且為數字
+回傳 val, ok: ok=找到且為數字
 
 `
   'json.get-str': `
 從物件取得字串值
-回傳 val str, ok bool: ok=找到且為字串
+回傳 val, ok: ok=找到且為字串
 用法：
 s, found = j.get-str('name')
 found -> print(s)
@@ -3023,7 +3023,7 @@ found -> print(s)
 `
   'json.i64': `
 取得整數值（當 root 為數字時）
-回傳 val i64, ok bool: ok=成功
+回傳 val, ok: ok=成功
 
 `
   'json.is-arr': '判斷是否為陣列'
@@ -3058,23 +3058,23 @@ root, next, ok = p.parse('{"key":"value"}', 0)
 `
   'json.num': `
 取得數值（當 root 為數字時）
-回傳 val f64, ok bool: ok=成功
+回傳 val, ok: ok=成功
 
 `
   'json.obj-key': `
 取得物件指定索引的 key
-回傳 key str: key 字串
+回傳 key: key 字串
 idx: 鍵序號（依插入順序沿邊鏈走訪）
 key: ok=鍵名, nil=越界或根非物件
 `
   'json.obj-keys-str': `
 取得物件所有鍵，以換行分隔的字串回傳
-回傳 keys str: 所有鍵拼接成的字串
+回傳 keys: 所有鍵拼接成的字串
 
 `
   'json.obj-len': `
 取得物件 key 數量
-回傳 n i64: key 數量（非物件回傳 0）
+回傳 n: key 數量（非物件回傳 0）
 
 `
   'json.overflowed': `
@@ -3144,60 +3144,60 @@ json.arr-get / json.get 回傳的子樹 root 恆為 -1。現在改由呼叫端�
 `
   'json.pool.stringify': `
 將節點序列化為字串
-回傳 out str: 序列化後的字串
+回傳 out: 序列化後的字串
 
 `
   'json.set': `
 在物件中設定鍵值（值為另一個 json 節點）
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 
 `
   'json.set-bool': `
 在物件中設定布林值
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 用法：
 j.set-bool('active', true)
 
 `
   'json.set-i64': `
 在物件中設定整數值
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 
 `
   'json.set-key': `
 設定物件鍵值（語意糖，接受 json 值作為 val）
-回傳 ok bool: ok=成功
+回傳 ok: ok=成功
 
 `
   'json.set-null': `
 在物件中設定 null 值
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 
 `
   'json.set-num': `
 在物件中設定數值
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 用法：
 j.set-num('age', 30.0)
 
 `
   'json.set-str': `
 在物件中設定字串值
-回傳 ok bool: 是否成功
+回傳 ok: 是否成功
 用法：
 j.set-str('name', 'Alice')
 
 `
   'json.str': `
 取得字串值（當 root 為字串時）
-回傳 val str, ok bool: ok=成功
+回傳 val, ok: ok=成功
 用法：
 s, found = j.str()
 
 `
   'json.str-val': `
 取得字串節點的值
-回傳 val str: 字串值
+回傳 val: 字串值
 
 `
   'json.stringify': `
@@ -3210,17 +3210,17 @@ s = j.stringify()
 `
   'link.link.empty': `
 判斷鏈結串列是否為空
-回傳 yes bool: true=空, false=非空
+回傳 yes: true=空, false=非空
 
 `
   'link.link.full': `
 判斷節點池是否已滿
-回傳 yes bool: true=已滿, false=未滿
+回傳 yes: true=已滿, false=未滿
 
 `
   'link.link.size': `
 回傳鏈結串列中元素數量
-回傳 sz i64: 元素數量
+回傳 sz: 元素數量
 
 `
   'linked-hash-map.linked-hash-map.clear': '清空'
@@ -3406,146 +3406,146 @@ rotate-left: 整數左旋 n 位（映射到 ARM64 ROR via llvm.fshl）
   'math.swap': '交換兩個值'
   'md5.md5': `
 計算 MD5 哈希（RFC 1321；輸入任意長度，內部自行補齊到 512-bit 的倍數）
-data []byte: 待計算摘要的輸入位元組
-out [16]byte: 128-bit 摘要，按 MD5 標準的小端字組序存放
+data: 待計算摘要的輸入位元組
+out: 128-bit 摘要，按 MD5 標準的小端字組序存放
 `
   'md5.md5-rotl': `
 32-bit 左旋。math.rotate-left 為 64-bit 寬度，不適用於 MD5 的 u32 輪函數，
 故以移位＋遮罩 (0xFFFFFFFF) 手動實作真正的 32-bit 旋轉。
-x u32: 要旋轉的 32 位元值
-n i64: 左旋位元數（1..31；32 會使移位量溢出）
-r u32: 左旋結果，已 & 0xFFFFFFFF
+x: 要旋轉的 32 位元值
+n: 左旋位元數（1..31；32 會使移位量溢出）
+r: 左旋結果，已 & 0xFFFFFFFF
 `
   'multipart.multipart-create': `
 建立新的 multipart 編碼器
-返回 w ?multipart-writer: ok=編碼器, nil=失敗
+返回 w: ok=編碼器, nil=失敗
 `
   'multipart.multipart-create-boundary': `
 使用指定邊界建立編碼器
-boundary str: 邊界字串（不含前導 --，寫入時自動加上）
-w multipart-writer: 已設入該邊界、可直接寫入各段的編碼器
+boundary: 邊界字串（不含前導 --，寫入時自動加上）
+w: 已設入該邊界、可直接寫入各段的編碼器
 `
   'multipart.multipart-decrypt-field': `
 解密加密的 multipart 欄位資料
-encrypted-data str: Base64 編碼的加密資料（含 12 byte IV 前綴）
-key [32]byte: AES-256 金鑰
-aad []byte: 額外認證資料（欄位名稱）
-返回 plain ?str: ok=解密後明文, nil=解密失敗
+encrypted-data: Base64 編碼的加密資料（含 12 byte IV 前綴）
+key: AES-256 金鑰
+aad: 額外認證資料（欄位名稱）
+返回 plain: ok=解密後明文, nil=解密失敗
 `
   'multipart.multipart-extract-boundary': `
 從 Content-Type 提取 boundary 值
-content-type str: Content-Type 標頭值
-返回 boundary str: 邊界字串（空=未找到）
+content-type: Content-Type 標頭值
+返回 boundary: 邊界字串（空=未找到）
 `
   'multipart.multipart-gen-boundary': `
 生成隨機邊界字串
-seed i64: 隨機種子（輸入/輸出）
-返回 boundary str: 邊界字串
+seed: 隨機種子（輸入/輸出）
+返回 boundary: 邊界字串
 `
   'multipart.multipart-parse': `
 從 Content-Type 標頭和請求體解析 multipart
-content-type str: Content-Type 標頭值（含 boundary=...）
-body str: 請求體
-返回 r ?multipart-reader: ok=解析器, nil=失敗
+content-type: Content-Type 標頭值（含 boundary=...）
+body: 請求體
+返回 r: ok=解析器, nil=失敗
 `
   'multipart.multipart-reader.field-content-type': `
 取得當前內容類型
-返回 ct str: 空=未指定
+返回 ct: 空=未指定
 `
   'multipart.multipart-reader.field-data': `
 取得當前欄位資料
-返回 data str: 當前部分的內容資料（含二進位位元組）
+返回 data: 當前部分的內容資料（含二進位位元組）
 `
   'multipart.multipart-reader.field-filename': `
 取得當前檔案名稱
-返回 filename str: 空=非檔案欄位
+返回 filename: 空=非檔案欄位
 `
   'multipart.multipart-reader.field-name': `
 取得當前欄位名稱
-返回 name str: 當前部分 form-data 的 name（空=未指定）
+返回 name: 當前部分 form-data 的 name（空=未指定）
 `
   'multipart.multipart-reader.has-current-part': `
 判斷是否有當前部分
-返回 yes bool: true=已定位到某部分可供讀取
+返回 yes: true=已定位到某部分可供讀取
 `
   'multipart.multipart-reader.init': `
 初始化解析器
-boundary str: 邊界字串（不含 '--' 前綴）
-data str: 原始資料
+boundary: 邊界字串（不含 '--' 前綴）
+data: 原始資料
 `
   'multipart.multipart-reader.is-file': `
 判斷當前部分是否為檔案
-返回 yes bool: true=檔案
+返回 yes: true=檔案
 `
   'multipart.multipart-reader.next': `
 前進到下一個部分
-返回 has-part bool: true=有下一個部分, false=已到結尾
+返回 has-part: true=有下一個部分, false=已到結尾
 `
   'multipart.multipart-reader.parse-header-line': `
 解析單個標頭行
-line str: 標頭行
-part multipart-part: 輸出，解析結果
+line: 標頭行
+part: 輸出，解析結果
 `
   'multipart.multipart-reader.parse-headers': `
 解析部分標頭
-header-block str: 標頭區塊（不含結尾 CRLFCRLF）
-part multipart-part: 輸出，解析結果
+header-block: 標頭區塊（不含結尾 CRLFCRLF）
+part: 輸出，解析結果
 `
   'multipart.multipart-writer.body-of': `
 取得已建構的請求體
-返回 body str: 截至目前已寫入各部分組成的完整請求體
+返回 body: 截至目前已寫入各部分組成的完整請求體
 `
   'multipart.multipart-writer.boundary-of': `
 取得邊界字串
-返回 boundary str: 編碼器目前使用的邊界（不含 -- 前綴）
+返回 boundary: 編碼器目前使用的邊界（不含 -- 前綴）
 `
   'multipart.multipart-writer.close-form': `
 寫入結束邊界，完成表單
-返回 ok bool: true=寫入成功
+返回 ok: true=寫入成功
 `
   'multipart.multipart-writer.content-type': `
 取得 Content-Type 標頭值
-返回 ct str: 如 'multipart/form-data; boundary=----NolangBoundary...'
+返回 ct: 如 'multipart/form-data; boundary=----NolangBoundary...'
 `
   'multipart.multipart-writer.init': `
 初始化編碼器（自動生成邊界）
-返回 ok bool: true=寫入成功
+返回 ok: true=寫入成功
 `
   'multipart.multipart-writer.init-boundary': `
 使用指定邊界初始化
-boundary str: 邊界字串
+boundary: 邊界字串
 `
   'multipart.multipart-writer.write-encrypted-field': `
 寫入 AES-256-GCM 加密文字欄位
-name str: 欄位名稱
-value str: 明文值
-key [32]byte: AES-256 金鑰
-iv [12]byte: GCM IV
-返回 ok bool: true=寫入成功
+name: 欄位名稱
+value: 明文值
+key: AES-256 金鑰
+iv: GCM IV
+返回 ok: true=寫入成功
 `
   'multipart.multipart-writer.write-encrypted-file': `
 寫入 AES-256-GCM 加密檔案欄位
-name str: 欄位名稱
-filename str: 檔案名稱
-content-type str: 內容類型
-content str: 檔案明文內容
-key [32]byte: AES-256 金鑰
-iv [12]byte: GCM IV（nonce）
-返回 ok bool: true=寫入成功
+name: 欄位名稱
+filename: 檔案名稱
+content-type: 內容類型
+content: 檔案明文內容
+key: AES-256 金鑰
+iv: GCM IV（nonce）
+返回 ok: true=寫入成功
 `
   'multipart.multipart-writer.write-field': `
 寫入文字欄位
-name str: 欄位名稱
-value str: 欄位值
-返回 ok bool: true=寫入成功
+name: 欄位名稱
+value: 欄位值
+返回 ok: true=寫入成功
 `
   'multipart.multipart-writer.write-file': `
 寫入檔案欄位
-name str: 欄位名稱
-filename str: 檔案名稱
-content-type str: 內容類型（如 'image/jpeg'）
-content str: 檔案內容
-返回 ok bool: true=寫入成功
+name: 欄位名稱
+filename: 檔案名稱
+content-type: 內容類型（如 'image/jpeg'）
+content: 檔案內容
+返回 ok: true=寫入成功
 `
   'net.close': `
 關閉檔案描述符（來自 fs 模組）
@@ -3579,15 +3579,15 @@ total: 累計收到的總位元組數
 `
   'net.conn.recv-line': `
 接收一行資料（最多 NET-BUF-SIZE 位元組）
-返回 line ?str: ok=接收內容, nil=失敗或連接關閉
+返回 line: ok=接收內容, nil=失敗或連接關閉
 line: ok=單次收到的資料（一次 recv 的內容，並非按換行切分）, nil=未收到或連接無效
 `
   'net.conn.recv-with-timeout': `
 帶逾時的接收
-buf str: 接收緩衝區
-n i64: 最多接收的位元組數
-timeout-ms i64: 逾時毫秒數
-返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
+buf: 接收緩衝區
+n: 最多接收的位元組數
+timeout-ms: 逾時毫秒數
+返回 read-n: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
 `
   'net.conn.send': `
 發送字串資料
@@ -3597,77 +3597,77 @@ written: 實際發送位元組數（-1=錯誤或連接無效）
 `
   'net.conn.send-with-timeout': `
 帶逾時的發送（目前直接發送，無獨立 send timeout）
-data str: 要發送的資料
-timeout-ms i64: 逾時毫秒數（目前忽略，僅設置 recv timeout 作為參考）
-返回 written i64: 實際發送位元組數（-1=錯誤）
+data: 要發送的資料
+timeout-ms: 逾時毫秒數（目前忽略，僅設置 recv timeout 作為參考）
+返回 written: 實際發送位元組數（-1=錯誤）
 `
   'net.conn.set-recv-timeout': `
 設定接收逾時
-timeout-ms i64: 逾時毫秒數（0=阻塞, >0=逾時）
-返回 ok bool: true=成功
+timeout-ms: 逾時毫秒數（0=阻塞, >0=逾時）
+返回 ok: true=成功
 `
   'net.conn.set-timeout': `
 設定接收逾時（別名，語義同 set-recv-timeout）
-timeout-ms i64: 逾時毫秒數
-返回 ok bool: true=成功
+timeout-ms: 逾時毫秒數
+返回 ok: true=成功
 `
   'net.dial-timeout': `
 帶連接逾時的撥號
-host str: 目標主機
-port i64: 目標埠號
-timeout-ms i64: 逾時毫秒數（目前用於連接後的 recv 逾時設定）
-返回 c ?conn: ok=連接, nil=失敗
+host: 目標主機
+port: 目標埠號
+timeout-ms: 逾時毫秒數（目前用於連接後的 recv 逾時設定）
+返回 c: ok=連接, nil=失敗
 `
   'net.dial-to': `
 建立連接並撥號
-返回 c ?conn: ok=連接, nil=失敗
+返回 c: ok=連接, nil=失敗
 host: 目標 IPv4 點分位址
 port: 目標埠號
 c: ok=已連接的連接器, nil=撥號失敗
 `
   'net.enc-accept': `
 在已接受的 TCP 連接上建立加密通道
-c conn: 已接受的 TCP 連接
-key [32]byte: AES-256 金鑰
-返回 ec enc-conn: 加密連接
+c: 已接受的 TCP 連接
+key: AES-256 金鑰
+返回 ec: 加密連接
 `
   'net.enc-conn.close': '關閉加密連接（同時關閉底層 TCP 連接）'
   'net.enc-conn.gen-iv': `
 生成下一個 IV（nonce）
-返回 iv [12]byte: 12 位元組 IV
+返回 iv: 12 位元組 IV
 iv: 12 位元組 IV（前 4 位元組為遞增的發送序號，後 8 位元組取自隨機數）
 `
   'net.enc-conn.init': `
 初始化加密連接
-c conn: 底層 TCP 連接
-key [32]byte: AES-256 金鑰
+c: 底層 TCP 連接
+key: AES-256 金鑰
 `
   'net.enc-conn.recv-encrypted': `
 接收並解密資料
-返回 data ?str: ok=解密後明文, nil=失敗
+返回 data: ok=解密後明文, nil=失敗
 `
   'net.enc-conn.send-encrypted': `
 加密並發送資料
-data str: 明文資料
-返回 ok bool: true=成功
+data: 明文資料
+返回 ok: true=成功
 `
   'net.enc-dial': `
 建立加密 TCP 連接
-host str: 目標主機
-port i64: 目標埠號
-key [32]byte: AES-256 金鑰
-返回 ec ?enc-conn: ok=加密連接, nil=失敗
+host: 目標主機
+port: 目標埠號
+key: AES-256 金鑰
+返回 ec: ok=加密連接, nil=失敗
 `
   'net.icmp-checksum': `
 計算 ICMP 校驗和（16 位元一補數和）
-data []byte: 封包資料
-len i64: 參與計算的位元組數（奇數時最後一個位元組補零成高位位元組）
-checksum i64: 16 位元一反補數結果（進位已摺疊，取反後低 16 位有效）
+data: 封包資料
+len: 參與計算的位元組數（奇數時最後一個位元組補零成高位位元組）
+checksum: 16 位元一反補數結果（進位已摺疊，取反後低 16 位有效）
 `
   'net.icmp-conn.build-echo': `
 建構 ICMP Echo Request 封包
-pkt []byte: 輸出封包緩衝區（至少 64 位元組），由本函式原地填寫
-seq i64: ICMP Echo 序號，寫入封包 seq 欄位用於配對應答
+pkt: 輸出封包緩衝區（至少 64 位元組），由本函式原地填寫
+seq: ICMP Echo 序號，寫入封包 seq 欄位用於配對應答
 `
   'net.icmp-conn.close': '關閉 ICMP socket'
   'net.icmp-conn.open': `
@@ -3677,32 +3677,32 @@ ok: true=socket 建立成功（並記錄 ident 與序號起點）
 `
   'net.icmp-conn.ping-host': `
 對指定主機發送多次 ping
-host str: 目標 IP 地址
-count i64: ping 次數
-timeout-ms i64: 每次逾時毫秒數（預設 1000）
+host: 目標 IP 地址
+count: ping 次數
+timeout-ms: 每次逾時毫秒數（預設 1000）
 `
   'net.icmp-conn.ping-once': `
 發送一次 ICMP Echo Request 並等待回應
-host str: 目標 IP 地址
-timeout-ms i64: 逾時毫秒數
-返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
+host: 目標 IP 地址
+timeout-ms: 逾時毫秒數
+返回 rtt: ok=往返延遲（微秒）, nil=失敗
 `
   'net.listen-on': `
 建立監聽器並開始監聽
-返回 l ?listener: ok=監聽器, nil=失敗
+返回 l: ok=監聽器, nil=失敗
 host: 綁定的 IPv4 點分位址
 port: 監聽埠號
 l: ok=可開始 accept 的監聽器, nil=監聽失敗
 `
   'net.listener.accept': `
 接受新的 TCP 連接
-返回 c ?conn: ok=連接結構體, nil=失敗
+返回 c: ok=連接結構體, nil=失敗
 c: ok=新連接（含已接受的 fd）, nil=接受失敗
 `
   'net.listener.accept-with-timeout': `
 帶逾時的 accept
-timeout-ms i64: 逾時毫秒數
-返回 c ?conn: ok=連接, nil=逾時或失敗
+timeout-ms: 逾時毫秒數
+返回 c: ok=連接, nil=逾時或失敗
 `
   'net.listener.close': '關閉監聽 socket'
   'net.listener.fd-of': `
@@ -3718,8 +3718,8 @@ ok: true=已綁定並開始監聽（失敗時 fd 保持 -1）
 `
   'net.listener.set-timeout': `
 設定 accept 逾時
-timeout-ms i64: 逾時毫秒數
-返回 ok bool: true=成功
+timeout-ms: 逾時毫秒數
+返回 ok: true=成功
 `
   'net.net-accept': `
 接受 TCP 連接
@@ -3802,18 +3802,18 @@ written: 實際發送位元組數（-1=錯誤）
 `
   'net.ping': `
 單次 ping 便捷函數
-host str: 目標 IP 地址
-返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
+host: 目標 IP 地址
+返回 rtt: ok=往返延遲（微秒）, nil=失敗
 `
   'net.ping-count': `
 多次 ping 便捷函數
-host str: 目標 IP 地址
-count i64: ping 次數
+host: 目標 IP 地址
+count: ping 次數
 `
   'net.split-ws': `
 按空白字元（空格/定位字元）分割字串，跳過連續空白
-s str: 輸入字串
-返回 out []str: 非空欄位列表
+s: 輸入字串
+返回 out: 非空欄位列表
 `
   'net.udp-conn.close': '關閉 UDP socket'
   'net.udp-conn.fd-of': `
@@ -3828,36 +3828,36 @@ ok: true=UDP socket 建立成功
 `
   'net.udp-conn.recv': `
 接收 UDP 資料到緩衝區
-buf str: 接收緩衝區
-n i64: 最多接收的位元組數
-read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
+buf: 接收緩衝區
+n: 最多接收的位元組數
+read-n: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
 `
   'net.udp-conn.recv-bytes': `
 接收 UDP 資料到位元組陣列
-buf []byte: 接收緩衝區
-n i64: 最多接收的位元組數
-read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
+buf: 接收緩衝區
+n: 最多接收的位元組數
+read-n: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
 `
   'net.udp-conn.send': `
 發送 UDP 資料到 .host:.port
-data str: 要發送的資料
-written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
+data: 要發送的資料
+written: 實際發送位元組數（-1=fd 無效或發送失敗）
 `
   'net.udp-conn.send-bytes': `
 發送 UDP 位元組陣列到 .host:.port
-data []byte: 要發送的資料
-written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
+data: 要發送的資料
+written: 實際發送位元組數（-1=fd 無效或發送失敗）
 `
   'net.udp-conn.set-timeout': `
 設定接收逾時
-timeout-ms i64: 逾時毫秒數（0=恢復阻塞）
-ok bool: true=socket 選項設定成功（fd 無效或系統呼叫失敗時為 false）
+timeout-ms: 逾時毫秒數（0=恢復阻塞）
+ok: true=socket 選項設定成功（fd 無效或系統呼叫失敗時為 false）
 `
   'net.udp-dial-to': `
 建立 UDP 連接並設定目標位址
-host str: 目標 IP 地址
-port i64: 目標埠號
-返回 c ?udp-conn: ok=連接, nil=失敗
+host: 目標 IP 地址
+port: 目標埠號
+返回 c: ok=連接, nil=失敗
 `
   'noml.doc.ann': `
 取根節點的 `#{...}` 註解原文
@@ -3954,8 +3954,8 @@ idx: 新節點索引
 `
   'noml.doc.new-bool': `
 建立布林節點
-v bool: 要存入節點的布林值
-idx i64: 新節點在池中的下標，供呼叫方掛接子樹
+v: 要存入節點的布林值
+idx: 新節點在池中的下標，供呼叫方掛接子樹
 `
   'noml.doc.new-nil': `
 建立 nil 節點
@@ -3963,8 +3963,8 @@ idx: 新節點索引
 `
   'noml.doc.new-num': `
 建立數字節點
-v f64: 節點儲存的數值（整數與小數共用同一種節點型別）
-idx i64: 新節點在池中的下標，供呼叫方掛接子樹
+v: 節點儲存的數值（整數與小數共用同一種節點型別）
+idx: 新節點在池中的下標，供呼叫方掛接子樹
 `
   'noml.doc.new-obj': `
 建立空物件節點
@@ -4126,8 +4126,8 @@ out: NOML 鍵面值
 產生數字面值（整值不帶小數點）
 落在 ±1e15 內、且取整後能還原（i.to-f64() == n）時輸出整數寫法，
 否則保留 n.to-str() 的結果。
-n f64: 要序列化的數值
-out str: 數字面值（如 '42' 或 '3.14'）
+n: 要序列化的數值
+out: 數字面值（如 '42' 或 '3.14'）
 `
   'noml.pool.get': `
 按鍵取子節點索引
@@ -4167,9 +4167,9 @@ found: true=存在
 `
   'noml.pool.has-byte': `
 掃描原始位元組，判斷是否出現指定值（逐位元組比對，不按碼點）
-s str: 要掃描的文字
-target i64: 要比對的位元組值，取值 0–255（如 10 = '\n'、96 = '`'）
-yes bool: true=至少出現一次, false=完全不含該位元組（空字串必得 false）
+s: 要掃描的文字
+target: 要比對的位元組值，取值 0–255（如 10 = '\n'、96 = '`'）
+yes: true=至少出現一次, false=完全不含該位元組（空字串必得 false）
 `
   'noml.pool.has-key': `
 物件是否已有同名成員（重複鍵報錯）
@@ -4265,11 +4265,11 @@ ok: true=解析成功
 `
   'noml.pool.parse-bool': `
 解析 true/false
-s str: 完整來源文字
-pos i64: 字面量起始位置（指向 t 或 f）
-val bool: 解析出的布林值；ok=false 時固定為 false
-next i64: 字面量之後的位置；ok=false 時回原 pos
-ok bool: true=解析成功，false=此處不是 true/false（已呼叫 fail 記錄錯誤）
+s: 完整來源文字
+pos: 字面量起始位置（指向 t 或 f）
+val: 解析出的布林值；ok=false 時固定為 false
+next: 字面量之後的位置；ok=false 時回原 pos
+ok: true=解析成功，false=此處不是 true/false（已呼叫 fail 記錄錯誤）
 `
   'noml.pool.parse-bool-node': `
 解析布林值並落地成節點
@@ -4298,11 +4298,11 @@ ok: true=解析成功
   'noml.pool.parse-num': `
 解析數字面值（整數 / 小數 / 科學記號，允許前導 '-'，不接受 '+'）
 只吃掉構成數字本身的位元組，遇到其他字元即停，不要求分隔符
-s str: 來源全文
-pos i64: 數字起始的位元組下標
-val f64: 解析出的數值（NOML 只有一種數字型別，整數亦以 f64 存放）
-next i64: 數字結束後的位元組下標（失敗時停在出錯位置，供 .fail 標記）
-ok bool: true=解析成功, false=語法錯誤（無整數位、'.' 後無小數位、指數無位數）
+s: 來源全文
+pos: 數字起始的位元組下標
+val: 解析出的數值（NOML 只有一種數字型別，整數亦以 f64 存放）
+next: 數字結束後的位元組下標（失敗時停在出錯位置，供 .fail 標記）
+ok: true=解析成功, false=語法錯誤（無整數位、'.' 後無小數位、指數無位數）
 `
   'noml.pool.parse-num-node': `
 解析數字值並落地成節點
@@ -4366,21 +4366,21 @@ ok: true=解析成功
 產生單引號字串面值（含轉義）
 轉義規則：'\'' 與 '\\' 前加反斜線，LF / CR / TAB 寫成 \n \r \t，
 其餘 < 0x20 的控制位元組寫成 \u00XX；輸出緩衝預留 n*6+2（每位元組最壞 6 字元）。
-s str: 原始內容（允許任意位元組，不要求合法 UTF-8）
-out str: 首尾各加一個單引號、內部已轉義的面值
+s: 原始內容（允許任意位元組，不要求合法 UTF-8）
+out: 首尾各加一個單引號、內部已轉義的面值
 `
   'noml.pool.quote-value': `
 依內容挑選最簡形式產生字串面值
 預設走 .quote()；含 LF 且通過 .raw-safe() 時改用反引號原始串，保留原換行。
-s str: 原始內容
-out str: 可直接寫進 .noml 的文字面值（單引號轉義形式或 '`' 原始串）
+s: 原始內容
+out: 可直接寫進 .noml 的文字面值（單引號轉義形式或 '`' 原始串）
 `
   'noml.pool.raw-safe': `
 判斷內容能否放進反引號原始串後原樣取回
 出現下列任一情形即不可用：空字串、首或末位元組為 LF、含 CR、
 任一行去掉前導空白（空白 / TAB / CR）後以 '`' 開頭（會被誤認為結束標記）。
-s str: 待序列化的內容
-yes bool: true=可安全包成 '`\n' + s + '\n`', false=須改用單引號轉義形式
+s: 待序列化的內容
+yes: true=可安全包成 '`\n' + s + '\n`', false=須改用單引號轉義形式
 `
   'noml.pool.require-end': `
 成員結束校驗：之後只允許行內空白、換行、`;` 註解或容器閉合
@@ -4528,14 +4528,14 @@ f64 轉字串（直接 Nolang 實作，**最短往返**十進位，對齊 Go 的
 `
   'number.f64.to-str-fixed': `
 定點格式轉換
-precision i64: 小數位數（>= 0，建議 <= 17 以避免 i64 溢位）
-回傳 out str: 字串表示（如 "3.14"、"-0.005"、"100"）
+precision: 小數位數（>= 0，建議 <= 17 以避免 i64 溢位）
+回傳 out: 字串表示（如 "3.14"、"-0.005"、"100"）
 
 `
   'number.f64.to-str-general': `
 通用格式（自動選擇定點或科學記號）
-precision i64: 最大有效數字位數（>= 1）
-回傳 out str: 字串表示（自動去掉尾隨零）
+precision: 最大有效數字位數（>= 1）
+回傳 out: 字串表示（自動去掉尾隨零）
 
 `
   'number.f64.to-u32': '浮點轉 32 位無號整數（飽和）'
@@ -4663,7 +4663,7 @@ op: 鎖操作（1=LOCK_SH 共享, 2=LOCK_EX 獨占, 4=LOCK_UN 解鎖, 8=LOCK_NB 
 `
   'os.get-env': `
 取得環境變數
-回傳 val ?str: ok=變數值, nil=未設定
+回傳 val: ok=變數值, nil=未設定
 
 `
   'os.get-errno': '取得最後的 errno 值'
@@ -4685,7 +4685,7 @@ get-login: 取得目前登入使用者名稱
 取得行程優先權
 which: 來源類型（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
 who: 目標 ID（0 表示目前行程/群組/使用者）
-回傳 prio ?i64: ok=優先權值(-20~19), nil=取得失敗
+回傳 prio: ok=優先權值(-20~19), nil=取得失敗
 注意：libc 慣例回傳 -1 並設定 errno 表示錯誤，但因優先權也可能為 -1，
 需以 errno==0 區分。這裡以 ?i64 明確表達（nil 表示錯誤）。
 
@@ -4743,22 +4743,22 @@ handler: 處理常量（0=SIG_DFL 預設, 1=SIG_IGN 忽略）
   'os.sleep-us': '睡眠 n 微秒'
   'os.stat-gid': `
 取得檔案群組 gid
-回傳 gid ?i64: ok=gid, nil=取得失敗
+回傳 gid: ok=gid, nil=取得失敗
 
 `
   'os.stat-mode': `
 取得檔案模式（包含權限與類型位）
-回傳 mode ?i64: ok=模式值, nil=取得失敗
+回傳 mode: ok=模式值, nil=取得失敗
 
 `
   'os.stat-mtime': `
 取得檔案修改時間（Unix 秒）
-回傳 mtime ?i64: ok=修改時間, nil=取得失敗
+回傳 mtime: ok=修改時間, nil=取得失敗
 
 `
   'os.stat-uid': `
 取得檔案擁有者 uid
-回傳 uid ?i64: ok=uid, nil=取得失敗
+回傳 uid: ok=uid, nil=取得失敗
 
 `
   'os.strerror': `
@@ -4778,7 +4778,7 @@ _SC_NPROCESSORS_CONF: macOS=57, Linux=83
   'os.sysctl': `
 查詢系統控制參數（讀取字串值）
 name: 參數名稱（如 'kern.ostype'、'hw.model'）
-回傳 val ?str: ok=值字串, nil=查詢失敗
+回傳 val: ok=值字串, nil=查詢失敗
 注意：Linux 上對應 /proc/sys；macOS/BSD 走 sysctl(2) syscall
 
 `
@@ -4881,27 +4881,27 @@ str（join/dir 仍會一併更新 .p，保留既有的原地用法）。
   'pbkdf2.pbkdf2-hmac-sha1': `
 PBKDF2 使用 HMAC-SHA1
 僅供相容舊協議；新設計請用 SHA-256 / SHA-512 版本。
-password []byte: 密碼（UTF-8 位元組序列）
-salt []byte: 鹽值
-iterations i64: 迭代次數；越大越難暴力破解，太小則不安全
-key-len i64: 期望金鑰長度（位元組），按 20 位元組一塊逐塊生成
-返回 out []byte: 推導出的金鑰，長度恰為 key-len
+password: 密碼（UTF-8 位元組序列）
+salt: 鹽值
+iterations: 迭代次數；越大越難暴力破解，太小則不安全
+key-len: 期望金鑰長度（位元組），按 20 位元組一塊逐塊生成
+返回 out: 推導出的金鑰，長度恰為 key-len
 `
   'pbkdf2.pbkdf2-hmac-sha256': `
 PBKDF2 使用 HMAC-SHA256
-password []byte: 密碼（UTF-8 位元組序列）
-salt []byte: 鹽值，建議至少 16 位元組且每個帳號不同
-iterations i64: 迭代次數；越大越難暴力破解（常見 100000 以上），太小則不安全
-key-len i64: 期望金鑰長度（位元組），按 32 位元組一塊逐塊生成
-返回 out []byte: 推導出的金鑰，長度恰為 key-len
+password: 密碼（UTF-8 位元組序列）
+salt: 鹽值，建議至少 16 位元組且每個帳號不同
+iterations: 迭代次數；越大越難暴力破解（常見 100000 以上），太小則不安全
+key-len: 期望金鑰長度（位元組），按 32 位元組一塊逐塊生成
+返回 out: 推導出的金鑰，長度恰為 key-len
 `
   'pbkdf2.pbkdf2-hmac-sha512': `
 PBKDF2 使用 HMAC-SHA512
-password []byte: 密碼（UTF-8 位元組序列）
-salt []byte: 鹽值，建議至少 16 位元組且每個帳號不同
-iterations i64: 迭代次數；越大越難暴力破解，太小則不安全
-key-len i64: 期望金鑰長度（位元組），按 64 位元組一塊逐塊生成
-返回 out []byte: 推導出的金鑰，長度恰為 key-len
+password: 密碼（UTF-8 位元組序列）
+salt: 鹽值，建議至少 16 位元組且每個帳號不同
+iterations: 迭代次數；越大越難暴力破解，太小則不安全
+key-len: 期望金鑰長度（位元組），按 64 位元組一塊逐塊生成
+返回 out: 推導出的金鑰，長度恰為 key-len
 `
   'pem.decode': `
 解析 PEM 格式字串
@@ -4911,9 +4911,9 @@ pem-str: PEM 格式字串
 `
   'pem.encode': `
 將原始位元組編碼為 PEM 格式字串
-label str: PEM 標籤（如 'CERTIFICATE'、'RSA PRIVATE KEY'）
-data []byte: 原始二進位資料
-回傳 out str: PEM 格式字串
+label: PEM 標籤（如 'CERTIFICATE'、'RSA PRIVATE KEY'）
+data: 原始二進位資料
+回傳 out: PEM 格式字串
 
 `
   'pool.create': `
@@ -4921,11 +4921,11 @@ data []byte: 原始二進位資料
 host: 目標伺服器的主機名或 IP
 port: 目標伺服器的埠號
 max-size: 允許的最大連接數
-返回 p pool: 初始化完畢的連接池實例
+返回 p: 初始化完畢的連接池實例
 `
   'pool.pool.active-count': `
 取得活躍連接數
-返回 n i64: 活躍連接數
+返回 n: 活躍連接數
 `
   'pool.pool.close-all': '關閉所有連接'
   'pool.pool.close-conn': `
@@ -4934,11 +4934,11 @@ idx: 池中要關閉並移除的連接索引
 `
   'pool.pool.get': `
 取得連接（優先複用空閒連接，否則新建）
-返回 c ?net.conn: ok=連接, nil=失敗
+返回 c: ok=連接, nil=失敗
 `
   'pool.pool.idle-count': `
 取得空閒連接數
-返回 n i64: 空閒連接數
+返回 n: 空閒連接數
 `
   'pool.pool.init': `
 初始化連接池
@@ -4952,13 +4952,13 @@ c: 要歸還進池的連接（保持開啟、不關閉）
 `
   'pool.pool.total-count': `
 取得總連接數
-返回 n i64: 總連接數
+返回 n: 總連接數
 `
   'pool.with-size': `
 使用預設大小建立連接池
 host: 目標伺服器的主機名或 IP
 port: 目標伺服器的埠號
-返回 p pool: 連接數上限為預設 8 的連接池
+返回 p: 連接數上限為預設 8 的連接池
 `
   'process.close': '關閉所有管道並等待子行程'
   'process.close-stderr': '關閉子行程的 stderr 管道'
@@ -5080,7 +5080,7 @@ status = process.wait(pid)                                      ; 回傳正確�
 `
   'process.read-line': `
 從子行程的 stdout 讀取一行
-回傳 line ?str: ok=讀取內容, nil=EOF 或錯誤
+回傳 line: ok=讀取內容, nil=EOF 或錯誤
 
 `
   'process.shell': `
@@ -5137,7 +5137,7 @@ pid: 子行程 ID
 `
   'process.wait-nohang': `
 非阻塞等待（輪詢）
-回傳 status ?i64: ok=子行程已結束(結束狀態碼), nil=仍在執行
+回傳 status: ok=子行程已結束(結束狀態碼), nil=仍在執行
 
 `
   'process.win-close-handle': '關閉 Windows handle（CloseHandle）'
@@ -5156,7 +5156,7 @@ stdin-handle, stdout-handle, stderr-handle: 標準流 handle（0=繼承父行程
 `
   'process.win-get-exit-code': `
 取得行程結束碼（GetExitCodeProcess）
-回傳 exit-code ?i64：nil 表示仍在執行
+回傳 exit-code：nil 表示仍在執行
 
 `
   'process.win-get-std-handle': `
@@ -5189,93 +5189,93 @@ timeout-ms: 逾時毫秒（0=無限等待）
   'proxy.config.connect': `
 使用 config 建立代理連接
 代理地址與帳密取自接收者（.host / .port / .username / .password）。
-target-host str: 要穿透到的目標主機名
-target-port i64: 目標服務埠號
-返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+target-host: 要穿透到的目標主機名
+target-port: 目標服務埠號
+返回 fd: 已建立的隧道 socket 描述符，-1=失敗
 `
   'proxy.config.tls-connect': `
 使用 config 建立代理 TLS 連接
 先用接收者的代理設定打通 CONNECT 隧道，再在隧道上完成 TLS 握手。
-target-host str: TLS 伺服器主機名（用於 SNI / 證書校驗）
-target-port i64: TLS 服務埠號
-返回 tc ?tls.conn: ok=完成握手的 TLS 連接, nil=失敗
+target-host: TLS 伺服器主機名（用於 SNI / 證書校驗）
+target-port: TLS 服務埠號
+返回 tc: ok=完成握手的 TLS 連接, nil=失敗
 `
   'proxy.connect': `
 通過 HTTP CONNECT 建立代理隧道
 連上代理後發送 CONNECT target-host:target-port，收到 200 即完成握手；
 username 非空時附帶 Basic 認證標頭。
-proxy-host str: 代理伺服器主機名或 IP
-proxy-port i64: 代理伺服器埠號（HTTP 代理通常為 3128 / 8080）
-target-host str: 要穿透到的目標主機名
-target-port i64: 目標服務埠號（如 HTTPS 的 443）
-username str: Basic 認證用戶名；空字串表示不帶認證頭
-password str: Basic 認證密碼（username 為空時忽略）
-返回 fd fd: 已建立的隧道 socket 描述符，-1=連接或握手失敗
+proxy-host: 代理伺服器主機名或 IP
+proxy-port: 代理伺服器埠號（HTTP 代理通常為 3128 / 8080）
+target-host: 要穿透到的目標主機名
+target-port: 目標服務埠號（如 HTTPS 的 443）
+username: Basic 認證用戶名；空字串表示不帶認證頭
+password: Basic 認證密碼（username 為空時忽略）
+返回 fd: 已建立的隧道 socket 描述符，-1=連接或握手失敗
 `
   'proxy.dial': `
 通過代理建立 TCP 連接（便捷函數，無認證）
 等價於 connect(..., '', '')。
-proxy-host str: 代理伺服器主機名或 IP
-proxy-port i64: 代理伺服器埠號
-target-host str: 要穿透到的目標主機名
-target-port i64: 目標服務埠號
-返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+proxy-host: 代理伺服器主機名或 IP
+proxy-port: 代理伺服器埠號
+target-host: 要穿透到的目標主機名
+target-port: 目標服務埠號
+返回 fd: 已建立的隧道 socket 描述符，-1=失敗
 `
   'proxy.dial-auth': `
 通過代理建立 TCP 連接（含認證）
 等價於 connect(...)，只是把帳密明寫成參數。
-proxy-host str: 代理伺服器主機名或 IP
-proxy-port i64: 代理伺服器埠號
-target-host str: 要穿透到的目標主機名
-target-port i64: 目標服務埠號
-username str: Basic 認證用戶名
-password str: Basic 認證密碼
-返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+proxy-host: 代理伺服器主機名或 IP
+proxy-port: 代理伺服器埠號
+target-host: 要穿透到的目標主機名
+target-port: 目標服務埠號
+username: Basic 認證用戶名
+password: Basic 認證密碼
+返回 fd: 已建立的隧道 socket 描述符，-1=失敗
 `
   'proxy.proxy-tls-dial': `
 通過代理建立 TLS 連接
 先做 HTTP CONNECT（不帶認證）得到隧道，再在隧道上發起 TLS 握手。
-proxy-host str: 代理伺服器主機名或 IP
-proxy-port i64: 代理伺服器埠號
-target-host str: TLS 伺服器主機名（也用於握手時的 SNI / 證書校驗）
-target-port i64: TLS 服務埠號（通常 443）
-返回 tc ?tls.conn: ok=在隧道上完成握手的 TLS 連接, nil=隧道或握手任一階段失敗
+proxy-host: 代理伺服器主機名或 IP
+proxy-port: 代理伺服器埠號
+target-host: TLS 伺服器主機名（也用於握手時的 SNI / 證書校驗）
+target-port: TLS 服務埠號（通常 443）
+返回 tc: ok=在隧道上完成握手的 TLS 連接, nil=隧道或握手任一階段失敗
 `
   'proxy.socks5-connect': `
 通過 SOCKS5 代理建立連接
 先做方法協商（username 非空時走 0x02 用戶名/密碼認證，否則 0x00 無認證），
 再用 CONNECT 命令把目標地址交給代理。
-proxy-host str: SOCKS5 代理主機名或 IP
-proxy-port i64: SOCKS5 代理埠號（通常 1080）
-target-host str: 要穿透到的目標主機；非 IP 字面量時以域名字串交給代理解析
-target-port i64: 目標服務埠號
-username str: 用戶名；空字串表示不認證
-password str: 密碼（username 為空時忽略）
-返回 fd fd: 已建立的隧道 socket 描述符，-1=協商或連接失敗
+proxy-host: SOCKS5 代理主機名或 IP
+proxy-port: SOCKS5 代理埠號（通常 1080）
+target-host: 要穿透到的目標主機；非 IP 字面量時以域名字串交給代理解析
+target-port: 目標服務埠號
+username: 用戶名；空字串表示不認證
+password: 密碼（username 為空時忽略）
+返回 fd: 已建立的隧道 socket 描述符，-1=協商或連接失敗
 `
   'proxy.socks5-dial': `
 通過 SOCKS5 代理建立連接（便捷函數，無認證）
 等價於 socks5-connect(..., '', '')，走 0x00 無認證協商。
-proxy-host str: SOCKS5 代理主機名或 IP
-proxy-port i64: SOCKS5 代理埠號（通常 1080）
-target-host str: 要穿透到的目標主機；非 IP 字面量時以域名字串交給代理解析
-target-port i64: 目標服務埠號
-返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+proxy-host: SOCKS5 代理主機名或 IP
+proxy-port: SOCKS5 代理埠號（通常 1080）
+target-host: 要穿透到的目標主機；非 IP 字面量時以域名字串交給代理解析
+target-port: 目標服務埠號
+返回 fd: 已建立的隧道 socket 描述符，-1=失敗
 `
   'queue.queue.clear': '清空佇列'
   'queue.queue.empty': `
 判斷佇列是否為空
-回傳 yes bool: true=空, false=非空
+回傳 yes: true=空, false=非空
 
 `
   'queue.queue.full': `
 判斷佇列是否已滿
-回傳 yes bool: true=已滿, false=未滿
+回傳 yes: true=已滿, false=未滿
 
 `
   'queue.queue.size': `
 回傳佇列中元素數量
-回傳 sz i64: 元素數量
+回傳 sz: 元素數量
 
 `
   'quic.apply-header-protection': `
@@ -5288,55 +5288,55 @@ is-long-header: 是否為 Long Header 封包
   'quic.conn.build-initial-packet': `
 quic-build-initial-packet: 構建 QUIC Initial 封包
 crypto-data: 待承載的 CRYPTO 影格資料（TLS ClientHello）
-返回 out ?[]byte: 成功則為完整 Initial 封包（已加密），失敗為 nil
+返回 out: 成功則為完整 Initial 封包（已加密），失敗為 nil
 `
   'quic.conn.close': '關閉連線'
   'quic.conn.init': '初始化連線'
   'quic.conn.recv-initial': `
 接收並解密伺服器 Initial 封包
-返回 frames [32]frame: 解析出的影格
-返回 count i64: 影格數量（-1=錯誤）
-返回 ok bool: true=成功
+返回 frames: 解析出的影格
+返回 count: 影格數量（-1=錯誤）
+返回 ok: true=成功
 `
   'quic.conn.recv-raw': `
 conn.recv-packet: 接收任意 QUIC 封包
-返回 buf []byte: 收到的原始封包位元組
-返回 n i64: 接收位元組數（-1=錯誤, 0=逾時）
+返回 buf: 收到的原始封包位元組
+返回 n: 接收位元組數（-1=錯誤, 0=逾時）
 `
   'quic.decode-packet-number': `
 從封包中解碼封包號碼
 packet: 已移除標頭保護的封包資料
 pn-offset: 封包號碼在封包中的位元組偏移
 largest-pn: 之前成功解碼出的最大封包號碼（用於推斷高位）
-返回 pn i64: 完整封包號碼
-返回 pn-len i64: 封包號碼欄位佔用的位元組數
+返回 pn: 完整封包號碼
+返回 pn-len: 封包號碼欄位佔用的位元組數
 `
   'quic.derive-initial-keys': `
 從 Destination CID 推導 Initial 金鑰
 dst-cid: 對端（目標）Connection ID 位元組
 is-client: 為 true 推導客戶端金鑰，false 推導伺服器端金鑰
-返回 key [16]byte: AEAD 金鑰
-返回 iv [12]byte: AEAD IV
-返回 hp [16]byte: 標頭保護金鑰
+返回 key: AEAD 金鑰
+返回 iv: AEAD IV
+返回 hp: 標頭保護金鑰
 `
   'quic.dial': `
 建立 QUIC 連線
 host: 伺服器主機名稱或 IP 位址
 port: 伺服器 UDP 埠號
-返回 conn ?conn: ok=已建立的連線, nil=失敗
+返回 conn: ok=已建立的連線, nil=失敗
 `
   'quic.gen-cid': `
 生成隨機 Connection ID
 len: 欲生成的 CID 位元組長度（通常 8）
-返回 cid []byte: 隨機生成的 Connection ID 位元組
+返回 cid: 隨機生成的 Connection ID 位元組
 `
   'quic.parse-frames': `
 從 buf 的 pos 位置開始解析所有影格
 buf: 含 QUIC 影格的資料緩衝區
 pos: 開始解析的位元組偏移
 end: 解析終止的位元組偏移（不含）
-返回 frames [32]frame: 解析出的影格陣列
-返回 count i64: 影格數量（-1=錯誤）
+返回 frames: 解析出的影格陣列
+返回 count: 影格數量（-1=錯誤）
 `
   'quic.remove-header-protection': `
 移除標頭保護（同 apply，XOR 對稱）
@@ -5349,20 +5349,20 @@ is-long-header: 是否為 Long Header 封包
 從 buf 的 pos 位置解碼 QUIC 變長整數
 buf: 存放變長整數的資料緩衝區
 pos: 開始解碼的位元組偏移
-返回 val i64: 解碼得到的整數值
-返回 next-pos i64: 下一個位置（-1=錯誤）
+返回 val: 解碼得到的整數值
+返回 next-pos: 下一個位置（-1=錯誤）
 `
   'quic.varint-encode': `
 將 i64 編碼為 QUIC 變長整數
 val: 要編碼為變長整數的非負 i64 值
-返回 buf []byte: 編碼結果（1/2/4/8 位元組）
-返回 n i64: buf 中實際寫入的編碼位元組數
+返回 buf: 編碼結果（1/2/4/8 位元組）
+返回 n: buf 中實際寫入的編碼位元組數
 `
   'rand.rand': `
 產生下一個偽隨機數（xorshift32）
-state i64: 輸入狀態（任意非零種子；內部先裁到 32 位元，且每一步都重新遮罩）
-new-state i64: 更新後的狀態（32 位元），供下一次調用作為種子
-r i64: 本次輸出值（0..4294967295）
+state: 輸入狀態（任意非零種子；內部先裁到 32 位元，且每一步都重新遮罩）
+new-state: 更新後的狀態（32 位元），供下一次調用作為種子
+r: 本次輸出值（0..4294967295）
 `
   'rand.rand-str': `
 產生指定長度的隨機字母數字字串
@@ -5374,169 +5374,169 @@ chars: 可用字元集 (A-Z a-z 0-9)
   'rc4.rc4': `
 RC4 加密/解密
 同一函式既加密也解密：out = in XOR 金鑰流，對 out 再跑一次即還原 in。
-in []byte: 輸入資料（明文或密文，長度不變）
-key []byte: 金鑰（1–256 位元組）；為空時內部索引會越界，呼叫方需自行保證非空
-返回 out []byte: 與 in 等長的金鑰流異或結果
+in: 輸入資料（明文或密文，長度不變）
+key: 金鑰（1–256 位元組）；為空時內部索引會越界，呼叫方需自行保證非空
+返回 out: 與 in 等長的金鑰流異或結果
 `
   'regexp.alloc-class': `
 分配一個新的字元類別，回傳索引
-回傳 cls-idx i64: 類別索引
+回傳 cls-idx: 類別索引
 
 `
   'regexp.clear-class-bit': `
 清除位元
-cls-idx i64: 類別索引
-c i64: 字元值（0~255）
+cls-idx: 類別索引
+c: 字元值（0~255）
 
 `
   'regexp.compile': '將 pattern 字串編譯為指令序列'
   'regexp.emit': `
 發射一條指令
-op i64: 指令類型
-arg1 i64: 參數1
-arg2 i64: 參數2
+op: 指令類型
+arg1: 參數1
+arg2: 參數2
 
 `
   'regexp.emit-atom': `
 發射一個 atom 指令
-atom-type i64: atom 類型
-atom-char i64: atom 字元值
-atom-cls i64: atom 類別索引
+atom-type: atom 類型
+atom-char: atom 字元值
+atom-cls: atom 類別索引
 
 `
   'regexp.emit-quantized': `
 依量詞發射指令
 從結構欄位 .tmp-quant 讀取量詞內部代碼（1=*, 2=+, 3=?）
 使用 1/2/3 作為比較值，避免 LLVM 對 == 42 的最佳化 bug
-atom-type i64: atom 類型
-atom-char i64: atom 字元值
-atom-cls i64: atom 類別索引
-atom-i i64: atom 後的位置
+atom-type: atom 類型
+atom-char: atom 字元值
+atom-cls: atom 類別索引
+atom-i: atom 後的位置
 
 `
   'regexp.find': `
 在 text 中尋找第一個符合 .pattern 的子字串
-text str: 待比對文字
-回傳 result str: 符合的子字串，未找到回傳空字串
+text: 待比對文字
+回傳 result: 符合的子字串，未找到回傳空字串
 
 `
   'regexp.in-class': `
 判斷字元是否在類別中
-cls-idx i64: 類別索引
-c i64: 字元值（0~255）
-回傳 yes bool: true=在類別中
+cls-idx: 類別索引
+c: 字元值（0~255）
+回傳 yes: true=在類別中
 
 `
   'regexp.init-class-all': `
 將類別 bitmap 初始化為全一
-cls-idx i64: 類別索引
+cls-idx: 類別索引
 
 `
   'regexp.init-class-zero': `
 將類別 bitmap 初始化為全零
-cls-idx i64: 類別索引
+cls-idx: 類別索引
 
 `
   'regexp.make-class-digits': `
 建立數字類別 \d [0-9]
-回傳 cls-idx i64: 類別索引
+回傳 cls-idx: 類別索引
 
 `
   'regexp.make-class-nondigits': `
 建立非數字類別 \D
-回傳 cls-idx i64: 類別索引
+回傳 cls-idx: 類別索引
 
 `
   'regexp.make-class-nonspace': `
 建立非空白字元類別 \S
-回傳 cls-idx i64: 類別索引
+回傳 cls-idx: 類別索引
 
 `
   'regexp.make-class-nonword': `
 建立非文字字元類別 \W
-回傳 cls-idx i64: 類別索引
+回傳 cls-idx: 類別索引
 
 `
   'regexp.make-class-space': `
 建立空白字元類別 \s
-回傳 cls-idx i64: 類別索引
+回傳 cls-idx: 類別索引
 
 `
   'regexp.make-class-word': `
 建立文字字元類別 \w [a-zA-Z0-9_]
-回傳 cls-idx i64: 類別索引
+回傳 cls-idx: 類別索引
 
 `
   'regexp.match-at': `
 遞迴回溯比對
-pc i64: 指令計數器
-sp i64: 文字位置
-text str: 待比對文字
-回傳 ok bool: true=比對成功
+pc: 指令計數器
+sp: 文字位置
+text: 待比對文字
+回傳 ok: true=比對成功
 副作用：成功時設定 .match-end = sp
 
 `
   'regexp.matches': `
 判斷 text 是否符合 .pattern（任意位置）
-text str: 待比對文字
-回傳 matched bool: true=符合
+text: 待比對文字
+回傳 matched: true=符合
 
 `
   'regexp.parse-atom': `
 解析單一 regex atom（不發射指令）
 將結果存入 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
-pattern str: pattern 字串
-i i64: 目前位置
-回傳 new-i i64: 解析後的新位置
+pattern: pattern 字串
+i: 目前位置
+回傳 new-i: 解析後的新位置
 
 `
   'regexp.parse-class': `
 解析 [...] 字元類別
-pattern str: pattern 字串
-i i64: 目前位置（指向 '['）
-回傳 new-i i64: 解析後的新位置（']' 之後）
+pattern: pattern 字串
+i: 目前位置（指向 '['）
+回傳 new-i: 解析後的新位置（']' 之後）
 副作用：建立新的字元類別，索引存入 .tmp-atom-cls
 
 `
   'regexp.parse-escape': `
 解析 \x 轉義序列
-pattern str: pattern 字串
-i i64: 目前位置（指向 '\'）
-回傳 new-i i64: 解析後的新位置
+pattern: pattern 字串
+i: 目前位置（指向 '\'）
+回傳 new-i: 解析後的新位置
 副作用：設定 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
 
 `
   'regexp.regexp-compile': `
 編譯正規表示式 pattern，回傳已編譯的 regexp 實例。
 供正規字面量 /pattern/ 使用：字面量在 codegen 階段脫糖為此函式呼叫。
-pattern str: 正規表示式
-回傳 re regexp: 已編譯的正規表示式實例
+pattern: 正規表示式
+回傳 re: 已編譯的正規表示式實例
 
 `
   'regexp.regexp-find': `
 在 text 中尋找第一個符合 pattern 的子字串
-pattern str: 正規表示式
-text str: 待比對文字
-回傳 result str: 符合的子字串，未找到回傳空字串
+pattern: 正規表示式
+text: 待比對文字
+回傳 result: 符合的子字串，未找到回傳空字串
 
 `
   'regexp.regexp-match': `
 判斷 text 是否符合 pattern（任意位置）
-pattern str: 正規表示式
-text str: 待比對文字
-回傳 matched bool: true=符合
+pattern: 正規表示式
+text: 待比對文字
+回傳 matched: true=符合
 
 `
   'regexp.set-class-bit': `
 設定位元
-cls-idx i64: 類別索引
-c i64: 字元值（0~255）
+cls-idx: 類別索引
+c: 字元值（0~255）
 
 `
   'regexp.set-class-escape': `
 在字元類別中處理轉義序列
-cls-idx i64: 類別索引
-c i64: 轉義字元（如 'd' 'w' 's' 等）
+cls-idx: 類別索引
+c: 轉義字元（如 'd' 'w' 's' 等）
 
 `
   'rsa._rsa-bn-add': `
@@ -5559,10 +5559,10 @@ cmp: 1=a>b, 0=a==b, -1=a<b（先比 limb 數，再自最高位逐位比）
 `
   'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
-a []i64: 被除數（低位在前的 limb 陣列）
-an i64: 被除數有效 limb 數
-b []i64: 除數（同 limb 排布）
-bn i64: 除數有效 limb 數（bn=1 且 b[0]=0 時視為除零，輸出全零）
+a: 被除數（低位在前的 limb 陣列）
+an: 被除數有效 limb 數
+b: 除數（同 limb 排布）
+bn: 除數有效 limb 數（bn=1 且 b[0]=0 時視為除零，輸出全零）
 q: 商數（輸出）, qn: 商長度
 r: 餘數（輸出）, rn: 餘長度
 qn: 商修剪後的 limb 數（b=0 時 q、r 全零且 qn=rn=0）
@@ -5650,221 +5650,221 @@ rn: result 的 limb 數
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════
 32-bit 循環左移（用於 Salsa20 quarter-round 的旋轉）
-x u32: 要旋轉的 32 位元值
-n i64: 左旋位元數（0..31；32 會使移位量溢出）
-r u32: 左旋結果，已 & 0xFFFFFFFF
+x: 要旋轉的 32 位元值
+n: 左旋位元數（0..31；32 會使移位量溢出）
+r: 左旋結果，已 & 0xFFFFFFFF
 `
   'scrypt.salsa20-8-core': `
 Salsa20/8 核心：對 64 位元組區塊進行 8 輪混合
 先讀入 16 個小端 32-bit 字，執行 8 輪 add-rotate-xor 後再與原值相加並寫回。
-block []byte: 64 位元組輸入/輸出；原地修改，少於 64 位元組時缺失部分按 0 處理
+block: 64 位元組輸入/輸出；原地修改，少於 64 位元組時缺失部分按 0 處理
 `
   'scrypt.scrypt': `
 Scrypt 金鑰推導（RFC 7914 §7）
 先以 PBKDF2-HMAC-SHA256(迭代 1 次) 把密碼展開為 p*128*r 位元組，
 逐段做 ROMix，最後再做一輪 PBKDF2 輸出 key-len 位元組。
-password []byte: 密碼（UTF-8 位元組序列）
-salt []byte: 鹽值，建議 16 位元組以上且每帳號不同
-n i64: CPU/記憶體成本，須為大於 1 的 2 的冪；越大越安全也越慢
-r i64: 區塊大小（如 8），與 n 共同決定記憶體用量 128*n*r 位元組
-p i64: 並行度（如 1），影響 CPU 時間
-key-len i64: 期望金鑰長度（位元組）
-返回 out []byte: 推導出的金鑰，長度恰為 key-len
+password: 密碼（UTF-8 位元組序列）
+salt: 鹽值，建議 16 位元組以上且每帳號不同
+n: CPU/記憶體成本，須為大於 1 的 2 的冪；越大越安全也越慢
+r: 區塊大小（如 8），與 n 共同決定記憶體用量 128*n*r 位元組
+p: 並行度（如 1），影響 CPU 時間
+key-len: 期望金鑰長度（位元組）
+返回 out: 推導出的金鑰，長度恰為 key-len
 `
   'scrypt.scrypt-blockmix': `
 區塊混合函數（RFC 7914 §4）
 以尾部 64 位元組為初始 X，對 2r 個 64 位元組子區塊迭代 Salsa20/8，
 偶數塊放前半、奇數塊放後半，得到新的 128*r 位元組輸出。
-b []byte: 輸入區塊（128*r 位元組）
-r i64: 區塊大小參數（每個子區塊 64 位元組，共 2r 塊）
-返回 out []byte: 混合後的區塊（長度 128*r）
+b: 輸入區塊（128*r 位元組）
+r: 區塊大小參數（每個子區塊 64 位元組，共 2r 塊）
+返回 out: 混合後的區塊（長度 128*r）
 `
   'scrypt.scrypt-romix': `
 記憶體困難混合函數（RFC 7914 §5，亦稱 ROMix）
 先填充 n 個區塊的 V 表，再做 n 次隨機索引讀取 + BlockMix，最終得到新的 128*r 位元組。
-b []byte: 輸入區塊（128*r 位元組）
-n i64: CPU/記憶體成本參數，須為大於 1 的 2 的冪（如 16384）
-r i64: 區塊大小參數，決定每個子區塊的 64 位元組塊數
-返回 out []byte: 混合後的區塊（長度 128*r）
+b: 輸入區塊（128*r 位元組）
+n: CPU/記憶體成本參數，須為大於 1 的 2 的冪（如 16384）
+r: 區塊大小參數，決定每個子區塊的 64 位元組塊數
+返回 out: 混合後的區塊（長度 128*r）
 `
   'server.https-listen-on': `
 建立 HTTPS 伺服器並開始監聽
-host str: 綁定的 IP 地址
-port i64: 監聽埠號
-返回 s ?https-server: ok=伺服器, nil=失敗
+host: 綁定的 IP 地址
+port: 監聽埠號
+返回 s: ok=伺服器, nil=失敗
 `
   'server.https-server-conn.close': '關閉 TLS 連接'
   'server.https-server-conn.get-header': `
 取得指定標頭值
-name str: 標頭名
-返回 val ?str: ok=標頭值, nil=未找到
+name: 標頭名
+返回 val: ok=標頭值, nil=未找到
 `
   'server.https-server-conn.parse': `
 解析 HTTP 請求（透過 TLS 接收）
-返回 ok bool: true=解析成功
+返回 ok: true=解析成功
 `
   'server.https-server-conn.recv-more': `
 從 TLS 連接接收更多資料到 recv-buf
-返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
+返回 n: 接收的位元組數（-1=錯誤, 0=連接關閉）
 `
   'server.https-server-conn.reset': '重置連接狀態以複用（Keep-Alive）'
   'server.https-server-conn.write-body': `
 寫入回應體（透過 TLS）
-data str: 回應體資料
-返回 ok bool: true=成功
+data: 回應體資料
+返回 ok: true=成功
 `
   'server.https-server-conn.write-header': `
 寫入單個回應標頭（透過 TLS）
-name str: 標頭名
-value str: 標頭值
-返回 ok bool: true=成功
+name: 標頭名
+value: 標頭值
+返回 ok: true=成功
 `
   'server.https-server-conn.write-headers-done': `
 寫入空行表示標頭結束（透過 TLS）
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'server.https-server-conn.write-html': `
 便捷方法 — 寫入 HTML 回應（透過 TLS）
-status i64: HTTP 回應狀態碼（如 200、404）
-html str: HTML 內容
-返回 ok bool: true=成功
+status: HTTP 回應狀態碼（如 200、404）
+html: HTML 內容
+返回 ok: true=成功
 `
   'server.https-server-conn.write-json': `
 便捷方法 — 寫入 JSON 回應（透過 TLS）
-status i64: HTTP 回應狀態碼（如 200、404）
-json-str str: JSON 字串
-返回 ok bool: true=成功
+status: HTTP 回應狀態碼（如 200、404）
+json-str: JSON 字串
+返回 ok: true=成功
 `
   'server.https-server-conn.write-status': `
 寫入 HTTP 狀態行（透過 TLS）
-status i64: HTTP 狀態碼（如 200、404）；內部映射出原因短語後寫成 "HTTP/1.1 <status> <reason>\r\n"，未知碼原因默認 'OK'
-返回 ok bool: true=成功
+status: HTTP 狀態碼（如 200、404）；內部映射出原因短語後寫成 "HTTP/1.1 <status> <reason>\r\n"，未知碼原因默認 'OK'
+返回 ok: true=成功
 `
   'server.https-server-conn.write-text': `
 便捷方法 — 寫入完整文字回應（透過 TLS）
-status i64: HTTP 回應狀態碼（如 200、404）
-text str: 回應文字
-返回 ok bool: true=成功
+status: HTTP 回應狀態碼（如 200、404）
+text: 回應文字
+返回 ok: true=成功
 `
   'server.https-server.accept': `
 接受新的 HTTPS 連接
-返回 c ?https-server-conn: ok=連接, nil=失敗
+返回 c: ok=連接, nil=失敗
 `
   'server.https-server.close': '關閉伺服器'
   'server.https-server.listen': `
 開始監聽（TLS）
-host str: 綁定的 IP 地址
-port i64: 監聽埠號
-返回 ok bool: true=成功
+host: 綁定的 IP 地址
+port: 監聽埠號
+返回 ok: true=成功
 `
   'server.listen-on': `
 建立 HTTP 伺服器並開始監聽
-host str: 綁定的 IP 地址
-port i64: 監聽埠號
-返回 s ?server: ok=伺服器, nil=失敗
+host: 綁定的 IP 地址
+port: 監聽埠號
+返回 s: ok=伺服器, nil=失敗
 `
   'server.secure-compare': `
 常數時間字串比較
-a str: 字串 A
-b str: 字串 B
-返回 ok bool: true=相等
+a: 字串 A
+b: 字串 B
+返回 ok: true=相等
 `
   'server.server-conn.close': '關閉連接'
   'server.server-conn.get-cookie': `
 從請求標頭取得指定 Cookie 值
-name str: Cookie 名稱
-返回 val ?str: ok=Cookie 值, nil=未找到
+name: Cookie 名稱
+返回 val: ok=Cookie 值, nil=未找到
 `
   'server.server-conn.get-header': `
 取得指定標頭值
-name str: 標頭名（如 'Content-Type'）
-返回 val ?str: ok=標頭值, nil=未找到
+name: 標頭名（如 'Content-Type'）
+返回 val: ok=標頭值, nil=未找到
 `
   'server.server-conn.get-signed-cookie': `
 取得並驗證簽名 Cookie
-name str: Cookie 名稱
-key []byte: HMAC-SHA256 簽名金鑰
-返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
+name: Cookie 名稱
+key: HMAC-SHA256 簽名金鑰
+返回 val: ok=原始 Cookie 值, nil=未找到或驗證失敗
 `
   'server.server-conn.parse': `
 解析 HTTP 請求
 讀取並解析完整的 HTTP 請求（請求行 + 標頭 + 可選的請求體）
-返回 ok bool: true=解析成功
+返回 ok: true=解析成功
 `
   'server.server-conn.recv-more': `
 從 socket 接收更多資料到 recv-buf
-返回 n i64: 接收的位元組數（-1=錯誤, 0=連接關閉）
+返回 n: 接收的位元組數（-1=錯誤, 0=連接關閉）
 `
   'server.server-conn.reset': '重置連接狀態以複用（Keep-Alive）'
   'server.server-conn.set-signed-cookie': `
 設定簽名 Cookie 到回應
-name str: Cookie 名稱
-value str: Cookie 值
-key []byte: HMAC-SHA256 簽名金鑰
+name: Cookie 名稱
+value: Cookie 值
+key: HMAC-SHA256 簽名金鑰
 `
   'server.server-conn.verify-basic-auth': `
 驗證 HTTP Basic 認證
-expected-user str: 期望的用戶名
-expected-pass str: 期望的密碼
-返回 ok bool: true=認證通過
+expected-user: 期望的用戶名
+expected-pass: 期望的密碼
+返回 ok: true=認證通過
 `
   'server.server-conn.write-body': `
 寫入回應體
-data str: 回應體資料
-返回 ok bool: true=成功
+data: 回應體資料
+返回 ok: true=成功
 `
   'server.server-conn.write-error': `
 便捷方法 — 寫入錯誤回應（以 text/plain 發送，強制 Connection: close）
-status i64: 錯誤狀態碼（如 404、500）
-message str: 錯誤訊息正文
-返回 ok bool: true=成功
+status: 錯誤狀態碼（如 404、500）
+message: 錯誤訊息正文
+返回 ok: true=成功
 `
   'server.server-conn.write-header': `
 寫入單個回應標頭
-name str: 標頭名
-value str: 標頭值
-返回 ok bool: true=成功
+name: 標頭名
+value: 標頭值
+返回 ok: true=成功
 `
   'server.server-conn.write-headers-done': `
 寫入空行表示標頭結束
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'server.server-conn.write-html': `
 便捷方法 — 寫入 HTML 回應（自動附加 Content-Type=text/html、Content-Length、Connection、Server 標頭）
-status i64: HTTP 狀態碼
-html str: HTML 頁面內容
-返回 ok bool: true=成功
+status: HTTP 狀態碼
+html: HTML 頁面內容
+返回 ok: true=成功
 `
   'server.server-conn.write-json': `
 便捷方法 — 寫入 JSON 回應（自動附加 Content-Type=application/json、Content-Length、Connection、Server 標頭）
-status i64: HTTP 狀態碼
-json-str str: 已序列化的 JSON 字串
-返回 ok bool: true=成功
+status: HTTP 狀態碼
+json-str: 已序列化的 JSON 字串
+返回 ok: true=成功
 `
   'server.server-conn.write-redirect': `
 便捷方法 — 寫入重定向回應（無響應體，Content-Length=0，強制 Connection: close）
-status i64: 重定向狀態碼（301 永久 / 302 臨時）
-location str: 重定向目標 URL（寫入 Location 標頭）
-返回 ok bool: true=成功
+status: 重定向狀態碼（301 永久 / 302 臨時）
+location: 重定向目標 URL（寫入 Location 標頭）
+返回 ok: true=成功
 `
   'server.server-conn.write-status': `
 寫入 HTTP 狀態行
-status i64: HTTP 狀態碼（如 200、404、500，自動附加對應Reason短語）
-返回 ok bool: true=成功
+status: HTTP 狀態碼（如 200、404、500，自動附加對應Reason短語）
+返回 ok: true=成功
 `
   'server.server-conn.write-text': `
 便捷方法 — 寫入完整文字回應（自動附加 Content-Type=text/plain、Content-Length、Connection、Server 標頭）
-status i64: HTTP 狀態碼
-text str: 回應正文，以 UTF-8 純文字寫入
-返回 ok bool: true=成功
+status: HTTP 狀態碼
+text: 回應正文，以 UTF-8 純文字寫入
+返回 ok: true=成功
 `
   'server.server.accept': `
 接受新的 HTTP 連接
-返回 c ?server-conn: ok=連接, nil=失敗
+返回 c: ok=連接, nil=失敗
 `
   'server.server.accept-nb': `
 非阻塞接受新的連接（供協程事件循環輪詢）
-返回 c ?server-conn: 有連接=server-conn, 暫無連接或失敗=nil
+返回 c: 有連接=server-conn, 暫無連接或失敗=nil
 與 server.accept 不同，本方法不阻塞，配合 async-yield() 實現可中斷的事件循環
 `
   'server.server.close': '關閉伺服器'
@@ -5874,109 +5874,109 @@ fd: 監聽 socket 的檔案描述符
 `
   'server.server.listen': `
 開始監聽
-host str: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
-port i64: 監聽埠號
-返回 ok bool: true=成功
+host: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
+port: 監聽埠號
+返回 ok: true=成功
 `
   'set.add': `
 加入元素到集合（若不存在）
-val t: 要加入的元素
-回傳 new-size i64: 新的大小
+val: 要加入的元素
+回傳 new-size: 新的大小
 
 `
   'set.contains': `
 檢查元素是否存在於集合中
-val t: 要查詢的元素
-回傳 yes bool: true=存在, false=不存在
+val: 要查詢的元素
+回傳 yes: true=存在, false=不存在
 
 `
   'set.difference': `
 計算差集（在自身中但不在 other 中）
 結果寫入呼叫方提供的 out 緩衝區，並回傳差集元素數量
-other []t: 另一個集合的元素緩衝區
-osize i64: 另一個集合的元素數量
-out []t: 差集結果緩衝區
-回傳 cnt i64: 差集元素數量
+other: 另一個集合的元素緩衝區
+osize: 另一個集合的元素數量
+out: 差集結果緩衝區
+回傳 cnt: 差集元素數量
 
 `
   'set.init': `
 工廠 — 以呼叫者提供的元素緩衝區建立空集合
-data []t: 元素緩衝區（其長度即容量上限）
-回傳 s set: 初始化後的集合實例
+data: 元素緩衝區（其長度即容量上限）
+回傳 s: 初始化後的集合實例
 
 `
   'set.intersection': `
 計算交集（自身與 other 的共同元素）
 結果寫入呼叫方提供的 out 緩衝區，並回傳交集元素數量
-other []t: 另一個集合的元素緩衝區
-osize i64: 另一個集合的元素數量
-out []t: 交集結果緩衝區
-回傳 cnt i64: 交集元素數量
+other: 另一個集合的元素緩衝區
+osize: 另一個集合的元素數量
+out: 交集結果緩衝區
+回傳 cnt: 交集元素數量
 
 `
   'set.is-empty': '判斷集合是否為空'
   'set.remove': `
 從集合移除元素
 以最後一個元素填補被移除的位置（無序）
-val t: 要移除的元素
-回傳 new-size i64: 新的大小
+val: 要移除的元素
+回傳 new-size: 新的大小
 
 `
   'set.size': '回傳集合大小'
   'set.to-vec': `
 將集合轉為切片（無序）
-回傳 out []t: 集合元素切片（長度 = size）
+回傳 out: 集合元素切片（長度 = size）
 
 `
   'set.union': `
 計算聯集（將 other 緩衝區中不在自身的元素加入自身）
-other []t: 另一個集合的元素緩衝區
-osize i64: 另一個集合的元素數量
-回傳 new-size i64: 聯集後的大小
+other: 另一個集合的元素緩衝區
+osize: 另一個集合的元素數量
+回傳 new-size: 聯集後的大小
 
 `
   'sha1.sha1': `
 計算 SHA-1 雜湊（含填充與多區塊處理）
-data []byte: 輸入位元組陣列（任意長度）
-hash [20]byte: 160-bit 摘要，按 FIPS 180-4 定義的大端序存放
+data: 輸入位元組陣列（任意長度）
+hash: 160-bit 摘要，按 FIPS 180-4 定義的大端序存放
 注意：SHA-1 已不具碰撞安全性，僅供相容舊協議 / 校驗使用
 `
   'sha1.sha1-block': `
 處理一個 512-bit 區塊（80 輪壓縮，FIPS 180-4）
-s []u32: 16 個 32-bit 大端訊息字（已由呼叫方從位元組解包）
-h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 進入本區塊前的 160-bit 哈希狀態
-r0 u32, r1 u32, r2 u32, r3 u32, r4 u32: 壓縮後的新狀態（工作變數加回輸入狀態並模 2^32）
+s: 16 個 32-bit 大端訊息字（已由呼叫方從位元組解包）
+h0 u32, h1, h2, h3, h4: 進入本區塊前的 160-bit 哈希狀態
+r0 u32, r1, r2, r3, r4: 壓縮後的新狀態（工作變數加回輸入狀態並模 2^32）
 `
   'sha1.sha1-hex': `
 計算 SHA-1 雜湊並返回 hex 字串
-data []byte: 輸入位元組陣列（任意長度）
-hex str: 40 字元小寫十六進位摘要
+data: 輸入位元組陣列（任意長度）
+hex: 40 字元小寫十六進位摘要
 `
   'sha224.sha224': `
 計算 SHA-224 雜湊（含填充與多區塊處理；壓縮函數與 SHA-256 相同，初始值不同）
-data []byte: 輸入位元組陣列（任意長度）
-hash [28]byte: 224-bit 摘要（取 SHA-256 前 7 個狀態字），大端序存放
+data: 輸入位元組陣列（任意長度）
+hash: 224-bit 摘要（取 SHA-256 前 7 個狀態字），大端序存放
 `
   'sha224.sha224-hex': `
 計算 SHA-224 雜湊並返回 hex 字串
-data []byte: 輸入位元組陣列（任意長度）
-hex str: 56 字元小寫十六進位摘要
+data: 輸入位元組陣列（任意長度）
+hex: 56 字元小寫十六進位摘要
 `
   'sha256.sha256': `
 計算 SHA-256 雜湊（含填充與多區塊處理）
-data []byte: 輸入位元組陣列（任意長度）
-hash [32]byte: 256-bit 摘要，按 FIPS 180-4 定義的大端序存放
+data: 輸入位元組陣列（任意長度）
+hash: 256-bit 摘要，按 FIPS 180-4 定義的大端序存放
 `
   'sha256.sha256-block': `
 處理一個 512-bit 區塊（64 輪壓縮，FIPS 180-4）
-s []u32: 16 個 32-bit 大端訊息字（已由呼叫方從位元組解包）
+s: 16 個 32-bit 大端訊息字（已由呼叫方從位元組解包）
 h0 u32..h7 u32: 進入本區塊前的 256-bit 哈希狀態（a..h 的初值）
 r0 u32..r7 u32: 壓縮後的新狀態（工作變數加回輸入狀態並模 2^32）
 `
   'sha256.sha256-hex': `
 計算 SHA-256 雜湊並返回 hex 字串
-data []byte: 輸入位元組陣列（任意長度）
-hex str: 64 字元小寫十六進位摘要
+data: 輸入位元組陣列（任意長度）
+hex: 64 字元小寫十六進位摘要
 `
   'sha3.keccak-f1600': `
 執行 Keccak-f[1600] 置換（24 輪）
@@ -5984,12 +5984,12 @@ state: 25 個 64-bit lane 的狀態陣列（原地輸入/輸出）
 `
   'sha3.keccak-sponge': `
 Keccak 海綿函數
-data []byte: 要吸收（absorb）到海綿狀態的原始位元組，可為空
+data: 要吸收（absorb）到海綿狀態的原始位元組，可為空
 rate: 吸收率（以位元組為單位，必須是 8 的倍數）
 capacity: 容量（以位元組為單位，rate + capacity = 200）
 out-len: 期望輸出的位元組長度
 suffix: 填充後綴（SHA-3 = 0x06, SHAKE = 0x1F）
-返回 out []byte: 擠出（squeeze）出的雜湊/輸出位元組
+返回 out: 擠出（squeeze）出的雜湊/輸出位元組
 `
   'sha3.rotl64': `
 64-bit 循環左移
@@ -5999,107 +5999,107 @@ r: 循環左移後的結果
 `
   'sha3.sha3-224': `
 計算 SHA3-224 雜湊
-data []byte: 待雜湊的原始位元組，可為空
-返回 hash [28]byte: 28 位元組雜湊值
+data: 待雜湊的原始位元組，可為空
+返回 hash: 28 位元組雜湊值
 `
   'sha3.sha3-224-hex': `
 計算 SHA3-224 並返回 hex 字串
-data []byte: 待雜湊的原始位元組，可為空
-返回 hex str: 56 字元 hex 字串
+data: 待雜湊的原始位元組，可為空
+返回 hex: 56 字元 hex 字串
 `
   'sha3.sha3-256': `
 計算 SHA3-256 雜湊
-data []byte: 待雜湊的原始位元組，可為空
-返回 hash [32]byte: 32 位元組雜湊值
+data: 待雜湊的原始位元組，可為空
+返回 hash: 32 位元組雜湊值
 `
   'sha3.sha3-256-hex': `
 計算 SHA3-256 並返回 hex 字串
-data []byte: 待雜湊的原始位元組，可為空
-返回 hex str: 64 字元 hex 字串
+data: 待雜湊的原始位元組，可為空
+返回 hex: 64 字元 hex 字串
 `
   'sha3.sha3-384': `
 計算 SHA3-384 雜湊
-data []byte: 待雜湊的原始位元組，可為空
-返回 hash [48]byte: 48 位元組雜湊值
+data: 待雜湊的原始位元組，可為空
+返回 hash: 48 位元組雜湊值
 `
   'sha3.sha3-384-hex': `
 計算 SHA3-384 並返回 hex 字串
-data []byte: 待雜湊的原始位元組，可為空
-返回 hex str: 96 字元 hex 字串
+data: 待雜湊的原始位元組，可為空
+返回 hex: 96 字元 hex 字串
 `
   'sha3.sha3-512': `
 計算 SHA3-512 雜湊
-data []byte: 待雜湊的原始位元組，可為空
-返回 hash [64]byte: 64 位元組雜湊值
+data: 待雜湊的原始位元組，可為空
+返回 hash: 64 位元組雜湊值
 `
   'sha3.sha3-512-hex': `
 計算 SHA3-512 並返回 hex 字串
-data []byte: 待雜湊的原始位元組，可為空
-返回 hex str: 128 字元 hex 字串
+data: 待雜湊的原始位元組，可為空
+返回 hex: 128 字元 hex 字串
 `
   'sha384.sha384': `
 計算 SHA-384 雜湊（含填充與多區塊處理；壓縮函數與 SHA-512 相同，初始值不同）
-data []byte: 輸入位元組陣列（任意長度）
-hash [48]byte: 384-bit 摘要（取 SHA-512 前 6 個狀態字），大端序存放
+data: 輸入位元組陣列（任意長度）
+hash: 384-bit 摘要（取 SHA-512 前 6 個狀態字），大端序存放
 `
   'sha384.sha384-hex': `
 計算 SHA-384 雜湊並返回 hex 字串
-data []byte: 輸入位元組陣列（任意長度）
-hex str: 96 字元小寫十六進位摘要
+data: 輸入位元組陣列（任意長度）
+hex: 96 字元小寫十六進位摘要
 `
   'sha512.sha512': `
 計算 SHA-512 雜湊（含填充與多區塊處理）
-data []byte: 輸入位元組陣列（任意長度；長度上限 2^128-1 位元）
-hash [64]byte: 512-bit 摘要，按 FIPS 180-4 定義的大端序存放
+data: 輸入位元組陣列（任意長度；長度上限 2^128-1 位元）
+hash: 512-bit 摘要，按 FIPS 180-4 定義的大端序存放
 `
   'sha512.sha512-block': `
 處理一個 1024-bit 區塊（80 輪壓縮，FIPS 180-4）
-s []u64: 16 個 64-bit 大端訊息字（已由呼叫方從位元組解包）
+s: 16 個 64-bit 大端訊息字（已由呼叫方從位元組解包）
 h0 u64..h7 u64: 進入本區塊前的 512-bit 哈希狀態（a..h 的初值）
 r0 u64..r7 u64: 壓縮後的新狀態（工作變數加回輸入狀態，模 2^64）
 `
   'sha512.sha512-hex': `
 計算 SHA-512 雜湊並返回 hex 字串
-data []byte: 輸入位元組陣列（任意長度）
-hex str: 128 字元小寫十六進位摘要
+data: 輸入位元組陣列（任意長度）
+hex: 128 字元小寫十六進位摘要
 `
   'sse.client.close': '關閉 SSE 連線'
   'sse.client.is-connected': `
 檢查連線狀態
-返回 yes bool: true=已連接
+返回 yes: true=已連接
 `
   'sse.client.next-event': `
 讀取下一個 SSE 事件
 阻塞直到收到完整事件或連線關閉。
-返回 ev ?event:
+返回 ev:
 ok = 事件
 nil   = 連線已關閉（EOF）
 err = 錯誤
 `
   'sse.client.reconnect': `
 重新連線（使用 last-event-id 繼續接收）
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'sse.listen-on': `
 建立 SSE 服務端並開始監聽
 host: 綁定的 IP 地址（如 '0.0.0.0'）
 port: 監聽埠號
-返回 s ?server: ok=服務端, nil=失敗
+返回 s: ok=服務端, nil=失敗
 `
   'sse.server-conn.close': '關閉客戶端連接'
   'sse.server-conn.handshake': `
 完成 SSE HTTP 交握
 讀取客戶端 HTTP 請求，驗證方法為 GET，發送 SSE 回應標頭。
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'sse.server-conn.is-connected': `
 檢查連線狀態
-返回 yes bool: true=已連接
+返回 yes: true=已連接
 `
   'sse.server-conn.send-comment': `
 發送 SSE 註解（用於心跳保活）
 comment: 註解內容
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'sse.server-conn.send-event': `
 發送 SSE 事件
@@ -6107,23 +6107,23 @@ event: 事件類型（空字符串=不發送 event 欄位，使用預設 'messag
 data: 事件數據（可多行，每行以 data: 前綴發送）
 id: 事件 ID（空字符串=不發送 id 欄位）
 retry: 重連等待毫秒數（-1=不發送 retry 欄位）
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'sse.server.accept': `
 接受新的 SSE 客戶端連接並完成 HTTP 交握
-返回 c ?server-conn: ok=已交握的客戶端, nil=失敗
+返回 c: ok=已交握的客戶端, nil=失敗
 `
   'sse.server.close': '關閉 SSE 服務端'
   'sse.server.listen': `
 開始監聽
 host: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
 port: 監聽埠號
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'sse.sse-connect': `
 連接到 SSE 端點
 url: SSE 端點 URL（http://host:port/path 或 https://host:port/path）
-返回 client ?client:
+返回 client:
 ok = 已連接的客戶端
 nil   = 連線失敗
 err = 錯誤訊息
@@ -6136,12 +6136,12 @@ err = 錯誤訊息
 `
   'stack.stack.peek': `
 檢視堆疊頂端元素（不移除）
-回傳 val ?i64: ok=頂端值, nil=堆疊為空
+回傳 val: ok=頂端值, nil=堆疊為空
 
 `
   'stack.stack.pop': `
 從堆疊頂端彈出元素
-回傳 val ?i64: ok=彈出值, nil=堆疊為空
+回傳 val: ok=彈出值, nil=堆疊為空
 
 `
   'stack.stack.push': '推入元素到堆疊頂端'
@@ -6207,8 +6207,8 @@ err = 錯誤訊息
   'str.at': `
 [deprecated] str.at: 字元（碼點）索引讀取——請改用 s[idx]（原生索引，回傳 ?char）
 str.at: 安全索引存取（字元索引；位元組偏移請用 s.byte(i)）
-i i64: 字元（碼點）索引
-回傳 val ?byte: 該字元的碼點值（超出 byte 範圍時截斷）；越界回傳 nil
+i: 字元（碼點）索引
+回傳 val: 該字元的碼點值（超出 byte 範圍時截斷）；越界回傳 nil
 
 `
   'str.bigint-bitlen': '回傳正 bigint 的位長度（floor(log2)+1）'
@@ -6270,14 +6270,14 @@ i i64: 字元（碼點）索引
 `
   'str.eq-full': `
 全等比較兩個字串
-b str: 比對目標
-回傳 yes bool: true=相等 false=不相等
+b: 比對目標
+回傳 yes: true=相等 false=不相等
 
 `
   'str.fields': `
 按一個或多個連續空白字元分割字串
 空白字元：空格(32)、製表(9)、換行(10)、回車(13)
-回傳 out []str: 分割後的非空子字串切片
+回傳 out: 分割後的非空子字串切片
 連續空白視為單一分隔符，首尾空白不產生空元素
 
 `
@@ -6312,8 +6312,8 @@ err('msg') - 含無效十六進位字元
 `
   'str.last-index': `
 反向尋找子字串最後出現位置（last-index 是 rindex 的別名）
-target str: 要尋找的子字串
-回傳 pos i64: 找到的碼點（字元）位置，未找到 -1
+target: 要尋找的子字串
+回傳 pos: 找到的碼點（字元）位置，未找到 -1
 
 `
   'str.len': `
@@ -6324,7 +6324,7 @@ target str: 要尋找的子字串
   'str.lines': `
 按換行符分割
 支援 \n 與 \r\n
-回傳 out []str: 行清單（末尾換行不產生空行）
+回傳 out: 行清單（末尾換行不產生空行）
 
 `
   'str.new': `
@@ -6345,17 +6345,17 @@ str.new: 從 char 切片建構 str（模組級建構器）
 `
   'str.replace-n': `
 限定替換次數
-old str: 舊子字串
-new str: 新子字串
-n i64: 最大替換次數，n <= 0 不替換
-回傳 val str: 替換後字串
+old: 舊子字串
+new: 新子字串
+n: 最大替換次數，n <= 0 不替換
+回傳 val: 替換後字串
 
 `
   'str.replace-str': `
 將 s 中所有 old 子字串替換為 new 子字串
-old str: 要替換的子字串
-new str: 替換後的子字串
-回傳 val str: 替換後的結果字串
+old: 要替換的子字串
+new: 替換後的子字串
+回傳 val: 替換後的結果字串
 若 old 為空字串，直接回傳原字串的副本
 
 `
@@ -6371,16 +6371,16 @@ new str: 替換後的子字串
 `
   'str.rindex': `
 反向尋找子字串最後出現位置
-target str: 要尋找的子字串
-回傳 pos i64: 找到的碼點（字元）位置，未找到 -1
+target: 要尋找的子字串
+回傳 pos: 找到的碼點（字元）位置，未找到 -1
 
 `
   'str.rindex-from': `
 從 from（碼點位置）反向尋找子字串
 語意同 Python rfind(target, from)：在 [from, .len) 範圍內尋找 target 最後出現位置
-target str: 要尋找的子字串
-from i64: 起始位置（含，下界，碼點）
-回傳 pos i64: 找到的碼點（字元）位置，未找到 -1
+target: 要尋找的子字串
+from: 起始位置（含，下界，碼點）
+回傳 pos: 找到的碼點（字元）位置，未找到 -1
 
 `
   'str.slice': `
@@ -6395,16 +6395,16 @@ from i64: 起始位置（含，下界，碼點）
 `
   'str.split': `
 用分隔符將字串分割為多個子字串
-sep str: 切分點子串；在每個出現處切開，本身不進入結果
-回傳 out []str: 分割後的子字串切片
+sep: 切分點子串；在每個出現處切開，本身不進入結果
+回傳 out: 分割後的子字串切片
 空分隔符時回傳整個字串作為唯一元素
 注意：使用本地 result 切片再賦值給 out，避免 out.push 在輸出參數上不生效的編譯器 bug
 `
   'str.split-n': `
 限定分割次數
-sep str: 切分點子串；在每個出現處切開，本身不進入結果
-maxsplit i64: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
-回傳 out []str: 分割結果
+sep: 切分點子串；在每個出現處切開，本身不進入結果
+maxsplit: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
+回傳 out: 分割結果
 `
   'str.starts-with': `
 判斷 s 是否以 target 開頭
@@ -6459,7 +6459,7 @@ err('msg') - 含非數字字元
   'str.to-hex': `
 字串轉十六進位編碼
 每位元組轉兩個十六進位字元（小寫）
-回傳 out str: 十六進位字串
+回傳 out: 十六進位字串
 
 `
   'str.to-i16': `
@@ -6507,7 +6507,7 @@ str 不可變，回傳自身即可（值語意：共享底層緩衝，不複製�
 `
   'str.to-txt': `
 將 str 轉換為 txt（最長 255 位元組）
-回傳 out ?txt: ok(txt) / nil（超過 255 位元組，txt 容納不下，不再靜默截斷）
+回傳 out: ok(txt) / nil（超過 255 位元組，txt 容納不下，不再靜默截斷）
 
 `
   'str.to-u16': `
@@ -6570,8 +6570,8 @@ s = ''.with-len-cap(10, 256)  -> 長度 10、容量 256 的字串
 `
   'strs.join': `
 []str.join: 用分隔符連接字串切片中的所有元素
-sep str: 分隔符
-回傳 out str: 連接後的字串
+sep: 分隔符
+回傳 out: 連接後的字串
 
 `
   'tar.builder.add-bytes': `
@@ -6704,35 +6704,35 @@ typ: 條目型別字串（依 typeflag 映射為 "file"、"dir" 或 "unknown"）
   'tdes.tdes-cbc-dec': `
 Triple DES-CBC 解密
 每塊先做 3DES-ECB 解密，再與前一段密文（首塊為 iv）異或還原明文。
-in []byte: 輸入密文（長度需為 8 的倍數）
-key [24]byte: 金鑰（K1 || K2 || K3），必須與加密時一致
-iv [8]byte: 初始向量，必須與加密時相同
-返回 out []byte: 解密後的資料，長度與 in 相同
+in: 輸入密文（長度需為 8 的倍數）
+key: 金鑰（K1 || K2 || K3），必須與加密時一致
+iv: 初始向量，必須與加密時相同
+返回 out: 解密後的資料，長度與 in 相同
 `
   'tdes.tdes-cbc-enc': `
 Triple DES-CBC 加密
 每個區塊先與前一區塊的密文（首塊為 iv）異或再走 3DES-ECB，
 因此相同明文在不同 iv 下得到不同密文。
-in []byte: 輸入資料（長度需為 8 的倍數）
-key [24]byte: 金鑰（K1 || K2 || K3）
-iv [8]byte: 初始向量，每個訊息應唯一
-返回 out []byte: 加密後的資料，長度與 in 相同
+in: 輸入資料（長度需為 8 的倍數）
+key: 金鑰（K1 || K2 || K3）
+iv: 初始向量，每個訊息應唯一
+返回 out: 加密後的資料，長度與 in 相同
 `
   'tdes.tdes-dec': `
 Triple DES 解密（ECB 模式）
 與加密相反：D_K3 → E_K2 → D_K1；同樣逐 8 位元組區塊獨立處理。
-in []byte: 輸入密文（長度需為 8 的倍數）
-n i64: 實際要處理的位元組數（通常為 in.len()）
-key [24]byte: 金鑰（K1 || K2 || K3），必須與加密時一致
-返回 out []byte: 解密後的資料，長度與 n 相同
+in: 輸入密文（長度需為 8 的倍數）
+n: 實際要處理的位元組數（通常為 in.len()）
+key: 金鑰（K1 || K2 || K3），必須與加密時一致
+返回 out: 解密後的資料，長度與 n 相同
 `
   'tdes.tdes-enc': `
 Triple DES 加密（ECB 模式）
 對每個 8 位元組區塊執行 E_K1 → D_K2 → E_K3，區塊之間互不影響（相同明文得到相同密文）。
-in []byte: 輸入資料（長度需為 8 的倍數；不足一區塊的尾部不會被處理）
-n i64: 實際要處理的位元組數（通常為 in.len()）
-key [24]byte: 金鑰（K1 || K2 || K3，每段 8 位元組）
-返回 out []byte: 加密後的資料，長度與 n 相同
+in: 輸入資料（長度需為 8 的倍數；不足一區塊的尾部不會被處理）
+n: 實際要處理的位元組數（通常為 in.len()）
+key: 金鑰（K1 || K2 || K3，每段 8 位元組）
+返回 out: 加密後的資料，長度與 n 相同
 `
   'time.add-seconds': '增加秒數，回傳新的 time'
   'time.date': '轉換為 date 結構（UTC，忽略 nsec）'
@@ -6821,92 +6821,92 @@ sleep-ms 無對應 builtin，以 sleep-us(ms * 1000) 實作
   'time.unix-to-time': '由 Unix 秒時間戳建構 time（nsec=0）'
   'tls.bn-to-bytes': `
 []i64（little-endian base 2^32）→ big-endian 位元組陣列
-num []i64: 大整數
-返回 out []byte: big-endian 位元組
+num: 大整數
+返回 out: big-endian 位元組
 `
   'tls.build-nonce': `
 構建 AEAD nonce
-iv [12]byte: 由寫入金鑰派生的 AEAD IV
-seq i64: 記錄序號（右對齊 8 位元組後 XOR 進 IV 尾段）
-nonce [12]byte: 本筆記錄的 AEAD nonce
+iv: 由寫入金鑰派生的 AEAD IV
+seq: 記錄序號（右對齊 8 位元組後 XOR 進 IV 尾段）
+nonce: 本筆記錄的 AEAD nonce
 `
   'tls.bytes-cat': `
 串接兩個位元組陣列
-a []byte: 前段陣列
-b []byte: 後段陣列（接於 a 之後）
-out []byte: 串接後的新陣列（長度 = a.len() + b.len()）
+a: 前段陣列
+b: 後段陣列（接於 a 之後）
+out: 串接後的新陣列（長度 = a.len() + b.len()）
 `
   'tls.bytes-to-bn': `
 big-endian 位元組陣列 → []i64（little-endian base 2^32）
-data []byte: big-endian 位元組
-返回 out []i64: 大整數（每個元素為 32-bit limb）
+data: big-endian 位元組
+返回 out: 大整數（每個元素為 32-bit limb）
 `
   'tls.cipher-is-ecdhe': `
 是否為 ECDHE 密鑰交換的 TLS 1.2 密碼套件
 目前涵蓋 ECDHE-ECDSA/RSA 搭配 AES128-CBC-SHA256 與 AES128-GCM-SHA256 四種。
-c i64: 密碼套件代碼（TLS-CIPHER-* 常數）
-r bool: true=上述四種之一（可做 ECDHE 金鑰交換）, false=其他套件
+c: 密碼套件代碼（TLS-CIPHER-* 常數）
+r: true=上述四種之一（可做 ECDHE 金鑰交換）, false=其他套件
 `
   'tls.cipher-is-gcm': `
 是否為 AEAD (AES-GCM) 記錄格式的 TLS 1.2 密碼套件
 只有 ECDHE-ECDSA-AES128-GCM-SHA256 與 ECDHE-RSA-AES128-GCM-SHA256 兩種。
-c i64: 密碼套件代碼（TLS-CIPHER-* 常數）
-r bool: true=使用 AES-GCM 記錄（需 explicit nonce）驗證標籤, false=使用 CBC + HMAC 格式
+c: 密碼套件代碼（TLS-CIPHER-* 常數）
+r: true=使用 AES-GCM 記錄（需 explicit nonce）驗證標籤, false=使用 CBC + HMAC 格式
 `
   'tls.conn.append-hs': `
 將交握訊息追加到緩衝區
-data []byte: 待追加到交握緩衝區尾端的訊息位元組
+data: 待追加到交握緩衝區尾端的訊息位元組
 `
   'tls.conn.append-hs-from': `
 從 buf 的 offset 位置追加 n 位元組到交握緩衝區
-buf []byte: 來源緩衝區（含 record header）
-offset i64: 起始偏移（通常為 5, 跳過 record header）
-n i64: 要追加的位元組數
+buf: 來源緩衝區（含 record header）
+offset: 起始偏移（通常為 5, 跳過 record header）
+n: 要追加的位元組數
 `
   'tls.conn.close': '關閉 TLS 連線'
   'tls.conn.compute-shared-secret-13': '計算 ECDHE 共享金鑰'
   'tls.conn.connect': `
 建立 TLS 連線（自動協商 1.3/1.2）
-host str: 伺服器主機名
-port i64: 埠號
-返回 ok bool: true=成功
+host: 伺服器主機名
+port: 埠號
+返回 ok: true=成功
 `
   'tls.conn.connect-12': `
 TLS 1.2 完整交握（純 TLS 1.2，不發送 supported_versions 擴展）
-返回 ok bool: true=成功
+返回 ok: true=成功
 host: 伺服器主機名或 IP
 port: TCP 埠號
 ok: true=TLS 1.2 交握完成
 `
   'tls.conn.connect-13': `
 TLS 1.3 完整交握
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.decrypt-record': `
 解密記錄
-buf []byte: 接收到的記錄資料（從標頭開始）
-返回 ct i64: 原始 content type（-1=錯誤）
-返回 out []byte: 解密後的明文
-expected-ct i64: 預期 content type（解密後比對，不符即視為錯誤）
+buf: 接收到的記錄資料（從標頭開始）
+返回 ct: 原始 content type（-1=錯誤）
+返回 out: 解密後的明文
+expected-ct: 預期 content type（解密後比對，不符即視為錯誤）
 `
   'tls.conn.decrypt-record-13': `
 TLS 1.3 AEAD 解密記錄
-rec []byte: 接收到的記錄（含標頭）
-key [16]byte: AEAD 金鑰
-iv [12]byte: AEAD IV
-seq i64: 這筆記錄的期望序號（參與 nonce 派生，錯序會令 AEAD 驗證失敗）
-返回 ct i64: 原始 content type（-1=錯誤）
-返回 out []byte: 解密後的明文（不含 content type byte）
+rec: 接收到的記錄（含標頭）
+key: AEAD 金鑰
+iv: AEAD IV
+seq: 這筆記錄的期望序號（參與 nonce 派生，錯序會令 AEAD 驗證失敗）
+返回 ct: 原始 content type（-1=錯誤）
+返回 out: 解密後的明文（不含 content type byte）
 `
   'tls.conn.decrypt-record-gcm': `
 TLS 1.2 AES-128-GCM AEAD 記錄解密（RFC 5288）
-buf []byte: 接收到的記錄（從標頭開始）
-expected-ct i64: 預期 content type（用於 AAD）
-key [16]byte: server_write_key
-salt [4]byte: server_write_IV（implicit salt）
-seq i64: 記錄序號
-返回 ct i64: 成功=expected-ct, -1=錯誤
-返回 out []byte: 解密後的明文
+buf: 接收到的記錄（從標頭開始）
+expected-ct: 預期 content type（用於 AAD）
+key: server_write_key
+salt: server_write_IV（implicit salt）
+seq: 記錄序號
+返回 ct: 成功=expected-ct, -1=錯誤
+返回 out: 解密後的明文
 `
   'tls.conn.derive-application-keys-13': '推導應用層金鑰'
   'tls.conn.derive-handshake-keys-13': `
@@ -6915,31 +6915,31 @@ derive-traffic-keys-13: 推導交握金鑰和應用金鑰
 `
   'tls.conn.derive-keys': `
 從 premaster secret 推導所有金鑰
-premaster []byte: premaster secret（static-RSA 48 bytes / ECDHE 32 bytes）
+premaster: premaster secret（static-RSA 48 bytes / ECDHE 32 bytes）
 `
   'tls.conn.encrypt-record': `
 加密記錄並發送
-ct i64: 原始 content type
-data []byte: 明文資料
-返回 ok bool: true=成功
+ct: 原始 content type
+data: 明文資料
+返回 ok: true=成功
 `
   'tls.conn.encrypt-record-13': `
 TLS 1.3 AEAD 加密記錄並發送
-ct i64: 原始 content type
-data []byte: 明文資料
-key [16]byte: AEAD 金鑰
-iv [12]byte: AEAD IV
-seq i64: 這筆記錄的序號（每次發送後遞增，參與 nonce 派生）
-返回 ok bool: true=成功
+ct: 原始 content type
+data: 明文資料
+key: AEAD 金鑰
+iv: AEAD IV
+seq: 這筆記錄的序號（每次發送後遞增，參與 nonce 派生）
+返回 ok: true=成功
 `
   'tls.conn.encrypt-record-gcm': `
 TLS 1.2 AES-128-GCM AEAD 記錄加密（RFC 5288）
-ct i64: content type
-data []byte: 明文
-key [16]byte: client/server_write_key
-salt [4]byte: client/server_write_IV（implicit salt）
-seq i64: 記錄序號
-返回 ok bool: true=成功
+ct: content type
+data: 明文
+key: client/server_write_key
+salt: client/server_write_IV（implicit salt）
+seq: 記錄序號
+返回 ok: true=成功
 `
   'tls.conn.gen-p256-keypair': `
 生成臨時 P-256 私鑰（大端序）與未壓縮公鑰
@@ -6947,7 +6947,7 @@ seq i64: 記錄序號
 `
   'tls.conn.gen-x25519-keypair': `
 send-client-hello: 發送 ClientHello
-返回 ok bool: true=成功
+返回 ok: true=成功
 生成臨時 X25519 金鑰對（存入 .client-priv/.client-pub）
 內聯實現，避免多返回值 [32]byte 的編譯器 bug
 `
@@ -6959,113 +6959,113 @@ fd: 底層 socket 的檔案描述符（僅供診斷）
 ServerHello 之後的 TLS 1.2 完整交握
 （Certificate → [ECDHE: ServerKeyExchange] → ServerHelloDone → 金鑰交換 → CCS/Finished）
 依賴 .cipher-id（read-server-hello / read-server-hello-13 已記入）與 ECDHE 時的 .client-priv/.client-pub
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.init': '初始化連線（未連線狀態）'
   'tls.conn.read-certificate': `
 讀取 Certificate
-cert-out []byte: 輸出憑證 DER 資料
-返回 ok bool: true=成功
+cert-out: 輸出憑證 DER 資料
+返回 ok: true=成功
 `
   'tls.conn.read-change-cipher-spec': `
 讀取 ChangeCipherSpec
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.read-encrypted-handshake-13': `
 讀取加密的交握訊息
 支援單一記錄中含多個交握訊息的情況（使用 hs-plain-buf 緩衝剩餘資料）
-返回 msg-type i64: 訊息類型（-1=錯誤）
-返回 msg-data []byte: 訊息資料（不含標頭）
+返回 msg-type: 訊息類型（-1=錯誤）
+返回 msg-data: 訊息資料（不含標頭）
 `
   'tls.conn.read-encrypted-record-13': `
 讀取並解密一筆 TLS 1.3 記錄
-key [16]byte: AEAD 金鑰
-iv [12]byte: AEAD IV
-seq i64: 序號（讀取後自動遞增）
-返回 ct i64: 原始 content type（-1=錯誤）
-返回 out []byte: 解密後的明文
+key: AEAD 金鑰
+iv: AEAD IV
+seq: 序號（讀取後自動遞增）
+返回 ct: 原始 content type（-1=錯誤）
+返回 out: 解密後的明文
 `
   'tls.conn.read-finished': `
 讀取加密的 Finished 訊息
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.read-server-hello': `
 讀取 ServerHello
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.read-server-hello-13': `
 讀取 ServerHello 並偵測 TLS 版本
-返回 ok bool: true=TLS 1.3, false=TLS 1.2 或失敗
+返回 ok: true=TLS 1.3, false=TLS 1.2 或失敗
 `
   'tls.conn.read-server-hello-done': `
 讀取 ServerHelloDone
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.read-server-key-exchange': `
 讀取 ECDHE ServerKeyExchange（僅 ECDHE 套件）
 解析出伺服器臨時 X25519 公鑰存入 .server-pub（憑證與簽名不做驗證，與本實現的信任模型一致）
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.send': `
 透過 TLS 發送資料
-data str: 待發送的明文
+data: 待發送的明文
 written: 已寫入位元組數（nil=加密或發送失敗）
 `
   'tls.conn.send-change-cipher-spec': '發送 ChangeCipherSpec'
   'tls.conn.send-client-hello': `
 發送 TLS 1.2 ClientHello（含 ECDHE 密碼套件與擴展）
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.send-client-hello-13': `
 發送 TLS 1.3 ClientHello（含擴展）
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.send-client-key-exchange': `
 發送 ClientKeyExchange
-premaster []byte: premaster secret（static-RSA 套件用, 48 bytes；ECDHE 套件忽略）
-cert []byte: 伺服器憑證 DER（static-RSA 套件用）
-返回 ok bool: true=成功
+premaster: premaster secret（static-RSA 套件用, 48 bytes；ECDHE 套件忽略）
+cert: 伺服器憑證 DER（static-RSA 套件用）
+返回 ok: true=成功
 `
   'tls.conn.send-finished': `
 發送加密的 Finished 訊息
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.conn.send-finished-13': `
 發送 TLS 1.3 Finished 訊息
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.dial': `
 便捷函數，建立 TLS 連線
-host str: 伺服器主機名
-port i64: 埠號
-返回 conn ?conn: 連線（nil=連線失敗）
+host: 伺服器主機名
+port: 埠號
+返回 conn: 連線（nil=連線失敗）
 `
   'tls.dial-12': `
 TLS 1.2 連線（純 TLS 1.2，不協商 1.3）
-host str: 主機名或 IP
-port i64: 埠號
-返回 conn ?conn: ok=連線, nil=失敗
+host: 主機名或 IP
+port: 埠號
+返回 conn: ok=連線, nil=失敗
 `
   'tls.get-u16': `
 從緩衝區讀取 16-bit 大端序值
-buf []byte: 來源緩衝區（讀取 buf[pos..pos+1]）
-pos i64: 讀取起始位置（高位元組在前）
-val i64: 解出的 16-bit 大端值（位元組越界時以零計）
+buf: 來源緩衝區（讀取 buf[pos..pos+1]）
+pos: 讀取起始位置（高位元組在前）
+val: 解出的 16-bit 大端值（位元組越界時以零計）
 `
   'tls.get-u24': `
 從緩衝區讀取 24-bit 大端序值
-buf []byte: 來源緩衝區（讀取 buf[pos..pos+2]）
-pos i64: 讀取起始位置（高位元組在前）
-val i64: 解出的 24-bit 大端值（位元組越界時以零計）
+buf: 來源緩衝區（讀取 buf[pos..pos+2]）
+pos: 讀取起始位置（高位元組在前）
+val: 解出的 24-bit 大端值（位元組越界時以零計）
 `
   'tls.https-serve-once': `
 完整的 HTTPS 請求-回應週期（單一函式）
 在同一個函式中完成：accept + handshake + recv HTTP + send HTTP + close
 所有 TLS 狀態保持在局部變數 c 中，避開全域變數 bug 和結構體複製 bug。
-listen-fd fd: 監聽 socket fd
-status i64: HTTP 回應狀態碼
-body str: HTTP 回應體
-返回 ok bool: true=成功
+listen-fd: 監聽 socket fd
+status: HTTP 回應狀態碼
+body: HTTP 回應體
+返回 ok: true=成功
 `
   'tls.net-recv-wait': `
 阻塞式接收（用 nb recv + 短睡重試）
@@ -7078,216 +7078,216 @@ r: >0=收到位元組數, 0=對端正常關閉(FIN), -1=錯誤
 `
   'tls.prf': `
 TLS 1.2 PRF（P_SHA256）
-secret []byte: 金鑰材料
-label str: 標籤字串
-seed []byte: 種子
-out-len i64: 需要的輸出長度
-返回 out []byte: PRF 輸出
+secret: 金鑰材料
+label: 標籤字串
+seed: 種子
+out-len: 需要的輸出長度
+返回 out: PRF 輸出
 `
   'tls.put-u16': `
 將 16-bit 大端序值寫入緩衝區
-buf []byte: 目標緩衝區，寫入 buf[pos..pos+1]
-pos i64: 寫入起始位置（高位元組在前）
-val i64: 要寫入的 16-bit 整數值
+buf: 目標緩衝區，寫入 buf[pos..pos+1]
+pos: 寫入起始位置（高位元組在前）
+val: 要寫入的 16-bit 整數值
 `
   'tls.put-u24': `
 將 24-bit 大端序值寫入緩衝區
-buf []byte: 目標緩衝區，寫入 buf[pos..pos+2]
-pos i64: 寫入起始位置（高位元組在前）
-val i64: 要寫入的 24-bit 整數值
+buf: 目標緩衝區，寫入 buf[pos..pos+2]
+pos: 寫入起始位置（高位元組在前）
+val: 要寫入的 24-bit 整數值
 `
   'tls.rand-bytes': `
 生成隨機位元組
-n i64: 需要的位元組數
-返回 out []byte: 隨機位元組陣列
-state i64: 隨機數種子狀態（rand.rand 內部逐位元組推進）
+n: 需要的位元組數
+返回 out: 隨機位元組陣列
+state: 隨機數種子狀態（rand.rand 內部逐位元組推進）
 `
   'tls.read-record': `
 讀取一筆 TLS 記錄
-fd fd: socket fd
-buf []byte: 記錄緩衝區（含標頭+資料, buf[0..4]=header, buf[5..]=body）
-返回 ct i64: content type（-1=錯誤）
-返回 rlen i64: 資料長度（不含標頭）
+fd: socket fd
+buf: 記錄緩衝區（含標頭+資料, buf[0..4]=header, buf[5..]=body）
+返回 ct: content type（-1=錯誤）
+返回 rlen: 資料長度（不含標頭）
 `
   'tls.recv-n': `
 從 socket 讀取恰好 n 個位元組
-fd fd: socket fd
-buf []byte: 接收緩衝區
-n i64: 需要讀取的位元組數
-返回 ok bool: true=成功
+fd: socket fd
+buf: 接收緩衝區
+n: 需要讀取的位元組數
+返回 ok: true=成功
 `
   'tls.rsa-pkcs1-decrypt': `
 RSA PKCS#1 v1.5 解密
-ciphertext []byte: RSA 加密的資料
-n []byte: 模數（big-endian）
-d []byte: 私鑰指數（big-endian）
-返回 out []byte: 解密後的明文（nil=失敗）
+ciphertext: RSA 加密的資料
+n: 模數（big-endian）
+d: 私鑰指數（big-endian）
+返回 out: 解密後的明文（nil=失敗）
 `
   'tls.rsa-pkcs1-encrypt': `
 RSA PKCS#1 v1.5 加密
-msg []byte: 訊息（premaster secret, 48 bytes）
-mod-bytes []byte: RSA 模數（big-endian）
-exp i64: RSA 公鑰指數
-返回 out []byte: 加密後的資料（長度 = mod-bytes.len）
+msg: 訊息（premaster secret, 48 bytes）
+mod-bytes: RSA 模數（big-endian）
+exp: RSA 公鑰指數
+返回 out: 加密後的資料（長度 = mod-bytes.len）
 `
   'tls.send-raw': `
 發送原始 TLS 記錄（未加密）
-fd fd: socket fd
-ct i64: content type（寫入記錄標頭首 byte）
-data []byte: 要寫入該記錄的載荷位元組（本函式不加密，直接送出）
+fd: socket fd
+ct: content type（寫入記錄標頭首 byte）
+data: 要寫入該記錄的載荷位元組（本函式不加密，直接送出）
 `
   'tls.server-accept': `
 接受 TCP 連線並執行 TLS 交握
 使用局部變數進行交握（全域變數有編譯器 bug：跨函式位址不一致）
-listen-fd fd: 監聽 socket fd
-返回 conn ?server-conn: ok=連線（含交握金鑰）, nil=失敗
+listen-fd: 監聽 socket fd
+返回 conn: ok=連線（含交握金鑰）, nil=失敗
 `
   'tls.server-conn.append-hs': `
 追加交握資料到緩衝區
-data []byte: 待追加到交握緩衝區的資料
+data: 待追加到交握緩衝區的資料
 `
   'tls.server-conn.append-hs-from': `
 從 buf 的 offset 位置追加 n 位元組
-buf []byte: 來源緩衝區
-offset i64: 讀取起始偏移
-n i64: 要追加的位元組數
+buf: 來源緩衝區
+offset: 讀取起始偏移
+n: 要追加的位元組數
 `
   'tls.server-conn.close': '關閉連線'
   'tls.server-conn.compute-shared-secret-13': '計算 ECDHE 共享金鑰'
   'tls.server-conn.decrypt-record': `
 解密記錄（使用 CLIENT 金鑰）
-buf []byte: 接收到的記錄資料（從標頭開始）
-expected-ct i64: 原始 content type（TLS-CT-HANDSHAKE 或 TLS-CT-APP-DATA）
-返回 ct i64: 原始 content type（-1=錯誤）
-返回 out []byte: 解密後的明文
+buf: 接收到的記錄資料（從標頭開始）
+expected-ct: 原始 content type（TLS-CT-HANDSHAKE 或 TLS-CT-APP-DATA）
+返回 ct: 原始 content type（-1=錯誤）
+返回 out: 解密後的明文
 `
   'tls.server-conn.decrypt-record-13': `
 TLS 1.3 AEAD 解密記錄
-rec []byte: 接收到的記錄（含標頭）
-key [16]byte: AEAD 金鑰
-iv [12]byte: AEAD IV
-seq i64: 這筆記錄的期望序號（參與 nonce 派生，錯序會令 AEAD 驗證失敗）
-返回 ct i64: 原始 content type（-1=錯誤）
-返回 out []byte: 解密後的明文
+rec: 接收到的記錄（含標頭）
+key: AEAD 金鑰
+iv: AEAD IV
+seq: 這筆記錄的期望序號（參與 nonce 派生，錯序會令 AEAD 驗證失敗）
+返回 ct: 原始 content type（-1=錯誤）
+返回 out: 解密後的明文
 `
   'tls.server-conn.derive-application-keys-13': '推導應用層金鑰'
   'tls.server-conn.derive-handshake-keys-13': '推導交握金鑰（HKDF 金鑰排程）'
   'tls.server-conn.derive-keys': `
 從 premaster 推導所有金鑰
-premaster []byte: premaster secret (48 bytes)
+premaster: premaster secret (48 bytes)
 `
   'tls.server-conn.encrypt-record': `
 加密記錄並發送（使用 SERVER 金鑰）
-ct i64: 原始 content type
-data []byte: 明文資料
-返回 ok bool: true=成功
+ct: 原始 content type
+data: 明文資料
+返回 ok: true=成功
 `
   'tls.server-conn.encrypt-record-13': `
 TLS 1.3 AEAD 加密記錄並發送
-ct i64: 原始 content type
-data []byte: 明文資料
-key [16]byte: AEAD 金鑰
-iv [12]byte: AEAD IV
-seq i64: 這筆記錄的序號（每次發送後遞增，參與 nonce 派生）
-返回 ok bool: true=成功
+ct: 原始 content type
+data: 明文資料
+key: AEAD 金鑰
+iv: AEAD IV
+seq: 這筆記錄的序號（每次發送後遞增，參與 nonce 派生）
+返回 ok: true=成功
 `
   'tls.server-conn.handshake': `
 TLS 伺服器交握（自動協商 1.3/1.2）
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.handshake-13': `
 TLS 1.3 伺服器交握
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.read-change-cipher-spec': `
 讀取 ChangeCipherSpec
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.read-client-finished-13': `
 讀取並驗證 client Finished
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.read-client-hello': `
 讀取 ClientHello
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.read-client-key-exchange': `
 讀取 ClientKeyExchange 並解密 premaster
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.read-encrypted-handshake-13': `
 讀取加密的交握訊息
-msg-type i64: 交握訊息類型（-1=錯誤）
-msg-data []byte: 訊息內容（不含標頭）
+msg-type: 交握訊息類型（-1=錯誤）
+msg-data: 訊息內容（不含標頭）
 `
   'tls.server-conn.read-encrypted-record-13': `
 讀取並解密一筆 TLS 1.3 記錄
 （跳過 CCS middlebox compatibility 記錄）
-key [16]byte: AEAD 金鑰
-iv [12]byte: AEAD IV
-seq i64: 記錄序號（呼叫方讀取後遞增）
-ct i64: 解密出的原始 content type（-1=錯誤）
-out []byte: 解密後的明文
+key: AEAD 金鑰
+iv: AEAD IV
+seq: 記錄序號（呼叫方讀取後遞增）
+ct: 解密出的原始 content type（-1=錯誤）
+out: 解密後的明文
 `
   'tls.server-conn.read-finished': `
 讀取加密的 client Finished 並驗證
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.recv': `
 接收並解密資料
-buf str: 接收緩衝區
-n i64: 最多接收位元組數
-返回 read-n i64: 實際接收位元組數（-1=錯誤）
+buf: 接收緩衝區
+n: 最多接收位元組數
+返回 read-n: 實際接收位元組數（-1=錯誤）
 `
   'tls.server-conn.send': `
 透過 TLS 發送資料
-data str: 待發送的明文
+data: 待發送的明文
 written: 已寫入位元組數（nil=失敗）
 `
   'tls.server-conn.send-certificate': `
 發送 Certificate
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.send-certificate-13': `
 發送 TLS 1.3 Certificate
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.send-change-cipher-spec': '發送 ChangeCipherSpec'
   'tls.server-conn.send-encrypted-extensions-13': `
 發送 EncryptedExtensions
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.send-finished': `
 發送加密的 server Finished
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.send-finished-13': `
 發送 server Finished
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.send-server-hello': `
 發送 ServerHello
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.send-server-hello-13': `
 發送 TLS 1.3 ServerHello
 生成 X25519 金鑰對，構建含 supported_versions 和 key_share 擴展的 ServerHello
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-conn.send-server-hello-done': `
 發送 ServerHelloDone
-返回 ok bool: true=成功
+返回 ok: true=成功
 `
   'tls.server-init': `
 初始化伺服器連線（生成憑證、設定金鑰）
-fd fd: 客戶端 socket fd
-返回 conn ?server-conn: 連線（nil=錯誤）
+fd: 客戶端 socket fd
+返回 conn: 連線（nil=錯誤）
 `
   'tls.server-listen': `
 建立監聽 socket
-host str: 綁定的 IP 地址
-port i64: 監聽埠號
-返回 fd fd: 監聽 socket fd（-1=失敗）
+host: 綁定的 IP 地址
+port: 監聽埠號
+返回 fd: 監聽 socket fd（-1=失敗）
 `
   'tls.tls-pad': `
 TLS 1.2 CBC 填充（RFC 5246 §6.2.3.2）——與 PKCS#7 不同！
@@ -7295,13 +7295,13 @@ TLS 1.2 CBC 填充（RFC 5246 §6.2.3.2）——與 PKCS#7 不同！
 對端（如 OpenSSL）讀末位元組 P 後移除 P+1 個位元組，並要求這 P+1 個位元組全等於 P。
 若誤用 PKCS#7（值 = pad-count），當明文已為區塊整數倍時會填 16 個 0x10，
 對端會試圖移除 17 個位元組而踩到 MAC 尾位元組 → bad record mac。
-in []byte: 明文（content || MAC）
-返回 out []byte: 填充後的資料（長度為 16 的倍數）
+in: 明文（content || MAC）
+返回 out: 填充後的資料（長度為 16 的倍數）
 `
   'tls.tls-unpad': `
 TLS 1.2 CBC 去填充
-in []byte: 解密後的資料（content || MAC || padding）
-返回 out-n i64: 去除填充後的長度（content+MAC），-1=填充錯誤
+in: 解密後的資料（content || MAC || padding）
+返回 out-n: 去除填充後的長度（content+MAC），-1=填充錯誤
 `
   'toml.array-name': '讀取 array-of-tables 名稱。'
   'toml.entry-key': '讀取 canonical key。'
@@ -7342,93 +7342,93 @@ value 可為陣列、日期時間等 TOML 語法，模組不會替它加引號�
   'toml.value-complete': '判斷值是否已閉合；用於多行陣列、inline table、multiline string。'
   'tree-map.tree-map.alloc-node': `
 從空閒池分配節點
-回傳 idx i64: 節點索引，-1=池已滿
+回傳 idx: 節點索引，-1=池已滿
 
 `
   'tree-map.tree-map.bf': `
 取得平衡因子（左高 - 右高）
-idx i64: 節點索引
-回傳 b i64: 平衡因子
+idx: 節點索引
+回傳 b: 平衡因子
 
 `
   'tree-map.tree-map.clear': '清空所有元素，重建空閒池'
   'tree-map.tree-map.contains': `
 檢查鍵是否存在
-key i64: 鍵
-回傳 yes bool: true=存在, false=不存在
+key: 鍵
+回傳 yes: true=存在, false=不存在
 
 `
   'tree-map.tree-map.empty': `
 判斷是否為空
-回傳 yes bool: true=空, false=非空
+回傳 yes: true=空, false=非空
 
 `
   'tree-map.tree-map.first': `
 取得最小鍵
-回傳 key ?i64: ok=最小鍵, nil=空樹
+回傳 key: ok=最小鍵, nil=空樹
 
 `
   'tree-map.tree-map.for-each': `
 按鍵升序走訪所有鍵值對
-k i64: 輸出鍵（每個元素更新）
-v i64: 輸出值（每個元素更新）
+k: 輸出鍵（每個元素更新）
+v: 輸出值（每個元素更新）
 
 `
   'tree-map.tree-map.free-node': `
 將節點歸還空閒池
-idx i64: 要釋放的節點索引
+idx: 要釋放的節點索引
 
 `
   'tree-map.tree-map.full': `
 判斷節點池是否已滿
-回傳 yes bool: true=已滿, false=未滿
+回傳 yes: true=已滿, false=未滿
 
 `
   'tree-map.tree-map.get': `
 查找鍵對應的值
-key i64: 鍵
-回傳 val ?i64: ok=找到, nil=未找到
+key: 鍵
+回傳 val: ok=找到, nil=未找到
 
 `
   'tree-map.tree-map.ht': `
 取得節點高度（NIL=0）
-idx i64: 節點索引
-回傳 h i64: 高度
+idx: 節點索引
+回傳 h: 高度
 
 `
   'tree-map.tree-map.init': '初始化空樹與空閒節點池'
   'tree-map.tree-map.last': `
 取得最大鍵
-回傳 key ?i64: ok=最大鍵, nil=空樹
+回傳 key: ok=最大鍵, nil=空樹
 
 `
   'tree-map.tree-map.lower-bound': `
 找第一個 >= target 的鍵
-target i64: 目標鍵
-回傳 key ?i64: ok=找到, nil=無此鍵
+target: 目標鍵
+回傳 key: ok=找到, nil=無此鍵
 
 `
   'tree-map.tree-map.put': `
 插入或更新 key→value
-key i64: 排序鍵
-val i64: 要寫入的整數值（鍵已存在時覆蓋舊值）
-回傳 ok bool: true=新增, false=更新已存在鍵或池已滿
+key: 排序鍵
+val: 要寫入的整數值（鍵已存在時覆蓋舊值）
+回傳 ok: true=新增, false=更新已存在鍵或池已滿
 `
   'tree-map.tree-map.rebalance': `
 在節點 idx 檢查並修復平衡
-idx i64: 節點索引
-回傳 nr i64: 再平衡後的子樹根索引
+idx: 節點索引
+回傳 nr: 再平衡後的子樹根索引
 
 `
   'tree-map.tree-map.rebalance-up': `
 從 idx 向上逐層再平衡
-idx i64: 起始節點索引
+idx: 起始節點索引
 
 `
   'tree-map.tree-map.remove': `
 刪除鍵
-key i64: 鍵
-回傳 ok bool: true=已刪除, false=未找到
+key: 鍵
+回傳 ok: true=已刪除, false=未找到
 
 `
   'tree-map.tree-map.rot-left': `
@@ -7438,7 +7438,7 @@ x                y
 a   y     =>     x   c
 / \          / \
 b   c        a   b
-x i64: 旋轉軸節點
+x: 旋轉軸節點
 
 `
   'tree-map.tree-map.rot-right': `
@@ -7448,113 +7448,113 @@ x              y
 y   c   =>     a   x
 / \                / \
 a   b              b   c
-x i64: 旋轉軸節點
+x: 旋轉軸節點
 
 `
   'tree-map.tree-map.size': `
 回傳元素數量
-回傳 sz i64: 元素數量
+回傳 sz: 元素數量
 
 `
   'tree-map.tree-map.successor': `
 求節點的中序後繼
-idx i64: 節點索引
-回傳 succ i64: 後繼索引，-1=無後繼
+idx: 節點索引
+回傳 succ: 後繼索引，-1=無後繼
 
 `
   'tree-map.tree-map.update-ht': `
 重新計算節點高度
-idx i64: 節點索引
+idx: 節點索引
 
 `
   'tree-map.tree-map.upper-bound': `
 找第一個 > target 的鍵
-target i64: 目標鍵
-回傳 key ?i64: ok=找到, nil=無此鍵
+target: 目標鍵
+回傳 key: ok=找到, nil=無此鍵
 
 `
   'tree-set.tree-set.add': `
 加入元素
-key i64: 要加入的值
-回傳 ok bool: true=新增, false=已存在或池已滿
+key: 要加入的值
+回傳 ok: true=新增, false=已存在或池已滿
 
 `
   'tree-set.tree-set.alloc-node': `
 從空閒池分配節點
-回傳 idx i64: 節點索引，-1=池已滿
+回傳 idx: 節點索引，-1=池已滿
 
 `
   'tree-set.tree-set.bf': `
 取得平衡因子（左高 - 右高）
-idx i64: 節點索引
-回傳 b i64: 平衡因子
+idx: 節點索引
+回傳 b: 平衡因子
 
 `
   'tree-set.tree-set.clear': '清空所有元素，重建空閒池'
   'tree-set.tree-set.contains': `
 檢查元素是否存在
-key i64: 要檢查的值
-回傳 yes bool: true=存在, false=不存在
+key: 要檢查的值
+回傳 yes: true=存在, false=不存在
 
 `
   'tree-set.tree-set.empty': `
 判斷是否為空
-回傳 yes bool: true=空, false=非空
+回傳 yes: true=空, false=非空
 
 `
   'tree-set.tree-set.first': `
 取得最小值
-回傳 val ?i64: ok=最小值, nil=空集合
+回傳 val: ok=最小值, nil=空集合
 
 `
   'tree-set.tree-set.for-each': `
 按升序走訪所有元素
-val i64: 輸出值（每個元素更新）
+val: 輸出值（每個元素更新）
 
 `
   'tree-set.tree-set.free-node': `
 將節點歸還空閒池
-idx i64: 要釋放的節點索引
+idx: 要釋放的節點索引
 
 `
   'tree-set.tree-set.full': `
 判斷節點池是否已滿
-回傳 yes bool: true=已滿, false=未滿
+回傳 yes: true=已滿, false=未滿
 
 `
   'tree-set.tree-set.ht': `
 取得節點高度（NIL=0）
-idx i64: 節點索引
-回傳 h i64: 高度
+idx: 節點索引
+回傳 h: 高度
 
 `
   'tree-set.tree-set.init': '初始化空樹與空閒節點池'
   'tree-set.tree-set.last': `
 取得最大值
-回傳 val ?i64: ok=最大值, nil=空集合
+回傳 val: ok=最大值, nil=空集合
 
 `
   'tree-set.tree-set.lower-bound': `
 找第一個 >= target 的元素
-target i64: 目標值
-回傳 val ?i64: ok=找到, nil=無此元素
+target: 目標值
+回傳 val: ok=找到, nil=無此元素
 
 `
   'tree-set.tree-set.rebalance': `
 在節點 idx 檢查並修復平衡
-idx i64: 節點索引
-回傳 nr i64: 再平衡後的子樹根索引
+idx: 節點索引
+回傳 nr: 再平衡後的子樹根索引
 
 `
   'tree-set.tree-set.rebalance-up': `
 從 idx 向上逐層再平衡
-idx i64: 起始節點索引
+idx: 起始節點索引
 
 `
   'tree-set.tree-set.remove': `
 刪除元素
-key i64: 要刪除的值
-回傳 ok bool: true=已刪除, false=未找到
+key: 要刪除的值
+回傳 ok: true=已刪除, false=未找到
 
 `
   'tree-set.tree-set.rot-left': `
@@ -7564,7 +7564,7 @@ x                y
 a   y     =>     x   c
 / \          / \
 b   c        a   b
-x i64: 旋轉軸節點
+x: 旋轉軸節點
 
 `
   'tree-set.tree-set.rot-right': `
@@ -7574,36 +7574,36 @@ x              y
 y   c   =>     a   x
 / \                / \
 a   b              b   c
-x i64: 旋轉軸節點
+x: 旋轉軸節點
 
 `
   'tree-set.tree-set.size': `
 回傳元素數量
-回傳 sz i64: 元素數量
+回傳 sz: 元素數量
 
 `
   'tree-set.tree-set.successor': `
 求節點的中序後繼
-idx i64: 節點索引
-回傳 succ i64: 後繼索引，-1=無後繼
+idx: 節點索引
+回傳 succ: 後繼索引，-1=無後繼
 
 `
   'tree-set.tree-set.update-ht': `
 重新計算節點高度
-idx i64: 節點索引
+idx: 節點索引
 
 `
   'tree-set.tree-set.upper-bound': `
 找第一個 > target 的元素
-target i64: 目標值
-回傳 val ?i64: ok=找到, nil=無此元素
+target: 目標值
+回傳 val: ok=找到, nil=無此元素
 
 `
   'txt._txt-dig-val': '單一數字字元轉數值（0-15），無效字元回傳 -1'
   'txt.at': `
 [deprecated] txt.at: 字元（碼點）索引讀取——請改用 t[idx]（原生索引，回傳 ?char）
 txt.at: 取得指定字元位置的碼點值（位元組偏移請用 t.byte(i)）
-回傳 b ?byte: 越界回傳 nil；超出 byte 範圍的碼點截斷
+回傳 b: 越界回傳 nil；超出 byte 範圍的碼點截斷
 
 `
   'txt.byte': `
@@ -7679,8 +7679,8 @@ txt.new（ForwardFunc: chars-new）正是為此存在的內建：一次寫入全
 `
   'txt.join': `
 []txt.join: 用分隔符連接 txt 切片（超過 255 位元組則截斷）
-sep txt: 分隔符
-回傳 out txt: 連接結果
+sep: 分隔符
+回傳 out: 連接結果
 
 `
   'txt.last-index': 'rindex 別名'
@@ -7705,7 +7705,7 @@ txt.new: 從 char 切片建構 txt（模組級建構器，回傳具體 txt）
 `
   'txt.replace-n': `
 限定替換次數
-old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
+old txt, new, n: 最大替換次數（n<=0 不替換）
 
 `
   'txt.replace-str': `
@@ -7724,7 +7724,7 @@ old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
   'txt.split': '用分隔符分割為 []txt'
   'txt.split-n': `
 限定分割次數
-sep txt, maxsplit i64: 最大分割次數（<=0 不限制）
+sep txt, maxsplit: 最大分割次數（<=0 不限制）
 
 `
   'txt.starts-with': '是否以指定前綴開頭'
@@ -7783,134 +7783,134 @@ sep txt, maxsplit i64: 最大分割次數（<=0 不限制）
   'unix.unix-conn.close': '關閉連接'
   'unix.unix-conn.dial': `
 連接到 Unix Domain Socket 服務端
-path str: socket 檔案路徑（如 '/tmp/myapp.sock'）
-ok bool: true=已連上，false=系統呼叫失敗（fd 保持 -1）
+path: socket 檔案路徑（如 '/tmp/myapp.sock'）
+ok: true=已連上，false=系統呼叫失敗（fd 保持 -1）
 `
   'unix.unix-conn.fd-of': `
 取得連接 socket 的檔案描述符
-fd fd: 連接 socket 的檔案描述符（未連接時為 -1）
+fd: 連接 socket 的檔案描述符（未連接時為 -1）
 `
   'unix.unix-conn.recv': `
 接收資料到緩衝區
-buf str: 接收緩衝區
-n i64: 最多接收的位元組數
-返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=連接關閉）
+buf: 接收緩衝區
+n: 最多接收的位元組數
+返回 read-n: 實際接收位元組數（-1=錯誤, 0=連接關閉）
 `
   'unix.unix-conn.recv-all': `
 接收全部資料直到連接關閉
-content str: 累積收到的全部資料（逐塊拼接，直到對端關閉或出錯）
-total i64: 收到的總位元組數（未連接時為 0）
+content: 累積收到的全部資料（逐塊拼接，直到對端關閉或出錯）
+total: 收到的總位元組數（未連接時為 0）
 `
   'unix.unix-conn.recv-with-timeout': `
 帶逾時的接收
-buf str: 接收緩衝區
-n i64: 最多接收的位元組數
-timeout-ms i64: 逾時毫秒數
-返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
+buf: 接收緩衝區
+n: 最多接收的位元組數
+timeout-ms: 逾時毫秒數
+返回 read-n: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
 `
   'unix.unix-conn.send': `
 發送字串資料
-data str: 要發送的字串
-返回 written i64: 實際發送位元組數（-1=錯誤）
+data: 要發送的字串
+返回 written: 實際發送位元組數（-1=錯誤）
 `
   'unix.unix-conn.set-recv-timeout': `
 設定接收逾時
-timeout-ms i64: 逾時毫秒數（0=阻塞, >0=逾時）
-返回 ok bool: true=成功
+timeout-ms: 逾時毫秒數（0=阻塞, >0=逾時）
+返回 ok: true=成功
 `
   'unix.unix-conn.set-timeout': `
 設定接收逾時（別名，語義同 set-recv-timeout）
-timeout-ms i64: 逾時毫秒數
-返回 ok bool: true=成功
+timeout-ms: 逾時毫秒數
+返回 ok: true=成功
 `
   'unix.unix-dial': `
 連接到 Unix Domain Socket
 執行 socket(AF_UNIX) + connect
-path str: 目標 socket 檔案路徑
-fd fd: 已連線的描述符；失敗為 -1
+path: 目標 socket 檔案路徑
+fd: 已連線的描述符；失敗為 -1
 `
   'unix.unix-dial-timeout': `
 帶逾時的 Unix Domain Socket 撥號
-path str: socket 檔案路徑
-timeout-ms i64: 連接後的接收逾時
-返回 c ?unix-conn: ok=連接, nil=失敗
+path: socket 檔案路徑
+timeout-ms: 連接後的接收逾時
+返回 c: ok=連接, nil=失敗
 `
   'unix.unix-dial-to': `
 建立 Unix Domain Socket 連接並撥號
-path str: socket 檔案路徑
-返回 c ?unix-conn: ok=連接, nil=失敗
+path: socket 檔案路徑
+返回 c: ok=連接, nil=失敗
 `
   'unix.unix-listen': `
 建立 Unix Domain Socket 監聽
 執行 unlink + socket(AF_UNIX) + bind + listen（先 unlink 以便重複使用舊路徑）
-path str: socket 檔案路徑；長度受 UNIX-MAX-PATH 限制
-fd fd: 已進入監聽狀態的描述符；失敗為 -1
+path: socket 檔案路徑；長度受 UNIX-MAX-PATH 限制
+fd: 已進入監聽狀態的描述符；失敗為 -1
 `
   'unix.unix-listen-on': `
 建立 Unix Domain Socket 監聽器並開始監聽
-path str: socket 檔案路徑
-返回 l ?unix-listener: ok=監聽器, nil=失敗
+path: socket 檔案路徑
+返回 l: ok=監聽器, nil=失敗
 `
   'unix.unix-listener.accept': `
 接受新的 Unix Domain Socket 連接
-返回 c ?unix-conn: ok=連接結構體, nil=失敗
+返回 c: ok=連接結構體, nil=失敗
 `
   'unix.unix-listener.accept-with-timeout': `
 帶逾時的 accept
-timeout-ms i64: 逾時毫秒數
-返回 c ?unix-conn: ok=連接, nil=逾時或失敗
+timeout-ms: 逾時毫秒數
+返回 c: ok=連接, nil=逾時或失敗
 `
   'unix.unix-listener.close': '關閉監聽 socket（不自動刪除 socket 檔案）'
   'unix.unix-listener.fd-of': `
 取得監聽 socket 的檔案描述符
-fd fd: 監聽 socket 的檔案描述符（未開啟時為 -1）
+fd: 監聽 socket 的檔案描述符（未開啟時為 -1）
 `
   'unix.unix-listener.listen': `
 開始監聽 Unix Domain Socket
-path str: socket 檔案路徑（如 '/tmp/myapp.sock'）
-ok bool: true=socket 已建立並進入監聽，false=系統呼叫失敗（fd 保持 -1）
+path: socket 檔案路徑（如 '/tmp/myapp.sock'）
+ok: true=socket 已建立並進入監聽，false=系統呼叫失敗（fd 保持 -1）
 `
   'unix.unix-listener.path-of': `
 取得 socket 檔案路徑
-path str: 建立監聽時傳入的 socket 檔案路徑
+path: 建立監聽時傳入的 socket 檔案路徑
 `
   'unix.unix-listener.set-timeout': `
 設定 accept 逾時
-timeout-ms i64: 逾時毫秒數
-返回 ok bool: true=成功
+timeout-ms: 逾時毫秒數
+返回 ok: true=成功
 `
   'url.url-basic-auth': `
 產生 HTTP Basic 認證標頭值
 user: 用戶名
 password: 密碼
-返回 out str: 標頭值（如 'Basic dXNlcjpwYXNz'）
+返回 out: 標頭值（如 'Basic dXNlcjpwYXNz'）
 `
   'url.url-build-query': `
 從鍵值對建構查詢字串
 keys: 鍵陣列（前 count 項有效）
 values: 值陣列（與 keys 一一對應）
 count: 有效鍵值對的數量
-返回 out str: 查詢字串（如 key1=val1&key2=val2）
+返回 out: 查詢字串（如 key1=val1&key2=val2）
 `
   'url.url-decode': `
 URL 解碼（百分號解碼）
 s: 待解碼的百分號編碼字符串
-返回 out str: 解碼後的原始字符串
+返回 out: 解碼後的原始字符串
 `
   'url.url-encode': `
 URL 編碼（百分號編碼）
 s: 待編碼的原始字符串
-返回 out str: 百分號編碼後的字符串
+返回 out: 百分號編碼後的字符串
 `
   'url.url-encode-component': `
 URL 編碼（元件模式，也編碼 / 和 ?）
 s: 待編碼的原始字符串
-返回 out str: 百分號編碼後的字符串
+返回 out: 百分號編碼後的字符串
 `
   'url.url-info.get-query': `
 取得查詢參數值
 key: 要讀取的查詢參數名
-返回 val ?str: ok=參數值, nil=未找到
+返回 val: ok=參數值, nil=未找到
 `
   'url.url-info.set-query': `
 設定查詢參數值
@@ -7919,40 +7919,40 @@ value: 該參數的新值
 `
   'url.url-info.to-str': `
 將 URL 重新組裝為字串
-返回 out str: 組裝後的完整 URL
+返回 out: 組裝後的完整 URL
 `
   'url.url-join': `
 連接基礎 URL 和路徑
 base: 基礎 URL
 path-str: 要附加到末尾的路徑
-返回 out str: 連接後的完整 URL
+返回 out: 連接後的完整 URL
 `
   'url.url-parse': `
 解析 URL 字串
 url-str: 待解析的完整 URL 字符串
-返回 u url-info: 解析結果（u.ok=true=成功）
+返回 u: 解析結果（u.ok=true=成功）
 `
   'url.url-parse-basic-auth': `
 解析 HTTP Basic 認證標頭
 header: Authorization 標頭值（如 'Basic dXNlcjpwYXNz'）
-返回 user str: 用戶名（空=解析失敗）
-返回 password str: 密碼
+返回 user: 用戶名（空=解析失敗）
+返回 password: 密碼
 `
   'uuid.cmp': '比較兩個 UUID（字典序）'
   'uuid.eq': '判斷兩個 UUID 是否相等'
   'uuid.from-str': `
 從字串解析 UUID
 支援帶連字號（36 字元）和不帶連字號（32 字元）格式
-s str: UUID 字串
-out uuid: 輸出 UUID
-回傳 ok bool: true=解析成功
+s: UUID 字串
+out: 輸出 UUID
+回傳 ok: true=解析成功
 
 `
   'uuid.hex-byte': `
 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
-b byte: 待編碼的位元組（高半位元組先寫，低半位元組後寫）
-pos i64: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
-out str: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
+b: 待編碼的位元組（高半位元組先寫，低半位元組後寫）
+pos: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
+out: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
 `
   'uuid.hex-byte-upper': '大寫 hex 位元組寫入'
   'uuid.hex-val': '單一 hex 字元轉數值'
@@ -7969,12 +7969,12 @@ out: 生成的 v4 隨機 UUID（state 隨 xorshift32 推進）
   'uuid.to-str': `
 將 UUID 格式化為標準字串
 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
-回傳 out str: UUID 字串
+回傳 out: UUID 字串
 
 `
   'uuid.to-str-upper': `
 將 UUID 格式化為大寫字串
-回傳 out str: UUID 大寫字串
+回傳 out: UUID 大寫字串
 
 `
   'uuid.validate': '驗證 UUID 格式是否合法'
@@ -8087,30 +8087,30 @@ cap >= 1024 -> new-cap = cap * 5 / 4
 `
   'ws.build-frame': `
 組裝 WebSocket frame
-opcode i64: 訊息類型
-data str: 訊息內容
-mask bool: 是否加 mask（client 必須 true，server 必須 false）
-mask-key str: 4-byte mask key（mask=true 時使用）
-返回 frame str: 完整的 frame 字串
+opcode: 訊息類型
+data: 訊息內容
+mask: 是否加 mask（client 必須 true，server 必須 false）
+mask-key: 4-byte mask key（mask=true 時使用）
+返回 frame: 完整的 frame 字串
 `
   'ws.client.close': '關閉連線'
   'ws.client.is-connected': `
 檢查連線狀態
-返回 yes bool: true=已連接
+返回 yes: true=已連接
 `
   'ws.client.recv': `
 阻塞讀取一個完整 WebSocket 訊息
 server 不 mask，無需 demask（但仍會檢查 mask bit）
-返回 msg ?message:
+返回 msg:
 ok = 訊息
 nil = 連線已關閉
 err = 錯誤
 `
   'ws.client.send': `
 發送 WebSocket 訊框（client 必須加 mask）
-opcode i64: 訊息類型
-data str: 訊息內容
-返回 ok bool: true=成功
+opcode: 訊息類型
+data: 訊息內容
+返回 ok: true=成功
 `
   'ws.client.send-binary': `
 發送二進位訊息
@@ -8119,9 +8119,9 @@ ok: true=發送成功
 `
   'ws.client.send-close': `
 發送 close 訊框
-close-code i64: 關閉狀態碼
-reason str: 關閉原因
-返回 ok bool: true=成功
+close-code: 關閉狀態碼
+reason: 關閉原因
+返回 ok: true=成功
 `
   'ws.client.send-ping': `
 發送 ping
@@ -8140,32 +8140,32 @@ ok: true=發送成功
 `
   'ws.compute-accept': `
 計算 Sec-WebSocket-Accept 值
-key str: 客戶端送來的 Sec-WebSocket-Key
-返回 accept str: base64(sha1(key - WS-GUID))
+key: 客戶端送來的 Sec-WebSocket-Key
+返回 accept: base64(sha1(key - WS-GUID))
 `
   'ws.connect': `
 連接到 WebSocket 端點
-url str: WS/WSS 端點 URL（ws://host:port/path 或 wss://host:port/path）
-返回 c ?client:
+url: WS/WSS 端點 URL（ws://host:port/path 或 wss://host:port/path）
+返回 c:
 ok = 已連接的客戶端
 nil = 連線失敗
 err = 錯誤訊息
 `
   'ws.gen-client-key': `
 產生 16-byte Sec-WebSocket-Key 並 base64 編碼
-seed i64: 種子值
-返回 key str: base64 編碼字串（24 字元含 padding）
+seed: 種子值
+返回 key: base64 編碼字串（24 字元含 padding）
 `
   'ws.gen-mask-key': `
 產生 4-byte mask key 字串
-seed i64: 種子值
-返回 key str: 4 字元字串
+seed: 種子值
+返回 key: 4 字元字串
 `
   'ws.listen-on': `
 建立 WebSocket 服務端並開始監聽
-host str: 綁定的 IP 地址（如 '0.0.0.0'）
-port i64: 監聽埠號
-返回 s ?server: ok=服務端, nil=失敗
+host: 綁定的 IP 地址（如 '0.0.0.0'）
+port: 監聽埠號
+返回 s: ok=服務端, nil=失敗
 `
   'ws.next-rand': `
 產生下一個偽隨機 i64
@@ -8180,13 +8180,13 @@ r: 新的偽隨機數（全域計數器 + LCG 輸出，非密碼學品質）
 `
   'ws.server-conn.is-connected': `
 檢查連線狀態
-返回 yes bool: true=已連接
+返回 yes: true=已連接
 `
   'ws.server-conn.recv': `
 阻塞讀取一個完整 WebSocket 訊息
 支援分片訊息（continuation opcode）收集。
 收到 ping 自動回 pong；收到 close 設 connected=false 並返回 nil。
-返回 msg ?message:
+返回 msg:
 ok = 訊息
 nil = 連線已關閉
 err = 錯誤
@@ -8195,50 +8195,50 @@ err = 錯誤
 注意：為配合非阻塞輪詢，本方法不跨多次呼叫累積 fragmentation；
 單 frame 的 text/binary 訊息（nowork 前端用法）直接成為一條訊息。
 需要完整分片重組時仍請使用阻塞版 recv。
-msg ?message: ok=本次輪詢已湊齊的完整訊息；nil=暫無資料或 frame 尚未收齊；err=連線關閉或錯誤
+msg: ok=本次輪詢已湊齊的完整訊息；nil=暫無資料或 frame 尚未收齊；err=連線關閉或錯誤
 `
   'ws.server-conn.send': `
 發送 WebSocket 訊框（server 不加 mask）
-opcode i64: 訊息類型（WS-OP-TEXT / WS-OP-BINARY / ...）
-data str: 訊息內容
-返回 ok bool: true=成功
+opcode: 訊息類型（WS-OP-TEXT / WS-OP-BINARY / ...）
+data: 訊息內容
+返回 ok: true=成功
 `
   'ws.server-conn.send-binary': `
 發送二進位訊息
-data str: 訊息內容
-返回 ok bool: true=成功
+data: 訊息內容
+返回 ok: true=成功
 `
   'ws.server-conn.send-close': `
 發送 close 訊框
-close-code i64: 關閉狀態碼（如 1000）
-reason str: 關閉原因
-返回 ok bool: true=成功
+close-code: 關閉狀態碼（如 1000）
+reason: 關閉原因
+返回 ok: true=成功
 `
   'ws.server-conn.send-ping': `
 發送 ping
-data str: ping 內容
-返回 ok bool: true=成功
+data: ping 內容
+返回 ok: true=成功
 `
   'ws.server-conn.send-pong': `
 發送 pong
-data str: pong 內容
-返回 ok bool: true=成功
+data: pong 內容
+返回 ok: true=成功
 `
   'ws.server-conn.send-text': `
 發送文字訊息
-data str: 訊息內容
-返回 ok bool: true=成功
+data: 訊息內容
+返回 ok: true=成功
 `
   'ws.server.accept': `
 接受新的 WebSocket 客戶端連接並完成交握
-返回 c ?server-conn: ok=已交握的客戶端, nil=失敗
+返回 c: ok=已交握的客戶端, nil=失敗
 `
   'ws.server.close': '關閉 WebSocket 服務端'
   'ws.server.listen': `
 開始監聽
-host str: 綁定的 IP 地址（如 '0.0.0.0'）
-port i64: 監聽埠號
-返回 ok bool: true=成功
+host: 綁定的 IP 地址（如 '0.0.0.0'）
+port: 監聽埠號
+返回 ok: true=成功
 `
   'x25519.fe-add': `
 域元素加法 h = f + g
@@ -8366,9 +8366,9 @@ h: 新建的零域元素（長度 10）
 `
   'x25519.x25519-gen-keypair': `
 生成隨機金鑰對
-seed i64: 隨機種子
-返回 priv [32]byte: 私鑰
-返回 pub [32]byte: 公鑰
+seed: 隨機種子
+返回 priv: 私鑰
+返回 pub: 公鑰
 seed: rand 種子（決定私鑰；真實場景需以系統亂源注入）
 priv: 私鑰（已 clamp：bit0-2 清零、bit254 置 1、bit255 清零）
 pub: 對應公鑰（priv × 基點）
@@ -8379,61 +8379,61 @@ base: 基點 u=9 的 32 位元組小端編碼
 `
   'x25519.x25519-scalarmult': `
 X25519 純量乘法
-scalar [32]byte: 純量（私鑰）
-point [32]byte: 點座標（公鑰）
-回傳 out [32]byte: 點乘結果（共享密鑰），小端序域元素位元組
+scalar: 純量（私鑰）
+point: 點座標（公鑰）
+回傳 out: 點乘結果（共享密鑰），小端序域元素位元組
 `
   'x25519.x25519-scalarmult-base': `
 計算純量 * 基點
-scalar [32]byte: 純量（私鑰）
-返回 out [32]byte: 公鑰
+scalar: 純量（私鑰）
+返回 out: 公鑰
 `
   'x25519.x25519-scalarmult-base-bytes': `
 計算純量 * 基點（[]byte 版本）
-scalar []byte: 純量（私鑰，長度 32）
-返回 out []byte: 公鑰（長度 32）
+scalar: 純量（私鑰，長度 32）
+返回 out: 公鑰（長度 32）
 `
   'x25519.x25519-scalarmult-bytes': `
 X25519 純量乘法（[]byte 版本）
-scalar []byte: 純量（私鑰，長度 32）
-point []byte: 點座標（公鑰，長度 32）
-返回 out []byte: 結果（長度 32）
+scalar: 純量（私鑰，長度 32）
+point: 點座標（公鑰，長度 32）
+返回 out: 結果（長度 32）
 `
   'x509.alg-id-rsa-encryption': `
 AlgorithmIdentifier for rsaEncryption (1.2.840.113549.1.1.1)
-返回 out []byte: SEQUENCE { OID rsaEncryption, NULL }
+返回 out: SEQUENCE { OID rsaEncryption, NULL }
 `
   'x509.alg-id-sha256-with-rsa': `
 AlgorithmIdentifier for sha256WithRSAEncryption (1.2.840.113549.1.1.11)
-返回 out []byte: SEQUENCE { OID sha256WithRSAEncryption, NULL }
+返回 out: SEQUENCE { OID sha256WithRSAEncryption, NULL }
 `
   'x509.der-enc-bitstring': `
 包裝為 BIT STRING
-data []byte: 位元組資料
-返回 out []byte: DER BIT STRING
+data: 位元組資料
+返回 out: DER BIT STRING
 data: 位元串內容（按位元組對齊，函數自動補首個「未使用位元數」位元組 0）
 out: tag=0x03 的 DER BIT STRING（內容長度比 data 多 1）
 `
   'x509.der-enc-explicit': `
 EXPLICIT context tag [n]
-tag-num i64: 標籤編號（0, 1, 2, ...），取低 5 位後與 0xA0 合成 tag
-content []byte: 要包在此 context tag 內的 DER 內層編碼
-返回 out []byte: DER [n] EXPLICIT（構造型 tag + 長度 + content）
+tag-num: 標籤編號（0, 1, 2, ...），取低 5 位後與 0xA0 合成 tag
+content: 要包在此 context tag 內的 DER 內層編碼
+返回 out: DER [n] EXPLICIT（構造型 tag + 長度 + content）
 `
   'x509.der-enc-integer-bytes': `
 將 big-endian 位元組陣列編碼為 DER INTEGER
-data []byte: big-endian 位元組（正整數）
-返回 out []byte: DER INTEGER（含 tag+length）
+data: big-endian 位元組（正整數）
+返回 out: DER INTEGER（含 tag+length）
 `
   'x509.der-enc-integer-i64': `
 將 i64 編碼為 DER INTEGER
-val i64: 整數值
-返回 out []byte: DER INTEGER
+val: 整數值
+返回 out: DER INTEGER
 `
   'x509.der-enc-len': `
 編碼 DER 長度
-val i64: 長度值
-返回 out []byte: DER 長度位元組
+val: 長度值
+返回 out: DER 長度位元組
 `
   'x509.der-enc-null': `
 編碼 DER NULL（內容恆為空）
@@ -8446,8 +8446,8 @@ out: tag=0x04 的 DER OCTET STRING
 `
   'x509.der-enc-oid-raw': `
 從原始 OID 內容位元組編碼（不含 tag+length）
-raw []byte: OID 內容位元組（例如 rsaEncryption = [0x2A, 0x86, 0x48, ...]）
-返回 out []byte: DER OBJECT IDENTIFIER（含 tag+length）
+raw: OID 內容位元組（例如 rsaEncryption = [0x2A, 0x86, 0x48, ...]）
+返回 out: DER OBJECT IDENTIFIER（含 tag+length）
 `
   'x509.der-enc-printablestring': `
 編碼 DER PrintableString（直接取字串的位元組作內容）
@@ -8466,9 +8466,9 @@ out: tag=0x31 的 DER SET
 `
   'x509.der-enc-tlv': `
 包裝 TLV
-tag i64: 標籤位元組（如 0x02 INTEGER、0x17 UTCTime）
-content []byte: 待包裝的內容位元組（可為空，長度為 0 時仍會寫長度欄）
-返回 out []byte: 完整 TLV（tag + DER 長度 + content）
+tag: 標籤位元組（如 0x02 INTEGER、0x17 UTCTime）
+content: 待包裝的內容位元組（可為空，長度為 0 時仍會寫長度欄）
+返回 out: 完整 TLV（tag + DER 長度 + content）
 `
   'x509.der-enc-utctime': `
 編碼 DER UTCTime
@@ -8477,10 +8477,10 @@ out: tag=0x17 的 DER TLV
 `
   'x509.der-len': `
 解碼 DER 長度
-data []byte: DER 編碼資料
-pos i64: 長度位元組所在偏移（短格式 1 位元組；長格式時首位元組低 7 位告訴後續還有幾個位元組編碼長度）
-len i64: 輸出長度值
-adv i64: 長度字段本身消耗的位元組數（短格式為 1，長格式為 1 + 長度位元組數，呼叫端以 pos+adv 跳到值域）
+data: DER 編碼資料
+pos: 長度位元組所在偏移（短格式 1 位元組；長格式時首位元組低 7 位告訴後續還有幾個位元組編碼長度）
+len: 輸出長度值
+adv: 長度字段本身消耗的位元組數（短格式為 1，長格式為 1 + 長度位元組數，呼叫端以 pos+adv 跳到值域）
 `
   'x509.der-skip': `
 跳過一個 DER TLV 元素
@@ -8496,10 +8496,10 @@ pos: 標籤位元組所在偏移（僅讀 data[pos]，不前移，呼叫端自�
 `
   'x509.rsa-pkcs1-sign-sha256': `
 使用 RSA PKCS#1 v1.5 簽署資料
-data []byte: 待簽資料
-n []byte: 模數（big-endian）
-d []byte: 私鑰指數（big-endian）
-返回 sig []byte: 簽章（模數長度）
+data: 待簽資料
+n: 模數（big-endian）
+d: 私鑰指數（big-endian）
+返回 sig: 簽章（模數長度）
 `
   'x509.sha256-compress': `
 SHA-256 單區塊壓縮
@@ -8510,49 +8510,49 @@ h0..h7 i64: 壓縮後的 8 個 32-bit 狀態字（hin + 工作變數，已 & 0xF
 `
   'x509.x509-build-name-cn': `
 建構 Name（僅 CN）
-cn str: commonName
-返回 out []byte: RDNSequence
+cn: commonName
+返回 out: RDNSequence
 `
   'x509.x509-build-rsa-public-key': `
 建構 RSAPublicKey DER
-n []byte: 模數（big-endian，不含前導 0x00）
-e i64: 公鑰指數
-返回 out []byte: SEQUENCE { INTEGER n, INTEGER e }
+n: 模數（big-endian，不含前導 0x00）
+e: 公鑰指數
+返回 out: SEQUENCE { INTEGER n, INTEGER e }
 `
   'x509.x509-build-self-signed-cert': `
 建構自簽 X.509 憑證
-n []byte: RSA 模數（big-endian）
-e i64: 公鑰指數
-d []byte: RSA 私鑰指數（big-endian）
-cn str: Common Name
-返回 cert []byte: 完整 DER 編碼憑證
+n: RSA 模數（big-endian）
+e: 公鑰指數
+d: RSA 私鑰指數（big-endian）
+cn: Common Name
+返回 cert: 完整 DER 編碼憑證
 `
   'x509.x509-build-spki': `
 建構 SubjectPublicKeyInfo
-n []byte: 模數
-e i64: 公鑰指數
-返回 out []byte: SEQUENCE { AlgorithmIdentifier, BIT STRING RSAPublicKey }
+n: 模數
+e: 公鑰指數
+返回 out: SEQUENCE { AlgorithmIdentifier, BIT STRING RSAPublicKey }
 `
   'x509.x509-build-tbs': `
 建構 TBSCertificate
-n []byte: RSA 模數
-e i64: 公鑰指數
-cn str: 憑證 CN
-not-before str: 起始時間
-not-after str: 結束時間
-返回 out []byte: TBSCertificate DER
+n: RSA 模數
+e: 公鑰指數
+cn: 憑證 CN
+not-before: 起始時間
+not-after: 結束時間
+返回 out: TBSCertificate DER
 `
   'x509.x509-build-validity': `
 建構 Validity
-not-before str: UTCTime 字串（如 "240101000000Z"）
-not-after str: UTCTime 字串
-返回 out []byte: SEQUENCE { UTCTime, UTCTime }
+not-before: UTCTime 字串（如 "240101000000Z"）
+not-after: UTCTime 字串
+返回 out: SEQUENCE { UTCTime, UTCTime }
 `
   'x509.x509-bytes-to-bn': `
 big-endian 位元組陣列 → []i64（little-endian base 2^32）
 本地副本，避免與 net/tls.no 產生循環依賴
-data []byte: big-endian 位元組
-返回 out []i64: 大整數（每個元素為 32-bit limb）
+data: big-endian 位元組
+返回 out: 大整數（每個元素為 32-bit limb）
 `
   'x509.x509-fingerprint': `
 x509-fingerprint: 計算 X.509 憑證的 SHA-256 指紋
@@ -8560,14 +8560,14 @@ x509-fingerprint: 計算 X.509 憑證的 SHA-256 指紋
 先以 x509-tbs-range 定位 TBSCertificate 位元組，再交給 sha256.sha256 計算，
 最後把 32 位元哈希結果組合成 8 個大端 32-bit 字返回。
 data: 憑證的完整 DER 位元組
-h0 i64: 指紋最高的 32 位元字（大端，TBSCertificate 不可定位時為 0）
-h1 i64: 依序遞減的第 2 個 32 位元字
-h2 i64: 依序遞減的第 3 個 32 位元字
-h3 i64: 依序遞減的第 4 個 32 位元字
-h4 i64: 依序遞減的第 5 個 32 位元字
-h5 i64: 依序遞減的第 6 個 32 位元字
-h6 i64: 依序遞減的第 7 個 32 位元字
-h7 i64: 最低的 32 位元字（全部填 0 表示該憑證沒有可解析的 TBSCertificate）
+h0: 指紋最高的 32 位元字（大端，TBSCertificate 不可定位時為 0）
+h1: 依序遞減的第 2 個 32 位元字
+h2: 依序遞減的第 3 個 32 位元字
+h3: 依序遞減的第 4 個 32 位元字
+h4: 依序遞減的第 5 個 32 位元字
+h5: 依序遞減的第 6 個 32 位元字
+h6: 依序遞減的第 7 個 32 位元字
+h7: 最低的 32 位元字（全部填 0 表示該憑證沒有可解析的 TBSCertificate）
 `
   'x509.x509-rsa-e': `
 提取 RSA 公鑰指數（通常為 65537）
@@ -8576,8 +8576,8 @@ e: 輸出指數值（0 表示非 RSA 或解析失敗）
 `
   'x509.x509-rsa-n': `
 提取 RSA 公鑰模數（big-endian 位元組陣列）
-data []byte: DER 編碼憑證
-返回 out []byte: 模數位元組（big-endian，不含前導 0x00）
+data: DER 編碼憑證
+返回 out: 模數位元組（big-endian，不含前導 0x00）
 `
   'x509.x509-serial': `
 提取憑證序號（若可放入 i64）
@@ -9001,7 +9001,7 @@ n: 實際參與計算的位元組數 (i64)
 - 2-byte zlib header (78 9c)
 - DEFLATE stored blocks（每塊最大 65535 bytes）
 - 4-byte big-endian Adler-32 checksum
-out []byte: 完整 zlib 串流（2-byte header + stored blocks + 4-byte Adler-32）
+out: 完整 zlib 串流（2-byte header + stored blocks + 4-byte Adler-32）
 `
   'zlib.consumed-stored': `
 計算 stored-block zlib 串流的消耗位元組數
@@ -9013,13 +9013,13 @@ data: 從偏移 0 開始的 zlib 串流 ([]byte)
 支援所有 DEFLATE 區塊類型（stored, fixed Huffman, dynamic Huffman）
 透過 gzip.inflate-decompress 進行解壓。
 先嘗試 stored-block 掃描（快速路徑），失敗則使用 inflate 解壓。
-out ?[]byte: 解壓後資料（ok）；長度不足 6、header 非法或解壓失敗皆為 nil
+out: 解壓後資料（ok）；長度不足 6、header 非法或解壓失敗皆為 nil
 `
   'zlib.decompress-stored': `
 僅解壓 stored-block 的 zlib 串流
 data: 僅含 BTYPE=00 區塊的 zlib 串流 ([]byte)
-返回 out ?[]byte: 解壓後資料（some），非 stored 區塊或失敗為 nil
-out ?[]byte: 僅由 BTYPE=00 區塊解出的位元組；遇其他區塊類型或結尾不符即回 nil
+返回 out: 解壓後資料（some），非 stored 區塊或失敗為 nil
+out: 僅由 BTYPE=00 區塊解出的位元組；遇其他區塊類型或結尾不符即回 nil
 `
   'zstd.bits-for-count': `
 計算 count 對應的位元數
@@ -9069,7 +9069,7 @@ v: 讀出的 n 個位元拼合而成的整數值
 v: 解出的整數值（每字節低 7 位有效、最高位 1 表示續讀）
 `
   'zstd.zs-frame.decode-block': `
-解碼一個區塊（回傳 last-block ?bool：some=成功並帶是否最後區塊，nil=失敗）
+解碼一個區塊（回傳 last-block：some=成功並帶是否最後區塊，nil=失敗）
 last-block: 三態結果 — ok(true) 末個區塊、ok(false) 中間區塊均解碼成功；nil 表示區塊頭不足或遇到保留區塊型別
 `
   'zstd.zs-frame.decode-compressed-block': `

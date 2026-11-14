@@ -14,9 +14,9 @@
 ; 本檔把這兩種形態都釘成「必須拿到真實元素值」，涵蓋 []str / []i64 /
 ; [][]i64 三種元素，以及「別名的別名」（d = c）。
 
-; name str: 檢查名稱
-; got str: 實際值
-; want str: 期望值
+; name: 檢查名稱
+; got: 實際值
+; want: 期望值
 check = (name str, got str, want str) {
     {
         got == want -> print('ok: {name}')
@@ -30,7 +30,7 @@ check = (name str, got str, want str) {
 
 ; 1. 塊 match 的 `?=`：別名容器的下標要能解包出真實元素
 ;
-; out str: 塊體內 `?=` 綁定到的元素值
+; out: 塊體內 `?=` 綁定到的元素值
 alias-unwrap = () (out str) {
     s []str
     s.push('hello')
@@ -48,7 +48,7 @@ alias-unwrap = () (out str) {
 
 ; 2. 值位 match：ok 臂必須被走到（修復前會靜默走默認臂）
 ;
-; out str: 匹配到的元素值
+; out: 匹配到的元素值
 alias-value-match = () (out str) {
     s []str
     s.push('world')
@@ -63,7 +63,7 @@ alias-value-match = () (out str) {
 
 ; 3. 別名的別名：型別鏈要走得過去
 ;
-; out str: 二級別名取到的元素值
+; out: 二級別名取到的元素值
 alias-chain = () (out str) {
     s []str
     s.push('deep')
@@ -79,7 +79,7 @@ alias-chain = () (out str) {
 
 ; 4. []i64 元素：數字要對，不能是 0
 ;
-; out i64: 別名容器第一個元素
+; out: 別名容器第一個元素
 alias-i64 = () (out i64) {
     nums []i64
     nums.push(7)
@@ -95,7 +95,7 @@ alias-i64 = () (out i64) {
 
 ; 5. [][]i64：元素的元素仍是 ?i64
 ;
-; out i64: 巢狀別名容器取到的內層元素
+; out: 巢狀別名容器取到的內層元素
 alias-nested = () (out i64) {
     grid [][]i64
     inner []i64
@@ -117,7 +117,7 @@ alias-nested = () (out i64) {
 
 ; 6. 比較語境：解包後的元素與字面量比對（別名容器同樣要正確）
 ;
-; out bool: 別名容器元素與字面量的比較結果
+; out: 別名容器元素與字面量的比較結果
 alias-compare = () (yes bool) {
     s []str
     s.push('cmp')

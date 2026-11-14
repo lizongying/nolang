@@ -83,7 +83,7 @@ no build glossary            # 构建词条库前端 -> glossary/dist/glossary
 - `;` / `;;` 是**注释标记**，绝**不是**语句分隔符；`,` 也不能连接语句。**每条语句独占一行**。
 - 每行一条语句——单行多语句写法被禁止（`cond -> { print('X'); return }` 中 `; return }` 全成注释，
   块永不闭合，后续整段被吞掉）。
-- 文档注释写在条目正上方，用 `;` 开头，附完整参数 / 返回名与类型（见 §4.3）。
+- 文档注释写在条目正上方，用 `;` 开头；参数 / 返回说明行**只写名字，不写类型**（见 §5.2）。
 - 每个非空白 `.no` 文件**必须以恰好一个末尾换行结尾**（`no fmt` 自动保证）。
 
 ```no
@@ -586,18 +586,24 @@ StringHelper.no; 文件名用 _ 而非 -
 
 ### 5.2 文档注释
 
-函数文档注释须含完整参数名与类型、返回名与类型；模块顶部 API 摘要同样用完整签名。
+函数文档注释须列出全部参数名与返回名，但**说明行不标类型**：写 `; name: 描述`，
+不写 `; name type: 描述`。多个参数同行时同样只留名字（`; a, b: 描述`）；
+返回行可带 `返回` / `returns` 前缀，前缀后面也只留名字。
+签名摘要行（如 `; sha1(data []byte) (hash [20]byte) — …`）与模块顶部 API 摘要
+是签名而非参数说明，仍照实写完整签名。
 
 ```no
-; ❌ 缺类型、缺返回名
-; sha1(data) (hash)
-```
-
-```no
-; ✅ 完整签名
+; ❌ 说明行带了类型
 ; sha1(data []byte) (hash [20]byte) — full hash
 ; data []byte: input byte array
 ; returns hash [20]byte: 20-byte hash value
+```
+
+```no
+; ✅ 说明行只留名字
+; sha1(data []byte) (hash [20]byte) — full hash
+; data: input byte array
+; returns hash: 20-byte hash value
 sha1 = (data []byte) (hash [20]byte) {
 }
 ```

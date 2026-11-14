@@ -9,95 +9,95 @@
   'aes-cbc.cbc-dec': `
 CBC 復号コア（ラウンドキーは呼び出し側で一度展開）
 各ブロックはまず AES-ECB 復号を実行し、前の暗文ブロックと XOR します。パディングの検証は行いません。
-in []byte: 入力暗文（長さは 16 の倍数である必要があります）
-iv [16]byte: 初期化ベクトル。暗号化時と同一である必要があります
-ek []byte: aes.key-expand / aes.key-expand-256 で展開したラウンドキー
-返り値 out []byte: 復号後の平文。長さは in と同じ（PKCS#7 パディングがそのまま残っています）
+in: 入力暗文（長さは 16 の倍数である必要があります）
+iv: 初期化ベクトル。暗号化時と同一である必要があります
+ek: aes.key-expand / aes.key-expand-256 で展開したラウンドキー
+返り値 out: 復号後の平文。長さは in と同じ（PKCS#7 パディングがそのまま残っています）
 `
   'aes-cbc.cbc-enc': `
 CBC 暗号化コア（ラウンドキーは呼び出し側で一度展開）
 各ブロックはまず前の暗文ブロックと XOR してから AES-ECB を実行します。パディングは行わず、16 バイトに満たない末尾は破棄されます。
-in []byte: 入力データ（長さは 16 の倍数である必要があります）
-iv [16]byte: 初期化ベクトル。同一キー下での再利用は不可
-ek []byte: aes.key-expand / aes.key-expand-256 で展開したラウンドキー
-返り値 out []byte: 暗号化後の暗文。長さは in と同じ
+in: 入力データ（長さは 16 の倍数である必要があります）
+iv: 初期化ベクトル。同一キー下での再利用は不可
+ek: aes.key-expand / aes.key-expand-256 で展開したラウンドキー
+返り値 out: 暗号化後の暗文。長さは in と同じ
 `
   'aes-cbc.dec-128': `
 AES-128-CBC 復号
-in []byte: 入力暗文（長さは 16 の倍数である必要があります）
-key [16]byte: 128-bit キー。暗号化時と一致する必要があります
-iv [16]byte: 初期化ベクトル。暗号化時と一致する必要があります
-返り値 out []byte: 復号結果（PKCS#7 パディングを含むため、さらに pkcs7-unpad で除去する必要があります）
+in: 入力暗文（長さは 16 の倍数である必要があります）
+key: 128-bit キー。暗号化時と一致する必要があります
+iv: 初期化ベクトル。暗号化時と一致する必要があります
+返り値 out: 復号結果（PKCS#7 パディングを含むため、さらに pkcs7-unpad で除去する必要があります）
 `
   'aes-cbc.dec-256': `
 AES-256-CBC 復号
-in []byte: 入力暗文（長さは 16 の倍数である必要があります）
-key [32]byte: 256-bit キー。暗号化時と一致する必要があります
-iv [16]byte: 初期化ベクトル。暗号化時と一致する必要があります
-返り値 out []byte: 復号結果（PKCS#7 パディングを含むため、さらに pkcs7-unpad で除去する必要があります）
+in: 入力暗文（長さは 16 の倍数である必要があります）
+key: 256-bit キー。暗号化時と一致する必要があります
+iv: 初期化ベクトル。暗号化時と一致する必要があります
+返り値 out: 復号結果（PKCS#7 パディングを含むため、さらに pkcs7-unpad で除去する必要があります）
 `
   'aes-cbc.enc-128': `
 AES-128-CBC 暗号化
 16 バイトキーを展開後に cbc-enc を実行します。パディングは行わないため、平文長は呼び出し側で 16 の倍数に調整してください。
-in []byte: 入力データ（長さは 16 の倍数である必要があります）
-key [16]byte: 128-bit キー
-iv [16]byte: 初期化ベクトル。メッセージごとにランダムかつ一意であるべきです
-返り値 out []byte: 暗号化後の暗文。長さは in と同じ
+in: 入力データ（長さは 16 の倍数である必要があります）
+key: 128-bit キー
+iv: 初期化ベクトル。メッセージごとにランダムかつ一意であるべきです
+返り値 out: 暗号化後の暗文。長さは in と同じ
 `
   'aes-cbc.enc-256': `
 AES-256-CBC 暗号化
 32 バイト（14 ラウンド）のキーを使用します。それ以外の挙動は enc-128 と同じです。
-in []byte: 入力データ（長さは 16 の倍数である必要があります）
-key [32]byte: 256-bit キー
-iv [16]byte: 初期化ベクトル。メッセージごとにランダムかつ一意であるべきです
-返り値 out []byte: 暗号化後の暗文。長さは in と同じ
+in: 入力データ（長さは 16 の倍数である必要があります）
+key: 256-bit キー
+iv: 初期化ベクトル。メッセージごとにランダムかつ一意であるべきです
+返り値 out: 暗号化後の暗文。長さは in と同じ
 `
   'aes-cbc.pkcs7-pad': `
 PKCS#7 パディング
 常に値が n のバイトを 1〜16 個追記します（平文がすでに 16 の倍数の場合はブロック分 16 バイトを丸ごと追記）。
-in []byte: 入力データ
-返り値 out []byte: パディング後のデータ（長さは 16 の倍数かつ元の長さより厳密に大きい）
+in: 入力データ
+返り値 out: パディング後のデータ（長さは 16 の倍数かつ元の長さより厳密に大きい）
 `
   'aes-cbc.pkcs7-unpad': `
 PKCS#7 パディング除去
 最後の 1 バイトをパディング長として読み取り、末尾 pad-len バイトがすべてその値に等しいことを検証します。
-in []byte: 復号後のデータ（PKCS#7 パディングを含む；長さ 0 はパディング不正とみなされます）
-out-n i64: パディング除去後の有効長。パディング値が不正・範囲外・検証不一致の場合は -1
+in: 復号後のデータ（PKCS#7 パディングを含む；長さ 0 はパディング不正とみなされます）
+out-n: パディング除去後の有効長。パディング値が不正・範囲外・検証不一致の場合は -1
 `
   'aes-ctr.crypt-128': `
 AES-128-CTR 暗号化/復号（対称操作）
 同一キー・同一 iv（nonce）で 2 回呼び出せば元に戻ります。(key, iv) の組み合わせの再利用は絶対に不可。
-in []byte: 入力データ（任意の長さ）
-key [16]byte: 128-bit キー
-iv [16]byte: 初期カウンタ値（nonce）。一意である必要があります
-返り値 out []byte: in と同じ長さの出力
+in: 入力データ（任意の長さ）
+key: 128-bit キー
+iv: 初期カウンタ値（nonce）。一意である必要があります
+返り値 out: in と同じ長さの出力
 `
   'aes-ctr.crypt-256': `
 AES-256-CTR 暗号化/復号（対称操作）
 挙動は crypt-128 と同じで、キーを 32 バイト（14 ラウンド）に展開する点が異なります。
-in []byte: 入力データ（任意の長さ）
-key [32]byte: 256-bit キー
-iv [16]byte: 初期カウンタ値（nonce）。一意である必要があります
-返り値 out []byte: in と同じ長さの出力
+in: 入力データ（任意の長さ）
+key: 256-bit キー
+iv: 初期カウンタ値（nonce）。一意である必要があります
+返り値 out: in と同じ長さの出力
 `
   'aes-ctr.ctr-crypt': `
 CTR 暗号化/復号コア（ラウンドキーは呼び出し側で一度展開）
 各カウンタ値を暗号化した結果と平文を XOR するため、任意の長さに対応でき、暗号化と復号は同一関数です。
-in []byte: 入力データ（任意の長さ。1 ブロックに満たない末尾は先頭 n バイトのみ XOR）
-iv [16]byte: 初期カウンタ値。同一キー下での再利用は絶対に不可
-ek []byte: aes.key-expand / aes.key-expand-256 で展開したラウンドキー
-返り値 out []byte: in と同じ長さの出力（暗号化または復号結果）
+in: 入力データ（任意の長さ。1 ブロックに満たない末尾は先頭 n バイトのみ XOR）
+iv: 初期カウンタ値。同一キー下での再利用は絶対に不可
+ek: aes.key-expand / aes.key-expand-256 で展開したラウンドキー
+返り値 out: in と同じ長さの出力（暗号化または復号結果）
 `
   'aes-ctr.ctr-inc': `
 カウンタインクリメント（ビッグエンディアン、下位 32 ビットに 1 を加算し桁上げは上位へ伝搬）
-cb []byte: 16 バイトのカウンタブロック。変更は後方 4 バイト（インデックス 12〜15）のみ
+cb: 16 バイトのカウンタブロック。変更は後方 4 バイト（インデックス 12〜15）のみ
 `
   'aes-gcm.ctr-xor': `
 AES-CTR でキーストリームを生成しデータと XOR
-icb [16]byte: 初期カウンタブロック J0+1
-data []byte: キーストリームと XOR するデータ。長さがそのまま出力長（空も可）
-ek []byte: aes.key-expand / aes.key-expand-256 の結果（展開されたラウンドキー）
-返り値 out []byte: キーストリームと XOR 後のデータ。長さは data と同じ
+icb: 初期カウンタブロック J0+1
+data: キーストリームと XOR するデータ。長さがそのまま出力長（空も可）
+ek: aes.key-expand / aes.key-expand-256 の結果（展開されたラウンドキー）
+返り値 out: キーストリームと XOR 後のデータ。長さは data と同じ
 `
   'aes-gcm.gcm-h': `
 ハッシュサブキー H = AES-enc(0^128) を計算
@@ -115,7 +115,7 @@ iv: 12 バイトの IV
 aad: 追加認証データ
 sealed: 暗文 + 16 バイトのタグ
 ek: aes.key-expand / aes.key-expand-256 の結果
-返り値 plain []byte: 平文（認証失敗時は長さ 0）
+返り値 plain: 平文（認証失敗時は長さ 0）
 `
   'aes-gcm.gcm-seal': `
 GCM 暗号化コア
@@ -123,21 +123,21 @@ iv: 12 バイトの IV（nonce）
 aad: 追加認証データ
 plain: 平文
 ek: aes.key-expand / aes.key-expand-256 の結果
-返り値 sealed []byte: 暗文 + 16 バイトのタグ
+返り値 sealed: 暗文 + 16 バイトのタグ
 `
   'aes-gcm.ghash': `
 GHASH を計算
 h: ハッシュサブキー（AES-enc(0^128)）
 aad: 追加認証データ
 cipher: 暗文
-返り値 out [16]byte: GHASH 値
+返り値 out: GHASH 値
 `
   'aes-gcm.ghash-mul': `
 GF(2^128) 乗算（GHASH 用）
 X = X * H mod P、ここで P = x^128 + x^7 + x^2 + x + 1
 x: 乗数（ビットがビッグエンディアン配置された 128 ビットブロック）
 h: ハッシュサブキー
-返り値 out [16]byte: 積 X * H mod P
+返り値 out: 積 X * H mod P
 `
   'aes-gcm.open-128': `
 AES-128-GCM 復号
@@ -145,7 +145,7 @@ key: 16 バイトのキー
 iv: IV
 aad: 追加認証データ
 sealed: 暗文 + 16 バイトのタグ
-返り値 plain []byte: 平文（認証失敗時は長さ 0）
+返り値 plain: 平文（認証失敗時は長さ 0）
 `
   'aes-gcm.open-256': `
 AES-256-GCM 復号
@@ -153,7 +153,7 @@ key: 32 バイトのキー
 iv: IV
 aad: 追加認証データ
 sealed: 暗文 + 16 バイトのタグ
-返り値 plain []byte: 平文（認証失敗時は長さ 0）
+返り値 plain: 平文（認証失敗時は長さ 0）
 `
   'aes-gcm.seal-128': `
 AES-128-GCM 暗号化
@@ -161,7 +161,7 @@ key: 16 バイトのキー
 iv: IV（nonce）
 aad: 追加認証データ
 plain: 平文
-返り値 sealed []byte: 暗文 + 16 バイトのタグ（長さ = plain.len() + 16）
+返り値 sealed: 暗文 + 16 バイトのタグ（長さ = plain.len() + 16）
 `
   'aes-gcm.seal-256': `
 AES-256-GCM 暗号化
@@ -169,7 +169,7 @@ key: 32 バイトのキー
 iv: IV（nonce）
 aad: 追加認証データ
 plain: 平文
-返り値 sealed []byte: 暗文 + 16 バイトのタグ
+返り値 sealed: 暗文 + 16 バイトのタグ
 `
   'aes.add-round-key': `
 状態とラウンドキーを XOR
@@ -196,9 +196,9 @@ out: 16 バイトの平文ブロック
 `
   'aes.dec-block': `
 展開済みのラウンドキーで 16 バイトブロックを 1 つ復号
-in [16]byte: 入力ブロック
-ek []byte: ラウンドキー（key-expand / key-expand-256 の結果）
-返り値 out [16]byte: 復号後のブロック
+in: 入力ブロック
+ek: ラウンドキー（key-expand / key-expand-256 の結果）
+返り値 out: 復号後のブロック
 `
   'aes.enc-128': `
 16 バイトブロックを 1 つ暗号化（AES-128）
@@ -214,9 +214,9 @@ out: 16 バイトの暗文ブロック
 `
   'aes.enc-block': `
 展開済みのラウンドキーで 16 バイトブロックを 1 つ暗号化
-in [16]byte: 入力ブロック
-ek []byte: ラウンドキー（key-expand / key-expand-256 の結果）
-返り値 out [16]byte: 暗号化後のブロック
+in: 入力ブロック
+ek: ラウンドキー（key-expand / key-expand-256 の結果）
+返り値 out: 暗号化後のブロック
 `
   'aes.gf-mul2': `
 GF(2^8) において x（多項式 x）を掛ける
@@ -249,13 +249,13 @@ n: 予約済みパラメータ（実装は固定で 16 バイトを処理、未�
 `
   'aes.key-expand': `
 16 バイトのキーを 176 バイトのラウンドキーへ展開（AES-128、11 組のラウンドキー）
-key [16]byte: 128-bit キー
-返り値 ek []byte: 176 バイトのラウンドキー。enc-block / dec-block に直接渡せます
+key: 128-bit キー
+返り値 ek: 176 バイトのラウンドキー。enc-block / dec-block に直接渡せます
 `
   'aes.key-expand-256': `
 32 バイトのキーを 240 バイトのラウンドキーへ展開（AES-256、15 組のラウンドキー）
-key [32]byte: 256-bit キー
-返り値 ek []byte: 240 バイトのラウンドキー
+key: 256-bit キー
+返り値 ek: 240 バイトのラウンドキー
 `
   'aes.mix-col': `
 単一の列（4 バイト）を MixColumns
@@ -289,139 +289,139 @@ n: 予約済みパラメータ（実装は固定で 16 バイトを処理、未�
   'argon2.blake-g': `
 Blake2b G 関数（Argon2 圧縮関数の基本混合ステップ）
 配列 v のインデックス a/b/c/d の 64 ビットワードを in-place で直接変更します（二つずつ加算・XOR・ローテート）。
-v []u64: 16 ワードの作業領域（Argon2 ブロック）。in-place で変更されます
-a i64: インデックス a（0..15）
-b i64: インデックス b
-c i64: インデックス c
-d i64: インデックス d
-x u64: 予約済みパラメータ（本実装では未使用；混合に必要な乗数は v[a]/v[b] の下位 32 ビットから都度算出）
-y u64: 予約済みパラメータ（本実装では未使用）
+v: 16 ワードの作業領域（Argon2 ブロック）。in-place で変更されます
+a: インデックス a（0..15）
+b: インデックス b
+c: インデックス c
+d: インデックス d
+x: 予約済みパラメータ（本実装では未使用；混合に必要な乗数は v[a]/v[b] の下位 32 ビットから都度算出）
+y: 予約済みパラメータ（本実装では未使用）
 返り値なし：結果は v[a]/v[b]/v[c]/v[d] に保持されます
 `
   'argon2.compress': `
 Argon2 圧縮関数 G(X, Y)
 まず X XOR Y を一時領域 r に書き込み、r の 16 ワードごとの行・列それぞれに blake-g の 1 ラウンドを実行し、
 最後に結果と元の r をもう一度 XOR して out に書き戻します。
-x []byte: 1024 バイトのブロック X
-y []byte: 1024 バイトのブロック Y
-返り値 out []byte: 1024 バイトの圧縮結果
+x: 1024 バイトのブロック X
+y: 1024 バイトのブロック Y
+返り値 out: 1024 バイトの圧縮結果
 `
   'argon2.h-prime': `
 可変長 Blake2b（H'）：Argon2 はこれでブロックダイジェストを任意長の出力に拡張します
-input []byte: 入力データ（通常は 64 バイトの Blake2b ダイジェスト）
-out-len i64: 期待する出力バイト数；64 以下なら Blake2b は 1 回だけで十分
-out []byte: ちょうど out-len バイトの導出結果
+input: 入力データ（通常は 64 バイトの Blake2b ダイジェスト）
+out-len: 期待する出力バイト数；64 以下なら Blake2b は 1 回だけで十分
+out: ちょうど out-len バイトの導出結果
 `
   'argon2.id': `
 Argon2id キー導出（RFC 9106、Argon2id v=0x13）
 まずブロック数 m を計算（4*parallelism の倍数へ切り下げ、最小 8*parallelism）、
 h0 を初期化した後 lane ごとにブロックを埋め、time-cost ラウンドの混合を実行し、最後に out-len バイトを取り出します。
-password []byte: パスワード（UTF-8 バイト列、空も可）
-salt []byte: ソルト。最低 8 バイトでアカウントごとに異なる値を使用
-time-cost i64: 時間コスト（反復ラウンド数、例 3）；大きいほど遅く、より安全
-memory-cost i64: メモリコスト（KB、例 65536 = 64MB）；小さすぎる場合は 8*parallelism ブロックへ引き上げられます
-parallelism i64: 並列レーン数（例 1）；≥ 1 が必要で、ブロック数の丸め単位を決めます
-out-len i64: 出力キー長（バイト、一般的な値は 32）
-返り値 out []byte: 導出されたキー。長さはちょうど out-len
+password: パスワード（UTF-8 バイト列、空も可）
+salt: ソルト。最低 8 バイトでアカウントごとに異なる値を使用
+time-cost: 時間コスト（反復ラウンド数、例 3）；大きいほど遅く、より安全
+memory-cost: メモリコスト（KB、例 65536 = 64MB）；小さすぎる場合は 8*parallelism ブロックへ引き上げられます
+parallelism: 並列レーン数（例 1）；≥ 1 が必要で、ブロック数の丸め単位を決めます
+out-len: 出力キー長（バイト、一般的な値は 32）
+返り値 out: 導出されたキー。長さはちょうど out-len
 `
   'argon2.rotr': `
 rotr64：64-bit 循環右シフト
-x u64: ローテートする 64-bit ワード
-n i64: 右シフトビット数（1〜63；0 または 64 の場合のシフトは未定義）
-r u64: (x >> n) | (x << (64-n))、下位 64 ビットのみ保持
+x: ローテートする 64-bit ワード
+n: 右シフトビット数（1〜63；0 または 64 の場合のシフトは未定義）
+r: (x >> n) | (x << (64-n))、下位 64 ビットのみ保持
 `
   'args.count': `
 引数の数（プログラム名を含む）
 os.args() builtin に委譲する（argv ベクタ全体を返し、その長さを取る）
 返される計数には argv[0]（プログラム名）が含まれるため、追加引数なしの最小値は 1。
-n i64: argv の総要素数（コマンドライン引数個数 + 1）
+n: argv の総要素数（コマンドライン引数個数 + 1）
 `
   'args.get': `
 i 番目の生引数を取得（フラグ / 位置引数の解析を一切しない）
 os.arg(i) builtin に委任（main の argv[i] を読み取る）。
-i i64: インデックス、0 はプログラム名、1 以降はユーザーが入力した引数
-val ?str: ok=argv[i], nil=添字範囲外（負数または ≥ 引数数）
+i: インデックス、0 はプログラム名、1 以降はユーザーが入力した引数
+val: ok=argv[i], nil=添字範囲外（負数または ≥ 引数数）
 `
   'args.get-option': `
 オプション値を取得する（例: --output=xxx）
 argv[1..] を一つずつ比較し、key で始まり直後に '='（0x3D）が続く引数を見つけ、
 '=' 以降の残り部分を返す（バイトスライス、空文字列可）。最初の一致項のみ取る。
-key str: オプションキー（先頭の - や -- を含む、例 '--output'）
-val ?str: ok='=' の後の値（'' の可能性あり）, nil=key=... に一致するパラメータ無し
+key: オプションキー（先頭の - や -- を含む、例 '--output'）
+val: ok='=' の後の値（'' の可能性あり）, nil=key=... に一致するパラメータ無し
 `
   'args.get-positional': `
 idx 番目の位置引数（0 から）を取得、途中で全フラグをスキップ
 argv[1..] を走査：'-' 始まりの引数は一律スキップ；それが単横線形式（-o など）なら、
 さらにその後ろの '-' 始まりでない引数 1 つもスキップ（そのオプションの値とみなす）；
 二重ハイフン形式（--output=xxx など）は自分だけをスキップ。残り引数は出現順に数える。
-idx i64: 位置引数番号、0 は最初の非フラグ引数
-val ?str: ok=idx 番目の位置引数, nil=位置引数の数が不足
+idx: 位置引数番号、0 は最初の非フラグ引数
+val: ok=idx 番目の位置引数, nil=位置引数の数が不足
 `
   'args.has-flag': `
 フラグが存在するかを判定する（例: --verbose, -v）
 argv[1] から逐一 flag と文字単位で完全一致比較（部分文字列一致ではなく、--k=v の展開もしない）。
 空文字列の flag は決して一致しない。
-flag str: 比較する完全なフラグ文字列（先頭の - や -- を含む）
-yes bool: true=argv に flag と完全に一致する要素が存在する, false=存在しない
+flag: 比較する完全なフラグ文字列（先頭の - や -- を含む）
+yes: true=argv に flag と完全に一致する要素が存在する, false=存在しない
 `
   'args.program': `
 プログラム名（第 0 引数、つまり argv[0] のそのまま）
-name ?str: ok=argv[0]（通常は実行ファイルパス、ディレクトリを含む場合あり）, nil=argv が空
+name: ok=argv[0]（通常は実行ファイルパス、ディレクトリを含む場合あり）, nil=argv が空
 `
   'arr-stack.arr-stack.clear': 'スタックを空にする'
   'arr-stack.arr-stack.empty': `
 スタックが空かを判定する
-戻り値 yes bool: true=空, false=空でない
-yes bool: true=top <= 0（まだ何も push されていないか既に空）
+戻り値 yes: true=空, false=空でない
+yes: true=top <= 0（まだ何も push されていないか既に空）
 `
   'arr-stack.arr-stack.full': `
 スタックが満杯かを判定する
-戻り値 yes bool: true=満杯, false=満杯でない
-yes bool: true=top >= cap（次の push は失敗または溢れ、先に pop すべき）
+戻り値 yes: true=満杯, false=満杯でない
+yes: true=top >= cap（次の push は失敗または溢れ、先に pop すべき）
 `
   'arr-stack.arr-stack.size': `
 スタック上の要素数を返す
-戻り値 sz i64: 要素数
-sz i64: 現在のスタック深さ（すなわち top ポインタ）、ポップ済み空スロットを含まない
+戻り値 sz: 要素数
+sz: 現在のスタック深さ（すなわち top ポインタ）、ポップ済み空スロットを含まない
 `
   'arr.arr-stack-init': `
 [n]t.arr-stack-init: スタック状態を初期化する
 cap は配列サイズ n に自動設定される
-戻り値 s arr-stack: 初期化されたスタック状態
+戻り値 s: 初期化されたスタック状態
 
 `
   'arr.arr-stack-peek': `
 [n]t.arr-stack-peek: 先頭要素を取り出さずに参照する
-s arr-stack: スタック状態
-戻り値 val ?t: ok=先頭の値, nil=スタックが空
+s: スタック状態
+戻り値 val: ok=先頭の値, nil=スタックが空
 
 `
   'arr.arr-stack-pop': `
 [n]t.arr-stack-pop: スタック先頭の要素を取り出す
-s arr-stack: スタック状態
-戻り値 val ?t: ok=取り出した値, nil=スタックが空
+s: スタック状態
+戻り値 val: ok=取り出した値, nil=スタックが空
 
 `
   'arr.arr-stack-push': `
 [n]t.arr-stack-push: スタック先頭に要素を積む
-s arr-stack: スタック状態
-val t: 積む値
-戻り値 ok bool: true=成功, false=スタックが満杯
+s: スタック状態
+val: 積む値
+戻り値 ok: true=成功, false=スタックが満杯
 
 `
   'arr.asc': '[n]t.asc: 昇順にその場でソートする（挿入ソート）'
   'arr.at': `
 [非推奨] [n]t.at: 安全な添字アクセス — 代わりに a[i] を使う（ネイティブの添字アクセスで ?t を返す。範囲外は err）
-i i64: インデックス
-戻り値 val ?t: 範囲外なら nil
+i: インデックス
+戻り値 val: 範囲外なら nil
 
 `
   'arr.clone': '[n]t.clone: 配列を dst にコピーする'
   'arr.contains': '[n]t.contains: 値 val が含まれるかを判定する'
   'arr.count': `
 [n]t.count: 値の出現回数を数える
-val t: 数える値
-戻り値 cnt i64: 出現回数
+val: 数える値
+戻り値 cnt: 出現回数
 
 `
   'arr.desc': '[n]t.desc: 降順にその場でソートする（挿入ソート）'
@@ -437,95 +437,95 @@ val t: 数える値
 `
   'arr.link-clear': `
 [n]t.link-clear: 連結リストを空にし、全ノードを回収する
-l link: 連結リスト状態
+l: 連結リスト状態
 
 `
   'arr.link-find': `
 [n]t.link-find: 値の位置を探す
-l link: 連結リスト状態
-val t: 探す値
-戻り値 pos i64: 位置インデックス, -1=見つからない
+l: 連結リスト状態
+val: 探す値
+戻り値 pos: 位置インデックス, -1=見つからない
 
 `
   'arr.link-get-at': `
 [n]t.link-get-at: 位置 pos の要素を取得する
-l link: 連結リスト状態
-pos i64: 位置
-戻り値 val ?t: ok=要素の値, nil=位置が範囲外
+l: 連結リスト状態
+pos: 位置
+戻り値 val: ok=要素の値, nil=位置が範囲外
 
 `
   'arr.link-init': `
 [n]t.link-init: 連結リストを初期化する
-nxt []i64: 次ノードのインデックス配列（呼び出し側が用意、サイズ >= n）
-prv []i64: 前ノードのインデックス配列（呼び出し側が用意、サイズ >= n）
-戻り値 l link: 初期化された連結リスト
+nxt: 次ノードのインデックス配列（呼び出し側が用意、サイズ >= n）
+prv: 前ノードのインデックス配列（呼び出し側が用意、サイズ >= n）
+戻り値 l: 初期化された連結リスト
 
 `
   'arr.link-insert-at': `
 [n]t.link-insert-at: 位置 pos に要素を挿入する
-l link: 連結リスト状態
-pos i64: 挿入位置（0=先頭, size=末尾）
-val t: 挿入する値
-戻り値 ok bool: true=成功, false=位置が範囲外またはノードプールが満杯
+l: 連結リスト状態
+pos: 挿入位置（0=先頭, size=末尾）
+val: 挿入する値
+戻り値 ok: true=成功, false=位置が範囲外またはノードプールが満杯
 
 `
   'arr.link-peek-back': `
 [n]t.link-peek-back: 末尾要素を取り出さずに参照する
-l link: 連結リスト状態
-戻り値 val ?t: ok=末尾の値, nil=リストが空
+l: 連結リスト状態
+戻り値 val: ok=末尾の値, nil=リストが空
 
 `
   'arr.link-peek-front': `
 [n]t.link-peek-front: 先頭要素を取り出さずに参照する
-l link: 連結リスト状態
-戻り値 val ?t: ok=先頭の値, nil=リストが空
+l: 連結リスト状態
+戻り値 val: ok=先頭の値, nil=リストが空
 
 `
   'arr.link-pop-back': `
 [n]t.link-pop-back: 連結リスト末尾の要素を取り出す
-l link: 連結リスト状態
-戻り値 val ?t: ok=取り出した値, nil=リストが空
+l: 連結リスト状態
+戻り値 val: ok=取り出した値, nil=リストが空
 
 `
   'arr.link-pop-front': `
 [n]t.link-pop-front: 連結リスト先頭の要素を取り出す
-l link: 連結リスト状態
-戻り値 val ?t: ok=取り出した値, nil=リストが空
+l: 連結リスト状態
+戻り値 val: ok=取り出した値, nil=リストが空
 
 `
   'arr.link-push-back': `
 [n]t.link-push-back: 連結リスト末尾に要素を挿入する
-l link: 連結リスト状態
-val t: 挿入する値
-戻り値 ok bool: true=成功, false=ノードプールが満杯
+l: 連結リスト状態
+val: 挿入する値
+戻り値 ok: true=成功, false=ノードプールが満杯
 
 `
   'arr.link-push-front': `
 [n]t.link-push-front: 連結リスト先頭に要素を挿入する
-l link: 連結リスト状態
-val t: 挿入する値
-戻り値 ok bool: true=成功, false=ノードプールが満杯
+l: 連結リスト状態
+val: 挿入する値
+戻り値 ok: true=成功, false=ノードプールが満杯
 
 `
   'arr.link-remove-at': `
 [n]t.link-remove-at: 位置 pos の要素を削除する
-l link: 連結リスト状態
-pos i64: 削除する位置
-戻り値 val ?t: ok=削除した値, nil=位置が範囲外
+l: 連結リスト状態
+pos: 削除する位置
+戻り値 val: ok=削除した値, nil=位置が範囲外
 
 `
   'arr.link-reverse': `
 [n]t.link-reverse: 連結リストを反転する
 各ノードの next/prev を入れ替え、その後 head/tail を入れ替える
-l link: 連結リスト状態
+l: 連結リスト状態
 
 `
   'arr.link-set-at': `
 [n]t.link-set-at: 位置 pos の要素を設定する
-l link: 連結リスト状態
-pos i64: 位置
-val t: 新しい値
-戻り値 ok bool: true=成功, false=位置が範囲外
+l: 連結リスト状態
+pos: 位置
+val: 新しい値
+戻り値 ok: true=成功, false=位置が範囲外
 
 `
   'arr.max': '[n]t.max: 配列内の最大値'
@@ -533,38 +533,38 @@ val t: 新しい値
   'arr.queue-init': `
 [n]t.queue-init: キュー状態を初期化する
 cap は配列サイズ n に自動設定される
-戻り値 q queue: 初期化されたキュー状態
+戻り値 q: 初期化されたキュー状態
 
 `
   'arr.queue-peek': `
 [n]t.queue-peek: 先頭要素を取り出さずに参照する
-q queue: キュー状態
-戻り値 val ?t: ok=先頭の値, nil=キューが空
+q: キュー状態
+戻り値 val: ok=先頭の値, nil=キューが空
 
 `
   'arr.queue-pop': `
 [n]t.queue-pop: キューの先頭要素を取り出す
-q queue: キュー状態
-戻り値 val ?t: ok=取り出した値, nil=キューが空
+q: キュー状態
+戻り値 val: ok=取り出した値, nil=キューが空
 
 `
   'arr.queue-push': `
 [n]t.queue-push: キューの末尾に要素を積む
-q queue: キュー状態
-val t: 積む値
-戻り値 ok bool: true=成功, false=キューが満杯
+q: キュー状態
+val: 積む値
+戻り値 ok: true=成功, false=キューが満杯
 
 `
   'arr.reverse': '[n]t.reverse: 配列を反転する'
   'arr.sum': '[n]t.sum: 配列要素の総和'
   'arr.swap': `
 [n]t.swap: 2 つの位置の要素を入れ替える
-i i64, j i64: 位置
+i i64, j: 位置
 
 `
   'arr.to-str': `
 [n]t.to-str: 文字列形式
-戻り値 out str: '[1, 2, 3]' のように整形
+戻り値 out: '[1, 2, 3]' のように整形
 各要素は自身の .to-str() を呼んで文字列化される（具体的な型は number.no を参照）
 
 `
@@ -581,47 +581,47 @@ task: ポインタ
 ⚠️ 非推奨: 手書きの cancelled は非推奨。代わりにコルーチングループ（裸のブロック { ... }）を使う。
 cancelled: 現在実行中の非同期タスクがキャンセル済みかを返す
 戻り値 bool。非同期タスク（イベントループがスケジュールした -async 関数）内でのみ意味を持つ。
-cancelled bool: true=現在のタスクの取消が要求済み、速やかにリソースを解放して返すべき；false=未取消
+cancelled: true=現在のタスクの取消が要求済み、速やかにリソースを解放して返すべき；false=未取消
 `
   'base32.decode': `
 Base32 デコード（末尾の '=' パディング数に応じて結果を切り詰め；文字表外の文字は一律 0 として扱い、エラーにしません）
 注意：長さが 8 の倍数でない残余文字は無視されます。
-in str: Base32 エンコード文字列（通常は ASCII）
-out []byte: デコード後の生バイト。長さはパディング分バイトを控除済み
+in: Base32 エンコード文字列（通常は ASCII）
+out: デコード後の生バイト。長さはパディング分バイトを控除済み
 `
   'base32.encode': `
 Base32 エンコード（RFC 4648 標準文字表、5 ビットごとに 1 組、末尾は '=' で 8 の倍数に埋めます）
-data []byte: エンコード対象の入力バイト
-out str: エンコード後の文字列。長さは 8 の倍数（空入力は空文字列に対応）
+data: エンコード対象の入力バイト
+out: エンコード後の文字列。長さは 8 の倍数（空入力は空文字列に対応）
 `
   'base64.b64-val': `
 Base64 の 1 文字をその値に変換する
 埋め文字 '=' は 0 を返し、アルファベット外の文字は -1 を返す
-c i64: テーブル参照する文字のコードポイント
-table str: 64 文字のアルファベット；線形走査で対応する添字を見つける
-v i64: 0..63 はアルファベット添字、-1 は無効文字
+c: テーブル参照する文字のコードポイント
+table: 64 文字のアルファベット；線形走査で対応する添字を見つける
+v: 0..63 はアルファベット添字、-1 は無効文字
 `
   'base64.decode': `
 指定した辞書で Base64 をデコードする
-s str: Base64 文字列（4 の倍数であるべき；1 組に満たない末尾文字は無視される）
-table str: エンコード時と同じ 64 文字アルファベット
-out ?[]byte: ok=デコード後のデータ（'=' 埋め数に従い短縮済み）, err=入力がアルファベット外の文字を含む
+s: Base64 文字列（4 の倍数であるべき；1 組に満たない末尾文字は無視される）
+table: エンコード時と同じ 64 文字アルファベット
+out: ok=デコード後のデータ（'=' 埋め数に従い短縮済み）, err=入力がアルファベット外の文字を含む
 `
   'base64.encode': `
 指定した辞書で Base64 にエンコードする
-data []byte: エンコードする入力バイト
-table str: 64 文字のアルファベット（標準は A-Za-z0-9+/）；URL 安全アルファベットは +/ の代わりに -_ を使用
-out str: エンコード後文字列、長さは 4 の倍数、不足は '=' で埋める
+data: エンコードする入力バイト
+table: 64 文字のアルファベット（標準は A-Za-z0-9+/）；URL 安全アルファベットは +/ の代わりに -_ を使用
+out: エンコード後文字列、長さは 4 の倍数、不足は '=' で埋める
 `
   'base64.encode-std': `
 標準アルファベット（A-Za-z0-9+/）でエンコード
-data []byte: エンコードする入力バイト
-out str: 標準 Base64 文字列（'=' 埋め）
+data: エンコードする入力バイト
+out: 標準 Base64 文字列（'=' 埋め）
 `
   'base64.encode-url': `
 URL 安全アルファベット（A-Za-z0-9-_）でエンコード
-data []byte: エンコードする入力バイト
-out str: URL 安全 Base64 文字列（'=' 埋めは保持）
+data: エンコードする入力バイト
+out: URL 安全 Base64 文字列（'=' 埋めは保持）
 `
   'bigint._add': 'a + b（演算子オーバーロード；?bigint と記述、コンパイラは bigint とみなす）\n経路 C：連合仮引数 `(b big)` ＋ 型分解 match。bigint 腕は `add-bigint` へ委任、i64 腕は\n`_add-i64` に委任。コアは型腕内に inline しない：実測では match 腕の BlockStatement 内で名前付き出力に\n仮引数 `c` で先に `c = expr` してから `c.sign = ...` のフィールド変更は書き戻されない（符号が失われる、例 -100+7\n誤って 93 を得る）、普通のメソッドへ委任後 `c.sign` 変更セマンティクスは正常に戻る（_mul が mul-bigint へ委任するのと同じ理屈）。\nb: 右オペランド（bigint または i64、実型種で腕を静的選択）\nc: self + b の和（?bigint は演算子オーバーロードのシグネチャに必要、加算は常に ok）'
   'bigint._add-i64': `
@@ -790,7 +790,7 @@ c: self - b の差（_sub の bigint 腕の委譲用）
 `
   'bigint.to-hex': `
 bigint を小文字の 16 進文字列に整形する
-返す out str: 十六進文字列（小文字、0x 接頭辞なし、負数は '-' 始まり）
+返す out: 十六進文字列（小文字、0x 接頭辞なし、負数は '-' 始まり）
 `
   'bigint.to-i64': `
 なぜ必要：`_mod-i64` / `_div-i64` といった小整数高速パスは本モジュールの私有（参照
@@ -800,7 +800,7 @@ v: ok=値域内の i64, err=i64 範囲外（高位の暗黙切り捨ては絶対
 `
   'bigint.to-str': `
 bigint を 10 進文字列に整形する
-返す out str: 十進文字列（負数は '-' 始まり、ゼロは "0"）
+返す out: 十進文字列（負数は '-' 始まり、ゼロは "0"）
 `
   'bigint.zero': `
 ゼロの bigint を構築する
@@ -809,17 +809,17 @@ out: 値が 0 の bigint（sign=1、limbs=[0]）
   'blake2.b': `
 BLAKE2b ハッシュを計算（64 バイト出力）
 data: ハッシュ対象の入力バイト
-返り値 hash [64]byte: BLAKE2b-512 の 64 バイトハッシュ値
+返り値 hash: BLAKE2b-512 の 64 バイトハッシュ値
 `
   'blake2.b-256': `
 BLAKE2b ハッシュを計算（32 バイト出力）
 data: ハッシュ対象の入力バイト
-返り値 hash [32]byte: BLAKE2b を 32 バイトに切り詰めたハッシュ値
+返り値 hash: BLAKE2b を 32 バイトに切り詰めたハッシュ値
 `
   'blake2.b-256-hex': `
 BLAKE2b-256 を計算し hex 文字列を返します
 data: ハッシュ対象の入力バイト
-返り値 hex str: BLAKE2b-256 ハッシュ値の 64 文字 16 進文字列
+返り値 hex: BLAKE2b-256 ハッシュ値の 64 文字 16 進文字列
 `
   'blake2.b-compress': `
 圧縮関数
@@ -841,7 +841,7 @@ y: 2 番目のメッセージワード（a の 2 周目の加算に組み込む�
   'blake2.b-hex': `
 BLAKE2b を計算し hex 文字列を返します
 data: ハッシュ対象の入力バイト
-返り値 hex str: BLAKE2b-512 ハッシュ値の 128 文字 16 進文字列
+返り値 hex: BLAKE2b-512 ハッシュ値の 128 文字 16 進文字列
 `
   'blake2.b-state': `
 履歴：初期のコンパイラは「配列スライス + option 形式のインデックス書き込み `h[i]: { ok -> it = ... }`」
@@ -865,7 +865,7 @@ r: 循環右シフト後の結果（64 ビットマスク適用済み）
   'blake2.s': `
 BLAKE2s ハッシュを計算（32 バイト出力）
 data: ハッシュ対象の入力バイト
-返り値 hash [32]byte: BLAKE2s の 32 バイトハッシュ値
+返り値 hash: BLAKE2s の 32 バイトハッシュ値
 `
   'blake2.s-compress': `
 BLAKE2s 圧縮関数
@@ -887,7 +887,7 @@ y: 2 番目のメッセージワード（u32）
   'blake2.s-hex': `
 BLAKE2s を計算し hex 文字列を返します
 data: ハッシュ対象の入力バイト
-返り値 hex str: BLAKE2s ハッシュ値の 64 文字 16 進文字列
+返り値 hex: BLAKE2s ハッシュ値の 64 文字 16 進文字列
 `
   'blake2.s-state': `
 上記と同じく BLAKE2s 版（BLAKE2s は 32 ビットワードのため []u32、[]u64 ではない）
@@ -895,7 +895,7 @@ h: 新しくコピーされた BLAKE2s 初期状態（8 つの u32）
 `
   'bool.to-str': `
 bool を文字列 "true" または "false" に変換する
-out str: true → 'true'、false → 'false'（長さ 4 または 5）
+out: true → 'true'、false → 'false'（長さ 4 または 5）
 `
   'bufio.reader.close': `
 リーダをクローズ（fd のみ閉じ、buf は解放しない；buf は呼び出し側スコープ管理）
@@ -904,22 +904,22 @@ out str: true → 'true'、false → 'false'（長さ 4 または 5）
   'bufio.reader.fill': `
 バッファを補充する
 未消費のデータあり（avail > 0）はそのまま再利用；そうでなければ fd から 1 回読み pos/avail をリセット。
-ok bool: true=バッファ内に読める新データ有り；false=EOF、読み取りエラー、または fd 位置無効
+ok: true=バッファ内に読める新データ有り；false=EOF、読み取りエラー、または fd 位置無効
 `
   'bufio.reader.init': `
 バッファ付きリーダを生成する
-fd fd: 開かれていて読み取り可能なファイルディスクリプタ
-buf []byte: 専用バッファ；長さは 0 でよい、fill() は buf.cap で読み込み
-r reader: 初期化後のリーダー（pos=0、avail=0、先読みなし）
+fd: 開かれていて読み取り可能なファイルディスクリプタ
+buf: 専用バッファ；長さは 0 でよい、fill() は buf.cap で読み込み
+r: 初期化後のリーダー（pos=0、avail=0、先読みなし）
 `
   'bufio.reader.read-byte': `
 1 バイト読み込む
-b ?byte: ok=次のバイト, nil=EOF または読み取り失敗
+b: ok=次のバイト, nil=EOF または読み取り失敗
 `
   'bufio.reader.read-line': `
 1 行読む（'\n' で停止、改行文字は結果に含まれない）
 行末に改行がないときは残り内容を返す；file が空で今回何も読めなかったときは nil を返す。
-line ?str: ok=その行のテキスト（'\n' 無し）, nil=EOF かつ残余内容無し
+line: ok=その行のテキスト（'\n' 無し）, nil=EOF かつ残余内容無し
 `
   'bytes.index': `
 []byte.index: []byte から部分列 target を探す
@@ -966,34 +966,34 @@ b.to-bytes-str()（下記参照）、または基のスライスを直接使用�
 `
   'bytes.to-txt': `
 []byte.to-txt: []byte を txt に変換（255 バイトに切り詰め）
-返す out txt: 固定 256 バイトの txt 構造
+返す out: 固定 256 バイトの txt 構造
 `
   'bzip2.bz-bit-reader.read-bit': `
 1 ビット読み取り（MSB 優先）。範囲外なら 0 を返します
-bit i64: 読み取ったビット（0 または 1）；バイトを使い切ると以降は固定で 0 を返し、エラーにしません
+bit: 読み取ったビット（0 または 1）；バイトを使い切ると以降は固定で 0 を返し、エラーにしません
 `
   'bzip2.bz-bit-reader.read-bits': `
 n ビット読み取り（MSB 優先）
-n i64: 連続で読み取るビット数
-v i64: 組み立てた整数；先に読んだビットは上位に配置
+n: 連続で読み取るビット数
+v: 組み立てた整数；先に読んだビットは上位に配置
 `
   'bzip2.bz-huffman.build': `
 コード長配列から Huffman コードテーブルを構築
 まず各コード長の個数を集計し、次に累積で limit / base を求め、最後に perm を埋めます。
-lengths []i64: 各シンボルのコード長（0 はそのシンボルが不使用であることを表します）
-alpha-size i64: 文字表の大きさ（有効シンボル数の上限、≤ 258）
+lengths: 各シンボルのコード長（0 はそのシンボルが不使用であることを表します）
+alpha-size: 文字表の大きさ（有効シンボル数の上限、≤ 258）
 `
   'bzip2.bz-huffman.decode': `
 シンボルを 1 つデコード
 まず min-len ビット読み取り、1 ビットずつ拡張して limit の範囲に入るまで続けます；範囲外またはコードが長すぎる場合は -1 を返します。
-br bz-bit-reader: ビットの供給元（各ラウンドで 1 ビット多く読む可能性があります）
-sym i64: デコードしたシンボル値、-1=不正なコードまたは空テーブル
+br: ビットの供給元（各ラウンドで 1 ビット多く読む可能性があります）
+sym: デコードしたシンボル値、-1=不正なコードまたは空テーブル
 `
   'bzip2.bz-huffman.decode-symbol': `
 シンボルを 1 つデコード（修正版：perm[zvec - base[zn]] で直接シンボルを取得）
 decode との違いは最後のステップの索引計算のみで、それ以外のデコード流程は同じ；bzip2 メイン流程はこの版を使用します。
-br bz-bit-reader: ビットの供給元（各ラウンドで 1 ビット多く読む可能性があります）
-sym i64: デコードしたシンボル値、-1=不正なコードまたは空テーブル
+br: ビットの供給元（各ラウンドで 1 ビット多く読む可能性があります）
+sym: デコードしたシンボル値、-1=不正なコードまたは空テーブル
 `
   'bzip2.compress': `
 bzip2 形式でデータを圧縮します
@@ -1009,46 +1009,46 @@ out: 解凍後のデータ（[]byte）
 `
   'chacha20-poly1305.chacha20-block': `
 64 バイトのキーストリームブロックを 1 つ生成
-key [32]byte: 256-bit キー
-counter u32: ブロックカウンタ
-nonce [12]byte: 96-bit nonce
-返り値 out [64]byte: キーストリーム
+key: 256-bit キー
+counter: ブロックカウンタ
+nonce: 96-bit nonce
+返り値 out: キーストリーム
 `
   'chacha20-poly1305.chacha20-poly1305-open': `
 ChaCha20-Poly1305 復号
-key [32]byte: キー
-nonce [12]byte: nonce
-aad []byte: 追加認証データ
-sealed []byte: 暗文 + 16 バイトのタグ
-返り値 plain []byte: 平文（認証失敗時は長さ 0）
+key: キー
+nonce: nonce
+aad: 追加認証データ
+sealed: 暗文 + 16 バイトのタグ
+返り値 plain: 平文（認証失敗時は長さ 0）
 `
   'chacha20-poly1305.chacha20-poly1305-seal': `
 ChaCha20-Poly1305 暗号化
-key [32]byte: キー
-nonce [12]byte: nonce
-aad []byte: 追加認証データ
-plain []byte: 平文
-返り値 sealed []byte: 暗文 + 16 バイトのタグ
+key: キー
+nonce: nonce
+aad: 追加認証データ
+plain: 平文
+返り値 sealed: 暗文 + 16 バイトのタグ
 `
   'chacha20-poly1305.chacha20-xor': `
 ChaCha20 ストリーム暗号/復号
-key [32]byte: キー
-counter u32: 初期カウンタ
-nonce [12]byte: nonce
-data []byte: 入力データ
-返り値 out []byte: XOR 後のデータ
+key: キー
+counter: 初期カウンタ
+nonce: nonce
+data: 入力データ
+返り値 out: XOR 後のデータ
 `
   'chacha20-poly1305.poly1305': `
 Poly1305 MAC を計算
-key [32]byte: ワンタイムキー（先頭 16 バイトは r、後半 16 バイトは s）
-data []byte: 入力データ
-返り値 tag [16]byte: 16 バイトの認証タグ
+key: ワンタイムキー（先頭 16 バイトは r、後半 16 バイトは s）
+data: 入力データ
+返り値 tag: 16 バイトの認証タグ
 `
   'chacha20-poly1305.poly1305-key-gen': `
 Poly1305 ワンタイムキーを生成
-key [32]byte: ChaCha20 キー
-nonce [12]byte: nonce
-返り値 otk [32]byte: ワンタイム Poly1305 キー
+key: ChaCha20 キー
+nonce: nonce
+返り値 otk: ワンタイム Poly1305 キー
 `
   'chacha20-poly1305.poly1305-reduce': `
 x を [0, 2^130-5) に約減
@@ -1136,7 +1136,7 @@ result: 小文字を大文字へ変換した文字（a-z 以外はそのまま�
 `
   'client.client-create': `
 クライアントを構築し接続します
-返り値 c ?client: ok=クライアント, nil=失敗
+返り値 c: ok=クライアント, nil=失敗
 host: 対象サーバーアドレス
 port: 対象サーバーのポート番号
 `
@@ -1166,12 +1166,12 @@ n: 受信する最大バイト数
 `
   'client.client.recv-line': `
 1 行受信（最大 NET-BUF-SIZE バイト）
-返り値 line ?str: ok=受信内容, nil=失敗または接続クローズ
+返り値 line: ok=受信内容, nil=失敗または接続クローズ
 `
   'client.client.request': `
 リクエスト-レスポンスモード
 データ送信後、接続がクローズするまで全レスポンスを受信します
-返り値 response ?str: ok=レスポンス内容, nil=失敗
+返り値 response: ok=レスポンス内容, nil=失敗
 data: 送信するリクエスト内容
 `
   'client.client.send': `
@@ -1189,12 +1189,12 @@ Cookie リクエストヘッダを構築
 names: Cookie 名配列（固定長 [16]str、先頭 count 件を取得）
 values: 対応する Cookie 値配列（固定長 [16]str）
 count: 出力する Cookie のペア数
-返り値 out str: 連結した Cookie リクエストヘッダ値（例 name1=val1; name2=val2）
+返り値 out: 連結した Cookie リクエストヘッダ値（例 name1=val1; name2=val2）
 `
   'cookie.build-set': `
 Set-Cookie ヘッダ値を構築
 c: シリアライズ対象の cookie 構造体
-返り値 out str: 組み立てた Set-Cookie ヘッダ値文字列
+返り値 out: 組み立てた Set-Cookie ヘッダ値文字列
 `
   'cookie.cookie-sign': `
 Cookie 値に HMAC-SHA256 署名を付与
@@ -1203,26 +1203,26 @@ Cookie 値に HMAC-SHA256 署名を付与
 name: Cookie 名（value とともに name=value を構成し HMAC 演算に参加）
 value: 署名対象の元の Cookie 値
 key: HMAC-SHA256 署名キー
-返り値 signed str: 署名後の値（形式：value.hex-hmac）
+返り値 signed: 署名後の値（形式：value.hex-hmac）
 `
   'cookie.cookie-verify': `
 署名付き Cookie を検証
 name: Cookie 名（署名時と一致する必要があります。一致しないと再計算した署名が合致しません）
 signed-value: 検証対象の署名値（形式：value.hex-hmac）
 key: HMAC-SHA256 署名キー
-返り値 ok bool: true=署名比較通過（定数時間比較）
-返り値 value str: 署名剥離後の元の Cookie 値（検証失敗時は空）
+返り値 ok: true=署名比較通過（定数時間比較）
+返り値 value: 署名剥離後の元の Cookie 値（検証失敗時は空）
 `
   'cookie.jar.build-header': `
 条件に合致する Cookie リクエストヘッダを構築
 domain: リクエスト対象ドメイン名（そのドメイン名に一致する Cookie を選別）
 path: リクエスト対象パス（そのパスプレフィックスに一致する Cookie を選別）
-返り値 out str: ドメイン名/パス条件に合致する全 Cookie を連結したヘッダ文字列
+返り値 out: ドメイン名/パス条件に合致する全 Cookie を連結したヘッダ文字列
 `
   'cookie.jar.clear': 'Cookie Jar を空にします'
   'cookie.jar.count-of': `
 Cookie 数を取得
-返り値 n i64: jar に現在保存されている Cookie 数
+返り値 n: jar に現在保存されている Cookie 数
 `
   'cookie.jar.delete': `
 Cookie を削除
@@ -1235,7 +1235,7 @@ Cookie 値を取得
 name: 検索する Cookie 名
 domain: リクエスト対象ドメイン名（完全一致・サブドメイン一致・空ドメイン一致で判定）
 path: リクエスト対象パス（プレフィックス一致；'/' はすべてに一致）
-返り値 val ?str: ok=条件に合致する Cookie 値, nil=見つかりません
+返り値 val: ok=条件に合致する Cookie 値, nil=見つかりません
 `
   'cookie.jar.get-verified': `
 署名付き Cookie を取得し検証
@@ -1243,7 +1243,7 @@ name: 検索する Cookie 名
 domain: リクエスト対象ドメイン名
 path: リクエスト対象パス
 key: 検証に使用する署名キー
-返り値 val ?str: ok=署名剥離かつ検証通過済みの元の値, nil=見つからないか検証失敗
+返り値 val: ok=署名剥離かつ検証通過済みの元の値, nil=見つからないか検証失敗
 `
   'cookie.jar.parse-response': `
 HTTP レスポンスの Set-Cookie ヘッダから Cookie を解析して保存
@@ -1254,81 +1254,81 @@ path: レスポンスの由来パス（保存する Cookie の所属パスとし
   'cookie.jar.set': `
 Cookie を設定
 同名（name + domain + path がすべて同一）の Cookie はその場で上書きされ、スロットは追加されません。
-name str: Cookie 名
-value str: Cookie 値（未署名の原文）
-domain str: 所属ドメイン名。リクエスト対象との匹配に使用
-path str: 所属パスプレフィックス
-max-age i64: 最大生存秒数（-1=未設定。ライフサイクルはセッションレベルで決定）
+name: Cookie 名
+value: Cookie 値（未署名の原文）
+domain: 所属ドメイン名。リクエスト対象との匹配に使用
+path: 所属パスプレフィックス
+max-age: 最大生存秒数（-1=未設定。ライフサイクルはセッションレベルで決定）
 `
   'cookie.jar.set-signed': `
 署名付き Cookie を設定
 保存するのは cookie-sign(name, value, key) の結果で、読み出し時に同一の key で署名検証が必要です。
-name str: Cookie 名（HMAC 計算にも参加）
-value str: 署名前の Cookie 値（自動で署名してから jar に保存）
-domain str: 所属ドメイン名
-path str: 所属パスプレフィックス
-max-age i64: 最大生存秒数（-1=未設定）
-key []byte: HMAC-SHA256 署名キー
+name: Cookie 名（HMAC 計算にも参加）
+value: 署名前の Cookie 値（自動で署名してから jar に保存）
+domain: 所属ドメイン名
+path: 所属パスプレフィックス
+max-age: 最大生存秒数（-1=未設定）
+key: HMAC-SHA256 署名キー
 `
   'cookie.parse-header': `
 Cookie リクエストヘッダを解析
 cookie-header: リクエスト側の Cookie ヘッダ値（例 name1=val1; name2=val2）
 names: 出力配列。各 Cookie 名を格納（固定長 [16]str）
 values: 出力配列。names と一対一対応する Cookie 値を格納（固定長 [16]str）
-返り値 count i64: 実際に解析された Cookie のペア数（≤16）
+返り値 count: 実際に解析された Cookie のペア数（≤16）
 `
   'cookie.parse-set': `
 Set-Cookie ヘッダ値を解析
 set-cookie-str: Set-Cookie ヘッダ値 1 件（例 name=value; Path=/; HttpOnly）
-返り値 c cookie: 解析された cookie 構造体（name/value/domain/path/max-age/secure などのフィールドを含む）
+返り値 c: 解析された cookie 構造体（name/value/domain/path/max-age/secure などのフィールドを含む）
 `
   'crc-16.hex': `
 CRC-16 を計算し 4 桁の小文字 hex 文字列を返します
-data []byte: 入力バイト。すべて計算に参加
-hex str: 固定 4 文字の 16 進表記（上位桁先、0x プレフィックスなし）
+data: 入力バイト。すべて計算に参加
+hex: 固定 4 文字の 16 進表記（上位桁先、0x プレフィックスなし）
 `
   'crc-16.new': `
 CRC-16-CCITT（多項式 0x1021、初期値 0xFFFF）チェックサムを計算
-data []byte: 入力バイト。すべて計算に参加
-crc i64: 16-bit チェックサム（0..65535）
+data: 入力バイト。すべて計算に参加
+crc: 16-bit チェックサム（0..65535）
 `
   'crc-32.new': `
 CRC-32（IEEE 802.3、反射多項式 0xEDB88320）チェックサムを計算
-s []byte: 入力バイトバッファ
-n i64: 実際に計算に参加するバイト数（s の長さより小さく可能）；s[0..n) のみ走査
-crc i64: 32-bit チェックサム（最終 xorout 0xFFFFFFFF 適用済み）、範囲は 0..4294967295
+s: 入力バイトバッファ
+n: 実際に計算に参加するバイト数（s の長さより小さく可能）；s[0..n) のみ走査
+crc: 32-bit チェックサム（最終 xorout 0xFFFFFFFF 適用済み）、範囲は 0..4294967295
 `
   'crc-64.hex': `
 CRC-64 を計算し 16 桁の小文字 hex 文字列を返します
-data []byte: 入力バイト。すべて計算に参加
-hex str: 固定 16 文字の 16 進表記（上位桁先、0x プレフィックスなし）
+data: 入力バイト。すべて計算に参加
+hex: 固定 16 文字の 16 進表記（上位桁先、0x プレフィックスなし）
 `
   'crc-64.new': `
 CRC-64/ECMA-182（反射多項式 0xC96C5795D7870F42、初期値は全 1）チェックサムを計算
-data []byte: 入力バイト。すべて計算に参加
-crc u64: 64-bit チェックサム（最終 xorout 適用済み）
+data: 入力バイト。すべて計算に参加
+crc: 64-bit チェックサム（最終 xorout 適用済み）
 `
   'csv.encode-field': `
 1 つのフィールドを CSV としてエンコードする
 カンマ、二重引用符、改行を含むフィールドは二重引用符で囲んでエスケープする
-field str: エンコードするフィールドの原文
-返す out str: CSV へ直接書き込めるテキスト；必要時ダブルクォートで包み " を "" に変換済み
+field: エンコードするフィールドの原文
+返す out: CSV へ直接書き込めるテキスト；必要時ダブルクォートで包み " を "" に変換済み
 `
   'csv.parse-field': `
 1 つの CSV フィールドをパースする
 s[pos] から解析を開始し、ダブルクォートとカンマを処理；ダブルクォート内の "" は一つの " に復元、
 引用符外のカンマ / 行末がフィールド境界。
-s str: CSV テキスト
-pos i64: 開始位置（バイト添字）、通常は直前エントリの new-pos
-返す field str: 解析されたフィールド内容（外側クォート除去済み、エスケープ復元済み）
-返す new-pos i64: フィールド終了後のバイト位置（区切りカンマをスキップ）
+s: CSV テキスト
+pos: 開始位置（バイト添字）、通常は直前エントリの new-pos
+返す field: 解析されたフィールド内容（外側クォート除去済み、エスケープ復元済み）
+返す new-pos: フィールド終了後のバイト位置（区切りカンマをスキップ）
 `
   'csv.parse-line': `
 CSV テキストの 1 行をパースする
 行末またはフィールド数上限に達するまで parse-field を反復呼び出し、満たない容量は truncate で切り落とす。
-s str: 解析対象の 1 行テキスト（行末改行を含めてはならない）
-max-fields i64: 解析する最大フィールド数（既定 1024）；上限到達後の残余内容は破棄
-返す fields []str: 解析されたフィールドリスト、長さ ≤ max-fields
+s: 解析対象の 1 行テキスト（行末改行を含めてはならない）
+max-fields: 解析する最大フィールド数（既定 1024）；上限到達後の残余内容は破棄
+返す fields: 解析されたフィールドリスト、長さ ≤ max-fields
 `
   'deque.deque.clear': `
 双端キューをクリア（tail を head に戻す、buf は解放せず head もリセットしない）
@@ -1336,142 +1336,142 @@ max-fields i64: 解析する最大フィールド数（既定 1024）；上限�
 `
   'deque.deque.empty': `
 デックが空かを判定する
-yes bool: true は tail <= head（取り出せる要素がない）を意味する
+yes: true は tail <= head（取り出せる要素がない）を意味する
 `
   'deque.deque.peek-back': `
 末尾要素を取り出さずに参照する
-val ?i64: ok=現在の後端要素, nil=キューが空
+val: ok=現在の後端要素, nil=キューが空
 `
   'deque.deque.peek-front': `
 先頭要素を取り出さずに参照する
-val ?i64: ok=現在の前端要素, nil=キューが空
+val: ok=現在の前端要素, nil=キューが空
 `
   'deque.deque.pop-back': `
 末尾から要素を取り出す
-val ?i64: ok=元の後端要素（除去済み）, nil=キューが空
+val: ok=元の後端要素（除去済み）, nil=キューが空
 `
   'deque.deque.pop-front': `
 先頭から要素を取り出す
-val ?i64: ok=元の前端要素（除去済み）, nil=キューが空
+val: ok=元の前端要素（除去済み）, nil=キューが空
 `
   'deque.deque.push-back': `
 末尾に要素を積む
 キューが満杯（要素数 >= cap）のとき今回の push を直接無視し、エラーも報じない。
-val i64: 後端に置く値
+val: 後端に置く値
 `
   'deque.deque.push-front': `
 先頭に要素を積む
 キューが満杯（要素数 >= cap）のとき今回の push を直接無視し、エラーも報じない。
-val i64: 前端に置く値
+val: 前端に置く値
 `
   'deque.deque.size': `
 双端キューの現在の要素数を返す
-sz i64: tail - head（要素の存続期間中、負には戻らない）
+sz: tail - head（要素の存続期間中、負には戻らない）
 `
   'des.des-block': `
 DES 単一ブロック処理（汎用）
 先頭 8 バイトを読み込み → IP 置換 → 16 ラウンド Feistel → FP 置換 → 8 バイトの結果を書き戻します。
-in []byte: 入力データ。先頭 n バイトのみ取得（通常 8）
-n i64: 処理するバイト数（一般に 8）
-ks [96]byte: des-key-schedule が生成した 16 組のサブキー
-encrypt i64: 1=暗号化（サブキーを順方向）、その他の値=復号（サブキーを逆方向）
-返り値 out []byte: 8 バイトの結果出力
+in: 入力データ。先頭 n バイトのみ取得（通常 8）
+n: 処理するバイト数（一般に 8）
+ks: des-key-schedule が生成した 16 組のサブキー
+encrypt: 1=暗号化（サブキーを順方向）、その他の値=復号（サブキーを逆方向）
+返り値 out: 8 バイトの結果出力
 `
   'des.des-dec': `
 8 バイトブロックを 1 つ復号
 des-enc と同じですが、16 組のサブキーを逆順に使う点のみ異なります（des-block(encrypt=0)）。
-in []byte: 入力暗文。先頭 8 バイトのみ取得
-n i64: 処理するバイト数（一般に 8）
-key [8]byte: 8 バイトの DES キー。暗号化時と一致する必要があります
-返り値 out []byte: 8 バイトの平文
+in: 入力暗文。先頭 8 バイトのみ取得
+n: 処理するバイト数（一般に 8）
+key: 8 バイトの DES キー。暗号化時と一致する必要があります
+返り値 out: 8 バイトの平文
 `
   'des.des-enc': `
 8 バイトブロックを 1 つ暗号化
 内部でまずキースケジュールを展開してから des-block(encrypt=1) を呼び出します。
-in []byte: 入力平文。先頭 8 バイトのみ取得
-n i64: 処理するバイト数（一般に 8）
-key [8]byte: 8 バイトの DES キー
-返り値 out []byte: 8 バイトの暗文
+in: 入力平文。先頭 8 バイトのみ取得
+n: 処理するバイト数（一般に 8）
+key: 8 バイトの DES キー
+返り値 out: 8 バイトの暗文
 `
   'des.des-key-schedule': `
 16 個の 48-bit サブキーを生成
 PC-1 に従い 64 ビットのキーを 56 ビットへ圧縮し C/D の半分に分割、各ラウンドでラウンド表どおり循環左シフト後、
 PC-2 で 48 ビットを選択し、計 16 組をビッグエンディアン順で ks に書き込みます（各組 6 バイト）。
-key [8]byte: 8 バイトの DES キー（偶奇パリティビットを含むが、検証はしません）
-返り値 ks [96]byte: 16 × 6 バイトのサブキー列（i 組目は ks[i*6 .. i*6+6)）
+key: 8 バイトの DES キー（偶奇パリティビットを含むが、検証はしません）
+返り値 ks: 16 × 6 バイトのサブキー列（i 組目は ks[i*6 .. i*6+6)）
 `
   'des.f': `
 DES ラウンド関数 F(R, K)
 32 ビットの半ブロック R を E 拡張で 48 ビットへ拡大し、48 ビットのサブキー K と XOR した後 8 個の S-box を通過、
 最後に P 置換で 32 ビットの出力を得ます。
-r i64: 右半ブロック（下位 32 ビットが有効）
-k i64: 48-bit サブキー（下位 48 ビットが有効）
-返り値 out i64: F 関数の結果（下位 32 ビットが有効）
+r: 右半ブロック（下位 32 ビットが有効）
+k: 48-bit サブキー（下位 48 ビットが有効）
+返り値 out: F 関数の結果（下位 32 ビットが有効）
 `
   'des.permute': `
 置換表に従いビットを抽出して再配置
 tbl は標準 DES の 1 起点（1-indexed）MSB ビット番号（1..width）を使用；出力は MSB 優先（表の 0 項目目 → 最上位ビット）。
-input i64: 置換対象の入力値（下位 width ビットのみ取得）
-tbl []byte: 置換表。各要素は 1 起点の来源ビット位置
-n i64: 置換に参加するビット数（tbl の有効長に等しい）
-width i64: 入力のビット幅（ビット位置の基準を決めます。例 64 / 56 / 48 / 32）
-r i64: 置換結果。表の 0 項目目は最上位ビットを占めます
+input: 置換対象の入力値（下位 width ビットのみ取得）
+tbl: 置換表。各要素は 1 起点の来源ビット位置
+n: 置換に参加するビット数（tbl の有効長に等しい）
+width: 入力のビット幅（ビット位置の基準を決めます。例 64 / 56 / 48 / 32）
+r: 置換結果。表の 0 項目目は最上位ビットを占めます
 `
   'des.sbox-lookup': `
 S-box を参照
 input は 6 ビットの値（MSB 優先、b1 b2 b3 b4 b5 b6）；row = b1*2 + b6、col = b2b3b4b5。
-input i64: 6 ビットの S-box 入力（下位 6 ビットのみ取得）
-box []byte: 64 項目の S-box テーブル（4 行 × 16 列をフラットに格納）
-r i64: 参照で得た 4 ビットの出力
+input: 6 ビットの S-box 入力（下位 6 ビットのみ取得）
+box: 64 項目の S-box テーブル（4 行 × 16 列をフラットに格納）
+r: 参照で得た 4 ビットの出力
 `
   'dns.build-query': `
 DNS クエリパケットを構築
-domain str: 検索するドメイン名（'.' 区切り、ラベルごとに 長さ+ラベル 形式で書き込み）
-qtype i64: クエリタイプ（DNS-TYPE-A=1 は IPv4 アドレスを表します）
-返り値 query []byte: クエリパケット（12 バイトヘッダ + 質問節）。末尾の余り空間は切り詰められていません
-返り値 qlen i64: パケットの実際の有効長（先頭 qlen バイトのみ送信すべき値）
+domain: 検索するドメイン名（'.' 区切り、ラベルごとに 長さ+ラベル 形式で書き込み）
+qtype: クエリタイプ（DNS-TYPE-A=1 は IPv4 アドレスを表します）
+返り値 query: クエリパケット（12 バイトヘッダ + 質問節）。末尾の余り空間は切り詰められていません
+返り値 qlen: パケットの実際の有効長（先頭 qlen バイトのみ送信すべき値）
 `
   'dns.dial': `
 ドメイン名を解析し TCP 接続を確立
 まず net-dial に委譲（内部でホスト名解決に対応済み）；失敗した場合のみ DNS で IP を取得してリトライ 1 回。
-domain str: ドメイン名（または直接 IP を記載）
-port i64: 対象ポート番号
-返り値 fd fd: 接続済み socket ディスクリプタ、-1=両方式とも失敗
+domain: ドメイン名（または直接 IP を記載）
+port: 対象ポート番号
+返り値 fd: 接続済み socket ディスクリプタ、-1=両方式とも失敗
 `
   'dns.parse-name': `
 レスポンスパケットからドメイン名を解析（圧縮ポインタ対応）
 ラベルごとに 長さ+ラベル を読み、長さ 0 で終了；上位 2 ビットが 11 の圧縮ポインタに遇うと読み取り位置をポインタ先へジャンプします（
 連続ジャンプ可）。CLASS などのフィールドは検証に参加しません。不正なパケット（範囲外または不正なラベル長）は next-pos=-1 を返します。
-data []byte: DNS パケット
-offset i64: ドメイン名の開始位置（バイトインデックス）
-返り値 name str: 解析したドメイン名。各ラベルを '.' で連結
-返り値 next-pos i64: このドメイン名をスキップした後の位置（圧縮ポインタがある場合はポインタの後続位置）
+data: DNS パケット
+offset: ドメイン名の開始位置（バイトインデックス）
+返り値 name: 解析したドメイン名。各ラベルを '.' で連結
+返り値 next-pos: このドメイン名をスキップした後の位置（圧縮ポインタがある場合はポインタの後続位置）
 `
   'dns.parse-response': `
 DNS レスポンスパケットを解析し、最初の A レコードの IP を返します
 まず RCODE をチェック（0 でなければ即終了）、ANCCOUNT=0 なら即終了。質問節をスキップした後、回答レコードを 1 件ずつ読みます；
 TYPE=A かつ RDLENGTH=4 のレコードのみ受け付けます（CLASS はチェックしません）。
-data []byte: DNS レスポンスパケット（ヘッダは最低 12 バイト）
-返り値 ip ?str: ok=最初の A レコードのドット区切り 10 進 IP, nil=A レコードなしまたはパケット不正
+data: DNS レスポンスパケット（ヘッダは最低 12 バイト）
+返り値 ip: ok=最初の A レコードのドット区切り 10 進 IP, nil=A レコードなしまたはパケット不正
 `
   'dns.resolve': `
 デフォルト DNS サーバーでドメイン名を解析
 まず DNS-DEFAULT-SERVER を照会し、失敗後に DNS-BACKUP-SERVER を試みます。
-domain str: 解析するドメイン名
-返り値 ip ?str: ok=解析した IPv4 アドレス, nil=両サーバーとも失敗
+domain: 解析するドメイン名
+返り値 ip: ok=解析した IPv4 アドレス, nil=両サーバーとも失敗
 `
   'dns.resolve-all': `
 ドメイン名を解析し、最初の A レコードを返します
 resolve との違い：フォールバックサーバーは試さず、DNS-DEFAULT-SERVER へクエリを 1 回だけ送信します（挙動は resolve の 1 周目と同じ）。
-domain str: 解析するドメイン名
-返り値 ip ?str: ok=解析した IPv4 アドレス, nil=解析失敗
+domain: 解析するドメイン名
+返り値 ip: ok=解析した IPv4 アドレス, nil=解析失敗
 `
   'dns.resolve-from': `
 指定 DNS サーバーでドメイン名を解析
 UDP を使用し、単一クエリの最大待機時間は DNS-TIMEOUT ミリ秒、リトライなし。
-server str: DNS サーバーの IPv4 アドレス（例 '8.8.8.8'、ポート番号は含みません）
-domain str: 解析するドメイン名
-返り値 ip ?str: ok=解析した IPv4 アドレス, nil=パケット構築失敗、socket/送信失敗、タイムアウトまたは A レコードなし
+server: DNS サーバーの IPv4 アドレス（例 '8.8.8.8'、ポート番号は含みません）
+domain: 解析するドメイン名
+返り値 ip: ok=解析した IPv4 アドレス, nil=パケット構築失敗、socket/送信失敗、タイムアウトまたは A レコードなし
 `
   'dom.append-child': `
 parent の子リストの末尾に子ノードを追加する（または移動する）
@@ -2033,8 +2033,8 @@ out: (a - b) mod m の結果（負の場合は m を加算して戻します、3
 `
   'ecdsa.ec-bytes-to-point': `
 非圧縮エンコードを Jacobian 座標へ変換
-in [65]byte: 04 || x || y（ビッグエンディアン）
-返り値 out []byte: 96 バイト
+in: 04 || x || y（ビッグエンディアン）
+返り値 out: 96 バイト
 `
   'ecdsa.ec-get-basepoint': `
 基底点 G の Jacobian 座標を取得
@@ -2042,49 +2042,49 @@ g: 基底点 G の Jacobian 座標（96 バイト：X‖Y‖Z、各 32 バイト
 `
   'ecdsa.ec-point-add': `
 点加算 R = P + Q（P は Jacobian、Q も Jacobian）
-返り値 r []byte: 96 バイト
+返り値 r: 96 バイト
 p: 加算点（Jacobian 座標、96 バイト X‖Y‖Z リトルエンディアン）
 q: 加算される点（Jacobian 座標、96 バイト）
 `
   'ecdsa.ec-point-double': `
 点倍算 R = 2*P（Jacobian 座標）
-p []byte: 入力点 (X, Y, Z)、各 32 バイト
-返り値 r []byte: 出力点 (X, Y, Z)、96 バイト
+p: 入力点 (X, Y, Z)、各 32 バイト
+返り値 r: 出力点 (X, Y, Z)、96 バイト
 `
   'ecdsa.ec-point-to-bytes': `
 Jacobian 座標を非圧縮エンコードへ変換
-p []byte: Jacobian 点（96 バイト）
-返り値 out [65]byte: 04 || x || y
+p: Jacobian 点（96 バイト）
+返り値 out: 04 || x || y
 `
   'ecdsa.ec-scalar-mult': `
 スカラー乗算 R = k * P
-k [32]byte: スカラー
-p []byte: 点（96 バイト）
-返り値 r []byte: 96 バイト
+k: スカラー
+p: 点（96 バイト）
+返り値 r: 96 バイト
 `
   'ecdsa.ecdh-p256': `
 P-256 (secp256r1) ECDH 共有秘密
-priv [32]byte: 自側の秘密鍵（ビッグエンディアン）
-peer [65]byte: 相手側の非圧縮公開鍵（04 || x || y）
-返り値 shared []byte: 共有秘密（R 点の x 座標、32 bytes ビッグエンディアン）；空=不正な入力
+priv: 自側の秘密鍵（ビッグエンディアン）
+peer: 相手側の非圧縮公開鍵（04 || x || y）
+返り値 shared: 共有秘密（R 点の x 座標、32 bytes ビッグエンディアン）；空=不正な入力
 `
   'ecdsa.ecdsa-publickey': `
 秘密鍵から公開鍵を計算
-priv [32]byte: 秘密鍵（ビッグエンディアン）
-返り値 pub [65]byte: 非圧縮公開鍵（04 || x || y）
+priv: 秘密鍵（ビッグエンディアン）
+返り値 pub: 非圧縮公開鍵（04 || x || y）
 `
   'ecdsa.ecdsa-sign': `
 ECDSA 署名
-priv [32]byte: 秘密鍵（ビッグエンディアン）
-msg []byte: メッセージ
-返り値 sig [64]byte: 署名（r || s、各 32 バイト、ビッグエンディアン）
+priv: 秘密鍵（ビッグエンディアン）
+msg: メッセージ
+返り値 sig: 署名（r || s、各 32 バイト、ビッグエンディアン）
 `
   'ecdsa.ecdsa-verify': `
 ECDSA 署名検証
-pub [65]byte: 公開鍵
-msg []byte: メッセージ
-sig [64]byte: 署名（r || s）
-返り値 ok i64: 1=有効, 0=無効
+pub: 公開鍵
+msg: メッセージ
+sig: 署名（r || s）
+返り値 ok: 1=有効, 0=無効
 `
   'ed25519.ed-d': `
 曲線定数 d の体要素を返します
@@ -2182,48 +2182,48 @@ src: 書き込む体要素（10 limb）
   'embed.exists': `
 embed.exists: 埋め込みファイルの存在を確認
 read と同じ線形一致ロジックですが、内容は取得しません。
-path str: ファイルパス（埋め込みディレクトリからの相対）
-yes bool: true=埋め込み一覧に完全一致のパスが存在
+path: ファイルパス（埋め込みディレクトリからの相対）
+yes: true=埋め込み一覧に完全一致のパスが存在
 `
   'embed.read': `
 embed.read: 埋め込みファイルを読み取り（パスを線形一致後に blob からスライスして返します）
-path str: ファイルパス（埋め込みディレクトリからの相対。例 'index.html'；パス区切り文字も含みます）
-data ?[]byte: ok=ファイル内容（blob 上のスライス、コピーなし）, nil=パスが存在しません
+path: ファイルパス（埋め込みディレクトリからの相対。例 'index.html'；パス区切り文字も含みます）
+data: ok=ファイル内容（blob 上のスライス、コピーなし）, nil=パスが存在しません
 注意：返り値は埋め込み領域を指すため、内容を変更しないでください。
 `
   'env.get': `
 環境変数の値を取得する
-key str: 環境変数名（大文字小文字を区別、例 'HOME' / 'PATH'）
-val ?str: ok=変数の値（空文字列の可能性あり）, nil=変数未設定, err=読み取り失敗
+key: 環境変数名（大文字小文字を区別、例 'HOME' / 'PATH'）
+val: ok=変数の値（空文字列の可能性あり）, nil=変数未設定, err=読み取り失敗
 `
   'env.get-with-default': `
 環境変数を取得し、未設定なら既定値を返す
-key str: 環境変数名
-default-str str: 変数未設定または読み取り失敗時のフォールバック値
-val str: 変数の値；未設定（nil/err）のときは default-str に等しい
+key: 環境変数名
+default-str: 変数未設定または読み取り失敗時のフォールバック値
+val: 変数の値；未設定（nil/err）のときは default-str に等しい
 `
   'env.is-set': `
 環境変数が設定済みかを判定する
-key str: 環境変数名
-yes bool: true=ok を読み取れた（空文字列値を含む）, false=未設定または読み取り失敗
+key: 環境変数名
+yes: true=ok を読み取れた（空文字列値を含む）, false=未設定または読み取り失敗
 `
   'env.lookup': `
 環境変数の値を取得（get の同義別名、挙動は完全一致）
-key str: 環境変数名
-val ?str: ok=変数の値, nil=変数未設定, err=読み取り失敗
+key: 環境変数名
+val: ok=変数の値, nil=変数未設定, err=読み取り失敗
 `
   'env.set': `
 環境変数を設定する
 同名既存変数へ上書き；現在プロセスとその後の子プロセスにのみ影響。
-key str: 環境変数名、空であってはならない
-val str: 書き込む値（空文字列は空に設定したものと同等）
-ok bool: true=書き込み成功, false=下位の set-env 失敗（key 空や長さ超過など）
+key: 環境変数名、空であってはならない
+val: 書き込む値（空文字列は空に設定したものと同等）
+ok: true=書き込み成功, false=下位の set-env 失敗（key 空や長さ超過など）
 `
   'env.unset': `
 環境変数を削除する（空文字列にする）
 注意：実装は実際の unset ではなく空文字列の書き込みで、変数はそのまま存在するが値は空。
-key str: 環境変数名
-ok bool: true=空値の書き込み成功, false=下位の set-env 失敗
+key: 環境変数名
+ok: true=空値の書き込み成功, false=下位の set-env 失敗
 `
   'err._errno-to-code': `
 C の errno を code 列挙に写す（モジュール内限定。from-errno だけが使う）
@@ -2265,7 +2265,7 @@ ec: 照合するコード
 `
   'err.msg': `
 エラーメッセージを返す
-戻り値 msg str: エラーオブジェクトが保持するメッセージテキスト；エラー値でない場合は空文字列
+戻り値 msg: エラーオブジェクトが保持するメッセージテキスト；エラー値でない場合は空文字列
 `
   'err.new': `
 エラーを構築する
@@ -2285,19 +2285,19 @@ e: 完全な位置情報付きのエラーインスタンス
   'float.div': `
 浮動小数点の除算。商を返す（a ÷ b）
 IEEE-754 に従う：除数 0.0 のとき ±inf（0.0/0.0 は NaN）、エラーも切り詰めもしない。
-b float: 除数；型はレシーバーと一致すること（f32 同士または f64 同士）
-q float: 商、型はレシーバに従う（f32 入力なら f32、f64 入力なら f64）
+b: 除数；型はレシーバーと一致すること（f32 同士または f64 同士）
+q: 商、型はレシーバに従う（f32 入力なら f32、f64 入力なら f64）
 `
   'float.is-inf': `
 値が無限大かを返す
 注意: `. + . == .` と書いてはいけない — これは ±0.0 でも成り立つ（0+0==0）ため、ゼロを無限大と誤判定する。
 非ゼロ判定を加えたときだけ必要十分になる（有限の非ゼロ x は x+x!=x を満たし、NaN との比較はすべて偽）。
-yes bool: true=受信者が +inf または -inf；NaN、±0.0、有限数はすべて false
+yes: true=受信者が +inf または -inf；NaN、±0.0、有限数はすべて false
 `
   'float.is-nan': `
 値が NaN かを返す
 IEEE-754 の「NaN は自分と等しくない」性質で判定するため、あらゆる NaN（異なる payload 含む）が true。
-yes bool: true=受信者が NaN, false=有限数または ±inf
+yes: true=受信者が NaN, false=有限数または ±inf
 `
   'fmt.eprintf': `
 削除済み（パースが通るよう名前だけ残している）— 呼ぶとコンパイルエラー。代わりに eprint（改行付き）か io.err（改行なし）を使う
@@ -2386,19 +2386,19 @@ out: 整形後出力文字列
 `
   'fnv-1a-32.fnv-1a-32': `
 32-bit FNV-1a ハッシュを計算（offset basis 2166136261、prime 16777619）
-s []byte: 入力バイトバッファ
-n i64: 実際に計算に参加するバイト数；s[0..n) のみ走査
-h i64: 32-bit ハッシュ値（各ステップの乗算後に & 0xFFFFFFFF）、範囲は 0..4294967295
+s: 入力バイトバッファ
+n: 実際に計算に参加するバイト数；s[0..n) のみ走査
+h: 32-bit ハッシュ値（各ステップの乗算後に & 0xFFFFFFFF）、範囲は 0..4294967295
 `
   'fnv.fnv-1a-32': `
 FNV-1a 32-bit ハッシュを計算（offset basis 2166136261、prime 16777619）
-data []byte: 入力バイト。すべて計算に参加
-hash i64: 32-bit ハッシュ値（各ステップの乗算後に & 0xFFFFFFFF）
+data: 入力バイト。すべて計算に参加
+hash: 32-bit ハッシュ値（各ステップの乗算後に & 0xFFFFFFFF）
 `
   'fnv.fnv-1a-64': `
 FNV-1a 64-bit ハッシュを計算（offset basis 14695981039346656037、prime 1099511628211）
-data []byte: 入力バイト。すべて計算に参加
-hash u64: 64-bit ハッシュ値（各回の乗算をマスクで 64 ビットに切り戻し）
+data: 入力バイト。すべて計算に参加
+hash: 64-bit ハッシュ値（各回の乗算をマスクで 64 ビットに切り戻し）
 `
   'fs.close': `
 ファイルディスクリプタを閉じる
@@ -2462,7 +2462,7 @@ read-n: 実際に読み取ったバイト数（0=EOF, -1=エラーまたは未�
 `
   'fs.file.read-bytes': `
 ファイル全体を []byte に読み込む（Rust 風のハイブリッド戦略）
-戻り値 content ?[]byte:
+戻り値 content:
 ok([]byte) - 成功。ファイルの内容
 nil        - ファイルが空
 err        - ファイルが開いていない、または読み込みに失敗
@@ -2470,12 +2470,12 @@ content: ok=ファイル内容, nil=ファイルが空, err=未オープンま�
 `
   'fs.file.read-line': `
 ファイルから 1 行読み込む（最大 4096 バイト）
-戻り値 line ?str: ok=行, nil=EOF またはエラー
+戻り値 line: ok=行, nil=EOF またはエラー
 line: ok=読んだ1行（改行文字含まず）, nil=EOF、4096 バイト超、またはエラー
 `
   'fs.file.read-str': `
 ファイル全体を文字列に読み込む
-戻り値 content ?str:
+戻り値 content:
 ok(str) - 成功。ファイルの内容
 nil     - ファイルが空
 err     - ファイルが開いていない、または読み込みに失敗
@@ -2493,8 +2493,8 @@ written: 実際に書き込んだバイト数（-1=エラーまたは未オー�
 `
   'fs.file.write-bytes': `
 []byte をファイルに書き込む（全体を上書き）
-data []byte: 書き込むバイト配列
-戻り値 ok ?bool:
+data: 書き込むバイト配列
+戻り値 ok:
 ok(true)  - 成功
 err       - ファイルが開いていない、または書き込みに失敗
 data: 書き込むバイト（ファイル全体上書き）
@@ -2502,8 +2502,8 @@ ok: ok(true)=書き込み成功, err=未オープンまたは書き込み失敗
 `
   'fs.file.write-str': `
 文字列をファイルに書き込む（全体を上書き）
-data str: 書き込む文字列
-戻り値 ok ?bool:
+data: 書き込む文字列
+戻り値 ok:
 ok(true)  - 成功
 err       - ファイルが開いていない、または書き込みに失敗
 data: 書き込む文字列（ファイル全体上書き、元の内容は置換）
@@ -2627,8 +2627,8 @@ got: 実際に読み取ったバイト数（0=EOF 到達, -1=エラー）
 `
   'fs.read-bytes': `
 ファイル全体を []byte に読み込む
-p str: ファイルパス
-戻り値 content ?[]byte:
+p: ファイルパス
+戻り値 content:
 ok([]byte) - 成功。ファイルの内容
 nil        - ファイルが空
 err        - 読み込みに失敗
@@ -2643,7 +2643,7 @@ content: ファイル内容（空スライスでは「空ファイル」と「�
 `
   'fs.read-stdin': `
 stdin をループで最後まで読み、[]byte に入れる（stat/fstat を使わないのでパイプ安全）
-戻り値 content ?[]byte:
+戻り値 content:
 ok([]byte) - 成功。stdin の内容
 nil        - stdin が空
 err        - 読み込みに失敗
@@ -2651,7 +2651,7 @@ content: ok=stdin の全内容, nil=入力が空, err=読み取り失敗
 `
   'fs.read-stdin-str': `
 stdin をループで最後まで読み、str に入れる（stat/fstat を使わないのでパイプ安全）
-戻り値 content ?str:
+戻り値 content:
 ok(str) - 成功。stdin の内容
 nil     - stdin が空
 err     - 読み込みに失敗
@@ -2659,8 +2659,8 @@ content: ok=stdin 全内容の文字列化, nil=入力が空, err=読み取り�
 `
   'fs.read-str': `
 ファイル全体を文字列に読み込む
-p str: ファイルパス
-戻り値 content ?str:
+p: ファイルパス
+戻り値 content:
 ok(str) - 成功。ファイルの内容
 nil     - ファイルが空
 err     - 読み込みに失敗
@@ -2748,9 +2748,9 @@ written: 実際に書き込んだバイト数（-1=エラー；n 未満は部分
 `
   'fs.write-bytes': `
 []byte をファイルに書き込む（上書き）
-p str: ファイルパス
-data []byte: 書き込むバイト配列
-戻り値 ok ?bool:
+p: ファイルパス
+data: 書き込むバイト配列
+戻り値 ok:
 ok(true) - 成功
 err      - 書き込みに失敗
 p: 対象パス（存在しなければ作成）
@@ -2766,9 +2766,9 @@ ok: 書き込みが成功したか（部分書き込みは報告されないた�
 `
   'fs.write-str': `
 文字列をファイルに書き込む（上書き）
-p str: ファイルパス
-data str: 書き込む文字列
-戻り値 ok ?bool:
+p: ファイルパス
+data: 書き込む文字列
+戻り値 ok:
 ok(true) - 成功
 err      - 書き込みに失敗
 p: 対象パス（存在しなければ作成）
@@ -2780,21 +2780,21 @@ ok: ok(true)=成功, err=書き込み失敗
 eprint('error: {msg}')
 多引数：eprint('err:', a, b) はスペース区切り、行末の改行は全体で 1 つ；
 各文字列リテラルが各自テンプレート（print と同じ）
-s str: 書式テンプレート文字列（規則は print と同じ）；その後ろに任意数の名前付き実引数を並べ順に埋める
+s: 書式テンプレート文字列（規則は print と同じ）；その後ろに任意数の名前付き実引数を並べ順に埋める
 `
   'global.exit': `
 実行を終了（状態コード c で現在プロセスを終了）
 exit(0)   -> 正常終了
 exit(1)   → 異常終了
-c i64: プロセスの終了コード（0=成功、非 0 は慣例により失敗；0–255 超過は OS が切捨て）
+c: プロセスの終了コード（0=成功、非 0 は慣例により失敗；0–255 超過は OS が切捨て）
 `
   'global.format': `
 {name:spec} 命名フィールドで文字列を整形し結果を返す（sprintf を置き換え）
 s = format('{x:.2f}')          -> '3.14'
 s = format('{name} is {age}')  -> 'Alice is 30'
 ⚠️ 単一のフォーマット文字列のみ受け付ける（多引数形式は無い）
-s str: 書式テンプレート文字列（規則は print と同じ）、この 1 つの引数のみを渡せる
-out str: テンプレート展開後の新文字列（どのストリームにも出力しない）
+s: 書式テンプレート文字列（規則は print と同じ）、この 1 つの引数のみを渡せる
+out: テンプレート展開後の新文字列（どのストリームにも出力しない）
 `
   'global.print': `
 文字列を標準出力へ改行付きで出力、{name:spec} 命名フォーマットフィールドをサポート
@@ -2803,55 +2803,55 @@ print('{x:.2f}')            -> 3.14（x = 3.14159 のとき）
 多引数：print(a, b, c) はスペース区切り、行末の改行は全体で 1 つ。
 多引数のとき各文字列リテラルが各自テンプレート（上方の「多引数のときリテラルは既定でテンプレート」参照）：
 print('result={val}', 42, 'result={val}')  -> result=42 42 result=42
-s str: 書式テンプレート文字列；{name:spec} は同名列リテラルで値を取って置換し、その後ろに任意数の名前付き実引数を並べ順に埋める
+s: 書式テンプレート文字列；{name:spec} は同名列リテラルで値を取って置換し、その後ろに任意数の名前付き実引数を並べ順に埋める
 `
   'global.with-cap': `
 指定容量の文字列またはスライスを作成（len=0）、型は代入の左辺から推論
 s str = with-cap(256)       → 256 バイトを事前確保した str
 v []i64 = with-cap(100)     → 100 要素を事前確保したスライス
-cap i64: 事前確保する容量（str はバイト数、vec は要素数）、長さは引き続き 0
+cap: 事前確保する容量（str はバイト数、vec は要素数）、長さは引き続き 0
 `
   'global.with-cap-len': `
 指定容量と長さの文字列またはスライスを作成、型は代入の左辺から推論
 v []i64 = with-cap-len(200, 100)  → 容量 200、長さ 100 のスライス
-cap i64: 事前確保容量（len より大きく可、後続 push の空きを確保）
-len i64: 実際の長さ；push せずに直接インデックスで読み書きできる
+cap: 事前確保容量（len より大きく可、後続 push の空きを確保）
+len: 実際の長さ；push せずに直接インデックスで読み書きできる
 `
   'global.with-len': `
 指定長さの文字列またはスライスを作成、型は代入の左辺から推論
 s str = with-len(10)        → 長さ 10 の str
 v []i64 = with-len(100)     → 長さ 100 のスライス
-len i64: 目標長さ（str はバイト数、vec は要素数）、len=cap で一括確保すれば push 不要で直接インデックス書き込み可
+len: 目標長さ（str はバイト数、vec は要素数）、len=cap で一括確保すれば push 不要で直接インデックス書き込み可
 `
   'gzip.bit-reader.read-bit': `
 1 ビット読み取り
 範囲外なら 0 を返します。DEFLATE デコーダが読み超過でクラッシュすることを回避
-bit i64: 読み取ったビット（0 または 1）；バイトを使い切ると以降は固定で 0 を返し、エラーにしません
+bit: 読み取ったビット（0 または 1）；バイトを使い切ると以降は固定で 0 を返し、エラーにしません
 `
   'gzip.bit-reader.read-bits': `
 n ビット読み取り（LSB 優先）
-n i64: 連続で読み取るビット数
-v i64: 組み立てた整数；先に読んだビットは下位に配置（i 番目のビットは bit i）
+n: 連続で読み取るビット数
+v: 組み立てた整数；先に読んだビットは下位に配置（i 番目のビットは bit i）
 `
   'gzip.bit-reader.read-u16-le': `
 2 バイトのリトルエンディアン整数を読み取り（バイトアライメント時）
 ビットバッファを使わず data[pos]、data[pos+1] から直接取得し、pos を 2 進めます。
-v i64: デコードした 0..65535 の整数
+v: デコードした 0..65535 の整数
 `
   'gzip.bit-reader.skip-to-byte': '次のバイト境界へスキップ'
   'gzip.build-dynamic': `
 ビットストリームから動的 Huffman テーブルを構築
 まず HLIT/HDIST/HCLEN を読み、次に code-order に従いコード長コードを読み、最後に繰り返しコード長を展開して字面/距離テーブルを得ます。
-br bit-reader: ビットの供給元（読み取り位置は進みます）
-lc huffman: 出力パラメータ。字面/長さコードテーブルへ書き込み
-dc huffman: 出力パラメータ。距離コードテーブルへ書き込み
+br: ビットの供給元（読み取り位置は進みます）
+lc: 出力パラメータ。字面/長さコードテーブルへ書き込み
+dc: 出力パラメータ。距離コードテーブルへ書き込み
 `
   'gzip.build-fixed': `
 固定 Huffman テーブルを構築
 DEFLATE 仕様 §3.2.6 に従い固定コード長を設定：0–143 はコード長 8、144–255 はコード長 9、
 256–279 はコード長 7、280–287 はコード長 8；距離コードはすべて 5 ビット。
-lc huffman: 出力パラメータ。288 シンボルの字面/長さコードテーブルへ書き込み
-dc huffman: 出力パラメータ。30 シンボルの距離コードテーブルへ書き込み
+lc: 出力パラメータ。288 シンボルの字面/長さコードテーブルへ書き込み
+dc: 出力パラメータ。30 シンボルの距離コードテーブルへ書き込み
 `
   'gzip.compress': `
 gzip 形式でデータを圧縮します
@@ -2871,14 +2871,14 @@ out: 圧縮後の DEFLATE データ（[]byte）
   'gzip.huffman.build': `
 コード長配列から Huffman コードテーブルを構築
 固定配列フィールドの直接索引代入を使用し、局部 vec の代入による宙吊りポインタを回避
-lengths []i64: 各シンボルのコード長。0 はそのシンボルが未使用であることを表します
-n i64: 有効シンボル数（字面/長さテーブルは 288、距離テーブルは 30）；n を超えた項目は読み取られません
+lengths: 各シンボルのコード長。0 はそのシンボルが未使用であることを表します
+n: 有効シンボル数（字面/長さテーブルは 288、距離テーブルは 30）；n を超えた項目は読み取られません
 `
   'gzip.huffman.decode': `
 シンボルを 1 つデコード
 1 ビットずつ canonical code を拡張し、count[] 上の二分方式で位置を特定；コード長 15 を超っても一致しない場合は -1 を返します。
-br bit-reader: ビットの供給元；各ラウンドで 1 ビット取得
-sym i64: デコードしたシンボル値（字面/長さまたは距離）、-1=不正なコード
+br: ビットの供給元；各ラウンドで 1 ビット取得
+sym: デコードしたシンボル値（字面/長さまたは距離）、-1=不正なコード
 `
   'gzip.inflate-decompress': `
 生の DEFLATE データを解凍（RFC 1951、ZIP method 8）
@@ -2890,175 +2890,175 @@ out: 解凍後のデータ（[]byte）
 要素を追加する; 挿入されたかを返す
 線形探測で空スロットを探す；同じ key の重複追加は集合を変えず、false を返すのみ。
 表が満杯で key 不在のとき探測は無限ループ、呼び出し側がロードファクターを制御する必要がある。
-key i64: 追加する要素
-is-new bool: true=元は存在せず挿入済み, false=既に存在、変更なし
+key: 追加する要素
+is-new: true=元は存在せず挿入済み, false=既に存在、変更なし
 `
   'hash-set.hash-set.clear': '集合を空にする'
   'hash-set.hash-set.contains': `
 要素が存在するかを返す
-key i64: 照会する要素
-found bool: true=集合中にその要素が存在する, false=存在しない（集合が空なら直ちに false を返す）
+key: 照会する要素
+found: true=集合中にその要素が存在する, false=存在しない（集合が空なら直ちに false を返す）
 `
   'hash-set.hash-set.for-each': `
 すべての要素を走査する
 スロット添字順（挿入順ではない）で [0, cap) を走査し、占有スロットの key を順次 val に代入する。
 本言語にコールバックは無く、関数リターン時 val は最後の非空スロットの要素で停止；
 個別処理が必要なら索引ループ＋ contains / .keys アクセスに変更する。
-val i64: 現在スロットの要素値（最後の代入）
+val: 現在スロットの要素値（最後の代入）
 `
   'hash-set.hash-set.hash': `
 スロットインデックスを計算する
-key i64: ハッシュ化するキー（本集合は i64 のみ収容）
-idx i64: key の [0, cap) 内の初期スロット（key & (cap-1)、cap は 2 の冪であること）
+key: ハッシュ化するキー（本集合は i64 のみ収容）
+idx: key の [0, cap) 内の初期スロット（key & (cap-1)、cap は 2 の冪であること）
 `
   'hash-set.hash-set.init': '集合を初期化する'
   'hash-set.hash-set.is-empty': `
 集合が空か
-empty bool: true=size == 0, false=要素残りあり
+empty: true=size == 0, false=要素残りあり
 `
   'hash-set.hash-set.len': `
 要素数を返す
-n i64: 集合中に現在存在する要素個数（新規要素の add +1、remove 成功 −1）
+n: 集合中に現在存在する要素個数（新規要素の add +1、remove 成功 −1）
 `
   'hash-set.hash-set.remove': `
 要素を削除する; 削除されたかを返す
 当該スロットの占有マークのみをゼロにし、探測鎖の後続再配置はしない；同じ key を再度 add すればスロットを再利用できる。
-key i64: 削除する要素
-removed bool: true=発見して削除, false=存在せず
+key: 削除する要素
+removed: true=発見して削除, false=存在せず
 `
   'heap.empty': `
 ヒープが空かを返す
-yes bool: true は n == 0 を意味する（満杯で無視された push はこの判定を変えない）
+yes: true は n == 0 を意味する（満杯で無視された push はこの判定を変えない）
 `
   'heap.init': `
 ファクトリ — 呼び出し側が用意した要素バッファ上に空のヒープを構築する
-data []t: 要素バッファ、その長さがヒープ容量上限を決める（n は 0 にリセット、バッファ内容は消去しない）
-h heap: 初期化後のヒープインスタンス、cap = len(data)、n = 0
+data: 要素バッファ、その長さがヒープ容量上限を決める（n は 0 にリセット、バッファ内容は消去しない）
+h: 初期化後のヒープインスタンス、cap = len(data)、n = 0
 `
   'heap.peek': `
 最小要素を取り出さずに参照する
-val ?t: ok=現在のヒープの頂上（最小値）, nil=ヒープが空
+val: ok=現在のヒープの頂上（最小値）, nil=ヒープが空
 `
   'heap.pop': `
 最小要素を取り出して sift down する
-val ?t: ok=現在のヒープの頂上（最小値）, nil=ヒープが空
+val: ok=現在のヒープの頂上（最小値）, nil=ヒープが空
 `
   'heap.push': `
 要素を積み、最小ヒープの性質を回復する
-val t: プッシュする要素、型 t は heap.init のバッファ型で決定
+val: プッシュする要素、型 t は heap.init のバッファ型で決定
 ヒープが満杯（n >= cap）のとき今回の push を直接無視し、エラーも報じない
 `
   'heap.size': `
 ヒープに現在格納されている要素数を返す
-sz i64: プッシュ済みかつまだポップしていない要素数（0..cap）
+sz: プッシュ済みかつまだポップしていない要素数（0..cap）
 `
   'hkdf.hkdf-derive-secret': `
 Derive-Secret(Secret, Label, Messages)（TLS 1.3 §7.1）
 hkdf-expand-label-vec(secret, label, messages, 32) と等価です。
-secret []byte: 32 バイトのキー
-label str: ラベル（"tls13 " プレフィックスは含みません）
-messages []byte: 鍵交換メッセージハッシュ（SHA-256 の出力。context として使用）
-out []byte: 32 バイトの導出キー
+secret: 32 バイトのキー
+label: ラベル（"tls13 " プレフィックスは含みません）
+messages: 鍵交換メッセージハッシュ（SHA-256 の出力。context として使用）
+out: 32 バイトの導出キー
 `
   'hkdf.hkdf-expand': `
 HKDF-Expand（RFC 5869 §2.3）
-prk [32]byte: 疑似ランダムキー
-info []byte: コンテキスト情報（空も可。各ラウンドの HMAC に参加）
-out-len i64: 必要な出力長；RFC 5869 の上限は 255*32 = 8160。超えるとカウンタが周回し、結果は仕様への適合を失います
-返り値 okm []byte: 展開後の鍵材料（長さはちょうど out-len）
+prk: 疑似ランダムキー
+info: コンテキスト情報（空も可。各ラウンドの HMAC に参加）
+out-len: 必要な出力長；RFC 5869 の上限は 255*32 = 8160。超えるとカウンタが周回し、結果は仕様への適合を失います
+返り値 okm: 展開後の鍵材料（長さはちょうど out-len）
 `
   'hkdf.hkdf-expand-hmac': `
 HMAC-SHA256(prk, t-prefix || info || counter-byte) を計算
 内部補助関数。hkdf-expand 内で slice.len() を変更することを避けます
-prk-vec []byte: キー（32 バイト）
-t-data []byte: T(i) のプレフィックス（空も可。長さは t-len で決定）
-t-len i64: T(i) の有効長
-info []byte: コンテキスト情報（空も可）
-counter i64: カウンタバイト（RFC では 1–255 を要求）。0 はこのバイトを追加しないことを表します
-返り値 out [32]byte: HMAC-SHA256(prk, T(i-1) || info || counter) の結果
+prk-vec: キー（32 バイト）
+t-data: T(i) のプレフィックス（空も可。長さは t-len で決定）
+t-len: T(i) の有効長
+info: コンテキスト情報（空も可）
+counter: カウンタバイト（RFC では 1–255 を要求）。0 はこのバイトを追加しないことを表します
+返り値 out: HMAC-SHA256(prk, T(i-1) || info || counter) の結果
 `
   'hkdf.hkdf-expand-label': `
 TLS 1.3 HKDF-Expand-Label（RFC 8446 §7.1）
 まず HkdfLabel 構造に従い info（length + "tls13 "+label + context）を組み立て、その後 HKDF-Expand を呼び出します。
-prk [32]byte: 疑似ランダムキー（32 バイト、通常 HKDF-Extract 由来）
-label str: ラベル（"tls13 " プレフィックスは含みません。本関数が自動で補います）
-context []byte: コンテキスト（通常は鍵交換メッセージハッシュ；空も可）
-out-len i64: 必要な出力バイト数
-okm []byte: 展開後の鍵材料。長さはちょうど out-len
+prk: 疑似ランダムキー（32 バイト、通常 HKDF-Extract 由来）
+label: ラベル（"tls13 " プレフィックスは含みません。本関数が自動で補います）
+context: コンテキスト（通常は鍵交換メッセージハッシュ；空も可）
+out-len: 必要な出力バイト数
+okm: 展開後の鍵材料。長さはちょうど out-len
 `
   'hkdf.hkdf-expand-label-vec': `
 hkdf-expand-label と同じですが、prk を []byte で受け取る点が異なります（32 バイトに満たない末尾は 0 で埋めます）
-prk []byte: 疑似ランダムキー。先頭 32 バイトを使用して
-label str: ラベル（"tls13 " プレフィックスは含みません）
-context []byte: コンテキスト（空も可）
-out-len i64: 必要な出力バイト数
-okm []byte: 展開後の鍵材料。長さはちょうど out-len
+prk: 疑似ランダムキー。先頭 32 バイトを使用して
+label: ラベル（"tls13 " プレフィックスは含みません）
+context: コンテキスト（空も可）
+out-len: 必要な出力バイト数
+okm: 展開後の鍵材料。長さはちょうど out-len
 `
   'hkdf.hkdf-extract': `
 HKDF-Extract（RFC 5869 §2.2）
-salt []byte: ソルト（空も可；空のときは 32 個のゼロバイトで代替）
-ikm []byte: 入力鍵材料（任意長）
-返り値 prk [32]byte: HMAC-SHA256(salt, IKM) で算出した疑似ランダムキー
+salt: ソルト（空も可；空のときは 32 個のゼロバイトで代替）
+ikm: 入力鍵材料（任意長）
+返り値 prk: HMAC-SHA256(salt, IKM) で算出した疑似ランダムキー
 `
   'hmac.hmac-md5': `
 HMAC-MD5 を計算（MD5 を基盤ハッシュとして使用、ブロックサイズ 64）
 key: ハッシュキー（64 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out [16]byte: 16 バイトの HMAC 値
+返り値 out: 16 バイトの HMAC 値
 `
   'hmac.hmac-md5-vec': `
 HMAC-MD5 を計算し、[]byte を返します
 key: ハッシュキー（64 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out []byte: 16 バイトの HMAC 値
+返り値 out: 16 バイトの HMAC 値
 `
   'hmac.hmac-sha1': `
 HMAC-SHA1 を計算
 key: ハッシュキー（64 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out [20]byte: 20 バイトの HMAC 値
+返り値 out: 20 バイトの HMAC 値
 `
   'hmac.hmac-sha1-vec': `
 HMAC-SHA1 を計算し、[]byte を返します
 key: ハッシュキー（64 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out []byte: 20 バイトの HMAC 値
+返り値 out: 20 バイトの HMAC 値
 `
   'hmac.hmac-sha256': `
 HMAC-SHA256 を計算
 key: ハッシュキー（基盤ハッシュのブロック長 64 バイトを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out [32]byte: 32 バイトの HMAC 値
+返り値 out: 32 バイトの HMAC 値
 `
   'hmac.hmac-sha256-vec': `
 HMAC-SHA256 を計算し、[]byte を返します（連結に便利）
 key: ハッシュキー（64 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out []byte: 32 バイトの HMAC 値
+返り値 out: 32 バイトの HMAC 値
 `
   'hmac.hmac-sha384': `
 HMAC-SHA384 を計算（SHA-384 を基盤ハッシュとして使用、ブロックサイズ 128）
 key: ハッシュキー（128 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out [48]byte: 48 バイトの HMAC 値
+返り値 out: 48 バイトの HMAC 値
 `
   'hmac.hmac-sha384-vec': `
 HMAC-SHA384 を計算し、[]byte を返します
 key: ハッシュキー（128 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out []byte: 48 バイトの HMAC 値
+返り値 out: 48 バイトの HMAC 値
 `
   'hmac.hmac-sha512': `
 HMAC-SHA512 を計算
 key: ハッシュキー（128 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out [64]byte: 64 バイトの HMAC 値
+返り値 out: 64 バイトの HMAC 値
 `
   'hmac.hmac-sha512-vec': `
 HMAC-SHA512 を計算し、[]byte を返します
 key: ハッシュキー（128 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
-返り値 out []byte: 64 バイトの HMAC 値
+返り値 out: 64 バイトの HMAC 値
 `
   'hpack.decode-int': `
 data の pos 位置から可変長整数をデコード
@@ -3125,19 +3125,19 @@ ok: idx が有効範囲内かつ正常に取得できた場合 true
   'http.delete': `
 HTTP DELETE リクエストを実行
 url: 完全な URL
-返り値 resp ?response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.do': `
 HTTP リクエストを実行
 method: HTTP メソッド（GET、POST、PUT、DELETE など）
 url: 完全な URL（例 http://host:port/path）
 body: リクエストボディ（GET は空文字列を渡すべき）
-返り値 resp ?response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.do-req': `
 request を使ってリクエストを送信（カスタムヘッダ対応）
 req: 初期化済みの request（カスタムヘッダを含む）
-返り値 resp ?response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.download': `
 ストリーミングダウンロード（任意サイズ対応、ファイルへ直接書き込み）
@@ -3149,14 +3149,14 @@ dest str — 保存先ファイルパス
   'http.get': `
 HTTP GET リクエストを実行
 url: 完全な URL
-返り値 resp ?response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.get-auth': `
 Basic 認証付き HTTP GET リクエストを実行
-url str: 完全な URL
-user str: ユーザー名
-password str: パスワード
-返り値 resp ?response: ok=レスポンス, nil=失敗
+url: 完全な URL
+user: ユーザー名
+password: パスワード
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.http-dl-dechunk': `
 chunked エンコードの body を生バイトへデフラム
@@ -3193,7 +3193,7 @@ ok: true=書き込み成功（?bool の ok を true に折り返し；nil/err �
 HTTP PATCH リクエストを実行
 url: 完全な URL
 body: リクエストボディ
-返り値 resp ?response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.ping': `
 ping — temporary probe to detect source vs embedded std loading
@@ -3203,21 +3203,21 @@ s: 固定で pong 文字列を返します。ソースファイルと埋め込�
 HTTP POST リクエストを実行
 url: 完全な URL
 body: リクエストボディ
-返り値 resp ?response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.post-auth': `
 Basic 認証付き HTTP POST リクエストを実行
-url str: 完全な URL
-body str: リクエストボディ
-user str: ユーザー名
-password str: パスワード
-返り値 resp ?response: ok=レスポンス, nil=失敗
+url: 完全な URL
+body: リクエストボディ
+user: ユーザー名
+password: パスワード
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.put': `
 HTTP PUT リクエストを実行
 url: 完全な URL
 body: リクエストボディ
-返り値 resp ?response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http.request.add-header': `
 カスタムヘッダを追加
@@ -3233,7 +3233,7 @@ body: リクエストボディ（GET/DELETE は空文字列可）
   'http.response.get-header': `
 指定ヘッダ値を取得（線形探索）
 name: ヘッダ名（例 'Content-Type'）
-返り値 val ?str: ok=ヘッダ値, nil=見つかりません
+返り値 val: ok=ヘッダ値, nil=見つかりません
 `
   'http.response.parse-headers': `
 headers 文字列を header-names / header-values へ分割
@@ -3241,22 +3241,22 @@ headers フィールドが埋められた後に呼ぶ必要があります（do 
 `
   'http.set-api-key': `
 リクエストへ API Key ヘッダを追加
-req request: リクエスト構造体
-header-name str: ヘッダ名（例 'X-API-Key'）
-api-key str: API キー
+req: リクエスト構造体
+header-name: ヘッダ名（例 'X-API-Key'）
+api-key: API キー
 返り値 ok=true=成功
 `
   'http.set-basic-auth': `
 リクエストへ HTTP Basic 認証ヘッダを追加
-req request: リクエスト構造体
-user str: ユーザー名
-password str: パスワード
+req: リクエスト構造体
+user: ユーザー名
+password: パスワード
 返り値 ok=true=成功
 `
   'http.set-bearer-auth': `
 リクエストへ Bearer Token 認証ヘッダを追加
-req request: リクエスト構造体
-token str: Bearer token
+req: リクエスト構造体
+token: Bearer token
 返り値 ok=true=成功
 `
   'http.upload-put': `
@@ -3271,7 +3271,7 @@ file-path str — アップロードするファイル
   'http2.conn.init': '接続状態を初期化'
   'http2.conn.recv-frame': `
 ソケットからフレームを受信
-返り値 frame ?frame: ok=受信したフレーム, nil=失敗
+返り値 frame: ok=受信したフレーム, nil=失敗
 `
   'http2.conn.request': `
 HTTP/2 リクエストを実行
@@ -3314,20 +3314,20 @@ ok: true=送信成功
   'http2.connect': `
 HTTP/2 h2c 接続を確立
 preface + SETTINGS を送信し、サーバーの SETTINGS を受信して ACK します
-返り値 conn ?conn: ok=接続, nil=失敗
+返り値 conn: ok=接続, nil=失敗
 host: 対象サーバーのホスト名または IP
 port: 対象 TCP ポート番号（h2c 平文接続）
 `
   'http2.connect-tls': `
 HTTP/2 over TLS 接続を確立
 まず TLS 接続を確立し、その後 HTTP/2 preface + SETTINGS を送信
-返り値 conn ?conn: ok=接続, nil=失敗
+返り値 conn: ok=接続, nil=失敗
 host: 対象サーバーのホスト名または IP
 port: 対象 TLS ポート番号（通常 443）
 `
   'http2.delete': `
 HTTP/2 DELETE リクエスト
-返り値 resp ?http.response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 url: リクエストアドレス 'http://host:port/path'
 `
   'http2.do': `
@@ -3348,11 +3348,11 @@ HTTP/2 リクエストで ?http.response を返します
 method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'
 url: 'http://host:port/path'
 body: リクエストボディ（空文字列=ボディなし）
-返り値 resp ?http.response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 `
   'http2.frame.parse': `
 data の pos 位置から 9 バイトフレームヘッダを解析
-返り値 next-pos ?i64: ok=次の位置, nil=エラー
+返り値 next-pos: ok=次の位置, nil=エラー
 data: HTTP/2 バイトストリーム（pos から 9 バイトのフレームヘッダ 1 件を解析）
 pos: 今回のフレームヘッダの data 内開始オフセット
 next-pos: ok=ヘッダの後のオフセット, nil=データ不足/解析失敗
@@ -3366,24 +3366,24 @@ next-pos: シリアライズ完了後の次の書き込み可能オフセット
 `
   'http2.get': `
 HTTP/2 GET リクエスト
-返り値 resp ?http.response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 url: リクエストアドレス 'http://host:port/path'（port は省略可、デフォルト 80）
 `
   'http2.patch': `
 HTTP/2 PATCH リクエスト
-返り値 resp ?http.response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 url: リクエストアドレス
 body: リクエストボディ（空文字列=ボディなし）
 `
   'http2.post': `
 HTTP/2 POST リクエスト
-返り値 resp ?http.response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 url: リクエストアドレス
 body: リクエストボディ（空文字列=ボディなし）
 `
   'http2.put': `
 HTTP/2 PUT リクエスト
-返り値 resp ?http.response: ok=レスポンス, nil=失敗
+返り値 resp: ok=レスポンス, nil=失敗
 url: リクエストアドレス
 body: リクエストボディ（空文字列=ボディなし）
 `
@@ -3391,95 +3391,95 @@ body: リクエストボディ（空文字列=ボディなし）
 HTTP/3 接続を確立
 host: サーバーのホスト名または IP
 port: HTTP/3（QUIC/UDP）ポート番号
-返り値 conn ?quic.conn: ok=確立済み QUIC 接続, nil/err=ダイヤル失敗
+返り値 conn: ok=確立済み QUIC 接続, nil/err=ダイヤル失敗
 `
   'http3.decode-header': `
 buf の pos 位置からヘッダ 1 件をデコード
 buf: デコード対象の QPACK バイトバッファ
 pos: 今回のデコードの buf 内開始オフセット
-返り値 name str: デコードしたヘッダ名
-返り値 value str: デコードしたヘッダ値
-返り値 next-pos i64: 次のヘッダの開始オフセット；-1 はデータ不足または書式エラーを表します
+返り値 name: デコードしたヘッダ名
+返り値 value: デコードしたヘッダ値
+返り値 next-pos: 次のヘッダの開始オフセット；-1 はデータ不足または書式エラーを表します
 `
   'http3.encode-data-frame': `
 DATA フレームをエンコード
 data: DATA フレームに入れるリクエスト／レスポンスボディ文字列
-返り値 buf []byte: 型が DATA(0x00)、ペイロードが data バイトのフレームバッファ
-返り値 n i64: フレームの総バイト数
+返り値 buf: 型が DATA(0x00)、ペイロードが data バイトのフレームバッファ
+返り値 n: フレームの総バイト数
 `
   'http3.encode-frame': `
 HTTP/3 フレームをエンコード
 frame-type: HTTP/3 フレームタイプコード（varint エンコード。例 0x00 DATA、0x01 HEADERS）
 payload: フレームペイロードバイト（その長さは varint で前置）
-返り値 buf []byte: 型＋長さ＋ペイロードを連結した完全なフレームバッファ
-返り値 n i64: エンコード後のフレーム総バイト数
+返り値 buf: 型＋長さ＋ペイロードを連結した完全なフレームバッファ
+返り値 n: エンコード後のフレーム総バイト数
 `
   'http3.encode-header': `
 単一ヘッダを QPACK リテラル形式へエンコード
 name: ヘッダ名（リテラル値でエンコードし、静的テーブルは使いません）
 value: ヘッダ値
-返り値 buf []byte: QPACK リテラルエンコード後のバイトバッファ
-返り値 n i64: buf に書き込んだ実際のバイト数
+返り値 buf: QPACK リテラルエンコード後のバイトバッファ
+返り値 n: buf に書き込んだ実際のバイト数
 `
   'http3.encode-headers': `
 複数ヘッダをエンコード
 names: 先頭 count 件が有効なヘッダ名配列（固定長 [16]str）
 values: names と一対一対応するヘッダ値配列（固定長 [16]str）
 count: このバッチでエンコードするヘッダのペア数（≤16）
-返り値 buf []byte: 各ヘッダの QPACK エンコードを順に連結したバイトバッファ
-返り値 n i64: エンコードして buf に書き込んだ総バイト数
+返り値 buf: 各ヘッダの QPACK エンコードを順に連結したバイトバッファ
+返り値 n: エンコードして buf に書き込んだ総バイト数
 `
   'http3.encode-headers-frame': `
 HEADERS フレームをエンコード
 names: ヘッダ名配列（固定長 [16]str、先頭 count 件を取得）
 values: 対応するヘッダ値配列（固定長 [16]str）
 count: エンコードするヘッダのペア数
-返り値 buf []byte: 型が HEADERS(0x01)、ペイロードが QPACK ヘッダブロックのフレームバッファ
-返り値 n i64: フレームの総バイト数
+返り値 buf: 型が HEADERS(0x01)、ペイロードが QPACK ヘッダブロックのフレームバッファ
+返り値 n: フレームの総バイト数
 `
   'http3.encode-settings-frame': `
 SETTINGS フレームをエンコード（空設定）
-返り値 buf []byte: 空 SETTINGS フレーム（型 0x04＋長さ 0、計 2 バイト）
-返り値 n i64: フレームの総バイト数（常に 2）
+返り値 buf: 空 SETTINGS フレーム（型 0x04＋長さ 0、計 2 バイト）
+返り値 n: フレームの総バイト数（常に 2）
 `
   'http3.get': `
 HTTP/3 GET リクエストを送信
 url: 完全な URL（例 https://example.com/path）
-返り値 resp ?response: ok=GET レスポンス, nil=URL 不正／接続失敗／レスポンスなし
+返り値 resp: ok=GET レスポンス, nil=URL 不正／接続失敗／レスポンスなし
 `
   'http3.http3-do': `
 汎用 HTTP/3 リクエストを送信
 method: HTTP メソッド（GET、POST、PUT、DELETE など）
 url: 完全な URL
 body: リクエストボディ文字列（空文字列はボディなしを表します）
-返り値 resp ?response: ok=レスポンス, nil=URL 不正／接続失敗／レスポンスなし
+返り値 resp: ok=レスポンス, nil=URL 不正／接続失敗／レスポンスなし
 `
   'http3.parse-frame': `
 buf の pos 位置から HTTP/3 フレーム 1 件を解析
 buf: 1 つまたは複数の HTTP/3 フレームを含むバイトバッファ
 pos: 今回の解析の buf 内開始オフセット
-返り値 frame-type i64: デコードしたフレームタイプコード
-返り値 payload []byte: フレームペイロードバイトのスライス
-返り値 next-pos i64: 次のフレームの開始オフセット；-1 はデータ不足または書式エラーを表します
+返り値 frame-type: デコードしたフレームタイプコード
+返り値 payload: フレームペイロードバイトのスライス
+返り値 next-pos: 次のフレームの開始オフセット；-1 はデータ不足または書式エラーを表します
 `
   'http3.parse-url': `
 HTTPS URL を解析
 url: 'https://' で始まる完全な URL（例 https://host:port/path）
-返り値 host str: ポート番号除去後のホスト名
-返り値 port i64: ポート番号（URL にポートがない場合は HTTP3-DEFAULT-PORT）
-返り値 path str: リクエストパス（パスなしの場合は '/'）
-返り値 ok bool: true=解析成功, false=プレフィックス不正またはポートに非数字を含む
+返り値 host: ポート番号除去後のホスト名
+返り値 port: ポート番号（URL にポートがない場合は HTTP3-DEFAULT-PORT）
+返り値 path: リクエストパス（パスなしの場合は '/'）
+返り値 ok: true=解析成功, false=プレフィックス不正またはポートに非数字を含む
 `
   'http3.post': `
 HTTP/3 POST リクエストを送信
 url: 完全な URL
 body: POST リクエストボディ文字列
-返り値 resp ?response: ok=POST レスポンス, nil=URL 不正／接続失敗／レスポンスなし
+返り値 resp: ok=POST レスポンス, nil=URL 不正／接続失敗／レスポンスなし
 `
   'http3.response.get-header': `
 ヘッダ値を取得
 name: 検索するヘッダ名（比較は大文字小文字を区別しません）
-返り値 val ?str: ok=対応するヘッダ値, nil=そのヘッダが見つかりません
+返り値 val: ok=対応するヘッダ値, nil=そのヘッダが見つかりません
 `
   'http3.send-request': `
 QUIC 接続上で HTTP/3 リクエストを送信
@@ -3488,19 +3488,19 @@ method: HTTP メソッド（:method ヘッダへ記入）
 path: リクエストパス（:path ヘッダへ記入）
 host: ホスト名（:authority ヘッダへ記入）
 body: リクエストボディ文字列（空文字列はボディなしを表します）
-返り値 resp ?response: ok=解析後のレスポンス, nil=送信または受信の失敗
+返り値 resp: ok=解析後のレスポンス, nil=送信または受信の失敗
 `
   'int.div': `
 整数除算。商を返す（a ÷ b）
 b が 0 のときは err を返す（コンパイラが挿入するゼロ除算ガード。UB ではない）。詳しくは docs/docs/lang/syntax.md の〈ゼロ除算〉
-b int: 除数；型は被除数と一致；符号は C の 0 方向切捨てに従う（-7 / 2 = -3）
-q ?int: ok=商（型はレシーバと同じ）, err=除数が 0（nil のケースなし）
+b: 除数；型は被除数と一致；符号は C の 0 方向切捨てに従う（-7 / 2 = -3）
+q: ok=商（型はレシーバと同じ）, err=除数が 0（nil のケースなし）
 `
   'int.mod': `
 整数剰余。余りを返す（a % b）
 b が 0 のときは err を返す（コンパイラが挿入するゼロ除算ガード。UB ではない）。詳しくは docs/docs/lang/syntax.md の〈ゼロ除算〉
-b int: 除数（0 不可）；余りの符号は被除数に従う（-7 % 2 = -1）
-r ?int: ok=余り（|r| < |b|）, err=除数が 0（nil のケースなし）
+b: 除数（0 不可）；余りの符号は被除数に従う（-7 % 2 = -1）
+r: ok=余り（|r| < |b|）, err=除数が 0（nil のケースなし）
 `
   'int.to-str': `
 整数を文字列に変換する（すべての整数型をカバーする共用体型メソッド）
@@ -3508,7 +3508,7 @@ transpiler は i64.to-str() などを int.to-str() に解決する
 算術演算を直接使うので、int -> u64 の型変換問題を避けられる
 注意: 負数の絶対値を取らない（0 - n は n = i64.MIN のときオーバーフローする）。
 代わりに負数のまま srem/sdiv（ゼロ方向への切り捨て）を行い、負の余りを [0, 9] に写す。
-out str: 十進表現文字列、例 42 / -17；ゼロは '0' を出力、負数は先頭 '-' 付き
+out: 十進表現文字列、例 42 / -17；ゼロは '0' を出力、負数は先頭 '-' 付き
 `
   'io.err': `
 文字列を標準エラーに書き出す（改行なし）
@@ -3532,7 +3532,7 @@ n: 文字列と改行を合わせて書き込んだバイト数
 `
   'io.read-line': `
 標準入力から 1 行読み込む
-戻り値 line ?str: ok=行, nil=EOF またはエラー
+戻り値 line: ok=行, nil=EOF またはエラー
 line: ok=標準入力から読んだ1行, nil=EOF または読み取り失敗
 `
   'io.reader.from-fd': `
@@ -3560,12 +3560,12 @@ total: 実際に読み込まれたバイト数；0 は EOF または fd 無効
 `
   'io.reader.read-byte': `
 1 バイト読み込む
-戻り値 b ?i64: ok=バイト値, nil=EOF またはエラー
+戻り値 b: ok=バイト値, nil=EOF またはエラー
 b: ok=読み取ったバイト値(0~255)、nil=EOF または無効な fd
 `
   'io.reader.read-line': `
 1 行読み込む（最大 4096 バイト）
-戻り値 line ?str: ok=行, nil=EOF またはエラー
+戻り値 line: ok=行, nil=EOF またはエラー
 line: ok=読んだ1行の内容(最大 4096 バイト)、nil=EOF または fd 無効
 `
   'io.writer.from-fd': `
@@ -3613,7 +3613,7 @@ yes: true=両アドレスの 32 ビット数値が完全一致
 `
   'ip.ip-addr.from-str': `
 文字列から ip-addr を構築（静的関数）
-返り値 addr ?ip-addr: ok=解析結果, nil=解析失敗
+返り値 addr: ok=解析結果, nil=解析失敗
 s: IPv4 ドット区切り 10 進文字列（例 192.168.1.1）
 addr: ok=解析したアドレス, nil=形式不正またはセグメント値の範囲超過
 `
@@ -3629,44 +3629,44 @@ prefix-len: プレフィックス長（0~32）
 `
   'ip.ip-addr.is-broadcast': `
 ブロードキャストアドレス（255.255.255.255）か
-yes bool: true は 4 セグメントすべてが 255 であることを表します
+yes: true は 4 セグメントすべてが 255 であることを表します
 `
   'ip.ip-addr.is-class-a': `
 A クラスアドレス（1.0.0.0 ~ 126.255.255.255）か
-yes bool: true は第 1 セグメントが 1~126（ループバックセグメント 127 を含まない）であることを表します
+yes: true は第 1 セグメントが 1~126（ループバックセグメント 127 を含まない）であることを表します
 `
   'ip.ip-addr.is-class-b': `
 B クラスアドレス（128.0.0.0 ~ 191.255.255.255）か
-yes bool: true は第 1 セグメントが 128~191 であることを表します
+yes: true は第 1 セグメントが 128~191 であることを表します
 `
   'ip.ip-addr.is-class-c': `
 C クラスアドレス（192.0.0.0 ~ 223.255.255.255）か
-yes bool: true は第 1 セグメントが 192~223 であることを表します
+yes: true は第 1 セグメントが 192~223 であることを表します
 `
   'ip.ip-addr.is-link-local': `
 リンクローカルアドレス（169.254.0.0/16）か
-yes bool: true は a==169 かつ b==254 を表します（IPv4 の自動構成失敗時に使用）
+yes: true は a==169 かつ b==254 を表します（IPv4 の自動構成失敗時に使用）
 `
   'ip.ip-addr.is-loopback': `
 ループバックアドレス（127.0.0.0/8）か
-yes bool: true は第 1 セグメントが 127 に等しいことを表します
+yes: true は第 1 セグメントが 127 に等しいことを表します
 `
   'ip.ip-addr.is-multicast': `
 マルチキャストアドレス（224.0.0.0/4）か
-yes bool: true は第 1 セグメントが 224~239 であることを表します
+yes: true は第 1 セグメントが 224~239 であることを表します
 `
   'ip.ip-addr.is-private': `
 プライベートアドレスか
 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-yes bool: true は上記 RFC 1918 の 3 ネットワークのいずれかに該当することを表します
+yes: true は上記 RFC 1918 の 3 ネットワークのいずれかに該当することを表します
 `
   'ip.ip-addr.is-valid': `
 全 octet が有効範囲（0~255）か検査
-yes bool: true は a/b/c/d の 4 セグメントすべてが 0~255 内であることを表します
+yes: true は a/b/c/d の 4 セグメントすべてが 0~255 内であることを表します
 `
   'ip.ip-addr.is-zero': `
 全ゼロアドレス（0.0.0.0）か
-yes bool: true は 4 セグメントすべてが 0 であることを表します（全 NIC へのバインド可能）
+yes: true は 4 セグメントすべてが 0 であることを表します（全 NIC へのバインド可能）
 `
   'ip.ip-addr.parse': `
 文字列から IPv4 アドレスを解析
@@ -3695,7 +3695,7 @@ yes: true=解析成功かつ 10/8、172.16/12、192.168/16 のプライベート
 `
   'ip.ip-parse': `
 IP 文字列を簡単に解析
-返り値 addr ?ip-addr: ok=解析結果, nil=解析失敗
+返り値 addr: ok=解析結果, nil=解析失敗
 s: 解析対象の IP 文字列
 addr: ok=解析結果, nil=解析失敗（挙動は ip-addr.from-str と同じ）
 `
@@ -3706,7 +3706,7 @@ idx: 本プールで新規割り当てたノードインデックス
 `
   'json.arr-get': `
 配列の指定インデックスの要素を json として取得する
-戻り値 child ?json: ok=見つかった, nil=見つからない、または配列でない
+戻り値 child: ok=見つかった, nil=見つからない、または配列でない
 使い方:
 elem = j.arr-get(0)
 elem: {
@@ -3725,7 +3725,7 @@ n: ルート配列の子要素数（配列以外は 0）
 `
   'json.arr-push': `
 配列の末尾に要素を追加する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 使い方:
 j.arr-push(item)
 val: 要素 json（その根サブツリーを先に本プールへディープコピーし、空キーで追加）
@@ -3733,31 +3733,31 @@ ok: true=追加済み
 `
   'json.arr-push-bool': `
 配列の末尾に真偽値要素を追加する
-返す ok bool: 追加成功したか
-val bool: 追加する真偽値（true / false）
-ok bool: true=真偽元素として配列末尾に追加済み；false=ノード割り当てまたは push 失敗
+返す ok: 追加成功したか
+val: 追加する真偽値（true / false）
+ok: true=真偽元素として配列末尾に追加済み；false=ノード割り当てまたは push 失敗
 `
   'json.arr-push-idx': `
 ノードインデックスで配列の末尾に要素を追加する（json を組み立てるときにプール全体をディープコピーしない内部用ヘルパー）
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 child-idx: 値ノードのインデックス（本プール所属でないと不可）
 ok: true=追加済み；false=ルートが配列でないかインデックス無効（child-idx の指すノードは変更しない）
 `
   'json.arr-push-num': `
 配列の末尾に数値要素を追加する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 val: 数値（ノード num-val に書き込み、整数も小数も f64 で格納）
 ok: true=数値元素として追加済み
 `
   'json.arr-push-str': `
 配列の末尾に文字列要素を追加する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 val: 文字列値
 ok: true=文字列元素として追加済み
 `
   'json.bool': `
 真偽値を取得する（root が真偽値のとき）
-戻り値 val bool, ok bool: ok=成功
+戻り値 val, ok: ok=成功
 val: ok=根ノードの真偽値, nil=根が真偽でない
 `
   'json.clone-tree': `
@@ -3773,7 +3773,7 @@ out: コピーしたサブツリーを保持する新 json（out.root=新ルー�
 `
   'json.delete-key': `
 オブジェクトからキーを削除する
-戻り値 ok bool: ok=成功（キーが存在し、削除された）
+戻り値 ok: ok=成功（キーが存在し、削除された）
 key: キー名
 ok: true=ヒットし当該エッジをリンクリストから取り外済み（エッジと子ノードの占有空間は回収しない）；false=ルートがオブジェクトでないかキー未ヒット
 `
@@ -3781,7 +3781,7 @@ ok: true=ヒットし当該エッジをリンクリストから取り外済み�
 オブジェクトの子ノードを json として取得する
 child は json 自身の子（同じノードプールを再利用して root だけを子に向ける）なので、新しいオブジェクトは作られない。
 存在しない、またはオブジェクトでないときは nil を返す。
-戻り値 child ?json: ok=見つかった, nil=見つからない、またはオブジェクトでない
+戻り値 child: ok=見つかった, nil=見つからない、またはオブジェクトでない
 使い方:
 child = j.get('key')
 child: {
@@ -3793,32 +3793,32 @@ key: キー名
 `
   'json.get-bool': `
 オブジェクトから真偽値を取得する
-戻り値 val bool, ok bool: ok=見つかり、かつ真偽値である
+戻り値 val, ok: ok=見つかり、かつ真偽値である
 key: キー名
 val: ok=子ノードの真偽値, nil=鍵が存在しないか値が真偽でない
 `
   'json.get-i64': `
 オブジェクトから整数値を取得する
-戻り値 val i64, ok bool: ok=見つかり、かつ数値である
+戻り値 val, ok: ok=見つかり、かつ数値である
 key: キー名
 val: ok=値を切り捨て整数化（まず .get-num、次に to-i64、ビット再解釈はしない）, nil=鍵が存在しないか値が数でない
 `
   'json.get-key': `
 グローバル関数 — json オブジェクトからキーで子ノードを取得
-返す child ?json: 子ノード（nil は不在を表す）
+返す child: 子ノード（nil は不在を表す）
 obj: ソース json（読み取りのみ、改変されない）
 key: キー名
 child: ok=独立に深いコピーしたサブツリーのハンドル（変更しても obj に影響しない）, nil=ルートがオブジェクトでないかキー不一致
 `
   'json.get-num': `
 オブジェクトから数値を取得する
-戻り値 val f64, ok bool: ok=見つかり、かつ数値である
+戻り値 val, ok: ok=見つかり、かつ数値である
 key: キー名
 val: ok=子ノードの数値, nil=鍵が存在しないか値が数でない
 `
   'json.get-str': `
 オブジェクトから文字列値を取得する
-戻り値 val str, ok bool: ok=見つかり、かつ文字列である
+戻り値 val, ok: ok=見つかり、かつ文字列である
 使い方:
 s, found = j.get-str('name')
 found -> print(s)
@@ -3827,7 +3827,7 @@ val: ok=子ノードの文字列値, nil=鍵が存在しないか値が文字列
 `
   'json.i64': `
 整数値を取得する（root が数値のとき）
-戻り値 val i64, ok bool: ok=成功
+戻り値 val, ok: ok=成功
 val: ok=根値を切り捨て整数化, nil=根が数でない
 `
   'json.is-arr': `
@@ -3877,23 +3877,23 @@ p: 初期化済みの空ノードプール（各ヒープ vec は長さ 0、over
 `
   'json.num': `
 数値を取得する（root が数値のとき）
-戻り値 val f64, ok bool: ok=成功
+戻り値 val, ok: ok=成功
 val: ok=根ノードの数値, nil=根が数でない
 `
   'json.obj-key': `
 オブジェクトの指定インデックスのキーを取得する
-戻り値 key str: キー文字列
+戻り値 key: キー文字列
 idx: キー番号（挿入順にエッジチェーンを辿る）
 key: ok=キー名, nil=範囲外またはルートがオブジェクトではない
 `
   'json.obj-keys-str': `
 オブジェクトのすべてのキーを改行区切りの文字列として取得する
-戻り値 keys str: すべてのキーを連結したもの
+戻り値 keys: すべてのキーを連結したもの
 keys: 各キー名を順に \n 終端で連結した文字列（オブジェクト以外では空文字列）
 `
   'json.obj-len': `
 オブジェクトのキー数を取得する
-戻り値 n i64: キー数（オブジェクトでなければ 0）
+戻り値 n: キー数（オブジェクトでなければ 0）
 n: ルートオブジェクトのキー数（オブジェクト以外は 0）
 `
   'json.overflowed': `
@@ -4014,49 +4014,49 @@ eq: 1=等しい, 0=不等
 `
   'json.pool.stringify': `
 ノードを文字列にシリアライズする
-戻り値 out str: シリアライズした文字列
+戻り値 out: シリアライズした文字列
 node-idx: サブツリー根部インデックス
 out: シリアライズ後 JSON テキスト（インデックス無効時は空文字列）
 `
   'json.set': `
 オブジェクトにキーを設定する（値は別の json ノード）
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 key: キー名
 val-idx: 値ノードインデックス（本プールに属すること）
 ok: true=書き込み済み；false=ルートがオブジェクトでない（ルートが null のときはその場でオブジェクトへ昇格）
 `
   'json.set-bool': `
 オブジェクトに真偽値を設定する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 使い方:
 j.set-bool('active', true)
-key str: 属性名、重複時は同名の既存メンバーを上書き
-val bool: 書き込む真偽値（true / false）
-ok bool: true=オブジェクトノードに接続済み；false=ノード割り当て失敗または接続失敗
+key: 属性名、重複時は同名の既存メンバーを上書き
+val: 書き込む真偽値（true / false）
+ok: true=オブジェクトノードに接続済み；false=ノード割り当て失敗または接続失敗
 `
   'json.set-i64': `
 オブジェクトに整数値を設定する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 key: キー名
 val: 整数値
 ok: true=書き込み済み
 `
   'json.set-key': `
 オブジェクトのキーを設定する（val に json 値を受け取る糖衣構文）
-戻り値 ok bool: ok=成功
+戻り値 ok: ok=成功
 key: キー名
 val: 値 json（一時的な新規プールへディープコピーしてから本プールへ転送するため、自己参照 j.set(k, j) も安全）
 ok: true=書き込み済み；false=val のルートインデックス無効
 `
   'json.set-null': `
 オブジェクトに null を設定する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 key: キー名
 ok: true=null 子ノードを書き込み済み
 `
   'json.set-num': `
 オブジェクトに数値を設定する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 使い方:
 j.set-num('age', 30.0)
 key: キー名
@@ -4065,7 +4065,7 @@ ok: true=書き込み済み
 `
   'json.set-str': `
 オブジェクトに文字列値を設定する
-戻り値 ok bool: 成功したか
+戻り値 ok: 成功したか
 使い方:
 j.set-str('name', 'Alice')
 key: キー名
@@ -4074,14 +4074,14 @@ ok: true=書き込み済み（root 判定は json.set と同じ）
 `
   'json.str': `
 文字列値を取得する（root が文字列のとき）
-戻り値 val str, ok bool: ok=成功
+戻り値 val, ok: ok=成功
 使い方:
 s, found = j.str()
 val: ok=根ノードの文字列値（コピー）, nil=根が文字列でない
 `
   'json.str-val': `
 文字列ノードの値を取得する
-戻り値 val str: 文字列値
+戻り値 val: 文字列値
 val: 根ノードの文字列値（文字列でないノードは空文字列を返す）
 `
   'json.stringify': `
@@ -4094,65 +4094,65 @@ out: JSON テキスト（root 無効時は空文字列）
 `
   'link.link.empty': `
 連結リストが空かを返す
-戻り値 yes bool: true=空, false=空でない
-yes bool: true=size <= 0（頭尾ポインタがともに -1）
+戻り値 yes: true=空, false=空でない
+yes: true=size <= 0（頭尾ポインタがともに -1）
 `
   'link.link.full': `
 ノードプールが満杯かを返す
-戻り値 yes bool: true=満杯, false=満杯でない
-yes bool: true=free-head < 0（空きリストが枯渇し、後続の insert は新ノードを取得できない）
+戻り値 yes: true=満杯, false=満杯でない
+yes: true=free-head < 0（空きリストが枯渇し、後続の insert は新ノードを取得できない）
 `
   'link.link.size': `
 連結リストの要素数を返す
-戻り値 sz i64: 要素数
-sz i64: 現在有効なノード数（ノードが一つも無いときは 0）
+戻り値 sz: 要素数
+sz: 現在有効なノード数（ノードが一つも無いときは 0）
 `
   'linked-hash-map.linked-hash-map.clear': 'マップを空にする'
   'linked-hash-map.linked-hash-map.contains': `
 キーが存在するかを返す
 get の結果で判定：ok のみ存在とみなす（err / nil はいずれも false）。
-key i64: 検査するキー
-found bool: true=存在する, false=存在しない
+key: 検査するキー
+found: true=存在する, false=存在しない
 `
   'linked-hash-map.linked-hash-map.for-each': `
 挿入順にすべての (キー, 値) 組を走査する
 head → tail の next ポインタに沿って連結リスト全体を歩き、每一步ノードを k / v へ代入。
 本言語にコールバックは無く、関数リターン時 k / v は末尾ノード（最後に挿入されたキーバリュー対）で停止。
-k i64: 現在ノードのキー
-v i64: 現在ノードの値
+k: 現在ノードのキー
+v: 現在ノードの値
 `
   'linked-hash-map.linked-hash-map.get': `
 キーを検索して ?i64 を返す（nil=見つからない）
-key i64: 照会するキー
-result ?i64: ok=対応する値, nil=存在せず（テーブルが空のときは探索せず即返却）
+key: 照会するキー
+result: ok=対応する値, nil=存在せず（テーブルが空のときは探索せず即返却）
 `
   'linked-hash-map.linked-hash-map.hash': `
 スロットインデックスを計算する
-key i64: ハッシュ化するキー
-idx i64: key の [0, cap) 内の初期プローブ位置（key & (cap-1)）
+key: ハッシュ化するキー
+idx: key の [0, cap) 内の初期プローブ位置（key & (cap-1)）
 `
   'linked-hash-map.linked-hash-map.init': 'ハッシュテーブルを初期化する'
   'linked-hash-map.linked-hash-map.is-empty': `
 マップが空か
-empty bool: true=size == 0, false=キー値ペア残りあり
+empty: true=size == 0, false=キー値ペア残りあり
 `
   'linked-hash-map.linked-hash-map.len': `
 要素数を返す
-n i64: 現在のキー・値ペア個数（新規キーの put +1、remove 成功 −1）
+n: 現在のキー・値ペア個数（新規キーの put +1、remove 成功 −1）
 `
   'linked-hash-map.linked-hash-map.put': `
 key→value を挿入または更新する
 線形探測でスロットを探す：同名 key にヒットするのは値を更新するだけで既存の連結リスト位置を保持（末尾へ移動しない）；
 新しい key は連結リストの末尾に挿入。表が満杯で key 不在のとき探測は無限ループするため、ロードファクターの制御が必要。
-key i64: キー
-val i64: 書き込む値（同名 key は上書きされる）
-is-new bool: true=新規挿入されたキー, false=既に存在、値のみ更新
+key: キー
+val: 書き込む値（同名 key は上書きされる）
+is-new: true=新規挿入されたキー, false=既に存在、値のみ更新
 `
   'linked-hash-map.linked-hash-map.remove': `
 キーを削除する
 スロットをクリアし当該ノードを双方向連結リストから外し、同時に head / tail を更新。
-key i64: 削除するキー
-removed bool: true=発見して削除, false=キーが存在せず
+key: 削除するキー
+removed: true=発見して削除, false=キーが存在せず
 `
   'log.get-output-fd': `
 現在の出力先の fd を返す（デバッグ用）
@@ -4197,28 +4197,28 @@ w: 対象 io.writer（内部では fd フィールドのみを永続保存とし
 `
   'magic.detect-by-extension': `
 ファイル拡張子から種別を判定する
-ext str: 小文字の拡張子（'.' を含まない、例 'png'、'json'）
+ext: 小文字の拡張子（'.' を含まない、例 'png'、'json'）
 不明なら空文字列を返す。それ以外は種別の説明を返す
-kind str: 対応するタイプ説明（例 'PNG image'）；未収録の拡張子は ''
+kind: 対応するタイプ説明（例 'PNG image'）；未収録の拡張子は ''
 `
   'magic.detect-by-magic': `
 マジックバイトから種別を判定する
-path str: ファイルパス；比較のため先頭 64 バイトのみ読み取る
+path: ファイルパス；比較のため先頭 64 バイトのみ読み取る
 不明なら空文字列を返す。それ以外は種別の説明を返す
-kind str: マジックナンバーで一致したタイプ説明；ファイルが開けない、または 4 バイト未満なら ''
+kind: マジックナンバーで一致したタイプ説明；ファイルが開けない、または 4 バイト未満なら ''
 `
   'magic.detect-type': `
 ファイルタイプを検出
-path str: 検出するパス（ディレクトリでも通常ファイルでも可）
+path: 検出するパス（ディレクトリでも通常ファイルでも可）
 型記述文字列を返す（例 'PNG image'、'ELF executable'、'ASCII text'、'directory'、'unknown'）
 判定順序：ディレクトリ > 通常ファイルでない > 拡張子 > マジック番号 > 既定 'data'。
-kind str: 'directory'、'unknown (not found)'、拡張子またはマジックナンバーで一致した説明、または既定の 'data'
+kind: 'directory'、'unknown (not found)'、拡張子またはマジックナンバーで一致した説明、または既定の 'data'
 `
   'magic.get-extension': `
 ファイル拡張子を返す（小文字）
-path str: ファイルパス（ディレクトリを含んでよい）；末尾から遡り最後の '.' を探す、'/' に当たれば停止
+path: ファイルパス（ディレクトリを含んでよい）；末尾から遡り最後の '.' を探す、'/' に当たれば停止
 '.' を含まない拡張子を返し、ない場合は空文字列
-ext str: 小文字の拡張子；'.' が無い、'.' 以降が空、または '.' がディレクトリ部分にしか無い場合は ''
+ext: 小文字の拡張子；'.' が無い、'.' 以降が空、または '.' がディレクトリ部分にしか無い場合は ''
 `
   'map.hashmap-bool-tmpl.clear': 'マップを空にする（occ の vec を再確保する）'
   'map.hashmap-bool-tmpl.contains': `
@@ -4361,119 +4361,119 @@ a: 1 番目の文字列
 b: 2 番目の文字列
 eq: 両者がバイト単位で等しいか
 `
-  'markdown.blockquote': '引用行の行頭 > 標記を取り除く。\n`> の後に半角スペースが1つだけある場合はそれも除去；`>>` のような入れ子は残りの `> を保持。\nline str: 生の1行テキスト\nout markdown-quote: yes はその行が引用行であることを示し、text は行頭マーカー除去後の内容（引用行で無いときは空文字列）'
+  'markdown.blockquote': '引用行の行頭 > 標記を取り除く。\n`> の後に半角スペースが1つだけある場合はそれも除去；`>>` のような入れ子は残りの `> を保持。\nline: 生の1行テキスト\nout: yes はその行が引用行であることを示し、text は行頭マーカー除去後の内容（引用行で無いときは空文字列）'
   'markdown.code-close': `
 現在行が指定 fence を閉じるかどうかを判定。
 CommonMark に一致：同種の marker で長さ開始フェンス幅以上（最低 3）で閉じられる。
-line str: 判定対象の1行テキスト
-marker i64: オープンフェンスの marker byte（96 または 126）
-width i64: 開いたグリッドの長さ
-yes bool: true はその行が現在のコードブロックを閉じることを意味する
+line: 判定対象の1行テキスト
+marker: オープンフェンスの marker byte（96 または 126）
+width: 開いたグリッドの長さ
+yes: true はその行が現在のコードブロックを閉じることを意味する
 `
   'markdown.escape-html': `
 HTML テキストと属性値をエスケープ（& < > " の 4 文字；& を先に置換しないと後続置換が二重エスケープされる）。
-s str: 生テキスト（本文または属性値）
-out str: HTML にそのまま挿入できるエスケープ結果
+s: 生テキスト（本文または属性値）
+out: HTML にそのまま挿入できるエスケープ結果
 `
   'markdown.fence': `
 フェンシングコードブロック標記を解析。
 開始フェンス行は trim 後 3 つ以上のバッククォートまたはチルダで始まり、後続テキストは言語ラベルとなる。
-line str: 生の1行テキスト
-out markdown-fence: yes はフェンス行を示す；marker は 96（`）または 126（~）；width はフェンス長；info は言語タグ、無い場合は空文字列
+line: 生の1行テキスト
+out: yes はフェンス行を示す；marker は 96（`）または 126（~）；width はフェンス長；info は言語タグ、無い場合は空文字列
 `
   'markdown.heading': `
 ATX 見出しの等級と見出しテキストを取得。
 「1–6 個の # にスペース 1 つ」の形式のみ受け付け、末尾の任意の「スペース + 連続 #」を除去する。
-line str: 生の1行テキスト
-out markdown-heading: level は 1–6（見出しで無いときは 0）、text は接頭辞と末尾 # を除去した見出し内容
+line: 生の1行テキスト
+out: level は 1–6（見出しで無いときは 0）、text は接頭辞と末尾 # を除去した見出し内容
 `
   'markdown.inline': `
 Markdown インライン構文をレンダリング。
 太字、斜体、取り消し線、インラインコード、リンク、画像、自動リンクとバックスラッシュエスケープをサポート；全テキストは HTML エスケープされ、閉じられていない標記は末尾で閉じタグを自動補完。
-s str: 1 行内の Markdown テキスト（ブロック構文を渡さないこと）
-out str: インライン HTML 断片（外側の <p> を含まない）
+s: 1 行内の Markdown テキスト（ブロック構文を渡さないこと）
+out: インライン HTML 断片（外側の <p> を含まない）
 `
   'markdown.is-word-byte': `
 ASCII byte が単語に属すかどうかを判定。
-c i64: 判定する byte 値（0–255、整数として直接渡す、char ではない）
-yes bool: true は c が 0-9 / A-Z / a-z であることを意味する；非 ASCII と句読点はすべて false
+c: 判定する byte 値（0–255、整数として直接渡す、char ではない）
+yes: true は c が 0-9 / A-Z / a-z であることを意味する；非 ASCII と句読点はすべて false
 `
   'markdown.join-paragraph': `
 段落へ 1 行追加、ハード改行を専用に処理する。
 hard-break が true のとき、行末のスペース2個を <br> として扱い、内容から除去してから '<br>\n' で接続する。
-paragraph str: 現在蓄積中の段落テキスト（空文字列は新段落を意味する）
-line str: 追記する生の行；hard-break 時は末尾にスペース2個必須
-hard-break bool: true はその行末にスペース2個があり、ハード改行を挿入する必要があることを示す
-out str: 追記後の段落テキスト
+paragraph: 現在蓄積中の段落テキスト（空文字列は新段落を意味する）
+line: 追記する生の行；hard-break 時は末尾にスペース2個必須
+hard-break: true はその行末にスペース2個があり、ハード改行を挿入する必要があることを示す
+out: 追記後の段落テキスト
 `
   'markdown.list-content': `
 タスクリスト内容をレンダリング。
 GFM タスク標記 '[ ] ' と '[x] ' / '[X] ' を識別し、残り内容はインライン構文でレンダリング。
-content str: リスト項目の本文（markdown-list の text 由来）
-out str: disabled checkbox 付き HTML 断片、または通常のインライン HTML
+content: リスト項目の本文（markdown-list の text 由来）
+out: disabled checkbox 付き HTML 断片、または通常のインライン HTML
 `
   'markdown.list-item': `
 リスト項目を解析。kind=1 順不同、kind=2 順序付き。
 順不同項は「- / * / + にスペース 1 つ」；順序付き項は「最低 1 桁の数字 + . にスペース 1 つ」。
-line str: 生の1行テキスト
-out markdown-list: kind は 0（リスト項目でない）/ 1（順不同）/ 2（順序付き）、text はマーカー後のエントリ内容
+line: 生の1行テキスト
+out: kind は 0（リスト項目でない）/ 1（順不同）/ 2（順序付き）、text はマーカー後のエントリ内容
 `
   'markdown.prefix-count': `
 行頭の指定文字の連続を数える。
 0 からバイト毎に比較し、異なる文字または文字列末尾で停止。
-s str: 走査対象の行（通常 trim 済み）
-c i64: 比較する byte 値（例 35 は '#'、96 は '`'）
-n i64: 接頭辞長；一致が全く無いときは 0
+s: 走査対象の行（通常 trim 済み）
+c: 比較する byte 値（例 35 は '#'、96 は '`'）
+n: 接頭辞長；一致が全く無いときは 0
 `
   'markdown.read-line': `
 バイトカーソルから 1 行読み、[]str への安全でない動的インデックスを回避。
 '\n' または文字列末尾まで読み、改行文字は含まない。
-source str: 文書全体の Markdown ソーステキスト
-pos i64: 現在の読み取り位置（バイトオフセット、0 始まり）
-out markdown-line: text=その行の内容；next-pos=次の行の開始オフセット；valid=pos が [0, len) 内か否か
+source: 文書全体の Markdown ソーステキスト
+pos: 現在の読み取り位置（バイトオフセット、0 始まり）
+out: text=その行の内容；next-pos=次の行の開始オフセット；valid=pos が [0, len) 内か否か
 `
   'markdown.render': `
 to-html の意味別名、出力は完全に一致。
-source str: 完全な Markdown ソーステキスト
-out str: 完全な HTML ドキュメント断片
+source: 完全な Markdown ソーステキスト
+out: 完全な HTML ドキュメント断片
 `
   'markdown.render-code': `
 コードブロックを出力。
 info が非空なら <code> に class="language-<info>" として付与され、コード内容は全量 HTML エスケープ。
-code str: フェンス内に蓄積されたコード本文（フェンス行を含まない）
-info str: フェンス行末の言語タグ、空文字は言語なしを示す
-out str: <pre><code…></code></pre>\n 断片
+code: フェンス内に蓄積されたコード本文（フェンス行を含まない）
+info: フェンス行末の言語タグ、空文字は言語なしを示す
+out: <pre><code…></code></pre>\n 断片
 `
   'markdown.setext-level': `
 Setext 見出しの等級（=== または ---）を取得。
 当該行は trim 後長さ ≥ 3 で始まりから終わりまで同一の '=' または '-'。
-line str: 生の1行テキスト
-level i64: 1 = '=' 下線（レベル1見出し）、2 = '-' 下線（レベル2見出し）、0 = Setext 見出しではない
+line: 生の1行テキスト
+level: 1 = '=' 下線（レベル1見出し）、2 = '-' 下線（レベル2見出し）、0 = Setext 見出しではない
 `
   'markdown.table-row': `
 | 区切りの行を tr としてレンダリング。
 先頭と末尾の '|' を自動除去し、各セルはインライン構文でレンダリング後に <tag> で包む。
-line str: テーブルの1行テキスト
-tag str: セルのタグ名、ヘッダーは 'th'、データ行は 'td'
-out str: 完全な <tr>…</tr>\n 断片
+line: テーブルの1行テキスト
+tag: セルのタグ名、ヘッダーは 'th'、データ行は 'td'
+out: 完全な <tr>…</tr>\n 断片
 `
   'markdown.table-separator': `
 表の区切り行を判定。
 '|' で分割後、各セルは ':' と '-' を除くと空でなければならず、かつセルが少なくとも 1 つ必要。
-line str: 判定対象の1行テキスト（通常はヘッダーの次の行）
-yes bool: true は |---|:--:| 型の表区切り行であることを意味する
+line: 判定対象の1行テキスト（通常はヘッダーの次の行）
+yes: true は |---|:--:| 型の表区切り行であることを意味する
 `
   'markdown.thematic-break': `
 仕切り線かどうかを判定。
 trim 後、同一の - / * / _ が 3 個以上で構成、間にスペースと tab を許容。
-line str: 生の1行テキスト
-yes bool: true はその行が主題仕切り線（<hr>）であることを意味する
+line: 生の1行テキスト
+yes: true はその行が主題仕切り線（<hr>）であることを意味する
 `
   'markdown.to-html': `
 Markdown ドキュメントを HTML にレンダリングする。
 まず CRLF / CR を LF に正規化し、その後行単位でブロック級構文（見出し、リスト、引用、コードブロック、表、仕切り線、段落）を解析。
-source str: 完全な Markdown ソーステキスト
-out str: 完全な HTML ドキュメント断片
+source: 完全な Markdown ソーステキスト
+out: 完全な HTML ドキュメント断片
 `
   'math.arr-zero': `
 [n]num.zero / []num.zero — ストレージを llvm.memset でゼロ埋めする
@@ -4484,16 +4484,16 @@ out str: 完全な HTML ドキュメント断片
   'math.atan-kernel': `
 atan2: y/x の逆正接（純 .no 実装、libm 依存を回避）
 内部 atan-kernel：まず |t| を <= tan(pi/8) に帰着し、その後テイラー級数
-t f64: 正規化済みの入力値；|t| が大きすぎると級数の収束が遅くなり精度も低下
-r f64: atan の近似値（ラジアン、値域はおよそ (-pi/2, pi/2)）
+t: 正規化済みの入力値；|t| が大きすぎると級数の収束が遅くなり精度も低下
+r: atan の近似値（ラジアン、値域はおよそ (-pi/2, pi/2)）
 `
   'math.char-to-str': `
 char（Unicode コードポイント）を UTF-8 エンコードした文字列に変換する
 旧来の sprintf %c（1 バイトの ASCII しか扱えなかった）を置き換える
 ⚠️ 非推奨: メソッド形式 char.to-str()（std/char.no を参照）を推奨。
 例: c char = 'A'; c.to-str(); この関数は既存の呼び出し箇所のためにのみ残している。
-c char: エンコードする Unicode コードポイント
-out str: 当該コードポイントの 1–4 バイト UTF-8 エンコード（with-cap(4) で容量確保、長さは実際の書き込みで決定）
+c: エンコードする Unicode コードポイント
+out: 当該コードポイントの 1–4 バイト UTF-8 エンコード（with-cap(4) で容量確保、長さは実際の書き込みで決定）
 `
   'math.clamp': `
 ═══════════════════════════════════════════════
@@ -4501,89 +4501,89 @@ out str: 当該コードポイントの 1–4 バイト UTF-8 エンコード（
 ═══════════════════════════════════════════════
 clamp: 値を [min, max] の範囲に制限する
 上限を先に比較してから下限を比較：min > max のとき結果は min（二つの select の後のものが勝つ）
-val i64: 制限対象の値
-min i64: 下限；結果がこれを下回れば min を採用
-max i64: 上限；結果がこれを超えれば max を採用
-result i64: [min, max] に収まる i64（min > max のとき min）
+val: 制限対象の値
+min: 下限；結果がこれを下回れば min を採用
+max: 上限；結果がこれを超えれば max を採用
+result: [min, max] に収まる i64（min > max のとき min）
 `
   'math.div': `
 -7 / 2 == -3（-4 ではない: 床方向のセマンティクスが必要なら自分で符号を判定する）
 ⚠️ b == 0 のときは裸の `/` と同じくトラップする（実行時のゼロ除算チェックはない）。
-a int: 被除数
-b int: 除数、0 不可
-r int: ゼロ方向へ切り捨てた商
+a: 被除数
+b: 除数、0 不可
+r: ゼロ方向へ切り捨てた商
 `
   'math.even': `
 値が偶数か — すべての整数型（符号なしも含む）で使える
-a int: 判定する整数
-yes bool: true は a が 2 で割り切れることを意味する（0 は偶数）
+a: 判定する整数
+yes: true は a が 2 で割り切れることを意味する（0 は偶数）
 `
   'math.fmod': `
 雑項
 浮動小数剰余 res = x - trunc(x/y) * y（C の fmod 意味）
-x f64: 被除数
-y f64: 除数；y == 0.0 のとき結果は NaN
-res f64: 余り、符号は x に従い |res| < |y|
+x: 被除数
+y: 除数；y == 0.0 のとき結果は NaN
+res: 余り、符号は x に従い |res| < |y|
 `
   'math.gcd': `
 最大公約数（ユークリッドの互除法）
 両数とも絶対値を取ってから反復するため結果は常に非負（gcd(0, 0) = 0）
-a int: 1 番目の整数
-b int: 2 番目の整数
-r int: a と b の最大公約数、非負
+a: 1 番目の整数
+b: 2 番目の整数
+r: a と b の最大公約数、非負
 `
   'math.hypot': `
 ユークリッドノルム sqrt(x*x + y*y)
-x f64: 第1の直角辺
-y f64: 第2の直角辺
-res f64: 斜辺長；二乗してから加算するため、|x| または |y| が f64 の上限に近いと中間値が inf にオーバーフローする
+x: 第1の直角辺
+y: 第2の直角辺
+res: 斜辺長；二乗してから加算するため、|x| または |y| が f64 の上限に近いと中間値が inf にオーバーフローする
 `
   'math.lcm': `
 最小公倍数
 a / gcd(a, b) * b で計算；先に割ってから掛けると中間値の溢れを減らせる
-a int: 1 番目の整数
-b int: 2 番目の整数；いずれかが 0 なら結果は 0
-r int: a と b の最小公倍数、非負；積のオーバーフローは #{overflow=wrap} でラップ
+a: 1 番目の整数
+b: 2 番目の整数；いずれかが 0 なら結果は 0
+r: a と b の最小公倍数、非負；積のオーバーフローは #{overflow=wrap} でラップ
 `
   'math.max': `
 実引数列中の最大値を返す（可変長引数・汎用、num の全成員型別で汎用）
 a ..num: 比較する数値シーケンス；少なくとも 1 要素を渡すこと（空だと範囲外アクセス）
-r num: 列中の最大要素、型は a のメンバーと同じ
+r: 列中の最大要素、型は a のメンバーと同じ
 `
   'math.min': `
 実引数列中の最小値を返す（可変長引数・汎用、num の全成員型別で汎用）
 a ..num: 比較する数値シーケンス；少なくとも 1 要素を渡すこと（空だと範囲外アクセス）
-r num: 列中の最小要素、型は a のメンバーと同じ
+r: 列中の最小要素、型は a のメンバーと同じ
 `
   'math.mod': `
 -7 % 2 == -1（床方向の剰余セマンティクスが必要なら自分で符号を判定する）
 ⚠️ b == 0 のときは裸の `%` と同じくトラップする。
-a int: 被除数
-b int: 除数、0 不可
-r int: 余り、|r| < |b| かつ符号は a と同じ
+a: 被除数
+b: 除数、0 不可
+r: 余り、|r| < |b| かつ符号は a と同じ
 `
   'math.odd': `
 値が奇数か — すべての整数型（符号なしも含む）で使える
-a int: 判定する整数
-yes bool: true は a が 2 で割り切れないことを意味する（負の奇数も true）
+a: 判定する整数
+yes: true は a が 2 で割り切れないことを意味する（負の奇数も true）
 `
   'math.pow': `
 ⚠️ 既知の制限（C pow との差異、いずれも極端な境界）：
 1. |y| > 2^63 で f64-to-i64 がオーバーフローし偶奇判定が不正確 ⇒ inf の符号が反転する可能性。
 このとき mag 自体すでに inf/0 で、符号にのみ影響する。
 2. x==0.0 かつ y<0 のとき C の pow は +inf を返すが、本実装は 0.0 を返す（旧動作踏襲）。
-x f64: 底、負数でも可（負の底は下記の符号補正分岐を通る）
-y f64: 指数；x<0 のとき y は整数でなければならず、そうでないと結果は NaN
-res f64: x の y 乗；0^0 = 1.0、x==0.0 のその他ケース（y<0 含む）はすべて 0.0
+x: 底、負数でも可（負の底は下記の符号補正分岐を通る）
+y: 指数；x<0 のとき y は整数でなければならず、そうでないと結果は NaN
+res: x の y 乗；0^0 = 1.0、x==0.0 のその他ケース（y<0 含む）はすべて 0.0
 `
   'math.pow-int': `
 pow: 整数べき a^n（n >= 0）— すべての整数型で使える
 高速べき乗を使う。O(log n)
 ⚠️ math に移していない: 名前が std/math.no の pow（f64 のべき関数）と衝突し、
 1 つのモジュールに pow の定義を 2 つ置けないため。関数形式の API を math に置くという規則の唯一の例外。
-a int: 底
-n int: 指数；n <= 0 ならループは実行されず、結果は常に 1
-r int: a の n 乗；乗算は #{overflow=wrap} でラップし、オーバーフロー報告なし
+a: 底
+n: 指数；n <= 0 ならループは実行されず、結果は常に 1
+r: a の n 乗；乗算は #{overflow=wrap} でラップし、オーバーフロー報告なし
 `
   'math.rotate-left': `
 []num.zero = () {
@@ -4597,169 +4597,169 @@ r int: a の n 乗；乗算は #{overflow=wrap} でラップし、オーバー�
 ビット演算（組み込み）
 ═══════════════════════════════════════════════
 rotate-left: 整数を n ビット左へローテートする（llvm.fshl 経由で ARM64 の ROR に対応づけられる）
-x i64: 回転させる 64 ビット整数
-n i64: 左回転ビット数、64 で剰余（n は負も可、右回転 |n| ビットに等価）
-r i64: 左回転後の結果
+x: 回転させる 64 ビット整数
+n: 左回転ビット数、64 で剰余（n は負も可、右回転 |n| ビットに等価）
+r: 左回転後の結果
 `
   'math.rotate-right': `
 整数を n ビット右へローテートする（llvm.fshr 経由で ARM64 の ROR に対応づけられる）
-x i64: 回転させる 64 ビット整数
-n i64: 右回転ビット数、64 で剰余（n は負も可、左回転 |n| ビットに等価）
-r i64: 右回転後の結果
+x: 回転させる 64 ビット整数
+n: 右回転ビット数、64 で剰余（n は負も可、左回転 |n| ビットに等価）
+r: 右回転後の結果
 `
   'math.store-le-u32': `
 u32 値をバイト配列の指定オフセットにリトルエンディアンで書き込む
-arr i64: 対象バイト配列の開始アドレス（i64 で渡す）
-offset i64: 書き込み位置の arr 基準バイトオフセット；呼び出し側で offset+4 が範囲外でないことを保証が必要
-val u32: 書き込む 32 ビット値、下位 8 バイトから配置
+arr: 対象バイト配列の開始アドレス（i64 で渡す）
+offset: 書き込み位置の arr 基準バイトオフセット；呼び出し側で offset+4 が範囲外でないことを保証が必要
+val: 書き込む 32 ビット値、下位 8 バイトから配置
 `
   'math.swap': `
 2 つの値を交換：一時変数で a と b を入れ替える、汎用 t
-a t: 出力パラメータ 1（呼び出し前は元の値を保持、リターン時は b の元の値を保持）
-b t: 出力パラメータ 2（呼び出し前は元の値を保持、リターン時は a の元の値を保持）
+a: 出力パラメータ 1（呼び出し前は元の値を保持、リターン時は b の元の値を保持）
+b: 出力パラメータ 2（呼び出し前は元の値を保持、リターン時は a の元の値を保持）
 `
   'md5.md5': `
 MD5 ハッシュを計算（RFC 1321；入力は任意長。内部で 512-bit の倍数に埋めます）
-data []byte: ダイジェスト計算の対象入力バイト
-out [16]byte: 128-bit ダイジェスト。MD5 標準のリトルエンディアンワード順で格納
+data: ダイジェスト計算の対象入力バイト
+out: 128-bit ダイジェスト。MD5 標準のリトルエンディアンワード順で格納
 `
   'md5.md5-rotl': `
 32-bit 左ローテート。math.rotate-left は 64-bit 幅のため MD5 の u32 ラウンド関数には不適であり、
 シフト＋マスク (0xFFFFFFFF) で真の 32-bit ローテートを手実装しています。
-x u32: ローテートする 32 ビット値
-n i64: 左ローテートビット数（1..31；32 はシフト量あふれを起こします）
-r u32: 左ローテート結果。& 0xFFFFFFFF 済み
+x: ローテートする 32 ビット値
+n: 左ローテートビット数（1..31；32 はシフト量あふれを起こします）
+r: 左ローテート結果。& 0xFFFFFFFF 済み
 `
   'multipart.multipart-create': `
 新しい multipart エンコーダを構築
-返り値 w ?multipart-writer: ok=エンコーダ, nil=失敗
+返り値 w: ok=エンコーダ, nil=失敗
 `
   'multipart.multipart-create-boundary': `
 指定境界でエンコーダを構築
-boundary str: 境界文字列
+boundary: 境界文字列
 返り値 w multipart-writer
 `
   'multipart.multipart-decrypt-field': `
 暗号化された multipart フィールドデータを復号
-encrypted-data str: Base64 エンコードの暗号化データ（12 バイト IV プレフィックスを含む）
-key [32]byte: AES-256 キー
-aad []byte: 追加認証データ（フィールド名）
-返り値 plain ?str: ok=復号後の平文, nil=復号失敗
+encrypted-data: Base64 エンコードの暗号化データ（12 バイト IV プレフィックスを含む）
+key: AES-256 キー
+aad: 追加認証データ（フィールド名）
+返り値 plain: ok=復号後の平文, nil=復号失敗
 `
   'multipart.multipart-extract-boundary': `
 Content-Type から boundary 値を抽出
-content-type str: Content-Type ヘッダ値
-返り値 boundary str: 境界文字列（空=見つかりません）
+content-type: Content-Type ヘッダ値
+返り値 boundary: 境界文字列（空=見つかりません）
 `
   'multipart.multipart-gen-boundary': `
 ランダム境界文字列を生成
-seed i64: ランダムシード（入力/出力）
-返り値 boundary str: 境界文字列
+seed: ランダムシード（入力/出力）
+返り値 boundary: 境界文字列
 `
   'multipart.multipart-parse': `
 Content-Type ヘッダとリクエストボディから multipart を解析
-content-type str: Content-Type ヘッダ値（boundary=... を含む）
-body str: リクエストボディ
-返り値 r ?multipart-reader: ok=パーサ, nil=失敗
+content-type: Content-Type ヘッダ値（boundary=... を含む）
+body: リクエストボディ
+返り値 r: ok=パーサ, nil=失敗
 `
   'multipart.multipart-reader.field-content-type': `
 現在のコンテンツタイプを取得
-返り値 ct str: 空=未指定
+返り値 ct: 空=未指定
 `
   'multipart.multipart-reader.field-data': `
 現在のフィールドデータを取得
-返り値 data str: 現在のパートの内容データ（バイナリバイトを含む）
+返り値 data: 現在のパートの内容データ（バイナリバイトを含む）
 `
   'multipart.multipart-reader.field-filename': `
 現在のファイル名を取得
-返り値 filename str: 空=ファイルフィールドではありません
+返り値 filename: 空=ファイルフィールドではありません
 `
   'multipart.multipart-reader.field-name': `
 現在のフィールド名を取得
-返り値 name str: 現在のパートの form-data の name（空=未指定）
+返り値 name: 現在のパートの form-data の name（空=未指定）
 `
   'multipart.multipart-reader.has-current-part': `
 現在のパートの有無を判定
-返り値 yes bool: true=読み取り可能なパートに位置しています
+返り値 yes: true=読み取り可能なパートに位置しています
 `
   'multipart.multipart-reader.init': `
 パーサを初期化
-boundary str: 境界文字列（'--' プレフィックスは含みません）
-data str: 生データ
+boundary: 境界文字列（'--' プレフィックスは含みません）
+data: 生データ
 `
   'multipart.multipart-reader.is-file': `
 現在パートがファイルかを判定
-返り値 yes bool: true=ファイル
+返り値 yes: true=ファイル
 `
   'multipart.multipart-reader.next': `
 次のパートへ進行
-返り値 has-part bool: true=次のパートが存在, false=末尾に到達
+返り値 has-part: true=次のパートが存在, false=末尾に到達
 `
   'multipart.multipart-reader.parse-header-line': `
 ヘッダ 1 行を解析
-line str: ヘッダ行
-part multipart-part: 出力。解析結果
+line: ヘッダ行
+part: 出力。解析結果
 `
   'multipart.multipart-reader.parse-headers': `
 パートヘッダを解析
-header-block str: ヘッダブロック（末尾の CRLFCRLF は含みません）
-part multipart-part: 出力。解析結果
+header-block: ヘッダブロック（末尾の CRLFCRLF は含みません）
+part: 出力。解析結果
 `
   'multipart.multipart-writer.body-of': `
 構築済みリクエストボディを取得
-返り値 body str: これまで書き込んだ各パートからなる完全なリクエストボディ
+返り値 body: これまで書き込んだ各パートからなる完全なリクエストボディ
 `
   'multipart.multipart-writer.boundary-of': `
 境界文字列を取得
-返り値 boundary str: エンコーダが現在使用している境界（-- プレフィックスは含みません）
+返り値 boundary: エンコーダが現在使用している境界（-- プレフィックスは含みません）
 `
   'multipart.multipart-writer.close-form': `
 終了境界を書き込み、フォームを完成
-返り値 ok bool: true=書き込み成功
+返り値 ok: true=書き込み成功
 `
   'multipart.multipart-writer.content-type': `
 Content-Type ヘッダ値を取得
-返り値 ct str: 例 'multipart/form-data; boundary=----NolangBoundary...'
+返り値 ct: 例 'multipart/form-data; boundary=----NolangBoundary...'
 `
   'multipart.multipart-writer.init': `
 エンコーダを初期化（境界を自動生成）
-返り値 ok bool: true=書き込み成功
+返り値 ok: true=書き込み成功
 `
   'multipart.multipart-writer.init-boundary': `
 指定境界で初期化
-boundary str: 境界文字列
+boundary: 境界文字列
 `
   'multipart.multipart-writer.write-encrypted-field': `
 AES-256-GCM 暗号化テキストフィールドを書き込み
-name str: フィールド名
-value str: 平文値
-key [32]byte: AES-256 キー
-iv [12]byte: GCM IV
-返り値 ok bool: true=書き込み成功
+name: フィールド名
+value: 平文値
+key: AES-256 キー
+iv: GCM IV
+返り値 ok: true=書き込み成功
 `
   'multipart.multipart-writer.write-encrypted-file': `
 AES-256-GCM 暗号化ファイルフィールドを書き込み
-name str: フィールド名
-filename str: ファイル名
-content-type str: コンテンツタイプ
-content str: ファイルの平文内容
-key [32]byte: AES-256 キー
-iv [12]byte: GCM IV（nonce）
-返り値 ok bool: true=書き込み成功
+name: フィールド名
+filename: ファイル名
+content-type: コンテンツタイプ
+content: ファイルの平文内容
+key: AES-256 キー
+iv: GCM IV（nonce）
+返り値 ok: true=書き込み成功
 `
   'multipart.multipart-writer.write-field': `
 テキストフィールドを書き込み
-name str: フィールド名
-value str: フィールド値
-返り値 ok bool: true=書き込み成功
+name: フィールド名
+value: フィールド値
+返り値 ok: true=書き込み成功
 `
   'multipart.multipart-writer.write-file': `
 ファイルフィールドを書き込み
-name str: フィールド名
-filename str: ファイル名
-content-type str: コンテンツタイプ（例 'image/jpeg'）
-content str: ファイル内容
-返り値 ok bool: true=書き込み成功
+name: フィールド名
+filename: ファイル名
+content-type: コンテンツタイプ（例 'image/jpeg'）
+content: ファイル内容
+返り値 ok: true=書き込み成功
 `
   'net.close': `
 ファイルディスクリプタをクローズ（fs モジュール由来）
@@ -4793,15 +4793,15 @@ total: 累計受信した総バイト数
 `
   'net.conn.recv-line': `
 1 行受信（最大 NET-BUF-SIZE バイト）
-返り値 line ?str: ok=受信内容, nil=失敗または接続クローズ
+返り値 line: ok=受信内容, nil=失敗または接続クローズ
 line: ok=単回受信のデータ（recv 1 回の内容で、改行区切りではありません）, nil=未受信または接続無効
 `
   'net.conn.recv-with-timeout': `
 タイムアウト付き受信
-buf str: 受信バッファ
-n i64: 受信する最大バイト数
-timeout-ms i64: タイムアウトミリ秒
-返り値 read-n i64: 実際の受信バイト数（-1=エラー, 0=タイムアウトまたは接続クローズ）
+buf: 受信バッファ
+n: 受信する最大バイト数
+timeout-ms: タイムアウトミリ秒
+返り値 read-n: 実際の受信バイト数（-1=エラー, 0=タイムアウトまたは接続クローズ）
 `
   'net.conn.send': `
 文字列データを送信
@@ -4811,77 +4811,77 @@ written: 実際の送信バイト数（-1=エラーまたは接続無効）
 `
   'net.conn.send-with-timeout': `
 タイムアウト付き送信（現在は直接送信し、独立した send timeout なし）
-data str: 送信するデータ
-timeout-ms i64: タイムアウトミリ秒（現在は無視され、recv timeout の設定のみ参考）
-返り値 written i64: 実際の送信バイト数（-1=エラー）
+data: 送信するデータ
+timeout-ms: タイムアウトミリ秒（現在は無視され、recv timeout の設定のみ参考）
+返り値 written: 実際の送信バイト数（-1=エラー）
 `
   'net.conn.set-recv-timeout': `
 受信タイムアウトを設定
-timeout-ms i64: タイムアウトミリ秒（0=ブロッキング, >0=タイムアウト）
-返り値 ok bool: true=成功
+timeout-ms: タイムアウトミリ秒（0=ブロッキング, >0=タイムアウト）
+返り値 ok: true=成功
 `
   'net.conn.set-timeout': `
 受信タイムアウトを設定（別名。セマンティクスは set-recv-timeout と同じ）
-timeout-ms i64: タイムアウトミリ秒
-返り値 ok bool: true=成功
+timeout-ms: タイムアウトミリ秒
+返り値 ok: true=成功
 `
   'net.dial-timeout': `
 接続タイムアウト付きダイヤル
-host str: 対象ホスト
-port i64: 対象ポート番号
-timeout-ms i64: タイムアウトミリ秒（現在は接続後の recv タイムアウト設定に使用）
-返り値 c ?conn: ok=接続, nil=失敗
+host: 対象ホスト
+port: 対象ポート番号
+timeout-ms: タイムアウトミリ秒（現在は接続後の recv タイムアウト設定に使用）
+返り値 c: ok=接続, nil=失敗
 `
   'net.dial-to': `
 接続を確立しダイヤル
-返り値 c ?conn: ok=接続, nil=失敗
+返り値 c: ok=接続, nil=失敗
 host: 対象 IPv4 ドット区切りアドレス
 port: 対象ポート番号
 c: ok=接続済みコネクタ, nil=ダイヤル失敗
 `
   'net.enc-accept': `
 accept 済み TCP 接続上で暗号チャネルを確立
-c conn: accept 済みの TCP 接続
-key [32]byte: AES-256 キー
-返り値 ec enc-conn: 暗号接続
+c: accept 済みの TCP 接続
+key: AES-256 キー
+返り値 ec: 暗号接続
 `
   'net.enc-conn.close': '暗号接続をクローズ（基盤の TCP 接続も同時にクローズ）'
   'net.enc-conn.gen-iv': `
 次の IV（nonce）を生成
-返り値 iv [12]byte: 12 バイトの IV
+返り値 iv: 12 バイトの IV
 iv: 12 バイトの IV（先頭 4 バイトは増加する送信シーケンス番号、後半 8 バイトはランダム値由来）
 `
   'net.enc-conn.init': `
 暗号接続を初期化
-c conn: 基盤の TCP 接続
-key [32]byte: AES-256 キー
+c: 基盤の TCP 接続
+key: AES-256 キー
 `
   'net.enc-conn.recv-encrypted': `
 データを受信し復号
-返り値 data ?str: ok=復号後の平文, nil=失敗
+返り値 data: ok=復号後の平文, nil=失敗
 `
   'net.enc-conn.send-encrypted': `
 データを暗号化し送信
-data str: 平文データ
-返り値 ok bool: true=成功
+data: 平文データ
+返り値 ok: true=成功
 `
   'net.enc-dial': `
 暗号化 TCP 接続を確立
-host str: 対象ホスト
-port i64: 対象ポート番号
-key [32]byte: AES-256 キー
-返り値 ec ?enc-conn: ok=暗号接続, nil=失敗
+host: 対象ホスト
+port: 対象ポート番号
+key: AES-256 キー
+返り値 ec: ok=暗号接続, nil=失敗
 `
   'net.icmp-checksum': `
 ICMP チェックサムを計算（16 ビットの 1 の補数和）
-data []byte: パケットデータ
-len i64: パケット長
+data: パケットデータ
+len: パケット長
 返り値 checksum i64（16 ビット）
 `
   'net.icmp-conn.build-echo': `
 ICMP Echo Request パケットを構築
-pkt []byte: 出力パケットバッファ（最低 64 バイト）。本関数が in-place で記入します
-seq i64: ICMP Echo シーケンス番号。応答との対応付けのためパケットの seq フィールドに書き込まれます
+pkt: 出力パケットバッファ（最低 64 バイト）。本関数が in-place で記入します
+seq: ICMP Echo シーケンス番号。応答との対応付けのためパケットの seq フィールドに書き込まれます
 `
   'net.icmp-conn.close': 'ICMP socket をクローズ'
   'net.icmp-conn.open': `
@@ -4891,32 +4891,32 @@ ok: true=socket 確立成功（ident とシーケンス番号の起点が記録�
 `
   'net.icmp-conn.ping-host': `
 指定ホストへ複数回 ping を送信
-host str: 対象 IP アドレス
-count i64: ping 回数
-timeout-ms i64: 回ごとのタイムアウトミリ秒（デフォルト 1000）
+host: 対象 IP アドレス
+count: ping 回数
+timeout-ms: 回ごとのタイムアウトミリ秒（デフォルト 1000）
 `
   'net.icmp-conn.ping-once': `
 ICMP Echo Request を 1 回送信し応答を待機
-host str: 対象 IP アドレス
-timeout-ms i64: タイムアウトミリ秒
-返り値 rtt ?i64: ok=往復遅延（マイクロ秒）, nil=失敗
+host: 対象 IP アドレス
+timeout-ms: タイムアウトミリ秒
+返り値 rtt: ok=往復遅延（マイクロ秒）, nil=失敗
 `
   'net.listen-on': `
 リスナーを確立し監視を開始
-返り値 l ?listener: ok=リスナー, nil=失敗
+返り値 l: ok=リスナー, nil=失敗
 host: バインドする IPv4 ドット区切りアドレス
 port: 監視ポート番号
 l: ok=accept 開始可能なリスナー, nil=監視失敗
 `
   'net.listener.accept': `
 新規 TCP 接続を accept
-返り値 c ?conn: ok=接続構造体, nil=失敗
+返り値 c: ok=接続構造体, nil=失敗
 c: ok=新規接続（accept 済み fd を含む）, nil=accept 失敗
 `
   'net.listener.accept-with-timeout': `
 タイムアウト付き accept
-timeout-ms i64: タイムアウトミリ秒
-返り値 c ?conn: ok=接続, nil=タイムアウトまたは失敗
+timeout-ms: タイムアウトミリ秒
+返り値 c: ok=接続, nil=タイムアウトまたは失敗
 `
   'net.listener.close': '監視 socket をクローズ'
   'net.listener.fd-of': `
@@ -4932,8 +4932,8 @@ ok: true=バインド済み・監視開始（失敗時は fd は -1 のまま）
 `
   'net.listener.set-timeout': `
 accept タイムアウトを設定
-timeout-ms i64: タイムアウトミリ秒
-返り値 ok bool: true=成功
+timeout-ms: タイムアウトミリ秒
+返り値 ok: true=成功
 `
   'net.net-accept': `
 TCP 接続を accept
@@ -5016,18 +5016,18 @@ written: 実際の送信バイト数（-1=エラー）
 `
   'net.ping': `
 1 回 ping の簡易関数
-host str: 対象 IP アドレス
-返り値 rtt ?i64: ok=往復遅延（マイクロ秒）, nil=失敗
+host: 対象 IP アドレス
+返り値 rtt: ok=往復遅延（マイクロ秒）, nil=失敗
 `
   'net.ping-count': `
 複数回 ping の簡易関数
-host str: 対象 IP アドレス
-count i64: ping 回数
+host: 対象 IP アドレス
+count: ping 回数
 `
   'net.split-ws': `
 空白文字（スペース/タブ）で文字列を分割し、連続空白はスキップ
-s str: 入力文字列
-返り値 out []str: 空でないフィールドリスト
+s: 入力文字列
+返り値 out: 空でないフィールドリスト
 `
   'net.udp-conn.close': 'UDP socket をクローズ'
   'net.udp-conn.fd-of': `
@@ -5042,36 +5042,36 @@ ok: true=UDP socket 確立成功
 `
   'net.udp-conn.recv': `
 UDP データをバッファへ受信
-buf str: 受信バッファ
-n i64: 受信する最大バイト数
+buf: 受信バッファ
+n: 受信する最大バイト数
 返り値 read-n=実際の受信バイト数（-1=エラー, 0=タイムアウト）
 `
   'net.udp-conn.recv-bytes': `
 UDP データをバイト配列へ受信
-buf []byte: 受信バッファ
-n i64: 受信する最大バイト数
+buf: 受信バッファ
+n: 受信する最大バイト数
 返り値 read-n=実際の受信バイト数（-1=エラー, 0=タイムアウト）
 `
   'net.udp-conn.send': `
 UDP データを .host:.port へ送信
-data str: 送信するデータ
+data: 送信するデータ
 返り値 written=実際の送信バイト数（-1=エラー）
 `
   'net.udp-conn.send-bytes': `
 UDP バイト配列を .host:.port へ送信
-data []byte: 送信するデータ
+data: 送信するデータ
 返り値 written=実際の送信バイト数（-1=エラー）
 `
   'net.udp-conn.set-timeout': `
 受信タイムアウトを設定
-timeout-ms i64: タイムアウトミリ秒
+timeout-ms: タイムアウトミリ秒
 返り値 ok=true=成功
 `
   'net.udp-dial-to': `
 UDP 接続を確立し宛先アドレスを設定
-host str: 対象 IP アドレス
-port i64: 対象ポート番号
-返り値 c ?udp-conn: ok=接続, nil=失敗
+host: 対象 IP アドレス
+port: 対象ポート番号
+返り値 c: ok=接続, nil=失敗
 `
   'noml.doc.ann': `
 ルートノードの `#{...}` コメント原文を取得
@@ -5168,8 +5168,8 @@ idx: 新ノードの索引
 `
   'noml.doc.new-bool': `
 ブールノードを構築
-v bool: ノードに格納するブール値
-idx i64: プール内の新ノードの索引。呼び出し側がサブツリーを接続するために使用
+v: ノードに格納するブール値
+idx: プール内の新ノードの索引。呼び出し側がサブツリーを接続するために使用
 `
   'noml.doc.new-nil': `
 nil ノードを構築
@@ -5177,8 +5177,8 @@ idx: 新ノードの索引
 `
   'noml.doc.new-num': `
 数字ノードを構築
-v f64: ノードが格納する数値（整数と小数は同一のノード型別を共有）
-idx i64: プール内の新ノードの索引。呼び出し側がサブツリーを接続するために使用
+v: ノードが格納する数値（整数と小数は同一のノード型別を共有）
+idx: プール内の新ノードの索引。呼び出し側がサブツリーを接続するために使用
 `
   'noml.doc.new-obj': `
 空オブジェクトノードを構築
@@ -5340,8 +5340,8 @@ out: NOML キーのリテラル
 数のリテラルを生成（整数値は小数点を付けません）
 ±1e15 以内かつ丸め後に復元できる場合（i.to-f64() == n）は整数表記で出力し、
 そうでない場合は n.to-str() の結果を保持します。
-n f64: シリアライズする数値
-out str: 数のリテラル（例 '42' または '3.14'）
+n: シリアライズする数値
+out: 数のリテラル（例 '42' または '3.14'）
 `
   'noml.pool.get': `
 キーにより子ノードの索引を取得
@@ -5381,9 +5381,9 @@ found: true=存在します
 `
   'noml.pool.has-byte': `
 生バイトを走査し指定値の出現有無を判定（コードポイントではなくバイト単位で比較）
-s str: 走査するテキスト
-target i64: 比較するバイト値、範囲 0–255（例 10 = '\n'、96 = '`'）
-yes bool: true=少なくとも 1 回出現, false=そのバイトを全く含まない（空文字列は必ず false）
+s: 走査するテキスト
+target: 比較するバイト値、範囲 0–255（例 10 = '\n'、96 = '`'）
+yes: true=少なくとも 1 回出現, false=そのバイトを全く含まない（空文字列は必ず false）
 `
   'noml.pool.has-key': `
 オブジェクトに同名メンバーが既に存在するか（重複キーはエラー報告）
@@ -5479,11 +5479,11 @@ ok: true=解析成功
 `
   'noml.pool.parse-bool': `
 true/false を解析
-s str: 完全なソーステキスト
-pos i64: リテラルの開始位置（t または f を指します）
-val bool: 解析したブール値；ok=false のときは固定で false
-next i64: リテラルの後の位置；ok=false のときは元の pos を返します
-ok bool: true=解析成功、false=この位置は true/false ではない（fail を呼びエラー記録済み）
+s: 完全なソーステキスト
+pos: リテラルの開始位置（t または f を指します）
+val: 解析したブール値；ok=false のときは固定で false
+next: リテラルの後の位置；ok=false のときは元の pos を返します
+ok: true=解析成功、false=この位置は true/false ではない（fail を呼びエラー記録済み）
 `
   'noml.pool.parse-bool-node': `
 ブール値を解析しノードとして確定
@@ -5512,11 +5512,11 @@ ok: true=解析成功
   'noml.pool.parse-num': `
 数のリテラルを解析（整数 / 小数 / 指数表記。先頭の '-' は許容、'+' は受け付けません）
 数を構成するバイトのみ消費し、それ以外の文字で停止。区切り文字は要求しません
-s str: ソース全文
-pos i64: 数字開始のバイトインデックス
-val f64: 解析した数値（NOML は数字型別が 1 種のみで、整数も f64 で格納）
-next i64: 数字終了後のバイトインデックス（失敗時はエラー位置で停止。fail のマーキング用）
-ok bool: true=解析成功, false=構文エラー（整数部なし、'.' 以降に小数部なし、指数に桁数なし）
+s: ソース全文
+pos: 数字開始のバイトインデックス
+val: 解析した数値（NOML は数字型別が 1 種のみで、整数も f64 で格納）
+next: 数字終了後のバイトインデックス（失敗時はエラー位置で停止。fail のマーキング用）
+ok: true=解析成功, false=構文エラー（整数部なし、'.' 以降に小数部なし、指数に桁数なし）
 `
   'noml.pool.parse-num-node': `
 数値を解析しノードとして確定
@@ -5580,21 +5580,21 @@ ok: true=解析成功
 単引用符文字列のリテラルを生成（エスケープを含む）
 エスケープ規則：'\'' と '\\' の前にはバックスラッシュを付加、LF / CR / TAB は \n \r \t と書き、
 その他の < 0x20 の制御バイトは \u00XX と書きます；出力バッファは n*6+2 を確保（1 バイトの最悪ケースは 6 文字）。
-s str: 生の内容（任意のバイトを許容し、正当な UTF-8 を要求しません）
-out str: 前後に単引用符を 1 つずつ付け、内部をエスケープしたリテラル
+s: 生の内容（任意のバイトを許容し、正当な UTF-8 を要求しません）
+out: 前後に単引用符を 1 つずつ付け、内部をエスケープしたリテラル
 `
   'noml.pool.quote-value': `
 内容により最も簡易な形式を選んで文字列リテラルを生成
 デフォルトは .quote()；LF を含み .raw-safe() を通過する場合はバッククォート生文字列改用し、元の改行を保持します。
-s str: 生の内容
-out str: .noml に直接書けるテキストリテラル（単引用符エスケープ形式または '`' 生文字列）
+s: 生の内容
+out: .noml に直接書けるテキストリテラル（単引用符エスケープ形式または '`' 生文字列）
 `
   'noml.pool.raw-safe': `
 内容をバッククォート生文字列に格納してもそのまま復元できるか判定
 以下のいずれかが出現した場合は使用不可：空文字列、先頭または末尾バイトが LF、CR を含む、
 いずれかの行を先頭空白（スペース / TAB / CR）除去後 '`' で始まる（終了マークと誤認されます）。
-s str: シリアライズ対象の内容
-yes bool: true='`\n' + s + '\n`' へ安全にラップ可能, false=単引用符エスケープ形式へ切り替えが必要
+s: シリアライズ対象の内容
+yes: true='`\n' + s + '\n`' へ安全にラップ可能, false=単引用符エスケープ形式へ切り替えが必要
 `
   'noml.pool.require-end': `
 メンバー終了検証：その後ろは行内空白、改行、`;` コメント、またはコンテナ閉じのみ許容
@@ -5679,21 +5679,21 @@ v: ok=文字列内容, nil=値が文字列ではありません
 呼び出し形式: abs(x)（x がレシーバ。num の 0 引数メソッドは現在この形式のみ対応。
 x.abs() のドット形式はネストした num 共用体がレシーバを単態化しないため未対応。num.sign も同じ）；
 負数は overflow=wrap で回り込ませて反転する（i64.MIN の絶対値は i64 の範囲を超える）
-r num: 非負はそのまま返す；負数は符号反転結果を返す（最小負整数は自分自身へラップし負のまま）
+r: 非負はそのまま返す；負数は符号反転結果を返す（最小負整数は自分自身へラップし負のまま）
 `
   'num.clamp': `
 [lo, hi] の範囲内に制限する
 使い方: x.clamp(lo, hi, r)
 順序どおりの短絡判定：先に下界、次に上界を比較。よって lo > hi（区間逆転）では下界が優先、
 lo 未満の値は lo まで引き上げ、hi 超えの値は hi まで押し下げ。
-lo num: 下界（含む）；入力が lo より小さければ lo を結果とする
-hi num: 上界（含む）；入力が hi より大きければ hi を結果とする
-r num: クランプ後の数値、[lo, hi] に収まる（区間が逆なら {lo, hi} のいずれか一方）
+lo: 下界（含む）；入力が lo より小さければ lo を結果とする
+hi: 上界（含む）；入力が hi より大きければ hi を結果とする
+r: クランプ後の数値、[lo, hi] に収まる（区間が逆なら {lo, hi} のいずれか一方）
 `
   'num.sign': `
 符号（-1, 0, 1）— すべての num 型（整数と浮動小数点）で使える
 ±0.0 とさまざまな整数型を受け付ける；NaN は二つの比較がともに false のため 0 に落ちる。
-r num: 1=ゼロより大, -1=ゼロより小, 0=ゼロに等しい（±0.0 を含む、NaN は else 分岐）
+r: 1=ゼロより大, -1=ゼロより小, 0=ゼロに等しい（±0.0 を含む、NaN は else 分岐）
 `
   'number.byte.to-str': `
 byte を文字列に変換する（符号なし。u64 に拡張して再利用する）
@@ -5779,14 +5779,14 @@ out: 最短往復十進文字列（この double を一意に復元できる最�
 `
   'number.f64.to-str-fixed': `
 固定小数点変換
-precision i64: 小数部の桁数（>= 0。i64 のオーバーフローを避けるため 17 以下にする）
-戻り値 out str: 文字列形式（例: "3.14", "-0.005", "100"）
+precision: 小数部の桁数（>= 0。i64 のオーバーフローを避けるため 17 以下にする）
+戻り値 out: 文字列形式（例: "3.14", "-0.005", "100"）
 
 `
   'number.f64.to-str-general': `
 汎用形式（固定小数点と指数表記を自動で選ぶ）
-precision i64: 有効桁数の上限（>= 1）
-戻り値 out str: 文字列形式（末尾のゼロは自動で取り除く）
+precision: 有効桁数の上限（>= 1）
+戻り値 out: 文字列形式（末尾のゼロは自動で取り除く）
 
 `
   'number.f64.to-u32': `
@@ -5972,7 +5972,7 @@ name: NIS ドメイン名（失敗時は空文字列）
 `
   'os.get-env': `
 環境変数を取得する
-戻り値 val ?str: ok=値, nil=未設定
+戻り値 val: ok=値, nil=未設定
 key: 環境変数名
 `
   'os.get-errno': `
@@ -6000,7 +6000,7 @@ pid: 現在プロセスの PID
 プロセスのスケジューリング優先度を取得する
 which: 対象の種類（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
 who: 対象の ID（0 は現在のプロセス/グループ/ユーザー）
-戻り値 prio ?i64: ok=優先度（-20〜19）, nil=読み取れなかった
+戻り値 prio: ok=優先度（-20〜19）, nil=読み取れなかった
 注意: libc は慣例的にエラー時に -1 を返して errno を設定するが、優先度が -1 であり得るため、
 errno==0 が両者を区別する。ここでは ?i64 で明示する（nil がエラー）。
 
@@ -6106,22 +6106,22 @@ us: 睡眠マイクロ秒数
 `
   'os.stat-gid': `
 ファイルのグループ gid を取得する
-戻り値 gid ?i64: ok=gid, nil=読み取れなかった
+戻り値 gid: ok=gid, nil=読み取れなかった
 path: ファイルパス
 `
   'os.stat-mode': `
 ファイルモード（パーミッションと種別のビット）を取得する
-戻り値 mode ?i64: ok=モード値, nil=読み取れなかった
+戻り値 mode: ok=モード値, nil=読み取れなかった
 path: ファイルパス
 `
   'os.stat-mtime': `
 ファイルの変更時刻（Unix 秒）を取得する
-戻り値 mtime ?i64: ok=変更時刻, nil=読み取れなかった
+戻り値 mtime: ok=変更時刻, nil=読み取れなかった
 path: ファイルパス
 `
   'os.stat-uid': `
 ファイルの所有者 uid を取得する
-戻り値 uid ?i64: ok=uid, nil=読み取れなかった
+戻り値 uid: ok=uid, nil=読み取れなかった
 path: ファイルパス
 `
   'os.strerror': `
@@ -6142,7 +6142,7 @@ val: その _SC_ 項目の値（失敗時は -1 を返す）
   'os.sysctl': `
 システム制御パラメータを問い合わせる（文字列値を読む）
 name: パラメータ名（例: 'kern.ostype', 'hw.model'）
-戻り値 val ?str: ok=値の文字列, nil=問い合わせ失敗
+戻り値 val: ok=値の文字列, nil=問い合わせ失敗
 注意: Linux では /proc/sys に対応づけ、macOS/BSD は sysctl(2) システムコールを通る
 
 `
@@ -6271,49 +6271,49 @@ f: 分割されたファイル名（.p は in-place でそのディレクトリ�
   'pbkdf2.pbkdf2-hmac-sha1': `
 HMAC-SHA1 を用いた PBKDF2
 旧プロトコル互換用のみ；新規設計は SHA-256 / SHA-512 版を使ってください。
-password []byte: パスワード（UTF-8 バイト列）
-salt []byte: ソルト
-iterations i64: 反復回数；大きいほど総当たりが困難で、小さすぎると安全ではありません
-key-len i64: 期待する鍵長（バイト）。20 バイト 1 ブロックずつ生成
-返り値 out []byte: 導出した鍵、長さは正確に key-len
+password: パスワード（UTF-8 バイト列）
+salt: ソルト
+iterations: 反復回数；大きいほど総当たりが困難で、小さすぎると安全ではありません
+key-len: 期待する鍵長（バイト）。20 バイト 1 ブロックずつ生成
+返り値 out: 導出した鍵、長さは正確に key-len
 `
   'pbkdf2.pbkdf2-hmac-sha256': `
 HMAC-SHA256 を用いた PBKDF2
-password []byte: パスワード（UTF-8 バイト列）
-salt []byte: ソルト。16 バイト以上かつアカウントごとに異なることを推奨
-iterations i64: 反復回数；大きいほど総当たりが困難（一般に 100000 以上）、小さすぎると安全ではありません
-key-len i64: 期待する鍵長（バイト）。32 バイト 1 ブロックずつ生成
-返り値 out []byte: 導出した鍵、長さは正確に key-len
+password: パスワード（UTF-8 バイト列）
+salt: ソルト。16 バイト以上かつアカウントごとに異なることを推奨
+iterations: 反復回数；大きいほど総当たりが困難（一般に 100000 以上）、小さすぎると安全ではありません
+key-len: 期待する鍵長（バイト）。32 バイト 1 ブロックずつ生成
+返り値 out: 導出した鍵、長さは正確に key-len
 `
   'pbkdf2.pbkdf2-hmac-sha512': `
 HMAC-SHA512 を用いた PBKDF2
-password []byte: パスワード（UTF-8 バイト列）
-salt []byte: ソルト。16 バイト以上かつアカウントごとに異なることを推奨
-iterations i64: 反復回数；大きいほど総当たりが困難で、小さすぎると安全ではありません
-key-len i64: 期待する鍵長（バイト）。64 バイト 1 ブロックずつ生成
-返り値 out []byte: 導出した鍵、長さは正確に key-len
+password: パスワード（UTF-8 バイト列）
+salt: ソルト。16 バイト以上かつアカウントごとに異なることを推奨
+iterations: 反復回数；大きいほど総当たりが困難で、小さすぎると安全ではありません
+key-len: 期待する鍵長（バイト）。64 バイト 1 ブロックずつ生成
+返り値 out: 導出した鍵、長さは正確に key-len
 `
   'pem.decode': `
 PEM 形式文字列を解析（入力の最初の BEGIN…END ブロックのみ取る）
-pem-str str: '-----BEGIN <label>-----' … '-----END <label>-----' を少なくとも 1 区間含むテキスト
-result ?block: ok=ラベルとデコード後ペイロード, nil=マーカー欠落、Base64 復号失敗、または内容が短すぎる
+pem-str: '-----BEGIN <label>-----' … '-----END <label>-----' を少なくとも 1 区間含むテキスト
+result: ok=ラベルとデコード後ペイロード, nil=マーカー欠落、Base64 復号失敗、または内容が短すぎる
 `
   'pem.encode': `
 生のバイト列を PEM 形式の文字列にエンコードする
-label str: PEM ラベル（例 'CERTIFICATE', 'RSA PRIVATE KEY'）、BEGIN/END と一致必須
-data []byte: 生のバイナリデータ、base64.encode-std でエンコード後 64 文字で折り返し
-out str: BEGIN/END 行と各行の末尾改行を含む完全な PEM テキスト
+label: PEM ラベル（例 'CERTIFICATE', 'RSA PRIVATE KEY'）、BEGIN/END と一致必須
+data: 生のバイナリデータ、base64.encode-std でエンコード後 64 文字で折り返し
+out: BEGIN/END 行と各行の末尾改行を含む完全な PEM テキスト
 `
   'pool.create': `
 接続プールを構築し初期化
 host: 対象サーバーのホスト名または IP
 port: 対象サーバーのポート番号
 max-size: 許可する最大接続数
-返り値 p pool: 初期化済み接続プールのインスタンス
+返り値 p: 初期化済み接続プールのインスタンス
 `
   'pool.pool.active-count': `
 アクティブ接続数を取得
-返り値 n i64: アクティブ接続数
+返り値 n: アクティブ接続数
 `
   'pool.pool.close-all': 'すべての接続をクローズ'
   'pool.pool.close-conn': `
@@ -6322,11 +6322,11 @@ idx: プール内でクローズ・削除する接続のインデックス
 `
   'pool.pool.get': `
 接続を取得（空き接続を優先再利用、なければ新規作成）
-返り値 c ?net.conn: ok=接続, nil=失敗
+返り値 c: ok=接続, nil=失敗
 `
   'pool.pool.idle-count': `
 空き接続数を取得
-返り値 n i64: 空き接続数
+返り値 n: 空き接続数
 `
   'pool.pool.init': `
 接続プールを初期化
@@ -6340,13 +6340,13 @@ c: プールへ返却する接続（開けたまま、クローズしない）
 `
   'pool.pool.total-count': `
 総接続数を取得
-返り値 n i64: 総接続数
+返り値 n: 総接続数
 `
   'pool.with-size': `
 デフォルトサイズで接続プールを構築
 host: 対象サーバーのホスト名または IP
 port: 対象サーバーのポート番号
-返り値 p pool: 接続数上限がデフォルト 8 の接続プール
+返り値 p: 接続数上限がデフォルト 8 の接続プール
 `
   'process.close': 'すべてのパイプを閉じ、子プロセスを待つ'
   'process.close-stderr': '子プロセスの stderr パイプを閉じる'
@@ -6520,7 +6520,7 @@ n: 読み取り総バイト数
 `
   'process.read-line': `
 子プロセスの stdout から 1 行読む
-戻り値 line ?str: ok=行, nil=EOF またはエラー
+戻り値 line: ok=行, nil=EOF またはエラー
 line: 読み取った1行（nil=EOF、エラー、または stdout 未接続）
 `
   'process.shell': `
@@ -6578,7 +6578,7 @@ status: 当該 PID の終了コード
 `
   'process.wait-nohang': `
 非ブロッキング待機（ポーリング）
-戻り値 status ?i64: ok=子が終了した（その終了状態）, nil=まだ動作中
+戻り値 status: ok=子が終了した（その終了状態）, nil=まだ動作中
 status: 終了後の終了コード；nil=まだ実行中
 `
   'process.win-close-handle': `
@@ -6605,7 +6605,7 @@ status: CreateProcessA の返却状態
 `
   'process.win-get-exit-code': `
 プロセスの終了コードを取得する（GetExitCodeProcess）
-戻り値 exit-code ?i64: nil はまだ動作中を意味する
+戻り値 exit-code: nil はまだ動作中を意味する
 proc-handle: 子プロセス handle
 exit-code: プロセス終了コード（nil=まだ実行中）
 `
@@ -6652,94 +6652,94 @@ written: 実際に書き込んだバイト数（0=stdin 未接続）
   'proxy.config.connect': `
 config を使いプロキシ接続を確立
 プロキシアドレスと認証情報はレシーバーから取得（.host / .port / .username / .password）。
-target-host str: 貫通先のターゲットホスト名
-target-port i64: 対象サービスのポート番号
-返り値 fd fd: 確立したトンネル socket のディスクリプタ、-1=失敗
+target-host: 貫通先のターゲットホスト名
+target-port: 対象サービスのポート番号
+返り値 fd: 確立したトンネル socket のディスクリプタ、-1=失敗
 `
   'proxy.config.tls-connect': `
 config を使いプロキシ TLS 接続を確立
 まずレシーバーのプロキシ設定で CONNECT トンネルを確立し、その後トンネル上で TLS ハンドシェイクを完了します。
-target-host str: TLS サーバーのホスト名（SNI / 証明書検証に使用）
-target-port i64: TLS サービスのポート番号
-返り値 tc ?tls.conn: ok=ハンドシェイク完了の TLS 接続, nil=失敗
+target-host: TLS サーバーのホスト名（SNI / 証明書検証に使用）
+target-port: TLS サービスのポート番号
+返り値 tc: ok=ハンドシェイク完了の TLS 接続, nil=失敗
 `
   'proxy.connect': `
 HTTP CONNECT 経由でプロキシトンネルを確立
 プロキシに接続後 CONNECT target-host:target-port を送信し、200 を受信すればハンドシェイク完了；
 username が空でない場合は Basic 認証ヘッダを付加します。
-proxy-host str: プロキシサーバーのホスト名または IP
-proxy-port i64: プロキシサーバーのポート番号（HTTP プロキシは通常 3128 / 8080）
-target-host str: 貫通先のターゲットホスト名
-target-port i64: 対象サービスのポート番号（例 HTTPS の 443）
-username str: Basic 認証ユーザー名；空文字列は認証ヘッダなしを意味
-password str: Basic 認証パスワード（username が空なら無視）
-返り値 fd fd: 確立したトンネル socket のディスクリプタ、-1=接続またはハンドシェイク失敗
+proxy-host: プロキシサーバーのホスト名または IP
+proxy-port: プロキシサーバーのポート番号（HTTP プロキシは通常 3128 / 8080）
+target-host: 貫通先のターゲットホスト名
+target-port: 対象サービスのポート番号（例 HTTPS の 443）
+username: Basic 認証ユーザー名；空文字列は認証ヘッダなしを意味
+password: Basic 認証パスワード（username が空なら無視）
+返り値 fd: 確立したトンネル socket のディスクリプタ、-1=接続またはハンドシェイク失敗
 `
   'proxy.dial': `
 プロキシ経由で TCP 接続を確立（簡易関数、認証なし）
 connect(..., '', '') と同等。
-proxy-host str: プロキシサーバーのホスト名または IP
-proxy-port i64: プロキシサーバーのポート番号
-target-host str: 貫通先のターゲットホスト名
-target-port i64: 対象サービスのポート番号
-返り値 fd fd: 確立したトンネル socket のディスクリプタ、-1=失敗
+proxy-host: プロキシサーバーのホスト名または IP
+proxy-port: プロキシサーバーのポート番号
+target-host: 貫通先のターゲットホスト名
+target-port: 対象サービスのポート番号
+返り値 fd: 確立したトンネル socket のディスクリプタ、-1=失敗
 `
   'proxy.dial-auth': `
 プロキシ経由で TCP 接続を確立（認証付き）
 connect(...) と同等ですが、認証情報をパラメータとして明示するだけ。
-proxy-host str: プロキシサーバーのホスト名または IP
-proxy-port i64: プロキシサーバーのポート番号
-target-host str: 貫通先のターゲットホスト名
-target-port i64: 対象サービスのポート番号
-username str: Basic 認証ユーザー名
-password str: Basic 認証パスワード
-返り値 fd fd: 確立したトンネル socket のディスクリプタ、-1=失敗
+proxy-host: プロキシサーバーのホスト名または IP
+proxy-port: プロキシサーバーのポート番号
+target-host: 貫通先のターゲットホスト名
+target-port: 対象サービスのポート番号
+username: Basic 認証ユーザー名
+password: Basic 認証パスワード
+返り値 fd: 確立したトンネル socket のディスクリプタ、-1=失敗
 `
   'proxy.proxy-tls-dial': `
 プロキシ経由で TLS 接続を確立
 まず HTTP CONNECT（認証なし）でトンネルを確立し、その後トンネル上で TLS ハンドシェイクを開始します。
-proxy-host str: プロキシサーバーのホスト名または IP
-proxy-port i64: プロキシサーバーのポート番号
-target-host str: TLS サーバーのホスト名（ハンドシェイク時の SNI / 証明書検証にも使用）
-target-port i64: TLS サービスのポート番号（通常 443）
-返り値 tc ?tls.conn: ok=トンネル上でハンドシェイク完了の TLS 接続, nil=トンネルまたはハンドシェイクのいずれかの段階で失敗
+proxy-host: プロキシサーバーのホスト名または IP
+proxy-port: プロキシサーバーのポート番号
+target-host: TLS サーバーのホスト名（ハンドシェイク時の SNI / 証明書検証にも使用）
+target-port: TLS サービスのポート番号（通常 443）
+返り値 tc: ok=トンネル上でハンドシェイク完了の TLS 接続, nil=トンネルまたはハンドシェイクのいずれかの段階で失敗
 `
   'proxy.socks5-connect': `
 SOCKS5 プロキシ経由で接続を確立
 まずメソッドネゴシエーションを行い（username が空でなければ 0x02 ユーザー名/パスワード認証、そうでなければ 0x00 認証なし）、
 その後 CONNECT コマンドでターゲットアドレスをプロキシに委譲します。
-proxy-host str: SOCKS5 プロキシのホスト名または IP
-proxy-port i64: SOCKS5 プロキシのポート番号（通常 1080）
-target-host str: 貫通先のターゲットホスト；IP リテラルでない場合はドメイン名文字列としてプロキシ解決に委譲
-target-port i64: 対象サービスのポート番号
-username str: ユーザー名；空文字列は認証なしを意味
-password str: パスワード（username が空なら無視）
-返り値 fd fd: 確立したトンネル socket のディスクリプタ、-1=ネゴシエーションまたは接続失敗
+proxy-host: SOCKS5 プロキシのホスト名または IP
+proxy-port: SOCKS5 プロキシのポート番号（通常 1080）
+target-host: 貫通先のターゲットホスト；IP リテラルでない場合はドメイン名文字列としてプロキシ解決に委譲
+target-port: 対象サービスのポート番号
+username: ユーザー名；空文字列は認証なしを意味
+password: パスワード（username が空なら無視）
+返り値 fd: 確立したトンネル socket のディスクリプタ、-1=ネゴシエーションまたは接続失敗
 `
   'proxy.socks5-dial': `
 SOCKS5 プロキシ経由で接続を確立（簡易関数、認証なし）
 socks5-connect(..., '', '') と同等。0x00 認証なしネゴシエーションを採ります。
-proxy-host str: SOCKS5 プロキシのホスト名または IP
-proxy-port i64: SOCKS5 プロキシのポート番号（通常 1080）
-target-host str: 貫通先のターゲットホスト；IP リテラルでない場合はドメイン名文字列としてプロキシ解決に委譲
-target-port i64: 対象サービスのポート番号
-返り値 fd fd: 確立したトンネル socket のディスクリプタ、-1=失敗
+proxy-host: SOCKS5 プロキシのホスト名または IP
+proxy-port: SOCKS5 プロキシのポート番号（通常 1080）
+target-host: 貫通先のターゲットホスト；IP リテラルでない場合はドメイン名文字列としてプロキシ解決に委譲
+target-port: 対象サービスのポート番号
+返り値 fd: 確立したトンネル socket のディスクリプタ、-1=失敗
 `
   'queue.queue.clear': 'キューを空にする'
   'queue.queue.empty': `
 キューが空かを返す
-戻り値 yes bool: true=空, false=空でない
-yes bool: true=tail <= head（デキュー待ちの要素なし）
+戻り値 yes: true=空, false=空でない
+yes: true=tail <= head（デキュー待ちの要素なし）
 `
   'queue.queue.full': `
 キューが満杯かを返す
 リングバッファは常に空スロットを 1 つ残して「空」と「満」を区別するため、収容要素の上限は cap-1。
-yes bool: true=tail - head >= cap - 1（満杯、次の push は上書きまたは失敗）, false=まだ空きがある
+yes: true=tail - head >= cap - 1（満杯、次の push は上書きまたは失敗）, false=まだ空きがある
 `
   'queue.queue.size': `
 キューの要素数を返す
-戻り値 sz i64: 要素数
-sz i64: tail - head、すなわち現在キュー中の要素数（空スロットを含まない）
+戻り値 sz: 要素数
+sz: tail - head、すなわち現在キュー中の要素数（空スロットを含まない）
 `
   'quic.apply-header-protection': `
 パケットへヘッダ保護を適用/除去
@@ -6751,55 +6751,55 @@ is-long-header: Long Header パケットか
   'quic.conn.build-initial-packet': `
 quic-build-initial-packet: QUIC Initial パケットを構築
 crypto-data: 格納する CRYPTO フレームデータ（TLS ClientHello）
-返り値 out ?[]byte: 成功時は完全な Initial パケット（暗号化済み）、失敗は nil
+返り値 out: 成功時は完全な Initial パケット（暗号化済み）、失敗は nil
 `
   'quic.conn.close': '接続をクローズ'
   'quic.conn.init': '接続を初期化'
   'quic.conn.recv-initial': `
 サーバー Initial パケットを受信し復号
-返り値 frames [32]frame: 解析したフレーム
-返り値 count i64: フレーム数（-1=エラー）
-返り値 ok bool: true=成功
+返り値 frames: 解析したフレーム
+返り値 count: フレーム数（-1=エラー）
+返り値 ok: true=成功
 `
   'quic.conn.recv-raw': `
 conn.recv-packet: 任意の QUIC パケットを受信
-返り値 buf []byte: 受信した生パケットバイト
-返り値 n i64: 受信バイト数（-1=エラー, 0=タイムアウト）
+返り値 buf: 受信した生パケットバイト
+返り値 n: 受信バイト数（-1=エラー, 0=タイムアウト）
 `
   'quic.decode-packet-number': `
 パケットからパケット番号をデコード
 packet: ヘッダ保護を除去済みのパケットデータ
 pn-offset: パケット番号のパケット内バイトオフセット
 largest-pn: 過去に正常デコードした最大パケット番号（上位ビットの推定に使用）
-返り値 pn i64: 完全なパケット番号
-返り値 pn-len i64: パケット番号フィールドが占めるバイト数
+返り値 pn: 完全なパケット番号
+返り値 pn-len: パケット番号フィールドが占めるバイト数
 `
   'quic.derive-initial-keys': `
 Destination CID から Initial 鍵を導出
 dst-cid: 相手側（ターゲット）Connection ID バイト
 is-client: true ならクライアント鍵、false ならサーバー側鍵を導出
-返り値 key [16]byte: AEAD 鍵
-返り値 iv [12]byte: AEAD IV
-返り値 hp [16]byte: ヘッダ保護鍵
+返り値 key: AEAD 鍵
+返り値 iv: AEAD IV
+返り値 hp: ヘッダ保護鍵
 `
   'quic.dial': `
 QUIC 接続を確立
 host: サーバーのホスト名または IP アドレス
 port: サーバーの UDP ポート番号
-返り値 conn ?conn: ok=確立した接続, nil=失敗
+返り値 conn: ok=確立した接続, nil=失敗
 `
   'quic.gen-cid': `
 ランダムな Connection ID を生成
 len: 生成する CID のバイト長（通常 8）
-返り値 cid []byte: ランダム生成した Connection ID バイト
+返り値 cid: ランダム生成した Connection ID バイト
 `
   'quic.parse-frames': `
 buf の pos 位置から全てのフレームを解析
 buf: QUIC フレームを含むデータバッファ
 pos: 解析開始のバイトオフセット
 end: 解析終了のバイトオフセット（含まず）
-返り値 frames [32]frame: 解析したフレーム配列
-返り値 count i64: フレーム数（-1=エラー）
+返り値 frames: 解析したフレーム配列
+返り値 count: フレーム数（-1=エラー）
 `
   'quic.remove-header-protection': `
 ヘッダ保護を除去（apply と同一、XOR は対称）
@@ -6812,20 +6812,20 @@ is-long-header: Long Header パケットか
 buf の pos 位置から QUIC 可変長整数をデコード
 buf: 可変長整数を格納するデータバッファ
 pos: デコード開始のバイトオフセット
-返り値 val i64: デコードした整数値
-返り値 next-pos i64: 次の位置（-1=エラー）
+返り値 val: デコードした整数値
+返り値 next-pos: 次の位置（-1=エラー）
 `
   'quic.varint-encode': `
 i64 を QUIC 可変長整数へエンコード
 val: 可変長整数へエンコードする非負の i64 値
-返り値 buf []byte: エンコード結果（1/2/4/8 バイト）
-返り値 n i64: buf に実際に書き込んだエンコードバイト数
+返り値 buf: エンコード結果（1/2/4/8 バイト）
+返り値 n: buf に実際に書き込んだエンコードバイト数
 `
   'rand.rand': `
 次の疑似乱数を生成（xorshift32）
-state i64: 入力状態（任意の非ゼロシード；内部でまず 32 ビットへ切り詰め、各ステップで再マスク）
-new-state i64: 更新後の状態（32 ビット）。次の呼び出しのシードとして使用
-r i64: 今回の出力値（0..4294967295）
+state: 入力状態（任意の非ゼロシード；内部でまず 32 ビットへ切り詰め、各ステップで再マスク）
+new-state: 更新後の状態（32 ビット）。次の呼び出しのシードとして使用
+r: 今回の出力値（0..4294967295）
 `
   'rand.rand-str': `
 指定長のランダム英数字文字列を生成
@@ -6837,169 +6837,169 @@ chars: 使用可能な文字集合 (A-Z a-z 0-9)
   'rc4.rc4': `
 RC4 暗号化/復号
 同一関数が暗号化と復号の両方を兼ねます：out = in XOR キーストリーム。out でもう一度実行すると in に復元。
-in []byte: 入力データ（平文または暗号文、長さは不変）
-key []byte: 鍵（1–256 バイト）。空だと内部インデックスが範囲外になるため、呼び出し側が非空を保証する必要あり
-返り値 out []byte: in と等長のキータイムストリーム XOR 結果
+in: 入力データ（平文または暗号文、長さは不変）
+key: 鍵（1–256 バイト）。空だと内部インデックスが範囲外になるため、呼び出し側が非空を保証する必要あり
+返り値 out: in と等長のキータイムストリーム XOR 結果
 `
   'regexp.alloc-class': `
 新しい文字クラスを確保し、そのインデックスを返す
-戻り値 cls-idx i64: クラスのインデックス
+戻り値 cls-idx: クラスのインデックス
 
 `
   'regexp.clear-class-bit': `
 ビットをクリアする
-cls-idx i64: クラスのインデックス
-c i64: 文字値（0-255）
+cls-idx: クラスのインデックス
+c: 文字値（0-255）
 
 `
   'regexp.compile': 'パターン文字列を命令列にコンパイルする'
   'regexp.emit': `
 命令を 1 つ出力する
-op i64: 命令種別
-arg1 i64: 引数 1
-arg2 i64: 引数 2
+op: 命令種別
+arg1: 引数 1
+arg2: 引数 2
 
 `
   'regexp.emit-atom': `
 アトム命令を出力する
-atom-type i64: アトム種別
-atom-char i64: アトムの文字値
-atom-cls i64: アトムのクラスインデックス
+atom-type: アトム種別
+atom-char: アトムの文字値
+atom-cls: アトムのクラスインデックス
 
 `
   'regexp.emit-quantized': `
 数量子に従って命令を出力する
 数量子の内部コードを .tmp-quant フィールドから読む（1=*, 2=+, 3=?）
 比較値に 1/2/3 を使い、LLVM の == 42 最適化バグを避ける
-atom-type i64: アトム種別
-atom-char i64: アトムの文字値
-atom-cls i64: アトムのクラスインデックス
-atom-i i64: アトムの後の位置
+atom-type: アトム種別
+atom-char: アトムの文字値
+atom-cls: アトムのクラスインデックス
+atom-i: アトムの後の位置
 
 `
   'regexp.find': `
 text のうち .pattern に一致する最初の部分文字列を探す
-text str: 照合するテキスト
-戻り値 result str: 一致した部分文字列。なければ空文字列
+text: 照合するテキスト
+戻り値 result: 一致した部分文字列。なければ空文字列
 
 `
   'regexp.in-class': `
 文字がクラスに属するかを調べる
-cls-idx i64: クラスのインデックス
-c i64: 文字値（0-255）
-戻り値 yes bool: true=クラスに属する
+cls-idx: クラスのインデックス
+c: 文字値（0-255）
+戻り値 yes: true=クラスに属する
 
 `
   'regexp.init-class-all': `
 クラスのビットマップをすべて 1 に初期化する
-cls-idx i64: クラスのインデックス
+cls-idx: クラスのインデックス
 
 `
   'regexp.init-class-zero': `
 クラスのビットマップをすべて 0 に初期化する
-cls-idx i64: クラスのインデックス
+cls-idx: クラスのインデックス
 
 `
   'regexp.make-class-digits': `
 数字クラス \d [0-9] を構築する
-戻り値 cls-idx i64: クラスのインデックス
+戻り値 cls-idx: クラスのインデックス
 
 `
   'regexp.make-class-nondigits': `
 非数字クラス \D を構築する
-戻り値 cls-idx i64: クラスのインデックス
+戻り値 cls-idx: クラスのインデックス
 
 `
   'regexp.make-class-nonspace': `
 非空白クラス \S を構築する
-戻り値 cls-idx i64: クラスのインデックス
+戻り値 cls-idx: クラスのインデックス
 
 `
   'regexp.make-class-nonword': `
 非単語クラス \W を構築する
-戻り値 cls-idx i64: クラスのインデックス
+戻り値 cls-idx: クラスのインデックス
 
 `
   'regexp.make-class-space': `
 空白クラス \s を構築する
-戻り値 cls-idx i64: クラスのインデックス
+戻り値 cls-idx: クラスのインデックス
 
 `
   'regexp.make-class-word': `
 単語クラス \w [a-zA-Z0-9_] を構築する
-戻り値 cls-idx i64: クラスのインデックス
+戻り値 cls-idx: クラスのインデックス
 
 `
   'regexp.match-at': `
 再帰的なバックトラック照合
-pc i64: 命令カウンタ
-sp i64: テキスト位置
-text str: 照合するテキスト
-戻り値 ok bool: true=一致
+pc: 命令カウンタ
+sp: テキスト位置
+text: 照合するテキスト
+戻り値 ok: true=一致
 副作用: 成功時は .match-end = sp を設定する
 
 `
   'regexp.matches': `
 text が .pattern にどこかで一致するかを調べる
-text str: 照合するテキスト
-戻り値 matched bool: true=一致
+text: 照合するテキスト
+戻り値 matched: true=一致
 
 `
   'regexp.parse-atom': `
 正規表現のアトムを 1 つパースする（命令は出力しない）
 結果を .tmp-atom-type、.tmp-atom-char、.tmp-atom-cls に格納する
-pattern str: パターン文字列
-i i64: 現在の位置
-戻り値 new-i i64: パース後の新しい位置
+pattern: パターン文字列
+i: 現在の位置
+戻り値 new-i: パース後の新しい位置
 
 `
   'regexp.parse-class': `
 [...] の文字クラスをパースする
-pattern str: パターン文字列
-i i64: 現在の位置（'[' を指す）
-戻り値 new-i i64: 新しい位置（']' の次）
+pattern: パターン文字列
+i: 現在の位置（'[' を指す）
+戻り値 new-i: 新しい位置（']' の次）
 副作用: 新しい文字クラスを作り、そのインデックスを .tmp-atom-cls に格納する
 
 `
   'regexp.parse-escape': `
 \x のエスケープシーケンスをパースする
-pattern str: パターン文字列
-i i64: 現在の位置（'\' を指す）
-戻り値 new-i i64: パース後の新しい位置
+pattern: パターン文字列
+i: 現在の位置（'\' を指す）
+戻り値 new-i: パース後の新しい位置
 副作用: .tmp-atom-type、.tmp-atom-char、.tmp-atom-cls を設定する
 
 `
   'regexp.regexp-compile': `
 正規表現パターンをコンパイルし、コンパイル済みの regexp インスタンスを返す。
 正規表現リテラル /pattern/ が使う: リテラルはコード生成時にこの関数の呼び出しに展開される。
-pattern str: 正規表現
-戻り値 re regexp: コンパイル済みの正規表現インスタンス
+pattern: 正規表現
+戻り値 re: コンパイル済みの正規表現インスタンス
 
 `
   'regexp.regexp-find': `
 text のうち pattern に一致する最初の部分文字列を探す
-pattern str: 正規表現
-text str: 照合するテキスト
-戻り値 result str: 一致した部分文字列。なければ空文字列
+pattern: 正規表現
+text: 照合するテキスト
+戻り値 result: 一致した部分文字列。なければ空文字列
 
 `
   'regexp.regexp-match': `
 text が pattern にどこかで一致するかを調べる
-pattern str: 正規表現
-text str: 照合するテキスト
-戻り値 matched bool: true=一致
+pattern: 正規表現
+text: 照合するテキスト
+戻り値 matched: true=一致
 
 `
   'regexp.set-class-bit': `
 ビットをセットする
-cls-idx i64: クラスのインデックス
-c i64: 文字値（0-255）
+cls-idx: クラスのインデックス
+c: 文字値（0-255）
 
 `
   'regexp.set-class-escape': `
 文字クラス内のエスケープシーケンスを処理する
-cls-idx i64: クラスのインデックス
-c i64: エスケープされた文字（例: 'd', 'w', 's'）
+cls-idx: クラスのインデックス
+c: エスケープされた文字（例: 'd', 'w', 's'）
 
 `
   'rsa._rsa-bn-add': `
@@ -7111,221 +7111,221 @@ rn: result の limb 数
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════
 32 ビット循環左シフト（Salsa20 quarter-round の回転に使用）
-x u32: 回転する 32 ビット値
-n i64: 左シフトビット数（0..31；32 はシフト量がオーバーフロー）
-r u32: 左シフト結果、& 0xFFFFFFFF 済み
+x: 回転する 32 ビット値
+n: 左シフトビット数（0..31；32 はシフト量がオーバーフロー）
+r: 左シフト結果、& 0xFFFFFFFF 済み
 `
   'scrypt.salsa20-8-core': `
 Salsa20/8 核心：64 バイトブロックを 8 ラウンド混合
 まずリトルエンディアン 32-bit 語を 16 個読み込み、8 ラウンドの add-rotate-xor を実行後、元の値に加算して書き戻します。
-block []byte: 64 バイト入出力；インプレス修正。64 バイト未満の不足部分は 0 として処理
+block: 64 バイト入出力；インプレス修正。64 バイト未満の不足部分は 0 として処理
 `
   'scrypt.scrypt': `
 Scrypt 鍵導出（RFC 7914 §7）
 まず PBKDF2-HMAC-SHA256（反復 1 回）でパスワードを p*128*r バイトへ展開し、
 各ブロックで ROMix を実行、最後に再度 PBKDF2 を 1 ラウンド行って key-len バイトを出力します。
-password []byte: パスワード（UTF-8 バイト列）
-salt []byte: ソルト。16 バイト以上かつアカウントごとに異なることを推奨
-n i64: CPU/メモリのコスト、1 より大きい 2 の冪である必要；大きいほど安全かつ遅い
-r i64: ブロックサイズ（例 8）。n と組み合わせてメモリ使用量 128*n*r バイトを決定
-p i64: 並列度（例 1）。CPU 時間に影響
-key-len i64: 期待する鍵長（バイト）
-返り値 out []byte: 導出した鍵、長さは正確に key-len
+password: パスワード（UTF-8 バイト列）
+salt: ソルト。16 バイト以上かつアカウントごとに異なることを推奨
+n: CPU/メモリのコスト、1 より大きい 2 の冪である必要；大きいほど安全かつ遅い
+r: ブロックサイズ（例 8）。n と組み合わせてメモリ使用量 128*n*r バイトを決定
+p: 並列度（例 1）。CPU 時間に影響
+key-len: 期待する鍵長（バイト）
+返り値 out: 導出した鍵、長さは正確に key-len
 `
   'scrypt.scrypt-blockmix': `
 ブロック混合関数（RFC 7914 §4）
 末尾 64 バイトを初期 X とし、2r 個の 64 バイトサブブロックへ Salsa20/8 を反復、
 偶数ブロックを前半、奇数ブロックを後半に配置し、新しい 128*r バイトの出力を得ます。
-b []byte: 入力ブロック（128*r バイト）
-r i64: ブロックサイズパラメータ（各サブブロック 64 バイト、計 2r ブロック）
-返り値 out []byte: 混合後のブロック（長さ 128*r）
+b: 入力ブロック（128*r バイト）
+r: ブロックサイズパラメータ（各サブブロック 64 バイト、計 2r ブロック）
+返り値 out: 混合後のブロック（長さ 128*r）
 `
   'scrypt.scrypt-romix': `
 メモリハード混合関数（RFC 7914 §5、ROMix も呼ばれる）
 まず n ブロック分の V テーブルを埋め、次に n 回のランダムインデックス読み込み + BlockMix を行い、最終的に新しい 128*r バイトを得ます。
-b []byte: 入力ブロック（128*r バイト）
-n i64: CPU/メモリコストパラメータ、1 より大きい 2 の冪である必要（例 16384）
-r i64: ブロックサイズパラメータ、各サブブロックの 64 バイトブロック数を決定
-返り値 out []byte: 混合後のブロック（長さ 128*r）
+b: 入力ブロック（128*r バイト）
+n: CPU/メモリコストパラメータ、1 より大きい 2 の冪である必要（例 16384）
+r: ブロックサイズパラメータ、各サブブロックの 64 バイトブロック数を決定
+返り値 out: 混合後のブロック（長さ 128*r）
 `
   'server.https-listen-on': `
 HTTPS サーバーを構築し監視を開始
-host str: バインドする IP アドレス
-port i64: 監視ポート番号
-返り値 s ?https-server: ok=サーバー, nil=失敗
+host: バインドする IP アドレス
+port: 監視ポート番号
+返り値 s: ok=サーバー, nil=失敗
 `
   'server.https-server-conn.close': 'TLS 接続をクローズ'
   'server.https-server-conn.get-header': `
 指定ヘッダの値を取得
-name str: ヘッダ名
-返り値 val ?str: ok=ヘッダ値, nil=見つかりません
+name: ヘッダ名
+返り値 val: ok=ヘッダ値, nil=見つかりません
 `
   'server.https-server-conn.parse': `
 HTTP リクエストを解析（TLS 経由で受信）
-返り値 ok bool: true=解析成功
+返り値 ok: true=解析成功
 `
   'server.https-server-conn.recv-more': `
 TLS 接続から追加データを recv-buf へ受信
-返り値 n i64: 受信バイト数（-1=エラー, 0=接続クローズ）
+返り値 n: 受信バイト数（-1=エラー, 0=接続クローズ）
 `
   'server.https-server-conn.reset': '再利用のため接続状態をリセット（Keep-Alive）'
   'server.https-server-conn.write-body': `
 レスポンスボディを書き込み（TLS 経由）
-data str: レスポンスボディデータ
-返り値 ok bool: true=成功
+data: レスポンスボディデータ
+返り値 ok: true=成功
 `
   'server.https-server-conn.write-header': `
 単一のレスポンスヘッダを書き込み（TLS 経由）
-name str: ヘッダ名
-value str: ヘッダ値
-返り値 ok bool: true=成功
+name: ヘッダ名
+value: ヘッダ値
+返り値 ok: true=成功
 `
   'server.https-server-conn.write-headers-done': `
 ヘッダ終了を示す空行を書き込み（TLS 経由）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'server.https-server-conn.write-html': `
 簡易メソッド — HTML レスポンスを書き込み（TLS 経由）
-status i64: 状態コード
-html str: HTML コンテンツ
-返り値 ok bool: true=成功
+status: 状態コード
+html: HTML コンテンツ
+返り値 ok: true=成功
 `
   'server.https-server-conn.write-json': `
 簡易メソッド — JSON レスポンスを書き込み（TLS 経由）
-status i64: 状態コード
-json-str str: JSON 文字列
-返り値 ok bool: true=成功
+status: 状態コード
+json-str: JSON 文字列
+返り値 ok: true=成功
 `
   'server.https-server-conn.write-status': `
 HTTP 状態行を書き込み（TLS 経由）
-status i64: 状態コード
-返り値 ok bool: true=成功
+status: 状態コード
+返り値 ok: true=成功
 `
   'server.https-server-conn.write-text': `
 簡易メソッド — 完全なテキストレスポンスを書き込み（TLS 経由）
-status i64: 状態コード
-text str: レスポンステキスト
-返り値 ok bool: true=成功
+status: 状態コード
+text: レスポンステキスト
+返り値 ok: true=成功
 `
   'server.https-server.accept': `
 新しい HTTPS 接続を受け入れ
-返り値 c ?https-server-conn: ok=接続, nil=失敗
+返り値 c: ok=接続, nil=失敗
 `
   'server.https-server.close': 'サーバーをクローズ'
   'server.https-server.listen': `
 監視を開始（TLS）
-host str: バインドする IP アドレス
-port i64: 監視ポート番号
-返り値 ok bool: true=成功
+host: バインドする IP アドレス
+port: 監視ポート番号
+返り値 ok: true=成功
 `
   'server.listen-on': `
 HTTP サーバーを構築し監視を開始
-host str: バインドする IP アドレス
-port i64: 監視ポート番号
-返り値 s ?server: ok=サーバー, nil=失敗
+host: バインドする IP アドレス
+port: 監視ポート番号
+返り値 s: ok=サーバー, nil=失敗
 `
   'server.secure-compare': `
 定数時間文字列比較
-a str: 文字列 A
-b str: 文字列 B
-返り値 ok bool: true=相等
+a: 文字列 A
+b: 文字列 B
+返り値 ok: true=相等
 `
   'server.server-conn.close': '接続をクローズ'
   'server.server-conn.get-cookie': `
 リクエストヘッダから指定 Cookie の値を取得
-name str: Cookie 名
-返り値 val ?str: ok=Cookie 値, nil=見つかりません
+name: Cookie 名
+返り値 val: ok=Cookie 値, nil=見つかりません
 `
   'server.server-conn.get-header': `
 指定ヘッダの値を取得
-name str: ヘッダ名（例 'Content-Type'）
-返り値 val ?str: ok=ヘッダ値, nil=見つかりません
+name: ヘッダ名（例 'Content-Type'）
+返り値 val: ok=ヘッダ値, nil=見つかりません
 `
   'server.server-conn.get-signed-cookie': `
 署名付き Cookie を取得して検証
-name str: Cookie 名
-key []byte: HMAC-SHA256 署名鍵
-返り値 val ?str: ok=元の Cookie 値, nil=見つからないか検証失敗
+name: Cookie 名
+key: HMAC-SHA256 署名鍵
+返り値 val: ok=元の Cookie 値, nil=見つからないか検証失敗
 `
   'server.server-conn.parse': `
 HTTP リクエストを解析
 完全な HTTP リクエスト（リクエスト行 + ヘッダ + オプションのボディ）を読み取り解析します
-返り値 ok bool: true=解析成功
+返り値 ok: true=解析成功
 `
   'server.server-conn.recv-more': `
 socket から追加データを recv-buf へ受信
-返り値 n i64: 受信バイト数（-1=エラー, 0=接続クローズ）
+返り値 n: 受信バイト数（-1=エラー, 0=接続クローズ）
 `
   'server.server-conn.reset': '再利用のため接続状態をリセット（Keep-Alive）'
   'server.server-conn.set-signed-cookie': `
 署名付き Cookie をレスポンスへ設定
-name str: Cookie 名
-value str: Cookie 値
-key []byte: HMAC-SHA256 署名鍵
+name: Cookie 名
+value: Cookie 値
+key: HMAC-SHA256 署名鍵
 `
   'server.server-conn.verify-basic-auth': `
 HTTP Basic 認証を検証
-expected-user str: 期待するユーザー名
-expected-pass str: 期待するパスワード
-返り値 ok bool: true=認証通過
+expected-user: 期待するユーザー名
+expected-pass: 期待するパスワード
+返り値 ok: true=認証通過
 `
   'server.server-conn.write-body': `
 レスポンスボディを書き込み
-data str: レスポンスボディデータ
-返り値 ok bool: true=成功
+data: レスポンスボディデータ
+返り値 ok: true=成功
 `
   'server.server-conn.write-error': `
 簡易メソッド — エラーレスポンスを書き込み（text/plain で送信、Connection: close を強制）
-status i64: エラー状態コード（例 404、500）
-message str: エラーメッセージ本文
-返り値 ok bool: true=成功
+status: エラー状態コード（例 404、500）
+message: エラーメッセージ本文
+返り値 ok: true=成功
 `
   'server.server-conn.write-header': `
 単一のレスポンスヘッダを書き込み
-name str: ヘッダ名
-value str: ヘッダ値
-返り値 ok bool: true=成功
+name: ヘッダ名
+value: ヘッダ値
+返り値 ok: true=成功
 `
   'server.server-conn.write-headers-done': `
 ヘッダ終了を示す空行を書き込み
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'server.server-conn.write-html': `
 簡易メソッド — HTML レスポンスを書き込み（Content-Type=text/html、Content-Length、Connection、Server ヘッダを自動付加）
-status i64: HTTP 状態コード
-html str: HTML ページ内容
-返り値 ok bool: true=成功
+status: HTTP 状態コード
+html: HTML ページ内容
+返り値 ok: true=成功
 `
   'server.server-conn.write-json': `
 簡易メソッド — JSON レスポンスを書き込み（Content-Type=application/json、Content-Length、Connection、Server ヘッダを自動付加）
-status i64: HTTP 状態コード
-json-str str: シリアライズ済みの JSON 文字列
-返り値 ok bool: true=成功
+status: HTTP 状態コード
+json-str: シリアライズ済みの JSON 文字列
+返り値 ok: true=成功
 `
   'server.server-conn.write-redirect': `
 簡易メソッド — リダイレクトレスポンスを書き込み（ボディなし、Content-Length=0、Connection: close を強制）
-status i64: リダイレクト状態コード（301 永続 / 302 一時）
-location str: リダイレクト先 URL（Location ヘッダへ書き込み）
-返り値 ok bool: true=成功
+status: リダイレクト状態コード（301 永続 / 302 一時）
+location: リダイレクト先 URL（Location ヘッダへ書き込み）
+返り値 ok: true=成功
 `
   'server.server-conn.write-status': `
 HTTP 状態行を書き込み
-status i64: HTTP 状態コード（例 200、404、500、対応する Reason 短句を自動付加）
-返り値 ok bool: true=成功
+status: HTTP 状態コード（例 200、404、500、対応する Reason 短句を自動付加）
+返り値 ok: true=成功
 `
   'server.server-conn.write-text': `
 簡易メソッド — 完全なテキストレスポンスを書き込み（Content-Type=text/plain、Content-Length、Connection、Server ヘッダを自動付加）
-status i64: HTTP 状態コード
-text str: レスポンス本文。UTF-8 プレーンテキストとして書き込み
-返り値 ok bool: true=成功
+status: HTTP 状態コード
+text: レスポンス本文。UTF-8 プレーンテキストとして書き込み
+返り値 ok: true=成功
 `
   'server.server.accept': `
 新しい HTTP 接続を受け入れ
-返り値 c ?server-conn: ok=接続, nil=失敗
+返り値 c: ok=接続, nil=失敗
 `
   'server.server.accept-nb': `
 新しい接続を非ブロックで受け入れ（協程イベントループのポーリング用）
-返り値 c ?server-conn: 接続あり=server-conn, 一時的に接続なしまたは失敗=nil
+返り値 c: 接続あり=server-conn, 一時的に接続なしまたは失敗=nil
 server.accept と異なり本メソッドはブロッキングせず、async-yield() と組み合わせて中断可能なイベントループを実現します
 `
   'server.server.close': 'サーバーをクローズ'
@@ -7335,44 +7335,44 @@ fd: 監視 socket のファイルディスクリプタ
 `
   'server.server.listen': `
 監視を開始
-host str: バインドする IP アドレス（例 '0.0.0.0' または '127.0.0.1'）
-port i64: 監視ポート番号
-返り値 ok bool: true=成功
+host: バインドする IP アドレス（例 '0.0.0.0' または '127.0.0.1'）
+port: 監視ポート番号
+返り値 ok: true=成功
 `
   'set.add': `
 集合に要素を追加する（なければ）
-val t: 追加する要素
-戻り値 new-size i64: 新しいサイズ
+val: 追加する要素
+戻り値 new-size: 新しいサイズ
 
 `
   'set.contains': `
 要素が集合に含まれるかを返す
-val t: 探す要素
-戻り値 yes bool: true=含まれる, false=含まれない
+val: 探す要素
+戻り値 yes: true=含まれる, false=含まれない
 
 `
   'set.difference': `
 差集合（この集合にあり、other にない要素）を計算する
 結果は呼び出し側が用意した out バッファに書き込まれ、要素数を返す
-other []t: 相手集合の要素バッファ
-osize i64: 相手集合の要素数
-out []t: 差集合を入れるバッファ
-戻り値 cnt i64: 差集合の要素数
+other: 相手集合の要素バッファ
+osize: 相手集合の要素数
+out: 差集合を入れるバッファ
+戻り値 cnt: 差集合の要素数
 
 `
   'set.init': `
 ファクトリ — 呼び出し側が用意した要素バッファ上に空の集合を構築する
-data []t: 要素バッファ（長さが容量の上限になる）
-戻り値 s set: 初期化された集合インスタンス
+data: 要素バッファ（長さが容量の上限になる）
+戻り値 s: 初期化された集合インスタンス
 
 `
   'set.intersection': `
 積集合（この集合と other の両方にある要素）を計算する
 結果は呼び出し側が用意した out バッファに書き込まれ、要素数を返す
-other []t: 相手集合の要素バッファ
-osize i64: 相手集合の要素数
-out []t: 積集合を入れるバッファ
-戻り値 cnt i64: 積集合の要素数
+other: 相手集合の要素バッファ
+osize: 相手集合の要素数
+out: 積集合を入れるバッファ
+戻り値 cnt: 積集合の要素数
 
 `
   'set.is-empty': `
@@ -7382,8 +7382,8 @@ yes: 集合が要素を含まないとき true
   'set.remove': `
 集合から要素を削除する
 空いた位置は最後の要素で埋める（順序は保たれない）
-val t: 削除する要素
-戻り値 new-size i64: 新しいサイズ
+val: 削除する要素
+戻り値 new-size: 新しいサイズ
 
 `
   'set.size': `
@@ -7392,58 +7392,58 @@ sz: セットが現在保持している要素数
 `
   'set.to-vec': `
 集合をスライスに変換する（順序なし）
-戻り値 out []t: 要素のスライス（長さ = サイズ）
+戻り値 out: 要素のスライス（長さ = サイズ）
 
 `
   'set.union': `
 和集合（other のバッファのうちこの集合にない要素を追加する）を計算する
-other []t: 相手集合の要素バッファ
-osize i64: 相手集合の要素数
-戻り値 new-size i64: 和集合後のサイズ
+other: 相手集合の要素バッファ
+osize: 相手集合の要素数
+戻り値 new-size: 和集合後のサイズ
 
 `
   'sha1.sha1': `
 SHA-1 ハッシュを計算（パディングと複数ブロック処理を含む）
-data []byte: 入力バイト配列（任意長）
-hash [20]byte: 160-bit ダイジェスト。FIPS 180-4 定義のビッグエンディアンで格納
+data: 入力バイト配列（任意長）
+hash: 160-bit ダイジェスト。FIPS 180-4 定義のビッグエンディアンで格納
 注意：SHA-1 は衝突耐性を失っており、旧プロトコル互換 / 検証用途に限ります
 `
   'sha1.sha1-block': `
 512-bit ブロックを 1 個処理（80 ラウンド圧縮、FIPS 180-4）
-s []u32: 32-bit ビッグエンディアンメッセージワード 16 個（呼び出し側がバイトから展開済み）
-h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: このブロック進入前の 160-bit ハッシュ状態
-r0 u32, r1 u32, r2 u32, r3 u32, r4 u32: 圧縮後の新状態（作業変数を入力状態に加え戻し 2^32 を法）
+s: 32-bit ビッグエンディアンメッセージワード 16 個（呼び出し側がバイトから展開済み）
+h0 u32, h1, h2, h3, h4: このブロック進入前の 160-bit ハッシュ状態
+r0 u32, r1, r2, r3, r4: 圧縮後の新状態（作業変数を入力状態に加え戻し 2^32 を法）
 `
   'sha1.sha1-hex': `
 SHA-1 ハッシュを計算し hex 文字列を返します
-data []byte: 入力バイト配列（任意長）
-hex str: 40 文字の小文字 16 進ダイジェスト
+data: 入力バイト配列（任意長）
+hex: 40 文字の小文字 16 進ダイジェスト
 `
   'sha224.sha224': `
 SHA-224 ハッシュを計算（パディングと複数ブロック処理を含む；圧縮関数は SHA-256 と同一で初期値のみ異なる）
-data []byte: 入力バイト配列（任意長）
-hash [28]byte: 224-bit ダイジェスト（SHA-256 の先頭 7 個の状態ワードを採用）、ビッグエンディアン格納
+data: 入力バイト配列（任意長）
+hash: 224-bit ダイジェスト（SHA-256 の先頭 7 個の状態ワードを採用）、ビッグエンディアン格納
 `
   'sha224.sha224-hex': `
 SHA-224 ハッシュを計算し hex 文字列を返します
-data []byte: 入力バイト配列（任意長）
-hex str: 56 文字の小文字 16 進ダイジェスト
+data: 入力バイト配列（任意長）
+hex: 56 文字の小文字 16 進ダイジェスト
 `
   'sha256.sha256': `
 SHA-256 ハッシュを計算（パディングと複数ブロック処理を含む）
-data []byte: 入力バイト配列（任意長）
-hash [32]byte: 256-bit ダイジェスト。FIPS 180-4 定義のビッグエンディアンで格納
+data: 入力バイト配列（任意長）
+hash: 256-bit ダイジェスト。FIPS 180-4 定義のビッグエンディアンで格納
 `
   'sha256.sha256-block': `
 512-bit ブロックを 1 個処理（64 ラウンド圧縮、FIPS 180-4）
-s []u32: 32-bit ビッグエンディアンメッセージワード 16 個（呼び出し側がバイトから展開済み）
+s: 32-bit ビッグエンディアンメッセージワード 16 個（呼び出し側がバイトから展開済み）
 h0 u32..h7 u32: このブロック進入前の 256-bit ハッシュ状態（a..h の初期値）
 r0 u32..r7 u32: 圧縮後の新状態（作業変数を入力状態に加え戻し 2^32 を法）
 `
   'sha256.sha256-hex': `
 SHA-256 ハッシュを計算し hex 文字列を返します
-data []byte: 入力バイト配列（任意長）
-hex str: 64 文字の小文字 16 進ダイジェスト
+data: 入力バイト配列（任意長）
+hex: 64 文字の小文字 16 進ダイジェスト
 `
   'sha3.keccak-f1600': `
 Keccak-f[1600] 置換を実行（24 ラウンド）
@@ -7451,12 +7451,12 @@ state: 64-bit レーン 25 個の状態配列（インプレス入出力）
 `
   'sha3.keccak-sponge': `
 Keccak スポンジ関数
-data []byte: スポンジ状態へ吸収（absorb）する生バイト。空でも可
+data: スポンジ状態へ吸収（absorb）する生バイト。空でも可
 rate: 吸収率（バイト単位、8 の倍数である必要）
 capacity: 容量（バイト単位、rate + capacity = 200）
 out-len: 期待する出力のバイト長
 suffix: パディングサフィックス（SHA-3 = 0x06, SHAKE = 0x1F）
-返り値 out []byte: 絞り出し（squeeze）たハッシュ/出力バイト
+返り値 out: 絞り出し（squeeze）たハッシュ/出力バイト
 `
   'sha3.rotl64': `
 64 ビット循環左シフト
@@ -7466,107 +7466,107 @@ r: 循環左シフト後の結果
 `
   'sha3.sha3-224': `
 SHA3-224 ハッシュを計算
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hash [28]byte: 28 バイトのハッシュ値
+data: ハッシュ対象の生バイト。空でも可
+返り値 hash: 28 バイトのハッシュ値
 `
   'sha3.sha3-224-hex': `
 SHA3-224 を計算し hex 文字列を返します
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hex str: 56 文字の hex 文字列
+data: ハッシュ対象の生バイト。空でも可
+返り値 hex: 56 文字の hex 文字列
 `
   'sha3.sha3-256': `
 SHA3-256 ハッシュを計算
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hash [32]byte: 32 バイトのハッシュ値
+data: ハッシュ対象の生バイト。空でも可
+返り値 hash: 32 バイトのハッシュ値
 `
   'sha3.sha3-256-hex': `
 SHA3-256 を計算し hex 文字列を返します
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hex str: 64 文字の hex 文字列
+data: ハッシュ対象の生バイト。空でも可
+返り値 hex: 64 文字の hex 文字列
 `
   'sha3.sha3-384': `
 SHA3-384 ハッシュを計算
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hash [48]byte: 48 バイトのハッシュ値
+data: ハッシュ対象の生バイト。空でも可
+返り値 hash: 48 バイトのハッシュ値
 `
   'sha3.sha3-384-hex': `
 SHA3-384 を計算し hex 文字列を返します
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hex str: 96 文字の hex 文字列
+data: ハッシュ対象の生バイト。空でも可
+返り値 hex: 96 文字の hex 文字列
 `
   'sha3.sha3-512': `
 SHA3-512 ハッシュを計算
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hash [64]byte: 64 バイトのハッシュ値
+data: ハッシュ対象の生バイト。空でも可
+返り値 hash: 64 バイトのハッシュ値
 `
   'sha3.sha3-512-hex': `
 SHA3-512 を計算し hex 文字列を返します
-data []byte: ハッシュ対象の生バイト。空でも可
-返り値 hex str: 128 文字の hex 文字列
+data: ハッシュ対象の生バイト。空でも可
+返り値 hex: 128 文字の hex 文字列
 `
   'sha384.sha384': `
 SHA-384 ハッシュを計算（パディングと複数ブロック処理を含む；圧縮関数は SHA-512 と同一で初期値のみ異なる）
-data []byte: 入力バイト配列（任意長）
-hash [48]byte: 384-bit ダイジェスト（SHA-512 の先頭 6 個の状態ワードを採用）、ビッグエンディアン格納
+data: 入力バイト配列（任意長）
+hash: 384-bit ダイジェスト（SHA-512 の先頭 6 個の状態ワードを採用）、ビッグエンディアン格納
 `
   'sha384.sha384-hex': `
 SHA-384 ハッシュを計算し hex 文字列を返します
-data []byte: 入力バイト配列（任意長）
-hex str: 96 文字の小文字 16 進ダイジェスト
+data: 入力バイト配列（任意長）
+hex: 96 文字の小文字 16 進ダイジェスト
 `
   'sha512.sha512': `
 SHA-512 ハッシュを計算（パディングと複数ブロック処理を含む）
-data []byte: 入力バイト配列（任意長；長さは 2^128-1 ビットが上限）
-hash [64]byte: 512-bit ダイジェスト。FIPS 180-4 定義のビッグエンディアンで格納
+data: 入力バイト配列（任意長；長さは 2^128-1 ビットが上限）
+hash: 512-bit ダイジェスト。FIPS 180-4 定義のビッグエンディアンで格納
 `
   'sha512.sha512-block': `
 1024-bit ブロックを 1 個処理（80 ラウンド圧縮、FIPS 180-4）
-s []u64: 64-bit ビッグエンディアンメッセージワード 16 個（呼び出し側がバイトから展開済み）
+s: 64-bit ビッグエンディアンメッセージワード 16 個（呼び出し側がバイトから展開済み）
 h0 u64..h7 u64: このブロック進入前の 512-bit ハッシュ状態（a..h の初期値）
 r0 u64..r7 u64: 圧縮後の新状態（作業変数を入力状態に加え戻し、2^64 を法）
 `
   'sha512.sha512-hex': `
 SHA-512 ハッシュを計算し hex 文字列を返します
-data []byte: 入力バイト配列（任意長）
-hex str: 128 文字の小文字 16 進ダイジェスト
+data: 入力バイト配列（任意長）
+hex: 128 文字の小文字 16 進ダイジェスト
 `
   'sse.client.close': 'SSE 接続をクローズ'
   'sse.client.is-connected': `
 接続状態を確認
-返り値 yes bool: true=接続済み
+返り値 yes: true=接続済み
 `
   'sse.client.next-event': `
 次の SSE イベントを読み取り
 完全なイベント受信か接続クローズまでブロッキングします。
-返り値 ev ?event:
+返り値 ev:
 ok = イベント
 nil   = 接続クローズ（EOF）
 err = エラー
 `
   'sse.client.reconnect': `
 再接続（last-event-id を使い受信を継続）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'sse.listen-on': `
 SSE サーバー側を構築し監視を開始
 host: バインドする IP アドレス（例 '0.0.0.0'）
 port: 監視ポート番号
-返り値 s ?server: ok=サーバー側, nil=失敗
+返り値 s: ok=サーバー側, nil=失敗
 `
   'sse.server-conn.close': 'クライアント接続をクローズ'
   'sse.server-conn.handshake': `
 SSE HTTP ハンドシェイクを完了
 クライアントの HTTP リクエストを読み取り、メソッドが GET であることを検証し、SSE レスポンスヘッダを送信します。
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'sse.server-conn.is-connected': `
 接続状態を確認
-返り値 yes bool: true=接続済み
+返り値 yes: true=接続済み
 `
   'sse.server-conn.send-comment': `
 SSE コメントを送信（ハートビート維持用）
 comment: コメント内容
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'sse.server-conn.send-event': `
 SSE イベントを送信
@@ -7574,23 +7574,23 @@ event: イベント種別（空文字列= event フィールドを送らず、�
 data: イベントデータ（複数行可、各行 data: プレフィックスで送信）
 id: イベント ID（空文字列= id フィールドを送らない）
 retry: 再接続待ちのミリ秒数（-1= retry フィールドを送らない）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'sse.server.accept': `
 新しい SSE クライアント接続を受け入れ HTTP ハンドシェイクを完了
-返り値 c ?server-conn: ok=ハンドシェイク済みクライアント, nil=失敗
+返り値 c: ok=ハンドシェイク済みクライアント, nil=失敗
 `
   'sse.server.close': 'SSE サーバー側をクローズ'
   'sse.server.listen': `
 監視を開始
 host: バインドする IP アドレス（例 '0.0.0.0' または '127.0.0.1'）
 port: 監視ポート番号
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'sse.sse-connect': `
 SSE エンドポイントへ接続
 url: SSE エンドポイント URL（http://host:port/path または https://host:port/path）
-返り値 client ?client:
+返り値 client:
 ok = 接続済みクライアント
 nil   = 接続失敗
 err = エラーメッセージ
@@ -7601,24 +7601,24 @@ err = エラーメッセージ
 `
   'stack.stack.empty': `
 スタックが空かを返す
-yes bool: true は n == 0 を意味する
+yes: true は n == 0 を意味する
 `
   'stack.stack.peek': `
 先頭要素を取り出さずに参照する
-val ?i64: ok=data[n-1], nil=スタックが空
+val: ok=data[n-1], nil=スタックが空
 `
   'stack.stack.pop': `
 スタック先頭の要素を取り出す
-val ?i64: ok=元の頂点要素（除去済み）, nil=スタックが空
+val: ok=元の頂点要素（除去済み）, nil=スタックが空
 `
   'stack.stack.push': `
 スタック先頭に要素を積む
 注意：本メソッドは容量をチェックせず、呼び出し側が n < len(data) を保証する必要がある。
-val i64: プッシュする値；data[n] に書き込み後 n を 1 増やす
+val: プッシュする値；data[n] に書き込み後 n を 1 増やす
 `
   'stack.stack.size': `
 スタックの現在の要素数を返す
-sz i64: n に等しい（0 は空を意味し、最大でも len(data) 以内）
+sz: n に等しい（0 は空を意味し、最大でも len(data) 以内）
 `
   'static-hashmap.static-hashmap-bool-tmpl.clear': 'マップを空にする'
   'static-hashmap.static-hashmap-bool-tmpl.contains': `
@@ -7801,47 +7801,47 @@ eq: 二つの文字列がバイト単位で完全一致の時 true
 要素を追加する; 挿入されたかを返す
 線形探測でスロットを探す；同一文字列にヒットすれば重複挿入しない。
 表が満杯で文字列不在のとき探測は無限ループ、呼び出し側が要素数を制御する必要がある。
-key str: 追加する文字列（スロットへコピーされる）
-is-new bool: true=元は存在せず挿入済み, false=既に存在、変更なし
+key: 追加する文字列（スロットへコピーされる）
+is-new: true=元は存在せず挿入済み, false=既に存在、変更なし
 `
   'str-set.str-set.clear': '集合を空にする'
   'str-set.str-set.contains': `
 要素が存在するかを返す
-key str: 照会する文字列
-found bool: true=集合中にその文字列が存在する, false=存在しない（集合が空なら直ちに返す）
+key: 照会する文字列
+found: true=集合中にその文字列が存在する, false=存在しない（集合が空なら直ちに返す）
 `
   'str-set.str-set.for-each': `
 すべての要素を走査する
 スロット添字順（挿入順ではない）で [0, cap) を走査し、占有スロットの文字列を順次 val に代入する。
 本言語にコールバックは無く、関数リターン時 val は最後の非空スロットの要素で停止。
-val str: 現在スロットの文字列（最後の代入）
+val: 現在スロットの文字列（最後の代入）
 `
   'str-set.str-set.hash': `
 FNV-1a 文字列ハッシュ
-key str: ハッシュ化する文字列（バイト順に走査）
-idx i64: [0, cap) 内のスロットインデックス（ハッシュ値 & (cap-1)、大文字小文字を区別しない）
+key: ハッシュ化する文字列（バイト順に走査）
+idx: [0, cap) 内のスロットインデックス（ハッシュ値 & (cap-1)、大文字小文字を区別しない）
 `
   'str-set.str-set.init': '集合を初期化する'
   'str-set.str-set.is-empty': `
 集合が空か
-empty bool: true=size == 0, false=要素残りあり
+empty: true=size == 0, false=要素残りあり
 `
   'str-set.str-set.len': `
 要素数を返す
-n i64: 集合中に現在存在する文字列個数
+n: 集合中に現在存在する文字列個数
 `
   'str-set.str-set.remove': `
 要素を削除する
 スロットの occ と keys[i].len をクリアし探測鎖の後続再配置はしない；同じ key を再度 add すればスロットを再利用できる。
-key str: 削除する文字列
-removed bool: true=発見して削除, false=存在せず
+key: 削除する文字列
+removed: true=発見して削除, false=存在せず
 `
   'str-set.str-set.str-eq': `
 2 つの str が等しいかを比較する
 先に長さで高速否定し、その後バイト毎に照合（大小文字無視の扱いはしない）。
-a str: 左オペランド
-b str: 右オペランド
-eq bool: true=長さと全バイトが同一, false=不等
+a: 左オペランド
+b: 右オペランド
+eq: true=長さと全バイトが同一, false=不等
 `
   'str._str-dig-val': `
 1 文字の数字（0-15）をその値に変換する; 無効な文字は -1 を返す
@@ -7851,8 +7851,8 @@ d: 0~15；無効文字は -1 を返す
   'str.at': `
 [非推奨] str.at: 文字（コードポイント）単位の添字読み込み — 代わりに s[idx] を使う（ネイティブの添字アクセスで ?char を返す）
 str.at: 安全な添字アクセス（文字インデックス単位。バイトオフセットが必要なら s.byte(i) を使う）
-i i64: 文字（コードポイント）のインデックス
-戻り値 val ?byte: その文字のコードポイント値（バイト範囲を超えるときは切り詰め）; 範囲外なら nil
+i: 文字（コードポイント）のインデックス
+戻り値 val: その文字のコードポイント値（バイト範囲を超えるときは切り詰め）; 範囲外なら nil
 
 `
   'str.bigint-bitlen': `
@@ -7926,14 +7926,14 @@ yes: s が target で終わるかどうか
 `
   'str.eq-full': `
 2 つの文字列が完全に等しいかを比較する
-b str: もう一方の文字列
-戻り値 yes bool: true=等しい, false=異なる
+b: もう一方の文字列
+戻り値 yes: true=等しい, false=異なる
 
 `
   'str.fields': `
 1 つ以上連続する空白文字で文字列を分割する
 空白文字: 空白（32）、タブ（9）、改行（10）、復帰（13）
-戻り値 out []str: 空でない部分文字列
+戻り値 out: 空でない部分文字列
 連続する空白は 1 つの区切りとして扱い、先頭や末尾の空白は空要素を生まない
 
 `
@@ -7976,8 +7976,8 @@ pos: 初出のコードポイント位置、未発見時 -1
 `
   'str.last-index': `
 部分文字列の最後の出現を逆方向に探す（last-index は rindex の別名）
-target str: 探す部分文字列
-戻り値 pos i64: 見つかったコードポイント（文字）位置、または -1
+target: 探す部分文字列
+戻り値 pos: 見つかったコードポイント（文字）位置、または -1
 
 `
   'str.len': `
@@ -7988,7 +7988,7 @@ n: コードポイント（文字）数（s[i] のインデックス意味と一
   'str.lines': `
 改行で分割する
 \n と \r\n に対応
-戻り値 out []str: 行のリスト（末尾の改行は空行を生まない）
+戻り値 out: 行のリスト（末尾の改行は空行を生まない）
 
 `
   'str.new': `
@@ -8013,17 +8013,17 @@ val: コードポイントごとに置換した後のコピー
 `
   'str.replace-n': `
 回数を制限した置換
-old str: 古い部分文字列
-new str: 新しい部分文字列
-n i64: 置換の最大回数; n <= 0 は何も置換しない
-戻り値 val str: 結果の文字列
+old: 古い部分文字列
+new: 新しい部分文字列
+n: 置換の最大回数; n <= 0 は何も置換しない
+戻り値 val: 結果の文字列
 
 `
   'str.replace-str': `
 s 内の部分文字列 old のすべての出現を new に置き換える
-old str: 置換する部分文字列
-new str: 置換後
-戻り値 val str: 結果の文字列
+old: 置換する部分文字列
+new: 置換後
+戻り値 val: 結果の文字列
 old が空文字列のときは元の文字列のコピーをそのまま返す
 
 `
@@ -8041,16 +8041,16 @@ pos: target 最終出現（>= from-byte）のバイトオフセット、未発�
 `
   'str.rindex': `
 部分文字列の最後の出現を逆方向に探す
-target str: 探す部分文字列
-戻り値 pos i64: 見つかったコードポイント（文字）位置、または -1
+target: 探す部分文字列
+戻り値 pos: 見つかったコードポイント（文字）位置、または -1
 
 `
   'str.rindex-from': `
 from（コードポイント位置）から部分文字列を逆方向に探す
 Python の rfind(target, from) と同じセマンティクス: [from, .len) の中で target の最後の出現を探す
-target str: 探す部分文字列
-from i64: 開始位置（含む下限。コードポイント単位）
-戻り値 pos i64: 見つかったコードポイント（文字）位置、または -1
+target: 探す部分文字列
+from: 開始位置（含む下限。コードポイント単位）
+戻り値 pos: 見つかったコードポイント（文字）位置、または -1
 
 `
   'str.slice': `
@@ -8069,16 +8069,16 @@ val: バイト範囲 [start,end) で切り出した部分文字列のコピー
 `
   'str.split': `
 区切り文字で文字列を部分文字列に分割する
-sep str: 分割部分文字列；各出現箇所で切り分け、sep 自体は結果に含まれない
-戻り値 out []str: 分割後の部分文字列
+sep: 分割部分文字列；各出現箇所で切り分け、sep 自体は結果に含まれない
+戻り値 out: 分割後の部分文字列
 空の区切り文字は文字列全体を 1 要素として返す
 注意: ローカルの結果スライスを作って out に代入する。出力パラメータへの out.push が効かないコンパイラの不具合を回避するため
 `
   'str.split-n': `
 回数を制限した分割
-sep str: 分割部分文字列；各出現箇所で切り分け、sep 自体は結果に含まれない
-maxsplit i64: 分割の最大回数（maxsplit+1 個の要素になる）; maxsplit <= 0 は無制限
-戻り値 out []str: 結果
+sep: 分割部分文字列；各出現箇所で切り分け、sep 自体は結果に含まれない
+maxsplit: 分割の最大回数（maxsplit+1 個の要素になる）; maxsplit <= 0 は無制限
+戻り値 out: 結果
 `
   'str.starts-with': `
 s が target で始まるかどうかを判定
@@ -8138,7 +8138,7 @@ val: ok=解析された f64, nil=空文字列, err=非数字文字を含む
   'str.to-hex': `
 文字列を 16 進にエンコードする
 各バイトが 2 文字の小文字 16 進になる
-戻り値 out str: 16 進文字列
+戻り値 out: 16 進文字列
 
 `
   'str.to-i16': `
@@ -8187,7 +8187,7 @@ out: 自身（str は不変、値セマンティクスで基盤バッファを�
 `
   'str.to-txt': `
 str を txt に変換（最長 255 バイト）
-返す out ?txt: ok(txt) / nil（255 バイト超は txt に収まらない、もはや静かな切り詰めはしない）
+返す out: ok(txt) / nil（255 バイト超は txt に収まらない、もはや静かな切り詰めはしない）
 `
   'str.to-u16': `
 文字列を u16 にパースする
@@ -8257,8 +8257,8 @@ out: 指定長と容量の新文字列
 `
   'strs.join': `
 []str.join: 文字列スライスのすべての要素を区切り文字で連結する
-sep str: 区切り文字
-戻り値 out str: 連結した文字列
+sep: 区切り文字
+戻り値 out: 連結した文字列
 
 `
   'tar.builder.add-bytes': `
@@ -8391,35 +8391,35 @@ typ: エントリ型文字列（typeflag に従い "file"、"dir" または "unk
   'tdes.tdes-cbc-dec': `
 Triple DES-CBC 復号
 各ブロックでまず 3DES-ECB 復号し、続く前セグメントの暗号文（先頭ブロックは iv）と XOR して平文を復元。
-in []byte: 入力暗号文（長さは 8 の倍数である必要）
-key [24]byte: 鍵（K1 || K2 || K3）、暗号化時と一致する必要
-iv [8]byte: 初期ベクトル、暗号化時と同一である必要
-返り値 out []byte: 復号後のデータ、長さは in と同一
+in: 入力暗号文（長さは 8 の倍数である必要）
+key: 鍵（K1 || K2 || K3）、暗号化時と一致する必要
+iv: 初期ベクトル、暗号化時と同一である必要
+返り値 out: 復号後のデータ、長さは in と同一
 `
   'tdes.tdes-cbc-enc': `
 Triple DES-CBC 暗号化
 各ブロックはまず前ブロックの暗号文（先頭ブロックは iv）と XOR してから 3DES-ECB を通すため、
 同一平文でも iv が異なれば異なる暗号文になります。
-in []byte: 入力データ（長さは 8 の倍数である必要）
-key [24]byte: 鍵（K1 || K2 || K3）
-iv [8]byte: 初期ベクトル、各メッセージで一意であるべき
-返り値 out []byte: 暗号化後のデータ、長さは in と同一
+in: 入力データ（長さは 8 の倍数である必要）
+key: 鍵（K1 || K2 || K3）
+iv: 初期ベクトル、各メッセージで一意であるべき
+返り値 out: 暗号化後のデータ、長さは in と同一
 `
   'tdes.tdes-dec': `
 Triple DES 復号（ECB モード）
 暗号化と逆順：D_K3 → E_K2 → D_K1；同様に 8 バイトブロックごとに独立処理。
-in []byte: 入力暗号文（長さは 8 の倍数である必要）
-n i64: 実際に処理するバイト数（通常 in.len()）
-key [24]byte: 鍵（K1 || K2 || K3）、暗号化時と一致する必要
-返り値 out []byte: 復号後のデータ、長さは n と同一
+in: 入力暗号文（長さは 8 の倍数である必要）
+n: 実際に処理するバイト数（通常 in.len()）
+key: 鍵（K1 || K2 || K3）、暗号化時と一致する必要
+返り値 out: 復号後のデータ、長さは n と同一
 `
   'tdes.tdes-enc': `
 Triple DES 暗号化（ECB モード）
 各 8 バイトブロックへ E_K1 → D_K2 → E_K3 を実行、ブロック同士は互いに影響しません（同一平文は同一暗号文になります）。
-in []byte: 入力データ（長さは 8 の倍数である必要；1 ブロックに満たない末尾は処理されません）
-n i64: 実際に処理するバイト数（通常 in.len()）
-key [24]byte: 鍵（K1 || K2 || K3、各セグメント 8 バイト）
-返り値 out []byte: 暗号化後のデータ、長さは n と同一
+in: 入力データ（長さは 8 の倍数である必要；1 ブロックに満たない末尾は処理されません）
+n: 実際に処理するバイト数（通常 in.len()）
+key: 鍵（K1 || K2 || K3、各セグメント 8 バイト）
+返り値 out: 暗号化後のデータ、長さは n と同一
 `
   'time.add-seconds': `
 秒を加えて新しい time を返す
@@ -8611,92 +8611,92 @@ t: 対応する時点（nsec=0）
 `
   'tls.bn-to-bytes': `
 []i64（リトルエンディアン base 2^32）→ ビッグエンディアンバイト配列
-num []i64: 多倍長整数
-返り値 out []byte: ビッグエンディアンバイト
+num: 多倍長整数
+返り値 out: ビッグエンディアンバイト
 `
   'tls.build-nonce': `
 AEAD nonce を構築
-iv [12]byte: 書き出し鍵から派生した AEAD IV
-seq i64: レコード番号（右寄せ 8 バイト後 IV 末尾へ XOR）
-nonce [12]byte: このレコードの AEAD nonce
+iv: 書き出し鍵から派生した AEAD IV
+seq: レコード番号（右寄せ 8 バイト後 IV 末尾へ XOR）
+nonce: このレコードの AEAD nonce
 `
   'tls.bytes-cat': `
 2 つのバイト配列を連結
-a []byte: 前段配列
-b []byte: 後段配列（a の後に接続）
-out []byte: 連結後の新配列（長さ = a.len() + b.len()）
+a: 前段配列
+b: 後段配列（a の後に接続）
+out: 連結後の新配列（長さ = a.len() + b.len()）
 `
   'tls.bytes-to-bn': `
 ビッグエンディアンバイト配列 → []i64（リトルエンディアン base 2^32）
-data []byte: ビッグエンディアンバイト
-返り値 out []i64: 多倍長整数（各要素は 32-bit limb）
+data: ビッグエンディアンバイト
+返り値 out: 多倍長整数（各要素は 32-bit limb）
 `
   'tls.cipher-is-ecdhe': `
 ECDHE 鍵交換の TLS 1.2 暗号スイートか
 現在 ECDHE-ECDSA/RSA の AES128-CBC-SHA256 と AES128-GCM-SHA256 の 4 種を扱います。
-c i64: 暗号スイートコード（TLS-CIPHER-* 定数）
-r bool: true=上記 4 種のいずれか（ECDHE 鍵交換可）, false=その他のスイート
+c: 暗号スイートコード（TLS-CIPHER-* 定数）
+r: true=上記 4 種のいずれか（ECDHE 鍵交換可）, false=その他のスイート
 `
   'tls.cipher-is-gcm': `
 AEAD (AES-GCM) レコード形式の TLS 1.2 暗号スイートか
 ECDHE-ECDSA-AES128-GCM-SHA256 と ECDHE-RSA-AES128-GCM-SHA256 の 2 種のみ。
-c i64: 暗号スイートコード（TLS-CIPHER-* 定数）
-r bool: true=AES-GCM レコード使用（explicit nonce が必要）検証ラベル, false=CBC + HMAC 形式使用
+c: 暗号スイートコード（TLS-CIPHER-* 定数）
+r: true=AES-GCM レコード使用（explicit nonce が必要）検証ラベル, false=CBC + HMAC 形式使用
 `
   'tls.conn.append-hs': `
 ハンドシェイクメッセージをバッファへ追加
-data []byte: ハンドシェイクバッファ末尾へ追加するメッセージバイト
+data: ハンドシェイクバッファ末尾へ追加するメッセージバイト
 `
   'tls.conn.append-hs-from': `
 buf の offset 位置から n バイトをハンドシェイクバッファへ追加
-buf []byte: ソースバッファ（record header を含む）
-offset i64: 開始オフセット（通常 5、record header をスキップ）
-n i64: 追加するバイト数
+buf: ソースバッファ（record header を含む）
+offset: 開始オフセット（通常 5、record header をスキップ）
+n: 追加するバイト数
 `
   'tls.conn.close': 'TLS 接続をクローズ'
   'tls.conn.compute-shared-secret-13': 'ECDHE 共有鍵を計算'
   'tls.conn.connect': `
 TLS 接続を確立（1.3/1.2 を自動ネゴシエーション）
-host str: サーバーのホスト名
-port i64: ポート番号
-返り値 ok bool: true=成功
+host: サーバーのホスト名
+port: ポート番号
+返り値 ok: true=成功
 `
   'tls.conn.connect-12': `
 TLS 1.2 完全ハンドシェイク（純 TLS 1.2、supported_versions 拡張を送らない）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 host: サーバーのホスト名または IP
 port: TCP ポート番号
 ok: true=TLS 1.2 ハンドシェイク完了
 `
   'tls.conn.connect-13': `
 TLS 1.3 完全ハンドシェイク
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.decrypt-record': `
 レコードを復号
-buf []byte: 受信レコードデータ（ヘッダから開始）
-返り値 ct i64: 元の content type（-1=エラー）
-返り値 out []byte: 復号後の平文
-expected-ct i64: 期待する content type（復号後に照合、不一致はエラー扱い）
+buf: 受信レコードデータ（ヘッダから開始）
+返り値 ct: 元の content type（-1=エラー）
+返り値 out: 復号後の平文
+expected-ct: 期待する content type（復号後に照合、不一致はエラー扱い）
 `
   'tls.conn.decrypt-record-13': `
 TLS 1.3 AEAD レコードを復号
-rec []byte: 受信レコード（ヘッダを含む）
-key [16]byte: AEAD 鍵
-iv [12]byte: AEAD IV
-seq i64: このレコードの期待番号（nonce 派生に関与、順序違いは AEAD 検証失敗を招く）
-返り値 ct i64: 元の content type（-1=エラー）
-返り値 out []byte: 復号後の平文（content type byte を含まない）
+rec: 受信レコード（ヘッダを含む）
+key: AEAD 鍵
+iv: AEAD IV
+seq: このレコードの期待番号（nonce 派生に関与、順序違いは AEAD 検証失敗を招く）
+返り値 ct: 元の content type（-1=エラー）
+返り値 out: 復号後の平文（content type byte を含まない）
 `
   'tls.conn.decrypt-record-gcm': `
 TLS 1.2 AES-128-GCM AEAD レコード復号（RFC 5288）
-buf []byte: 受信レコード（ヘッダから開始）
-expected-ct i64: 期待する content type（AAD 用）
-key [16]byte: server_write_key
-salt [4]byte: server_write_IV（implicit salt）
-seq i64: レコード番号
-返り値 ct i64: 成功=expected-ct, -1=エラー
-返り値 out []byte: 復号後の平文
+buf: 受信レコード（ヘッダから開始）
+expected-ct: 期待する content type（AAD 用）
+key: server_write_key
+salt: server_write_IV（implicit salt）
+seq: レコード番号
+返り値 ct: 成功=expected-ct, -1=エラー
+返り値 out: 復号後の平文
 `
   'tls.conn.derive-application-keys-13': 'アプリケーション層鍵を派生'
   'tls.conn.derive-handshake-keys-13': `
@@ -8705,31 +8705,31 @@ HKDF 鍵スケジューリングを使用（RFC 8446 §7.1）
 `
   'tls.conn.derive-keys': `
 premaster secret から全ての鍵を派生
-premaster []byte: premaster secret（static-RSA 48 bytes / ECDHE 32 bytes）
+premaster: premaster secret（static-RSA 48 bytes / ECDHE 32 bytes）
 `
   'tls.conn.encrypt-record': `
 レコードを暗号化して送信
-ct i64: 元の content type
-data []byte: 平文データ
-返り値 ok bool: true=成功
+ct: 元の content type
+data: 平文データ
+返り値 ok: true=成功
 `
   'tls.conn.encrypt-record-13': `
 TLS 1.3 AEAD レコードを暗号化して送信
-ct i64: 元の content type
-data []byte: 平文データ
-key [16]byte: AEAD 鍵
-iv [12]byte: AEAD IV
-seq i64: このレコードの番号（送信ごとにインクリメント、nonce 派生に関与）
-返り値 ok bool: true=成功
+ct: 元の content type
+data: 平文データ
+key: AEAD 鍵
+iv: AEAD IV
+seq: このレコードの番号（送信ごとにインクリメント、nonce 派生に関与）
+返り値 ok: true=成功
 `
   'tls.conn.encrypt-record-gcm': `
 TLS 1.2 AES-128-GCM AEAD レコード暗号化（RFC 5288）
-ct i64: content type
-data []byte: 平文
-key [16]byte: client/server_write_key
-salt [4]byte: client/server_write_IV（implicit salt）
-seq i64: レコード番号
-返り値 ok bool: true=成功
+ct: content type
+data: 平文
+key: client/server_write_key
+salt: client/server_write_IV（implicit salt）
+seq: レコード番号
+返り値 ok: true=成功
 `
   'tls.conn.gen-p256-keypair': `
 エフェメラル P-256 秘密鍵（ビッグエンディアン）と非圧縮公開鍵を生成
@@ -8737,7 +8737,7 @@ seq i64: レコード番号
 `
   'tls.conn.gen-x25519-keypair': `
 send-client-hello: ClientHello を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 エフェメラル X25519 鍵ペアを生成（.client-priv/.client-pub に格納）
 複数返り値 [32]byte のコンパイラバグ回避のためインライン実装
 `
@@ -8749,113 +8749,113 @@ fd: 基盤 socket のファイルディスクリプタ（診断専用）
 ServerHello 以降の TLS 1.2 完全ハンドシェイク
 （Certificate → [ECDHE: ServerKeyExchange] → ServerHelloDone → 鍵交換 → CCS/Finished）
 .cipher-id（read-server-hello / read-server-hello-13 が記録済み）と ECDHE 時の .client-priv/.client-pub に依存
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.init': '接続を初期化（未接続状態）'
   'tls.conn.read-certificate': `
 Certificate を読み取り
-cert-out []byte: 出力する証明書 DER データ
-返り値 ok bool: true=成功
+cert-out: 出力する証明書 DER データ
+返り値 ok: true=成功
 `
   'tls.conn.read-change-cipher-spec': `
 ChangeCipherSpec を読み取り
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.read-encrypted-handshake-13': `
 暗号化されたハンドシェイクメッセージを読み取り
 単一レコードに複数のハンドシェイクメッセージを含む場合に対応（hs-plain-buf で残りデータをバッファ）
-返り値 msg-type i64: メッセージ型（-1=エラー）
-返り値 msg-data []byte: メッセージデータ（ヘッダを含まない）
+返り値 msg-type: メッセージ型（-1=エラー）
+返り値 msg-data: メッセージデータ（ヘッダを含まない）
 `
   'tls.conn.read-encrypted-record-13': `
 TLS 1.3 レコードを 1 件読み取って復号
-key [16]byte: AEAD 鍵
-iv [12]byte: AEAD IV
-seq i64: 番号（読み取り後自動インクリメント）
-返り値 ct i64: 元の content type（-1=エラー）
-返り値 out []byte: 復号後の平文
+key: AEAD 鍵
+iv: AEAD IV
+seq: 番号（読み取り後自動インクリメント）
+返り値 ct: 元の content type（-1=エラー）
+返り値 out: 復号後の平文
 `
   'tls.conn.read-finished': `
 暗号化された Finished メッセージを読み取り
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.read-server-hello': `
 ServerHello を読み取り
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.read-server-hello-13': `
 ServerHello を読み取り TLS バージョンを検出
-返り値 ok bool: true=TLS 1.3, false=TLS 1.2 または失敗
+返り値 ok: true=TLS 1.3, false=TLS 1.2 または失敗
 `
   'tls.conn.read-server-hello-done': `
 ServerHelloDone を読み取り
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.read-server-key-exchange': `
 ECDHE ServerKeyExchange を読み取り（ECDHE スイートのみ）
 サーバーのエフェメラル X25519 公開鍵を解析して .server-pub に格納（証明書と署名は検証しません。本実装の信頼モデルに一致）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.send': `
 TLS 経由でデータを送信
-data str: 送信する平文
+data: 送信する平文
 written: 書き込み済みバイト数（nil=暗号化または送信失敗）
 `
   'tls.conn.send-change-cipher-spec': 'ChangeCipherSpec を送信'
   'tls.conn.send-client-hello': `
 TLS 1.2 ClientHello を送信（ECDHE 暗号スイートと拡張を含む）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.send-client-hello-13': `
 TLS 1.3 ClientHello を送信（拡張を含む）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.send-client-key-exchange': `
 ClientKeyExchange を送信
-premaster []byte: premaster secret（static-RSA スイート用、48 bytes；ECDHE スイートでは無視）
-cert []byte: サーバー証明書 DER（static-RSA スイート用）
-返り値 ok bool: true=成功
+premaster: premaster secret（static-RSA スイート用、48 bytes；ECDHE スイートでは無視）
+cert: サーバー証明書 DER（static-RSA スイート用）
+返り値 ok: true=成功
 `
   'tls.conn.send-finished': `
 暗号化された Finished メッセージを送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.conn.send-finished-13': `
 TLS 1.3 Finished メッセージを送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.dial': `
 簡易関数、TLS 接続を確立
-host str: サーバーのホスト名
-port i64: ポート番号
-返り値 conn ?conn: 接続（nil=接続失敗）
+host: サーバーのホスト名
+port: ポート番号
+返り値 conn: 接続（nil=接続失敗）
 `
   'tls.dial-12': `
 TLS 1.2 接続（純 TLS 1.2、1.3 をネゴシエーションしません）
-host str: ホスト名または IP
-port i64: ポート番号
-返り値 conn ?conn: ok=接続, nil=失敗
+host: ホスト名または IP
+port: ポート番号
+返り値 conn: ok=接続, nil=失敗
 `
   'tls.get-u16': `
 バッファから 16-bit ビッグエンディアン値を読み取り
-buf []byte: ソースバッファ（buf[pos..pos+1] を読み取り）
-pos i64: 読み取り開始位置（上位バイトが先）
-val i64: 復号した 16-bit ビッグエンディアン値（バイトが範囲外ならゼロとして計算）
+buf: ソースバッファ（buf[pos..pos+1] を読み取り）
+pos: 読み取り開始位置（上位バイトが先）
+val: 復号した 16-bit ビッグエンディアン値（バイトが範囲外ならゼロとして計算）
 `
   'tls.get-u24': `
 バッファから 24-bit ビッグエンディアン値を読み取り
-buf []byte: ソースバッファ（buf[pos..pos+2] を読み取り）
-pos i64: 読み取り開始位置（上位バイトが先）
-val i64: 復号した 24-bit ビッグエンディアン値（バイトが範囲外ならゼロとして計算）
+buf: ソースバッファ（buf[pos..pos+2] を読み取り）
+pos: 読み取り開始位置（上位バイトが先）
+val: 復号した 24-bit ビッグエンディアン値（バイトが範囲外ならゼロとして計算）
 `
   'tls.https-serve-once': `
 完全な HTTPS リクエスト-レスポンス周期（単一関数）
 同一関数内で完了：accept + handshake + recv HTTP + send HTTP + close
 全ての TLS 状態は局所変数 c に保持し、グローバル変数バグと構造体コピーバグを回避します。
-listen-fd fd: 監視 socket fd
-status i64: HTTP レスポンス状態コード
-body str: HTTP レスポンスボディ
-返り値 ok bool: true=成功
+listen-fd: 監視 socket fd
+status: HTTP レスポンス状態コード
+body: HTTP レスポンスボディ
+返り値 ok: true=成功
 `
   'tls.net-recv-wait': `
 ブロッキング受信（nb recv + 短時間スリープのリトライ）
@@ -8868,216 +8868,216 @@ r: >0=受信箱ト数, 0=相手側の正常クローズ(FIN), -1=エラー
 `
   'tls.prf': `
 TLS 1.2 PRF（P_SHA256）
-secret []byte: 鍵材料
-label str: ラベル文字列
-seed []byte: シード
-out-len i64: 必要な出力長
-返り値 out []byte: PRF 出力
+secret: 鍵材料
+label: ラベル文字列
+seed: シード
+out-len: 必要な出力長
+返り値 out: PRF 出力
 `
   'tls.put-u16': `
 16-bit ビッグエンディアン値をバッファへ書き込み
-buf []byte: 対象バッファ、buf[pos..pos+1] へ書き込み
-pos i64: 書き込み開始位置（上位バイトが先）
-val i64: 書き込む 16-bit 整数値
+buf: 対象バッファ、buf[pos..pos+1] へ書き込み
+pos: 書き込み開始位置（上位バイトが先）
+val: 書き込む 16-bit 整数値
 `
   'tls.put-u24': `
 24-bit ビッグエンディアン値をバッファへ書き込み
-buf []byte: 対象バッファ、buf[pos..pos+2] へ書き込み
-pos i64: 書き込み開始位置（上位バイトが先）
-val i64: 書き込む 24-bit 整数値
+buf: 対象バッファ、buf[pos..pos+2] へ書き込み
+pos: 書き込み開始位置（上位バイトが先）
+val: 書き込む 24-bit 整数値
 `
   'tls.rand-bytes': `
 ランダムバイトを生成
-n i64: 必要なバイト数
-返り値 out []byte: ランダムバイト配列
-state i64: 乱数シードの状態（rand.rand が内部でバイトごとに進めます）
+n: 必要なバイト数
+返り値 out: ランダムバイト配列
+state: 乱数シードの状態（rand.rand が内部でバイトごとに進めます）
 `
   'tls.read-record': `
 TLS レコードを 1 件読み取り
-fd fd: socket fd
-buf []byte: レコードバッファ（ヘッダ+データを含む、buf[0..4]=header、buf[5..]=body）
-返り値 ct i64: content type（-1=エラー）
-返り値 rlen i64: データ長（ヘッダを含まない）
+fd: socket fd
+buf: レコードバッファ（ヘッダ+データを含む、buf[0..4]=header、buf[5..]=body）
+返り値 ct: content type（-1=エラー）
+返り値 rlen: データ長（ヘッダを含まない）
 `
   'tls.recv-n': `
 socket からちょうど n バイトを読み取り
-fd fd: socket fd
-buf []byte: 受信バッファ
-n i64: 読み取る必要のあるバイト数
-返り値 ok bool: true=成功
+fd: socket fd
+buf: 受信バッファ
+n: 読み取る必要のあるバイト数
+返り値 ok: true=成功
 `
   'tls.rsa-pkcs1-decrypt': `
 RSA PKCS#1 v1.5 復号
-ciphertext []byte: RSA 暗号化されたデータ
-n []byte: 法（big-endian）
-d []byte: 秘密鍵指数（big-endian）
-返り値 out []byte: 復号後の平文（nil=失敗）
+ciphertext: RSA 暗号化されたデータ
+n: 法（big-endian）
+d: 秘密鍵指数（big-endian）
+返り値 out: 復号後の平文（nil=失敗）
 `
   'tls.rsa-pkcs1-encrypt': `
 RSA PKCS#1 v1.5 暗号化
-msg []byte: メッセージ（premaster secret、48 bytes）
-mod-bytes []byte: RSA 法（big-endian）
-exp i64: RSA 公開鍵指数
-返り値 out []byte: 暗号化後のデータ（長さ = mod-bytes.len）
+msg: メッセージ（premaster secret、48 bytes）
+mod-bytes: RSA 法（big-endian）
+exp: RSA 公開鍵指数
+返り値 out: 暗号化後のデータ（長さ = mod-bytes.len）
 `
   'tls.send-raw': `
 生 TLS レコードを送信（未暗号化）
-fd fd: socket fd
-ct i64: content type（レコードヘッダの先頭 byte へ書き込み）
-data []byte: そのレコードへ書き込むペイロードバイト（本関数は暗号化せず直接送信）
+fd: socket fd
+ct: content type（レコードヘッダの先頭 byte へ書き込み）
+data: そのレコードへ書き込むペイロードバイト（本関数は暗号化せず直接送信）
 `
   'tls.server-accept': `
 TCP 接続を受け入れ TLS ハンドシェイクを実行
 局所変数でハンドシェイクを行います（グローバル変数はコンパイラバグあり：関数跨ぎでアドレス不一致）
-listen-fd fd: 監視 socket fd
-返り値 conn ?server-conn: ok=接続（ハンドシェイク鍵を含む）, nil=失敗
+listen-fd: 監視 socket fd
+返り値 conn: ok=接続（ハンドシェイク鍵を含む）, nil=失敗
 `
   'tls.server-conn.append-hs': `
 ハンドシェイクデータをバッファへ追加
-data []byte: ハンドシェイクバッファへ追加するデータ
+data: ハンドシェイクバッファへ追加するデータ
 `
   'tls.server-conn.append-hs-from': `
 buf の offset 位置から n バイトを追加
-buf []byte: ソースバッファ
-offset i64: 読み取り開始オフセット
-n i64: 追加するバイト数
+buf: ソースバッファ
+offset: 読み取り開始オフセット
+n: 追加するバイト数
 `
   'tls.server-conn.close': '接続をクローズ'
   'tls.server-conn.compute-shared-secret-13': 'ECDHE 共有鍵を計算'
   'tls.server-conn.decrypt-record': `
 レコードを復号（CLIENT 鍵を使用）
-buf []byte: 受信レコードデータ（ヘッダから開始）
-expected-ct i64: 元の content type（TLS-CT-HANDSHAKE または TLS-CT-APP-DATA）
-返り値 ct i64: 元の content type（-1=エラー）
-返り値 out []byte: 復号後の平文
+buf: 受信レコードデータ（ヘッダから開始）
+expected-ct: 元の content type（TLS-CT-HANDSHAKE または TLS-CT-APP-DATA）
+返り値 ct: 元の content type（-1=エラー）
+返り値 out: 復号後の平文
 `
   'tls.server-conn.decrypt-record-13': `
 TLS 1.3 AEAD レコードを復号
-rec []byte: 受信レコード（ヘッダを含む）
-key [16]byte: AEAD 鍵
-iv [12]byte: AEAD IV
-seq i64: このレコードの期待番号（nonce 派生に関与、順序違いは AEAD 検証失敗を招く）
-返り値 ct i64: 元の content type（-1=エラー）
-返り値 out []byte: 復号後の平文
+rec: 受信レコード（ヘッダを含む）
+key: AEAD 鍵
+iv: AEAD IV
+seq: このレコードの期待番号（nonce 派生に関与、順序違いは AEAD 検証失敗を招く）
+返り値 ct: 元の content type（-1=エラー）
+返り値 out: 復号後の平文
 `
   'tls.server-conn.derive-application-keys-13': 'アプリケーション層鍵を派生'
   'tls.server-conn.derive-handshake-keys-13': 'ハンドシェイク鍵を派生（HKDF 鍵スケジューリング）'
   'tls.server-conn.derive-keys': `
 premaster から全ての鍵を派生
-premaster []byte: premaster secret (48 bytes)
+premaster: premaster secret (48 bytes)
 `
   'tls.server-conn.encrypt-record': `
 レコードを暗号化して送信（SERVER 鍵を使用）
-ct i64: 元の content type
-data []byte: 平文データ
-返り値 ok bool: true=成功
+ct: 元の content type
+data: 平文データ
+返り値 ok: true=成功
 `
   'tls.server-conn.encrypt-record-13': `
 TLS 1.3 AEAD レコードを暗号化して送信
-ct i64: 元の content type
-data []byte: 平文データ
-key [16]byte: AEAD 鍵
-iv [12]byte: AEAD IV
-seq i64: このレコードの番号（送信ごとにインクリメント、nonce 派生に関与）
-返り値 ok bool: true=成功
+ct: 元の content type
+data: 平文データ
+key: AEAD 鍵
+iv: AEAD IV
+seq: このレコードの番号（送信ごとにインクリメント、nonce 派生に関与）
+返り値 ok: true=成功
 `
   'tls.server-conn.handshake': `
 TLS サーバーハンドシェイク（1.3/1.2 を自動ネゴシエーション）
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.handshake-13': `
 TLS 1.3 サーバーハンドシェイク
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.read-change-cipher-spec': `
 ChangeCipherSpec を読み取り
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.read-client-finished-13': `
 client Finished を読み取り検証
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.read-client-hello': `
 ClientHello を読み取り
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.read-client-key-exchange': `
 ClientKeyExchange を読み取り premaster を復号
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.read-encrypted-handshake-13': `
 暗号化されたハンドシェイクメッセージを読み取り
-msg-type i64: ハンドシェイクメッセージ型（-1=エラー）
-msg-data []byte: メッセージ内容（ヘッダを含まない）
+msg-type: ハンドシェイクメッセージ型（-1=エラー）
+msg-data: メッセージ内容（ヘッダを含まない）
 `
   'tls.server-conn.read-encrypted-record-13': `
 TLS 1.3 レコードを 1 件読み取って復号
 （CCS middlebox compatibility レコードをスキップ）
-key [16]byte: AEAD 鍵
-iv [12]byte: AEAD IV
-seq i64: レコード番号（呼び出し側が読み取り後インクリメント）
-ct i64: 復号した元の content type（-1=エラー）
-out []byte: 復号後の平文
+key: AEAD 鍵
+iv: AEAD IV
+seq: レコード番号（呼び出し側が読み取り後インクリメント）
+ct: 復号した元の content type（-1=エラー）
+out: 復号後の平文
 `
   'tls.server-conn.read-finished': `
 暗号化された client Finished を読み取り検証
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.recv': `
 データを受信し復号
-buf str: 受信バッファ
-n i64: 最大受信バイト数
-返り値 read-n i64: 実際の受信バイト数（-1=エラー）
+buf: 受信バッファ
+n: 最大受信バイト数
+返り値 read-n: 実際の受信バイト数（-1=エラー）
 `
   'tls.server-conn.send': `
 TLS 経由でデータを送信
-data str: 送信する平文
+data: 送信する平文
 written: 書き込み済みバイト数（nil=失敗）
 `
   'tls.server-conn.send-certificate': `
 Certificate を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.send-certificate-13': `
 TLS 1.3 Certificate を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.send-change-cipher-spec': 'ChangeCipherSpec を送信'
   'tls.server-conn.send-encrypted-extensions-13': `
 EncryptedExtensions を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.send-finished': `
 暗号化された server Finished を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.send-finished-13': `
 server Finished を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.send-server-hello': `
 ServerHello を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.send-server-hello-13': `
 TLS 1.3 ServerHello を送信
 X25519 鍵ペアを生成し、supported_versions と key_share 拡張を含む ServerHello を構築
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-conn.send-server-hello-done': `
 ServerHelloDone を送信
-返り値 ok bool: true=成功
+返り値 ok: true=成功
 `
   'tls.server-init': `
 サーバー接続を初期化（証明書生成、鍵設定）
-fd fd: クライアント socket fd
-返り値 conn ?server-conn: 接続（nil=エラー）
+fd: クライアント socket fd
+返り値 conn: 接続（nil=エラー）
 `
   'tls.server-listen': `
 監視 socket を構築
-host str: バインドする IP アドレス
-port i64: 監視ポート番号
-返り値 fd fd: 監視 socket fd（-1=失敗）
+host: バインドする IP アドレス
+port: 監視ポート番号
+返り値 fd: 監視 socket fd（-1=失敗）
 `
   'tls.tls-pad': `
 TLS 1.2 CBC パディング（RFC 5246 §6.2.3.2）——PKCS#7 とは異なる！
@@ -9085,13 +9085,13 @@ pad-count バイト分をパディングし、各バイトの値はいずれも 
 対端（OpenSSL 等）は末尾バイト P を読むと P+1 バイトを除去し、この P+1 バイトがすべて P と等しいことを要求します。
 PKCS#7（値 = pad-count）を誤用すると、平文が既にブロック整数倍のとき 0x10 を 16 個パディングし、
 対端は 17 バイト除去しようとして MAC 末尾バイトを踏みます → bad record mac。
-in []byte: 平文（content || MAC）
-返り値 out []byte: パディング後のデータ（長さは 16 の倍数）
+in: 平文（content || MAC）
+返り値 out: パディング後のデータ（長さは 16 の倍数）
 `
   'tls.tls-unpad': `
 TLS 1.2 CBC パディング除去
-in []byte: 復号後のデータ（content || MAC || padding）
-返り値 out-n i64: パディング除去後の長さ（content+MAC）、-1=パディングエラー
+in: 復号後のデータ（content || MAC || padding）
+返り値 out-n: パディング除去後の長さ（content+MAC）、-1=パディングエラー
 `
   'toml.array-name': `
 テーブルの配列の名前を読む。
@@ -9255,93 +9255,93 @@ complete: 引用符／括弧が閉じたか（複数行値読み取り時に終�
 `
   'tree-map.tree-map.alloc-node': `
 空きプールからノードを確保する
-戻り値 idx i64: ノードのインデックス、プールが満杯なら -1
+戻り値 idx: ノードのインデックス、プールが満杯なら -1
 
 `
   'tree-map.tree-map.bf': `
 平衡係数（左の高さ - 右の高さ）を返す
-idx i64: ノードのインデックス
-戻り値 b i64: 平衡係数
+idx: ノードのインデックス
+戻り値 b: 平衡係数
 
 `
   'tree-map.tree-map.clear': 'すべての要素を削除し、空きプールを再構築する'
   'tree-map.tree-map.contains': `
 キーが存在するかを返す
-key i64: キー
-戻り値 yes bool: true=存在する, false=存在しない
+key: キー
+戻り値 yes: true=存在する, false=存在しない
 
 `
   'tree-map.tree-map.empty': `
 木が空かを返す
-戻り値 yes bool: true=空, false=空でない
+戻り値 yes: true=空, false=空でない
 
 `
   'tree-map.tree-map.first': `
 最小のキーを返す
-戻り値 key ?i64: ok=最小のキー, nil=木が空
+戻り値 key: ok=最小のキー, nil=木が空
 
 `
   'tree-map.tree-map.for-each': `
 キーの昇順にすべてのキー/値の組を走査する
-k i64: 出力キー（要素ごとに更新）
-v i64: 出力値（要素ごとに更新）
+k: 出力キー（要素ごとに更新）
+v: 出力値（要素ごとに更新）
 
 `
   'tree-map.tree-map.free-node': `
 ノードを空きプールに戻す
-idx i64: 解放するノードのインデックス
+idx: 解放するノードのインデックス
 
 `
   'tree-map.tree-map.full': `
 ノードプールが満杯かを返す
-戻り値 yes bool: true=満杯, false=満杯でない
+戻り値 yes: true=満杯, false=満杯でない
 
 `
   'tree-map.tree-map.get': `
 キーの値を検索する
-key i64: キー
-戻り値 val ?i64: ok=見つかった, nil=見つからない
+key: キー
+戻り値 val: ok=見つかった, nil=見つからない
 
 `
   'tree-map.tree-map.ht': `
 ノードの高さを返す（NIL = 0）
-idx i64: ノードのインデックス
-戻り値 h i64: 高さ
+idx: ノードのインデックス
+戻り値 h: 高さ
 
 `
   'tree-map.tree-map.init': '空の木とその空きノードプールを初期化する'
   'tree-map.tree-map.last': `
 最大のキーを返す
-戻り値 key ?i64: ok=最大のキー, nil=木が空
+戻り値 key: ok=最大のキー, nil=木が空
 
 `
   'tree-map.tree-map.lower-bound': `
 target 以上の最初のキーを探す
-target i64: 目標のキー
-戻り値 key ?i64: ok=見つかった, nil=そのようなキーはない
+target: 目標のキー
+戻り値 key: ok=見つかった, nil=そのようなキーはない
 
 `
   'tree-map.tree-map.put': `
 key→value を挿入または更新する
-key i64: ソートキー
-val i64: 書き込む整数値（キーが既に存在する場合は古い値を上書きする）
-戻り値 ok bool: true=挿入した, false=既存キーを更新したかプールが満杯
+key: ソートキー
+val: 書き込む整数値（キーが既に存在する場合は古い値を上書きする）
+戻り値 ok: true=挿入した, false=既存キーを更新したかプールが満杯
 `
   'tree-map.tree-map.rebalance': `
 ノード idx の平衡を検査して修復する
-idx i64: ノードのインデックス
-戻り値 nr i64: 再平衡後の部分木の根のインデックス
+idx: ノードのインデックス
+戻り値 nr: 再平衡後の部分木の根のインデックス
 
 `
   'tree-map.tree-map.rebalance-up': `
 idx から上へ、階層ごとに再平衡する
-idx i64: 起点のノードのインデックス
+idx: 起点のノードのインデックス
 
 `
   'tree-map.tree-map.remove': `
 キーを削除する
-key i64: キー
-戻り値 ok bool: true=削除した, false=見つからない
+key: キー
+戻り値 ok: true=削除した, false=見つからない
 
 `
   'tree-map.tree-map.rot-left': `
@@ -9351,7 +9351,7 @@ x                y
 a   y     =>     x   c
 / \          / \
 b   c        a   b
-x i64: 回転の軸となるノード
+x: 回転の軸となるノード
 
 `
   'tree-map.tree-map.rot-right': `
@@ -9361,113 +9361,113 @@ x              y
 y   c   =>     a   x
 / \                / \
 a   b              b   c
-x i64: 回転の軸となるノード
+x: 回転の軸となるノード
 
 `
   'tree-map.tree-map.size': `
 要素数を返す
-戻り値 sz i64: 要素数
+戻り値 sz: 要素数
 
 `
   'tree-map.tree-map.successor': `
 ノードの infix 順の後続を探す
-idx i64: ノードのインデックス
-戻り値 succ i64: 後続のインデックス、なければ -1
+idx: ノードのインデックス
+戻り値 succ: 後続のインデックス、なければ -1
 
 `
   'tree-map.tree-map.update-ht': `
 ノードの高さを再計算する
-idx i64: ノードのインデックス
+idx: ノードのインデックス
 
 `
   'tree-map.tree-map.upper-bound': `
 target より大きい最初のキーを探す
-target i64: 目標のキー
-戻り値 key ?i64: ok=見つかった, nil=そのようなキーはない
+target: 目標のキー
+戻り値 key: ok=見つかった, nil=そのようなキーはない
 
 `
   'tree-set.tree-set.add': `
 要素を追加する
-key i64: 追加する値
-戻り値 ok bool: true=挿入した, false=すでに存在するかプールが満杯
+key: 追加する値
+戻り値 ok: true=挿入した, false=すでに存在するかプールが満杯
 
 `
   'tree-set.tree-set.alloc-node': `
 空きプールからノードを確保する
-戻り値 idx i64: ノードのインデックス、プールが満杯なら -1
+戻り値 idx: ノードのインデックス、プールが満杯なら -1
 
 `
   'tree-set.tree-set.bf': `
 平衡係数（左の高さ - 右の高さ）を返す
-idx i64: ノードのインデックス
-戻り値 b i64: 平衡係数
+idx: ノードのインデックス
+戻り値 b: 平衡係数
 
 `
   'tree-set.tree-set.clear': 'すべての要素を削除し、空きプールを再構築する'
   'tree-set.tree-set.contains': `
 値が存在するかを返す
-key i64: 検査する値
-戻り値 yes bool: true=存在する, false=存在しない
+key: 検査する値
+戻り値 yes: true=存在する, false=存在しない
 
 `
   'tree-set.tree-set.empty': `
 集合が空かを返す
-戻り値 yes bool: true=空, false=空でない
+戻り値 yes: true=空, false=空でない
 
 `
   'tree-set.tree-set.first': `
 最小の値を返す
-戻り値 val ?i64: ok=最小の値, nil=集合が空
+戻り値 val: ok=最小の値, nil=集合が空
 
 `
   'tree-set.tree-set.for-each': `
 昇順にすべての要素を走査する
-val i64: 出力値（要素ごとに更新）
+val: 出力値（要素ごとに更新）
 
 `
   'tree-set.tree-set.free-node': `
 ノードを空きプールに戻す
-idx i64: 解放するノードのインデックス
+idx: 解放するノードのインデックス
 
 `
   'tree-set.tree-set.full': `
 ノードプールが満杯かを返す
-戻り値 yes bool: true=満杯, false=満杯でない
+戻り値 yes: true=満杯, false=満杯でない
 
 `
   'tree-set.tree-set.ht': `
 ノードの高さを返す（NIL = 0）
-idx i64: ノードのインデックス
-戻り値 h i64: 高さ
+idx: ノードのインデックス
+戻り値 h: 高さ
 
 `
   'tree-set.tree-set.init': '空の木とその空きノードプールを初期化する'
   'tree-set.tree-set.last': `
 最大の値を返す
-戻り値 val ?i64: ok=最大の値, nil=集合が空
+戻り値 val: ok=最大の値, nil=集合が空
 
 `
   'tree-set.tree-set.lower-bound': `
 target 以上の最初の要素を探す
-target i64: 目標の値
-戻り値 val ?i64: ok=見つかった, nil=そのような要素はない
+target: 目標の値
+戻り値 val: ok=見つかった, nil=そのような要素はない
 
 `
   'tree-set.tree-set.rebalance': `
 ノード idx の平衡を検査して修復する
-idx i64: ノードのインデックス
-戻り値 nr i64: 再平衡後の部分木の根のインデックス
+idx: ノードのインデックス
+戻り値 nr: 再平衡後の部分木の根のインデックス
 
 `
   'tree-set.tree-set.rebalance-up': `
 idx から上へ、階層ごとに再平衡する
-idx i64: 起点のノードのインデックス
+idx: 起点のノードのインデックス
 
 `
   'tree-set.tree-set.remove': `
 要素を削除する
-key i64: 削除する値
-戻り値 ok bool: true=削除した, false=見つからない
+key: 削除する値
+戻り値 ok: true=削除した, false=見つからない
 
 `
   'tree-set.tree-set.rot-left': `
@@ -9477,7 +9477,7 @@ x                y
 a   y     =>     x   c
 / \          / \
 b   c        a   b
-x i64: 回転の軸となるノード
+x: 回転の軸となるノード
 
 `
   'tree-set.tree-set.rot-right': `
@@ -9487,29 +9487,29 @@ x              y
 y   c   =>     a   x
 / \                / \
 a   b              b   c
-x i64: 回転の軸となるノード
+x: 回転の軸となるノード
 
 `
   'tree-set.tree-set.size': `
 要素数を返す
-戻り値 sz i64: 要素数
+戻り値 sz: 要素数
 
 `
   'tree-set.tree-set.successor': `
 ノードの infix 順の後続を探す
-idx i64: ノードのインデックス
-戻り値 succ i64: 後続のインデックス、なければ -1
+idx: ノードのインデックス
+戻り値 succ: 後続のインデックス、なければ -1
 
 `
   'tree-set.tree-set.update-ht': `
 ノードの高さを再計算する
-idx i64: ノードのインデックス
+idx: ノードのインデックス
 
 `
   'tree-set.tree-set.upper-bound': `
 target より大きい最初の要素を探す
-target i64: 目標の値
-戻り値 val ?i64: ok=見つかった, nil=そのような要素はない
+target: 目標の値
+戻り値 val: ok=見つかった, nil=そのような要素はない
 
 `
   'txt._txt-dig-val': `
@@ -9520,7 +9520,7 @@ d: 0~15；無効文字は -1 を返す
   'txt.at': `
 [非推奨] txt.at: 文字（コードポイント）単位の添字読み込み — 代わりに t[idx] を使う（ネイティブの添字アクセスで ?char を返す）
 txt.at: 文字位置のコードポイント値を取得する（バイトオフセットが必要なら t.byte(i) を使う）
-戻り値 b ?byte: 範囲外なら nil; バイト範囲を超えるコードポイントは切り詰める
+戻り値 b: 範囲外なら nil; バイト範囲を超えるコードポイントは切り詰める
 idx: コードポイント（文字）インデックス
 b: ok=該当コードポイント値（byte 範囲超過は切捨て）, nil=範囲外
 `
@@ -9635,8 +9635,8 @@ pos: 初出のコードポイント位置、未発見時 -1
 `
   'txt.join': `
 []txt.join: txt のスライスを区切り文字で連結する（255 バイトを超える分は切り詰め）
-sep txt: 区切り文字
-戻り値 out txt: 連結結果
+sep: 区切り文字
+戻り値 out: 連結結果
 
 `
   'txt.last-index': `
@@ -9675,7 +9675,7 @@ val: コードポイントごとに置換した後の新規 txt（255 バイト�
 `
   'txt.replace-n': `
 回数を制限した置換
-old txt, new txt, n i64: 置換の最大回数（n<=0 は何も置換しない）
+old txt, new, n: 置換の最大回数（n<=0 は何も置換しない）
 old: 置換された子 txt
 new: 置換後の子 txt
 n: 最大置換回数（n <= 0 は置換しない）
@@ -9717,7 +9717,7 @@ out: 分割した子 txt のスライス
 `
   'txt.split-n': `
 回数を制限した分割
-sep txt, maxsplit i64: 分割の最大回数（<=0 は無制限）
+sep txt, maxsplit: 分割の最大回数（<=0 は無制限）
 sep: 区切り txt
 maxsplit: 最大分割回数（<= 0 は無制限）
 out: 分割結果スライス（最大 maxsplit+1 分割）
@@ -9838,72 +9838,72 @@ path: socket ファイルパス（例 '/tmp/myapp.sock'）
 `
   'unix.unix-conn.recv': `
 データをバッファへ受信
-buf str: 受信バッファ
-n i64: 最大受信バイト数
-返り値 read-n i64: 実際の受信バイト数（-1=エラー, 0=接続クローズ）
+buf: 受信バッファ
+n: 最大受信バイト数
+返り値 read-n: 実際の受信バイト数（-1=エラー, 0=接続クローズ）
 `
   'unix.unix-conn.recv-all': `
 接続クローズまで全てのデータを受信
-返り値 content str: 受信内容, total i64: 総バイト数
+返り値 content: 受信内容, total i64: 総バイト数
 `
   'unix.unix-conn.recv-with-timeout': `
 タイムアウト付き受信
-buf str: 受信バッファ
-n i64: 最大受信バイト数
-timeout-ms i64: タイムアウトミリ秒数
-返り値 read-n i64: 実際の受信バイト数（-1=エラー, 0=タイムアウトまたは接続クローズ）
+buf: 受信バッファ
+n: 最大受信バイト数
+timeout-ms: タイムアウトミリ秒数
+返り値 read-n: 実際の受信バイト数（-1=エラー, 0=タイムアウトまたは接続クローズ）
 `
   'unix.unix-conn.send': `
 文字列データを送信
-data str: 送信する文字列
-返り値 written i64: 実際の送信バイト数（-1=エラー）
+data: 送信する文字列
+返り値 written: 実際の送信バイト数（-1=エラー）
 `
   'unix.unix-conn.set-recv-timeout': `
 受信タイムアウトを設定
-timeout-ms i64: タイムアウトミリ秒数（0=ブロッキング, >0=タイムアウト）
-返り値 ok bool: true=成功
+timeout-ms: タイムアウトミリ秒数（0=ブロッキング, >0=タイムアウト）
+返り値 ok: true=成功
 `
   'unix.unix-conn.set-timeout': `
 受信タイムアウトを設定（別名、意味は set-recv-timeout と同一）
-timeout-ms i64: タイムアウトミリ秒数
-返り値 ok bool: true=成功
+timeout-ms: タイムアウトミリ秒数
+返り値 ok: true=成功
 `
   'unix.unix-dial': `
 Unix Domain Socket へ接続
 socket(AF_UNIX) + connect を実行
-path str: 対象 socket ファイルパス
-fd fd: 接続済みディスクリプタ；失敗は -1
+path: 対象 socket ファイルパス
+fd: 接続済みディスクリプタ；失敗は -1
 `
   'unix.unix-dial-timeout': `
 タイムアウト付き Unix Domain Socket ダイヤル
-path str: socket ファイルパス
-timeout-ms i64: 接続後の受信タイムアウト
-返り値 c ?unix-conn: ok=接続, nil=失敗
+path: socket ファイルパス
+timeout-ms: 接続後の受信タイムアウト
+返り値 c: ok=接続, nil=失敗
 `
   'unix.unix-dial-to': `
 Unix Domain Socket 接続を確立しダイヤル
-path str: socket ファイルパス
-返り値 c ?unix-conn: ok=接続, nil=失敗
+path: socket ファイルパス
+返り値 c: ok=接続, nil=失敗
 `
   'unix.unix-listen': `
 Unix Domain Socket 監視を構築
 unlink + socket(AF_UNIX) + bind + listen を実行（旧パスの再利用のため先に unlink）
-path str: socket ファイルパス；長さは UNIX-MAX-PATH の制限
-fd fd: 監視状態に入ったディスクリプタ；失敗は -1
+path: socket ファイルパス；長さは UNIX-MAX-PATH の制限
+fd: 監視状態に入ったディスクリプタ；失敗は -1
 `
   'unix.unix-listen-on': `
 Unix Domain Socket リスナーを構築し監視を開始
-path str: socket ファイルパス
-返り値 l ?unix-listener: ok=リスナー, nil=失敗
+path: socket ファイルパス
+返り値 l: ok=リスナー, nil=失敗
 `
   'unix.unix-listener.accept': `
 新しい Unix Domain Socket 接続を受け入れ
-返り値 c ?unix-conn: ok=接続構造体, nil=失敗
+返り値 c: ok=接続構造体, nil=失敗
 `
   'unix.unix-listener.accept-with-timeout': `
 タイムアウト付き accept
-timeout-ms i64: タイムアウトミリ秒数
-返り値 c ?unix-conn: ok=接続, nil=タイムアウトまたは失敗
+timeout-ms: タイムアウトミリ秒数
+返り値 c: ok=接続, nil=タイムアウトまたは失敗
 `
   'unix.unix-listener.close': '監視 socket をクローズ（socket ファイルは自動削除しません）'
   'unix.unix-listener.fd-of': `
@@ -9921,41 +9921,41 @@ socket ファイルパスを取得
 `
   'unix.unix-listener.set-timeout': `
 accept タイムアウトを設定
-timeout-ms i64: タイムアウトミリ秒数
-返り値 ok bool: true=成功
+timeout-ms: タイムアウトミリ秒数
+返り値 ok: true=成功
 `
   'url.url-basic-auth': `
 HTTP Basic 認証ヘッダ値を生成
 user: ユーザー名
 password: パスワード
-返り値 out str: ヘッダ値（例 'Basic dXNlcjpwYXNz'）
+返り値 out: ヘッダ値（例 'Basic dXNlcjpwYXNz'）
 `
   'url.url-build-query': `
 キー・値ペアからクエリ文字列を構築
 keys: キー配列（先頭 count 項が有効）
 values: 値配列（keys と一対一対応）
 count: 有効なキー・値ペアの数
-返り値 out str: クエリ文字列（例 key1=val1&key2=val2）
+返り値 out: クエリ文字列（例 key1=val1&key2=val2）
 `
   'url.url-decode': `
 URL デコード（パーセントデコード）
 s: デコード対象のパーセントエンコード文字列
-返り値 out str: デコード後の元の文字列
+返り値 out: デコード後の元の文字列
 `
   'url.url-encode': `
 URL エンコード（パーセントエンコード）
 s: エンコード対象の元の文字列
-返り値 out str: パーセントエンコード後の文字列
+返り値 out: パーセントエンコード後の文字列
 `
   'url.url-encode-component': `
 URL エンコード（コンポーネントモード、/ と ? もエンコード）
 s: エンコード対象の元の文字列
-返り値 out str: パーセントエンコード後の文字列
+返り値 out: パーセントエンコード後の文字列
 `
   'url.url-info.get-query': `
 クエリパラメータの値を取得
 key: 読み取るクエリパラメータ名
-返り値 val ?str: ok=パラメータ値, nil=見つかりません
+返り値 val: ok=パラメータ値, nil=見つかりません
 `
   'url.url-info.set-query': `
 クエリパラメータの値を設定
@@ -9964,24 +9964,24 @@ value: そのパラメータの新値
 `
   'url.url-info.to-str': `
 URL を再度文字列へ組み立て
-返り値 out str: 組み立て後の完全な URL
+返り値 out: 組み立て後の完全な URL
 `
   'url.url-join': `
 ベース URL とパスを連結
 base: ベース URL
 path-str: 末尾に追加するパス
-返り値 out str: 連結後の完全な URL
+返り値 out: 連結後の完全な URL
 `
   'url.url-parse': `
 URL 文字列を解析
 url-str: 解析対象の完全な URL 文字列
-返り値 u url-info: 解析結果（u.ok=true=成功）
+返り値 u: 解析結果（u.ok=true=成功）
 `
   'url.url-parse-basic-auth': `
 HTTP Basic 認証ヘッダを解析
 header: Authorization ヘッダ値（例 'Basic dXNlcjpwYXNz'）
-返り値 user str: ユーザー名（空=解析失敗）
-返り値 password str: パスワード
+返り値 user: ユーザー名（空=解析失敗）
+返り値 password: パスワード
 `
   'uuid.cmp': `
 2 つの UUID を辞書順に比較する
@@ -9996,18 +9996,18 @@ yes: true=2 つの UUID の 16 バイトが逐一等しい
   'uuid.from-str': `
 文字列から UUID をパースする
 ハイフン付き（36 文字）とハイフンなし（32 文字）の両方の形式を受け付ける
-s str: UUID 文字列
-out uuid: 結果の UUID
-戻り値 ok bool: true=パース成功
+s: UUID 文字列
+out: 結果の UUID
+戻り値 ok: true=パース成功
 s: UUID 文字列（36 文字ハイフン付きまたは 32 文字ハイフンなし）
 out: 出力パラメータ、解析成功時に 16 バイトを書き込む（元の内容は上書き）
 ok: true=フォーマット合法かつ書き込み済み, false=長さ/文字不正
 `
   'uuid.hex-byte': `
 1 バイトを 2 文字の 16 進として out の位置 pos に書き込む
-b byte: エンコード対象のバイト（上位ニブルを先に、下位ニブルを後に書き込む）
-pos i64: out 内で最初の hex 文字を書き込むオフセット（2 文字目は pos+1 に書き込む）
-out str: 対象文字列、同じ位置に 2 要素を書き込む（範囲外の場合、その要素の書き込みは安全索引によりスキップされる）
+b: エンコード対象のバイト（上位ニブルを先に、下位ニブルを後に書き込む）
+pos: out 内で最初の hex 文字を書き込むオフセット（2 文字目は pos+1 に書き込む）
+out: 対象文字列、同じ位置に 2 要素を書き込む（範囲外の場合、その要素の書き込みは安全索引によりスキップされる）
 `
   'uuid.hex-byte-upper': `
 1 バイトを大文字の 16 進で書き込む
@@ -10057,12 +10057,12 @@ ok: true=当該セクション解析成功（ハイフン位置と hex 文字と
   'uuid.to-str': `
 UUID を標準的な文字列に整形する
 形式: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小文字）
-戻り値 out str: UUID 文字列
+戻り値 out: UUID 文字列
 
 `
   'uuid.to-str-upper': `
 UUID を大文字の文字列に整形する
-戻り値 out str: 大文字の UUID 文字列
+戻り値 out: 大文字の UUID 文字列
 
 `
   'uuid.validate': `
@@ -10092,8 +10092,8 @@ v: UUID バージョン番号（byte6 の上位 4 ビット、v4 は 4）
 `
   'vec.eq': `
 []t.eq: 2 つのスライスの相等を比較（要素ごとに比較、容量と出所は比較しない）
-b []t: 反対側のスライス；長さが異なる場合は即 false
-eq bool: true=長さと全対応要素が等しい（要素は != で比較）
+b: 反対側のスライス；長さが異なる場合は即 false
+eq: true=長さと全対応要素が等しい（要素は != で比較）
 `
   'vec.extend': `
 []t.extend: 別のスライスのすべての要素を追加する
@@ -10127,7 +10127,7 @@ push のロジックをインライン化している（.len = cur + 1; .[cur] =
 `
   'vec.len': `
 []t.len: スライスの要素数を返す（要素型を区別せず、バイト数とも無関係）
-out i64: 現在の長さ、取り得る値は 0..cap
+out: 現在の長さ、取り得る値は 0..cap
 `
   'vec.max': `
 []t.max: 最大値; 空のスライスは nil を返す
@@ -10183,35 +10183,35 @@ out i64: 現在の長さ、取り得る値は 0..cap
 cap == 0 -> new-cap = 4
 cap < 1024 -> new-cap = cap * 2
 cap >= 1024 -> new-cap = cap * 5 / 4
-val t: 追加する要素；型はレシーバースライスの要素型で決定
+val: 追加する要素；型はレシーバースライスの要素型で決定
 追加後 .len は 1 増える；拡張時は既存要素を新バッファへ移し旧バッファは解放される
 `
   'ws.build-frame': `
 WebSocket フレームを組み立て
-opcode i64: メッセージ型
-data str: メッセージ内容
-mask bool: mask を施すか（client は true 必須、server は false 必須）
-mask-key str: 4-byte mask key（mask=true の場合使用）
-返り値 frame str: 完全なフレーム文字列
+opcode: メッセージ型
+data: メッセージ内容
+mask: mask を施すか（client は true 必須、server は false 必須）
+mask-key: 4-byte mask key（mask=true の場合使用）
+返り値 frame: 完全なフレーム文字列
 `
   'ws.client.close': '接続をクローズ'
   'ws.client.is-connected': `
 接続状態を確認
-返り値 yes bool: true=接続済み
+返り値 yes: true=接続済み
 `
   'ws.client.recv': `
 完全な WebSocket メッセージを 1 件ブロッキング読み取り
 server は mask しないため demask 不要（ただし mask bit は検査します）
-返り値 msg ?message:
+返り値 msg:
 ok = メッセージ
 nil = 接続クローズ
 err = エラー
 `
   'ws.client.send': `
 WebSocket フレームを送信（client は mask 必須）
-opcode i64: メッセージ型
-data str: メッセージ内容
-返り値 ok bool: true=成功
+opcode: メッセージ型
+data: メッセージ内容
+返り値 ok: true=成功
 `
   'ws.client.send-binary': `
 バイナリメッセージを送信
@@ -10220,9 +10220,9 @@ ok: true=送信成功
 `
   'ws.client.send-close': `
 close フレームを送信
-close-code i64: クローズ状態コード
-reason str: クローズ理由
-返り値 ok bool: true=成功
+close-code: クローズ状態コード
+reason: クローズ理由
+返り値 ok: true=成功
 `
   'ws.client.send-ping': `
 ping を送信
@@ -10241,32 +10241,32 @@ ok: true=送信成功
 `
   'ws.compute-accept': `
 Sec-WebSocket-Accept 値を計算
-key str: クライアントが送った Sec-WebSocket-Key
-返り値 accept str: base64(sha1(key - WS-GUID))
+key: クライアントが送った Sec-WebSocket-Key
+返り値 accept: base64(sha1(key - WS-GUID))
 `
   'ws.connect': `
 WebSocket エンドポイントへ接続
-url str: WS/WSS エンドポイント URL（ws://host:port/path または wss://host:port/path）
-返り値 c ?client:
+url: WS/WSS エンドポイント URL（ws://host:port/path または wss://host:port/path）
+返り値 c:
 ok = 接続済みクライアント
 nil = 接続失敗
 err = エラーメッセージ
 `
   'ws.gen-client-key': `
 16-byte Sec-WebSocket-Key を生成し base64 エンコード
-seed i64: シード値
-返り値 key str: base64 エンコード文字列（24 文字、パディング含む）
+seed: シード値
+返り値 key: base64 エンコード文字列（24 文字、パディング含む）
 `
   'ws.gen-mask-key': `
 4-byte mask key 文字列を生成
-seed i64: シード値
-返り値 key str: 4 文字の文字列
+seed: シード値
+返り値 key: 4 文字の文字列
 `
   'ws.listen-on': `
 WebSocket サーバー側を構築し監視を開始
-host str: バインドする IP アドレス（例 '0.0.0.0'）
-port i64: 監視ポート番号
-返り値 s ?server: ok=サーバー側, nil=失敗
+host: バインドする IP アドレス（例 '0.0.0.0'）
+port: 監視ポート番号
+返り値 s: ok=サーバー側, nil=失敗
 `
   'ws.next-rand': `
 次の疑似乱数 i64 を生成
@@ -10281,13 +10281,13 @@ WebSocket HTTP ハンドシェイクを完了
 `
   'ws.server-conn.is-connected': `
 接続状態を確認
-返り値 yes bool: true=接続済み
+返り値 yes: true=接続済み
 `
   'ws.server-conn.recv': `
 完全な WebSocket メッセージを 1 件ブロッキング読み取り
 分断メッセージ（continuation opcode）の収集に対応。
 ping 受信時は自動で pong を返し、close 受信時は connected=false を設定し nil を返します。
-返り値 msg ?message:
+返り値 msg:
 ok = メッセージ
 nil = 接続クローズ
 err = エラー
@@ -10299,46 +10299,46 @@ err = エラー
 `
   'ws.server-conn.send': `
 WebSocket フレームを送信（server は mask しません）
-opcode i64: メッセージ型（WS-OP-TEXT / WS-OP-BINARY / ...）
-data str: メッセージ内容
-返り値 ok bool: true=成功
+opcode: メッセージ型（WS-OP-TEXT / WS-OP-BINARY / ...）
+data: メッセージ内容
+返り値 ok: true=成功
 `
   'ws.server-conn.send-binary': `
 バイナリメッセージを送信
-data str: メッセージ内容
-返り値 ok bool: true=成功
+data: メッセージ内容
+返り値 ok: true=成功
 `
   'ws.server-conn.send-close': `
 close フレームを送信
-close-code i64: クローズ状態コード（例 1000）
-reason str: クローズ理由
-返り値 ok bool: true=成功
+close-code: クローズ状態コード（例 1000）
+reason: クローズ理由
+返り値 ok: true=成功
 `
   'ws.server-conn.send-ping': `
 ping を送信
-data str: ping 内容
-返り値 ok bool: true=成功
+data: ping 内容
+返り値 ok: true=成功
 `
   'ws.server-conn.send-pong': `
 pong を送信
-data str: pong 内容
-返り値 ok bool: true=成功
+data: pong 内容
+返り値 ok: true=成功
 `
   'ws.server-conn.send-text': `
 テキストメッセージを送信
-data str: メッセージ内容
-返り値 ok bool: true=成功
+data: メッセージ内容
+返り値 ok: true=成功
 `
   'ws.server.accept': `
 新しい WebSocket クライアント接続を受け入れハンドシェイクを完了
-返り値 c ?server-conn: ok=ハンドシェイク済みクライアント, nil=失敗
+返り値 c: ok=ハンドシェイク済みクライアント, nil=失敗
 `
   'ws.server.close': 'WebSocket サーバー側をクローズ'
   'ws.server.listen': `
 監視を開始
-host str: バインドする IP アドレス（例 '0.0.0.0'）
-port i64: 監視ポート番号
-返り値 ok bool: true=成功
+host: バインドする IP アドレス（例 '0.0.0.0'）
+port: 監視ポート番号
+返り値 ok: true=成功
 `
   'x25519.fe-add': `
 体要素の加算 h = f + g
@@ -10466,9 +10466,9 @@ h: 新規生成のゼロ体要素（長さ 10）
 `
   'x25519.x25519-gen-keypair': `
 ランダムな鍵ペアを生成
-seed i64: ランダムシード
-返り値 priv [32]byte: 秘密鍵
-返り値 pub [32]byte: 公開鍵
+seed: ランダムシード
+返り値 priv: 秘密鍵
+返り値 pub: 公開鍵
 seed: rand シード（秘密鍵を決めます；実運用ではシステムの乱源で注入する必要あり）
 priv: 秘密鍵（clamp 済み：bit0-2 をゼロ化、bit254 を 1、bit255 をゼロ化）
 pub: 対応する公開鍵（priv × 基点）
@@ -10479,61 +10479,61 @@ base: 基点 u=9 の 32 バイトのリトルエンコード
 `
   'x25519.x25519-scalarmult': `
 X25519 スカラー掛算
-scalar [32]byte: スカラー（秘密鍵）
-point [32]byte: 点座標（公開鍵）
-返り値 out [32]byte: 結果
+scalar: スカラー（秘密鍵）
+point: 点座標（公開鍵）
+返り値 out: 結果
 `
   'x25519.x25519-scalarmult-base': `
 スカラー × 基点 を計算
-scalar [32]byte: スカラー（秘密鍵）
-返り値 out [32]byte: 公開鍵
+scalar: スカラー（秘密鍵）
+返り値 out: 公開鍵
 `
   'x25519.x25519-scalarmult-base-bytes': `
 スカラー × 基点 を計算（[]byte バージョン）
-scalar []byte: スカラー（秘密鍵、長さ 32）
-返り値 out []byte: 公開鍵（長さ 32）
+scalar: スカラー（秘密鍵、長さ 32）
+返り値 out: 公開鍵（長さ 32）
 `
   'x25519.x25519-scalarmult-bytes': `
 X25519 スカラー掛算（[]byte バージョン）
-scalar []byte: スカラー（秘密鍵、長さ 32）
-point []byte: 点座標（公開鍵、長さ 32）
-返り値 out []byte: 結果（長さ 32）
+scalar: スカラー（秘密鍵、長さ 32）
+point: 点座標（公開鍵、長さ 32）
+返り値 out: 結果（長さ 32）
 `
   'x509.alg-id-rsa-encryption': `
 AlgorithmIdentifier for rsaEncryption (1.2.840.113549.1.1.1)
-返り値 out []byte: SEQUENCE { OID rsaEncryption, NULL }
+返り値 out: SEQUENCE { OID rsaEncryption, NULL }
 `
   'x509.alg-id-sha256-with-rsa': `
 AlgorithmIdentifier for sha256WithRSAEncryption (1.2.840.113549.1.1.11)
-返り値 out []byte: SEQUENCE { OID sha256WithRSAEncryption, NULL }
+返り値 out: SEQUENCE { OID sha256WithRSAEncryption, NULL }
 `
   'x509.der-enc-bitstring': `
 BIT STRING へラップ
-data []byte: バイトデータ
-返り値 out []byte: DER BIT STRING
+data: バイトデータ
+返り値 out: DER BIT STRING
 data: ビット列内容（バイト単位で整列、関数が先頭の「未使用ビット数」バイト 0 を自動補います）
 out: tag=0x03 の DER BIT STRING（内容長は data より 1 多い）
 `
   'x509.der-enc-explicit': `
 EXPLICIT context tag [n]
-tag-num i64: タグ番号（0, 1, 2, ...）、下位 5 ビットを取り 0xA0 と合成してタグに
-content []byte: この context tag 内に包む DER 内層エンコード
-返り値 out []byte: DER [n] EXPLICIT（構造型 tag + 長さ + content）
+tag-num: タグ番号（0, 1, 2, ...）、下位 5 ビットを取り 0xA0 と合成してタグに
+content: この context tag 内に包む DER 内層エンコード
+返り値 out: DER [n] EXPLICIT（構造型 tag + 長さ + content）
 `
   'x509.der-enc-integer-bytes': `
 ビッグエンディアンのバイト配列を DER INTEGER へエンコード
-data []byte: ビッグエンディアンバイト（正整数）
-返り値 out []byte: DER INTEGER（tag+length を含む）
+data: ビッグエンディアンバイト（正整数）
+返り値 out: DER INTEGER（tag+length を含む）
 `
   'x509.der-enc-integer-i64': `
 i64 を DER INTEGER へエンコード
-val i64: 整数値
-返り値 out []byte: DER INTEGER
+val: 整数値
+返り値 out: DER INTEGER
 `
   'x509.der-enc-len': `
 DER 長をエンコード
-val i64: 長さ値
-返り値 out []byte: DER 長さバイト
+val: 長さ値
+返り値 out: DER 長さバイト
 `
   'x509.der-enc-null': `
 DER NULL をエンコード（内容は常に空）
@@ -10546,8 +10546,8 @@ out: tag=0x04 の DER OCTET STRING
 `
   'x509.der-enc-oid-raw': `
 生 OID 内容バイトからエンコード（tag+length を含まない）
-raw []byte: OID 内容バイト（例 rsaEncryption = [0x2A, 0x86, 0x48, ...]）
-返り値 out []byte: DER OBJECT IDENTIFIER（tag+length を含む）
+raw: OID 内容バイト（例 rsaEncryption = [0x2A, 0x86, 0x48, ...]）
+返り値 out: DER OBJECT IDENTIFIER（tag+length を含む）
 `
   'x509.der-enc-printablestring': `
 DER PrintableString をエンコード（文字列のバイトを直接内容として取得）
@@ -10566,9 +10566,9 @@ out: tag=0x31 の DER SET
 `
   'x509.der-enc-tlv': `
 TLV へラップ
-tag i64: タグバイト（例 0x02 INTEGER、0x17 UTCTime）
-content []byte: ラップする内容バイト（空でも可、長さ 0 でも長さフィールドは書き込まれます）
-返り値 out []byte: 完全な TLV（tag + DER 長さ + content）
+tag: タグバイト（例 0x02 INTEGER、0x17 UTCTime）
+content: ラップする内容バイト（空でも可、長さ 0 でも長さフィールドは書き込まれます）
+返り値 out: 完全な TLV（tag + DER 長さ + content）
 `
   'x509.der-enc-utctime': `
 DER UTCTime をエンコード
@@ -10594,10 +10594,10 @@ pos: タグバイトのオフセット（data[pos] のみ読み、前方に進�
 `
   'x509.rsa-pkcs1-sign-sha256': `
 RSA PKCS#1 v1.5 でデータに署名
-data []byte: 署名対象データ
-n []byte: 法（big-endian）
-d []byte: 秘密鍵指数（big-endian）
-返り値 sig []byte: 署名（法長）
+data: 署名対象データ
+n: 法（big-endian）
+d: 秘密鍵指数（big-endian）
+返り値 sig: 署名（法長）
 `
   'x509.sha256-compress': `
 SHA-256 単一ブロック圧縮
@@ -10608,49 +10608,49 @@ h0..h7 i64: 圧縮後の 8 個の 32-bit 状態ワード（hin + 作業変数、
 `
   'x509.x509-build-name-cn': `
 Name を構築（CN のみ）
-cn str: commonName
-返り値 out []byte: RDNSequence
+cn: commonName
+返り値 out: RDNSequence
 `
   'x509.x509-build-rsa-public-key': `
 RSAPublicKey DER を構築
-n []byte: 法（big-endian、先頭の 0x00 を含まない）
-e i64: 公開鍵指数
-返り値 out []byte: SEQUENCE { INTEGER n, INTEGER e }
+n: 法（big-endian、先頭の 0x00 を含まない）
+e: 公開鍵指数
+返り値 out: SEQUENCE { INTEGER n, INTEGER e }
 `
   'x509.x509-build-self-signed-cert': `
 自己署名 X.509 証明書を構築
-n []byte: RSA 法（big-endian）
-e i64: 公開鍵指数
-d []byte: RSA 秘密鍵指数（big-endian）
-cn str: Common Name
-返り値 cert []byte: 完全な DER エンコード証明書
+n: RSA 法（big-endian）
+e: 公開鍵指数
+d: RSA 秘密鍵指数（big-endian）
+cn: Common Name
+返り値 cert: 完全な DER エンコード証明書
 `
   'x509.x509-build-spki': `
 SubjectPublicKeyInfo を構築
-n []byte: 法
-e i64: 公開鍵指数
-返り値 out []byte: SEQUENCE { AlgorithmIdentifier, BIT STRING RSAPublicKey }
+n: 法
+e: 公開鍵指数
+返り値 out: SEQUENCE { AlgorithmIdentifier, BIT STRING RSAPublicKey }
 `
   'x509.x509-build-tbs': `
 TBSCertificate を構築
-n []byte: RSA 法
-e i64: 公開鍵指数
-cn str: 証明書の CN
-not-before str: 開始時刻
-not-after str: 終了時刻
-返り値 out []byte: TBSCertificate DER
+n: RSA 法
+e: 公開鍵指数
+cn: 証明書の CN
+not-before: 開始時刻
+not-after: 終了時刻
+返り値 out: TBSCertificate DER
 `
   'x509.x509-build-validity': `
 Validity を構築
-not-before str: UTCTime 文字列（例 "240101000000Z"）
-not-after str: UTCTime 文字列
-返り値 out []byte: SEQUENCE { UTCTime, UTCTime }
+not-before: UTCTime 文字列（例 "240101000000Z"）
+not-after: UTCTime 文字列
+返り値 out: SEQUENCE { UTCTime, UTCTime }
 `
   'x509.x509-bytes-to-bn': `
 ビッグエンディアンのバイト配列 → []i64（little-endian base 2^32）
 net/tls.no との循環依存回避のためローカルコピー
-data []byte: ビッグエンディアンバイト
-返り値 out []i64: 多倍長整数（各要素は 32-bit limb）
+data: ビッグエンディアンバイト
+返り値 out: 多倍長整数（各要素は 32-bit limb）
 `
   'x509.x509-fingerprint': `
 x509-fingerprint: X.509 証明書の SHA-256 フィンガープリントを計算
@@ -10658,14 +10658,14 @@ x509-fingerprint: X.509 証明書の SHA-256 フィンガープリントを計�
 まず x509-tbs-range で TBSCertificate バイトを位置特定し、sha256.sha256 へ渡して計算、
 最後に 32 バイトのハッシュ結果を 8 個のビッグエンディアン 32-bit ワードへ組み立てて返します。
 data: 証明書の完全な DER バイト
-h0 i64: フィンガープリントの最上位 32-bit ワード（ビッグエンディアン、TBSCertificate を特定できない場合 0）
-h1 i64: 順に下がる第 2 の 32-bit ワード
-h2 i64: 順に下がる第 3 の 32-bit ワード
-h3 i64: 順に下がる第 4 の 32-bit ワード
-h4 i64: 順に下がる第 5 の 32-bit ワード
-h5 i64: 順に下がる第 6 の 32-bit ワード
-h6 i64: 順に下がる第 7 の 32-bit ワード
-h7 i64: 最下位 32-bit ワード（すべて 0 は、その証明書に解析可能な TBSCertificate がないことを示します）
+h0: フィンガープリントの最上位 32-bit ワード（ビッグエンディアン、TBSCertificate を特定できない場合 0）
+h1: 順に下がる第 2 の 32-bit ワード
+h2: 順に下がる第 3 の 32-bit ワード
+h3: 順に下がる第 4 の 32-bit ワード
+h4: 順に下がる第 5 の 32-bit ワード
+h5: 順に下がる第 6 の 32-bit ワード
+h6: 順に下がる第 7 の 32-bit ワード
+h7: 最下位 32-bit ワード（すべて 0 は、その証明書に解析可能な TBSCertificate がないことを示します）
 `
   'x509.x509-rsa-e': `
 RSA 公開鍵指数を抽出（通常 65537）
@@ -10674,8 +10674,8 @@ e: 出力の指数値（0 は非 RSA または解析失敗を示します）
 `
   'x509.x509-rsa-n': `
 RSA 公開鍵法を抽出（ビッグエンディアンのバイト配列）
-data []byte: DER エンコード証明書
-返り値 out []byte: 法バイト（big-endian、先頭の 0x00 を含まない）
+data: DER エンコード証明書
+返り値 out: 法バイト（big-endian、先頭の 0x00 を含まない）
 `
   'x509.x509-serial': `
 証明書シリアル番号を抽出（i64 に収まる場合）
@@ -11490,7 +11490,7 @@ stored blocks (BTYPE=00) を使い zlib ストリームを構築：
 - 2-byte zlib header (78 9c)
 - DEFLATE stored blocks（各ブロック最大 65535 bytes）
 - 4-byte big-endian Adler-32 checksum
-out []byte: 完全な zlib ストリーム（2-byte header + stored blocks + 4-byte Adler-32）
+out: 完全な zlib ストリーム（2-byte header + stored blocks + 4-byte Adler-32）
 `
   'zlib.consumed-stored': `
 stored-block zlib ストリームの消費バイト数を計算
@@ -11502,13 +11502,13 @@ consumed を返します: 合計消費バイト数（header と Adler-32 を含�
 すべての DEFLATE ブロック型に対応（stored, fixed Huffman, dynamic Huffman）
 gzip.inflate-decompress により解凍します。
 まず stored-block スキャン（高速パス）を試み、失敗した場合は inflate 解凍を使用します。
-out ?[]byte: 解凍後のデータ（ok）。長さが 6 未満、header 不正、または解凍失敗はいずれも nil
+out: 解凍後のデータ（ok）。長さが 6 未満、header 不正、または解凍失敗はいずれも nil
 `
   'zlib.decompress-stored': `
 stored-block のみの zlib ストリームを解凍
 data: BTYPE=00 ブロックのみを含む zlib ストリーム ([]byte)
 out ?[]byte を返します: 解凍後のデータ（some）、非 stored ブロックまたは失敗は nil
-out ?[]byte: BTYPE=00 ブロックのみから復号したバイト。他のブロック型や末尾不一致では nil を返します
+out: BTYPE=00 ブロックのみから復号したバイト。他のブロック型や末尾不一致では nil を返します
 `
   'zstd.bits-for-count': `
 count に対応するビット数を計算

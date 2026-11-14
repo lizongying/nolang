@@ -15,11 +15,11 @@
 ...
 
 ; PBKDF2 使用 HMAC-SHA256
-; password []byte: 密碼（UTF-8 位元組序列）
-; salt []byte: 鹽值，建議至少 16 位元組且每個帳號不同
-; iterations i64: 迭代次數；越大越難暴力破解（常見 100000 以上），太小則不安全
-; key-len i64: 期望金鑰長度（位元組），按 32 位元組一塊逐塊生成
-; 返回 out []byte: 推導出的金鑰，長度恰為 key-len
+; password: 密碼（UTF-8 位元組序列）
+; salt: 鹽值，建議至少 16 位元組且每個帳號不同
+; iterations: 迭代次數；越大越難暴力破解（常見 100000 以上），太小則不安全
+; key-len: 期望金鑰長度（位元組），按 32 位元組一塊逐塊生成
+; 返回 out: 推導出的金鑰，長度恰為 key-len
 ; [pbkdf2-hmac-sha256](#pbkdf2.pbkdf2-hmac-sha256)
 pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64) (out []byte) {
 
@@ -172,11 +172,11 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
 ...
 
 ; PBKDF2 使用 HMAC-SHA512
-; password []byte: 密碼（UTF-8 位元組序列）
-; salt []byte: 鹽值，建議至少 16 位元組且每個帳號不同
-; iterations i64: 迭代次數；越大越難暴力破解，太小則不安全
-; key-len i64: 期望金鑰長度（位元組），按 64 位元組一塊逐塊生成
-; 返回 out []byte: 推導出的金鑰，長度恰為 key-len
+; password: 密碼（UTF-8 位元組序列）
+; salt: 鹽值，建議至少 16 位元組且每個帳號不同
+; iterations: 迭代次數；越大越難暴力破解，太小則不安全
+; key-len: 期望金鑰長度（位元組），按 64 位元組一塊逐塊生成
+; 返回 out: 推導出的金鑰，長度恰為 key-len
 ; [pbkdf2-hmac-sha512](#pbkdf2.pbkdf2-hmac-sha512)
 pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64) (out []byte) {
     h-len = 64
@@ -314,11 +314,11 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
 
 ; PBKDF2 使用 HMAC-SHA1
 ; 僅供相容舊協議；新設計請用 SHA-256 / SHA-512 版本。
-; password []byte: 密碼（UTF-8 位元組序列）
-; salt []byte: 鹽值
-; iterations i64: 迭代次數；越大越難暴力破解，太小則不安全
-; key-len i64: 期望金鑰長度（位元組），按 20 位元組一塊逐塊生成
-; 返回 out []byte: 推導出的金鑰，長度恰為 key-len
+; password: 密碼（UTF-8 位元組序列）
+; salt: 鹽值
+; iterations: 迭代次數；越大越難暴力破解，太小則不安全
+; key-len: 期望金鑰長度（位元組），按 20 位元組一塊逐塊生成
+; 返回 out: 推導出的金鑰，長度恰為 key-len
 ; [pbkdf2-hmac-sha1](#pbkdf2.pbkdf2-hmac-sha1)
 pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (out []byte) {
     h-len = 20

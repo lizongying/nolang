@@ -103,7 +103,7 @@ client {
 
 ; 讀取下一個 SSE 事件
 ; 阻塞直到收到完整事件或連線關閉。
-; 返回 ev ?event:
+; 返回 ev:
 ;   ok = 事件
 ;   nil   = 連線已關閉（EOF）
 ;   err = 錯誤
@@ -321,14 +321,14 @@ client.close = () {
 }
 
 ; 檢查連線狀態
-; 返回 yes bool: true=已連接
+; 返回 yes: true=已連接
 ; [is-connected](#sse.client.is-connected)
 client.is-connected = () (yes bool) {
     yes = .connected
 }
 
 ; 重新連線（使用 last-event-id 繼續接收）
-; 返回 ok bool: true=成功
+; 返回 ok: true=成功
 ; [reconnect](#sse.client.reconnect)
 client.reconnect = () (ok bool) {
     ok = false
@@ -538,7 +538,7 @@ client.reconnect = () (ok bool) {
 
 ; 連接到 SSE 端點
 ; url: SSE 端點 URL（http://host:port/path 或 https://host:port/path）
-; 返回 client ?client:
+; 返回 client:
 ;   ok = 已連接的客戶端
 ;   nil   = 連線失敗
 ;   err = 錯誤訊息
@@ -847,7 +847,7 @@ server-conn {
 ; 開始監聽
 ; host: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
 ; port: 監聽埠號
-; 返回 ok bool: true=成功
+; 返回 ok: true=成功
 ; [listen](#sse.server.listen)
 server.listen = (host str, port i64) (ok bool) {
     ok = false
@@ -861,7 +861,7 @@ server.listen = (host str, port i64) (ok bool) {
 }
 
 ; 接受新的 SSE 客戶端連接並完成 HTTP 交握
-; 返回 c ?server-conn: ok=已交握的客戶端, nil=失敗
+; 返回 c: ok=已交握的客戶端, nil=失敗
 ; [accept](#sse.server.accept)
 server.accept = () (c ?server-conn) {
     c = nil
@@ -895,7 +895,7 @@ server.close = () {
 
 ; 完成 SSE HTTP 交握
 ; 讀取客戶端 HTTP 請求，驗證方法為 GET，發送 SSE 回應標頭。
-; 返回 ok bool: true=成功
+; 返回 ok: true=成功
 ; [handshake](#sse.server-conn.handshake)
 server-conn.handshake = () (ok bool) {
     ok = false
@@ -979,7 +979,7 @@ server-conn.handshake = () (ok bool) {
 ; data: 事件數據（可多行，每行以 data: 前綴發送）
 ; id: 事件 ID（空字符串=不發送 id 欄位）
 ; retry: 重連等待毫秒數（-1=不發送 retry 欄位）
-; 返回 ok bool: true=成功
+; 返回 ok: true=成功
 ; [send-event](#sse.server-conn.send-event)
 server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
     ok = false
@@ -1030,7 +1030,7 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
 
 ; 發送 SSE 註解（用於心跳保活）
 ; comment: 註解內容
-; 返回 ok bool: true=成功
+; 返回 ok: true=成功
 ; [send-comment](#sse.server-conn.send-comment)
 server-conn.send-comment = (comment str) (ok bool) {
     ok = false
@@ -1048,7 +1048,7 @@ server-conn.send-comment = (comment str) (ok bool) {
 }
 
 ; 檢查連線狀態
-; 返回 yes bool: true=已連接
+; 返回 yes: true=已連接
 ; [is-connected](#sse.server-conn.is-connected)
 server-conn.is-connected = () (yes bool) {
     yes = .connected
@@ -1070,7 +1070,7 @@ server-conn.close = () {
 ; 建立 SSE 服務端並開始監聽
 ; host: 綁定的 IP 地址（如 '0.0.0.0'）
 ; port: 監聽埠號
-; 返回 s ?server: ok=服務端, nil=失敗
+; 返回 s: ok=服務端, nil=失敗
 ; [listen-on](#sse.listen-on)
 listen-on = (host str, port i64) (s ?server) {
     s = nil

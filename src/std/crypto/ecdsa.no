@@ -1032,8 +1032,8 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
 ...
 
 ; 點倍乘 R = 2*P（Jacobian 座標）
-; p []byte: 輸入點 (X, Y, Z)，各 32 位元組
-; 返回 r []byte: 輸出點 (X, Y, Z)，96 位元組
+; p: 輸入點 (X, Y, Z)，各 32 位元組
+; 返回 r: 輸出點 (X, Y, Z)，96 位元組
 ; [ec-point-double](#ecdsa.ec-point-double)
 ec-point-double = (p []byte) (r []byte) {
 
@@ -1160,7 +1160,7 @@ ec-point-double = (p []byte) (r []byte) {
 }
 
 ; 點加法 R = P + Q（P 在 Jacobian，Q 在 Jacobian）
-; 返回 r []byte: 96 位元組
+; 返回 r: 96 位元組
 ; p: 加數點（Jacobian 座標，96 位元組 X‖Y‖Z 小端序）
 ; q: 被加點（Jacobian 座標，96 位元組）
 ; [ec-point-add](#ecdsa.ec-point-add)
@@ -1375,9 +1375,9 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
 }
 
 ; 純量乘法 R = k * P
-; k [32]byte: 純量
-; p []byte: 點 (96 位元組)
-; 返回 r []byte: 96 位元組
+; k: 純量
+; p: 點 (96 位元組)
+; 返回 r: 96 位元組
 ; [ec-scalar-mult](#ecdsa.ec-scalar-mult)
 ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 
@@ -1434,8 +1434,8 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 }
 
 ; 將 Jacobian 座標轉為未壓縮編碼
-; p []byte: Jacobian 點 (96 位元組)
-; 返回 out [65]byte: 04 || x || y
+; p: Jacobian 點 (96 位元組)
+; 返回 out: 04 || x || y
 ; [ec-point-to-bytes](#ecdsa.ec-point-to-bytes)
 ec-point-to-bytes = (p []byte) (out [65]byte) {
 
@@ -1516,8 +1516,8 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
 }
 
 ; 將未壓縮編碼轉為 Jacobian 座標
-; in [65]byte: 04 || x || y（大端序）
-; 返回 out []byte: 96 位元組
+; in: 04 || x || y（大端序）
+; 返回 out: 96 位元組
 ; [ec-bytes-to-point](#ecdsa.ec-bytes-to-point)
 ec-bytes-to-point = (in [65]byte) (out []byte) {
     out = with-len(96)
@@ -1604,9 +1604,9 @@ ec-get-basepoint = () (g []byte) {
 ...
 
 ; P-256 (secp256r1) ECDH 共享秘密
-; priv [32]byte: 我方私鑰（大端序）
-; peer [65]byte: 對端未壓縮公鑰（04 || x || y）
-; 返回 shared []byte: 共享秘密（R 點之 x 座標, 32 bytes 大端序）；空=無效輸入
+; priv: 我方私鑰（大端序）
+; peer: 對端未壓縮公鑰（04 || x || y）
+; 返回 shared: 共享秘密（R 點之 x 座標, 32 bytes 大端序）；空=無效輸入
 ; [ecdh-p256](#ecdsa.ecdh-p256)
 ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
 
@@ -1664,8 +1664,8 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
 }
 
 ; 從私鑰計算公鑰
-; priv [32]byte: 私鑰（大端序）
-; 返回 pub [65]byte: 未壓縮公鑰（04 || x || y）
+; priv: 私鑰（大端序）
+; 返回 pub: 未壓縮公鑰（04 || x || y）
 ; [ecdsa-publickey](#ecdsa.ecdsa-publickey)
 ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
 
@@ -1696,9 +1696,9 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
 }
 
 ; ECDSA 簽名
-; priv [32]byte: 私鑰（大端序）
-; msg []byte: 待簽名原文（內部先做 SHA-256 再簽，非預哈希輸入）
-; 返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
+; priv: 私鑰（大端序）
+; msg: 待簽名原文（內部先做 SHA-256 再簽，非預哈希輸入）
+; 返回 sig: 簽名（r || s，各 32 位元組，大端序）
 ; [ecdsa-sign](#ecdsa.ecdsa-sign)
 ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 
@@ -1849,10 +1849,10 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 }
 
 ; ECDSA 驗簽
-; pub [65]byte: 公鑰
-; msg []byte: 待驗簽原文（內部先做 SHA-256，需與簽名時一致）
-; sig [64]byte: 簽名（r || s）
-; 返回 ok i64: 1=有效, 0=無效
+; pub: 公鑰
+; msg: 待驗簽原文（內部先做 SHA-256，需與簽名時一致）
+; sig: 簽名（r || s）
+; 返回 ok: 1=有效, 0=無效
 ; [ecdsa-verify](#ecdsa.ecdsa-verify)
 ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
 

@@ -2,7 +2,7 @@
 ; （底層仍 desugar 成 run/awy，所以與手寫 run/awy 的行為一致）
 
 ; 協程生產者：回傳固定字串，供壓力測試反覆 spawn / awy
-; s str: 固定的 5 位元組字串 'value'
+; s: 固定的 5 位元組字串 'value'
 str-producer = () (s str) {
     s = 'value'
 }

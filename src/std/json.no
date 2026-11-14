@@ -1114,7 +1114,7 @@ pool.get-bool = (node-idx i64) (val ?bool) {
 ...
 
 ; 將節點序列化為字串
-; 返回 out str: 序列化後的字串
+; 返回 out: 序列化後的字串
 ; node-idx: 子樹根索引
 ; out: 序列化後的 JSON 文本（索引無效時為空字串）
 ; [stringify](#json.pool.stringify)
@@ -1297,7 +1297,7 @@ pool.stringify = (node-idx i64) (out str) {
 ...
 
 ; 全域函式 — 從 json 物件中按鍵取得子節點
-; 返回 child ?json: 子節點（nil 表示不存在）
+; 返回 child: 子節點（nil 表示不存在）
 ; obj: 來源 json（僅讀取，不被改動）
 ; key: 鍵名
 ; child: ok=獨立深拷貝的子樹句柄（改動它不會影響 obj）, nil=根非物件或鍵未命中
@@ -1454,7 +1454,7 @@ json.kind = () (k i64) {
 ; 從物件取得子節點作為 json
 ; child 是 json 自身的子節點（沿用同一節點池，僅 root 指向子節點），
 ; 不會新建物件；找不到或非物件時回傳 nil。
-; 返回 child ?json: ok=找到, nil=未找到或非物件
+; 返回 child: ok=找到, nil=未找到或非物件
 ; 用法：
 ;   child = j.get('key')
 ;   child: {
@@ -1482,7 +1482,7 @@ json.get = (key str) (child ?json) {
 }
 
 ; 從物件取得字串值
-; 返回 val str, ok bool: ok=找到且為字串
+; 返回 val, ok: ok=找到且為字串
 ; 用法：
 ;   s, found = j.get-str('name')
 ;   found -> print(s)
@@ -1501,7 +1501,7 @@ json.get-str = (key str) (val ?str) {
 }
 
 ; 從物件取得數值
-; 返回 val f64, ok bool: ok=找到且為數字
+; 返回 val, ok: ok=找到且為數字
 ; key: 鍵名
 ; val: ok=子節點數值, nil=鍵不存在或值非數字
 ; [get-num](#json.get-num)
@@ -1517,7 +1517,7 @@ json.get-num = (key str) (val ?f64) {
 }
 
 ; 從物件取得布林值
-; 返回 val bool, ok bool: ok=找到且為布林值
+; 返回 val, ok: ok=找到且為布林值
 ; key: 鍵名
 ; val: ok=子節點布林值, nil=鍵不存在或值非布林
 ; [get-bool](#json.get-bool)
@@ -1533,7 +1533,7 @@ json.get-bool = (key str) (val ?bool) {
 }
 
 ; 從物件取得整數值
-; 返回 val i64, ok bool: ok=找到且為數字
+; 返回 val, ok: ok=找到且為數字
 ; key: 鍵名
 ; val: ok=數值截斷取整（先 .get-num 再 to-i64，不做位元重解）, nil=鍵不存在或值非數字
 ; [get-i64](#json.get-i64)
@@ -1565,7 +1565,7 @@ json.alloc-node = () (idx i64) {
 }
 
 ; 在物件中設定鍵值（值為另一個 json 節點）
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; key: 鍵名
 ; val-idx: 值節點索引（須屬本池）
 ; ok: true=已寫入；false=root 非物件（root 為 null 時原地提升為物件）
@@ -1592,7 +1592,7 @@ json.set = (key str, val-idx i64) (ok bool) {
 }
 
 ; 在物件中設定字串值
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; 用法：
 ;   j.set-str('name', 'Alice')
 ; key: 鍵名
@@ -1617,7 +1617,7 @@ json.set-str = (key str, val str) (ok bool) {
 }
 
 ; 在物件中設定數值
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; 用法：
 ;   j.set-num('age', 30.0)
 ; key: 鍵名
@@ -1636,7 +1636,7 @@ json.set-num = (key str, val f64) (ok bool) {
 }
 
 ; 在物件中設定整數值
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; key: 鍵名
 ; val: 整數值
 ; ok: true=已寫入
@@ -1647,12 +1647,12 @@ json.set-i64 = (key str, val i64) (ok bool) {
 }
 
 ; 在物件中設定布林值
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; 用法：
 ;   j.set-bool('active', true)
-; key str: 屬性名，重複時覆寫已有的同名成員
-; val bool: 要寫入的布林值（true / false）
-; ok bool: true=已掛到物件節點；false=分配節點失敗或掛接失敗
+; key: 屬性名，重複時覆寫已有的同名成員
+; val: 要寫入的布林值（true / false）
+; ok: true=已掛到物件節點；false=分配節點失敗或掛接失敗
 ; [set-bool](#json.set-bool)
 json.set-bool = (key str, val bool) (ok bool) {
     ok = false
@@ -1666,7 +1666,7 @@ json.set-bool = (key str, val bool) (ok bool) {
 }
 
 ; 在物件中設定 null 值
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; key: 鍵名
 ; ok: true=已寫入 null 子節點
 ; [set-null](#json.set-null)
@@ -1683,7 +1683,7 @@ json.set-null = (key str) (ok bool) {
 ...
 
 ; 從陣列取得指定索引的元素作為 json
-; 返回 child ?json: ok=找到, nil=未找到或非陣列
+; 返回 child: ok=找到, nil=未找到或非陣列
 ; 用法：
 ;   elem = j.arr-get(0)
 ;   elem: {
@@ -1719,7 +1719,7 @@ json.arr-len = () (n i64) {
 }
 
 ; 以節點索引向陣列末尾附加元素（內部輔助，避免構造 json 時深拷貝整個池）
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; child-idx: 值節點索引（須屬本池）
 ; ok: true=已附加；false=根非陣列或索引無效（不改變 child-idx 指向的節點）
 ; [arr-push-idx](#json.arr-push-idx)
@@ -1746,7 +1746,7 @@ json.arr-push-idx = (child-idx i64) (ok bool) {
 }
 
 ; 向陣列末尾添加元素
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; 用法：
 ;   j.arr-push(item)
 ; val: 元素 json（其根子樹先深拷貝進本池，再以空鍵附加）
@@ -1770,7 +1770,7 @@ json.arr-push = (val json) (ok bool) {
 }
 
 ; 向陣列末尾添加字串元素
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; val: 字串值
 ; ok: true=已附加為字串元素
 ; [arr-push-str](#json.arr-push-str)
@@ -1792,7 +1792,7 @@ json.arr-push-str = (val str) (ok bool) {
 }
 
 ; 向陣列末尾添加數值元素
-; 返回 ok bool: 是否成功
+; 返回 ok: 是否成功
 ; val: 數值（寫入節點 num-val，整數小數皆以 f64 存放）
 ; ok: true=已附加為數字元素
 ; [arr-push-num](#json.arr-push-num)
@@ -1807,9 +1807,9 @@ json.arr-push-num = (val f64) (ok bool) {
 }
 
 ; 向陣列末尾添加布林元素
-; 返回 ok bool: 是否附加成功
-; val bool: 要附加的布林值（true / false）
-; ok bool: true=已作為布林元素附加到陣列末尾；false=分配節點或 push 失敗
+; 返回 ok: 是否附加成功
+; val: 要附加的布林值（true / false）
+; ok: true=已作為布林元素附加到陣列末尾；false=分配節點或 push 失敗
 ; [arr-push-bool](#json.arr-push-bool)
 json.arr-push-bool = (val bool) (ok bool) {
     ok = false
@@ -1825,7 +1825,7 @@ json.arr-push-bool = (val bool) (ok bool) {
 ...
 
 ; 取得字串值（當 root 為字串時）
-; 返回 val str, ok bool: ok=成功
+; 返回 val, ok: ok=成功
 ; 用法：
 ;   s, found = j.str()
 ; val: ok=根節點字串值（副本）, nil=根非字串
@@ -1835,7 +1835,7 @@ json.str = () (val ?str) {
 }
 
 ; 取得數值（當 root 為數字時）
-; 返回 val f64, ok bool: ok=成功
+; 返回 val, ok: ok=成功
 ; val: ok=根節點數值, nil=根非數字
 ; [num](#json.num)
 json.num = () (val ?f64) {
@@ -1843,7 +1843,7 @@ json.num = () (val ?f64) {
 }
 
 ; 取得布林值（當 root 為布林值時）
-; 返回 val bool, ok bool: ok=成功
+; 返回 val, ok: ok=成功
 ; val: ok=根節點布林值, nil=根非布林
 ; [bool](#json.bool)
 json.bool = () (val ?bool) {
@@ -1851,7 +1851,7 @@ json.bool = () (val ?bool) {
 }
 
 ; 取得整數值（當 root 為數字時）
-; 返回 val i64, ok bool: ok=成功
+; 返回 val, ok: ok=成功
 ; val: ok=根數值截斷取整, nil=根非數字
 ; [i64](#json.i64)
 json.i64 = () (val ?i64) {
@@ -1871,7 +1871,7 @@ json.i64 = () (val ?i64) {
 }
 
 ; 取得物件 key 數量
-; 返回 n i64: key 數量（非物件返回 0）
+; 返回 n: key 數量（非物件返回 0）
 ; n: 根物件的鍵數量（非物件為 0）
 ; [obj-len](#json.obj-len)
 json.obj-len = () (n i64) {
@@ -1892,7 +1892,7 @@ json.obj-len = () (n i64) {
 }
 
 ; 取得物件指定索引的 key
-; 返回 key str: key 字串
+; 返回 key: key 字串
 ; idx: 鍵序號（依插入順序沿邊鏈走訪）
 ; key: ok=鍵名, nil=越界或根非物件
 ; [obj-key](#json.obj-key)
@@ -1914,7 +1914,7 @@ json.obj-key = (idx i64) (key ?str) {
 }
 
 ; 從物件中刪除指定鍵
-; 返回 ok bool: ok=成功（鍵存在且已刪除）
+; 返回 ok: ok=成功（鍵存在且已刪除）
 ; key: 鍵名
 ; ok: true=命中並已把該邊從鏈表摘除（邊與子節點的佔用空間不回收）；false=根非物件或鍵未命中
 ; [delete-key](#json.delete-key)
@@ -1992,7 +1992,7 @@ json.delete-key = (key str) (ok bool) {
 }
 
 ; 設定物件鍵值（語意糖，接受 json 值作為 val）
-; 返回 ok bool: ok=成功
+; 返回 ok: ok=成功
 ; key: 鍵名
 ; val: 值 json（先深拷貝進臨時新池再轉拷進本池，故自引用 j.set(k, j) 亦安全）
 ; ok: true=已寫入；false=val 根索引無效
@@ -2019,7 +2019,7 @@ json.set-key = (key str, val json) (ok bool) {
 }
 
 ; 取得物件所有鍵，以換行分隔的字串返回
-; 返回 keys str: 所有鍵拼接成的字串
+; 返回 keys: 所有鍵拼接成的字串
 ; keys: 各鍵名依序以 \n 結尾拼接的字串（非物件為空字串）
 ; [obj-keys-str](#json.obj-keys-str)
 json.obj-keys-str = () (keys str) {
@@ -2052,7 +2052,7 @@ json.obj-keys-str = () (keys str) {
 }
 
 ; 取得字串節點的值
-; 返回 val str: 字串值
+; 返回 val: 字串值
 ; val: 根節點字串值（非字串節點返回空字串）
 ; [str-val](#json.str-val)
 json.str-val = () (val str) {

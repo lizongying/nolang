@@ -206,7 +206,7 @@ conn {
 }
 
 ; 產生 ok(conn) 的 ?conn：path='/api/health'、port=8080
-; result ?conn: 內容為上述 conn 的 ok 選項
+; result: 內容為上述 conn 的 ok 選項
 make-conn = () (result ?conn) {
     result = nil
 
@@ -247,7 +247,7 @@ server {
 }
 
 ; 產生 ok(server) 的 ?server：host='localhost'、connections=42
-; result ?server: 內容為上述 server 的 ok 選項
+; result: 內容為上述 server 的 ok 選項
 make-server = () (result ?server) {
     result = nil
     s = server{

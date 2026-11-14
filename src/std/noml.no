@@ -1423,11 +1423,11 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
 
 ; 解析數字面值（整數 / 小數 / 科學記號，允許前導 '-'，不接受 '+'）
 ; 只吃掉構成數字本身的位元組，遇到其他字元即停，不要求分隔符
-; s str: 來源全文
-; pos i64: 數字起始的位元組下標
-; val f64: 解析出的數值（NOML 只有一種數字型別，整數亦以 f64 存放）
-; next i64: 數字結束後的位元組下標（失敗時停在出錯位置，供 .fail 標記）
-; ok bool: true=解析成功, false=語法錯誤（無整數位、'.' 後無小數位、指數無位數）
+; s: 來源全文
+; pos: 數字起始的位元組下標
+; val: 解析出的數值（NOML 只有一種數字型別，整數亦以 f64 存放）
+; next: 數字結束後的位元組下標（失敗時停在出錯位置，供 .fail 標記）
+; ok: true=解析成功, false=語法錯誤（無整數位、'.' 後無小數位、指數無位數）
 ; [parse-num](#noml.pool.parse-num)
 pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
     val = 0.0
@@ -1584,11 +1584,11 @@ pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
 }
 
 ; 解析 true/false
-; s str: 完整來源文字
-; pos i64: 字面量起始位置（指向 t 或 f）
-; val bool: 解析出的布林值；ok=false 時固定為 false
-; next i64: 字面量之後的位置；ok=false 時回原 pos
-; ok bool: true=解析成功，false=此處不是 true/false（已呼叫 fail 記錄錯誤）
+; s: 完整來源文字
+; pos: 字面量起始位置（指向 t 或 f）
+; val: 解析出的布林值；ok=false 時固定為 false
+; next: 字面量之後的位置；ok=false 時回原 pos
+; ok: true=解析成功，false=此處不是 true/false（已呼叫 fail 記錄錯誤）
 ; [parse-bool](#noml.pool.parse-bool)
 pool.parse-bool = (s str, pos i64) (val bool, next i64, ok bool) {
     val = false
@@ -1749,9 +1749,9 @@ pool.parse-num-node = (s str, pos i64) (idx i64, next i64, ok bool) {
 ...
 
 ; 掃描原始位元組，判斷是否出現指定值（逐位元組比對，不按碼點）
-; s str: 要掃描的文字
-; target i64: 要比對的位元組值，取值 0–255（如 10 = '\n'、96 = '`'）
-; yes bool: true=至少出現一次, false=完全不含該位元組（空字串必得 false）
+; s: 要掃描的文字
+; target: 要比對的位元組值，取值 0–255（如 10 = '\n'、96 = '`'）
+; yes: true=至少出現一次, false=完全不含該位元組（空字串必得 false）
 ; [has-byte](#noml.pool.has-byte)
 pool.has-byte = (s str, target i64) (yes bool) {
     yes = false
@@ -1766,8 +1766,8 @@ pool.has-byte = (s str, target i64) (yes bool) {
 ; 判斷內容能否放進反引號原始串後原樣取回
 ; 出現下列任一情形即不可用：空字串、首或末位元組為 LF、含 CR、
 ; 任一行去掉前導空白（空白 / TAB / CR）後以 '`' 開頭（會被誤認為結束標記）。
-; s str: 待序列化的內容
-; yes bool: true=可安全包成 '`\n' + s + '\n`', false=須改用單引號轉義形式
+; s: 待序列化的內容
+; yes: true=可安全包成 '`\n' + s + '\n`', false=須改用單引號轉義形式
 ; [raw-safe](#noml.pool.raw-safe)
 pool.raw-safe = (s str) (yes bool) {
     yes = true
@@ -1826,8 +1826,8 @@ pool.raw-safe = (s str) (yes bool) {
 ; 產生單引號字串面值（含轉義）
 ; 轉義規則：'\'' 與 '\\' 前加反斜線，LF / CR / TAB 寫成 \n \r \t，
 ; 其餘 < 0x20 的控制位元組寫成 \u00XX；輸出緩衝預留 n*6+2（每位元組最壞 6 字元）。
-; s str: 原始內容（允許任意位元組，不要求合法 UTF-8）
-; out str: 首尾各加一個單引號、內部已轉義的面值
+; s: 原始內容（允許任意位元組，不要求合法 UTF-8）
+; out: 首尾各加一個單引號、內部已轉義的面值
 ; [quote](#noml.pool.quote)
 pool.quote = (s str) (out str) {
     n = s.len-bytes()
@@ -2049,8 +2049,8 @@ pool.quote = (s str) (out str) {
 
 ; 依內容挑選最簡形式產生字串面值
 ; 預設走 .quote()；含 LF 且通過 .raw-safe() 時改用反引號原始串，保留原換行。
-; s str: 原始內容
-; out str: 可直接寫進 .noml 的文字面值（單引號轉義形式或 '`' 原始串）
+; s: 原始內容
+; out: 可直接寫進 .noml 的文字面值（單引號轉義形式或 '`' 原始串）
 ; [quote-value](#noml.pool.quote-value)
 pool.quote-value = (s str) (out str) {
     out = .quote(s)
@@ -2062,8 +2062,8 @@ pool.quote-value = (s str) (out str) {
 ; 產生數字面值（整值不帶小數點）
 ; 落在 ±1e15 內、且取整後能還原（i.to-f64() == n）時輸出整數寫法，
 ; 否則保留 n.to-str() 的結果。
-; n f64: 要序列化的數值
-; out str: 數字面值（如 '42' 或 '3.14'）
+; n: 要序列化的數值
+; out: 數字面值（如 '42' 或 '3.14'）
 ; [fmt-num](#noml.pool.fmt-num)
 pool.fmt-num = (n f64) (out str) {
     out = n.to-str()
@@ -3088,8 +3088,8 @@ doc.new-str = (v str) (idx i64) {
 }
 
 ; 建立數字節點
-; v f64: 節點儲存的數值（整數與小數共用同一種節點型別）
-; idx i64: 新節點在池中的下標，供呼叫方掛接子樹
+; v: 節點儲存的數值（整數與小數共用同一種節點型別）
+; idx: 新節點在池中的下標，供呼叫方掛接子樹
 ; [new-num](#noml.doc.new-num)
 doc.new-num = (v f64) (idx i64) {
     idx = .node-pool.alloc()
@@ -3098,8 +3098,8 @@ doc.new-num = (v f64) (idx i64) {
 }
 
 ; 建立布林節點
-; v bool: 要存入節點的布林值
-; idx i64: 新節點在池中的下標，供呼叫方掛接子樹
+; v: 要存入節點的布林值
+; idx: 新節點在池中的下標，供呼叫方掛接子樹
 ; [new-bool](#noml.doc.new-bool)
 doc.new-bool = (v bool) (idx i64) {
     idx = .node-pool.alloc()

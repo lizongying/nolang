@@ -456,7 +456,7 @@ s-state = () (h []u32) {
 
 ; 計算 BLAKE2b 雜湊（64 位元組輸出）
 ; data: 待雜湊的輸入位元組
-; 返回 hash [64]byte: BLAKE2b-512 的 64 位元組雜湊值
+; 返回 hash: BLAKE2b-512 的 64 位元組雜湊值
 ; [b](#blake2.b)
 b = (data []byte) (hash [64]byte) {
 
@@ -561,7 +561,7 @@ b = (data []byte) (hash [64]byte) {
 
 ; 計算 BLAKE2b 雜湊（32 位元組輸出）
 ; data: 待雜湊的輸入位元組
-; 返回 hash [32]byte: BLAKE2b 截斷為 32 位元組的雜湊值
+; 返回 hash: BLAKE2b 截斷為 32 位元組的雜湊值
 ; [b-256](#blake2.b-256)
 b-256 = (data []byte) (hash [32]byte) {
 
@@ -661,7 +661,7 @@ b-256 = (data []byte) (hash [32]byte) {
 
 ; 計算 BLAKE2b 並返回 hex 字串
 ; data: 待雜湊的輸入位元組
-; 返回 hex str: BLAKE2b-512 雜湊值的 128 字元十六進位字串
+; 返回 hex: BLAKE2b-512 雜湊值的 128 字元十六進位字串
 ; [b-hex](#blake2.b-hex)
 b-hex = (data []byte) (hex str) {
     hash = b(data)
@@ -686,7 +686,7 @@ b-hex = (data []byte) (hex str) {
 
 ; 計算 BLAKE2b-256 並返回 hex 字串
 ; data: 待雜湊的輸入位元組
-; 返回 hex str: BLAKE2b-256 雜湊值的 64 字元十六進位字串
+; 返回 hex: BLAKE2b-256 雜湊值的 64 字元十六進位字串
 ; [b-256-hex](#blake2.b-256-hex)
 b-256-hex = (data []byte) (hex str) {
     hash = b-256(data)
@@ -1111,7 +1111,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
 
 ; 計算 BLAKE2s 雜湊（32 位元組輸出）
 ; data: 待雜湊的輸入位元組
-; 返回 hash [32]byte: BLAKE2s 的 32 位元組雜湊值
+; 返回 hash: BLAKE2s 的 32 位元組雜湊值
 ; [s](#blake2.s)
 s = (data []byte) (hash [32]byte) {
     h = s-state()
@@ -1209,7 +1209,7 @@ s = (data []byte) (hash [32]byte) {
 
 ; 計算 BLAKE2s 並返回 hex 字串
 ; data: 待雜湊的輸入位元組
-; 返回 hex str: BLAKE2s 雜湊值的 64 字元十六進位字串
+; 返回 hex: BLAKE2s 雜湊值的 64 字元十六進位字串
 ; [s-hex](#blake2.s-hex)
 s-hex = (data []byte) (hex str) {
     hash = s(data)

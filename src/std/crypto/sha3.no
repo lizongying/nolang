@@ -249,12 +249,12 @@ keccak-f1600 = (state []u64) {
 ...
 
 ; Keccak 海綿函數
-; data []byte: 要吸收（absorb）到海綿狀態的原始位元組，可為空
+; data: 要吸收（absorb）到海綿狀態的原始位元組，可為空
 ; rate: 吸收率（以位元組為單位，必須是 8 的倍數）
 ; capacity: 容量（以位元組為單位，rate + capacity = 200）
 ; out-len: 期望輸出的位元組長度
 ; suffix: 填充後綴（SHA-3 = 0x06, SHAKE = 0x1F）
-; 返回 out []byte: 擠出（squeeze）出的雜湊/輸出位元組
+; 返回 out: 擠出（squeeze）出的雜湊/輸出位元組
 ; [keccak-sponge](#sha3.keccak-sponge)
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
     out = with-len(out-len)
@@ -439,8 +439,8 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 ...
 
 ; 計算 SHA3-224 雜湊
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hash [28]byte: 28 位元組雜湊值
+; data: 待雜湊的原始位元組，可為空
+; 返回 hash: 28 位元組雜湊值
 ; [sha3-224](#sha3.sha3-224)
 sha3-224 = (data []byte) (hash [28]byte) {
     out = keccak-sponge(data, 144, 56, 28, 0x06)
@@ -454,8 +454,8 @@ sha3-224 = (data []byte) (hash [28]byte) {
 }
 
 ; 計算 SHA3-256 雜湊
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hash [32]byte: 32 位元組雜湊值
+; data: 待雜湊的原始位元組，可為空
+; 返回 hash: 32 位元組雜湊值
 ; [sha3-256](#sha3.sha3-256)
 sha3-256 = (data []byte) (hash [32]byte) {
     out = keccak-sponge(data, 136, 64, 32, 0x06)
@@ -469,8 +469,8 @@ sha3-256 = (data []byte) (hash [32]byte) {
 }
 
 ; 計算 SHA3-384 雜湊
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hash [48]byte: 48 位元組雜湊值
+; data: 待雜湊的原始位元組，可為空
+; 返回 hash: 48 位元組雜湊值
 ; [sha3-384](#sha3.sha3-384)
 sha3-384 = (data []byte) (hash [48]byte) {
     out = keccak-sponge(data, 104, 96, 48, 0x06)
@@ -484,8 +484,8 @@ sha3-384 = (data []byte) (hash [48]byte) {
 }
 
 ; 計算 SHA3-512 雜湊
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hash [64]byte: 64 位元組雜湊值
+; data: 待雜湊的原始位元組，可為空
+; 返回 hash: 64 位元組雜湊值
 ; [sha3-512](#sha3.sha3-512)
 sha3-512 = (data []byte) (hash [64]byte) {
     out = keccak-sponge(data, 72, 128, 64, 0x06)
@@ -502,8 +502,8 @@ sha3-512 = (data []byte) (hash [64]byte) {
 ...
 
 ; 計算 SHA3-224 並返回 hex 字串
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hex str: 56 字元 hex 字串
+; data: 待雜湊的原始位元組，可為空
+; 返回 hex: 56 字元 hex 字串
 ; [sha3-224-hex](#sha3.sha3-224-hex)
 sha3-224-hex = (data []byte) (hex str) {
     hash = sha3-224(data)
@@ -527,8 +527,8 @@ sha3-224-hex = (data []byte) (hex str) {
 }
 
 ; 計算 SHA3-256 並返回 hex 字串
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hex str: 64 字元 hex 字串
+; data: 待雜湊的原始位元組，可為空
+; 返回 hex: 64 字元 hex 字串
 ; [sha3-256-hex](#sha3.sha3-256-hex)
 sha3-256-hex = (data []byte) (hex str) {
     hash = sha3-256(data)
@@ -552,8 +552,8 @@ sha3-256-hex = (data []byte) (hex str) {
 }
 
 ; 計算 SHA3-384 並返回 hex 字串
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hex str: 96 字元 hex 字串
+; data: 待雜湊的原始位元組，可為空
+; 返回 hex: 96 字元 hex 字串
 ; [sha3-384-hex](#sha3.sha3-384-hex)
 sha3-384-hex = (data []byte) (hex str) {
     hash = sha3-384(data)
@@ -577,8 +577,8 @@ sha3-384-hex = (data []byte) (hex str) {
 }
 
 ; 計算 SHA3-512 並返回 hex 字串
-; data []byte: 待雜湊的原始位元組，可為空
-; 返回 hex str: 128 字元 hex 字串
+; data: 待雜湊的原始位元組，可為空
+; 返回 hex: 128 字元 hex 字串
 ; [sha3-512-hex](#sha3.sha3-512-hex)
 sha3-512-hex = (data []byte) (hex str) {
     hash = sha3-512(data)

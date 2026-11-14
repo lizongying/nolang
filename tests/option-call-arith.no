@@ -14,9 +14,9 @@
 ;
 ; 本檔只釘「ok 路徑取到真實值」與「位元運算要走 ?=」兩件事。
 
-; name str: 檢查名稱
-; got i64: 實際值
-; want i64: 期望值
+; name: 檢查名稱
+; got: 實際值
+; want: 期望值
 check = (name str, got i64, want i64) {
     {
         got == want -> print('ok: {name}')
@@ -30,16 +30,16 @@ check = (name str, got i64, want i64) {
 
 ; 回傳 ?i64 的呼叫：供 call-opt 使用
 ;
-; v ?i64: 要原樣帶出的 option
-; out ?i64: 同一個 option
+; v: 要原樣帶出的 option
+; out: 同一個 option
 echo-opt = (v ?i64) (out ?i64) {
     out = v
 }
 
 ; 1. 內建容器方法（回傳 i64）參與算術
 ;
-; data []i64: 受測容器
-; out i64: len - 1
+; data: 受測容器
+; out: len - 1
 call-sub = (data []i64) (out i64) {
     n = data.len() - 1: {
         ok -> it
@@ -51,8 +51,8 @@ call-sub = (data []i64) (out i64) {
 
 ; 2. 回傳 ?i64 的呼叫參與算術：payload 是 i64
 ;
-; v ?i64: 傳給 echo-opt
-; out i64: 解包後的值減一
+; v: 傳給 echo-opt
+; out: 解包後的值減一
 call-opt = (v ?i64) (out i64) {
     n = echo-opt(v) - 1: {
         ok -> it
@@ -64,9 +64,9 @@ call-opt = (v ?i64) (out i64) {
 
 ; 3. 兩側都是呼叫
 ;
-; a []i64: 被減數
-; b []i64: 減數
-; out i64: 兩個長度相減
+; a: 被減數
+; b: 減數
+; out: 兩個長度相減
 call-diff = (a []i64, b []i64) (out i64) {
     n = a.len() - b.len(): {
         ok -> it
@@ -79,8 +79,8 @@ call-diff = (a []i64, b []i64) (out i64) {
 ; 4. 位元運算：`&` 不是 option 算術（D6 只含 `+ - * / %`），
 ;    寫成值位 match 會把純量當標籤比對、永遠走兜底臂，必須用 ?=。
 ;
-; data []i64: 受測容器
-; out i64: (-len) & 3
+; data: 受測容器
+; out: (-len) & 3
 pad-bits = (data []i64) (out i64) {
     pad = 0
     {

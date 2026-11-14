@@ -84,8 +84,8 @@ ip-addr {
 
 ; 從字串解析 IPv4 地址
 ; 格式：A.B.C.D，每段 0~255
-; s str: 點分十進位字串（四段以 '.' 分隔，每段 0~255）
-; ok bool: true=解析成功且四段已寫入 a/b/c/d，false=格式非法（此時欄位已清零）
+; s: 點分十進位字串（四段以 '.' 分隔，每段 0~255）
+; ok: true=解析成功且四段已寫入 a/b/c/d，false=格式非法（此時欄位已清零）
 ; [parse](#ip.ip-addr.parse)
 ip-addr.parse = (s str) (ok bool) {
     r-s = s
@@ -153,7 +153,7 @@ ip-addr.parse = (s str) (ok bool) {
 }
 
 ; 從字串建立 ip-addr（靜態函數）
-; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
+; 返回 addr: ok=解析結果, nil=解析失敗
 ; s: IPv4 點分十進位字串（如 192.168.1.1）
 ; addr: ok=解析出的地址, nil=格式非法或段值越界
 ; [from-str](#ip.ip-addr.from-str)
@@ -172,7 +172,7 @@ ip-addr.from-str = (s str) (addr ?ip-addr) {
 ; 直接拼接四個十進位片段。舊實作靠 `out[n]: { ok -> it = 46 }` 在 len 處追加字元，
 ; 但索引寫入是**邊界檢查寫**：n == len-bytes() 時 safe-index 判越界（nil），
 ; 點號從未寫入，結果只剩第一個 octet（`192.168.1.1` → `192`）。
-; out str: 四段十進位以 '.' 串接的地址字串（如 '192.168.1.1'）
+; out: 四段十進位以 '.' 串接的地址字串（如 '192.168.1.1'）
 ; [to-str](#ip.ip-addr.to-str)
 ip-addr.to-str = () (out str) {
     out = .a.to-str() - '.' - .b.to-str() - '.' - .c.to-str() - '.' - .d.to-str()
@@ -199,7 +199,7 @@ ip-addr.from-u32 = (v i64) {
 ...
 
 ; 檢查所有 octet 是否在有效範圍（0~255）
-; yes bool: true 表示 a/b/c/d 四個分段都在 0~255 內
+; yes: true 表示 a/b/c/d 四個分段都在 0~255 內
 ; [is-valid](#ip.ip-addr.is-valid)
 ip-addr.is-valid = () (yes bool) {
     yes = true
@@ -222,7 +222,7 @@ ip-addr.is-valid = () (yes bool) {
 ...
 
 ; 是否為環回地址（127.0.0.0/8）
-; yes bool: true 表示第一段等於 127
+; yes: true 表示第一段等於 127
 ; [is-loopback](#ip.ip-addr.is-loopback)
 ip-addr.is-loopback = () (yes bool) {
     yes = .a == 127
@@ -230,7 +230,7 @@ ip-addr.is-loopback = () (yes bool) {
 
 ; 是否為私有地址
 ; 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-; yes bool: true 表示落在上述三個 RFC 1918 網段之一
+; yes: true 表示落在上述三個 RFC 1918 網段之一
 ; [is-private](#ip.ip-addr.is-private)
 ip-addr.is-private = () (yes bool) {
 
@@ -261,49 +261,49 @@ ip-addr.is-private = () (yes bool) {
 }
 
 ; 是否為全零地址（0.0.0.0）
-; yes bool: true 表示四個分段全為 0（可綁定到所有網卡）
+; yes: true 表示四個分段全為 0（可綁定到所有網卡）
 ; [is-zero](#ip.ip-addr.is-zero)
 ip-addr.is-zero = () (yes bool) {
     .a == 0 -> .b == 0 -> .c == 0 -> .d == 0 -> yes = true
 }
 
 ; 是否為廣播地址（255.255.255.255）
-; yes bool: true 表示四個分段全為 255
+; yes: true 表示四個分段全為 255
 ; [is-broadcast](#ip.ip-addr.is-broadcast)
 ip-addr.is-broadcast = () (yes bool) {
     .a == 255 -> .b == 255 -> .c == 255 -> .d == 255 -> yes = true
 }
 
 ; 是否為多播地址（224.0.0.0/4）
-; yes bool: true 表示第一段落在 224~239
+; yes: true 表示第一段落在 224~239
 ; [is-multicast](#ip.ip-addr.is-multicast)
 ip-addr.is-multicast = () (yes bool) {
     .a >= 224 -> .a <= 239 -> yes = true
 }
 
 ; 是否為鏈路本地地址（169.254.0.0/16）
-; yes bool: true 表示 a==169 且 b==254（IPv4 自動組態失敗時使用）
+; yes: true 表示 a==169 且 b==254（IPv4 自動組態失敗時使用）
 ; [is-link-local](#ip.ip-addr.is-link-local)
 ip-addr.is-link-local = () (yes bool) {
     .a == 169 -> .b == 254 -> yes = true
 }
 
 ; 是否為 A 類地址（1.0.0.0 ~ 126.255.255.255）
-; yes bool: true 表示第一段落在 1~126（不含環回段 127）
+; yes: true 表示第一段落在 1~126（不含環回段 127）
 ; [is-class-a](#ip.ip-addr.is-class-a)
 ip-addr.is-class-a = () (yes bool) {
     .a >= 1 -> .a <= 126 -> yes = true
 }
 
 ; 是否為 B 類地址（128.0.0.0 ~ 191.255.255.255）
-; yes bool: true 表示第一段落在 128~191
+; yes: true 表示第一段落在 128~191
 ; [is-class-b](#ip.ip-addr.is-class-b)
 ip-addr.is-class-b = () (yes bool) {
     .a >= 128 -> .a <= 191 -> yes = true
 }
 
 ; 是否為 C 類地址（192.0.0.0 ~ 223.255.255.255）
-; yes bool: true 表示第一段落在 192~223
+; yes: true 表示第一段落在 192~223
 ; [is-class-c](#ip.ip-addr.is-class-c)
 ip-addr.is-class-c = () (yes bool) {
     .a >= 192 -> .a <= 223 -> yes = true
@@ -324,9 +324,9 @@ ip-addr.equal = (other ip-addr) (yes bool) {
 ...
 
 ; 檢查是否在指定子網內
-; base ip-addr: 子網基地址
-; prefix-len i64: 前綴長度（0~32；<=0 視為全域，>=32 退化為完全相等比較）
-; yes bool: true=本地址與 base 在前 prefix-len 位網絡遮罩下同屬一個子網
+; base: 子網基地址
+; prefix-len: 前綴長度（0~32；<=0 視為全域，>=32 退化為完全相等比較）
+; yes: true=本地址與 base 在前 prefix-len 位網絡遮罩下同屬一個子網
 ; [in-subnet](#ip.ip-addr.in-subnet)
 ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
     {
@@ -373,7 +373,7 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
 ...
 
 ; 快速解析 IP 字串
-; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
+; 返回 addr: ok=解析結果, nil=解析失敗
 ; s: 待解析的 IP 字串
 ; addr: ok=解析結果, nil=解析失敗（行爲同 ip-addr.from-str）
 ; [ip-parse](#ip.ip-parse)

@@ -13,20 +13,20 @@
 # /test/runner
 
 ; 比較是否相等 str（先比位元組長度再逐字元比對）
-; got str: 實測得到的字串
-; want str: 期望的字串，同時作為比對長度的基準
-; msg str: 斷言訊息前綴，長度不符時會附加 ' [len]'
+; got: 實測得到的字串
+; want: 期望的字串，同時作為比對長度的基準
+; msg: 斷言訊息前綴，長度不符時會附加 ' [len]'
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
 ; 造 45-byte 應答：提問 example.com/A + 應答（指標 C0 0C）+ 4-byte IPv4 1.2.3.4
-; rtype-hi i64: 應答記錄 TYPE 高位元組，1 表 A 記錄
-; rtype-lo i64: 應答記錄 TYPE 低位元組
-; rcode i64: 應答旗標低 4 位（RX 碼），0=NOERROR
-; ancount i64: ANCOUNT 欄位（應答記錄數），用於驗證 0 筆與多筆分支
-; data []byte: 長度固定 45 的完整 DNS 應答封包（含 4-byte IPv4 1.2.3.4）
+; rtype-hi: 應答記錄 TYPE 高位元組，1 表 A 記錄
+; rtype-lo: 應答記錄 TYPE 低位元組
+; rcode: 應答旗標低 4 位（RX 碼），0=NOERROR
+; ancount: ANCOUNT 欄位（應答記錄數），用於驗證 0 筆與多筆分支
+; data: 長度固定 45 的完整 DNS 應答封包（含 4-byte IPv4 1.2.3.4）
 make-resp = (rtype-hi i64, rtype-lo i64, rcode i64, ancount i64) (data []byte) {
     data = with-len(45)
     data[0] = 0

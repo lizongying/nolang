@@ -31,8 +31,8 @@
 hex-chars = '0123456789abcdef'
 
 ; 位元組陣列 → hex 字串（逐字元建構，小寫、每 byte 兩位）
-; data []byte: 待格式化的位元組，可為空
-; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個 byte
+; data: 待格式化的位元組，可為空
+; hex: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個 byte
 bhex = (data []byte) (hex str) {
     n = data.len()
 
@@ -74,16 +74,16 @@ bhex = (data []byte) (hex str) {
 }
 
 ; [32]byte → hex 字串
-; a [32]byte: 待格式化的摘要
-; s str: 64 字元 hex
+; a: 待格式化的摘要
+; s: 64 字元 hex
 hx32 = (a [32]byte) (s str) {
     v []byte = a.slice(0, 32)
     s = bhex(v)
 }
 
 ; hex 字串 → []byte
-; h str: 偶數長度的 hex
-; b []byte: 解出的位元組
+; h: 偶數長度的 hex
+; b: 解出的位元組
 mkb = (h str) (b []byte) {
     opt = h.from-hex()
     b = opt: {
@@ -94,9 +94,9 @@ mkb = (h str) (b []byte) {
 }
 
 ; 讀 []i64 的第 i 個元素（越界回 -999999 以便在斷言中暴露）
-; v []i64: 大整數 limb 陣列
-; i i64: 索引
-; x i64: limb 值
+; v: 大整數 limb 陣列
+; i: 索引
+; x: limb 值
 limb = (v []i64, i i64) (x i64) {
     x = v[i]: {
         ok -> it
@@ -107,7 +107,7 @@ limb = (v []i64, i i64) (x i64) {
 
 ; 8 個 32-bit 大端字 → 32 位元組 hex（供 sha256 類回傳值比較）
 ; h0..h7 i64: 8 個大端 32-bit 字（高位在前）
-; s str: 64 字元 hex
+; s: 64 字元 hex
 w8hex = (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) (s str) {
     buf []byte = with-len(32)
     ws [8]i64 = [h0, h1, h2, h3, h4, h5, h6, h7]
@@ -153,8 +153,8 @@ w8hex = (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) (s str)
 }
 
 ; 固定 [512]byte → []byte 檢視（每次複製到新 vec，避免全域 slice 突變）
-; a [512]byte: 來源固定陣列（DER 憑證原始位元組）
-; v []byte: 長度 512、內容逐位元組複製的切片
+; a: 來源固定陣列（DER 憑證原始位元組）
+; v: 長度 512、內容逐位元組複製的切片
 arr512 = (a [512]byte) (v []byte) {
     v = with-len(512)
     i <- [0..512): {

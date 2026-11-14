@@ -58,9 +58,9 @@ link {
 ...
 
 ; [n]t.link-init: 初始化鏈結串列
-; nxt []i64: 下一節點索引陣列（由呼叫者提供，大小 ≥ n）
-; prv []i64: 前一節點索引陣列（由呼叫者提供，大小 ≥ n）
-; 返回 l link: 初始化後的鏈結串列
+; nxt: 下一節點索引陣列（由呼叫者提供，大小 ≥ n）
+; prv: 前一節點索引陣列（由呼叫者提供，大小 ≥ n）
+; 返回 l: 初始化後的鏈結串列
 ; [link-init](#arr.link-init)
 [n]t.link-init = (nxt []i64, prv []i64) (l link) {
     l.head = -1
@@ -82,9 +82,9 @@ link {
 }
 
 ; [n]t.link-push-front: 插入元素到鏈結串列頭部
-; l link: 鏈結串列狀態
-; val t: 要插入的值
-; 返回 ok bool: true=成功, false=節點池已滿
+; l: 鏈結串列狀態
+; val: 要插入的值
+; 返回 ok: true=成功, false=節點池已滿
 ; [link-push-front](#arr.link-push-front)
 [n]t.link-push-front = (l link, val t) (ok bool) {
     ok = false
@@ -120,9 +120,9 @@ link {
 }
 
 ; [n]t.link-push-back: 插入元素到鏈結串列尾部
-; l link: 鏈結串列狀態
-; val t: 要插入的值
-; 返回 ok bool: true=成功, false=節點池已滿
+; l: 鏈結串列狀態
+; val: 要插入的值
+; 返回 ok: true=成功, false=節點池已滿
 ; [link-push-back](#arr.link-push-back)
 [n]t.link-push-back = (l link, val t) (ok bool) {
     ok = false
@@ -153,8 +153,8 @@ link {
 }
 
 ; [n]t.link-pop-front: 從鏈結串列頭部彈出元素
-; l link: 鏈結串列狀態
-; 返回 val ?t: ok=彈出值, nil=串列為空
+; l: 鏈結串列狀態
+; 返回 val: ok=彈出值, nil=串列為空
 ; [link-pop-front](#arr.link-pop-front)
 [n]t.link-pop-front = (l link) (val ?t) {
     l.head < 0 -> {
@@ -188,8 +188,8 @@ link {
 }
 
 ; [n]t.link-pop-back: 從鏈結串列尾部彈出元素
-; l link: 鏈結串列狀態
-; 返回 val ?t: ok=彈出值, nil=串列為空
+; l: 鏈結串列狀態
+; 返回 val: ok=彈出值, nil=串列為空
 ; [link-pop-back](#arr.link-pop-back)
 [n]t.link-pop-back = (l link) (val ?t) {
     l.tail < 0 -> {
@@ -222,8 +222,8 @@ link {
 }
 
 ; [n]t.link-peek-front: 查看頭部元素（不移除）
-; l link: 鏈結串列狀態
-; 返回 val ?t: ok=頭部值, nil=串列為空
+; l: 鏈結串列狀態
+; 返回 val: ok=頭部值, nil=串列為空
 ; [link-peek-front](#arr.link-peek-front)
 [n]t.link-peek-front = (l link) (val ?t) {
     l.head < 0 -> {
@@ -234,8 +234,8 @@ link {
 }
 
 ; [n]t.link-peek-back: 查看尾部元素（不移除）
-; l link: 鏈結串列狀態
-; 返回 val ?t: ok=尾部值, nil=串列為空
+; l: 鏈結串列狀態
+; 返回 val: ok=尾部值, nil=串列為空
 ; [link-peek-back](#arr.link-peek-back)
 [n]t.link-peek-back = (l link) (val ?t) {
     l.tail < 0 -> {
@@ -246,10 +246,10 @@ link {
 }
 
 ; [n]t.link-insert-at: 在指定位置插入元素
-; l link: 鏈結串列狀態
-; pos i64: 插入位置（0=頭部, size=尾部）
-; val t: 要插入的值
-; 返回 ok bool: true=成功, false=位置越界或節點池已滿
+; l: 鏈結串列狀態
+; pos: 插入位置（0=頭部, size=尾部）
+; val: 要插入的值
+; 返回 ok: true=成功, false=位置越界或節點池已滿
 ; [link-insert-at](#arr.link-insert-at)
 [n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
     ok = false
@@ -342,9 +342,9 @@ link {
 }
 
 ; [n]t.link-remove-at: 移除指定位置的元素
-; l link: 鏈結串列狀態
-; pos i64: 移除位置
-; 返回 val ?t: ok=移除的值, nil=位置越界
+; l: 鏈結串列狀態
+; pos: 移除位置
+; 返回 val: ok=移除的值, nil=位置越界
 ; [link-remove-at](#arr.link-remove-at)
 [n]t.link-remove-at = (l link, pos i64) (val ?t) {
     {
@@ -430,9 +430,9 @@ link {
 }
 
 ; [n]t.link-get-at: 取得指定位置的元素
-; l link: 鏈結串列狀態
-; pos i64: 位置
-; 返回 val ?t: ok=元素值, nil=位置越界
+; l: 鏈結串列狀態
+; pos: 位置
+; 返回 val: ok=元素值, nil=位置越界
 ; [link-get-at](#arr.link-get-at)
 [n]t.link-get-at = (l link, pos i64) (val ?t) {
     pos < 0 || pos >= l.size -> {
@@ -447,10 +447,10 @@ link {
 }
 
 ; [n]t.link-set-at: 設定指定位置的元素
-; l link: 鏈結串列狀態
-; pos i64: 位置
-; val t: 新值
-; 返回 ok bool: true=成功, false=位置越界
+; l: 鏈結串列狀態
+; pos: 位置
+; val: 新值
+; 返回 ok: true=成功, false=位置越界
 ; [link-set-at](#arr.link-set-at)
 [n]t.link-set-at = (l link, pos i64, val t) (ok bool) {
     ok = false
@@ -464,9 +464,9 @@ link {
 }
 
 ; [n]t.link-find: 查找值的位置
-; l link: 鏈結串列狀態
-; val t: 要查找的值
-; 返回 pos i64: 位置索引, -1=未找到
+; l: 鏈結串列狀態
+; val: 要查找的值
+; 返回 pos: 位置索引, -1=未找到
 ; [link-find](#arr.link-find)
 [n]t.link-find = (l link, val t) (pos i64) {
     pos = -1
@@ -486,7 +486,7 @@ link {
 
 ; [n]t.link-reverse: 反轉鏈結串列
 ; 交換所有節點的 next/prev，然後交換 head/tail
-; l link: 鏈結串列狀態
+; l: 鏈結串列狀態
 ; [link-reverse](#arr.link-reverse)
 [n]t.link-reverse = (l link) {
     {
@@ -510,7 +510,7 @@ link {
 }
 
 ; [n]t.link-clear: 清空鏈結串列，回收所有節點
-; l link: 鏈結串列狀態
+; l: 鏈結串列狀態
 ; [link-clear](#arr.link-clear)
 [n]t.link-clear = (l link) {
     {
@@ -536,24 +536,24 @@ link {
 ...
 
 ; 返回鏈結串列中元素數量
-; 返回 sz i64: 元素數量
-; sz i64: 目前有效節點個數（尚未加入任何節點時為 0）
+; 返回 sz: 元素數量
+; sz: 目前有效節點個數（尚未加入任何節點時為 0）
 ; [size](#link.link.size)
 link.size = () (sz i64) {
     sz = .size
 }
 
 ; 判斷鏈結串列是否為空
-; 返回 yes bool: true=空, false=非空
-; yes bool: true=size <= 0（頭尾指標均為 -1）
+; 返回 yes: true=空, false=非空
+; yes: true=size <= 0（頭尾指標均為 -1）
 ; [empty](#link.link.empty)
 link.empty = () (yes bool) {
     yes = .size <= 0
 }
 
 ; 判斷節點池是否已滿
-; 返回 yes bool: true=已滿, false=未滿
-; yes bool: true=free-head < 0（空閒鏈已耗盡，後續 insert 拿不到新節點）
+; 返回 yes: true=已滿, false=未滿
+; yes: true=free-head < 0（空閒鏈已耗盡，後續 insert 拿不到新節點）
 ; [full](#link.link.full)
 link.full = () (yes bool) {
     yes = .free-head < 0

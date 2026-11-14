@@ -11,9 +11,9 @@
 ; arms 只跑一次。`-> _` 丟棄結果。
 
 ; 斷言：不符即 exit(1)，讓 `no test` 真的能紅。
-; name str: 檢查名稱
-; got str: 實際值
-; want str: 期望值
+; name: 檢查名稱
+; got: 實際值
+; want: 期望值
 check = (name str, got str, want str) {
     {
         got == want -> print('ok: {name}')
@@ -28,7 +28,7 @@ check = (name str, got str, want str) {
 ; 1. 零個 `?=`：arms 看到 nil
 ...
 
-; out str: 塊 match 最終觀察到的變體
+; out: 塊 match 最終觀察到的變體
 zero = () (out str) {
     out = ''
     {
@@ -45,7 +45,7 @@ zero = () (out str) {
 ; 2. 一個成功的 `?=`：arms 仍是 nil，主體繼續跑完
 ...
 
-; out str: 塊 match 最終觀察到的變體 + 主體是否跑完
+; out: 塊 match 最終觀察到的變體 + 主體是否跑完
 success = (d i64) (out str) {
     ran = false
     out = ''
@@ -66,8 +66,8 @@ success = (d i64) (out str) {
 ; 3. `?=` 失敗為 err：整個主體停住，arms 只跑一次
 ...
 
-; d i64: 除數（0 時 6/d 得 err）
-; out str: 觀察到的變體 + 主體是否被停住
+; d: 除數（0 時 6/d 得 err）
+; out: 觀察到的變體 + 主體是否被停住
 fail-err = (d i64) (out str) {
     ran = false
     out = ''
@@ -90,8 +90,8 @@ fail-err = (d i64) (out str) {
 ;    這是塊主語的既定語意（見檔案頭：主體走完也是 nil），差別只在 halt。
 ...
 
-; n i64: 0 時回 nil，正數時回 ok(n)
-; v ?i64: nil 或 ok(n)
+; n: 0 時回 nil，正數時回 ok(n)
+; v: nil 或 ok(n)
 none-i = (n i64) (v ?i64) {
     if n > 0 {
         v = 7
@@ -100,7 +100,7 @@ none-i = (n i64) (v ?i64) {
     v = nil
 }
 
-; out str: 觀察到的變體 + 主體是否被停住
+; out: 觀察到的變體 + 主體是否被停住
 fail-nil = () (out str) {
     ran = false
     out = ''
@@ -121,7 +121,7 @@ fail-nil = () (out str) {
 ; 4b. 越界索引的 `?=` 失敗是 err（D11 起不再回 nil）：同樣停住主體
 ...
 
-; out str: 觀察到的變體 + 主體是否被停住
+; out: 觀察到的變體 + 主體是否被停住
 fail-oob = () (out str) {
     arr = [10, 20, 30]
     ran = false
@@ -143,7 +143,7 @@ fail-oob = () (out str) {
 ; 5. 巢狀塊 match：最內層捕捉，外層只看到 nil
 ...
 
-; out str: 內外兩層觀察到的變體
+; out: 內外兩層觀察到的變體
 nested = (z i64) (out str) {
     out = ''
     {
@@ -169,8 +169,8 @@ nested = (z i64) (out str) {
 ; 6. 函式本身有 ?T 結果參數時，仍是「最近的塊 match」捕捉
 ...
 
-; res ?i64: 刻意留著，證明它不會把 `?=` 吸走
-; out str: 塊 match 觀察到的變體
+; res: 刻意留著，證明它不會把 `?=` 吸走
+; out: 塊 match 觀察到的變體
 shadow = (z i64) (res ?i64, out str) {
     res = nil
     out = ''
@@ -189,7 +189,7 @@ shadow = (z i64) (res ?i64, out str) {
 ; 7. 迴圈內失敗：後續 iteration 全部停住
 ...
 
-; out str: 觀察到的變體 + 迴圈累計次數（應停在 0）
+; out: 觀察到的變體 + 迴圈累計次數（應停在 0）
 loop-stop = (z i64) (out str) {
     n = 0
     out = ''
@@ -219,7 +219,7 @@ loop-stop = (z i64) (out str) {
 ; 8. `-> _` 丟棄：語法合法、不產生值
 ...
 
-; out str: 固定回 'discarded'
+; out: 固定回 'discarded'
 discard = (z i64) (out str) {
     out = 'discarded'
     {
@@ -235,7 +235,7 @@ discard = (z i64) (out str) {
 ; 9. 三種主語形態（值 / 表達式 / 塊）在同一函式裡並存
 ...
 
-; out str: 三種主語的匹配結果
+; out: 三種主語的匹配結果
 subjects = () (out str) {
     x = 1
     out = ''
@@ -264,8 +264,8 @@ subjects = () (out str) {
 ; 10. err 載荷保真：err 臂的 it 是結構化 err.err
 ...
 
-; d i64: 除數，0 時 6/d 得 err
-; out str: err 的訊息（whole-option 拷貝必須保留 msg/code/file/line/col）
+; d: 除數，0 時 6/d 得 err
+; out: err 的訊息（whole-option 拷貝必須保留 msg/code/file/line/col）
 err-msg = (d i64) (out str) {
     out = ''
     {

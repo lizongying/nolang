@@ -5,10 +5,10 @@
 ;
 ; 用法：
 ;   # std/crypto/chacha20-poly1305
-;   key [32]byte: 256-bit 金鑰
-;   nonce [12]byte: 96-bit nonce
-;   aad []byte: 額外認證資料
-;   plain []byte: 明文
+;   key: 256-bit 金鑰
+;   nonce: 96-bit nonce
+;   aad: 額外認證資料
+;   plain: 明文
 ;   sealed = chacha20-poly1305-seal(key, nonce, aad, plain)
 ;   opened = chacha20-poly1305-open(key, nonce, aad, sealed)
 ; [chacha20-poly1305](#chacha20-poly1305)
@@ -148,10 +148,10 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
 ...
 
 ; 生成一個 64-byte 密鑰流區塊
-; key [32]byte: 256-bit 金鑰
-; counter u32: 區塊計數器
-; nonce [12]byte: 96-bit nonce
-; 返回 out [64]byte: 密鑰流
+; key: 256-bit 金鑰
+; counter: 區塊計數器
+; nonce: 96-bit nonce
+; 返回 out: 密鑰流
 ; [chacha20-block](#chacha20-poly1305.chacha20-block)
 chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
@@ -319,11 +319,11 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 }
 
 ; ChaCha20 串流加密/解密
-; key [32]byte: 金鑰
-; counter u32: 初始計數器
-; nonce [12]byte: nonce
-; data []byte: 輸入資料
-; 返回 out []byte: XOR 後的資料
+; key: 金鑰
+; counter: 初始計數器
+; nonce: nonce
+; data: 輸入資料
+; 返回 out: XOR 後的資料
 ; [chacha20-xor](#chacha20-poly1305.chacha20-xor)
 chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []byte) {
     out = with-len(data.len())
@@ -392,9 +392,9 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
 }
 
 ; 計算 Poly1305 MAC
-; key [32]byte: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
-; data []byte: 輸入資料
-; 返回 tag [16]byte: 16 位元組認證標籤
+; key: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
+; data: 輸入資料
+; 返回 tag: 16 位元組認證標籤
 ; [poly1305](#chacha20-poly1305.poly1305)
 poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
@@ -500,9 +500,9 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 ...
 
 ; 生成 Poly1305 一次性金鑰
-; key [32]byte: ChaCha20 金鑰
-; nonce [12]byte: nonce
-; 返回 otk [32]byte: 一次性 Poly1305 金鑰
+; key: ChaCha20 金鑰
+; nonce: nonce
+; 返回 otk: 一次性 Poly1305 金鑰
 ; [poly1305-key-gen](#chacha20-poly1305.poly1305-key-gen)
 poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 
@@ -520,11 +520,11 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 }
 
 ; ChaCha20-Poly1305 加密
-; key [32]byte: 金鑰
-; nonce [12]byte: nonce
-; aad []byte: 額外認證資料
-; plain []byte: 明文
-; 返回 sealed []byte: 密文 + 16 位元組 tag
+; key: 金鑰
+; nonce: nonce
+; aad: 額外認證資料
+; plain: 明文
+; 返回 sealed: 密文 + 16 位元組 tag
 ; [chacha20-poly1305-seal](#chacha20-poly1305.chacha20-poly1305-seal)
 chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte) (sealed []byte) {
 
@@ -796,11 +796,11 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 }
 
 ; ChaCha20-Poly1305 解密
-; key [32]byte: 金鑰
-; nonce [12]byte: nonce
-; aad []byte: 額外認證資料
-; sealed []byte: 密文 + 16 位元組 tag
-; 返回 plain []byte: 明文（認證失敗時長度為 0）
+; key: 金鑰
+; nonce: nonce
+; aad: 額外認證資料
+; sealed: 密文 + 16 位元組 tag
+; 返回 plain: 明文（認證失敗時長度為 0）
 ; [chacha20-poly1305-open](#chacha20-poly1305.chacha20-poly1305-open)
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
     sealed.len() < 16 -> return

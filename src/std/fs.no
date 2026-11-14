@@ -306,7 +306,7 @@ get-line = () (line ?str) {
 }
 
 ; 循環讀取 stdin 全部內容為 []byte（不依賴 stat/fstat，對管道安全）
-; 返回 content ?[]byte:
+; 返回 content:
 ;   ok([]byte) — 成功，含 stdin 內容
 ;   nil        — stdin 為空
 ;   err        — 讀取失敗
@@ -336,7 +336,7 @@ read-stdin = () (content ?[]byte) {
 }
 
 ; 循環讀取 stdin 全部內容為 str（不依賴 stat/fstat，對管道安全）
-; 返回 content ?str:
+; 返回 content:
 ;   ok(str) — 成功，含 stdin 內容
 ;   nil     — stdin 為空
 ;   err     — 讀取失敗
@@ -649,7 +649,7 @@ file.read = (buf []byte, n i64) (read-n i64) {
 ; 從檔案讀取至多 4096 位元組的內容
 ; ⚠ 名為 read-line 但**不做換行切分**：一次 read 拿到什麼就回什麼（可含 '\n'）。
 ;   真正的逐行讀取需要跨呼叫緩衝，file 結構體目前沒有該欄位。
-; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; 返回 line: ok=讀取內容, nil=EOF 或錯誤
 ; line: ok=本次讀到的內容（可能多行）, nil=EOF、逾 4096 位元組或錯誤
 ; [read-line](#fs.file.read-line)
 file.read-line = () (line ?str) {
@@ -708,7 +708,7 @@ file.size = () (sz i64) {
 }
 
 ; 讀取整個檔案為字串
-; 返回 content ?str:
+; 返回 content:
 ;   ok(str) — 成功，含檔案內容
 ;   nil     — 檔案為空
 ;   err     — 檔案未開啟或讀取失敗
@@ -726,7 +726,7 @@ file.read-str = () (content ?str) {
 }
 
 ; 讀取整個檔案為 []byte（Rust 混合策略）
-; 返回 content ?[]byte:
+; 返回 content:
 ;   ok([]byte) — 成功，含檔案內容
 ;   nil        — 檔案為空
 ;   err        — 檔案未開啟或讀取失敗
@@ -771,8 +771,8 @@ file.read-bytes = () (content ?[]byte) {
 }
 
 ; 將字串寫入檔案（覆寫整個檔案）
-; data str: 要寫入的字串
-; 返回 ok ?bool:
+; data: 要寫入的字串
+; 返回 ok:
 ;   ok(true)  — 成功
 ;   err       — 檔案未開啟或寫入失敗
 ; data: 要寫入的字串（整檔覆寫，原內容被替換）
@@ -799,8 +799,8 @@ file.write-str = (data str) (ok ?bool) {
 }
 
 ; 將 []byte 寫入檔案（覆寫整個檔案）
-; data []byte: 要寫入的位元組陣列
-; 返回 ok ?bool:
+; data: 要寫入的位元組陣列
+; 返回 ok:
 ;   ok(true)  — 成功
 ;   err       — 檔案未開啟或寫入失敗
 ; data: 要寫入的位元組（整檔覆寫）
@@ -829,8 +829,8 @@ file.write-bytes = (data []byte) (ok ?bool) {
 ...
 
 ; 讀取整個檔案為 []byte
-; p str: 檔案路徑
-; 返回 content ?[]byte:
+; p: 檔案路徑
+; 返回 content:
 ;   ok([]byte) — 成功，含檔案內容
 ;   nil        — 檔案為空
 ;   err        — 讀取失敗
@@ -858,8 +858,8 @@ read-bytes = (p str) (content ?[]byte) {
 }
 
 ; 讀取整個檔案為字串
-; p str: 檔案路徑
-; 返回 content ?str:
+; p: 檔案路徑
+; 返回 content:
 ;   ok(str) — 成功，含檔案內容
 ;   nil     — 檔案為空
 ;   err     — 讀取失敗
@@ -887,9 +887,9 @@ read-str = (p str) (content ?str) {
 }
 
 ; 將字串寫入檔案（覆寫）
-; p str: 檔案路徑
-; data str: 要寫入的字串
-; 返回 ok ?bool:
+; p: 檔案路徑
+; data: 要寫入的字串
+; 返回 ok:
 ;   ok(true) — 成功
 ;   err      — 寫入失敗
 ; p: 目標路徑（不存在則建立）
@@ -917,9 +917,9 @@ write-str = (p str, data str) (ok ?bool) {
 }
 
 ; 將 []byte 寫入檔案（覆寫）
-; p str: 檔案路徑
-; data []byte: 要寫入的位元組陣列
-; 返回 ok ?bool:
+; p: 檔案路徑
+; data: 要寫入的位元組陣列
+; 返回 ok:
 ;   ok(true) — 成功
 ;   err      — 寫入失敗
 ; p: 目標路徑（不存在則建立）
@@ -1144,8 +1144,8 @@ dir-entries = (dirpath str) (entries []str) {
 ...
 
 ; 遞迴遍歷目錄樹，返回所有檔案路徑
-; root str: 根目錄路徑
-; 返回 paths []str: 所有檔案的完整路徑（不含目錄本身）
+; root: 根目錄路徑
+; 返回 paths: 所有檔案的完整路徑（不含目錄本身）
 ;
 ; 用法：
 ;   paths = walk('/path/to/dir')

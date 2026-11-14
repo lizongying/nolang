@@ -82,7 +82,7 @@ tree-map.init = () {
 ...
 
 ; 從空閒池分配節點
-; 返回 idx i64: 節點索引，-1=池已滿
+; 返回 idx: 節點索引，-1=池已滿
 ; [alloc-node](#tree-map.tree-map.alloc-node)
 tree-map.alloc-node = () (idx i64) {
     idx = .free-head
@@ -110,7 +110,7 @@ tree-map.alloc-node = () (idx i64) {
 }
 
 ; 將節點歸還空閒池
-; idx i64: 要釋放的節點索引
+; idx: 要釋放的節點索引
 ; [free-node](#tree-map.tree-map.free-node)
 tree-map.free-node = (idx i64) {
     {
@@ -127,8 +127,8 @@ tree-map.free-node = (idx i64) {
 ...
 
 ; 取得節點高度（NIL=0）
-; idx i64: 節點索引
-; 返回 h i64: 高度
+; idx: 節點索引
+; 返回 h: 高度
 ; [ht](#tree-map.tree-map.ht)
 tree-map.ht = (idx i64) (h i64) {
     h = 0
@@ -142,7 +142,7 @@ tree-map.ht = (idx i64) (h i64) {
 }
 
 ; 重新計算節點高度
-; idx i64: 節點索引
+; idx: 節點索引
 ; [update-ht](#tree-map.tree-map.update-ht)
 tree-map.update-ht = (idx i64) {
     {
@@ -161,8 +161,8 @@ tree-map.update-ht = (idx i64) {
 }
 
 ; 取得平衡因子（左高 - 右高）
-; idx i64: 節點索引
-; 返回 b i64: 平衡因子
+; idx: 節點索引
+; 返回 b: 平衡因子
 ;
 ; ⚠️ 這裡有三個踩過的坑（test/README.md §5.1q）：
 ; 1. 原本寫成「裸塊 + 值位 match 且臂內 `b = it`」——臂內對**結果參數**的寫入會被
@@ -207,7 +207,7 @@ tree-map.bf = (idx i64) (b i64) {
 ;   a   y     =>     x   c
 ;      / \          / \
 ;     b   c        a   b
-; x i64: 旋轉軸節點
+; x: 旋轉軸節點
 ; [rot-left](#tree-map.tree-map.rot-left)
 tree-map.rot-left = (x i64) {
     y = .right[x]: {
@@ -267,7 +267,7 @@ tree-map.rot-left = (x i64) {
 ;     y   c   =>     a   x
 ;    / \                / \
 ;   a   b              b   c
-; x i64: 旋轉軸節點
+; x: 旋轉軸節點
 ; [rot-right](#tree-map.tree-map.rot-right)
 tree-map.rot-right = (x i64) {
     y = .left[x]: {
@@ -325,8 +325,8 @@ tree-map.rot-right = (x i64) {
 ...
 
 ; 在節點 idx 檢查並修復平衡
-; idx i64: 節點索引
-; 返回 nr i64: 再平衡後的子樹根索引
+; idx: 節點索引
+; 返回 nr: 再平衡後的子樹根索引
 ; [rebalance](#tree-map.tree-map.rebalance)
 tree-map.rebalance = (idx i64) (nr i64) {
     nr = idx
@@ -380,7 +380,7 @@ tree-map.rebalance = (idx i64) (nr i64) {
 }
 
 ; 從 idx 向上逐層再平衡
-; idx i64: 起始節點索引
+; idx: 起始節點索引
 ; [rebalance-up](#tree-map.tree-map.rebalance-up)
 tree-map.rebalance-up = (idx i64) {
     r-idx = idx
@@ -396,8 +396,8 @@ tree-map.rebalance-up = (idx i64) {
 }
 
 ; 求節點的中序後繼
-; idx i64: 節點索引
-; 返回 succ i64: 後繼索引，-1=無後繼
+; idx: 節點索引
+; 返回 succ: 後繼索引，-1=無後繼
 ; [successor](#tree-map.tree-map.successor)
 tree-map.successor = (idx i64) (succ i64) {
     r-idx = idx
@@ -444,9 +444,9 @@ tree-map.successor = (idx i64) (succ i64) {
 ...
 
 ; 插入或更新 key→value
-; key i64: 排序鍵
-; val i64: 要寫入的整數值（鍵已存在時覆蓋舊值）
-; 返回 ok bool: true=新增, false=更新已存在鍵或池已滿
+; key: 排序鍵
+; val: 要寫入的整數值（鍵已存在時覆蓋舊值）
+; 返回 ok: true=新增, false=更新已存在鍵或池已滿
 ; [put](#tree-map.tree-map.put)
 tree-map.put = (key i64, val i64) (ok bool) {
     ok = false
@@ -541,8 +541,8 @@ tree-map.put = (key i64, val i64) (ok bool) {
 }
 
 ; 查找鍵對應的值
-; key i64: 鍵
-; 返回 val ?i64: ok=找到, nil=未找到
+; key: 鍵
+; 返回 val: ok=找到, nil=未找到
 ; [get](#tree-map.tree-map.get)
 tree-map.get = (key i64) (val ?i64) {
     idx = .root
@@ -578,8 +578,8 @@ tree-map.get = (key i64) (val ?i64) {
 }
 
 ; 檢查鍵是否存在
-; key i64: 鍵
-; 返回 yes bool: true=存在, false=不存在
+; key: 鍵
+; 返回 yes: true=存在, false=不存在
 ; [contains](#tree-map.tree-map.contains)
 tree-map.contains = (key i64) (yes bool) {
     idx = .root
@@ -616,8 +616,8 @@ tree-map.contains = (key i64) (yes bool) {
 }
 
 ; 刪除鍵
-; key i64: 鍵
-; 返回 ok bool: true=已刪除, false=未找到
+; key: 鍵
+; 返回 ok: true=已刪除, false=未找到
 ; [remove](#tree-map.tree-map.remove)
 tree-map.remove = (key i64) (ok bool) {
     ok = false
@@ -726,7 +726,7 @@ tree-map.remove = (key i64) (ok bool) {
 ...
 
 ; 取得最小鍵
-; 返回 key ?i64: ok=最小鍵, nil=空樹
+; 返回 key: ok=最小鍵, nil=空樹
 ; [first](#tree-map.tree-map.first)
 tree-map.first = () (key ?i64) {
     idx = .root
@@ -748,7 +748,7 @@ tree-map.first = () (key ?i64) {
 }
 
 ; 取得最大鍵
-; 返回 key ?i64: ok=最大鍵, nil=空樹
+; 返回 key: ok=最大鍵, nil=空樹
 ; [last](#tree-map.tree-map.last)
 tree-map.last = () (key ?i64) {
     idx = .root
@@ -770,8 +770,8 @@ tree-map.last = () (key ?i64) {
 }
 
 ; 找第一個 ≥ target 的鍵
-; target i64: 目標鍵
-; 返回 key ?i64: ok=找到, nil=無此鍵
+; target: 目標鍵
+; 返回 key: ok=找到, nil=無此鍵
 ; [lower-bound](#tree-map.tree-map.lower-bound)
 tree-map.lower-bound = (target i64) (key ?i64) {
     result = -1
@@ -811,8 +811,8 @@ tree-map.lower-bound = (target i64) (key ?i64) {
 }
 
 ; 找第一個 > target 的鍵
-; target i64: 目標鍵
-; 返回 key ?i64: ok=找到, nil=無此鍵
+; target: 目標鍵
+; 返回 key: ok=找到, nil=無此鍵
 ; [upper-bound](#tree-map.tree-map.upper-bound)
 tree-map.upper-bound = (target i64) (key ?i64) {
     result = -1
@@ -852,8 +852,8 @@ tree-map.upper-bound = (target i64) (key ?i64) {
 }
 
 ; 按鍵升序遍歷所有鍵值對
-; k i64: 輸出鍵（每個元素更新）
-; v i64: 輸出值（每個元素更新）
+; k: 輸出鍵（每個元素更新）
+; v: 輸出值（每個元素更新）
 ; [for-each](#tree-map.tree-map.for-each)
 tree-map.for-each = () (k i64, v i64) {
     idx = .root
@@ -913,21 +913,21 @@ tree-map.clear = () {
 }
 
 ; 返回元素數量
-; 返回 sz i64: 元素數量
+; 返回 sz: 元素數量
 ; [size](#tree-map.tree-map.size)
 tree-map.size = () (sz i64) {
     sz = .size
 }
 
 ; 判斷是否為空
-; 返回 yes bool: true=空, false=非空
+; 返回 yes: true=空, false=非空
 ; [empty](#tree-map.tree-map.empty)
 tree-map.empty = () (yes bool) {
     yes = .size <= 0
 }
 
 ; 判斷節點池是否已滿
-; 返回 yes bool: true=已滿, false=未滿
+; 返回 yes: true=已滿, false=未滿
 ; [full](#tree-map.tree-map.full)
 tree-map.full = () (yes bool) {
     yes = .free-head < 0

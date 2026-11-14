@@ -168,7 +168,7 @@ err.is = (ec code) (yes bool) {
 }
 
 ; 取得錯誤訊息
-; 返回 msg str: 錯誤物件攜帶的訊息文字；非錯誤值時為空串
+; 返回 msg: 錯誤物件攜帶的訊息文字；非錯誤值時為空串
 ; [msg](#err.msg)
 err.msg = () (msg str) {
     msg = .msg

@@ -535,8 +535,17 @@ t-dir-iter = () {
 
 t-special-files = () {
     fs.remove(FIFO)
+
+    ; 清掉舊版 mode=0 斷言在 Linux 上成功建立、卻沒移除的 node1
+    fs.remove(FIFO2)
     runner.is-true(fs.mkfifo(FIFO, 420), 'mkfifo 建立 FIFO')
-    runner.is-false(fs.mknod(FIFO2, 0, 0), 'mknod 非法 mode 失敗')
+
+    ; ⚠ `mode = 0` 不是非法 mode：Linux mknod(2) 明定 S_IFMT=0 等價 S_IFREG，
+    ;   會成功建立 000 權限的普通檔（回 0 ⇒ true）；Darwin 非 root 才回 EPERM（false）。
+    ;   舊斷言把 macOS 的 EPERM 當跨平台契約 ⇒ ubuntu CI 紅一條（2026-11-14）。
+    ;   改用真正非法的 S_IFDIR（0o40000 = 16384）：Linux EINVAL、Darwin EPERM、
+    ;   Windows stub ENOSYS，三個平台都回 false。
+    runner.is-false(fs.mknod(FIFO2, 16384, 0), 'mknod 非法 mode 失敗')
     fs.remove(FIFO)
 }
 

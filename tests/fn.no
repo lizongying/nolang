@@ -14,14 +14,14 @@
 ret-cb = () (i64)
 
 ; 取得 42
-; r i64: 固定值 42
+; r: 固定值 42
 get-42 = () (r i64) {
     r = 42
 }
 
 ; 以函式型別參數做間接呼叫，並把結果接住回傳（回歸：Results 為空時要取 Dst）
-; cb ret-cb: 無參、回 i64 的回呼參考
-; out i64: cb() 的回傳值
+; cb: 無參、回 i64 的回呼參考
+; out: cb() 的回傳值
 apply-ret = (cb ret-cb) (out i64) {
     out = cb()
 }
@@ -44,8 +44,8 @@ result = apply-ret(get-42)
 ; definition exists and the qualified call must route to the builtin.
 ...
 
-; p str: 要檢查的路徑
-; ok bool: fs.is-file(p) 的結果；本函式名故意與 builtin 同名以驗證解析不串錯
+; p: 要檢查的路徑
+; ok: fs.is-file(p) 的結果；本函式名故意與 builtin 同名以驗證解析不串錯
 is-file = (p str) (ok bool) {
     ok = fs.is-file(p)
 }

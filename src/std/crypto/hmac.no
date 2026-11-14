@@ -39,7 +39,7 @@ HMAC-OPAD = 92
 ; 計算 HMAC-SHA256
 ; key: 雜湊金鑰（超過底層雜湊區塊長度 64 位元組時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out [32]byte: 32 位元組 HMAC 值
+; 返回 out: 32 位元組 HMAC 值
 ; [hmac-sha256](#hmac.hmac-sha256)
 hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     key-n = key.len()
@@ -170,7 +170,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 ; 計算 HMAC-SHA256，返回 []byte（方便串接）
 ; key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out []byte: 32 位元組 HMAC 值
+; 返回 out: 32 位元組 HMAC 值
 ; [hmac-sha256-vec](#hmac.hmac-sha256-vec)
 hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
     h [32]byte
@@ -193,7 +193,7 @@ HMAC-SHA1-HASH-SIZE = 20
 ; 計算 HMAC-SHA1
 ; key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out [20]byte: 20 位元組 HMAC 值
+; 返回 out: 20 位元組 HMAC 值
 ; [hmac-sha1](#hmac.hmac-sha1)
 hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     key-n = key.len()
@@ -317,7 +317,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 ; 計算 HMAC-SHA1，返回 []byte
 ; key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out []byte: 20 位元組 HMAC 值
+; 返回 out: 20 位元組 HMAC 值
 ; [hmac-sha1-vec](#hmac.hmac-sha1-vec)
 hmac-sha1-vec = (key []byte, msg []byte) (out []byte) {
     h [20]byte
@@ -339,7 +339,7 @@ HMAC-SHA512-HASH-SIZE = 64
 ; 計算 HMAC-SHA512
 ; key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out [64]byte: 64 位元組 HMAC 值
+; 返回 out: 64 位元組 HMAC 值
 ; [hmac-sha512](#hmac.hmac-sha512)
 hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     key-n = key.len()
@@ -464,7 +464,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 ; 計算 HMAC-SHA512，返回 []byte
 ; key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out []byte: 64 位元組 HMAC 值
+; 返回 out: 64 位元組 HMAC 值
 ; [hmac-sha512-vec](#hmac.hmac-sha512-vec)
 hmac-sha512-vec = (key []byte, msg []byte) (out []byte) {
     h [64]byte
@@ -478,7 +478,7 @@ hmac-sha512-vec = (key []byte, msg []byte) (out []byte) {
 ; 計算 HMAC-SHA384（使用 SHA-384 底層雜湊，區塊大小 128）
 ; key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out [48]byte: 48 位元組 HMAC 值
+; 返回 out: 48 位元組 HMAC 值
 ; [hmac-sha384](#hmac.hmac-sha384)
 hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     key-n = key.len()
@@ -602,7 +602,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 ; 計算 HMAC-SHA384，返回 []byte
 ; key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out []byte: 48 位元組 HMAC 值
+; 返回 out: 48 位元組 HMAC 值
 ; [hmac-sha384-vec](#hmac.hmac-sha384-vec)
 hmac-sha384-vec = (key []byte, msg []byte) (out []byte) {
     h [48]byte
@@ -616,7 +616,7 @@ hmac-sha384-vec = (key []byte, msg []byte) (out []byte) {
 ; 計算 HMAC-MD5（使用 MD5 底層雜湊，區塊大小 64）
 ; key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out [16]byte: 16 位元組 HMAC 值
+; 返回 out: 16 位元組 HMAC 值
 ; [hmac-md5](#hmac.hmac-md5)
 hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     key-n = key.len()
@@ -740,7 +740,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 ; 計算 HMAC-MD5，返回 []byte
 ; key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）
 ; msg: 待認證的訊息位元組
-; 返回 out []byte: 16 位元組 HMAC 值
+; 返回 out: 16 位元組 HMAC 值
 ; [hmac-md5-vec](#hmac.hmac-md5-vec)
 hmac-md5-vec = (key []byte, msg []byte) (out []byte) {
     h [16]byte

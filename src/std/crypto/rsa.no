@@ -446,10 +446,10 @@ _rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 ...
 
 ; q = a / b, r = a % b
-; a []i64: 被除數（低位在前的 limb 陣列）
-; an i64: 被除數有效 limb 數
-; b []i64: 除數（同 limb 排布）
-; bn i64: 除數有效 limb 數（bn=1 且 b[0]=0 時視為除零，輸出全零）
+; a: 被除數（低位在前的 limb 陣列）
+; an: 被除數有效 limb 數
+; b: 除數（同 limb 排布）
+; bn: 除數有效 limb 數（bn=1 且 b[0]=0 時視為除零，輸出全零）
 ; q: 商數（輸出）, qn: 商長度
 ; r: 餘數（輸出）, rn: 餘長度
 ; qn: 商修剪後的 limb 數（b=0 時 q、r 全零且 qn=rn=0）
@@ -891,28 +891,28 @@ _rsa-modpow-trimmed = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn 
 }
 
 ; 高階包裝（模組內私有；外部請用 rsa-encrypt-bytes）：limb 級 RSA 加密（c = m^e mod n）
-; msg []i64: 明文大數 m（低位在前的 32-bit limb 陣列，須小於 mod，未做 PKCS#1 填充）
-; pub-exp []i64: 公開指數 e（limb 陣列）
-; mod []i64: 模數 n（limb 陣列）
-; out []i64: 密文 c = m^e mod n（已精確修剪，out.len() 即 limb 數）
+; msg: 明文大數 m（低位在前的 32-bit limb 陣列，須小於 mod，未做 PKCS#1 填充）
+; pub-exp: 公開指數 e（limb 陣列）
+; mod: 模數 n（limb 陣列）
+; out: 密文 c = m^e mod n（已精確修剪，out.len() 即 limb 數）
 ; [_rsa-encrypt](#rsa._rsa-encrypt)
 _rsa-encrypt = (msg []i64, pub-exp []i64, mod []i64) (out []i64) {
     out = _rsa-modpow-trimmed(msg, msg.len(), pub-exp, pub-exp.len(), mod, mod.len())
 }
 
 ; 高階包裝（模組內私有；外部請用 rsa-decrypt-bytes）：limb 級 RSA 解密（m = c^d mod n）
-; ct []i64: 密文大數 c（低位在前的 limb 陣列，須小於 mod）
-; priv-exp []i64: 私鑰指數 d（limb 陣列）
-; mod []i64: 模數 n（limb 陣列）
-; out []i64: 明文 m = c^d mod n（未做 PKCS#1 去填充；已精確修剪，out.len() 即 limb 數）
+; ct: 密文大數 c（低位在前的 limb 陣列，須小於 mod）
+; priv-exp: 私鑰指數 d（limb 陣列）
+; mod: 模數 n（limb 陣列）
+; out: 明文 m = c^d mod n（未做 PKCS#1 去填充；已精確修剪，out.len() 即 limb 數）
 ; [_rsa-decrypt](#rsa._rsa-decrypt)
 _rsa-decrypt = (ct []i64, priv-exp []i64, mod []i64) (out []i64) {
     out = _rsa-modpow-trimmed(ct, ct.len(), priv-exp, priv-exp.len(), mod, mod.len())
 }
 
 ; bytes → limbs（模組內私有）：大端無符號位元組串轉 base 2^32 little-endian limb 陣列
-; v []byte: 大端無符號整數（前導零位元組無害）
-; out []i64: limb 陣列，長度 ceil(len/4)；空輸入回傳 [0]
+; v: 大端無符號整數（前導零位元組無害）
+; out: limb 陣列，長度 ceil(len/4)；空輸入回傳 [0]
 ; [_bytes-to-limbs](#rsa._bytes-to-limbs)
 _bytes-to-limbs = (v []byte) (out []i64) {
     n = v.len()
@@ -946,8 +946,8 @@ _bytes-to-limbs = (v []byte) (out []i64) {
 }
 
 ; limbs → bytes（模組內私有）：base 2^32 little-endian limb 陣列轉最短大端無符號位元組串
-; v []i64: limb 陣列（允許前導零 limb）
-; out []byte: 最短大端編碼；值 0 回傳單位元組 [0]
+; v: limb 陣列（允許前導零 limb）
+; out: 最短大端編碼；值 0 回傳單位元組 [0]
 ; [_limbs-to-bytes](#rsa._limbs-to-bytes)
 _limbs-to-bytes = (v []i64) (out []byte) {
     n = v.len()
@@ -993,10 +993,10 @@ _limbs-to-bytes = (v []i64) (out []byte) {
 }
 
 ; RSA 加密（位元組介面）：c = m^e mod n
-; msg []byte: 明文大數 m，大端無符號位元組串（未做 PKCS#1 填充，須小於 mod）
-; pub-exp []byte: 公開指數 e，大端無符號位元組串
-; mod []byte: 模數 n，大端無符號位元組串
-; out []byte: 密文 c = m^e mod n，最短大端無符號編碼（0 為單位元組 [0]）
+; msg: 明文大數 m，大端無符號位元組串（未做 PKCS#1 填充，須小於 mod）
+; pub-exp: 公開指數 e，大端無符號位元組串
+; mod: 模數 n，大端無符號位元組串
+; out: 密文 c = m^e mod n，最短大端無符號編碼（0 為單位元組 [0]）
 ; [rsa-encrypt-bytes](#rsa.rsa-encrypt-bytes)
 rsa-encrypt-bytes = (msg []byte, pub-exp []byte, mod []byte) (out []byte) {
     m-bn = _bytes-to-limbs(msg)
@@ -1007,10 +1007,10 @@ rsa-encrypt-bytes = (msg []byte, pub-exp []byte, mod []byte) (out []byte) {
 }
 
 ; RSA 解密（位元組介面）：m = c^d mod n
-; ct []byte: 密文大數 c，大端無符號位元組串（須小於 mod）
-; priv-exp []byte: 私鑰指數 d，大端無符號位元組串
-; mod []byte: 模數 n，大端無符號位元組串
-; out []byte: 明文 m = c^d mod n，最短大端無符號編碼（未做 PKCS#1 去填充）
+; ct: 密文大數 c，大端無符號位元組串（須小於 mod）
+; priv-exp: 私鑰指數 d，大端無符號位元組串
+; mod: 模數 n，大端無符號位元組串
+; out: 明文 m = c^d mod n，最短大端無符號編碼（未做 PKCS#1 去填充）
 ; [rsa-decrypt-bytes](#rsa.rsa-decrypt-bytes)
 rsa-decrypt-bytes = (ct []byte, priv-exp []byte, mod []byte) (out []byte) {
     c-bn = _bytes-to-limbs(ct)
