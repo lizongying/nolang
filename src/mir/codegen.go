@@ -9019,6 +9019,36 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.emitMemcpy(dstSlot, srcSlot, sz)
 		return nil
 	}
+	// Free the OLD owned buffer the destination slot currently holds BEFORE
+	// overwriting it. insertDrops exempts RESULT PARAMETERS from dropping (its
+	// wouldDrop predicate requires !isParam), so a reassignment of a result
+	// parameter leaks the previous value each time it is overwritten — e.g.
+	// `out = out - tmp` inside a loop (tests/mem-safety/loop-temp-leak.no)
+	// leaked N-1 buffers. The previous value is not a distinct SSA value that
+	// liveness/drop can track (MIR reuses value ids across loop iterations),
+	// so the only correct place to free it is here, at the store site, where
+	// the slot still names the live buffer. emitDrop is null/empty-safe
+	// (@str_free / @vec_free no-op on an empty container), and freeing the
+	// slot's current contents (≠ the value being stored) cannot clash with
+	// insertDrops' own drops — those target independent values (e.g. the
+	// per-iteration `tmp`), never this slot's prior binding.
+	// Plain locals are deliberately NOT handled here: insertDrops drops their
+	// old value independently, so freeing here would double-free. The result
+	// param gate is exactly the set insertDrops leaves un-dropped.
+	if c.curFn != nil && srcSlot != dstSlot {
+		isRP := false
+		for _, rp := range c.curFn.ResultParams {
+			if rp == dstVal {
+				isRP = true
+				break
+			}
+		}
+		if isRP && c.mod.dropOwnsHeap(c.curFn, dstVal) {
+			if err := c.emitDrop(&Inst{Op: OpDrop, Args: []ValueID{dstVal}}); err != nil {
+				return err
+			}
+		}
+	}
 	// Use a unique temp name (%mv<instID>) because Dst is an existing variable
 	// slot already defined by its original binding, so reusing %c<Dst> would
 	// collide.
