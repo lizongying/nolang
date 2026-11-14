@@ -1078,6 +1078,23 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		clangIn = sPath
 	}
 	var clangArgs []string
+	// NOLANG_LEAK_DETECT=1 links the binary with LeakSanitizer (LSan, the
+	// runtime-only member of the ASan family) so that every libc malloc the
+	// Nolang runtime performs is tracked and any block still unreclaimed at
+	// process exit is reported. This is the zero-code-change first increment of
+	// the runtime leak detector: the compiler-owned heap funnels through
+	// @nolang_rc_alloc / @nolang_free on top of libc malloc/free, which LSan
+	// intercepts directly. WASI has no LSan runtime and Windows uses a different
+	// ASan backend, so the flag is a no-op on those targets.
+	leakDetect := os.Getenv("NOLANG_LEAK_DETECT") == "1"
+	leakWindows := runtime.GOOS == "windows"
+	if tg, _ := parseTargetPlatform(target); tg != "" {
+		leakWindows = tg == "windows"
+	}
+	leakOK := leakDetect && !isWasiTarget && !leakWindows
+	if leakOK {
+		clangArgs = append(clangArgs, "-fsanitize=leak")
+	}
 	if shared && isWasiTarget {
 		return i18n.Errorf("n1cabi03", "--shared is not supported for a WASI target")
 	}
@@ -1130,7 +1147,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if tGoos == "" {
 			tGoos = runtime.GOOS
 		}
-		if tGoos == "linux" && !shared {
+		if tGoos == "linux" && !shared && !leakOK {
 			clangArgs = append(clangArgs, "-no-pie")
 		}
 		if shared && tGoos == "darwin" {
