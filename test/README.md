@@ -5313,3 +5313,154 @@ err 丢掉了。写成 `out[pos] ?= …` 就两层一起解。
 未起）会失败，单跑同一个二进制却全绿 —— 是本机临时目录与硬编码端口被抢占，
 不是回归。验收时串行跑。
 
+
+
+### 5.2z 2026-11-14：v0.4.22 `std-test` 唯一紅 —— `uname.machine` 與 `get-arch()` 不是同一詞彙表【已修】
+
+CI run `43603194893` / job `132472155147`（`8354db91`，ubuntu-latest）的
+`std-test` 跑完 129 檔後只紅一條：`FAIL: is-true - uname.machine == get-arch`
+（`test/std/os.no::t-sysinfo`）。`go-build` / `vet-gate` 皆綠，`corpus-smoke`
+另計。本機 macOS 全量 129 檔 / 7479 斷言全綠，故為平台相關。
+
+🔴 **根因是測試斷言本身寫錯，不是 std 或編譯器缺陷**：
+- `os.get-arch()` 是**編譯期 GOARCH 常量**（`src/mir/builtin_call.go::emitBuiltinArch`
+  → `targetGOARCH()` → `src/mir/platform.go::mirTargetPlatform`），值是
+  `amd64` / `arm64` / `386`。
+- `os.uname().machine` 是 **POSIX `uname(2)` 回傳的內核詞彙**，Linux 上是
+  `x86_64` / `aarch64`，Windows shim（`src/mir/builtin_win_shims.go:38-46`）
+  甚至顯式把 `amd64→x86_64`、`arm64→aarch64`、`386→x86` 轉過去。
+- Darwin 恰好直接回 `arm64` / `x86_64`，與 GOARCH 同名 ⇒ 舊斷言
+  `u.machine.eq-full(a)` 只在 macOS 成立。實測探針：
+  macOS `get-arch=[arm64] machine=[arm64]`；
+  Linux `get-arch=[arm64] machine=[aarch64]`；
+  CI x86_64 則是 `amd64` vs `x86_64`。
+
+**修法**：`t-sysinfo` 先把 `u.machine` 正規化到 GOARCH 詞彙
+（`x86_64→amd64`、`aarch64→arm64`、`i386`/`i686`/`x86→386`）再比對，
+保留原斷言的檢測力（仍會抓到 `get-arch` 回錯值），不更動 `get-arch()` 語義。
+
+**驗收**：`no fmt -d test/std/os.no` 無 diff；macOS 單檔 64 斷言全綠；
+以 Docker `linux/arm64` 容器 + `--user 1000`（對應 CI 非 root runner）實跑
+`-cc zig -target aarch64-linux-musl` 編出的靜態 ELF ⇒ 修改前 `failed: 1`、
+修改後 `failed: 0`；另用字面量探針驗證 CI 的 `x86_64→amd64` 分支
+（`canon=[amd64] a=[amd64] equal=true`）。
+
+⚠️ 容器以 **root** 跑時 `os.no` 還會多紅一條
+`FAIL: is-false - chown 給不存在 uid 失敗`（root 可 chown 任意 uid），
+那是容器權限假陽性，CI runner 非 root 不會觸發；`--user 1000` 複跑即消失。
+
+⚠️ 本機重現 Linux 專屬斷言的可靠做法：`no build -cc zig -target
+aarch64-linux-musl` 編靜態 ELF → `docker run --rm --user 1000 -v ...` 實跑。
+`-target x86_64-...` 在 Apple Silicon Docker 上走 Rosetta 會報
+`rosetta error: bss_size overflow`，改走 arm64 原生容器即可（Linux 平台分支相同）。
+
+**Linux 全量實跑（129 檔靜態 ELF，非 root 容器）**：`LINUX RUN TOTAL=129 FAIL=2`，
+兩檔皆為容器環境假陽性，與 CI 無關：
+- `net.no`（068）5 條 ICMP 斷言：容器缺 raw socket / loopback echo；加
+  `--cap-add=NET_RAW` 後前 3 條轉綠（剩 `ping-once` / `ping` 仍因容器網路棧無回應）。
+  且上一版 CI（v0.4.21）只報 `json.no` 一檔紅、`net.no` 是綠的，可佐證 runner 上正常。
+- `proxy.no`（081）：在全量迴圈裡 rc=1，單獨複跑 `rc=0 / ALL TESTS PASSED`
+  ⇒ 硬編碼 listener 埠與前檔殘留衝突（見 §5.2y 的「不能併發跑」告誡）。
+`os.no`（075，已用修復後原始碼重編覆蓋）在全量裡為綠。
+
+### 5.2aa 2026-11-14：同一個 CI run 其實有「兩個紅 job」——`corpus-smoke` 待定位
+
+🔴 續查 run `43603194893`（`8354db91` / v0.4.22）時發現，除了 §5.2z 的
+`std-test`，`corpus-smoke` 也已經跑完並是 **failure**（step 8
+`Compile corpus`，14:07:23 → 15:19:17，約 1h11m）。四個 job 的最終結論：
+
+| job | 結論 | 失敗 step |
+|---|---|---|
+| `go-build` | success | — |
+| `vet-gate` | success | — |
+| `std-test` | **failure** | step 7 `Run std tests`（§5.2z 已修） |
+| `corpus-smoke` | **failure** | step 8 `Compile corpus`（本節待定位） |
+
+**拿不到失敗檔名**：匿名 API 的 `actions/jobs/<id>/logs`（job 與 run 兩個端點）
+都回 `403 Must have admin rights to Repository.`，`gh` / keychain / git
+credential 的 token 全是 Bad credentials；check-run annotations 只有
+`Process completed with exit code 1.`（`.github` L263），output.text 是空的。
+只有 repo 管理者或登入後的網頁能看 log 本文。
+
+**本機等價複現**（macOS 宿主，用 `-target` 模擬 ubuntu runner 的 linux/amd64）：
+`./bin/no build -cc zig -target x86_64-linux-gnu -o <unique> <f>` 並行 4 路跑完
+`tests/*.no` + `tests/mem-safety/*.no` 共 232 檔 ⇒
+`LINUX SMOKE TOTAL=232 FAIL=1`：
+
+- 唯一紅 `tests/database-sql.no`：`error: unable to find dynamic system library
+  "sqlite3" ... [wjju8z98]`。這是**交叉連結的環境假陽性**，不是原始碼缺陷：
+  `example/sqlite-driver/package.noml` 宣告 `link-libs: ['sqlite3']`，
+  macOS 宿主上的 zig 找不到 Linux 版 `libsqlite3`；同一檔在 macOS 原生
+  target 下 `Build successful`。且 GitHub runner image（Ubuntu 24.04 與
+  26.04 的 Readme）都明確裝了 `libsqlite3-dev` / `sqlite3`，CI 應該能連結。
+- 其餘 231 檔（含上一輪修的 `tests/net.no`、`tests/platform.no`、全部
+  `tests/mem-safety/*.no`）在 linux/amd64 target 下全部編過。
+
+⚠️ 也就是說：本機 linux/amd64 交叉編譯**沒有重現** CI 的 `corpus-smoke` 紅。
+剩餘差異只剩「CI 是原生 Linux clang+GNU ld / LLVM 21」vs「本機是 macOS
+宿主上的 zig cc + lld / LLVM 22」，以及 `bin/no` 自身是 linux/amd64 還是
+darwin/arm64 的 Go 二進位。定位前不要臆測、更不要把 `tests/database-sql.no`
+加進 `skip`。下一步要嘛請管理者貼出 `Compile corpus` step 的 `BUILD FAIL:`
+行，要嘛讓下一次 run 把失敗檔名寫成 `::error::` annotation（匿名 API 可讀）。
+
+### 5.2ab 2026-11-15：`corpus-smoke` 的真紅 —— 延遲登記的 `?txt` option 型別沒宣告【已修】
+
+管理者貼出 `Compile corpus` 的原文後，§5.2aa 的「待定位」收斂：
+
+```text
+/tmp/nolang3686983184/memory.ll:1649:35: error: invalid type for function argument
+1649 | define void @//print_option__x25txt/(%option__x25txt %o) {
+|                                   ^
+1 error generated.
+Error: build error: linking failed: exit status 1 [wjju8z98]
+BUILD FAIL: tests/memory.no
+```
+
+🔴 **根因不是 `//` 那串符號名，也不是 std 或 linker**：失敗 IR 的第 1649 行
+`define void @print_option__x25txt(%option__x25txt %o)` 用了一個**從未宣告**
+的具名結構 `%option__x25txt`。LLVM 對未宣告的具名型別會自動建成
+**opaque struct**，而 opaque struct 不是 first-class type ⇒ 依值傳遞的函式
+參數在「解析函式標頭」時就被判 `invalid type for function argument`。
+成功 IR 的同一位置則有
+`%option__x25txt = type { i8, [32 x i64] }`（`?txt` = 256B inline payload）。
+
+產生時序：`Module.EmitLLVM()` 先 `collectOptionLayouts()`（對 `mod.Types`
+取長度快照）→ `emitPrelude()` 只宣告「當時已登記」的 option layout →
+`emitStructTypes()` 的 `print_option_<payload>` helper 迴圈又呼叫
+`optionType(elem)`，可能在這時才把 `?txt`（來自 `str.to-txt` /
+`txt.from-chars` / `txt.from-hex` 的 std 簽名）登記進 `optByLLVM`。
+哪些 std 簽名先被 intern 取決於 Go map 疊代順序 ⇒ **間歇性失敗**：本機
+`-v` 連跑 16 次紅 1 次，Linux 原生二進位連跑 17 次有 1 次根本沒 intern
+到 `?txt`。這也解釋了為什麼本機全量 corpus smoke 232/0 而 CI 紅。
+
+補宣告必須放在**首次使用之前**：實測把
+`%option__x25txt = type { ... }` 附加到模組尾端，`opt -passes=verify` 與
+`clang -x ir` 仍然報同一個錯（LLParser 在讀函式標頭時就驗參數型別）。
+CI 走的是 `singleShot`（非 `-v`）的 `clang -x ir memory.ll`，所以錯誤落在
+`linking failed [wjju8z98]`；本機 `-v` 走 `opt/llc/clang`，錯誤由 MIR
+preflight 的 `opt -passes=verify` 先攔下，兩者同源。
+
+**修法**（`src/mir/layout.go` + `src/mir/codegen.go`）：把 option 型別宣告的
+單一格式抽成 `optionTypeDeclLine(lay)`，`emitPrelude()` 與新的
+`injectMissingOptionTypeDecls()` 共用；後者在 IR 定稿後掃描
+「已登記且被引用、但沒有 `= type {` 宣告」的 layout，把缺的宣告插到
+`preludeEnd`（prelude 尾、所有 `emitStructTypes`/`emitFunc` 輸出之前）。
+`optPrunePrelude` 的 `start/end` 邊界不受影響（插入點正好在 `end`）。
+
+**驗收**：
+- `src/mir/option_layout_ir_test.go` 新增三條判別測試（宣告必須早於首次
+  使用、已完成時 byte-identical、`EmitLLVM` 連跑 24 次不得留下未宣告的
+  `%option_*`）。
+- 把補宣告那行從修復後的 IR 移除，`clang -x ir` 立刻重現
+  `1649:35: invalid type for function argument`（與 CI 行號/欄位完全一致）；
+  保留則編譯成功。
+- 修復後 `tests/memory.no`：32 次連跑（`-v` / 單進程各 16）全綠，IR 掃描
+  無未宣告 option 型別；其中 `v07.bin.ll` 正是「延遲補宣告」那一類，宣告
+  落在第 1608 行。最終二進位再連跑 8 次（含 4 次 linux/amd64 target）全綠。
+- Linux target 全量 corpus `LINUX SMOKE TOTAL=232 FAIL=1`，唯一紅仍是
+  §5.2aa 記錄的 `tests/database-sql.no` zig 交叉連結假陽性；`tests/memory.no`
+  已綠。全量 `test/std` 129 檔 / 0 紅；`vet src/std` 與 `vet tests` 皆 0 error。
+- ⚠️ 改 `src/mir/*.go` 會動到 `StdSigKey`，必須 `make gen` 重烘焙
+  `std_ast.bin` 再 `make no`；本輪第一次 `make test` 就是在背景測試跑到一半
+  又改了 `layout.go`，導致 `TestStdASTBlobCarriesParseConfig` 的 StdKey
+  與磁碟不同步而紅（重烘焙後綠）。

@@ -272,6 +272,71 @@ func (c *codegen) sortedOptionLayouts() []*OptionLayout {
 	return out
 }
 
+// optionTypeDeclLine renders one option layout exactly the way emitPrelude
+// does. Both callers must stay byte-identical: a late-registered layout is
+// repaired by appending this same line to the prelude's declaration block.
+func optionTypeDeclLine(lay *OptionLayout) string {
+	return fmt.Sprintf("%s = type { i8, %s }    ; tag, %d-byte payload (%d bytes total)%s\n",
+		lay.LLVM, lay.SlotLT, lay.Size-optionPayloadOffset, lay.Size,
+		map[bool]string{true: " boxed", false: ""}[lay.Boxed])
+}
+
+// declaredOptionTypes collects the `%option_*` names that already carry a
+// concrete `= type { ... }` declaration in ir. A bare `= type opaque` does NOT
+// count: an opaque identified struct is not a first-class type and is exactly
+// what makes a by-value argument invalid.
+func declaredOptionTypes(ir string) map[string]bool {
+	out := map[string]bool{}
+	for _, line := range strings.Split(ir, "\n") {
+		if !strings.HasPrefix(line, "%option_") {
+			continue
+		}
+		if eq := strings.Index(line, " = type {"); eq > 0 {
+			out[line[:eq]] = true
+		}
+	}
+	return out
+}
+
+// injectMissingOptionTypeDecls repairs option layouts that were registered
+// AFTER emitPrelude wrote its declaration block.
+//
+// Why this is needed: collectOptionLayouts snapshots mod.Types, but resolving a
+// payload (llvmSizeAlign / optionType) can intern further `?T` types, and
+// emitStructTypes' print-helper loop then calls optLayoutOfPayload again. When
+// that late layout is used as a BY-VALUE function argument (e.g.
+// `define void @print_option__x25txt(%option__x25txt %o)`), the LLVM parser
+// auto-creates the named type as OPAQUE and rejects it at the function header:
+// "invalid type for function argument". Which types are interned early depends
+// on Go map iteration during std module loading, so the same source fails only
+// on some runs — this is the flaky `BUILD FAIL: tests/memory.no` in CI.
+//
+// The declaration must land BEFORE the first use. Appending it to the end of
+// the module does NOT work: LLParser validates argument types while parsing the
+// function header, before it ever sees a later type definition. preludeEnd is
+// the earliest point after the prelude's own declarations and before
+// emitStructTypes / emitFunc, so that is where the missing lines are inserted.
+// Type declarations are top-level entities, so their position inside the
+// prelude/tail boundary is immaterial; optPrunePrelude keeps everything after
+// its `end` verbatim.
+func injectMissingOptionTypeDecls(ir string, preludeEnd int, layouts []*OptionLayout) string {
+	if preludeEnd < 0 || preludeEnd > len(ir) || len(layouts) == 0 {
+		return ir
+	}
+	declared := declaredOptionTypes(ir)
+	var missing strings.Builder
+	for _, lay := range layouts {
+		if lay == nil || declared[lay.LLVM] || !strings.Contains(ir, lay.LLVM) {
+			continue
+		}
+		missing.WriteString(optionTypeDeclLine(lay))
+	}
+	if missing.Len() == 0 {
+		return ir
+	}
+	return ir[:preludeEnd] + missing.String() + ir[preludeEnd:]
+}
+
 // newLayoutCodegen builds a codegen carrying ONLY the module, so the layout
 // engine can run outside emitFunc. hir2mir needs the identical numbers for
 // module-level `?T` constants and enum payload slots, and re-deriving them

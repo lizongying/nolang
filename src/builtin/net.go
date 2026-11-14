@@ -175,8 +175,9 @@ func init() {
 	})
 
 	// net-icmp-open: create an ICMP socket for ping
-	// macOS:  socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)  — unprivileged
-	// Linux:  socket(AF_INET, SOCK_RAW,  IPPROTO_ICMP)  — requires root or CAP_NET_RAW
+	// macOS / Linux: socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP) — unprivileged
+	//                (Linux: ping socket gated by net.ipv4.ping_group_range)
+	// Other:         SOCK_RAW (needs CAP_NET_RAW / admin)
 	// Returns: fd (-1 on error)
 	// Use net-udp-sendto / net-udp-recvfrom for I/O (port=0).
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
@@ -184,7 +185,7 @@ func init() {
 		MethodName:   "net-icmp-open",
 		Params:       []parser.Type{},
 		Return:       []parser.Type{parser.TypeFd},
-		Doc:          "Create ICMP socket for ping. Returns fd (-1 on error, requires root on Linux)",
+		Doc:          "Create ICMP socket for ping. Returns fd (-1 on error; macOS/Linux use an unprivileged SOCK_DGRAM ping socket)",
 		ForwardFunc:  "net-icmp-open",
 	})
 

@@ -633,6 +633,13 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		return "", i18n.Errorf("zodppsnm", "MIR->LLVM: %s", strings.Join(c.errs, "; "))
 	}
 	ir := c.sb.String()
+	// A `?T` layout registered after emitPrelude (std module loading /
+	// emitStructTypes' print-helper loop can intern new option types) has no
+	// `%option_<key> = type { ... }` line. LLVM then treats the by-value
+	// argument as an opaque struct and rejects the function header. Repair the
+	// finished text by inserting the missing declarations at the end of the
+	// prelude, before the first use. See injectMissingOptionTypeDecls.
+	ir = injectMissingOptionTypeDecls(ir, preludeEnd, c.sortedOptionLayouts())
 	// Behind the optimiser switch, so a default build emits byte-identical IR.
 	// This has to run on the FINISHED text: the prelude is written before any
 	// of the functions that reference it, and the trailing helper/global/declare
@@ -3617,9 +3624,7 @@ func (c *codegen) emitPrelude() {
 	// payload always starts at byte 8 and the total is 8 + 8K. Sorted by name
 	// because optByLLVM is a map and its iteration order is randomised.
 	for _, lay := range c.sortedOptionLayouts() {
-		fmt.Fprintf(c.sb, "%s = type { i8, %s }    ; tag, %d-byte payload (%d bytes total)%s\n",
-			lay.LLVM, lay.SlotLT, lay.Size-optionPayloadOffset, lay.Size,
-			map[bool]string{true: " boxed", false: ""}[lay.Boxed])
+		c.sb.WriteString(optionTypeDeclLine(lay))
 	}
 	c.sb.WriteString(`
 

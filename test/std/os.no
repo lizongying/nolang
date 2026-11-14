@@ -176,7 +176,19 @@ t-sysinfo = () {
     u = os.uname()
     runner.is-true(u.sysname.len() > 0, 'uname.sysname 非空')
     runner.is-true(u.release.len() > 0, 'uname.release 非空')
-    runner.is-true(u.machine.eq-full(a), 'uname.machine == get-arch')
+
+    ; ⚠ uname.machine 是**內核詞彙**（Linux x86_64 / aarch64、Windows shim 亦同），
+    ;   os.get-arch() 則是**編譯期 GOARCH 詞彙**（amd64 / arm64 / 386，見
+    ;   src/mir/builtin_call.go::emitBuiltinArch → targetGOARCH）。兩者只在 macOS
+    ;   恰好同名；舊斷言 u.machine.eq-full(a) 把這當跨平台契約 ⇒ ubuntu CI 紅一條
+    ;   （2026-11-14）。先把 machine 正規化到 GOARCH 詞彙再比對，保留檢測力。
+    canon = u.machine
+    u.machine.eq-full('x86_64') -> canon = 'amd64'
+    u.machine.eq-full('aarch64') -> canon = 'arm64'
+    u.machine.eq-full('i386') -> canon = '386'
+    u.machine.eq-full('i686') -> canon = '386'
+    u.machine.eq-full('x86') -> canon = '386'
+    runner.is-true(canon.eq-full(a), 'uname.machine 正規化後 == get-arch')
 
     ; _SC_NPROCESSORS_ONLN：macOS=58 / Linux=84，兩邊都應 > 0
     cpu = 58

@@ -878,7 +878,9 @@ enc-accept = (c conn, key [32]byte) (ec enc-conn) {
 
 ;
 ; 使用 net-icmp-open 建立 ICMP socket，在純 Nolang 中實現 ICMP Echo 協議。
-; macOS 使用 SOCK_DGRAM（非特權），Linux 使用 SOCK_RAW（需要 root 或 CAP_NET_RAW）。
+; macOS 與 Linux 都使用 SOCK_DGRAM（非特權）：Linux 走 ping socket，
+; 由 net.ipv4.ping_group_range 授權，一般非特權行程即可用。
+; 未授權的環境 net-icmp-open 回 -1，呼叫端應明確略過。
 ;
 ; 用法：
 ;   ; 單次 ping
@@ -892,7 +894,7 @@ enc-accept = (c conn, key [32]byte) (ec enc-conn) {
 ;   icmp-conn.ping-host('8.8.8.8', 4)
 ; 建立 ICMP socket
 ; 返回 fd fd（-1=失敗）
-; fd: ICMP socket 的檔案描述符（-1=失敗；macOS 走非特權 SOCK_DGRAM，Linux 走 SOCK_RAW 需 root）
+; fd: ICMP socket 的檔案描述符（-1=失敗；macOS/Linux 走非特權 SOCK_DGRAM，未授權時回 -1）
 ; [net-icmp-open](#net.net-icmp-open)
 #{buildin}
 net-icmp-open = () (fd fd) {
@@ -1130,7 +1132,8 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     ; 記錄接收時間
     t-end = os.now-us()
 
-    ; 判斷是否有 IP 標頭（Linux SOCK_RAW 回傳 IP+ICMP，macOS SOCK_DGRAM 只回傳 ICMP）
+    ; 判斷是否有 IP 標頭（SOCK_RAW 回傳 IP+ICMP，SOCK_DGRAM 只回傳 ICMP）
+    ; offset > 0 也就成了「是否為 SOCK_RAW」的可靠訊號，供下方 identifier 過濾使用。
     offset = 0
 
     {
@@ -1170,6 +1173,11 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier（ICMP 標頭 offset+4..offset+6，大端）
+    ; ⚠️ SOCK_DGRAM ping socket（macOS 非特權路徑、Linux ping_group_range 路徑）
+    ;    由核心改寫 identifier：Linux 實測寫入 0x1234、回包卻是 0x0001
+    ;    （socket 的 sport）。核心已按該 identifier 把回應只投遞給對應 socket，
+    ;    使用者態再比對 .ident 反而會把所有回應誤判成失敗。
+    ;    故只有收到 IP 標頭（SOCK_RAW，offset > 0）時才需要自己過濾其他行程的回應。
     #{overflow=wrap}
     ident-high = recv-buf[offset + 4]: {
         ok -> it
@@ -1185,7 +1193,11 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     }
 
     recv-ident = (ident-high << 8) | ident-low
-    recv-ident != .ident -> return
+    {
+        offset > 0 -> {
+            recv-ident != .ident -> return
+        }
+    }
 
     ; 驗證 Sequence（只比較低 16 位；offset+6..offset+8，大端）
     #{overflow=wrap}
@@ -1256,7 +1268,7 @@ ping-count = (host str, count i64) {
     ic icmp-conn
     ok = ic.open()
     ok == false -> {
-        print('ping: cannot create ICMP socket (requires root on Linux)')
+        print('ping: cannot create ICMP socket (no ping socket permission)')
         return
     }
     ic.ping-host(host, count, 1000)

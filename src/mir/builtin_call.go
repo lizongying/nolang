@@ -3098,13 +3098,21 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 // emitBuiltinNetIcmpOpen lowers `net.net-icmp-open()` -> fd i64: create an ICMP
 // socket for ping.
 //
-//	macOS: socket(AF_INET, SOCK_DGRAM=2, IPPROTO_ICMP=1) — unprivileged.
-//	Linux: socket(AF_INET, SOCK_RAW=3,  IPPROTO_ICMP=1) — needs CAP_NET_RAW.
+//	macOS / Linux: socket(AF_INET, SOCK_DGRAM=2, IPPROTO_ICMP=1) — unprivileged.
+//	               On Linux this is the "ping socket", gated by
+//	               net.ipv4.ping_group_range (0 2147483647 on Ubuntu / GH runners).
+//	Other:         socket(AF_INET, SOCK_RAW=3, IPPROTO_ICMP=1).
 //
-// Returns the fd (>=0 on success, -1 on error). Mirrors the legacy backend
-// (build/llvm/call_stdlib.go net-icmp-open), which emits the @socket call inline
-// rather than through a C shim. The OS-specific sockType is chosen at codegen
-// time from the compilation target (see targetGOOS in platform.go).
+// Why Linux no longer uses SOCK_RAW: it needs CAP_NET_RAW, so unprivileged CI
+// runners got fd=-1 and lost every ping assertion. Even with CAP_NET_RAW it
+// does not work: a RAW IPPROTO_ICMP socket receives our own outgoing Echo
+// Request (type=8) before the reply, and ping-once's single recvfrom treats
+// that as a failure. There is no working fallback to preserve, so a host that
+// denies the DGRAM ping socket simply gets fd=-1 and the test suite SKIPs.
+//
+// Returns the fd (>=0 on success, -1 on error). The OS-specific sockType is
+// chosen at codegen time from the compilation target (see targetGOOS in
+// platform.go).
 func (c *codegen) emitBuiltinNetIcmpOpen(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
@@ -3114,9 +3122,9 @@ func (c *codegen) emitBuiltinNetIcmpOpen(inst *Inst) error {
 	if dstLT == "" {
 		dstLT = "i64"
 	}
-	sockType := int32(3) // SOCK_RAW (Linux)
-	if targetGOOS() == "darwin" {
-		sockType = 2 // SOCK_DGRAM (macOS unprivileged ICMP)
+	sockType := int32(3) // SOCK_RAW (other targets)
+	if goos := targetGOOS(); goos == "darwin" || goos == "linux" {
+		sockType = 2 // SOCK_DGRAM (unprivileged ICMP)
 	}
 	c.decl("declare i32 @socket(i32, i32, i32)")
 	sock := c.treg("icmp.sock")

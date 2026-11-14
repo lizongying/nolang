@@ -4,8 +4,9 @@
 ;
 ; 為什麼這裡能測這麼多：net/net 是 60 個符號裡缺口最大的一塊，但**絕大多數
 ; 不需要外部網路** —— 127.0.0.1 上自己 listen、自己 dial，loopback 在沙箱內可用
-; （實測 bind/dial/accept/send/recv 全通）。ICMP 在 mac 上走非特權 SOCK_DGRAM，
-; 對 127.0.0.1 也真的有回應。所以本檔把 **60 個符號全部**釘住（覆蓋率 100%）。
+; （實測 bind/dial/accept/send/recv 全通）。ICMP 在 macOS 走非特權 SOCK_DGRAM、
+; Linux 走 ping_group_range 授權的 SOCK_DGRAM，對 127.0.0.1 也真的有回應；
+; 拿不到 socket 的環境明確 SKIP（見 t-icmp）。本檔把 **60 個符號全部**釘住（覆蓋率 100%）。
 ;
 ; 覆蓋清單（60 個 = 25 函式 + 35 方法）：
 ;   TCP 裸函式：net-listen net-dial net-accept net-accept-nb net-send net-recv close
@@ -20,7 +21,8 @@
 ;   系統表：    ifconfig-list route-list arp-list
 ;   純函式：    icmp-checksum split-ws
 ;
-; ⚠️ 系統表三兄弟在沙箱內回傳空陣列（只釘住「可呼叫且回傳陣列」）；其餘全部真斷言。
+; ⚠️ 系統表三兄弟在沙箱內回傳空陣列（只釘住「可呼叫且回傳陣列」）；
+;   ICMP 在拿不到 socket 的環境明確 SKIP；其餘全部真斷言。
 ;
 ; 寫法備註：
 ;   - 裸下標 `b[i]`/`s[i]` 當實參會被 `no vet` 判 idxbruse ⇒ 一律經 by/sb 取值。
@@ -559,9 +561,15 @@ t-ctors = () {
 
 ; ── ICMP ──────────────────────────────────────────────────
 
-; mac 上 net-icmp-open 走非特權 SOCK_DGRAM（Linux 要 root/CAP_NET_RAW）
+; macOS 走非特權 SOCK_DGRAM；Linux 走 ping_group_range 授權的 SOCK_DGRAM
+; ping socket。未授權的環境（沙箱 / ping_group_range 關閉）net-icmp-open 回 -1，
+; 明確 SKIP，不把環境限制誤報成 std 缺陷。
 t-icmp = () {
     fd = net.net-icmp-open()
+    fd < 0 -> {
+        print('SKIP: net.icmp — 此環境無法建立 ICMP socket（ping_group_range 未授權或沙箱限制）')
+        return
+    }
     runner.is-true(fd >= 0, 'net-icmp-open: 取得 ICMP socket')
     runner.eq(net.close(fd), 0, 'net-icmp-open: 可正常關閉')
 

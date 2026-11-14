@@ -6,6 +6,16 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.23
+
+- fix(net): use unprivileged SOCK_DGRAM ping socket on linux via ping_group_range
+- fix(net): only filter icmp identifier for SOCK_RAW replies, skip on unprivileged socket
+- fix(mir): declare late-registered option layouts to fix flaky codegen build failure
+- fix(test): normalize uname.machine to GOARCH vocabulary before comparing to get-arch
+- test(net): skip icmp assertions when no ping socket is available
+- docs(i18n): add doc translations for de, es, fr, ja, ko, pt, ru, zh-cn, zh-tw locales
+- docs(test): document std coverage and icmp skip rationale in test README
+
 ## v0.4.22
 
 - fix(parser): infer value-match ok-arm tail type to fix option payload mismatch

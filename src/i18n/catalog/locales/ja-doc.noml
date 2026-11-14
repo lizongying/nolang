@@ -6,6 +6,47 @@
 ; copy of it here. Every key must still exist in some .no source, or the gate
 ; rejects it as an orphan.
 {
+  'aes': `
+aes — AES ブロック暗号の中核 (AES-128 と AES-256)
+
+S-box、GF(2^8) 演算、ラウンド関数、鍵拡張を提供。AES ファミリ全体の共通基盤。
+動作モードはここにはなく、同じディレクトリの aes-cbc.no / aes-ctr.no / aes-gcm.no にある。
+
+階層的な使い方 (モード層に適用): 鍵を一度だけ展開し、あとはブロックごとに暗号化/復号する
+ek []byte = aes.key-expand(key [16]byte)       ; 176 バイト、AES-128
+ek []byte = aes.key-expand-256(key [32]byte)   ; 240 バイト、AES-256
+out [16]byte = aes.enc-block(block [16]byte, ek)
+out [16]byte = aes.dec-block(block [16]byte, ek)
+
+単一ブロックの使い方 (鍵拡張を内蔵、ECB の単一ブロック相当):
+out [16]byte = aes.enc-128(block [16]byte, key [16]byte)
+out [16]byte = aes.dec-128(block [16]byte, key [16]byte)
+out [16]byte = aes.enc-256(block [16]byte, key [32]byte)
+out [16]byte = aes.dec-256(block [16]byte, key [32]byte)
+
+注意: enc-block / dec-block のラウンド数は ek の長さから導出される (nr = ek.len() / 16 - 1)、
+そのため AES-128 (10 ラウンド) と AES-256 (14 ラウンド) は同じラウンドループを共有する。
+`
+  'aes-cbc': `
+aes-cbc — AES-CBC 暗号化／復号モード (AES-128 および AES-256)
+
+AES ブロック暗号の上に CBC (Cipher Block Chaining) モードを実装します。
+CBC 暗号化: C_i = AES_enc(P_i ⊕ C_{i-1}), C_0 = IV
+CBC 復号: P_i = AES_dec(C_i) ⊕ C_{i-1}, C_0 = IV
+
+鍵長はファイルの次元ではありません。同じ CBC ロジックが AES-128 と AES-256 の両方に適用されます。
+唯一の違いは、エントリポイントが aes.key-expand と aes.key-expand-256 のどちらを使うかです。
+
+使用方法:
+iv [16]byte
+key [16]byte
+padded = aes-cbc.pkcs7-pad(plain)
+cipher = aes-cbc.enc-128(padded, key, iv)
+plain  = aes-cbc.dec-128(cipher, key, iv)
+n      = aes-cbc.pkcs7-unpad(plain)
+; for AES-256 use key [32]byte with enc-256 / dec-256
+`
+  'aes-cbc.aes-block-size': 'AES ブロックサイズ'
   'aes-cbc.cbc-dec': `
 CBC 復号コア（ラウンドキーは呼び出し側で一度展開）
 各ブロックはまず AES-ECB 復号を実行し、前の暗文ブロックと XOR します。パディングの検証は行いません。
@@ -64,6 +105,22 @@ PKCS#7 パディング除去
 in: 復号後のデータ（PKCS#7 パディングを含む；長さ 0 はパディング不正とみなされます）
 out-n: パディング除去後の有効長。パディング値が不正・範囲外・検証不一致の場合は -1
 `
+  'aes-ctr': `
+aes-ctr — AES-CTR カウンタモード（AES-128 および AES-256）
+
+CTR モードはブロック暗号をストリーム暗号に変換する。
+カウンタがインクリメントされ暗号化され、生成されたキーストリームが平文と XOR される；暗号化と復号は同一の操作である。
+
+鍵長はファイルレベルの次元ではない：同じ CTR ロジックが AES-128 と AES-256 の両方に使われ、
+唯一の違いはエントリポイントが aes.key-expand と aes.key-expand-256 のどちらを使うかである。
+
+usage:
+iv [16]byte
+key [16]byte
+cipher = aes-ctr.crypt-128(plain, key, iv)   ; encrypt
+plain  = aes-ctr.crypt-128(cipher, key, iv)  ; decrypt (same function)
+; AES-256 は代わりに key [32]byte と crypt-256 を使用する
+`
   'aes-ctr.crypt-128': `
 AES-128-CTR 暗号化/復号（対称操作）
 同一キー・同一 iv（nonce）で 2 回呼び出せば元に戻ります。(key, iv) の組み合わせの再利用は絶対に不可。
@@ -91,6 +148,22 @@ ek: aes.key-expand / aes.key-expand-256 で展開したラウンドキー
   'aes-ctr.ctr-inc': `
 カウンタインクリメント（ビッグエンディアン、下位 32 ビットに 1 を加算し桁上げは上位へ伝搬）
 cb: 16 バイトのカウンタブロック。変更は後方 4 バイト（インデックス 12〜15）のみ
+`
+  'aes-gcm': `
+aes-gcm — AES-GCM AEAD 暗号化/復号（NIST SP 800-38D、AES-128 および AES-256）
+
+GCM = AES-CTR（カウンタモード）+ GHASH（GF(2^128) 認証）。
+カウンタインクリメントのロジックは aes-ctr.ctr-inc を再利用します；鍵長はファイルの次元ではなく、
+唯一の違いはエントリが aes.key-expand と aes.key-expand-256 のどちらを使うかです。
+
+使い方:
+key [16]byte
+iv [12]byte
+aad []byte = 'additional data'
+plain []byte = 'plaintext'
+sealed = aes-gcm.seal-128(key, iv, aad, plain)   ; 暗号文 + 16 バイトタグ
+opened = aes-gcm.open-128(key, iv, aad, sealed)  ; 平文、認証失敗時は長さ 0
+; AES-256 では key [32]byte と seal-256 / open-256 を使用
 `
   'aes-gcm.ctr-xor': `
 AES-CTR でキーストリームを生成しデータと XOR
@@ -223,6 +296,11 @@ GF(2^8) において x（多項式 x）を掛ける
 x: 0..255 のバイト値
 r: x·{02} の GF(2^8) での結果（左シフトで桁あふれした場合は 0x11b で約減）
 `
+  'aes.gf-mul3': `
+GF(2^8) 内で {03} を掛けます（つまり x+1）
+x: 0..255 の byte 値
+r: x·{03} の結果
+`
   'aes.inv-mix-col': `
 逆 MixColumns（係数 9,11,13,14 を使用）
 b0: 列の 0 番目のバイト
@@ -277,6 +355,11 @@ rcon: ラウンド定数
 round: ラウンド番号（1..14）
 r: 該当ラウンドのラウンド定数 x^(round-1)（すなわち 1,2,4,…,0x6b,0xd8,0xab,0x4d；その他のラウンド番号では 0 を返します）
 `
+  'aes.rot-word': `
+32-bit ワードを 8 ビット左に回転します（RotWord：最上位バイトが下位側へ移動します）
+w: 32-bit ワード（ビッグエンディアンのバイト順で解釈）
+r: 回転後の 32-bit ワード
+`
   'aes.shift-rows': `
 ShiftRows（i 行目を i バイト左ローテート）
 state: 16 バイトの状態行列（連続 4 バイトごとに 1 行とみなし、i 行目を i バイト循環左シフト、in-place 変更）
@@ -286,6 +369,30 @@ S-box で状態内の各バイトを置換
 state: 16 バイトの状態（先頭 16 要素を 1 バイトずつ S-box で置換）
 n: 予約済みパラメータ（実装は固定で 16 バイトを処理、未使用）
 `
+  'aes.sub-word': `
+32-bit ワードの 4 バイトそれぞれを S-box で置換する (SubWord)
+w: 32-bit ワード
+r: 置換後に組み直した 32-bit ワード
+`
+  'argon2': `
+argon2 — Argon2id メモリハードな鍵導出関数 (RFC 9106)
+
+Argon2 は Password Hashing Competition の優勝者です。
+Argon2id はハイブリッドモードで、時間攻撃と領域攻撃の両方に耐性があります。
+
+基底のハッシュ関数として Blake2b を使用します。
+
+使用方法:
+# std/crypto/argon2
+password []byte = 'password'
+salt []byte = 'somesalt'
+// parameter: time_cost=3, memory_cost=4096, parallelism=1, output_len=32
+derived = id(password, salt, 3, 4096, 1, 32)
+`
+  'argon2.argon2-block-size': 'ブロック・サイズ（1024 bytes = 128 × 8 bytes）'
+  'argon2.argon2-id': 'Argon2 タイプ'
+  'argon2.argon2-mask': '64-bit の全ビット 1 マスク'
+  'argon2.argon2-version': 'Argon2 バージョン'
   'argon2.blake-g': `
 Blake2b G 関数（Argon2 圧縮関数の基本混合ステップ）
 配列 v のインデックス a/b/c/d の 64 ビットワードを in-place で直接変更します（二つずつ加算・XOR・ローテート）。
@@ -330,6 +437,12 @@ x: ローテートする 64-bit ワード
 n: 右シフトビット数（1〜63；0 または 64 の場合のシフトは未定義）
 r: (x >> n) | (x << (64-n))、下位 64 ビットのみ保持
 `
+  'args': `
+args — コマンドライン引数の解析
+
+低レベルアクセスに os.args() / os.arg() に依存します。
+フラグ検出、オプション読み取り、位置引数などの高レベルインターフェースを提供します。
+`
   'args.count': `
 引数の数（プログラム名を含む）
 os.args() builtin に委譲する（argv ベクタ全体を返し、その長さを取る）
@@ -368,6 +481,55 @@ yes: true=argv に flag と完全に一致する要素が存在する, false=存
 プログラム名（第 0 引数、つまり argv[0] のそのまま）
 name: ok=argv[0]（通常は実行ファイルパス、ディレクトリを含む場合あり）, nil=argv が空
 `
+  'arr': `
+arr — 配列操作
+
+固定サイズ配列に対する汎用操作を提供します。
+汎用パラメータは a-z の 1 文字で推論されます。
+
+スライスはビューであり、独立した型ではありません: arr をスライス（例 a[1..3]）すると []t (vec) ビューが生成され、
+データをコピーせずに arr の基底メモリを共有します。
+したがって vec の全メソッド（len、push、pop、contains、reverse、clone、fill、to-arr など）は
+arr のスライスビューに適用されます。スライス経由で要素を変更すると元の arr に影響します。
+`
+  'arr-stack': `
+arr-stack — ジェネリックなスタック（固定長配列を基盤）
+
+LIFO（後入れ先出し）データ構造で、[n]t の固定長配列を基盤となる格納域として使用します。
+top は次の書き込み位置（現在の要素数とも等しい）を指します。
+
+ジェネリック設計：値操作（push/pop/peek）は [n]t 上に定義されます；
+ジェネリックパラメータ n（配列サイズ）と t（要素型）はコンパイラにより自動的に推論されます。
+スタックの状態（cap/top）は arr-stack 構造体に別途格納されます。
+
+stack との違い:
+- arr-stack はジェネリックな [n]t を使用し、任意の要素型（i64/u8/byte など）をサポートします
+- stack は []i64 のみをサポートします
+- arr-stack の pop/peek は ?t オプションを返し、stack は (val, ok) を返します
+
+使い方:
+buf [128]i64
+s = buf.arr-stack-init()
+ok = buf.arr-stack-push(s, 42)
+ok = buf.arr-stack-push(s, 7)
+val = buf.arr-stack-pop(s)      // val = ok（後入れ先出し）
+val = buf.arr-stack-pop(s)      // val = ok
+val = buf.arr-stack-pop(s)      // val = nil（スタック空）
+sz = s.size()
+yes = s.empty()
+
+// オプションのアンラップ
+val = buf.arr-stack-pop(s)
+val: {
+nil -> print('empty')
+-> print(it)          // it = 取り出された値
+}
+`
+  'arr-stack.arr-stack': `
+arr-stack: スタック状態 (バッファなし。バッファは [n]t レシーバーが提供)
+cap: 容量 (= 配列長 n)
+top: スタック先頭索引 (次の書き込み位置、同時に要素数にも等しい)
+`
   'arr-stack.arr-stack.clear': 'スタックを空にする'
   'arr-stack.arr-stack.empty': `
 スタックが空かを判定する
@@ -384,6 +546,7 @@ yes: true=top >= cap（次の push は失敗または溢れ、先に pop すべ�
 戻り値 sz: 要素数
 sz: 現在のスタック深さ（すなわち top ポインタ）、ポップ済み空スロットを含まない
 `
+  'arr.arr': '`[n]t` は LLVM レベルでは裸の集合体 `[N x T]` です: 要素はインラインで、len/cap フィールドもヒープポインタもありません。\n`.len` はメモリを読みません。コンパイラがコンパイル時定数 n に直接置き換えます（下の [n]t.len を参照）。\nしたがってここでは擬似フィールド len のみを宣言し、cap も data もありません。\n実行時の長さ／容量が必要な場合は代わりにスライス `[]t` を使用します（std/vec.no の vec 宣言を参照）。'
   'arr.arr-stack-init': `
 [n]t.arr-stack-init: スタック状態を初期化する
 cap は配列サイズ n に自動設定される
@@ -559,7 +722,7 @@ val: 積む値
   'arr.sum': '[n]t.sum: 配列要素の総和'
   'arr.swap': `
 [n]t.swap: 2 つの位置の要素を入れ替える
-i i64, j: 位置
+i, j: 位置
 
 `
   'arr.to-str': `
@@ -571,6 +734,50 @@ i i64, j: 位置
   'arr.to-vec': '[n]t.to-vec: 配列を []t ベクタに変換する配列メソッド'
   'arrords.asc': '[n]ord.asc: 昇順にその場でソートする（挿入ソート）'
   'arrords.desc': '[n]ord.desc: 降順にその場でソートする（挿入ソート）'
+  'async': `
+async — コルーチン / 非同期タスクとキャンセルプリミティブ (D10)
+
+⚠️ 非推奨（手書きプリミティブ）: run / awy / cancel / cancelled は非推奨です。
+アプリケーションコードに手書きしないでください。タスクハンドルの手動管理は安全ではありません（await しないと引数バッファがリークし、
+コピーしたハンドルを二重に await するとクラッシュします）。また協調的キャンセルは長時間のブロッキング呼び出しを強制中断できません。
+代わりに「コルーチングループ」を使用してください（文の位置にある裸のブロック { ... }）。このファイルは低レベル参照用にのみ残されています。
+
+nolang は協調的・シングルスレッド・スタックレスの非同期コルーチンモデルを提供します:
+- `awy f-async(args)`  -async 関数の完了を同期的に待機します（コルーチン内の現在のタスクを中断する場合があります）。
+- `run f-async(args)`  -async 関数をバックグラウンドタスクとして開始し、即座に不透明な
+タスクハンドル（基底は i8*）を返し、現在のコルーチンをブロックしません。
+- `awy h`              バックグラウンドタスク h の完了を待機し、その結果を返します。
+
+実際の「キャンセル」プリミティブ（以前は未実装）は次のとおりです:
+- `cancel(h)`        タスク h をキャンセルします: %task.cancelled フラグを設定します。
+イベントループが h をスケジュールすると、async_wrapper は入口でフラグを確認し、
+設定されていれば対象関数をスキップして done=true を設定します（正常な中断）、
+そのため待機側（awy h）は即座に戻れます。
+- `cancelled()`      協調的な自己キャンセル確認: 現在実行中のタスクがキャンセル済みかどうかを返します。
+非同期関数（例: Agent Loop）は各ステップの開始時にこれを呼び、
+true を返した場合は早期に戻ることで「外部キャンセル後すみやかに終了」します。
+
+注記（協調的キャンセルの限界）:
+長時間のブロッキング呼び出し（例: 単一の LLM ネットワークリクエスト）は強制中断できません。cancel がフラグを設定した後、
+タスクが実際に停止するのは「次の協調的チェックポイント」（cancelled() 呼び出し、またはイベントループの次のスケジューリング）だけです。
+したがってキャンセルは「即時」ではなく「迅速」です — 協調的スケジューリングモデルに固有の性質です。
+
+使用例:
+// start a background task and cancel it later
+h = run worker-async(...)
+...
+cancel(h)        ; request cancellation
+r = awy h              ; wait (returns immediately if cancelled, r is the zero value)
+
+// cooperative check inside an async function
+worker-async = (n i64) (r i64) {
+loop i in 0..n {
+if cancelled() { return 0 }   ; exit early if cancelled
+r = r + step(i)
+}
+r
+}
+`
   'async.cancel': `
 ⚠️ 非推奨: 手書きの cancel は非推奨。代わりにコルーチングループ（裸のブロック { ... }）を使う。
 cancel: run() で開始したバックグラウンドタスクをキャンセルする
@@ -583,6 +790,17 @@ cancelled: 現在実行中の非同期タスクがキャンセル済みかを返
 戻り値 bool。非同期タスク（イベントループがスケジュールした -async 関数）内でのみ意味を持つ。
 cancelled: true=現在のタスクの取消が要求済み、速やかにリソースを解放して返すべき；false=未取消
 `
+  'base32': `
+base32 — Base32 エンコード/デコード（RFC 4648）
+
+バイトデータを Base32 文字列（A-Z, 2-7）にエンコードします。
+5 バイトごとに 8 文字へエンコードし、残りは '=' で埋めます。
+
+使用方法:
+encoded = encode(data)
+decoded = decode(encoded)
+`
+  'base32.base32-alphabet': 'Base32 アルファベット'
   'base32.decode': `
 Base32 デコード（末尾の '=' パディング数に応じて結果を切り詰め；文字表外の文字は一律 0 として扱い、エラーにしません）
 注意：長さが 8 の倍数でない残余文字は無視されます。
@@ -594,6 +812,11 @@ Base32 エンコード（RFC 4648 標準文字表、5 ビットごとに 1 組�
 data: エンコード対象の入力バイト
 out: エンコード後の文字列。長さは 8 の倍数（空入力は空文字列に対応）
 `
+  'base64': `
+encoding/base64 — Base64 エンコード/デコード（RFC 4648）
+
+標準および URL セーフの両アルファベットのエンコード/デコードを提供します。
+`
   'base64.b64-val': `
 Base64 の 1 文字をその値に変換する
 埋め文字 '=' は 0 を返し、アルファベット外の文字は -1 を返す
@@ -601,6 +824,8 @@ c: テーブル参照する文字のコードポイント
 table: 64 文字のアルファベット；線形走査で対応する添字を見つける
 v: 0..63 はアルファベット添字、-1 は無効文字
 `
+  'base64.base64-std': '標準 Base64 アルファベット'
+  'base64.base64-url': 'URL 安全な Base64 アルファベット'
   'base64.decode': `
 指定した辞書で Base64 をデコードする
 s: Base64 文字列（4 の倍数であるべき；1 組に満たない末尾文字は無視される）
@@ -622,6 +847,17 @@ out: 標準 Base64 文字列（'=' 埋め）
 URL 安全アルファベット（A-Za-z0-9-_）でエンコード
 data: エンコードする入力バイト
 out: URL 安全 Base64 文字列（'=' 埋めは保持）
+`
+  'base64.pad': 'パディング文字 \'=\''
+  'bigint': `
+bigint — 任意精度整数
+
+基底 2^32 のリトルエンディアン []i64 スライスで表現。
+各 i64 要素が 1 つの 32-bit limb を格納し、高位 limb が先頭に来る。
+負数は sign フィールドで示す (符号・絶対値表現)。
+
+crypto/rsa.no と同じ基底の []i64 表現を共有。
+このモジュールは完全な多倍長算術ライブラリを提供する。
 `
   'bigint._add': 'a + b（演算子オーバーロード；?bigint と記述、コンパイラは bigint とみなす）\n経路 C：連合仮引数 `(b big)` ＋ 型分解 match。bigint 腕は `add-bigint` へ委任、i64 腕は\n`_add-i64` に委任。コアは型腕内に inline しない：実測では match 腕の BlockStatement 内で名前付き出力に\n仮引数 `c` で先に `c = expr` してから `c.sign = ...` のフィールド変更は書き戻されない（符号が失われる、例 -100+7\n誤って 93 を得る）、普通のメソッドへ委任後 `c.sign` 変更セマンティクスは正常に戻る（_mul が mul-bigint へ委任するのと同じ理屈）。\nb: 右オペランド（bigint または i64、実型種で腕を静的選択）\nc: self + b の和（?bigint は演算子オーバーロードのシグネチャに必要、加算は常に ok）'
   'bigint._add-i64': `
@@ -693,6 +929,15 @@ self + b の big⊕big コア（通常の具象メソッド、演算子オーバ
 b: 右オペランド bigint
 c: self + b の和（符号合成込み、_add の bigint 腕の委譲用）
 `
+  'bigint.base': `
+2^32
+
+`
+  'bigint.big': '演算子オーバーロードのための「ユニオンパラメータ」型 (ルート C)。`a + 1` のような混合オペランドは\n`_add = (b big)` + b の具象型に対する型分解マッチによって静的にディスパッチされます; 右側の i64 スカラーは\ni64 アーム (既存の `_*-i64` プライベートメソッド経由) を取り、bigint は同型アーム (元の big⊕big コア) を取ります。\nプライベート規約: `_add-i64` / `_mul-i64` / `_div-i64` / `_mod-i64` などの小整数高速パスは\n本モジュール内でのみ使用するためのものです; 他モジュールは演算子オーバーロード (`+ - * / %`、すなわち `_add`/`_sub`/`_mul`/`_div`/`_mod`) を使用しなければなりません。'
+  'bigint.bigint': `
+型定義
+bigint: 任意精度整数
+`
   'bigint.cmp': `
 self と b を比較する（1=大きい, 0=等しい, -1=小さい）
 b: 比較する bigint
@@ -748,6 +993,7 @@ l = lcm(self, b)
 b: もう一方の整数
 l: 最小公倍数 = self/gcd × b（いずれかゼロなら 0）
 `
+  'bigint.mask': '32-bit マスク'
   'bigint.mod-pow': `
 r = self^exp mod modulus
 exp: 指数 bigint（ビット順スキャン、任意精度対応）
@@ -806,6 +1052,18 @@ bigint を 10 進文字列に整形する
 ゼロの bigint を構築する
 out: 値が 0 の bigint（sign=1、limbs=[0]）
 `
+  'blake2': `
+b — BLAKE2b ハッシュアルゴリズム（RFC 7693）
+
+BLAKE2b は 64 ビットプラットフォーム向けに最適化されており、最大出力は 64 バイトです。
+ブロックサイズ 128 バイト、12 ラウンド、64 ビット語を使用します。
+
+使い方:
+# std/crypto/b
+hash = b(data)           // [64]byte, default output 64 bytes
+hash32 = b-256(data)     // [32]byte, output 32 bytes
+hex = b-hex(data)        // 128-character hex string
+`
   'blake2.b': `
 BLAKE2b ハッシュを計算（64 バイト出力）
 data: ハッシュ対象の入力バイト
@@ -850,6 +1108,18 @@ data: ハッシュ対象の入力バイト
 配列スライス構文を直接使い、手動コピーは不要です。
 h: 新しくコピーされた BLAKE2b 初期状態（8 つの u64、配列バッファから分離）
 `
+  'blake2.blake2b-iv': `
+BLAKE2b 初期ベクトル（IV, = SHA-512 IV）。
+IV[0] = 0x6a09e667f3bcc908 は元の値です; パラメータブロック（0x01010000 | out-len）は
+b()/b-256() 自身によって h[0] に XOR されます; パラメータブロックをあらかじめ IV にマージしてはいけません。
+`
+  'blake2.blake2b-mask': '64 ビット全 1 マスク'
+  'blake2.blake2b-sigma': '置換表（sigma）'
+  'blake2.blake2s-iv': `
+BLAKE2s 初期化ベクトル (IV) —— SHA-256 と同じ
+注意: 過去に ChaCha の "expand 32-byte k" 定数 (0x61707865...) を誤用し、すべての BLAKE2s ハッシュが誤っていました。
+`
+  'blake2.blake2s-sigma': 'BLAKE2s 置換表（BLAKE2b と同じ）'
   'blake2.rotr32': `
 32-bit 循環右シフト
 x: 右ローテートする 32 ビット値
@@ -893,9 +1163,27 @@ data: ハッシュ対象の入力バイト
 上記と同じく BLAKE2s 版（BLAKE2s は 32 ビットワードのため []u32、[]u64 ではない）
 h: 新しくコピーされた BLAKE2s 初期状態（8 つの u32）
 `
+  'bool': `
+bool — ブール型標準ライブラリ
+
+bool 型の一般的な操作を提供する。
+基盤表現: i1 (1 バイト、0 または 1)
+`
   'bool.to-str': `
 bool を文字列 "true" または "false" に変換する
 out: true → 'true'、false → 'false'（長さ 4 または 5）
+`
+  'bufio': `
+bufio — バッファ付き I/O
+
+os.read / os.write 向けのバッファ付き読み書きと行読み取りを提供します。
+`
+  'bufio.reader': `
+reader: バッファ付きリーダー状態
+fd: オープンされたファイル記述子、fs.read により消費される
+buf: 呼び出し側が提供するバッファ (容量が 1 回の読み取り上限を決定)
+pos: buf から次に取得するバイトのインデックス
+avail: buf に充填されたがまだ消費されていないバイト数
 `
   'bufio.reader.close': `
 リーダをクローズ（fd のみ閉じ、buf は解放しない；buf は呼び出し側スコープ管理）
@@ -921,6 +1209,24 @@ b: ok=次のバイト, nil=EOF または読み取り失敗
 行末に改行がないときは残り内容を返す；file が空で今回何も読めなかったときは nil を返す。
 line: ok=その行のテキスト（'\n' 無し）, nil=EOF かつ残余内容無し
 `
+  'byte': `
+byte — バイト操作
+
+int64 と []byte の間の変換を提供。
+
+使用法：
+v = 0x1234
+out = v.to-bytes-be()       // out = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34]
+out = v.to-bytes-le()       // out = [0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+data = [0x12, 0x34]
+v = data.to-i64-be()        // v = 0x1234
+v = data.to-i64-le()        // v = 0x3412
+
+[n]byte と []byte の相互変換には arr.to-vec() / []byte.to-arr() を使う
+`
+  'byte.hex-lower': '小文字 16 進文字表'
+  'byte.hex-upper': '大文字 hexadecimal 文字テーブル'
   'bytes.index': `
 []byte.index: []byte から部分列 target を探す
 初回出現位置を返す、見つからなければ -1
@@ -968,6 +1274,30 @@ b.to-bytes-str()（下記参照）、または基のスライスを直接使用�
 []byte.to-txt: []byte を txt に変換（255 バイトに切り詰め）
 返す out: 固定 256 バイトの txt 構造
 `
+  'bzip2': `
+bzip2 — BZIP2 圧縮・伸長 (純 Nolang 実装)
+
+BZIP2 伸長アルゴリズムをすべて Nolang で実装しており、
+逆 Burrows-Wheeler Transform (BWT)、逆 Move-To-Front (MTF)、
+Huffman デコード、Run-Length Encoding (RLE) デコードを含む。
+
+対応:
+- BZIP2 伸長: .bz2 形式の完全デコード
+
+使い方:
+data = fs.read-file('example.bz2')  ; bz2 ファイルを []byte として読む
+decompressed = bzip2.decompress(data)
+
+アルゴリズム参考: bzip2 公式フォーマット仕様
+https://sourceware.org/bzip2/
+`
+  'bzip2.bz-bit-reader': `
+bz-bit-reader: bzip2 ビット・リーダー（MSB-first）
+data: 復号する生バイト・バッファ
+pos: bit-buf へ次に読み込むバイトのバイト・インデックス
+bit-buf: ビット・バッファ。未消費の下位 bit-cnt ビットのみが残る
+bit-cnt: bit-buf で読み取り可能な残りビット数（0 は次のバイトを読み込む必要がある）
+`
   'bzip2.bz-bit-reader.read-bit': `
 1 ビット読み取り（MSB 優先）。範囲外なら 0 を返します
 bit: 読み取ったビット（0 または 1）；バイトを使い切ると以降は固定で 0 を返し、エラーにしません
@@ -976,6 +1306,14 @@ bit: 読み取ったビット（0 または 1）；バイトを使い切ると�
 n ビット読み取り（MSB 優先）
 n: 連続で読み取るビット数
 v: 組み立てた整数；先に読んだビットは上位に配置
+`
+  'bzip2.bz-huffman': `
+bz-huffman: bzip2 方式の Huffman デコード表（base / limit / perm の 3 配列）
+limit: 各符号長で許容される最大符号値（昇順）
+base: perm 内での各符号長の開始オフセット
+perm: 符号長と辞書順で並べたシンボル表
+min-len: 最短符号長。0 は表が空でデコードが即座に失敗することを意味します
+max-len: 最長符号長
 `
   'bzip2.bz-huffman.build': `
 コード長配列から Huffman コードテーブルを構築
@@ -1006,6 +1344,26 @@ out: bzip2 圧縮後のデータ（[]byte）
 bzip2 形式のデータを解凍します
 data: bzip2 圧縮データ（[]byte）
 out: 解凍後のデータ（[]byte）
+`
+  'chacha20-poly1305': `
+chacha20-poly1305 — ChaCha20-Poly1305 AEAD 暗号（RFC 8439）
+
+ChaCha20 は 256 ビット鍵のストリーム暗号です；Poly1305 は 128 ビット MAC です。
+これらを組み合わせた ChaCha20-Poly1305 AEAD は、機密性と完全性を提供します。
+
+使い方:
+# std/crypto/chacha20-poly1305
+key: 256 ビット鍵
+nonce: 96 ビットナンス
+aad: 追加の認証データ
+plain: 平文
+sealed = chacha20-poly1305-seal(key, nonce, aad, plain)
+opened = chacha20-poly1305-open(key, nonce, aad, sealed)
+`
+  'chacha20-poly1305.cc-mask32': '32 ビット全 1 マスク'
+  'chacha20-poly1305.cc-sigma0': `
+ChaCha20 定数 "expand 32-byte k"
+各 32 ビット リトルエンディアン値
 `
   'chacha20-poly1305.chacha20-block': `
 64 バイトのキーストリームブロックを 1 つ生成
@@ -1071,6 +1429,18 @@ x: 循環左シフトする 32 ビット符号なし値
 n: シフト量（ビット数；呼び出し側が 32 未満を保証し、関数内で剰余は取りません）
 r: 循環左シフト後の結果（32 ビットにマスク済み）
 `
+  'char': `
+char — 文字操作
+
+char は本質的に i32 (Unicode コードポイント / rune)。
+文字分類、大文字小文字変換、UTF-8 エンコードなどのメソッドを提供する。
+
+usage:
+c = "A"                  // 二重引用符 = char リテラル (単一文字 rune)
+yes = c.is-upper()       // true
+u = c.to-lower()         // "a"
+s = c.to-str()           // s = 'A' (単一引用符 = str)
+`
   'char.is-alnum': `
 文字が英数字かを判定する
 result: レシーバーが英字または数字のとき true を返す
@@ -1134,6 +1504,35 @@ result: 小文字を大文字へ変換した文字（a-z 以外はそのまま�
 直接 "unknown callee []t.to-chars" と報告され、コンパイル不能。
 コンパイラが []char スライスサポートを直すまで、to-chars / []char.to-str に依存しないこと。
 `
+  'client': `
+client — 高レベル TCP クライアント
+
+conn をラップし、listener と対称。接続状態の追跡、再接続、リクエスト・レスポンスモードなどの便宜を提供する。
+配下で net.no の conn 構造体と net-* 組み込み関数を使用する。
+
+usage:
+c = client{}
+ok = c.connect('127.0.0.1', 8080)
+n = c.send('hello')
+n = c.recv(buf, 1024)
+c.close()
+
+// リクエスト・レスポンスモード
+response = c.request('PING')              // ?str を返す
+
+// 再接続
+ok = c.reconnect()
+
+// 便利関数
+c = client-create('127.0.0.1', 8080)          // ?client を返す
+`
+  'client.client': `
+client: 高水準 TCP クライアント
+c: 基盤となる TCP 接続（net.conn 構造体）
+host: 対象ホスト（再接続用に記録）
+port: 対象ポート番号
+connected: 接続状態
+`
   'client.client-create': `
 クライアントを構築し接続します
 返り値 c: ok=クライアント, nil=失敗
@@ -1184,6 +1583,23 @@ data: 送信するバイト内容の文字列
 返り値 written=実際の送信バイト数（-1=エラー）
 line: 送信する行テキスト（改行が自動で付加されます）
 `
+  'cookie': `
+cookie — HTTP Cookie の処理
+
+Cookie の解析、構築、管理（Cookie Jar）を提供する。
+Set-Cookie ヘッダの解析、Cookie ヘッダの構築、Cookie の保存と取得をサポートする。
+改ざん防止のための HMAC-SHA256 ベースの署名付き Cookie をサポートする。
+
+usage:
+// parse the Set-Cookie header
+c = parse-set('sessionid=abc123; Path=/; HttpOnly; Secure')
+c.valid -> {
+print(c.name)        // 'sessionid'
+print(c.value)       // 'abc123'
+print(c.path)        // '/'
+print(c.http-only)   // true
+print(c.secure)      // true
+`
   'cookie.build-header': `
 Cookie リクエストヘッダを構築
 names: Cookie 名配列（固定長 [16]str、先頭 count 件を取得）
@@ -1196,6 +1612,20 @@ Set-Cookie ヘッダ値を構築
 c: シリアライズ対象の cookie 構造体
 返り値 out: 組み立てた Set-Cookie ヘッダ値文字列
 `
+  'cookie.cookie': `
+cookie: 単一の Cookie
+valid: 有効かどうか
+name: Cookie 名
+value: Cookie 値
+domain: ドメイン
+path: パス
+expires: 有効期限 (Unix ミリ秒、0=セッション Cookie)
+max-age: 最大存続秒数 (-1=未設定)
+secure: HTTPS のみかどうか
+http-only: JS アクセスを禁止するかどうか
+same-site: SameSite ポリシー ('Strict', 'Lax', 'None')
+`
+  'cookie.cookie-jar-max': 'Cookie Jar の最大容量'
   'cookie.cookie-sign': `
 Cookie 値に HMAC-SHA256 署名を付与
 注：旧名 sign は num.sign のメソッドシンボルと衝突し（クロスモジュール呼び出しが signum と解釈され、
@@ -1212,6 +1642,14 @@ signed-value: 検証対象の署名値（形式：value.hex-hmac）
 key: HMAC-SHA256 署名キー
 返り値 ok: true=署名比較通過（定数時間比較）
 返り値 value: 署名剥離後の元の Cookie 値（検証失敗時は空）
+`
+  'cookie.jar': `
+jar: Cookie ストア
+names: Cookie 名の配列
+values: Cookie 値の配列
+domains: ドメイン配列
+paths: パス配列
+count: 格納された Cookie の数
 `
   'cookie.jar.build-header': `
 条件に合致する Cookie リクエストヘッダを構築
@@ -1282,6 +1720,14 @@ Set-Cookie ヘッダ値を解析
 set-cookie-str: Set-Cookie ヘッダ値 1 件（例 name=value; Path=/; HttpOnly）
 返り値 c: 解析された cookie 構造体（name/value/domain/path/max-age/secure などのフィールドを含む）
 `
+  'crc-16': `
+crc16 — CRC-16 巡回冗長検査 (CCITT バリアント)
+
+CRC-16-CCITT 多項式 0x1021、初期値 0xFFFF を使用する。
+
+usage:
+h = new(data)
+`
   'crc-16.hex': `
 CRC-16 を計算し 4 桁の小文字 hex 文字列を返します
 data: 入力バイト。すべて計算に参加
@@ -1292,11 +1738,28 @@ CRC-16-CCITT（多項式 0x1021、初期値 0xFFFF）チェックサムを計算
 data: 入力バイト。すべて計算に参加
 crc: 16-bit チェックサム（0..65535）
 `
+  'crc-32': `
+crc32 — CRC32 巡回冗長検査
+
+標準 CRC-32（IEEE 802.3）多項式 0xEDB88320 を使用します。
+
+使い方:
+h = new('hello', 5)
+`
   'crc-32.new': `
 CRC-32（IEEE 802.3、反射多項式 0xEDB88320）チェックサムを計算
 s: 入力バイトバッファ
 n: 実際に計算に参加するバイト数（s の長さより小さく可能）；s[0..n) のみ走査
 crc: 32-bit チェックサム（最終 xorout 0xFFFFFFFF 適用済み）、範囲は 0..4294967295
+`
+  'crc-64': `
+crc64 — CRC-64 巡回冗長検査（ECMA-182 変種）
+
+CRC-64-ECMA 多項式 0x42F0E1EBA9EA3693 を使用します。
+入力と出力は反射（LSB ファースト）、初期値 0、最終 XOR なし。
+
+使い方:
+h = new(data)
 `
   'crc-64.hex': `
 CRC-64 を計算し 16 桁の小文字 hex 文字列を返します
@@ -1307,6 +1770,18 @@ hex: 固定 16 文字の 16 進表記（上位桁先、0x プレフィックス�
 CRC-64/ECMA-182（反射多項式 0xC96C5795D7870F42、初期値は全 1）チェックサムを計算
 data: 入力バイト。すべて計算に参加
 crc: 64-bit チェックサム（最終 xorout 適用済み）
+`
+  'csv': `
+csv — CSV ファイルの解析
+
+CSV 形式の読み取りと生成を提供します。
+標準 CSV 形式 (RFC 4180) をサポートします。カンマ区切り、二重引用符によるエスケープ。
+
+使用方法:
+use std/encoding/csv
+line = 'a,b,c'
+fields = csv.parse-line(line)           // max-fields defaults to 1024
+fields = csv.parse-line(line, 3)        // limits to at most 3 fields
 `
   'csv.encode-field': `
 1 つのフィールドを CSV としてエンコードする
@@ -1329,6 +1804,32 @@ CSV テキストの 1 行をパースする
 s: 解析対象の 1 行テキスト（行末改行を含めてはならない）
 max-fields: 解析する最大フィールド数（既定 1024）；上限到達後の残余内容は破棄
 返す fields: 解析されたフィールドリスト、長さ ≤ max-fields
+`
+  'deque': `
+deque — 両端キュー
+
+[]i64 を使用して両端キュー（Double-Ended Queue）を実装します。
+前後両端からの要素の push/pop をサポートします。
+内部では循環バッファを使用します。
+
+使い方:
+use std/deque
+buf [128]i64
+d = deque { buf: buf, cap: 128, head: 0, tail: 0 }
+d.push-back(42)
+d.push-back(7)
+val = d.pop-front()
+val: {
+nil -> print('empty')
+-> print(it)
+}
+`
+  'deque.deque': `
+deque: 両端キューの状態
+buf: リングバッファ、容量 = cap（呼び出し側が提供し生存させます）
+cap: キューの容量上限（buf の長さに等しい）
+head: 前方の仮想インデックス。実際の格納インデックスは head mod cap
+tail: 後方の仮想インデックス。tail - head = 要素数
 `
   'deque.deque.clear': `
 双端キューをクリア（tail を head に戻す、buf は解放せず head もリセットしない）
@@ -1368,6 +1869,17 @@ val: 前端に置く値
 双端キューの現在の要素数を返す
 sz: tail - head（要素の存続期間中、負には戻らない）
 `
+  'des': `
+des — DES 暗号化/復号（ECB モード）
+
+DES を用いて 8 バイトブロックを暗号化/復号します。
+56 ビット鍵は 8 バイトに格納されます（8 ビット目はパリティビットで無視されます）。
+
+使い方:
+key [8]byte
+out  = des-enc(plain, 8, key)   // encrypt
+out  = des-dec(cipher, 8, key)  // decrypt
+`
   'des.des-block': `
 DES 単一ブロック処理（汎用）
 先頭 8 バイトを読み込み → IP 置換 → 16 ラウンド Feistel → FP 置換 → 8 バイトの結果を書き戻します。
@@ -1400,6 +1912,7 @@ PC-2 で 48 ビットを選択し、計 16 組をビッグエンディアン順�
 key: 8 バイトの DES キー（偶奇パリティビットを含むが、検証はしません）
 返り値 ks: 16 × 6 バイトのサブキー列（i 組目は ks[i*6 .. i*6+6)）
 `
+  'des.e-tbl': 'E: 拡張置換（32→48 ビット）'
   'des.f': `
 DES ラウンド関数 F(R, K)
 32 ビットの半ブロック R を E 拡張で 48 ビットへ拡大し、48 ビットのサブキー K と XOR した後 8 個の S-box を通過、
@@ -1408,6 +1921,15 @@ r: 右半ブロック（下位 32 ビットが有効）
 k: 48-bit サブキー（下位 48 ビットが有効）
 返り値 out: F 関数の結果（下位 32 ビットが有効）
 `
+  'des.fp-tbl': 'FP: 最終置換（IP の逆）'
+  'des.ip-tbl': 'IP: 初期置換 (64 ビット)'
+  'des.p-tbl': 'P: 置換 (32 ビット)'
+  'des.pc1-c': `
+PC1: 初期鍵置換（64→56 ビット）
+C 半分（28 ビット）
+`
+  'des.pc1-d': 'D 半分（28 ビット）'
+  'des.pc2-tbl': 'PC2: 鍵圧縮置換（56→48 ビット）'
   'des.permute': `
 置換表に従いビットを抽出して再配置
 tbl は標準 DES の 1 起点（1-indexed）MSB ビット番号（1..width）を使用；出力は MSB 優先（表の 0 項目目 → 最上位ビット）。
@@ -1424,6 +1946,24 @@ input: 6 ビットの S-box 入力（下位 6 ビットのみ取得）
 box: 64 項目の S-box テーブル（4 行 × 16 列をフラットに格納）
 r: 参照で得た 4 ビットの出力
 `
+  'des.shift-tbl': '左シフト表（16 ラウンド）'
+  'dns': `
+dns — DNS リゾルバ（純 Nolang 実装）
+
+UDP（ポート 53）経由の DNS クエリを実装し、A レコード（IPv4）の解決をサポートします。
+C ライブラリの getaddrinfo に依存せず、DNS パケットを直接構築・解析します。
+
+使い方:
+// ドメイン名を解決
+ip = resolve('example.com')           // ?str を返す（IP アドレス）
+ip: {
+nil -> print('resolution failed')
+-> print(ip)                         // 例 '93.184.216.34'
+}
+
+// DNS サーバーを指定
+ip = resolve-from('8.8.8.8', 'example.com')  // ?str を返す
+`
   'dns.build-query': `
 DNS クエリパケットを構築
 domain: 検索するドメイン名（'.' 区切り、ラベルごとに 長さ+ラベル 形式で書き込み）
@@ -1438,6 +1978,17 @@ domain: ドメイン名（または直接 IP を記載）
 port: 対象ポート番号
 返り値 fd: 接続済み socket ディスクリプタ、-1=両方式とも失敗
 `
+  'dns.dns-backup-server': 'バックアップ DNS サーバー（Cloudflare）'
+  'dns.dns-class-in': 'DNS クラス'
+  'dns.dns-default-server': 'デフォルト DNS サーバー（Google Public DNS）'
+  'dns.dns-max-packet': 'DNS パケットの最大サイズ'
+  'dns.dns-port': `
+DNS ポート
+
+`
+  'dns.dns-rcode-no-error': 'DNS 応答コード'
+  'dns.dns-timeout': 'DNS クエリのタイムアウト（ミリ秒）'
+  'dns.dns-type-a': 'DNS レコード種別'
   'dns.parse-name': `
 レスポンスパケットからドメイン名を解析（圧縮ポインタ対応）
 ラベルごとに 長さ+ラベル を読み、長さ 0 で終了；上位 2 ビットが 11 の圧縮ポインタに遇うと読み取り位置をポインタ先へジャンプします（
@@ -1453,6 +2004,13 @@ DNS レスポンスパケットを解析し、最初の A レコードの IP を
 TYPE=A かつ RDLENGTH=4 のレコードのみ受け付けます（CLASS はチェックしません）。
 data: DNS レスポンスパケット（ヘッダは最低 12 バイト）
 返り値 ip: ok=最初の A レコードのドット区切り 10 進 IP, nil=A レコードなしまたはパケット不正
+`
+  'dns.record': `
+record: DNS レコード
+rtype: レコード種別（1=A, 5=CNAME, 28=AAAA）
+name: ドメイン名
+value: レコード値（A レコードの場合は IP アドレス）
+ttl: time to live
 `
   'dns.resolve': `
 デフォルト DNS サーバーでドメイン名を解析
@@ -1472,6 +2030,45 @@ UDP を使用し、単一クエリの最大待機時間は DNS-TIMEOUT ミリ秒
 server: DNS サーバーの IPv4 アドレス（例 '8.8.8.8'、ポート番号は含みません）
 domain: 解析するドメイン名
 返り値 ip: ok=解析した IPv4 アドレス, nil=パケット構築失敗、socket/送信失敗、タイムアウトまたは A レコードなし
+`
+  'dom': `
+dom — XML / HTML DOM の解析と操作
+
+完全な DOM ツリー・モデル（ノードプール + インデックス・ハンドル）で、以下をサポート：
+- 厳格な XML 1.0 解析：要素 / 属性 / テキスト / コメント / CDATA / 処理命令 / DOCTYPE、
+定義済みおよび数値実体の復号、タグ照合と単一ルート要素のチェック、解析失敗は err を返す。
+- 寛容な HTML 解析：大文字小文字を区別しないタグ、void 要素、raw-text/RCDATA 要素
+（script/style/textarea/title など）、不一致終了タグの自動クローズとフォールトトレラントな無視、
+一般的な暗黙のクローズ規則（p/li/dd/dt/option/td/th/tr/テーブル節）、HTML4 命名実体表。
+- DOM 操作：親/子/兄弟の走査、属性の追加/削除/照会、テキスト内容の読み取り、
+getElementById / getElementsByTagName / getElementsByClassName、
+ノードの作成と挿入/削除/置換、outer/inner シリアライズ（XML および HTML モード）。
+
+ノードはプール・インデックス i64 で識別される（0 = ドキュメントのルートノード）。インデックスは dom の生存期間中有効。
+
+使用法：
+d = dom.parse-xml('<root a="1">text<!--c--></root>')
+d: {
+ok -> {
+doc = it
+root, found = doc.document-element()
+root: {
+ok -> {
+v, has = doc.get-attribute(it, 'a')
+print(doc.text-content(it))
+}
+}
+}
+err -> print(it)
+}
+
+h = dom.parse-html('<ul><li>a<li>b</ul>')
+h: {
+ok -> {
+items = it.get-elements-by-tag-name('li')
+print(items.len())
+}
+}
 `
   'dom.append-child': `
 parent の子リストの末尾に子ノードを追加する（または移動する）
@@ -1553,10 +2150,31 @@ out: デコード後文字列（nil=実体が見つからず）
 ルート要素（最初の ELEMENT の子）
 idx: ルート要素インデックス（nil=存在しない）
 `
+  'dom.dom': `
+dom: ドキュメントハンドル（ノードプール + ドキュメントルートインデックス + フォーマット）
+format: 0=XML, 1=HTML（void 要素のシリアライズと大文字小文字の扱いに影響）
+pool は #{inline=false} のポインタフィールドとして格納され、dom は値渡し時にプールをディープコピーします
+`
+  'dom.dom-byte-space': '一般的なバイト値'
   'dom.dom-closers-of': `
 タグ t を開くときに先に閉じる必要がある開始タグの単語表（空文字列 = ルールなし）
 t: 新たに開いたタグ名（小文字）
 blob: 先に暗黙クローズすべきオープンタグの単語リスト（空=規則なし）
+`
+  'dom.dom-entity-blob': 'HTML4 の名前付きエンティティ完全表（\'name:codepoint\' を空白区切り）+ XML 事前定義エンティティ'
+  'dom.dom-kind-document': 'ノード型（W3C の nodeType 番号に合わせる）'
+  'dom.dom-max-depth': '解析の最大ネスト深さ（深くネストされた入力によるスタックオーバーフローを防ぐ）'
+  'dom.dom-node': `
+dom-node: DOM ノード (純スカラーフィールド、ヒープ vec に安全に格納可能)
+ツリー構造はインデックス付き双方向リスト: parent/prev/next/first/last
+attr-first/attr-last/attr-count: 属性エッジリストの連結リスト (エッジインデックスは pool.an/av/ax に格納)
+`
+  'dom.dom-pblock-blob': '新しいブロックレベルタグが始まると自動的に閉じられる、開いた <p>'
+  'dom.dom-pool': `
+dom-pool: ノードプール (ヒープ vec、容量上限なし)
+nodes: 並列ノード配列。names/vals: ノード idx で索引される文字列
+element→タグ名、pi→ターゲット、doctype→生の内部テキスト、text/cdata/comment→値
+an/av/ax: 属性エッジ表 (名前、値、次の兄弟エッジのインデックス。-1=リスト末尾)
 `
   'dom.dom-pool.alloc': `
 新しいノード（names/vals の並行スロット付き）を確保し、そのインデックスを返す
@@ -1590,6 +2208,11 @@ out: ヒットした要素ノードインデックスリスト
   'dom.dom-pool.detach': `
 child を親から切り離し、子リストの整合性を保つ
 child: 親ノードから取り外すノードのインデックス
+`
+  'dom.dom-pool.err-pos-or': `
+失敗位置を取得: .errpos (直近で試行した要素の開始位置) を優先し、なければ dflt にフォールバック
+dflt: フォールバック値 (呼び出し側の走査位置)
+v: 2 つの位置のうち大きい方
 `
   'dom.dom-pool.find-attr': `
 ノードの name 属性のエッジインデックスを探す; -1 は存在しない
@@ -1778,10 +2401,28 @@ s: ソース文字列
 p: 処理命令開始 '<?' の位置
 np: '?>' の後の位置（nil=未閉じまたは目標名無し）
 `
+  'dom.dom-rawtext-blob': 'HTML raw-text / RCDATA 要素: 対応する終了タグまでが内容で、それ以上の字句解析は行いません'
+  'dom.dom-rcdata-blob': 'RCDATA 集合 (内容は実体デコードが必要): title / textarea。他の raw-text はデコードしない'
   'dom.dom-strip-bom': `
 strip-bom: 先頭の UTF-8 BOM を取り除き、開始オフセットを返す
 s: ソース文字列
 p: BOM 後の開始オフセット（0=BOM なし、3=BOM 除去済み）
+`
+  'dom.dom-void-blob': 'HTML void 要素（全体単語検索のため両側に空白を埋め込み）'
+  'dom.dom.last-child': `
+最後の子を取得します
+idx: ノードインデックス
+c: 最後の子のノードインデックス (-1=なし)
+`
+  'dom.dom.next-sibling': `
+次の兄弟を取得する
+idx: ノードインデックス
+c: .nextSibling のノードインデックス (-1=なし)
+`
+  'dom.dom.prev-sibling': `
+前の兄弟を取得
+idx: ノードインデックス
+c: 前の兄弟ノードインデックス (-1=なし)
 `
   'dom.esc-attr': `
 属性値の &, <, > と二重引用符をエスケープする
@@ -1968,6 +2609,23 @@ s: ソース文字列
 p: 開始バイト位置
 np: 空白スキップ後の最初の非空白バイト位置
 `
+  'ecdsa': `
+ecdsa — ECDSA デジタル署名 (NIST P-256 / secp256r1)
+
+NIST P-256 楕円曲線に基づく ECDSA 署名アルゴリズムを実装。
+# std/fs
+曲線: y² = x³ - 3x + b (mod p)
+
+256-bit の大きな整数を 8×32-bit limb で表現する。
+点演算にはヤコビ座標を使う。
+
+使い方:
+# std/crypto/ecdsa
+priv [32]byte = ecdsa-generate(seed)
+pub [65]byte = ecdsa-publickey(priv)
+sig [64]byte = ecdsa-sign(priv, msg)
+ok = ecdsa-verify(pub, msg, sig)
+`
   'ecdsa.bn-add': `
 256-bit 加算（モジュロ約減なし）
 返り値 sum [32]byte と carry i64
@@ -2086,14 +2744,54 @@ msg: メッセージ
 sig: 署名（r || s）
 返り値 ok: 1=有効, 0=無効
 `
+  'ecdsa.p256-b': '曲線パラメータ b'
+  'ecdsa.p256-gx': '基点 Gx (ビッグエンディアン。ec-get-basepoint は Gx[31-i] により内部リトルエンディアンに変換)'
+  'ecdsa.p256-gy': '基点 Gy（ビッグエンディアン）'
+  'ecdsa.p256-n': '群の位数 n'
+  'ecdsa.p256-p': `
+素数 p = 2^256 - 2^224 + 2^192 + 2^96 - 1
+32 バイト、リトルエンディアン
+素体 p = 2^256 - 2^224 + 2^192 + 2^96 - 1 (リトルエンディアン順: byte[0] が最下位バイトで、
+bn-* エンジンおよび P256-N の格納規約と整合)
+`
+  'ed25519': `
+ed25519 — Ed25519 署名アルゴリズム（RFC 8032）
+
+twisted Edwards 曲線に基づく EdDSA 署名方式。
+curve: -x² + y² = 1 + d*x²*y² (mod 2^255-19)
+基点 B、群の位数 L = 2^252 + 27742317777372353535851937790883648493
+
+体要素（GF(2^255-19)）の演算は x25519.no を再利用しますが、常にその「戻り値形式」の
+fe-*-v ラッパー関数を介して結果を取得します —— モジュール間呼び出しでは「スライス引数へのインプレース書き込み」は
+呼び出し側に戻らず、「戻り値」のみが戻るため、本モジュールの中間値はすべて戻り値で組み立てられます。
+
+点は拡張座標 (X,Y,Z,T) の []i64（長さ 40）で表され、各 10 limbs、
+オフセット 0/10/20/30 に配置されます。座標の読み取りはスライスビュー（読み取り専用、モジュール間で安全）を使え、
+書き込みは本モジュールの set-coord を通します（同一モジュール引数へのインプレース書き込みは戻ります）。
+
+使い方:
+# std/crypto/ed25519
+pub [32]byte = ed25519-publickey(seed)
+sig [64]byte = ed25519-sign(seed, msg)
+ok = ed25519-verify(pub, msg, sig)
+`
   'ed25519.ed-d': `
 曲線定数 d の体要素を返します
 h: 曲線定数 d の体要素（10 limb、リトルエンディアン）
 `
+  'ed25519.ed-d-bytes': '曲線パラメータ d = -121665/121666 mod p (リトルエンディアン、32 バイト)'
+  'ed25519.ed-exp-bytes': '平方根の指数 (p-5)/8 = 2^252 - 3 (リトルエンディアン 32 バイト)'
+  'ed25519.ed-gx-bytes': '基点 B の x 座標（リトルエンディアン 32 バイト）'
+  'ed25519.ed-gy-bytes': `
+基点 B の y 座標 = 4/5 mod p（リトルエンディアン、32 バイト）
+0x6666666666666666666666666666666666666666666666666666666666666658
+`
+  'ed25519.ed-l': '群の位数 L = 2^252 + 27742317777372353535851937790883648493（リトルエンディアン 32 バイト）'
   'ed25519.ed-sqm1': `
 sqrt(-1) の体要素を返します
 h: sqrt(-1) mod p の体要素（10 limb）
 `
+  'ed25519.ed-sqm1-bytes': 'sqrt(-1) mod p = 2^((p-1)/4)（リトルエンディアン 32 バイト）、点の展開時の平方根補正に使用します'
   'ed25519.ed25519-publickey': `
 シードから公開鍵を計算
 seed: 32 バイトの秘密鍵シード
@@ -2179,6 +2877,29 @@ p: 対象点バッファ（40 limb：X‖Y‖Z‖T 各 10 limb を連結）
 off: p への書き込み開始 limb オフセット
 src: 書き込む体要素（10 limb）
 `
+  'embed': `
+embed: コンパイル時組み込みファイルシステム
+
+#{embed='dir/path'} によってコンパイル時に初期化されます。
+ディレクトリ内の全ファイルを実行ファイルに組み込み、単一バイナリ配布を可能にします。
+
+usage:
+#{embed='../frontend/dist'}
+DIST fs.embed
+
+data = DIST.read('index.html')
+ok = DIST.exists('css/style.css')
+`
+  'embed.embed': `
+embed: 埋め込みファイルシステム
+count: ファイル数
+paths: 全パスを連結したもの (\0 で区切り)
+pathStarts: paths 内の各パスの開始オフセット
+pathLens: 各パスの長さ
+blob: 全ファイル内容を連結したもの
+dataStarts: blob 内の各ファイルの開始オフセット
+dataLens: 各ファイルの長さ
+`
   'embed.exists': `
 embed.exists: 埋め込みファイルの存在を確認
 read と同じ線形一致ロジックですが、内容は取得しません。
@@ -2190,6 +2911,43 @@ embed.read: 埋め込みファイルを読み取り（パスを線形一致後�
 path: ファイルパス（埋め込みディレクトリからの相対。例 'index.html'；パス区切り文字も含みます）
 data: ok=ファイル内容（blob 上のスライス、コピーなし）, nil=パスが存在しません
 注意：返り値は埋め込み領域を指すため、内容を変更しないでください。
+`
+  'enter': `
+enter — スコープ進入フック（インターフェース宣言）
+
+型が `T.enter = () { … }` を提供すると、コンパイラはその型の変数が宣言された直後（スコープ進入時）に `var.enter()` を挿入します:
+この注入は src/build/transpiler_inject.go の injectEnterLeave により、
+**メソッド名**をキーとして実行され、この宣言とは結合しません。
+
+判断は「解決された実効型」に基づき、ソースに注釈があるかどうかではありません — `no fmt` は
+「注釈型 == 推論型」の冗長な注釈を除去します。注釈だけを数えると、fmt を通した `a T = T{…}` は
+もはやライフサイクルに入らず、フォーマットが意味論を静かに変えてしまいます。したがって `a = T{…}` と `a = make-t()` も同様に発動します。
+
+注: enter は宣言直後に、**あらゆるフィールド代入より前に**実行されます — すでに埋まっている
+フィールドが必要な場合は enter に頼らず、明示的な初期化メソッドを使用してください。
+
+本ファイルはインターフェース自体のみを登録し、ドキュメントと LSP ナビゲーションのためのものです。std コーパスでこれを実装する型は現在ありません
+（example/sqlite-driver および example/mysql-driver は実装しています）。
+`
+  'env': `
+env — 環境変数ユーティリティ
+
+環境変数の読み取り、設定、検索のための高レベル操作を提供する。
+下層では os モジュールの get-env および set-env 呼び出しに依存する。
+
+usage:
+use std/env
+val = env.get('HOME')
+val: {
+nil -> print('HOME not set')
+-> print(it)
+}
+ok = env.set('MY_VAR', 'value')
+val = env.lookup('PATH')
+val: {
+nil -> print('not found')
+-> print(it)
+}
 `
   'env.get': `
 環境変数の値を取得する
@@ -2225,6 +2983,17 @@ ok: true=書き込み成功, false=下位の set-env 失敗（key 空や長さ�
 key: 環境変数名
 ok: true=空値の書き込み成功, false=下位の set-env 失敗
 `
+  'err': `
+err — エラー処理
+
+構造化されたエラー型とユーティリティ関数を提供します。
+err 構造体はエラーコード、メッセージ、位置（ファイル / 行 / 列）をラップします；code 列挙型は一般的なエラーカテゴリを定義します。
+
+使い方:
+e = err.new('disk full', code.io)
+yes = e.is(err.code.io)
+s = e.format()     ; => 'code.io: disk full'（エラーコードと位置付き）
+`
   'err._errno-to-code': `
 C の errno を code 列挙に写す（モジュール内限定。from-errno だけが使う）
 errno: 変換する C errno 数値（例 2=ENOENT、13=EACCES）
@@ -2235,12 +3004,24 @@ ec: 対応する code 列挙値（未収録の errno はすべて code.unknown �
 戻り値 ec: コード
 
 `
+  'err.code-2': `
+code: エラーカテゴリ
+index-out: 範囲外インデックス（`a[i]` / `s[i]` の i が `[0, len)` 内にありません）。D11 の決定: 範囲外読み取りは
+err を返します（nil ではありません）— nil は「値が本当に存在しない」場合（map の欠損キー、空の `?T` スロット）に予約されており、
+範囲外は**プログラムエラー**なので、空の値と区別するために err が返されます。
+`
   'err.code.to-name': `
 エラーコードの列挙名を code. 接頭辞なしで返す
 戻り値 s: 列挙名（例: 'ok' / 'not-found' / 'io'）
 使い方:
 n = code.io.to-name()     ; => 'io'
 
+`
+  'err.err': `
+err: 構造化エラー
+code: エラーコード（code 列挙値）
+msg: 人間が読めるエラー説明テキスト
+file / line / col: エラーが発生した場所（コンパイラが生成位置で自動注入；手動で構築する場合は空文字列と 0 のままにします）
 `
   'err.format': `
 エラーを情報量の多い文字列として整形する
@@ -2282,6 +3063,14 @@ line: エラーが発生した行番号
 col: エラー発生行番号
 e: 完全な位置情報付きのエラーインスタンス
 `
+  'float': `
+float — float 共用体型と float メソッド
+
+float = f32 | f64（浮動小数点共用体型のエイリアス）。
+本モジュールは float 型のメソッド、div, is-nan, is-inf を担います。
+int 共用体型は std/int.no を、num 共用体型は std/num.no を参照。
+具象型の操作（範囲定数、型変換、f64/f32.to-str、ビット演算など）は number モジュールを参照。
+`
   'float.div': `
 浮動小数点の除算。商を返す（a ÷ b）
 IEEE-754 に従う：除数 0.0 のとき ±inf（0.0/0.0 は NaN）、エラーも切り詰めもしない。
@@ -2299,6 +3088,7 @@ yes: true=受信者が +inf または -inf；NaN、±0.0、有限数はすべて
 IEEE-754 の「NaN は自分と等しくない」性質で判定するため、あらゆる NaN（異なる payload 含む）が true。
 yes: true=受信者が NaN, false=有限数または ±inf
 `
+  'fmt': 'fmt — フォーマット付き入出力の標準ライブラリ\n\nprint/eprint/format/sprintf はコンパイラ組み込み（ForwardFunc）です。\n⚠️ printf/eprintf は削除されました：名前はシンボルテーブルに残ります（呼び出しは解決され、LSP も補完します）、\nただしいかなる呼び出しもハードコンパイルエラー [printf-depr] となり、print/io.out と eprint/io.err への移行を促します。\nこのファイルは純粋な Nolang で実装されたフォーマット補助関数を提供し、Python の format spec の部分集合をサポートします：\nfmt-parse-spec  — 指定文字列を解析する\nfmt-apply-spec  — 幅/配置/埋め込みを適用する\nfmt-uint-base   — 符号なし整数を指定された基数の文字列に変換する\nfmt-int         — 符号付き整数のフォーマット\nfmt-uint        — 符号なし整数のフォーマット\nfmt-f64         — 浮動小数点のフォーマット\nfmt-str         — 文字列のフォーマット\nfmt-bool        — ブール値のフォーマット\n\n指定文字列の構文（Python format spec の部分集合）:\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(左) >(右) =(符号の後の埋め込み) ^(中央)\nsign:   + -(空白)\ngrouping: ,(カンマ) _(アンダースコア)\ntype:   b o d x X p e E f F g G s t v\n\n実装上の注意（コンパイラ制限の回避策）:\n1. 条件ブロック内でのスカラー i64 出力パラメータへの代入は無効です（コンパイラのバグ）、\nそのため fmt-parse-spec はローカル -v 変数で計算し、最上位レベルで出力パラメータに代入します。\n2. with-cap() は型注釈がない場合、デフォルトで str ではなく vec を推論するため、\nローカルバッファは明示的に型注釈する必要があります。\n3. str の直接の添字書き込み（`s[i] = v`）は 2026-11-11 以降グローバルに無効化されています（with-cap の基底でさえ\n免除されなくなりました）；バイト単位の構築は常に `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-bytes-str()` を使用します。'
   'fmt.eprintf': `
 削除済み（パースが通るよう名前だけ残している）— 呼ぶとコンパイルエラー。代わりに eprint（改行付き）か io.err（改行なし）を使う
 s: 書式文字列（本関数は削除済み、呼ぶとコンパイルエラー）
@@ -2384,6 +3174,24 @@ s: 書式文字列（本関数は削除済み、呼ぶとコンパイルエラ�
 s: 書式仕様文字列（構文は format と同じ）
 out: 整形後出力文字列
 `
+  'fnv': `
+fnv — FNV-1a ハッシュ関数 (32-bit と 64-bit)
+
+FNV (Fowler-Noll-Vo) は高速な非暗号化ハッシュ関数です。
+FNV-1a: hash = (hash XOR byte) * prime
+
+usage:
+h32 = fnv-1a-32(data)
+h64 = fnv-1a-64(data)
+`
+  'fnv-1a-32': `
+fnv-1a — FNV-1a 非暗号学的ハッシュ（32bit）
+
+高速で単純な非暗号学的ハッシュで、ハッシュテーブルなどの場面に適しています。
+
+使用方法:
+h = fnv-1a-32('hello', 5)
+`
   'fnv-1a-32.fnv-1a-32': `
 32-bit FNV-1a ハッシュを計算（offset basis 2166136261、prime 16777619）
 s: 入力バイトバッファ
@@ -2400,10 +3208,43 @@ FNV-1a 64-bit ハッシュを計算（offset basis 14695981039346656037、prime 
 data: 入力バイト。すべて計算に参加
 hash: 64-bit ハッシュ値（各回の乗算をマスクで 64 ビットに切り戻し）
 `
+  'fnv.fnv32-offset': 'FNV-1a-32 パラメータ'
+  'fnv.fnv64-offset': 'FNV-1a-64 パラメータ'
+  'fs': `
+fs — ファイルシステムユーティリティ
+
+オープン中のファイルを file 構造体に、パスを path 構造体にラップします。
+ファイル操作、読み書き、情報照会のための低レベルシステムコールを含みます。
+
+使い方:
+f = open(FILE-PATH, {
+mode: write
+perm: perm-644
+excl: false
+truncate: false
+append: false
+})
+f.write('hello'.to-bytes(), 5)         // メソッド呼び出し
+f.close()
+
+line = STDIN.read-line()              // 標準入力から 1 行読み取り、?str を返す
+n = STDOUT.write('hello'.to-bytes(), 5)  // 標準出力へ書き込む
+n = STDERR.write('error'.to-bytes(), 5)  // 標準エラー出力へ書き込む
+
+p = path{
+p: '/tmp'
+}
+yes = p.exists()
+`
   'fs.close': `
 ファイルディスクリプタを閉じる
 fd: 閉じるべきファイルディスクリプタ
 ok: 0=成功, -1=失敗（重複クローズも失敗）
+`
+  'fs.close-dir': `
+close-dir: ディレクトリハンドルを閉じる
+dirp: open-dir が返したディレクトリハンドル（閉じた後は読み取れない）
+ok: true=ディレクトリストリームバッファが解放された
 `
   'fs.copy-file': `
 ファイルの内容をコピーする
@@ -2426,6 +3267,26 @@ entries: 子項目名リスト（'.'/'..' を除外；ディレクトリが開�
 p: 検査するパス
 yes: true=パスが存在する（シンボリックリンクは対象を追う）
 `
+  'fs.fd': `
+標準ファイルディスクリプタ
+fd はファイルディスクリプタの newtype エイリアス (基底は i64) で、型システム上 i64 と排他であり、
+fd が任意の整数 (ポート番号、PID など) として誤用されるのを防ぐ。
+整数リテラルは fd に代入でき (例: STDIN-FD fd = 0)、fd は整数リテラルと比較できる。
+`
+  'fs.file': `
+file: 開かれたファイル
+fd=-1 は未オープンを意味する。path はソース・パス。
+`
+  'fs.file-mode': 'file-mode: ファイルオープンモード（事前結合済み）'
+  'fs.file-opts': `
+file-opts: open() のオプション
+mode: ファイルモード (file-mode 列挙)
+perm: パーミッション (file-perm 列挙)
+excl: 排他作成 (O_EXCL と同等)
+truncate: 長さ 0 に切り詰め (O_TRUNC と同等)
+append: 追記書き込み (O_APPEND と同等)
+`
+  'fs.file-perm': 'file-perm: ファイル権限 (事前結合済み)'
   'fs.file-size': `
 ファイルサイズを取得する（stat-size と同じ）
 p: ファイルパス
@@ -2593,6 +3454,10 @@ i64/bool にし、主たる戻り値を str にすることを要求するため
 name: 実際に作成されたファイル名（テンプレ末尾の6個の X がランダム文字に置換；失敗時は空文字列）
 fd: 書き込みモードで既に開かれたファイルディスクリプタ（失敗は -1）
 `
+  'fs.o-rdonly': `
+open() のフラグ定数（プラットフォーム固有）
+O_RDONLY/O_WRONLY/O_RDWR はクロスプラットフォームです（0/1/2）
+`
   'fs.open': `
 ファイルを開く（コンストラクタ）
 opts: file-opts 構造体
@@ -2600,6 +3465,15 @@ opts: file-opts 構造体
 失敗: f = err('エラーメッセージ')
 p: ファイルパス
 f: ok=opts に従い開かれたファイル, err=開くのに失敗（エラーメッセージ付き）
+`
+  'fs.open-dir': `
+open-dir: エントリを読み取るためにディレクトリを開く
+read-dir と組み合わせてエントリを1つずつ読み取る。終了時は close-dir を呼ぶこと。
+⚠ read-dir が1つずつ返す POSIX ディレクトリ・エントリは '.' と '..' を**含む**：
+'..' に誤って入り込む再帰的な走査/削除は上位へ抜け出し、親ツリーを削除するおそれがある。
+安全に「子リスト」を得るには代わり fs.dir-entries を使うこと（'.'/'..' は既に除外）。
+p: ディレクトリ・パス（存在しないか読み取り権限がない場合は開けない）
+dirp: read-dir/close-dir 用のディレクトリ・ハンドル（0=開封失敗）
 `
   'fs.open-file': `
 独自のフラグとパーミッションでファイルを開く
@@ -2634,6 +3508,14 @@ nil        - ファイルが空
 err        - 読み込みに失敗
 p: ファイルパス
 content: ok=ファイル内容, nil=ファイルが空, err=オープンまたは読み取り失敗
+`
+  'fs.read-dir': `
+read-dir: 次のディレクトリエントリ名を読み取る
+⚠ POSIX readdir に従います：エントリごとに反復すると '.' と '..'（カレント/親ディレクトリ）が出力されます。
+再帰的な走査や削除では、この 2 つのエントリを明示的にスキップする必要があります。さもないと '..' を通じて上位へ抜けます。
+子のリストが必要な場合は、素の open-dir+read-dir より fs.dir-entries を優先してください。
+dirp: open-dir が返すディレクトリハンドル
+name: ok=次のエントリ名（'.'/'..' の場合あり）、nil=読み終えたかハンドルが無効
 `
   'fs.read-file': `
 [非推奨] read-file: 代わりに read-bytes を使う（エラーを扱い、TOCTOU 安全で、読み込みをループする）
@@ -2701,6 +3583,9 @@ ok: true=ディレクトリ削除済み（ディレクトリ非空または存�
 p: ファイルパス
 size: ok=バイトサイズ, nil=ファイルが存在しないまたは権限なし
 `
+  'fs.stderr': '標準エラー出力（fd=2）'
+  'fs.stdin': '標準入力（fd=0）'
+  'fs.stdout': '標準出力（fd=1）'
   'fs.symlink': `
 シンボリックリンクを作成する
 target: リンク先のパス
@@ -2709,6 +3594,11 @@ linkpath: シンボリックリンク自体のパス
 ok: true=リンク作成済み（同名パス既存なら false）
 `
   'fs.sync': 'ファイルシステムのバッファをディスクに書き出す（戻り値なし）'
+  'fs.touch-file': `
+touch-file: ファイルのタイムスタンプを現在時刻に更新
+p: ファイルパス
+ok: true=アクセス/更新時刻が現在に更新された（パスに到達できない場合は false）
+`
   'fs.truncate': `
 ファイルを指定サイズに切り詰める、または拡張する
 p: ファイルパス
@@ -2775,6 +3665,19 @@ p: 対象パス（存在しなければ作成）
 data: 書き込む文字列
 ok: ok(true)=成功, err=書き込み失敗
 `
+  'global': `
+global.no — グローバル組み込み関数の宣言
+
+このファイルはモジュール接頭辞なしで呼び出し可能なグローバル関数を宣言する。
+これらの関数はコンパイラによって組み込み（builtin）として実装される；ここでのコメント宣言は
+ドキュメント表示と LSP go-to-definition ナビゲーションのみを目的とする。
+
+規則：以下の 7 関数のみをモジュール名なしでグローバルに呼び出せる；
+それ以外のモジュール間呼び出しはすべてモジュール接頭辞（例：fs.read, os.get-env）を含める必要がある。
+さらに、ファイル末尾の `@ std/err.new err` はもう 1 つの
+裸の名前 `err` を **呼び出し可能なエイリアス** として登録する（その行の上の説明参照）；これは builtin ではなく通常の呼び出しを通る。
+エイリアスには 2 つの等価な形式がある：`@ <path>.<fn> <alias>` と `<alias> = <mod>.<fn>`。
+`
   'global.eprint': `
 文字列を標準エラーへ改行付きで出力、{name:spec} 命名フォーマットフィールドをサポート
 eprint('error: {msg}')
@@ -2795,6 +3698,14 @@ s = format('{name} is {age}')  -> 'Alice is 30'
 ⚠️ 単一のフォーマット文字列のみ受け付ける（多引数形式は無い）
 s: 書式テンプレート文字列（規則は print と同じ）、この 1 つの引数のみを渡せる
 out: テンプレート展開後の新文字列（どのストリームにも出力しない）
+`
+  'global.option': `
+match
+x: {
+nil -> log(it)
+err -> log(it)
+-> log(it)
+}
 `
   'global.print': `
 文字列を標準出力へ改行付きで出力、{name:spec} 命名フォーマットフィールドをサポート
@@ -2822,6 +3733,30 @@ len: 実際の長さ；push せずに直接インデックスで読み書きで�
 s str = with-len(10)        → 長さ 10 の str
 v []i64 = with-len(100)     → 長さ 100 のスライス
 len: 目標長さ（str はバイト数、vec は要素数）、len=cap で一括確保すれば push 不要で直接インデックス書き込み可
+`
+  'gzip': `
+gzip — GZIP の圧縮・展開（純 Nolang 実装）
+
+DEFLATE (RFC 1951) と GZIP (RFC 1952) をすべて Nolang で実装しており、
+外部ライブラリに依存しません（zlib は使用しません）。
+
+サポート:
+- DEFLATE 展開：stored (0)、fixed Huffman (1)、dynamic Huffman (2)
+- DEFLATE 圧縮：stored blocks（無圧縮、すべての展開器と互換）
+- GZIP 形式：ヘッダ + DEFLATE + CRC32 + ISIZE
+
+使用方法:
+data = [104, 101, 108, 108, 111]  // []byte
+compressed = compress(data)
+decompressed = decompress(compressed)
+raw = inflate-decompress(deflate-data, expected-size)
+`
+  'gzip.bit-reader': `
+bit-reader: DEFLATE ビットリーダー（LSB-first）
+data: デコード対象の生バイトバッファ
+pos: bit-buf に次に読み込むバイトのインデックス
+bit-buf: ビットバッファ; 未消費のビットは下位ビットにあり、読み取り時に右シフトされる
+bit-cnt: bit-buf 内でまだ読み取り可能なビット数（0 は次のバイトを読み込む必要がある）
 `
   'gzip.bit-reader.read-bit': `
 1 ビット読み取り
@@ -2868,6 +3803,11 @@ stored blocks を使用した DEFLATE 圧縮
 data: 生データ（[]byte）
 out: 圧縮後の DEFLATE データ（[]byte）
 `
+  'gzip.huffman': `
+huffman: 標準 Huffman 復号テーブル (DEFLATE)
+count: 各符号長 (0–15) の符号数。count[0] は構築時に 0 にされ、count[16] は単なるプレースホルダ
+symbol: 符号長の昇順、次いで符号値の昇順に並べられた符号表
+`
   'gzip.huffman.build': `
 コード長配列から Huffman コードテーブルを構築
 固定配列フィールドの直接索引代入を使用し、局部 vec の代入による宙吊りポインタを回避
@@ -2885,6 +3825,20 @@ sym: デコードしたシンボル値（字面/長さまたは距離）、-1=�
 data: 圧縮データ（[]byte）
 out-size: 解凍後の想定サイズ（i64）
 out: 解凍後のデータ（[]byte）
+`
+  'hash-set': `
+hash-set — i64 ハッシュ集合
+
+固定容量（64 スロット）、線形 probing、O(1) の検索/挿入/削除。
+容量は 2 の累乗；推奨負荷率 ≤ 0.75（つまり最大約 48 エントリ）。
+
+usage:
+s = hash-set{}
+s.init()
+s.add(42)
+yes = s.contains(42)    // yes = true
+s.remove(42)
+s.for-each(val)
 `
   'hash-set.hash-set.add': `
 要素を追加する; 挿入されたかを返す
@@ -2926,9 +3880,35 @@ n: 集合中に現在存在する要素個数（新規要素の add +1、remove 
 key: 削除する要素
 removed: true=発見して削除, false=存在せず
 `
+  'heap': `
+heap — 汎用二分ヒープ / 優先度付きキュー
+
+heap 構造体は自身の要素バッファ（`data []t`）と状態（cap/n）を持つ；要素型 `t` は
+ファクトリ呼び出し `heap.init(data)` に渡される具象の `[N]E` / `[]E` バッファから推論され；コンパイラは
+monomorphizeSliceStructs (src/build/slice_structs.go) を通じて heap-E の具象型と
+その全メソッドを単体化する。したがって heap は `<` / `>=` 比較セマンティクスを持つ任意の要素型（i64/u8/f64 等）をサポートする。
+最小ヒープ（Min-Heap）を実装する。
+
+usage:
+use std/heap
+data [128]i64 = [0, 0, 0 /* ... 128 elements */]
+h = heap.init(data)          // h : heap-i64, capacity = buffer length
+h.push(42)
+h.push(7)
+val = h.pop()                // val = ok(7) (minimum out first)
+sz = h.size()
+
+注：容量の上限はバッファ配列の長さである；インスタンスは heap.init(buffer) で生成される。
+`
   'heap.empty': `
 ヒープが空かを返す
 yes: true は n == 0 を意味する（満杯で無視された push はこの判定を変えない）
+`
+  'heap.heap': `
+heap: ヒープ状態（自身の要素バッファを保持）
+data: 要素バッファのスライス（容量 = その長さ）
+cap:  容量（= バッファ配列の長さ）
+n:    現在の要素数
 `
   'heap.init': `
 ファクトリ — 呼び出し側が用意した要素バッファ上に空のヒープを構築する
@@ -2951,6 +3931,18 @@ val: プッシュする要素、型 t は heap.init のバッファ型で決定
   'heap.size': `
 ヒープに現在格納されている要素数を返す
 sz: プッシュ済みかつまだポップしていない要素数（0..cap）
+`
+  'hkdf': `
+hkdf — HMAC-based Key Derivation Function (RFC 5869)
+
+HKDF-Extract と HKDF-Expand に加え、TLS 1.3 固有の HKDF-Expand-Label を実装。
+HMAC-SHA256（32バイト出力）に基づく。
+
+使用法：
+# std/crypto/hkdf
+prk = hkdf-extract(salt, ikm)           // returns [32]byte
+okm = hkdf-expand(prk, info, 32)        // returns []byte
+okm = hkdf-expand-label(prk, 'label', ctx, 32)  // TLS 1.3 only
 `
   'hkdf.hkdf-derive-secret': `
 Derive-Secret(Secret, Label, Messages)（TLS 1.3 §7.1）
@@ -3000,6 +3992,28 @@ salt: ソルト（空も可；空のときは 32 個のゼロバイトで代替�
 ikm: 入力鍵材料（任意長）
 返り値 prk: HMAC-SHA256(salt, IKM) で算出した疑似ランダムキー
 `
+  'hmac': `
+hmac — HMAC 鍵付きハッシュメッセージ認証コード (RFC 2104)
+
+RFC 2104 で定義された HMAC アルゴリズムを、複数の基底ハッシュ関数で実装。
+HMAC(K, m) = H((K' ⊕ opad) || H((K' ⊕ ipad) || m))
+
+対応するバリエーション:
+hmac-sha1(key, msg) -> [20]byte
+hmac-sha256(key, msg) -> [32]byte
+hmac-sha384(key, msg) -> [48]byte
+hmac-sha512(key, msg) -> [64]byte
+hmac-md5(key, msg) -> [16]byte
+
+使い方:
+key []byte
+msg []byte = 'hello'
+out = hmac-sha256(key, msg)
+// out は [32]byte のハッシュ値
+`
+  'hmac.hmac-block-size': 'SHA-256 ブロックサイズ（バイト）'
+  'hmac.hmac-hash-size': 'SHA-256 出力サイズ (バイト)'
+  'hmac.hmac-ipad': 'ipad / opad 定数'
   'hmac.hmac-md5': `
 HMAC-MD5 を計算（MD5 を基盤ハッシュとして使用、ブロックサイズ 64）
 key: ハッシュキー（64 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
@@ -3018,6 +4032,8 @@ key: ハッシュキー（64 バイトのブロックを超える場合は先に
 msg: 認証対象のメッセージバイト
 返り値 out: 20 バイトの HMAC 値
 `
+  'hmac.hmac-sha1-block-size': 'HMAC-SHA1 ブロックサイズ'
+  'hmac.hmac-sha1-hash-size': 'HMAC-SHA1 出力サイズ'
   'hmac.hmac-sha1-vec': `
 HMAC-SHA1 を計算し、[]byte を返します
 key: ハッシュキー（64 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
@@ -3054,11 +4070,29 @@ key: ハッシュキー（128 バイトのブロックを超える場合は先�
 msg: 認証対象のメッセージバイト
 返り値 out: 64 バイトの HMAC 値
 `
+  'hmac.hmac-sha512-block-size': 'HMAC-SHA512 ブロックサイズ（SHA-512 は 128 バイトブロックを使用）'
+  'hmac.hmac-sha512-hash-size': 'HMAC-SHA512 出力サイズ'
   'hmac.hmac-sha512-vec': `
 HMAC-SHA512 を計算し、[]byte を返します
 key: ハッシュキー（128 バイトのブロックを超える場合は先にハッシュで縮約、不足分はゼロ埋め）
 msg: 認証対象のメッセージバイト
 返り値 out: 64 バイトの HMAC 値
+`
+  'hpack': `
+hpack — HPACK ヘッダ圧縮（RFC 7541）
+
+HTTP/2.0 で使用されるヘッダ圧縮形式。この実装は純 Nolang で FFI 依存がない。
+簡略化：
+- 文字列は literal としてエンコードされる（H bit=0）；Huffman 圧縮はサポートされない
+- 静的テーブルは 61 エントリ（RFC 7541 Appendix A）
+- 動的テーブルは最大 64 エントリ
+- エンコードは indexed 表現（完全一致）を優先し、次に literal with incremental indexing
+
+usage:
+t = tables{}
+t.init()
+out, n = t.encode-header(':method', 'GET')
+names, values, cnt = t.decode-headers(data)  // cnt=-1 means failure
 `
   'hpack.decode-int': `
 data の pos 位置から可変長整数をデコード
@@ -3081,6 +4115,7 @@ prefix-byte: 設定済みのプレフィックス byte（上位 8-prefix-bits �
 返り値 out=エンコード後文字列
 s: エンコード対象の文字列（長さ varint プレフィックス + UTF-8 バイト）
 `
+  'hpack.tables': 'tables: HPACK コーデックの状態（静的テーブル + 動的テーブルを含む）'
   'hpack.tables.decode-headers': `
 ヘッダブロックをデコード
 data: バイナリデータ
@@ -3122,6 +4157,34 @@ name: 取得したヘッダフィールド名
 value: 取得したヘッダフィールド値
 ok: idx が有効範囲内かつ正常に取得できた場合 true
 `
+  'http': `
+http — HTTP/1.1 クライアント（REST サポート付き）
+
+単純な HTTP/1.1 クライアントを提供し、GET、POST、PUT、DELETE、PATCH などのメソッドをサポート。
+カスタム・ヘッダーとレスポンス・ヘッダーの解析をサポート。
+下層は net.no の組み込み関数（net-dial、net-send、net-recv、close）を使用。
+
+使用法：
+resp = get('http://example.com/path')   // returns ?response
+resp: {
+nil -> print('request failed')
+-> print(resp.status-code)
+print(resp.body)
+ct = resp.get-header('Content-Type')  // returns ?str
+}
+
+resp = post('http://example.com/api', '{"key":"value"}')
+
+// 一般リクエスト
+resp = do('PUT', 'http://example.com/item', 'data')
+
+// カスタム・リクエスト（ヘッダー付き）
+req = request{}
+req.init('PUT', 'http://example.com/item', 'data')
+req.add-header('Content-Type', 'application/json')
+req.add-header('Authorization', 'Bearer token123')
+resp = do-req(req)
+`
   'http.delete': `
 HTTP DELETE リクエストを実行
 url: 完全な URL
@@ -3146,6 +4209,12 @@ url str — 完全な URL
 dest str — 保存先ファイルパス
 返り値 ok bool — true=成功（かつ HTTP ステータスコードが 2xx）
 `
+  'http.download-to-file': `
+URL の内容をローカルファイルにダウンロードする (公開エントリ): http-dl-open に委譲し、リダイレクト数は 0 から開始
+url: 完全な URL (http/https)
+dest: 宛先ファイルパス (書き込み成功時に作成または上書き)
+ok: true=書き込み成功かつ HTTP ステータスが 2xx、false=失敗またはリダイレクトが 5 回超
+`
   'http.get': `
 HTTP GET リクエストを実行
 url: 完全な URL
@@ -3158,6 +4227,13 @@ user: ユーザー名
 password: パスワード
 返り値 resp: ok=レスポンス, nil=失敗
 `
+  'http.http-buf-size': `
+受信バッファ・サイズ
+TLS のレコードあたり最大平文（2^14 = 16384 バイト）以上でなければならない。さもなくば tls.conn.recv は、
+copy-n > n のとき n を超えるバイトを暗黙に破棄し、レスポンス途中の欠落を引き起こす（tls.no recv 参照）。
+単一レコードを無傷に保つため、16640（= 16384 + 256 の余裕、tls の内部 rec バッファと一致）を使用する。
+`
+  'http.http-default-port': 'デフォルトの HTTP ポート'
   'http.http-dl-dechunk': `
 chunked エンコードの body を生バイトへデフラム
 b: chunked エンコードのレスポンスボディ（各ブロックは 16 進の長さ行 + データ + CRLF、長さ 0 のブロックで終了）
@@ -3183,12 +4259,16 @@ port: 現在リクエスト中のポート番号
 loc: Location ヘッダの原文（絶対 URL、/ 始まりのルート相対パス、または一般相対パス）
 out: 解決後の絶対 URL 文字列
 `
+  'http.http-max-req-headers': 'カスタムリクエストヘッダの最大数'
+  'http.http-max-resp-headers': '解析するレスポンスヘッダの最大数'
+  'http.http-max-response': '最大レスポンスサイズ'
   'http.http-write-ok': `
 バイトを書き込み、?bool の結果を bool の成功フラグへ折り返します
 p: 対象ファイルパス
 data: 書き込むバイト（fs.write-bytes の内容）
 ok: true=書き込み成功（?bool の ok を true に折り返し；nil/err はどちらも false）
 `
+  'http.https-default-port': 'デフォルト HTTPS ポート'
   'http.patch': `
 HTTP PATCH リクエストを実行
 url: 完全な URL
@@ -3219,6 +4299,11 @@ url: 完全な URL
 body: リクエストボディ
 返り値 resp: ok=レスポンス, nil=失敗
 `
+  'http.request': `
+request: HTTP リクエスト（カスタムヘッダをサポート）
+headers: ヘッダ行の配列、各行は 'Name: Value' の形式
+header-count: 追加されたヘッダの数
+`
   'http.request.add-header': `
 カスタムヘッダを追加
 name と value を 'Name: Value' に組み立て headers 配列へ格納
@@ -3229,6 +4314,15 @@ name と value を 'Name: Value' に組み立て headers 配列へ格納
 method: HTTP メソッド（GET、POST、PUT、DELETE、PATCH など）
 url: 完全な URL
 body: リクエストボディ（GET/DELETE は空文字列可）
+`
+  'http.response': `
+response: HTTP レスポンス
+status-code: ステータスコード（例：200、404）
+status-text: ステータステキスト（例：OK、Not Found）
+headers: レスポンスヘッダ（生文字列、複数行、後方互換）
+header-names/header-values: 解析済みのヘッダ名/値（parse-headers が設定）
+header-count: 解析済みヘッダの数
+body: レスポンス本体
 `
   'http.response.get-header': `
 指定ヘッダ値を取得（線形探索）
@@ -3267,6 +4361,17 @@ token str — Bearer token（空も可）
 file-path str — アップロードするファイル
 返り値 ok bool — true=成功（かつ HTTP ステータスコードが 2xx）
 `
+  'http2': `
+http2 — HTTP/2.0 frames と接続管理 (RFC 7540)
+
+純 Nolang 実装、h2c (cleartext) prior knowledge モード。
+Upgrade ネゴシエーションなし; プリアンブルを直接送信します。
+
+usage:
+conn = connect(host, port)            // returns ?conn
+resp = do('GET', 'http://host/path', '')  // returns ?http.response
+`
+  'http2.conn': 'conn: HTTP/2 接続'
   'http2.conn.close': '接続をクローズ（TLS/平文を自動処理）'
   'http2.conn.init': '接続状態を初期化'
   'http2.conn.recv-frame': `
@@ -3350,6 +4455,12 @@ url: 'http://host:port/path'
 body: リクエストボディ（空文字列=ボディなし）
 返り値 resp: ok=レスポンス, nil=失敗
 `
+  'http2.flag-end-stream': `
+Flag
+
+`
+  'http2.frame': 'frame: HTTP/2 フレーム'
+  'http2.frame-data': 'フレーム種別'
   'http2.frame.parse': `
 data の pos 位置から 9 バイトフレームヘッダを解析
 返り値 next-pos: ok=次の位置, nil=エラー
@@ -3386,6 +4497,21 @@ HTTP/2 PUT リクエスト
 返り値 resp: ok=レスポンス, nil=失敗
 url: リクエストアドレス
 body: リクエストボディ（空文字列=ボディなし）
+`
+  'http3': `
+http3 — HTTP/3.0 クライアント (RFC 9114)
+
+HTTP/3 は QUIC トランスポートの上に構築され、QPACK ヘッダー圧縮を使用する。
+このモジュールは HTTP/3 フレーミング層、簡略化された QPACK コーデック、
+および HTTP/3 リクエスト/レスポンス処理を実装する。
+
+配下で QUIC (std/net/quic) と UDP を使用する
+QPACK は簡略モードを使用 (リテラルヘッダー、静的/動的テーブルなし)
+
+usage:
+# std/net/http3
+resp = get('https://example.com/path')   // ?http.response を返す
+resp = http3-do('GET', 'https://example.com/path', '')
 `
   'http3.connect': `
 HTTP/3 接続を確立
@@ -3447,6 +4573,8 @@ HTTP/3 GET リクエストを送信
 url: 完全な URL（例 https://example.com/path）
 返り値 resp: ok=GET レスポンス, nil=URL 不正／接続失敗／レスポンスなし
 `
+  'http3.http3-control-stream-id': 'QUIC ストリーム ID'
+  'http3.http3-default-port': 'デフォルトポート'
   'http3.http3-do': `
 汎用 HTTP/3 リクエストを送信
 method: HTTP メソッド（GET、POST、PUT、DELETE など）
@@ -3454,6 +4582,10 @@ url: 完全な URL
 body: リクエストボディ文字列（空文字列はボディなしを表します）
 返り値 resp: ok=レスポンス, nil=URL 不正／接続失敗／レスポンスなし
 `
+  'http3.http3-frame-data': 'HTTP/3 フレーム型'
+  'http3.http3-max-response': '最大レスポンスサイズ'
+  'http3.http3-method-get': 'HTTP メソッド'
+  'http3.http3-setting-max-field-section-size': 'HTTP/3 SETTINGS ID'
   'http3.parse-frame': `
 buf の pos 位置から HTTP/3 フレーム 1 件を解析
 buf: 1 つまたは複数の HTTP/3 フレームを含むバイトバッファ
@@ -3476,6 +4608,15 @@ url: 完全な URL
 body: POST リクエストボディ文字列
 返り値 resp: ok=POST レスポンス, nil=URL 不正／接続失敗／レスポンスなし
 `
+  'http3.qpack-literal-prefix': 'QPACK リテラルヘッダープレフィックス'
+  'http3.response': `
+response: HTTP/3 レスポンス
+status-code: ステータス・コード
+header-names: ヘッダー名
+header-values: ヘッダー値
+header-count: ヘッダー数
+body: レスポンス本体
+`
   'http3.response.get-header': `
 ヘッダ値を取得
 name: 検索するヘッダ名（比較は大文字小文字を区別しません）
@@ -3489,6 +4630,15 @@ path: リクエストパス（:path ヘッダへ記入）
 host: ホスト名（:authority ヘッダへ記入）
 body: リクエストボディ文字列（空文字列はボディなしを表します）
 返り値 resp: ok=解析後のレスポンス, nil=送信または受信の失敗
+`
+  'int': `
+int — int 共用体型と int メソッド
+
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
+(整数共用体型エイリアス)。
+このモジュールは int 型のメソッドを保持する: to-str, div, mod。
+float 共用体型は std/float.no を参照。num 共用体型は std/num.no を参照。
+具象型の操作 (範囲定数、型変換、具象型 to-str、ビット演算など) は number モジュールを参照。
 `
   'int.div': `
 整数除算。商を返す（a ÷ b）
@@ -3509,6 +4659,25 @@ transpiler は i64.to-str() などを int.to-str() に解決する
 注意: 負数の絶対値を取らない（0 - n は n = i64.MIN のときオーバーフローする）。
 代わりに負数のまま srem/sdiv（ゼロ方向への切り捨て）を行い、負の余りを [0, 9] に写す。
 out: 十進表現文字列、例 42 / -17；ゼロは '0' を出力、負数は先頭 '-' 付き
+`
+  'io': `
+io — 基本的な入出力インターフェース
+
+reader/writer 抽象インターフェースと便利関数を提供し、
+ファイル、標準入出力、文字列、その他のデータストリームに対する読み書き操作を統一します。
+配下の fs モジュールの read/write/get-line 組み込み関数に依存し、
+fs.read / fs.write / fs.get-line を通じて呼び出されます。
+
+使い方:
+r = reader.from-stdin()
+line = r.read-line()
+
+w = writer.from-stdout()
+n = w.write-str('hello')
+
+io.out('hello')
+io.outln('world')
+line = io.read-line()
 `
   'io.err': `
 文字列を標準エラーに書き出す（改行なし）
@@ -3534,6 +4703,10 @@ n: 文字列と改行を合わせて書き込んだバイト数
 標準入力から 1 行読み込む
 戻り値 line: ok=行, nil=EOF またはエラー
 line: ok=標準入力から読んだ1行, nil=EOF または読み取り失敗
+`
+  'io.reader': `
+reader: リーダ
+fd: 基底のファイルディスクリプタ
 `
   'io.reader.from-fd': `
 ファイルディスクリプタからリーダを構築する
@@ -3567,6 +4740,10 @@ b: ok=読み取ったバイト値(0~255)、nil=EOF または無効な fd
 1 行読み込む（最大 4096 バイト）
 戻り値 line: ok=行, nil=EOF またはエラー
 line: ok=読んだ1行の内容(最大 4096 バイト)、nil=EOF または fd 無効
+`
+  'io.writer': `
+writer: ライター
+fd: 基盤となるファイルディスクリプタ
 `
   'io.writer.from-fd': `
 ファイルディスクリプタからライタを構築する
@@ -3605,6 +4782,25 @@ written: 文字列と改行を合計して書き込んだバイト数；0 は fd
 実際に書いたバイト数を返す
 s: 書き込む完全な文字列（バイト化後全量書き込み）
 written: 実際に書き込んだバイト数；0 は fd が無効を意味する
+`
+  'ip': `
+ip — IP アドレス操作
+
+IPv4 アドレスの解析、検証、変換、分類を提供。
+純粋な Nolang 実装で、C ライブラリに依存しない。
+
+使用法：
+// parse an IP string
+ip = ip-addr{}
+ok = ip.parse('192.168.1.1')
+ok -> {
+s = ip.to-str()       // s = '192.168.1.1'
+yes = ip.is-loopback() // yes = false
+yes = ip.is-private()  // yes = true
+`
+  'ip.ip-addr': `
+ip-addr: IPv4 アドレス
+a, b, c, d: 4 つのオクテット（0~255）
 `
   'ip.ip-addr.equal': `
 2 つの IP アドレスが等しいかを比較
@@ -3683,6 +4879,8 @@ yes: true は 4 セグメントすべてが 0 であることを表します（�
 32 ビット符号なし整数へ変換（ビッグエンディアン）
 返り値 v: (a<<24)|(b<<16)|(c<<8)|d
 `
+  'ip.ip-any': '0.0.0.0 (IP-ZERO と同じ、意味的命名)'
+  'ip.ip-broadcast': '255.255.255.255'
   'ip.ip-is-loopback': `
 文字列がループバックアドレスかを簡単に判定
 s: IP 文字列（先に解析してから判定）
@@ -3693,11 +4891,38 @@ yes: true=解析成功かつ 127.0.0.0/8 のループバックアドレス
 s: IP 文字列（先に解析してから判定）
 yes: true=解析成功かつ 10/8、172.16/12、192.168/16 のプライベートネットワークのいずれかに該当
 `
+  'ip.ip-loopback': `
+127.0.0.1
+
+`
   'ip.ip-parse': `
 IP 文字列を簡単に解析
 返り値 addr: ok=解析結果, nil=解析失敗
 s: 解析対象の IP 文字列
 addr: ok=解析結果, nil=解析失敗（挙動は ip-addr.from-str と同じ）
+`
+  'ip.ip-zero': `
+0.0.0.0
+
+`
+  'json': `
+json — JSON シリアライズ/デシリアライズ
+
+高レベル API: json 構造体はノードプールをラップし、直感的な parse/stringify インターフェースを提供します。
+下層はノードプール（pool）に基づく JSON ツリーであり、ネストした配列とオブジェクトをサポートします。
+
+使い方:
+j = json.parse('{"name":"Alice","age":30}')
+j: {
+ok -> {
+name, found = it.get-str('name')
+found -> print(name)
+}
+}
+
+j2 = new()
+j2.set('key', 'value')
+s = j2.stringify()
 `
   'json.alloc-node': `
 新しいノードを確保する（pool は #{inline=false} のポインタフィールドなので、そのまま .pool.alloc に委譲する）
@@ -3855,6 +5080,21 @@ yes: 根ノードの種類が JSON-KIND-OBJ
 文字列かを返す
 yes: 根ノードの種類が JSON-KIND-STR
 `
+  'json.json': `
+json: 高レベルの JSON 値。ノードプールとルートノードインデックスをラップする
+使い方:
+j = new()                      // create a null json
+j = json.parse('{"a":1}')      // parse from a string
+s = j.stringify()              // serialize to a string
+pool は #{inline=false} のポインタとして格納されます: json を値として返却/コピーできるようにし、
+ノードプールは代わりにヒープ vec を使用します（コピー時にプールをディープコピーし、エイリアスと double-free を回避）。
+`
+  'json.json-kind-null': 'json-kind: JSON 値の型（enum 値がインクリメントされないコンパイラのバグを避けるため、enum ではなく定数を使用）'
+  'json.json.parse': `
+解析
+s: 完全な JSON テキスト（先頭と末尾の空白はスキップされます）
+result: ok=解析済み json、err('empty input'/'parse error'/'trailing characters')=各段階での失敗
+`
   'json.kind': `
 ノード種別を取得する
 戻り値 JSON の種別定数
@@ -3903,6 +5143,21 @@ bool を返す set / arr-push などのメソッドが、false を返した後�
 ok = j.set('k', v)
 ok == false && j.overflowed() -> print('pool full')
 yes: プール溢れフラグ（ヒープ vec 版 alloc はもはや発火させず、ほぼ常に false）
+`
+  'json.pool': `
+pool: JSON ノードプール (ヒープ vec 割り当て、容量制限なし)
+nodes: 並列ノード配列 (ノード idx で索引、要素は純粋なスカラー構造体)
+strs: 各ノードの文字列値 (ノード idx で索引。str が vec 要素内に置かれるのを避けるため、古い str-val フィールドから移動)
+ec/ek/en: 辺テーブル — 子ノード idx、キー名、次の兄弟辺 idx (親ノードは first/last を介してチェーンを連結)
+`
+  'json.pool-next-id': `
+⚠️ これはインスタンスごとの一意識別子では**なく**、また「ソースプール == レシーバプール」を判定するためにも使えません：nolang の
+モジュールレベルのバインディングは再束縛できないため、関数内で `JSON-POOL-NEXT-ID = …` と書いても同名のローカル変数を
+宣言してグローバルを隠すだけで、グローバルは永久に 0 のままです。実際には、複数回の init 呼び出しの後、各プールの id は 1 となり、
+copy-tree はこれを使って「同じプール」と判断し、copy-self に切り替え、空の新規プールで直接 -1 を返すようになったため、
+json.arr-get / json.get で得られる部分木のルートは常に -1 となります（.str() は常に nil、
+stringify がクラッシュします）。プール間コピーのプール同一性の問題は現在、呼び出し側が保証します（copy-tree のコメント参照）、
+自己参照の場合は json.set-key の二段階中継を通ります。
 `
   'json.pool.add-child': `
 子ノード child-idx（キー名 key。配列なら空文字列を渡す）をノード node-idx に接続する
@@ -4092,6 +5347,61 @@ j = new()
 s = j.stringify()
 out: JSON テキスト（root 無効時は空文字列）
 `
+  'json.value': `
+value: JSON ノード（純粋なスカラー項目を持ち、ヒープ vec に安全に格納できる）
+kind/num-val/bool-val: スカラー値
+count: 配列/オブジェクトの子要素数
+first/last: 辺テーブル内の子単方向リストの先頭/末尾の辺インデックス（-1=子なし）
+`
+  'leave': 'leave — スコープ退出フック（インターフェース宣言）\n\n型が `T.leave = () { … }` を提供すると、コンパイラは**スコープ退出時**に宣言の逆順で自動的に\n`var.leave()` を挿入します（`return` で抜けても実行され、かつ一度だけ — クリーンアップは各ブロックレベルの\n末尾に付加され、return の前に再挿入はされません）: 注入は src/build/transpiler_inject.go の\ninjectEnterLeave により、**メソッド名**をキーとして実行され、この宣言とは結合しません。\n\n基準は「解決された実効型」であり、ソースが注釈を書いたかどうかではありません — `no fmt` は\n冗長な注釈を除去します。`a T = T{…}` は fmt を通した後も同様に leave しなければ、リソースが解放されません。\n\n本ファイルはインターフェース自体のみを登録し、ドキュメントと LSP ナビゲーションのためのものです。std コーパスでこれを実装する型はまだありません\n（example/sqlite-driver および example/mysql-driver は実装しており、leave で接続を閉じます）。'
+  'link': `
+link — generic doubly linked list (based on a fixed-size array node pool)
+
+[n]t 固定サイズ配列を値の格納に用いる二重連結リスト (Doubly Linked List) で、
+[]i64 インデックス配列により next/prev のリンクを実装します。
+フリーリストでノードの割り当てと回収を管理し、O(1) の挿入/削除をサポートします。
+
+ジェネリック設計: 値操作メソッドは [n]t 上で定義され、
+ジェネリックパラメータ n (配列サイズ) と t (要素型) はコンパイラにより自動推論されます。
+リンク状態 (head/tail/free-head/size) は link 構造体に別途格納されます。
+
+queue/arr-stack との違い:
+- link は任意の位置での挿入/削除をサポート (O(n) 検索 + O(1) 修正)
+- link は両端 push/pop をサポートし、pop-back は O(1)
+- queue は FIFO のみ、arr-stack は LIFO のみ
+- link は追加の next/prev インデックス配列を必要とする
+
+usage:
+buf [128]i64
+nxt [128]i64
+prv [128]i64
+l = buf.link-init(nxt, prv)
+ok = buf.link-push-back(l, 10)
+ok = buf.link-push-back(l, 20)
+ok = buf.link-push-front(l, 5)
+// リスト: 5 → 10 → 20
+val = buf.link-pop-front(l)   // val = ok
+val = buf.link-pop-back(l)    // val = ok
+// リスト: 10
+sz = l.size()
+yes = l.empty()
+
+// オプションの展開
+val = buf.link-pop-front(l)
+val: {
+nil -> print('empty')
+-> print(it)
+}
+`
+  'link.link': `
+link: 連結リストの状態（値バッファなし；値は [n]t レシーバから提供される）
+head: 先頭ノードのインデックス、-1=空リスト
+tail: 末尾ノードのインデックス、-1=空リスト
+free-head: フリーリストの先頭インデックス、-1=ノードプール満杯
+size: 現在の要素数
+next: 次ノードのインデックス配列（呼び出し側が提供）
+prev: 前ノードのインデックス配列（呼び出し側が提供）
+`
   'link.link.empty': `
 連結リストが空かを返す
 戻り値 yes: true=空, false=空でない
@@ -4106,6 +5416,30 @@ yes: true=free-head < 0（空きリストが枯渇し、後続の insert は新�
 連結リストの要素数を返す
 戻り値 sz: 要素数
 sz: 現在有効なノード数（ノードが一つも無いときは 0）
+`
+  'linked-hash-map': `
+linked-hash-map — 順序付き i64->i64 ハッシュマップ
+
+固定容量（64 エントリ）、線形探査、双方向リストが挿入順序を保持します。
+容量は 2 のべき乗で、推奨負荷率は ≤ 0.75（つまり最大 ~48 エントリ）です。
+
+使い方:
+m = linked-hash-map{}
+m.put(42, 100)
+val = m.get(42)   // val = ok(100) または nil
+m.for-each(key, val)
+`
+  'linked-hash-map.linked-hash-map': `
+linked-hash-map: 挿入順に維持される i64→i64 ハッシュ表インスタンス
+cap: スロットの総数 (固定 64、2 のべき乗であること)
+keys: 各スロットに格納されたキー。occ[i] == 1 のスロットのみが有効
+vals: keys に対応する値 (一対一)
+occ: 占有フラグ、1=スロット占有 (プローブされた位置の可能性あり)、0=空スロット
+nxt: 連結リスト内でのこのスロットの後続スロット索引、-1=末尾ノード
+prv: 連結リスト内でのこのスロットの先行スロット索引、-1=先頭ノード
+head: 連結リストの先頭スロット索引 (最も早く挿入されたキー)、-1=空表
+tail: 連結リストの末尾スロット索引 (最も遅く挿入されたキー)、-1=空表
+size: 現在のキー・値ペア数
 `
   'linked-hash-map.linked-hash-map.clear': 'マップを空にする'
   'linked-hash-map.linked-hash-map.contains': `
@@ -4154,6 +5488,47 @@ is-new: true=新規挿入されたキー, false=既に存在、値のみ更新
 key: 削除するキー
 removed: true=発見して削除, false=キーが存在せず
 `
+  'log': `
+log — レベル付きロギング
+
+接頭辞形式のレベル付きロギングです。既定では標準エラー出力（io.writer 抽象化を基盤とします）に書き込みます。
+open-file / set-writer / set-output-fd で出力先を切り替えられます。出力形式は set-format で選択し、タイムスタンプ、レベルタグ、
+およびコンパイラが注入する呼び出し位置 file:line:column を含められます（#{track-caller} を参照）。
+
+使用方法:
+log.set-format(log.F-TIME | log.F-LEVEL | log.F-LOC)
+log.open-file('app.log')            ; append to file
+log.info('server started')          ; 2026-.. ..:.. [INFO] app.no:7:5 server started
+
+; output target (default stderr): use uppercase fd constants for stdout / stderr
+; (use the scalars STDOUT-FD/STDERR-FD, not struct globals like fs.STDOUT/stdout -
+;  initialization of struct globals in std merged modules is unreliable)
+log.set-output-fd(fs.STDOUT-FD)             ; redirect logs to standard output
+log.set-output-fd(fs.STDERR-FD)             ; switch back to standard error (the default)
+`
+  'log.debug': `
+debug: DEBUG レベルのログを出力する
+msg: ログの本文
+loc: 呼び出し元の ファイル:行:列（#{track-caller} によって自動注入される；呼び出し側は省略可、明示的に渡した値が優先される）
+`
+  'log.error': `
+error: ERROR レベルのログを出力します
+msg: ログ本文
+loc: 呼び出し位置 file:line:col（#{track-caller} により自動注入。呼び出し側は省略可能で、明示値が優先されます）
+`
+  'log.f-level': '[INFO] / [ERROR] のレベル・タグを前置する'
+  'log.f-loc': '呼び出し箇所 [file:line:col] を前置する（#{track-caller} により自動注入）'
+  'log.f-time': 'タイムスタンプ YYYY-MM-DD HH:MM:SS (UTC) を前置する'
+  'log.fatal': `
+fatal: FATAL レベルのログを出力し終了する
+msg: ログ本文
+code: 出力後に exit に渡されるプロセス終了ステータスコード
+loc: 呼び出し元 ファイル:行:列 (#{track-caller} により自動注入。呼び出し側は省略可能、明示的な値が優先される)
+`
+  'log.fmt-flags': `
+出力形式ビット (デフォルトは [INFO] レベルタグのみ、互換性のため旧出力に近く保たれます;
+必要なら set-format で F-TIME / F-LOC を追加)
+`
   'log.get-output-fd': `
 現在の出力先の fd を返す（デバッグ用）
 cur: 現在の出力先 fd（デフォルトは標準エラー）
@@ -4162,6 +5537,12 @@ cur: 現在の出力先 fd（デフォルトは標準エラー）
 現在の出力先に対応する io.writer を返す
 w: 現在の OUT-FD から組み立てた io.writer 抽象
 `
+  'log.info': `
+info: INFO レベルのログを出力する
+msg: ログメッセージの本文
+loc: 呼び出し元の ファイル:行:列（#{track-caller} によって自動注入される；呼び出し側は省略可、明示的に渡した値が優先される）
+`
+  'log.level': '現在のログレベル (デフォルト INFO)'
   'log.log-emit': `
 FMT-FLAGS からログ 1 行を組み立て、io.writer 抽象を通して OUT-FD に書き込む
 tag: レベルタグ（例 DEBUG/INFO、F-LEVEL 設定時のみ [tag] を接頭辞に付与）
@@ -4177,6 +5558,12 @@ s: UTC タイムスタンプ文字列（書式 YYYY-MM-DD HH:MM:SS）
 戻り値 ?bool: ok=true は成功、ファイルを開けないときは err
 path: 追記モードで開いて出力先とするログファイルパス
 res: ok=true オープン成功, err=オープン失敗
+`
+  'log.out-fd': `
+OUT-FD: ログ出力先 fd（既定は標準エラー stderr=2）。
+説明：外部出力インタフェースは io.writer 抽象（set-writer / get-writer 参照）が担うが、永続化できる状態は
+このスカラー fd のみ——Nolang の統合された std モジュールでは struct global への書き込みは
+永続化されない（スカラー・グローバルのみが可変）。そのため fd を唯一の信頼できる格納先とし、書き込み時に writer を組み立てる。
 `
   'log.set-format': `
 出力フォーマットのビット（F-TIME / F-LEVEL / F-LOC の OR）を設定する
@@ -4194,6 +5581,21 @@ new-fd: 新しい出力先ファイルディスクリプタ（その open/close 
 出力先を指定した io.writer（io インターフェースの抽象）に切り替える。
 writer が実際に包んでいるのは fd だけであり、std が永続化できるのはスカラーだけなので、その fd を保存する。
 w: 対象 io.writer（内部では fd フィールドのみを永続保存として取る）
+`
+  'log.warn': `
+warn: WARN レベルのログを出力する
+msg: ログメッセージ本文
+loc: 呼び出し元 ファイル:行:列 (#{track-caller} により自動注入。呼び出し側は省略可能、明示的な値が優先される)
+`
+  'magic': `
+magic — 単純化されたファイル種別検出
+
+libmagic に依存せず、拡張子とマジックバイトからファイル種別を判定する。
+優先順位：まず拡張子を確認し、次にマジックバイトを確認する。
+
+usage:
+kind = magic.detect-type('/path/to/file')
+print(kind)
 `
   'magic.detect-by-extension': `
 ファイル拡張子から種別を判定する
@@ -4220,6 +5622,25 @@ path: ファイルパス（ディレクトリを含んでよい）；末尾か�
 '.' を含まない拡張子を返し、ない場合は空文字列
 ext: 小文字の拡張子；'.' が無い、'.' 以降が空、または '.' がディレクトリ部分にしか無い場合は ''
 `
+  'map': `
+map — 汎用動的ハッシュマップ
+
+このファイルは 3 つの汎用ハッシュマップテンプレートを提供し、コンパイラが任意の k/v の組み合わせに特殊化します:
+- hashmap-str-tmpl: str キー (V は汎用)
+- hashmap-int-tmpl: int キー (K,V は汎用)
+- hashmap-bool-tmpl: bool キー (V は汎用)
+
+すべての実装は動的容量を持ち、keys/vals/occ の格納に vec フィールドを使用します。
+str/int テンプレートは容量 16 から開始し、負荷率 > 0.75 のとき自動的にリハッシュして拡張します（容量を倍増）。
+bool テンプレートは固定の 2 スロットを持ちます（true/false を直接インデックス、プローブや拡張はありません）。
+
+使用方法（特殊化後、例: v=i64）:
+m = hashmap-str-tmpl{}
+m.init()
+m.put('name', 42)
+val = m.get('name')   ; val = ok(42) or nil
+`
+  'map.fnv-offset': 'FNV-1a 定数'
   'map.hashmap-bool-tmpl.clear': 'マップを空にする（occ の vec を再確保する）'
   'map.hashmap-bool-tmpl.contains': `
 キーが存在するかを返す
@@ -4361,6 +5782,23 @@ a: 1 番目の文字列
 b: 2 番目の文字列
 eq: 両者がバイト単位で等しいか
 `
+  'markdown': `
+markdown — Markdown rendering standard library
+
+外部依存のない CommonMark 風レンダラーで、文書・ログ・メッセージ向けです。
+サポート:
+- ATX / Setext 見出し、段落、ハード改行、区切り線
+- 順序/非順序リスト、タスクリスト、引用ブロック
+- フェンス付きコードブロック (``` / ~~~、言語クラスを保持) とインデントコードブロック
+- 表、太字、斜体、打ち消し線、インラインコード
+- リンク、画像、オートリンク、バックスラッシュエスケープ
+- 完全な HTML エスケープ; デフォルトでは入力は生 HTML として実行されない
+
+usage:
+html = markdown.to-html(source)
+html = markdown.render(source)
+text = markdown.inline('**bold** and `code`')
+`
   'markdown.blockquote': '引用行の行頭 > 標記を取り除く。\n`> の後に半角スペースが1つだけある場合はそれも除去；`>>` のような入れ子は残りの `> を保持。\nline: 生の1行テキスト\nout: yes はその行が引用行であることを示し、text は行頭マーカー除去後の内容（引用行で無いときは空文字列）'
   'markdown.code-close': `
 現在行が指定 fence を閉じるかどうかを判定。
@@ -4406,6 +5844,7 @@ line: 追記する生の行；hard-break 時は末尾にスペース2個必須
 hard-break: true はその行末にスペース2個があり、ハード改行を挿入する必要があることを示す
 out: 追記後の段落テキスト
 `
+  'markdown.line': '複数値の解析結果を保持するために小さなレコードを使用し、呼び出し側がオプションのインデックス結果を処理する必要がないようにする。'
   'markdown.list-content': `
 タスクリスト内容をレンダリング。
 GFM タスク標記 '[ ] ' と '[x] ' / '[X] ' を識別し、残り内容はインライン構文でレンダリング。
@@ -4475,6 +5914,24 @@ Markdown ドキュメントを HTML にレンダリングする。
 source: 完全な Markdown ソーステキスト
 out: 完全な HTML ドキュメント断片
 `
+  'math': `
+math - 数学および数値関数（関数形式 API）
+
+std 数値ファミリーの全「関数形式」API はこのモジュールに集約される：max, min, pow, hypot, atan2,
+fmod, clamp, even, odd, gcd, lcm, div, mod, swap, arr-zero,
+低レベルの数値から文字列への関数（char-to-str）,
+ビット演算（rotate-left, rotate-right, store-le-u32）。
+注：型幅変換（i64-to-f64, f64-to-i64, f32-to-f64 …）および整数/浮動小数点 to-str
+（i64/u64/f64-to-str）の関数形式は削除され、number.no の直接メソッド
+（f64.to-i64, i64.to-str, f64.to-str 等）によって提供されるようになった。
+「メソッド形式」の API（*.to-str, f64/f32 sqrt/sin/exp…, 整数 sqrt/is-prime）
+はすべて number モジュール（std/number.no）にあり；共用型とメンバメソッド：num → std/num.no,
+int → std/int.no, float → std/float.no。
+例外：整数の累乗 pow（int ジェネリック）は本モジュールの pow（f64）と名前が衝突するため、std/number.no に残る。
+
+定数：PI, E, LN10（ln 10、number.no の f64.to-str から math.LN10 で参照される）は本モジュールにあり；
+数値範囲定数（i8.MIN…u64.MAX）および INF は std/number.no にある。
+`
   'math.arr-zero': `
 [n]num.zero / []num.zero — ストレージを llvm.memset でゼロ埋めする
 固定長配列: 総バイト数 = n * sizeof(num) でコンパイル時定数
@@ -4486,6 +5943,13 @@ atan2: y/x の逆正接（純 .no 実装、libm 依存を回避）
 内部 atan-kernel：まず |t| を <= tan(pi/8) に帰着し、その後テイラー級数
 t: 正規化済みの入力値；|t| が大きすぎると級数の収束が遅くなり精度も低下
 r: atan の近似値（ラジアン、値域はおよそ (-pi/2, pi/2)）
+`
+  'math.atan2': `
+atan2: 原点に対する点 (x, y) の偏角 (atan(y/x) の単一値域とは異なり、象限で補正される)
+範囲 (-pi, pi]: x>0 は atan(y/x) をそのまま取る。x<0 は pi を加減する。x=0 は ±pi/2 を取る。原点は 0 を取る
+y: 縦座標
+x: 横座標
+res: 偏角 (ラジアン)
 `
   'math.char-to-str': `
 char（Unicode コードポイント）を UTF-8 エンコードした文字列に変換する
@@ -4618,6 +6082,16 @@ val: 書き込む 32 ビット値、下位 8 バイトから配置
 a: 出力パラメータ 1（呼び出し前は元の値を保持、リターン時は b の元の値を保持）
 b: 出力パラメータ 2（呼び出し前は元の値を保持、リターン時は a の元の値を保持）
 `
+  'md5': `
+md5 — MD5 メッセージダイジェストアルゴリズム（128-bit）
+
+バイト配列の MD5 ハッシュを計算します。
+
+使用方法:
+data = [0x61, 0x62, 0x63]  // ["a", "b", c"]
+hash = md5(data)
+// hash == [0x90, 0x01, 0x50, 0x98, ...]
+`
   'md5.md5': `
 MD5 ハッシュを計算（RFC 1321；入力は任意長。内部で 512-bit の倍数に埋めます）
 data: ダイジェスト計算の対象入力バイト
@@ -4630,6 +6104,48 @@ x: ローテートする 32 ビット値
 n: 左ローテートビット数（1..31；32 はシフト量あふれを起こします）
 r: 左ローテート結果。& 0xFFFFFFFF 済み
 `
+  'multipart': `
+multipart — Multipart/form-data エンコード/デコード（RFC 2046）
+
+HTTP multipart/form-data のエンコード（ファイルアップロード用）と解析を提供する。
+テキストフィールドとファイルフィールドをサポートし、境界（boundary）を自動生成する。
+機密データを保護するための AES-256-GCM 暗号化ファイルアップロードをサポートする。
+
+usage:
+// build a multipart request body
+w = multipart-create()
+w.write-field('name', 'Alice')
+w.write-file('avatar', 'photo.jpg', 'image/jpeg', file-data)
+w.close-form()
+body = w.body()
+ct = w.content-type()
+// set HTTP headers
+req.add-header('Content-Type', ct)
+resp = http-post('http://example.com/upload', body)
+
+// encrypted file upload
+w = multipart-create()
+w.write-encrypted-file('secret', 'data.bin', 'application/octet-stream', file-data, key, iv)
+w.close-form()
+// 受信側では multipart-reader で解析し、その後 aes-gcm.open-256 で復号する
+
+// parse a multipart response
+r = multipart-parse(boundary, body)
+r: {
+nil -> print('parse failed')
+-> {
+r: {
+ok -> {
+name = r.field-name()
+data = r.field-data()
+}
+-> break
+}
+}
+}
+`
+  'multipart.multipart-boundary-len': '境界の長さ'
+  'multipart.multipart-boundary-prefix': '境界プレフィックス'
   'multipart.multipart-create': `
 新しい multipart エンコーダを構築
 返り値 w: ok=エンコーダ, nil=失敗
@@ -4656,11 +6172,28 @@ content-type: Content-Type ヘッダ値
 seed: ランダムシード（入力/出力）
 返り値 boundary: 境界文字列
 `
+  'multipart.multipart-max-fields': 'フィールドの最大数'
   'multipart.multipart-parse': `
 Content-Type ヘッダとリクエストボディから multipart を解析
 content-type: Content-Type ヘッダ値（boundary=... を含む）
 body: リクエストボディ
 返り値 r: ok=パーサ, nil=失敗
+`
+  'multipart.multipart-part': `
+multipart-part: 単一の multipart パート
+name: フィールド名
+filename: ファイル名 (empty=ファイルではない)
+content-type: コンテンツタイプ (empty=未指定)
+data: パートのデータ
+`
+  'multipart.multipart-reader': `
+multipart-reader: Multipart フォームパーサ
+boundary: 境界文字列
+data: 生データ
+pos: 現在のパース位置
+end: データの総長
+current: 現在のパート
+has-current: 現在のパートが存在するか
 `
   'multipart.multipart-reader.field-content-type': `
 現在のコンテンツタイプを取得
@@ -4704,6 +6237,13 @@ part: 出力。解析結果
 パートヘッダを解析
 header-block: ヘッダブロック（末尾の CRLFCRLF は含みません）
 part: 出力。解析結果
+`
+  'multipart.multipart-writer': `
+multipart-writer: マルチパートフォームエンコーダー
+boundary: 境界文字列
+body: 構築されたリクエスト本文
+closed: 閉じられているかどうか（終端境界はすでに書き込まれている）
+seed: 乱数シード
 `
   'multipart.multipart-writer.body-of': `
 構築済みリクエストボディを取得
@@ -4761,10 +6301,71 @@ content-type: コンテンツタイプ（例 'image/jpeg'）
 content: ファイル内容
 返り値 ok: true=書き込み成功
 `
+  'net': `
+net — network operations
+
+TCP ネットワークプログラミング機能を提供します。サーバー待ち受け、クライアント接続、データ送受信を含みます。
+POSIX ソケット API (socket/bind/listen/accept/connect/send/recv) 上に実装されています。
+AES-256-GCM 暗号化チャネルをサポートし、平文 TCP 接続にエンドツーエンド暗号化を提供します。
+
+usage:
+// TCP サーバー
+l = listen-on('127.0.0.1', 8080)         // returns ?listener
+l: {
+nil -> return
+-> c = l.accept()                      // returns ?conn
+}
+n = c.recv(buf, 1024)
+n = c.send('hello')
+c.close()
+l.close()
+
+// TCP クライアント
+c = dial-to('127.0.0.1', 8080)           // returns ?conn
+n = c.send('hello')
+n = c.recv(buf, 1024)
+c.close()
+
+// 暗号化チャネル
+key [32]byte = [...]  // shared key
+ec = enc-conn{}
+ec.init(c, key)
+ec.send-encrypted('sensitive data')
+msg = ec.recv-encrypted()  // returns ?str
+`
+  'net.af-inet': 'アドレスファミリー'
+  'net.arp-info': `
+arp-info: ARP テーブル項目
+ip: IP アドレス
+hw-type: ハードウェア種別
+flags: フラグ・フィールド（/proc/net/arp の第3列の16進値、0x2 は complete を意味する）
+mac: MAC アドレス
+iface: インタフェース名
+`
+  'net.arp-list': `
+arp-list: ARP テーブルを一覧表示
+arp-info のリストを返します
+Linux: /proc/net/arp を解析します
+macOS/Windows: 現在は空のリストを返します（sysctl net.inet.arp または GetIpNetTable が必要）
+arps: ARP テーブルエントリのリスト（ip/hw-type/flags/mac/iface）
+`
+  'net.arp-list-2': `
+macOS 変種: 未実装（sysctl net.inet.arp または ARP ioctl が必要）
+arps: 常に空のリスト
+`
+  'net.arp-list-3': `
+Windows 版：未実装（GetIpNetTable が必要）
+arps: 常に空のリスト
+`
+  'net.backlog': 'リッスンキューの長さ'
   'net.close': `
 ファイルディスクリプタをクローズ（fs モジュール由来）
 fd: クローズする socket/ファイルディスクリプタ
 ok: 0=成功, -1=失敗
+`
+  'net.conn': `
+conn: TCP 接続
+fd: 接続済みソケットのファイルディスクリプタ（-1=未接続）
 `
   'net.conn.close': '接続をクローズ'
   'net.conn.dial': `
@@ -4845,6 +6446,13 @@ c: accept 済みの TCP 接続
 key: AES-256 キー
 返り値 ec: 暗号接続
 `
+  'net.enc-conn': `
+underlying: 基底の TCP 接続
+key: AES-256 鍵
+send-seq: 送信シーケンス番号 (IV 生成用)
+recv-seed: 受信シーケンス番号 (IV の一意性検証用)
+rand-seed: 乱数シード (IV 生成用)
+`
   'net.enc-conn.close': '暗号接続をクローズ（基盤の TCP 接続も同時にクローズ）'
   'net.enc-conn.gen-iv': `
 次の IV（nonce）を生成
@@ -4878,6 +6486,12 @@ data: パケットデータ
 len: パケット長
 返り値 checksum i64（16 ビット）
 `
+  'net.icmp-conn': `
+icmp-conn: ICMP ping 接続
+fd: ソケットファイルディスクリプタ (-1=未オープン)
+ident: ICMP 識別子（ビッグエンディアン）
+seq: 現在のシーケンス番号
+`
   'net.icmp-conn.build-echo': `
 ICMP Echo Request パケットを構築
 pkt: 出力パケットバッファ（最低 64 バイト）。本関数が in-place で記入します
@@ -4901,12 +6515,40 @@ host: 対象 IP アドレス
 timeout-ms: タイムアウトミリ秒
 返り値 rtt: ok=往復遅延（マイクロ秒）, nil=失敗
 `
+  'net.icmp-echo-request': 'ICMP 定数'
+  'net.if-info': `
+if-info: ネットワークインターフェース情報
+name: インターフェース名 (例: eth0, lo)
+rx-bytes: 受信バイト数
+tx-bytes: 送信バイト数
+rx-packets: 受信パケット数
+tx-packets: 送信パケット数
+`
+  'net.ifconfig-list': `
+ifconfig-list: すべてのネットワークインターフェース情報を列挙します
+if-info のリストを返します
+Linux: /proc/net/dev をパース
+macOS/Windows: 現在は空リストを返します（getifaddrs または GetIfTable システム API が必要）
+ifs: 各ネットワークインターフェースの統計リスト（name/rx-bytes/rx-packets/tx-bytes/tx-packets）
+`
+  'net.ifconfig-list-2': `
+macOS 版: 未実装（getifaddrs(3) が必要）
+ifs: 常に空のリスト
+`
+  'net.ifconfig-list-3': `
+Windows 変種: 未実装（GetIfTable が必要）
+ifs: 常に空のリスト
+`
   'net.listen-on': `
 リスナーを確立し監視を開始
 返り値 l: ok=リスナー, nil=失敗
 host: バインドする IPv4 ドット区切りアドレス
 port: 監視ポート番号
 l: ok=accept 開始可能なリスナー, nil=監視失敗
+`
+  'net.listener': `
+listener: TCP リスナー
+fd: 待ち受けソケットのファイルディスクリプタ（-1=未オープン）
 `
   'net.listener.accept': `
 新規 TCP 接続を accept
@@ -4947,6 +6589,7 @@ fd: 新規 accept 接続のファイルディスクリプタ（-1=失敗）
 listen-fd: 非ブロッキング設定済みの監視 socket ファイルディスクリプタ
 fd: 新規 accept 接続のファイルディスクリプタ（-1=失敗）
 `
+  'net.net-buf-size': 'デフォルトのバッファサイズ'
   'net.net-dial': `
 TCP クライアント接続を確立
 socket + connect を実行
@@ -5024,10 +6667,50 @@ host: 対象 IP アドレス
 host: 対象 IP アドレス
 count: ping 回数
 `
+  'net.route-info': `
+route-info: ルーティングテーブルエントリ
+destination: 宛先ネットワーク（例: 00000000 = デフォルトルート）
+mask: サブネットマスク
+gateway: ゲートウェイ
+flags: フラグフィールド（/proc/net/route の第 4 列の 16 進値, 例: 0003 = U|G）
+iface: インターフェース名
+`
+  'net.route-list': `
+route-list: カーネルルーティングテーブルを一覧表示
+returns a list of route-info
+Linux: parse /proc/net/route
+macOS/Windows: 現在は空リストを返します (PF_ROUTE ソケットが必要)
+routes: ルートエントリのリスト (iface/destination/gateway/flags/mask; アドレスフィールドは 16 進文字列)
+`
+  'net.route-list-2': `
+macOS 版: 未実装（PF_ROUTE ソケットまたは sysctl CTL_NET/NET_RT_DUMP が必要）
+routes: 常に空のリスト
+`
+  'net.route-list-3': `
+Windows 変種: 未実装（GetIpForwardTable が必要）
+routes: 常に空のリスト
+`
+  'net.so-rcvtimeo': `
+SO_RCVTIMEO
+
+`
+  'net.so-reuseaddr': 'ソケットオプション'
+  'net.sock-dgram': 'ソケット種別（UDP）'
+  'net.sock-stream': `
+ソケット型
+
+`
+  'net.sol-socket': 'setsockopt レベル'
   'net.split-ws': `
 空白文字（スペース/タブ）で文字列を分割し、連続空白はスキップ
 s: 入力文字列
 返り値 out: 空でないフィールドリスト
+`
+  'net.udp-conn': `
+udp-conn: UDP コネクション
+fd: ソケット・ファイル記述子（-1=未オープン）
+host: 対象ホスト IP
+port: 対象ポート
 `
   'net.udp-conn.close': 'UDP socket をクローズ'
   'net.udp-conn.fd-of': `
@@ -5072,6 +6755,17 @@ UDP 接続を確立し宛先アドレスを設定
 host: 対象 IP アドレス
 port: 対象ポート番号
 返り値 c: ok=接続, nil=失敗
+`
+  'noml': 'noml — NOML 設定ファイルの解析と生成\n\nNOML は Nolang ツールチェーンの設定形式です（package.noml / workspace.noml /\nnolang.lock.noml / 言語パック locales/*.noml）。\n\nNOML は文字どおり**有効な Nolang リテラル構文**です：オブジェクト `{...}`、配列 `[...]`、\n一重引用符の文字列 `\'...\'`、裸の数値、真偽値 `true`/`false`、そして Nolang の `nil`\n(**`null` は存在しません** — Nolang の「空の値」は `nil` です）。そのため NOML ドキュメントは\nこのモジュールで実行時に解析でき、コンパイラからも Nolang リテラルとして直接読み込めます。構文の要点：\n- 最上位は通常オブジェクトです：`{` と `}` をそれぞれ別の行に置き、1 行に 1 メンバー、改行を区切りとし、カンマは使いません。\n- キー：裸の識別子（アンダースコアまたは小文字で始まり、小文字・数字・ハイフンを含められます）、\n規則に合わない場合は一重引用符の文字列として書きます。\n- 値：一重引用符の文字列（`\\\'` `\\\\` `\\/` `\\n` `\\r` `\\t` `\\0` `\\uXXXX`）、バッククォートによる\n生文字列、true/false/nil、裸の数値、オブジェクト、配列（カンマ区切り、末尾カンマ可）。\n- コメント：`;` から行末まで。\n- アノテーションマーカー：`#{key = value, ...}` はメンバーの上に単独行で置くか、メンバーと\n同じ行の末尾位置にのみ置けます。メンバーより前の同じ行に置くと構文エラーになります。\n\n使用方法:\nr = noml.parse(\'{\\nname: \\\'nolang\\\'\\n}\')\nr: {\nok -> {\nv, found = it.get-str(it.root(), \'name\')\nfound -> print(v)\n}\nerr -> print(it)\n}\n\nツリーは json のように子ハンドルを返すのではなく「ノードインデックス」でアドレス指定します。`doc` は\nノードプール（`#{inline=false}` ポインタフィールド）を持ち、`get` は i64 インデックスを返します。インデックスはハンドルより低コストで、\n「親ハンドルと子ハンドルがそれぞれ vec ヘッダを持ち、同じ data バッファを共有する」というエイリアシング問題を回避します。\n\nメンバーの `#{...}` アノテーションの生テキスト（`#{` と `}` を除く）はノードと一緒に保存され、`ann` で読み戻せ、\n`set-ann` で書き込めます；`ann-value` はキーでアノテーションから値を取り出します。シリアライズ時にはアノテーションは\nメンバーの上に別行として出力されるため、`parse` → `stringify` は完全に往復できます。'
+  'noml.doc': `
+doc: 1 つの NOML 文書 (ノードプール + ルートノード索引)
+usage:
+d = noml.new()
+k = d.new-str('nolang')
+o = d.new-obj()
+d.put(o, 'name', k)
+d.set-root(o)
+print(d.stringify())
 `
   'noml.doc.ann': `
 ルートノードの `#{...}` コメント原文を取得
@@ -5257,6 +6951,7 @@ yes: true=むき出しキーとして書けます（そうでない場合シリ�
 c: バイト値
 yes: true=先頭文字になれる
 `
+  'noml.kind-nil': 'kind: ノード種別 (enum ではなく定数、json モジュールと一致)'
   'noml.new': `
 空ドキュメントを構築（ルートノードは -1、すなわち空）
 用法：
@@ -5276,6 +6971,14 @@ err -> print(it)
 }
 s: 完全な NOML テキスト（前後の空白はスキップされます）
 result: ok=解析したドキュメント, err(行番号付きメッセージ)=構文エラー
+`
+  'noml.pool': `
+pool: ノードプール（ヒープ vec、容量上限なし）
+nodes: ノードの並列配列
+strs: 各ノードの文字列値（nodes と同じインデックス）
+anns: 各ノードの `#{...}` アノテーション生テキスト（空文字列 = アノテーションなし、nodes と同じインデックス）
+ec/ek/en: エッジテーブル — 子ノードのインデックス、キー名、次の兄弟エッジのインデックス
+err: 直近の解析失敗のメッセージ（行番号付き）、parse が読み出します
 `
   'noml.pool.add-child': `
 子ノードを親ノードへ追加（エッジ表の一方向リンクで可変長子要素を実装）
@@ -5674,6 +7377,21 @@ v: ok=数値, nil=値が数字ではありません
 idx: ノードの索引
 v: ok=文字列内容, nil=値が文字列ではありません
 `
+  'noml.value': `
+value: ノード（純粋なスカラーフィールド、ヒープ vec に安全に格納可能）
+kind/num-val/bool-val: スカラー値
+count: 配列／オブジェクトの子要素数
+first/last: エッジテーブル内の子の片方向リストの先頭／末尾エッジインデックス (-1=子なし)
+`
+  'num': `
+num — num ユニオン型と num メソッド
+
+num = int | float (整数/浮動小数点ユニオン型の別名)。
+メンバーのユニオン型 int / float は std/int.no および std/float.no にあります。
+このモジュールは num 型のメソッドを保持します: abs, clamp, sign。
+ジェネリック数値関数 max / min は math モジュールにあります;
+具象型操作 (範囲定数、型変換、to-str、ビット演算など) は number モジュールにあります。
+`
   'num.abs': `
 絶対値 — すべての num 型（整数と浮動小数点）で使える
 呼び出し形式: abs(x)（x がレシーバ。num の 0 引数メソッドは現在この形式のみ対応。
@@ -5695,9 +7413,38 @@ r: クランプ後の数値、[lo, hi] に収まる（区間が逆なら {lo, hi
 ±0.0 とさまざまな整数型を受け付ける；NaN は二つの比較がともに false のため 0 に落ちる。
 r: 1=ゼロより大, -1=ゼロより小, 0=ゼロに等しい（±0.0 を含む、NaN は else 分岐）
 `
+  'number': `
+number — 数値演算（メソッド形式 API）
+
+std 数値系の「メソッド形式」API はすべてこのモジュールに集約されています: 具体型の to-str
+（i64/i32/i16/i8/u64/u32/u16/u8/byte/f64/f32）、可変精度の f64 to-str
+（f64.to-str-fixed / f64.to-str-sci / f64.to-str-general。旧 str.f64-to-str-*
+関数は本モジュールに移動しメソッド形式へ変換されました）、数値幅変換メソッド
+（f64.to-i64、i64.to-f64、f32.to-f64 など #{buildin}）、f64/f32 の数学メソッド
+（sqrt、cbrt、三角/双曲線、ceil/floor/round/trunc、exp/log、degrees/radians）、
+整数 sqrt / is-prime。
+「関数形式」の API（max、min、pow、hypot、atan2、fmod、clamp、even、odd、gcd、
+lcm、div、mod、swap、arr-zero、char-to-str、ビット演算）は
+math モジュール（std/math.no）にあります。唯一の例外: 整数の累乗 pow（int ジェネリック）は
+math の pow（f64）と名前が衝突するため、本モジュールに残ります。
+注: 旧関数形式の幅変換（math.i64-to-f64 など）および整数/浮動小数点の to-str
+（math.i64/u64/f64-to-str）は削除されました — これらは上記の本モジュールのメソッドが直接担います。
+共用体型エイリアスとメンバメソッド: num → std/num.no、int → std/int.no、
+float → std/float.no。
+範囲定数（str.to-i8 などの範囲チェック用）: i8/i16/i32/i64/u8/u16/u32/u64 の
+MIN/MAX および INF は本モジュールに残ります。
+`
+  'number.byte.to-i64': `
+byte から i64 へ (符号なしゼロ拡張)
+out: 等価な i64
+`
   'number.byte.to-str': `
 byte を文字列に変換する（符号なし。u64 に拡張して再利用する）
 out: 十進表現（byte は符号無し 0..255、u64 へ拡張後整形）
+`
+  'number.byte.to-u64': `
+byte を u64 に変換します（符号なしゼロ拡張）
+out: 等価な u64
 `
   'number.exp-f64': `
 指数と対数（f64/f32 メソッド）
@@ -5709,6 +7456,86 @@ codegen のバグは外側のレシーバーを誤用するため、exp への�
 x: 指数（f64）
 res: e の x 乗（x>709 は +Inf、x<-745 は 0.0 を返す；範囲を半減した後 z⁸ テイラー級数）
 `
+  'number.f32.acos': `
+逆余弦 (f32 メソッド、f64 に拡張してから再利用)
+res: acos(x) (結果は f32 に戻して縮小)
+`
+  'number.f32.asin': `
+逆正弦（f32 メソッド, f64 に拡張して再利用）
+res: asin(x)（結果を f32 に絞り込み）
+`
+  'number.f32.atan': `
+逆正接（f32 メソッド、f64 へ拡張して再利用）
+res: atan(x)（結果を f32 に狭める）
+`
+  'number.f32.cbrt': `
+立方根 (f32 メソッド。f64 に拡張し f64.cbrt を再利用)
+res: ³√x (結果を f32 に狭める)
+`
+  'number.f32.ceil': `
+切り上げ (f32 メソッド; f64 に拡張して再利用)
+res: ceil(x)（結果は f32 に戻して縮小）
+`
+  'number.f32.cos': `
+余弦
+res: cos(x)（計算のため f64 に拡張し、その後縮小）
+`
+  'number.f32.cosh': `
+双曲線余弦 (f32 メソッド、f64 に拡張して再利用)
+res: cosh(x)（結果は f32 に縮小）
+`
+  'number.f32.degrees': `
+ラジアンから度へ (f32 メソッド、f64 に拡張して再利用)
+res: 度の値（結果は f32 に縮小）
+`
+  'number.f32.exp': `
+指数関数
+res: e の x 乗（計算のために f64 に拡張し、その後縮小される）
+`
+  'number.f32.floor': `
+切り捨て (f32 メソッド、f64 に拡張して再利用)
+res: floor(x) (結果を f32 に縮小)
+`
+  'number.f32.log': `
+対数
+res: ln(x) (計算のため f64 に拡張し、その後狭める)
+`
+  'number.f32.log10': `
+常用対数 (f32 メソッド; f64 に拡張して再利用)
+res: log10(x) (結果を f32 に縮小)
+`
+  'number.f32.log2': `
+2 を底とする対数（f32 メソッド。f64 に拡張して再利用）
+res: log2(x)（結果は f32 に縮小）
+`
+  'number.f32.radians': `
+度からラジアンへ (f32 メソッド、f64 に拡張してから再利用)
+res: ラジアン値 (結果を f32 に狭める)
+`
+  'number.f32.round': `
+最も近い値に丸める (f32 メソッド、f64 に拡張して再利用)
+res: round(x) (結果は f32 に戻して縮小)
+`
+  'number.f32.sin': `
+正弦
+res: sin(x) (計算のため f64 に拡張し、その後縮小)
+`
+  'number.f32.sinh': `
+双曲線正弦（f32 メソッド、f64 に拡張して再利用）
+res: sinh(x)（結果を f32 に狭める）
+`
+  'number.f32.sqrt': `
+平方根
+res: √x（計算のために f64 へ拡張してから狭める。負数は NaN を返す）
+`
+  'number.f32.tan': `
+正接
+res: tan(x)（計算のため f64 に拡張し、その後縮小）
+`
+  'number.f32.tanh': `
+双曲線正接（f32 メソッド、f64 へ拡張して再利用）
+res: tanh(x)（結果を f32 に狭める）
+`
   'number.f32.to-f64': `
 f32 を f64 に拡張する
 out: 等価 f64（精密拡張、精度損失無し）
@@ -5717,6 +7544,22 @@ out: 等価 f64（精密拡張、精度損失無し）
 f32 を文字列に変換する（メソッド）
 f32.to-f64（#{buildin}）で拡張し、f64.to-str の Nolang 版 %g 実装を再利用する。
 out: 十進文字列（f64 へ拡張後 f64 %g 最短往復実装を経由）
+`
+  'number.f32.trunc': `
+ゼロ方向に切り捨てます（f32 メソッド、f64 に拡張して再利用）
+res: trunc(x)（結果を f32 に戻して縮小）
+`
+  'number.f64.acos': `
+逆余弦（acos = atan2(√(1-x²), x)）
+res: acos(x)（主値域 [0, π]。|x|>1 のとき NaN を返す）
+`
+  'number.f64.asin': `
+逆正弦（asin = atan2(x, √(1-x²))）
+res: asin(x)（主値域 [-π/2, π/2]; |x|>1 は NaN を返す）
+`
+  'number.f64.atan': `
+逆正接 (atan = atan2(x, 1.0))
+res: atan(x) (範囲 (-π/2, π/2))
 `
   'number.f64.cbrt': `
 立方根（f64 メソッド）
@@ -5727,13 +7570,45 @@ res: x の立方根（exp(log(|x|)/3) 実装で符号を保持；0 は 0.0 を�
 丸め（f64/f32 メソッド。整数型では丸めが恒等写像なので汎用版は用意しない）
 res: x 以上の最小の整数値（切り上げ、結果は引き続き f64）
 `
+  'number.f64.cos': `
+余弦
+res: cos(x)（x はラジアン）
+`
+  'number.f64.cosh': `
+双曲線余弦
+res: cosh(x) = (eˣ + e⁻ˣ)/2
+`
   'number.f64.degrees': `
 ラジアンから度へ（f64/f32 メソッド）
 res: x をラジアンから角度へ換算（× 180/π）
 `
+  'number.f64.exp': `
+指数関数
+res: e の x 乗 (exp-f64 自由関数に委譲)
+`
+  'number.f64.floor': `
+切り下げ
+res: x より大きくない最大の整数値（切り下げ、依然として f64）
+`
+  'number.f64.log': `
+自然対数
+res: ln(x) 自然対数（x≤0 は NaN を返す。まず区間を [1,√2) に縮小し、その後 z³ 級数で近似する）
+`
+  'number.f64.log10': `
+常用対数（底 10）
+res: log10(x) = ln(x)/ln(10)
+`
+  'number.f64.log2': `
+2 を底とする対数
+res: log2(x) = ln(x)/ln(2)
+`
   'number.f64.radians': `
 度からラジアンへ（f64/f32 メソッド）
 res: x を角度からラジアンへ換算（× π/180）
+`
+  'number.f64.round': `
+最接近する値に丸め (.5 は切り上げ、負数は対称)
+res: x に最も近い整数値 (|fraction|≥0.5 のとき 0 から離れる方向に丸め)
 `
   'number.f64.sin': `
 三角関数（ラジアン；f64/f32 メソッド）
@@ -5750,6 +7625,10 @@ res: √x（libm ネイティブ sqrt；負数は NaN を返す）
   'number.f64.tan': `
 tangent（libm tan、sin/cos と等価）
 res: tan(x) = sin(x)/cos(x)（cos(x)≈0 で発散）
+`
+  'number.f64.tanh': `
+双曲線正接
+res: tanh(x) = (e²ˣ-1)/(e²ˣ+1) (範囲 (-1, 1))
 `
   'number.f64.to-bits': `
 f64 の 64 ビット IEEE-754 ビットパターンを u64 として取り出す（bitcast double->i64）。
@@ -5797,22 +7676,53 @@ out: ゼロ方向切り捨て後の u32（範囲外はサチュレート）
 浮動小数点から 64 ビット符号なし整数へ（飽和）
 out: ゼロ方向切り捨て後の u64（負数と範囲外はサチュレート処理）
 `
+  'number.f64.trunc': `
+整数に切り詰めます（小数部を破棄）
+res: x の整数部（ゼロ方向へ切り詰め。例 -3.9→-3.0）
+`
+  'number.i128.is-prime': `
+素数かどうかを判定する
+yes: 素数かどうか (128 ビット符号付き、n<2 は常に false)
+`
+  'number.i128.max': `
+i128: -170141183460469231731687303715884105728 ~ 170141183460469231731687303715884105727
+型レベルの定数値は hir2mir の typeConstantText128 定数テーブルから来ます（i128 レーンは
+全精度の 10 進テキストを使用します）；以下は API/ドキュメント用に定義されています（他の幅と一貫性あり）
+`
   'number.i128.sqrt': '── 128 ビット整数メソッドのコピー（i128 / u128）──\n128 ビット演算自体は使用可（演算子は LLVM i128 経路）だが、次の 2 点に注意：\n① 領域変数は明示的な型注釈が必要（`n i128 = .`、`lo i128 = 1` …）。注釈しないと\nchecker はリテラルと混算した中間値を i64 と推論するため、ループが誤った値に収束するかあるいは\nハングする（i128.MAX の二分探索は実測まさにそう）。u128 を型注釈しないと i64→u128 代入もエラー。\n② 溢れ注解の配置：i128（符号付き、除算は INT_MIN/-1 で溢れる可能性）は各算術に\n`#{overflow=wrap}`；u128（符号なし、÷/% はオーバーフローしない）は + − と「リテラルによる除算」のみに適用\nの演算に注釈を追加し、変数間の ÷/% には付けない（さもなくば overflow-ineffective 警告）。\nコメントは独立行とし対象陳述の前に置く（1 行 `;` 連ねの guard は引き起こす\n128 ビット codegen は main 全体を破棄）。\n同時に codegen の isUnsignedRaw が u128 を省いているのを修正：u128 の比較/除算が誤って符号ありパスを通っていた\n符号述語は u128.MAX 値域（≥ 2^127）で順序を誤る；修正後 u128.sqrt(u128.MAX)=2^64-1 は正確。\nr: floor(√n)（128 ビット；型付きローカル変数 + オーバーフローラップ注釈）'
   'number.i128.to-f64': `
 128 ビット符号付き整数から浮動小数点へ
 out: 等価 f64（128 ビットの絶対値が大きいと精度損失）
 `
+  'number.i16.is-prime': `
+素数かどうかを判定
+yes: 素数かどうか（n<2 の場合は常に false）
+`
+  'number.i16.min': 'i16: -32768 ~ 32767'
   'number.i16.sqrt': `
 i16
 r: floor(√n)（符号付き、n<0 は 0 を返す）
+`
+  'number.i16.to-i64': `
+i16 から i64 へ
+out: 等価な i64
 `
   'number.i16.to-str': `
 i16 を文字列に変換する（i64 に拡張して再利用する）
 out: 十進表現（i64 へ拡張後整形）
 `
+  'number.i32.is-prime': `
+素数かどうかを判定します
+yes: 素数かどうか（n<2 では常に false）
+`
+  'number.i32.min': 'i32: -2147483648 ~ 2147483647'
   'number.i32.sqrt': `
 i32
 r: floor(√n)（符号付き、n<0 は 0 を返す）
+`
+  'number.i32.to-i64': `
+i32 から i64 へ
+out: 等価な i64
 `
   'number.i32.to-str': `
 i32 を文字列に変換する（暗黙に i64 へ拡張し、ネイティブの i64.to-str 経路を再利用する）
@@ -5823,6 +7733,10 @@ out: 十進表現（暗黙に i64 へ拡張後ネイティブ経路を再利用�
 試し割りで O(√n): まず偶数を飛ばし、次に奇数の約数を試す; ループは d <= n/d で止めるので d*d は
 オーバーフローせず、除数は常に >= 1 なのでトラップもしない（int 共用体レシーバも避けられる。上記参照）
 yes: 素数かどうか（n<2 は常に false；1 と自身でのみ割り切れる）
+`
+  'number.i64.max': `
+i64: -9223372036854775808 ~ 9223372036854775807
+MIN はリテラルとして直接書けません（パーサが非対応）。-MAX - 1 で表現します
 `
   'number.i64.sqrt': '整数平方根 floor(√n) — i64 メソッド\nn < 0 は整数解を持たないので 0 を返す; 二分探索で O(log n)、mid*mid ではなく n/mid と比較するので\n何もオーバーフローしない（math.no の gcd/even と同じ wrap 注記の規約）。\nint 共用体レシーバ（どの幅でも動く）は使わない: int 別名は std/int.no で定義されており、モジュールをまたぐ\n`int.X` メソッドは prefixMethodNames で `int.int.X` と二重接頭辞化され、単態化された呼び出し側と一致せず\nunknown-callee エラーになるため。\nr: floor(√n)（n<0 は 0 を返す；n<2 は n 自身を返す；二分探索 O(log n)）'
   'number.i64.to-bytes-be': `
@@ -5848,9 +7762,18 @@ out: 等価 f64（絶対値が 2^53 超の整数は精度損失の可能性）
 out: 下位 32 ビット切り詰め結果（上位ビット破棄、範囲チェック無し）
 `
   'number.i64.to-str': 'i64 を文字列へ変換\n`#{buildin}: 低層はネイティブ @str_from_i64 を使用（builtin strconv.go で ForwardFunc "i64-to-str" を登録、\n（コンパイラが名前でネイティブ inline パスを命名）。i64 はネイティブフォーマッタがあるため、直接 builtin とし Nolang ループのラッパは不要。\nout: 十進表現（ネイティブ @str_from_i64 インライン、例 -42 → \'-42\'）'
+  'number.i8.is-prime': `
+素数かどうかを判定する
+yes: 素数かどうか (n<2 は常に false)
+`
+  'number.i8.min': 'i8: -128 ~ 127'
   'number.i8.sqrt': `
 i8（符号付き: 負数のガードを保つ）
 r: floor(√n)（符号付き、n<0 は 0 を返す）
+`
+  'number.i8.to-i64': `
+i8 から i64 へ（符号付き符号拡張）
+out: 等価な i64
 `
   'number.i8.to-str': `
 i8 を文字列に変換する（i64 に拡張して再利用する）
@@ -5865,29 +7788,72 @@ base: 底
 n: 指数（n ≥ 0、負数は結果未定義）
 res: base の n 乗（高速べき乗、オーバーフローはラップ）
 `
+  'number.u128.is-prime': `
+素数かどうか
+yes: 素数かどうか（128-bit 符号なし、n<2 では常に false）
+`
+  'number.u128.min': 'u128: 0 ~ 340282366920938463463374607431768211455'
+  'number.u128.sqrt': `
+平方根
+r: floor(√n)（128 ビット符号なし、u128.MAX でも正確）
+`
   'number.u128.to-f64': `
 128 ビット符号なし整数から浮動小数点へ
 out: 等価 f64（128 ビットの絶対値が大きいと精度損失）
 `
+  'number.u16.is-prime': `
+素数かどうか
+yes: 素数かどうか（n<2 のときは常に false）
+`
+  'number.u16.min': 'u16: 0 ~ 65535'
   'number.u16.sqrt': `
 u16
 r: floor(√n)（符号なし）
+`
+  'number.u16.to-i64': `
+u16 から i64 へ
+out: 等価な i64
 `
   'number.u16.to-str': `
 u16 を文字列に変換する（u64 に拡張して再利用する）
 out: 十進表現（u64 へ拡張後整形）
 `
+  'number.u16.to-u64': `
+u16 から u64 へ
+out: 同等の u64
+`
+  'number.u32.is-prime': `
+素数かどうかを判定する
+yes: 素数かどうか (n<2 では常に false)
+`
+  'number.u32.min': 'u32: 0 ~ 4294967295'
   'number.u32.sqrt': `
 u32
 r: floor(√n)（符号なし）
+`
+  'number.u32.to-i64': `
+u32 から i64 へ
+out: 等価な i64
 `
   'number.u32.to-str': `
 u32 を文字列に変換する（暗黙に u64 へ拡張し、u64.to-str を再利用する）
 out: 十進表現（暗黙に u64 へ拡張後 u64.to-str を再利用）
 `
+  'number.u32.to-u64': `
+u32 から u64 へ
+out: 同等の u64
+`
   'number.u64.from-bits': `
 f64.to-bits の逆（bitcast i64->double）。ネイティブの LLVM で実装する。
 out: 当該 64 ビットパターンから再構築した f64（f64.to-bits の逆演算）
+`
+  'number.u64.is-prime': `
+prime かどうかを判定します
+yes: 素数かどうか（n<2 では常に false）
+`
+  'number.u64.min': `
+u64: 0 ~ 18446744073709551615
+MAX は整数リテラルで表せません（i64 の上限を超えます）。0 - 1 で間接的に取得します
 `
   'number.u64.sqrt': `
 u64（範囲が i64 を超えるため、同じ幅の独立した実装が必要）
@@ -5902,16 +7868,38 @@ u64 を文字列に変換する（Nolang による直接実装: バックエン�
 旧 math.u64-to-str の 10 進ループをメソッド本体にインライン化し、削除された関数を置き換えた）
 out: 十進表現（Nolang ループで1桁ずつ生成、バックエンドに u64 ネイティブ整形器無し）
 `
+  'number.u8.is-prime': `
+素数かどうかを判定する
+yes: 素数かどうか（n<2 は常に false）
+`
+  'number.u8.min': `
+u8: 0 ~ 255
+
+`
   'number.u8.sqrt': `
 u8（符号なし: 負数のガードなし）
 r: floor(√n)（符号なし、値域 0..255）
+`
+  'number.u8.to-i64': `
+u8 から i64 へ (符号なしゼロ拡張)
+out: 等価な i64
 `
   'number.u8.to-str': `
 u8 を文字列に変換する（u64 に拡張して再利用する）
 out: 十進表現（u64 へ拡張後整形）
 `
+  'number.u8.to-u64': `
+u8 から u64 へ（符号なしゼロ拡張）
+out: 等価な u64
+`
   'ords.asc': '[]ord.asc: 昇順にその場でソートする（挿入ソート）'
   'ords.desc': '[]ord.desc: 降順にその場でソートする（挿入ソート）'
+  'os': `
+os — オペレーティングシステムインターフェース標準ライブラリ
+
+環境変数、ディレクトリ操作、プロセス管理、システム情報、時刻などの OS レベル関数を提供します。
+ファイル読み書き関数は fs モジュールを参照してください。
+`
   'os.arg': `
 // LLVM: main から argc にアクセスする
 }
@@ -6163,6 +8151,10 @@ name: 端末デバイスパス（失敗時は空文字列）
 戻り値 sysname/nodename/release/version/machine の 5 フィールドを持つ utsname 構造体
 u: utsname 構造体（sysname/nodename/release/version/machine）
 `
+  'os.utsname': `
+utsname: OS 情報構造体（uname システムコールの結果）
+各フィールドは null 終端文字列（最大 64 文字）
+`
   'os.win-find-close': `
 Windows のディレクトリ検索ハンドルを閉じる
 bufptr: クローズする検索ハンドル
@@ -6186,6 +8178,11 @@ name: ok=次のエントリ名, nil=これ以上エントリ無し
   'os.win-wsa-startup': `
 Winsock 2.2 を初期化する（Windows 専用）; true=成功を返す
 ok: true=Winsock 2.2 の初期化成功
+`
+  'path': `
+path — パス操作
+
+純粋な文字列操作；ファイルシステムにアクセスしない。
 `
   'path.base': `
 パスの最後の要素（ファイル名）を取り出す
@@ -6212,6 +8209,7 @@ out: 現在の作業ディレクトリパスをカプセル化した新 path 構
 .p をその場で変更し、かつ変更後の .p を返す（base()/ext()/join() と一貫。join の注記を参照）
 out: ファイル名除去後のディレクトリ部分（.p をその場で更新し返す）
 `
+  'path.dot': 'カレントディレクトリ（\'.\' = 46。同上、二重引用符の char リテラル）'
   'path.exists': `
 パスが存在するかを調べる（ファイルでもディレクトリでも該当する）
 yes: true=そのパス（ファイルまたはディレクトリ）が存在する
@@ -6246,6 +8244,7 @@ out: 先頭末尾のスラッシュ処理後に連結完成した完全パス文
 戻り値 true=成功, false=失敗
 ok: true=ディレクトリ作成成功, false=失敗
 `
+  'path.path': 'path: 文字列フィールド p にパスを保持する値オブジェクト（すべてのメソッドは .p に対して動作します）'
   'path.remove': `
 ファイルを削除する
 戻り値 true=成功, false=失敗
@@ -6257,6 +8256,13 @@ ok: true=ファイル削除成功, false=失敗
 new-p: リネーム後の対象パス文字列
 ok: true=リネーム成功, false=失敗
 `
+  'path.sep': 'Path separator (\'/\' = 47)\n⚠️ **char リテラル (二重引用符)** でなければならず、文字列リテラル `SEP = \'/\'` ではいけません:\nNolang では単一引用符は str です; byte と str を比較すると常に false となり、\n`c == SEP` が常に false になります → dir()/base()/ext() は区切り文字を見つけられません\n(last-sep は -1 のまま、dir() は常に \'.\' を返し、base() は文字列全体を返します)。\nSEP/DOT は **書き込み** のみに使用します (`.p[n] = SEP`); 走査時は以下の SEP-BYTE / DOT-BYTE を使用してください。'
+  'path.sep-byte': `
+バイト版区切り定数。`.p.byte(i)` は **数値**（char ではない）を読むため、スキャンループ内の比較は
+数値定数を使わなければならない。すべての「読み取り」は .byte(i) を通る：セマンティクスはバイトであり、len-bytes()、
+out-n バイトカーソルと同じ単位を共有する —— コードポイントインデックス（.p[i]）とバイトカーソルを混在させると
+非 ASCII のパスが壊れる（tests/std-byte-indexing.no 参照）。
+`
   'path.size': `
 ファイルサイズを取得する
 sz: .p が指すファイルのバイトサイズ
@@ -6267,6 +8273,19 @@ sz: .p が指すファイルのバイトサイズ
 例: path{ p: '/a/b/c.txt' }.split() -> .p='/a/b', f='c.txt'
 （構造体リテラルは複数行に分ける必要がある。上は略記）
 f: 分割されたファイル名（.p は in-place でそのディレクトリ部分に変わる）
+`
+  'pbkdf2': `
+pbkdf2 — PBKDF2 鍵導出関数 (RFC 2898 / PKCS#5 v2.0)
+
+擬似乱数関数 (PRF) として HMAC-SHA256 を使用し、反復によって鍵を導出する。
+
+usage:
+# std/crypto/pbkdf2
+password []byte = 'password'
+salt []byte = 'salt'
+iterations = 10000
+key-len = 32
+derived = pbkdf2-hmac-sha256(password, salt, iterations, key-len)
 `
   'pbkdf2.pbkdf2-hmac-sha1': `
 HMAC-SHA1 を用いた PBKDF2
@@ -6293,6 +8312,33 @@ iterations: 反復回数；大きいほど総当たりが困難で、小さす�
 key-len: 期待する鍵長（バイト）。64 バイト 1 ブロックずつ生成
 返り値 out: 導出した鍵、長さは正確に key-len
 `
+  'pem': `
+encoding/pem — PEM 形式のエンコード/デコード（RFC 7468）
+
+PEM（Privacy-Enhanced Mail）形式は X.509 証明書、RSA/ECDSA 鍵などに広く使用される。
+形式：
+-----BEGIN LABEL-----
+<Base64 エンコードされたデータ、1 行 64 文字>
+-----END LABEL-----
+
+usage:
+; encode
+pem-str = pem.encode('CERTIFICATE', raw-bytes)
+
+; decode
+result = pem.decode(pem-str)
+result: {
+ok -> {
+label = result.label
+data = result.data
+}
+}
+`
+  'pem.block': `
+block: PEM デコード結果
+label: BEGIN/END の間のラベル (例: 'CERTIFICATE')
+data: Base64 デコードされたバイナリペイロード
+`
   'pem.decode': `
 PEM 形式文字列を解析（入力の最初の BEGIN…END ブロックのみ取る）
 pem-str: '-----BEGIN <label>-----' … '-----END <label>-----' を少なくとも 1 区間含むテキスト
@@ -6304,6 +8350,25 @@ label: PEM ラベル（例 'CERTIFICATE', 'RSA PRIVATE KEY'）、BEGIN/END と�
 data: 生のバイナリデータ、base64.encode-std でエンコード後 64 文字で折り返し
 out: BEGIN/END 行と各行の末尾改行を含む完全な PEM テキスト
 `
+  'pem.pem-line-len': '1 行あたりの最大 Base64 文字数'
+  'pool': `
+pool — TCP コネクション・プール
+
+TCP コネクションのプール管理を提供し、コネクションの頻繁な生成とクローズを回避する。
+コネクションの再利用、最大コネクション数制限、アイドル・タイムアウト回収をサポート。
+
+使用法：
+p = pool{}
+p.init('127.0.0.1', 8080, 10)    // init: target 127.0.0.1:8080, max 10 connections
+c = p.get()                       // get a connection (returns ?net.conn)
+c: {
+nil -> print('no connection')
+->
+c.send('hello')
+p.put(c)                   // return the connection (not close)
+}
+p.close-all()                     // close all connections
+`
   'pool.create': `
 接続プールを構築し初期化
 host: 対象サーバーのホスト名または IP
@@ -6311,6 +8376,17 @@ port: 対象サーバーのポート番号
 max-size: 許可する最大接続数
 返り値 p: 初期化済み接続プールのインスタンス
 `
+  'pool.pool': `
+pool: TCP コネクション・プール
+host: 対象ホスト
+port: 対象ポート
+max-size: 最大コネクション数
+conns: コネクション配列
+in-use: コネクションが使用中かどうか
+count: 現在のコネクション数
+`
+  'pool.pool-idle-timeout': 'アイドルタイムアウト（ミリ秒）'
+  'pool.pool-max-conns': '接続プールの最大容量'
   'pool.pool.active-count': `
 アクティブ接続数を取得
 返り値 n: アクティブ接続数
@@ -6348,10 +8424,65 @@ host: 対象サーバーのホスト名または IP
 port: 対象サーバーのポート番号
 返り値 p: 接続数上限がデフォルト 8 の接続プール
 `
+  'process': `
+process — プロセス操作
+
+プロセス作成、標準ストリーム取得、プロセス待機、プロセス情報問い合わせなどを提供する。
+基盤実装は POSIX fork/exec/pipe/waitpid を使用する。
+
+usage:
+p = process.new()
+p.start('ls', '-la')
+code = p.wait()
+print('exit code: ' - code.to-str())
+
+// 低レベル起動メソッド (args, dir, input, merge-err をサポート)
+p.start-with-opts('ls', ['-la'], '', '', false)
+code = p.wait()
+
+// 便利メソッド: stdout 出力を捕捉
+content, code = process.new().output('ls', '-la')
+
+// 非ブロッキング spawn + wait
+pid = process.spawn('echo hello')
+code = process.wait(pid)
+
+// 便利: シェルコマンドを同期的に実行 (spawn + wait を組み合わせ)
+code = process.shell('echo hello')
+
+// 本格的なサブプロセス実行器 (フラットな引数: program, args, dir, stdin, env, timeout, merge-err)
+out, stderr, code, err = process.cmd('ls', args, '', '', env, 5000, false)
+print('out=' - out - ' code=' - code.to-str())
+
+// 構造体結果 (exec-result を返し、stdout/stderr/code への連鎖アクセスが可能)
+o = process.cmdopts{timeout: 5000}
+res = process.exec('ls', ['-la'], o)
+res.code == 0 -> print(res.stdout)
+res.code != 0 -> print('error: ' - res.code.to-str())
+`
   'process.close': 'すべてのパイプを閉じ、子プロセスを待つ'
   'process.close-stderr': '子プロセスの stderr パイプを閉じる'
   'process.close-stdin': '子プロセスの stdin パイプを閉じる'
   'process.close-stdout': '子プロセスの stdout パイプを閉じる'
+  'process.cmd': `
+cmd: 機能完備のサブプロセス実行器（クロスプラットフォームの本番グレード実装）
+program   : 実行するプログラム名（PATH 検索）
+args      : プログラムに渡される引数リスト
+dir       : 作業ディレクトリ；空文字列 = 親プロセスの作業ディレクトリを継承
+input     : サブプロセスの stdin に書き込まれる内容；空文字列 = stdin を与えない
+（パラメータが stdin ではなく input という名前なのは、std/fs.no がすでにグローバル stdin/file ハンドルを事前定義しているため；
+同名の検証名はそのグローバルの SSA 名 %stdin と衝突し、呼び出し側がグローバルを誤用する原因となる。）
+env       : 環境変数（["K=V", ...]）；空配列 = 親プロセスの環境を継承
+timeout   : タイムアウト（ミリ秒），<=0 = 無期限に待機
+merge-err : true = stderr を捕捉した out に統合する
+returns:
+out: サブプロセスの標準出力全文（merge-err が true のとき、stdout+stderr のインターリーブ結果）
+stderr: サブプロセスの標準エラー全文（merge-err が true のとき、空文字列）
+code: 終了コード；>=0 正常終了、-1 は起動／exec 失敗、-2 はタイムアウト（サブプロセス強制終了）を示す
+err: 起動失敗またはタイムアウトのエラー説明；成功時は空文字列
+POSIX 版：純 Nolang で実装（process-fork/pipe/dup2/exec-shell/waitpid）。
+process.c の C ランタイムに依存せず、Windows 版と対称。
+`
   'process.cmd-2': `
 機能を備えた子プロセス起動器（実運用品質のクロスプラットフォーム実装）
 Windows 版: Win32 API（CreateProcessA、CreatePipe など）で純粋な Nolang として実装する。
@@ -6369,6 +8500,15 @@ stderr    : 捕捉した stderr（merge-err 時は空）
 code      : 終了コード（-1=パイプ/プロセス生成/終了コード取得の失敗, -2=タイムアウト）
 err       : エラーメッセージ（空=エラーなし）
 `
+  'process.cmdopts': `
+cmdopts: process.start-with-opts の実行オプション（モジュール横断 struct の例）。
+フィールドは process.cmd の平坦化されたパラメータに対応します：
+dir       : 作業ディレクトリ；空文字列 = 親プロセスの作業ディレクトリを継承
+stdin     : 子プロセスの stdin に書き込む内容；空文字列 = stdin を提供しない
+env       : 環境変数（["K=V", ...]）；空の配列 = 親プロセスの環境を継承
+timeout   : タイムアウト（ミリ秒）、<=0 = 無期限に待機
+merge-err : true = stderr をキャプチャした out に統合
+`
   'process.exec': `
 使い方:
 o = process.cmdopts{timeout: 5000}
@@ -6379,6 +8519,12 @@ program: 実行するプログラム名
 args: プログラムに渡す引数リスト
 o: 実行オプション（dir/stdin/env/timeout/merge-err）
 res: 実行結果構造体（stdout/stderr/code）
+`
+  'process.exec-result': `
+exec-result: exec が返す結果構造体
+stdout : 取得した stdout 出力（merge-err 時は stderr を含む）
+stderr : 取得した stderr 出力（merge-err 時は空）
+code   : 終了コード（>=0=正常、127=コマンド未検出、-1=起動失敗、-2=タイムアウト）
 `
   'process.exit-code-of': `
 子プロセスの終了コードを取得（先に wait して初めて有効）
@@ -6419,6 +8565,14 @@ macOS/Windows: 現状は空リストを返す（libproc/sysctl や CreateToolhel
 戻り値 proc-info のリスト
 procs: システム全プロセスの (pid, name) リスト
 `
+  'process.list-all-2': `
+macOS 版：未実装。空リストを返す（libproc proc_listallpids または sysctl が必要）
+procs: 空のプロセス・リスト
+`
+  'process.list-all-3': `
+Windows 版: 未実装、空リストを返す (CreateToolhelp32Snapshot が必要)
+procs: 空のプロセスリスト
+`
   'process.new': `
 プロセスインスタンスを生成して返す
 使い方: p = process.new()
@@ -6438,6 +8592,20 @@ code: 子プロセスの終了コード
 pid: 現在プロセスの親プロセス ID（getppid）
 `
   'process.pid-of': 'pid: 子プロセスの識別子を取得する'
+  'process.proc-info': `
+proc-info: プロセス情報
+pid: プロセス ID
+name: プロセス名 (Linux では /proc/<pid>/comm から取得、最大 15 文字)
+`
+  'process.process': `
+process: 子プロセス
+pid: 子プロセス ID
+stdin-fd: 子プロセスの標準入力へ書き込むための fd (-1=未接続)
+stdout-fd: 子プロセスの標準出力を読むための fd (-1=未接続)
+stderr-fd: 子プロセスの標準エラーを読むための fd (-1=未接続)
+exit-code: 子プロセスの終了コード
+running: まだ実行中かどうか (0=いいえ, 1=はい)
+`
   'process.process-dup2': `
 ファイルディスクリプタを複製する
 oldfd: ソースファイルディスクリプタ
@@ -6505,6 +8673,28 @@ code: デコード後の終了コード（WEXITSTATUS）
 pid: ポーリング対象の子プロセス ID
 code: 終了コード（-1=実行中またはエラー）
 `
+  'process.process.kill': `
+Windows 版：POSIX シグナルセマンティクスは未実装であり、常に false を返す（代わりに terminate/force-kill の Windows 相当を使用）
+sig: シグナル番号（POSIX セマンティクス、Windows では処理されない）
+ok: 成功したかどうか（Windows では常に false）
+`
+  'process.process.start-with-opts': `
+Windows 版：未実装（常に false を返します）。Windows では代わりに process.cmd() を使用してください
+program: 実行するプログラム名
+args: プログラムに渡す引数リスト
+dir: 作業ディレクトリ；空文字列 = 親プロセスから継承
+input: 子プロセスの stdin に書き込む内容；空文字列 = 提供しない
+merge-err: true = stderr を stdout に統合
+ok: 成功したか（Windows 版では常に false）
+`
+  'process.process.wait': `
+Windows 版: ブロックせず、インスタンスに記録された終了コードをそのまま返す
+status: .exit-code に記録された値 (起動失敗時または未記録の場合は 0)
+`
+  'process.process.wait-nohang': `
+Windows 版: ポーリングは未実装で、常に nil を返す (呼び出し側は実行中として扱う)
+status: 終了コード (Windows では常に nil)
+`
   'process.read': `
 子プロセスの stdout からデータを読む
 戻り値 read-n=実際に読んだバイト数
@@ -6529,6 +8719,11 @@ cmd: コマンド文字列全体（sh -c 経由で実行される）
 戻り値 code=終了コード（0=成功, >0=コマンド失敗, 127=exec 失敗, -1=fork 失敗）
 code: spawn 成功後 wait が取得した終了コード；fork 失敗時は -1
 `
+  'process.shell-2': `
+Windows 版: 未実装、常に -1 を返します
+cmd: 完全なコマンド文字列（Windows では処理されません）
+code: 常に -1（未実装）
+`
   'process.shell-quote': `
 POSIX のシングルクォートによるエスケープ — 任意の文字列を、シェル（sh -c）が安全に再パースできる
 シングルクォートのリテラルで包む。埋め込まれたシングルクォートは 4 文字の並び '\''（閉じクォート、エスケープしたクォート、開きクォート）になる。
@@ -6542,6 +8737,11 @@ out: シングルクォートで包み sh コマンドラインに安全に埋�
 cmd: コマンド文字列全体（sh -c 経由で実行される）
 戻り値 pid > 0=親（子の PID）, -1=エラー
 pid: 子プロセス PID（-1=fork 失敗）
+`
+  'process.spawn-2': `
+Windows 版：未実装、常に -1 を返します
+cmd: 完全なコマンド文字列（Windows では処理しません）
+pid: 常に -1（未実装）
 `
   'process.start': `
 子プロセスを生成してコマンドを実行する（引数 1 つの簡易メソッド）
@@ -6575,6 +8775,11 @@ status: 子プロセスの終了コード（既に終了済みなら記録値を
 pid: 子プロセスの識別子
 戻り値 status=終了状態（WEXITSTATUS）
 status: 当該 PID の終了コード
+`
+  'process.wait-3': `
+Windows 版: 未実装、常に -1 を返す
+pid: 子プロセス ID (Windows では処理されない)
+status: 常に -1 (未実装)
 `
   'process.wait-nohang': `
 非ブロッキング待機（ポーリング）
@@ -6642,12 +8847,40 @@ handle: 書き込み先 handle
 data: 書き込むデータ
 written: 実際に書き込んだバイト数（-1=エラー）
 `
+  'process.wnohang': 'waitpid オプション'
   'process.write': `
 子プロセスの stdin にデータを書く
 戻り値 written=実際に書いたバイト数
 data: 書き込むデータ文字列
 n: 書き込みを期待するバイト数
 written: 実際に書き込んだバイト数（0=stdin 未接続）
+`
+  'proxy': `
+proxy — HTTP/HTTPS プロキシ対応
+
+HTTP CONNECT プロキシトンネリングを提供し、プロキシサーバー経由で HTTP および HTTPS サービスにアクセスできるようにします。
+
+使い方:
+// HTTP プロキシ経由で接続
+c = dial('proxy.example.com', 3128, 'target.example.com', 443)
+c: {
+nil -> print('proxy connection failed')
+-> c.send('hello')
+}
+
+// プロキシ経由で TLS 接続を確立
+tc = proxy-tls-dial('proxy.example.com', 3128, 'target.example.com', 443)
+tc: {
+nil -> print('proxy TLS connection failed')
+-> w = tc.send('GET / HTTP/1.1\r\nHost: target.example.com\r\n\r\n')
+}
+`
+  'proxy.config': `
+config: プロキシ設定
+host: プロキシサーバのホスト
+port: プロキシサーバのポート番号
+username: 認証ユーザー名（空=認証なし）
+password: 認証パスワード
 `
   'proxy.config.connect': `
 config を使いプロキシ接続を確立
@@ -6695,6 +8928,7 @@ username: Basic 認証ユーザー名
 password: Basic 認証パスワード
 返り値 fd: 確立したトンネル socket のディスクリプタ、-1=失敗
 `
+  'proxy.proxy-buf-size': 'プロキシバッファサイズ'
   'proxy.proxy-tls-dial': `
 プロキシ経由で TLS 接続を確立
 まず HTTP CONNECT（認証なし）でトンネルを確立し、その後トンネル上で TLS ハンドシェイクを開始します。
@@ -6704,6 +8938,8 @@ target-host: TLS サーバーのホスト名（ハンドシェイク時の SNI /
 target-port: TLS サービスのポート番号（通常 443）
 返り値 tc: ok=トンネル上でハンドシェイク完了の TLS 接続, nil=トンネルまたはハンドシェイクのいずれかの段階で失敗
 `
+  'proxy.socks5-atyp-ipv4': 'SOCKS5 アドレス型'
+  'proxy.socks5-cmd-connect': 'SOCKS5 コマンド'
   'proxy.socks5-connect': `
 SOCKS5 プロキシ経由で接続を確立
 まずメソッドネゴシエーションを行い（username が空でなければ 0x02 ユーザー名/パスワード認証、そうでなければ 0x00 認証なし）、
@@ -6725,6 +8961,48 @@ target-host: 貫通先のターゲットホスト；IP リテラルでない場�
 target-port: 対象サービスのポート番号
 返り値 fd: 確立したトンネル socket のディスクリプタ、-1=失敗
 `
+  'proxy.socks5-method-no-auth': 'SOCKS5 認証方式'
+  'proxy.socks5-version': 'SOCKS5 バージョン'
+  'queue': `
+queue — generic queue (ring buffer based on a fixed-length array)
+
+先入れ先出し (FIFO) データ構造で、[n]t 固定長配列を基盤となる格納に使用します。
+リングバッファで実装され、head はキューの先頭、tail は次の書き込み位置を指します。
+容量は n-1 に固定されます (「満杯」と「空」を区別するために 1 スロットを犠牲にします)。
+
+ジェネリック設計: 値操作 (push/pop/peek) は [n]t 上で定義され、
+ジェネリックパラメータ n (配列サイズ) と t (要素型) はコンパイラにより自動推論されます。
+キュー状態 (cap/head/tail) は queue 構造体に別途格納されます。
+
+deque との違い:
+- queue は FIFO のみ (後ろから入れ、前から出る) をサポートし、API はより単純
+- queue はジェネリック [n]t を使用し、任意の要素型 (i64/u8/byte など) をサポート
+- deque は []i64 のみをサポート
+
+usage:
+buf [128]i64
+q = buf.queue-init()
+ok = buf.queue-push(q, 42)
+ok = buf.queue-push(q, 7)
+val = buf.queue-pop(q)      // val = ok
+val = buf.queue-pop(q)      // val = ok
+val = buf.queue-pop(q)      // val = nil (キュー空)
+sz = q.size()
+yes = q.empty()
+
+// オプションの展開
+val = buf.queue-pop(q)
+val: {
+nil -> print('empty')
+-> print(it)          // it = 取り出した値
+}
+`
+  'queue.queue': `
+queue: キュー状態（バッファは含まず、[n]t レシーバが提供）
+cap: リングバッファ容量（= 配列長 n）
+head: キュー先頭のインデックス（論理インデックス、剰余後に物理位置へマップ）
+tail: キュー末尾のインデックス（次の書き込み位置）
+`
   'queue.queue.clear': 'キューを空にする'
   'queue.queue.empty': `
 キューが空かを返す
@@ -6741,6 +9019,21 @@ yes: true=tail - head >= cap - 1（満杯、次の push は上書きまたは失
 戻り値 sz: 要素数
 sz: tail - head、すなわち現在キュー中の要素数（空スロットを含まない）
 `
+  'quic': `
+quic — QUIC トランスポートプロトコル（RFC 9000）の中核実装
+
+QUIC v1 パケット形式、可変長整数エンコーディング、フレーム解析、
+および Initial パケット保護（鍵導出 + ヘッダ保護 + AEAD 暗号化/復号）を実装します。
+HTTP/3（RFC 9114）へのトランスポート層サポートを提供します。
+
+下層は UDP（net-udp-open/sendto/recvfrom）を使用します
+暗号プリミティブは std/hash の AES-128-GCM, HKDF, SHA-256 を使用します
+
+使い方:
+# std/net/quic
+# std/net/http3
+resp = http3-get('https://example.com/path')
+`
   'quic.apply-header-protection': `
 パケットへヘッダ保護を適用/除去
 packet: 処理対象のパケットデータ（インプレス修正）
@@ -6748,6 +9041,7 @@ pn-offset: パケット番号のパケット内バイトオフセット
 hp: ヘッダ保護に使う 16 バイト鍵
 is-long-header: Long Header パケットか
 `
+  'quic.conn': 'conn: QUIC 接続'
   'quic.conn.build-initial-packet': `
 quic-build-initial-packet: QUIC Initial パケットを構築
 crypto-data: 格納する CRYPTO フレームデータ（TLS ClientHello）
@@ -6788,6 +9082,14 @@ host: サーバーのホスト名または IP アドレス
 port: サーバーの UDP ポート番号
 返り値 conn: ok=確立した接続, nil=失敗
 `
+  'quic.frame': `
+frame: QUIC フレーム
+frame-type: フレームの種類
+offset: CRYPTO/STREAM フレームのオフセット
+length: フレームデータの長さ
+stream-id: STREAM フレームのストリーム ID
+data: フレームデータ
+`
   'quic.gen-cid': `
 ランダムな Connection ID を生成
 len: 生成する CID のバイト長（通常 8）
@@ -6801,6 +9103,24 @@ end: 解析終了のバイトオフセット（含まず）
 返り値 frames: 解析したフレーム配列
 返り値 count: フレーム数（-1=エラー）
 `
+  'quic.quic-fixed-bit': `
+Fixed Bit (RFC 9000 §17.2): 長ヘッダと短ヘッダは同じビット 0x40 を **共有** し、常に 1 でなければなりません;
+そうでない場合、ピアはパケットを破棄しなければなりません。
+`
+  'quic.quic-frame-padding': 'フレーム種別'
+  'quic.quic-initial-salt': 'QUIC Initial Salt (RFC 9001 §5.2)'
+  'quic.quic-key-size': '鍵長'
+  'quic.quic-long-header-fixed-bit': `
+Long Header 固定ビット (⚠️ 名前は古くから使われているが、値 0x80 は実際には RFC 9000 §17.2 の
+**Header Form** ビットであり Fixed Bit ではない。Fixed Bit は QUIC-FIXED-BIT を参照)
+`
+  'quic.quic-max-cid-len': 'CID の最大長'
+  'quic.quic-max-frames': '最大フレーム数'
+  'quic.quic-max-packet-size': '最大パケットサイズ'
+  'quic.quic-packet-initial': 'パケット型（Long Header の最初のバイトの上位ビット）'
+  'quic.quic-short-header-fixed-bit': 'Short Header 固定ビット'
+  'quic.quic-state-new': '接続状態'
+  'quic.quic-version-1': 'QUIC バージョン'
   'quic.remove-header-protection': `
 ヘッダ保護を除去（apply と同一、XOR は対称）
 packet: 処理対象のパケットデータ（インプレス修正）
@@ -6821,6 +9141,15 @@ val: 可変長整数へエンコードする非負の i64 値
 返り値 buf: エンコード結果（1/2/4/8 バイト）
 返り値 n: buf に実際に書き込んだエンコードバイト数
 `
+  'rand': `
+rand — 単純な乱数生成器（xorshift32）
+
+xorshift32 アルゴリズムを用いる、単純で高速な疑似乱数生成器。
+
+使用法：
+seed = 123456789
+r = rand(seed)    // r = random number 0..4294967295
+`
   'rand.rand': `
 次の疑似乱数を生成（xorshift32）
 state: 入力状態（任意の非ゼロシード；内部でまず 32 ビットへ切り詰め、各ステップで再マスク）
@@ -6834,12 +9163,69 @@ n: 生成する文字数
 s: 出力文字列（長さ n）
 chars: 使用可能な文字集合 (A-Z a-z 0-9)
 `
+  'rc4': `
+rc4 — RC4 ストリーム暗号
+
+RC4 は 256 バイトの状態配列を用いる単純なストリーム暗号。
+暗号化と復号は同じ演算（XOR）を使用する。
+
+注：RC4 は安全でないとみなされ、レガシー・システム互換のためにのみ提供される。
+
+使用法：
+# std/crypto/rc4
+key []byte = 'secret key'
+cipher = rc4(plain, key)   // encrypt
+plain = rc4(cipher, key)   // decrypt (same operation)
+`
   'rc4.rc4': `
 RC4 暗号化/復号
 同一関数が暗号化と復号の両方を兼ねます：out = in XOR キーストリーム。out でもう一度実行すると in に復元。
 in: 入力データ（平文または暗号文、長さは不変）
 key: 鍵（1–256 バイト）。空だと内部インデックスが範囲外になるため、呼び出し側が非空を保証する必要あり
 返り値 out: in と等長のキータイムストリーム XOR 結果
+`
+  'regexp': `
+regexp — regular expression standard library (pure Nolang implementation)
+
+正規表現エンジンは Nolang のみで実装され、C 標準の regex.h に依存しません。
+命令型 VM + バックトラック照合アーキテクチャを使用します。
+
+Supported syntax:
+.          any character (except newline)
+*          zero or more (greedy)
++          one or more (greedy)
+?          zero or one (greedy)
+[abc]      character class
+[^abc]     negated character class
+[a-z]      character range
+^          start-of-line anchor
+$          end-of-line anchor
+\d \D      digit / non-digit
+\w \W      word character / non-word character
+\s \S      whitespace / non-whitespace
+\n \t \r   newline / tab / carriage return
+\. \* \+   escaped special characters
+
+usage example:
+re = regexp{
+pattern: '^hello'
+}
+matched = re.matches('hello world')
+// matched = true
+
+re = regexp{
+pattern: '\\d+'
+}
+match = re.find('price: 123')
+// match = '123'
+
+// 便利関数
+matched = regexp-match('hello.*world', 'hello nolang world')
+result = regexp-find('[0-9]+', 'abc123def456')
+`
+  'regexp._re-quant-none': `
+量指定子の内部コード（42/43/63 のような生の文字値を比較定数に使わないでください。
+LLVM に == 42 の最適化バグがあるためです。代わりに安全な値 1/2/3 を使います。）
 `
   'regexp.alloc-class': `
 新しい文字クラスを確保し、そのインデックスを返す
@@ -6969,6 +9355,26 @@ i: 現在の位置（'\' を指す）
 副作用: .tmp-atom-type、.tmp-atom-char、.tmp-atom-cls を設定する
 
 `
+  'regexp.re-cls-max': '文字クラスの容量 (cls の総バイト数 / RE-CLS-SIZE = 収まるクラス数)'
+  'regexp.re-cls-size': '各文字クラスのビットマップ・サイズ（32 bytes = 256 bits）'
+  'regexp.re-op-char': '命令タイプ定数'
+  'regexp.re-op-max': '命令配列の容量（op / arg1 / arg2、同じ長さの 3 配列）'
+  'regexp.regexp': `
+regexp: 正規表現
+pattern: 元のパターン文字列
+compiled: コンパイル済みか
+n: コンパイル後の命令数
+op: 命令種別の配列
+arg1: 命令の引数 1 (char 値 / ジャンプ先 / クラスインデックス)
+arg2: 命令の引数 2 (SPLIT の第 2 分岐)
+cls: 文字クラスのビットマップ (それぞれ RE-CLS-SIZE バイト)
+ncls: 文字クラスの数
+match-end: マッチ終了位置 (find が使用)
+overflowed: コンパイル時に RE-OP-MAX / RE-CLS-MAX の上限に達したか (true ⇒ 命令やクラスが破棄され、マッチ結果は信頼できない)
+tmp-atom-type: 解析用一時領域 — アトム種別
+tmp-atom-char: 解析用一時領域 — アトムの char 値
+tmp-atom-cls: 解析用一時領域 — アトムのクラスインデックス
+`
   'regexp.regexp-compile': `
 正規表現パターンをコンパイルし、コンパイル済みの regexp インスタンスを返す。
 正規表現リテラル /pattern/ が使う: リテラルはコード生成時にこの関数の呼び出しに展開される。
@@ -7001,6 +9407,48 @@ c: 文字値（0-255）
 cls-idx: クラスのインデックス
 c: エスケープされた文字（例: 'd', 'w', 's'）
 
+`
+  'rsa': `
+rsa — RSA 暗号化／復号（多倍長整数の剰余累乗）
+
+多倍長整数（基数 2^32、リトルエンディアン）による RSA 剰余累乗を実行します:
+result = base^exp mod modulus
+
+鍵生成は行いません。呼び出し側が n、e、d を供給する必要があります。
+1024~4096-bit の鍵（32~128 個の 32-bit limbs）をサポートします。
+
+使い方:
+// 高レベルインターフェース（推奨）: バイト列は符号なしビッグエンディアン整数として解釈され、出力は最短のビッグエンディアン符号化（0 は単一バイト [0]）です
+cipher = rsa-encrypt-bytes(msg, pub-exp, mod)
+plain  = rsa-decrypt-bytes(cipher, priv-exp, mod)
+// 低レベル数値インターフェース（limb 数の手動管理。呼び出し側はトリミング済みの数を渡して走査ビット数を減らせます）:
+// base, exp, mod は []i64 スライス（基数 2^32 リトルエンディアン）です
+result, result-n = rsa-modpow(base, base-n, exp, exp-n, mod, mod-n)
+// _ で始まるその他のシンボル（limb ラップ／bignum ユーティリティ／バイト変換）はモジュール内部用で、モジュール間利用は禁止です（private_std ガードが ERROR を報告します）
+
+注意:
+- 内部関数はすべて ecdsa.no の bn-* 関数との衝突を避けるため _rsa-bn-* と命名されています
+（両者は crypto パッケージに属し、モジュール接頭辞がないと誤った関数に解決されます）
+- Nolang の && は短絡評価しないため、trim ループは条件に && を使ってはいけません
+代わりに keep-trimming フラグ変数を使用してください。
+- ⚠️ かつて `(keep-trimming) { ... }` は**デッドコード**でした: パーサの isCondLoopPrefix が
+(src/parser/stmt.go) 「括弧内の単一の IDENT」を無名関数リテラルの引数リストと誤認し、
+そのため `(flag) { ... }` はループではなく何もしない文となり —— ループは一度も実行されず、
+長さもトリミングされませんでした。当時の回避策は `(flag == true) { ... }` でした。
+2026-09-24 にパーサで修正済み（Nolang の関数リテラルの引数は常に型が必要で、`(flag)`
+はそもそも有効な引数リストではありません）。そのため現在は**直接 `(keep-trimming) { ... }` と書けばよく**、
+以下の 4 箇所はすべてこの形に戻されています。このバグはかつて未トリミングの rn が rsa-modpow に範囲外読み込みを起こさせ、
+tests/https-server.no で SIGSEGV を引き起こしました。
+`
+  'rsa._bytes-to-limbs': `
+bytes → limbs（モジュール非公開）: ビッグエンディアンの符号なしバイト列を基数 2^32 のリトルエンディアン limb 配列に変換します
+v: ビッグエンディアンの符号なし整数（先頭のゼロバイトは無害）
+out: limb 配列、長さ ceil(len/4)。空入力は [0] を返します
+`
+  'rsa._limbs-to-bytes': `
+limbs → bytes（モジュール内プライベート）: 基数 2^32 リトルエンディアンの limb 配列から最短のビッグエンディアン符号なしバイト列へ
+v: limb 配列（先行するゼロ limb を許可）
+out: 最短のビッグエンディアン符号化；値 0 は単一バイト [0] を返す
 `
   'rsa._rsa-bn-add': `
 c = a + b
@@ -7094,6 +9542,32 @@ mn: modulus の limb 数
 new-result: (result² × base^exp-bit) mod modulus
 new-rn: new-result の limb 数
 `
+  'rsa._rsa-modpow-trimmed': `
+公開インターフェースはもはや limb 数を手動で渡さない。入力は vec 自身の .len() で測る (先頭のゼロ limb は余分な走査が増えるだけで正確性には影響しない)。
+出力は精密にトリミングされた vec で、out.len() が有効な limb 数になる (低レベルの rsa-modpow は余分なゼロ limb を含むバッファ長を返す)。
+rsa-modpow の幅広バッファ出力を正確な長さの vec にトリミングする
+base: 冪の底
+bn: base の limb 数
+exp: 指数
+en: exp の limb 数
+modulus: 法
+mn: modulus の limb 数
+out: base^exp mod modulus (長さは有効な limb 数と完全一致。rn==0 のとき単一のゼロ limb を返す)
+`
+  'rsa.rsa-decrypt-bytes': `
+RSA 復号（バイトインタフェース）：m = c^d mod n
+ct: 暗号文の大きな整数 c、ビッグエンディアンの符号なしバイト列（mod より小さくなければならない）
+priv-exp: 秘密指数 d、ビッグエンディアンの符号なしバイト列
+mod: 法 n、ビッグエンディアンの符号なしバイト列
+out: 平文 m = c^d mod n、最短のビッグエンディアン符号なしエンコーディング（PKCS#1 アンパディングなし）
+`
+  'rsa.rsa-encrypt-bytes': `
+RSA 暗号化 (バイトインターフェース): c = m^e mod n
+msg: 平文の大きな整数 m、符号なしビッグエンディアンのバイト列 (PKCS#1 パディングなし、mod より小さい必要がある)
+pub-exp: 公開指数 e、符号なしビッグエンディアンのバイト列
+mod: 法 n、符号なしビッグエンディアンのバイト列
+out: 暗号文 c = m^e mod n、最短の符号なしビッグエンディアン符号化 (0 は単一バイト [0])
+`
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
 左右スキャンの平方乗（square-and-multiply）を使用
@@ -7108,12 +9582,40 @@ mn: modulus の limb 数（結果バッファはこの長さで確保）
 result: base^exp mod modulus（1 から始め各ビットで平方乗）
 rn: result の limb 数
 `
+  'scrypt': `
+scrypt — Scrypt メモリ困難鍵導出関数 (RFC 7914)
+
+Scrypt はメモリ困難な KDF として設計され、ASIC/GPU クラックに耐性があります。
+PBKDF2-HMAC-SHA256 + Salsa20/8 コア関数を使用します。
+
+usage:
+# std/crypto/scrypt
+password []byte = 'password'
+salt []byte = 'salt'
+N = 16384    // CPU/メモリパラメータ (2 のべき乗でなければならない)
+r = 8        // ブロックサイズパラメータ
+p = 1        // 並列度パラメータ
+key-len = 32
+derived = scrypt(password, salt, N, r, p, key-len)
+`
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════
 32 ビット循環左シフト（Salsa20 quarter-round の回転に使用）
 x: 回転する 32 ビット値
 n: 左シフトビット数（0..31；32 はシフト量がオーバーフロー）
 r: 左シフト結果、& 0xFFFFFFFF 済み
+`
+  'scrypt.salsa-quarter-round': `
+Salsa20/8 core：64バイト・ブロックに対する8ラウンドの混合
+まず16個のリトルエンディアン32ビット語を読み、8ラウンドの add-rotate-xor を実行し、元の値に加算して書き出す。
+block: 64バイト入力/出力。その場で変更され、64バイト未満の場合は欠落部を 0 として扱う
+[salsa20-8-core](#scrypt.salsa20-8-core)
+Salsa20 quarter round（16語の作業ベクトルをその場で更新）
+RFC 7914 §3.1 の QR(a,b,c,d) に従い、b/c/d/a はそれぞれ 7/9/13/18 ビット左回転で混合される
+x: 16語の作業ベクトル（その場で更新）
+a, b, c, d: このラウンドの4語のベクトル内インデックス
+mask: 32ビット・マスク
+各ステップは直前のステップが書いた語を読むため、それぞれ名前で読み出され、共有一時変数はない。
 `
   'scrypt.salsa20-8-core': `
 Salsa20/8 核心：64 バイトブロックを 8 ラウンド混合
@@ -7148,11 +9650,59 @@ n: CPU/メモリコストパラメータ、1 より大きい 2 の冪である�
 r: ブロックサイズパラメータ、各サブブロックの 64 バイトブロック数を決定
 返り値 out: 混合後のブロック（長さ 128*r）
 `
+  'server': `
+server — HTTP/1.1 サーバ
+
+ルーティングディスパッチ、リクエスト解析、レスポンス構築を行う単純な HTTP/1.1 サーバを提供する。
+GET, POST, PUT, DELETE, PATCH メソッドと Keep-Alive 接続の再利用をサポートする。
+下層では net.no の listener/conn 構造体を使用する。
+
+usage:
+srv = server{}
+ok = srv.listen('0.0.0.0', 8080)
+ok -> {
+! {
+req = srv.accept()           // returns ?server-conn
+req: {
+nil -> break
+->
+req.parse()
+req.method == 'GET' -> {
+req.write-text(200, 'Hello, World!')
+`
+  'server.http-srv-buf-size': 'サーバーの受信バッファサイズ'
+  'server.http-srv-keepalive-timeout': 'Keep-Alive タイムアウト (ミリ秒)'
+  'server.http-srv-max-body': 'リクエストボディの最大サイズ'
+  'server.http-srv-max-headers': 'リクエストヘッダの最大数'
+  'server.http-srv-max-keepalive': '最大 Keep-Alive リクエスト数'
+  'server.http-srv-recv-size': '1 回の受信サイズ'
   'server.https-listen-on': `
 HTTPS サーバーを構築し監視を開始
 host: バインドする IP アドレス
 port: 監視ポート番号
 返り値 s: ok=サーバー, nil=失敗
+`
+  'server.https-server': `
+https-server: HTTPS サーバー
+fd: 待ち受けソケット fd（-1=未オープン）
+host: バインドされた IP アドレス
+port: 待ち受けポート
+`
+  'server.https-server-conn': `
+https-server-conn: HTTPS サーバー側接続
+tls: 基盤となる TLS 接続
+method: リクエストメソッド
+path: リクエストパス
+query: クエリ文字列
+version: HTTP バージョン
+headers: 生ヘッダ文字列
+header-names: 解析済みヘッダ名
+header-values: 解析済みヘッダ値
+header-count: ヘッダ数
+body: リクエストボディ
+keep-alive: 接続を維持するかどうか
+recv-buf: 受信バッファ
+recv-buf-len: バッファ内の実際のデータ長
 `
   'server.https-server-conn.close': 'TLS 接続をクローズ'
   'server.https-server-conn.get-header': `
@@ -7229,6 +9779,29 @@ port: 監視ポート番号
 a: 文字列 A
 b: 文字列 B
 返り値 ok: true=相等
+`
+  'server.server': `
+server: HTTP サーバー
+fd: 待ち受けソケット fd (-1=未オープン)
+host: バインドされた IP アドレス
+port: 待ち受けポート
+`
+  'server.server-conn': `
+server-conn: サーバー側クライアント接続
+fd: クライアントソケットの fd (-1=未接続)
+method: リクエストメソッド (GET/POST/PUT/DELETE/PATCH)
+path: リクエストパス
+query: クエリ文字列 (? を含まない)
+version: HTTP バージョン (例: HTTP/1.1)
+headers: 生ヘッダ文字列（複数行）
+header-names: 解析済みヘッダ名
+header-values: 解析済みヘッダ値
+header-count: ヘッダ数
+body: リクエスト本体
+remote-addr: クライアント IP アドレス（未使用、予約済み）
+keep-alive: 接続を維持するかどうか
+recv-buf: 受信バッファ
+recv-buf-len: バッファ内の実際のデータ長
 `
   'server.server-conn.close': '接続をクローズ'
   'server.server-conn.get-cookie': `
@@ -7339,6 +9912,31 @@ host: バインドする IP アドレス（例 '0.0.0.0' または '127.0.0.1'�
 port: 監視ポート番号
 返り値 ok: true=成功
 `
+  'set': `
+set — ジェネリックな集合データ構造
+
+set 構造体は自身の要素バッファ（`data []t`）と状態（cap/size）を持ち、要素型 `t` は
+ファクトリ呼び出し `set.init(data)` に渡される具体的な `[N]E` / `[]E` バッファから推論されます；コンパイラは
+monomorphizeSliceStructs（src/build/slice_structs.go）を通じて set-E の実体化型および
+そのすべてのメソッドへ単相化します。したがって set は `==` セマンティクスを持つ任意の要素型（i64/u8/byte/str など）をサポートします。
+
+使い方:
+use std/set
+buf [128]i64 = [0,0,0 /* ... 128 要素 */]
+s = set.init(buf)                // s : set-i64、容量 = バッファ長
+n = s.add(1)                     // 1 を追加、新しいサイズを返す
+s.add(2)
+yes = s.contains(1)              // yes = true
+n = s.remove(1)                  // 1 を削除、新しいサイズを返す
+sz = s.size()
+
+// ジェネリックな文字列集合：別の [n]str バッファを与えるだけ
+sbuf [16]str = ['', '', /* ... */]
+ss = set.init(sbuf)
+ss.add('apple')
+
+注意：容量の上限はバッファ配列の長さです；インスタンスは set.init(buffer) で作成されます。
+`
   'set.add': `
 集合に要素を追加する（なければ）
 val: 追加する要素
@@ -7386,6 +9984,12 @@ val: 削除する要素
 戻り値 new-size: 新しいサイズ
 
 `
+  'set.set': `
+set: 集合状態（自身の要素バッファを持つ）
+data: 要素バッファスライス（容量 = その長さ）
+cap:  容量（= バッファ配列の長さ）
+size: 現在の要素数
+`
   'set.size': `
 集合のサイズを返す
 sz: セットが現在保持している要素数
@@ -7402,6 +10006,27 @@ osize: 相手集合の要素数
 戻り値 new-size: 和集合後のサイズ
 
 `
+  'sha1': `
+sha1 — SHA-1 セキュアハッシュアルゴリズム（160 ビット）
+
+2 つの公開 API 層と 1 つの低レベル API を提供します:
+sha1(data []byte) (hash [20]byte) — 完全なハッシュ（パディングとマルチブロック処理付き）
+sha1-hex(data []byte) (hex str) — 完全なハッシュ、40 文字の 16 進文字列を返す
+sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — 単一の 512 ビットブロックを処理（低レベル）
+
+使い方:
+// public API: compute SHA-1 over a byte array
+hash = sha1(data)       // hash = 20 bytes [20]byte
+hex = sha1-hex(data)    // hex = 40-character hex string
+
+// low-level: manage blocks manually
+h0 = 1732584193
+h1 = 4023233417
+h2 = 2562383102
+h3 = 271733878
+h4 = 3285377520
+sha1-block(block, h0, h1, h2, h3, h4)
+`
   'sha1.sha1': `
 SHA-1 ハッシュを計算（パディングと複数ブロック処理を含む）
 data: 入力バイト配列（任意長）
@@ -7411,13 +10036,24 @@ hash: 160-bit ダイジェスト。FIPS 180-4 定義のビッグエンディア�
   'sha1.sha1-block': `
 512-bit ブロックを 1 個処理（80 ラウンド圧縮、FIPS 180-4）
 s: 32-bit ビッグエンディアンメッセージワード 16 個（呼び出し側がバイトから展開済み）
-h0 u32, h1, h2, h3, h4: このブロック進入前の 160-bit ハッシュ状態
-r0 u32, r1, r2, r3, r4: 圧縮後の新状態（作業変数を入力状態に加え戻し 2^32 を法）
+h0, h1, h2, h3, h4: このブロック進入前の 160-bit ハッシュ状態
+r0, r1, r2, r3, r4: 圧縮後の新状態（作業変数を入力状態に加え戻し 2^32 を法）
 `
   'sha1.sha1-hex': `
 SHA-1 ハッシュを計算し hex 文字列を返します
 data: 入力バイト配列（任意長）
 hex: 40 文字の小文字 16 進ダイジェスト
+`
+  'sha224': `
+sha224 — SHA-224 セキュアハッシュアルゴリズム（224 ビット）
+
+SHA-224 は SHA-256 と同じ圧縮関数を使用しますが、初期値が異なり、出力を 28 バイトに切り捨てます。
+内部では sha256-block を呼び出して 512 ビットブロックを処理します。
+
+使い方:
+# std/crypto/sha224
+hash = sha224(data)       // hash = 28 バイト [28]byte
+hex = sha224-hex(data)    // hex = 56 文字の 16 進文字列
 `
   'sha224.sha224': `
 SHA-224 ハッシュを計算（パディングと複数ブロック処理を含む；圧縮関数は SHA-256 と同一で初期値のみ異なる）
@@ -7428,6 +10064,30 @@ hash: 224-bit ダイジェスト（SHA-256 の先頭 7 個の状態ワードを�
 SHA-224 ハッシュを計算し hex 文字列を返します
 data: 入力バイト配列（任意長）
 hex: 56 文字の小文字 16 進ダイジェスト
+`
+  'sha256': `
+sha256 — SHA-256 セキュアハッシュアルゴリズム (256-bit)
+
+公開 API 2 層と低レベル API 1 層を提供:
+sha256(data []byte) (hash [32]byte) — 完全なハッシュ。パディングと複数ブロック処理を含む
+sha256-hex(data []byte) (hex str) — 完全なハッシュ。64 文字の hex 文字列を返す
+sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32) — 単一の 512-bit ブロックを処理 (低レベル)
+
+使い方:
+// 公開 API: バイト配列に対して SHA-256 を計算
+hash = sha256(data)       // hash = 32 バイト [32]byte
+hex = sha256-hex(data)    // hex = 64 文字の hex 文字列
+
+// 低レベル: ブロックを手動で管理
+h0 = 1779033703
+h1 = 3144134277
+h2 = 1013904242
+h3 = 2773480762
+h4 = 1359893119
+h5 = 2600822924
+h6 = 528734635
+h7 = 1541459225
+sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 `
   'sha256.sha256': `
 SHA-256 ハッシュを計算（パディングと複数ブロック処理を含む）
@@ -7445,9 +10105,34 @@ SHA-256 ハッシュを計算し hex 文字列を返します
 data: 入力バイト配列（任意長）
 hex: 64 文字の小文字 16 進ダイジェスト
 `
+  'sha3': `
+sha3 — SHA-3 (Keccak) セキュアハッシュアルゴリズム
+
+NIST FIPS 202 で定義された SHA-3 ファミリを、Keccak スポンジ構造に基づいて実装します。
+4 種類の出力長を提供します: SHA3-224、SHA3-256、SHA3-384、SHA3-512。
+
+内部状態は 1600-bit（25 × 64-bit lanes）で、Keccak-f[1600] は 24 ラウンドです。
+
+使い方:
+# std/crypto/sha3
+hash28 = sha3.sha3-224(data)     // [28]byte
+hash32 = sha3.sha3-256(data)     // [32]byte
+hash48 = sha3.sha3-384(data)     // [48]byte
+hash64 = sha3.sha3-512(data)     // [64]byte
+hex = sha3.sha3-256-hex(data)    // 64 文字の hex
+`
   'sha3.keccak-f1600': `
 Keccak-f[1600] 置換を実行（24 ラウンド）
 state: 64-bit レーン 25 個の状態配列（インプレス入出力）
+`
+  'sha3.keccak-rc': `
+ラウンド定数（iota）、24 ラウンド
+rc[t] は 8 ビット LFSR（x^8 + x^6 + x^5 + x^4 + 1）により生成され、
+ビットは 2^j - 1（j = 0..6、すなわち bit 0/1/3/7/15/31/63）に配置される。
+`
+  'sha3.keccak-rho': `
+回転オフセットテーブル (rho)、25 レーンの回転量
+配置: lane[x][y] -> index = x + 5*y (x=0..4, y=0..4)
 `
   'sha3.keccak-sponge': `
 Keccak スポンジ関数
@@ -7504,6 +10189,19 @@ SHA3-512 を計算し hex 文字列を返します
 data: ハッシュ対象の生バイト。空でも可
 返り値 hex: 128 文字の hex 文字列
 `
+  'sha3.sha3-mask64': '64 ビット全て 1 のマスク'
+  'sha3.sha3-pad-high': '最上位ビットをパディングする（0x80 が lane の最上位バイトに来る場合に、i64 シフトオーバーフローを回避するため）'
+  'sha384': `
+sha384 — SHA-384 セキュアハッシュアルゴリズム（384-bit）
+
+SHA-384 は SHA-512 と同じ圧縮関数を使いますが、初期値が異なり、出力を 48 バイトに切り詰めます。
+内部では sha512-block を呼び出して 1024-bit ブロックを処理します。
+
+使用方法:
+# std/crypto/sha384
+hash = sha384(data)       // hash = 48-byte [48]byte
+hex = sha384-hex(data)    // hex = 96-character hex string
+`
   'sha384.sha384': `
 SHA-384 ハッシュを計算（パディングと複数ブロック処理を含む；圧縮関数は SHA-512 と同一で初期値のみ異なる）
 data: 入力バイト配列（任意長）
@@ -7513,6 +10211,30 @@ hash: 384-bit ダイジェスト（SHA-512 の先頭 6 個の状態ワードを�
 SHA-384 ハッシュを計算し hex 文字列を返します
 data: 入力バイト配列（任意長）
 hex: 96 文字の小文字 16 進ダイジェスト
+`
+  'sha512': `
+sha512 — SHA-512 セキュアハッシュアルゴリズム (512 ビット)
+
+2 つの公開 API 層と 1 つの低レベル API を提供する:
+sha512(data []byte) (hash [64]byte) — 完全なハッシュ。パディングと複数ブロック処理を含む
+sha512-hex(data []byte) (hex str) — 完全なハッシュ。128 文字の hex 文字列を返す
+sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64) — 単一の 1024 ビットブロックを処理 (低レベル)
+
+usage:
+// 公開 API: バイト配列に対して SHA-512 を計算
+hash = sha512(data)       // hash = 64 バイト [64]byte
+hex = sha512-hex(data)    // hex = 128 文字の hex 文字列
+
+// 低レベル: ブロックを手動で管理
+h0 = 7640891576956012808
+h1 = 13503953896175478587
+h2 = 4354685564936845355
+h3 = 11912009170470909681
+h4 = 5840696475078001361
+h5 = 11170449401992604703
+h6 = 2270897969802886507
+h7 = 6620516959819538809
+sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 `
   'sha512.sha512': `
 SHA-512 ハッシュを計算（パディングと複数ブロック処理を含む）
@@ -7529,6 +10251,178 @@ r0 u64..r7 u64: 圧縮後の新状態（作業変数を入力状態に加え戻�
 SHA-512 ハッシュを計算し hex 文字列を返します
 data: 入力バイト配列（任意長）
 hex: 128 文字の小文字 16 進ダイジェスト
+`
+  'sort': `
+sort — ord 比較インターフェースと昇順／降順のインプレースソート
+
+ord が必要とするメソッドは 1 つだけです: `.gt(b) bool`（レシーバが b より大きいとき true）。このファイルはさらに
+組み込み型 (i8…u64, f32/f64, byte, char, str) 向けの gt 実装と、
+要素が ord である配列／スライスビュー `[n]ord.asc` / `.desc` および `[]ord.asc` / `.desc` のインプレース挿入ソートを提供します。
+`
+  'sort.byte.gt': `
+byte.gt: ord インターフェース実装 — レシーバが b より大きいかを判定
+b: 比較するバイト値
+res: レシーバが b より大きいとき true
+`
+  'sort.char.gt': `
+char.gt: ord インターフェース実装 - レシーバが b より大きいかをコードポイントで判定
+b: 比較する文字
+res: レシーバのコードポイントが b より大きいとき true
+`
+  'sort.f32.gt': `
+f32.gt: ord インターフェース実装 — レシーバが b より大きいかを判定
+b: 比較する f32 値
+res: レシーバが b より大きいとき true
+`
+  'sort.f64.gt': `
+f64.gt: ord インターフェース実装 —— レシーバが b より大きいか判定します
+b: 比較対象の f64 値
+res: レシーバが b より大きいとき true
+`
+  'sort.i16.gt': `
+i16.gt: ord インターフェース実装 —— レシーバが b より大きいか判定します
+b: 比較する i16 値
+res: レシーバが b より大きいとき true
+`
+  'sort.i32.gt': `
+i32.gt: ord インターフェース実装 - レシーバが b より大きいかを判定
+b: 比較する i32 値
+res: レシーバが b より大きいとき true
+`
+  'sort.i64.gt': `
+i64.gt: ord インターフェース実装 —— レシーバが b より大きいかを判定
+b: 比較する i64 値
+res: レシーバが b より大きいとき true
+`
+  'sort.i8.gt': `
+i8.gt: ord インターフェース実装—レシーバが b より大きいか判定します
+b: 比較する i8 値
+res: レシーバが b より大きいとき true
+`
+  'sort.str.gt': `
+str.gt: ord インタフェースの実装 — レシーバが b の後に辞書順で並ぶかどうかを判定する
+b: 比較する文字列
+res: レシーバが b より辞書順で大きいとき（compare が正の値を返すとき）true
+`
+  'sort.u16.gt': `
+u16.gt: ord インターフェース実装 —— レシーバが b より大きいかを判定
+b: 比較する u16 値
+res: レシーバが b より大きいとき true
+`
+  'sort.u32.gt': `
+u32.gt: ord インタフェース実装——レシーバが b より大きいかを判定する
+b: 比較する u32 値
+res: レシーバが b より大きいとき true
+`
+  'sort.u64.gt': `
+u64.gt: ord インターフェース実装 — レシーバが b より大きいかを判定
+b: 比較する u64 値
+res: レシーバが b より大きいとき true
+`
+  'sort.u8.gt': `
+u8.gt: ord インターフェース実装 — レシーバが b より大きいか判定します
+b: 比較する u8 値
+res: レシーバが b より大きいとき true
+`
+  'sql': `
+sql — データベースアクセスインターフェース定義
+
+このファイルはデータベースアクセスの標準インターフェースを定義します。
+各ドライバ（SQLite、MySQL、PostgreSQL など）がこのインターフェースを実装し、
+具体的な構造体型とメソッドを提供します。
+
+インターフェース:
+db    — データベース接続（enter/leave をマージ、スコープ離脱時に自動クローズ）
+rows  — クエリ結果セット（enter/leave をマージ、スコープ離脱時に自動クローズ）
+stmt  — プリペアドステートメント（enter/leave をマージ、スコープ離脱時に自動クローズ）
+
+継承（インターフェースのマージ）は本体に記述し、1 行に 1 つの親インターフェース名を書きます（カンマなし）:
+db {
+enter
+leave
+exec(sql str) (r result)
+}
+
+共通の構造体:
+result — 実行結果（全ドライバで共有）
+
+ドライバが提供すべき関数:
+open = (dsn str) (d db) — ドライバが提供
+`
+  'sql.db': `
+interface: db — データベース接続
+enter/leave インターフェースを統合; 変数がスコープを抜けるとき leave() が自動的に呼ばれる
+`
+  'sql.result': `
+Historical note: this file once declared `#{buildin} db-*` (15) and `ffi-cstr-*` (3) builtin stubs.
+Their lowering originally lived in the legacy backend (`callDatabase` in `src/build/llvm/call_stdlib.go`,
+cb24869); that directory was removed wholesale in c7febdb and was never ported to MIR.
+The result was a half-life trap of "`no vet` 0 error, `no run` reports unsupported builtin", removed on 2026-09-21
+together with the Go-side registrations (`src/builtin/database.go`, `src/builtin/ffi.go`).
+Database access always goes through drivers (see `example/sqlite-driver`, `example/mysql-driver`);
+when a C string array is needed, call it directly with `#{c}` FFI inside the driver; do not make it a builtin again.
+result: 実行結果 (全ドライバで共有)
+`
+  'sql.rows': `
+interface: rows — クエリ結果セット
+enter/leave インターフェースをマージし、変数がスコープを離れると leave() が自動で呼ばれます
+`
+  'sql.stmt': `
+interface: stmt — プリペアドステートメント
+enter/leave インターフェースを統合；変数がスコープを離れるとき leave() が自動的に呼ばれます
+`
+  'sse': `
+sse — Server-Sent Events のクライアントとサーバー
+
+W3C EventSource 仕様に準拠した SSE ストリームの受信と送信をサポートします。
+内部では HTTP/1.1 の持続接続を使用し、平文の HTTP と HTTPS（TLS、クライアント）をサポートします。
+
+使用方法（クライアント）:
+client = sse-connect('http://localhost:3000/events')   // returns ?client
+client: {
+nil -> print('SSE connection failed')
+->
+! {
+ev = client.next-event()       // returns ?event
+ev: {
+nil -> break
+err -> print('error: ' - it)
+break
+-> print(ev.event - ': ' - ev.data)
+}
+}
+client.close()
+}
+
+使用方法（サーバー）:
+srv = listen-on('0.0.0.0', 3000)   // returns ?server
+srv: {
+nil -> return
+->
+! {
+c = srv.accept()             // returns ?server-conn
+c: {
+nil -> break
+->
+c.send-event('message', 'hello', '', -1)
+c.send-comment('heartbeat')
+c.close()
+}
+}
+}
+`
+  'sse.client': `
+client: SSE クライアント接続
+fd: TCP ソケットファイル記述子 (-1=未接続)
+tls-c: TLS 接続 (use-tls=true のとき使用)
+use-tls: TLS を使用するかどうか
+connected: 接続状態
+host: サーバーホスト名
+port: ポート番号
+path: リクエストパス
+last-event-id: 最後に受信したイベント ID (再接続用)
+recv-buf: 受信バッファ
+recv-buf-len: バッファ内の実際のデータ長
 `
   'sse.client.close': 'SSE 接続をクローズ'
   'sse.client.is-connected': `
@@ -7547,11 +10441,29 @@ err = エラー
 再接続（last-event-id を使い受信を継続）
 返り値 ok: true=成功
 `
+  'sse.event': `
+event: SSE イベント
+event: イベント型（デフォルト 'message'）
+data: イベントデータ（複数の data 行を \n で結合）
+id: イベント ID
+retry: 再接続待機時間（ミリ秒, -1=unset）
+`
   'sse.listen-on': `
 SSE サーバー側を構築し監視を開始
 host: バインドする IP アドレス（例 '0.0.0.0'）
 port: 監視ポート番号
 返り値 s: ok=サーバー側, nil=失敗
+`
+  'sse.server': `
+server: SSE サーバーリスナー
+fd: 待ち受けソケットのファイルディスクリプタ（-1=未オープン）
+host: バインドされた IP アドレス
+port: 待ち受けポート
+`
+  'sse.server-conn': `
+server-conn: SSE サーバー側クライアント接続
+fd: クライアントソケットファイル記述子 (-1=未接続)
+connected: 接続状態
 `
   'sse.server-conn.close': 'クライアント接続をクローズ'
   'sse.server-conn.handshake': `
@@ -7587,6 +10499,7 @@ host: バインドする IP アドレス（例 '0.0.0.0' または '127.0.0.1'�
 port: 監視ポート番号
 返り値 ok: true=成功
 `
+  'sse.sse-buf-size': '受信バッファサイズ'
   'sse.sse-connect': `
 SSE エンドポイントへ接続
 url: SSE エンドポイント URL（http://host:port/path または https://host:port/path）
@@ -7594,6 +10507,31 @@ url: SSE エンドポイント URL（http://host:port/path または https://hos
 ok = 接続済みクライアント
 nil   = 接続失敗
 err = エラーメッセージ
+`
+  'sse.sse-default-port': 'デフォルトの HTTP ポート'
+  'sse.sse-default-tls-port': 'デフォルトの HTTPS ポート'
+  'sse.sse-recv-size': '1 回の受信サイズ'
+  'stack': `
+stack — スタック
+
+後入れ先出し（LIFO）のデータ構造で、[]i64 で実装されています。
+
+使い方:
+use std/stack
+buf [128]i64
+s = stack { data: buf, n: 0 }
+s.push(42)
+s.push(7)
+val = s.pop()    // val=ok（後入れ先出し）
+val: {
+nil -> print('empty')
+-> print(it)
+}
+`
+  'stack.stack': `
+stack: スタック状態
+data: 配下の格納スライス, 容量上限 = len(data)
+n: 現在の要素数; 有効な要素は data[0..n) にある
 `
   'stack.stack.clear': `
 スタックをクリア（n を 0 に設定、data は解放せず旧内容も消さない）
@@ -7620,6 +10558,25 @@ val: プッシュする値；data[n] に書き込み後 n を 1 増やす
 スタックの現在の要素数を返す
 sz: n に等しい（0 は空を意味し、最大でも len(data) 以内）
 `
+  'static-hashmap': `
+static-hashmap — 固定容量のジェネリック連想配列
+
+このファイルはコンパイラによって任意の k/v の組み合わせへ特殊化される3つのジェネリック hashmap テンプレートを提供する：
+- static-hashmap-str-tmpl: str キー（#{generic=[v]}）
+- static-hashmap-int-tmpl: int キー（#{generic=[k,v]}）
+- static-hashmap-bool-tmpl: bool キー（#{generic=[v]}）
+
+すべての実装は固定容量で線形探査を行う。
+str/int テンプレートは 256 スロット（推奨 ≤ 192 エントリ、負荷率 ≤ 0.75）。
+bool テンプレートは 2 スロット（true/false を直接索引、探査不要）。
+
+使用法（特殊化後、例：v=i64）：
+m = static-hashmap-str-tmpl{}
+m.init()
+m.put('name', 42)
+val = m.get('name')   // val = ok(42) or nil
+`
+  'static-hashmap.fnv-offset': 'FNV-1a 定数'
   'static-hashmap.static-hashmap-bool-tmpl.clear': 'マップを空にする'
   'static-hashmap.static-hashmap-bool-tmpl.contains': `
 キーが存在するかを返す
@@ -7749,6 +10706,30 @@ a: 1 番目の文字列
 b: 2 番目の文字列
 eq: 両者がバイト単位で等しいか
 `
+  'str': `
+str — 文字列操作の標準ライブラリ
+str は外部に公開される統一文字列型です
+内部実装: str-long（ヒープ確保）
+
+スライスはビューであり、別の型ではありません。str のスライス（例: s[1..3]）は依然として str ビューを生成し、
+データをコピーせずに str の基底メモリを共有します。
+したがってすべての str メソッド (to-upper, to-lower, index, contains, slice, copy, fill など) は
+str スライスビューに適用されます。スライス経由で要素を変更すると元の str に影響します。
+`
+  'str-map': `
+str-map — str→str ハッシュマップ
+
+固定容量（256 スロット）、線形 probing、文字列を FNV-1a でハッシュする。
+小規模なキー値シナリオに適する（推奨 ≤ 192 エントリ）。
+
+usage:
+m = str-map{}
+m.init()
+m.put('name', 'Alice')
+val = m.get('name')   // val = ok('Alice') or nil
+m.for-each(k, v)
+`
+  'str-map.fnv-offset': 'FNV-1a 定数'
   'str-map.str-map.clear': 'マップを空にする'
   'str-map.str-map.contains': `
 キーが存在するかを返す
@@ -7797,6 +10778,27 @@ b: 比較する右側の文字列
 eq: 二つの文字列がバイト単位で完全一致の時 true
 `
   'str-map.str-map.to-str': '文字列表現\n`{name: Alice, age: 18}` のように整形される\nout: {鍵: 値, ...} 形式で組み立てた可読文字列'
+  'str-set': `
+str-set — str ハッシュセット
+
+固定容量（256 スロット）、線形プローブ、FNV-1a で文字列をハッシュします。
+文字列の重複排除と所属確認に適しています（推奨 ≤ 192 エントリ）。
+
+使用方法:
+s = str-set{}
+s.init()
+s.add('hello')
+yes = s.contains('hello')   // yes = true
+s.for-each(val)
+`
+  'str-set.ss-fnv-offset': 'FNV-1a 定数'
+  'str-set.str-set': `
+str-set: FNV-1a でハッシュされた str 集合のインスタンス
+cap: スロットの総数（固定 256、2 のべき乗でなければなりません）
+keys: 各スロットに格納された文字列（全 256 スロット）；有効性は occ で決まります
+occ: 占有フラグ、1=スロット使用中、0=空スロット
+size: 現在の要素数
+`
   'str-set.str-set.add': `
 要素を追加する; 挿入されたかを返す
 線形探測でスロットを探す；同一文字列にヒットすれば重複挿入しない。
@@ -7843,6 +10845,29 @@ a: 左オペランド
 b: 右オペランド
 eq: true=長さと全バイトが同一, false=不等
 `
+  'str._from-bytes': `
+str._from-bytes: 非公開コンストラクタ — 「バッファを引き継ぐ」セマンティクスで []byte を str に包みます（ゼロコピー）
+🔒 非公開（`_` 接頭辞）：src/std/str.no 自身だけが呼び出せ、ユーザーコードからの呼び出しは checker に
+拒否されます（raqvyltn）。公開経路には from-chars() を使ってください — コンパイラに新しいバッファを割り当てさせ、
+所有権の移転はなく、double free も起こりません。
+bs の基になる data ポインタから直接 str を構築し、コピーしません。n は文字列長で、
+[0, bs.len()] にクランプされ（負の値や長すぎる値が範囲外に出ることはありません）、cap もクランプ後の値を取ります。
+結果の str は bs とバッファを共有し（codegen が既に vec_retain 済み）、それぞれ 1 回解放されます。元の bs は
+今後独立したバッファとして使ってはいけません。
+コンパイラ組み込み（#{buildin}）が処理します：codegen が介入した後、%vec の data ポインタ + n から
+%str-long を構築します。シグネチャは src/builtin/str.go にも登録されています（ForwardFunc "str-from-bytes"）。
+bs: バイトスライス（結果とバッファを共有します）
+n: 文字列長（バイト数、[0, bs.len()] にクランプ）
+s: bs のバッファを共有する str（ゼロコピー）
+`
+  'str._set-byte': `
+?bool を返す（失敗あり）：範囲外（i < 0 または i >= 物理容量 cap）の場合は nil を返し**書き込みをスキップ**する。
+成功時は some(true) を返す。範囲は len ではなく %str-long の cap（物理容量）を用いるため、「バッファを埋めて
+から len を設定する」コードもそのまま動作する。呼び出し側は ?bool を裸の文として破棄してよい（optunuse は束縛名のみ確認）。
+i: バイト・インデックス
+b: 書き込むバイト値
+ok: ok=true=書き込み成功、nil=i が範囲外（書き込みスキップ）
+`
   'str._str-dig-val': `
 1 文字の数字（0-15）をその値に変換する; 無効な文字は -1 を返す
 c: 数字文字のコードポイント値
@@ -7876,6 +10901,18 @@ c: ok=該当位置の生のバイト値, nil=i が範囲外
 cp-pos 番目のコードポイントが始まるバイト位置を返す; cp-pos が末尾を超えるときは .len を返す
 cp-pos: コードポイント（文字）インデックス
 byte: バイト
+`
+  'str.bytes': `
+str.bytes(): 基底の UTF-8 バイトの「ゼロコピービュー」を返します（実際は単なる .data）
+to-bytes() と異なり、新しいバッファは確保されず、バイト単位のコピーも行われません。返される []byte は str の
+データバッファを共有し、要素への書き込みは元の文字列に反映されます。ビューの cap は 0（借用マーカー）で、スコープ終了時に
+vec_free は解放をスキップし、所有権は元の str に残ります。呼び出し側は str がビューより長生きすることを保証する必要があります。
+コンパイラ組み込み (#{buildin}) として処理されます。コード生成がこれを傍受し、%vec{len, cap=0, data} を直接
+%str-long の len/data から構築します。std 関数本体は存在せず、シグネチャは
+src/builtin/str.go の BuiltinMethodList にも登録されています (ForwardFunc "str-bytes")。
+注記: `val []byte = s.data` を直接書き込む方法は現在壊れています（コード生成がデータポインタを
+集約全体としてロードするため）、このメソッドを使用する必要があります。
+val: 基底の UTF-8 バイトの借用ビュー（長さは len-bytes() に等しい）
 `
   'str.compare': `
 2 つの文字列を辞書順で比較
@@ -7952,6 +10989,16 @@ target: 探す部分文字列
 from-byte: 開始バイトオフセット
 pos: target 初出のバイトオフセット、未発見時 -1
 `
+  'str.from-chars': `
+str.from-chars: []char から str を安全に構築（公開コンストラクタ。各 char は 1 生バイトとして書き込まれます）
+コンパイラ組み込みが処理します（#{buildin}、ForwardFunc "chars-new"、new() と同一実装）:
+新しいバッファを一度確保し、バイト単位で書き込んで長さを設定し（len = cap = cs.len()）、呼び出し側の
+メモリを借用しないため、ユーザーにとって完全に安全です（double free／範囲外なし）。
+注意: 各 char は下位 8 ビットのみを 1 バイトとして書き込み（trunc i32→i8）、UTF-8 再エンコードは行いません。
+UTF-8 バイトが必要な場合は char.to-bytes() で連結するか、to-str() の後に to-bytes() を呼び出します。
+cs: コードポイントのスライス（[]char）
+s: cs からバイト単位で構築した str（新規バッファ、データを所有）
+`
   'str.from-hex': `
 16 進文字列を []byte にデコードする
 戻り値 Option:
@@ -7985,6 +11032,10 @@ target: 探す部分文字列
 s[i] のコードポイント添字と一致; バイト数が必要なら s.len-bytes() を使う
 n: コードポイント（文字）数（s[i] のインデックス意味と一致）
 `
+  'str.len-bytes': `
+str.len-bytes(): 文字列の「バイト数」(基盤となる UTF-8 バッファの長さ) を返します
+コンパイラにより組み込み (build-in、旧 .len 構造体フィールドと同等) として処理されます; 標準ライブラリ内のバイトレベルのループ/スライスにはこのメソッドを使用してください
+`
   'str.lines': `
 改行で分割する
 \n と \r\n に対応
@@ -7997,6 +11048,15 @@ str.new: char スライスから str を構築（モジュールレベルコン�
 バイト毎の .no ループ無し。str は内建型で、バイト/長さはユーザコードで操作できないため、変換全体はコンパイラが IR を生成。
 cs: コードポイントスライス（[]char）
 s: バイトごとに再エンコード後の str
+`
+  'str.push': '1 つのコードポイントを追加します（インプレースで拡張、UTF-8 エンコード）\n`s[i] = v` の全面禁止後、これは可変長書き込みの唯一の入口です:\nインデックス書き込みは長さを暗黙に変更するため危険でした。拡張は\n明示的で監査可能な 1 回の呼び出しでなければなりません。\nc: 追加するコードポイント'
+  'str.push-str': `
+文字列を追加する (インプレースで伸長、バイトコピー)
+コンパイラが builtin として処理 (#{buildin}、ForwardFunc "str-push-bytes"、std 本体なし):
+%str-long のバッファを新しい文字列の生成・連結ではなくインプレースで再確保し (倍増 + memmove)、
+呼び出しごとに O(N) かかることを避ける。自己追加 `s.push-str(s)` は
+安全 (先に retain してからコピー)。
+s: 追加する文字列
 `
   'str.repeat': `
 文字列を times 回繰り返す
@@ -8091,6 +11151,24 @@ yes: s が target で始まるかどうか
 不正文字は -1 返却（旧名 hex-val は uuid.hex-val と衝突、モジュール間解決では修飾を要求されるため、txt-hex-val の慣例に従いモジュール接頭辞を付与）
 c: 16 進文字のコードポイント値
 v: 0~15；無効文字は -1 を返す
+`
+  'str.str-to-f64': `
+10 進/科学記法テキストを f64 に解析します (Nolang 実装、strtod に依存しません)
+s: 数値テキスト
+result: 解析された f64 (有効性は呼び出し側の to-f64 により事前検査済み)
+`
+  'str.string': `
+string = str | txt — 文字列ファミリのユニオン型エイリアス (number.no の num = int | float に対応)
+使い方: string と宣言された関数の引数/戻り値は、呼び出し側で str または txt の実引数を受け取り、
+コンパイル時に実引数の具体的な型で単相化され (ValidateUnionTypes + FlattenUnion + clone)、
+メンバーごとに 1 つの具象関数が生成される (例: f__str / f__txt)。
+能力の境界 (num と同じ既存の制限):
+- 関数本体内でユニオン引数に対してメンバーメソッド (s.len()/s.to-upper()) を呼ぶことはまだ未対応
+(単相化時の名前修飾の不具合)。代わりにグローバル builtin を使う (len(s) はバイト数) か、
+str/txt の 2 つの具象関数に分割すること。
+- ユニオン変数宣言 (s string = 'x') はまだ未対応。
+- string.len のような「メンバーと同名」のエイリアスメソッドを定義しないこと。s.len() の
+呼び出しを奪い、メソッド本体が自身へ再帰的にディスパッチする (セグフォルト)。メンバーメソッドには素の str.*/txt.* を使うこと。
 `
   'str.to-bigint': `
 文字列を bigint にパースする。基数は自動判定
@@ -8261,6 +11339,37 @@ sep: 区切り文字
 戻り値 out: 連結した文字列
 
 `
+  'tar': `
+tar — TAR アーカイブの読み書き
+
+POSIX ustar 形式の TAR アーカイブを読み書きします。
+外部ライブラリは使わず、[]byte のみを扱います。
+
+使用方法（読み取り）:
+archive = tar{
+data: raw-bytes
+}
+n = archive.count()
+i <- [0..n): {
+e = archive.entry(i)
+name = e.name()
+sz = e.size()
+typ = e.type()
+content = e.read()
+}
+
+使用方法（読み取り .tar.gz）:
+archive = open-gz(gz-data)
+n = archive.count()
+...
+
+使用方法（書き込み）:
+builder = builder{}
+builder.add-file('hello.txt', 'hello world')
+builder.add-dir('subdir/')
+archive = builder.finish()
+`
+  'tar.builder': 'builder: TAR アーカイブビルダー'
   'tar.builder.add-bytes': `
 生バイトエントリを追加
 name: エントリ名
@@ -8296,6 +11405,7 @@ offset: フィールドが現在のヘッダブロック内で占めるオフセ
 width: フィールド幅（8 進数字を右寄せ、左側を空白埋め）
 val: エンコードする整数値（ブロック末尾に別途 NUL を補う）
 `
+  'tar.entry': 'entry: TAR エントリ（archive.data 内のヘッダーを指す）'
   'tar.entry.is-dir': `
 ディレクトリかどうか判定
 yes: このエントリがディレクトリか
@@ -8333,6 +11443,9 @@ gzip 圧縮データから tar ビューを構築（.tar.gz）
 gz-data: gzip 圧縮された tar データ ([]byte)
 archive: 解凍後の tar アーカイブ
 `
+  'tar.tar': 'tar: TAR アーカイブの読み取り専用ビュー'
+  'tar.tar-block': 'TAR ブロックサイズ'
+  'tar.tar-type-file': 'エントリ型'
   'tar.tar.count': `
 TAR 内の有効エントリ数を計算
 count: 終了マーク（全ゼロブロック）前のエントリ数
@@ -8388,6 +11501,21 @@ idx 番目のエントリの型文字列を読み取り
 idx: エントリ番号
 typ: エントリ型文字列（typeflag に従い "file"、"dir" または "unknown" へマップ）
 `
+  'tdes': `
+tdes — Triple DES (3DES) 暗号化/復号 (ECB モード)
+
+Triple DES は 3 つの 8 バイト鍵 (K1, K2, K3) を使用し、DES を 3 回適用する。
+encrypt: C = E_K3(D_K2(E_K1(P)))
+decrypt: P = D_K1(E_K2(D_K3(C)))
+
+2 鍵モード (K1=K3) と 3 鍵モードをサポートする。
+
+usage:
+# std/crypto/tdes
+key [24]byte  // K1=key[0:8], K2=key[8:16], K3=key[16:24]
+out = tdes-enc(plain, plain.len(), key)   // 暗号化
+out = tdes-dec(cipher, cipher.len(), key) // 復号
+`
   'tdes.tdes-cbc-dec': `
 Triple DES-CBC 復号
 各ブロックでまず 3DES-ECB 復号し、続く前セグメントの暗号文（先頭ブロックは iv）と XOR して平文を復元。
@@ -8421,6 +11549,21 @@ n: 実際に処理するバイト数（通常 in.len()）
 key: 鍵（K1 || K2 || K3、各セグメント 8 バイト）
 返り値 out: 暗号化後のデータ、長さは n と同一
 `
+  'time': `
+time — 時刻操作
+
+Unix タイムスタンプ、フォーマット、スリープ、期間計算、タイマーを提供します。
+下層では os モジュールのシステムコールに依存します（now, now-ms, now-us, now-ns, sleep, sleep-us, sleep-ns）。
+
+また、time 構造体（sec + nsec で表される絶対的な時点）も提供します：now-time, unix-to-time,
+duration-time, since-time, parse-time などの関数や、.unix/.date/.format などのメソッドにより、
+呼び出し側は生の i64 タイムスタンプではなく時刻として操作できます。
+
+注意：now-ms, now-us, now-ns, sleep-us, sleep-ns は組み込み（builtins）からすでに提供されており、
+ここでは再定義されません（ユーザー関数が同名の組み込みを隠して再帰を引き起こします）；
+組み込みとして直接呼び出されます。
+`
+  'time._days-in-month': '月ごとの日数表（平年）'
   'time.add-seconds': `
 秒を加えて新しい time を返す
 n: 加算する秒数（負も可）
@@ -8430,6 +11573,7 @@ t: 新しい time（sec+n、nsec は不変）
 date 構造体に変換する（UTC。nsec は無視）
 d: .sec に対応する UTC 日付構造体
 `
+  'time.date-2': 'date: 日時構造体 (UTC)'
   'time.date-to-unix': `
 date 構造体（UTC）を Unix タイムスタンプ（秒）に変換する
 days-from-civil アルゴリズム（Howard Hinnant）を使う
@@ -8576,6 +11720,17 @@ us: 睡眠時間（マイクロ秒）
 other: 減算される側の日時
 diff: .sec - other.sec（秒、nsec 無視）
 `
+  'time.time': `
+time: 時点構造体（UTC）
+Unix 秒（sec）とナノ秒（nsec, 0~999,999,999）で絶対的な時点を表します。
+now-time, unix-to-time などのコンストラクタや .unix, .date, .format などのメソッドと組み合わせることで、
+呼び出し側は生の i64 タイムスタンプではなく時刻として操作できます。
+`
+  'time.timer': `
+timer: タイマー構造体
+start-ts: 開始タイムスタンプ（ミリ秒）
+end-ts: 終了タイムスタンプ（ミリ秒）
+`
   'time.timer.elapsed-ms': `
 経過ミリ秒
 ms: end-ts と start-ts の差（ミリ秒；stop 未呼び出しなら end-ts は旧値または 0）
@@ -8609,6 +11764,46 @@ Unix タイムスタンプ（秒）から time を構築する（nsec=0）
 ts: Unix タイムスタンプ（秒）
 t: 対応する時点（nsec=0）
 `
+  'tls': `
+tls — TLS 1.2 / 1.3 クライアント（純 Nolang 実装、OpenSSL 非依存）
+
+TLS 1.3: 暗号スイート TLS_AES_128_GCM_SHA256 (0x1301) をサポート
+AES-128-GCM (AEAD) + X25519 ECDHE 鍵交換 + HKDF 鍵スケジュール を使用
+
+TLS 1.2: 以下の暗号スイートをサポート
+ECDHE（X25519 鍵交換）:
+TLS_ECDHE_RSA/AES128-GCM-SHA256 (0xC02F)、TLS_ECDHE_ECDSA_AES128-GCM-SHA256 (0xC02B)
+TLS_ECDHE_RSA_AES128_CBC-SHA256 (0xC027)、TLS_ECDHE_ECDSA_AES128-CBC-SHA256 (0xC023)
+static-RSA（互換フォールバック）: TLS_RSA_WITH_AES_128_CBC_SHA256 (0x003C)
+AES-128-GCM (AEAD, RFC 5288) または AES-128-CBC + HMAC-SHA256 を使用
+
+配下で TCP 組み込み関数（net-dial, net-send, net-recv, close）を使用
+暗号プリミティブは std/hash 配下の AES-128, SHA-256, RSA, HMAC-SHA256, X.509、
+AES-GCM, HKDF, X25519 から来る
+
+使い方:
+conn = dial('example.com', 443)         // returns ?conn
+conn: {
+nil -> return
+-> w = conn.send(data)          // returns ?i64
+w: { nil -> return }
+r = conn.recv(buf, 4096)       // returns i64 (-1=error, 0=closed, >0=byte count)
+r < 0 -> return
+n = r
+conn.close()
+}
+`
+  'tls-server-keys': `
+tls-server-keys — 事前生成済み 2048 ビット RSA 鍵ペア（埋め込み）
+
+出典: openssl genrsa 2048
+用途: HTTPS サーバー向けの自己署名証明書と TLS ハンドシェイク署名。
+純 Nolang での RSA 鍵生成は 20 分以上かかるため、ここに事前生成鍵を埋め込んでいます。
+証明書自体は DER エンコード + RSA 署名による Nolang コードで生成され、Nolang の PEM/DER 機能を検証します。
+`
+  'tls-server-keys.tls-server-rsa-d': 'RSA 秘密指数 d (256 バイト、ビッグエンディアン)'
+  'tls-server-keys.tls-server-rsa-e': 'RSA 公開指数 e = 65537 (0x10001)'
+  'tls-server-keys.tls-server-rsa-n': 'RSA 法 n（256 バイト, ビッグエンディアン, DER の先行 0x00 なし）'
   'tls.bn-to-bytes': `
 []i64（リトルエンディアン base 2^32）→ ビッグエンディアンバイト配列
 num: 多倍長整数
@@ -8642,6 +11837,17 @@ AEAD (AES-GCM) レコード形式の TLS 1.2 暗号スイートか
 ECDHE-ECDSA-AES128-GCM-SHA256 と ECDHE-RSA-AES128-GCM-SHA256 の 2 種のみ。
 c: 暗号スイートコード（TLS-CIPHER-* 定数）
 r: true=AES-GCM レコード使用（explicit nonce が必要）検証ラベル, false=CBC + HMAC 形式使用
+`
+  'tls.conn': `
+conn: TLS 接続（1.2 および 1.3 をサポート）
+fd: 配下の TCP ソケット fd
+host: サーバーのホスト名（SNI 用）
+connected: 接続状態
+encrypted: 暗号化が有効かどうか
+version: ネゴシエートされた TLS バージョン（0x0303=1.2, 0x0304=1.3）
+write-seq / read-seq: レコード層のシーケンス番号（TLS 1.2 で使用）
+rand-state: PRNG 状態
+hs-buf: ハンドシェイクメッセージバッファ（Finished 検証用）
 `
   'tls.conn.append-hs': `
 ハンドシェイクメッセージをバッファへ追加
@@ -8796,6 +12002,12 @@ ECDHE ServerKeyExchange を読み取り（ECDHE スイートのみ）
 サーバーのエフェメラル X25519 公開鍵を解析して .server-pub に格納（証明書と署名は検証しません。本実装の信頼モデルに一致）
 返り値 ok: true=成功
 `
+  'tls.conn.recv': `
+1 つのデータレコードを受信して復号し、平文を buf に書き込みます
+buf: 受信バッファ（文字列、n バイトに対して十分な容量が必要）
+n: 受信する最大バイト数
+read-n: 実際に受信したバイト数 (-1=エラー)
+`
   'tls.conn.send': `
 TLS 経由でデータを送信
 data: 送信する平文
@@ -8931,6 +12143,30 @@ TCP 接続を受け入れ TLS ハンドシェイクを実行
 局所変数でハンドシェイクを行います（グローバル変数はコンパイラバグあり：関数跨ぎでアドレス不一致）
 listen-fd: 監視 socket fd
 返り値 conn: ok=接続（ハンドシェイク鍵を含む）, nil=失敗
+`
+  'tls.server-conn': `
+server-conn: TLS サーバー接続
+fd: クライアントソケット fd
+rand-state: PRNG 状態
+client-random / server-random: ハンドシェイク乱数
+client-mac-key / server-mac-key: MAC キー (各 32 バイト)
+client-enc-key / server-enc-key: 暗号化キー (各 16 バイト)
+write-seq / read-seq: レコード層シーケンス番号
+hs-buf / hs-buf-len: ハンドシェイクバッファ (Finished 検証用)
+encrypted: 暗号化が有効かどうか
+master-secret: マスターシークレット (48 バイト)
+cert: 事前生成された証明書 DER
+n-bytes / d-bytes: RSA 鍵素材
+e-val: RSA 公開指数
+version: ネゴシエートされた TLS バージョン
+is-tls13: TLS 1.3 が使用されるかどうか
+client-priv / server-priv / server-pub / client-pub: X25519 鍵ペア
+shared-secret: ECDHE 共有キー (アプリケーション鍵を導出するためハンドシェイクシークレットを一時保管)
+hs-c-secret / hs-s-secret: ハンドシェイクトラフィックキー
+hs-{client,server}-{key,iv}: ハンドシェイク層 AEAD キー/IV
+ap-{client,server}-{key,iv}: アプリケーション層 AEAD キー/IV
+hs-{write,read}-seq / ap-{write,read}-seq: TLS 1.3 シーケンス番号
+hs-plain-{buf,pos,len}: ハンドシェイク平文バッファ
 `
   'tls.server-conn.append-hs': `
 ハンドシェイクデータをバッファへ追加
@@ -9079,6 +12315,16 @@ host: バインドする IP アドレス
 port: 監視ポート番号
 返り値 fd: 監視 socket fd（-1=失敗）
 `
+  'tls.tls-cipher-ecdhe-ecdsa-aes128-cbc-sha256': 'TLS 1.2 ECDHE 暗号スイート'
+  'tls.tls-cipher-rsa-aes128-cbc-sha256': '暗号スイート'
+  'tls.tls-ct-ccs': 'Record content types'
+  'tls.tls-ext-server-name': '拡張 (TLS 1.3)'
+  'tls.tls-group-x25519': '名前付きグループ'
+  'tls.tls-hs-client-hello': 'ハンドシェイクメッセージ型'
+  'tls.tls-mac-key-size': `
+鍵サイズ
+
+`
   'tls.tls-pad': `
 TLS 1.2 CBC パディング（RFC 5246 §6.2.3.2）——PKCS#7 とは異なる！
 pad-count バイト分をパディングし、各バイトの値はいずれも pad-count - 1（末尾の長さバイトの値 = pad-count-1）。
@@ -9088,16 +12334,37 @@ PKCS#7（値 = pad-count）を誤用すると、平文が既にブロック整�
 in: 平文（content || MAC）
 返り値 out: パディング後のデータ（長さは 16 の倍数）
 `
+  'tls.tls-sig-rsa-pkcs1-sha256': '署名アルゴリズム'
   'tls.tls-unpad': `
 TLS 1.2 CBC パディング除去
 in: 復号後のデータ（content || MAC || padding）
 返り値 out-n: パディング除去後の長さ（content+MAC）、-1=パディングエラー
+`
+  'tls.tls13-key-size': 'TLS 1.3 の鍵サイズ'
+  'toml': `
+toml — TOML 設定ファイルの解析と生成
+
+外部依存のない軽量な TOML 読み書きモジュールを提供します。
+サポート:
+- 空行と # コメント
+- [table] テーブルヘッダー（table.key として格納）
+- bare / quoted key
+- basic string, literal string, bool, i64, f64
+- 配列、インラインテーブル、日時を含む、すべての値の元の TOML リテラルを保持
+- 固定容量のドキュメントモデル: 64 keys, 32 tables, 32 array-of-tables
+
+使い方:
+cfg = toml.parse('name = "nolang"\n[server]\nport = 8080')
+doc = toml.new()
+doc.put('server.port', '8080')
+text = toml.stringify(doc)
 `
   'toml.array-name': `
 テーブルの配列の名前を読む。
 t: 読み取る array-of-tables レコード
 s: 当該配列表の名前
 `
+  'toml.entry': 'entry は構造体値がコピーされる際の所有権エイリアシングを避けるため固定バイトバッファを使用します。'
   'toml.entry-key': `
 正規化されたキーを読む。
 e: 読み取る entry
@@ -9238,6 +12505,7 @@ same: 両者がバイト単位で一致するか
 t: 読み取るテーブル
 s: テーブル名
 `
+  'toml.toml': 'toml: TOML 文書。テーブルは完全なドット付きキーで格納される。例: server.port。'
   'toml.unquote': `
 TOML の基本文字列またはリテラル文字列をデコードする
 raw: 引用符付きの生文字列
@@ -9252,6 +12520,50 @@ valid: TOML 1.0 リテラル構文に適合するかどうか
 値が閉じたかどうかを判定；多行配列、inline table、multiline string に使う。
 raw: 値の生テキスト
 complete: 引用符／括弧が閉じたか（複数行値読み取り時に終了可否を決定）
+`
+  'tree-map': `
+tree-map — 順序付きマップ（AVL 自己平衡二分探索木ベース）
+
+順序付き i64→i64 マップ。AVL 木で実装。
+すべての操作は O(log n)。キーは昇順に走査される。
+
+linked-hash-map との違い:
+- tree-map はキーで（昇順に）ソート、linked-hash-map は挿入順
+- tree-map は lower-bound/upper-bound の順序付き問い合わせをサポート
+- tree-map は AVL 木を使用、linked-hash-map はハッシュ表 + 連結リストを使用
+- tree-map の get は ?i64 オプションを返す、linked-hash-map は (found, result) パラメータを使用
+
+usage:
+m = tree-map{}
+m.init()
+ok = m.put(3, 30)       // ok=true (新規)
+ok = m.put(1, 10)       // ok=true
+ok = m.put(2, 20)       // ok=true
+ok = m.put(1, 99)       // ok=false (既存キーの更新)
+val = m.get(2)           // val = ok
+key = m.first()          // key = ok (最小キー)
+key = m.last()           // key = ok (最大キー)
+key = m.lower-bound(2)   // key = ok (最初のキー ≥ 2)
+key = m.upper-bound(2)   // key = ok (最初のキー > 2)
+ok = m.remove(2)         // ok=true
+yes = m.contains(3)      // yes=true
+m.for-each(k, v)         // すべてのキー・値ペアを昇順に走査
+
+// オプションのアンパック
+val = m.get(42)
+val: {
+nil -> print('not found')
+-> print(it)
+}
+`
+  'tree-map.tree-map': `
+tree-map: AVL 順序付きマップ
+root: ルートノードインデックス, -1=空の木
+free-head: 空きノードプールの先頭インデックス, -1=プール満杯
+size: 現在の要素数
+keys/vals: キー/値の格納
+left/right/parent: 木構造のインデックス, -1=NIL
+height: ノードの高さ（葉=1, NIL=0）
 `
   'tree-map.tree-map.alloc-node': `
 空きプールからノードを確保する
@@ -9386,6 +12698,49 @@ target: 目標のキー
 戻り値 key: ok=見つかった, nil=そのようなキーはない
 
 `
+  'tree-set': `
+tree-set — 順序付き集合（AVL 自己平衡二分探索木ベース）
+
+i64 の順序付き集合で、AVL 木で実装されています。
+すべての操作は O(log n) で、要素は昇順に走査されます。
+
+hash-set との違い:
+- tree-set は値でソート（昇順）、hash-set は順序なし
+- tree-set は lower-bound/upper-bound の順序付きクエリをサポート
+- tree-set は AVL 木、hash-set はハッシュ表を使用
+- tree-set の contains/add/remove は bool option を返す
+
+使い方:
+s = tree-set{}
+s.init()
+ok = s.add(3)             // ok=true（新規）
+ok = s.add(1)             // ok=true
+ok = s.add(2)             // ok=true
+ok = s.add(1)             // ok=false（既に存在）
+yes = s.contains(2)       // yes=true
+val = s.first()           // val = ok（最小値）
+val = s.last()            // val = ok（最大値）
+val = s.lower-bound(2)    // val = ok（最初の ≥ 2）
+val = s.upper-bound(2)    // val = ok（最初の > 2）
+ok = s.remove(2)          // ok=true
+s.for-each(v)             // すべての要素を昇順に走査
+
+// option のアンパック
+val = s.lower-bound(42)
+val: {
+nil -> print('not found')
+-> print(it)
+}
+`
+  'tree-set.tree-set': `
+tree-set: AVL 順序付き集合
+root: 根ノードのインデックス、-1=空の木
+free-head: 空きノードプールの先頭インデックス、-1=プール満杯
+size: 現在の要素数
+keys: キー格納域
+left/right/parent: 木構造のインデックス、-1=NIL
+height: ノードの高さ（葉=1、NIL=0）
+`
   'tree-set.tree-set.add': `
 要素を追加する
 key: 追加する値
@@ -9511,6 +12866,58 @@ target より大きい最初の要素を探す
 target: 目標の値
 戻り値 val: ok=見つかった, nil=そのような要素はない
 
+`
+  'txt': `
+txt — 固定長テキスト型
+
+txt は固定 256 バイトのテキスト型です:
+- 先頭 255 バイトにデータを格納 (data [255]byte)
+- 末尾 1 バイトに長さを格納 (len byte、範囲 0-255、単位は "byte")
+- 構造体全体が 256 バイト固定で、ヒープ確保は不要
+
+長さのセマンティクス (str と整合):
+- t.len()        「文字 (コードポイント) 数」を返す。t.count() と等価
+- t.len-bytes()  「バイト数」を返す (基底の UTF-8 バッファの実際の長さ)
+- 内部の len フィールドは今もバイト長。インデックス/スライス/書き込みなどのバイト操作は len-bytes() を使う
+- ASCII 内容では 3 つすべて等しい。マルチバイト UTF-8 では len() < len-bytes()
+
+インデックスのセマンティクス (コードポイント単位、str の読み取り動作と整合):
+- txt[i] 読み取り: コードポイント位置 i の char を返す (UTF-8 デコード)。範囲外は**検査付き**読み取りで、
+err('index out of range') を返す (idxhndld 統合後は -1 センチネルは廃止。str の s[i] も err を返す)
+- txt[i] = v 書き込み: **全面的に無効化** (checker idxwrite、2026-11-12)。旧実装の書き込みでは
+v を再 UTF-8 エンコードして後続バイトをずらし、i == code point count のとき暗黙に追記し、255 を超える分を黙って捨てていた
+— 書き込みによって長さが黙って変わることが、この禁止の理由そのものである。内容の変更には place-match を
+(`t[i]: { ok -> it = "x" }`、nil を返すゲートは自動でスキップ)、長さの変更には .push(c) /
+.push-str(s) / .push-txt(t) を使う (str 側の s[i] = v も無効化、両側でセマンティクスは一致)
+- バイト単位の生読み書きには .byte(i) / ._set-byte(i, b) のメソッドペアを使う (バッファ構築コード専用)
+
+使い方 (型注釈が必須):
+t txt = 'hello'
+n = t.len()          ; 文字数
+b = t.len-bytes()    ; バイト数
+c = t[0]             ; 先頭のコードポイント (char)
+b = t.byte(0)        ; 先頭のバイト (byte)
+str との違い:
+- str はヒープ確保の可変長文字列
+- txt はスタック確保の固定サイズ文字列 (256 バイト)
+- txt はヒープ確保が不要で、短いテキストの用途に適する
+- txt には型注釈が必要 (t txt = 'abc')
+`
+  'txt._from-bytes': `
+n のクランプ: 負 -> 0; b.len() 超え -> b.len(); その後 txt のハード上限 255 バイトに切り詰め。
+UTF-8 検証なし (純粋なバイトコピー); マルチバイト文字の途中で切る可能性があります — 呼び出し側の責任。
+b: 元のバイト
+n: コピー要求バイト数 ( [0, min(b.len(), 255)] にクランプ)
+out: 最初の n バイトのコピー (len = クランプ後の n; txt に cap 概念はない)
+`
+  'txt._set-byte': `
+?bool を返す (失敗可能): 範囲外 (i < 0 または i >= 255 の物理容量) の場合は nil を返し **書き込みをスキップ**、
+成功時は some(true) を返す。境界は「物理容量」(txt は固定 255 バイトバッファ) に基づき、
+len ではない。そのため「バッファを埋めてから len を設定する」ビルダー (fill / from-str / to-hex / join) は引き続き動作する。
+呼び出し側で ?bool をむきの文として破棄することは合法である (optunuse は束縛された名前のみを対象とする)。
+i: バイト索引
+b: 書き込むバイト値
+ok: ok=true=書き込み成功、nil=i が範囲外 (書き込みスキップ)
 `
   'txt._txt-dig-val': `
 1 文字の数字（0-15）をその値に変換する; 無効な文字は -1 を返す
@@ -9660,6 +13067,23 @@ txt.new: char スライスから txt を構築（モジュールレベルコン�
 cs: コードポイントスライス（[]char）
 t: バイトごとに再エンコード後の txt（255 バイト超の部分は自動破棄）
 `
+  'txt.push': `
+1 つのコードポイントを追加します（UTF-8 エンコード。文字全体が 255 制限に収まらない場合は完全に破棄されます）
+All-or-nothing: 複数バイトのコードポイントは全体が書き込まれるか、まったく書き込まれないかのどちらかです — これは
+i == コードポイント数における古い `t[i] = v` の動作と一致し、UTF-8 シーケンスを
+途中で切断することを避けます（これは .push-str のセマンティクスです。両者は境界ケースで異なります）。
+c: 追加するコードポイント
+`
+  'txt.push-str': `
+str を追加する（バイト・コピー、255 制限を超えない。超える場合は**バイト単位で切り詰める**）
+⚠️ 切り詰めによりマルチバイト UTF-8 シーケンスが途中で切断されることがある。「収まらないなら文字全体を棄てる」
+ようにしたい場合は .push(c char) を使う。
+s: 追加する str（255 制限を超えると切り詰められる）
+`
+  'txt.push-txt': `
+txt を追加する (バイトコピー、255 上限を超えない。超える場合はバイト単位で切り詰める)
+t: 追加する txt (255 上限を超える場合は切り詰める)
+`
   'txt.repeat': `
 内容を times 回繰り返す（255 バイトで上限）
 戻り値 新しい txt
@@ -9675,7 +13099,7 @@ val: コードポイントごとに置換した後の新規 txt（255 バイト�
 `
   'txt.replace-n': `
 回数を制限した置換
-old txt, new, n: 置換の最大回数（n<=0 は何も置換しない）
+old, new, n: 置換の最大回数（n<=0 は何も置換しない）
 old: 置換された子 txt
 new: 置換後の子 txt
 n: 最大置換回数（n <= 0 は置換しない）
@@ -9717,7 +13141,7 @@ out: 分割した子 txt のスライス
 `
   'txt.split-n': `
 回数を制限した分割
-sep txt, maxsplit: 分割の最大回数（<=0 は無制限）
+sep, maxsplit: 分割の最大回数（<=0 は無制限）
 sep: 区切り txt
 maxsplit: 最大分割回数（<= 0 は無制限）
 out: 分割結果スライス（最大 maxsplit+1 分割）
@@ -9826,6 +13250,39 @@ n: 切り詰め後に保持するバイト長（n が現長より小さいとき
 c: 16 進文字のコードポイント値
 v: 0~15；無効文字は -1 を返す
 `
+  'unix': `
+unix — Unix Domain Socket サポート
+
+Unix Domain Socket (AF_UNIX) のサーバー側待ち受けとクライアント側接続を提供する。
+基盤層は POSIX ソケット API (socket/unlink/bind/listen/accept/connect) を使用する。
+データ送受信は net.no の組み込み関数 (net-accept, net-send, net-recv, close) を再利用する。
+
+usage:
+// サーバー
+l = unix-listen-on('/tmp/myapp.sock')       // ?unix-listener を返す
+l: {
+nil -> print('listen failed')
+-> c = l.accept()                        // ?unix-conn を返す
+}
+n = c.recv(buf, 1024)
+n = c.send('hello')
+c.close()
+l.close()
+
+// クライアント
+c = unix-dial-to('/tmp/myapp.sock')          // ?unix-conn を返す
+c: {
+nil -> print('connect failed')
+-> n = c.send('hello')
+}
+c.close()
+`
+  'unix.unix-backlog': 'リッスンバックログの長さ'
+  'unix.unix-buf-size': 'デフォルトのバッファサイズ'
+  'unix.unix-conn': `
+unix-conn: Unix Domain Socket 接続
+fd: 接続ソケットのファイルディスクリプタ（-1=未接続）
+`
   'unix.unix-conn.close': '接続をクローズ'
   'unix.unix-conn.dial': `
 Unix Domain Socket サーバー側へ接続
@@ -9896,6 +13353,11 @@ Unix Domain Socket リスナーを構築し監視を開始
 path: socket ファイルパス
 返り値 l: ok=リスナー, nil=失敗
 `
+  'unix.unix-listener': `
+unix-listener: Unix Domain Socket リスナ
+fd: リッスンソケットのファイルディスクリプタ（-1=未オープン）
+path: ソケットファイルのパス
+`
   'unix.unix-listener.accept': `
 新しい Unix Domain Socket 接続を受け入れ
 返り値 c: ok=接続構造体, nil=失敗
@@ -9924,6 +13386,23 @@ accept タイムアウトを設定
 timeout-ms: タイムアウトミリ秒数
 返り値 ok: true=成功
 `
+  'unix.unix-max-path': 'Unix Domain Socket パスの最大長'
+  'url': `
+url — URL の解析と構築
+
+URL の解析、構築、エンコード、デコードを提供。
+scheme://host:port/path?query#fragment 形式に対応。
+
+使い方:
+u = url-parse('https://example.com:8080/api/v1?key=value#section')
+u.ok -> {
+print(u.scheme)    // 'https'
+print(u.host)      // 'example.com'
+print(u.port)      // 8080
+print(u.path)      // '/api/v1'
+print(u.query)     // 'key=value'
+print(u.fragment)  // 'section'
+`
   'url.url-basic-auth': `
 HTTP Basic 認証ヘッダ値を生成
 user: ユーザー名
@@ -9951,6 +13430,18 @@ s: エンコード対象の元の文字列
 URL エンコード（コンポーネントモード、/ と ? もエンコード）
 s: エンコード対象の元の文字列
 返り値 out: パーセントエンコード後の文字列
+`
+  'url.url-info': `
+url-info: URL 解析結果
+ok: 解析が成功したか
+scheme: プロトコル（例：http, https）
+host: ホスト名
+port: ポート番号（-1=未指定）
+path: パス（例：/api/v1）
+query: クエリ文字列（? を含まない）
+fragment: フラグメント（# を含まない）
+user: ユーザー名（例：user:pass@host の user）
+password: パスワード
 `
   'url.url-info.get-query': `
 クエリパラメータの値を取得
@@ -9983,6 +13474,12 @@ header: Authorization ヘッダ値（例 'Basic dXNlcjpwYXNz'）
 返り値 user: ユーザー名（空=解析失敗）
 返り値 password: パスワード
 `
+  'uuid': `
+uuid — 汎用一意識別子 (RFC 4122)
+
+UUID v4 (ランダム) の生成、解析、書式化、検証を提供。
+UUID は 128-bit (16 バイト) の識別子である。
+`
   'uuid.cmp': `
 2 つの UUID を辞書順に比較する
 b: 比較するもう一方の UUID
@@ -10003,6 +13500,7 @@ s: UUID 文字列（36 文字ハイフン付きまたは 32 文字ハイフン�
 out: 出力パラメータ、解析成功時に 16 バイトを書き込む（元の内容は上書き）
 ok: true=フォーマット合法かつ書き込み済み, false=長さ/文字不正
 `
+  'uuid.hex': '小文字の hex 文字表'
   'uuid.hex-byte': `
 1 バイトを 2 文字の 16 進として out の位置 pos に書き込む
 b: エンコード対象のバイト（上位ニブルを先に、下位ニブルを後に書き込む）
@@ -10065,6 +13563,7 @@ UUID を大文字の文字列に整形する
 戻り値 out: 大文字の UUID 文字列
 
 `
+  'uuid.uuid': 'uuid: 128-bit の汎用一意識別子'
   'uuid.validate': `
 UUID の形式を検証する
 ok: true=バリアントビット合法（byte8 の上位2ビットが 10b、すなわち RFC 4122 バリアント）；バージョン番号は情報として読むのみで 4 を強制しない
@@ -10073,9 +13572,51 @@ ok: true=バリアントビット合法（byte8 の上位2ビットが 10b、す
 UUID のバリアントを返す
 v: バリアント識別子（byte8 の上位 2 ビット、RFC 4122 では 2）
 `
+  'uuid.variant-rfc4122': 'RFC 4122 バリアント'
   'uuid.version': `
 UUID のバージョンを返す
 v: UUID バージョン番号（byte6 の上位 4 ビット、v4 は 4）
+`
+  'uuid.version-4': 'UUID バージョン 4（ランダム）'
+  'vec': `
+vec — スライス操作
+
+動的スライスの作成、クローン、比較。
+
+スライスは独立した型ではなくビューである。vec のメソッドは以下のスライス・ビューに適用される：
+- arr スライス（a[1..3] -> []t ビュー、arr の基になるメモリを共有）
+- vec スライス（v[1..3] -> []t ビュー、vec の基になるメモリを共有）
+スライスはデータをコピーせず、ポインタ + 長さ + 容量のみを記録し、元のバッファを指す。
+スライスを通じた要素の変更は元データに影響し、その逆も同様。
+
+使用法：
+use std/vec.vec-create
+data [16]i64
+data = vec-create(10, 42)
+
+vec-slice — スライス・ビュー構文の概要
+以下の形式はすべて []t ビューを生成する（基になるバッファを共有、コピーなし）：
+全範囲、開始のみ、終了のみ、または両端、それぞれに4通りの開/閉の組み合わせ。
+端点は無限大（..）として省略可能。ビュー自身の len() は範囲の長さ。
+[]t[..]
+[]t[..)
+[]t(..]
+[]t(..)
+
+[]t[n0..]
+[]t[n0..)
+[]t(n0..]
+[]t(n0..)
+
+[]t[..n1]
+[]t[..n1)
+[]t(..n1]
+[]t(..n1)
+
+[]t[n0..n1]
+[]t[n0..n1)
+[]t(n0..n1]
+[]t(n0..n1)
 `
   'vec.at': `
 [非推奨] []t.at: 安全な添字アクセス; 範囲外なら nil — 代わりに v[i] を使う（ネイティブの添字アクセスで ?t を返す。範囲外は err）
@@ -10171,6 +13712,15 @@ out: 現在の長さ、取り得る値は 0..cap
 
 `
   'vec.truncate': '[]t.truncate: cnt 要素に切り詰める; cnt < 0 は 0 として扱い、cnt >= .len は何もしない'
+  'vec.vec': `
+メモリレイアウトは LLVM バックエンドの `%vec` 型によって決定され、16 バイト：
+offset 0  u32 len
+offset 4  u32 cap
+offset 8  i64 data   - ptrtoint でエンコードされた要素ポインタ
+公開 API（.len()）は常に i64 を返す；u32 はディスクリプタ内部にのみ存在する；cap は getter を公開しない。
+cap == 0 は「借用ビュー」のマーカー：バッファを所有せず、そのため @vec_free / @vec_retain はスキップされる；
+cap > 0 は、data が指すヒープブロックを所有することを意味する。
+`
   'vec.vec-clear': `
 []t.clear: スライスをクリア（長さ を 0 にインプレイス変更）— 組み込み、関数本体は codegen が展開
 ヒープは解放せず容量も縮めないので、データポインタは変わらない
@@ -10186,6 +13736,63 @@ cap >= 1024 -> new-cap = cap * 5 / 4
 val: 追加する要素；型はレシーバースライスの要素型で決定
 追加後 .len は 1 増える；拡張時は既存要素を新バッファへ移し旧バッファは解放される
 `
+  'ws': `
+ws — WebSocket クライアントとサーバー
+
+RFC 6455 WebSocket プロトコルをサポートし、サーバーの待ち受けとクライアント接続を提供します。
+内部では HTTP/1.1 アップグレードハンドシェイクを使用し、平文の WS と暗号化された WSS (TLS 1.2) をサポートします。
+
+使用方法（サーバー）:
+srv = ws.listen-on('0.0.0.0', 8080)   // returns ?server
+srv: {
+nil -> return
+->
+! {
+c = srv.accept()             // returns ?server-conn
+c: {
+nil -> break
+->
+msg = c.recv()        // returns ?message
+msg: {
+nil -> break
+err -> break
+-> c.send-text('echo: ' - msg.data)
+c.close()
+}
+}
+}
+}
+
+使用方法（クライアント WS）:
+c = ws.connect('ws://127.0.0.1:8080/path')   // returns ?client
+c: {
+nil -> print('connect failed')
+->
+c.send-text('hello')
+msg = c.recv()
+msg: {
+nil -> print('closed')
+err -> print('error')
+-> print(msg.data)
+}
+c.close()
+}
+
+使用方法（クライアント WSS）:
+c = ws.connect('wss://echo.websocket.org/path')   // returns ?client
+c: {
+nil -> print('connect failed')
+->
+c.send-text('hello over TLS')
+msg = c.recv()
+msg: {
+nil -> print('closed')
+err -> print('error')
+-> print(msg.data)
+}
+c.close()
+}
+`
   'ws.build-frame': `
 WebSocket フレームを組み立て
 opcode: メッセージ型
@@ -10193,6 +13800,19 @@ data: メッセージ内容
 mask: mask を施すか（client は true 必須、server は false 必須）
 mask-key: 4-byte mask key（mask=true の場合使用）
 返り値 frame: 完全なフレーム文字列
+`
+  'ws.client': `
+client: WebSocket クライアント接続
+fd: TCP ソケットのファイルディスクリプタ（-1=未接続）
+use-tls: TLS（WSS）を使用するかどうか
+tls-c: TLS 接続（use-tls=true のとき使用）
+connected: 接続状態
+host: サーバーホスト名
+port: ポート番号
+path: リクエストパス
+recv-buf: 受信バッファ
+recv-buf-len: バッファ内の実際のデータ長
+send-counter: マスクキーの擬似乱数カウンタ
 `
   'ws.client.close': '接続をクローズ'
   'ws.client.is-connected': `
@@ -10268,10 +13888,30 @@ host: バインドする IP アドレス（例 '0.0.0.0'）
 port: 監視ポート番号
 返り値 s: ok=サーバー側, nil=失敗
 `
+  'ws.message': `
+message: WebSocket メッセージ
+opcode: 1=text, 2=binary, 8=close, 9=ping, 10=pong
+data: メッセージ内容
+fin: 最終フラグメントかどうか
+`
   'ws.next-rand': `
 次の疑似乱数 i64 を生成
 グローバルカウンタと単純 LCG を組み合わせて使用
 r: 新しい疑似乱数（グローバルカウンタ + LCG 出力、暗号学的品質ではありません）
+`
+  'ws.rand-counter': 'グローバル疑似乱数カウンタ（mask key および Sec-WebSocket-Key の生成に使用）'
+  'ws.server': `
+server: WebSocket サーバーのリスナー
+fd: 待ち受けソケットのファイルディスクリプタ (-1=未オープン)
+host: バインドされた IP アドレス
+port: 待ち受けポート
+`
+  'ws.server-conn': `
+server-conn: WebSocket サーバー側クライアント接続
+fd: クライアントソケットファイル記述子 (-1=未接続)
+connected: 接続状態
+recv-buf: 受信バッファ
+recv-buf-len: バッファ内の実際のデータ長
 `
   'ws.server-conn.close': 'クライアント接続をクローズ'
   'ws.server-conn.handshake': `
@@ -10339,6 +13979,26 @@ data: メッセージ内容
 host: バインドする IP アドレス（例 '0.0.0.0'）
 port: 監視ポート番号
 返り値 ok: true=成功
+`
+  'ws.ws-buf-size': '受信バッファサイズ'
+  'ws.ws-default-port': 'デフォルトの WS ポート'
+  'ws.ws-default-tls-port': 'デフォルト WSS ポート'
+  'ws.ws-guid': 'RFC 6455 の固定 GUID（Sec-WebSocket-Accept の計算に使用）'
+  'ws.ws-op-cont': 'オペコード定数'
+  'ws.ws-recv-size': '単一回受信サイズ'
+  'x25519': `
+x25519 — X25519 楕円曲線 Diffie-Hellman 鍵交換（RFC 7748）
+
+Curve25519 上の Montgomery ladder スカラー乗算を実装します。
+GF(2^255-19) 体要素に対して 10-limb 表現（26/25 ビット交互）を使用します。
+
+使い方:
+# std/crypto/x25519
+// 鍵ペアを生成
+priv [32]byte
+pub [32]byte = x25519-scalarmult-base(priv)
+// 共有鍵
+shared [32]byte = x25519-scalarmult(priv, peer-pub)
 `
   'x25519.fe-add': `
 体要素の加算 h = f + g
@@ -10464,6 +14124,25 @@ h: ゼロ要素として書き込む体要素（10 個の limb をすべて 0 �
 ゼロ体要素を返します
 h: 新規生成のゼロ体要素（長さ 10）
 `
+  'x25519.mask-26': '体要素 limb マスク'
+  'x25519.num-add': `
+i64 加算
+a: 左オペランド
+b: 右オペランド
+`
+  'x25519.num-floor': `
+floor(x / 2^bits)。負数でも正しく動作します
+まず 2^40 を加えて被除数を非負に持ち上げ、右シフトします —— これにより >> が論理右移しでも算術右シフトでも結果は同じになります
+（limb の絶対値は 2^40 よりはるかに小さい）。最後に (2^40 >> bits) を差し戻します。
+x: 被除数
+bits: シフト量（このファイルでは 25 または 26 のみ）
+`
+  'x25519.num-sub': `
+i64 減算
+a: 左オペランド
+b: 右オペランド
+`
+  'x25519.x25519-a24': 'Curve25519 定数'
   'x25519.x25519-gen-keypair': `
 ランダムな鍵ペアを生成
 seed: ランダムシード
@@ -10498,6 +14177,24 @@ X25519 スカラー掛算（[]byte バージョン）
 scalar: スカラー（秘密鍵、長さ 32）
 point: 点座標（公開鍵、長さ 32）
 返り値 out: 結果（長さ 32）
+`
+  'x509': `
+x509 — X.509 証明書 DER パースユーティリティ
+
+DER エンコードされた X.509 証明書の基本的なパースを提供します:
+- 低レベル DER TLV（Tag-Length-Value）パース
+- 証明書構造の走査（TBSCertificate、シリアル番号、公開鍵）
+- RSA 公開指数の抽出
+- SHA-256 証明書フィンガープリントの計算
+
+使い方:
+cert []byte
+
+// 証明書のフィンガープリントを計算
+h0, h1, h2, h3, h4, h5, h6, h7 = x509-fingerprint(cert)
+
+// RSA 公開指数を抽出
+e = x509-rsa-e(cert)
 `
   'x509.alg-id-rsa-encryption': `
 AlgorithmIdentifier for rsaEncryption (1.2.840.113549.1.1.1)
@@ -10688,6 +14385,24 @@ data: DER エンコード証明書
 start: 出力の TBS 開始位置（SEQUENCE タグを含む）
 end: 出力の TBS 終了位置（含まない、すなわち次要素の開始）
 `
+  'xz': `
+xz — XZ / LZMA 圧縮および展開（純 Nolang 実装）
+
+LZMA2 展開アルゴリズムを実装し、以下をサポートします:
+- .xz 形式の展開（XZ コンテナ + LZMA2 ストリーム）
+- .lzma 形式の展開（従来の LZMA alone 形式）
+
+使い方:
+data = fs.read-file('example.xz')    ; read the xz file
+decompressed = xz.decompress(data)    ; decompress xz format
+
+data = fs.read-file('example.lzma')  ; read the lzma file
+decompressed = lzma-decompress(data)  ; decompress legacy lzma format
+
+アルゴリズム参照:
+- LZMA specification: https://www.7-zip.org/sdk.html (LZMA SDK)
+- XZ format: https://tukaani.org/xz/xz-file-format.txt
+`
   'xz.compress': `
 xz 形式でデータを圧縮（基本実装）
 data: 生データ ([]byte)
@@ -10702,6 +14417,7 @@ out: xz 圧縮後のデータ ([]byte)
 - Index
 - Stream Footer: 12 バイト
 `
+  'xz.lzma-decoder': 'lzma-decoder: LZMA デコーダ'
   'xz.lzma-decoder.decode': `
 LZMA デコード主ループ
 data: 圧縮データ、start-pos: データ開始位置
@@ -10731,6 +14447,9 @@ length: デコードしたマッチ長（セレクタと下位/整列ビット�
 - 8 bytes: unpacked size (little-endian, 0xFFFFFFFFFFFFFFFF = unknown)
 - compressed data
 `
+  'xz.lzma-eof-sym': 'LZMA 復号定数'
+  'xz.lzma-num-states': 'LZMA 確率モデルサイズ'
+  'xz.lzma-rd': 'lzma-range-decoder: LZMA 算術範囲復号器'
   'xz.lzma-rd.decode-bit': `
 1 ビットを復号
 prob: 確率値（0-0x7FFF）、bit と更新後の prob を返します
@@ -10774,6 +14493,33 @@ inflate-decompress などと同じパターン）。out を通常の入力パラ
 data: 制御バイトを含む LZMA2 ストリーム
 start-pos: ストリームの開始オフセット
 out: 解凍した平文バイトストリーム（名前付き出力パラメータ、関数末尾で一括引き渡し）
+`
+  'xz.xz-magic': 'XZ 定数'
+  'yaml': `
+yaml — YAML 1.2 の解析と生成
+
+YAML 1.2 core スキーマの完全なノード・モデルをサポート：
+- ブロック・マッピング / ブロック・シーケンス（インデントの入れ子、シーケンス内マッピング、マッピング内シーケンス）
+- フロー・コレクション [a, b] / {k: v}（複数行にまたがる可能）
+- スカラー：plain、単一引用符、二重引用符（エスケープ付き）、ブロック・スカラー | と >（chomping / インデント指示子付き）
+- コメント、空行、ドキュメント・マーカー --- / ... 、マルチドキュメント、%YAML / %TAG ディレクティブ
+- アンカー &a / エイリアス *a、明示的タグ !!str / !<...>、マージキー <<
+- 明示的キー ? key / : value
+- core スキーマの型推論：null / bool / int（10進、0x、0o、_ 区切り） / float（.inf/.nan/指数）
+
+使用法：
+doc ?yaml = yaml.parse(source)
+doc: {
+ok -> {
+host, found = it.find-str('server.host')
+port, found = it.find-i64('server.port')
+}
+}
+
+注：
+- エイリアスは解析時に同じ部分木を共有する新しいノード（読み取り専用）として解決され、繰り返し読み取りしても安全。
+自己参照アンカーは無限には展開されず、シリアライズは深さ制限で打ち切られる。
+- キーがスカラーの場合はドット・パスで直接アクセスできる。非スカラー・キーには key(i) / value(i) で反復する。
 `
   'yaml.anchor': `
 現在のノードのアンカー名
@@ -10986,11 +14732,22 @@ n: ノード開始の行番号
 局所変数を経由すると畳み込みを避けられ、本物の NaN が得られる（`x != x` が真）。
 v: NaN 値（実行時に 0.0/0.0 で発生、定数畳み込みされていない）
 `
+  'yaml.node': `
+node: ツリーノード
+kind   ノード種別（YAML-KIND-*）
+style  スカラー/コレクションのスタイル（YAML-STYLE-*）
+tag    明示的なタグのテキスト（タグなしの場合 ''）
+anchor アンカー名（アンカーなしの場合 ''）
+text   スカラーのテキスト（引用符はエスケープ解除済み）；コレクションでは空
+ival/fval/bval 解析済みのスカラー値
+keys   マッピングのキーノードのインデックス；kids シーケンス要素 / マッピングの値ノードのインデックス
+`
   'yaml.node-count': `
 ノード総数
 n: ノードプール中のノード総数
 `
   'yaml.node-is-nan': '`.nan` の fval は nan() が真の NaN を填入するため、値で判定（NaN != NaN）。\nノード原文判定はフォールバックとして使う：タグ書き換えなどの経路は text だけ変えて fval を再計算しないことがある。\nnd: 検査対象ノード\nyes: ノードが .nan'
+  'yaml.node-pool': 'node-pool: ノード・プール'
   'yaml.parse': `
 YAML テキストを解析し第一ドキュメントを返す
 ok(yaml) または err(message) を返す
@@ -11010,12 +14767,14 @@ radix: 進数基数（2/8/16）
 kind: 成功=YAML-KIND-INT、失敗=YAML-KIND-STR
 v: 変換後の整数値
 `
+  'yaml.parser': 'parser: パーサ状態（メソッドレシーバは参照であり、その場で進行可能）'
   'yaml.parser.advance': '1 バイト前進'
   'yaml.parser.anchor-id': `
 アンカーを検索、見つからなければ -1 返却
 name: アンカー名
 idx: 対応するノードインデックス（-1=未登録）
 `
+  'yaml.parser.apply-tag-at': 'ノードはまずコアスキーマにより推論で作成され、タグは後から適用されるため、「再計算」ステップが必要です:\nタグが kind を書き換えた後、ival/fval/bval はタグの要求に従って再解析されなければなりません。そうでないと\n`!!int "42"` は kind=INT のまま ival=0 となります (`yaml.i64` は 42 ではなく 0 を読みます)。\nコレクションノード (seq/map) は生タグテキストのみを保持し kind は変更しません — `!!seq` / `!!map` は\n解析構造を変更せず、コレクションへの `!!str` の適用は YAML ではそもそも不正な形式です。\nidx: ノードプールインデックス'
   'yaml.parser.at': `
 現在位置からの相対で k バイトオフセット
 k: 現在位置からの相対オフセット（範囲外は 0 として扱う）
@@ -11340,6 +15099,38 @@ yes: 源テキストが解析可能
 i: キー・値ペア番号（0 開始）
 out: i 番目の鍵・値ペアの値ノード（nil=範囲外またはマッピングでない）
 `
+  'yaml.yaml': 'yaml: 解析済みドキュメント（複数のドキュメントを含む場合がある）'
+  'yaml.yaml-chomp-clip': 'チャンピングモード'
+  'yaml.yaml-kind-null': `
+ノード種別
+
+`
+  'yaml.yaml-max-depth': 'シリアライズの最大再帰深さ（自己参照アンカーに対する防御）'
+  'yaml.yaml-style-block': 'コレクションスタイル'
+  'yaml.yaml-style-plain': 'スカラースタイル'
+  'yaml.yaml.is-float': `
+float かどうかを判定
+yes: ノードは float
+`
+  'zip': `
+zip — ZIP アーカイブの解析
+
+ZIP ファイル形式を読み取り、エントリを一覧表示し、内容を抽出します。
+stored（方式 0）および deflate（方式 8）エントリの抽出をサポートします。
+
+使い方:
+archive = zip{
+data: raw-bytes
+}
+n = archive.count()
+i <- [0..n): {
+e = archive.entry(i)
+name = e.name()
+sz = e.size()
+content = e.extract()
+}
+`
+  'zip.entry': 'entry: ZIP エントリ（archive.data 内の central directory エントリを指す）'
   'zip.entry.compressed-size': `
 エントリの圧縮後サイズを読み取り
 csz: 圧縮後のバイト数
@@ -11428,6 +15219,7 @@ v: 書き込む整数（下位 16 ビットを取りリトルエンディアン�
 4 バイトのリトルエンディアン整数を書き込み
 v: 書き込む整数（下位 32 ビットを取りリトルエンディアンで追加）
 `
+  'zip.zip': 'zip: ZIP アーカイブの読み取り専用ビュー'
   'zip.zip.compressed-size': `
 圧縮後サイズ
 idx: エントリ番号
@@ -11479,6 +15271,24 @@ name: ファイル名（/ 区切りの相対パスを含み得ます）
 idx: エントリ番号
 sz: 圧縮前の元のバイト数
 `
+  'zlib': `
+zlib — RFC 1950 zlib の圧縮・展開（純 Nolang 実装）
+
+Git はすべての緩いオブジェクトとすべてのパックオブジェクトのペイロードを zlib
+ストリームとして保存します：2 バイトのヘッダ、生の DEFLATE データ、そして非圧縮データの
+4 バイトのビッグエンディアン Adler-32 チェックサムです。
+
+サポート:
+- zlib 圧縮：stored blocks (BTYPE=00) を使って有効な zlib ストリームを構築します
+- zlib 展開：stored blocks と、gzip.inflate-decompress による完全な DEFLATE をサポートします
+
+使用方法:
+data = fs.read-file('blob')          ; read as []byte
+compressed = compress(data)     ; compress to zlib format
+decompressed, ok = decompress(compressed)  ; decompress zlib format
+
+アルゴリズム参照: RFC 1950 (zlib), RFC 1951 (DEFLATE)
+`
   'zlib.adler-32': `
 Adler-32 チェックサムを計算
 data: 入力データ ([]byte)
@@ -11510,6 +15320,23 @@ data: BTYPE=00 ブロックのみを含む zlib ストリーム ([]byte)
 out ?[]byte を返します: 解凍後のデータ（some）、非 stored ブロックまたは失敗は nil
 out: BTYPE=00 ブロックのみから復号したバイト。他のブロック型や末尾不一致では nil を返します
 `
+  'zstd': `
+zstd — Zstandard 圧縮・展開（純 Nolang 実装）
+
+Zstandard (zstd) 展開アルゴリズムを実装します。含むもの:
+- FSE (Finite State Entropy) デコード
+- ハフマンデコード
+- LZ77 シーケンスデコード
+- Zstandard フレーム形式の解析
+
+使用方法:
+data = fs.read-file('example.zst')   ; read zst file
+decompressed = decompress(data)  ; decompress zstd format
+
+アルゴリズム参照:
+- Zstandard 形式: https://datatracker.ietf.org/doc/html/rfc8878
+- FSE: https://github.com/Cyan4973/FiniteStateEntropy
+`
   'zstd.bits-for-count': `
 count に対応するビット数を計算
 count > 0: count の有効ビット数を返します（floor(log2(count)) + 1）
@@ -11529,6 +15356,7 @@ Zstandard 形式のデータを解凍
 data: zstd 圧縮データ ([]byte)
 out: 解凍後のデータ ([]byte)
 `
+  'zstd.fse-table': 'fse-table: FSE 復号テーブル'
   'zstd.fse-table.build': `
 正規化カウントから FSE テーブルを構築
 norm-count: 各記号の正規化カウント
@@ -11544,6 +15372,11 @@ sym: 現在の状態に対応する記号
 new-state: 次の世代へ遷移した後の状態（next-state[state] に読み取った追加ビット値を加えて合成）
 `
   'zstd.zs-bit-reader.align-to-byte': '次のバイト境界へアライン'
+  'zstd.zs-bit-reader.init': `
+初期化します
+data: デコード対象の圧縮バイトストリーム（読み取り専用、変更しません）
+pos: 読み取りを開始するバイトオフセット（デコーダはここからビットストリームに入ります）
+`
   'zstd.zs-bit-reader.read-bit': `
 1 ビットを読み取り（LSB-first）
 bit: 読み取ったビット（0 または 1）。データを使い切った場合 0 を返します
@@ -11557,6 +15390,7 @@ v: 読み取った n ビットから組み立てた整数値
 可変長整数を読み取り（LSB-first、7 ビットずつ）
 v: 復号した整数値（各バイトの下位 7 ビットが有効、最上位ビット 1 は続きを読むことを示します）
 `
+  'zstd.zs-frame': 'zs-frame: Zstandard フレーム復号状態'
   'zstd.zs-frame.decode-block': `
 1 ブロックを復号（last-block ?bool を返す：some=成功し最終ブロックか否かを伴う、nil=失敗）
 last-block: 三状態結果 — ok(true) 最終ブロック、ok(false) 中間ブロック、いずれも復号成功。nil はブロックヘッダ不足または予約ブロック型に遭遇したことを示します
@@ -11570,6 +15404,7 @@ ok: 圧縮ブロックの literals とシーケンスセクションの解析お
 frame header を読み取り
 ok: magic マジックの検証に成功し、かつ header フィールドの解析が完全な場合 true（この時点で pos は最初のブロックの開始位置まで進んでいます）
 `
+  'zstd.zs-huffman': 'zs-huffman: zstd の Huffman デコード表'
   'zstd.zs-huffman.build': `
 Huffman 復号テーブルを構築
 lengths: 各記号の Huffman コード長テーブル（長さがコードの分布重みを決定）
@@ -11580,4 +15415,5 @@ max-symbol: 記号値の上限（lengths 走査の終点。zstd のバイト記�
 br: コードビットを読み取るビットリーダ（コードワードを MSB 側から 1 ビットずつ組み出します）
 sym: 復号した記号値。最大コード長内でどのコードにも命中しなかった場合 0 を返します
 `
+  'zstd.zs-magic': 'Zstandard 定数'
 }

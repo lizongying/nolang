@@ -6,6 +6,16 @@ sidebar_position: 2
 
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
+## v0.4.23
+
+- fix(net): use unprivileged SOCK_DGRAM ping socket on linux via ping_group_range
+- fix(net): only filter icmp identifier for SOCK_RAW replies, skip on unprivileged socket
+- fix(mir): declare late-registered option layouts to fix flaky codegen build failure
+- fix(test): normalize uname.machine to GOARCH vocabulary before comparing to get-arch
+- test(net): skip icmp assertions when no ping socket is available
+- docs(i18n): add doc translations for de, es, fr, ja, ko, pt, ru, zh-cn, zh-tw locales
+- docs(test): document std coverage and icmp skip rationale in test README
+
 ## v0.4.22
 
 - fix(parser): infer value-match ok-arm tail type to fix option payload mismatch

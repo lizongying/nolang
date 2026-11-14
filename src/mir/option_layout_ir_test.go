@@ -2,6 +2,7 @@ package mir
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -263,5 +264,97 @@ tv ?txt = mk()
 	}
 	if regexp.MustCompile(`call i8\* @nolang_rc_alloc\(i64 264\)`).MatchString(fn) {
 		t.Errorf("?txt payload was heap-boxed even though it fits inline\n%s", fn)
+	}
+}
+
+// ── late-registered option layouts ────────────────────────────────────────
+//
+// CI run 43603194893 failed `BUILD FAIL: tests/memory.no` with
+//
+//	define void @print_option__x25txt(%option__x25txt %o) {
+//	                                  ^
+//	error: invalid type for function argument
+//
+// The print helper is emitted by emitStructTypes, which can register a `?txt`
+// layout AFTER emitPrelude wrote the `%option_* = type { ... }` block. LLVM
+// then auto-creates an opaque named struct for the by-value argument and
+// rejects the function header. Which std signatures get interned early depends
+// on Go map iteration, so the failure is intermittent (roughly 1 in 16 runs).
+
+var optionRefRE = regexp.MustCompile(`%option_[A-Za-z0-9_]+`)
+
+func undeclaredOptionTypes(ir string) []string {
+	declared := declaredOptionTypes(ir)
+	seen := map[string]bool{}
+	for _, ref := range optionRefRE.FindAllString(ir, -1) {
+		if !declared[ref] {
+			seen[ref] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for n := range seen {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestInjectMissingOptionTypeDeclsPlacesDeclBeforeFirstUse(t *testing.T) {
+	const prelude = "target triple = \"x86_64-linux-gnu\"\n" +
+		"%option_i64 = type { i8, [1 x i64] }    ; tag, 8-byte payload (16 bytes total)\n"
+	const body = "define void @print_option__x25txt(%option__x25txt %o) {\n" +
+		"entry:\n  ret void\n}\n"
+	ir := prelude + body
+	layouts := []*OptionLayout{
+		{LLVM: "%option_i64", SlotLT: "[1 x i64]", Size: 16, PayloadLT: "i64"},
+		{LLVM: "%option__x25txt", SlotLT: "[32 x i64]", Size: 264, PayloadLT: "%txt"},
+		{LLVM: "%option_never_used", SlotLT: "[1 x i64]", Size: 16, PayloadLT: "i64"},
+	}
+	if got := undeclaredOptionTypes(ir); len(got) != 1 || got[0] != "%option__x25txt" {
+		t.Fatalf("fixture must have exactly one undeclared option type, got %v", got)
+	}
+	got := injectMissingOptionTypeDecls(ir, len(prelude), layouts)
+	if !strings.Contains(got, "%option__x25txt = type { i8, [32 x i64] }") {
+		t.Fatalf("late layout was not declared:\n%s", got)
+	}
+	declAt := strings.Index(got, "%option__x25txt = type")
+	useAt := strings.Index(got, "define void @print_option__x25txt")
+	if declAt < 0 || useAt < 0 || declAt > useAt {
+		t.Fatalf("declaration must precede first use: decl@%d use@%d\n%s", declAt, useAt, got)
+	}
+	if n := strings.Count(got, "%option_i64 = type"); n != 1 {
+		t.Errorf("already-declared layout duplicated %d times", n)
+	}
+	if strings.Contains(got, "%option_never_used = type") {
+		t.Error("unreferenced layout should not be declared")
+	}
+	if left := undeclaredOptionTypes(got); len(left) != 0 {
+		t.Errorf("still undeclared: %v", left)
+	}
+	// The declarations land at preludeEnd, i.e. outside optPrunePrelude's
+	// pruned region, so the optimiser pass must keep them verbatim.
+	pruned, _ := optPrunePrelude(got, 0, len(prelude))
+	if !strings.Contains(pruned, "%option__x25txt = type { i8, [32 x i64] }") {
+		t.Errorf("prelude pruning dropped the late declaration:\n%s", pruned)
+	}
+}
+
+func TestInjectMissingOptionTypeDeclsNoopWhenComplete(t *testing.T) {
+	const ir = "%option_i64 = type { i8, [1 x i64] }\n" +
+		"define void @f(%option_i64 %o) {\n  ret void\n}\n"
+	layouts := []*OptionLayout{{LLVM: "%option_i64", SlotLT: "[1 x i64]", Size: 16}}
+	if got := injectMissingOptionTypeDecls(ir, 44, layouts); got != ir {
+		t.Fatalf("complete IR must be byte-identical, got:\n%s", got)
+	}
+}
+
+// EmitLLVM must never leave a referenced option type without a body. Repeat
+// the lowering because the late-registration path depends on map iteration.
+func TestEmitLLVMDeclaresEveryReferencedOptionType(t *testing.T) {
+	for i := 0; i < 24; i++ {
+		ll, _ := declareOptions(t, optionLayoutSrc, 0)
+		if missing := undeclaredOptionTypes(ll); len(missing) != 0 {
+			t.Fatalf("iteration %d: undeclared option types: %v", i, missing)
+		}
 	}
 }

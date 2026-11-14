@@ -697,7 +697,7 @@ returns ok: true = success, false = the queue is full
   'arr.sum': '[n]t.sum: the sum of the array\'s elements'
   'arr.swap': `
 [n]t.swap: swaps the elements at two positions
-i i64, j: the positions
+i, j: the positions
 `
   'arr.to-str': `
 [n]t.to-str: the string form
@@ -5549,7 +5549,7 @@ s: UTC timestamp string (format YYYY-MM-DD HH:MM:SS)
 `
   'log.open-file': `
 opens a log file in append mode and makes it the output target
-returns ?bool: ok = true on success, err when the file cannot be opened
+returns : ok = true on success, err when the file cannot be opened
 path: log file path to open in append mode and set as the output target
 res: ok=true opened successfully, err=open failed
 `
@@ -10002,7 +10002,7 @@ Note: SHA-1 no longer offers collision resistance; use it only for legacy protoc
   'sha1.sha1-block': `
 Process one 512-bit block (80-round compression, FIPS 180-4)
 s: 16 32-bit big-endian message words (already unpacked from bytes by the caller)
-h0 u32, h1, h2, h3, h4: the 160-bit hash state entering this block
+h0, h1, h2, h3, h4: the 160-bit hash state entering this block
 r0 u32, r1, r2, r3, r4: the new state after compression (working variables added back to the input state modulo 2^32)
 `
   'sha1.sha1-hex': `
@@ -11625,7 +11625,7 @@ ts: the current Unix timestamp (microseconds)
   'time.parse-date': `
 parses a date string into a Unix timestamp
 Accepted formats: YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
-returns ?i64: ok = the timestamp, nil = parsing failed
+returns : ok = the timestamp, nil = parsing failed
 s: date string (YYYY-MM-DD, or the full form with HH:MM:SS)
 ts: ok=the corresponding Unix timestamp (seconds), nil=insufficient length, illegal separator/digits, or field out of range
 `
