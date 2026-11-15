@@ -120,14 +120,21 @@ func collectSizesFromStmt(stmt parser.Statement, sm *sizeMaps) {
 			} else {
 				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 			}
-		} else if isStringExprForCollect(s.Value, sm.stringSizes, sm.funcStrReturns) {
+		} else if s.Type == nil || isStringLikeTypeName(s.Type.String()) {
+			// 顯式宣告為非 str 的變數（bigint / txt / 自訂 struct…）不得靠
+			// 「表達式看起來像字串」推測登記：funcStrReturns 是以函式裸名為
+			// 鍵的全域表，merged program 裡另一個模組的 str.copy 會讓
+			// bigint.div-mod 的 `r = .copy()` 被誤判成 str，進而使合法的
+			// `r.len = 1`（r 已宣告為 bigint）誤報 qon2wsev。顯式型別優先。
 			// Also detect string from inferred expression (StringLiteral, string concatenation,
 			// string method calls like slice/repeat, char-to-str, copy from known string var,
 			// or calls to user-defined functions returning str)
-			if sl, ok := s.Value.(*parser.StringLiteral); ok {
-				sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
-			} else {
-				sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+			if isStringExprForCollect(s.Value, sm.stringSizes, sm.funcStrReturns) {
+				if sl, ok := s.Value.(*parser.StringLiteral); ok {
+					sm.stringSizes[s.Name.Value] = int64(len(sl.Value))
+				} else {
+					sm.stringSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+				}
 			}
 		}
 	case *parser.FunctionDefinition:
@@ -339,13 +346,16 @@ func collectStringSizeMapFromStmt(stmt parser.Statement, strSizes map[string]int
 			} else {
 				strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
 			}
-		} else if isStringExprForCollect(s.Value, strSizes, validateFuncStrReturns) {
+		} else if s.Type == nil || isStringLikeTypeName(s.Type.String()) {
+			// 與 collectSizesFromStmt 同一口徑：顯式非 str 的宣告不由表達式推測覆寫。
 			// Also detect string from inferred expression (StringLiteral, string concatenation,
 			// string method calls like slice/repeat, char-to-str, copy from known string var,
-			if sl, ok := s.Value.(*parser.StringLiteral); ok {
-				strSizes[s.Name.Value] = int64(len(sl.Value))
-			} else {
-				strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+			if isStringExprForCollect(s.Value, strSizes, validateFuncStrReturns) {
+				if sl, ok := s.Value.(*parser.StringLiteral); ok {
+					strSizes[s.Name.Value] = int64(len(sl.Value))
+				} else {
+					strSizes[s.Name.Value] = 0 // unknown size, mark as string but no bound check
+				}
 			}
 		}
 	case *parser.FunctionDefinition:
@@ -417,6 +427,21 @@ func isSliceTypeOrOptionSlice(t parser.Type) bool {
 		if _, ok := nt.Type.(*parser.SliceType); ok {
 			return true
 		}
+	}
+	return false
+}
+
+// isStringLikeTypeName reports whether an explicit type annotation denotes a
+// string-like value (as opposed to txt / bigint / a user struct, whose `.len`
+// field may be writable). It is used to make explicit annotations take
+// precedence over the "expression looks like a string" heuristic: the latter
+// consults funcStrReturns, a program-wide map keyed by bare function name, so
+// a same-named str-returning function in another module can otherwise make a
+// non-string local look like a string (see TestStrLenReadOnlyExplicitType).
+func isStringLikeTypeName(t string) bool {
+	switch t {
+	case "str", "?str", "string":
+		return true
 	}
 	return false
 }
@@ -1152,6 +1177,21 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				collectStringSizeMapFromStmt(ss, funcStringSizes)
 				collectSliceSizeMapFromStmt(ss, funcSliceSizes)
 				collectArraySizesFromStmt(ss, funcArraySizes)
+			}
+			// 顯式宣告為非 str 的參數 / 結果，不能被函數體內「無型別標註的
+			// 重新賦值」推測成字串。merged program 的 funcStrReturns 以函式
+			// 裸名為鍵：另一個模組的 str.copy 會讓 bigint.div-mod 裡的
+			// `r = .copy()` 被判為 str，進而使 `r.len = 1`（r bigint，合法
+			// 欄位寫入）誤報 qon2wsev。顯式宣告優先於推測，這裡最終收口。
+			for _, p := range s.Parameters {
+				if p.Type != nil && !isStringLikeTypeName(p.Type.String()) {
+					delete(funcStringSizes, p.Name)
+				}
+			}
+			for _, p := range s.Results {
+				if p.Type != nil && !isStringLikeTypeName(p.Type.String()) {
+					delete(funcStringSizes, p.Name)
+				}
 			}
 			for _, ss := range s.Body.Statements {
 				if err := validateStmtArrayBounds(ss, funcArraySizes, funcSliceSizes, funcStringSizes, funcVarTypes, sem); err != nil {

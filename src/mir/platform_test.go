@@ -2,6 +2,7 @@ package mir
 
 import (
 	"fmt"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -351,5 +352,91 @@ func TestSetTargetPlatformEmptyFallsBackToHost(t *testing.T) {
 	mod := lowerHIR(t, src)
 	if len(mod.Globals) != 1 || !strings.Contains(mod.Globals[0].ConstText, "111") {
 		t.Errorf("host fallback lost the host variant: %v", globalNames(mod))
+	}
+}
+
+// TestUnameBufferCoversCStruct pins the geometry behind emitBuiltinUname.
+// uname(2) copies the WHOLE kernel struct into the user buffer, so the alloca
+// must cover every C field, not just the five os.utsname adopts:
+//
+//	linux  : struct new_utsname = 6 x 65  = 390 bytes (domainname included)
+//	darwin : struct utsname     = 5 x 256 = 1280 bytes
+//	windows: nolang.win_uname shim writes 5 x 256 = 1280 bytes
+//
+// The pre-fix 5*65 = 325-byte slot was a 65-byte stack overflow: it took down
+// test/std/unix.no with SIGSEGV on ubuntu-latest (x86_64) while staying
+// invisible on darwin and linux/arm64. A `.no` assertion cannot pin this —
+// whether the stray bytes are fatal depends on the frame layout — so assert
+// the geometric invariant directly.
+func TestUnameBufferCoversCStruct(t *testing.T) {
+	for _, tc := range []struct {
+		goos     string
+		fieldLen int64
+		fields   int64
+		wantSize int64
+	}{
+		{"linux", 65, 6, 390},
+		{"darwin", 256, 5, 1280},
+		{"windows", 256, 5, 1280},
+		{"freebsd", 256, 5, 1280}, // unknown targets keep the POSIX 5x256 layout
+	} {
+		fl, fc, total, offs := unameBufGeometry(tc.goos)
+		if fl != tc.fieldLen || fc != tc.fields || total != tc.wantSize {
+			t.Errorf("%s: geometry = (%d, %d, %d), want (%d, %d, %d)",
+				tc.goos, fl, fc, total, tc.fieldLen, tc.fields, tc.wantSize)
+		}
+		if total != fl*fc {
+			t.Errorf("%s: total %d != fieldLen*fieldCount %d", tc.goos, total, fl*fc)
+		}
+		// Every adopted field must fit inside the buffer with its full slot.
+		for i, off := range offs {
+			if off < 0 || off+fl > total {
+				t.Errorf("%s: field %d at [%d,%d) exceeds buffer %d", tc.goos, i, off, off+fl, total)
+			}
+		}
+	}
+
+	// Regression: 5*65 = 325 leaves 65 bytes of uname(2) writing off-slot.
+	const linuxNewUtsnameSize = 6 * 65
+	if _, _, total, _ := unameBufGeometry("linux"); total < linuxNewUtsnameSize {
+		t.Fatalf("linux uname buffer %d < sizeof(struct new_utsname) %d: stack overflow",
+			total, linuxNewUtsnameSize)
+	}
+}
+
+// TestUnixSockaddrCopyIsGatedByTooLong pins the second half of the Linux CI
+// SIGSEGV fix. emitUnixSockaddr emits its memcpy BEFORE the caller branches on
+// tooLong, so the copy length must be a select that zeroes it for an over-long
+// path. Using raw strlen wrote 130 bytes at addrp+2 into the 112-byte sockaddr
+// stack slot — test/std/unix.no deliberately exercises that path.
+func TestUnixSockaddrCopyIsGatedByTooLong(t *testing.T) {
+	selRe := regexp.MustCompile(`(%\S+) = select i1 (%\S+), i64 0, i64 (%\S+)`)
+	cpRe := regexp.MustCompile(`call void @llvm\.memcpy\.[^(]*\(i8\* %\S+, i8\* %\S+, i64 (%\S+), i1 0\)`)
+
+	for _, goos := range []string{"linux", "darwin"} {
+		withTarget(t, goos, "amd64")
+		c := &codegen{sb: &strings.Builder{}}
+		c.emitUnixSockaddr("%path")
+		ir := c.sb.String()
+
+		sel := selRe.FindStringSubmatch(ir)
+		if sel == nil {
+			t.Fatalf("%s: no `select ... 0 ...` gate before the sockaddr memcpy:\n%s", goos, ir)
+		}
+		copyLen, tooLong, plen := sel[1], sel[2], sel[3]
+		if !strings.Contains(ir, tooLong+" = icmp ugt i64 "+plen+", 103") {
+			t.Errorf("%s: tooLong is not derived from strlen > UNIX-MAX-PATH", goos)
+		}
+		cp := cpRe.FindStringSubmatch(ir)
+		if cp == nil {
+			t.Fatalf("%s: no sockaddr memcpy found:\n%s", goos, ir)
+		}
+		if cp[1] != copyLen || cp[1] == plen {
+			t.Errorf("%s: memcpy length = %s, want gated %s (raw strlen %s would overrun the %d-byte slot)",
+				goos, cp[1], copyLen, plen, unixAddrBuf)
+		}
+		if !strings.Contains(ir, fmt.Sprintf("alloca [%d x i8]", unixAddrBuf)) {
+			t.Errorf("%s: sockaddr slot is not %d bytes", goos, unixAddrBuf)
+		}
 	}
 }

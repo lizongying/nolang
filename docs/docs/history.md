@@ -6,6 +6,16 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.24
+
+- fix(mir): cover all six new_utsname fields in os.uname() buffer to avoid stack overflow SIGSEGV on Linux
+- fix(mir): gate unix sockaddr memcpy on path-length overflow to prevent out-of-bounds stack write
+- test(mir): pin uname buffer geometry and sockaddr copy gate as regression invariants
+- fix(build): stop treating explicitly non-string locals as a read-only string on len writes
+- test(build): add size-map regression tests for the str.len false positive
+- docs: update self-host design notes
+- docs: refresh test coverage notes
+
 ## v0.4.23
 
 - fix(net): use unprivileged SOCK_DGRAM ping socket on linux via ping_group_range

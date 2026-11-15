@@ -1,6 +1,7 @@
 package build
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -114,5 +115,85 @@ main = () () {
 	err := validateArrayBounds(prog, sizeMap.arraySizes, sizeMap.sliceSizes, sizeMap.stringSizes, varTypes)
 	if err != nil {
 		t.Fatalf("expected no validation error, got: %v", err)
+	}
+}
+
+// TestStrLenReadOnlyExplicitTypeNonStr pins the qon2wsev false positive that
+// surfaced as "tests/byte-option-index.no:680:9: cannot modify read-only field
+// 'len' of string 'r'". The reported file was just the CLI's entry file: this
+// diagnostic carries no File, so the line/column came from src/std/bigint.no
+// while the file name was stamped on afterwards.
+//
+// Root cause: buildSizeMaps pre-scans functions with a single str result into
+// funcStrReturns, keyed by BARE function name. In a merged program that table
+// is program-wide, so a same-named str-returning function in another module
+// (str.copy) makes `r = .copy()` inside bigint.div-mod look like a string.
+// That inferred name lands in stringSizes["r"], and the legal `r.len = 1`
+// (r is explicitly declared bigint) is rejected. Explicit annotations now win
+// over the expression heuristic, and the per-function pass drops parameters /
+// results explicitly declared as non-str.
+func TestStrLenReadOnlyExplicitTypeNonStr(t *testing.T) {
+	// A same-named str-returning function plus an explicitly non-str result
+	// that is re-assigned via that call must NOT be rejected.
+	noFalsePositive := `
+copy = () (out str) {
+    out = 'x'
+}
+box.div-mod = (b box) (q box, r box) {
+    r = .copy()
+    r.len = 1
+}
+`
+	// The genuine violation must still be rejected even when the assignment
+	// goes through a str-returning function call.
+	stillRejected := `
+copy = () (out str) {
+    out = 'x'
+}
+f = (s str) {
+    s = copy()
+    s.len = 1
+}
+`
+	validate := func(t *testing.T, src string) error {
+		t.Helper()
+		l := lexer.New(src)
+		p := parser.New(l)
+		prog := p.ParseProgram()
+		if errs := p.Errors(); len(errs) > 0 {
+			t.Fatalf("parse errors: %v", errs)
+		}
+		sm := buildSizeMaps(prog)
+		validateFuncStrReturns = sm.funcStrReturns
+		return validateArrayBounds(prog, sm.arraySizes, sm.sliceSizes, sm.stringSizes, buildVarTypes(prog))
+	}
+
+	if err := validate(t, noFalsePositive); err != nil {
+		t.Fatalf("explicitly non-str 'r' was misreported as a string: %v", err)
+	}
+	if err := validate(t, stillRejected); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("genuine str.len assignment must still fail, got: %v", err)
+	}
+}
+
+// TestBigintDivModLenNoFalsePositive replays the exact source from the report:
+// src/std/bigint.no:680 (`r.len = 1` in bigint.div-mod) must survive validation
+// even when the merged program contains a same-named str-returning function.
+func TestBigintDivModLenNoFalsePositive(t *testing.T) {
+	data, err := os.ReadFile("../std/bigint.no")
+	if err != nil {
+		t.Fatalf("read src/std/bigint.no: %v", err)
+	}
+	src := string(data) + "\ncopy = () (out str) {\n    out = 'x'\n}\n"
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	sm := buildSizeMaps(prog)
+	validateFuncStrReturns = sm.funcStrReturns
+	if err := validateArrayBounds(prog, sm.arraySizes, sm.sliceSizes, sm.stringSizes, buildVarTypes(prog)); err != nil {
+		t.Fatalf("bigint.div-mod must not trip qon2wsev: %v", err)
 	}
 }

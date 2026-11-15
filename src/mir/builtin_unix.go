@@ -49,9 +49,10 @@ const (
 //	addrLen — i64 register holding the byte length to pass to bind/connect,
 //	tooLong — i1 register that is true when the path does not fit sun_path,
 //
-// The caller is responsible for branching on tooLong BEFORE doing anything
-// with addrp (a truncated path must not be unlinked/bound), and for freeing
-// pathPtr with @nolang_free once the syscalls are done.
+// The caller must still branch on tooLong before unlink/bind (an over-long path
+// must not touch the filesystem); the path copy itself is gated here so no
+// out-of-bounds write happens before that branch. The caller also frees pathPtr
+// with @nolang_free once the syscalls are done.
 func (c *codegen) emitUnixSockaddr(pathPtr string) (addrp, addrLen, tooLong string) {
 	darwin := targetGOOS() == "darwin"
 
@@ -70,11 +71,19 @@ func (c *codegen) emitUnixSockaddr(pathPtr string) (addrp, addrLen, tooLong stri
 		addrp, unixAddrBuf, unixAddrBuf, addr))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %d, i1 0)\n", addrp, unixAddrBuf))
 
-	// sun_path starts at offset 2 on both platforms.
+	// sun_path starts at offset 2 on both platforms. The copy length MUST be
+	// gated on tooLong: memcpy runs BEFORE the caller branches on it, and an
+	// over-long path (test/std/unix.no deliberately passes 130 bytes) would
+	// write 130 bytes at addrp+2 into the 112-byte stack slot — a 20-byte
+	// stack overflow that only shows up where the frame layout is unforgiving.
+	// When tooLong is true the caller skips unlink/bind entirely, so copying
+	// nothing is the correct behaviour for that path.
+	copyLen := c.treg("ux.copylen")
+	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", copyLen, tooLong, plen))
 	pathDst := c.treg("ux.pathp")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 2\n", pathDst, addrp))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 0)\n",
-		pathDst, pathPtr, plen))
+		pathDst, pathPtr, copyLen))
 
 	// sun_family: byte 0 on linux, byte 1 on darwin (byte 0 is sun_len there).
 	famOff := int64(0)

@@ -3040,12 +3040,40 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 	return nil
 }
 
+// unameBufGeometry returns the C-side layout of struct utsname for goos: the
+// width of one field, the number of fields uname(2) actually writes, the total
+// buffer size we must alloca, and the offsets of the five fields os.utsname
+// adopts.
+//
+// Linux/glibc (and the kernel's struct new_utsname copied out by uname(2)) has
+// SIX 65-byte fields — sysname, nodename, release, version, machine and the GNU
+// extension domainname — so copy_to_user writes 6*65 = 390 bytes regardless of
+// how many fields the caller reads back. Allocating only the five exposed
+// fields (325 bytes) is a 65-byte stack overflow: silent on linux/arm64, but on
+// x86_64 (CI's ubuntu-latest) it clobbers neighbouring locals / the return
+// address, which is the SIGSEGV in test/std/unix.no — its `u = os.uname()`
+// guard shares the frame with the socket path used by fs.remove() afterwards.
+//
+// macOS has exactly five 256-byte fields, and the Windows shim writes the same
+// five-field layout.
+func unameBufGeometry(goos string) (fieldLen, fieldCount, totalSize int64, offsets [5]int64) {
+	fieldLen, fieldCount = 256, 5
+	if goos == "linux" {
+		fieldLen, fieldCount = 65, 6
+	}
+	totalSize = fieldLen * fieldCount
+	offsets = [5]int64{0, fieldLen, fieldLen * 2, fieldLen * 3, fieldLen * 4}
+	return
+}
+
 // emitBuiltinUname lowers `os.uname()` -> utsname. The C struct utsname is a
-// packed array of five NUL-terminated char fields (sysname, nodename, release,
-// version, machine), each _UTSNAME_LENGTH bytes wide (256 on macOS, 65 on
-// Linux). We alloca the C buffer, call uname(buf), then adopt each field as an
-// owned %str-long via @str_from_cstr and store it into the result %utsname
-// struct. This mirrors the legacy call_stdlib.go uname inliner exactly.
+// packed array of NUL-terminated char fields, each _UTSNAME_LENGTH bytes wide
+// (256 on macOS, 65 on Linux). macOS has five fields; Linux/glibc and the
+// kernel's struct new_utsname have SIX (the extra domainname), so the buffer
+// handed to uname(2) must cover all six even though os.utsname only exposes
+// five. We alloca the C buffer, call uname(buf), then adopt each of the first
+// five fields as an owned %str-long via @str_from_cstr and store it into the
+// result %utsname struct. This mirrors the legacy call_stdlib.go uname inliner.
 func (c *codegen) emitBuiltinUname(inst *Inst) error {
 	dstSlot := c.valSlot[inst.Dst]
 	if dstSlot == "" {
@@ -3060,12 +3088,7 @@ func (c *codegen) emitBuiltinUname(inst *Inst) error {
 		return i18n.Errorf("9ru0tpwh", "uname: utsname struct type not collected")
 	}
 
-	fieldLen := int64(256)
-	if targetGOOS() == "linux" {
-		fieldLen = 65
-	}
-	totalSize := fieldLen * 5
-	offsets := [5]int64{0, fieldLen, fieldLen * 2, fieldLen * 3, fieldLen * 4}
+	_, _, totalSize, offsets := unameBufGeometry(targetGOOS())
 
 	// Windows has no uname(2): the prelude shim nolang.win_uname fills the same
 	// five-field layout (256 bytes each) from Win32 facts (see

@@ -5464,3 +5464,70 @@ preflight 的 `opt -passes=verify` 先攔下，兩者同源。
   `std_ast.bin` 再 `make no`；本輪第一次 `make test` 就是在背景測試跑到一半
   又改了 `layout.go`，導致 `TestStdASTBlobCarriesParseConfig` 的 StdKey
   與磁碟不同步而紅（重烘焙後綠）。
+
+### 5.2ac 2026-11-15：v0.4.23 Linux CI `test/std/os.no` SIGSEGV —— `uname(2)` 写穿 325 字节栈缓冲【已修】
+
+**症状**：CI run `43655079946`（HEAD `826bf5af` / v0.4.23，`std-test` job，
+ubuntu-latest x86_64、非 root）报
+`FAIL: test/std/os.no (exit code signal: segmentation fault (core dumped))`。
+本机 macOS 与 `-target aarch64-linux-musl` 交叉编译后在 arm64 Linux 容器里跑
+`os.no` 都是 63/0，无法直接复现。
+
+**根因**：`src/mir/builtin_call.go::emitBuiltinUname` 对 Linux 按
+`fieldLen = 65`、`totalSize = 5 * 65 = 325` 生成 `alloca [325 x i8]`，随后
+`call i32 @uname(i8* ...)`。但 Linux 内核 `uname(2)` 复制的是
+`struct new_utsname` —— **6 个 65 字节字段**（第 6 个是 GNU 扩展
+`domainname`），共 **390 字节**；glibc 的 `struct utsname` 同样是 390 字节。
+⇒ 每次 `os.uname()` 都往栈上多写 65 字节。macOS 是 5×256=1280 正好匹配，
+Windows shim 也只写 5×256，所以只有 Linux 溢出。
+`test/std/os.no` 有**两处** `os.uname()`（`t-sysinfo` 176 行、`t-sysctl` 224 行），
+`test/std/unix.no` 也有一处；v0.4.23 给 `t-sysinfo` 新增的 `canon` 归一化链
+改变了栈帧布局，让原本静默的越界在 x86_64 CI 变成致命（本机 arm64 帧布局 +
+LLVM 22 恰好仍无害；CI 用 LLVM 21）。同一 run 里 `unix.no` 的 SIGSEGV 同源。
+
+**确定性证据**（不依赖 x86_64 能否运行）：`zig cc -target aarch64-linux-musl`
+编一个 C 探针，堆上放 `buf[n]` + 65 字节 canary 后调 `uname()`：
+
+| 缓冲 | `sizeof(struct utsname)` | canary 被改写 |
+| --- | --- | --- |
+| 325（修复前） | 390 | **65/65** |
+| 390（修复后） | 390 | **0/65** |
+
+**修法**：抽出 `unameBufGeometry(goos)`，Linux 返回
+`fieldLen=65, fieldCount=6, totalSize=390`，macOS / Windows / 其它维持
+`256×5=1280`；`emitBuiltinUname` 改用它的 `totalSize`，五个字段偏移
+`0/65/130/195/260` 不变（第 6 个字段只是给内核写的保留区）。
+`src/mir/platform_test.go::TestUnameBufferCoversCStruct` 钉住各平台几何与
+「五个字段都落在缓冲内」。同一轮另修 `emitUnixSockaddr` 的 `sun_path`：
+`unix.no` 故意传 130 字节长路径时，旧 `memcpy` 在 `tooLong` 判断**之前**
+就往 112 字节槽里写 ⇒ 20 字节栈溢出；现在拷贝长度用
+`select tooLong, 0, plen` 门控。
+
+**验收**：
+- 修复后 Linux IR 为 `alloca [390 x i8]`（原 `[325 x i8]`），`@uname` 调用与
+  五个 `getelementptr` 偏移不变。
+- **x86_64 Linux（= CI 架构，QEMU 容器 `no-linux-amd64`）决定性前后对比**：
+  修前二进制 `no-before` 跑 `test/std/os.no`，输出停在 `TEST: os.sysctl` 后即
+  `FAIL: test/std/os.no (exit code signal: segmentation fault)`（`t-sysctl`
+  正是第二处 `os.uname()`），与使用者回报的 CI 失败逐字一致；修后
+  `no-final` 走完 17 个 TEST、SIGSEGV 消失，`unix.no` 64/0。
+- arm64 Linux 容器非 root `os.no` 63/0、`unix.no` 64/0；macOS 全量
+  `test/std` rc=0 / 0 FAIL（11m42s）；`make test` rc=0 / 36 包全绿；
+  `go test ./mir -run TestUnameBufferCoversCStruct` PASS；
+  `no fmt -d test/std/os.no` 无差异，`no vet src/std` 与
+  `no vet test/std/os.no` 皆 0 error。
+
+**x86_64 QEMU 环境的残留红（非本修复引入）**：修后 `os.no` 在 QEMU 容器稳定
+3/3 出现 `FAIL: is-true - now-ns 與 now-us 同微秒級`（62/1），但原生 macOS
+与 arm64 Linux 都是 63/0。`t-clock` 的窗口是 `ns < (us + 5) * 1000`
+—— **5 µs**（`us` 单位是微秒），而 `now-us` / `now-ns` 分别走
+`gettimeofday` / `clock_gettime`；C 探针实测连续两次读的间隔：QEMU 首次
+**22961 ns**（后续 < 1000 ns）、arm64 原生首次 3211 ns。⇒ QEMU 禁用 vDSO
+后的冷启动开销超窗，是仿真伪影。真实 CI（原生 x86_64、vDSO 可用）应绿，
+仍需 CI 重跑确认；若要彻底免疫可把该窗口放宽到毫秒级（未做，避免削弱
+时钟源错误检测力）。
+
+⚠️ 直接 `docker run --platform linux/amd64` 跑 no 产出的 ELF 会被 Rosetta
+挡下（`rosetta error: bss_size overflow`），x86_64 验证要走 QEMU 容器
+（见 `.workbuddy/memory/2026-11-15.md` 的环境备注）。但
+`alloca >= sizeof(struct utsname)` 已从根上消除溢出，与栈帧布局无关。

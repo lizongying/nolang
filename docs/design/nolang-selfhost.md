@@ -5029,6 +5029,8 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 ### 5.3.4.du s92——M4-e 第三十八件：默认参数调用点回填（`h2m.no` 簽名表補 fdef 預設式節點表＋調用臂尾部回填迴圈，鏡像 Go `hir2mir.go:13175` 缺省實參逐調用點 lowerExpr(deID) 拷開回填；**零改 cg/ps/mir**；`h2m-test` 763→**771/771**（`test-default-param-fill`／`test-default-param-trailing`／`test-default-param-missing-gate` 三斷言×3，共 +8；舊「gate default param」兩斷言按 s87 先例翻正），刀 3/3、oracle exit 15、前向 exit 19/19 全同、IR 16/16 SAME）（2026-11-06 本輪）
 
+> 🔴 **Moot（2026-11-15 改標）**：`31cce183` 自 Go 編譯器**移除函式簽名預設參數支援**，故語言已無預設參數；本件在 self-host `h2m.no` 的實作（`compiler/src/h2m.no` -81 行）已於該 commit 一併移除，`compiler/tests/h2m-test.no` 相關斷言（`default-fill`/`default-trailing` 等）隨之清理。本節保留作歷史紀錄，不再代表現狀（詳 §11 ⑮）。
+
 **選型裁決（d1）**：按 §5.3.4.dt 候選面逐項調研＋ `tmp/s92-quick.no` 16 形普查——char 值面（char-eq-lit/char-param-ret）unsup=0 屬 s91 紅利、非缺口排除；真實缺口清單＝str-lit/str-concat/vec-lit/arr-index/default-param/multi-out/nested-func/defer/opt-nil/opt-ok。其中 str 族卡 M4-d RC 自動放置、vec/arr 字面量卡 >24B 堆裝箱、multi-out 卡 cg LLVM 單返回值後端形制大改、option nil/ok 卡建模大件、defer/嵌套函數大件——均續不作。**取 default-param（調用點回填）立件**：改件局限在 h2m 簽名表與調用臂，量級可控。
 
 **語義實釘（Go 權威）**：`hir2mir.go` L13154-13211 調用下降在 `len(args) < len(paramNodes)` 且非變參時，對缺失尾參逐個 `l.lowerExpr(pn.First)` 入 argv——**默認值表達式在每個調用點拷開降一份**（非共享常量）；`pn.First == NoID`（被缺且無默認值）直接 skip，因 `funcargs.go:238` checker 已前置拒「實參少於 minArgs」。AST 形制 `no ast` 實釘：Parameter kid 序 = [Type, DefaultExpr]（kids[1]=IntegerLiteral{5}）。Go oracle 值面 `tmp/s92-oracle-vals.no` 實釘：`f()=5`、`f(9)=9`、`g(1)=21`（1+20）、`g(1,2)=3`。
@@ -5779,6 +5781,17 @@ M3 收官（見 §6.4 s13）後下一里程碑為 **M4 中端＋代碼生成**�
 - **M4-c 結構體欄位型別已完成（s32，§5.3.4.bl）**：`cg-runtime.no` 新增 `cg-runtime-ty-name(t)`（**全庫唯一**的型別碼→型名映射，自 `cg.no` 遷入；`cg-ty-name` 退化成一行轉發）與 `struct-decl(id,nf,ft)`／`struct-decls(sfc,sft)`（`sft` = 各結構體欄位型別碼的**拼接表**，游標展開無 stride 上限）；`cg.no` 的 `MK`/`GET`/`SET` 不再硬編 `i64 %v`，改按 `vty[fv]`／`cty[k]` 選型別名與命名空間（`str` 欄位落 `%sv`）門禁：`cg-test` **127/127**`cg-runtime-test` **37/37**`%struct.s0 = type { %str-long, i64 }` 的 `hold()`（`'abcd'.len + 9`）`opt` rc=0 + `clang -O2` **exit 13** + ASan 零報告；**負向對照**（宣告欄位順序寫反）⇒ `insertvalue operand and field disagree in type`；`no vet` 四檔 0 ERROR四檔 `no fmt -d` 0 hunk⚠️ **str 欄位的逐欄位 RC 未做（§11 B11）**：e2e 只用 `STRCONST`（無 RC 頭）故 ASan 乾淨，**不代表** str 欄位安全**未覆蓋**：逐欄位 RC（B11）嵌套 struct 欄位（技術上已通但未實測）struct 作形參/返回值具名 struct → id 映射表
 - **M4-c 結構體欄位 RC 原語已完成（s33，§5.3.4.bm）**：`mir.no` 增 `OP-STRUCT-RETAIN=37`/`OP-STRUCT-RELEASE=38`（`xa[k]`=結構體值 id`bs[k]`=**欄位位掩碼**，bit j 置位 ⇒ 字段 j 持有堆）；`cg.no` 兩個 emit 分支逐位置位發三步 `%rf<k>_<j> = extractvalue %struct.s<id> %st<x>, <j>` → `%rp<k>_<j> = extractvalue %str-long …, 2` → `call void @nolang_rc_retain(i8* …)`（release 版多 `%rl<k>_<j> = call i1 @nolang_rc_release`）；`cg-test.no` 增 `test-struct-field-rc`（6 斷言，含掩碼未置位的字段不得被遍歷）🔴 **`STRUCT-MK` 刻意不自動 retain**：① 操作數可能是 `STRCONST` 全局常量（retain 會讀 `data-16`，即全局對象**之外**的記憶體）；② `vty` 只說型別**不說所有權**——要不要 retain由呼叫方用掩碼顯式聲明🔴 **UAF 只在真讀位元組時發生**：`%str-long` 的 len/cap 是**內聯值**，`STRLEN` 讀 SSA 值不碰堆 ⇒ s32 那種 `'abcd'.len` 的 e2e 對漏 retain**徹底靜默**；本輪 e2e 因此在取字段後再做一次 `STRCAT`（`@str_concat` 會 `memcpy` 源字節）才踩到已釋放緩衝門禁：`cg-test` **133/133**`cg-runtime-test` **37/37**204 行模組 `opt` rc=0 + `clang -O2` **exit 37** + 補屬性 ASan **exit 37 零報告**；**三個負向對照**（`tmp/s33ctl.py` 在 `.ll` 上做）：刪 `STRUCT-RETAIN` ⇒ **exit 134 `heap-use-after-free … READ of size 6`**（`@str_concat` 的 `memcpy`）刪 `STRUCT-RELEASE` ⇒ exit 37 無報告（**無鑑別力**，洩漏方向）重複 `STRUCT-RELEASE` ⇒ **exit 134 `READ of size 8`**（`@nolang_rc_release` 讀 rc 的那次 `load`，且 `rc==0` 借用哨兵把 double free 降級成一次越界讀）🔴 **門禁口徑修正（§11 B12）**：`clang -x ir -fsanitize=address x.ll` 對 **IR 輸入完全不插樁**——最小反例（`malloc`→`free`→`load`）exit 0二進位只有 `__asan_init`/`__version_mismatch`；ASan pass 只插樁帶 `sanitize_address` **函式屬性**的函式，clang 前端處理 `.ll` 時不加 ⇒ s26–s32 的ASan 零報告只覆蓋 libc 攔截器（`malloc`/`free`/`memcpy`），裸 `load`/`store` UAF 全漏修法：`scripts/asan_instrument.py` 補屬性再編（`opt -passes=asan` 手插亦可，但 LLVM22 在 MachO 報 COMDAT 錯）`no vet` 四檔 0 ERROR`no vet compiler/src` 34 ERROR 不變四檔 `no fmt -d` 0 hunk；`ps/ck/lx/tok/util/diag` 38/20/45/62/27/7 全綠**未覆蓋**：逐欄位 RC 的**自動放置**（B11，需值是否擁有堆的所有權位）掩碼 >64 字段（需分塊）`vec`/`option` 字段（B5/B8 同族）嵌套 struct 字段（掩碼只掃一層）洩漏方向無動態門禁（macOS arm64 無 LSan）
 - **M4-c 結構體作一等值（形參/返回值 + 嵌套欄位）已完成（s34，§5.3.4.bn）**：**零 emit 變更**——`ptyps[q]`/`retty` 寫 `TY-STRUCT-BASE + id``sft` 的欄位型別寫子 id 即通（`define %struct.s0 @bump(%struct.s0 %st1)` / `ret %struct.s0 %st5` / `%st2 = call %struct.s0 @bump(%struct.s0 %st1)` / `%struct.s1 = type { %struct.s0, i64 }`），本件把它從有臂未實測變成有測試釘住🔴 **唯一的代碼修復是撞出來的真 bug**：`cg-lit-name(fname, k)` 把字面量全局從 `@.s<k>` 改為 `@.s.<函式名>.<k>`——兩個函式各自第 k 條 `STRCONST` 會撞成同名（`opt: redefinition of global '@.s1'`），而 s29–s33 的 e2e 全是單一業務函式 + 無字面量的 main故從未觸發判據：**全局名只含指令下標 ⇒ 必撞**（§11 B10 從具名型別擴到全局符號）`cg-test.no` 增 `test-struct-param-ret`（7 斷言）`test-struct-nested`（6 斷言），三條字面量斷言改新名 ⇒ **146/146**門禁：`cg-runtime-test` **37/37**三個 e2e（`mk/bump/total` ⇒ **exit 8**嵌套 ⇒ **exit 16**邊界 RC ⇒ **exit 7**）`opt` rc=0 + `clang -O2` + 補屬性 ASan 零報告；**五個對照**：父欄位宣告成 `i64` ⇒ `insertvalue operand and field disagree in type`漏發子宣告 ⇒ `invalid type for null constant`**宣告順序寫反 ⇒ 照樣 exit 16（否證子型別必須先宣告的猜想，LLVM 具名型別惰性解析）**`STRUCT-RELEASE` 挪到 call 前 ⇒ ASan `heap-use-after-free READ of size 6`（釘住參數是引用語義caller 的 release 必須晚於最後一次使用）；`no vet` 三檔 0 ERROR三檔 `no fmt -d` 0 hunk**未覆蓋**：跨函式所有權轉移（B13）嵌套欄位的 RCstruct 陣列/切片多返回值struct 作 vec 元素具名 struct → id 映射表
+---
+
+### 6.6 M5 啟動盤點（2026-11-13；詳見 §11 ⑭/⑮）
+
+M5 目標＝拿下「自舉唯一剩餘結構性閘」——`#` 模組導入（whole-program 降級）。現況：
+
+- ✅ 套件載入（`drv.build-package`，含路徑解析 + cycle 檢測）、全域簽名表（**395** 條）、單 `agg` struct 註冊、多模組 body 串接 + `@<mod>.<fn>` 命名、點號呼叫查全域表、emit 名統一（`.ll` 可連結）——切片 1–5 與 6① 全部實作並有回歸（`build-package-test` **8/8**、`pkg-sigs-test` **5/5**、`pkg-ll-test` **10/10**、`pkg-ll-call-test` **5/5**）。
+- ⬜ 端到端行為閘（6②）：`noc build compiler` 產物執行 `version` 印版本 + 抽 `tests/` SHS 子集跑 L4。現仍擋在 h2m 函式本體降級能力（整包約 **5,749 unsupported**），本體降級是 M5/M6 的 h2m 能力擴張範疇。
+- ⬜ M5 後續不收（⑭ ⑫）：workspace/package 合併、`target` 解析、快取；多 package 跨包解析；`as` 別名重綁；whole-program 體積/重複 emit 優化（reachability-based 按需 emit）。
+- 🔴 語言面變更：`31cce183` 移除函式簽名預設參數 ⇒ self-host s92 成 Moot（詳 ⑮）。
+
 ---
 
 ## 7. 驗證策略（差分矩陣）
@@ -7242,7 +7255,9 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
    - ⚠️ **AST 結構實測（與初判不同，已更正）**：`mod.fn(x)` 解析為 CALL（`c0=1`、nkid=2）其**子節點[0] 就是單個 `K-DOT-EXPRESSION`**（整個 `mod.fn` 作為 callee：`s0="fn"`、`mod` 在 dot 子節點[0] 的 `K-IDENTIFIER`）；**實參 `x` 是 CALL 的直接子節點 child[1]**（與純量呼叫 `f(x)` 同構，並非嵌在 dot 節點內）。故 `cn = dot.base.s0 - '.' - dot.s0`（得 `mod.fn`），`argbase` 沿用 `d.kid0+1`（實參為 CALL 直接子節點），`na` 仍取 `d.c0`。`h2m-lower-expr` 的 `K-CALL-EXPRESSION` 臂現對「callee 為 `K-DOT-EXPRESSION`」與「callee 為 `K-IDENTIFIER`（純量）」兩形態統一處理（實作見 `compiler/src/h2m.no`）。
    - ⚠️ **emit 名 / 呼叫名錯位（切片 5 已知限制，切片 6 已根除）**：受控被呼叫者 `testmod.no` 仍以【連字號名】`testmod-bar` 定義（自舉 parser 對【點號】名多算 `c5=1` 致 `h2m-func-sig` 誤判 `bad=1`，故受控模組須用連字號名），其 emit 名為 `@testmod-bar`（連字號）；切片 5 的呼叫名 `cn` 是 `testmod.bar`（點號）⇒ 舊版 `.ll` 出現「定義 `@testmod-bar`、呼叫 `@testmod.bar`」未定義引用，`opt` 報 `use of undefined value`。**切片 6 修法（最小、不動定義 emit 名）**：`h2m-sigs` 增 `femit` 欄（定義 emit 名＝裸 AST 名 `nm`），`h2m-sig-add` 增 `emit` 形參；`h2m-lower-expr` 的 CALL 臂查表命中後把 `cn` 覆寫為 `sg.femit[si]`，故 call 符號與 define 符號一致（受控例現 emit `call i64 @testmod-bar` ⇔ 定義 `define i64 @testmod-bar`）。單模組路徑 `femit==fname==nm` 故與舊行為等價、零回歸。驅動測試 `pkg-ll-call-test.no` 現 **5/5 全綠** 且 `opt -passes=verify` 乾淨通過（rc=0、無 undefined value）。点号前缀函数（`drv.build-package`/`ps.parse`）本就 `femit==fname==nm` 天然一致；連字號前綴（`h2m-sig-add`）現經 `femit` 取回裸名亦一致——故 emit 名最終為「定義裸名」（混合點/連字），但每個 call 都精確對應其 define，IR 可連結。
    - 回歸零新增：`cg-test` **359/359**、`cg-runtime-test` **86/86**、`drv-build-test` **63/63**、`pkg-sigs-test` **5/5**、`build-package-test` **8/8**、`h2m-test` **1080/1086**（6 紅為既有 `s98 optmatch`）、`pkg-ll-test` **9/10**（1 紅為既有 `@h2m-lower-module`，均與本切片無關）。
-6. **端到端閘 + L4 對拍**（⑩）。驗收：`noc build compiler` 產物執行 `version` 印出版本；抽 `tests/` SHS 子集跑 L4。
+6. **端到端閘 + L4 對拍**（⑩）——拆兩步：
+   - **6① emit 名統一（✅ 已實作，2026-11-13，`ec622ce4`）**：`h2m-sigs` 增 `femit` 欄、`h2m-sig-add` 增 `emit` 形參；`h2m-lower-expr` 的 CALL 臂查表命中後把 `cn` 覆寫為 `sg.femit[si]` ⇒ call 符號與 define 符號一致（點號前綴 `drv.build-package`/`ps.parse` 本就 `femit==fname==nm`；連字號前綴 `h2m-sig-add` 經 `femit` 取回裸名），`.ll` 可連結、`opt -passes=verify` 乾淨通過（受控 `pkg-ll-call-test.no` **5/5** 全綠、無 `use of undefined value`）。單模組路徑 `femit==fname==nm` 故與舊行為等價、零回歸。
+   - **6② 端到端 `noc build compiler` 行為閘（⬜ 待辦）**：驗收＝產物執行 `version` 印 `noc v0.0.1-m0`；抽 `tests/` SHS 子集跑 L4。⚠️ 現仍**擋在 h2m 函式本體降級能力**（整包約 **5,749 unsupported**，見 ⑭ 切片 4 註）：`ps.parse`/`ast.str-at` 本體含未支援構造 ⇒ `h2m-lower-func` 回 `''` 不發射、其被呼叫者亦未定義 ⇒ `opt` 報 `use of undefined value`；6① 只解「定義/呼叫名對齊」這一層，本體降級是 M5/M6 的 h2m 能力擴張範疇，非本切片（詳 ⑮）。
 
 **⑫ 本輪不收（留待 M5 後續）**
 
@@ -7250,6 +7265,16 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
 - 多 package 的 `#` 跨包解析（自舉只需 compiler 單包）。
 - `as` 別名重綁（compiler 自身不用；std 跨包導入才需要）。
 - whole-program 降級的體積／重複 emit 優化（未用函式也降級）——可後續改 reachability-based 按需 emit，但非 M5 必須。
+
+### ⑮ 2026-11-15 追記（續）：M5 結構性閘收官現況（package 載入 + 點號呼叫 + emit 名統一；default-param 移除）
+
+> 收 ⑭ 切片 1–5 與 6① 的落地結果（均已在 `ec622ce4`/`c5eed113`/`2a5cfd24` 三 commit 實作並回歸），並記一項語言面變更對 self-host 的影響。
+
+- **package 模組載入 + 多模組 codegen 落地**（`2a5cfd24` `feat(pkg)`，⑭ 切片 2/3/4 的實作輪次；doc 正文 +118 行已隨該 commit 補齊）：`drv.build-package`（路徑解析 + cycle 檢測）回傳入口 + **16 個** compiler 套件模組；`drv.pkg-sigs` 回傳整包全域簽名表（**395** 條）；`drv.pkg-ll` 多模組 body 串接 + `@<mod>.<fn>` 命名 + 合成 `@main`。回歸 `build-package-test` **8/8**、`pkg-sigs-test` **5/5**、`pkg-ll-test` **10/10** 全綠。
+- **點號呼叫經全域 sg 降級**（`c5eed113` ⑭ 切片5 ⑥）：`h2m-lower-expr` 的 CALL 臂對 callee 為 `K-DOT-EXPRESSION` 時查全域簽名表 emit `call @<mod.fn>`（受控切面 `pkg-ll-call-test.no` **5/5** 全綠，實測 `call i64 @testmod-bar` 與 define 符號一致）。
+- **emit 名統一（⑭ 切片6 ①，`ec622ce4`）**：`h2m-sigs` 增 `femit` 欄、`h2m-sig-add` 增 `emit` 形參；CALL 臂查表命中後 `cn` 覆寫為 `sg.femit[si]` ⇒ call 與 define 符號一致，`.ll` 可連結、`opt -passes=verify` 乾淨通過（無 `use of undefined value`）；單模組路徑 `femit==fname==nm` 故零回歸。
+- 🔴 **default-param 移除對 self-host 的影響**（`31cce183` `refactor(compiler): remove support for default parameter values in function signatures`）：Go 編譯器**移除函式簽名預設參數支援** ⇒ 自舉 `h2m.no` 的 s92（預設參數呼叫點回填，§5.3.4.du）成**死碼**並已於本 commit 移除（`compiler/src/h2m.no` -81、`compiler/tests/h2m-test.no` -34）。⇒ s92 在本文「✅ 已實作」記錄**改標為 Moot**——語言已無預設參數，self-host 無需處理；相關 SHS 回歸（`default-fill`/`default-trailing` 等）隨之失效並已清理。
+- **版本與現狀**：`v0.4.20 → v0.4.21 → v0.4.22 → v0.4.23`（HEAD `826bf5af`）。`noc build compiler` 仍未產出可執行二進位——**6② 端到端閘仍擋在 h2m 函式本體降級能力**（整包約 **5,749 unsupported**，見 ⑭ 切片 4 註）：`ps.parse`/`ast.str-at` 本體含未支援構造 ⇒ `h2m-lower-func` 回 `''` 不發射、其被呼叫者亦未定義 ⇒ `opt` 報 `use of undefined value`；6① 只解「定義/呼叫名對齊」層，本體降級屬 M5/M6 的 h2m 能力擴張，非本切片。unsup 判讀須同看 `define` 行數（⑭ ⑨）。
 
 ---
 
