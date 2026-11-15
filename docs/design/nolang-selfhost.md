@@ -7257,7 +7257,7 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
    - 回歸零新增：`cg-test` **359/359**、`cg-runtime-test` **86/86**、`drv-build-test` **63/63**、`pkg-sigs-test` **5/5**、`build-package-test` **8/8**、`h2m-test` **1080/1086**（6 紅為既有 `s98 optmatch`）、`pkg-ll-test` **9/10**（1 紅為既有 `@h2m-lower-module`，均與本切片無關）。
 6. **端到端閘 + L4 對拍**（⑩）——拆兩步：
    - **6① emit 名統一（✅ 已實作，2026-11-13，`ec622ce4`）**：`h2m-sigs` 增 `femit` 欄、`h2m-sig-add` 增 `emit` 形參；`h2m-lower-expr` 的 CALL 臂查表命中後把 `cn` 覆寫為 `sg.femit[si]` ⇒ call 符號與 define 符號一致（點號前綴 `drv.build-package`/`ps.parse` 本就 `femit==fname==nm`；連字號前綴 `h2m-sig-add` 經 `femit` 取回裸名），`.ll` 可連結、`opt -passes=verify` 乾淨通過（受控 `pkg-ll-call-test.no` **5/5** 全綠、無 `use of undefined value`）。單模組路徑 `femit==fname==nm` 故與舊行為等價、零回歸。
-   - **6② 端到端 `noc build compiler` 行為閘（⬜ 待辦）**：驗收＝產物執行 `version` 印 `noc v0.0.1-m0`；抽 `tests/` SHS 子集跑 L4。⚠️ 現仍**擋在 h2m 函式本體降級能力**（整包約 **5,749 unsupported**，見 ⑭ 切片 4 註）：`ps.parse`/`ast.str-at` 本體含未支援構造 ⇒ `h2m-lower-func` 回 `''` 不發射、其被呼叫者亦未定義 ⇒ `opt` 報 `use of undefined value`；6① 只解「定義/呼叫名對齊」這一層，本體降級是 M5/M6 的 h2m 能力擴張範疇，非本切片（詳 ⑮）。
+   - **6② 端到端 `noc build compiler` 行為閘（🟡 S0→noc 已達成 2026-11-15，見 ⑯；noc→noc 定點仍未收）**：驗收＝產物執行 `version` 印 `noc v0.0.1-m0`；抽 `tests/` SHS 子集跑 L4。**S0→noc 已達成**：修掉 `ck.no` 的 option→`vec.push` 潜在 bug 後，`no build compiler` rc=0、產物 `version` 實測印 `noc v0.0.1-m0`（⑭ ⑩ 表的改後預期已兑現，詳 ⑯）。⚠️ **noc→noc 定點（DR-1 s2/s3）仍未收**：S1 自編出的 S2 為 34,632 B、`version` 不印——仍擋在 h2m 函式本體降級能力（整包約 **5,749 unsupported**，見 ⑭ 切片 4 註）：`ps.parse`/`ast.str-at` 本體含未支援構造 ⇒ `h2m-lower-func` 回 `''` 不發射、其被呼叫者亦未定義；本體降級屬 M5/M6 的 h2m 能力擴張範疇（詳 ⑯）。
 
 **⑫ 本輪不收（留待 M5 後續）**
 
@@ -7274,7 +7274,119 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
 - **點號呼叫經全域 sg 降級**（`c5eed113` ⑭ 切片5 ⑥）：`h2m-lower-expr` 的 CALL 臂對 callee 為 `K-DOT-EXPRESSION` 時查全域簽名表 emit `call @<mod.fn>`（受控切面 `pkg-ll-call-test.no` **5/5** 全綠，實測 `call i64 @testmod-bar` 與 define 符號一致）。
 - **emit 名統一（⑭ 切片6 ①，`ec622ce4`）**：`h2m-sigs` 增 `femit` 欄、`h2m-sig-add` 增 `emit` 形參；CALL 臂查表命中後 `cn` 覆寫為 `sg.femit[si]` ⇒ call 與 define 符號一致，`.ll` 可連結、`opt -passes=verify` 乾淨通過（無 `use of undefined value`）；單模組路徑 `femit==fname==nm` 故零回歸。
 - 🔴 **default-param 移除對 self-host 的影響**（`31cce183` `refactor(compiler): remove support for default parameter values in function signatures`）：Go 編譯器**移除函式簽名預設參數支援** ⇒ 自舉 `h2m.no` 的 s92（預設參數呼叫點回填，§5.3.4.du）成**死碼**並已於本 commit 移除（`compiler/src/h2m.no` -81、`compiler/tests/h2m-test.no` -34）。⇒ s92 在本文「✅ 已實作」記錄**改標為 Moot**——語言已無預設參數，self-host 無需處理；相關 SHS 回歸（`default-fill`/`default-trailing` 等）隨之失效並已清理。
-- **版本與現狀**：`v0.4.20 → v0.4.21 → v0.4.22 → v0.4.23`（HEAD `826bf5af`）。`noc build compiler` 仍未產出可執行二進位——**6② 端到端閘仍擋在 h2m 函式本體降級能力**（整包約 **5,749 unsupported**，見 ⑭ 切片 4 註）：`ps.parse`/`ast.str-at` 本體含未支援構造 ⇒ `h2m-lower-func` 回 `''` 不發射、其被呼叫者亦未定義 ⇒ `opt` 報 `use of undefined value`；6① 只解「定義/呼叫名對齊」層，本體降級屬 M5/M6 的 h2m 能力擴張，非本切片。unsup 判讀須同看 `define` 行數（⑭ ⑨）。
+- **版本與現狀**：`v0.4.20 → v0.4.21 → v0.4.22 → v0.4.23`（HEAD `826bf5af`；本節寫就時 HEAD 已至 `571c658a` v0.4.24）。`noc build compiler` 仍未產出可執行二進位——**6② 端到端閘仍擋在 h2m 函式本體降級能力**（整包約 **5,749 unsupported**，見 ⑭ 切片 4 註）：`ps.parse`/`ast.str-at` 本體含未支援構造 ⇒ `h2m-lower-func` 回 `''` 不發射、其被呼叫者亦未定義 ⇒ `opt` 報 `use of undefined value`；6① 只解「定義/呼叫名對齊」層，本體降級屬 M5/M6 的 h2m 能力擴張，非本切片。unsup 判讀須同看 `define` 行數（⑭ ⑨）。⟶ **此「未產出二進位」判斷已於 2026-11-15 當日被 ⑯ 推翻（只改 `ck.no` 兩行即 rc=0）**：根因不是 h2m 本體降級，而是 S0 codegen 一道硬檢查被 v0.4.21 點亮後暴露的 source 潜在 bug。保留本段作為「誤判紀實」，最新狀態見 ⑯。
+
+---
+
+### ⑯ 2026-11-15 追記（續）：6② S0→noc 端到端閘達成——`ck.no` option→`vec.push` 潜在 bug 修復（**實作輪次**，HEAD `571c658a` v0.4.24）
+
+> 本節是 as-built：所有數字為本輪實測。起因是接手 ⑮ 的 6②「端到端閘」待辦後先跑 `no build compiler`，發現真實第一道牆**不是**之前判定的 h2m 本體降級（5,749 unsupported），而是更早的一層——S0（Go `no`）根本编不過 `compiler/` 源碼。
+
+**① 真實失敗形態（推翻 ⑮ 的判定）**
+
+```
+./bin/no build -o /tmp/noc-e2e compiler        # RC=1
+Error: compilation error: MIR codegen could not handle .../compiler/main.no:
+  EmitLLVM: MIR->LLVM: vec.push [in check]: cannot push an option value of type
+  '%option_i64' into '[]i64' (element type 'i64'): unwrap it first ... [zodppsnm]
+```
+
+- `c.fname[c.cf]="check"` ⇒ 出錯函式為 `compiler/src/ck.no:51` 的 `check`。
+- 该诊断由 `bd2ac046`（v0.4.21，2026-11-14 19:18）引入於 `src/mir/builtin_call.go:2154-2167`，是**真實的記憶體安全修復**：option 寬度（16/24 B）寫進 i64 元素（8 B）緩衝區會堆溢位（註釋引 h2m-test s98 六條紅為證）。
+- 關鍵推論：⑭ ① 記錄 v0.4.20 時 `no build compiler` rc=0、產 34,632 B ⇒ 此 bug 是**v0.4.21 硬檢查點亮的潜在缺陷**，不是新引入的回歸；此前 vec.push 靜默容忍 option 位元組，錯值一直存在。
+
+**② 根因（`[]i64` 下標讀取回 `?i64` ＋ 無 overflow 註解的算術實參）**
+
+- 最小重現探針實測：`v = xs[i]; out []i64 = []; out.push(v)` 编译失敗（選項捕獲）；改寫成 `v = xs[i]: { ok -> it  -> 0 }` 即通過。⇒ `[]i64` 下標讀取是 `?i64`（與記憶 §5.2 #106、ast.no `child-at`:696 的显式解包一致）。
+- 二分定位（逐行把 push 實參換成常數 `0`）：唯一元凶是 `ck.no:173 defs.push(tbnd)`，`tbnd = ast.aux-at(t, hb + 3)`（:171）。
+- 真正機制：`hb + 3`（及 :180 的 `hb + 10`）是**沒有 `#{overflow=wrap}` 的算術運算式**，回 `?i64`；做為實參傳入 `ast.aux-at` 時，checker 放行但 MIR 捕獲成 option，污染回值 `tbnd`/`mcond`。對比同函式 `hb = hba + 12 * ac`（:166）因赋給局部多次使用而推斷路徑不同，未觸發。
+- 排除项：`ast.kid-at`/`ast.aux-at` 內部的 `v = t.kids[i]` 直接赋值是**紅鯡魚**——把它們改成 match 解包後報錯不變；回退後只修算術實參即 rc=0。故未動這兩個訪問器（避免不必要的行為變更）。
+
+**③ 修復（`compiler/src/ck.no`，唯一改动檔，+4 行）**
+
+```no
+                #{overflow=wrap}
+                tbnd-i = hb + 3
+                tbnd = ast.aux-at(t, tbnd-i)     ; 原: ast.aux-at(t, hb + 3)
+...
+                #{overflow=wrap}
+                mcond-i = hb + 10
+                mcond = ast.aux-at(t, mcond-i)   ; 原: ast.aux-at(t, hb + 10)
+```
+
+- 與既有慣例一致（同函式 `ac = ac + 1`、`pc = pc + 1` 皆帶 `#{overflow=wrap}`）；`hb` 是 arm helper 區的小正偏移基底，`+3`/`+10` 在 i64 範圍內，wrap 與數學語義等價。
+- `:180 mcond-i` 是同模式的潜伏點（本輪未點亮），一併修正。`ast.no` 零改动。
+
+**④ 端到端驗收（實測）**
+
+| 項 | 改前 | 改後 |
+| --- | --- | --- |
+| `no build compiler`（S0→noc） | rc=1、`zodppsnm` | **rc=0，產 `/tmp/noc-e2e` 3,945,512 B** |
+| 產物 `version` | — | **`noc v0.0.1-m0`（rc=0）** ← ⑭ ⑩ 表 6② 改後預期兑現 |
+| 產物 `help` | — | rc=0，列 version/help/tokens/ast/vet/build/run |
+| `ck-test`（自舉） | **RC=1（同 zodppsnm 紅）** | **20/20 全綠** |
+| `h2m-test`（最大） | — | **1085/1085 全綠**（⑮ 記錄的 1080/1086 6 紅已由他輪修掉） |
+| 其餘前端/驅動/codegen 門禁 | — | ck-sig 50/50、diag 7/7、lx 81/81、tok 62/62、util 27/27、ps 49/49、ast 48/48、drv-build 63/63、cg-runtime 86/86、cg-str16 41/41 **全綠** |
+
+- `build-package`/`pkg-sigs`/`pkg-ll`/`pkg-ll-call` 四檔 `signal: abort/trace-BPT trap` 是**預存** host codegen 缺陷（用修復前 `ck.no` 對跑，abort 一致），與本修無關。
+
+**⑤ 自舉定點（DR-1）現況——誠實邊界**
+
+- **S0→S1 已通**：`no build compiler` → 3.9 MB 完整 noc（version 正常）。
+- **S1→S2 部分通**：`/tmp/noc-e2e build compiler` rc=0、產 34,632 B，但 `version` **不印**——即 ⑭ ① 記載的「`#` 導入被忽略」舊症狀復現於自舉路径。S2→S3 rc=0 但**無產物**。
+- ⇒ **DR-1 的 s2/s3 `(rc, sha256(stdout))` 一致定點仍未成立**。⚠️ **歸因已於同日 ⑰ 節精化**：本節原判「根因＝5,749 unsupported 本體降級」過於籠統——⑰ 實測證明第一道牆是 `cmd-build` 只讀單檔 + 讀目錄靜默產 34KB 假殼（`#` 導入被忽略），本體降級是第二道牆；且 5,749 為舊 cov 日誌數字、現行工具鏈 abort 無法覆驗。詳 ⑰。本輪只收「S0 能编出可用 noc」這一層，不跨層誇大。
+- unsup 判讀紀律不變（⑭ ⑨）：須同看 `define` 行數；「abort/unsup 上升」可能是「更多函式被嘗試」而非退步。
+
+---
+
+### ⑰ 2026-11-15 追記（再續）：DR-1 第一道牆重新定位——`cmd-build` 單檔路徑 + 靜默假殼（**偵察輪次**，HEAD `571c658a` v0.4.24）
+
+> 本節是 as-built 偵察：只量測與定位，不改任何原始碼。起因是 ⑯ ⑤ 把 S1→S2 失败籠統歸因為「5,749 unsupported 的 h2m 本體降級」。本輪實測**精化**該判斷：DR-1 有兩層牆，第一層根本不是本體降級，而是 `cmd-build` 的入口路徑缺陷 + 靜默假殼。
+
+**① 決定性對照：S0 與 S1 是兩條完全不同的路徑**
+
+| 執行 | 二進位路徑 | RC | 產物 | `version` |
+| --- | --- | --- | --- | --- |
+| `./bin/no build -o /tmp/check-s0 compiler` | **Go 後端**（忽略 self-host `drv.no`/`h2m.no`） | 0 | 3,945,512 B Mach-O arm64 | 印 `noc v0.0.1-m0` |
+| `/tmp/noc-e2e build -o /tmp/check-s1 compiler` | **self-host** `drv.cmd-build`→`drv.build-to`→`drv.build-ll` | 0 | 34,632 B | **不印**（空殼） |
+
+- 兩個產物大小相差 **113×**；S1 的 34,632 B 與 ⑯ ⑤ 記載的 S2 完全一致 ⇒ 瓶頸在 self-host 路徑，不在 S0。
+
+**② 第一道牆：`cmd-build` 只讀單檔，`#` 導入被靜默忽略**
+
+- `drv.build-ll`（drv.no:365-386）文件註明「只處理單一 .no 檔；**不做** workspace / package / `#` 導入合併」（drv.no:357-359）。
+- `drv.build-to`（drv.no:1047-1072）對傳入的 `path` 直接 `fs.read-bytes(path)`。當 `path='compiler'` 是**目錄**時，讀到的內容不足以 parse 出任何函式定義 ⇒ `h2m-synth-main` 合成一個空 `main` ⇒ 只鏈出 prelude 的 29 個 runtime 符號（`nm /tmp/check-s1` 實測：`_main` 存在但無任何用戶函式，`str_eq`/`vec_push_i64`/`print_*` 等皆在，`version`/help 字串一個都沒有）。
+- 與之對照，整包路徑 `drv.pkg-ll`（drv.no:725）**已實作** `#` 導入解析、`build-package` 遞迴載入（drv.no:424）、全域 `sg` 跨模組呼叫（drv.no:771-816），但 `cmd-build` 從未呼叫它。⇒ 第一道牆是「入口沒接整包路徑」，不是「本體降級能力不足」。
+
+**③ 反證：`h2m` 單檔降級能力其實正常（推翻「全面失效」的隱含假設）**
+
+用 S1 對最小可執行檔做 `build` + 執行，全部成功：
+
+| 源檔 | S1 build | 執行結果 |
+| --- | --- | --- |
+| `exit(42)` | rc=0 | exit code **42** |
+| `f = () (r i64) { r = 7 }` + `exit(f())` | rc=0 | exit code **7**（函式定義＋呼叫可降級） |
+| `print("hi")` + `exit(0)` | rc=0 | 正確印出 `hi` |
+| `compiler/main.no`（含 `#` 導入）| rc=0 但**無產物** | `unsupported constructs: 2`——正是 2 條 `K-USE-STATEMENT`（`#` 導入）|
+| `compiler/src/ck.no` | rc=0 但**無產物** | `unsupported constructs: 21` |
+
+- `h2m-lower-module`（h2m.no:4660）的 `agg.unsup > 0 -> r = ''` 是「全有或全無」策略：只要有 unsup 就清空整模組 IR。單檔 `main.no` 只因 2 條 `#` 導入就被清空 ⇒ 再次指向導入路徑，而非本體構造。
+
+**④ 對 ⑯ ⑤ / ⑮ 的精化（不推翻已達成的 S0→noc）**
+
+- ⑯ ⑤ 與 ⑮ 把 S1→S2 归因為「5,749 unsupported 的 `ps.parse`/`ast.str-at` 本體未降級」。**該數字來源是 11-14 舊 cov 日誌**（`/tmp/h2m-cov.log`）的整包 `pkg-ll` 量測，非單檔路徑。
+- 本輪嘗試用 `cov-measure.no` 復測新數字，仍 `signal: abort trap`（預存 host codegen 缺陷，與 ⑯ 一致）⇒ **5,749 目前無法用現行工具鏈刷新，應標註為「舊量測、待覆驗」**，不應作為第一道牆的當前依據。
+- **兩層牆模型**（本次定位）：
+  - **牆 1（入口層，已定位、未修）**：`cmd-build` 不認目錄 / `#` 導入 + 讀檔失敗靜默產假殼 rc=0。這一道使「 noc 自編 compiler」在還沒碰到本體降級前就已經失敗。
+  - **牆 2（能力層）**：即便接上 `drv.pkg-ll` 整包路徑，仍需直面 h2m 函式本體降級缺口（舊測 5,749，待覆驗）——這是 M5/M6 的 h2m 能力擴張範疇。
+
+**⑤ 可選路徑（本輪不擅改原始碼，留作決策）**
+
+- **路徑 A（消除假殼，低風險）**：讓 `drv.cmd-build` 用 `fs.is-dir`（self-host 簽名表 ck-sig.no:383 已有）偵測目錄 → 改呼叫 `drv.pkg-ll(path, false)`。語義從「假殼 rc=0」變「誠實 rc=1（若仍有 unsup）或真產物」。⚠️ 代價：16 ⑤ 的 S1 `build compiler` rc=0 將不再成立，需同步更新驗收口徑；且 `pkg-ll` 在 S1 self-host 路徑能否跑通未驗證（S0 側 cov/pkg-* 四檔 abort）。
+- **路徑 B（攻牆 2，大工程）**：直接擴張 h2m 本體降級能力（M5/M6），代價高、跨多模組，非單切片可收。
+- **路徑 C（僅記錄）**：維持本節偵察結論，不改原始碼；把 DR-1 明確定義為 M5/M6 範疇的獨立里程碑。
+
+- ⇒ **本輪選択路徑 C**：只固化定位、刷新 ⑯ ⑤ 的歸因精度。S0→noc 已達成（⑯，不變）；noc→noc 定點（DR-1）仍需就 A/B/C 取捨後再動工。
 
 ---
 
@@ -7300,3 +7412,10 @@ i = 0; (i < 5) { print(i) }; print(0)                                ⇒ unsup 0
 ---
 
 **進度快照（2026-11-12，as-built 現況；含 B28 清償、`cg-test` 解鎖、M4-d 接線、`print` 降級、`...` 佔位陳述與字面量插值降級、值位塊匹配降級、`str` 相等/不等降級、解析器欄位尾註釋保真度修復後）**：M0／M1／M2 已完成（L2 全語料 655/655 SAME、L1 675/675 SAME 為 2026-10 歷史觀測）；M3 完成 M3-a 骨架（`drv.cmd-vet`＋`diag.no`）→ M3-b stdsig 表（`ck-sig.no`）→ M3-c 首族與 s82 詞法 ILLEGAL 報告族（§6 M3 列）。**M4 已進入中後端**：M4-a/b 骨架、M4-c 發射層（控制流／循環／字符串／拼接／多參調用／str 跨塊／vec／帶型別簽名／ALU·u64·f64 全族／option 載荷／struct 全族／RC 原語）已落地；`compiler/src` 現有 `h2m.no` 4,447／`mir.no` 481／`cg.no` 2,569／`cg-runtime.no` 531／`cg-rc.no` 180／`link.no` 53／`drv.no` 602／`ps.no` 10,071／`lx.no` 1,645／`tok.no` 413／`asp.no` 915。**M4-e `h2m` AST→MIR 降級已續推至 s99n（件號 54，§5.3.4.ea–.eo）**：s98（2026-11-08）清 cg `OP-SHR` ashr 死臂（h2m 自 s80 恆射 `OP-SHRU`=lshr、cg 刪 ashr 發射臂、cg-test 移位斷言校正）；s99–s99n（2026-11-09，14 節）補 struct 定義／欄位訪問／形參返回值／跨塊槽／跨函數／欄位型別（str·f64·嵌套·`[]i64`）／欄位 RC 取得與 scope-exit 釋放／vec 欄位就地索引；s99m 所有權 provenance（`ownn`·`ownv`·`rdval`·`rdown`·`retset`）＋撤除 `mem==1` 含 CALL 的整函數閘門；s99n 補 vec 半邊（`K-SLICE-LITERAL`⇒`OP-VECNEW`／`OP-VECPUSH`、`@vec_free`、`OP-VEC-FREE = 94`、三條所有權外流門禁、離線 ASan 4/4 無報告）。`a4b7c66f`／`0fbbe684`（11-10）分別扁平化 `asp.no` 規格表、重構 `h2m` struct lowering 與 ownership；`0e055e11`（11-11）重生 `asp.no`（`KIND-COUNT=74`／`STR-COUNT=191`／`INSTR-COUNT=315`，新增 `EmptyStatement`）並補 §5.3.4.ax 的 16B `%str-long` 警示。**門禁（`h2m-test` 6 紅為既有 s98 optmatch，其餘全綠）**：`h2m-test` **1080/1086**、`cg-runtime-test` **86/86**、`cg-str16-test` **41/41**（完整 `.ll` `opt -passes=verify` rc=0＋`clang` e2e 4/4）、`cg-test` **359/359**（⑦ 解鎖並校正 16B 斷言）、`drv-build-test` **63/63**（M4-d＋⑨ print＋⑩ 插值／`...`＋⑪ 值位塊匹配＋⑫ str 相等/不等斷言；`dump` 模式 367 行 `.ll` 過 `opt -passes=verify` rc=0、`clang` 執行 exit=42；`dump-print` 374 行（輸出 `42\nhi`）、`dump-interp` 389 行（輸出 `a=7 b=hi c=7`），皆過 `opt`＋`clang`，輸出逐位元組等於 oracle）⇒ **M4 四個文字門禁全綠**；其餘 L0 抽測見 §11 後 2026-11-12 追記。✅ **§11.2 B28 已於本日清償**：selfhost `%str-long` 已由 24B 同步為 16B `{ i32, i32, i8* }`，prelude／`@str_eq`／`@str_concat` 與 Go `emitPrelude` 逐字相同，`cg.no` 各 op 補齊 `zext`／`trunc`；`%option` 的 24B slot 未變、`?str` 仍 inline 但只佔前 16B（詳 §11 後 ⑥）；**⑦ 再解鎖 `cg-test.no` 並校正 16B 斷言**（詳 §11 後 ⑦）。✅ **⑧ M4-d 接線已於本日落地**：`h2m-lower-module` 合成 `@main`、新增 `link.no`（DR-2 調 clang）、`drv.cmd-build`／`cmd-run` 支援 `-o OUT FILE` 與 `FILE -o OUT` 雙序、`drv-build-test` 16/16、e2e `build`／`run` 與 Go oracle 同值（**exit=42**）（詳 §11 後 ⑧）。✅ **⑨ `print`／`eprint` 已於本日降級**：新增 `OP-PRINT = 95`（kind 8 種）、prelude 補 `@digits`／`@print_i64`／`@print_str`／`@eprint_*`／`@.nl`／`@.sp`（3,214 字元，prelude 總長 7,226→10,440）、`h2m-lower-print` 含值型別／插值擋板／語句位三條誠實門禁、`run` 預設落 `<TMPDIR>/noc-run-<pid>.out`（不再污染語料目錄）；**L4 全語料首度量測（169 檔，串行）**：真 SAME **2**（`ifelse.no`／`colon-loop.no`，本輪由 0 起增益）、空 SAME 4（`tagged-enum-*`，oracle 亦建不過）、DIFF 163 且**無靜默錯碼**（詳 §11 後 ⑨）。✅ **⑩ `...` 佔位陳述＋字面量插值已於本日降級**：`tok.no` 新增 `ELLIPSIS3 = 92`（與範圍運算子 `ELLIPSIS = 65` 分離，擋掉 `[0...n)` 的靜默合法化）、`lx.no` 三點貪婪、`ps.no` 建 `K-EMPTY-STATEMENT`、`h2m` no-op 臂消費（語料 **74 檔**含 `...`）；插值走「三檔分類 + 逐段 `OP-PRINT`」，無 spec 的 `{ident}` 與權威**逐位元組同結果**（`fmt-int(n,'')` 正文即 `n.to_str()`），`{name:spec}`／表達式字段／多實參模板形／`{{` `}}` 一律誠實門禁。量測：`rc==0` 檔 **2 → 4**（新綠 `for.no`、`guard.no`，皆以改前二進制復跑確認為 DIFF ⇒ 淨增益確為 +2）；全語料 unsup 總數 **11,857 → 11,436（−421，−3.6%）**，**86/169 檔**下降（詳 §11 後 ⑩）。✅ **⑪ 值位塊匹配（`r = { c -> v  -> d }`）已於本日降級**：`h2m-scan` 按 LetStatement 節點 id 合成結果槽 `@smv<id>` 並在 entry 統一 `OP-ALLOC`（**不在降級途中補 alloca**——否則迴圈體每迭代新攤一份棧）、`h2m-lower-surface` 加值位分支（逐臂 `OP-STORE`、匯聚 `OP-LOAD`），臂值非 `i64`／臂體非單表達式／`valueCtx` 未置位一律誠實門禁；`h2m-test` 1031/1037 → **1060/1066**、`drv-build-test` 42/42 → **53/53**；L4 真 SAME **4 → 5**（新綠 `build-mo.no`，唯該檔不印輸出 ⇒ 語義那一半由端到端對拍承擔）、全語料 unsup **11,436 → 11,354（−82，−0.7%）**、18/169 檔下降；⚠️ 同時記下 **4 檔 unsup 上升**（值位匹配強制 mem 模式 ⇒ `[]i64` 局部量首次需要槽）與 **B19 的鏈語義分歧**（權威側無兜底臂不短路，本輪不動）（詳 §11 後 ⑪）。✅ **⑫ `str` 相等/不等已於本日降級**：`h2m-lower-expr` 的 infix 分派補 `ok-e` 臂（`==`/`!=` 兩側皆 `TY-STR` ⇒ `OP-STEREQ`/`OP-STNEQ`，`dst` 記 `TY-I64`），**零改 `cg`／零改 `mir`**——兩 op 與 `@str_eq` 早已就位，缺的只是降級臂；同時補 `h2m-ty-of` 的 `str`×`str` 分支（`==`/`!=` ⇒ `TY-I64`、`+`/`-` ⇒ `TY-STR`）——**缺它則 str 比較/拼接只在 `mem==1` 掛**（同一份碼直線式能編、塞進 `cond -> …` 就 5 條 unsup，因槽寬推不出而 `h2m-slot-decl` 計 unsup）；`h2m-test` 1060/1066 → **1080/1086**、`drv-build-test` 53/53 → **63/63**、全語料 unsup **11,354 → 11,163（−191，−1.7%）**、**25/169 檔下降且 0 檔上升**（⑪ 曾有 4 檔上升）、自舉模組 unsup 合計 **2,456 → 2,368（−88）**（`ps.no` 1,268→1,182、`h2m.no` 154→148、`link.no` 24→22）；端到端 `e1.no`（四組 str 比較繞過 `print(bool)`）與權威**逐位元組相同**（詳 §11 後 ⑫）。**s105 修掉一個更底層的保真度缺口**：`ps-is-struct-def` 的「型別後終結符」只認 NEWLINE/COMMA/RBRACE/EOF，`COMMENT` 落進 fallback ⇒ **欄位帶 `;` 尾註釋的結構體整塊退回 `blockUnknown`、從未登記**（Go 的 `parser.nextToken()` 自行跳過 COMMENT，故其 `look()` 根本看不見 COMMENT；`ps-peek-at` 忠實回傳 ⇒ 兩側對「型別後面那個 token」判斷分歧）。修法是新增 `et == tok.COMMENT` 臂並**即時計數**（主迴圈 NEWLINE 臂不計數，只跳過會讓「每個欄位都帶尾註釋」的結構體得 `nfield==0` 仍判非結構體）。影響面：`ast.no` 的 `ast` 12 個欄位裡 3 個帶註釋 ⇒ 該結構體未入表 ⇒ `h2m-struct-find('ast')` 回 -1 ⇒ 155 個函式簽名被判 bad；修後 15 個自舉模組的簽名被拒 **250 → 166**、自舉模組**實際產碼函式數**（`define` 行）`ast.no` 3→8／`lx.no` 2→3；⚠️ 自舉模組 unsup 反而 **2,362 → 3,198**（簽名通了，函式本體才被嘗試，body 內每條不支援各記一條——判據必須同時看 `define` 行數），而**全語料 173 檔逐檔 `diff` 完全相同**（11,315 → 11,315、`unsup==0` 5 → 5，零回歸零增益）；`ps-test` **39/42 → 41/44**（詳 §11 後 ⑬）。**新的最高優先未了項**＝**`#` 模組導入**——⑫ 以臨時插樁量出 unsup 落在哪個 AST 節點型別的直方圖（`K-CALL-EXPRESSION` 611 條／`K-INFIX` 479／`K-IDENTIFIER` 338／`K-EXPRESSION-STATEMENT` 233／`K-LET` 139／`K-USE-STATEMENT` 37…），其中 611 條調用標記**全卡在「點號被調者」＝跨模組**（`cg-runtime.no` 350 條裡 296 條是 `b.push('…')`，而方法本體住在 `util/sb.no`），與 37 條 `K-USE-STATEMENT` 是同一塊；佐證：`noc build compiler` 目前 rc=0 卻只產出 34,632 位元組的空殼（執行 `version` 什麼都不印）⇒ 導入整條被忽略，這已是「模組能互相調用」前面唯一還空著的結構性缺口。其餘殘差：下標讀、`ok(...)` 條件臂、值位匹配的 str/vec 臂值、空 match 臂 `->` 與裸塊陳述 `{ … }`（⑬ 已釘到最小重現）、`[]T` 元素型別只有 `i64`（簽名側 20 條 `62:false`）、B19 的鏈語義裁決。M5–M8 ⬜ 未開始；`?str/?vec` 載荷、`option` match 臂解構、err 構造/tag=2 裝箱、ok 字面量、`print(bool)` 的 bool 型別碼、multi-out、defer／嵌套函數、TY-VOID、>24B 堆裝箱仍待續（§11 記帳 B4/B8/B11/B13/B14/B19/B26；B28 已清償、`cg-test.no` 已解鎖、M4-d 已接線、`print` 已降級、`...` 與插值已降級、值位塊匹配已降級、`str` 相等/不等已降級、解析器欄位尾 `;` 註釋保真度已修）。本文件為持續維護的活文檔——每完成一個里程碑即更新 §6 與本快照，故不再以文檔結束收尾
+
+
+---
+
+**進度快照（2026-11-15，最新；HEAD `571c658a` v0.4.24）**：6② 端到端閘的 **S0→noc 層已達成**——修 `compiler/src/ck.no` 两处无注解算术实参（`hb+3`/`hb+10` 提取為 `#{overflow=wrap}` 局部變數，+4 行）後 `no build compiler` rc=0、產物 `version` 印 `noc v0.0.1-m0`；此前 rc=1 的根因是 v0.4.21 的 vec.push option 硬檢查點亮了 `?i64` 算術實參污染 aux-at 回值的潜在 bug（非 h2m 本體降級，推翻 ⑮ 判定）。門禁：`ck-test` 20/20、`h2m-test` **1085/1085**、前端/驅動/codegen 全綠（詳 ⑯）。⚠️ **DR-1 自舉定點仍未收**：S1 自編 S2 34,632 B 但 `version` 不印、S2→S3 無產物，仍擋在 h2m 函式本體降級（約 5,749 unsupported）——這是 M5/M6 的 h2m 能力擴張範疇，非本輪可跨層解決。pkg-* 四檔 abort 為預存 host codegen 缺陷。
+
+**進度快照（2026-11-15 續，最新；HEAD `571c658a` v0.4.24；⑰ 偵察輪）**：DR-1 第一道牆重新定位——實測證明 `drv.cmd-build` 只讀單檔，`fs.read-bytes(compiler 目錄)` 解析不出函式定義 ⇒ `h2m-synth-main` 合成空 main ⇒ 靜默產 34,632 B 假殼（rc=0、`version` 不印、`nm` 僅 29 個 runtime 符號）；S1 單檔降級能力正常（`exit(42)`→42、函式呼叫→7、`print("hi")`→印 hi），`#` 導入是清空 IR 的元凶（`main.no` 僅 2 條 `K-USE-STATEMENT` unsup 即被 `agg.unsup>0 -> r=""` 全清）。⇒ ⑯/⑮ 的「5,749 本體降級」為第二道牆且係 11-14 舊 cov 數字（現行 cov-measure abort 無法覆驗），非第一道牆。S0→noc 已達成不變（⑯）；noc→noc 定點留 A（cmd-build 接 pkg-ll 消假殼）／B（攻 M5/M6 本體）／C（僅記錄）三路徑決策，本輪選 C、未改原始碼（詳 ⑰）。

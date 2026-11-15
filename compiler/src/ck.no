@@ -168,7 +168,9 @@ check = (t ast, path str) (out []str) {
                 bnd > 0 && ck-def-has(defs, bnd) == 0 -> {
                     defs.push(bnd)
                 }
-                tbnd = ast.aux-at(t, hb + 3)
+                #{overflow=wrap}
+                tbnd-i = hb + 3
+                tbnd = ast.aux-at(t, tbnd-i)
                 tbnd > 0 && ck-def-has(defs, tbnd) == 0 -> {
                     defs.push(tbnd)
                 }
@@ -177,7 +179,9 @@ check = (t ast, path str) (out []str) {
                 ;   parse 期 binding 空 ⇒ 綁定名僅存於臂 Condition：
                 ;   CallExpression{fn: variant, args: 綁定名 Identifier}）——采
                 ;   mcond（aux offset10，節點索引）之 CallExpression 參數 Identifier。
-                mcond = ast.aux-at(t, hb + 10)
+                #{overflow=wrap}
+                mcond-i = hb + 10
+                mcond = ast.aux-at(t, mcond-i)
                 mcond > 0 && ast.kind-at(t, mcond) == kc -> {
                     pd = ast.nd-at(t, mcond)
                     pk0 = pd.kid0
