@@ -100,6 +100,31 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for the language server"
+        },
+        "nolang.fmt.rewrite": {
+          "type": "boolean",
+          "default": true,
+          "description": "Format-on-save applies the same active rewrites as `no fmt` (remove redundant type annotations, ineffective overflow annotations, flip string concatenation). Turn off for layout-only formatting."
+        },
+        "nolang.fmt.redundantTypes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Remove explicit type annotations whose type equals the inferred type (e.g. `x str = ''` -> `x = ''`). Requires nolang.fmt.rewrite."
+        },
+        "nolang.fmt.ineffectiveOverflow": {
+          "type": "boolean",
+          "default": true,
+          "description": "Remove #{overflow=...} annotations whose governed statement contains no integer arithmetic. Requires nolang.fmt.rewrite."
+        },
+        "nolang.fmt.stringConcat": {
+          "type": "boolean",
+          "default": true,
+          "description": "Rewrite string concatenation `+` to Nolang's `-` operator during formatting. Requires nolang.fmt.rewrite."
+        },
+        "nolang.fmt.crossModuleSignatures": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load std/local module signatures while formatting. Disable to fall back to a single-file view (type-driven rewrites and bool-comparison simplification become conservative)."
         }
       }
     }

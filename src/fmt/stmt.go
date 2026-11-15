@@ -468,6 +468,16 @@ func (f *formatter) formatFunctionTypeAlias(ft *parser.FunctionType) {
 }
 
 func (f *formatter) formatLetStatement(s *parser.LetStatement) {
+	// 主動改寫：把冗餘的顯式型別標註視為「未書寫」。只在渲染本陳述期間暫時
+	// 置空 s.Type，結束後還原——呼叫端（LSP 的 doc.AST / 工具鏈）持有的樹不被
+	// 改動，且 boolFacts 已在 formatProgram 開頭收集完畢，不受這裡影響。
+	// s.Type 為 nil 時，下方所有型別輸出分支與「值為 ArrayLiteral」的切片風格
+	// 分支都不觸發，正好與 `no fmt` 先移除標註再重新解析得到的樹一致。
+	if f.redundantTypes != nil && f.redundantTypes[s] {
+		orig := s.Type
+		s.Type = nil
+		defer func() { s.Type = orig }()
+	}
 	f.formatExpression(s.Name)
 	// S3 修復後，lowering 不再就地寫 `s.Type = &NullableType{IsInferred: true}`；
 	// 推斷型別改走 Program.Sem.InferredType side-table。當 AST Type 為空但

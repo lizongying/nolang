@@ -495,6 +495,8 @@ func TestFormatBasic(t *testing.T) {
 			expected: "! a",
 		},
 		{
+			// 以下運算元都是「未知」：單檔 fresh parse 沒有任何 bool 證據。
+			// 依「已知的化簡、未知的不化簡」契約，一律照原樣輸出。
 			name:     "bool cmp eq true",
 			input:    "f == true",
 			expected: "f == true",
@@ -540,22 +542,22 @@ func TestFormatBasic(t *testing.T) {
 			expected: "true == false",
 		},
 		{
-			// `!!` parses as standalone `true` (BooleanLiteral), so the same
-			// simplification must fire: `f == !!` → `f`.
+			// `!!` parses as standalone `true` (BooleanLiteral); the operand
+			// `f` is unknown, so only the shorthand spelling is normalised.
 			name:     "bool cmp bang-bang rhs",
 			input:    "f == !!",
 			expected: "f == true",
 		},
 		{
-			// a bare `!` parses as standalone `false`, so `f == !` → `! f`.
+			// a bare `!` parses as standalone `false`.
 			name:     "bool cmp bang rhs",
 			input:    "f == !",
 			expected: "f == false",
 		},
 		{
 			// regression: `!` before a match/if-then `->` must still parse as
-			// standalone `false` (RARROW terminator) so the whole arm simplifies
-			// to `! f -> return` rather than mis-parsing the `!` as a prefix-NOT.
+			// standalone `false` (RARROW terminator) rather than a prefix-NOT.
+			// `flag` / `other` are unknown operands, so no simplification fires.
 			name: "bool cmp bang rhs before arrow",
 			input: `f = () {
     flag == ! -> return

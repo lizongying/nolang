@@ -1319,6 +1319,8 @@ func fmtCommand(args []string) {
 	}
 
 	remaining := fs.Args()
+	// 一次 fmt 執行共用一組跨模組簽名載入器（按 package 快取）。
+	sigCtx := newFmtSigContext()
 
 	if len(remaining) == 0 {
 		if stdinIsPiped() {
@@ -1340,7 +1342,9 @@ func fmtCommand(args []string) {
 				}
 				return
 			}
-			result, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(original, style)
+			// 與檔案模式共用同一個入口：stdin 也做移除冗餘標註 / stringConcat
+			// 翻轉 / overflow 註解清理，不再只剩排版。
+			result, perrs := computeFmtResult(original, style, sigCtx.configFor(".", original))
 			if len(perrs) > 0 {
 				for _, e := range perrs {
 					fmt.Fprintf(os.Stderr, "format error: %s\n", e)
@@ -1388,7 +1392,7 @@ func fmtCommand(args []string) {
 		}
 
 		if info.IsDir() {
-			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode, *fixClass, style, *mdMode); err != nil {
+			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode, *fixClass, style, *mdMode, sigCtx); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing directory %s: %v\n", arg, err)
 				hadError = true
 			}
@@ -1398,7 +1402,7 @@ func fmtCommand(args []string) {
 				hadError = true
 			}
 		} else {
-			if err := fmtProcessFile(arg, *writeInPlace, *diffMode, *fixClass, style); err != nil {
+			if err := fmtProcessFile(arg, *writeInPlace, *diffMode, *fixClass, style, sigCtx); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing file %s: %v\n", arg, err)
 				hadError = true
 			}
@@ -1409,7 +1413,30 @@ func fmtCommand(args []string) {
 	}
 }
 
-func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
+// computeFmtResult 是 `no fmt` 對一份 .no 原始碼的**唯一**格式化入口：
+// 移除冗餘標註 → stringConcat 翻轉 → overflow 相關性 → 渲染。
+//
+// 長期決策：檔案模式、stdin 管道、目錄檢查模式三條路徑都呼叫它。過去 stdin
+// 只做排版、目錄檢查模式也只做排版，於是「檢查說不用改、-w 卻改了」以及
+// 「管道裡跑 no fmt 與檔案模式結果不同」都是同一個根源。perrs 保留給呼叫端
+// 決定怎麼回報（檔案要帶檔名、stdin 不帶），格式化產物本身只有一份。
+func computeFmtResult(src string, loopStyle nfmt.LoopStyle, cfg nfmt.ParseConfig) (string, []string) {
+	reduced := src
+	if r, ok := fixRedundantTypeSourceWithConfig(src, cfg); ok {
+		reduced = r
+	}
+	lp := parseProgramForFmtWithConfig(reduced, cfg)
+	if lp == nil {
+		// 解析失敗時退回 formatter 自己的 fallback，並把錯誤交回呼叫端。
+		r, perrs := nfmt.FormatFileWithConfig(reduced, cfg, loopStyle)
+		return r, perrs
+	}
+	checker.FixStringConcatOperators(lp, checker.BuildTHIRView(lp))
+	relevant, governed := checker.OverflowAnnotationRelevanceWithExtern(lp, externTablesFromConfig(cfg))
+	return nfmt.FormatProgramWithOverflow(lp, reduced, relevant, governed), nil
+}
+
+func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle, sigCtx *fmtSigContext) error {
 	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
 	if verr := validateFmtPath(filename); verr != nil {
 		return verr
@@ -1423,38 +1450,15 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 	}
 
 	original := string(data)
-	var result string
-	{
-		// 預設 no fmt：先手術式移除冗餘型別標註（與 --fix=redundant 同邏輯），再正常格式化。
-		// 這樣 `no fmt -w` 會自動去掉 `x str = ''` 的 `str`，且 -d 預覽也含此變更。
-		reduced := original
-		if r, ok := fixRedundantTypeSource(original); ok {
-			reduced = r
+	// 跨模組簽名配置：一次算好，餵給「移除冗餘標註 / 預解析 / fallback 格式化」
+	// 三個站點，保證同一份 no fmt 裡的所有解析看到同一張簽名表。
+	cfg := sigCtx.configFor(filename, original)
+	result, perrs := computeFmtResult(original, loopStyle, cfg)
+	if len(perrs) > 0 {
+		for _, e := range perrs {
+			fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
 		}
-		// 先解析（與 formatter 內部解析選項一致）。解析失敗則退回舊路徑回報錯誤；
-		// 解析成功則 best-effort 計算「無效 overflow 註解」資訊，交由 formatter 移除。
-		// OverflowAnnotationRelevance 採超集（保守）設計：不會誤判「有效 overflow」為無效，
-		// 故移除只會發生在註解確實無效之處；即便回傳空集合（程式確實無整數運算）移除也安全。
-		lp := parseProgramForFmt(reduced)
-		if lp == nil {
-			r, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(reduced, loopStyle)
-			if len(perrs) > 0 {
-				for _, e := range perrs {
-					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", filename, e)
-				}
-				return i18n.Errorf("0ik1j9cf", "format failed: %d parse error(s)", len(perrs))
-			}
-			result = r
-		} else {
-			// 預設 no fmt：StringConcat lint（a3yrogp1）報告的 `+` 拼接站點就地
-			// 翻轉為 `-`（formatter 由 AST 重渲染即自動替換，不必再手動改 HINT）。
-			// 判定口徑與 `no vet` 同源（checker.FixStringConcatOperators）；BuildTHIRView
-			// 對 H0 副作用有隔離回滾，後續 overflow 相關性計算與格式化看到的仍是
-			// 同一形狀的糖樹。
-			checker.FixStringConcatOperators(lp, checker.BuildTHIRView(lp))
-			relevant, governed := checker.OverflowAnnotationRelevance(lp)
-			result = nfmt.FormatProgramWithOverflow(lp, reduced, relevant, governed)
-		}
+		return i18n.Errorf("0ik1j9cf", "format failed: %d parse error(s)", len(perrs))
 	}
 
 	if diffMode {
@@ -1538,7 +1542,7 @@ func validateFmtPath(path string) error {
 	return pkg.ValidateSourcePathName(path)
 }
 
-func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle, mdMode bool) error {
+func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle, mdMode bool, sigCtx *fmtSigContext) error {
 	if fixClass != "" {
 		return fmtProcessFixDirectory(dirname, writeInPlace, diffMode, fixClass)
 	}
@@ -1621,12 +1625,10 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 				return nil
 			}
 			src := string(data)
-			// 預設 no fmt：先移除冗餘型別標註再格式化，與 fmtProcessFile 保持一致。
-			reduced := src
-			if r, ok := fixRedundantTypeSource(src); ok {
-				reduced = r
-			}
-			result, perrs := nfmt.FormatFileWithErrors(reduced)
+			// 檢查模式與檔案模式共用同一份簽名配置**與同一個格式化入口**，
+			// 否則「檢查說不用改、真跑 -w 卻改了」會在同一份檔案上分歧。
+			cfg := sigCtx.configFor(path, src)
+			result, perrs := computeFmtResult(src, loopStyle, cfg)
 			if len(perrs) > 0 {
 				for _, e := range perrs {
 					fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, e)
@@ -1648,7 +1650,7 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			}
 			return nil
 		}
-		if ferr := fmtProcessFile(path, writeInPlace, diffMode, fixClass, loopStyle); ferr != nil && firstErr == nil {
+		if ferr := fmtProcessFile(path, writeInPlace, diffMode, fixClass, loopStyle, sigCtx); ferr != nil && firstErr == nil {
 			firstErr = ferr
 		}
 		return nil
@@ -1827,11 +1829,15 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 // 保持一致，否則「先解析算 overflow 相關性、再交給 formatter 重解析」的兩次
 // 解析會看到不同形狀的樹。
 func parseProgramForFmt(src string) *parser.Program {
-	lx := lexer.New(src)
-	p := parser.New(lx)
-	p.SkipLowering = true
-	program := p.ParseProgram()
-	if len(p.Errors()) > 0 {
+	return parseProgramForFmtWithConfig(src, nfmt.ParseConfig{})
+}
+
+// parseProgramForFmtWithConfig 同上，但在 ParseProgram 之前套用跨模組簽名配置。
+// 直接復用 nfmt.ParseSourceWithConfig，讓 CLI 的預解析與 fmt 內部解析共用
+// 同一份注入協定，不會再出現「一邊注入、一邊裸 parse」的樹形狀漂移。
+func parseProgramForFmtWithConfig(src string, cfg nfmt.ParseConfig) *parser.Program {
+	program, errs := nfmt.ParseSourceWithConfig(src, cfg)
+	if len(errs) > 0 {
 		return nil
 	}
 	return program
@@ -2573,21 +2579,24 @@ type fmtRemoval struct {
 // 份語料上兩形態逐條相同，且三個 fixture（overflow / redundant / match）都確認能
 // 觸發對應 fix（尺子非空洞）。
 func fixRedundantTypeSource(src string) (string, bool) {
-	lx := lexer.New(src)
-	p := parser.New(lx)
-	p.SkipLowering = true
-	program := p.ParseProgram()
-	if len(p.Errors()) > 0 {
+	return fixRedundantTypeSourceWithConfig(src, nfmt.ParseConfig{})
+}
+
+// fixRedundantTypeSourceWithConfig 同上，但解析時注入跨模組簽名，讓
+// checker 的型別推斷看得見 mod.fn 的回傳型別（見 fmt_signatures.go）。
+func fixRedundantTypeSourceWithConfig(src string, cfg nfmt.ParseConfig) (string, bool) {
+	program, errs := nfmt.ParseSourceWithConfig(src, cfg)
+	if len(errs) > 0 || program == nil {
 		return "", false
 	}
-	results := checker.ValidateRedundantTypeAnnotation(program)
+	results := checker.ValidateRedundantTypeAnnotationWithExtern(program, externTablesFromConfig(cfg))
 	if len(results) == 0 {
 		return "", false
 	}
 	lineStarts := buildLineStarts(src)
 	var removals []fmtRemoval
 	for _, r := range results {
-		node := findRedundantTypeNode(program, r.Line, r.Column)
+		node := parser.FindLetByTypePos(program, r.Line, r.Column)
 		if node == nil {
 			continue
 		}
@@ -2908,7 +2917,7 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 	lineStarts := buildLineStarts(src)
 	var removals []fmtRemoval
 	for _, pp := range positions {
-		node := findRedundantTypeNode(program, pp.line, pp.col)
+		node := parser.FindLetByTypePos(program, pp.line, pp.col)
 		rm, ok := computeRedundantTypeRemoval(src, node, lineStarts)
 		if !ok {
 			continue
@@ -2988,65 +2997,6 @@ func fixRedundantTypeInFileWithVet(filename, src string) (string, bool) {
 // findRedundantTypeNode 在程式中尋找「型別標註位置恰好為 (line, col)」的 LetStatement。
 // 與 checker.ValidateRedundantTypeAnnotation 的報告位置對齊（該報告的 Line/Column 即取自
 // s.Type.Pos()），因此能精準定位要移除的型別節點。
-
-func findRedundantTypeNode(program *parser.Program, line, col int) *parser.LetStatement {
-	var found *parser.LetStatement
-	var walk func(stmts []parser.Statement)
-	walk = func(stmts []parser.Statement) {
-		for _, s := range stmts {
-			if s == nil {
-				continue
-			}
-			if ls, ok := s.(*parser.LetStatement); ok {
-				if ls.Type != nil && ls.Type.Pos().Line == line && ls.Type.Pos().Column == col {
-					found = ls
-					return
-				}
-			}
-			switch v := s.(type) {
-			case *parser.FunctionDefinition:
-				if v.Body != nil {
-					walk(v.Body.Statements)
-				}
-			case *parser.ForStatement:
-				if v.Init != nil {
-					walk([]parser.Statement{v.Init})
-				}
-				if v.Update != nil {
-					walk([]parser.Statement{v.Update})
-				}
-				if v.Body != nil {
-					walk(v.Body.Statements)
-				}
-			case *parser.BlockStatement:
-				walk(v.Statements)
-			case *parser.ExpressionStatement:
-				if ie, ok := v.Expression.(*parser.IfExpression); ok {
-					if ie.Consequence != nil {
-						walk(ie.Consequence.Statements)
-					}
-					if ie.Alternative != nil {
-						walk(ie.Alternative.Statements)
-					}
-				}
-				// S4 糖形態：match 的臂體是 SurfaceMatch 的直接子節點，與上面
-				// 的 IfExpression 分支同理由必須下鑽（臂內的冗餘標註否則定位不到）。
-				if sm, ok := v.Expression.(*parser.SurfaceMatch); ok {
-					parser.WalkSurfaceMatchArmBodies(sm, walk)
-				}
-			case *parser.LetStatement:
-				if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
-					walk(fl.Body.Statements)
-				}
-				if sm, ok := v.Value.(*parser.SurfaceMatch); ok {
-					parser.WalkSurfaceMatchArmBodies(sm, walk)
-				}
-			}
-		}
-	}
-	walk(program.Statements)
-	return found
-}
 
 // buildLineStarts 回傳每行（1-based）起始的 byte 偏移；lineStarts[i] 為第 i+1 行的起點。
 func buildLineStarts(src string) []int {

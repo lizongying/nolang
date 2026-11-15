@@ -1054,26 +1054,56 @@ under [Control Flow](#control-flow) — same tokens, different context.
 
 - **Standalone literals normalize to the keyword spelling.** `c = !!` → `c = true`,
   `c = !` → `c = false`.
-- **Redundant boolean comparisons collapse.** When exactly one operand of `==`
-  / `!=` is a boolean literal, the formatter emits the simplified form:
+- **Known simplifies, unknown does not.** When exactly one operand of `==` /
+  `!=` is a boolean literal AND the other operand can be **proven to be a bool
+  value**, the formatter emits the simplified form. `no fmt`, LSP, `no build`
+  and `no vet` share the `build.FmtSigLoader` signature view (baked-in std
+  tables + local modules reached via `use` / `#` + EnumVariants), injected
+  before the fresh `SkipLowering` parse via `SemRebuildConfig.Apply`. Three
+  sources count as proof:
 
-  | Source                          | Formatted    |
-  | ------------------------------- | ------------ |
-  | `f == true` / `f == !!`        | `f`          |
-  | `f == false` / `f == !`        | `! f`        |
-  | `f != true` / `f != !!`        | `! f`        |
-  | `f != false` / `f != !`        | `f`          |
-  | `true == f` (mirrored lhs)      | `f`          |
+  1. An explicit type annotation: `b bool = true`, parameter `(b bool)`.
+  2. A boolean literal assignment: `flag = true` / `flag = false`.
+  3. A call to a function whose declared result is `bool`: **defined in this
+     file** (e.g. `bytes-eq = ... (eq bool)`), or visible through the
+     signature table (e.g. std `args.has-flag`, a local `helper.is-ok`).
+     A call whose result type the table cannot resolve stays unknown.
+
+  | Source (`b` below is a "known" variable) | Formatted |
+  | ---------------------------------------- | --------- |
+  | `b == true` / `b == !!`                  | `b`       |
+  | `b == false` / `b == !`                  | `! b`     |
+  | `b != true` / `b != !!`                  | `! b`     |
+  | `b != false` / `b != !`                  | `b`       |
+  | `true == b` (mirrored lhs)               | `b`       |
 
   The `!=` operator simply flips the polarity. `true == false` (both literals)
-  is left untouched.
-- **Works inside `->` arms / standalone if-then conditions**: `flag == ! ->
-  return` → `! flag -> return`.
-- **Precedence-safe negation**: when the surviving operand is not an atomic /
-  postfix expression it is parenthesized so the emitted `!` cannot re-bind —
-  `a + b == false` → `! (a + b)`, never `! a + b`. Negation is written `! `
-  (with a space) to match the prefix-operator convention, which keeps `no fmt`
-  idempotent.
+  is left untouched, and so is a bare name with no bool evidence (`f == true`).
+- **`?T` and every unknown operand keep `== true` / `== false`**: options,
+  cross-module calls whose result type the signature table cannot resolve,
+  bare names, dot access, call expressions and arithmetic results. A bare
+  `x` / `! x` used as a control-flow guard triggers an MIR "option-as-i1"
+  codegen crash — v0.3.3 reverted the entire rule for this reason
+  (`8a8ecb59`). 2026-11-15 restored it under a *positive proof* rule,
+  replacing the old "no `?T` visible ⇒ must be a value" inference. On the
+  same day `no fmt` and LSP gained cross-module signatures too, so option
+  results such as `fs.write-str(...)` (`?bool`) are **visible** and are
+  stopped by the option hard gate — not by being invisible. An option is an
+  **independent hard gate** (`boolOperandIsOptionTyped`) checked before the
+  bool value proof, so it is never simplified whether or not the annotation
+  survives: both `ok ?bool = fs.write-str(...)` and
+  `ok = fs.write-str(...)` keep the comparison. Removing redundant type
+  annotations is an intended, correct part of `no fmt`
+  (`fixRedundantTypeSource`); do not disable that removal to preserve option
+  detection. Regression tests: `src/fmt/bool_comparison_test.go`,
+  `src/fmt/signatures_test.go`, `src/lsp/fmt_gate_test.go`.
+- **Works inside `->` arms / standalone if-then conditions** (for known
+  variables): `b == ! -> return` → `! b -> return`.
+- **Precedence-safe negation**: negation is written `! ` (with one space) to
+  match the prefix-operator convention. Today every provable operand is an
+  identifier, so `! ` cannot re-bind; the implementation still keeps the
+  parenthesis guard for non-atomic operands (`! (a + b)`, never `! a + b`) in
+  case the proof rule is widened later; this keeps `no fmt` idempotent.
 
 ### Functions
 

@@ -16,7 +16,6 @@ import (
 	nolangfmt "github.com/lizongying/nolang/fmt"
 	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/i18n/catalog"
-	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 	"go.lsp.dev/jsonrpc2"
 )
@@ -33,6 +32,9 @@ type Server struct {
 	// startup — otherwise "the editor says zh-CN" and "the project ships
 	// locales/zh-cn.noml" could disagree about which file wins.
 	projectDirs []string
+	// fmtCfg 是 format-on-save 的行為開關，預設與 CLI `no fmt` 一致（見
+	// fmt_config.go）。客戶端可在 initialize 或 didChangeConfiguration 覆寫。
+	fmtCfg *fmtConfigState
 }
 
 func NewServer() *Server {
@@ -40,6 +42,7 @@ func NewServer() *Server {
 		documents:   NewDocumentManager(),
 		shutdown:    false,
 		projectDirs: catalog.ProjectDirs(),
+		fmtCfg:      newFmtConfigState(),
 		capabilities: ServerCapabilities{
 			TextDocumentSync: &TextDocumentSyncOptions{
 				OpenClose:         true,
@@ -90,6 +93,10 @@ func (s *Server) handleInitialize(params InitializeParams) (any, error) {
 	s.mu.Lock()
 	s.shutdown = false
 	s.mu.Unlock()
+
+	// 客戶端可在 initializationOptions 裡覆寫格式化開關；未提供時保留
+	// DefaultFmtConfig（與 CLI 一致的主動改寫）。
+	s.fmtCfg.apply(params.InitializationOptions)
 
 	// The client's locale outranks the machine's. An editor that runs in
 	// English while $LANG is zh_CN would otherwise get Chinese diagnostics and
@@ -177,57 +184,57 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 			// duplicated Validate* + Diagnostic construction that was here
 			// before (and had duplicate calls to ValidateUninitOutputParams
 			// and ValidateInterfaceImplementation).
-		lints := checker.RunAllLints(prog, checker.LintOptions{
-			SourcePath:      docPath,
-			RootDir:         docDir,
-			LightweightMode: true,
-		})
+			lints := checker.RunAllLints(prog, checker.LintOptions{
+				SourcePath:      docPath,
+				RootDir:         docDir,
+				LightweightMode: true,
+			})
 			for _, l := range lints {
 				endChar := uint32(l.Column)
 				if l.EndColumn > 0 {
 					endChar = uint32(l.EndColumn - 1)
 				}
-			var sev int
-			var tags []DiagnosticTag
-			var code any
-			switch l.Severity {
-			case checker.LintError:
-				sev = DiagnosticSeverityError
-			case checker.LintWarning:
-				sev = DiagnosticSeverityWarning
-			case checker.LintHint:
-				sev = DiagnosticSeverityHint
-				// Unused variables carry the Unnecessary tag for IDE
-				// strikethrough; RunAllLints marks them as "hint" +
-				// source "nolang-lint" with message containing
-				// "is defined but never used".
-				if strings.Contains(l.Message, "is defined but never used") {
-					tags = []DiagnosticTag{DiagnosticTagUnnecessary}
+				var sev int
+				var tags []DiagnosticTag
+				var code any
+				switch l.Severity {
+				case checker.LintError:
+					sev = DiagnosticSeverityError
+				case checker.LintWarning:
+					sev = DiagnosticSeverityWarning
+				case checker.LintHint:
+					sev = DiagnosticSeverityHint
+					// Unused variables carry the Unnecessary tag for IDE
+					// strikethrough; RunAllLints marks them as "hint" +
+					// source "nolang-lint" with message containing
+					// "is defined but never used".
+					if strings.Contains(l.Message, "is defined but never used") {
+						tags = []DiagnosticTag{DiagnosticTagUnnecessary}
+					}
 				}
-			}
-		// 有號整數相減溢出提示帶固定 Code，供 code action 識別並提供
-		// 「插入 #{overflow = wrap|clamp0}」quickfix。
-		if l.Source == "nolang-overflow" {
-			code = "overflow-wrap"
-		}
-		// 無效 overflow 註解（管轄陳述不含整數運算）帶固定 Code，供 code action
-		// 識別並提供「移除 #{overflow}」quickfix。
-		if l.Source == "nolang-overflow-ineffective" {
-			code = "overflow-ineffective"
-		}
-		diagnostics = append(diagnostics, Diagnostic{
-			Range: Range{
-				Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
-				End:   Position{Line: uint32(l.Line - 1), Character: endChar},
-			},
-			Severity: sev,
-			Code:     code,
-			Source:   l.Source,
-			Tags:     tags,
-			Message:  l.Message,
-			Fixes:    l.Fixes,
-			RelatedInformation: relatedFromFixes(l.Fixes, uri, l),
-		})
+				// 有號整數相減溢出提示帶固定 Code，供 code action 識別並提供
+				// 「插入 #{overflow = wrap|clamp0}」quickfix。
+				if l.Source == "nolang-overflow" {
+					code = "overflow-wrap"
+				}
+				// 無效 overflow 註解（管轄陳述不含整數運算）帶固定 Code，供 code action
+				// 識別並提供「移除 #{overflow}」quickfix。
+				if l.Source == "nolang-overflow-ineffective" {
+					code = "overflow-ineffective"
+				}
+				diagnostics = append(diagnostics, Diagnostic{
+					Range: Range{
+						Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
+						End:   Position{Line: uint32(l.Line - 1), Character: endChar},
+					},
+					Severity:           sev,
+					Code:               code,
+					Source:             l.Source,
+					Tags:               tags,
+					Message:            l.Message,
+					Fixes:              l.Fixes,
+					RelatedInformation: relatedFromFixes(l.Fixes, uri, l),
+				})
 			}
 		}
 	}
@@ -693,21 +700,20 @@ func getWordBeforePosition(text string, position Position) string {
 	return line[start : end+1]
 }
 
-// formatNolangCode formats Nolang source. The underlying formatter
-// (fmt.FormatFile) guarantees the result ends with exactly one trailing
-// newline (EOF blank line), so both explicit formatting and format-on-save
-// enforce the project's trailing-newline rule. Callers
-// (handleTextDocumentFormatting / handleTextDocumentWillSaveWaitUntil) already
-// bail out on parse errors, so unparseable input is never rewritten here.
-// formatNolangCode reformats a document. It reuses the AST the document manager
-// already parsed for indexing (doc.AST) instead of re-lexing and re-parsing the
-// whole file on every format/save. When the AST is unavailable (e.g. the last
-// parse had errors), it falls back to parsing the text itself.
-func formatNolangCode(doc *TextDocument) string {
-	if doc.AST != nil {
+// formatNolangCode reformats a document according to the active FmtConfig.
+// Both callers (handleTextDocumentFormatting / handleTextDocumentWillSaveWaitUntil)
+// already bail out on parse errors, so unparseable input is never rewritten.
+//
+// 純排版（rewrite=false）且簽名視野不變時，直接複用索引用的 doc.AST，零額外
+// parse。一旦開啟主動改寫，就必須在一棵 fresh parse 的臨時樹上作業：
+// FixStringConcatOperators 會就地改 AST，直接拿 doc.AST 會污染 hover / 補全，
+// 且「省略冗餘標註」的渲染結果與緩衝區文字不同，不能讓索引樹繼續代表它。
+// format-on-save 不是每鍵觸發，多一次 parse 的代價可接受。
+func formatNolangCode(doc *TextDocument, cfg nolangfmt.ParseConfig, c FmtConfig) string {
+	if !c.Rewrite && c.CrossModuleSignatures && doc.AST != nil {
 		return nolangfmt.FormatProgram(doc.AST, doc.Text)
 	}
-	return nolangfmt.FormatFile(doc.Text)
+	return rewriteAndFormat(doc.Text, cfg, c)
 }
 
 func computeTextEdits(original, formatted string) []TextEdit {
@@ -736,14 +742,18 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	if err != nil {
 		return nil, err
 	}
-	// If the document currently has parse errors, do NOT format.
-	// Returning an empty edit list (rather than calling format) prevents
-	// the formatter from re-emitting a half-parsed AST and corrupting the
-	// user's source on save.
-	if s.hasParseErrors(doc.Text) {
+	// The guard reads the SAME parse result that produced the editor's live
+	// diagnostics (see ensureFormatSnapshot) — no second parse with a different
+	// signature view. On diagnostics we return empty edits so the formatter
+	// never re-emits a half-parsed AST over the user's source on save.
+	snap, err := s.ensureFormatSnapshot(params.TextDocument.URI)
+	if err != nil {
+		return nil, err
+	}
+	if len(snap.errs) > 0 {
 		return []TextEdit{}, nil
 	}
-	formatted := formatNolangCode(doc)
+	formatted := formatNolangCode(doc, snap.cfg, s.fmtCfg.get())
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
@@ -756,13 +766,16 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 	if err != nil {
 		return nil, err
 	}
-	// Same guard as the synchronous formatting handler: skip format on
-	// parse errors so the editor doesn't silently overwrite the file with
-	// mangled output.
-	if s.hasParseErrors(doc.Text) {
+	// Same guard as the synchronous formatting handler: the editor must not
+	// silently overwrite a file whose live diagnostics are non-empty.
+	snap, err := s.ensureFormatSnapshot(params.TextDocument.URI)
+	if err != nil {
+		return nil, err
+	}
+	if len(snap.errs) > 0 {
 		return []TextEdit{}, nil
 	}
-	formatted := formatNolangCode(doc)
+	formatted := formatNolangCode(doc, snap.cfg, s.fmtCfg.get())
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
@@ -770,14 +783,43 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 	return edits, nil
 }
 
-// hasParseErrors returns true when lexer/parser rejects the document.
-// Used to gate formatter on save so an in-progress edit (parse errors
-// present) is left untouched instead of being mangled by the formatter.
-func (s *Server) hasParseErrors(text string) bool {
-	l := lexer.New(text)
-	p := parser.New(l)
-	p.ParseProgram()
-	return len(p.Errors()) > 0
+// ensureFormatSnapshot returns the parse result that BOTH feeds the editor's
+// live diagnostics and gates format-on-save. Long-term architecture: one
+// ParseDocument call per buffer state produces diagnostics, the sugar AST and
+// the injected signature config; formatting reuses all three instead of
+// parsing again with a possibly different view.
+//
+// didOpen/didChange parse asynchronously, so a save can arrive before the
+// snapshot covers the current text. In that race we synchronously run the SAME
+// ParseDocument — never a bespoke gate parse with its own signature view.
+// Normal saves are zero-extra-parse.
+func (s *Server) ensureFormatSnapshot(uri string) (*parseSnapshot, error) {
+	if s == nil || s.documents == nil {
+		return nil, ErrDocumentNotFound
+	}
+	doc, err := s.documents.GetDocument(uri)
+	if err != nil {
+		return nil, err
+	}
+	if snap := s.documents.snapshotFor(uri); snap != nil && snap.text == doc.Text {
+		return snap, nil
+	}
+	if _, _, err := s.documents.ParseDocument(uri); err != nil {
+		return nil, err
+	}
+	snap := s.documents.snapshotFor(uri)
+	if snap == nil {
+		return nil, ErrDocumentNotFound
+	}
+	return snap, nil
+}
+
+// isPackageManifestEvent 只認 package.noml / workspace.noml（名稱與
+// pkg.PackageManifestName / pkg.WorkspaceFileName 一致）。用字面量而非 import
+// pkg，避免 LSP 再多一條對包管理子的直接依賴。
+func isPackageManifestEvent(e FileEvent) bool {
+	base := filepath.Base(strings.TrimPrefix(e.URI, "file://"))
+	return base == "package.noml" || base == "workspace.noml"
 }
 
 func (s *Server) Handle(method string, params json.RawMessage) (any, error) {
@@ -790,6 +832,36 @@ func (s *Server) Handle(method string, params json.RawMessage) (any, error) {
 			}
 		}
 		return s.handleInitialize(p)
+	case "workspace/didChangeConfiguration":
+		// 執行期改設定：只合併明確出現的欄位，其餘保留現值。
+		var p DidChangeConfigurationParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		s.fmtCfg.apply(p.Settings)
+		return nil, nil
+	case "workspace/didChangeWatchedFiles":
+		// package.noml / workspace.noml 變動時才失效簽名快取。一般 .no 存檔
+		// 不該讓整個 package 的 loader 重建（loaders 會重新 resolveUse 所有
+		// 本地模組）。用戶端沒註冊 watcher 時，快取在 session 內不失效。
+		var p DidChangeWatchedFilesParams
+		if params != nil {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return nil, err
+			}
+		}
+		for _, e := range p.Changes {
+			if isPackageManifestEvent(e) {
+				if s.documents != nil {
+					s.documents.sig.invalidate()
+					s.documents.invalidateParseSnapshots()
+				}
+				break
+			}
+		}
+		return nil, nil
 	case "shutdown":
 		return s.handleShutdown()
 	case "exit":
@@ -945,11 +1017,13 @@ func (s *Server) Handle(method string, params json.RawMessage) (any, error) {
 
 // handleTextDocumentCodeAction 對「整數運算溢出」提示（Code = "overflow-wrap"）
 // 提供五個 quickfix，插入對應的 #{overflow = <mode>} 註解：
-//   wrap   無聲 2's complement 回繞
-//   clamp0 下溢歸零
-//   min    飽和箝位到型別最小值
-//   max    飽和箝位到型別最大值
-//   saturate 飽和箝位到型別區間
+//
+//	wrap   無聲 2's complement 回繞
+//	clamp0 下溢歸零
+//	min    飽和箝位到型別最小值
+//	max    飽和箝位到型別最大值
+//	saturate 飽和箝位到型別區間
+//
 // 五者都把整數運算的預設 option<int> 結果改為普通 int。
 func (s *Server) handleTextDocumentCodeAction(params CodeActionParams) (any, error) {
 	uri := params.TextDocument.URI
@@ -1002,7 +1076,7 @@ func (s *Server) handleTextDocumentCodeAction(params CodeActionParams) (any, err
 				continue
 			}
 			edit := &WorkspaceEdit{Changes: map[string][]TextEdit{uri: {{
-				Range: fixEditRange(fix, diag),
+				Range:   fixEditRange(fix, diag),
 				NewText: fix.Snippet,
 			}}}}
 			title := i18n.P("fxapply1", "Apply fix")

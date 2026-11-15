@@ -637,6 +637,16 @@ sha1 = (data []byte) (hash [20]byte) {
 - 语句以**换行**分隔（不是 `;`；`;` 是注释标记）。`{` 与构造同行，`}` 独占一行。
 - 注解 `#{...}` 独占一行置于目标语句上方，或 trailing 于目标同行。
 - `no fmt` 自动：去重导入、删除裸 `# std/fmt`、按 path→函数→别名排序导入；保留带注释 / 注解的导入块原序。
+- **`.no` 的格式化只有一个来源**：文件模式、stdin 管道、目录检查模式都走
+  `computeFmtResult(src, loopStyle, cfg)`（`src/cmd/no/main.go`），LSP 的 format-on-save
+  则消费 `ParseDocument` 发布的 `parseSnapshot`（`src/lsp/documents.go`）。三条 CLI 路径
+  因此逐字节一致，LSP 的即时诊断与「是否格式化」也读同一份结果。新增格式化行为只改
+  单一来源，**不要**再让某条路径退回去只做排版。
+- **Markdown / MDX 里的 ```no 代码块是刻意的例外**（`no fmt -md`）：逐块单档 parse，
+  只做排版，不注入跨模块签名，也不做移除冗余标注 / stringConcat 翻转 / overflow 注解清理。
+  原因：文档片段没有型别信息，且大量示意伪码本来就不可解析；解析不了的块原样保留并回报
+  `MdSkippedBlock`，刻意写错的示例用 `#{fmt-skip}` 标记。把 Markdown 接进 `computeFmtResult`
+  或签名加载器会破坏整棵 `docs/` 的幂等性 —— 这是设计边界，不是待修缺口。
 
 ### 5.4 惯用写法
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/checker"
+	nfmt "github.com/lizongying/nolang/fmt"
 	"github.com/lizongying/nolang/lexer"
 	pkg "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
@@ -20,6 +21,14 @@ type DocumentManager struct {
 	documents map[string]*TextDocument
 	indices   map[string]*SymbolIndex
 	mu        sync.RWMutex
+	// sig 為所有文件解析提供跨模組簽名配置（與 `no fmt` / `no build` 共用
+	// build.FmtSigLoader）。ParseDocument 把這份 cfg 連同診斷、糖 AST 一起
+	// 發布到 parseSnapshots，format-on-save 直接消費同一份結果。
+	sig *lspSigContext
+	// parseSnapshots 是「一次 ParseDocument 的完整產出」。長期決策：即時診斷
+	// 與 format-on-save 的守門員必須讀同一份結果，不再各自 parse 一次。
+	// 由 m.mu 保護；內容發布後不再修改，讀取方可安全併讀。
+	parseSnapshots map[string]*parseSnapshot
 	// moduleCache caches parsed module files (std / local / dependency) keyed
 	// by absolute path. std modules rarely change within a session, so this
 	// avoids re-parsing the entire std library on every keystroke.
@@ -36,12 +45,40 @@ type moduleCacheEntry struct {
 	source  string
 }
 
+// parseSnapshot 是一次 ParseDocument 的完整產出。text 記錄「這次解析讀到的
+// 原始碼」，因為 didOpen/didChange 的解析是非同步的：存檔請求可能比它先到，
+// 此時不能拿舊診斷去決定要不要格式化（ensureFormatSnapshot 會同步補跑一次
+// 同一個 ParseDocument）。
+type parseSnapshot struct {
+	text string
+	errs []string
+	cfg  nfmt.ParseConfig
+	ast  *parser.Program
+}
+
 func NewDocumentManager() *DocumentManager {
 	return &DocumentManager{
-		documents:   make(map[string]*TextDocument),
-		indices:     make(map[string]*SymbolIndex),
-		moduleCache: make(map[string]*moduleCacheEntry),
+		documents:      make(map[string]*TextDocument),
+		indices:        make(map[string]*SymbolIndex),
+		moduleCache:    make(map[string]*moduleCacheEntry),
+		parseSnapshots: make(map[string]*parseSnapshot),
+		sig:            newLSPSigContext(),
 	}
+}
+
+// snapshotFor 回傳目前快取的解析結果（唯讀視圖，發布後不再修改）。
+func (m *DocumentManager) snapshotFor(uri string) *parseSnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.parseSnapshots[uri]
+}
+
+// invalidateParseSnapshots 在 package.noml / workspace.noml 變動時清掉診斷
+// 快取；下一次 format 會重新解析，不會繼續用舊簽名表判定語義診斷。
+func (m *DocumentManager) invalidateParseSnapshots() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.parseSnapshots = make(map[string]*parseSnapshot)
 }
 
 // parseModuleFile reads and parses a module .no file, caching the result by
@@ -153,6 +190,7 @@ func (m *DocumentManager) RemoveDocument(uri string) error {
 
 	delete(m.documents, uri)
 	delete(m.indices, uri)
+	delete(m.parseSnapshots, uri)
 
 	return nil
 }
@@ -264,6 +302,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	l := lexer.New(text)
 	p := parser.New(l)
 	p.Filename = filenameFromURI(uri)
+	cfg := m.sig.configFor(uri, text)
 	// S4：LSP 主解析改读**糖 AST**（SkipLowering，完全不降糖），与另外两个
 	// 消费方同一形态——fmt/api.go 的 formatProgramWithLoopStyle 与
 	// cmd/no/main.go 的 parseProgramForFmt 都已是 SkipLowering。三者读同一棵
@@ -274,12 +313,12 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	// 会把 `v ?= expr` 改写成不可再解析的 __unwrap_N 區塊，format-on-save 会把它們
 	// 寫回使用者源碼」。SkipLowering 是同一动机的全集：糖节点全部存活，formatter 原样渲染。
 	p.SkipLowering = true
-	// Inject std module function signatures and struct field types so that
-	// the parser can infer types from cross-module method calls (e.g.
-	// tls-c.send() → ?i64), which enables option-match `it` binding injection.
-	funcSigs, structFields := checker.CollectStdModuleSignatures()
-	methodSigs := checker.CollectStdMethodSigs()
-	p.SetExternSignatures(funcSigs, methodSigs, structFields)
+	// 注入跨模組簽名（std 內嵌表 + use/# 指向的本地模組 + EnumVariants），
+	// 與 build.astParseConfig / no fmt 的 FmtSigLoader 同一份協定。
+	// cfg.Apply 會寫回 p.Filename（同值）與 AllowAnonymousFnType（原本即
+	// 為 false），故診斷文字與降糖診斷行為不變；formatter 之後讀的
+	// program.Sem.ExternFuncSigs 也從「只有 std」變成完整視野。
+	cfg.Apply(p)
 	ast := p.ParseProgram()
 
 	errs := p.Errors()
@@ -293,7 +332,7 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		for _, e := range errs {
 			seen[e] = true
 		}
-		errs = append(errs, collectUnwrapLoweringErrors(text, filenameFromURI(uri), seen)...)
+		errs = append(errs, collectUnwrapLoweringErrors(text, filenameFromURI(uri), cfg, seen)...)
 	}
 
 	// Rebuild symbol index
@@ -528,6 +567,10 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 		}
 		d.Dirty = len(errs) > 0
 	}
+	// 診斷、注入配置、糖 AST 一起發布：format-on-save 直接消費這份快照，
+	// 不再另起一次 parse（也就不再有「即時診斷」與「格式閘門」兩套錯誤集合）。
+	// text 必須是本次解析實際讀到的文字，而不是發布當下的 doc.Text。
+	m.parseSnapshots[uri] = &parseSnapshot{text: text, errs: errs, cfg: cfg, ast: ast}
 	m.indices[uri] = index
 	m.mu.Unlock()
 
@@ -862,16 +905,16 @@ func filenameFromURI(uri string) string {
 // 這些錯誤，使用者只能在 `no build` 時才發現。
 //
 // seen 由呼叫端傳入已回報過的錯誤字串，避免與主解析的診斷重複。
-func collectUnwrapLoweringErrors(text, filename string, seen map[string]bool) []string {
+func collectUnwrapLoweringErrors(text, filename string, cfg nfmt.ParseConfig, seen map[string]bool) []string {
 	if !strings.Contains(text, "?=") {
 		return nil
 	}
 	l := lexer.New(text)
 	p := parser.New(l)
 	p.Filename = filename
-	funcSigs, structFields := checker.CollectStdModuleSignatures()
-	methodSigs := checker.CollectStdMethodSigs()
-	p.SetExternSignatures(funcSigs, methodSigs, structFields)
+	// 這棵診斷樹必須與主解析看到同一組簽名，否則 `?=` 的 option 結果
+	// 判斷（依賴函式結果型別）會與 format-on-save 的 AST 互相漂移。
+	cfg.Apply(p)
 	_ = p.ParseProgram()
 
 	var extra []string

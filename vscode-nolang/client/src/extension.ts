@@ -9,6 +9,19 @@ import {
 
 let client: LanguageClient | undefined;
 
+// fmtSettings mirrors FmtConfig in src/lsp/fmt_config.go. Defaults here must
+// stay in sync with DefaultFmtConfig() (all true = same rewrites as `no fmt`).
+function fmtSettings() {
+  const c = vscode.workspace.getConfiguration("nolang.fmt");
+  return {
+    rewrite: c.get<boolean>("rewrite", true),
+    redundantTypes: c.get<boolean>("redundantTypes", true),
+    ineffectiveOverflow: c.get<boolean>("ineffectiveOverflow", true),
+    stringConcat: c.get<boolean>("stringConcat", true),
+    crossModuleSignatures: c.get<boolean>("crossModuleSignatures", true),
+  };
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const binName = process.platform === "win32" ? "lsp.exe" : "lsp";
   const serverPath = context.asAbsolutePath(path.join("server", binName));
@@ -34,6 +47,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "nolang" }],
+    // Sent with `initialize`; the server reads initializationOptions.fmt.
+    initializationOptions: { fmt: fmtSettings() },
     outputChannel: outputChannel,
     // 添加 middleware 來偵錯
     middleware: {
@@ -91,6 +106,18 @@ export function activate(context: vscode.ExtensionContext) {
     .catch((err) => {
       outputChannel.appendLine(`Failed to start client: ${err.message}`);
     });
+
+  // Apply setting changes without restarting the server.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration("nolang.fmt") || !client) {
+        return;
+      }
+      void client.sendNotification("workspace/didChangeConfiguration", {
+        settings: { fmt: fmtSettings() },
+      });
+    }),
+  );
 
   context.subscriptions.push(client);
 }

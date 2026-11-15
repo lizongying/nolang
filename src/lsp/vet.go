@@ -25,6 +25,11 @@ type VetResult struct {
 	TraceID  string
 }
 
+// vetSigContext 在 VetDirectory 逐檔呼叫 VetFile 時快取 loader，避免每個
+// 檔案都重新 resolveUse 同一批本地模組。與 DocumentManager.sig 是同一份
+// 注入協定（build.FmtSigLoader → parser.SemRebuildConfig）。
+var vetSigContext = newLSPSigContext()
+
 // VetFile runs the full LSP validation pipeline on a single .no file
 // and returns all diagnostics found.
 func VetFile(filePath string) []VetResult {
@@ -34,7 +39,7 @@ func VetFile(filePath string) []VetResult {
 			File:     filePath,
 			Severity: "error",
 			Source:   "lsp-vet",
-			TraceID: "ulcnkg06",
+			TraceID:  "ulcnkg06",
 			Message:  fmt.Sprintf("cannot read file: %v", err),
 		}}
 	}
@@ -46,10 +51,11 @@ func VetFile(filePath string) []VetResult {
 	p := parser.New(l)
 	p.Filename = filepath.Base(filePath)
 
-	// Inject std module signatures so the parser can infer cross-module types
-	funcSigs, structFields := checker.CollectStdModuleSignatures()
-	methodSigs := checker.CollectStdMethodSigs()
-	p.SetExternSignatures(funcSigs, methodSigs, structFields)
+	// 注入跨模組簽名：std 內嵌表 + use/# 指向的本地模組 + EnumVariants，
+	// 與 LSP 主解析、no fmt、no build 共用同一份 FmtSigLoader 配置。
+	// 舊寫法只有 std 三表，因此跨本地模組呼叫的結果型別在 LSP vet 裡
+	// 一直是不可見的。cfg.Apply 會寫回同值 Filename，診斷文字不變。
+	vetSigContext.configFor("file://"+absPath, string(source)).Apply(p)
 
 	prog := p.ParseProgram()
 
@@ -149,7 +155,7 @@ func VetDirVerbose(dirPath string, progress VetProgressFunc) []VetResult {
 				File:     dirPath,
 				Severity: "error",
 				Source:   "lsp-vet",
-				TraceID: "4r8qabpu",
+				TraceID:  "4r8qabpu",
 				Message:  fmt.Sprintf("dependency resolution failed: %v", err),
 			}}
 		}
@@ -196,7 +202,7 @@ func VetPathVerbose(path string, progress VetProgressFunc) []VetResult {
 			File:     path,
 			Severity: "error",
 			Source:   "lsp-vet",
-			TraceID: "tynafhwy",
+			TraceID:  "tynafhwy",
 			Message:  fmt.Sprintf("cannot access path: %v", err),
 		}}
 	}

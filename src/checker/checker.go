@@ -3250,6 +3250,14 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 	return results
 }
 func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
+	return ValidateRedundantTypeAnnotationWithExtern(program, ExternSigTables{})
+}
+
+// ValidateRedundantTypeAnnotationWithExtern 同上，但額外併入跨模組簽名表。
+// `no fmt` 現在會注入 std / 本地模組簽名（見 build/fmt_signatures.go）；單檔
+// validator 若仍只看本檔宣告，`x = mod.fn()` 的右值就推不出型別，正是上方
+// 註解記錄的「vet 有、fmt 沒有」。舊函式委託零表，合併 vet 管道行為不變。
+func ValidateRedundantTypeAnnotationWithExtern(program *parser.Program, ext ExternSigTables) []ValidateResult {
 	validationMu.Lock()
 	defer validationMu.Unlock()
 	// inferExprType 的 DotExpression / self 欄位分支讀包級 validationStructFields。
@@ -3264,11 +3272,14 @@ func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
 	// 結束後還原，讓兩條管道看到同一份程式，也不污染後續 lint 步驟。
 	if validationStructFields == nil {
 		validationStructFields = collectStructFields(program)
+		mergeExternStructFields(validationStructFields, ext.StructFields)
 		defer func() { validationStructFields = nil }()
 	}
 	var results []ValidateResult
-	// Build funcTypes for inferExprType
+	// Build funcTypes for inferExprType。先放跨模組簽名，下面本檔宣告直接
+	// 覆蓋同名鍵，維持「本地優先」。
 	validationFuncTypes = make(map[string]string)
+	mergeExternFuncTypes(validationFuncTypes, ext.FuncTypes)
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			// declaredResults drops the implicit `self` receiver of methods, so
@@ -4586,6 +4597,12 @@ func runIntOverflowCore(program *parser.Program, view *THIRView) []ValidateResul
 // 因為這樣只會讓我們「保留」註解、不會「誤刪」有效的註解）。因此本集合是超集性質：
 // 落在集合中的陳述未必真的需要註解，但不在集合中的陳述註解必定無效。
 func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]bool {
+	return StatementsWithIntOverflowWithExtern(program, ExternSigTables{})
+}
+
+// StatementsWithIntOverflowWithExtern 同上，但把跨模組簽名併入單檔推導表。
+// 舊函式委託零表，合併 vet / LSP 的既有口徑完全不變。
+func StatementsWithIntOverflowWithExtern(program *parser.Program, ext ExternSigTables) map[parser.Statement]bool {
 	if program == nil {
 		return nil
 	}
@@ -4606,6 +4623,7 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 		restore := false
 		if validationStructFields == nil {
 			validationStructFields = collectStructFields(program)
+			mergeExternStructFields(validationStructFields, ext.StructFields)
 			restore = true
 		}
 		validationMu.Unlock()
@@ -4620,6 +4638,12 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 	relevant := map[parser.Statement]bool{}
 	// 快照一次供闭包内 collectFuncDeclared 与主迴圈共用（同 ValidateIntOverflow）。
 	funcTypes := snapshotValidationFuncTypes()
+	if len(ext.FuncTypes) > 0 {
+		if funcTypes == nil {
+			funcTypes = make(map[string]string, len(ext.FuncTypes))
+		}
+		mergeExternFuncTypes(funcTypes, ext.FuncTypes)
+	}
 	topLevelDeclared := collectTopLevelLets(program, funcTypes, nil, true) // StatementsWithIntOverflow 非影子對拍入口：沿用 legacy 扁平表
 
 	// 先宣告兩個遞迴閉包變數（互相參考），再於下方指派，避免前向參考未定義。
@@ -4871,10 +4895,21 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 // 兩組皆為 nil 時退回「保留所有 overflow 註解」的舊行為（不刪除），確保無型別資訊的
 // 場景（如 LSP 純格式化）不會誤刪。
 func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) {
+	return overflowAnnotationRelevance(program, ExternSigTables{})
+}
+
+// OverflowAnnotationRelevanceWithExtern 同上，但讓 relevant 的整數運算判定
+// 看得見跨模組回傳型別（否則單檔下 `x = mod.fn()` 一律被保守當成整數，
+// 純字串拼接的陳述會被誤算進 relevant、無效 #{overflow} 註解因此刪不掉）。
+func OverflowAnnotationRelevanceWithExtern(program *parser.Program, ext ExternSigTables) (relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) {
+	return overflowAnnotationRelevance(program, ext)
+}
+
+func overflowAnnotationRelevance(program *parser.Program, ext ExternSigTables) (relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) {
 	if program == nil {
 		return nil, nil
 	}
-	relevant = StatementsWithIntOverflow(program)
+	relevant = StatementsWithIntOverflowWithExtern(program, ext)
 	governed = map[*parser.AnnotationStatement]parser.Statement{}
 
 	// scanList 在「同一個陳述列表」內掃描獨立 overflow 註解，並依行注解語意計算其

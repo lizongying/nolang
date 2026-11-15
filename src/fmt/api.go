@@ -57,6 +57,10 @@ type formatter struct {
 	column      int                     // current output column (0-based)
 	stringAlign int                     // alignment column for multi-line string concat continuation lines
 	sem         *parser.SemanticContext // 語義 side-table（來自 program.Sem，可為 nil）
+	// boolFacts 是布林比較化簡的「單檔可確證」事實表，由 formatProgram 於
+	// 遍歷前一次性收集：只有確證為 bool 值的運算元才化簡，option 與未知
+	// 一律保留 `== true` / `== false`（見 expr.go 的 boolComparisonFacts）。
+	boolFacts *boolComparisonFacts
 	// trivia 是 formatter 專用的表層 trivia 表（RTFlags / `{` 同行註釋），
 	// 來自 program.FmtTrivia，可為 nil（blob 解碼的 Program 沒有它——fmt/LSP
 	// 一律 fresh parse，故實務上不會發生；各存取子皆 nil 安全）。
@@ -73,6 +77,13 @@ type formatter struct {
 	// 語意下所管轄的陳述（可能為 nil）。與 overflowRelevant 配套使用：對獨立節點
 	// 路徑以 governed 查 relevant。
 	overflowGoverned map[*parser.AnnotationStatement]parser.Statement
+
+	// redundantTypes 由呼叫端（LSP 的主動改寫 / 工具鏈）用 checker 判定後傳入：
+	// 這些 LetStatement 的顯式型別標註被視為「未書寫」，渲染時不輸出。
+	// 與 CLI `no fmt` 先做文字手術再重新解析的結果等價，但不需要改動來源字串，
+	// 也不會污染呼叫端持有的 AST（見 stmt.go formatLetStatement 的臨時置空）。
+	// nil / 空表 = 保留所有標註的舊行為。
+	redundantTypes map[*parser.LetStatement]bool
 
 	// forceInline：僅供 inlineWidth 量測使用 —— 為 true 時，格式化的中綴一律走
 	// 單行分支（不因源碼跨行而插入換行），讓量測得到「完全攤平」的宽度。
@@ -146,6 +157,9 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	// 按字典序排序（imports.go）。
 	hoistImports(p)
 	normalizeImportRun(p)
+	// 布林比較化簡的證據表在遍歷前一次性收集：只有單檔可確證為 bool 值的
+	// 運算元才化簡，option / 未知一律保留原比較（見 expr.go）。
+	f.boolFacts = collectBoolComparisonFacts(p, f.sem)
 	if len(p.Statements) > 0 {
 		f.firstStmt = p.Statements[0]
 	}

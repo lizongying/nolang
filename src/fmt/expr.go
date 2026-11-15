@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
+	"github.com/lizongying/nolang/ty"
 )
 
 func (f *formatter) formatExpression(expr parser.Expression) {
@@ -161,6 +162,7 @@ const maxInlineInfixWidth = 76
 func (f *formatter) inlineWidth(e parser.Expression) (int, bool) {
 	tmp := &formatter{
 		sem:         f.sem,
+		boolFacts:   f.boolFacts,
 		trivia:      f.trivia,
 		loopStyle:   f.loopStyle,
 		forceInline: true,
@@ -174,14 +176,17 @@ func (f *formatter) inlineWidth(e parser.Expression) (int, bool) {
 }
 
 func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
-	// Boolean-comparison simplification (`x == true` -> `x`, `x == false` ->
-	// `! x`) used to be performed here. It was removed on purpose: the rewrite
-	// is unsound for operands whose type the formatter cannot observe - most
-	// notably an option<?T> such as the result of process.wait-nohang().
-	// `exited == true` lowers to a valid option/bool comparison, but the
-	// collapsed `exited` / `! exited` used as a control-flow guard triggers a
-	// MIR "option-as-i1" codegen crash. Always emit the comparison verbatim
-	// through the normal infix path below.
+	// Redundant boolean comparison simplification (`x == true` -> `x`,
+	// `x == false` -> `! x`) is a documented code-style rule (see
+	// docs/docs/lang/code-style.md). It was reverted in v0.3.3 because an
+	// option<?T> operand collapsed into a bare guard crashed MIR codegen
+	// ("option-as-i1"). The rule now fires ONLY for operands proven to be
+	// bool values by boolComparisonFacts (local facts plus any injected
+	// cross-module signatures); option operands and every unknown operand
+	// keep the comparison verbatim.
+	if f.tryFormatBoolComparison(e) {
+		return
+	}
 	f.formatExpression(e.Left)
 
 	// Detect multi-line expressions (right operand starts on a different line)
@@ -221,6 +226,368 @@ func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
 		f.write(" ")
 		f.formatExpression(e.Right)
 	}
+}
+
+// tryFormatBoolComparison handles `x == true`, `x == false`, `x != true` and
+// `x != false` (plus the mirrored `true == x` forms) by emitting the simplified
+// boolean expression directly. It returns true when it produced output, false
+// when the caller should fall back to the normal infix formatting. The rewrite
+// only fires when *exactly one* operand is a boolean literal, so `true ==
+// false` is left untouched. `x == true` -> `x`; `x == false` -> `! x`; `!=`
+// flips the polarity. When the surviving operand is not atomic it is wrapped in
+// parentheses so the emitted `!` cannot silently re-bind (e.g. `a + b == false`
+// -> `! (a + b)`, not `! a + b`).
+//
+// Two independent guards, in this order:
+//
+//  1. Option hard gate — an operand known to be `?T` is NEVER simplified,
+//     regardless of whether its annotation survives the CLI's
+//     fixRedundantTypeSource pass and regardless of what the proof table
+//     says. `exited == true` is a valid option/bool comparison, but the
+//     collapsed `exited` / `! exited` used as a control-flow guard cannot be
+//     lowered to i1 by MIR (the v0.3.3 revert). This check is deliberately
+//     separate from the proof table so a future widening of the bool evidence
+//     rules cannot reintroduce that crash.
+//  2. Known-value guard — bool-ness must be *proven* by the evidence table
+//     (local facts plus cross-module signatures when a ParseConfig is
+//     injected; see boolComparisonFacts). Everything unproven — an unknown
+//     cross-module call result, a bare name, a dot/call/infix operand — is
+//     unknown and keeps its comparison.
+func (f *formatter) tryFormatBoolComparison(e *parser.InfixExpression) bool {
+	if e.Operator != "==" && e.Operator != "!=" {
+		return false
+	}
+	lb, lok := e.Left.(*parser.BooleanLiteral)
+	rb, rok := e.Right.(*parser.BooleanLiteral)
+	if lok && rok {
+		return false
+	}
+	var operand parser.Expression
+	var expectTrue bool
+	switch {
+	case rok:
+		operand, expectTrue = e.Left, rb.Value
+	case lok:
+		operand, expectTrue = e.Right, lb.Value
+	default:
+		return false
+	}
+	// option 是絕對禁令，與標註是否被移除無關；必須先於 bool 證據判定。
+	if f.boolOperandIsOptionTyped(operand) {
+		return false
+	}
+	// 已知的化簡，未知的不化簡：只有單檔可確證為 bool 值的運算元才重寫。
+	if !f.boolOperandIsKnownValue(operand) {
+		return false
+	}
+	if e.Operator == "!=" {
+		expectTrue = !expectTrue
+	}
+	if expectTrue {
+		f.formatExpression(operand)
+	} else {
+		f.write("! ")
+		if boolOperandIsAtomic(operand) {
+			f.formatExpression(operand)
+		} else {
+			f.write("(")
+			f.formatExpression(operand)
+			f.write(")")
+		}
+	}
+	return true
+}
+
+// boolOperandIsKnownValue reports whether the surviving operand is *proven* to
+// be a plain bool value by the evidence table. Anything else — an option<?T>,
+// a cross-module call result with no visible signature, a bare name, or a
+// dot/call/infix expression — is unknown and keeps its comparison verbatim.
+func (f *formatter) boolOperandIsKnownValue(e parser.Expression) bool {
+	for {
+		g, ok := e.(*parser.GroupedExpression)
+		if !ok || g.Expression == nil {
+			break
+		}
+		e = g.Expression
+	}
+	id, ok := e.(*parser.Identifier)
+	if !ok {
+		return false
+	}
+	return f.boolFacts.isKnownValue(id.Value)
+}
+
+// boolOperandIsOptionTyped is the hard gate for option<?T> operands. It runs
+// BEFORE boolOperandIsKnownValue so that "option never simplifies" is an
+// absolute rule rather than a side effect of the proof table: even if the
+// table ever gains new bool evidence, a `?T` sighting still wins.
+//
+// `no fmt` removes redundant type annotations (fixRedundantTypeSource) before
+// formatting, so `ok ?bool = fs.write-str(...)` may arrive here as
+// `ok = fs.write-str(...)`. That is fine and intentional: with the annotation
+// gone the operand is unknown without a config, or classified as option from
+// the injected signature with one — both keep the comparison. Both spellings
+// are covered by bool_comparison_test.go. Type checks use the structured
+// ty.Type.IsOption() API (never `?` prefix string parsing), so the verify-ty
+// gate stays clean.
+func (f *formatter) boolOperandIsOptionTyped(e parser.Expression) bool {
+	for {
+		g, ok := e.(*parser.GroupedExpression)
+		if !ok || g.Expression == nil {
+			break
+		}
+		e = g.Expression
+	}
+	id, ok := e.(*parser.Identifier)
+	if !ok {
+		return false
+	}
+	// Evidence collected from explicit `?T` annotations, `?T` parameters and
+	// local functions declared to return `?T`.
+	if f.boolFacts != nil && f.boolFacts.option[id.Value] {
+		return true
+	}
+	// Semantic side-table from the fresh parse (explicit annotations and the
+	// few locally inferred option types, e.g. `x = 1 + 2` -> ?i64).
+	if f.sem == nil {
+		return false
+	}
+	if t, ok := f.sem.VarTypeRef(id.Value); ok && t != nil && t.IsOption() {
+		return true
+	}
+	for _, vars := range f.sem.FuncVarTypes {
+		if t, ok := vars[id.Value]; ok && t != nil && t.IsOption() {
+			return true
+		}
+	}
+	return false
+}
+
+// boolComparisonFacts is the evidence table for the boolean comparison rule.
+// Without an injected ParseConfig (bare single-file parse, fmt unit tests,
+// LSP pure formatting) the only provable bool values come from three local
+// sources:
+//
+//  1. an explicit type annotation (`flag bool = ...`, `(b bool)` parameter);
+//  2. a boolean literal assignment (`flag = true`, `flag = false`);
+//  3. a call to a function DEFINED IN THIS FILE whose declared result is bool.
+//
+// With a config injected (the `no fmt` CLI path), cross-module result types
+// from sem.ExternFuncSigs / ExternMethodSigs join that table — see
+// bool_extern.go. Everything still unproven is unknown and deliberately left
+// alone: "known simplifies, unknown does not" holds in both modes. A std call
+// such as `ok = fs.write-str(...)` returns ?bool, so classify marks it option
+// and the hard gate keeps the comparison verbatim either way.
+//
+// `unknown` is a one-way downgrade: the same variable name may be a bool in
+// one function and an option/unknown in another, and a name-keyed table must
+// not let the bool sighting win. Once a name is downgraded it never comes back.
+type boolComparisonFacts struct {
+	value   map[string]bool // proven plain bool value
+	option  map[string]bool // proven ?T
+	unknown map[string]bool // ambiguous / unprovable sighting
+}
+
+func (b *boolComparisonFacts) isKnownValue(name string) bool {
+	return b != nil && b.value[name] && !b.option[name] && !b.unknown[name]
+}
+
+func (b *boolComparisonFacts) classify(name string, t *ty.Type) {
+	if name == "" || t == nil || !t.IsValid() {
+		return
+	}
+	switch {
+	case t.IsOption():
+		b.option[name] = true
+		delete(b.value, name)
+	case t.IsBool():
+		if !b.unknown[name] && !b.option[name] {
+			b.value[name] = true
+		}
+	default:
+		b.unknown[name] = true
+		delete(b.value, name)
+	}
+}
+
+func (b *boolComparisonFacts) markValue(name string) {
+	if name != "" && !b.unknown[name] && !b.option[name] {
+		b.value[name] = true
+	}
+}
+
+func (b *boolComparisonFacts) markUnknown(name string) {
+	if name != "" {
+		b.unknown[name] = true
+		delete(b.value, name)
+	}
+}
+
+// collectBoolComparisonFacts builds the evidence table once per formatted
+// program. The AST walk is intentionally best-effort: a statement shape it
+// does not recognise simply contributes no evidence, which is the safe
+// direction (unknown operands are never simplified).
+func collectBoolComparisonFacts(p *parser.Program, sem *parser.SemanticContext) *boolComparisonFacts {
+	b := &boolComparisonFacts{
+		value:   make(map[string]bool),
+		option:  make(map[string]bool),
+		unknown: make(map[string]bool),
+	}
+	if p == nil {
+		return b
+	}
+
+	// Result types for calls: definitions in THIS file first, then any
+	// cross-module signatures injected via ParseSourceWithConfig. Local
+	// definitions win, matching build's "local first" merge order. A qualified
+	// method name (`str.starts-with`) is stored as written, so both bare and
+	// qualified call spellings can be looked up.
+	localResults := make(map[string]*ty.Type)
+	for _, s := range p.Statements {
+		if fd, ok := s.(*parser.FunctionDefinition); ok {
+			if rs := parser.DeclaredResults(fd); len(rs) > 0 && rs[0].Type != nil {
+				if t := ty.Parse(rs[0].Type.String()); t.IsValid() {
+					localResults[fd.Name] = t
+				}
+			}
+		}
+	}
+	// Without an injected config the extern tables are empty, so the
+	// single-file "unknown wins" behaviour is preserved byte-for-byte.
+	for k, t := range externResultTypes(sem) {
+		if _, exists := localResults[k]; !exists {
+			localResults[k] = t
+		}
+	}
+
+	// Semantic side-table from the fresh parse: declared annotations plus the
+	// few types the parser infers locally (notably `x = 1 + 2` -> ?i64).
+	if sem != nil {
+		for name, t := range sem.VarTypes {
+			b.classify(name, t)
+		}
+		for _, vars := range sem.FuncVarTypes {
+			for name, t := range vars {
+				b.classify(name, t)
+			}
+		}
+	}
+
+	b.walkStatements(p.Statements, localResults)
+	return b
+}
+
+func (b *boolComparisonFacts) walkStatements(stmts []parser.Statement, local map[string]*ty.Type) {
+	for _, s := range stmts {
+		switch n := s.(type) {
+		case *parser.LetStatement:
+			b.recordLet(n, local)
+			b.walkExpr(n.Value, local)
+		case *parser.FunctionDefinition:
+			for _, param := range n.Parameters {
+				if param != nil && param.Type != nil {
+					b.classify(param.Name, ty.Parse(param.Type.String()))
+				}
+			}
+			if n.Body != nil {
+				b.walkStatements(n.Body.Statements, local)
+			}
+		case *parser.BlockStatement:
+			b.walkStatements(n.Statements, local)
+		case *parser.ExpressionStatement:
+			b.walkExpr(n.Expression, local)
+		case *parser.ForStatement:
+			if n.Init != nil {
+				b.walkStatements([]parser.Statement{n.Init}, local)
+			}
+			if n.Update != nil {
+				b.walkStatements([]parser.Statement{n.Update}, local)
+			}
+			if n.Body != nil {
+				b.walkStatements(n.Body.Statements, local)
+			}
+		}
+	}
+}
+
+func (b *boolComparisonFacts) recordLet(n *parser.LetStatement, local map[string]*ty.Type) {
+	if n == nil || n.Name == nil {
+		return
+	}
+	name := n.Name.Value
+	if n.Type != nil {
+		if t := ty.Parse(n.Type.String()); t.IsValid() {
+			b.classify(name, t)
+			return
+		}
+	}
+	switch v := n.Value.(type) {
+	case *parser.BooleanLiteral:
+		b.markValue(name)
+	case *parser.CallExpression:
+		callee, ok := callResultName(v)
+		if !ok {
+			b.markUnknown(name)
+			return
+		}
+		if t, exists := local[callee]; exists {
+			b.classify(name, t)
+			return
+		}
+		// No visible signature (no injected config, or module not loaded):
+		// the result type is unknown — never assume bool.
+		b.markUnknown(name)
+	default:
+		b.markUnknown(name)
+	}
+}
+
+func (b *boolComparisonFacts) walkExpr(e parser.Expression, local map[string]*ty.Type) {
+	switch n := e.(type) {
+	case *parser.IfExpression:
+		if n.Consequence != nil {
+			b.walkStatements(n.Consequence.Statements, local)
+		}
+		if n.Alternative != nil {
+			b.walkStatements(n.Alternative.Statements, local)
+		}
+	case *parser.SurfaceMatch:
+		parser.WalkSurfaceMatchArmBodies(n, func(stmts []parser.Statement) {
+			b.walkStatements(stmts, local)
+		})
+	case *parser.FunctionLiteral:
+		if n.Body != nil {
+			b.walkStatements(n.Body.Statements, local)
+		}
+	}
+}
+
+// boolOperandIsAtomic reports whether an expression can follow a prefix `!`
+// without parentheses - i.e. it is a primary/postfix form whose own precedence
+// is at least that of unary not.
+func boolOperandIsAtomic(e parser.Expression) bool {
+	switch e.(type) {
+	case *parser.Identifier,
+		*parser.IntegerLiteral,
+		*parser.FloatLiteral,
+		*parser.StringLiteral,
+		*parser.CharLiteral,
+		*parser.RegexLiteral,
+		*parser.BooleanLiteral,
+		*parser.NilLiteral,
+		*parser.CallExpression,
+		*parser.DotExpression,
+		*parser.IndexExpression,
+		*parser.SliceExpression,
+		*parser.GroupedExpression,
+		*parser.ArrayLiteral,
+		*parser.SliceLiteral,
+		*parser.StructLiteral,
+		*parser.MapLiteral,
+		*parser.PrefixExpression:
+		return true
+	}
+	return false
 }
 
 func (f *formatter) formatCallExpression(e *parser.CallExpression) {

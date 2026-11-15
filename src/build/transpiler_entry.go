@@ -207,46 +207,12 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	t.externFuncSigs = funcSigs
 	t.externMethodSigs = methodSigs
 	t.externStructFields = structFields
-	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位
+	// collectSignaturesFromProg 從已解析的 Program 中收集函數簽名和 struct 欄位。
+	// 主體已抽到包級函式 collectModuleSignatures（fmt_signatures.go），讓
+	// `no fmt` 的 FmtSigLoader 與本處共用同一套收集口徑，避免兩邊對
+	//「方法鍵 / 陣列方法裸名 / struct 欄位」的判定各自漂移。
 	collectSignaturesFromProg := func(modProg *parser.Program, modShort string) {
-		for _, stmt := range modProg.Statements {
-			if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-				// DeclaredResults 剔除方法定義的隱式 `self` 接收者（見其
-				// 註解）：這張表供 let 型別推斷使用（parser/type.go 的
-				// len(rets)==1 判定），留著 self 會讓無回傳值的方法被推成
-				// 「回傳接收者型別」，有回傳值的方法則因長度 2 查不到型別。
-				if decl := parser.DeclaredResults(fd); len(decl) > 0 {
-					rets := make([]string, 0, len(decl))
-					for _, r := range decl {
-						rets = append(rets, r.Type.String())
-					}
-					if fd.IsMethodDef && len(fd.Name) > 0 && fd.Name[0] != '[' {
-						fullKey := modShort + "." + fd.Name
-						methodSigs[fullKey] = rets
-						// Also register with fd.Name as key (e.g., "str.starts-with")
-						// so that type inference can find it via receiverType + "." + dot.Property
-						// where receiverType is just the type name (e.g., "str"), not "module.struct".
-						if strings.Contains(fd.Name, ".") {
-							methodSigs[fd.Name] = rets
-						}
-					} else if len(fd.Name) > 0 && fd.Name[0] != '[' {
-						funcSigs[modShort+"."+fd.Name] = rets
-					} else {
-						// 陣列/切片型別方法（如 []t.method）：以裸名存入 funcSigs
-						funcSigs[fd.Name] = rets
-					}
-				}
-			}
-			if sd, ok := stmt.(*parser.StructDefinition); ok {
-				fields := make(map[string]string)
-				for _, f := range sd.Fields {
-					if typeStr := checker.StructFieldTypeString(f); typeStr != "" {
-						fields[f.Name] = typeStr
-					}
-				}
-				structFields[sd.Name] = fields
-			}
-		}
+		collectModuleSignatures(modProg, modShort, funcSigs, methodSigs, structFields)
 	}
 	// 1. 掃描顯式 use/# 語句（非 std 模組，std 模組由快取提供）
 	useRe := regexp.MustCompile(`(?m)^\s*(?:use|#)\s+([\w/.\-]+)`)

@@ -30,6 +30,19 @@ jobs:
         run: cd src && go build ./...
       - name: Vet toolchain
         run: cd src && go vet ./...
+      - name: Check gofmt (src/lsp)
+        # 2026-11-15: the LSP formatting pipeline is gofmt-clean; keep it that way.
+        # Scope is deliberately narrow: the whole src tree is not clean yet, and
+        # files such as src/build/transpiler_entry.go sit INSIDE STDSIG_KEY_SRCS —
+        # gofmt there would change the baked std signature key. Widen this gate
+        # only in a dedicated cleanup commit that also regenerates the key.
+        run: |
+          out=$(gofmt -l src/lsp)
+          if [ -n "$out" ]; then
+            echo "gofmt violations in src/lsp:"
+            echo "$out"
+            exit 1
+          fi
 
   # ── Corpus compile gate (§2 class of "compile directly fails") ──────────
   # Compile (do not run) every corpus file. Cheap, yet it catches the exact

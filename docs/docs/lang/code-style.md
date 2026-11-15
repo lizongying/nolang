@@ -112,19 +112,48 @@ cond -> {
 `no fmt` 對布林的處理規則（實作於 `src/fmt/expr.go`）：
 
 - **獨立字面量統一為關鍵字寫法**：`c = !!` → `c = true`、`c = !` → `c = false`。
-- **冗餘布林比較會被化簡**：當 `==` / `!=` 的兩側其中一側為布林字面量時，輸出最簡形式：
+- **已知的化簡，未知的不化簡**：當 `==` / `!=` 的其中一側是布林字面量，且另一側
+  運算元**能確證為 bool 值**時，輸出最簡形式。`no fmt` / LSP / `no build` /
+  `no vet` 現在共用 `build.FmtSigLoader` 的簽名視野：std 內嵌表、`use` / `#`
+  指向的本地模組、EnumVariants，都在 fresh `SkipLowering` parse 之前注入
+  （`SemRebuildConfig.Apply`）。可確證的來源有三類：
 
-  | 原始寫法                     | 格式化後   |
-  | ---------------------------- | ---------- |
-  | `f == true` / `f == !!`     | `f`        |
-  | `f == false` / `f == !`     | `! f`      |
-  | `f != true` / `f != !!`     | `! f`      |
-  | `f != false` / `f != !`     | `f`        |
-  | `true == f`（字面量在左側） | `f`        |
+  1. 顯式型別標註：`b bool = true`、參數 `(b bool)`；
+  2. 布林字面量賦值：`flag = true` / `flag = false`；
+  3. 呼叫宣告回傳 `bool` 的函式：**本檔定義**（如 `bytes-eq = ... (eq bool)`），
+     或簽名表查得到的 std / 本地模組函式（如 `args.has-flag`、本地模組
+     `helper.is-ok`）。簽名表查不到結果型別時仍視為未知。
+
+  | 原始寫法（下表的 `b` 為上述「已知」變數） | 格式化後 |
+  | ------------------------------------------ | -------- |
+  | `b == true` / `b == !!`                    | `b`      |
+  | `b == false` / `b == !`                    | `! b`    |
+  | `b != true` / `b != !!`                    | `! b`    |
+  | `b != false` / `b != !`                    | `b`      |
+  | `true == b`（字面量在左側）                | `b`      |
 
   `!=` 只是翻轉極性；`true == false`（兩側都是字面量）保持原樣不動。
-- **在 `->` 分支 / 獨立 if-then 條件中同樣生效**：`flag == ! -> return` → `! flag -> return`。
-- **運算優先順序安全**：當保留下來的運算元不是原子 / 後綴運算式時，會加上括號，避免輸出的 `!` 錯誤重新結合——`a + b == false` → `! (a + b)`，絕非 `! a + b`。否定寫為 `! `（帶一個空格）以符合前綴運算子的既有慣例，保證 `no fmt` 冪等。
+  `f == true` 這類**沒有 bool 證據**的裸名會原樣保留。
+- **`?T` 與一切未知運算元保留原比較**：option（`?T`）、簽名表查不到結果型別的
+  跨模組呼叫、無賦值的裸名、點號存取、呼叫式、運算結果，一律保留
+  `== true` / `== false`。折成裸 `x` / `! x` 當控制流條件會讓 MIR 撞
+  「option-as-i1」codegen crash —— v0.3.3 正是因此把整條規則 revert
+  （`8a8ecb59`）；2026-11-15 改成「正向確證才化簡」後恢復，不再用
+  「查不到 `?T` 就當值」的反向推論。同日起 `no fmt` / LSP 也會注入跨模組
+  簽名，`fs.write-str(...)`（`?bool`）這類 option 回傳**看得見**，由 option
+  硬閘門擋下，而不是靠「看不到型別」。option 是**獨立硬閘門**
+  （`boolOperandIsOptionTyped`），先於 bool 值證據判定，因此不論型別標註
+  是否留在原始檔都不化簡：`ok ?bool = fs.write-str(...)` 與
+  `ok = fs.write-str(...)` 兩種寫法都保留比較。`no fmt` 依既有規範
+  （`fixRedundantTypeSource`）移除冗餘型別標註是**正確行為**，不要為了
+  保住 option 判定去關閉這道移除。回歸測試：`src/fmt/bool_comparison_test.go`、
+  `src/fmt/signatures_test.go`、`src/lsp/fmt_gate_test.go`。
+- **在 `->` 分支 / 獨立 if-then 條件中同樣生效**（對已知變數）：
+  `b == ! -> return` → `! b -> return`。
+- **運算優先順序安全**：否定寫為 `! `（帶一個空格）以符合前綴運算子的既有慣例，
+  保證 `no fmt` 冪等。目前可確證的運算元都是識別字，`!` 不會重新結合；
+  實作仍對非原子運算元保留括號防護（`! (a + b)` 而非 `! a + b`），
+  以備日後放寬判定。
 
 ## 返回值變數延遲零值（Deferred Zero-Init for Return Values）
 

@@ -567,9 +567,9 @@ type DocumentSymbol struct {
 }
 
 type CodeAction struct {
-	Title       string          `json:"title"`
-	Kind        CodeActionKind  `json:"kind,omitempty"`
-	Tags        []int           `json:"tags,omitempty"`
+	Title       string         `json:"title"`
+	Kind        CodeActionKind `json:"kind,omitempty"`
+	Tags        []int          `json:"tags,omitempty"`
 	Diagnostics []Diagnostic   `json:"diagnostics,omitempty"`
 	IsPreferred bool           `json:"isPreferred,omitempty"`
 	Disabled    *Disabled      `json:"disabled,omitempty"`
