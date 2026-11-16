@@ -58,7 +58,7 @@ t-clamp = () {
 ; 修復前 os.get-wd() 回傳空字串（長度 0）。
 t-get-wd = () {
     wd = os.get-wd()
-    n i64 = wd.len-bytes()
+    n = wd.len-bytes()
     runner.is-true(n > 0, '# std/os: os.get-wd() 非空')
 }
 

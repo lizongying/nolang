@@ -133,6 +133,7 @@ u64.to-str = () (out str) {
     digits = 0
     (tmp > 0) {
         {
+
             #{overflow=wrap}
             digits ?= digits + 1
         }: {
@@ -164,6 +165,7 @@ u64.to-str = () (out str) {
         ru = ru / 10
 
         {
+
             #{overflow=wrap}
             pos ?= pos - 1
         }: {
@@ -368,6 +370,7 @@ f64.to-str = () (out str) {
             }
             found == 0 -> {
                 {
+
                     #{overflow=wrap}
                     k-ten ?= k-ten + 1
                 }: {
@@ -414,6 +417,7 @@ f64.to-str = () (out str) {
             best-n = n-big
 
             {
+
                 #{overflow=wrap}
                 best-k ?= 0 - trim-m
             }: {
@@ -423,6 +427,7 @@ f64.to-str = () (out str) {
             }
 
             {
+
                 #{overflow=wrap}
                 trim-m ?= trim-m + 1
             }: {
@@ -994,6 +999,7 @@ f64.to-str-fixed = (precision i64) (out str) {
 
     neg == 1 -> {
         {
+
             #{overflow=wrap}
             total ?= total + 1
         }: {
@@ -1005,6 +1011,7 @@ f64.to-str-fixed = (precision i64) (out str) {
 
     precision > 0 -> {
         {
+
             #{overflow=wrap}
             total ?= total + 1
         }: {
@@ -1044,6 +1051,7 @@ f64.to-str-fixed = (precision i64) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 1
         }: {
@@ -1339,6 +1347,7 @@ f64.to-str-sci = (precision i64) (out str) {
 
     neg == 1 -> {
         {
+
             #{overflow=wrap}
             total ?= total + 1
         }: {
@@ -1350,6 +1359,7 @@ f64.to-str-sci = (precision i64) (out str) {
 
     precision > 0 -> {
         {
+
             #{overflow=wrap}
             total ?= total + 1
         }: {
@@ -1360,6 +1370,7 @@ f64.to-str-sci = (precision i64) (out str) {
     }
 
     {
+
         #{overflow=wrap}
         total ?= total + 2 + elen
     }: {
@@ -1370,6 +1381,7 @@ f64.to-str-sci = (precision i64) (out str) {
 
     elen < 2 -> {
         {
+
             #{overflow=wrap}
             total ?= total + 1
         }: {
@@ -1396,6 +1408,7 @@ f64.to-str-sci = (precision i64) (out str) {
     obs2[pos] = mstr.byte(0)
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -1441,6 +1454,7 @@ f64.to-str-sci = (precision i64) (out str) {
     obs2[pos] = 101
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -1459,6 +1473,7 @@ f64.to-str-sci = (precision i64) (out str) {
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -1485,6 +1500,7 @@ f64.to-str-sci = (precision i64) (out str) {
         obs2[pos] = estr.byte(j)
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 1
         }: {
@@ -1633,6 +1649,7 @@ f64.to-str-general = (precision i64) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i - 1
         }: {
@@ -1854,6 +1871,7 @@ f64.to-str-general = (precision i64) (out str) {
     lead-zeros = 0 - e - 1
 
     {
+
         #{overflow=wrap}
         total ?= 2 + lead-zeros + last-nz + 1
     }: {
@@ -1864,6 +1882,7 @@ f64.to-str-general = (precision i64) (out str) {
 
     neg == 1 -> {
         {
+
             #{overflow=wrap}
             total ?= total + 1
         }: {
@@ -1888,6 +1907,7 @@ f64.to-str-general = (precision i64) (out str) {
     obs5[pos] = 48
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -1898,6 +1918,7 @@ f64.to-str-general = (precision i64) (out str) {
     obs5[pos] = 46
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -1909,6 +1930,7 @@ f64.to-str-general = (precision i64) (out str) {
         obs5[pos] = 48
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 1
         }: {
@@ -1929,6 +1951,7 @@ f64.to-str-general = (precision i64) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 1
         }: {
@@ -2255,6 +2278,7 @@ pow = (base i64, n i64) (res i64) {
     (rn > 0) {
         rn & 1 == 1 -> {
             {
+
                 #{overflow=wrap}
                 res ?= res * b
             }: {
@@ -2265,6 +2289,7 @@ pow = (base i64, n i64) (res i64) {
         }
 
         {
+
             #{overflow=wrap}
             b ?= b * b
         }: {
@@ -2633,6 +2658,7 @@ f64.log = () (res f64) {
         x = x / 2.0
 
         {
+
             #{overflow=wrap}
             k ?= k + 1
         }: {
@@ -2646,6 +2672,7 @@ f64.log = () (res f64) {
         x = x * 2.0
 
         {
+
             #{overflow=wrap}
             k ?= k - 1
         }: {
@@ -2659,6 +2686,7 @@ f64.log = () (res f64) {
         x = x / 2.0
 
         {
+
             #{overflow=wrap}
             k ?= k + 1
         }: {
@@ -2781,6 +2809,7 @@ i64.sqrt = () (r i64) {
                 r = mid
 
                 {
+
                     #{overflow=wrap}
                     lo ?= mid + 1
                 }: {
@@ -2792,6 +2821,7 @@ i64.sqrt = () (r i64) {
 
             -> {
                 {
+
                     #{overflow=wrap}
                     hi ?= mid - 1
                 }: {
@@ -2836,6 +2866,7 @@ i64.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             d ?= d + 2
         }: {
@@ -2845,6 +2876,7 @@ i64.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             lim ?= n / d
         }: {
@@ -2903,6 +2935,7 @@ i8.sqrt = () (r i8) {
         mid i8 = 0
 
         {
+
             #{overflow=wrap}
             mid ?= (lo + hi) / 2
         }: {
@@ -2913,6 +2946,7 @@ i8.sqrt = () (r i8) {
         q i8 = 0
 
         {
+
             #{overflow=wrap}
             q ?= n / mid
         }: {
@@ -2925,6 +2959,7 @@ i8.sqrt = () (r i8) {
                 r = mid
 
                 {
+
                     #{overflow=wrap}
                     lo ?= mid + 1
                 }: {
@@ -2936,6 +2971,7 @@ i8.sqrt = () (r i8) {
 
             -> {
                 {
+
                     #{overflow=wrap}
                     hi ?= mid - 1
                 }: {
@@ -2960,6 +2996,7 @@ i8.is-prime = () (yes bool) {
     m2 i8 = 0
 
     {
+
         #{overflow=wrap}
         m2 ?= n % 2
     }: {
@@ -2979,6 +3016,7 @@ i8.is-prime = () (yes bool) {
         md i8 = 0
 
         {
+
             #{overflow=wrap}
             md ?= n % d
         }: {
@@ -2992,6 +3030,7 @@ i8.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             d ?= d + 2
         }: {
@@ -3001,6 +3040,7 @@ i8.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             lim ?= n / d
         }: {
@@ -3034,6 +3074,7 @@ i16.sqrt = () (r i16) {
         mid i16 = 0
 
         {
+
             #{overflow=wrap}
             mid ?= (lo + hi) / 2
         }: {
@@ -3045,6 +3086,7 @@ i16.sqrt = () (r i16) {
         q i16 = 0
 
         {
+
             #{overflow=wrap}
             q ?= n / mid
         }: {
@@ -3057,6 +3099,7 @@ i16.sqrt = () (r i16) {
                 r = mid
 
                 {
+
                     #{overflow=wrap}
                     lo ?= mid + 1
                 }: {
@@ -3068,6 +3111,7 @@ i16.sqrt = () (r i16) {
 
             -> {
                 {
+
                     #{overflow=wrap}
                     hi ?= mid - 1
                 }: {
@@ -3092,6 +3136,7 @@ i16.is-prime = () (yes bool) {
     m2 i16 = 0
 
     {
+
         #{overflow=wrap}
         m2 ?= n % 2
     }: {
@@ -3111,6 +3156,7 @@ i16.is-prime = () (yes bool) {
         md i16 = 0
 
         {
+
             #{overflow=wrap}
             md ?= n % d
         }: {
@@ -3124,6 +3170,7 @@ i16.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             d ?= d + 2
         }: {
@@ -3133,6 +3180,7 @@ i16.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             lim ?= n / d
         }: {
@@ -3166,6 +3214,7 @@ i32.sqrt = () (r i32) {
         mid i32 = 0
 
         {
+
             #{overflow=wrap}
             mid ?= (lo + hi) / 2
         }: {
@@ -3176,6 +3225,7 @@ i32.sqrt = () (r i32) {
         q i32 = 0
 
         {
+
             #{overflow=wrap}
             q ?= n / mid
         }: {
@@ -3188,6 +3238,7 @@ i32.sqrt = () (r i32) {
                 r = mid
 
                 {
+
                     #{overflow=wrap}
                     lo ?= mid + 1
                 }: {
@@ -3199,6 +3250,7 @@ i32.sqrt = () (r i32) {
 
             -> {
                 {
+
                     #{overflow=wrap}
                     hi ?= mid - 1
                 }: {
@@ -3223,6 +3275,7 @@ i32.is-prime = () (yes bool) {
     m2 i32 = 0
 
     {
+
         #{overflow=wrap}
         m2 ?= n % 2
     }: {
@@ -3242,6 +3295,7 @@ i32.is-prime = () (yes bool) {
         md i32 = 0
 
         {
+
             #{overflow=wrap}
             md ?= n % d
         }: {
@@ -3255,6 +3309,7 @@ i32.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             d ?= d + 2
         }: {
@@ -3264,6 +3319,7 @@ i32.is-prime = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             lim ?= n / d
         }: {

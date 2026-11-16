@@ -90,6 +90,7 @@ sleep-ns = (ns i64) {
 ; [duration-between](#time.duration-between)
 duration-between = (start i64, end i64) (diff i64) {
     {
+
         #{overflow=wrap}
         diff ?= end - start
     }: {
@@ -106,6 +107,7 @@ duration-between = (start i64, end i64) (diff i64) {
 ; [duration-ms-between](#time.duration-ms-between)
 duration-ms-between = (start i64, end i64) (diff i64) {
     {
+
         #{overflow=wrap}
         diff ?= end - start
     }: {
@@ -122,6 +124,7 @@ duration-ms-between = (start i64, end i64) (diff i64) {
 ; [duration-us-between](#time.duration-us-between)
 duration-us-between = (start i64, end i64) (diff i64) {
     {
+
         #{overflow=wrap}
         diff ?= end - start
     }: {
@@ -150,6 +153,7 @@ since-ms = (start i64) (diff i64) {
     end = now-ms()
 
     {
+
         #{overflow=wrap}
         diff ?= end - start
     }: {
@@ -167,6 +171,7 @@ since-us = (start i64) (diff i64) {
     end = now-us()
 
     {
+
         #{overflow=wrap}
         diff ?= end - start
     }: {
@@ -366,6 +371,7 @@ unix-to-date = (ts i64) (d date) {
 
     rem < 0 -> {
         {
+
             #{overflow=wrap}
             days ?= days - 1
         }: {
@@ -394,6 +400,7 @@ unix-to-date = (ts i64) (d date) {
 
     z < 0 && z % 146097 != 0 -> {
         {
+
             #{overflow=wrap}
             era ?= era - 1
         }: {
@@ -493,6 +500,7 @@ date-to-unix = (d date) (ts i64) {
     ; 調整：3月為年初
     m <= 2 -> {
         {
+
             #{overflow=wrap}
             y ?= y - 1
         }: {
@@ -507,6 +515,7 @@ date-to-unix = (d date) (ts i64) {
 
     y < 0 && y % 400 != 0 -> {
         {
+
             #{overflow=wrap}
             era ?= era - 1
         }: {
@@ -600,6 +609,7 @@ format-date = (d date) (out str) {
     ; `it = <expr>` 會把算術那層 err 丟掉。用一個塊形態 match 把這些 ?= 併起來：
     ; 任一處失敗就整體放棄這次格式化，不必為每個字元各寫一個 match。
     {
+
         #{overflow=wrap}
         out[pos] ?= (yr / 1000) % 10 + 48
 

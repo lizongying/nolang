@@ -191,11 +191,11 @@ i <- [0..32): {
     fem-fem-h3-bytes[i] != fem-fem-pm1-bytes[i] -> fem-ok3 = false
 }
 {
-    fem-ok3 == true -> {
+    fem-ok3 -> {
         print('PASS: (p-1)*1=p-1')
     }
 
-    fem-ok3 == false -> {
+    ! fem-ok3 -> {
         print('FAIL: (p-1)*1')
         eprint('h3 bytes: ')
         i <- [0..32): {
@@ -529,31 +529,31 @@ feo-test-scalarmult-base = () (pass bool) {
 
 feo-p1 = feo-test-fe-add()
 {
-    feo-p1 == true -> print('PASS: fe-add')
+    feo-p1 -> print('PASS: fe-add')
 
-    feo-p1 == false -> print('FAIL: fe-add')
+    ! feo-p1 -> print('FAIL: fe-add')
 }
 feo-p2 = feo-test-fe-mul()
 {
-    feo-p2 == true -> print('PASS: fe-mul')
+    feo-p2 -> print('PASS: fe-mul')
 
-    feo-p2 == false -> print('FAIL: fe-mul')
+    ! feo-p2 -> print('FAIL: fe-mul')
 }
 feo-p3 = feo-test-fe-sq()
 {
-    feo-p3 == true -> print('PASS: fe-sq')
+    feo-p3 -> print('PASS: fe-sq')
 
-    feo-p3 == false -> print('FAIL: fe-sq')
+    ! feo-p3 -> print('FAIL: fe-sq')
 }
 feo-p4 = feo-test-fe-frombytes()
 {
-    feo-p4 == true -> print('PASS: fe-frombytes')
+    feo-p4 -> print('PASS: fe-frombytes')
 
-    feo-p4 == false -> print('FAIL: fe-frombytes')
+    ! feo-p4 -> print('FAIL: fe-frombytes')
 }
 feo-p5 = feo-test-scalarmult-base()
 {
-    feo-p5 == true -> print('PASS: scalarmult-base')
+    feo-p5 -> print('PASS: scalarmult-base')
 
-    feo-p5 == false -> print('FAIL: scalarmult-base')
+    ! feo-p5 -> print('FAIL: scalarmult-base')
 }

@@ -48,6 +48,7 @@ rotl32 = (x u32, n i64) (r u32) {
 ; d: 累加器 d 的字索引（被異或後循環左移 16/12 位）
 ; [qr](#chacha20-poly1305.qr)
 qr = (state []u32, a i64, b i64, c i64, d i64) {
+
     ; ---- 第一輪：a += b；d、c、b 依次混合 ----
     {
         a-old-1 ?= state[a]
@@ -188,10 +189,12 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; 金鑰（8 個 32-bit 小端字）
     i <- [0..8): {
+
         ; 逐位元組小端組字：第 j 個位元組佔 bit [8j, 8j+8)
         key-word u32 = 0
         j <- [0..4): {
             {
+
                 #{overflow=wrap}
                 byte-at ?= i * 4 + j
 
@@ -225,10 +228,12 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; Nonce（3 個 32-bit 小端字）
     i <- [0..3): {
+
         ; 逐位元組小端組字：第 j 個位元組佔 bit [8j, 8j+8)
         nonce-word u32 = 0
         j <- [0..4): {
             {
+
                 #{overflow=wrap}
                 byte-at ?= i * 4 + j
 
@@ -293,6 +298,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
             ; 逐位元組拆字：第 j 個位元組佔 bit [8j, 8j+8)
             j <- [0..4): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= i * 4 + j
 
@@ -357,6 +363,7 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + n
         }: {
@@ -469,6 +476,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         h = poly1305-reduce(hc._mul(r))
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 16
         }: {
@@ -585,6 +593,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + pad-len
     }: {
@@ -624,6 +633,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + pad-len
     }: {
@@ -692,6 +702,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 8
     }: {
@@ -760,6 +771,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 8
     }: {
@@ -882,6 +894,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + pad-len
     }: {
@@ -919,6 +932,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + pad-len
     }: {
@@ -986,6 +1000,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 8
     }: {
@@ -1052,6 +1067,7 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 8
     }: {

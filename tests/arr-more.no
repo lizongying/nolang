@@ -787,8 +787,8 @@ print('---')
 test-arr-clone-infer()
 print('---')
 lit-ok = test-arr-field-lit()
-lit-ok == false -> print('FAIL: arr-field-lit')
-lit-ok == true -> print('arr-field-lit passed')
+! lit-ok -> print('FAIL: arr-field-lit')
+lit-ok -> print('arr-field-lit passed')
 print('---')
 test-arr-index-mid()
 print('---')
@@ -822,25 +822,25 @@ test-arr-slice-views()
 print('---')
 p1 = test-arr-via-inner()
 {
-    p1 == true -> print('PASS: via inner')
+    p1 -> print('PASS: via inner')
 
-    p1 == false -> print('FAIL: via inner')
+    ! p1 -> print('FAIL: via inner')
 }
 p2 = test-arr-via-i64()
 {
-    p2 == true -> print('PASS: via i64')
+    p2 -> print('PASS: via i64')
 
-    p2 == false -> print('FAIL: via i64')
+    ! p2 -> print('FAIL: via i64')
 }
 p3 = test-arr-direct-return()
 {
-    p3 == true -> print('PASS: direct return')
+    p3 -> print('PASS: direct return')
 
-    p3 == false -> print('FAIL: direct return')
+    ! p3 -> print('FAIL: direct return')
 }
 p4 = test-arr-param-pass()
 {
-    p4 == true -> print('PASS: param pass')
+    p4 -> print('PASS: param pass')
 
-    p4 == false -> print('FAIL: param pass')
+    ! p4 -> print('FAIL: param pass')
 }

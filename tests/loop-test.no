@@ -2,7 +2,7 @@
     line str = ''
     ok = false
     line, ok = fs.get-line()
-    ok == false -> break
+    ! ok -> break
     print('got: {line}')
 }
 print('done')

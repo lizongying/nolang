@@ -452,11 +452,11 @@ lx-skip-ws = (lx lxst) {
 ; lx: 輸入
 lx-skip-to-eol = (lx lxst) {
     stop = false
-    (stop == false) {
+    (! stop) {
         c = lx.ch
         c == B-LF -> stop = true
         c == 0 -> stop = true
-        stop == false -> lx-read-char(lx)
+        ! stop -> lx-read-char(lx)
     }
 }
 
@@ -535,11 +535,11 @@ lx-read-string = (lx lxst) (lit str, raw str) {
     lx-read-char(lx)
     buf = sb.init(32)
     stop = false
-    (stop == false) {
+    (! stop) {
         c = lx.ch
         c == quote -> stop = true
         c == 0 -> stop = true
-        stop == false -> {
+        ! stop -> {
             c == B-BS -> {
                 tr = lx-str-esc(lx, buf)
                 tr -> lx-read-char(lx)
@@ -593,7 +593,7 @@ lx-str-esc = (lx lxst, buf sb) (trailing bool) {
     e = lx.ch
     simple = lx-esc-simple-ok(e)
     simple -> buf.push-byte(lx-esc-simple(e))
-    simple == false -> {
+    ! simple -> {
         e == B-ESC-X -> {
             lx-read-char(lx)
             hi = lx-hex-val(lx.ch)
@@ -647,7 +647,7 @@ lx-read-raw = (lx lxst) (r str) {
     lx-read-char(lx)
     buf = sb.init(32)
     stop = false
-    (stop == false) {
+    (! stop) {
         lx.ch == 0 -> {
             r = buf.str()
             stop = true
@@ -691,7 +691,7 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
     buf = sb.init(16)
     ok = false
     stop = false
-    (stop == false) {
+    (! stop) {
         c = lx.ch
         (c == B-SLASH) -> stop = true
         (c == 0) -> stop = true
@@ -716,12 +716,12 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
                             buf.push-byte(c)
                             lx-read-char(lx)
                             stop2 = false
-                            (stop2 == false) {
+                            (! stop2) {
                                 d = lx.ch
                                 d == B-RB -> stop2 = true
                                 d == 0 -> stop2 = true
                                 d == B-LF -> stop2 = true
-                                stop2 == false -> {
+                                ! stop2 -> {
                                     d == B-BS -> {
                                         buf.push-byte(d)
                                         lx-read-char(lx)
@@ -762,7 +762,7 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
     ;    若只把 hit 當迴圈條件，遇到「不是字母」時迴圈體不推進也不改條件
     ;    ⇒ 無限迴圈（實測：`/a/` 在 EOF 後掛死）。
     stop = false
-    (stop == false) {
+    (! stop) {
         f = lx.ch
         isup = lx-in-range(f, B-UP-A, B-UP-Z)
         islo = lx-in-range(f, B-LO-A, B-LO-Z)
@@ -773,7 +773,7 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
             fb.push-byte(f)
             lx-read-char(lx)
         }
-        isl == false -> stop = true
+        ! isl -> stop = true
     }
     pat = buf.str()
     flags = fb.str()
@@ -806,7 +806,7 @@ lx-block-boundary = (lx lxst) (yes bool) {
                     #{overflow=wrap}
                     i = i + 1
                 }
-                w == false -> {
+                ! w -> {
                     yes = false
                     go = false
                 }
@@ -1206,7 +1206,7 @@ lx-scan-token = (lx lxst, t tk) {
                         raw = f1
                         done = true
                     }
-                    ok1 == false -> {
+                    ! ok1 -> {
                         pk2 = lx-peek(lx)
                         pk2 == B-EQ -> {
                             lx-read-char(lx)
@@ -1219,7 +1219,7 @@ lx-scan-token = (lx lxst, t tk) {
                         }
                     }
                 }
-                rs == false -> {
+                ! rs -> {
                     pk2 = lx-peek(lx)
                     pk2 == B-EQ -> {
                         lx-read-char(lx)
@@ -1362,7 +1362,7 @@ lx-scan-token = (lx lxst, t tk) {
                     mk = ';;block'
                     done = true
                 }
-                bs == false -> {
+                ! bs -> {
                     lx-read-char(lx)
                     lx-read-char(lx)
                     s2 = lx.pos
@@ -1405,7 +1405,7 @@ lx-scan-token = (lx lxst, t tk) {
                 lit = id1
                 done = true
             }
-            ident-start == false -> {
+            ! ident-start -> {
                 typ = tok.UNDERSCORE
                 lit = '_'
             }
@@ -1467,7 +1467,7 @@ lx-scan-token = (lx lxst, t tk) {
                     lit = lx-sub(lx.input, s4, lx.pos)
                     done = true
                 }
-                (a3 == false) -> {
+                (! a3) -> {
                     typ = tok.USE
                     lit = '#'
                 }
@@ -1542,7 +1542,7 @@ lx-scan-token = (lx lxst, t tk) {
                 lit = id2
                 done = true
             }
-            (a5 == false) -> {
+            (! a5) -> {
                 a6 -> {
                     num = lx-read-number(lx)
                     typ = tok.INT
@@ -1571,7 +1571,7 @@ lx-scan-token = (lx lxst, t tk) {
                     }
                     done = true
                 }
-                (a6 == false) -> {
+                (! a6) -> {
                     typ = tok.ILLEGAL
                     lit = lx-ch-str(c)
                 }
@@ -1579,7 +1579,7 @@ lx-scan-token = (lx lxst, t tk) {
         }
     }
 
-    done == false -> lx-read-char(lx)
+    ! done -> lx-read-char(lx)
     lx.prev = typ
     lx.last = typ
 
@@ -1612,7 +1612,7 @@ dump = (src []byte) (out str) {
     first = true
     (go) {
         lx-scan-token(lx, t)
-        first == false -> b.push-byte(B-LF)
+        ! first -> b.push-byte(B-LF)
         b.push(lx-fmt(t))
         first = false
         lx.last == tok.EOF -> go = false

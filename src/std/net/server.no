@@ -1245,7 +1245,7 @@ https-server-conn.write-status = (status i64) (ok bool) {
 
         ok -> send-ok = true
     }
-    send-ok == false -> return
+    ! send-ok -> return
     ok = true
 }
 
@@ -1272,7 +1272,7 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
 
         ok -> send-ok = true
     }
-    send-ok == false -> return
+    ! send-ok -> return
     ok = true
 }
 
@@ -1295,7 +1295,7 @@ https-server-conn.write-headers-done = () (ok bool) {
 
         ok -> send-ok = true
     }
-    send-ok == false -> return
+    ! send-ok -> return
     ok = true
 }
 
@@ -1316,7 +1316,7 @@ https-server-conn.write-body = (data str) (ok bool) {
 
             ok -> send-ok = true
         }
-        send-ok == false -> return
+        ! send-ok -> return
         ok = true
     }
     ok = true

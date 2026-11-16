@@ -92,7 +92,8 @@ func ResolveEmbedBase(sourcePath string) string {
 }
 
 // SourcePathSegmentRe 匹配合法的源碼路徑段：小寫字母 (a-z)、數字 (0-9) 與中劃線 (-)。
-// 底線 (_)、大寫字母與其他字元皆被拒絕。
+// 此正則套用於「去掉首個底線後」的段名：底線 (_) 僅能做為首字元的忽略標記，
+// 從第二個字元起被拒絕；大寫字母與其他字元亦被拒絕。
 var SourcePathSegmentRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 // IsIgnoredSourceDir 回報目錄名 name 是否為「被忽略」段：必須「以底線 '_' 開頭」
@@ -163,7 +164,8 @@ func isValidSourceSegment(name string) bool {
 
 // ValidateSourcePathName 強制執行 Nolang 源碼路徑命名規範：
 // 路徑的每一段（目錄名與檔名主體；.no 副檔名不計入）都只能由小寫字母、數字與中劃線組成，
-// 不得以中劃線開頭/結尾、不得出現連續中劃線。底線、大寫字母與其他字元皆直接報錯。
+// 不得以中劃線開頭/結尾、不得出現連續中劃線。底線 (_) 僅允許做為段名首字元的忽略標記，
+// 從第二個字元起禁止；大寫字母與其他字元皆直接報錯。
 //
 // 無論資料夾或檔案都會檢查：例如 "tmp/zz_stridx/r_index.no" 因 "zz_stridx" 與 "r_index"
 // 含底線而被拒。
@@ -215,7 +217,7 @@ func validatePathSegments(path string, skipHidden bool) error {
 			name = name[1:]
 		}
 		if !isValidSourceSegment(name) {
-			return i18n.Errorf("83xbz15x", "source file path is not a valid name: %s\n  the path segment %q contains disallowed characters (only lowercase letters, digits and hyphens are allowed; underscores are forbidden, and a hyphen may not lead, trail or repeat)\n  valid example: tmp/zz-stridx/r-index.no", path, seg)
+			return i18n.Errorf("83xbz15x", "source file path is not a valid name: %s\n  the path segment %q contains disallowed characters (only lowercase letters, digits and hyphens are allowed; an underscore is allowed only as the first character of a segment (ignore marker) and is forbidden from the second character onward; a hyphen may not lead, trail or repeat)\n  valid example: tmp/zz-stridx/r-index.no", path, seg)
 		}
 	}
 	return nil

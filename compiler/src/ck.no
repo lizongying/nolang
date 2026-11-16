@@ -168,6 +168,7 @@ check = (t ast, path str) (out []str) {
                 bnd > 0 && ck-def-has(defs, bnd) == 0 -> {
                     defs.push(bnd)
                 }
+
                 #{overflow=wrap}
                 tbnd-i = hb + 3
                 tbnd = ast.aux-at(t, tbnd-i)

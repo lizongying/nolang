@@ -131,6 +131,7 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
             }
 
             {
+
                 #{overflow=wrap}
                 j ?= j - 1
             }: {
@@ -239,6 +240,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         y = ghash-mul(y, h)
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 16
         }: {
@@ -250,6 +252,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     ; AAD 最後不完整區塊
     pos < aad.len() -> {
+
         ; 尾端不足一塊：blk 先清零再填入剩下的位元組
         i <- [0..16): {
             blk[i]: {
@@ -324,6 +327,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         y = ghash-mul(y, h)
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 16
         }: {
@@ -334,6 +338,7 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     }
 
     pos < cipher.len() -> {
+
         ; 尾端不足一塊：blk 先清零再填入剩下的位元組
         i <- [0..16): {
             blk[i]: {
@@ -584,6 +589,7 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         aes-ctr.ctr-inc(cb)
 
         {
+
             #{overflow=wrap}
             pos ?= pos + n
         }: {

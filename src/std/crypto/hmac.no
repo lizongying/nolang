@@ -235,6 +235,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
             }
         }
     }
+
     ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [64]byte
     opad-key [64]byte
@@ -382,6 +383,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
             }
         }
     }
+
     ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [128]byte
     opad-key [128]byte
@@ -520,6 +522,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
             }
         }
     }
+
     ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [128]byte
     opad-key [128]byte
@@ -658,6 +661,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
             }
         }
     }
+
     ; ipad-key = K' ⊕ ipad、opad-key = K' ⊕ opad
     ipad-key [64]byte
     opad-key [64]byte

@@ -254,6 +254,7 @@ parser.line-end-of = (i i64) (le i64) {
         c == 10 || c == 13 -> return
 
         {
+
             #{overflow=wrap}
             le ?= le + 1
         }: {
@@ -552,6 +553,7 @@ hex-digit = (c i64) (d i64) {
     d = -1
     c >= 48 && c <= 57 -> {
         {
+
             #{overflow=wrap}
             d ?= c - 48
         }: {
@@ -563,6 +565,7 @@ hex-digit = (c i64) (d i64) {
     }
     c >= 97 && c <= 102 -> {
         {
+
             #{overflow=wrap}
             d ?= c - 97 + 10
         }: {
@@ -574,6 +577,7 @@ hex-digit = (c i64) (d i64) {
     }
     c >= 65 && c <= 70 -> {
         {
+
             #{overflow=wrap}
             d ?= c - 65 + 10
         }: {
@@ -606,6 +610,7 @@ parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         }
         c == 95 -> {
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -620,6 +625,7 @@ parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         d >= radix -> return
 
         {
+
             #{overflow=wrap}
             v ?= v * radix + d
         }: {
@@ -629,6 +635,7 @@ parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         }
 
         {
+
             #{overflow=wrap}
             digits ?= digits + 1
         }: {
@@ -638,6 +645,7 @@ parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -710,6 +718,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
                 k == YAML-KIND-INT -> {
                     neg -> {
                         {
+
                             #{overflow=wrap}
                             v ?= 0 - v
                         }: {
@@ -725,6 +734,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
             }
             x == 111 || x == 79 -> {
                 {
+
                     #{overflow=wrap}
                     s ?= j + 1
                 }: {
@@ -738,6 +748,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
                 k == YAML-KIND-INT -> {
                     neg -> {
                         {
+
                             #{overflow=wrap}
                             v ?= 0 - v
                         }: {
@@ -763,6 +774,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
         c = t.byte(i)
         c == 95 -> {
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -774,6 +786,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
         }
         c >= 48 && c <= 57 -> {
             {
+
                 #{overflow=wrap}
                 digits ?= digits + 1
             }: {
@@ -783,6 +796,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
             }
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -797,6 +811,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
             has-dot = true
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -812,6 +827,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
             has-exp = true
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -828,6 +844,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
 
                 s == 45 || s == 43 -> {
                     {
+
                         #{overflow=wrap}
                         i ?= i + 1
                     }: {
@@ -866,6 +883,7 @@ scan-number = (t str) (kind i64, ival i64, fval f64) {
     k == YAML-KIND-INT -> {
         neg -> {
             {
+
                 #{overflow=wrap}
                 v ?= 0 - v
             }: {
@@ -1304,6 +1322,7 @@ parser.looks-like-map-entry = () (yes bool) {
                 j < .n -> {
                     .src.byte(j) == 39 -> {
                         {
+
                             #{overflow=wrap}
                             i ?= i + 2
                         }: {
@@ -1318,6 +1337,7 @@ parser.looks-like-map-entry = () (yes bool) {
             }
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -1330,6 +1350,7 @@ parser.looks-like-map-entry = () (yes bool) {
         in-d -> {
             c == 92 -> {
                 {
+
                     #{overflow=wrap}
                     i ?= i + 2
                 }: {
@@ -1342,6 +1363,7 @@ parser.looks-like-map-entry = () (yes bool) {
             c == 34 -> in-d = false
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -1355,6 +1377,7 @@ parser.looks-like-map-entry = () (yes bool) {
             in-s = true
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -1368,6 +1391,7 @@ parser.looks-like-map-entry = () (yes bool) {
             in-d = true
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -1379,6 +1403,7 @@ parser.looks-like-map-entry = () (yes bool) {
         }
         c == 91 || c == 123 -> {
             {
+
                 #{overflow=wrap}
                 depth ?= depth + 1
             }: {
@@ -1388,6 +1413,7 @@ parser.looks-like-map-entry = () (yes bool) {
             }
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -1399,6 +1425,7 @@ parser.looks-like-map-entry = () (yes bool) {
         }
         c == 93 || c == 125 -> {
             {
+
                 #{overflow=wrap}
                 depth ?= depth - 1
             }: {
@@ -1408,6 +1435,7 @@ parser.looks-like-map-entry = () (yes bool) {
             }
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -1426,6 +1454,7 @@ parser.looks-like-map-entry = () (yes bool) {
         }
         depth == 0 && c == 58 -> {
             {
+
                 #{overflow=wrap}
                 j ?= i + 1
             }: {
@@ -1445,6 +1474,7 @@ parser.looks-like-map-entry = () (yes bool) {
         }
         depth == 0 && c == 63 -> {
             {
+
                 #{overflow=wrap}
                 j ?= i + 1
             }: {
@@ -1464,6 +1494,7 @@ parser.looks-like-map-entry = () (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -1584,6 +1615,7 @@ parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
                 .newline()
 
                 {
+
                     #{overflow=wrap}
                     breaks ?= breaks + 1
                 }: {
@@ -1659,7 +1691,7 @@ parser.parse-single = () (idx i64) {
         out = out - sc.to-str()
         .advance()
     }
-    closed == false -> .fail-at('unterminated single-quoted scalar')
+    ! closed -> .fail-at('unterminated single-quoted scalar')
     idx = .push-scalar(out, YAML-STYLE-SINGLE, '', '')
 }
 
@@ -1706,7 +1738,7 @@ parser.parse-double = () (idx i64) {
         raw = raw - dc.to-str()
         .advance()
     }
-    closed == false -> {
+    ! closed -> {
         .fail-at('unterminated double-quoted scalar')
         idx = .push-null()
         return
@@ -1779,6 +1811,7 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
         }
         c >= 49 && c <= 57 -> {
             {
+
                 #{overflow=wrap}
                 ind-ind ?= c - 48
             }: {
@@ -1809,6 +1842,7 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
     content-ind = 0
     ind-ind > 0 -> {
         {
+
             #{overflow=wrap}
             content-ind ?= parent-indent + ind-ind
         }: {
@@ -1875,6 +1909,7 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
         tail = str-at(lines, last)
         tail.len-bytes() == 0 -> {
             {
+
                 #{overflow=wrap}
                 trail ?= trail + 1
             }: {
@@ -1905,6 +1940,7 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
             ln = str-at(lines, i)
             ln.len-bytes() == 0 -> {
                 {
+
                     #{overflow=wrap}
                     pending ?= pending + 1
                 }: {
@@ -2446,7 +2482,7 @@ parser.parse-block-map = (indent i64) (idx i64) {
         is-merge -> {
             keys, vals = .merge-into(keys, vals, val)
         }
-        is-merge == false -> {
+        ! is-merge -> {
 
             ; 同名键：本地值覆蓋已有條目（YAML 合並键語義）
             dup = -1
@@ -3414,6 +3450,7 @@ to-i64 = (s str) (v i64) {
         acc = acc * 10 + c - 48
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -3455,6 +3492,7 @@ hex-char = (v i64) (ch str) {
     v < 10 -> {
         h1 char = 0
         {
+
             #{overflow=wrap}
             h1 ?= 48 + v
         }: {
@@ -3468,6 +3506,7 @@ hex-char = (v i64) (ch str) {
 
     h2 char = 0
     {
+
         #{overflow=wrap}
         h2 ?= 87 + v
     }: {

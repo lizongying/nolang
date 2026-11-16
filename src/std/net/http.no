@@ -363,7 +363,7 @@ do = (method str, url str, body str) (resp ?response) {
         use-tls -> {
             tls-c.init()
             ok2 = tls-c.connect(host, port)
-            ok2 == false -> {
+            ! ok2 -> {
 
                 ; 純 nolang TLS 目前不可用：顯式回報錯誤，避免靜默回傳 nil 掩蓋原因
                 resp = err('tls handshake failed: pure nolang TLS unavailable')
@@ -596,7 +596,7 @@ do-req = (req request) (resp ?response) {
         use-tls -> {
             tls-c.init()
             ok2 = tls-c.connect(host, port)
-            ok2 == false -> {
+            ! ok2 -> {
 
                 ; 純 nolang TLS 目前不可用：顯式回報錯誤，避免靜默回傳 nil 掩蓋原因
                 resp = err('tls handshake failed: pure nolang TLS unavailable')
@@ -877,7 +877,7 @@ download = (url str, dest str) (ok bool) {
         use-tls -> {
             tls-c.init()
             ok2 = tls-c.connect(host, port)
-            ok2 == false -> return
+            ! ok2 -> return
         }
 
         -> {
@@ -972,6 +972,7 @@ download = (url str, dest str) (ok bool) {
 upload-put = (url str, token str, file-path str) (ok bool) {
     ok = false
     content = ''
+
     ; ⚠️ err/nil 臂要 return，只能用语句 match（`?=` 块的臂内 return 不生效）
     content-result = fs.read-str(file-path)
     content-result: {
@@ -1046,7 +1047,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
         use-tls -> {
             tls-c.init()
             ok2 = tls-c.connect(host, port)
-            ok2 == false -> return
+            ! ok2 -> return
         }
 
         -> {
@@ -1293,7 +1294,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         use-tls -> {
             tls-c.init()
             okc = tls-c.connect(host, port)
-            okc == false -> return
+            ! okc -> return
         }
 
         -> {
@@ -1408,6 +1409,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         }
 
         {
+
             #{overflow=wrap}
             scan ?= scan + 1
         }: {
@@ -1630,7 +1632,7 @@ http-dl-dechunk = (b []byte) (out []byte) {
         size = 0
         size-done = false
 
-        (pos < blen && size-done == false) {
+        (pos < blen && ! size-done) {
             c = b[pos]: {
                 ok -> it
 
@@ -1665,7 +1667,7 @@ http-dl-dechunk = (b []byte) (out []byte) {
         }
         line-done = false
 
-        (pos < blen && line-done == false) {
+        (pos < blen && ! line-done) {
             c = b[pos]: {
                 ok -> it
 

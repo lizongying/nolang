@@ -178,7 +178,7 @@ t-fixed-all = () {
 ; RFC 4231 TC2（key = "Jefe"、data = "what do ya want for nothing?"）
 t-tc2-384-md5 = () {
     d = 'what do ya want for nothing?'
-    k []byte = 'Jefe'.to-bytes()
+    k = 'Jefe'.to-bytes()
     h384 = hmac.hmac-sha384-vec(k, d.to-bytes())
     runner.str-eq(bhex(h384), 'af45d2e376484031617f78d2b58a6b1b9c7ef464f5a01b47e42ec3736322445e8e2240ca5e69e2c78b3239ecfab21649', 96, 'hmac-sha384 TC2')
     hmd5 = hmac.hmac-md5-vec(k, d.to-bytes())

@@ -77,10 +77,12 @@ keccak-f1600 = (state []u64) {
         ; θ (theta)
         c [5]u64
         x <- [0..5): {
+
             ; 每列的 5 個 lane 依 stride 5 展開後 XOR 起來
             column u64 = 0
             k <- [0..5): {
                 {
+
                     #{overflow=wrap}
                     lane-at ?= x + k * 5
 
@@ -308,6 +310,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         keccak-f1600(state)
 
         {
+
             #{overflow=wrap}
             absorbed ?= absorbed + rate
         }: {
@@ -424,6 +427,7 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         }
 
         {
+
             #{overflow=wrap}
             squeezed ?= squeezed + rate
         }: {

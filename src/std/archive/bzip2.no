@@ -159,6 +159,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         }
 
         {
+
             #{overflow=wrap}
             len-count[l] ?= len-count-l + 1
         }: {
@@ -255,6 +256,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         }
 
         {
+
             #{overflow=wrap}
             tmp-base[l] ?= slot-at + 1
         }: {
@@ -417,7 +419,9 @@ decompress = (data []byte) (out []byte) {
 
             expected-byte ?= header-magic[i]
 
-            magic-byte != expected-byte -> { return }
+            magic-byte != expected-byte -> {
+                return
+            }
         }: {
             err -> _
 
@@ -429,9 +433,13 @@ decompress = (data []byte) (out []byte) {
     {
         size-char ?= data[3]
 
-        size-char < 49 -> { return }
+        size-char < 49 -> {
+            return
+        }
 
-        size-char > 57 -> { return }
+        size-char > 57 -> {
+            return
+        }
     }: {
         err -> _
 
@@ -927,6 +935,7 @@ decompress = (data []byte) (out []byte) {
                         }
 
                         {
+
                             #{overflow=wrap}
                             count[v] ?= count-v + 1
                         }: {
@@ -987,6 +996,7 @@ decompress = (data []byte) (out []byte) {
                     }
 
                     {
+
                         ; 該字元此前已出現的個數，用過即累加
                         seen-count ?= rank[v]
 

@@ -20,7 +20,7 @@ print('step1 ch=[{ch}]')
 ; Step 2: Cross-module call with str + i64 params returning bool
 ; This triggers bug13: bool return via voidSingleOutput
 ok = bug13-helper.use-str-and-bool(ch, 42)
-ok == true -> print('step2 ok=true')
+ok -> print('step2 ok=true')
 
 -> print('step2 ok=false')
 
@@ -31,6 +31,11 @@ print('step3 ch=[{ch}]')
 
 ; Verify correctness
 {
-    ch == 'commit-1234567890abcdef' -> { print('bug13: PASS') }
-    -> { print('bug13: FAIL') }
+    ch == 'commit-1234567890abcdef' -> {
+        print('bug13: PASS')
+    }
+
+    -> {
+        print('bug13: FAIL')
+    }
 }

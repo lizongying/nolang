@@ -82,6 +82,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     buf[pos] = QPACK-LITERAL-PREFIX
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -98,6 +99,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos] = name-bytes.len() & 255
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 1
             }: {
@@ -116,6 +118,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos + 1] = name-bytes.len() & 255
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 2
             }: {
@@ -148,6 +151,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos] = value-bytes.len() & 255
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 1
             }: {
@@ -164,6 +168,7 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos + 1] = value-bytes.len() & 255
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 2
             }: {
@@ -239,6 +244,7 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + hdr-n
         }: {
@@ -270,6 +276,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     }
 
     {
+
         #{overflow=wrap}
         r-pos ?= r-pos + 1
     }: {
@@ -452,6 +459,7 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + ft-n
     }: {
@@ -477,6 +485,7 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + len-n
     }: {
@@ -586,6 +595,7 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
     }
 
     {
+
         #{overflow=wrap}
         next-pos ?= r-pos + len-val
     }: {
@@ -1010,7 +1020,7 @@ get = (url str) (resp ?response) {
     path = '/'
     ok = false
     host, port, path, ok = parse-url(url)
-    ok == false -> return
+    ! ok -> return
     conn = connect(host, port)
     conn: {
         nil -> return
@@ -1040,7 +1050,7 @@ post = (url str, body str) (resp ?response) {
     path = '/'
     ok = false
     host, port, path, ok = parse-url(url)
-    ok == false -> return
+    ! ok -> return
     conn = connect(host, port)
     conn: {
         nil -> return
@@ -1068,7 +1078,7 @@ http3-do = (method str, url str, body str) (resp ?response) {
     path = '/'
     ok = false
     host, port, path, ok = parse-url(url)
-    ok == false -> return
+    ! ok -> return
     conn = connect(host, port)
     conn: {
         nil -> return

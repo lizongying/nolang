@@ -54,11 +54,12 @@ test-names-cover-all = () {
         nm = tok.name(i)
         unk = tok.str-eq(nm, 'UNKNOWN')
         unk -> {
-
             {
+
                 #{overflow=wrap}
                 bad ?= bad + 1
-            }: { err -> _
+            }: {
+                err -> _
 
                 -> _
             }

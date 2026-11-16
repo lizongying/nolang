@@ -119,11 +119,12 @@ test-intern-many = () {
         expect = k + 1
         {
             id == expect -> {
-
                 {
+
                     #{overflow=wrap}
                     ok-count ?= ok-count + 1
-                }: { err -> _
+                }: {
+                    err -> _
 
                     -> _
                 }

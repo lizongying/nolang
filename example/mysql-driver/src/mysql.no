@@ -125,7 +125,7 @@ mysql-pkt-recv = (fd fd) (payload str, payload-len i64, seq i64, ok bool) {
     ok = false
     hdr, hdr-ok = mysql-read-exact(fd, 4)
     {
-        hdr-ok == false -> return
+        ! hdr-ok -> return
     }
 
     ; 解析標頭：3 位元組 LE 長度 + 1 位元組序號
@@ -538,7 +538,7 @@ open = (dsn str) (d db-mysql) {
     }
     handshake, hs-len, hs-seq, hs-ok = mysql-pkt-recv(fd)
     {
-        hs-ok == false -> {
+        ! hs-ok -> {
             fs.close(fd)
             return
         }
@@ -1049,7 +1049,7 @@ open = (dsn str) (d db-mysql) {
     }
     auth-resp, ar-len, ar-seq, ar-ok = mysql-pkt-recv(fd)
     {
-        ar-ok == false -> {
+        ! ar-ok -> {
             fs.close(fd)
             return
         }
@@ -1146,7 +1146,7 @@ db-mysql.exec = (sql str) (r sql.result) {
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
     {
-        recv-ok == false -> {
+        ! recv-ok -> {
             .connected = false
             return
         }
@@ -1216,7 +1216,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
     {
-        recv-ok == false -> {
+        ! recv-ok -> {
             .connected = false
             return
         }
@@ -1247,7 +1247,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     (i < n-cols) {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
         {
-            cd-ok == false -> {
+            ! cd-ok -> {
                 rs.eof = true
                 return
             }
@@ -1267,7 +1267,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     }
     eof-pkt, eof-len, eof-seq, eof-ok = mysql-pkt-recv(.fd)
     {
-        eof-ok == false -> {
+        ! eof-ok -> {
             rs.eof = true
             return
         }
@@ -1307,7 +1307,7 @@ rows-mysql.next = () (ok bool) {
     }
     pkt, pkt-len, pkt-seq, recv-ok = mysql-pkt-recv(.fd)
     {
-        recv-ok == false -> {
+        ! recv-ok -> {
             .eof = true
             return
         }
@@ -1356,7 +1356,7 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
         #{overflow=wrap}
         {
-            fn == false -> .row-pos = .row-pos + fl
+            ! fn -> .row-pos = .row-pos + fl
         }
 
         #{overflow=wrap}
@@ -1462,7 +1462,7 @@ rows-mysql.scan-str = (col i64) (v str) {
 
         #{overflow=wrap}
         {
-            fn == false -> .row-pos = .row-pos + fl
+            ! fn -> .row-pos = .row-pos + fl
         }
 
         #{overflow=wrap}
@@ -1507,7 +1507,7 @@ rows-mysql.scan-float = (col i64) (v f64) {
 
         #{overflow=wrap}
         {
-            fn == false -> .row-pos = .row-pos + fl
+            ! fn -> .row-pos = .row-pos + fl
         }
 
         #{overflow=wrap}
@@ -1733,7 +1733,7 @@ stmt-mysql.exec = () (r sql.result) {
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
     {
-        recv-ok == false -> return
+        ! recv-ok -> return
     }
 
     ; 解析回應
@@ -1801,7 +1801,7 @@ stmt-mysql.query = () (rs rows-mysql) {
     }
     resp, resp-len, resp-seq, recv-ok = mysql-pkt-recv(.fd)
     {
-        recv-ok == false -> return
+        ! recv-ok -> return
     }
 
     ; 檢查回應類型
@@ -1825,7 +1825,7 @@ stmt-mysql.query = () (rs rows-mysql) {
     (i < n-cols) {
         col-def, cd-len, cd-seq, cd-ok = mysql-pkt-recv(.fd)
         {
-            cd-ok == false -> {
+            ! cd-ok -> {
                 rs.eof = true
                 return
             }
@@ -1845,7 +1845,7 @@ stmt-mysql.query = () (rs rows-mysql) {
     }
     eof-pkt, eof-len, eof-seq, eof-ok = mysql-pkt-recv(.fd)
     {
-        eof-ok == false -> {
+        ! eof-ok -> {
             rs.eof = true
             return
         }

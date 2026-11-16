@@ -71,7 +71,7 @@ line: {
 c.close()
 yes2 = c.is-connected()
 {
-    yes2 == false -> print('ok: close')
+    ! yes2 -> print('ok: close')
 
     -> print('fail: close')
 }
@@ -418,6 +418,6 @@ p = test-tcp-fork-basic()
 {
     p -> print('PASS: tcp-fork-basic')
 
-    p == false -> print('FAIL: tcp-fork-basic')
+    ! p -> print('FAIL: tcp-fork-basic')
 }
 io.errln('=== TCP Fork Tests Done ===')

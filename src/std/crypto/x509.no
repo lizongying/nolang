@@ -68,6 +68,7 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     }
 
     {
+
         #{overflow=wrap}
         adv ?= 1 + n
     }: {
@@ -243,6 +244,7 @@ x509-rsa-e = (data []byte) (e i64) {
 
     ; 步驟 7：進入 SPKI 內容（跳過 SPKI SEQUENCE 標籤 + 長度）
     {
+
         #{overflow=wrap}
         p ?= p + 1
     }: {
@@ -350,6 +352,7 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     ; 進入 SPKI
     {
+
         #{overflow=wrap}
         p ?= p + 1
     }: {
@@ -410,6 +413,7 @@ x509-rsa-n = (data []byte) (out []byte) {
 
         (data-mod-val-start) == 0 -> {
             {
+
                 #{overflow=wrap}
                 actual-start ?= mod-val-start + 1
             }: {
@@ -2343,10 +2347,10 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
     skipping = 1
     (start < n - 1 && skipping == 1) {
         {
-            #{overflow=wrap}
             first-byte ?= data[start]
 
             first-byte == 0 -> {
+
                 #{overflow=wrap}
                 start ?= start + 1
             }
@@ -2438,6 +2442,7 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     n = 0
     (tmp != 0) {
         {
+
             #{overflow=wrap}
             n ?= n + 1
         }: {
@@ -3338,10 +3343,10 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
 
             j <- [0..4): {
                 {
+
                     #{overflow=wrap}
                     out-pos ?= mod-len - 1 - i * 4 - j
 
-                    #{overflow=wrap}
                     byte-value = (limb >> (j * 8)) & 255
 
                     sig[out-pos]: {

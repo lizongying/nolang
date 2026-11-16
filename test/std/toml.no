@@ -276,8 +276,8 @@ t-helpers = () {
 ; 建構回環：new + put 組出文件後，get-str 能解出 hello，stringify 輸出與原輸入逐字相等
 t-build-roundtrip = () {
     doc = toml.new()
-    o1 bool = doc.put('title', '"hello"')
-    o2 bool = doc.put('n', '42')
+    o1 = doc.put('title', '"hello"')
+    o2 = doc.put('n', '42')
     runner.is-true(o1, 'put title ok')
     runner.is-true(o2, 'put n ok')
     runner.eq(doc.count, 2, 'built doc count 2')

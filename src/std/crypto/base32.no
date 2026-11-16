@@ -30,6 +30,7 @@ encode = (data []byte) (out str) {
 
     remainder != 0 -> {
         {
+
             #{overflow=wrap}
             out-len ?= out-len + 8
         }: {
@@ -136,6 +137,7 @@ encode = (data []byte) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 5
         }: {
@@ -145,6 +147,7 @@ encode = (data []byte) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             out-pos ?= out-pos + 8
         }: {
@@ -508,6 +511,7 @@ decode = (in str) (out []byte) {
         out[out-pos + 4] = (((v6 & 7) << 5) | v7) & 255
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 8
         }: {
@@ -517,6 +521,7 @@ decode = (in str) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             out-pos ?= out-pos + 5
         }: {

@@ -108,9 +108,9 @@ i <- [0..32): {
 }
 
 {
-    eq == true -> print('PASS: scalarmult-base([1..32]) matches reference')
+    eq -> print('PASS: scalarmult-base([1..32]) matches reference')
 
-    eq == false -> {
+    ! eq -> {
         print('FAIL: scalarmult-base([1..32]) mismatch')
         i <- [0..32): {
             eprint(pub[i])

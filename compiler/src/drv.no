@@ -132,7 +132,7 @@ drv.cmd-tokens = () (code i64) {
         err -> {
         }
     }
-    got == false -> {
+    ! got -> {
         eprint(NOC-NAME - ': cannot read ' - path)
         code = EXIT-FAIL
         return
@@ -175,7 +175,7 @@ drv.cmd-ast = () (code i64) {
         err -> {
         }
     }
-    got == false -> {
+    ! got -> {
         eprint(NOC-NAME - ': cannot read ' - path)
         code = EXIT-FAIL
         return
@@ -233,7 +233,7 @@ drv.cmd-vet = () (code i64) {
             code = EXIT-FAIL
         }
     }
-    got == false -> {
+    ! got -> {
         return
     }
 
@@ -453,7 +453,7 @@ drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
 
     ; cycle：path 已在祖先鏈上 ⇒ 真循環（A→B→A）
     onstack = pathchain.contains(probe)
-    onstack == true -> {
+    onstack -> {
         r.cyc = true
         return
     }
@@ -485,7 +485,7 @@ drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
         err -> {
         }
     }
-    ok-read == false -> {
+    ! ok-read -> {
         eprint(NOC-NAME - ': cannot read ' - path)
         return
     }
@@ -575,7 +575,7 @@ drv.read-mod = (f str) (src []byte) {
         err -> {
         }
     }
-    ok-read == false -> {
+    ! ok-read -> {
         eprint(NOC-NAME - ': cannot read ' - f)
         return
     }
@@ -760,6 +760,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
 
     ; pass 2：逐模組 emit 各函式（入口額外合成 main），body 串接
     body = ''
+
     ; 发射闭包用的分片表：parts[i] 与 pnames[i] 一一对应，且与 agg.cgf[i]/agg.cgb[i] 同序
     ;   （h2m-lower-func 只在真正产码时登记 cgf，因此下标天然对齐）
     parts []str = []
@@ -768,6 +769,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
     ; 整包 emit-once：同名函式只產一次（自舉源碼存在重複定義，如 ps.no 的 ps-is-builtin-type
     ;   在 3434 與 7321 各定義一次；整包路徑首次完整降級 ps.no 才暴露。emit-once 兼顧跨模組同名碰撞。
     emitted = ':'
+
     ; 全域 sg（切片 5 跨模組呼叫查表用）：先逐模組把所有函式簽名收進【同一份】sg，
     ;   再逐模組 emit 時用這份全域表解析 `mod.fn` 點號呼叫（不再逐模組隔離）。
     sg = h2m-sigs-new()
@@ -790,6 +792,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
             kd.kind == asp.K-FUNCTION-DEFINITION -> {
                 nm, rt, ap, bd = h2m-func-sig(t, agg, kid)
                 bd == 0 -> {
+
                     ; 與 drv.pkg-sigs 同口径：key = mod.short（剝 module 前綴後重組），
                     ;   使點號呼叫 emit 的 `mod.fn` 能在此全域表命中（切片 5 ⑥）。
                     short = nm
@@ -845,6 +848,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
                 emitted.contains(key) == false -> {
                     one = h2m-lower-func(t, agg, sg, kid)
                     one != '' -> {
+
                         ; 只有【真正产码】的函数进 parts/pnames（与 agg.cgf 只记成功者严格同序同长）；
                         ;   h2m-lower-func 对含不支持构造的函数直接回 ''，已被外层 one != '' 挡在门外。
                         parts.push(one)
@@ -882,6 +886,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
         nalive []i64 = []
         bi = 0
         (bi < parts.len()) {
+
             ; 防御：调用图与文本分片必须同序同长（上面已按 `define ` 前缀对齐）；越界即视为不可保留
             keep = 0
             bi < agg.cgf.len() -> keep = alive[bi]
@@ -922,6 +927,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
     (ji < parts.len()) {
         alive[ji] == 1 -> body = body - parts[ji] - '\n'
         alive[ji] == 0 -> {
+
             ; 被剔除 = 该函数本可产码，但引用了不可降级的函数 ⇒ 等价于不可降级
             agg.unsup = agg.unsup + 1
             eprint(NOC-NAME - ': dropped (calls unsupported): ' - pnames[ji])
@@ -934,12 +940,13 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
     agg.unsup > 0 -> {
         eprint(NOC-NAME - ': unsupported constructs: ' - agg.unsup.to-str() - ' (pkg-ll)')
     }
+
     ; 切片 6 ②：把逐条 (fn,kind) 拼成覆盖率日志串。
     ; ⚠️ 仅当 emit-cov 为 true（由 drv.pkg-ll-cov 传 true）才输出，避免污染正常 pkg-ll
     ;   调用与真实 no build 的 stdout。输出走 print 到 stdout（可靠通道）＋ best-effort 写
     ;   /tmp/h2m-cov.log；大日志头部可能被 host 大缓冲 bug 损坏（实测 ~62 行 :0 占据文件头），
     ;   故覆盖率审查一律以 stdout 上的逐条日志为准。
-    emit-cov == true -> {
+    emit-cov -> {
         cov = h2m-cov-join(agg.unsf, agg.unsk)
         print(cov)
         fs.write-file('/tmp/h2m-cov.log', cov.to-bytes())
@@ -1062,7 +1069,7 @@ drv.build-to = (path str, out str) (ok bool) {
         err(e) -> {
         }
     }
-    got == false -> {
+    ! got -> {
         eprint(NOC-NAME - ': cannot read ' - path)
         return
     }
@@ -1090,7 +1097,7 @@ drv.cmd-build = () (code i64) {
         return
     }
     ok = drv.build-to(path, drv.build-out(path))
-    ok == false -> code = EXIT-FAIL
+    ! ok -> code = EXIT-FAIL
 }
 
 ; run：build 後同步執行產物，把子行程結束碼當 noc 的結束碼（L4 行為差分用）
@@ -1115,7 +1122,7 @@ drv.cmd-run = () (code i64) {
     out = drv.out-arg()
     out == '' -> out = drv.run-temp()
     ok = drv.build-to(path, out)
-    ok == false -> {
+    ! ok -> {
         code = EXIT-FAIL
         return
     }

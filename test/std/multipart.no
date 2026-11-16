@@ -153,6 +153,7 @@ t-reader = () {
 t-encrypted = () {
     key [32]byte
     iv [12]byte
+
     ; 下標與算術各自都是 option（下標越界 / 溢出），place-match 的
     ; `it = <expr>` 只解一層，改用塊形態 match 的 ?= 一次解兩層。
     i <- [0..32): {

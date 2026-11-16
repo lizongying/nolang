@@ -52,7 +52,7 @@ ne = (a t, b t, msg str) (ok bool) {
 ; ok: true=val 為 true；false=val 為 false 且已印 FAIL
 true = (val bool, msg str) (ok bool) {
     {
-        val == false -> {
+        ! val -> {
             ok = false
             print('FAIL: true')
             print(msg)
@@ -68,7 +68,7 @@ true = (val bool, msg str) (ok bool) {
 ; ok: true=val 為 false；false=val 為 true 且已印 FAIL
 false = (val bool, msg str) (ok bool) {
     {
-        val == true -> {
+        val -> {
             ok = false
             print('FAIL: false')
             print(msg)

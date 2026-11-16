@@ -279,6 +279,7 @@ conn.recv-all = () (content str, total i64) {
         content = content - buf.slice(0, chunk-n)
 
         {
+
             #{overflow=wrap}
             total ?= total + chunk-n
         }: {
@@ -1041,6 +1042,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
         #{overflow=wrap}
         i + 1 < len -> {
             {
+
                 ; 16-bit word: data[i] << 8 | data[i+1]
                 word-high ?= data[i]
 
@@ -1063,6 +1065,7 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 2
         }: {
@@ -1138,6 +1141,7 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
 
     {
         n >= 20 -> {
+
             ; IP 版本判斷與 IHL 都取自標頭第 0 個位元組
             {
                 version-byte ?= recv-buf[0]
@@ -1145,6 +1149,7 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
                 ver = (version-byte >> 4) & 15
 
                 ver == 4 -> {
+
                     ; IHL = (byte 0 & 0x0F) * 4
                     ; D1：`*` 的結果恆為 `?i64`，此處要的是普通整數 → 顯式 plain i64。
                     #{overflow=wrap}
@@ -1585,6 +1590,7 @@ split-ws = (s str) (out []str) {
                 {
                     c == 32 || c == 9 -> {
                         {
+
                             #{overflow=wrap}
                             i ?= i + 1
                         }: {
@@ -1608,6 +1614,7 @@ split-ws = (s str) (out []str) {
                 c == 32 || c == 9 -> break
 
                 {
+
                     #{overflow=wrap}
                     i ?= i + 1
                 }: {

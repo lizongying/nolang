@@ -91,7 +91,7 @@ test-dh = () (pass bool) {
             -> _
         }
     }
-    alice-pub-ok == false -> {
+    ! alice-pub-ok -> {
         print('FAIL: Alice pub mismatch')
         return
     }
@@ -112,7 +112,7 @@ test-dh = () (pass bool) {
             -> _
         }
     }
-    bob-pub-ok == false -> {
+    ! bob-pub-ok -> {
         print('FAIL: Bob pub mismatch')
         return
     }
@@ -142,7 +142,7 @@ test-dh = () (pass bool) {
             break
         }
     }
-    shared-match == false -> {
+    ! shared-match -> {
         print('FAIL: shared secrets differ')
         return
     }
@@ -164,7 +164,7 @@ test-dh = () (pass bool) {
             -> _
         }
     }
-    shared-ok == false -> {
+    ! shared-ok -> {
         print('FAIL: shared secret does not match expected')
         return
     }
@@ -173,7 +173,7 @@ test-dh = () (pass bool) {
 
 p = test-dh()
 {
-    p == true -> print('PASS: X25519 DH test')
+    p -> print('PASS: X25519 DH test')
 
-    p == false -> print('FAIL: X25519 DH test')
+    ! p -> print('FAIL: X25519 DH test')
 }

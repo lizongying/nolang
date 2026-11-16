@@ -194,20 +194,28 @@ fe-mul = (h []i64, f []i64, g []i64) {
     ; 預計算 g 的 19 倍數（用於 wrap-around 折疊）
     #{overflow=wrap}
     g1-times-19 = 19 * g1
+
     #{overflow=wrap}
     g2-times-19 = 19 * g2
+
     #{overflow=wrap}
     g3-times-19 = 19 * g3
+
     #{overflow=wrap}
     g4-times-19 = 19 * g4
+
     #{overflow=wrap}
     g5-times-19 = 19 * g5
+
     #{overflow=wrap}
     g6-times-19 = 19 * g6
+
     #{overflow=wrap}
     g7-times-19 = 19 * g7
+
     #{overflow=wrap}
     g8-times-19 = 19 * g8
+
     #{overflow=wrap}
     g9-times-19 = 19 * g9
 
@@ -216,12 +224,16 @@ fe-mul = (h []i64, f []i64, g []i64) {
     ; wrap-around 因子為 19（shift_sum=255+shift_k），非 38（2*19）
     #{overflow=wrap}
     f1-doubled = 2 * f1
+
     #{overflow=wrap}
     f3-doubled = 2 * f3
+
     #{overflow=wrap}
     f5-doubled = 2 * f5
+
     #{overflow=wrap}
     f7-doubled = 2 * f7
+
     #{overflow=wrap}
     f9-doubled = 2 * f9
 
@@ -234,6 +246,7 @@ fe-mul = (h []i64, f []i64, g []i64) {
     ; 偶數 shift_k（0,51,102,153,204）: 奇數 i 的低位對稱項與奇數 i 的高位項都有 shift 和 = shift_k+1，故需 2 倍
     ; 奇數 shift_k（26,77,128,179,230）: 所有 wrap 項 shift 和恰好 = 255+shift_k，故只需 19 倍（無 2 倍）
     {
+
         #{overflow=wrap}
         t[0] ?= f0 * g0 + f1-doubled * g9-times-19 + f2 * g8-times-19 + f3-doubled * g7-times-19 + f4 * g6-times-19 + f5-doubled * g5-times-19 + f6 * g4-times-19 + f7-doubled * g3-times-19 + f8 * g2-times-19 + f9-doubled * g1-times-19
 
@@ -1480,7 +1493,6 @@ fe-tobytes = (s [32]byte, h []i64) {
     ; 往返因此全錯）。見 test/README.md §5.2 未修清單。
     #{overflow=wrap}
     wrap-carry = 19 * q
-    #{overflow=wrap}
     h0 = num-add(h0, wrap-carry)
 
     ; ---- 逐級進位，把每個 limb 規約到 [0, 2^bits) ----
@@ -2086,6 +2098,7 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
         fe-add(z2, z2, a)
 
         {
+
             #{overflow=wrap}
             t ?= t - 1
         }: {

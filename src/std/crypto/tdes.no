@@ -105,6 +105,7 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             blk ?= blk + 8
         }: {
@@ -198,6 +199,7 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             blk ?= blk + 8
         }: {
@@ -289,6 +291,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             blk ?= blk + 8
         }: {
@@ -368,6 +371,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             blk ?= blk + 8
         }: {

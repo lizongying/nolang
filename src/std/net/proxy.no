@@ -232,7 +232,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; 發送 TLS ClientHello
     ok = false
     ok = c.send-client-hello-13()
-    ok == false -> {
+    ! ok -> {
         c.close()
         return
     }
@@ -244,7 +244,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             ; TLS 1.3 路徑
             ok = c.connect-13()
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
@@ -257,12 +257,12 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             cert []byte
             ok = c.read-certificate(cert)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
             ok = c.read-server-hello-done()
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
@@ -298,7 +298,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             c.derive-keys(premaster)
 
             ok = c.send-client-key-exchange(premaster, cert)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
@@ -306,17 +306,17 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
             c.encrypted = true
 
             ok = c.send-finished(premaster)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
             ok = c.read-change-cipher-spec()
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
             ok = c.read-finished(premaster)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
@@ -353,7 +353,7 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
 
     ok = false
     ok = c.send-client-hello-13()
-    ok == false -> {
+    ! ok -> {
         c.close()
         return
     }
@@ -361,7 +361,7 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
     {
         ok -> {
             ok = c.connect-13()
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
@@ -371,12 +371,12 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
             c.version = tls.TLS-VERSION
             cert []byte
             ok = c.read-certificate(cert)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
             ok = c.read-server-hello-done()
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
@@ -409,24 +409,24 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
             }
             c.derive-keys(premaster)
             ok = c.send-client-key-exchange(premaster, cert)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
             c.send-change-cipher-spec()
             c.encrypted = true
             ok = c.send-finished(premaster)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
             ok = c.read-change-cipher-spec()
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
             ok = c.read-finished(premaster)
-            ok == false -> {
+            ! ok -> {
                 c.close()
                 return
             }
@@ -656,6 +656,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -671,6 +672,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -686,6 +688,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -702,6 +705,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -717,6 +721,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -732,6 +737,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 1
         }: {
@@ -748,6 +754,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -763,6 +770,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {

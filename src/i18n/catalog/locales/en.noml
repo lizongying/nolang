@@ -296,7 +296,7 @@ Entries: %d
   '82l9xk55': 'zip entry %q is too large (%d bytes)'
   '83xbz15x': `
 source file path is not a valid name: %s
-  the path segment %q contains disallowed characters (only lowercase letters, digits and hyphens are allowed; underscores are forbidden, and a hyphen may not lead, trail or repeat)
+  the path segment %q contains disallowed characters (only lowercase letters, digits and hyphens are allowed; an underscore is allowed only as the first character of a segment (ignore marker) and is forbidden from the second character onward; a hyphen may not lead, trail or repeat)
   valid example: tmp/zz-stridx/r-index.no
 `
   '87zc5awf': 'cannot modify read-only field \'%s\' of %s; the length is derived from the buffer — use truncate(n) instead'

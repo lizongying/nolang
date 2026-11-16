@@ -141,7 +141,7 @@ u64-of = (src str) (out str) {
 
 ; to-bool → 1/0（ok 值）；nil → 9000001、err → 9000002
 bool-of = (src str) (out i64) {
-    v ?bool = src.to-bool()
+    v = src.to-bool()
     out = 9000001
     v: {
         ok(x) -> out = x ? 1 : 0

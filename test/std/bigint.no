@@ -194,7 +194,7 @@ t-mod-public = () {
 ; to-i64：把值域受限的 bigint 取回 i64 的公開出口。測的是「不靜默截斷」這個契約。
 t-to-i64 = () {
     a = bigint.from-i64(4503599627370496)
-    av ?i64 = a.to-i64()
+    av = a.to-i64()
     rv = av: {
         ok -> it
 
@@ -203,7 +203,7 @@ t-to-i64 = () {
     runner.eq(rv, 4503599627370496, 'to-i64 round-trips 2^52')
 
     neg = bigint.from-i64(-123)
-    nv ?i64 = neg.to-i64()
+    nv = neg.to-i64()
     nrv = nv: {
         ok -> it
 
@@ -213,7 +213,7 @@ t-to-i64 = () {
 
     ; 2^63（正）出界：必須 err，不能截斷成低位
     p63 = bigint.shl(bigint.one(), 63)
-    o63 ?i64 = p63.to-i64()
+    o63 = p63.to-i64()
     ok63 = o63: {
         ok -> 1
 
@@ -223,7 +223,7 @@ t-to-i64 = () {
 
     ; 3 個 limb（2^64）由長度守衛直接擋掉
     p64 = bigint.shl(bigint.one(), 64)
-    o64 ?i64 = p64.to-i64()
+    o64 = p64.to-i64()
     ok64 = o64: {
         ok -> 1
 
@@ -234,7 +234,7 @@ t-to-i64 = () {
     ; -2^63 恰是 i64 下限：必須 ok，且往回建 bigint 後值相等
     m63 = bigint.shl(bigint.one(), 63)
     m63.sign = -1
-    mv63 ?i64 = m63.to-i64()
+    mv63 = m63.to-i64()
     okm = mv63: {
         ok -> it
 

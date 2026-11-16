@@ -464,7 +464,7 @@ test-http3-parse-url = () {
     ok = false
 
     host, port, path, ok = http3.parse-url('https://example.com:8443/api/v1')
-    ok == false -> {
+    ! ok -> {
         print('FAIL: http3-parse-url returned ok=false')
         return
     }
@@ -491,7 +491,7 @@ test-http3-parse-url = () {
     path2 = ''
     ok2 = false
     host2, port2, path2, ok2 = http3.parse-url('https://example.com/')
-    ok2 == false -> {
+    ! ok2 -> {
         print('FAIL: http3-parse-url (no port) returned ok=false')
         return
     }

@@ -160,6 +160,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = first & 63
 
             {
+
                 #{overflow=wrap}
                 next-pos ?= pos + 1
             }: {
@@ -175,6 +176,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             pos + 1 >= buf.len() -> return
 
             {
+
                 #{overflow=wrap}
                 second-byte ?= buf[pos + 1]
 
@@ -186,6 +188,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             }
 
             {
+
                 #{overflow=wrap}
                 next-pos ?= pos + 2
             }: {
@@ -204,6 +207,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = first & 63
             j <- [1..4): {
                 {
+
                     #{overflow=wrap}
                     at ?= pos + j
 
@@ -213,7 +217,6 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
                         -> 0
                     }
 
-                    #{overflow=wrap}
                     val = (val << 8) | byte-val
                 }: {
                     err -> _
@@ -223,6 +226,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             }
 
             {
+
                 #{overflow=wrap}
                 next-pos ?= pos + 4
             }: {
@@ -241,6 +245,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = first & 63
             j <- [1..8): {
                 {
+
                     #{overflow=wrap}
                     at ?= pos + j
 
@@ -250,7 +255,6 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
                         -> 0
                     }
 
-                    #{overflow=wrap}
                     val = (val << 8) | byte-val
                 }: {
                     err -> _
@@ -260,6 +264,7 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             }
 
             {
+
                 #{overflow=wrap}
                 next-pos ?= pos + 8
             }: {
@@ -357,6 +362,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         }
 
         {
+
             #{overflow=wrap}
             count ?= count + 1
         }: {
@@ -396,6 +402,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             {
+
                 #{overflow=wrap}
                 r-pos ?= rl-np + rl-val
             }: {
@@ -407,6 +414,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             {
+
                 #{overflow=wrap}
                 count ?= count + 1
             }: {
@@ -437,6 +445,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             {
+
                 #{overflow=wrap}
                 r-pos ?= rl-np + rl-val
             }: {
@@ -448,6 +457,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             {
+
                 #{overflow=wrap}
                 count ?= count + 1
             }: {
@@ -464,6 +474,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             {
+
                 #{overflow=wrap}
                 count ?= count + 1
             }: {
@@ -486,6 +497,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             {
+
                 #{overflow=wrap}
                 r-pos ?= tl-np + tl-val
             }: {
@@ -497,6 +509,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             {
+
                 #{overflow=wrap}
                 count ?= count + 1
             }: {
@@ -522,6 +535,7 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             {
+
                 #{overflow=wrap}
                 count ?= count + 1
             }: {
@@ -664,12 +678,12 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     j = 0
     (j < 4) {
         {
+
             #{overflow=wrap}
             pn-at ?= pn-offset + j
 
             pn-at < packet.len() -> {
                 {
-                    #{overflow=wrap}
                     pn-byte ?= packet[pn-at]
 
                     #{overflow=wrap}
@@ -693,6 +707,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
         }
 
         {
+
             #{overflow=wrap}
             j ?= j + 1
         }: {
@@ -1072,6 +1087,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; 再減掉 length 欄位之後（含 2 位元組 varint 自身）的起點。
     length-val = 0
     {
+
         #{overflow=wrap}
         length-val ?= QUIC-MAX-PACKET-SIZE - length-pos - 2
     }: {
@@ -1127,6 +1143,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; 聽不懂，更不可能與真實伺服器互通。
     pn-end = 0
     {
+
         #{overflow=wrap}
         pn-end ?= pn-offset + pn-len
     }: {
@@ -1152,6 +1169,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
     plain-len = 0
     {
+
         #{overflow=wrap}
         plain-len ?= pos - pn-end
     }: {
@@ -1237,6 +1255,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     ; 跳過 Version (4 bytes)
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -1255,6 +1274,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1 + dcid-len
     }: {
@@ -1273,6 +1293,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1 + scid-len
     }: {
@@ -1288,6 +1309,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     token-np < 0 -> return
 
     {
+
         #{overflow=wrap}
         pos ?= token-np + token-len
     }: {
@@ -1333,13 +1355,14 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
             -> _
         }
     }
+
     ; nonce = iv，其中第 4..11 位元組再與封包號碼（大端）XOR
     i <- [0..8): {
         {
+
             #{overflow=wrap}
             iv-byte ?= nonce[4 + i]
 
-            #{overflow=wrap}
             pn-byte = (pn >> ((7 - i) * 8)) & 255
 
             #{overflow=wrap}
@@ -1361,6 +1384,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; 對「PN 在哪」的假設不一致，nonce 就對不上，tag 永遠驗不過。
     pn-end = 0
     {
+
         #{overflow=wrap}
         pn-end ?= pn-offset + pn-len
     }: {
@@ -1382,6 +1406,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; Ciphertext = buf[pn_end..pn_offset+length_val]（length 含 PN 欄位）
     payload-len = 0
     {
+
         #{overflow=wrap}
         payload-len ?= length-val - pn-len
     }: {

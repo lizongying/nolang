@@ -1,8 +1,8 @@
 ; monaco.no — Monaco Editor API declarations (JS backend)
 ; Actual mapping is in src/build/js/builtin.go
 ; [js-monaco](#js-monaco)
-#{js}
 
+#{js}
 monaco.init = (cdn str, cb str) {
 }
 

@@ -85,6 +85,7 @@ encode = (data []byte, table str) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 3
         }: {
@@ -94,6 +95,7 @@ encode = (data []byte, table str) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             j ?= j + 4
         }: {

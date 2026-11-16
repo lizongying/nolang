@@ -74,6 +74,7 @@ rotr64 = (x u64, n i64) (r u64) {
 ; y: 第二條訊息字（併入 a 的次輪加法）
 ; [b-g](#blake2.b-g)
 b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
+
     ; ---- 第一輪：併入訊息字 x ----
     ; v[a] 與 v[d] 寫回後立刻被下一步讀取，故每一步各自具名讀出，不共用暫存。
     {
@@ -236,6 +237,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     m [16]u64
     i <- [0..16): {
         {
+
             #{overflow=wrap}
             word-start ?= i * 8
 
@@ -243,6 +245,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
             word u64 = 0
             j <- [0..8): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= word-start + j
 
@@ -534,6 +537,7 @@ b = (data []byte) (hash [64]byte) {
 
             j <- [0..8): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= i * 8 + j
 
@@ -634,6 +638,7 @@ b-256 = (data []byte) (hash [32]byte) {
 
             j <- [0..8): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= i * 8 + j
 
@@ -763,6 +768,7 @@ rotr32 = (x u32, n i64) (r u32) {
 ; y: 第二條訊息字（u32）
 ; [s-g](#blake2.s-g)
 s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
+
     ; ---- 第一輪：併入訊息字 x ----
     ; v[a] 與 v[d] 寫回後立刻被下一步讀取，故每一步各自具名讀出，不共用暫存。
     {
@@ -917,6 +923,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
     m [16]u32
     i <- [0..16): {
         {
+
             #{overflow=wrap}
             word-start ?= i * 4
 
@@ -924,6 +931,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
             word u32 = 0
             j <- [0..4): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= word-start + j
 
@@ -1182,6 +1190,7 @@ s = (data []byte) (hash [32]byte) {
 
             j <- [0..4): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= i * 4 + j
 

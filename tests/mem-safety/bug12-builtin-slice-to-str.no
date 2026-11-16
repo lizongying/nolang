@@ -29,6 +29,11 @@ print('data=[{data}]')
 
 ; Verify correctness
 {
-    data == 'hello world test\n' -> { print('bug12: PASS') }
-    -> { print('bug12: FAIL') }
+    data == 'hello world test\n' -> {
+        print('bug12: PASS')
+    }
+
+    -> {
+        print('bug12: FAIL')
+    }
 }

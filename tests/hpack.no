@@ -214,7 +214,7 @@ test-dyn-table = () {
     value = ''
     found = false
     t.lookup(62)(name, value, found)
-    found == false -> {
+    ! found -> {
         print('FAIL: lookup not found')
         return
     }
@@ -274,7 +274,7 @@ test-decode-headers = () {
     count = 0
     ok = false
     t.decode-headers(enc-out)(names, values, count, ok)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: decode failed')
         return
     }

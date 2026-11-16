@@ -294,7 +294,7 @@ Einträge: %d
   '82l9xk55': 'Zip-Eintrag %q ist zu groß (%d Bytes)'
   '83xbz15x': `
 Pfad der Quelldatei ist kein gültiger Name: %s
-  das Pfadsegment %q enthält unzulässige Zeichen (nur Kleinbuchstaben, Ziffern und Bindestriche sind erlaubt; Unterstriche sind verboten, und ein Bindestrich darf nicht führen, abschließen oder sich wiederholen)
+  das Pfadsegment %q enthält unzulässige Zeichen (nur Kleinbuchstaben, Ziffern und Bindestriche sind erlaubt; ein Unterstrich ist nur als erstes Zeichen eines Segments erlaubt (Ignorier-Markierung), ab dem zweiten Zeichen ist er verboten; ein Bindestrich darf nicht führen, abschließen oder sich wiederholen)
   gültiges Beispiel: tmp/zz-stridx/r-index.no
 `
   '87zc5awf': 'schreibgeschütztes Feld \'%s\' von %s kann nicht geändert werden; die Länge wird aus dem Puffer abgeleitet — verwenden Sie stattdessen truncate(n)'

@@ -613,6 +613,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
                         ; 長度/距離回參考
                         {
+
                             #{overflow=wrap}
                             code ?= sym - 257
                         }: {
@@ -657,6 +658,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         src = result.len() - distance
                         i <- [0..length): {
                             {
+
                                 #{overflow=wrap}
                                 copy-at ?= src + i
 
@@ -741,6 +743,7 @@ deflate-stored = (data []byte) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + blen
         }: {
@@ -886,6 +889,7 @@ decompress = (data []byte) (out []byte) {
     ; FHCRC (bit 0) — 2 bytes CRC16
     (flg & 1) != 0 -> {
         {
+
             #{overflow=wrap}
             pos ?= pos + 2
         }: {
@@ -915,9 +919,10 @@ decompress = (data []byte) (out []byte) {
     }
 
     ; 預期大小 = ISIZE（最後 4 bytes，小端序）
-    isize i64 = 0
+    isize = 0
     i <- [0..4): {
         {
+
             #{overflow=wrap}
             tail-at ?= data.len() - 4 + i
 

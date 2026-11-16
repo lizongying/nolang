@@ -57,6 +57,7 @@ rotr = (x u64, n i64) (r u64) {
 ; 無返回值：結果留在 v[a]/v[b]/v[c]/v[d]
 ; [blake-g](#argon2.blake-g)
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
+
     ; GB 的 4 步 × 2 輪。每次寫回 v[i] 後下一步就讀新值，故各自具名讀出；
     ; 乘數項取低 32 位（2 * lo32(x) * lo32(y)），與 RFC 9106 §3.5 一致。
     ; x / y 為保留參數，本實作不使用。
@@ -349,6 +350,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     pos ?= pos + 32
                 }: {
@@ -358,6 +360,7 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     remaining ?= remaining - 32
                 }: {
@@ -425,10 +428,12 @@ compress = (x []byte, y []byte) (out []byte) {
     ; 載入為 128 個 u64（16×8 矩陣）
     v [128]u64
     i <- [0..128): {
+
         ; 逐位元組小端組字：第 j 個位元組佔 bit [8j, 8j+8)
         word u64 = 0
         j <- [0..8): {
             {
+
                 #{overflow=wrap}
                 byte-at ?= i * 8 + j
 
@@ -522,6 +527,7 @@ compress = (x []byte, y []byte) (out []byte) {
             ; 逐位元組拆字並與原值 XOR：第 j 個位元組佔 bit [8j, 8j+8)
             j <- [0..8): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= i * 8 + j
 
@@ -530,7 +536,6 @@ compress = (x []byte, y []byte) (out []byte) {
 
                     old-byte ?= r[byte-at]
 
-                    #{overflow=wrap}
                     out[byte-at]: {
                         ok -> it = (((val >> bit-shift) & 255) ^ old-byte) & 255
 
@@ -579,6 +584,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     #{overflow=wrap}
     m < 8 * parallelism -> {
         {
+
             #{overflow=wrap}
             m ?= 8 * parallelism
         }: {
@@ -636,6 +642,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -674,6 +681,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -712,6 +720,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -750,6 +759,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -788,6 +798,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -826,6 +837,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -866,6 +878,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -886,6 +899,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + pw-len
     }: {
@@ -926,6 +940,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -946,6 +961,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + salt-len
     }: {
@@ -984,6 +1000,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -1021,6 +1038,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     }
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 4
     }: {
@@ -1178,6 +1196,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         }
 
         {
+
             #{overflow=wrap}
             curr-idx ?= curr-idx + 1
         }: {
@@ -1192,6 +1211,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         curr-idx = 0
         (curr-idx < blocks-per-lane) {
             {
+
                 #{overflow=wrap}
                 prev-idx ?= curr-idx - 1
             }: {
@@ -1202,6 +1222,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
             prev-idx < 0 -> {
                 {
+
                     #{overflow=wrap}
                     prev-idx ?= blocks-per-lane - 1
                 }: {
@@ -1240,6 +1261,7 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
             }
 
             {
+
                 #{overflow=wrap}
                 curr-idx ?= curr-idx + 1
             }: {

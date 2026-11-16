@@ -101,6 +101,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 1
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -116,6 +117,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0x00
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -131,6 +133,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 1
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -146,6 +149,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -161,6 +165,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -176,6 +181,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -237,6 +243,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -250,6 +257,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos] = 0
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 1
     }: {
@@ -265,6 +273,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = qtype & 255
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -280,6 +289,7 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 1
 
     {
+
         #{overflow=wrap}
         pos ?= pos + 2
     }: {
@@ -313,7 +323,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
         ; 遇數據尾端仍未見終止零標籤：畸形封包，標記 next-pos=-1
         pos >= data.len() -> {
-            jumped == false -> end-pos = -1
+            ! jumped -> end-pos = -1
             break
         }
 
@@ -325,6 +335,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
         len-byte == 0 -> {
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 1
             }: {
@@ -332,15 +343,16 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
                 -> _
             }
-            jumped == false -> end-pos = pos
+            ! jumped -> end-pos = pos
             break
         }
 
         ; 檢查是否為壓縮指標（前兩位為 11）
         {
             (len-byte & 0xc0) == 0xc0 -> {
-                jumped == false -> {
+                ! jumped -> {
                     {
+
                         #{overflow=wrap}
                         end-pos ?= pos + 2
                     }: {
@@ -421,10 +433,12 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     ; 移除末尾的點
     buf-pos > 0 -> {
         {
+
             #{overflow=wrap}
             last-byte ?= buf[buf-pos - 1]
 
             last-byte == 46 -> {
+
                 #{overflow=wrap}
                 buf-pos ?= buf-pos - 1
             }
@@ -610,6 +624,7 @@ parse-response = (data []byte) (ip ?str) {
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + rdlength
         }: {

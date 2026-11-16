@@ -40,6 +40,7 @@ test-str-readonly = () {
 test-vec-independence = () {
     a = [10, 20, 30]
     b = a
+
     ; 下標直寫 `b[0] = 99` 被 D11 禁止：下標讀回的是 option（越界為 err），
     ; 直寫就把「越界讀」變成「未檢查的越界寫」。place-match 的 ok 臂裡 `it`
     ; 就是元素位置本身，可讀可寫。

@@ -53,7 +53,7 @@ print('done')
 line = ''
 ok = false
 line, ok = fs.get-line()
-ok == false -> {
+! ok -> {
     print('no input')
     return
 }
@@ -122,7 +122,7 @@ i2 <- [0..256): {
 }
 
 bad1 -> print('FAIL: 1 byte-fidelity: some of 0..255 corrupted')
-bad1 == false -> print('PASS: 1 byte-fidelity: all 0..255 preserved (len-bytes=' + s.len-bytes().to-str() + ')')
+! bad1 -> print('PASS: 1 byte-fidelity: all 0..255 preserved (len-bytes=' + s.len-bytes().to-str() + ')')
 
 ; 2) 高位元組必須保持原值（碼點讀取會在這裡出錯）
 print('2 high bytes: 0x80=' - s.byte(128).to-str() - ' 0x90=' - s.byte(144).to-str() - ' 0x94=' - s.byte(148).to-str() - ' 0xff=' - s.byte(255).to-str())
@@ -162,7 +162,7 @@ i3 <- [0..5): {
 }
 
 bad4 -> print('FAIL: 4 []byte[i] vs str.byte(i) differ')
-bad4 == false -> print('PASS: 4 []byte[i] == str.byte(i)')
+! bad4 -> print('PASS: 4 []byte[i] == str.byte(i)')
 
 ; merged from tests/set-byte-receiver-writeback.no
 ; receiver write-back — 接收者寫回：原位變更必須寫進真正的欄位/元素

@@ -509,8 +509,10 @@ h2m-set-block = (c h2m-ctx, id i64) {
 ; 记一条「本切片不支持」的构造（诚实门禁，不是静默略过）
 ; c: 上下文
 h2m-mark = (c h2m-ctx) {
+
     #{overflow=wrap}
     c.unsup = c.unsup + 1
+
     ; 切片 6 ②：逐条记录 (fn, kind)，供 h2m-cov-join 拼日志
     c.unsf.push(c.cur-fn)
     c.unsk.push(c.cur-k)
@@ -531,9 +533,17 @@ h2m-set-cur-k = (c h2m-ctx, t ast, n i64) {
 h2m-kind-cat = (k i64) (r str) {
     nm = asp.kind-name(k)
     {
-        nm.ends-with('Type') == true -> { r = 'type' }
-        nm == 'TypeAlias' -> { r = 'type' }
-        -> { r = 'construct' }
+        nm.ends-with('Type') == true -> {
+            r = 'type'
+        }
+
+        nm == 'TypeAlias' -> {
+            r = 'type'
+        }
+
+        -> {
+            r = 'construct'
+        }
     }
 }
 
@@ -551,11 +561,14 @@ h2m-kind-cat = (k i64) (r str) {
 ; cov: 每行 "fn:KindName:category" 拼接的文本；空 ⇒ ''
 h2m-cov-join = (unsf []str, unsk []i64) (cov str) {
     cov = ''
+
     ; 求 max K 作为分组上界（避免依赖 KIND-COUNT 常量名 / 硬编码上限）
     maxk = 0
     i = 0
     (i < unsk.len()) {
-        unsk[i] > maxk -> { maxk = unsk[i] }
+        unsk[i] > maxk -> {
+            maxk = unsk[i]
+        }
         i = i + 1
     }
     k = 1
@@ -973,6 +986,7 @@ h2m-tynode-code = (t ast, agg h2m-ctx, tn i64) (code i64) {
             ek = ast.kid-at(t, d.kid0)
             ek > 0 -> {
                 ed = ast.nd-at(t, ek)
+
                 ; 切片 B 第三层：let 注解里的元素型别可能是 K-NAMED-TYPE 或 K-IDENTIFIER
                 ;   （两处 s0 都存型别名下标），统一取出来判 i64/str。
                 ed.kind == asp.K-NAMED-TYPE || ed.kind == asp.K-IDENTIFIER -> {
@@ -1064,6 +1078,7 @@ h2m-struct-field-idx = (c h2m-ctx, sid i64, fname str) (fi i64) {
 ; 字段型别覆盖面见 h2m-struct-resolve（i64/u64/f64/str/bool/char/嵌套结构体；vec/函數指標等不支援⇒计 unsup）。
 h2m-struct-register = (c h2m-ctx, t ast, n i64) {
     d = ast.nd-at(t, n)
+
     ; 切片 6 ②：入口即设 cur-k 为「结构体定义」节点 kind，使其内部不支持 mark（字段型别解析失败等）带上构造码而非 0
     h2m-set-cur-k(c, t, n)
 
@@ -1116,11 +1131,13 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
         (j < fc) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
+
             ; 切片 B 保守门禁：str-vec 缓冲无 retain（§11 B5）⇒ 写进结构体字段后，
             ;   局部 vec 与字段别名同一缓冲，scope-exit 的 vec_free_str 会与字段owner双释放 ⇒ UAF。
             ;   故 []str 字段拦回 -1 计 unsup（与 s99f 的「元素非 i64 字段不入形」同口径）。
             fty == TY-VECSTR -> fty = -1
             fty < 0 -> {
+
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
                 ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
                 c.cur-fn = c.stn[i] - '.' - c.stfldn[off + j]
@@ -1161,9 +1178,11 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
         (j < fc) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
+
             ; 切片 B 保守门禁：同 h2m-struct-resolve——[]str 字段无 retain，双释放风险 ⇒ 拦回 unsup。
             fty == TY-VECSTR -> fty = -1
             fty < 0 -> {
+
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
                 ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
                 c.cur-fn = c.stn[i] - '.' - c.stfldn[off + j]
@@ -1777,6 +1796,7 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
                 ty < 0 && h2m-is-withcap(t, vk) == 1 && d.nkid > 1 -> {
                     ty = h2m-tynode-code(t, agg, ast.kid-at(t, d.kid0))
                 }
+
                 ; 注：scan 的 agg 即函数 ctx 的浅拷来源，h2m-tynode-code 只读 struct 表，agg 可用
 
                 ; s103：值位 SurfaceMatch 右值（`r = { c -> v  -> d }`）——h2m-ty-of 不认 K-SURFACE-MATCH，
@@ -2269,133 +2289,143 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == 0 || lv == 0 || rv == 0 || (ok-i == 0 && ok-f == 0 && ok-u == 0 && ok-s == 0 && ok-e == 0) -> h2m-mark(c)
         }
 
-            ; 调用降级：c0 = 实参个数；实参个数与型别查签名表；
-            ;   s64：实参值 id 逐个追加进侧池 c.args，CALL 只带「池基址 + 个数」，不再校验 id 连续性。
-            ;   自举 parser 对两种呼叫形态的解析不同（⑥ 跨模組點號呼叫關鍵）：
-            ;   ─ 純量呼叫 `f(x)`：call.child[0]=callee(IDENTIFIER f)、child[1..]=實參
-            ;     ⇒ name=f、實參基址=call.kid0+1。
-            ;   ─ 點號呼叫 `mod.fn(x)`：call.child[0]=K-DOT-EXPRESSION(fn)（整個 `mod.fn` 作為 callee，
-            ;     fn=dot.s0、模組名 mod 在 dot 子節點[0]）、child[1..]=實參（與純量同構，仍是 CALL 直接子節點）
-            ;     ⇒ name=dot.base.s0 . '.' . dot.s0=mod.fn、實參基址=call.kid0+1（同純量）。
-            d.kind == asp.K-CALL-EXPRESSION -> {
-                na = d.c0
-                ck = ast.kid-at(t, d.kid0)
-                cd = ast.nd-at(t, ck)
-                ok-call = 1
-                ok-print = 0
-                ok-method = 0
-                cn = ''
-                si = -1
-                argbase = d.kid0 + 1
-                ; ⑥ 點號呼叫（跨模組）：callee 是單個 K-DOT-EXPRESSION（`mod.fn`），
-                ;   name = base.fn，其中 base 是 dot 的子節點[0]（K-IDENTIFIER mod）、fn = dot.s0。
-                ;   實參仍是 CALL 的直接子節點（child[1..]），與純量呼叫 f(x) 完全同構
-                ;   ⇒ argbase 保持 d.kid0+1，na 仍取 d.c0。
-                ;   （差異只在 cn 的拼法：純量取 child[0] 的 s0；點號取 dot.base.s0 . '.' . dot.s0。）
-                has-dot = 0
-                cd.kind == asp.K-DOT-EXPRESSION -> {
-                    has-dot = 1
-                    recv-id = ast.kid-at(t, cd.kid0)
-                    recv-nd = ast.nd-at(t, recv-id)
-                    mname = ast.str-at(t, cd.s0)
-                    ; 接收者若是【已绑定值】⇒ 方法调用（vec/str 内建分派）；
-                    ;   否则（模块名）⇒ 跨模組调用，走下方 cn 拼接。
-                    recv-is-value = 0
-                    ; 沿点号链走到最左端标识符，判断它是否是个已绑定值（局部 / 形参）；
-                    ;   agg.stn.len() → 头是形参 agg ⇒ 值；drv.build-out → 头是模块 drv ⇒ 跨模組；
-                    ;   args.get() → 头是全局 args（非局部）⇒ 跨模組（全局变量支援另议）。
-                    ;   只判「能否是值」、不在此降级，避免对模块名误记 unsup。
-                    head = recv-nd
-                    head.kind == asp.K-DOT-EXPRESSION -> head = ast.nd-at(t, ast.kid-at(t, head.kid0))
-                    head.kind == asp.K-IDENTIFIER -> {
-                        rn = ast.str-at(t, head.s0)
-                        h2m-name-find(c, rn) >= 0 -> recv-is-value = 1
-                    }
-                    recv-is-value == 1 -> {
-                        ; ── 内建型别方法分派（只读 / 取值类，无签名表查询）──
-                        ;   注：push/get 暂不收——push 运行时返回【新】vec（非原地改），
-                        ;   作为语句会丢结果；get 真实用例是 []str（需元素型别泛化，当前只有 vec_get_i64）。
-                        ;   两者都留待元素型别泛化 / push 语义落地後再做。
-                        rv = h2m-lower-expr(t, c, sg, recv-id)
-                        rv > 0 -> {
-                            rty = h2m-vty-at(c, rv)
-                            ; vec 方法：len() 取计数（与元素型别无关，全元素型别安全）
-                            rty == TY-VEC -> {
-                                mname == 'len' -> {
-                                    cid = h2m-alloc(c, TY-I64)
-                                    h2m-emit(c, OP-VECLEN, cid, rv, 0, '', TY-I64)
-                                    v = cid
-                                    ok-method = 1
-                                    ok-call = 0
-                                }
-                                ; 切片 B 第三层：i64 vec 的 push(x) — 发 OP-VECPUSH（返回新 vec），
-                                ;   重绑接收者变量名模拟原地修改；旧 vec 标记 reldrop 防 double-free。
-                                ;   ⚠️ 只认 K-IDENTIFIER 接收者（a[i].push() 无法重绑 ⇒ 门禁）。
-                                mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-IDENTIFIER -> {
-                                    pushk = ast.kid-at(t, argbase)
-                                    pv = h2m-lower-expr(t, c, sg, pushk)
-                                    pv > 0 && h2m-vty-at(c, pv) == TY-I64 -> {
-                                        nv = h2m-alloc(c, TY-VEC)
-                                        h2m-emit(c, OP-VECPUSH, nv, rv, pv, '', TY-VEC)
-                                        rvn = ast.str-at(t, recv-nd.s0)
-                                        h2m-var-bind(c, rvn, nv)
-                                        h2m-rel-drop(c, rv)
-                                        h2m-rel-add(c, nv, TY-VEC, 0)
-                                        v = nv
-                                        ok-method = 1
-                                        ok-call = 0
-                                    }
-                                }
+        ; 调用降级：c0 = 实参个数；实参个数与型别查签名表；
+        ;   s64：实参值 id 逐个追加进侧池 c.args，CALL 只带「池基址 + 个数」，不再校验 id 连续性。
+        ;   自举 parser 对两种呼叫形态的解析不同（⑥ 跨模組點號呼叫關鍵）：
+        ;   ─ 純量呼叫 `f(x)`：call.child[0]=callee(IDENTIFIER f)、child[1..]=實參
+        ;     ⇒ name=f、實參基址=call.kid0+1。
+        ;   ─ 點號呼叫 `mod.fn(x)`：call.child[0]=K-DOT-EXPRESSION(fn)（整個 `mod.fn` 作為 callee，
+        ;     fn=dot.s0、模組名 mod 在 dot 子節點[0]）、child[1..]=實參（與純量同構，仍是 CALL 直接子節點）
+        ;     ⇒ name=dot.base.s0 . '.' . dot.s0=mod.fn、實參基址=call.kid0+1（同純量）。
+        d.kind == asp.K-CALL-EXPRESSION -> {
+            na = d.c0
+            ck = ast.kid-at(t, d.kid0)
+            cd = ast.nd-at(t, ck)
+            ok-call = 1
+            ok-print = 0
+            ok-method = 0
+            cn = ''
+            si = -1
+            argbase = d.kid0 + 1
+
+            ; ⑥ 點號呼叫（跨模組）：callee 是單個 K-DOT-EXPRESSION（`mod.fn`），
+            ;   name = base.fn，其中 base 是 dot 的子節點[0]（K-IDENTIFIER mod）、fn = dot.s0。
+            ;   實參仍是 CALL 的直接子節點（child[1..]），與純量呼叫 f(x) 完全同構
+            ;   ⇒ argbase 保持 d.kid0+1，na 仍取 d.c0。
+            ;   （差異只在 cn 的拼法：純量取 child[0] 的 s0；點號取 dot.base.s0 . '.' . dot.s0。）
+            has-dot = 0
+            cd.kind == asp.K-DOT-EXPRESSION -> {
+                has-dot = 1
+                recv-id = ast.kid-at(t, cd.kid0)
+                recv-nd = ast.nd-at(t, recv-id)
+                mname = ast.str-at(t, cd.s0)
+
+                ; 接收者若是【已绑定值】⇒ 方法调用（vec/str 内建分派）；
+                ;   否则（模块名）⇒ 跨模組调用，走下方 cn 拼接。
+                recv-is-value = 0
+
+                ; 沿点号链走到最左端标识符，判断它是否是个已绑定值（局部 / 形参）；
+                ;   agg.stn.len() → 头是形参 agg ⇒ 值；drv.build-out → 头是模块 drv ⇒ 跨模組；
+                ;   args.get() → 头是全局 args（非局部）⇒ 跨模組（全局变量支援另议）。
+                ;   只判「能否是值」、不在此降级，避免对模块名误记 unsup。
+                head = recv-nd
+                head.kind == asp.K-DOT-EXPRESSION -> head = ast.nd-at(t, ast.kid-at(t, head.kid0))
+                head.kind == asp.K-IDENTIFIER -> {
+                    rn = ast.str-at(t, head.s0)
+                    h2m-name-find(c, rn) >= 0 -> recv-is-value = 1
+                }
+                recv-is-value == 1 -> {
+
+                    ; ── 内建型别方法分派（只读 / 取值类，无签名表查询）──
+                    ;   注：push/get 暂不收——push 运行时返回【新】vec（非原地改），
+                    ;   作为语句会丢结果；get 真实用例是 []str（需元素型别泛化，当前只有 vec_get_i64）。
+                    ;   两者都留待元素型别泛化 / push 语义落地後再做。
+                    rv = h2m-lower-expr(t, c, sg, recv-id)
+                    rv > 0 -> {
+                        rty = h2m-vty-at(c, rv)
+
+                        ; vec 方法：len() 取计数（与元素型别无关，全元素型别安全）
+                        rty == TY-VEC -> {
+                            mname == 'len' -> {
+                                cid = h2m-alloc(c, TY-I64)
+                                h2m-emit(c, OP-VECLEN, cid, rv, 0, '', TY-I64)
+                                v = cid
+                                ok-method = 1
+                                ok-call = 0
                             }
-                            ; 切片 B 第三层：str vec —— len() 复用 OP-VECLEN（len 字段在 %vec 描述符，
-                            ;   与元素 stride 无关）；push(s) 发 OP-VECPUSHSTR + 重绑 + reldrop。
-                            rty == TY-VECSTR -> {
-                                mname == 'len' -> {
-                                    cid = h2m-alloc(c, TY-I64)
-                                    h2m-emit(c, OP-VECLEN, cid, rv, 0, '', TY-I64)
-                                    v = cid
-                                    ok-method = 1
-                                    ok-call = 0
-                                }
-                                mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-IDENTIFIER -> {
-                                    pushk = ast.kid-at(t, argbase)
-                                    pv = h2m-lower-expr(t, c, sg, pushk)
-                                    pv > 0 && h2m-vty-at(c, pv) == TY-STR -> {
-                                        nv = h2m-alloc(c, TY-VECSTR)
-                                        h2m-emit(c, OP-VECPUSHSTR, nv, rv, pv, '', TY-VECSTR)
-                                        rvn = ast.str-at(t, recv-nd.s0)
-                                        h2m-var-bind(c, rvn, nv)
-                                        h2m-rel-drop(c, rv)
-                                        h2m-rel-add(c, nv, TY-VECSTR, 0)
-                                        v = nv
-                                        ok-method = 1
-                                        ok-call = 0
-                                    }
-                                }
-                            }
-                            ; str 方法：len-bytes() 取字节长
-                            rty == TY-STR -> {
-                                mname == 'len-bytes' -> {
-                                    cid = h2m-alloc(c, TY-I64)
-                                    h2m-emit(c, OP-STRLEN, cid, rv, 0, '', TY-I64)
-                                    v = cid
+
+                            ; 切片 B 第三层：i64 vec 的 push(x) — 发 OP-VECPUSH（返回新 vec），
+                            ;   重绑接收者变量名模拟原地修改；旧 vec 标记 reldrop 防 double-free。
+                            ;   ⚠️ 只认 K-IDENTIFIER 接收者（a[i].push() 无法重绑 ⇒ 门禁）。
+                            mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-IDENTIFIER -> {
+                                pushk = ast.kid-at(t, argbase)
+                                pv = h2m-lower-expr(t, c, sg, pushk)
+                                pv > 0 && h2m-vty-at(c, pv) == TY-I64 -> {
+                                    nv = h2m-alloc(c, TY-VEC)
+                                    h2m-emit(c, OP-VECPUSH, nv, rv, pv, '', TY-VEC)
+                                    rvn = ast.str-at(t, recv-nd.s0)
+                                    h2m-var-bind(c, rvn, nv)
+                                    h2m-rel-drop(c, rv)
+                                    h2m-rel-add(c, nv, TY-VEC, 0)
+                                    v = nv
                                     ok-method = 1
                                     ok-call = 0
                                 }
                             }
                         }
-                        ; 接收者是值但方法不支持 / 降级失败 ⇒ 落闸门（不进跨模組 cn 路径，避免误当模块调用）
-                        ok-method == 0 -> ok-call = 0
+
+                        ; 切片 B 第三层：str vec —— len() 复用 OP-VECLEN（len 字段在 %vec 描述符，
+                        ;   与元素 stride 无关）；push(s) 发 OP-VECPUSHSTR + 重绑 + reldrop。
+                        rty == TY-VECSTR -> {
+                            mname == 'len' -> {
+                                cid = h2m-alloc(c, TY-I64)
+                                h2m-emit(c, OP-VECLEN, cid, rv, 0, '', TY-I64)
+                                v = cid
+                                ok-method = 1
+                                ok-call = 0
+                            }
+                            mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-IDENTIFIER -> {
+                                pushk = ast.kid-at(t, argbase)
+                                pv = h2m-lower-expr(t, c, sg, pushk)
+                                pv > 0 && h2m-vty-at(c, pv) == TY-STR -> {
+                                    nv = h2m-alloc(c, TY-VECSTR)
+                                    h2m-emit(c, OP-VECPUSHSTR, nv, rv, pv, '', TY-VECSTR)
+                                    rvn = ast.str-at(t, recv-nd.s0)
+                                    h2m-var-bind(c, rvn, nv)
+                                    h2m-rel-drop(c, rv)
+                                    h2m-rel-add(c, nv, TY-VECSTR, 0)
+                                    v = nv
+                                    ok-method = 1
+                                    ok-call = 0
+                                }
+                            }
+                        }
+
+                        ; str 方法：len-bytes() 取字节长
+                        rty == TY-STR -> {
+                            mname == 'len-bytes' -> {
+                                cid = h2m-alloc(c, TY-I64)
+                                h2m-emit(c, OP-STRLEN, cid, rv, 0, '', TY-I64)
+                                v = cid
+                                ok-method = 1
+                                ok-call = 0
+                            }
+                        }
                     }
-                    recv-is-value == 0 -> {
-                        base-nd = recv-nd
-                        cn = ast.str-at(t, base-nd.s0) - '.' - mname
-                    }
+
+                    ; 接收者是值但方法不支持 / 降级失败 ⇒ 落闸门（不进跨模組 cn 路径，避免误当模块调用）
+                    ok-method == 0 -> ok-call = 0
                 }
-                cd.kind != asp.K-DOT-EXPRESSION -> {
-                    cd.kind == asp.K-IDENTIFIER -> cn = ast.str-at(t, cd.s0)
-                    cd.kind != asp.K-IDENTIFIER -> ok-call = 0
+                recv-is-value == 0 -> {
+                    base-nd = recv-nd
+                    cn = ast.str-at(t, base-nd.s0) - '.' - mname
                 }
+            }
+            cd.kind != asp.K-DOT-EXPRESSION -> {
+                cd.kind == asp.K-IDENTIFIER -> cn = ast.str-at(t, cd.s0)
+                cd.kind != asp.K-IDENTIFIER -> ok-call = 0
+            }
+
             ; s100：print / eprint 是内建（自举无 builtin 签名表）⇒ 在签名查找前单点认领。
             ;   语句位由 s93 路径丢弃结果值（hd=1，不查 v）；表达式位若被当值用，
             ;   v 留 0 会让外层调用 / 赋值入门禁，退化成 unsup（诚实门禁不绕）。
@@ -2411,6 +2441,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ok-call == 1 && cn != 'print' && cn != 'eprint' -> {
                 si = h2m-sig-find(sg, cn)
                 si < 0 -> ok-call = 0
+
                 ; 切片 6：命中後把 cn 覆寫為【定義 emit 名】（femit），使 call 符號與
                 ;   define 符號一致（根除「定義 @testmod-bar / 呼叫 @testmod.bar」錯位）。
                 ;   單模組路徑 femit==fname==nm，故與舊行為等價、零回歸。
@@ -2434,6 +2465,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 (j < want-n && ok-call == 1) {
                     ak = 0
                     j < na -> {
+
                         ; 實參基址：純量呼叫 = call.kid0+1；⑥ 方法呼叫 = method.kid0（實參嵌在 method 子節點）
                         ap = argbase
 
@@ -2712,6 +2744,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
         ;      的裸值（dat=0，@vec_free 内短路，见 cg-runtime.no）。
         ;   ⚠️ 所有权唯一的另一半是「不许外流」：结构体字段写 / 返回值两处由调用点门禁拦（无 vec retain）。
         d.kind == asp.K-SLICE-LITERAL -> {
+
             ; 切片 B：元素型别决定 vec 种类——首元素定 vec-ty（TY-VEC / TY-VECSTR），后续须一致。
             ;   OP-VECNEW 的 dst 型别先按首元素的 AST kind 预判：K-STRING-LITERAL ⇒ TY-VECSTR，
             ;   其余 ⇒ TY-VEC（最终在逐元素循环里用实际 vty 复核，不符计 unsup）。
@@ -2740,6 +2773,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 }
                 evo > 0 -> {
                     eto = h2m-vty-at(c, evo)
+
                     ; 元素实际 vty 必须与预判 vec-ty 相容：TY-VEC↔i64、TY-VECSTR↔str。
                     ;   不符（含标识符形式的 str 元素——预判只认字面量）⇒ 计 unsup，宁缺勿错。
                     eto != TY-I64 && eto != TY-STR -> {
@@ -3806,6 +3840,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                                 ; ok(v)：payload 绑定到臂局部名（跨 mem 直返 SSA，出臂 pop 还原）
                                 bvar == 'ok' -> {
+
                                     ; ⚠️ 实参**不能**写成算术式（哪怕 `hb + 0` 这种恒等式）：
                                     ;   实参含算术 ⇒ 整條 let 被 option 捕获改写成 `?i64`
                                     ;   （lowering 的 maybeCaptureOptionAssign，见
@@ -4161,6 +4196,7 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
 h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     r = ''
     c = h2m-new()
+
     ; 切片 6 ②：入口即设 cur-k 为「函数定义」节点 kind——本函数内所有不支持 mark
     ;   （含 setup 期调用的辅助函数 h2m-func-sig/h2m-scan/...）都带上正确构造码而非初始 0；
     ;   嵌套构造降级（h2m-lower-expr 等）会用各自 h2m-set-cur-k 覆盖为更精确的构造 kind。
@@ -4174,11 +4210,13 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     c.stfldn = agg.stfldn
     c.stftn = agg.stftn
     d = ast.nd-at(t, n)
+
     ; s6b：與 h2m-func-sig 同口徑計算 realOuts（方法語法扣 self），供下方輸出處理各支使用
     isM = (ast.str-at(t, d.s2) == 'true')
     realOut = 0
     isM -> realOut = 1
     realOuts = d.c5
+
     #{overflow=wrap}
     realOuts = realOuts - realOut
     fnm, frt, fap, fb = h2m-func-sig(t, agg, n)
@@ -4388,6 +4426,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
     ; 本函数体内有任何不支持构造 ⇒ 整函数不产码（宁缺勿错），并把计数并入模块级
     inc = c.unsup
+
     ; 切片 6 ②：把本函数的 unsupported 逐条记录 (fn, kind) 并回模块级（与 unsup 同口径）
     qi = 0
     (qi < c.unsf.len()) {
@@ -4485,6 +4524,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
             nm2, rt2, ap2, bd2 = h2m-func-sig(t, agg, kid)
             bd2 != 0 -> {
+
                 ; 切片 6 ②：模块级 mark 带上「被拒函数定义」节点 kind 与函数名（而非初始 0 / 空 fn）
                 agg.cur-fn = nm2
                 agg.cur-k = kk.kind
@@ -4501,6 +4541,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
 
         ; s99：结构体定义不是函数、也不是不支持构造——前扫描已登记，此处跳过（不计入 unsup）
         kk.kind != asp.K-FUNCTION-DEFINITION && kk.kind != asp.K-STRUCT-DEFINITION -> {
+
             ; 切片 6 ②：模块级 mark 带上「被拒顶层节点」自身 kind（而非初始 0）
             agg.cur-k = kk.kind
             h2m-mark(agg)

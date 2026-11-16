@@ -48,7 +48,7 @@ found = false
 i <- [0..gids.len()): {
     gids[i] == rgid -> found = true
 }
-found == false -> {
+! found -> {
     print('getgrouplist FAILED: base gid not present in membership')
     exit(1)
 }
@@ -59,7 +59,7 @@ print('getgrouplist passed')
 line = ''
 ok = false
 line, ok = fs.get-line()
-ok == false -> {
+! ok -> {
     print('no input')
     return
 }

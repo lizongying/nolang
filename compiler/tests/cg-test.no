@@ -2875,6 +2875,7 @@ test-strvec-ops = () {
     xa.push(0)
     bs.push(0)
     syms.push('')
+
     ; k1: STRCONST sv2 = 'hi'
     blks.push(0)
     ops.push(OP-STRCONST)
@@ -2882,6 +2883,7 @@ test-strvec-ops = () {
     xa.push(0)
     bs.push(0)
     syms.push('hi')
+
     ; k2: VECPUSHSTR vc3 = push(vc1, sv2)
     blks.push(0)
     ops.push(OP-VECPUSHSTR)
@@ -2889,6 +2891,7 @@ test-strvec-ops = () {
     xa.push(1)
     bs.push(2)
     syms.push('')
+
     ; k3: CONST v4 = 0
     blks.push(0)
     ops.push(OP-CONST)
@@ -2896,6 +2899,7 @@ test-strvec-ops = () {
     xa.push(0)
     bs.push(0)
     syms.push('')
+
     ; k4: VECGETSTR sv5 = get(vc3, v4)
     blks.push(0)
     ops.push(OP-VECGETSTR)
@@ -2903,6 +2907,7 @@ test-strvec-ops = () {
     xa.push(3)
     bs.push(4)
     syms.push('')
+
     ; k5: VEC-FREE-STR vc3
     blks.push(0)
     ops.push(OP-VEC-FREE-STR)
@@ -2910,6 +2915,7 @@ test-strvec-ops = () {
     xa.push(3)
     bs.push(0)
     syms.push('')
+
     ; k6: RET sv5
     blks.push(0)
     ops.push(OP-RET)

@@ -666,6 +666,7 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
         t = t >> 7
 
         {
+
             #{overflow=wrap}
             n ?= n + 1
         }: {
@@ -684,6 +685,7 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     ob[0] = prefix-byte | max-prefix
 
     {
+
         #{overflow=wrap}
         r-val ?= r-val - max-prefix
     }: {
@@ -696,6 +698,7 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
         ob[i] = (r-val & 127) | 128
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -736,6 +739,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     val = first
 
     {
+
         #{overflow=wrap}
         next-pos ?= pos + 1
     }: {
@@ -756,6 +760,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
         b = data.byte(next-pos)
 
         {
+
             #{overflow=wrap}
             next-pos ?= next-pos + 1
         }: {
@@ -768,6 +773,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
         val = val + ((b & 127) << m)
 
         {
+
             #{overflow=wrap}
             m ?= m + 7
         }: {
@@ -854,6 +860,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
 
     {
+
         #{overflow=wrap}
         next-pos ?= p + len
     }: {
@@ -992,7 +999,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 lk-val = ''
                 found = false
                 lk-name, lk-val, found = .lookup(idx)
-                found == false -> return
+                ! found -> return
 
                 ; 複製到輸出
                 ln-tmp str = ''.with-len(lk-name.len-bytes())
@@ -1017,6 +1024,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = lv-tmp
 
                 {
+
                     #{overflow=wrap}
                     count ?= count + 1
                 }: {
@@ -1049,7 +1057,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                         lk-val = ''
                         found = false
                         lk-name, lk-val, found = .lookup(name-idx)
-                        found == false -> return
+                        ! found -> return
                         name = lk-name
                     }
                 }
@@ -1079,6 +1087,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 {
+
                     #{overflow=wrap}
                     count ?= count + 1
                 }: {
@@ -1113,7 +1122,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                         lk-val = ''
                         found = false
                         lk-name, lk-val, found = .lookup(name-idx)
-                        found == false -> return
+                        ! found -> return
                         name = lk-name
                     }
                 }
@@ -1141,6 +1150,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 {
+
                     #{overflow=wrap}
                     count ?= count + 1
                 }: {
@@ -1172,7 +1182,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                         lk-val = ''
                         found = false
                         lk-name, lk-val, found = .lookup(name-idx)
-                        found == false -> return
+                        ! found -> return
                         name = lk-name
                     }
                 }
@@ -1200,6 +1210,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 {
+
                     #{overflow=wrap}
                     count ?= count + 1
                 }: {

@@ -379,6 +379,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     block-n = 0
     i <- [0..count): {
         {
+
             ; 用 slice 載入值（避開 IndexExpression codegen 問題）
             name-sw ?= names[i]
             value-sw ?= values[i]
@@ -503,7 +504,7 @@ connect = (host str, port i64) (conn ?conn) {
             f0.frame-type == FRAME-SETTINGS -> {
                 (f0.flags & FLAG-ACK) == 0 -> {
                     ack-ok = c.send-settings(true)
-                    ack-ok == false -> {
+                    ! ack-ok -> {
                         fs.close(fd)
                         return
                     }
@@ -527,7 +528,7 @@ connect-tls = (host str, port i64) (conn ?conn) {
     tls-c tls.conn
     tls-c.init()
     ok2 = tls-c.connect(host, port)
-    ok2 == false -> return
+    ! ok2 -> return
     c conn
     c.init()
     c.use-tls = true
@@ -567,7 +568,7 @@ connect-tls = (host str, port i64) (conn ?conn) {
         recv-f.frame-type == FRAME-SETTINGS -> {
             (recv-f.flags & FLAG-ACK) == 0 -> {
                 ack-ok = c.send-settings(true)
-                ack-ok == false -> {
+                ! ack-ok -> {
                     tls-c.close()
                     return
                 }
@@ -701,7 +702,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
 
     ; 發送 HEADERS
     end-stream = false
-    has-body == false -> end-stream = true
+    ! has-body -> end-stream = true
     send-ok = false
     send-ok = .send-headers(stream-id, hdr-names, hdr-values, hdr-count, end-stream)
     send-ok == false -> return
@@ -745,7 +746,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 dec-count = 0
                 dec-ok = false
                 dec-names, dec-values, dec-count, dec-ok = .hpack.decode-headers(f.payload)
-                dec-ok == false -> return
+                ! dec-ok -> return
 
                 ; 複製到輸出（最多 32 項）
                 i <- [0..dec-count): {
@@ -968,7 +969,6 @@ do-req = (method str, url str, body str) (resp ?http.response) {
                     r.status-code = 0
                     j <- [0..vlen): {
                         {
-                            #{overflow=wrap}
                             digit ?= value-sw[j]
 
                             #{overflow=wrap}

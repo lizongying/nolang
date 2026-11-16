@@ -229,6 +229,7 @@ test-vec-helpers = () {
 
 ; ── 切片 B 底座：str-vec 助手 IR 文本（元素 %str-long 16B，所有权 clone/release）──
 test-strvec-helpers = () {
+
     ; push：元素 clone 成独立 rc 塊（字面量无 rc 頭亦可持有）；stride 16；扩容只 free 舊陣列緩衝
     ps = cg-runtime-vec-push-str()
     runner.eq(ps.contains('define %vec @vec_push_str(%vec %v, %str-long %x)'), 1, 'push_str sig')
@@ -237,11 +238,13 @@ test-strvec-helpers = () {
     runner.eq(ps.contains('call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %xd'), 1, 'push_str copies element bytes')
     runner.eq(ps.contains('call void @free(i8* %old)'), 1, 'push_str frees old array buffer')
     runner.eq(ps.contains('%cap2 = phi i64 [ %cap, %entry ], [ %ncap, %grow ], [ %ncap, %copy ]'), 1, 'push_str cap phi')
+
     ; get：借用視圖，stride 16
     gs = cg-runtime-vec-get-str()
     runner.eq(gs.contains('define %str-long @vec_get_str(%vec %v, i64 %i)'), 1, 'get_str sig')
     runner.eq(gs.contains('%off = mul i64 %i, 16'), 1, 'get_str stride 16')
     runner.eq(gs.contains('load %str-long, %str-long* %sp'), 1, 'get_str loads str-long')
+
     ; free：逐元素 release data + free 陣列緩衝，dat==0 短路
     fs = cg-runtime-vec-free-str()
     runner.eq(fs.contains('define void @vec_free_str(%vec %v)'), 1, 'free_str sig')
@@ -249,6 +252,7 @@ test-strvec-helpers = () {
     runner.eq(fs.contains('%off = mul i64 %i, 16'), 1, 'free_str stride 16')
     runner.eq(fs.contains('call void @free(i8* %p)'), 1, 'free_str frees array buffer')
     runner.eq(fs.contains('br i1 %nul, label %done, label %init'), 1, 'free_str short-circuits null dat')
+
     ; prelude-full 已含三助手
     pf = cg-runtime-prelude-full()
     runner.eq(pf.contains('define %vec @vec_push_str'), 1, 'full has vec_push_str')

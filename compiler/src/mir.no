@@ -495,9 +495,11 @@ OP-PRINT = 95
 ; OP-VECPUSHSTR：dst = 新向量值 id（TY-VEC）；a = 旧向量值 id；bs[k] = 被压入的 str 值 id（TY-STR，落 %sv）。
 ;   发 call %vec @vec_push_str(%vec %vc, %str-long %sv)（返回新 %vec；元素在助手内 clone 成独立 rc 塊）。
 OP-VECPUSHSTR = 96
+
 ; OP-VECGETSTR：dst = str 值 id（TY-STR，落 %sv）；a = 向量值 id；bs[k] = 下标 i64 值 id。
 ;   发 call %str-long @vec_get_str(%vec %vc, i64 %v)。回【借用視圖】，呼叫方不得 drop。
 OP-VECGETSTR = 97
+
 ; OP-VEC-FREE-STR：x = 向量值 id（TY-VEC）；无结果。发 call void @vec_free_str(%vec %vc)
 ;   （逐元素 release data + free 陣列緩衝，dat==0 短路）。破坏性一次性释放，所有权必须唯一。
 OP-VEC-FREE-STR = 98
@@ -509,6 +511,7 @@ OP-VEC-FREE-STR = 98
 ; OP-VECNEWCAP：dst = %vec（TY-VEC）；x = cap 值 id（TY-I64，落 %v）。
 ;   发 call %vec @vec_new_cap_i64(i64 %v)（malloc cap*8，写 len=0/cap=cap/data）。
 OP-VECNEWCAP = 99
+
 ; OP-VECNEWCAPSTR：dst = %vec（TY-VECSTR）；x = cap 值 id（TY-I64）。
 ;   发 call %vec @vec_new_cap_str(i64 %v)（malloc cap*16 + memset 0）。
 OP-VECNEWCAPSTR = 100

@@ -294,7 +294,7 @@ Entradas: %d
   '82l9xk55': 'la entrada zip %q es demasiado grande (%d bytes)'
   '83xbz15x': `
 la ruta del archivo fuente no es un nombre válido: %s
-  el segmento de ruta %q contiene caracteres no permitidos (solo se admiten letras minúsculas, dígitos y guiones; los guiones bajos están prohibidos, y un guion no puede ir al principio, al final ni repetirse)
+  el segmento de ruta %q contiene caracteres no permitidos (solo se admiten letras minúsculas, dígitos y guiones; el guion bajo solo se permite como primer carácter del segmento (marcador de ignorado) y está prohibido desde el segundo carácter; un guion no puede ir al principio, al final ni repetirse)
   ejemplo válido: tmp/zz-stridx/r-index.no
 
 `

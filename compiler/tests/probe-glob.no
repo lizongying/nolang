@@ -20,6 +20,7 @@ h2m-cov-report = () (out str) {
             -> _
         }
         out = out - e - '\n'
+
         #{overflow=wrap}
         i = i + 1
     }

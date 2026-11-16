@@ -61,7 +61,7 @@ has-flag = (flag str) (yes bool) {
                 break
             }
         }
-        matched == true -> {
+        matched -> {
             yes = true
             return
         }

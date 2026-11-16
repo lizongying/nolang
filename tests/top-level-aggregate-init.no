@@ -11,7 +11,9 @@ point {
     n i64
 }
 
-pr point = point{n: 7}
+pr = point{
+    n: 7
+}
 
 e-num {
     hi(v i64),

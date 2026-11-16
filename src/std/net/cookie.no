@@ -133,6 +133,7 @@ parse-set = (set-cookie-str str) (c cookie) {
         ; 跳過前導空格
         (pos < rest.len-bytes() && rest[pos] == 32) {
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 1
             }: {
@@ -245,6 +246,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         ; 跳過空格
         (pos < cookie-header.len-bytes() && cookie-header[pos] == 32) {
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 1
             }: {

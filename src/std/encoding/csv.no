@@ -34,6 +34,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
             ; 空欄位（逗號開頭）
             {
+
                 #{overflow=wrap}
                 new-pos ?= r-pos + 1
             }: {
@@ -49,6 +50,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
             ; 雙引號包圍的欄位
             {
+
                 #{overflow=wrap}
                 r-pos ?= r-pos + 1
             }: {
@@ -88,6 +90,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                     ; 結束雙引號
                     {
+
                         #{overflow=wrap}
                         r-pos ?= r-pos + 1
                     }: {
@@ -102,6 +105,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                         nc == 44 -> {
                             {
+
                                 #{overflow=wrap}
                                 r-pos ?= r-pos + 1
                             }: {
@@ -121,6 +125,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     field-b[fn] = c
 
                     {
+
                         #{overflow=wrap}
                         fn ?= fn + 1
                     }: {
@@ -130,6 +135,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     }
 
                     {
+
                         #{overflow=wrap}
                         r-pos ?= r-pos + 1
                     }: {
@@ -143,6 +149,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 field-b[fn] = c
 
                 {
+
                     #{overflow=wrap}
                     fn ?= fn + 1
                 }: {
@@ -152,6 +159,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     r-pos ?= r-pos + 1
                 }: {
@@ -173,6 +181,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         {
             c == 44 -> {
                 {
+
                     #{overflow=wrap}
                     r-pos ?= r-pos + 1
                 }: {
@@ -197,6 +206,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         field-b[fn] = c
 
         {
+
             #{overflow=wrap}
             fn ?= fn + 1
         }: {
@@ -206,6 +216,7 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         }
 
         {
+
             #{overflow=wrap}
             r-pos ?= r-pos + 1
         }: {
@@ -240,6 +251,7 @@ parse-line = (s str, max-fields ?i64) (fields []str) {
         fields[n], pos = parse-field(s, pos)
 
         {
+
             #{overflow=wrap}
             n ?= n + 1
         }: {
@@ -265,7 +277,7 @@ encode-field = (field str) (out str) {
             break
         }
     }
-    need-quote == false -> {
+    ! need-quote -> {
         out = field
         return
     }
@@ -277,6 +289,7 @@ encode-field = (field str) (out str) {
     out-b[j] = 34
 
     {
+
         #{overflow=wrap}
         j ?= j + 1
     }: {
@@ -307,6 +320,7 @@ encode-field = (field str) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             j ?= j + 1
         }: {

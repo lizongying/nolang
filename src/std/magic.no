@@ -29,7 +29,7 @@ detect-type = (path str) (kind str) {
 
     ; 檢查是否為普通檔案
     is-f = fs.is-file(path)
-    is-f == false -> {
+    ! is-f -> {
         kind = 'unknown (not found)'
         return
     }

@@ -642,7 +642,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
             b >= 65 && b <= 90 -> ec = true
             b >= 97 && b <= 122 -> ec = true
             b == 35 -> ec = true
-            ec == false -> break
+            ! ec -> break
 
             #{overflow=wrap}
             k ?= k + 1
@@ -659,7 +659,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
             name-len == 0 -> {
 
                 ; 裸 '&'：XML 錯誤；HTML 原樣保留
-                html == false -> return
+                ! html -> return
                 acc = acc - '&'
 
                 #{overflow=wrap}
@@ -668,10 +668,10 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
                 continue
             }
 
-            has-semi == false -> {
+            ! has-semi -> {
 
                 ; 未闭合實體：XML 錯誤；HTML 保留字面 '&'（名字仍作正文）
-                html == false -> return
+                ! html -> return
                 acc = acc - '&'
 
                 #{overflow=wrap}
@@ -696,7 +696,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
                 }
             }
             cpv < 0 -> {
-                html == false -> return
+                ! html -> return
 
                 ; HTML：未知實體原文保留（含分號）
                 #{overflow=wrap}
@@ -735,6 +735,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
             hex = true
 
             {
+
                 #{overflow=wrap}
                 p ?= p + 1
             }: {
@@ -769,7 +770,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
                 -> _
             }
         }
-        hex == true && b >= 65 && b <= 70 -> {
+        hex && b >= 65 && b <= 70 -> {
             {
                 d ?= bi - 55
             }: {
@@ -778,7 +779,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
                 -> _
             }
         }
-        hex == true && b >= 97 && b <= 102 -> {
+        hex && b >= 97 && b <= 102 -> {
             {
                 d ?= bi - 87
             }: {
@@ -790,8 +791,9 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
         d < 0 -> return
         any = true
         {
-            hex == true -> {
+            hex -> {
                 {
+
                     #{overflow=wrap}
                     v ?= v * 16 + d
                 }: {
@@ -803,6 +805,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 
             -> {
                 {
+
                     #{overflow=wrap}
                     v ?= v * 10 + d
                 }: {
@@ -814,6 +817,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
         }
 
         {
+
             #{overflow=wrap}
             p ?= p + 1
         }: {
@@ -822,7 +826,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
             -> _
         }
     }
-    any == false -> return
+    ! any -> return
     v > 1114111 -> return
     cp = v
 }
@@ -843,6 +847,7 @@ xml-skip-ws = (s str, p i64) (np i64) {
         c != 32 && c != 9 && c != 10 && c != 13 -> return
 
         {
+
             #{overflow=wrap}
             np ?= np + 1
         }: {
@@ -942,7 +947,7 @@ dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np ?i64) {
         #{overflow=wrap}
         j ?= j + 1
     }
-    found == false -> return
+    ! found -> return
     idx = .alloc(DOM-KIND-COMMENT)
     .vals[idx] ?= s.slice-bytes(p + 4, j)
     .append(parent, idx)
@@ -971,7 +976,7 @@ dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
         #{overflow=wrap}
         j ?= j + 1
     }
-    found == false -> return
+    ! found -> return
     idx = .alloc(DOM-KIND-CDATA)
     .vals[idx] ?= s.slice-bytes(p + 9, j)
     .append(parent, idx)
@@ -1011,7 +1016,7 @@ dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
         #{overflow=wrap}
         j ?= j + 1
     }
-    found == false -> return
+    ! found -> return
     idx = .alloc(DOM-KIND-PI)
     .names[idx] ?= tgt
 
@@ -1073,7 +1078,7 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
         #{overflow=wrap}
         j ?= j + 1
     }
-    found == false -> return
+    ! found -> return
     idx = .alloc(DOM-KIND-DOCTYPE)
     .vals[idx] ?= s.slice-bytes(p + 2, j)
 
@@ -1146,14 +1151,14 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
                 #{overflow=wrap}
                 j ?= j + 1
             }
-            fe == false -> return
+            ! fe -> return
             ve = j
 
             #{overflow=wrap}
             cpos ?= j + 1
         }
 
-        xml == true -> return
+        xml -> return
 
         -> {
 
@@ -1175,14 +1180,14 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
     ; 重複屬性：XML 違規；HTML 首個為準
     ex = .find-attr(node, nm)
     ex >= 0 -> {
-        xml == false -> {
+        ! xml -> {
             np = cpos
             return
         }
         return
     }
     val = ''
-    dopt = decode-entities(s, vs, ve, xml == false)
+    dopt = decode-entities(s, vs, ve, ! xml)
     dopt: {
         ok -> val = it
 
@@ -1468,7 +1473,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                     d9 str = s.slice-bytes(p, p + 9)
                     d9.eq-full('<!DOCTYPE') -> is-dt = true
                 }
-                is-dt == false -> {
+                ! is-dt -> {
                     failpos = .err-pos-or(p)
                     return
                 }
@@ -1501,7 +1506,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
             }
         }
     }
-    seen == false -> {
+    ! seen -> {
         failpos = .err-pos-or(p)
         return
     }
@@ -1640,6 +1645,7 @@ dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
         }
 
         {
+
             #{overflow=wrap}
             j ?= j + 1
         }: {
@@ -1686,6 +1692,7 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
         s.byte(q) == 62 -> break
 
         {
+
             #{overflow=wrap}
             q ?= q + 1
         }: {
@@ -1746,6 +1753,7 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
         }
 
         {
+
             #{overflow=wrap}
             j ?= j + 1
         }: {
@@ -1935,6 +1943,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
         mode = 0
 
         {
+
             #{overflow=wrap}
             np ?= p + 1
         }: {
@@ -1958,13 +1967,14 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
     ; 屬性迴圈
     done = false
-    (np < n && done == false) {
+    (np < n && ! done) {
         np = xml-skip-ws(s, np)
         np >= n -> break
         c = s.byte(np)
         {
             c == 62 -> {
                 {
+
                     #{overflow=wrap}
                     np ?= np + 1
                 }: {
@@ -1993,6 +2003,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
                 ; 孤立的 '/'：跳過繼續
                 {
+
                     #{overflow=wrap}
                     np ?= np + 1
                 }: {
@@ -2011,6 +2022,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
                         ; 非法屬性起始字元：跳過避免死循環
                         {
+
                             #{overflow=wrap}
                             np ?= np + 1
                         }: {
@@ -2050,6 +2062,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
         }
 
         {
+
             #{overflow=wrap}
             j ?= j + 1
         }: {
@@ -2102,6 +2115,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
             s.byte(q) == 62 -> break
 
             {
+
                 #{overflow=wrap}
                 q ?= q + 1
             }: {
@@ -2148,6 +2162,7 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
                 s.byte(np) == 62 -> break
 
                 {
+
                     #{overflow=wrap}
                     np ?= np + 1
                 }: {
@@ -2158,6 +2173,7 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
             }
             np < n -> {
                 {
+
                     #{overflow=wrap}
                     np ?= np + 1
                 }: {
@@ -2176,6 +2192,7 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
         s.byte(np) == 62 -> break
 
         {
+
             #{overflow=wrap}
             np ?= np + 1
         }: {
@@ -2186,6 +2203,7 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
     }
     np < n -> {
         {
+
             #{overflow=wrap}
             np ?= np + 1
         }: {
@@ -2223,6 +2241,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 s.byte(te) == 60 -> break
 
                 {
+
                     #{overflow=wrap}
                     te ?= te + 1
                 }: {
@@ -2244,6 +2263,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             .html-add-text(cur, s, p, p + 1)
 
             {
+
                 #{overflow=wrap}
                 p ?= p + 1
             }: {
@@ -2325,6 +2345,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     k ?= k - 1
                 }: {
@@ -2358,6 +2379,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             .html-add-text(cur, s, p, p + 1)
 
             {
+
                 #{overflow=wrap}
                 p ?= p + 1
             }: {
@@ -2432,6 +2454,7 @@ esc-text = (s str) (out str) {
                 out = out - s.slice-bytes(seg, i) - '&amp;'
 
                 {
+
                     #{overflow=wrap}
                     seg ?= i + 1
                 }: {
@@ -2445,6 +2468,7 @@ esc-text = (s str) (out str) {
                 out = out - s.slice-bytes(seg, i) - '&lt;'
 
                 {
+
                     #{overflow=wrap}
                     seg ?= i + 1
                 }: {
@@ -2458,6 +2482,7 @@ esc-text = (s str) (out str) {
                 out = out - s.slice-bytes(seg, i) - '&gt;'
 
                 {
+
                     #{overflow=wrap}
                     seg ?= i + 1
                 }: {
@@ -2469,6 +2494,7 @@ esc-text = (s str) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -2496,6 +2522,7 @@ esc-attr = (s str) (out str) {
                 out = out - s.slice-bytes(seg, i) - '&amp;'
 
                 {
+
                     #{overflow=wrap}
                     seg ?= i + 1
                 }: {
@@ -2509,6 +2536,7 @@ esc-attr = (s str) (out str) {
                 out = out - s.slice-bytes(seg, i) - '&lt;'
 
                 {
+
                     #{overflow=wrap}
                     seg ?= i + 1
                 }: {
@@ -2522,6 +2550,7 @@ esc-attr = (s str) (out str) {
                 out = out - s.slice-bytes(seg, i) - '&gt;'
 
                 {
+
                     #{overflow=wrap}
                     seg ?= i + 1
                 }: {
@@ -2535,6 +2564,7 @@ esc-attr = (s str) (out str) {
                 out = out - s.slice-bytes(seg, i) - '&quot;'
 
                 {
+
                     #{overflow=wrap}
                     seg ?= i + 1
                 }: {
@@ -2546,6 +2576,7 @@ esc-attr = (s str) (out str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -2949,6 +2980,7 @@ class-has = (val str, cls str) (yes bool) {
             tk.eq-full(cls) -> yes = true
 
             {
+
                 #{overflow=wrap}
                 seg ?= i + 1
             }: {
@@ -2959,6 +2991,7 @@ class-has = (val str, cls str) (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -2984,7 +3017,7 @@ dom.parse-xml = (source str) (out ?dom) {
     d.pool.init()
     d.format = 0
     root, failpos, ok = d.pool.xml-parse-doc(source)
-    ok == false -> {
+    ! ok -> {
         out = err('xml parse error at byte ' - failpos.to-str())
         return
     }

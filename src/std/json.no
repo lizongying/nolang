@@ -259,6 +259,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
         {
+
             #{overflow=wrap}
             p ?= p + 1
         }: {
@@ -285,6 +286,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].kind = JSON-KIND-NULL
 
             {
+
                 #{overflow=wrap}
                 next-pos ?= p + 4
             }: {
@@ -304,6 +306,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].bool-val = true
 
             {
+
                 #{overflow=wrap}
                 next-pos ?= p + 4
             }: {
@@ -323,6 +326,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].bool-val = false
 
             {
+
                 #{overflow=wrap}
                 next-pos ?= p + 5
             }: {
@@ -388,6 +392,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].count = 0
 
             {
+
                 #{overflow=wrap}
                 p ?= p + 1
             }: {
@@ -400,8 +405,8 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             ; empty array
             s.byte(p) == 93 -> {
-
                 {
+
                     #{overflow=wrap}
                     next-pos ?= p + 1
                 }: {
@@ -419,7 +424,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 p = .skip-ws(s, p)
                 p >= sn -> return
                 child-idx, child-next, child-ok = .parse(s, p)
-                child-ok == false -> return
+                ! child-ok -> return
 
                 ; 陣列：以邊表附加子元素（鍵名空字串）
                 .add-child(node-idx, child-idx, '')
@@ -433,8 +438,8 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     -> 0
                 }
                 c2 == 93 -> {
-
                     {
+
                         #{overflow=wrap}
                         next-pos ?= p + 1
                     }: {
@@ -447,8 +452,8 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 }
                 {
                     c2 == 44 -> {
-
                         {
+
                             #{overflow=wrap}
                             p ?= p + 1
                         }: {
@@ -471,6 +476,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].count = 0
 
             {
+
                 #{overflow=wrap}
                 p ?= p + 1
             }: {
@@ -483,8 +489,8 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
             ; empty object
             s.byte(p) == 125 -> {
-
                 {
+
                     #{overflow=wrap}
                     next-pos ?= p + 1
                 }: {
@@ -507,7 +513,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     return
                 }
                 key-idx, key-next, key-ok = .parse(s, p)
-                key-ok == false -> return
+                ! key-ok -> return
                 p = key-next
                 p = .skip-ws(s, p)
                 p >= sn -> return
@@ -518,6 +524,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     p ?= p + 1
                 }: {
@@ -526,7 +533,7 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     -> _
                 }
                 val-idx, val-next, val-ok = .parse(s, p)
-                val-ok == false -> return
+                ! val-ok -> return
 
                 ; 物件：以邊表附加子元素；鍵名取自解析出的 key 節點字串值
                 key-str = .strs[key-idx]: {
@@ -545,8 +552,8 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     -> 0
                 }
                 c2 == 125 -> {
-
                     {
+
                         #{overflow=wrap}
                         next-pos ?= p + 1
                     }: {
@@ -559,8 +566,8 @@ pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 }
                 {
                     c2 == 44 -> {
-
                         {
+
                             #{overflow=wrap}
                             p ?= p + 1
                         }: {
@@ -1204,6 +1211,7 @@ pool.stringify = (node-idx i64) (out str) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     j ?= j + 1
                 }: {
@@ -1228,7 +1236,7 @@ pool.stringify = (node-idx i64) (out str) {
             }
             is-first = true
             (e >= 0) {
-                is-first == false -> out = out - ','
+                ! is-first -> out = out - ','
                 is-first = false
 
                 ce = .ec[e]: {
@@ -1262,7 +1270,7 @@ pool.stringify = (node-idx i64) (out str) {
             }
             is-first = true
             (e >= 0) {
-                is-first == false -> out = out - ','
+                ! is-first -> out = out - ','
                 is-first = false
 
                 key-str = .ek[e]: {
@@ -1549,7 +1557,7 @@ json.get-i64 = (key str) (val ?i64) {
 
         -> _
     }
-    found == false -> return
+    ! found -> return
 
     ; get-num 回傳 f64，直接 `val = f` 會被當成 f64→i64 的裸指派，
     ; codegen 只做位元重解（42.0 -> 4631107791820423168），必須顯式截斷。
@@ -1866,7 +1874,7 @@ json.i64 = () (val ?i64) {
 
         -> _
     }
-    found == false -> return
+    ! found -> return
     val = f.to-i64()
 }
 

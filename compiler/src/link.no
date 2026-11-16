@@ -33,7 +33,7 @@ compile = (ll str, out str) (ok bool) {
 
         err(e) -> eprint('noc: cannot write ' - llpath - ': ' - e)
     }
-    good == false -> return
+    ! good -> return
 
     a []str = []
     a.push('-x')

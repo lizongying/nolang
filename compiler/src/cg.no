@@ -129,6 +129,7 @@ cg-val-prefix = (t i64) (s str) {
     s = '%v'
     t == TY-STR -> s = '%sv'
     t == TY-VEC -> s = '%vc'
+
     ; 切片 B：[]str 与 []i64 共用 %vec 命名空间（值都是 vec 描述符）
     t == TY-VECSTR -> s = '%vc'
     t == TY-OPT -> s = '%op'

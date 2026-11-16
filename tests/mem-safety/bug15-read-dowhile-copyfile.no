@@ -40,7 +40,7 @@ test-copy-file = () (ok bool) {
 
     ; 複製檔案
     ok2 = fs.copy-file('/tmp/bug15_src.txt', '/tmp/bug15_dst.txt')
-    ok2 != true -> return
+    ! ok2 -> return
 
     ; 讀取複製後的檔案驗證內容
     fd = fs.open-read('/tmp/bug15_dst.txt')
@@ -131,25 +131,25 @@ test-pretest-loop = () (ok bool) {
 
 ; 測試 1: fs.read
 ok1 = test-read-into-buf()
-ok1 == true -> print('test-read-into-buf: PASS')
-ok1 != true -> print('test-read-into-buf: FAIL')
+ok1 -> print('test-read-into-buf: PASS')
+! ok1 -> print('test-read-into-buf: FAIL')
 
 ; 測試 2: copy-file
 ok2 = test-copy-file()
-ok2 == true -> print('test-copy-file: PASS')
-ok2 != true -> print('test-copy-file: FAIL')
+ok2 -> print('test-copy-file: PASS')
+! ok2 -> print('test-copy-file: FAIL')
 
 ; 測試 3: process.cmd
 ok3 = test-cmd-capture()
-ok3 == true -> print('test-cmd-capture: PASS')
-ok3 != true -> print('test-cmd-capture: FAIL')
+ok3 -> print('test-cmd-capture: PASS')
+! ok3 -> print('test-cmd-capture: FAIL')
 
 ; 測試 4: 無限循環 + break
 ok4 = test-infinite-break()
-ok4 == true -> print('test-infinite-break: PASS')
-ok4 != true -> print('test-infinite-break: FAIL')
+ok4 -> print('test-infinite-break: PASS')
+! ok4 -> print('test-infinite-break: FAIL')
 
 ; 測試 5: 前測循環
 ok5 = test-pretest-loop()
-ok5 == true -> print('test-pretest-loop: PASS')
-ok5 != true -> print('test-pretest-loop: FAIL')
+ok5 -> print('test-pretest-loop: PASS')
+! ok5 -> print('test-pretest-loop: FAIL')

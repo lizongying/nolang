@@ -106,7 +106,7 @@ lt = (a i64, b i64, msg str) {
 ; msg: 斷言失敗時列印的說明
 is-true = (val bool, msg str) {
     {
-        val == false -> {
+        ! val -> {
             count-failed = fail(count-failed)
             print('FAIL: is-true -', msg)
         }
@@ -122,7 +122,7 @@ is-true = (val bool, msg str) {
 ; msg: 斷言失敗時列印的說明
 is-false = (val bool, msg str) {
     {
-        val == true -> {
+        val -> {
             count-failed = fail(count-failed)
             print('FAIL: is-false -', msg)
         }

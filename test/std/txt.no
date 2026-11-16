@@ -569,7 +569,7 @@ t-split = () {
     ; fields：任意空白（含 tab）分段，且吃掉前後空白
     fs = txt.from-str('  one\ttwo  three ')
     print('DBG fromstr=[' - fs.to-str() - ']')
-    f []txt = fs.fields()
+    f = fs.fields()
     print('DBG f.len=' - f.len().to-str())
     f-0 = f[0]: {
         ok -> it

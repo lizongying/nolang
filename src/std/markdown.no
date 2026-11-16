@@ -73,6 +73,7 @@ markdown.prefix-count = (s str, c i64) (n i64) {
         s.byte(n) != c -> break
 
         {
+
             #{overflow=wrap}
             n ?= n + 1
         }: {
@@ -134,6 +135,7 @@ markdown.setext-level = (line str) (level i64) {
         i >= n || s.byte(i) != c -> break
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -170,6 +172,7 @@ markdown.thematic-break = (line str) (yes bool) {
         }
         c == 32 || c == 9 -> {
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -184,6 +187,7 @@ markdown.thematic-break = (line str) (yes bool) {
         marker != 45 && marker != 42 && marker != 95 -> return
 
         {
+
             #{overflow=wrap}
             count ?= count + 1
         }: {
@@ -193,6 +197,7 @@ markdown.thematic-break = (line str) (yes bool) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -228,6 +233,7 @@ markdown.list-item = (line str) (out list) {
             i >= n || s.byte(i) < 48 || s.byte(i) > 57 -> break
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -250,6 +256,7 @@ markdown.list-item = (line str) (out list) {
                 index-v = index-v * 10 + digits.byte(d) - 48
 
                 {
+
                     #{overflow=wrap}
                     d ?= d + 1
                 }: {
@@ -433,6 +440,7 @@ markdown.inline = (s str) (out str) {
             result = result - markdown.escape-html(s.slice-bytes(i + 1, i + 2))
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 2
             }: {
@@ -588,6 +596,7 @@ markdown.inline = (s str) (out str) {
             strike = strike == false
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 2
             }: {
@@ -608,6 +617,7 @@ markdown.inline = (s str) (out str) {
             strong = strong == false
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 2
             }: {
@@ -628,6 +638,7 @@ markdown.inline = (s str) (out str) {
             strong = strong == false
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 2
             }: {
@@ -650,6 +661,7 @@ markdown.inline = (s str) (out str) {
                 result = result - '_'
 
                 {
+
                     #{overflow=wrap}
                     i ?= i + 1
                 }: {
@@ -667,6 +679,7 @@ markdown.inline = (s str) (out str) {
             emphasis = emphasis == false
 
             {
+
                 #{overflow=wrap}
                 i ?= i + 1
             }: {
@@ -679,6 +692,7 @@ markdown.inline = (s str) (out str) {
         result = result - markdown.escape-html(c.to-str())
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -747,6 +761,7 @@ markdown.read-line = (source str, pos i64) (out line) {
             }
 
             {
+
                 #{overflow=wrap}
                 j ?= j + 1
             }: {
@@ -759,6 +774,7 @@ markdown.read-line = (source str, pos i64) (out line) {
         {
             end-v < n -> {
                 {
+
                     #{overflow=wrap}
                     next-v ?= end-v + 1
                 }: {
@@ -1002,7 +1018,7 @@ markdown.to-html = (source str) (out str) {
                 }
                 result = result - '<table>\n<thead>\n' - markdown.table-row(trimmed, 'th') - '</thead>\n<tbody>\n'
                 pos = look-pos
-                (pos < n-source && pending == false) {
+                (pos < n-source && ! pending) {
                     pos >= n-source -> break
                     body-info line = markdown.read-line(normalized, pos)
                     body-line = body-info.text

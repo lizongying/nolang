@@ -1015,7 +1015,7 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
 
         #{overflow=wrap}
         child, cnext, cok = .parse-value(s, p + 1)
-        cok == false -> return
+        ! cok -> return
         .add-child(idx, child, key)
         p = .skip-blanks(s, cnext)
         (p < sn && s.byte(p) == 35) {
@@ -1078,7 +1078,7 @@ pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
             return
         }
         child, cnext, cok = .parse-value(s, p)
-        cok == false -> return
+        ! cok -> return
         .add-child(idx, child, '')
         p = .skip-trivia(s, cnext)
         p >= sn -> {
@@ -1283,7 +1283,7 @@ pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
 
             c == 92 -> {
                 dec, np, dok = .decode-escape(s, p)
-                dok == false -> {
+                ! dok -> {
                     ok = false
                     return
                 }

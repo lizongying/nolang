@@ -197,6 +197,7 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     sym = 0
     i <- [0..num-bits): {
         {
+
             ; 取出當前節點機率，走一位後把更新後的機率寫回同一節點
             node-prob ?= probs[m]
 
@@ -489,6 +490,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
         sub-probs []i64
         i <- [0..8): {
             {
+
                 #{overflow=wrap}
                 tree-at ?= 2 + i
 
@@ -503,6 +505,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
         }
         sym = .rd.decode-bit-tree(sub-probs, 3)
         {
+
             #{overflow=wrap}
             length ?= sym + 8
         }: {
@@ -517,6 +520,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     sub-probs []i64
     i <- [0..256): {
         {
+
             #{overflow=wrap}
             tree-at ?= 10 + i
 
@@ -532,6 +536,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     sym = .rd.decode-bit-tree(sub-probs, 8)
 
     {
+
         #{overflow=wrap}
         length ?= sym + 16
     }: {
@@ -596,6 +601,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
         }
         sym = .rd.decode-reverse-bit-tree(sub-probs, num-direct-bits)
         {
+
             #{overflow=wrap}
             dist ?= base + sym
         }: {
@@ -857,9 +863,10 @@ lzma-decompress = (data []byte) (out []byte) {
     lc = rem % 9
 
     ; 解析 dict size (4 bytes LE)：第 i 個位元組佔 bit [8*i, 8*i+8)
-    dict-size i64 = 0
+    dict-size = 0
     i <- [0..4): {
         {
+
             #{overflow=wrap}
             byte-at ?= 1 + i
 
@@ -877,9 +884,10 @@ lzma-decompress = (data []byte) (out []byte) {
     }
 
     ; 解析 unpacked size (8 bytes LE)
-    unpacked-size i64 = 0
+    unpacked-size = 0
     i <- [0..8): {
         {
+
             #{overflow=wrap}
             byte-at ?= 5 + i
 
@@ -949,7 +957,9 @@ decompress = (data []byte) (out []byte) {
         {
             magic-byte ?= data[i]
 
-            magic-byte != XZ-MAGIC[i] -> { return }
+            magic-byte != XZ-MAGIC[i] -> {
+                return
+            }
         }: {
             err -> _
 
@@ -971,7 +981,9 @@ decompress = (data []byte) (out []byte) {
             -> 0
         }
 
-        marker-byte == 0 -> { break }
+        marker-byte == 0 -> {
+            break
+        }
 
         ; Block Header Size：實際大小 = (value + 1) * 4
         header-start = pos
@@ -988,6 +1000,7 @@ decompress = (data []byte) (out []byte) {
         block-flags i64 = 0
         props-size i64 = 0
         {
+
             ; Block Flags 欄位
             #{overflow=wrap}
             pos ?= pos + 1
@@ -1034,6 +1047,7 @@ decompress = (data []byte) (out []byte) {
 
         ; 壓縮資料緊接在 Block Header 之後
         {
+
             #{overflow=wrap}
             pos ?= header-start + header-size
         }: {
@@ -1079,6 +1093,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             pos ?= pos + 1
         }: {
@@ -1094,6 +1109,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
         ctrl == 1 -> {
             chunk-size i64 = 0
             {
+
                 ; 長度欄位：值 = 實際大小 - 1（大端序）
                 high-byte ?= data[pos]
 
@@ -1118,6 +1134,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             ; 複製未壓縮資料
             i <- [0..chunk-size): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= pos + i
 
@@ -1132,6 +1149,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             }
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + chunk-size
             }: {
@@ -1145,6 +1163,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
         ctrl == 2 -> {
             chunk-size i64 = 0
             {
+
                 ; 長度欄位：值 = 實際大小 - 1（大端序）
                 high-byte ?= data[pos]
 
@@ -1163,6 +1182,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
             i <- [0..chunk-size): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= pos + i
 
@@ -1177,6 +1197,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             }
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + chunk-size
             }: {
@@ -1226,6 +1247,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             props-skip = 0
             ctrl >= 0xc0 -> props-skip = 1
             {
+
                 #{overflow=wrap}
                 pos ?= pos + props-skip
             }: {
@@ -1250,6 +1272,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             comp-data []byte
             i <- [0..comp-size): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= pos + i
 
@@ -1264,6 +1287,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             }
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + comp-size
             }: {

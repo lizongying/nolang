@@ -1040,7 +1040,8 @@ list-dir = (dirpath str) (entries []str) {
     }
     result []str
     more = true
-    (more == true) {
+    (more) {
+
         ; ⚠️ err 臂要寫 `more`，只能用語句 match（`?=` 块的臂是獨立幀，臂內寫入不生效）
         item = read-dir(dirp)
         item: {
@@ -1067,7 +1068,7 @@ list-dir = (dirpath str) (entries []str) {
     }
     result []str
     more = true
-    (more == true) {
+    (more) {
         item = os.win-find-next-file(bufptr)
         item: {
             ok -> result.push(it)
@@ -1092,7 +1093,8 @@ list-dir = (dirpath str) (entries []str) {
     }
     result []str
     more = true
-    (more == true) {
+    (more) {
+
         ; ⚠️ err 臂要寫 `more`，只能用語句 match（`?=` 块的臂是獨立幀，臂內寫入不生效）
         item = read-dir(dirp)
         item: {
@@ -1136,7 +1138,7 @@ dir-entries = (dirpath str) (entries []str) {
         name.len-bytes() == 2 && name[0] == 46 && name[1] == 46 -> {
             skip = true
         }
-        skip == false -> entries.push(name)
+        ! skip -> entries.push(name)
     }
 }
 
@@ -1194,7 +1196,7 @@ walk-collect = (dirpath str, paths []str) (out []str) {
         {
             is-d -> out = walk-collect(fullpath, out)
 
-            is-d == false -> out.push(fullpath)
+            ! is-d -> out.push(fullpath)
         }
     }
 }

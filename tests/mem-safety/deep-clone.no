@@ -10,6 +10,7 @@ test-clone-vec = () (ok bool) {
 
         -> _
     }
+
     ; 同 test-clone-str-vec：clone 之後不要用 `?=` 塊讀元素（§5.2q），改值位 match
     original = a[0]: {
         ok -> it
@@ -32,6 +33,7 @@ test-clone-str-vec = () (ok bool) {
     s.push('hello')
     s.push('world')
     c = s
+
     ; ⚠️ 不要寫成 `{ s0 ?= s[0] … }: { err -> _  -> _ }`：`c = s`（[]str 深拷貝）
     ;   之後，塊內 `?=` 綁定的變數再讀會拿到 void，MIR 發出
     ;   `icmp eq void undef, <'hello'>` ⇒ LLVM 驗證失敗（最小複現見

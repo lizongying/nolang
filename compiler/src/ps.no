@@ -6681,9 +6681,9 @@ ps-bm-scan = (p psst) (yes i64) {
             (i-i-d == true && j-a-s == true) -> excl = true
             (i-i-d == true && j-c-m == true) -> excl = true
         }
-        lbl == true -> yes = 1
+        lbl -> yes = 1
 
-        excl == false && lbl == false && i < p.toks.len() -> {
+        excl == false && ! lbl && i < p.toks.len() -> {
             depth = 0
             done = false
             m = i
@@ -6983,14 +6983,14 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
                     ; block 形（無大括號）：語句解析至臂界/}`；Go 將 bodyBlock.IsInline=true
                     sl []i64 = with-cap(4)
                     bdone = false
-                    (bdone == false && fail == 0) {
+                    (! bdone && fail == 0) {
 
                         ; s59：對齊 Go match.go:355-359（collectDoc→parseStatement→setDoc→attachInlineComment）
                         sdoc = ps-skip-trivia-doc(t, p, 0)
                         hd3 = ps-peek(p)
                         hd3 == tok.RBRACE || hd3 == tok.EOF -> bdone = true
-                        wild == 0 && bdone == false && ps-is-arm-start(p) == 1 -> bdone = true
-                        bdone == false && fail == 0 -> {
+                        wild == 0 && ! bdone && ps-is-arm-start(p) == 1 -> bdone = true
+                        ! bdone && fail == 0 -> {
                             pos0 = p.pos
                             s = ps-parse-stmt(t, p)
                             s > 0 -> {
@@ -9780,12 +9780,12 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                 }
                 sl []i64 = with-cap(4)
                 bdone = false
-                (bdone == false) {
+                (! bdone) {
                     hd3 = ps-peek(p)
                     hd3 == tok.RBRACE || hd3 == tok.EOF -> bdone = true
-                    bdone == false && ps-is-opt-pat-start(p) == 1 -> bdone = true
-                    bdone == false && wild == 0 && ps-is-arm-start(p) == 1 -> bdone = true
-                    bdone == false -> {
+                    ! bdone && ps-is-opt-pat-start(p) == 1 -> bdone = true
+                    ! bdone && wild == 0 && ps-is-arm-start(p) == 1 -> bdone = true
+                    ! bdone -> {
                         sdoc = ps-skip-trivia-doc(t, p, 0)
                         pos0 = p.pos
                         s = ps-parse-stmt(t, p)

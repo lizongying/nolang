@@ -21,6 +21,7 @@ cg-runtime-ty-name = (t i64) (s str) {
     s = 'i64'
     t == TY-STR -> s = '%str-long'
     t == TY-VEC -> s = '%vec'
+
     ; 切片 B：[]str 与 []i64 在 LLVM 层同为 %vec（元素 stride 由助手决定）
     t == TY-VECSTR -> s = '%vec'
     t == TY-OPT -> s = '%option'

@@ -18,15 +18,14 @@
 ; cb: 16 位元組計數器區塊，原地修改；只會動到後 4 位元組（下標 12–15）
 ; [ctr-inc](#aes-ctr.ctr-inc)
 ctr-inc = (cb []byte) {
+
     ; 大端計數器加 1：從最低位元組往上加，位元組回繞成 0 才繼續進位
     carry = 1
     j = 15
     (j >= 0 && carry == 1) {
         {
-            #{overflow=wrap}
             old-byte ?= cb[j]
 
-            #{overflow=wrap}
             new-byte = (old-byte + carry) & 255
 
             cb[j]: {
@@ -45,6 +44,7 @@ ctr-inc = (cb []byte) {
         }
 
         {
+
             #{overflow=wrap}
             j ?= j - 1
         }: {
@@ -124,6 +124,7 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ctr-inc(cb)
 
         {
+
             #{overflow=wrap}
             pos ?= pos + n
         }: {

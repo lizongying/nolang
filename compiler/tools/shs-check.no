@@ -722,7 +722,7 @@ shs-type-decl = (ln str) (yes bool, name str) {
             break
         }
     }
-    hit == false -> return
+    ! hit -> return
 
     ch2 = shs-byte(ln, j)
     ch2 == B-LC -> {
@@ -800,7 +800,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
             #{overflow=wrap}
             je = k + 1
         }
-        ok == false -> break
+        ! ok -> break
     }
 
     ; 下一個非空白必須是 '='
@@ -814,7 +814,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
             break
         }
     }
-    hit == false -> return
+    ! hit -> return
 
     ce = shs-byte(ln, j)
     ce != B-EQ -> return
@@ -833,7 +833,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
             break
         }
     }
-    hit2 == false -> return
+    ! hit2 -> return
 
     cp = shs-byte(ln, p1)
     cp != B-LP -> return
@@ -874,7 +874,7 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
             break
         }
     }
-    hit3 == false -> {
+    ! hit3 -> {
         yes = true
         return
     }
@@ -952,7 +952,7 @@ shs-map-at = (ln str, i i64) (yes bool) {
             j = j + 1
         }
     }
-    closed == false -> return
+    ! closed -> return
     rb < 0 -> return
 
     ; xs = ln[i+1 .. rb)；空內容 ⇒ 切片，不是 map
@@ -1378,7 +1378,7 @@ shs-check-file = (path str, acc []finding) (r []finding) {
         err -> {
         }
     }
-    got == false -> {
+    ! got -> {
         r = shs-add(r, path, 0, 'IO', 'cannot read file')
         return
     }
@@ -1555,7 +1555,7 @@ shs-check-file = (path str, acc []finding) (r []finding) {
                         e3 = shs-str-eq(t3, own)
                         e3 -> ismeth = true
                     }
-                    ismeth == false -> {
+                    ! ismeth -> {
                         r = shs-add(r, path, lineno3, 'S6', 'definition name contains `.` and has ' + dn.to-str() + ' out-params - the compiler miscompiles this shape (SIGSEGV); use a dot-free name or at most 1 out-param')
                     }
                 }

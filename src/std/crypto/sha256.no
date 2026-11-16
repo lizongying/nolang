@@ -2172,10 +2172,12 @@ sha256 = (data []byte) (hash [32]byte) {
         ; 注意：讀 padded 必須在 block[i] 的寫入分支之外；option 寫入 ok 分支主體內
         ; 讀 []byte 會被編譯器錯算 GEP（+0x100）→ 組出的 block 是垃圾 → digest 錯。
         i <- [0..16): {
+
             ; 逐位元組大端組字：第 j 個位元組佔 bit [8*(3-j), 8*(3-j)+8)
             word u32 = 0
             j <- [0..4): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= offset + i * 4 + j
 
@@ -2201,6 +2203,7 @@ sha256 = (data []byte) (hash [32]byte) {
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
         {
+
             #{overflow=wrap}
             offset ?= offset + 64
         }: {

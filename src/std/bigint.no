@@ -48,6 +48,7 @@ from-i64 = (v i64) (out bigint) {
             out.sign = -1
 
             {
+
                 #{overflow=wrap}
                 r-v ?= 0 - r-v
             }: {
@@ -964,6 +965,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         }
 
         {
+
             #{overflow=wrap}
             qi ?= qi - 1
         }: {
@@ -1018,6 +1020,7 @@ bigint._div-i64 = (v i64) (q bigint) {
 
     r-v < 0 -> {
         {
+
             #{overflow=wrap}
             r-v ?= 0 - r-v
         }: {
@@ -1063,6 +1066,7 @@ bigint._mod-i64 = (v i64) (r ?i64) {
 
     r-v < 0 -> {
         {
+
             #{overflow=wrap}
             r-v ?= 0 - r-v
         }: {
@@ -1132,6 +1136,7 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
         tv = tv >> 1
 
         {
+
             #{overflow=wrap}
             lead ?= lead + 1
         }: {
@@ -1375,6 +1380,7 @@ bigint.to-str = () (out str) {
         ; 換算成 ASCII 並寫回：下標讀取與算術各自都是 option，用一個塊形態
         ; match 一併處理，失敗就停止轉換（回傳已寫入的部分）。
         {
+
             #{overflow=wrap}
             buf[bufn] ?= d + 48
 
@@ -1399,6 +1405,7 @@ bigint.to-str = () (out str) {
         }
 
         {
+
             #{overflow=wrap}
             out-n ?= out-n + 1
         }: {
@@ -1408,6 +1415,7 @@ bigint.to-str = () (out str) {
         }
 
         {
+
             #{overflow=wrap}
             j ?= j - 1
         }: {

@@ -39,6 +39,7 @@ adler-32 = (data []byte, n i64) (sum i64) {
         a = (a + data-i) % mod-base
 
         {
+
             #{overflow=wrap}
             b ?= (b + a) % mod-base
         }: {
@@ -135,6 +136,7 @@ decompress = (data []byte) (out ?[]byte) {
     deflate-data []byte
     i <- [0..deflate-len): {
         {
+
             #{overflow=wrap}
             payload-at ?= hdr-len + i
 
@@ -208,6 +210,7 @@ decompress-stored = (data []byte) (out ?[]byte) {
         ; 提取 payload
         i <- [0..blk-len): {
             {
+
                 #{overflow=wrap}
                 payload-at ?= p + i
 
@@ -255,6 +258,7 @@ consumed-stored = (data []byte) (consumed i64) {
         ; 區塊長度 LEN（2 bytes 小端）與其補數 NLEN
         blk-len i64 = 0
         {
+
             #{overflow=wrap}
             p ?= p + 1
 
@@ -278,6 +282,7 @@ consumed-stored = (data []byte) (consumed i64) {
 
     ; p 現在指向 Adler-32（4 bytes）
     {
+
         #{overflow=wrap}
         consumed ?= p + 4
     }: {

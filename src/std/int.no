@@ -31,6 +31,7 @@ int.to-str = () (out str) {
     tmp = n
     (tmp != 0) {
         {
+
             #{overflow=wrap}
             digits ?= digits + 1
         }: {
@@ -46,6 +47,7 @@ int.to-str = () (out str) {
 
     neg == 1 -> {
         {
+
             #{overflow=wrap}
             total ?= total + 1
         }: {
@@ -78,6 +80,7 @@ int.to-str = () (out str) {
         n = n / 10
 
         {
+
             #{overflow=wrap}
             pos ?= pos - 1
         }: {

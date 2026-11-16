@@ -316,6 +316,7 @@ str.cp-index = (byte-pos i64) (cp i64) {
 
         b < 0x80 -> {
             {
+
                 #{overflow=wrap}
                 cp ?= cp + 1
             }: {
@@ -327,6 +328,7 @@ str.cp-index = (byte-pos i64) (cp i64) {
 
         b >= 0x80 && (b & 0xc0) == 0xc0 -> {
             {
+
                 #{overflow=wrap}
                 cp ?= cp + 1
             }: {
@@ -397,6 +399,7 @@ str.byte-index = (cp-pos i64) (byte i64) {
         }
 
         {
+
             #{overflow=wrap}
             cp ?= cp + 1
         }: {
@@ -794,6 +797,7 @@ str.to-i64 = () (val ?i64) {
 
     neg == 1 -> {
         {
+
             #{overflow=wrap}
             n ?= 0 - n
         }: {
@@ -1342,6 +1346,7 @@ str-to-f64 = (s str) (result f64) {
                     {
                         c >= 48 && c <= 57 -> {
                             {
+
                                 #{overflow=wrap}
                                 exp-val ?= exp-val * 10 + (c - 48)
                             }: {
@@ -1403,6 +1408,7 @@ str-to-f64 = (s str) (result f64) {
         e >= 0 -> {
             (bigint.shl(den, e).cmp(num) > 0) -> {
                 {
+
                     #{overflow=wrap}
                     e ?= e - 1
                 }: {
@@ -1416,6 +1422,7 @@ str-to-f64 = (s str) (result f64) {
         -> {
             (bigint.shl(num, 0 - e).cmp(den) < 0) -> {
                 {
+
                     #{overflow=wrap}
                     e ?= e - 1
                 }: {
@@ -1517,6 +1524,7 @@ str-to-f64 = (s str) (result f64) {
     ; 溢位保護：wv >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
     (wv.cmp(two53) >= 0) -> {
         {
+
             #{overflow=wrap}
             e ?= e + 1
         }: {
@@ -1554,6 +1562,7 @@ str-to-f64 = (s str) (result f64) {
     (e > 0) {
         scale = scale * 2.0
         {
+
             #{overflow=wrap}
             e ?= e - 1
         }: {
@@ -1565,6 +1574,7 @@ str-to-f64 = (s str) (result f64) {
     (e < 0) {
         scale = scale / 2.0
         {
+
             #{overflow=wrap}
             e ?= e + 1
         }: {
@@ -1799,6 +1809,7 @@ str.count = () (cnt i64) {
         }
 
         {
+
             #{overflow=wrap}
             cnt ?= cnt + 1
         }: {
@@ -1910,6 +1921,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + clen
         }: {
@@ -2026,6 +2038,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     j ?= j + clen
                 }: {
@@ -2037,6 +2050,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + clen
         }: {
@@ -2091,6 +2105,7 @@ str.trim-char = (ch char) (val str) {
         cp != ch -> break
 
         {
+
             #{overflow=wrap}
             start ?= start + clen
         }: {
@@ -2135,6 +2150,7 @@ str.trim-char = (ch char) (val str) {
 
         cp != ch -> {
             {
+
                 #{overflow=wrap}
                 end ?= i + clen
             }: {
@@ -2145,6 +2161,7 @@ str.trim-char = (ch char) (val str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + clen
         }: {
@@ -2247,6 +2264,7 @@ str-hex-val = (c i64) (v i64) {
     {
         c >= 48 && c <= 57 -> {
             {
+
                 #{overflow=wrap}
                 v ?= c - 48
             }: {
@@ -2259,6 +2277,7 @@ str-hex-val = (c i64) (v i64) {
 
         c >= 65 && c <= 70 -> {
             {
+
                 #{overflow=wrap}
                 v ?= c - 65 + 10
             }: {
@@ -2271,6 +2290,7 @@ str-hex-val = (c i64) (v i64) {
 
         c >= 97 && c <= 102 -> {
             {
+
                 #{overflow=wrap}
                 v ?= c - 97 + 10
             }: {
@@ -2338,6 +2358,7 @@ _str-dig-val = (c i64) (d i64) {
     {
         c >= 48 && c <= 57 -> {
             {
+
                 #{overflow=wrap}
                 d ?= c - 48
             }: {
@@ -2350,6 +2371,7 @@ _str-dig-val = (c i64) (d i64) {
 
         c >= 65 && c <= 70 -> {
             {
+
                 #{overflow=wrap}
                 d ?= c - 55
             }: {
@@ -2362,6 +2384,7 @@ _str-dig-val = (c i64) (d i64) {
 
         c >= 97 && c <= 102 -> {
             {
+
                 #{overflow=wrap}
                 d ?= c - 87
             }: {
@@ -2586,6 +2609,7 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             {
+
                 #{overflow=wrap}
                 j ?= j + 1
             }: {
@@ -2606,6 +2630,7 @@ str.replace-str = (old str, new str) (val str) {
 
             -> {
                 {
+
                     #{overflow=wrap}
                     out-len ?= out-len + 1
                 }: {
@@ -2615,6 +2640,7 @@ str.replace-str = (old str, new str) (val str) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     i ?= i + 1
                 }: {
@@ -2650,6 +2676,7 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             {
+
                 #{overflow=wrap}
                 j ?= j + 1
             }: {
@@ -2664,6 +2691,7 @@ str.replace-str = (old str, new str) (val str) {
                     buf[pos] = new.byte(k)
 
                     {
+
                         #{overflow=wrap}
                         pos ?= pos + 1
                     }: {
@@ -2681,6 +2709,7 @@ str.replace-str = (old str, new str) (val str) {
                 buf[pos] = .byte(i)
 
                 {
+
                     #{overflow=wrap}
                     pos ?= pos + 1
                 }: {
@@ -2690,6 +2719,7 @@ str.replace-str = (old str, new str) (val str) {
                 }
 
                 {
+
                     #{overflow=wrap}
                     i ?= i + 1
                 }: {
@@ -2874,6 +2904,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
             buf[pos] = s.byte(j)
 
             {
+
                 #{overflow=wrap}
                 pos ?= pos + 1
             }: {
@@ -2920,6 +2951,7 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
         start = pos + sep.len-bytes()
 
         {
+
             #{overflow=wrap}
             count ?= count + 1
         }: {
@@ -2975,6 +3007,7 @@ str.lines = () (out []str) {
         }
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {

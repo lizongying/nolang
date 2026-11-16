@@ -216,6 +216,7 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
         r = r | (bit << (n - 1 - i))
 
         {
+
             #{overflow=wrap}
             i ?= i + 1
         }: {
@@ -392,6 +393,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
         ; 取出本輪 6 位元組子金鑰並組成大端 48-bit 整數
         j <- [0..6): {
             {
+
                 #{overflow=wrap}
                 byte-at ?= sk-off + j
 

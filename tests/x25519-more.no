@@ -124,9 +124,9 @@ x-alice-only = () {
     alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
     ok = bytes-eq(alice-pub, alice-pub-expected)
     {
-        ok == true -> print('PASS: Alice only')
+        ok -> print('PASS: Alice only')
 
-        ok == false -> print('FAIL: Alice only')
+        ! ok -> print('FAIL: Alice only')
     }
 }
 
@@ -161,9 +161,9 @@ x-bob-only = () {
     bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
     ok = bytes-eq(bob-pub, bob-pub-expected)
     {
-        ok == true -> print('PASS: Bob only')
+        ok -> print('PASS: Bob only')
 
-        ok == false -> print('FAIL: Bob only')
+        ! ok -> print('FAIL: Bob only')
     }
 }
 
@@ -175,23 +175,23 @@ x-alice-twice = () {
     print-bytes('pub-1:', alice-pub-1)
     ok1 = bytes-eq(alice-pub-1, alice-pub-expected)
     {
-        ok1 == true -> print('PASS: Alice first call')
+        ok1 -> print('PASS: Alice first call')
 
-        ok1 == false -> print('FAIL: Alice first call')
+        ! ok1 -> print('FAIL: Alice first call')
     }
     alice-pub-2 = x25519.x25519-scalarmult-base(alice-priv)
     print-bytes('pub-2:', alice-pub-2)
     ok2 = bytes-eq(alice-pub-2, alice-pub-expected)
     {
-        ok2 == true -> print('PASS: Alice second call')
+        ok2 -> print('PASS: Alice second call')
 
-        ok2 == false -> print('FAIL: Alice second call')
+        ! ok2 -> print('FAIL: Alice second call')
     }
     same = bytes-eq(alice-pub-1, alice-pub-2)
     {
-        same == true -> print('SAME: both calls produce same result')
+        same -> print('SAME: both calls produce same result')
 
-        same == false -> print('DIFF: calls produce different results')
+        ! same -> print('DIFF: calls produce different results')
     }
 }
 
@@ -202,9 +202,9 @@ x-global = () {
     expected-pub = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
     ok1 = bytes-eq(local-pub, expected-pub)
     {
-        ok1 == true -> print('PASS: local priv -> correct pub')
+        ok1 -> print('PASS: local priv -> correct pub')
 
-        ok1 == false -> print('FAIL: local priv -> wrong pub')
+        ! ok1 -> print('FAIL: local priv -> wrong pub')
     }
     g-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
     eprint('g-priv: ')
@@ -236,15 +236,15 @@ x-global = () {
     eprint(s)
     ok2 = bytes-eq(global-pub, expected-pub)
     {
-        ok2 == true -> print('PASS: global priv -> correct pub')
+        ok2 -> print('PASS: global priv -> correct pub')
 
-        ok2 == false -> print('FAIL: global priv -> wrong pub')
+        ! ok2 -> print('FAIL: global priv -> wrong pub')
     }
     ok3 = bytes-eq(local-pub, global-pub)
     {
-        ok3 == true -> print('PASS: local pub == global pub')
+        ok3 -> print('PASS: local pub == global pub')
 
-        ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
+        ! ok3 -> print('FAIL: local pub != global pub (global passing bug)')
     }
 }
 
@@ -259,33 +259,33 @@ x-shared = () {
     print-bytes('alice-pub:', alice-pub-comp)
     ok1 = bytes-eq(alice-pub-comp, alice-pub)
     {
-        ok1 == true -> print('PASS: Alice scalarmult-base')
+        ok1 -> print('PASS: Alice scalarmult-base')
 
-        ok1 == false -> print('FAIL: Alice scalarmult-base')
+        ! ok1 -> print('FAIL: Alice scalarmult-base')
     }
     bob-pub-comp = x25519.x25519-scalarmult-base(bob-priv)
     print-bytes('bob-pub:', bob-pub-comp)
     ok2 = bytes-eq(bob-pub-comp, bob-pub)
     {
-        ok2 == true -> print('PASS: Bob scalarmult-base')
+        ok2 -> print('PASS: Bob scalarmult-base')
 
-        ok2 == false -> print('FAIL: Bob scalarmult-base')
+        ! ok2 -> print('FAIL: Bob scalarmult-base')
     }
     shared-1 = x25519.x25519-scalarmult(alice-priv, bob-pub)
     print-bytes('shared-1:', shared-1)
     ok3 = bytes-eq(shared-1, shared-expected)
     {
-        ok3 == true -> print('PASS: shared secret (alice-priv, bob-pub)')
+        ok3 -> print('PASS: shared secret (alice-priv, bob-pub)')
 
-        ok3 == false -> print('FAIL: shared secret (alice-priv, bob-pub)')
+        ! ok3 -> print('FAIL: shared secret (alice-priv, bob-pub)')
     }
     shared-2 = x25519.x25519-scalarmult(bob-priv, alice-pub)
     print-bytes('shared-2:', shared-2)
     ok4 = bytes-eq(shared-2, shared-expected)
     {
-        ok4 == true -> print('PASS: shared secret (bob-priv, alice-pub)')
+        ok4 -> print('PASS: shared secret (bob-priv, alice-pub)')
 
-        ok4 == false -> print('FAIL: shared secret (bob-priv, alice-pub)')
+        ! ok4 -> print('FAIL: shared secret (bob-priv, alice-pub)')
     }
 }
 
@@ -331,9 +331,9 @@ xm-min = () (pass bool) {
 x-main-minimal = () {
     p = xm-min()
     {
-        p == true -> print('PASS: minimal test')
+        p -> print('PASS: minimal test')
 
-        p == false -> print('FAIL: minimal test')
+        ! p -> print('FAIL: minimal test')
     }
 }
 
@@ -483,15 +483,15 @@ xs-func-output = () (pass bool) {
 x-main-struct = () {
     p1 = xs-struct-field()
     {
-        p1 == true -> print('PASS: struct-field scalarmult')
+        p1 -> print('PASS: struct-field scalarmult')
 
-        p1 == false -> print('FAIL: struct-field scalarmult')
+        ! p1 -> print('FAIL: struct-field scalarmult')
     }
     p2 = xs-func-output()
     {
-        p2 == true -> print('PASS: func-output scalarmult')
+        p2 -> print('PASS: func-output scalarmult')
 
-        p2 == false -> print('FAIL: func-output scalarmult')
+        ! p2 -> print('FAIL: func-output scalarmult')
     }
 }
 
@@ -502,7 +502,7 @@ xv-1 = () (pass bool) {
     alice-pub = x25519.x25519-scalarmult-base(alice-priv)
     alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
     ok = bytes-eq(alice-pub, alice-pub-expected)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: Alice public key mismatch')
         return
     }
@@ -511,7 +511,7 @@ xv-1 = () (pass bool) {
     bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
     bob-pub = x25519.x25519-scalarmult-base(bob-priv)
     ok = bytes-eq(bob-pub, bob-pub-expected)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: Bob public key mismatch')
         return
     }
@@ -519,14 +519,14 @@ xv-1 = () (pass bool) {
     shared-alice = x25519.x25519-scalarmult(alice-priv, bob-pub)
     shared-bob = x25519.x25519-scalarmult(bob-priv, alice-pub)
     ok = bytes-eq(shared-alice, shared-bob)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: shared secrets differ between Alice and Bob')
         return
     }
     print('PASS: shared secrets match between Alice and Bob')
     shared-expected = hex-to-bytes('4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742')
     ok = bytes-eq(shared-alice, shared-expected)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: shared secret does not match expected value')
         return
     }
@@ -537,9 +537,9 @@ xv-1 = () (pass bool) {
 x-main-vec = () {
     p1 = xv-1()
     {
-        p1 == true -> print('PASS: X25519 RFC 7748 test vector')
+        p1 -> print('PASS: X25519 RFC 7748 test vector')
 
-        p1 == false -> print('FAIL: X25519 RFC 7748 test vector')
+        ! p1 -> print('FAIL: X25519 RFC 7748 test vector')
     }
 }
 
@@ -578,14 +578,14 @@ i <- [0..32): {
     ga-pub[i] != gb-pub[i] -> pub-same = false
 }
 {
-    priv-same == true -> print('FAIL: different seeds produce same priv')
+    priv-same -> print('FAIL: different seeds produce same priv')
 
-    priv-same == false -> print('PASS: different seeds produce different priv')
+    ! priv-same -> print('PASS: different seeds produce different priv')
 }
 {
-    pub-same == true -> print('FAIL: different seeds produce same pub')
+    pub-same -> print('FAIL: different seeds produce same pub')
 
-    pub-same == false -> print('PASS: different seeds produce different pub')
+    ! pub-same -> print('PASS: different seeds produce different pub')
 }
 g-shared-a = x25519.x25519-scalarmult(ga-priv, gb-pub)
 g-shared-b = x25519.x25519-scalarmult(gb-priv, ga-pub)
@@ -594,9 +594,9 @@ i <- [0..32): {
     g-shared-a[i] != g-shared-b[i] -> shared-same = false
 }
 {
-    shared-same == true -> print('PASS: ECDH shared secrets match')
+    shared-same -> print('PASS: ECDH shared secrets match')
 
-    shared-same == false -> print('FAIL: ECDH shared secrets mismatch')
+    ! shared-same -> print('FAIL: ECDH shared secrets mismatch')
 }
 
 x-alice-only()

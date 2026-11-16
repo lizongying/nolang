@@ -41,6 +41,7 @@ rotl32 = (x u32, n i64) (r u32) {
 ; [salsa-quarter-round](#scrypt.salsa-quarter-round)
 salsa-quarter-round = (x []u32, a i64, b i64, c i64, d i64, mask u32) {
     {
+
         ; b ^= rotl(a + d, 7)
         a-base ?= x[a]
         d-base ?= x[d]
@@ -101,6 +102,7 @@ salsa20-8-core = (block []byte) {
     x [16]u32
     i <- [0..16): {
         {
+
             #{overflow=wrap}
             word-start ?= i * 4
 
@@ -108,6 +110,7 @@ salsa20-8-core = (block []byte) {
             word u32 = 0
             j <- [0..4): {
                 {
+
                     #{overflow=wrap}
                     byte-at ?= word-start + j
 
@@ -157,6 +160,7 @@ salsa20-8-core = (block []byte) {
     ; 4 次雙輪：先 4 個列四分之一輪，再 4 個行四分之一輪
     mask u32 = 4294967295
     round <- [0..4): {
+
         ; 列
         salsa-quarter-round(x, 0, 4, 8, 12, mask)
         salsa-quarter-round(x, 5, 9, 13, 1, mask)
@@ -176,7 +180,6 @@ salsa20-8-core = (block []byte) {
             word ?= x[i]
             base ?= init[i]
 
-            #{overflow=wrap}
             sum = (word + base) & 4294967295
 
             #{overflow=wrap}
@@ -401,6 +404,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             n-idx ?= n-idx + 1
         }: {
@@ -471,6 +475,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         }
 
         {
+
             #{overflow=wrap}
             n-idx ?= n-idx + 1
         }: {

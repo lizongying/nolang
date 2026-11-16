@@ -269,7 +269,7 @@ fd-w >= 0 -> {
     {
         link-ok -> print('PASS: link succeeded')
 
-        link-ok == false -> print('FAIL: link failed')
+        ! link-ok -> print('FAIL: link failed')
     }
     fs.remove(link-src)
     fs.remove(link-dst)
@@ -288,7 +288,7 @@ fd-w2 >= 0 -> {
     {
         trunc-ok -> print('PASS: truncate succeeded')
 
-        trunc-ok == false -> print('FAIL: truncate failed')
+        ! trunc-ok -> print('FAIL: truncate failed')
     }
     fs.remove(trunc-path)
 }
@@ -302,7 +302,7 @@ rmdir-ok = fs.rmdir(rmdir-path)
 eprint('rmdir ok = ')
 print(rmdir-ok.to-str())
 rmdir-ok -> print('PASS: rmdir succeeded')
-rmdir-ok == false -> print('FAIL: rmdir failed')
+! rmdir-ok -> print('FAIL: rmdir failed')
 
 ; 4. os.get-login — 取得登入使用者名稱
 ...
@@ -357,7 +357,7 @@ fd-w3 >= 0 -> {
     {
         flock-ok -> print('PASS: flock succeeded')
 
-        flock-ok == false -> print('FAIL: flock failed')
+        ! flock-ok -> print('FAIL: flock failed')
     }
 
     ; LOCK_UN = 4 (unlock)
@@ -507,7 +507,7 @@ fd-w-1 >= 0 -> {
     {
         ut-ok -> print('PASS: utime succeeded')
 
-        ut-ok == false -> print('FAIL: utime failed')
+        ! ut-ok -> print('FAIL: utime failed')
     }
     fs.remove(ut-path)
 }

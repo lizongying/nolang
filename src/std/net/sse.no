@@ -462,6 +462,7 @@ client.reconnect = () (ok bool) {
         }
 
         {
+
             #{overflow=wrap}
             total ?= total + n
         }: {
@@ -563,7 +564,7 @@ sse-connect = (url str) (client ?client) {
         scheme = 'https://'
         port = SSE-DEFAULT-TLS-PORT
     }
-    url.starts-with('http://') == false -> use-tls == false -> {
+    url.starts-with('http://') == false -> ! use-tls -> {
         client = err('invalid URL: must start with http:// or https://')
         return
     }
@@ -615,7 +616,7 @@ sse-connect = (url str) (client ?client) {
             }
         }
 
-        use-tls == false -> {
+        ! use-tls -> {
             fd = net.net-dial(host, port)
             fd < 0 -> {
                 client = err('TCP connection failed')
@@ -677,7 +678,7 @@ sse-connect = (url str) (client ?client) {
             }
         }
 
-        use-tls == false -> {
+        ! use-tls -> {
             written = net.net-send(fd, req, req.len-bytes())
             written < 0 -> {
                 fs.close(fd)
@@ -701,7 +702,7 @@ sse-connect = (url str) (client ?client) {
         #{overflow=wrap}
         total + SSE-RECV-SIZE > SSE-BUF-SIZE -> {
             use-tls -> tls-c.close()
-            use-tls == false -> fs.close(fd)
+            ! use-tls -> fs.close(fd)
             client = err('response headers too large')
             return
         }
@@ -717,10 +718,10 @@ sse-connect = (url str) (client ?client) {
                 }
             }
         }
-        use-tls == false -> n = net.net-recv(fd, tmp, SSE-RECV-SIZE)
+        ! use-tls -> n = net.net-recv(fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> {
             use-tls -> tls-c.close()
-            use-tls == false -> fs.close(fd)
+            ! use-tls -> fs.close(fd)
             client = err('connection closed during handshake')
             return
         }
@@ -749,7 +750,7 @@ sse-connect = (url str) (client ?client) {
     sp1 = status-line.index(' ')
     sp1 < 0 -> {
         use-tls -> tls-c.close()
-        use-tls == false -> fs.close(fd)
+        ! use-tls -> fs.close(fd)
         client = err('invalid status line')
         return
     }
@@ -772,7 +773,7 @@ sse-connect = (url str) (client ?client) {
         c = code-str[i]
         c < 48 || c > 57 -> {
             use-tls -> tls-c.close()
-            use-tls == false -> fs.close(fd)
+            ! use-tls -> fs.close(fd)
             client = err('invalid status code')
             return
         }
@@ -783,7 +784,7 @@ sse-connect = (url str) (client ?client) {
 
     status-code != 200 -> {
         use-tls -> tls-c.close()
-        use-tls == false -> fs.close(fd)
+        ! use-tls -> fs.close(fd)
         code-s = status-code.to-str()
         client = err('server returned status ' - code-s)
         return

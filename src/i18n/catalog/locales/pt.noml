@@ -294,7 +294,7 @@ Entradas: %d
   '82l9xk55': 'a entrada zip %q é grande demais (%d bytes)'
   '83xbz15x': `
 o caminho do arquivo fonte não é um nome válido: %s
-  o segmento de caminho %q contém caracteres não permitidos (apenas letras minúsculas, dígitos e hífens são permitidos; sublinhados são proibidos, e um hífen não pode liderar, terminar nem repetir)
+  o segmento de caminho %q contém caracteres não permitidos (apenas letras minúsculas, dígitos e hífens são permitidos; o sublinhado só é permitido como primeiro caractere do segmento (marcador de ignorado) e é proibido a partir do segundo caractere; um hífen não pode liderar, terminar nem repetir)
   exemplo válido: tmp/zz-stridx/r-index.no
 `
   '87zc5awf': 'não é possível modificar o campo somente-leitura \'%s\' de %s; o comprimento é derivado do buffer — use truncate(n) em vez disso'

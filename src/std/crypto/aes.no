@@ -412,13 +412,14 @@ mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) {
 ; state: 16 位元組狀態（每 4 個連續位元組視為一欄，逐欄原位混合）
 ; [mix-columns](#aes.mix-columns)
 mix-columns = (state []byte) {
+
     ; 逐欄處理：第 column 欄佔 state[4*column .. 4*column+4)
     column <- [0..4): {
         {
+
             #{overflow=wrap}
             col-start ?= column * 4
 
-            #{overflow=wrap}
             b0 ?= state[col-start]
 
             #{overflow=wrap}
@@ -432,7 +433,6 @@ mix-columns = (state []byte) {
 
             d0, d1, d2, d3 = mix-col(b0, b1, b2, b3)
 
-            #{overflow=wrap}
             state[col-start]: {
                 ok -> it = d0
 
@@ -512,13 +512,14 @@ inv-mix-col = (b0 i64, b1 i64, b2 i64, b3 i64) (d0 i64, d1 i64, d2 i64, d3 i64) 
 ; state: 16 位元組狀態（每 4 個連續位元組視為一欄，逐欄原位逆混合）
 ; [inv-mix-columns](#aes.inv-mix-columns)
 inv-mix-columns = (state []byte) {
+
     ; 逐欄處理：第 column 欄佔 state[4*column .. 4*column+4)
     column <- [0..4): {
         {
+
             #{overflow=wrap}
             col-start ?= column * 4
 
-            #{overflow=wrap}
             b0 ?= state[col-start]
 
             #{overflow=wrap}
@@ -532,7 +533,6 @@ inv-mix-columns = (state []byte) {
 
             d0, d1, d2, d3 = inv-mix-col(b0, b1, b2, b3)
 
-            #{overflow=wrap}
             state[col-start]: {
                 ok -> it = d0
 
@@ -913,6 +913,7 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
         inv-sub-bytes(st, 16)
 
         {
+
             #{overflow=wrap}
             rk-off ?= round * 16
         }: {
@@ -924,6 +925,7 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
         inv-mix-columns(st)
 
         {
+
             #{overflow=wrap}
             round ?= round - 1
         }: {

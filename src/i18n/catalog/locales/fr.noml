@@ -297,7 +297,7 @@ Entrées : %d
   '82l9xk55': 'l’entrée zip %q est trop grande (%d octets)'
   '83xbz15x': `
 le chemin du fichier source n’est pas un nom valide : %s
-  le segment de chemin %q contient des caractères interdits (seules les lettres minuscules, les chiffres et les traits d’union sont autorisés ; les underscores sont interdits, et un trait d’union ne peut être ni initial, ni final, ni répété)
+  le segment de chemin %q contient des caractères interdits (seules les lettres minuscules, les chiffres et les traits d’union sont autorisés ; un underscore n’est autorisé qu’en première position d’un segment (marqueur d’ignorance) et est interdit à partir du deuxième caractère ; un trait d’union ne peut être ni initial, ni final, ni répété)
   exemple valide : tmp/zz-stridx/r-index.no
 
 `

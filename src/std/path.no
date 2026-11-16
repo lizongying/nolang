@@ -39,7 +39,7 @@ path {
 ; [exists](#path.exists)
 path.exists = () (yes bool) {
     yes = fs.is-file(.p)
-    yes == false -> yes = fs.is-dir(.p)
+    ! yes -> yes = fs.is-dir(.p)
 }
 
 ; 檢查路徑是否為目錄
@@ -398,7 +398,7 @@ path.clean = () {
                     nseg > 0 -> act = 2
                     nseg == 0 -> {
                         rooted -> act = 0
-                        rooted == false -> act = 1
+                        ! rooted -> act = 1
                     }
                 }
 
@@ -429,9 +429,9 @@ path.clean = () {
                             p = 1
                         }
                     }
-                    found == false -> {
+                    ! found -> {
                         rooted -> on = 1
-                        rooted == false -> on = 0
+                        ! rooted -> on = 0
                     }
 
                     #{overflow=wrap}
@@ -492,8 +492,8 @@ path.clean = () {
             in-seg = false
         }
 
-        is-sep == false -> {
-            in-seg == false -> {
+        ! is-sep -> {
+            ! in-seg -> {
                 seg-start = i
                 in-seg = true
             }
@@ -504,7 +504,7 @@ path.clean = () {
         on == 0 -> {
             rooted -> .p = '/'
 
-            rooted == false -> .p = '.'
+            ! rooted -> .p = '.'
         }
 
         on > 0 -> {

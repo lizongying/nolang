@@ -114,11 +114,12 @@ test-dedup = () {
         ;   ⚠️ 必須用塊形 while——單語句形 `(cond) q = q + 1` 只執行一次非循環
         q = 0
         (p.toks[q].ln != p.e-ln[0] || p.toks[q].cl != p.e-cl[0]) {
-
             {
+
                 #{overflow=wrap}
                 q ?= q + 1
-            }: { err -> _
+            }: {
+                err -> _
 
                 -> _
             }

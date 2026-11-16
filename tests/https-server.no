@@ -8,7 +8,7 @@ test-https-listen = () (pass bool) {
     pass = false
     srv = https-server{}
     ok = srv.listen('127.0.0.1', 9443)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: https-server.listen failed')
         return
     }
@@ -134,7 +134,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
 
                 ok -> send-ok = true
             }
-            send-ok == false -> {
+            ! send-ok -> {
                 tc.close()
                 return
             }
@@ -144,7 +144,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             recv-buf = space.repeat(4096)
             recv-total = 0
             found = false
-            (found == false) {
+            (! found) {
                 found -> break
                 recv-total >= 4000 -> break
                 tmp = space.repeat(2048)
@@ -176,7 +176,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                     ok = true
                 }
 
-                found == false -> print('FAIL: e2e did not receive expected response')
+                ! found -> print('FAIL: e2e did not receive expected response')
             }
             tc.close()
         }
@@ -193,7 +193,7 @@ test-https-e2e = () (pass bool) {
     ; 1. 啟動 HTTPS 伺服器
     srv = https-server{}
     ok = srv.listen('127.0.0.1', 9444)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: e2e listen failed')
         return
     }
@@ -216,7 +216,7 @@ test-https-e2e = () (pass bool) {
             ; 避開全域變數 bug 和結構體複製 bug。
 
             serve-ok = tls.https-serve-once(srv.fd, 200, 'hello from nolang https')
-            serve-ok == false -> exit(1)
+            ! serve-ok -> exit(1)
             exit(0)
         }
     }
@@ -282,7 +282,7 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
 
                 ok -> send-ok = true
             }
-            send-ok == false -> {
+            ! send-ok -> {
                 tc.close()
                 return
             }
@@ -292,7 +292,7 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             recv-buf = space.repeat(4096)
             recv-total = 0
             found = false
-            (found == false) {
+            (! found) {
                 found -> break
                 recv-total >= 4000 -> break
                 tmp = space.repeat(2048)
@@ -324,7 +324,7 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
                     ok = true
                 }
 
-                found == false -> print('FAIL: e2e-12 did not receive expected response')
+                ! found -> print('FAIL: e2e-12 did not receive expected response')
             }
             tc.close()
         }
@@ -340,7 +340,7 @@ test-https-e2e-12 = () (pass bool) {
     ; 1. 啟動 HTTPS 伺服器
     srv = https-server{}
     ok = srv.listen('127.0.0.1', 9445)
-    ok == false -> {
+    ! ok -> {
         print('FAIL: e2e-12 listen failed')
         return
     }
@@ -363,7 +363,7 @@ test-https-e2e-12 = () (pass bool) {
             ; 客戶端發送 TLS 1.2 ClientHello（無 supported_versions），伺服器走 TLS 1.2 路徑。
 
             serve-ok = tls.https-serve-once(srv.fd, 200, 'hello from nolang https 1.2')
-            serve-ok == false -> exit(1)
+            ! serve-ok -> exit(1)
             exit(0)
         }
     }
@@ -383,31 +383,31 @@ test-https-e2e-12 = () (pass bool) {
 ; 主函數
 p1 = test-https-listen()
 {
-    p1 == true -> print('PASS: https-server.listen')
+    p1 -> print('PASS: https-server.listen')
 
-    p1 == false -> print('FAIL: https-server.listen')
+    ! p1 -> print('FAIL: https-server.listen')
 }
 p2 = test-tls-server-init()
 {
-    p2 == true -> print('PASS: server-init')
+    p2 -> print('PASS: server-init')
 
-    p2 == false -> print('FAIL: server-init')
+    ! p2 -> print('FAIL: server-init')
 }
 p3 = test-https-server-struct()
 {
-    p3 == true -> print('PASS: https-server-conn struct')
+    p3 -> print('PASS: https-server-conn struct')
 
-    p3 == false -> print('FAIL: https-server-conn struct')
+    ! p3 -> print('FAIL: https-server-conn struct')
 }
 p4 = test-https-e2e()
 {
-    p4 == true -> print('PASS: https-e2e')
+    p4 -> print('PASS: https-e2e')
 
-    p4 == false -> print('FAIL: https-e2e')
+    ! p4 -> print('FAIL: https-e2e')
 }
 p5 = test-https-e2e-12()
 {
-    p5 == true -> print('PASS: https-e2e-tls12')
+    p5 -> print('PASS: https-e2e-tls12')
 
-    p5 == false -> print('FAIL: https-e2e-tls12')
+    ! p5 -> print('FAIL: https-e2e-tls12')
 }

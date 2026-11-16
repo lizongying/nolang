@@ -118,7 +118,7 @@ t-frame = () {
     g.data = 'xxxxxx'.to-bytes()
     g.pos = 0
     bad = g.decode-compressed-block(4)
-    runner.is-true(bad == true || bad == false, 'decode-compressed-block 回傳 bool（不崩潰）')
+    runner.is-true(bad || ! bad, 'decode-compressed-block 回傳 bool（不崩潰）')
 }
 
 ; ── 6. 壓縮 / 解壓 round-trip（含 fcs_flag=1 的 2 位元組長度路徑）────
@@ -133,6 +133,7 @@ t-roundtrip = () {
     big []byte = with-len(300)
     i <- [0..300): {
         {
+
             #{overflow=wrap}
             big[i] ?= 65 + (i % 26)
         }: {

@@ -491,6 +491,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-ANY
 
         {
+
             #{overflow=wrap}
             result-i ?= i + 1
         }: {
@@ -517,6 +518,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         .tmp-atom-char = c
 
         {
+
             #{overflow=wrap}
             result-i ?= i + 1
         }: {
@@ -545,6 +547,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     n = pattern.len-bytes()
 
     {
+
         #{overflow=wrap}
         ri ?= ri + 1
     }: {
@@ -580,6 +583,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         ; 結束（非首字元）
         c == 93 && first == 0 -> {
             {
+
                 #{overflow=wrap}
                 ri ?= ri + 1
             }: {
@@ -631,6 +635,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             ; 跳脫序列
             c == 92 -> {
                 {
+
                     #{overflow=wrap}
                     next-i ?= ri + 1
                 }: {
@@ -702,6 +707,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     n = pattern.len-bytes()
 
     {
+
         #{overflow=wrap}
         ri ?= ri + 1
     }: {
@@ -1138,6 +1144,7 @@ regexp.matches = (text str) (matched bool) {
         }
 
         {
+
             #{overflow=wrap}
             sp ?= sp + 1
         }: {
@@ -1189,6 +1196,7 @@ regexp.find = (text str) (result str) {
         }
 
         {
+
             #{overflow=wrap}
             sp ?= sp + 1
         }: {
