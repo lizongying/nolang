@@ -347,6 +347,7 @@ var lintSteps = []lintStep{
 	{"range-index-loops", true, runLintRangeIndexLoops},
 	{"range-self-ellipsis", true, runLintRangeSelfEllipsis},
 	{"index-write", false, runLintIndexWrite},
+	{"value-match-position", true, runLintValueMatchPosition},
 	{"parser-warnings", true, runLintParserWarnings},
 	{"trailing-comments", true, runLintTrailingComments},
 }
@@ -688,6 +689,26 @@ func runLintIndexWrite(program *parser.Program, opts LintOptions) []LintResult {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: LintError, Source: "nolang-index-write",
+			File:    file,
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintValueMatchPosition — value-match 只能作赋值右值顶层（纯语法，surface 轨）
+// 出现在操作数/实参/比较等表达式位置时，MIR 不产出值会崩在 codegen（NoVal），
+// 故在 vet / build 阶段直接报硬错误。
+func runLintValueMatchPosition(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateValueMatchPosition(program) {
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, EndColumn: u.EndColumn,
+			Severity: LintError, Source: "nolang-value-match",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})

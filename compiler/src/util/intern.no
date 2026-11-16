@@ -133,8 +133,19 @@ intern.at = (t itab, id i64) (r str) {
         }
     }
 
-    #{overflow=wrap}
-    i = id - 1
+    ; D6：`id - 1` 是 ?i64，必須先解包才能當下標；id ≥ 1 已由上面的守衛保證，
+    ; 故解包失敗臂取 0（走不到，僅為型別完整）。
+    i = id - 1: {
+        ok -> it
 
-    r = t.pool[i]
+        -> 0
+    }
+
+    ; D11：切片元素讀取回 ?T，越界回空字串
+    v = t.pool[i]: {
+        ok -> it
+
+        -> ''
+    }
+    r = v
 }

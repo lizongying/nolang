@@ -244,7 +244,7 @@ test-comment-marker = () {
 
 ; 測試 sci-notation
 test-sci-notation = () {
-    SCI = 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)'
+    sci = 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)'
     ts = lx.scan-all('x = 1e5')
     runner.eq(ts.len(), 5, 'x = 1e5 -> ILLEGAL + residual IDENT e5')
 
@@ -263,7 +263,7 @@ test-sci-notation = () {
     runner.eq(a.ln, 1, 'sci line')
     runner.eq(a.cl, 5, 'sci col')
     runner.str-eq(a.lit, '1', 1, 'sci lit keeps the consumed number')
-    runner.str-eq(a.emsg, SCI, 156, 'sci emsg exact wording')
+    runner.str-eq(a.emsg, sci, 156, 'sci emsg exact wording')
     runner.eq(b.typ, tok.IDENT, 'e5 residual is IDENT')
     runner.str-eq(b.lit, 'e5', 2, 'e5 literal')
     runner.eq(b.cl, 6, 'e5 starts at the e')
@@ -279,7 +279,7 @@ test-sci-notation = () {
     }
     runner.eq(a2.typ, tok.ILLEGAL, 'dotted sci is ILLEGAL not FLOAT')
     runner.str-eq(a2.lit, '3.5', 3, 'dotted sci lit is the number part')
-    runner.str-eq(a2.emsg, SCI, 156, 'dotted sci emsg')
+    runner.str-eq(a2.emsg, sci, 156, 'dotted sci emsg')
 
     b2 = ts2[1]: {
         ok -> it
@@ -297,7 +297,7 @@ test-sci-notation = () {
         -> _
     }
     runner.eq(a3.typ, tok.ILLEGAL, '1e+5 is sci')
-    runner.str-eq(a3.emsg, SCI, 156, '1e+5 emsg')
+    runner.str-eq(a3.emsg, sci, 156, '1e+5 emsg')
 
     ; 大寫 E 同檢
     ts4 = lx.scan-all('2E7')

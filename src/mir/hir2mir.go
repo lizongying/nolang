@@ -1181,6 +1181,23 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" {
 				continue
 			}
+			// A top-level `let` the registration loop already turned into module
+			// storage (`declOnly`: `BUF []i64` with no initializer, read and
+			// written by a helper function) must NOT also be inlined here.
+			// Inlining gives the synthetic main its OWN local %vec, so the
+			// helper pushes into @BUF while main reads its empty private copy —
+			// the two sides silently diverge:
+			//
+			//   BUF []i64
+			//   add = (v i64) { BUF.push(v) }
+			//   add(1) / print(BUF.len())     ; 0, want 1
+			//
+			// (compiler/tests/probe-glob.no). The registration loop has already
+			// decided the name is shared state, so honour that decision here
+			// instead of re-deciding it from the initializer's foldability.
+			if gnid, ok := l.globalNodes[pkg.Str(n.S)]; ok && gnid == id {
+				continue
+			}
 			raw := l.letTypeRaw(n)
 			if raw != "" && l.foldConstText(n, raw) != "" {
 				// A real COMPILE-TIME CONSTANT initializer. Scalars/enums/fixed
@@ -3316,6 +3333,24 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						// untouched, which is how `out = o: { ok -> it  -> }`
 						// returned 0 while the identical local-binding form
 						// worked. The rebind path below moves the value in.
+					} else if l.globalVisible(name) && n.Flags&hir.FlagArmBinding == 0 {
+						// MODULE-LEVEL binding: do NOT alias the name to the
+						// capture sink. Aliasing it makes the name a fresh
+						// LOCAL, so the `globalVisible` write-back below is
+						// never reached and the module slot is never stored —
+						// the same "read and write target different storage"
+						// defect the write-back path was added for, only via
+						// the match-expression spelling of the right-hand side:
+						//
+						//   CNT i64 = 0
+						//   bump = () { CNT = CNT + 1: { ok -> it  -> CNT } }
+						//
+						// `bump()` left @CNT at 0 (measured; the unwrapped value
+						// only ever landed in the sink). D6 forces this spelling
+						// — plain `CNT = CNT + 1` is an option-into-plain type
+						// error — so every real global accumulator hits it.
+						// Leave `val` = the sink and let the write-back store it
+						// into the global; reads then reload @CNT (correct).
 					} else {
 						l.locals[name] = l.exprSink
 						freshCapture = true

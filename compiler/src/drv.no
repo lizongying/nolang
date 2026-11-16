@@ -879,7 +879,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
 
             ; 防御：调用图与文本分片必须同序同长（上面已按 `define ` 前缀对齐）；越界即视为不可保留
             keep = 0
-            bi < agg.cgf.len() -> keep = alive[bi]
+            bi < agg.cgf.len() -> keep = ix.at-i(alive, bi)
             keep == 1 -> {
                 bb = agg.cgb[bi]
                 bn = agg.cgc[bi]
@@ -1041,6 +1041,19 @@ drv.build-out = (path str) (r str) {
 ; ok: 是否成功（false 时已 eprint 诊断）
 drv.build-to = (path str, out str) (ok bool) {
     ok = false
+
+    ; ⚠️ 目錄必須先擋掉。fs.read-bytes 對目錄回 ok(空位元組)，於是空程式一路
+    ;    走完 h2m → 只帶 runtime prelude 的 .ll → clang 鏈出一個 34KB 的
+    ;    空殼執行檔，rc=0、無任何診斷。這正是「不靜默產出錯碼」的反例
+    ;    （`noc build compiler` 曾如此）。
+    fs.is-dir(path) -> {
+        eprint(NOC-NAME - ': ' - path - ' is a directory; build takes a single .no file')
+        return
+    }
+    ! fs.is-file(path) -> {
+        eprint(NOC-NAME - ': not a file: ' - path)
+        return
+    }
     c = fs.read-bytes(path)
     src []byte = with-cap(0)
     got = false

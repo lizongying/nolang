@@ -5,6 +5,7 @@
 ;   其 main 含 `drv.dispatch()` 跨模組呼叫，須切片 5 才能產 @main）。
 
 # /compiler/src/drv.dispatch
+# /compiler/src/ix
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/lx

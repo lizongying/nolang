@@ -81,6 +81,53 @@ WASI preview1 does not provide socket APIs, so the following standard libraries 
 - `tls` (TLS connection)
 - `quic`, `sse`, `dns`
 
+**A stricter constraint on `no` / `lsp` themselves**: the wasm artifacts may not even *import*
+a socket function. The browser instantiates them through `@wasmer/wasi`, which has no
+`sock_accept` / `sock_shutdown` implementation, so an artifact that pulls `net` / `net/http`
+into the wasip1 link throws:
+
+```
+Failed to instantiate WASI: RuntimeError: JsValue(LinkError: WebAssembly.Instance():
+Import #28 "wasi_snapshot_preview1" "sock_accept": function import requires a callable)
+```
+
+and the program never reaches `_start` — the language service reports "initialization failed"
+(no completion, hover or formatting, while the editor itself still works), and Run fails the
+same way. Network code that only makes sense natively therefore lives behind `!wasip1`, with
+error stubs on the wasip1 side: `cmd/lsp/pprof_wasip1.go`, `cmd/no/serve_esm_wasip1.go`,
+`package/download_net_wasip1.go`, `package/release_net_wasip1.go`.
+`bun scripts/wasm_imports_check.ts` (`make wasm-imports-check`) guards the invariant using the
+engine's own import table.
+
+### `poll_oneoff` is supplied by the front end
+
+A clean import table only means the functions exist, not that they work. `@wasmer/wasi`'s
+`poll_oneoff` body is Rust `unimplemented!()`: the moment it is called — even with zero
+subscriptions — it executes `unreachable` and traps the whole instance:
+
+```
+Error while running start function: RuntimeError: JsValue(RuntimeError: unreachable)
+```
+
+Go's runtime turns both `time.Sleep` and `netpoll(delay)` into a single monotonic-clock
+subscription, so **every Go program hits this**: `no fmt` / `no vet` / `no build` all died the
+first time they slept, while the import check stayed green.
+
+The fix lives in `docs/src/playground/wasm-loader.ts`: `instantiateWasi()` builds the import
+object itself from `wasi.getImports()` and replaces `poll_oneoff` with a JS implementation
+(clock subscriptions sleep to the nearest deadline and report the clock event; fd-only
+subscriptions report ready immediately so a wait can never block forever). Note that the
+override **cannot** be handed to `wasi.instantiate(module, overrides)` — the glue's own
+functions win, the override is silently ignored, and the program still traps. Because the
+import object is built here, callers must pass the instance to `wasi.start(instance)`.
+
+### First-run compile time
+
+Run drives `no build --wasm-direct`, which lowers the entire std library again — about **one
+minute** inside a single-threaded wasm engine (native `no` takes ~11 s). That is a pre-existing
+performance characteristic, not a timeout: the runner watchdog therefore has two budgets —
+180 s for load + compile, and the usual 5 s for the user program.
+
 ### Virtual filesystem
 
 WASI preview1 only provides stdin / stdout / stderr file descriptors — there is no real filesystem. Therefore `fs`, `path`, `os.get-env`, `os.set-env` and other file/environment-related standard libraries may not work as expected in the Playground.
@@ -108,10 +155,25 @@ After changing the Playground, run these checks from a clean build tree:
 
 ```bash
 make playground-demos                       # compile + wasmtime-run all 24 examples
+make wasm-imports-check                     # rebuild both wasm files, assert no socket imports
+make wasm-runtime-smoke                     # run version/fmt/vet through the worker's loader path
+RUN_WASM_LSP=1 RUN_WASM_BUILD=1 make wasm-runtime-smoke   # + language service + full compile/run
 bun scripts/playground_ui_check.ts          # diagnostics, watchdog, recovery, i18n
 make playground-smoke                       # dev server and WASM routes return HTTP 200
 cd docs && bun run typecheck                # TypeScript typecheck
 ```
+
+Note that `playground-demos` drives the **native** `no`, so it cannot catch "the wasm artifact
+imports something the browser does not provide"; `wasm-imports-check` covers exactly that gap
+(it decides with `WebAssembly.Module.imports()`, the same view instantiation uses). The worker
+adds one more layer: `instantiateWasi()` in `wasm-loader.ts` stubs any WASI function
+`@wasmer/wasi` lacks with one returning `ENOSYS` / `NOTSUP`, so an unexpected import degrades
+into a failed syscall instead of taking the whole service down.
+
+`wasm-imports-check` cannot catch "the function exists but its body traps" (the `poll_oneoff`
+class above), so `make wasm-runtime-smoke` closes the last gap: it drives `no version` /
+`no fmt` / `no vet` through the real `instantiateWasi()` path and can additionally verify the
+language service and a full compile + execute.
 
 `docs/static/wasm/*.wasm` is excluded by `.gitignore` and local artifacts should never be committed. `no.wasm` and `lsp.wasm` are rebuilt by CI from the same source tree with the same `StdSigKey`, so the in-browser compiler, its embedded std AST blob, and the Direct-WASM backend all come from one build. Version skew between those three was the usual cause of past `unreachable` traps and WASM validation errors.
 

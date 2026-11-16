@@ -23,6 +23,7 @@ import {
   loadWasmRuntime,
   warmupWasmRuntime,
   clearWasmRuntimeCache,
+  instantiateWasi,
   type WasmLoadSpec,
 } from './wasm-loader';
 import {
@@ -118,6 +119,14 @@ function buildBaseMessages(): object[] {
  * `wasi.start()` is synchronous; inside the Worker this is safe even
  * for >8MB modules (the main-thread `WebAssembly.Instance` limit does
  * not apply here).
+ *
+ * The server ends the batch by exiting the process; `@wasmer/wasi`
+ * sometimes surfaces that exit as a thrown `RuntimeError` *after* the
+ * responses have been written. stdout is therefore read even when
+ * `start()` throws — dropping it used to make `textDocument/formatting`
+ * return null (the batch produced its edit and then threw on exit). The
+ * error is only re-thrown when the batch produced no response at all, so
+ * a genuinely broken instantiation still fails loudly.
  */
 function runBatch(messages: object[]): JsonRpcResponse[] {
   if (!wasmModule) throw new Error('lsp.wasm not compiled');
@@ -145,12 +154,39 @@ function runBatch(messages: object[]): JsonRpcResponse[] {
     fs,
   });
   wasi.setStdinBuffer(stdin);
-  wasi.instantiate(wasmModule, {});
-  wasi.start();
+
+  // Stub any WASI import the glue lacks and replace the ones that trap (see
+  // wasm-loader's instantiateWasi) so a drifted artifact degrades to failed
+  // syscalls instead of `LinkError` on import #N. The returned instance must be
+  // handed to `start()`: instantiateWasi builds the import object itself in
+  // order to override the glue's `poll_oneoff`, which traps.
+  const {instance, stubbed} = instantiateWasi(wasi, wasmModule);
+  if (stubbed.length > 0) {
+    warnOnce(
+      'wasi-imports',
+      `lsp.wasm needs ${stubbed.length} WASI import(s) @wasmer/wasi does not provide (${stubbed.join(', ')}); stubbed with ENOSYS/NOTSUP — rebuild lsp.wasm without net`,
+    );
+  }
+
+  let startError: unknown = null;
+  try {
+    wasi.start(instance);
+  } catch (e) {
+    startError = e;
+  }
 
   const stdout = wasi.getStdoutBuffer();
   const {messages: parsed} = parseLspMessages(stdout);
+  if (parsed.length === 0 && startError) throw startError;
   return parsed as JsonRpcResponse[];
+}
+
+/** Post a warning at most once per reason key (stub chatter is per-batch). */
+const warnedKeys = new Set<string>();
+function warnOnce(key: string, reason: string): void {
+  if (warnedKeys.has(key)) return;
+  warnedKeys.add(key);
+  ctx.postMessage({type: 'warning', reason: `lsp.worker ${reason}`});
 }
 
 interface DiagnosticsPush {

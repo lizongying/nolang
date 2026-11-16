@@ -5,8 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -88,14 +86,11 @@ func main() {
 
 	// 内存诊断开关：NOLANG_LSP_PPROF=<addr> 时在 addr 上提供 /debug/pprof，
 	// 用于压测定位常驻缓存增长（默认不监听，零开销）。
-	if addr := os.Getenv("NOLANG_LSP_PPROF"); addr != "" {
-		go func() {
-			log.Printf("pprof listening on %s", addr)
-			if err := http.ListenAndServe(addr, nil); err != nil {
-				log.Printf("pprof server: %v", err)
-			}
-		}()
-	}
+	//
+	// 实现放在 build tag 后面（pprof.go / pprof_wasip1.go）：wasip1 产物不能
+	// import net/http，否则 sock_accept / sock_shutdown 会被链进去，浏览器里的
+	// @wasmer/wasi 没有这两个导入 ⇒ LinkError ⇒ 语言服务初始化失败。
+	startPprofServer()
 
 	// 設置日誌
 	log.SetOutput(os.Stderr)

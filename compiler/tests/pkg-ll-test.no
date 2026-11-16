@@ -25,6 +25,7 @@
 # /test/runner.failed-count
 # /test/runner.summary
 # /compiler/src/drv
+# /compiler/src/ix
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/lx
@@ -49,15 +50,20 @@ print('pkg-ll: produced ' - ll.len-bytes().to-str() - ' bytes of IR')
 runner.is-true(ll.contains('@main'), 'pkg-ll .ll contains @main (synthesized)')
 
 ; ④b 多模組 body 串接：至少 4 個不同模組的函式進同一份 .ll
-runner.is-true(ll.contains('@ps-bump'), 'pkg-ll concatenates ps module (@ps-bump)')
-runner.is-true(ll.contains('@h2m-lower-module'), 'pkg-ll concatenates h2m module (@h2m-lower-module)')
+; ⚠️ 樣本函式（as-built 回填 2）：原本取 @ps-bump / @h2m-lower-module，但 D6 之後
+;    `p.pos = p.pos + 1` 這類自增必須顯式解包（match）或改走跨模組呼叫（ix.inc），
+;    h2m 目前對這兩種構造皆不可降級 ⇒ 該二函式本體被 drv.pkg-ll 的定點剔除丟掉
+;    （eprint 'dropped (calls unsupported)'）。此為 h2m 能力缺口（切片 5+），
+;    非串接/命名 bug；故改用同模組內仍可降級的樣本函式做「body 串接」閘。
+runner.is-true(ll.contains('@ps-err-count'), 'pkg-ll concatenates ps module (@ps-err-count)')
+runner.is-true(ll.contains('@h2m-set-block'), 'pkg-ll concatenates h2m module (@h2m-set-block)')
 runner.is-true(ll.contains('@lx-in-range'), 'pkg-ll concatenates lx module (@lx-in-range)')
 runner.is-true(ll.contains('@zero-nd') || ll.contains('@nd-put'), 'pkg-ll concatenates ast module (@nd-* / @*-ast)')
 runner.is-true(ll.contains('@nolang_rc_alloc') || ll.contains('@str_eq'), 'pkg-ll concatenates cg-runtime helpers')
 
 ; ④c @<mod>.<fn> 命名（兩種形式）
-; 連字形式：實測發射 @ps-bump ⇒ 命名接線正確（點號前綴 → @mod.fn，連字前綴 → @mod-fn）
-runner.is-true(ll.contains('@ps-bump'), 'pkg-ll emits @<mod>-<fn> hyphen naming')
+; 連字形式：實測發射 @ps-err-count ⇒ 命名接線正確（點號前綴 → @mod.fn，連字前綴 → @mod-fn）
+runner.is-true(ll.contains('@ps-err-count'), 'pkg-ll emits @<mod>-<fn> hyphen naming')
 
 ; 點號形式：全域簽名表 key 證明 ps.parse / ast.str-at 命名接線正確（本體降級待切片 5+）
 sg = drv.pkg-sigs('compiler/tests/pkg-ll-entry.no')

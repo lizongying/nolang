@@ -71,6 +71,16 @@ jobs:
           test -s docs/static/wasm/no.wasm
           test -s docs/static/wasm/lsp.wasm
 
+      - name: Verify WASI import surface
+        # The browser instantiates these modules through @wasmer/wasi, which has
+        # a fixed preview1 surface. Any extra import (canonically sock_accept /
+        # sock_shutdown, linked in as soon as net/net/http joins the wasip1
+        # build) makes WebAssembly.Instance throw LinkError and takes the whole
+        # playground down — language service included. `make playground-demos`
+        # cannot catch this because it drives the NATIVE no binary, so this gate
+        # reads the artifacts' import sections with the engine itself.
+        run: bun scripts/wasm_imports_check.ts docs/static/wasm/no.wasm docs/static/wasm/lsp.wasm
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
         working-directory: docs
@@ -80,6 +90,18 @@ jobs:
         # rewritten runner / worker / lsp-bridge / lsp-worker / wasm-loader.
         run: bun run typecheck
         working-directory: docs
+
+      - name: Smoke-test the wasm runtime
+        # An import-surface check only proves the functions EXIST. @wasmer/wasi
+        # also ships bodies that trap: poll_oneoff is `unimplemented!()`, so the
+        # first time.Sleep / netpoll in any Go program executes `unreachable` and
+        # the whole instance dies, with the import table looking perfectly clean.
+        # This runs both artifacts through the same loader the workers use.
+        run: |
+          bun scripts/wasm_runtime_smoke.ts \
+            --no-wasm docs/static/wasm/no.wasm \
+            --lsp-wasm docs/static/wasm/lsp.wasm \
+            --lsp
 
       - name: Build website
         run: bun run build

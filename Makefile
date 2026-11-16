@@ -43,7 +43,7 @@ WASMTIME  ?= wasmtime
 # same IDs.
 TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/checker/unknown_field.go src/checker/builtin_struct_decl.go src/lsp/vet.go
 
-.PHONY: all no force lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke playground-demos gen stamp-traceid install test
+.PHONY: all no force lsp package clean help FORCE no-wasm lsp-wasm wasm-imports-check wasm-runtime-smoke playground playground-smoke playground-demos gen stamp-traceid install test
 
 # ── FORCE REBUILD ─────────────────────────────────
 # GNU make (3.81 and 4.x) has NO `--force` long option: `make no --force` dies
@@ -425,6 +425,28 @@ $(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) $(STD_AST
 	$(MAKE) stamp-traceid
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/lsp
 
+# ── WASM IMPORT GATE ────────────────────────────
+# 瀏覽器端用 @wasmer/wasi 實例化產物，它只提供固定的 WASI preview1 函式面。
+# 產物一旦多出它沒實作的導入（典型：cmd/lsp 的 pprof / cmd/no 的 ESM http
+# server 把 net 鏈進來 ⇒ sock_accept / sock_shutdown），
+# `WebAssembly.Instance` 直接 LinkError，整個 playground（語言服務 + 執行）
+# 連啟動都做不到——而 `make playground-demos` 走的是原生 no，抓不到這類問題。
+# 這道門禁用引擎自己的導入表（WebAssembly.Module.imports）判定，與實例化時
+# 的檢查完全一致，所以不會和真實行為有出入。
+wasm-imports-check: no-wasm lsp-wasm
+	bun scripts/wasm_imports_check.ts $(NO_WASM) $(LSP_WASM)
+
+# ── WASM RUNTIME GATE ────────────────────────────
+# 導入表檢查只保證「函式存在」，不保證「函式不炸」。@wasmer/wasi 的 poll_oneoff
+# 是 unimplemented!()，任何 Go 程式（time.Sleep / netpoll 的時鐘訂閱）一呼叫就
+# 執行 unreachable 整支 trap——而導入表看起來完全正常。
+# 這道門禁走與 runner.worker / lsp.worker 完全相同的載入路徑（wasm-loader 的
+# instantiateWasi）實跑 no version / fmt / vet（+ --lsp 的 initialize/completion）。
+# 完整編譯一次要一分鐘，故 build 檢查為選配：RUN_WASM_BUILD=1。
+WASM_SMOKE_ARGS := $(if $(RUN_WASM_BUILD),--build) $(if $(RUN_WASM_LSP),--lsp)
+wasm-runtime-smoke: no-wasm lsp-wasm
+	bun scripts/wasm_runtime_smoke.ts --no-wasm $(NO_WASM) --lsp-wasm $(LSP_WASM) $(WASM_SMOKE_ARGS)
+
 # ── PLAYGROUND ────────────────────────────
 # Build no.wasm + lsp.wasm + Docusaurus site for the playground.
 playground: no-wasm lsp-wasm
@@ -499,6 +521,8 @@ help:
 	@echo "  make package    跨譯 LSP 並打包 VSCode 拓展"
 	@echo "  make no-wasm    跨譯 no 為 WebAssembly (wasip1) → docs/static/wasm/no.wasm"
 	@echo "  make lsp-wasm   跨譯 LSP 為 WebAssembly (wasip1) → docs/static/wasm/lsp.wasm"
+	@echo "  make wasm-imports-check 重建兩個 wasm 並用引擎導入表驗證無 socket 導入（@wasmer/wasi 缺 sock_* ⇒ LinkError）"
+	@echo "  make wasm-runtime-smoke 用 wasm-loader 的同一條路徑實跑 no version/fmt/vet（RUN_WASM_LSP=1 加語言服務、RUN_WASM_BUILD=1 加完整編譯+執行）"
 	@echo "  make playground 建構 no.wasm + lsp.wasm + Docusaurus 站點"
 	@echo "  make playground-smoke 啟動 dev server 並驗證 playground + wasm 資源可訪問"
 	@echo "  make playground-demos 以 --wasm-direct 編譯並用 wasmtime 執行全部範例（不重建 wasm）"

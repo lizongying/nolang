@@ -15,6 +15,7 @@
 ; ⚠️ nolang 控制流守則：同塊的【裸尾臂 `-> {…}`】會被當成尾隨無條件陳述執行
 ;    （見 ps.no:1082 的 handled 守則）。故本檔所有 else 分支一律以旗標守衛。
 
+# /compiler/src/ix
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/lx
@@ -35,15 +36,14 @@ find-type = (t ast, root i64, target str) (ftype i64) {
     (k < nk) {
         s = ast.kid-at(t, base + k)
         sd = ast.nd-at(t, s)
-        sd.kind == asp.K_LET_STATEMENT -> {
+        sd.kind == asp.kind-id('LetStatement') -> {
             nm = ast.str-at(t, sd.s0)
             nm == target -> {
                 ftype = ast.kid-at(t, sd.kid0)
             }
         }
 
-        #{overflow=wrap}
-        k = k + 1
+        k = ix.inc(k)
     }
 }
 
@@ -70,7 +70,7 @@ ft1 > 0 -> {
     el1 = ast.str-at(t1, elnd1.s0)
     msg1 = msg1 - '  kind='
     msg1 = msg1 - k1.to-str()
-    msg1 = msg1 - ' (want 11 K_ARRAY_TYPE)\n  type-string='
+    msg1 = msg1 - ' (want ArrayType)\n  type-string='
     msg1 = msg1 - s1
     msg1 = msg1 - ' (want [2]i64)\n  inferred(slot0)='
     msg1 = msg1 - inf1
@@ -79,7 +79,7 @@ ft1 > 0 -> {
     msg1 = msg1 - ' elem='
     msg1 = msg1 - el1
     msg1 = msg1 - '\n'
-    k1 != 11 -> ok = 0
+    k1 != asp.kind-id('ArrayType') -> ok = 0
     s1 != '[2]i64' -> ok = 0
     inf1 != 'true' -> ok = 0
     sz1 != '2' -> ok = 0
@@ -110,14 +110,14 @@ ft2 > 0 -> {
     el2 = ast.str-at(t2, elnd2.s0)
     msg2 = msg2 - '  kind='
     msg2 = msg2 - k2.to-str()
-    msg2 = msg2 - ' (want 60 K_SLICE_TYPE)\n  type-string='
+    msg2 = msg2 - ' (want SliceType)\n  type-string='
     msg2 = msg2 - s2
     msg2 = msg2 - ' (want []i64)\n  inferred(slot0)='
     msg2 = msg2 - inf2
     msg2 = msg2 - '\n  elem='
     msg2 = msg2 - el2
     msg2 = msg2 - '\n'
-    k2 != 60 -> ok = 0
+    k2 != asp.kind-id('SliceType') -> ok = 0
     s2 != '[]i64' -> ok = 0
     inf2 != 'true' -> ok = 0
     el2 != 'i64' -> ok = 0
@@ -145,12 +145,12 @@ ft3 > 0 -> {
     el3 = ast.str-at(t3, elnd3.s0)
     msg3 = msg3 - '  kind='
     msg3 = msg3 - k3.to-str()
-    msg3 = msg3 - ' (want 49 K_NULLABLE_TYPE)\n  type-string='
+    msg3 = msg3 - ' (want NullableType)\n  type-string='
     msg3 = msg3 - s3
     msg3 = msg3 - ' (want ?i64)\n  elem='
     msg3 = msg3 - el3
     msg3 = msg3 - '\n'
-    k3 != 49 -> ok = 0
+    k3 != asp.kind-id('NullableType') -> ok = 0
     s3 != '?i64' -> ok = 0
     el3 != 'i64' -> ok = 0
     h3 = 1
@@ -176,12 +176,12 @@ ft4 > 0 -> {
     inf4 = ast.str-at(t4, fnd4.s1)
     msg4 = msg4 - '  kind='
     msg4 = msg4 - k4.to-str()
-    msg4 = msg4 - ' (want 47 K_NAMED_TYPE)\n  type-string='
+    msg4 = msg4 - ' (want NamedType)\n  type-string='
     msg4 = msg4 - s4
     msg4 = msg4 - ' (want i64)\n  inferred(slot1)='
     msg4 = msg4 - inf4
     msg4 = msg4 - '\n'
-    k4 != 47 -> ok = 0
+    k4 != asp.kind-id('NamedType') -> ok = 0
     s4 != 'i64' -> ok = 0
     inf4 != 'true' -> ok = 0
     h4 = 1

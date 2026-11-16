@@ -6,23 +6,50 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/parser"
 )
 
-// checkUnresolvedModuleCalls 在檢查期（module merge 完成、ResolveModuleCalls
-// 之後）對主程式中的 `module.fn()` 呼叫做存在性驗證。
+// looksLikeConstName 判定 name 是否符合 nolang 的模組常量命名（全大寫、
+// 可有數字/連字號/下劃線，不含小寫字母）。與 checker.isConstantName 同款
+// 規則，這裡獨立實作是因為它在 checker 套件內未導出。
 //
-// 背景：resolveModuleCalls 只改寫「存在的」模組函數呼叫；呼叫不存在的
-// 模組函數（如 `bigint.from-int()`）會原樣落到 codegen，直到 LLVM opt 才
-// 報出難懂的 `use of undefined value '@from-int'`。這裡把診斷提前，並給
-// 出人類可讀的錯誤（含行號與候選建議）。
+// 用途：把「成員讀取」的檢查限制在大寫常量上。結構欄位、方法名一律小寫
+// 開頭，因此 `obj.field`、`path.len` 之類不會被誤判成模組常量。
+func looksLikeConstName(name string) bool {
+	if name == "" {
+		return false
+	}
+	if name[0] < 'A' || name[0] > 'Z' {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		if c := name[i]; c >= 'a' && c <= 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+// checkUnresolvedModuleCalls 在檢查期（module merge 完成、ResolveModuleCalls
+// 之後）對主程式中的 `module.fn()` 呼叫與 `module.CONST` 常量讀取做存在性
+// 驗證。
+//
+// 背景：resolveModuleCalls 只改寫「存在的」模組成員；引用不存在的成員
+// （`bigint.from-int()`、`asp.K_LET_STATEMENT`）會原樣落到 codegen，前者
+// 直到 LLVM opt 才報出難懂的 `use of undefined value '@from-int'`，後者更
+// 糟——它降級成 NoVal，只在 MIR 以 `consumer reads value 0`（bug #85）現形，
+// 訊息裡既沒有模組名也沒有識別符。這裡把兩類診斷都提前，並給出行號與候選
+// 建議。
 //
 // 誤報防護（寧可漏報、不可誤報）：
 //   - 只檢查主程式語句（merged.Sem.ModuleOwnerOf(stmt) == ""），std 模組內部不查；
 //   - receiver 鏈必須整體匹配某個已導入模組路徑（modSet）；
 //   - fnName 若是任何已知符號（裸頂層函數、module.fn 平點名、任何型別的
 //     方法名、builtin 方法名、結構欄位名、模組常量）即放行 —— 這樣同名
-//     變數遮蔽模組名（如變數 path 上的 .join()）不會誤報。
+//     變數遮蔽模組名（如變數 path 上的 .join()）不會誤報；
+//   - 「未知常量」額外要求成員名是全大寫（looksLikeConstName），並排除
+//     std 模組（其頂層常量不在 merged 裡，無法比對）。
 func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string) error {
 	if len(importedModules) == 0 {
 		return nil
@@ -33,9 +60,10 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 	}
 
 	// 收集全部可呼叫符號與欄位名。
-	known := make(map[string]bool)       // 精確名："gcd"、"bigint.gcd"、"conn.connect"
-	propNames := make(map[string]bool)   // 帶點名的最後一段（方法名/前綴函數名）
-	moduleFnsOf := make(map[string][]string) // 短名模組 → 該模組頂層函數（供建議）
+	known := make(map[string]bool)              // 精確名："gcd"、"bigint.gcd"、"conn.connect"
+	propNames := make(map[string]bool)          // 帶點名的最後一段（方法名/前綴函數名）
+	moduleFnsOf := make(map[string][]string)    // 短名模組 → 該模組頂層函數（供建議）
+	moduleConstsOf := make(map[string][]string) // 短名模組 → 該模組頂層常量（供建議）
 	for _, stmt := range merged.Statements {
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
@@ -49,6 +77,12 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 			} else {
 				// 模組常量（module.CONST 讀取也走 DotExpression）
 				known[s.Name.Value] = true
+				if owner := merged.Sem.ModuleOwnerOf(stmt); owner != "" {
+					if idx := strings.LastIndex(owner, "/"); idx >= 0 {
+						owner = owner[idx+1:]
+					}
+					moduleConstsOf[owner] = append(moduleConstsOf[owner], s.Name.Value)
+				}
 			}
 		case *parser.StructDefinition:
 			// 函數型別欄位可能以 `x.field(...)` 形式被呼叫
@@ -64,6 +98,14 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 			name = name[idx+1:]
 		}
 		propNames[name] = true
+	}
+
+	// std 模組不參與「未知常量」判定：std 只以 builtin stub 形式出現在 merged
+	// 裡，其頂層常量（math.PI 之類）根本沒有 LetStatement 可供登記，若拿
+	// known 去比對必然全數誤報。
+	stdMods := make(map[string]bool)
+	for short := range checker.KnownStdModules() {
+		stdMods[short] = true
 	}
 
 	var errs []string
@@ -82,6 +124,34 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 		msg := fmt.Sprintf("line %d: unknown function '%s.%s': module '%s' has no top-level function '%s'",
 			pos.Line, short, fnName, modPath, fnName)
 		if sug := suggestSimilar(fnName, moduleFnsOf[short]); sug != "" {
+			msg += fmt.Sprintf(" (did you mean '%s.%s'?)", short, sug)
+		}
+		errs = append(errs, msg)
+	}
+	// reportConst 報告「模組常量不存在」：`mod.CONST` 形式的讀取。
+	//
+	// 為什麼需要它：resolveModuleCalls 只把「真的存在」的模組常量攤平成裸名，
+	// 拼錯/寫錯的常量會原樣留成 DotExpression，一路落到 codegen 才以
+	// `consumer reads value 0 (NoVal)`（bug #85）的形式炸掉——診斷與成因
+	// 完全對不上（編譯器自舉語料 compiler/tests/verify-struct-elem.no 的
+	// `asp.K_LET_STATEMENT` 就是這種情況：那個常量從來不存在）。
+	//
+	// 誤報防護採三層：只認大寫常量名（isConstantName 同款規則；小寫的
+	// `path.len` 一律放行）、排除 std 模組、再過 known/propNames 白名單。
+	reportConst := func(dot *parser.DotExpression, modPath, name string) {
+		short := modPath
+		if idx := strings.LastIndex(short, "/"); idx >= 0 {
+			short = short[idx+1:]
+		}
+		key := short + "." + name
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		pos := dot.Pos()
+		msg := fmt.Sprintf("line %d: unknown constant '%s.%s': module '%s' has no top-level constant '%s'",
+			pos.Line, short, name, modPath, name)
+		if sug := suggestSimilar(name, moduleConstsOf[short]); sug != "" {
 			msg += fmt.Sprintf(" (did you mean '%s.%s'?)", short, sug)
 		}
 		errs = append(errs, msg)
@@ -125,6 +195,19 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 		case *parser.GroupedExpression:
 			checkExpr(x.Expression)
 		case *parser.DotExpression:
+			// 非呼叫位置的 DotExpression 是「成員讀取」。走到這裡的 dot 一定
+			// 不是被呼叫的對象（呼叫分支只遞迴 receiver），所以 `mod.CONST`
+			// 這類常量讀取全部落在這個分支。
+			if modPath, name := dotModulePathAndFunc(x); modPath != "" && name != "" && modSet[modPath] {
+				short := modPath
+				if idx := strings.LastIndex(short, "/"); idx >= 0 {
+					short = short[idx+1:]
+				}
+				if !stdMods[short] && looksLikeConstName(name) &&
+					!known[name] && !known[short+"."+name] && !propNames[name] {
+					reportConst(x, modPath, name)
+				}
+			}
 			checkExpr(x.Receiver)
 		case *parser.IndexExpression:
 			checkExpr(x.Left)
@@ -143,37 +226,37 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 		case *parser.RangeExpression:
 			checkExpr(x.Start)
 			checkExpr(x.End)
-	case *parser.SurfaceMatch:
-		// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
-		// MultiValuePatterns / Body，不校 Matched。
-		for i := range x.Arms {
-			arm := &x.Arms[i]
-			if arm.Condition != nil {
-				checkExpr(arm.Condition)
-			}
-			for _, vp := range arm.MultiValuePatterns {
-				if vp != nil {
-					checkExpr(vp)
+		case *parser.SurfaceMatch:
+			// S1：糖形態 match。對應 IfExpression 分支：只走各臂 Condition /
+			// MultiValuePatterns / Body，不校 Matched。
+			for i := range x.Arms {
+				arm := &x.Arms[i]
+				if arm.Condition != nil {
+					checkExpr(arm.Condition)
+				}
+				for _, vp := range arm.MultiValuePatterns {
+					if vp != nil {
+						checkExpr(vp)
+					}
+				}
+				if arm.Body != nil {
+					for _, bs := range arm.Body.Statements {
+						checkStmt(bs)
+					}
 				}
 			}
-			if arm.Body != nil {
-				for _, bs := range arm.Body.Statements {
+		case *parser.IfExpression:
+			checkExpr(x.Condition)
+			if x.Consequence != nil {
+				for _, bs := range x.Consequence.Statements {
 					checkStmt(bs)
 				}
 			}
-		}
-	case *parser.IfExpression:
-		checkExpr(x.Condition)
-		if x.Consequence != nil {
-			for _, bs := range x.Consequence.Statements {
-				checkStmt(bs)
+			if x.Alternative != nil {
+				for _, bs := range x.Alternative.Statements {
+					checkStmt(bs)
+				}
 			}
-		}
-		if x.Alternative != nil {
-			for _, bs := range x.Alternative.Statements {
-				checkStmt(bs)
-			}
-		}
 		case *parser.FunctionLiteral:
 			if x.Body != nil {
 				for _, bs := range x.Body.Statements {

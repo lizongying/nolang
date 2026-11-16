@@ -1203,8 +1203,15 @@ shs-sort-strs = (arr []str) (r []str) {
         ;   （越界寫會變成未檢查的 OOB 寫）。改用 place-match：ok 臂的 it 是元素
         ;   「位置」，可讀可寫；越界走 `_` 臂什麼都不做。本函式無 option 結果參數，
         ;   用不了 `?=` 上拋。a/best 皆 < n，ok 臂必然到達。
+        ;   RHS `idx[best]` 亦是裸索引（D11）⇒ 先值匹配取出再寫入。
+        bv = idx[best]: {
+            ok -> it
+
+            -> 0
+        }
+
         idx[a]: {
-            ok -> it = idx[best]
+            ok -> it = bv
 
             -> _
         }

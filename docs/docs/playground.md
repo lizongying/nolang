@@ -81,6 +81,48 @@ WASI preview1 不提供 socket API，因此以下標準庫在 Playground 中無�
 - `tls`（TLS 連線）
 - `quic`、`sse`、`dns`
 
+**對 `no` / `lsp` 本身的約束（比標準庫更嚴格）**：wasm 產物連「導入」socket 函式都不行。
+瀏覽器端用 `@wasmer/wasi` 實例化，它沒有實作 `sock_accept` / `sock_shutdown`，
+所以產物一旦因 `net` / `net/http` 被鏈進來而多出這兩個 `wasi_snapshot_preview1` 導入，
+`WebAssembly.Instance` 會直接擲出：
+
+```
+Failed to instantiate WASI: RuntimeError: JsValue(LinkError: WebAssembly.Instance():
+Import #28 "wasi_snapshot_preview1" "sock_accept": function import requires a callable)
+```
+
+後果是整支程式連 `_start` 都跑不到——語言服務會報「初始化失敗」（補全、懸停、格式化全廢），
+執行按鈕也一樣。因此凡是只有原生環境才有意義的網路程式碼，一律放進 `!wasip1` 的檔案，
+wasip1 側只留報錯樁：`cmd/lsp/pprof_wasip1.go`、`cmd/no/serve_esm_wasip1.go`、
+`package/download_net_wasip1.go`、`package/release_net_wasip1.go`。
+`bun scripts/wasm_imports_check.ts`（`make wasm-imports-check`）用引擎自己的導入表守這條線。
+
+### `poll_oneoff` 由前端補上
+
+導入表乾淨只代表「函式存在」，不代表「函式不炸」。`@wasmer/wasi` 的 `poll_oneoff` 本體是
+Rust 的 `unimplemented!()`：只要被呼叫（連 0 個訂閱都會），就執行 `unreachable` 讓整支實例
+trap，錯誤長這樣：
+
+```
+Error while running start function: RuntimeError: JsValue(RuntimeError: unreachable)
+```
+
+Go 的 `runtime` 會把 `time.Sleep` 與 `netpoll(delay)` 都變成一個 monotonic clock 訂閱，
+所以 **每一個 Go 程式都會踩到**——`no fmt` / `no vet` / `no build` 全都會在第一次睡著時死掉，
+而導入表檢查完全看不出來。
+
+修法在 `docs/src/playground/wasm-loader.ts`：`instantiateWasi()` 自己用 `wasi.getImports()`
+組導入物件，把 `poll_oneoff` 換成 JS 實作（時鐘訂閱 → 睡到最近到期時間後回報 clock 事件；
+只有 fd 訂閱 → 立即回報就緒，避免永久阻塞）。注意**不能**把覆寫丟給
+`wasi.instantiate(module, overrides)`：glue 自己的函式優先，覆寫會被無聲忽略，程式照樣 trap。
+也因為改成自建導入物件，`wasi.start(instance)` 必須顯式傳入實例。
+
+### 首次執行的編譯時間
+
+Run 會用 `no build --wasm-direct` 把整個 std 重新下降成 wasm，在單執行緒的 wasm 直譯環境裡
+約需 **一分鐘**（原生 `no` 約 11 秒）。這是既有效能特性，不是逾時判定：
+runner 的看門狗因此分成兩段預算——載入 + 編譯 180 秒，使用者程式仍只給 5 秒。
+
 ### 檔案系統為虛擬
 
 WASI preview1 僅提供 stdin / stdout / stderr 三個檔案描述符，沒有真實檔案系統。因此 `fs`、`path`、`os.get-env`、`os.set-env` 等涉及檔案或環境的標準庫在 Playground 中可能無法如預期運作。
@@ -108,10 +150,23 @@ Playground 需要支援 WebAssembly 的現代瀏覽器。建議使用以下版�
 
 ```bash
 make playground-demos                       # 編譯 + wasmtime 執行全部 24 個範例
+make wasm-imports-check                     # 重建兩個 wasm 並驗證導入表無 socket 函式
+make wasm-runtime-smoke                     # 用 worker 的同一條載入路徑實跑 version/fmt/vet
+RUN_WASM_LSP=1 RUN_WASM_BUILD=1 make wasm-runtime-smoke   # 追加語言服務與完整編譯+執行
 bun scripts/playground_ui_check.ts          # 診斷解析、看門狗、worker 恢復、i18n
 make playground-smoke                       # dev server 與 WASM 路由 HTTP 200
 cd docs && bun run typecheck                # TypeScript 型別檢查
 ```
+
+注意 `playground-demos` 走的是**原生** `no`，它攔不到「wasm 產物帶了瀏覽器不支援的導入」這類問題；
+`wasm-imports-check` 補的就是這一格（以 `WebAssembly.Module.imports()` 判定，與實例化時的檢查同源）。
+worker 端另有一層兜底：`wasm-loader.ts` 的 `instantiateWasi()` 會把 `@wasmer/wasi` 沒提供的
+WASI 函式補成回傳 `ENOSYS` / `NOTSUP` 的樁，讓意外的導入退化成一次失敗的系統呼叫，
+而不是整片服務掛掉。
+
+`wasm-imports-check` 也攔不到「函式存在但本體會 trap」（上面 `poll_oneoff` 那一類），
+所以 `make wasm-runtime-smoke` 補上最後一格：它走 `instantiateWasi()` 的真實路徑實跑
+`no version` / `no fmt` / `no vet`，並可加驗語言服務與完整編譯 + 執行。
 
 `docs/static/wasm/*.wasm` 被 `.gitignore` 排除，永遠不應提交本機產物。`no.wasm` 與 `lsp.wasm` 由 CI 從同一份原始碼與同一個 `StdSigKey` 一起重建，確保瀏覽器裡的編譯器、內嵌 std AST blob 與 Direct-WASM 後端來自同一次建置；三者版本錯位正是過去 `unreachable` 與驗證錯誤的常見來源。
 

@@ -13,6 +13,15 @@
  * only way to actually stop a hung program is `worker.terminate()` from the
  * main thread. This class therefore owns a per-run watchdog, terminates the
  * worker on expiry, and lazily recreates it for the next run.
+ *
+ * Two budgets, not one: compiling a snippet with no.wasm is not comparable to
+ * running it. `no build --wasm-direct` re-lowers the std library inside a
+ * single-threaded wasm interpreter and takes ~55 s warm (~75 s cold) in a
+ * browser-class engine — 200× the 5 s a user program is allowed. A single
+ * budget would therefore kill every run during the compile stage and report a
+ * bogus "timed out" for programs that never started. The watchdog arms
+ * COMPILE_TIMEOUT_MS for load+compile and switches to the user budget when the
+ * worker reports the 'running' stage.
  */
 // ---------------------------------------------------------------------------
 // Public types
@@ -53,6 +62,14 @@ export interface RunnerOptions {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_TIMEOUT_MS = 5000;
+/**
+ * Budget for fetching, instantiating and running the compiler. Measured on a
+ * desktop browser engine: ~55 s for a hello-world snippet (`no build` lowers
+ * the whole std library), plus up to 40 MB of artifact download on a cold
+ * cache. Generous by design — the cost of being too strict is a run that can
+ * never succeed, while a genuinely hung compiler is still killed.
+ */
+const COMPILE_TIMEOUT_MS = 180_000;
 /** Extra budget so a run that posts its result at the wire can still win. */
 const WATCHDOG_GRACE_MS = 250;
 
@@ -99,6 +116,8 @@ export class Runner {
   private handleMessage(data: any): void {
     if (!data || typeof data !== 'object') return;
     if (data.type === 'stage' && (data.stage === 'compiling' || data.stage === 'running')) {
+      // Compile finished: from here on the user's budget applies.
+      if (data.stage === 'running') this.armRunBudget(Number(data.runId));
       this.options.onStage?.(data.stage);
       return;
     }
@@ -134,6 +153,17 @@ export class Runner {
     this.terminateWorker();
     this.settle(runId);
     pending.resolve(failed('timeout'));
+  }
+
+  /**
+   * Re-arm the watchdog with the user-program budget. Called when the worker
+   * moves to the 'running' stage, i.e. once the compiler is out of the way.
+   */
+  private armRunBudget(runId: number): void {
+    const pending = this.pending.get(runId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pending.timer = setTimeout(() => this.handleTimeout(runId), pending.timeoutMs + WATCHDOG_GRACE_MS);
   }
 
   /** Clear a pending run's watchdog and remove it from the map. */
@@ -178,7 +208,7 @@ export class Runner {
     const budget = Math.max(1, timeoutMs);
 
     return new Promise<RunResult>((resolve) => {
-      const timer = setTimeout(() => this.handleTimeout(runId), budget + WATCHDOG_GRACE_MS);
+      const timer = setTimeout(() => this.handleTimeout(runId), COMPILE_TIMEOUT_MS + WATCHDOG_GRACE_MS);
       this.pending.set(runId, {resolve, timer, timeoutMs: budget});
       worker.postMessage({
         type: 'run',

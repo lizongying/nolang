@@ -1560,6 +1560,17 @@ func validateEntryProgram(program *parser.Program, sourcePath string, varTypes m
 			lints = append(lints, validateResultToLint(e))
 		}
 	}
+	// value-match 只能作赋值右值顶层（纯语法，不依赖 THIR）。出现在操作数/实参/
+	// 比较等表达式位置时 MIR 不产出值、codegen 报 NoVal（zodppsnm），故在此
+	// 按 TraceID 汇入硬错误，越早报越不易被后续 codegen 症状掩盖。
+	if vmErrs := checker.ValidateValueMatchPosition(program); len(vmErrs) > 0 {
+		for _, e := range vmErrs {
+			if e.TraceID != checker.ValueMatchExprTraceID {
+				continue
+			}
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
 	thirView := checker.BuildTHIRView(program)
 	if typeErrs := checker.ValidateTypesTHIR(program, thirView); len(typeErrs) > 0 {
 		for _, e := range typeErrs {
@@ -1701,6 +1712,20 @@ func validateMergedProgram(merged *parser.Program) error {
 			lints = append(lints, validateResultToLint(e))
 		}
 		return &DiagnosticError{Lints: lints}
+	}
+	// value-match 只能是赋值右值顶层。validateEntryProgram 只看入口文件的 AST，
+	// import 模块的错误写法此前一路流到 codegen 才以 NoVal 暴露；merged 阶段
+	// 已经包含全部模块函数体，在这里按同一 TraceID 再跑一次即可提前报准位置。
+	if vmErrs := checker.ValidateValueMatchPosition(merged); len(vmErrs) > 0 {
+		var lints []checker.LintResult
+		for _, e := range vmErrs {
+			if e.TraceID == checker.ValueMatchExprTraceID {
+				lints = append(lints, validateResultToLint(e))
+			}
+		}
+		if len(lints) > 0 {
+			return &DiagnosticError{Lints: lints, Prefix: "value match position errors"}
+		}
 	}
 	// Bug 22: 跨模組 with-len/with-cap/with-cap-len 無類型標註漏檢。
 	// 單文件時 ValidateTypes/ValidateFuncArgs 會檢查，但模組合併發生在驗證之後，

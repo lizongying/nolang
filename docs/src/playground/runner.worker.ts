@@ -21,7 +21,20 @@
  */
 import './node-polyfills';
 import {WASI, MemFS} from '@wasmer/wasi';
-import {loadWasmRuntime, warmupWasmRuntime, type WasmLoadSpec} from './wasm-loader';
+import {loadWasmRuntime, warmupWasmRuntime, instantiateWasi, type WasmLoadSpec} from './wasm-loader';
+
+/** Warn once per reason about WASI imports the glue had to stub. */
+const warnedKeys = new Set<string>();
+function warnStubs(where: string, stubbed: string[]): void {
+  if (stubbed.length === 0) return;
+  const key = `${where}:${stubbed.join(',')}`;
+  if (warnedKeys.has(key)) return;
+  warnedKeys.add(key);
+  ctx.postMessage({
+    type: 'warning',
+    reason: `runner.worker ${where}: stubbed ${stubbed.length} WASI import(s) @wasmer/wasi does not provide (${stubbed.join(', ')}) — rebuild without net`,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Result type (mirrored from runner.ts — kept local to avoid pulling the
@@ -101,8 +114,9 @@ function compileSource(source: string, module: WebAssembly.Module): {
 
   let exitCode = 0;
   try {
-    wasi.instantiate(module, {});
-    exitCode = wasi.start();
+    const {instance, stubbed} = instantiateWasi(wasi, module);
+    warnStubs('no.wasm', stubbed);
+    exitCode = wasi.start(instance);
   } catch (e) {
     const stderrStr = wasi.getStderrString();
     return {
@@ -177,8 +191,9 @@ function executeUserWasm(
     const moduleBytes = new Uint8Array(userWasmBytes.length);
     moduleBytes.set(userWasmBytes);
     const module = new WebAssembly.Module(moduleBytes);
-    wasi.instantiate(module, {});
-    exitCode = wasi.start();
+    const {instance, stubbed} = instantiateWasi(wasi, module);
+    warnStubs('user program', stubbed);
+    exitCode = wasi.start(instance);
   } catch (e) {
     exitCode = -1;
     stderrSuffix = String(e);

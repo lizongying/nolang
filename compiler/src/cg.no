@@ -280,7 +280,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
     ; ⚠️ 结构体型别 `%struct.point` **不在这里发**——它由 prelude（cg-runtime-struct-type）
     ;    唯一发射。若每函式各发一次，多函式模块会报 "redefinition of type named"。
     g <- [0..n): {
-        ops[g] == OP-STRCONST -> {
+        ix.at-i(ops, g) == OP-STRCONST -> {
             t = syms[g]
             b.push(cg-lit-name(name, g))
             b.push(' = private unnamed_addr constant [')
@@ -349,7 +349,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 b.push('\t%fd')
                 b.push(d.to-str())
                 b.push(' = fadd double 0.0, ')
-                b.push(syms[k])
+                b.push(ix.at-s(syms, k))
                 b.push('\n')
             }
             cg-vty-at(vty, d) != TY-F64 -> {
@@ -538,7 +538,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = call ')
             b.push(cg-ty-name(rt))
             b.push(' @')
-            b.push(syms[k])
+            b.push(ix.at-s(syms, k))
             b.push('(')
 
             ; 实参：从侧池 args 取 y = bs[k] 个，第 j 个的值 id = args[x + j]（x = xa[k] = 基址下标）；
@@ -2403,7 +2403,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             ;   s29 用的 `{ i64 0, i64 0 }` 只能表达 2 字段，已废弃。
             ; ⚠️ 中间步名 %sm<k>_<j>（k = 指令下标、j = 字段下标），**最后一步**才落 %st<dst>：
             ;   同一本地名复用为多步 insertvalue 的输出会报 multiple definition。
-            tn = cg-ty-name(cty[k])
+            tn = cg-ty-name(ix.at-i(cty, k))
             nf = y
             prev = ''
             j = 0
@@ -2424,9 +2424,9 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 prev.len-bytes() == 0 -> b.push('zeroinitializer')
                 prev.len-bytes() > 0 -> b.push(prev)
                 b.push(', ')
-                b.push(cg-ty-name(vty[fv]))
+                b.push(cg-ty-name(ix.at-i(vty, fv)))
                 b.push(' ')
-                b.push(cg-val-prefix(vty[fv]))
+                b.push(cg-val-prefix(ix.at-i(vty, fv)))
                 b.push(fv.to-str())
                 b.push(', ')
                 b.push(j.to-str())
@@ -2441,10 +2441,10 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             ; dst 的型别 = cty[k]（字段可能是 i64，也可能是 %str-long ⇒ 命名空间随之变）
             ; ⚠️ 结构体值住 %st 命名空间，读出的字段按**字段型别**落 %v / %sv / %vc / %op。
             b.push('\t')
-            b.push(cg-val-prefix(cty[k]))
+            b.push(cg-val-prefix(ix.at-i(cty, k)))
             b.push(d.to-str())
             b.push(' = extractvalue ')
-            b.push(cg-ty-name(vty[x]))
+            b.push(cg-ty-name(ix.at-i(vty, x)))
             b.push(' %st')
             b.push(x.to-str())
             b.push(', ')
@@ -2462,16 +2462,17 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push('\t%st')
             b.push(d.to-str())
             b.push(' = insertvalue ')
-            b.push(cg-ty-name(vty[x]))
+            b.push(cg-ty-name(ix.at-i(vty, x)))
             b.push(' %st')
             b.push(x.to-str())
             b.push(', ')
-            b.push(cg-ty-name(vty[vf]))
+            b.push(cg-ty-name(ix.at-i(vty, vf)))
             b.push(' ')
-            b.push(cg-val-prefix(vty[vf]))
+            b.push(cg-val-prefix(ix.at-i(vty, vf)))
             b.push(vf.to-str())
             b.push(', ')
-            b.push(cty[k].to-str())
+            cty-k = ix.at-i(cty, k)
+            b.push(cty-k.to-str())
             b.push('\n')
         }
         op == OP-STALLOC -> {
@@ -2488,7 +2489,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
 
             ; xa[k] = 结构体值 id；bs[k] = 槽 id。无结果（与 str 的 SSTORE 同形）。
             ; 结构体 id 取 vty[xa[k]] - TY-STRUCT-BASE。
-            tn = cg-ty-name(vty[x])
+            tn = cg-ty-name(ix.at-i(vty, x))
             b.push('\tstore ')
             b.push(tn)
             b.push(' %st')
@@ -2503,7 +2504,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
 
             ; dst = 结构体值 id；xa[k] = 槽 id（与 SLOAD 同形：槽在 a、结果在 dst）。
             ; 结构体 id 取 cty[k] - TY-STRUCT-BASE（**结果**的型别）。
-            tn = cg-ty-name(cty[k])
+            tn = cg-ty-name(ix.at-i(cty, k))
             b.push('\t%st')
             b.push(d.to-str())
             b.push(' = load ')
@@ -2519,7 +2520,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             ; xa[k] = 结构体值 id；bs[k] = 字段掩码（bit j ⇒ 字段 j 持有堆，且必须是 str 字段）。
             ; 每个置位字段发三步：struct → %str-long → i8* data → call @nolang_rc_retain。
             ; ⚠️ 这是**机械动作**，不做策略判断（MK 不自动 retain，见 mir.no 的说明）。
-            tnr = cg-ty-name(vty[x])
+            tnr = cg-ty-name(ix.at-i(vty, x))
             mkr = y
             jr = 0
             (jr < 64) {
@@ -2557,7 +2558,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         op == OP-STRUCT-RELEASE -> {
 
             ; 同 RETAIN，改 call @nolang_rc_release（返回 i1，丢弃）。临时值 %rl<k>_<j>。
-            tnl = cg-ty-name(vty[x])
+            tnl = cg-ty-name(ix.at-i(vty, x))
             mkl = y
             jl = 0
             (jl < 64) {

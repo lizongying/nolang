@@ -24,8 +24,28 @@
  * serve an old 27 MB binary from cache after a site redeploy. Once CI emits
  * content-hashed asset names, pass `immutable: true` to switch to
  * `cache: 'force-cache'` and skip revalidation entirely.
+ *
+ * WASI import coverage: `@wasmer/wasi` implements a fixed preview1 surface. If
+ * the guest module imports a function the glue does not provide (e.g. Go emits
+ * `sock_accept` / `sock_shutdown` as soon as `net` is linked), instantiation
+ * fails with `LinkError: Import #N "wasi_snapshot_preview1" "sock_accept":
+ * function import requires a callable` and the WHOLE program never runs. The
+ * build-side fix is to keep `net` out of the wasip1 binaries (see
+ * `make lsp-wasm` / `cmd/lsp/pprof_wasip1.go`), but the browser is the last line
+ * of defence: `instantiateWasi()` fills any still-missing import with a stub
+ * that returns an errno, so an unexpected import degrades to a failed syscall
+ * instead of a dead language service.
+ *
+ * `poll_oneoff` is a different failure mode: the glue DOES provide it, but its
+ * body is `unimplemented!()` in Rust. Calling it — even with 0 subscriptions —
+ * executes `unreachable` and traps the whole instance, which is what every Go
+ * program eventually hits (the runtime turns `time.Sleep` and `netpoll(delay)`
+ * into a monotonic-clock subscription). Since the caller-provided import object
+ * does not win over the glue's own functions, `instantiateWasi()` builds the
+ * import object itself and replaces `poll_oneoff` with a JS implementation.
  */
 import {init} from '@wasmer/wasi';
+import type {WASI} from '@wasmer/wasi';
 
 export type WasmLoadStage = 'wasi-init' | 'fetch' | 'compile';
 
@@ -162,4 +182,256 @@ export function warmupWasmRuntime(
 /** Drop cached runtimes (used by worker `dispose` and tests). */
 export function clearWasmRuntimeCache(): void {
   runtimeCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// WASI instantiation (missing-import stubs + poll_oneoff replacement)
+// ---------------------------------------------------------------------------
+
+const WASI_NAMESPACE = 'wasi_snapshot_preview1';
+
+/** WASI errno values used for imports the glue cannot execute. */
+const ENOSYS = 52;
+const NOTSUP = 58;
+
+/** `subscription` / `event` sizes from the preview1 ABI (both are padded to 8). */
+const SUBSCRIPTION_SIZE = 48;
+const EVENT_SIZE = 32;
+
+/** `eventtype::clock`. `fd_read` is 1, `fd_write` is 2. */
+const EVENT_TYPE_CLOCK = 0;
+
+/** `subscription_clock::flags` bit 0 — timeout is an absolute deadline. */
+const CLOCK_ABSTIME = 1;
+
+/**
+ * Upper bound for a single `poll_oneoff` wait. A guest that asks for an absurd
+ * deadline must not wedge the Worker: the watchdog can only kill the Worker
+ * from the outside, and every extra second of silence looks like a hang.
+ */
+const MAX_POLL_SLEEP_MS = 300_000;
+
+/**
+ * Preferred errno per unimplemented import. Sockets are the realistic case —
+ * the browser sandbox has none, and `no`/`lsp` only reach them through
+ * `net`-using code that is (or should be) excluded from the wasip1 build.
+ * Anything not listed falls back to ENOSYS, which is what a WASI host should
+ * return for a syscall it does not implement.
+ */
+const STUB_ERRNO: Record<string, number> = {
+  sock_accept: NOTSUP,
+  sock_recv: NOTSUP,
+  sock_send: NOTSUP,
+  sock_shutdown: NOTSUP,
+};
+
+export interface WasiInstantiation {
+  instance: WebAssembly.Instance;
+  /** Names that had to be stubbed — non-empty means the build drifted. */
+  stubbed: string[];
+  /** Names served by a local shim because the glue's body traps. */
+  shimmed: string[];
+}
+
+/**
+ * Collect the `wasi_snapshot_preview1` functions this module needs but the
+ * glue does not implement, as `() => errno` stubs.
+ *
+ * The glue's own inventory is read from `wasi.getImports(module)`: probing is
+ * safe (it builds an import object without touching instance state) and is the
+ * only way to know what the current `@wasmer/wasi` version really provides —
+ * hard-coding a list would silently clobber a real implementation after an
+ * upgrade. If probing throws, no overrides are returned at all, because
+ * overriding a function the glue *does* implement (say `fd_write`) would break
+ * every program.
+ */
+export function wasiImportOverrides(
+  wasi: WASI,
+  module: WebAssembly.Module,
+): {overrides: Record<string, Record<string, () => number>>; stubbed: string[]} {
+  let provided: Set<string>;
+  try {
+    const imports = wasi.getImports(module) as Record<string, Record<string, unknown> | undefined>;
+    provided = new Set(Object.keys(imports[WASI_NAMESPACE] ?? {}));
+  } catch {
+    return {overrides: {}, stubbed: []};
+  }
+
+  const missing: Record<string, () => number> = {};
+  const stubbed: string[] = [];
+  for (const imp of WebAssembly.Module.imports(module)) {
+    if (imp.module !== WASI_NAMESPACE || imp.kind !== 'function') continue;
+    if (provided.has(imp.name)) continue;
+    const errno = STUB_ERRNO[imp.name] ?? ENOSYS;
+    missing[imp.name] = () => errno;
+    stubbed.push(imp.name);
+  }
+
+  return {
+    overrides: stubbed.length > 0 ? {[WASI_NAMESPACE]: missing} : {},
+    stubbed,
+  };
+}
+
+/**
+ * Memory of the most recently created instance. `poll_oneoff` needs it to read
+ * subscriptions and write events, but the export only exists once
+ * `new WebAssembly.Instance()` returns — i.e. after the import object was built.
+ * Workers run one instance at a time (a run is synchronous), so a single slot is
+ * enough; the LSP worker's per-batch instances and the runner's compile/execute
+ * stages never overlap.
+ */
+let lastMemory: WebAssembly.Memory | null = null;
+
+// ---------------------------------------------------------------------------
+// poll_oneoff
+// ---------------------------------------------------------------------------
+
+/**
+ * Sleep gate for `poll_oneoff`. `Atomics.wait` blocks the calling thread with
+ * the OS scheduler instead of burning CPU. It is legal in a Worker (where both
+ * playground runtimes live) and in Node; on a browser main thread it throws,
+ * and the spin fallback keeps behaviour correct (if slow) instead of failing.
+ */
+const POLL_GATE: Int32Array | null =
+  typeof SharedArrayBuffer === 'function' ? new Int32Array(new SharedArrayBuffer(4)) : null;
+
+function sleepNs(ns: bigint): void {
+  if (ns <= 0n) return;
+  const wholeMs = Number(ns / 1_000_000n);
+  const ms = Math.min(ns % 1_000_000n > 0n ? wholeMs + 1 : wholeMs, MAX_POLL_SLEEP_MS);
+  if (POLL_GATE) {
+    try {
+      Atomics.wait(POLL_GATE, 0, 0, ms);
+      return;
+    } catch {
+      // Main-thread browser context: fall through to the spin.
+    }
+  }
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    /* spin */
+  }
+}
+
+/**
+ * `poll_oneoff` for @wasmer/wasi, whose Rust glue is `unimplemented!()`.
+ *
+ * What the playground actually needs: Go's runtime implements `time.Sleep` and
+ * `netpoll(delay)` as a single monotonic-clock subscription (see
+ * `runtime/os_wasip1.go` / `runtime/netpoll_wasip1.go`), where `delay` is
+ * relative unless the ABSTIME flag is set. So:
+ *
+ *   - clock subscriptions present → sleep the shortest deadline, then report
+ *     every clock subscription as fired (`nbytes` 0). Go skips clock events
+ *     when it scans the array, so this is exactly "the timer elapsed".
+ *   - fd subscriptions only → report them ready immediately. The playground
+ *     has no sockets (they were removed from the wasip1 builds) and Go reads
+ *     regular files / stdin through `fd_read` directly, so a blocking wait
+ *     would only risk a permanent hang that the outside watchdog has to kill.
+ *
+ * Absolute deadlines are resolved against `performance.now()`, i.e. the worker's
+ * monotonic clock, which is the same base the glue uses for `clock_time_get`.
+ */
+export function makePollOneoff(getMemory: () => WebAssembly.Memory | null): (
+  inPtr: number,
+  outPtr: number,
+  nsubs: number,
+  nevPtr: number,
+) => number {
+  return (inPtr, outPtr, nsubs, nevPtr) => {
+    const memory = getMemory();
+    if (!memory || memory.buffer.byteLength === 0) return ENOSYS;
+
+    const view = new DataView(memory.buffer);
+    const clocks: {userdata: bigint; delay: bigint}[] = [];
+    const fds: {userdata: bigint; type: number}[] = [];
+    let shortest: bigint | null = null;
+
+    for (let i = 0; i < nsubs; i++) {
+      const base = inPtr + i * SUBSCRIPTION_SIZE;
+      const userdata = view.getBigUint64(base, true);
+      const type = view.getUint8(base + 8);
+      if (type === EVENT_TYPE_CLOCK) {
+        const timeout = view.getBigUint64(base + 24, true);
+        const flags = view.getUint16(base + 40, true);
+        const nowNs = BigInt(Math.round(performance.now() * 1e6));
+        let delay = (flags & CLOCK_ABSTIME) !== 0 ? timeout - nowNs : timeout;
+        if (delay < 0n) delay = 0n;
+        clocks.push({userdata, delay});
+        if (shortest === null || delay < shortest) shortest = delay;
+      } else {
+        fds.push({userdata, type});
+      }
+    }
+
+    if (shortest !== null) sleepNs(shortest);
+
+    const fired: {userdata: bigint; type: number}[] =
+      clocks.length > 0 ? clocks.map((c) => ({userdata: c.userdata, type: EVENT_TYPE_CLOCK})) : fds;
+    const nbytes = clocks.length > 0 ? 0n : 1n;
+
+    let count = 0;
+    for (const event of fired) {
+      const out = outPtr + count * EVENT_SIZE;
+      new Uint8Array(memory.buffer, out, EVENT_SIZE).fill(0);
+      view.setBigUint64(out, event.userdata, true);
+      view.setUint16(out + 8, 0, true); // errno
+      view.setUint8(out + 10, event.type);
+      view.setBigUint64(out + 16, nbytes, true);
+      count++;
+    }
+    view.setUint32(nevPtr, count, true);
+    return 0;
+  };
+}
+
+/**
+ * Instantiate `module` against `wasi`, stubbing any WASI import the glue lacks
+ * and replacing any import whose glue body traps.
+ *
+ * The import object must be built here rather than handed to
+ * `wasi.instantiate(module, overrides)`: the glue's own functions take
+ * precedence over caller-provided ones, so a `poll_oneoff` override passed to
+ * `instantiate` is silently ignored and the program still traps. `getImports()`
+ * returns the same object the glue would use, and patching it before
+ * `new WebAssembly.Instance()` is the only way to win. `wasi.start(instance)`
+ * then adopts the instance (the caller must pass it — see
+ * `WasiInstantiation.instance`).
+ *
+ * Throws the original LinkError when something other than a callable WASI
+ * function import is missing (memory/table/global imports come from the same
+ * object and must not be papered over).
+ */
+export function instantiateWasi(wasi: WASI, module: WebAssembly.Module): WasiInstantiation {
+  const {overrides, stubbed} = wasiImportOverrides(wasi, module);
+  const shimmed: string[] = [];
+
+  let glue: Record<string, Record<string, WebAssembly.ImportValue>>;
+  try {
+    glue = wasi.getImports(module) as unknown as Record<string, Record<string, WebAssembly.ImportValue>>;
+  } catch {
+    // Probing failed (unknown glue version): fall back to the merging path and
+    // accept that trap-prone functions cannot be replaced.
+    const instance = wasi.instantiate(module, overrides) as unknown as WebAssembly.Instance;
+    return {instance, stubbed, shimmed};
+  }
+
+  const wasiNamespace: Record<string, WebAssembly.ImportValue> = {
+    ...(glue[WASI_NAMESPACE] ?? {}),
+    ...((overrides[WASI_NAMESPACE] ?? {}) as Record<string, WebAssembly.ImportValue>),
+  };
+
+  const needsPoll = WebAssembly.Module.imports(module).some(
+    (imp) => imp.module === WASI_NAMESPACE && imp.name === 'poll_oneoff',
+  );
+  if (needsPoll) {
+    wasiNamespace.poll_oneoff = makePollOneoff(() => lastMemory);
+    shimmed.push('poll_oneoff');
+  }
+
+  const instance = new WebAssembly.Instance(module, {...glue, [WASI_NAMESPACE]: wasiNamespace});
+  const exported = instance.exports.memory;
+  lastMemory = exported instanceof WebAssembly.Memory ? exported : null;
+  return {instance, stubbed, shimmed};
 }
