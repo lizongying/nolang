@@ -16,6 +16,11 @@ Thumbs.db
 .workbuddy
 .workbuddy-ai
 .workspace.noml
+.qoder
+.cline
+.copilot
+.opencode
+.gemini
 
 tmp
 bin

@@ -8687,6 +8687,27 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// argument opt-verify rejects. txt -> str is handled further down by
 	// strValueFromTxt, which already produces an independent (malloc'd) buffer,
 	// so skipping the clone costs nothing.
+	//
+	// 🔴 2026-11-16: STRUCT WITH OWNED FIELDS was missing from this guard.
+	// A borrowed struct parameter (e.g. `bpctx { r str }` passed by value to
+	// drv.bp-walk) re-bound into the result/out-param (`r = ctx`) was copied
+	// bitwise: the owned `str` field's {len,cap,data} triple was shared with
+	// the caller's buffer. The callee's scope-exit drop of `r` then freed the
+	// caller's buffer -> SIGTRAP double-free (cov-measure.no crashed at
+	// drv_bp_walk). This is the struct counterpart of the %str-long / %vec
+	// cases below: the callee does NOT own a parameter's heap. Deep-copy the
+	// owned fields into the destination, reusing the very same clone emitters
+	// emitClone uses for `b = a`. clone{,Ptr,Leaf}StructKey only match struct
+	// values that actually own heap, so scalars / str / vec fall through to
+	// their existing paths unchanged.
+	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) {
+		if key, ok := c.clonePtrStructKey(inst); ok {
+			return c.emitPtrStructClone(inst, key)
+		}
+		if key, ok := c.cloneLeafStructKey(inst); ok {
+			return c.emitLeafStructClone(inst, key)
+		}
+	}
 	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) && srcT != "%txt" && !isOptionType(srcT) &&
 		(dstT == "%str-long" || (dstT == "%vec" && srcT == "%vec")) {
 		if dstT == "%str-long" {

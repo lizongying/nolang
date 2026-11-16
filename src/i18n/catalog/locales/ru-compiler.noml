@@ -48,6 +48,7 @@ Nolang — язык программирования (версия %s)
       no fmt -fix=redundant main.no   предпросмотр удаления избыточных аннотаций
       no fmt -fix=match -w src/       добавить на месте пропущенные ветви match в src/
       echo 'x=1' | no fmt         отформатировать из stdin
+      no fmt -w package.noml      форматировать файл конфигурации NOML на месте
       no fmt -loop-style=suffix f.no  форматировать циклы как '{ } (cond)' / '{ } * N'
       no fmt --md -w docs/        форматировать блоки Nolang во всех .md/.mdx в docs/
 

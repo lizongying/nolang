@@ -25,7 +25,7 @@ Nolang 是一门**内存安全、无 GC、语法极简**的系统编程语言。
 | `src/checker/` | 类型检查、签名收集。`stdsig_gen.go` 是**内嵌二进位的 std 签名表**，由 `make gen` 从 `src/std` 生成。 |
 | `src/hir/` `src/mir/` | 高层 / 中层 IR。MIR 是 codegen 主战场，内存安全审计聚焦此处。 |
 | `src/build/` `src/build/llvm/` | transpiler 与 LLVM 后端 codegen（生成 IR → opt → llc → clang）。 |
-| `src/fmt/` | `no fmt` 源码格式化器。4 空格缩进，是代码风格的唯一权威。 |
+| `src/fmt/` | `no fmt` 格式化器：`.no` 源码 4 空格缩进，是代码风格的唯一权威；`noml.go` 另有一套 `.noml` 的保留布局排版规则（2 空格）。 |
 | `src/lsp/` `src/cmd/` | 语言服务器与 `no` CLI（`src/cmd/no`）。 |
 | `src/std/` | **标准库**（`.no` 源）。被 `//go:embed` 烘焙进二进制，无磁盘回退。 |
 | `src/builtin/` | 编译器内建（print、数值转换、str/vec 内建方法等）。 |
@@ -51,7 +51,7 @@ make no         # 构建 bin/no（会先 make gen 重生成 std 签名表）
 make test       # 跑测试（注入 StdSigKey，走内嵌签名表快路）
 make gen        # 仅重生成 src/checker/stdsig_gen.go
 
-no fmt [-w] [-d] <file|dir>   # 格式化；-w 写回，-d 仅 diff
+no fmt [-w] [-d] <file|dir>   # 格式化 .no（含目录递归）与 .noml（保留注释/键序）；-w 写回，-d 仅 diff
 no build [-o out] <file|dir>  # 构建可执行文件
 no run <pkg|dir|file>         # 构建并运行
 no test [file|dir]            # 运行测试

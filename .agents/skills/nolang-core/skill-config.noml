@@ -1,0 +1,214 @@
+; nolang-core 子模块开关 —— 本文件是唯一源。SKILL.md 里的开关表由本文件渲染，勿手改表。
+; 没有宿主会解析本文件，「开关」是 in-band 协议：agent 真正读的是 SKILL.md 内嵌的那张表。
+;
+;   python3 scripts/core.py gen     从本文件重渲染 SKILL.md 的开关表
+;   python3 scripts/core.py check   校验 SKILL.md 是否漂移 + 路径存在 + 孤儿模块（提交前跑）
+;   python3 scripts/core.py links   校验本 skill 内所有相对链接可达
+;
+; 顶层字段：
+;   name / version   标识
+;   budget           单次加载正文行数上限，超限时先只读路由，正文按需追加
+;   inline           无条件内联进 SKILL.md，不参与开关（篇幅小、违反即不可逆）
+;   modules          子模块表，键名即开关名
+;
+; 模块字段：
+;   path / title / default / trigger / budget   常规项
+;   default          true 常驻；'auto' 命中 trigger 才载；false 仅显式点名或 requires 拉起
+;   requires         硬依赖，被拉起时一并加载（缺了会出错）
+;   children         子视图：父模块命中后再按 trigger 挑一档，不要整目录读
+;   confirm          执行前必须用户确认
+;   conflicts        冲突时以列出的对象优先
+;   quarantined      内容部分失效：默认关，且加载时必须先打出失效横幅
+{
+  name: 'nolang-core'
+  version: '1.0.0'
+  budget: 1200
+  inline: ['redlines']
+
+  modules: {
+    redlines: {
+      path: 'modules/m00-redlines.md'
+      title: '硬红线与验收顺序'
+      default: true
+      budget: 50
+    }
+
+    syntax: {
+      path: 'modules/m10-syntax.md'
+      title: '语言语法（路由）'
+      default: 'auto'
+      trigger: ['.no', '语法', 'syntax', 'parser', 'fmt', '类型', 'match', 'struct', 'enum', 'union', '注解', 'FFI']
+      budget: 90
+      children: {
+        data-types: {
+          path: 'modules/syntax/10-data-types.md'
+          trigger: ['类型', '变量', '命名', '代码风格', '格式化', 'str', '字符串', '转换', '?T']
+        }
+        functions: {
+          path: 'modules/syntax/20-functions-control.md'
+          trigger: ['函数', 'fn', '循环', 'for', 'while', 'return', '多赋值']
+        }
+        match: {
+          path: 'modules/syntax/30-match-branch.md'
+          trigger: ['match', 'it', 'option', '解包', 'if', 'else']
+        }
+        structs-enums: {
+          path: 'modules/syntax/40-structs-enums.md'
+          trigger: ['struct', 'enum', '接口', 'interface', '泛型', 'slice', '索引', '方法']
+        }
+        modules-imports: {
+          path: 'modules/syntax/50-modules-imports.md'
+          trigger: ['import', 'use', '模块', 'package.noml', '导出', 'export']
+        }
+        annotations-ffi: {
+          path: 'modules/syntax/60-annotations-ffi.md'
+          trigger: ['#{', '注解', 'FFI', '#{c}', 'overflow', 'embed', '运算符']
+        }
+        runtime-async: {
+          path: 'modules/syntax/70-runtime-async.md'
+          trigger: ['async', 'co', '协程', '并发', 'JS', 'wasm', 'browser']
+        }
+      }
+    }
+
+    std: {
+      path: 'modules/m20-std.md'
+      title: '标准库（路由 + 原名索引）'
+      default: 'auto'
+      trigger: ['std/', '标准库', 'API', '函数签名', '模块']
+      budget: 160
+      children: {
+        base: {
+          path: 'modules/std/10-base.md'
+          trigger: ['types', 'option', '布局']
+        }
+        core: {
+          path: 'modules/std/20-core.md'
+          trigger: ['fmt', 'math', 'str', 'number', 'num', 'int', 'float', 'byte', 'char', 'txt', 'vec', 'arr', 'sort', 'sprintf', 'format']
+        }
+        os-io: {
+          path: 'modules/std/30-os-io.md'
+          trigger: ['os', 'fs', 'file', 'env', 'args', 'path', 'bufio', 'io', 'regexp', 'process']
+        }
+        net: {
+          path: 'modules/std/40-net.md'
+          trigger: ['net', 'http', 'tcp', 'tls', 'ws', 'websocket', 'quic', 'dns', 'url', 'cookie', 'server', 'proxy']
+        }
+        time-log: {
+          path: 'modules/std/50-time-log.md'
+          trigger: ['time', 'log', '时间', '日志']
+        }
+        data-structs: {
+          path: 'modules/std/60-data-structs.md'
+          trigger: ['set', 'map', 'deque', 'heap', 'stack', 'queue', 'tree', 'collection']
+        }
+        db-encode: {
+          path: 'modules/std/70-db-encode.md'
+          trigger: ['database', 'sql', 'hex', 'base64', 'csv', 'pem', 'tar', 'zip', 'gzip', 'zstd']
+        }
+        crypto: {
+          path: 'modules/std/80-crypto.md'
+          trigger: ['crypto', 'aes', 'rsa', 'sha', 'md5', 'hmac', 'rand', 'hash', '签名']
+        }
+        exchange: {
+          path: 'modules/std/85-exchange.md'
+          trigger: ['json', 'toml', 'yaml', 'dom', 'xml']
+        }
+        misc: {
+          path: 'modules/std/90-misc.md'
+          trigger: ['unicode', 'uuid', 'bigint', 'err', 'async', 'magic']
+        }
+      }
+    }
+
+    build: {
+      path: 'modules/m30-build.md'
+      title: '构建（只走 make）'
+      default: true
+      trigger: ['make', 'build', 'bin/no', 'stdsig', '构建', '编译']
+      budget: 100
+    }
+
+    verify: {
+      path: 'modules/m40-verify.md'
+      title: '验收（no vet 门槛，唯一来源）'
+      default: true
+      trigger: ['vet', '验收', 'ERROR']
+      requires: ['build']
+      budget: 150
+    }
+
+    cli: {
+      path: 'modules/m93-cli.md'
+      title: 'CLI / workspace / 依赖管理'
+      default: false
+      trigger: ['no build', 'no run', 'no test', 'no install', 'workspace', 'package.noml', '依赖']
+      requires: ['build']
+      budget: 390
+    }
+
+    debug: {
+      path: 'modules/m50-debug.md'
+      title: '调试（测试先行）'
+      default: false
+      trigger: ['bug', '调试', 'debug', '复现', '诊断', 'LSP', 'DIVERGE']
+      requires: ['build', 'verify']
+      budget: 430
+    }
+
+    builtin: {
+      path: 'modules/m70-builtin.md'
+      title: '内建函数注册与查找'
+      default: false
+      trigger: ['builtin', '内建', 'src/builtin']
+      requires: ['std']
+      budget: 320
+    }
+
+    path-resolution: {
+      path: 'modules/m80-path-resolution.md'
+      title: '路径解析约定（workspace-root 相对）'
+      default: false
+      trigger: ['path', 'embed', '缓存键', 'tokenCache', 'stale']
+      budget: 95
+    }
+
+    selfhost-perf: {
+      path: 'modules/m90-selfhost-perf.md'
+      title: '自举编译器性能约定'
+      default: false
+      trigger: ['性能', 'perf', 'O(N²)', '自举', 'compiler/src']
+      requires: ['syntax']
+      budget: 130
+    }
+
+    docs-i18n: {
+      path: 'modules/m91-docs-i18n.md'
+      title: '英文文档追平中文源'
+      default: false
+      trigger: ['i18n', '英文文档', '翻译', 'docs/i18n']
+      budget: 145
+    }
+
+    release: {
+      path: 'modules/m92-release.md'
+      title: '发版'
+      default: false
+      trigger: ['发版', 'release', 'publish', 'tag', 'HISTORY.md']
+      requires: ['build', 'verify']
+      confirm: true
+      conflicts: ['redlines.git']
+      budget: 230
+    }
+
+    memory: {
+      path: 'modules/m60-memory.md'
+      title: '内存与所有权模型（部分失效）'
+      default: false
+      quarantined: true
+      trigger: ['free', 'double-free', '泄漏', '所有权', 'move', 'clone', '堆释放']
+      requires: ['syntax']
+      budget: 900
+    }
+  }
+}

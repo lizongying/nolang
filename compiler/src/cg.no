@@ -129,6 +129,8 @@ cg-val-prefix = (t i64) (s str) {
     s = '%v'
     t == TY-STR -> s = '%sv'
     t == TY-VEC -> s = '%vc'
+    ; 切片 B：[]str 与 []i64 共用 %vec 命名空间（值都是 vec 描述符）
+    t == TY-VECSTR -> s = '%vc'
     t == TY-OPT -> s = '%op'
     t == TY-F64 -> s = '%fd'
     t >= TY-STRUCT-BASE -> s = '%st'
@@ -1976,6 +1978,55 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             ; s99n：x = 向量值 id（TY-VEC）。破坏性一次性释放（缓冲无 RC 头，§11 B5），无结果值。
             ;   @vec_free 内部对 dat == 0 短路（空字面量），故这里不做判空。
             b.push('\tcall void @vec_free(%vec %vc')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECPUSHSTR -> {
+
+            ; 切片 B 底座：dst = 新 %vec（%vc<d>）；x = 旧 %vec（%vc<x>）；y = str 值（%sv<y>）。
+            ;   @vec_push_str 在助手内把元素 clone 成独立 rc 塊（字面量无 rc 頭亦可安全持有）。
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @vec_push_str(%vec %vc')
+            b.push(x.to-str())
+            b.push(', %str-long %sv')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECGETSTR -> {
+
+            ; 切片 B 底座：dst = str 值（%sv<d>）；x = %vec；y = 下标 i64（%v<y>）。
+            ;   回借用視圖（与原 vec 共享元素 buf）——呼叫方不得 drop 结果。
+            b.push('\t%sv')
+            b.push(d.to-str())
+            b.push(' = call %str-long @vec_get_str(%vec %vc')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-VEC-FREE-STR -> {
+
+            ; 切片 B 底座：x = %vec；无结果。逐元素 release + free 陣列緩衝（助手内 dat==0 短路）。
+            b.push('\tcall void @vec_free_str(%vec %vc')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECNEWCAP -> {
+
+            ; 切片 B 第三层：with-cap 容量预留（i64 元素）。dst = 新 %vec；x = cap i64 值 id。
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @vec_new_cap_i64(i64 %v')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECNEWCAPSTR -> {
+
+            ; 切片 B 第三层：with-cap 容量预留（str 元素，stride 16）。dst = 新 %vec；x = cap i64 值 id。
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @vec_new_cap_str(i64 %v')
             b.push(x.to-str())
             b.push(')\n')
         }

@@ -2858,6 +2858,72 @@ test-vec-free = () {
     runner.eq(s.contains('nolang_rc_retain'), 0, 'vec free has no retain')
 }
 
+; ── 切片 B 底座：str-vec op 发射（OP-VECPUSHSTR / OP-VECGETSTR / OP-VEC-FREE-STR）──
+; 验证三个新 op 发射出正确的助手呼叫与命名空间（vec=%vc、str=%sv、idx=%v）。
+test-strvec-ops = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks []i64 = []
+
+    ; k0: VECNEW vc1
+    blks.push(0)
+    ops.push(OP-VECNEW)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    ; k1: STRCONST sv2 = 'hi'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('hi')
+    ; k2: VECPUSHSTR vc3 = push(vc1, sv2)
+    blks.push(0)
+    ops.push(OP-VECPUSHSTR)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: CONST v4 = 0
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(4)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    ; k4: VECGETSTR sv5 = get(vc3, v4)
+    blks.push(0)
+    ops.push(OP-VECGETSTR)
+    dsts.push(5)
+    xa.push(3)
+    bs.push(4)
+    syms.push('')
+    ; k5: VEC-FREE-STR vc3
+    blks.push(0)
+    ops.push(OP-VEC-FREE-STR)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k6: RET sv5
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('strvec', 0, blks, ops, dsts, xa, bs, syms, [])
+    runner.eq(s.contains('%vc3 = call %vec @vec_push_str(%vec %vc1, %str-long %sv2)'), 1, 'push_str call')
+    runner.eq(s.contains('%sv5 = call %str-long @vec_get_str(%vec %vc3, i64 %v4)'), 1, 'get_str call')
+    runner.eq(s.contains('call void @vec_free_str(%vec %vc3)'), 1, 'free_str call')
+    runner.eq(s.contains('define i64 @strvec'), 1, 'strvec sig')
+}
+
 ; ── 型别签名：str 形参 + str 返回（纯转发）──────────────
 test-sig-str = () {
     ops []i64 = []
@@ -4169,6 +4235,7 @@ test-opt-eq-f64()
 test-vec()
 test-vec-len()
 test-vec-free()
+test-strvec-ops()
 test-sig-str()
 test-sig-mixed()
 test-sig-vec()

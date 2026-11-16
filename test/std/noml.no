@@ -256,6 +256,49 @@ t-comment = () {
     runner.eq(n, 2, 'comment keeps 2 members')
 }
 
+; 多行註解 `;;` … `;;`（與 Nolang 原始碼同語法）
+t-block-comment = () {
+    src = '{\n  ;;\n  整段被註解\n  a: 999\n  ;;\n  a: \'x\'\n  b: 1\n}\n'
+    r = noml.parse(src)
+    ok = false
+    n = -1
+    av = ''
+    r: {
+        ok -> {
+            ok = true
+            doc = it
+            n = doc.len()
+            v = doc.get-str('a')
+            v: {
+                ok -> av = it
+
+                nil -> av = ''
+
+                err -> av = ''
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'block comment parse ok')
+    runner.eq(n, 2, 'block comment keeps 2 members')
+    runner.is-true(av.eq-full('x'), 'block comment body is ignored')
+
+    ; `;; 有內容` 同一行有非空白 ⇒ 仍然只是行註解
+    r2 = noml.parse('{\n  ;; 行註解\n  a: 1\n}\n')
+    n2 = -1
+    r2: {
+        ok -> n2 = it.len()
+
+        nil -> n2 = -1
+
+        err -> n2 = -1
+    }
+    runner.eq(n2, 1, 'semicolons with content stay a line comment')
+}
+
 ; 註解標記 `#{...}`（文件級 + 成員級）
 t-annotation = () {
     src = '#{type = \'server\'}\n{\n  #{c}\n  host: \'localhost\'\n}\n'
@@ -625,6 +668,22 @@ t-noml-cursor = () {
     runner.eq(d.node-pool.skip-trivia('  \n; c\n x', 0), 8, 'skip-trivia comment')
     runner.eq(d.node-pool.skip-trivia('  \n; c\n x', 9), 9, 'skip-trivia at end')
     runner.eq(d.node-pool.skip-trivia('', 0), 0, 'skip-trivia empty')
+
+    ; 多行註解 `;;` … `;;`：定界符要求 `;;` 後到行尾只有空白
+    runner.is-true(d.node-pool.block-delim-at(';;\n', 0), 'block-delim start')
+    runner.is-true(d.node-pool.block-delim-at(';;  \r\n', 0), 'block-delim trailing blanks')
+    runner.is-true(d.node-pool.block-delim-at(';;', 0), 'block-delim at EOF')
+    runner.is-false(d.node-pool.block-delim-at(';; x\n', 0), 'block-delim with content is a line comment')
+    runner.is-false(d.node-pool.block-delim-at('; x\n', 0), 'block-delim needs two semicolons')
+
+    ; skip-block-comment 停在結束定界符之後（不吞那一行的換行）
+    runner.eq(d.node-pool.skip-block-comment(';;\nabc\n;;\nx', 0), 9, 'skip-block-comment end')
+    runner.eq(d.node-pool.skip-block-comment(';;\n;;\nx', 0), 5, 'skip-block-comment empty body')
+    runner.eq(d.node-pool.skip-block-comment(';;\nabc', 0), 6, 'skip-block-comment unterminated eats EOF')
+
+    ; skip-trivia 兩種註解混排
+    runner.eq(d.node-pool.skip-trivia(';;\nabc\n;;\nx', 0), 10, 'skip-trivia block comment')
+    runner.eq(d.node-pool.skip-trivia(';; x\n a', 0), 6, 'skip-trivia block-delim needs empty tail')
 
     ; skip-blanks 只吃空格與 TAB，不跨換行
     runner.eq(d.node-pool.skip-blanks(' \t x', 0), 3, 'skip-blanks blanks')
@@ -1593,6 +1652,7 @@ p5, f5 = runner.test('noml.parse-obj', t-parse-obj)
 p6, f6 = runner.test('noml.parse-arr', t-parse-arr)
 p7, f7 = runner.test('noml.parse-nested', t-parse-nested)
 p8, f8 = runner.test('noml.comment', t-comment)
+p8b, f8b = runner.test('noml.block-comment', t-block-comment)
 p9, f9 = runner.test('noml.annotation', t-annotation)
 p10, f10 = runner.test('noml.roundtrip', t-roundtrip)
 

@@ -48,6 +48,7 @@ Nolang プログラミング言語（バージョン %s）
       no fmt -fix=redundant main.no   冗長な注釈の削除をプレビュー
       no fmt -fix=match -w src/       src/ に不足の match アームをその場で追加
       echo 'x=1' | no fmt         stdin から整形
+      no fmt -w package.noml      NOML 設定ファイルをその場で整形
       no fmt -loop-style=suffix f.no  ループを '{ } (cond)' / '{ } * N' として整形
       no fmt --md -w docs/        docs/ 配下のすべての .md/.mdx の Nolang ブロックを整形
 

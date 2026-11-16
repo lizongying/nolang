@@ -7419,3 +7419,242 @@ Error: compilation error: MIR codegen could not handle .../compiler/main.no:
 **進度快照（2026-11-15，最新；HEAD `571c658a` v0.4.24）**：6② 端到端閘的 **S0→noc 層已達成**——修 `compiler/src/ck.no` 两处无注解算术实参（`hb+3`/`hb+10` 提取為 `#{overflow=wrap}` 局部變數，+4 行）後 `no build compiler` rc=0、產物 `version` 印 `noc v0.0.1-m0`；此前 rc=1 的根因是 v0.4.21 的 vec.push option 硬檢查點亮了 `?i64` 算術實參污染 aux-at 回值的潜在 bug（非 h2m 本體降級，推翻 ⑮ 判定）。門禁：`ck-test` 20/20、`h2m-test` **1085/1085**、前端/驅動/codegen 全綠（詳 ⑯）。⚠️ **DR-1 自舉定點仍未收**：S1 自編 S2 34,632 B 但 `version` 不印、S2→S3 無產物，仍擋在 h2m 函式本體降級（約 5,749 unsupported）——這是 M5/M6 的 h2m 能力擴張範疇，非本輪可跨層解決。pkg-* 四檔 abort 為預存 host codegen 缺陷。
 
 **進度快照（2026-11-15 續，最新；HEAD `571c658a` v0.4.24；⑰ 偵察輪）**：DR-1 第一道牆重新定位——實測證明 `drv.cmd-build` 只讀單檔，`fs.read-bytes(compiler 目錄)` 解析不出函式定義 ⇒ `h2m-synth-main` 合成空 main ⇒ 靜默產 34,632 B 假殼（rc=0、`version` 不印、`nm` 僅 29 個 runtime 符號）；S1 單檔降級能力正常（`exit(42)`→42、函式呼叫→7、`print("hi")`→印 hi），`#` 導入是清空 IR 的元凶（`main.no` 僅 2 條 `K-USE-STATEMENT` unsup 即被 `agg.unsup>0 -> r=""` 全清）。⇒ ⑯/⑮ 的「5,749 本體降級」為第二道牆且係 11-14 舊 cov 數字（現行 cov-measure abort 無法覆驗），非第一道牆。S0→noc 已達成不變（⑯）；noc→noc 定點留 A（cmd-build 接 pkg-ll 消假殼）／B（攻 M5/M6 本體）／C（僅記錄）三路徑決策，本輪選 C、未改原始碼（詳 ⑰）。
+
+---
+
+### ⑱ 2026-11-16 追記：路徑 B 偵察——h2m 本體降級缺口的真實分層與量測恢復（**偵察輪次**，HEAD `df48dd89`）
+
+> 使用者於 ⑰ 的 A/B/C 決策中選 **B（攻 M5/M6 h2m 本體降級）**。本節是 as-built 偵察：恢復量測、定位缺口分層、給出可驗收切入點；**不改任何原始碼**（experiment 全在 /tmp 與已還原的工作檔）。
+
+**① 量測工具鏈 abort 根因（恢復可量測性）**
+
+- `cov-measure.no` build 成功（1.05 MB），run 階段 `signal: abort trap`（rc=134，零輸出）。lldb 崩棧精確定位：`malloc: pointer being freed was not allocated` → `drv_bp_walk +3304`（遞迴幀）→ `drv_build_package` → `drv_pkg_ll`。
+- 根因：`drv.bp-walk`（drv.no:450）的 `bpctx { r str, cyc bool }` 作**值參數 + 返回值**參與遞迴（drv.no:511 `sub = drv.bp-walk(...)`）。self-host codegen 對 struct 內 `str` 欄位做淺拷貝，遞迴返回 scope-exit 時雙重釋放——與 ⑯ `ck.no` option 腐敗同類的 **self-host codegen 所有權缺陷**，非 h2m 降級臂缺失。
+- 隔離實驗（stub 掉 line 511 遞迴為 `sub = r`）⇒ abort 消失、產 571 行覆蓋率日誌。⇒ **確認根因在 struct-by-value 遞迴**；此缺陷本身是 C 路徑（Go codegen）的獨立 bug，不在 B 的 h2m 降級範疇，但擋住了 B 的驗收量測。
+
+**② 當前 unsup 真實分佈（用 stub 版恢復量測，入口 drv.no 單模組）**
+
+stub 版 `drv.pkg-ll-cov('compiler/src/drv.no')` 產 569 條 `fn:Kind:construct`（`/tmp/h2m-cov.log`）：
+
+| 構造 | 條數 | 判讀 |
+| --- | --- | --- |
+| Identifier | 182 | 分散，特定上下文（實參/複合運算式）未降級 |
+| **FunctionDefinition** | **132**（20 個唯一函式，全 `drv.*`） | **根因已定位（見 ③）** |
+| CallExpression | 121 | 跨模組點號呼叫為主 |
+| StringLiteral | 48 | 分散於 17 函式，上下文相關 |
+| IntegerLiteral | 38 | 分散，上下文相關 |
+| StructLiteral / BooleanLiteral / SurfaceMatch / SliceLiteral | 18/12/11/6 | 小族 |
+
+**③ FunctionDefinition 132 條的根因（推翻文檔舊註）**
+
+- drv.no:555-558 舊註称「`drv.*` 點號定義因 parser signature c5 多算 1 被全判 bad」。探針（self-host `ps.parse` + `h2m-func-sig`）實測**精化**：
+  - 點號名自由函式（如 `drv.foo`）被 self-host parser 誤判為 **method definition**（`isM=true`、`c5 = 宣告outs+1`），`h2m-func-sig` 用 `realOuts = c5-1` 抵消 ⇒ 單純 i64/str 簽名 **bad=0**（不是被拒原因）。
+  - 真因：`h2m-param-ty`（h2m.no:3818-3848）對 slice 型別**只收 `[]i64`**（3834-3846 `enm == 'i64'`）、對 struct 具名型別（`bpctx`/`h2m-sigs`）查不到表 ⇒ 含 `[]byte`/`[]str`/struct 參數或返回的函式 `bad=1`。探針實證：`drv.a([]byte)→bad=1`、`drv.b()→[]str bad=1`、`drv.d()→h2m-sigs bad=1`、`plain(i64)→bad=0`。
+  - 20 個被拒函式含 `bp-walk`（回 `bpctx`）、`pkg-split`（回 `[]str`）、`pkg-sigs`（回 `h2m-sigs`）、`read-mod`（回 `[]byte`）、`build-ll`（參 `[]byte`）——**全是複合型別簽名**。
+
+**④ B 的真實層次與瓶頸（誠實規模評估）**
+
+- **層 1（簽名側）**：`h2m-param-ty` 僅認 `[]i64` + 已登記 struct。放寬到 `[]str`/`[]byte` 可讓部分函式 signature 由 bad=1→0，但——
+- **層 2（codegen 側，真正的牆）**：self-host `cg.no` 的 vec 助手**只有 `vec_push_i64`/`vec_get_i64`/`vec_len`**（cg.no:1952-1978），預備元素是 `%vec`=i64 向量；**沒有 str-vec**（無 `vec_get_str`/`vec_push_str`）。⇒ 即便 signature 放寬，`[]str`/`[]byte` 函式本體照樣降不出來。struct-by-value 亦受 ① 的 codegen 所有權缺陷制約。
+- self-host 現況：MIR **96 op**、cg **95 handler**、struct 支持 6 處——不是空白，但補齊 str-vec + struct-by-value + 各降級臂是**跨 mir/cg/h2m 三模組的系統工程**，遠非單一切片。
+- ⇒ B 的完成度：**量測已恢復、缺口已分層定位、切入點已找到（h2m-param-ty 放寬 + str-vec codegen）；但達成 noc→noc 定點需 M5/M6 多輪力度**，本輪不跨層誇大。
+
+**⑤ 切片建議（⑤' 已推翻原切片 1——實測修正）**
+
+- ⚠️ **原建議「切片 1：放寬 `h2m-param-ty` slice 元素型別」經查證是錯的，不得实施**：h2m-test.no:513 明確記載「元素非 i64 的 vec（`[]str` 等）**不攜元素型別且會被 i64 helper 誤讀** ⇒ 欄位解析回 -1 計 unsup」；cg.no 的 vec helper 只有 `vec_push_i64`/`vec_get_i64`（1949-1968），`%vec` 元素是裸 i64。放寬簽名會讓 `[]str`/`[]byte` 函式被當 i64-vector 產碼 ⇒ **違反「寧缺勿錯」的核心正確性保證**（自舉产物比權威更寬鬆且靜默錯碼）。簽名 gate 是正確的誠實門禁，不是缺陷。
+- **可做的真實切片（按依賴序）**：
+  - **切片 A（前置、獨立）**：修 ① 的 **struct-by-value 所有權雙重釋放**——這是量測工具崩潰與 `bp-walk` 無法在 self-host 跑通的單點根因（drv.no:511 遞迴 `bpctx` 值返回）。先定位是 Go codegen 還是 h2m/cg 的 struct 淺拷貝，修法若為「遞迴改輸出參 / 累加器重用」屬 compiler 源碼層可解；修好後 cov-measure 無需 stub 即可跑，量測恢復可信度大幅提升。**這是 B 的真正第一步**（先讓量測工具自身能跑）。
+  - **切片 B（大工程）**：給 self-host cg 補 str-vec 助手（`vec_push_str`/`vec_get_str`）+ MIR op + h2m vec 降級臂，讓 `%vec` 攜元素型別；如此 `h2m-param-ty` 放寬才安全。跨 mir/cg/h2m 三模組，對應 M5/M6 多輪力度。
+  - **切片 C**：struct 具名型別（`bpctx`/`h2m-sigs`）作函式簽名/返回值——與切片 A 的 struct-by-value 所有權同源，需一起解。
+
+- ⇒ **本輪小結（誠實）**：使用者選 B 後完成量測恢復（stub 版）+ 缺口分層定位（①②③④）+ **否決一個看似低風險實則破壞正確性的偽切片**（⑤'）。B 的真正第一步是**切片 A（struct-by-value 所有權）**——它同時解開量測工具崩潰與 `bp-walk` 自舉障礙，是最高槓桿的單點。尚未落地原始碼：切片 A 需先判定修在 Go codegen 還是 compiler 源碼層（跨層決策），留待下一輪或請求授權後動工。
+
+---
+
+### ⑲ 2026-11-16 追記：切片 A 落地——borrowed struct 參數移入 owned 槽補 deep clone（**Go codegen 治本**，HEAD `df48dd89`+dirty）
+
+> 使用者於 ⑱ 的 A/B/C 決策中選 **1（修在 Go codegen / `src/` 層，治本）**，並要求「充分驗證和測試，要長遠考慮」。本節 as-built：根因、修復、IR 證據、門禁全數。**已落地原始碼**（`src/mir/codegen.go` +21 行 + 新測試檔），不同於 ⑱ 的偵察輪。
+
+**① 根因（推翻 ⑱ ① 的「Go codegen 所有權缺陷」笼統說法，給出精確機制）**
+
+- lldb 崩棧：`drv_bp_walk +3304` → `+3008`（遞迴幀）→ `drv_build_package` → `drv_pkg_ll`；`malloc: pointer being freed was not allocated`。double-free 非確定性（有時 rc=0 無輸出），符合雙釋放特徵。
+- 抓 IR（`NOLANG_MIR_DUMP_LL`）+ MIR（`NOLANG_MIR_DUMP_MIR`）對照 `drv_bp_walk`：
+  - MIR：`PARAM 1956 type=drv.bpctx owned=false`（ctx 入參，borrowed）、`PARAM 1958 ... owned=false`（r out-param）；`move dst=0 args=[1956 1958]` = `r = ctx`（EmitMoveInto，src=borrowed param，dst=out-param）。
+  - IR 序言：`load %p2 → store %v0.s`（r=ctx 位拷貝，**無 clone**）；exit：`__nolang_drop_drv_bpctx(%v0.s)` drop r → `str_free` 掉 **ctx 入參的 buffer**（caller 擁有）。
+- **精確根因**：`emitMove`（codegen.go:8670-8727）早已對 borrowed `str` / `[]T` 參數移入 owned 槽做了 clone guard（註解明言「callee 不擁有參數 heap，位拷貝會共享 buffer 而 double-free」），但 **struct 類型被漏掉**。`bpctx { r str }` / `bx { s str }` 這類「含 owned str 欄位的 struct」作參數、`r = ctx` 重綁進 out-param 時走位拷貝，str 欄位指針與 caller 共享 → callee scope-exit drop → 釋放 caller buffer。
+- **對照實驗（排除誤判）**：Go codegen 編普通 Nolang `id = (ctx bx)(r bx){ r = ctx }`（無迴圈）不崩——因其 IR 無 scope-exit drop；加迴圈 + 遞迴累積（`r=ctx`→`walk(r,..)`→`r=sub`）後 **6/6 rc=133** 穩定崩，精確隔離出「borrowed struct param + out-param 重綁 + 迴圈 drop」三要素。
+
+**② 修復（最小、复用既有 emitters）**
+
+- `src/mir/codegen.go` 的 `emitMove` borrowed-param guard 之前新增：
+
+  ```go
+  if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) {
+      if key, ok := c.clonePtrStructKey(inst); ok { return c.emitPtrStructClone(inst, key) }
+      if key, ok := c.cloneLeafStructKey(inst); ok { return c.emitLeafStructClone(inst, key) }
+  }
+  ```
+
+- 復用 `emitClone` 既有的 struct deep-clone 發射器（`clone{,Ptr,Leaf}StructKey` 只在 struct 確實擁有 heap 時命中）；標量 / str / vec 落回原路徑，零誤傷。入口 `isFuncParam` 只查 `f.Params`（輸入參數），不碰 result param。
+- 修後 IR：`r=ctx` 位拷貝後緊接 `@str_clone`（給 dst 獨立 buffer）；exit drop 釋放的是 clone 的 buffer——配對正確，無 double-free 亦無洩漏（caller 的 struct 全局不 drop，callee 只 drop 自己的 clone）。
+
+**③ 驗收（充分驗證）**
+
+| 項 | 修前 | 修後 |
+| --- | --- | --- |
+| 最小 repro `repro-loopctx.no` | 6/6 rc=133 | **6/6 rc=0**，輸出正確；20 次壓力全過 |
+| `cov-measure.no`（量測工具） | abort trap，零輸出 | **rc=0，8140 行**，5/5 輸出 SHA 完全一致 |
+| unsup 覆蓋率（遞迴完整展開） | 舊 stub 版 571 行 | **8116 行日志 / 8054 條 unsup**（權威基線，見下） |
+| `make test`（全 Go 包，注入 key） | — | **rc=0 全綠**（含 lsp 431s / hir 75s；`mir` 包新測試全過） |
+| selfhost 門禁 | — | ck 20/20、ck-sig 50/50、diag 7/7、lx 81/81、tok 62/62、util 27/27、ps 49/49、ast 48/48、**h2m 1085/1085** 全綠 |
+| `no build compiler` + `version` | — | **rc=0 / 3.9 MB / `noc v0.0.1-m0`** |
+| `no vet src/std` | — | **0 error**（6 warning / 322 hint 為既存漂移） |
+
+- 新測試（`src/mir/param_struct_move_clone_test.go`）：① borrowed struct param → clone（紅燈→綠燈）、② 遞迴+迴圈形態（對應 bp-walk 崩潰）、③ **negative control：POD struct（無 owned 欄位）不得誤加 clone**——三條全綠。
+- 純 `go test ./...`（不經 make）的 8 個 FAIL 全是「StdSigKey 未注入」（直接 go test 跳過 make 注入），與本修復無關；`make test` 同口徑全綠。
+
+**④ 對 B 路徑的意義（誠實邊界）**
+
+- ✅ **切片 A 完成**：量測工具 `cov-measure.no` 不再崩、無需 stub，量測恢復可信度；struct-by-value 所有權 double-free 在 **Go codegen 層治本**（非繞過）。
+- ✅ **拿到遞迴完整展開的權威 unsup 分佈**：Identifier 4073 / FunctionDefinition 1691 / CallExpression 990 / IntegerLiteral 840 / StringLiteral 288 / SliceLiteral 77 / SurfaceMatch 39 / BooleanLiteral 26 / BlockStatement 24 / For 3 / Nil 2 / Break 1（合 8054；`set-count:BlockStatement` 為計數輔助行）。這取代 ⑱ 的 stub 版 569 條與 11-14 舊日誌 5749。
+- ⚠️ **noc→noc 定點（DR-1）仍未收**：⑱ 的切片 B（self-host cg 補 str-vec）與切片 C（struct 具名型別簽名）仍待 M5/M6 多輪力度。本輪只收「量測工具自身能跑 + 最高槓桿 single-point 所有權 bug 治本」，**不誇大為定點達成**。
+- 🔴 **⑱ ① 的修正**：⑱ 稱此 bug「可能是 Go codegen 或 h2m/cg 的 shallow-copy」——實測確認是 **Go codegen 的 emitMove borrowed-param guard 漏了 struct 類型**，與 self-host h2m lowering 無關（對照實驗：Go codegen 編普通 Nolang 的同構代碼是對的，只是含迴圈 CFG 時 drop 才暴露）。
+
+---
+
+### ⑳ 2026-11-16 追記（再續）：切片 C 複勘——struct 具名簽名【早已完成】，⑱ 的「查不到表」證偽（**實測輪次**，HEAD `df48dd89`+dirty）
+
+> 使用者於 ⑲ 的 A/B/C 決策中續選 **C（struct 具名型別簽名）**。本節是 as-built 實測：用兩個探針直接量測 h2m 簽名 gate 的當前行為。**結論：切片 C 無剩餘工作**——struct 作形參／返回值／欄位／按值傳參已由 s99b/s99c/s99d 完整實現並測試（h2m 1085/1085 全綠）；⑱ ③ 的「struct 查不到表 ⇒ bad=1」是**孤立探針未先登記 struct 的假象**，早在 s99b 落地時即已失效。本輪**不改任何原始碼**。
+
+**① 方法（兩個探針，皆在 `compiler/tests/` 下跑 `./bin/no run`）**
+
+- 探針 1（單模組）：`ps.parse` 解析 `compiler/src/drv.no` → `h2m-struct-register` + `h2m-struct-resolve` 先登記 struct → 逐函式調 `h2m-func-sig` 印 bad。
+- 探針 2（整包，與 `drv.pkg-ll` 真實路徑同構）：`drv.build-package` + `drv.pkg-split` 取 16 模組 → pass1 全模組 struct 登記進**共享 agg** → pass2 逐函式調 `h2m-func-sig` 印 bad。
+- ⚠️ 探針編寫踩兩個本倉庫已知坑（均已繞開，非被測物件缺陷）：(a) self-host codegen 不認 `str.to-bytes()`（`drv.read-mod` 已回 `[]byte`，直接 `ps.new(src)`）；(b) 頂層/函式內 `#{overflow=wrap}` 只改取值不改回傳型別，迴圈自增須兩步式 `n = x + 1` + `x = n: { ok -> it  -> 0 }` 解包；(c) 單行 match arm 非法須換行；(d) bug #85（multi-line field-access 探針variant 觸發 consumer reads value 0）——故 pty 交叉驗證改用直接讀源碼簽名。
+
+**② 實測結果（權威）**
+
+| 視角 | struct 數 | bad 函式數 | struct 簽名 bad | 根因分佈 |
+| --- | --- | --- | --- | --- |
+| 單模組 drv.no | 1（`bpctx`） | 4 | **0** | 4 全為 slice：`build-ll`/`read-mod`/`pkg-split`([]byte/[]str) + `pkg-sigs`（回 `h2m-sigs`，因單模組未登記他模組 struct 而 bad；整包視角消失） |
+| 整包 16 模組共享 agg | 12 | 26 | **0** | 26 全為 `[]str`/`[]byte` 形參或返回，**無一 struct 具名型別** |
+
+- 整包 26 bad 函式：`drv.read-mod`/`drv.pkg-split`/`drv.build-ll`、`h2m-cov-join`、`cg-emit-func`/`cg-emit-cfg`/`cg-emit-cfg-t`、`check`/`ck-str-at`/`ck-sig-types`/`ck-sig-str-at`/`ck-sig-bsearch`、`ps-q-esc`/`ps-star-label`/`ps-match-listed`/`ps-enum-variants`/`ps-detect-generic`/`ps-add-generic`、`lx-new`/`lx-sub`/`lx-esc`/`lx-contains-dot`、`asp.strs`、`scan-all`、`new`、`dump`。逐一比對源碼簽名（Grep 工具）確認全部帶 `[]str`/`[]byte`。
+- **關鍵反證**：`drv.bp-walk`（回 `bpctx`）與 `drv.pkg-sigs`（回 `h2m-sigs`）**都不在 bad 列表** ⇒ struct 具名型別作返回值已在 gate 通過；`h2m-test.no` 的 s99b（形參/返回/欄位寫）、s99c（跨基本塊槽）、s99d（按值傳參+改寫）四檔全綠 ⇒ 完整生命週期已覆蓋。
+
+**③ 對 ⑱ ③ 的證偽與根因**
+
+- ⑱ ③ 稱「`h2m-param-ty` 對 struct 具名型別查不到表 ⇒ `bp-walk`/`pkg-sigs` 等 bad=1」。**實測相反**：`h2m-tynode-code`（h2m.no:909-914，s99b）在 `h2m-ty-code` 回 -1 時回退 `h2m-struct-find(agg, nm)`，命中即 `TY-STRUCT-BASE + sid`；`h2m-lower-program` 前掃描拆兩段（①先全 struct 登記/解析，②再函式簽名），`drv.pkg-ll` 整包路徑 pass1 亦把所有模組 struct 登進共享 agg（drv.no:733-759）。
+- ⑱ 的探針結論推測來自**未先跑 struct 登記**就孤立調 `h2m-func-sig`——那樣 `bpctx`/`h2m-sigs` 當然查不到。真實路徑（單模組前掃描 + 整包 pass1）均已先登記，故 struct 簽名 gate 從 s99b 起就是通的。本節以兩探針 + 源碼簽名比對三重佐證。
+
+**④ 對 DR-1 / B 路徑的意義（誠實邊界）**
+
+- ✅ **切片 C 達成（無需改碼）**：struct 具名型別簽名不是缺口。⑳ 的價值在於**證偽一個基于此錯誤前提的決策**，避免對已完成的子系統做無意義改動。
+- 🔴 **DR-1 剩餘瓶頸收斂到切片 B（str-vec）**：整包 26 個 bad 函式**全部**因 `[]str`/`[]byte`——這與 ⑱ ⑤' 的判斷一致（self-host cg 無 `vec_push_str`/`vec_get_str`，`%vec` 元素只認 i64）。真正的定點工作 = 給 self-host cg 補 str-vec 助手 + MIR op + h2m vec 降級臂 + 參數化 clone/free 所有權（鏡像 Go 的 `__nolang_vec_clone_<T>_<d>` / `__nolang_vec_free_<T>_<d>`），跨 mir/cg/h2m/cg-runtime 四模組，對應 M5/M6 多輪力度。
+- ⚠️ ** Identifier(4073) 的最大塊未在本次解析**：cov 日誌的 Identifier 記錄分散且 cur-k 歸因混亂（同一函式如 `drv.bp-walk` 同時有 BooleanLiteral/CallExpression/FunctionDefinition 多種記錄），單靠日誌無法判定哪些是純 gate 表徵。推測多數源於「變數因上游 slice 型別 gate 未登记槽表 ⇒ 引用它的 Identifier 成片 unsup」，與 26 個 slice bad 同源，但**未逐條證實**，不寫入結論。
+
+---
+
+### ㉑ 2026-11-16 追記（再續）：切片 B 底座落地——str-vec 運行時助手 + MIR op + cg 發射器（**底座輪次**，HEAD `df48dd89`+dirty）
+
+> 使用者於 ⑳ 的方向調整中選 **轉攻切片 B（底座）**：先給 self-host 補 str-vec 助手並用獨立小程序驗證跑通，再談 h2m 降級臂與簽名 gate 放寬。本節 as-built：所有權方案、四模組改動、IR 文本 + clang/ASAN 运行驗證、誠實邊界。**已落地原始碼**（`compiler/src/{cg-runtime,mir,cg}.no` + 兩測試檔），不同於 ⑳ 的純實測輪。
+
+**① 所有權方案（鏡像 Go `vecDeepClone`/`vecDeepFree`，適配 self-host 無 magic 頭的 `rc_release`）**
+
+- `%vec` = 16B `{i32 len, i32 cap, i64 data}`（對外 API 仍 i64，邊界 zext/trunc）；i64 元素 stride 8、`%str-long` 元素 stride **16**。
+- 陣列緩衝用裸 `@malloc`/`@free`（與 i64 vec 一致）；元素 str 用 `@nolang_rc_alloc`/`@nolang_rc_release`。
+- **push 時 clone 元素**到新 rc 塊（memcpy bytes + rc_alloc）——這是關鍵：字面量 `@.str` 無 rc 頭，若直接持有再 release 會讀越界頭；clone 後一律是獨立 rc 塊，free 安全。
+- 擴容 memcpy 元素（淺拷貝 rc 塊指針）後只 free【舊陣列緩衝】（裸 free，非元素 buf）⇒ 元素 rc 塊在搬遷後仍唯一，free-str 逐元素 release 一次，無 double-free。
+- free-str：逐元素 release data（field 2）→ free 陣列緩衝；`dat == 0` 短路（空 vec）。
+- ⚠️ **get-str 回借用視圖**（與原 vec 共享元素 buf），呼叫方不得 drop 結果——與 Go 的 borrow 語義同構，但 self-host 尚無 retain-on-borrow，此約束由 h2m 降級臂將來兌現（本輪底座不接 h2m）。
+
+**② 四模組改動（共 +260 行）**
+
+| 檔 | 改動 |
+| --- | --- |
+| `cg-runtime.no` | +新助手 `vec_push_str`/`vec_get_str`/`vec_free_str` 發射函式（IR 文本），註冊進 `cg-runtime-prelude-full()` |
+| `mir.no` | +3 op 碼 `OP-VECPUSHSTR=96` / `OP-VECGETSTR=97` / `OP-VEC-FREE-STR=98`（接 OP-PRINT=95 後，不重排既有碼） |
+| `cg.no` | +3 op 發射分支：`%vc<d> = call %vec @vec_push_str(...)` / `%sv<d> = call %str-long @vec_get_str(...)` / `call void @vec_free_str(%vec ...)` |
+| `cg-test.no` / `cg-runtime-test.no` | +手寫 op 發射測試 + 助手 IR 文本測試（clone/stride/release/short-circuit 全釘住） |
+
+**③ 驗證（充分）**
+
+| 項 | 結果 |
+| --- | --- |
+| `cg-test`（手寫 op 發射） | **363/363 全綠**（含新 `test-strvec-ops`） |
+| `cg-runtime-test`（助手 IR 文本） | **103/103 全綠**（含新 `test-strvec-helpers`） |
+| `h2m-test`（未接降級臂，回歸） | **1085/1085 全綠** |
+| clang 22 + ASAN：push 3 str + 讀回 + free | **rc=0**，無 double-free/UAF |
+| clang 22 + ASAN：push 6 str（強制 2 次擴容 0→4→8）+ 讀回全部 + free | **rc=0**，擴容搬遷元素後 free 無 double-free |
+| **負對照**：同程式 free 兩次 | **rc=134**，`AddressSanitizer: attempting double-free ... in vec_free_str+0x64` ⇒ 證明 ASAN 檢測有效，上面 rc=0 非空話 |
+| `no build compiler` | **rc=0**，產物 3.96 MB，`version` = `noc v0.0.1-m0`（S0→noc 未回歸） |
+| `make gen no` | rc=0（Go 側未受影響 rebuild） |
+
+- prelude dump 證三助手皆在發射產物中（`vec_push_str`@219 / `vec_get_str`@267 / `vec_free_str`@277 of 441 行 prelude）。
+- ⚠️ **macOS 上 LeakSanitizer 不工作**：`detect_leaks=1` 下故意不 free 的負對照也 rc=0 ⇒ **本輪只驗證了「無 double-free/UAF」，未驗證「無洩漏」**。洩漏的正確性靠 IR 結構推論（每元素 clone 恰一次、free-str release 恰一次、擴容搬遷不重複 clone），非运行時量測。
+
+**④ 誠實邊界**
+
+- ✅ **底座達成**：str-vec 的三個核心助手在 self-host 側從零到可發射、可运行、所有權正確（double-free 維度經 ASAN 正反向驗證）。
+- ⚠️ **尚未接 h2m 降級臂**：本輪新 op 只由 cg-test 手寫 op 與手写 .ll 觸發；真實 `[]str` 源碼仍不降級（h2m SliceLiteral 仍限 i64 元素、signature gate 仍拒 `[]str`）。職責切分刻意如此——底座先立穩，再接 h2m。
+- ⚠️ **未做 str-vec clone/別名**：vec 整體被別名（寫進 struct 字段、作返回值、option 載荷）仍無 retain/clone；get-str 借用視圖尚無 retain-on-borrow。完整所有權（對應 Go 的 `__nolang_vec_clone_<T>_<d>`）留待 h2m 集成階段。
+- ⇒ 距離 noc→noc 定點（DR-1）仍需：**h2m `[]str`/`[]byte` 降級臂 → 簽名 gate 放寬 → str-vec clone/別名與借用 retain → Identifier unsup 歸因**。本輪只收底座一層，不誇大為定點進展。
+
+### ㉒ 2026-11-16 再續：切片 B 第二層——h2m `[]str` 降級臂接進底座（HEAD `df48dd89`+dirty）
+
+**目標**：把 ㉑ 的 str-vec 底座（三個助手 / MIR op / cg 發射器）從「只由手寫 op 觸發」接進真實 HIR→MIR 降級路徑，讓 `[]str` 源碼能自行降出 `vec_push_str/get_str/free_str`。用戶選「做吧」（承接 ㉑ 末尾提議），並沿用「充分驗證、長遠考慮」要求。
+
+**核心設計：新增 `TY-VECSTR = 6`**（mir.no，取 TY-F64=5 與 TY-STRUCT-BASE=100 之間空檔）。
+- LLVM 層與 `TY-VEC` **同一型別 `%vec`、同一命名空間 `%vc`**——元素 stride 只活在助手選擇裡（16 vs 8）。與 TY-U64「型別碼存在但共用 LLVM 型」同構。
+- ⚠️ `cg-runtime-ty-name` / `cg-val-prefix` 必須**顯式**映射 TY-VECSTR → `%vec`/`%vc`，否則 `[]str` 形參/返回落默認臂發成 i64/%v（型別錯配）。已補。
+
+**h2m.no 接線（六處）**：
+1. `h2m-tynode-code`：`[]str`（K-SLICE-TYPE 元素 str）→ TY-VECSTR（原本只認 i64）。
+2. `h2m-param-ty`：簽名 gate 放行 `[]str` 作形參/返回 → TY-VECSTR、bad=0。**`[]byte` 不放行**（1 字節元素， vec_push_str 按 16B 讀寫會錯，另一套 helper）。
+3. `K-SLICE-LITERAL`：首元素 AST kind 預判 vec-ty（K-STRING-LITERAL ⇒ TY-VECSTR），逐元素以實際 vty 覆核（TY-VEC↔i64、TY-VECSTR↔str，混合即 unsup）；str 元素發 `OP-VECPUSHSTR`。**保持 VECNEW 仍為首個 alloc**（不改值 id 分配序 ⇒ 既有 h2m-test 的 id 斷言不受影響）。
+4. `K-INDEX-EXPRESSION`：base vty == TY-VECSTR → `OP-VECGETSTR`（回借用 `%sv`，TY-STR），不走 i64 `OP-VECGET`。
+5. `h2m-emit-releases`：TY-VECSTR → `OP-VEC-FREE-STR`；`h2m-vec-own` 納入 TY-VECSTR（外流攔截同源）。
+6. **保守門禁**：`h2m-struct-resolve[-range]` 把 TY-VECSTR 字段攔回 -1 計 unsup——str-vec 無 retain，寫進 struct 欄位後與 scope-exit 的 `vec_free_str` 雙釋放 ⇒ UAF（沿用 s99f「元素非 i64 欄位不入形」口徑）。`for-in` 容器仍限 TY-VEC（str-vec 逐元素 str 遍歷 + 槽屬 M7，本輪不碰）——故 ㉑ 提到的 `coll-gate-elem-str` 負例仍維持。
+
+**驗證（充分，誠實分已證/未證）**：
+- selfhost 三檔全綠：**cg-test 363/363、cg-runtime-test 103/103、h2m-test 1099/1099**（本輪 +10 斷言：字面量正例、混合元素門禁、[]str 形參簽名、索引 get_str、返回 %vec、struct 欄位拒絕）。s99n 時代「str 元素計 unsup」的負例升級為正例。
+- **端到端（真 HIR→MIR→cg→clang）**：源碼 `mk = () (r []str) { r = ['ab','cde','fghi'] }` + `pick = (xs []str,i i64)(r str){ r=xs[i] }` 經 `h2m-lower-program` 降出 `%vec @mk()`（3× vec_push_str）與 `%str-long @pick(%vec,i64)`（vec_get_str），0 unsup；拼 `cg-runtime-prelude-full()` + 手寫 main（mk→pick 讀回索引 2/0 校驗 len → vec_free_str）clang+ASAN **rc=0**。
+  - **負對照**：main 故意 double-free → rc=134 報 `vec_free_str+0x64`，證明 ASAN 檢測有效、上面 rc=0 非空話。macOS LeakSanitizer 仍不工作（㉑ 同），**只證無 double-free/UAF，未證無洩漏**。
+- `no build compiler` rc=0（3.96MB，`noc v0.0.1-m0`）；`make gen no` / `make test` 見下。
+- **cov-measure unsup 8054 → 8472（+418）——方向上看似倒退，實為誠實門禁的精細化，非回歸**：差集分析（按 fn）顯示增量集中在兩類——① 本輪新增的 self-host 助手函數自身（`cg-runtime-vec-push-str` +49、`vec-free-str` +31、`vec-get-str` +11、`h2m-struct-resolve[-range]` 各 +8 等約 120 條）：新函數用了 h2m 尚未降級的構造；② 簽名 gate 放行後**函數體暴露**（`check` 1→135、`cg-emit-cfg-t` 1→49、`drv.pkg-split` 1→18、`ck-sig-bsearch` 1→28 等）：基線的 `1` 是「整函數被簽名 gate 拒」，現在簽名通過、體內 with-cap/push/str 方法等未支持構造被逐條記出。**關鍵安全性質**：`h2m-lower-func` 末尾 `inc>0 ⇒ r=''`（4256-4272），任何 unsup 函數整函數不產碼 ⇒ 不會有靜默錯碼，unsup 增長只是記錄更細。
+- 結構等價性：本輪 struct-resolve 對 `[]str` 欄位的攔截與改前語義**等價**（改前 tynode-code 對非 i64 slice 就回 -1），故 `[]str` 欄位眾多的 `psst`/`ast` 等結構體降級行為不變，build compiler 未受影響（已實證 rc=0）。
+
+**誠實邊界（距定點仍遠）**：
+- 本輪只接了 `[]str` **字面量 + 索引 + 形參/返回 + 釋放**；真實 `[]str` 構造主力 `with-cap(4)` + `.push()`（drv/ck/ps 大量使用）**尚未降級**——cov 差集裡 `check` +134 主要就是這批。下一層要補 with-cap（vec_new with capacity）與 vec-push 方法調用的降級。
+- `[]byte` 未放行（需獨立的 1 字節元素助手族）。
+- str-vec **整體別名**（寫字段/option 載荷/賦第二變量）仍無 retain/clone；get-str 借用視圖無 retain-on-borrow；for-in str-vec 未支援（M7）。
+- ⇒ DR-1 定點仍需：**with-cap/push 降級 → []byte 助手族 → str-vec clone/別名 → Identifier unsup 逐條歸因 → noc→noc 比對**。本輪把底座真正接進了自舉路徑（首度有真源碼降出 str-vec op 並跑通），但不誇大為定點進展。
+
+### ㉓ 2026-11-16 再續：切片 B 第三層——`with-cap` + `.push()` 降級（HEAD `df48dd89`+dirty）
+
+**目標**：補上 ㉒ 末尾點名的真實 `[]str` 構造主力 `with-cap(n)` + `.push(x)`——drv/ck/ps 大量使用，是 cov 差集裡 `check`+134 的主要來源。用戶「繼續」，沿用「充分驗證、長遠考慮」。
+
+**語義矛盾（先定位再動手）**：
+- Go 側 `vec.push` 是**原地寫回接收者**（`src/std/vec.no` builtin，codegen 展開），`with-cap` 回型別由 **LHS 註解**決定（`builtin/str.go:184`、`emitBuiltinAlloc` 以 `inst.Dst` 選 stride）。
+- self-host 是 **SSA 值語義**：vec 不鋪槽（§11 B5），`vec_push_*` 助手回**新** `%vec`。故 `.push()` 語句要正確，必須把新值**重綁**到接收者變數，且舊值不可再 free（助手已 free/共享其緩衝）——否則 double-free。
+- `with-cap` 的 cap **有真實語義**：跨幀傳遞的 `bufio.reader.init('with-cap(64)')` 要求 `buf.cap` 原樣保留，否則 `fs.read(fd, buf, buf.cap)` 讀 0 位元組（Go `codegen.go:2414 vecBufClone` 來歷）⇒ **不能**像 `@vec_new` 那樣恆回 `{0,0,0}`，必須 malloc cap*stride 並寫 cap 欄位。
+
+**落地（4 檔）**：
+1. `cg-runtime.no`：新增 `vec_new_cap_i64`（stride 8）/ `vec_new_cap_str`（stride 16 + memset 0）兩助手；cap==0 短路回 `{0,0,0}`（與 `@vec_free` 的 dat==0 短路對齊）；註冊進 `prelude-full`。
+2. `mir.no`：新增 `OP-VECNEWCAP=99` / `OP-VECNEWCAPSTR=100`（接在 98 後，不重排既有碼）。
+3. `cg.no`：兩 op 發射分支（call `@vec_new_cap_i64/str(i64 %v)`）。
+4. `h2m.no`（核心）：
+   - `h2m-is-withcap` helper 認 `with-cap(...)` 呼叫；前掃描（`h2m-scan` K-LET）對 with-cap 用 **let 註解** `h2m-tynode-code` 鋪 TY-VEC/VECSTR（内建無簽名，`h2m-ty-of` 回 -1）。
+   - `h2m-lower-let` 特判：降 cap 實參，按註解碼發 OP-VECNEWCAP[STR]，`rel-add` 新值。
+   - 方法呼叫臂新增：vec.len / str-vec.len（複用 OP-VECLEN，len 欄位與元素 stride 無關）；vec.push / str-vec.push（發 OP-VECPUSH[STR] + `h2m-var-bind` 重綁接收者名 + `h2m-rel-drop(舊值)` + `rel-add(新值)`）。
+   - ctx 新增 `reldrop []i64`（被 push 接管的舊 vec 值），`h2m-emit-releases` 跳過它 ⇒ 中間 push 值不 double-free。
+   - **保守門禁**：push 重綁限 `mem==0`（直線式；含控制流時 vec 無槽可寫回，計 unsup 不產碼）+ 接收者須 K-IDENTIFIER（`a[i].push()` 無法重綁 ⇒ unsup）。`h2m-tynode-code` 的 `[]T` 元素同時認 K-NAMED-TYPE / K-IDENTIFIER（let 註解與 struct 欄位兩形態）。
+
+**驗證（誠實區分已證/未證）**：
+- 探針實測四形（`with-cap` ± str/i64 × ± push）：全 **0 unsup**；`[]str with-cap(2)+3 push(2→4→8 擴容)+索引+返回` IR 乾淨——中間 vec 值全無 vec_free_str（reldrop 生效）。
+- **端到端 clang+ASAN**：`mk()→[]str`（with-cap(2)+3 push 擴容）→ main 讀回 3 元素校驗 len 2/3/4 → free，**rc=0**；故意 double-free 負對照 **rc=134** 報 `vec_free_str+0x64`，證明檢測有效。macOS LeakSanitizer 仍不作用 ⇒ **只證無 double-free/UAF，未證無洩漏**（洩漏靠 IR 結構推論：只 free 最終值、助手擴容時 free 舊緩衝）。
+- selfhost 三檔全綠：**h2m-test 1113/1113（+14）、cg-runtime-test 114/114（+11）、cg-test 363/363**。
+- **cov unsup 8472→8522（+50）差集分析**：非回歸。增量來自本輪新增 self-host 程式自身（`vec-new-cap-str` +18 / `vec-new-cap-i64` +17 / `h2m-is-withcap` +9 / 被改的 `h2m-lower-let|expr|emit-releases` +11 等共 +59），以及簽名 gate 連帶 -9（ps-parse-star-star-break / ps-add-generic / h2m-cov-join）。安全性質不變：`inc>0⇒r=''` 保證 unsup 函式整函式不產碼，無靜默錯碼。
+- `no build compiler` rc=0（3.96MB，`noc v0.0.1-m0`）；`make gen no` rc=0（未改 Go/std blob，Nothing to be done）。
+
+**誠實邊界**：`with-len` / `with-cap-len`（len=cap，直接索引）未放行——需額外助手；`[]byte` 未放行；str-vec 別名/clone、含控制流 push（mem==1 寫回槽）、`a[i].push()` 複合接收者仍 unsup（M7）。距 noc→noc 定點仍需這批 + Identifier unsup 歸因。

@@ -186,6 +186,9 @@ h2m-ctx {
     rls []i64
     rlsm []i64
     rlst []i64
+    ; 切片 B 第三层：被 push 重绑废弃的旧 vec 值 id（其 data 缓冲已被 @vec_push_* 接管/释放，
+    ;   scope-exit 必须跳过，否则 double-free）。与 rls 同口径按 vid 去重。
+    reldrop []i64
     ; s99k：mem==1 scope-exit 释放扩展（解除 s99j 的 mem==0 限制）
     outn str; 输出（回传）变量名：body 降级时用它识别「写入输出槽」以记录 outsv/retset
     outsv i64; 最后写入输出槽的 owner id（= 该拥有值当前在输出槽、将被回传给呼叫方 ⇒ 释放时跳过防双重释放）
@@ -256,6 +259,7 @@ h2m-new = () (c h2m-ctx) {
         rls: []
         rlsm: []
         rlst: []
+        reldrop: []
         outn: ''
         outsv: 0
         ownn: []
@@ -378,6 +382,32 @@ h2m-rel-has = (c h2m-ctx, vid i64) (yes i64) {
     }
 }
 
+; 切片 B 第三层：标记一个 vec 值已被 push 接管（旧缓冲已由 @vec_push_* free/共享），
+;   scope-exit 释放必须跳过它，否则 double-free。按 vid 去重。
+h2m-rel-drop = (c h2m-ctx, vid i64) {
+    dup = 0
+    i = 0
+    (i < c.reldrop.len() && dup == 0) {
+        c.reldrop[i] == vid -> dup = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    dup == 0 -> c.reldrop.push(vid)
+}
+
+; 切片 B 第三层：vid 是否已被 push 接管（须跳过 scope-exit 释放）
+h2m-rel-dropped = (c h2m-ctx, vid i64) (yes i64) {
+    yes = 0
+    i = 0
+    (i < c.reldrop.len() && yes == 0) {
+        c.reldrop[i] == vid -> yes = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
 ; s99n：值 id 是否「自拥有 vec」（= 切片字面量产出的 %vec，已入释放清单）
 ;   所有权外流（写进结构体字段 / 作返回值）必须计 unsup——vec 缓冲无 RC 头（§11 B5），
 ;   没有 retain 可用，一旦外流而 scope-exit 仍 free，就是悬垂指针（UAF）。
@@ -386,7 +416,7 @@ h2m-rel-has = (c h2m-ctx, vid i64) (yes i64) {
 ; yes: 1 = 自拥有 vec
 h2m-vec-own = (c h2m-ctx, vid i64) (yes i64) {
     yes = 0
-    vid > 0 && h2m-rel-has(c, vid) == 1 && h2m-vty-at(c, vid) == TY-VEC -> yes = 1
+    vid > 0 && h2m-rel-has(c, vid) == 1 && (h2m-vty-at(c, vid) == TY-VEC || h2m-vty-at(c, vid) == TY-VECSTR) -> yes = 1
 }
 
 ; s99m：把一个 owner 并入「可能被回传」集合（按 vid 去重；may-return 分析）
@@ -443,11 +473,14 @@ h2m-emit-releases = (c h2m-ctx, skip i64) {
         vid = c.rls[i]
         m = c.rlsm[i]
         ty = c.rlst[i]
-        (vid != skip && vid != c.outsv && h2m-ret-has(c, vid) == 0) -> {
+        (vid != skip && vid != c.outsv && h2m-ret-has(c, vid) == 0 && h2m-rel-dropped(c, vid) == 0) -> {
             ty == TY-STR -> h2m-emit(c, OP-RELEASE, 0, vid, 0, '', TY-STR)
 
             ; s99n：vec 走破坏性一次性释放（缓冲无 RC 头，§11 B5 —— 无 retain，只有 free）
             ty == TY-VEC -> h2m-emit(c, OP-VEC-FREE, 0, vid, 0, '', 0)
+
+            ; 切片 B：[]str vec 逐元素 release data + free 缓冲（助手 vec_free_str）
+            ty == TY-VECSTR -> h2m-emit(c, OP-VEC-FREE-STR, 0, vid, 0, '', 0)
             ty >= TY-STRUCT-BASE && m > 0 -> h2m-emit(c, OP-STRUCT-RELEASE, 0, vid, m, '', 0)
         }
 
@@ -607,12 +640,12 @@ h2m-name-find = (c h2m-ctx, name str) (i i64) {
 ; name: 变量名
 ; ty: 槽型别码（认 TY-I64 / TY-U64 / TY-F64 / TY-STR / TY-OPT；TY-VEC 不铺槽）
 h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
-    ty == TY-VEC -> {
+    (ty == TY-VEC || ty == TY-VECSTR) -> {
         i0 = h2m-name-find(c, name)
         i0 >= 0 -> c.tys[i0] = ty
         i0 < 0 -> h2m-mark(c)
     }
-    ty != TY-VEC -> {
+    ty != TY-VEC && ty != TY-VECSTR -> {
         sid = h2m-alloc(c, ty)
         ok-slot = 1
         ty != TY-I64 && ty != TY-U64 && ty != TY-STR && ty != TY-F64 && ty != TY-OPT && ! (ty >= TY-STRUCT-BASE) -> ok-slot = 0
@@ -677,13 +710,13 @@ h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
         sid = c.vids[i]
         st = c.tys[i]
     }
-    st == ty && ty != TY-VEC && ty != TY-STR && ty < TY-STRUCT-BASE -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
+    st == ty && ty != TY-VEC && ty != TY-VECSTR && ty != TY-STR && ty < TY-STRUCT-BASE -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
     st == ty && ty == TY-STR -> h2m-emit(c, OP-SSTORE, 0, vid, sid, '', 0)
 
     ; s99c：结构体形参 incoming 值落 %sts<sid> 槽（cg OP-STSTORE：xa=值、bs=槽）
     st == ty && ty >= TY-STRUCT-BASE -> h2m-emit(c, OP-STSTORE, 0, vid, sid, '', 0)
 
-    ; s62：TY-VEC 形参无槽可存——绑在名字上的值 id 就是该 incoming vid ⇒ 空操作
+    ; s62 / 切片 B：TY-VEC / TY-VECSTR 形参无槽可存——绑在名字上的值 id 就是该 incoming vid ⇒ 空操作
     st != ty -> h2m-mark(c)
     i < 0 -> h2m-mark(c)
 }
@@ -734,13 +767,14 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
                     h2m-emit(c, OP-OPTLOAD, v, sid, 0, '', TY-OPT)
                 }
 
-                ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
+                ; s62 / 切片 B：TY-VEC / TY-VECSTR 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
                 st == TY-VEC -> v = sid
+                st == TY-VECSTR -> v = sid
                 st >= TY-STRUCT-BASE -> {
                     v = h2m-alloc(c, st)
                     h2m-emit(c, OP-STLOAD, v, sid, 0, '', st)
                 }
-                st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-F64 && st != TY-OPT && ! (st >= TY-STRUCT-BASE) -> h2m-mark(c)
+                st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-VECSTR && st != TY-F64 && st != TY-OPT && ! (st >= TY-STRUCT-BASE) -> h2m-mark(c)
             }
         }
     }
@@ -939,9 +973,16 @@ h2m-tynode-code = (t ast, agg h2m-ctx, tn i64) (code i64) {
             ek = ast.kid-at(t, d.kid0)
             ek > 0 -> {
                 ed = ast.nd-at(t, ek)
-                ed.kind == asp.K-NAMED-TYPE -> {
+                ; 切片 B 第三层：let 注解里的元素型别可能是 K-NAMED-TYPE 或 K-IDENTIFIER
+                ;   （两处 s0 都存型别名下标），统一取出来判 i64/str。
+                ed.kind == asp.K-NAMED-TYPE || ed.kind == asp.K-IDENTIFIER -> {
                     enm = ast.str-at(t, ed.s0)
                     enm == 'i64' -> code = TY-VEC
+
+                    ; 切片 B：[]str → TY-VECSTR（元素 stride 16，走 vec_push_str/get_str/free_str 助手）。
+                    ;   ⚠️ struct 字段解析也走本 helper——str-vec 缓冲无 retain、字段外流会 UAF，
+                    ;   故 h2m-struct-resolve[-range] 在下游保守把 TY-VECSTR 拦回 -1（特性 s99f 门禁）。
+                    enm == 'str' -> code = TY-VECSTR
                 }
             }
         }
@@ -1075,6 +1116,10 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
         (j < fc) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
+            ; 切片 B 保守门禁：str-vec 缓冲无 retain（§11 B5）⇒ 写进结构体字段后，
+            ;   局部 vec 与字段别名同一缓冲，scope-exit 的 vec_free_str 会与字段owner双释放 ⇒ UAF。
+            ;   故 []str 字段拦回 -1 计 unsup（与 s99f 的「元素非 i64 字段不入形」同口径）。
+            fty == TY-VECSTR -> fty = -1
             fty < 0 -> {
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
                 ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
@@ -1116,6 +1161,8 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
         (j < fc) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
+            ; 切片 B 保守门禁：同 h2m-struct-resolve——[]str 字段无 retain，双释放风险 ⇒ 拦回 unsup。
+            fty == TY-VECSTR -> fty = -1
             fty < 0 -> {
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
                 ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
@@ -1480,6 +1527,27 @@ h2m-lst-add = (l h2m-lst, name str, ty i64) {
 ; l: 已登记的局部量表（标识符型别查此表）
 ; n: 表达式节点 id
 ; code: 型别码（-1 = 推不出）
+; 切片 B 第三层：判断节点是否为 with-cap(<cap>) 调用（内建，无签名表项）。
+;   形态：K-CALL-EXPRESSION，callee = K-IDENTIFIER('with-cap')（self-host 无跨模组前缀）。
+; n: 表达式节点 id
+; yes: 1 = 是 with-cap 调用
+h2m-is-withcap = (t ast, n i64) (yes i64) {
+    yes = 0
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        d.kind == asp.K-CALL-EXPRESSION -> {
+            ck = ast.kid-at(t, d.kid0)
+            ck > 0 -> {
+                cd = ast.nd-at(t, ck)
+                cd.kind == asp.K-IDENTIFIER -> {
+                    cn = ast.str-at(t, cd.s0)
+                    cn == 'with-cap' -> yes = 1
+                }
+            }
+        }
+    }
+}
+
 h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
     code = -1
     n > 0 -> {
@@ -1702,6 +1770,14 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
                     vsid < 0 -> ty = -1
                 }
                 vkd.kind != asp.K-STRUCT-LITERAL -> ty = h2m-ty-of(t, sg, l, agg, vk)
+
+                ; 切片 B 第三层：with-cap(...) 无签名（内建，codegen 展开）⇒ h2m-ty-of 回 -1。
+                ;   型别只能由 let 注解决定（Go emitBuiltinAlloc 亦以 inst.Dst 选 stride）。
+                ;   这里用注解 tynode-code 覆盖，使 slot-decl 能把名字绑成 TY-VEC / TY-VECSTR。
+                ty < 0 && h2m-is-withcap(t, vk) == 1 && d.nkid > 1 -> {
+                    ty = h2m-tynode-code(t, agg, ast.kid-at(t, d.kid0))
+                }
+                ; 注：scan 的 agg 即函数 ctx 的浅拷来源，h2m-tynode-code 只读 struct 表，agg 可用
 
                 ; s103：值位 SurfaceMatch 右值（`r = { c -> v  -> d }`）——h2m-ty-of 不认 K-SURFACE-MATCH，
                 ;   故就地定型 TY-I64（本件只收 i64 臂值，str/vec 值仍由降级侧门禁计 unsup）；
@@ -2252,6 +2328,50 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                     ok-method = 1
                                     ok-call = 0
                                 }
+                                ; 切片 B 第三层：i64 vec 的 push(x) — 发 OP-VECPUSH（返回新 vec），
+                                ;   重绑接收者变量名模拟原地修改；旧 vec 标记 reldrop 防 double-free。
+                                ;   ⚠️ 只认 K-IDENTIFIER 接收者（a[i].push() 无法重绑 ⇒ 门禁）。
+                                mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-IDENTIFIER -> {
+                                    pushk = ast.kid-at(t, argbase)
+                                    pv = h2m-lower-expr(t, c, sg, pushk)
+                                    pv > 0 && h2m-vty-at(c, pv) == TY-I64 -> {
+                                        nv = h2m-alloc(c, TY-VEC)
+                                        h2m-emit(c, OP-VECPUSH, nv, rv, pv, '', TY-VEC)
+                                        rvn = ast.str-at(t, recv-nd.s0)
+                                        h2m-var-bind(c, rvn, nv)
+                                        h2m-rel-drop(c, rv)
+                                        h2m-rel-add(c, nv, TY-VEC, 0)
+                                        v = nv
+                                        ok-method = 1
+                                        ok-call = 0
+                                    }
+                                }
+                            }
+                            ; 切片 B 第三层：str vec —— len() 复用 OP-VECLEN（len 字段在 %vec 描述符，
+                            ;   与元素 stride 无关）；push(s) 发 OP-VECPUSHSTR + 重绑 + reldrop。
+                            rty == TY-VECSTR -> {
+                                mname == 'len' -> {
+                                    cid = h2m-alloc(c, TY-I64)
+                                    h2m-emit(c, OP-VECLEN, cid, rv, 0, '', TY-I64)
+                                    v = cid
+                                    ok-method = 1
+                                    ok-call = 0
+                                }
+                                mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-IDENTIFIER -> {
+                                    pushk = ast.kid-at(t, argbase)
+                                    pv = h2m-lower-expr(t, c, sg, pushk)
+                                    pv > 0 && h2m-vty-at(c, pv) == TY-STR -> {
+                                        nv = h2m-alloc(c, TY-VECSTR)
+                                        h2m-emit(c, OP-VECPUSHSTR, nv, rv, pv, '', TY-VECSTR)
+                                        rvn = ast.str-at(t, recv-nd.s0)
+                                        h2m-var-bind(c, rvn, nv)
+                                        h2m-rel-drop(c, rv)
+                                        h2m-rel-add(c, nv, TY-VECSTR, 0)
+                                        v = nv
+                                        ok-method = 1
+                                        ok-call = 0
+                                    }
+                                }
                             }
                             ; str 方法：len-bytes() 取字节长
                             rty == TY-STR -> {
@@ -2570,7 +2690,17 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         v = ev
                     }
                 }
-                bt != TY-VEC -> h2m-mark(c)
+
+                ; 切片 B：[]str 索引 → OP-VECGETSTR，回借用 str 視圖（TY-STR，呼叫方不得 drop）
+                bt == TY-VECSTR -> {
+                    iv = h2m-lower-expr(t, c, sg, ik)
+                    iv > 0 -> {
+                        sv = h2m-alloc(c, TY-STR)
+                        h2m-emit(c, OP-VECGETSTR, sv, bv, iv, '', TY-STR)
+                        v = sv
+                    }
+                }
+                bt != TY-VEC && bt != TY-VECSTR -> h2m-mark(c)
             }
         }
 
@@ -2582,8 +2712,18 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
         ;      的裸值（dat=0，@vec_free 内短路，见 cg-runtime.no）。
         ;   ⚠️ 所有权唯一的另一半是「不许外流」：结构体字段写 / 返回值两处由调用点门禁拦（无 vec retain）。
         d.kind == asp.K-SLICE-LITERAL -> {
-            vcnew = h2m-alloc(c, TY-VEC)
-            h2m-emit(c, OP-VECNEW, vcnew, 0, 0, '', TY-VEC)
+            ; 切片 B：元素型别决定 vec 种类——首元素定 vec-ty（TY-VEC / TY-VECSTR），后续须一致。
+            ;   OP-VECNEW 的 dst 型别先按首元素的 AST kind 预判：K-STRING-LITERAL ⇒ TY-VECSTR，
+            ;   其余 ⇒ TY-VEC（最终在逐元素循环里用实际 vty 复核，不符计 unsup）。
+            ;   ⚠️ 空字面量 `[]` 无元素 ⇒ TY-VEC（@vec_free 对 dat=0 短路）。
+            vec-ty = TY-VEC
+            d.nkid > 0 -> {
+                fk = ast.kid-at(t, d.kid0)
+                fd = ast.nd-at(t, fk)
+                fd.kind == asp.K-STRING-LITERAL -> vec-ty = TY-VECSTR
+            }
+            vcnew = h2m-alloc(c, vec-ty)
+            h2m-emit(c, OP-VECNEW, vcnew, 0, 0, '', vec-ty)
             vc-cur = vcnew
             ok-sl = 1
             ei = 0
@@ -2600,14 +2740,29 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 }
                 evo > 0 -> {
                     eto = h2m-vty-at(c, evo)
-                    eto == TY-I64 -> {
+                    ; 元素实际 vty 必须与预判 vec-ty 相容：TY-VEC↔i64、TY-VECSTR↔str。
+                    ;   不符（含标识符形式的 str 元素——预判只认字面量）⇒ 计 unsup，宁缺勿错。
+                    eto != TY-I64 && eto != TY-STR -> {
+                        h2m-mark(c)
+                        ok-sl = 0
+                    }
+                    vec-ty == TY-VEC && eto != TY-I64 -> {
+                        h2m-mark(c)
+                        ok-sl = 0
+                    }
+                    vec-ty == TY-VECSTR && eto != TY-STR -> {
+                        h2m-mark(c)
+                        ok-sl = 0
+                    }
+                    ok-sl == 1 && vec-ty == TY-VEC -> {
                         vcn = h2m-alloc(c, TY-VEC)
                         h2m-emit(c, OP-VECPUSH, vcn, vc-cur, evo, '', TY-VEC)
                         vc-cur = vcn
                     }
-                    eto != TY-I64 -> {
-                        h2m-mark(c)
-                        ok-sl = 0
+                    ok-sl == 1 && vec-ty == TY-VECSTR -> {
+                        vcn = h2m-alloc(c, TY-VECSTR)
+                        h2m-emit(c, OP-VECPUSHSTR, vcn, vc-cur, evo, '', TY-VECSTR)
+                        vc-cur = vcn
                     }
                 }
 
@@ -2616,7 +2771,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             }
             ok-sl == 1 -> {
                 v = vc-cur
-                h2m-rel-add(c, vc-cur, TY-VEC, 0)
+                h2m-rel-add(c, vc-cur, vec-ty, 0)
             }
         }
 
@@ -2653,7 +2808,35 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         ;   前扫描铺好的结果槽，汇聚块 LOAD 交回。结果槽名按本 LetStatement 节点 id 合成。
         vkd = ast.nd-at(t, vk)
         vkd.kind == asp.K-SURFACE-MATCH -> vv = h2m-lower-surface(t, c, sg, vk, h2m-smv-name(n))
-        vkd.kind != asp.K-SURFACE-MATCH -> vv = h2m-lower-expr(t, c, sg, vk)
+
+        ; 切片 B 第三层：with-cap(<cap>) 特判——内建无签名，型别由 let 注解给出。
+        ;   降级 cap 实参（i64），按注解码发 OP-VECNEWCAP / OP-VECNEWCAPSTR。
+        ;   ⚠️ 只认 TY-VEC / TY-VECSTR 两种注解，其余（含 []byte / 未知）留门禁。
+        cap-ok = 0
+        h2m-is-withcap(t, vk) == 1 && d.nkid > 1 -> {
+            capk = ast.kid-at(t, vkd.kid0 + 1)
+            cv = h2m-lower-expr(t, c, sg, capk)
+            cv > 0 && h2m-vty-at(c, cv) == TY-I64 -> {
+                ct = h2m-tynode-code(t, c, ast.kid-at(t, d.kid0))
+                ct == TY-VEC -> {
+                    nv = h2m-alloc(c, TY-VEC)
+                    h2m-emit(c, OP-VECNEWCAP, nv, cv, 0, '', TY-VEC)
+                    vv = nv
+                    h2m-rel-add(c, nv, TY-VEC, 0)
+                    cap-ok = 1
+                }
+                ct == TY-VECSTR -> {
+                    nv = h2m-alloc(c, TY-VECSTR)
+                    h2m-emit(c, OP-VECNEWCAPSTR, nv, cv, 0, '', TY-VECSTR)
+                    vv = nv
+                    h2m-rel-add(c, nv, TY-VECSTR, 0)
+                    cap-ok = 1
+                }
+                cap-ok == 0 -> h2m-mark(c)
+            }
+            cv == 0 -> h2m-mark(c)
+        }
+        vkd.kind != asp.K-SURFACE-MATCH && h2m-is-withcap(t, vk) == 0 -> vv = h2m-lower-expr(t, c, sg, vk)
         vv > 0 -> h2m-var-write(c, nm, vv)
 
         ; 型别标注侧：走 h2m-tynode-code 共用判据且码与右值相符（不符 ⇒ 计 unsup，整函数不产码）
@@ -3839,6 +4022,13 @@ h2m-param-ty = (t ast, agg h2m-ctx, p i64) (code i64, bad i64) {
                     enm = ast.str-at(t, ed.s0)
                     enm == 'i64' -> {
                         code = TY-VEC
+                        bad = 0
+                    }
+
+                    ; 切片 B：[]str 形参/返回入形 → TY-VECSTR（LLVM 层同为 %vec，发射侧按 op 码选助手）
+                    ;   []byte 不放行——那是 1 字节元素（另一套 helper），vec_push_str 按 16B 元素读写会错。
+                    enm == 'str' -> {
+                        code = TY-VECSTR
                         bad = 0
                     }
                 }

@@ -48,6 +48,7 @@ Opciones globales:
       no fmt -fix=redundant main.no   previsualizar la eliminación de anotaciones redundantes
       no fmt -fix=match -w src/       añadir in situ las ramas match que faltan en src/
       echo 'x=1' | no fmt         formatear desde stdin
+      no fmt -w package.noml      formatear un archivo de configuración NOML in situ
       no fmt -loop-style=suffix f.no  formatear bucles como '{ } (cond)' / '{ } * N'
       no fmt --md -w docs/        formatear los bloques Nolang de todos los .md/.mdx de docs/
 

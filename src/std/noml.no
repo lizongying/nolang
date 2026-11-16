@@ -12,7 +12,9 @@
 ;     不符合規則時寫成單引號字串。
 ;   - 值：單引號字串（`\'` `\\` `\/` `\n` `\r` `\t` `\0` `\uXXXX`）、反引號
 ;     原始串、true/false/nil、裸數字、物件、陣列（逗號分隔，允許尾隨逗號）。
-;   - 註解：`;` 到行尾。
+;   - 註解：`;` 到行尾；多行註解放一對獨立成行的 `;;` 之間（與 Nolang
+;     原始碼的塊註解同語法——`;;` 之後到行尾只有空白才算定界符，所以
+;     `;; 說明` 仍然只是行註解）。
 ;   - 註解標記：`#{key = value, ...}` 只能獨立成行寫在成員上方，或寫在成員
 ;     同一行的尾隨位置；寫在成員前方同一行是語法錯誤。
 ;
@@ -315,7 +317,119 @@ pool.has-key = (obj-idx i64, key str) (found bool) {
 ; 游標與錯誤
 ...
 
-; 跳過空白（含換行）與 `;` 行註解
+; 判斷 `pos` 處的 `;;` 是否為多行註解定界符
+; s: 來源文字
+; pos: 待判斷的位元組偏移
+; yes: true=`;;` 且其後到行尾只有空白（或直接 EOF）
+; [block-delim-at](#noml.pool.block-delim-at)
+pool.block-delim-at = (s str, pos i64) (yes bool) {
+    yes = false
+    sn = s.len-bytes()
+    pos >= sn -> return
+    s.byte(pos) != 59 -> return
+
+    #{overflow=wrap}
+    n1 = pos + 1
+    n1 >= sn -> return
+    s.byte(n1) != 59 -> return
+
+    #{overflow=wrap}
+    i = pos + 2
+    (i < sn) {
+        c = s.byte(i)
+        c == 10 -> {
+            yes = true
+            return
+        }
+        (c == 32 || c == 9 || c == 13) -> {
+            {
+                i ?= i + 1
+            }: {
+                err -> _
+
+                -> _
+            }
+        }
+        (c != 32 && c != 9 && c != 13) -> return
+    }
+    yes = true
+}
+
+; 跳過 `;;` … `;;` 多行註解
+; s: 來源文字
+; pos: 開始定界符 `;;` 的位元組偏移
+; p: 註解之後的位置（未閉合時為字串尾）
+; [skip-block-comment](#noml.pool.skip-block-comment)
+pool.skip-block-comment = (s str, pos i64) (p i64) {
+    p = pos
+    sn = s.len-bytes()
+
+    {
+        p ?= pos + 2
+    }: {
+        err -> return
+
+        -> _
+    }
+    (p < sn) {
+        c = s.byte(p)
+        (c == 32 || c == 9 || c == 13) -> {
+            {
+                p ?= p + 1
+            }: {
+                err -> _
+
+                -> _
+            }
+        }
+        (c != 32 && c != 9 && c != 13) -> break
+    }
+    (p < sn && s.byte(p) == 10) -> {
+        {
+            p ?= p + 1
+        }: {
+            err -> _
+
+            -> _
+        }
+    }
+    (p < sn) {
+        .block-delim-at(s, p) -> {
+            {
+                p ?= p + 2
+            }: {
+                err -> return
+
+                -> _
+            }
+            (p < sn) {
+                c = s.byte(p)
+                (c == 32 || c == 9 || c == 13) -> {
+                    {
+                        p ?= p + 1
+                    }: {
+                        err -> _
+
+                        -> _
+                    }
+                }
+                (c != 32 && c != 9 && c != 13) -> return
+            }
+            return
+        }
+        .block-delim-at(s, p) == false -> {
+            {
+                p ?= p + 1
+            }: {
+                err -> _
+
+                -> _
+            }
+        }
+    }
+}
+
+; 跳過空白（含換行）、`;` 行註解與 `;;` 多行註解
 ; s: 來源文字
 ; pos: 開始掃描的位元組偏移
 ; p: 第一個有效字元的位置（全為空白時為字串尾）
@@ -337,13 +451,18 @@ pool.skip-trivia = (s str, pos i64) (p i64) {
             }
 
             c == 59 -> {
-                (p < sn && s.byte(p) != 10) {
-                    {
-                        p ?= p + 1
-                    }: {
-                        err -> _
+                .block-delim-at(s, p) -> {
+                    p = .skip-block-comment(s, p)
+                }
+                .block-delim-at(s, p) == false -> {
+                    (p < sn && s.byte(p) != 10) {
+                        {
+                            p ?= p + 1
+                        }: {
+                            err -> _
 
-                        -> _
+                            -> _
+                        }
                     }
                 }
             }
@@ -1043,29 +1162,34 @@ pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
             }
 
             c == 59 -> {
-                (pos < sn && s.byte(pos) != 10) {
-                    {
-                        pos ?= pos + 1
-                    }: {
-                        err -> _
-
-                        -> _
-                    }
+                .block-delim-at(s, pos) -> {
+                    pos = .skip-block-comment(s, pos)
                 }
-                pos < sn -> {
-                    {
-                        next ?= pos + 1
-                    }: {
-                        err -> _
+                .block-delim-at(s, pos) == false -> {
+                    (pos < sn && s.byte(pos) != 10) {
+                        {
+                            pos ?= pos + 1
+                        }: {
+                            err -> _
 
-                        -> _
+                            -> _
+                        }
                     }
+                    pos < sn -> {
+                        {
+                            next ?= pos + 1
+                        }: {
+                            err -> _
+
+                            -> _
+                        }
+                        ok = true
+                        return
+                    }
+                    next = pos
                     ok = true
                     return
                 }
-                next = pos
-                ok = true
-                return
             }
 
             -> {

@@ -659,3 +659,110 @@ func TestNomlQuoteValueRoundTrip(t *testing.T) {
 		t.Errorf("a value whose line starts with a backtick must fall back to the quoted form, got %q", q)
 	}
 }
+
+// ─── 多行註釋 `;;` … `;;` ─────────────────────────────────────────────────────
+//
+// 語義與 Nolang 源碼 lexer 完全一致：起始與結束 `;;` 都要求其後到行尾只有
+// 空白（或直接 EOF）。因此 `;; 說明` 這種同行帶內容的寫法仍然只是行註釋。
+
+func TestNomlBlockComment(t *testing.T) {
+	src := `{
+  ;;
+  這是多行註釋，裡面可以放 { } [ ] 引號 ' 和 ; 單個分號。
+  name: 'should-be-ignored'
+  ;;
+  name: 'x'
+}
+`
+	m, err := ParseNomlMap([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if m["name"] != "x" {
+		t.Errorf("name = %v (block comment content leaked into the value tree)", m["name"])
+	}
+	if len(m) != 1 {
+		t.Errorf("m = %v, want exactly one member", m)
+	}
+}
+
+func TestNomlBlockCommentInline(t *testing.T) {
+	// 成員同一行的尾隨塊註釋：`;;` 後只有空白 ⇒ 塊註釋開始，需匹配結束符。
+	src := `{
+  a: 1 ;;
+  尾隨塊註釋
+  ;;
+  b: 2
+}
+`
+	m, err := ParseNomlMap([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if m["a"] != float64(1) || m["b"] != float64(2) {
+		t.Errorf("m = %v", m)
+	}
+}
+
+func TestNomlBlockCommentBetweenAnnotations(t *testing.T) {
+	src := `{
+  ;;
+  文件級說明
+  ;;
+  ;; 這是行註釋（同行有內容）
+  a: 1
+}
+`
+	doc, err := ParseNomlDoc([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if doc.Root["a"] != float64(1) {
+		t.Errorf("root = %v", doc.Root)
+	}
+}
+
+func TestNomlBlockCommentNotStartedWhenContentFollows(t *testing.T) {
+	// `;; 有內容` 不是塊註釋，只是行註釋：後面的 `}` 仍然有效。
+	src := `{
+  ;; 這是行註釋
+  a: 1
+}
+`
+	m, err := ParseNomlMap([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if m["a"] != float64(1) {
+		t.Errorf("m = %v", m)
+	}
+}
+
+func TestNomlBlockCommentUnterminated(t *testing.T) {
+	// 未閉合的塊註釋吃到 EOF，物件因此缺少 `}`，必須報錯而不是靜默通過。
+	src := "{ a: 1\n;;\n未閉合\n"
+	if _, err := ParseNomlMap([]byte(src)); err == nil {
+		t.Fatal("unterminated block comment must be rejected")
+	}
+}
+
+func TestNomlBlockCommentInArray(t *testing.T) {
+	src := `{
+  xs: [
+    ;;
+    註釋
+    ;;
+    'a',
+    'b',
+  ]
+}
+`
+	m, err := ParseNomlMap([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	arr, ok := m["xs"].([]any)
+	if !ok || len(arr) != 2 || arr[0] != "a" || arr[1] != "b" {
+		t.Errorf("xs = %v", m["xs"])
+	}
+}

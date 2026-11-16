@@ -21,6 +21,8 @@ cg-runtime-ty-name = (t i64) (s str) {
     s = 'i64'
     t == TY-STR -> s = '%str-long'
     t == TY-VEC -> s = '%vec'
+    ; 切片 B：[]str 与 []i64 在 LLVM 层同为 %vec（元素 stride 由助手决定）
+    t == TY-VECSTR -> s = '%vec'
     t == TY-OPT -> s = '%option'
     t == TY-F64 -> s = 'double'
     t >= TY-STRUCT-BASE -> s = '%struct.s' - (t - TY-STRUCT-BASE).to-str()
@@ -370,6 +372,171 @@ cg-runtime-vec-free = () (r str) {
     r = b.str()
 }
 
+; ── 切片 B 底座：str 元素向量助手（%vec = {i32 len, i32 cap, i64 data}，元素 %str-long 16B）──
+; ⚠️ 所有權（鏡像 Go vecDeepClone/vecDeepFree，適配 self-host 無 magic 頭的 rc_release）：
+;   - 陣列緩衝用裸 @malloc/@free（與 i64 vec 一致，無 RC 頭）；
+;   - 元素 str 用 @nolang_rc_alloc/@nolang_rc_release，push 時【clone】元素到新 rc 塊
+;     （字面量 @.str 無 rc 頭，直接 release 會讀越界頭 ⇒ 一律 clone 成獨立 rc 塊）；
+;   - 擴容 memcpy 元素（淺拷貝 rc 塊指針）後 free【舊陣列緩衝】（裸 free，非元素 buf）；
+;   - free-str 逐元素 release data（field 2）後 free 陣列緩衝。
+; ⚠️ get-str 回【借用視圖】（與原 vec 共享元素 buf）⇒ 呼叫方不得 drop 結果，否則 double-free。
+
+; vec_push_str：push 一個 str 元素，回新 %vec（stride 16）。元素先 clone 成獨立 rc 塊。
+; r: 結果字串
+cg-runtime-vec-push-str = () (r str) {
+    b = sb.init(2048)
+    b.push('define %vec @vec_push_str(%vec %v, %str-long %x) {\n')
+    b.push('entry:\n')
+    b.push('\t%len32 = extractvalue %vec %v, 0\n')
+    b.push('\t%cap32 = extractvalue %vec %v, 1\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%len = zext i32 %len32 to i64\n')
+    b.push('\t%cap = zext i32 %cap32 to i64\n')
+    b.push('\t%full = icmp eq i64 %len, %cap\n')
+    b.push('\tbr i1 %full, label %grow, label %clone\n')
+    b.push('grow:\n')
+    b.push('\t%ncap0 = mul i64 %cap, 2\n')
+    b.push('\t%small = icmp slt i64 %ncap0, 4\n')
+    b.push('\t%ncap = select i1 %small, i64 4, i64 %ncap0\n')
+    b.push('\t%nb = mul i64 %ncap, 16\n')
+    b.push('\t%nbp = call i8* @malloc(i64 %nb)\n')
+    b.push('\t%nbi = ptrtoint i8* %nbp to i64\n')
+    b.push('\t%ob = mul i64 %len, 16\n')
+    b.push('\t%empty = icmp eq i64 %ob, 0\n')
+    b.push('\tbr i1 %empty, label %clone, label %copy\n')
+    b.push('copy:\n')
+    b.push('\t%old = inttoptr i64 %dat to i8*\n')
+    b.push('\tcall void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbp, i8* %old, i64 %ob, i1 0)\n')
+    b.push('\tcall void @free(i8* %old)\n')
+    b.push('\tbr label %clone\n')
+    b.push('clone:\n')
+    b.push('\t%cap2 = phi i64 [ %cap, %entry ], [ %ncap, %grow ], [ %ncap, %copy ]\n')
+    b.push('\t%dat2 = phi i64 [ %dat, %entry ], [ %nbi, %grow ], [ %nbi, %copy ]\n')
+    b.push('\t%xl = extractvalue %str-long %x, 0\n')
+    b.push('\t%xl64 = zext i32 %xl to i64\n')
+    b.push('\t%xd = extractvalue %str-long %x, 2\n')
+    b.push('\t%nbuf = call i8* @nolang_rc_alloc(i64 %xl64)\n')
+    b.push('\tcall void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %xd, i64 %xl64, i1 0)\n')
+    b.push('\t%off = mul i64 %len, 16\n')
+    b.push('\t%base = inttoptr i64 %dat2 to i8*\n')
+    b.push('\t%slot = getelementptr i8, i8* %base, i64 %off\n')
+    b.push('\t%sp = bitcast i8* %slot to %str-long*\n')
+    b.push('\t%e0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %xl, 0\n')
+    b.push('\t%e1 = insertvalue %str-long %e0, i32 %xl, 1\n')
+    b.push('\t%e2 = insertvalue %str-long %e1, i8* %nbuf, 2\n')
+    b.push('\tstore %str-long %e2, %str-long* %sp\n')
+    b.push('\t%len1 = add i64 %len, 1\n')
+    b.push('\t%len1t = trunc i64 %len1 to i32\n')
+    b.push('\t%cap2t = trunc i64 %cap2 to i32\n')
+    b.push('\t%r0 = insertvalue %vec { i32 0, i32 0, i64 0 }, i32 %len1t, 0\n')
+    b.push('\t%r1 = insertvalue %vec %r0, i32 %cap2t, 1\n')
+    b.push('\t%r2 = insertvalue %vec %r1, i64 %dat2, 2\n')
+    b.push('\tret %vec %r2\n}\n')
+    r = b.str()
+}
+
+; vec_get_str：取第 i 個 str 元素（借用視圖，stride 16）。
+; r: 結果字串
+cg-runtime-vec-get-str = () (r str) {
+    b = sb.init(512)
+    b.push('define %str-long @vec_get_str(%vec %v, i64 %i) {\n')
+    b.push('entry:\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%off = mul i64 %i, 16\n')
+    b.push('\t%base = inttoptr i64 %dat to i8*\n')
+    b.push('\t%slot = getelementptr i8, i8* %base, i64 %off\n')
+    b.push('\t%sp = bitcast i8* %slot to %str-long*\n')
+    b.push('\t%x = load %str-long, %str-long* %sp\n')
+    b.push('\tret %str-long %x\n}\n')
+    r = b.str()
+}
+
+; vec_free_str：逐元素 release data（field 2）+ free 陣列緩衝（dat==0 短路）。
+; r: 結果字串
+cg-runtime-vec-free-str = () (r str) {
+    b = sb.init(1024)
+    b.push('define void @vec_free_str(%vec %v) {\n')
+    b.push('entry:\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%nul = icmp eq i64 %dat, 0\n')
+    b.push('\tbr i1 %nul, label %done, label %init\n')
+    b.push('init:\n')
+    b.push('\t%len32 = extractvalue %vec %v, 0\n')
+    b.push('\t%len = zext i32 %len32 to i64\n')
+    b.push('\tbr label %loop\n')
+    b.push('loop:\n')
+    b.push('\t%i = phi i64 [ 0, %init ], [ %inext, %body ]\n')
+    b.push('\t%more = icmp ult i64 %i, %len\n')
+    b.push('\tbr i1 %more, label %body, label %fin\n')
+    b.push('body:\n')
+    b.push('\t%off = mul i64 %i, 16\n')
+    b.push('\t%base = inttoptr i64 %dat to i8*\n')
+    b.push('\t%slot = getelementptr i8, i8* %base, i64 %off\n')
+    b.push('\t%sp = bitcast i8* %slot to %str-long*\n')
+    b.push('\t%ev = load %str-long, %str-long* %sp\n')
+    b.push('\t%ed = extractvalue %str-long %ev, 2\n')
+    b.push('\tcall void @nolang_rc_release(i8* %ed)\n')
+    b.push('\t%inext = add i64 %i, 1\n')
+    b.push('\tbr label %loop\n')
+    b.push('fin:\n')
+    b.push('\t%p = inttoptr i64 %dat to i8*\n')
+    b.push('\tcall void @free(i8* %p)\n')
+    b.push('\tbr label %done\n')
+    b.push('done:\n')
+    b.push('\tret void\n}\n')
+    r = b.str()
+}
+
+; 切片 B 第三层：with-cap 的容量预留助手。
+;   与 @vec_new（恒 {0,0,0}）不同，with-cap(n) 的 cap 有真实语义——跨帧传递的
+;   bufio.reader 缓冲区要求 cap 原样保留（Go codegen.go:2414 vecBufClone 的來歷），
+;   否则 `buf.cap` 读回 0 ⇒ fs.read 读 0 字节。故必须 malloc cap*stride 并写入 cap 字段。
+;   cap==0 ⇒ 回 {0,0,0}（与空 vec 一致，@vec_free 对 dat==0 短路）。
+; r: 結果字串
+cg-runtime-vec-new-cap-i64 = () (r str) {
+    b = sb.init(768)
+    b.push('define %vec @vec_new_cap_i64(i64 %cap) {\n')
+    b.push('entry:\n')
+    b.push('\t%nz = icmp eq i64 %cap, 0\n')
+    b.push('\tbr i1 %nz, label %empty, label %alloc\n')
+    b.push('empty:\n')
+    b.push('\tret %vec { i32 0, i32 0, i64 0 }\n')
+    b.push('alloc:\n')
+    b.push('\t%nb = mul i64 %cap, 8\n')
+    b.push('\t%p = call i8* @malloc(i64 %nb)\n')
+    b.push('\t%dp = ptrtoint i8* %p to i64\n')
+    b.push('\t%c32 = trunc i64 %cap to i32\n')
+    b.push('\t%v0 = insertvalue %vec undef, i32 0, 0\n')
+    b.push('\t%v1 = insertvalue %vec %v0, i32 %c32, 1\n')
+    b.push('\t%v2 = insertvalue %vec %v1, i64 %dp, 2\n')
+    b.push('\tret %vec %v2\n}\n')
+    r = b.str()
+}
+
+; str 版：元素 stride 16（%str-long）；malloc 后 memset 0，
+;   使尚未写入的元素槽读回定义良好的空 str（避免垃圾指针被 release）。
+; r: 結果字串
+cg-runtime-vec-new-cap-str = () (r str) {
+    b = sb.init(1024)
+    b.push('define %vec @vec_new_cap_str(i64 %cap) {\n')
+    b.push('entry:\n')
+    b.push('\t%nz = icmp eq i64 %cap, 0\n')
+    b.push('\tbr i1 %nz, label %empty, label %alloc\n')
+    b.push('empty:\n')
+    b.push('\tret %vec { i32 0, i32 0, i64 0 }\n')
+    b.push('alloc:\n')
+    b.push('\t%nb = mul i64 %cap, 16\n')
+    b.push('\t%p = call i8* @malloc(i64 %nb)\n')
+    b.push('\tcall void @llvm.memset.p0i8.i64(i8* %p, i8 0, i64 %nb, i1 false)\n')
+    b.push('\t%dp = ptrtoint i8* %p to i64\n')
+    b.push('\t%c32 = trunc i64 %cap to i32\n')
+    b.push('\t%v0 = insertvalue %vec undef, i32 0, 0\n')
+    b.push('\t%v1 = insertvalue %vec %v0, i32 %c32, 1\n')
+    b.push('\t%v2 = insertvalue %vec %v1, i64 %dp, 2\n')
+    b.push('\tret %vec %v2\n}\n')
+    r = b.str()
+}
+
 ; prelude：类型 + 声明（RC helper 见 cg-rc.no）。M4-a 的「最小 prelude」。
 ; r: 結果字串
 cg-runtime-prelude = () (r str) {
@@ -525,6 +692,11 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-vec-get())
     b.push(cg-runtime-vec-push())
     b.push(cg-runtime-vec-free())
+    b.push(cg-runtime-vec-push-str())
+    b.push(cg-runtime-vec-get-str())
+    b.push(cg-runtime-vec-free-str())
+    b.push(cg-runtime-vec-new-cap-i64())
+    b.push(cg-runtime-vec-new-cap-str())
     b.push(cg-runtime-vec-eq())
     b.push(cg-runtime-print-helpers())
     r = b.str()

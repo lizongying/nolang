@@ -771,6 +771,21 @@ range-index 循环: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标访问；若�
   'n00utq2q': 'process-exec: 无法将 arg 编组为 C 字符串'
   'n08bzk5j': '结果正是 `no add <tool>@<host>/<owner>/<repo>` 会下载的东西：'
   'n0hl9vde': 'builtin %s 参数 %d: %s'
+  'n0mlfmt1': 'fmt: -fix applies to Nolang sources only; .noml files have no automatic fixes'
+  'n0mlfmt2': 'cannot format %s: %d problem(s), file left unchanged'
+  'n0mlfmt3': `
+NOML config files (.noml) are formatted too, with their own layout-preserving
+rules: comments, key order and the single-line/multi-line choice are kept, while
+indentation (2 spaces per level), the space after ':' and trailing whitespace are
+normalised. A file with an unterminated raw string or block comment is reported
+and left unchanged. -fix does not apply to them.
+  no fmt -w package.noml      format a NOML config file in-place
+  no fmt -d src/              show diffs for .no and .noml files under src/
+`
+  'n0mlfmt4': `
+%s:%d: noml: %s
+
+`
   'n1cabi00': '`no build --shared` requires at least one #{cabi} export; annotate a top-level function with #{cabi=\'symbol\'}'
   'n1cabi01': 'creating header directory: %w'
   'n1cabi02': 'writing C ABI header: %w'

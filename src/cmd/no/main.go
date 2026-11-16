@@ -313,6 +313,7 @@ func printUsage() {
 	fmt.Println("      no fmt -fix=redundant main.no   preview redundant annotation removal")
 	fmt.Println("      no fmt -fix=match -w src/       add missing match arms in src/ in-place")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
+	fmt.Println("      no fmt -w package.noml      format a NOML config file in-place")
 	fmt.Println("      no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'")
 	fmt.Println("      no fmt --md -w docs/        format Nolang blocks in every .md/.mdx under docs/")
 	fmt.Println("")
@@ -1283,6 +1284,8 @@ func fmtCommand(args []string) {
 		// 預設文字是單一字串字面量（不能拼接），故整段寫成一行、用 \n 斷行。
 		fmt.Println(i18n.P("46fhe9ez", "Markdown (.md/.mdx), only with -md: only the body of ```no / ```nolang fences is\nformatted. Fence lines and every other line are preserved byte for byte; a block that\nfails to parse is left untouched and reported on stderr, so formatting is always\nsafe. Mark a deliberate pseudo-code or wrong-usage example with a '#{fmt-skip}'\nline at the top of the block: it is then neither validated nor modified.\n(```no skip and a '; nolang-fmt:skip' line are older spellings of the same thing.)\n-md ignores -fix."))
 		fmt.Println("")
+		fmt.Println(i18n.P("n0mlfmt3", "NOML config files (.noml) are formatted too, with their own layout-preserving\nrules: comments, key order and the single-line/multi-line choice are kept, while\nindentation (2 spaces per level), the space after ':' and trailing whitespace are\nnormalised. A file with an unterminated raw string or block comment is reported\nand left unchanged. -fix does not apply to them.\n  no fmt -w package.noml      format a NOML config file in-place\n  no fmt -d src/              show diffs for .no and .noml files under src/"))
+		fmt.Println("")
 		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
@@ -1376,6 +1379,21 @@ func fmtCommand(args []string) {
 
 	hadError := false
 	for _, arg := range remaining {
+		// .noml 是工具鏈的配置格式，走自己的排版规则（保留註釋、鍵序與單/多行
+		// 佈局，只規範縮進與空白）；它與 .no 的語法格式化完全無關，所以先分派
+		// 出去，後面所有 .no / Markdown 的判斷都不適用於它。
+		if nfmt.IsNomlPath(arg) {
+			if *fixClass != "" {
+				fmt.Fprintln(os.Stderr, i18n.P("n0mlfmt1", "fmt: -fix applies to Nolang sources only; .noml files have no automatic fixes"))
+				hadError = true
+				continue
+			}
+			if err := fmtProcessNomlFile(arg, *writeInPlace, *diffMode); err != nil {
+				fmt.Fprintf(os.Stderr, "Error processing file %s: %v\n", arg, err)
+				hadError = true
+			}
+			continue
+		}
 		// Markdown 是「另一個世界」：只有顯式 -md 才處理，否則給提示而不是
 		// 靜默略過——使用者明確點名了一個 .md，卻什麼都沒發生會很困惑。
 		if nfmt.IsMarkdownPath(arg) && !*mdMode {
@@ -1520,18 +1538,57 @@ func reportMdSkipped(filename string, skipped []nfmt.MdSkippedBlock) {
 
 // validateFmtPath 是 `no fmt` 的路徑命名檢查。
 //
-// .no 走源碼命名規範（全段校驗）；Markdown 不是 Nolang 源碼，README.md /
-// CHANGELOG.md 這類帶大寫的檔名是慣例、也不構成模組，故只校驗**目錄段**。
-// 目錄參數與 Markdown 一樣放行 `.agents` 這類隱藏目錄（工具鏈約定名，見
+// .no 走源碼命名規範（全段校驗）；Markdown 與 noml 都不是 Nolang 源碼
+// （README.md / CHANGELOG.md 這類帶大寫的檔名是慣例、也不構成模組；
+// package.noml / workspace.noml 同理由工具鏈約定），故只校驗**目錄段**。
+// 目錄參數與這兩類檔案一樣放行 `.agents` 這類隱藏目錄（工具鏈約定名，見
 // pkg.ValidateDirPathName）。
 func validateFmtPath(path string) error {
-	if nfmt.IsMarkdownPath(path) {
+	if nfmt.IsMarkdownPath(path) || nfmt.IsNomlPath(path) {
 		return pkg.ValidateMarkdownDirName(path)
 	}
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return pkg.ValidateDirPathName(path)
 	}
 	return pkg.ValidateSourcePathName(path)
+}
+
+// fmtProcessNomlFile 格式化一份 .noml 配置檔。
+//
+// 與 .no / Markdown 兩條路徑的關鍵差別：noml 的格式化器是「排版規範化」而非
+// 語法重排（見 src/fmt/noml.go 的檔頭），所以既不需要 checker，也不需要跨模組
+// 簽名表。遇到未閉合的原始字串或塊註釋時它會退回原文並回報行號——這裡把檔案
+// 原樣留底並回非零，避免把一份殘缺結構寫回磁碟。
+func fmtProcessNomlFile(filename string, writeInPlace bool, diffMode bool) error {
+	if verr := validateFmtPath(filename); verr != nil {
+		return verr
+	}
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	original := string(data)
+	result, probs := nfmt.FormatNomlFile(original)
+	if len(probs) > 0 {
+		for _, p := range probs {
+			fmt.Fprint(os.Stderr, i18n.T("n0mlfmt4", "%s:%d: noml: %s\n", filename, p.Line, p.Reason))
+		}
+		return i18n.Errorf("n0mlfmt2", "cannot format %s: %d problem(s), file left unchanged", filename, len(probs))
+	}
+	if diffMode {
+		if diff := generateDiff(filename, original, result); diff != "" {
+			fmt.Print(diff)
+		}
+		return nil
+	}
+	if writeInPlace {
+		if result == original {
+			return nil
+		}
+		return os.WriteFile(filename, []byte(result), 0644)
+	}
+	fmt.Print(result)
+	return nil
 }
 
 func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle, mdMode bool, sigCtx *fmtSigContext) error {
@@ -1570,16 +1627,17 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			}
 			return nil
 		}
-		// Markdown 只在顯式 -md 時參與；其餘非 .no 檔一律略過。
+		// Markdown 只在顯式 -md 時參與；.noml 配置檔與 .no 一起處理；其餘略過。
 		isMd := nfmt.IsMarkdownPath(path)
+		isNoml := nfmt.IsNomlPath(path)
 		if isMd && !mdMode {
 			return nil
 		}
-		if !isMd && !strings.HasSuffix(path, ".no") {
+		if !isMd && !isNoml && !strings.HasSuffix(path, ".no") {
 			return nil
 		}
 		// 底線開頭的 .no 檔（或其上層底線目錄）是被忽略檔（草稿 / 私有），不格式化、不報錯。
-		if !isMd && pkg.IsIgnoredSourcePath(path) {
+		if !isMd && !isNoml && pkg.IsIgnoredSourcePath(path) {
 			return nil
 		}
 		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
@@ -1616,6 +1674,24 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 				}
 				return nil
 			}
+			if isNoml {
+				// 檢查模式與 -w 共用同一個格式化入口，兩者不可能分歧。
+				nomlOut, probs := nfmt.FormatNomlFile(string(data))
+				if len(probs) > 0 {
+					for _, p := range probs {
+						fmt.Fprint(os.Stderr, i18n.T("n0mlfmt4", "%s:%d: noml: %s\n", path, p.Line, p.Reason))
+					}
+					if firstErr == nil {
+						firstErr = i18n.Errorf("n0mlfmt2", "cannot format %s: %d problem(s), file left unchanged", path, len(probs))
+					}
+					return nil
+				}
+				if nomlOut != string(data) {
+					fmt.Println(path)
+					needFormat++
+				}
+				return nil
+			}
 			src := string(data)
 			// 檢查模式與檔案模式共用同一份簽名配置**與同一個格式化入口**，
 			// 否則「檢查說不用改、真跑 -w 卻改了」會在同一份檔案上分歧。
@@ -1638,6 +1714,12 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 		}
 		if isMd {
 			if ferr := fmtProcessMarkdownFile(path, writeInPlace, diffMode, loopStyle); ferr != nil && firstErr == nil {
+				firstErr = ferr
+			}
+			return nil
+		}
+		if isNoml {
+			if ferr := fmtProcessNomlFile(path, writeInPlace, diffMode); ferr != nil && firstErr == nil {
 				firstErr = ferr
 			}
 			return nil

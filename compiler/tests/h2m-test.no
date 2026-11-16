@@ -4707,7 +4707,8 @@ test-s99n-vec-empty-literal = () {
 
 test-s99n-vec-elem-type-gate = () {
 
-    ; 元素非 i64（['a', 'b']）：@vec_push_i64 是單型 helper ⇒ 計 unsup、整函數不產碼
+    ; 切片 B：元素为 str（['a', 'b']）⇒ TY-VECSTR，降为 vec_new + vec_push_str + 退出 vec_free_str
+    ;   （s99n 时代本例计 unsup；底座与 h2m 降级臂落地后升级为正例）
     src = 'f = () (r i64) {\n    v = [\'a\', \'b\']\n    r = 1\n}\n'
     t = ast.make()
     b = src.to-bytes()
@@ -4715,8 +4716,26 @@ test-s99n-vec-elem-type-gate = () {
     root = ps.parse(t, p)
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
-    runner.eq(agg.unsup > 0, 1, 's99n str elements counted unsup')
-    runner.eq(ir.contains('@vec_new'), 0, 's99n no vec_new for str elements')
+    runner.eq(agg.unsup, 0, 'sB str literal unsup')
+    runner.eq(ir.split('call %vec @vec_new()').len(), 2, 'sB str one vec_new')
+    runner.eq(ir.split('call %vec @vec_push_str(').len(), 3, 'sB str two push_str')
+    runner.eq(ir.split('call void @vec_free_str(%vec ').len(), 2, 'sB str one free_str')
+    runner.eq(ir.contains('@vec_push_i64('), 0, 'sB str no i64 push')
+    runner.eq(ir.contains('@vec_free(%vec '), 0, 'sB str no i64 free')
+}
+
+test-sb-vec-mixed-elem-gate = () {
+
+    ; 混合元素型别（['a', 1]）⇒ 首元素预判 TY-VECSTR，第二个 i64 复核不符 ⇒ 计 unsup 不产码
+    src = 'f = () (r i64) {\n    v = [\'a\', 1]\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 'sB mixed elems counted unsup')
+    runner.eq(ir.contains('@vec_push_str('), 0, 'sB mixed no str push')
 }
 
 test-s99n-vec-field-mk-gate = () {
@@ -4746,6 +4765,138 @@ test-s99n-vec-field-set-gate = () {
     runner.eq(agg.unsup > 0, 1, 's99n vec into field-set counted unsup')
     runner.eq(ir.contains('@vec_new'), 0, 's99n no vec_new when escaping via field-set')
 }
+
+; ── 切片 B：[]str 降级臂（TY-VECSTR）─────────────────────────────────────
+; 签名 gate 放行 []str 作形参/返回（LLVM 层同为 %vec）；索引读回借用 str（OP-VECGETSTR）。
+test-sb-str-param-sig = () {
+
+    ; []str 形参 + 返回：签名侧 TY-VECSTR → %vec（与 []i64 同 LLVM 型别）
+    src = 'pick = (xs []str, i i64) (r str) {\n    r = xs[i]\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 'sB str param unsup')
+    runner.eq(ir.contains('define %str-long @pick(%vec %vc1, i64 %v2)'), 1, 'sB str param sig %vec')
+}
+
+test-sb-str-index = () {
+
+    ; []str 索引 → OP-VECGETSTR，回借用 %sv（vec_get_str），而非 i64 vec_get
+    src = 'pick = (xs []str, i i64) (r str) {\n    r = xs[i]\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(ir.contains('call %str-long @vec_get_str(%vec %vc1, i64 %v2)'), 1, 'sB str index get_str')
+    runner.eq(ir.contains('@vec_get_i64('), 0, 'sB str index no i64 get')
+}
+
+test-sb-str-return = () {
+
+    ; []str 作返回：TY-VECSTR 返回 %vec（所有权移交调用方，不双 free）
+    src = 'mk = () (r []str) {\n    r = [\'a\', \'b\']\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 'sB str return unsup')
+    runner.eq(ir.contains('define %vec @mk()'), 1, 'sB str return sig %vec')
+    runner.eq(ir.contains('@vec_push_str('), 1, 'sB str return has push_str')
+}
+
+test-sb-str-field-gate = () {
+
+    ; struct 栏位 []str 仍拒绝（无 retain ⇒ 与 scope-exit 的 vec_free_str 双释放）：计 unsup 不产码
+    src = 'S {\n    parts []str\n}\nmk = () (r i64) {\n    s = S { parts: [\'a\'] }\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 'sB str field counted unsup')
+}
+
+; ── 切片 B 第三层：with-cap 容量预留 + push 原地重绑 ─────────────────────
+test-sb3-withcap-i64 = () {
+
+    ; []i64 with-cap(n) → OP-VECNEWCAP（vec_new_cap_i64），cap 保留（跨帧 buf.cap 语义）
+    src = 'f = () (r i64) {\n    v []i64 = with-cap(4)\n    r = v.len()\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 'sb3 cap i64 unsup')
+    runner.eq(ir.contains('call %vec @vec_new_cap_i64('), 1, 'sb3 cap i64 helper')
+    runner.eq(ir.contains('call %vec @vec_new()'), 0, 'sb3 cap i64 not plain vec_new')
+    runner.eq(ir.contains('call void @vec_free('), 1, 'sb3 cap i64 one free')
+}
+
+test-sb3-withcap-str-push = () {
+
+    ; []str with-cap(2) + 3 push（2→4→8 扩容）+ 返回：0 unsup；3 push_str；
+    ;   中间 vec 值由 reldrop 跳过 ⇒ 不产 vec_free_str（返回值移交调用方）
+    src = 'mk = () (r []str) {\n    v []str = with-cap(2)\n    v.push(\'ab\')\n    v.push(\'cde\')\n    v.push(\'fghi\')\n    r = v\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 'sb3 cap str push unsup')
+    runner.eq(ir.contains('call %vec @vec_new_cap_str('), 1, 'sb3 cap str helper')
+    runner.eq(ir.split('call %vec @vec_push_str(').len(), 4, 'sb3 cap str 3 pushes')
+    runner.eq(ir.contains('call void @vec_free_str('), 0, 'sb3 cap str return no free')
+    runner.eq(ir.contains('@vec_push_i64('), 0, 'sb3 cap str no i64 push')
+}
+
+test-sb3-push-free-once = () {
+
+    ; 不返回的 []str vec：push 重绑后 scope-exit 只 free 最终值一次（reldrop 防 double-free）
+    src = 'f = () (r i64) {\n    v []str = with-cap(2)\n    v.push(\'ab\')\n    v.push(\'cde\')\n    r = v.len()\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 'sb3 push free unsup')
+    runner.eq(ir.split('call void @vec_free_str(').len(), 2, 'sb3 push free exactly once')
+}
+
+test-sb3-push-own-i64 = () {
+
+    ; i64 vec 的 push 重绑也走 OP-VECPUSH + reldrop：只 free 最终值一次
+    src = 'f = () (r i64) {\n    v []i64 = with-cap(2)\n    v.push(7)\n    v.push(9)\n    r = v.len()\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 'sb3 push i64 unsup')
+    runner.eq(ir.split('call %vec @vec_push_i64(').len(), 3, 'sb3 push i64 two pushes')
+    runner.eq(ir.split('call void @vec_free(').len(), 2, 'sb3 push i64 free once')
+}
+
+test-sb-vec-mixed-elem-gate()
+test-sb-str-param-sig()
+test-sb-str-index()
+test-sb-str-return()
+test-sb-str-field-gate()
+test-sb3-withcap-i64()
+test-sb3-withcap-str-push()
+test-sb3-push-free-once()
+test-sb3-push-own-i64()
 
 runner.summary()
 f = runner.failed-count()

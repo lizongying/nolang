@@ -48,6 +48,7 @@ Nolang 程式語言（版本 %s）
       no fmt -fix=redundant main.no   預覽冗餘標註的移除
       no fmt -fix=match -w src/       為 src/ 原地補上缺失的匹配分支
       echo 'x=1' | no fmt         從 stdin 格式化
+      no fmt -w package.noml      就地格式化 NOML 設定檔
       no fmt -loop-style=suffix f.no  將迴圈格式化為 '{ } (cond)' / '{ } * N'
       no fmt --md -w docs/        格式化 docs/ 下所有 .md/.mdx 中的 Nolang 程式碼區塊
 

@@ -25,7 +25,9 @@ import (
 //     Nolang 語法，而 Nolang 沒有 `null`。寫 `null` 會被當成語法錯誤拒絕
 //     （src/std/noml.no 同口徑）。
 //   - 陣列：元素用逗號分隔，支援尾隨逗號；[ 、元素、,、] 皆可跨行。
-//   - 註解：; 到行尾（字串內的 ; 除外）。縮排無意義。
+//   - 註解：; 到行尾（字串內的 ; 除外）；多行註解放一對獨立成行的 `;;` 之間
+//     （語法與 Nolang 原始碼的塊註解完全一致——`;;` 之後到行尾只有空白才算
+//     定界符，所以 `;; 說明` 仍然只是行註解）。縮排無意義。
 //   - 成員註解：`#{...}` 與 nolang 註解語法完全一致（`key = value`，逗號分隔），
 //     只允許獨立成行寫在成員**上方**，或寫在成員同一行的**尾隨**位置。
 //     寫在成員前方同一行（`#{...} name: 'x'`）是語法錯誤，判定規則與 nolang
@@ -70,6 +72,28 @@ func isNomlIdentStart(c byte) bool {
 // 下劃線、中劃線（中間只能是中劃線）。
 func isNomlIdentChar(c byte) bool {
 	return c == '_' || c == '-' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+}
+
+// nomlBlockDelimAt 報告 data[off:] 處的 `;;` 是否是多行註釋定界符。
+//
+// 與 Nolang 源碼 lexer 同口徑（src/lexer/lexer.go 的 isBlockCommentStart /
+// isBlockCommentEnd）：`;;` 之後到行尾只有空白（或直接 EOF）才算定界符；
+// 同一行後面還有別的字元時，`;;` 只是普通 `;` 行註釋的開頭。
+func nomlBlockDelimAt(data []byte, off int) bool {
+	if off+1 >= len(data) || data[off] != ';' || data[off+1] != ';' {
+		return false
+	}
+	for i := off + 2; i < len(data); i++ {
+		switch data[i] {
+		case '\n':
+			return true
+		case ' ', '\t', '\r':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // IsNomlIdentifierKey 報告 s 是否可寫成 noml 裸鍵。
@@ -815,7 +839,12 @@ func (p *nomlParser) requireMemberEnd(key string) error {
 			return nil // 交由外層迴圈閉合容器
 		}
 		if c == ';' {
-			// 行尾註解：吃到換行；換行即成員分隔。
+			// `;;` 多行註釋：吞掉整段後繼續找成員結束標記；其餘是行尾註解，
+			// 吃到換行（換行即成員分隔）。
+			if p.atBlockCommentStart() {
+				p.skipBlockComment()
+				continue
+			}
 			for p.pos < len(p.data) && p.data[p.pos] != '\n' {
 				p.advance()
 			}
@@ -829,7 +858,47 @@ func (p *nomlParser) requireMemberEnd(key string) error {
 	return p.errf("unexpected end of input in object (after key %q)", key)
 }
 
-// skipTrivia 跳過空白（含換行）與 ; 行註解。
+// atBlockCommentStart 報告光標是否位於多行註釋 `;;` 的開始定界符。
+func (p *nomlParser) atBlockCommentStart() bool {
+	return nomlBlockDelimAt(p.data, p.pos)
+}
+
+// skipBlockComment 跳過多行註釋 `;;` … `;;`。
+//
+// 語義與 Nolang 源碼 lexer 一致：起始 `;;` 之後的空白與換行不計入內容，
+// 結束定界符同樣要求 `;;` 之後只有空白。未閉合時一路吃到 EOF——那種情況
+// 後續必然撞上結構性錯誤（例如物件缺少 `}`），錯誤訊息仍然給得出來。
+func (p *nomlParser) skipBlockComment() {
+	p.advance() // 跳過第一個 ;
+	p.advance() // 跳過第二個 ;
+	for p.pos < len(p.data) {
+		c := p.data[p.pos]
+		if c != ' ' && c != '\t' && c != '\r' {
+			break
+		}
+		p.advance()
+	}
+	if p.pos < len(p.data) && p.data[p.pos] == '\n' {
+		p.advance() // 開始定界符後的換行不計入內容
+	}
+	for p.pos < len(p.data) {
+		if nomlBlockDelimAt(p.data, p.pos) {
+			p.advance() // 跳過第一個 ;
+			p.advance() // 跳過第二個 ;
+			for p.pos < len(p.data) {
+				c := p.data[p.pos]
+				if c != ' ' && c != '\t' && c != '\r' {
+					return
+				}
+				p.advance()
+			}
+			return
+		}
+		p.advance()
+	}
+}
+
+// skipTrivia 跳過空白（含換行）、`;` 行註解與 `;;` 多行註釋。
 func (p *nomlParser) skipTrivia() {
 	for p.pos < len(p.data) {
 		c := p.data[p.pos]
@@ -837,6 +906,10 @@ func (p *nomlParser) skipTrivia() {
 		case c == ' ' || c == '\t' || c == '\r' || c == '\n':
 			p.advance()
 		case c == ';':
+			if p.atBlockCommentStart() {
+				p.skipBlockComment()
+				continue
+			}
 			for p.pos < len(p.data) && p.data[p.pos] != '\n' {
 				p.advance()
 			}
@@ -846,7 +919,7 @@ func (p *nomlParser) skipTrivia() {
 	}
 }
 
-// skipInlineSpace 只跳行內空白與 ; 註解，不跨越換行。
+// skipInlineSpace 只跳行內空白與 `;` 註解（含 `;;` 多行註釋），不跨越換行。
 func (p *nomlParser) skipInlineSpace() {
 	for p.pos < len(p.data) {
 		c := p.data[p.pos]
@@ -855,6 +928,10 @@ func (p *nomlParser) skipInlineSpace() {
 			continue
 		}
 		if c == ';' {
+			if p.atBlockCommentStart() {
+				p.skipBlockComment()
+				continue
+			}
 			for p.pos < len(p.data) && p.data[p.pos] != '\n' {
 				p.advance()
 			}

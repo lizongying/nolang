@@ -46,6 +46,14 @@ TY-U64 = 4
 ;   故 fdiv/frem 不需整數族的除零護欄（§11 B14 只關整數）。
 TY-F64 = 5
 
+; TY-VECSTR（切片 B）：元素为 str 的切片。LLVM 层与 TY-VEC **同一型别 %vec、同一命名空间
+;   %vc**（vec 描述符 16B {i32 len, i32 cap, i64 data}，元素 stride 16 vs i64 的 8）——
+;   元素型别只活在高层语义里（决定 OP-VECPUSHSTR/GETSTR/FREE-STR 三助手的选择）。
+;   ⚠️ 与 TY-U64 同理：cg-ty-name/cg-val-prefix 必须显式映射 TY-VECSTR → %vec/%vc，
+;   否则函数签名里 []str 形参/返回会落默认臂发成 i64/%v（型别错配）。
+;   型别码取 6（TY-F64=5 之后、TY-STRUCT-BASE=100 之前的空档）。
+TY-VECSTR = 6
+
 ; 结构体型别（M4-c 续件 s31）：**型别码 = TY-STRUCT-BASE + 结构体 id**，值住 %st<id>（第七个
 ;   命名空间之外的「值」空间，与 %sv/%vc/%op 并列）。结构体 id 0..N 由语义层登记
 ;   （`cg-runtime-struct-decls(sfc)`：sfc[id] = 字段数，0 = 未使用）。
@@ -479,3 +487,28 @@ OP-VEC-FREE = 94
 ;      由 h2m 显式发 kind 3/2 序列，不在助手内隐式处理（同 Go emitPrint 的拼法）。
 ;   ⚠️ op 码取 95，接在 OP-VEC-FREE=94 之后，不重排既有码。
 OP-PRINT = 95
+
+; ── 切片 B 底座：str 元素向量助手（%vec 元素型别 = %str-long，stride 16）────────
+; ⚠️ op 码 96/97/98 接在 OP-PRINT=95 之后，不重排既有码。
+; ⚠️ 这三 op 只由【底座验证】（cg-test 手写 op）与后续 h2m []str 降级臂发出；与 i64 版同形，
+;    差在助手名（vec_push_str/get_str/free_str）与元素 stride（16 vs 8）。
+; OP-VECPUSHSTR：dst = 新向量值 id（TY-VEC）；a = 旧向量值 id；bs[k] = 被压入的 str 值 id（TY-STR，落 %sv）。
+;   发 call %vec @vec_push_str(%vec %vc, %str-long %sv)（返回新 %vec；元素在助手内 clone 成独立 rc 塊）。
+OP-VECPUSHSTR = 96
+; OP-VECGETSTR：dst = str 值 id（TY-STR，落 %sv）；a = 向量值 id；bs[k] = 下标 i64 值 id。
+;   发 call %str-long @vec_get_str(%vec %vc, i64 %v)。回【借用視圖】，呼叫方不得 drop。
+OP-VECGETSTR = 97
+; OP-VEC-FREE-STR：x = 向量值 id（TY-VEC）；无结果。发 call void @vec_free_str(%vec %vc)
+;   （逐元素 release data + free 陣列緩衝，dat==0 短路）。破坏性一次性释放，所有权必须唯一。
+OP-VEC-FREE-STR = 98
+
+; ── 切片 B 第三层：with-cap 容量预留助手 ─────────────────────────────────
+; ⚠️ op 码 99/100 接在 98 之后，不重排既有码。
+; with-cap(n) 的 cap 有真实语义（跨帧传递的 bufio 缓冲要求 buf.cap 原样保留），
+;   不能像 @vec_new 那样恒回 {0,0,0}。两 op 按 let 注解型别选择 stride。
+; OP-VECNEWCAP：dst = %vec（TY-VEC）；x = cap 值 id（TY-I64，落 %v）。
+;   发 call %vec @vec_new_cap_i64(i64 %v)（malloc cap*8，写 len=0/cap=cap/data）。
+OP-VECNEWCAP = 99
+; OP-VECNEWCAPSTR：dst = %vec（TY-VECSTR）；x = cap 值 id（TY-I64）。
+;   发 call %vec @vec_new_cap_str(i64 %v)（malloc cap*16 + memset 0）。
+OP-VECNEWCAPSTR = 100
