@@ -7,12 +7,16 @@ package lsp
 //   #{overflow=wrap} / 'a'+'b'   → 註解移除、'+' 翻成 '-'
 //   m [str]i64 = {...}           → 標註保留（map 字面量防禦）
 //
-// 注意 stdin 模式的 `no fmt` 只做排版、不做主動改寫，別拿它當對照基準。
+// 對照基準用檔案模式：stdin 現在也走 computeFmtResult（會做主動改寫），
+// 但它的簽名上下文是 configFor(".")，子目錄檔案的 package root 可能不同。
 
 import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	nfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/fmtflow"
 )
 
 func lspFormatText(t *testing.T, s *Server, uri, src string) string {
@@ -122,10 +126,11 @@ func TestLSPFormatConfigDidChangeConfiguration(t *testing.T) {
 }
 
 // TestLSPFormatCrossModuleSignaturesOff 驗證關掉簽名後視野收斂：
-// 跨模組 bool 呼叫不再被化簡，但本檔單純排版不受影響。
+// 跨模組 bool 呼叫不再被化簡，但主動改寫仍要跑（不能因 fresh parse 失敗
+// 退回純排版）。
 func TestLSPFormatCrossModuleSignaturesOff(t *testing.T) {
 	skipLSPWithoutStdSigKey(t)
-	src := "# std/args\nf = () {\n    hit = args.has-flag('x')\n    hit == true -> return\n}\n"
+	src := "# std/args\nf = () {\n    x str = ''\n    hit = args.has-flag('x')\n    hit == true -> return\n}\n"
 	s := NewServer()
 	if _, err := s.Handle("initialize", json.RawMessage(`{"initializationOptions":{"fmt":{"crossModuleSignatures":false}}}`)); err != nil {
 		t.Fatal(err)
@@ -133,5 +138,32 @@ func TestLSPFormatCrossModuleSignaturesOff(t *testing.T) {
 	got := lspFormatText(t, s, "file:///tmp/probe-c5.no", src)
 	if !strings.Contains(got, "hit == true") {
 		t.Fatalf("no cross-module signatures => keep the comparison, got:\n%s", got)
+	}
+	if !strings.Contains(got, "x = ''") || strings.Contains(got, "x str = ''") {
+		t.Fatalf("turning off signatures must not fall back to plain formatting, got:\n%s", got)
+	}
+}
+
+// TestNarrowConfigKeepsParseOnlyFields 釘住「關掉跨模組簽名」只關三張
+// 簽名表。EnumVariants / Filename / AllowAnonymousFnType 不是函式簽名，但會
+// 影響解析成敗，清掉會讓渲染用的 fresh parse 與 gate 的完整 cfg 分歧。
+func TestNarrowConfigKeepsParseOnlyFields(t *testing.T) {
+	cfg := nfmt.ParseConfig{
+		Filename:             "probe.no",
+		AllowAnonymousFnType: true,
+		FuncSigs:             map[string][]string{"fs.write-str": {"?bool"}},
+		MethodSigs:           map[string][]string{"str.starts-with": {"bool"}},
+		StructFields:         map[string]map[string]string{"t": {"n": "i64"}},
+		EnumVariants:         map[string][]string{"code": {"io", "arg"}},
+	}
+	off := fmtflow.NarrowConfig(cfg)
+	if off.FuncSigs != nil || off.MethodSigs != nil || off.StructFields != nil {
+		t.Fatal("crossModuleSignatures=false must drop the three signature tables")
+	}
+	if off.Filename != "probe.no" || len(off.EnumVariants) == 0 || !off.AllowAnonymousFnType {
+		t.Fatalf("parse-affecting fields must survive: %+v", off)
+	}
+	if cfg.FuncSigs == nil || cfg.EnumVariants == nil {
+		t.Fatal("NarrowConfig must not mutate the shared source config")
 	}
 }

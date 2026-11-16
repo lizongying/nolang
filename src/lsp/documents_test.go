@@ -87,6 +87,12 @@ func TestDocumentRemove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenDocument failed: %v", err)
 	}
+	// parseSnapshots 也必須隨關檔清掉：它持有整棵糖 AST，只在文件開啟期間
+	// 有意義。這條不變量是「不需要 LRU / 上限」的前提（見 DocumentManager
+	// 的 parseSnapshots 註解），所以直接釘在這裡。
+	dm.mu.Lock()
+	dm.parseSnapshots[uri] = &parseSnapshot{text: text}
+	dm.mu.Unlock()
 
 	err = dm.RemoveDocument(uri)
 	if err != nil {
@@ -96,6 +102,12 @@ func TestDocumentRemove(t *testing.T) {
 	_, err = dm.GetDocument(uri)
 	if err == nil {
 		t.Error("expected error when getting removed document")
+	}
+	dm.mu.RLock()
+	_, snapLeft := dm.parseSnapshots[uri]
+	dm.mu.RUnlock()
+	if snapLeft {
+		t.Error("RemoveDocument must drop the parse snapshot (no LRU: bounded by open docs)")
 	}
 }
 

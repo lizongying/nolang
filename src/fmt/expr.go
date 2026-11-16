@@ -459,6 +459,14 @@ func collectBoolComparisonFacts(p *parser.Program, sem *parser.SemanticContext) 
 			localResults[k] = t
 		}
 	}
+	// Method calls keyed by a VARIABLE receiver (`s.starts-with`) need the
+	// receiver's already-inferred type to reach the type-keyed method table.
+	// Exact keys above win; this only fills the gap.
+	for k, t := range externMethodResultsForVars(sem) {
+		if _, exists := localResults[k]; !exists {
+			localResults[k] = t
+		}
+	}
 
 	// Semantic side-table from the fresh parse: declared annotations plus the
 	// few types the parser infers locally (notably `x = 1 + 2` -> ?i64).

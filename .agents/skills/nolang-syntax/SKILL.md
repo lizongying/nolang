@@ -1056,18 +1056,29 @@ under [Control Flow](#control-flow) — same tokens, different context.
   `c = !` → `c = false`.
 - **Known simplifies, unknown does not.** When exactly one operand of `==` /
   `!=` is a boolean literal AND the other operand can be **proven to be a bool
-  value**, the formatter emits the simplified form. `no fmt`, LSP, `no build`
-  and `no vet` share the `build.FmtSigLoader` signature view (baked-in std
-  tables + local modules reached via `use` / `#` + EnumVariants), injected
-  before the fresh `SkipLowering` parse via `SemRebuildConfig.Apply`. Three
-  sources count as proof:
+  value**, the formatter emits the simplified form. All four pipelines share
+  the same signature-collection rules (`collectModuleSignatures`: baked-in std
+  tables + local modules reached via `use` / `#` + EnumVariants) and the same
+  `SemRebuildConfig.Apply` injection contract; only the supplier differs:
+  `no fmt` / LSP use `build.FmtSigLoader`, while `no build` / `no vet` still go
+  through `preloadModuleSignatures` + `astParseConfig` (the two loaders are not
+  merged yet). `no fmt` injects before the fresh `SkipLowering` parse; LSP
+  injects in `ParseDocument` and publishes a `parseSnapshot`, so format-on-save
+  reuses a deep copy of that sugar AST (`fmt.CloneProgramForFormat`) and, with
+  default settings, no longer parses again. Three sources count as proof:
 
   1. An explicit type annotation: `b bool = true`, parameter `(b bool)`.
   2. A boolean literal assignment: `flag = true` / `flag = false`.
   3. A call to a function whose declared result is `bool`: **defined in this
      file** (e.g. `bytes-eq = ... (eq bool)`), or visible through the
      signature table (e.g. std `args.has-flag`, a local `helper.is-ok`).
-     A call whose result type the table cannot resolve stays unknown.
+     A call on a variable receiver (`s.starts-with('a')`) is resolved through
+     the receiver's already-inferred type in `Sem` (`s: str`) against
+     `str.starts-with`; an uninferred receiver, or the same variable name
+     inferred as different types in different scopes, stays unknown (no
+     "globally unique method name" guessing, which could mistake `?bool` for
+     plain `bool`). A call whose result type the table cannot resolve stays
+     unknown.
 
   | Source (`b` below is a "known" variable) | Formatted |
   | ---------------------------------------- | --------- |
@@ -1081,7 +1092,8 @@ under [Control Flow](#control-flow) — same tokens, different context.
   is left untouched, and so is a bare name with no bool evidence (`f == true`).
 - **`?T` and every unknown operand keep `== true` / `== false`**: options,
   cross-module calls whose result type the signature table cannot resolve,
-  bare names, dot access, call expressions and arithmetic results. A bare
+  bare names, dot access with an uninferred receiver type, call expressions
+  and arithmetic results. A bare
   `x` / `! x` used as a control-flow guard triggers an MIR "option-as-i1"
   codegen crash — v0.3.3 reverted the entire rule for this reason
   (`8a8ecb59`). 2026-11-15 restored it under a *positive proof* rule,

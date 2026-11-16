@@ -248,14 +248,20 @@ func stdParseTablesFor(fsys fs.FS) (stdParseTables, error) {
 // stdSemConfig is the parse configuration a std module body is parsed with.
 // Both the generator (newStdModuleParser) and the Tier-0 rebuild (StdASTFor)
 // go through it, so a configuration change cannot reach one and miss the other.
+//
+// 字段到 cfg 的映射不在本函数里：交给 parser.NewSemRebuildConfig（与 build、
+// fmt / LSP 同一个构造点），因此给 parser 加输入时这里不会静默落后。
+//
+// CompilerSwitches 取零值是有意的：std 模块体不属于任何 package.noml，
+// compiler.anonymous-fn-type 对它没有定义域。若将来 std 需要某个解析期开关，
+// 必须在这里显式给值 —— 那也意味着**烤 blob 与重建两条路径同时**获得它。
 func stdSemConfig(embedPath string, t stdParseTables) parser.SemRebuildConfig {
-	return parser.SemRebuildConfig{
-		Filename:     filepath.Base(embedPath),
+	return parser.NewSemRebuildConfig(filepath.Base(embedPath), parser.CompilerSwitches{}, parser.SigTableSet{
 		FuncSigs:     t.FuncSigs,
 		MethodSigs:   t.MethodSigs,
 		StructFields: t.StructFields,
 		EnumVariants: t.EnumVariants,
-	}
+	})
 }
 
 // newStdModuleParser builds the parser for a std module body with the SAME

@@ -16,17 +16,24 @@ import (
 )
 
 type Transpiler struct {
-	pkg              *Package // 當前套件（用於路徑解析）
-	sourcePath       string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
-	allowAnonymousFn bool     // 是否允許匿名函式型別參數（來自 package.noml）
+	pkg        *Package // 當前套件（用於路徑解析）
+	sourcePath string   // 當前編譯的源碼檔案路徑（用於 std 庫檢測）
+	// switches 是 package.noml compiler 區塊中影響**解析結果**的開關，由
+	// compilerSwitches 統一映射（見 compiler_switches.go）。存整個結構體而非
+	// 單個布林值：新增解析期開關時，這裡不必再改。
+	switches parser.CompilerSwitches
+	// saltCache 是 astCacheSalt 的 memo。同一个编译目标内外部签名表不变，
+	// 而 salt 要把上千条签名序列化成 JSON；原先每个文件解析都重算一遍。
+	// 失效点只有 preloadModuleSignatures 装载完签名表的那一刻。
+	saltCache string
 	// optionInlineThreshold 是 `?T` 載荷內聯的字節閾值（0 = 用 MIR 預設值 24）。
 	// 來源依序為 NOLANG_OPTION_INLINE_THRESHOLD 環境變數、package.noml 的
 	// compiler.option-inline-threshold。它決定 MIR 的
 	// `%option = { i64 tag, [N x i64] slot }` 裡 slot 的寬度：載荷 sizeof 不
 	// 大於它則內聯，大於它則堆裝箱、slot[0] 存指針。
 	optionInlineThreshold int
-	vetMode               bool                 // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
-	vetStrict             bool                 // vet 模式下是否將 warning/hint 升級為 error
+	vetMode               bool // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
+	vetStrict             bool // vet 模式下是否將 warning/hint 升級為 error
 	// jsBackend 標記本次前端組裝服務於 JS 後端（--js 或 package.noml 的
 	// compiler.emit = "js"）。LLVM 無法連結 JS 模組，故 `# npm/<spec>` 這類
 	// ESM 導入在 JS 後端下**不解析為 .no 原始碼**，而是與 js_backend.go 同口徑
@@ -34,7 +41,7 @@ type Transpiler struct {
 	// 沒有這個標記時 `# npm/...` 走 resolveModule 的硬錯分支（見
 	// transpiler_resolve.go），`no vet example/esm-imports` 因此誤報 ERROR。
 	jsBackend bool
-	vetLints              []checker.LintResult // vet 模式下收集的 lint 結果
+	vetLints  []checker.LintResult // vet 模式下收集的 lint 結果
 	// chainedIfHints 收集主程序（非 std 库）中链式 -> 条件的 lint 提示，
 	// 由 buildWithPkg 在编译成功后打印到 stderr，提醒用户改用合并条件或 { } 块。
 	chainedIfHints []string
@@ -165,10 +172,10 @@ func (t *Transpiler) collectASTAudit() {
 
 func NewTranspiler(pkg *Package) *Transpiler {
 	t := &Transpiler{
-		pkg: pkg,
+		pkg:      pkg,
+		switches: compilerSwitches(pkg),
 	}
 	if pkg != nil {
-		t.allowAnonymousFn = pkg.Compiler.AnonymousFnType
 		t.optionInlineThreshold = pkg.Compiler.OptionInlineThreshold
 	}
 	// 環境變數覆寫 package.noml，方便不改專案檔就能做 A/B。

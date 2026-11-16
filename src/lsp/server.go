@@ -705,15 +705,20 @@ func getWordBeforePosition(text string, position Position) string {
 // already bail out on parse errors, so unparseable input is never rewritten.
 //
 // 純排版（rewrite=false）且簽名視野不變時，直接複用索引用的 doc.AST，零額外
-// parse。一旦開啟主動改寫，就必須在一棵 fresh parse 的臨時樹上作業：
-// FixStringConcatOperators 會就地改 AST，直接拿 doc.AST 會污染 hover / 補全，
+// parse。開啟主動改寫後則用 ParseDocument 發布的 snap.ast 深拷一份工作副本：
+// FixStringConcatOperators 會就地改 AST，直接拿索引樹會污染 hover / 補全，
 // 且「省略冗餘標註」的渲染結果與緩衝區文字不同，不能讓索引樹繼續代表它。
-// format-on-save 不是每鍵觸發，多一次 parse 的代價可接受。
-func formatNolangCode(doc *TextDocument, cfg nolangfmt.ParseConfig, c FmtConfig) string {
+// 預設設定下這是零額外 parse；關掉跨模組簽名、或快照文字與緩衝區不同步時，
+// 才退回 fresh parse（見 rewriteAndFormat）。
+func formatNolangCode(doc *TextDocument, cfg nolangfmt.ParseConfig, c FmtConfig, snap *parseSnapshot) string {
 	if !c.Rewrite && c.CrossModuleSignatures && doc.AST != nil {
 		return nolangfmt.FormatProgram(doc.AST, doc.Text)
 	}
-	return rewriteAndFormat(doc.Text, cfg, c)
+	var base *parser.Program
+	if snap != nil && snap.text == doc.Text {
+		base = snap.ast
+	}
+	return rewriteAndFormat(doc.Text, cfg, c, base)
 }
 
 func computeTextEdits(original, formatted string) []TextEdit {
@@ -753,7 +758,7 @@ func (s *Server) handleTextDocumentFormatting(params DocumentFormattingParams) (
 	if len(snap.errs) > 0 {
 		return []TextEdit{}, nil
 	}
-	formatted := formatNolangCode(doc, snap.cfg, s.fmtCfg.get())
+	formatted := formatNolangCode(doc, snap.cfg, s.fmtCfg.get(), snap)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
@@ -775,7 +780,7 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 	if len(snap.errs) > 0 {
 		return []TextEdit{}, nil
 	}
-	formatted := formatNolangCode(doc, snap.cfg, s.fmtCfg.get())
+	formatted := formatNolangCode(doc, snap.cfg, s.fmtCfg.get(), snap)
 	edits := computeTextEdits(doc.Text, formatted)
 	if edits == nil {
 		return []TextEdit{}, nil
@@ -784,10 +789,11 @@ func (s *Server) handleTextDocumentWillSaveWaitUntil(params WillSaveWaitUntilPar
 }
 
 // ensureFormatSnapshot returns the parse result that BOTH feeds the editor's
-// live diagnostics and gates format-on-save. Long-term architecture: one
-// ParseDocument call per buffer state produces diagnostics, the sugar AST and
-// the injected signature config; formatting reuses all three instead of
-// parsing again with a possibly different view.
+// live diagnostics and drives format-on-save. One ParseDocument call per buffer
+// state produces diagnostics, the sugar AST and the injected signature config;
+// formatting consumes all three: errs as the gate, cfg as the render view and
+// ast as the (cloned) working tree for active rewrites. Only a narrowed
+// signature view or a stale-text race falls back to a fresh parse.
 //
 // didOpen/didChange parse asynchronously, so a save can arrive before the
 // snapshot covers the current text. In that race we synchronously run the SAME
@@ -854,6 +860,9 @@ func (s *Server) Handle(method string, params json.RawMessage) (any, error) {
 		}
 		for _, e := range p.Changes {
 			if isPackageManifestEvent(e) {
+				// VetFile 用的是另一個包級 context（VetDirectory 逐檔呼叫），
+				// 也要一併失效，否則 manifest 改了 LSP 目錄 vet 仍讀舊 loader。
+				vetSigContext.invalidate()
 				if s.documents != nil {
 					s.documents.sig.invalidate()
 					s.documents.invalidateParseSnapshots()

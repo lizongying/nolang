@@ -78,9 +78,9 @@ func collectModuleSignatures(modProg *parser.Program, modShort string,
 	}
 }
 
-// fmtUseRe 與 preloadModuleSignatures 的掃描式逐字一致，確保兩條管道看到
-// 同一組 use / # 陳述。
-var fmtUseRe = regexp.MustCompile(`(?m)^\s*(?:use|#)\s+([\w/.\-]+)`)
+// moduleUseRe 匹配源码中的 use / # 陈述。包级复用：这个正则原先在
+// preloadModuleSignatures 函数体内，每编译一个文件就重编一次。
+var moduleUseRe = regexp.MustCompile(`(?m)^\s*(?:use|#)\s+([\w/.\-]+)`)
 
 type fmtSigTables struct {
 	funcSigs     map[string][]string
@@ -116,6 +116,11 @@ type FmtSigLoader struct {
 	// `no fmt` 因為拿不到簽名就整支程式被殺掉。
 	disabled bool
 
+	// switches 是 package.noml compiler 区块中影响**解析结果**的开关，由
+	// compilerSwitches 统一映射 —— 与 Transpiler 用的是同一份映射，因此在
+	// fmt / LSP 里不可能漏掉某个解析期开关（anonymous-fn-type 曾经就漏在这里）。
+	switches parser.CompilerSwitches
+
 	stdFunc      map[string][]string
 	stdMethod    map[string][]string
 	stdStruct    map[string]map[string]string
@@ -130,6 +135,7 @@ type FmtSigLoader struct {
 func NewFmtSigLoader(p *Package) *FmtSigLoader {
 	l := &FmtSigLoader{
 		t:           NewTranspiler(p),
+		switches:    compilerSwitches(p),
 		moduleCache: make(map[string]*fmtModuleSigs),
 		tablesCache: make(map[string]*fmtSigTables),
 	}
@@ -154,29 +160,38 @@ func NewFmtSigLoader(p *Package) *FmtSigLoader {
 // ConfigFor 回傳格式化 source 時應注入的解析配置。filePath 非空時會填
 // cfg.Filename（影響診斷文字）；`no fmt` 預設傳空字串以保持既有的錯誤
 // 輸出逐字不變。回傳的 map 是共用只讀表，呼叫端不應修改。
+//
+// 與 build 的 astParseConfig 共用 parser.NewSemRebuildConfig，本函式只決定
+// 「表從哪來」，不羅列 cfg 欄位。
+//
+// package 級開關與簽名表無關（它們決定語法能否解析），因此即使 StdSigKey
+// 缺失、簽名表退化為空，仍照樣帶上 —— 少了它會讓 fmt 對
+// `anonymous-fn-type: true` 的 package 產生與 build 不同的錯誤。
 func (l *FmtSigLoader) ConfigFor(source, filePath string) parser.SemRebuildConfig {
-	if l == nil || l.disabled {
-		return parser.SemRebuildConfig{}
+	if l == nil {
+		return parser.NewSemRebuildConfig("", parser.CompilerSwitches{}, parser.SigTableSet{})
 	}
-	tables := l.tablesFor(source)
 	name := ""
 	if filePath != "" {
 		name = filepath.Base(filePath)
 	}
-	return parser.SemRebuildConfig{
-		Filename:     name,
+	if l.disabled {
+		return parser.NewSemRebuildConfig(name, l.switches, parser.SigTableSet{})
+	}
+	tables := l.tablesFor(source)
+	return parser.NewSemRebuildConfig(name, l.switches, parser.SigTableSet{
 		FuncSigs:     tables.funcSigs,
 		MethodSigs:   tables.methodSigs,
 		StructFields: tables.structFields,
 		EnumVariants: l.enumVariants,
-	}
+	})
 }
 
 // tablesFor 依「排序後的 use 集合」快取合併後的三張表。std 簽名一律由內嵌表
 // 全量提供（標準庫隱式可用，不能按是否引用跳過），本地模組簽名後寫入、
 // 覆蓋同名鍵，維持 build 的「本地優先」語義。
 func (l *FmtSigLoader) tablesFor(source string) *fmtSigTables {
-	uses := fmtUseRe.FindAllStringSubmatch(source, -1)
+	uses := moduleUseRe.FindAllStringSubmatch(source, -1)
 	paths := make([]string, 0, len(uses))
 	seen := make(map[string]bool, len(uses))
 	for _, m := range uses {

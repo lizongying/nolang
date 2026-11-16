@@ -11,12 +11,14 @@ import (
 //
 //	**已知的化簡，未知的不化簡。**
 //
-// `no fmt` 是單檔 fresh SkipLowering parse，沒有跨模組簽名（那是 build/vet
-// 才注入的 SetExternSignatures）。因此只有「單檔可確證為 bool 值」的運算元
-// 才重寫：`x == true` → `x`、`x == false` → `! x`（`!=` 翻轉極性）。
-// 可確證的來源只有三類：顯式 bool 標註、bool 字面量賦值、本檔定義函式的
-// bool 宣告回傳型別。其它一切 —— `?T`、跨模組呼叫結果、裸名、點號存取、
-// 呼叫式、運算結果 —— 都是未知，一律保留 `== true` / `== false`。
+// 本檔刻意用裸 `nfmt.Format*` 呼叫（零值 ParseConfig）驗證**單檔視野**：
+// 現在 `no fmt` / LSP 會注入 `FmtSigLoader` 的 std + 本地模組簽名，跨模組的
+// bool 證據由 `signatures_test.go` 與 `lsp/fmt_*_test.go` 覆蓋，別把這裡的
+// 「未知」誤讀成「工具鏈看不到」。只有「可確證為 bool 值」的運算元才重寫：
+// `x == true` → `x`、`x == false` → `! x`（`!=` 翻轉極性）。
+// 單檔可確證的來源有三類：顯式 bool 標註、bool 字面量賦值、本檔定義函式的
+// bool 宣告回傳型別。其它一切 —— `?T`、查不到結果型別的呼叫、裸名、
+// 點號存取、運算結果 —— 都是未知，一律保留 `== true` / `== false`。
 //
 // v0.3.3（8a8ecb59）曾因 option 折成裸 guard 觸發 MIR "option-as-i1" crash
 // 而整條 revert；2026-11-15 恢復時改成上述「正向確證」分界，不再用

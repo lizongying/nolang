@@ -348,8 +348,16 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 
 // FormatProgramWithOverflow 與 FormatProgram 同，但移除「無效」的 #{overflow = ...}
 // 註解（其管轄陳述不含整數運算，如整行僅字串拼接）。relevant 為 nil 時退回舊行為。
+// 循環風格固定為 prefix；需要 -loop-style 的呼叫端改用下面帶 style 的版本。
 func FormatProgramWithOverflow(program *parser.Program, source string, relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) string {
-	out, ok, _ := formatProgramASTWithOverflow(program, source, LoopStylePrefix, relevant, governed)
+	return FormatProgramWithOverflowAndLoopStyle(program, source, LoopStylePrefix, relevant, governed)
+}
+
+// FormatProgramWithOverflowAndLoopStyle 同 FormatProgramWithOverflow，但可指定循環
+// 輸出風格。CLI 的主動改寫路徑（computeFmtResult）必須走這裡：過去本函式硬編碼
+// LoopStylePrefix，導致 `no fmt -loop-style=suffix` 只在解析失敗的 fallback 生效。
+func FormatProgramWithOverflowAndLoopStyle(program *parser.Program, source string, style LoopStyle, relevant map[parser.Statement]bool, governed map[*parser.AnnotationStatement]parser.Statement) string {
+	out, ok, _ := formatProgramASTWithOverflow(program, source, style, relevant, governed)
 	if !ok {
 		return source
 	}

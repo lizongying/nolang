@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/lizongying/nolang/cache"
@@ -102,14 +101,29 @@ func (t *Transpiler) parseFileWrapped(filePath string) (*parser.Program, error) 
 // differ only in these inputs must NOT share a cached AST, because the parser's
 // semantic side-table (sem.VarTypes / sem.EnumVariants, consumed during
 // lowering) is shaped by them.
+//
+// 结果由 preloadModuleSignatures 在装载完签名表之后算一次并缓存（见
+// computeASTSalt）——同一个编译目标内这些表不会再变，而序列化的是上千条签名。
+// 原先每次调用都重新 marshal：Tier-1 键、重建回验、每个模块文件的解析各一次，
+// 全是同一份内容的重复计算。缓存失效点只有一个（签名表被重新装载），
+// seminputs_consistency_test.go 的 TestAstCacheSaltFollowsSignatureTables 钉住它。
 func (t *Transpiler) astCacheSalt() string {
+	if t.saltCache == "" {
+		t.saltCache = t.computeASTSalt()
+	}
+	return t.saltCache
+}
+
+// computeASTSalt 是 salt 的唯一计算点；顺序与字段名都不能改 —— 它进磁盘缓存
+// 键，改动等于让所有已烤好的 AST 失效一次。
+func (t *Transpiler) computeASTSalt() string {
 	b, _ := json.Marshal(struct {
 		FuncSigs     map[string][]string          `json:"f"`
 		MethodSigs   map[string][]string          `json:"m"`
 		StructFields map[string]map[string]string `json:"s"`
 		AllowAnon    bool                         `json:"a"`
 		StdKey       string                       `json:"k"`
-	}{t.externFuncSigs, t.externMethodSigs, t.externStructFields, t.allowAnonymousFn, checker.StdSigKey})
+	}{t.externFuncSigs, t.externMethodSigs, t.externStructFields, t.switches.AnonymousFnType, checker.StdSigKey})
 	return string(b)
 }
 
@@ -121,6 +135,11 @@ func (t *Transpiler) astCacheSalt() string {
 // what keeps the two paths from drifting — a new parser input added here reaches
 // both, and one added by hand at a single call site reaches only that one.
 //
+// 字段到 cfg 的映射不在本函数里：本函数只交出「文件名 + package 级开关 +
+// 外部签名表」三个整体，由 parser.NewSemRebuildConfig 统一装配
+// （见 parser/seminputs.go）。这样 fmt / LSP 与 Tier-0 std blob 三个生产者
+// 不可能各自漏掉一个 cfg 字段。
+//
 // An empty filePath yields an empty Filename (not filepath.Base("") == "."),
 // matching the old `if t.sourcePath != ""` guard in parseEntryProgram.
 func (t *Transpiler) astParseConfig(filePath string) parser.SemRebuildConfig {
@@ -128,14 +147,15 @@ func (t *Transpiler) astParseConfig(filePath string) parser.SemRebuildConfig {
 	if filePath != "" {
 		name = filepath.Base(filePath)
 	}
-	return parser.SemRebuildConfig{
-		Filename:             name,
-		AllowAnonymousFnType: t.allowAnonymousFn,
-		FuncSigs:             t.externFuncSigs,
-		MethodSigs:           t.externMethodSigs,
-		StructFields:         t.externStructFields,
-		EnumVariants:         checker.CollectStdEnumVariants(),
-	}
+	// EnumVariants 目前只有 std 一份（checker 侧 sync.Once 缓存，重复调用是
+	// 原子读，不是重新收集）。本地模块的枚举变体从未进过 cfg —— 三个生产者
+	// 一致缺失，见 parser.SigTableSet 的注释。
+	return parser.NewSemRebuildConfig(name, t.switches, parser.SigTableSet{
+		FuncSigs:     t.externFuncSigs,
+		MethodSigs:   t.externMethodSigs,
+		StructFields: t.externStructFields,
+		EnumVariants: checker.CollectStdEnumVariants(),
+	})
 }
 
 // parseEmbeddedProgram 從內嵌 FS 的位元組資料解析 Nolang 程式。
@@ -195,6 +215,11 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	// 僅載入程式實際引用到的 std 模組體，其餘略過。
 	stdSigs, stdFields := checker.CollectStdModuleSignatures()
 	stdMethodSigs := checker.CollectStdMethodSigs()
+	// 这里刻意**整表拷贝**，不要改成直接引用：
+	//   - 这三张 std 表是 checker 的全局缓存（stdSigsOnce 背后那几张 map）；
+	//   - 步骤 1 会把本地模块签名写进同一张 map（本地键覆盖同名 std 键）。
+	// 直接引用等于就地改写全局缓存 —— 静默、且会跨编译目标传染。
+	// 拷贝量级约 2000 条 × 每个文件（十几毫秒），不值得为它冒这个险。
 	for name, sigs := range stdSigs {
 		funcSigs[name] = sigs
 	}
@@ -214,9 +239,10 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 	collectSignaturesFromProg := func(modProg *parser.Program, modShort string) {
 		collectModuleSignatures(modProg, modShort, funcSigs, methodSigs, structFields)
 	}
-	// 1. 掃描顯式 use/# 語句（非 std 模組，std 模組由快取提供）
-	useRe := regexp.MustCompile(`(?m)^\s*(?:use|#)\s+([\w/.\-]+)`)
-	matches := useRe.FindAllStringSubmatch(source, -1)
+	// 1. 扫描显式 use/# 语句（非 std 模块，std 模块由缓存提供）
+	// 正则与 FmtSigLoader 共用包级 moduleUseRe：两条管道必须看到同一组
+	// use / # 陈述，且不能再每文件重编一次。
+	matches := moduleUseRe.FindAllStringSubmatch(source, -1)
 	for _, m := range matches {
 		if len(m) < 2 {
 			continue
@@ -265,6 +291,12 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 		}
 	}
 	// std 簽名已於步驟 0 合入（本地模組簽名在步驟 1 直接覆蓋同名鍵）。
+	//
+	// salt 的重算点就在这里：步骤 1 的 resolveUse 会在本函数内部解析模块文件，
+	// 那些解析发生在签名表只含 std 的时刻，用的就是那一刻的 salt（对它们而言
+	// 是对的）。步入步骤 1 之后表变了，因此返回前必须重算，否则入口文件（用
+	// 完整表解析）会拿 std-only 的 salt 去命中按另一组表烤出来的 blob。
+	t.saltCache = t.computeASTSalt()
 	return funcSigs, methodSigs, structFields
 }
 

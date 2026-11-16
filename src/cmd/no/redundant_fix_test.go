@@ -142,7 +142,7 @@ func TestFixRedundantTypeInFile(t *testing.T) {
 			if err := os.WriteFile(p, []byte(c.src), 0644); err != nil {
 				t.Fatal(err)
 			}
-			got, ok := fixRedundantTypeInFile(p)
+			got, ok := fixRedundantTypeInFile(p, nil)
 			if c.want == "" {
 				if ok {
 					t.Errorf("expected NO fix (ok=false), got ok=true result=%q", got)
@@ -170,7 +170,7 @@ func TestFixRedundantTypeFixesDirectory(t *testing.T) {
 	if err := os.WriteFile(p2, []byte("main = () () {\n  y i16 = 5\n}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	fixes := fixRedundantTypeFixes(dir)
+	fixes := fixRedundantTypeFixes(dir, nil)
 	abs1, _ := filepath.Abs(p1)
 	abs2, _ := filepath.Abs(p2)
 	if _, ok := fixes[filepath.Clean(abs1)]; !ok {

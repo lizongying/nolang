@@ -30,16 +30,19 @@ jobs:
         run: cd src && go build ./...
       - name: Vet toolchain
         run: cd src && go vet ./...
-      - name: Check gofmt (src/lsp)
+      - name: Check gofmt (src/lsp src/fmt src/fmtflow)
         # 2026-11-15: the LSP formatting pipeline is gofmt-clean; keep it that way.
-        # Scope is deliberately narrow: the whole src tree is not clean yet, and
+        # 2026-11-16: src/fmt and src/fmtflow (the shared rewrite pipeline used by
+        # both `no fmt` and LSP) are clean too — gate them together so the
+        # single-source contract cannot drift back into divergent code.
+        # Scope stays deliberately narrow: the whole src tree is not clean yet, and
         # files such as src/build/transpiler_entry.go sit INSIDE STDSIG_KEY_SRCS —
         # gofmt there would change the baked std signature key. Widen this gate
         # only in a dedicated cleanup commit that also regenerates the key.
         run: |
-          out=$(gofmt -l src/lsp)
+          out=$(gofmt -l src/lsp src/fmt src/fmtflow)
           if [ -n "$out" ]; then
-            echo "gofmt violations in src/lsp:"
+            echo "gofmt violations:"
             echo "$out"
             exit 1
           fi

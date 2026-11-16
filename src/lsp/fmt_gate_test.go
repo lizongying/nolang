@@ -208,3 +208,29 @@ func TestLSPWatchedFilesInvalidatesBothCaches(t *testing.T) {
 		t.Fatal("workspace.noml change must invalidate the cache")
 	}
 }
+
+// TestLSPWatchedFilesInvalidatesVetCache 釘住 VetFile 的包級 context 也會隨
+// manifest 變更失效。VetDirectory 是逐檔呼叫 VetFile，過去 watched files
+// 只清 documents.sig / snapshots，目錄 vet 會一直讀舊的本地模組簽名。
+func TestLSPWatchedFilesInvalidatesVetCache(t *testing.T) {
+	skipLSPWithoutStdSigKey(t)
+	s := NewServer()
+	prev := vetSigContext
+	vetSigContext = newLSPSigContext()
+	defer func() { vetSigContext = prev }()
+
+	uri := "file:///tmp/probe/vet-cache.no"
+	vetSigContext.configFor(uri, "x str = ''\n")
+	if len(vetSigContext.pkgs) == 0 {
+		t.Fatal("VetFile context should cache its package lookup")
+	}
+	_, err := s.Handle("workspace/didChangeWatchedFiles",
+		json.RawMessage(`{"changes":[{"uri":"file:///tmp/probe/package.noml","type":2}]}`))
+	if err != nil {
+		t.Fatalf("didChangeWatchedFiles: %v", err)
+	}
+	if len(vetSigContext.pkgs) != 0 || len(vetSigContext.loaders) != 0 {
+		t.Fatalf("manifest change must invalidate the vet context: pkgs=%d loaders=%d",
+			len(vetSigContext.pkgs), len(vetSigContext.loaders))
+	}
+}

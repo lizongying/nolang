@@ -13,6 +13,8 @@ package fmt
 // 所有既有的「未知 → 不化簡」測試行為逐位元組不變。
 
 import (
+	"strings"
+
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/ty"
 )
@@ -44,8 +46,9 @@ func externResultTypes(sem *parser.SemanticContext) map[string]*ty.Type {
 //
 //   - 裸函式 `foo()` → "foo"
 //   - 模組限定 `fs.write-str()` → "fs.write-str"
-//   - 方法呼叫 `s.starts-with()` → "s.starts-with"（簽名表也以
-//     `type.method` 形式登記，兩種拼法都能命中）
+//   - 方法呼叫 `s.starts-with()` → "s.starts-with"（以**變數名**為鍵；
+//     簽名表是以 `str.starts-with` 這類**型別名**登記，需由
+//     externMethodResultsForVars 依 Sem 已推斷的變數型別補一組精確鍵）
 //
 // 無法判定（例如呼叫結果再呼叫）時回 false，呼叫端一律降級為 unknown。
 func callResultName(call *parser.CallExpression) (string, bool) {
@@ -61,4 +64,70 @@ func callResultName(call *parser.CallExpression) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// externMethodResultsForVars 補上「變數 receiver 的方法呼叫」的結果型別證據。
+//
+// callResultName 對 `s.starts-with('a')` 產生 `s.starts-with`，但
+// ExternMethodSigs 的鍵是 `str.starts-with`（型別名），兩者永遠對不上——
+// 實測帶 cfg 時 `ok = s.starts-with(...)` 的 ok 在 VarTypes / FuncVarTypes
+// 裡都是空的，boolFacts 只能判 unknown，`ok == true` 因此不被化簡。
+//
+// 這裡**不做**「方法名全域唯一」的猜測：同名方法完全可能一個回 bool、另一個
+// 回 ?bool，誤判就會把 option 當成純 bool 化簡，撞上 option 硬門禁在擋的
+// option-as-i1 MIR crash。只按 parser 已經寫進 Sem 的變數型別精確合成
+// `<變數名>.<方法名>`；同名變數在不同作用域被推成不同型別時直接跳過
+// （boolFacts 是 name-keyed，分不出作用域）。精確鍵仍由 externResultTypes
+// 優先提供，這裡只補空缺。
+func externMethodResultsForVars(sem *parser.SemanticContext) map[string]*ty.Type {
+	out := make(map[string]*ty.Type)
+	if sem == nil || len(sem.ExternMethodSigs) == 0 {
+		return out
+	}
+
+	vars := make(map[string]string) // 變數名 -> 型別名
+	conflict := make(map[string]bool)
+	record := func(name string, t *ty.Type) {
+		if name == "" || t == nil || !t.IsValid() {
+			return
+		}
+		tn := t.String()
+		if prev, ok := vars[name]; ok {
+			if prev != tn {
+				conflict[name] = true
+			}
+			return
+		}
+		vars[name] = tn
+	}
+	for name, t := range sem.VarTypes {
+		record(name, t)
+	}
+	for _, scope := range sem.FuncVarTypes {
+		for name, t := range scope {
+			record(name, t)
+		}
+	}
+
+	for key, rets := range sem.ExternMethodSigs {
+		if len(rets) == 0 || rets[0] == "" {
+			continue
+		}
+		t := ty.Parse(rets[0])
+		if !t.IsValid() {
+			continue
+		}
+		dot := strings.LastIndex(key, ".")
+		if dot <= 0 || dot == len(key)-1 {
+			continue
+		}
+		owner, method := key[:dot], key[dot+1:]
+		for varName, typeName := range vars {
+			if conflict[varName] || typeName != owner {
+				continue
+			}
+			out[varName+"."+method] = t
+		}
+	}
+	return out
 }

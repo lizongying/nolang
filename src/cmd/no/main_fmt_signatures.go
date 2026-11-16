@@ -20,13 +20,44 @@ import (
 	nfmt "github.com/lizongying/nolang/fmt"
 )
 
+// packageLookup 連「找不到 manifest」的結果一起快取（見 loadPackage）。
+type packageLookup struct {
+	pkg *nbuild.Package
+	err error
+}
+
 type fmtSigContext struct {
 	mu      sync.Mutex
 	loaders map[string]*nbuild.FmtSigLoader
+	pkgs    map[string]packageLookup
 }
 
 func newFmtSigContext() *fmtSigContext {
-	return &fmtSigContext{loaders: make(map[string]*nbuild.FmtSigLoader)}
+	return &fmtSigContext{
+		loaders: make(map[string]*nbuild.FmtSigLoader),
+		pkgs:    make(map[string]packageLookup),
+	}
+}
+
+// loadPackage 以雙檢鎖快取 LoadPackage：目錄批次會對上百個 .no 檔呼叫
+// configFor，而 LoadPackage 每次都向上逐級 os.Stat + os.ReadFile +
+// ParseNomlMap。與 lsp.lspSigContext.loadPackage 同一份協定（磁碟 IO 留在
+// 鎖外、連 nil manifest 也快取，避免每檔重走一次失敗路徑）。
+func (c *fmtSigContext) loadPackage(dir string) (*nbuild.Package, error) {
+	c.mu.Lock()
+	v, ok := c.pkgs[dir]
+	c.mu.Unlock()
+	if ok {
+		return v.pkg, v.err
+	}
+	p, err := nbuild.LoadPackage(dir)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v, ok := c.pkgs[dir]; ok {
+		return v.pkg, v.err
+	}
+	c.pkgs[dir] = packageLookup{pkg: p, err: err}
+	return p, err
 }
 
 // configFor 依檔案所屬 package 取得 loader，並為該份 source 產出解析配置。
@@ -39,7 +70,7 @@ func (c *fmtSigContext) configFor(path, source string) nfmt.ParseConfig {
 	if info, err := os.Stat(path); err == nil && !info.IsDir() {
 		dir = filepath.Dir(path)
 	}
-	p, _ := nbuild.LoadPackage(dir)
+	p, _ := c.loadPackage(dir)
 	key := ""
 	if p != nil {
 		key = p.RootDir

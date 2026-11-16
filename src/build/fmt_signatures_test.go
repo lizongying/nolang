@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
 // fmt_signatures_test.go 需要內嵌 std 簽名表；bare `go test`（StdSigKey 未
@@ -18,6 +20,46 @@ func skipWithoutStdSigKey(t *testing.T) {
 	}
 }
 
+// TestFmtSigLoaderCarriesAllowAnonymousFnType 回歸：`compiler.anonymous-fn-type`
+// 不是簽名表，但同樣決定「這份原始碼能否解析」（parser/type.go 的
+// parseParamTypeAfterName 在關閉時直接報 zc1zfsat）。它過去從未進入
+// FmtSigLoader.ConfigFor，於是 `no fmt` / LSP 對開啟該開關的 package 會用
+// 關閉的視野解析 —— 與 `no build` 得到不同 AST。
+func TestFmtSigLoaderCarriesAllowAnonymousFnType(t *testing.T) {
+	// 開啟時必須一路傳到 cfg，且不受簽名表是否可用影響（簽名表退化路徑也要留）。
+	l := NewFmtSigLoader(&Package{Compiler: CompilerOptions{AnonymousFnType: true}})
+	if !l.switches.AnonymousFnType {
+		t.Fatal("loader did not capture compiler.anonymous-fn-type")
+	}
+	if cfg := l.ConfigFor("f = () () {\n}\n", "x.no"); !cfg.AllowAnonymousFnType {
+		t.Fatal("ConfigFor dropped AllowAnonymousFnType (cfg)")
+	}
+
+	// 空 package（無 package.noml）必須維持 false，與編譯器預設一致。
+	if cfg := NewFmtSigLoader(&Package{}).ConfigFor("", ""); cfg.AllowAnonymousFnType {
+		t.Fatal("zero-value package must keep AllowAnonymousFnType false")
+	}
+}
+
+// TestAllowAnonymousFnTypeReachesParse 確認上面那個旗標不是裝飾：同一份原始碼
+// 在開 / 關兩種配置下，解析結果真的不同。
+func TestAllowAnonymousFnTypeReachesParse(t *testing.T) {
+	src := "f = (cb () ()) {\n}\n"
+	parse := func(allow bool) []string {
+		p := parser.New(lexer.New(src))
+		parser.NewSemRebuildConfig("probe.no", parser.CompilerSwitches{AnonymousFnType: allow}, parser.SigTableSet{}).Apply(p)
+		p.ParseProgram()
+		return p.Errors()
+	}
+	if got := parse(true); len(got) != 0 {
+		t.Fatalf("anonymous-fn-type=true should parse, got %v", got)
+	}
+	if got := parse(false); len(got) == 0 {
+		t.Fatal("anonymous-fn-type=false must reject the anonymous function type")
+	}
+}
+
+// TestFmtSigLoaderStdTables 驗證內嵌 std 表全量注入。
 func TestFmtSigLoaderStdTables(t *testing.T) {
 	skipWithoutStdSigKey(t)
 	stdSigs, stdFields := checker.CollectStdModuleSignatures()

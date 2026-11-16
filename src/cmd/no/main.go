@@ -25,6 +25,7 @@ import (
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/checker/stdastembed"
 	nfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/fmtflow"
 	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/i18n/catalog"
 	"github.com/lizongying/nolang/lexer"
@@ -1344,6 +1345,9 @@ func fmtCommand(args []string) {
 			}
 			// 與檔案模式共用同一個入口：stdin 也做移除冗餘標註 / stringConcat
 			// 翻轉 / overflow 註解清理，不再只剩排版。
+			// stdin 沒有檔名，故以「當前工作目錄」為 package root（configFor(".")）；
+			// 檔案模式用的是檔案所在目錄。兩者 root 相同時輸出才逐位元組一致——
+			// 從子目錄把檔案餵進管道時，請在該 package 根目錄下執行（見 AGENTS.md §5.3）。
 			result, perrs := computeFmtResult(original, style, sigCtx.configFor(".", original))
 			if len(perrs) > 0 {
 				for _, e := range perrs {
@@ -1414,26 +1418,14 @@ func fmtCommand(args []string) {
 }
 
 // computeFmtResult 是 `no fmt` 對一份 .no 原始碼的**唯一**格式化入口：
-// 移除冗餘標註 → stringConcat 翻轉 → overflow 相關性 → 渲染。
+// 移除冗餘標註 / stringConcat 翻轉 / overflow 註解清理 → 渲染。
 //
-// 長期決策：檔案模式、stdin 管道、目錄檢查模式三條路徑都呼叫它。過去 stdin
-// 只做排版、目錄檢查模式也只做排版，於是「檢查說不用改、-w 卻改了」以及
-// 「管道裡跑 no fmt 與檔案模式結果不同」都是同一個根源。perrs 保留給呼叫端
+// 長期決策：檔案模式、stdin 管道、目錄檢查模式三條路徑都呼叫它，而它本身
+// 只是 fmtflow.Format 的薄封裝 —— LSP format-on-save 呼叫的是同一個函式，
+// 所以「存檔自動格式化」與 `no fmt -w` 不可能再各自漂移。perrs 保留給呼叫端
 // 決定怎麼回報（檔案要帶檔名、stdin 不帶），格式化產物本身只有一份。
 func computeFmtResult(src string, loopStyle nfmt.LoopStyle, cfg nfmt.ParseConfig) (string, []string) {
-	reduced := src
-	if r, ok := fixRedundantTypeSourceWithConfig(src, cfg); ok {
-		reduced = r
-	}
-	lp := parseProgramForFmtWithConfig(reduced, cfg)
-	if lp == nil {
-		// 解析失敗時退回 formatter 自己的 fallback，並把錯誤交回呼叫端。
-		r, perrs := nfmt.FormatFileWithConfig(reduced, cfg, loopStyle)
-		return r, perrs
-	}
-	checker.FixStringConcatOperators(lp, checker.BuildTHIRView(lp))
-	relevant, governed := checker.OverflowAnnotationRelevanceWithExtern(lp, externTablesFromConfig(cfg))
-	return nfmt.FormatProgramWithOverflow(lp, reduced, relevant, governed), nil
+	return fmtflow.Format(src, cfg, fmtflow.DefaultOptions(loopStyle))
 }
 
 func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle, sigCtx *fmtSigContext) error {
@@ -1442,7 +1434,7 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 		return verr
 	}
 	if fixClass != "" {
-		return fmtProcessFixFile(filename, writeInPlace, diffMode, fixClass)
+		return fmtProcessFixFile(filename, writeInPlace, diffMode, fixClass, sigCtx)
 	}
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -1544,7 +1536,7 @@ func validateFmtPath(path string) error {
 
 func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle, mdMode bool, sigCtx *fmtSigContext) error {
 	if fixClass != "" {
-		return fmtProcessFixDirectory(dirname, writeInPlace, diffMode, fixClass)
+		return fmtProcessFixDirectory(dirname, writeInPlace, diffMode, fixClass, sigCtx)
 	}
 	var firstErr error
 	checked := 0
@@ -1672,14 +1664,14 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 
 // fmtProcessFixFile 對單一檔案套用 --fix。修復集合以「package 目錄」的合併 vet
 // 為準（見 fmtOverflowFixes），故能修到單檔 vet 漏報的站點。
-func fmtProcessFixFile(filename string, writeInPlace bool, diffMode bool, fixClass string) error {
+func fmtProcessFixFile(filename string, writeInPlace bool, diffMode bool, fixClass string, sigCtx *fmtSigContext) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
 	original := string(data)
 	result := original
-	fixes, ferr := fmtOverflowFixes(filename, fixClass)
+	fixes, ferr := fmtOverflowFixes(filename, fixClass, sigCtx)
 	if ferr != nil {
 		return ferr
 	}
@@ -1706,8 +1698,8 @@ func fmtProcessFixFile(filename string, writeInPlace bool, diffMode bool, fixCla
 
 // fmtProcessFixDirectory 對目錄套用 --fix：以合併 vet 取得全部修復（檔名 -> 修復後源碼），
 // 再依 -w / -d / 檢查模式處理每個有變動的檔案。
-func fmtProcessFixDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string) error {
-	fixes, err := fmtOverflowFixes(dirname, fixClass)
+func fmtProcessFixDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, sigCtx *fmtSigContext) error {
+	fixes, err := fmtOverflowFixes(dirname, fixClass, sigCtx)
 	if err != nil {
 		return err
 	}
@@ -1767,9 +1759,9 @@ func fmtProcessFixDirectory(dirname string, writeInPlace bool, diffMode bool, fi
 // 的行號完全相同）。刻意不呼叫 `no vet <pkg>` 取行號：`no vet src/std` 對 std 模組
 // 走的是內嵌 StdFS，磁碟修改必須重編 bin/no 才會反映，否則報告行號與磁碟檔錯位，
 // 會把註解插到錯誤的陳述上。
-func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
+func fmtOverflowFixes(arg string, fixClass string, sigCtx *fmtSigContext) (map[string]string, error) {
 	if fixClass == "redundant" {
-		return fixRedundantTypeFixes(arg), nil
+		return fixRedundantTypeFixes(arg, sigCtx), nil
 	}
 	if fixClass == "match" {
 		fx, ferr := fixMatchArmsFixes(arg)
@@ -2527,7 +2519,7 @@ func mergeAnnotationLine(s, add string) string {
 // 分析來源是「磁碟檔案自身」：解析後跑 checker.ValidateRedundantTypeAnnotation。這與 `no vet`
 // 的實質報告一致。刻意不呼叫 `no vet <pkg>` 取行號：`no vet src/std` 對 std 模組走的是內嵌
 // StdFS，磁碟修改必須重編 bin/no 才會反映，否則報告行號與磁碟檔錯位，會把標註從錯誤的位置刪除。
-func fixRedundantTypeFixes(arg string) map[string]string {
+func fixRedundantTypeFixes(arg string, sigCtx *fmtSigContext) map[string]string {
 	info, err := os.Stat(arg)
 	if err != nil {
 		return nil
@@ -2549,7 +2541,7 @@ func fixRedundantTypeFixes(arg string) map[string]string {
 	sort.Strings(files)
 	fixes := map[string]string{}
 	for _, f := range files {
-		fixed, ok := fixRedundantTypeInFile(f)
+		fixed, ok := fixRedundantTypeInFile(f, sigCtx)
 		if !ok {
 			continue
 		}
@@ -2570,8 +2562,10 @@ type fmtRemoval struct {
 
 // fixRedundantTypeSource 對單份源碼字串移除「標註型別 == 推斷型別」的型別標註，
 // 回傳修復後源碼與 ok（無可移除處時 ok=false、回傳空字串）。
-// 與 --fix=redundant 同一套手術式邏輯；被 fixRedundantTypeInFile（磁碟檔）與預設
-// `no fmt`（先去冗餘再正常格式化）共用。
+//
+// 只服務 `no fmt --fix=redundant`（fixRedundantTypeInFile 的 Path 1）；預設
+// `no fmt` 不再走文字手術，而是 fmtflow.Format 的節點表渲染。兩條路徑共用
+// fmt.RedundantTypeAnnotationSafe 的「能不能省」判定，只有達成方式不同。
 //
 // S4：解析形態改為 SkipLowering，與隨後真正做格式化的 parseProgramForFmt 同一形態
 // （此前是 surface ⇒ 同一份源碼在一次 `no fmt` 裡被解析兩次、兩種形態，正是設計稿
@@ -2640,17 +2634,15 @@ func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStar
 	if node == nil || node.Type == nil || node.Value == nil || node.Name == nil {
 		return fmtRemoval{}, false
 	}
-	// 防禦：map 字面量 `m [str]i64 = {..}` 的型別標註不可移除。一旦移除，
-	// `m = {..}` 會被 parser 讀成程式碼區塊（code block）而非 map 字面量，造成
-	// 解析/編譯錯誤。checker 能在 package 上下文推斷出 [str]i64 而誤判標註「冗餘」，
-	// 但該標註其實不可省——parser 需要顯式型別才能建出正確的 MapLiteral AST。
-	// 故凡值為 MapLiteral 者一律不移除（寧可保守，不可改壞語義）。
-	if _, ok := node.Value.(*parser.MapLiteral); ok {
+	// AST 層的「這個標註能不能省」由 fmt 套件單一判定，與 LSP format-on-save
+	// 共用（過去兩邊各寫一份、條件不一致，同一檔案的存檔格式化與 no fmt -w
+	// 會給出不同結果）。定長陣列 / map 字面值 / hex / 合成型別在這裡一次擋掉。
+	if !nfmt.RedundantTypeAnnotationSafe(node) {
 		return fmtRemoval{}, false
 	}
-	// 十六進位字面量防禦（AST + 文本雙重檢查）：值運算式含 0xNN 時，移除型別
-	// 標註會把字面量從 checker 推斷的 byte 退化成編譯器預設的 i64，改壞語義
-	// （見本函式頂部註釋）。故一律不移除——寧可保守，不可改壞語義。
+	// 十六進位字面量防禦的**源碼層**兜底：AST 走查只看得到字面量節點，
+	// 值運算式若把 hex 藏在二元 / 呼叫運算元裡（如 `f(0x01)`），由這段
+	// span 文字掃描補上（見本函式頂部註釋）。故一律不移除——寧可保守。
 	if containsHexLiteral(src, lineStarts, node.Value) {
 		return fmtRemoval{}, false
 	}
@@ -2715,14 +2707,14 @@ func computeRedundantTypeRemoval(src string, node *parser.LetStatement, lineStar
 }
 
 // containsHexLiteral 回傳值運算式是否含蓄十六進位字面量（0xNN）。
-// 雙重檢查：(1) AST 走查 IntegerLiteral.Raw 前綴（精準，不會把字串裡的 "0x"
-// 誤判）；(2) 值源碼 span 文字掃描兜底，捕捉 AST 走查未涵蓋的巢狀形態
-// （如二元/呼叫運算元中的 hex）。任一命中即視為含 hex。
+// 雙重檢查：(1) AST 走查 IntegerLiteral.Raw 前綴（fmt.ExpressionHasHexLiteral，
+// 與 LSP 共用，精準，不會把字串裡的 "0x" 誤判）；(2) 值源碼 span 文字掃描兜底，
+// 捕捉 AST 走查未涵蓋的巢狀形態（如二元/呼叫運算元中的 hex）。任一命中即視為含 hex。
 func containsHexLiteral(src string, lineStarts []int, e parser.Expression) bool {
 	if e == nil {
 		return false
 	}
-	if walkHasHexLiteral(e) {
+	if nfmt.ExpressionHasHexLiteral(e) {
 		return true
 	}
 	start, end := exprSpan(lineStarts, e)
@@ -2733,43 +2725,6 @@ func containsHexLiteral(src string, lineStarts []int, e parser.Expression) bool 
 		}
 	}
 	return false
-}
-
-// walkHasHexLiteral 遞迴走查表達式樹，尋找任何以 0x/0X（可帶正負號）開頭的
-// 整數字面量。巢狀陣列/切片/映射字面量均展開其元素與鍵值。其他表達式形態
-// （二元/呼叫/if 等）不遞迴——交由 containsHexLiteral 的文字掃描兜底。
-func walkHasHexLiteral(e parser.Expression) bool {
-	switch v := e.(type) {
-	case *parser.IntegerLiteral:
-		r := strings.ToLower(v.Raw)
-		return strings.HasPrefix(r, "0x") || strings.HasPrefix(r, "-0x") || strings.HasPrefix(r, "+0x")
-	case *parser.ArrayLiteral:
-		if v.Size != nil && walkHasHexLiteral(v.Size) {
-			return true
-		}
-		for _, el := range v.Elements {
-			if walkHasHexLiteral(el) {
-				return true
-			}
-		}
-		return false
-	case *parser.SliceLiteral:
-		for _, el := range v.Elements {
-			if walkHasHexLiteral(el) {
-				return true
-			}
-		}
-		return false
-	case *parser.MapLiteral:
-		for _, p := range v.Pairs {
-			if walkHasHexLiteral(p.Key) || walkHasHexLiteral(p.Value) {
-				return true
-			}
-		}
-		return false
-	default:
-		return false
-	}
 }
 
 // exprSpan 回傳表達式在 src 中覆蓋的 [start, end) byte 區間（由行/列經 lineStarts
@@ -2792,6 +2747,12 @@ func exprSpan(lineStarts []int, e parser.Expression) (int, int) {
 // sourceParses 回傳 source 是否可在 formatter 的解析選項下成功解析（無解析錯誤）。
 // 這裡複製 fmt 路徑的選項（S4 起為 SkipLowering），與 parseProgramForFmt 保持一致，
 // 避免選項差異造成誤判。
+//
+// 🔴 刻意「不」注入跨模組簽名（2026-11-16 實測）：帶 cfg 的 parse 會多報
+// 「option match must handle all branches … missing: err」這類語義診斷——裸
+// parse 看不到 fs.write-str 回 ?bool，會靜默通過。本函式只用來回驗「移除標註
+// 後是否仍可解析」，補 cfg 反而會把大量合法移除誤判成不可解析，連帶讓
+// fixRedundantTypeSourceWithConfig 直接退回原檔。別順手把 cfg 傳進來。
 func sourceParses(source string) bool {
 	lx := lexer.New(source)
 	p := parser.New(lx)
@@ -2827,15 +2788,18 @@ func applyRemovals(src string, removals []fmtRemoval) string {
 //     推斷型別），只對「歸屬本檔」的 tcpoxtfd 套用移除。這讓 --fix=redundant 能清除
 //     測試檔中那些「標註確實冗餘但因 standalone 解析不過而未被工具處理」的提示
 //     （如 `?yaml.yaml`、`[str]`、純量標註），與 `no vet` 的報告對齊。
-func fixRedundantTypeInFile(filename string) (string, bool) {
+func fixRedundantTypeInFile(filename string, sigCtx *fmtSigContext) (string, bool) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return "", false
 	}
 	src := string(data)
 
-	// Path 1: standalone parse (fast, conservative).
-	if reduced, ok := fixRedundantTypeSource(src); ok {
+	// Path 1: standalone parse (fast, conservative). 與預設 `no fmt` 的
+	// computeFmtResult 共用同一份注入協定；sigCtx 為 nil（單元測試 / 舊呼叫）
+	// 時 configFor 回零配置，行為與從前逐位元組一致。
+	cfg := sigCtx.configFor(filename, src)
+	if reduced, ok := fixRedundantTypeSourceWithConfig(src, cfg); ok {
 		return reduced, true
 	}
 

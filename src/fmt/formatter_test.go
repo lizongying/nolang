@@ -3310,3 +3310,30 @@ func TestFormatRangeUpperBoundKeepsSelfExplicit(t *testing.T) {
 		})
 	}
 }
+
+// TestFormatProgramWithOverflowAndLoopStyle 釘住 -loop-style=suffix 在主動改寫
+// 路徑也生效。過去 FormatProgramWithOverflow / FormatProgramWithRewrites 都
+// 硬編碼 LoopStylePrefix，cmd/no 的 computeFmtResult 因此把 -loop-style 吞掉，
+// 只有解析失敗的 fallback 分支吃到 style。
+func TestFormatProgramWithOverflowAndLoopStyle(t *testing.T) {
+	src := "3 * {\n    print('x')\n}\n"
+	prog, errs := ParseSourceWithConfig(src, ParseConfig{})
+	if prog == nil || len(errs) > 0 {
+		t.Fatalf("parse: prog=%v errs=%v", prog, errs)
+	}
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"overflow legacy stays prefix", FormatProgramWithOverflow(prog, src, nil, nil), "3 * {"},
+		{"overflow with suffix", FormatProgramWithOverflowAndLoopStyle(prog, src, LoopStyleSuffix, nil, nil), "} * 3"},
+		{"rewrites legacy stays prefix", FormatProgramWithRewrites(prog, src, nil, nil, nil), "3 * {"},
+		{"rewrites with suffix", FormatProgramWithRewritesAndLoopStyle(prog, src, LoopStyleSuffix, nil, nil, nil), "} * 3"},
+	}
+	for _, c := range cases {
+		if !strings.Contains(c.got, c.want) {
+			t.Errorf("%s: got\n%s\nwant substring %q", c.name, c.got, c.want)
+		}
+	}
+}

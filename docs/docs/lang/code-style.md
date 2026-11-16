@@ -113,16 +113,24 @@ cond -> {
 
 - **獨立字面量統一為關鍵字寫法**：`c = !!` → `c = true`、`c = !` → `c = false`。
 - **已知的化簡，未知的不化簡**：當 `==` / `!=` 的其中一側是布林字面量，且另一側
-  運算元**能確證為 bool 值**時，輸出最簡形式。`no fmt` / LSP / `no build` /
-  `no vet` 現在共用 `build.FmtSigLoader` 的簽名視野：std 內嵌表、`use` / `#`
-  指向的本地模組、EnumVariants，都在 fresh `SkipLowering` parse 之前注入
-  （`SemRebuildConfig.Apply`）。可確證的來源有三類：
+  運算元**能確證為 bool 值**時，輸出最簡形式。四條管道共用同一份簽名**收集口徑**
+  （`collectModuleSignatures`：std 內嵌表、`use` / `#` 指向的本地模組、
+  EnumVariants）與同一個 `SemRebuildConfig.Apply` 注入契約；差別只在供表者：
+  `no fmt` / LSP 由 `build.FmtSigLoader` 供表，`no build` / `no vet` 仍走
+  `preloadModuleSignatures` + `astParseConfig`（兩者尚未合併成單一 loader）。
+  `no fmt` 在 fresh `SkipLowering` parse 之前注入；LSP 則由 `ParseDocument`
+  注入後發布 `parseSnapshot`，format-on-save 複用同一棵糖 AST 的深拷貝
+  （`fmt.CloneProgramForFormat`），預設設定下不再額外 parse。可確證的來源有三類：
 
   1. 顯式型別標註：`b bool = true`、參數 `(b bool)`；
   2. 布林字面量賦值：`flag = true` / `flag = false`；
   3. 呼叫宣告回傳 `bool` 的函式：**本檔定義**（如 `bytes-eq = ... (eq bool)`），
      或簽名表查得到的 std / 本地模組函式（如 `args.has-flag`、本地模組
-     `helper.is-ok`）。簽名表查不到結果型別時仍視為未知。
+     `helper.is-ok`）。變數 receiver 的方法呼叫（`s.starts-with('a')`）會依
+     Sem 已推斷的 receiver 型別（`s: str`）查 `str.starts-with`；型別沒推斷
+     出來、或同名變數在不同作用域被推成不同型別時仍視為未知（刻意不做
+     「方法名全域唯一」的猜測，以免把 `?bool` 誤當純 bool）。簽名表查不到
+     結果型別時仍視為未知。
 
   | 原始寫法（下表的 `b` 為上述「已知」變數） | 格式化後 |
   | ------------------------------------------ | -------- |
@@ -134,8 +142,8 @@ cond -> {
 
   `!=` 只是翻轉極性；`true == false`（兩側都是字面量）保持原樣不動。
   `f == true` 這類**沒有 bool 證據**的裸名會原樣保留。
-- **`?T` 與一切未知運算元保留原比較**：option（`?T`）、簽名表查不到結果型別的
-  跨模組呼叫、無賦值的裸名、點號存取、呼叫式、運算結果，一律保留
+- **  `?T` 與一切未知運算元保留原比較**：option（`?T`）、簽名表查不到結果型別的
+  跨模組呼叫、無賦值的裸名、型別未推斷出來的點號存取、呼叫式、運算結果，一律保留
   `== true` / `== false`。折成裸 `x` / `! x` 當控制流條件會讓 MIR 撞
   「option-as-i1」codegen crash —— v0.3.3 正是因此把整條規則 revert
   （`8a8ecb59`）；2026-11-15 改成「正向確證才化簡」後恢復，不再用

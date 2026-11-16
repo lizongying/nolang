@@ -21,12 +21,14 @@ type DocumentManager struct {
 	documents map[string]*TextDocument
 	indices   map[string]*SymbolIndex
 	mu        sync.RWMutex
-	// sig 為所有文件解析提供跨模組簽名配置（與 `no fmt` / `no build` 共用
-	// build.FmtSigLoader）。ParseDocument 把這份 cfg 連同診斷、糖 AST 一起
-	// 發布到 parseSnapshots，format-on-save 直接消費同一份結果。
+	// sig 為所有文件解析提供跨模組簽名配置（與 `no fmt` 共用
+	// build.FmtSigLoader；`no build` / `no vet` 走 preloadModuleSignatures，
+	// 兩邊共用 SemRebuildConfig 契約）。ParseDocument 把 cfg、診斷、糖 AST
+	// 一起發布到 parseSnapshots。
 	sig *lspSigContext
-	// parseSnapshots 是「一次 ParseDocument 的完整產出」。長期決策：即時診斷
-	// 與 format-on-save 的守門員必須讀同一份結果，不再各自 parse 一次。
+	// parseSnapshots 是「一次 ParseDocument 的完整產出」。長期決策：即時診斷、
+	// format 守門員與主動改寫都讀同一份結果（errs + cfg + ast），不再各自
+	// parse 一次；改寫只碰 ast 的深拷貝，索引樹保持不變。
 	// 由 m.mu 保護；內容發布後不再修改，讀取方可安全併讀。
 	parseSnapshots map[string]*parseSnapshot
 	// moduleCache caches parsed module files (std / local / dependency) keyed

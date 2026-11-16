@@ -638,10 +638,32 @@ sha1 = (data []byte) (hash [20]byte) {
 - 注解 `#{...}` 独占一行置于目标语句上方，或 trailing 于目标同行。
 - `no fmt` 自动：去重导入、删除裸 `# std/fmt`、按 path→函数→别名排序导入；保留带注释 / 注解的导入块原序。
 - **`.no` 的格式化只有一个来源**：文件模式、stdin 管道、目录检查模式都走
-  `computeFmtResult(src, loopStyle, cfg)`（`src/cmd/no/main.go`），LSP 的 format-on-save
-  则消费 `ParseDocument` 发布的 `parseSnapshot`（`src/lsp/documents.go`）。三条 CLI 路径
-  因此逐字节一致，LSP 的即时诊断与「是否格式化」也读同一份结果。新增格式化行为只改
-  单一来源，**不要**再让某条路径退回去只做排版。
+  `computeFmtResult(src, loopStyle, cfg)`（`src/cmd/no/main.go`），它是
+  `fmtflow.Format`（`src/fmtflow/`）的薄封装；LSP 的 format-on-save 调用的是
+  **同一个** `fmtflow.Format`，并把 `ParseDocument` 发布的 `parseSnapshot` 当输入：
+  `errs` 作闸门、`cfg` 作签名视野、`ast` 的深拷贝作工作树（`src/lsp/documents.go`、
+  `src/fmt/clone.go`），默认配置下保存不再额外 parse。三类主动改写（移除冗余标注 /
+  stringConcat 翻转 / overflow 注解清理）的编排只此一份，「这个标注能不能省」的判定
+  也只此一份（`fmt.RedundantTypeAnnotationSafe`，CLI 的文字区间路径与 LSP 共用）。
+  三条 CLI 路径逐字节一致**有前提**：stdin 走
+  `configFor(".")`，以**当前工作目录**为 package root；档案模式走
+  `configFor(filename)`，以档案所在目录为 root。从子目录把档案喂进管道时，
+  要在这个 package 的根目录下执行 `no fmt < file.no`，否则两边看到的签名表
+  可能不同。新增格式化行为只改 `fmtflow`，**不要**再让某条路径自建编排或退回去只做排版。
+  `no fmt --fix` 是另一类修复（合并 vet 驱动），不走 `computeFmtResult`；但
+  `--fix=redundant` 的 standalone 站现在也注入同一份 cfg，其「移除后是否仍可
+  解析」的回验刻意保持裸 parse（带签名会多报 option match 语义错误，见
+  `sourceParses` 注释），不要顺手补 cfg。
+- **解析配置只有一个构造点**：`parser.NewSemRebuildConfig`（`src/parser/seminputs.go`）。
+  三个生产者 —— build 的 `astParseConfig`、fmt / LSP 的 `FmtSigLoader.ConfigFor`、
+  Tier-0 std blob 的 `checker.stdSemConfig` —— 只交出「文件名 + `CompilerSwitches` +
+  `SigTableSet`」三个整体，字段到 `SemRebuildConfig` 的映射只发生在那一个函数里。
+  `package.noml` 的 `compiler.*` → `CompilerSwitches` 的映射同样只有一处
+  （`src/build/compiler_switches.go`）。**不要在任何生产者里手拼
+  `parser.SemRebuildConfig{...}`**：`compiler.anonymous-fn-type` 当初就只进了 build
+  那一个，于是 fmt / LSP 对同一个 package 解析出不同的 AST。给 parser 加输入时改
+  `CompilerSwitches` / `SigTableSet`，`src/parser/seminputs_test.go` 会因 cfg 有新字段
+  没被构造点填而变红。
 - **Markdown / MDX 里的 ```no 代码块是刻意的例外**（`no fmt -md`）：逐块单档 parse，
   只做排版，不注入跨模块签名，也不做移除冗余标注 / stringConcat 翻转 / overflow 注解清理。
   原因：文档片段没有型别信息，且大量示意伪码本来就不可解析；解析不了的块原样保留并回报
