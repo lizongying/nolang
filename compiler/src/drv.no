@@ -32,6 +32,7 @@
 # /compiler/src/h2m
 # /compiler/src/link
 # /compiler/src/util/sb.sb
+# /compiler/src/ix
 
 ; ⚠️ 本檔的 drv.* 是**含點的自由函式**（沒有宣告 struct drv），因此受 SHS S6
 ;    約束：每個定義的 out-param 至多 1 個，否則執行期 SIGSEGV。見 docs 附錄 A.6。
@@ -277,11 +278,9 @@ drv.cmd-vet = () (code i64) {
         d.code = p.e-code[i]
         print(d.render())
 
-        #{overflow=wrap}
-        nerr = nerr + 1
+        nerr = ix.inc(nerr)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
 
     ; s13：渲染 ck 的 not-defined 診斷。ck↔drv 介面 = 打包串 vec，每條 'L|C|CODE|MSG'
@@ -328,11 +327,9 @@ drv.cmd-vet = () (code i64) {
         d.msg = msg-part
         print(d.render())
 
-        #{overflow=wrap}
-        nerr = nerr + 1
+        nerr = ix.inc(nerr)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
     nerr > 0 -> {
         eprint('')
@@ -513,7 +510,7 @@ drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
             subcyc == true -> r.cyc = true
             r = sub
         }
-        k = k + 1
+        k = ix.inc(k)
     }
 }
 
@@ -590,8 +587,7 @@ drv.mod-name = (f str) (r str) {
         c = f.slice-bytes(k, k + 1)
         c == '/' -> last = k
 
-        #{overflow=wrap}
-        k = k + 1
+        k = ix.inc(k)
     }
     base = f.slice-bytes(last + 1, n)
     bn = base.len-bytes()
@@ -614,11 +610,14 @@ drv.pkg-split = (s str) (r []str) {
         c == ':' -> {
             seg = s.slice-bytes(start, i)
             seg.len-bytes() > 0 -> r.push(seg)
-            start = i + 1
+            start = i + 1: {
+                ok -> it
+
+                -> start
+            }
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
     last = s.slice-bytes(start, n)
     last.len-bytes() > 0 -> r.push(last)
@@ -650,8 +649,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
             kk = ast.nd-at(t, kid)
             kk.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
 
-            #{overflow=wrap}
-            k = k + 1
+            k = ix.inc(k)
         }
     }
 
@@ -687,8 +685,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
                 }
             }
 
-            #{overflow=wrap}
-            k = k + 1
+            k = ix.inc(k)
         }
     }
 }
@@ -748,14 +745,12 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
             kd = ast.nd-at(t, kid)
             kd.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
 
-            #{overflow=wrap}
-            m = m + 1
+            m = ix.inc(m)
         }
         after = agg.stn.len()
         after > before -> h2m-struct-resolve-range(agg, t, before, after)
 
-        #{overflow=wrap}
-        k = k + 1
+        k = ix.inc(k)
     }
 
     ; pass 2：逐模組 emit 各函式（入口額外合成 main），body 串接
@@ -805,8 +800,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
                 }
             }
 
-            #{overflow=wrap}
-            m = m + 1
+            m = ix.inc(m)
         }
 
         ; 切片 6 ②：h2m-func-sig 對真·多回傳會登記合成聚合結構體（'__mr__'<fn>），
@@ -814,8 +808,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
         after2 = agg.stn.len()
         after2 > before2 -> h2m-struct-resolve-range(agg, t, before2, after2)
 
-        #{overflow=wrap}
-        k = k + 1
+        k = ix.inc(k)
     }
 
     ; 全域結構體宣告一次（§11 B10 唯一裝配點，多模組不可分散 emit 否則 redefinition）；
@@ -858,12 +851,10 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
                 }
             }
 
-            #{overflow=wrap}
-            m2 = m2 + 1
+            m2 = ix.inc(m2)
         }
 
-        #{overflow=wrap}
-        k2 = k2 + 1
+        k2 = ix.inc(k2)
     }
 
     ; ── 发射闭包（切片 6 ② 前置）：剔除「引用了未发射函数」的函数 ──────────────
@@ -876,8 +867,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
     (a0 < parts.len()) {
         alive.push(1)
 
-        #{overflow=wrap}
-        a0 = a0 + 1
+        a0 = ix.inc(a0)
     }
     changed = 1
     rounds = 0
@@ -899,42 +889,37 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
                     found = 0
                     bk = 0
                     (bk < pnames.len() && found == 0) {
-                        pnames[bk] == tg && alive[bk] == 1 -> found = 1
+                        ix.at-s(pnames, bk) == tg && ix.at-i(alive, bk) == 1 -> found = 1
 
-                        #{overflow=wrap}
-                        bk = bk + 1
+                        bk = ix.inc(bk)
                     }
                     found == 0 -> {
                         keep = 0
                         changed = 1
                     }
 
-                    #{overflow=wrap}
-                    bj = bj + 1
+                    bj = ix.inc(bj)
                 }
             }
             nalive.push(keep)
 
-            #{overflow=wrap}
-            bi = bi + 1
+            bi = ix.inc(bi)
         }
         alive = nalive
 
-        #{overflow=wrap}
-        rounds = rounds + 1
+        rounds = ix.inc(rounds)
     }
     ji = 0
     (ji < parts.len()) {
-        alive[ji] == 1 -> body = body - parts[ji] - '\n'
-        alive[ji] == 0 -> {
+        ix.at-i(alive, ji) == 1 -> body = body - ix.at-s(parts, ji) - '\n'
+        ix.at-i(alive, ji) == 0 -> {
 
             ; 被剔除 = 该函数本可产码，但引用了不可降级的函数 ⇒ 等价于不可降级
-            agg.unsup = agg.unsup + 1
-            eprint(NOC-NAME - ': dropped (calls unsupported): ' - pnames[ji])
+            agg.unsup = ix.inc(agg.unsup)
+            eprint(NOC-NAME - ': dropped (calls unsupported): ' - ix.at-s(pnames, ji))
         }
 
-        #{overflow=wrap}
-        ji = ji + 1
+        ji = ix.inc(ji)
     }
     r = cg-runtime-prelude-full() - '\n' - body - '\n'
     agg.unsup > 0 -> {
@@ -990,7 +975,11 @@ drv.src-arg = () (r str) {
         a == '-o' -> {
 
             #{overflow=wrap}
-            i = i + 2
+            i = i + 2: {
+                ok -> it
+
+                -> i
+            }
             continue
         }
         r = a
@@ -1016,8 +1005,7 @@ drv.out-arg = () (r str) {
             break
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
 }
 

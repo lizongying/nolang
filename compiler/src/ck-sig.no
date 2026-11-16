@@ -18022,7 +18022,13 @@ ck-sig-lt = (a str, b str) (lt i64) {
         cb < ca -> {
             return
         }
-        i = i + 1
+
+        #{overflow=wrap}
+        i = i + 1: {
+            ok -> it
+
+            -> i
+        }
     }
     an < bn -> {
         lt = 1
@@ -18039,15 +18045,27 @@ ck-sig-bsearch = (keys []str, name str) (idx i64) {
         mid = lo + ((hi - lo) / 2)
         k = ck-sig-str-at(keys, mid)
         ck-sig-lt(k, name) == 1 -> {
-            lo = mid + 1
+            lo = mid + 1: {
+                ok -> it
+
+                -> lo
+            }
         }
 
         ck-sig-lt(name, k) == 1 -> {
-            hi = mid
+            hi = mid: {
+                ok -> it
+
+                -> hi
+            }
         }
 
         k == name -> {
-            idx = mid
+            idx = mid: {
+                ok -> it
+
+                -> idx
+            }
             return
         }
     }

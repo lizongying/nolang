@@ -49,6 +49,7 @@
 # /compiler/src/util/sb.sb
 # /compiler/src/mir
 # /compiler/src/cg-runtime
+# /compiler/src/ix
 
 ; 块 id → LLVM 标签名（0 → entry，其余 → bb<id>）。
 ; id: 數值
@@ -64,8 +65,7 @@ cg-label = (id i64) (s str) {
 cg-strlen1 = (t str) (n i64) {
     n = t.len-bytes()
 
-    #{overflow=wrap}
-    n = n + 1
+    n = ix.inc(n)
 }
 
 ; 字面量全局符号名：`@.s.<函式名>.<指令下标>`（s34）。
@@ -301,8 +301,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                     -> _
                 }
 
-                #{overflow=wrap}
-                si = si + 1
+                si = ix.inc(si)
             }
             nb > 0 -> b.push(', i8 0')
             nb == 0 -> b.push('i8 0')
@@ -318,7 +317,6 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
     q = 0
     p = 1
 
-    #{overflow=wrap}
     (q < nargs) {
         q > 0 -> b.push(', ')
         pt = ptyps[q]
@@ -327,11 +325,9 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         b.push(cg-val-prefix(pt))
         b.push(p.to-str())
 
-        #{overflow=wrap}
-        q = q + 1
+        q = ix.inc(q)
 
-        #{overflow=wrap}
-        p = p + 1
+        p = ix.inc(p)
     }
     b.push(') {\n')
     cur = -1
@@ -562,8 +558,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 b.push(cg-val-prefix(at))
                 b.push(q.to-str())
 
-                #{overflow=wrap}
-                j = j + 1
+                j = ix.inc(j)
             }
             b.push(')\n')
         }
@@ -2438,8 +2433,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 b.push('\n')
                 prev = nm
 
-                #{overflow=wrap}
-                j = j + 1
+                j = ix.inc(j)
             }
         }
         op == OP-STRUCT-GET -> {
@@ -2557,8 +2551,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                     b.push(')\n')
                 }
 
-                #{overflow=wrap}
-                jr = jr + 1
+                jr = ix.inc(jr)
             }
         }
         op == OP-STRUCT-RELEASE -> {
@@ -2600,8 +2593,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                     b.push(')\n')
                 }
 
-                #{overflow=wrap}
-                jl = jl + 1
+                jl = ix.inc(jl)
             }
         }
         op == OP-RETAIN -> {

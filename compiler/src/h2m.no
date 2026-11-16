@@ -288,8 +288,7 @@ h2m-alloc = (c h2m-ctx, ty i64) (id i64) {
     c.vty.push(ty)
     id = c.nid
 
-    #{overflow=wrap}
-    c.nid = c.nid + 1
+    c.nid = h2m-inc(c.nid)
 }
 
 ; 追加一条指令（落到当前块 c.blk；s57 前恒为 entry = 0）
@@ -317,10 +316,14 @@ h2m-rel-add = (c h2m-ctx, vid i64, ty i64, mask i64) {
     dup = 0
     i = 0
     (i < c.rls.len() && dup == 0) {
-        c.rls[i] == vid -> dup = 1
+        el = c.rls[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> -1
+        }
+        el == vid -> dup = 1
+
+        i = h2m-inc(i)
     }
     dup == 0 -> {
         c.rls.push(vid)
@@ -338,13 +341,21 @@ h2m-own-set = (c h2m-ctx, name str, owner i64) {
     found = 0
     i = 0
     (i < c.ownn.len() && found == 0) {
-        c.ownn[i] == name -> {
-            c.ownv[i] = owner
+        nm = c.ownn[i]: {
+            ok -> it
+
+            -> ''
+        }
+        nm == name -> {
+            c.ownv[i]: {
+                ok -> it = owner
+
+                -> _
+            }
             found = 1
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
     found == 0 -> {
         c.ownn.push(name)
@@ -360,10 +371,20 @@ h2m-own-get = (c h2m-ctx, name str) (owner i64) {
     owner = 0
     i = 0
     (i < c.ownn.len() && owner == 0) {
-        c.ownn[i] == name -> owner = c.ownv[i]
+        nm = c.ownn[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> ''
+        }
+        nm == name -> {
+            owner = c.ownv[i]: {
+                ok -> it
+
+                -> owner
+            }
+        }
+
+        i = h2m-inc(i)
     }
 }
 
@@ -375,10 +396,14 @@ h2m-rel-has = (c h2m-ctx, vid i64) (yes i64) {
     yes = 0
     i = 0
     (i < c.rls.len() && yes == 0) {
-        c.rls[i] == vid -> yes = 1
+        el = c.rls[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> -1
+        }
+        el == vid -> yes = 1
+
+        i = h2m-inc(i)
     }
 }
 
@@ -388,10 +413,14 @@ h2m-rel-drop = (c h2m-ctx, vid i64) {
     dup = 0
     i = 0
     (i < c.reldrop.len() && dup == 0) {
-        c.reldrop[i] == vid -> dup = 1
+        el = c.reldrop[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> -1
+        }
+        el == vid -> dup = 1
+
+        i = h2m-inc(i)
     }
     dup == 0 -> c.reldrop.push(vid)
 }
@@ -401,10 +430,14 @@ h2m-rel-dropped = (c h2m-ctx, vid i64) (yes i64) {
     yes = 0
     i = 0
     (i < c.reldrop.len() && yes == 0) {
-        c.reldrop[i] == vid -> yes = 1
+        el = c.reldrop[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> -1
+        }
+        el == vid -> yes = 1
+
+        i = h2m-inc(i)
     }
 }
 
@@ -426,10 +459,14 @@ h2m-ret-add = (c h2m-ctx, vid i64) {
     dup = 0
     i = 0
     (i < c.retset.len() && dup == 0) {
-        c.retset[i] == vid -> dup = 1
+        el = c.retset[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> -1
+        }
+        el == vid -> dup = 1
+
+        i = h2m-inc(i)
     }
     dup == 0 -> c.retset.push(vid)
 }
@@ -442,10 +479,14 @@ h2m-ret-has = (c h2m-ctx, vid i64) (yes i64) {
     yes = 0
     i = 0
     (i < c.retset.len() && yes == 0) {
-        c.retset[i] == vid -> yes = 1
+        el = c.retset[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> -1
+        }
+        el == vid -> yes = 1
+
+        i = h2m-inc(i)
     }
 }
 
@@ -484,8 +525,7 @@ h2m-emit-releases = (c h2m-ctx, skip i64) {
             ty >= TY-STRUCT-BASE && m > 0 -> h2m-emit(c, OP-STRUCT-RELEASE, 0, vid, m, '', 0)
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
 }
 
@@ -495,8 +535,7 @@ h2m-emit-releases = (c h2m-ctx, skip i64) {
 h2m-block-new = (c h2m-ctx) (id i64) {
     id = c.bnext
 
-    #{overflow=wrap}
-    c.bnext = c.bnext + 1
+    c.bnext = h2m-inc(c.bnext)
 }
 
 ; 切当前块（后续 h2m-emit 落到此块）⚠️ 只可切到尚未写过指令的块（连续段纪律）
@@ -509,9 +548,7 @@ h2m-set-block = (c h2m-ctx, id i64) {
 ; 记一条「本切片不支持」的构造（诚实门禁，不是静默略过）
 ; c: 上下文
 h2m-mark = (c h2m-ctx) {
-
-    #{overflow=wrap}
-    c.unsup = c.unsup + 1
+    c.unsup = h2m-inc(c.unsup)
 
     ; 切片 6 ②：逐条记录 (fn, kind)，供 h2m-cov-join 拼日志
     c.unsf.push(c.cur-fn)
@@ -566,21 +603,36 @@ h2m-cov-join = (unsf []str, unsk []i64) (cov str) {
     maxk = 0
     i = 0
     (i < unsk.len()) {
-        unsk[i] > maxk -> {
-            maxk = unsk[i]
+        kv = unsk[i]: {
+            ok -> it
+
+            -> 0
         }
-        i = i + 1
+        kv > maxk -> {
+            maxk = kv
+        }
+        i = h2m-inc(i)
     }
     k = 1
     (k <= maxk) {
         i = 0
         (i < unsf.len()) {
-            unsk[i] == k -> {
-                cov = cov - unsf[i] - ':' - asp.kind-name(unsk[i]) - ':' - h2m-kind-cat(unsk[i]) - '\n'
+            kv = unsk[i]: {
+                ok -> it
+
+                -> 0
             }
-            i = i + 1
+            fnv = unsf[i]: {
+                ok -> it
+
+                -> ''
+            }
+            kv == k -> {
+                cov = cov - fnv - ':' - asp.kind-name(kv) - ':' - h2m-kind-cat(kv) - '\n'
+            }
+            i = h2m-inc(i)
         }
-        k = k + 1
+        k = h2m-inc(k)
     }
 }
 
@@ -598,8 +650,7 @@ h2m-var-find = (c h2m-ctx, name str) (id i64) {
             id = vid
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
 }
 
@@ -613,12 +664,15 @@ h2m-var-bind = (c h2m-ctx, name str, id i64) {
     (i < c.names.len() && found == 0) {
         nm = c.names[i]
         nm == name -> {
-            c.vids[i] = id
+            c.vids[i]: {
+                ok -> it = id
+
+                -> _
+            }
             found = 1
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
     found == 0 -> {
         c.names.push(name)
@@ -639,8 +693,7 @@ h2m-name-find = (c h2m-ctx, name str) (i i64) {
         nm = c.names[j]
         nm == name -> i = j
 
-        #{overflow=wrap}
-        j = j + 1
+        j = h2m-inc(j)
     }
 }
 
@@ -655,7 +708,13 @@ h2m-name-find = (c h2m-ctx, name str) (i i64) {
 h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
     (ty == TY-VEC || ty == TY-VECSTR) -> {
         i0 = h2m-name-find(c, name)
-        i0 >= 0 -> c.tys[i0] = ty
+        i0 >= 0 -> {
+            c.tys[i0]: {
+                ok -> it = ty
+
+                -> _
+            }
+        }
         i0 < 0 -> h2m-mark(c)
     }
     ty != TY-VEC && ty != TY-VECSTR -> {
@@ -698,8 +757,16 @@ h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
         ok-slot == 1 -> {
             i = h2m-name-find(c, name)
             i >= 0 -> {
-                c.vids[i] = sid
-                c.tys[i] = ty
+                c.vids[i]: {
+                    ok -> it = sid
+
+                    -> _
+                }
+                c.tys[i]: {
+                    ok -> it = ty
+
+                    -> _
+                }
             }
             i < 0 -> {
                 c.names.push(name)
@@ -720,8 +787,16 @@ h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
     st = -1
     i = h2m-name-find(c, name)
     i >= 0 -> {
-        sid = c.vids[i]
-        st = c.tys[i]
+        sid = c.vids[i]: {
+            ok -> it
+
+            -> 0
+        }
+        st = c.tys[i]: {
+            ok -> it
+
+            -> -1
+        }
     }
     st == ty && ty != TY-VEC && ty != TY-VECSTR && ty != TY-STR && ty < TY-STRUCT-BASE -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
     st == ty && ty == TY-STR -> h2m-emit(c, OP-SSTORE, 0, vid, sid, '', 0)
@@ -742,7 +817,14 @@ h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
 ; v: 值 id（0 = 未登记或槽型 unsupported，已计入 unsup）
 h2m-var-read = (c h2m-ctx, name str) (v i64) {
     v = 0
-    name == 'it' && c.itv-n > 0 -> v = c.itv[c.itv-n - 1]
+    name == 'it' && c.itv-n > 0 -> {
+        ti = h2m-dec(c.itv-n)
+        v = c.itv[ti]: {
+            ok -> it
+
+            -> 0
+        }
+    }
     name != 'it' || c.itv-n <= 0 -> {
 
         ; s98：臂局部名（ok(v) 等 match 臂绑定）——跨 mem 模式直返 SSA 值，绕过槽 LOAD；
@@ -750,21 +832,43 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
         ai = c.aln.len() - 1
         fal = 0
         (ai >= 0 && fal == 0) {
-            c.aln[ai] == name -> {
-                v = c.alv[ai]
+            an = c.aln[ai]: {
+                ok -> it
+
+                -> ''
+            }
+            an == name -> {
+                v = c.alv[ai]: {
+                    ok -> it
+
+                    -> 0
+                }
                 fal = 1
             }
 
-            #{overflow=wrap}
-            ai = ai - 1
+            ai = h2m-dec(ai)
         }
         fal == 0 -> {
             i = h2m-name-find(c, name)
             i < 0 -> h2m-mark(c)
-            i >= 0 && c.mem == 0 -> v = c.vids[i]
+            i >= 0 && c.mem == 0 -> {
+                v = c.vids[i]: {
+                    ok -> it
+
+                    -> 0
+                }
+            }
             i >= 0 && c.mem == 1 -> {
-                sid = c.vids[i]
-                st = c.tys[i]
+                sid = c.vids[i]: {
+                    ok -> it
+
+                    -> 0
+                }
+                st = c.tys[i]: {
+                    ok -> it
+
+                    -> -1
+                }
                 st == TY-I64 || st == TY-U64 || st == TY-F64 -> {
                     v = h2m-alloc(c, st)
                     h2m-emit(c, OP-LOAD, v, sid, 0, '', st)
@@ -847,8 +951,7 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
         en = c.epl[q]
         en == name -> hit = 1
 
-        #{overflow=wrap}
-        q = q + 1
+        q = h2m-inc(q)
     }
     hit == 1 -> h2m-mark(c)
     it-w == 0 && hit == 0 && c.mem == 0 -> h2m-var-bind(c, name, val)
@@ -911,7 +1014,11 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
 ; id: 值 id
 ; t: 型别码
 h2m-vty-at = (c h2m-ctx, id i64) (t i64) {
-    t = c.vty[id]
+    t = c.vty[id]: {
+        ok -> it
+
+        -> TY-I64
+    }
 }
 
 ; 具名型别 → MIR 型别码；本件只收四个基础型别，认不出回 -1（呼叫方计 unsup）
@@ -1009,30 +1116,61 @@ h2m-struct-find = (c h2m-ctx, name str) (sid i64) {
     sid = -1
     i = 0
     (i < c.stn.len() && sid < 0) {
-        c.stn[i] == name -> sid = i
+        sn = c.stn[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> ''
+        }
+        sn == name -> sid = i
+
+        i = h2m-inc(i)
     }
 }
 
 ; 取结构体 sid 的字段数
 h2m-struct-fc = (c h2m-ctx, sid i64) (fc i64) {
-    fc = c.stfc[sid]
+    fc = c.stfc[sid]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 前 sid 个结构体的字段总数 = stft / stftn / stfldn 拼接表里该结构体首字段的下标（基线）。
+;   原先三处各写一遍 `off = off + c.stfc[k]` 前缀和循环；D6 起 `+` 恒回落 ?i64，统一收进本 helper。
+; c: 上下文
+; sid: 结构体 id
+; off: 首字段下标
+h2m-struct-base = (c h2m-ctx, sid i64) (off i64) {
+    off = 0
+    i = 0
+    (i < sid) {
+        fc = c.stfc[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        #{overflow=wrap}
+        off = off + fc: {
+            ok -> it
+
+            -> off
+        }
+
+        i = h2m-inc(i)
+    }
 }
 
 ; 取结构体 sid 第 fi 个字段的型别码（stft 为拼接表，需跳过前 sid 个结构体的字段）
 h2m-struct-field-ty = (c h2m-ctx, sid i64, fi i64) (ty i64) {
     ty = -1
-    off = 0
-    i = 0
-    (i < sid) {
-        off = off + c.stfc[i]
+    off = h2m-struct-base(c, sid)
+    ty = c.stft[off + fi]: {
+        ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+        -> -1
     }
-    ty = c.stft[off + fi]
 }
 
 ; s99g：结构体 str 欄位位掩码——bit j 置位 ⇔ 第 j 個欄位型別是 TY-STR。
@@ -1046,28 +1184,25 @@ h2m-struct-str-mask = (c h2m-ctx, sid i64) (mask i64) {
         fty = h2m-struct-field-ty(c, sid, j)
         fty == TY-STR -> mask = mask | (1 << j)
 
-        #{overflow=wrap}
-        j = j + 1
+        j = h2m-inc(j)
     }
 }
 
 ; 按字段名查字段下标（-1 = 该结构体无此字段）；stfldn 与 stft 同序同下标
 h2m-struct-field-idx = (c h2m-ctx, sid i64, fname str) (fi i64) {
     fi = -1
-    off = 0
-    i = 0
-    (i < sid) {
-        off = off + c.stfc[i]
-
-        #{overflow=wrap}
-        i = i + 1
-    }
+    off = h2m-struct-base(c, sid)
+    nfc = h2m-struct-fc(c, sid)
     j = 0
-    (j < c.stfc[sid] && fi < 0) {
-        c.stfldn[off + j] == fname -> fi = j
+    (j < nfc && fi < 0) {
+        fld = c.stfldn[off + j]: {
+            ok -> it
 
-        #{overflow=wrap}
-        j = j + 1
+            -> ''
+        }
+        fld == fname -> fi = j
+
+        j = h2m-inc(j)
     }
 }
 
@@ -1106,12 +1241,11 @@ h2m-struct-register = (c h2m-ctx, t ast, n i64) {
             ntk = ast.kid-at(t, fnode.kid0)
 
             ; 先登记型别【节点 id】，型别码延后由 h2m-struct-resolve 解析
-            fc = fc + 1
+            fc = h2m-inc(fc)
             c.stftn.push(ntk)
             c.stfldn.push(ffname)
 
-            #{overflow=wrap}
-            i = i + 1
+            i = h2m-inc(i)
         }
         c.stfc.push(fc)
     }
@@ -1140,20 +1274,34 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
 
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
                 ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
-                c.cur-fn = c.stn[i] - '.' - c.stfldn[off + j]
+                snm = c.stn[i]: {
+                    ok -> it
+
+                    -> ''
+                }
+                fldn = c.stfldn[off + j]: {
+                    ok -> it
+
+                    -> ''
+                }
+                c.cur-fn = snm - '.' - fldn
                 c.cur-k = (ast.nd-at(t, ftn)).kind
                 h2m-mark(c)
                 c.cur-fn = ''
             }
             c.stft.push(fty)
 
-            #{overflow=wrap}
-            j = j + 1
+            j = h2m-inc(j)
         }
-        off = off + fc
 
         #{overflow=wrap}
-        i = i + 1
+        off = off + fc: {
+            ok -> it
+
+            -> off
+        }
+
+        i = h2m-inc(i)
     }
 }
 
@@ -1163,14 +1311,7 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
 ;   逐段解（每段用該模組自己的 t）。
 h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
     n = c.stn.len()
-    off = 0
-    i0 = 0
-    (i0 < from) {
-        off = off + c.stfc[i0]
-
-        #{overflow=wrap}
-        i0 = i0 + 1
-    }
+    off = h2m-struct-base(c, from)
     i = from
     (i < to) {
         fc = c.stfc[i]
@@ -1185,20 +1326,34 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
 
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
                 ;   使模块级日志从 ":K" 升级为 "Struct.field:K"（K=型别节点码，slice 字段即 62）。
-                c.cur-fn = c.stn[i] - '.' - c.stfldn[off + j]
+                snm = c.stn[i]: {
+                    ok -> it
+
+                    -> ''
+                }
+                fldn = c.stfldn[off + j]: {
+                    ok -> it
+
+                    -> ''
+                }
+                c.cur-fn = snm - '.' - fldn
                 c.cur-k = (ast.nd-at(t, ftn)).kind
                 h2m-mark(c)
                 c.cur-fn = ''
             }
             c.stft.push(fty)
 
-            #{overflow=wrap}
-            j = j + 1
+            j = h2m-inc(j)
         }
-        off = off + fc
 
         #{overflow=wrap}
-        i = i + 1
+        off = off + fc: {
+            ok -> it
+
+            -> off
+        }
+
+        i = h2m-inc(i)
     }
 }
 
@@ -1212,32 +1367,28 @@ h2m-struct-decls = (c h2m-ctx) (r str) {
     (i < n) {
         fc = c.stfc[i]
         fc > 0 -> {
-            off = 0
-            k = 0
-            (k < i) {
-                off = off + c.stfc[k]
-
-                #{overflow=wrap}
-                k = k + 1
-            }
+            off = h2m-struct-base(c, i)
             b.push('%struct.s')
             b.push(i.to-str())
             b.push(' = type { ')
             j = 0
             (j < fc) {
                 j > 0 -> b.push(', ')
-                tn = cg.cg-ty-name(c.stft[off + j])
+                ftyc = c.stft[off + j]: {
+                    ok -> it
+
+                    -> 0
+                }
+                tn = cg.cg-ty-name(ftyc)
                 b.push(tn)
 
-                #{overflow=wrap}
-                j = j + 1
+                j = h2m-inc(j)
             }
             b.push(' }')
             b.push('\n')
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
     r = b.str()
 }
@@ -1458,8 +1609,7 @@ h2m-sig-add = (s h2m-sigs, name str, emit str, ret i64, argt []i64) {
         }
         s.farg.push(at)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
 }
 
@@ -1474,8 +1624,7 @@ h2m-sig-find = (s h2m-sigs, name str) (i i64) {
         nm = s.fname[j]
         nm == name -> i = j
 
-        #{overflow=wrap}
-        j = j + 1
+        j = h2m-inc(j)
     }
 }
 
@@ -1485,11 +1634,23 @@ h2m-sig-find = (s h2m-sigs, name str) (i i64) {
 ; j: 形参序
 ; t: 型别码
 h2m-sig-arg = (s h2m-sigs, i i64, j i64) (t i64) {
-    fb = s.fbase[i]
+    fb = s.fbase[i]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
-    fb = fb + j
-    t = s.farg[fb]
+    fb = fb + j: {
+        ok -> it
+
+        -> fb
+    }
+    t = s.farg[fb]: {
+        ok -> it
+
+        -> -1
+    }
 }
 
 ; ── 前扫描（s57：mem 模式定槽宽 + 控制流探测）───────────────────
@@ -1522,8 +1683,7 @@ h2m-lst-find = (l h2m-lst, name str) (i i64) {
         nm = l.lname[j]
         nm == name -> i = j
 
-        #{overflow=wrap}
-        j = j + 1
+        j = h2m-inc(j)
     }
 }
 
@@ -1533,7 +1693,13 @@ h2m-lst-find = (l h2m-lst, name str) (i i64) {
 ; ty: 型别码（-1 = 推不出，后续 h2m-slot-decl 会计 unsup）
 h2m-lst-add = (l h2m-lst, name str, ty i64) {
     i = h2m-lst-find(l, name)
-    i >= 0 -> l.lty[i] = ty
+    i >= 0 -> {
+        l.lty[i]: {
+            ok -> it = ty
+
+            -> _
+        }
+    }
     i < 0 -> {
         l.lname.push(name)
         l.lty.push(ty)
@@ -1635,7 +1801,13 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
         d.kind == asp.K-IDENTIFIER -> {
             nm = ast.str-at(t, d.s0)
             i = h2m-lst-find(l, nm)
-            i >= 0 -> code = l.lty[i]
+            i >= 0 -> {
+                code = l.lty[i]: {
+                    ok -> it
+
+                    -> -1
+                }
+            }
 
             ; s65：`it` 不进槽表——它的值 = 值匹配臂主体（s63 门禁限 i64 槽），槽宽直推 I64；
             ;   裸链／match 外的 `it` 在这里同样推成 I64，但降级侧 var-read/write 栈空即计 unsup，门禁不放松
@@ -1652,7 +1824,13 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                 cd.kind == asp.K-IDENTIFIER -> {
                     cn = ast.str-at(t, cd.s0)
                     si = h2m-sig-find(sg, cn)
-                    si >= 0 -> code = sg.fret[si]
+                    si >= 0 -> {
+                        code = sg.fret[si]: {
+                            ok -> it
+
+                            -> -1
+                        }
+                    }
                 }
             }
         }
@@ -1667,7 +1845,13 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
             rkd.kind == asp.K-IDENTIFIER -> {
                 rnm = ast.str-at(t, rkd.s0)
                 ri = h2m-lst-find(l, rnm)
-                ri >= 0 -> rt = l.lty[ri]
+                ri >= 0 -> {
+                    rt = l.lty[ri]: {
+                        ok -> it
+
+                        -> -1
+                    }
+                }
                 ri < 0 -> rt = h2m-ty-of(t, sg, l, agg, rk)
             }
             rkd.kind != asp.K-IDENTIFIER -> rt = h2m-ty-of(t, sg, l, agg, rk)
@@ -1721,8 +1905,7 @@ h2m-scan-kids = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
             }
             kf > flow -> flow = kf
 
-            #{overflow=wrap}
-            i = i + 1
+            i = h2m-inc(i)
         }
     }
 }
@@ -1751,8 +1934,7 @@ h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
             bn > 0 -> bf = h2m-scan(t, sg, l, agg, bn)
             bf > flow -> flow = bf
 
-            #{overflow=wrap}
-            j = j + 1
+            j = h2m-inc(j)
         }
     }
 }
@@ -1882,10 +2064,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
     {
         d.kind == asp.K-INTEGER-LITERAL -> {
             lit = ast.str-at(t, d.s0)
-            ov = lit.to-i64()
+
+            ; ⚠️ 不能叫 ov：本函数的 `ov` 是前缀运算操作数（i64，2527 起）。同名会把它
+            ;   定型成 ?i64，于是 `h2m-vty-at(c, ov)` / `h2m-emit(…, ov, …)` 全被拒为裸 option。
+            litv = lit.to-i64()
             ok-lit = 0
             num = 0
-            ov: {
+            litv: {
                 ok -> {
                     num = it
                     ok-lit = 1
@@ -1939,22 +2124,70 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             n = bs.len()
             cp = 0
             n > 0 -> {
-                b0 i64 = bs[0]
+
+                ; D11 起下標恆回 `?T`：顯式 plain 綁定要先值位 match 解包（此處 n > 0 已保證界內）
+                b0 i64 = bs[0]: {
+                    ok -> it
+
+                    -> 0
+                }
                 b0 < 128 -> cp = b0
                 b0 >= 192 && b0 < 224 && n >= 2 -> {
-                    b1x i64 = bs[1]
-                    cp = (b0 - 192) * 64 + (b1x - 128)
+                    b1x i64 = bs[1]: {
+                        ok -> it
+
+                        -> 0
+                    }
+
+                    #{overflow=wrap}
+                    cp = (b0 - 192) * 64 + (b1x - 128): {
+                        ok -> it
+
+                        -> 0
+                    }
                 }
                 b0 >= 224 && b0 < 240 && n >= 3 -> {
-                    b1y i64 = bs[1]
-                    b2y i64 = bs[2]
-                    cp = (b0 - 224) * 4096 + (b1y - 128) * 64 + (b2y - 128)
+                    b1y i64 = bs[1]: {
+                        ok -> it
+
+                        -> 0
+                    }
+                    b2y i64 = bs[2]: {
+                        ok -> it
+
+                        -> 0
+                    }
+
+                    #{overflow=wrap}
+                    cp = (b0 - 224) * 4096 + (b1y - 128) * 64 + (b2y - 128): {
+                        ok -> it
+
+                        -> 0
+                    }
                 }
                 b0 >= 240 && n >= 4 -> {
-                    b1z i64 = bs[1]
-                    b2z i64 = bs[2]
-                    b3z i64 = bs[3]
-                    cp = (b0 - 240) * 262144 + (b1z - 128) * 4096 + (b2z - 128) * 64 + (b3z - 128)
+                    b1z i64 = bs[1]: {
+                        ok -> it
+
+                        -> 0
+                    }
+                    b2z i64 = bs[2]: {
+                        ok -> it
+
+                        -> 0
+                    }
+                    b3z i64 = bs[3]: {
+                        ok -> it
+
+                        -> 0
+                    }
+
+                    #{overflow=wrap}
+                    cp = (b0 - 240) * 262144 + (b1z - 128) * 4096 + (b2z - 128) * 64 + (b3z - 128): {
+                        ok -> it
+
+                        -> 0
+                    }
                 }
             }
             cid = h2m-alloc(c, TY-I64)
@@ -2000,7 +2233,12 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                 ; 按内容比对：把臂绑定名的 str 表下标现取现比（ast.str-at 此时已可靠），
                 ;   不与 d.s0 比下标——同一 'v' 在 t.strs 里可能有多份，下标不等但内容相等。
-                inm = ast.str-at(t, c.alidx[ai])
+                axi = c.alidx[ai]: {
+                    ok -> it
+
+                    -> 0
+                }
+                inm = ast.str-at(t, axi)
                 inm == nm -> {
                     aln-hit = 1
                     found-ai = ai
@@ -2014,7 +2252,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             vi = h2m-name-find(c, nm)
 
             ; 优先级：臂局部 (alidx) > it 栈 > names 表；命中即取对应 SSA 值
-            aln-hit == 1 -> v = c.alv[found-ai]
+            aln-hit == 1 -> {
+                v = c.alv[found-ai]: {
+                    ok -> it
+
+                    -> 0
+                }
+            }
             aln-hit == 0 && (it-on == 1 || vi >= 0) -> v = h2m-var-read(c, nm)
             aln-hit == 0 && it-on == 0 && vi < 0 -> h2m-mark(c)
         }
@@ -2445,7 +2689,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 ; 切片 6：命中後把 cn 覆寫為【定義 emit 名】（femit），使 call 符號與
                 ;   define 符號一致（根除「定義 @testmod-bar / 呼叫 @testmod.bar」錯位）。
                 ;   單模組路徑 femit==fname==nm，故與舊行為等價、零回歸。
-                si >= 0 -> cn = sg.femit[si]
+                si >= 0 -> {
+                    cn = sg.femit[si]: {
+                        ok -> it
+
+                        -> cn
+                    }
+                }
             }
             ok-call == 1 -> {
                 want-n = sg.fnarg[si]
@@ -2489,17 +2739,20 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         }
                     }
 
-                    #{overflow=wrap}
-                    j = j + 1
+                    j = h2m-inc(j)
                 }
                 ok-call == 1 -> {
                     base = c.args.len()
                     m = 0
                     (m < al.len()) {
-                        c.args.push(al[m])
+                        av2 = al[m]: {
+                            ok -> it
 
-                        #{overflow=wrap}
-                        m = m + 1
+                            -> 0
+                        }
+                        c.args.push(av2)
+
+                        m = h2m-inc(m)
                     }
                 }
             }
@@ -2633,8 +2886,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         fv == 0 -> h2m-mark(c)
                         fvs.push(fv)
 
-                        #{overflow=wrap}
-                        i = i + 1
+                        i = h2m-inc(i)
                     }
 
                     ; s99n：逃逸门禁——切片字面量的自拥有 %vec 被放进结构体字段 ⇒ 所有权外流。
@@ -2642,10 +2894,14 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                     ;   故整函数计 unsup（宁缺勿错，与 s62「vec 作返回值」同一处置）。
                     vi = 0
                     (vi < fvs.len()) {
-                        h2m-vec-own(c, fvs[vi]) == 1 -> h2m-mark(c)
+                        fvv = fvs[vi]: {
+                            ok -> it
 
-                        #{overflow=wrap}
-                        vi = vi + 1
+                            -> 0
+                        }
+                        h2m-vec-own(c, fvv) == 1 -> h2m-mark(c)
+
+                        vi = h2m-inc(vi)
                     }
 
                     #{overflow=wrap}
@@ -2657,10 +2913,14 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                     base = c.args.len()
                     m = 0
                     (m < nf) {
-                        c.args.push(fvs[m])
+                        fvj = fvs[m]: {
+                            ok -> it
 
-                        #{overflow=wrap}
-                        m = m + 1
+                            -> 0
+                        }
+                        c.args.push(fvj)
+
+                        m = h2m-inc(m)
                     }
                     h2m-emit(c, OP-STRUCT-MK, sv, base, nf, '', stcode)
 
@@ -2800,8 +3060,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                     }
                 }
 
-                #{overflow=wrap}
-                ei = ei + 1
+                ei = h2m-inc(ei)
             }
             ok-sl == 1 -> {
                 v = vc-cur
@@ -3029,8 +3288,7 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         }
         hd == 0 -> h2m-mark(c)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
 }
 
@@ -3149,14 +3407,10 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     form = 0
     rg == 0 && ce == 0 && cond != 0 -> form = 1
     cnt != 0 -> {
-
-        #{overflow=wrap}
-        form = form + 1
+        form = h2m-inc(form)
     }
     rng != 0 -> {
-
-        #{overflow=wrap}
-        form = form + 1
+        form = h2m-inc(form)
     }
     form != 1 -> bad = 1
 
@@ -3178,14 +3432,13 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         c.stk.push(hdr-id)
         c.stk.push(exit-id)
 
-        #{overflow=wrap}
-        c.stk-n = c.stk-n + 1
+        c.stk-n = h2m-inc(c.stk-n)
         h2m-lower-block(t, c, sg, body)
 
         ; s65：出栈真刪除——只減計数留陳項 ⇒ 下一个兄弟循环查到本层的 hdr/exit（break 回跳成死循環）
         c.stk.pop()
         c.stk.pop()
-        c.stk-n = c.stk-n - 1
+        c.stk-n = h2m-dec(c.stk-n)
         h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
 
         h2m-set-block(c, exit-id)
@@ -3227,14 +3480,13 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 c.stk.push(cu-id)
                 c.stk.push(ce-id)
 
-                #{overflow=wrap}
-                c.stk-n = c.stk-n + 1
+                c.stk-n = h2m-inc(c.stk-n)
                 h2m-lower-block(t, c, sg, body)
 
                 ; s65：出栈真刪除（同前置循環）
                 c.stk.pop()
                 c.stk.pop()
-                c.stk-n = c.stk-n - 1
+                c.stk-n = h2m-dec(c.stk-n)
                 h2m-emit(c, OP-BR, 0, cu-id, 0, '', 0)
 
                 ; update 块：cnt = cnt - 1 后跳回 header（N ≤ 0 的初始形在 header 首次判定即退出）
@@ -3307,8 +3559,7 @@ h2m-lower-range = (t ast, c h2m-ctx, sg h2m-sigs, rg i64, body i64, vn str) {
         qn = c.rnms[q]
         qn == vn -> bad = 1
 
-        #{overflow=wrap}
-        q = q + 1
+        q = h2m-inc(q)
     }
     bad == 1 -> h2m-mark(c)
 
@@ -3382,20 +3633,18 @@ h2m-lower-range = (t ast, c h2m-ctx, sg h2m-sigs, rg i64, body i64, vn str) {
             c.stk.push(cup-id)
             c.stk.push(cex-id)
 
-            #{overflow=wrap}
-            c.stk-n = c.stk-n + 1
+            c.stk-n = h2m-inc(c.stk-n)
             c.rnms.push(vn)
 
-            #{overflow=wrap}
-            c.rnms-n = c.rnms-n + 1
+            c.rnms-n = h2m-inc(c.rnms-n)
             h2m-lower-block(t, c, sg, body)
 
             ; s65：出栈真刪除——rnms 留陳項 ⇒ 后续兄弟层的同名检查拿已退出层的名字误拒／漏闸
             c.rnms.pop()
-            c.rnms-n = c.rnms-n - 1
+            c.rnms-n = h2m-dec(c.rnms-n)
             c.stk.pop()
             c.stk.pop()
-            c.stk-n = c.stk-n - 1
+            c.stk-n = h2m-dec(c.stk-n)
             h2m-emit(c, OP-BR, 0, cup-id, 0, '', 0)
 
             h2m-set-block(c, cup-id)
@@ -3482,8 +3731,7 @@ h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn st
         qn = c.rnms[q]
         qn == vn -> bad = 1
 
-        #{overflow=wrap}
-        q = q + 1
+        q = h2m-inc(q)
     }
 
     bad != 0 -> h2m-mark(c)
@@ -3517,26 +3765,23 @@ h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn st
         c.stk.push(upd-id)
         c.stk.push(ext-id)
 
-        #{overflow=wrap}
-        c.stk-n = c.stk-n + 1
+        c.stk-n = h2m-inc(c.stk-n)
         c.rnms.push(vn)
 
-        #{overflow=wrap}
-        c.rnms-n = c.rnms-n + 1
+        c.rnms-n = h2m-inc(c.rnms-n)
         c.epl.push(vn)
 
-        #{overflow=wrap}
-        c.epl-n = c.epl-n + 1
+        c.epl-n = h2m-inc(c.epl-n)
         h2m-lower-block(t, c, sg, body)
 
         ; s65：出栈真刪除——epl 留陳項 ⇒ 下一个兄弟容器遍历里写循环变量的门禁漏闸（静默错码）
         c.epl.pop()
-        c.epl-n = c.epl-n - 1
+        c.epl-n = h2m-dec(c.epl-n)
         c.rnms.pop()
-        c.rnms-n = c.rnms-n - 1
+        c.rnms-n = h2m-dec(c.rnms-n)
         c.stk.pop()
         c.stk.pop()
-        c.stk-n = c.stk-n - 1
+        c.stk-n = h2m-dec(c.stk-n)
         h2m-emit(c, OP-BR, 0, upd-id, 0, '', 0)
 
         ; update：索引自增后跳回 header（len == 0 时在 header 首次判定即退出，与 Go 同形）
@@ -3573,8 +3818,7 @@ h2m-subtree-uses-it = (t ast, n i64) (u i64) {
                 k = ast.kid-at(t, d.kid0 + i)
                 k > 0 -> u = h2m-subtree-uses-it(t, k)
 
-                #{overflow=wrap}
-                i = i + 1
+                i = h2m-inc(i)
             }
             u == 0 && d.kind == asp.K-SURFACE-MATCH -> {
                 arms = d.hcount
@@ -3586,8 +3830,7 @@ h2m-subtree-uses-it = (t ast, n i64) (u i64) {
                     u = h2m-subtree-uses-it(t, cn)
                     u == 0 -> u = h2m-subtree-uses-it(t, bn)
 
-                    #{overflow=wrap}
-                    j = j + 1
+                    j = h2m-inc(j)
                 }
             }
         }
@@ -3678,7 +3921,13 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
         vctx == 1 -> {
             si = h2m-name-find(c, snm)
             si < 0 -> bad = 1
-            si >= 0 -> sslot = c.vids[si]
+            si >= 0 -> {
+                sslot = c.vids[si]: {
+                    ok -> it
+
+                    -> 0
+                }
+            }
         }
 
         j = 0
@@ -3747,8 +3996,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 }
             }
 
-            #{overflow=wrap}
-            j = j + 1
+            j = h2m-inc(j)
         }
         bad != 0 -> h2m-mark(c)
         bad == 0 -> {
@@ -3784,8 +4032,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                             bound = 1
                             c.itv.push(iv1)
 
-                            #{overflow=wrap}
-                            c.itv-n = c.itv-n + 1
+                            c.itv-n = h2m-inc(c.itv-n)
                         }
                     }
                     h2m-smv-body(t, c, sg, bn, vctx, sslot)
@@ -3793,8 +4040,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                     bound == 1 -> {
                         c.itv.pop()
 
-                        #{overflow=wrap}
-                        c.itv-n = c.itv-n - 1
+                        c.itv-n = h2m-dec(c.itv-n)
                     }
                     stop = 1
                 }
@@ -3835,8 +4081,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                                 ; it = subject option 值（同 i64 路）
                                 c.itv.push(sv)
 
-                                #{overflow=wrap}
-                                c.itv-n = c.itv-n + 1
+                                c.itv-n = h2m-inc(c.itv-n)
 
                                 ; ok(v)：payload 绑定到臂局部名（跨 mem 直返 SSA，出臂 pop 还原）
                                 bvar == 'ok' -> {
@@ -3866,8 +4111,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                                 }
                                 c.itv.pop()
 
-                                #{overflow=wrap}
-                                c.itv-n = c.itv-n - 1
+                                c.itv-n = h2m-dec(c.itv-n)
                                 next-id = ftgt
                             }
                         }
@@ -3903,24 +4147,21 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                                 ab = 1
                                 c.itv.push(sv)
 
-                                #{overflow=wrap}
-                                c.itv-n = c.itv-n + 1
+                                c.itv-n = h2m-inc(c.itv-n)
                             }
                             h2m-smv-body(t, c, sg, bn, vctx, sslot)
                             h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
                             ab == 1 -> {
                                 c.itv.pop()
 
-                                #{overflow=wrap}
-                                c.itv-n = c.itv-n - 1
+                                c.itv-n = h2m-dec(c.itv-n)
                             }
                             next-id = ftgt
                         }
                     }
                 }
 
-                #{overflow=wrap}
-                j = j + 1
+                j = h2m-inc(j)
             }
             h2m-set-block(c, merge-id)
 
@@ -3982,24 +4223,30 @@ h2m-lower-term = (t ast, c h2m-ctx, n i64, k i64) {
         k == asp.K-BREAK-STATEMENT -> {
             p = c.stk-n
 
-            #{overflow=wrap}
-            p = p - 1
+            p = h2m-dec(p)
             p < 0 -> h2m-mark(c)
             p >= 0 -> {
                 pk = 2 * p + 1
-                tgt = c.stk[pk]
+                tgt = c.stk[pk]: {
+                    ok -> it
+
+                    -> 0
+                }
                 h2m-emit(c, OP-BR, 0, tgt, 0, '', 0)
             }
         }
         k == asp.K-CONTINUE-STATEMENT -> {
             p = c.stk-n
 
-            #{overflow=wrap}
-            p = p - 1
+            p = h2m-dec(p)
             p < 0 -> h2m-mark(c)
             p >= 0 -> {
                 pk = 2 * p
-                tgt = c.stk[pk]
+                tgt = c.stk[pk]: {
+                    ok -> it
+
+                    -> 0
+                }
                 h2m-emit(c, OP-BR, 0, tgt, 0, '', 0)
             }
         }
@@ -4091,14 +4338,14 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
     ; s6b：方法語法（'recv.method'）會在輸出區[0]合成 self 參數（ps-parse-method-func，
     ;   set-sig 的 results = 1 + 宣告 outs），真實回傳值從輸出區[1]起算。故「有效輸出數」
     ;   須扣掉 self，才不會把單回傳方法誤判成多回傳。slice 6 ② 前置：Step 1 只放行
-    ;   realOuts<=1；realOuts>1（真·多回傳，hyphen/無前綴函式）留 Step 2 做結構體聚合回傳。
-    isM = (ast.str-at(t, d.s2) == 'true')
-    realOut = 0
-    isM -> realOut = 1
-    realOuts = d.c5
+    ;   real-outs<=1；real-outs>1（真·多回傳，hyphen/無前綴函式）留 Step 2 做結構體聚合回傳。
+    is-m = (ast.str-at(t, d.s2) == 'true')
+    real-out = 0
+    is-m -> real-out = 1
+    real-outs = d.c5
 
     #{overflow=wrap}
-    realOuts = realOuts - realOut
+    real-outs = real-outs - real-out
 
     d.c3 > 0 -> {
         bad = 1
@@ -4117,10 +4364,9 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
         pb != 0 -> bad = 1
         pb == 0 -> argt.push(pc)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
-    bad == 0 && realOuts == 1 -> {
+    bad == 0 && real-outs == 1 -> {
         rp = d.kid0
 
         #{overflow=wrap}
@@ -4130,7 +4376,7 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
         rp = rp + d.c4
 
         #{overflow=wrap}
-        rp = rp + realOut
+        rp = rp + real-out
         rk = ast.kid-at(t, rp)
         rc, rb = h2m-param-ty(t, agg, rk)
         rb != 0 -> bad = 1
@@ -4140,12 +4386,12 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
         rb == 0 -> ret = rc
     }
 
-    ; s6c：真·多回傳（realOuts>1）⇒ 合成聚合結構體作回傳型別（适配 297aa2a0：h2m-param-ty 已無 s92 預設值參數）
-    ;   結構體名唯一（'__mr__'<fn>），欄位 = 各真實輸出參（realOut 起算）；欄位型別節點 id 先登進 stftn
+    ; s6c：真·多回傳（real-outs>1）⇒ 合成聚合結構體作回傳型別（适配 297aa2a0：h2m-param-ty 已無 s92 預設值參數）
+    ;   結構體名唯一（'__mr__'<fn>），欄位 = 各真實輸出參（real-out 起算）；欄位型別節點 id 先登進 stftn
     ;   （與 K-STRUCT-DEFINITION 同機制），型別碼由 h2m-lower-program 的 resolve-range 在 pre-pass ② 之後
     ;   統一解析。ret 設 TY-STRUCT-BASE + sid；解包（OP-STRUCT-GET 散到各 LHS 變量）留 Step 2b 接 CALL 子特徵。
     ;   ⚠️ 重入冪等：靠 h2m-struct-find 去重避免雙註冊。
-    bad == 0 && realOuts > 1 -> {
+    bad == 0 && real-outs > 1 -> {
         mrname = '__mr__' - name
         mrsid = h2m-struct-find(agg, mrname)
         mrsid < 0 -> {
@@ -4153,7 +4399,7 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
             agg.stn.push(mrname)
             agg.stid.push(mrsid)
             k = 0
-            (k < realOuts) {
+            (k < real-outs) {
                 opn = d.kid0
 
                 #{overflow=wrap}
@@ -4163,7 +4409,7 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
                 opn = opn + d.c4
 
                 #{overflow=wrap}
-                opn = opn + realOut
+                opn = opn + real-out
 
                 #{overflow=wrap}
                 opn = opn + k
@@ -4174,10 +4420,9 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
                 agg.stftn.push(ftn)
                 agg.stfldn.push(fnn)
 
-                #{overflow=wrap}
-                k = k + 1
+                k = h2m-inc(k)
             }
-            agg.stfc.push(realOuts)
+            agg.stfc.push(real-outs)
         }
         ret = TY-STRUCT-BASE + mrsid
     }
@@ -4211,14 +4456,14 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     c.stftn = agg.stftn
     d = ast.nd-at(t, n)
 
-    ; s6b：與 h2m-func-sig 同口徑計算 realOuts（方法語法扣 self），供下方輸出處理各支使用
-    isM = (ast.str-at(t, d.s2) == 'true')
-    realOut = 0
-    isM -> realOut = 1
-    realOuts = d.c5
+    ; s6b：與 h2m-func-sig 同口徑計算 real-outs（方法語法扣 self），供下方輸出處理各支使用
+    is-m = (ast.str-at(t, d.s2) == 'true')
+    real-out = 0
+    is-m -> real-out = 1
+    real-outs = d.c5
 
     #{overflow=wrap}
-    realOuts = realOuts - realOut
+    real-outs = real-outs - real-out
     fnm, frt, fap, fb = h2m-func-sig(t, agg, n)
     c.cur-fn = fnm; 切片 6 ②：本函数名，供 h2m-mark 记录 fn
     fb != 0 -> {
@@ -4251,8 +4496,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             h2m-var-bind(c, pnm, vid)
             h2m-lst-add(loc, pnm, pt)
 
-            #{overflow=wrap}
-            q = q + 1
+            q = h2m-inc(q)
         }
 
         ; body 是最后一个 kid
@@ -4274,7 +4518,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         ; s97：option 输出参的槽必须按【声明型 TY-OPT】铺（nil-init），但 h2m-scan 把体内 `r = <payload>`
         ;   当 LetStatement 登记 ⇒ 槽型被按 RHS 推成整/f64（正是 some(0) 错形之源）。故 mem==1 且回值型为
         ;   option 时，铺槽前按声明覆写该名为 TY-OPT（h2m-lst-add 的 i>=0 分支就地改型、位次不变，仍排在形参后）
-        c.mem == 1 && frt == TY-OPT && realOuts == 1 -> {
+        c.mem == 1 && frt == TY-OPT && real-outs == 1 -> {
             oop = d.kid0
 
             #{overflow=wrap}
@@ -4284,7 +4528,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             oop = oop + d.c4
 
             #{overflow=wrap}
-            oop = oop + realOut
+            oop = oop + real-out
             ook = ast.kid-at(t, oop)
             ood = ast.nd-at(t, ook)
             oonm = ast.str-at(t, ood.s0)
@@ -4302,13 +4546,11 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
                 m < fap.len() -> {
                     avid = 0
 
-                    #{overflow=wrap}
-                    avid = m + 1
+                    avid = h2m-inc(m)
                     h2m-slot-init-arg(c, lnm, avid, lty)
                 }
 
-                #{overflow=wrap}
-                m = m + 1
+                m = h2m-inc(m)
             }
         }
         bc < 0 -> {
@@ -4317,7 +4559,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
         ; s99k：提前算出输出变量名，供 body 降级时 h2m-var-write 识别「写入输出槽」并记录 outsv
         ;   （out-name 原在 body 之后才求，但 h2m-var-write 在 body 降级期就会用到，故此处先定）
-        realOuts == 1 -> {
+        real-outs == 1 -> {
             op2 = d.kid0
 
             #{overflow=wrap}
@@ -4327,7 +4569,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             op2 = op2 + d.c4
 
             #{overflow=wrap}
-            op2 = op2 + realOut
+            op2 = op2 + real-out
             ok2 = ast.kid-at(t, op2)
             od2 = ast.nd-at(t, ok2)
             c.outn = ast.str-at(t, od2.s0)
@@ -4336,7 +4578,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
         ; 恰一个输出参数时：它绑定的值 id 即返回值
         rid = 0
-        realOuts == 1 -> {
+        real-outs == 1 -> {
             rp = d.kid0
 
             #{overflow=wrap}
@@ -4346,7 +4588,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             rp = rp + d.c4
 
             #{overflow=wrap}
-            rp = rp + realOut
+            rp = rp + real-out
             pk = ast.kid-at(t, rp)
             pd = ast.nd-at(t, pk)
             out-name = ast.str-at(t, pd.s0)
@@ -4397,11 +4639,11 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             h2m-emit(c, OP-BR, 0, c.ret, 0, '', 0)
             h2m-set-block(c, c.ret)
             zc2 = 0
-            realOuts == 1 -> {
+            real-outs == 1 -> {
                 oi2 = h2m-name-find(c, out-name)
                 oi2 >= 0 -> zc2 = h2m-var-read(c, out-name)
             }
-            realOuts == 0 -> {
+            real-outs == 0 -> {
                 zc2 = h2m-alloc(c, TY-I64)
                 h2m-emit(c, OP-CONST, zc2, 0, 0, '', TY-I64)
             }
@@ -4430,14 +4672,28 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     ; 切片 6 ②：把本函数的 unsupported 逐条记录 (fn, kind) 并回模块级（与 unsup 同口径）
     qi = 0
     (qi < c.unsf.len()) {
-        agg.unsf.push(c.unsf[qi])
-        agg.unsk.push(c.unsk[qi])
-        qi = qi + 1
+        ufn = c.unsf[qi]: {
+            ok -> it
+
+            -> ''
+        }
+        ukd = c.unsk[qi]: {
+            ok -> it
+
+            -> 0
+        }
+        agg.unsf.push(ufn)
+        agg.unsk.push(ukd)
+        qi = h2m-inc(qi)
     }
     fnok = 1
 
     #{overflow=wrap}
-    agg.unsup = agg.unsup + inc
+    agg.unsup = agg.unsup + inc: {
+        ok -> it
+
+        -> agg.unsup
+    }
     inc > 0 -> {
         r = ''
         fnok = 0
@@ -4450,10 +4706,14 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         agg.cgc.push(c.callee.len())
         q2 = 0
         (q2 < c.callee.len()) {
-            agg.cgl.push(c.callee[q2])
+            cnm = c.callee[q2]: {
+                ok -> it
 
-            #{overflow=wrap}
-            q2 = q2 + 1
+                -> ''
+            }
+            agg.cgl.push(cnm)
+
+            q2 = h2m-inc(q2)
         }
     }
 }
@@ -4482,8 +4742,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
 
     ; 前置 pass ①b：全部结构体名就位后，解析字段型别码（支持嵌套结构体字段、定义序无关）
@@ -4507,8 +4766,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
             bd == 0 -> h2m-sig-add(sg, nm, nm, rt, ap)
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = h2m-inc(i)
     }
     agg.stn.len() > n0 -> h2m-struct-resolve-range(agg, t, n0, agg.stn.len())
 
@@ -4547,8 +4805,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
             h2m-mark(agg)
         }
 
-        #{overflow=wrap}
-        j = j + 1
+        j = h2m-inc(j)
     }
 
     ; s99：模块级结构体型别声明（§11 B10 唯一装配点）——按 id 升序一次性发全部，前置于函数文本；
@@ -4597,12 +4854,32 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
 ;   · 含 `{{` / `}}` 转义 ⇒ 计 unsup（本件不反转义，原样印会错码）。
 
 ; s102：i + 1（索引运算的溢出在本文件不可能发生，回绕即可）
+;   D6 起 `+` 恒回落 `?i64`：加註解只聲明回繞語意，取值仍須值位 match 解包（失敗臂回原值）。
 ; i: 下标
 ; r: i + 1
 h2m-inc = (i i64) (r i64) {
+    r = 0
 
     #{overflow=wrap}
-    r = i + 1
+    r = i + 1: {
+        ok -> it
+
+        -> i
+    }
+}
+
+; s102：i - 1（同上，回繞語意；失敗臂回原值）
+; i: 下标
+; r: i - 1
+h2m-dec = (i i64) (r i64) {
+    r = 0
+
+    #{overflow=wrap}
+    r = i - 1: {
+        ok -> it
+
+        -> i
+    }
 }
 
 ; s102：取 s[i] 的字节值；越界回 -1（哨兵；合法字节值域是 0..255）
@@ -4867,8 +5144,7 @@ h2m-lower-print = (t ast, c h2m-ctx, sg h2m-sigs, n i64, name str) (r i64) {
             }
         }
 
-        #{overflow=wrap}
-        j = j + 1
+        j = h2m-inc(j)
     }
 
     ; 末尾换行（print() 空实参也走这条 ⇒ 只印一个 "\n"，与 Go 同形）

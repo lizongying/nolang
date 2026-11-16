@@ -12,6 +12,7 @@
 ;    尚未接入 MIR（M4-c 起由 cg.no 消费 IR 文本，M4-c 起由 MIR 分析喂事件）。
 
 # /compiler/src/util/sb.sb
+# /compiler/src/ix
 
 ; 16 字节头 ABI 常量
 HDR-SIZE = 16
@@ -155,20 +156,16 @@ cg-rc-check-balance = (vids []i64, ops []i64) (r str) {
     n = vids.len()
     i <- [0..n): {
         cur = vids[i]
-        ops[i] == RC-RELEASE -> {
+        ix.at-i(ops, i) == RC-RELEASE -> {
             nr = 0
             nd = 0
             j <- [0..n): {
-                vids[j] == cur -> {
-                    ops[j] == RC-RETAIN -> {
-
-                        #{overflow=wrap}
-                        nr = nr + 1
+                ix.at-i(vids, j) == cur -> {
+                    ix.at-i(ops, j) == RC-RETAIN -> {
+                        nr = ix.inc(nr)
                     }
-                    ops[j] == RC-RELEASE -> {
-
-                        #{overflow=wrap}
-                        nd = nd + 1
+                    ix.at-i(ops, j) == RC-RELEASE -> {
+                        nd = ix.inc(nd)
                     }
                 }
             }

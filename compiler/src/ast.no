@@ -73,6 +73,7 @@
 
 # /compiler/src/asp
 # /compiler/src/util/sb.sb
+# /compiler/src/ix
 
 ; ── 節點資料（POD；字串一律以 id 指向 ast.strs / ast.aux）──────────
 ;
@@ -202,7 +203,7 @@ make = () (r ast) {
     (hi < 256) {
         r.str-k.push('')
         r.str-v.push(0)
-        hi = hi + 1
+        hi = ix.inc(hi)
     }
 }
 
@@ -216,11 +217,14 @@ add = (t ast, kind i64) (idx i64) {
     d.kid0 = t.kids.len()
     t.nodes.push(d)
 
-    #{overflow=wrap}
-    t.n = t.n + 1
+    t.n = ix.inc(t.n)
 
     #{overflow=wrap}
-    idx = t.n - 1
+    idx = t.n - 1: {
+        ok -> it
+
+        -> idx
+    }
 }
 
 ; 把子節點索引附加到節點 i 的 kids 區段
@@ -231,8 +235,7 @@ kid-add = (t ast, i i64, c i64) {
     t.kids.push(c)
     d = ast.nd-at(t, i)
 
-    #{overflow=wrap}
-    d.nkid = d.nkid + 1
+    d.nkid = ix.inc(d.nkid)
     ast.nd-put(t, i, d)
 }
 
@@ -416,8 +419,12 @@ ast-str-hash = (sx str) (h i64) {
         }
 
         #{overflow=wrap}
-        h = h * 31 + c
-        i = i + 1
+        h = h * 31 + c: {
+            ok -> it
+
+            -> h
+        }
+        i = ix.inc(i)
     }
 }
 
@@ -436,9 +443,17 @@ ast-str-intern-raw = (t ast, s str, target i64) {
     (i < n) {
         k = t.str-k[h]
         k == '' -> {
-            t.str-k[h] = s
-            t.str-v[h] = target
-            t.str-n = t.str-n + 1
+            t.str-k[h]: {
+                ok -> it = s
+
+                -> _
+            }
+            t.str-v[h]: {
+                ok -> it = target
+
+                -> _
+            }
+            t.str-n = ix.inc(t.str-n)
             return
         }
         k == s -> {
@@ -448,7 +463,7 @@ ast-str-intern-raw = (t ast, s str, target i64) {
         #{overflow=wrap}
         h = (h + 1) % n
         (h < 0) -> h = h + n
-        i = i + 1
+        i = ix.inc(i)
     }
 }
 
@@ -466,14 +481,14 @@ ast-str-grow = (t ast) {
     (hi < new-cap) {
         t.str-k.push('')
         t.str-v.push(0)
-        hi = hi + 1
+        hi = ix.inc(hi)
     }
     t.str-n = 0
     hi = 0
     (hi < old-n) {
         kk = old-k[hi]
         kk != '' -> ast-str-intern-raw(t, kk, old-v[hi])
-        hi = hi + 1
+        hi = ix.inc(hi)
     }
 }
 
@@ -494,22 +509,34 @@ ast-str-intern = (t ast, s str) (idx i64) {
     (i < n) {
         k = t.str-k[h]
         k == s -> {
-            idx = t.str-v[h]
+            idx = t.str-v[h]: {
+                ok -> it
+
+                -> _
+            }
             return
         }
         k == '' -> {
-            t.str-k[h] = s
+            t.str-k[h]: {
+                ok -> it = s
+
+                -> _
+            }
             t.strs.push(s)
             idx = t.strs.len() - 1
-            t.str-v[h] = idx
-            t.str-n = t.str-n + 1
+            t.str-v[h]: {
+                ok -> it = idx
+
+                -> _
+            }
+            t.str-n = ix.inc(t.str-n)
             return
         }
 
         #{overflow=wrap}
         h = (h + 1) % n
         (h < 0) -> h = h + n
-        i = i + 1
+        i = ix.inc(i)
     }
     t.strs.push(s)
     idx = t.strs.len() - 1
@@ -553,7 +580,11 @@ nd-at = (t ast, i i64) (d nd) {
     i <= 0 -> return
     i >= t.n -> return
 
-    d = t.nodes[i]
+    d = t.nodes[i]: {
+        ok -> it
+
+        -> _
+    }
 }
 
 ; 功能待補充
@@ -563,7 +594,11 @@ nd-at = (t ast, i i64) (d nd) {
 nd-put = (t ast, i i64, d nd) {
     i <= 0 -> return
     i >= t.n -> return
-    t.nodes[i] = d
+    t.nodes[i]: {
+        ok -> it = d
+
+        -> _
+    }
 }
 
 ; 功能待補充
@@ -575,7 +610,11 @@ kid-at = (t ast, i i64) (v i64) {
     i < 0 -> return
     i >= t.kids.len() -> return
 
-    v = t.kids[i]
+    v = t.kids[i]: {
+        ok -> it
+
+        -> _
+    }
 }
 
 ; 第 i 條指令的第 j 欄（每條 5 個 i64）
@@ -594,7 +633,11 @@ ins = (t ast, i i64, j i64) (v i64) {
     p < 0 -> return
     p >= t.tape.len() -> return
 
-    v = t.tape[p]
+    v = t.tape[p]: {
+        ok -> it
+
+        -> _
+    }
 }
 
 ; 節點種類 k 的第 j 欄（每種 4 個 i64）
@@ -613,7 +656,11 @@ kind-f = (t ast, k i64, j i64) (v i64) {
     p < 0 -> return
     p >= t.kinds.len() -> return
 
-    v = t.kinds[p]
+    v = t.kinds[p]: {
+        ok -> it
+
+        -> _
+    }
 }
 
 ; 功能待補充
@@ -625,7 +672,11 @@ str-at = (t ast, id i64) (r str) {
     id <= 0 -> return
     id >= t.strs.len() -> return
 
-    r = t.strs[id]
+    r = t.strs[id]: {
+        ok -> it
+
+        -> _
+    }
 }
 
 ; 功能待補充
@@ -637,7 +688,11 @@ aux-at = (t ast, idx i64) (v i64) {
     idx <= 0 -> return
     idx >= t.aux.len() -> return
 
-    v = t.aux[idx]
+    v = t.aux[idx]: {
+        ok -> it
+
+        -> _
+    }
 }
 
 ; 功能待補充
@@ -753,8 +808,7 @@ indent = (o sb, depth i64) {
     (j < depth) {
         o.push('    ')
 
-        #{overflow=wrap}
-        j = j + 1
+        j = ix.inc(j)
     }
 }
 
@@ -784,8 +838,7 @@ sub = (s str, a i64, b i64) (r str) {
         }
         t.push-byte(sbv)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
     r = t.str()
 }
@@ -805,8 +858,7 @@ trim-nl = (s str) (r str) {
         }
         b != 10 -> break
 
-        #{overflow=wrap}
-        n = n - 1
+        n = ix.dec(n)
     }
     r = ast.sub(s, 0, n)
 }
@@ -947,8 +999,7 @@ expr-string = (t ast, i i64) (r str) {
         -> {
 
             ; ⚠️ Go 的 default 是 fmt.Sprintf("%v", e)：結構體傾印，無法重現。
-            #{overflow=wrap}
-            t.gaps = t.gaps + 1
+            t.gaps = ix.inc(t.gaps)
             r = '<expr?(' - asp.kind-name(k) - ')>'
         }
     }
@@ -1029,8 +1080,7 @@ fn-str = (t ast, d nd) (r str) {
         #{overflow=wrap}
         r = r - ast.param-type(t, ast.kid-at(t, base + j))
 
-        #{overflow=wrap}
-        j = j + 1
+        j = ix.inc(j)
     }
     r = r - ')'
     nr = d.c1
@@ -1046,8 +1096,7 @@ fn-str = (t ast, d nd) (r str) {
             #{overflow=wrap}
             r = r - ast.param-type(t, ast.kid-at(t, rb + m))
 
-            #{overflow=wrap}
-            m = m + 1
+            m = ix.inc(m)
         }
         r = r - ')'
     }
@@ -1128,8 +1177,7 @@ node = (t ast, o sb, i i64, depth i64) {
             op == asp.OP-CHILD -> {
                 childs.push(ast.kid-at(t, cur))
 
-                #{overflow=wrap}
-                cur = cur + 1
+                cur = ix.inc(cur)
             }
 
             op == asp.OP-KIDS -> {
@@ -1137,35 +1185,49 @@ node = (t ast, o sb, i i64, depth i64) {
                 #{overflow=wrap}
                 cur = cur + ast.nd-c(d, cslot)
 
-                #{overflow=wrap}
-                cslot = cslot + 1
+                cslot = ix.inc(cslot)
             }
 
             op == asp.OP-SIG -> {
 
                 ; SIG 的三組節點（泛型參數 / 參數 / 回傳值）連續排在 kid 區
                 #{overflow=wrap}
-                cur = cur + d.c3
+                cur = cur + d.c3: {
+                    ok -> it
+
+                    -> cur
+                }
 
                 #{overflow=wrap}
-                cur = cur + d.c4
+                cur = cur + d.c4: {
+                    ok -> it
+
+                    -> cur
+                }
 
                 #{overflow=wrap}
-                cur = cur + d.c5
+                cur = cur + d.c5: {
+                    ok -> it
+
+                    -> cur
+                }
             }
 
             op == asp.OP-HELPER -> {
 
                 #{overflow=wrap}
-                cur = cur + d.hcount
+                cur = cur + d.hcount: {
+                    ok -> it
+
+                    -> cur
+                }
             }
 
             -> {
             }
         }
 
-        #{overflow=wrap}
-        j = j + 1
+        j = ix.inc(j)
     }
 
     ; 主掃：逐指令輸出
@@ -1188,8 +1250,7 @@ node = (t ast, o sb, i i64, depth i64) {
             op == asp.OP-CHILD -> {
                 v = ast.kid-at(t, cur)
 
-                #{overflow=wrap}
-                cur = cur + 1
+                cur = ix.inc(cur)
                 guard = ast.ins(t, ins, 2)
                 {
                     v <= 0 -> {
@@ -1215,14 +1276,12 @@ node = (t ast, o sb, i i64, depth i64) {
                 n = ast.nd-c(d, kslot)
                 skip = ast.ins(t, ins, 2)
 
-                #{overflow=wrap}
-                kslot = kslot + 1
+                kslot = ix.inc(kslot)
                 m = 0
                 (m < n) {
                     v = ast.kid-at(t, cur)
 
-                    #{overflow=wrap}
-                    cur = cur + 1
+                    cur = ix.inc(cur)
                     {
                         v <= 0 -> {
                             skip == 0 -> {
@@ -1242,8 +1301,7 @@ node = (t ast, o sb, i i64, depth i64) {
                         }
                     }
 
-                    #{overflow=wrap}
-                    m = m + 1
+                    m = ix.inc(m)
                 }
             }
 
@@ -1257,13 +1315,25 @@ node = (t ast, o sb, i i64, depth i64) {
                 ast.signature(t, o, d, depth + 1)
 
                 #{overflow=wrap}
-                cur = cur + d.c3
+                cur = cur + d.c3: {
+                    ok -> it
+
+                    -> cur
+                }
 
                 #{overflow=wrap}
-                cur = cur + d.c4
+                cur = cur + d.c4: {
+                    ok -> it
+
+                    -> cur
+                }
 
                 #{overflow=wrap}
-                cur = cur + d.c5
+                cur = cur + d.c5: {
+                    ok -> it
+
+                    -> cur
+                }
             }
 
             op == asp.OP-HELPER -> {
@@ -1271,7 +1341,11 @@ node = (t ast, o sb, i i64, depth i64) {
                 ast.helper(t, o, d, hname, cur, depth)
 
                 #{overflow=wrap}
-                cur = cur + d.hcount
+                cur = cur + d.hcount: {
+                    ok -> it
+
+                    -> cur
+                }
             }
 
             op == asp.OP-FREE -> ast.free-comments(t, o, d, depth)
@@ -1291,13 +1365,11 @@ node = (t ast, o sb, i i64, depth i64) {
 
                 ; 尚未接線：計數，**不靜默略過**
 
-                #{overflow=wrap}
-                t.unsup = t.unsup + 1
+                t.unsup = ix.inc(t.unsup)
             }
         }
 
-        #{overflow=wrap}
-        j = j + 1
+        j = ix.inc(j)
     }
 }
 
@@ -1393,8 +1465,7 @@ trailing-comments = (t ast, o sb, d nd, depth i64) {
             o.push(ast.str-at(t, ast.aux-at(t, d.ct0 + j)))
             o.push-byte(10)
 
-            #{overflow=wrap}
-            j = j + 1
+            j = ix.inc(j)
         }
     }
 }
@@ -1415,7 +1486,11 @@ closing-comments = (t ast, o sb, d nd, depth i64) {
         d.ntrail > 0 -> {
 
             #{overflow=wrap}
-            base = d.ct0 + d.ntrail
+            base = d.ct0 + d.ntrail: {
+                ok -> it
+
+                -> base
+            }
         }
         j = 0
         (j < d.nclos) {
@@ -1428,8 +1503,7 @@ closing-comments = (t ast, o sb, d nd, depth i64) {
             o.push(ast.str-at(t, ast.aux-at(t, base + j)))
             o.push-byte(10)
 
-            #{overflow=wrap}
-            j = j + 1
+            j = ix.inc(j)
         }
     }
 }
@@ -1449,12 +1523,20 @@ implements = (t ast, o sb, d nd, depth i64) {
         d.ntrail > 0 -> {
 
             #{overflow=wrap}
-            base = base + d.ntrail
+            base = base + d.ntrail: {
+                ok -> it
+
+                -> base
+            }
         }
         d.nclos > 0 -> {
 
             #{overflow=wrap}
-            base = base + d.nclos
+            base = base + d.nclos: {
+                ok -> it
+
+                -> base
+            }
         }
         j = 0
         (j < d.nimp) {
@@ -1463,8 +1545,7 @@ implements = (t ast, o sb, d nd, depth i64) {
             #{overflow=wrap}
             o.push(ast.str-at(t, ast.aux-at(t, base + j)))
 
-            #{overflow=wrap}
-            j = j + 1
+            j = ix.inc(j)
         }
         o.push(']')
         o.push-byte(10)
@@ -1499,12 +1580,10 @@ signature = (t ast, o sb, d nd, depth i64) {
                 k > 0 -> o.push(', ')
                 o.push(ast.node-string(t, v))
 
-                #{overflow=wrap}
-                k = k + 1
+                k = ix.inc(k)
             }
 
-            #{overflow=wrap}
-            j = j + 1
+            j = ix.inc(j)
         }
         o.push-byte(10)
     }
@@ -1529,8 +1608,7 @@ signature = (t ast, o sb, d nd, depth i64) {
         v = ast.kid-at(t, p0 + j)
         v > 0 -> ast.node(t, o, v, depth)
 
-        #{overflow=wrap}
-        j = j + 1
+        j = ix.inc(j)
     }
 
     #{overflow=wrap}
@@ -1542,8 +1620,7 @@ signature = (t ast, o sb, d nd, depth i64) {
         v = ast.kid-at(t, r0 + j)
         v > 0 -> ast.node(t, o, v, depth)
 
-        #{overflow=wrap}
-        j = j + 1
+        j = ix.inc(j)
     }
 }
 
@@ -1689,8 +1766,7 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
                 mcond > 0 -> ast.node(t, o, mcond, depth + 2)
                 mbody > 0 -> ast.node(t, o, mbody, depth + 2)
 
-                #{overflow=wrap}
-                j = j + 1
+                j = ix.inc(j)
             }
         }
 
@@ -1731,8 +1807,7 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
                     }
                 }
 
-                #{overflow=wrap}
-                j = j + 1
+                j = ix.inc(j)
             }
         }
 
@@ -1791,22 +1866,22 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
                     v = ast.aux-at(t, seg-b + off + k)
                     v > 0 -> ast.node(t, o, v, depth + 2)
 
-                    #{overflow=wrap}
-                    k = k + 1
+                    k = ix.inc(k)
                 }
 
                 #{overflow=wrap}
-                off = off + impc
+                off = off + impc: {
+                    ok -> it
 
-                #{overflow=wrap}
-                j = j + 1
+                    -> off
+                }
+
+                j = ix.inc(j)
             }
         }
 
         -> {
-
-            #{overflow=wrap}
-            t.unsup = t.unsup + 1
+            t.unsup = ix.inc(t.unsup)
         }
     }
 }
@@ -1861,8 +1936,7 @@ header = (t ast, o sb, d nd, ins i64, last i64, childs []i64, depth i64) {
             sep = ''
             k = ins
 
-            #{overflow=wrap}
-            k = k + 1
+            k = ix.inc(k)
             (k < last) {
                 {
                     ast.ins(t, k, 0) == asp.OP-SCALAR -> {
@@ -1873,8 +1947,7 @@ header = (t ast, o sb, d nd, ins i64, last i64, childs []i64, depth i64) {
                             sep = ', '
                         }
 
-                        #{overflow=wrap}
-                        k = k + 1
+                        k = ix.inc(k)
                     }
 
                     -> break

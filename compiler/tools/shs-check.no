@@ -41,6 +41,7 @@
 ;    `shs-sort-strs` 的註解 —— 驗證器必須先證明它**會壞**。
 
 # /compiler/src/util/sb.sb
+# /compiler/src/ix
 
 ; ── 退出碼 ──
 EXIT-OK = 0
@@ -127,7 +128,7 @@ shs-byte = (s str, i i64) (b i64) {
     b = o: {
         ok -> it
 
-        ->
+        -> b
     }
 }
 
@@ -197,7 +198,6 @@ shs-sub = (s str, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
 
-    #{overflow=wrap}
     (i < b) {
 
         ; ⚠️ `str.byte(i)` 回傳 **?byte**：直接 push 進 []byte 會寫進 option 的
@@ -211,8 +211,7 @@ shs-sub = (s str, a i64, b i64) (r str) {
         }
         t.push-byte(sv)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
     r = t.str()
 }
@@ -225,15 +224,12 @@ shs-rest-blank = (s str, j i64) (yes bool) {
     n = s.len-bytes()
     yes = true
 
-    #{overflow=wrap}
     (j < n) {
         c = shs-byte(s, j)
         c == B-LF -> j = n
         c != B-LF -> {
             shs-is-blank(c) -> {
-
-                #{overflow=wrap}
-                j = j + 1
+                j = ix.inc(j)
             }
             shs-is-blank(c) == false -> {
                 yes = false
@@ -347,12 +343,10 @@ shs-mask = (s str) (out str) {
                 c == B-BS -> {
                     b.push-byte(B-BS)
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     i < n -> b.push-byte(s.byte(i))
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-LF -> {
@@ -360,8 +354,7 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = 0
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-SQ -> {
@@ -369,14 +362,12 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = B-SQ
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 b.push-byte(120)
 
-                #{overflow=wrap}
-                i = i + 1
+                i = ix.inc(i)
                 continue
             }
 
@@ -384,12 +375,10 @@ shs-mask = (s str) (out str) {
                 c == B-BS -> {
                     b.push-byte(B-BS)
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     i < n -> b.push-byte(s.byte(i))
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-LF -> {
@@ -397,8 +386,7 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = 0
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-DQ -> {
@@ -406,14 +394,12 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = B-DQ
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 b.push-byte(120)
 
-                #{overflow=wrap}
-                i = i + 1
+                i = ix.inc(i)
                 continue
             }
 
@@ -423,8 +409,7 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = B-BT
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-LF -> {
@@ -432,14 +417,12 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = 0
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 b.push-byte(120)
 
-                #{overflow=wrap}
-                i = i + 1
+                i = ix.inc(i)
                 continue
             }
 
@@ -447,12 +430,10 @@ shs-mask = (s str) (out str) {
                 c == B-BS -> {
                     b.push-byte(B-BS)
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     i < n -> b.push-byte(s.byte(i))
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-LF -> {
@@ -460,8 +441,7 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = 0
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-SLASH -> {
@@ -469,14 +449,12 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = B-SLASH
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 b.push-byte(120)
 
-                #{overflow=wrap}
-                i = i + 1
+                i = ix.inc(i)
                 continue
             }
 
@@ -486,14 +464,12 @@ shs-mask = (s str) (out str) {
                     st = ST-CODE
                     prev = 0
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 b.push-byte(B-SP)
 
-                #{overflow=wrap}
-                i = i + 1
+                i = ix.inc(i)
                 continue
             }
 
@@ -501,8 +477,7 @@ shs-mask = (s str) (out str) {
                 c == B-LF -> {
                     b.push-byte(B-LF)
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-SEMI -> {
@@ -514,14 +489,17 @@ shs-mask = (s str) (out str) {
                         prev = 0
 
                         #{overflow=wrap}
-                        i = i + 2
+                        i = i + 2: {
+                            ok -> it
+
+                            -> i
+                        }
                         continue
                     }
                 }
                 b.push-byte(B-SP)
 
-                #{overflow=wrap}
-                i = i + 1
+                i = ix.inc(i)
                 continue
             }
 
@@ -530,39 +508,34 @@ shs-mask = (s str) (out str) {
                     b.push-byte(B-LF)
                     prev = 0
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 shs-is-blank(c) -> {
                     b.push-byte(c)
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-SQ -> {
                     b.push-byte(B-SQ)
                     st = ST-STR
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-DQ -> {
                     b.push-byte(B-DQ)
                     st = ST-CHR
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-BT -> {
                     b.push-byte(B-BT)
                     st = ST-RAW
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-SEMI -> {
@@ -573,14 +546,17 @@ shs-mask = (s str) (out str) {
                         b.push-byte(B-SP)
 
                         #{overflow=wrap}
-                        i = i + 2
+                        i = i + 2: {
+                            ok -> it
+
+                            -> i
+                        }
                         continue
                     }
                     st = ST-LINE
                     b.push-byte(B-SP)
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 c == B-SLASH -> {
@@ -591,7 +567,11 @@ shs-mask = (s str) (out str) {
                         b.push-byte(B-SP)
 
                         #{overflow=wrap}
-                        i = i + 2
+                        i = i + 2: {
+                            ok -> it
+
+                            -> i
+                        }
                         continue
                     }
                     rx = shs-slash-regex(prev)
@@ -599,22 +579,19 @@ shs-mask = (s str) (out str) {
                         b.push-byte(B-SLASH)
                         st = ST-REGEX
 
-                        #{overflow=wrap}
-                        i = i + 1
+                        i = ix.inc(i)
                         continue
                     }
                     b.push-byte(B-SLASH)
                     prev = B-SLASH
 
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                     continue
                 }
                 b.push-byte(c)
                 prev = c
 
-                #{overflow=wrap}
-                i = i + 1
+                i = ix.inc(i)
                 continue
             }
         }
@@ -634,7 +611,6 @@ shs-lines = (s str) (out []str) {
     cur = sb.init(64)
     i = 0
 
-    #{overflow=wrap}
     (i < n) {
         c = shs-byte(s, i)
         c == B-LF -> {
@@ -643,8 +619,7 @@ shs-lines = (s str) (out []str) {
         }
         c != B-LF -> cur.push-byte(c)
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
     out.push(cur.str())
 }
@@ -677,7 +652,11 @@ shs-trim-range = (ln str) (a i64, b i64) {
     }
 
     #{overflow=wrap}
-    b = j + 1
+    b = j + 1: {
+        ok -> it
+
+        -> b
+    }
 }
 
 ; ═══════════════════════════════════════════════════════════════════
@@ -844,14 +823,10 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     k4 <- [p1..b): {
         q = shs-byte(ln, k4)
         q == B-LP -> {
-
-            #{overflow=wrap}
-            depth = depth + 1
+            depth = ix.inc(depth)
         }
         q == B-RP -> {
-
-            #{overflow=wrap}
-            depth = depth - 1
+            depth = ix.dec(depth)
             (depth == 0) -> {
                 e1 = k4
                 break
@@ -891,27 +866,25 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     k6 <- [p2..b): {
         r2 = shs-byte(ln, k6)
         r2 == B-LP -> {
-
-            #{overflow=wrap}
-            depth2 = depth2 + 1
+            depth2 = ix.inc(depth2)
         }
         r2 == B-RP -> {
-
-            #{overflow=wrap}
-            depth2 = depth2 - 1
+            depth2 = ix.dec(depth2)
             (depth2 == 0) -> break
         }
         r2 == B-COMMA -> {
             (depth2 == 1) -> {
-
-                #{overflow=wrap}
-                commas = commas + 1
+                commas = ix.inc(commas)
             }
         }
     }
 
     #{overflow=wrap}
-    nout = commas + 1
+    nout = commas + 1: {
+        ok -> it
+
+        -> nout
+    }
     yes = true
 }
 
@@ -933,7 +906,6 @@ shs-map-at = (ln str, i i64) (yes bool) {
     rb = -1
     closed = false
 
-    #{overflow=wrap}
     (j < n) {
         ch = shs-byte(ln, j)
         ch == B-RB -> {
@@ -947,9 +919,7 @@ shs-map-at = (ln str, i i64) (yes bool) {
             j = n
         }
         ch != B-RB -> {
-
-            #{overflow=wrap}
-            j = j + 1
+            j = ix.inc(j)
         }
     }
     ! closed -> return
@@ -1066,8 +1036,7 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
             }
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
 }
 
@@ -1096,8 +1065,7 @@ shs-has-ffi-c = (ln str) (yes bool) {
             }
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
 }
 

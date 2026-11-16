@@ -41,6 +41,7 @@
 # /compiler/src/ast
 # /compiler/src/asp
 # /compiler/src/ck-sig
+# /compiler/src/ix
 
 ; 对 parse 产物执行 not-defined 族检查（drv.cmd-vet 在 ps 错误数==0 时调用）。
 ;   正主 runParseGate 语义（p90 实证）：有 parse 错 ⇒ 整族跳过，此处同。
@@ -129,8 +130,7 @@ check = (t ast, path str) (out []str) {
                     }
                 }
 
-                #{overflow=wrap}
-                mc = mc + 1
+                mc = ix.inc(mc)
             }
         }
 
@@ -149,8 +149,7 @@ check = (t ast, path str) (out []str) {
                     }
                 }
 
-                #{overflow=wrap}
-                gc = gc + 1
+                gc = ix.inc(gc)
             }
         }
 
@@ -197,16 +196,14 @@ check = (t ast, path str) (out []str) {
                             }
                         }
 
-                        #{overflow=wrap}
-                        pc = pc + 1
+                        pc = ix.inc(pc)
                     }
                 }
 
-                #{overflow=wrap}
-                ac = ac + 1
+                ac = ix.inc(ac)
             }
         }
-        i = i + 1
+        i = ix.inc(i)
     }
 
     ; curModule 归约（正主 stdModuleForSourceFile，checker.go:2142）：
@@ -290,7 +287,7 @@ check = (t ast, path str) (out []str) {
                 }
             }
         }
-        i = i + 1
+        i = ix.inc(i)
     }
 }
 
@@ -367,8 +364,7 @@ ck-def-has = (v []i64, id i64) (r i64) {
             return
         }
 
-        #{overflow=wrap}
-        i = i + 1
+        i = ix.inc(i)
     }
 }
 
@@ -391,7 +387,7 @@ ck-allcaps = (nm str) (r i64) {
         cls == 0 -> {
             legal = 0
         }
-        i = i + 1
+        i = ix.inc(i)
     }
     has-upper == 1 && legal == 1 -> {
         r = 1

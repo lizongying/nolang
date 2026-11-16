@@ -58,6 +58,7 @@
 
 # /compiler/src/tok
 # /compiler/src/util/sb.sb
+# /compiler/src/ix
 
 ; ── 位元組常量 ──
 B-LF = 10
@@ -284,12 +285,15 @@ lx-sub = (s []byte, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
 
-    #{overflow=wrap}
     (i < b) {
-        t.push-byte(s[i])
+        bv = s[i]: {
+            ok -> it
 
-        #{overflow=wrap}
-        i = i + 1
+            -> _
+        }
+        t.push-byte(bv)
+
+        i = ix.inc(i)
     }
     r = t.str()
 }
@@ -313,7 +317,11 @@ lx-hex-digit = (v i64) (c i64) {
     v >= 10 -> {
 
         #{overflow=wrap}
-        c = v + 87
+        c = v + 87: {
+            ok -> it
+
+            -> 0
+        }
     }
 }
 
@@ -382,7 +390,12 @@ lx-esc = (s []byte) (r str) {
     #{overflow=wrap}
     b = sb.init(n + 8)
     i <- [0..n): {
-        lx-esc-byte(b, s[i])
+        bv = s[i]: {
+            ok -> it
+
+            -> _
+        }
+        lx-esc-byte(b, bv)
     }
     r = b.str()
 }
@@ -415,18 +428,18 @@ lx-new = (src []byte) (r lxst) {
 lx-read-char = (lx lxst) {
     n = lx.input.len()
     lx.rpos >= n -> lx.ch = 0
-    lx.rpos < n -> lx.ch = lx.input[lx.rpos]
+    lx.rpos < n -> lx.input[lx.rpos]: {
+        ok -> lx.ch = it
+
+        -> _
+    }
     lx.pos = lx.rpos
 
-    #{overflow=wrap}
-    lx.rpos = lx.rpos + 1
+    lx.rpos = ix.inc(lx.rpos)
 
-    #{overflow=wrap}
-    lx.col = lx.col + 1
+    lx.col = ix.inc(lx.col)
     lx.ch == B-LF -> {
-
-        #{overflow=wrap}
-        lx.line = lx.line + 1
+        lx.line = ix.inc(lx.line)
         lx.col = 0
     }
 }
@@ -437,7 +450,11 @@ lx-read-char = (lx lxst) {
 lx-peek = (lx lxst) (c i64) {
     n = lx.input.len()
     c = 0
-    lx.rpos < n -> c = lx.input[lx.rpos]
+    lx.rpos < n -> c = lx.input[lx.rpos]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; 功能待補充
@@ -802,9 +819,7 @@ lx-block-boundary = (lx lxst) (yes bool) {
             c != B-LF -> {
                 w = lx-is-ws(c)
                 w -> {
-
-                    #{overflow=wrap}
-                    i = i + 1
+                    i = ix.inc(i)
                 }
                 ! w -> {
                     yes = false
@@ -1560,9 +1575,18 @@ lx-scan-token = (lx lxst, t tk) {
                         nx = lx-peek(lx)
                         lx-is-digit(nx) -> sci = true
                         nx == B-PLUS || nx == B-MINUS -> {
+
+                            #{overflow=wrap}
                             k = lx.rpos + 1
                             kn = lx.input.len()
-                            k < kn -> sci = lx-is-digit(lx.input[k])
+                            k < kn -> {
+                                kc = lx.input[k]: {
+                                    ok -> it
+
+                                    -> _
+                                }
+                                sci = lx-is-digit(kc)
+                            }
                         }
                     }
                     sci -> {
@@ -1592,8 +1616,7 @@ lx-scan-token = (lx lxst, t tk) {
     t.mk = mk
     t.emsg = emsg
 
-    #{overflow=wrap}
-    lx.count = lx.count + 1
+    lx.count = ix.inc(lx.count)
 }
 
 ; 把整份原始碼的 token 流 dump 成字串（與 /tmp/notok 逐位元組可比）

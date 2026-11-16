@@ -11,6 +11,7 @@
 # /compiler/src/util/sb.sb
 # /compiler/src/cg-rc
 # /compiler/src/mir
+# /compiler/src/ix
 
 ; ty-name：型别码 → LLVM 型名。**全库唯一**的一份映射（s32 从 cg.no 迁到这里：
 ;   struct 型别声明也要用它，而声明属于模块级装配点，不能反向依赖发射器）。
@@ -218,10 +219,9 @@ cg-runtime-struct-decl = (id i64, nf i64, ft []i64) (r str) {
     j = 0
     (j < nf) {
         j > 0 -> b.push(', ')
-        b.push(cg-runtime-ty-name(ft[j]))
+        b.push(cg-runtime-ty-name(ix.at-i(ft, j)))
 
-        #{overflow=wrap}
-        j = j + 1
+        j = ix.inc(j)
     }
     b.push(' }')
     r = b.str()
@@ -244,13 +244,11 @@ cg-runtime-struct-decls = (sfc []i64, sft []i64) (r str) {
             ft []i64 = []
             j = 0
             (j < nf) {
-                ft.push(sft[off])
+                ft.push(ix.at-i(sft, off))
 
-                #{overflow=wrap}
-                j = j + 1
+                j = ix.inc(j)
 
-                #{overflow=wrap}
-                off = off + 1
+                off = ix.inc(off)
             }
             b.push(cg-runtime-struct-decl(i, nf, ft))
             b.push('\n')
