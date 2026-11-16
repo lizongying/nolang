@@ -6,6 +6,17 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.25
+
+- feat(wasm): add `wasm-imports-check` and `wasm-runtime-smoke` CI/Makefile targets that reject forbidden socket imports and instantiate built wasm artifacts in a simulated loader environment
+- feat(fmt): give fmt/vet/LSP one cross-module signature contract (`collectModuleSignatures` + `FmtSigLoader`) so formatting sees std and local module result types, while keeping bool-comparison simplification gated on proven bool operands
+- refactor(fmt): consolidate formatting on a single `fmtflow.Format` entry, one `NewSemRebuildConfig` constructor and one `RedundantTypeAnnotationSafe` guard, closing the CLI/LSP annotation divergences found by a 659-file corpus diff
+- fix(fmt/lsp): preserve struct-field evidence via `CloneProgramForFormat`, keep enum/fn switches when cross-module signatures are disabled, and invalidate `vetSigContext` on manifest changes
+- refactor(compiler): replace manual increments and raw slice reads across the compiler with overflow-safe `ix.inc`/`ix.dec` and bounds-checked `ix.at-i`/`ix.at-s`
+- feat(mir): add vec/str `len()`/`push()` method dispatch and `OP-VECPUSHSTR` lowering, with ownership fixes for `[]str` to avoid double-free
+- fix(selfhost): unwrap `?i64` offsets in `ck.no` so `no build compiler` reaches a working S0 `noc` again
+- chore(repo): update `.gitignore` and formatting docs, add agent red-line rules, and consolidate `nolang-core` skill routing
+
 ## v0.4.24
 
 - fix(mir): cover all six new_utsname fields in os.uname() buffer to avoid stack overflow SIGSEGV on Linux
