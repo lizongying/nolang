@@ -119,9 +119,20 @@ Go 的 `runtime` 會把 `time.Sleep` 與 `netpoll(delay)` 都變成一個 monoto
 
 ### 首次執行的編譯時間
 
-Run 會用 `no build --wasm-direct` 把整個 std 重新下降成 wasm，在單執行緒的 wasm 直譯環境裡
-約需 **一分鐘**（原生 `no` 約 11 秒）。這是既有效能特性，不是逾時判定：
-runner 的看門狗因此分成兩段預算——載入 + 編譯 180 秒，使用者程式仍只給 5 秒。
+Run 會用 `no build --wasm-direct` 產生 wasm。實測 hello world 在 wasm 裡約 **0.5 秒**
+（原生 `no` 同命令約 0.6 秒；兩者都在 2026-11 的 std 索引預烘焙之後，先前分別是
+約 55 秒與 11 秒）。
+
+原本的瓶頸不在 codegen，而在**每次冷啟動都把整個 std 解析兩遍**：`validateProgram`
+的 `ValidateUndefinedVars` 為了認得 `math.max(...)` 這類模組限定呼叫，會為全部 119 個
+std 模組收集導出符號；`CollectStdUnionAliases` 又獨立解析同一批模組找 union 別名。
+現在 `genstdsig` 把「每個模組的導出符號」與「哪幾個模組有 union 別名」一起烤進
+`stdsig_gen.go`，執行期直接查表；另有兩道守衛（`hir.TestModuleExportsMatchChecker`
+逐模組逐欄位比對 HIR 現算結果、`TestUnionAliasNarrowingMatchesFullScan` 比對窄掃描與
+全量掃描），表過期會測試紅而不是靜默改語義。
+
+看門狗仍保留「載入 + 編譯 180 秒 / 使用者程式 5 秒」的兩段預算：前者現在有極大餘裕，
+留著是為了吸收冷啟動、大程式與慢裝置的長尾。
 
 ### 檔案系統為虛擬
 
@@ -149,7 +160,9 @@ Playground 需要支援 WebAssembly 的現代瀏覽器。建議使用以下版�
 修改 Playground 後，可在乾淨的建置樹上執行下列檢查：
 
 ```bash
-make playground-demos                       # 編譯 + wasmtime 執行全部 24 個範例
+make playground-demos                       # 編譯 + 在行程內用 playground 自己的 WASI loader 執行全部範例
+make playground-demos DEMO_RUN=wasmtime     # 改用外部 wasmtime 執行（交叉比對用）
+make playground-demos DEMO_RUN=none         # 只編譯、不驗輸出（不可當發佈門檻）
 make wasm-imports-check                     # 重建兩個 wasm 並驗證導入表無 socket 函式
 make wasm-runtime-smoke                     # 用 worker 的同一條載入路徑實跑 version/fmt/vet
 RUN_WASM_LSP=1 RUN_WASM_BUILD=1 make wasm-runtime-smoke   # 追加語言服務與完整編譯+執行
@@ -158,11 +171,16 @@ make playground-smoke                       # dev server 與 WASM 路由 HTTP 20
 cd docs && bun run typecheck                # TypeScript 型別檢查
 ```
 
-注意 `playground-demos` 走的是**原生** `no`，它攔不到「wasm 產物帶了瀏覽器不支援的導入」這類問題；
-`wasm-imports-check` 補的就是這一格（以 `WebAssembly.Module.imports()` 判定，與實例化時的檢查同源）。
-worker 端另有一層兜底：`wasm-loader.ts` 的 `instantiateWasi()` 會把 `@wasmer/wasi` 沒提供的
-WASI 函式補成回傳 `ENOSYS` / `NOTSUP` 的樁，讓意外的導入退化成一次失敗的系統呼叫，
-而不是整片服務掛掉。
+`playground-demos` 的編譯器是**原生** `no`，但產物走的是瀏覽器那條 `--wasm-direct -target wasm32-wasi`，
+執行則用 `wasi-glue` + `wasm-loader` 的 `instantiateWasi()`——與 `runner.worker` 完全同一份程式碼，
+因此不需要安裝 wasmtime，CI 直接就能跑。它同時驗三件事：snippet 能編、產物能通過 WebAssembly 驗證
+（欄位值位 match 那類空堆疊錯誤在這裡現形）、列印輸出符合 `expect`（`?=` 靜默得 0 這類後端偏差也在這裡現形）。
+
+它攔不到的只有一件事——`no.wasm` / `lsp.wasm` 自己的導入表（那兩個產物不由 snippet 產生），
+由 `wasm-imports-check` 補上：`@wasmer/wasi` 缺 `sock_*` 時 `WebAssembly.Instance` 會直接 `LinkError`，
+整個 playground（含語言服務）連啟動都做不到。worker 端另有一層兜底：`wasm-loader.ts` 的
+`instantiateWasi()` 會把 `@wasmer/wasi` 沒提供的 WASI 函式補成回傳 `ENOSYS` / `NOTSUP` 的樁，
+讓意外的導入退化成一次失敗的系統呼叫，而不是整片服務掛掉。
 
 `wasm-imports-check` 也攔不到「函式存在但本體會 trap」（上面 `poll_oneoff` 那一類），
 所以 `make wasm-runtime-smoke` 補上最後一格：它走 `instantiateWasi()` 的真實路徑實跑

@@ -1,5 +1,18 @@
 # 更新日誌
 
+## v0.4.26
+
+- perf(checker): bake std union-alias locations and per-module exports into stdsig so cold builds skip parsing all 119 std modules (native 11.5s -> 0.6s, wasm heap ~1GB -> ~43MB), with self-healing fallback to full scans on drift
+- perf(parser): collapse three full-tree reflection walks in local-type inference into one cached per-function scope index, removing O(vars x nodes) rebuilds
+- fix(mir): exclude option operands from the borrowed-parameter struct-clone path so options no longer get their {tag,data} header memcpy'd as a struct, causing SIGSEGV/SIGBUS in option-heavy tests
+- fix(wasm): correct Direct-WASM option unwrapping -- `?=` target write-back, nested value-match arms, and ok/nil/err tag constant-folding -- plus valid stores when a value match is an assignment/index/field right-hand side
+- test(wasm): add unit regressions pinning `?=` and value-match codegen against the native backend
+- ci(playground): add a playground-demos gate that compiles and executes every teaching snippet through the in-process WASI shim, catching Direct-WASM drift native CI misses
+- build(playground): replace WASMTIME with DEMO_RUN (shim/wasmtime/none), defaulting to the browser's own WASI loader so the gate needs no external runtime
+- docs(playground): update examples to use ?i64/?= and value matches so snippets exercise overflow-safe arithmetic and option re-raising
+- test(checker): pin baked std export and union-alias tables equivalent to on-the-fly full scans
+- fix(checker): use module short name when a value-match diagnostic lacks a per-node source file, and add the vmp8s7tq i18n message across all locales
+
 ## v0.4.25
 
 - feat(wasm): add `wasm-imports-check` and `wasm-runtime-smoke` CI/Makefile targets that reject forbidden socket imports and instantiate built wasm artifacts in a simulated loader environment

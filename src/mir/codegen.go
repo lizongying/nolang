@@ -8700,7 +8700,21 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// emitClone uses for `b = a`. clone{,Ptr,Leaf}StructKey only match struct
 	// values that actually own heap, so scalars / str / vec fall through to
 	// their existing paths unchanged.
-	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) {
+	//
+	// 🔴 2026-11-17: OPTIONS MUST NOT ENTER THIS BRANCH. clone{,Ptr,Leaf}StructKey
+	// inspect BOTH the destination and the source and return true when EITHER is
+	// an owned struct — but an option's payload slot is a %option_<key>
+	// { i8 tag, [K x i64] }, NOT the payload struct itself. When a borrowed
+	// parameter move had an option on either side, this branch memcpy'd the
+	// option's {tag,data} header as if it were the struct (source pointer came
+	// back as the box header, e.g. `0x6e6f6c616e670001` = "nolang\x00\x01"),
+	// producing SIGSEGV/SIGBUS in every option-heavy test (json/sse/client/
+	// http/server/unix) — reproduced under ASAN as a memcpy SEGV in the
+	// clone path. emitClone's main path already excludes options here (see the
+	// OPTION SOURCE/DESTINATION comments near its own clone calls); fall
+	// through to the option-aware wrap/peel paths below instead.
+	if c.curFn != nil && isFuncParam(c.curFn, inst.Args[0]) &&
+		!isOptionType(srcT) && !isOptionType(dstT) {
 		if key, ok := c.clonePtrStructKey(inst); ok {
 			return c.emitPtrStructClone(inst, key)
 		}

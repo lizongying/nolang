@@ -40,12 +40,17 @@ func ValidateValueMatchPosition(program *parser.Program) []ValidateResult {
 		file := ""
 		if program.Sem != nil {
 			file = program.Sem.SourceFileOf(sm)
+			// 合併後的 program 沒有逐節點 SourceFile 映射，退回模組短名，
+			// 至少能定位是哪個 import 模組引入的非法寫法。
+			if file == "" {
+				file = program.Sem.ModuleOwnerOf(sm)
+			}
 		}
 		results = append(results, ValidateResult{
 			Line:   pos.Line,
 			Column: pos.Column,
 			File:   file,
-			Message: i18n.T(ValueMatchExprTraceID,
+			Message: i18n.T("vmp8s7tq",
 				"a value match (`subject: { arms }`) is a statement-level construct and may only appear as the right-hand side of an assignment (optionally parenthesized). It cannot be used inside an expression such as an operand, function argument, comparison, return value or literal. Bind its result to a variable first: `v = subject: { ok -> it ... }`, then use `v`."),
 			TraceID: ValueMatchExprTraceID,
 		})

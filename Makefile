@@ -30,9 +30,21 @@ WASM_DIR  = docs/static/wasm
 NO_WASM   = $(WASM_DIR)/no.wasm
 LSP_WASM  = $(WASM_DIR)/lsp.wasm
 PLAYGROUND_PORT ?= 3000
-# Runtime used by the playground demo gate. Set WASMTIME= (empty) on hosts
-# without wasmtime to fall back to a compile-only gate.
-WASMTIME  ?= wasmtime
+# Runtime used by the playground demo gate.
+#   shim      default: execute in-process through the playground's OWN WASI
+#             loader (scripts use the same instantiateWasi path the browser
+#             workers use), so no external tool is needed and the gate checks
+#             real stdout, not just "it compiled".
+#   wasmtime  execute with an external wasmtime binary (WASMTIME=/path/to/it).
+#   none      compile only.
+DEMO_RUN ?= shim
+ifeq ($(DEMO_RUN),none)
+DEMO_RUN_ARGS := --compile-only
+else ifeq ($(DEMO_RUN),wasmtime)
+DEMO_RUN_ARGS := --wasmtime $(or $(WASMTIME),wasmtime)
+else
+DEMO_RUN_ARGS := --wasi-shim
+endif
 
 # ── TRACE ID ────────────────────────────────────
 # Each ValidateResult{} literal in the checker source carries
@@ -489,17 +501,20 @@ playground-smoke: no-wasm lsp-wasm
 # docs/src/playground/examples.ts is the single source of truth. The script
 # imports it directly and drives every demo through the EXACT compiler path
 # the browser uses (`no build --wasm-direct -target wasm32-wasi`), then runs
-# the emitted module under wasmtime and asserts the `expect` stdout substring.
+# the emitted module and asserts the `expect` stdout substring. The default
+# runner is the in-process WASI shim (`DEMO_RUN=shim`), i.e. the playground's
+# own loader, so the gate needs no external runtime and still validates output:
+# a demo that compiles but prints the wrong thing fails here.
 # This is the only gate that catches Direct-WASM backend drift before CI
 # publishes no.wasm to GitHub Pages.
 #
-#   make playground-demos                  # compile + run all demos
-#   make playground-demos WASMTIME=       # compile-only (no wasmtime locally)
-#   make playground-demos WASMTIME=/path/to/wasmtime
+#   make playground-demos                    # compile + run (in-process shim)
+#   make playground-demos DEMO_RUN=wasmtime  # run under external wasmtime
+#   make playground-demos DEMO_RUN=none      # compile-only
 playground-demos: $(STDSIG_GEN)
 	@mkdir -p /tmp/nobin
 	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o /tmp/nobin/no_demo ./cmd/no
-	bun scripts/playground_demos.ts --no /tmp/nobin/no_demo $(if $(WASMTIME),--wasmtime $(WASMTIME),--compile-only)
+	bun scripts/playground_demos.ts --no /tmp/nobin/no_demo $(DEMO_RUN_ARGS)
 
 FORCE:
 
@@ -536,5 +551,5 @@ help:
 	@echo "  LD_FLAGS=...    自定義鏈接標誌（內建注入 Git commit）"
 	@echo "  WASI_SYSROOT=path  wasi-sysroot 路徑（no build -target wasm32-wasi 時需要）"
 	@echo "  PLAYGROUND_PORT=3000  playground-smoke 使用的端口（默認 3000）"
-	@echo "  WASMTIME=wasmtime  playground-demos 的執行器（設為空值即只編譯不執行）"
+	@echo "  WASMTIME=wasmtime  playground-demos 的外部執行器（DEMO_RUN=wasmtime 時生效；DEMO_RUN=none 即只編譯不執行）"
 	@echo "  NO=/path/to/no    playground-demos 若已有編譯器可直接用 bun scripts/playground_demos.ts --no 指定"

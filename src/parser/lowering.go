@@ -942,48 +942,7 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 // *MultiAssignStatement（`_, mb = f(...)` 這類多目標賦值）。分開一個函式是因為
 // 兩者節點型別不同，而收集口徑（同作用域、遇巢狀函式停、按指標去重）必須一致。
 func gatherMultiAssignsInFuncScope(body *BlockStatement) []*MultiAssignStatement {
-	var out []*MultiAssignStatement
-	if body == nil {
-		return out
-	}
-	seen := map[uintptr]bool{}
-	var walk func(rv reflect.Value)
-	walk = func(rv reflect.Value) {
-		switch rv.Kind() {
-		case reflect.Ptr:
-			if rv.IsNil() {
-				return
-			}
-			ptr := rv.Pointer()
-			if seen[ptr] {
-				return
-			}
-			seen[ptr] = true
-			if _, isFn := rv.Interface().(*FunctionDefinition); isFn {
-				return
-			}
-			if ma, isMA := rv.Interface().(*MultiAssignStatement); isMA {
-				out = append(out, ma)
-			}
-			walk(rv.Elem())
-		case reflect.Interface:
-			if rv.IsNil() {
-				return
-			}
-			walk(rv.Elem())
-		case reflect.Slice:
-			for i := 0; i < rv.Len(); i++ {
-				walk(rv.Index(i))
-			}
-		case reflect.Struct:
-			t := rv.Type()
-			for _, i := range exportedFieldIndices(t) {
-				walk(rv.Field(i))
-			}
-		}
-	}
-	walk(reflect.ValueOf(body))
-	return out
+	return walkScopeNodes(body).multiAssigns
 }
 
 // gatherLetsInFuncScope 以反射走訪 body 子樹，依原始碼順序回傳「本函數作用域內」
@@ -991,48 +950,7 @@ func gatherMultiAssignsInFuncScope(body *BlockStatement) []*MultiAssignStatement
 // FunctionDefinition（閉包 / 巢狀函式）即停止下钻——那是另一個作用域、另有自己的
 // idxLocalTypes 鍵。反射僅讀取導出欄位，並按指標去重（AST 可能有共享節點）。
 func gatherLetsInFuncScope(body *BlockStatement) []*LetStatement {
-	var out []*LetStatement
-	if body == nil {
-		return out
-	}
-	seen := map[uintptr]bool{}
-	var walk func(rv reflect.Value)
-	walk = func(rv reflect.Value) {
-		switch rv.Kind() {
-		case reflect.Ptr:
-			if rv.IsNil() {
-				return
-			}
-			ptr := rv.Pointer()
-			if seen[ptr] {
-				return
-			}
-			seen[ptr] = true
-			if _, isFn := rv.Interface().(*FunctionDefinition); isFn {
-				return // 巢狀函式：獨立作用域，不下钻
-			}
-			if ls, isLet := rv.Interface().(*LetStatement); isLet {
-				out = append(out, ls)
-			}
-			walk(rv.Elem())
-		case reflect.Interface:
-			if rv.IsNil() {
-				return
-			}
-			walk(rv.Elem())
-		case reflect.Slice:
-			for i := 0; i < rv.Len(); i++ {
-				walk(rv.Index(i))
-			}
-		case reflect.Struct:
-			t := rv.Type()
-			for _, i := range exportedFieldIndices(t) {
-				walk(rv.Field(i))
-			}
-		}
-	}
-	walk(reflect.ValueOf(body))
-	return out
+	return walkScopeNodes(body).lets
 }
 
 // gatherForStatementsInFuncScope 與 gatherLetsInFuncScope 同構，收集的是迴圈
@@ -1044,7 +962,31 @@ func gatherLetsInFuncScope(body *BlockStatement) []*LetStatement {
 // 退化成亂碼）。收集口徑（遇巢狀函式停、按指標去重）與 gatherLetsInFuncScope
 // 必須一致。
 func gatherForStatementsInFuncScope(body *BlockStatement) []*ForStatement {
-	var out []*ForStatement
+	return walkScopeNodes(body).fors
+}
+
+// astScopeNodes 是一個函式作用域內、computeAstLocalVarType 需要的三種節點清單。
+//
+// 三個 gather* 函式各自是一趟全樹反射走訪，而 computeAstLocalVarType 原本每次
+// 被問一個變數就跑滿三趟（`let` 兩遍 + for + 多重賦值），於是單一函式的成本是
+// O(變數數 × 節點數)。實測 hello world 這種單行程式也要 12s，profile 裡
+// gatherLetsInFuncScope 一族吃掉 60% 取樣——其中絕大部分是重複走同一棵樹，
+// 外加每步一次 reflect.Value.Field / exportedFieldIndices 查詢。
+//
+// 因此把三趟合成一趟（walkScopeNodes），結果按函式定義指標快取。收集口徑與
+// 三個 gather* 逐一相同：遇巢狀 FunctionDefinition 停止下钻、按指標去重、
+// 依原始碼順序。快取安全性與 astVarTypeCache 同源（H0 期 AST 已凍結），
+// 且此處只快取「從 AST 讀出的事實」，不涉及任何遞迴推導，不會把在途的部分結果
+// 固化下來。
+type astScopeNodes struct {
+	lets         []*LetStatement
+	fors         []*ForStatement
+	multiAssigns []*MultiAssignStatement
+}
+
+// walkScopeNodes 一趟反射走訪 body，同時收集三類節點。
+func walkScopeNodes(body *BlockStatement) *astScopeNodes {
+	out := &astScopeNodes{}
 	if body == nil {
 		return out
 	}
@@ -1061,11 +1003,15 @@ func gatherForStatementsInFuncScope(body *BlockStatement) []*ForStatement {
 				return
 			}
 			seen[ptr] = true
-			if _, isFn := rv.Interface().(*FunctionDefinition); isFn {
+			switch node := rv.Interface().(type) {
+			case *FunctionDefinition:
 				return // 巢狀函式：獨立作用域，不下钻
-			}
-			if fs, isFor := rv.Interface().(*ForStatement); isFor {
-				out = append(out, fs)
+			case *LetStatement:
+				out.lets = append(out.lets, node)
+			case *ForStatement:
+				out.fors = append(out.fors, node)
+			case *MultiAssignStatement:
+				out.multiAssigns = append(out.multiAssigns, node)
 			}
 			walk(rv.Elem())
 		case reflect.Interface:
@@ -1086,6 +1032,25 @@ func gatherForStatementsInFuncScope(body *BlockStatement) []*ForStatement {
 	}
 	walk(reflect.ValueOf(body))
 	return out
+}
+
+// scopeNodesOf 回傳（並快取）某個函式定義的作用域節點索引。
+func (p *Parser) scopeNodesOf(fd *FunctionDefinition) *astScopeNodes {
+	if fd == nil {
+		return &astScopeNodes{}
+	}
+	if p == nil {
+		return walkScopeNodes(fd.Body)
+	}
+	if nodes, ok := p.astScopeIndex[fd]; ok {
+		return nodes
+	}
+	nodes := walkScopeNodes(fd.Body)
+	if p.astScopeIndex == nil {
+		p.astScopeIndex = make(map[*FunctionDefinition]*astScopeNodes)
+	}
+	p.astScopeIndex[fd] = nodes
+	return nodes
 }
 
 // gatherFuncDefs 以反射走訪整棵程式樹，回傳其中所有的 *FunctionDefinition
@@ -3294,8 +3259,9 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 			selfType = typeString(r.Type)
 		}
 	}
+	scope := p.scopeNodesOf(fd)
 	// First pass: explicit annotations + call-RHS return types.
-	for _, ls := range gatherLetsInFuncScope(fd.Body) {
+	for _, ls := range scope.lets {
 		if ls == nil || ls.Name == nil || ls.Name.Value == "" || ls.IsSynthetic {
 			continue
 		}
@@ -3348,7 +3314,7 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 	// Iteration-variable pass: `i <- [a..b]` / `ch <- s` 的變數沒有 LetStatement，
 	// 它是 IterRange.Variable 上的裸名字。口徑對齊 checker 的 iterElemType（區間
 	// 迭代 → i64、字串來源 → char、`[]T` 來源 → T）。缺這遍時迴圈體內的 `i` 無型別。
-	for _, fs := range gatherForStatementsInFuncScope(fd.Body) {
+	for _, fs := range scope.fors {
 		if fs == nil || fs.IterRange == nil {
 			continue
 		}
@@ -3364,7 +3330,7 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 		}
 	}
 	// Second pass: follow identifier RHS chains (`x = otherVar`).
-	for _, ls := range gatherLetsInFuncScope(fd.Body) {
+	for _, ls := range scope.lets {
 		if ls == nil || ls.Name == nil || ls.Name.Value == "" || ls.IsSynthetic {
 			continue
 		}
@@ -3384,7 +3350,7 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 	// 賦值是 MultiAssignStatement），於是 `mb.to-i64()` 的接收者型別為空、回傳
 	// 型別推不出、值位 match 主語不歸一化、臂內 `it` 沒有綁定，最後在 codegen
 	// 炸成 `unknown callee byte.to-f64`。
-	for _, ma := range gatherMultiAssignsInFuncScope(fd.Body) {
+	for _, ma := range scope.multiAssigns {
 		if ma == nil || len(ma.Targets) == 0 {
 			continue
 		}

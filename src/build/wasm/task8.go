@@ -1021,6 +1021,11 @@ func (g *Generator) emitIndexAssign(sb *bytes.Buffer, ie *parser.IndexExpression
 		sb.WriteByte(OpI32Add)
 		// 值
 		vt := g.emitExpr(sb, value)
+		if vt == Void {
+			// 沒有值可存：丟掉地址，見 emitDotAssign 的同名說明。
+			sb.WriteByte(OpDrop)
+			return
+		}
 		if vt == I32 {
 			sb.WriteByte(OpI64ExtendI32S)
 		}
@@ -1030,7 +1035,10 @@ func (g *Generator) emitIndexAssign(sb *bytes.Buffer, ie *parser.IndexExpression
 		writeSLEB(sb, 2)
 		sb.WriteByte(OpI32Shl)
 		sb.WriteByte(OpI32Add)
-		g.emitExpr(sb, value)
+		if vt := g.emitExpr(sb, value); vt == Void {
+			sb.WriteByte(OpDrop)
+			return
+		}
 		g.emitI32Store(sb)
 	}
 }
@@ -1173,7 +1181,39 @@ func (g *Generator) emitDotAssign(sb *bytes.Buffer, de *parser.DotExpression, va
 	writeI32ConstU(sb, fl.Offset)
 	sb.WriteByte(OpI32Add)
 
+	// 值位 match 作為欄位右值（`self.n = self.n + 1: { ok -> it  -> self.n }`）：
+	// match 的結果必須逐臂寫回欄位，而不是走 emitIfExpr 的 void 路徑（那條路徑
+	// 不產值，store 會從空堆疊取操作數）。做法是把位址與結果各自落到一個臨時
+	// local，再用既有的 emitIfAssign 算出結果，最後一次 store —— 這樣 arm 末尾
+	// 仍是嵌套 if 的情形也由 emitIfAssign 遞迴處理。
+	if ife, ok := value.(*parser.IfExpression); ok {
+		addrIdx := g.addLocal(g.uniqueLocal("$fa.addr"), I32)
+		valIdx := g.addLocal(g.uniqueLocal("$fa.val"), fl.Type)
+		sb.WriteByte(OpLocalSet)
+		writeU32LEB(sb, uint32(addrIdx))
+		g.emitIfAssign(sb, ife, valIdx, fl.Type)
+		sb.WriteByte(OpLocalGet)
+		writeU32LEB(sb, uint32(addrIdx))
+		sb.WriteByte(OpLocalGet)
+		writeU32LEB(sb, uint32(valIdx))
+		switch fl.Type {
+		case I64, F64:
+			g.emitI64Store(sb)
+		default:
+			g.emitI32Store(sb)
+		}
+		return
+	}
+
 	vt := g.emitExpr(sb, value)
+	if vt == Void {
+		// 值側沒有產出（match 鏈落到 void 路徑、或賦值表達式本身）：
+		// 丟棄已算好的欄位地址，不發射 store。硬發 store 會讓 store 從
+		// 空/錯位堆疊取操作數，整份模組在 WebAssembly 驗證階段被拒
+		// （"can't pop empty stack in store"）。
+		sb.WriteByte(OpDrop)
+		return
+	}
 	switch fl.Type {
 	case I64, F64:
 		if vt == I32 {

@@ -9531,6 +9531,18 @@ func parseModuleExports(moduleName string) []ModuleExport {
 		}
 		full = moduleName
 	}
+	// 預烘焙表優先：validateProgram 每次冷啟動都要取全部 std 模組的導出，而
+	// 每個模組的導出都要 lex+parse+lower 一次（實測 119 個模組共 1.4s，是
+	// playground 單筆編譯的主要成本之一）。表由 genstdsig 用同一個
+	// parseModuleExportsFromSource 產生，值與現算逐字相同；表中沒有此模組時
+	// 才落到源碼解析。
+	if baked, ok := embeddedStdModuleExports[full]; ok {
+		// 回傳副本：呼叫端（含 moduleExportsCache）不共用同一份切片，
+		// 與「每次現算都是新切片」的原語義一致。
+		out := make([]ModuleExport, len(baked))
+		copy(out, baked)
+		return out
+	}
 	embedPath := "std/" + full + ".no"
 	if data, err := nolang.StdFS.ReadFile(embedPath); err == nil {
 		return parseModuleExportsFromSource(data)
@@ -11882,28 +11894,71 @@ func StdUnionAliasModules() map[string]string {
 
 func CollectStdUnionAliases() map[string]*parser.TypeAlias {
 	stdUnionAliasesOnce.Do(func() {
-		out := make(map[string]*parser.TypeAlias)
-		outMod := make(map[string]string)
-		for short, full := range knownStdModules() {
-			source, err := fs.ReadFile(nolang.StdFS, "std/"+full+".no")
-			if err != nil {
-				continue
-			}
-			l := lexer.NewCached("std/"+full+".no", string(source))
-			prog := parser.New(l).ParseProgram()
-			for _, stmt := range prog.Statements {
-				if ta, ok := stmt.(*parser.TypeAlias); ok && ta.IsUnion() {
-					if _, exists := out[ta.Name]; !exists {
-						out[ta.Name] = ta
-						outMod[ta.Name] = short
-					}
-				}
-			}
+		out, outMod := scanStdUnionAliases(unionAliasScanTargets())
+		// 自癒：預烘焙索引若與實際 std 不一致（src/std 改過但沒 `make gen`，
+		// 或表被烤壞），退回全量掃描。寧可慢，也不要靜默丟掉別名——缺一條
+		// union 別名會讓跨模組 union 形參在 vet 階段被誤報 6fgg3htw。
+		if want := embeddedStdUnionAliasMods; len(want) > 0 && !unionAliasesMatch(outMod, want) {
+			out, outMod = scanStdUnionAliases(knownStdModules())
 		}
 		stdUnionAliasesCache = out
 		stdUnionAliasModCache = outMod
 	})
 	return stdUnionAliasesCache
+}
+
+// unionAliasScanTargets 回傳 CollectStdUnionAliases 要解析的模組集合
+// （ShortName → FullPath）。有預烘焙索引時只給那幾個模組，否則全量。
+func unionAliasScanTargets() map[string]string {
+	if len(embeddedStdUnionAliasMods) == 0 {
+		return knownStdModules()
+	}
+	known := knownStdModules()
+	out := make(map[string]string, len(embeddedStdUnionAliasMods))
+	for short := range embeddedStdUnionAliasMods {
+		if full, ok := known[short]; ok {
+			out[short] = full
+		}
+	}
+	return out
+}
+
+// unionAliasesMatch 檢查掃描結果是否與預烘焙索引一致（模組 → 別名集合）。
+// 兩個方向都要對上：表裡的每個別名都由該模組宣告，且沒有多出來的別名。
+func unionAliasesMatch(foundMod map[string]string, want map[string][]string) bool {
+	total := 0
+	for short, names := range want {
+		for _, name := range names {
+			total++
+			if foundMod[name] != short {
+				return false
+			}
+		}
+	}
+	return total == len(foundMod)
+}
+
+// scanStdUnionAliases 解析 targets 裡的每個模組，收集頂層 union TypeAlias。
+func scanStdUnionAliases(targets map[string]string) (map[string]*parser.TypeAlias, map[string]string) {
+	out := make(map[string]*parser.TypeAlias)
+	outMod := make(map[string]string)
+	for short, full := range targets {
+		source, err := fs.ReadFile(nolang.StdFS, "std/"+full+".no")
+		if err != nil {
+			continue
+		}
+		l := lexer.NewCached("std/"+full+".no", string(source))
+		prog := parser.New(l).ParseProgram()
+		for _, stmt := range prog.Statements {
+			if ta, ok := stmt.(*parser.TypeAlias); ok && ta.IsUnion() {
+				if _, exists := out[ta.Name]; !exists {
+					out[ta.Name] = ta
+					outMod[ta.Name] = short
+				}
+			}
+		}
+	}
+	return out, outMod
 }
 func CollectStdStructModules() map[string]string {
 	CollectStdModuleSignatures() // 觸發 sync.Once 填充快取

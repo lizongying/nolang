@@ -57,6 +57,10 @@ type Parser struct {
 	// H0 降糖期同一個 (函式, 變數) 會被反覆發問，每次都重走函式體會讓
 	// genstdsig 跑不完。
 	astVarTypeCache map[string]string
+	// astScopeIndex 是 computeAstLocalVarType 的函式體作用域索引（鍵：函式定義
+	// 指標）。原本每個被查詢的變數都要重跑三趟全樹反射走訪（實測佔單次建置
+	// 60% 取樣），此處讓每個函式只走一遍，見 lowering.go walkScopeNodes。
+	astScopeIndex map[*FunctionDefinition]*astScopeNodes
 
 	// extern* 記錄 SetExternSignatures / SetExternEnumVariants 收到的**注入**
 	// 表（僅記引用，不複製）。刻意與 funcSignatures/methodSignatures/structFields

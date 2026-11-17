@@ -1102,6 +1102,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'vjkycl6v': 'utf8-at 수신자 슬롯'
   'vkq3r0r2': '`# npm/lodash.get as get` 또는 `# npm/lodash.default as d`. 둘 다'
   'vm9uj5g4': 'builtin %s: raw str이 %s 슬롯에 저장되었습니다'
+  'vmp8s7tq': 'value match(`subject: { arms }`)는 문장 수준의 구조이며, 대입의 오른쪽(괄호로 감싸는 것은 선택 사항)에만 나타날 수 있습니다. 연산자의 피연산자, 함수 인자, 비교, 반환값 또는 리터럴과 같은 식 내부에서는 사용할 수 없습니다. 먼저 결과를 변수에 바인딩한 다음 사용하세요: `v = subject: { ok -> it ... }`, 그다음 `v`를 사용하세요.'
   'vmy4qtcr': '%s에서 다운로드 중: %w'
   'vo2eyrl7': 'gzip 리더 생성: %w'
   'vpi1fke2': 'win-find-close: bufptr 인수가 필요합니다'

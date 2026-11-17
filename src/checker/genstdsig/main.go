@@ -87,6 +87,21 @@ func main() {
 	// tables — all derive from src/std.
 	mods := checker.ListStdModules(fsys)
 
+	// 10th baked table: which std modules declare union type aliases, so
+	// CollectStdUnionAliases parses only those modules instead of all 119.
+	unionAliasMods, err := checker.BakeStdUnionAliasModules(fsys)
+	if err != nil {
+		fatal(fmt.Sprintf("genstdsig: union alias scan failed: %v", err))
+	}
+
+	// 11th baked table: each std module's exported symbols, produced by the
+	// SAME collector the runtime uses (parseModuleExportsFromSource), so the
+	// baked values are byte-identical to what a cold parse would yield.
+	moduleExports, err := checker.BakeStdModuleExports(fsys)
+	if err != nil {
+		fatal(fmt.Sprintf("genstdsig: module export collection failed: %v", err))
+	}
+
 	// ---- AST blob (Tier 0) ----
 	// Bake every std module's serialized Program (gob of parser.CachedProgram;
 	// the whole map is gzipped once here) so `no build` deserializes the std
@@ -132,6 +147,10 @@ func main() {
 	writeMapStringSliceInline(&buf, enumVariants)
 	buf.WriteString("\tembeddedStdModules = ")
 	writeModuleInfos(&buf, mods)
+	buf.WriteString("\tembeddedStdUnionAliasMods = ")
+	writeMapStringSliceInline(&buf, unionAliasMods)
+	buf.WriteString("\tembeddedStdModuleExports = ")
+	writeModuleExports(&buf, moduleExports)
 	buf.WriteString("}\n")
 
 	formatted, err := goformat.Source(buf.Bytes())
@@ -148,8 +167,46 @@ func main() {
 	if err := os.WriteFile(outPath, formatted, 0o644); err != nil {
 		fatal(fmt.Sprintf("genstdsig: write %s: %v", outPath, err))
 	}
-	fmt.Printf("genstdsig: wrote %s (%d func sigs (params+results), %d method sigs (params+results), %d structs, %d aliases, %d enumTypes)\n",
-		outPath, len(funcSigs), len(methodSigs), len(structFields), len(aliases), len(enumVariants))
+	fmt.Printf("genstdsig: wrote %s (%d func sigs (params+results), %d method sigs (params+results), %d structs, %d aliases, %d enumTypes, %d modules with union aliases, %d module export tables)\n",
+		outPath, len(funcSigs), len(methodSigs), len(structFields), len(aliases), len(enumVariants), len(unionAliasMods), len(moduleExports))
+}
+
+// writeModuleExports emits the baked std export table as
+// map[string][]ModuleExport literals. Entries stay on one line each so the
+// generated file remains greppable and diff-friendly.
+func writeModuleExports(buf *bytes.Buffer, m map[string][]checker.ModuleExport) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	if len(keys) == 0 {
+		buf.WriteString("map[string][]ModuleExport{}\n")
+		return
+	}
+	buf.WriteString("map[string][]ModuleExport{\n")
+	for _, k := range keys {
+		body := m[k]
+		if len(body) == 0 {
+			fmt.Fprintf(buf, "\t%s: {},\n", strconv.Quote(k))
+			continue
+		}
+		fmt.Fprintf(buf, "\t%s: {\n", strconv.Quote(k))
+		for _, e := range body {
+			buf.WriteString("\t\t{")
+			fmt.Fprintf(buf, "Name: %s", strconv.Quote(e.Name))
+			if e.Value != "" {
+				fmt.Fprintf(buf, ", Value: %s", strconv.Quote(e.Value))
+			}
+			if e.Type != "" {
+				fmt.Fprintf(buf, ", Type: %s", strconv.Quote(e.Type))
+			}
+			buf.WriteString("},\n")
+		}
+		buf.WriteString("\t},\n")
+	}
+	buf.WriteString("}\n")
 }
 
 func writeMapStringSliceInline(buf *bytes.Buffer, m map[string][]string) {

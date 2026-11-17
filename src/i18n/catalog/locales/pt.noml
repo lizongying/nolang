@@ -1096,6 +1096,7 @@ Erro ao escrever o arquivo de configuração: %v
   'vjkycl6v': 'espaço de receptor utf8-at'
   'vkq3r0r2': '`# npm/lodash.get as get` ou `# npm/lodash.default as d`. Ambos devem'
   'vm9uj5g4': 'builtin %s: str crua armazenada no espaço %s'
+  'vmp8s7tq': 'Um value match (`subject: { arms }`) é uma construção de nível de declaração e só pode aparecer como o lado direito de uma atribuição (opcionalmente entre parênteses). Ele não pode ser usado dentro de uma expressão, como um operando, argumento de função, comparação, valor de retorno ou literal. Primeiro vincule seu resultado a uma variável: `v = subject: { ok -> it ... }`, e depois use `v`.'
   'vmy4qtcr': 'baixando de %s: %w'
   'vo2eyrl7': 'criando leitor gzip: %w'
   'vpi1fke2': 'win-find-close: precisa de um argumento bufptr'

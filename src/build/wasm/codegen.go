@@ -3,6 +3,7 @@ package wasm
 import (
 	"bytes"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/lizongying/nolang/parser"
@@ -55,6 +56,14 @@ func (g *Generator) redeclareLocal(name string, t ValType) int {
 	g.localDecls[g.currentFunc] = append(g.localDecls[g.currentFunc], t)
 	g.localTypeMap[g.currentFunc][name] = t
 	return idx
+}
+
+// uniqueLocal 產生一個不與用戶變數（也不能與其他合成名）衝突的臨時 local 名。
+// 序號取當前函式已宣告的 local 數量：同一函式內每次呼叫都不同，因此嵌套的
+// 合成目標（欄位值位 match 套欄位值位 match）不會互相覆寫。`$` 前綴保證
+// 不會與用戶識別字同名。
+func (g *Generator) uniqueLocal(prefix string) string {
+	return prefix + "." + strconv.Itoa(len(g.localDecls[g.currentFunc]))
 }
 
 // lookupLocal 回傳當前函數中某變數的 local index。
@@ -298,7 +307,21 @@ func (g *Generator) emitArmBodyAssign(sb *bytes.Buffer, body *parser.BlockStatem
 	for i, s := range body.Statements {
 		if i == lastIdx {
 			if es, ok := s.(*parser.ExpressionStatement); ok {
+				// 末尾仍是嵌套 IfExpression（值位 match 的 `ok -> it` / `-> 0`
+				// 在 arm body 裡自身又是一層 if 鏈）。走 emitExpr 會落到
+				// emitIfExpr 的 void 路徑 ⇒ 堆疊上沒有值，隨後的 local.set
+				// 從空堆疊取值，整份模組在 WebAssembly 驗證階段被拒絕
+				// （"can't pop empty stack in set_local"）。必須遞迴 emitIfAssign。
+				if ife, ok := es.Expression.(*parser.IfExpression); ok {
+					g.emitIfAssign(sb, ife, targetIdx, targetType)
+					return
+				}
 				vt := g.emitExpr(sb, es.Expression)
+				if vt == Void {
+					// 末尾表達式本身不產值（例如賦值表達式）：沒有值可寫回目標，
+					// 發 local.set 只會製造同樣的空堆疊校驗錯誤。
+					return
+				}
 				g.emitConvert(sb, vt, targetType)
 				sb.WriteByte(OpLocalSet)
 				writeU32LEB(sb, uint32(targetIdx))
@@ -622,6 +645,30 @@ func (g *Generator) emitExpr(sb *bytes.Buffer, expr parser.Expression) ValType {
 	}
 }
 
+// optionTagLiteral 回報 expr 是否為未綁定的 option 變體關鍵字（ok / nil / err）。
+//
+// Direct-WASM 後端沒有 option 表示：`+` 直接發 i64.add，沒有 tag/payload 佈局，
+// 也沒有錯誤通道。因此「永遠取成功路徑」是它唯一自洽的模型——match 的 tag
+// 比較必須據此常量折疊（`x == ok` 恆真、`x == nil` / `x == err` 恆假）。
+// 不折疊時 ok/nil/err 是未綁定的 Identifier，會壓 0，於是 `x == ok` 變成
+// `x == 0`：任意非零結果都被判成失敗，`r = a + b: { ok -> it  -> 0 }` 走兜底臂
+// 得 0，而編譯器與 wasm 驗證全程無聲。已綁定的同名 local（用戶自己的 `err`
+// 變數）不算關鍵字。
+func (g *Generator) optionTagLiteral(e parser.Expression) (string, bool) {
+	id, ok := e.(*parser.Identifier)
+	if !ok {
+		return "", false
+	}
+	if _, isLocal := g.lookupLocal(id.Value); isLocal {
+		return "", false
+	}
+	switch id.Value {
+	case "ok", "nil", "err":
+		return id.Value, true
+	}
+	return "", false
+}
+
 // emitInfix 處理中序運算子：算術、比較、邏輯、字串拼接。
 // Nolang 整數預設為 i64；比較/邏輯結果為 i32。
 // Task 8：`-` 在兩側為 str 時為字串拼接（產生新 str 描述符）。
@@ -668,6 +715,25 @@ func (g *Generator) emitInfix(sb *bytes.Buffer, ie *parser.InfixExpression) ValT
 		}
 		return I64
 	case "<", ">", "<=", ">=", "==", "!=":
+		if tag, ok := g.optionTagLiteral(ie.Right); ok && (op == "==" || op == "!=") {
+			// match 的 tag 探測（`__match_subj == ok` / `== nil` / `== err`）。
+			// 見 optionTagLiteral 的註解：此後端沒有 option 表示，只有成功路徑，
+			// 必須常量折疊，否則 `x == ok` 會退化成 `x == 0` 而永遠走兜底臂。
+			if vt := g.emitExpr(sb, ie.Left); vt != Void {
+				sb.WriteByte(OpDrop) // 只為可能的副作用求值
+			}
+			hit := tag == "ok"
+			if op == "!=" {
+				hit = !hit
+			}
+			sb.WriteByte(OpI32Const)
+			if hit {
+				writeSLEB(sb, 1)
+			} else {
+				writeSLEB(sb, 0)
+			}
+			return I32
+		}
 		g.emitExpr(sb, ie.Left)
 		g.emitExpr(sb, ie.Right)
 		switch op {
@@ -846,12 +912,35 @@ func (g *Generator) emitDotOrField(sb *bytes.Buffer, de *parser.DotExpression) V
 	return g.emitDotExpr(sb, de)
 }
 
-// emitAssignExpr 處理 AssignExpression：u.name = value 或 v[i] = value。
+// emitAssignExpr 處理 AssignExpression：u.name = value、v[i] = value、x = value。
 func (g *Generator) emitAssignExpr(sb *bytes.Buffer, ae *parser.AssignExpression) {
 	if ae == nil {
 		return
 	}
 	switch left := ae.Left.(type) {
+	case *parser.Identifier:
+		// 🔴 純變數賦值（`x = v`）作為**表達式**出現時，必須真的寫回 local。
+		//
+		// 這不是邊角情形：`?=` 的降糖把成功值寫成目標變數的賦值表達式，作為
+		// match 成功臂的最後一條陳述（`s ?= s + 1` → ok 臂末尾 `s = it`）。
+		// 此前該分支缺失，整條賦值被靜默丟棄，目標保持降糖插入的零初始化值：
+		// playground 裡 `s ?= s + 1` 在循環體/普通區域恆得 0（原生後端正確），
+		// 而編譯與 wasm 驗證都不報錯——最壞的一類靜默錯。
+		idx, ok := g.lookupLocal(left.Value)
+		vt := g.emitExpr(sb, ae.Value)
+		if !ok {
+			// 未宣告的目標：求值右側以保留副作用，值丟棄。
+			if vt != Void {
+				sb.WriteByte(OpDrop)
+			}
+			return
+		}
+		if vt == Void {
+			return
+		}
+		g.emitConvert(sb, vt, g.localType(left.Value))
+		sb.WriteByte(OpLocalSet)
+		writeU32LEB(sb, uint32(idx))
 	case *parser.DotExpression:
 		g.emitDotAssign(sb, left, ae.Value)
 	case *parser.IndexExpression:

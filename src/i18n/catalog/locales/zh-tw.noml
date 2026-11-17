@@ -1096,6 +1096,7 @@ and left unchanged. -fix does not apply to them.
   'vjkycl6v': 'utf8-at 接收者槽位'
   'vkq3r0r2': '`# npm/lodash.get as get` 或 `# npm/lodash.default as d`。它們都要在'
   'vm9uj5g4': 'builtin %s: 原始 str 被存入 %s 槽位'
+  'vmp8s7tq': 'value match（`subject: { arms }`）是語句級建構，只能出現在指派右側（可選擇加上括號）。它不能用在運算式內部，例如運算元、函式引數、比較、回傳值或字面值。請先把結果綁定到變數：`v = subject: { ok -> it ... }`，然後再使用 `v`。'
   'vmy4qtcr': '從 %s 下載失敗: %w'
   'vo2eyrl7': '建立 gzip 讀取器失敗: %w'
   'vpi1fke2': 'win-find-close: 需要 bufptr 參數'

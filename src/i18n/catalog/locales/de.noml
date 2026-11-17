@@ -1096,6 +1096,7 @@ Fehler beim Schreiben der Konfigurationsdatei: %v
   'vjkycl6v': 'utf8-at-Empfänger-Slot'
   'vkq3r0r2': '`# npm/lodash.get as get` oder `# npm/lodash.default as d`. Beide müssen in'
   'vm9uj5g4': 'builtin %s: rohe str in den Slot %s gespeichert'
+  'vmp8s7tq': 'Ein Value-Match (`subject: { arms }`) ist ein Konstrukt auf Anweisungsebene und darf nur auf der rechten Seite einer Zuweisung erscheinen (optional in Klammern). Es kann nicht innerhalb eines Ausdrucks verwendet werden, etwa als Operand, Funktionsargument, Vergleich, Rückgabewert oder Literal. Binden Sie das Ergebnis zuerst an eine Variable: `v = subject: { ok -> it ... }`, und verwenden Sie dann `v`.'
   'vmy4qtcr': 'von %s wird heruntergeladen: %w'
   'vo2eyrl7': 'gzip-Leser wird erstellt: %w'
   'vpi1fke2': 'win-find-close: benötigt ein bufptr-Argument'

@@ -91,6 +91,25 @@ jobs:
         run: bun run typecheck
         working-directory: docs
 
+      - name: Verify playground demos
+        # docs/src/playground/examples.ts is the ONLY hand-written teaching
+        # surface the published site ships. This compiles every snippet through
+        # the exact browser path (`no build --wasm-direct -target wasm32-wasi`)
+        # and then EXECUTES the emitted module through the playground's own WASI
+        # loader (`wasi-glue` + `wasm-loader`), asserting each `expect` string.
+        #
+        # Why here and not only in test.yml: this job already has bun, the docs
+        # dependencies and a native `no` toolchain, and its path filter covers
+        # every file that can break a demo (docs/**, src/**, Makefile). The gate
+        # needs no wasmtime — the in-process WASI shim is the browser's own
+        # loader, which is strictly better than a native runtime.
+        #
+        # Regression it would have caught: `?=` and value-matches were silently
+        # miscompiled by the Direct-WASM backend (`s ?= s + 1` reported 0, field
+        # value-matches emitted unvalidatable modules) while the native backend
+        # was correct, so nothing else in CI noticed.
+        run: make playground-demos
+
       - name: Smoke-test the wasm runtime
         # An import-surface check only proves the functions EXIST. @wasmer/wasi
         # also ships bodies that trap: poll_oneoff is `unimplemented!()`, so the

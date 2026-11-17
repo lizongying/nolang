@@ -21,6 +21,21 @@ import (
 // binary as Go source literals, so every `no build` skips PASS1 signature
 // collection entirely.
 //
+// Two further tables exist for the same reason — so a cold build never has to
+// parse the whole std library just to answer a question about it:
+//
+//   - embeddedStdUnionAliasMods: which modules declare union type aliases, so
+//     CollectStdUnionAliases parses ~5 modules instead of all 119;
+//   - embeddedStdModuleExports: each module's exported symbols, so
+//     ValidateUndefinedVars (which asks about every std module, because any
+//     `math.max(...)` must resolve) reads a table instead of lexing, parsing
+//     and lowering all of them.
+//
+// Together they took a cold `no build --wasm-direct` of hello world from 11.5 s
+// to 0.6 s natively (~55 s to 0.4 s in the browser wasm playground) and cut the
+// wasm heap peak from ~1 GB to ~43 MB. Both have fallbacks to on-the-fly
+// parsing, so a stale table is slow, never wrong.
+//
 // Validation: at build time the Makefile runs the SAME independent genstdsig
 // tool over the current on-disk src/std and injects its hash into the binary
 // via -X as checker.StdSigKey. At runtime the ONLY check that matters is
@@ -89,6 +104,27 @@ var (
 	// src/std as the other 6 signature tables); the only runtime gate is that
 	// the injected StdSigKey is non-empty.
 	embeddedStdModules = map[string]string{}
+	// embeddedStdUnionAliasMods 是「哪些 std 模組宣告了 union 型別別名」的
+	// 預先烘焙索引（模組 ShortName → 該模組宣告的 union 別名，按原始碼順序）。
+	//
+	// 存在理由：CollectStdUnionAliases 需要在全部 std 模組裡找 TypeAlias，但
+	// 真正的 union 別名只有寥寥數個（`int`/`float`/`num`/`string`/`big`，分佈在
+	// 5 個模組），而窮舉式掃描要為此把 119 個模組全部解析一遍——實測單次冷建置
+	// 1.5s，佔 wasm playground 總時長的顯著比例。有了這張表，執行期只解析那幾個
+	// 模組；若解析結果與表不一致（src/std 改過但沒 `make gen`、或表被烤壞），
+	// CollectStdUnionAliases 會自動退回全量掃描，不會靜默丟別名。
+	embeddedStdUnionAliasMods = map[string][]string{}
+	// embeddedStdModuleExports 是各 std 模組「導出符號」的預先烘焙表
+	// （模組 FullPath → 導出項，按原始碼順序）。
+	//
+	// 存在理由：validateProgram 的 ValidateUndefinedVars 會為全部 119 個 std
+	// 模組收集導出（collectModuleNames 刻意回傳整份 knownStdModules，因為
+	// 自動匯入語義要求任何 `math.max` 都能被認出），而每個模組都要
+	// lex+parse+lower 才拿得到——實測冷建置 1.4s，且是 wasm playground 裡
+	// 單筆編譯的主要成本。genstdsig 用**與執行期完全相同**的
+	// parseModuleExportsFromSource 產生這張表，因此烤出來的值與現算值逐字一致；
+	// 表中沒有的模組（非 std、或表未生成）照舊走解析路徑。
+	embeddedStdModuleExports = map[string][]ModuleExport{}
 )
 
 // ComputeStdSigKeyFromFS is the exported, FS-parameterised variant used by

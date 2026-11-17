@@ -9,12 +9,22 @@
  *
  *   no build --wasm-direct -target wasm32-wasi -o <out.wasm> <input.no>
  *
- * With `--wasmtime <path>` it also executes each module and asserts a stable
- * stdout substring (`expect`). Without it (default locally, where wasmtime is
- * unavailable) only compilation is gated.
+ * It then EXECUTES each emitted module and asserts a stable stdout substring
+ * (`expect`). Two runners are available:
+ *
+ *   --wasi-shim   (default) instantiate the module with the playground's own
+ *                 WASI loader (`wasm-loader` / `wasi-glue`), i.e. the same
+ *                 `instantiateWasi` + `WASI.start` path the browser workers
+ *                 take. No external tool required — this is what CI runs.
+ *   --wasmtime    shell out to a native `wasmtime run`. Useful for a second
+ *                 opinion when a shim bug is suspected.
+ *   --compile-only
+ *                 skip execution. Compile errors only; output is NOT checked.
+ *                 A compile-clean demo whose snippets print the wrong thing
+ *                 passes here, so never use this as the release gate.
  *
  * Usage:
- *   bun scripts/playground_demos.ts --no /tmp/nobin/no_demo --compile-only
+ *   bun scripts/playground_demos.ts --no /tmp/nobin/no_demo
  *   bun scripts/playground_demos.ts --no /tmp/nobin/no_demo --wasmtime wasmtime
  *
  * This script NEVER rebuilds the browser WASM binaries and never touches
@@ -22,20 +32,27 @@
  */
 import {examples, CATEGORY_ORDER, type Example} from '../docs/src/playground/examples';
 import {mkdtemp, rm, readFile, writeFile, stat} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {WASI, MemFS} from '../docs/src/playground/wasi-glue';
+import {ensureWasiInit, instantiateWasi} from '../docs/src/playground/wasm-loader';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const examplesPath = resolve(here, '../docs/src/playground/examples.ts');
 
+type Runtime = 'shim' | 'wasmtime' | 'none';
+
 interface Options {
     no: string;
+    runtime: Runtime;
     wasmtime: string | null;
 }
 
 function parseArgs(argv: string[]): Options {
     let no = 'no';
+    let runtime: Runtime = 'shim';
     let wasmtime: string | null = null;
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
@@ -43,16 +60,19 @@ function parseArgs(argv: string[]): Options {
             no = argv[++i];
         } else if (a === '--wasmtime' && argv[i + 1]) {
             wasmtime = argv[++i];
+            runtime = 'wasmtime';
+        } else if (a === '--wasi-shim') {
+            runtime = 'shim';
         } else if (a === '--compile-only') {
-            wasmtime = null;
+            runtime = 'none';
         } else if (a === '-h' || a === '--help') {
-            console.log('usage: playground_demos.ts [--no <binary>] [--wasmtime <binary> | --compile-only]');
+            console.log('usage: playground_demos.ts [--no <binary>] [--wasi-shim | --wasmtime <binary> | --compile-only]');
             process.exit(0);
         } else {
             fail(`unknown argument: ${a}`);
         }
     }
-    return {no, wasmtime};
+    return {no, runtime, wasmtime};
 }
 
 const failures: string[] = [];
@@ -142,6 +162,48 @@ async function run(cmd: string[], timeoutMs: number): Promise<{rc: number; out: 
     }
 }
 
+/** Trim a trap/panic down to one line so a failure stays readable. */
+function brief(e: unknown): string {
+    return String((e as Error)?.message ?? e).split('\n')[0].slice(0, 300);
+}
+
+/**
+ * Execute one emitted module through the playground's own WASI loader.
+ *
+ * Kept deliberately identical to `runner.worker.ts`: a fresh MemFS with `/tmp`
+ * preopened, `instantiateWasi`, then `wasi.start(instance)`. A Go guest needs a
+ * monotonic clock (poll_oneoff) before it prints anything, so if the loader's
+ * shim regresses every demo traps here — which is exactly the browser symptom.
+ */
+function runWithShim(wasmPath: string, expect: string): string {
+    const module = new WebAssembly.Module(readFileSync(wasmPath));
+    const fs = new MemFS();
+    try {
+        fs.createDir('/tmp');
+    } catch {
+        // already present
+    }
+    const wasi = new WASI({args: ['demo.wasm'], env: {}, preopens: {'/tmp': '/tmp'}, fs});
+    let trap: string | null = null;
+    let rc = 0;
+    try {
+        const {instance} = instantiateWasi(wasi, module);
+        rc = wasi.start(instance);
+    } catch (e) {
+        trap = brief(e);
+        rc = -1;
+    }
+    // getStdoutString() drains the buffer — read it exactly once, and read it
+    // even when the guest trapped (a proc_exit trap still leaves output behind).
+    const out = wasi.getStdoutString();
+    if (trap) return `trap: ${trap}${out ? ` (stdout ${JSON.stringify(out.slice(0, 120))})` : ''}`;
+    if (rc !== 0) return `rc=${rc}: ${JSON.stringify(out.slice(0, 200))}`;
+    if (expect && !out.includes(expect)) {
+        return `stdout missing ${JSON.stringify(expect)}: ${JSON.stringify(out.slice(0, 200))}`;
+    }
+    return '';
+}
+
 async function validateExample(e: Example, opts: Options, dir: string): Promise<string> {
     const src = join(dir, `${e.id}.no`);
     const wasm = join(dir, `${e.id}.wasm`);
@@ -158,9 +220,17 @@ async function validateExample(e: Example, opts: Options, dir: string): Promise<
     const st = await stat(wasm).catch(() => null);
     if (!st || st.size === 0) return 'compile produced no WASM module';
 
-    if (!opts.wasmtime) return '';
+    if (opts.runtime === 'none') return '';
 
-    const exec = await run([opts.wasmtime, 'run', wasm], 30_000);
+    if (opts.runtime === 'shim') {
+        try {
+            return runWithShim(wasm, e.expect);
+        } catch (err) {
+            return `shim: ${brief(err)}`;
+        }
+    }
+
+    const exec = await run([opts.wasmtime as string, 'run', wasm], 30_000);
     if (exec.rc !== 0) return `wasmtime rc=${exec.rc}: ${(exec.err || exec.out).trim().slice(0, 300)}`;
     if (e.expect && !exec.out.includes(e.expect)) {
         return `stdout missing ${JSON.stringify(e.expect)}: ${JSON.stringify(exec.out.slice(0, 200))}`;
@@ -170,9 +240,16 @@ async function validateExample(e: Example, opts: Options, dir: string): Promise<
 
 async function main(): Promise<void> {
     const opts = parseArgs(process.argv.slice(2));
+    const runtimeLabel = opts.runtime === 'wasmtime'
+        ? `wasmtime (${opts.wasmtime})`
+        : opts.runtime === 'shim'
+            ? 'in-process WASI shim (playground loader)'
+            : '(compile-only — output NOT checked)';
     console.log(`playground demos: ${examples.length} examples, ${CATEGORY_ORDER.length} categories`);
     console.log(`compiler: ${opts.no}`);
-    console.log(`runtime : ${opts.wasmtime ?? '(compile-only)'}\n`);
+    console.log(`runtime : ${runtimeLabel}\n`);
+
+    if (opts.runtime === 'shim') await ensureWasiInit();
 
     await staticChecks();
     if (failures.length) {

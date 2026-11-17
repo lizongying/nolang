@@ -1098,6 +1098,7 @@ Error writing config file: %v
   'vjkycl6v': 'utf8-at recv slot'
   'vkq3r0r2': '`# npm/lodash.get as get` or `# npm/lodash.default as d`. Declare them in'
   'vm9uj5g4': 'builtin %s: raw str stored into %s slot'
+  'vmp8s7tq': 'a value match (`subject: { arms }`) is a statement-level construct and may only appear as the right-hand side of an assignment (optionally parenthesized). It cannot be used inside an expression such as an operand, function argument, comparison, return value or literal. Bind its result to a variable first: `v = subject: { ok -> it ... }`, then use `v`.'
   'vmy4qtcr': 'downloading from %s: %w'
   'vo2eyrl7': 'creating gzip reader: %w'
   'vpi1fke2': 'win-find-close: needs a bufptr argument'

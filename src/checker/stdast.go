@@ -205,6 +205,59 @@ func StdASTFor(embedPath string) (*parser.Program, bool) {
 	return cp.Prog, true
 }
 
+// BakeStdUnionAliasModules 掃描 fsys 下的每個 std 模組，回傳「宣告了 union 型別
+// 別名的模組 → 別名清單」（ShortName → 別名，按原始碼順序）。
+//
+// 只給 genstdsig 用：把「哪幾個模組有 union 別名」變成執行期可查的表，讓
+// CollectStdUnionAliases 不必為找 5 條別名而解析全部 119 個模組。值的內容仍由
+// 執行期重新解析該模組得到（完整保真），這裡只提供「去哪找」的索引。
+func BakeStdUnionAliasModules(fsys fs.FS) (map[string][]string, error) {
+	out := make(map[string][]string)
+	for _, info := range ListStdModules(fsys) {
+		embedPath := "std/" + info.FullPath + ".no"
+		source, err := fs.ReadFile(fsys, embedPath)
+		if err != nil {
+			continue
+		}
+		prog := parser.New(lexer.NewCached(embedPath, string(source))).ParseProgram()
+		if prog == nil {
+			// 產生器（genstdsig）專用診斷，不進 i18n catalog：這條路徑不在
+			// 任何使用者指令的執行期上。
+			return nil, fmt.Errorf("parse %s for union aliases: nil program", embedPath)
+		}
+		var names []string
+		for _, stmt := range prog.Statements {
+			if ta, ok := stmt.(*parser.TypeAlias); ok && ta.IsUnion() {
+				names = append(names, ta.Name)
+			}
+		}
+		if len(names) > 0 {
+			out[info.ShortName] = names
+		}
+	}
+	return out, nil
+}
+
+// BakeStdModuleExports 為 fsys 下的每個 std 模組烘焙「導出符號」表
+// （FullPath → []ModuleExport）。
+//
+// 刻意呼叫**執行期同一個** parseModuleExportsFromSource（HIR 導出收集），而不是
+// 另寫一份 AST 走查：烤出來的值因此與現算值逐字相同，不存在「生成器一套口徑、
+// 執行期另一套」的漂移。src/std 改了而沒有重跑 `make gen` 時，StdSigKey 的
+// 注入/比對會先失敗（見 stdsig_cache.go），不會靜默用舊表。
+func BakeStdModuleExports(fsys fs.FS) (map[string][]ModuleExport, error) {
+	out := make(map[string][]ModuleExport)
+	for _, info := range ListStdModules(fsys) {
+		embedPath := "std/" + info.FullPath + ".no"
+		source, err := fs.ReadFile(fsys, embedPath)
+		if err != nil {
+			continue
+		}
+		out[info.FullPath] = parseModuleExportsFromSource(source)
+	}
+	return out, nil
+}
+
 // stdParseTables holds the parser inputs that shape a std module's parse.
 // Lowering is NOT inference-free: buildMatchDesugar normalises an
 // index-expression match subject (`parts[i]: { ok -> ... }`) into a synthetic

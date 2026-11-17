@@ -1100,6 +1100,7 @@ Error al escribir el archivo de configuración: %v
   'vjkycl6v': 'ranura de receptor utf8-at'
   'vkq3r0r2': '`# npm/lodash.get as get` o `# npm/lodash.default as d`. Deben'
   'vm9uj5g4': 'builtin %s: str sin procesar almacenado en la ranura %s'
+  'vmp8s7tq': 'Un value match (`subject: { arms }`) es una construcción de nivel de sentencia y solo puede aparecer como el lado derecho de una asignación (opcionalmente entre paréntesis). No se puede usar dentro de una expresión, como un operando, argumento de función, comparación, valor de retorno o literal. Primero vincula su resultado a una variable: `v = subject: { ok -> it ... }`, y luego usa `v`.'
   'vmy4qtcr': 'descargando desde %s: %w'
   'vo2eyrl7': 'creando el lector gzip: %w'
   'vpi1fke2': 'win-find-close: necesita un argumento bufptr'

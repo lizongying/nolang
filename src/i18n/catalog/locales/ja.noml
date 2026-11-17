@@ -1102,6 +1102,7 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'vjkycl6v': 'utf8-at のレシーバスロット'
   'vkq3r0r2': '`# npm/lodash.get as get` または `# npm/lodash.default as d`。いずれも'
   'vm9uj5g4': 'builtin %s: 生の str が %s スロットに格納されました'
+  'vmp8s7tq': 'value match（`subject: { arms }`）は文レベルの構造であり、代入の右辺（括弧で囲むのは任意）にのみ現れます。演算子のオペランド、関数引数、比較、戻り値、リテラルなどの式の中では使用できません。まず結果を変数にバインドしてから使用してください: `v = subject: { ok -> it ... }`、その後 `v` を使用します。'
   'vmy4qtcr': '%s からダウンロード中: %w'
   'vo2eyrl7': 'gzip リーダの作成: %w'
   'vpi1fke2': 'win-find-close: bufptr 引数が必要です'

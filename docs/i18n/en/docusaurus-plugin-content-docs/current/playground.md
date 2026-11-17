@@ -123,10 +123,24 @@ import object is built here, callers must pass the instance to `wasi.start(insta
 
 ### First-run compile time
 
-Run drives `no build --wasm-direct`, which lowers the entire std library again — about **one
-minute** inside a single-threaded wasm engine (native `no` takes ~11 s). That is a pre-existing
-performance characteristic, not a timeout: the runner watchdog therefore has two budgets —
-180 s for load + compile, and the usual 5 s for the user program.
+Run drives `no build --wasm-direct`. Measured on hello world it now takes about **0.5 s**
+inside wasm (native `no`, same command: ~0.6 s). Before the std index was pre-baked
+(2026-11) the same numbers were ~55 s and ~11 s.
+
+The bottleneck was never codegen — it was parsing the whole std library **twice** on every
+cold start: `ValidateUndefinedVars` collects the exported symbols of all 119 std modules so
+that module-qualified calls like `math.max(...)` are recognised, and
+`CollectStdUnionAliases` independently parsed the same 119 modules looking for union
+aliases. `genstdsig` now bakes both tables (per-module exports, and which modules declare
+union aliases) into `stdsig_gen.go`, so the runtime looks them up instead of parsing. Two
+guards keep the baked tables honest: `hir.TestModuleExportsMatchChecker` compares every
+module's exports field-by-field against a fresh HIR computation, and
+`TestUnionAliasNarrowingMatchesFullScan` compares the narrowed scan against a full one — a
+stale table turns tests red instead of silently changing semantics.
+
+The watchdog keeps its two budgets (180 s for load + compile, 5 s for the user program).
+The first one now has a huge margin; it stays to absorb cold starts, large programs and
+slow devices.
 
 ### Virtual filesystem
 
@@ -154,7 +168,9 @@ If the browser does not support WebAssembly or has JavaScript disabled, the Play
 After changing the Playground, run these checks from a clean build tree:
 
 ```bash
-make playground-demos                       # compile + wasmtime-run all 24 examples
+make playground-demos                       # compile + execute all examples in-process via the playground's own WASI loader
+make playground-demos DEMO_RUN=wasmtime     # execute under an external wasmtime instead (cross-check)
+make playground-demos DEMO_RUN=none         # compile only, output NOT checked (never a release gate)
 make wasm-imports-check                     # rebuild both wasm files, assert no socket imports
 make wasm-runtime-smoke                     # run version/fmt/vet through the worker's loader path
 RUN_WASM_LSP=1 RUN_WASM_BUILD=1 make wasm-runtime-smoke   # + language service + full compile/run
@@ -163,12 +179,20 @@ make playground-smoke                       # dev server and WASM routes return 
 cd docs && bun run typecheck                # TypeScript typecheck
 ```
 
-Note that `playground-demos` drives the **native** `no`, so it cannot catch "the wasm artifact
-imports something the browser does not provide"; `wasm-imports-check` covers exactly that gap
-(it decides with `WebAssembly.Module.imports()`, the same view instantiation uses). The worker
-adds one more layer: `instantiateWasi()` in `wasm-loader.ts` stubs any WASI function
-`@wasmer/wasi` lacks with one returning `ENOSYS` / `NOTSUP`, so an unexpected import degrades
-into a failed syscall instead of taking the whole service down.
+The `playground-demos` compiler is the **native** `no`, but the artifacts come from the browser's
+own `--wasm-direct -target wasm32-wasi` path and are executed through `instantiateWasi()` in
+`wasi-glue` + `wasm-loader` — the exact code `runner.worker` runs. No wasmtime install is needed,
+so CI runs it directly. It asserts three things at once: the snippet compiles, the artifact passes
+WebAssembly validation (an empty-stack `local.set` from a field value-match shows up here), and the
+printed output matches `expect` (a Direct-WASM backend that silently reports `0` for `?=` shows up
+here too).
+
+The one thing it cannot see is the import table of `no.wasm` / `lsp.wasm` themselves — those are
+not produced from snippets — so `wasm-imports-check` covers that gap: when `@wasmer/wasi` lacks
+`sock_*`, `WebAssembly.Instance` throws `LinkError` and the whole playground (language service
+included) fails to start. The worker adds one more layer: `instantiateWasi()` stubs any WASI
+function `@wasmer/wasi` lacks with one returning `ENOSYS` / `NOTSUP`, so an unexpected import
+degrades into a failed syscall instead of taking the whole service down.
 
 `wasm-imports-check` cannot catch "the function exists but its body traps" (the `poll_oneoff`
 class above), so `make wasm-runtime-smoke` closes the last gap: it drives `no version` /

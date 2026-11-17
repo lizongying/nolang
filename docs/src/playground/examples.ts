@@ -145,19 +145,21 @@ print('swap(5, 9) = {a}, {b}')
     },
     expect: '5! = 120',
     code: `; Functions — parameters, named results, recursion, multiple results.
-add = (a i64, b i64) (r i64) {
-    r = a + b
+; Integer arithmetic can overflow, so + yields ?i64. A ?T result parameter lets
+; ?= unwrap it and re-raise the failure instead of silently dropping it.
+add = (a i64, b i64) (r ?i64) {
+    r ?= a + b
 }
 s = add(3, 4)
 print('3 + 4 = {s}')
 
-fact = (n i64) (r i64) {
+fact = (n i64) (r ?i64) {
     n < 2 -> {
         r = 1
         return
     }
-    p = fact(n - 1)
-    r = n * p
+    p ?= fact(n - 1)
+    r ?= n * p
 }
 f5 = fact(5)
 print('5! = {f5}')
@@ -184,25 +186,25 @@ print('min={lo} max={hi}')
     },
     expect: 'fib-rec(10) = 55',
     code: `; Fibonacci — iterative and recursive implementations.
-fib-loop = (n i64) (r i64) {
+fib-loop = (n i64) (r ?i64) {
     a i64 = 0
     b i64 = 1
     i <- [0..n): {
-        t = a + b
+        t ?= a + b
         a = b
         b = t
     }
     r = a
 }
 
-fib-rec = (n i64) (r i64) {
+fib-rec = (n i64) (r ?i64) {
     n < 2 -> {
         r = n
         return
     }
-    p1 = fib-rec(n - 1)
-    p2 = fib-rec(n - 2)
-    r = p1 + p2
+    p1 ?= fib-rec(n - 1)
+    p2 ?= fib-rec(n - 2)
+    r ?= p1 + p2
 }
 
 loop10 = fib-loop(10)
@@ -407,7 +409,8 @@ t <- [0..): {
     },
     expect: 'n = 3',
     code: `; Conditional while-do loop: (cond) { ... }
-n = 0
+; n is declared ?i64 so that n = n + 1 is an option-to-option copy (no silent unwrap).
+n ?i64 = 0
 keep = true
 (keep) {
     n = n + 1
@@ -519,8 +522,14 @@ print('Renamed to {n}')
 counter {
     n i64
 }
+; A field target is still a value context: a value match unwraps the ?i64 sum
+; and falls back to the old value when the addition overflows.
 counter.bump = () {
-    .n = .n + 1
+    .n = .n + 1: {
+        ok -> it
+
+        -> .n
+    }
 }
 counter.read = () (v i64) {
     v = .n

@@ -1103,6 +1103,7 @@ Erreur d'écriture du fichier de configuration : %v
   'vjkycl6v': 'emplacement du récepteur utf8-at'
   'vkq3r0r2': '`# npm/lodash.get as get` ou `# npm/lodash.default as d`. Ils doivent être'
   'vm9uj5g4': 'builtin %s : str brut stocké dans l’emplacement %s'
+  'vmp8s7tq': 'Un value match (`subject: { arms }`) est une construction de niveau instruction et ne peut apparaître que comme côté droit d’une affectation (éventuellement entre parenthèses). Il ne peut pas être utilisé dans une expression telle qu’un opérande, un argument de fonction, une comparaison, une valeur de retour ou un littéral. Liez d’abord son résultat à une variable : `v = subject: { ok -> it ... }`, puis utilisez `v`.'
   'vmy4qtcr': 'téléchargement depuis %s : %w'
   'vo2eyrl7': 'création du lecteur gzip : %w'
   'vpi1fke2': 'win-find-close : un argument bufptr est requis'
