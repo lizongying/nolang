@@ -4,7 +4,7 @@
 
 - perf(checker): bake std union-alias locations and per-module exports into stdsig so cold builds skip parsing all 119 std modules (native 11.5s -> 0.6s, wasm heap ~1GB -> ~43MB), with self-healing fallback to full scans on drift
 - perf(parser): collapse three full-tree reflection walks in local-type inference into one cached per-function scope index, removing O(vars x nodes) rebuilds
-- fix(mir): exclude option operands from the borrowed-parameter struct-clone path so options no longer get their {tag,data} header memcpy'd as a struct, causing SIGSEGV/SIGBUS in option-heavy tests
+- fix(mir): exclude option operands from the borrowed-parameter struct-clone path so options no longer get their `{tag,data}` header memcpy'd as a struct, causing SIGSEGV/SIGBUS in option-heavy tests
 - fix(wasm): correct Direct-WASM option unwrapping -- `?=` target write-back, nested value-match arms, and ok/nil/err tag constant-folding -- plus valid stores when a value match is an assignment/index/field right-hand side
 - test(wasm): add unit regressions pinning `?=` and value-match codegen against the native backend
 - ci(playground): add a playground-demos gate that compiles and executes every teaching snippet through the in-process WASI shim, catching Direct-WASM drift native CI misses

@@ -95,6 +95,18 @@ CONVENTIONAL_RE = re.compile(
     r"(\([a-z0-9_.,/+*-]+\))?: \S"
 )
 ALLOWED_TYPES = "feat|fix|refactor|perf|docs|test|build|ci|chore"
+# Inline code spans (`...`), whose contents MDX treats as literal text.
+CODE_SPAN_RE = re.compile(r"`[^`]*`")
+# The changelog body is mirrored into docs/*.md, which Docusaurus compiles as
+# MDX. A bare `{...}` outside a code span is parsed as a JSX expression and
+# fails the docs build (e.g. `{tag,data}` -> "ReferenceError: tag is not
+# defined"). Fenced/quoted spans are safe; reject only unquoted braces.
+BARE_BRACE_CHARS_RE = re.compile(r"[{}]")
+
+
+def bare_mdx_braces(line: str) -> bool:
+    """True when `line` has a `{` or `}` outside any backtick code span."""
+    return bool(BARE_BRACE_CHARS_RE.search(CODE_SPAN_RE.sub("", line)))
 
 
 def detect_repo(explicit: str | None) -> str:
@@ -315,9 +327,9 @@ def status_path(line: str) -> str:
     return line[3:].strip().strip('"')
 
 
-def lint_body(body: str) -> tuple[list[str], list[str]]:
-    """Return (cjk_lines, non_conventional_lines)."""
-    cjk, off = [], []
+def lint_body(body: str) -> tuple[list[str], list[str], list[str]]:
+    """Return (cjk_lines, non_conventional_lines, bare_mdx_brace_lines)."""
+    cjk, off, braces = [], [], []
     for line in body.split("\n"):
         s = line.strip()
         if not s:
@@ -326,7 +338,9 @@ def lint_body(body: str) -> tuple[list[str], list[str]]:
             cjk.append(line)
         if not CONVENTIONAL_RE.match(s):
             off.append(line)
-    return cjk, off
+        if bare_mdx_braces(line):
+            braces.append(line)
+    return cjk, off, braces
 
 
 def upsert_section(text: str, version: str, body: str) -> tuple[str, bool]:
@@ -526,7 +540,16 @@ def cmd_apply(args: argparse.Namespace) -> int:
         raise SystemExit("refusing to write an empty changelog entry")
 
     # Changelog body must be English, conventional-commit style.
-    cjk, off = lint_body(body)
+    cjk, off, braces = lint_body(body)
+    if braces:
+        # Docs-site build safety, not a language rule: --allow-non-english must
+        # not bypass it. Bare `{...}` is compiled as a JSX expression by MDX.
+        print("BLOCKED: bare `{...}` in changelog breaks the Docusaurus/MDX docs build.",
+              file=sys.stderr)
+        print("  wrap the literal in backticks, e.g. `{tag,data}`.", file=sys.stderr)
+        for line in braces[:20]:
+            print(f"  bare-brace: {line}", file=sys.stderr)
+        return 3
     if cjk and not args.allow_non_english:
         print("BLOCKED: HISTORY.md entries must be written in English.",
               file=sys.stderr)
