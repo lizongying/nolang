@@ -81,7 +81,6 @@ func TestStatementWalkingLintsCarrySourceFile(t *testing.T) {
 		{"hex-case", "f = () {\n    x = 0xFF\n    x = x\n}\n", ValidateHexCase},
 		{"unassigned-returns", "f = () (res i64) {\n    x = 1\n}\n", ValidateUnassignedReturns},
 		{"duplicate-vars", "x i64 = 1\nx i64 = 2\n", ValidateDuplicateVars},
-		{"async-naming", "work = () {\n}\nf = () {\n    run work()\n}\n", ValidateAsyncNaming},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

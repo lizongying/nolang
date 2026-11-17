@@ -135,11 +135,6 @@ func (g *Generator) generateExpression(expr parser.Expression) string {
 	case *parser.ViewType:
 		// Type expression (a borrow) — not meaningful at runtime.
 		return ""
-	case *parser.RunExpression:
-		// JS has no async tasks like Nolang's run; treat as direct call for v1.
-		return g.generateExpression(e.Call)
-	case *parser.AwaitExpression:
-		return "await " + g.generateExpression(e.Right)
 	}
 	return "/* unhandled: " + fmt.Sprintf("%T", expr) + " */"
 }

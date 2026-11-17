@@ -223,11 +223,7 @@ func (u *rngidxUse) expr(e parser.Expression, allowedIdx bool) {
 		}
 	case *parser.DotExpression:
 		u.expr(x.Receiver, false)
-	case *parser.AwaitExpression:
-		u.expr(x.Right, false)
 	case *parser.CoExpression:
-		u.expr(x.Call, false)
-	case *parser.RunExpression:
 		u.expr(x.Call, false)
 	case *parser.CastExpression:
 		u.expr(x.Expr, false)

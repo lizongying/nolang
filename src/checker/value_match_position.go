@@ -28,6 +28,7 @@ const ValueMatchExprTraceID = "matchexpr"
 //   - AssignExpression.Value
 //   - MultiAssignStatement.Value
 //   - UnwrapAssignStatement.Value
+//
 // 以及它们值表达式外任意层 GroupedExpression（括号透明）。
 func ValidateValueMatchPosition(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
@@ -168,10 +169,6 @@ func ValidateValueMatchPosition(program *parser.Program) []ValidateResult {
 			}
 		case *parser.CastExpression:
 			walkExpr(x.Expr, false)
-		case *parser.RunExpression:
-			walkExpr(x.Call, false)
-		case *parser.AwaitExpression:
-			walkExpr(x.Right, false)
 		case *parser.BlockMatchStatement:
 			// 块 match `{ body }: { arms }` 是语句，其内部语句照常遍历。
 			for _, s := range blockMatchChildStatements(x) {

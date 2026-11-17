@@ -417,7 +417,11 @@ import (
 // 把 `v = fields[0]: { ok -> it.to-i64()  -> _ }` 的 v 記成 `str`，重用會讓
 // src/std/net/net.no 的 Linux ifconfig-list 發出 `store i64 %str-long`
 // （corpus-smoke 在 ubuntu 上以此紅）。故必 bump。
-const ASTVersion = "2026-11-14.3"
+// 2026-11-17.2：新增 `chan[T]` 通道型別與通道語法：AST 多了 ChanType、
+// ChanSendStatement 兩個節點，IterationExpr 多了 IsChan / ChanValue 兩個欄位，
+// 且 `<- ch: { ... }` 會脫糖成 ForStatement。gob blob 形狀改變，舊 blob 重用會
+// 把通道接收迴圈讀回成裸 match（語意全非），故必 bump。
+const ASTVersion = "2026-11-17.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

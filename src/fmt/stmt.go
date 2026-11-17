@@ -846,6 +846,11 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 		}
 		return
 	}
+	// IsAwaitGroup：`awy { ... }` 协程组（新语法）。重解析需要这个关键字，
+	// 否则组内 `co` 会被判为组外而报错（AST→源码→AST 往返门禁）。
+	if s.IsAwaitGroup {
+		f.write("awy ")
+	}
 	f.write("{")
 	// Output opening brace comment on the same line as {
 	if obc := f.obcOf(s); obc != nil && len(obc.List) > 0 {

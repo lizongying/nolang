@@ -313,12 +313,8 @@ func walkExpr(e parser.Expression, notes *[]string, n *int) parser.Expression {
 				*n += walkStmt(b, notes)
 			}
 		}
-	case *parser.RunExpression:
-		x.Call = walkExpr(x.Call, notes, n)
 	case *parser.CoExpression:
 		x.Call = walkExpr(x.Call, notes, n)
-	case *parser.AwaitExpression:
-		x.Right = walkExpr(x.Right, notes, n)
 	case *parser.CastExpression:
 		x.Expr = walkExpr(x.Expr, notes, n)
 	case *parser.ArrayLiteral:
@@ -482,10 +478,6 @@ func mentionsSelf(e parser.Expression) bool {
 		return mentionsSelf(x.Condition) || mentionsSelf(x.Consequence) || mentionsSelf(x.Alternative)
 	case *parser.CastExpression:
 		return mentionsSelf(x.Expr)
-	case *parser.AwaitExpression:
-		return mentionsSelf(x.Right)
-	case *parser.RunExpression:
-		return mentionsSelf(x.Call)
 	case *parser.CoExpression:
 		return mentionsSelf(x.Call)
 	case *parser.ArrayLiteral:

@@ -42,7 +42,7 @@ std 未修缺陷查 `test/README.md §5.2`，名词查 `./glossary/dist/glossary
 - 🔴 **空 `str` 的 `data == NULL`**：`eq(x, n)` 在 `n > 0` 直接崩（含 `str.slice` 提前 return 的空视图）
   ⇒ 空串断言一律 `n = 0`。
 - 🔴 `t[i]` / `s[i]` **越界读是 `err` 不是 `-1`**：断言 tag，不要断言兜底值。
-- 🔴 不写 `free`（deferred move + 作用域退出自动销毁）；协程用 `co` 或协程组 `{}`，`go` **不是**关键字。
+- 🔴 不写 `free`（deferred move + 作用域退出自动销毁）；协程只能写成 `awy { r = co f() }`，`co` 组外非法（`E_CO_OUTSIDE_GROUP`）；`go` **不是**关键字，`run` 已移除，`awy <handle>` 已废除。
 - 🔴 match 各臂绑定变量**不得同名**（不同类型同名会静默串型，checker 不报）；`?t` 解包优先用 `it`。
 - 🔴 `#{overflow=...}` **只作用于下一行陈述**（L3），挂在函数头 / 块头上对 codegen 无效。
 - 🔴 全局变量必须大写开头；模块内避免全局可变状态。

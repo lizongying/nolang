@@ -44,7 +44,7 @@
 - 含副作用调用（如 `print`）的函数 → 非纯；
 - 调用了不在 `funcNames` 里的名字（内建/未知）→ 非纯；
 - 递归 → 非纯（同时由求值栈兜底）；
-- **含 `co` / `run` 派生的函数 → 非纯**（`isSpawnCall`）；
+- **含 `co` 派生的函数 → 非纯**（`isSpawnCall`）；
 - **写模块级全局的函数 → 非纯**（见 §2.3.4）。
 
 **方法（`FlagMethod`）按需判定**：不在上面的批量表里，而是在调用点真正用到某个方法时
@@ -224,7 +224,7 @@ lowering 是**顺序**的：进入循环体后，先 lower `start < 0` 这个**�
   方法折叠：`TestComptimeFoldsMethodCall`（`p.dist()`→25，常量接收者 + 纯方法）。
   反向守卫：`TestComptimeLeavesImpureCallAlone`（含 `print`）、
   `TestComptimeLeavesRuntimeCallAlone`（循环变量）、
-  `TestComptimeLeavesAsyncSpawnAlone`（`run` 必须保留 `OpRun`）、
+  `TestComptimeLeavesAsyncSpawnAlone`（`co` 必须保留 `OpRun`）、
   `TestComptimeLeavesOptionResultAlone`（`?i64` 返回值必须保留调用）、
   `TestComptimeLeavesRuntimeCondIfAlone`（循环变量的 `if` 条件运行时 ⇒ 调用保留）、
   `TestComptimeLeavesLoopBodyAlone`（函数体含 `KRange` 循环 ⇒ 调用保留）、
@@ -290,7 +290,7 @@ lowering 是**顺序**的：进入循环体后，先 lower `start < 0` 这个**�
 
 启用跨函数折叠后暴露出的两个真实语义问题（均已修，见 §2.3.2）：
 
-- **`run`/`awy` 的调用被折叠 → 任务被静默删除**，spawn-graph / tier 分析随之失效。
+- **协程 spawn（`co`）被折叠 → 任务被静默删除**，spawn-graph / tier 分析随之失效。
 - **裸调用 `-async` 后缀函数**同样产出 `OpRun`，按名拒绝。
 
 - **Option 结果被折叠 ⇒ 丢失 tag。** 折叠 `?i64` 返回值的调用会发出裸标量，match

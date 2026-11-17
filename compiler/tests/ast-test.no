@@ -323,23 +323,26 @@ test-kind-table = () {
     ;      於是折出錯的常量（evalConstIfBranch）。現在改成一律放棄折疊。
     ; 下面仍先落到區域變數，只是為了讓失敗訊息看得懂，不再有繞路作用。
     kprog = asp.K-PROGRAM
-    runner.eq(asp.KIND-COUNT, 74, 'KIND-COUNT = 74')
-    runner.eq(kprog, 55, 'Program is kind 55')
+    ; 2026-11-17：刪除 RunExpression/AwaitExpression 後 kind 總數 74 → 72，
+    ; 後續 kind 編號跟著前移兩位（Program 55 → 54、SurfaceMatch 67 → 65、
+    ; Identifier 37 → 36、IntegerLiteral 41 → 40）。
+    runner.eq(asp.KIND-COUNT, 72, 'KIND-COUNT = 72')
+    runner.eq(kprog, 54, 'Program is kind 54')
 
     ; SurfaceMatch 是 2026-10-16 新增的種類（dump.go 的 SurfaceMatch case）。
     ; 它被**追加在 switch 尾端**（default: 之前），之後的種類才位移。目前它在
-    ; 67（前面又多了 K-STRUCT-FIELD 等兩個種類，所以舊值 65 已不成立）。
+    ; 65（2026-11-17 刪除兩個節點後從 67 前移兩位）。
     ; ⚠️ 如果不釘它，KIND-COUNT 就算寫錯也只會被數字比對抓到，
     ;    而 kind-name / kind-id 兩張表對這個種類的條目會是**死條目**——
     ;    沒有任何人呼叫它，位移錯了也沒人報警。
     ksrf = asp.K-SURFACE-MATCH
-    runner.eq(ksrf, 67, 'SurfaceMatch is kind 67')
+    runner.eq(ksrf, 65, 'SurfaceMatch is kind 65')
     runner.eq(asp.kind-id('SurfaceMatch'), ksrf, 'kind-id(SurfaceMatch) round-trips')
-    runner.is-true(asp.kind-name(ksrf).eq-full('SurfaceMatch'), 'kind-name(67) = SurfaceMatch')
-    runner.eq(asp.K-IDENTIFIER, 37, 'Identifier is kind 37')
-    runner.eq(asp.K-INTEGER-LITERAL, 41, 'IntegerLiteral is kind 41')
+    runner.is-true(asp.kind-name(ksrf).eq-full('SurfaceMatch'), 'kind-name(65) = SurfaceMatch')
+    runner.eq(asp.K-IDENTIFIER, 36, 'Identifier is kind 36')
+    runner.eq(asp.K-INTEGER-LITERAL, 40, 'IntegerLiteral is kind 40')
     runner.eq(asp.kind-id('Program'), kprog, 'kind-id(Program) round-trips')
-    runner.is-true(asp.kind-name(kprog).eq-full('Program'), 'kind-name(55) = Program')
+    runner.is-true(asp.kind-name(kprog).eq-full('Program'), 'kind-name(54) = Program')
     runner.eq(asp.kind-id('NoSuchNode'), 0, 'kind-id of an unknown name is 0')
 }
 

@@ -117,7 +117,8 @@ test-keyword = () {
     runner.eq(tok.keyword('ptr'), tok.PTR, 'kw ptr')
     runner.eq(tok.keyword('chan'), tok.CHAN, 'kw chan')
     runner.eq(tok.keyword('use'), tok.USE, 'kw use')
-    runner.eq(tok.keyword('run'), tok.RUN, 'kw run')
+    ; run 關鍵字已移除（2026-11-17）：run 現在是普通識別符
+    runner.eq(tok.keyword('run'), tok.ILLEGAL, 'run is no longer a keyword')
     runner.eq(tok.keyword('awy'), tok.AWY, 'kw awy')
     runner.eq(tok.keyword('co'), tok.CO, 'kw co')
 

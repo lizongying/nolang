@@ -162,13 +162,13 @@ func computeStdSigKeyFromFS(fsys fs.FS) (string, error) {
 //   - 一行一个条目，既可以是文件也可以是目录（目录递归展开成 .no + .go）
 //   - `;` 开头是注释，空行跳过
 //   - 结尾必须有一个单独的 `{ ... }` 块，包含：
-//       include: [ 'path/to/dir/'  'path/to/file.go'  ... ]
-//       exclude: [ '*_test.go'  'checker/stdsig_gen.go'  ... ]
+//     include: [ 'path/to/dir/'  'path/to/file.go'  ... ]
+//     exclude: [ '*_test.go'  'checker/stdsig_gen.go'  ... ]
 //     块是可选的；没有就只靠裸行
 //   - exclude 匹配语义：
-//       * 通配符匹配 basename，如 '*_test.go' 能筛掉所有 _test.go
-//       * 带斜杠的路径（相对 fsys 根）做精确后缀匹配，如 'checker/stdsig_gen.go'
-//       * 以 '/' 结尾 → 目录前缀匹配，如 'test/' 能筛掉 test/ 下所有
+//   - 通配符匹配 basename，如 '*_test.go' 能筛掉所有 _test.go
+//   - 带斜杠的路径（相对 fsys 根）做精确后缀匹配，如 'checker/stdsig_gen.go'
+//   - 以 '/' 结尾 → 目录前缀匹配，如 'test/' 能筛掉 test/ 下所有
 //
 // 返回的条目保证是文件（不是目录），路径相对于 fsys 根、已排序。
 // 清单不存在时回退 legacy：只 hash src/std/*.no。
@@ -198,9 +198,10 @@ func readManifestOrFallback(fsys fs.FS, manifestRel string) ([]string, error) {
 }
 
 // parseNoml 解析 hash.noml，返回：
-//   entries    — 裸行里的条目（include 列表 + 目录/文件路径）
-//   includeList — { include: [...] } 里的条目（如果有）
-//   excludeList — { exclude: [...] } 里的 glob（如果有）
+//
+//	entries    — 裸行里的条目（include 列表 + 目录/文件路径）
+//	includeList — { include: [...] } 里的条目（如果有）
+//	excludeList — { exclude: [...] } 里的 glob（如果有）
 //
 // 块的解析是简化版：找到匹配的 `{` `}`，中间用 noml 数组语法
 // `include: [ 'a' 'b' ]` / `exclude: [ 'a' 'b' ]`。我们只识别这两个
@@ -266,8 +267,8 @@ func splitTopLevelBlock(content string) (pre, block string, ok bool) {
 // 不认识的 key 忽略。
 func parseBlock(body string) (includeList, excludeList []string) {
 	keys := []struct {
-		name    string
-		list    *[]string
+		name string
+		list *[]string
 	}{
 		{"include:", nil},
 		{"exclude:", nil},

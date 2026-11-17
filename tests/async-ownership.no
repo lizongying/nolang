@@ -1,51 +1,32 @@
-; async-ownership.no — spawn 邊界所有權與 task handle 生命週期
+; async-ownership.no — 協程組 spawn 邊界的所有權
 ;
-; 釘住三個在 HEAD 上實測到的缺陷（修復前 → 修復後）：
+; 原檔包含六個缺陷的回歸測試，其中三個只存在於手寫 task 句柄路徑
+; （同一 handle await 兩次、未賦值 handle、句柄槽位重綁定），已隨 run/awy
+; 前綴語法移除。保留並改寫為 `awy { ... } + co` 的覆蓋：
 ;
-;   1. 同一 handle `awy` 兩次
-;        修復前：印出第一個結果後 SIGSEGV（第二次無條件 free 已釋放的
-;                task / args / 結果三個容器）
-;        修復後：第一次正常，第二次診斷到 stderr 且結果為零值，rc=0
-;
-;   2. spawn 之後重賦值堆參數
+;   1. spawn 之後重賦值堆參數
 ;        修復前：argbuf 只做描述符的位元複製，與呼叫方共享 data；呼叫方重賦值
 ;                時 free 掉任務還握著的 buffer → 任務讀已釋放記憶體。
-;                str 印出 40 個 NUL、[]i64 印出 0，兩者 rc 都是 0 且無診斷。
 ;        修復後：spawn 當下就深拷貝進 argbuf，任務擁有獨立副本。
 ;
-;   3. 從未賦值的 handle 直接 awy
-;        修復前：inttoptr(0) → SIGSEGV
-;        修復後：同上，診斷 + 零值
+;   2. struct 參數跨 spawn 邊界：argbuf 只位元複製整個結構體，擁有的 `str`
+;      欄位與呼叫方共享 buffer；但重賦值本身洩漏舊 buffer，所以「碰巧」印對。
+;      修復後：spawn 當下深拷貝（in-place leaf clone），wrapper 用遞迴解構子釋放。
 ;
-;   4. struct 參數跨 spawn 邊界（test 7）
-;        修復前：argbuf 只位元複製整個結構體，擁有的 `str` 欄位與呼叫方共享
-;        buffer；但重賦值本身洩漏舊 buffer，所以「碰巧」印對。
-;        修復後：spawn 當下深拷貝（in-place leaf clone），wrapper 用遞迴解構子釋放。
-;
-;   5. struct 重賦值洩漏舊欄位（test 8）
+;   3. struct 重賦值洩漏舊欄位
 ;        修復前：`h = holder { … }` 直接覆寫，舊的 `s` buffer 永遠不釋放
 ;                （2M 次重賦值：峰值 RSS 66.1 MB → 33.8 MB）。
 ;        修復後：重綁定前先釋放舊欄位。
 ;
-;   6. 已宣告的 handle 變數重新賦值後再 awy（test 9）
-;        修復前：`t i64 = 0` 之後 `t = run f(h)`，awaited 結果的型別在重綁定時
-;                沒有跟著搬到既有的 slot；`awy t` 於是把結果緩衝區當 i64 解讀，
-;                str 結果印出它的「長度」40 而不是字串本身（rc=0、無診斷）。
-;        修復後：重綁定時把 task 的結果型別一起搬過去。
-;
-; 注意 1 與 3 的診斷走 fd 2，stdout 只含結果，故不影響金標。
+;   4. 同組多個 co 各自等待一次，防止 handle 被誤清。
 
 ; 協程：把輸入字串原樣搬回輸出，驗證 spawn 後字串所有權歸協程、父側不再引用
-; s: 來源字串
-; r: 與 s 相同的內容
-echo-async = (s str) (r str) {
+echo = (s str) (r str) {
     r = s
 }
 
 ; 取首個 async
-; v: 來源 vec（協程已在 spawn 時深拷貝）
-; r: v[0]；索引讀取回傳 ?T，以值 match 顯式消費、越界由 nil 臂補零
-first-async = (v []i64) (r i64) {
+first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -53,10 +34,8 @@ first-async = (v []i64) (r i64) {
     }
 }
 
-; 協程：純量乘二，驗證標量以值捕獲進協程，父側後續改動不影響它
-; n: 來源數值
-; r: n * 2（#{overflow=wrap}）
-double-async = (n i64) (r i64) {
+; 純量乘二，驗證標量以值捕獲進協程
+double = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
@@ -71,86 +50,68 @@ double-async = (n i64) (r i64) {
     }
 }
 
-; 7/8 用的結構體：內聯擁有的 `str` 葉子。
+; 內聯擁有 `str` 葉子的結構體
 holder {
     s str
 }
 
-; 協程：讀結構體的 s 欄位，驗證整個 holder 被 spawn 搬移後欄位仍可讀
-; h: 含單一字串欄位 s 的結構體
-; r: h.s 的內容
-echo-holder-async = (h holder) (r str) {
+echo-holder = (h holder) (r str) {
     r = h.s
 }
 
 ; 1. str 參數：spawn 後重賦值 -> 任務必須持有自己的副本
 test-str-arg-reassign = () {
     s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
-    h = run echo-async(s)
+    awy {
+        v = co echo(s)
+    }
     s = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
-    v = awy h
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
 ; 2. []i64 參數：同上（元素指標型別走不同的克隆 helper）
 test-vec-arg-reassign = () {
     a = [7, 8, 9]
-    h = run first-async(a)
+    awy {
+        n = co first(a)
+    }
     a = [1, 2, 3]
-    n = awy h
     print(n); expect: 7
 }
 
-; 3. 同一 handle await 兩次：第二次是零值
-test-double-await = () {
-    h = run double-async(21)
-    a = awy h
-    print(a); expect: 42
-    b = awy h
-    print(b); expect: 0
-}
-
-; 4. 從未賦值的 handle（0）不會崩潰
-test-null-handle = () {
-    h = 0
-    z = awy h
-    print(z); expect: 0
-}
-
-; 5. 單次 await 不受影響（防止過度修正）
+; 3. 單一 co 不受影響（防止過度修正）
 test-single-await = () {
-    r = awy double-async(5)
+    awy {
+        r = co double(5)
+    }
     print(r); expect: 10
 }
 
-; 6. 多個 handle 各自 await 一次（防止 handle 被誤清）
+; 4. 同組兩個 co 各自等待一次
 test-two-handles = () {
-    h1 = run double-async(10)
-    h2 = run double-async(20)
-    r1 = awy h1
-    r2 = awy h2
+    awy {
+        r1 = co double(10)
+        r2 = co double(20)
+    }
     print(r1); expect: 20
     print(r2); expect: 40
 }
 
-; 7. struct 參數：argbuf 是位元複製，所以必須在 spawn 邊界深拷貝擁有的欄位。
-;    這裡的重賦值會釋放舊的 s buffer（見 8），若 spawn 沒深拷貝，任務就會讀到
-;    已釋放記憶體。修復前這條「碰巧」印對，因為重賦值本身洩漏了那個 buffer
-;    ——兩個缺陷互相掩蓋，所以必須一起修。
+; 5. struct 參數：argbuf 是位元複製，必須在 spawn 邊界深拷貝擁有的欄位。
 test-struct-arg-reassign = () {
     h = holder{
         s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     }
-    t = run echo-holder-async(h)
+    awy {
+        v = co echo-holder(h)
+    }
     h = holder{
         s: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
     }
-    v = awy t
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
-; 8. struct 重賦值必須釋放舊欄位（洩漏修復），但**不能**波及新值。
-;    這條是過度修正的守門員：釋放順序若顛倒，這裡會印出空字串或崩潰。
+; 6. struct 重賦值必須釋放舊欄位，但不能波及新值
 test-struct-rebind = () {
     h = holder{
         s: 'first'
@@ -161,37 +122,9 @@ test-struct-rebind = () {
     print(h.s); expect: second
 }
 
-; 9. 已宣告的 handle 重新賦值：結果型別必須跟著搬到既有的 slot。
-;    修復前這條印出 40（str 的長度）而不是字串，rc 仍是 0。
-test-handle-rebind = () {
-    h = holder{
-        s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
-    }
-    t = 0
-    t = run echo-holder-async(h)
-    v = awy t
-    print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-}
-
-; 10. 同上，但 v 明確宣告為 str（修復前是編譯錯誤：
-;     "cannot assign i64 value to str variable 'v'"）。
-test-handle-rebind-typed = () {
-    h = holder{
-        s: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
-    }
-    t = 0
-    t = run echo-holder-async(h)
-    v str = awy t
-    print(v); expect: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
-}
-
 test-str-arg-reassign()
 test-vec-arg-reassign()
-test-double-await()
-test-null-handle()
 test-single-await()
 test-two-handles()
 test-struct-arg-reassign()
 test-struct-rebind()
-test-handle-rebind()
-test-handle-rebind-typed()

@@ -403,6 +403,8 @@ Parser ASTVersion: %s
   'bsaaq6j7': 'utime: 無法將 path 編組為 C 字串'
   'bsnjql1o': '寫入 HTML 輸出 %s 失敗: %w'
   'bvxzv6u0': 'net-udp-recvfrom: 沒有結果槽位'
+  'c0grp1aa': 'co <call> 只能在 \'awy { ... }\' 協程組內使用'
+  'c0grp1ab': '\'awy\' 後需要 \'{\' 才能開始協程組'
   'c33l3vql': '找不到模組檔案: %s 或 %s'
   'c48g377y': '不支援浮點區間邊界，請使用整數'
   'c6eld4s3': `
@@ -1173,7 +1175,6 @@ and left unchanged. -fix does not apply to them.
   'y4yjmhz2': 'builtin %s: 未知的 LLVMConv 型別 %d'
   'y4yxzacz': 'builtin %s: scratch 緩衝區未實體化'
   'y5f921sg': 'txt 索引目標槽位（dst=%d type=%s）'
-  'y7964ox1': '被 “run” 呼叫的函式 “%s” 應以 “-async” 結尾'
   'y8ieefsr': 'builtin %s: 參數無效'
   'y9lj5a9g': '預期參數名稱或型別，實際得到 %s'
   'yevhjra2': 'LLVM C API: %s 失敗: %s'

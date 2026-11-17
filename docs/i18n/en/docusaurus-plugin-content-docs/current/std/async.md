@@ -4,90 +4,49 @@ sidebar_position: 4.2
 
 ## Async
 
-:::warning Deprecated
-Writing `run` / `awy` / `cancel` / `cancelled` by hand is **deprecated**. They are unsafe: manual task-handle management leaks (an un-awaited task leaks its argument buffer), aliasing a handle and awaiting twice crashes, and cooperative cancellation cannot force-interrupt a long-blocking call. Use **coroutine groups** below instead — simpler syntax, and handles/cancellation are managed for you. These primitives remain only as a low-level reference.
-:::
+Nolang has one surface syntax for concurrency: an `awy { ... }` coroutine group
+with `co <call>` statements inside. `run` is no longer a keyword (it is a plain
+identifier); `awy <handle>` and bare-block coroutine groups are removed.
+**`co` outside a group is a compile error** (`E_CO_OUTSIDE_GROUP`).
 
-### Coroutine groups — recommended
-
-A bare `{ ... }` block in statement position is a **coroutine group**: each `-async` call inside it is spawned by default and awaited where its result is needed. No explicit `run` / `awy` required.
-
-```no
-; Concurrent: both tasks are launched before either is awaited
-{
-    r1 = worker-async(1)
-    r2 = worker-async(2)
-}
-
-; Sequential: r2 reads r1, so r1 is awaited first — the group degrades to await
-{
-    r1 = worker-async(1)
-    r2 = worker-async(r1)
-}
-```
-
-Rules:
-
-- **Degradation.** When a later statement reads (or rebinds) a variable bound by an earlier one, that earlier task is awaited right there. Dependencies are transitive.
-- **Barriers.** Any statement in the group that is not a direct `-async` call — a plain assignment, a `print`, a loop, an `if` — is a barrier: everything still in flight is awaited before it runs, so code inside a group always reads a value, never an opaque handle.
-- **A function body is not a group.** Only a bare block in statement position is. So `f = worker-async(1)` at function-body level still just builds a future; it is not awaited automatically.
-- **A discarded result is still awaited.** `{ side-async(5) }` spawns *and* awaits — a task that is never awaited leaks its argument buffer.
-
-See `lang/syntax.md` → "Coroutine Groups" for the full expansion.
-
-### `co` keyword (colorless async) — recommended
-
-`co` is a **colorless** syntax built on top of coroutine groups: you write the
-uncolored name `worker`; the compiler auto-monomorphizes a `worker-async` variant
-and runs it on the underlying colored stackless coroutines. You do not hand-write
-the `-async` suffix and you do not hand-write `run` / `awy`.
+### Coroutine groups
 
 ```no
-#{fmt-skip}
 worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
 }
-r1 i64
-r2 i64
-{
-    r1 = co worker(1)   ; auto-monomorphizes worker-async and spawns
-    r2 = co worker(2)   ; runs concurrently with r1
+
+; independent tasks run concurrently; the group waits at its end
+awy {
+    r1 = co worker(1)
+    r2 = co worker(2)
 }
-print(r1.to-str() + ' ' + r2.to-str())
 ```
 
-Rules:
+`r1` / `r2` are result values, never opaque task handles. See `lang/syntax.md`
+("Asynchronous Programming") for degradation and barrier rules.
 
-- **Monomorphization.** `co worker(1)` auto-generates `worker-async` (a clone of
-  `worker`'s body, renamed). If `worker` is also called synchronously, both
-  `worker` (sync) and `worker-async` (async) coexist.
-- **Transitivity.** If a function calls an async function internally (e.g.
-  `worker` contains `co child(...)`), then `worker` is also monomorphized into
-  `worker-async`; async coloring propagates up the call chain.
-- **Underlying still colored stackless coroutines.** `co` is only sugar,
-  equivalent to `run worker-async(1); r1 = awy <handle>`; inside a coroutine group
-  the group schedules the spawn / await to obtain concurrency.
+### `co` (colorless async)
 
-### async — manual primitives (deprecated, low-level reference only)
+`co` is colorless syntax: you write the uncolored name `worker` and the compiler
+synthesizes a `worker-async` variant. Do not hand-write the `-async` suffix.
 
-A coroutine model:
+- **Monomorphization.** `co worker(1)` generates `worker-async` (a renamed clone);
+  both variants coexist if `worker` is also called synchronously.
+- **Transitivity.** If a function itself contains `awy { c = co child(n) }`, it
+  too is monomorphized into `-async`.
+- **Lowering detail** (not source syntax): each `co` becomes `OpRun`, and each
+  task gets an `OpAwait` at group exit.
 
-```no
-#{fmt-skip}
-; Start an -async function as a background task, returns an opaque task handle (i8*)
-h = run f-async(args)
+### Cancellation
 
-; Await a background task
-r = awy h
+`cancelled()` remains a cooperative self-check inside a coroutine body.
+`cancel(h)` is a low-level handle operation with no surface handle under the new
+syntax; application code does not use it.
 
-; Cancellation primitives (deprecated)
-cancel(h)                     ; Cancel task h (sets cancelled flag, returns void)
-yes = cancelled()              ; Check if current task has been cancelled (returns bool)
-```
-
-:::note
-Cancellation is cooperative: long-blocking calls (e.g. a network request) cannot be force-interrupted. After `cancel` sets the flag, the task stops at the next cooperative checkpoint (`cancelled()` call or next event loop dispatch). Cancellation is "timely" not "instantaneous" — this is inherent to cooperative scheduling.
-:::
+Cancellation is cooperative, not preemptive: a long blocking call cannot be
+interrupted; the task stops at the next cooperative checkpoint (`cancelled()`
+call or the next event-loop scheduling).
 
 ---

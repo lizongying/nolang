@@ -787,6 +787,22 @@ const (
 	// pointer). See NOLANG-OWNERSHIP-MODEL.md §1.3 (correction B) and §4.4.
 	OpTaskRetain
 
+	// channel runtime (`chan[T]`). The handle is an opaque i8* to a heap
+	// control block; these four ops are the only way user code touches it.
+	//
+	// OpChanMake allocates a channel: Args[0] = initial capacity (i64, grown on
+	// demand — a send NEVER blocks and NEVER fails), Dst = the chan value.
+	OpChanMake
+	// OpChanSend enqueues a copy of Args[1] into the channel Args[0]. The value
+	// is deep-copied when it owns heap memory, so the sender keeps its own.
+	OpChanSend
+	// OpChanRecv dequeues one element into the storage behind Args[1] (a local
+	// slot) and yields a status in Dst: 0 = ok, 1 = closed and drained,
+	// 2 = open but empty. Lowering turns that status into a `?T`.
+	OpChanRecv
+	// OpChanClose marks the channel closed (idempotent). Args[0] = chan.
+	OpChanClose
+
 	opCount
 )
 
@@ -849,6 +865,10 @@ var opNames = [opCount]string{
 	OpEnumNew:    "enum-new",
 	OpEnumTag:    "enum-tag",
 	OpEnumField:  "enum-field",
+	OpChanMake:   "chan-make",
+	OpChanSend:   "chan-send",
+	OpChanRecv:   "chan-recv",
+	OpChanClose:  "chan-close",
 }
 
 func (o Op) String() string {
@@ -862,7 +882,7 @@ func (o Op) String() string {
 // pure side-effecting stores, and Drop/SetField do not.
 func producesValue(op Op) bool {
 	switch op {
-	case OpReturn, OpBr, OpCondBr, OpSwitch, OpStore, OpDrop, OpSetField, OpIndexStore, OpRetain, OpRelease:
+	case OpReturn, OpBr, OpCondBr, OpSwitch, OpStore, OpDrop, OpSetField, OpIndexStore, OpRetain, OpRelease, OpChanSend, OpChanClose:
 		return false
 	}
 	return true
@@ -899,6 +919,10 @@ const (
 	KindFunc
 	KindVoid
 	KindEnum
+	// KindChan is `chan[T]`: an opaque 8-byte handle (i8*) to a heap control
+	// block. The payload type only determines the element stride and the `?T`
+	// shape a receive produces.
+	KindChan
 )
 
 // String returns a readable name for a TypeKind, used by diagnostics, the MIR
@@ -935,6 +959,8 @@ func (k TypeKind) String() string {
 		return "void"
 	case KindEnum:
 		return "enum"
+	case KindChan:
+		return "chan"
 	}
 	return "TypeKind?"
 }
@@ -1274,6 +1300,8 @@ func kindOfTy(t *ty.Type) TypeKind {
 		// A bare identifier is a struct/named layout; internType downgrades it to
 		// KindInt when no layout is registered.
 		return KindStruct
+	case ty.Chan:
+		return KindChan
 	}
 	return KindStruct
 }
@@ -1901,9 +1929,17 @@ func (m *Module) internType(raw string) TypeID {
 		if st.Len >= 0 {
 			arrSizes = []int64{st.Len}
 		}
-	case ty.Slice, ty.Option, ty.View:
+	case ty.Slice, ty.Option, ty.View, ty.Chan:
 		// A view `&T` records the borrowed element so codegen renders it as
 		// `llvm(T)*` instead of a bare `i8*`.
+		//
+		// For `chan[T]` the element is the RING PAYLOAD type: codegen needs it to
+		// size the control block's elemsize field and to decide whether the
+		// option payload goes inline. Leaving it NoType made chanElemLTOf fall
+		// back to `i64`, so a `chan[str]` allocated a ring with 8-byte slots
+		// while send/recv memcpy'd 16-byte %str-long descriptors — the payload
+		// came back as garbage (measured: `c2 <- 'a'` then `print(it)` printed a
+		// replacement character).
 		if st.Elem != nil {
 			elemTID = m.internType(st.Elem.Raw())
 		}

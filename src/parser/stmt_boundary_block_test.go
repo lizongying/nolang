@@ -19,13 +19,11 @@ import (
 //     `}` closed the ENCLOSING block — so every statement after the bare block
 //     leaked one level outward.
 //
-//  2. `run` and `awy` were missing from isStatementBoundary(). When either
-//     began a statement that was NOT the first statement of a block, the
-//     previous statement's skipToStatementEnd() skipped over it (NEWLINE is
-//     deliberately not a boundary). `awy t` degraded to a bare `t` (so an
-//     if-chain arm whose tail was `awy t` yielded the task handle — a heap
-//     pointer — printed as a garbage integer), and `run f(x)` degraded to a
-//     SYNCHRONOUS `f(x)` (no longer spawning a coroutine).
+//  2. `awy` and `co` must be in isStatementBoundary(). When either begins a
+//     statement that is NOT the first statement of a block, the previous
+//     statement's skipToStatementEnd() skips over it (NEWLINE is deliberately
+//     not a boundary). An `awy { ... }` group would lose its keyword, and an
+//     in-group `co f(x)` would degrade to a SYNCHRONOUS `f(x)` (no spawn).
 
 // parseSrc parses src and fails the test on any parser error.
 func parseSrc(t *testing.T, src string) *Program {
@@ -153,31 +151,31 @@ print(x)
 	exprStmt(t, prog.Statements[2], "statement 2")
 }
 
-// TestStatementBoundaryIncludesRunAndAwy is the direct pin for bug 2.
-//
-// isStatementBoundary() is the whitelist of tokens that can BEGIN a statement;
-// skipToStatementEnd() advances until it sees one. `run` and `awy` are prefix
-// keywords (parseStatement has no case for them, so they fall through to the
-// default expression-statement path), yet they were missing from the list.
-func TestStatementBoundaryIncludesRunAndAwy(t *testing.T) {
-	for _, tok := range []lexer.TokenType{lexer.RUN, lexer.AWY} {
+// TestStatementBoundaryIncludesAwyAndCo pins bug 2 under the new coroutine
+// syntax. isStatementBoundary() is the whitelist of tokens that can BEGIN a
+// statement; skipToStatementEnd() advances until it sees one. `awy` (group
+// start) and `co` (in-group spawn) must be boundaries, otherwise a preceding
+// statement's skipToStatementEnd() swallows them when they are non-first.
+func TestStatementBoundaryIncludesAwyAndCo(t *testing.T) {
+	for _, tok := range []lexer.TokenType{lexer.AWY, lexer.CO} {
 		if !isStatementBoundary(tok) {
 			t.Errorf("isStatementBoundary(%v) = false, want true — skipToStatementEnd "+
-				"will swallow this prefix keyword when it begins a non-first statement", tok)
+				"will swallow this keyword when it begins a non-first statement", tok)
 		}
 	}
 }
 
-// TestRunAndAwySurviveAsNonFirstStatements pins the AST consequence of bug 2.
-//
-// Before the fix the `run` and `awy` tokens were eaten by the preceding
-// statement's skipToStatementEnd(), so the AST held a bare `dbl(21)` call
-// (synchronous — no longer spawning) and a bare `t` identifier.
-func TestRunAndAwySurviveAsNonFirstStatements(t *testing.T) {
+// TestAwaitGroupSurvivesAsNonFirstStatement pins the AST consequence of bug 2
+// under the new syntax: an `awy { ... }` group that is not the first statement
+// must still be parsed as a BlockStatement with IsAwaitGroup set, and the
+// in-group `co` calls must not be swallowed by the preceding statement.
+func TestAwaitGroupSurvivesAsNonFirstStatement(t *testing.T) {
 	src := `f = () {
   y = 1
-  run dbl(21)
-  awy t
+  awy {
+    r1 = co dbl(21)
+    r2 = co dbl(22)
+  }
 }
 `
 	prog := parseSrc(t, src)
@@ -185,29 +183,42 @@ func TestRunAndAwySurviveAsNonFirstStatements(t *testing.T) {
 	if fd.Body == nil {
 		t.Fatal("function f has a nil body")
 	}
-	if got := len(fd.Body.Statements); got != 3 {
-		t.Fatalf("f body has %d statements, want 3 (let, run, awy)", got)
+	if got := len(fd.Body.Statements); got != 2 {
+		t.Fatalf("f body has %d statements, want 2 (let, awy group)", got)
 	}
 	if _, ok := fd.Body.Statements[0].(*LetStatement); !ok {
 		t.Errorf("f body[0] is %T, want *LetStatement", fd.Body.Statements[0])
 	}
-
-	// The `run` statement must still be a *RunExpression. If the keyword was
-	// eaten it degrades to a plain *CallExpression — same output, but no spawn.
-	runExpr := exprStmt(t, fd.Body.Statements[1], "f body[1]")
-	if _, ok := runExpr.(*RunExpression); !ok {
-		t.Errorf("f body[1] expression is %T, want *RunExpression — the `run` "+
-			"keyword was swallowed and the call silently became synchronous", runExpr)
+	group, ok := fd.Body.Statements[1].(*BlockStatement)
+	if !ok {
+		t.Fatalf("f body[1] is %T, want *BlockStatement (awy group)", fd.Body.Statements[1])
 	}
+	if !group.IsAwaitGroup {
+		t.Error("f body[1] BlockStatement.IsAwaitGroup = false, want true")
+	}
+	if got := len(group.Statements); got != 2 {
+		t.Fatalf("await group has %d statements, want 2 co spawns", got)
+	}
+}
 
-	// The `awy` statement must still be an *AwaitExpression. If the keyword was
-	// eaten it degrades to a bare *Identifier (the task handle), which prints
-	// as a garbage pointer when used as a value.
-	awyExpr := exprStmt(t, fd.Body.Statements[2], "f body[2]")
-	if _, ok := awyExpr.(*AwaitExpression); !ok {
-		t.Errorf("f body[2] expression is %T, want *AwaitExpression — the `awy` "+
-			"keyword was swallowed and the statement degraded to a bare identifier",
-			awyExpr)
+// TestCoOutsideGroupIsRejected pins the new rule: co <call> is only legal
+// inside an `awy { ... }` group.
+func TestCoOutsideGroupIsRejected(t *testing.T) {
+	src := `f = () {
+  r = co dbl(21)
+}
+`
+	p := New(lexer.New(src))
+	p.ParseProgram()
+	found := false
+	for _, d := range p.Diagnostics() {
+		if d.Code == "E_CO_OUTSIDE_GROUP" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected E_CO_OUTSIDE_GROUP diagnostic for group-external co, got: %+v",
+			p.Diagnostics())
 	}
 }
 

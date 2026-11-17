@@ -203,10 +203,6 @@ func walkExprForRemovedPrintf(expr parser.Expression, out *[]ValidateResult) {
 		walkExprForRemovedPrintf(e.Alternative, out)
 	case *parser.CastExpression:
 		walkExprForRemovedPrintf(e.Expr, out)
-	case *parser.RunExpression:
-		walkExprForRemovedPrintf(e.Call, out)
-	case *parser.AwaitExpression:
-		walkExprForRemovedPrintf(e.Right, out)
 	case *parser.IfExpression:
 		// 實 if/else：match 在糖形態下是 SurfaceMatch，不經此路徑。
 		walkExprForRemovedPrintf(e.Condition, out)

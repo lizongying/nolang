@@ -275,7 +275,7 @@ Variable names, function names, struct names, etc. can start with an underscore,
 **Function naming convention (strongly recommended):**
 - **Do NOT prefix function names with the module name.** Functions within a module should use short, intuitive names. The module prefix is automatically provided by the `ShortName.` prefix during cross-module calls. For example, in `tail.no`, define the entry function as `tail` (not `tail-run`), and helper functions as `atoi` (not `tail-atoi`). This keeps code concise and makes cross-module calls like `tail.tail()` more intuitive.
 - **Entry functions** should use the module name itself (e.g. `ping.no` → `ping`, `cat.no` → `cat`). Cross-module imports look like `# /src/tail.tail`.
-- **Avoid keywords**: `run` (async keyword), `match` (conditional match keyword) cannot be used as function names. Use the module name directly for entry functions instead.
+- **Avoid keywords**: `match` (conditional match keyword), `awy` (coroutine-group keyword) cannot be used as function names. `run` is no longer reserved. Use the module name directly for entry functions instead.
 
 ```no
 ; ✅ Correct: global data uses uppercase

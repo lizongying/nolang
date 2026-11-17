@@ -5,22 +5,21 @@ import (
 	"testing"
 )
 
-// These tests pin the coroutine group (協程組) desugaring — a bare `{ ... }`
-// block in statement position whose statements are `-async` calls. The
-// observable is the ORDER of OpRun / OpAwait in the lowered function, because
-// order is the entire point: "spawn everything, then await" is the concurrent
-// case, and "spawn, await, spawn, await" is the degraded sequential case. A
-// test that only checked that the program produced the right numbers could not
-// tell them apart.
+// These tests pin the coroutine group (協程組) desugaring — an `awy { ... }`
+// block whose statements are `co` calls. The observable is the ORDER of OpRun /
+// OpAwait in the lowered function, because order is the entire point: "spawn
+// everything, then await" is the concurrent case, and "spawn, await, spawn,
+// await" is the degraded sequential case. A test that only checked that the
+// program produced the right numbers could not tell them apart.
 //
 // NON-VACUITY: each case has a sibling that must produce the OTHER pattern.
 // TestAsyncGroupSpawnsIndependentCalls (run run await await) is the control for
 // TestAsyncGroupDegradesOnDependency (run await run await), and
-// TestAsyncGroupFnBodyIsNotAGroup proves the pass does not fire on a function
-// body — without it, a pass that rewrote every block would still pass the first
-// two.
+// TestAsyncGroupFnBodyIsNotAGroup proves the pass does not fire on a plain
+// function body — without it, a pass that rewrote every block would still pass
+// the first two.
 
-const asyncGroupWorkSrc = `work-async = (n i64) (r i64) {
+const asyncGroupWorkSrc = `work = (n i64) (r i64) {
     r = n
 }
 `
@@ -69,9 +68,9 @@ func TestAsyncGroupSpawnsIndependentCalls(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
     r1 i64
     r2 i64
-    {
-        r1 = work-async(1)
-        r2 = work-async(2)
+    awy {
+        r1 = co work(1)
+        r2 = co work(2)
     }
     print(r1)
     print(r2)
@@ -86,9 +85,9 @@ func TestAsyncGroupDegradesOnDependency(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
     r1 i64
     r2 i64
-    {
-        r1 = work-async(1)
-        r2 = work-async(r1)
+    awy {
+        r1 = co work(1)
+        r2 = co work(r1)
     }
     print(r1)
     print(r2)
@@ -104,10 +103,10 @@ func TestAsyncGroupTransitiveDependency(t *testing.T) {
     r1 i64
     r2 i64
     r3 i64
-    {
-        r1 = work-async(1)
-        r2 = work-async(r1)
-        r3 = work-async(r2)
+    awy {
+        r1 = co work(1)
+        r2 = co work(r1)
+        r3 = co work(r2)
     }
     print(r3)
 }
@@ -122,10 +121,10 @@ func TestAsyncGroupBarrierFlushes(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
     r1 i64
     r2 i64
-    {
-        r1 = work-async(1)
+    awy {
+        r1 = co work(1)
         print(9)
-        r2 = work-async(2)
+        r2 = co work(2)
     }
     print(r1)
     print(r2)
@@ -141,30 +140,28 @@ func TestAsyncGroupBarrierFlushes(t *testing.T) {
 func TestAsyncGroupBarrierSeesValueNotHandle(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
     r1 i64
-    {
-        r1 = work-async(1)
+    awy {
+        r1 = co work(1)
         print(r1)
     }
 }
 `, "main"), "run", "await")
 }
 
-// TestAsyncGroupFnBodyIsNotAGroup: the function body is NOT a bare block (it
-// hangs off the "body" slot), so a bare `-async` call there keeps its
-// pre-existing meaning — a lazily enqueued future, no await. This is the
-// control that proves the pass is scoped to statement-position blocks.
-func TestAsyncGroupFnBodyIsNotAGroup(t *testing.T) {
+// TestAsyncGroupPlainCallIsNotASpawn: a plain call outside an `awy` group is
+// NOT a spawn — `co` is the only spawn marker and it is only legal in a group.
+// This is the control that proves the pass is scoped to explicit awy groups.
+func TestAsyncGroupPlainCallIsNotASpawn(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
-    f = work-async(1)
-    print(1)
+    f = work(1)
+    print(f)
 }
-`, "main"), "run")
+`, "main"))
 }
 
-// TestAsyncGroupWithoutAsyncCallsIsUntouched: a bare block with no `-async`
-// call must lower to no run/await at all. The pass reports "no group" and
-// leaves the block byte-for-byte alone, which is what makes it a no-op for the
-// existing corpus.
+// TestAsyncGroupWithoutAsyncCallsIsUntouched: an awy block with no `co` spawn
+// must lower to no run/await at all. The pass reports "no group" and leaves the
+// block byte-for-byte alone.
 func TestAsyncGroupWithoutAsyncCallsIsUntouched(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, `work = (n i64) (r i64) {
     r = n
@@ -172,7 +169,7 @@ func TestAsyncGroupWithoutAsyncCallsIsUntouched(t *testing.T) {
 main = () {
     r1 i64
     r2 i64
-    {
+    awy {
         r1 = work(1)
         r2 = work(2)
     }
@@ -182,18 +179,17 @@ main = () {
 `, "main"))
 }
 
-// TestAsyncGroupDiscardedResultIsAwaited: a bare `-async` call statement drops
-// its result. It is still spawned AND still awaited — an un-awaited task leaks
-// its argument buffer, so "nobody wants the value" is not a reason to skip the
-// await.
+// TestAsyncGroupDiscardedResultIsAwaited: a `co` call statement drops its
+// result. It is still spawned AND still awaited — an un-awaited task leaks its
+// argument buffer, so "nobody wants the value" is not a reason to skip await.
 func TestAsyncGroupDiscardedResultIsAwaited(t *testing.T) {
-	wantOps(t, asyncOpsIn(t, `side-async = (n i64) {
+	wantOps(t, asyncOpsIn(t, `side = (n i64) {
     print(n)
 }
 main = () {
-    {
-        side-async(7)
-        side-async(8)
+    awy {
+        co side(7)
+        co side(8)
     }
 }
 `, "main"), "run", "run", "await", "await")

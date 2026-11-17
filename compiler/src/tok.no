@@ -400,8 +400,8 @@ keyword = (s str) (r i64) {
 
         'use' -> USE
 
-        'run' -> RUN
-
+        ; `run` 關鍵字已移除（2026-11-17）：run 現在是普通識別符。
+        ; RUN 常量保留作數值錨點（勿刪），避免 iota 後續編號平移。
         'awy' -> AWY
 
         'co' -> CO

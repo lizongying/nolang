@@ -221,10 +221,6 @@ func validateTypeNameNaming(program *parser.Program) []ValidateResult {
 			for _, a := range x.Arguments {
 				walkExpr(a, file)
 			}
-		case *parser.RunExpression:
-			walkExpr(x.Call, file)
-		case *parser.AwaitExpression:
-			walkExpr(x.Right, file)
 		case *parser.MapLiteral:
 			for _, pair := range x.Pairs {
 				if isNilASTNode(pair) {

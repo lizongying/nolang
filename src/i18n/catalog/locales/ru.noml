@@ -403,6 +403,8 @@ Parser ASTVersion: %s
   'bsaaq6j7': 'utime: невозможно сериализовать путь как строку C'
   'bsnjql1o': 'запись HTML-вывода %s: %w'
   'bvxzv6u0': 'net-udp-recvfrom: нет слота результата'
+  'c0grp1aa': 'co <call> допустим только внутри группы сопрограмм \'awy { ... }\''
+  'c0grp1ab': 'expected \'{\' after \'awy\' to start a coroutine group'
   'c33l3vql': 'файл модуля не найден: %s или %s'
   'c48g377y': 'граница диапазона float не поддерживается, используйте целые числа'
   'c6eld4s3': `
@@ -1173,7 +1175,6 @@ WASI sysroot не найден. Задайте $WASI_SYSROOT, указывающ
   'y4yjmhz2': 'builtin %s: неизвестный род LLVMConv %d'
   'y4yxzacz': 'builtin %s: рабочий буфер не материализован'
   'y5f921sg': 'слот назначения индексирования txt (dst=%d type=%s)'
-  'y7964ox1': 'функция \'%s\', вызываемая через \'run\', должна заканчиваться на \'-async\''
   'y8ieefsr': 'builtin %s: недопустимые аргументы'
   'y9lj5a9g': 'ожидалось имя параметра или тип, вместо него получено %s'
   'yevhjra2': 'LLVM C API: %s не удалось: %s'

@@ -23,15 +23,18 @@ type Parser struct {
 	cur      int           // currentToken 在 tk 中的绝对索引（注释包含）
 	peek     int           // peekToken 的绝对索引
 
-	ctx             contextStack     // replaces inForCond, inMatchCond, inMatchArm, inExprContext
-	comments        []lexer.Token    // collected comment tokens
+	ctx contextStack // replaces inForCond, inMatchCond, inMatchArm, inExprContext
+	// awaitGroupDepth 是当前词法嵌套的 `awy { ... }` 协程组深度；co <call> 只允许
+	// 在深度 > 0 处出现。进入函数字面量时须临时归零（函数体不是组的直接语句）。
+	awaitGroupDepth int
+	comments        []lexer.Token // collected comment tokens
 	// moduleDocEndLine 是模組 doc 最後一行（0 = 本檔沒有模組 doc）。由
 	// takeModuleDoc 在 ParseProgram 開頭寫入，只給「剔除首個宣告 Doc 裡的
 	// 模組註解」用，不是語義資訊，故不入 Sem。見 takeModuleDoc。
 	moduleDocEndLine int
-	warnedSemiEat   map[int]bool     // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
-	reportedIllegal map[string]bool  // 已報告的 ILLEGAL token 位置（避免重複）
-	sem             *SemanticContext // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
+	warnedSemiEat    map[int]bool     // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
+	reportedIllegal  map[string]bool  // 已報告的 ILLEGAL token 位置（避免重複）
+	sem              *SemanticContext // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
 	// fmtTrivia 是 formatter 專用的表層 trivia 表（RTFlags / `{` 同行註釋）。
 	// 與 sem 並列的第二張副表：sem 服務編譯管線，fmtTrivia 只服務 fmt / LSP。
 	// ParseProgram 收尾時掛到 program.FmtTrivia。見 fmttrivia.go 檔案頭。
@@ -158,7 +161,7 @@ type Parser struct {
 	// 重解析原始碼，檢查逐行注解是否與舊行為等價。目前沒有任何工具會設定它
 	//（預設恆為 false），故上述分支在正常建置下不會被走到。
 	LegacyBlockOverflowPropagation bool
-	preserveInnerBlock bool
+	preserveInnerBlock             bool
 }
 
 // blockType — { body } 內部的型別分類

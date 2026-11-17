@@ -407,6 +407,8 @@ Dernière version de %s/%s : %s
   'bsaaq6j7': 'utime : impossible de convertir le chemin en chaîne C'
   'bsnjql1o': 'écriture de la sortie HTML %s : %w'
   'bvxzv6u0': 'net-udp-recvfrom : aucun emplacement de résultat'
+  'c0grp1aa': 'co <call> n\'est autorisé qu\'à l\'intérieur d\'un groupe de coroutines \'awy { ... }\''
+  'c0grp1ab': 'expected \'{\' after \'awy\' to start a coroutine group'
   'c33l3vql': 'fichier de module introuvable : %s ou %s'
   'c48g377y': 'les bornes de plage flottantes ne sont pas prises en charge, utilisez des entiers'
   'c6eld4s3': `
@@ -1181,7 +1183,6 @@ Erreur d'écriture du fichier de configuration : %v
   'y4yjmhz2': 'builtin %s : type LLVMConv inconnu %d'
   'y4yxzacz': 'builtin %s : le tampon scratch n’est pas matérialisé'
   'y5f921sg': 'emplacement de destination d’index txt (dst=%d type=%s)'
-  'y7964ox1': 'la fonction “%s” appelée par “run” doit se terminer par “-async”'
   'y8ieefsr': 'builtin %s : arguments invalides'
   'y9lj5a9g': 'nom ou type de paramètre attendu, %s obtenu'
   'yevhjra2': 'API C LLVM : échec de %s : %s'

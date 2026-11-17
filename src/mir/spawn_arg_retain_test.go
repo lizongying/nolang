@@ -9,9 +9,9 @@ import (
 // spawn-boundary SHARE that replaces the P0 deep copy when the caller provably
 // never writes the argument after the spawn.
 //
-// WHAT THE CHANGE IS. `run f(x)` deep-copies every owned argument into the task's
+// WHAT THE CHANGE IS. `co f(x)` deep-copies every owned argument into the task's
 // own buffer so the task sees the value AS OF SPAWN. When x is still live but the
-// caller never writes it in place before the await, that copy is avoidable:
+// caller never writes it in place from the spawn onward, that copy is avoidable:
 // insertDrops records x in mod.spawnArgRetains, and emitAsyncRun emits ONE
 // @str_retain / @vec_retain instead of the copy. The caller keeps its binding AND
 // its drop; the task's wrapper (w_free) releases the second reference; since
@@ -34,7 +34,7 @@ import (
 
 // retainVecSrc is the positive shape: `a` is READ after the spawn (a[1], a direct
 // index read, which cannot write) and never written, so the buffer can be shared.
-const retainVecSrc = `first-async = (v []i64) (r i64) {
+const retainVecSrc = `first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -44,9 +44,10 @@ const retainVecSrc = `first-async = (v []i64) (r i64) {
 
 main = () {
     a []i64 = [1, 2, 3]
-    t = run first-async(a)
+    awy {
+        n = co first(a)
+    }
     m = a[1]
-    n = awy t
     print(n)
     print(m)
 }
@@ -56,7 +57,7 @@ main = () {
 // place after the spawn, so the task must see the SPAWN-TIME value. Sharing here
 // would print 99 instead of 1 — the silent semantic change the gate exists to
 // prevent.
-const retainVecWrittenSrc = `first-async = (v []i64) (r i64) {
+const retainVecWrittenSrc = `first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -66,9 +67,10 @@ const retainVecWrittenSrc = `first-async = (v []i64) (r i64) {
 
 main = () {
     a []i64 = [1, 2, 3]
-    t = run first-async(a)
+    awy {
+        n = co first(a)
+    }
     a[0] = 99
-    n = awy t
     print(n)
 }
 `
@@ -142,7 +144,7 @@ func TestSpawnArgRetainNotTakenWhenWritten(t *testing.T) {
 // cover them. The shape is otherwise identical to the positive one (a direct
 // index read, no write), so only the element class can explain the refusal.
 func TestSpawnArgRetainNotTakenForOwnedElements(t *testing.T) {
-	mod := lowerForTest(t, `vecstr-async = (v []str) (r i64) {
+	mod := lowerForTest(t, `vecstr = (v []str) (r i64) {
     s = v[0]: {
         ok -> it
 
@@ -153,9 +155,10 @@ func TestSpawnArgRetainNotTakenForOwnedElements(t *testing.T) {
 
 main = () {
     a []str = ['aaa', 'bbb']
-    t = run vecstr-async(a)
+    awy {
+        m = co vecstr(a)
+    }
     s = a[0]
-    m = awy t
     print(m)
     print(s)
 }
@@ -172,15 +175,16 @@ main = () {
 func TestSpawnArgRetainNotTakenForStruct(t *testing.T) {
 	mod := lowerForTest(t, `holder { s str }
 
-holder-async = (h holder) (r str) {
+echo-holder = (h holder) (r str) {
     r = h.s
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
-    t = run holder-async(h)
+    awy {
+        v = co echo-holder(h)
+    }
     c = h.s
-    v = awy t
     print(v)
     print(c)
 }
@@ -196,7 +200,7 @@ main = () {
 // this, "always retain" would also satisfy the positive test while leaking the
 // reference the move would have consumed.
 func TestSpawnArgRetainNotTakenWhenDead(t *testing.T) {
-	mod := lowerForTest(t, `first-async = (v []i64) (r i64) {
+	mod := lowerForTest(t, `first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -206,8 +210,9 @@ func TestSpawnArgRetainNotTakenWhenDead(t *testing.T) {
 
 main = () {
     a []i64 = [1, 2, 3]
-    t = run first-async(a)
-    n = awy t
+    awy {
+        n = co first(a)
+    }
     print(n)
 }
 `)
@@ -238,7 +243,7 @@ func TestSpawnArgRetainNotTakenForCallUse(t *testing.T) {
     }
 }
 
-first-async = (v []i64) (r i64) {
+first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -248,9 +253,10 @@ first-async = (v []i64) (r i64) {
 
 main = () {
     a []i64 = [1, 2, 3]
-    t = run first-async(a)
+    awy {
+        n = co first(a)
+    }
     p = peek(a)
-    n = awy t
     print(n)
     print(p)
 }
@@ -265,7 +271,7 @@ main = () {
 // pins that the conservatism is about OPS, not about source spelling: printing a
 // container lowers to a len/index loop (read-only), so the share IS taken.
 func TestSpawnArgRetainTakenForContainerPrint(t *testing.T) {
-	mod := lowerForTest(t, `first-async = (v []i64) (r i64) {
+	mod := lowerForTest(t, `first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -275,9 +281,10 @@ func TestSpawnArgRetainTakenForContainerPrint(t *testing.T) {
 
 main = () {
     a []i64 = [1, 2, 3]
-    t = run first-async(a)
+    awy {
+        n = co first(a)
+    }
     print(a)
-    n = awy t
     print(n)
 }
 `)
@@ -293,7 +300,7 @@ func TestSpawnArgRetainSafeContract(t *testing.T) {
 	// The source must MENTION every element type whose TypeID is looked up, or
 	// internType never ran on it and TypeMap yields NoType (which would answer
 	// "owns no heap" for the wrong reason).
-	mod := lowerForTest(t, `first-async = (v []i64) (r i64) {
+	mod := lowerForTest(t, `first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -301,7 +308,7 @@ func TestSpawnArgRetainSafeContract(t *testing.T) {
     }
 }
 
-vecstr-async = (v []str) (r i64) {
+vecstr = (v []str) (r i64) {
     s = v[0]: {
         ok -> it
 
@@ -313,13 +320,14 @@ vecstr-async = (v []str) (r i64) {
 main = () {
     a []i64 = [1, 2, 3]
     b []str = ['x', 'y']
-    t1 = run first-async(a)
-    t2 = run vecstr-async(b)
+    awy {
+        n = co first(a)
+        k = co vecstr(b)
+    }
     m = a[1]
-    n = awy t1
     print(n)
     print(m)
-    print(awy t2)
+    print(k)
 }
 `)
 	i64t := mod.TypeMap["i64"]

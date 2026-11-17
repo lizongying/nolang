@@ -684,10 +684,6 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			walkExpr(ex.Right)
 		case *parser.GroupedExpression:
 			walkExpr(ex.Expression)
-		case *parser.RunExpression:
-			walkExpr(ex.Call)
-		case *parser.AwaitExpression:
-			walkExpr(ex.Right)
 		case *parser.SurfaceMatch:
 			// S1：糖形態 match。WalkSurfaceMatchChildren 枚舉 Matched +
 			// 每臂 Condition / MultiValuePatterns / Body，與降糖後的 IfExpression

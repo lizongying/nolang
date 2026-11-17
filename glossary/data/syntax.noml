@@ -54,7 +54,7 @@ eprint-line = (msg str) {
     eprint(msg)
 }
 `
-      related: ['void', 'fn-type', 'syntax-return', 'reserved-run']
+      related: ['void', 'fn-type', 'syntax-return', 'reserved-keywords']
       refs: ['docs/docs/lang/syntax.md']
     }
     'syntax-out-rebind': {

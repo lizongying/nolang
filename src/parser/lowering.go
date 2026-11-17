@@ -3150,6 +3150,21 @@ func iterVarType(ie *IterationExpr, types map[string]string) string {
 	if ie.Range != nil {
 		return "i64"
 	}
+	// 通道接收迴圈：每輪綁定三態 ?T（ok=有值 / nil=已關閉 / err=打開但空）。
+	// ChanValue 形態（body 不對迴圈變數 match）只要元素本身，nil/err 直接結束。
+	if ie.IsChan {
+		id, ok := ie.RangeExpr.(*Identifier)
+		if !ok {
+			return ""
+		}
+		if elem := chanElemTypeString(types[id.Value]); elem != "" {
+			if ie.ChanValue {
+				return elem
+			}
+			return "?" + elem
+		}
+		return ""
+	}
 	src := ie.RangeExpr
 	if src == nil {
 		return ""

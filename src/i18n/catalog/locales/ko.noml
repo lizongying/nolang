@@ -406,6 +406,8 @@ tests 디렉터리 생성 오류: %v
   'bsaaq6j7': 'utime: 경로를 C 문자열로 변환할 수 없습니다'
   'bsnjql1o': 'HTML 출력 %s 쓰기: %w'
   'bvxzv6u0': 'net-udp-recvfrom: 결과 슬롯이 없습니다'
+  'c0grp1aa': 'co <call>은 \'awy { ... }\' 코루틴 그룹 안에서만 사용할 수 있습니다'
+  'c0grp1ab': '코루틴 그룹을 시작하려면 \'awy\' 다음에 \'{\'가 필요합니다'
   'c33l3vql': '모듈 파일을 찾을 수 없습니다: %s 또는 %s'
   'c48g377y': '부동 소수점 범위 경계는 지원되지 않습니다. 정수를 사용하세요'
   'c6eld4s3': `
@@ -1180,7 +1182,6 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'y4yjmhz2': 'builtin %s: 알 수 없는 LLVMConv 종류 %d'
   'y4yxzacz': 'builtin %s: 스크래치 버퍼가 구체화되지 않았습니다'
   'y5f921sg': 'txt 인덱스 대상 슬롯(dst=%d type=%s)'
-  'y7964ox1': '“run”이 호출하는 함수 “%s”은(는) “-async”로 끝나야 합니다'
   'y8ieefsr': 'builtin %s: 잘못된 인수'
   'y9lj5a9g': '매개변수 이름 또는 타입을 기대했지만 %s을(를) 받았습니다'
   'yevhjra2': 'LLVM C API: %s에 실패했습니다: %s'

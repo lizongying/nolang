@@ -178,14 +178,14 @@ func TestOptScalarLLVMRejectsWhatTheFolderCannotModel(t *testing.T) {
 	m := NewModule("t")
 	b := &Builder{Mod: m}
 	accept := map[string]string{
-		"i64":   "i64",
-		"u64":   "i64",
-		"i32":   "i64", // llvmTypeOf maps every non-byte int to i64
-		"u16":   "i64",
-		"char":  "i32",
-		"bool":  "i1",
-		"f64":   "double",
-		"f32":   "double",
+		"i64":  "i64",
+		"u64":  "i64",
+		"i32":  "i64", // llvmTypeOf maps every non-byte int to i64
+		"u16":  "i64",
+		"char": "i32",
+		"bool": "i1",
+		"f64":  "double",
+		"f32":  "double",
 	}
 	for raw, want := range accept {
 		got, ok := optScalarLLVM(m.Type(b.Type(raw)))
@@ -1060,7 +1060,8 @@ func TestOptIdentityLeavesUnsafeCasesAlone(t *testing.T) {
 			} else {
 				t.Errorf("optTryIdentityConst refused %s, but the constant half is "+
 					"supposed to own it: %s", tc.name, tc.why)
-			}		})
+			}
+		})
 	}
 }
 
@@ -1434,9 +1435,10 @@ func TestOptCopySourceRequiresASingleDefinition(t *testing.T) {
 //	a  = awy h
 //	b  = awy h2
 //
-// which is `test-alias-both` in tests/async-rc.no — the case that file's own
-// comment describes as "the two awaits shared one slot, so the second read a
-// zeroed handle and printed 0 instead of 42".
+// which was `test-alias-both` in the old tests/async-rc.no: the two awaits
+// shared one slot, so the second read a zeroed handle and printed 0 instead of 42.
+// That `.no` fixture was removed with the hand-written-handle syntax; this
+// MIR-level fixture preserves the internal protocol coverage.
 //
 // `handleOps` decides whether the R-tier pair (`task-retain` / the second
 // `await`) is emitted, so one fixture serves as both the positive case and a
@@ -1476,9 +1478,8 @@ func optHandleCopyFixture(t *testing.T, handleOps bool) (m *Module, f *Function,
 //
 // `OpAwait` consumes its operand — it releases the reference and zeroes the
 // slot — so redirecting the second await onto the first one's slot makes it
-// read the zeroed handle. Before the fix this pass collapsed the pair and
-// tests/async-rc.no printed `1 42 0` instead of `1 42 42`, and
-// tests/async-handle-alias.no lost two of its three results.
+// read the zeroed handle. Before the fix this pass collapsed the pair and the
+// old hand-written-handle corpus printed `1 42 0` instead of `1 42 42`.
 //
 // The pass runs BEFORE `Analyze`, so the drop/ownership rewrites are not
 // present yet; the handle ops are the only destructive readers it can see.
@@ -1927,6 +1928,7 @@ func TestOptNeverDoubleFreesOnBlockEntry(t *testing.T) {
 		})
 	}
 }
+
 // every step is a single-predecessor unconditional branch. One round can only
 // fold one pair (after folding b1 into entry, b2's predecessor changes), so the
 // pass must iterate to a fixpoint to collapse the whole chain.

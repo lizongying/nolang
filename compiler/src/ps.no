@@ -2536,20 +2536,8 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             right > 0 -> ast.kid-add(t, idx, right)
         }
 
-        tk.typ == tok.RUN -> {
-            dot-after = ps-peek-at(p, 1) == tok.DOT
-            dot-after == 1 -> {
-                idx = ast.add(t, asp.K-IDENTIFIER)
-                ast.set-slot(t, idx, 0, ast.put-str(t, tk.lit))
-                ps-bump(p); 消費 run（停在 DOT）
-            }
-            dot-after == 0 -> {
-                ps-bump(p); 消費 run
-                child = ps-parse-expr-prec(t, p, 0); 內層呼叫運算式（LOWEST）
-                idx = ast.add(t, asp.K-RUN-EXPRESSION)
-                child > 0 -> ast.kid-add(t, idx, child); guarded CHILD=Call
-            }
-        }
+        ; `run` 關鍵字已移除（2026-11-17）：run 現在是普通識別符，
+        ; 由 tok.keyword 回 ILLEGAL ⇒ IDENT，走一般識別元路徑。
 
         tk.typ == tok.CO -> {
             dot-after = ps-peek-at(p, 1) == tok.DOT
@@ -2567,10 +2555,23 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
         }
 
         tk.typ == tok.AWY -> {
+            ; `awy { ... }` 協程組（新語法）：awy 後緊接 { 時解析為普通 BlockStatement。
+            ; Go 側的 IsAwaitGroup 標記對 ast dump 不可見（dump 只印 inline 欄位），
+            ; 故自舉側產出 K-BLOCK-STATEMENT 即可與 `no ast` 逐位元組一致。
+            ; 舊式前綴 `awy <expr>` 已廢除：不再建 K-AWAIT-EXPRESSION。
+            is-group = ps-peek-at(p, 1) == tok.LBRACE
             ps-bump(p); 消費 awy
-            child = ps-parse-expr-prec(t, p, 0); 內層運算式（LOWEST）
-            idx = ast.add(t, asp.K-AWAIT-EXPRESSION)
-            child > 0 -> ast.kid-add(t, idx, child); guarded CHILD=Right
+            is-group == 1 -> {
+                ps-bump(p); 消費 {
+                idx = ps-parse-block(t, p)
+                ps-peek(p) == tok.RBRACE -> {
+                    ps-bump(p); 吃 }
+                }
+            }
+            is-group == 0 -> {
+                ; 保守解析後續運算式，避免丟 token（語料已遷移，正常不該走到這）。
+                idx = ps-parse-expr-prec(t, p, 0)
+            }
         }
 
         tk.typ == tok.LBRACKET -> {

@@ -522,7 +522,11 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 	// 解析完再連同本函式的結果型別一起定案（flushCompoundAssigns）。
 	prevCompound := p.pendingCompoundAssigns
 	p.pendingCompoundAssigns = nil
+	// 函数定义体不是外层协程组的直接语句；co 在函数体内须报错。
+	savedGroupDepth := p.awaitGroupDepth
+	p.awaitGroupDepth = 0
 	def.Body = p.parseBlockStatement()
+	p.awaitGroupDepth = savedGroupDepth
 	p.curFuncName = prevFuncName
 	p.flushCompoundAssigns(def)
 	p.pendingCompoundAssigns = prevCompound
@@ -1884,7 +1888,11 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 	// 複合賦算語句同理單獨收集，解析完連同結果型別定案（同上方 decl.go:531 一處）。
 	prevCompound := p.pendingCompoundAssigns
 	p.pendingCompoundAssigns = nil
+	// 函数定义体不是外层协程组的直接语句；co 在函数体内须报错。
+	savedGroupDepth := p.awaitGroupDepth
+	p.awaitGroupDepth = 0
 	def.Body = p.parseBlockStatement()
+	p.awaitGroupDepth = savedGroupDepth
 	p.curFuncName = prevFuncName
 	p.flushCompoundAssigns(def)
 	p.pendingCompoundAssigns = prevCompound

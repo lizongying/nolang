@@ -3628,7 +3628,14 @@ func (m *Module) DumpAnnotated() string {
 						dt = fmt.Sprintf(":%s(owned=%v)", t.Raw, t.Owned)
 					}
 				}
-				fmt.Fprintf(&b, "    %-10s dst=%d%s args=%v\n", inst.Op, inst.Dst, dt, inst.Args)
+				fmt.Fprintf(&b, "    %-10s dst=%d%s args=%v", inst.Op, inst.Dst, dt, inst.Args)
+				// The symbol is the whole story for OpCall (which builtin or
+				// which callee was resolved) and it is invisible in the args
+				// list, so print it whenever it is set.
+				if inst.Sym != "" {
+					fmt.Fprintf(&b, " sym=%s", inst.Sym)
+				}
+				b.WriteString("\n")
 			}
 			if blk.Term != nil {
 				fmt.Fprintf(&b, "    TERM %s args=%v targets=%v\n", blk.Term.Op, blk.Term.Args, blk.Term.Targets)

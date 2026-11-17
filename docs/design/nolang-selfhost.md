@@ -4,6 +4,10 @@
 >
 > **一句話目標**：在 `compiler/` 子項目中用 **Nolang 自身**實現一個完整編譯器 `noc`，使它能夠**編譯自己**，並以S0 → S1 → S2 → S3 定點的方式證明自舉成立；同時用**五級差分門禁**保證它與現有 Go 實作 `no` 的行為一致
 >
+> ⚠️ **語法現行（2026-11-17）**：本文 §5.3.4 等歷史增量記錄中出現的 `run` / `awy <expr>` /
+> `RunExpression` / `AwaitExpression` 都是**已移除語法的歷史證據**，不是現行寫法。
+> 現行協程語法只有 `awy { r = co f() }`；`co` 組外非法，`run` 已是普通識別符。
+>
 > **命名**：`noc` = **No**lang **C**ompiler它是 `compiler/` 包構建出的可執行檔，與 Go 實作的 `no` **並存**互不干擾`no` 在本文中一律指 **S0（當前 Go 實作）**，`noc-s1/s2/s3` 指自舉的三個階段產物
 
 > ⛔ **2026-11-12 後端佈局變更（Go 側已落地，`compiler/src` 尚未鏡像）**：Go `no` 的 `?T` 不再是單一
@@ -463,7 +467,7 @@ $ /tmp/notok/notok tokens /tmp/empty.no
 | 泛型（`[n]t` / `[]t`）                              | `#{c}` FFI 宣告                                  | 保持可移植性                  |
 | 模組（`# /path.mod.sym`）                           | 全局可變狀態（模組級 `let` 有特殊釋放語義）                      | 見 §5.1.4                |
 | `#{overflow=wrap}`                              | `#{}` 位置前綴（parse error）                        | 語言規則                    |
-| `co` / 協程組（**僅在驅動層並行調用 clang 時**）               | `run` / `awy` 手寫                               | 已廢棄手寫                   |
+| `awy { ... }` + 組內 `co`（**僅在驅動層並行調用 clang 時**）       | 舊 `run` / `awy <handle>` 手寫                     | 2026-11-17 移除手寫語法          |
 
 **SHS 命名硬規則**（`shs-check.no` 強制）：
 
@@ -727,7 +731,7 @@ util/{sb,arena,intern,idxmap,pathx}
 | ----------------------------------------------------------- | ----------------------- |
 | 模組名 ≤ 3 字元（`lx` / `ps` / `ck` / `cg` / `drv`）               | §2.2.5：每處跨模組調用都要前綴      |
 | 函式名**不重複模組名**（`lx.next-token` 而非 `lx.lexer-next-token`）     | repo 的 `module.md` 明文規定 |
-| 避開關鍵字：`run` / `match` / `in` / `for` / `co` / `it` / `self` | 語言規則                    |
+| 避開關鍵字：`awy` / `match` / `in` / `for` / `co` / `it` / `self`（`run` 已非關鍵字） | 語言規則                    |
 | 型別名用大寫開頭；區域變數小寫                                             | repo 的 `code-style.md`  |
 | **禁止**頂層 `let` 作為可變狀態（模組全局釋放語義特殊）                           | 見 §5.1.4                |
 
@@ -951,15 +955,14 @@ $ ./scripts/selfhost_diff.sh --sut /tmp/noc-l1c --levels L1 \
 | `<unknown *parser.X>` | 行數      | 意義                      |
 | --------------------- | ------- | ----------------------- |
 | `MultiAssignStatement` | 154     | 多重賦值 `a, b = f()`       |
-| `CoExpression`         | 47      | `co { … }`              |
-| `AwaitExpression`      | 43      | `awy`                   |
-| `RunExpression`        | 36      | `run`                   |
+| `CoExpression`         | 47      | `co <call>`             |
+| （舊 `AwaitExpression` / `RunExpression`） | — | 2026-11-17 移除：改由 `awy { ... }` 協程組表示 |
 | `MapLiteral`           | 29      | map 字面量 `[K]V{…}`       |
 | `TypeAlias`            | 6       | `type x = y`            |
 | `RegexLiteral`         | 2       | `/re/`                  |
 | `ExternStatement`      | 1       | `extern`                |
 | `AnnotationStatement`  | 1       | `#{…}` 敘述               |
-| **合計**                | **319** | **9 種節點型別完全不可見**（佔 0.38%） |
+| **合計**                | **319** | **9 種節點型別完全不可見**（佔 0.38%；其中 `AwaitExpression` 43 行 / `RunExpression` 36 行屬已被移除的舊語法） |
 
 另有進得了 switch 但只印殼的節點（子節點不 dump）：
 
@@ -970,7 +973,7 @@ $ ./scripts/selfhost_diff.sh --sut /tmp/noc-l1c --levels L1 \
 | `InterfaceDefinition`                                           | name + 方法名          | 方法簽名              |
 | `ArrayLiteral` / `RangeExpression`                              | `nodeString(size/start/end)` | 子運算式              |
 
-⚠️ 當時的**最壞後果**：一個把 map 字面量多重賦值`co`/`run`/`awy` 全部解析錯的 `noc`，只要**錯在同樣的地方**（都塌成一行 `<unknown>`），L2 就報完全一致而且語料中 145 處 struct literal 的欄位**從未被差分**
+⚠️ 當時的**最壞後果**：一個把 map 字面量、`co`、舊 `run`/`awy` 前綴全部解析錯的 `noc`，只要**錯在同樣的地方**（都塌成一行 `<unknown>`），L2 就報完全一致而且語料中 145 處 struct literal 的欄位**從未被差分**。2026-11-17 後 `run` / `awy <handle>` 已移除，協程組統一走 `awy { ... }` + 組內 `co`。
 
 ##### 修復後的狀態（實測）
 
@@ -1768,7 +1771,7 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 **⚠️ 踩坑（本輪真因隱蔽）**：`ps-is-map-assign-let` 掃描迴圈最初寫成 `tkj==LBRACKET -> {…}`／`tkj==IDENT -> {…}`／`-> scan = 0`（意圖 catch-all）但 **ps.no 塊內各 `cond -> stmt` 是互相獨立的 bare-if，裸 `-> X` 只掛在最末個 bare-if 作其 else**——於是 `-> scan=0` 對任何非 IDENT token（含 `[`）都觸發，掃描在 j=4 即中止 ⇒ 複合 V 回 0 ⇒ 本臂根本不進⇒ 仍由 typedecl 產 StructLiteral（單 IDENT 的 `n [str]i64` 因第一步就遇 IDENT 而倖免，故只 m 壞n 好）修：catch-all 改為顯式已處理 token 補集`tkj!=EOF && tkj!=MUL && … && tkj!=IDENT -> scan=0`同坑亦見裸 `->` 誤當 if/else——欲得真 if/else 須將兩臂包進 `{ cond -> {…} -> {…} }`（ps-parse-map-lit 用此形）另：初版泛化丟了 `=` 判別，令裸 map 宣告 `m1 [str]i64`（無 `=`）誤入本臂吞後隨陳述 ⇒ `tests/mem-safety/nested-container-clone.no` 真回歸；`ps-is-map-assign-let` 的 `=` 前探即為補回
 
-**連帶踩坑（工具鏈）**：`ps-is-map-assign-let` 迴圈旗標命名 `run`——`run` 是 Nolang 保留的異步前綴運算子（run/co/awy），作識別字 ⇒ `expected ')' got INT`改 `scan`另 `build -cc zig` 若反覆报同一陈旧行，先排 AST 快取：`NOLANG_AST_CACHE_OFF=1`（本次實為真實語法錯，非快取）
+**連帶踩坑（工具鏈，historical）**：`ps-is-map-assign-let` 的迴圈旗標曾命名 `run`——當時 `run` 是保留的異步前綴運算子，作識別字 ⇒ `expected ')' got INT`，改名 `scan` 後消失。2026-11-17 起 `run` 已非關鍵字。另 `build -cc zig` 若反覆报同一陈旧行，先排 AST 快取：`NOLANG_AST_CACHE_OFF=1`。
 
 **歸因（同一 harness同一 CTL，A/B `noc-s69`→`noc-s70`）**：**DIFF 8→7 / SAME +1**轉 SAME：`tests/vec-elem-ownership.no``nested-container-clone.no` 先回歸後經 `=` 前探修復回 SAME**最終 SAME→DIFF 真回歸 0 檔**
 

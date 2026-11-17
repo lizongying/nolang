@@ -273,7 +273,7 @@ func snippetCorpus(t *testing.T) []*hir.Package {
 		"function-lit":  "g((a i64) { a })\n",
 		"map-literal":   "m [str]i64 = {\"a\": 1, \"b\": 2}\n",
 		"regex-literal": "r = /ab+/i\n",
-		"async":         "h = run w()\nr = awy h\n",
+		"async":         "w = (r i64) { r = 1 }\nawy {\n  h = co w()\n}\n",
 		"extern-c":      "#{c}\nputs = (s *byte) (r i32)\n",
 		"type-match":    "num = i32 | i64\nf = (x num) (r i64) {\n  r = x: {\n    i64 -> 1\n    i32 -> 2\n    -> 0\n  }\n}\n",
 	}

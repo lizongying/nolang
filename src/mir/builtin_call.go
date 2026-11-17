@@ -996,6 +996,8 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	switch bm.ForwardFunc {
 	case "with-cap", "with-len", "with-cap-len":
 		return c.emitBuiltinAlloc(inst, bm.ForwardFunc)
+	case "chan-len", "chan-cap", "chan-close":
+		return c.emitBuiltinChanMethod(inst, bm.ForwardFunc)
 	case "chars-new":
 		return c.emitBuiltinCharsNew(inst)
 	case "eprint":

@@ -113,16 +113,14 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 			prog.Errors = append(prog.Errors, d.Message)
 		}
 	}
-	// Colorless async (`go`): monomorphize each `go <call>` callee into its
+	// Colorless async (`co`): monomorphize each `co <call>` callee into its
 	// `-async` variant and propagate the async coloring transitively. This
 	// MUST run before DesugarAsyncGroups so the rewritten bare `-async` calls
 	// are recognized as spawnable by the group pass. See hir.MonomorphizeGo.
+	// `co` is only legal inside `awy { ... }` (parser enforces this), so there
+	// is no group-external inline-await path any more.
 	pkg.GoSpawns = c.goSpawns
 	hir.MonomorphizeGo(pkg)
-	// Coroutine groups run first (above) and claim the `go` spawns that sit
-	// inside a bare block; any `go` left at statement level (outside a group)
-	// is wrapped in `run`/`awy` here so its RESULT is read, not the handle.
-	hir.DesugarGoInlineAwait(pkg)
 	// Record the owning module of every top-level free function so backends
 	// can validate module-qualified bare-name resolution (see
 	// hir.Package.FuncOwners). Names are taken AFTER build.mangleOverloads /
@@ -144,8 +142,8 @@ func ASTToHIRWithMap(prog *Program) (*hir.Package, map[Node]int32) {
 			}
 		}
 	}
-	// Coroutine groups (協程組): a bare block holding `-async` calls is
-	// rewritten into explicit `run` / `awy` bindings. It runs HERE, after the
+	// Coroutine groups (協程組): an `awy { ... }` block holding `co` calls is
+	// rewritten into explicit KRun / KAwait bindings. It runs HERE, after the
 	// surface AST has been fully lowered and — critically — after the checker
 	// has already run on the AST, so a synthesized handle binding never has to
 	// satisfy a declaration check. See hir.DesugarAsyncGroups.
@@ -585,14 +583,29 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 	case *ExpressionStatement:
 		return c.b.Add(hir.Node{Kind: hir.KExprStmt, First: c.expr(s.Expression), Line: line, Col: col, Flags: overflowModeFlags(s.OverflowMode)})
 
+	case *ChanSendStatement:
+		// ch <- value：具名 slot 讓 MIR 不必按位置猜（與 KFor 同一慣例）。
+		return c.b.Add(hir.Node{
+			Kind: hir.KChanSend,
+			First: c.kids([]int32{
+				c.slot("chan", c.expr(s.Chan)),
+				c.slot("value", c.expr(s.Value)),
+			}),
+			Line: line, Col: col,
+		})
+
 	case *BlockStatement:
 		stmts := make([]int32, 0, len(s.Statements))
 		for _, st := range s.Statements {
 			stmts = append(stmts, c.stmt(st))
 		}
+		flags := hir.FlagInline * u32(s.IsInline)
+		if s.IsAwaitGroup {
+			flags |= hir.FlagAwaitGroup
+		}
 		return c.b.Add(hir.Node{
 			Kind:  hir.KBlock,
-			Flags: hir.FlagInline * u32(s.IsInline),
+			Flags: flags,
 			First: c.kids(stmts),
 			Line:  line, Col: col,
 		})
@@ -1103,9 +1116,6 @@ func (c *hirConv) exprNode(e Expression) int32 {
 			Line:  line, Col: col,
 		})
 
-	case *RunExpression:
-		return c.b.Add(hir.Node{Kind: hir.KRun, First: c.expr(e.Call), Line: line, Col: col})
-
 	case *CoExpression:
 		// Lower `co F(args)` to a plain KCall to F; the monomorphization pass
 		// (hir.MonomorphizeGo) rewrites the callee to `F-async` and, when the
@@ -1114,9 +1124,6 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		callID := c.expr(e.Call)
 		c.goSpawns = append(c.goSpawns, callID)
 		return callID
-
-	case *AwaitExpression:
-		return c.b.Add(hir.Node{Kind: hir.KAwait, First: c.expr(e.Right), Line: line, Col: col})
 
 	case *GroupedExpression:
 		// W5 / §10.2（2026-10-21）：括号是纯语法、无语义，H0 抹除——直接
@@ -1208,11 +1215,22 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		})
 
 	case *IterationExpr:
+		kind := hir.KIter
+		var flags uint32
+		if e.IsChan {
+			// 通道接收迴圈：同樣帶 Variable 與接收源，靠 kind 區分，
+			// 讓 MIR 不必猜（`v <- ch:` 與 `v <- arr:` 表面同形）。
+			kind = hir.KChanIter
+			if e.ChanValue {
+				flags |= hir.FlagChanElem
+			}
+		}
 		return c.b.Add(hir.Node{
-			Kind:  hir.KIter,
+			Kind:  kind,
 			S:     c.b.Intern(e.Variable),
 			S2:    c.b.Intern(e.RangeStr),
 			First: c.b.List([]int32{c.expr(e.Range), c.expr(e.RangeExpr)}),
+			Flags: flags,
 			Line:  line, Col: col,
 		})
 

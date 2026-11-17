@@ -3196,6 +3196,27 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		return
 	}
 	switch n.Kind {
+	case hir.KChanSend:
+		// ch <- v : enqueue a copy of v. The deep copy that keeps the ring
+		// independent of the sender's value is emitted by the codegen
+		// (emitChanSend), NOT here — a clone lowered here would be an ordinary
+		// owned local of this block and the scope-exit drop would free the
+		// buffer the ring just kept.
+		chID := l.slot(id, "chan")
+		valID := l.slot(id, "value")
+		if chID == hir.NoID || valID == hir.NoID {
+			l.unsupported(l.curFuncName(), "chan-send", "missing chan/value operand")
+			break
+		}
+		chV := l.lowerExpr(chID)
+		if chV == NoVal {
+			break
+		}
+		valV := l.lowerExpr(valID)
+		if valV == NoVal {
+			break
+		}
+		l.b.EmitVoid(OpChanSend, []ValueID{chV, valV}, "")
 	case hir.KLet:
 		name := l.pkg.Str(n.S)
 		// `_ = expr` is an explicit DISCARD, not a reusable local binding.
@@ -5565,6 +5586,106 @@ func (l *lowerer) resultOutParamFor(name string) ValueID {
 // of the classic init/cond/update for (which already worked). The variable is
 // inserted into l.locals so body expressions resolve it instead of cascading into
 // unresolved-identifier lower-gaps.
+	// lowerChanRangeFor lowers `v <- ch:` — the channel receive loop.
+//
+// Two shapes share the syntax (see parser.detectChanLoopForm):
+//
+//	three-state  `<- ch: { ok -> ... nil -> ... err -> ... }`
+//	             v is a ?T; the body runs on EVERY round (the last one is the
+//	             nil/err that ends the loop), and `break` exits early.
+//	element      `i <- ch: { co bar(i) }`
+//	             v is the element T; the body runs only on rounds that produced
+//	             a value, and nil/err end the loop without running the body.
+//
+// The back-edge condition is `status == 0` (the raw receive status), which is
+// why OpChanRecv yields the status alongside the option: MIR has no instruction
+// that reads an option's discriminant.
+//
+// CFG (no phi anywhere — every value lives in an alloca slot):
+//
+//	pre:    br header
+//	header: (opt, status) = chan-recv ch ; ok = status == 0 ; br body
+//	body:   v = opt (or its payload) ; <body> ; br cont
+//	cont:   br ok ? header : exit
+//	exit:   -> enclosing continuation
+func (l *lowerer) lowerChanRangeFor(chV ValueID, varName string, elemForm bool, bodyID int32, pre BlockID, enclosingCont BlockID) {
+	chanRaw := ""
+	if t := l.valueTypeOf(chV); t != NoType {
+		if mt := l.mod.Type(t); mt != nil {
+			chanRaw = mt.Raw
+		}
+	}
+	elemRaw := ""
+	if strings.HasPrefix(chanRaw, "chan[") && strings.HasSuffix(chanRaw, "]") {
+		elemRaw = chanRaw[len("chan["): len(chanRaw)-1]
+	}
+	if elemRaw == "" {
+		l.unsupported(l.curFuncName(), "chan-recv", "cannot determine the channel element type of "+chanRaw)
+		return
+	}
+	optT := l.b.Type("?" + elemRaw)
+	i64T := l.b.Type("i64")
+	boolT := l.b.Type("bool")
+
+	header := l.b.NewBlock("ch.header")
+	body := l.b.NewBlock("ch.body")
+	cont := l.b.NewBlock("ch.cont")
+	exit := l.b.NewBlock("ch.exit")
+
+	// `break` / `continue` inside the receive body target EXIT / cont: a
+	// continue must re-run the back-edge test, not jump straight to header.
+	l.loopStack = append(l.loopStack, loopCtx{exit: exit, update: cont})
+	defer func() { l.loopStack = l.loopStack[:len(l.loopStack)-1] }()
+	l.contStack = append(l.contStack, cont)
+	defer func() { l.contStack = l.contStack[:len(l.contStack)-1] }()
+
+	l.b.SetBlock(pre)
+	l.b.Terminate(OpBr, nil, []BlockID{header}, "")
+
+	l.b.SetBlock(header)
+	optV, statusV := l.b.EmitChanRecv(optT, i64T, chV)
+	zero := l.b.EmitInt(OpConst, i64T, 0, "")
+	okC := l.b.Emit(OpEq, boolT, []ValueID{statusV, zero}, "")
+	if elemForm {
+		// Only a round that produced a value enters the body.
+		l.b.Terminate(OpCondBr, []ValueID{okC}, []BlockID{body, exit}, "")
+	} else {
+		l.b.Terminate(OpBr, nil, []BlockID{body}, "")
+	}
+
+	l.b.SetBlock(body)
+	if elemForm {
+		// Move the element OUT of the option: the option's payload is the only
+		// owner, and OpMove peels it into a T-typed value that the body reads.
+		if elemV := l.unwrapOptionOperand(optV); elemV != NoVal {
+			l.locals[varName] = elemV
+		} else {
+			l.locals[varName] = optV
+		}
+	} else {
+		l.locals[varName] = optV
+	}
+	if bodyID != hir.NoID {
+		l.lowerBlock(bodyID)
+	}
+	// Same continuation handling as the collection loop: a `break` terminates
+	// the block early, and a nested if/merge may leave the CURRENT block (not
+	// the body block) unterminated.
+	if l.mod.Block(body).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{cont}, "")
+	}
+	if cur := l.b.CurrentBlock(); cur != NoBlock && cur != body && l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{cont}, "")
+	}
+
+	l.b.SetBlock(cont)
+	l.b.Terminate(OpCondBr, []ValueID{okC}, []BlockID{header, exit}, "")
+	l.b.SetBlock(exit)
+	if enclosingCont != NoBlock && l.mod.Block(exit).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{enclosingCont}, "")
+	}
+}
+
 func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre BlockID) {
 	// Enclosing continuation: the merge block of the nearest enclosing
 	// control-flow construct (pushed by the caller's lowerIf/lowerFor). Same
@@ -5600,7 +5721,25 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		}
 	}
 
-	// --- integer range form: for v in lo..hi ---
+	// --- channel receive form: v <- ch ---
+	// Must come before the integer-range branch: a channel iteration carries
+	// neither a KRange child nor a collection, so every later test would fall
+	// through to "cannot determine element type of collection".
+	if iterNode.Kind == hir.KChanIter {
+		if rangeExprID == hir.NoID {
+			l.unsupported(l.curFuncName(), "chan-recv", "missing channel expression")
+			return
+		}
+		chV := l.lowerExpr(rangeExprID)
+		if chV == NoVal {
+			return
+		}
+		l.lowerChanRangeFor(chV, varName, iterNode.Has(hir.FlagChanElem), bodyID, pre, enclosingCont)
+		return
+	}
+
+
+// --- integer range form: for v in lo..hi ---
 	if rangeNodeID != hir.NoID {
 		rn := l.pkg.Node(rangeNodeID)
 		if rn == nil || rn.Kind != hir.KRange {
@@ -11512,6 +11651,14 @@ func canonSliceRecv(name string) string {
 	// to []t — they have their own concrete method definitions.
 	if strings.HasPrefix(recv, "[") && strings.Contains(recv, "]") && !syntaxPool.Parse(recv).IsMap() {
 		return "[]t" + meth
+	}
+	// chan[T].m -> chan.m. The channel control block carries the element stride,
+	// so .len()/.cap()/.close() are element-type-agnostic and registered once.
+	// Without this the callee stayed "chan[i64].len", the exact lookup missed,
+	// and lookupBuiltin's bare-name fallback resolved it to str's `len` — which
+	// then rejected the receiver ("unsupported receiver type i64").
+	if strings.HasPrefix(recv, "chan[") && strings.HasSuffix(recv, "]") {
+		return "chan" + meth
 	}
 	return name
 }

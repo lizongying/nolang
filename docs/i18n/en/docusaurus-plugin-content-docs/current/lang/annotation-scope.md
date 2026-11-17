@@ -153,7 +153,7 @@ x = 1
 }
 ```
 
-All four block kinds apply: coroutine groups (a bare block in statement position), if-groups
+All four block kinds apply: coroutine groups (`awy { ... }`), if-groups
 (`{ cond -> … }`), single-condition statements (`cond -> body`), match, and `for` / count / range
 loops.
 

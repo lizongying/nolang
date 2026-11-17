@@ -403,6 +403,8 @@ Neuestes Release von %s/%s: %s
   'bsaaq6j7': 'utime: Pfad kann nicht als C-Zeichenkette marshalled werden'
   'bsnjql1o': 'HTML-Ausgabe %s wird geschrieben: %w'
   'bvxzv6u0': 'net-udp-recvfrom: kein Ergebnis-Slot'
+  'c0grp1aa': 'co <call> ist nur innerhalb einer \'awy { ... }\'-Koroutinengruppe erlaubt'
+  'c0grp1ab': 'expected \'{\' after \'awy\' to start a coroutine group'
   'c33l3vql': 'Moduldatei nicht gefunden: %s oder %s'
   'c48g377y': 'float-Bereichsgrenze nicht unterstützt, verwenden Sie Ganzzahlen'
   'c6eld4s3': `
@@ -1173,7 +1175,6 @@ Fehler beim Schreiben der Konfigurationsdatei: %v
   'y4yjmhz2': 'builtin %s: unbekannte LLVMConv-Art %d'
   'y4yxzacz': 'builtin %s: Scratch-Puffer nicht materialisiert'
   'y5f921sg': 'txt-Index-Ziel-Slot (dst=%d type=%s)'
-  'y7964ox1': 'die von \'run\' aufgerufene Funktion \'%s\' sollte mit \'-async\' enden'
   'y8ieefsr': 'builtin %s: falsche Argumente'
   'y9lj5a9g': 'Parameter-Name oder Typ erwartet, stattdessen %s erhalten'
   'yevhjra2': 'LLVM C API: %s fehlgeschlagen: %s'

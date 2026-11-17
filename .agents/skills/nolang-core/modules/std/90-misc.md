@@ -143,18 +143,17 @@ leave {
 Nolang provides a cooperative, single-threaded, stackless async coroutine model:
 
 ```no
-; Start an -async function as a background task, returns opaque task handle
-h = run worker-async(args)
+; Spawn coroutines in a group; results are values, not task handles
+awy {
+    r = co worker(args)
+}
 
-; Await a background task, returns its result
-r = awy h
-
-; Cancel a background task (cooperative)
-async.cancel(h); Set cancellation flag on task h
-
-; Cooperative self-cancellation check (call inside async functions)
+; Cooperative self-cancellation check (call inside a coroutine body)
 yes = async.cancelled(); Returns true if current task has been cancelled
 ```
+
+The old hand-written handle form (`run` / `awy <handle>` / `async.cancel(h)`) has
+been removed: `run` is no longer a keyword and no surface handle is exposed.
 
 > **Note:** Cancellation is cooperative, not preemptive. Long blocking calls (e.g. network requests) cannot be force-interrupted. The task stops at the next cooperative checkpoint (`cancelled()` call or next event loop scheduling).
 

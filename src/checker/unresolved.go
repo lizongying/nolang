@@ -310,10 +310,6 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 			}
 		case *parser.CastExpression:
 			checkExpr(x.Expr)
-		case *parser.RunExpression:
-			checkExpr(x.Call)
-		case *parser.AwaitExpression:
-			checkExpr(x.Right)
 		case *parser.MapLiteral:
 			for _, pair := range x.Pairs {
 				checkExpr(pair.Key)

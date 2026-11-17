@@ -58,7 +58,7 @@ Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a
 
 ### Test references
 - `tests/slot-rebind.no`: i64/u64 rebind, i128/u128 via `==`, txt via `.len-bytes()`, degrade-to-copy (`da` reused → `db`/`dc` copy), reassign-after (`ra`=10), param-move (`pm_fn` source is a param → copy), rebind-then-reassign (`rr_fn` → `rr`=99), consume (`consume(m)` → `cm`=84). Expected output: `42 7 1 1 17 5 5 10 100 99 84`.
-- `tests/slot-rebind-unsafe.no`: coroutine (`run`/`awy`) capturing a stack variable, verifying `curHasUnsafeConstruct` disables rebind and output matches baseline.
+- `tests/slot-rebind-unsafe.no`: coroutine (`awy { co ... }`) capturing a stack variable, verifying `curHasUnsafeConstruct` disables rebind and output matches baseline.
 
 ### Compiler-Inserted Free
 - Function exit: free all non-moved local heap variables
@@ -465,20 +465,25 @@ arr = [9, 8, 7]    ; free old arr.data → view dangling
 
 ### async Shared Data (fixed 2026-09-30)
 
-The `run`/`awy` spawn boundary now **deep-clones** heap-owning arguments; tasks no longer share buffers with the caller.
+The spawn boundary of `awy { r = co f(x) }` now **deep-clones** heap-owning
+arguments; tasks no longer share buffers with the caller.
 
-Coroutines are cooperative, single-threaded, so "sharing mutable heap data across coroutines" does not hold at the language level; the only thing that was shared was **the caller's copy that it still holds after spawn**. Before the fix, `argbuf` was merely a **bit-copy** of the argument descriptor; `data` was shared with the caller, and the task ran only when `awy` was called — if the caller reassigned or left scope before that point, the buffer was freed, and the task read freed memory (observed: `str` printed 40 NUL bytes, `[]i64` printed 0; both with rc=0 and no diagnostic).
+Coroutines are cooperative and single-threaded, so "sharing mutable heap data
+across coroutines" does not hold at the language level; what used to be shared
+was **the caller's copy that it still holds after spawn**. Before the fix,
+`argbuf` was merely a bit-copy of the argument descriptor, so a reassignment
+before the wait freed the buffer the task still held (observed: `str` printed 40
+NUL bytes, `[]i64` printed 0, both rc=0 and no diagnostic).
 
-Spawn now deep-clones at the call site; the wrapper frees the copy after the callee returns:
+Spawn now deep-clones at the call site; the wrapper frees the copy after the
+callee returns:
 
 | Parameter type | Spawn boundary | Wrapper free |
 |---|---|---|
 | `str` | `@str_clone` | `@str_free` |
 | `[]T` (T has deep-clone helper) | `vecDeepClone` | `@vec_free` |
-| Heap-owning struct (inlined `str` leaves / pointer fields) | in-place leaf clone + pointee copy | recursive struct destructor |
+| Heap-owning struct | in-place leaf clone + pointee copy | recursive struct destructor |
 | Other (pure value types) | bit-copy (correct) | free container only |
-
-Two additional boundary bugs were fixed: awaiting the same handle twice (was SIGSEGV, now a defined no-op with a diagnostic to fd 2), and cancelled tasks no longer leak `argbuf`.
 
 Regression: `tests/async-ownership.no`.
 
@@ -507,26 +512,14 @@ The classification of `{ … }` depends on a few-token lookahead. A match arm's 
 
 After the fix `h = holder { s: recv.method(args) }` parses correctly. Nolang match arms cannot start with `name : X(` (the arm separator is `->`; arms starting with `:` are wildcard/default and their body won't have a parenthesized call), so allowing `(` does not misclassify any legitimate match as a struct literal. Regression: `src/parser/struct_literal_field_value_test.go`.
 
-### Await Result Type Reassigned Across Handle (fixed 2026-09-30)
+### Await Result Type (simplified 2026-11-17)
 
-```no
-#{fmt-skip}
-holder { s str }
-echo-holder-async = (h holder) (r str) { r = h.s }
-t i64 = 0
-t = run echo-holder-async(h)   ; reassignment, not a new binding
-print(awy t)                   ; before fix: printed 40 (the str length), rc=0
-```
-
-A task's result type is recorded in a table keyed by MIR value id. `awy <handle-var>` resolves the handle through the **local variable's current value id**, which is the **new slot** where the OpRun result was moved, not the OpRun result id itself — the reassignment path did not propagate the type, so await was treated as untyped `i64`, and the `str` result's buffer was reinterpreted, printing the length.
-
-The fix required three coordinated changes; missing any one leaves a symptom:
-
-1. The lowering stage moves the result type to the target slot on both rebind paths (local variable, module-level global); when the source is not a handle, **clear** the target slot's record to prevent a later `awy` from picking up a stale type from a previous task.
-2. The checker no longer returns `i64` for all `*AwaitExpression`: `awy <call>` returns the callee's return type; `awy <handle-var>` returns "unknown" and skips type checking (the handle is an opaque `i64`; statically the type cannot be recovered). The old behavior rejected the perfectly valid `v str = awy t`.
-3. The transpiler's string check treats `*AwaitExpression` as potentially a string, otherwise the valid `v str = awy t` would be caught by "cannot assign non-string value to string variable".
-
-Regression: `tests/async-ownership.no` test 9 / test 10.
+The old syntax exposed a task handle as an `i64` variable, which required
+propagating the result type across handle-slot rebinding
+(`t i64 = 0; t = run f(...); v = awy t`). With `run` and `awy <handle>` removed,
+the result type of a `co` expression comes directly from the callee; that path
+no longer exists. The lower-level invariant is pinned by
+`src/mir/async_boundary_ownership_test.go`.
 
 ### Coroutine Waiter Table Alias (fixed 2026-09-30)
 
@@ -536,27 +529,20 @@ Now the entire table is removed; waiters are stored in `%task`'s own 5th field (
 
 > Note: the MIR backend currently drives await synchronously and never calls `@nolang_async_run`/`@nolang_async_wait`, so this was a **latent** defect, not an observable fault. Regression: `src/mir/async_boundary_ownership_test.go`.
 
-### `run` / `awy` are swallowed when they are not the first statement of a block (fixed 2026-09-30)
+### `awy` swallowed when not the first statement of a block (fixed 2026-09-30; rewritten 2026-11-17)
 
-`skipToStatementEnd()` advances until it reaches a token that can **begin** the next statement, and that
-whitelist — `isStatementBoundary()` (`src/parser/stmt.go`) — was missing `run` and `awy`. Both are
-**prefix keywords** (they can only open an expression; `parseStatement` has no case for them, so they
-fall through to `parseExpressionStatement`) and can therefore legitimately begin a statement. `NEWLINE`
-is deliberately not a boundary, so when they are **not the first statement of a block** (the first one
-never goes through `skipToStatementEnd`) the keyword is skipped over together with its newline. Both
-consequences are `rc=0` with **no diagnostic**:
+`skipToStatementEnd()` advances until a token that can **begin** the next
+statement; the whitelist `isStatementBoundary()` (`src/parser/stmt.go`) once
+missed prefix keywords. Under the old syntax `run` / `awy t` could therefore be
+skipped together with their newline when they were not the first statement,
+producing `rc=0` with no diagnostic.
 
-| Source | Before the fix | After the fix |
-|---|---|---|
-| `awy t` | degraded to a bare `t`, so an if-chain arm's value became the **task handle** (a heap pointer), printed as a garbage integer (e.g. `4367685392`) | correctly unwraps the task result |
-| `run dbl(21)` | degraded to a **synchronous** `dbl(21)` — compiles, prints, but **no longer spawns** | actually spawns |
+In the new syntax `awy` has its own `parseStatement` case (a coroutine group)
+and is listed in `isStatementBoundary()` together with `co`; `run` is no longer
+a keyword and is removed from the whitelist. Rule: **every token that
+`parseStatement`'s `switch` can dispatch on must also appear in
+`isStatementBoundary()`**.
 
-The second one is especially dangerous: it is a **semantic** degradation, not a crash, so any check of
-the form "did it run without error?" cannot see it.
-
-The fix adds `lexer.RUN, lexer.AWY` to `isStatementBoundary()`. The rule: **every token that
-`parseStatement`'s `switch` can dispatch on must also be listed in `isStatementBoundary()`**; omitting
-one produces a silent bug that only appears when the statement is not the first in its block.
 Regression: `tests/stmt-boundary.no`, `src/parser/stmt_boundary_block_test.go`.
 
 ### A bare `{ ... }` at statement position was treated as a declaration (fixed 2026-09-30)
@@ -607,7 +593,7 @@ These two layers of runtime protection mean that, even though the compile-time j
 ## Design Trade-offs
 
 1. **The cost of a deep clone.** `b = a` allocates and copies the data; `vec.push(x)` likewise deep-clones a heap-owning element. This is deliberate: **one copy buys back an entire class of alias analysis** — value-to-value keeps only "own" and "transfer", never "share", so "who owns, who frees, whether a write is observable" no longer needs a separate set of rules per aliasing shape.
-2. **Deep copy at the spawn boundary (= a snapshot).** `run f(x)` deep-copies heap-owning arguments at spawn time, so the task sees the value **as of spawn**, independent of anything the caller writes afterwards. **When the source is already dead this becomes a zero-copy move.** ⚠️ Do not replace this copy with "share one buffer + reference count" just to save it: that would let the task observe the caller's **in-place writes** between spawn and `awy` (sharing), violating point 4. The correct way to save the copy is **copy-on-write**.
-3. **Reference cycles leak.** The only reference-counted object in the language is the coroutine task handle (`%task`). Reference counting cannot reclaim **cycles** — if a set of tasks hold each other's handles, none of them is ever freed. Wait explicitly with `awy`, or avoid letting tasks hold each other. This is the inherent cost of deterministic memory management (the same as Rust's `Rc`).
+2. **Deep copy at the spawn boundary (= a snapshot).** `co f(x)` deep-copies heap-owning arguments at spawn time, so the task sees the value **as of spawn**, independent of anything the caller writes afterwards. **When the source is already dead this becomes a zero-copy move.** ⚠️ Do not replace this copy with "share one buffer + reference count" just to save it: that would let the task observe the caller's **in-place writes** between spawn and group exit (sharing), violating point 4. The correct way to save the copy is **copy-on-write**.
+3. **No task-handle cycles in source.** Internally `%task` is the only reference-counted object. The new `awy { ... }` syntax exposes no handle, and each `co` is awaited exactly once at group exit, so "tasks holding each other's handles" cannot be expressed.
 4. **Coroutines do not share mutable heap data.** Coroutines are scheduled **cooperatively on a single thread**, so sharing mutable heap data across coroutines does not exist at the language level; allowing it would only produce data races and dangling pointers. The spawn boundary therefore always passes an **independent copy** (or transfers ownership).
 

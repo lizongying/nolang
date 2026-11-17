@@ -403,6 +403,8 @@ Erro ao resolver a última versão: %v
   'bsaaq6j7': 'utime: não é possível marshalar o caminho como string C'
   'bsnjql1o': 'gravando saída HTML %s: %w'
   'bvxzv6u0': 'net-udp-recvfrom: sem espaço de resultado'
+  'c0grp1aa': 'co <call> só é permitido dentro de um grupo de corrotinas \'awy { ... }\''
+  'c0grp1ab': 'expected \'{\' after \'awy\' to start a coroutine group'
   'c33l3vql': 'arquivo de módulo não encontrado: %s ou %s'
   'c48g377y': 'limite de intervalo float não suportado, use inteiros'
   'c6eld4s3': `
@@ -1173,7 +1175,6 @@ Erro ao escrever o arquivo de configuração: %v
   'y4yjmhz2': 'builtin %s: tipo LLVMConv desconhecido %d'
   'y4yxzacz': 'builtin %s: buffer provisório não materializado'
   'y5f921sg': 'espaço de destino do índice txt (dst=%d type=%s)'
-  'y7964ox1': 'a função \'%s\' chamada por \'run\' deve terminar com \'-async\''
   'y8ieefsr': 'builtin %s: argumentos incorretos'
   'y9lj5a9g': 'esperado nome de parâmetro ou tipo, obtido %s em vez disso'
   'yevhjra2': 'LLVM C API: %s falhou: %s'

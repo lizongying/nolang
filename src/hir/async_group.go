@@ -10,17 +10,18 @@ import (
 //
 // SURFACE FORM
 // ------------
-// A bare block — a `{ ... }` that sits in STATEMENT position rather than being
-// the body of an if/for/match arm/function — is a coroutine group:
+// An `awy { ... }` block is a coroutine group (the old statement-position bare
+// block is no longer a group):
 //
-//	{
-//	    r1 = hello-async(1)
-//	    r2 = hello-async(2)
+//	awy {
+//	    r1 = co worker(1)
+//	    r2 = co worker(2)
 //	}
 //
-// Every statement of the group whose right-hand side is a direct call to an
-// `-async` callee is SPAWNED (`run`) rather than executed eagerly. The group
-// then awaits whatever it spawned:
+// Each `co <call>` in the group is SPAWNED (`run`) rather than executed eagerly;
+// the `-async` callee is synthesized by MonomorphizeGo. `co` is only legal
+// inside an `awy { ... }` group (enforced by the parser). The group then awaits
+// whatever it spawned:
 //
 //   - a spawn whose result nothing else in the group needs is awaited at the
 //     END of the group, so it overlaps with the group's other spawns;
@@ -29,12 +30,12 @@ import (
 //     await"): `r2 = hello-async(r1)` forces r1's await up front and the group
 //     degrades to sequential execution.
 //
-// So the two examples above lower to
+// So the group above lowers to
 //
-//	__ag0 = run hello-async(1)         __ag0 = run hello-async(1)
-//	__ag1 = run hello-async(2)         r1    = awy __ag0
-//	r1    = awy __ag0                  __ag1 = run hello-async(r1)
-//	r2    = awy __ag1                  r2    = awy __ag1
+//	__ag0 = run worker-async(1)
+//	__ag1 = run worker-async(2)
+//	r1    = awy __ag0
+//	r2    = awy __ag1
 //
 // WHY A DESUGARING AND NOT A NEW MIR OP
 // -------------------------------------
@@ -50,8 +51,7 @@ import (
 // WHY THIS RUNS AFTER THE CHECKER
 // -------------------------------
 // The checker runs on the surface AST, before ASTToHIR. A synthesized binding
-// therefore never has to satisfy a declaration check — exactly like the `h1`
-// in `h1 = run compute-async(10)`, which is undeclared in tests/async.no today.
+// therefore never has to satisfy a declaration check.
 //
 // SCOPE, DELIBERATELY NARROW
 // --------------------------
@@ -67,27 +67,23 @@ import (
 // the other NOLANG_* switches). Desugaring happens before any MIR is built, so
 // the flag is usable for A/B comparing a program against itself.
 
-// DesugarAsyncGroups rewrites every bare block that contains at least one
-// spawnable statement into explicit `run` / `awy` bindings. It returns the
-// number of groups rewritten; 0 means the package was left untouched.
+// DesugarAsyncGroups rewrites every `awy { ... }` block (KBlock carrying
+// FlagAwaitGroup) that contains at least one spawnable statement into explicit
+// KRun / KAwait bindings. It returns the number of groups rewritten; 0 means
+// the package was left untouched.
 func DesugarAsyncGroups(p *Package) int {
 	if p == nil || os.Getenv("NOLANG_ASYNC_GROUP") == "0" {
 		return 0
 	}
 	// Collect FIRST, and only over the nodes that exist now: the rewrite
 	// appends to p.Nodes, and a loop over a growing slice would walk its own
-	// output. Bare blocks are found by PARENT, not by position: a fn body, an
-	// if arm and a loop body all hang off a KSlot, so the only KBlock whose
-	// parent is another KBlock is one written in statement position.
+	// output. Coroutine groups are found by the explicit FlagAwaitGroup mark
+	// emitted by `awy { ... }` (the old "parent is a block" heuristic is gone:
+	// a plain bare block is no longer a coroutine group).
 	var bare []int32
 	for i := 1; i < len(p.Nodes); i++ {
-		if p.Nodes[i].Kind != KBlock {
-			continue
-		}
-		for c := p.Nodes[i].First; c != NoID; c = p.Nodes[c].Next {
-			if p.Nodes[c].Kind == KBlock {
-				bare = append(bare, c)
-			}
+		if p.Nodes[i].Kind == KBlock && p.Nodes[i].Flags&FlagAwaitGroup != 0 {
+			bare = append(bare, int32(i))
 		}
 	}
 	if len(bare) == 0 {
@@ -97,7 +93,7 @@ func DesugarAsyncGroups(p *Package) int {
 	g.collectNames()
 	n := 0
 	// Innermost first: an outer group rebuilds its child list, which relinks
-	// (but never re-ids) the nested bare blocks, so processing the deeper ones
+	// (but never re-ids) the nested groups, so processing the deeper ones
 	// afterwards still sees their own untouched children.
 	for i := len(bare) - 1; i >= 0; i-- {
 		if g.group(bare[i]) {
@@ -162,9 +158,9 @@ type GroupStep struct {
 	Flush []int
 }
 
-// GroupPlan is the spawn/await schedule of one bare block: one step per
-// statement, in source order, plus the spawns still in flight when the group
-// ends (awaited after the last statement).
+// GroupPlan is the spawn/await schedule of one `awy { ... }` group: one step
+// per statement, in source order, plus the spawns still in flight when the
+// group ends (awaited after the last statement).
 //
 // WHY THE SCHEDULE IS A SEPARATE VALUE. Two backends need it. The MIR path
 // rewrites the HIR into `run`/`awy` bindings; the JS backend emits promises
@@ -176,8 +172,8 @@ type GroupPlan struct {
 	Tail  []int
 }
 
-// AsyncGroupPlan computes the schedule of a bare block WITHOUT changing
-// anything. ok is false when no statement in the block is spawnable — the
+// AsyncGroupPlan computes the schedule of an `awy { ... }` group WITHOUT
+// changing anything. ok is false when no statement in the block is spawnable — the
 // caller must then leave the block alone, which is what keeps the whole
 // feature a no-op for code that was never written against it.
 func (p *Package) AsyncGroupPlan(blockID int32) (plan GroupPlan, ok bool) {
@@ -226,7 +222,7 @@ func (p *Package) AsyncGroupPlan(blockID int32) (plan GroupPlan, ok bool) {
 	return plan, ok
 }
 
-// group applies a plan, rewriting one bare block into `run` / `awy` bindings.
+// group applies a plan, rewriting one `awy { ... }` block into KRun / KAwait bindings.
 func (g *groupRewriter) group(blockID int32) bool {
 	plan, ok := g.p.AsyncGroupPlan(blockID)
 	if !ok {
@@ -460,27 +456,28 @@ func itoa(n int) string {
 }
 
 // ---------------------------------------------------------------------------
-// Colorless async (`go`): monomorphization
+// Colorless async (`co`): monomorphization
 //
-// `go worker(1)` is sugar for spawning the compiler-generated `worker-async`
-// variant of `worker` and reading its result. The user writes the uncolored
-// name `worker`; the `-async` suffix is purely internal. This pass:
+// `co worker(1)` (inside an `awy { ... }` group) is sugar for spawning the
+// compiler-generated `worker-async` variant of `worker` and reading its result.
+// The user writes the uncolored name `worker`; the `-async` suffix is purely
+// internal. This pass:
 //
-//   1. clones every `go`-targeted (or transitively async) function `F` into a
+//   1. clones every `co`-targeted (or transitively async) function `F` into a
 //      fresh `F-async` definition (identical body, renamed), and
-//   2. rewrites each `go <call>` KCall's callee from `F` to `F-async`.
+//   2. rewrites each `co <call>` KCall's callee from `F` to `F-async`.
 //
 // The coroutine-group pass (which runs AFTER this one) then treats the
-// rewritten bare `-async` calls as spawnable, so `go` inside a `{ }` group
-// overlaps with its siblings; outside a group a later pass wraps the bare
-// `-async` call in `run`/`awy` (see hir.DesugarAsyncGroups / the inline-await
-// step). The async coloring is propagated upward: any function that calls an
-// async-colored function also gets an `-async` variant, so a `go` deep in the
-// call tree lifts every ancestor that could spawn it.
+// rewritten bare `-async` calls as spawnable, so `co` inside an `awy { }` group
+// overlaps with its siblings. `co` is only legal inside such a group (parser
+// enforced), so there is no group-external inline-await path. The async coloring
+// is propagated upward: any function that calls an async-colored function also
+// gets an `-async` variant, so a `co` deep in the call tree lifts every ancestor
+// that could spawn it.
 //
 // Kill switch: NOLANG_ASYNC_GO=0 disables the pass (diagnostic only). The pass
 // is a no-op whenever pkg.GoSpawns is empty, i.e. for programs that never use
-// `go` — which keeps the corpus guard untouched.
+// `co` — which keeps the corpus guard untouched.
 // ---------------------------------------------------------------------------
 
 // MonomorphizeGo clones `-async` variants for every function in the async
@@ -661,118 +658,6 @@ func goSpawnIndex(p *Package, callID int32) int {
 		}
 	}
 	return -1
-}
-
-// DesugarGoInlineAwait wraps every `go <call>` that was NOT claimed by a
-// coroutine group (DesugarAsyncGroups runs first and rewrites the group ones
-// into `run`/`awy`, leaving their call node parented by a KRun) with the
-// synchronous `run` + `awy` pair:
-//
-//	r1 = go worker(1)   ──▶   __ghN = run worker-async(1)
-//	                         r1    = awy __ghN
-//
-// so the spawn's RESULT (not the opaque handle) lands in the binding. A `go`
-// nested inside a larger expression (e.g. `n + go child(n)`) is not
-// statement-level and is left to the caller's diagnostic; only direct
-// KLet/KExprStmt `go` calls are wrapped here, mirroring the coroutine group's
-// own refusal of nested async calls.
-func DesugarGoInlineAwait(p *Package) {
-	if p == nil || len(p.GoSpawns) == 0 {
-		return
-	}
-	// Parent map: child id -> parent node id (the node whose First/Next links
-	// to it). Built once over the whole arena.
-	parent := make(map[int32]int32, len(p.Nodes))
-	for i := 1; i < len(p.Nodes); i++ {
-		for c := p.Nodes[i].First; c != NoID; c = p.Nodes[c].Next {
-			parent[c] = int32(i)
-		}
-	}
-	g := &groupRewriter{p: p, taken: map[string]bool{}}
-	g.collectNames()
-	for _, callID := range p.GoSpawns {
-		call := p.Node(callID)
-		if call == nil || call.Kind != KCall {
-			continue
-		}
-		par := parent[callID]
-		if par == NoID {
-			continue
-		}
-		pk := p.Node(par)
-		if pk == nil {
-			continue
-		}
-		// Already a `run` (spawned by a coroutine group) or an `awy` — leave
-		// it alone; the group pass owns its ordering.
-		if pk.Kind == KRun || pk.Kind == KAwait {
-			continue
-		}
-		// Only statement-level `go` (r1 = go f / go f) is wrapped here.
-		if pk.Kind != KLet && pk.Kind != KExprStmt {
-			continue
-		}
-		line, col := call.Line, call.Col
-		runID := p.add(Node{Kind: KRun, First: callID, Line: line, Col: col})
-		hName := g.freshName()
-		hLet := p.add(Node{Kind: KLet, S: p.intern(hName), First: runID, Line: line, Col: col})
-		hIdent := p.add(Node{Kind: KIdent, S: p.intern(hName), Line: line, Col: col})
-		awy := p.add(Node{Kind: KAwait, First: hIdent, Line: line, Col: col})
-		// Insert `__ghN = run <call>` immediately before the statement that
-		// held the spawn. When that statement is a top-level node (module-level
-		// `go`, e.g. `r = go f(21)` at the package root) it has no block
-		// parent in the arena, so `parent[par] == NoID`; in that case the new
-		// `run` node must be spliced into the package's top-level list instead,
-		// otherwise the `awy` would await a handle that is never spawned
-		// (→ trace/BPT trap at runtime).
-		if blk := parent[par]; blk != NoID {
-			insertBefore(p, blk, par, hLet)
-		} else {
-			insertTopBefore(p, par, hLet)
-		}
-		// Rewrite the original statement to await the handle.
-		if pk.Kind == KLet {
-			pk.First = awy // keep S (target) and Type
-		} else {
-			pk.First = awy
-		}
-	}
-}
-
-// insertBefore inserts newID into blockID's child chain, right before stmtID.
-// It is a no-op if stmtID is not a child of blockID.
-func insertBefore(p *Package, blockID, stmtID, newID int32) {
-	blk := p.Node(blockID)
-	if blk == nil || stmtID == NoID || newID == NoID {
-		return
-	}
-	if blk.First == stmtID {
-		p.Nodes[newID].Next = blk.First
-		blk.First = newID
-		return
-	}
-	for c := blk.First; c != NoID; c = p.Nodes[c].Next {
-		if p.Nodes[c].Next == stmtID {
-			p.Nodes[newID].Next = stmtID
-			p.Nodes[c].Next = newID
-			return
-		}
-	}
-}
-
-// insertTopBefore inserts newID into p.Top immediately before stmtID. It is a
-// no-op if stmtID is not present in p.Top (this is the module-level analogue of
-// insertBefore: a `go` spawn written at package scope has no enclosing block in
-// the arena, so its `run`/`awy` pair is spliced into the top-level list).
-func insertTopBefore(p *Package, stmtID, newID int32) {
-	for i, id := range p.Top {
-		if id == stmtID {
-			p.Top = append(p.Top, 0)
-			copy(p.Top[i+1:], p.Top[i:])
-			p.Top[i] = newID
-			return
-		}
-	}
 }
 
 // cloneSubtree deep-copies the closed subtree rooted at root into fresh arena

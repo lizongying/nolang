@@ -27,8 +27,8 @@
 - `->` — match arm / if-else branch (`cond -> body`)
 - `:` — match expression (`x: { ... }`)
 - `?` — option type prefix (`?i64`, `?str`) / ternary operator
-- `run` — start async thread
-- `awy` — await async thread completion
+- `awy` — coroutine group; spawns every `co <call>` inside and awaits them at group exit
+- `co` — colorless async spawn, only legal inside `awy { ... }`
 
 #### Arithmetic Operators
 

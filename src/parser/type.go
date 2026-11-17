@@ -1307,6 +1307,27 @@ func (p *Parser) parseTypeExpression() (Type, bool) {
 		innerTok := p.currentToken
 		p.nextToken()
 		return &NullableType{Token: startTok, Type: &NamedType{Token: innerTok, Value: innerName}}, true
+	case lexer.CHAN:
+		// chan[T]
+		chanTok := p.currentToken
+		p.nextToken() // skip chan
+		if p.currentToken.Type != lexer.LBRACKET {
+			p.saveErrorf("chnopnbr", "line %d, column %d: expected '[' after 'chan' in channel type, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			return nil, false
+		}
+		p.nextToken() // skip [
+		elem, ok := p.parseTypeExpression()
+		if !ok {
+			return nil, false
+		}
+		if p.currentToken.Type != lexer.RBRACKET {
+			p.saveErrorf("chnclsbr", "line %d, column %d: expected ']' to close channel type, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			return nil, false
+		}
+		p.nextToken() // skip ]
+		return &ChanType{Token: chanTok, Elem: elem}, true
 	}
 	return nil, false
 }
@@ -1489,6 +1510,33 @@ func (p *Parser) parseParamTypeAfterName() (Type, bool) {
 		ptrPrefix += "**"
 		p.nextToken()
 	}
+	// 通道型別：`chan[T]`。型別字串走 buildType 的 ty.Parse 分類，與其它
+	// 型別一樣只在一處決定結構（見 ty 的 `chan[` 前綴規則）。
+	if p.currentToken.Type == lexer.CHAN {
+		chanTok := p.currentToken
+		p.nextToken() // skip chan
+		if p.currentToken.Type != lexer.LBRACKET {
+			p.saveErrorf("chnopnbr", "line %d, column %d: expected '[' after 'chan' in channel type, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			return nil, false
+		}
+		p.nextToken() // skip [
+		elem, ok := p.parseTypeExpression()
+		if !ok {
+			return nil, false
+		}
+		if p.currentToken.Type != lexer.RBRACKET {
+			p.saveErrorf("chnclsbr", "line %d, column %d: expected ']' to close channel type, got %s instead",
+				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+			return nil, false
+		}
+		p.nextToken() // skip ]
+		var chanType Type = &ChanType{Token: chanTok, Elem: elem}
+		if isOption {
+			chanType = &NullableType{Token: chanTok, Type: chanType}
+		}
+		return chanType, true
+	}
 	if p.currentToken.Type == lexer.LBRACKET {
 		// Parse first bracket group: [], [N], [?], or [K]
 		p.nextToken() // skip [
@@ -1630,6 +1678,9 @@ func markInferred(t Type) Type {
 		typ.IsInferred = true
 		markInferred(typ.Key)
 		markInferred(typ.Value)
+	case *ChanType:
+		typ.IsInferred = true
+		markInferred(typ.Elem)
 	case *PointerType:
 		markInferred(typ.Type)
 	case *ViewType:
@@ -1652,6 +1703,8 @@ func typeIsInferred(t Type) bool {
 	case *NullableType:
 		return typ.IsInferred
 	case *MapType:
+		return typ.IsInferred
+	case *ChanType:
 		return typ.IsInferred
 	case *ViewType:
 		return typ.IsInferred
@@ -1711,6 +1764,12 @@ func buildType(typeStr string, tok lexer.Token) Type {
 			Key:   &NamedType{Token: tok, Value: rawOf(st.Key)},
 			Value: valType,
 		}
+	case ty.Chan:
+		elem := buildType(rawOf(st.Elem), tok)
+		if elem == nil {
+			elem = &NamedType{Token: tok, Value: rawOf(st.Elem)}
+		}
+		return &ChanType{Token: tok, Elem: elem}
 	}
 	// 簡單名稱型別（含純量、別名、模組限定名與單態化殘留名）
 	return &NamedType{Token: tok, Value: typeStr}

@@ -15,8 +15,9 @@ func TestGoMonomorphizesAsyncVariant(t *testing.T) {
 		r = n
 	}
 	main = () {
-		r1 i64
-		r1 = co worker(1)
+		awy {
+			r1 = co worker(1)
+		}
 		print(r1)
 	}`
 	mod := lowerForTest(t, src)
@@ -45,13 +46,15 @@ func TestGoTransitiveAsyncColoring(t *testing.T) {
 		r = n
 	}
 	worker = (n i64) (r i64) {
-		c i64
-		c = co child(n)
+		awy {
+			c = co child(n)
+		}
 		r = c
 	}
 	main = () {
-		r1 i64
-		r1 = co worker(1)
+		awy {
+			r1 = co worker(1)
+		}
 		print(r1)
 	}`
 	mod := lowerForTest(t, src)

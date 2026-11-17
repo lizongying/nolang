@@ -117,7 +117,8 @@ async function staticChecks(): Promise<void> {
             /#\{(?:index-out|cabi|c\s*=|bind\s*=|buildin)/,
             /^\s*#\s+std\//m,
             /\b(?:printf|eprintf)\s*\(/,
-            /^\s*(?:run|awy)\s+/m,
+            /^\s*run\s+\S/m,                  // old spawn prefix
+            /^\s*awy\s+(?!\{)\S/m,           // old handle-wait prefix (awy { ... } is allowed)
         ]) {
             check(!forbidden.test(e.code), `${e.id}: forbidden construct ${forbidden}`);
         }

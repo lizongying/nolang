@@ -1,10 +1,10 @@
 ; async-more — 合併自同簇 async 小件（heavy dedup）
 ;
-; 僅併入「函式化、決定性」的協程探針（run/awy/co 皆封在函式內，末尾依序呼叫）；
+; 僅併入「函式化、決定性」的協程探針（awy 組與 co 皆封在函式內，末尾依序呼叫）；
 ; 每個原件頂層符號加前綴避免單態化衝突。
-; 保留獨立：async.no(canonical)、async-arg-move/handle-alias/ownership/rc(被 src 引用)、
-; async-arg-retain(ownership-model §4.2 煙霧測，配 spawn_arg_retain_test.go)、
+; 保留獨立：async.no(canonical)、async-arg-move/arg-retain(被 src 引用)、
 ; go-async/module-async(模組級 co 觸發全檔 async 狀態機變換，併檔會改語義)。
+; 手寫句柄 / cancel(h) 探針已隨 run 關鍵字一併移除。
 
 ; from async-cancel.no — cancel / cancelled / async-yield 探針
 ac-worker = (n i64) (r i64) {
@@ -22,16 +22,10 @@ ac-worker = (n i64) (r i64) {
     }
 }
 
-ac-test-cancel = () {
-    h = run ac-worker(100)
-    async.cancel(h)
-    r = awy h
-    print(r); expect: 0
-}
-
 ac-test-no-cancel = () {
-    h = run ac-worker(21)
-    r = awy h
+    awy {
+        r = co ac-worker(21)
+    }
     print(r); expect: 42
 }
 
@@ -55,16 +49,10 @@ ak-selfcheck = (n i64) (r i64) {
 }
 
 ak-test-run-ok = () {
-    h = run ak-selfcheck(7)
-    r = awy h
+    awy {
+        r = co ak-selfcheck(7)
+    }
     print(r); expect: 7
-}
-
-ak-test-cancelled = () {
-    h = run ak-selfcheck(7)
-    async.cancel(h)
-    r = awy h
-    print(r); expect: 0
 }
 
 ; from async-yield.no — async-yield 在協程內（讓出控制權）
@@ -85,7 +73,9 @@ ay-yielder = (n i64) (r i64) {
 }
 
 ay-test-inside = () {
-    r = co ay-yielder(5)
+    awy {
+        r = co ay-yielder(5)
+    }
     print(r); expect: 6
 }
 
@@ -102,7 +92,7 @@ ag-hello = (i i64) (r i64) {
 ag-test-independent = () {
     r1 i64
     r2 i64
-    {
+    awy {
         r1 = co ag-hello(1)
         r2 = co ag-hello(2)
     }
@@ -113,7 +103,7 @@ ag-test-independent = () {
 ag-test-dependent = () {
     r1 i64
     r2 i64
-    {
+    awy {
         r1 = co ag-hello(1)
         r2 = co ag-hello(r1)
     }
@@ -125,7 +115,7 @@ ag-test-chain = () {
     r1 i64
     r2 i64
     r3 i64
-    {
+    awy {
         r1 = co ag-hello(1)
         r2 = co ag-hello(r1)
         r3 = co ag-hello(r2)
@@ -135,7 +125,7 @@ ag-test-chain = () {
 
 ag-test-read-inside = () {
     r1 i64
-    {
+    awy {
         r1 = co ag-hello(7)
         print(r1); expect: 7
     }
@@ -146,7 +136,7 @@ ag-side = (n i64) {
 }
 
 ag-test-discarded = () {
-    {
+    awy {
         co ag-side(5)
     }
 }
@@ -160,7 +150,7 @@ ag-test-heap-arg = () {
     b = 'world'
     ra str
     rb str
-    {
+    awy {
         ra = co ag-echo(a)
         rb = co ag-echo(b)
     }
@@ -168,17 +158,10 @@ ag-test-heap-arg = () {
     print(rb); expect: world
 }
 
-ag-test-statement-level = () {
-    f = co ag-hello(1)
-    print(f); expect: 1
-}
-
-ac-test-cancel()
 ac-test-no-cancel()
 ac-test-cancelled()
 ac-test-yield()
 ak-test-run-ok()
-ak-test-cancelled()
 ay-test-inside()
 ay-test-plain()
 ag-test-independent()
@@ -187,4 +170,3 @@ ag-test-chain()
 ag-test-read-inside()
 ag-test-discarded()
 ag-test-heap-arg()
-ag-test-statement-level()

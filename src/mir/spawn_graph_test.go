@@ -20,7 +20,7 @@ import (
 // tests/async-handle-alias.no) so the verdicts here are the ones a reviewer
 // checks by hand there.
 
-const spawnWorkSrc = `work-async = (n i64) (r i64) {
+const spawnWorkSrc = `work = (n i64) (r i64) {
     #{overflow=wrap}
     r = n * 2
 }
@@ -49,8 +49,9 @@ func spawnEdgesIn(t *testing.T, src string, name string) []SpawnEdge {
 // All four criteria hold.
 func TestSpawnFlatIsLinear(t *testing.T) {
 	edges := spawnEdgesIn(t, spawnWorkSrc+`main = () {
-    h = run work-async(21)
-    v = awy h
+    awy {
+        v = co work(21)
+    }
     print(v)
 }
 `, "main")
@@ -70,117 +71,29 @@ func TestSpawnFlatIsLinear(t *testing.T) {
 	}
 }
 
-// TestSpawnAliasedHandleAwaitedTwiceIsNotLinear pins criterion 2 — and it is
-// the case the whole R tier exists for. `h2 = h` is a second REFERENCE to one
-// task, so two awaits release twice; an analysis that counted awaits per value
-// instead of per TASK would call this linear and P5 would then drop the retain.
-func TestSpawnAliasedHandleAwaitedTwiceIsNotLinear(t *testing.T) {
-	e := spawnEdgesIn(t, spawnWorkSrc+`main = () {
-    h = run work-async(21)
-    h2 = h
-    a = awy h
-    b = awy h2
-    print(a)
-}
-`, "main")[0]
-	if e.Linearizable {
-		t.Fatalf("aliased handle awaited twice is linearizable; want NON-LINEAR")
-	}
-	if e.OneAwait {
-		t.Errorf("criterion 2 (exactly one await) holds; the alias closure missed `h2 = h`")
-	}
-	if !strings.Contains(strings.Join(e.Reasons, " "), "2 await(s)") {
-		t.Errorf("reasons = %v, want the await count (2) reported", e.Reasons)
-	}
-}
-
-// TestSpawnHandlePassedToCallIsNotLinear pins criterion 1 in its conservative
-// form: a handle handed to any call is treated as escaping. cancel is the
-// known false positive (the builtin neither stores nor retains the handle);
-// whitelisting it is exactly how such an analysis starts lying, so it stays a
-// verdict and not a special case.
-func TestSpawnHandlePassedToCallIsNotLinear(t *testing.T) {
-	e := spawnEdgesIn(t, spawnWorkSrc+`sink = (x i64) {
-    print(x)
-}
-main = () {
-    h = run work-async(21)
-    sink(h)
-    v = awy h
-    print(v)
-}
-`, "main")[0]
-	if e.Linearizable {
-		t.Fatalf("handle passed to a call is linearizable; want NON-LINEAR")
-	}
-	if e.NoEscape {
-		t.Errorf("criterion 1 (no escape) holds; the call use went unnoticed")
-	}
-	if !strings.Contains(strings.Join(e.Reasons, " "), "sink") {
-		t.Errorf("reasons = %v, want the escaping callee named", e.Reasons)
-	}
-}
-
-// TestSpawnHandleReturnedViaOutParamIsNotLinear pins the out-param form of
-// criterion 1: `mk = () (h i64) { h = run ... }` returns the handle through a
-// result slot, which the OpMove alias closure would otherwise swallow. There
-// is no OpReturn arg to inspect — the move IS the return.
-func TestSpawnHandleReturnedViaOutParamIsNotLinear(t *testing.T) {
-	e := spawnEdgesIn(t, spawnWorkSrc+`mk = () (h i64) {
-    h = run work-async(21)
-}
-main = () {
-    h = mk()
-    v = awy h
-    print(v)
-}
-`, "mk")[0]
-	if e.Linearizable {
-		t.Fatalf("handle returned through an out-param is linearizable; want NON-LINEAR")
-	}
-	if e.NoEscape {
-		t.Errorf("criterion 1 (no escape) holds; the out-param return went unnoticed")
-	}
-	if !strings.Contains(strings.Join(e.Reasons, " "), "out-param") {
-		t.Errorf("reasons = %v, want the out-param named", e.Reasons)
-	}
-}
-
-// TestSpawnHandleStoredInContainerIsNotLinear pins the container form of
-// criterion 1 (tests/async-handle-alias.no `via-container`).
-func TestSpawnHandleStoredInContainerIsNotLinear(t *testing.T) {
-	e := spawnEdgesIn(t, spawnWorkSrc+`main = () {
-    hs []i64 = []
-    hs.push(run work-async(21))
-    v = awy hs[0]
-    print(v)
-}
-`, "main")[0]
-	if e.Linearizable {
-		t.Fatalf("handle stored in a container is linearizable; want NON-LINEAR")
-	}
-	if e.NoEscape {
-		t.Errorf("criterion 1 (no escape) holds; the container store went unnoticed")
-	}
-}
+// 旧的手写句柄逃逸用例（复制句柄二次 await、传给调用、经 out-param 返回、
+// 存进容器）随 run/awy 前缀语法一并移除：新语法没有可泄漏的句柄值，
+// awy { ... } 组内的每个 co 都在组尾被恰好等待一次。
 
 // TestSpawnNestedIsNotLinear pins criterion 3, transitively. A callee that
 // spawns two levels down breaks the flat-await-tree assumption just as much as
 // a direct one does, so a direct-only check is unsound.
 func TestSpawnNestedIsNotLinear(t *testing.T) {
-	e := spawnEdgesIn(t, `inner-async = (n i64) (r i64) {
+	e := spawnEdgesIn(t, `inner = (n i64) (r i64) {
     r = n
 }
 mid = (n i64) (r i64) {
-    t = run inner-async(n)
-    r = awy t
+    awy {
+        r = co inner(n)
+    }
 }
-outer-async = (n i64) (r i64) {
+outer = (n i64) (r i64) {
     r = mid(n)
 }
 main = () {
-    h = run outer-async(5)
-    v = awy h
+    awy {
+        v = co outer(5)
+    }
     print(v)
 }
 `, "main")[0]
@@ -196,40 +109,14 @@ main = () {
 	}
 }
 
-// TestSpawnVerdictIsPerEdgeNotPerFunction pins §4.3's explicit warning: the
-// decision must be per spawn EDGE. One function holds a clean spawn next to an
-// escaping one, and the clean one must not be dragged down with it — the whole
-// reason the analysis is not written per handle or per function.
-func TestSpawnVerdictIsPerEdgeNotPerFunction(t *testing.T) {
-	edges := spawnEdgesIn(t, spawnWorkSrc+`sink = (x i64) {
-    print(x)
-}
-main = () {
-    h1 = run work-async(1)
-    h2 = run work-async(2)
-    sink(h2)
-    a = awy h1
-    print(a)
-}
-`, "main")
-	if len(edges) != 2 {
-		t.Fatalf("spawn edge count = %d, want 2", len(edges))
-	}
-	if !edges[0].Linearizable {
-		t.Errorf("edge 1 (clean spawn, awaited) = NON-LINEAR, want LINEAR: %v", edges[0].Reasons)
-	}
-	if edges[1].Linearizable {
-		t.Errorf("edge 2 (handle escapes to sink, never awaited) = LINEAR, want NON-LINEAR")
-	}
-}
-
 // TestSpawnGraphDoesNotMutate is the "report only" guarantee. P3 is allowed to
 // read the module and nothing else: if it ever starts inserting or rewriting
 // instructions the corpus verification in P5 stops being a clean baseline.
 func TestSpawnGraphDoesNotMutate(t *testing.T) {
 	mod := lowerForTest(t, spawnWorkSrc+`main = () {
-    h = run work-async(21)
-    v = awy h
+    awy {
+        v = co work(21)
+    }
     print(v)
 }
 `)
@@ -262,8 +149,9 @@ func TestSpawnGraphDumpIsSilentByDefault(t *testing.T) {
 	// the single branch at the top of the function and this test simply asserts
 	// it is driven by the environment rather than by any module state.
 	mod := lowerForTest(t, spawnWorkSrc+`main = () {
-    h = run work-async(21)
-    v = awy h
+    awy {
+        v = co work(21)
+    }
     print(v)
 }
 `)

@@ -1,7 +1,7 @@
-; 無色 async：`go` 關鍵字會單態化出 worker-async，並與同步版本共存。
+; 無色 async：`awy { }` 協程組內的 `co` 會單態化出 X-async，並與同步版本共存。
 ;
 ; 覆蓋：
-;   - coroutine group 內的 `go` 並發（b、c 重疊執行）
+;   - 協程組內的 `co` 並發（b、c 重疊執行）
 ;   - 同步呼叫 worker(10) 與 `co worker(...)` 共存（worker 與 worker-async 兩個方法）
 ;   - 傳遞性：worker-with-child 內部 `co child` → 自動生成 child-async
 ;
@@ -23,7 +23,7 @@ worker = (n i64) (r i64) {
     }
 }
 
-; 無色子函式：乘十；被 worker 以 go 呼叫後會被單態成 child-async
+; 無色子函式：乘十；被 worker 以 co 呼叫後會被單態成 child-async
 ; n: 來源數值
 ; r: n * 10（#{overflow=wrap}）
 child = (n i64) (r i64) {
@@ -45,7 +45,9 @@ child = (n i64) (r i64) {
 ; n: 來源數值
 ; r: n + child(n) = n + n*10
 worker-with-child = (n i64) (r i64) {
-    c = co child(n)
+    awy {
+        c = co child(n)
+    }
 
     #{overflow=wrap}
     {
@@ -65,9 +67,11 @@ b i64
 c i64
 d i64
 a = worker(10); 同步呼叫 -> 11
-{
+awy {
     b = co worker(20); 單態 worker-async -> 21
     c = co worker(30); 單態 worker-async -> 31
 }
-d = co worker-with-child(5); 5 + (5*10) = 55
+awy {
+    d = co worker-with-child(5); 5 + (5*10) = 55
+}
 print('a=' - a.to-str() - ' b=' - b.to-str() - ' c=' - c.to-str() - ' d=' - d.to-str())

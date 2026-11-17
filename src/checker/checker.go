@@ -178,11 +178,6 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			}
 			return ""
 		}
-		// run <expr> 返回不透明的 task 句柄（LLVM i8*），供 cancel 使用。
-		// 显式推断为 "i8*" 使 `h = run ...` 的变量获得一致类型。
-		if _, ok := expr.(*parser.RunExpression); ok {
-			return "i8*"
-		}
 		// 4. 檢查 struct 方法調用（DotExpression）
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
 			var typeName string
@@ -547,23 +542,6 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 			return t
 		}
 		return blockTrailingExprType(e.Alternative, varTypes, funcTypes, selfType)
-	case *parser.AwaitExpression:
-		// `awy <call>` — a direct call operand is launched as a task and then
-		// awaited, so the result is the callee's own return type.
-		if call, ok := e.Right.(*parser.CallExpression); ok {
-			if t := inferExprType(call, varTypes, funcTypes, selfType); t != "" && t != "i8*" {
-				return t
-			}
-		}
-		// `awy <handle-var>` — the handle is an opaque i64, so the task's
-		// result type is not statically recoverable from the variable alone.
-		// Return "" (unknown) so callers skip the type check and defer to LLVM,
-		// matching the other "cannot determine at vet time" cases above.
-		//
-		// The `default:` arm below used to answer "i64" for every await, which
-		// rejected the valid `v str = awy t` ("cannot assign i64 value to str
-		// variable 'v'") and silently mis-typed `v = awy t` as an integer.
-		return ""
 	default:
 		return "i64"
 	}
@@ -1003,10 +981,6 @@ func walkExprForLen(expr parser.Expression, varTypes, funcTypes map[string]strin
 		walkExprForLen(e.Alternative, varTypes, funcTypes, selfType, results)
 	case *parser.CastExpression:
 		walkExprForLen(e.Expr, varTypes, funcTypes, selfType, results)
-	case *parser.RunExpression:
-		walkExprForLen(e.Call, varTypes, funcTypes, selfType, results)
-	case *parser.AwaitExpression:
-		walkExprForLen(e.Right, varTypes, funcTypes, selfType, results)
 	case *parser.ArrayLiteral:
 		for _, el := range e.Elements {
 			walkExprForLen(el, varTypes, funcTypes, selfType, results)
@@ -1675,7 +1649,6 @@ func walkStatementsForAsync(sem *parser.SemanticContext, stmt parser.Statement, 
 		}
 	case *parser.LetStatement:
 		if s.Value != nil {
-			checkRunAsyncNaming(s.Value, file, results)
 			if fnLit, ok := s.Value.(*parser.FunctionLiteral); ok {
 				if fnLit.Body != nil {
 					for _, b := range fnLit.Body.Statements {
@@ -1695,7 +1668,6 @@ func walkStatementsForAsync(sem *parser.SemanticContext, stmt parser.Statement, 
 		}
 	case *parser.ExpressionStatement:
 		if s.Expression != nil {
-			checkRunAsyncNaming(s.Expression, file, results)
 			if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
 				if ifExpr.Consequence != nil {
 					for _, b := range ifExpr.Consequence.Statements {
@@ -1726,38 +1698,6 @@ func walkStatementsForAsync(sem *parser.SemanticContext, stmt parser.Statement, 
 			}
 		}
 	}
-}
-func checkRunAsyncNaming(expr parser.Expression, file string, results *[]ValidateResult) {
-	runExpr, ok := expr.(*parser.RunExpression)
-	if !ok {
-		return
-	}
-	call, ok := runExpr.Call.(*parser.CallExpression)
-	if !ok {
-		return
-	}
-	fnName := asyncCallFunctionName(call)
-	if fnName == "" {
-		return
-	}
-	if !strings.HasSuffix(fnName, "-async") {
-		*results = append(*results, ValidateResult{
-			TraceID: "y7964ox1",
-			File:    file,
-			Line:    runExpr.Token.Line,
-			Column:  runExpr.Token.Column,
-			Message: i18n.T("y7964ox1", "function '%s' called by 'run' should end with '-async'", fnName),
-		})
-	}
-}
-func asyncCallFunctionName(call *parser.CallExpression) string {
-	if ident, ok := call.Function.(*parser.Identifier); ok {
-		return ident.Value
-	}
-	if dot, ok := call.Function.(*parser.DotExpression); ok {
-		return dot.Property
-	}
-	return ""
 }
 func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) []ValidateResult {
 	var results []ValidateResult
@@ -2992,14 +2932,6 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 		for _, pair := range e.Pairs {
 			collectReadNamesInExpr(pair.Key, read)
 			collectReadNamesInExpr(pair.Value, read)
-		}
-	case *parser.RunExpression:
-		if e.Call != nil {
-			collectReadNamesInExpr(e.Call, read)
-		}
-	case *parser.AwaitExpression:
-		if e.Right != nil {
-			collectReadNamesInExpr(e.Right, read)
 		}
 	case *parser.CastExpression:
 		if e.Expr != nil {
@@ -4457,6 +4389,22 @@ func iterElemType(ie *parser.IterationExpr, varTypes map[string]string, selfType
 		return "char"
 	}
 	if ie.RangeExpr == nil {
+		return ""
+	}
+	// 通道接收迴圈：每輪綁定三態 ?T（與 parser 的 iterVarType 同口徑）。
+	// ChanValue 形態（body 不對迴圈變數 match）只要元素本身。
+	if ie.IsChan {
+		if id, ok := ie.RangeExpr.(*parser.Identifier); ok {
+			if st, ok := varTypes[id.Value]; ok {
+				if strings.HasPrefix(st, "chan[") && strings.HasSuffix(st, "]") {
+					elem := st[len("chan["): len(st)-1]
+					if ie.ChanValue {
+						return elem
+					}
+					return "?" + elem
+				}
+			}
+		}
 		return ""
 	}
 	if _, ok := ie.RangeExpr.(*parser.StringLiteral); ok {
@@ -8641,10 +8589,6 @@ func walkStrOrderingExpr(sem *parser.SemanticContext, e parser.Expression, funcT
 		walkStrOrderingExpr(sem, x.Alternative, funcTypes, varTypes, selfType, file, results)
 	case *parser.CastExpression:
 		walkStrOrderingExpr(sem, x.Expr, funcTypes, varTypes, selfType, file, results)
-	case *parser.RunExpression:
-		walkStrOrderingExpr(sem, x.Call, funcTypes, varTypes, selfType, file, results)
-	case *parser.AwaitExpression:
-		walkStrOrderingExpr(sem, x.Right, funcTypes, varTypes, selfType, file, results)
 	case *parser.ArrayLiteral:
 		walkStrOrderingExpr(sem, x.Size, funcTypes, varTypes, selfType, file, results)
 		for _, el := range x.Elements {

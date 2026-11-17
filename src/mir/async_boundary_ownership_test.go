@@ -55,15 +55,16 @@ func argbufCloneWindow(ir string) string {
 func TestAsyncStructArgDeepCopiedAtSpawn(t *testing.T) {
 	mod := lowerForTest(t, `holder { s str }
 
-echo-holder-async = (h holder) (r str) {
+echo-holder = (h holder) (r str) {
     r = h.s
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
-    t = run echo-holder-async(h)
+    awy {
+        v = co echo-holder(h)
+    }
     h = holder { s: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' }
-    v = awy t
     print(v)
 }
 `)
@@ -156,75 +157,9 @@ main = () {
 		dst, moveIdx, mod.DumpAnnotated())
 }
 
-// TestAsyncAwaitKeepsResultTypeAcrossRebind pins the asyncResTypes propagation
-// on the REBIND path.
-//
-// A task handle is an opaque i64; the task's real result type is remembered at
-// the `run` site in lowerer.asyncResTypes, keyed by MIR value id. `awy t`
-// resolves the handle through the LOCAL's value id, and a reassignment
-// (`t i64 = 0` … `t = run f(...)`) moves the OpRun result into the EXISTING
-// slot — a different value id. The type was never carried across, so the await
-// fell back to i64 and the result buffer was reinterpreted: a `str` result
-// printed as its LENGTH.
-//
-//	holder { s str }
-//	echo-holder-async = (h holder) (r str) { r = h.s }
-//	t i64 = 0
-//	t = run echo-holder-async(h)
-//	print(awy t)     ; printed 40, want the 40-char string
-//
-// The same hole existed on the module-global rebind path.
-func TestAsyncAwaitKeepsResultTypeAcrossRebind(t *testing.T) {
-	mod := lowerForTest(t, `holder { s str }
-
-echo-holder-async = (h holder) (r str) {
-    r = h.s
-}
-
-main = () {
-    h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
-    t i64 = 0
-    t = run echo-holder-async(h)
-    v = awy t
-    print(v)
-}
-`)
-	fid, ok := mod.FuncByName["main"]
-	if !ok {
-		t.Fatal("main not found in lowered module")
-	}
-	f := mod.Func(fid)
-	var awaited *Inst
-	for _, bid := range f.Blocks {
-		blk := mod.Block(bid)
-		if blk == nil {
-			continue
-		}
-		for _, iid := range blk.Insts {
-			if inst := mod.Inst(iid); inst != nil && inst.Op == OpAwait {
-				awaited = inst
-				break
-			}
-		}
-		if awaited != nil {
-			break
-		}
-	}
-	if awaited == nil {
-		t.Fatalf("no OpAwait emitted:\n%s", mod.DumpAnnotated())
-	}
-	tt := mod.Type(awaited.Type)
-	if tt == nil {
-		t.Fatalf("OpAwait has no type; the handle's result type was lost")
-	}
-	// The callee returns str, so the awaited value must not be a bare i64 —
-	// that is exactly the shape that printed the string's length.
-	if tt.Kind == KindInt {
-		t.Errorf("OpAwait of a rebound handle is typed %q (KindInt): the task's "+
-			"result type was not carried across the rebind, so a str result is "+
-			"read as its length.\n%s", tt.Raw, mod.DumpAnnotated())
-	}
-}
+// 旧的手写句柄重绑定测试（t i64 = 0; t = run f(...); v = awy t）随 run/awy
+// 前缀语法一并移除：新语法只有 `awy { v = co f() }`，结果类型直接由 co 表达式
+// 决定，不再存在「句柄槽位重绑定丢失 asyncResTypes」的 surface 路径。
 
 // TestAsyncReadyQueueGrows pins the ready-queue overflow fix.
 //
@@ -242,8 +177,9 @@ func TestAsyncReadyQueueGrows(t *testing.T) {
 }
 
 main = () {
-    h = run mk(1)
-    v = awy h
+    awy {
+        v = co mk(1)
+    }
     print(v)
 }
 `)
@@ -293,8 +229,9 @@ func TestAsyncWaitersNotAddressAliased(t *testing.T) {
 }
 
 main = () {
-    h = run mk(1)
-    v = awy h
+    awy {
+        v = co mk(1)
+    }
     print(v)
 }
 `)

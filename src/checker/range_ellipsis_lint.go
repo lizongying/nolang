@@ -114,10 +114,6 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 			walkExpr(x.Alternative, file)
 		case *parser.CastExpression:
 			walkExpr(x.Expr, file)
-		case *parser.RunExpression:
-			walkExpr(x.Call, file)
-		case *parser.AwaitExpression:
-			walkExpr(x.Right, file)
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
 				walkExpr(el, file)

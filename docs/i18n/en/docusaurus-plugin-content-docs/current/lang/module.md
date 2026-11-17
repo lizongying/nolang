@@ -80,7 +80,7 @@ Keep the same convention when importing across modules:
 ; # /src/mktemp.mktemp-run
 ```
 
-> **Avoid keywords**: `run` (async keyword), `match` (conditional-match keyword), etc. cannot be used as function names. It is recommended that the entry function use the module name itself (e.g. `ping.no` → `ping`).
+> **Avoid keywords**: `awy` (coroutine-group keyword), `match` (conditional-match keyword), etc. cannot be used as function names. `run` is no longer reserved. It is recommended that the entry function use the module name itself (e.g. `ping.no` → `ping`).
 
 ## When Prefix is Not Required
 

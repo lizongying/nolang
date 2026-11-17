@@ -8,9 +8,7 @@
 1 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 tests/i.no
 0 1d96a073cf6cd8c4738f6cec153689fedf49a2561fbf0351448eaf40773387f6 tests/match.no
 0 c68d9e7157a707e38689a48dc9facc51234de8273be012962015e5989d94f4d6 tests/mem-safety/00-overview.no
-0 9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa tests/mem-safety/async-alloca-escape.no
 0 084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0 tests/mem-safety/async-module-awy.no
-0 6129217cf67ecbda657402281eaac622fb8c939d96ab1d3b240aaefd24ca1c3d tests/mem-safety/async-shared-race.no
 0 3f1f71fa7bf240d75fdf22727550e6dbc9a940a436853c129d6f675d940cd8ee tests/mem-safety/async-str-result.no
 0 8d8ec21d42c117f9d55ce7a51b1a205755ad12aceec382087e1d4668596c4e83 tests/mem-safety/async-str-stress.no
 0 bdf06282fefd4ab7ba1aa0fea75cf00664c88141fe4e9238997b7df59e5fbb88 tests/mem-safety/bug12-builtin-slice-to-str.no

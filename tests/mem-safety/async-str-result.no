@@ -1,6 +1,5 @@
-; 測試 go 取回 %str-long / []i64 結果的懸空指針問題
-; （底層仍 desugar 成 run/awy，所以與手寫 run/awy 的行為一致）
-; 場景 1：簡單字串返回
+; 測試 awy 協程組取回 %str-long / []i64 結果的懸空指針問題
+; （底層 desugar 成 KRun/KAwait，與語義等價）
 
 ; 場景 1：協程直接回傳字面量字串，驗證 awy 取回後指標仍有效
 ; s: 固定的 'hello from async'
@@ -21,15 +20,21 @@ vec-producer = () (v []i64) {
     v = [10, 20, 30]
 }
 
-; 場景 4：多個 go 連續調用
+; 場景 4：多個 co 連續調用
 consumer = () {
-    s1 = co str-producer()
+    awy {
+        s1 = co str-producer()
+    }
     print(s1)
 
-    s2 = co str-producer2()
+    awy {
+        s2 = co str-producer2()
+    }
     print(s2)
 
-    v = co vec-producer()
+    awy {
+        v = co vec-producer()
+    }
     print(v.len())
     print(v[0])
     print(v[1])

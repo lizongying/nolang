@@ -494,12 +494,8 @@ func walkExpr(e parser.Expression, current string, bound map[string]bool, notes 
 				*n += walkStmt(b, current, bound, notes)
 			}
 		}
-	case *parser.RunExpression:
-		x.Call = walkExpr(x.Call, current, bound, notes, n)
 	case *parser.CoExpression:
 		x.Call = walkExpr(x.Call, current, bound, notes, n)
-	case *parser.AwaitExpression:
-		x.Right = walkExpr(x.Right, current, bound, notes, n)
 	case *parser.CastExpression:
 		x.Expr = walkExpr(x.Expr, current, bound, notes, n)
 	case *parser.ArrayLiteral:

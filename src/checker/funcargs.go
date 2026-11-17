@@ -2944,8 +2944,6 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			walkExpr(e.Alternative)
 		case *parser.CastExpression:
 			walkExpr(e.Expr)
-		case *parser.AwaitExpression:
-			walkExpr(e.Right)
 		}
 	}
 	walkStmts = func(stmts []parser.Statement) {

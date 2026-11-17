@@ -1223,11 +1223,11 @@ func (m *Module) optCopySource(f *Function, inst *Inst, defs map[ValueID]int) (V
 //     Redirecting it onto the source slot moves the count without moving the
 //     release, which unbalances the pair.
 //
-// Both were measured. `tests/async-rc.no`'s `h = run f(21); h2 = h; awy h;
-// awy h2` printed `1 42 0` instead of `1 42 42`, and `tests/async-handle-alias.no`
-// lost two of its three results (`1a=42 1b=0`, `2a=42 2b=0 2c=0`). The `.no`
-// source documents the shape by name — "the two awaits shared one slot, so the
-// second read a zeroed handle and printed 0 instead of 42".
+// Both were measured on the old hand-written-handle syntax: `h = run f(21);
+// h2 = h; awy h; awy h2` printed `1 42 0` instead of `1 42 42`, and the alias
+// corpus lost two of its three results (`1a=42 1b=0`, `2a=42 2b=0 2c=0`).
+// Those `.no` fixtures were removed with the `run`/`awy` prefix syntax; the
+// MIR-level fixture in opt_test.go now owns the shape.
 //
 // This is deliberately a whitelist of the ops that carry the semantics, not a
 // guess about which ops mutate their arguments: `drop` and the ownership

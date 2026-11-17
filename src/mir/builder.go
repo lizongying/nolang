@@ -293,6 +293,36 @@ func (b *Builder) EmitOptionWrap(optType TypeID, tag int64, payload ValueID) Val
 	return dst
 }
 
+// EmitChanRecv emits OpChanRecv, which produces TWO values:
+//
+//	opt    — the ?<elem> the loop binds (Results[0] / Dst)
+//	status — the raw receive status (Results[1]): 0 = ok, 1 = closed, 2 = empty
+//
+// The loop back-edge tests `status == 0`, which is why the status is a real
+// value and not something re-derived from the option: MIR has no op that reads
+// an option's discriminant.
+func (b *Builder) EmitChanRecv(optType, statusType TypeID, ch ValueID) (opt, status ValueID) {
+	iid := b.newInstID()
+	opt = b.newValueID(optType, "")
+	status = b.newValueID(statusType, "")
+	if f := b.Mod.Func(b.CurFunc); f != nil {
+		f.LocalTypes[opt] = optType
+		f.LocalTypes[status] = statusType
+	}
+	inst := &b.Mod.Insts[iid]
+	inst.ID = iid
+	inst.Op = OpChanRecv
+	inst.Dst = opt
+	inst.Results = []ValueID{opt, status}
+	inst.Args = []ValueID{ch}
+	inst.Type = optType
+	inst.Block = b.CurBlock
+	if f := b.Mod.Func(b.CurFunc); f != nil {
+		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
+	}
+	return opt, status
+}
+
 // EmitMoveInto emits an OpMove that stores src into the EXISTING dst slot without
 // allocating a new value id. Used for assignment to a previously-bound variable
 // (including a result parameter): the variable keeps its stable slot (so its name

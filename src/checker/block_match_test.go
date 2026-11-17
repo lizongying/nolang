@@ -14,13 +14,13 @@ func TestBlockMatchExhaustiveness(t *testing.T) {
 		count int
 	}{
 		{
-			name: "missing_ok_and_catchall",
-			arms: "        err -> _\n\n        nil -> _\n",
+			name:  "missing_ok_and_catchall",
+			arms:  "        err -> _\n\n        nil -> _\n",
 			count: 1,
 		},
 		{
-			name: "only_err",
-			arms: "        err -> _\n",
+			name:  "only_err",
+			arms:  "        err -> _\n",
 			count: 1,
 		},
 		{

@@ -422,7 +422,7 @@ result = match-text(/\d+/, text)
 
 - **不要在函數名前加上模組名前綴**。模組內的函數只需用簡短直觀的名稱，模組前綴由跨模組調用時的 `ShortName.` 自動帶出。例如在 `tail.no` 中定義入口函數 `tail` 而非 `tail-run`，定義輔助函數 `atoi` 而非 `tail-atoi`。這樣程式碼更簡潔，跨模組調用時形如 `tail.tail()` 也更直觀。
 - **入口函數**建議直接使用模組名本身（如 `ping.no` → `ping`、`cat.no` → `cat`）。跨模組導入形如 `# /src/tail.tail`。
-- **注意避開關鍵字**：`run`（async 關鍵字）、`match`（條件匹配關鍵字）等不能用作函數名。如需對應語義，改用其他名稱。
+- **注意避開關鍵字**：`awy`（協程組關鍵字）、`match`（條件匹配關鍵字）等不能用作函數名。`run` 已移除，可作普通識別符。
 - **`main` 是保留名，不可用作函數名**：Nolang 的程式入口由**頂層語句自動合成**（見 `hir2mir.synthesizeMainForTopLevel`），因此無需、也**不允許**顯式定義 `main`。一旦出現 `main = (...) { }`——包含方法 `recv.main`、嵌套在其它函數內的 `main`——編譯器直接報錯（`'main' is a reserved name and cannot be used as a function name`）。要作為入口，把陳述直接寫在頂層即可。
 
 > **全局變量必須大寫字母開頭**，這是強制規則，不是慣例。小寫開頭的頂層變量會被編譯器視為局部變量，可能導致未定義引用等錯誤。
@@ -1844,122 +1844,47 @@ git-dispatch = (cmd str) {
 }
 ```
 
-### 異步編程（run / awy）— 已廢棄手寫，推薦協程組
+### 異步編程：`awy { ... }` 協程組 + `co`
 
-> ⚠️ **已廢棄（手寫原語）**：`run` / `awy` / `cancel` / `cancelled` 已廢棄，不推薦手寫。手動管理 task 句柄不安全（未 await 會洩漏參數緩衝區、複製句柄後重複 await 會崩潰），協作式取消無法強制中斷長阻塞調用。請改用「協程組」（見下方），自動管理句柄與依賴。
-
-Nolang 使用 `run` 和 `awy` 實現異步並發。異步函數的名稱必須以 `-async` 結尾，但不使用 `async` 關鍵字。
-
-- `run` — 啟動異步線程，返回一個 task handle
-- `awy` — 等待異步線程完成並取得結果
-
-```no
-; 異步函數定義（名稱以 -async 結尾）
-compute-async = (n i64) (r i64) {
-    r = n * 2
-}
-
-; 基本異步調用
-test-basic = () {
-    h = run compute-async(21)
-    r = awy h
-    print(r); 42
-}
-
-; 並發多個任務
-test-concurrent = () {
-    h1 = run compute-async(10)
-    h2 = run compute-async(20)
-    r1 = awy h1
-    r2 = awy h2
-    print(r1); 20
-    print(r2); 40
-}
-
-; 內聯等待
-test-inline = () {
-    r = awy run compute-async(5)
-    print(r); 10
-}
-```
-
-> **命名規則**：異步函數名必須以 `-async` 結尾（如 `compute-async`、`fetch-data-async`）。不使用 `async` 關鍵字聲明。
-
-#### 協程組（coroutine group）— 推薦
-
-語句位置的裸塊 `{ ... }` 是**協程組**：塊內每條「直接調用 `-async` 函數」的語句默認被 **spawn**（等價於 `run`），  
-結果在**需要它的地方**才 `awy`。不需要寫 `run` / `awy`。
-
-```no
-hello-async = (i i64) (r i64) {
-    r = i
-}
-
-; 無依賴：兩個任務並發（先後 spawn，最後一起 await）
-test-concurrent = () {
-    r1 i64
-    r2 i64
-    {
-        r1 = hello-async(1)
-        r2 = hello-async(2)
-    }
-    print(r1); 1
-    print(r2); 2
-}
-
-; 有依賴：r2 讀 r1，不能並發 —— 退化成 await（順序執行）
-test-sequential = () {
-    r1 i64
-    r2 i64
-    {
-        r1 = hello-async(1)
-        r2 = hello-async(r1)
-    }
-    print(r1); 1
-    print(r2); 1
-}
-```
-
-規則：
-
-- **降級條件**：後面的語句讀到（或覆寫）前面某條語句綁定的變量時，那條語句的任務必須先落地，  
-  於是在該處插入 `awy`，整組退化為順序執行。依賴是傳遞的（`r3` 讀 `r2`、`r2` 讀 `r1` ⇒ 整條鏈順序）。
-- **屏障**：組內不是「直接 `-async` 調用」的語句（普通賦值、`print`、迴圈、`if`…）是屏障，  
-  它之前所有仍在飛行中的任務都會先 `awy`。這保證組內讀到的永遠是值，不會是 opaque 句柄。
-- **函數體不是協程組**：只有語句位置的裸塊才是。函數體、`if` 分支、迴圈體都不是，  
-  所以 `f = hello-async(1)` 在函數體裡仍然只是建出一個 future，不自動 await。
-- **丟棄結果也要 await**：`{ side-async(5) }` 仍會 spawn + await —— 未 await 的任務會洩漏它的參數緩衝區。
-
-> **等價展開**（上面並發例子的實際 lowering）：  
-> `__ag0 = run hello-async(1)` → `__ag1 = run hello-async(2)` → `r1 = awy __ag0` → `r2 = awy __ag1`。
-
-#### 無色 async：`co` 關鍵字 — 推薦
-
-`co` 是建立在協程組之上的**無色（colorless）**&#x8A9E;法：你寫未染色的函式名 `worker`，編譯器自動單態化出 `worker-async` 變體，並在底層以染色無棧協程執行。你不需要手寫 `-async` 後綴，也不需要手寫 `run` / `awy`。
+Nolang 只有一種表面並發語法：`awy { ... }` 協程組，組內用 `co <call>` 衍生任務。
+`run` 關鍵字已移除（`run` 現在是普通識別符）；`awy <handle>` 等待前綴與語句位置裸塊
+協程組都已廢除。**組外寫 `co` 是編譯錯誤**（`E_CO_OUTSIDE_GROUP`）。
 
 ```no
 worker = (n i64) (r i64) {
-
     #{overflow=wrap}
     r = n + 1
 }
 
-; 入口由頂層語句自動合成（無需、也不允許顯式 `main`）
-r1 i64
-r2 i64
-{
-    r1 = co worker(1); 自動單態 worker-async 並 spawn
-    r2 = co worker(2); 與 r1 並發執行
+; 無依賴：兩個任務並發，組尾統一等待
+awy {
+    r1 = co worker(1)
+    r2 = co worker(2)
 }
 print(r1.to-str() + ' ' + r2.to-str())
 ```
 
+`r1` / `r2` 拿到的是**結果值**，不是 task 句柄；離開組時所有任務都已被等待。
+
+#### 無色 async：`co`
+
+`co` 是無色（colorless）語法：你寫未染色的函式名 `worker`，編譯器自動單態化出
+`worker-async` 變體並在底層以染色無棧協程執行。不要在應用碼手寫 `-async` 後綴。
+
 規則：
 
-- **單態化**：`co worker(1)` 會自動生成 `worker-async`（複製 `worker` 的本體、改名）。若 `worker` 同時也被同步呼叫，則 `worker` 與 `worker-async` 兩個方法共存。
-- **傳遞性**：若某函式內部呼叫了異步函式（例如 `worker` 內 `co child(...)`），則 `worker` 也會被單態為 `worker-async`，異步染色沿呼叫鏈向上傳遞。
-- **語句級 `co`（協程組之外）**：當 `co` 出現在協程組之外（例如在函式體裡 `d = co worker(5)`），編譯器會把它包成 `run worker-async(5)` + `awy` 的內聯 await，使 `d` 取到的是結果值而非 task 句柄。
-- **底層仍是染色無棧協程**：`co` 只是語法糖。協程組內 `r1 = co worker(1)` 與 `r2 = co worker(2)` 各佔一行（`;` 是註釋，不能當語句分隔符），等價於協程組展開——先後 spawn `worker-async`，最後一起 `awy`。
+- **單態化**：`co worker(1)` 會自動生成 `worker-async`（複製 `worker` 的本體、改名）。若 `worker` 同時也被同步呼叫，兩者共存。
+- **傳遞性**：若某函式內部也有 `awy { c = co child(n) }`，該函式本身也會被單態為 `-async`，異步染色沿呼叫鏈向上傳遞。
+- **降級**：若後面的 `co` 讀到前面某條 `co` 綁定的變量，前面的任務先落地，整組退化為順序執行；依賴是傳遞的。
+- **屏障**：組內不是 `co` 綁定的語句（普通賦值、`print`、迴圈、`if`…）會先等待所有在飛行的任務，保證組內讀到的永遠是值。
+- **函數體不是協程組**：只有 `awy { ... }` 引入組。函數體、`if` 分支、迴圈體內的 `co` 一律拒絕。
+- **丟棄結果也要等待**：`awy { co side(5) }` 仍會 spawn + await，不留下未等待的任務。
+
+> **底層 lowering**（不是使用者語法）：每條 `co` 變成 `OpRun`，組尾為各任務插入 `OpAwait`；
+> `KRun` / `KAwait` / `OpRun` / `OpAwait` 只存在於 HIR/MIR。
+
+取消：`cancelled()` 可在協程函式內作協作式自我檢查；`cancel(h)` 是底層句柄操作，
+新語法不暴露 task 句柄，應用碼不使用。
 
 ### 多重賦值
 

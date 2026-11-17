@@ -17,7 +17,7 @@ import (
 // fix" evidence: under P1 the same call would have been silent, i.e. the check
 // would have been vacuous.
 
-const tierSrc = `work-async = (n i64) (r i64) {
+const tierSrc = `work = (n i64) (r i64) {
     #{overflow=wrap}
     r = n * 2
 }
@@ -26,29 +26,15 @@ main = () {
     s str = 'abc'
     t str = s
     print(t)
-    h = run work-async(21)
-    v = awy h
+    awy {
+        v = co work(21)
+    }
     print(v)
 }
 `
 
-// tierAliasChainSrc is the shape that needs MORE THAN ONE fixpoint sweep: the
-// handle is copied twice before it is awaited, so R has to travel
-// h → h2 → h3 along the alias edges. A single-sweep "fixpoint" leaves h3 at S,
-// which is what checkTierPartition's closure half exists to catch.
-const tierAliasChainSrc = `work-async = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n * 2
-}
-
-main = () {
-    h = run work-async(21)
-    h2 = h
-    h3 = h2
-    v = awy h3
-    print(v)
-}
-`
+// 旧的手写句柄别名链（h2 = h; h3 = h2）随 run/awy 前缀语法一并移除：
+// 新语法不暴露 task 句柄，也没有可传递的别名边。
 
 // tierViewWrittenSrc is the C-tier trigger: `a` is a BORROW read (the `%vec`
 // field of `o`, which emitGetField does not clone) and it is then written
@@ -285,31 +271,6 @@ func TestInferTiersSpawnHandleIsR(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatal("no definitions checked: the test would pass vacuously")
-	}
-}
-
-// TestInferTiersPropagatesRAcrossAliasChain pins the transitivity row
-// (§3.1 「被 R 檔值別名 → R」) at a depth that needs more than one sweep.
-func TestInferTiersPropagatesRAcrossAliasChain(t *testing.T) {
-	mod := lowerForTest(t, tierAliasChainSrc)
-	f := tierFunc(t, mod, "main")
-	run := tierRunInst(t, mod, "main")
-	tiers := mod.inferTiers(f)
-	root := run.Dst
-	if root <= NoVal {
-		t.Fatalf("the spawn has no destination value")
-	}
-	// The alias set is the SHARED predicate (spawn_graph.go / checkRefBalance),
-	// so the assertion is on the property the validator uses, not on a
-	// re-derivation.
-	members := mod.handleAliasSet(f, root)
-	if len(members) < 3 {
-		t.Fatalf("the alias chain collapsed to %d member(s): the source no longer exercises depth", len(members))
-	}
-	for _, m := range members {
-		if got := tiers[m]; got != TierR {
-			t.Errorf("alias member %d of the spawn handle tiered %v, want R", m, got)
-		}
 	}
 }
 

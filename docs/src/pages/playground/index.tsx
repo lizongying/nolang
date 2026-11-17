@@ -122,6 +122,11 @@ export default function Playground(): React.JSX.Element {
   const [selectedExample, setSelectedExample] = useState<string>(DEFAULT_EXAMPLE_ID);
   const [runMarkers, setRunMarkers] = useState<ErrorMarker[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [showFirstCompileHint, setShowFirstCompileHint] = useState(false);
+  const [firstCompileSeconds, setFirstCompileSeconds] = useState(0);
+  // The runtime warms up automatically on load; Run is gated until it is ready.
+  const [runnerReady, setRunnerReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const editorHostRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -131,6 +136,9 @@ export default function Playground(): React.JSX.Element {
   // Ref guards beat state guards for rapid double-clicks: setState is async.
   const isRunningRef = useRef(false);
   const noticeSeq = useRef(0);
+  // The first compile lowers the whole std library in-browser (~30–60 s).
+  // Track it once per page session so only that run shows the patience hint.
+  const hasCompiledRef = useRef(false);
 
   const pushNotice = useCallback((level: Notice['level'], text: string) => {
     setNotices((prev) =>
@@ -315,30 +323,56 @@ export default function Playground(): React.JSX.Element {
     };
   }, [pushNotice, ui]);
 
-  // Runner. Warm up the 27 MB compiler during idle time so the first Run does
-  // not pay the full download + compile cost.
+  // Runner. Start warming the 27 MB compiler immediately on load (not on the
+  // first click): Run stays disabled until onReady fires. The compiled module
+  // lives in the worker for the whole session.
   useEffect(() => {
     const runner = new Runner(NO_WASM_URL, {
       onLoadError: (reason) =>
         pushNotice('error', formatMessage(ui.wasmLoadFailed, {name: 'no.wasm', reason})),
-      onStage: (stage: RunStage) => setStatus(stage === 'compiling' ? 'compiling' : 'running'),
+      onReady: () => {
+        setRunnerReady(true);
+        setInitError(null);
+      },
+      onWarmupError: (reason) => setInitError(reason),
+      onStage: (stage: RunStage) => {
+        setStatus(stage === 'compiling' ? 'compiling' : 'running');
+        // The slow part is over once the worker reaches the execute stage.
+        if (stage === 'running') setShowFirstCompileHint(false);
+      },
     });
     runnerRef.current = runner;
-    const idleHandle = scheduleIdle(() => runner.warmup());
+    runner.warmup();
     return () => {
-      cancelIdle(idleHandle);
       runner.dispose();
       runnerRef.current = null;
     };
   }, [pushNotice, ui]);
 
+  // Tick the "waited N seconds" counter only while the first-compile hint is
+  // visible, so users can tell the page is alive during the long cold build.
+  useEffect(() => {
+    if (!showFirstCompileHint) return;
+    setFirstCompileSeconds(0);
+    const started = Date.now();
+    const id = window.setInterval(() => {
+      setFirstCompileSeconds(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [showFirstCompileHint]);
+
   const getCurrentCode = (): string =>
     editorViewRef.current?.state.doc.toString() ?? code;
+
+  const handleRetryInit = () => {
+    setInitError(null);
+    runnerRef.current?.warmup();
+  };
 
   const handleRun = async () => {
     if (isRunningRef.current) return;
     const runner = runnerRef.current;
-    if (!runner) {
+    if (!runner || !runner.isReady()) {
       setStderr(ui.runnerUnavailable);
       setStatus('error');
       return;
@@ -349,6 +383,8 @@ export default function Playground(): React.JSX.Element {
     setOutput('');
     setStderr('');
     setRunMarkers([]);
+    // Only the very first compile pays the in-browser std-library build cost.
+    if (!hasCompiledRef.current) setShowFirstCompileHint(true);
     try {
       const result = await runner.run(getCurrentCode(), RUN_TIMEOUT_MS);
       setOutput(result.stdout);
@@ -378,6 +414,10 @@ export default function Playground(): React.JSX.Element {
       setStderr(messageOf(e));
       setStatus('error');
     } finally {
+      // Any attempt that reached the worker has warmed it; never show the
+      // patience hint again, even if compilation failed or timed out.
+      hasCompiledRef.current = true;
+      setShowFirstCompileHint(false);
       isRunningRef.current = false;
       setIsRunning(false);
     }
@@ -461,18 +501,19 @@ export default function Playground(): React.JSX.Element {
         <div style={{display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap'}}>
           <button
             onClick={handleRun}
-            disabled={isRunning}
+            disabled={isRunning || !runnerReady}
+            title={!runnerReady ? ui.initializing : undefined}
             style={{
               padding: '6px 16px',
-              background: isRunning ? 'var(--nolang-muted)' : '#25c2a0',
+              background: isRunning || !runnerReady ? 'var(--nolang-muted)' : '#25c2a0',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: isRunning ? 'not-allowed' : 'pointer',
+              cursor: isRunning || !runnerReady ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 600,
             }}>
-            {isRunning ? ui.running : ui.run}
+            {!runnerReady ? ui.initializingButton : isRunning ? ui.running : ui.run}
           </button>
           <button
             onClick={handleFormat}
@@ -563,6 +604,82 @@ export default function Playground(): React.JSX.Element {
             </button>
           </div>
         ))}
+
+        {!runnerReady && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 12px',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              background: initError ? 'var(--nolang-error-bg)' : 'var(--nolang-banner-bg)',
+              border: `1px solid ${initError ? 'var(--nolang-error-border)' : 'var(--nolang-panel-border)'}`,
+              borderRadius: '4px',
+              color: initError ? 'var(--nolang-error-fg)' : 'var(--nolang-info-fg)',
+            }}>
+            {initError ? (
+              <span style={{flex: 1}}>{formatMessage(ui.initFailed, {reason: initError})}</span>
+            ) : (
+              <>
+                <span className="nolang-spinner" aria-hidden="true" />
+                <span style={{flex: 1}}>{ui.initializing}</span>
+              </>
+            )}
+            {initError && (
+              <button
+                type="button"
+                onClick={handleRetryInit}
+                style={{
+                  flex: '0 0 auto',
+                  padding: '4px 12px',
+                  background: 'var(--nolang-panel-bg)',
+                  color: 'inherit',
+                  border: '1px solid currentColor',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                }}>
+                {ui.retryInit}
+              </button>
+            )}
+          </div>
+        )}
+
+        {showFirstCompileHint && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 12px',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              background: 'var(--nolang-banner-bg)',
+              border: '1px solid var(--nolang-panel-border)',
+              borderRadius: '4px',
+              color: 'var(--nolang-info-fg)',
+            }}>
+            <span className="nolang-spinner" aria-hidden="true" />
+            <span style={{flex: 1}}>
+              <span style={{fontWeight: 600}}>{ui.statusCompiling}</span> · {ui.firstCompileHint}
+            </span>
+            <span
+              style={{
+                flex: '0 0 auto',
+                fontFamily: MONO,
+                color: 'var(--nolang-muted)',
+                whiteSpace: 'nowrap',
+              }}>
+              {formatMessage(ui.firstCompileWaited, {s: firstCompileSeconds})}
+            </span>
+          </div>
+        )}
 
         <div style={{display: 'flex', gap: '12px', flex: 1, minHeight: 0}}>
           {/* Editor pane */}

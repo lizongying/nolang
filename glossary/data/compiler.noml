@@ -50,7 +50,7 @@ lexer -> parser -> checker -> transpiler -> opt -> llc -> clang
 # /pkg/src/a
 #{overflow=wrap}
 `
-      related: ['parser', 'syntax-raw-string', 'syntax-char-literal', 'reserved-run']
+      related: ['parser', 'syntax-raw-string', 'syntax-char-literal', 'reserved-keywords']
       refs: ['src/lexer']
     }
     'parser': {

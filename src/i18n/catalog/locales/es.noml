@@ -404,6 +404,8 @@ Error al resolver la última versión: %v
   'bsaaq6j7': 'utime: no se puede convertir la ruta a una cadena C'
   'bsnjql1o': 'escribiendo la salida HTML %s: %w'
   'bvxzv6u0': 'net-udp-recvfrom: no hay ranura para el resultado'
+  'c0grp1aa': 'co <call> solo se permite dentro de un grupo de corutinas \'awy { ... }\''
+  'c0grp1ab': 'se esperaba \'{\' después de \'awy\' para iniciar un grupo de corutinas'
   'c33l3vql': 'archivo de módulo no encontrado: %s o %s'
   'c48g377y': 'no se admiten límites de rango en coma flotante, usa enteros'
   'c6eld4s3': `
@@ -1178,7 +1180,6 @@ Error al escribir el archivo de configuración: %v
   'y4yjmhz2': 'builtin %s: tipo LLVMConv desconocido %d'
   'y4yxzacz': 'builtin %s: el búfer scratch no se materializó'
   'y5f921sg': 'ranura de destino del índice txt (dst=%d type=%s)'
-  'y7964ox1': 'la función “%s” llamada por “run” debe terminar en “-async”'
   'y8ieefsr': 'builtin %s: argumentos incorrectos'
   'y9lj5a9g': 'se esperaba el nombre o el tipo del parámetro, se obtuvo %s'
   'yevhjra2': 'LLVM C API: %s falló: %s'

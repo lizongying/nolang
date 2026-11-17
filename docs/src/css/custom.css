@@ -191,3 +191,24 @@
 .nolang-panel-muted {
   color: var(--nolang-muted);
 }
+
+/** Spinner for the first-compile patience banner. */
+.nolang-spinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: nolang-spin 0.8s linear infinite;
+}
+@keyframes nolang-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nolang-spinner {
+    animation-duration: 2s;
+  }
+}

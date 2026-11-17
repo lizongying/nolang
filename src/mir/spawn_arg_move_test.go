@@ -36,14 +36,15 @@ import (
 // read after the spawn, so its ownership can be transferred.
 const spawnArgSrc = `holder { s str }
 
-echo-holder-async = (h holder) (r str) {
+echo-holder = (h holder) (r str) {
     r = h.s
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
-    t = run echo-holder-async(h)
-    v = awy t
+    awy {
+        v = co echo-holder(h)
+    }
     print(v)
 }
 `
@@ -52,15 +53,16 @@ main = () {
 // the spawn, so it is live across it and the copy must stay.
 const spawnArgLiveSrc = `holder { s str }
 
-echo-holder-async = (h holder) (r str) {
+echo-holder = (h holder) (r str) {
     r = h.s
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
-    t = run echo-holder-async(h)
+    awy {
+        v = co echo-holder(h)
+    }
     print(h.s)
-    v = awy t
     print(v)
 }
 `
@@ -273,8 +275,10 @@ func TestSpawnArgMoveNotTakenForScalarArg(t *testing.T) {
 
 main = () {
     x i64 = 21
-    t = run dbl(x)
-    print(awy t)
+    awy {
+        v = co dbl(x)
+    }
+    print(v)
 }
 `)
 	if len(mod.spawnArgMoves) != 0 {
@@ -292,11 +296,11 @@ main = () {
 // of Module.SpawnArgClasses — so this asserts the cross-layer agreement rather
 // than a second copy of the rule.
 func TestSpawnArgMoveOnlyWhenWrapperFreesPayload(t *testing.T) {
-	mod := lowerForTest(t, `echo-async = (s str) (r str) {
+	mod := lowerForTest(t, `echo = (s str) (r str) {
     r = s
 }
 
-first-async = (v []i64) (r i64) {
+first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -311,7 +315,7 @@ dbl = (n i64) (r i64) {
 
 holder { s str }
 
-echo-holder-async = (h holder) (r str) {
+echo-holder = (h holder) (r str) {
     r = h.s
 }
 
@@ -319,14 +323,16 @@ main = () {
     s str = 'hello world'
     a []i64 = [7, 8, 9]
     h holder = holder { s: 'nested' }
-    t1 = run echo-async(s)
-    t2 = run first-async(a)
-    t3 = run echo-holder-async(h)
-    t4 = run dbl(21)
-    print(awy t1)
-    print(awy t2)
-    print(awy t3)
-    print(awy t4)
+    awy {
+        r1 = co echo(s)
+        r2 = co first(a)
+        r3 = co echo-holder(h)
+        r4 = co dbl(21)
+    }
+    print(r1)
+    print(r2)
+    print(r3)
+    print(r4)
 }
 `)
 	f := mod.Func(mod.FuncByName["main"])
@@ -372,11 +378,11 @@ func TestSpawnArgClassesContract(t *testing.T) {
 	// Every callee must be REACHABLE: lowering is worklist-driven from `main`, so
 	// a function nobody calls is not in the module at all and FuncByName misses
 	// it. That is why this source has a `main` that spawns all of them.
-	mod := lowerForTest(t, `echo-async = (s str) (r str) {
+	mod := lowerForTest(t, `echo = (s str) (r str) {
     r = s
 }
 
-first-async = (v []i64) (r i64) {
+first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it
 
@@ -393,11 +399,11 @@ holder { s str }
 
 plain { n i64 }
 
-echo-holder-async = (h holder) (r str) {
+echo-holder = (h holder) (r str) {
     r = h.s
 }
 
-echo-plain-async = (p plain) (r i64) {
+echo-plain = (p plain) (r i64) {
     r = p.n
 }
 
@@ -406,16 +412,18 @@ main = () {
     a []i64 = [7, 8, 9]
     h holder = holder { s: 'nested' }
     p plain = plain { n: 1 }
-    t1 = run echo-async(s)
-    t2 = run first-async(a)
-    t3 = run echo-holder-async(h)
-    t4 = run echo-plain-async(p)
-    t5 = run dbl(21)
-    print(awy t1)
-    print(awy t2)
-    print(awy t3)
-    print(awy t4)
-    print(awy t5)
+    awy {
+        r1 = co echo(s)
+        r2 = co first(a)
+        r3 = co echo-holder(h)
+        r4 = co echo-plain(p)
+        r5 = co dbl(21)
+    }
+    print(r1)
+    print(r2)
+    print(r3)
+    print(r4)
+    print(r5)
 }
 `)
 	for _, tc := range []struct {
@@ -424,7 +432,9 @@ main = () {
 	}{
 		{"echo-async", "str"},
 		{"first-async", "vec"},
-		{"dbl", ""},
+		// `dbl` has no sync callers left after `co dbl(...)` is retargeted to
+		// `dbl-async`, so reachability-driven lowering keeps only the variant.
+		{"dbl-async", ""},
 		// A struct that owns heap through an inline `str` leaf.
 		{"echo-holder-async", "struct"},
 		// A struct that owns nothing: a bitwise copy IS a value copy, so it is

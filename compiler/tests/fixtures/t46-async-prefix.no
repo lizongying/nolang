@@ -2,12 +2,14 @@ worker = (n i64) (r i64) {
     r = n
 }
 
-; 無色 async 前綴：run/co/awy 各建單 guarded CHILD 的包裝節點
-h = run worker(3)
-k = co worker(4)
-v = awy h
+; 協程組：`awy { }` 內的 `co worker(...)` 是無色 async spawn
+; （run / 舊 awy 前綴已廢除，不再建 K-RUN/K-AWAIT-EXPRESSION）
+awy {
+    h = co worker(3)
+    k = co worker(4)
+}
 
-; 歧義消解：`co`/`run` 緊接 `.` 時是模組名（DotExpression），非 async 關鍵字
+; 歧義消解：`co` 緊接 `.` 時是模組名（DotExpression），非 async 關鍵字
 m = co.pool()
 
 ; 對照：普通呼叫不受影響（CallExpression）

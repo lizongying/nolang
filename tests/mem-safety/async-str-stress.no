@@ -1,5 +1,5 @@
-; 壓力測試：循環中重複 go，驗證是否有累積泄漏或 UAF
-; （底層仍 desugar 成 run/awy，所以與手寫 run/awy 的行為一致）
+; 壓力測試：循環中重複 co，驗證是否有累積泄漏或 UAF
+; （底層 desugar 成 KRun/KAwait）
 
 ; 協程生產者：回傳固定字串，供壓力測試反覆 spawn / awy
 ; s: 固定的 5 位元組字串 'value'
@@ -10,7 +10,9 @@ str-producer = () (s str) {
 ; 連續 spawn 100 個協程並取回結果，每輪字串長度都應是 5（無累積洩漏、無懸空）
 stress = () {
     i <- [0..100): {
-        s = co str-producer()
+        awy {
+            s = co str-producer()
+        }
         s.len-bytes() == 5 -> print('ok ', i)
     }
 }

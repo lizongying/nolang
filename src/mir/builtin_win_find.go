@@ -135,7 +135,8 @@ func (c *codegen) emitBuiltinWinFindNextFile(inst *Inst) error {
 	// ?str result: okc becomes the option tag (0 = some name, 1 = nil / exhausted).
 	// The entry name lives inside the caller's scratch buffer, so copy it to an
 	// owned heap block (strLongFromBuffer) before wrapping.
-	c.decl("declare i64 @strlen(i8*)")
+	// strlen is already declared globally by codegen.go — re-declaring it here
+	// makes LLVM reject the module with "invalid redefinition of function".
 	slen := c.treg("wfn.slen")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", slen, safe))
 	sreg := c.strLongFromBuffer(safe, slen)

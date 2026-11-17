@@ -70,6 +70,17 @@ export interface PlaygroundStrings {
   runnerUnavailable: string;
   compilerFailed: string;
   runtimeFailed: string;
+  /** Shown as a banner while the first (slow) compile builds the std library. */
+  firstCompileHint: string;
+  /** `{s}` is the number of seconds waited so far, to show the page is alive. */
+  firstCompileWaited: string;
+  /** Shown while the runtime (compiler WASM) is being fetched/compiled on load. */
+  initializing: string;
+  /** Short label for the disabled Run button during init. */
+  initializingButton: string;
+  /** `{reason}` is the underlying WASM load error. */
+  initFailed: string;
+  retryInit: string;
 }
 
 export const STRINGS: Record<Locale, PlaygroundStrings> = {
@@ -104,6 +115,13 @@ export const STRINGS: Record<Locale, PlaygroundStrings> = {
     runnerUnavailable: '运行器尚未就绪，请稍后重试。',
     compilerFailed: '编译失败，请查看标准错误输出。',
     runtimeFailed: '程序执行失败，请查看标准错误输出。',
+    firstCompileHint:
+      '首次编译较慢：需要在浏览器中下载编译器并构建标准库，通常要 30～60 秒甚至更久。请耐心等待，之后的运行会快很多。',
+    firstCompileWaited: '已等待 {s} 秒…',
+    initializing: '正在初始化运行环境：加载编译器（约 27 MB）中，请稍候…',
+    initializingButton: '初始化中…',
+    initFailed: '运行环境初始化失败：{reason}',
+    retryInit: '重试',
   },
   en: {
     run: '▶ Run',
@@ -136,6 +154,13 @@ export const STRINGS: Record<Locale, PlaygroundStrings> = {
     runnerUnavailable: 'Runner is not ready yet; please try again.',
     compilerFailed: 'Compilation failed; see stderr for details.',
     runtimeFailed: 'Execution failed; see stderr for details.',
+    firstCompileHint:
+      'The first compile takes longer: the compiler is downloaded and the standard library is built right in your browser, usually 30–60 seconds or more. Please be patient — later runs are much faster.',
+    firstCompileWaited: 'Waited {s}s…',
+    initializing: 'Initializing the runtime: downloading the compiler (~27 MB), please wait…',
+    initializingButton: 'Initializing…',
+    initFailed: 'Runtime initialization failed: {reason}',
+    retryInit: 'Retry',
   },
 };
 

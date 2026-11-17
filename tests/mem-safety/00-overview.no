@@ -19,11 +19,7 @@
 ;    out = view（view 是切片視圖別名）不走 clone 路徑
 ;    src/build/llvm/expr.go:133-149, slice_view.go:450
 ;
-; 2. async-alloca-escape.no
-;    異步 args/result 用 alloca，未 awy 即返回 → use-after-free
-;    src/build/llvm/expr.go:5671-5680
-;
-; 3. async-str-result.no
+; 2. async-str-result.no
 ;    awy 取回的 %str-long 結果可能是懸空指針
 ;    任務函數 emitHeapFree 釋放後，調用端拿到失效 data
 ;    src/build/llvm/expr.go:6137
@@ -95,11 +91,6 @@
 ...
 
 ;
-; 13. async-shared-race.no（已解決）
-;     線程間共享堆數據無同步保護 → 參數深拷貝隔離 + wrapper 釋放參數容器
-;     + emitLocalTasksFree 同步驅動未完成 task 並釋放 args/result
-;     src/build/llvm/expr.go: prepareAsyncCall, stmt.go: emitLocalTasksFree
-;
 ; 已規避的問題（設計正確，不需測試）
 ...
 
@@ -130,4 +121,4 @@
 ; - 併發所有權隔離或同步原語
 ;
 print('Nolang 內存安全測試套件索引')
-print('共 14 個測試案例，詳見各 .no 文件註釋')
+print('共 12 個測試案例，詳見各 .no 文件註釋')

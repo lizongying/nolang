@@ -35,10 +35,10 @@ func hirOf(t *testing.T, src string) *hir.Package {
 	return pkg
 }
 
-// shapeOf renders the statements of the FIRST bare block found inside fn as
-// compact tokens: "run:<handle>", "awy:<target>", or the node kind name for
-// anything else. Order is the point of the assertion, so a flat ordered list is
-// the right observable.
+// shapeOf renders the statements of the FIRST `awy { ... }` group found inside
+// fn as compact tokens: "run:<handle>", "awy:<target>", or the node kind name
+// for anything else. Order is the point of the assertion, so a flat ordered
+// list is the right observable.
 func shapeOf(t *testing.T, pkg *hir.Package, fn string) []string {
 	t.Helper()
 	var body int32 = hir.NoID
@@ -56,17 +56,18 @@ func shapeOf(t *testing.T, pkg *hir.Package, fn string) []string {
 	if body == hir.NoID {
 		t.Fatalf("no body found for fn %q", fn)
 	}
-	// A bare block is a KBlock whose parent is a KBlock (fn bodies hang off a
-	// KSlot), which is exactly the rule the pass uses.
+	// A coroutine group is a KBlock carrying FlagAwaitGroup (emitted by
+	// `awy { ... }`), which is exactly the rule the pass uses.
 	group := hir.NoID
 	for _, c := range pkg.Children(body) {
-		if cn := pkg.Node(c); cn != nil && cn.Kind == hir.KBlock {
+		if cn := pkg.Node(c); cn != nil && cn.Kind == hir.KBlock &&
+			cn.Flags&hir.FlagAwaitGroup != 0 {
 			group = c
 			break
 		}
 	}
 	if group == hir.NoID {
-		t.Fatalf("no bare block inside fn %q", fn)
+		t.Fatalf("no awy group inside fn %q", fn)
 	}
 	var out []string
 	for _, s := range pkg.Children(group) {
@@ -88,14 +89,33 @@ func shapeOf(t *testing.T, pkg *hir.Package, fn string) []string {
 	return out
 }
 
-const groupWorkSrc = `work-async = (n i64) (r i64) {
+const groupWorkSrc = `work = (n i64) (r i64) {
     r = n
 }
 `
 
+// normalizeShape strips the synthesized handle suffix from "run:__agN" /
+// "awy:rN" tokens, keeping only the run/awy pattern. Exact handle names are
+// checked separately by TestGroupHandleNameAvoidsACollision; here the property
+// under test is the SPAWN/AWAIT ORDER, and handle numbering shifts whenever
+// MonomorphizeGo synthesizes an extra -async variant.
+func normalizeShape(shape []string) []string {
+	out := make([]string, len(shape))
+	for i, s := range shape {
+		if j := strings.IndexByte(s, ':'); j >= 0 {
+			out[i] = s[:j]
+		} else {
+			out[i] = s
+		}
+	}
+	return out
+}
+
 func wantShape(t *testing.T, got []string, want ...string) {
 	t.Helper()
-	if strings.Join(got, "|") != strings.Join(want, "|") {
+	gotNorm := normalizeShape(got)
+	wantNorm := normalizeShape(want)
+	if strings.Join(gotNorm, "|") != strings.Join(wantNorm, "|") {
 		t.Errorf("group shape = [%s], want [%s]", strings.Join(got, "|"), strings.Join(want, "|"))
 	}
 }
@@ -106,9 +126,9 @@ func TestGroupIndependentSpawnsThenAwaits(t *testing.T) {
 	src := groupWorkSrc + `main = () {
     r1 i64
     r2 i64
-    {
-        r1 = work-async(1)
-        r2 = work-async(2)
+    awy {
+        r1 = co work(1)
+        r2 = co work(2)
     }
     print(r1)
 }
@@ -123,9 +143,9 @@ func TestGroupDependencyDegradesToAwait(t *testing.T) {
 	src := groupWorkSrc + `main = () {
     r1 i64
     r2 i64
-    {
-        r1 = work-async(1)
-        r2 = work-async(r1)
+    awy {
+        r1 = co work(1)
+        r2 = co work(r1)
     }
     print(r2)
 }
@@ -134,32 +154,32 @@ func TestGroupDependencyDegradesToAwait(t *testing.T) {
 		"run:__ag0", "awy:r1", "run:__ag1", "awy:r2")
 }
 
-// TestGroupDiscardedResultStillAwaited: a bare `-async` call statement with no
-// binding still gets both a spawn and an await — an un-awaited task leaks its
-// argument buffer.
+// TestGroupDiscardedResultStillAwaited: a `co` call statement with no binding
+// still gets both a spawn and an await — an un-awaited task leaks its argument
+// buffer.
 func TestGroupDiscardedResultStillAwaited(t *testing.T) {
-	src := `side-async = (n i64) {
+	src := `side = (n i64) {
     print(n)
 }
 main = () {
-    {
-        side-async(7)
+    awy {
+        co side(7)
     }
 }
 `
 	wantShape(t, shapeOf(t, hirOf(t, src), "main"), "run:__ag0", "awy:")
 }
 
-// TestGroupWithoutAsyncCallIsLeftAlone: no `-async` callee means no group. The
-// pass must report 0 and leave the block as written — this is the property that
-// makes the whole feature a no-op for the existing corpus.
+// TestGroupWithoutAsyncCallIsLeftAlone: an `awy` block with no `co` spawn
+// means nothing to desugar. The pass must report 0 and leave the block as
+// written — this is the property that keeps the pass a no-op for such groups.
 func TestGroupWithoutAsyncCallIsLeftAlone(t *testing.T) {
 	pkg := hirOf(t, `work = (n i64) (r i64) {
     r = n
 }
 main = () {
     r1 i64
-    {
+    awy {
         r1 = work(1)
     }
     print(r1)
@@ -184,8 +204,8 @@ func TestGroupHandleNameAvoidsACollision(t *testing.T) {
 	t.Setenv("NOLANG_ASYNC_GROUP", "0")
 	pkg := hirOf(t, groupWorkSrc+`main = () {
     r1 i64
-    {
-        r1 = work-async(1)
+    awy {
+        r1 = co work(1)
     }
 }
 `)
@@ -213,8 +233,8 @@ func TestGroupKillSwitch(t *testing.T) {
 	t.Setenv("NOLANG_ASYNC_GROUP", "0")
 	src := groupWorkSrc + `main = () {
     r1 i64
-    {
-        r1 = work-async(1)
+    awy {
+        r1 = co work(1)
     }
 }
 `

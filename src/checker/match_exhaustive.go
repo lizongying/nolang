@@ -229,8 +229,6 @@ func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*pa
 			}
 		case *parser.GroupedExpression:
 			walkExpr(funcName, file, x.Expression)
-		case *parser.AwaitExpression:
-			walkExpr(funcName, file, x.Right)
 		case *parser.DotExpression:
 			walkExpr(funcName, file, x.Receiver)
 		}

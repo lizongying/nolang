@@ -256,10 +256,6 @@ func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, ma
 			}
 		case *parser.GroupedExpression:
 			walkExpr(fn, file, x.Expression)
-		case *parser.AwaitExpression:
-			walkExpr(fn, file, x.Right)
-		case *parser.RunExpression:
-			walkExpr(fn, file, x.Call)
 		case *parser.CastExpression:
 			walkExpr(fn, file, x.Expr)
 		case *parser.ConditionalExpression:

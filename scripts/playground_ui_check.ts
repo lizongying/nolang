@@ -78,6 +78,12 @@ eq(normalizeLocale('en'), 'en', 'en locale');
 eq(normalizeLocale(undefined), 'en', 'missing locale falls back to en');
 eq(formatMessage(STRINGS.en.timedOut, {ms: 8000}).includes('8000 ms'), true,
   'timedOut template interpolates ms');
+eq(formatMessage(STRINGS['zh-Hans'].firstCompileWaited, {s: 42}).includes('42'), true,
+  'firstCompileWaited template interpolates seconds (zh)');
+eq(formatMessage(STRINGS.en.firstCompileWaited, {s: 42}).includes('42'), true,
+  'firstCompileWaited template interpolates seconds (en)');
+eq(STRINGS['zh-Hans'].firstCompileHint.length > 0 && STRINGS.en.firstCompileHint.length > 0, true,
+  'first-compile hint is present in both locales');
 eq(examples.length >= 18 && examples.length <= 24, true, 'demo count within 18-24');
 eq(new Set(examples.map((e) => e.id)).size, examples.length, 'demo ids are unique');
 eq(CATEGORY_ORDER.every((c) => examples.some((e) => e.category === c.id)), true,
@@ -123,9 +129,13 @@ const NativeWorker = (globalThis as any).Worker;
 
 async function runRunnerChecks(): Promise<void> {
   // 1. Timeout really terminates the worker and resolves timedOut.
+  // The compile stage uses a long (180 s) budget; signal 'running' so the
+  // short user budget arms and the check does not wait for the compile watchdog.
   FakeWorker.instances = [];
   const runner = new Runner('/nolang/wasm/no.wasm');
-  const timedOut = await runner.run('i <- [0..): {}', 20);
+  const timeoutPromise = runner.run('i <- [0..): {}', 20);
+  FakeWorker.instances[0].emit({type: 'stage', runId: 1, stage: 'running'});
+  const timedOut = await timeoutPromise;
   eq(timedOut.timedOut, true, 'hung worker produces timedOut=true');
   eq(timedOut.errorKind, 'timeout', 'hung worker reports errorKind=timeout');
   eq(FakeWorker.instances[0].terminated, true, 'hung worker was terminated');
@@ -153,6 +163,7 @@ async function runRunnerChecks(): Promise<void> {
 
   // 3. After a timeout, the NEXT run gets a fresh worker.
   const hung = recovered.run('i <- [0..): {}', 20);
+  FakeWorker.instances[0].emit({type: 'stage', runId: 3, stage: 'running'});
   await hung;
   const afterTimeout = recovered.run('print(3)', 1000);
   eq(FakeWorker.instances.length, 2, 'worker is recreated after watchdog termination');
@@ -202,13 +213,37 @@ async function runRunnerChecks(): Promise<void> {
   eq(FakeWorker.instances[0].terminated, true, 'crashed worker is terminated');
   crashed.dispose();
 
-  // 7. Warm-up goes to the worker without waiting for a Run click.
+  // 7. Warm-up goes to the worker and gates readiness until it reports back.
   FakeWorker.instances = [];
-  const warmed = new Runner('/nolang/wasm/no.wasm');
+  let readyFired = 0;
+  let warmupErr = '';
+  const warmed = new Runner('/nolang/wasm/no.wasm', {
+    onReady: () => readyFired++,
+    onWarmupError: (reason) => (warmupErr = reason),
+  });
   warmed.warmup();
-  eq(FakeWorker.instances[0].last, {type: 'warmup', noWasmUrl: '/nolang/wasm/no.wasm'},
-    'warmup message is posted on demand');
+  eq(FakeWorker.instances[0].last, {type: 'warmup', noWasmUrl: '/nolang/wasm/no.wasm', seq: 1},
+    'warmup message carries a seq for stale-reply filtering');
+  eq(warmed.isReady(), false, 'runner is not ready until warmup completes');
+  FakeWorker.instances[0].emit({type: 'warmup-done', seq: 1, ok: true});
+  eq(warmed.isReady(), true, 'warmup-done ok flips readiness');
+  eq(readyFired, 1, 'onReady fires once on successful warmup');
+  // A stale sequence (e.g. from a replaced worker) must be ignored.
+  FakeWorker.instances[0].emit({type: 'warmup-done', seq: 999, ok: false, reason: 'stale'});
+  eq(warmupErr, '', 'stale warmup-done is ignored');
   warmed.dispose();
+
+  // 7b. A failed warm-up reports the reason and leaves the runner not ready.
+  FakeWorker.instances = [];
+  let failedReason = '';
+  const warmedFail = new Runner('/nolang/wasm/no.wasm', {
+    onWarmupError: (reason) => (failedReason = reason),
+  });
+  warmedFail.warmup();
+  FakeWorker.instances[0].emit({type: 'warmup-done', seq: 1, ok: false, reason: 'HTTP 404'});
+  eq(failedReason.includes('404'), true, 'warmup failure reason reaches onWarmupError');
+  eq(warmedFail.isReady(), false, 'failed warmup keeps runner not ready');
+  warmedFail.dispose();
 
   // 8. stage callbacks update the UI status.
   FakeWorker.instances = [];

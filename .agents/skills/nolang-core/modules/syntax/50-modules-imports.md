@@ -167,7 +167,7 @@ Cross-module imports follow the same pattern:
 ; # /src/mktemp.mktemp-run
 ```
 
-> **Avoid keywords**: `run` (async keyword), `match` (conditional match keyword) cannot be used as function names. Entry functions should use the module name itself (e.g. `ping.no` → `ping`).
+> **Avoid keywords**: `match` (conditional match keyword), `awy` (coroutine-group keyword) cannot be used as function names. `run` is no longer reserved. Entry functions should use the module name itself (e.g. `ping.no` → `ping`).
 
 #### Prefix Not Required
 

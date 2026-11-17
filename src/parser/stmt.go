@@ -44,12 +44,18 @@ func (p *Parser) parseStatement() Statement {
 		return stmt
 	case lexer.USE:
 		return p.parseUseStatement()
+	case lexer.AWY:
+		// `awy { ... }` 协程组（新语法，取代旧的语句位置裸块）。
+		return p.parseAwaitGroupStatement()
 	case lexer.HASH_LBRACE:
 		return p.parseAnnotationStatement()
 	case lexer.LABEL:
 		return p.parseLabeledStatement()
 	case lexer.AT:
 		return p.parseExportStatement()
+	case lexer.ARROW:
+		// `<- ch: { ok -> ... }` — 接收迴圈並丟棄迴圈變數（body 直接是 match 臂）
+		return p.parseChanRecvSugar()
 	case lexer.IDENT, lexer.TRUE, lexer.FALSE, lexer.NIL, lexer.MATCH, lexer.UNDERSCORE:
 		// 布林字面量循環：`true { }` 恆真（無限循環）、`false { }` 恆假（不執行）。
 		// 只有 `{` 緊接字面量時才算循環；`true -> ...`、`x = true` 等不受影響。
@@ -132,6 +138,15 @@ func (p *Parser) parseStatement() Statement {
 				return p.parseForStatement()
 			}
 			p.restoreState(state)
+			stmt := p.parseLetStatement()
+			if stmt != nil {
+				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
+					p.skipToStatementEnd()
+				}
+				return stmt
+			}
+		} else if p.peekToken.Type == lexer.CHAN {
+			// 通道宣告：ch chan[i64] / buf chan[i64] = with-cap(8)
 			stmt := p.parseLetStatement()
 			if stmt != nil {
 				if !p.ctx.contains(CTX_MATCH_ARM) && !p.ctx.contains(CTX_FOR_COND) {
@@ -404,8 +419,11 @@ func (p *Parser) parseStatement() Statement {
 			p.restoreState(state)
 		}
 
-		// 範圍遍歷：i <- (a..b] { 或 i <- [a..b] {
+		// 範圍遍歷：i <- (a..b] { 或 i <- [a..b] { ；左側為通道時是發送 ch <- v
 		if p.peekToken.Type == lexer.ARROW && !p.ctx.contains(CTX_FOR_COND) {
+			if _, isChan := p.chanVarType(p.currentToken.Literal); isChan {
+				return p.parseChanSendStatement()
+			}
 			return p.parseForStatement()
 		}
 
@@ -854,8 +872,9 @@ func joinPathParts(parts []string) string {
 
 // isPathIdent returns true if the token type can serve as an identifier in a
 // use/export path. This includes the normal IDENT token as well as keyword
-// tokens (RUN, CHAN, PTR, AS, MATCH, etc.) whose spelling may legitimately
-// appear as a module or function name (e.g. `# /nonpm/src/run`). AT is
+// tokens (AWY, CHAN, PTR, AS, MATCH, etc.) whose spelling may legitimately
+// appear as a module or function name (e.g. `# /nonpm/src/run` — `run` is now
+// a plain IDENT, so it is covered by the IDENT branch above). AT is
 // accepted so scoped package names parse (`# npm/@scope/pkg.get`); the
 // statement-level `@` export directive is dispatched before path parsing, so
 // the two uses of AT never meet.
@@ -866,7 +885,7 @@ func isPathIdent(t lexer.TokenType) bool {
 	// Keywords that may appear as path segments. We accept all keyword tokens
 	// whose lexical form is a plain identifier (letters/digits/underscores).
 	switch t {
-	case lexer.RUN, lexer.AWY, lexer.CHAN, lexer.PTR, lexer.AS, lexer.AT,
+	case lexer.AWY, lexer.CHAN, lexer.PTR, lexer.AS, lexer.AT,
 		lexer.UNDERSCORE,
 		lexer.SWITCH, lexer.CASE, lexer.DEFAULT, lexer.MATCH, lexer.MAP,
 		lexer.IF, lexer.ELIF, lexer.ELSE, lexer.FOR, lexer.IN, lexer.BREAK,
@@ -1111,6 +1130,19 @@ func (p *Parser) parseLetStatement() Statement {
 		Value: nameToken.Literal,
 	}
 
+	// 通道型別: ch chan[i64]。`chan` 是宣告位置上唯一帶方括號的**前置**型別
+	// （`[]T` / `[K]V` 的方括號緊跟變數名，這裡緊跟 `chan`），因此必須在
+	// 下方的切片/陣列分支之前處理，否則 `chan` 會被猜成裸型別名，留下
+	// `[` 給賦值解析器，報出「expected assignment operator, got LBRACKET」。
+	if p.peekToken.Type == lexer.CHAN {
+		p.nextToken() // 名字 -> chan
+		ct, ok := p.parseTypeExpression()
+		if !ok {
+			return nil
+		}
+		stmt.Type = ct
+	}
+
 	// 陣列/切片型別: a [3] / a [3]u16 / v []u8
 	if p.peekToken.Type == lexer.LBRACKET {
 		bracketToken := p.peekToken
@@ -1317,6 +1349,7 @@ func (p *Parser) parseLetStatement() Statement {
 			p.nextToken()
 		}
 		if stmt.Type != nil {
+			p.synthesizeChanInit(stmt, nameToken)
 			p.setVarType(stmt.Name.Value, typeString(stmt.Type))
 		}
 		return stmt
@@ -1480,6 +1513,12 @@ func (p *Parser) parseLetStatement() Statement {
 			}
 		}
 	}
+
+	// 通道宣告即分配：`ch chan[i64]` 等價於 `ch chan[i64] = with-cap(0)`。
+	// 少了這一步裸宣告只得到零值（null 句柄），隨後的 `ch <- v` 會中止進程。
+	// 只有「宣告型別是通道且沒有初始值」這一種情況合成，顯式初始化的
+	// `ch chan[i64] = with-cap(8)` 原樣保留。
+	p.synthesizeChanInit(stmt, nameToken)
 
 	// 記錄變數宣告型別供後續 match 完整性檢查使用
 	if stmt.Type != nil {
@@ -2320,26 +2359,33 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// 陳述（`_ = 1 / zz` 靜默退化成 `1 / zz`）。UNDERSCORE 不是 IDENT，
 		// 沒有這一項就無法在 `_` 上停下。
 		lexer.IN, lexer.UNDERSCORE,
-		// `run` / `awy` 是**前綴關鍵字**，只能開始一個陳述或表達式，永遠不會
-		// 續接上一個表達式。parseStatement 沒有它們的 case ⇒ 落到 default 的
-		// parseExpressionStatement，所以它們確實能開始一條陳述。少了這兩項時：
+		// `awy` 是协程组的**起始关键字**（`awy { ... }`），`co` 是组内 spawn
+		// 的前缀关键字（`co worker(1)`）——两者都只能开始一条陈述/表达式，
+		// 永远不会续接上一条表达式。少了它们时：
 		//
-		//     f = () {
-		//       y = 1
-		//       run dbl(21)     ; `run` 被吃掉 ⇒ 靜默退化成同步呼叫 dbl(21)
-		//       awy t           ; `awy` 被吃掉 ⇒ 陳述退化成裸識別字 t
+		//     awy {
+		//       x = 1
+		//       co worker(2)    ; `co` 被吃掉 ⇒ 靜默退化成同步呼叫 worker(2)
 		//     }
 		//
-		// 上一條陳述（`y = 1`）解析完會呼叫 skipToStatementEnd()，它一路前進到
-		// 「能開始下一條陳述」的 token 才停。NEWLINE 不是邊界，`awy`/`run` 也不是
-		// ⇒ 兩者連同換行一起被吞掉，停在後面的 IDENT 上。症狀因此只在
+		// 上一條陳述（`x = 1`）解析完會呼叫 skipToStatementEnd()，它一路前進到
+		// 「能開始下一條陳述」的 token 才停。NEWLINE 不是邊界，`co`/`awy` 也不是
+		// ⇒ 連同換行一起被吞掉，停在後面的 IDENT 上。症狀因此只在
 		// 「不是區塊第一條陳述」時出現（第一條不經過 skipToStatementEnd）。
+		// 特別危險的是 `co`：吞掉後 `co worker(2)` 變成同步呼叫，編譯照過、
+		// 輸出照印，只是**不再 spawn**——rc=0、無診斷的靜默錯誤。
+		lexer.AWY, lexer.CO, lexer.ELLIPSIS3,
+		// `<- ch: { ... }`（接收迴圈、丟棄迴圈變數）以 `<-` **開頭**一條陳述。
+		// 它是唯一以 ARROW 起頭的陳述形式：其餘的 `<-` 都跟在左側名字之後
+		// （`i <- arr:` 遍歷、`ch <- v` 發送），不可能出現在行首。
+		// 少了這一項時，前一條 let 陳述收尾的 skipToStatementEnd 會連同換行把
+		// `<-` 一起吞掉，停在後面的通道名上，於是
 		//
-		// 特別危險的是 `run`：吞掉後 `run dbl(21)` 變成同步呼叫 `dbl(21)`，
-		// 編譯照過、輸出照印，只是**不再 spawn**。而 `awy t` 退化成裸 `t`，
-		// 於是「if 鏈臂體的值」拿到的是 task handle（一個堆指標），印出來就是
-		// 一個垃圾大數（如 4316452624）。兩者都是 rc=0、無診斷的靜默錯誤。
-		lexer.RUN, lexer.AWY, lexer.ELLIPSIS3:
+		//     c chan[i64]
+		//     <- c: { ok -> ... }
+		//
+		// 被靜默改讀成裸 match `c: { ok -> ... }`（rc=0，語意全非）。
+		lexer.ARROW:
 		return true
 	}
 	return false
@@ -2417,6 +2463,39 @@ func (p *Parser) parseBlockMatchTail(body *BlockStatement) Statement {
 		Subject: fmt.Sprintf("__bm_%d", p.blockMatchSeq),
 		RBrace:  sm.RBracePos,
 	}
+}
+
+// parseAwaitGroupStatement 解析 `awy { ... }` 协程组（新语法）。
+// `awy` 关键字后必须紧跟 `{`；块内允许 `r = co worker(...)`（由 expr.go 的
+// CO 分支在 awaitGroupDepth>0 时接受）。产出一个带 IsAwaitGroup 标记的
+// BlockStatement，tohir 据此打 FlagAwaitGroup，DesugarAsyncGroups 识别为协程组。
+func (p *Parser) parseAwaitGroupStatement() Statement {
+	tok := p.currentToken // the `awy` token
+	if p.peekToken.Type == lexer.NEWLINE {
+		// allow a newline between `awy` and `{`
+		p.nextToken()
+	}
+	if p.peekToken.Type != lexer.LBRACE {
+		p.errorf(tok, "c0grp1ab", "E_GENERAL",
+			"expected '{' after 'awy' to start a coroutine group")
+		return nil
+	}
+	p.nextToken() // currentToken = '{'
+	p.awaitGroupDepth++
+	block := p.parseBlockStatement()
+	p.awaitGroupDepth--
+	if block == nil {
+		return nil
+	}
+	block.IsAwaitGroup = true
+	// Pos of the group is the `awy` keyword, not the `{`.
+	block.Token = tok
+	// parseBlockStatement stops at '}' without consuming it; advance past so
+	// the enclosing block's brace matching stays aligned.
+	if p.currentToken.Type == lexer.RBRACE {
+		p.nextToken()
+	}
+	return block
 }
 
 func (p *Parser) parseBlockStatement() *BlockStatement {
@@ -2927,6 +3006,7 @@ parseBody:
 	}
 
 	stmt.Body = p.parseLoopBody()
+	p.detectChanLoopForm(stmt)
 	return stmt
 }
 
@@ -3003,6 +3083,8 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 		p.ctx.pop()
 		if expr != nil {
 			ir.RangeExpr = expr
+			// 通道接收迴圈：v <- ch: { ... }（每輪綁定三態 ?T）
+			ir.IsChan = p.chanIterIsChan(ir)
 		}
 		return
 	default:

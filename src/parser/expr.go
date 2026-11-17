@@ -313,44 +313,13 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	case lexer.IF:
 		leftExp = p.parseIfExpression()
 
-	case lexer.RUN:
-		// When `run` is followed by `.`, it's a module-qualified call
-		// (e.g. `run.list-scripts(...)` where `run` is a module name),
-		// not the async `run <expr>` keyword. Treat `run` as a plain
-		// identifier so parseIdentifier + DOT path handles it correctly.
-		if p.peekToken.Type == lexer.DOT {
-			leftExp = &Identifier{
-				Token: p.currentToken,
-				Value: p.currentToken.Literal,
-			}
-			p.nextToken()
-		} else {
-			tok := p.currentToken
-			p.nextToken() // consume 'run'
-			// Parse the following expression — should be a CallExpression
-			callExpr := p.parseExpression(LOWEST)
-			leftExp = &RunExpression{
-				Token: tok,
-				Call:  callExpr,
-			}
-		}
-
-	case lexer.AWY:
-		tok := p.currentToken
-		p.nextToken() // consume 'awy'
-		rightExpr := p.parseExpression(LOWEST)
-		leftExp = &AwaitExpression{
-			Token: tok,
-			Right: rightExpr,
-		}
-
 	case lexer.CO:
-		// `co <call>` — colorless async spawn. Mirror the run/awy prefix
-		// handling: consume `co`, then parse the following call expression.
-		// (Unlike `run`, `co` targets an uncolored callee and resolves to its
-		// `-async` monomorphized variant at HIR time.)
-		// When `co` is followed by `.`, it is a module-qualified name (e.g. a
-		// module literally named `co`), not the async keyword.
+		// `co <call>` — colorless async spawn, ONLY valid inside an
+		// `awy { ... }` coroutine group. Consume `co`, then parse the
+		// following call expression; the callee resolves to its `-async`
+		// monomorphized variant at HIR time.
+		// When `co` is followed by `.`, it is a module-qualified name
+		// (e.g. a module literally named `co`), not the spawn keyword.
 		if p.peekToken.Type == lexer.DOT {
 			leftExp = &Identifier{
 				Token: p.currentToken,
@@ -359,6 +328,10 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			p.nextToken()
 		} else {
 			tok := p.currentToken
+			if p.awaitGroupDepth == 0 {
+				p.errorf(tok, "c0grp1aa", "E_CO_OUTSIDE_GROUP",
+					"co <call> is only allowed inside an 'awy { ... }' coroutine group")
+			}
 			p.nextToken() // consume 'co'
 			callExpr := p.parseExpression(LOWEST)
 			leftExp = &CoExpression{
@@ -2363,7 +2336,12 @@ func (p *Parser) parseFunctionLiteral() Expression {
 		return nil
 	}
 
+	// 函数体不是外层协程组的直接语句：`co worker()` 出现在函数字面量内部时
+	// 不属于任何 awy 组，临时归零深度让 expr.go 的 CO 分支正确报错。
+	savedGroupDepth := p.awaitGroupDepth
+	p.awaitGroupDepth = 0
 	lit.Body = p.parseBlockStatement()
+	p.awaitGroupDepth = savedGroupDepth
 
 	if p.currentToken.Type == lexer.RBRACE {
 		p.nextToken()

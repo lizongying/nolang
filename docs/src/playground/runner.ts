@@ -55,6 +55,10 @@ export interface RunnerOptions {
   onLoadError?: (reason: string) => void;
   /** Called when the worker reports a pipeline stage transition. */
   onStage?: (stage: RunStage) => void;
+  /** Called once the compiler WASM has finished loading — Run is safe now. */
+  onReady?: () => void;
+  /** Called when the background warm-up fails, with the underlying reason. */
+  onWarmupError?: (reason: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,10 +94,19 @@ export class Runner {
   private readonly pending = new Map<number, PendingRun>();
   private nextRunId = 1;
   private disposed = false;
+  /** Monotonic warm-up id; a worker's reply is ignored unless it matches. */
+  private warmupSeq = 0;
+  private warmupPending = 0;
+  private ready = false;
 
   constructor(noWasmUrl: string, options: RunnerOptions = {}) {
     this.noWasmUrl = noWasmUrl;
     this.options = options;
+  }
+
+  /** True once the compiler WASM has loaded and Run can proceed. */
+  isReady(): boolean {
+    return this.ready;
   }
 
   /**
@@ -115,6 +128,19 @@ export class Runner {
 
   private handleMessage(data: any): void {
     if (!data || typeof data !== 'object') return;
+    if (data.type === 'warmup-done') {
+      const seq = Number(data.seq);
+      if (seq !== this.warmupPending) return; // stale warm-up from a replaced worker
+      this.warmupPending = 0;
+      if (data.ok) {
+        this.ready = true;
+        this.options.onReady?.();
+      } else {
+        const reason = String(data.reason ?? 'unknown WASM load failure');
+        this.options.onWarmupError?.(reason);
+      }
+      return;
+    }
     if (data.type === 'stage' && (data.stage === 'compiling' || data.stage === 'running')) {
       // Compile finished: from here on the user's budget applies.
       if (data.stage === 'running') this.armRunBudget(Number(data.runId));
@@ -182,16 +208,23 @@ export class Runner {
     this.worker.onmessageerror = null;
     this.worker.terminate();
     this.worker = null;
+    // The compiled module lives in the worker; losing it means Run needs a
+    // fresh load before it can proceed safely again.
+    this.ready = false;
+    this.warmupPending = 0;
   }
 
   /**
-   * Start fetching + compiling no.wasm before the user presses Run. The
-   * worker keeps the compiled module for its lifetime, so the first run then
-   * only pays for the actual compilation of the user's snippet.
+   * Start fetching + compiling no.wasm. The worker reports back with
+   * `warmup-done`, which flips `isReady()` and calls `onReady` / `onWarmupError`.
+   * Calling this again (e.g. after a watchdog kill) re-runs the load in the new
+   * worker; the `seq` tag keeps a late reply from the old worker from winning.
    */
   warmup(): void {
     if (this.disposed) return;
-    this.ensureWorker().postMessage({type: 'warmup', noWasmUrl: this.noWasmUrl});
+    const seq = ++this.warmupSeq;
+    this.warmupPending = seq;
+    this.ensureWorker().postMessage({type: 'warmup', noWasmUrl: this.noWasmUrl, seq});
   }
 
   /**

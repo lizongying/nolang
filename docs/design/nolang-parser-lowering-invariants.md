@@ -231,7 +231,7 @@ Checker-on-THIR ──► L2 MIR ──► L3 LLVM
 | `KMultiAssign`            | 基础        | 1:1 产出 |
 | `KIter`                   | 基础        | 1:1 产出 |
 | `KSliceLit`               | 基础        | 1:1 产出 |
-| `KRun` / `KAwait`         | 基础        | 1:1 对应 `run` / `awy` |
+| `KRun` / `KAwait`         | 基础        | 内部节点：`awy { ... } + co` 的 desugar 目标（非表面语法） |
 | `KAnnotation`             | 基础（**暂**） | 第二波目标：H0 消费成属性位后从 HIR 删除（§10） |
 | `KGrouped`                | **糖**     | 纯括号无语义。H0 抹除（✅ 已落地，§23） |
 | `KUnwrapAssign`           | **糖**     | 保留（`?=` 产出） |

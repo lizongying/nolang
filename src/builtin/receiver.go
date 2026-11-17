@@ -25,6 +25,10 @@ const (
 	ReceiverArr
 	ReceiverBool
 	ReceiverByte
+	// ReceiverChan 是 `chan[T]` 的接收者類別。通道方法的符號一律規範化成
+	// `chan.<method>`（見 mir.canonSliceRecv）：緩衝區的元素寬度存在控制塊裡，
+	// 所以 .len() / .cap() / .close() 與元素型別無關，只註冊一份。
+	ReceiverChan
 )
 
 // String 實現，方便日誌、LSP、錯誤打印轉文字
@@ -66,6 +70,8 @@ func (k ReceiverKind) String() string {
 		return "bool"
 	case ReceiverByte:
 		return "byte"
+	case ReceiverChan:
+		return "chan"
 	default:
 		return "unknown"
 	}

@@ -470,10 +470,6 @@ func (c *fieldAccessWalk) walkExpr(expr parser.Expression, varTypes map[string]s
 		c.walkExpr(e.Alternative, varTypes, selfType)
 	case *parser.CastExpression:
 		c.walkExpr(e.Expr, varTypes, selfType)
-	case *parser.RunExpression:
-		c.walkExpr(e.Call, varTypes, selfType)
-	case *parser.AwaitExpression:
-		c.walkExpr(e.Right, varTypes, selfType)
 	case *parser.ArrayLiteral:
 		for _, el := range e.Elements {
 			c.walkExpr(el, varTypes, selfType)

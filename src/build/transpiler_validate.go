@@ -575,13 +575,6 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64, varTypes
 		// `x str = a[1..3]` over a non-str container is still rejected by the
 		// checker.
 		return true
-	case *parser.AwaitExpression:
-		// `awy <handle>` yields the awaited task's result. The handle is an
-		// opaque i64, so the result type is not statically known here — e.g.
-		// `v str = awy t` where t came from `run f(...)` and f returns str.
-		// Defer to LLVM type checking, like the cases above. Without this the
-		// validator rejected a perfectly valid str result.
-		return true
 	}
 	return false
 }
@@ -834,24 +827,24 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 		// Check if this statement reads a loop-only variable in an expression
 		usedNames := collectExprIdentifiers(stmt)
 		for name := range usedNames {
-		if loopOnlyVars[name] && !definedBeforeLoop[name] {
-			// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
-			// （含 "line %d:" 前綴），指紋門禁零漂移；同時補上原本缺失的行列位置。
-			return &DiagnosticError{
-				Lints: []checker.LintResult{{
-					Line:     stmt.Pos().Line,
-					Column:   stmt.Pos().Column,
-					Severity: checker.LintError,
-					Source:   "nolang-compile",
-					Message:  i18n.T("sjuueqqo", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)", stmtPosLine(stmt), name),
-					TraceID:  "sjuueqqo",
-					Fixes: []parser.DiagnosticFix{{
-						Description: "declare the variable before the loop, or initialize it inside the loop body before use",
+			if loopOnlyVars[name] && !definedBeforeLoop[name] {
+				// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
+				// （含 "line %d:" 前綴），指紋門禁零漂移；同時補上原本缺失的行列位置。
+				return &DiagnosticError{
+					Lints: []checker.LintResult{{
+						Line:     stmt.Pos().Line,
+						Column:   stmt.Pos().Column,
+						Severity: checker.LintError,
+						Source:   "nolang-compile",
+						Message:  i18n.T("sjuueqqo", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)", stmtPosLine(stmt), name),
+						TraceID:  "sjuueqqo",
+						Fixes: []parser.DiagnosticFix{{
+							Description: "declare the variable before the loop, or initialize it inside the loop body before use",
+						}},
 					}},
-				}},
-				Prefix: "validation errors",
+					Prefix: "validation errors",
+				}
 			}
-		}
 		}
 		// Check if a ForStatement's loop variable reuses a loop-only variable name.
 		// This is the exact pattern that caused the md5 hang: a variable declared
@@ -860,24 +853,24 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 		if fs, ok := stmt.(*parser.ForStatement); ok {
 			if fs.IterRange != nil && fs.IterRange.Variable != "" {
 				v := fs.IterRange.Variable
-			if loopOnlyVars[v] && !definedBeforeLoop[v] {
-				// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
-				// （含 "line %d:" 前綴），指紋門禁零漂移；同時補上原本缺失的行列位置。
-				return &DiagnosticError{
-					Lints: []checker.LintResult{{
-						Line:     fs.Pos().Line,
-						Column:   fs.Pos().Column,
-						Severity: checker.LintError,
-						Source:   "nolang-compile",
-						Message:  i18n.T("h9cfkf84", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)", fs.Token.Line, v),
-						TraceID:  "h9cfkf84",
-						Fixes: []parser.DiagnosticFix{{
-							Description: "use a distinct name for the loop variable, or declare the variable outside the loop",
+				if loopOnlyVars[v] && !definedBeforeLoop[v] {
+					// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
+					// （含 "line %d:" 前綴），指紋門禁零漂移；同時補上原本缺失的行列位置。
+					return &DiagnosticError{
+						Lints: []checker.LintResult{{
+							Line:     fs.Pos().Line,
+							Column:   fs.Pos().Column,
+							Severity: checker.LintError,
+							Source:   "nolang-compile",
+							Message:  i18n.T("h9cfkf84", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)", fs.Token.Line, v),
+							TraceID:  "h9cfkf84",
+							Fixes: []parser.DiagnosticFix{{
+								Description: "use a distinct name for the loop variable, or declare the variable outside the loop",
+							}},
 						}},
-					}},
-					Prefix: "validation errors",
+						Prefix: "validation errors",
+					}
 				}
-			}
 			}
 		}
 		// Track top-level variable declarations
@@ -1054,10 +1047,6 @@ func collectIdentsFromExpr(expr parser.Expression, idents map[string]bool) {
 		for _, field := range e.Fields {
 			collectIdentsFromExpr(field.Value, idents)
 		}
-	case *parser.RunExpression:
-		collectIdentsFromExpr(e.Call, idents)
-	case *parser.AwaitExpression:
-		collectIdentsFromExpr(e.Right, idents)
 	case *parser.RangeExpression:
 		collectIdentsFromExpr(e.Start, idents)
 		collectIdentsFromExpr(e.End, idents)
@@ -1368,55 +1357,55 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		if dot, ok := e.Left.(*parser.DotExpression); ok {
 			if dot.Property == "len" {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
-				if _, exists := arraySizes[ident.Value]; exists {
-					// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
-					return &DiagnosticError{
-						Lints: []checker.LintResult{{
-							Line:     ident.Pos().Line,
-							Column:   ident.Pos().Column,
-							Severity: checker.LintError,
-							Source:   "nolang-compile",
-							Message:  i18n.T("xo6e53hm", "cannot modify read-only field 'len' of array '%s'", ident.Value),
-							TraceID:  "xo6e53hm",
-							Fixes: []parser.DiagnosticFix{{
-								Description: "do not assign to '.len'; it is computed automatically (use a fresh container or truncate instead)",
+					if _, exists := arraySizes[ident.Value]; exists {
+						// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
+						return &DiagnosticError{
+							Lints: []checker.LintResult{{
+								Line:     ident.Pos().Line,
+								Column:   ident.Pos().Column,
+								Severity: checker.LintError,
+								Source:   "nolang-compile",
+								Message:  i18n.T("xo6e53hm", "cannot modify read-only field 'len' of array '%s'", ident.Value),
+								TraceID:  "xo6e53hm",
+								Fixes: []parser.DiagnosticFix{{
+									Description: "do not assign to '.len'; it is computed automatically (use a fresh container or truncate instead)",
+								}},
 							}},
-						}},
-						Prefix: "validation errors",
+							Prefix: "validation errors",
+						}
 					}
-				}
-				if _, exists := sliceSizes[ident.Value]; exists {
-					return &DiagnosticError{
-						Lints: []checker.LintResult{{
-							Line:     ident.Pos().Line,
-							Column:   ident.Pos().Column,
-							Severity: checker.LintError,
-							Source:   "nolang-compile",
-							Message:  i18n.T("xlppn81m", "cannot modify read-only field 'len' of slice '%s'", ident.Value),
-							TraceID:  "xlppn81m",
-							Fixes: []parser.DiagnosticFix{{
-								Description: "do not assign to '.len'; it is computed automatically (use a fresh container or truncate instead)",
+					if _, exists := sliceSizes[ident.Value]; exists {
+						return &DiagnosticError{
+							Lints: []checker.LintResult{{
+								Line:     ident.Pos().Line,
+								Column:   ident.Pos().Column,
+								Severity: checker.LintError,
+								Source:   "nolang-compile",
+								Message:  i18n.T("xlppn81m", "cannot modify read-only field 'len' of slice '%s'", ident.Value),
+								TraceID:  "xlppn81m",
+								Fixes: []parser.DiagnosticFix{{
+									Description: "do not assign to '.len'; it is computed automatically (use a fresh container or truncate instead)",
+								}},
 							}},
-						}},
-						Prefix: "validation errors",
+							Prefix: "validation errors",
+						}
 					}
-				}
-				if _, exists := stringSizes[ident.Value]; exists {
-					return &DiagnosticError{
-						Lints: []checker.LintResult{{
-							Line:     ident.Pos().Line,
-							Column:   ident.Pos().Column,
-							Severity: checker.LintError,
-							Source:   "nolang-compile",
-							Message:  i18n.T("qon2wsev", "cannot modify read-only field 'len' of string '%s'", ident.Value),
-							TraceID:  "qon2wsev",
-							Fixes: []parser.DiagnosticFix{{
-								Description: "do not assign to '.len'; it is computed automatically (use str.truncate or build a new string instead)",
+					if _, exists := stringSizes[ident.Value]; exists {
+						return &DiagnosticError{
+							Lints: []checker.LintResult{{
+								Line:     ident.Pos().Line,
+								Column:   ident.Pos().Column,
+								Severity: checker.LintError,
+								Source:   "nolang-compile",
+								Message:  i18n.T("qon2wsev", "cannot modify read-only field 'len' of string '%s'", ident.Value),
+								TraceID:  "qon2wsev",
+								Fixes: []parser.DiagnosticFix{{
+									Description: "do not assign to '.len'; it is computed automatically (use str.truncate or build a new string instead)",
+								}},
 							}},
-						}},
-						Prefix: "validation errors",
+							Prefix: "validation errors",
+						}
 					}
-				}
 				}
 			}
 		}

@@ -103,15 +103,9 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 		f.write("(")
 		f.formatExpression(e.Expression)
 		f.write(")")
-	case *parser.RunExpression:
-		f.write("run ")
-		f.formatExpression(e.Call)
 	case *parser.CoExpression:
 		f.write("co ")
 		f.formatExpression(e.Call)
-	case *parser.AwaitExpression:
-		f.write("awy ")
-		f.formatExpression(e.Right)
 	case *parser.CastExpression:
 		f.formatExpression(e.Expr)
 		f.write(" as ")

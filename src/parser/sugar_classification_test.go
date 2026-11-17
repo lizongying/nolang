@@ -62,7 +62,7 @@ var sugarASTTypes = map[string]string{
 	"UnwrapAssignStatement": "§4.1 #2 — `x ?= e`; expands to a tag test + let/return",
 	"BlockMatchStatement": "§4.1 #2b — `{ body }: { arms }`; H0 expands the block " +
 		"subject into a ?T local + CPS guard chain (no new HIR kind)",
-	"MultiAssignStatement":  "§4.1 #6 — `a, b = f()`; destructuring, H0 emits KMultiAssign 1:1",
+	"MultiAssignStatement": "§4.1 #6 — `a, b = f()`; destructuring, H0 emits KMultiAssign 1:1",
 	"GroupedExpression": "§5 rules KGrouped SUGAR (pure parentheses, no semantics), " +
 		"so H0 must erase it — §10.2's first non-vacuous instance; erased at tohir " +
 		"since 2026-10-21 (G3 gate pins the count at 0)",
@@ -90,12 +90,13 @@ var baseASTTypes = []string{
 	"ArrayLiteral",
 	"ArrayType",
 	"AssignExpression",
-	"AwaitExpression",
 	"BlockStatement",
 	"BooleanLiteral",
 	"BreakStatement",
 	"CallExpression",
 	"CastExpression",
+	"ChanSendStatement",
+	"ChanType",
 	"CharLiteral",
 	"CoExpression",
 	"ConditionalExpression",
@@ -130,7 +131,6 @@ var baseASTTypes = []string{
 	"RangeExpression",
 	"RegexLiteral",
 	"ReturnStatement",
-	"RunExpression",
 	"SliceExpression",
 	"SliceLiteral",
 	"SliceType",

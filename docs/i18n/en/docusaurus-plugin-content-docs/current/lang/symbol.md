@@ -23,8 +23,8 @@ sidebar_position: 4
 - `*` ; Skip current iteration — replaces continue (accepted by the parser, but not recommended yet — use the keyword)
 - `**` ; Break — replaces break (accepted by the parser, but not recommended yet — use the keyword)
 - `***` ; Return statement, terminate function — replaces return (planned, not recommended yet — use the keyword)
-- `run` ; Start async thread
-- `awy` ; Wait for async thread completion
+- `awy { }` ; Coroutine group; waits for all `co` tasks at group exit
+- `co` ; Colorless async spawn, only legal inside `awy { }`
 
 ## Arithmetic Operators
 

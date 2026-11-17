@@ -82,9 +82,7 @@
 | `DotExpression` | `Receiver` |
 | `PrefixExpression` | `Right` |
 | `InfixExpression` | `Left`, `Right` |
-| `RunExpression` | `Call` |
 | `CoExpression` | `Call` |
-| `AwaitExpression` | `Right` |
 | `IfExpression` | `Alternative`, `Condition`, `Consequence` |
 | `RangeExpression` | `End`, `Start` |
 | `IterationExpr` | `Range`, `RangeExpr` |
@@ -137,7 +135,6 @@
 | `TaggedEnumField` | - | parseTaggedEnumDefinition |
 | `ArrayLiteral` | Expression | parseArrayLiteral, parseLetStatement, zeroValueLiteralFor |
 | `AssignExpression` | Expression | blockMatchTail, lowerUnwrapAssign, parseExpression, rewriteItPlaceWritesStmts |
-| `AwaitExpression` | Expression | parseExpression |
 | `BlockMatchStatement` | Expression | parseBlockMatchTail |
 | `BooleanLiteral` | Expression | parseBangLoop, parseBoolLiteralLoop, parseCondLoopBlockFirst, parseCondLoopPrefix, parseExpression, parseForStatement, parseMatchExprFrom, scalarZeroLiteral |
 | `CallExpression` | Expression | OperatorOverloadReturnType, guardInArithmetic, guardInCallArg, guardOptionOperands, maybeDesugarInfix, parseCallExpression, parseExpression |
@@ -161,7 +158,6 @@
 | `PrefixExpression` | Expression | parsePrefixExpression |
 | `RangeExpression` | Expression | parseForRange, parseGroupedExpression, parseRangeBody, parseSliceExpression, parseSliceLiteral |
 | `RegexLiteral` | Expression | parseExpression |
-| `RunExpression` | Expression | parseExpression |
 | `SliceExpression` | Expression | parseSliceExpression |
 | `SliceLiteral` | Expression | parseSliceLiteral |
 | `StringLiteral` | Expression | parseStringLiteral, scalarZeroLiteral |

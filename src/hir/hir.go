@@ -121,6 +121,14 @@ const (
 	KTypeMatch
 	KTypeArm
 
+	// ---- channels (appended 2026-11-17 so no existing Kind number shifts) ----
+	// KChanSend is `ch <- value`. S is empty; the slots are "chan" and "value".
+	KChanSend
+	// KChanIter is the channel receive loop `v <- ch: { ... }`. S carries the
+	// loop variable name, First holds the channel expression. It is a distinct
+	// Kind (not KIter + flag) because every flag bit is already allocated.
+	KChanIter
+
 	kindCount
 )
 
@@ -158,6 +166,7 @@ var KindNames = [kindCount]string{
 	KName: "name", KAnnEntry: "ann-entry",
 	KGeneric: "generic", KUnionName: "union-name", KSlot: "slot",
 	KTypeMatch: "type-match", KTypeArm: "type-arm",
+	KChanSend: "chan-send", KChanIter: "chan-iter",
 }
 
 func (k Kind) String() string {
@@ -207,6 +216,16 @@ const (
 	// KTypeMatch performs static single-dispatch by the monomorphized concrete
 	// type, so the default arm is the fallback when no explicit pattern matches.
 	FlagTypeDefault uint32 = 1 << 21
+	// FlagChanElem marks a KChanIter whose loop variable binds the ELEMENT (T)
+	// rather than the three-state `?T`: `<elem> <- ch: { body }`. The body then
+	// runs only on the rounds that produced a value, and nil/err end the loop.
+	// Without it the variable would be a `?T` and `co bar(i)` would hand an
+	// option to a parameter declared `i64`.
+	FlagChanElem uint32 = 1 << 20
+	// FlagAwaitGroup marks a KBlock that came from an `awy { ... }` coroutine
+	// group. DesugarAsyncGroups uses it instead of the old "parent is a block"
+	// heuristic to identify coroutine groups.
+	FlagAwaitGroup uint32 = 1 << 24
 	// FlagOverflowWrap / FlagOverflowClamp0 / FlagOverflowMin / FlagOverflowMax /
 	// FlagOverflowSaturate 攜帶函數級 #{overflow = wrap|clamp0|min|max|saturate}
 	// 註解指定的「整數算術溢位」處理模式，貫穿 HIR 重建（parser -> hir ->

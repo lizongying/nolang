@@ -15,7 +15,7 @@ Nolang 是**无 GC、内存安全、语法极简**的系统语言：资源靠 **
 | [`40-structs-enums.md`](syntax/40-structs-enums.md) | struct 与方法、字段 inline tag、enum 与内存布局、方法约定、slice（视图非新类型）、索引与安全索引、标准库 struct 模式、字段方法调用、接口、泛型 | 定义数据结构或方法 |
 | [`50-modules-imports.md`](syntax/50-modules-imports.md) | `#` / `use` 导入系统、模块前缀规则、跨模块类型引用、导出 | 跨文件、跨包、拆分模块 |
 | [`60-annotations-ffi.md`](syntax/60-annotations-ffi.md) | 特殊符号与运算符、FFI（`#{c}`）、注解系统（`#{...}`、`#{embed}`、`#{range}`、平台注解）、`#{overflow}` | 调 C、写或改注解、处理溢出 |
-| [`70-runtime-async.md`](syntax/70-runtime-async.md) | async/await（手写形式已废弃）、协程组、JS 后端（`--js` / `--browser`） | 并发、协程取消、JS target |
+| [`70-runtime-async.md`](syntax/70-runtime-async.md) | `awy { ... }` 协程组 + 组内 `co`、协程取消、JS 后端（`--js` / `--browser`） | 并发、协程取消、JS target |
 | [`m93-cli.md`](m93-cli.md) | `no` 子命令、workspace 与包布局、`package.noml` 编译配置、依赖管理 | 用命令行、配工程、发版前的工程结构 |
 
 ## 加载判据

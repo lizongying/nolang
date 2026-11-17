@@ -164,6 +164,15 @@ func (p *Pool) build(raw string, depth int) *Type {
 		}
 	}
 
+	// `chan[T]` — channel handle. The bracket content is a TYPE (not a size),
+	// reusing the same bracket matcher as `[K]V`. Placed before the scalar
+	// lookups so `chan[i64]` never falls through to the Named fallback.
+	if strings.HasPrefix(s, "chan[") {
+		if end := matchBracket(s, 4); end == len(s)-1 && end > 5 {
+			return &Type{Kind: Chan, Elem: p.parse(trimSpace(s[5:end]), depth+1)}
+		}
+	}
+
 	// `fn(p0,p1)(r0,r1)?` — the spelling produced by parser.FunctionType.String().
 	// Bare `fn` (no signature) is the generic "any function" type and denotes
 	// the same KindFunc shape as `fn()`; without this it fell through to the

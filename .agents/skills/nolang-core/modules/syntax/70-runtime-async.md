@@ -2,127 +2,54 @@
 
 > 视图切分自原 `nolang-syntax/SKILL.md`，正文未改写；索引与加载判据见 [`../m10-syntax.md`](../m10-syntax.md)。
 
-### Async / Await (`run` / `awy`) — hand-written form deprecated, use coroutine groups
+### Coroutine groups: `awy { ... }` + `co`
 
-> **Deprecated (hand-written primitives):** Writing `run` / `awy` / `cancel` / `cancelled` by hand is deprecated and not recommended for application code. Manual task-handle management is unsafe (an un-awaited task leaks its argument buffer; aliasing a handle and awaiting twice crashes; cooperative cancellation cannot force-interrupt a long-blocking call). Use **coroutine groups** (below) instead — simpler and it manages handles for you.
-
-Nolang uses `run` and `awy` for async concurrency. Async function names must end with `-async` (no `async` keyword).
-
-- `run` — start an async thread, returns a task handle
-- `awy` — wait for the async thread to complete and get the result
-
-```no
-; Async function definition (name ends with -async)
-compute-async = (n i64) (r i64) {
-    r = n * 2
-}
-
-; Basic async call
-h = run compute-async(21)
-r = awy h; r = 42
-
-; Concurrent tasks
-h1 = run compute-async(10)
-h2 = run compute-async(20)
-r1 = awy h1; r1 = 20
-r2 = awy h2; r2 = 40
-
-; Inline await
-r = awy run compute-async(5); r = 10
-```
-
-> **Naming rule**: async function names must end with `-async` (e.g. `compute-async`, `fetch-data-async`). Do not use the `async` keyword.
-
-### Coroutine Groups
-
-A bare `{ ... }` block in statement position — see the rules below.
-
-A bare `{ ... }` block in **statement position** is a **coroutine group**. Every
-statement in it that directly calls an `-async` function is spawned by default
-(as if written `run`); the result is `awy`-ed where it is needed. You do not
-write `run` / `awy` yourself.
-
-```no
-hello-async = (i i64) (r i64) {
-    r = i
-}
-
-; No dependency — the two tasks run concurrently
-{
-    r1 = hello-async(1)
-    r2 = hello-async(2)
-}
-
-; lowers to: __ag0 = run hello-async(1)
-;            __ag1 = run hello-async(2)
-;            r1 = awy __ag0
-;            r2 = awy __ag1
-
-; Dependency — r2 reads r1, so it cannot overlap; degrades to await
-{
-    r1 = hello-async(1)
-    r2 = hello-async(r1)
-}
-; lowers to: __ag0 = run hello-async(1)
-;            r1 = awy __ag0
-;            __ag1 = run hello-async(r1)
-;            r2 = awy __ag1
-```
-
-Rules:
-
-- **Degradation.** When a later statement reads (or rebinds) a variable bound by
-  an earlier one, that earlier task is awaited right there and the group becomes
-  sequential. Dependencies are transitive.
-- **Barriers.** Any statement in the group that is not a direct `-async` call
-  (plain assignment, `print`, loop, `if`, …) is a barrier: every task still in
-  flight is awaited before it runs. This is what makes code inside a group read
-  a *value*, never an opaque handle.
-- **A function body is NOT a group.** Only a bare block in statement position
-  is. Function bodies, `if` arms and loop bodies are not — so
-  `f = hello-async(1)` at function-body level still just builds a future and is
-  never awaited.
-- **A discarded result is still awaited.** `{ side-async(5) }` spawns *and*
-  awaits: an un-awaited task leaks its argument buffer.
-
-#### Co keyword (colorless async) — recommended
-
-`co` is the **only** colorless async spawn keyword (there is no `go` keyword):
-you write the uncolored name `worker` and the compiler automatically
-monomorphizes a `worker-async` variant, executing it on the underlying colored
-stackless coroutines. You never write the `-async` suffix and you never write
-`run` / `awy`.
+Nolang has **one** surface form for concurrency: a coroutine group introduced by
+`awy`, containing `co <call>` statements. `run` is no longer a keyword (it is a
+plain identifier), `awy <handle>` is gone, and a bare `{ ... }` block is no
+longer a coroutine group. `co` **outside** an `awy { ... }` group is a compile
+error (`E_CO_OUTSIDE_GROUP`).
 
 ```no
 worker = (n i64) (r i64) {
-
     #{overflow=wrap}
     r = n + 1
 }
-r1 i64
-r2 i64
-{
-    r1 = co worker(1); auto-monomorphizes worker-async and spawns
-    r2 = co worker(2); runs concurrently with r1
+
+awy {
+    r1 = co worker(1)
+    r2 = co worker(2)
 }
 print(r1.to-str() + ' ' + r2.to-str())
 ```
 
+The group awaits every `co` at its end, so `r1`/`r2` are result values inside the
+enclosing scope — never opaque task handles. Under the hood the compiler still
+uses `KRun`/`KAwait` and `OpRun`/`OpAwait`, but those are lowering artifacts and
+must not appear in source.
+
 Rules:
 
-- **Monomorphization.** `co worker(1)` auto-generates `worker-async` (a clone
-  of `worker`'s body, renamed). If `worker` is also called synchronously, both
-  `worker` (sync) and `worker-async` (async) coexist.
+- **`co` is colorless.** You write the uncolored name `worker`; the compiler
+  synthesizes a `worker-async` variant and retargets the spawn at it. There is
+  no `go` keyword, and no `-async` suffix in application code.
 - **Transitivity.** If a function calls an async function internally (e.g.
-  `worker` contains `co child(...)`), then `worker` is also monomorphized into
-  `worker-async`; the async coloring propagates up the call chain.
-- **Statement-level `co` (outside a group).** When `co` appears outside a
-  coroutine group (e.g. `d = co worker(5)` at function-body level), the compiler
-  wraps it as `run worker-async(5)` + `awy` inline-await, so `d` receives the
-  result value, not a task handle.
-- **Underlying still colored stackless coroutines.** `co` is just sugar.
-  `{ r1 = co worker(1)  r2 = co worker(2) }` (each on its own line) lowers like a coroutine group — the
-  two `worker-async` tasks are spawned first, then `awy`-ed together.
+  `worker` contains `awy { c = co child(n) }`), then `worker` is itself
+  monomorphized into `worker-async`; async coloring propagates up the call chain.
+- **Degradation.** If a later `co` in the group reads a variable bound by an
+  earlier one, that earlier task is awaited right there and the rest of the
+  group becomes sequential. Dependencies are transitive.
+- **Barriers.** Any statement in the group that is not a `co` binding (plain
+  assignment, `print`, loop, `if`, …) is a barrier: every task still in flight
+  is awaited before it runs.
+- **A function body is NOT a group.** Only `awy { ... }` introduces one;
+  function bodies, `if` arms and loop bodies do not. A `co` there is rejected.
+- **A discarded result is still awaited.** `awy { co side(5) }` spawns *and*
+  awaits, so no task is left running at scope exit.
+
+Cancellation: `cancelled()` remains usable **inside** a coroutine body as a
+cooperative self-check. `cancel(h)` is a low-level handle operation with no
+surface handle to pass under the new syntax; application code does not use it.
 ### JS Backend
 
 Nolang supports compiling `.no` source directly to JavaScript via the `--js` flag, bypassing the LLVM toolchain entirely. The JS backend uses **type erasure** — all Nolang type annotations (`int`/`str`/`bool`/`vec[T]`/`[N]T`/`?T`) are dropped in JS output; only runtime behavior is generated.

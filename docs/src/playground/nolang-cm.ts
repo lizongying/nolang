@@ -19,7 +19,7 @@ import { HighlightStyle, StreamLanguage, syntaxHighlighting, type StringStream }
 import { tags as t } from '@lezer/highlight';
 
 const KEYWORDS =
-  /^(if|elif|else|for|in|break|brk|continue|ctn|return|rtn|defer|as|chan|match|while|run|awy)\b/;
+  /^(if|elif|else|for|in|break|brk|continue|ctn|return|rtn|defer|as|chan|match|while|awy|co)\b/;
 
 const CONSTANTS = /^(true|false|nil)\b/;
 

@@ -569,6 +569,9 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	// visible to the function bodies that reference %task*.
 	c.asyncWrappers = map[string]string{}
 	c.emitAsyncScheduler()
+	// Channel runtime (`chan[T]`): control block + new/send/recv/close/free.
+	// Also buffered into extraGlobals; %chancb is declared there.
+	c.emitChanRuntime()
 	// Module globals resolve to their @name (a pointer); register the slot so
 	// any instruction referencing the global value emits `@name` directly.
 	c.globalSlots = map[ValueID]string{}
@@ -1068,6 +1071,17 @@ func (c *codegen) llvmTypeOf(t *Type) string {
 				return s
 			}
 		}
+		return "i64"
+	case KindChan:
+		// chan[T] is an opaque handle: a pointer to a heap control block whose
+		// element stride lives in the block itself, so the LLVM type does not
+		// depend on T.
+		//
+		// The MIR-level type is i64, NOT i8*: every value in this backend is a
+		// machine word (the same choice `%task` makes), which keeps the handle
+		// usable in option payloads, comparisons and drops without teaching
+		// supportedLLVM about a bare pointer type. The ptr<->int conversion
+		// happens at the runtime call boundary in codegen_chan.go.
 		return "i64"
 	case KindOption:
 		// A `?T` lowers to its OWN `%option_<key>`, sized from the payload
@@ -6188,6 +6202,14 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 		return c.emitAsyncAwait(f, inst)
 	case OpTaskRetain:
 		return c.emitTaskRetain(f, inst)
+	case OpChanMake:
+		return c.emitChanMake(inst)
+	case OpChanSend:
+		return c.emitChanSend(inst)
+	case OpChanRecv:
+		return c.emitChanRecv(inst, allocaFor)
+	case OpChanClose:
+		return c.emitChanClose(inst)
 	case OpReturn:
 		c.sb.WriteString("  ret void\n")
 		return nil
@@ -7812,6 +7834,17 @@ func (c *codegen) emitDrop(inst *Inst) error {
 		// type. Scalar options (?i64, ?bool, ...) own nothing and stay a
 		// no-op (correct); struct/str/vec payloads are freed by emitOptionDrop.
 		c.emitOptionDrop(inst, v, lt)
+		return nil
+	}
+	// CHANNEL HANDLE: release the ring and its control block. A channel is an
+	// owned value like str/vec, but every channel lowers to the same i64 word,
+	// so the decision must come from the MIR type, not from lt. The inttoptr
+	// mirrors chanHandle: the handle is an integer at MIR level.
+	if t := c.mirTypeOfValue(inst.Args[0]); t != nil && t.Kind == KindChan {
+		c.loadSeq++
+		h := fmt.Sprintf("%%chdrop.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", h, v)
+		fmt.Fprintf(c.sb, "  call void @nolang_chan_free(i8* %s)\n", h)
 		return nil
 	}
 	switch lt {
@@ -10804,6 +10837,12 @@ func (c *codegen) txtHeaderOfSlot(slot string) (data, lenPtr, byteLen string) {
 // option can recurse into its own element (see the KindOption case).
 func (c *codegen) elemLTOfType(t *Type) string {
 	switch t.Kind {
+	case KindChan:
+		// chan[T] as an ELEMENT (e.g. `?chan[i64]`, `[]chan[i64]`): the stored
+		// word is the handle itself, so the stride is one machine word. The
+		// ring's payload stride is a RUNTIME property (the control block's
+		// elemsize field), never a compile-time one.
+		return "i64"
 	case KindOption:
 		// `?[]T` / `?str` — an option wrapping a container. The element width
 		// is that of the INNER container, not of the option header: falling
@@ -17834,6 +17873,18 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	// emitArith's operand unwrap.
 	capT, capRaw := c.loadVal(inst.Args[0])
 	_, capV := c.unwrapOptionOperand(inst.Args[0], capT, capRaw, "i64")
+	// `ch chan[i64] = with-cap(8)`: the destination is a CHANNEL handle, not a
+	// str/vec header, so the capacity argument means "ring slots" — not bytes.
+	// Only with-cap makes sense (with-len would promise elements that do not
+	// exist yet, and there is no way to fill them), so the other two spellings
+	// are refused rather than silently ignored.
+	if t := c.mirTypeOfValue(inst.Dst); t != nil && t.Kind == KindChan {
+		if ff != "with-cap" {
+			c.fail("builtin %s cannot initialise a chan; use with-cap(n)", ff)
+			return i18n.Errorf("chwlna99", "builtin %s cannot initialise a chan; use with-cap(n)", ff)
+		}
+		return c.emitChanMakeCap(inst, capV)
+	}
 	var lenV string
 	switch ff {
 	case "with-cap":

@@ -43,9 +43,9 @@ const (
 	DEFAULT
 	MATCH
 	MAP
-	RUN
-	AWY
-	CO // `co` — colorless async spawn keyword: `r1 = co worker(1)` monomorphizes worker-async and spawns it
+	RUN // 保留占位（数值锚点，勿删）：`run` 关键字已移除，此常量不再由 lexer 产出
+	AWY // 协程组块关键字：`awy { r1 = co worker(1) }`
+	CO  // `co` — 协程组内 colorless async spawn: `r1 = co worker(1)`
 
 	// 运算符
 	ASSIGN         // =
@@ -210,7 +210,7 @@ var tokenNames = map[TokenType]string{
 	AND_NOT_ASSIGN:  "AND_NOT_ASSIGN(&^=)",
 	QUESTION_ASSIGN: "QUESTION_ASSIGN(?=)",
 	TILDE:           "TILDE(~)",
-	RUN:             "RUN",
+	RUN:             "RUN", // 保留占位（数值锚点）；run 关键字已移除，永不产出
 	AWY:             "AWY",
 	CO:              "CO",
 }
@@ -267,8 +267,9 @@ func lookupKeyword(s string) TokenType {
 		return CHAN
 	case "use":
 		return USE
-	case "run":
-		return RUN
+	// `run` 关键字已移除（2026-11-17）：run 现在是普通标识符。
+	// 注意：RUN token 常量保留作数值锚点（不删）——删它会让 iota 后续
+	// 90+ token 数值连锁平移，破坏自举 tok.no 的硬编码编号与 L1 差分。
 	case "awy":
 		return AWY
 	case "co":

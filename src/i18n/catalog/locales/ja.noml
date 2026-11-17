@@ -406,6 +406,8 @@ tests ディレクトリ作成エラー: %v
   'bsaaq6j7': 'utime: パスを C 文字列にマーシャルできません'
   'bsnjql1o': 'HTML 出力 %s の書き込み: %w'
   'bvxzv6u0': 'net-udp-recvfrom: 結果スロットがありません'
+  'c0grp1aa': 'co <call> は \'awy { ... }\' コルーチングループ内でのみ使用できます'
+  'c0grp1ab': 'コルーチングループを開始するには \'awy\' の後に \'{\' が必要です'
   'c33l3vql': 'モジュールファイルが見つかりません: %s または %s'
   'c48g377y': '浮動小数点の範囲境界は未対応です。整数を使用してください'
   'c6eld4s3': `
@@ -1180,7 +1182,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'y4yjmhz2': 'builtin %s: 不明な LLVMConv 種別 %d です'
   'y4yxzacz': 'builtin %s: scratch バッファが具体化されていません'
   'y5f921sg': 'txt インデックスの出力先スロット（dst=%d type=%s）'
-  'y7964ox1': '“run” から呼び出される関数 “%s” は “-async” で終わる必要があります'
   'y8ieefsr': 'builtin %s: 引数が不正です'
   'y9lj5a9g': '引数名または型を期待しましたが %s でした'
   'yevhjra2': 'LLVM C API: %s に失敗しました: %s'

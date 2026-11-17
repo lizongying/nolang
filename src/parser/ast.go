@@ -158,12 +158,8 @@ func exprToString(e Expression) string {
 			exprToString(ex.Consequence) + " : " + exprToString(ex.Alternative)
 	case *RegexLiteral:
 		return "/" + ex.Pattern + "/" + ex.Flags
-	case *RunExpression:
-		return "run " + exprToString(ex.Call)
 	case *CoExpression:
 		return "co " + exprToString(ex.Call)
-	case *AwaitExpression:
-		return "awy " + exprToString(ex.Right)
 	case *ArrayLiteral:
 		return exprListToString(ex.Elements, "[", "]", true)
 	case *SliceLiteral:
@@ -237,6 +233,24 @@ func (st *SliceType) typeNode()              {}
 func (st *SliceType) Pos() lexer.Position    { return posFromToken(st.Token) }
 func (st *SliceType) EndPos() lexer.Position { return st.Elem.EndPos() }
 func (st *SliceType) String() string         { return "[]" + st.Elem.String() }
+
+// ChanType represents `chan[T]` — a channel carrying T.
+//
+// The handle is an opaque 8-byte pointer to a heap control block (RC'd, so
+// copies share the channel); T only determines the element stride and the
+// payload type of the three-state value a receive produces (`?T`).
+type ChanType struct {
+	Token lexer.Token // the `chan` token
+	Elem  Type        // payload type
+	// IsInferred 標記此型別由 parser 推斷（非源碼顯式標注），與其它容器的
+	// 同名欄位對稱：formatter 據此不渲染，冗餘標註檢查據此跳過。
+	IsInferred bool
+}
+
+func (ct *ChanType) typeNode()              {}
+func (ct *ChanType) Pos() lexer.Position    { return posFromToken(ct.Token) }
+func (ct *ChanType) EndPos() lexer.Position { return ct.Elem.EndPos() }
+func (ct *ChanType) String() string         { return "chan[" + ct.Elem.String() + "]" }
 
 // MapType represents a map type: [K]V where K is the key type and V is the value type.
 // Syntax: m [str]i64 declares a map with str keys and i64 values.
@@ -386,6 +400,8 @@ func typeString(n Node) string {
 		return n.String()
 	case *NullableType:
 		return "?" + typeString(n.Type)
+	case *ChanType:
+		return n.String()
 	case *PointerType:
 		return "*" + typeString(n.Type)
 	case *ViewType:
@@ -868,6 +884,9 @@ type BlockStatement struct {
 	// 手动 parseBareMatchExpr 折叠 arms 后用 BlockStatement{IsWrapper:true} 包装，
 	// 区分双层和单层的 AST。fmt 遇到 IsWrapper 时跳过大括号直接输出内部内容。
 	IsWrapper bool
+	// IsAwaitGroup：true = 该块是 `awy { ... }` 协程组（新语法，取代旧的语句位置裸块）。
+	// tohir 将其映射为 HIR FlagAwaitGroup，DesugarAsyncGroups 据此识别协程组。
+	IsAwaitGroup bool
 	CommentedNode
 	TrailingComments    *CommentGroup   // standalone statements before }
 	ClosingBraceComment *CommentGroup   // comment on the } line itself
@@ -1619,22 +1638,6 @@ func (ie *InfixExpression) EndPos() lexer.Position {
 	return ie.Right.EndPos()
 }
 
-// RunExpression: run <call-expression>
-// Starts an async function call in a new thread, returns a task handle.
-type RunExpression struct {
-	Token lexer.Token
-	Call  Expression // must be a *CallExpression
-}
-
-func (re *RunExpression) expressionNode()     {}
-func (re *RunExpression) Pos() lexer.Position { return posFromToken(re.Token) }
-func (re *RunExpression) EndPos() lexer.Position {
-	if re.Call == nil {
-		return posFromToken(re.Token)
-	}
-	return re.Call.EndPos()
-}
-
 // CoExpression: co <call-expression>
 // Colorless async spawn. `r1 = co worker(1)` spawns `worker-async` (the
 // compiler-monomorphized async variant of `worker`) and reads its RESULT back
@@ -1655,22 +1658,6 @@ func (ge *CoExpression) EndPos() lexer.Position {
 		return posFromToken(ge.Token)
 	}
 	return ge.Call.EndPos()
-}
-
-// AwaitExpression: awy <expression>
-// Waits for an async task to complete and returns the result.
-type AwaitExpression struct {
-	Token lexer.Token
-	Right Expression // the task handle expression
-}
-
-func (ae *AwaitExpression) expressionNode()     {}
-func (ae *AwaitExpression) Pos() lexer.Position { return posFromToken(ae.Token) }
-func (ae *AwaitExpression) EndPos() lexer.Position {
-	if ae.Right == nil {
-		return posFromToken(ae.Token)
-	}
-	return ae.Right.EndPos()
 }
 
 // if
@@ -1828,6 +1815,21 @@ type IterationExpr struct {
 	Range     *RangeExpression // [a..b] etc.
 	RangeStr  string           // string literal iteration
 	RangeExpr Expression       // identifier or slice literal
+	// IsChan marks a channel receive loop (`v <- ch: { ... }`). The loop
+	// variable is bound to a three-state `?T` each round (ok / nil = closed /
+	// err = open but empty) and the loop ends after the round that produced
+	// nil or err. Distinguishing this at the AST level keeps the lowering from
+	// guessing: the same surface shape iterates arrays and channels.
+	IsChan bool
+	// ChanValue 是通道接收迴圈的第二種形態：迴圈變數綁的是**元素本身**（T），
+	// 不是三態 `?T`，且只有收到值的那一輪才跑 body（nil / err 直接結束迴圈）。
+	//
+	//	<- ch: { ok -> ... nil -> ... }      三態（ChanValue = false）
+	//	i <- ch: { co bar(i) }               取元素（ChanValue = true）
+	//
+	// 判據是**語法**的：body 的第一條陳述若是對迴圈變數的 match（`v: { ... }`），
+	// 使用者顯然要自己分辨三態；否則取值即可。見 detectChanLoopForm。
+	ChanValue bool
 }
 
 func (ie *IterationExpr) expressionNode()     {}
@@ -1904,6 +1906,27 @@ type ContinueStatement struct {
 func (cs *ContinueStatement) statementNode()         {}
 func (cs *ContinueStatement) Pos() lexer.Position    { return posFromToken(cs.Token) }
 func (cs *ContinueStatement) EndPos() lexer.Position { return posFromToken(cs.Token) }
+
+// ChanSendStatement is `ch <- value` — a channel send. It is a STATEMENT (not
+// an expression) because a send has no value: the channel never blocks and
+// never fails in this backend (capacity is an initial size, the queue grows).
+//
+// Disambiguation from `v <- ch:` (receive loop) is by the LEFT side's declared
+// type: a channel-typed LHS makes `<-` a send, anything else keeps the
+// for-range meaning. See parseStatement.
+type ChanSendStatement struct {
+	Token lexer.Token  // the `<-` token
+	Chan  Expression   // channel-typed left operand
+	Value Expression   // payload
+	CommentedNode
+}
+
+func (cs *ChanSendStatement) statementNode()         {}
+func (cs *ChanSendStatement) Pos() lexer.Position    { return posFromToken(cs.Token) }
+func (cs *ChanSendStatement) EndPos() lexer.Position { return cs.Value.EndPos() }
+func (cs *ChanSendStatement) String() string {
+	return exprToString(cs.Chan) + " <- " + exprToString(cs.Value)
+}
 
 type ArrayLiteral struct {
 	Token    lexer.Token

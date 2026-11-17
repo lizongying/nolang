@@ -600,7 +600,7 @@ clib 路徑（`generator.go:1763`）用於內建函數（`get-env`、`get-wd`、
 | `reverse-slice-clone.no` | slice 反轉 clone 獨立性 |
 | `clone-reset-is-moved.no` | clone 後重置 moved 狀態 |
 | `struct-move-is-moved.no` | 結構體 move 後 isMovedVar 正確 |
-| `async-str-result.no` / `async-str-stress.no` / `async-module-awy.no` / `async-shared-race.no` / `async-alloca-escape.no` | async 場景記憶體安全 |
+| `async-str-result.no` / `async-str-stress.no` / `async-module-awy.no` | async 場景記憶體安全 |
 | `minimal-option-str.no` / `minimal-str-map.no` / `minimal-str-map2.no` / `option-str-match.no` | 最小化 option/map str 場景 |
 | `bug19-struct-field-corruption.no` | 局部結構體 str 字段跨函數傳遞 + str-range clone（§5.9） |
 | `bug12-builtin-slice-to-str.no` | Builtin 返回 []byte 賦值到 str 變數（§5.10） |
@@ -654,7 +654,7 @@ arr = [9, 8, 7]; free 旧 arr.data → view 悬空
 
 ### 10.5 ~~async 共享数据竞态~~（已解決）
 
-**原問題**：異步線程與主線程共享堆數據時，參數指針共享同一 data 緩衝區，子線程讀寫時調用端可能同時修改或釋放它，無同步保護 → 數據競爭（未定義行為）。此外，未 awy 的 task 容器在函數返回前被跳過釋放（泄漏但無 UAF）。
+**原問題**：異步任務與主線程共享堆數據時，參數指針共享同一 data 緩衝區，子任務讀寫時調用端可能同時修改或釋放它，無同步保護 → 數據競爭（未定義行為）。舊的手寫句柄語法還可能留下未等待的 task 容器（泄漏但無 UAF）；新的 `awy { ... }` 組在組尾等待所有 `co`，不再暴露這種表面寫法。
 
 **根因**：
 1. `prepareAsyncCall` 中 Identifier + 堆擁有類型參數直接傳遞調用方的 data 指針給子線程，無所有權隔離。
@@ -673,14 +673,14 @@ arr = [9, 8, 7]; free 旧 arr.data → view 悬空
    - **不釋放 task 結構體本身**：task 通過 `@nolang_async_enqueue` 入隊後，就緒隊列 `@nolang_ready_q` 仍持有 task 指針。釋放 task 會導致事件循環調度到該 task 時讀取已釋放內存（UAF）。task 結構體（24 字節）作為已知泄漏保留——事件循環取出 task 後，wrapper 檢查 `done=true` 直接返回，`done_handler` 調用 `nolang_async_done`（無等待者時直接返回），安全跳過。
 
 **安全分析**：
-- 單線程事件循環模型下，`run` 只是把 task 入隊，不會真正並發執行。task 在事件循環調度到時才執行。
+- 單線程事件循環模型下，底層 task 入隊後不會立即並發執行；task 在事件循環調度到時才執行。表面的 `co` 由 `awy { ... }` 組統一 spawn 與等待。
 - `emitLocalTasksFree` 同步驅動未完成 task 到完成是安全的——`resume_fn` 執行完畢後設置 `done=true`。
 - 釋放 args 和 result 容器不影響就緒隊列（隊列只持有 task 指針，不直接訪問 args/result）。
 - wrapper 釋放參數容器（cloneBuf）不影響 data——data 被 move 到 result buffer 後由其所有者管理。
 
 **殘留泄漏**：task 結構體本身（24 字節）在事件循環場景下泄漏（因就緒隊列持有指針）。在非事件循環場景下（無 `@nolang_async_run`），就緒隊列不會被消費，task 結構體也泄漏。這是保守的安全選擇。
 
-測試見 `async-shared-race.no`（參數所有權隔離 + 未 awy task 清理 + str 參數深拷貝）。
+測試見 `tests/async-ownership.no` 與 `src/mir/spawn_arg_*_test.go`（參數所有權隔離 + str 參數深拷貝）；舊的 `async-shared-race.no` 手寫句柄檔已移除。
 
 ### 10.5a ~~main 函數 out 參數 UB 崩潰~~（已解決）
 
@@ -863,17 +863,17 @@ The hybrid ownership model (design doc: `NOLANG-OWNERSHIP-MODEL.md`) introduces 
 |------|------|--------|---------|
 | **P1 Tier Lattice** | `src/mir/tier.go` | Framework (all values classified S) | S (statically unique) / C (first-write clone) / R (refcounted) lattice; monotone fixpoint over MIR ops. Currently returns S for all values (baseline equivalence). |
 | **P2 Alias Forward (first-write clone)** | `src/mir/alias_forward.go` | Active (codegen-affecting) | Defers unnecessary OpClone/OpMove deep copies to the alias's first write. If the alias is never written, the clone is eliminated entirely. Reduces redundant heap allocations for `b = a` where `b` is only read. |
-| **P3 Spawn Graph** | `src/mir/spawn_graph.go` | Report-only (no codegen effect) | Analyzes coroutine spawn edges: determines whether a `run`/`awy` boundary can be downgraded to static tier (S/C) vs requiring refcounted (R). Four-condition test: handle doesn't escape, every path awaits exactly once, callee doesn't spawn, boundary values unused after await. |
+| **P3 Spawn Graph** | `src/mir/spawn_graph.go` | Report-only (no codegen effect) | Analyzes internal coroutine spawn edges (`OpRun`/`OpAwait` produced by `awy { co ... }`): determines whether a boundary can be downgraded to static tier (S/C) vs requiring refcounted (R). Four-condition test: handle doesn't escape, every path awaits exactly once, callee doesn't spawn, boundary values unused after await. |
 
 ### Key design facts (mirrored in docs/docs/lang/memory.md)
 
 - **RC only on coroutine spawn edges** — the only place where ownership might be ambiguous at runtime; all other flows remain static.
 - **`%task` grew from 24 to 32 bytes** — the 5th field stores the waiter pointer (replacing the 256-entry hash table, fixing address aliasing).
-- **Deep clone at spawn boundary** — heap-owning arguments (str, vec, struct with heap fields) are cloned at `run`; the wrapper frees the clone after the callee completes.
+- **Deep clone at spawn boundary** — heap-owning arguments (str, vec, struct with heap fields) are cloned when `co` is spawned; the wrapper frees the clone after the callee completes.
 - **Double await** — now a defined no-op with diagnostic to fd 2 (was SIGSEGV).
 - **Cancelled task** — no longer leaks argbuf.
 
-Regression: `tests/async-ownership.no`, `tests/async-handle-alias.no`, `src/mir/async_boundary_ownership_test.go`, `src/mir/async_rc_handle_test.go`, `src/mir/option_peel_ownership_test.go`.
+Regression: `tests/async-ownership.no`, `src/mir/async_boundary_ownership_test.go`, `src/mir/spawn_arg_move_test.go`, `src/mir/spawn_arg_retain_test.go`, `src/mir/option_peel_ownership_test.go`. 舊的 `tests/async-handle-alias.no` / `src/mir/async_rc_handle_test.go` 手寫句柄用例已隨 `run` 移除。
 
 ## 14. 借入參數存入結構字段（param-setfield clone，bufio 修復）
 

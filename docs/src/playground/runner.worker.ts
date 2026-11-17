@@ -12,16 +12,17 @@
  * main-thread watchdog that terminates and lazily recreates this worker.
  *
  * Protocol (main thread -> worker):
- *   {type: 'warmup', noWasmUrl}
+ *   {type: 'warmup', noWasmUrl, seq}
  *   {type: 'run', runId, source, timeoutMs, noWasmUrl}
  * Protocol (worker -> main thread):
+ *   {type: 'warmup-done', seq, ok: boolean, reason?}
  *   {type: 'stage', runId, stage: 'compiling' | 'running'}
  *   {type: 'result', runId, result: RunResult}
  *   {type: 'load-error', runId, reason}
  */
 import './node-polyfills';
 import {WASI, MemFS} from '@wasmer/wasi';
-import {loadWasmRuntime, warmupWasmRuntime, instantiateWasi, type WasmLoadSpec} from './wasm-loader';
+import {loadWasmRuntime, instantiateWasi, type WasmLoadSpec} from './wasm-loader';
 
 /** Warn once per reason about WASI imports the glue had to stub. */
 const warnedKeys = new Set<string>();
@@ -229,18 +230,34 @@ interface RunMessage {
   noWasmUrl: string;
 }
 
-type IncomingMessage = {type: 'warmup'; noWasmUrl: string} | RunMessage;
+interface WarmupMessage {
+  type: 'warmup';
+  noWasmUrl: string;
+  /** Echoed back so the main thread can ignore a late warm-up from a prior worker. */
+  seq: number;
+}
+
+type IncomingMessage = WarmupMessage | RunMessage;
 
 ctx.onmessage = async (e: MessageEvent) => {
   const data = e.data as IncomingMessage | null;
   if (!data || !data.noWasmUrl) return;
 
   if (data.type === 'warmup') {
-    warmupWasmRuntime(assetFor(data.noWasmUrl), (reason) => {
-      // A warm-up failure is not fatal: the real run will retry and surface
-      // the error. Still emit it so the page can log/hint at a cold start.
-      ctx.postMessage({type: 'warning', reason});
-    });
+    // Report completion — not just failure — so the page can gate Run until
+    // the compiler is actually loaded. `seq` filters a stale reply after the
+    // worker was recreated by a watchdog termination.
+    try {
+      await loadWasmRuntime(assetFor(data.noWasmUrl));
+      ctx.postMessage({type: 'warmup-done', seq: data.seq, ok: true});
+    } catch (err) {
+      ctx.postMessage({
+        type: 'warmup-done',
+        seq: data.seq,
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
     return;
   }
   if (data.type !== 'run') return;

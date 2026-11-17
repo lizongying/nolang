@@ -54,6 +54,8 @@ const (
 	Union
 	// Named is a struct, enum, newtype or an unresolved alias name.
 	Named
+	// Chan is `chan[T]` — an owned channel handle (opaque i8* at runtime).
+	Chan
 )
 
 // String returns the spelling name of the kind (diagnostics only).
@@ -91,6 +93,8 @@ func (k Kind) String() string {
 		return "union"
 	case Named:
 		return "named"
+	case Chan:
+		return "chan"
 	}
 	return "invalid"
 }

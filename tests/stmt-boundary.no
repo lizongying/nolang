@@ -12,18 +12,16 @@
 ;                於是裸區塊之後的每一條語句都往外漏一層。
 ;                test-bare-block 修復前只印 `99`（`print(x)` 漏到頂層）。
 ;
-;   2. `run` / `awy` 不是區塊第一條語句時，關鍵字被上一條語句的
+;   2. `awy` / `co` 不是區塊第一條語句時，關鍵字被上一條語句的
 ;      skipToStatementEnd() 吃掉（NEWLINE 刻意不是語句邊界）。
-;        修復前：`awy t` 退化成裸 `t` ⇒ if 鏈臂體的值變成 task handle
-;                （一個堆指標），印出來是垃圾大數（如 4367685392）。
-;                `run f(x)` 退化成同步 `f(x)` ⇒ 編譯照過、輸出照印，
-;                只是**不再 spawn**（這條無法從 stdout 觀察，由
-;                src/parser/stmt_boundary_block_test.go 的 AST 斷言釘住）。
+;        `co f(x)` 被吃掉 ⇒ 退化成同步 `f(x)`，編譯照過、輸出照印，
+;        只是**不再 spawn**（這條由 src/parser/stmt_boundary_block_test.go
+;        的 AST 斷言釘住）；`awy { }` 被吃掉則整組語義丟失。
 
 ; 被協程衍生的簡單函式：把輸入乘 2（overflow 採 wrap），用來觀察引數是否被搬走 / 誤用指標
 ; n: 輸入值
 ; r: n * 2
-dbl-async = (n i64) (r i64) {
+dbl = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
@@ -67,26 +65,31 @@ x-top = 1
 }
 print(x-top); expect: 2
 
-; 缺陷 2：非首條語句的 run / awy
+; 缺陷 2：非首條語句的 awy / co
 ...
 
-; 原始回報形式：if 鏈臂體尾巴是 `awy t`，臂值必須是結果而非 task handle
-test-awy-tail-in-ifchain = () {
+; if 鏈臂體包含 awy 組，臂尾是組內的 co（非臂內首條語句）
+test-awy-in-ifchain = () {
     x = true -> {
-        t = run dbl-async(21)
-        awy t
+        awy {
+            y = 1
+            r = co dbl(21)
+        }
+        r
     }
     print(x); expect: 42
 }
 
-; 同樣的缺陷，但尾巴 `awy t` 出現在 **match 臂** 而非 if 鏈臂
-test-awy-tail-in-match = () {
-    t = run dbl-async(21)
+; 同樣的缺陷，但 awy 組出現在 **match 臂** 而非 if 鏈臂
+test-awy-in-match = () {
     v = 1
     x = v: {
         1 -> {
-            y = 1
-            awy t
+            awy {
+                y = 1
+                r = co dbl(21)
+            }
+            r
         }
 
         -> 0
@@ -94,24 +97,30 @@ test-awy-tail-in-match = () {
     print(x); expect: 42
 }
 
-; `awy run f(21)` 作為非首條語句（兩個關鍵字連續）
-test-awy-run-nonfirst = () {
+; awy 組不是第一條語句，且組內 co 也不是組內第一條語句
+test-co-nonfirst = () {
     y = 1
-    z = awy run dbl-async(21)
-    print(z); expect: 42
+    awy {
+        z = 2
+        r = co dbl(21)
+    }
+    print(y + z); expect: 3
+    print(r); expect: 42
 }
 
-; 過度修正守門員：非首條 `run` 之後的語句仍要正常解析
-test-run-nonfirst-then-use = () {
+; 過度修正守門員：非首條 awy 組之後的語句仍要正常解析
+test-awy-nonfirst-then-use = () {
     y = 1
-    t = run dbl-async(21)
+    awy {
+        r = co dbl(21)
+    }
     print(y); expect: 1
-    print(awy t); expect: 42
+    print(r); expect: 42
 }
 
 test-bare-block()
 test-bare-block-call-first()
-test-awy-tail-in-ifchain()
-test-awy-tail-in-match()
-test-awy-run-nonfirst()
-test-run-nonfirst-then-use()
+test-awy-in-ifchain()
+test-awy-in-match()
+test-co-nonfirst()
+test-awy-nonfirst-then-use()

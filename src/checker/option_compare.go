@@ -406,8 +406,6 @@ func (w *optCmpWalker) walkExpr(e parser.Expression) {
 	case *parser.AssignExpression:
 		w.walkExpr(x.Left)
 		w.walkExpr(x.Value)
-	case *parser.AwaitExpression:
-		w.walkExpr(x.Right)
 	case *parser.DotExpression:
 		w.walkExpr(x.Receiver)
 	case *parser.ArrayLiteral:

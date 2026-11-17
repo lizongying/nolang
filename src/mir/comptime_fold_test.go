@@ -421,17 +421,18 @@ main = () () {
 
 // TestComptimeLeavesAsyncSpawnAlone: a spawn CREATES A TASK, so it must never
 // be replaced by a constant — not even when the callee is pure and every
-// argument is a literal. Folding `run work-async(21)` to 42 would delete the
+// argument is a literal. Folding `co work(21)` to 42 would delete the
 // task and with it every spawn-graph / tier verdict derived from it.
 func TestComptimeLeavesAsyncSpawnAlone(t *testing.T) {
 	t.Setenv("NOLANG_COMPTIME", "1")
-	on := lowerSrc(t, `work-async = (n i64) (r i64) {
+	on := lowerSrc(t, `work = (n i64) (r i64) {
     #{overflow=wrap}
     r = n * 2
 }
 main = () {
-    h = run work-async(21)
-    v = awy h
+    awy {
+        v = co work(21)
+    }
     print(v)
 }
 `)

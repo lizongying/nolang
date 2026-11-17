@@ -334,7 +334,7 @@ This page collects Nolang release records for each version, kept consistent with
 - fix(mir): keep unreachable blocks that are the sole producer of a value codegen still needs
 - fix(mir): stop copy propagation redirecting a reader through a source reassigned later in the same block
 - fix(mir): stop empty-block threading widening a block's predecessor set, which let a per-edge drop become a double free on 49 of the 631-file corpus
-- fix(mir): stop copy propagation collapsing a task-handle copy, which made a second `awy` read the handle slot the first had zeroed
+- fix(mir): stop copy propagation collapsing an internal task-handle copy, which made a second wait read the handle slot the first had zeroed
 - refactor(checker): remove redundant hex literal check and improve type inference registration
 - fix(checker): handle implicit self float methods in type inference
 - fix(builtin): audit and fix math.pow negative base sign and builtin handling

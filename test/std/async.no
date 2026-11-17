@@ -1,21 +1,21 @@
 ; test/std/async.no — async 模組測試（cancel / cancelled 原語）
 ;
 ; 執行：no test test/std/async.no
-; 覆蓋：cancel / cancelled
+; 覆蓋：cancelled / 協程組回傳值
 ;
 ; 註：兩個符號都是 `#{buildin}`，文件規定的呼叫形態是**帶模組前綴**的
 ;     `async.cancel(h)` / `async.cancelled()`；不帶前綴的 `cancelled()` 會被
 ;     checker 直接拒絕：`'cancelled' is not defined; call it as 'async.cancelled'
 ;     (cross-module calls must be module-qualified) [4bek3xc6]`。
 ;
-; ⚠️ 這裡測的是**已廢棄**的手寫原語，應用碼請改用協程組（語句位置的裸塊
-;     `{ ... }`）。保留測試是為了鎖住底層語義：cancel 置位後 `awy` 立即返回
-;     零值，而未取消的任務照常返回結果。
+; ⚠️ 舊的手寫句柄 cancel 測試已移除：新語法只有 `awy { r = co f() }`，
+;     不暴露可傳給 async.cancel 的 task 句柄。此檔保留 cancelled 原語與
+;     協程組正常返回結果的覆蓋。
 
 # /test/runner
 
 ; worker：未取消時回 n*2；被取消則由 async_wrapper 跳過執行體、返回零值
-ac-worker-async = (n i64) (r i64) {
+ac-worker = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
@@ -36,26 +36,18 @@ t-cancelled = () {
     runner.is-false(c2, 'cancelled is stable across calls')
 }
 
-; cancel：取消後台任務後，awy 立刻返回且結果為零值
-t-cancel = () {
-    h = run ac-worker-async(100)
-    async.cancel(h)
-    r = awy h
-    runner.eq(r, 0, 'cancelled task yields zero value')
-}
-
-; 對照組：不取消時任務正常返回 n*2
+; 對照組：協程組內的 co 任務正常返回 n*2
 t-no-cancel = () {
-    h = run ac-worker-async(21)
-    r = awy h
-    runner.eq(r, 42, 'task without cancel returns n*2')
+    awy {
+        r = co ac-worker(21)
+    }
+    runner.eq(r, 42, 'group coroutine returns n*2')
 }
 
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('async.cancelled', t-cancelled)
-p2, f2 = runner.test('async.cancel', t-cancel)
-p3, f3 = runner.test('async.run/awy baseline', t-no-cancel)
+p2, f2 = runner.test('async coroutine group', t-no-cancel)
 
 total = runner.summary()
 f = runner.failed-count()

@@ -140,16 +140,19 @@ bare '->' else arm outside an if-group，而且它会把上面那条 cond 臂判
       related: ['syntax-if-group', 'syntax-presence']
       refs: ['glossary/src/jsono.no']
     }
-    'reserved-run': {
-      title: 'run 是保留字'
+    'reserved-keywords': {
+      title: '保留字撞名会报在 EOF'
       kind: 'trap'
       status: 'stable'
-      summary: '用 run 当函数名会得到 expected right parenthesis, got NEWLINE，且位置指向文件末尾。'
-      aliases: ['run', '保留字']
+      summary: '用 awy / match 等保留字当函数名会得到 expected right parenthesis, got NEWLINE，且位置指向文件末尾。'
+      aliases: ['保留字', 'reserved keyword']
       definition: `
-run 是保留字。写成 run = () { ... } 时，解析器不会报「保留字被占用」，
-而是把整行当表达式解析，最终在文件末尾报
+保留字（如 awy、match）不能当函数名。写成 awy = () { ... } 时，解析器不会报
+「保留字被占用」，而是把整行当表达式解析，最终在文件末尾报
 expected right parenthesis, got NEWLINE（位置完全误导）。
+
+2026-11-17 起 run 已不是关键字：co 只在 awy { ... } 協程組內合法，
+舊的 run / awy <handle> 手寫語法已移除。
 
 同类行为会出现在其他保留字上：报错位置与真实原因无关，看到指向 EOF 的括号错误，
 先怀疑标识符撞了保留字。

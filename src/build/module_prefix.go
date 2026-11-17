@@ -665,10 +665,6 @@ func renameBareFnRefsInExpr(expr parser.Expression, rename map[string]string) {
 		}
 	case *parser.CastExpression:
 		renameBareFnRefsInExpr(e.Expr, rename)
-	case *parser.RunExpression:
-		renameBareFnRefsInExpr(e.Call, rename)
-	case *parser.AwaitExpression:
-		renameBareFnRefsInExpr(e.Right, rename)
 	case *parser.MapLiteral:
 		for _, pair := range e.Pairs {
 			renameBareFnRefsInExpr(pair.Key, rename)
@@ -722,9 +718,9 @@ func excludeLocalTypes(typeOwner map[string]string, localTypes map[string]bool) 
 // typeOwner 的 key 為 "module.name"，value 為 bareName。查找規則：
 //   - name 已含 "."：視為已帶模組前綴，直接返回（typeOwner 中可能記錄也可能未記錄）
 //   - name 為 bare name：遍歷 typeOwner 查找 value == name 的鍵
-//     - 恰好一個匹配 → 返回 "module.name"
-//     - 多個匹配（同名結構體跨模組）→ bare name 無法消歧，保持原樣
-//     - 零個匹配 → 保持原樣
+//   - 恰好一個匹配 → 返回 "module.name"
+//   - 多個匹配（同名結構體跨模組）→ bare name 無法消歧，保持原樣
+//   - 零個匹配 → 保持原樣
 func prefixTypeName(name string, typeOwner map[string]string) string {
 	if name == "" || isModulePrefixBuiltinType(name) {
 		return name
@@ -1054,10 +1050,6 @@ func rewriteTypeRefsInExpr(expr parser.Expression, typeOwner map[string]string) 
 		if e.Type != nil {
 			rewriteTypeRef(e.Type, typeOwner)
 		}
-	case *parser.RunExpression:
-		rewriteTypeRefsInExpr(e.Call, typeOwner)
-	case *parser.AwaitExpression:
-		rewriteTypeRefsInExpr(e.Right, typeOwner)
 	case *parser.MapLiteral:
 		if e.MapType != nil {
 			rewriteTypeRef(e.MapType, typeOwner)

@@ -489,22 +489,10 @@ func (d *dumper) node(node parser.Node, depth int) {
 		d.node(n.Left, depth+1)
 		d.node(n.Right, depth+1)
 
-	case *parser.RunExpression:
-		fmt.Fprintf(&d.buf, "%sRunExpression\n", indent(depth))
-		if n.Call != nil {
-			d.node(n.Call, depth+1)
-		}
-
 	case *parser.CoExpression:
 		fmt.Fprintf(&d.buf, "%sCoExpression\n", indent(depth))
 		if n.Call != nil {
 			d.node(n.Call, depth+1)
-		}
-
-	case *parser.AwaitExpression:
-		fmt.Fprintf(&d.buf, "%sAwaitExpression\n", indent(depth))
-		if n.Right != nil {
-			d.node(n.Right, depth+1)
 		}
 
 	case *parser.IfExpression:
@@ -530,12 +518,24 @@ func (d *dumper) node(node parser.Node, depth int) {
 
 	case *parser.IterationExpr:
 		fmt.Fprintf(&d.buf, "%sIterationExpr{%s}\n", indent(depth),
-			fields(kvs("var", n.Variable), kvs("rangeStr", n.RangeStr)))
+			fields(kvs("var", n.Variable), kvs("rangeStr", n.RangeStr),
+				kvb("chan", n.IsChan), kvb("chanValue", n.ChanValue)))
 		if n.Range != nil {
 			d.node(n.Range, depth+1)
 		}
 		if n.RangeExpr != nil {
 			d.node(n.RangeExpr, depth+1)
+		}
+
+	case *parser.ChanSendStatement:
+		// `ch <- v`：通道是左子節點，載荷是右子節點。
+		fmt.Fprintf(&d.buf, "%sChanSendStatement\n", indent(depth))
+		d.comments(n, depth+1)
+		if n.Chan != nil {
+			d.node(n.Chan, depth+1)
+		}
+		if n.Value != nil {
+			d.node(n.Value, depth+1)
 		}
 
 	case *parser.SliceExpression:
@@ -676,6 +676,15 @@ func (d *dumper) node(node parser.Node, depth int) {
 
 	case *parser.SliceType:
 		fmt.Fprintf(&d.buf, "%sSliceType{%s}\n", indent(depth),
+			fields(kvb("inferred", n.IsInferred)))
+		if n.Elem != nil {
+			d.node(n.Elem, depth+1)
+		}
+
+	case *parser.ChanType:
+		// `chan[T]`：元素型別是子節點，`inferred` 與其它容器同口徑（formatter
+		// 據此決定要不要渲染這層標註）。
+		fmt.Fprintf(&d.buf, "%sChanType{%s}\n", indent(depth),
 			fields(kvb("inferred", n.IsInferred)))
 		if n.Elem != nil {
 			d.node(n.Elem, depth+1)

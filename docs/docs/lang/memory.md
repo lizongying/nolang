@@ -36,7 +36,7 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 重綁定後 b 與 a 指向同一棧槽，因此 a 後續任何對 b 的讀都會讀到「a 的存儲」。為避免語義錯誤，重綁定僅在源 a **後續「完全無引用（讀或寫）」**時允許；否則**降級為完整值拷貝**（語義不變，僅多一次 memcpy）。
 
 - 安全性由 `computeSlotRebindSafety`（主函數）/`computeMoveEligibility`（用戶函數）透過 `stmtContainsVarRefAny` / `exprContainsVarRefAny` 靜態求解：掃描 move 之後的所有語句（含分支/迴圈回邊），若源變數仍被任何方式引用則 `slotRebindSafe[stmt] = false` → 走拷貝。
-- 引用掃描必須窮舉**所有能引用變數的 AST 節點**，否則未覆蓋的寫引用會導致不安全的重綁定（別名槽被污染 → 錯誤輸出甚至無限迴圈）。已覆蓋：語句層 `LetStatement` / `ExpressionStatement` / `ForStatement`（含 `Init`/`Update`/`Condition`/`CountExpr`/`Body` 與 **`IterRange` 迭代集合**）/ `ReturnStatement` / `MultiAssignStatement` / **`UnwrapAssignStatement`（`?=` 解包賦值）** / **`BlockStatement`（裸區塊）**；表達式層 `Identifier` / `AssignExpression` / `Infix` / `Prefix` / `Call` / `Dot` / `Index` / `IfExpression`（含分支體）/ `Slice` / `Conditional` / `Grouped` / **`AwaitExpression`** / **`CastExpression`** / **`RangeExpression`** / **`RunExpression`（協程 spawn，防禦性；整函數禁用仍由 `curHasUnsafeConstruct` 負責）**。任何新增的變數引用構造都必須同步加入這兩個掃描函數。
+- 引用掃描必須窮舉**所有能引用變數的 AST 節點**，否則未覆蓋的寫引用會導致不安全的重綁定（別名槽被污染 → 錯誤輸出甚至無限迴圈）。已覆蓋：語句層 `LetStatement` / `ExpressionStatement` / `ForStatement`（含 `Init`/`Update`/`Condition`/`CountExpr`/`Body` 與 **`IterRange` 迭代集合**）/ `ReturnStatement` / `MultiAssignStatement` / **`UnwrapAssignStatement`（`?=` 解包賦值）** / **`BlockStatement`（裸區塊）**；表達式層 `Identifier` / `AssignExpression` / `Infix` / `Prefix` / `Call` / `Dot` / `Index` / `IfExpression`（含分支體）/ `Slice` / `Conditional` / `Grouped` / **`CoExpression`（`co <call>` 協程 spawn，防禦性；整函數禁用仍由 `curHasUnsafeConstruct` 負責）** / **`CastExpression`** / **`RangeExpression`**。任何新增的變數引用構造都必須同步加入這兩個掃描函數。
 - `match` 已 desugar 為 `IfExpression`，其分支體內的引用由上述分析遍歷覆蓋，故 **match 不觸發禁用**（經 `tests/match.no` / `tests/option.no` 驗證與基線一致）。
 
 ### 禁用場景（一律降級為值拷貝）
@@ -58,7 +58,7 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 
 ### 測試參考
 - `tests/slot-rebind.no`：i64/u64 重綁定、i128/u128 經 `==` 比較、txt 經 `.len-bytes()`、降級拷貝（`da` 複用 → `db`/`dc` 拷貝）、重賦值後（`ra`=10）、參數 move（`pm_fn` 源為參數 → 拷貝）、重綁定後重賦值（`rr_fn` → `rr`=99）、消費（`consume(m)` → `cm`=84）。期望輸出 `42 7 1 1 17 5 5 10 100 99 84`。
-- `tests/slot-rebind-unsafe.no`：協程（`run`/`awy`）capture 棧變數，驗證 `curHasUnsafeConstruct` 禁用重綁定後輸出與基線一致。
+- `tests/slot-rebind-unsafe.no`：協程（`awy { co ... }`）capture 棧變數，驗證 `curHasUnsafeConstruct` 禁用重綁定後輸出與基線一致。
 
 ### 編譯器插入 free
 - 函數結束時：釋放所有未 moved 的局部堆變數
@@ -460,11 +460,11 @@ arr = [9, 8, 7]; 釋放舊 arr.data → view 懸空
 
 ### async 共享數據（2026-09-30 已修）
 
-`run`/`awy` 的 spawn 邊界現在會**深拷貝**擁有堆的引數，任務不再與呼叫方共享 buffer。
+`awy { r = co f(x) }` 的 spawn 邊界現在會**深拷貝**擁有堆的引數，任務不再與呼叫方共享 buffer。
 
 協程是協作式、單執行緒的，所以「跨協程共享可變堆數據」在語言層不成立；唯一會共享的
 是**呼叫方在 spawn 之後仍然持有**的那份值。修復前 argbuf 只是引數描述符的**位元複製**，
-`data` 與呼叫方共享，而任務要等到 `awy` 才執行 —— 呼叫方在那之前重賦值或離開作用域就會
+`data` 與呼叫方共享，而任務要等到等待點才執行 —— 呼叫方在那之前重賦值或離開作用域就會
 把 buffer 釋放掉，任務於是讀到已釋放的記憶體（實測：str 印出 40 個 NUL、`[]i64` 印出 0，
 兩者 rc 都是 0 且無任何診斷）。
 
@@ -476,9 +476,6 @@ arr = [9, 8, 7]; 釋放舊 arr.data → view 懸空
 | `[]T`（T 有 deep-clone helper） | `vecDeepClone` | `@vec_free` |
 | 擁有堆的 struct（內聯 `str` 葉子／指標欄位） | 就地葉子 clone ＋ pointee 複製 | 遞迴結構體解構子 |
 | 其他（純值型別） | 位元複製（正確） | 只釋放容器 |
-
-另外兩個已修的邊界缺陷：同一 handle `awy` 兩次（修復前 SIGSEGV，現在是已定義的 no-op
-並輸出診斷到 fd 2）、以及被取消的任務不再洩漏 argbuf。
 
 迴歸：`tests/async-ownership.no`。
 
@@ -528,100 +525,56 @@ h = holder {
 所以放行 `(` 不會把任何合法的 match 誤判成 struct literal。迴歸：
 `src/parser/struct_literal_field_value_test.go`。
 
-### await 結果型別跨 handle 重賦值（2026-09-30 已修）
+### await 結果型別（2026-11-17 語法簡化）
 
-```no
-holder {
-    s str
-}
-echo-holder-async = (h holder) (r str) {
-    r = h.s
-}
-t i64 = 0
-t = run echo-holder-async(h); 重賦值，不是新綁定
-print(awy t); 修復前印出 40（str 的長度），rc 仍是 0
-```
+舊語法把 task handle 暴露成 `i64` 變數，曾需要跨「handle 槽位重綁定」搬移結果型別
+（`t i64 = 0; t = run f(...); v = awy t`）。`run` 與 `awy <handle>` 移除後，
+`co` 表達式的結果型別直接由 callee 決定，這條路徑已不存在。
+迴歸改由 `src/mir/async_boundary_ownership_test.go` 釘住底層 MIR 的結果型別。
 
-任務的結果型別記在以 MIR value id 為鍵的表裡。`awy <handle-var>` 是透過**區域變數當前的
-value id** 去解析 handle 的，而那是 OpRun 結果被 move 進去的**新槽**，不是 OpRun 結果本身的
-id —— 重賦值路徑沒有把型別搬過去，於是 await 被當成無型別的 `i64`，`str` 結果的 buffer 被
-重新解讀，印出來的就是長度。
+### 任務引用計數（2026-11-17 語法簡化）
 
-修復要三處同時到位，缺一都會留下症狀：
-
-1. 降低階段在兩條 rebind 路徑（區域變數、模組級全局）把結果型別搬到目標槽；
-   來源不是 handle 時**清除**目標槽的記錄，避免後續 `awy` 撿到上一個任務的陳舊型別。
-2. 檢查器對 `*AwaitExpression` 不再一律回 `i64`：`awy <call>` 回 callee 的回傳型別，
-   `awy <handle-var>` 回「未知」而跳過型別檢查（handle 是不透明的 `i64`，靜態無法還原）。
-   舊行為會拒收完全合法的 `v str = awy t`。
-3. 轉譯層的字串判定把 `*AwaitExpression` 視為可能是字串，否則合法的 `v str = awy t`
-   會被「cannot assign non-string value to string variable」擋下。
-
-迴歸：`tests/async-ownership.no` 的 test 9 / test 10。
-
-### handle 複製的引用計數漏計：void 任務與 `run <handle>`（2026-10-01 已修）
-
-協程 spawn 是唯一的引用計數邊界，所以 `run` 產生的 `%task` 是語言裡唯一的 R 檔物件。紀律是
-**一個引用一個計數**：`run` 建立時 `rc = 1`，handle 的**每次複製** `retain`，每次 `awy` `release`。
-有兩條路徑的複製沒有計數，因為「這個值是不是 handle」被誤判成「這個值有沒有已知的**任務結果型別**」：
-
-| 形狀 | 修復前 | 修復後 |
-|---|---|---|
-| `h = run void-async(); h2 = h; awy h; awy h2` | **SIGSEGV（rc=139）** | 正常結束 |
-| `h = run dbl(21); h2 = run h; awy h; awy h2` | 印出 `42 0` | 印出 `42 42` |
-
-第一條是**結果型別為 void 的任務**：它有 handle，但沒有結果型別，於是複製不 retain，`rc` 停在 1。
-第一次 `awy` 就把任務釋放掉，第二個引用仍指著它，第二次 `awy` 對已釋放的塊再 `release` 一次。
-同一個形狀在任務回傳 `i64` 時完全正確 —— 這個**不對稱**就是病灶。
-
-第二條是 `run <handle>`：它**不是** spawn 站點（運算元已經是 handle），而是「同一任務的第二個
-引用」，所以必須跟 `h2 = h` 一樣 retain。修復前它直接回傳運算元、不建新值也不 retain，兩次 `awy`
-因此落在同一個槽上，第一次把槽歸零後第二次讀到 0。
-
-修法是把 **handle 的「身分」與任務的「結果型別」分開記**（`asyncHandles` 對上 `asyncResTypes`），
-`run <handle>` 走與 `h2 = h` 相同的計數路徑。新增的 `checkRefBalance` 驗證器（MIR `Analyze` 內）
-會把「有別名卻沒有 retain」變成**編譯錯誤**，而不是等到執行期才崩。
-
-迴歸：`tests/async-rc.no`（修復前 rc=139）、`src/mir/async_rc_handle_test.go` 的
-`TestVoidTaskHandleCopyRetains` / `TestRunHandleForwardCreatesFreshReference` /
-`TestCheckRefBalanceFiresOnMissingRetain`。
+內部 `%task` 仍是唯一的引用計數物件：spawn 建立時 `rc = 1`，等待完成時 `release`。
+舊語法暴露手寫句柄，`h2 = h` / `run h` 等複製路徑曾漏計 retain（void 結果任務尤其嚴重，
+實測 SIGSEGV），並由 `checkRefBalance` 驗證器攔截。新的 `awy { ... }` 不暴露句柄，
+組尾對每個 `co` 恰好等待一次，因此表面語法不會產生清單外引用。
+handle 別名 / RC 的 `.no` 與 Go 測試已隨 `run` 移除；MIR 層的 `OpTaskRetain` /
+`OpAwait` 配對仍由 `src/mir/opt_test.go` 的 MIR fixture 覆蓋。
 
 ### spawn 參數的移動：來源已死時零拷貝（2026-10-01）
 
-`run f(x)` 對每個**擁有堆**的參數會在 spawn 邊界做一次深拷貝，因為任務可能到 `awy` 才執行，
-而呼叫端在那之前可以重賦值或離開作用域（見下方「spawn 後重賦值參數」那條）。當 x 在 spawn 之後
-**確定不再被使用**時，那次拷貝是多餘的：所有權直接**轉移**進任務。
+`co f(x)` 對每個**擁有堆**的參數會在 spawn 邊界做一次深拷貝，因為任務可能到組尾才執行，
+而呼叫端在那之前可以重賦值或離開作用域。當 x 在 spawn 之後**確定不再被使用**時，
+那次拷貝是多餘的：所有權直接**轉移**進任務。
 
-```
+```no
 s str = 'hello'
-t = run echo-async(s)     ; s 之後不再被讀 -> 零拷貝轉移
-print(awy t)              ; hello
+awy {
+    v = co echo(s)      ; s 之後不再被讀 -> 零拷貝轉移
+}
+print(v)                ; hello
 
 s str = 'hello'
-t = run echo-async(s)
-print(s)                  ; s 仍被讀 -> 維持深拷貝（兩邊各自擁有）
-print(awy t)              ; hello
+awy {
+    v = co echo(s)
+}
+print(s)                ; s 仍被讀 -> 維持深拷貝（兩邊各自擁有）
+print(v)                ; hello
 ```
 
 判準三個，全部必要：
 
-1. 呼叫端**本來就會**釋放 x —— 借用（切片視圖、borrow read）與參數都不會被呼叫端釋放，
-   把它們轉移進任務等於讓任務去釋放別人的緩衝區；
-2. x 在 spawn 之後已死（不是「活到區塊結束」，而是**沒有任何後續讀取**）；
-3. 被呼叫端該位置的參數是 `str` / `[]T` / 擁有堆的 `struct` —— 也就是任務的 wrapper
-   會負責釋放 payload 的那三類。其餘型別（`map`、owning tagged enum、元素不可深拷貝的
-   切片）即使擁有堆也**不會**被轉移，因為 wrapper 只釋放容器、不釋放內容。
+1. 呼叫端**本來就會**釋放 x —— 借用（切片視圖、borrow read）與參數都不會被呼叫端釋放；
+2. x 在 spawn 之後已死（**沒有任何後續讀取**）；
+3. 被呼叫端該位置的參數是 `str` / `[]T` / 擁有堆的 `struct` —— wrapper 會釋放其 payload。
 
-**為什麼這樣是安全的**：對那三類，任務 wrapper 的釋放與呼叫端原本的 drop **降成同一支 helper**
-（`@str_free` / `@vec_free` / 該 struct 的解構子）。所以轉移只是把**同一次釋放**從呼叫端搬到
-任務，不改變釋放了什麼——既不多釋放（double free），也不少釋放（洩漏）。
+對這三類，任務 wrapper 的釋放與呼叫端原本的 drop **降成同一支 helper**，所以轉移只是把
+**同一次釋放**從呼叫端搬到任務，既不多釋放也不少釋放。
 
-**不變的使用者語義**：從未被 `awy` 的任務，它的參數緩衝區本來就會洩漏（釋放它的是任務的
-wrapper，而 wrapper 只在 await 時執行）。移動與拷貝在這點上**完全相同**，所以移動不會把
-「一次拷貝」換成「一筆洩漏」。
+**不變的使用者語義**：未被等待的任務其參數緩衝區本來就由 wrapper 在等待時才釋放；
+移動與拷貝對這點完全相同。
 
-實作：`insertDrops` 判定並記進 `Module.spawnArgMoves`，`emitAsyncRun` 據此跳過深拷貝，
-`checkDropCount` 據此豁免 `missing-drop`。量測開關 `NOLANG_MIR_SPAWN_ARG_MOVE=1`。
+實作：`insertDrops` 記進 `Module.spawnArgMoves`，`emitAsyncRun` 據此跳過深拷貝。
 迴歸：`tests/async-arg-move.no`、`src/mir/spawn_arg_move_test.go`。
 
 ### 協程等待者表別名（2026-09-30 已修）
@@ -638,26 +591,17 @@ task 由 `@malloc` 配置、**16 位元組對齊**，指標低位只有 4 個有
 > 所以這一條在今天是**潛伏**缺陷而非可觀測故障。迴歸：
 > `src/mir/async_boundary_ownership_test.go`。
 
-### `run` / `awy` 不是區塊第一條陳述時被吃掉（2026-09-30 已修）
+### `awy` 不是區塊第一條陳述時被吃掉（2026-09-30 已修；2026-11-17 改寫）
 
-`skipToStatementEnd()` 在每條陳述解析完後一路前進到「能**開始**下一條陳述」的 token 才停，
-而這份白名單 `isStatementBoundary()`（`src/parser/stmt.go`）漏了 `run` 與 `awy`。兩者都是
-**前綴關鍵字**（只能開啟一個表達式，`parseStatement` 沒有它們的 case ⇒ 落到
-`parseExpressionStatement`），確實能開始一條陳述，因此必須在白名單裡。`NEWLINE` 刻意不是
-邊界，於是當它們**不是區塊第一條陳述**時（第一條不經過 `skipToStatementEnd`），關鍵字連同
-換行一起被吞掉。兩個後果都是 `rc=0`、無診斷：
+`skipToStatementEnd()` 前進到「能**開始**下一條陳述」的 token 才停，而白名單
+`isStatementBoundary()`（`src/parser/stmt.go`）曾漏了前綴關鍵字。舊語法的 `run` / `awy t`
+因此可能在非第一條陳述時被連同換行吞掉，造成 `rc=0` 且無診斷的語意退化。
 
-| 原始碼 | 修復前 | 修復後 |
-|---|---|---|
-| `awy t` | 退化成裸 `t` ⇒ if 鏈臂體的值變成 **task handle**（堆指標），印出垃圾大數（如 `4367685392`） | 正確解出任務結果 |
-| `run dbl(21)` | 退化成**同步** `dbl(21)` ⇒ 編譯照過、輸出照印，只是**不再 spawn** | 真的 spawn |
+新語法中 `awy` 有自己的 `parseStatement` case（協程組），並與 `co` 一起列入
+`isStatementBoundary()`；`run` 不再是關鍵字，從白名單移除。規則是：**`parseStatement`
+的 `switch` 能分派的每一個 token，都必須同時列在 `isStatementBoundary()` 裡**。
 
-第二條特別危險：它是**語意**退化，不是崩潰，任何「跑起來有沒有報錯」的檢查都看不到。
-
-修法是往 `isStatementBoundary()` 加入 `lexer.RUN, lexer.AWY`。規則是：**`parseStatement` 的
-`switch` 能分派的每一個 token，都必須同時列在 `isStatementBoundary()` 裡**；漏一個就會出現
-「只在非第一條陳述時發生」的靜默錯誤。迴歸：`tests/stmt-boundary.no`、
-`src/parser/stmt_boundary_block_test.go`。
+迴歸：`tests/stmt-boundary.no`、`src/parser/stmt_boundary_block_test.go`。
 
 ### 語句位置的裸 `{ ... }` 被當成宣告（2026-09-30 已修）
 
@@ -704,12 +648,11 @@ task 由 `@malloc` 配置、**16 位元組對齊**，指標低位只有 4 個有
 1. **深層 clone 的成本。** `b = a` 會配置並複製一份 data；`vec.push(x)` 也對堆擁有元素做一次深層 clone。
    這是刻意的：**用一次拷貝換掉一整類別名分析**——值對值之間只保留「擁有」與「搬移」，不保留共享，
    於是「誰擁有、誰釋放、寫入是否可被觀測」不需要為每一種別名情形各寫一組守則。
-2. **spawn 邊界的深拷貝（＝快照）。** `run f(x)` 對擁有堆的引數在 spawn 當下做一次深拷貝，所以任務看到的
+2. **spawn 邊界的深拷貝（＝快照）。** `co f(x)` 對擁有堆的引數在 spawn 當下做一次深拷貝，所以任務看到的
    是 **spawn 當下的值**，與呼叫方在那之後的寫入無關。**來源已死時改為零拷貝 move**。
-   ⚠️ 不要為了省這份拷貝而改成「共用同一塊 buffer ＋ 引用計數」：那會讓任務看到呼叫方在 spawn 與 `awy`
+   ⚠️ 不要為了省這份拷貝而改成「共用同一塊 buffer ＋ 引用計數」：那會讓任務看到呼叫方在 spawn 與組尾等待
    之間的**原位寫入**（共享），違反第 4 條。要省拷貝的正確做法是「**寫入時才拷貝**」（copy-on-write）。
-3. **循環引用會洩漏。** 語言裡唯一的引用計數物件是協程任務 handle（`%task`）。引用計數無法回收**環**——
-   若一組任務互相持有 handle，它們都不會被釋放。需要時用 `awy` 明確等待，或避免讓任務互相持有。
-   這是確定性記憶體管理的固有代價（同 Rust 的 `Rc`）。
+3. **任務引用計數不留環。** 內部 `%task` 是唯一的引用計數物件；新的 `awy { ... }` 不暴露 handle，
+   每條 `co` 在組尾恰好等待一次，因此不會形成「任務互相持有 handle」的環。
 4. **協程之間不共享可變堆數據。** 協程是**協作式、單執行緒**調度，跨協程共享可變堆數據在語言層不成立；
    允許共享只會帶來資料競爭與懸空指標。因此 spawn 邊界一律傳遞**獨立副本**（或轉移所有權）。

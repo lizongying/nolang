@@ -405,6 +405,8 @@ Latest release of %s/%s: %s
   'bsaaq6j7': 'utime: cannot marshal path as C string'
   'bsnjql1o': 'writing HTML output %s: %w'
   'bvxzv6u0': 'net-udp-recvfrom: no result slot'
+  'c0grp1aa': 'co <call> is only allowed inside an \'awy { ... }\' coroutine group'
+  'c0grp1ab': 'expected \'{\' after \'awy\' to start a coroutine group'
   'c33l3vql': 'module file not found: %s or %s'
   'c48g377y': 'float range boundary not supported, use integers'
   'c6eld4s3': `
@@ -1175,7 +1177,6 @@ Synced %d dependencies.
   'y4yjmhz2': 'builtin %s: unknown LLVMConv kind %d'
   'y4yxzacz': 'builtin %s: scratch buffer not materialized'
   'y5f921sg': 'txt index dst slot (dst=%d type=%s)'
-  'y7964ox1': 'function \'%s\' called by \'run\' should end with \'-async\''
   'y8ieefsr': 'builtin %s: bad args'
   'y9lj5a9g': 'expected parameter name or type, got %s instead'
   'yevhjra2': 'LLVM C API: %s failed: %s'

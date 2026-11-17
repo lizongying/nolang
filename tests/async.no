@@ -1,7 +1,7 @@
-; async.no — 測試 async/await（go 關鍵字 / 協程組）無色 async 模型
+; async.no — 測試無色 async 模型（`awy { }` 協程組 + `co` spawn）
 ;
-; `co f(x)` 會自動單態化出 f-async 變體並在底層以染色無棧協程執行。
-; 協程組（語句位置的裸塊）內的 `go` 預設並發 spawn，遇到依賴則退化成 await。
+; `co f(x)` 只能出現在 `awy { }` 協程組內，會自動單態化出 f-async 變體並在
+; 底層以染色無棧協程執行。組內的 `co` 默認並發 spawn，遇到依賴則退化成 await。
 
 ; 同步函數：返回輸入值的兩倍
 ; n: 輸入值，本檔用 21 / 10 / 20 / 25 等值呼叫
@@ -53,33 +53,39 @@ classify = (n i64) (r i64) {
     }
 }
 
-; 1. 串行等待（最簡）— r = co f()
+; 1. 單一 spawn（最簡）— awy 組內 r = co f()
 test-serial = () {
-    r = co compute(21)
+    awy {
+        r = co compute(21)
+    }
     print(r); expect: 42
 }
 
-; 2. 多參數串行等待
+; 2. 多參數
 test-multi-params = () {
-    r = co add(15, 27)
+    awy {
+        r = co add(15, 27)
+    }
     print(r); expect: 42
 }
 
 ; 3. 條件邏輯
 test-conditional = () {
-    r1 = co classify(5)
-    r2 = co classify(-3)
-    r3 = co classify(0)
+    awy {
+        r1 = co classify(5)
+        r2 = co classify(-3)
+        r3 = co classify(0)
+    }
     print(r1); expect: 1
     print(r2); expect: -1
     print(r3); expect: 0
 }
 
-; 4. 並發：協程組內兩個 go 並發 spawn，最後一起 await
+; 4. 並發：協程組內兩個 co 並發 spawn，最後一起 await
 test-concurrent = () {
     r1 i64
     r2 i64
-    {
+    awy {
         r1 = co compute(10)
         r2 = co compute(20)
     }
@@ -88,10 +94,14 @@ test-concurrent = () {
     print(r1 + r2); expect: 60
 }
 
-; 5. 語句級 go（協程組之外）：每個 go 即 spawn + 立即 await，順序執行
+; 5. 順序執行：兩個獨立的 awy 組先後 spawn + await
 test-statement-level = () {
-    r = co compute(10)
-    s = co compute(20)
+    awy {
+        r = co compute(10)
+    }
+    awy {
+        s = co compute(20)
+    }
 
     #{overflow=wrap}
     print(r + s); expect: 60
@@ -100,7 +110,7 @@ test-statement-level = () {
 ; 6. 協程組內讀取結果：print(r1) 是屏障，r1 必須先落地
 test-group-read = () {
     r1 i64
-    {
+    awy {
         r1 = co compute(25)
         print(r1); expect: 50
     }
