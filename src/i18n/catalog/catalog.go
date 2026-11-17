@@ -497,9 +497,27 @@ func Canonical(tag string) string {
 // ProjectDirs returns the default search list, most specific first: the working
 // directory, then the enclosing workspace root. Both binaries use this so a
 // project's `locales/` override behaves the same for `no` and for the LSP.
+//
+// The filesystem root is never a project directory. It must not be searched:
+// under WASI the guest cwd is "/" while the browser only preopens "/tmp", so
+// probing /locales/<tag>-*.noml fails with "Capabilities insufficient" and
+// every playground invocation prints two misleading i18n warnings even though
+// the embedded catalogs are perfectly readable. Skipping it makes LoadDoc /
+// LoadAlias fall through to the embedded files, which is the right answer for
+// any process whose cwd is a filesystem root.
 func ProjectDirs() []string {
 	wd, err := os.Getwd()
 	if err != nil {
+		return nil
+	}
+	return projectDirsFrom(wd)
+}
+
+// projectDirsFrom is the testable core of ProjectDirs: it takes the cwd as an
+// argument so the root-skip rule can be verified without chdir'ing a test
+// process (which is racy under -parallel).
+func projectDirsFrom(wd string) []string {
+	if filepath.Dir(wd) == wd {
 		return nil
 	}
 	dirs := []string{wd}

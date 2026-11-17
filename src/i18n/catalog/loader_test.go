@@ -22,6 +22,45 @@ func writeLocale(t *testing.T, dir, tag, body string) {
 	}
 }
 
+// TestProjectDirsSkipsFilesystemRoot guards the WASI playground case: the guest
+// cwd is "/", but only /tmp is preopened, so probing /locales/<tag>-*.noml
+// fails with "Capabilities insufficient" and prints two bogus warnings on every
+// run. The root is not a project directory, so it must be dropped and the
+// embedded catalogs used instead.
+func TestProjectDirsSkipsFilesystemRoot(t *testing.T) {
+	root := string(filepath.Separator)
+	if got := projectDirsFrom(root); got != nil {
+		t.Fatalf("projectDirsFrom(%q) = %v, want nil", root, got)
+	}
+
+	// A real project directory must still be searched for locales/ overrides.
+	dir := t.TempDir()
+	got := projectDirsFrom(dir)
+	if len(got) == 0 || got[0] != dir {
+		t.Fatalf("projectDirsFrom(%q) = %v, want [%q ...]", dir, got, dir)
+	}
+}
+
+// TestEmbeddedEnglishDocAndAliasLoad proves the fallback that the root-skip
+// relies on: with no project dirs, en's doc and alias catalogs load from the
+// embedded filesystem without a warning-worthy error.
+func TestEmbeddedEnglishDocAndAliasLoad(t *testing.T) {
+	docs, err := LoadDoc(nil, "en")
+	if err != nil {
+		t.Fatalf("LoadDoc(en): %v", err)
+	}
+	if len(docs) == 0 {
+		t.Fatal("embedded en-doc.noml should carry entries")
+	}
+	aliases, err := LoadAlias(nil, "en")
+	if err != nil {
+		t.Fatalf("LoadAlias(en): %v", err)
+	}
+	if len(aliases) == 0 {
+		t.Fatal("embedded en-alias.noml should carry entries")
+	}
+}
+
 // TestProjectLocaleOverridesEmbedded is the whole point of the project dir: a
 // team can fix or add a translation without rebuilding the toolchain.
 func TestProjectLocaleOverridesEmbedded(t *testing.T) {

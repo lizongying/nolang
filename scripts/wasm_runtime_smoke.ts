@@ -206,6 +206,14 @@ async function main(): Promise<void> {
             r.stdout.trim().split('\n')[0]?.slice(0, 80) ?? '(no output)',
         );
         check('poll_oneoff served by the loader shim', r.shimmed.includes('poll_oneoff'), r.shimmed.join(',') || 'not shimmed');
+        // The guest cwd is "/" while only /tmp is preopened. If catalog.ProjectDirs
+        // ever treats that root as a project again, every WASI run leaks two
+        // "Capabilities insufficient" warnings into the playground stderr.
+        check(
+            'no stderr has no i18n warnings',
+            !/doc translations for|alias names for/.test(r.stderr),
+            r.stderr.trim().split('\n').slice(0, 2).join(' | '),
+        );
     }
 
     // 2. `no fmt` — the first command that actually sleeps (fmt walks the AST
@@ -247,6 +255,12 @@ async function main(): Promise<void> {
         const elapsed = Date.now() - startedAt;
         check('no build --wasm-direct exits 0', trap === null && rc === 0, trap ?? `rc=${rc}`);
         check('no build uses the poll_oneoff shim', shimmed.includes('poll_oneoff'));
+        const compileStderr = wasi.getStderrString();
+        check(
+            'no build stderr has no i18n warnings',
+            !/doc translations for|alias names for/.test(compileStderr),
+            compileStderr.trim().split('\n').slice(0, 2).join(' | '),
+        );
 
         let bytes: Uint8Array | null = null;
         try {
