@@ -96,7 +96,7 @@ export function parseLspMessages(buffer: Uint8Array): {
     offset = bodyEnd;
   }
 
-  return {messages, remaining: buffer.subarray(offset)};
+  return { messages, remaining: buffer.subarray(offset) };
 }
 
 /** Search for `needle` inside `haystack` starting at `start`. */
@@ -130,12 +130,12 @@ export interface JsonRpcResponse {
   method?: string;
   params?: unknown;
   result?: unknown;
-  error?: {code: number; message: string; data?: unknown};
+  error?: { code: number; message: string; data?: unknown };
 }
 
 /** Map LSP DiagnosticSeverity (1-4) to the bridge's string union. */
 export function mapDiagnostic(d: {
-  range?: {start?: {line?: number; character?: number}; end?: {line?: number; character?: number}};
+  range?: { start?: { line?: number; character?: number }; end?: { line?: number; character?: number } };
   severity?: number;
   message?: string;
   source?: string;
@@ -160,13 +160,13 @@ export function mapDiagnostic(d: {
 }
 
 /** Type guard: is this JSON-RPC message a response (has `id`)? */
-export function isResponse(msg: unknown): msg is JsonRpcResponse & {id: number | string} {
+export function isResponse(msg: unknown): msg is JsonRpcResponse & { id: number | string } {
   return (
     typeof msg === 'object' &&
     msg !== null &&
     'id' in msg &&
-    (typeof (msg as {id: unknown}).id === 'number' ||
-      typeof (msg as {id: unknown}).id === 'string')
+    (typeof (msg as { id: unknown }).id === 'number' ||
+      typeof (msg as { id: unknown }).id === 'string')
   );
 }
 
@@ -179,7 +179,7 @@ export function extractHoverText(contents: unknown): string {
       .join('\n');
   }
   if (contents && typeof contents === 'object' && 'value' in contents) {
-    return String((contents as {value: unknown}).value);
+    return String((contents as { value: unknown }).value);
   }
   return String(contents ?? '');
 }
@@ -201,7 +201,7 @@ interface LspPending {
   timer: ReturnType<typeof setTimeout>;
 }
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 export class LspBridge {
   private readonly wasmUrl: string;
@@ -232,7 +232,7 @@ export class LspBridge {
    */
   async initialize(rootUri: string): Promise<void> {
     this.rootUri = rootUri;
-    const result = await this.send<{initError: string | null}>('initialize', {
+    const result = await this.send<{ initError: string | null }>('initialize', {
       wasmUrl: this.wasmUrl,
       rootUri,
     });
@@ -246,13 +246,13 @@ export class LspBridge {
     this.ensureWorker().postMessage({
       id: this.nextId++,
       type: 'warmup',
-      payload: {wasmUrl: this.wasmUrl},
+      payload: { wasmUrl: this.wasmUrl },
     });
   }
 
   /** Track the latest document text and request fresh diagnostics. */
   async didOpen(uri: string, text: string): Promise<void> {
-    await this.send('didOpen', {uri, text});
+    await this.send('didOpen', { uri, text });
   }
 
   /**
@@ -262,15 +262,15 @@ export class LspBridge {
    * (no `id`) before resolving, which fires `onDiagnostics`.
    */
   async didChange(uri: string, text: string): Promise<void> {
-    await this.send('didChange', {uri, text});
+    await this.send('didChange', { uri, text });
   }
 
   async completion(uri: string, line: number, col: number): Promise<LspCompletion[]> {
-    return await this.send<LspCompletion[]>('completion', {uri, line, col});
+    return await this.send<LspCompletion[]>('completion', { uri, line, col });
   }
 
   async hover(uri: string, line: number, col: number): Promise<LspHover | null> {
-    return await this.send<LspHover | null>('hover', {uri, line, col});
+    return await this.send<LspHover | null>('hover', { uri, line, col });
   }
 
   /**
@@ -278,7 +278,7 @@ export class LspBridge {
    * `null` if the server returned no edits (e.g. parse errors present).
    */
   async formatting(uri: string): Promise<string | null> {
-    return await this.send<string | null>('formatting', {uri});
+    return await this.send<string | null>('formatting', { uri });
   }
 
   onDiagnostics(cb: (uri: string, diagnostics: LspDiagnostic[]) => void): void {
@@ -290,7 +290,7 @@ export class LspBridge {
     this.diagnosticsCallback = null;
     this.terminateWorker();
     // Reject any pending requests so callers don't hang.
-    for (const {reject, timer} of this.pending.values()) {
+    for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new Error('LspBridge disposed'));
     }
@@ -319,7 +319,7 @@ export class LspBridge {
   private handleWorkerFailure(reason: string): void {
     this.terminateWorker();
     this.options.onWarning?.(reason);
-    for (const {reject, timer} of this.pending.values()) {
+    for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new Error(reason));
     }
@@ -328,7 +328,7 @@ export class LspBridge {
 
   private ensureWorker(): Worker {
     if (this.worker) return this.worker;
-    const worker = new Worker(new URL('./lsp.worker.ts', import.meta.url), {type: 'module'});
+    const worker = new Worker(new URL('./lsp.worker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = (e: MessageEvent) => {
       const data = e.data ?? {};
       if ((data.type === 'result' || data.type === 'error') && typeof data.id === 'number') {
@@ -370,8 +370,8 @@ export class LspBridge {
         if (!this.pending.has(id)) return;
         this.handleWorkerFailure(`LSP request '${type}' timed out after ${timeout} ms`);
       }, timeout);
-      this.pending.set(id, {resolve: resolve as (v: any) => void, reject, timer});
-      worker.postMessage({id, type, payload});
+      this.pending.set(id, { resolve: resolve as (v: any) => void, reject, timer });
+      worker.postMessage({ id, type, payload });
     });
   }
 }

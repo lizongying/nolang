@@ -76,6 +76,26 @@ cd test1
 no run
 ```
 
+### Hello World
+
+新建項目後，編輯 `main.no`：
+
+```no
+print('Hello, World!')
+```
+
+運行：
+
+```bash
+no run
+```
+
+輸出：
+
+```
+Hello, World!
+```
+
 ### 入口規則
 
 - **main.no** — 程序入口
