@@ -1122,10 +1122,76 @@ func (l *lowerer) hintIsOption() bool {
 // top-level statements in source order. lowerFunction handles this shape exactly
 // like any user-defined function body, so all existing statement/expression
 // lowerers apply unchanged.
+// topLevelWriteCounts counts writes to a name from INSIDE a nested statement
+// tree of a top-level statement (guard bodies, if/match arms, loops). Direct
+// top-level statements are deliberately NOT counted: a plain `n = T{...}`
+// reassign is a normal module-global write and must keep that name global.
+// Counting those broke tests/field.no, where `n node` is later reassigned to a
+// different struct type — inlining it into main gave the slot a fixed LLVM type
+// and the program segfaulted.
+//
+// A top-level `let` that folds to a module constant is normally kept as a
+// global and omitted from the synthetic main; but if the same name is ALSO
+// assigned inside a top-level statement (e.g. `pass byte = 1` then
+// `cond -> pass = 0`), the guard-body assignment lowers as a fresh KLet in main
+// where `l.locals` has no entry for the name — it binds a NEW slot instead of
+// writing the global, so the initializer is lost and the guard appears to fire
+// even when its condition is false. Keeping such constants in main (as real
+// locals) makes both writes hit the same slot. This mirrors scanReassignedNames
+// but runs over ALL top-level statements, because synthesizeMain drops constant
+// lets BEFORE the synthetic main body is built and scanned.
+func topLevelWriteCounts(pkg *hir.Package) map[string]int {
+	counts := map[string]int{}
+	var walk func(id int32, nested bool)
+	walk = func(id int32, nested bool) {
+		n := pkg.Node(id)
+		if n == nil {
+			return
+		}
+		switch n.Kind {
+		case hir.KFuncDef, hir.KFuncLit:
+			return // nested-function writes are a separate scope
+		case hir.KLet:
+			if nested {
+				if nm := pkg.Str(n.S); nm != "" {
+					counts[nm]++
+				}
+			}
+		case hir.KAssign:
+			if nested {
+				for _, c := range pkg.Children(id) {
+					if cn := pkg.Node(c); cn != nil && cn.Kind == hir.KIdent {
+						if nm := pkg.Str(cn.S); nm != "" {
+							counts[nm]++
+						}
+					}
+					break // only the first child is the assignment target
+				}
+			}
+		}
+		for _, c := range pkg.Children(id) {
+			walk(c, true)
+		}
+	}
+	for _, id := range pkg.Top {
+		// Platform variants of the same name (`#{mac-arm64} V = 1` /
+		// `#{mac-amd64} V = 2`) are alternative DECLARATIONS, not two writes
+		// to one variable. Only the host-matching variant participates, so
+		// count just that one — otherwise a platform-variant constant looks
+		// reassigned and stops being a module global.
+		if !nodeMatchesPlatform(pkg, id) {
+			continue
+		}
+		walk(id, false)
+	}
+	return counts
+}
+
 func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 	if _, ok := l.funcNames["main"]; ok {
 		return // explicit fn main already present; nothing to synthesize
 	}
+	writes := topLevelWriteCounts(pkg)
 	var stmts []int32
 	for _, id := range pkg.Top {
 		n := pkg.Node(id)
@@ -1178,7 +1244,8 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			// unconditionally used to leave such lets as unmaterialized global
 			// markers -> every later read was `undef` (test-fd-newtype trapped at
 			// `bad-fd < 0`).
-			if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" {
+			if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" &&
+				writes[pkg.Str(n.S)] == 0 {
 				continue
 			}
 			// A top-level `let` the registration loop already turned into module
@@ -1210,7 +1277,8 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 				// lowers to a real `%vec`. Skip the global keep for those.
 				if l.isUnsafeInlineType(raw) {
 					// fall through to inline as a local
-				} else if gnid, ok := l.globalNodes[pkg.Str(n.S)]; ok && gnid == id {
+				} else if gnid, ok := l.globalNodes[pkg.Str(n.S)]; ok && gnid == id &&
+					writes[pkg.Str(n.S)] == 0 {
 					// This `let` IS the registered module-constant declaration
 					// (its initializer folds to a real LLVM constant and was
 					// materialized as a lazily-materialized global). It must NOT
@@ -1437,6 +1505,12 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	l.collectLocalEnumVariants()
 	l.collectValueTypeAliases()
 
+	// Names assigned more than once anywhere in the script's top-level
+	// statement trees must stay as synthetic-main locals, not module globals:
+	// a guard-body `x = 0` lowers to a fresh KLet in main whose `l.locals` has
+	// no entry when x is only a global, so the write misses and the initializer
+	// is lost (tests/byte-overflow.no). See topLevelWriteCounts.
+	topWrites := topLevelWriteCounts(pkg)
 	hasExplicitMain := false
 	for _, id := range pkg.Top {
 		n := pkg.Node(id)
@@ -1693,7 +1767,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				// by synthesizeMainForTopLevel, which inlines it so
 				// lowerStmt/lowerAssignNode emit the store. Guard with existence
 				// so reassignments never overwrite the declaration's slot.
-				if _, exists := l.globals[gname]; !exists {
+				if _, exists := l.globals[gname]; !exists && topWrites[gname] == 0 {
 					// A fixed-array override wins: the binding's own type is a
 					// slice, which cannot describe the fixed-array constant its
 					// initializer folds to (see fixedArrayConstGlobalType).
@@ -1786,6 +1860,18 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		}
 	}
 	rep := l.mod.Analyze()
+	// The coroutine transformation runs AFTER Analyze, and that order is
+	// load-bearing: drop insertion, view liveness and the spawn-argument
+	// ownership decisions are all computed against the original CFG, where a
+	// suspension point is an ordinary instruction inside a block. Splitting the
+	// blocks afterwards cannot move a drop across a park, because none was ever
+	// placed there. See coro.go's header.
+	//
+	// Default ON: only `-async` clones that actually contain a suspension point
+	// are touched, so a module that never spawns is byte-identical to before.
+	if os.Getenv("NOLANG_CORO") != "0" {
+		l.mod.PlanCoroutines()
+	}
 	return l.mod, rep, l.diags
 }
 
@@ -5580,15 +5666,9 @@ func (l *lowerer) resultOutParamFor(name string) ValueID {
 	return NoVal
 }
 
-// lowerRangeFor lowers a range-for: `for v in COLLECTION { body }` where v is
-// bound to each element of COLLECTION, and `for v in LO..HI { body }` where v is
-// bound to each integer in [LO, HI). It is the loop-variable-binding counterpart
-// of the classic init/cond/update for (which already worked). The variable is
-// inserted into l.locals so body expressions resolve it instead of cascading into
-// unresolved-identifier lower-gaps.
-	// lowerChanRangeFor lowers `v <- ch:` — the channel receive loop.
+// lowerChanRangeFor lowers `v <- ch:` — the channel receive loop.
 //
-// Two shapes share the syntax (see parser.detectChanLoopForm):
+// Two shapes share the syntax (see parser.parseChanLoopBody):
 //
 //	three-state  `<- ch: { ok -> ... nil -> ... err -> ... }`
 //	             v is a ?T; the body runs on EVERY round (the last one is the
@@ -5617,7 +5697,7 @@ func (l *lowerer) lowerChanRangeFor(chV ValueID, varName string, elemForm bool, 
 	}
 	elemRaw := ""
 	if strings.HasPrefix(chanRaw, "chan[") && strings.HasSuffix(chanRaw, "]") {
-		elemRaw = chanRaw[len("chan["): len(chanRaw)-1]
+		elemRaw = chanRaw[len("chan[") : len(chanRaw)-1]
 	}
 	if elemRaw == "" {
 		l.unsupported(l.curFuncName(), "chan-recv", "cannot determine the channel element type of "+chanRaw)
@@ -5686,6 +5766,12 @@ func (l *lowerer) lowerChanRangeFor(chV ValueID, varName string, elemForm bool, 
 	}
 }
 
+// lowerRangeFor lowers a range-for: `for v in COLLECTION { body }` where v is
+// bound to each element of COLLECTION, and `for v in LO..HI { body }` where v is
+// bound to each integer in [LO, HI). It is the loop-variable-binding counterpart
+// of the classic init/cond/update for (which already worked). The variable is
+// inserted into l.locals so body expressions resolve it instead of cascading into
+// unresolved-identifier lower-gaps.
 func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre BlockID) {
 	// Enclosing continuation: the merge block of the nearest enclosing
 	// control-flow construct (pushed by the caller's lowerIf/lowerFor). Same
@@ -5737,9 +5823,7 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		l.lowerChanRangeFor(chV, varName, iterNode.Has(hir.FlagChanElem), bodyID, pre, enclosingCont)
 		return
 	}
-
-
-// --- integer range form: for v in lo..hi ---
+	// --- integer range form: for v in lo..hi ---
 	if rangeNodeID != hir.NoID {
 		rn := l.pkg.Node(rangeNodeID)
 		if rn == nil || rn.Kind != hir.KRange {
@@ -6954,7 +7038,13 @@ func (l *lowerer) foldStrLitConst(initNode *hir.Node, name string) string {
 	nb := len([]byte(text))
 	backing := ".gstr." + name
 	l.addStrBackingGlobal(backing, text)
-	return fmt.Sprintf("%%str-long { i32 %d, i32 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
+	// cap MUST be 0 here: `data` points at a read-only .gstr backing array,
+	// which is NOT malloc'd. A non-zero cap marks an OWNED buffer, so any
+	// in-place growth (e.g. `s.push-str(...)` on a top-level constant) would
+	// take ensureStrLongBuffer's grow branch and call @nolang_free on the
+	// rodata pointer -> SIGABRT. cap=0 is the borrowed/const marker: str_free
+	// skips it, and push-str COWs it into an owned buffer first.
+	return fmt.Sprintf("%%str-long { i32 %d, i32 0, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, backing)
 }
 
 // addStrBackingGlobal registers the byte-array global that holds a folded string
@@ -13444,7 +13534,25 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// drives the task to completion and reads the result. This keeps async
 	// calls out of the normal out-param call path (which would execute the
 	// function eagerly and return its value, not a handle).
-	if (l.forceRunCall != hir.NoID && n.Id == l.forceRunCall) || strings.HasSuffix(callee, "-async") {
+	//
+	// forced == true means hir.DesugarAsyncGroups already rewrote this exact
+	// call node into `__agN = run f(...)` and planted the KAwait that consumes
+	// the handle, so the handle must survive.
+	//
+	// forced == false with an `-async` callee is the #108 shape: a `co` the
+	// group pass did NOT claim — a function literal nested inside a group
+	// (collectFlowArmSpawns stops at KFuncLit), or any other site with no
+	// enclosing group schedule. Bare blocks and control-flow arms are no
+	// longer in this set: DesugarAsyncGroups handles straight-line nesting
+	// with static slots and loops / if / match with the runtime join-set.
+	// Nothing will ever await such a handle, so returning it bare left the
+	// task enqueued forever: the call never ran (measured:
+	// `awy { i <- [0..2]: { co foo(i) } }` printed nothing) and `r = co foo(i)`
+	// bound the slot pointer instead of the result (measured: printing
+	// 4337147120). Pair the spawn with an IMMEDIATE await instead — correct,
+	// and no orphan task, at the cost of serial execution.
+	forced := l.forceRunCall != hir.NoID && n.Id == l.forceRunCall
+	if forced || strings.HasSuffix(callee, "-async") {
 		handleTyp := l.b.Type("i64")
 		v := l.b.Emit(OpRun, handleTyp, argv, callee)
 		// This value IS a task handle — record that unconditionally. A void
@@ -13457,7 +13565,10 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 		if rt := l.resultTypeOfCallee(callee); rt != l.voidType && rt != NoType {
 			l.asyncResTypes[v] = rt
 		}
-		return v
+		if forced {
+			return v
+		}
+		return l.awaitHandleInline(v)
 	}
 	// The KCall node carries NO type — the AST CallExpression has no Type field,
 	// so InferredType/KType are both empty for it. Derive the result type from
@@ -13775,6 +13886,21 @@ func (l *lowerer) lowerAsyncAwait(n *hir.Node) ValueID {
 				resTyp = rt
 			}
 		}
+	}
+	return l.b.Emit(OpAwait, resTyp, []ValueID{h}, "")
+}
+
+// awaitHandleInline emits the OpAwait that pairs with a handle this lowerer just
+// produced, reading the result through the type recorded at the spawn site.
+//
+// It exists for the #108 fallback in lowerCall: a `co` that no group schedule
+// will ever await still has to be driven to completion, and the handle is an
+// opaque i64, so the result type has to come from asyncResTypes (a void callee
+// has no entry there and is read as i64, which is what emitAsyncRun allocated).
+func (l *lowerer) awaitHandleInline(h ValueID) ValueID {
+	resTyp := l.b.Type("i64")
+	if rt, ok := l.asyncResTypes[h]; ok {
+		resTyp = rt
 	}
 	return l.b.Emit(OpAwait, resTyp, []ValueID{h}, "")
 }

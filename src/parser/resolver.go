@@ -54,7 +54,7 @@ const (
 )
 
 // RTFlag 是 fmt 往返專用的表層語法標誌位集合。
-type RTFlag uint8
+type RTFlag uint16
 
 const (
 	// RTBareMatch 標記 IfExpression 來自裸 match 表達式 `{ cond -> body }`，
@@ -86,6 +86,16 @@ const (
 	// 但 SurfaceMatch 必在 ParseProgram 內被 lowering 展開，故它仍不會進任何 blob），
 	// 不用 RTFlag。
 	RTEmptyArmDefault
+	// RTChanDecl 標記 LetStatement 的初始值是 parser 為通道裸宣告合成的
+	// `with-cap(0)`（見 chan.go synthesizeChanInit）。Formatter 據此只印型別
+	// 標註、不印 `= with-cap(0)`——原始碼寫的是 `ch chan[i64]`，把它印成
+	// `ch chan[i64] = with-cap(0)` 會無中生有一份使用者沒寫的呼叫。
+	RTChanDecl
+	// RTChanRecv 標記 ForStatement 由 `<- ch: { arms }` 脫糖而來（丟棄迴圈
+	// 變數的接收迴圈）。Formatter 據此印回 `<- ch: { ... }`，而不是合成形態
+	// `__chan_in <- ch: { __chan_in: { ... } }`——後者不但多一層大括號，重新
+	// 解析時 `__chan_in` 也沒有宣告型別，會被當成陣列遍歷。
+	RTChanRecv
 )
 
 // SemanticContext 是解析/语义分离后的“副表”。

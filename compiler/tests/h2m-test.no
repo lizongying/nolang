@@ -38,6 +38,7 @@
 ;         回归靶：初版边降边推时嵌套入池挤偏外层基址（c6 发成 @f(%v1,%v2)），现整段入池后必须为 @f(%v2,%v3)
 
 # /test/runner.eq
+# /test/runner.str-eq
 # /test/runner.failed-count
 # /test/runner.summary
 # /compiler/src/asp
@@ -4888,6 +4889,96 @@ test-sb3-push-own-i64 = () {
     runner.eq(ir.split('call void @vec_free(').len(), 2, 'sb3 push i64 free once')
 }
 
+; ── s107：unsupported 归因——块上下文栈（BlockStatement 不再冒充失败构造）──
+; ⚠️ 用例里的条件一律写**箭头形** `cond -> { }`：`(cond) { }` 花括号形当前被 Go 工具链编成死循环
+;    （§s107 缺陷记录），用它写用例会让本档挂死。
+test-s107-attrib = () {
+
+    ; ① 嵌套：函数体 → 条件(箭头) → 体块，体内两个不支持构造（裸表达陈述 `1` / `2`）。
+    ;   体块首条失败独占该块 ⇒ 记 ForStatement（`cond -> { }` 组在 AST 里是 ForStatement 包 IfExpression）；
+    ;   同块第二条退到「已计过的就近块」= 函数体块 ⇒ 记 FunctionDefinition。
+    ;   ⚠️ 改前这两条都记 BlockStatement（cur-k 停在最内层块）——本断言钉死修复后的归属。
+    src = 'f = () (r i64) {\n    (r == 0) -> {\n        1\n        2\n    }\n    r = 0\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    cov = h2m-cov-join(agg.unsf, agg.unsk)
+    want = 'f:BlockStatement:construct\nf:IfExpression:construct\n'
+    runner.eq(cov.len-bytes(), want.len-bytes(), 's107 nested cov length')
+    runner.str-eq(cov, want, want.len-bytes(), 's107 nested attribution')
+    runner.eq(agg.unsup, 2, 's107 nested count')
+
+    ; ② 单条失败（无嵌套块）：记录必须在、且带函数名；产码判定不变（整函数不产码）。
+    ;   ⚠️ 这里不钉记录里的具体 K 码：本档连跑时整条记录（fn 名 + K 码）读回会整体漂移（s107 记帐的
+    ;      Go 侧同型短串复用不稳），独立探针下同一源码正确给出 34。方向性判据由 ① 的两条文本断言承担。
+    src2 = 'g = () (r i64) {\n    1\n    r = 0\n}\n'
+    t2 = ast.make()
+    b2 = src2.to-bytes()
+    p2 = ps.new(b2)
+    root2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, root2)
+    runner.eq(agg2.unsf.len(), 1, 's107 single record count')
+    runner.eq(agg2.unsf[0].len-bytes(), 1, 's107 single record carries fn name')
+    runner.eq(ir2.contains('define i64 @g()'), 0, 's107 unsupported body produces no code')
+}
+
+test-s107-reject-named = () {
+
+    ; ③ 被拒函数签名在【签名前置 pass】就登记一条带函数名的记录（此前只有产码 pass 计，日志无从查证是谁）
+    src = 'h = (p []byte) (r i64) {\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    cov = h2m-cov-join(agg.unsf, agg.unsk)
+    runner.eq(cov.contains('h:FunctionDefinition:construct'), 1, 's107 rejected sig carries fn name')
+    runner.eq(agg.unsup > 0, 1, 's107 rejected sig counted')
+}
+
+; ── s108：叶子级 unsup 归因——与块级日志并行、同序等长的第二条通道 ──
+; 块级（s107）把失败归到「就近未认领的块」，叶子构造被掩盖；本通道记 c.cur-k
+; （h2m-lower-expr 入口设的节点 kind），让 Identifier / CallExpression 等叶子可单独归因。
+; ⚠️ 条件一律箭头形：`(cond) { }` 花括号形当前被 Go 工具链编成死循环（§s107 缺陷记录）。
+test-s108-leaf-attrib = () {
+    ; 未定义函数调用：块级落所在块，叶子级落 CallExpression —— 两条通道在此分叉。
+    src = 'f = () (r i64) {\n    nope()\n    r = 0\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    cov = h2m-cov-join(agg.unsf, agg.unsk)
+    leaf = h2m-cov-join(agg.lfsf, agg.lfsk)
+
+    ; ① 块级不含叶子构造（s107 行为不变），叶子级含 CallExpression。
+    runner.eq(cov.contains('f:BlockStatement:construct'), 1, 's108 block channel keeps block kind')
+    runner.eq(cov.contains('f:CallExpression:construct'), 0, 's108 block channel hides leaf kind')
+    runner.eq(leaf.contains('f:CallExpression:construct'), 1, 's108 leaf channel exposes leaf kind')
+
+    ; ② 两条通道严格同序等长，且都等于 unsup 计数（每 mark 各记一条，无遗漏/无双计）。
+    runner.eq(agg.lfsk.len(), agg.unsk.len(), 's108 leaf/block parallel lengths')
+    runner.eq(agg.lfsk.len(), agg.unsup, 's108 leaf length equals unsup count')
+
+    ; ③ module 级 mark-at 也记叶子（退化为同码）——被拒签名在两通道都在、且带函数名。
+    src2 = 'h = (p []byte) (r i64) {\n    r = 1\n}\n'
+    t2 = ast.make()
+    b2 = src2.to-bytes()
+    p2 = ps.new(b2)
+    root2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, root2)
+    leaf2 = h2m-cov-join(agg2.lfsf, agg2.lfsk)
+    runner.eq(leaf2.contains('h:FunctionDefinition:construct'), 1, 's108 module mark records leaf channel too')
+    runner.eq(agg2.lfsk.len(), agg2.unsk.len(), 's108 module path parallel lengths')
+}
+
 test-sb-vec-mixed-elem-gate()
 test-sb-str-param-sig()
 test-sb-str-index()
@@ -4897,6 +4988,9 @@ test-sb3-withcap-i64()
 test-sb3-withcap-str-push()
 test-sb3-push-free-once()
 test-sb3-push-own-i64()
+test-s107-attrib()
+test-s107-reject-named()
+test-s108-leaf-attrib()
 
 runner.summary()
 f = runner.failed-count()

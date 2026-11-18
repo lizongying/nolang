@@ -1,14 +1,16 @@
-; 無色 async：`awy { }` 協程組內的 `co` 會單態化出 X-async，並與同步版本共存。
+; 無色 async：`awy { }` 協程組內的 `co` 啟動**過程**（被呼叫者不得有宣告回傳值），
+; 由 MonomorphizeGo 單態出對應的 `-async` 變體，並與同步呼叫共存。
 ;
 ; 覆蓋：
 ;   - 協程組內的 `co` 並發（b、c 重疊執行）
-;   - 同步呼叫 worker(10) 與 `co worker(...)` 共存（worker 與 worker-async 兩個方法）
-;   - 傳遞性：worker-with-child 內部 `co child` → 自動生成 child-async
+;   - 同一個過程既被同步呼叫、又被 `co` 啟動（`bump-into` 與 `bump-into-async` 兩份）
+;   - 傳遞性：`pair-into` 內部再 `co child-into` → 自動生成 `pair-into-async`
 ;
 ; 期望輸出：a=11 b=21 c=31 d=55
+
 ; n: 輸入值，本檔用 10 / 20 / 30 等呼叫
 ; r: n + 1（overflow 採 wrap）
-worker = (n i64) (r i64) {
+add1 = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
@@ -23,10 +25,9 @@ worker = (n i64) (r i64) {
     }
 }
 
-; 無色子函式：乘十；被 worker 以 co 呼叫後會被單態成 child-async
 ; n: 來源數值
 ; r: n * 10（#{overflow=wrap}）
-child = (n i64) (r i64) {
+mul10 = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
@@ -41,24 +42,56 @@ child = (n i64) (r i64) {
     }
 }
 
-; worker 內部呼叫異步 child：worker 因此也被單態為 worker-async（傳遞性）
+; 過程：把 add1(n) 送回通道再關閉。同一個過程既能同步呼叫、也能被 co 啟動。
+; out: 結果通道（呼叫方建，容量 1）
 ; n: 來源數值
-; r: n + child(n) = n + n*10
-worker-with-child = (n i64) (r i64) {
+bump-into = (out chan[i64], n i64) {
+    out <- add1(n)
+    out.close()
+}
+
+; 過程：把 mul10(n) 送回通道
+; out: 結果通道（呼叫方建，容量 1）
+; n: 來源數值
+child-into = (out chan[i64], n i64) {
+    out <- mul10(n)
+    out.close()
+}
+
+; 過程內部再 spawn 一個過程：本函式因此也被單態為 pair-into-async（傳遞性）
+; out: 結果通道（呼叫方建，容量 1）
+; n: 來源數值；送回 n + n*10
+pair-into = (out chan[i64], n i64) {
+    inner chan[i64] = with-cap(1)
     awy {
-        c = co child(n)
+        co child-into(inner, n)
+    }
+    cv = 0
+    <- inner: {
+        ok -> cv = it
     }
 
     #{overflow=wrap}
     {
 
         #{overflow=wrap}
-        r-opt3 = n + c
+        r-opt3 = n + cv
         r-opt3: {
-            ok -> r = it
+            ok -> out <- it
 
             ->
         }
+    }
+    out.close()
+}
+
+; 從單值通道取一筆（生產者已 close，所以一輪 ok 後落到 nil 收尾）
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take1 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
     }
 }
 
@@ -66,12 +99,25 @@ a i64
 b i64
 c i64
 d i64
-a = worker(10); 同步呼叫 -> 11
+
+ch1 chan[i64] = with-cap(1)
+ch2 chan[i64] = with-cap(1)
+ch3 chan[i64] = with-cap(1)
+ch4 chan[i64] = with-cap(1)
+
+bump-into(ch1, 10); 同步呼叫同一過程 -> 11
+a = take1(ch1)
+
 awy {
-    b = co worker(20); 單態 worker-async -> 21
-    c = co worker(30); 單態 worker-async -> 31
+    co bump-into(ch2, 20); 單態 bump-into-async -> 21
+    co bump-into(ch3, 30); 單態 bump-into-async -> 31
 }
+b = take1(ch2)
+c = take1(ch3)
+
 awy {
-    d = co worker-with-child(5); 5 + (5*10) = 55
+    co pair-into(ch4, 5); 5 + (5*10) = 55
 }
+d = take1(ch4)
+
 print('a=' - a.to-str() - ' b=' - b.to-str() - ' c=' - c.to-str() - ' d=' - d.to-str())

@@ -273,9 +273,12 @@ func snippetCorpus(t *testing.T) []*hir.Package {
 		"function-lit":  "g((a i64) { a })\n",
 		"map-literal":   "m [str]i64 = {\"a\": 1, \"b\": 2}\n",
 		"regex-literal": "r = /ab+/i\n",
-		"async":         "w = (r i64) { r = 1 }\nawy {\n  h = co w()\n}\n",
+		"async":         "w = () {\n  print(1)\n}\nawy {\n  co w()\n}\n",
 		"extern-c":      "#{c}\nputs = (s *byte) (r i32)\n",
 		"type-match":    "num = i32 | i64\nf = (x num) (r i64) {\n  r = x: {\n    i64 -> 1\n    i32 -> 2\n    -> 0\n  }\n}\n",
+		// 通道：`c <- 1` 產生 KChanSend，`<- c: { ... }` 產生 KChanIter
+		// （丟棄迴圈變數的接收迴圈，parser 脫糖成 `__chan_in <- c: { ... }`）。
+		"chan": "c chan[i64]\nc <- 1\n<- c: {\n  ok -> print(it)\n  nil -> print('n')\n  err -> print('e')\n}\n",
 	}
 	out := make([]*hir.Package, 0, len(snippets))
 	for name, src := range snippets {

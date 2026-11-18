@@ -1,13 +1,23 @@
 ; async — 协程 / 异步任务与取消原语（D10）
 ;
 ; ⚠️ 手写 task 句柄原语（run / awy 前缀与 cancel(h)）已移除；
-;    应用代码一律使用协程组 `awy { r = co f(args) }`。本文件只保留底层
+;    应用代码一律使用协程组 `awy { co f(args) }`。本文件只保留底层
 ;    cancelled 自检原语与实现参考。
 ;
 ; nolang 提供协作式、单线程、无栈的异步协程模型：
-;   - `awy { r1 = co f(1); r2 = co f(2) }`  启动一组协程并在组尾统一等待，
-;                                              r1/r2 逐个取得任务结果。
+;   - `awy { co f(1); co g(2) }`  启动一组协程并在组尾统一等待。
 ;   - `co f(args)`  只在 `awy { ... }` 组内合法；组外写 co 是编译错误。
+;   - `co { ... }`  闭包写法：把一段过程就地交给协程执行，
+;                   外层局部变量按值捕获（spawn 当刻的快照）。
+;
+; co 只启动**过程**：被呼叫者不得有宣告回傳值（方法隐式返回的 self 不算），
+; 因为 spawn 没有地方接结果。需要结果时走通道——过程写一筆再 close，
+; 呼叫方在组外排空：
+;   awy {
+;       co produce(ch, 21)      ; produce 内部： ch <- 42; ch.close()
+;   }
+;   r = 0
+;   <- ch: { ok -> r = it }
 ;
 ; 取消原语：
 ;   - `cancel(h)`        底层手写句柄取消：将 %task.cancelled 标志置位。
@@ -22,18 +32,27 @@
 ;   真正停止。因此取消是“及时”而非“瞬时”的——这正是协作式调度模型的固有特性。
 ;
 ; 用法示例：
-;   awy {
-;       r1 = co worker(1)
-;       r2 = co worker(2)
+;   produce = (ch chan[i64], n i64) {
+;       ch <- n
+;       ch.close()
 ;   }
 ;
-;   ; 在协程函数内部协作式检查
-;   worker = (n i64) (r i64) {
+;   ch chan[i64] = with-cap(1)
+;   awy {
+;       co produce(ch, 42)
+;   }
+;   r = 0
+;   <- ch: { ok -> r = it }
+;
+;   ; 在协程内部协作式检查
+;   worker-into = (ch chan[i64], n i64) {
 ;       loop i in 0..n {
-;           if cancelled() { return 0 }   ; 被取消则提前退出
-;           r = r + step(i)
+;           if cancelled() { ch <- 0; ch.close(); return }
+;           ; 每步检查一次，被取消就提前退出
+;           step(i)
 ;       }
-;       r
+;       ch <- n
+;       ch.close()
 ;   }
 ;
 ; [async](#async)

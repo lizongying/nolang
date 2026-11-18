@@ -40,6 +40,8 @@ func (p *Parser) synthesizeChanInit(stmt *LetStatement, tok lexer.Token) {
 			&IntegerLiteral{Token: tok, Value: 0, Raw: "0"},
 		},
 	}
+	// 記下「這份初始值是合成的」：fmt 只印型別標註，不印 `= with-cap(0)`。
+	p.fmtTrivia.SetRTFlag(stmt, RTChanDecl)
 }
 
 // chanVarType 回報變數宣告型別是否為 chan[T]，是則給出其結構型別。
@@ -100,7 +102,14 @@ func (p *Parser) parseChanRecvSugar() Statement {
 	}
 	p.nextToken() // COLON -> LBRACE
 	subj := &Identifier{Token: arrowTok, Value: chanRecvVarName}
+	// 合成的 match 是**迴圈體**，永遠不是值：臂以賦值結尾（`ok -> r = it`）是常態。
+	// 外層若在值語境（典型 `x = v: { 1 -> { … <- c: { ok -> r = it } … } }`），
+	// CTX_EXPR 會一路帶著，validateMatchArmReturns 於是要求每臂以表達式結尾，
+	// 誤報 9q9raufb 在 `<- c: {` 這一行上（臂體裡的語句其實沒錯）。
+	savedCtx := p.ctx
+	p.ctx = p.ctx.filterOut(CTX_EXPR)
 	match := p.parseMatchExprFrom(subj)
+	p.ctx = savedCtx
 	if match == nil {
 		return nil
 	}
@@ -119,7 +128,10 @@ func (p *Parser) parseChanRecvSugar() Statement {
 		RangeExpr: chanExpr,
 		IsChan:    true,
 	}
-	return &ForStatement{Token: arrowTok, IterRange: iter, Body: body}
+	forStmt := &ForStatement{Token: arrowTok, IterRange: iter, Body: body}
+	// fmt 據此印回 `<- ch: { ... }`（不印合成的迴圈變數與內層 match）。
+	p.fmtTrivia.SetRTFlag(forStmt, RTChanRecv)
+	return forStmt
 }
 
 // parseChanRecvSource 解析 `<-` 之後、`:` 之前的接收源。
@@ -150,48 +162,99 @@ func (p *Parser) parseChanRecvSource() Expression {
 	return expr
 }
 
-// detectChanLoopForm 在 body 解析完成後定形通道接收迴圈：
+// parseChanLoopBody 解析通道接收迴圈 `v <- ch: { ... }` 的 body，並定形三態 /
+// 元素兩種形態。
 //
-//	<- ch: { ok -> ... }      三態 ?T（body 自己 match 迴圈變數）
-//	i <- ch: { co bar(i) }    元素 T（body 不 match，只取值）
+// 判據必須在**解析 body 之前**用 token 取得，不能等 body 解析完再看 AST：
+// 區塊裡第一條陳述如果是 match（顯式主語 `v: { ... }` 或裸 `{ ok -> ... }`），
+// parseBlockStatement 會立刻把它降糖成 IfExpression 鏈，SurfaceMatch 已經不在，
+// 事後再也認不出原意（歷史症狀：`i <- ch:` 永遠被當成元素形態）。
 //
-// 判據是語法的，不是型別的：body 的第一條陳述若正好是對迴圈變數的 match
-// （`v: { ... }`），作者顯然要自己分辨 ok/nil/err，變數就該是三態 ?T；否則
-// 他只想要值，變數就是 T，而 nil/err 等同「沒有下一個」而結束迴圈。這條規則
-// 讓兩種形態在原始碼裡一眼可辨，不需要型別推斷或額外標註。
-func (p *Parser) detectChanLoopForm(stmt *ForStatement) {
-	if stmt == nil || stmt.IterRange == nil || !stmt.IterRange.IsChan {
-		return
+//	{ co bar(i) }           元素 T：body 是普通陳述
+//	{ print(i) }            元素 T
+//	{ i: { ok -> ... } }    三態 ?T：body 自己 match 迴圈變數
+//	{ ok -> ... nil -> ... } 三態 ?T：省掉 `v:` 的簡寫
+//
+// 最後一種與 `<- ch: { ... }` 同義，主語就是迴圈變數——這裡直接把 body 當成
+// 「對 `v` 的 match」解析（等同 parseChanRecvSugar 對無變數形式做的事）。少了
+// 這一步，裸 match 沒有被匹配者：臂上的 ok/nil/err 退化成獨立 guard（每輪全跑），
+// `it` 綁到空值，`co f(it)` 的實參被降成 void。
+//
+// 呼叫時 currentToken 必須在 body 的 `{` 上。
+func (p *Parser) parseChanLoopBody(stmt *ForStatement) *BlockStatement {
+	for p.currentToken.Type == lexer.NEWLINE {
+		p.nextToken()
 	}
 	ir := stmt.IterRange
-	ir.ChanValue = !bodyStartsWithMatchOn(stmt.Body, ir.Variable)
+	if p.currentToken.Type != lexer.LBRACE {
+		return p.parseLoopBody()
+	}
+	subjectForm, bareArms := p.chanLoopBodyAhead(ir.Variable)
+	if !subjectForm {
+		ir.ChanValue = true
+		return p.parseLoopBody()
+	}
+	ir.ChanValue = false
+	if !bareArms {
+		// 顯式主語：body 自己就是 match，照常解析。
+		return p.parseLoopBody()
+	}
+	tok := p.currentToken // {
+	p.nextToken()         // skip {
+	subj := &Identifier{Token: tok, Value: ir.Variable}
+	// 與 parseChanRecvSugar 同一個理由：合成的 match 是迴圈體，不是值。
+	savedCtx := p.ctx
+	p.ctx = p.ctx.filterOut(CTX_EXPR)
+	match := p.parseMatchExprFrom(subj)
+	p.ctx = savedCtx
+	body := &BlockStatement{Token: tok}
+	if match != nil {
+		body.Statements = []Statement{&ExpressionStatement{Token: tok, Expression: match}}
+	}
+	// 這裡的 `}` 由 parseMatchExprFrom 吃掉；與 parseLoopBody 的約定一致
+	//（後者呼叫 parseBlockStatement 後自己 nextToken 跳過 `}`），呼叫端看到的
+	// currentToken 都是 body 之後的第一個 token。
+	return body
 }
 
-// bodyStartsWithMatchOn 回報區塊的第一條陳述是否為 `name: { ... }`。
-func bodyStartsWithMatchOn(b *BlockStatement, name string) bool {
-	if b == nil || name == "" || len(b.Statements) == 0 {
-		return false
+// chanLoopBodyAhead 在不移動解析位置的前提下，回報 body 開頭是否為三態寫法，
+// 以及它是否為「只有臂、沒有主語」的簡寫形式。currentToken 必須在 `{` 上。
+func (p *Parser) chanLoopBodyAhead(varName string) (subjectForm, bareArms bool) {
+	if p.currentToken.Type != lexer.LBRACE || varName == "" {
+		return false, false
 	}
-	es, ok := b.Statements[0].(*ExpressionStatement)
-	if !ok {
-		return false
+	i := 0
+	t1 := p.peekAhead(i)
+	for t1.Type == lexer.NEWLINE {
+		i++
+		t1 = p.peekAhead(i)
 	}
-	subj := matchSubjectOf(es.Expression)
-	if subj == nil {
-		return false
+	t2 := p.peekAhead(i + 1)
+	t3 := p.peekAhead(i + 2)
+	// `v: { ... }`——顯式主語。
+	if t1.Type == lexer.IDENT && t1.Literal == varName &&
+		t2.Type == lexer.COLON && t3.Type == lexer.LBRACE {
+		return true, false
 	}
-	id, ok := subj.(*Identifier)
-	return ok && id.Value == name
+	// `ok -> ...` / `nil -> ...` / `err -> ...`——省略主語的三態簡寫。
+	// 只認這三個臂名：`{ i > 5 -> ... }` 是元素形態下合法的獨立 guard，
+	// 不能被誤判成三態。臂的箭頭是 RARROW（`->`），與迴圈的 ARROW（`<-`）不同。
+	if t2.Type == lexer.RARROW || t2.Type == lexer.ARROW {
+		switch t1.Literal {
+		case "ok", "nil", "err":
+			return true, true
+		}
+	}
+	return false, false
 }
 
-// matchSubjectOf 取出 match 節點的被匹配表達式；非 match 回 nil。
-// 表層 match 走 SurfaceMatch；已經降糖過的形式（裸 match `{ ... }`）沒有
-// 被匹配者，同樣回 nil。
-func matchSubjectOf(e Expression) Expression {
-	if sm, ok := e.(*SurfaceMatch); ok {
-		return sm.Matched
+// peekAhead 取 currentToken 之後第 k 個 token（k=0 是 peekToken），
+// 與 p.look 的 0 基約定對齊（look(0) 是 currentToken 之後的第 2 個）。
+func (p *Parser) peekAhead(k int) lexer.Token {
+	if k <= 0 {
+		return p.peekToken
 	}
-	return nil
+	return p.look(k - 1)
 }
 
 // chanIterIsChan 判斷 `v <- X:` 的 X 是否為通道，是則把迭代標記為通道接收。

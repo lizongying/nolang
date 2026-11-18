@@ -17,11 +17,15 @@
 ;        `co f(x)` 被吃掉 ⇒ 退化成同步 `f(x)`，編譯照過、輸出照印，
 ;        只是**不再 spawn**（這條由 src/parser/stmt_boundary_block_test.go
 ;        的 AST 斷言釘住）；`awy { }` 被吃掉則整組語義丟失。
+;        注意：`co` 現在只啟動**過程**（被呼叫者不得有宣告回傳值）且是不可
+;        當值的語句，所以「被吃掉」的形態一旦再現會直接編不過（c0nostmt），
+;        本檔仍從輸出端釘一次，確保整組語義沒被靜默丟棄。
 
-; 被協程衍生的簡單函式：把輸入乘 2（overflow 採 wrap），用來觀察引數是否被搬走 / 誤用指標
+; 被協程衍生的簡單過程：把輸入乘 2（overflow 採 wrap）寫進結果通道再關閉。
+; `co` 只啟動過程、結果走通道，所以呼叫方在組外排空。
+; out: 結果通道（呼叫方建，容量 1）
 ; n: 輸入值
-; r: n * 2
-dbl = (n i64) (r i64) {
+dbl-into = (out chan[i64], n i64) {
 
     #{overflow=wrap}
     {
@@ -29,10 +33,11 @@ dbl = (n i64) (r i64) {
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
-            ok -> r = it
+            ok -> out <- it
 
             ->
         }
+        out.close()
     }
 }
 
@@ -71,9 +76,14 @@ print(x-top); expect: 2
 ; if 鏈臂體包含 awy 組，臂尾是組內的 co（非臂內首條語句）
 test-awy-in-ifchain = () {
     x = true -> {
+        out chan[i64] = with-cap(1)
+        y = 1
         awy {
-            y = 1
-            r = co dbl(21)
+            co dbl-into(out, 21)
+        }
+        r = 0
+        <- out: {
+            ok -> r = it
         }
         r
     }
@@ -85,9 +95,14 @@ test-awy-in-match = () {
     v = 1
     x = v: {
         1 -> {
+            out chan[i64] = with-cap(1)
+            y = 1
             awy {
-                y = 1
-                r = co dbl(21)
+                co dbl-into(out, 21)
+            }
+            r = 0
+            <- out: {
+                ok -> r = it
             }
             r
         }
@@ -99,22 +114,32 @@ test-awy-in-match = () {
 
 ; awy 組不是第一條語句，且組內 co 也不是組內第一條語句
 test-co-nonfirst = () {
+    out chan[i64] = with-cap(1)
     y = 1
     awy {
         z = 2
-        r = co dbl(21)
+        co dbl-into(out, 21)
     }
     print(y + z); expect: 3
+    r = 0
+    <- out: {
+        ok -> r = it
+    }
     print(r); expect: 42
 }
 
 ; 過度修正守門員：非首條 awy 組之後的語句仍要正常解析
 test-awy-nonfirst-then-use = () {
+    out chan[i64] = with-cap(1)
     y = 1
     awy {
-        r = co dbl(21)
+        co dbl-into(out, 21)
     }
     print(y); expect: 1
+    r = 0
+    <- out: {
+        ok -> r = it
+    }
     print(r); expect: 42
 }
 

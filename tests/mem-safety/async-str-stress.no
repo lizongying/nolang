@@ -1,5 +1,8 @@
 ; 壓力測試：循環中重複 co，驗證是否有累積泄漏或 UAF
 ; （底層 desugar 成 KRun/KAwait）
+;
+; `co` 只啟動**過程**（無宣告回傳值），所以結果走每輪自建的通道：生產者寫一筆
+; 再 close，呼叫方讀回。堆字串跨 spawn 邊界搬運這件事與原本一致。
 
 ; 協程生產者：回傳固定字串，供壓力測試反覆 spawn / awy
 ; s: 固定的 5 位元組字串 'value'
@@ -7,11 +10,22 @@ str-producer = () (s str) {
     s = 'value'
 }
 
+; ch: 結果通道（呼叫方建，容量 1）
+str-producer-into = (ch chan[str]) {
+    ch <- str-producer()
+    ch.close()
+}
+
 ; 連續 spawn 100 個協程並取回結果，每輪字串長度都應是 5（無累積洩漏、無懸空）
 stress = () {
     i <- [0..100): {
+        ch chan[str] = with-cap(1)
         awy {
-            s = co str-producer()
+            co str-producer-into(ch)
+        }
+        s = ''
+        <- ch: {
+            ok -> s = it
         }
         s.len-bytes() == 5 -> print('ok ', i)
     }

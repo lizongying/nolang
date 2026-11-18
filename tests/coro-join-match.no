@@ -1,0 +1,58 @@
+; join-all across a match arm.
+;
+; A `co` inside a match arm must be spawned at its source and joined at the
+; tail of the enclosing `awy` (runtime join-set), NOT awaited inline (the old
+; #108 serial fallback). The two tasks are mutually dependent: the waiter parks
+; on an empty channel, and only the later signaler can wake it. Under serial
+; spawn-then-await the first `co` is joined before the second is even spawned,
+; so the runtime aborts with a deadlock. Under join-all both are enqueued
+; before the group tail drains, so the test passes.
+;
+; This is the KTypeMatch counterpart of coro-join-all.no (for/if) and
+; coro-join-chaniter.no (chan iteration). Regression for desugarFlowArmSpawns
+; + join-set.
+
+# /test/runner
+
+signal chan[i64] = with-cap(1)
+done chan[i64] = with-cap(1)
+
+waiter = (s chan[i64], d chan[i64]) {
+    <- s: {
+        ok -> { }
+    }
+    d <- 7
+    d.close()
+}
+
+signaler = (s chan[i64]) {
+    s <- 1
+    s.close()
+}
+
+k ?i64 = 1
+awy {
+    k: {
+        ok -> {
+            co waiter(signal, done)
+            co signaler(signal)
+        }
+
+        -> { }
+    }
+}
+
+; With join-all the waiter is woken and closes `done` before the group ends.
+n i64 = 0
+<- done: {
+    ok -> n = 1
+
+    nil -> { }
+
+    err -> { }
+}
+runner.eq(n, 1, 'join-all: match-arm co joined at group tail')
+runner.summary()
+fails = runner.failed-count()
+fails > 0 -> exit(1)
+exit(0)

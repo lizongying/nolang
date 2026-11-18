@@ -105,6 +105,19 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 		f.write(")")
 	case *parser.CoExpression:
 		f.write("co ")
+		// `co { ... }` — the closure form. The AST holds it as `co` + a
+		// zero-parameter FunctionLiteral, so the parenthesised spelling
+		// (`co () { ... }`) would be a faithful but wrong round-trip: the
+		// parser accepts it, yet nobody writes it that way.
+		if lit, ok := e.Call.(*parser.FunctionLiteral); ok && len(lit.Parameters) == 0 && lit.Body != nil {
+			f.write("{")
+			f.indent++
+			f.formatBlockInner(lit.Body, lit.Body.Token.Line)
+			f.indent--
+			f.newline()
+			f.write("}")
+			break
+		}
 		f.formatExpression(e.Call)
 	case *parser.CastExpression:
 		f.formatExpression(e.Expr)

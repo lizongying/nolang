@@ -7,7 +7,7 @@ import "fmt"
 // 句柄是一个不透明的 i8*：指向堆上的控制块 %chancb。元素宽度存在控制块里
 // （elemsize），所以 LLVM 侧的 chan 类型与 T 无关，send/recv 一律按字节搬。
 //
-// 控制块（48 字节）：
+// 控制块（56 字节）：
 //
 //	field 0  len       当前排队元素数
 //	field 1  cap       当前缓冲容量（初始容量按需倍增；send 永不阻塞）
@@ -15,16 +15,21 @@ import "fmt"
 //	field 3  elemsize  元素字节宽度
 //	field 4  buf       环形缓冲（i8*，cap*elemsize 字节）
 //	field 5  closed    关闭标志（1 = 已关闭；close 幂等）
+//	field 6  waiters   等待者链（i8*，串 %task 的 field 6 `next`）
 //
 // 读语义（三态，codegen 直接折成 ?T 的 tag）：
 //
 //	0 = ok        取到一个元素
 //	1 = closed    已关闭且排空
-//	2 = empty     打开但空（单线程顺序模型下等价于"暂时没有数据"）
-//	              未初始化的通道（零值句柄）也折成 2
+//	2 = empty     打开但空；未初始化的通道（零值句柄）也折成 2
 //
-// 没有阻塞、没有等待队列：`co`/`awy` 目前是"组尾顺序跑完"的模型，
-// 无法挂起协程，通道因此定义为可增长队列（见 docs/docs/lang/syntax.md §chan）。
+// 2 永远不会被用户代码「静默」看到：协程在 recv 前有 park 块（见
+// CoroParkChan），非协程走 @nolang_chan_recv_block 反复驱动就绪队列。
+// 因此 `err` 臂在正常程序里只剩「未初始化的通道」这一种真错误，
+// 「暂时没有数据」不再是错误而是等待（见 docs/docs/lang/syntax.md §chan）。
+//
+// 等待者链是唯一的挂起登记处：park 的协程把自己串进去，send/close 把整条链
+// 摘下并逐个入队。唤醒只表示「状态变了」，被唤醒的协程必须重新检查可读性。
 
 // chanControlBlock 字段偏移（字节），供 codegen 与测试共用。
 const (
@@ -34,7 +39,16 @@ const (
 	chanFieldElemSize = 3
 	chanFieldBuf      = 4
 	chanFieldClosed   = 5
+	chanFieldWaiters  = 6
 )
+
+// chanCBSize is the malloc size of the control block: seven 8-byte fields.
+const chanCBSize = 56
+
+// deadlockMsg is the diagnostic for "nothing can make progress". It is written
+// with a Go-computed length, so the constant's array size and the write count
+// cannot drift apart.
+const deadlockMsg = "nolang: deadlock: no runnable task and all tasks are blocked"
 
 // chanStatus* 是 @nolang_chan_recv 的返回码。它们与 ?T 的 tag 取值一致
 // （0 ok / 1 nil / 2 err），codegen 因此可以把返回值直接当判别式写入 option，
@@ -163,7 +177,7 @@ func (c *codegen) emitChanSend(inst *Inst) error {
 // then moved into the option, so a `?str` pays exactly one copy of the
 // descriptor and no clone — the ring slot is dead after recv, which makes the
 // transfer a move rather than an aliasing bug.
-func (c *codegen) emitChanRecv(inst *Inst, allocaFor func(ValueID) string) error {
+func (c *codegen) emitChanRecv(f *Function, inst *Inst, allocaFor func(ValueID) string) error {
 	optSlot := c.valSlot[inst.Dst]
 	if optSlot == "" {
 		return fmt.Errorf("chan-recv: no result slot")
@@ -188,7 +202,17 @@ func (c *codegen) emitChanRecv(inst *Inst, allocaFor func(ValueID) string) error
 	fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", scratchI8, payloadLT, scratch)
 	c.loadSeq++
 	st := fmt.Sprintf("%%chst.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = call i64 @nolang_chan_recv(i8* %s, i8* %s)\n", st, ch, scratchI8)
+	// WHICH RECEIVE. Inside a coroutine the park block in front of this
+	// instruction already proved the channel is readable (or closed / null), so
+	// the plain runtime call is enough and it cannot block. Anywhere else there
+	// is no frame to park on, so the BLOCKING entry point is used: it retries
+	// while driving the ready queue, which is how ordinary code waits for a
+	// producer task to hand it a value.
+	recvFn := "nolang_chan_recv_block"
+	if f.IsCoro && f.Coro != nil {
+		recvFn = "nolang_chan_recv"
+	}
+	fmt.Fprintf(c.sb, "  %s = call i64 @%s(i8* %s, i8* %s)\n", st, recvFn, ch, scratchI8)
 
 	// Discriminant: the runtime's status IS the option tag (0 ok, 1 closed,
 	// 2 open-but-empty). Zero the payload area first so a `nil` / `err` option
@@ -279,27 +303,34 @@ func (c *codegen) emitBuiltinChanMethod(inst *Inst, ff string) error {
 func (c *codegen) emitChanRuntime() {
 	var b string
 
-	b += `
+	b += fmt.Sprintf(`
 ; ---- channel runtime (chan[T]) ----
-; control block: len, cap, head, elemsize, buf, closed  (48 bytes)
-%chancb = type { i64, i64, i64, i64, i8*, i64 }
-
+; control block: len, cap, head, elemsize, buf, closed, waiters (%d bytes)
+%%chancb = type { i64, i64, i64, i64, i8*, i64, i8* }
+`, chanCBSize)
+	b += `
 @nolang_chan_msg_send = private unnamed_addr constant [41 x i8] c"nolang: send on a closed or nil channel\0A\00"
 
-declare void @exit(i32)
+; Terminate a panicking program with an LLVM intrinsic, never with libc @exit:
+; std declares @exit(i32) itself for the exit builtin, and this clang rejects
+; a second declaration of a symbol already declared in the module ("invalid
+; redefinition of function 'exit'"). @llvm.trap is a reserved intrinsic name, so
+; it cannot collide with a Nolang symbol; it aborts with SIGILL after the
+; diagnostic has been written.
+declare void @llvm.trap()
 
-; nolang_chan_panic(): write the fixed diagnostic to stderr and exit(1).
+; nolang_chan_panic(): write the fixed diagnostic to stderr and abort.
 define void @nolang_chan_panic() {
 entry:
   %p = getelementptr inbounds [41 x i8], [41 x i8]* @nolang_chan_msg_send, i64 0, i64 0
   %n = call i64 @write(i32 2, i8* %p, i64 40)
-  call void @exit(i32 1)
+  call void @llvm.trap()
   unreachable
 }
 
 define i8* @nolang_chan_new(i64 %elemsize, i64 %capin) {
 entry:
-  %raw = call i8* @nolang_rc_alloc(i64 48)
+  %raw = call i8* @nolang_rc_alloc(i64 56)
   %cb = bitcast i8* %raw to %chancb*
   %f0 = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 0
   store i64 0, i64* %f0
@@ -313,6 +344,8 @@ entry:
   store i8* null, i8** %f4
   %f5 = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 5
   store i64 0, i64* %f5
+  %f6 = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 6
+  store i8* null, i8** %f6
   %has = icmp sgt i64 %capin, 0
   br i1 %has, label %alloc, label %done
 alloc:
@@ -412,6 +445,7 @@ store:
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst, i8* %val, i64 %esz, i1 false)
   %len2 = add i64 %len1, 1
   store i64 %len2, i64* %pl
+  call void @nolang_chan_wake(i8* %raw)
   ret void
 }
 
@@ -462,6 +496,7 @@ set:
   %cb = bitcast i8* %raw to %chancb*
   %pf = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 5
   store i64 1, i64* %pf
+  call void @nolang_chan_wake(i8* %raw)
   br label %done
 done:
   ret void
@@ -493,13 +528,149 @@ zero:
   ret i64 0
 }
 
+; nolang_chan_ready(raw) -> i1: "a receive would not block right now".
+;
+; True for a null handle (there is no channel to wait on, and the receive has to
+; report the uninitialized handle), for len > 0, and for a CLOSED channel (its
+; receive is the terminal nil). False means "open and empty": the only case a
+; coroutine parks on.
+define i1 @nolang_chan_ready(i8* %raw) {
+entry:
+  %isnull = icmp eq i8* %raw, null
+  br i1 %isnull, label %yes, label %chk
+chk:
+  %cb = bitcast i8* %raw to %chancb*
+  %pl = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 0
+  %len = load i64, i64* %pl
+  %has = icmp sgt i64 %len, 0
+  br i1 %has, label %yes, label %chkc
+chkc:
+  %pf = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 5
+  %closed = load i64, i64* %pf
+  %isc = icmp ne i64 %closed, 0
+  br i1 %isc, label %yes, label %no
+yes:
+  ret i1 true
+no:
+  ret i1 false
+}
+
+; nolang_chan_park(raw): push the running task onto the channel's waiter chain.
+;
+; The chain is threaded through %task field 6 (next), so a task occupies at
+; most one place in at most one chain at a time — which holds because a parked
+; task is never resumed by anything except @nolang_chan_wake, and that pops the
+; whole chain (and clears the field) before enqueueing.
+;
+; A null channel or a null current task is a no-op: the first cannot block, and
+; the second means some non-coroutine caller asked to park, which the callers
+; guard against anyway.
+define void @nolang_chan_park(i8* %raw) {
+entry:
+  %isnull = icmp eq i8* %raw, null
+  br i1 %isnull, label %out, label %chk
+chk:
+  %cur = load i8*, i8** @nolang_current_task
+  %cnull = icmp eq i8* %cur, null
+  br i1 %cnull, label %out, label %push
+push:
+  %cb = bitcast i8* %raw to %chancb*
+  %pw = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 6
+  %old = load i8*, i8** %pw
+  %ct = bitcast i8* %cur to %task*
+  %ng = getelementptr inbounds %task, %task* %ct, i32 0, i32 6
+  store i8* %old, i8** %ng
+  store i8* %cur, i8** %pw
+  br label %out
+out:
+  ret void
+}
+
+; nolang_chan_wake(raw): detach the whole waiter chain and enqueue every task in
+; it.
+;
+; Wake ALL of them rather than one: a send adds exactly one element, so every
+; woken task re-runs the readiness test and all but one park again. Waking one
+; would need to know which one can make progress, and the chain carries no such
+; information.
+define void @nolang_chan_wake(i8* %raw) {
+entry:
+  %isnull = icmp eq i8* %raw, null
+  br i1 %isnull, label %out, label %pop
+pop:
+  %cb = bitcast i8* %raw to %chancb*
+  %pw = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 6
+  %head = load i8*, i8** %pw
+  %hempty = icmp eq i8* %head, null
+  br i1 %hempty, label %out, label %detach
+detach:
+  store i8* null, i8** %pw
+  br label %loop
+loop:
+  %cur = phi i8* [ %head, %detach ], [ %nx, %body ]
+  %ct = bitcast i8* %cur to %task*
+  %ng = getelementptr inbounds %task, %task* %ct, i32 0, i32 6
+  %nx = load i8*, i8** %ng
+  store i8* null, i8** %ng
+  call void @nolang_async_enqueue(i8* %cur)
+  br label %body
+body:
+  %more = icmp ne i8* %nx, null
+  br i1 %more, label %loop, label %out
+out:
+  ret void
+}
+
+; nolang_chan_recv_block(raw, out) -> status: the receive for code that has no
+; frame to park on.
+;
+; It retries: receive, and if the channel is open and empty, drive the ready
+; queue (@nolang_async_drain_until with a null target runs it dry) and try
+; again. When the queue is exhausted and the channel is STILL empty, no task can
+; ever send — this program cannot make progress, so it aborts with a deadlock
+; diagnostic instead of spinning or returning a value nobody sent.
+define i64 @nolang_chan_recv_block(i8* %raw, i8* %out) {
+entry:
+  %st = call i64 @nolang_chan_recv(i8* %raw, i8* %out)
+  %empty = icmp eq i64 %st, 2
+  br i1 %empty, label %pump, label %done
+pump:
+  call void @nolang_async_drain_until(i8* null)
+  %st2 = call i64 @nolang_chan_recv(i8* %raw, i8* %out)
+  %empty2 = icmp eq i64 %st2, 2
+  br i1 %empty2, label %dead, label %done2
+done:
+  ret i64 %st
+done2:
+  ret i64 %st2
+dead:
+  call void @nolang_deadlock_abort()
+  unreachable
+}
+
 ; nolang_chan_free(cb): release the ring. Elements still queued keep their own
 ; heap (they were cloned on send) and are intentionally not walked — dropping a
 ; non-empty channel leaks them (documented limitation, see syntax.md §chan).
 define void @nolang_chan_free(i8* %raw) {
 entry:
   %isnull = icmp eq i8* %raw, null
-  br i1 %isnull, label %done, label %freebuf
+  br i1 %isnull, label %done, label %waiters
+waiters:
+  ; A task parked on this channel holds only a raw i64 handle in its frame,
+  ; NOT a reference to the control block. Freeing cb here would leave that
+  ; task on a chain that no longer exists; when it resumed it would read the
+  ; freed cb in nolang_chan_ready -> use-after-free. Fail loudly instead:
+  ; a channel must outlive every task waiting on it (normally the owning
+  ; function's group-tail await guarantees this; reaching here means the
+  ; program destroyed the channel while a receiver was still parked).
+  %cbw = bitcast i8* %raw to %chancb*
+  %pww = getelementptr inbounds %chancb, %chancb* %cbw, i32 0, i32 6
+  %wh = load i8*, i8** %pww
+  %wnull = icmp eq i8* %wh, null
+  br i1 %wnull, label %freebuf, label %bad
+bad:
+  call void @nolang_deadlock_abort()
+  unreachable
 freebuf:
   %cb = bitcast i8* %raw to %chancb*
   %pb = getelementptr inbounds %chancb, %chancb* %cb, i32 0, i32 4

@@ -1,0 +1,44 @@
+; EXPECTED DEADLOCK — kept out of `no test` by the `_` directory prefix.
+;
+; Manual check for the join-set parked-task regression. The flow-arm `co` parks
+; on `signal`; nobody signals it before the `awy` group ends, so join-leave must
+; abort with `nolang: deadlock` before retiring the handle. The old
+; `drain_until(null)` shape retired the still-suspended task and the later send
+; SIGSEGV'd. Underscore prefix keeps this fixture out of the passing corpus.
+
+signal chan[i64] = with-cap(1)
+res chan[i64] = with-cap(1)
+
+waiter = (s chan[i64], r chan[i64]) {
+    <- s: {
+        ok -> { }
+    }
+    r <- 99
+    r.close()
+}
+
+add = (a i64, b i64) (r i64) {
+    s = a + b
+    r = s: {
+        ok -> it
+        -> 0
+    }
+}
+
+i i64 = 0
+awy {
+    for i < 1 {
+        i == 0 -> {
+            co waiter(signal, res)
+        }
+        i = add(i, 1)
+    }
+}
+
+; Must NOT be reached: join-leave already aborted at the group tail.
+signal <- 1
+n i64 = 0
+<- res: {
+    ok -> n = 1
+}
+print(n)

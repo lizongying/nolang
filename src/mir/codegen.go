@@ -114,6 +114,34 @@ type codegen struct {
 	asyncWrappers   map[string]string
 	asyncWrapperSeq int
 
+	// usesJoinSet is set by scanJoinSetUse before emitAsyncScheduler. It gates
+	// the join-set globals + functions (4 BSS globals incl. a 128 KiB table,
+	// plus 5 defines). A program without an `awy` control-flow-arm `co` never
+	// calls __join-*, so emitting them is pure dead weight: ~160 lines of IR
+	// and a 128 KiB BSS allocation on EVERY build. The core scheduler runtime
+	// is left unconditional — only the join-set leaf is gated.
+	usesJoinSet bool
+
+	// coroFrameReg is the register holding the current coroutine's frame
+	// pointer (`%cs`, a %frame.N*). It is defined once in the function's
+	// dispatch block, which dominates every other block, so the park
+	// terminators and the __state loads can all read it. Empty outside a
+	// coroutine body.
+	coroFrameReg string
+	coroStateReg string
+	coroTaskReg  string
+	// coroInit buffers the frame's zero-initialisation stores. They may only
+	// run on the state-0 path — re-running them on every resume would clobber
+	// exactly the values the park saved — so they are collected here and
+	// emitted into the dedicated cs.init block instead of the dispatch block.
+	coroInit strings.Builder
+	// coroFrameDecls accumulates the `%frame.N = type { ... }` lines, which are
+	// spliced into the finished module just before the first function body
+	// (same treatment as injectMissingOptionTypeDecls, and for the same reason:
+	// the prelude is written before the coroutine plan is consulted).
+	coroFrameDecls []string
+	coroFrameDone  map[FuncID]bool
+
 	// awaitConsumedMsgEmitted gates the one-shot emission of the diagnostic
 	// string constant used by emitAsyncAwait's consumed-handle guard. The
 	// constant is only added to a module that actually awaits twice, so no
@@ -206,17 +234,14 @@ func (c *codegen) elemToStrMethod(lt string) string {
 }
 
 func (c *codegen) ptype(v ValueID) (llvm string, owned bool) {
-	if c.cf != NoFunc {
-		if f := c.mod.Func(c.cf); f != nil {
-			if t, ok := f.LocalTypes[v]; ok {
-				if ty := c.mod.Type(t); ty != nil {
-					return c.llvmTypeOf(ty), ty.Owned
-				}
-			}
-		}
-	}
-	if val := c.mod.Value(v); val != nil {
-		if ty := c.mod.Type(val.Type); ty != nil {
+	return c.ptypeIn(c.cf, v)
+}
+
+// ptypeIn is ptype resolved against an EXPLICIT function (see localTypeOfIn for
+// why the callee's params must never be looked up through c.cf).
+func (c *codegen) ptypeIn(fid FuncID, v ValueID) (llvm string, owned bool) {
+	if t := c.localTypeOfIn(fid, v); t != NoType {
+		if ty := c.mod.Type(t); ty != nil {
 			return c.llvmTypeOf(ty), ty.Owned
 		}
 	}
@@ -463,6 +488,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 		defCount:           map[ValueID]int{},
 		extraFuncs:         map[string]bool{},
 		errMsgGlobals:      map[string]bool{},
+		coroFrameDone:      map[FuncID]bool{},
 	}
 	// Sanitize LLVM symbol names, disambiguating collisions. Nolang method
 	// names embed their receiver type (e.g. `[]t.len`, `vec.reverse`,
@@ -568,6 +594,7 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	// legal in LLVM. The %task type itself is declared in the prelude so it is
 	// visible to the function bodies that reference %task*.
 	c.asyncWrappers = map[string]string{}
+	c.usesJoinSet = m.scanJoinSetUse()
 	c.emitAsyncScheduler()
 	// Channel runtime (`chan[T]`): control block + new/send/recv/close/free.
 	// Also buffered into extraGlobals; %chancb is declared there.
@@ -643,6 +670,15 @@ func (m *Module) EmitLLVM() (out string, err error) {
 	// finished text by inserting the missing declarations at the end of the
 	// prelude, before the first use. See injectMissingOptionTypeDecls.
 	ir = injectMissingOptionTypeDecls(ir, preludeEnd, c.sortedOptionLayouts())
+	// Coroutine frame types. They are named structs that can only be built while
+	// a coroutine's body is being emitted (their fields are the LLVM types of
+	// that function's frame slots), but LLVM's parser validates a
+	// `getelementptr %frame.N, ...` only once the type is defined, so the
+	// declarations are spliced in at the same prelude boundary as the option
+	// ones — before the first function that uses them.
+	if len(c.coroFrameDecls) > 0 && preludeEnd >= 0 && preludeEnd <= len(ir) {
+		ir = ir[:preludeEnd] + strings.Join(c.coroFrameDecls, "") + ir[preludeEnd:]
+	}
 	// Behind the optimiser switch, so a default build emits byte-identical IR.
 	// This has to run on the FINISHED text: the prelude is written before any
 	// of the functions that reference it, and the trailing helper/global/declare
@@ -3643,17 +3679,45 @@ func (c *codegen) emitPrelude() {
 	c.sb.WriteString(`
 
 ; async task runtime (mirrors legacy build/llvm cooperative scheduler).
-; %task = { resume_fn, data(i64 ptr), done, cancelled, waiter }; 32 bytes.
+; %task = { resume_fn, data(i64 ptr), done, cancelled, waiters, frame, next,
+;           waitnext };
+; 56 bytes (padding after the two i1s is implicit).
 ;
-; field 4 (waiter) holds the task that is blocked on THIS task (set by
-; @nolang_async_wait, consumed by @nolang_async_done). It lives in the task
-; itself so the lookup is exact. The scheduler used to keep a separate
-; "@nolang_waiters [256 x i8*]" table indexed by "ptrtoint(task) & 255", but
-; malloc returns 16-byte-aligned blocks, so only the low 4 bits of a task
-; pointer ever varied: the 256 slots collapsed to 16 and any two tasks whose
-; addresses shared those bits aliased each other's waiter. See the note on
-; emitAsyncScheduler.
-%task = type { void (i8*)*, i64, i1, i1, i8* }
+; field 4 (waiters) is the HEAD of the chain of tasks blocked on THIS task (set
+; by @nolang_async_wait, drained by @nolang_async_done); field 7 (waitnext)
+; threads that chain. It lives in the task itself so the lookup is exact. The
+; scheduler used to keep a separate "@nolang_waiters [256 x i8*]" table indexed
+; by "ptrtoint(task) & 255", but malloc returns 16-byte-aligned blocks, so only
+; the low 4 bits of a task pointer ever varied: the 256 slots collapsed to 16
+; and any two tasks whose addresses shared those bits aliased each other's
+; waiter. See the note on emitAsyncScheduler.
+;
+; A single slot was wrong too, only less loudly: two coroutines awaiting the
+; same handle overwrote each other, the first one was never woken, and the run
+; ended in the drain loop's deadlock abort. The chain is per-WAITER, not per
+; await: a parked task is blocked on exactly one thing, so one link suffices.
+;
+; field 5 (frame) is the coroutine frame (%frame.N) of a transformed function,
+; null for a plain run-to-completion task. field 6 (next) chains tasks waiting
+; on the SAME CHANNEL — deliberately a different link from waitnext, so the two
+; chain kinds cannot be confused if a task ever parks on a channel while
+; registered as someone's waiter.
+;
+; field 8 (depth) is the logical nesting depth inherited from the spawning
+; task. It is NOT a native stack depth: coroutine frames are heap blocks, so a
+; recursively spawning coroutine has no hardware stack to overflow. The limit
+; is imposed at spawn time (emitSpawnDepthCheck) to turn that runaway frame
+; chain into a diagnostic instead of an OOM. field 9 pads the struct to 64B.
+; field 10 (join_top) is the head of THIS task's join-set frame chain. Keeping
+; it per-task is what makes a cooperative suspend inside an awy group safe:
+; another task entering a group must not pop this task's frame. A plain top-level
+; main has no %task, so the root frames still live in the globals below.
+%task = type { void (i8*)*, i64, i1, i1, i8*, i8*, i8*, i8*, i32, i32, i8* }
+
+; One join-set frame: prev link, handle count, nesting depth, handle array.
+; 16 + joinMaxHandles*8 bytes, allocated with @nolang_rc_alloc and freed with
+; @nolang_free. The fixed array preserves the old per-group spawn cap.
+%joinframe = type { i8*, i32, i32, [256 x i64] }
 
 ; R-tier block header (NOLANG-OWNERSHIP-MODEL.md §3.4).
 ;
@@ -5419,6 +5483,64 @@ func (c *codegen) emitEntry(main *Function) {
 
 // ---- function emission ----
 
+// emitSlotZeroInit zero-initialises a freshly allocated local slot.
+//
+// Zero-initialising heap-owning slots makes a value that is never written (most
+// notably an OUT-parameter left untouched by an empty function body, e.g. the
+// macOS `net.ifconfig-list` stub that returns an empty list) a valid, free-able
+// "empty" value rather than uninitialized garbage. A %vec/%str-long/%option left
+// as garbage and later freed by emitDrop/@vec_free/@str_free would free a random
+// pointer and abort (trace/BPT trap). Legacy zero-initializes locals, so this is
+// required for parity. Written Dst/params overwrite the zero below, so this is
+// safe.
+//
+// An option slot is the ONE type whose default is not its zero value: every
+// `%option_<key>` is `{ i8 tag, payload }` with tag 0 = ok, 2 = err and 1 = nil,
+// so `zeroinitializer` reads back as `ok(0)` — a non-nil some(zero). Store the
+// nil discriminant instead. This matters most for a named OUT-parameter that the
+// body returns without assigning (e.g. `hashmap.get` on a miss, which just falls
+// out of its probe loop): the write-back then published either uninitialized
+// garbage or a stale `ok` from a previously reused slot, so a removed key still
+// came back "found" carrying the previous call's payload
+// (tests/mem-safety/map-tombstone.no, tests/map-generics.no). Written Dst/params
+// overwrite this, so the extra store is dead for every value that is actually
+// assigned.
+//
+// OUT-PARAMETERS are always zeroed as well, and the predicate is deliberately
+// WIDER than the drop predicate above. An out-param slot is write-only from the
+// caller's point of view, so the callee may read it BEFORE writing —
+// `out.push(x)` reads {len, cap, data} to decide whether to grow, `out[i] = v`
+// drops the previous element, `out += ...` reads the old buffer. Leaving that
+// slot as stack garbage hands those reads a random %vec/%str-long: push's grow
+// path then calls `nolang_free(<random pointer>)` ("pointer being freed was not
+// allocated", abort) or, when the garbage looks like a plausible {len, cap},
+// allocates/deep-frees whatever len/cap say — measured with
+// `fill(n) (b box) { b.data.push(65) }` (a []byte INSIDE an out-param struct,
+// where `structSlotNeedsZero` says false because the analysis does not treat a
+// `[]byte` field as an owned leaf): abort trap on the first push, and the same
+// shape with a garbage len grows without bound. Zeroing costs one store per
+// out-param per call and makes "an untouched out-param reads as the zero value"
+// a hard invariant instead of luck.
+func (c *codegen) emitSlotZeroInit(lt string, owned bool, v ValueID, s string) {
+	if isOptionType(lt) {
+		c.optStoreTag(s, c.optDeclLTOfLLVM(lt), 1)
+		return
+	}
+	if !owned && !c.structSlotNeedsZero(lt) && !c.resultParam[v] {
+		return
+	}
+	// A STRUCT THAT GETS A DROP must start zeroed even though it is not `owned`
+	// (Type.Owned is false for a struct — it is only true for str/vec/[]T/map/
+	// ?owned). Before structs with inline owned `str` leaves had a destructor
+	// this was harmless: an uninitialized slot was simply never read. With the
+	// destructor, a struct local that every branch leaves unwritten (a loop that
+	// only assigns it in one arm) frees stack garbage — `free(0xffffffffffffffff)`,
+	// "pointer being freed was not allocated", abort. Verified:
+	// tests/diff-debug.no. Guarded by the SAME predicate as the drop, so a struct
+	// that is never dropped pays nothing.
+	fmt.Fprintf(c.sb, "  store %s zeroinitializer, %s* %s\n", lt, lt, s)
+}
+
 func (c *codegen) emitFunc(f *Function) error {
 	// Call temporaries (`%cargN`, `%cresN`, `%icrN`, ...) are discovered only
 	// while the block that contains the call is being emitted — which may be a
@@ -5517,35 +5639,45 @@ func (c *codegen) emitFunc(f *Function) error {
 	// ownership: the caller provides an out-pointer that emitReturn writes back
 	// into, so declaring them by-value (as the non-owned branch would) clashes
 	// with the `store ...* %pp` in emitReturn.
+	//
+	// A COROUTINE takes no user parameters at all: its LLVM signature is the
+	// scheduler's `void (i8* task)`, the arguments arrive in the frame the
+	// spawn site filled, and the result pointer is recovered from the task (see
+	// the coro prologue after the entry label).
+	coro := f.IsCoro && f.Coro != nil
 	var decls []string
 	c.paramPtr = map[ValueID]string{}
-	idx := 0
-	for _, p := range f.Params {
-		lt, owned := c.ptype(p)
-		pk := KindUnknown
-		if v := c.mod.Value(p); v != nil {
-			if ty := c.mod.Type(v.Type); ty != nil {
-				pk = ty.Kind
+	if coro {
+		decls = []string{"i8* %task_ptr"}
+	} else {
+		idx := 0
+		for _, p := range f.Params {
+			lt, owned := c.ptype(p)
+			pk := KindUnknown
+			if v := c.mod.Value(p); v != nil {
+				if ty := c.mod.Type(v.Type); ty != nil {
+					pk = ty.Kind
+				}
 			}
+			pn := fmt.Sprintf("%%p%d", idx)
+			if c.resultParam[p] {
+				decls = append(decls, lt+"* "+pn)
+			} else if pk == KindFunc {
+				// Function-pointer parameters are passed BY REFERENCE: the caller
+				// hands a `void(...)**` (address of the slot holding the fn ptr),
+				// so the callee receives a pointer and loads the fn ptr from it —
+				// identical to how the by-ref argument ABI passes every other
+				// parameter. Declaring it by-value (`void()* %pN`) would clash with
+				// the caller's `void()**` argument and reject at opt/link time.
+				decls = append(decls, lt+"* "+pn)
+			} else if byPointerLLVM(lt, owned) {
+				decls = append(decls, lt+"* "+pn)
+			} else {
+				decls = append(decls, lt+" "+pn)
+			}
+			c.paramPtr[p] = pn
+			idx++
 		}
-		pn := fmt.Sprintf("%%p%d", idx)
-		if c.resultParam[p] {
-			decls = append(decls, lt+"* "+pn)
-		} else if pk == KindFunc {
-			// Function-pointer parameters are passed BY REFERENCE: the caller
-			// hands a `void(...)**` (address of the slot holding the fn ptr),
-			// so the callee receives a pointer and loads the fn ptr from it —
-			// identical to how the by-ref argument ABI passes every other
-			// parameter. Declaring it by-value (`void()* %pN`) would clash with
-			// the caller's `void()**` argument and reject at opt/link time.
-			decls = append(decls, lt+"* "+pn)
-		} else if byPointerLLVM(lt, owned) {
-			decls = append(decls, lt+"* "+pn)
-		} else {
-			decls = append(decls, lt+" "+pn)
-		}
-		c.paramPtr[p] = pn
-		idx++
 	}
 	name := c.fname[f.ID]
 	fmt.Fprintf(c.sb, "define void @%s(%s) {\n", name, strings.Join(decls, ", "))
@@ -5560,6 +5692,10 @@ func (c *codegen) emitFunc(f *Function) error {
 	}
 	entry := f.Blocks[0]
 	fmt.Fprintf(c.sb, "%s.bb0:\n", name)
+	c.coroFrameReg = ""
+	if coro {
+		c.emitCoroPrologue(f)
+	}
 	slotIdx := 0
 	allocaFor := func(v ValueID) string {
 		if s, ok := c.valSlot[v]; ok {
@@ -5572,64 +5708,35 @@ func (c *codegen) emitFunc(f *Function) error {
 			// and are skipped by consumers — loadVal returns ("void","undef").
 			return ""
 		}
+		if coro {
+			// FRAME SLOT: the value must survive a suspension, so it lives in
+			// the heap frame instead of the stack. The address is a plain
+			// `getelementptr` — everything downstream keeps emitting
+			// load/store against it unchanged.
+			ord, ok := f.Coro.SlotIdx[v]
+			if !ok {
+				return ""
+			}
+			s := fmt.Sprintf("%%cs.%d", ord)
+			fmt.Fprintf(c.sb, "  %s = getelementptr %%%s, %%%s* %s, i32 0, i32 %d\n",
+				s, f.Coro.FrameName, f.Coro.FrameName, c.coroFrameReg, ord+CoroFrameHeader)
+			c.valSlot[v] = s
+			if c.valSlotLT == nil {
+				c.valSlotLT = map[ValueID]string{}
+			}
+			c.valSlotLT[v] = lt
+			// The zero-initialisation is emitted into the state-0-only block:
+			// it must run once, when the frame is fresh, and never again.
+			saved := c.sb
+			c.sb = &c.coroInit
+			c.emitSlotZeroInit(lt, owned, v, s)
+			c.sb = saved
+			return s
+		}
 		s := fmt.Sprintf("%%v%d.s", slotIdx)
 		slotIdx++
 		fmt.Fprintf(c.sb, "  %s = alloca %s\n", s, lt)
-		// Zero-initialize heap-owning slots so a value that is never written
-		// (most notably an OUT-parameter left untouched by an empty function
-		// body, e.g. the macOS `net.ifconfig-list` stub that returns an empty
-		// list) is a valid, free-able "empty" value rather than uninitialized
-		// garbage. A %vec/%str-long/%option left as garbage and later freed by
-		// emitDrop/@vec_free/@str_free would free a random pointer and abort
-		// (trace/BPT trap). Legacy zero-initializes locals, so this is required
-		// for parity. Written Dst/params overwrite the zero below, so this is
-		// safe.
-		//
-		// An option slot is the ONE type whose default is not its zero value:
-		// every `%option_<key>` is `{ i8 tag, payload }` with tag 0 = ok, 2 = err
-		// and 1 = nil, so `zeroinitializer` reads back as `ok(0)` — a non-nil
-		// some(zero). Store the nil discriminant instead. This matters most for
-		// a named OUT-parameter that the body returns without assigning (e.g.
-		// `hashmap.get` on a miss, which just falls out of its probe loop): the
-		// write-back then published either uninitialized garbage or a stale
-		// `ok` from a previously reused slot, so a removed key still came back
-		// "found" carrying the previous call's payload
-		// (tests/mem-safety/map-tombstone.no, tests/map-generics.no).
-		// Written Dst/params overwrite this, so the extra store is dead for
-		// every value that is actually assigned.
-		//
-		// OUT-PARAMETERS are always zeroed as well, and the predicate is
-		// deliberately WIDER than the drop predicate above. An out-param slot is
-		// write-only from the caller's point of view, so the callee may read it
-		// BEFORE writing — `out.push(x)` reads {len, cap, data} to decide whether
-		// to grow, `out[i] = v` drops the previous element, `out += ...` reads the
-		// old buffer. Leaving that slot as stack garbage hands those reads a
-		// random %vec/%str-long: push's grow path then calls
-		// `nolang_free(<random pointer>)` ("pointer being freed was not
-		// allocated", abort) or, when the garbage looks like a plausible
-		// {len, cap}, allocates/deep-frees whatever len/cap say — measured with
-		// `fill(n) (b box) { b.data.push(65) }` (a []byte INSIDE an out-param
-		// struct, where `structSlotNeedsZero` says false because the analysis
-		// does not treat a `[]byte` field as an owned leaf): abort trap on the
-		// first push, and the same shape with a garbage len grows without bound.
-		// Zeroing costs one store per out-param per call and makes "an untouched
-		// out-param reads as the zero value" a hard invariant instead of luck.
-		if isOptionType(lt) {
-			c.optStoreTag(s, c.optDeclLTOfLLVM(lt), 1)
-		} else if owned || c.structSlotNeedsZero(lt) || c.resultParam[v] {
-			// A STRUCT THAT GETS A DROP must start zeroed even though it is
-			// not `owned` (Type.Owned is false for a struct — it is only true
-			// for str/vec/[]T/map/?owned). Before structs with inline owned
-			// `str` leaves had a destructor this was harmless: an
-			// uninitialized slot was simply never read. With the destructor,
-			// a struct local that every branch leaves unwritten (a loop that
-			// only assigns it in one arm) frees stack garbage —
-			// `free(0xffffffffffffffff)`, "pointer being freed was not
-			// allocated", abort. Verified: tests/diff-debug.no.
-			// Guarded by the SAME predicate as the drop, so a struct that is
-			// never dropped pays nothing.
-			fmt.Fprintf(c.sb, "  store %s zeroinitializer, %s* %s\n", lt, lt, s)
-		}
+		c.emitSlotZeroInit(lt, owned, v, s)
 		c.valSlot[v] = s
 		if c.valSlotLT == nil {
 			c.valSlotLT = map[ValueID]string{}
@@ -5655,26 +5762,28 @@ func (c *codegen) emitFunc(f *Function) error {
 	// opt rejects ("%p0 defined with type 'i64' but expected 'ptr'"). Scalars are
 	// copied into a normal slot below. The receiver is just a (usually
 	// by-pointer) param, so it is covered by this same loop — no special case.
-	for _, p := range f.Params {
-		if c.resultParam[p] {
-			// self (the first result param of a method) IS aliased to the
-			// caller's pointer so in-body mutations propagate directly.
-			// Other result params are written back by emitReturn.
-			if f.IsMethod {
-				isSelf := false
-				if len(f.ResultParams) > 0 && f.ResultParams[0] == p {
-					isSelf = true
+	if !coro {
+		for _, p := range f.Params {
+			if c.resultParam[p] {
+				// self (the first result param of a method) IS aliased to the
+				// caller's pointer so in-body mutations propagate directly.
+				// Other result params are written back by emitReturn.
+				if f.IsMethod {
+					isSelf := false
+					if len(f.ResultParams) > 0 && f.ResultParams[0] == p {
+						isSelf = true
+					}
+					if isSelf {
+						c.valSlot[p] = c.paramPtr[p]
+						continue
+					}
 				}
-				if isSelf {
-					c.valSlot[p] = c.paramPtr[p]
-					continue
-				}
+				continue // other out-params are written back by emitReturn, not aliased
 			}
-			continue // other out-params are written back by emitReturn, not aliased
-		}
-		plt, powned := c.ptype(p)
-		if powned || byPointerLLVM(plt, powned) || strings.HasSuffix(plt, "*") {
-			c.valSlot[p] = c.paramPtr[p]
+			plt, powned := c.ptype(p)
+			if powned || byPointerLLVM(plt, powned) || strings.HasSuffix(plt, "*") {
+				c.valSlot[p] = c.paramPtr[p]
+			}
 		}
 	}
 	// params
@@ -5706,26 +5815,31 @@ func (c *codegen) emitFunc(f *Function) error {
 			}
 		}
 	}
-	// store incoming params into slots (skip out-params and by-pointer params)
-	for _, p := range f.Params {
-		if c.resultParam[p] {
-			continue // out-param: written back by emitReturn
+	// store incoming params into slots (skip out-params and by-pointer params).
+	// A coroutine takes none: its parameters were written straight into the
+	// frame by the spawn site (emitCoroRun), which is what makes them survive a
+	// suspension.
+	if !coro {
+		for _, p := range f.Params {
+			if c.resultParam[p] {
+				continue // out-param: written back by emitReturn
+			}
+			lt, owned := c.ptype(p)
+			slot := c.valSlot[p]
+			if lt == "void" || slot == "" {
+				continue
+			}
+			// By-pointer params were aliased to the caller's pointer above, so
+			// their slot IS that pointer; the body reads/writes through it. Do NOT
+			// copy into a local slot (that would discard the caller's writes).
+			// Scalar (by-value) params are aliased to nothing, so their slot is a
+			// fresh alloca; store the incoming value into it here.
+			if owned || byPointerLLVM(lt, owned) || strings.HasSuffix(lt, "*") {
+				continue
+			}
+			pin := c.paramPtr[p]
+			fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", lt, pin, lt, slot)
 		}
-		lt, owned := c.ptype(p)
-		slot := c.valSlot[p]
-		if lt == "void" || slot == "" {
-			continue
-		}
-		// By-pointer params were aliased to the caller's pointer above, so their
-		// slot IS that pointer; the body reads/writes through it. Do NOT copy
-		// into a local slot (that would discard the caller's writes). Scalar
-		// (by-value) params are aliased to nothing, so their slot is a fresh
-		// alloca; store the incoming value into it here.
-		if owned || byPointerLLVM(lt, owned) || strings.HasSuffix(lt, "*") {
-			continue
-		}
-		pin := c.paramPtr[p]
-		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", lt, pin, lt, slot)
 	}
 
 	// Assign LLVM labels for EVERY block BEFORE emitting any of them. LLVM text
@@ -5741,7 +5855,13 @@ func (c *codegen) emitFunc(f *Function) error {
 	}
 
 	// emit entry block insts + term
-	if err := c.emitBlock(f, entry, allocaFor); err != nil {
+	if coro && entry == f.Coro.Dispatch {
+		// The synthetic entry holds no instructions of its own: bb0 is the
+		// frame pointer + the slot GEPs, and the dispatch is the state chain.
+		if err := c.emitCoroDispatch(f); err != nil {
+			return err
+		}
+	} else if err := c.emitBlock(f, entry, allocaFor); err != nil {
 		return err
 	}
 	// remaining blocks
@@ -5877,6 +5997,14 @@ func (c *codegen) emitBlock(f *Function, bid BlockID, allocaFor func(ValueID) st
 		}
 		if err := c.emitInst(f, inst, allocaFor); err != nil {
 			return err
+		}
+	}
+	if f.IsCoro && f.Coro != nil {
+		if p, ok := f.Coro.Parks[bid]; ok {
+			// A parking block's terminator is the suspension itself, so the
+			// MIR terminator (a plain OpReturn, kept so the pre-existing
+			// analyses still see a sink) must NOT be emitted.
+			return c.emitCoroPark(f, p)
 		}
 	}
 	if blk.Term != nil {
@@ -6207,9 +6335,20 @@ func (c *codegen) emitInst(f *Function, inst *Inst, allocaFor func(ValueID) stri
 	case OpChanSend:
 		return c.emitChanSend(inst)
 	case OpChanRecv:
-		return c.emitChanRecv(inst, allocaFor)
+		return c.emitChanRecv(f, inst, allocaFor)
 	case OpChanClose:
 		return c.emitChanClose(inst)
+	case OpYield:
+		// Inside a coroutine the yield is the park terminator's job (coro.go
+		// split the block at it), so the marker itself emits nothing. Outside
+		// one there is no state machine to park, and the historical
+		// "re-enqueue the current task and carry on" call is the only sensible
+		// reading — it still gives the scheduler a chance to run others.
+		if f.IsCoro && f.Coro != nil {
+			return nil
+		}
+		c.sb.WriteString("  call void @nolang_async_yield()\n")
+		return nil
 	case OpReturn:
 		c.sb.WriteString("  ret void\n")
 		return nil
@@ -11415,9 +11554,21 @@ func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
 // function's LocalTypes table (authoritative after lowering — e.g. a `?T`
 // option wrap is recorded there) over the value's own declared type.
 func (c *codegen) localTypeOf(v ValueID) TypeID {
-	if f := c.mod.Func(c.cf); f != nil {
-		if tid, ok := f.LocalTypes[v]; ok {
-			return tid
+	return c.localTypeOfIn(c.cf, v)
+}
+
+// localTypeOfIn is localTypeOf resolved against an EXPLICIT function instead of
+// the one currently being emitted. ValueIDs are only unique inside a single
+// function, so any lookup of another function's param/result value must go
+// through here: reading it as a caller-local ID silently picks up whatever the
+// CALLER happens to have at that slot (a void-typed value, for one) and turns a
+// perfectly normal i64 parameter into `void*` at the spawn boundary.
+func (c *codegen) localTypeOfIn(fid FuncID, v ValueID) TypeID {
+	if fid != NoFunc {
+		if f := c.mod.Func(fid); f != nil {
+			if tid, ok := f.LocalTypes[v]; ok {
+				return tid
+			}
 		}
 	}
 	if val := c.mod.Value(v); val != nil {
@@ -15994,6 +16145,14 @@ func parseArrayType(lt string) (int64, string) {
 // (nolang_async_enqueue / _yield / _wait / _done / _run) into the module tail.
 // These are ported verbatim from the legacy build/llvm emitter (decl.go); the
 // %task type they reference is declared in the prelude.
+// maxTaskDepth is the logical nesting limit for spawned tasks. A coroutine's
+// frame is a heap block, so recursion cannot overflow a native stack; what it
+// can do is build an unbounded chain of live tasks (each holding a frame, an
+// args buffer and a result buffer). The limit turns that into a diagnostic.
+const maxTaskDepth = 1024
+
+const depthMsg = "nolang: coroutine nesting limit exceeded (recursive spawn?)"
+
 // nolangHdrMagic is written into the %nolang_hdr `flags` field of every block
 // that @nolang_rc_alloc hands out, and checked by @nolang_free.
 //
@@ -16014,6 +16173,34 @@ func parseArrayType(lt string) (int64, string) {
 // The value spells "nolang" followed by a version byte pair, chosen so it is
 // not a plausible rc/size/flag value.
 const nolangHdrMagic int64 = 0x6E6F6C616E670001 // "nolang\0\1"
+
+// scanJoinSetUse reports whether any function in the module calls one of the
+// compiler-internal join-set builtins. The `awy` desugarer inserts these calls
+// only for a `co` in a control-flow arm (loop / if / match / chan-iter); a
+// program with no such spawn has no reason to carry the join runtime. The scan
+// is over MIR OpCall instructions, before LLVM emission, so it sees the full
+// module regardless of function emission order.
+func (m *Module) scanJoinSetUse() bool {
+	for i := range m.Funcs {
+		for _, bid := range m.Funcs[i].Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil || inst.Op != OpCall {
+					continue
+				}
+				switch inst.Sym {
+				case "__join-enter", "__join-push", "__join-leave":
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
 
 func (c *codegen) emitAsyncScheduler() {
 	var b strings.Builder
@@ -16036,6 +16223,24 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("@nolang_ready_head = global i32 0\n")
 	b.WriteString("@nolang_ready_tail = global i32 0\n")
 	b.WriteString("@nolang_current_task = global i8* null\n")
+	// join-set runtime (compiler-internal, used by the `awy` group pass for
+	// `co` spawns in control-flow arms). A fixed stack of frames; each frame is
+	// a fixed array of task handles. sp is the current depth; nsp[i] is how many
+	// handles frame i holds. Overflow aborts rather than corrupting memory —
+	// the same discipline as the %task depth guard.
+	//
+	// Gated on scanJoinSetUse: a program with no control-flow-arm `co` calls
+	// none of the join functions, so the 128 KiB @nolang_join_h table and its
+	// siblings are pure dead BSS. Both the declarations here and the 5 defines
+	// below are emitted together (or not at all).
+	var joinMsg string
+	if c.usesJoinSet {
+		b.WriteString("@nolang_join_sp = global i32 0\n")
+		b.WriteString(fmt.Sprintf("@nolang_join_n = global [%d x i32] zeroinitializer\n", joinMaxFrames))
+		b.WriteString(fmt.Sprintf("@nolang_join_h = global [%d x [%d x i64]] zeroinitializer\n", joinMaxFrames, joinMaxHandles))
+		joinMsg = "join-set overflow: too many nested groups or spawns"
+		b.WriteString(fmt.Sprintf("@nolang_join_msg = private unnamed_addr constant [%d x i8] c\"%s\\0A\\00\"\n", len(joinMsg)+2, joinMsg))
+	}
 	// (No separate waiter table: the waiter lives in %task field 4 — see
 	// @nolang_async_wait / @nolang_async_done below.)
 	// nolang_ready_grow(): double the capacity, compacting [head, tail) to 0.
@@ -16081,6 +16286,21 @@ func (c *codegen) emitAsyncScheduler() {
 	// next tail would collide with head (i.e. the buffer is full).
 	b.WriteString("define void @nolang_async_enqueue(i8* %task) {\n")
 	b.WriteString("entry:\n")
+	// A null task is a no-op. `async-yield()` called OUTSIDE a task (an ordinary
+	// function, or the top level) reads a null @nolang_current_task and hands it
+	// here; enqueueing it put a null entry in the ready queue, and the drain
+	// loop dereferenced it the first time it popped one (measured SIGSEGV right
+	// after a top-level `async-yield()`).
+	b.WriteString("\t%nulltask = icmp eq i8* %task, null\n")
+	b.WriteString("\tbr i1 %nulltask, label %out, label %live\n")
+	b.WriteString("live:\n")
+	// The queue holds its own REFERENCE. A task stays queued across the
+	// awaiter's own `retire` (the awaiter releases the handle reference as soon
+	// as the result is read), and a stale pointer in the queue is a
+	// use-after-free the first time the drain loop pops it. The matching
+	// release is in @nolang_async_drain_until's `rel` block, so the counts come
+	// back to zero exactly once per enqueue.
+	b.WriteString("\tcall void @nolang_rc_retain(i8* %task)\n")
 	b.WriteString("\t%cap0 = load i32, i32* @nolang_ready_cap\n")
 	b.WriteString("\t%uninit = icmp eq i32 %cap0, 0\n")
 	b.WriteString("\tbr i1 %uninit, label %init, label %chk\n")
@@ -16107,6 +16327,8 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\t%next2 = add i32 %tail2, 1\n")
 	b.WriteString("\t%mod = urem i32 %next2, %cap2\n")
 	b.WriteString("\tstore i32 %mod, i32* @nolang_ready_tail\n")
+	b.WriteString("\tbr label %out\n")
+	b.WriteString("out:\n")
 	b.WriteString("\tret void\n}\n")
 	// nolang_async_yield(): re-enqueue the current task.
 	b.WriteString("define void @nolang_async_yield() {\n")
@@ -16114,33 +16336,69 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\t%cur = load i8*, i8** @nolang_current_task\n")
 	b.WriteString("\tcall void @nolang_async_enqueue(i8* %cur)\n")
 	b.WriteString("\tret void\n}\n")
-	// nolang_async_wait(waited): register the current task as waiter on `waited`.
+	// nolang_async_wait(waited): push the current task onto `waited`'s waiter
+	// chain. The chain head is the WAITED task's own `waiters` field (%task
+	// field 4) and the links are the waiters' `waitnext` (field 7), so the
+	// association is exact — no hashing, and no lost wake-up when several
+	// coroutines await the same handle (a single slot kept only the last one
+	// registered; the earlier waiters never ran again and the drain loop
+	// declared a deadlock).
 	//
-	// The waiter is stored in the WAITED task's own `waiter` field (%task field
-	// 4), so the association is exact — one slot per task, no hashing. It used
-	// to be `@nolang_waiters[ptrtoint(waited) & 255]`, which aliased: malloc
-	// blocks are 16-byte aligned, so only the low 4 bits of the address varied
-	// and 256 slots collapsed to 16.
+	// Prepending makes the wake order LIFO (the most recent waiter resumes
+	// first). That is deterministic, which is all the test corpus relies on.
+	//
+	// A null `waited` (never awaited / consumed handle) or a null current task
+	// (a non-coroutine caller) is a no-op: neither can ever be woken, and
+	// dereferencing the null would be worse.
 	b.WriteString("define void @nolang_async_wait(i8* %waited) {\n")
 	b.WriteString("entry:\n")
+	b.WriteString("\t%isnull = icmp eq i8* %waited, null\n")
+	b.WriteString("\tbr i1 %isnull, label %out, label %chk\n")
+	b.WriteString("chk:\n")
 	b.WriteString("\t%cur = load i8*, i8** @nolang_current_task\n")
+	b.WriteString("\t%cnull = icmp eq i8* %cur, null\n")
+	b.WriteString("\tbr i1 %cnull, label %out, label %push\n")
+	b.WriteString("push:\n")
 	b.WriteString("\t%wt = bitcast i8* %waited to %task*\n")
 	b.WriteString("\t%wgep = getelementptr inbounds %task, %task* %wt, i32 0, i32 4\n")
+	b.WriteString("\t%old = load i8*, i8** %wgep\n")
+	b.WriteString("\t%ct = bitcast i8* %cur to %task*\n")
+	b.WriteString("\t%ngep = getelementptr inbounds %task, %task* %ct, i32 0, i32 7\n")
+	b.WriteString("\tstore i8* %old, i8** %ngep\n")
 	b.WriteString("\tstore i8* %cur, i8** %wgep\n")
+	b.WriteString("\tbr label %out\n")
+	b.WriteString("out:\n")
 	b.WriteString("\tret void\n}\n")
-	// nolang_async_done(task): wake the task's waiter (if any).
+	// nolang_async_done(task): detach the whole waiter chain and enqueue every
+	// task in it.
+	//
+	// Wake ALL of them, not just the head: the waited task's result is ready for
+	// each of them, and a woken waiter re-checks `done` in its park block before
+	// reading — so over-waking is harmless, while under-waking loses a task
+	// forever (there is no second completion event to retry on).
 	b.WriteString("define void @nolang_async_done(i8* %task) {\n")
 	b.WriteString("entry:\n")
+	b.WriteString("\t%isnull = icmp eq i8* %task, null\n")
+	b.WriteString("\tbr i1 %isnull, label %out, label %detach\n")
+	b.WriteString("detach:\n")
 	b.WriteString("\t%dt = bitcast i8* %task to %task*\n")
 	b.WriteString("\t%dgep = getelementptr inbounds %task, %task* %dt, i32 0, i32 4\n")
-	b.WriteString("\t%waiter = load i8*, i8** %dgep\n")
-	b.WriteString("\t%is_null = icmp eq i8* %waiter, null\n")
-	b.WriteString("\tbr i1 %is_null, label %ret, label %wake\n")
-	b.WriteString("wake:\n")
-	b.WriteString("\tcall void @nolang_async_enqueue(i8* %waiter)\n")
+	b.WriteString("\t%head = load i8*, i8** %dgep\n")
 	b.WriteString("\tstore i8* null, i8** %dgep\n")
-	b.WriteString("\tbr label %ret\n")
-	b.WriteString("ret:\n")
+	b.WriteString("\t%hempty = icmp eq i8* %head, null\n")
+	b.WriteString("\tbr i1 %hempty, label %out, label %loop\n")
+	b.WriteString("loop:\n")
+	b.WriteString("\t%cur = phi i8* [ %head, %detach ], [ %nx, %body ]\n")
+	b.WriteString("\t%ct = bitcast i8* %cur to %task*\n")
+	b.WriteString("\t%ng = getelementptr inbounds %task, %task* %ct, i32 0, i32 7\n")
+	b.WriteString("\t%nx = load i8*, i8** %ng\n")
+	b.WriteString("\tstore i8* null, i8** %ng\n")
+	b.WriteString("\tcall void @nolang_async_enqueue(i8* %cur)\n")
+	b.WriteString("\tbr label %body\n")
+	b.WriteString("body:\n")
+	b.WriteString("\t%more = icmp ne i8* %nx, null\n")
+	b.WriteString("\tbr i1 %more, label %loop, label %out\n")
+	b.WriteString("out:\n")
 	b.WriteString("\tret void\n}\n")
 	// nolang_async_run(main_task): the event loop. Drives every enqueued task to
 	// completion, waking waiters when a task finishes. Only needed for nested
@@ -16174,6 +16432,147 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("\tcall void @nolang_async_done(i8* %task)\n")
 	b.WriteString("\tbr label %loop\n")
 	b.WriteString("exit:\n")
+	b.WriteString("\tret void\n}\n")
+
+	// nolang_async_drain_until(target): run the ready queue until `target` is
+	// done (or until the queue runs dry when target is null).
+	//
+	// This is the blocking bridge between ordinary code and the coroutine
+	// scheduler. A non-coroutine caller cannot park, so `awy` on it must BLOCK:
+	// pop a task, publish it as @nolang_current_task for the duration of the
+	// resume (so `cancelled()` and channel waits inside it see the right task),
+	// hand the queue's reference back, and repeat. `target` itself is normally
+	// in the queue — the spawn site enqueued it — so no special case is needed
+	// for it.
+	b.WriteString("define void @nolang_async_drain_until(i8* %target) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%prev = load i8*, i8** @nolang_current_task\n")
+	b.WriteString("\tbr label %loop\n")
+	b.WriteString("loop:\n")
+	b.WriteString("\t; %steps bounds the null-target DRAIN mode. A task that yields\n")
+	b.WriteString("\t; forever re-enqueues itself, so the ready queue never drains and\n")
+	b.WriteString("\t; the old loop spun forever (no exit, hence no deadlock check).\n")
+	b.WriteString("\t; LIMIT is large enough that no finite drain hits it; only a\n")
+	b.WriteString("\t; livelock does. Non-null targets (the normal `awy` bridge) are\n")
+	b.WriteString("\t; unaffected: their bound is target.done, not this counter.\n")
+	b.WriteString("\t%steps = phi i32 [ 0, %entry ], [ %steps1, %rel ]\n")
+	b.WriteString("\t%isnull = icmp eq i8* %target, null\n")
+	b.WriteString("\t%over = icmp sge i32 %steps, 1000000\n")
+	b.WriteString("\t%spin = and i1 %isnull, %over\n")
+	b.WriteString("\tbr i1 %spin, label %dead, label %next\n")
+	b.WriteString("next:\n")
+	b.WriteString("\tbr i1 %isnull, label %checkq, label %tchk\n")
+	b.WriteString("tchk:\n")
+	b.WriteString("\t%tt = bitcast i8* %target to %task*\n")
+	b.WriteString("\t%tg = getelementptr inbounds %task, %task* %tt, i32 0, i32 2\n")
+	b.WriteString("\t%td = load i1, i1* %tg\n")
+	b.WriteString("\tbr i1 %td, label %exit, label %checkq\n")
+	b.WriteString("checkq:\n")
+	b.WriteString("\t%head = load i32, i32* @nolang_ready_head\n")
+	b.WriteString("\t%tail = load i32, i32* @nolang_ready_tail\n")
+	b.WriteString("\t%empty = icmp eq i32 %head, %tail\n")
+	b.WriteString("\tbr i1 %empty, label %exit, label %runone\n")
+	b.WriteString("runone:\n")
+	b.WriteString("\t%cap = load i32, i32* @nolang_ready_cap\n")
+	b.WriteString("\t%q = load i8**, i8*** @nolang_ready_q\n")
+	b.WriteString("\t%qg = getelementptr i8*, i8** %q, i32 %head\n")
+	b.WriteString("\t%task = load i8*, i8** %qg\n")
+	b.WriteString("\t%h1 = add i32 %head, 1\n")
+	b.WriteString("\t%hm = urem i32 %h1, %cap\n")
+	b.WriteString("\tstore i32 %hm, i32* @nolang_ready_head\n")
+	b.WriteString("\tstore i8* %task, i8** @nolang_current_task\n")
+	b.WriteString("\t%rt = bitcast i8* %task to %task*\n")
+	b.WriteString("\t%fng = getelementptr inbounds %task, %task* %rt, i32 0, i32 0\n")
+	b.WriteString("\t%fn = load void (i8*)*, void (i8*)** %fng\n")
+	b.WriteString("\tcall void %fn(i8* %task)\n")
+	b.WriteString("\t%dg = getelementptr inbounds %task, %task* %rt, i32 0, i32 2\n")
+	b.WriteString("\t%dv = load i1, i1* %dg\n")
+	b.WriteString("\tbr i1 %dv, label %fin, label %rel\n")
+	b.WriteString("fin:\n")
+	b.WriteString("\tcall void @nolang_async_done(i8* %task)\n")
+	b.WriteString("\tbr label %rel\n")
+	b.WriteString("rel:\n")
+	b.WriteString("\tstore i8* %prev, i8** @nolang_current_task\n")
+	b.WriteString("\tcall void @nolang_rc_release(i8* %task)\n")
+	b.WriteString("\t%steps1 = add i32 %steps, 1\n")
+	b.WriteString("\tbr label %loop\n")
+	b.WriteString("exit:\n")
+	b.WriteString("\tstore i8* %prev, i8** @nolang_current_task\n")
+	// DEADLOCK CHECK. Falling out of the loop with a target that is still not
+	// done means nothing is runnable and nothing can become runnable: every
+	// remaining task is parked on a channel nobody will send to, on a task
+	// nobody will finish, or on a waiter registration that can never fire. The
+	// alternative is to return and let the caller read a result buffer that was
+	// never written — a silent zero. Abort with a diagnostic instead.
+	b.WriteString("\t%tn = icmp eq i8* %target, null\n")
+	b.WriteString("\tbr i1 %tn, label %out, label %exchk\n")
+	b.WriteString("exchk:\n")
+	b.WriteString("\t%xt = bitcast i8* %target to %task*\n")
+	b.WriteString("\t%xg = getelementptr inbounds %task, %task* %xt, i32 0, i32 2\n")
+	b.WriteString("\t%xv = load i1, i1* %xg\n")
+	b.WriteString("\tbr i1 %xv, label %out, label %dead\n")
+	b.WriteString("dead:\n")
+	b.WriteString("\tcall void @nolang_deadlock_abort()\n")
+	b.WriteString("\tunreachable\n")
+	b.WriteString("out:\n")
+	b.WriteString("\tret void\n}\n")
+
+	// nolang_task_retire(task): give back one handle reference, and — when that
+	// was the LAST one — free everything the task owns: the coroutine frame
+	// first (it holds pointers into the argument payloads that the return path
+	// already released), then the args struct and the result buffer.
+	//
+	// The frame is freed even when the count did not reach zero: a done task's
+	// frame is dead weight, and leaving it would keep the (already freed)
+	// argument payloads reachable through a dangling pointer. Nulling the field
+	// is what stops a second retire from freeing it twice.
+	b.WriteString("define void @nolang_task_retire(i8* %task) {\n")
+	b.WriteString("entry:\n")
+	b.WriteString("\t%t = bitcast i8* %task to %task*\n")
+	b.WriteString("\t%fg = getelementptr inbounds %task, %task* %t, i32 0, i32 5\n")
+	b.WriteString("\t%frame = load i8*, i8** %fg\n")
+	// Read the args pointer BEFORE the release: @nolang_rc_release frees the
+	// %task block itself when the count reaches zero, so every field has to be
+	// read up front. Reading %dg after the release dereferenced freed memory
+	// (measured SIGSEGV on the very first `awy` of a program).
+	b.WriteString("\t%dg = getelementptr inbounds %task, %task* %t, i32 0, i32 1\n")
+	b.WriteString("\t%di = load i64, i64* %dg\n")
+	b.WriteString("\t%dp = inttoptr i64 %di to i8*\n")
+	// An early return/break out of an `awy` group skips __join-leave, so a
+	// task may be retired with join frames still chained on it. Free those
+	// frames here (the handles they record are still leaked by design — see
+	// docs/design/nolang-coro.md §9.5), before rc_release frees the task.
+	b.WriteString("\t%jg = getelementptr inbounds %task, %task* %t, i32 0, i32 10\n")
+	b.WriteString("\t%jtop = load i8*, i8** %jg\n")
+	b.WriteString("\tbr label %jloop\n")
+	b.WriteString("jloop:\n")
+	b.WriteString("\t%jf = phi i8* [ %jtop, %entry ], [ %jprev, %jbody ]\n")
+	b.WriteString("\t%jnull = icmp eq i8* %jf, null\n")
+	b.WriteString("\tbr i1 %jnull, label %afterj, label %jbody\n")
+	b.WriteString("jbody:\n")
+	b.WriteString("\t%jfr = bitcast i8* %jf to %joinframe*\n")
+	b.WriteString("\t%jpp = getelementptr inbounds %joinframe, %joinframe* %jfr, i32 0, i32 0\n")
+	b.WriteString("\t%jprev = load i8*, i8** %jpp\n")
+	b.WriteString("\tcall void @nolang_free(i8* %jf)\n")
+	b.WriteString("\tbr label %jloop\n")
+	b.WriteString("afterj:\n")
+	b.WriteString("\t%fnull = icmp eq i8* %frame, null\n")
+	b.WriteString("\tbr i1 %fnull, label %rel, label %freeframe\n")
+	b.WriteString("freeframe:\n")
+	b.WriteString("\tcall void @nolang_free(i8* %frame)\n")
+	b.WriteString("\tstore i8* null, i8** %fg\n")
+	b.WriteString("\tbr label %rel\n")
+	b.WriteString("rel:\n")
+	b.WriteString("\t%freed = call i1 @nolang_rc_release(i8* %task)\n")
+	b.WriteString("\tbr i1 %freed, label %free, label %out\n")
+	b.WriteString("free:\n")
+	b.WriteString("\t%a = bitcast i8* %dp to { i8* }*\n")
+	b.WriteString("\t%rg = getelementptr inbounds { i8* }, { i8* }* %a, i32 0, i32 0\n")
+	b.WriteString("\t%rp = load i8*, i8** %rg\n")
+	b.WriteString("\tcall void @nolang_free(i8* %rp)\n")
+	b.WriteString("\tcall void @nolang_free(i8* %dp)\n")
+	b.WriteString("\tbr label %out\n")
+	b.WriteString("out:\n")
 	b.WriteString("\tret void\n}\n")
 
 	// ---------------------------------------------------------------------
@@ -16315,7 +16714,281 @@ func (c *codegen) emitAsyncScheduler() {
 	b.WriteString("out:\n")
 	b.WriteString("\tret void\n}\n")
 
+	// The deadlock abort used by @nolang_async_drain_until and by the channel
+	// runtime's blocking receive. It lives in this section rather than with the
+	// channel runtime so the scheduler never depends on a part a later change
+	// might make conditional. The array size and the write count come from Go,
+	// so they cannot drift; `\0A\00` is the newline plus NUL.
+	deadlockArr := len(deadlockMsg) + 2
+	b.WriteString(fmt.Sprintf("@nolang_deadlock_msg = private unnamed_addr constant [%d x i8] c\"%s\\0A\\00\"\n",
+		deadlockArr, deadlockMsg))
+	b.WriteString("define void @nolang_deadlock_abort() {\n")
+	b.WriteString("entry:\n")
+	b.WriteString(fmt.Sprintf("\t%%p = getelementptr inbounds [%[1]d x i8], [%[1]d x i8]* @nolang_deadlock_msg, i64 0, i64 0\n", deadlockArr))
+	b.WriteString(fmt.Sprintf("\t%%n = call i64 @write(i32 2, i8* %%p, i64 %d)\n", len(deadlockMsg)+1))
+	b.WriteString("\tcall void @llvm.trap()\n")
+	b.WriteString("\tunreachable\n}\n")
+
+	// The nesting-limit abort. Coroutine frames live on the heap, so there is
+	// no hardware stack to overflow; what can grow without bound is the CHAIN
+	// of tasks a recursively spawning coroutine creates. emitSpawnDepthCheck
+	// calls this before allocating the child task.
+	depthArr := len(depthMsg) + 2
+	b.WriteString(fmt.Sprintf("@nolang_depth_msg = private unnamed_addr constant [%d x i8] c\"%s\\0A\\00\"\n",
+		depthArr, depthMsg))
+	b.WriteString("define void @nolang_depth_abort() {\n")
+	b.WriteString("entry:\n")
+	b.WriteString(fmt.Sprintf("\t%%p = getelementptr inbounds [%[1]d x i8], [%[1]d x i8]* @nolang_depth_msg, i64 0, i64 0\n", depthArr))
+	b.WriteString(fmt.Sprintf("\t%%n = call i64 @write(i32 2, i8* %%p, i64 %d)\n", len(depthMsg)+1))
+	b.WriteString("\tcall void @llvm.trap()\n")
+	b.WriteString("\tunreachable\n}\n")
+
+	if c.usesJoinSet {
+		// ---- join-set runtime ---------------------------------------------------
+		// Root frames (plain top-level main — no @nolang_current_task) live in the
+		// fixed globals below. A running TASK gets its own heap frame chained off
+		// %task.join_top: a cooperative suspend inside an `awy` group must not let
+		// another task pop this task's frame. Both paths share @nolang_join_reap.
+		b.WriteString("define void @nolang_join_reap(i32 %n, i64* %slots) {\n")
+		b.WriteString("entry:\n")
+		b.WriteString("\tbr label %loop\n")
+		b.WriteString("loop:\n")
+		b.WriteString("\t%i = phi i32 [ 0, %entry ], [ %i1, %body ]\n")
+		b.WriteString("\t%more = icmp slt i32 %i, %n\n")
+		b.WriteString("\tbr i1 %more, label %body, label %end\n")
+		b.WriteString("body:\n")
+		b.WriteString("\t%slot = getelementptr inbounds i64, i64* %slots, i32 %i\n")
+		b.WriteString("\t%h = load i64, i64* %slot\n")
+		b.WriteString("\t%hp = inttoptr i64 %h to i8*\n")
+		b.WriteString("\tcall void @nolang_async_drain_until(i8* %hp)\n")
+		b.WriteString("\tcall void @nolang_task_retire(i8* %hp)\n")
+		b.WriteString("\t%i1 = add i32 %i, 1\n")
+		b.WriteString("\tbr label %loop\n")
+		b.WriteString("end:\n")
+		b.WriteString("\tret void\n}\n")
+
+		b.WriteString("define void @nolang_join_enter() {\n")
+		b.WriteString("entry:\n")
+		b.WriteString("\t%t = load i8*, i8** @nolang_current_task\n")
+		b.WriteString("\t%isnull = icmp eq i8* %t, null\n")
+		b.WriteString("\tbr i1 %isnull, label %root, label %task\n")
+		b.WriteString("root:\n")
+		b.WriteString("\t%rsp = load i32, i32* @nolang_join_sp\n")
+		b.WriteString(fmt.Sprintf("\t%%rfull = icmp sge i32 %%rsp, %d\n", joinMaxFrames))
+		b.WriteString("\tbr i1 %rfull, label %rbad, label %rok\n")
+		b.WriteString("rbad:\n")
+		b.WriteString("\tcall void @nolang_join_abort()\n")
+		b.WriteString("\tunreachable\n")
+		b.WriteString("rok:\n")
+		b.WriteString("\t%rnp = getelementptr inbounds [" + itoaI(joinMaxFrames) + " x i32], [" + itoaI(joinMaxFrames) + " x i32]* @nolang_join_n, i32 0, i32 %rsp\n")
+		b.WriteString("\tstore i32 0, i32* %rnp\n")
+		b.WriteString("\t%rsp1 = add i32 %rsp, 1\n")
+		b.WriteString("\tstore i32 %rsp1, i32* @nolang_join_sp\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("task:\n")
+		b.WriteString("\t%tt = bitcast i8* %t to %task*\n")
+		b.WriteString("\t%tp = getelementptr inbounds %task, %task* %tt, i32 0, i32 10\n")
+		b.WriteString("\t%prev = load i8*, i8** %tp\n")
+		b.WriteString("\t%pnull = icmp eq i8* %prev, null\n")
+		b.WriteString("\tbr i1 %pnull, label %d0, label %dp\n")
+		b.WriteString("d0:\n")
+		b.WriteString("\tbr label %alloc\n")
+		b.WriteString("dp:\n")
+		b.WriteString("\t%pf = bitcast i8* %prev to %joinframe*\n")
+		b.WriteString("\t%dg = getelementptr inbounds %joinframe, %joinframe* %pf, i32 0, i32 2\n")
+		b.WriteString("\t%pd = load i32, i32* %dg\n")
+		b.WriteString("\t%dp1 = add i32 %pd, 1\n")
+		b.WriteString("\tbr label %alloc\n")
+		b.WriteString("alloc:\n")
+		b.WriteString("\t%d = phi i32 [ 0, %d0 ], [ %dp1, %dp ]\n")
+		b.WriteString(fmt.Sprintf("\t%%dfull = icmp sge i32 %%d, %d\n", joinMaxFrames))
+		b.WriteString("\tbr i1 %dfull, label %rbad, label %mk\n")
+		b.WriteString("mk:\n")
+		b.WriteString(fmt.Sprintf("\t%%raw = call i8* @nolang_rc_alloc(i64 %d)\n", joinFrameBytes))
+		b.WriteString("\t%fr = bitcast i8* %raw to %joinframe*\n")
+		b.WriteString("\t%fp0 = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 0\n")
+		b.WriteString("\tstore i8* %prev, i8** %fp0\n")
+		b.WriteString("\t%fp1 = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 1\n")
+		b.WriteString("\tstore i32 0, i32* %fp1\n")
+		b.WriteString("\t%fp2 = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 2\n")
+		b.WriteString("\t%d1 = add i32 %d, 1\n")
+		b.WriteString("\tstore i32 %d1, i32* %fp2\n")
+		b.WriteString("\tstore i8* %raw, i8** %tp\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("}\n")
+
+		b.WriteString("define void @nolang_join_push(i64 %h) {\n")
+		b.WriteString("entry:\n")
+		b.WriteString("\t%t = load i8*, i8** @nolang_current_task\n")
+		b.WriteString("\t%isnull = icmp eq i8* %t, null\n")
+		b.WriteString("\tbr i1 %isnull, label %root, label %task\n")
+		b.WriteString("root:\n")
+		b.WriteString("\t%rsp = load i32, i32* @nolang_join_sp\n")
+		b.WriteString("\t%rtop = sub i32 %rsp, 1\n")
+		b.WriteString("\t%rneg = icmp slt i32 %rtop, 0\n")
+		b.WriteString("\tbr i1 %rneg, label %rbad, label %rcnt\n")
+		b.WriteString("rbad:\n")
+		b.WriteString("\tcall void @nolang_join_abort()\n")
+		b.WriteString("\tunreachable\n")
+		b.WriteString("rcnt:\n")
+		b.WriteString("\t%rnp = getelementptr inbounds [" + itoaI(joinMaxFrames) + " x i32], [" + itoaI(joinMaxFrames) + " x i32]* @nolang_join_n, i32 0, i32 %rtop\n")
+		b.WriteString("\t%rn = load i32, i32* %rnp\n")
+		b.WriteString(fmt.Sprintf("\t%%rfull = icmp sge i32 %%rn, %d\n", joinMaxHandles))
+		b.WriteString("\tbr i1 %rfull, label %rbad, label %rstore\n")
+		b.WriteString("rstore:\n")
+		b.WriteString("\t%rrow = getelementptr inbounds [" + itoaI(joinMaxFrames) + " x [" + itoaI(joinMaxHandles) + " x i64]], [" + itoaI(joinMaxFrames) + " x [" + itoaI(joinMaxHandles) + " x i64]]* @nolang_join_h, i32 0, i32 %rtop\n")
+		b.WriteString("\t%rslot = getelementptr inbounds [" + itoaI(joinMaxHandles) + " x i64], [" + itoaI(joinMaxHandles) + " x i64]* %rrow, i32 0, i32 %rn\n")
+		b.WriteString("\tstore i64 %h, i64* %rslot\n")
+		b.WriteString("\t%rn1 = add i32 %rn, 1\n")
+		b.WriteString("\tstore i32 %rn1, i32* %rnp\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("task:\n")
+		b.WriteString("\t%tt = bitcast i8* %t to %task*\n")
+		b.WriteString("\t%tp = getelementptr inbounds %task, %task* %tt, i32 0, i32 10\n")
+		b.WriteString("\t%frraw = load i8*, i8** %tp\n")
+		b.WriteString("\t%fnull = icmp eq i8* %frraw, null\n")
+		b.WriteString("\tbr i1 %fnull, label %tbad, label %tcnt\n")
+		b.WriteString("tbad:\n")
+		b.WriteString("\tcall void @nolang_join_abort()\n")
+		b.WriteString("\tunreachable\n")
+		b.WriteString("tcnt:\n")
+		b.WriteString("\t%fr = bitcast i8* %frraw to %joinframe*\n")
+		b.WriteString("\t%np = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 1\n")
+		b.WriteString("\t%n = load i32, i32* %np\n")
+		b.WriteString(fmt.Sprintf("\t%%tfull = icmp sge i32 %%n, %d\n", joinMaxHandles))
+		b.WriteString("\tbr i1 %tfull, label %tbad, label %tstore\n")
+		b.WriteString("tstore:\n")
+		b.WriteString("\t%tslots = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 3, i32 0\n")
+		b.WriteString("\t%tslot = getelementptr inbounds i64, i64* %tslots, i32 %n\n")
+		b.WriteString("\tstore i64 %h, i64* %tslot\n")
+		b.WriteString("\t%n1 = add i32 %n, 1\n")
+		b.WriteString("\tstore i32 %n1, i32* %np\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("}\n")
+
+		// @nolang_join_leave: reap BY TARGET (deadlock check), then pop. The root
+		// path still uses the globals; a task pops its own chained frame and frees
+		// it. A null frame in a task is a no-op (nothing to join).
+		b.WriteString("define void @nolang_join_leave() {\n")
+		b.WriteString("entry:\n")
+		b.WriteString("\t%t = load i8*, i8** @nolang_current_task\n")
+		b.WriteString("\t%isnull = icmp eq i8* %t, null\n")
+		b.WriteString("\tbr i1 %isnull, label %root, label %task\n")
+		b.WriteString("root:\n")
+		b.WriteString("\t%rsp = load i32, i32* @nolang_join_sp\n")
+		b.WriteString("\t%rtop = sub i32 %rsp, 1\n")
+		b.WriteString("\t%rneg = icmp slt i32 %rtop, 0\n")
+		b.WriteString("\tbr i1 %rneg, label %rdone, label %rcnt\n")
+		b.WriteString("rdone:\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("rcnt:\n")
+		b.WriteString("\t%rnp = getelementptr inbounds [" + itoaI(joinMaxFrames) + " x i32], [" + itoaI(joinMaxFrames) + " x i32]* @nolang_join_n, i32 0, i32 %rtop\n")
+		b.WriteString("\t%rn = load i32, i32* %rnp\n")
+		b.WriteString("\t%rrow = getelementptr inbounds [" + itoaI(joinMaxFrames) + " x [" + itoaI(joinMaxHandles) + " x i64]], [" + itoaI(joinMaxFrames) + " x [" + itoaI(joinMaxHandles) + " x i64]]* @nolang_join_h, i32 0, i32 %rtop\n")
+		b.WriteString("\t%rslots = getelementptr inbounds [" + itoaI(joinMaxHandles) + " x i64], [" + itoaI(joinMaxHandles) + " x i64]* %rrow, i32 0, i32 0\n")
+		b.WriteString("\tcall void @nolang_join_reap(i32 %rn, i64* %rslots)\n")
+		b.WriteString("\tstore i32 %rtop, i32* @nolang_join_sp\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("task:\n")
+		b.WriteString("\t%tt = bitcast i8* %t to %task*\n")
+		b.WriteString("\t%tp = getelementptr inbounds %task, %task* %tt, i32 0, i32 10\n")
+		b.WriteString("\t%frraw = load i8*, i8** %tp\n")
+		b.WriteString("\t%fnull = icmp eq i8* %frraw, null\n")
+		b.WriteString("\tbr i1 %fnull, label %tdone, label %tcnt\n")
+		b.WriteString("tdone:\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("tcnt:\n")
+		b.WriteString("\t%fr = bitcast i8* %frraw to %joinframe*\n")
+		b.WriteString("\t%np = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 1\n")
+		b.WriteString("\t%n = load i32, i32* %np\n")
+		b.WriteString("\t%tslots = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 3, i32 0\n")
+		b.WriteString("\tcall void @nolang_join_reap(i32 %n, i64* %tslots)\n")
+		b.WriteString("\t%jpp = getelementptr inbounds %joinframe, %joinframe* %fr, i32 0, i32 0\n")
+		b.WriteString("\t%jprev = load i8*, i8** %jpp\n")
+		b.WriteString("\tstore i8* %jprev, i8** %tp\n")
+		b.WriteString("\tcall void @nolang_free(i8* %frraw)\n")
+		b.WriteString("\tret void\n")
+		b.WriteString("}\n")
+
+		// Overflow diagnostic (shared by root and task paths).
+		b.WriteString("define void @nolang_join_abort() {\n")
+		b.WriteString("entry:\n")
+		b.WriteString(fmt.Sprintf("\t%%p = getelementptr inbounds [%[1]d x i8], [%[1]d x i8]* @nolang_join_msg, i64 0, i64 0\n", len(joinMsg)+2))
+		b.WriteString(fmt.Sprintf("\t%%n = call i64 @write(i32 2, i8* %%p, i64 %d)\n", len(joinMsg)+1))
+		b.WriteString("\tcall void @llvm.trap()\n")
+		b.WriteString("\tunreachable\n}\n")
+	}
+
 	c.extraGlobals = append(c.extraGlobals, b.String())
+}
+
+// itoaI is a small int-to-decimal helper for LLVM array type sizes emitted by
+// the join-set runtime. It lives here (not hir's itoa, which is unexported).
+func itoaI(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
+}
+
+// emitSpawnDepthCheck inherits the logical task depth from @nolang_current_task
+// and aborts when a recursive spawn would exceed maxTaskDepth. It must be
+// emitted immediately BEFORE a task is allocated: the returned i32 SSA name is
+// stored into %task field 8, and the trailing `sd.ok.N` label is where the
+// caller's allocation code continues.
+//
+// Why a branch and not a `select`: selecting between a null and a non-null task
+// pointer and then loading through the result is undefined even on the branch
+// that was not taken. Both arms must be real blocks so the load is dominated by
+// the null check.
+func (c *codegen) emitSpawnDepthCheck() string {
+	n := c.loadSeq
+	cur := fmt.Sprintf("%%sd.cur.%d", n)
+	null := fmt.Sprintf("%%sd.null.%d", n)
+	root := fmt.Sprintf("sd.root.%d", n)
+	nest := fmt.Sprintf("sd.nest.%d", n)
+	join := fmt.Sprintf("sd.join.%d", n)
+	depth := fmt.Sprintf("%%sd.depth.%d", n)
+	over := fmt.Sprintf("%%sd.over.%d", n)
+	bad := fmt.Sprintf("sd.bad.%d", n)
+	ok := fmt.Sprintf("sd.ok.%d", n)
+
+	fmt.Fprintf(c.sb, "  %s = load i8*, i8** @nolang_current_task\n", cur)
+	fmt.Fprintf(c.sb, "  %s = icmp eq i8* %s, null\n", null, cur)
+	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", null, root, nest)
+	fmt.Fprintf(c.sb, "%s:\n", root)
+	fmt.Fprintf(c.sb, "  br label %%%s\n", join)
+	fmt.Fprintf(c.sb, "%s:\n", nest)
+	c.loadSeq++
+	pt := fmt.Sprintf("%%sd.t.%d", c.loadSeq)
+	c.loadSeq++
+	pg := fmt.Sprintf("%%sd.g.%d", c.loadSeq)
+	c.loadSeq++
+	pd := fmt.Sprintf("%%sd.p.%d", c.loadSeq)
+	c.loadSeq++
+	p1 := fmt.Sprintf("%%sd.d.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %%task*\n", pt, cur)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 8\n", pg, pt)
+	fmt.Fprintf(c.sb, "  %s = load i32, i32* %s\n", pd, pg)
+	fmt.Fprintf(c.sb, "  %s = add i32 %s, 1\n", p1, pd)
+	fmt.Fprintf(c.sb, "  br label %%%s\n", join)
+	fmt.Fprintf(c.sb, "%s:\n", join)
+	fmt.Fprintf(c.sb, "  %s = phi i32 [ 1, %%%s ], [ %s, %%%s ]\n", depth, root, p1, nest)
+	fmt.Fprintf(c.sb, "  %s = icmp sgt i32 %s, %d\n", over, depth, maxTaskDepth)
+	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", over, bad, ok)
+	fmt.Fprintf(c.sb, "%s:\n", bad)
+	c.sb.WriteString("  call void @nolang_depth_abort()\n")
+	c.sb.WriteString("  unreachable\n")
+	fmt.Fprintf(c.sb, "%s:\n", ok)
+	c.loadSeq++
+	return depth
 }
 
 // asyncWrapperFor returns (generating if necessary) the LLVM name of the
@@ -16615,7 +17288,10 @@ func (c *codegen) asyncArgOwnedCopy(kind, areg string, elem TypeID) string {
 // clone in emitAsyncRun and the free in asyncWrapperFor in agreement: the
 // wrapper is emitted once per callee and reused by every call site, so a
 // per-call-site decision would let one call site clone what another did not.
-func (c *codegen) asyncArgKinds(cf *Function) ([]string, []TypeID, []string) {
+// `fid` is the callee's own function ID. It is REQUIRED, not redundant with
+// `cf`: every parameter type below must be resolved inside the callee (see
+// localTypeOfIn), and a Function does not carry its own ID.
+func (c *codegen) asyncArgKinds(fid FuncID, cf *Function) ([]string, []TypeID, []string) {
 	isResult := map[ValueID]bool{}
 	for _, rp := range cf.ResultParams {
 		isResult[rp] = true
@@ -16630,7 +17306,7 @@ func (c *codegen) asyncArgKinds(cf *Function) ([]string, []TypeID, []string) {
 		kind := ""
 		elem := NoType
 		key := ""
-		if t := c.mod.Type(c.localTypeOf(p)); t != nil {
+		if t := c.mod.Type(c.localTypeOfIn(fid, p)); t != nil {
 			switch {
 			case t.Kind == KindStr:
 				kind = "str"
@@ -16678,6 +17354,9 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	}
 	cf := c.mod.Func(cid)
 	targetName := c.fname[cid]
+	if cf.IsCoro && cf.Coro != nil {
+		return c.emitCoroRun(f, inst, cid, cf)
+	}
 
 	isResult := map[ValueID]bool{}
 	for _, rp := range cf.ResultParams {
@@ -16688,16 +17367,20 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 		if isResult[p] {
 			continue
 		}
-		lt, _ := c.ptype(p)
+		// CALLEE-SCOPED lookup (ptypeIn, not ptype): `p` is a param value of
+		// `cf`, and value IDs are per-function. Resolving it against the
+		// caller's LocalTypes reads an unrelated slot — in practice a
+		// void-typed one — and emits `bitcast i8* ... to void*`.
+		lt, _ := c.ptypeIn(cid, p)
 		argTypes = append(argTypes, lt)
 	}
 	// Spawn-boundary ownership protocol, decided from the CALLEE so that the
 	// deep copy emitted below and the free emitted inside the wrapper agree on
 	// every call site (the wrapper is generated once and cached).
-	argKinds, argElems, argKeys := c.asyncArgKinds(cf)
+	argKinds, argElems, argKeys := c.asyncArgKinds(cid, cf)
 	resLT := "i64"
 	if len(cf.ResultParams) > 0 {
-		resLT, _ = c.ptype(cf.ResultParams[0])
+		resLT, _ = c.ptypeIn(cid, cf.ResultParams[0])
 	}
 	wrapperName := c.asyncWrapperFor(calleeName, targetName, argTypes, argKinds, resLT)
 
@@ -16752,6 +17435,17 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 			plt = argTypes[i]
 		}
 		alt, areg, owned := c.coerceAsyncArg(av, plt)
+		// A void argument is a LOWERING GAP, not a value: MIR cannot store a
+		// void into an argbuf (LLVM has no `void*`), so emitting it produces
+		// `bitcast i8* ... to void*` and clang rejects the whole module with
+		// "pointers to void are invalid". Ring it here, with the callee and the
+		// argument index, instead of letting a templated LLVM diagnostic be the
+		// only trace. The known producer is a spawn argument whose identifier
+		// bound to nothing (see parser.parseChanLoopBody's bare-arm note).
+		if alt == "void" {
+			c.fail("OpRun: argument %d of %s lowered to void in func %s", i, calleeName, f.Name)
+			return i18n.Errorf("x57xvqny", "unsupported value type %s in func %s", alt, f.Name)
+		}
 		// SPAWN-BOUNDARY DEEP COPY. The argbuf below is a bitwise copy of the
 		// descriptor, so an argument that still aliases the caller's binding
 		// (or a borrow view over it) would leave the task reading a block the
@@ -16876,18 +17570,24 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	argsI64 := fmt.Sprintf("%%arun.argsi64.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", argsI64, argsI8)
 
-	// 3. task struct (heap). 32 bytes: %task = { resume_fn, data, done,
-	// cancelled, waiter }. Must stay in sync with the `%task` type in the
-	// prelude — a short malloc would leave the `waiter` field (offset 24)
-	// pointing past the block.
+	// 3. task struct (heap). 72 bytes: %task = { resume_fn, data, done,
+	// cancelled, waiters, frame, next, waitnext, depth, pad, join_top }. Must stay
+	// in sync with the `%task` type in the prelude — a short malloc would leave the
+	// trailing fields pointing past the block.
+	//
+	// depth is inherited from the task that is CURRENTLY running, which the
+	// scheduler published in @nolang_current_task before it called resume_fn.
+	// A plain function called by a coroutine therefore counts as nesting too.
 	//
 	// Allocated as an R-tier block (correction B): @nolang_rc_alloc puts a
 	// 16-byte header in front and starts the count at 1, which is the reference
 	// the returned handle owns. The `data` pointer it returns is the %task
 	// itself, so every field access below is unchanged.
 	c.loadSeq++
+	depthVal := c.emitSpawnDepthCheck()
+	c.loadSeq++
 	taskBuf := fmt.Sprintf("%%arun.task.%d", c.loadSeq)
-	c.sb.WriteString("  " + taskBuf + " = call i8* @nolang_rc_alloc(i64 32)\n")
+	c.sb.WriteString("  " + taskBuf + " = call i8* @nolang_rc_alloc(i64 72)\n")
 	c.loadSeq++
 	taskT := fmt.Sprintf("%%arun.task.t.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %%task*\n", taskT, taskBuf)
@@ -16907,13 +17607,51 @@ func (c *codegen) emitAsyncRun(f *Function, inst *Inst) error {
 	tf3 := fmt.Sprintf("%%arun.tf3.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 3\n", tf3, taskT)
 	fmt.Fprintf(c.sb, "  store i1 false, i1* %s\n", tf3)
-	// field 4 = waiter: no task is blocked on this one yet.
+	// field 4 = waiters: no task is blocked on this one yet.
 	c.loadSeq++
 	tf4 := fmt.Sprintf("%%arun.tf4.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 4\n", tf4, taskT)
 	fmt.Fprintf(c.sb, "  store i8* null, i8** %s\n", tf4)
+	// field 5 = frame: no coroutine frame yet (the coroutine launcher sets it
+	// when the callee is a transformed function; see emitAsyncRun's coro path).
+	c.loadSeq++
+	tf5 := fmt.Sprintf("%%arun.tf5.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 5\n", tf5, taskT)
+	fmt.Fprintf(c.sb, "  store i8* null, i8** %s\n", tf5)
+	// field 6 = next: not queued behind a channel wait.
+	c.loadSeq++
+	tf6 := fmt.Sprintf("%%arun.tf6.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 6\n", tf6, taskT)
+	fmt.Fprintf(c.sb, "  store i8* null, i8** %s\n", tf6)
+	// field 7 = waitnext: not in anybody's waiter chain. @nolang_rc_alloc does
+	// not zero, and @nolang_async_done walks this link, so a stale value here
+	// would enqueue a garbage pointer the first time this task is awaited.
+	c.loadSeq++
+	tf7 := fmt.Sprintf("%%arun.tf7.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 7\n", tf7, taskT)
+	fmt.Fprintf(c.sb, "  store i8* null, i8** %s\n", tf7)
+	// fields 8/9 = depth + pad. @nolang_rc_alloc does not zero, so the pad
+	// must be written explicitly even though nothing reads it yet.
+	c.loadSeq++
+	tf8 := fmt.Sprintf("%%arun.tf8.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 8\n", tf8, taskT)
+	fmt.Fprintf(c.sb, "  store i32 %s, i32* %s\n", depthVal, tf8)
+	c.loadSeq++
+	tf9 := fmt.Sprintf("%%arun.tf9.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 9\n", tf9, taskT)
+	fmt.Fprintf(c.sb, "  store i32 0, i32* %s\n", tf9)
+	// field 10 = join_top: no join-set frame is active at spawn time.
+	c.loadSeq++
+	tf10 := fmt.Sprintf("%%arun.tf10.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 10\n", tf10, taskT)
+	fmt.Fprintf(c.sb, "  store i8* null, i8** %s\n", tf10)
 
-	// enqueue the task.
+	// ENQUEUE. The ready queue is the ONLY thing that ever runs a task: an
+	// awaiter drives it through @nolang_async_drain_until, which pops whatever
+	// is ready — this task included. @nolang_async_enqueue takes its own
+	// reference on the way in, so a queued task cannot be freed by an awaiter
+	// that reaches `retire` before the queue is drained, and the drain loop
+	// gives that reference back after the resume.
 	c.loadSeq++
 	taskI8 := fmt.Sprintf("%%arun.taski8.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast %%task* %s to i8*\n", taskI8, taskT)
@@ -17038,6 +17776,9 @@ func (c *codegen) emitTaskRetain(f *Function, inst *Inst) error {
 // second `awy h` sees 0 and takes the guarded no-op path instead of freeing
 // three already-dead pointers (the measured SIGSEGV).
 func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
+	if f.IsCoro && f.Coro != nil {
+		return c.emitCoroAwaitRead(f, inst)
+	}
 	resLT, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	if slot == "" {
@@ -17095,23 +17836,21 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	doneRef := "%" + doneDef
 	fmt.Fprintf(c.sb, "  br i1 %s, label %s, label %s\n", doneVal, doneRef, notDoneRef)
 
-	// not done: call resume_fn(task) to drive it to completion.
+	// not done: BLOCK this (non-coroutine) caller until the task is done.
+	//
+	// It used to invoke resume_fn(task) once inline, which only worked while a
+	// spawned task ran to completion in a single shot. Now that a clone is a
+	// state machine that returns as soon as it parks, one call is no longer
+	// enough — a coroutine that awaits a grandchild would come back unfinished
+	// and the result buffer would still be the zero initializer.
+	//
+	// @nolang_async_drain_until drives the ready queue until TARGET is done:
+	// it pops other tasks, resumes them (setting @nolang_current_task for the
+	// duration, so `cancelled()` and channel waits inside them read the right
+	// task), releases the queue's reference and loops. A target that is queued
+	// is simply run by the same loop.
 	c.sb.WriteString(notDoneDef + ":\n")
-	c.loadSeq++
-	fnGep := fmt.Sprintf("%%aawy.fg.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%task, %%task* %s, i32 0, i32 0\n", fnGep, taskT)
-	c.loadSeq++
-	fnVal := fmt.Sprintf("%%aawy.fn.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = load void (i8*)*, void (i8*)** %s\n", fnVal, fnGep)
-	// Publish this task as the current task for the duration of the synchronous
-	// drive, so an `cancelled()` call inside the target reads the right
-	// %task.cancelled flag (the legacy event loop sets @nolang_current_task the
-	// same way before invoking a task's resume_fn). Restored to null afterwards;
-	// MIR drives one task at a time (no nested coroutine suspend), so a single
-	// save/restore pair is sufficient.
-	fmt.Fprintf(c.sb, "  store i8* %s, i8** @nolang_current_task\n", taskI8)
-	fmt.Fprintf(c.sb, "  call void %s(i8* %s)\n", fnVal, taskI8)
-	c.sb.WriteString("  store i8* null, i8** @nolang_current_task\n")
+	fmt.Fprintf(c.sb, "  call void @nolang_async_drain_until(i8* %s)\n", taskI8)
 	fmt.Fprintf(c.sb, "  br label %s\n", doneRef)
 
 	// done: read result from args struct field 0.
@@ -17160,34 +17899,12 @@ func (c *codegen) emitAsyncAwait(f *Function, inst *Inst) error {
 	// freed memory (measured SIGSEGV after printing 42). The slot zeroing is
 	// kept: it is still what makes `awy h; awy h` — the same slot twice —
 	// a defined no-op rather than a second release of a dead block.
-	c.loadSeq++
-	relFreed := fmt.Sprintf("%%aawy.freed.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = call i1 @nolang_rc_release(i8* %s)\n", relFreed, taskI8)
-	freeDef := fmt.Sprintf("aawy.free.%d", c.loadSeq)
-	freeRef := "%" + freeDef
-	relDoneDef := fmt.Sprintf("aawy.reldone.%d", c.loadSeq)
-	relDoneRef := "%" + relDoneDef
-	fmt.Fprintf(c.sb, "  br i1 %s, label %s, label %s\n", relFreed, freeRef, relDoneRef)
-
-	// The count reached zero: free the two containers the task borrowed. Inner
-	// owned data now lives in the result slot, so freeing only the 24/8-byte
-	// wrappers is safe. The per-argument buffers are NOT here — the wrapper
-	// (asyncWrapperFor's w_free) already released them when it ran the callee,
-	// and the wrapper is invoked at most once per task (the `done` guard at the
-	// top of this function is what makes that true).
 	//
-	// The %task block itself is NOT freed here either: @nolang_rc_release owns
-	// it and has already freed the allocation's BASE (data - 16) by the time it
-	// returns true. Freeing the data pointer as well would free an interior
-	// address of a block that is already gone (measured trace/BPT trap).
-	c.sb.WriteString(freeDef + ":\n")
-	c.loadSeq++
-	fr := fmt.Sprintf("%%aawy.freeres.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to i8*\n", fr, resPtr)
-	fmt.Fprintf(c.sb, "  call void @nolang_free(i8* %s)\n", fr)
-	fmt.Fprintf(c.sb, "  call void @nolang_free(i8* %s)\n", dataI8)
-	fmt.Fprintf(c.sb, "  br label %s\n", relDoneRef)
-	c.sb.WriteString(relDoneDef + ":\n")
+	// The containers themselves are released by @nolang_task_retire, which is
+	// also what frees a coroutine's frame: the order inside it (frame first,
+	// then the count, then the args/result wrappers only when the count really
+	// reached zero) is what keeps an aliased handle's second await valid.
+	fmt.Fprintf(c.sb, "  call void @nolang_task_retire(i8* %s)\n", taskI8)
 
 	// CONSUME THE HANDLE. The task may still be alive (an aliased handle holds
 	// another reference), but THIS slot's reference has now been released, so it
@@ -17736,6 +18453,9 @@ func (c *codegen) emitReturn(f *Function) error {
 		_, v := c.loadVal(rp)
 		pp := c.paramPtr[rp]
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", plt, v, plt, pp)
+	}
+	if f.IsCoro && f.Coro != nil {
+		return c.emitCoroReturn(f)
 	}
 	c.sb.WriteString("  ret void\n")
 	return nil

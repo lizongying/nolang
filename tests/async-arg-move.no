@@ -7,8 +7,11 @@
 ; 時，那份拷貝是純浪費：所有權直接轉移進任務——零拷貝，而 §3.3 的「move 是
 ; 計數中性」正是它的許可證。
 ;
-; 本檔以 `awy { }` 協程組內的無色 `co f(x)` 書寫：`co` 自動單態出 f-async 並 spawn，
-; 組末 await 取回結果。
+; 本檔以 `awy { }` 協程組內的無色 `co f(x)` 書寫：`co` 自動單態出 f-async 並 spawn。
+; `co` 只啟動**過程**（無宣告回傳值），所以每個被 spawn 的形態都有一份 `-into`
+; 版本——把結果寫進通道再 close，呼叫方在組外用 take-i64 / take-str 讀回。
+; 讀回點就是原本「組末 await 取回結果」的位置，不引用被 spawn 的實參本身，
+; 所以「實參是否已死」的判定不受影響。
 ;
 ; ⚠️ 這個檔案只是端到端煙霧測試，兩個失敗方向都無法從 stdout 可靠地看出來：
 ;   - 該 move 卻沒 move：只是多一次拷貝，輸出完全正確；
@@ -47,57 +50,109 @@ echo-holder = (h holder) (r str) {
     r = h.s
 }
 
+; ── 過程形態（`co` 的目標）────────────────────────────────
+; out: 結果通道（呼叫方建，容量 1）
+; s: 要搬過去的字串
+echo-into = (out chan[str], s str) {
+    out <- echo(s)
+    out.close()
+}
+
+; out: 結果通道
+; v: 取首元素用的向量
+first-into = (out chan[i64], v []i64) {
+    out <- first(v)
+    out.close()
+}
+
+; out: 結果通道（str 版）
+; h: 內聯持有 str 的結構體
+echo-holder-into = (out chan[str], h holder) {
+    out <- echo-holder(h)
+    out.close()
+}
+
+; 從單值通道取一筆
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take-i64 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+}
+
+; ch: 已關閉的結果通道
+; r: 取到的字串；一筆都沒有時回空字串
+take-str = (ch chan[str]) (r str) {
+    r = ''
+    <- ch: {
+        ok -> r = it
+    }
+}
+
 ; 1. str 參數在 spawn 之後已死 -> 轉移。任務必須讀到完整內容，
 ;    而且呼叫端不得再釋放它（否則就是 double free）。
 test-str-move = () {
+    ch chan[str] = with-cap(1)
     s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     awy {
-        v = co echo(s)
+        co echo-into(ch, s)
     }
+    v = take-str(ch)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
 ; 2. 同一個形狀，但字串夠大：double free 在大塊上比較容易被配置器抓到。
 ;    印長度而不是內容，只是為了讓 expect 短一點——轉移後長度必須原樣送達。
 test-str-move-large = () {
+    ch chan[str] = with-cap(1)
     s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     awy {
-        v = co echo(s)
+        co echo-into(ch, s)
     }
+    v = take-str(ch)
     print(v.len()); expect: 100
 }
 
 ; 3. []i64 參數已死 -> 轉移（元素指標走另一條克隆 helper）。
 test-vec-move = () {
+    ch chan[i64] = with-cap(1)
     a = [7, 8, 9]
     awy {
-        n = co first(a)
+        co first-into(ch, a)
     }
+    n = take-i64(ch)
     print(n); expect: 7
 }
 
 ; 4. struct 參數已死 -> 轉移。struct 的深拷貝是「ptr 欄位遞迴 + 內聯葉子」
 ;    兩段走訪，轉移則整段省掉，改由 wrapper 的遞迴解構子釋放。
 test-struct-move = () {
+    ch chan[str] = with-cap(1)
     h = holder{
         s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     }
     awy {
-        v = co echo-holder(h)
+        co echo-holder-into(ch, h)
     }
+    v = take-str(ch)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
 ; 5. 一次 spawn 兩個已死參數（str + vec）都走轉移，且互不干擾。
-;    （`co` 必須是陳述級：先由 awy 組 await 進變數，不能直接作為 print 引數——
-;     巢狀 `co` 不在 desugar 範圍內。）
+;    （`co` 必須獨立成句：結果一律由組外的通道讀回，不能直接作為 print 引數。）
 test-two-moves = () {
+    cs chan[str] = with-cap(1)
+    cn chan[i64] = with-cap(1)
     s = 'hello'
     a = [42]
     awy {
-        v1 = co echo(s)
-        v2 = co first(a)
+        co echo-into(cs, s)
+        co first-into(cn, a)
     }
+    v1 = take-str(cs)
+    v2 = take-i64(cn)
     print(v1); expect: hello
     print(v2); expect: 42
 }
@@ -105,33 +160,39 @@ test-two-moves = () {
 ; 6. 反向（防止過度修正）：參數在 spawn 之後仍被**讀取** -> 必須維持深拷貝。
 ;    這裡若改成轉移，任務就會在呼叫端釋放之後才讀，印出垃圾。
 test-str-live-copy = () {
+    ch chan[str] = with-cap(1)
     s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     awy {
-        v = co echo(s)
+        co echo-into(ch, s)
     }
     print(s); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    v = take-str(ch)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
 ; 7. 反向：§2.3.2 的重賦值形狀（重賦值會釋放舊 buffer）-> 必須維持深拷貝。
 test-arg-reassign = () {
+    ch chan[str] = with-cap(1)
     s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     awy {
-        v = co echo(s)
+        co echo-into(ch, s)
     }
     s = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    v = take-str(ch)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
 ; 8. 反向：struct 參數在 spawn 之後仍被讀取 -> 必須維持深拷貝。
 test-struct-live-copy = () {
+    ch chan[str] = with-cap(1)
     h = holder{
         s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     }
     awy {
-        v = co echo-holder(h)
+        co echo-holder-into(ch, h)
     }
     print(h.s); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    v = take-str(ch)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
@@ -140,15 +201,17 @@ test-struct-live-copy = () {
 ;    這同時是 §4.2(b)「無條件 retain」的守門員：retain 會共用 buffer ⇒ 這例會印 99。
 ;    ⚠️ 第 6–8 例（重賦值／讀取）兩種做法都得到舊值，無法區分；只有**原位寫入**會分歧。
 test-arg-inplace-mutation = () {
+    ch chan[i64] = with-cap(1)
     a = [1, 2, 3]
     awy {
-        n = co first(a)
+        co first-into(ch, a)
     }
     a[0]: {
         ok -> it = 99
 
         -> _
     }
+    n = take-i64(ch)
     print(n); expect: 1
 }
 

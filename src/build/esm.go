@@ -95,6 +95,12 @@ func programESMImports(inputPath string) ([]js.ESMImport, error) {
 	}
 	// P7 re-home：js 後端改走 Plain 變體（純 IfExpression 鏈，不含 match 專用欄位）。
 	p.DesugarSurfaceMatchesPlain(program)
+	// 通道只有 LLVM 後端實作；JS generator 遇通道節點會落進
+	// `/* unhandled stmt */` 的靜默分支，故在此明確拒絕。
+	if err := rejectChanForNonLLVM(program, "JS"); err != nil {
+		return nil, err
+	}
+
 	pkgConfig, _ := LoadPackage(filepath.Dir(inputPath))
 	program, merr := resolveAndMergeJSModules(program, inputPath, pkgConfig)
 	if merr != nil {

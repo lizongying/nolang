@@ -79,6 +79,13 @@ func CountProgramNodes(prog *Program) int {
 	return n
 }
 
+// WalkProgramNodes visits every AST node reachable from prog in document order,
+// skipping unexported fields (the same口径 walkProgramNodes uses for the cache
+// fingerprint). Exported for checkers that need a generic traversal instead of
+// hand-writing one case per node kind — a hand-written walker silently misses
+// whatever kind was added after it was written.
+func WalkProgramNodes(prog *Program, visit func(Node)) { walkProgramNodes(prog, visit) }
+
 func walkValue(v reflect.Value, visit func(Node), onPath map[Node]bool) {
 	switch v.Kind() {
 	case reflect.Invalid:

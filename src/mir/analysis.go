@@ -2096,7 +2096,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if !ok {
 				continue
 			}
-			classes, elems, _ := m.SpawnArgClasses(m.Func(cid))
+			classes, elems, _ := m.SpawnArgClasses(cid)
 			for idx, a := range inst.Args {
 				if a <= NoVal || !wouldDrop[a] {
 					continue

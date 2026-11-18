@@ -10,32 +10,26 @@ import (
 //
 // SURFACE FORM
 // ------------
-// An `awy { ... }` block is a coroutine group (the old statement-position bare
-// block is no longer a group):
+// An `awy { ... }` block is a coroutine group:
 //
 //	awy {
-//	    r1 = co worker(1)
-//	    r2 = co worker(2)
+//	    co produce(ch, 1)
+//	    co produce(ch, 2)
 //	}
 //
-// Each `co <call>` in the group is SPAWNED (`run`) rather than executed eagerly;
-// the `-async` callee is synthesized by MonomorphizeGo. `co` is only legal
-// inside an `awy { ... }` group (enforced by the parser). The group then awaits
-// whatever it spawned:
+// `co` is a statement that spawns a PROCEDURE and produces no value: the callee
+// writes its result to a channel, read after the group. Each `co` becomes
+// `__agN = run <callee>-async` (the clone is synthesized by MonomorphizeGo), and
+// the group awaits every in-flight task at its end:
 //
-//   - a spawn whose result nothing else in the group needs is awaited at the
-//     END of the group, so it overlaps with the group's other spawns;
-//   - a spawn whose result a LATER statement of the group reads cannot overlap
-//     with that statement, so it is awaited immediately before it ("退化成
-//     await"): `r2 = hello-async(r1)` forces r1's await up front and the group
-//     degrades to sequential execution.
+//	__ag0 = run produce-async(ch, 1)
+//	__ag1 = run produce-async(ch, 2)
+//	awy __ag0
+//	awy __ag1
 //
-// So the group above lowers to
-//
-//	__ag0 = run worker-async(1)
-//	__ag1 = run worker-async(2)
-//	r1    = awy __ag0
-//	r2    = awy __ag1
+// A statement that is not a `co` is a BARRIER: all in-flight spawns are awaited
+// before it runs. That is the ONLY reason a spawn is awaited early — `co` never
+// produces a result, so there is no result-dependency analysis to do.
 //
 // WHY A DESUGARING AND NOT A NEW MIR OP
 // -------------------------------------
@@ -55,13 +49,23 @@ import (
 //
 // SCOPE, DELIBERATELY NARROW
 // --------------------------
-// Only a statement that is *itself* an `-async` call binding is spawnable.
-// Anything else in the group (a plain call, a loop, an if, a nested block) is a
-// BARRIER: every pending spawn is awaited before it, because a barrier's
-// reads and writes are not analyzed. This costs concurrency in a mixed group
-// and buys an ordering guarantee that does not depend on the analysis being
-// complete. A group with no spawnable statement is left byte-for-byte alone,
-// which is what keeps this pass a no-op for the existing corpus.
+// A statement that is itself a bare `co` is spawnable. Anything else in the
+// group is a BARRIER: every pending spawn is awaited before it, because a
+// barrier's reads and writes are not analyzed. This costs concurrency in a
+// mixed group and buys an ordering guarantee that does not depend on the
+// analysis being complete. A group with no spawnable statement is left
+// byte-for-byte alone, which is what keeps this pass a no-op for the existing
+// corpus.
+//
+// A BARRIER THAT IS A BARE BLOCK is scanned recursively: its own `co`
+// statements are rewritten in place (so argument evaluation stays where the
+// source put it), but their awaits are moved to the GROUP tail. Control-flow
+// barriers (loops, ifs, matches, channel receive loops) are entered too, but
+// their handles cannot live in a static group-tail slot — the arm may run many
+// times or not at all. Those `co`s are rewritten to `run` + `__join-push` and
+// reaped by `__join-leave` at the group tail (the runtime join-set; see
+// desugarFlowArmSpawns). The only remaining sequential case is a `co` inside a
+// nested function literal, where no enclosing group schedule applies.
 //
 // Kill switch: NOLANG_ASYNC_GROUP=0 disables the pass (diagnostic only, like
 // the other NOLANG_* switches). Desugaring happens before any MIR is built, so
@@ -141,35 +145,50 @@ func (g *groupRewriter) freshName() string {
 	}
 }
 
+// spawnRef is one rewritten `co` site. block is the KBlock whose child list
+// contains stmt; keeping it explicit lets the same machinery rewrite both the
+// group's own statements and `co`s found inside nested bare blocks.
+type spawnRef struct {
+	block int32
+	stmt  int32
+	call  int32
+	// deferred marks a `co` inside a CONTROL-FLOW arm (loop/if/match). Its
+	// handle is rebound per iteration / absent on untaken paths, so it cannot
+	// be awaited from a static group-tail slot. Instead it is recorded in the
+	// runtime join-set (__join-push) and reaped by __join-leave at the tail.
+	deferred bool
+}
+
 // GroupStep is one statement's entry in a group's schedule.
 type GroupStep struct {
-	// Spawn marks a statement that is a direct `-async` call binding: it is
-	// launched (run) rather than executed eagerly.
+	// Spawn marks a `co` statement at the group's own level.
 	Spawn bool
-	// Target is the binding the result is written back to; "" when the result
-	// is discarded.
-	Target string
-	// Type is the declared type id of the original binding (NoID when none).
-	// It travels with the AWAIT, not with the spawn: the handle is an opaque
-	// i64 whatever the task returns.
-	Type int32
-	// Flush lists, by statement index, the spawns that must be awaited BEFORE
-	// this statement runs. Empty means "nothing to wait for".
+	// Handle is the index into GroupPlan.Handles for a direct spawn, or -1.
+	Handle int
+	// Flush lists, by handle index, the spawns that must be awaited BEFORE
+	// a barrier statement runs. Empty means "nothing in flight".
 	Flush []int
+	// Nested lists the handle indices of `co`s found inside a barrier that
+	// is a bare block. Their KRun bindings stay inside that block, but their
+	// awaits belong to the group tail — that is what turns nested straight-line
+	// spawns from serial into overlapping.
+	Nested []int
 }
 
 // GroupPlan is the spawn/await schedule of one `awy { ... }` group: one step
 // per statement, in source order, plus the spawns still in flight when the
 // group ends (awaited after the last statement).
 //
-// WHY THE SCHEDULE IS A SEPARATE VALUE. Two backends need it. The MIR path
-// rewrites the HIR into `run`/`awy` bindings; the JS backend emits promises
-// and `await` from the same schedule. Deriving it twice would let the two
-// disagree about which spawns overlap, and "one question, one implementation"
-// is the rule this repo keeps re-learning. So: plan here, apply anywhere.
+// WHY A SCHEDULE AT ALL
+// ---------------------
+// AsyncGroupPlan computes which spawns overlap as a separate value that the
+// rewrite then applies. Keeping "who is in flight" in one place makes the
+// invariant inspectable (and assertable in tests) instead of buried in the
+// node-building loop.
 type GroupPlan struct {
-	Steps []GroupStep
-	Tail  []int
+	Steps   []GroupStep
+	Tail    []int      // handle indices still in flight at the group end
+	Handles []spawnRef // every spawn site, in source order
 }
 
 // AsyncGroupPlan computes the schedule of an `awy { ... }` group WITHOUT
@@ -183,75 +202,288 @@ func (p *Package) AsyncGroupPlan(blockID int32) (plan GroupPlan, ok bool) {
 	}
 	g := &groupRewriter{p: p}
 	plan.Steps = make([]GroupStep, len(stmts))
-	var pending []int // indices of spawned steps still in flight
+	var pending []int // handle indices of spawns still in flight
+	register := func(block, stmt, call int32) int {
+		idx := len(plan.Handles)
+		plan.Handles = append(plan.Handles, spawnRef{block: block, stmt: stmt, call: call})
+		return idx
+	}
+	for i := range plan.Steps {
+		plan.Steps[i].Handle = -1
+	}
 	for i, sid := range stmts {
 		s := p.Node(sid)
-		call, target, typ := NoID, "", NoID
+		call := NoID
 		if s != nil {
-			call, target, typ = g.spawnable(s)
+			call = g.spawnable(s)
 		}
 		if call == NoID {
-			// Barrier: its reads and writes are not analyzed, so everything
-			// still in flight must land before it runs.
+			// Barrier. A `co` result is impossible, so there is no data
+			// dependency to compute — everything already in flight must land
+			// before it runs. Nested bare blocks are special: their `co`s are
+			// spawns of THIS group, so register them only after the flush.
 			plan.Steps[i].Flush = append([]int(nil), pending...)
 			pending = nil
+			var nested []spawnRef
+			p.collectBareNestedSpawns(sid, &nested)
+			for _, ns := range nested {
+				idx := register(ns.block, ns.stmt, ns.call)
+				plan.Steps[i].Nested = append(plan.Steps[i].Nested, idx)
+				pending = append(pending, idx)
+				ok = true
+			}
 			continue
 		}
-		uses := g.reads(sid)
-		var still, flush []int
-		for _, j := range pending {
-			// Two reasons a pending spawn cannot stay in flight: this
-			// statement READS its result (a data dependency), or it rebinds
-			// the same name (the pending value would be overwritten before it
-			// ever landed).
-			if (plan.Steps[j].Target != "" && uses[plan.Steps[j].Target]) ||
-				(target != "" && plan.Steps[j].Target == target) {
-				flush = append(flush, j)
-			} else {
-				still = append(still, j)
-			}
-		}
-		pending = still
-		// NOTE: assign the whole step at once — writing plan.Steps[i] again
-		// later would discard the Flush collected above.
-		plan.Steps[i] = GroupStep{Spawn: true, Target: target, Type: typ, Flush: flush}
-		pending = append(pending, i)
+		h := register(blockID, sid, call)
+		plan.Steps[i] = GroupStep{Spawn: true, Handle: h}
+		pending = append(pending, h)
 		ok = true
 	}
 	plan.Tail = append([]int(nil), pending...)
 	return plan, ok
 }
 
+// collectBareNestedSpawns finds `co` statements inside a barrier that is a
+// bare block, descending through further bare blocks. It stops at any other
+// node kind: a loop/if/match arm cannot use a STATIC slot (it may run many
+// times or not at all), so those are collected separately by
+// collectFlowArmSpawns and routed through the runtime join-set. An inner
+// `awy` group is also skipped — it was desugared first (innermost-first in
+// DesugarAsyncGroups) and owns its awaits.
+func (p *Package) collectBareNestedSpawns(stmtID int32, out *[]spawnRef) {
+	n := p.Node(stmtID)
+	if n == nil || n.Kind != KBlock || n.Flags&FlagAwaitGroup != 0 {
+		return
+	}
+	g := &groupRewriter{p: p}
+	for _, sid := range p.Children(stmtID) {
+		s := p.Node(sid)
+		if s == nil {
+			continue
+		}
+		if s.Kind == KExprStmt {
+			if call := g.spawnable(s); call != NoID {
+				*out = append(*out, spawnRef{block: stmtID, stmt: sid, call: call})
+				continue
+			}
+		}
+		if s.Kind == KBlock {
+			p.collectBareNestedSpawns(sid, out)
+		}
+	}
+}
+
+// controlFlowKind reports whether a node is a control-flow construct whose
+// arms execute a variable number of times (or not at all). A `co` inside one
+// cannot be awaited from a static group-tail slot.
+func controlFlowKind(n *Node) bool {
+	if n == nil {
+		return false
+	}
+	switch n.Kind {
+	case KFor, KIf, KTypeMatch, KChanIter:
+		return true
+	}
+	return false
+}
+
+// collectFlowArmSpawns finds every bare `co` statement nested inside a
+// control-flow arm of `blockID` (loops, ifs, type matches, channel receive
+// loops) and returns it as a deferred spawnRef. It does NOT descend into a
+// nested `awy` group — that group was desugared first and owns its own awaits.
+// Direct children of `blockID` and `co`s in plain nested bare blocks are NOT
+// collected here: the existing GroupPlan / collectBareNestedSpawns handle
+// those with static slots.
+func (p *Package) collectFlowArmSpawns(blockID int32) []spawnRef {
+	g := &groupRewriter{p: p}
+	var out []spawnRef
+	var walk func(id int32, inFlow bool)
+	walk = func(id int32, inFlow bool) {
+		n := p.Node(id)
+		if n == nil {
+			return
+		}
+		if n.Kind == KBlock && n.Flags&FlagAwaitGroup != 0 && id != blockID {
+			return // nested group owns its own awaits
+		}
+		if n.Kind == KFuncDef || n.Kind == KFuncLit {
+			return
+		}
+		if inFlow && n.Kind == KExprStmt {
+			if call := g.spawnable(n); call != NoID {
+				// The containing block id is recovered by the caller's walk;
+				// store the immediate parent so group() can relink it.
+				out = append(out, spawnRef{stmt: id, call: call, deferred: true})
+				return
+			}
+		}
+		for _, c := range p.Children(id) {
+			nextInFlow := inFlow || controlFlowKind(n)
+			walk(c, nextInFlow)
+		}
+	}
+	// Walk EVERY direct child with inFlow=false. A control-flow node may be
+	// wrapped in a KExprStmt (that is how `if` appears in HIR), so filtering
+	// by controlFlowKind(child) here would miss it. walk() flips inFlow on as
+	// soon as it reaches the control-flow node itself, and never collects a
+	// `co` that is a direct group statement (inFlow=false) — those are handled
+	// by AsyncGroupPlan with static slots.
+	for _, sid := range p.Children(blockID) {
+		walk(sid, false)
+	}
+	return out
+}
+
+// findParentBlock returns the id of the nearest KBlock ancestor of `stmt` that
+// is inside `root`. HIR wraps control-flow nodes in KExprStmt and wraps their
+// bodies in KSlot, so the descent must follow EVERY child edge — an earlier
+// version that only descended through KBlock/controlFlowKind missed every `co`
+// inside an `if` arm and returned NoID, which silently skipped the rewrite
+// while still emitting __join-enter/__join-leave around the group.
+func (p *Package) findParentBlock(root, stmt int32) int32 {
+	var find func(id int32) int32
+	find = func(id int32) int32 {
+		n := p.Node(id)
+		isBlock := n != nil && n.Kind == KBlock
+		for _, c := range p.Children(id) {
+			if c == stmt && isBlock {
+				return id
+			}
+			if got := find(c); got != NoID {
+				return got
+			}
+		}
+		return NoID
+	}
+	return find(root)
+}
+
+// globalCall builds a zero-arg global builtin call statement: `name()`.
+func (g *groupRewriter) globalCall(name string, at int32) int32 {
+	line, col := int32(0), int32(0)
+	if n := g.p.Node(at); n != nil {
+		line, col = n.Line, n.Col
+	}
+	ident := g.p.add(Node{Kind: KIdent, S: g.p.intern(name), Line: line, Col: col})
+	fnSlot := g.p.add(Node{Kind: KSlot, S: g.p.intern("fn"), First: ident, Line: line, Col: col})
+	call := g.p.add(Node{Kind: KCall, First: fnSlot, Line: line, Col: col})
+	return g.p.add(Node{Kind: KExprStmt, First: call, Line: line, Col: col})
+}
+
+// callWithHandle builds `<name>(<handleIdent>)` as a statement.
+func (g *groupRewriter) callWithHandle(name string, handle int32, at int32) int32 {
+	line, col := int32(0), int32(0)
+	if n := g.p.Node(at); n != nil {
+		line, col = n.Line, n.Col
+	}
+	ident := g.p.add(Node{Kind: KIdent, S: g.p.intern(name), Line: line, Col: col})
+	fnSlot := g.p.add(Node{Kind: KSlot, S: g.p.intern("fn"), First: ident, Line: line, Col: col})
+	hName := g.p.Str(g.p.Nodes[handle].S)
+	hIdent := g.p.add(Node{Kind: KIdent, S: g.p.intern(hName), Line: line, Col: col})
+	argSlot := g.p.add(Node{Kind: KSlot, S: g.p.intern("arg"), First: hIdent, Line: line, Col: col})
+	call := g.p.add(Node{Kind: KCall, First: g.p.link([]int32{fnSlot, argSlot}), Line: line, Col: col})
+	return g.p.add(Node{Kind: KExprStmt, First: call, Line: line, Col: col})
+}
+
+// desugarFlowArmSpawns rewrites `co` statements inside control-flow arms of an
+// awy group into `run` + __join-push, and wraps the group with __join-enter /
+// __join-leave. Returns true when anything changed. It runs AFTER the static
+// GroupPlan rewrite so the group's own children are already KRun/KLet/KAwait.
+func (g *groupRewriter) desugarFlowArmSpawns(blockID int32) bool {
+	spawns := g.p.collectFlowArmSpawns(blockID)
+	if len(spawns) == 0 {
+		return false
+	}
+	// Rewrite each deferred co in its own parent block: replace the co
+	// statement with `__agN = run f-async()` followed by `__join-push(__agN)`.
+	for _, ref := range spawns {
+		parent := g.p.findParentBlock(blockID, ref.stmt)
+		if parent == NoID {
+			continue
+		}
+		name := g.freshName()
+		runBinding := g.spawn(ref.stmt, ref.call, name)
+		push := g.callWithHandle("__join-push", runBinding, ref.stmt)
+		kids := g.p.Children(parent)
+		replaced := make([]int32, 0, len(kids)+1)
+		for _, kid := range kids {
+			if kid == ref.stmt {
+				replaced = append(replaced, runBinding, push)
+			} else {
+				replaced = append(replaced, kid)
+			}
+		}
+		g.p.Nodes[parent].First = g.p.link(replaced)
+	}
+	// Wrap the group: enter at the head, leave at the tail.
+	stmts := g.p.Children(blockID)
+	if len(stmts) == 0 {
+		return false
+	}
+	enter := g.globalCall("__join-enter", stmts[0])
+	leave := g.globalCall("__join-leave", stmts[len(stmts)-1])
+	out := make([]int32, 0, len(stmts)+2)
+	out = append(out, enter)
+	out = append(out, stmts...)
+	out = append(out, leave)
+	g.p.Nodes[blockID].First = g.p.link(out)
+	return true
+}
+
 // group applies a plan, rewriting one `awy { ... }` block into KRun / KAwait bindings.
 func (g *groupRewriter) group(blockID int32) bool {
 	plan, ok := g.p.AsyncGroupPlan(blockID)
 	if !ok {
-		return false
+		// Even with no DIRECT spawnable statement, control-flow arms may still
+		// hold `co`s; handle those through the join-set.
+		return g.desugarFlowArmSpawns(blockID)
 	}
 	stmts := g.p.Children(blockID)
-	out := make([]int32, 0, len(stmts)+len(plan.Steps)+2)
-	// stepHandle[i] is the KLet that holds step i's handle, needed when a
-	// later step (or the tail) has to await it.
-	handle := make(map[int]int32, len(plan.Steps))
+	out := make([]int32, 0, len(stmts)+len(plan.Handles)+2)
+	// handle[i] is the KLet that holds spawn i's handle, needed when a later
+	// step (or the tail) has to await it.
+	handle := make(map[int]int32, len(plan.Handles))
+	for i, ref := range plan.Handles {
+		name := g.freshName()
+		handle[i] = g.spawn(ref.stmt, ref.call, name)
+		if ref.block == blockID {
+			// A direct child of the group: its binding is emitted at the
+			// statement's own position in the loop below, NOT here — moving
+			// it would break the barrier that sits between two `co`s.
+			continue
+		}
+		// Nested bare block: leave the binding where the source put it, but
+		// replace the original `co` statement in that block's child list.
+		kids := g.p.Children(ref.block)
+		replaced := make([]int32, 0, len(kids))
+		for _, kid := range kids {
+			if kid == ref.stmt {
+				replaced = append(replaced, handle[i])
+			} else {
+				replaced = append(replaced, kid)
+			}
+		}
+		g.p.Nodes[ref.block].First = g.p.link(replaced)
+	}
 	for i, sid := range stmts {
 		st := plan.Steps[i]
 		for _, j := range st.Flush {
-			out = append(out, g.awaitAt(handle[j], plan.Steps[j], sid))
+			out = append(out, g.awaitAt(handle[j], sid))
 		}
-		if !st.Spawn {
+		if st.Spawn {
+			out = append(out, handle[st.Handle])
+		} else {
 			out = append(out, sid)
-			continue
 		}
-		call, _, _ := g.spawnable(g.p.Node(sid))
-		name := g.freshName()
-		h := g.spawn(sid, call, name)
-		handle[i] = h
-		out = append(out, h)
 	}
 	for _, j := range plan.Tail {
-		out = append(out, g.awaitAt(handle[j], plan.Steps[j], stmts[len(stmts)-1]))
+		out = append(out, g.awaitAt(handle[j], stmts[len(stmts)-1]))
 	}
 	g.p.Nodes[blockID].First = g.p.link(out)
+	// Control-flow-arm `co`s (loops/if/match) cannot use static slots; route
+	// them through the runtime join-set. This re-reads the group's (now
+	// rewritten) children and wraps them with enter/leave if any are found.
+	g.desugarFlowArmSpawns(blockID)
 	return true
 }
 
@@ -263,15 +495,14 @@ func (g *groupRewriter) spawn(stmtID, call int32, name string) int32 {
 		return NoID
 	}
 	run := g.p.add(Node{Kind: KRun, First: call, Line: s.Line, Col: s.Col})
-	// The binding holds an opaque handle, so the original declared type must
-	// NOT be carried over — `r1 i64` is the type of the RESULT, and it travels
-	// with the await instead (see GroupStep.Type).
+	// The binding holds an opaque handle, never a result: `co` produces no
+	// value, so no result type is carried anywhere.
 	return g.p.add(Node{Kind: KLet, S: g.p.intern(name), First: run, Line: s.Line, Col: s.Col})
 }
 
-// awaitAt builds `<target> = awy <handle>` for a spawned step, positioned at
-// the statement `at` so diagnostics point at the code that forced the wait.
-func (g *groupRewriter) awaitAt(handleID int32, st GroupStep, at int32) int32 {
+// awaitAt builds `awy <handle>` as a statement, positioned at the statement
+// `at` so diagnostics point at the barrier/group end that forced the wait.
+func (g *groupRewriter) awaitAt(handleID int32, at int32) int32 {
 	src := g.p.Node(at)
 	line, col := int32(0), int32(0)
 	if src != nil {
@@ -283,43 +514,31 @@ func (g *groupRewriter) awaitAt(handleID int32, st GroupStep, at int32) int32 {
 	name := g.p.Str(g.p.Nodes[handleID].S)
 	h := g.p.add(Node{Kind: KIdent, S: g.p.intern(name), Line: line, Col: col})
 	awy := g.p.add(Node{Kind: KAwait, First: h, Line: line, Col: col})
-	if st.Target == "" {
-		return g.p.add(Node{Kind: KExprStmt, First: awy, Line: line, Col: col})
-	}
-	return g.p.add(Node{Kind: KLet, S: g.p.intern(st.Target), Type: st.Type, First: awy, Line: line, Col: col})
+	return g.p.add(Node{Kind: KExprStmt, First: awy, Line: line, Col: col})
 }
 
-// spawnable reports whether stmt is a direct `-async` call binding. It returns
-// the call node, the bound name ("" when the result is discarded) and the
-// declared type of the binding.
-func (g *groupRewriter) spawnable(stmt *Node) (call int32, target string, typ int32) {
-	switch stmt.Kind {
-	case KLet:
-		// `r1 = hello-async(1)` lowers to KLet with the value as its child. A
-		// declaration with no value has no child and is not a spawn.
-		if stmt.First == NoID {
-			return NoID, "", NoID
-		}
-		call, target, typ = stmt.First, g.p.Str(stmt.S), stmt.Type
-	case KExprStmt:
-		call, target, typ = stmt.First, "", NoID
-	default:
-		return NoID, "", NoID
+// spawnable reports whether stmt is a bare `co <call>` statement. It returns
+// the call node, or NoID for a barrier. Only KExprStmt qualifies: `co` is not a
+// value, so it can never appear as the right-hand side of a binding.
+func (g *groupRewriter) spawnable(stmt *Node) int32 {
+	if stmt == nil || stmt.Kind != KExprStmt {
+		return NoID
 	}
+	call := stmt.First
 	cn := g.p.Node(call)
 	if cn == nil || cn.Kind != KCall {
-		return NoID, "", NoID
+		return NoID
 	}
 	if !g.isAsyncCall(cn) {
-		return NoID, "", NoID
+		return NoID
 	}
 	// A nested async call in an argument position would lower to a handle being
 	// passed as an argument — a shape `run` does not cover. Refuse rather than
 	// emit it.
 	if g.hasNestedAsyncCall(g.p.Children(call)) {
-		return NoID, "", NoID
+		return NoID
 	}
-	return call, target, typ
+	return call
 }
 
 // isAsyncCall reports whether the callee is spelled `-async`, the SAME rule
@@ -359,39 +578,6 @@ func (g *groupRewriter) hasNestedAsyncCall(kids []int32) bool {
 		}
 	}
 	return false
-}
-
-// reads returns every identifier the statement mentions, so a dependency on a
-// pending spawn's result is recognized. Over-approximating is the safe
-// direction: an extra dependency costs concurrency, a missed one compiles a
-// program that reads a handle as if it were the result.
-//
-// The callee slot is excluded — the function's own name is not a read of a
-// variable.
-func (g *groupRewriter) reads(root int32) map[string]bool {
-	uses := map[string]bool{}
-	var walk func(id int32)
-	walk = func(id int32) {
-		n := g.p.Node(id)
-		if n == nil {
-			return
-		}
-		switch n.Kind {
-		case KIdent:
-			if s := g.p.Str(n.S); s != "" {
-				uses[s] = true
-			}
-		case KSlot:
-			if g.p.Str(n.S) == "fn" {
-				return
-			}
-		}
-		for c := n.First; c != NoID; c = g.p.Nodes[c].Next {
-			walk(c)
-		}
-	}
-	walk(root)
-	return uses
 }
 
 // add appends a node to the arena. A Package is immutable to its readers but a
@@ -459,9 +645,8 @@ func itoa(n int) string {
 // Colorless async (`co`): monomorphization
 //
 // `co worker(1)` (inside an `awy { ... }` group) is sugar for spawning the
-// compiler-generated `worker-async` variant of `worker` and reading its result.
-// The user writes the uncolored name `worker`; the `-async` suffix is purely
-// internal. This pass:
+// compiler-generated `worker-async` variant of `worker`. The user writes the
+// uncolored name `worker`; the `-async` suffix is purely internal. This pass:
 //
 //   1. clones every `co`-targeted (or transitively async) function `F` into a
 //      fresh `F-async` definition (identical body, renamed), and

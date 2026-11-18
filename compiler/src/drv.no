@@ -935,6 +935,17 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
         cov = h2m-cov-join(agg.unsf, agg.unsk)
         print(cov)
         fs.write-file('/tmp/h2m-cov.log', cov.to-bytes())
+        ; s108：叶子级第二通道——同格式逐条 "fn:LeafKindName:category"，前缀 LF: 与块级区分。
+        ;   与块级日志逐条同序等长，可按下标对照「失败归到哪个块 / 最近进入哪个叶子构造」。
+        leaf-cov = h2m-cov-join(agg.lfsf, agg.lfsk)
+        leaf-lines = leaf-cov.split('\n')
+        li = 0
+        (li < leaf-lines.len()) {
+            ln = leaf-lines[li]
+            ln.len-bytes() > 0 -> print('LF:' - ln)
+            li = ix.inc(li)
+        }
+        fs.write-file('/tmp/h2m-leaf-cov.log', leaf-cov.to-bytes())
     }
 }
 

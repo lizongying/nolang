@@ -17,9 +17,10 @@ import (
 // fix" evidence: under P1 the same call would have been silent, i.e. the check
 // would have been vacuous.
 
-const tierSrc = `work = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n * 2
+// `co` only spawns a PROCEDURE, so the spawn target declares no result; the
+// handle the OpRun still defines is the R source the tier tests are about.
+const tierSrc = `work = (n i64) {
+    print(n)
 }
 
 main = () {
@@ -27,9 +28,8 @@ main = () {
     t str = s
     print(t)
     awy {
-        v = co work(21)
+        co work(21)
     }
-    print(v)
 }
 `
 

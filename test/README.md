@@ -2755,6 +2755,7 @@ blk = 0
 | 105 | 🔴 **編譯器 comptime 折疊：純函式 + 全字面量實參 + `[]byte` 下標讀 ⇒ 落到失敗臂（靜默給錯值）**（2026-11-12，**未修**）。最小復現 `tmp/sh/q15.no`：`f-at = (b []byte, i i64) (v i64) { v = -1  b[i]: { ok -> v = it  -> _ } }`，呼叫 `f-at(pk, 4)`（`pk` 是 `[]byte` 變數、索引是**字面量**）回 **-1**；把索引換成變數 `k = 4` 後回 14；在函式體裡加一行 `print` 讓它不純，也回 14。同樣形態對 `[16]byte`（定長陣列）正常。⇒ 折疊器把 `[]byte` 型別的實參當成「無法求值」，下標讀於是不走 `ok` 臂。<br>**影響**：任何「純工具函式 + 字面量下標」的呼叫都會被靜默算錯，這正好是測試 helper（`at(buf, 0)`）最常見的形狀 —— 我先前的 `at(pk, 4) != at(orig, 4)` 因此恆等、斷言假綠。<br>**未碰的原因**：實作在 `src/mir/hir2mir.go` 的 `comptimeFold` / `evalConst`（`src/mir/comptime_reassigned_local_test.go` 已釘過同一個求值器的另一條 soundness bug），而 `src/mir/hir2mir.go` **正被並行 session 修改**，不宜同時動。<br>**測試側繞法**：`test/std/quic.no` 所有 `at()` 下標一律先落變數（`k0 = 0 …`），並在檔頭與 §5.0za 註明原因。 | `tmp/sh/q15.no`（`at-lit=-1 / at-var=14 / at2-lit=14 / arr-lit=4`）、`tmp/sh/q14.no`（加 `print` 即恢復正常）、`tmp/sh/q13.no`（內聯下標 `pk[4]` = 14，經 helper 呼叫 = -1） |
 | 106 | 🔴 **「空 `str`」的 `data` 是 NULL，`str.eq(x, n)` 只要 `n > 0` 就崩**（2026-11-12，**未修**）。`str.eq` 是 `#{buildin} eq-raw`，落到 `src/mir/builtin_call.go:1207 emitBuiltinEqRaw`，那裡直接 `call i32 @memcmp(i8* dataA, i8* dataB, i64 n)`，**不檢查指標是否為 NULL**；而空串的 `data` 正是 NULL ⇒ `memcmp(NULL, p, 1)` 必崩。<br>實測（v0.4.19-45）：`e = ''` + `e.eq('de', 0)` ⇒ `true`（n=0 時 `memcmp(NULL, …, 0)` 合法）；`e.eq('de', 1)` ⇒ `trace/BPT trap`；`runner.str-eq(e, 'de', 2, …)` 與 `runner.str-eq('de', e, 2, …)`（NULL 放右邊一樣）⇒ `segmentation fault`。<br>**最常見的踩點是 `str.slice`**：`src/std/str.no:631` 的 `r-start >= r-end -> return` 是**提前 return**，`val str` 停在零值 ⇒ `s.slice(3, 3)` / `s.slice(6, 8)` / 任何越界切片拿到的都是 NULL-data 空串：`len-bytes()` 回 0、`byte(0)` 回 `nil`、`print` 印空，看起來「就是個空串」，要等配上 `n > 0` 的 `eq` 才爆。<br>**修法**：`emitBuiltinEqRaw` 開頭加一支「任一 data 為 NULL ⇒ 結果 = `n == 0`（否則 false）」，別對 NULL 做有長度的 memcmp。**測試側繞法**：空串一律 `n = 0`（語料現況正好都是這樣，所以這條一直沒被踩到）。與 §5.2 #84（`eq` 不檢查長度）同族，差別是本條**必崩**、不會靜默。 | 探針 `/tmp/psprobe/w1.no`（`''` + n=2 崩）、`x2.no`（n=1 → `trace/BPT trap`）、`x1.no`（n=0 → true）、`x3.no`（NULL 在右側同樣崩）、`x4.no`（`slice(3,3)` 同現象）；`test/std/str.no` 的 `t-push` 註解 |
 | 107 | ✅ **`#{buildin} txt` 佈局聲明被當成模組型別 ⇒ `test/std/txt.no` 整檔無法編譯**（2026-11-12，**已修**，見 §5.2k）。症狀固定是 `EmitLLVM: unknown callee txt.to-str in func <名>`，根因**不是**缺 builtin 登記（`%txt` 與 `txt.*` 的 MIR 支援一直都在），而是 `src/build/module_prefix.go` 的 Phase 1 把 `#{buildin} txt { … }` 收進了 `moduleTypes`，于是聲明被改名成 `txt.txt`（⇒ `%txt_txt`）、方法被改名成 `txt.txt.to-str`（⇒ 呼叫端 `txt.to-str` 找不到）。<br>**排除紀錄**：在隔離 worktree（`git worktree add /tmp/nolang-head-check HEAD` + `make no`）用 HEAD 版原始碼複現同一條紅 ⇒ 與本輪 unix 改動無關。<br>**修法**：`parser` 給 `StructDefinition` 加 `Builtin` 欄位，模組前綴 Phase 1 / MIR `collectStructFields` 都跳過「注解 + 佈局名」的組合，並用 `checker.ValidateBuiltinStructDecls` 反向要求兩者成對出現。 | `./bin/no run test/std/txt.no`（修前 `4qhyyund`；修後 169/169） |
+| 108 | ✅ **已修（2026-11-17，見 §5.2ad(2)）**。原症狀：**`co f()` 寫在迴圈體內（`awy { i <- arr: { co foo(i) } }`）從不執行；帶結果時 `r = co foo(i)` 取回的是垃圾指標**（2026-11-17；與 `chan` 無關，不含通道同樣復現）。最小復現：`foo = (x i64) (r i64) { print('foo {x}')  r = x }` + `f = () { awy { i <- [0..2]: { co foo(i) } } }` ⇒ **完全沒有輸出**（`co` 被靜默丟棄）；同樣的 `co` 放在組的直接陳述上（`awy { co foo(1) }`）就正常印 `foo 1`。把結果落地更危險：`r = co foo(i)` + `print('r={r}')` 在 `i <- [0..3]:` 內印出 `r=4337147120 / …` （指標殘值），且 `foo` 依然沒被呼叫 —— 即任務句柄根本沒初始化，await 也沒發生。影響：使用者最自然的「迴圈內每次 spawn 一個協程」寫法（如 producer 邊遍歷邊 `co` 發送）**靜默不生效**，而 `co` 在組的直接陳述上工作正常，所以只看 `tests/async.no` 是綠的。**未修的原因**：async 降糖（`DesugarAsyncGroups` + MIR 的 `OpAwait` 就地 `call resume_fn`）只覆蓋組的直接陳述，迴圈體裡的 `KCo`/await 沒有對應處理；改它要動 `src/hir` 的 async pass 與 `src/mir/hir2mir.go`，屬獨立一輪。**測試側繞法**：`tests/chan.no::t-awy` 讓 producer/consumer 都是普通（非同步）函式，用 `co produce(c)` 在組的直接陳述上 spawn，迴圈留給函式體內部 —— 這樣既測到通道與協程的配合，又不會踩本條（**該繞法已於 2026-11-18 不再需要**：`tests/coro-loop.no` / `coro-nested.no` 與 `tests/chan.no::t-awy` 都在用迴圈內 `co`） | `tmp/cprobe/a1.no`（`i <- arr:` + `co foo(i)` 無輸出）、`a6.no`（`[0..2]` 同）、`a9.no`（`r = co foo(i)` 印垃圾位址）、`a5.no`（組直接陳述 `co foo(1)` → `foo 1`，正常） |
 
 > #9–#91 都在 `bin/no`（v0.4.19-40-g72e157cb-dirty，2026-11-10）上複現；
 > #92–#96 在 2026-11-11 的 `v0.4.19-44-g70908f79-dirty` 上複現（後者已含本輪的
@@ -5054,7 +5055,7 @@ defer func() { parser.HIRCaptureEnabled = prevCaptureTrack }()
 
 ### 5.2u 2026-11-14：`out = a` 之后再 `g = a` —— 移动后使用未诊断 ⇒ 双释放
 
-**症状**：`tests/tmp-wrapclone/probe.no`（仓库里保留的最小复现）跑起来先印出
+**症状**：`tests/_tmp-wrapclone/probe.no`（仓库里保留的最小复现）跑起来先印出
 一串空格、退出时 `signal: trace/BPT trap`（双释放）：
 
 ```
@@ -5072,7 +5073,7 @@ print(f('hello'))
 作用域退出时 `g` 与结果各自 drop 同一块堆 ⇒ 双释放。
 
 **为什么本轮不修**：这正是用户规划中的那块改造（把 `movedVar` 从单一全域 bitmap
-改成基于 CFG 的 dataflow `MovedFact` 集合）。当下的 `tests/tmp-wrapclone/` 里
+改成基于 CFG 的 dataflow `MovedFact` 集合）。当下的 `tests/_tmp-wrapclone/` 里
 `min.no` / `min2.no` / `repro.no` / `repro2.no` 四个探针已经**跑通**，只剩
 `probe.no` 这一条；它是**已知缺陷的复现档**，不是断言测试，`no test tests`
 因此会一直报这一条红 —— 看板上的「tests 全绿」要带上这个注记。
@@ -5531,3 +5532,488 @@ LLVM 22 恰好仍无害；CI 用 LLVM 21）。同一 run 里 `unix.no` 的 SIGSE
 挡下（`rosetta error: bss_size overflow`），x86_64 验证要走 QEMU 容器
 （见 `.workbuddy/memory/2026-11-15.md` 的环境备注）。但
 `alloca >= sizeof(struct utsname)` 已从根上消除溢出，与栈帧布局无关。
+
+### 5.2ad 2026-11-17：`i <- ch: { ... }` 的形态判定整格失效 ＋ 组内嵌套 `co` 静默丢弃【已修】
+
+两条互不相干、症状却是同一个模板：**编译通过、运行时悄悄是错的**。
+
+**(1) 通道接收循环的三态/元素形态从未被判定过。** 文档写的判据是「body 开头是否
+是对循环变量 `v` 的 match」，`detectChanLoopForm` 也确实按 AST 查 `SurfaceMatch`。
+但这条路径永远查不到东西：
+
+| 写法 | 实际走到哪 |
+|---|---|
+| `<- ch: { ... }` | `parseChanRecvSugar` 直接脱糖成 `__chan_in <- ch: { __chan_in: { ... } }`，**不经过**判定，恒为三态（正确，碰巧） |
+| `i <- ch: { ... }`（裸形式，不带 `for`） | `parseForStatement` 的裸分支 `return stmt` 前**没调**判定 ⇒ `ChanValue` 保持零值 `false` ⇒ 恒为三态 |
+| `for i in ch: { ... }` | 调了判定，但 `parseBlockStatement` 早已把开头的 match 降糖成 `IfExpression` 链，`SurfaceMatch` 不在 ⇒ 恒为元素形态 |
+
+于是同一段源码加不加 `for` 语义不同；而三态形态一旦绑定的是**裸 match**
+（`i <- ch: { ok -> ... }`），主语的缺失让：
+
+- 三个臂退化成互不相干的独立 guard，**每轮全跑**（不是互斥分支）；
+- `it` 绑到空值：`co f(it)` 的实参被降成 `void`，clang 报
+  `pointers to void are invalid - use i8* instead`（这是唯一会报错的情形）；
+- 不经过 `co` 时**完全不报错**，只是结果错。
+
+修法：判定移到**解析 body 之前**（`parser.parseChanLoopBody`），用 token 前瞻定形，
+三处入口（裸、带标签、`for`）统一走它；`ok`/`nil`/`err` 这三个臂名出现时，直接把
+body 当成「对循环变量的 match」解析（同 `parseChanRecvSugar` 的做法），主语不再缺
+失。只认这三个名字，所以元素形态下合法的独立 guard `i <- ch: { i > 5 -> ... }`
+不受影响。副作用：`no fmt` 会把简写补成显式 `i: { ... }`（幂等、可再解析）。
+
+**(2) 组内嵌套块的 `co`（#108）被静默丢弃。** `hir.DesugarAsyncGroups` 只看组的
+**直接陈述**，`KFor`/`KIf`/`KBlock` 一律当屏障且不递归，因此循环体 / 条件体 /
+match 臂里的 `co` 永远等不到消费它句柄的 `KAwait`：
+
+- `awy { i <- [0..3): { co foo(i) } }` —— 什么都不打印（任务从未被驱动）；
+- `r = co foo(i)` —— `r` 绑到槽指针（实测打印 `4337147120`）。
+
+修法：`hir2mir` 的 OpRun 分支按 `forced` 分流。组排程改写过的那个调用节点
+（`forceRunCall`）照旧只返回句柄；其余 `-async` 调用 spawn 之后**立即**接一个
+`OpAwait`（`awaitHandleInline`）——屏障里的 `co` 降级为「spawn 后 join」：每轮串行、
+结果正确、不留孤儿任务，且不改 `src/hir`。
+
+**(3) 顺带修掉的两个坑**
+
+- `emitAsyncRun` 用 `c.ptype(p)` 解析**被调函数**的形参：ValueID 只在函数内唯一，
+  这次撞上调用方同号的 void 值，`i64` 形参被算成 `void`，进而发出 `bitcast i8* ...
+  to void*`。改 `ptypeIn(fid, v)` / `localTypeOfIn(fid, v)` 显式带被调函数 ID；
+  `Module.SpawnArgClasses` 同步改签名（`cf *Function` → `cid FuncID`），其注释里
+  「ValueID 属于唯一函数 ⇒ 该查找必然落空」的前提是错的，已改写。
+- 组内嵌套 `co` 的实参若真的降到 `void`，现在在 `emitAsyncRun` 就以
+  `x57xvqny` 报错，不再把非法 IR 交给 clang。
+
+**验证**：`test/std/async.no` 7/7（新增 4 例：循环体 / 条件循环 / match 臂 /
+通道 pipeline）；`tests/chan.no` 23/23；`make test` 26 包全绿；`no vet src/std`
+0 error；`no fmt` 对两种形态幂等。`TestAsyncGroupKillSwitch` 期望改为
+`run await run await`——kill switch 关掉的是**组的批量排程**，逐调用的 join 是
+`lowerCall` 自己的兜底，因此 OFF 侧不再是孤儿任务（对比：ON 侧仍是 `run run await await`）。
+
+**当时仍然未做（真挂起）**：`%task` 已扩到 7 字段（`frame`/`next`），`emitAsyncAwait`
+仍是「就地 call resume_fn 跑完」，`@nolang_async_run`/`@nolang_async_wait` 依旧
+0 调用点。**这一条已在 2026-11-18 完成**，见 §5.2ae。
+
+### 5.2ae 2026-11-18：无栈协程「真挂起」（M1）＋ 通道空读挂起（M2）＋ `%task` 等待者串链
+
+在此之前 `awy { co f() }` 的语义是「spawn 后立刻 join」：`emitAsyncAwait` 就地
+`call resume_fn` 把整个函数体跑完，`async-yield()` 只是把一个没人会再跑的任务塞回队列。
+于是「两个任务交错」根本不可表达，`tests/chan.no` 只能让 producer / consumer 顺序跑。
+本轮把它换成**帧 + 状态机 + 就绪队列**，并把通道从「空读回 `err`」改成**空读挂起**。
+
+**(1) 帧与状态分派**（`src/mir/coro.go` 的 `Module.PlanCoroutines`）
+
+- 只处理名字以 `-async` 结尾、且真含挂起点（`OpAwait` / `OpYield` / `OpChanRecv` /
+  `async-yield()` 调用）的函数。普通函数与 `main` 一字不动，不 spawn 的模块**逐字节不变**。
+- 帧槽 = 全部形参（方法 receiver 除外，它继续指向调用方分配的结果缓冲）+ 每条指令的
+  `Dst` / `Results`；`%frame.N = { i32 __state, i32 __pad, <slot 0>, … }`，
+  槽 `i` = 字段 `i + CoroFrameHeader`（`CoroFrameHeader = 2`）。
+- 每个挂起点切块：前段留原块、后段进 `cs.<bid>.<k>`、原终结符搬到最后一个新块；
+  每段以 `OpCoroPark`（**非 sink**，`Term.Int` = 状态号）终结；最后建 `cs.dispatch`
+  作为新 entry。
+
+三条承重约束：
+
+| # | 约束 | 为什么 |
+|---|---|---|
+| 1 | `PlanCoroutines` 必须在 `Analyze()` **之后** | drop 插入、view liveness、spawn 实参所有权都在原 CFG 上算完；之后切块不会让 drop 跨过 park。反过来就要教所有 dataflow pass「`OpCoroPark` 是非 sink 且有后继」 |
+| 2 | 帧指针只能来自形参 `i8* %task_ptr` | MIR **无 phi**，跨块携带一个「当前帧」只能靠 entry alloca，而 alloca 在挂起后已失效 |
+| 3 | 零初始化只跑 state 0 那条路径 | 帧槽的 `zeroinitializer` 写在 `cs.init`（缓冲 `c.coroInit`）；恢复时再跑一遍会清掉 park 存下的值 |
+
+`allocaFor` 仍是**唯一的槽分配点**：协程分支改发 `getelementptr`，下游的 load/store
+一字不改 —— 这是整个改动里最省事的一刀。
+
+**(2) 调度器运行时**（`src/mir/codegen.go`）
+
+| 入口 | 职责 |
+|---|---|
+| `@nolang_async_enqueue(i8*)` | 入队；**自带 `rc_retain`**（队列持有引用，否则 awaiter 先 retire 就 UAF）；null 请求 no-op |
+| `@nolang_async_drain_until(i8* target)` | 阻塞驱动就绪队列到 target `done` 或队列空；每次 resume 前后换入/恢复 `@nolang_current_task` |
+| `@nolang_task_retire(i8*)` | **先**读 `data`/`frame`，再 free 帧、再 `rc_release`，计数归零时释放 args / result 包装 |
+| `@nolang_async_wait / _done` | await 的登记与唤醒（本轮改为链，见 (4)） |
+
+`drain_until` 的出口加了**死锁判定**：target 仍未完成而队列已空 ⇒ 印
+`nolang: deadlock: no runnable task and all tasks are blocked` 并 `abort`。
+以前这里会返回、让调用方读一个**从没人写过**的结果槽（静默 0）。
+
+**(3) 通道空读挂起**（`src/mir/codegen_chan.go`）
+
+`%chancb` 48B → **56B**（field 6 `waiters`，串 `%task.next`）；新增
+`@nolang_chan_ready / _park / _wake / _recv_block`。协程里的 `OpChanRecv` 变成切块点，
+park 块形状与 await 同构：`ready` 为真就落到 recv，否则存状态、挂进等待链、返回调度器。
+
+两个非显然的点：
+
+- **恢复点必须是 park 块本身，不是 recv 块**（`CoroPark.Resume`）。一次 `send` 只加一个
+  元素却会唤醒整条链，被唤醒 ≠ 拿到值 —— 回到 park 块重跑可读性判断才对。
+- 非协程路径改 `@nolang_chan_recv_block`：recv → 空则 `drain_until(null)` → 再 recv →
+  仍空则判死锁。`err` 从此只表示「零值句柄」这一种真错误（三态里 `nil` = 已关闭且取空）。
+
+**(4) `%task` 等待者：单槽 → 链**
+
+`%task` 原 field 4 是**单槽**：两个协程 await 同一句柄时，后登记的覆盖前一个，
+前一个永不唤醒（旧行为是静默读到零值，有了死锁判定之后变成 abort）。
+现改为 field 4 = 链头、field 7 `waitnext` = 链节（与通道那条 field 6 `next` **分开**，
+两种链不会互相污染），`%task` 48B → **56B**（两处 `rc_alloc(i64 48)` 同步改 56）。
+唤醒是 LIFO（后登记者先恢复），确定性由 `tests/coro-yield.no` 的顺序断言钉住。
+
+**(5) 踩过的坑（都是实测）**
+
+- `@nolang_task_retire` 里 `rc_release` 可能直接 free 整个 `%task` 块 ⇒ 必须先读
+  `data` / `frame`。写成「先 release 再读字段」的表现是**首个 `awy` 必 SIGSEGV**。
+- 顶层 `async-yield()`（无当前任务）会把 **null** 入队，drain 循环解引用 null ⇒
+  `enqueue` 加 null 守卫。
+- 新诊断复用了别人的 8 位 i18n ID ⇒ `TestEnCatalogFresh` 报「一个 ID 两个文本」；
+  改成 `coronowl` 后 `TestEveryLocaleCoversEn` 又要求 **11 个 locale 全覆盖**。
+  **改 `src/mir` 里任何 `i18n.Errorf` 之后要 `make i18n`**，只改 Go 不够。
+
+**(6) 验收**
+
+`tests/coro-basic.no`（11 断言）/ `coro-loop.no`（6）/ `coro-nested.no`（5）/
+`coro-yield.no`（27）四档全绿且**两次运行输出同 hash**，已进
+`tests/golden/mir-baseline.tsv`；`tests/chan.no` 重写为 28 断言（含 `t-park`
+「consumer 先跑、空读挂起，producer 后跑 send 唤醒」、`t-two-waiters`「一个值两个等待者」）。
+**测试非空转**：`NOLANG_CORO=0` 对照下 `coro-yield` 翻 5 条红（退回 run-to-completion）、
+`coro-loop` 直接 SIGSEGV。`test/std/async.no` 7/7；`tests/async*.no` 十档输出逐字不变。
+
+**(7) 仍未收口**
+
+- `@nolang_chan_free` 不摘 `%chancb.waiters` 链：通道先于协程组销毁时等待者是悬空指针
+  （正常路径会先撞 group 尾 await 的死锁 abort，所以打不到）。
+- `drain_until(null)` 遇到「无限 `async-yield()`」不返回（它会一直把自己重新入队）。
+- 屏障里的嵌套 `co`（§5.2ad(2)）现在是「spawn 后立即 join」，**每轮串行**。有了帧之后
+  可以改成组尾统一 await，但要动 `src/hir` 的 handle 收集，属独立一轮。
+- `tests/golden/mir-baseline.tsv` 在 HEAD 上就已大面积陈旧（全量核对 `same=67
+  changed=49 new=64 missing=160`），本轮只单条更新了涉及的三档，**别整表 `-update`**。
+- 批量跑语料必须重定向 stdin：`tests/byte.no`、`tests/loop-test.no` 会读 stdin，不重定向会挂住。
+
+### 5.2af 2026-11-18：`co` 收口成「只启动过程、且不是值」＋ 闭包形式 `co { ... }`
+
+本轮把 `co` 的语义收死（用户口径）：
+
+- `co f(...)` — spawn **过程**，`f` 不得有宣告回傳值；**方法隐式返回的 `self` 不算**
+  （`parser.DeclaredResults` 剥掉它），所以 `co obj.bump()` 合法。
+- `co { ... }` — 闭包写法，把一段过程就地交给协程；块内自由变量**按值捕获**。
+- `co` 不是值 ⇒ 必须独立成句。
+
+三条规则各有落点，互不重叠：
+
+| 规则 | 诊断 | 落点 |
+|---|---|---|
+| 组外写 `co` | `E_CO_OUTSIDE_GROUP`（`c0grp1aa`） | `parser/expr.go` 的 `case lexer.CO` |
+| 被调用者有回傳值 | `c0retval` | `src/checker/co_spawn.go`（`ValidateCoSpawn`） |
+| `co` 当值用 | `E_CO_NOT_STATEMENT`（`c0nostmt`） | parser：`atStatementStart()` + `parseLetStatement` 补一道 |
+| `co` 后不是呼叫/区块 | `E_CO_NOT_CALL`（`c0notcal`） | parser |
+
+**为什么回傳值必须禁**：被 spawn 的呼叫，其结果只有在**组被 join 之后**才可读，而读的
+地方不在 join 点上 —— 这正是 `chan` 存在的场景。放行 `r = co f()` 会继续留下一整类
+「在 spawn 落地前就读 r」的程式，读到的是槽里的残值。
+
+**语句位置判据**用**前一个 token**：`prevToken ∈ {NEWLINE, SEMICOLON, LBRACE, RBRACE,
+EOF, RARROW, COLON, ILLEGAL}`。`parseExpression` 顶部的 NEWLINE 跳过大循环会吃掉行首
+换行，所以「`co` 在下一行」由 `parseLetStatement` 对右值再补一道同码检查。
+
+**闭包形式**在 tohir 阶段合成普通函数 `__coN`：参数 = 块内提到、且外层 `FuncVarType`
+查得到类型的**自由变量**（块内自己声明的名字先收集再排除，形成 shadow），随后照常登记
+`Package.GoSpawns`，与过程 spawn 走同一条单态化路径。天然按值 —— spawn 协议本来就把
+每个堆拥有的实参深拷进任务自己的 buffer（§5.2ae(2)）。
+
+**(1) 顺带修掉的一个真 bug：通道接收循环在值语境里被当成值 match**
+
+`x = v: { 1 -> { … <- c: { ok -> r = it } … } }` 报
+`9q9raufb match arm in expression context must end with an expression`，指向 `<- c: {`
+那一行。根因：`parseChanRecvSugar` / `parseChanLoopBody` 合成 match 时**继承了外层
+CTX_EXPR**，于是 `validateMatchArmReturns` 把「迴圈体」当成值语境，要求每臂以表达式结尾
+（而臂里写 `ok -> r = it` 完全正常）。修法：合成 match 前
+`p.ctx = p.ctx.filterOut(CTX_EXPR)`，解析完还原。`ASTVersion` 因此 bump 到
+**`2026-11-18.2`**。
+
+**(2) 语料改写（`co` 不再回传值）**
+
+- 11 档既有异步语料全部改写：`test/std/async.no`、`tests/async.no`、
+  `async-ownership`、`async-arg-retain`、`async-arg-move`、`async-more`、`go-async`、
+  `module-async`、`stmt-boundary`、`slot-more`、`slot-rebind-unsafe`。
+- 3 档 mem-safety：`async-str-result`、`async-module-awy`、`async-str-stress`。
+- 4 档 coro 语料（§5.2ae 那一批）同步改成过程形态。
+- `compiler/tests/fixtures/t46-async-prefix.no`、`src/std/async.no` 的用法示例、`AGENTS.md
+  §6.1`、`docs/docs/lang/syntax.md`、`docs/docs/std/async.md`、EN 译文两份。
+
+改写范式是**一生产一通道**：
+
+```no
+put1 = (ch chan[i64], v i64) { ch <- v; ch.close() }
+take1 = (ch chan[i64]) (r i64) { r = 0; <- ch: { ok -> r = it } }
+
+awy { co put1(ch, 21) }
+r = take1(ch)                       ; 组外读回
+```
+
+原本靠「读已 await 的变量」表达的**组内数据依赖**改成「读通道」——读通道本身就是屏障，
+顺序（run await run await）与旧的 dependency 降级完全一致，但读起来不用猜。
+
+**(3) Go 测试跟着改（都在断言 IR/形状，不在 stdout）**
+
+`mir/async_group_test.go`（依赖用例换成语义等价的通道屏障用例）、`mir/spawn_graph_test.go`、
+`mir/go_async_test.go`、`mir/comptime_fold_test.go`、`mir/spawn_arg_move_test.go`、
+`mir/spawn_arg_retain_test.go`、`mir/async_boundary_ownership_test.go`、`mir/tier_test.go`、
+`hir/async_group_test.go`、`hir/golden_test.go` 的 `async` snippet、
+`parser/stmt_boundary_block_test.go`（`r1 = co …` → `co …`）。
+
+所有权类测试的改法值得记一笔：**只把被 spawn 的函式改成过程，别动实参形状**——
+`echo-holder = (h holder) (r str) → (h holder) { print(h.s) }`，实参仍是同一个
+`holder`，于是 `spawnArgMoves` / `spawnArgRetains` / `SpawnArgClasses` 的断言一字不改。
+
+**顺带的结论**：`AsyncGroupPlan` 里那条「读前一个 spawn 的结果 ⇒ 该 spawn 先落地」的
+依赖分析，**在任何表面语法里都不可触达**（`co` 不产生值）。当时先保留代码、测试改成屏障
+用例；**同日已收口删除**（见下面 §5.2ag），别再按「依赖降级」去理解它。
+
+**(4) 验收**
+
+- `go test ./...`（带 `-X checker.StdSigKey`）：hir / parser / checker / fmt / mir /
+  build / lsp 全绿。
+- `./bin/no test -timeout 300 tests`（约 300 档，含子目录）**只剩两例预存失败**，
+  已用 `git worktree add /tmp/no-base HEAD` 建基线、同法 `make gen no` 后对照确认：
+  - `tests/byte-overflow.no`：`b1 != 4` 等 `byte` 与整数字面量比较全部判真 ⇒ 打
+    `SOME TESTS FAILED`（基线同）；
+  - `tests/str-push.no`：`e.push-str(e)` 自我追加时 `signal: abort trap`（基线同）。
+- 4 档 coro 语料：`coro-basic` 12/12、`coro-loop` 6/6、`coro-nested` 5/5、
+  `coro-yield` 27/27；`tests/chan.no` 12 组全绿；`test/std/async.no` 7/7。
+
+**(5) 仍未收口**
+
+- ~~`AsyncGroupPlan` 的依赖分支已是死路径（见 (3) 末段）。真要清掉得连 `reads()` 与
+  `GroupStep.Flush` 一起删，并同步 JS 后端 —— 独立一轮。~~ → **已于 §5.2ag 收口**，
+  且「同步 JS 后端」是过时判断：`src/build/js/` 根本没有 `GroupPlan` 消费者。
+- `tests/byte-overflow.no` / `tests/str-push.no` 两例预存失败尚未定位（与本轮无关）。
+
+**(6) 金表单条更新＋收尾复核**
+
+`tests/golden/mir-baseline.tsv` 只改涉及的那几条（脚本第 410 行明确拒绝「子集 + `-update`」，
+所以是「子集比对定位 → 手改一行 → 子集复跑」）：
+
+| `MIR_GOLDEN_GLOB` | 比对结果 | 处理 |
+|---|---|---|
+| `coro-*.no` | SAME=3 DIVERGE=1（`coro-basic`） | 单条改 hash |
+| `async*.no` | SAME=7 DIVERGE=1（`async-arg-retain`） | 单条改 hash |
+| `go-async.no` | DIVERGE=1 | 单条改 hash |
+| `slot*.no` / `module-async.no` / `stmt-boundary.no` / `async-more.no` / `chan*.no` | 全 SAME（`slot-more.no` 是 NEW，未入表） | 不动 |
+
+每条改之前先**跑两遍确认 hash 稳定**、且断言本身全绿（`coro-basic` 12/12；`go-async`
+输出 `a=11 b=21 c=31 d=55`；`async-arg-retain` 输出 `7 / 8 / ABC / 65 / 1 / 190`）。
+改完复跑三组 glob：`DIVERGE=0 REGRESS=0`。**别整表 `-update`** —— 金表在 HEAD 上就大面积
+陈旧（`same=67 changed=49 new=64 missing=160`），整表更新会把别人的变动一起盖掉。
+
+两个格式/静态检查的口径：
+
+- `gofmt -l` 在 HEAD 上就有 **40+ 档**不合规（`parser/ast.go` 的 `ChanSendStatement`
+  字段对齐早就漂移了，不是本轮造成的），**别整仓 `gofmt -w`**。判据是「本轮改过的文件里
+  我写的那几行合规」：本轮唯一真不合规的是 `build/builder.go` / `build/js_backend.go`
+  里 `rejectChanForNonLLVM` 判空之后多出的空行（双空行），已删。
+- `./bin/no vet src/std` = **0 error / 5 warning / 318 hint**，warning 全在 `uuid.no`
+  的未标注溢出（`xmicjezl`），与基线一致。
+
+### 5.2ag 2026-11-18（同日第二刀）：删掉 `AsyncGroupPlan` 的依赖分析死路径
+
+承接 §5.2af(5)。动手前先核了一遍共用面，**修正两条过时判断**：
+
+| 旧笔记说法 | 实测 |
+|---|---|
+| 「plan 与 JS 后端共用，同步 JS 要一起动」 | `src/build/js/` 里连 `awy` / `FlagAwaitGroup` / `GroupPlan` 都**没有任何引用**；`AsyncGroupPlan` 全仓只有 `hir/async_group.go` 自己 + `mir/zz_corpus_async_group_test.go:169`（只取 `ok`） |
+| 「真清理要连 `GroupStep.Flush` 一起删」 | **错**。`Flush` 是屏障语义的载体（非 `co` 语句前 flush 在飞任务），`TestAsyncGroupChanReadInsideGroupIsBarrier` / `TestAsyncGroupBarrierFlushes` 直接钉它；删掉就丢了「组尾之外还有 join」这条顺序保证 |
+
+真正变成死代码的是 **`reads()` + 结果绑定通路**：`co` 不产生值 ⇒ KLet 形态的 spawn 不可达
+⇒ `GroupStep.Target/Type` 恒空 ⇒ 「读前一个 spawn 结果」「同名的重绑定」两个 flush 条件
+永假。
+
+**改动（`src/hir/async_group.go`）**
+
+| 位置 | 收口后 |
+|---|---|
+| `GroupStep` | 只剩 `Spawn bool` + `Flush []int`；删 `Target string` / `Type int32` |
+| `AsyncGroupPlan` | 无 `reads()`；spawn 语句直接 `GroupStep{Spawn:true}`，pending 全保留到屏障或组尾 |
+| `spawnable` | 签名变 `(stmt *Node) int32`，只认 `KExprStmt`（裸 `co` 语句）；KLet 分支删除 |
+| `awaitAt` | 恒生成 `KExprStmt{KAwait}`，不再按 `Target` 决定绑结果 |
+| `reads()` | 整函数删除（约 30 行） |
+| 文件头注释 | SURFACE FORM 换成通道写法；删掉「r2 = co work(r1) 退化成顺序」的旧例子；「两后端共用」改成「schedule 作为独立值便于断言」 |
+
+`src/mir/async_group_test.go` 头部注释同步改成「依赖分支已删除，`Flush` 只记屏障」。
+
+**验收（均已跑完）**：
+
+- `go test -count=1 ./...`（带 `-X checker.StdSigKey`）：**全绿**；`go vet ./hir/ ./mir/` 无输出。
+- 金表子集 `coro-*.no` / `async*.no` / `go-async.no` / `slot*.no` / `module-async.no` /
+  `stmt-boundary.no` / `chan*.no`：`DIVERGE=0 REGRESS=0`（`slot-more.no` 仍是 NEW，未入表）。
+- `./bin/no test -timeout 300 tests`（后台 11m15s 跑完，rc=1）：**只有三例红，全部与本轮无关**——
+  `tests/byte-overflow.no`（`SOME TESTS FAILED`）、`tests/str-push.no`（abort trap）、
+  `tests/_tmp-wrapclone/probe.no`（trace/BPT trap）。最后一例是**有意保留的已知缺陷复现档**
+  （§5.2u，git 跟踪），不是断言测试：它是 `out = a` 后再 `g = a` 的 use-after-move 双释放
+  repro，trap 是预期行为。已用 `/tmp/no-base/bin/no` 基线跑同一份源码对照，同样 trap。
+  2026-11-18 把目录改名为 `tests/_tmp-wrapclone/`（仓库惯例：领先 `_` = 忽略标记），
+  `no test tests` 不再把它当普通测试跑（`no test tests/_tmp-wrapclone` → No test files found）。
+  ⚠️ 前台跑这个全量命令会在 15 分钟工具时限处被 SIGTERM（日志约第 5100 行，非断言失败），
+  要放后台或用更长的自有超时。
+
+**仍未收口**：三例预存失败在 2026-11-18 全部处理完毕 —— `str-push` / `byte-overflow`
+见 §5.2ah，`tmp-wrapclone` repro 改名为 `_tmp-wrapclone` 后被测试扫描忽略。
+
+### 5.2ai 2026-11-18（同日第三刀）：§9 缺口收口 + 顶层变量计数回归
+
+承接 §5.2ag/§5.2ah。本刀把 `docs/design/nolang-coro.md §9` 剩下的 1/3/4 三项
+按「能落地的落地、落不了的写清边界」处理，并在全量语料里抓到并修掉一处自己
+引入的回归。
+
+**#1 `chan_free` 悬空等待者**：`src/mir/codegen_chan.go` 在释放 `%chancb` 前读
+`field 6 (waiters)`；链非空直接 `@nolang_deadlock_abort()`。`TestChanFreeRejectsDanglingWaiters`
+钉住 `waiters:` 块与 abort 调用。
+
+**#2 `drain_until(null)` livelock**：phi 步数上限 `1_000_000`，仅 null-target 模式
+生效，超限走 `@nolang_deadlock_abort()`。`TestDrainUntilNullHasStepBound` 钉住 IR。
+
+**#3 嵌套 `co`（部分解决）**：`src/hir/async_group.go` 的 `AsyncGroupPlan` 现在
+递归扫描「屏障本身是裸块」的 `co`，把句柄登记进 `GroupPlan.Handles`；`KRun`
+绑定留在原块，await 移到组尾。`GroupStep` 增加 `Handle` / `Nested`，`Flush`
+与 `Tail` 改成 handle 下标。`TestAsyncGroupNestedBareBlockDefersAwaits`
+（`run run await await`）与 `TestAsyncGroupNestedBareBlockStillFlushesEarlierSpawns`
+钉住。循环/if/match 臂**仍未并发**：句柄会跨迭代覆盖或在不进入的分支里未绑定，
+组尾单槽 await 会漏任务/读到未初始化值；真正跨迭代 overlap 需要句柄容器 +
+`join-all` 运行时入口。该边界已写进设计文档 §9.1，当前这些位置仍走 #108 串行回退。
+
+**#4 逻辑嵌套深度守卫**：`%task` 末尾加 `i32 depth, i32 pad`（56B → 64B），
+两个 spawn emitter 在分配任务前调用 `emitSpawnDepthCheck()`，从
+`@nolang_current_task.field 8` 继承 depth（顶层为 1），`>1024` 走
+`@nolang_depth_abort()`。这不是原生栈溢出检查——无栈协程没有原生栈——而是
+拦住递归 spawn 拉出的任务链。`TestTaskDepthGuard` 钉住布局、父读、子写与 abort。
+
+**回归：`tests/field.no` SIGSEGV**。全量语料第一次跑出这一例（此前 8 次全量日志
+均无）。根因是 §5.2ah 的 `topLevelWriteCounts` 计数过宽：它把**直接顶层重赋值**
+也算成「守卫体内写」，`field.no` 的 `n node` 后来被赋成另一种 struct (`annotated`)，
+一旦从 module global 变成 main local，槽的 LLVM 类型固定，第二次 store 破坏栈帧。
+修法：helper 只统计**嵌套语句树内**的写入（顶层语句本身不计），三个调用点的
+判据从 `<=1` 改成 `==0`。新对照测试 `TestTopLevelDirectReassignStaysGlobal` 与
+原 `TestTopLevelGuardReassignKeepsInitializer` 双向钉住。
+
+**#5 `%task` 无 TLS/线程亲和性：明确保留为刻意约束**（设计文档 §9.3）。调度队列、
+`@nolang_current_task` 与 `%chancb` 都是无锁全局；单线程协作式是 §8 顺序可断言的
+前提。真并行必须同时改队列、`%chancb` waiters/缓冲和 `current_task`（TLS），
+单独加锁不成立，属运行时模型变更，本轮不实施；当前唯一并发来源是单线程内交错。
+
+**验收**：`make gen FORCE=1 && make no` rc=0；`go vet ./...` 无输出；
+`go test -count=1 ./...`（带 StdSigKey）全绿；`gofmt -l` 本轮改动文件 0 条；
+`./bin/no test -timeout 300 tests` rc=0、`FAIL: tests/` 计数 **0**（后台 11m20s），
+`field.no` / `byte-overflow.no` / `str-push.no` 单跑全绿；端到端
+`/tmp/nested-co-probe.no`（两个 `co` 在裸块里）输出 `1 / 2`、rc=0。
+金表 8 组子集（`coro-*` / `async*` / `go-async` / `slot*` / `module-async` /
+`stmt-boundary` / `chan*` / `field.no`）**DIVERGE=0 REGRESS=0**；`field.no` 与
+`slot-more.no` 仍是 NEW（未入表），按子集群不能直接 `-update`，未动金表。
+
+### 5.2aj 2026-11-18（第四刀）：运行时 join-set —— 循环/if/match 臂的 `co` 组尾 join-all
+
+承接 §5.2ai 的 §9 #3 剩余部分。用户裁决走「A 运行时 join-set」：跨迭代句柄不能
+用编译期 `ValueID` 槽位收集（循环体只 lower 一次但运行多次），改由运行时容器记录。
+
+**HIR**（`src/hir/async_group.go`）：`spawnRef` 加 `deferred`；新增
+`controlFlowKind` / `collectFlowArmSpawns` / `findParentBlock` / `globalCall` /
+`callWithHandle` / `desugarFlowArmSpawns`。臂内每个 `co` 改写成
+`KLet(__agN, KRun(call))` + `__join-push(__agN)`；组头插 `__join-enter`，组尾插
+`__join-leave`。`group()` 无论静态 plan 是否命中都会再扫一遍控制流臂。
+
+**踩坑（关键）**：初版 `collectFlowArmSpawns` 只在直接孩子是 `KFor/KIf/...` 时
+下降，漏掉 HIR 用 `KExprStmt` 包住的 `if`；`findParentBlock` 又只沿
+`KBlock/controlFlowKind` 下降，漏掉 `KSlot` 和 `KExprStmt`。结果是 enter/leave
+插进去了、`__join-push` 一条没生成，`co` 仍走 #108 立即 await。修法：顶层对每个
+孩子都 `walk(sid, false)`（由 walk 自己遇到控制流节点时翻 `inFlow`），
+`findParentBlock` 沿所有孩子边下降但只把 `KBlock` 当结果。
+
+**builtin / runtime**：`src/builtin/async.go` 注册三个 internal global builtin；
+`src/mir/builtin_call.go` 加 `join-enter/push/leave` 分派与 emit；
+`src/mir/codegen.go` 的 `emitAsyncScheduler` 发出
+`@nolang_join_sp` / `@nolang_join_n[64]` / `@nolang_join_h[64][256]` 和四个运行时
+函数。`__join-leave` 先 `@nolang_async_drain_until(i8* null)`，再逐个
+`@nolang_task_retire(i8*)`，最后弹栈；超限（64 帧 / 256 句柄）打印诊断并 trap。
+
+**端到端判据**：`tests/coro-join-all.no` 用「第 0 个任务 park 在空通道、第 1 个
+任务才发信号」的两个循环臂 `co` 区分调度。join-all：`ALL TESTS PASSED`；
+`NOLANG_ASYNC_GROUP=0`（退回 #108 串行）：`nolang: deadlock` + trap。这是本轮
+唯一能真正区分两种实现的观测点，普通「打印 1/2」档在两种实现下都绿。
+
+**新增测试**：`TestFlowArmCoUsesJoinSet`（HIR：1 run / 0 await / enter+push+leave
+各 1）、`TestFlowArmCoIsNotAwaitedInline`（MIR：同上）、`TestJoinSetRuntimeIR`
+（运行时 IR 含 globals/drain/retire/弹栈）。两个临时探针
+`probe_dump_join_test.go` / `probe_loop_co_test.go` 已删除。
+
+**补记（同刀）**：① HIR 钉子扩到四种控制流（`TestFlowArmCoJoinSetAllControlFlowKinds`：
+for / if / match / chan-iter 全部 `run>0, await=0, push==run`）；match 与 chan-iter
+脱糖会把臂体同时放进 `then` 与 `dot-val` 两个 slot，只有一支会执行，所以断言是
+「每个 run 都有 push」而不是恰好 1 个。② `i18n.Errorf` 新键（`k7m2q9xa`）要求
+`make i18n` + 九个 locale 各补一行，键必须 8 字符 base36；③
+`TestStdASTBlobCarriesParseConfig` 报 hash 不一致时跑 `make gen FORCE=1 && make no`。
+
+### 5.2ak 2026-11-18（审查后修）：join-leave 逐句柄 drain，消除 parked-task UAF
+
+审查发现 §5.2aj 的 `__join-leave` 用 `drain_until(null)`：null 模式在就绪队列空
+时**直接返回**，没有「target 未完成」的 deadlock 检查（该检查只对非 null target
+生效，见 `codegen.go` 的 `drain_until`）。于是组内 park、组外才发信号的 `co`：
+任务仍挂在通道等待链上时就被 `task_retire` 释放 frame，后续 send 触发 SIGSEGV。
+实测 `/tmp/joinall-parked-uaf.no` 崩；同形状走静态槽 `OpAwait` 则是正确的
+`nolang: deadlock` + trap。
+
+修法：`src/mir/codegen.go` 的 `@nolang_join_leave` 改为对每个记录的句柄做
+`call void @nolang_async_drain_until(i8* %hp)`，再 `nolang_task_retire(i8* %hp)`，
+最后弹栈。非 null target 自带 deadlock 检查，语义与静态槽对齐；某次 drain 顺带
+跑完后续句柄的任务也安全（后续 drain 入口检查 `target.done` 即返回）。
+
+回归：`TestJoinSetRuntimeIR` 断言改成 per-handle drain；新增
+`TestJoinLeaveDrainsEachTargetBeforeRetire` 在 `@nolang_join_leave` 函数体内断言
+**无 null drain**、先 drain 再 retire、句柄来自 `%slot` 且弹栈仍在。端到端
+`tests/_known-deadlock/join-parked.no` 用 `_` 前缀排除出 `no test`，手工跑
+应从 SIGSEGV 变为 deadlock abort（已验证）。
+
+附带：`emitJoinPush` 的 default 分支不再静默把非 i64/i8* 实参塞进 `call i64`，
+改走既有 `x57xvqny`（unsupported value type）诊断；`docs/design/nolang-coro.md`
+的 9.5 小节移到 9.4 之后并改正「null drain 自带死锁检测」的错误描述。
+
+### 5.2al 2026-11-18（P1）：join-set frame 改为任务私有，修挂起交错
+
+上一刀的 join-set 仍把 frame 放在**全局栈**上，但 `awy` 组可能在
+`__join-enter` 与 `__join-leave` 之间 park（屏障 await / 通道空读）。两个任务
+同时挂起在各自组里时，enter/leave 在时间上交错，后恢复者会按 `%sp-1` 弹掉
+对方的 frame，造成二次 retire / UAF。
+
+实测判据 `tests/coro-join-interleave.no`：两个任务各在组内 park 等自己的通道，
+内层 `co` 分别回唤醒；trace 次序是 `a-enter b-enter a-leave b-leave`。单一全局栈
+下第二次 resume 必错。
+
+修法：
+- `%task` 加 field 10 `i8* join_top`，64B → 72B；两个 spawn emitter 同步分配
+  与显式置 null。`%joinframe = { i8* prev, i32 n, i32 depth, [256 x i64] h }`，
+  2064B，走 `@nolang_rc_alloc` / `@nolang_free`。
+- `join-enter/push/leave` 先看 `@nolang_current_task`：任务走自己的 `join_top`
+  链（depth 守 64 层、每帧 256 句柄），顶层 main 仍走原三个全局。
+- drain/retire 循环抽成 `@nolang_join_reap(i32 n, i64* slots)`，两条路径共用，
+  保持逐句柄 target drain（§5.2ak）。
+- `@nolang_task_retire` 在释放任务前清掉残留 frame 链：`return`/`break` 早退仍
+  泄漏句柄引用（与静态槽同构），但不再泄漏 frame 本身。
+
+钉子：`TestJoinSetPerTaskFrames`（enter/push/leave 的任务分支、2064B 分配、
+`task_retire` 清链）、`TestJoinLeaveDrainsEachTargetBeforeRetire`（改查
+`join_reap`）、`TestTaskDepthGuard` 与 `TestTaskOwnsWaiter` 的 `%task` 类型串
+同步 11 字段 / 72B。端到端新增 `tests/coro-join-interleave.no`。
+
+### 5.2am 2026-11-18（第五刀）：P2 收口 —— match/chan-iter 端到端档 + join-set 按需发射
+
+**端到端补齐**：§5.2aj 的四种控制流臂此前只有 for/if 有语料档，match 与
+chan-iter 仅 HIR 形状钉子。新增 `tests/coro-join-match.no`（KTypeMatch 臂）与
+`tests/coro-join-chaniter.no`（`<- ch:` 迭代臂），都沿用「第 0 个任务 park 在空
+通道、第 1 个才发信号」的互相依赖结构：join-all 下 `ALL TESTS PASSED`，
+`NOLANG_ASYNC_GROUP=0`（#108 串行）下 `nolang: deadlock` + trap。至此四种臂
+（for / if / match / chan-iter）都有能真正区分两种实现的端到端判据。
+
+**join-set 按需发射**：此前无协程程序也无条件带 `@nolang_join_h`（`[64 x
+[256 x i64]]` = 128 KiB BSS）+ 4 globals + 5 函数（~160 行 IR）。实测一个只
+`print('hi')` 的程序 join 引用 25 行。改动：`Module.scanJoinSetUse()` 在
+`EmitLLVM` 前扫所有 MIR `OpCall.Sym ∈ {__join-enter,__join-push,__join-leave}`，
+`emitAsyncScheduler` 据此把 globals 与 5 个函数一并发射或一并省略。依赖方向
+单向（join 引用核心 `drain_until`/`task_retire`，反向无引用），门控安全；核心
+调度器 runtime 不动。实测 hello-world join 引用 25 → 0 行，有协程档仍 29 行，
+四个端到端档全过。门控在 LLVM 发射层，MIR 金表不受影响。
+新钉子：`TestJoinSetGatedWhenUnused`（无 join 调用则 globals/函数全无，但核心
+scheduler 仍在）、`TestJoinSetScanDetectsRewrittenSpawns`（有臂内 co 则扫描为真）。

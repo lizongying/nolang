@@ -421,26 +421,35 @@ main = () () {
 
 // TestComptimeLeavesAsyncSpawnAlone: a spawn CREATES A TASK, so it must never
 // be replaced by a constant — not even when the callee is pure and every
-// argument is a literal. Folding `co work(21)` to 42 would delete the
-// task and with it every spawn-graph / tier verdict derived from it.
+// argument is a literal. (Since `co` only spawns a PROCEDURE, there is no
+// result to fold into any more; what folding would still destroy is the TASK,
+// and with it every spawn-graph / tier verdict derived from it. The assertion
+// is therefore "the OpRun survives and still targets the -async clone".)
 func TestComptimeLeavesAsyncSpawnAlone(t *testing.T) {
 	t.Setenv("NOLANG_COMPTIME", "1")
-	on := lowerSrc(t, `work = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n * 2
+	on := lowerSrc(t, `work = (n i64) {
+    print(n)
 }
 main = () {
     awy {
-        v = co work(21)
+        co work(21)
     }
-    print(v)
 }
 `)
 	if n := runInsts(on); n != 1 {
 		t.Errorf("the spawn was folded away (or duplicated): %d OpRun instruction(s), want 1", n)
 	}
-	if constInts(on)[42] {
-		t.Errorf("the spawn was folded to its result 42; consts=%v", constInts(on))
+	// The spawn must still name the -async clone: folding it into a plain call
+	// (or into nothing) is the failure this test exists for, and it is not
+	// visible through callSyms — spawns are OpRun, not OpCall.
+	targets := ""
+	for i := range on.Insts {
+		if on.Insts[i].Op == OpRun {
+			targets = on.Insts[i].Sym
+		}
+	}
+	if targets != "work-async" {
+		t.Errorf("the spawn targets %q, want %q", targets, "work-async")
 	}
 }
 

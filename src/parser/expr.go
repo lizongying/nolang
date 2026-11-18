@@ -84,6 +84,20 @@ func (p *Parser) currentPrecedence() int {
 	return LOWEST
 }
 
+// atStatementStart reports whether the token BEFORE the current one can end a
+// statement. Used by `co`, which produces no value: a spawn can only stand
+// alone, so its left neighbour has to be a statement boundary (newline,
+// semicolon, an opening/closing brace of a block, a match arm's `->`) rather
+// than `=` or `(`. ILLEGAL is the zero TokenType, i.e. the start of the file.
+func (p *Parser) atStatementStart() bool {
+	switch p.prevToken.Type {
+	case lexer.NEWLINE, lexer.SEMICOLON, lexer.LBRACE, lexer.RBRACE,
+		lexer.EOF, lexer.RARROW, lexer.COLON, lexer.ILLEGAL:
+		return true
+	}
+	return false
+}
+
 func (p *Parser) parseExpression(precedence int) Expression {
 	// Skip newlines within expressions (multi-line array/slice literals, etc.)
 	for p.currentToken.Type == lexer.NEWLINE {
@@ -314,10 +328,14 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseIfExpression()
 
 	case lexer.CO:
-		// `co <call>` — colorless async spawn, ONLY valid inside an
-		// `awy { ... }` coroutine group. Consume `co`, then parse the
-		// following call expression; the callee resolves to its `-async`
-		// monomorphized variant at HIR time.
+		// `co` — colorless async spawn, ONLY valid inside an `awy { ... }`
+		// coroutine group. Two forms, both spawning a PROCEDURE (no result):
+		//
+		//	co f(args)   spawn the `-async` monomorph of `f`
+		//	co { ... }   spawn an anonymous zero-parameter closure
+		//
+		// spawn 的结果没有任何去处（`co` 不是值），所以它只能占满一个语句：
+		// 赋值右侧、实参位置等都会在下面被拒。
 		// When `co` is followed by `.`, it is a module-qualified name
 		// (e.g. a module literally named `co`), not the spawn keyword.
 		if p.peekToken.Type == lexer.DOT {
@@ -332,11 +350,46 @@ func (p *Parser) parseExpression(precedence int) Expression {
 				p.errorf(tok, "c0grp1aa", "E_CO_OUTSIDE_GROUP",
 					"co <call> is only allowed inside an 'awy { ... }' coroutine group")
 			}
+			// `co` 不是值：它左邊只能是語句邊界（換行 / 分號 / 塊的 `{` `}` /
+			// 匹配臂的 `->`）。`r = co f()`、`print(co f())` 都在這裡被拒，
+			// 而不是留到後面降成一個「假的同步呼叫」。
+			if !p.atStatementStart() {
+				p.errorf(tok, "c0nostmt", "E_CO_NOT_STATEMENT",
+					"'co' spawns a procedure and produces no value; it must stand alone as a statement")
+			}
 			p.nextToken() // consume 'co'
-			callExpr := p.parseExpression(LOWEST)
-			leftExp = &CoExpression{
-				Token: tok,
-				Call:  callExpr,
+			if p.currentToken.Type == lexer.LBRACE {
+				// 閉包形式：`co { ... }` 等價於一個零參數匿名函式的 spawn。
+				// 區塊內是獨立的函式體，`co` 的組深度要歸零（與函式字面量一致）。
+				savedGroupDepth := p.awaitGroupDepth
+				p.awaitGroupDepth = 0
+				body := p.parseBlockStatement()
+				p.awaitGroupDepth = savedGroupDepth
+				// parseBlockStatement 停在 `}` 上而不消費它；表達式的位置約定是
+				// 「currentToken 停在最後一個 token 之後」，所以這裡跟
+				// parseFunctionLiteral 一樣補一次 nextToken。少了這一步，整個
+				// 外層塊會少算一層大括號（`co { ... }` 之後的語句會被擠出函式）。
+				if p.currentToken.Type == lexer.RBRACE {
+					p.nextToken()
+				}
+				leftExp = &CoExpression{
+					Token: tok,
+					Call: &FunctionLiteral{
+						Token:         tok,
+						FuncSignature: FuncSignature{Parameters: []*Parameter{}},
+						Body:          body,
+					},
+				}
+			} else {
+				callExpr := p.parseExpression(LOWEST)
+				if _, ok := callExpr.(*CallExpression); !ok {
+					p.errorf(tok, "c0notcal", "E_CO_NOT_CALL",
+						"'co' must be followed by a call ('co f(...)') or a block ('co { ... }')")
+				}
+				leftExp = &CoExpression{
+					Token: tok,
+					Call:  callExpr,
+				}
 			}
 		}
 
@@ -2278,6 +2331,28 @@ func (p *Parser) parseFunctionLiteral() Expression {
 			}
 
 			p.nextToken()
+
+			// 通道型別參數：`(c chan[i64]) { ... }`。方括號在 `chan` 之後，
+			// 與 `[]T` / `[N]T`（方括號緊跟名字）形狀不同，故在此先行分流，
+			// 再由 parseParamTypeAfterName 統一解析 `chan[` 前綴。
+			if p.currentToken.Type == lexer.CHAN {
+				t, ok := p.parseParamTypeAfterName()
+				if !ok {
+					return nil
+				}
+				param.Type = t
+				lit.Parameters = append(lit.Parameters, param)
+				if p.currentToken.Type == lexer.RPAREN {
+					break
+				}
+				if p.currentToken.Type != lexer.COMMA {
+					p.saveErrorf("i0q22lpt", "line %d, column %d: expected comma or right parenthesis, got %s instead",
+						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
+					return nil
+				}
+				p.nextToken()
+				continue
+			}
 
 			// Optional type annotation: (a i64, b str, c i8* / *i8)
 			if p.currentToken.Type == lexer.IDENT || p.currentToken.Type == lexer.MUL || p.currentToken.Type == lexer.STAR_STAR {

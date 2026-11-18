@@ -95,7 +95,7 @@ print(q); expect 9 (rebind disabled: p reassigned after move)
 print('---')
 
 ; slot-rebind-unsafe：協程捕獲棧變數，slot-rebind 必須禁用
-double = (n i64) (r i64) {
+double-into = (out chan[i64], n i64) {
 
     #{overflow=wrap}
     {
@@ -103,20 +103,26 @@ double = (n i64) (r i64) {
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
-            ok -> r = it
+            ok -> out <- it
 
             ->
         }
+        out.close()
     }
 }
 
 coro-capture = () {
     x = 7
     y = x; 若誤重綁定：y 別名 x
+    out chan[i64] = with-cap(1)
     awy {
-        r = co double(x); 協程捕獲 x（跨線程）
+        co double-into(out, x); 協程捕獲 x（跨線程）
     }
     print(y); expect: 7
+    r = 0
+    <- out: {
+        ok -> r = it
+    }
     print(r); expect: 14
 }
 

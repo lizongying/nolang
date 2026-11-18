@@ -1438,6 +1438,7 @@ func (p *Parser) parseFunctionTypeEntry() (*Parameter, bool) {
 	// If next token starts a type, firstLit was the param name.
 	if p.currentToken.Type == lexer.IDENT ||
 		p.currentToken.Type == lexer.LBRACKET ||
+		p.currentToken.Type == lexer.CHAN ||
 		p.currentToken.Type == lexer.QUESTION {
 		paramType, ok := p.parseParamTypeAfterName()
 		if !ok {

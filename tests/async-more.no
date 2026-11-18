@@ -5,6 +5,31 @@
 ; 保留獨立：async.no(canonical)、async-arg-move/arg-retain(被 src 引用)、
 ; go-async/module-async(模組級 co 觸發全檔 async 狀態機變換，併檔會改語義)。
 ; 手寫句柄 / cancel(h) 探針已隨 run 關鍵字一併移除。
+;
+; `co` 只啟動**過程**（被呼叫者不得有宣告回傳值），所以結果一律走通道：
+; 一個生產者一條通道，寫完值即 close，呼叫方用 take-i64 / take-str 讀回。
+; 原本靠「讀已 await 的變數」表達的組內資料依賴，改成「讀通道」——同樣是屏障，
+; 前者由變數依賴隱含，後者由通道語義顯式表達。
+
+; ── 通用讀回 ────────────────────────────────────────────
+; 從單值通道取一筆（生產者已 close，一輪 ok 之後落到 nil 收尾）
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take-i64 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+}
+
+; ch: 已關閉的結果通道
+; r: 取到的字串；一筆都沒有時回空字串
+take-str = (ch chan[str]) (r str) {
+    r = ''
+    <- ch: {
+        ok -> r = it
+    }
+}
 
 ; from async-cancel.no — cancel / cancelled / async-yield 探針
 ac-worker = (n i64) (r i64) {
@@ -22,10 +47,19 @@ ac-worker = (n i64) (r i64) {
     }
 }
 
+; ch: 結果通道（呼叫方建，容量 1）
+; n: 來源數值
+ac-worker-into = (ch chan[i64], n i64) {
+    ch <- ac-worker(n)
+    ch.close()
+}
+
 ac-test-no-cancel = () {
+    ch chan[i64] = with-cap(1)
     awy {
-        r = co ac-worker(21)
+        co ac-worker-into(ch, 21)
     }
+    r = take-i64(ch)
     print(r); expect: 42
 }
 
@@ -48,10 +82,19 @@ ak-selfcheck = (n i64) (r i64) {
     }
 }
 
+; ch: 結果通道（呼叫方建，容量 1）
+; n: 來源數值
+ak-selfcheck-into = (ch chan[i64], n i64) {
+    ch <- ak-selfcheck(n)
+    ch.close()
+}
+
 ak-test-run-ok = () {
+    ch chan[i64] = with-cap(1)
     awy {
-        r = co ak-selfcheck(7)
+        co ak-selfcheck-into(ch, 7)
     }
+    r = take-i64(ch)
     print(r); expect: 7
 }
 
@@ -72,10 +115,19 @@ ay-yielder = (n i64) (r i64) {
     }
 }
 
+; ch: 結果通道（呼叫方建，容量 1）
+; n: 來源數值
+ay-yielder-into = (ch chan[i64], n i64) {
+    ch <- ay-yielder(n)
+    ch.close()
+}
+
 ay-test-inside = () {
+    ch chan[i64] = with-cap(1)
     awy {
-        r = co ay-yielder(5)
+        co ay-yielder-into(ch, 5)
     }
+    r = take-i64(ch)
     print(r); expect: 6
 }
 
@@ -89,45 +141,64 @@ ag-hello = (i i64) (r i64) {
     r = i
 }
 
+; ch: 結果通道（呼叫方建，容量 1）
+; i: 要原樣送回的數值
+ag-hello-into = (ch chan[i64], i i64) {
+    ch <- ag-hello(i)
+    ch.close()
+}
+
 ag-test-independent = () {
-    r1 i64
-    r2 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     awy {
-        r1 = co ag-hello(1)
-        r2 = co ag-hello(2)
+        co ag-hello-into(c1, 1)
+        co ag-hello-into(c2, 2)
     }
+    r1 = take-i64(c1)
+    r2 = take-i64(c2)
     print(r1); expect: 1
     print(r2); expect: 2
 }
 
+; 組內資料依賴：第二個 spawn 的實參來自第一個的結果 ⇒ 組內先讀通道（屏障）
 ag-test-dependent = () {
-    r1 i64
-    r2 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
+    r1 = 0
     awy {
-        r1 = co ag-hello(1)
-        r2 = co ag-hello(r1)
+        co ag-hello-into(c1, 1)
+        r1 = take-i64(c1)
+        co ag-hello-into(c2, r1)
     }
+    r2 = take-i64(c2)
     print(r1); expect: 1
     print(r2); expect: 1
 }
 
+; 三級依賴鏈，每級都靠通道讀回把上一級的結果接到下一級的實參上
 ag-test-chain = () {
-    r1 i64
-    r2 i64
-    r3 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
+    c3 chan[i64] = with-cap(1)
+    r1 = 0
+    r2 = 0
     awy {
-        r1 = co ag-hello(1)
-        r2 = co ag-hello(r1)
-        r3 = co ag-hello(r2)
+        co ag-hello-into(c1, 1)
+        r1 = take-i64(c1)
+        co ag-hello-into(c2, r1)
+        r2 = take-i64(c2)
+        co ag-hello-into(c3, r2)
     }
+    r3 = take-i64(c3)
     print(r3); expect: 1
 }
 
 ag-test-read-inside = () {
-    r1 i64
+    ch chan[i64] = with-cap(1)
     awy {
-        r1 = co ag-hello(7)
-        print(r1); expect: 7
+        co ag-hello-into(ch, 7)
+        print(take-i64(ch)); expect: 7
     }
 }
 
@@ -145,15 +216,24 @@ ag-echo = (s str) (r str) {
     r = s
 }
 
+; ch: 結果通道（呼叫方建，容量 1）
+; s: 要原樣送回的負載
+ag-echo-into = (ch chan[str], s str) {
+    ch <- ag-echo(s)
+    ch.close()
+}
+
 ag-test-heap-arg = () {
+    ca chan[str] = with-cap(1)
+    cb chan[str] = with-cap(1)
     a = 'hello'
     b = 'world'
-    ra str
-    rb str
     awy {
-        ra = co ag-echo(a)
-        rb = co ag-echo(b)
+        co ag-echo-into(ca, a)
+        co ag-echo-into(cb, b)
     }
+    ra = take-str(ca)
+    rb = take-str(cb)
     print(ra); expect: hello
     print(rb); expect: world
 }

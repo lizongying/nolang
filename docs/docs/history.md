@@ -6,6 +6,18 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.27
+
+- refactor(async): remove the deprecated run keyword and awy handle form, allowing co only inside awy coroutine groups
+- feat(coro): implement stackless coroutines with heap frames, state dispatch and a cooperative FIFO scheduler
+- feat(chan): add blocking channel recv with empty-read park and %task waiter chaining for deterministic wakeup
+- feat(async): support co procedure and closure spawn with by-value capture, rejecting callees with declared results
+- fix(coro): guard nested depth, join sets and channel/drain livelock in the coroutine runtime
+- test(coro): add coroutine, channel, join and ownership regressions with deterministic output assertions
+- fix(i18n): skip the filesystem root in WASI catalog probing so the playground falls back to embedded catalogs
+- docs(playground): add a Hello World snippet and raise the LSP bridge request timeout to 60 seconds
+- fix(docs): quote bare braces in the previous changelog and lint future entries against MDX-breaking braces
+
 ## v0.4.26
 
 - perf(checker): bake std union-alias locations and per-module exports into stdsig so cold builds skip parsing all 119 std modules (native 11.5s -> 0.6s, wasm heap ~1GB -> ~43MB), with self-healing fallback to full scans on drift

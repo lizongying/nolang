@@ -1110,6 +1110,12 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinAsyncCancelled(inst)
 	case "async-yield":
 		return c.emitBuiltinAsyncYield(inst)
+	case "join-enter":
+		return c.emitJoinEnter()
+	case "join-push":
+		return c.emitJoinPush(inst)
+	case "join-leave":
+		return c.emitJoinLeave()
 	case "write-file":
 		return c.emitBuiltinWriteFile(inst)
 	case "read-dir":
@@ -1331,6 +1337,56 @@ func (c *codegen) emitBuiltinAsyncCancelled(inst *Inst) error {
 // the current task and returns. Returns void (no destination).
 func (c *codegen) emitBuiltinAsyncYield(inst *Inst) error {
 	c.sb.WriteString("  call void @nolang_async_yield()\n")
+	return nil
+}
+
+// join-set runtime. DesugarAsyncGroups inserts __join-enter / __join-push /
+// __join-leave around an `awy { ... }` group whose `co` statements live in a
+// control-flow arm (loop/if/match), where a static per-spawn handle binding
+// cannot survive cross-iteration rebinding. The set is a fixed-size global
+// stack of handle arrays; a group records each OpRun handle, and at its tail
+// drains the ready queue and retires exactly one reference per recorded handle.
+// The declarations below are emitted once by emitAsyncScheduler.
+const (
+	joinMaxFrames  = 64  // max nested join sets
+	joinMaxHandles = 256 // max deferred spawns per group
+	// %joinframe = { i8* prev, i32 n, i32 depth, [joinMaxHandles x i64] }:
+	// 8 + 4 + 4 padding/fields, then the handle array.
+	joinFrameBytes = 16 + joinMaxHandles*8
+)
+
+func (c *codegen) emitJoinEnter() error {
+	c.sb.WriteString("  call void @nolang_join_enter()\n")
+	return nil
+}
+
+func (c *codegen) emitJoinPush(inst *Inst) error {
+	if len(inst.Args) < 1 {
+		return i18n.Errorf("k7m2q9xa", "__join-push: missing task handle")
+	}
+	lt, hreg := c.loadVal(inst.Args[0])
+	var h64 string
+	switch lt {
+	case "i64":
+		h64 = hreg
+	case "i8*":
+		r := c.treg("jp.ptr")
+		c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", r, hreg))
+		h64 = r
+	default:
+		// Handles are opaque i64 by construction. Anything else means a
+		// mismatch between the HIR pass and the lowerer; fail loudly instead
+		// of emitting `call void @nolang_join_push(i64 <i32 value>)`, which
+		// LLVM would reject with an opaque diagnostic far from the cause.
+		c.fail("__join-push: unsupported handle type %s", lt)
+		return i18n.Errorf("x57xvqny", "unsupported value type %s in func %s", lt, "__join-push")
+	}
+	c.sb.WriteString(fmt.Sprintf("  call void @nolang_join_push(i64 %s)\n", h64))
+	return nil
+}
+
+func (c *codegen) emitJoinLeave() error {
+	c.sb.WriteString("  call void @nolang_join_leave()\n")
 	return nil
 }
 

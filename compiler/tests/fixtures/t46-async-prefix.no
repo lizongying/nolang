@@ -2,11 +2,28 @@ worker = (n i64) (r i64) {
     r = n
 }
 
-; 協程組：`awy { }` 內的 `co worker(...)` 是無色 async spawn
+; 過程版：`co` 只能啟動過程（無宣告回傳值），結果走通道
+worker-into = (ch chan[i64], n i64) {
+    ch <- worker(n)
+    ch.close()
+}
+
+; 從單值通道取一筆
+take1 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+}
+
+; 協程組：`awy { }` 內的 `co worker-into(...)` 是無色 async spawn
 ; （run / 舊 awy 前綴已廢除，不再建 K-RUN/K-AWAIT-EXPRESSION）
+; `co` 只啟動過程，所以結果走通道而不是綁定到變數。
+h-ch chan[i64] = with-cap(1)
+k-ch chan[i64] = with-cap(1)
 awy {
-    h = co worker(3)
-    k = co worker(4)
+    co worker-into(h-ch, 3)
+    co worker-into(k-ch, 4)
 }
 
 ; 歧義消解：`co` 緊接 `.` 時是模組名（DotExpression），非 async 關鍵字
@@ -14,8 +31,9 @@ m = co.pool()
 
 ; 對照：普通呼叫不受影響（CallExpression）
 w = worker(5)
+h = take1(h-ch)
+k = take1(k-ch)
 print(h)
 print(k)
-print(v)
 print(m)
 print(w)

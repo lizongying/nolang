@@ -9,18 +9,34 @@ import (
 // block whose statements are `co` calls. The observable is the ORDER of OpRun /
 // OpAwait in the lowered function, because order is the entire point: "spawn
 // everything, then await" is the concurrent case, and "spawn, await, spawn,
-// await" is the degraded sequential case. A test that only checked that the
-// program produced the right numbers could not tell them apart.
+// await" is the case where a barrier sits between the spawns.
+//
+// SURFACE SHAPE (2026-11-18). `co` only ever spawns a PROCEDURE: the callee may
+// not declare a result (a method's implicit `self` does not count), so a spawn
+// result can no longer be bound in the group at all — results travel through a
+// channel. That removes the old "r2 = co work(r1) forces r1's await up front"
+// shape from the language; a dependency is now written as a channel read inside
+// the group, and a channel read is a BARRIER (it is not an `-async` call), so it
+// produces the same run/await/run/await order for a different, better stated
+// reason. The old `reads`-based dependency branch has been REMOVED from
+// AsyncGroupPlan (2026-11-18): with `co` producing no value there is no result
+// to depend on, so `Flush` now only records barrier statements.
 //
 // NON-VACUITY: each case has a sibling that must produce the OTHER pattern.
 // TestAsyncGroupSpawnsIndependentCalls (run run await await) is the control for
-// TestAsyncGroupDegradesOnDependency (run await run await), and
-// TestAsyncGroupFnBodyIsNotAGroup proves the pass does not fire on a plain
-// function body — without it, a pass that rewrote every block would still pass
-// the first two.
+// TestAsyncGroupChanReadInsideGroupIsBarrier (run await run await), and
+// TestAsyncGroupPlainCallIsNotASpawn / TestAsyncGroupWithoutAsyncCallsIsUntouched
+// prove the pass does not fire outside a group or on a group with no spawn —
+// without them, a pass that rewrote every block would still pass the first two.
 
 const asyncGroupWorkSrc = `work = (n i64) (r i64) {
     r = n
+}
+
+; 過程版：` + "`co`" + ` 只啟動過程，結果走通道
+work-into = (ch chan[i64], n i64) {
+    ch <- work(n)
+    ch.close()
 }
 `
 
@@ -62,15 +78,23 @@ func wantOps(t *testing.T, got []string, want ...string) {
 	}
 }
 
-// TestAsyncGroupSpawnsIndependentCalls: two spawns whose results nothing else
-// in the group reads must BOTH be launched before either is awaited.
+// TestAsyncGroupSpawnsIndependentCalls: two spawns with nothing between them
+// must BOTH be launched before either is awaited.
 func TestAsyncGroupSpawnsIndependentCalls(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
-    r1 i64
-    r2 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     awy {
-        r1 = co work(1)
-        r2 = co work(2)
+        co work-into(c1, 1)
+        co work-into(c2, 2)
+    }
+    r1 = 0
+    <- c1: {
+        ok -> r1 = it
+    }
+    r2 = 0
+    <- c2: {
+        ok -> r2 = it
     }
     print(r1)
     print(r2)
@@ -78,74 +102,81 @@ func TestAsyncGroupSpawnsIndependentCalls(t *testing.T) {
 `, "main"), "run", "run", "await", "await")
 }
 
-// TestAsyncGroupDegradesOnDependency: `r2 = work-async(r1)` reads r1, so r1's
-// task must land BEFORE r2 is launched. The group degrades to sequential
-// execution — this is the whole reason the dependency analysis exists.
-func TestAsyncGroupDegradesOnDependency(t *testing.T) {
+// TestAsyncGroupChanReadInsideGroupIsBarrier: the group's dependency case, as
+// the language can still express it. A receive loop is not an `-async` call, so
+// it is a barrier: the spawn before it must land before the loop runs, and the
+// spawn after it cannot start earlier either.
+//
+// This is what replaced `r2 = co work(r1)` — that spelling is rejected by the
+// parser now (`co` produces no value), and "read the channel" states the same
+// ordering without relying on an analysis of the spawned call's arguments.
+func TestAsyncGroupChanReadInsideGroupIsBarrier(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
-    r1 i64
-    r2 i64
+    c1 chan[i64] = with-cap(1)
     awy {
-        r1 = co work(1)
-        r2 = co work(r1)
+        co work-into(c1, 1)
+        <- c1: {
+            ok -> print(it)
+        }
+        co work-into(c1, 2)
     }
-    print(r1)
-    print(r2)
 }
 `, "main"), "run", "await", "run", "await")
-}
-
-// TestAsyncGroupTransitiveDependency: r3 reads r2 which reads r1, so the whole
-// chain is sequential. A one-level-deep analysis would leave r1 in flight and
-// hand r2 a handle where a value was expected.
-func TestAsyncGroupTransitiveDependency(t *testing.T) {
-	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
-    r1 i64
-    r2 i64
-    r3 i64
-    awy {
-        r1 = co work(1)
-        r2 = co work(r1)
-        r3 = co work(r2)
-    }
-    print(r3)
-}
-`, "main"), "run", "await", "run", "await", "run", "await")
 }
 
 // TestAsyncGroupBarrierFlushes: a statement that is not an `-async` call is a
 // barrier — its reads and writes are not analyzed, so everything in flight
-// lands before it. This is what keeps `print(r1)` inside a group from reading a
-// handle as if it were the value.
+// lands before it. This is what keeps a `print` between two spawns from
+// observing a half-run group.
 func TestAsyncGroupBarrierFlushes(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
-    r1 i64
-    r2 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     awy {
-        r1 = co work(1)
+        co work-into(c1, 1)
         print(9)
-        r2 = co work(2)
+        co work-into(c2, 2)
     }
-    print(r1)
-    print(r2)
 }
 `, "main"), "run", "await", "run", "await")
 }
 
-// TestAsyncGroupBarrierSeesValueNotHandle: the barrier variant that matters —
-// a read of a group result INSIDE the group. Without the flush, `print(r1)`
-// would be handed the opaque i8* handle. The op order alone proves the flush;
-// this case is kept separate so the reason for the barrier rule is written down
-// next to a failing shape rather than only in the pass's comment.
-func TestAsyncGroupBarrierSeesValueNotHandle(t *testing.T) {
+// TestAsyncGroupNestedBareBlockDefersAwaits covers design/nolang-coro.md §9 #3
+// for the straight-line case. A bare block inside a group is a barrier, but a
+// `co` inside it is still a spawn of that group: its handle is bound where the
+// source put it, while the await is deferred to the group tail. Without the
+// HIR handle collection the lowerer's #108 fallback pairs each spawn with an
+// immediate await, which prints here as run/await/run/await.
+func TestAsyncGroupNestedBareBlockDefersAwaits(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
-    r1 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     awy {
-        r1 = co work(1)
-        print(r1)
+        {
+            co work-into(c1, 1)
+            co work-into(c2, 2)
+        }
     }
 }
-`, "main"), "run", "await")
+`, "main"), "run", "run", "await", "await")
+}
+
+// TestAsyncGroupNestedBareBlockStillFlushesEarlierSpawns: the barrier before
+// the nested block must still land first — deferring the inner awaits must not
+// weaken the ordering guarantee that made the block a barrier in the first
+// place.
+func TestAsyncGroupNestedBareBlockStillFlushesEarlierSpawns(t *testing.T) {
+	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
+    awy {
+        co work-into(c1, 1)
+        {
+            co work-into(c2, 2)
+        }
+    }
+}
+`, "main"), "run", "await", "run", "await")
 }
 
 // TestAsyncGroupPlainCallIsNotASpawn: a plain call outside an `awy` group is
@@ -179,9 +210,10 @@ main = () {
 `, "main"))
 }
 
-// TestAsyncGroupDiscardedResultIsAwaited: a `co` call statement drops its
-// result. It is still spawned AND still awaited — an un-awaited task leaks its
-// argument buffer, so "nobody wants the value" is not a reason to skip await.
+// TestAsyncGroupDiscardedResultIsAwaited: a `co` statement produces no value at
+// all (that is now the only form there is), and it is still spawned AND still
+// awaited — an un-awaited task leaks its argument buffer and its frame, so
+// "nobody wants the value" is not a reason to skip the await.
 func TestAsyncGroupDiscardedResultIsAwaited(t *testing.T) {
 	wantOps(t, asyncOpsIn(t, `side = (n i64) {
     print(n)
@@ -195,20 +227,85 @@ main = () {
 `, "main"), "run", "run", "await", "await")
 }
 
-// TestAsyncGroupKillSwitch: NOLANG_ASYNC_GROUP=0 must restore the pre-pass
-// lowering exactly. It is the A/B lever for validating the pass against a
-// corpus without building a second binary.
+// TestAsyncGroupKillSwitch: NOLANG_ASYNC_GROUP=0 must disable the GROUP REWRITE
+// — the `awy` block is left as written, so neither handle gets parked in a
+// group-level await. What still happens per call is lowerCall's own pairing:
+// a spawn whose handle no group schedule will consume is driven to completion
+// right there (#108), which gives run/await per call instead of the group's
+// batched run/run/await/await.
+//
+// That IS the A/B lever working: the two outputs differ in exactly the way the
+// pass changes the program (batched spawns vs. sequential ones), while the
+// kill-switch build no longer leaks an un-awaited handle.
 func TestAsyncGroupKillSwitch(t *testing.T) {
 	t.Setenv("NOLANG_ASYNC_GROUP", "0")
 	wantOps(t, asyncOpsIn(t, asyncGroupWorkSrc+`main = () {
-    r1 i64
-    r2 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     {
-        r1 = work-async(1)
-        r2 = work-async(2)
+        work-into-async(c1, 1)
+        work-into-async(c2, 2)
     }
-    print(r1)
-    print(r2)
 }
-`, "main"), "run", "run")
+`, "main"), "run", "await", "run", "await")
+}
+
+// TestFlowArmCoIsNotAwaitedInline: a `co` inside a loop/if arm must lower to
+// OpRun + a __join-push call, with NO OpAwait in the enclosing function. An
+// inline await is the old #108 serial fallback: it makes mutually dependent
+// spawns deadlock because the second task has not been spawned yet. The MIR
+// shape, not stdout, is the reliable observable here (a deadlock aborts before
+// any assertion can run).
+func TestFlowArmCoIsNotAwaitedInline(t *testing.T) {
+	src := `work = (n i64) {
+    print(n)
+}
+main = () {
+    i i64 = 0
+    awy {
+        for i < 2 {
+            i == 0 -> {
+                co work(1)
+            }
+            i = i + 1
+        }
+    }
+}
+`
+	mod := lowerForTest(t, src)
+	fid, ok := mod.FuncByName["main"]
+	if !ok {
+		t.Fatalf("main not found; funcs=%v", mod.FuncByName)
+	}
+	f := mod.Func(fid)
+	var runs, awaits, pushes, enters, leaves int
+	for _, bid := range f.Blocks {
+		for _, iid := range mod.Block(bid).Insts {
+			inst := mod.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpRun:
+				runs++
+			case OpAwait:
+				awaits++
+			case OpCall:
+				switch inst.Sym {
+				case "__join-push":
+					pushes++
+				case "__join-enter":
+					enters++
+				case "__join-leave":
+					leaves++
+				}
+			}
+		}
+	}
+	if runs != 1 || awaits != 0 {
+		t.Errorf("run/await = %d/%d, want 1/0 (inline await is the serial fallback)", runs, awaits)
+	}
+	if pushes != 1 || enters != 1 || leaves != 1 {
+		t.Errorf("join enter/push/leave = %d/%d/%d, want 1/1/1", enters, pushes, leaves)
+	}
 }

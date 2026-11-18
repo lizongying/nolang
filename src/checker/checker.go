@@ -1211,6 +1211,10 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 	// tests + example，約 600 檔）零誤報後才開成硬錯誤。
 	results = append(results, ValidateUnknownFields(program)...)
 
+	// `co` 的目標必須是「過程」：無宣告回傳值（方法的隱式 self 不算）。
+	// 語句位置由 parser 保證（co 不是值），這裡只管被呼叫者。
+	results = append(results, ValidateCoSpawn(program)...)
+
 	return results
 }
 func ValidateUnionTypes(program *parser.Program) (map[string]*parser.TypeAlias, []ValidateResult) {
@@ -4397,7 +4401,7 @@ func iterElemType(ie *parser.IterationExpr, varTypes map[string]string, selfType
 		if id, ok := ie.RangeExpr.(*parser.Identifier); ok {
 			if st, ok := varTypes[id.Value]; ok {
 				if strings.HasPrefix(st, "chan[") && strings.HasSuffix(st, "]") {
-					elem := st[len("chan["): len(st)-1]
+					elem := st[len("chan[") : len(st)-1]
 					if ie.ChanValue {
 						return elem
 					}

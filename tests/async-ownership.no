@@ -19,6 +19,10 @@
 ;        修復後：重綁定前先釋放舊欄位。
 ;
 ;   4. 同組多個 co 各自等待一次，防止 handle 被誤清。
+;
+; `co` 只啟動**過程**（被呼叫者不得有宣告回傳值），所以每個被 spawn 的形態都
+; 有一份 `-into` 版本：把結果寫進通道再 close，呼叫方用 take-i64 / take-str 讀回。
+; 所有權的關鍵不變——深拷貝發生在 **spawn 當下**，之後呼叫方重賦值不影響任務。
 
 ; 協程：把輸入字串原樣搬回輸出，驗證 spawn 後字串所有權歸協程、父側不再引用
 echo = (s str) (r str) {
@@ -59,40 +63,98 @@ echo-holder = (h holder) (r str) {
     r = h.s
 }
 
+; ── 過程形態（`co` 的目標）────────────────────────────────
+; out: 結果通道（呼叫方建，容量 1）
+; s: 要搬過去的字串
+echo-into = (out chan[str], s str) {
+    out <- echo(s)
+    out.close()
+}
+
+; out: 結果通道
+; v: 取首元素用的向量
+first-into = (out chan[i64], v []i64) {
+    out <- first(v)
+    out.close()
+}
+
+; out: 結果通道
+; n: 要乘二的數
+double-into = (out chan[i64], n i64) {
+    out <- double(n)
+    out.close()
+}
+
+; out: 結果通道（str 版）
+; h: 內聯持有 str 的結構體
+echo-holder-into = (out chan[str], h holder) {
+    out <- echo-holder(h)
+    out.close()
+}
+
+; 從單值通道取一筆
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take-i64 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+}
+
+; ch: 已關閉的結果通道
+; r: 取到的字串；一筆都沒有時回空字串
+take-str = (ch chan[str]) (r str) {
+    r = ''
+    <- ch: {
+        ok -> r = it
+    }
+}
+
 ; 1. str 參數：spawn 後重賦值 -> 任務必須持有自己的副本
 test-str-arg-reassign = () {
     s = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    ch chan[str] = with-cap(1)
     awy {
-        v = co echo(s)
+        co echo-into(ch, s)
     }
     s = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+    v = take-str(ch)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 
 ; 2. []i64 參數：同上（元素指標型別走不同的克隆 helper）
 test-vec-arg-reassign = () {
     a = [7, 8, 9]
+    ch chan[i64] = with-cap(1)
     awy {
-        n = co first(a)
+        co first-into(ch, a)
     }
     a = [1, 2, 3]
+    n = take-i64(ch)
     print(n); expect: 7
 }
 
 ; 3. 單一 co 不受影響（防止過度修正）
 test-single-await = () {
+    ch chan[i64] = with-cap(1)
     awy {
-        r = co double(5)
+        co double-into(ch, 5)
     }
+    r = take-i64(ch)
     print(r); expect: 10
 }
 
 ; 4. 同組兩個 co 各自等待一次
 test-two-handles = () {
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     awy {
-        r1 = co double(10)
-        r2 = co double(20)
+        co double-into(c1, 10)
+        co double-into(c2, 20)
     }
+    r1 = take-i64(c1)
+    r2 = take-i64(c2)
     print(r1); expect: 20
     print(r2); expect: 40
 }
@@ -102,12 +164,14 @@ test-struct-arg-reassign = () {
     h = holder{
         s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     }
+    ch chan[str] = with-cap(1)
     awy {
-        v = co echo-holder(h)
+        co echo-holder-into(ch, h)
     }
     h = holder{
         s: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
     }
+    v = take-str(ch)
     print(v); expect: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 }
 

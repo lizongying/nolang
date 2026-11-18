@@ -245,11 +245,11 @@ func (m *Module) evalSpawnEdge(f *Function, b *Block, inst *Inst) SpawnEdge {
 // would free a box the other shared."
 //
 // The throwaway is sound because asyncArgKinds resolves each parameter's type
-// through localTypeOf, whose only function-scoped lookup is
-// `mod.Func(c.cf).LocalTypes[p]`. A ValueID belongs to exactly one function, so
-// for a CALLEE parameter that lookup always misses and the answer comes from
-// mod.Value(p).Type — independent of which function `c.cf` names. (The throwaway
-// leaves c.cf at 0; the real call leaves it at the caller.)
+// through localTypeOfIn, which is handed the callee's OWN FuncID. That argument
+// is not decoration: ValueIDs are per-function, so a caller-scoped lookup can
+// and does hit an unrelated slot (a void-typed one, which then emitted
+// `bitcast i8* ... to void*` at the spawn boundary). Passing the ID keeps the
+// throwaway and the real emitter on the same, callee-scoped answer.
 //
 // vecDeepClone's "is there a clone helper" guard is evaluated on the throwaway
 // codegen, so the helper it would register is discarded — which is what we want
@@ -257,9 +257,13 @@ func (m *Module) evalSpawnEdge(f *Function, b *Block, inst *Inst) SpawnEdge {
 // registers it there. extraFuncs must nevertheless be a REAL map: vecDeepClone
 // memoizes the helper name in it, and a nil map panics ("assignment to entry in
 // nil map"), which the codegen entry point reports as a compile error.
-func (m *Module) SpawnArgClasses(cf *Function) ([]string, []TypeID, []string) {
+func (m *Module) SpawnArgClasses(cid FuncID) ([]string, []TypeID, []string) {
+	cf := m.Func(cid)
+	if cf == nil {
+		return nil, nil, nil
+	}
 	c := &codegen{mod: m, sb: &strings.Builder{}, extraFuncs: map[string]bool{}}
-	return c.asyncArgKinds(cf)
+	return c.asyncArgKinds(cid, cf)
 }
 
 // DumpSpawnArgMoveStats reports, for every `run` argument, whether the P5
@@ -317,7 +321,7 @@ func (m *Module) DumpSpawnArgMoveStats() {
 				}
 				classes, ok := classesOf[cid]
 				if !ok {
-					classes, _, _ = m.SpawnArgClasses(m.Func(cid))
+					classes, _, _ = m.SpawnArgClasses(cid)
 					classesOf[cid] = classes
 				}
 				oa := oneAwait[iid]

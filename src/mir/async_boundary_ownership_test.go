@@ -55,17 +55,16 @@ func argbufCloneWindow(ir string) string {
 func TestAsyncStructArgDeepCopiedAtSpawn(t *testing.T) {
 	mod := lowerForTest(t, `holder { s str }
 
-echo-holder = (h holder) (r str) {
-    r = h.s
+echo-holder = (h holder) {
+    print(h.s.len())
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
     awy {
-        v = co echo-holder(h)
+        co echo-holder(h)
     }
     h = holder { s: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' }
-    print(v)
 }
 `)
 	ir, err := mod.EmitLLVM()
@@ -158,7 +157,7 @@ main = () {
 }
 
 // 旧的手写句柄重绑定测试（t i64 = 0; t = run f(...); v = awy t）随 run/awy
-// 前缀语法一并移除：新语法只有 `awy { v = co f() }`，结果类型直接由 co 表达式
+// 前缀语法一并移除：新语法只有 `awy { co f() }`，结果类型直接由 co 表达式
 // 决定，不再存在「句柄槽位重绑定丢失 asyncResTypes」的 surface 路径。
 
 // TestAsyncReadyQueueGrows pins the ready-queue overflow fix.
@@ -172,15 +171,14 @@ main = () {
 // 300-spawn program produced correct output with rc=0 — the corruption was
 // invisible, not absent. The queue is now heap-allocated and doubles on demand.
 func TestAsyncReadyQueueGrows(t *testing.T) {
-	mod := lowerForTest(t, `mk = (n i64) (r i64) {
-    r = n
+	mod := lowerForTest(t, `mk = (n i64) {
+    print(n)
 }
 
 main = () {
     awy {
-        v = co mk(1)
+        co mk(1)
     }
-    print(v)
 }
 `)
 	ir, err := mod.EmitLLVM()
@@ -224,15 +222,14 @@ main = () {
 // The waiter now lives in the waited task's own `waiter` field (%task field 4),
 // which is exact: one slot per task, no hashing, no collisions.
 func TestAsyncWaitersNotAddressAliased(t *testing.T) {
-	mod := lowerForTest(t, `mk = (n i64) (r i64) {
-    r = n
+	mod := lowerForTest(t, `mk = (n i64) {
+    print(n)
 }
 
 main = () {
     awy {
-        v = co mk(1)
+        co mk(1)
     }
-    print(v)
 }
 `)
 	ir, err := mod.EmitLLVM()
@@ -248,31 +245,39 @@ main = () {
 	if strings.Contains(ir, "and i64 %idx, 255") {
 		t.Errorf("`ptrtoint(task) & 255` waiter indexing is still emitted")
 	}
-	// The waiter must live in the task itself: a 5th field, and an allocation
-	// big enough to hold it (offset 24 + 8 = 32; a 24-byte block would leave the
-	// field dangling past the allocation). The task is now an R-tier block, so
-	// the request goes through @nolang_rc_alloc — which adds a 16-byte header in
-	// FRONT and still returns a 32-byte payload, so the size invariant is
-	// unchanged. Accept either allocator but pin the size, and reject a 24-byte
-	// request under both spellings.
-	if !strings.Contains(ir, "%task = type { void (i8*)*, i64, i1, i1, i8* }") {
-		t.Errorf("%%task does not carry a waiter field:\n%s", ir)
+	// The waiter must live in the task itself: field 4, and an allocation big
+	// enough to hold every field. The task is now an R-tier block, so the
+	// request goes through @nolang_rc_alloc — which adds a 16-byte header in
+	// FRONT and still returns the payload — so the size invariant is about the
+	// payload. %task grew to 8 fields (frame/next for the coroutine scheduler,
+	// waitnext for the waiter chain, depth/pad for the nesting guard, and
+	// join_top for per-task join-set frames): 9 words plus two i32s = 72 bytes.
+	// Pin the exact shape and the exact request so a field added without a
+	// matching re-size fails here rather than as a heap overrun at run time.
+	if !strings.Contains(ir, "%task = type { void (i8*)*, i64, i1, i1, i8*, i8*, i8*, i8*, i32, i32, i8* }") {
+		t.Errorf("%%task does not carry the waiters/frame/next/waitnext/depth fields:\n%s", ir)
 	}
-	if !strings.Contains(ir, "@nolang_rc_alloc(i64 32)") && !strings.Contains(ir, "@malloc(i64 32)") {
-		t.Errorf("task allocation is not sized for the waiter field (want a 32-byte request)")
+	if !strings.Contains(ir, "@nolang_rc_alloc(i64 72)") && !strings.Contains(ir, "@malloc(i64 72)") {
+		t.Errorf("task allocation is not sized for the 11-field %%task (want a 72-byte request)")
 	}
-	for _, bad := range []string{"@malloc(i64 24)", "@nolang_rc_alloc(i64 24)"} {
+	for _, bad := range []string{"@malloc(i64 24)", "@nolang_rc_alloc(i64 24)", "@malloc(i64 32)", "@nolang_rc_alloc(i64 32)", "@malloc(i64 48)", "@nolang_rc_alloc(i64 48)"} {
 		if strings.Contains(ir, bad) {
-			t.Errorf("task allocation is still 24 bytes but %%task is now 32 bytes (%s)", bad)
+			t.Errorf("task allocation is smaller than %%task (%s)", bad)
 		}
 	}
 	for _, want := range []string{
 		"define void @nolang_async_wait(i8* %waited)",
 		"define void @nolang_async_done(i8* %task)",
 		"i32 0, i32 4",
+		"i32 0, i32 7",
 	} {
 		if !strings.Contains(ir, want) {
 			t.Errorf("waiter-in-task plumbing missing %q", want)
 		}
+	}
+	// The chain, not a single slot: a second waiter has to be linked onto the
+	// one already registered, so the waiter field is read as well as written.
+	if !strings.Contains(ir, "%old = load i8*, i8** %wgep") {
+		t.Errorf("@nolang_async_wait does not prepend onto the existing chain")
 	}
 }

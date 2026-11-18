@@ -1,0 +1,156 @@
+; coro-yield.no — `async-yield()` 的确定性交错顺序
+;
+; 运行：no test tests/coro-yield.no
+;
+; 调度模型是单线程协作式：就绪队列 FIFO，`async-yield()` = 把自己重新入队到
+; 队尾然后 park。因此「谁先跑」完全可断言，不需要 sleep，也不依赖墙钟。
+;
+; 观测手段：每个任务把事件码 `c <- N` 送进通道，组结束后再按到达顺序排空，
+; 逐个比对期望序号——事件码本身就是顺序断言。
+;
+;   两个任务各让出一次 → a1 b1 a2 b2
+;   三个任务各让出一次 → a1 b1 c1 a2 b2 c2
+;   深度不等（让出两次 vs 一次）→ 1 2 3 4 5（见 ③ 的推演）
+;
+; ⚠️ 顺序就是本档的全部价值：真挂起后 `co` 不再「spawn 即跑到底」，
+; 任何退回 run-to-completion 的改动都会先把第一组翻成 a1 a2 b1 b2。
+
+# /test/runner
+
+; 两数相加（显式解包 ?i64）
+; a: 左加数
+; b: 右加数
+; r: a + b；溢位时回 0
+add = (a i64, b i64) (r i64) {
+    s = a + b
+    r = s: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 让出一次的任务：发两个事件，中间 park
+; c: 事件通道
+; first: 让出前发的事件码
+; second: 恢复后发的事件码
+yielder = (c chan[i64], first i64, second i64) {
+    c <- first
+    async-yield()
+    c <- second
+}
+
+; 让出两次的任务：三个事件，中间 park 两次
+; c: 事件通道
+; first: 第一个事件码
+; second: 第二个事件码
+; third: 第三个事件码
+yielder2 = (c chan[i64], first i64, second i64, third i64) {
+    c <- first
+    async-yield()
+    c <- second
+    async-yield()
+    c <- third
+}
+
+; 不让出的任务：整段一次跑完
+; c: 事件通道
+; v: 事件码
+plain = (c chan[i64], v i64) {
+    c <- v
+}
+
+; 排空通道，逐条比对「第 n 个事件码 == n」，返回收到的事件数
+; c: 事件通道（调用前已确认会有序到达）
+; got: 实际收到的事件数
+drain-check = (c chan[i64]) (got i64) {
+    seen = 0
+    <- c: {
+        ok -> {
+            seen = add(seen, 1)
+            runner.eq(it, seen, 'yield: 第 n 个事件码按序到达')
+        }
+    }
+    got = seen
+}
+
+; ① 两个任务各让出一次：a1 b1 a2 b2（事件码按到达顺序编成 1 2 3 4）
+t-two-tasks = () {
+    c chan[i64] = with-cap(8)
+    awy {
+        co yielder(c, 1, 3)
+        co yielder(c, 2, 4)
+    }
+    c.close()
+    got = drain-check(c)
+    runner.eq(got, 4, 'yield: 两任务各让出一次共 4 个事件')
+    runner.eq(c.len(), 0, 'yield: 事件已全部取空')
+}
+
+; ② 三个任务各让出一次：a1 b1 c1 a2 b2 c2
+t-three-tasks = () {
+    c chan[i64] = with-cap(8)
+    awy {
+        co yielder(c, 1, 4)
+        co yielder(c, 2, 5)
+        co yielder(c, 3, 6)
+    }
+    c.close()
+    got = drain-check(c)
+    runner.eq(got, 6, 'yield: 三任务各让出一次共 6 个事件')
+}
+
+; ③ 让出两次的任务与只让出一次的任务交错
+;    yielder2(c, 1, 3, 5)：发 1 → park → 发 3 → park → 发 5
+;    yielder(c, 2, 4)    ：发 2 → park → 发 4
+;    FIFO 推演：入队 [x,y]；x 发 1 让出 → [y,x]；y 发 2 让出 → [x,y]；
+;    x 恢复发 3 让出 → [y,x]；y 恢复发 4 返回 → [x]；x 恢复发 5 返回。
+;    ⇒ 到达顺序 1 2 3 4 5（连续，drain-check 直接可用）。
+t-mixed-depth = () {
+    c chan[i64] = with-cap(8)
+    awy {
+        co yielder2(c, 1, 3, 5)
+        co yielder(c, 2, 4)
+    }
+    c.close()
+    got = drain-check(c)
+    runner.eq(got, 5, 'yield: 深度不等的两个任务共 5 个事件')
+}
+
+; ④ 不让出的任务：spawn 顺序即执行顺序
+t-plain-order = () {
+    c chan[i64] = with-cap(8)
+    awy {
+        co plain(c, 1)
+        co plain(c, 2)
+        co plain(c, 3)
+    }
+    c.close()
+    got = drain-check(c)
+    runner.eq(got, 3, 'yield: 三个不让出的任务按 spawn 顺序跑完')
+}
+
+; ⑤ 让出与不让出混排：不让出的整段先跑完，事件仍按序到达
+;    plain(c,1) 直接发 1 返回；yielder(c,2,3) 发 2 让出、
+;    队里只剩自己、恢复后发 3。⇒ 1 2 3。
+t-mixed-plain = () {
+    c chan[i64] = with-cap(8)
+    awy {
+        co plain(c, 1)
+        co yielder(c, 2, 3)
+    }
+    c.close()
+    got = drain-check(c)
+    runner.eq(got, 3, 'yield: 让出/不让出混排仍有 3 个事件')
+}
+
+t-two-tasks()
+t-three-tasks()
+t-mixed-depth()
+t-plain-order()
+t-mixed-plain()
+
+runner.summary()
+fails = runner.failed-count()
+fails > 0 -> exit(1)
+exit(0)

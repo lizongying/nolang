@@ -711,21 +711,38 @@ r = msq
 
 ### 6.1 协程衍生只能在 `awy { ... }` 组内用 `co`
 `go` 不是关键字；`run` 关键字已移除（`run` 现在是普通标识符）。无色 async 衍生用 `co`，
-且 `co <call>` **只允许出现在 `awy { ... }` 协程组内**：组尾统一等待所有任务并取回结果。
+且 `co` **只允许出现在 `awy { ... }` 协程组内**：组尾统一等待所有任务。
 组外写 `co` 是编译错误（`E_CO_OUTSIDE_GROUP`）；旧的 `awy <handle>` 等待前缀与语句位置裸块
 协程组都已废除。
 
+`co` 有两种形态，**都只启动过程、都不产生值**：
+
+- `co f(args)` — `f` 不得有宣告返回值（方法隐式返回的 `self` 不算），否则 `c0retval`；
+  需要结果就走通道：过程写通道再 `close()`，调用方在组外排空。
+- `co { ... }` — 闭包写法，块内自由变量按值捕获（spawn 当刻的快照）。
+
+`co` 不是值 ⇒ 必须独立成句（`E_CO_NOT_STATEMENT` / `c0nostmt`）；`co` 后只能是
+调用或块（`E_CO_NOT_CALL` / `c0notcal`）。
+
 ```no
-; ✅ 正例：awy 协程组 + 组内 co
-awy {
-    r1 = co worker(1)
-    r2 = co worker(2)
+; ✅ 正例：awy 协程组 + 组内 co 启动过程，结果走通道
+produce = (ch chan[i64], v i64) {
+    ch <- v
+    ch.close()
 }
 
-; ❌ 反例：组外 co / 裸块协程组 / 旧 run
+ch chan[i64] = with-cap(1)
+awy {
+    co produce(ch, 1)
+    co { ch <- 2; ch.close() }
+}
+
+; ❌ 反例：组外 co / 裸块协程组 / 旧 run / co 回传值 / co 当值用
 f = co worker(1)
 { r = co worker(1) }
 h = run worker(1)
+awy { co worker(1) }          ; worker 有返回值 ⇒ c0retval
+awy { r = co produce(ch, 1) } ; co 不是值 ⇒ c0nostmt
 ```
 
 ### 6.2 禁止手动释放内存

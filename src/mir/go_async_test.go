@@ -4,6 +4,10 @@ import (
 	"testing"
 )
 
+// `co` only spawns a PROCEDURE: the callee may not declare a result (a method's
+// implicit `self` does not count), so every spawn target below is written with
+// no result list and results travel through a channel.
+//
 // TestGoMonomorphizesAsyncVariant pins the colorless-async monomorphization:
 // `co worker(1)` must generate a `worker-async` definition (cloned from the
 // sync `worker`) and retarget the spawn at it. The observable is the presence
@@ -11,14 +15,13 @@ import (
 // not run, only `worker` would exist and the call would lower to a bare
 // (non-async) out-param call, not an OpRun.
 func TestGoMonomorphizesAsyncVariant(t *testing.T) {
-	src := `worker = (n i64) (r i64) {
-		r = n
+	src := `worker = (n i64) {
+		print(n)
 	}
 	main = () {
 		awy {
-			r1 = co worker(1)
+			co worker(1)
 		}
-		print(r1)
 	}`
 	mod := lowerForTest(t, src)
 	if _, ok := mod.FuncByName["worker-async"]; !ok {
@@ -42,20 +45,18 @@ func TestGoMonomorphizesAsyncVariant(t *testing.T) {
 // calls an async function (`worker` calls `child` via `co`) also receives an
 // `-async` variant, so the whole async chain is monomorphized.
 func TestGoTransitiveAsyncColoring(t *testing.T) {
-	src := `child = (n i64) (r i64) {
-		r = n
+	src := `child = (n i64) {
+		print(n)
 	}
-	worker = (n i64) (r i64) {
+	worker = (n i64) {
 		awy {
-			c = co child(n)
+			co child(n)
 		}
-		r = c
 	}
 	main = () {
 		awy {
-			r1 = co worker(1)
+			co worker(1)
 		}
-		print(r1)
 	}`
 	mod := lowerForTest(t, src)
 	for _, want := range []string{"child-async", "worker-async"} {

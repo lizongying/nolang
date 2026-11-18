@@ -1,5 +1,8 @@
 ; module-async.no — 測試模組級 co（無棧協程狀態機變換）
 ; 模組級協程組內的 co 會啟動事件循環。
+;
+; `co` 只啟動**過程**（被呼叫者不得有宣告回傳值），所以結果走通道：
+; 過程寫一筆再 close，模組級語句在組後讀回。
 
 ; 同步函數：返回輸入值的兩倍
 ; n: 輸入值，本檔用 21 呼叫
@@ -19,8 +22,28 @@ compute = (n i64) (r i64) {
     }
 }
 
-; 模組級協程組：在頂層 awy 組內 co
-awy {
-    r = co compute(21)
+; 過程版：把 compute(n) 寫進通道再關閉
+; ch: 結果通道（呼叫方建，容量 1）
+; n: 來源數值
+compute-into = (ch chan[i64], n i64) {
+    ch <- compute(n)
+    ch.close()
 }
+
+; 從單值通道取一筆
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take-i64 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+}
+
+; 模組級協程組：在頂層 awy 組內 co
+ch chan[i64] = with-cap(1)
+awy {
+    co compute-into(ch, 21)
+}
+r = take-i64(ch)
 print(r); expect: 42

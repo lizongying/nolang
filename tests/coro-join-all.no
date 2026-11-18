@@ -1,0 +1,64 @@
+; join-all across control-flow arms.
+;
+; A `co` inside a loop / if arm must be SPAWNED at its source position and
+; JOINED at the tail of the enclosing `awy`, not awaited immediately (the old
+; #108 serial fallback). The two tasks below are mutually dependent: the waiter
+; parks on an empty channel, and only the later signaler can wake it. Under
+; serial spawn-then-await the first await finds an empty ready queue and the
+; runtime aborts with a deadlock. Under join-all both tasks are enqueued before
+; the group tail drains, so the signaler wakes the waiter and the test passes.
+;
+; Regression for the runtime join-set (__join-enter / __join-push /
+; __join-leave) and hir.DesugarAsyncGroups.desugarFlowArmSpawns.
+
+# /test/runner
+
+add = (a i64, b i64) (r i64) {
+    s = a + b
+    r = s: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+signal chan[i64] = with-cap(1)
+done chan[i64] = with-cap(1)
+
+waiter = (s chan[i64], d chan[i64]) {
+    <- s: {
+        ok -> { }
+    }
+    d <- 7
+    d.close()
+}
+
+signaler = (s chan[i64]) {
+    s <- 1
+    s.close()
+}
+
+i i64 = 0
+awy {
+    for i < 2 {
+        i == 0 -> {
+            co waiter(signal, done)
+        }
+        i == 1 -> {
+            co signaler(signal)
+        }
+        i = add(i, 1)
+    }
+}
+
+; With join-all, the waiter has already been woken and closed `done`.
+; The receive loop below therefore terminates with `ok` (not `nil`).
+n i64 = 0
+<- done: {
+    ok -> n = 1
+}
+runner.eq(n, 1, 'join-all: control-flow-arm co joined at group tail')
+runner.summary()
+fails = runner.failed-count()
+fails > 0 -> exit(1)
+exit(0)

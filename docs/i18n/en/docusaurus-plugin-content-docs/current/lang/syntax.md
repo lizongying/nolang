@@ -1693,36 +1693,103 @@ plain identifier); `awy <handle>` and bare-block coroutine groups are gone.
 **`co` outside a group is a compile error** (`E_CO_OUTSIDE_GROUP`).
 
 ```no
-worker = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n + 1
+; a procedure: it only writes the channel, it declares no result
+produce = (ch chan[i64], v i64) {
+    ch <- v
+    ch.close()
 }
 
-; independent tasks run concurrently; the group waits at its end
+ch chan[i64] = with-cap(2)
 awy {
-    r1 = co worker(1)
-    r2 = co worker(2)
+    co produce(ch, 1)          ; (1) procedure spawn: co f(args)
+    co {                       ; (2) closure spawn: co { ... }
+        ch <- 2
+        ch.close()
+    }
 }
-print(r1.to-str() + ' ' + r2.to-str())
+sum = 0
+i <- ch: {
+    sum = sum + i
+}
+print(sum.to-str())            ; => 3
 ```
 
-`r1` / `r2` are result values, never opaque task handles. At group exit every
-spawned task has been awaited.
+### (1) Procedure spawn: `co f(args)`
+
+`f` **must not declare a result**. A spawn has nowhere to put one, so a
+value-returning function passed to `co` is rejected with `c0retval`:
+
+```no
+worker = (n i64) (r i64) { r = n }   ; declares a result
+awy { co worker(1) }                  ; ✗ c0retval
+```
+
+A method's implicit `self` **does not count**: it is the receiver out-param every
+method carries so calls can chain, so `co obj.flush()` is an ordinary spawn:
+
+```no
+queue {
+    n i64
+}
+queue.flush = () {          ; implicit (self queue), no other result
+    self.n = 0
+}
+awy { co q.flush() }        ; ✓
+```
+
+When you need the value, use a channel: the procedure sends it and `close()`s,
+and the caller drains the channel after the group. This is a rule, not a style
+choice — a spawned call's value only becomes readable once the group is joined,
+and the reader is not at the join point; `chan` is exactly the hand-off for that.
+
+### (2) Closure spawn: `co { ... }`
+
+`co { ... }` hands a block to a coroutine as a procedure. The block's **free
+variables are captured by value** (a snapshot at the spawn, the same semantics as
+the deep copy of a spawn argument):
+
+```no
+seed = 33
+ch chan[i64] = with-cap(1)
+awy {
+    co {
+        ch <- seed
+        ch.close()
+    }
+}
+r = 0
+<- ch: { ok -> r = it }
+print(r.to-str())          ; => 33
+```
+
+### `co` is not a value
+
+`co` produces void, so it must fill a whole statement. A binding's right-hand
+side, an argument position and a return position are all rejected with
+`E_CO_NOT_STATEMENT` (`c0nostmt`):
+
+```no
+r = co produce(ch, 1)      ; ✗ c0nostmt
+print(co produce(ch, 1))   ; ✗ c0nostmt
+```
+
+And `co` may only be followed by a call or a block; anything else is
+`E_CO_NOT_CALL` (`c0notcal`).
 
 ### `co` (colorless async)
 
-`co` is colorless syntax: you write the uncolored name `worker` and the compiler
-synthesizes a `worker-async` variant that runs on the underlying stackless
+`co` is colorless syntax: you write the uncolored name `produce` and the compiler
+synthesizes a `produce-async` variant that runs on the underlying stackless
 coroutine machinery. Do not hand-write the `-async` suffix.
 
-- **Monomorphization.** `co worker(1)` generates `worker-async` (a renamed clone).
-  If `worker` is also called synchronously, both variants coexist.
-- **Transitivity.** If a function itself contains `awy { c = co child(n) }`, it
+- **Monomorphization.** `co produce(ch, 1)` generates `produce-async` (a renamed
+  clone). If `produce` is also called synchronously, both variants coexist.
+- **Transitivity.** If a procedure itself contains `awy { co child(n) }`, it
   too is monomorphized into `-async`; coloring propagates up the call chain.
-- **Degradation.** If a later `co` reads a value bound by an earlier one, the
-  earlier task is awaited first and the rest of the group becomes sequential.
-- **Barriers.** Any non-`co` statement in the group waits for in-flight tasks
-  first, so group code reads values, never handles.
+- **Barriers.** Any non-`co` statement in the group (an assignment, a `print`, a
+  loop, an `if`, **a channel read**) waits for in-flight tasks first. A data
+  dependency inside a group is therefore written as "read the channel, then spawn
+  with the value you read" — the read is the barrier, and it says what it means.
 - **Function bodies are not groups.** Only `awy { ... }` introduces one; a `co`
   in a function body, `if` arm or loop body is rejected.
 - **Discarded results are still awaited.** `awy { co side(5) }` leaves no task

@@ -1,7 +1,12 @@
 ; 測試 awy 協程組取回 %str-long / []i64 結果的懸空指針問題
 ; （底層 desugar 成 KRun/KAwait，與語義等價）
+;
+; `co` 只啟動**過程**（無宣告回傳值），所以每個生產者都有一份 `-into` 版本：
+; 把結果寫進通道再 close，呼叫方用 take-str / 直接排空讀回。懸空指針要驗的
+; 正是「跨 spawn 邊界搬運堆指標」這件事，通道只換了搬運的中介，不變的是
+; 值在任務結束後仍必須完整可讀。
 
-; 場景 1：協程直接回傳字面量字串，驗證 awy 取回後指標仍有效
+; 場景 1：協程直接回傳字面量字串，驗證取回後指標仍有效
 ; s: 固定的 'hello from async'
 str-producer = () (s str) {
     s = 'hello from async'
@@ -20,25 +25,78 @@ vec-producer = () (v []i64) {
     v = [10, 20, 30]
 }
 
+; ── 過程形態（`co` 的目標）────────────────────────────────
+; ch: 結果通道（呼叫方建，容量 1）
+str-producer-into = (ch chan[str]) {
+    ch <- str-producer()
+    ch.close()
+}
+
+; ch: 結果通道（呼叫方建，容量 1）
+str-producer2-into = (ch chan[str]) {
+    ch <- str-producer2()
+    ch.close()
+}
+
+; ch: 結果通道（呼叫方建，容量 1）
+vec-producer-into = (ch chan[[]i64]) {
+    ch <- vec-producer()
+    ch.close()
+}
+
+; 從單值通道取一筆
+; ch: 已關閉的結果通道
+; r: 取到的字串；一筆都沒有時回空字串
+take-str = (ch chan[str]) (r str) {
+    r = ''
+    <- ch: {
+        ok -> r = it
+    }
+}
+
 ; 場景 4：多個 co 連續調用
 consumer = () {
+    c1 chan[str] = with-cap(1)
     awy {
-        s1 = co str-producer()
+        co str-producer-into(c1)
     }
+    s1 = take-str(c1)
     print(s1)
 
+    c2 chan[str] = with-cap(1)
     awy {
-        s2 = co str-producer2()
+        co str-producer2-into(c2)
     }
+    s2 = take-str(c2)
     print(s2)
 
+    c3 chan[[]i64] = with-cap(1)
     awy {
-        v = co vec-producer()
+        co vec-producer-into(c3)
+    }
+    v = [0]
+    <- c3: {
+        ok -> v = it
     }
     print(v.len())
-    print(v[0])
-    print(v[1])
-    print(v[2])
+    e0 = v[0]: {
+        ok -> it
+
+        -> 0
+    }
+    e1 = v[1]: {
+        ok -> it
+
+        -> 0
+    }
+    e2 = v[2]: {
+        ok -> it
+
+        -> 0
+    }
+    print(e0)
+    print(e1)
+    print(e2)
 }
 consumer()
 print('done')

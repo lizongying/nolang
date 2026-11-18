@@ -49,4 +49,41 @@ func init() {
 		Doc:          "Yield control back to the event loop so other ready tasks (e.g. a stop handler) can run; a true coroutine suspend point when used as a top-level statement in an async function",
 		ForwardFunc:  "async-yield",
 	})
+
+	// join-set runtime (compiler-internal). These three builtins implement the
+	// "spawn everything, then join all" schedule for `co` statements that live
+	// inside a control-flow arm (loop/if/match), where a static per-spawn handle
+	// binding cannot survive cross-iteration rebinding:
+	//
+	//   __join-enter()      push a fresh frame on the join stack
+	//   __join-push(h)      record a run handle in the current frame
+	//   __join-leave()      drain the ready queue, retire every recorded handle,
+	//                       then pop the frame
+	//
+	// DesugarAsyncGroups synthesizes these calls; they are not surfaced in the
+	// language. The handle array is a fixed-size global stack (see the runtime
+	// in codegen), mirroring the fixed depth guard on %task: a program that
+	// spawns more than the cap in one group aborts with a diagnostic rather than
+	// corrupting memory.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "__join-enter",
+		Params:       []parser.Type{},
+		Doc:          "internal: push a coroutine join-set frame",
+		ForwardFunc:  "join-enter",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "__join-push",
+		Params:       []parser.Type{&parser.PointerType{Type: parser.TypeI8}},
+		Doc:          "internal: record a task handle in the current join-set frame",
+		ForwardFunc:  "join-push",
+	})
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "__join-leave",
+		Params:       []parser.Type{},
+		Doc:          "internal: drain + retire all handles in the current join-set frame",
+		ForwardFunc:  "join-leave",
+	})
 }

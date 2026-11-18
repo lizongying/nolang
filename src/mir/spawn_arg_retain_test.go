@@ -34,21 +34,16 @@ import (
 
 // retainVecSrc is the positive shape: `a` is READ after the spawn (a[1], a direct
 // index read, which cannot write) and never written, so the buffer can be shared.
-const retainVecSrc = `first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+const retainVecSrc = `first = (v []i64) {
+    print(v.len())
 }
 
 main = () {
     a []i64 = [1, 2, 3]
     awy {
-        n = co first(a)
+        co first(a)
     }
     m = a[1]
-    print(n)
     print(m)
 }
 `
@@ -57,21 +52,16 @@ main = () {
 // place after the spawn, so the task must see the SPAWN-TIME value. Sharing here
 // would print 99 instead of 1 — the silent semantic change the gate exists to
 // prevent.
-const retainVecWrittenSrc = `first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+const retainVecWrittenSrc = `first = (v []i64) {
+    print(v.len())
 }
 
 main = () {
     a []i64 = [1, 2, 3]
     awy {
-        n = co first(a)
+        co first(a)
     }
     a[0] = 99
-    print(n)
 }
 `
 
@@ -144,22 +134,21 @@ func TestSpawnArgRetainNotTakenWhenWritten(t *testing.T) {
 // cover them. The shape is otherwise identical to the positive one (a direct
 // index read, no write), so only the element class can explain the refusal.
 func TestSpawnArgRetainNotTakenForOwnedElements(t *testing.T) {
-	mod := lowerForTest(t, `vecstr = (v []str) (r i64) {
+	mod := lowerForTest(t, `vecstr = (v []str) {
     s = v[0]: {
         ok -> it
 
         -> ''
     }
-    r = s.len()
+    print(s.len())
 }
 
 main = () {
     a []str = ['aaa', 'bbb']
     awy {
-        m = co vecstr(a)
+        co vecstr(a)
     }
     s = a[0]
-    print(m)
     print(s)
 }
 `)
@@ -175,17 +164,16 @@ main = () {
 func TestSpawnArgRetainNotTakenForStruct(t *testing.T) {
 	mod := lowerForTest(t, `holder { s str }
 
-echo-holder = (h holder) (r str) {
-    r = h.s
+echo-holder = (h holder) {
+    print(h.s.len())
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
     awy {
-        v = co echo-holder(h)
+        co echo-holder(h)
     }
     c = h.s
-    print(v)
     print(c)
 }
 `)
@@ -200,20 +188,15 @@ main = () {
 // this, "always retain" would also satisfy the positive test while leaking the
 // reference the move would have consumed.
 func TestSpawnArgRetainNotTakenWhenDead(t *testing.T) {
-	mod := lowerForTest(t, `first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+	mod := lowerForTest(t, `first = (v []i64) {
+    print(v.len())
 }
 
 main = () {
     a []i64 = [1, 2, 3]
     awy {
-        n = co first(a)
+        co first(a)
     }
-    print(n)
 }
 `)
 	arg := runArg(t, mod, "main")
@@ -243,21 +226,16 @@ func TestSpawnArgRetainNotTakenForCallUse(t *testing.T) {
     }
 }
 
-first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+first = (v []i64) {
+    print(v.len())
 }
 
 main = () {
     a []i64 = [1, 2, 3]
     awy {
-        n = co first(a)
+        co first(a)
     }
     p = peek(a)
-    print(n)
     print(p)
 }
 `)
@@ -271,21 +249,16 @@ main = () {
 // pins that the conservatism is about OPS, not about source spelling: printing a
 // container lowers to a len/index loop (read-only), so the share IS taken.
 func TestSpawnArgRetainTakenForContainerPrint(t *testing.T) {
-	mod := lowerForTest(t, `first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+	mod := lowerForTest(t, `first = (v []i64) {
+    print(v.len())
 }
 
 main = () {
     a []i64 = [1, 2, 3]
     awy {
-        n = co first(a)
+        co first(a)
     }
     print(a)
-    print(n)
 }
 `)
 	arg := runArg(t, mod, "main")
@@ -300,34 +273,28 @@ func TestSpawnArgRetainSafeContract(t *testing.T) {
 	// The source must MENTION every element type whose TypeID is looked up, or
 	// internType never ran on it and TypeMap yields NoType (which would answer
 	// "owns no heap" for the wrong reason).
-	mod := lowerForTest(t, `first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+	mod := lowerForTest(t, `first = (v []i64) {
+    print(v.len())
 }
 
-vecstr = (v []str) (r i64) {
+vecstr = (v []str) {
     s = v[0]: {
         ok -> it
 
         -> ''
     }
-    r = s.len()
+    print(s.len())
 }
 
 main = () {
     a []i64 = [1, 2, 3]
     b []str = ['x', 'y']
     awy {
-        n = co first(a)
-        k = co vecstr(b)
+        co first(a)
+        co vecstr(b)
     }
     m = a[1]
-    print(n)
     print(m)
-    print(k)
 }
 `)
 	i64t := mod.TypeMap["i64"]

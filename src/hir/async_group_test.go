@@ -89,8 +89,10 @@ func shapeOf(t *testing.T, pkg *hir.Package, fn string) []string {
 	return out
 }
 
-const groupWorkSrc = `work = (n i64) (r i64) {
-    r = n
+// `co` only spawns a PROCEDURE (no declared result); results travel through a
+// channel, so the group statements below never bind a spawn result.
+const groupWorkSrc = `work = (n i64) {
+    print(n)
 }
 `
 
@@ -124,34 +126,37 @@ func wantShape(t *testing.T, got []string, want ...string) {
 // statement's result, so both spawns are emitted before either await.
 func TestGroupIndependentSpawnsThenAwaits(t *testing.T) {
 	src := groupWorkSrc + `main = () {
-    r1 i64
-    r2 i64
     awy {
-        r1 = co work(1)
-        r2 = co work(2)
+        co work(1)
+        co work(2)
     }
-    print(r1)
 }
 `
 	wantShape(t, shapeOf(t, hirOf(t, src), "main"),
-		"run:__ag0", "run:__ag1", "awy:r1", "awy:r2")
+		"run:__ag0", "run:__ag1", "awy:", "awy:")
 }
 
-// TestGroupDependencyDegradesToAwait: `r2 = work-async(r1)` reads r1, so r1 is
-// awaited before r2 is launched. This is the "退化成 await" case.
-func TestGroupDependencyDegradesToAwait(t *testing.T) {
+// TestGroupBarrierBetweenSpawns: any statement that is not an `-async` call is
+// a barrier, so the spawn before it lands before it runs and the spawn after it
+// cannot start earlier. `print` is the cheapest such statement.
+//
+// HISTORY: this slot used to hold the "退化成 await" case (`r2 = co work(r1)`,
+// where r2's argument reads r1's spawn result). `co` no longer produces a value,
+// so that shape is not expressible any more; a dependency is now written as a
+// channel read, which is a barrier for the same reason and lowers the same way
+// (pinned in src/mir/async_group_test.go, where only run/await are counted and
+// a receive loop does not disturb the shape list).
+func TestGroupBarrierBetweenSpawns(t *testing.T) {
 	src := groupWorkSrc + `main = () {
-    r1 i64
-    r2 i64
     awy {
-        r1 = co work(1)
-        r2 = co work(r1)
+        co work(1)
+        print(9)
+        co work(2)
     }
-    print(r2)
 }
 `
 	wantShape(t, shapeOf(t, hirOf(t, src), "main"),
-		"run:__ag0", "awy:r1", "run:__ag1", "awy:r2")
+		"run:__ag0", "awy:", "expr-stmt", "run:__ag1", "awy:")
 }
 
 // TestGroupDiscardedResultStillAwaited: a `co` call statement with no binding
@@ -203,9 +208,8 @@ func TestGroupHandleNameAvoidsACollision(t *testing.T) {
 	// nothing — which is a property worth having, but not the one under test.)
 	t.Setenv("NOLANG_ASYNC_GROUP", "0")
 	pkg := hirOf(t, groupWorkSrc+`main = () {
-    r1 i64
     awy {
-        r1 = co work(1)
+        co work(1)
     }
 }
 `)
@@ -226,17 +230,176 @@ func TestGroupHandleNameAvoidsACollision(t *testing.T) {
 	}
 }
 
+// TestFlowArmCoUsesJoinSet: a `co` inside a loop/if arm cannot use a static
+// group-tail slot (the arm may run zero or many times). It must be rewritten to
+// `run` + `__join-push`, with `__join-enter`/`__join-leave` around the group and
+// NO `awy` at all — awaiting inline would restore the old serial #108 fallback.
+func TestFlowArmCoUsesJoinSet(t *testing.T) {
+	src := `work = (n i64) {
+    print(n)
+}
+main = () {
+    i i64 = 0
+    awy {
+        for i < 2 {
+            i == 0 -> {
+                co work(1)
+            }
+            i = i + 1
+        }
+    }
+}
+`
+	pkg := hirOf(t, src)
+	var runs, awaits int
+	calls := map[string]int{}
+	var walk func(id int32)
+	seen := map[int32]bool{}
+	walk = func(id int32) {
+		if id == hir.NoID || seen[id] {
+			return
+		}
+		seen[id] = true
+		n := pkg.Node(id)
+		if n == nil {
+			return
+		}
+		switch n.Kind {
+		case hir.KRun:
+			runs++
+		case hir.KAwait:
+			awaits++
+		case hir.KCall:
+			for _, c := range pkg.Children(id) {
+				slot := pkg.Node(c)
+				if slot == nil || slot.Kind != hir.KSlot || pkg.Str(slot.S) != "fn" {
+					continue
+				}
+				if fn := pkg.Node(slot.First); fn != nil && fn.Kind == hir.KIdent {
+					calls[pkg.Str(fn.S)]++
+				}
+			}
+		}
+		for _, c := range pkg.Children(id) {
+			walk(c)
+		}
+	}
+	for _, top := range pkg.Top {
+		if n := pkg.Node(top); n != nil && n.Kind == hir.KFuncDef && pkg.Str(n.S) == "main" {
+			walk(top)
+		}
+	}
+	if runs != 1 {
+		t.Errorf("run count = %d, want 1", runs)
+	}
+	if awaits != 0 {
+		t.Errorf("await count = %d, want 0 (inline await is the serial fallback)", awaits)
+	}
+	for _, name := range []string{"__join-enter", "__join-push", "__join-leave"} {
+		if calls[name] != 1 {
+			t.Errorf("%s count = %d, want 1 (calls=%v)", name, calls[name], calls)
+		}
+	}
+}
+
+// TestFlowArmCoJoinSetAllControlFlowKinds: every construct that can execute an
+// arm zero or many times must route its `co` through the join-set, not just
+// `for`. KTypeMatch and KChanIter desugar differently from KIf, so a bug in
+// controlFlowKind would otherwise only show up for one of them at runtime.
+func TestFlowArmCoJoinSetAllControlFlowKinds(t *testing.T) {
+	const prelude = `work = (n i64) {
+    print(n)
+}
+main = () {
+    i i64 = 0
+    k ?i64 = 1
+    ch chan[i64] = with-cap(1)
+    ch <- 9
+    ch.close()
+    awy {
+`
+	const postlude = `    }
+}
+`
+	cases := map[string]string{
+		"for": `        for i < 2 {
+            co work(1)
+        }
+`,
+		"if": `        i == 0 -> {
+            co work(1)
+        }
+`,
+		"match": `        k: {
+            ok -> { co work(1) }
+            -> { }
+        }
+`,
+		"chan-iter": `        <- ch: {
+            ok -> { co work(1) }
+            -> { }
+        }
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			pkg := hirOf(t, prelude+body+postlude)
+			var runs, awaits, pushes int
+			var walk func(int32)
+			seen := map[int32]bool{}
+			walk = func(id int32) {
+				if id == hir.NoID || seen[id] {
+					return
+				}
+				seen[id] = true
+				n := pkg.Node(id)
+				if n == nil {
+					return
+				}
+				switch n.Kind {
+				case hir.KRun:
+					runs++
+				case hir.KAwait:
+					awaits++
+				case hir.KCall:
+					if n := pkg.Node(n.First); n != nil && n.Kind == hir.KSlot &&
+						pkg.Str(n.S) == "fn" {
+						if fn := pkg.Node(n.First); fn != nil && fn.Kind == hir.KIdent &&
+							pkg.Str(fn.S) == "__join-push" {
+							pushes++
+						}
+					}
+				}
+				for _, c := range pkg.Children(id) {
+					walk(c)
+				}
+			}
+			for _, top := range pkg.Top {
+				if n := pkg.Node(top); n != nil && n.Kind == hir.KFuncDef && pkg.Str(n.S) == "main" {
+					walk(top)
+				}
+			}
+			// `match` / chan-iter desugar the arm into BOTH a `then` and a
+			// `dot-val` slot; only one runs, but both must be rewritten or a
+			// taken path could fall back to #108. So the invariant is
+			// "every run has a push, and no run awaits inline".
+			if runs < 1 || awaits != 0 || pushes != runs {
+				t.Errorf("run/await/push = %d/%d/%d, want >=1/0/runs", runs, awaits, pushes)
+			}
+		})
+	}
+}
+
 // TestGroupKillSwitch: NOLANG_ASYNC_GROUP=0 restores the untouched HIR. It is
 // the A/B lever for validating the pass across the corpus without building a
 // second binary.
 func TestGroupKillSwitch(t *testing.T) {
 	t.Setenv("NOLANG_ASYNC_GROUP", "0")
 	src := groupWorkSrc + `main = () {
-    r1 i64
     awy {
-        r1 = co work(1)
+        co work(1)
     }
 }
 `
-	wantShape(t, shapeOf(t, hirOf(t, src), "main"), "let")
+	wantShape(t, shapeOf(t, hirOf(t, src), "main"), "expr-stmt")
 }

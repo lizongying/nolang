@@ -798,10 +798,41 @@ const (
 	OpChanSend
 	// OpChanRecv dequeues one element into the storage behind Args[1] (a local
 	// slot) and yields a status in Dst: 0 = ok, 1 = closed and drained,
-	// 2 = open but empty. Lowering turns that status into a `?T`.
+	// 2 = open but empty (an uninitialized handle also reports 2). Lowering
+	// turns that status into a `?T`.
+	//
+	// A receive is a SUSPENSION POINT: PlanCoroutines splits the enclosing
+	// block in front of it and makes the preceding block a CoroParkChan, so a
+	// coroutine that reads an empty channel parks until a send wakes it. In a
+	// function that is not a coroutine there is nothing to park, so codegen
+	// calls @nolang_chan_recv_block instead, which drives the ready queue
+	// until a value arrives.
 	OpChanRecv
 	// OpChanClose marks the channel closed (idempotent). Args[0] = chan.
 	OpChanClose
+
+	// OpYield marks a VOLUNTARY suspension point (`async-yield()`). It is a
+	// marker for the coroutine planning pass and produces no IR of its own:
+	// PlanCoroutines turns the enclosing block into a park block (see
+	// OpCoroPark) and the instruction itself stays at the head of the
+	// continuation block, where codegen emits nothing for it.
+	//
+	// In a function that is NOT a coroutine the marker is left in place and
+	// emitInst falls back to the historical direct call to
+	// @nolang_async_yield, so an `async-yield()` outside an `-async` clone
+	// keeps its old (enqueue-and-continue) behaviour.
+	OpYield
+
+	// OpCoroPark terminates a coroutine block at a suspension point, i.e. it is
+	// the CFG edge "park here, continue at Targets[0] on resume". It is NOT a
+	// sink: the continuation block is reachable, which is what keeps the values
+	// live across the park visible to the analyses that ran before this
+	// terminator was introduced (PlanCoroutines runs after Analyze).
+	//
+	// Int = the state number stored into the frame's __state field,
+	// Sym = "await" | "yield" | "chan" (CoroParkAwait / CoroParkYield /
+	// CoroParkChan), Args[0] = the awaited handle or the channel.
+	OpCoroPark
 
 	opCount
 )
@@ -869,6 +900,8 @@ var opNames = [opCount]string{
 	OpChanSend:   "chan-send",
 	OpChanRecv:   "chan-recv",
 	OpChanClose:  "chan-close",
+	OpYield:      "yield",
+	OpCoroPark:   "coro-park",
 }
 
 func (o Op) String() string {
@@ -882,7 +915,7 @@ func (o Op) String() string {
 // pure side-effecting stores, and Drop/SetField do not.
 func producesValue(op Op) bool {
 	switch op {
-	case OpReturn, OpBr, OpCondBr, OpSwitch, OpStore, OpDrop, OpSetField, OpIndexStore, OpRetain, OpRelease, OpChanSend, OpChanClose:
+	case OpReturn, OpBr, OpCondBr, OpSwitch, OpCoroPark, OpStore, OpDrop, OpSetField, OpIndexStore, OpRetain, OpRelease, OpChanSend, OpChanClose, OpYield:
 		return false
 	}
 	return true
@@ -891,7 +924,7 @@ func producesValue(op Op) bool {
 // isTerminator reports whether op may appear as a block terminator.
 func (o Op) isTerminator() bool {
 	switch o {
-	case OpReturn, OpBr, OpCondBr, OpSwitch:
+	case OpReturn, OpBr, OpCondBr, OpSwitch, OpCoroPark:
 		return true
 	}
 	return false
@@ -1454,10 +1487,15 @@ type Inst struct {
 }
 
 type Term struct {
-	Op      Op // OpReturn / OpBr / OpCondBr / OpSwitch
+	Op      Op // OpReturn / OpBr / OpCondBr / OpSwitch / OpCoroPark
 	Args    []ValueID
 	Targets []BlockID
 	Sym     string
+	// Int carries the terminator's integer payload. Only OpCoroPark uses it
+	// today: the state number the park stores into the frame's __state field.
+	// Kept separate from Sym (a string) so the dispatch chain compares numbers,
+	// not text.
+	Int int64
 }
 
 type Block struct {
@@ -1488,6 +1526,77 @@ type Function struct {
 	Variadic   bool
 	Receiver   TypeID
 	SourceName string
+	// IsCoro marks a function that has been transformed into a resumable state
+	// machine by PlanCoroutines: its locals live in a heap frame hanging off
+	// %task.frame, its body takes `i8* task` instead of the user ABI, and every
+	// suspension point is a park terminator (OpCoroPark) that returns to the
+	// scheduler. Nil-safe everywhere: IsCoro is only ever true together with a
+	// non-nil Coro.
+	IsCoro bool
+	Coro   *CoroInfo
+}
+
+// CoroParkKind distinguishes the two ways a coroutine park block gives up the
+// CPU.
+type CoroParkKind uint8
+
+const (
+	// CoroParkAwait parks until the awaited task is done. The park block
+	// registers itself as that task's waiter (@nolang_async_wait), so the
+	// task's completion re-enqueues it.
+	CoroParkAwait CoroParkKind = iota + 1
+	// CoroParkYield parks after re-enqueuing itself (@nolang_async_yield),
+	// which is what makes one coroutine interleave with its siblings.
+	CoroParkYield
+	// CoroParkChan parks until the channel is readable: the park block asks
+	// @nolang_chan_ready and either falls through to the receive or links
+	// itself into the channel's waiter chain (@nolang_chan_park) and returns.
+	// A send or a close wakes every waiter, so the resume must RE-CHECK — the
+	// value may already have been taken by a task that was woken first.
+	CoroParkChan
+)
+
+// CoroPark is one suspension site of a coroutine: the block that parks, the
+// state number it records, and where execution continues on resume.
+type CoroPark struct {
+	State  int32
+	Kind   CoroParkKind
+	Handle ValueID // CoroParkAwait: the awaited task; CoroParkChan: the channel
+	Cont   BlockID // the block that starts the work which follows the park
+	// Resume is where the dispatch jumps after a resume. For an await it is
+	// Cont (the awaited task is done by definition, so the continuation can
+	// read the result straight away). For a channel park it is the PARK BLOCK
+	// ITSELF: the readiness test has to run again, because being woken only
+	// means "something changed", not "this task now owns a value".
+	Resume BlockID
+}
+
+// CoroInfo is the plan PlanCoroutines produces for one coroutine function. It
+// is the single source of truth for codegen: which values live in the frame
+// (and in what order), which blocks park, and how a resuming dispatch maps a
+// state number back to a block.
+type CoroInfo struct {
+	// FrameName is the LLVM identified type of the frame, without the leading
+	// '%' (e.g. "frame.7"). Layout is
+	//   { i32 __state, i32 __pad, <slot 0>, <slot 1>, ... }
+	// so slot i is field index i+2.
+	FrameName string
+	// Slots lists the values that live in the frame, in field order. It covers
+	// every value the ordinary backend would give a stack slot to (params, Dst
+	// and Results of every instruction), minus the method receiver, which keeps
+	// aliasing the caller-provided result buffer.
+	Slots   []ValueID
+	SlotIdx map[ValueID]int32 // value -> slot ordinal (add 2 for the field index)
+	// Parks maps a parking block to its suspension site.
+	Parks map[BlockID]CoroPark
+	// States lists the park sites in state order (States[i] has State == i+1),
+	// which fixes the order of the dispatch's comparison chain.
+	States []CoroPark
+	// Dispatch is the synthetic entry block: it loads the frame, reads __state
+	// and branches to States[i].Resume (or Body for state 0).
+	Dispatch BlockID
+	// Body is the original entry block, i.e. where state 0 resumes.
+	Body BlockID
 }
 
 type Const struct {

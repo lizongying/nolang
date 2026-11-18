@@ -1638,17 +1638,27 @@ func (ie *InfixExpression) EndPos() lexer.Position {
 	return ie.Right.EndPos()
 }
 
-// CoExpression: co <call-expression>
-// Colorless async spawn. `r1 = co worker(1)` spawns `worker-async` (the
-// compiler-monomorphized async variant of `worker`) and reads its RESULT back
-// into `r1` — i.e. it is sugar for `run worker-async(1); r1 = awy <handle>`.
+// CoExpression: co <call-expression> | co { ... }
+// Colorless async spawn. Two forms, both spawning a PROCEDURE and producing no
+// value:
+//
+//	co worker(1)     spawn `worker-async` (the compiler-monomorphized async
+//	                 variant of `worker`). `worker` may not declare a result
+//	                 (a method's implicit `self` does not count).
+//	co { ... }       spawn the block as an anonymous zero-parameter procedure;
+//	                 the block's free variables are captured BY VALUE, i.e. a
+//	                 snapshot taken at the spawn.
+//
+// `co` is not a value, so it may only stand alone as a statement — the parser
+// rejects it on the right-hand side of a binding, in an argument position, and
+// in a return position. Results travel through a channel instead.
 // The user writes the uncolored name `worker`; the `-async` suffix is purely a
 // compiler-internal detail over stackless coroutines. The monomorphization
 // pass (src/hir) generates `worker-async` from `worker` when it does not
 // already exist, and propagates the async coloring transitively upward.
 type CoExpression struct {
 	Token lexer.Token
-	Call  Expression // must be a *CallExpression
+	Call  Expression // *CallExpression, or *FunctionLiteral for `co { ... }`
 }
 
 func (ge *CoExpression) expressionNode()     {}
@@ -1828,7 +1838,7 @@ type IterationExpr struct {
 	//	i <- ch: { co bar(i) }               取元素（ChanValue = true）
 	//
 	// 判據是**語法**的：body 的第一條陳述若是對迴圈變數的 match（`v: { ... }`），
-	// 使用者顯然要自己分辨三態；否則取值即可。見 detectChanLoopForm。
+	// 使用者顯然要自己分辨三態；否則取值即可。見 parseChanLoopBody。
 	ChanValue bool
 }
 

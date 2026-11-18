@@ -307,6 +307,15 @@ func (sp *SemanticTokensProvider) walkStmt(stmt parser.Statement, typeMap map[[2
 			typeMap[pos] = SemTokenTypeVariable
 			modMap[pos] = SemTokenModDefinition
 		}
+	case *parser.ChanSendStatement:
+		// `ch <- v`：接收者與載荷都是普通表達式，走同一條 walker 即可
+		// （`<-` 本身由 mapTokenType 當 operator 上色）。
+		if s.Chan != nil {
+			sp.walkExpr(s.Chan, typeMap, modMap)
+		}
+		if s.Value != nil {
+			sp.walkExpr(s.Value, typeMap, modMap)
+		}
 	case *parser.ForStatement:
 		if s.Body != nil {
 			sp.walkStmt(s.Body, typeMap, modMap)

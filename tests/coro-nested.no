@@ -1,0 +1,172 @@
+; coro-nested.no — 协程内再 spawn + await 子任务（多层帧）
+;
+; 运行：no test tests/coro-nested.no
+;
+; 每层协程都有自己的帧：父协程 park 在 await 上时，它自己的帧必须原样留着，
+; 同时子任务的帧是另一次分配。这个档就是要让「父帧 + 子帧」同时在飞，
+; 一旦帧是共享的（例如还退回 alloca 版），下面累加链会整体错位。
+;
+; 调用链：
+;   outer → mid → leaf            （每层都挂起至少一次）
+;   sibling：一个协程内先后 spawn 两个子任务，其中一个还会再 spawn
+;
+; 每层的过程把结果写进调用方给的通道（`co` 不产生值），所以「上一层等下一层」
+; 就是「上一层读下一层的通道」。挂起点始终落在被 spawn 的函数自己身上。
+
+# /test/runner
+
+; 两数相加（显式解包 ?i64）
+; a: 左加数
+; b: 右加数
+; r: a + b；溢位时回 0
+add = (a i64, b i64) (r i64) {
+    s = a + b
+    r = s: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 只写通道的辅助过程
+; ch: 结果通道
+; v: 要送回的值
+put1 = (ch chan[i64], v i64) {
+    ch <- v
+    ch.close()
+}
+
+; 读回通道里的唯一值
+; ch: 结果通道
+; def: 一个都没取到时的值
+; out: 取到的值，或 def
+take1 = (ch chan[i64], def i64) (out i64) {
+    out = def
+    <- ch: {
+        ok -> out = it
+    }
+}
+
+; 最内层：让出一次，回来再 +1
+; ch: 结果通道
+; n: 输入
+; 送回 n + 1
+leaf = (ch chan[i64], n i64) {
+    async-yield()
+    put1(ch, add(n, 1))
+}
+
+; 中间层：先让出，再 spawn leaf 并等它
+; ch: 结果通道
+; n: 输入
+; 送回 leaf 的结果 + 1 = n + 2
+mid = (ch chan[i64], n i64) {
+    async-yield()
+    inner chan[i64] = with-cap(1)
+    awy {
+        co leaf(inner, n)
+    }
+    put1(ch, add(take1(inner, 0), 1))
+}
+
+; 外层：把 mid 当子任务等回来
+; ch: 结果通道
+; n: 输入
+; 送回 mid 的结果 + 1 = n + 3
+outer = (ch chan[i64], n i64) {
+    inner chan[i64] = with-cap(1)
+    awy {
+        co mid(inner, n)
+    }
+    put1(ch, add(take1(inner, 0), 1))
+}
+
+; 父协程在「让出 → 等子 → 再让出」之间反复穿过挂起点
+; ch: 结果通道
+; n: 输入
+; 送回 leaf(n) + n = 2n + 1
+pingpong = (ch chan[i64], n i64) {
+    async-yield()
+    inner chan[i64] = with-cap(1)
+    awy {
+        co leaf(inner, n)
+    }
+    v = take1(inner, 0)
+    async-yield()
+    put1(ch, add(v, n))
+}
+
+; 一个协程里先后 spawn 两个子任务：两个子帧同时在飞
+; ch: 结果通道
+; a: 第一个输入
+; b: 第二个输入
+; 送回 (a + 1) + (b + 2)
+siblings = (ch chan[i64], a i64, b i64) {
+    ca chan[i64] = with-cap(1)
+    cb chan[i64] = with-cap(1)
+    awy {
+        co leaf(ca, a)
+        co mid(cb, b)
+    }
+    x = take1(ca, 0)
+    y = take1(cb, 0)
+    put1(ch, add(x, y))
+}
+
+; ① 三层嵌套：outer → mid → leaf
+t-three-level = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co outer(ch, 1)
+    }
+    runner.eq(take1(ch, -1), 4, 'nested: outer→mid→leaf 每层 +1')
+}
+
+; ② 换一个输入再验一次（确认帧槽不是靠巧合初值对上）
+t-three-level-2 = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co outer(ch, 10)
+    }
+    runner.eq(take1(ch, -1), 13, 'nested: 输入 10 时结果 13')
+}
+
+; ③ 父协程多次穿过挂起点
+t-pingpong = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co pingpong(ch, 5)
+    }
+    runner.eq(take1(ch, -1), 11, 'nested: 父协程让出→等子→再让出后算对（2*5+1）')
+}
+
+; ④ 两个子任务同时在飞（子帧彼此独立）
+t-siblings = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co siblings(ch, 3, 4)
+    }
+    runner.eq(take1(ch, -1), 10, 'nested: 两个子任务结果 (3+1) + (4+2)')
+}
+
+; ⑤ 外层 spawn 两个协程，各自又 spawn 子任务：帧数量最多的一档
+t-wide = () {
+    ca chan[i64] = with-cap(1)
+    cb chan[i64] = with-cap(1)
+    awy {
+        co outer(ca, 0)
+        co outer(cb, 0)
+    }
+    runner.eq(add(take1(ca, 0), take1(cb, 0)), 6, 'nested: 两棵子树并发，各 3')
+}
+
+t-three-level()
+t-three-level-2()
+t-pingpong()
+t-siblings()
+t-wide()
+
+runner.summary()
+fails = runner.failed-count()
+fails > 0 -> exit(1)
+exit(0)

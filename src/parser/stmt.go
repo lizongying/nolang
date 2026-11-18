@@ -1383,6 +1383,12 @@ func (p *Parser) parseLetStatement() Statement {
 	} else {
 		stmt.Value = p.parseExpression(LOWEST)
 	}
+	// `x = co f()` — `co` 不是值，賦值右側沒有東西可綁。atStatementStart 在
+	// 同一行時已經攔下，這裡補的是「co 在下一行」的寫法（`x =\n    co f()`）。
+	if co, ok := stmt.Value.(*CoExpression); ok {
+		p.errorf(co.Token, "c0nostmt", "E_CO_NOT_STATEMENT",
+			"'co' spawns a procedure and produces no value; it must stand alone as a statement")
+	}
 	p.ctx.pop()
 
 	// `x = A -> B -> V` — the WHOLE pipeline is the assignment's value, and the
@@ -2819,7 +2825,14 @@ func (p *Parser) parseForStatement() Statement {
 			p.saveWarningf("zl7i0mx6", "line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
 				ir.Token.Line, ir.Token.Column)
 		}
-		stmt.Body = p.parseLoopBody()
+		// 通道接收迴圈（`i <- ch: { }`）的 body 必須在解析前定形三態/元素形態：
+		// 區塊開頭若是 match，parseBlockStatement 會立刻把它降糖成 IfExpression，
+		// 事後就再也認不出原意。見 parseChanLoopBody。
+		if ir.IsChan {
+			stmt.Body = p.parseChanLoopBody(stmt)
+		} else {
+			stmt.Body = p.parseLoopBody()
+		}
 		return stmt
 	}
 	if p.currentToken.Type == lexer.IDENT && p.peekToken.Type == lexer.IDENT {
@@ -2838,7 +2851,12 @@ func (p *Parser) parseForStatement() Statement {
 				p.saveWarningf("o7503w1f", "line %d, column %d: 'i <- range { }' is deprecated, use 'i <- range: { }' instead",
 					ir.Token.Line, ir.Token.Column)
 			}
-			stmt.Body = p.parseLoopBody()
+			// 同前：帶標籤的裸 `name i <- ch: { }` 也要在解析前定形。
+			if ir.IsChan {
+				stmt.Body = p.parseChanLoopBody(stmt)
+			} else {
+				stmt.Body = p.parseLoopBody()
+			}
 			return stmt
 		}
 		p.restoreState(state)
@@ -3005,8 +3023,12 @@ parseBody:
 		}
 	}
 
-	stmt.Body = p.parseLoopBody()
-	p.detectChanLoopForm(stmt)
+	// `for i in ch: { }` / `for i <- ch: { }` 也要在解析前定形（同前兩處）。
+	if stmt.IterRange != nil && stmt.IterRange.IsChan {
+		stmt.Body = p.parseChanLoopBody(stmt)
+	} else {
+		stmt.Body = p.parseLoopBody()
+	}
 	return stmt
 }
 

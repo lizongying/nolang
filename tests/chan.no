@@ -1,0 +1,310 @@
+; chan.no — 通道型別 `chan[T]` 與三態接收迴圈
+;
+; 執行：no test tests/chan.no
+;
+; 三種語法共用 `<-`：
+;   ch <- v           發送（值先深拷貝進環，發送端永不阻塞、不丟值）
+;   v <- ch: { ... }  接收（每輪綁定三態 ?T，或元素 T——見 body 首條是否 match v）
+;   <- ch: { ... }    接收並丟棄迴圈變數（body 直接是 match 臂）
+;
+; 三態：
+;   ok  = 有值
+;   nil = 通道已關閉且已取空（接收迴圈從這裡結束）
+;   err = 真錯誤：未初始化的通道（零值句柄，沒有東西可等）
+;
+; **空讀是「等值」，不是錯誤**：通道打開但空時讀者掛起——協程在 recv 前 park
+; （見 src/mir/coro.go 的 CoroParkChan），非協程則反覆驅動就緒佇列直到有值。
+; 因此「取空」必須由 close 結束迴圈（與 Go 的 range over channel 一致）；
+; 若整個程式再也無法推進（就緒佇列空而目標仍未完成），執行期印
+; `nolang: deadlock: …` 並 abort，而不是回一個沒人送過的值。
+;
+; 寫法備註：本檔刻意不寫 `n = n + 1` 這種「加字面量」的自增——`x + 1` 在
+; Nolang 是檢查溢出的運算，結果是 `?i64`（要 `k = x + 1` 再 `k: { ok -> … }`
+; 兩步展開，見 tests/cond-loop-flag.no）。這與 chan 無關，`{ true -> n = n + 1 }`
+; 這種裸 if 組一樣報 15w45dqk。斷言因此都寫成「每輪就地比對」或
+; 「元素形態裡對變數求和」（`s = s + i` 合法）。
+
+# /test/runner
+
+passed = 0
+failed = 0
+
+; ── 排空已關閉的通道 ──────────────────────────
+; 三個值全部取到，取空後落到 nil 臂（而不是 err）。
+t-drain = () {
+    c chan[i64] = with-cap(4)
+    c <- 1
+    c <- 1
+    c <- 1
+    c.close()
+    runner.eq(c.len(), 3, 'drain: 關閉後既有值仍積壓')
+    done = ''
+    rounds = 0
+    <- c: {
+        ok -> {
+            rounds = rounds + it
+            runner.eq(it, 1, 'drain: 每輪 it 都是發送的值')
+        }
+
+        nil -> done = 'closed'
+
+        err -> done = 'empty'
+    }
+    runner.eq(rounds, 3, 'drain: 三個值各跑一輪')
+    runner.eq(c.len(), 0, 'drain: 取空後隊列歸零')
+    runner.str-eq(done, 'closed', 6, 'drain: 取空後落到 nil 臂')
+}
+
+; ── 關閉且空：nil 臂（不是 err）──────────────
+; 打開但空的通道現在是「等」，所以 nil 與 err 的分界移到「關閉」與
+; 「未初始化」上。
+t-closed-empty = () {
+    c chan[i64] = with-cap(1)
+    c.close()
+    done = ''
+    <- c: {
+        ok -> done = 'got'
+
+        nil -> done = 'closed'
+
+        err -> done = 'empty'
+    }
+    runner.str-eq(done, 'closed', 6, 'closed-empty: 關閉且空走 nil 臂')
+}
+
+; ── 元素形態 ──────────────────────────────────
+; body 不對迴圈變數做 match ⇒ 變數綁元素本身，只跑收到值的那幾輪。
+t-elem-form = () {
+    c chan[i64] = with-cap(2)
+    c <- 7
+    c <- 9
+    c.close()
+    s = 0
+    i <- c: {
+        s = s + i
+    }
+    runner.eq(s, 16, 'elem: 只有收到值的兩輪進 body，且元素可直接參與算術')
+}
+
+; ── 顯式接收（不丟棄變數）────────────────────
+; 每輪拿到的是三態 ?T，作者自己分辨；ok 臂的 it 是元素本身。
+t-explicit = () {
+    c chan[i64] = with-cap(2)
+    c <- 5
+    c.close()
+    got = 0
+    hit = 0
+    v <- c: {
+        v: {
+            ok -> {
+                got = it
+                hit = hit + it
+            }
+
+            -> {
+            }
+        }
+    }
+    runner.eq(hit, 5, 'explicit: 只有 ok 那一輪綁到值')
+    runner.eq(got, 5, 'explicit: it 綁的是元素而不是 ?i64')
+}
+
+; ── 容量與長度 ────────────────────────────────
+t-len-cap = () {
+    c chan[i64] = with-cap(8)
+    runner.eq(c.cap(), 8, 'len-cap: cap 回報初始容量')
+    runner.eq(c.len(), 0, 'len-cap: 新通道 len 為 0')
+    c <- 1
+    c <- 2
+    runner.eq(c.len(), 2, 'len-cap: len 回報積壓數')
+    c.close()
+    runner.eq(c.len(), 2, 'len-cap: 關閉後既有的值仍在隊列裡')
+}
+
+; ── str 載荷深拷貝 ────────────────────────────
+; 發送時把值拷進環；改寫來源不得影響通道裡的值。
+t-str-payload = () {
+    c chan[str] = with-cap(2)
+    src = 'ab'
+    c <- src
+    src = 'zz'
+    c.close()
+    got = ''
+    end = ''
+
+    ; 注意：ok 輪之後迴圈還會再跑一輪拿 nil，所以收尾狀態必須記在別的變數上，
+    ; 否則後面的 nil 臂會把剛取到的值覆寫掉。
+    <- c: {
+        ok -> got = it
+
+        nil -> end = 'closed'
+
+        err -> end = 'empty'
+    }
+    runner.str-eq(got, 'ab', 2, 'str: 發送是深拷貝，改寫來源不影響環內值')
+    runner.str-eq(end, 'closed', 6, 'str: 取完一輪後落到 nil 臂')
+}
+
+; ── 裸宣告即分配 + 按需增長 ───────────────────
+; `c chan[i64]` 等價於 with-cap(0)：不預分配緩衝，發送時倍增，永不丟值。
+t-bare-decl = () {
+    c chan[i64]
+    c <- 1
+    c <- 2
+    c <- 3
+    c <- 4
+    c <- 5
+    runner.eq(c.len(), 5, 'bare: 五次發送全部積壓')
+    c.close()
+    sum = 0
+    i <- c: {
+        sum = sum + i
+    }
+    runner.eq(sum, 15, 'bare: 按需增長後取值順序不變')
+}
+
+; ── break 提前退出 ────────────────────────────
+; 三態循環支援 break；已入隊但未取的值留在環裡。
+; 這裡刻意不 close：break 在通道還是「打開且空」之前就跳出了，
+; 因此不會走到需要等待的那一輪。
+t-break = () {
+    c chan[i64] = with-cap(4)
+    c <- 1
+    c <- 2
+    c <- 3
+    got = 0
+    <- c: {
+        ok -> {
+            got = it
+            it == 2 -> break
+        }
+
+        nil -> got = 0
+
+        err -> got = 0
+    }
+    runner.eq(got, 2, 'break: 取到 2 就跳出循環')
+    runner.eq(c.len(), 1, 'break: 未取的值仍留在環裡')
+}
+
+; ── 協程組內收發 ──────────────────────────────
+; `awy { }` 組內的 co 是無棧協程：producer 先把值放進環並關閉，consumer 再排空。
+t-awy = () {
+    c chan[i64] = with-cap(4)
+    awy {
+        co produce(c)
+        co consume(c)
+    }
+    runner.eq(c.len(), 0, 'awy: producer 兩個值已全部入隊並被消費光')
+}
+
+; ── 空讀掛起：consumer 先跑，空讀即 park ──────
+; 兩個任務在組內按 spawn 顺序入隊：consumer 先跑，通道是空的 ⇒ 掛起；
+; producer 接著跑，send 把等待者從通道的 waiters 鏈上摘下並重新入隊。
+; 這個檔能通過本身就證明 consumer 真的被掛起又恢復了——若它只是「讀空就
+; 返回」，consumer 會在 producer 發送之前結束，sum 只會是 0。
+t-park = () {
+    c chan[i64] = with-cap(0)
+    awy {
+        co consume-sum(c)
+        co produce-close(c)
+    }
+    runner.eq(c.len(), 0, 'park: 兩個值都被取走')
+}
+
+; ── 掛起後被更晚的 send 喚醒 ──────────────────
+; producer 先讓出一次才發送：consumer 的恢復因此排在自己 park 之後的第二輪
+; 排程，證明恢復不依賴「生產者緊接在後」這個巧合。
+t-park-after-yield = () {
+    c chan[i64] = with-cap(0)
+    awy {
+        co consume-sum(c)
+        co produce-slow(c)
+    }
+    runner.eq(c.len(), 0, 'park-yield: 讓出後再發送仍能喚醒等待者')
+}
+
+; ── 多個等待者、一個值：喚醒後必須重新檢查 ────
+; 一個 send 會喚醒整條等待鏈，但只有一個能拿到值；另一個恢復後重新判斷
+; 可讀性（此時是「已關閉且空」）⇒ 走 nil 臂正常結束，而不是誤判成拿到值。
+t-two-waiters = () {
+    c chan[i64] = with-cap(0)
+    out chan[i64] = with-cap(4)
+    awy {
+        co wait-one(c, out)
+        co wait-one(c, out)
+        co produce-one(c)
+    }
+    out.close()
+    total = 0
+    i <- out: {
+        total = total + i
+    }
+    runner.eq(total, 7, 'waiters: 兩個等待者裡只有一個拿到 7')
+}
+
+produce = (c chan[i64]) {
+    c <- 10
+    c <- 20
+    c.close()
+}
+
+consume = (c chan[i64]) {
+    n = 0
+    i <- c: {
+        n = n + i
+    }
+    runner.eq(n, 30, 'awy: consumer 拿到 producer 送出的兩個值')
+}
+
+consume-sum = (c chan[i64]) {
+    n = 0
+    i <- c: {
+        n = n + i
+    }
+    runner.eq(n, 30, 'park: consumer 拿到 producer 送出的兩個值')
+}
+
+produce-close = (c chan[i64]) {
+    c <- 10
+    c <- 20
+    c.close()
+}
+
+produce-slow = (c chan[i64]) {
+    async-yield()
+    c <- 10
+    c <- 20
+    c.close()
+}
+
+; 收到 0 或 1 個值：把收到的值（沒收到就是 0）轉發到 out。
+wait-one = (c chan[i64], out chan[i64]) {
+    last = 0
+    i <- c: {
+        last = i
+    }
+    out <- last
+}
+
+produce-one = (c chan[i64]) {
+    c <- 7
+    c.close()
+}
+
+t-drain()
+t-closed-empty()
+t-elem-form()
+t-explicit()
+t-len-cap()
+t-str-payload()
+t-bare-decl()
+t-break()
+t-awy()
+t-park()
+t-park-after-yield()
+t-two-waiters()
+
+; runner.summary 印出 ALL TESTS PASSED / SOME TESTS FAILED，
+; `no test` 以該行判成敗，無需自行 exit。
+total = runner.summary()

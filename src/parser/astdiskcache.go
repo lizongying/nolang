@@ -421,7 +421,17 @@ import (
 // ChanSendStatement 兩個節點，IterationExpr 多了 IsChan / ChanValue 兩個欄位，
 // 且 `<- ch: { ... }` 會脫糖成 ForStatement。gob blob 形狀改變，舊 blob 重用會
 // 把通道接收迴圈讀回成裸 match（語意全非），故必 bump。
-const ASTVersion = "2026-11-17.2"
+// 2026-11-17.4：`i <- ch: { ... }` 的三態/元素形態改在**解析 body 之前**用 token
+// 判定（parseChanLoopBody），並把 `{ ok -> ... }` 這種省略主語的寫法合成成
+// 「對迴圈變數的 match」。舊 blob 把這類寫法記成元素形態（ChanValue=true）且主語
+// 為空，重用會讓 `it` 綁到空值（`co f(it)` 的實參降成 void），故必 bump。
+// 2026-11-18.1：`co` 改成「只能獨立成句的過程 spawn」，並新增閉包形式
+// `co { ... }`（AST 上是 CoExpression 包一個零參數 FunctionLiteral）。舊 blob
+// 裡的 `r = co f(x)` 會在新語義下少一個語句位置檢查，故必 bump。
+// 2026-11-18.2：通道接收迴圈合成的 match 不再繼承外層的 CTX_EXPR
+// （parseChanRecvSugar / parseChanLoopBody 都先 filterOut 掉）。舊 blob 若在值語境
+// 裡帶過 `<- ch: { ok -> r = it }`，會記成解析失敗後被丟掉的空 block，故必 bump。
+const ASTVersion = "2026-11-18.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

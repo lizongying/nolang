@@ -1,0 +1,203 @@
+; coro-loop.no — 循环体内挂起：每轮 park / resume
+;
+; 运行：no test tests/coro-loop.no
+;
+; 挂起点在循环体里时，同一个 `CoroPark` 会被走到多次：每轮都写同一个
+; `__state` 槽、下一次 resume 从同一个 cont 块回到循环头。这里要确认三件事：
+;   ① 每轮都能恢复，且循环变量（帧槽）跨挂起保值
+;   ② 循环变量在恢复后仍是最新一轮的值（不会被重新零初始化）
+;   ③ 循环里再套 await / yield 混合时累加不丢
+;
+; 帧的零初始化只发生在 state 0 路径（`cs.init`），恢复路径不重跑它，
+; 所以 ② 断言一旦翻红，说明零初始化被搬回了每轮回合。
+;
+; `co` 只启动过程：结果经通道回传。**挂起点必须落在被 spawn 的那个函数自己
+; 身上**——`async-yield()` 挂起的是「当前任务」，而一个被同步调用者的普通函数
+; 没有自己的帧，也没有自己的任务，它让出等于把调用者的任务重新入队。
+
+# /test/runner
+
+; 两数相加（显式解包 ?i64）
+; a: 左加数
+; b: 右加数
+; r: a + b；溢位时回 0
+add = (a i64, b i64) (r i64) {
+    s = a + b
+    r = s: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 子过程：把 n 送进通道再关闭
+; ch: 结果通道
+; n: 要送回的值
+put1 = (ch chan[i64], n i64) {
+    ch <- n
+    ch.close()
+}
+
+; 循环体内 await：第 i 轮 spawn 一个子任务并等它回来
+; ch: 结果通道
+; k: 轮数（本档传 4）
+; 送回 0 + 1 + … + k-1
+sum-await = (ch chan[i64], k i64) {
+    total i64 = 0
+    i i64 = 0
+    for i < k {
+        one chan[i64] = with-cap(1)
+        awy {
+            co put1(one, i)
+        }
+        v = 0
+        <- one: {
+            ok -> v = it
+        }
+        total = add(total, v)
+        i = add(i, 1)
+    }
+    put1(ch, total)
+}
+
+; 循环体内 yield：每轮主动让出一次再累加
+; ch: 结果通道
+; k: 上界（本档传 4，累加 1..4）
+; 送回 1 + … + k
+sum-yield = (ch chan[i64], k i64) {
+    total i64 = 0
+    i i64 = 1
+    for i <= k {
+        async-yield()
+        total = add(total, i)
+        i = add(i, 1)
+    }
+    put1(ch, total)
+}
+
+; 循环体内 await + yield 混合：先让出，再等子任务
+; ch: 结果通道
+; k: 轮数（本档传 3）
+; 送回 每轮加 2 的和 = 6
+sum-mixed = (ch chan[i64], k i64) {
+    total i64 = 0
+    i i64 = 0
+    for i < k {
+        async-yield()
+        one chan[i64] = with-cap(1)
+        awy {
+            co put1(one, 2)
+        }
+        v = 0
+        <- one: {
+            ok -> v = it
+        }
+        total = add(total, v)
+        i = add(i, 1)
+    }
+    put1(ch, total)
+}
+
+; 双层循环：只在内层挂起（外层循环变量也要跨挂起活着）
+; ch: 结果通道
+; outer: 外层轮数
+; inner: 内层轮数
+; 送回 outer * inner
+sum-nested = (ch chan[i64], outer i64, inner i64) {
+    total i64 = 0
+    a i64 = 0
+    for a < outer {
+        b i64 = 0
+        for b < inner {
+            one chan[i64] = with-cap(1)
+            awy {
+                co put1(one, 1)
+            }
+            v = 0
+            <- one: {
+                ok -> v = it
+            }
+            total = add(total, v)
+            b = add(b, 1)
+        }
+        a = add(a, 1)
+    }
+    put1(ch, total)
+}
+
+; 取回通道里的唯一值（读完即关，循环随后自然结束）
+; ch: 结果通道
+; def: 一个都没取到时的值
+; out: 取到的值，或 def
+take1 = (ch chan[i64], def i64) (out i64) {
+    out = def
+    <- ch: {
+        ok -> out = it
+    }
+}
+
+; ① 每轮挂起/恢复，结果正确
+t-await-loop = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co sum-await(ch, 4)
+    }
+    runner.eq(take1(ch, -1), 6, 'loop-await: 每轮恢复后累加正确（0+1+2+3）')
+}
+
+; ② 循环变量跨挂起保值：轮数翻倍，和随之翻倍（若被清零会算出别的值）
+t-loop-var-survives = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co sum-await(ch, 5)
+    }
+    runner.eq(take1(ch, -1), 10, 'loop-await: 循环变量在恢复后仍是新一轮的值')
+}
+
+; ③ 循环体内 yield 多轮
+t-yield-loop = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co sum-yield(ch, 4)
+    }
+    runner.eq(take1(ch, -1), 10, 'loop-yield: 每轮让出后累加不丢（1+2+3+4）')
+}
+
+; ④ yield 与 await 在同一循环体里交替
+t-mixed-loop = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co sum-mixed(ch, 3)
+    }
+    runner.eq(take1(ch, -1), 6, 'loop-mixed: yield/await 交替仍累加正确')
+}
+
+; ⑤ 双层循环 + 内层挂起
+t-nested-loop = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co sum-nested(ch, 3, 4)
+    }
+    runner.eq(take1(ch, -1), 12, 'loop-nested: 外层 3 轮 × 内层 4 轮')
+}
+
+; ⑥ 零轮循环：一次都不挂起，帧只在 state 0 初始化后直接返回
+t-zero-iter = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co sum-await(ch, 0)
+    }
+    runner.eq(take1(ch, -1), 0, 'loop-zero: 零轮时直接返回 0（不 park）')
+}
+
+t-await-loop()
+t-loop-var-survives()
+t-yield-loop()
+t-mixed-loop()
+t-nested-loop()
+t-zero-iter()
+
+runner.summary()
+fails = runner.failed-count()
+fails > 0 -> exit(1)
+exit(0)

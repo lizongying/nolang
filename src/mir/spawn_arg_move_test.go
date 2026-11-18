@@ -36,14 +36,14 @@ import (
 // read after the spawn, so its ownership can be transferred.
 const spawnArgSrc = `holder { s str }
 
-echo-holder = (h holder) (r str) {
-    r = h.s
+echo-holder = (h holder) {
+    print(h.s)
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
     awy {
-        v = co echo-holder(h)
+        co echo-holder(h)
     }
     print(v)
 }
@@ -53,14 +53,14 @@ main = () {
 // the spawn, so it is live across it and the copy must stay.
 const spawnArgLiveSrc = `holder { s str }
 
-echo-holder = (h holder) (r str) {
-    r = h.s
+echo-holder = (h holder) {
+    print(h.s)
 }
 
 main = () {
     h holder = holder { s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
     awy {
-        v = co echo-holder(h)
+        co echo-holder(h)
     }
     print(h.s)
     print(v)
@@ -268,15 +268,14 @@ func TestSpawnArgMoveNotTakenWhenSourceIsLive(t *testing.T) {
 // not on "the source happens to be dead". An i64 argument owns nothing, so there
 // is no drop to suppress and nothing to transfer.
 func TestSpawnArgMoveNotTakenForScalarArg(t *testing.T) {
-	mod := lowerForTest(t, `dbl = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n * 2
+	mod := lowerForTest(t, `dbl = (n i64) {
+    print(n)
 }
 
 main = () {
     x i64 = 21
     awy {
-        v = co dbl(x)
+        co dbl(x)
     }
     print(v)
 }
@@ -296,27 +295,22 @@ main = () {
 // of Module.SpawnArgClasses — so this asserts the cross-layer agreement rather
 // than a second copy of the rule.
 func TestSpawnArgMoveOnlyWhenWrapperFreesPayload(t *testing.T) {
-	mod := lowerForTest(t, `echo = (s str) (r str) {
-    r = s
+	mod := lowerForTest(t, `echo = (s str) {
+    print(s)
 }
 
-first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+first = (v []i64) {
+    print(v.len())
 }
 
-dbl = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n * 2
+dbl = (n i64) {
+    print(n)
 }
 
 holder { s str }
 
-echo-holder = (h holder) (r str) {
-    r = h.s
+echo-holder = (h holder) {
+    print(h.s)
 }
 
 main = () {
@@ -324,15 +318,11 @@ main = () {
     a []i64 = [7, 8, 9]
     h holder = holder { s: 'nested' }
     awy {
-        r1 = co echo(s)
-        r2 = co first(a)
-        r3 = co echo-holder(h)
-        r4 = co dbl(21)
+        co echo(s)
+        co first(a)
+        co echo-holder(h)
+        co dbl(21)
     }
-    print(r1)
-    print(r2)
-    print(r3)
-    print(r4)
 }
 `)
 	f := mod.Func(mod.FuncByName["main"])
@@ -351,7 +341,7 @@ main = () {
 			if !ok {
 				t.Fatalf("spawn callee %q not found", inst.Sym)
 			}
-			classes, _, _ := mod.SpawnArgClasses(mod.Func(cid))
+			classes, _, _ := mod.SpawnArgClasses(cid)
 			for i, a := range inst.Args {
 				if a <= NoVal || !mod.spawnArgMoves[a] {
 					continue
@@ -378,33 +368,28 @@ func TestSpawnArgClassesContract(t *testing.T) {
 	// Every callee must be REACHABLE: lowering is worklist-driven from `main`, so
 	// a function nobody calls is not in the module at all and FuncByName misses
 	// it. That is why this source has a `main` that spawns all of them.
-	mod := lowerForTest(t, `echo = (s str) (r str) {
-    r = s
+	mod := lowerForTest(t, `echo = (s str) {
+    print(s)
 }
 
-first = (v []i64) (r i64) {
-    r = v[0]: {
-        ok -> it
-
-        -> 0
-    }
+first = (v []i64) {
+    print(v.len())
 }
 
-dbl = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n * 2
+dbl = (n i64) {
+    print(n)
 }
 
 holder { s str }
 
 plain { n i64 }
 
-echo-holder = (h holder) (r str) {
-    r = h.s
+echo-holder = (h holder) {
+    print(h.s)
 }
 
-echo-plain = (p plain) (r i64) {
-    r = p.n
+echo-plain = (p plain) {
+    print(p.n)
 }
 
 main = () {
@@ -413,17 +398,12 @@ main = () {
     h holder = holder { s: 'nested' }
     p plain = plain { n: 1 }
     awy {
-        r1 = co echo(s)
-        r2 = co first(a)
-        r3 = co echo-holder(h)
-        r4 = co echo-plain(p)
-        r5 = co dbl(21)
+        co echo(s)
+        co first(a)
+        co echo-holder(h)
+        co echo-plain(p)
+        co dbl(21)
     }
-    print(r1)
-    print(r2)
-    print(r3)
-    print(r4)
-    print(r5)
 }
 `)
 	for _, tc := range []struct {
@@ -445,7 +425,7 @@ main = () {
 		if !ok {
 			t.Fatalf("callee %q not found", tc.callee)
 		}
-		classes, _, _ := mod.SpawnArgClasses(mod.Func(cid))
+		classes, _, _ := mod.SpawnArgClasses(cid)
 		if len(classes) != 1 {
 			t.Fatalf("%s: got %d classes, want 1", tc.callee, len(classes))
 		}

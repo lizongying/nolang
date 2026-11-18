@@ -210,6 +210,28 @@ h2m-ctx {
     cur-k i64; 当前降级中的构造 AST 节点 K（各 h2m-lower-* 入口设置），h2m-mark 记录 kind 用
     unsf []str; unsupported 逐条：函数名（与 unsk 同序、同下标）
     unsk []i64; unsupported 逐条：构造 K 型别码
+    ; s108：叶子级归因（与块级归因同序并行的第二条日志通道）。
+    ;   s107 的块栈把「失败归到就近未认领的块」，叶子构造（Identifier / CallExpression /
+    ;   IntegerLiteral / StringLiteral …）的失败一律落所在块，kind 列看不到叶子。
+    ;   这里在每条 mark 之外再记一条「字段/叶子可见的构造」：字段级走 h2m-mark-field 时 c.cur-k
+    ;   是字段名（如 SliceType），块内 mark 时 c.cur-k 是 h2m-lower-expr 入口设的节点 kind（叶子）。
+    ;   ⚠️ 不覆盖、不替换块级 unsk/unsf；两表独立、同序、等长，可逐条对照「块 vs 叶子」。
+    lfsf []str; 叶子级归因逐条：函数名（与 lfsk 同序）
+    lfsk []i64; 叶子级归因逐条：c.cur-k 构造 K 码（与 lfsf 同序）
+    ; s107：块上下文表（parallel arrays，index 0 = 函数体／根块的虚拟基准）
+    ;   cur-k 只记「最近一次 h2m-set-cur-k 设的节点」，不是「包含本次失败的块」——嵌套构造降级时
+    ;   内层块/上下文不断覆盖它，致日志里 BlockStatement/FunctionDefinition 成片出现、归因含混。
+    ;   这里独立维护一条块栈：h2m-lower-block 等容器入口压栈／退出弹栈，h2m-mark 用栈顶作归因基准。
+    ;   bks = 块 K 码（K-BLOCK-STATEMENT / K-FUNCTION-DEFINITION / K-IF-EXPRESSION / K-FOR-STATEMENT /
+    ;   K-EXPRESSION-STATEMENT / K-SURFACE-MATCH / K-PROGRAM …）；bka = 块 AST 节点 id；bkd = 深度；
+    ;   bkp = 父项下标；bkm = 本块已计 unsup 标记（0 = 本块尚未计过；非 0 = 已计，后续同块 mark 归到父项，
+    ;   防同一块内多个失败声明各计一次 BlockStatement）；bkn = 栈内条目数（含根项）
+    bks []i64
+    bka []i64
+    bkd []i64
+    bkp []i64
+    bkm []i64
+    bkn i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -276,8 +298,17 @@ h2m-new = () (c h2m-ctx) {
         cur-k: 0
         unsf: []
         unsk: []
+        lfsf: []
+        lfsk: []
+        bks: []
+        bka: []
+        bkd: []
+        bkp: []
+        bkm: []
+        bkn: 0
     }
     c.vty.push(TY-I64)
+    h2m-bk-root(c)
 }
 
 ; 分配一个新值 id，并把它的型别码登记进 vty（vty 按值 id 索引，必须同步填）
@@ -546,13 +577,10 @@ h2m-set-block = (c h2m-ctx, id i64) {
 }
 
 ; 记一条「本切片不支持」的构造（诚实门禁，不是静默略过）
+; s107：实现移入 h2m-mark-here（块上下文归因）；本函数保留为唯一对外入口，调用点不改
 ; c: 上下文
 h2m-mark = (c h2m-ctx) {
-    c.unsup = h2m-inc(c.unsup)
-
-    ; 切片 6 ②：逐条记录 (fn, kind)，供 h2m-cov-join 拼日志
-    c.unsf.push(c.cur-fn)
-    c.unsk.push(c.cur-k)
+    h2m-mark-here(c)
 }
 
 ; 切片 6 ②：设置当前降级构造的 AST 节点 K（供 h2m-mark 记录 kind）
@@ -562,25 +590,230 @@ h2m-set-cur-k = (c h2m-ctx, t ast, n i64) {
     c.cur-k = dk.kind
 }
 
+; s107：往两张记录表各追加一项（整表 from-scratch 重建后一次赋值）。
+;   ⚠️ 不能写成 `c.unsk.push(v)`：实测 `x = with-cap(n>0)`（cap>0、len==0）上的 push 只覆盖下标 0
+;      且 len 不动（§11 B6 同族），日志会整条丢失；from-scratch 逐项 push（每次 len==cap）实测正确。
+; c: 上下文；fnm: 函数名；k: 构造 K 码
+h2m-rec-append = (c h2m-ctx, fnm str, k i64) {
+    nk []i64 = []
+    i = 0
+    (i < c.unsk.len()) {
+        kv = c.unsk[i]: {
+            ok -> it
+
+            -> 0
+        }
+        nk.push(kv)
+
+        i = h2m-inc(i)
+    }
+    nk.push(k)
+    nf []str = []
+    j = 0
+    (j < c.unsf.len()) {
+        fv = c.unsf[j]: {
+            ok -> it
+
+            -> ''
+        }
+        nf.push(fv)
+
+        j = h2m-inc(j)
+    }
+    nf.push(fnm)
+    c.unsk = nk
+    c.unsf = nf
+}
+
+; s108：叶子归因表追加一项（与 h2m-rec-append 完全同构，只是记 c.cur-k 而非块码）。
+;   ⚠️ 同样 from-scratch 重建（with-cap cap>0+len==0 的 push 只覆盖首槽，见 h2m-rec-append 行内注）。
+;   与 unsk/unsf 严格同序等长：每次 mark 两表各追加一条，块级/叶子级可按下标逐条对照。
+; c: 上下文；fnm: 函数名；k: 叶子构造 K 码（调用方传 c.cur-k，即最近一次 h2m-set-cur-k 的节点）
+h2m-leaf-append = (c h2m-ctx, fnm str, k i64) {
+    nk []i64 = []
+    i = 0
+    (i < c.lfsk.len()) {
+        kv = c.lfsk[i]: {
+            ok -> it
+
+            -> 0
+        }
+        nk.push(kv)
+
+        i = h2m-inc(i)
+    }
+    nk.push(k)
+    nf []str = []
+    j = 0
+    (j < c.lfsf.len()) {
+        fv = c.lfsf[j]: {
+            ok -> it
+
+            -> ''
+        }
+        nf.push(fv)
+
+        j = h2m-inc(j)
+    }
+    nf.push(fnm)
+    c.lfsk = nk
+    c.lfsf = nf
+}
+
+; s107：块上下文栈——压入根项（下标 0，K-PROGRAM 虚拟基准，深度 0，父项 -1）。
+;   根项让「块栈空」不可能出现：h2m-mark 的归因基准永远可读，且未入块的模块级 mark 落 PROGRAM。
+; c: 上下文
+h2m-bk-root = (c h2m-ctx) {
+    c.bks.push(asp.K-PROGRAM)
+    c.bka.push(0)
+    c.bkd.push(0)
+    c.bkp.push(0)
+    c.bkm.push(0)
+    c.bkn = 1
+}
+
+; s107：压入一个块上下文（容器构造入口调用；与 h2m-bk-pop 严格配对）
+; ⚠️ 两个写法约束（`no vet compiler/src` 的 15w45dqk / index-write 检查）：
+;   ① 长度运算一律走 h2m-inc / h2m-dec（回绕语义封在 helper 里，返回值是 plain i64）；
+;      `p = c.bkn` 之后的 `p - 1` 会被 checker 当成 ?i64 赋值（field→局部 的 option 传播缺口）。
+;      故「深度」直接由栈长现算，不引中间整数量。
+;   ② 数组元素不能用下标直写（`c.bkm[x] = 1` 会被拒），带下标写一律走 vec 的 place-match。
+; c: 上下文；k: 块构造 K 码；n: 块 AST 节点 id
+h2m-bk-push = (c h2m-ctx, k i64, n i64) {
+    c.bks.push(k)
+    c.bka.push(n)
+    c.bkd.push(c.bks.len())
+    c.bkp.push(h2m-dec(c.bks.len()))
+    c.bkm.push(0)
+    c.bkn = c.bks.len()
+}
+
+; s107：弹出栈顶块上下文（栈内只留根项时为空操作，不会越界；长度即新的栈深）
+; c: 上下文
+h2m-bk-pop = (c h2m-ctx) {
+    c.bkn > 1 -> {
+        c.bks.pop()
+        c.bka.pop()
+        c.bkd.pop()
+        c.bkp.pop()
+        c.bkm.pop()
+        c.bkn = c.bks.len()
+    }
+}
+
+; s107：取当前块归因基准的栈项下标。
+;   从栈顶往下找第一个 bkm == 0 的项并把它标成「已计」（本块独占一次归因 ⇒ 同块多次失败只计一次块级）；
+;   整条栈都被标过则退回栈顶（父块早已计过，仍归最近块而非根）。
+; c: 上下文
+; r: 栈项下标（保证 >= 0）
+h2m-bk-take = (c h2m-ctx) (r i64) {
+    r = 0
+    free = 0
+    e = h2m-dec(c.bkn)
+    e >= 0 -> {
+        x = e
+        (x >= 0 && free == 0) {
+            bx = c.bkm[x]: {
+                ok -> it
+
+                -> 1
+            }
+            bx == 0 -> {
+                r = x
+                c.bkm[x]: {
+                    ok -> it = 1
+
+                    -> _
+                }
+                free = 1
+            }
+
+            x = h2m-dec(x)
+        }
+        free == 0 -> r = e
+    }
+}
+
+; s107：取块栈第 i 项（越界回 K-PROGRAM：栈根恒为它）
+; c: 上下文；i: 栈项下标
+h2m-bk-kind = (c h2m-ctx, i i64) (k i64) {
+    k = asp.K-PROGRAM
+    (i >= 0 && i < c.bkn) -> {
+        v = c.bks[i]: {
+            ok -> it
+
+            -> asp.K-PROGRAM
+        }
+        k = v
+    }
+}
+
+; s107：在当前块上下文下记一条 unsupported（h2m-mark 的唯一实现）。
+;   归因基准 = 就近的【尚未计过】块，整条栈都计过就退回栈顶块（栈根恒为 K-PROGRAM ⇒ 恒有块可归）。
+;   「fn + K 码」的记录格式照旧，只是不再拿「最近一次 set-cur-k 的节点」冒充失败构造——那是被嵌套
+;   上下文覆盖得最厉害的字段，日志里 BlockStatement/FunctionDefinition 成片出现就是它造成的。
+; ⚠️ 两张记录表一律 from-scratch 重建（见下方行内注）：直接 `c.unsk.push(<值>)` 在 cap>0+len==0
+;   的切片上只覆盖首槽、len 不动，日志里会整条丢失。
+; c: 上下文
+h2m-mark-here = (c h2m-ctx) {
+    c.unsup = h2m-inc(c.unsup)
+    bi = h2m-bk-take(c)
+    bk = h2m-bk-kind(c, bi)
+    h2m-rec-append(c, c.cur-fn, bk)
+    ; s108：叶子级第二通道——记 c.cur-k（h2m-lower-expr 入口设的节点 kind，叶子构造在此可见）
+    h2m-leaf-append(c, c.cur-fn, c.cur-k)
+}
+
+; s107：结构体字段型别解析失败（h2m-struct-resolve 里）——字段不是块，失败归到字段型别节点本身。
+;   此时 ctx 是模块级 agg.stn 路径或函数 ctx：两者都无「字段」块可压，故直接按 cur-k（字段型别节点 K）记，
+;   与 s107 之前的字段级归因逐字一致（只是不再被块构造码掩盖）。
+; c: 上下文
+h2m-mark-field = (c h2m-ctx) {
+    c.unsup = h2m-inc(c.unsup)
+    h2m-rec-append(c, c.cur-fn, c.cur-k)
+    ; s108：字段级路径 cur-k 即字段型别节点（如 SliceType），叶子通道与块级此条同码
+    h2m-leaf-append(c, c.cur-fn, c.cur-k)
+}
+
+; s107：字段型别 mark——把「字段名 + 字段型别节点 K」这条记录单独收拢成一个入口。
+;   ⚠️ 首版在这里把 c.bkn 复位成 1 想让归因「干净」，实测反而把 h2m-struct-resolve 里
+;      h2m-tynode-code 深调用层的 mark 从 IfExpression -3 变成 BlockStatement——复位会剥掉
+;      深调用层的块上下文，等于伪造一条更粗的归因。故本条**不复位 c.bkn**：
+;      字段级归因与改前逐字一致，深调用层的块构造照旧如实上报。
+; c: 上下文；t: AST；tn: 字段型别节点 id
+h2m-mark-field-ty = (c h2m-ctx, t ast, tn i64) {
+    d = ast.nd-at(t, tn)
+    c.cur-k = d.kind
+    h2m-mark-field(c)
+}
+
+; s107：模块级 mark 带显式块构造码（drv.pkg-ll 的顶层节点分派用：被拒顶层节点 / 不合格函数签名）。
+;   不压栈、不查栈——K 码由调用方直接给定，函数名由调用方先设 c.cur-fn。
+; c: 上下文（模块级 agg）；k: 块构造 K 码
+h2m-mark-at = (c h2m-ctx, k i64) {
+    c.unsup = h2m-inc(c.unsup)
+    h2m-rec-append(c, c.cur-fn, k)
+    ; s108：模块级无 h2m-set-cur-k 上下文，叶子通道退化为与块级同码 k（诚实：该路径无从取叶子）
+    h2m-leaf-append(c, c.cur-fn, k)
+}
+
 ; 覆盖度量：把逐条 unsupported 记录 (fn:kind) 拼成日志串
 ; 切片 6 ②：把 AST 节点 K 码归为「型别 / 构造」两类，供覆盖率日志标注。
 ; 判定：asp.kind-name 以 'Type' 结尾 ⇒ 型别（SliceType / NamedType / FunctionType …）；
 ;       例外 'TypeAlias'（名字含 Alias 非 Type，但本质是型别别名）亦归型别；
 ;       其余（表达式 / 语句 / 字面量 / 定义 / match …）归构造。
+
 h2m-kind-cat = (k i64) (r str) {
     nm = asp.kind-name(k)
-    {
-        nm.ends-with('Type') == true -> {
-            r = 'type'
-        }
-
-        nm == 'TypeAlias' -> {
-            r = 'type'
-        }
-
-        -> {
-            r = 'construct'
-        }
+    t1 = nm.ends-with('Type')
+    t1 == true -> {
+        r = 'type'
+    }
+    t1 == false && nm == 'TypeAlias' -> {
+        r = 'type'
+    }
+    t1 == false && nm != 'TypeAlias' -> {
+        r = 'construct'
     }
 }
 
@@ -628,12 +861,22 @@ h2m-cov-join = (unsf []str, unsk []i64) (cov str) {
                 -> ''
             }
             kv == k -> {
-                cov = cov - fnv - ':' - asp.kind-name(kv) - ':' - h2m-kind-cat(kv) - '\n'
+                cov = cov - h2m-cov-line(fnv, kv)
             }
             i = h2m-inc(i)
         }
         k = h2m-inc(k)
     }
+}
+
+; 覆盖度量：单条记录 "fn:KindName:category\n"（每个值都是入参 → 不跨调用边界改写）
+; fnv: 函数名；k: 构造 K 码
+h2m-cov-line = (fnv str, k i64) (line str) {
+    kn = asp.kind-name(k)
+    cat = h2m-kind-cat(k)
+    t1 = fnv - ':' - kn
+    t2 = t1 - ':' - cat
+    line = t2 - '\n'
 }
 
 ; 查变量绑定的值 id
@@ -1285,8 +1528,7 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
                     -> ''
                 }
                 c.cur-fn = snm - '.' - fldn
-                c.cur-k = (ast.nd-at(t, ftn)).kind
-                h2m-mark(c)
+                h2m-mark-field-ty(c, t, ftn)
                 c.cur-fn = ''
             }
             c.stft.push(fty)
@@ -1337,8 +1579,7 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
                     -> ''
                 }
                 c.cur-fn = snm - '.' - fldn
-                c.cur-k = (ast.nd-at(t, ftn)).kind
-                h2m-mark(c)
+                h2m-mark-field-ty(c, t, ftn)
                 c.cur-fn = ''
             }
             c.stft.push(fty)
@@ -3159,6 +3400,7 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; n: 块节点 id
 h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     h2m-set-cur-k(c, t, n)
+    h2m-bk-push(c, asp.K-BLOCK-STATEMENT, n)
     d = ast.nd-at(t, n)
     i = 0
     (i < d.nkid) {
@@ -3290,6 +3532,7 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 
         i = h2m-inc(i)
     }
+    h2m-bk-pop(c)
 }
 
 ; 分支体降级：Block 走 h2m-lower-block；嵌套 IfExpression 走 h2m-lower-if（elif 链就靠这一路）；
@@ -3331,6 +3574,7 @@ h2m-lower-branch = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; n: IfExpression 节点 id
 h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     h2m-set-cur-k(c, t, n)
+    h2m-bk-push(c, asp.K-IF-EXPRESSION, n)
     ck = h2m-kid-i(t, n, 0)
     tk = h2m-kid-i(t, n, 1)
     ek = h2m-kid-i(t, n, 2)
@@ -3356,6 +3600,7 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 
         h2m-set-block(c, merge-id)
     }
+    h2m-bk-pop(c)
 }
 
 ; ForStatement 降级（s57：纯前置条件循环 `(cond) { }`；s60m：计数循环 `N * { }` 与 `{ } * N`；s61：区间遍历 `i <- [a..b]`；s62：容器遍历 `i <- xs`）
@@ -3378,6 +3623,7 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; n: ForStatement 节点 id
 h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     h2m-set-cur-k(c, t, n)
+    h2m-bk-push(c, asp.K-FOR-STATEMENT, n)
     d = ast.nd-at(t, n)
     init = h2m-kid-i(t, n, 0)
     cond = h2m-kid-i(t, n, 1)
@@ -3510,6 +3756,7 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 
     ; s62：容器遍历——形状已过校验，块形制交给 h2m-lower-coll（n 用于回推合成索引槽名）
     bad == 0 && ce > 0 -> h2m-lower-coll(t, c, sg, n, ce, body, vn)
+    h2m-bk-pop(c)
 }
 
 ; 区间遍历降级（s61）：`i <- [a..b]`／`(a..b]`／`[a..b]`／`(a..b)` 四括号组合 + 自动双向
@@ -3882,6 +4129,7 @@ h2m-subtree-uses-it = (t ast, n i64) (u i64) {
 ; r: 交出的值 id（0 = 陈述位或降级失败）
 h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     h2m-set-cur-k(c, t, n)
+    h2m-bk-push(c, asp.K-SURFACE-MATCH, n)
     d = ast.nd-at(t, n)
     arms = d.hcount
     sname = ''
@@ -4173,6 +4421,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
             }
         }
     }
+    h2m-bk-pop(c)
 }
 
 ; ── 块终结形（s59）：return / break / continue ───────────────────
@@ -4442,6 +4691,11 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     r = ''
     c = h2m-new()
 
+    ; s107：函数体是一个块上下文——函数签名判定失败的 mark 归到本函数名下的函数级构造；
+    ;   与函数尾部的 h2m-bk-pop 严格配对（函数体在 h2m-lower-block 内自己压一块，块内 mark 归到最近的块；
+    ;   块开之前（签名/前扫描期）的 mark 归到本函数级构造）
+    h2m-bk-push(c, asp.K-FUNCTION-DEFINITION, n)
+
     ; 切片 6 ②：入口即设 cur-k 为「函数定义」节点 kind——本函数内所有不支持 mark
     ;   （含 setup 期调用的辅助函数 h2m-func-sig/h2m-scan/...）都带上正确构造码而非初始 0；
     ;   嵌套构造降级（h2m-lower-expr 等）会用各自 h2m-set-cur-k 覆盖为更精确的构造 kind。
@@ -4669,6 +4923,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     ; 本函数体内有任何不支持构造 ⇒ 整函数不产码（宁缺勿错），并把计数并入模块级
     inc = c.unsup
 
+    ; s107：本函数块上下文清空——函数名即将换人，块栈残留（异常路径）不能把上一函数的块带到本函数
     ; 切片 6 ②：把本函数的 unsupported 逐条记录 (fn, kind) 并回模块级（与 unsup 同口径）
     qi = 0
     (qi < c.unsf.len()) {
@@ -4686,6 +4941,23 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         agg.unsk.push(ukd)
         qi = h2m-inc(qi)
     }
+    ; s108：叶子级第二通道同口径并回模块级（与块级逐条同序等长）
+    li = 0
+    (li < c.lfsf.len()) {
+        lfn = c.lfsf[li]: {
+            ok -> it
+
+            -> ''
+        }
+        lkd = c.lfsk[li]: {
+            ok -> it
+
+            -> 0
+        }
+        agg.lfsf.push(lfn)
+        agg.lfsk.push(lkd)
+        li = h2m-inc(li)
+    }
     fnok = 1
 
     #{overflow=wrap}
@@ -4698,6 +4970,9 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         r = ''
         fnok = 0
     }
+
+    ; s107：函数块上下文出栈（与入口 h2m-bk-push 配对；须在闭包登记之前，闭包与块栈无关）
+    h2m-bk-pop(c)
 
     ; 发射闭包：只有【真正产码】的函数才登记进调用图（失败函数无 IR，其被调表无意义）
     fnok == 1 -> {
@@ -4764,6 +5039,14 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
             nm, rt, ap, bd = h2m-func-sig(t, agg, kid)
             bd == 0 -> h2m-sig-add(sg, nm, nm, rt, ap)
+
+            ; s107：签名不合格即「本函数不可能产码」——本遍就记一条（带函数名），
+            ;   此前只有产码遍登记，日志里这些函数在「-N 条」里无任何记录、差分查不出是谁
+            bd != 0 -> {
+                agg.cur-fn = nm
+                h2m-mark-at(agg, kk.kind)
+                agg.cur-fn = ''
+            }
         }
 
         i = h2m-inc(i)
@@ -4784,9 +5067,10 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
             bd2 != 0 -> {
 
                 ; 切片 6 ②：模块级 mark 带上「被拒函数定义」节点 kind 与函数名（而非初始 0 / 空 fn）
+                ; s107：改用 h2m-mark-at 直接给定块构造码——模块级 agg 无块栈（不压栈），
+                ;   若走 h2m-mark-here 会落到根项 K-PROGRAM，丢掉「签名被拒」这一真实构造
                 agg.cur-fn = nm2
-                agg.cur-k = kk.kind
-                h2m-mark(agg)
+                h2m-mark-at(agg, kk.kind)
                 agg.cur-fn = ''
             }
             bd2 == 0 -> {
@@ -4801,8 +5085,8 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk.kind != asp.K-FUNCTION-DEFINITION && kk.kind != asp.K-STRUCT-DEFINITION -> {
 
             ; 切片 6 ②：模块级 mark 带上「被拒顶层节点」自身 kind（而非初始 0）
-            agg.cur-k = kk.kind
-            h2m-mark(agg)
+            ; s107：同 h2m-mark-at 理由——直接给定块构造码，不经 agg 的（空）块栈
+            h2m-mark-at(agg, kk.kind)
         }
 
         j = h2m-inc(j)

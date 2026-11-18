@@ -2,7 +2,10 @@
 ;
 ; `co f(x)` 只能出現在 `awy { }` 協程組內，會自動單態化出 f-async 變體並在
 ; 底層以染色無棧協程執行。組內的 `co` 默認並發 spawn，遇到依賴則退化成 await。
-
+;
+; `co` 只啟動**過程**：被呼叫者不得有宣告回傳值（方法的隱式 self 不算），所以
+; 結果一律走通道——一個生產者一條通道，寫完值即 close，呼叫方用 take1 讀回。
+;
 ; 同步函數：返回輸入值的兩倍
 ; n: 輸入值，本檔用 21 / 10 / 20 / 25 等值呼叫
 ; r: n * 2（overflow 採 wrap）
@@ -53,29 +56,72 @@ classify = (n i64) (r i64) {
     }
 }
 
-; 1. 單一 spawn（最簡）— awy 組內 r = co f()
-test-serial = () {
-    awy {
-        r = co compute(21)
+; ── 過程形態：`co` 的目標（寫入結果通道後 close）──────────
+; ch: 結果通道（呼叫方建，容量 1）
+; n: 輸入值
+compute-into = (ch chan[i64], n i64) {
+    ch <- compute(n)
+    ch.close()
+}
+
+; ch: 結果通道
+; a: 第一個加數
+; b: 第二個加數
+add-into = (ch chan[i64], a i64, b i64) {
+    ch <- add(a, b)
+    ch.close()
+}
+
+; ch: 結果通道
+; n: 待分類的數值
+classify-into = (ch chan[i64], n i64) {
+    ch <- classify(n)
+    ch.close()
+}
+
+; 從單值通道取一筆（生產者已 close，一輪 ok 之後落到 nil 收尾）
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take1 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
     }
+}
+
+; 1. 單一 spawn（最簡）— awy 組內 co f()
+test-serial = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co compute-into(ch, 21)
+    }
+    r = take1(ch)
     print(r); expect: 42
 }
 
 ; 2. 多參數
 test-multi-params = () {
+    ch chan[i64] = with-cap(1)
     awy {
-        r = co add(15, 27)
+        co add-into(ch, 15, 27)
     }
+    r = take1(ch)
     print(r); expect: 42
 }
 
 ; 3. 條件邏輯
 test-conditional = () {
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
+    c3 chan[i64] = with-cap(1)
     awy {
-        r1 = co classify(5)
-        r2 = co classify(-3)
-        r3 = co classify(0)
+        co classify-into(c1, 5)
+        co classify-into(c2, -3)
+        co classify-into(c3, 0)
     }
+    r1 = take1(c1)
+    r2 = take1(c2)
+    r3 = take1(c3)
     print(r1); expect: 1
     print(r2); expect: -1
     print(r3); expect: 0
@@ -83,12 +129,14 @@ test-conditional = () {
 
 ; 4. 並發：協程組內兩個 co 並發 spawn，最後一起 await
 test-concurrent = () {
-    r1 i64
-    r2 i64
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     awy {
-        r1 = co compute(10)
-        r2 = co compute(20)
+        co compute-into(c1, 10)
+        co compute-into(c2, 20)
     }
+    r1 = take1(c1)
+    r2 = take1(c2)
 
     #{overflow=wrap}
     print(r1 + r2); expect: 60
@@ -96,23 +144,27 @@ test-concurrent = () {
 
 ; 5. 順序執行：兩個獨立的 awy 組先後 spawn + await
 test-statement-level = () {
+    c1 chan[i64] = with-cap(1)
+    c2 chan[i64] = with-cap(1)
     awy {
-        r = co compute(10)
+        co compute-into(c1, 10)
     }
     awy {
-        s = co compute(20)
+        co compute-into(c2, 20)
     }
+    r = take1(c1)
+    s = take1(c2)
 
     #{overflow=wrap}
     print(r + s); expect: 60
 }
 
-; 6. 協程組內讀取結果：print(r1) 是屏障，r1 必須先落地
+; 6. 協程組內讀取結果：讀通道是屏障，值必須先落地才讀得到
 test-group-read = () {
-    r1 i64
+    ch chan[i64] = with-cap(1)
     awy {
-        r1 = co compute(25)
-        print(r1); expect: 50
+        co compute-into(ch, 25)
+        print(take1(ch)); expect: 50
     }
 }
 test-serial()

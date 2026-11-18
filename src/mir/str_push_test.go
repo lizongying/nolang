@@ -34,6 +34,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
 const strPushSrc = `
@@ -183,5 +186,31 @@ func TestStrPushStrEmptySourceShortCircuits(t *testing.T) {
 	}
 	if growLabel == doneLabel {
 		t.Errorf("the growth branch and the short-circuit branch are the same block %q", doneLabel)
+	}
+}
+
+// TestFoldStrLitConstMarksBackingBufferBorrowed pins the SIGABRT behind
+// tests/str-push.no. A top-level `e = 'zz'` folds into a module-global
+// %str-long whose `data` points at a read-only .gstr backing array. Its `cap`
+// MUST be 0 (the borrowed marker): a non-zero cap marks an OWNED buffer, so
+// `e.push-str(...)` takes ensureStrLongBuffer's grow branch and calls
+// @nolang_free on the rodata pointer -> SIGABRT. With cap=0 the push-str
+// emitter COWs the buffer into an owned allocation first.
+func TestFoldStrLitConstMarksBackingBufferBorrowed(t *testing.T) {
+	p := parser.New(lexer.New("e = 'zz'\nprint(e)\n"))
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	pkg := parser.ASTToHIR(prog)
+	mod, _, diags := LowerHIR(pkg, nil)
+	if mod == nil {
+		t.Fatalf("LowerHIR failed: %v", diags)
+	}
+	for _, g := range mod.Globals {
+		if strings.Contains(g.ConstText, ".gstr.") &&
+			!strings.Contains(g.ConstText, "i32 2, i32 0, i8* bitcast") {
+			t.Errorf("folded str global %q has non-borrowed cap: %s", g.Name, g.ConstText)
+		}
 	}
 }

@@ -162,6 +162,10 @@ type hirConv struct {
 	// CoExpression nodes, so ASTToHIRWithMap can hand them to the
 	// monomorphization pass via hir.Package.GoSpawns.
 	goSpawns []int32
+	// coSeq numbers the synthesized functions behind `co { ... }` (__co0,
+	// __co1, ...). One lowering pass covers the whole merged program, so the
+	// counter alone is enough to keep the names unique.
+	coSeq int
 	// curFile is the base name of the source file being lowered, threaded down
 	// the statement tree (inherited by nested statements whose SourceFile is
 	// empty). Stamp onto KCall nodes so the MIR lowerer can bake a caller
@@ -351,6 +355,88 @@ func (c *hirConv) annotate(n Node, id int32) int32 {
 }
 
 func (c *hirConv) top(id int32) { c.b.AddTop(id) }
+
+// coClosure lowers the closure form `co { ... }`.
+//
+// A spawn is a CALL, and the rest of the pipeline (MonomorphizeGo clones the
+// callee into its `-async` variant, DesugarAsyncGroups rewrites the call into a
+// run/await pair) knows only about named top-level functions. So the block is
+// lifted: it becomes `__coN(cap1, cap2, ...)` — a synthesized top-level
+// function whose parameters are the ENCLOSING function's locals that the block
+// mentions — and the spawn site becomes a call to it with those names as
+// arguments.
+//
+// Capture is BY VALUE, and deliberately so: the spawn protocol already
+// deep-copies every heap-owned argument into the task's own buffer (that is
+// what async-arg-move / async-arg-retain pin down), so a captured `str` or
+// `%vec` is copied exactly like an explicit argument would be, and a write to a
+// captured name inside the block lands on the copy — it is not visible to the
+// enclosing function. Everything else in the language is by value too; making
+// `co { ... }` the one form that shares a stack slot with its parent would be
+// the surprise, not the other way round.
+//
+// A name that is declared INSIDE the block shadows the outer one and is not
+// captured; a name the type side table does not know (a function name, a
+// module, an enum variant) is not a local either and is left for lowering to
+// resolve at top level.
+func (c *hirConv) coClosure(fl *FunctionLiteral, line, col int32) int32 {
+	name := fmt.Sprintf("__co%d", c.coSeq)
+	c.coSeq++
+	sig := FuncSignature{Parameters: c.closureCaptures(fl.Body)}
+	def := c.funcLike(hir.KFuncDef, &sig, name, fl.Body, "", "", line, col,
+		hir.FlagSkipNaming, c.curFunc)
+	c.top(def)
+	fn := c.b.Add(hir.Node{Kind: hir.KIdent, S: c.b.Intern(name), Line: line, Col: col})
+	nodes := make([]int32, 0, len(sig.Parameters)+1)
+	nodes = append(nodes, c.slot("fn", fn))
+	for _, p := range sig.Parameters {
+		arg := c.b.Add(hir.Node{Kind: hir.KIdent, S: c.b.Intern(p.Name), Line: line, Col: col})
+		nodes = append(nodes, c.slot("arg", arg))
+	}
+	file := hir.NoID
+	if c.curFile != "" {
+		file = c.b.Intern(c.curFile)
+	}
+	callID := c.b.Add(hir.Node{Kind: hir.KCall, First: c.kids(nodes), Line: line, Col: col, S2: file})
+	c.goSpawns = append(c.goSpawns, callID)
+	return callID
+}
+
+// closureCaptures returns the enclosing-function locals a `co { ... }` block
+// mentions, in source order, typed from the parser's per-function side table.
+// A capture whose type cannot be established is dropped rather than guessed:
+// the name then resolves at top level, which is the pre-existing behaviour for
+// globals and function names.
+func (c *hirConv) closureCaptures(body *BlockStatement) []*Parameter {
+	if body == nil || c.sem == nil {
+		return nil
+	}
+	local := map[string]bool{}
+	walkValue(reflect.ValueOf(body), func(n Node) {
+		if ls, ok := n.(*LetStatement); ok && ls.Name != nil {
+			local[ls.Name.Value] = true
+		}
+	}, map[Node]bool{})
+	var out []*Parameter
+	seen := map[string]bool{}
+	walkValue(reflect.ValueOf(body), func(n Node) {
+		id, ok := n.(*Identifier)
+		if !ok || id.Value == "" || local[id.Value] || seen[id.Value] {
+			return
+		}
+		ts, found := c.sem.FuncVarType(c.curFunc, id.Value)
+		if !found || ts == "" {
+			return
+		}
+		t := typeFromInferredString(ts)
+		if t == nil {
+			return
+		}
+		seen[id.Value] = true
+		out = append(out, &Parameter{Token: id.Token, Name: id.Value, Type: t})
+	}, map[Node]bool{})
+	return out
+}
 
 // hasAnnotation reports whether the parser filed a `#{key}` annotation on n.
 // Reads the semantic side-tables, falling back to RawAnnotations: during
@@ -1121,6 +1207,12 @@ func (c *hirConv) exprNode(e Expression) int32 {
 		// (hir.MonomorphizeGo) rewrites the callee to `F-async` and, when the
 		// call sits inside a coroutine group, lets DesugarAsyncGroups spawn it.
 		// The call node id is recorded in c.goSpawns so the pass can find it.
+		//
+		// `co { ... }` (closure form) has no callee yet: the block is lifted
+		// into a synthesized top-level function first (see coClosure).
+		if fl, ok := e.Call.(*FunctionLiteral); ok {
+			return c.coClosure(fl, line, col)
+		}
 		callID := c.expr(e.Call)
 		c.goSpawns = append(c.goSpawns, callID)
 		return callID

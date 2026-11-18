@@ -171,6 +171,11 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		f.formatFunctionDefinition(s)
 	case *parser.ForStatement:
 		f.formatForStatement(s)
+	case *parser.ChanSendStatement:
+		// `ch <- v`
+		f.formatExpression(s.Chan)
+		f.write(" <- ")
+		f.formatExpression(s.Value)
 	case *parser.BreakStatement:
 		f.formatBreakStatement(s)
 	case *parser.ContinueStatement:
@@ -525,8 +530,12 @@ func (f *formatter) formatLetStatement(s *parser.LetStatement) {
 		// 書寫型別，渲染會無中生有地加上 `[K]V` 標註，破壞冪等。
 		f.write(" ")
 		f.write(mt.String())
+	} else if ct, ok := s.Type.(*parser.ChanType); ok && !ct.IsInferred {
+		// 通道型別 `ch chan[T]`。與 map 同口徑：String() 已是 `chan[T]` 拼寫。
+		f.write(" ")
+		f.write(ct.String())
 	}
-	if s.Value != nil {
+	if s.Value != nil && !f.trivia.HasRTFlag(s, parser.RTChanDecl) {
 		f.write(" = ")
 		f.stringAlign = f.column
 		// 當 ArraySize > 0 且值為 ArrayLiteral（由 [1, 2, 3] 轉換而來）

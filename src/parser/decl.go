@@ -674,6 +674,11 @@ func (p *Parser) isFunctionDefinition() bool {
 			p.currentToken.Type != lexer.ELLIPSIS &&
 			// 指標型別後綴：i8*（MUL）、i8**（STAR_STAR）
 			p.currentToken.Type != lexer.MUL && p.currentToken.Type != lexer.STAR_STAR &&
+			// 通道型別參數：`(c chan[i64]) { ... }`。`chan` 是型別位置上的
+			// 前置關鍵字（方括號在其後），少了這一項會讓整條定義被判成
+			// 函式字面量運算式，參數型別因此不進語義表，body 裡的
+			// `c <- v` 也就認不出左側是通道（退化成 for-range，報 ttlxcrgt）。
+			p.currentToken.Type != lexer.CHAN &&
 			p.currentToken.Type != lexer.NEWLINE &&
 			!(p.currentToken.Type == lexer.LPAREN && prevIdent) &&
 			!(p.currentToken.Type == lexer.LPAREN && allowFnResultsParen) &&

@@ -1,0 +1,47 @@
+; Two tasks that each suspend inside their own awy group, with a flow-arm `co`
+; in each group. The trace is a-enter, b-enter, a-leave, b-leave: with one global
+; join stack the second resume pops the FIRST task's frame and double-retires a
+; handle. Per-task frames (task.join_top) keep the two leaves independent.
+# /test/runner
+
+wakeA chan[i64] = with-cap(1)
+wakeB chan[i64] = with-cap(1)
+
+helper = (c chan[i64]) {
+    c <- 1
+    c.close()
+}
+
+a = (c chan[i64]) {
+    one i64 = 1
+    awy {
+        one == 1 -> {
+            co helper(c)
+        }
+        <- c: {
+            ok -> { }
+        }
+    }
+}
+
+b = (c chan[i64]) {
+    one i64 = 1
+    awy {
+        one == 1 -> {
+            co helper(c)
+        }
+        <- c: {
+            ok -> { }
+        }
+    }
+}
+
+awy {
+    co a(wakeA)
+    co b(wakeB)
+}
+runner.eq(1, 1, 'two suspended groups did not corrupt each other')
+runner.summary()
+fails = runner.failed-count()
+fails > 0 -> exit(1)
+exit(0)

@@ -1268,6 +1268,11 @@ func BuildDirectWasm(inputPath string, opts BuildOptions) ([]byte, error) {
 	// 舊降糖路徑時 js/wasm 後端不被波及（設計文件 §5 的 JS/WASM re-home）。
 	// 主編譯管線（checker/transpiler/H0）已原生消費 SurfaceMatch，不走此處。
 	p.DesugarSurfaceMatchesPlain(program)
+	// 通道只有本（LLVM）後端實作：Direct-WASM 的 AST generator 遇通道節點
+	// 會直接跳過（`default:` 分支），靜默產出與源碼無關的 wasm，故明確拒絕。
+	if err := rejectChanForNonLLVM(program, "Direct-WASM"); err != nil {
+		return nil, err
+	}
 
 	// Inject -ld-KEY=VALUE compile-time global constants
 	injectLDFlags(program, opts.LDFlags)

@@ -173,8 +173,8 @@ func TestAwaitGroupSurvivesAsNonFirstStatement(t *testing.T) {
 	src := `f = () {
   y = 1
   awy {
-    r1 = co dbl(21)
-    r2 = co dbl(22)
+    co dbl(21)
+    co dbl(22)
   }
 }
 `
@@ -205,7 +205,7 @@ func TestAwaitGroupSurvivesAsNonFirstStatement(t *testing.T) {
 // inside an `awy { ... }` group.
 func TestCoOutsideGroupIsRejected(t *testing.T) {
 	src := `f = () {
-  r = co dbl(21)
+  co dbl(21)
 }
 `
 	p := New(lexer.New(src))

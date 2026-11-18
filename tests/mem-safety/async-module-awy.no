@@ -6,6 +6,9 @@
 ;   生成 coro_state.N / coro_resume.N / coro_trampoline.N，
 ;   @main 仅创建 coro_state + task 并启动 @nolang_async_run 事件循环。
 ;
+; `co` 只启动**过程**（被呼叫者不得有宣告回傳值），所以結果走通道：
+; 過程寫一筆再 close，模組級語句在組後讀回。
+;
 ; 验证：work(21) 应返回 42，co 取回结果后 print 输出 42
 
 ; 被模組級協程衍生的函式：把輸入乘 2（overflow 採 wrap）
@@ -26,8 +29,28 @@ work = (n i64) (r i64) {
     }
 }
 
-; 模块级协程组：触发模块级 async 包装
-awy {
-    result = co work(21)
+; 過程版：把 work(n) 寫進通道再關閉
+; ch: 結果通道（呼叫方建，容量 1）
+; n: 來源數值
+work-into = (ch chan[i64], n i64) {
+    ch <- work(n)
+    ch.close()
 }
+
+; 從單值通道取一筆
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take-i64 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+}
+
+; 模块级协程组：触发模块级 async 包装
+ch chan[i64] = with-cap(1)
+awy {
+    co work-into(ch, 21)
+}
+result = take-i64(ch)
 print(result)

@@ -20,9 +20,11 @@ import (
 // tests/async-handle-alias.no) so the verdicts here are the ones a reviewer
 // checks by hand there.
 
-const spawnWorkSrc = `work = (n i64) (r i64) {
-    #{overflow=wrap}
-    r = n * 2
+// `co` only spawns a PROCEDURE (no declared result), so the spawn target here
+// takes its argument and produces nothing; the await is still observable as an
+// OpAwait on the group handle.
+const spawnWorkSrc = `work = (n i64) {
+    print(n)
 }
 `
 
@@ -50,9 +52,8 @@ func spawnEdgesIn(t *testing.T, src string, name string) []SpawnEdge {
 func TestSpawnFlatIsLinear(t *testing.T) {
 	edges := spawnEdgesIn(t, spawnWorkSrc+`main = () {
     awy {
-        v = co work(21)
+        co work(21)
     }
-    print(v)
 }
 `, "main")
 	if len(edges) != 1 {
@@ -79,22 +80,21 @@ func TestSpawnFlatIsLinear(t *testing.T) {
 // spawns two levels down breaks the flat-await-tree assumption just as much as
 // a direct one does, so a direct-only check is unsound.
 func TestSpawnNestedIsNotLinear(t *testing.T) {
-	e := spawnEdgesIn(t, `inner = (n i64) (r i64) {
-    r = n
+	e := spawnEdgesIn(t, `inner = (n i64) {
+    print(n)
 }
-mid = (n i64) (r i64) {
+mid = (n i64) {
     awy {
-        r = co inner(n)
+        co inner(n)
     }
 }
-outer = (n i64) (r i64) {
-    r = mid(n)
+outer = (n i64) {
+    mid(n)
 }
 main = () {
     awy {
-        v = co outer(5)
+        co outer(5)
     }
-    print(v)
 }
 `, "main")[0]
 	if e.Linearizable {
@@ -115,9 +115,8 @@ main = () {
 func TestSpawnGraphDoesNotMutate(t *testing.T) {
 	mod := lowerForTest(t, spawnWorkSrc+`main = () {
     awy {
-        v = co work(21)
+        co work(21)
     }
-    print(v)
 }
 `)
 	count := func() int {
@@ -150,9 +149,8 @@ func TestSpawnGraphDumpIsSilentByDefault(t *testing.T) {
 	// it is driven by the environment rather than by any module state.
 	mod := lowerForTest(t, spawnWorkSrc+`main = () {
     awy {
-        v = co work(21)
+        co work(21)
     }
-    print(v)
 }
 `)
 	if len(mod.SpawnGraph()) == 0 {

@@ -211,6 +211,15 @@ func (f *formatter) formatSurfaceMatch(sm *parser.SurfaceMatch) {
 		}
 	}
 	f.indent++
+	f.writeMatchArmList(sm)
+	f.write("}")
+}
+
+// writeMatchArmList 輸出 sm 的全部臂並把收尾換行處理好（呼叫端負責 `}`）。
+//
+// 抽出來是為了讓 `<- ch: { arms }` 的糖形態打印複用同一套臂排版：那裡的
+// 大括號屬於使用者寫的臂表，主語（合成的迴圈變數）不印。
+func (f *formatter) writeMatchArmList(sm *parser.SurfaceMatch) {
 	for i := range sm.Arms {
 		if i > 0 {
 			f.write("\n")
@@ -225,7 +234,6 @@ func (f *formatter) formatSurfaceMatch(sm *parser.SurfaceMatch) {
 	}
 	f.indent--
 	f.newline()
-	f.write("}")
 }
 
 // matchOpeningBraceComment 取 match 外層 `{` 的同行註釋。糖節點自己帶著它
@@ -524,6 +532,52 @@ func (f *formatter) isElifBlock(bs *parser.BlockStatement) bool {
 	return f.hasRT(ifExpr, parser.RTElif)
 }
 
+// formatChanRecvSugar 輸出 `<- ch: { arms }`——丟棄迴圈變數的通道接收迴圈。
+//
+// parser 把它脫糖成 `__chan_in <- ch: { __chan_in: { arms } }`（語義上是「每輪
+// 把三態 ?T 綁給合成變數，再由臂表分派」）。這裡只印回使用者寫的那一層：
+// 接收源 + 臂表，合成的迴圈變數與內層 match 主語都不出現。
+func (f *formatter) formatChanRecvSugar(s *parser.ForStatement) {
+	f.write("<- ")
+	f.formatExpression(s.IterRange.RangeExpr)
+	f.write(": {")
+	sm := chanRecvSugarArms(s)
+	if obc := f.matchOpeningBraceComment(sm); sm != nil && obc != nil && len(obc.List) > 0 {
+		f.write("; ")
+		for _, c := range obc.List {
+			f.write(strings.TrimSpace(c.Text))
+		}
+	}
+	if sm == nil {
+		// 沒有臂表（不該發生）：退化成空塊，至少保持可解析。
+		f.indent++
+		f.newline()
+		f.indent--
+		f.write("}")
+		return
+	}
+	f.indent++
+	f.writeMatchArmList(sm)
+	f.write("}")
+}
+
+// chanRecvSugarArms 取出糖形態 ForStatement 內層 match 的臂表。
+// body 恆為單條 `__chan_in: { ... }` 陳述（見 parser.parseChanRecvSugar）。
+func chanRecvSugarArms(s *parser.ForStatement) *parser.SurfaceMatch {
+	if s == nil || s.Body == nil || len(s.Body.Statements) == 0 {
+		return nil
+	}
+	es, ok := s.Body.Statements[0].(*parser.ExpressionStatement)
+	if !ok {
+		return nil
+	}
+	sm, ok := es.Expression.(*parser.SurfaceMatch)
+	if !ok {
+		return nil
+	}
+	return sm
+}
+
 // writeLoopBodyBlock 輸出循環主體 "{\n  stmts\n}"，保留語句間的空行與文檔註釋。
 
 // writeLoopBodyBlock 輸出循環主體 "{\n  stmts\n}"，保留語句間的空行與文檔註釋。
@@ -562,6 +616,14 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		f.write("#")
 		f.write(s.Label)
 		f.write(" ")
+	}
+
+	// `<- ch: { arms }`（parser 脫糖成 `__chan_in <- ch: { __chan_in: {arms} }`）。
+	// 必須在裸遍歷分支之前攔截：合成形態會印出 `__chan_in <- ch: { __chan_in: … }`,
+	// 多一層大括號，而且 `__chan_in` 沒有宣告型別，重新解析會被當成陣列遍歷。
+	if s.IterRange != nil && s.IterRange.IsChan && f.trivia.HasRTFlag(s, parser.RTChanRecv) {
+		f.formatChanRecvSugar(s)
+		return
 	}
 
 	// Bare range-for: i <- [a..b]: { body } — when token type is not FOR and IterRange set

@@ -392,7 +392,10 @@ type Package struct {
 	// silently overwrote it — see nameUsedInFuncBodies in src/mir/hir2mir.go.
 	Owners map[int32]string
 	// GoSpawns records the HIR node ids of every `co <call>` KCall lowered from
-	// a CoExpression. The monomorphization pass (MonomorphizeGo) reads it to
+	// a CoExpression. `co { ... }` (closure form) also lands here: tohir
+	// synthesizes an ordinary function `__coN` whose parameters are the block's
+	// captured free variables, then records the call to it. The
+	// monomorphization pass (MonomorphizeGo) reads it to
 	// clone the callee's `-async` variant and rewrite each spawn's callee from
 	// the uncolored name to its `-async` monomorph; the coroutine-group pass
 	// then treats the rewritten bare `-async` calls as spawnable. It is empty

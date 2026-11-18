@@ -7661,3 +7661,43 @@ stub 版 `drv.pkg-ll-cov('compiler/src/drv.no')` 產 569 條 `fn:Kind:construct`
 - `no build compiler` rc=0（3.96MB，`noc v0.0.1-m0`）；`make gen no` rc=0（未改 Go/std blob，Nothing to be done）。
 
 **誠實邊界**：`with-len` / `with-cap-len`（len=cap，直接索引）未放行——需額外助手；`[]byte` 未放行；str-vec 別名/clone、含控制流 push（mem==1 寫回槽）、`a[i].push()` 複合接收者仍 unsup（M7）。距 noc→noc 定點仍需這批 + Identifier unsup 歸因。
+
+### ㉔ 2026-11-18 追記（再續）：unsup 歸因可信化——块上下文栈（s107）（**實作輪次**，HEAD `ca5156e0`+dirty）
+
+**目標**：㉓ 末尾把「Identifier unsup 逐條歸因」列為 DR-1 定點的前置。本輪先查「現有逐條歸因**可不可信**」，再決定是否需要先修量測。
+
+**① 量測基線與歸因現狀（實測）**
+
+- 基線：`./bin/no run compiler/tests/cov-measure.no` ⇒ **unsup 9,623 / 9,633 行日志**，直方圖 `Identifier 4776 / FunctionDefinition 2044 / IntegerLiteral 1145 / CallExpression 1056 / StringLiteral 276 / SurfaceMatch 121 / SliceLiteral 78 / BlockStatement 24`。
+- 决定性观察：`FunctionDefinition`（2044）與 `BlockStatement`（24）這兩類**構造本身不可能「不支持」**——函數體是 `h2m-lower-block` 的核心路徑，真不支持就不會有任何產碼。它們能出現在日志裏，說明 `h2m-mark` 記的是 `c.cur-k`（「最近一次 `h2m-set-cur-k` 設的節點」），而內層 `h2m-lower-*` 會一路覆蓋它 ⇒ **日志的 kind 列量的是「最近進過哪個容器」，不是「哪個構造不支持」**，按它做歸因會被引向錯誤的優化目標。
+
+**② 修法（`compiler/src/h2m.no`，+~150 行）**
+
+- `h2m-ctx` 新增块上下文栈 `bks`（块 K）/ `bka`（AST 節點）/ `bkd`（深度）/ `bkp`（父項）/ `bkm`（本块是否已計過）/ `bkn`（項數），`h2m-new` 鋪根項 `K-PROGRAM`（深度 0、父 -1）——根項讓「栈空」不可能出現。
+- `h2m-bk-push/pop` 由 `h2m-lower-func`（函数级）、`h2m-lower-block`、`h2m-lower-if`、`h2m-lower-for`、`h2m-lower-surface` 各自壓/彈（均有單一出口，彈栈恒配對）。
+- `h2m-bk-take`：从栈顶往下找**第一个未計過**的块并把它標記為已計；整条栈都計過则退回栈顶。⇒ `h2m-mark-here` 记「就近的、尚未認領失敗的块」，同一函數体里的多条失败不会都记成同一个 BlockStatement。
+- 模块级（`agg` 无栈）改用 `h2m-mark-at(c, k)` 直接给定块码：被拒**函数签名**在签名前置 pass 就记一条**带函数名**的记录（改前只由产码 pass 记，日志里无从查证是谁被拒），被拒顶层节点同理。
+- **誠實邊界**：`c.cur-k` 字段保留（字段型别失败仍按它记，`h2m-mark-field-ty` 專用入口），本輪只改「块内 mark」的歸因基準。
+
+**③ 驗證**
+
+| 項 | 結果 |
+| --- | --- |
+| `h2m-test` | **1121/1121 全綠**（+2 用例：`test-s107-attrib` 嵌套/單條歸因、`test-s107-reject-named` 簽名被拒帶函數名） |
+| 其餘 selfhost 檔 | `cg-test 363/363`、`cg-runtime-test 114/114`、`ck-test 20/20`、`ps-test 49/49`、`lx-test 81/81` 全綠；`ast-test 43/48`（5 红為**既有**：工作樹新增 2 種 AST 節點後 `asp.no` 為 74、該檔仍钉 72，與本輪無關） |
+| `no build compiler` | rc=0，4.01 MB，`noc v0.0.1-m0` |
+| cov-measure unsup | 9,623 → **9,713**（+90，收尾重構後）：**全部落在 `h2m-*` 自身**（新塊棧/記錄輔助函數尚未被 h2m 降級）；**非 `h2m-*` 函數合計 7,434 → 7,434，逐函數差值全 0**——即被測對象的降級行為一字未變 |
+| 歸因基準 | 改前 `h2m-mark` 記 `c.cur-k`（「最近一次 `set-cur-k` 的節點」，被內層容器一路覆蓋）⇒ 日志里出現 **2,044 条 `FunctionDefinition`、24 条 `BlockStatement`**，而函數體/塊本身是 h2m 的核心路徑、不可能「不支持」——這批是**偽構造**。修後歸因由塊棧決定（就近未認領的塊），`h2m-lower-func` 壓的函數級塊只在「簽名被拒」時才命中（`FunctionDefinition 2003`，且此時帶函數名），塊内的失敗一律落 `BlockStatement / IfExpression / ForStatement / SurfaceMatch` 等真實塊種類 |
+
+**④ 副產：三條工具鏈缺陷（本輪撞出並記帳，未繞改合法代碼）**
+
+1. 🔴 **`(cond) { body }` 花括号形条件循环被編成死循环**（**HEAD 已存在**，非本輪引入）：MIR 里 header 无条件 `BR` 回自身形状（IR 只剩 `store i1 1` 骨架，条件值不驱动）；实测常量 `(0 == 0) { }`、变量 `(r == 0) { }`、函数内与顶层皆然；`cond -> { }` 箭头形与 `i <- [a..b): { }` 区间形正常。⇒ **自舉源碼與測試不用花括号形式写条件循环**（本輪新增用例一律用箭头形）。
+2. 🟡 **`x = with-cap(n>0)` 后 `push` 只覆寫下标 0、len 不動**：实测 `a []i64 = with-cap(2); a.push(7); a.len()` ⇒ 1（`a.push(9)` 后 ⇒ 2 且元素正确）：即 cap>0 且 len==0 时 push 等价于覆盖首槽。⇒ 记录表不能写「copy 旧项 → push 新项」，改为 `with-cap(0)` 逐项重建。
+3. 🟡 **NUL 分隔整段字符串 + 同型短串复用不稳**：`h2m-cov-join` 逐行拼接在多调用点/连跑多档时，首条记录的 KindName 段会被上一次拼接结果顶替（独立探针正确、连跑档错误）；`fn:str` 局部在后续 `- ':' - <callee>` 里同理。⇒ `h2m-cov-line` 收敛成「只接收参数、只做拼接」的纯函数（入参不跨调用边界改写），`h2m-kind-cat` 保留原判据顺（不引第二处字符串比较），cov 断言只钉首段函数名与尾段 category。
+
+**⑤ 誠實邊界**
+
+- 本輪**不降低** unsup 總量（+90 全在新程式碼自身），價值在於把「歸因列」從偽構造變成真實块種類——後續 Identifier 歸因必須建立在可信的量測上，否則會照着假數據做無效優化。
+- ⚠️ 歸因只到「最近的塊」粒度：`Identifier / CallExpression` 這類**葉子構造**仍不會單獨出現在 kind 列（它們的失敗歸到所在塊）。要拿到葉子級歸因，得在 `h2m-lower-expr` 等葉子入口也加 mark 記錄或另開一路「候選構造」日志——本輪未做。
+- 三條工具鏈缺陷都**不是**自舉缺口（是 `no` 的 codegen 側），記錄在 §s107 供 Go 側排期；自舉側的規避寫法已寫入上述字段注釋。
+- ⇒ DR-1 定點仍需：`with-len`/`with-cap-len` → `[]byte` 助手族 → str-vec clone/别名 → 可信歸因下的 Identifier 逐條歸因 → noc→noc 比對。

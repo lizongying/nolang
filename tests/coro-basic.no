@@ -1,0 +1,231 @@
+; coro-basic.no — 无染色协程的「真挂起」基线
+;
+; 运行：no test tests/coro-basic.no
+;
+; 本档钉的是 M1（协程帧 + await 真挂起）的行为面：
+;   ① 协程跑完把过程走完，结果经通道回传
+;   ② 协程内 `async-yield()` 让出后能恢复，且恢复后继续执行到返回
+;   ③ 跨挂起点存活的局部变量（帧槽 = 全部 Dst/params，栈帧在挂起时会被丢弃）
+;   ④ 同一 `-async` 克隆被两个任务同时跑时，两份帧互不覆盖
+;   ⑤ 协程体内再开一个协程组（帧在同一次运行里复用）
+;
+; 与 async.no 的分工：async.no 只看「结果对不对」，本档专门压**挂起/恢复**
+; 这条路径（`NOLANG_CORO=0` 关掉协程变换后，②③④ 会退化或算错）。
+;
+; 写法规避：`x = x + 1` 在 Nolang 是检查溢位的运算，结果是 `?i64`，
+; 直接赋值给 i64 变量会报 15w45dqk；故所有加法都走下面的 add()。
+
+# /test/runner
+
+; 两数相加（显式解包 ?i64，供全文复用）
+; a: 左加数
+; b: 右加数
+; r: a + b；溢位时回 0
+add = (a i64, b i64) (r i64) {
+    s = a + b
+    r = s: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 送回一个值并关闭通道。`co` 只启动过程、不产生值，结果一律走通道，
+; 所以每个测试自带一条容量 1 的通道，一个生产者一条（close 只由它做）。
+; ch: 结果通道（调用方建，容量 1）
+; v: 要送回的值
+put1 = (ch chan[i64], v i64) {
+    ch <- v
+    ch.close()
+}
+
+; 恒等过程：只用来产生一个「一定会跑完」的子任务
+; ch: 结果通道
+; n: 任意整数
+ident-into = (ch chan[i64], n i64) {
+    put1(ch, n)
+}
+
+; 让出一次再送回：恢复后才产生结果
+; n: 输入
+; r: 2 * n（借 add 拼出）
+after-yield-into = (ch chan[i64], n i64) {
+    async-yield()
+    put1(ch, add(n, n))
+}
+
+; 跨挂起点的局部变量：x 在 await 之前落地，await 之后还要读
+; n: 输入值（本档传 7）
+; 送回 n + 2（= x + y，y 来自子任务）
+keep-local-into = (ch chan[i64], n i64) {
+    x i64 = n
+    inner chan[i64] = with-cap(1)
+    awy {
+        co ident-into(inner, 2)
+    }
+    y = 0
+    <- inner: {
+        ok -> y = it
+    }
+    put1(ch, add(x, y))
+}
+
+; 恢复后重新绑定「当前任务」：`async.cancelled()` 读的是 @nolang_current_task，
+; 挂起时它指向别人，恢复时必须换回来
+; n: 正常返回的输入值
+; 未取消时送回 n；若取消状态读错则送回 999
+after-yield-cancel-into = (ch chan[i64], n i64) {
+    async-yield()
+    c = async.cancelled()
+    {
+        c -> put1(ch, 999)
+
+        -> put1(ch, n)
+    }
+}
+
+; ① 最简 await：单个 spawn，组尾 await，结果经通道回传
+t-await = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co ident-into(ch, 42)
+    }
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+    runner.eq(r, 42, 'await: 协程结果经通道回传到组外')
+}
+
+; ② 协程内让出后恢复，且恢复后继续执行到 return
+t-yield-resume = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co after-yield-into(ch, 5)
+    }
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+    runner.eq(r, 10, 'yield: 让出恢复后仍能算完并返回')
+}
+
+; ③ 跨挂起点保值的局部变量
+t-local-across-await = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co keep-local-into(ch, 7)
+    }
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+    runner.eq(r, 9, 'frame: 挂起前的局部变量在恢复后仍可读')
+}
+
+; ④ 双实例帧隔离：同一个 after-yield 克隆跑两份任务
+t-two-instances = () {
+    ca chan[i64] = with-cap(1)
+    cb chan[i64] = with-cap(1)
+    awy {
+        co after-yield-into(ca, 3)
+        co after-yield-into(cb, 4)
+    }
+    p = 0
+    <- ca: {
+        ok -> p = it
+    }
+    q = 0
+    <- cb: {
+        ok -> q = it
+    }
+    runner.eq(p, 6, 'frame: 实例 A 的帧槽未被实例 B 覆写')
+    runner.eq(q, 8, 'frame: 实例 B 的帧槽未被实例 A 覆写')
+    runner.eq(add(p, q), 14, 'frame: 两实例结果互不干扰')
+}
+
+; ⑤ 同一协程体内两个 awy 组先后 await（帧在同一次运行里复用）
+t-two-groups = () {
+    ca chan[i64] = with-cap(1)
+    cb chan[i64] = with-cap(1)
+    awy {
+        co ident-into(ca, 3)
+    }
+    awy {
+        co ident-into(cb, 4)
+    }
+    a = 0
+    <- ca: {
+        ok -> a = it
+    }
+    b = 0
+    <- cb: {
+        ok -> b = it
+    }
+    runner.eq(add(a, b), 7, 'two-groups: 两组先后 await，变量各自落地')
+}
+
+; ⑥ await 之后再做一次同步调用（恢复后栈上状态可用）
+t-after-await-call = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co ident-into(ch, 20)
+    }
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+    runner.eq(add(r, 1), 21, 'await: 恢复后可继续调用普通函数')
+    runner.eq(add(21, 21), 42, 'await: 普通函数的直接调用不受影响')
+}
+
+; ⑦ 恢复后 @nolang_current_task 被重新绑定（两个实例各自读到自己的状态）
+t-cancelled-after-resume = () {
+    ca chan[i64] = with-cap(1)
+    cb chan[i64] = with-cap(1)
+    awy {
+        co after-yield-cancel-into(ca, 7)
+        co after-yield-cancel-into(cb, 8)
+    }
+    p = 0
+    <- ca: {
+        ok -> p = it
+    }
+    q = 0
+    <- cb: {
+        ok -> q = it
+    }
+    runner.eq(p, 7, 'resume: 实例 A 恢复后读到未取消')
+    runner.eq(q, 8, 'resume: 实例 B 恢复后读到未取消')
+}
+
+; ⑧ 闭包形式：`co { ... }` 直接 spawn 一段过程，捕获按值传参
+t-closure = () {
+    ch chan[i64] = with-cap(1)
+    seed = 33
+    awy {
+        co {
+            ch <- seed
+            ch.close()
+        }
+    }
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+    runner.eq(r, 33, 'closure: co { } 捕获的外层局部按值进入过程')
+}
+
+t-await()
+t-yield-resume()
+t-local-across-await()
+t-two-instances()
+t-two-groups()
+t-after-await-call()
+t-cancelled-after-resume()
+t-closure()
+
+runner.summary()
+fails = runner.failed-count()
+fails > 0 -> exit(1)
+exit(0)
