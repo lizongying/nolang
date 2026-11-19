@@ -4946,6 +4946,7 @@ test-s107-reject-named = () {
 ; （h2m-lower-expr 入口设的节点 kind），让 Identifier / CallExpression 等叶子可单独归因。
 ; ⚠️ 条件一律箭头形：`(cond) { }` 花括号形当前被 Go 工具链编成死循环（§s107 缺陷记录）。
 test-s108-leaf-attrib = () {
+
     ; 未定义函数调用：块级落所在块，叶子级落 CallExpression —— 两条通道在此分叉。
     src = 'f = () (r i64) {\n    nope()\n    r = 0\n}\n'
     t = ast.make()
@@ -4979,6 +4980,232 @@ test-s108-leaf-attrib = () {
     runner.eq(agg2.lfsk.len(), agg2.unsk.len(), 's108 module path parallel lengths')
 }
 
+; ── s109：Identifier 逐条归因——失败标识符名字旁路通道 ──
+; K-IDENTIFIER 三表（names / it 栈 / arm-local）都未命中时记一条 "fn:name"，
+; 让「哪类变量没被 h2m-scan 铺槽」可见（模块名 / 常量名 / 局部名）。
+; ⚠️ 条件一律箭头形：`(cond) { }` 花括号形当前被 Go 工具链编成死循环（§s107 缺陷记录）。
+test-s109-id-attrib = () {
+    ; ① 裸未定义标识符作 RHS：三表未命中 ⇒ 记一条 f:missing，unsup 与两通道仍对齐。
+    src = 'f = () (r i64) {\n    r = missing\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.idn.len(), 1, 's109 one failed ident recorded')
+    want = 'f:missing'
+    runner.str-eq(agg.idn[0], want, want.len-bytes(), 's109 failed ident name is fn:name')
+    runner.eq(agg.unsup, 1, 's109 ident failure still counted once')
+    runner.eq(agg.lfsk.len(), agg.unsk.len(), 's109 s108 channels still parallel')
+    runner.eq(agg.unsk.len(), agg.idn.len(), 's109 id channel aligns with unsup here')
+
+    ; ② 模块点号名的基：tok.EOF 的基 tok 未登记 ⇒ 记 f:tok（模块名归因）。
+    src2 = 'g = () (r i64) {\n    r = tok.EOF\n}\n'
+    t2 = ast.make()
+    b2 = src2.to-bytes()
+    p2 = ps.new(b2)
+    root2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, root2)
+    runner.eq(agg2.idn.len(), 1, 's109 one module-base ident recorded')
+    want2 = 'g:tok'
+    runner.str-eq(agg2.idn[0], want2, want2.len-bytes(), 's109 module base name captured')
+
+    ; ③ 正常绑定的标识符不记：r = a（a 是输出参数，已在 names 表）⇒ idn 空、unsup 0、产码。
+    src3 = 'h = (a i64) (r i64) {\n    r = a\n}\n'
+    t3 = ast.make()
+    b3 = src3.to-bytes()
+    p3 = ps.new(b3)
+    root3 = ps.parse(t3, p3)
+    agg3 = h2m-new()
+    ir3 = h2m-lower-program(t3, agg3, root3)
+    runner.eq(agg3.idn.len(), 0, 's109 bound ident not recorded')
+    runner.eq(agg3.unsup, 0, 's109 bound ident no unsup')
+    runner.eq(ir3.contains('define i64 @h('), 1, 's109 bound ident body has code')
+}
+
+; ── s110：跨模組點號呼叫回值型別推斷（h2m-ty-of 的 K-CALL/DOT 臂）──
+; 修復前只認純 IDENTIFIER callee ⇒ mod.fn() 回值推不出 (-1) ⇒ let 槽不綁名 ⇒ 體內引用連鎖失敗。
+; 本測試手工造 CALL(DOT(mod,fn)) + 手填 sg[mod.fn]=TY-I64，直接釘 ty-of 的回值。
+test-s110-dot-call-ty = () {
+    t = ast.make()
+
+    ; DOT 節點：kid0 = base IDENTIFIER('mod')，s0 = 'fn'
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'mod'))
+    dot = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot, base)
+    ast.set-slot(t, dot, 0, ast.put-str(t, 'fn'))
+
+    ; CALL 節點：kid0 = DOT（無實參）
+    call = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call, dot)
+
+    ; 手填簽名表：mod.fn 回 TY-I64
+    sg = h2m-sigs-new()
+    noarg []i64 = []
+    h2m-sig-add(sg, 'mod.fn', 'mod.fn', TY-I64, noarg)
+    loc = h2m-lst-new()
+    agg = h2m-new()
+
+    ty = h2m-ty-of(t, sg, loc, agg, call)
+    runner.eq(ty, TY-I64, 's110 dot-call return type inferred')
+
+    ; 對照：未登記的 mod.missing ⇒ -1（誠實門禁不變）
+    missing = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, missing, base)
+    ast.set-slot(t, missing, 0, ast.put-str(t, 'missing'))
+    call2 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call2, missing)
+    ty2 = h2m-ty-of(t, sg, loc, agg, call2)
+    runner.eq(ty2, -1, 's110 unregistered dot-call still -1')
+}
+
+; ── s111：跨模組常量 mod.CONST（tok.EOF / asp.K-* 等）──
+; 修復前 K-DOT-EXPRESSION 一律先降接收者為值 ⇒ 模組名未綁定 ⇒ 475+ 條 ID 失敗連鎖。
+; 常量表由 drv 的整包前置 pass 填進 h2m-sigs；本測試直接填表釘 ty-of 與 lower-expr。
+test-s111-mod-const = () {
+    t = ast.make()
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'tok'))
+    dot = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot, base)
+    ast.set-slot(t, dot, 0, ast.put-str(t, 'EOF'))
+
+    sg = h2m-sigs-new()
+    h2m-sig-const-add(sg, 'tok.EOF', 1)
+    loc = h2m-lst-new()
+    agg = h2m-new()
+
+    ty = h2m-ty-of(t, sg, loc, agg, dot)
+    runner.eq(ty, TY-I64, 's111 module const ty')
+
+    c = h2m-new()
+    v = h2m-lower-expr(t, c, sg, dot)
+    runner.eq(c.unsup, 0, 's111 module const no unsup')
+    runner.eq(v > 0, 1, 's111 module const emits value')
+    runner.eq(h2m-vty-at(c, v), TY-I64, 's111 module const vty')
+
+    ; 對照：未登記的 mod.CONST 仍誠實計 unsup（門禁不放寬）
+    miss = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, miss, base)
+    ast.set-slot(t, miss, 0, ast.put-str(t, 'MISSING'))
+    c2 = h2m-new()
+    v2 = h2m-lower-expr(t, c2, sg, miss)
+    runner.eq(c2.unsup > 0, 1, 's111 unregistered module const still unsup')
+    runner.eq(v2, 0, 's111 unregistered module const no value')
+}
+
+; ── s112：模組自身的裸常量引用（TY-I64 / OP-ADD / B-LF ...）──
+; s111 只收 `mod.CONST` 點號形；self-host 源碼大量在自己模組內寫裸名，三表皆空 ⇒ 連鎖失敗。
+; 常量表按短名再給一條旁路，優先級仍在局部名之後（不遮蔽局部变量）。
+test-s112-bare-const = () {
+    t = ast.make()
+    id = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, id, 0, ast.put-str(t, 'TY-I64'))
+
+    sg = h2m-sigs-new()
+    h2m-sig-const-add(sg, 'mir.TY-I64', 0)
+    loc = h2m-lst-new()
+    agg = h2m-new()
+
+    ty = h2m-ty-of(t, sg, loc, agg, id)
+    runner.eq(ty, TY-I64, 's112 bare const ty')
+
+    c = h2m-new()
+    v = h2m-lower-expr(t, c, sg, id)
+    runner.eq(c.unsup, 0, 's112 bare const no unsup')
+    runner.eq(v > 0, 1, 's112 bare const emits value')
+    runner.eq(h2m-vty-at(c, v), TY-I64, 's112 bare const vty')
+
+    ; 對照：未登记的裸名仍誠實 unsup
+    miss = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, miss, 0, ast.put-str(t, 'NOPE-CONST'))
+    c2 = h2m-new()
+    v2 = h2m-lower-expr(t, c2, sg, miss)
+    runner.eq(c2.unsup > 0, 1, 's112 unregistered bare const still unsup')
+    runner.eq(v2, 0, 's112 unregistered bare const no value')
+}
+
+; ── s113：接收者為值的方法呼叫回值型別（a.len() / s.len-bytes() / a.push(x)）──
+; ㉗ 的點號呼叫只認模組函式；方法呼叫不走簽名表 ⇒ ty-of 回 -1 ⇒ let 槽不綁名，
+; 大量 `n = c.stn.len()` / `n = s.len-bytes()` 連鎖失敗。ty-of 必須與 lower-expr 的方法臂同口徑。
+test-s113-method-call-ty = () {
+    t = ast.make()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 'a'))
+
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+
+    ; ① []i64 / []str 的 len() ⇒ TY-I64（lower-expr 的 OP-VECLEN）
+    dot-len = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-len, recv)
+    ast.set-slot(t, dot-len, 0, ast.put-str(t, 'len'))
+    call-len = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-len, dot-len)
+    lv = h2m-lst-new()
+    h2m-lst-add(lv, 'a', TY-VEC)
+    runner.eq(h2m-ty-of(t, sg, lv, agg, call-len), TY-I64, 's113 vec len ty')
+    lv2 = h2m-lst-new()
+    h2m-lst-add(lv2, 'a', TY-VECSTR)
+    runner.eq(h2m-ty-of(t, sg, lv2, agg, call-len), TY-I64, 's113 vecstr len ty')
+
+    ; ② str.len-bytes() ⇒ TY-I64（lower-expr 的 OP-STRLEN）
+    dot-lb = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-lb, recv)
+    ast.set-slot(t, dot-lb, 0, ast.put-str(t, 'len-bytes'))
+    call-lb = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-lb, dot-lb)
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 'a', TY-STR)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, call-lb), TY-I64, 's113 str len-bytes ty')
+
+    ; ③ vec.push(x) 回【新】vec（lower-expr 的 OP-VECPUSH / OP-VECPUSHSTR）
+    dot-push = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-push, recv)
+    ast.set-slot(t, dot-push, 0, ast.put-str(t, 'push'))
+    call-push = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-push, dot-push)
+    runner.eq(h2m-ty-of(t, sg, lv, agg, call-push), TY-VEC, 's113 vec push ty')
+    runner.eq(h2m-ty-of(t, sg, lv2, agg, call-push), TY-VECSTR, 's113 vecstr push ty')
+
+    ; 對照：未支持的方法仍 -1（門禁不放寬）
+    dot-bad = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-bad, recv)
+    ast.set-slot(t, dot-bad, 0, ast.put-str(t, 'byte'))
+    call-bad = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-bad, dot-bad)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, call-bad), -1, 's113 unsupported method still -1')
+}
+
+; ── s113b：索引讀取的回值型別（ops[k] ⇒ str / xs[k] ⇒ i64）──
+; s113 放行 cg-emit-cfg-t 後暴露 op=ops[k]：lower-expr 已支援 OP-VECGETSTR，但 ty-of 不認
+; K-INDEX-EXPRESSION ⇒ 槽寬 -1。與 lower-expr 兩條索引臂同步。
+test-s113b-index-ty = () {
+    t = ast.make()
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'xs'))
+    idx = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '0'))
+    at = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, at, base)
+    ast.kid-add(t, at, idx)
+
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    li = h2m-lst-new()
+    h2m-lst-add(li, 'xs', TY-VEC)
+    runner.eq(h2m-ty-of(t, sg, li, agg, at), TY-I64, 's113b vec index ty')
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 'xs', TY-VECSTR)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, at), TY-STR, 's113b vecstr index ty')
+    lb = h2m-lst-new()
+    h2m-lst-add(lb, 'xs', TY-STR)
+    runner.eq(h2m-ty-of(t, sg, lb, agg, at), -1, 's113b unsupported index base still -1')
+}
+
 test-sb-vec-mixed-elem-gate()
 test-sb-str-param-sig()
 test-sb-str-index()
@@ -4991,6 +5218,12 @@ test-sb3-push-own-i64()
 test-s107-attrib()
 test-s107-reject-named()
 test-s108-leaf-attrib()
+test-s109-id-attrib()
+test-s110-dot-call-ty()
+test-s111-mod-const()
+test-s112-bare-const()
+test-s113-method-call-ty()
+test-s113b-index-ty()
 
 runner.summary()
 f = runner.failed-count()

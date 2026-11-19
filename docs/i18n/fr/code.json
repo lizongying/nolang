@@ -1,0 +1,20 @@
+{
+  "無 GC": {
+    "message": "Sans GC"
+  },
+  "自动內存管理": {
+    "message": "Gestion automatique de la mémoire"
+  },
+  "內存安全": {
+    "message": "Sécurité mémoire"
+  },
+  "性能強勁": {
+    "message": "Haute performance"
+  },
+  "語法極簡": {
+    "message": "Syntaxe minimale"
+  },
+  "語法更簡單": {
+    "message": "Syntaxe plus simple"
+  }
+}

@@ -70,6 +70,9 @@ drain-check = (c chan[i64]) (got i64) {
             seen = add(seen, 1)
             runner.eq(it, seen, 'yield: 第 n 个事件码按序到达')
         }
+
+        -> {
+        }
     }
     got = seen
 }

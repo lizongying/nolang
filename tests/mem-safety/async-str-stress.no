@@ -26,6 +26,9 @@ stress = () {
         s = ''
         <- ch: {
             ok -> s = it
+
+            -> {
+            }
         }
         s.len-bytes() == 5 -> print('ok ', i)
     }

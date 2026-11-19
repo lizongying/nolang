@@ -5,7 +5,11 @@
 ;    cancelled 自检原语与实现参考。
 ;
 ; nolang 提供协作式、单线程、无栈的异步协程模型：
-;   - `awy { co f(1); co g(2) }`  启动一组协程并在组尾统一等待。
+;   - `awy { ... }` 启动一组协程并在组尾统一等待，例如：
+;         awy {
+;             co f(1)
+;             co g(2)
+;         }
 ;   - `co f(args)`  只在 `awy { ... }` 组内合法；组外写 co 是编译错误。
 ;   - `co { ... }`  闭包写法：把一段过程就地交给协程执行，
 ;                   外层局部变量按值捕获（spawn 当刻的快照）。
@@ -14,7 +18,8 @@
 ; 因为 spawn 没有地方接结果。需要结果时走通道——过程写一筆再 close，
 ; 呼叫方在组外排空：
 ;   awy {
-;       co produce(ch, 21)      ; produce 内部： ch <- 42; ch.close()
+;       co produce(ch, 21)
+;       ; produce 内部：写一笔数据再 close
 ;   }
 ;   r = 0
 ;   <- ch: { ok -> r = it }
@@ -46,9 +51,13 @@
 ;
 ;   ; 在协程内部协作式检查
 ;   worker-into = (ch chan[i64], n i64) {
-;       loop i in 0..n {
-;           if cancelled() { ch <- 0; ch.close(); return }
-;           ; 每步检查一次，被取消就提前退出
+;       i <- [0..n): {
+;           ; 每步检查一次，被取消就写 0、close 并提前退出
+;           if cancelled() {
+;               ch <- 0
+;               ch.close()
+;               return
+;           }
 ;           step(i)
 ;       }
 ;       ch <- n

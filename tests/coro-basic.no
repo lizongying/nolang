@@ -66,6 +66,9 @@ keep-local-into = (ch chan[i64], n i64) {
     y = 0
     <- inner: {
         ok -> y = it
+
+        -> {
+        }
     }
     put1(ch, add(x, y))
 }
@@ -93,6 +96,9 @@ t-await = () {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
     runner.eq(r, 42, 'await: 协程结果经通道回传到组外')
 }
@@ -106,6 +112,9 @@ t-yield-resume = () {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
     runner.eq(r, 10, 'yield: 让出恢复后仍能算完并返回')
 }
@@ -119,6 +128,9 @@ t-local-across-await = () {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
     runner.eq(r, 9, 'frame: 挂起前的局部变量在恢复后仍可读')
 }
@@ -134,10 +146,16 @@ t-two-instances = () {
     p = 0
     <- ca: {
         ok -> p = it
+
+        -> {
+        }
     }
     q = 0
     <- cb: {
         ok -> q = it
+
+        -> {
+        }
     }
     runner.eq(p, 6, 'frame: 实例 A 的帧槽未被实例 B 覆写')
     runner.eq(q, 8, 'frame: 实例 B 的帧槽未被实例 A 覆写')
@@ -157,10 +175,16 @@ t-two-groups = () {
     a = 0
     <- ca: {
         ok -> a = it
+
+        -> {
+        }
     }
     b = 0
     <- cb: {
         ok -> b = it
+
+        -> {
+        }
     }
     runner.eq(add(a, b), 7, 'two-groups: 两组先后 await，变量各自落地')
 }
@@ -174,6 +198,9 @@ t-after-await-call = () {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
     runner.eq(add(r, 1), 21, 'await: 恢复后可继续调用普通函数')
     runner.eq(add(21, 21), 42, 'await: 普通函数的直接调用不受影响')
@@ -190,10 +217,16 @@ t-cancelled-after-resume = () {
     p = 0
     <- ca: {
         ok -> p = it
+
+        -> {
+        }
     }
     q = 0
     <- cb: {
         ok -> q = it
+
+        -> {
+        }
     }
     runner.eq(p, 7, 'resume: 实例 A 恢复后读到未取消')
     runner.eq(q, 8, 'resume: 实例 B 恢复后读到未取消')
@@ -212,6 +245,9 @@ t-closure = () {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
     runner.eq(r, 33, 'closure: co { } 捕获的外层局部按值进入过程')
 }

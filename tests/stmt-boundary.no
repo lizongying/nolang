@@ -84,6 +84,9 @@ test-awy-in-ifchain = () {
         r = 0
         <- out: {
             ok -> r = it
+
+            -> {
+            }
         }
         r
     }
@@ -103,6 +106,9 @@ test-awy-in-match = () {
             r = 0
             <- out: {
                 ok -> r = it
+
+                -> {
+                }
             }
             r
         }
@@ -124,6 +130,9 @@ test-co-nonfirst = () {
     r = 0
     <- out: {
         ok -> r = it
+
+        -> {
+        }
     }
     print(r); expect: 42
 }
@@ -139,6 +148,9 @@ test-awy-nonfirst-then-use = () {
     r = 0
     <- out: {
         ok -> r = it
+
+        -> {
+        }
     }
     print(r); expect: 42
 }

@@ -69,6 +69,9 @@ pair-into = (out chan[i64], n i64) {
     cv = 0
     <- inner: {
         ok -> cv = it
+
+        -> {
+        }
     }
 
     #{overflow=wrap}
@@ -92,6 +95,9 @@ take1 = (ch chan[i64]) (r i64) {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
 }
 

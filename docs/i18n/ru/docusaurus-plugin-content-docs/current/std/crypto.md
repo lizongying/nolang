@@ -1,0 +1,310 @@
+---
+sidebar_position: 4.0
+---
+
+## Криптография и хэширование
+
+### crypto/aes — ядро блочного шифра AES (AES-128 / AES-256)
+
+```no
+#{fmt-skip}
+; один блок (расширение ключа выполняется самостоятельно)
+out = aes.enc-128(in [16]byte, key [16]byte)   ; шифрование AES-128
+out = aes.dec-128(in [16]byte, key [16]byte)   ; дешифрование AES-128
+out = aes.enc-256(in [16]byte, key [32]byte)   ; шифрование AES-256
+out = aes.dec-256(in [16]byte, key [32]byte)   ; дешифрование AES-256
+
+; много блоков: ключ расширяется один раз, затем шифрование/дешифрование по блокам
+ek []byte = aes.key-expand(key [16]byte)       ; 176 байт раундовых ключей
+ek []byte = aes.key-expand-256(key [32]byte)   ; 240 байт раундовых ключей
+out = aes.enc-block(in [16]byte, ek)
+out = aes.dec-block(in [16]byte, ek)
+```
+
+Число раундов выводится из длины `ek` (`nr = ek.len() / 16 - 1`), поэтому AES-128 и AES-256 используют один и тот же цикл раундов. Режимы работы находятся в `crypto/aes-cbc`, `crypto/aes-ctr` и `crypto/aes-gcm`.
+
+### crypto/des — шифрование/дешифрование DES (режим ECB)
+
+```no
+des.des-enc(plain, 8, key, out); шифрование 8-байтового блока
+des.des-dec(cipher, 8, key, out); дешифрование 8-байтового блока
+```
+
+### crypto/rsa — шифрование/дешифрование RSA (многопрецизионное модульное возведение в степень)
+
+```no
+; высокоуровневый байтовый API (рекомендуется): байтовая строка интерпретируется как беззнаковое целое big-endian, вывод — кратчайшая big-endian кодировка
+cipher = rsa.rsa-encrypt-bytes(msg, pub-exp, mod); c = m^e mod n
+plain = rsa.rsa-decrypt-bytes(cipher, priv-exp, mod); m = c^d mod n
+
+; низкоуровневый limb API (основание 2^32 little-endian, ручное управление числом limb)
+result, rn = rsa.rsa-modpow(base, bn, exp, en, mod, mn)
+```
+
+Генерация ключей не включена (n, e, d предоставляет вызывающая сторона); поддерживается 1024~4096-bit. Символы с префиксом подчёркивания — обёртки limb / утилиты для больших чисел — являются внутренней реализацией модуля и запрещены в других модулях (защита private_std сообщает об ERROR).
+
+### crypto/md5 — MD5 (128-bit)
+
+```no
+out [16]byte = md5.md5(data)
+```
+
+### crypto/sha1 — SHA-1 (160-bit)
+
+```no
+#{fmt-skip}
+hash = sha1.sha1(data []byte) (hash [20]byte)
+hex = sha1.sha1-hex(data []byte) (hex str)
+sha1.sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
+```
+
+`sha1` вычисляет полный хэш (включая дополнение и обработку нескольких блоков), возвращая 20 байт.
+`sha1-hex` делает то же, но возвращает 40-символьную строку hex в нижнем регистре.
+`sha1-block` — низкоуровневый API, обрабатывающий один 512-bit блок.
+
+### crypto/sha256 — SHA-256 (256-bit)
+
+```no
+#{fmt-skip}
+sha256.sha256(data []byte) (hash [32]byte)
+sha256.sha256-hex(data []byte) (hex str)
+sha256.sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32)
+```
+
+`sha256` вычисляет полный хэш (включая дополнение и обработку нескольких блоков), возвращая 32 байта.
+`sha256-hex` делает то же, но возвращает 64-символьную строку hex в нижнем регистре.
+`sha256-block` — низкоуровневый API, обрабатывающий один 512-bit блок.
+
+### crypto/sha512 — SHA-512 (512-bit)
+
+```no
+#{fmt-skip}
+sha512.sha512(data []byte) (hash [64]byte)
+sha512.sha512-hex(data []byte) (hex str)
+sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64)
+```
+
+`sha512` вычисляет полный хэш (включая дополнение и обработку нескольких блоков), возвращая 64 байта.
+`sha512-hex` делает то же, но возвращает 128-символьную строку hex в нижнем регистре.
+`sha512-block` — низкоуровневый API, обрабатывающий один 1024-bit блок.
+
+### crypto/crc-32 — контрольная сумма CRC32
+
+```no
+#{fmt-skip}
+crc-32.new(s []byte, n, crc)
+```
+
+### crypto/fnv-1a-32 — некриптографический хэш FNV-1a
+
+```no
+#{fmt-skip}
+fnv-1a-32.fnv-1a-32(s []byte, n, h)
+```
+
+### crypto/rand — генератор случайных чисел (xorshift32)
+
+```no
+r = rand.rand(state); 32-битное псевдослучайное число
+rand.rand-str(state, n, s); случайная буквенно-цифровая строка
+```
+
+### crypto/x509 — разбор сертификатов X.509 DER
+
+```no
+#{fmt-skip}
+tag = x509.der-tag(data, pos)
+len, adv = x509.der-len(data, pos)
+x509.x509-fingerprint(cert, n, h0..h7)  ; отпечаток сертификата SHA-256
+x509.x509-rsa-e(cert, n, e)             ; извлечение открытой экспоненты RSA
+```
+
+### crypto/aes-cbc — режим AES-CBC (с заполнением PKCS7, AES-128 / AES-256)
+
+```no
+#{fmt-skip}
+out = aes-cbc.enc-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.dec-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-cbc.enc-256(in []byte, key [32]byte, iv [16]byte)
+out = aes-cbc.dec-256(in []byte, key [32]byte, iv [16]byte)
+out = aes-cbc.pkcs7-pad(in []byte)
+n = aes-cbc.pkcs7-unpad(in []byte)
+```
+
+### crypto/aes-ctr — режим счётчика AES-CTR (AES-128 / AES-256)
+
+```no
+#{fmt-skip}
+out = aes-ctr.crypt-128(in []byte, key [16]byte, iv [16]byte)
+out = aes-ctr.crypt-256(in []byte, key [32]byte, iv [16]byte)
+```
+
+### crypto/aes-gcm — AES-GCM AEAD (NIST SP 800-38D, AES-128 / AES-256)
+
+```no
+#{fmt-skip}
+sealed = aes-gcm.seal-128(key [16]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-gcm.open-128(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
+sealed = aes-gcm.seal-256(key [32]byte, iv [12]byte, aad []byte, plain []byte)
+plain = aes-gcm.open-256(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
+```
+
+### crypto/hmac — код аутентификации сообщений HMAC
+
+```no
+#{fmt-skip}
+out = hmac.hmac-sha256(key []byte, msg []byte) (out [32]byte)
+out = hmac.hmac-sha512(key []byte, msg []byte) (out [64]byte)
+out = hmac.hmac-sha384(key []byte, msg []byte) (out [48]byte)
+out = hmac.hmac-sha1(key []byte, msg []byte) (out [20]byte)
+out = hmac.hmac-md5(key []byte, msg []byte) (out [16]byte)
+vec = hmac.hmac-sha256-vec(key []byte, msg []byte) (out []byte)
+```
+
+### crypto/hkdf — вывод ключа HKDF (RFC 5869)
+
+```no
+#{fmt-skip}
+ok = hkdf.hkdf-extract(salt []byte, salt-n i64, ikm []byte, ikm-n i64, prk []byte)
+ok = hkdf.hkdf-expand(prk []byte, prk-n i64, info []byte, info-n i64, out []byte, out-n i64)
+```
+
+### crypto/pbkdf2 — вывод ключа PBKDF2 (RFC 2898)
+
+```no
+#{fmt-skip}
+out = pbkdf2.pbkdf2-hmac-sha256(password []byte, salt []byte, iterations i64, key-len i64) (out []byte)
+out = pbkdf2.pbkdf2-hmac-sha512(password []byte, salt []byte, iterations i64, key-len i64) (out []byte)
+out = pbkdf2.pbkdf2-hmac-sha1(password []byte, salt []byte, iterations i64, key-len i64) (out []byte)
+```
+
+### crypto/argon2 — вывод ключа Argon2 с большой требуемой памятью
+
+```no
+#{fmt-skip}
+argon2.id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
+```
+
+### crypto/scrypt — вывод ключа scrypt
+
+```no
+#{fmt-skip}
+scrypt.scrypt(password []byte, pw-n i64, salt []byte, salt-n i64, n i64, r i64, p i64, out []byte, out-n i64)
+```
+
+### crypto/sha224 — SHA-224 (224-bit)
+
+```no
+#{fmt-skip}
+hash = sha224.sha224(data []byte) (hash [28]byte)
+hex = sha224.sha224-hex(data []byte) (hex str)
+```
+
+### crypto/sha384 — SHA-384 (384-bit)
+
+```no
+#{fmt-skip}
+hash = sha384.sha384(data []byte) (hash [48]byte)
+hex = sha384.sha384-hex(data []byte) (hex str)
+```
+
+### crypto/sha3 — SHA-3 (Keccak)
+
+```no
+#{fmt-skip}
+hash = sha3.sha3-256(data []byte) (hash [32]byte)
+hash = sha3.sha3-512(data []byte) (hash [64]byte)
+```
+
+### crypto/blake2 — хэш BLAKE2
+
+```no
+#{fmt-skip}
+hash = blake2.b(data []byte) (hash [64]byte)
+hash = blake2.b-256(data []byte) (hash [32]byte)
+hex = blake2.b-hex(data []byte) (hex str)
+hash = blake2.s(data []byte) (hash [32]byte)
+hex = blake2.s-hex(data []byte) (hex str)
+```
+
+### crypto/crc-16 — контрольная сумма CRC16
+
+```no
+#{fmt-skip}
+crc = crc-16.new(data []byte, n i64) (crc i64)
+```
+
+### crypto/crc-64 — контрольная сумма CRC64
+
+```no
+#{fmt-skip}
+crc = crc-64.new(data []byte, n i64) (crc i64)
+```
+
+### crypto/fnv — хэш FNV-1
+
+```no
+#{fmt-skip}
+h = fnv.fnv-1a-32(data []byte) (hash i64)
+h = fnv.fnv-1a-64(data []byte) (hash u64)
+```
+
+### crypto/base32 — кодирование/декодирование Base32 (RFC 4648)
+
+```no
+#{fmt-skip}
+out = base32.encode(data []byte) (out str)
+out = base32.decode(s str) (out []byte)
+```
+
+### crypto/chacha20-poly1305 — ChaCha20-Poly1305 AEAD
+
+```no
+#{fmt-skip}
+sealed = chacha20-poly1305.chacha20-poly1305-seal(key [32]byte, nonce [12]byte, aad []byte, plain []byte)
+plain = chacha20-poly1305.chacha20-poly1305-open(key [32]byte, nonce [12]byte, aad []byte, sealed []byte)
+```
+
+### crypto/rc4 — поточное шифрование RC4
+
+```no
+#{fmt-skip}
+out = rc4.rc4(key []byte, key-n i64, data []byte, data-n i64) (out []byte)
+```
+
+### crypto/tdes — тройной DES (3DES)
+
+```no
+#{fmt-skip}
+tdes.tdes-enc(plain, 8, key [24]byte, out)
+tdes.tdes-dec(cipher, 8, key [24]byte, out)
+```
+
+### crypto/ecdsa — цифровая подпись ECDSA
+
+```no
+#{fmt-skip}
+ok = ecdsa.ecdsa-sign(priv-key []byte, msg []byte, msg-n i64, r []byte, s []byte)
+ok = ecdsa.ecdsa-verify(pub-key []byte, msg []byte, msg-n i64, r []byte, s []byte) (ok bool)
+```
+
+### crypto/ed25519 — цифровая подпись Ed25519
+
+```no
+#{fmt-skip}
+pub = ed25519.ed25519-publickey(seed [32]byte) (pub [32]byte)
+sig = ed25519.ed25519-sign(seed [32]byte, msg []byte) (sig [64]byte)
+ok = ed25519.ed25519-verify(pub [32]byte, msg []byte, sig [64]byte) (ok i64)
+```
+
+### crypto/x25519 — обмен ключами X25519
+
+```no
+#{fmt-skip}
+priv, pub = x25519.x25519-gen-keypair(seed i64) (priv [32]byte, pub [32]byte)
+pub = x25519.x25519-scalarmult-base-bytes(scalar []byte) (out []byte)
+shared = x25519.x25519-scalarmult-bytes(scalar []byte, point []byte) (out []byte)
+out = x25519.x25519-scalarmult(scalar [32]byte, point [32]byte) (out [32]byte)
+```
+
+---

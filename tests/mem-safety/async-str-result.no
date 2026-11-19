@@ -51,6 +51,9 @@ take-str = (ch chan[str]) (r str) {
     r = ''
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
 }
 
@@ -77,6 +80,9 @@ consumer = () {
     v = [0]
     <- c3: {
         ok -> v = it
+
+        -> {
+        }
     }
     print(v.len())
     e0 = v[0]: {

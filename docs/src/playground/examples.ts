@@ -36,7 +36,7 @@ export interface Example {
 
 export interface Category {
   id: CategoryId;
-  i18n: Record<'zh-Hans' | 'en', {label: string; description: string}>;
+  i18n: Record<'zh-Hant' | 'zh-Hans' | 'en', {label: string; description: string}>;
 }
 
 /** Order in which categories appear in the Examples dropdown. */
@@ -44,6 +44,7 @@ export const CATEGORY_ORDER: Category[] = [
   {
     id: 'basics',
     i18n: {
+      'zh-Hant': {label: '基礎', description: '從第一行程序開始：變量、函數與輸出。'},
       'zh-Hans': {label: '基础', description: '从第一行程序开始：变量、函数与输出。'},
       en: {label: 'Basics', description: 'Start here: variables, functions and output.'},
     },
@@ -51,6 +52,7 @@ export const CATEGORY_ORDER: Category[] = [
   {
     id: 'control',
     i18n: {
+      'zh-Hant': {label: '流程控制', description: '條件、模式匹配與各種循環寫法。'},
       'zh-Hans': {label: '流程控制', description: '条件、模式匹配与各种循环写法。'},
       en: {label: 'Control flow', description: 'Guards, pattern matching and every loop form.'},
     },
@@ -58,6 +60,7 @@ export const CATEGORY_ORDER: Category[] = [
   {
     id: 'data',
     i18n: {
+      'zh-Hant': {label: '數據結構', description: '數組、切片、結構體與方法。'},
       'zh-Hans': {label: '数据结构', description: '数组、切片、结构体与方法。'},
       en: {label: 'Data structures', description: 'Arrays, slices, structs and methods.'},
     },
@@ -65,6 +68,7 @@ export const CATEGORY_ORDER: Category[] = [
   {
     id: 'types',
     i18n: {
+      'zh-Hant': {label: '標量類型', description: 'char、bool、f64 與 byte 的行爲。'},
       'zh-Hans': {label: '标量类型', description: 'char、bool、f64 与 byte 的行为。'},
       en: {label: 'Scalar types', description: 'How char, bool, f64 and byte behave.'},
     },
@@ -72,6 +76,7 @@ export const CATEGORY_ORDER: Category[] = [
   {
     id: 'std',
     i18n: {
+      'zh-Hant': {label: '標準庫', description: 'math 與 rand 模塊的常用函數。'},
       'zh-Hans': {label: '标准库', description: 'math 与 rand 模块的常用函数。'},
       en: {label: 'Standard library', description: 'Everyday math and rand module functions.'},
     },
@@ -79,6 +84,7 @@ export const CATEGORY_ORDER: Category[] = [
   {
     id: 'errors',
     i18n: {
+      'zh-Hant': {label: '錯誤處理', description: '用 option 值表達可能失敗的計算。'},
       'zh-Hans': {label: '错误处理', description: '用 option 值表达可能失败的计算。'},
       en: {label: 'Error handling', description: 'Model fallible computations with option values.'},
     },
@@ -91,6 +97,7 @@ export const examples: Example[] = [
     id: 'hello',
     category: 'basics',
     i18n: {
+      'zh-Hant': {label: 'Hello World', description: '頂層語句直接執行，無需 main 函數；並演示命名格式化字符串與浮點精度。'},
       'zh-Hans': {label: 'Hello World', description: '顶层语句直接执行，无需 main 函数；并演示命名格式化字符串与浮点精度。'},
       en: {label: 'Hello World', description: 'Top-level statements run without a main function; also shows named format strings and float precision.'},
     },
@@ -111,6 +118,7 @@ print('pi = {pi:.2f}')
     id: 'variables',
     category: 'basics',
     i18n: {
+      'zh-Hant': {label: '變量與類型推斷', description: '類型推斷、顯式類型標註，以及用逗號左側綁定多返回值。'},
       'zh-Hans': {label: '变量与类型推断', description: '类型推断、显式类型标注，以及用逗号左侧绑定多返回值。'},
       en: {label: 'Variables & inference', description: 'Type inference, explicit annotations, and binding multiple results with a comma-separated LHS.'},
     },
@@ -140,6 +148,7 @@ print('swap(5, 9) = {a}, {b}')
     id: 'functions',
     category: 'basics',
     i18n: {
+      'zh-Hant': {label: '函數與遞歸', description: '參數、具名結果參數、遞歸調用與多返回值函數。'},
       'zh-Hans': {label: '函数与递归', description: '参数、具名结果参数、递归调用与多返回值函数。'},
       en: {label: 'Functions & recursion', description: 'Parameters, named results, recursive calls and multi-result functions.'},
     },
@@ -181,6 +190,7 @@ print('min={lo} max={hi}')
     id: 'fib',
     category: 'basics',
     i18n: {
+      'zh-Hant': {label: '斐波那契', description: '同一函數的迭代版與遞歸版，對比兩種寫法。'},
       'zh-Hans': {label: '斐波那契', description: '同一函数的迭代版与递归版，对比两种写法。'},
       en: {label: 'Fibonacci', description: 'Iterative and recursive implementations of the same function side by side.'},
     },
@@ -217,6 +227,7 @@ print('fib-rec(10) = {rec10}')
     id: 'arithmetic',
     category: 'basics',
     i18n: {
+      'zh-Hant': {label: '算術與位運算', description: '整數五則運算與按位與；結果可直接在格式字符串中引用。'},
       'zh-Hans': {label: '算术与位运算', description: '整数五则运算与按位与；结果可直接在格式字符串中引用。'},
       en: {label: 'Arithmetic & bitwise', description: 'Integer arithmetic and bitwise AND; results can be referenced directly in format strings.'},
     },
@@ -245,6 +256,7 @@ print('12 & 10 = {band}')
     id: 'format',
     category: 'basics',
     i18n: {
+      'zh-Hant': {label: '格式化輸出', description: '{name} 命名插值與 {name:spec} 精度控制；無字段的字符串原樣輸出。'},
       'zh-Hans': {label: '格式化输出', description: '{name} 命名插值与 {name:spec} 精度控制；无字段的字符串原样输出。'},
       en: {label: 'Formatting', description: '{name} interpolation and {name:spec} precision; a literal without fields prints verbatim.'},
     },
@@ -264,6 +276,7 @@ print('plain text, no fields')
     id: 'strings',
     category: 'basics',
     i18n: {
+      'zh-Hant': {label: '字符串', description: "用 '-' 拼接字符串、len() 取長度、to-str() 轉換標量，以及按下標取字節。 "},
       'zh-Hans': {label: '字符串', description: "用 '-' 拼接字符串、len() 取长度、to-str() 转换标量，以及按下标取字节。 "},
       en: {label: 'Strings', description: "Concatenate with '-', measure with len(), convert with to-str(), and index a byte."},
     },
@@ -297,6 +310,7 @@ print('s[0] = {c}')
     id: 'guards',
     category: 'control',
     i18n: {
+      'zh-Hant': {label: '短路守衛', description: 'cond -> action 形式的短路條件語句，條件成立時才執行右側動作。'},
       'zh-Hans': {label: '短路守卫', description: 'cond -> action 形式的短路条件语句，条件成立时才执行右侧动作。'},
       en: {label: 'Short-circuit guards', description: 'The cond -> action form; the action runs only when the condition holds.'},
     },
@@ -317,6 +331,7 @@ print('done')
     id: 'match',
     category: 'control',
     i18n: {
+      'zh-Hant': {label: '模式匹配', description: 'subject: { ... } 形式的值匹配：區間模式、開區間與 || 多模式。'},
       'zh-Hans': {label: '模式匹配', description: 'subject: { ... } 形式的值匹配：区间模式、开区间与 || 多模式。'},
       en: {label: 'Match expression', description: 'subject: { ... } matching with interval patterns, open bounds and || alternatives.'},
     },
@@ -356,6 +371,7 @@ m: {
     id: 'fizzbuzz',
     category: 'control',
     i18n: {
+      'zh-Hant': {label: 'FizzBuzz', description: '在範圍循環裏用塊匹配替代鏈式 if，展示模式分支的寫法。'},
       'zh-Hans': {label: 'FizzBuzz', description: '在范围循环里用块匹配替代链式 if，展示模式分支的写法。'},
       en: {label: 'FizzBuzz', description: 'Block-match patterns inside a range loop, as an alternative to chained ifs.'},
     },
@@ -375,6 +391,7 @@ i <- [1..16): {
     id: 'range-loop',
     category: 'control',
     i18n: {
+      'zh-Hant': {label: '區間循環', description: '四種有界區間寫法，以及必須用 break 終止的無界區間 [0..)。'},
       'zh-Hans': {label: '区间循环', description: '四种有界区间写法，以及必须用 break 终止的无界区间 [0..)。'},
       en: {label: 'Range loops', description: 'Four bounded interval forms plus the unbounded [0..) form, which needs a break.'},
     },
@@ -404,6 +421,7 @@ t <- [0..): {
     id: 'while-loop',
     category: 'control',
     i18n: {
+      'zh-Hant': {label: '條件循環', description: '(cond) { ... } 形式的 while 循環，條件由循環體更新。'},
       'zh-Hans': {label: '条件循环', description: '(cond) { ... } 形式的 while 循环，条件由循环体更新。'},
       en: {label: 'Conditional while loop', description: 'The (cond) { ... } while form, where the body updates the condition.'},
     },
@@ -423,6 +441,7 @@ print('n = {n}')
     id: 'break-continue',
     category: 'control',
     i18n: {
+      'zh-Hant': {label: 'break / continue', description: 'continue 跳到本輪末尾（仍會執行遞增），break 直接離開循環。'},
       'zh-Hans': {label: 'break / continue', description: 'continue 跳到本轮末尾（仍会执行递增），break 直接离开循环。'},
       en: {label: 'break / continue', description: 'continue jumps to the end of the iteration (the increment still runs); break leaves the loop.'},
     },
@@ -442,6 +461,7 @@ print('done')
     id: 'arrays',
     category: 'data',
     i18n: {
+      'zh-Hant': {label: '定長數組', description: '[3]i64 定長數組的字面量、下標讀取與下標寫入。'},
       'zh-Hans': {label: '定长数组', description: '[3]i64 定长数组的字面量、下标读取与下标写入。'},
       en: {label: 'Fixed arrays', description: 'A [3]i64 literal with indexed reads and an indexed write.'},
     },
@@ -460,6 +480,7 @@ print('after a[1]=99 -> {z}')
     id: 'slices',
     category: 'data',
     i18n: {
+      'zh-Hant': {label: '動態切片', description: '[]T 切片、len/cap 屬性、下標賦值與 with-cap 預分配。'},
       'zh-Hans': {label: '动态切片', description: '[]T 切片、len/cap 属性、下标赋值与 with-cap 预分配。'},
       en: {label: 'Slices', description: '[]T literals, len/cap, index assignment and with-cap preallocation.'},
     },
@@ -483,6 +504,7 @@ print('cap(with-cap(4)) = {c}')
     id: 'struct',
     category: 'data',
     i18n: {
+      'zh-Hant': {label: '結構體', description: '結構體聲明、字面量構造，以及字段的讀寫。'},
       'zh-Hans': {label: '结构体', description: '结构体声明、字面量构造，以及字段的读写。'},
       en: {label: 'Structs', description: 'Struct declaration, literal construction and field reads/writes.'},
     },
@@ -514,6 +536,7 @@ print('Renamed to {n}')
     id: 'methods',
     category: 'data',
     i18n: {
+      'zh-Hant': {label: '方法', description: '把函數掛到結構體類型上；方法體內用 . 引用接收者。'},
       'zh-Hans': {label: '方法', description: '把函数挂到结构体类型上；方法体内用 . 引用接收者。'},
       en: {label: 'Methods', description: 'Attach functions to a struct type; . refers to the receiver inside the body.'},
     },
@@ -551,6 +574,7 @@ print('after 2 bumps = {v}')
     id: 'char',
     category: 'types',
     i18n: {
+      'zh-Hant': {label: '字符 char', description: "單引號字面量是 Unicode 碼點；print 會把它渲染成字符。 "},
       'zh-Hans': {label: '字符 char', description: "单引号字面量是 Unicode 码点；print 会把它渲染成字符。 "},
       en: {label: 'char literals', description: "Single-quoted literals are Unicode code points; print renders them as characters."},
     },
@@ -566,6 +590,7 @@ print('Z = {d}')
     id: 'bool',
     category: 'types',
     i18n: {
+      'zh-Hant': {label: '布爾 bool', description: '布爾字面量、比較運算、&& / || 與 !；輸出爲 true / false。'},
       'zh-Hans': {label: '布尔 bool', description: '布尔字面量、比较运算、&& / || 与 !；输出为 true / false。'},
       en: {label: 'Booleans', description: 'Boolean literals, comparisons, && / || and !; printed as true / false.'},
     },
@@ -588,6 +613,7 @@ print('both = {both}')
     id: 'floats',
     category: 'types',
     i18n: {
+      'zh-Hant': {label: '浮點 f64', description: '浮點精度格式化，以及 f64 / i64 上的 sqrt() 方法。'},
       'zh-Hans': {label: '浮点 f64', description: '浮点精度格式化，以及 f64 / i64 上的 sqrt() 方法。'},
       en: {label: 'Floating point', description: 'Precision formatting and the sqrt() method on f64 / i64.'},
     },
@@ -608,6 +634,7 @@ print('sqrt(16) = {isq}')
     id: 'bytes',
     category: 'types',
     i18n: {
+      'zh-Hant': {label: '字節 byte', description: '[]byte 字節切片；byte 是 0..255 的無符號值，算術按 2 補數迴繞。'},
       'zh-Hans': {label: '字节 byte', description: '[]byte 字节切片；byte 是 0..255 的无符号值，算术按 2 补数回绕。'},
       en: {label: 'byte slices', description: '[]byte literals; byte is an unsigned 0..255 value with wrapping two-complement arithmetic.'},
     },
@@ -626,6 +653,7 @@ print('b[0] = {x}')
     id: 'math',
     category: 'std',
     i18n: {
+      'zh-Hant': {label: 'math 模塊', description: 'math.max / math.min 是可變參數函數；sqrt 是數值類型上的方法。'},
       'zh-Hans': {label: 'math 模块', description: 'math.max / math.min 是可变参数函数；sqrt 是数值类型上的方法。'},
       en: {label: 'math module', description: 'math.max / math.min are variadic functions; sqrt is a method on numeric types.'},
     },
@@ -643,6 +671,7 @@ print('sqrt = {sq:.1f}')
     id: 'rand',
     category: 'std',
     i18n: {
+      'zh-Hant': {label: 'rand 隨機數', description: 'rand.rand(state) 返回 (新狀態, 隨機值)；用取模把結果約束到 [0..99]。'},
       'zh-Hans': {label: 'rand 随机数', description: 'rand.rand(state) 返回 (新状态, 随机值)；用取模把结果约束到 [0..99]。'},
       en: {label: 'rand module', description: 'rand.rand(state) returns (new-state, value); use modulo to bound the result to [0..99].'},
     },
@@ -666,6 +695,7 @@ print('rand[0..99] = {r99}')
     id: 'option-match',
     category: 'errors',
     i18n: {
+      'zh-Hant': {label: 'option 與 nil', description: '用 ?T 表示可能失敗的結果，並以 nil / 通配臂消費 option 值。'},
       'zh-Hans': {label: 'option 与 nil', description: '用 ?T 表示可能失败的结果，并以 nil / 通配臂消费 option 值。'},
       en: {label: 'option & nil', description: 'Use ?T for a fallible result and consume it with nil / catch-all match arms.'},
     },

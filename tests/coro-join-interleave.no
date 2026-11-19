@@ -4,8 +4,8 @@
 ; handle. Per-task frames (task.join_top) keep the two leaves independent.
 # /test/runner
 
-wakeA chan[i64] = with-cap(1)
-wakeB chan[i64] = with-cap(1)
+wake-a chan[i64] = with-cap(1)
+wake-b chan[i64] = with-cap(1)
 
 helper = (c chan[i64]) {
     c <- 1
@@ -20,6 +20,9 @@ a = (c chan[i64]) {
         }
         <- c: {
             ok -> { }
+
+            -> {
+            }
         }
     }
 }
@@ -32,13 +35,16 @@ b = (c chan[i64]) {
         }
         <- c: {
             ok -> { }
+
+            -> {
+            }
         }
     }
 }
 
 awy {
-    co a(wakeA)
-    co b(wakeB)
+    co a(wake-a)
+    co b(wake-b)
 }
 runner.eq(1, 1, 'two suspended groups did not corrupt each other')
 runner.summary()

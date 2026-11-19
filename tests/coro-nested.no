@@ -44,6 +44,9 @@ take1 = (ch chan[i64], def i64) (out i64) {
     out = def
     <- ch: {
         ok -> out = it
+
+        -> {
+        }
     }
 }
 

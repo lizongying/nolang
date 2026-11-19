@@ -28,6 +28,9 @@ done chan[i64] = with-cap(1)
 waiter = (s chan[i64], d chan[i64]) {
     <- s: {
         ok -> { }
+
+        -> {
+        }
     }
     d <- 7
     d.close()
@@ -56,6 +59,9 @@ awy {
 n i64 = 0
 <- done: {
     ok -> n = 1
+
+    -> {
+    }
 }
 runner.eq(n, 1, 'join-all: control-flow-arm co joined at group tail')
 runner.summary()

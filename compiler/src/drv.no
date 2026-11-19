@@ -623,6 +623,38 @@ drv.pkg-split = (s str) (r []str) {
     last.len-bytes() > 0 -> r.push(last)
 }
 
+; s111：把一個模組根層的整型常量（`CONST = 0`）收進全域 sg。
+;   根層 let 在 selfhost AST 中是 K-LET-STATEMENT（s0 = 常量名，kid0 = 推斷出的
+;   K-NAMED-TYPE 'i64'，kid1 = K-INTEGER-LITERAL）；只收整數字面量，函數內 let /
+;   非字面量初值不收（誠實門禁不變）。
+drv.sig-consts-add = (sg h2m-sigs, t ast, nk i64, base i64, mod str) {
+    m = 0
+    (m < nk) {
+        kid = ast.kid-at(t, base + m)
+        kd = ast.nd-at(t, kid)
+        kd.kind == asp.K-LET-STATEMENT && kd.nkid >= 2 -> {
+            lk = ast.kid-at(t, kd.kid0)
+            lnd = ast.nd-at(t, lk)
+            rk = ast.kid-at(t, kd.kid0 + 1)
+            rnd = ast.nd-at(t, rk)
+
+            ; 根層 let 的名字在 LetStatement.s0（kid0 是推斷出的 NamedType 'i64'，不是名字）
+            lnd.kind == asp.K-NAMED-TYPE && rnd.kind == asp.K-INTEGER-LITERAL -> {
+                cn = ast.str-at(t, kd.s0)
+                cv = ast.str-at(t, rnd.s0).to-i64()
+                cv: {
+                    ok -> h2m-sig-const-add(sg, mod - '.' - cn, it)
+
+                    -> {
+                    }
+                }
+            }
+        }
+
+        m = ix.inc(m)
+    }
+}
+
 ; 入口 .no 檔 → 整包全域簽名表（key = `mod.fn`，存於 sg.fname）。
 ;   單一 agg 共享整包結構體名→sid；單一 sg 收整包函式簽名。
 ;   path: 入口檔（相對 cwd = workspace 根）
@@ -635,7 +667,9 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
     files = drv.pkg-split(body)
 
     ; pass 1：全部模組 struct 名→sid 登記進共享 agg（跨模組結構體表統一）
+    ;   s111：同一遍順手收根層整型常量進 sg（key = mod.CONST）
     f <- files: {
+        mod = drv.mod-name(f)
         src = drv.read-mod(f)
         t = ast.make()
         p = ps.new(src)
@@ -651,6 +685,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
 
             k = ix.inc(k)
         }
+        drv.sig-consts-add(sg, t, nk, base, mod)
     }
 
     ; pass 2：函式簽名抽取，key = mod.fn
@@ -803,6 +838,9 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
             m = ix.inc(m)
         }
 
+        ; s111：同一遍收根層整型常量（mod.CONST），供 h2m-lower-expr / h2m-ty-of 認領
+        drv.sig-consts-add(sg, t, nk, base, mod)
+
         ; 切片 6 ②：h2m-func-sig 對真·多回傳會登記合成聚合結構體（'__mr__'<fn>），
         ;   欄位型別節點屬於【本模組】這棵 AST ⇒ 必須用同一個 t 就地解析（跨模組讀會解錯）。
         after2 = agg.stn.len()
@@ -935,6 +973,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
         cov = h2m-cov-join(agg.unsf, agg.unsk)
         print(cov)
         fs.write-file('/tmp/h2m-cov.log', cov.to-bytes())
+
         ; s108：叶子级第二通道——同格式逐条 "fn:LeafKindName:category"，前缀 LF: 与块级区分。
         ;   与块级日志逐条同序等长，可按下标对照「失败归到哪个块 / 最近进入哪个叶子构造」。
         leaf-cov = h2m-cov-join(agg.lfsf, agg.lfsk)
@@ -946,6 +985,14 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
             li = ix.inc(li)
         }
         fs.write-file('/tmp/h2m-leaf-cov.log', leaf-cov.to-bytes())
+
+        ; s109：失败标识符逐条（K-IDENTIFIER 三表未命中处）——"ID:fn:name"，旁路观测。
+        ii = 0
+        (ii < agg.idn.len()) {
+            idv = agg.idn[ii]
+            idv.len-bytes() > 0 -> print('ID:' - idv)
+            ii = ix.inc(ii)
+        }
     }
 }
 

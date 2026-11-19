@@ -72,24 +72,30 @@ eq(parseErrorLines('Build successful: /tmp/out.wasm\n\nrandom prose'),
 // ---------------------------------------------------------------------------
 
 console.log('\n=== i18n / metadata ===');
+eq(normalizeLocale('zh-Hant'), 'zh-Hant', 'zh-Hant locale');
+eq(normalizeLocale('zh-TW'), 'zh-Hant', 'zh-TW maps to zh-Hant');
 eq(normalizeLocale('zh-Hans'), 'zh-Hans', 'zh-Hans locale');
 eq(normalizeLocale('zh-CN'), 'zh-Hans', 'zh-CN maps to zh-Hans');
 eq(normalizeLocale('en'), 'en', 'en locale');
 eq(normalizeLocale(undefined), 'en', 'missing locale falls back to en');
 eq(formatMessage(STRINGS.en.timedOut, {ms: 8000}).includes('8000 ms'), true,
   'timedOut template interpolates ms');
+eq(formatMessage(STRINGS['zh-Hant'].firstCompileWaited, {s: 42}).includes('42'), true,
+  'firstCompileWaited template interpolates seconds (zh-Hant)');
 eq(formatMessage(STRINGS['zh-Hans'].firstCompileWaited, {s: 42}).includes('42'), true,
-  'firstCompileWaited template interpolates seconds (zh)');
+  'firstCompileWaited template interpolates seconds (zh-Hans)');
 eq(formatMessage(STRINGS.en.firstCompileWaited, {s: 42}).includes('42'), true,
   'firstCompileWaited template interpolates seconds (en)');
-eq(STRINGS['zh-Hans'].firstCompileHint.length > 0 && STRINGS.en.firstCompileHint.length > 0, true,
-  'first-compile hint is present in both locales');
+eq(STRINGS['zh-Hant'].firstCompileHint.length > 0 &&
+   STRINGS['zh-Hans'].firstCompileHint.length > 0 && STRINGS.en.firstCompileHint.length > 0, true,
+  'first-compile hint is present in all three locales');
 eq(examples.length >= 18 && examples.length <= 24, true, 'demo count within 18-24');
 eq(new Set(examples.map((e) => e.id)).size, examples.length, 'demo ids are unique');
 eq(CATEGORY_ORDER.every((c) => examples.some((e) => e.category === c.id)), true,
   'every category has at least one demo');
-eq(examples.every((e) => e.i18n['zh-Hans']?.description && e.i18n.en?.description), true,
-  'every demo has both locales');
+eq(examples.every((e) => e.i18n['zh-Hant']?.description &&
+   e.i18n['zh-Hans']?.description && e.i18n.en?.description), true,
+  'every demo has all three locales');
 
 // ---------------------------------------------------------------------------
 // Runner watchdog (fake Worker)

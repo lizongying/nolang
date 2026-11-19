@@ -22,6 +22,9 @@ trigger.close()
 waiter = (s chan[i64], d chan[i64]) {
     <- s: {
         ok -> { }
+
+        -> {
+        }
     }
     d <- 7
     d.close()

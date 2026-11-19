@@ -53,6 +53,9 @@ sum-await = (ch chan[i64], k i64) {
         v = 0
         <- one: {
             ok -> v = it
+
+            -> {
+            }
         }
         total = add(total, v)
         i = add(i, 1)
@@ -91,6 +94,9 @@ sum-mixed = (ch chan[i64], k i64) {
         v = 0
         <- one: {
             ok -> v = it
+
+            -> {
+            }
         }
         total = add(total, v)
         i = add(i, 1)
@@ -116,6 +122,9 @@ sum-nested = (ch chan[i64], outer i64, inner i64) {
             v = 0
             <- one: {
                 ok -> v = it
+
+                -> {
+                }
             }
             total = add(total, v)
             b = add(b, 1)
@@ -133,6 +142,9 @@ take1 = (ch chan[i64], def i64) (out i64) {
     out = def
     <- ch: {
         ok -> out = it
+
+        -> {
+        }
     }
 }
 

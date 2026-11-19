@@ -1,5 +1,5 @@
 /**
- * Playground UI strings (zh-Hans / en).
+ * Playground UI strings (zh-Hant / zh-Hans / en).
  *
  * These strings are deliberately kept in an explicit local map instead of
  * Docusaurus `translate()` + `i18n/en/code.json`: most of them are produced
@@ -11,14 +11,14 @@
  * through `normalizeLocale()`; anything that is not Chinese falls back to en.
  */
 
-export type Locale = 'zh-Hans' | 'en';
+export type Locale = 'zh-Hant' | 'zh-Hans' | 'en';
 
 /** Ids of the groups shown in the Examples dropdown. */
 export type CategoryId = 'basics' | 'control' | 'data' | 'types' | 'std' | 'errors';
 
-export const DEFAULT_LOCALE: Locale = 'zh-Hans';
+export const DEFAULT_LOCALE: Locale = 'zh-Hant';
 
-export const SUPPORTED_LOCALES: readonly Locale[] = ['zh-Hans', 'en'];
+export const SUPPORTED_LOCALES: readonly Locale[] = ['zh-Hant', 'zh-Hans', 'en'];
 
 /** Text attached to a demo or a demo category, one entry per supported locale. */
 export interface LocalizedExampleText {
@@ -31,7 +31,10 @@ export type ExampleI18n = Record<Locale, LocalizedExampleText>;
 
 /** Map a Docusaurus locale id onto the two locales the playground ships. */
 export function normalizeLocale(raw: string | undefined | null): Locale {
-  return raw && raw.toLowerCase().startsWith('zh') ? 'zh-Hans' : 'en';
+  const l = (raw ?? '').toLowerCase();
+  if (l === 'zh-hant' || l === 'zh-tw') return 'zh-Hant';
+  if (l.startsWith('zh')) return 'zh-Hans';
+  return 'en';
 }
 
 export interface PlaygroundStrings {
@@ -122,6 +125,45 @@ export const STRINGS: Record<Locale, PlaygroundStrings> = {
     initializingButton: '初始化中…',
     initFailed: '运行环境初始化失败：{reason}',
     retryInit: '重试',
+  },
+  'zh-Hant': {
+    run: '▶ 運行',
+    running: '運行中…',
+    format: '格式化',
+    examples: '示例',
+    status: '狀態',
+    editor: '編輯器',
+    output: '輸出',
+    stderr: '標準錯誤',
+    diagnostics: '診斷',
+    runErrors: '運行錯誤',
+    aboutExample: '示例說明',
+    outputPlaceholder: '（輸出將顯示在這裏）',
+    stderrPlaceholder: '（標準錯誤將顯示在這裏）',
+    noDiagnostics: '（暫無診斷）',
+    jumpHint: '點擊跳轉到對應位置',
+    dismiss: '關閉提示',
+    statusIdle: '空閒',
+    statusCompiling: '編譯中',
+    statusRunning: '運行中',
+    statusDone: '完成',
+    statusError: '錯誤',
+    wasmLoadFailed: '無法加載 {name}：{reason}。請刷新頁面重試；若持續失敗，說明站點構建的 WASM 資源缺失或已過期。',
+    lspInitFailed: '語言服務初始化失敗：{reason}。編輯器仍可運行，但補全、懸停與格式化不可用。',
+    timedOut: '運行超時（{ms} ms）：編譯或執行未能在此時間內完成，工作線程已重啓。',
+    workerCrashed: '工作線程異常退出：{reason}。已自動重建，請重新運行。',
+    formatFailed: '格式化失敗：{reason}',
+    lspUnavailable: '格式化：語言服務不可用。',
+    runnerUnavailable: '運行器尚未就緒，請稍後重試。',
+    compilerFailed: '編譯失敗，請查看標準錯誤輸出。',
+    runtimeFailed: '程序執行失敗，請查看標準錯誤輸出。',
+    firstCompileHint:
+      '首次編譯較慢：需要在瀏覽器中下載編譯器並構建標準庫，通常要 30～60 秒甚至更久。請耐心等待，之後的運行會快很多。',
+    firstCompileWaited: '已等待 {s} 秒…',
+    initializing: '正在初始化運行環境：加載編譯器（約 27 MB）中，請稍候…',
+    initializingButton: '初始化中…',
+    initFailed: '運行環境初始化失敗：{reason}',
+    retryInit: '重試',
   },
   en: {
     run: '▶ Run',

@@ -86,6 +86,9 @@ take1 = (ch chan[i64]) (r i64) {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
 }
 

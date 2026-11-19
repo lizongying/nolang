@@ -79,6 +79,9 @@ take-i64 = (ch chan[i64]) (r i64) {
     r = 0
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
 }
 
@@ -88,6 +91,9 @@ take-str = (ch chan[str]) (r str) {
     r = ''
     <- ch: {
         ok -> r = it
+
+        -> {
+        }
     }
 }
 

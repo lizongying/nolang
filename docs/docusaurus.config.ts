@@ -24,8 +24,8 @@ const config: Config = {
   clientModules: [require.resolve('./src/nolang-prism.js')],
 
   i18n: {
-    defaultLocale: 'zh-Hans',
-    locales: ['zh-Hans', 'en'],
+    defaultLocale: 'zh-Hant',
+    locales: ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'ru', 'fr', 'es', 'de', 'pt'],
   },
 
   presets: [

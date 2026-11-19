@@ -218,6 +218,10 @@ h2m-ctx {
     ;   ⚠️ 不覆盖、不替换块级 unsk/unsf；两表独立、同序、等长，可逐条对照「块 vs 叶子」。
     lfsf []str; 叶子级归因逐条：函数名（与 lfsk 同序）
     lfsk []i64; 叶子级归因逐条：c.cur-k 构造 K 码（与 lfsf 同序）
+    ; s109：失败标识符名字表（Identifier 逐条归因）。只记录 K-IDENTIFIER 三表未命中的失败：
+    ;   名字在 names/it/arm-local 都找不到 ⇒ 变量没被 h2m-scan 铺槽（真实 codegen 缺口，非纯 gate 连锁）。
+    ;   ⚠️ 与 lfsf/lfsk 独立、不等长（只在 2507 那个失败点 push），不动 s108 两通道。
+    idn []str; 失败标识符名（可含 fn 前缀，由 h2m-id-name 决定）
     ; s107：块上下文表（parallel arrays，index 0 = 函数体／根块的虚拟基准）
     ;   cur-k 只记「最近一次 h2m-set-cur-k 设的节点」，不是「包含本次失败的块」——嵌套构造降级时
     ;   内层块/上下文不断覆盖它，致日志里 BlockStatement/FunctionDefinition 成片出现、归因含混。
@@ -300,6 +304,7 @@ h2m-new = () (c h2m-ctx) {
         unsk: []
         lfsf: []
         lfsk: []
+        idn: []
         bks: []
         bka: []
         bkd: []
@@ -660,6 +665,27 @@ h2m-leaf-append = (c h2m-ctx, fnm str, k i64) {
     c.lfsf = nf
 }
 
+; s109：记一条失败标识符（K-IDENTIFIER 三表未命中处专用）。
+;   存 "fn:name" 串，供 drv 输出 ID: 逐条日志；from-scratch 重建（同 h2m-leaf-append 坑）。
+; ⚠️ 本函数不增 c.unsup、不碰 unsk/unsf/lfsk/lfsf——纯旁路观测，零降级语义影响。
+; c: 上下文；nm: 失败的标识符名字
+h2m-id-name = (c h2m-ctx, nm str) {
+    nf []str = []
+    i = 0
+    (i < c.idn.len()) {
+        fv = c.idn[i]: {
+            ok -> it
+
+            -> ''
+        }
+        nf.push(fv)
+
+        i = h2m-inc(i)
+    }
+    nf.push(c.cur-fn - ':' - nm)
+    c.idn = nf
+}
+
 ; s107：块上下文栈——压入根项（下标 0，K-PROGRAM 虚拟基准，深度 0，父项 -1）。
 ;   根项让「块栈空」不可能出现：h2m-mark 的归因基准永远可读，且未入块的模块级 mark 落 PROGRAM。
 ; c: 上下文
@@ -760,6 +786,7 @@ h2m-mark-here = (c h2m-ctx) {
     bi = h2m-bk-take(c)
     bk = h2m-bk-kind(c, bi)
     h2m-rec-append(c, c.cur-fn, bk)
+
     ; s108：叶子级第二通道——记 c.cur-k（h2m-lower-expr 入口设的节点 kind，叶子构造在此可见）
     h2m-leaf-append(c, c.cur-fn, c.cur-k)
 }
@@ -771,6 +798,7 @@ h2m-mark-here = (c h2m-ctx) {
 h2m-mark-field = (c h2m-ctx) {
     c.unsup = h2m-inc(c.unsup)
     h2m-rec-append(c, c.cur-fn, c.cur-k)
+
     ; s108：字段级路径 cur-k 即字段型别节点（如 SliceType），叶子通道与块级此条同码
     h2m-leaf-append(c, c.cur-fn, c.cur-k)
 }
@@ -793,6 +821,7 @@ h2m-mark-field-ty = (c h2m-ctx, t ast, tn i64) {
 h2m-mark-at = (c h2m-ctx, k i64) {
     c.unsup = h2m-inc(c.unsup)
     h2m-rec-append(c, c.cur-fn, k)
+
     ; s108：模块级无 h2m-set-cur-k 上下文，叶子通道退化为与块级同码 k（诚实：该路径无从取叶子）
     h2m-leaf-append(c, c.cur-fn, k)
 }
@@ -1812,6 +1841,15 @@ h2m-sigs {
     fbase []i64
     farg []i64
     femit []str
+    ; s111：整包跨模組常量表（key = `mod.CONST`，值為 i64 字面量）。
+    ;   由 drv 的整包前置 pass 從各模組根層 `CONST = <integer>` 收集；
+    ;   h2m-lower-expr 的 K-DOT-EXPRESSION 與 h2m-ty-of 同步查此表。
+    ckey []str
+    cval []i64
+    ; s112：同一份常量的短名（`CONST`，取 mod.CONST 的最後一段）。
+    ;   self-host 源碼在模組自己內部寫裸名，失敗時三表皆空；短名旁路只作 fallback，
+    ;   優先級仍在臂局部 / it / 局部名之後，不遮蔽局部變量。
+    csname []str
 }
 
 ; 新建签名表
@@ -1824,6 +1862,9 @@ h2m-sigs-new = () (s h2m-sigs) {
         fbase: []
         farg: []
         femit: []
+        ckey: []
+        cval: []
+        csname: []
     }
 }
 
@@ -1863,6 +1904,45 @@ h2m-sig-find = (s h2m-sigs, name str) (i i64) {
     j = 0
     (j < s.fname.len() && i < 0) {
         nm = s.fname[j]
+        nm == name -> i = j
+
+        j = h2m-inc(j)
+    }
+}
+
+; s111：登记一个跨模组整型常量（key = `mod.CONST`）
+h2m-sig-const-add = (s h2m-sigs, name str, val i64) {
+    s.ckey.push(name)
+    s.cval.push(val)
+
+    ; s112：短名 = 第一個 '.' 之後的部分（模組名本身不含 '.'，常量名也不含）
+    short = name
+    p = name.index('.')
+    p >= 0 -> {
+        p = h2m-inc(p)
+        short = name.slice-bytes(p, name.len-bytes())
+    }
+    s.csname.push(short)
+}
+
+; s111：按 `mod.CONST` 查常量下标；-1 = 未登记
+h2m-sig-const-find = (s h2m-sigs, name str) (i i64) {
+    i = -1
+    j = 0
+    (j < s.ckey.len() && i < 0) {
+        nm = s.ckey[j]
+        nm == name -> i = j
+
+        j = h2m-inc(j)
+    }
+}
+
+; s112：按裸名（不含模組前綴）查常量下标；-1 = 未登记
+h2m-sig-const-find-short = (s h2m-sigs, name str) (i i64) {
+    i = -1
+    j = 0
+    (j < s.csname.len() && i < 0) {
+        nm = s.csname[j]
         nm == name -> i = j
 
         j = h2m-inc(j)
@@ -2053,6 +2133,13 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
             ; s65：`it` 不进槽表——它的值 = 值匹配臂主体（s63 门禁限 i64 槽），槽宽直推 I64；
             ;   裸链／match 外的 `it` 在这里同样推成 I64，但降级侧 var-read/write 栈空即计 unsup，门禁不放松
             i < 0 && nm == 'it' -> code = TY-I64
+
+            ; s112：裸常量（TY-I64 / OP-ADD / B-LF ...）——模組自己在函式內引用，
+            ;   三表未命中時才查短名旁路；優先級不變（局部名永遠先命中）。
+            i < 0 && nm != 'it' -> {
+                bci = h2m-sig-const-find-short(sg, nm)
+                bci >= 0 -> code = TY-I64
+            }
         }
         d.kind == asp.K-PREFIX-EXPRESSION -> {
             k = ast.kid-at(t, d.kid0)
@@ -2071,6 +2158,42 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
 
                             -> -1
                         }
+                    }
+                }
+                ; s110：跨模組點號呼叫 mod.fn(x)——self-host 源碼的呼叫主力（ast.make() / drv.pkg-split() …）。
+                ;   舊版只認純 IDENTIFIER callee ⇒ 點號呼叫的回值型別推不出 (-1) ⇒ let 槽不綁名 ⇒
+                ;   體內所有引用該變數的 K-IDENTIFIER 連鎖失敗（s109 的 1940 條局部名主因）。
+                ;   拼法與降級側 h2m-lower-expr 的跨模組臂（2939 行 base.s0 - '.' - mname）逐字一致。
+                cd.kind == asp.K-DOT-EXPRESSION -> {
+                    bk = ast.kid-at(t, cd.kid0)
+                    bd = ast.nd-at(t, bk)
+                    bd.kind == asp.K-IDENTIFIER -> {
+                        bn = ast.str-at(t, bd.s0)
+                        fn = ast.str-at(t, cd.s0)
+                        dn = bn - '.' - fn
+                        di = h2m-sig-find(sg, dn)
+                        di >= 0 -> {
+                            code = sg.fret[di]: {
+                                ok -> it
+
+                                -> -1
+                            }
+                        }
+                    }
+
+                    ; s113：接收者是【值】的方法呼叫不走簽名表（lower-expr 的內建方法臂）——
+                    ;   舊版只認 mod.fn ⇒ `n = c.stn.len()` / `n = s.len-bytes()` 的 RHS 回 -1 ⇒
+                    ;   let 槽不綁名 ⇒ 後續每次讀 n/i/b 都記 ID 失敗。
+                    ;   只覆蓋 lower-expr 已支援的三個方法，dest 與該臂逐字同口徑；
+                    ;   其餘（byte/index/to-i64/…）仍回 -1，門禁不放寬。
+                    code == -1 -> {
+                        mt = h2m-ty-of(t, sg, l, agg, bk)
+                        mf = ast.str-at(t, cd.s0)
+                        mt == TY-VEC && mf == 'len' -> code = TY-I64
+                        mt == TY-VECSTR && mf == 'len' -> code = TY-I64
+                        mt == TY-STR && mf == 'len-bytes' -> code = TY-I64
+                        mt == TY-VEC && mf == 'push' -> code = TY-VEC
+                        mt == TY-VECSTR && mf == 'push' -> code = TY-VECSTR
                     }
                 }
             }
@@ -2103,6 +2226,25 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                 rfi >= 0 -> code = h2m-struct-field-ty(agg, rsid, rfi)
                 rfi < 0 -> code = -1
             }
+
+            ; s111：模組常量 mod.CONST（tok.EOF / asp.K-* ...）不是結構體欄位，
+            ;   先查整包常量表；命中即 i64 寬（與 lower-expr 的 OP-CONST TY-I64 同口徑）。
+            ;   未命中保持上面結構體欄位推導的結果，門禁不放寬。
+            rkd.kind == asp.K-IDENTIFIER -> {
+                cmn = ast.str-at(t, rkd.s0)
+                cf = ast.str-at(t, d.s0)
+                ci = h2m-sig-const-find(sg, cmn - '.' - cf)
+                ci >= 0 -> code = TY-I64
+            }
+        }
+
+        ; s113b：索引讀取回值型別——與 lower-expr 的 OP-VECGET / OP-VECGETSTR 兩臂同口徑：
+        ;   []i64[k] ⇒ TY-I64、[]str[k] ⇒ TY-STR（回借用 str 視圖）；其餘基底仍 -1（門禁不變）。
+        d.kind == asp.K-INDEX-EXPRESSION -> {
+            ib = ast.kid-at(t, d.kid0)
+            ity = h2m-ty-of(t, sg, l, agg, ib)
+            ity == TY-VEC -> code = TY-I64
+            ity == TY-VECSTR -> code = TY-STR
         }
     }
 }
@@ -2501,7 +2643,28 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 }
             }
             aln-hit == 0 && (it-on == 1 || vi >= 0) -> v = h2m-var-read(c, nm)
-            aln-hit == 0 && it-on == 0 && vi < 0 -> h2m-mark(c)
+            aln-hit == 0 && it-on == 0 && vi < 0 -> {
+
+                ; s112：裸常量最後一條旁路——局部名三表皆空才認領，
+                ;   命中發 OP-CONST(TY-I64)；未命中才記 unsup / ID（門禁不放寬）。
+                bci = h2m-sig-const-find-short(sg, nm)
+                bci >= 0 -> {
+                    bcv = sg.cval[bci]: {
+                        ok -> it
+
+                        -> 0
+                    }
+                    bcid = h2m-alloc(c, TY-I64)
+                    h2m-emit(c, OP-CONST, bcid, bcv, 0, '', TY-I64)
+                    v = bcid
+                }
+                bci < 0 -> {
+                    h2m-mark(c)
+
+                    ; s109：逐条归因——记下未命中的标识符名（旁路观测，不改降级语义）
+                    h2m-id-name(c, nm)
+                }
+            }
         }
 
         d.kind == asp.K-GROUPED-EXPRESSION -> {
@@ -3186,21 +3349,43 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
         d.kind == asp.K-DOT-EXPRESSION -> {
             fname = ast.str-at(t, d.s0)
             recv = ast.kid-at(t, d.kid0)
-            sv = h2m-lower-expr(t, c, sg, recv)
-            sv > 0 -> {
-                stcode = h2m-vty-at(c, sv)
 
-                #{overflow=wrap}
-                sid = stcode - TY-STRUCT-BASE
-                (sid < 0 || sid >= c.stn.len()) -> h2m-mark(c)
-                sid >= 0 && sid < c.stn.len() -> {
-                    fi = h2m-struct-field-idx(c, sid, fname)
-                    fi < 0 -> h2m-mark(c)
-                    fi >= 0 -> {
-                        fty = h2m-struct-field-ty(c, sid, fi)
-                        fv = h2m-alloc(c, fty)
-                        h2m-emit(c, OP-STRUCT-GET, fv, sv, fi, '', fty)
-                        v = fv
+            ; s111：跨模組常量（`mod.CONST`）先認領——模組名不是值，舊路徑先降接收者
+            ;   會讓 K-IDENTIFIER 三表全部落空（s109 的 tok/asp 兩族高頻失敗）。
+            ;   常數由 drv 整包前置 pass 從根層 `CONST = <integer>` 收進 sg；
+            ;   命中即發 OP-CONST(TY-I64)，不進 struct 欄位路徑。
+            rnd = ast.nd-at(t, recv)
+            ckey = ''
+            rnd.kind == asp.K-IDENTIFIER -> ckey = ast.str-at(t, rnd.s0) - '.' - fname
+            ci = h2m-sig-const-find(sg, ckey)
+            ci >= 0 -> {
+                cv = sg.cval[ci]: {
+                    ok -> it
+
+                    -> 0
+                }
+                cid = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, cid, cv, 0, '', TY-I64)
+                v = cid
+            }
+
+            ci < 0 -> {
+                sv = h2m-lower-expr(t, c, sg, recv)
+                sv > 0 -> {
+                    stcode = h2m-vty-at(c, sv)
+
+                    #{overflow=wrap}
+                    sid = stcode - TY-STRUCT-BASE
+                    (sid < 0 || sid >= c.stn.len()) -> h2m-mark(c)
+                    sid >= 0 && sid < c.stn.len() -> {
+                        fi = h2m-struct-field-idx(c, sid, fname)
+                        fi < 0 -> h2m-mark(c)
+                        fi >= 0 -> {
+                            fty = h2m-struct-field-ty(c, sid, fi)
+                            fv = h2m-alloc(c, fty)
+                            h2m-emit(c, OP-STRUCT-GET, fv, sv, fi, '', fty)
+                            v = fv
+                        }
                     }
                 }
             }
@@ -4941,6 +5126,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         agg.unsk.push(ukd)
         qi = h2m-inc(qi)
     }
+
     ; s108：叶子级第二通道同口径并回模块级（与块级逐条同序等长）
     li = 0
     (li < c.lfsf.len()) {
@@ -4957,6 +5143,17 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         agg.lfsf.push(lfn)
         agg.lfsk.push(lkd)
         li = h2m-inc(li)
+    }
+    ; s109：失败标识符名并回模块级（旁路通道，与块级/叶子级记录无关）
+    ii = 0
+    (ii < c.idn.len()) {
+        idv = c.idn[ii]: {
+            ok -> it
+
+            -> ''
+        }
+        agg.idn.push(idv)
+        ii = h2m-inc(ii)
     }
     fnok = 1
 

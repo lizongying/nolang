@@ -35,6 +35,9 @@ coro-capture = () {
     r = 0
     <- out: {
         ok -> r = it
+
+        -> {
+        }
     }
     print(r); expect: 14
 }

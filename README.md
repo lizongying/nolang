@@ -1,5 +1,7 @@
 # Nolang
 
+[繁體中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
+
 Nolang 是一種內存安全、性能強勁、語法極簡的系統編程語言。
 
 ## 核心特性
