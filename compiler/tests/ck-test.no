@@ -1,12 +1,3 @@
-; ck-test.no — compiler/src/ck.no（M3-c s13 checker 骨架首族 `'X' is not defined`）單測
-;
-; 執行： ./bin/no run compiler/tests/ck-test.no
-;
-; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    exit(1)，否則差分 harness 會把失敗讀成通過。
-; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
-;
-; ── 期望值從哪來 ──────────────────────────────────────────────────
 ; 全部取自 oracle `no vet` 實測（./bin/no vet 於同形最小檔逐檔核對，2026-10-28）：
 ;   門控帶提示（cancelled）/門控無提示（from-bits）/完全未知（wuzzle）/
 ;   沉默（max）/dot 整子樹跳過/本地遮蔽/'_' 前綴/ALL-CAPS/自模組裸調。
@@ -22,6 +13,17 @@
 # /compiler/src/tok
 # /compiler/src/ps
 # /compiler/src/ck
+
+; ck-test.no — compiler/src/ck.no（M3-c s13 checker 骨架首族 `'X' is not defined`）單測
+;
+; 執行： ./bin/no run compiler/tests/ck-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; 期望值從哪來
+...
 
 ; 源碼串 ⇒ 診斷 vec（path 固定中性 '/tmp/t.no' ⇒ curModule=''）
 ; ⚠️ ps.parse 返回值必須捕獲後顯式丟棄（裸語句調用觸發 bug #85 NoVal，實測）

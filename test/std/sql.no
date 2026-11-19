@@ -18,7 +18,8 @@
 
 # /test/runner
 
-; ── 假驅動：db ──
+; 假驅動：db
+...
 
 fake-db {
     opened i64
@@ -50,7 +51,8 @@ fake-db.prepare = (statement str) (s fake-stmt) {
     s.bound = 0
 }
 
-; ── 假驅動：rows ──
+; 假驅動：rows
+...
 
 fake-rows {
     cursor i64
@@ -90,7 +92,8 @@ fake-rows.close = () (ok bool) {
     ok = true
 }
 
-; ── 假驅動：stmt ──
+; 假驅動：stmt
+...
 
 fake-stmt {
     bound i64
@@ -128,7 +131,8 @@ fake-stmt.close = () (ok bool) {
     ok = true
 }
 
-; ── 1. result：零值、可寫、實例獨立 ──
+; 1. result：零值、可寫、實例獨立
+...
 
 t-result = () {
     r sql.result
@@ -149,7 +153,8 @@ t-result = () {
     runner.eq(b.last-id, 2, 'result: 實例 b 獨立')
 }
 
-; ── 2. db 契約：6 個方法都實作得出，且行為符合宣告 ──
+; 2. db 契約：6 個方法都實作得出，且行為符合宣告
+...
 
 t-db = () {
     d = fake-db{}
@@ -171,7 +176,8 @@ t-db = () {
     runner.is-true(d.close(), 'db.close: 回 true')
 }
 
-; ── 3. rows 契約：next 走到底、三種 scan、close ──
+; 3. rows 契約：next 走到底、三種 scan、close
+...
 
 t-rows = () {
     rs = fake-rows{}
@@ -185,7 +191,8 @@ t-rows = () {
     runner.is-true(rs.close(), 'rows.close: 回 true')
 }
 
-; ── 4. stmt 契約：三種 bind、exec / query、close ──
+; 4. stmt 契約：三種 bind、exec / query、close
+...
 
 t-stmt = () {
     st = fake-stmt{}
@@ -202,7 +209,8 @@ t-stmt = () {
     runner.is-true(st.close(), 'stmt.close: 回 true')
 }
 
-; ── 5. 介面合併 enter/leave 後，離開作用域會自動 leave ──
+; 5. 介面合併 enter/leave 後，離開作用域會自動 leave
+...
 
 t-db-leave = () {
     {

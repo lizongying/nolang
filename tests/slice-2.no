@@ -44,7 +44,9 @@ res = foo(x)
 ; 來源：vec-slice.no, nested-vec-test.no
 ; 保留錨點：vec.no（基名）；vec-more.no（既有合併檔：reverse/elem/assign/u32/len/
 ;            push-clear/to-str 等，另行保留，regress-vec-to-str.sh 依賴它）
-; ── 來自 vec-slice.no ──
+; 來自 vec-slice.no
+...
+
 ; vec-slice test (slice 區間語法全覆蓋)
 ...
 a = [10, 20, 30, 40, 50]
@@ -102,7 +104,9 @@ print(j[0])
 
 print('---')
 
-; ── 來自 nested-vec-test.no ──
+; 來自 nested-vec-test.no
+...
+
 ; 巢狀 vec：b 推入 make-vec2 後再拷給 b0，改 b0 內層元素不得影響原始 a[0]
 make-vec2 = (a i64, b i64) (v []i64) {
     v.push(a)

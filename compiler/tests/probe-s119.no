@@ -1,0 +1,34 @@
+; probe-s119.no — 臨時：vmode 變體臂（ok/nil/err ⇒ 常量 0）降級現狀
+; ⚠️ 臨時探針，追記前刪除。
+
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+# /compiler/src/drv
+# /compiler/src/ix
+
+out = ''
+i = 1
+(i < 10) {
+    fn = 'compiler/tests/t8/f' - i.to-str() - '.no'
+    src = fs.read-file(fn)
+    ll = drv.build-ll(src)
+    okk = ll.contains('define').to-str()
+    out = out - 'f' - i.to-str() - ' len=' - ll.len-bytes().to-str() - ' define=' - okk - '\n'
+    i = ix.inc(i)
+}
+
+fs.write-file('/tmp/s119-t8.txt', out.to-bytes())
+print('done')

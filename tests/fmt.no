@@ -47,7 +47,8 @@ sign = fixed: {
 ;   fmt-field-chain / print-eprint-to-str(含模組級 struct 型別宣告)、
 ;   format-concat-fold / format-plain(頂層未加括號的 `cond -> / -> else`，包進函式會破解析)。
 ;
-; ── from tests/fmt-helpers.no ──
+; from tests/fmt-helpers.no
+...
 ...
 fmh-run = () {
 
@@ -195,13 +196,15 @@ fmh-run = () {
     print('[{s}]')
 }
 
-; ── from tests/fmt-spec.no ──
+; from tests/fmt-spec.no
+...
 fspec-run = () {
     pi = 3.14159
     print('pi = {pi:.2f}')
 }
 
-; ── from tests/named-format.no ──
+; from tests/named-format.no
+...
 nf-run = () {
 
     ; named-format.no — 測試具名字串格式 {name:spec}
@@ -277,7 +280,8 @@ fmh-run()
 fspec-run()
 nf-run()
 
-; ── from format-vso.no — vso.tmp 型別不一致編譯探針（原檔只定義 test-fmt 不呼叫＝無輸出）──
+; from format-vso.no — vso.tmp 型別不一致編譯探針（原檔只定義 test-fmt 不呼叫＝無輸出）
+...
 fmvso-test-fmt = () {
     size = 42
     size-str = format('{size:8d}')

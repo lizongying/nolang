@@ -20,7 +20,8 @@
 ;
 ; ⚠️ 定義順序：str-eq 必須在 keyword **之前**（本 repo 的呼叫一律向後引用）。
 
-; ── 常量（ILLEGAL=0 … ELLIPSIS3=92）──
+; 常量（ILLEGAL=0 … ELLIPSIS3=92）
+...
 ILLEGAL = 0
 EOF = 1
 NEWLINE = 2
@@ -119,7 +120,9 @@ TILDE = 91
 ;   混用會讓 `[0...count)` 這種誤寫靜默變成合法範圍（Go 側刻意收成單 token 就是為了擋它）。
 ELLIPSIS3 = 92
 
-; ── str-eq：逐位元組比較 ──
+; str-eq：逐位元組比較
+...
+
 ; ⚠️ 必須先比 len-bytes()，否則前綴相同的短字串會誤判相等。
 ;    注意 str.len() 回的是【碼點數】，不是位元組數。
 ; a: 運算元
@@ -152,7 +155,9 @@ str-eq = (a str, b str) (yes bool) {
     yes = true
 }
 
-; ── name：code -> 識別符名（L1 差分實際比較的就是它）──
+; name：code -> 識別符名（L1 差分實際比較的就是它）
+...
+
 ; c: 運算元
 ; r: 結果字串
 name = (c i64) (r str) {
@@ -347,7 +352,9 @@ name = (c i64) (r str) {
     }
 }
 
-; ── keyword：識別符 -> 關鍵字 code（照抄 src/lexer/token.go 的 lookupKeyword）──
+; keyword：識別符 -> 關鍵字 code（照抄 src/lexer/token.go 的 lookupKeyword）
+...
+
 ; 回 ILLEGAL(0) 表示不是關鍵字，呼叫端應視為 IDENT。
 ; 刻意用值匹配而非 map：SHS 禁「map 欄位 + 方法」。別名：ctn⇒CONTINUE、brk⇒BREAK、rtn⇒RETURN。
 ; s: 字串

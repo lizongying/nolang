@@ -12,7 +12,8 @@
 # /compiler/src/mir
 # /compiler/src/cg-rc
 
-; ── func three() -> 3 ───────────────────────────────────
+; func three() -> 3
+...
 test-alu = () {
 
     ; 12 条 ALU op 各钉一条**指令文本**：v<dst> ← 运算(a, b)。
@@ -152,7 +153,9 @@ test-alu = () {
     runner.eq(s.contains('%c13 = icmp sge i64 %v1, %v2'), 1, 'cmpge icmp')
 }
 
-; ── 無符號 ALU 家族（s36）：SHRU/DIVU/MODU + CMP*U ────────────
+; 無符號 ALU 家族（s36）：SHRU/DIVU/MODU + CMP*U
+...
+
 ;   同時驗證 TY-U64 走 cg-ty-name/cg-val-prefix 默認臂 ⇒ i64/%v（形參/返回值都是 i64 %v1）。
 test-alu-unsigned = () {
     ops []i64 = []
@@ -745,7 +748,9 @@ test-opt-order-f64 = () {
     runner.eq(s.contains('icmp slt'), 0, 'no icmp leak')
 }
 
-; ── func sc(o ?i64, n i64) { o < n / n <= o / o > n / n >= o } ──
+; func sc(o ?i64, n i64) { o < n / n <= o / o > n / n >= o }
+...
+
 ; 证明 option 与纯量的排序降级（s53）：方向由 vty 判定，只提 option 侧 slot[0] 载荷与纯量 icmp——无 tag 项无 and；
 ; 镜像 Go emitCmp 的 aOpt/bOpt 分支：提取后走普通比较，操作数次序不变、谓词不翻转。
 test-opt-order-sc = () {
@@ -846,7 +851,9 @@ test-opt-order-sc = () {
     runner.eq(s.contains('bitcast'), 0, 'no f64 wing')
 }
 
-; ── func scf(f f64) { some(f) < f / f <= some(f) / some(f) > f / f >= some(f) } ──
+; func scf(f f64) { some(f) < f / f <= some(f) / some(f) > f / f >= some(f) }
+...
+
 ; 证明 option 与 f64 纯量的排序降级（s54）：vty 双護欄判向，载荷 bitcast→double 后与 %fd 纯量 fcmp olt/ole/ogt/oge——无 tag 项无 and、谓词不翻转；
 ; 镜像 Go emitCmp aOpt/bOpt 提取后落 double 翼（codegen.go:6686-6714）；纯量侧非 TY-F64 时兩護欄不发。
 test-opt-order-scf = () {
@@ -1177,7 +1184,8 @@ test-const-ret = () {
     runner.eq(s.contains('ret i64 %v1'), 1, 'ret v1')
 }
 
-; ── func dbl(x) -> x + x ────────────────────────────────
+; func dbl(x) -> x + x
+...
 test-arith = () {
     ops []i64 = []
     dsts []i64 = []
@@ -1200,7 +1208,8 @@ test-arith = () {
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
 }
 
-; ── func caller() -> dbl(2) ─────────────────────────────
+; func caller() -> dbl(2)
+...
 test-call = () {
     ops []i64 = []
     dsts []i64 = []
@@ -1232,7 +1241,9 @@ test-call = () {
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
 }
 
-; ── 双参函数 + 双参调用（M4-c 多参 CALL）──────────────────
+; 双参函数 + 双参调用（M4-c 多参 CALL）
+...
+
 ; add2(a,b) = a+b；caller2() = add2(3,4)
 test-call2 = () {
     ops []i64 = []
@@ -1289,7 +1300,9 @@ test-call2 = () {
     runner.eq(t.contains('ret i64 %v3'), 1, 'ret v3')
 }
 
-; ── s64：侧池解耦连续 id（基址非 0 ＋ 池下标≠值 id ＋ str 散布）──
+; s64：侧池解耦连续 id（基址非 0 ＋ 池下标≠值 id ＋ str 散布）
+...
+
 ; 旧契约下 xa 就是首个实参值 id 且要求连续；s64 起 xa = 池内基址下标，
 ; 实参值 id 可任意散布（嵌套调用入池后外层基址落在内层池项之后）。
 ; caller3() = add2(v5, v9)：池 = [1, 3, 5, 9]，基址 2 ⇒ 读 %v5、%v9；
@@ -1365,7 +1378,8 @@ test-call-scatter = () {
     runner.eq(t.contains('%v8 = call i64 @sf(i64 %v3, %str-long %sv7)'), 1, 'scatter str arg')
 }
 
-; ── func let-add() { x = 3; return x + x } ─────────────
+; func let-add() { x = 3; return x + x }
+...
 test-let = () {
     ops []i64 = []
     dsts []i64 = []
@@ -1409,7 +1423,8 @@ test-let = () {
     runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
 }
 
-; ── func lt10(x) { x < 10 ? 1 : 2 }（多基本块）──────────
+; func lt10(x) { x < 10 ? 1 : 2 }（多基本块）
+...
 test-cfg = () {
     blks []i64 = []
     ops []i64 = []
@@ -1483,7 +1498,9 @@ test-cfg = () {
     runner.eq(s.contains('ret i64 %v5'), 1, 'else ret')
 }
 
-; ── func sum4() { s=0; i=0; while i<4 { s+=i; i+=1 }; return s } ──
+; func sum4() { s=0; i=0; while i<4 { s+=i; i+=1 }; return s }
+...
+
 ; 证明 CFG 支持回边（bb2 的 br 跳回 bb1）。
 test-loop = () {
     blks []i64 = []
@@ -1640,7 +1657,9 @@ test-loop = () {
     runner.eq(s.contains('ret i64 %v14'), 1, 'ret s')
 }
 
-; ── func slen() -> 'abc'.len（首个非 i64 型别：%str-long）──
+; func slen() -> 'abc'.len（首个非 i64 型别：%str-long）
+...
+
 ; 证明：全局字面量 @.s0 + insertvalue 构造 %str-long + extractvalue 取 len。
 test-string = () {
     blks []i64 = []
@@ -1683,7 +1702,9 @@ test-string = () {
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
 }
 
-; ── func cat() -> ('ab' + 'cd').len（堆拼接 + RC 头）──────
+; func cat() -> ('ab' + 'cd').len（堆拼接 + RC 头）
+...
+
 ; 证明：@str_concat 调用形状；结果仍是 %str-long（住在 %sv 命名空间）。
 test-strcat = () {
     blks []i64 = []
@@ -1740,7 +1761,9 @@ test-strcat = () {
     runner.eq(s.contains('ret i64 %v4'), 1, 'ret v4')
 }
 
-; ── func optstr() -> (some('ab'+'cd') 取出 str).len；option 内联 str 载荷 ──
+; func optstr() -> (some('ab'+'cd') 取出 str).len；option 内联 str 载荷
+...
+
 ; 证明 option 的 str 载荷读写（B8，s28；B28 後 %str-long 為 16B，仍內聯進 24B 槽前 16B），
 ; 逐字段 extractvalue + data 指针 bitcast 互转（槽是 i64 数组、字段 2 是 i8*，必須 bitcast）；
 ; 选项取得所有权须紧接 RETAIN（rc=2），scope 退出释放其份额 + 原拥有者份额（rc=0）。
@@ -1899,7 +1922,9 @@ test-option-str = () {
     runner.eq(bad.contains('under-count'), 1, 'under-count message')
 }
 
-; ── s40（§11 B8）：option 的 vec 载荷（?[]i64）内联读写 ──
+; s40（§11 B8）：option 的 vec 载荷（?[]i64）内联读写
+...
+
 ; 证明 %vec（{i64,i64,i64}，dat 已是整数指针）与 %option 的 [3 x i64] 槽 1:1 逐字段互转，
 ;   且**本函数体内无 ptrtoint**（vec 载荷不需指针<->整数转换，较 str 载荷更简单）。
 ; arena：v1=CONST 42（元素）/ v2=CONST 0（索引）/ vc3=VECNEW / vc4=VECPUSH(vc3,v1)
@@ -2025,7 +2050,9 @@ test-option-vec = () {
     runner.eq(s.contains('%vc6 = insertvalue %vec %vb15, i64 %vo25, 2'), 1, 'optgetvec rebuild dat field')
 }
 
-; ── func pick(c) { s='ab'; c ? s='abcdef'; return s.len } ──
+; func pick(c) { s='ab'; c ? s='abcdef'; return s.len }
+...
+
 ; 证明 %str-long 跨基本块（bb1 → bb2）走 alloca/store/load 而非 PHI。
 test-str-slot = () {
     blks []i64 = []
@@ -2109,7 +2136,9 @@ test-str-slot = () {
     runner.eq(s.contains('br i1 %c3, label %bb1, label %bb2'), 1, 'condbr')
 }
 
-; ── func strpick() { return ('ab' == 'ab') 与 ('ab' != 'cd') } ──
+; func strpick() { return ('ab' == 'ab') 与 ('ab' != 'cd') }
+...
+
 ; 证明 str 相等走运行时 @str_eq 调用（非 icmp %str-long）；STNEQ 额外 xor true 取反（s42）。
 test-str-eq = () {
     blks []i64 = []
@@ -2379,7 +2408,9 @@ test-opt-eq-str = () {
     runner.eq(s.contains('%v6 = zext i1 %on5 to i64'), 1, 'optneqstr zext')
 }
 
-; ── func optf64(a f64) f64 { o = some(a); return o.get() } ──
+; func optf64(a f64) f64 { o = some(a); return o.get() }
+...
+
 ; 证明 ?f64 载荷内联读写：OPTMKF64 先 bitcast double→i64 写 slot[0]，OPTGETF64 从 slot[0] bitcast i64→double 读回（s46）。
 ; 往返经 CMPEQ 分派为 fcmp oeq double（两侧皆 %fd），验证读出值与原值同为一个 double。
 test-opt-f64 = () {
@@ -2450,7 +2481,9 @@ test-opt-f64 = () {
     runner.eq(s.contains('%c2 = fcmp oeq double %fd3, %fd1'), 1, 'optf64 roundtrip fcmp')
 }
 
-; ── func eqfd(a f64, b f64) { some(a) == some(b) / some(a) != some(b) } ──
+; func eqfd(a f64, b f64) { some(a) == some(b) / some(a) != some(b) }
+...
+
 ; 证明 option 的 f64（double）载荷相等降级：取 slot[0]（i64）→ bitcast i64→double → fcmp oeq，与 tag icmp eq AND（镜像 Go emitOptionValueEq double 分支，§5.3.4.cb）。
 ; 与 s44/s45 同族：操作数在 %op，单块降级，无需 helper；仅载荷比较从 i64 icmp / str call 换成 double fcmp oeq。
 test-opt-eq-f64 = () {
@@ -2536,7 +2569,9 @@ test-opt-eq-f64 = () {
     runner.eq(s.contains('%on3 = xor i1 %oa3, true'), 1, 'optneqf64 xor')
 }
 
-; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
+; func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() }
+...
+
 ; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
 ; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
 test-option-slot = () {
@@ -2637,7 +2672,9 @@ test-option-slot = () {
     runner.eq(s.contains('br i1 %c3, label %bb1, label %bb2'), 1, 'condbr wiring')
 }
 
-; ── func vecsum() { v=[1,2,3]; return v[0]+v[1]+v[2] } ────
+; func vecsum() { v=[1,2,3]; return v[0]+v[1]+v[2] }
+...
+
 ; 证明 %vec 值命名空间 %vc 与 push/get/len 的发射形状。
 test-vec = () {
     blks []i64 = []
@@ -2760,7 +2797,8 @@ test-vec = () {
     runner.eq(s.contains('ret i64 %v11'), 1, 'ret sum')
 }
 
-; ── func veclen() { v=[9]; return v.len } ──────────────────
+; func veclen() { v=[9]; return v.len }
+...
 test-vec-len = () {
     blks []i64 = []
     ops []i64 = []
@@ -2803,7 +2841,9 @@ test-vec-len = () {
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret len')
 }
 
-; ── s99n：vec 释放发射（OP-VEC-FREE ⇒ call void @vec_free(%vec)）──
+; s99n：vec 释放发射（OP-VEC-FREE ⇒ call void @vec_free(%vec)）
+...
+
 ; vec 缓冲无 RC 头（§11 B5——元素仅 i64、缓冲走裸 @malloc/@free）⇒ 一次性 free，
 ; 绝不走 @nolang_rc_release（那是 str 的引用计数，对裸缓冲发就是读越界头）。
 test-vec-free = () {
@@ -2858,7 +2898,9 @@ test-vec-free = () {
     runner.eq(s.contains('nolang_rc_retain'), 0, 'vec free has no retain')
 }
 
-; ── 切片 B 底座：str-vec op 发射（OP-VECPUSHSTR / OP-VECGETSTR / OP-VEC-FREE-STR）──
+; 切片 B 底座：str-vec op 发射（OP-VECPUSHSTR / OP-VECGETSTR / OP-VEC-FREE-STR）
+...
+
 ; 验证三个新 op 发射出正确的助手呼叫与命名空间（vec=%vc、str=%sv、idx=%v）。
 test-strvec-ops = () {
     ops []i64 = []
@@ -2930,7 +2972,8 @@ test-strvec-ops = () {
     runner.eq(s.contains('define i64 @strvec'), 1, 'strvec sig')
 }
 
-; ── 型别签名：str 形参 + str 返回（纯转发）──────────────
+; 型别签名：str 形参 + str 返回（纯转发）
+...
 test-sig-str = () {
     ops []i64 = []
     dsts []i64 = []
@@ -2957,7 +3000,8 @@ test-sig-str = () {
     runner.eq(s.contains('i64 %v1'), 0, 'no i64 leak')
 }
 
-; ── 型别签名：i64 与 str 混排形参（命名空间交错）─────────
+; 型别签名：i64 与 str 混排形参（命名空间交错）
+...
 test-sig-mixed = () {
     ops []i64 = []
     dsts []i64 = []
@@ -2994,7 +3038,8 @@ test-sig-mixed = () {
     runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
 }
 
-; ── 型别签名：vec 形参（形参本身住 %vc 命名空间）──────────
+; 型别签名：vec 形参（形参本身住 %vc 命名空间）
+...
 test-sig-vec = () {
     ops []i64 = []
     dsts []i64 = []
@@ -3029,7 +3074,8 @@ test-sig-vec = () {
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
 }
 
-; ── 带型别的 CALL：实参型别混排（i64 + str），结果 i64 ────
+; 带型别的 CALL：实参型别混排（i64 + str），结果 i64
+...
 test-sig-call = () {
     ops []i64 = []
     dsts []i64 = []
@@ -3082,7 +3128,9 @@ test-sig-call = () {
     runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
 }
 
-; ── option：构造（some/none）+ 返回 %option 的签名 ──────
+; option：构造（some/none）+ 返回 %option 的签名
+...
+
 ;   pick(n) = n < 10 ? some(n) : none
 test-option = () {
     ops []i64 = []
@@ -3159,7 +3207,8 @@ test-option = () {
     runner.eq(s.contains('ret %option %op5'), 1, 'ret none')
 }
 
-; ── option：读取（tag / is-ok / i64 载荷）───────────────
+; option：读取（tag / is-ok / i64 载荷）
+...
 test-option-read = () {
     ops []i64 = []
     dsts []i64 = []
@@ -3221,7 +3270,9 @@ test-option-read = () {
     runner.eq(s.contains('%v4 = extractvalue %option %op1, 1, 0'), 1, 'payload slot0')
 }
 
-; ── func catrc() -> ('ab' + 'cd').len，且 strcat 结果在 scope 退出时 release ──
+; func catrc() -> ('ab' + 'cd').len，且 strcat 结果在 scope 退出时 release
+...
+
 ; 证明 STRCAT 的 RC 发射原语（OP-RETAIN/OP-RELEASE）：结果带 RC 头（rc=1），
 ; 拿到即记 RETAIN 事件、scope 退出 RELEASE；check-rc-balance 平衡通过，且能抓出漏 retain。
 test-strcat-rc = () {
@@ -3337,7 +3388,9 @@ test-strcat-rc = () {
     runner.eq(bad.contains('under-count'), 1, 'under-count message')
 }
 
-; ── func catnested() -> (('ab' + 'cd') + 'ef').len，中间堆串必须释放 ──
+; func catnested() -> (('ab' + 'cd') + 'ef').len，中间堆串必须释放
+...
+
 ; 证明 STRCAT 的实参为「变量（堆上结果）」时的 RC 生命周期（M4-c 续件，s27）：
 ;   sv1/sv2/sv4 是 STRCONST（全局常量，无 RC 头，绝不 release）；
 ;   sv3 = sv1+sv2、sv5 = sv3+sv4 都是堆上 rc=1 结果，各自记 RETAIN、scope 退出 RELEASE。
@@ -3508,7 +3561,9 @@ test-strcat-rc-nested = () {
     runner.eq(bad.contains('under-count'), 1, 'under-count message')
 }
 
-; ── 结构体：pt() 构造 point{3,4} 并读回 v4*10+v7 ───────────────
+; 结构体：pt() 构造 point{3,4} 并读回 v4*10+v7
+...
+
 ; 值命名空间：结构体住 %st<id>（第六个），字段读出是 i64 住 %v<id>。
 ; 中间构造步用 %sm0<k>（k = 指令下标），最后一步才落到 %st<dst>。
 test-struct-mk-get = () {
@@ -3634,7 +3689,9 @@ test-struct-mk-get = () {
     runner.eq(s.contains('%struct.s0 = type'), 0, 'no per-func type decl')
 }
 
-; ── 结构体写字段 + 槽：st5 = set(st3, 1, 42)；槽 20 存 st5 再 load ──
+; 结构体写字段 + 槽：st5 = set(st3, 1, 42)；槽 20 存 st5 再 load
+...
+
 ; 断言重点：SET 是【读旧出新值】（旧 %st3 仍在），槽住 %sts<id> 与值 %st<id> 不混。
 test-struct-set = () {
     ops []i64 = []
@@ -3790,7 +3847,9 @@ test-struct-set = () {
     runner.eq(s.contains('store %struct.s0 %st3'), 0, 'set emits no store')
 }
 
-; ── 多结构体 + 任意字段数：struct1{1,2,3} 读字段 2（s31 泛化）─────
+; 多结构体 + 任意字段数：struct1{1,2,3} 读字段 2（s31 泛化）
+...
+
 ; 型别码 = TY-STRUCT-BASE + 结构体 id ⇒ 型别名 %struct.s1；MK 按 bs[k] 的字段数链式展开。
 test-struct-wide = () {
     ops []i64 = []
@@ -3871,7 +3930,9 @@ test-struct-wide = () {
     runner.eq(s.contains('%v5 = extractvalue %struct.s1 %st4, 2'), 1, 'wide get field2')
 }
 
-; ── 结构体带 str 字段：st3 = {'abcd', 9} 读字段 0 的 .len（s32 字段型别）──
+; 结构体带 str 字段：st3 = {'abcd', 9} 读字段 0 的 .len（s32 字段型别）
+...
+
 ; 字段型别取自**值自身**的 vty：字段 0 是 %str-long ⇒ insertvalue 的操作数型别与前缀
 ; 跟着变（%sv），字段 1 仍是 i64/%v；读出时 dst 的命名空间由 cty 决定。
 test-struct-str-field = () {
@@ -3958,7 +4019,9 @@ test-struct-str-field = () {
     runner.eq(s.contains('%v5 = zext i32 %slr4 to i64'), 1, 'str field len')
 }
 
-; ── 结构体字段 RC：st2 = {'abcd'} 的 retain / release（s33，§11 B11 第一块）──
+; 结构体字段 RC：st2 = {'abcd'} 的 retain / release（s33，§11 B11 第一块）
+...
+
 ; 掩码 bit0 置位 ⇒ 字段 0（str）参与；每步三步：struct → %str-long → i8* data → call。
 test-struct-field-rc = () {
     ops []i64 = []
@@ -4065,7 +4128,9 @@ test-struct-field-rc = () {
     runner.eq(s.contains('%rf6_1'), 0, 'mask bit1 not set')
 }
 
-; ── ②MK 非連續字段值 id（嵌套結構體作非首位欄位值）：直接驗 cg 從 args 側池取真實 id ──
+; ②MK 非連續字段值 id（嵌套結構體作非首位欄位值）：直接驗 cg 從 args 側池取真實 id
+...
+
 ; 構造：Inner{a i64, b i64}、Outer{x i64, y Inner}。
 ;   v1=1(x) / v2=2(人造間隙，不屬 Outer) / va=4,vb=5(Inner 兩欄) / st3=Inner{va,vb} /
 ;   v6=6(另一間隙) / st7=Outer{v1,st3} / st8=GET st7.1。

@@ -1,62 +1,3 @@
-;
-; 目標（M2，見 docs/design/nolang-selfhost.md §5.3）：讓 `noc ast <file>` 的輸出
-; 與 L2 oracle `no ast <file>` **逐位元組相同**。
-;
-; ── 為什麼是 arena + i64 索引（§5.1.1）─────────────────────────────
-; AST 是有向圖（型別互相引用、符號互相引用，可能成環）。Nolang 的所有權模型
-; 無法表達環。而且 `[]T` 擴容會重新分配，任何指向舊緩衝的位址立即失效。
-; 索引永遠有效，且環可以自由表達。
-;
-; ⚠️ `nd` 必須是 **POD**：全部欄位都是 i64，字串以 id 指向 strs / aux 池。
-;    這一條是硬約定（§5.1.1）：含擁有堆的欄位會在 push 時被深拷貝，
-;    而 POD 的拷貝成本是固定的。
-;
-; ── 為什麼是「規格表 + 解譯器」而不是 71 個手寫函式 ────────────────
-; 規格表在 compiler/src/asp.no（**自動生成**，來源是 dump.go 的型別 switch）。
-; 同一份表已經在 Go 上重放並與 dump.go 對拍：src/parser/dump/spec_gen_test.go
-; 走全語料 528 檔、逐位元組一致 ⇒ **表本身已被證明忠實**。
-; 本檔只需要忠實「解譯」那張表，不必再承擔 71 段輸出序列的轉錄風險。
-;
-; ── 表的槽位模型（與 asp.no 檔頭同步）────────────────────────────
-; HDR     = (op, name-id, braces, child-ordinal(node_of)+1 或 0, absent-id)
-; SCALAR  = (op, policy, render, of, label-id | ref<<24)
-;   ref：OF-TYPE / OF-NODE-STRING / OF-LOCAL(render=nodeString)
-;        → **CHILD 序號**（值來自子節點，不佔槽位）
-;        其餘 → 節點的字串槽序號 s0..s8（parser 已預先渲染好）
-; CHILD   = (op, field-id, guard, 0, 0)
-; KIDS    = (op, field-id, skip_nil, ptr, 0)
-; HELPER  = (op, field-id, skip_nil, helper-id, 0)
-; SELFHELPER = (op, helper-id, 0, 0, 0)
-; 其餘    = (op, 0, 0, 0, 0)
-;
-; ⚠️ **為什麼純量槽一律是「字串槽」而不是「字串槽 + 整數槽」**：
-;    render 包含 float，而 Go 的 `%v` 對 float64 的輸出無法從 i64 還原。
-;    改由 parser 預先渲染成字串後，解譯器只需 `wanted(policy, val)` 一個決策點。
-;
-; ── 本檔目前的覆蓋範圍（M2 進行中，**刻意可量測**）────────────────
-;   已接線：OP-HDR / OP-SCALAR / OP-COMMENTS / OP-CHILD / OP-KIDS /
-;           OP-FREE / OP-BETWEEN / OP-TRAILING / OP-CLOSING /
-;           OP-IMPLEMENTS / OP-SIG / OP-HELPER（taggedEnumField / matchArm /
-;           interfaceMethod）
-;   未接線：OP-SELF-HELPER（AnnotationEntry）、OP-HELPER 的
-;           annotationStructField 一支
-; ⚠️ 未接線的指令會讓 `.unsup` 計數 +1（**不是**靜默略過），
-;    所以「這個 fixture 的 dump 可不可信」是可判定的：ast.unsupported(t) == 0。
-;
-; ⚠️ **OP-ANNOTS 是 no-op，且這不是遺漏**：Go 端的規格表本身也不模擬
-;    `Options.Annotations`（見 spec_gen_test.go 的 opAnnots 註解）。
-;    因此本檔的 dump 對應的是 **`-annotations` 關閉** 的情形。
-;    語料的 L2 對拍（528 檔）也全是在 annotations 關閉下做的。
-;
-; ── `.gaps`：不影響輸出、但「不可重現」的診斷計數 ─────────────────
-;   * `exprToString` 的 `default: fmt.Sprintf("%v", e)` 印的是 Go 結構體
-;     傾印（含 lexer.Token），**無法**在 Nolang 重現。
-;   * 已實測：全語料 262 個 ArrayType.Size 全部是 *IntegerLiteral
-;     （見 §5.3.1 的探針），故此分支目前不可達。
-;   命中時輸出 `<expr?(` + 型別名 + `)>`（刻意醜，避免被當成正確輸出），
-;   並讓 ast.gaps(t) > 0。
-;
-; ── SHS 合規 ──────────────────────────────────────────────────────
 ;   無模組級可變狀態、無一等函式值、無指針、無 map 欄位。
 ; ⚠️ 一律用【普通函式 + 顯式結構體參數】，不用方法：
 ;    帶 map 欄位的結構體 + 方法 + 跨模組會炸（見 compiler/src/util/intern.no 檔頭）。
@@ -72,10 +13,83 @@
 # /compiler/src/util/sb.sb
 # /compiler/src/ix
 
+;
+; 目標（M2，見 docs/design/nolang-selfhost.md §5.3）：讓 `noc ast <file>` 的輸出
+; 與 L2 oracle `no ast <file>` **逐位元組相同**。
+;
+; 為什麼是 arena + i64 索引（§5.1.1）
+...
+
+; AST 是有向圖（型別互相引用、符號互相引用，可能成環）。Nolang 的所有權模型
+; 無法表達環。而且 `[]T` 擴容會重新分配，任何指向舊緩衝的位址立即失效。
+; 索引永遠有效，且環可以自由表達。
+;
+; ⚠️ `nd` 必須是 **POD**：全部欄位都是 i64，字串以 id 指向 strs / aux 池。
+;    這一條是硬約定（§5.1.1）：含擁有堆的欄位會在 push 時被深拷貝，
+;    而 POD 的拷貝成本是固定的。
+;
+; 為什麼是「規格表 + 解譯器」而不是 71 個手寫函式
+...
+
+; 規格表在 compiler/src/asp.no（**自動生成**，來源是 dump.go 的型別 switch）。
+; 同一份表已經在 Go 上重放並與 dump.go 對拍：src/parser/dump/spec_gen_test.go
+; 走全語料 528 檔、逐位元組一致 ⇒ **表本身已被證明忠實**。
+; 本檔只需要忠實「解譯」那張表，不必再承擔 71 段輸出序列的轉錄風險。
+;
+; 表的槽位模型（與 asp.no 檔頭同步）
+...
+
+; HDR     = (op, name-id, braces, child-ordinal(node_of)+1 或 0, absent-id)
+; SCALAR  = (op, policy, render, of, label-id | ref<<24)
+;   ref：OF-TYPE / OF-NODE-STRING / OF-LOCAL(render=nodeString)
+;        → **CHILD 序號**（值來自子節點，不佔槽位）
+;        其餘 → 節點的字串槽序號 s0..s8（parser 已預先渲染好）
+; CHILD   = (op, field-id, guard, 0, 0)
+; KIDS    = (op, field-id, skip_nil, ptr, 0)
+; HELPER  = (op, field-id, skip_nil, helper-id, 0)
+; SELFHELPER = (op, helper-id, 0, 0, 0)
+; 其餘    = (op, 0, 0, 0, 0)
+;
+; ⚠️ **為什麼純量槽一律是「字串槽」而不是「字串槽 + 整數槽」**：
+;    render 包含 float，而 Go 的 `%v` 對 float64 的輸出無法從 i64 還原。
+;    改由 parser 預先渲染成字串後，解譯器只需 `wanted(policy, val)` 一個決策點。
+;
+; 本檔目前的覆蓋範圍（M2 進行中，**刻意可量測**）
+...
+
+;   已接線：OP-HDR / OP-SCALAR / OP-COMMENTS / OP-CHILD / OP-KIDS /
+;           OP-FREE / OP-BETWEEN / OP-TRAILING / OP-CLOSING /
+;           OP-IMPLEMENTS / OP-SIG / OP-HELPER（taggedEnumField / matchArm /
+;           interfaceMethod）
+;   未接線：OP-SELF-HELPER（AnnotationEntry）、OP-HELPER 的
+;           annotationStructField 一支
+; ⚠️ 未接線的指令會讓 `.unsup` 計數 +1（**不是**靜默略過），
+;    所以「這個 fixture 的 dump 可不可信」是可判定的：ast.unsupported(t) == 0。
+;
+; ⚠️ **OP-ANNOTS 是 no-op，且這不是遺漏**：Go 端的規格表本身也不模擬
+;    `Options.Annotations`（見 spec_gen_test.go 的 opAnnots 註解）。
+;    因此本檔的 dump 對應的是 **`-annotations` 關閉** 的情形。
+;    語料的 L2 對拍（528 檔）也全是在 annotations 關閉下做的。
+;
+; `.gaps`：不影響輸出、但「不可重現」的診斷計數
+...
+
+;   * `exprToString` 的 `default: fmt.Sprintf("%v", e)` 印的是 Go 結構體
+;     傾印（含 lexer.Token），**無法**在 Nolang 重現。
+;   * 已實測：全語料 262 個 ArrayType.Size 全部是 *IntegerLiteral
+;     （見 §5.3.1 的探針），故此分支目前不可達。
+;   命中時輸出 `<expr?(` + 型別名 + `)>`（刻意醜，避免被當成正確輸出），
+;   並讓 ast.gaps(t) > 0。
+;
+; SHS 合規
+...
+
 ; ast — AST arena（POD）+ `no ast` dump 解譯器
 ...
 
-; ── 節點資料（POD；字串一律以 id 指向 ast.strs / ast.aux）──────────
+; 節點資料（POD；字串一律以 id 指向 ast.strs / ast.aux）
+...
+
 ;
 ; 槽位分區（每一區都從 0 起算，互不重疊）：
 ;   c0..c2   KIDS 各組的元素數（由 ast.set-count 填入）
@@ -403,7 +417,9 @@ helper-begin = (t ast, i i64, count i64) (base i64) {
 ;    字串）。新增的字串接在後面，索引就是 len-1。
 ;    早期版本回傳 len（1 起算），會讓 str-at 讀到隔壁一格 —— 症狀是
 ;    `warnings: ` 少印、而 `value` 印成下一個字串的內容。
-; ── 字串駐留：O(1) 開放定址雜湊（替代原 O(n) 線性掃描，修 parser O(n²)）──
+; 字串駐留：O(1) 開放定址雜湊（替代原 O(n) 線性掃描，修 parser O(n²)）
+...
+
 ; sx: 字串
 ; h: 結果數值
 ast-str-hash = (sx str) (h i64) {
@@ -759,7 +775,9 @@ child-at = (t ast, childs []i64, ref i64) (v i64) {
     }
 }
 
-; ── 讀回存取器（給測試與除錯用；ps.no 不需要）────────────────────
+; 讀回存取器（給測試與除錯用；ps.no 不需要）
+...
+
 ; t: 輸入
 ; i: 索引
 ; v: 結果數值

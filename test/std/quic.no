@@ -50,7 +50,8 @@ at = (b []byte, i i64) (v i64) {
     }
 }
 
-; ── varint 編解碼（RFC 9000 §16）────────────────────────
+; varint 編解碼（RFC 9000 §16）
+...
 
 ; 把 v 編碼後回傳 (實際位元組數, 首位元組, 末位元組)
 enc-of = (v i64) (n i64, b0 i64, blast i64) {
@@ -182,7 +183,8 @@ t-varint-decode-err = () {
     runner.eq(p4, -1, 'varint-decode: 前綴要求 2 位元組但資料不足 ⇒ next-pos = -1')
 }
 
-; ── gen-cid ──────────────────────────────────────────────
+; gen-cid
+...
 
 t-gen-cid = () {
     c8 = quic.gen-cid(8)
@@ -214,7 +216,8 @@ t-gen-cid = () {
     runner.eq(diff, 1, 'gen-cid: 間隔 >1µs 的兩次生成內容不同')
 }
 
-; ── parse-frames ─────────────────────────────────────────
+; parse-frames
+...
 
 t-parse-frames = () {
 
@@ -242,7 +245,8 @@ t-parse-frames = () {
     runner.eq(cnt-bad, -1, 'parse-frames: end 超出緩衝 ⇒ count = -1')
 }
 
-; ── derive-initial-keys（RFC 9001 §5.2）─────────────────
+; derive-initial-keys（RFC 9001 §5.2）
+...
 
 t-derive-initial-keys = () {
     cid []byte = [1, 2, 3, 4, 5, 6, 7, 8]
@@ -302,7 +306,8 @@ t-derive-initial-keys = () {
     runner.eq(differs2, 1, 'derive-initial-keys: 不同 CID ⇒ key 不同')
 }
 
-; ── header protection：XOR 對稱 + 只遮「封包第一位元組」的低 4/5 位 ──
+; header protection：XOR 對稱 + 只遮「封包第一位元組」的低 4/5 位
+...
 ;
 ; 斷言只依賴「遮了哪幾個位」而不硬編碼 AES 輸出：測試端自己用同一個 hp
 ; 對同一個 16 位元組取樣再算一次 mask，期望值由 mask 現算。
@@ -408,7 +413,8 @@ t-header-protection = () {
     runner.eq(short.len(), 4, 'apply-header-protection: 封包過短時原樣返回')
 }
 
-; ── decode-packet-number（RFC 9000 §17.1 / 附錄 A.3）──────
+; decode-packet-number（RFC 9000 §17.1 / 附錄 A.3）
+...
 ;
 ; 佈局照真實 Long Header 擺：第一位元組 + version(4) + DCID len(1) + DCID(8)
 ; + SCID len(1) + … ⇒ **pn-offset = 10**，pn 欄位在 10..13。
@@ -530,7 +536,8 @@ t-decode-pn = () {
     runner.eq(p6, 0, 'decode-packet-number: 資料不足 ⇒ pn 0')
 }
 
-; ── conn 白盒 ────────────────────────────────────────────
+; conn 白盒
+...
 
 t-conn-init = () {
     c = quic.conn{}
@@ -562,7 +569,8 @@ t-conn-close = () {
     runner.eq(c.fd, -1, 'conn.close: 重複呼叫仍 -1')
 }
 
-; ── dial（UDP，本機任意埠都會成功）─────────────────────
+; dial（UDP，本機任意埠都會成功）
+...
 
 t-dial = () {
     o = quic.dial('127.0.0.1', 39341)
@@ -581,7 +589,8 @@ t-dial = () {
     runner.eq(got, 1, 'quic.dial: UDP 到本機埠 ⇒ 回 ok')
 }
 
-; ── build-initial-packet（純計算；需先備妥 CIDs 與 client Initial 金鑰）──
+; build-initial-packet（純計算；需先備妥 CIDs 與 client Initial 金鑰）
+...
 ;
 ; 這個方法不只斷言「有東西出來」，而是把封包**反向解回明文**：
 ;   remove-header-protection → decode-packet-number → aes-gcm.open-128 → parse-frames
@@ -742,7 +751,8 @@ t-build-initial-packet = () {
     runner.eq(at(plain, 1153), 0, '補零延伸到明文結尾')
 }
 
-; ── recv-raw / recv-initial（UDP 收包；無對端 ⇒ 走逾時／錯誤臂）──
+; recv-raw / recv-initial（UDP 收包；無對端 ⇒ 走逾時／錯誤臂）
+...
 ;
 ; 兩者都需要一個 fd。這裡開一個從未綁定、也收不到任何資料的 UDP socket，
 ; 並把接收逾時壓到 200ms，於是都走「收不到」的失敗臂 —— 正是呼叫方依賴
@@ -774,7 +784,8 @@ t-recv-empty = () {
     runner.eq(c.fd, -1, 'recv: close 後 fd = -1')
 }
 
-; ── 執行 ──────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('quic.varint-encode', t-varint-encode)
 p2, f2 = runner.test('quic.varint-roundtrip', t-varint-roundtrip)

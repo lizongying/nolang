@@ -11,7 +11,8 @@
 
 # /test/runner
 
-; ── B1：float→int 饱和，绝不產生 poison ──────────────────────
+; B1：float→int 饱和，绝不產生 poison
+...
 t-float-int-sat = () {
 
     ; 範圍內：向零截斷
@@ -46,7 +47,8 @@ t-float-int-sat = () {
     runner.eq(ninf.to-i64(), i64.MIN, '-Inf.to-i64 → i64.MIN')
 }
 
-; ── B2：f64→str 的 NaN/Inf/大值渲染 ──────────────────────────
+; B2：f64→str 的 NaN/Inf/大值渲染
+...
 ; 口径：f64.to-str 取「最短往返」表示並對齊 Go 的 %v（含 NaN/+Inf/-Inf 拼寫）。
 t-f64-str = () {
     za = 0.0
@@ -71,7 +73,8 @@ t-f64-str = () {
     runner.str-eq(two63.to-str(), '9.223372036854776e+18', '2^63 → 9.223372036854776e+18')
 }
 
-; ── B3：f64→f32 真實精度損失（fptrunc+fpext 往返）──────────────
+; B3：f64→f32 真實精度損失（fptrunc+fpext 往返）
+...
 t-f32-precision = () {
 
     ; 0.1 在 f32 無法精確表示，拓寬回 f64 後與原值不同
@@ -97,7 +100,8 @@ t-f32-precision = () {
     runner.f64-eq(wb, 0.5, 0.000001, '0.5 经 f32 往返无损')
 }
 
-; ── B6：轉換 API 矩阵 ────────────────────────────────────────
+; B6：轉換 API 矩阵
+...
 t-conv-matrix = () {
     a u64 = 1000
     runner.f64-eq(a.to-f64(), 1000.0, 0.000001, 'u64.to-f64')
@@ -120,7 +124,8 @@ t-conv-matrix = () {
     runner.eq(neg.to-u32(), 0, 'f64 负值.to-u32 → 0')
 }
 
-; ── B8：宣告型別 → 自動 `<src>.to-<dst>` 轉換 ────────────────
+; B8：宣告型別 → 自動 `<src>.to-<dst>` 轉換
+...
 ; 賦值目標的型別寫明時，MIR 會去找約定型別轉換方法 `<src>.to-<dst>`
 ; （src/mir/hir2mir.go intConvCallee）。有方法就呼叫它（允許窄化），
 ; 沒有就只能隱式加寬。以下確保兩條路徑的結果與 `no fmt` 摺疊後一致：
@@ -152,14 +157,16 @@ t-declared-conv = () {
     runner.eq(uu, 4000000000, 'u32 → u64 宣告加宽')
 }
 
-; ── 編譯期用例（B4/B5/B7）：無法在 runtime 斷言，保留為文檔 ─────────
+; 編譯期用例（B4/B5/B7）：無法在 runtime 斷言，保留為文檔
+...
 ; 以下寫法應被 checker/lexer 拒绝，用 `no run` 單獨驗證：
 ;   B7:  x f64 = 1e40           → lexer 報「scientific notation ... not supported」
 ;   B4:  c char = 1114112       → checker 報「out of Unicode code point range」
 ;   B5:  a f64 = 1.5; b f32 = a → checker 報「f64 -> f32 ... must be explicit」
 ;   B5+: a f32 = 1.5.to-f32(); b f64 = a → 允許（隱式拓寬），編譯通過
 
-; ── 執行 ────────────────────────────────────────────────────
+; 執行
+...
 p1, f1 = runner.test('B1 float→int saturating', t-float-int-sat)
 p2, f2 = runner.test('B2 f64→str render', t-f64-str)
 p3, f3 = runner.test('B3 f64→f32 precision', t-f32-precision)

@@ -17,7 +17,9 @@
 ;   旧口径曾要求实参值 id 彼此连续（§11 B16），任何「非首位实参需要先算一个中间值」的
 ;   调用都会撞门禁，故改为侧池寻址——值 id 可任意散布，池只按调用点顺序追加。
 
-; ── 型别码（M4-c 第七件：带型别的函数签名）──────────────────
+; 型别码（M4-c 第七件：带型别的函数签名）
+...
+
 ; 值 id 的 SSA 名由「型别」决定，不住同一个命名空间：
 ;   TY-I64 → %v<id>（i64）、TY-STR → %sv<id>（%str-long）、TY-VEC → %vc<id>（%vec）。
 ; LLVM 不允许同名不同型，故形参/返回值的命名必须按型别选前缀。
@@ -83,14 +85,18 @@ OP-ALLOC = 6
 OP-STORE = 7
 OP-LOAD = 8
 
-; ── 控制流（M4-c 首件）────────────────────────────────────
+; 控制流（M4-c 首件）
+...
+
 ; blks[k] 给出每条指令所属的基本块 id（0 = entry）。块切换处发 bb<id>: 标签。
 ; 跨块传值用 alloca/store/load（-O0 风格），不引入 PHI（PHI 留后续）。
 OP-BR = 9; a = 目标块 id
 OP-CONDBR = 10; a = 条件值 id（i64，非零为真）；bs[k] = 真块 id；dsts[k] = 假块 id
 OP-CMPLT = 11; dst = (a < b)；发 icmp slt + zext 到 i64
 
-; ── ALU 家族（M4-c 续件 s35）：位运算 / 移位 / 除法 / 其余比较 ──────
+; ALU 家族（M4-c 续件 s35）：位运算 / 移位 / 除法 / 其余比较
+...
+
 ; 约定与 ADD/SUB/MUL 完全一致：dst = i64 结果值 id；a = 左操作数；bs[k] = 右操作数。
 ;   位运算：OP-AND / OP-OR / OP-XOR  ⇒ and / or / xor i64
 ;   移位　：OP-SHL ⇒ shl i64；OP-SHR ⇒ **ashr** i64（算术右移，与 i64 有符号语义一致；
@@ -114,7 +120,9 @@ OP-SHR = 48
 OP-DIV = 49
 OP-MOD = 50
 
-; ── 無符號 ALU 家族（M4-c 續件 s36）：s35 預留——「邏輯右移要等 u64 型別進場後用獨立 op」──────
+; 無符號 ALU 家族（M4-c 續件 s36）：s35 預留——「邏輯右移要等 u64 型別進場後用獨立 op」
+...
+
 ; 約定與有符號族完全一致：dst = i64 結果值 id；a = 左；bs[k] = 右；結果走 %v（與 TY-I64 同命名空間）。
 ;   OP-SHRU ⇒ lshr i64（邏輯右移，高位填 0；有符號版是 OP-SHR⇒ashr）
 ;   OP-DIVU ⇒ udiv i64；OP-MODU ⇒ urem i64（s38 起裹除零 select 護欄，同有符號族；無 (MIN,-1)，§11 B14）
@@ -128,7 +136,9 @@ OP-CMPLEU = 55
 OP-CMPGTU = 56
 OP-CMPGEU = 57
 
-; ── 字符串（M4-c 非 i64 型别首件）──────────────────────────
+; 字符串（M4-c 非 i64 型别首件）
+...
+
 ; 字符串值住在独立命名空间 %sv<id>（类型 %str-long）；i64 值住 %v<id>。
 ; dst = 字符串值 id；syms[k] = 字面量文本（限可打印 ASCII，无引号/反斜线）。
 ;   发射：全局 @.s<k> + getelementptr + insertvalue 构造 %str-long。
@@ -139,7 +149,9 @@ OP-STRCONST = 12
 OP-STRLEN = 13
 OP-STRCAT = 14
 
-; ── 字符串槽（跨基本块保存 %str-long，M4-c 第五件）──────────
+; 字符串槽（跨基本块保存 %str-long，M4-c 第五件）
+...
+
 ; %str-long 是【值型别】，跨块不能用 SSA 名直接续命（除非 PHI）⇒ 走 alloca。
 ; 槽住在独立命名空间 %ss<id>（类型 %str-long*），与 i64 槽 %s<id> 区分。
 ; dst = 槽 id。发射 alloca %str-long。
@@ -149,7 +161,9 @@ OP-SALLOC = 15
 OP-SSTORE = 16
 OP-SLOAD = 17
 
-; ── 向量（M4-c 第六件；%vec = { i64, i64, i64 }，元素目前只有 i64）──────
+; 向量（M4-c 第六件；%vec = { i64, i64, i64 }，元素目前只有 i64）
+...
+
 ; 向量值住在第四个命名空间 %vc<id>（类型 %vec）。
 ; dst = 向量值 id。发 call %vec @vec_new()。
 ; OP-VECPUSH：dst = 新向量值 id；a = 旧向量值 id；bs[k] = 被压入的 i64 值 id。
@@ -162,7 +176,9 @@ OP-VECPUSH = 19
 OP-VECLEN = 20
 OP-VECGET = 21
 
-; ── option（M4-c 第十件；%option = { i64 tag, [3 x i64] slot }，tag 0=ok/1=nil/2=err）──
+; option（M4-c 第十件；%option = { i64 tag, [3 x i64] slot }，tag 0=ok/1=nil/2=err）
+...
+
 ; option 值住在第五个命名空间 %op<id>（类型 %option）。
 ; dst = option 值 id。发 tag=1（nil）的常量。
 ; OP-OPTSOME：dst = option 值 id；a = i64 值 id。发 tag=0 + slot[0] = %v<a>
@@ -179,7 +195,9 @@ OP-OPTTAG = 24
 OP-OPTISOK = 25
 OP-OPTGET = 26
 
-; ── option 的 str 载荷（M4-c 续件 s28；B28 2026-11-12 改为 16B，仍内联进 24B 槽、免堆装箱）──
+; option 的 str 载荷（M4-c 续件 s28；B28 2026-11-12 改为 16B，仍内联进 24B 槽、免堆装箱）
+...
+
 ; ⚠️ B28（2026-11-11 Go 后端变更）：%str-long = { i32, i32, i8* }（u32 len/u32 cap/data，16B），
 ;    外部 API 仍是 i64。旧注释「恰 24 字节 = [3 x i64] 槽、全 8 字节字段 1:1 逐字段互转」
 ;    **只适用于 2026-11-11 之前**，其余章节若仍如此描述属历史论证。
@@ -199,7 +217,9 @@ OP-OPTGET = 26
 OP-OPTMKSTR = 29
 OP-OPTGETSTR = 30
 
-; ── option 的 vec 载荷（M4-c 续件 s40；补齐上面 173–174 行 s28 预告的同构内联路径）──────
+; option 的 vec 载荷（M4-c 续件 s40；补齐上面 173–174 行 s28 预告的同构内联路径）
+...
+
 ; %vec = { i64, i64, i64 }（f0=len、f1=cap、f2=dat），其中 dat 已是 ptrtoint 后的**整数指针**
 ; （见 cg-runtime-vec-get/push 内部才 inttoptr 还原），三字段全 i64 且恰 24 字节 ⇒ 与 %option 的
 ;   [3 x i64] 槽 1:1 布局兼容，逐字段 extractvalue/insertvalue 互转，**连 ptrtoint/inttoptr 都不需要**
@@ -212,7 +232,9 @@ OP-OPTGETSTR = 30
 OP-OPTMKVEC = 58
 OP-OPTGETVEC = 59
 
-; ── option 跨基本块槽（M4-c 续件 s41；补齐 §11 B8 里 option 值跨块的 alloca 通路）──
+; option 跨基本块槽（M4-c 续件 s41；补齐 §11 B8 里 option 值跨块的 alloca 通路）
+...
+
 ; option 值住 %op<id>；本件新增**第八个命名空间** %os<id>（option slot），与值 %op 只差一个 s，
 ;   写错就是把值名当指针（LLVM 报 not a pointer），与 str 的 %sv/%ss、struct 的 %st/%sts 同规。
 ; %option 型别固定（{ i64 tag, [3 x i64] payload }），故三件套无需 cty/vty 解型别——比 struct 槽更简单。
@@ -225,7 +247,9 @@ OP-OPTALLOC = 60
 OP-OPTSTORE = 61
 OP-OPTLOAD = 62
 
-; ── str 结构相等（M4-c 续件 s42；补齐 §11 字符串比较，镜像 Go 专用 OpStrEq）──
+; str 结构相等（M4-c 续件 s42；补齐 §11 字符串比较，镜像 Go 专用 OpStrEq）
+...
+
 ; Go 对 str 相等不用 icmp（icmp %str-long 非法），而是专用 MIR op 降级到运行时
 ; helper @str_eq（见 cg-runtime.no cg-runtime-str-eq）。本层同形新增两条 op：
 ; OP-STEREQ ：dst = i64 结果 id（0/1）；xa[k] = 左 str 值 id；bs[k] = 右 str 值 id。
@@ -235,7 +259,9 @@ OP-OPTLOAD = 62
 OP-STEREQ = 63
 OP-STNEQ = 64
 
-; ── vec 元素相等（M4-c 续件 s43；补齐 §11 向量比较，镜像 Go vecDeepEq 的 i64 分支）──
+; vec 元素相等（M4-c 续件 s43；补齐 §11 向量比较，镜像 Go vecDeepEq 的 i64 分支）
+...
+
 ; Go 对 []i64 相等不用 icmp（icmp %vec 非法），降级到运行时 helper @__nolang_vec_eq_i64
 ; （见 cg-runtime.no cg-runtime-vec-eq）。本层同形新增一条 op：
 ; OP-VECEQ ：dst = i64 结果 id（0/1）；xa[k] = 左 vec 值 id；bs[k] = 右 vec 值 id。
@@ -244,7 +270,9 @@ OP-STNEQ = 64
 ; ⚠️ op 码接在既有最大码 OP-STNEQ=64 之后（取 65），不重排既有码。
 OP-VECEQ = 65
 
-; ── option 值相等（M4-c 续件 s44；补齐 §11 option 比较，镜像 Go emitOptionValueEq 的 i64 载荷分支）──
+; option 值相等（M4-c 续件 s44；补齐 §11 option 比较，镜像 Go emitOptionValueEq 的 i64 载荷分支）
+...
+
 ; Go 对 ?i64 相等发「tag icmp eq AND payload(i64) icmp eq」再 and（src/mir/codegen.go:6247），
 ; 纯单块降级、无需运行时 helper（区别于 str/vec 需 call helper）。本层同形新增两条 op：
 ; OP-OPTEQ ：dst = i64 结果 id（0/1）；xa[k] = 左 option 值 id；bs[k] = 右 option 值 id。
@@ -255,7 +283,9 @@ OP-VECEQ = 65
 OP-OPTEQ = 66
 OP-OPTNEQ = 67
 
-; ── option 的 `str` 载荷相等（M4-c 續件 s45；補齊 §11 option 非 i64 載荷比較，鏡像 Go emitOptionValueEq 的 %str-long 分支）──
+; option 的 `str` 载荷相等（M4-c 續件 s45；補齊 §11 option 非 i64 載荷比較，鏡像 Go emitOptionValueEq 的 %str-long 分支）
+...
+
 ; Go 對 ?str 相等仍走 emitOptionValueEq（src/mir/codegen.go:6247）：tag icmp eq AND 載荷 call @str_eq 再 and；
 ; 載荷內聯（optionPayloadOf 回呼已負載值），故無需控制流。noc 的 %option 載荷槽是 [3 x i64]（s28 把 %str-long 的
 ; len/cap/data 逐欄位打包，data 指針 ptrtoint），故相等前需先用與 OPTGETSTR 同形的三步 insertvalue 從槽重建 %str-long，
@@ -270,7 +300,9 @@ OP-OPTNEQ = 67
 OP-OPTEQSTR = 68
 OP-OPTNEQSTR = 69
 
-; ── option 的 `f64`（double）載荷內聯讀寫（M4-c 續件 s46；補齊 §11 option 標量載荷家族，鏡像 Go 對 double 載荷的存取）──
+; option 的 `f64`（double）載荷內聯讀寫（M4-c 續件 s46；補齊 §11 option 標量載荷家族，鏡像 Go 對 double 載荷的存取）
+...
+
 ; Go 對 ?f64 的載荷存取走 optPayloadTypedAddr（把槽地址重類型為 double*）＋ store/load double；
 ; emitOptionValueEq 的 double 分支即 fcmp oeq（src/mir/codegen.go:6263）。noc 的 %option 載荷槽是 [3 x i64]，
 ; 無法直接 insertvalue 一個 double（欄位型別是 i64），故以等宽 bitcast 落槽：**double→i64 寫入 slot[0]、i64→double 讀回**
@@ -283,7 +315,9 @@ OP-OPTNEQSTR = 69
 OP-OPTMKF64 = 70
 OP-OPTGETF64 = 71
 
-; ── option 的 `f64`（double）載荷相等（M4-c 續件 s47；鏡像 Go emitOptionValueEq 的 double 分支，延續 s44(i64)／s45(str)「先建讀寫、後建相等」節律）──
+; option 的 `f64`（double）載荷相等（M4-c 續件 s47；鏡像 Go emitOptionValueEq 的 double 分支，延續 s44(i64)／s45(str)「先建讀寫、後建相等」節律）
+...
+
 ; Go 對 ?f64 相等走 emitOptionValueEq（src/mir/codegen.go:6263）：載荷 fcmp oeq ＋ tag icmp eq 再 and i1；!= 為整體取反（xor i1 true）。
 ; 本件復用 s46 的 slot[0] 讀取路徑：兩側各 extractvalue slot[0]（i64）→ bitcast i64→double → fcmp oeq；聚合體不可直接 icmp，故拆 tag／載荷兩比再 and。
 ; OP-OPTEQF64 ：dst = i64 結果（0/1）；x = 左 option 值 id；y = 右 option 值 id。發 tag icmp eq AND（bitcast 後 fcmp oeq double）→ zext。
@@ -292,7 +326,9 @@ OP-OPTGETF64 = 71
 OP-OPTEQF64 = 72
 OP-OPTNEQF64 = 73
 
-; ── 一元 ALU：NEG / NOT（M4-c 續件 s48；鏡像 Go emitNeg／emitNot，補齊 emitInst 裡 arith 之後緊接的兩條一元 op）──
+; 一元 ALU：NEG / NOT（M4-c 續件 s48；鏡像 Go emitNeg／emitNot，補齊 emitInst 裡 arith 之後緊接的兩條一元 op）
+...
+
 ; Go：emitNeg（codegen.go:5503）float ⇒ `fneg double`、int ⇒ `sub <lt> 0, x`（非 option 路徑不插溢出護欄，與 s35 有符號 ALU 同紀律）；
 ;     emitNot（5505）⇒ `xor <lt> 1, x`（翻轉 0/1 布林，noc 布林即 i64 0/1）。
 ; OP-NEG：dst = 結果值 id；x = 操作數 id（vty[d]==TY-F64 ⇒ 發 %fd<dst> = fneg double %fd<x>，否則 %v<dst> = sub i64 0, %v<x>）。
@@ -301,7 +337,9 @@ OP-OPTNEQF64 = 73
 OP-NEG = 74
 OP-NOT = 75
 
-; ── vec → str 重interpret（M4-c 續件 s49；鏡像 Go emitStrFromVec，codegen.go:13069）──
+; vec → str 重interpret（M4-c 續件 s49；鏡像 Go emitStrFromVec，codegen.go:13069）
+...
+
 ; Go 把 %vec 就地重reinterpret 成 %str-long（用於 `data str = fs.read-file(path)` 一类把 %vec 直 store 進 %str-long 槽的語料）。
 ; %vec = { i64 f0=len, i64 f1=cap, i64 f2=dat(整數指針) }；%str-long = { i64 f0=len, i64 f1=cap, i8* f2=data }。
 ; 兩者前三欄位皆 8 字節、僅 f2 型別不同（i64 ⇄ i8*）⇒ 逐欄位 extractvalue/insertvalue，f2 走 inttoptr（LLVM 不允許 bitcast 指針⇄整數，同 s28 OPTGETSTR 紀律）。
@@ -312,7 +350,9 @@ OP-NOT = 75
 ; ⚠ op 碼接在既有最大碼 OP-NOT=75 之後（取 76），不重排既有碼。
 OP-STRFROMVEC = 76
 
-; ── str 容量欄讀取（M4-c 續件 s50；鏡像 Go emitLenCap 的 OpCap/KindStr 分支，codegen.go:11848）──
+; str 容量欄讀取（M4-c 續件 s50；鏡像 Go emitLenCap 的 OpCap/KindStr 分支，codegen.go:11848）
+...
+
 ; %str-long = { i64 f0=len, i64 f1=cap, i8* f2=data }；Go 以 fieldIdx 分派：OpLen⇒0、OpCap⇒1。
 ; noc 已有 OP-STRLEN（f0），本件補 f1：dst = i64 值 id；x = 字符串值 id（TY-STR，住 %sv）；bs[k] 不用（0）。
 ; 發射：%v<dst> = extractvalue %str-long %sv<x>, 1（純單塊、無 helper）。
@@ -327,7 +367,9 @@ OP-STRFROMVEC = 76
 ; ⚠ op 碼接在既有最大碼 OP-STRFROMVEC=76 之後（取 77），不重排既有碼。
 OP-STRCAP = 77
 
-; ── option 排序（M4-c 續件 s51；鏡像 Go emitOptionValueOrder 的有符號 int 載荷分支，codegen.go:6294）──
+; option 排序（M4-c 續件 s51；鏡像 Go emitOptionValueOrder 的有符號 int 載荷分支，codegen.go:6294）
+...
+
 ; Go emitCmp 對兩個 option 的 `a < b`／`<=`／`>`／`>=` 先試 emitOptionValueEq（Eq/Ne）、再試 emitOptionValueOrder（codegen.go:6448）：
 ; 直接對兩側載荷（field 1,0）發 icmp slt/sle/sgt/sge——⚠️【無 tag 項、無 and】，異於 s44 OPTEQ 的「tag AND 載荷」：
 ; Go 原函即如此（序比較只看值；str.compare 因 `.byte(i)` 返 ?byte 而需此路徑，比 tag 會讓同 tag 全判 false）。
@@ -343,7 +385,9 @@ OP-OPTLE = 79
 OP-OPTGT = 80
 OP-OPTGE = 81
 
-; ── option 的 `f64`（double）載荷排序（M4-c 續件 s52；鏡像 Go emitOptionValueOrder 的 double 翼，codegen.go:6352，循 s47 OPTEQF64 專用 op 前例）──
+; option 的 `f64`（double）載荷排序（M4-c 續件 s52；鏡像 Go emitOptionValueOrder 的 double 翼，codegen.go:6352，循 s47 OPTEQF64 專用 op 前例）
+...
+
 ; Go 同函對 pTA==double 的兩側載荷直接 `fcmp olt/ole/ogt/oge double`（OpLt⇒olt／OpLe⇒ole／OpGt⇒ogt／OpGe⇒oge）再 store——
 ; 與 s51 有符號 int 翼同紀律：【無 tag 項、無 and】，只比載荷。ordered 謂詞對 NaN 恒判 false，為 Go 原語義忠實鏡像。
 ; noc 的 %option 載荷槽是 [3 x i64]，f64 讀回循 s46/s47 路徑：slot[0]（i64）等宽 bitcast→double，無需 helper。
@@ -357,7 +401,9 @@ OP-OPTLEF64 = 83
 OP-OPTGTF64 = 84
 OP-OPTGEF64 = 85
 
-; ── option 與純量（scalar）的排序（M4-c 續件 s53；鏡像 Go emitCmp 的 aOpt/bOpt 分支，codegen.go:6490-6520：?T 與普通值比較走載荷路）──
+; option 與純量（scalar）的排序（M4-c 續件 s53；鏡像 Go emitCmp 的 aOpt/bOpt 分支，codegen.go:6490-6520：?T 與普通值比較走載荷路）
+...
+
 ; Go 口徑：一側為 %option、另一側為可比的普通值（optionPayloadComparable：同型別或整數寬度互容）時，
 ;   取出 option 側載荷（field 1,0）後與純量側操作數一起走普通 icmp／fcmp——⚠️【操作數次序不變、謂詞不翻轉】，
 ;   tag 不参与（提取後整個丟棄）：這與 s51／s52 同紀律（無 tag 項、無 and），只是另一側從 %op 換成普通值。
@@ -374,7 +420,9 @@ OP-OPTLESC = 87
 OP-OPTGTSC = 88
 OP-OPTGESC = 89
 
-; ── option 與 f64 純量（scalar）的排序（M4-c 續件 s54；鏡像 Go emitCmp aOpt／bOpt 提取後落 double 翼，codegen.go:6686-6714：OpLt／Le／Gt／Ge ⇒ fcmp olt／ole／ogt／oge double）──
+; option 與 f64 純量（scalar）的排序（M4-c 續件 s54；鏡像 Go emitCmp aOpt／bOpt 提取後落 double 翼，codegen.go:6686-6714：OpLt／Le／Gt／Ge ⇒ fcmp olt／ole／ogt／oge double）
+...
+
 ; Go 口徑：optionPayloadComparable 對 double 載荷只認同形（payloadT==otherT ⇒ double-vs-double 過閘；double-vs-i64 不過閘回退 tag 比較，noc 未實作回退，由呼叫方保證不餵）；
 ;   過閘後提取載荷與 double 純量發 fcmp，【操作數次序不變、謂詞不翻轉】同 s53——i64 側換成 bitcast 後的 double（鏡像 Go 對載荷做 typed load double，noc 內聯槽等價）。
 ; OP-OPTLTSCF／OP-OPTLESCF／OP-OPTGTSCF／OP-OPTGESCF：dst = i64 結果 id（0/1）；方向與純量側型別由 vty 雙護欄判定：
@@ -388,7 +436,9 @@ OP-OPTLESCF = 91
 OP-OPTGTSCF = 92
 OP-OPTGESCF = 93
 
-; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
+; 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）
+...
+
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
 ; 字段型别当前**只有 i64**（ADD/MUL 等分支硬编 %v）；str/vec/option 字段需逐字段 RC，属后续。
@@ -404,7 +454,9 @@ OP-OPTGESCF = 93
 OP-STRUCT-MK = 31
 OP-STRUCT-GET = 32
 
-; ── 结构体写字段与结构体槽（M4-c 续件 s30）────────────────────────────
+; 结构体写字段与结构体槽（M4-c 续件 s30）
+...
+
 ; OP-STRUCT-SET：dst = 新结构体值 id；xa[k] = 旧结构体值 id；
 ;               xa[k]+1 = 新字段值 id（i64，**连续**——本 op 自带连续约定，
 ;               ⚠️ s64 后与 OP-CALL 非同形：CALL 的实参走侧池 args，见 OP-CALL 注）；
@@ -424,7 +476,9 @@ OP-STALLOC = 34
 OP-STSTORE = 35
 OP-STLOAD = 36
 
-; ── 结构体字段的 RC 原语（M4-c 续件 s33；§11 B11 的第一块）──────────────
+; 结构体字段的 RC 原语（M4-c 续件 s33；§11 B11 的第一块）
+...
+
 ; 语义：结构体**值**对它的每个「持有堆的字段」各算一份拥有权。这两个 op 只做**机械动作**，
 ;   **不做策略判断**：要不要 retain、何时 release 由调用方（未来的 hir2mir）决定。
 ;   ⚠️ 刻意**不**让 OP-STRUCT-MK 自动 retain：MK 的操作数可能是全局常量（STRCONST，无 RC 头），
@@ -442,7 +496,9 @@ OP-STLOAD = 36
 OP-STRUCT-RETAIN = 37
 OP-STRUCT-RELEASE = 38
 
-; ── RC 发射原语（M4-c 第十一件：STRCAT 的 retain/release）────────
+; RC 发射原语（M4-c 第十一件：STRCAT 的 retain/release）
+...
+
 ;   STRCAT 的结果在堆上、带 RC 头（rc=1，拥有）；本编译器必须在别名传递时
 ;   retain、在 scope 退出时 release，否则 UAF（§5.6.1 铁律）。这两个 op 是
 ;   hir2mir 后续组合 RC 的原子（见 §5.3.4.bf）。
@@ -459,7 +515,9 @@ OP-STRUCT-RELEASE = 38
 OP-RETAIN = 27
 OP-RELEASE = 28
 
-; ── vec 的释放原语（M4-e s99n：与切片字面量取得所有权配对）────────────────
+; vec 的释放原语（M4-e s99n：与切片字面量取得所有权配对）
+...
+
 ;   ⚠️ 与 OP-RETAIN/RELEASE **不同族**：vec 的数据缓冲没有 RC 头（§11 B5——元素只有 i64，
 ;      缓冲走裸 @malloc/@free），因此**没有 retain**，只有「一次性 free」。本 op 是破坏性的。
 ; OP-VEC-FREE：x = 向量值 id（TY-VEC）；无结果。发射
@@ -488,7 +546,9 @@ OP-VEC-FREE = 94
 ;   ⚠️ op 码取 95，接在 OP-VEC-FREE=94 之后，不重排既有码。
 OP-PRINT = 95
 
-; ── 切片 B 底座：str 元素向量助手（%vec 元素型别 = %str-long，stride 16）────────
+; 切片 B 底座：str 元素向量助手（%vec 元素型别 = %str-long，stride 16）
+...
+
 ; ⚠️ op 码 96/97/98 接在 OP-PRINT=95 之后，不重排既有码。
 ; ⚠️ 这三 op 只由【底座验证】（cg-test 手写 op）与后续 h2m []str 降级臂发出；与 i64 版同形，
 ;    差在助手名（vec_push_str/get_str/free_str）与元素 stride（16 vs 8）。
@@ -504,7 +564,9 @@ OP-VECGETSTR = 97
 ;   （逐元素 release data + free 陣列緩衝，dat==0 短路）。破坏性一次性释放，所有权必须唯一。
 OP-VEC-FREE-STR = 98
 
-; ── 切片 B 第三层：with-cap 容量预留助手 ─────────────────────────────────
+; 切片 B 第三层：with-cap 容量预留助手
+...
+
 ; ⚠️ op 码 99/100 接在 98 之后，不重排既有码。
 ; with-cap(n) 的 cap 有真实语义（跨帧传递的 bufio 缓冲要求 buf.cap 原样保留），
 ;   不能像 @vec_new 那样恒回 {0,0,0}。两 op 按 let 注解型别选择 stride。
@@ -515,3 +577,20 @@ OP-VECNEWCAP = 99
 ; OP-VECNEWCAPSTR：dst = %vec（TY-VECSTR）；x = cap 值 id（TY-I64）。
 ;   发 call %vec @vec_new_cap_str(i64 %v)（malloc cap*16 + memset 0）。
 OP-VECNEWCAPSTR = 100
+
+; str.byte(i)：取第 i 個【字節】（非碼點），越界 ⇒ nil（s117；鏡像 Go emitBuiltinRawByteAt，codegen.go:17967）
+...
+
+; 語義：?byte。合法 i ⇒ tag=0（ok）+ 載荷 = data[i]（zext i8→i64）；i<0 或 i>=len ⇒ tag=1（nil），載荷 0。
+;   ⚠️ 與 s[s.i]（碼點讀）不同：byte 按【位元組】計，回 ?byte 且恆裝箱（option 載荷 > 264B 才 boxing，
+;   但 ?byte 走統一表示 %option{i64,[3xi64]} ⇒ 袋型別 TY-OPT，槽型別恒定，無 inline/boxing 分支）。
+; ⚠️ 越界防護用 select（GEP+load 無條件執行，與 Go 同構：越界地址的 load 結果被 select 丟棄）。
+; OP-STRBYTE：dst = option 值 id（TY-OPT，落 %op）；x = 字符串值 id（TY-STR，落 %sv）；y = 索引 i64 值 id（落 %v）。
+;   發：%sbL<k>=extractvalue %str-long %sv<x>,0；%sbW<k>=zext i32 %sbL<k> to i64；
+;       %sbN<k>=icmp slt i64 %v<y>,0；%sbG<k>=icmp sge i64 %v<y>,%sbW<k>；%sbO<k>=or i1 %sbN<k>,%sbG<k>；
+;       %sbP<k>=extractvalue %str-long %sv<x>,2；%sbE<k>=getelementptr i8,i8* %sbP<k>,i64 %v<y>；
+;       %sbD<k>=load i8,i8* %sbE<k>；%sbV<k>=zext i8 %sbD<k> to i64；
+;       %sbT<k>=select i1 %sbO<k>,i64 1,i64 0；%sbY<k>=select i1 %sbO<k>,i64 0,i64 %sbV<k>；
+;       %sb0<k>=insertvalue %option zeroinitializer,i64 %sbT<k>,0；%op<dst>=insertvalue %option %sb0<k>,i64 %sbY<k>,1,0
+; ⚠ op 碼接在既有最大碼 OP-VECNEWCAPSTR=100 之後（取 101），不重排既有碼。
+OP-STRBYTE = 101

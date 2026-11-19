@@ -31,7 +31,8 @@ check = (cond bool, msg str) (r bool) {
 ; 全部斷言以此旗標彙整（於 top-level main scope 更新）
 allok = true
 
-; ── 1. add / contains / size ──
+; 1. add / contains / size
+...
 buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 s = set.init(buf)
 n = 0
@@ -44,7 +45,8 @@ allok = allok && check(! s.contains(99), 'not contains 99')
 allok = allok && check(s.size() == 3, 'size() == 3')
 allok = allok && check(! s.is-empty(), 'not empty')
 
-; ── 2. add 重複元素 ──
+; 2. add 重複元素
+...
 dbuf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 ds = set.init(dbuf)
 dn = 0
@@ -53,7 +55,8 @@ dn = ds.add(5)
 dn = ds.add(5)
 allok = allok && check(dn == 1, 'add duplicate 3x -> size 1')
 
-; ── 3. remove ──
+; 3. remove
+...
 rm [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 rs = set.init(rm)
 rs.add(1)
@@ -66,7 +69,8 @@ allok = allok && check(! rs.contains(2), 'removed 2 gone')
 allok = allok && check(rs.contains(1), 'still contains 1')
 allok = allok && check(rs.contains(3), 'still contains 3')
 
-; ── 4. union ──
+; 4. union
+...
 abuf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 aset = set.init(abuf)
 aset.add(1)
@@ -87,7 +91,8 @@ allok = allok && check(un == 5, 'union -> size 5')
 allok = allok && check(aset.contains(4), 'union contains 4')
 allok = allok && check(aset.contains(5), 'union contains 5')
 
-; ── 5. intersection ──
+; 5. intersection
+...
 ia [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 ias = set.init(ia)
 ias.add(1)
@@ -104,7 +109,8 @@ allok = allok && check(icnt == 2, 'intersection size 2')
 allok = allok && check(iout[0] == 2, 'intersection [0] == 2')
 allok = allok && check(iout[1] == 3, 'intersection [1] == 3')
 
-; ── 6. difference ──
+; 6. difference
+...
 da [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 das = set.init(da)
 das.add(1)
@@ -120,7 +126,8 @@ allok = allok && check(dcnt == 2, 'difference size 2')
 allok = allok && check(dout[0] == 1, 'difference [0] == 1')
 allok = allok && check(dout[1] == 3, 'difference [1] == 3')
 
-; ── 7. to-vec ──
+; 7. to-vec
+...
 tv [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 tvs = set.init(tv)
 tvs.add(10)
@@ -132,7 +139,8 @@ allok = allok && check(vec[0] == 10, 'to-vec [0] == 10')
 allok = allok && check(vec[1] == 20, 'to-vec [1] == 20')
 allok = allok && check(vec[2] == 30, 'to-vec [2] == 30')
 
-; ── 8. 泛型 str 元素 ──
+; 8. 泛型 str 元素
+...
 sbuf [4]str = ['', '', '', '']
 ss = set.init(sbuf)
 sn = 0
@@ -146,7 +154,8 @@ sn = ss.remove('apple')
 allok = allok && check(sn == 1, 'str set: remove -> size 1')
 allok = allok && check(! ss.contains('apple'), 'str set: apple removed')
 
-; ── 結果 ──
+; 結果
+...
 {
     allok -> {
         print('set test ALL PASSED')

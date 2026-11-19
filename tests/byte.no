@@ -11,7 +11,8 @@
 ; 片段間以 print('---') 分隔以保全 stdout 指紋確定性（golden 比對用）。
 ...
 
-; ── 來自 to-bytes.no：str.to-bytes 基本 + 首字節斷言 ──
+; 來自 to-bytes.no：str.to-bytes 基本 + 首字節斷言
+...
 print('start')
 s1 = 'test label'
 print('before len')
@@ -28,7 +29,8 @@ b1[0] != 116 -> {
 print('PASS: to-bytes')
 print('---')
 
-; ── 來自 to-bytes2.no：to-bytes 後只印 len，不訪問 b[0] ──
+; 來自 to-bytes2.no：to-bytes 後只印 len，不訪問 b[0]
+...
 print('start')
 s2 = 'test label'
 print('before to-bytes')
@@ -38,7 +40,8 @@ print('before print')
 print('done')
 print('---')
 
-; ── 來自 to-bytes3.no：不同呼叫方式，訪問 b[0] ──
+; 來自 to-bytes3.no：不同呼叫方式，訪問 b[0]
+...
 print('start')
 s3 = 'test label'
 b3 []byte

@@ -123,7 +123,8 @@ t-mod = () {
     }
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('int.to-str', t-to-str)
 p2, f2 = runner.test('int.div', t-div)

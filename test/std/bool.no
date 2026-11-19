@@ -20,7 +20,8 @@ t-to-str-false = () {
     runner.str-eq(s2, 'false', 'false.to-str content')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('bool.to-str true', t-to-str-true)
 p2, f2 = runner.test('bool.to-str false', t-to-str-false)

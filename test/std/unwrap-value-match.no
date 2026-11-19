@@ -111,7 +111,8 @@ t-with-result-param = () {
     }
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('index-subject', t-index-subject)
 p2, f2 = runner.test('index-oob', t-index-oob)

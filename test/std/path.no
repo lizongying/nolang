@@ -25,7 +25,8 @@ P-FILE = '/tmp/nolang_path_test_dir/a.txt'
 P-RENAMED = '/tmp/nolang_path_test_dir/b.txt'
 P-ABSENT = '/tmp/nolang_path_test_dir/absent.txt'
 
-; ── 助手 ──────────────────────────────────────
+; 助手
+...
 
 ; 字串相等斷言（走 eq-full，免手算位元組長度）
 se = (a str, b str, msg str) {
@@ -49,7 +50,8 @@ mk = (s str) (out path) {
     out.p = s
 }
 
-; ── base ──────────────────────────────────────
+; base
+...
 
 ; base：取最後一段，/a/b/c.txt → c.txt
 t-base = () {
@@ -69,7 +71,8 @@ t-base-root = () {
     runner.eq(p.base().len-bytes(), 0, 'base / len == 0')
 }
 
-; ── ext ───────────────────────────────────────
+; ext
+...
 
 ; ext 回含點的副檔名：/a/b/c.txt → .txt
 t-ext = () {
@@ -94,7 +97,8 @@ t-ext-dotdot = () {
     runner.eq(p.ext().len-bytes(), 0, 'ext .. len == 0')
 }
 
-; ── is-abs ────────────────────────────────────
+; is-abs
+...
 
 ; is-abs：以 '/' 開頭的路徑為絕對路徑
 t-is-abs = () {
@@ -114,7 +118,8 @@ t-is-abs-empty = () {
     runner.is-false(p.is-abs(), 'is-abs empty == false')
 }
 
-; ── join ──────────────────────────────────────
+; join
+...
 
 ; 基本拼接：'/a/b' + 'c.txt' → '/a/b/c.txt'，且 .p 原地更新
 t-join-basic = () {
@@ -189,7 +194,8 @@ t-join-long = () {
     se(j.slice-bytes(9, 610), long, 'join 長後綴內容完整')
 }
 
-; ── dir ───────────────────────────────────────
+; dir
+...
 
 t-dir = () {
     p = mk('/a/b/c.txt')
@@ -221,7 +227,8 @@ t-dir-non-ascii = () {
     se(p.dir(), '/tmp/日本語', 'dir 非 ASCII')
 }
 
-; ── split ─────────────────────────────────────
+; split
+...
 
 t-split = () {
     p = mk('/a/b/c.txt')
@@ -256,7 +263,8 @@ t-split-non-ascii = () {
     se(p.split(), 'ファイル.txt', 'split 非 ASCII 檔名')
 }
 
-; ── clean ─────────────────────────────────────
+; clean
+...
 
 t-clean-basic = () {
     p = mk('/a/./b/../c//d/')
@@ -361,7 +369,8 @@ t-clean-non-ascii = () {
     se(p.p, '日本語/ファイル.txt', 'clean 非 ASCII 折疊 //')
 }
 
-; ── 檔案系統 ──────────────────────────────────
+; 檔案系統
+...
 
 ; 建立測試目錄（可重複執行：開場先清掉上次殘留）
 t-fs-make-dir = () {
@@ -433,7 +442,8 @@ t-fs-change-dir = () {
     runner.is-true(back.p.eq-full(start.p), '切回後 current 還原')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('path.base', t-base)
 p2, f2 = runner.test('path.base-no-slash', t-base-no-slash)

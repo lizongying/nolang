@@ -3076,3 +3076,137 @@ t8 語料（`compiler/tests/t8/`，既有 f1–f6 + 本輪補 f7–f9）把「�
   仍與真·兜底共享「bindingVariant 空」，靠 `dot-val`／`Condition 是標識符` 認臂。
 - 下一輪候選優先級：① **`str.byte` 的方法族降級**（cg 新 OP + h2m ty-of／lower-expr 臂，
   解 5 個受控形 + std 49 處）；② 括號／其它主體形態的回歸補齊。
+
+---
+
+### ㉞ s117 —— `str.byte(i)` 的方法族降級：值位 match 主體的最後一塊拼圖（2026-11-19）
+
+**① 定位**
+
+- ㉝ ⑤ 指定的第一優先候選。t8 受控語料裡 f1／f6／f8 都是
+  `r = s.byte(0): { ok -> it … }` 形——**值位 match 主體是 CALL 表達式**，卡點不在
+  parser（㉝ 已修 CALL 主體的 `:` 歸屬），而在 `h2m-lower-expr` 的**方法族**：
+  `str.byte` 不在 s113 的 str 方法臂裡，`cg.no` 也沒有對應的 OP。
+- 逐檔 `drv.build-ll` 實測：f1／f6／f8 均 `unsupported 1 method`，t8 發射形停在他處。
+- 語义參照（Go oracle）：`src/build/llvm/codegen.go:17967 emitBuiltinRawByteAt`——
+  按**位元組**（非碼點）讀，越界回 `nil`（option 的 nil 態，恆裝箱）。
+
+**② 修復（全在 noc 側，`compiler/src/`）**
+
+- `mir.no`：新 **`OP-STRBYTE = 101`**（接在 `OP-VECNEWCAPSTR = 100` 後，不重排既有碼）。
+  語義：`dst = %option`；`x = str` 值 id；`y = i64` 字節下標。越界用 `select` 收斂成
+  `tag=1`（nil）而非分支。
+- `cg.no`：新發射臂（OP-STRBYTE），序列為
+  `extractvalue %str-long …, 0` → `zext i32 → i64` → `icmp slt`／`icmp sge` → `or` →
+  `select`（tag 與 payload 各一次）→ 兩次 `insertvalue` 構造 `%option`。
+  ⚠️ `%str-long` 的 data 指標在 **field 2**（0/1 是 u32 的 len/cap）——對齊 B28 教訓。
+- `h2m.no`：
+  - `h2m-ty-of` 加臂 `mt == TY-STR && mf == 'byte' -> code = TY-OPT`——`?byte` 恆裝箱
+    ⇒ let 槽必須是 option 型別，否則 `?=` 的 slot 型別推錯。
+  - `h2m-lower-expr` 的 `rty == TY-STR` 塊加臂
+    `mname == 'byte' && ok-method == 0 && na == 1`：**只收正好一參且參數為 i64**，
+    發 `OP-STRBYTE` 到建立立的 `TY-OPT` 槽；其餘（非 i64 參數、多參）**落門禁，絕不猜**。
+- `h2m-test.no`：
+  - 新增 `vm-strbyte-subj`：`s.byte(0): { ok -> it … }` 的值位 match 主體 ⇒ 斷言
+    `unsup == 0` + 有 `define` + 有 `getelementptr i8`（確認真的發了 OP-STRBYTE）。
+  - s113 的對照斷言 `unsupported method still -1` 原本用 `str.byte` 當「未支持方法」，
+    s117 起它已支持 ⇒ **如實換成 `nosuch-method`**，另加 `s117 str byte ty ⇒ TY-OPT`。
+
+**③ 量測（`drv.pkg-ll-cov` 逐檔 `compiler/src/*.no`）**
+
+| 指標 | s116 | s117 | Δ |
+| --- | --- | --- | --- |
+| ID（`ID:` 行，16 檔合計） | 759 | **759** | **0** |
+| h2m-test 斷言 | 1182 | **1186** | +4 |
+| t8 發射形 | — | **7/9** | — |
+
+ID 持平是**預期**：ID 行計的是 `h2m-name-find` 三表（局部／形參結果／自由／全局）未命中的
+**標識符引用**，與本輪的**方法族**降級正交——`str.byte` 的方法名從來不是 name-find 的
+對象。16 檔分布：`drv` 367、`mir` 229、`h2m` 74、`ck` 35、`ast` 25、`lx` 16、
+`cg-runtime` 8、`ck-sig` 3、`link` 2，其餘 0。
+
+**④ 驗證（先紅後綠 + 語义端到端）**
+
+- **语义端到端**：`S = 'ABC'`／`X = S.byte(0): { ok -> it … -> 0 }`／`exit(X)`，
+  用 `drv.build-to` 鏈出可執行檔實跑 ⇒ **rc = 65**（`'A'` 的位元組）✓。
+  這是本輪最硬的一條：不止「有 define」，而是**跑起來值對**。
+- **t8 受控語料**：f1／f3／f5／f6／f7／f8／f9 七檔轉綠（有 `define` +
+  `getelementptr i8`）；**f2／f4 仍 EMPTY**（見 ⑤）。
+- **全量門禁**（`no run` 斷言數，與 ㉝ 同口徑）：`ps` 51、`h2m` 1186、`cg` 363、
+  `ck` 20、`ck-sig` 50、`lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、
+  `ps-err` 46、`pkg-ll-call` 5、`pkg-sigs` 5、`pkg-ll` 10 **全綠**（後兩個用 `no run`
+  跑，95s／225s）。
+- 格式：`no fmt -d` 為空。
+- 臨時探針 `probe-s117-{cov,t8,run,allcov}.no` 已刪；`t8/` 語料保留。
+
+**⑤ 誠實邊界與下一步**
+
+- **f2 未解**：`r = s.byte(0): { -> it }`——主體**只有兜底臂**，`it` 沒有 `ok` 臂提供
+  綁定。h2m 的 `is-wild` 門禁（`dotv==0 && bvx==0 && cn==0 ⇒ is-wild`）仍判 `bad=1`。
+  要支持得先定「**兜底臂的 `it` 語义**」（Go 側同形如何定義，待查對齊）。
+- **f4 未解**：`x = 1; r = x: { ok -> it … }`——主體是 **i64（非 option）**的值位 match。
+  值位 match 主體的三態 arm 語义目前只對 option 主語定義（D6）；非 option 主體未定義。
+- **只收一參 i64**：`str.byte(ch)`（char 參）等落門禁；方法族其它成員（`bytes` 32 處、
+  `len` 21 處）本輪未動。
+- **ID 指標的盲區**：本輪證明 ID 對「方法族降級」不敏感——下輪若只做方法族，
+  應同時看 **t8 發射形**與 **std 主体計數**，別只看 ID。
+- 下一輪候選優先級：① **括號主體** `(a + b): { }` 回歸（㉝ ⑤ 遺留，primary 括號分支
+  後的 `:` 由外層消費，未專門驗證）；② **`bytes` 方法族**（std 32 處）；
+  ③ f2 兜底臂 `it` 語义對齊 Go。
+
+---
+
+### ㉟ s118 —— 括號主體 `(a + b): { }`：一行白名單修復，外加 i64 值匹配變體臂的語義釘死（2026-11-19）
+
+**① 定位**
+
+- ㉞ ⑤ 的遺留項①。實測：`r = (a + b): { … }` 讓整個文件 `unsupported 1`——**不是**
+  ㉝ 猜的「`:` 由外層消費」，而是 **primary 括號分支建的 `K-GROUPED-EXPRESSION`
+  不在 s116 的明示 match 白名單裡** ⇒ `:` 未消費 ⇒ 後面的 `{ … }` 被當成獨立塊。
+- h2m 側**本就認** GroupedExpression（`h2m-ty-of` 與 `h2m-lower-expr` 各有一臂），
+  缺口只在 ps 一行。
+
+**② 修復（ps 一行 + 兩條測試）**
+
+- `ps.no`：明示 match 白名單加 `ast.kind-at(t, idx) == asp.K-GROUPED-EXPRESSION -> match-subj = 1`。
+- `ps-test.no`：新增 `test-expr-subj-grouped`——`x = (a + b): { ok -> it … }` 的
+  dump 必須是 `SurfaceMatch` 主體 `GroupedExpression{InfixExpression{a, b}}`。
+- `h2m-test.no`：新增 `vm-grouped-subj`——括號主體 + 常量臂降級後
+  `unsup == 0` + 有 `define` + 有 `icmp eq i64`。
+
+**③ 量測（`drv.pkg-ll-cov` 逐檔 16 個 `compiler/src/*.no`）**
+
+| 指標 | s117 | s118 | Δ |
+| --- | --- | --- | --- |
+| ID（`ID:` 行，16 檔合計） | 759 | **759** | **0** |
+| ps-test 斷言 | 51 | **52** | +1 |
+| h2m-test 斷言 | 1186 | **1189** | +3 |
+
+ID 持平符合預期：本輪只動 **parse 白名單**，不碰 `h2m-name-find` 的三表未命中口徑。
+
+**④ 驗證（端到端 + 語義實驗）**
+
+- **括號主體端到端**：`f = (a i64, b i64) (r i64) { r = (a + b): { 7 -> 1 … -> 0 } }`，
+  `drv.build-to` 鏈出可執行檔實跑 `f(3, 4)` ⇒ **rc = 1**（7 命中常量臂）✓。
+- **全量門禁**（`no run` 口徑）：`ps` 52、`h2m` 1189、`cg` 363、`ck` 20、`ck-sig` 50、
+  `lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、`ps-err` 46、
+  `pkg-ll-call` 5、`pkg-sigs` 5、`pkg-ll` 10 **全綠**。
+- **Go oracle 語義實驗**（本輪最有價值的副產品，4 組對照）：i64 主體的值匹配中，
+  `ok` / `nil` / `err` 三個裸標識符臂**都匹配常量 0**（誰在前誰贏）；
+  常量臂照常匹配字面值（`0 ->` 匹配 0、`1 ->` 匹配 1）；未定義的裸標識符臂
+  （`zzz ->`）**編譯錯誤**。`it` 取主體值。
+  ⇒ t8 的 **f4**（`x = 1; r = x: { ok -> it … }`）不是「非 option 主體未定義」，
+  而是 noc **vmode 門禁拒收了 Go 接受的形態**（`ok` 臂撞在
+  `hb+5 != 0 -> bad = 1` 的 dot-val 禁令上）。
+
+**⑤ 誠實邊界與下一步**
+
+- **本輪零語料收益**：`compiler/src` 與 `src/std` 裡**真正**的括號主體
+  （`= (…): {`，非 `[a..b): {` 區間遍歷、非 `s.byte(i): {` 呼叫主體）**皆為 0 處**。
+  這是一處**語言完整性**修復（有測試鎖定），不是語料驅動的。
+- **括號主體 + `ok` 臂仍 unsupported**：`(a + b): { ok -> it … }` 卡在 vmode 門禁
+  （`hb+5 != 0 -> bad = 1`），根因與 f4 同源——下一輪的明確目標。
+- **`bytes` 方法族**（std 32 處）本輪未動。
+- 下一輪候選優先級：① **vmode 變體臂**——讓 `ok` / `nil` / `err` 在 i64 值匹配中
+  按 **常量 0** 匹配（對齊 Go 實測，含 `it` = 主體值），一併解 f4 與
+  「括號主體 + `ok` 臂」；② **`bytes` 方法族**。

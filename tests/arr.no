@@ -85,7 +85,8 @@ print(by[0]); 1
 print(by[1]); 2
 print(by[2]); 3
 
-; ── []i16 / []i32: MIR stores these as i64, push must agree ──
+; []i16 / []i32: MIR stores these as i64, push must agree
+...
 w []i16
 w.push(258)
 w.push(515)
@@ -128,7 +129,8 @@ print(n[0].len()); 2
 print(n[0][0]); 7
 print(n[0][1]); 8
 
-; ── a pushed-then-read byte is a real byte, not a truncated i64 ──
+; a pushed-then-read byte is a real byte, not a truncated i64
+...
 sum-1 = 0
 
 #{overflow=wrap}

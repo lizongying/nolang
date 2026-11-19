@@ -67,7 +67,8 @@ pair = (p str) (lf i64, cf i64, af i64) {
     af = net.net-accept(lf)
 }
 
-; ── 裸 builtin：unix-listen / unix-dial ──────────────────────────
+; 裸 builtin：unix-listen / unix-dial
+...
 
 t-raw = () {
     p = '/tmp/no-unix-t1.sock'
@@ -115,7 +116,8 @@ t-raw = () {
     runner.eq(unix.UNIX-BACKLOG, 128, 'UNIX-BACKLOG = 128')
 }
 
-; ── unix-listen-on / listener.{listen,fd-of,path-of,close} ────────
+; unix-listen-on / listener.{listen,fd-of,path-of,close}
+...
 
 t-listen-on = () {
     p = '/tmp/no-unix-t2.sock'
@@ -146,7 +148,8 @@ t-listen-on = () {
     fs.remove(p)
 }
 
-; ── unix-dial-to / conn.{dial,send,recv,recv-all,fd-of} ───────────
+; unix-dial-to / conn.{dial,send,recv,recv-all,fd-of}
+...
 
 t-conn-io = () {
     p = '/tmp/no-unix-t3.sock'
@@ -212,7 +215,8 @@ t-conn-io = () {
     fs.remove(p)
 }
 
-; ── conn.{set-recv-timeout,set-timeout,recv-with-timeout} ────────
+; conn.{set-recv-timeout,set-timeout,recv-with-timeout}
+...
 
 t-conn-timeout = () {
     p = '/tmp/no-unix-t4.sock'
@@ -261,7 +265,8 @@ t-conn-timeout = () {
     fs.remove(p)
 }
 
-; ── listener.{set-timeout,accept-with-timeout} ───────────────────
+; listener.{set-timeout,accept-with-timeout}
+...
 
 t-accept-timeout = () {
     p = '/tmp/no-unix-t5.sock'
@@ -294,7 +299,8 @@ t-accept-timeout = () {
     fs.remove(p)
 }
 
-; ── unix-dial-timeout ────────────────────────────────────────────
+; unix-dial-timeout
+...
 
 t-dial-timeout = () {
     p = '/tmp/no-unix-t6.sock'
@@ -330,7 +336,8 @@ t-dial-timeout = () {
     fs.remove(p)
 }
 
-; ── close 之後的所有入口都要安全 ─────────────────────────────────
+; close 之後的所有入口都要安全
+...
 
 t-closed = () {
     p = '/tmp/no-unix-t7.sock'
@@ -374,7 +381,8 @@ t-closed = () {
     fs.remove(p)
 }
 
-; ── 執行 ─────────────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('unix.raw', t-raw)
 p2, f2 = runner.test('unix.listen-on', t-listen-on)

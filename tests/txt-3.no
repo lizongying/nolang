@@ -14,7 +14,9 @@
 ; 片段間以 print('---') 分隔以保全 stdout 指紋確定性（golden 比對用）。
 ...
 
-; ── 來自 txt-slice.no ──
+; 來自 txt-slice.no
+...
+
 ; txt 原始切片語法 t[a..b]。txt 索引是「碼點」語義（與 str 一致），
 ; 切片結果仍是 txt，內容必須與 str 逐字一致。此檔在 txt 切片支援前無法編譯。
 
@@ -54,7 +56,9 @@ print(m-sl[5..])
 print(m-sl(0..2))
 print('---')
 
-; ── 來自 txt-codepoint.no ──
+; 來自 txt-codepoint.no
+...
+
 ; test-txt-codepoint: txt 码点索引回归（读 + 写，MIR 后端）
 ; 每次 `no run` 输出应为纯 ok 行；任何 FAIL 行都代表回归。
 
@@ -75,7 +79,8 @@ oob-is-err = (t txt, i i64) (bad bool) {
     }
 }
 
-; ── 读取：码点索引 → char（UTF-8 解码）──
+; 读取：码点索引 → char（UTF-8 解码）
+...
 t txt = 'A中B'
 ck('read-ascii-0', t[0] == 65)
 ck('read-cjk-1', t[1] == 20013)
@@ -89,7 +94,9 @@ ck('read-emoji-1', e[1] == 120)
 ck('count-mixed', e.count() == 2)
 ck('bytes-mixed', e.len-bytes() == 5)
 
-; ── 写入：增长（1 字节 → 3 字节，后移尾部）──
+; 写入：增长（1 字节 → 3 字节，后移尾部）
+...
+
 ; 2026-11-12 起 `t[i] = v` 被 idxwrite 全域禁用（索引写会隐式改变长度）。
 ; 就地改值的合法通道是 place-match：以「读」作闸门，只在该索引可读时写回。
 g txt = 'aX'
@@ -103,7 +110,8 @@ ck('grow-cp1', g[1] == 88)
 ck('grow-bytes', g.len-bytes() == 4)
 ck('grow-count', g.count() == 2)
 
-; ── 写入：收缩（3 字节 → 1 字节）──
+; 写入：收缩（3 字节 → 1 字节）
+...
 s txt = '中X'
 s[0]: {
     ok -> it = "a"
@@ -114,7 +122,9 @@ ck('shrink-cp0', s[0] == 97)
 ck('shrink-cp1', s[1] == 88)
 ck('shrink-bytes', s.len-bytes() == 2)
 
-; ── 写入：在 count 处追加 ──
+; 写入：在 count 处追加
+...
+
 ; i == count 时 place-match 的闸门返 nil（读越界），天然跳过；追加必须走显式的 push。
 w txt = 'ab'
 w.push("中")
@@ -122,7 +132,8 @@ ck('append-cp2', w[2] == 20013)
 ck('append-bytes', w.len-bytes() == 5)
 ck('append-count', w.count() == 3)
 
-; ── 255 字节上限：填满后超界的码点写入被丢弃 ──
+; 255 字节上限：填满后超界的码点写入被丢弃
+...
 b txt = ''
 i <- [0..300): {
     b.push("a")
@@ -137,7 +148,9 @@ b[255]: {
 ck('cap-drop-bytes', b.len-bytes() == 255)
 ck('cap-tail-intact', b[254] == 97)
 
-; ── 码点写入 / byte 读取：原位改一个 ASCII 字元，长度不变 ──
+; 码点写入 / byte 读取：原位改一个 ASCII 字元，长度不变
+...
+
 ; 原本用 `r.set-byte(0, 90)`；該內建已於 2026-11-11 私有化為 `_set-byte`，
 ; 公開面 2026-11-11 曾由碼點直寫 `r[0] = <char>` 承擔；2026-11-12 起直寫也被
 ; idxwrite 禁用，一律改用 place-match。

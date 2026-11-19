@@ -29,7 +29,8 @@
 
 # /test/runner
 
-; ── 便捷斷言輔助 ──────────────────────────────
+; 便捷斷言輔助
+...
 
 ; 把 ?i64 壓成三態哨兵值：9000001 = nil、9000002 = err、其餘為實際值
 ; 必須在呼叫端就地 match：帶 err 的 ?i64 跨函數傳遞會在 exit 崩
@@ -66,7 +67,8 @@ bool-str = (b bool) (out str) {
     }
 }
 
-; ── 基礎構造 ──────────────────────────────────
+; 基礎構造
+...
 
 ; 新建進程：初始 pid 為 0、running 為 false（尚未啟動）
 t-new = () {
@@ -84,7 +86,8 @@ t-signals = () {
     runner.eq(process.WNOHANG, 1, 'WNOHANG == 1')
 }
 
-; ── process.shell / spawn + wait ──────────────
+; process.shell / spawn + wait
+...
 
 ; shell 直譯器：'true' 退出碼 0、'false' 退出碼非 0
 t-shell = () {
@@ -102,7 +105,8 @@ t-spawn-wait = () {
     runner.eq(status, 0, 'wait true status == 0')
 }
 
-; ── process.parent-pid ───────────────────────
+; process.parent-pid
+...
 
 ; parent-pid 應為正整數（當前進程的父進程號）
 t-parent-pid = () {
@@ -110,7 +114,8 @@ t-parent-pid = () {
     runner.gt(pid, 0, 'parent-pid > 0')
 }
 
-; ── process.cmd ──────────────────────────────
+; process.cmd
+...
 
 ; cmd：執行 echo 退出碼 0，且擷取到的標準輸出非空
 t-cmd = () {
@@ -187,7 +192,8 @@ t-cmd-not-found = () {
     runner.gt(err.len(), 0, 'cmd 命令不存在 err 非空')
 }
 
-; ── process.start-with-opts ──────────────────
+; process.start-with-opts
+...
 
 ; 啟動 + 讀輸出 + 等待 + 收尾：ok/pid/running 三態齊全
 t-start-opts = () {
@@ -265,7 +271,8 @@ t-start-opts-split-err = () {
     runner.str-eq(content, 'out\n', 'read-all 只讀 stdout')
 }
 
-; ── process.start（單參數便捷版） ─────────────
+; process.start（單參數便捷版）
+...
 
 t-start = () {
     p = process.new()
@@ -278,7 +285,8 @@ t-start = () {
     runner.str-eq(content, 'xy', 'start 傳遞單一參數')
 }
 
-; ── process.wait-nohang ──────────────────────
+; process.wait-nohang
+...
 
 ; 執行中回 nil；wait 收割後回記錄的退出碼
 t-wait-nohang = () {
@@ -297,7 +305,8 @@ t-wait-nohang = () {
     p.close()
 }
 
-; ── process.kill / terminate / force-kill ────
+; process.kill / terminate / force-kill
+...
 
 ; kill(0) 只做存在性檢查；terminate 發 SIG-TERM
 t-kill-terminate = () {
@@ -328,7 +337,8 @@ t-force-kill = () {
     runner.eq(p.exit-code-of(), 0, 'force-kill 後 exit-code-of 有記錄')
 }
 
-; ── 標準流操作 ───────────────────────────────
+; 標準流操作
+...
 
 ; read：一次讀取到位元組緩衝區
 t-read = () {
@@ -389,7 +399,8 @@ t-write = () {
     p.close()
 }
 
-; ── 進程信息 ─────────────────────────────────
+; 進程信息
+...
 
 ; pid-of / exit-code-of 的時序：wait 前 exit-code 為 0，wait 後為實際值
 t-pid-exit-code = () {
@@ -408,7 +419,8 @@ t-pid-exit-code = () {
     p.close()
 }
 
-; ── process.output ───────────────────────────
+; process.output
+...
 
 t-output = () {
     p = process.new()
@@ -417,7 +429,8 @@ t-output = () {
     runner.str-eq(content, 'hi\n', 'output 捕獲 stdout')
 }
 
-; ── process-shell（已棄用，回原始 wait 狀態） ─
+; process-shell（已棄用，回原始 wait 狀態）
+...
 
 t-process-shell = () {
     r0 = process.process-shell('true')
@@ -426,7 +439,8 @@ t-process-shell = () {
     runner.eq(r1, 256, 'process-shell false 回原始狀態 256（非退出碼）')
 }
 
-; ── shell-quote ──────────────────────────────
+; shell-quote
+...
 
 t-shell-quote = () {
     q = '\''
@@ -439,7 +453,8 @@ t-shell-quote = () {
     runner.str-eq(process.shell-quote(''), want-empty, 'shell-quote 空字串得兩個引號')
 }
 
-; ── process.exec（結構體選項） ────────────────
+; process.exec（結構體選項）
+...
 
 t-exec = () {
     o = process.cmdopts{
@@ -471,7 +486,8 @@ t-exec-opts = () {
     runner.str-eq(res.stdout, 'xyz', 'exec(opts) stdin 透傳')
 }
 
-; ── 進程列表與查找 ───────────────────────────
+; 進程列表與查找
+...
 
 ; list-all 在 macOS/Windows 為空實作、Linux 遍歷 /proc，故只斷言非負
 t-list-all = () {
@@ -492,7 +508,8 @@ t-find-by-name = () {
     runner.eq(pids.len(), 0, 'find-by-name 對不存在名稱回空列表')
 }
 
-; ── 底層內建 ─────────────────────────────────
+; 底層內建
+...
 
 ; process-getppid
 t-low-getppid = () {
@@ -573,7 +590,8 @@ t-low-exec-shell = () {
     runner.eq(process.process-waitpid(pid, 0), 3, 'process-exec-shell 以 sh -c 執行並透傳退出碼')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('process.new', t-new)
 p2, f2 = runner.test('process.shell', t-shell)

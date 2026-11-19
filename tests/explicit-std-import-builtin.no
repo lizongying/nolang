@@ -22,7 +22,9 @@
 # std/vec
 # /test/runner
 
-; ── # std/number：f64.sqrt（唯一仍為 LLVM 硬件內建的 f64 方法）──
+; # std/number：f64.sqrt（唯一仍為 LLVM 硬件內建的 f64 方法）
+...
+
 ; 修復前 4.0.sqrt() 讀到未初始化堆疊，實測值為 500000 或 0（不確定）。
 t-sqrt = () {
     four = 4.0
@@ -42,7 +44,8 @@ t-inverse-trig-needs-sqrt = () {
     runner.f64-eq(h.acos(), 1.0471975511965979, 0.000001, '# std/number: acos(0.5)')
 }
 
-; ── # std/math：clamp（#{buildin} 樁 → ForwardFunc math-clamp）──
+; # std/math：clamp（#{buildin} 樁 → ForwardFunc math-clamp）
+...
 t-clamp = () {
     hi = math.clamp(9, 1, 5)
     runner.eq(hi, 5, '# std/math: math.clamp(9,1,5) == 5')
@@ -54,7 +57,9 @@ t-clamp = () {
     runner.eq(mid, 3, '# std/math: math.clamp(3,1,5) == 3')
 }
 
-; ── # std/os：get-wd（getcwd，C 字串回傳）──
+; # std/os：get-wd（getcwd，C 字串回傳）
+...
+
 ; 修復前 os.get-wd() 回傳空字串（長度 0）。
 t-get-wd = () {
     wd = os.get-wd()
@@ -62,7 +67,8 @@ t-get-wd = () {
     runner.is-true(n > 0, '# std/os: os.get-wd() 非空')
 }
 
-; ── # std/vec：vec-push（切片自動增長）──
+; # std/vec：vec-push（切片自動增長）
+...
 t-vec-push = () {
     a = [1, 2, 3]
     a.push(4)

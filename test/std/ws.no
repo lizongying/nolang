@@ -55,7 +55,8 @@ chk-frame = (f str, want-b0 i64, want-b1 i64, tag str) {
 ; 會被當成另一個名義型別（`expected '?ws.message', got '?message'`）⇒ 取值只能在
 ; 呼叫點就地 match（這幾處都在函式體頂層，不涉及嵌套 match 的 it 串型別）。
 
-; ── 純函式 ────────────────────────────────────────────────
+; 純函式
+...
 
 ; RFC 6455 §1.3 的金標準向量：key ⇒ accept
 t-pure = () {
@@ -111,7 +112,8 @@ t-pure = () {
     runner.eq(sb(f3, 3), 200, 'build-frame: 擴展長度低位 = 200')
 }
 
-; ── server-conn：白盒交握 + 收發 ──────────────────────────
+; server-conn：白盒交握 + 收發
+...
 
 ; 交握請求（RFC 6455 的標準 key，方便對照 accept 值）
 handshake-req = () (req str) {
@@ -307,7 +309,8 @@ t-recv-nb = () {
     lst.close()
 }
 
-; ── client：白盒方法 ──────────────────────────────────────
+; client：白盒方法
+...
 
 t-client = () {
     lst = net.listener{}
@@ -390,7 +393,8 @@ t-client = () {
     lst.close()
 }
 
-; ── 便捷函數：listen-on / server.accept / connect ──────────
+; 便捷函數：listen-on / server.accept / connect
+...
 
 ; listen-on 回 ok 即可拿到 server；accept 需要先有 pending 連線（loopback 打進去），
 ; 交握會阻塞讀 HTTP 請求，所以請求必須在 accept 之前就送進 socket 緩衝。
@@ -458,7 +462,8 @@ t-connect = () {
     runner.is-true(v2 != 3, 'ws.connect: 連不上時不謊報成功')
 }
 
-; ── 執行 ──────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('ws.pure', t-pure)
 p2, f2 = runner.test('ws.server-conn', t-server-conn)

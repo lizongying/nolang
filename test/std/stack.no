@@ -130,7 +130,8 @@ t-clear = () {
     runner.is-true(yes, 'after clear empty == true')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('stack.init/empty', t-init-empty)
 p2, f2 = runner.test('stack.push/pop', t-push-pop)

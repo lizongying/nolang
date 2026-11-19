@@ -133,7 +133,8 @@ t-to-vec = () {
     runner.eq(v2.len(), 0, 'empty set -> empty slice')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('set.add/contains', t-add-contains)
 p2, f2 = runner.test('set.remove/size', t-remove-size)

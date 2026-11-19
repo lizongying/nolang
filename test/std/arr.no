@@ -105,7 +105,8 @@ t-contains = () {
     runner.eq(a.contains(9), false, 'arr.contains(9) false')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('arr.len', t-len)
 

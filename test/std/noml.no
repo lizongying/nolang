@@ -12,7 +12,8 @@
 
 # /test/runner
 
-; ── 解析標量 ──────────────────────────────────
+; 解析標量
+...
 
 ; 頂層 nil 解析
 t-parse-nil = () {
@@ -109,7 +110,8 @@ t-parse-bool = () {
     runner.is-true(ok, 'parse bool true ok')
 }
 
-; ── 解析物件 / 陣列 ────────────────────────────
+; 解析物件 / 陣列
+...
 
 ; 物件解析與成員取值
 t-parse-obj = () {
@@ -235,7 +237,8 @@ t-parse-nested = () {
     runner.is-true(ok2, 'nested reparse ok')
 }
 
-; ── 註解 / 註解標記 ────────────────────────────
+; 註解 / 註解標記
+...
 
 ; 行尾註解（`;`）
 t-comment = () {
@@ -353,7 +356,8 @@ t-annotation = () {
     runner.is-true(mfound, 'member ann text')
 }
 
-; ── stringify 往返 ─────────────────────────────
+; stringify 往返
+...
 
 ; 解析→序列化→再解析應冪等
 t-roundtrip = () {
@@ -389,7 +393,8 @@ t-roundtrip = () {
     runner.str-eq(s1, s2, 'roundtrip idempotent')
 }
 
-; ── 構建 API ──────────────────────────────────
+; 構建 API
+...
 
 ; 用構建器建立物件並序列化往返
 t-builder = () {
@@ -522,7 +527,8 @@ t-ann-write = () {
     runner.str-eq(avv, 'server', 'ann-value text')
 }
 
-; ── 錯誤路徑 ──────────────────────────────────
+; 錯誤路徑
+...
 
 ; 空輸入
 t-err-empty = () {
@@ -608,7 +614,8 @@ t-err-null = () {
     runner.is-false(bad, 'null rejected')
 }
 
-; ── 白盒：模組級詞法輔助 ──────────────────────
+; 白盒：模組級詞法輔助
+...
 ;
 ; 這些函式只吃位元組，不碰節點池，直接從模組頂層呼叫。
 
@@ -658,7 +665,8 @@ t-noml-lex = () {
     runner.is-false(noml.is-ident-key('a.b'), 'ident-key dot')
 }
 
-; ── 白盒：游標與錯誤 ──────────────────────────
+; 白盒：游標與錯誤
+...
 
 ; skip-trivia / skip-blanks / at-line-start / line-of / fail
 t-noml-cursor = () {
@@ -710,7 +718,8 @@ t-noml-cursor = () {
     runner.str-eq(d.node-pool.err, 'noml: line 3: boom', 'fail message')
 }
 
-; ── 白盒：掃描器 ──────────────────────────────
+; 白盒：掃描器
+...
 
 ; scan-quote / scan-raw / scan-ann / join-ann
 t-noml-scan = () {
@@ -742,7 +751,8 @@ t-noml-scan = () {
     runner.str-eq(d.node-pool.join-ann('a = 1', 'b = 2'), 'a = 1, b = 2', 'join-ann merge')
 }
 
-; ── 白盒：節點池骨架 ──────────────────────────
+; 白盒：節點池骨架
+...
 ;
 ; ⚠️ 白盒只能「呼叫方法」，**不能直接讀 `.nodes` / `.strs` 等欄位**：
 ; 從模組外按下標讀 std 結構體的 `[]str` 欄位會拿到 nil 或直接段錯誤
@@ -823,7 +833,8 @@ t-noml-pool-core = () {
     runner.eq(d.node-pool.alloc(), 0, 'init resets pool')
 }
 
-; ── 白盒：純量解析 ────────────────────────────
+; 白盒：純量解析
+...
 
 ; parse-str / decode-escape / hex4 / parse-raw / parse-num / parse-bool /
 ; match-kw / parse-{str,raw,bool,nil,num}-node
@@ -1005,7 +1016,8 @@ t-noml-parse-scalars = () {
     }
 }
 
-; ── 白盒：樹解析 ──────────────────────────────
+; 白盒：樹解析
+...
 
 ; parse-value / parse-object / parse-array / require-end / parse-key / parse
 t-noml-parse-tree = () {
@@ -1157,7 +1169,8 @@ t-noml-parse-tree = () {
     runner.is-false(pok10, 'pool.parse trailing content')
 }
 
-; ── 白盒：序列化 ──────────────────────────────
+; 白盒：序列化
+...
 
 ; has-byte / raw-safe / quote / quote-value / fmt-num / fmt-key /
 ; stringify / stringify-obj / stringify-arr
@@ -1248,7 +1261,8 @@ t-noml-emit = () {
     runner.str-eq(d.node-pool.stringify(-1, 0), '', 'stringify invalid index')
 }
 
-; ── 白盒：節點取值與註解 ──────────────────────
+; 白盒：節點取值與註解
+...
 
 ; val-str / val-num / val-bool / get-f64 / get-i64 / has /
 ; ann / set-ann / ann-value / ann-literal / skip-ann-value
@@ -1518,7 +1532,8 @@ t-noml-access = () {
     runner.eq(d.node-pool.skip-ann-value('\'ab', 0), -1, 'skip-ann-value unterminated')
 }
 
-; ── 白盒：noml-doc 根節點級 API ───────────────
+; 白盒：noml-doc 根節點級 API
+...
 
 ; root-index / kind / key / num / bool / get-f64 / get-i64 / has / stringify-node
 t-noml-doc-wb = () {
@@ -1642,7 +1657,8 @@ t-noml-doc-wb = () {
     }
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('noml.parse-nil', t-parse-nil)
 p2, f2 = runner.test('noml.parse-str', t-parse-str)

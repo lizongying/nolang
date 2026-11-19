@@ -20,7 +20,8 @@
 passed = 0
 failed = 0
 
-; ── 取值助手 ──────────────────────────────────
+; 取值助手
+...
 ; 每個助手都是「傳 str 進來、在函數內自建 option、自 match」，**不把 `?T` 當實參
 ; 跨函數傳遞**。三個坑都是本輪實測撞出來的（見 test/README.md §5.2 #50）：
 ;   1) 已帶 err 的 `?T` 具名變數傳進另一個函數，程式結束時 trace/BPT trap 或
@@ -32,7 +33,8 @@ failed = 0
 ; 窄整數與布林用哨兵編碼三態：9000001 = nil、9000002 = err
 ; （兩者都超出這些型別的取值範圍，不會與真值混淆）。
 
-; ── 窄整數：ok → 值，nil → 9000001，err → 9000002 ──
+; 窄整數：ok → 值，nil → 9000001，err → 9000002
+...
 
 ; to-i8 → i64（三態哨兵）
 i8-of = (src str) (out i64) {
@@ -152,7 +154,8 @@ bool-of = (src str) (out i64) {
     }
 }
 
-; ── 浮點 ──
+; 浮點
+...
 
 ; to-f64 → f64；非 ok 給哨兵 d
 f64-of = (src str, d f64) (out f64) {
@@ -200,7 +203,8 @@ f32-state = (src str) (out i64) {
     }
 }
 
-; ── 位元組 / 十六進位 / 大整數 / txt ──
+; 位元組 / 十六進位 / 大整數 / txt
+...
 
 ; byte(i) → i64；越界（nil）給 d
 byte-at = (src str, i i64, d i64) (out i64) {
@@ -263,7 +267,8 @@ txt-of = (src str) (out str) {
     }
 }
 
-; ── 基礎操作 ──────────────────────────────────
+; 基礎操作
+...
 
 ; 驗證 len-bytes 對非空字串與空字串皆回傳正確的位元組數
 t-len = () {
@@ -307,7 +312,8 @@ t-starts-ends = () {
     runner.is-false(s.ends-with('hello'), 'not ends-with hello')
 }
 
-; ── 轉換 ──────────────────────────────────────
+; 轉換
+...
 
 ; 驗證 to-upper / to-lower 只轉換字母大小寫、不影響數字
 t-case = () {
@@ -404,7 +410,8 @@ t-to-i64 = () {
     runner.eq(bad-state, 2, 'to-i64 abc == err')
 }
 
-; ── 比較與複製 ────────────────────────────────
+; 比較與複製
+...
 
 ; 驗證 eq 比對前 n 位元組：相同為真、不同為假、僅比對前綴亦為真
 t-eq = () {
@@ -438,7 +445,8 @@ t-fill = () {
     runner.str-eq(s, 'zzz', 'fill with z')
 }
 
-; ── 位元組存取 ────────────────────────────────
+; 位元組存取
+...
 
 ; 驗證 byte / at 依位元組下標取值：byte 越界回 nil（逃生艙口），
 ; 容器索引 s[i] 越界回 err（code.index-out）；at(i) 為 deprecated，僅保留界內覆蓋
@@ -480,7 +488,8 @@ t-eq-full = () {
     runner.is-false(a.eq-full('helloo'), 'eq-full longer')
 }
 
-; ── 索引換算 / 解碼 ───────────────────────────
+; 索引換算 / 解碼
+...
 
 ; 驗證 decode-cp 回傳碼點值與其 UTF-8 序列位元組長（ASCII 與 3 位元組中文）
 t-decode-cp = () {
@@ -505,7 +514,8 @@ t-cp-byte-index = () {
     runner.eq(z.byte-index(5), 6, 'byte-index(5) clamps to len')
 }
 
-; ── 查找 ──────────────────────────────────────
+; 查找
+...
 
 ; 驗證 find-byte-from / rfind-byte-from 以位元組偏移查找，未命中回 -1
 t-find-byte-from = () {
@@ -527,7 +537,8 @@ t-rindex = () {
     runner.eq('abcabc'.rindex-from('b', 5), -1, 'rindex-from b@5 == -1')
 }
 
-; ── 切片 / 反轉 / 比較 ───────────────────────
+; 切片 / 反轉 / 比較
+...
 
 ; 驗證 slice-bytes 取位元組區間、to-str 保留完整內容
 t-slice-bytes-to-str = () {
@@ -560,7 +571,8 @@ t-count = () {
     runner.eq(''.count(), 0, 'count empty == 0')
 }
 
-; ── 數值解析 ──────────────────────────────────
+; 數值解析
+...
 
 ; 驗證 to-i8/i16/i32 的邊界、越界（err）與空字串（nil）
 t-to-narrow = () {
@@ -617,7 +629,8 @@ t-to-bool = () {
     runner.eq(bool-of('xyz'), 9000002, 'to-bool xyz == err')
 }
 
-; ── 字元替換 / 建構 ───────────────────────────
+; 字元替換 / 建構
+...
 
 ; 驗證 replace-char 換單一字元、trim-char 只削掉首尾的指定字元
 t-replace-char = () {
@@ -638,7 +651,8 @@ t-mode-ctors = () {
     runner.str-eq(str.new(cs), 'abc', 'new from []char')
 }
 
-; ── 十六進位 / 大整數 / txt ───────────────────
+; 十六進位 / 大整數 / txt
+...
 
 ; 驗證 to-hex / str-hex-val / from-hex 的三向互轉與錯誤分支
 t-hex = () {
@@ -681,7 +695,8 @@ t-to-txt = () {
     runner.str-eq(txt-of(big), 'nil', 'to-txt 300 bytes == nil')
 }
 
-; ── 分割 / 替換（字串版）─────────────────────
+; 分割 / 替換（字串版）
+...
 
 ; 驗證 split 逐分隔符分段（含相鄰分隔符產生空段）
 t-split = () {
@@ -825,7 +840,8 @@ t-push = () {
     runner.eq(w.len(), 1, '空 str 起手 push len')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 p1, f1 = runner.test('str.len()', t-len)
 
 passed = passed + p1
@@ -1138,7 +1154,8 @@ passed = passed + p41
 #{overflow=wrap}
 failed = failed + f41
 
-; ── str.cap：容量（属性形态）／str.bytes：零拷贝视图 ──
+; str.cap：容量（属性形态）／str.bytes：零拷贝视图
+...
 ;
 ; ⚠️ `str.cap` 只有**属性**形态可用；方法形态在用户码里调不出来：
 ;     s.cap()    ⇒ EmitLLVM: unknown callee str.cap in func ... [4qhyyund]

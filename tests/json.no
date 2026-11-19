@@ -82,7 +82,8 @@ print('DONE — any FAIL above is the tracked §5.3 defect, not a new regression
 
 print('start')
 
-; ── 所有變數頂層宣告（遵循 http-no 慣例）──
+; 所有變數頂層宣告（遵循 http-no 慣例）
+...
 json-str = '{"name":"Alice","age":30,"items":[1,2,3],"active":true}'
 root = -1
 next = 0
@@ -99,7 +100,8 @@ out-buf = ''
 out-n = 0
 result = ''
 
-; ── 測試 1: 剖析物件 ──
+; 測試 1: 剖析物件
+...
 p = json.pool{}
 p.init()
 root, next, ok = p.parse(json-str, 0)
@@ -211,7 +213,9 @@ active-opt: {
     -> print('fail: get-key active')
 }
 
-; ── 測試 6: stringify ──
+; 測試 6: stringify
+...
+
 ; pool.stringify(node-idx) → str（舊的三參 out-buf 版本已移除）
 result = p.stringify(root)
 {

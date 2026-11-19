@@ -379,7 +379,8 @@ t-sort = () {
     runner.eq(arr-4-2, 1, 'sort-desc [4] == 1')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('vec.len()/push', t-len-push)
 p2, f2 = runner.test('vec.push grow', t-push-grow)

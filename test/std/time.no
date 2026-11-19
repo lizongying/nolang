@@ -12,7 +12,8 @@
 
 # /test/runner
 
-; ── 時間戳 ────────────────────────────────────
+; 時間戳
+...
 
 ; 驗證 now-s 回傳當前 Unix 秒級時間戳（大於 1e9）
 t-now-s = () {
@@ -28,7 +29,8 @@ t-duration-between = () {
     runner.eq(d2, -100, 'duration-between reversed == -100')
 }
 
-; ── 閏年 ──────────────────────────────────────
+; 閏年
+...
 
 ; 驗證 is-leap 判定閏年（2000/2024 為真、1900/2023 為假）
 t-is-leap = () {
@@ -54,7 +56,8 @@ t-days-in-month = () {
     runner.eq(d4, 30, '2024 Apr has 30 days')
 }
 
-; ── 日期轉換 ──────────────────────────────────
+; 日期轉換
+...
 
 ; 驗證 unix-to-date(0) 拆解出 1970-01-01 星期四的各日期欄位
 t-unix-to-date = () {
@@ -99,7 +102,8 @@ t-roundtrip = () {
     runner.eq(back, orig, 'unix-to-date/date-to-unix roundtrip')
 }
 
-; ── 格式化 ────────────────────────────────────
+; 格式化
+...
 
 ; 驗證 format-date 將 date 格式化為 YYYY-MM-DD HH:MM:SS 字串
 t-format-date = () {
@@ -120,7 +124,8 @@ t-format-time-str = () {
     runner.str-eq(s, '1970-01-01 00:00:00', 'format-time-str(0)')
 }
 
-; ── 解析 ──────────────────────────────────────
+; 解析
+...
 
 ; 驗證 parse-date 解析含/不含時間的字串為 Unix 秒，無效格式得 nil
 t-parse-date = () {
@@ -153,7 +158,8 @@ t-parse-date = () {
     runner.is-true(is-nil, 'parse-date invalid == nil')
 }
 
-; ── 計時器 ────────────────────────────────────
+; 計時器
+...
 
 ; 驗證 timer 依 start-ts/end-ts 計算 elapsed-ms 與 elapsed-s
 t-timer = () {
@@ -177,7 +183,8 @@ t-format-duration = () {
     runner.str-eq(s3, '25h1m1s', 'format-duration(90061) == 25h1m1s')
 }
 
-; ── time 結構體 ────────────────────────────────
+; time 結構體
+...
 
 ; 驗證 time 結構體的 unix/date/format/add-seconds/sub 等方法往返正確
 t-time-struct = () {
@@ -232,7 +239,8 @@ t-time-struct = () {
     runner.is-true(isnil, 'parse-time invalid == nil')
 }
 
-; ── 算術助手 ───────────────────────────────────
+; 算術助手
+...
 ;
 ; Nolang 的算術結果一律是 `?i64`（見 §5.2 #61：`#{overflow=wrap}` 也不會讓型別變回
 ; i64）。把 `?i64` 當運算元再用會**靜默取 0**，比較也會走錯臂，所以本檔所有
@@ -277,7 +285,8 @@ abs-of = (v i64) (out i64) {
     v < 0 -> out = sub-of(0, v)
 }
 
-; ── 毫秒 / 微秒 / 納秒時鐘 ─────────────────────
+; 毫秒 / 微秒 / 納秒時鐘
+...
 
 ; 驗證 now-ms / now-us / now-ns 三個時鐘的量級與彼此自洽（單位不是秒）
 t-now-clocks = () {
@@ -427,7 +436,8 @@ t-since-time = () {
     runner.lt(time.since-time(t-future), 0, 'since-time(未來 100s) < 0')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('time.now-s', t-now-s)
 p2, f2 = runner.test('time.duration-between', t-duration-between)

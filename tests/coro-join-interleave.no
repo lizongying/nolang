@@ -2,6 +2,7 @@
 ; in each group. The trace is a-enter, b-enter, a-leave, b-leave: with one global
 ; join stack the second resume pops the FIRST task's frame and double-retires a
 ; handle. Per-task frames (task.join_top) keep the two leaves independent.
+
 # /test/runner
 
 wake-a chan[i64] = with-cap(1)
@@ -13,13 +14,14 @@ helper = (c chan[i64]) {
 }
 
 a = (c chan[i64]) {
-    one i64 = 1
+    one = 1
     awy {
         one == 1 -> {
             co helper(c)
         }
         <- c: {
-            ok -> { }
+            ok -> {
+            }
 
             -> {
             }
@@ -28,13 +30,14 @@ a = (c chan[i64]) {
 }
 
 b = (c chan[i64]) {
-    one i64 = 1
+    one = 1
     awy {
         one == 1 -> {
             co helper(c)
         }
         <- c: {
-            ok -> { }
+            ok -> {
+            }
 
             -> {
             }

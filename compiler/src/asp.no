@@ -34,7 +34,8 @@
 ; ⚠️ 定義順序：本檔的函式彼此不呼叫，故順序無關；但呼叫方 ast.no
 ;    一律向後引用，故本檔必須先於 ast.no 被導入。
 
-; ── 指令 opcode ──
+; 指令 opcode
+...
 OP-HDR = 0
 OP-SCALAR = 1
 OP-COMMENTS = 2
@@ -50,7 +51,8 @@ OP-CLOSING = 11
 OP-IMPLEMENTS = 12
 OP-ANNOTS = 13
 
-; ── 純量出處（of）──
+; 純量出處（of）
+...
 OF-FIELD = 0
 OF-LEN = 1
 OF-TYPE = 2
@@ -60,7 +62,8 @@ OF-SPRINTF = 5
 OF-BARE = 6
 OF-LOCAL = 7
 
-; ── 純量渲染器（render）──
+; 純量渲染器（render）
+...
 R-STR = 0
 R-INT = 1
 R-FLOAT = 2
@@ -69,14 +72,16 @@ R-TYPE = 4
 R-NODE-STRING = 5
 R-LABEL-KIND = 6
 
-; ── 純量印出政策（policy）──
+; 純量印出政策（policy）
+...
 P-ALWAYS = 0
 P-NON-EMPTY = 1
 P-TRUE = 2
 P-NON-ZERO = 3
 P-COUNT = 4
 
-; ── 槽位上限（由生成器實測，供 ast.no 宣告 arena 用）──
+; 槽位上限（由生成器實測，供 ast.no 宣告 arena 用）
+...
 MAX-STR-SLOTS = 8
 MAX-COUNT-SLOTS = 2
 KIND-COUNT = 74
@@ -532,7 +537,9 @@ kinds = () (r []i64) {
     ]
 }
 
-; ── 節點種類 id ──
+; 節點種類 id
+...
+
 ; 命名照 tok.no 的風格：大寫 + 中劃線，跨模組寫 asp.K-IDENTIFIER。
 K-ANNOTATION-ARRAY-VALUE = 1
 K-ANNOTATION-BOOL-VALUE = 2

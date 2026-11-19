@@ -25,7 +25,9 @@ vec-producer = () (v []i64) {
     v = [10, 20, 30]
 }
 
-; ── 過程形態（`co` 的目標）────────────────────────────────
+; 過程形態（`co` 的目標）
+...
+
 ; ch: 結果通道（呼叫方建，容量 1）
 str-producer-into = (ch chan[str]) {
     ch <- str-producer()

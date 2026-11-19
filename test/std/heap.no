@@ -105,7 +105,8 @@ t-pop-peek-empty = () {
     runner.eq(h.size(), 0, 'empty stays empty')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('heap.push/pop', t-push-pop)
 p2, f2 = runner.test('heap.size/empty', t-size-empty)

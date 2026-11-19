@@ -307,7 +307,8 @@ u32-of = (v u32) (out i64) {
     out = v
 }
 
-; ── 整數快速冪 / 反正切 / 可變參數工具 / 位元操作 ─────────────
+; 整數快速冪 / 反正切 / 可變參數工具 / 位元操作
+...
 ;
 ; 這幾個是 math 模組裡「不掛在型別上」的函數形式 API。pow-int 因為與 f64 的
 ; math.pow 同名衝突，是唯一保留函數形式的求冪（見 src/std/math.no 檔頭說明）。
@@ -466,7 +467,8 @@ t-store-le-u32 = () {
     runner.eq(u32-of(b.load-le-u32(0)), 4294967295, 'u32 上限 0xffffffff 往返正確')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p2, f2 = runner.test('f64.sqrt', t-sqrt)
 p3, f3 = runner.test('math.pow', t-pow)

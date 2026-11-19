@@ -6,7 +6,8 @@
 ; 2. 函式內只做算術（+ - *），比較在 main() 中進行
 ; 3. 相等判斷透過減法：a == b 等價於 (a - b) == 0
 
-; ── i64 型別的「泛型」函式 ──
+; i64 型別的「泛型」函式
+...
 
 ; 模擬泛型的 i64 加法（Nolang 不支援隱式型別參數，故按型別各寫一份）
 ; a: 第一個加數
@@ -65,7 +66,8 @@ gen-mul-i64 = (a i64, b i64) (r i64) {
     }
 }
 
-; ── i32 型別的「泛型」函式 ──
+; i32 型別的「泛型」函式
+...
 
 ; 跨型別的 i32 加法：證明同名邏輯可為不同寬度各寫一份
 ; a: 第一個加數
@@ -105,7 +107,8 @@ gen-sub-i32 = (a i32, b i32) (d i32) {
     }
 }
 
-; ── 1. gen-add-i64 加法 ──
+; 1. gen-add-i64 加法
+...
 r = 0
 r = gen-add-i64(40, 2)
 {
@@ -114,7 +117,8 @@ r = gen-add-i64(40, 2)
     -> print('fail: gen-add-i64')
 }
 
-; ── 2. gen-eq i64（透過 sub + == 0）──
+; 2. gen-eq i64（透過 sub + == 0）
+...
 d = 0
 d = gen-sub-i64(42, 42)
 {
@@ -123,7 +127,8 @@ d = gen-sub-i64(42, 42)
     -> print('fail: gen-eq i64 true')
 }
 
-; ── 3. gen-ne i64（透過 sub + != 0）──
+; 3. gen-ne i64（透過 sub + != 0）
+...
 d = gen-sub-i64(42, 43)
 {
     d != 0 -> print('ok: gen-ne i64')
@@ -131,7 +136,8 @@ d = gen-sub-i64(42, 43)
     -> print('fail: gen-ne i64')
 }
 
-; ── 4. gen-mul-i64 乘法 ──
+; 4. gen-mul-i64 乘法
+...
 r = gen-mul-i64(6, 7)
 {
     r == 42 -> print('ok: gen-mul-i64')
@@ -139,7 +145,8 @@ r = gen-mul-i64(6, 7)
     -> print('fail: gen-mul-i64')
 }
 
-; ── 5. gen-add-i32 跨型別 ──
+; 5. gen-add-i32 跨型別
+...
 r32 i32 = 0
 r32 = gen-add-i32(40, 2)
 {
@@ -148,7 +155,8 @@ r32 = gen-add-i32(40, 2)
     -> print('fail: gen-add-i32')
 }
 
-; ── 6. gen-eq i32（透過 sub + == 0）──
+; 6. gen-eq i32（透過 sub + == 0）
+...
 d32 i32 = 0
 d32 = gen-sub-i32(100, 100)
 {

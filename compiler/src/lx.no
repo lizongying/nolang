@@ -1,42 +1,3 @@
-;
-; 忠實移植 src/lexer/lexer.go 的 scanToken() 與其所有輔助函式。
-; 「忠實」是字面意思：連 Go 的**缺陷**都照抄（見下方 raw string 一節），
-; 因為 L1 門禁比的是「與 no 逐 token 相同」，不是「比較正確」。
-;
-; 輸出格式（與 L1 oracle /tmp/notok 相同，逐位元組可比）：
-;     <line>:<col> <NAME> <lit> <raw> <marker> <err>
-;   - 六個欄位以單一空白分隔，行尾一個 \n
-;   - lit/raw/marker/err 經過 esc()：空字串寫成 `-`
-;   - esc：\\ → \\\\ 、\n → \\n 、\t → \\t 、\r → \\r 、
-;           < 0x20 或 >= 0x7f → \\xHH（小寫十六進位）、其餘原樣
-;
-; ── 為什麼 esc 要這麼囉唆 ──
-; 字面量可以含換行（塊註釋、raw string）與任意位元組。若直接輸出，
-; 一個 token 會佔多行，逐行 diff 就失去意義。十六進位轉義讓每個 token
-; 恰好一行，且**沒有歧義**（不需要猜「這個字面量原本長什麼樣」）。
-;
-; ── 已實測的關鍵事實（不要憑常識改）──
-; 1. `column` 數的是**位元組**，不是碼點（readChar 一次前進一個 byte）。
-; 2. NEWLINE token 的 column 恆為 0：readChar 見到 '\n' 時把 column 歸零，
-;    而 token 的位置是在 skipWhitespace 之後才取樣的。
-; 3. 識別符可以含 `-` 與 `_`（isLetter 含這兩個），所以 `foo-bar` 是**一個**
-;    IDENT，而 `a - b` 是三個 token。
-; 4. isDigit 對 >= 0x80 的位元組**恆為 false**（已實測：128 個位元組中 0 個）。
-; 5. isLetter 對 >= 0x80 只有 65 個位元組為真（拉丁-1 補充字母），見 lx-is-letter。
-; 6. `"..."` 是 **char** 字面量（必須恰好 1 個碼點），`'...'` 才是字串。
-;
-; ── ⚠️ 已知缺陷：raw string 的續行會吃掉字元（照抄，不修）──
-; src/lexer/lexer.go 的 readRawString 用 SaveState/RestoreState「回捲」，
-; 但 LexerState 只存 pos（token 索引，預掃描期間恆為 0）與 prevTokenType，
-; **沒有存字元位置** ⇒ 回捲是空操作。於是每一續行會先被跳過前導空白，
-; 再多吃掉一個字元。實測：
-;     反引號 + 換行 + "line1" + 換行 + "    indented" + 換行 + 反引號
-;   ⇒ 得到 "line1\nndented"（4 個空白消失，且 'i' 被吃掉）
-; 本檔**照抄此行為**（L1 要比逐位元組相同）。語料中沒有任何真正的
-; raw string 字面量（130 個檔案含反引號，但全在註解裡），故此缺陷目前
-; **不可達**。已記錄於 docs/design/nolang-selfhost.md §8。
-;
-; ── SHS 合規 ──
 ; 無結構體方法（避開方法命名雷區）、無一等函式值、無 map 欄位、
 ; 所有自由函式定義名**不含半形句點**（SHS S6）。
 
@@ -57,10 +18,58 @@
 # /compiler/src/util/sb.sb
 # /compiler/src/ix
 
+;
+; 忠實移植 src/lexer/lexer.go 的 scanToken() 與其所有輔助函式。
+; 「忠實」是字面意思：連 Go 的**缺陷**都照抄（見下方 raw string 一節），
+; 因為 L1 門禁比的是「與 no 逐 token 相同」，不是「比較正確」。
+;
+; 輸出格式（與 L1 oracle /tmp/notok 相同，逐位元組可比）：
+;     <line>:<col> <NAME> <lit> <raw> <marker> <err>
+;   - 六個欄位以單一空白分隔，行尾一個 \n
+;   - lit/raw/marker/err 經過 esc()：空字串寫成 `-`
+;   - esc：\\ → \\\\ 、\n → \\n 、\t → \\t 、\r → \\r 、
+;           < 0x20 或 >= 0x7f → \\xHH（小寫十六進位）、其餘原樣
+;
+; 為什麼 esc 要這麼囉唆
+...
+
+; 字面量可以含換行（塊註釋、raw string）與任意位元組。若直接輸出，
+; 一個 token 會佔多行，逐行 diff 就失去意義。十六進位轉義讓每個 token
+; 恰好一行，且**沒有歧義**（不需要猜「這個字面量原本長什麼樣」）。
+;
+; 已實測的關鍵事實（不要憑常識改）
+...
+
+; 1. `column` 數的是**位元組**，不是碼點（readChar 一次前進一個 byte）。
+; 2. NEWLINE token 的 column 恆為 0：readChar 見到 '\n' 時把 column 歸零，
+;    而 token 的位置是在 skipWhitespace 之後才取樣的。
+; 3. 識別符可以含 `-` 與 `_`（isLetter 含這兩個），所以 `foo-bar` 是**一個**
+;    IDENT，而 `a - b` 是三個 token。
+; 4. isDigit 對 >= 0x80 的位元組**恆為 false**（已實測：128 個位元組中 0 個）。
+; 5. isLetter 對 >= 0x80 只有 65 個位元組為真（拉丁-1 補充字母），見 lx-is-letter。
+; 6. `"..."` 是 **char** 字面量（必須恰好 1 個碼點），`'...'` 才是字串。
+;
+; ⚠️ 已知缺陷：raw string 的續行會吃掉字元（照抄，不修）
+...
+
+; src/lexer/lexer.go 的 readRawString 用 SaveState/RestoreState「回捲」，
+; 但 LexerState 只存 pos（token 索引，預掃描期間恆為 0）與 prevTokenType，
+; **沒有存字元位置** ⇒ 回捲是空操作。於是每一續行會先被跳過前導空白，
+; 再多吃掉一個字元。實測：
+;     反引號 + 換行 + "line1" + 換行 + "    indented" + 換行 + 反引號
+;   ⇒ 得到 "line1\nndented"（4 個空白消失，且 'i' 被吃掉）
+; 本檔**照抄此行為**（L1 要比逐位元組相同）。語料中沒有任何真正的
+; raw string 字面量（130 個檔案含反引號，但全在註解裡），故此缺陷目前
+; **不可達**。已記錄於 docs/design/nolang-selfhost.md §8。
+;
+; SHS 合規
+...
+
 ; lx — 詞法分析器（M1）
 ...
 
-; ── 位元組常量 ──
+; 位元組常量
+...
 B-LF = 10
 B-TAB = 9
 B-CR = 13
@@ -111,7 +120,9 @@ B-ESC-T = 116
 B-ESC-R = 114
 B-ESC-X = 120
 
-; ── 詞法狀態 ──
+; 詞法狀態
+...
+
 ; 欄位名刻意與 src/lexer/lexer.go 的 Lexer 對齊，方便逐行對照。
 lxst {
     ; ⚠️ 源碼一律以 []byte 承載：入口處 str.to-bytes() 轉一次，此後全走 b[i] 遍歷。
@@ -140,7 +151,9 @@ lxst {
     count i64; 本檔自用：已產出的 token 數（決定要不要在行首補 \n）
 }
 
-; ── 一個 token 的記錄（M2 起：掃描與渲染分離）──
+; 一個 token 的記錄（M2 起：掃描與渲染分離）
+...
+
 ;
 ; 為什麼要有這個結構：M1 時 lx-scan-token 直接「掃描 + 渲染成字串」，只有 dump
 ; 一個消費者。M2 的解析器需要**結構化的 token 陣列**；若為此另寫一份掃描邏輯，

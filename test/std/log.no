@@ -21,7 +21,8 @@ slurp = (p str) (out str) {
     out = fs.read-file(p).to-str()
 }
 
-; ── 級別常量 ──────────────────────────────────
+; 級別常量
+...
 
 ; 等級常數：DEBUG=0、INFO=1、WARN=2、ERROR=3、FATAL=4
 t-level-constants = () {
@@ -32,7 +33,8 @@ t-level-constants = () {
     runner.eq(4, 4, 'LEVEL-FATAL == 4')
 }
 
-; ── set-level + info ─────────────────────────
+; set-level + info
+...
 
 ; 門檻設為 INFO：info 及以上應輸出，調用不得報錯
 t-set-level-info = () {
@@ -43,7 +45,8 @@ t-set-level-info = () {
     runner.eq(0, 0, 'set-level + info completed')
 }
 
-; ── set-level + warn ─────────────────────────
+; set-level + warn
+...
 
 ; 門檻設為 WARN：info 被抑制，warn 及以上仍輸出
 t-set-level-warn = () {
@@ -53,7 +56,8 @@ t-set-level-warn = () {
     runner.eq(0, 0, 'set-level warn + info suppressed completed')
 }
 
-; ── set-level + error ────────────────────────
+; set-level + error
+...
 
 ; 門檻設為 ERROR：debug / info / warn 都被抑制
 t-set-level-error = () {
@@ -64,7 +68,8 @@ t-set-level-error = () {
     runner.eq(0, 0, 'set-level error + lower suppressed completed')
 }
 
-; ── set-level + debug ────────────────────────
+; set-level + debug
+...
 
 ; 門檻設為 DEBUG：所有等級都輸出
 t-set-level-debug = () {
@@ -76,7 +81,8 @@ t-set-level-debug = () {
     runner.eq(0, 0, 'set-level debug + all levels completed')
 }
 
-; ── 輸出目標 / 格式 / 寫入 ─────────────────────
+; 輸出目標 / 格式 / 寫入
+...
 
 ; 驗證 open-file + set-output-fd + get-output-fd + set-writer + get-writer + log-emit：
 ; 導向檔案後，emit 出來的行確實落在檔案裡；writer 抽象與 fd 狀態一致
@@ -181,7 +187,8 @@ t-fatal = () {
     runner.eq(code, 42, 'fatal exits with the given code')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('log.level-constants', t-level-constants)
 p2, f2 = runner.test('log.set-level-info', t-set-level-info)

@@ -64,7 +64,8 @@ t-deflate-stored = () {
     runner.eq(deflated-9, 50, 'deflated data[4] == 50')
 }
 
-; ── 空輸入：仍須產生合法的 DEFLATE 主體 ─────────────────────────────
+; 空輸入：仍須產生合法的 DEFLATE 主體
+...
 ; 修復前 deflate-stored(空) 回 0 位元組，zlib/gzip 串流缺 DEFLATE 主體，
 ; 真實解壓端一律報 "incomplete or truncated stream"。此處同時以
 ; CPython gzip/zlib 交叉驗證（見 test/README.md §5.1）。
@@ -110,7 +111,8 @@ t-inflate-stored = () {
     runner.eq(inflated-4, 5, 'inflated[4] == 5')
 }
 
-; ── 位元讀取器（LSB-first，DEFLATE 用）──────────────────────────────
+; 位元讀取器（LSB-first，DEFLATE 用）
+...
 t-bit-reader = () {
     br = bit-reader{}
     br.data = [0xb5, 0x01, 0x34, 0x12]
@@ -139,7 +141,8 @@ t-bit-reader = () {
     runner.eq(u, 0x1234, 'skip-to-byte 後 read-u16-le 讀到 0x1234')
 }
 
-; ── Huffman 固定碼表 + 解碼 KAT ──────────────────────────────────────
+; Huffman 固定碼表 + 解碼 KAT
+...
 ; DEFLATE 固定表：字面量 0x41（65）的 8 位元碼為 0x71，位元流依 MSB→LSB
 ; 逐位元填入，故位元組為 0b10001110 = 0x8E；其後 7 個 0 位元為 EOB(256)。
 t-huffman = () {
@@ -183,7 +186,8 @@ t-huffman = () {
     runner.eq(s3, 0, '自建表：位元 0 解出符號 0')
 }
 
-; ── 動態 Huffman 表建構（直接呼叫 build-dynamic）────────────────────
+; 動態 Huffman 表建構（直接呼叫 build-dynamic）
+...
 ; 同一份 dynamic 樣本，前 3 位元為 BFINAL=1 / BTYPE=10；表建好後連續解出
 ; 'z','e','t','a' 四個字面量，即證明字面/長度表正確。
 t-build-dynamic = () {
@@ -216,7 +220,8 @@ t-build-dynamic = () {
     runner.eq(lc.decode(br), 97, '動態表解出 "a"')
 }
 
-; ── inflate：fixed Huffman 區塊（btype=1）───────────────────────────
+; inflate：fixed Huffman 區塊（btype=1）
+...
 ; zlib（level 9, Z_FIXED）壓 'hello hello hello world hello' 的原始 deflate
 t-inflate-fixed = () {
     hex = 'CB48CDC9C957C84022CBF38B7252206C00'
@@ -234,7 +239,8 @@ t-inflate-fixed = () {
     runner.str-eq(out.to-str(), 'hello hello hello world hello', 'fixed 區塊內容')
 }
 
-; ── inflate：dynamic Huffman 區塊（btype=2）─────────────────────────
+; inflate：dynamic Huffman 區塊（btype=2）
+...
 ; zlib（level 9）壓 2292 位元組「英文單詞串」的原始 deflate；
 ; 期望值以長度 + Adler-32 校驗（避免在測試檔內複製 2KB 原文）
 t-inflate-dynamic = () {
@@ -257,7 +263,8 @@ t-inflate-dynamic = () {
     runner.eq(a, 289291758, 'dynamic 區塊 Adler-32 與原文一致')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('gzip.compress', t-compress)
 p2, f2 = runner.test('gzip.compress/decompress roundtrip', t-compress-decompress)

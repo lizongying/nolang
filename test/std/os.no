@@ -36,7 +36,8 @@
 OS-FILE = '/tmp/nolang_os_test_file.txt'
 OS-DIR = '/tmp/nolang_os_test_dir'
 
-; ── 環境變數 ──────────────────────────────────
+; 環境變數
+...
 
 ; set-env 之後 get-env 應讀回剛寫入的 'xyz'
 t-get-env = () {
@@ -67,7 +68,8 @@ t-get-env-unset = () {
     runner.is-true(is-nil, 'get-env unset == nil')
 }
 
-; ── 工作目錄 ──────────────────────────────────
+; 工作目錄
+...
 
 ; get-wd 應回非空的工作目錄路徑
 t-get-wd = () {
@@ -75,7 +77,8 @@ t-get-wd = () {
     runner.gt(dir.len(), 0, 'get-wd len > 0')
 }
 
-; ── 進程 ──────────────────────────────────────
+; 進程
+...
 
 ; get-pid 應為正整數（當前進程號）
 t-get-pid = () {
@@ -83,7 +86,8 @@ t-get-pid = () {
     runner.gt(pid, 0, 'get-pid > 0')
 }
 
-; ── 系統資訊 ──────────────────────────────────
+; 系統資訊
+...
 
 ; host-name 應回非空主機名
 t-host-name = () {
@@ -97,7 +101,8 @@ t-num-cpu = () {
     runner.gt(n, 0, 'num-cpu > 0')
 }
 
-; ── 行程優先級（?i64 option）──────────────────
+; 行程優先級（?i64 option）
+...
 
 ; get-priority：應解出 ok，且 nice 值落在合法範圍 -20..19
 t-get-priority = () {
@@ -116,7 +121,8 @@ t-get-priority = () {
     runner.is-true(prio >= -20 && prio <= 19, 'get-priority in nice range')
 }
 
-; ── 輔助 ──────────────────────────────────────
+; 輔助
+...
 
 ; ?str 解包：非 ok 回空串
 ; o: 待解包的可選字串
@@ -156,7 +162,8 @@ mul = (a i64, b i64) (v i64) {
     }
 }
 
-; ── 身份 / 系統資訊 ──────────────────────────
+; 身份 / 系統資訊
+...
 
 t-ids = () {
     runner.is-true(os.getuid() >= 0, 'getuid 非負')
@@ -228,7 +235,8 @@ t-sysctl = () {
     runner.eq(str-of(os.sysctl('no.such.key')).len(), 0, 'sysctl 不存在的 key 回 nil')
 }
 
-; ── 時間 ──────────────────────────────────────
+; 時間
+...
 
 t-clock = () {
     s = os.now()
@@ -251,7 +259,8 @@ t-sleep = () {
     runner.is-true(true, 'sleep-us / sleep-ns 可呼叫')
 }
 
-; ── 檔案屬性 / 權限 ──────────────────────────
+; 檔案屬性 / 權限
+...
 
 t-stat = () {
     fs.remove(OS-FILE)
@@ -315,7 +324,8 @@ t-stat = () {
     fs.remove(OS-FILE)
 }
 
-; ── 目錄 / 工作目錄 ──────────────────────────
+; 目錄 / 工作目錄
+...
 
 t-dir-ops = () {
     fs.rmdir(OS-DIR)
@@ -333,7 +343,8 @@ t-dir-ops = () {
     fs.rmdir(OS-DIR)
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('os.get-env', t-get-env)
 p2, f2 = runner.test('os.get-wd', t-get-wd)

@@ -40,7 +40,8 @@ fin.leave = () {
     log-add('/tmp/no-life-leave.txt', 'L' - .tag)
 }
 
-; ── 1. 區塊結束時觸發 ──
+; 1. 區塊結束時觸發
+...
 
 t-leave-block-end = () {
     fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
@@ -57,7 +58,8 @@ t-leave-block-end = () {
     runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'La', 'leave: 區塊結束時觸發')
 }
 
-; ── 2. 多個變數：宣告逆序 ──
+; 2. 多個變數：宣告逆序
+...
 
 t-leave-reverse = () {
     fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
@@ -77,7 +79,8 @@ t-leave-reverse = () {
     runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'L3L2L1', 'leave: 按宣告逆序觸發（L3 L2 L1）')
 }
 
-; ── 3. return 之前觸發，且只一次 ──
+; 3. return 之前觸發，且只一次
+...
 
 ; 在函式裡宣告後立刻 return：leave 應在 return 之前跑完，呼叫方回到這裡時日誌已就位。
 ret-helper = () {
@@ -95,7 +98,8 @@ t-leave-before-return = () {
     runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lh', 'leave: return 前觸發，且不重複')
 }
 
-; ── 4. 只實作 leave 的型別本身（回歸：注入器曾強插 enter）──
+; 4. 只實作 leave 的型別本身（回歸：注入器曾強插 enter）
+...
 
 t-leave-only = () {
     fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
@@ -112,7 +116,8 @@ t-leave-only = () {
     runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lx', 'leave: 只實作 leave 的型別可編譯且生效')
 }
 
-; ── 5. 不帶標註（推斷）的宣告同樣注入 ──
+; 5. 不帶標註（推斷）的宣告同樣注入
+...
 ;
 ; 這是 `no fmt` 之後的形態（標註被當成冗餘移除）。行為必須與帶標註時一致。
 
@@ -128,7 +133,8 @@ t-leave-inferred = () {
     runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lb', 'leave: 不帶標註的宣告也注入')
 }
 
-; ── 6. 巢狀區塊：內層先 leave，外層後 leave ──
+; 6. 巢狀區塊：內層先 leave，外層後 leave
+...
 
 t-leave-nested = () {
     fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())

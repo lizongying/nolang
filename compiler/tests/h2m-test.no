@@ -54,7 +54,9 @@
 ;    表現為【無限循環掛起】而非報錯；補全直接導入後恢復。同族缺陷的報錯形態見
 ;    compiler/tests/ps-test.no 檔頭（oracle 端跨模組常量解析範圍缺陷，先於本檔存在）。
 
-; ── f = () (r i64) { r = 2 + 3 * 4 } ──
+; f = () (r i64) { r = 2 + 3 * 4 }
+...
+
 ; 证明 AST → MIR 的第一条真实路径：优先级由 parser 建成嵌套 InfixExpression，
 ; 降级只需后序遍历——先算右侧乘法（id2/id3/id4），再算加法（id5），末 RET id5。
 test-prec = () {
@@ -81,7 +83,9 @@ test-prec = () {
     runner.eq(ir.contains('load '), 0, 'prec no load')
 }
 
-; ── g = () (r i64) { x = 5; r = x - 1 } ──
+; g = () (r i64) { x = 5; r = x - 1 }
+...
+
 ; 证明标识符按名字查到先前绑定的值 id（无槽、直接 SSA 引用）。
 test-var = () {
     src = 'g = () (r i64) {\n    x = 5\n    r = x - 1\n}\n'
@@ -99,7 +103,9 @@ test-var = () {
     runner.eq(ir.contains('ret i64 %v3'), 1, 'var ret')
 }
 
-; ── h = () (r i64) { r = 1; r = r + 2 } ──
+; h = () (r i64) { r = 1; r = r + 2 }
+...
+
 ; 证明同名重复绑定 = 覆盖重赋值（§3.11）：第二条语句读到的是第一条的值 id 1，
 ; 且 r 的最终绑定挪到 id3，RET 取 id3——不是 RET 旧的 id1。
 test-rebind = () {
@@ -117,7 +123,9 @@ test-rebind = () {
     runner.eq(ir.contains('ret i64 %v3'), 1, 'rebind ret latest')
 }
 
-; ── k = () (r i64) { r = (2 + 3) * 4 } ──
+; k = () (r i64) { r = (2 + 3) * 4 }
+...
+
 ; 证明 GroupedExpression 透明降级（只下钻第一个 kid，不额外产生值）。
 test-group = () {
     src = 'k = () (r i64) {\n    r = (2 + 3) * 4\n}\n'
@@ -135,7 +143,8 @@ test-group = () {
     runner.eq(ir.contains('ret i64 %v5'), 1, 'group ret')
 }
 
-; ── 两个函数：拼接 + 各自独立的值 id arena ──
+; 两个函数：拼接 + 各自独立的值 id arena
+...
 test-multi-func = () {
     src = 'a = () (r i64) {\n    r = 1 + 2\n}\n\nz = () (r i64) {\n    r = 7\n}\n'
     t = ast.make()
@@ -153,7 +162,8 @@ test-multi-func = () {
     runner.eq(ir.contains('%v1 = add i64 0, 7'), 1, 'multi fresh arena')
 }
 
-; ── 负例门禁：不支持的构造必须计入 unsup，不得静默产码 ──
+; 负例门禁：不支持的构造必须计入 unsup，不得静默产码
+...
 test-gate = () {
 
     ; s75：整型 / 已放行（護欄 plain 路：除零→0 + stderr 报告），此例转正
@@ -209,7 +219,9 @@ test-gate = () {
     runner.eq(ir4.contains('define i64 @s()'), 1, 'gate sibling still emitted')
 }
 
-; ── s99：结构体定义 + 字段读/写（局部变量）──
+; s99：结构体定义 + 字段读/写（局部变量）
+...
+
 ; 证明：前扫描登记结构体表 ⇒ 模块 IR 前置 `%struct.s0 = type { i64, i64 }`；
 ;   struct 字面量降级成 OP-STRUCT-MK（字段值 id 连续，insertvalue 链式装配）；
 ;   点号读降级成 extractvalue（OP-STRUCT-GET）；字段写降级成 insertvalue 出新值
@@ -241,7 +253,9 @@ test-s99-struct = () {
     runner.eq(ir.contains('ret i64 %v'), 1, 's99 ret present')
 }
 
-; ── s99b：结构体作形参（字段读）+ 作返回值（MK） + 形参字段写后返回 ──
+; s99b：结构体作形参（字段读）+ 作返回值（MK） + 形参字段写后返回
+...
+
 ; 证明：h2m-tynode-code 在 h2m-ty-code 回 -1 时回退查模块级结构体表，把具名结构体型别
 ;   解析成 TY-STRUCT-BASE + sid；h2m-func-sig / h2m-param-ty / h2m-lower-let 透传 agg 上下文后，
 ;   函数签名（形参 ptys、retty）即可携带结构体码，cg 按 cg-ty-name 渲染 %struct.s0 签名。
@@ -291,7 +305,9 @@ test-s99b-param-set-return = () {
     runner.eq(ir.contains('ret %struct.s0 %st5'), 1, 's99b ret')
 }
 
-; ── s99c：结构体跨基本块槽（STALLOC / STSTORE / STLOAD）──
+; s99c：结构体跨基本块槽（STALLOC / STSTORE / STLOAD）
+...
+
 ; 证明：mem 模式下（函数体含循环）局部量落 entry 的 alloca %struct.sN 槽（%sts<id>）；
 ;   MK 把字面量值 store 进槽、GET 从槽 load 后再 extractvalue、SET 先 load 旧值再 insertvalue 后 store 回槽，
 ;   槽在循环迭代间正确携带 mutation；循环后读字段得到的是改后的值。
@@ -340,7 +356,9 @@ test-s99c-param-loop = () {
     runner.eq(ir.contains('ret %struct.s0 %st'), 1, 's99c ret')
 }
 
-; ── s99d：结构体跨函数调用（mem 模式，含控制流）──
+; s99d：结构体跨函数调用（mem 模式，含控制流）
+...
+
 ; 证明：结构体在 mem 模式下作为实参按值穿过 call、被调按值返 struct、调用方读出/改写字段，
 ;   整条链路（MK 落槽 → load → call by-value → store 返回 → extractvalue → insertvalue 改写 → store 回槽）
 ;   在 h2m 侧完整降级且 UNSUP=0；call 发射对 struct 实参/返回值的型别码（TY-STRUCT-BASE+sid）正确。
@@ -407,7 +425,9 @@ test-s99d-return-call = () {
     runner.eq(ir.contains('extractvalue %struct.s0 %st'), 1, 's99d read fields after mutate')
 }
 
-; ── s99e：结构體欄位型別擴充（str / f64 / 嵌套結構體）（M4-e 第四十五件續）──
+; s99e：结构體欄位型別擴充（str / f64 / 嵌套結構體）（M4-e 第四十五件續）
+...
+
 ; 證明：s99/s99b/s99c/s99d 只收 i64 欄位，本件把欄位型別擴到 str / f64 / 嵌套結構體。
 ;   關鍵在 h2m 側兩處：(1) `h2m-struct-register` 改兩遍——第一遍只登欄位「型別節點 id」，
 ;   第二遍 `h2m-struct-resolve` 等全部結構體名就位後再解析成型別碼（支持「欄位引用較後定義的結構體」）；
@@ -501,7 +521,9 @@ test-s99e-mixed-field = () {
     runner.eq(ir.contains('extractvalue %struct.s0 %st10, 0'), 1, 's99e GET inner x')
 }
 
-; ── s99f：結構體欄位型別支援 []i64（vec 欄位）（M4-e 第四十六件續）──
+; s99f：結構體欄位型別支援 []i64（vec 欄位）（M4-e 第四十六件續）
+...
+
 ; 證明：s99e 收 i64/str/f64/嵌套結構體欄位；本件把欄位型別擴到 []i64（vec）。
 ;   關鍵在 h2m 側一處：`h2m-tynode-code` 補 K-SLICE-TYPE → TY-VEC（僅收元素 i64，與 s62 形參口径一致）；
 ;   `h2m-struct-resolve` 調它解析欄位型別，故欄位自動落到 TY-VEC，cg 側 MK/GET/SET/STALLOC 零改
@@ -578,7 +600,9 @@ test-s99f-vec-field-gate = () {
     runner.eq(ir.contains('define'), 0, 's99f vec-str-field no code')
 }
 
-; ── s99g：結構體 str 欄位 RC——MK 後緊接 OP-STRUCT-RETAIN（欄位掩碼由 h2m 設置）（M4-e 第四十七件續）──
+; s99g：結構體 str 欄位 RC——MK 後緊接 OP-STRUCT-RETAIN（欄位掩碼由 h2m 設置）（M4-e 第四十七件續）
+...
+
 ; 證明：③str 欄位 RC 的「取得所有權」半邊——h2m 在結構體字面量 MK 後，對含 str 欄位的結構體
 ;   發 OP-STRUCT-RETAIN（bs[k]=欄位掩碼，bit j 置位 ⇔ 欄位 j 是 str）；cg 依掩碼對每個 str 欄位
 ;   call @nolang_rc_retain。純 h2m 改動（cg 的 OP-STRUCT-RETAIN/RELEASE 與 @nolang_rc_retain/release
@@ -643,7 +667,9 @@ test-s99g-struct-no-retain = () {
     runner.eq(ir.contains('call void @nolang_rc_retain('), 0, 's99g no retain for non-str struct')
 }
 
-; ── s99i：vec 欄位就地索引 b.data[i] / 本地 vec 變量 v[i]（M4-e 第四十九件續）──
+; s99i：vec 欄位就地索引 b.data[i] / 本地 vec 變量 v[i]（M4-e 第四十九件續）
+...
+
 ; 核心：h2m-lower-expr 新增 K-INDEX-EXPRESSION 分支——base 降級出 %vec 值 id 後發 OP-VECGET 取第 i 個 i64 元素；
 ;   base 須是 TY-VEC（[]i64 欄位 / vec 形參 / mem==0 下綁定的 vec 局部），其餘型別（str/struct/arr）計 unsup。
 ;   cg 早已支援 OP-VECGET（→ call i64 @vec_get_i64(%vec, i64)），本件是純 h2m 改動。
@@ -722,7 +748,9 @@ test-s99i-index-scalar-gate = () {
     runner.eq(ir.contains('call i64 @vec_get_i64('), 0, 's99i no VECGET for scalar base')
 }
 
-; ── s99j：結構體 str 欄位 RC——scope-exit 釋放半邊（與 s99g 取得所有權配對）（M4-e 第五十件續）──
+; s99j：結構體 str 欄位 RC——scope-exit 釋放半邊（與 s99g 取得所有權配對）（M4-e 第五十件續）
+...
+
 ; 核心：s99g 在 MK 後發 OP-STRUCT-RETAIN，本件在函數退出時由 h2m-emit-releases 對同一 %st 值發
 ;   OP-STRUCT-RELEASE（欄位掩碼同 s99g）。跳過「已被回傳佔用」的值防雙重釋放。僅 mem==0 放行。
 ;   ⚠️ 運行時驗證受 15w45dqk 門禁阻塞（同 s99h/s99i），IR 文本斷言為本件主要驗證手段。
@@ -783,7 +811,9 @@ test-s99j-struct-mixed-release = () {
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99j mixed-mask release emitted')
 }
 
-; ── 单个输入参数：形参占值 id 1，body 从 id 2 起 ──
+; 单个输入参数：形参占值 id 1，body 从 id 2 起
+...
+
 ; 证明 s56 的签名侧降级：不建 alloca，名字直接绑到形参 id（与 §3.11 重绑模型一致）。
 test-param-one = () {
     src = 'p1 = (x i64) (r i64) {\n    r = x + 1\n}\n'
@@ -800,7 +830,8 @@ test-param-one = () {
     runner.eq(ir.contains('ret i64 %v3'), 1, 'param1 ret')
 }
 
-; ── 两个输入参数：形参序 = 值 id 序 ──
+; 两个输入参数：形参序 = 值 id 序
+...
 test-param-two = () {
     src = 'p2 = (x i64, y i64) (r i64) {\n    r = x * y\n}\n'
     t = ast.make()
@@ -815,7 +846,8 @@ test-param-two = () {
     runner.eq(ir.contains('alloca'), 0, 'param2 no alloca')
 }
 
-; ── str 形参：签名侧按型别选命名空间（值语义仍限 i64）──
+; str 形参：签名侧按型别选命名空间（值语义仍限 i64）
+...
 test-param-str = () {
     src = 'sp = (s str) (r i64) {\n    r = 1\n}\n'
     t = ast.make()
@@ -833,7 +865,8 @@ test-param-str = () {
     runner.eq(ir.contains('i64 %v1'), 0, 'pstr no i64 param')
 }
 
-; ── 输出参数的型别决定 retty（str 透传，不新增 id）──
+; 输出参数的型别决定 retty（str 透传，不新增 id）
+...
 test-ret-str = () {
     src = 'stw = (s str) (t str) {\n    t = s\n}\n'
     t = ast.make()
@@ -850,7 +883,9 @@ test-ret-str = () {
     runner.eq(ir.contains('%v'), 0, 'rets no i64 id')
 }
 
-; ── 零参调用 + 前向引用（调用者写在被调用者之前）──
+; 零参调用 + 前向引用（调用者写在被调用者之前）
+...
+
 ; 证明前置 pass 先登记全模块签名，调用点能查到返回型别与 arity。
 test-call-fwd = () {
     src = 'cc = () (r i64) {\n    r = cf0()\n}\n\ncf0 = () (r i64) {\n    r = 9\n}\n'
@@ -867,7 +902,8 @@ test-call-fwd = () {
     runner.eq(ir.contains('%v1 = add i64 0, 9'), 1, 'callfwd callee body')
 }
 
-; ── 单参调用 + 两参连续调用 ──
+; 单参调用 + 两参连续调用
+...
 test-call-args = () {
     src = 'dbl = (x i64) (r i64) {\n    r = x + x\n}\n\nad = (x i64, y i64) (r i64) {\n    r = x + y\n}\n\nm1 = () (r i64) {\n    a = 3\n    r = dbl(a)\n}\n\nm2 = () (r i64) {\n    a = 1\n    b = 2\n    r = ad(a, b)\n}\n'
     t = ast.make()
@@ -886,7 +922,9 @@ test-call-args = () {
     runner.eq(ir.contains('@ad(i64 %v2, i64 %v1)'), 0, 'callargs order not swapped')
 }
 
-; ── 调用侧门禁：arity 不符 / 未知被调用者 / 返回型别不符 都计 unsup ──
+; 调用侧门禁：arity 不符 / 未知被调用者 / 返回型别不符 都计 unsup
+...
+
 ; ⚠️ s64 前这里还钉「实参 id 不连续计 unsup」；侧池 args 落地后该门禁摘除（§11 B16 销帐），
 ;   不连续形制翻转为正向用例 test-call-s64-*。
 test-call-gate = () {
@@ -932,7 +970,9 @@ test-call-gate = () {
     runner.eq(ir4.contains('define'), 0, 'rettype no code')
 }
 
-; ── s64 正向形制：实参值 id 任意散布（侧池寻址）──────────
+; s64 正向形制：实参值 id 任意散布（侧池寻址）
+...
+
 ; 每个用例的锚点 IR 直取自 tmp/s64-dump-after2.txt（探针实测）。
 
 ; 三实参、后两个是算式：值 id 1/3/5 跳号（旧契约 unsup=2）
@@ -1052,7 +1092,8 @@ test-flow-if = () {
     runner.eq(ir.contains('ret i64 %v10'), 0, 'if no cross-block ret')
 }
 
-; ── 前置条件循环：(cond) { body } ⇒ entry→hdr、hdr→(body|exit)、body→hdr 回边 ──
+; 前置条件循环：(cond) { body } ⇒ entry→hdr、hdr→(body|exit)、body→hdr 回边
+...
 test-flow-loop = () {
     src = 'g = (n i64) (r i64) {\n    r = 0\n    (n > 0) {\n        r = r + 1\n    }\n}\n'
     t = ast.make()
@@ -1081,7 +1122,8 @@ test-flow-loop = () {
     runner.eq(ir.contains('ret i64 %v13'), 1, 'loop ret in exit block')
 }
 
-; ── 比较家族：六个比较符各自落到对应的 icmp predicate ──
+; 比较家族：六个比较符各自落到对应的 icmp predicate
+...
 test-flow-cmp = () {
     src = 'a = (n i64) (r i64) {\n    r = 0\n    n < 5 -> r = 1\n    n <= 5 -> r = 2\n    n >= 5 -> r = 3\n    n == 5 -> r = 4\n    n != 5 -> r = 5\n}\n'
     t = ast.make()
@@ -1206,7 +1248,9 @@ test-flow-else-syn = () {
     runner.eq(ir.contains('ret i64 %v10'), 0, 'else-syn no cross-block ret else')
 }
 
-; ── s58：花括号短路链（K-SURFACE-MATCH）三臂含 wildcard──
+; s58：花括号短路链（K-SURFACE-MATCH）三臂含 wildcard
+...
+
 ; 实测量：臂体块 bb2/bb4/bb5 各写自己的常量进同一槽 %s4 并无条件回汇聚块 bb1；第二臂的判定落 bb3
 test-flow-chain3 = () {
     src = 'f = (n i64) (r i64) {\n    r = 0\n    {\n        n > 3 -> r = 1\n        n > 1 -> { r = 2 }\n        -> r = 3\n    }\n}\n'
@@ -1243,7 +1287,8 @@ test-flow-chain3 = () {
     runner.eq(ir.contains('ret i64 %v10'), 0, 'chain3 no cross-block ret')
 }
 
-; ── s58：无 wildcard 的两臂链——最后一臂的假路直接落汇聚块，不留空判定块──
+; s58：无 wildcard 的两臂链——最后一臂的假路直接落汇聚块，不留空判定块
+...
 test-flow-chain-nowild = () {
     src = 'g = (n i64) (r i64) {\n    r = 7\n    {\n        n > 3 -> r = 1\n        n > 1 -> r = 2\n    }\n}\n'
     t = ast.make()
@@ -1261,7 +1306,8 @@ test-flow-chain-nowild = () {
     runner.eq(ir.contains('ret i64 %v15'), 1, 'nowild ret loaded')
 }
 
-; ── s58：单 wildcard 臂链——无条件判定，臂体直落当前块，整链不应出现任何 icmp──
+; s58：单 wildcard 臂链——无条件判定，臂体直落当前块，整链不应出现任何 icmp
+...
 test-flow-chain-wild1 = () {
     src = 'w = (n i64) (r i64) {\n    r = 5\n    {\n        -> r = 9\n    }\n}\n'
     t = ast.make()
@@ -1279,7 +1325,8 @@ test-flow-chain-wild1 = () {
     runner.eq(ir.contains('br i1'), 0, 'wild1 no condbr')
 }
 
-; ── s58：循环体内的链——链的汇聚块只拿到循环的回边（连续段纪律的叠块例）──
+; s58：循环体内的链——链的汇聚块只拿到循环的回边（连续段纪律的叠块例）
+...
 test-flow-chain-nest = () {
     src = 'h = (n i64) (r i64) {\n    r = 0\n    (r < 10) {\n        {\n            r > 5 -> r = r + 3\n            -> r = r + 1\n        }\n    }\n}\n'
     t = ast.make()
@@ -1300,7 +1347,9 @@ test-flow-chain-nest = () {
     runner.eq(ir.contains('ret i64 %v19'), 1, 'nest exit ret')
 }
 
-; ── s103：值位 SurfaceMatch（`r = { c -> 1  -> 0 }`）——逐臂 STORE 进 entry 结果槽、汇聚块 LOAD ──
+; s103：值位 SurfaceMatch（`r = { c -> 1  -> 0 }`）——逐臂 STORE 进 entry 结果槽、汇聚块 LOAD
+...
+
 ; 槽位实测：%s2 = 形参 n、%s4 = 合成结果槽 @smv<let-id>、%s6 = 输出参 r 的槽。
 ;   结果槽必须【独立于】目标变量槽：两者合一的话，无兜底臂且全不命中时会读到 r 的旧值
 ;   而不是 Go 权威的零初始化 0。
@@ -1333,7 +1382,8 @@ test-smv-wild3 = () {
     runner.eq(ir.contains('bb6:'), 0, 'smv-wild3 no spare block')
 }
 
-; ── s103：无兜底臂的两臂值链——最后一臂的假路直接落汇聚块，不留空判定块 ──
+; s103：无兜底臂的两臂值链——最后一臂的假路直接落汇聚块，不留空判定块
+...
 test-smv-nowild2 = () {
     src = 'w = (n i64) (r i64) {\n    r = {\n        n > 3 -> 1\n        n > 1 -> 2\n    }\n}\n'
     t = ast.make()
@@ -1353,7 +1403,8 @@ test-smv-nowild2 = () {
     runner.eq(ir.contains('%v5 = add i64 0, 0\n\tstore i64 %v5, i64* %s4'), 1, 'smv-nowild2 zero init')
 }
 
-; ── s103：值位 + i64 主体（`r = n: { 1 -> 10  -> 0 }`）——逐臂「本臂判定块内 LOAD 主体 + CMPEQ」 ──
+; s103：值位 + i64 主体（`r = n: { 1 -> 10  -> 0 }`）——逐臂「本臂判定块内 LOAD 主体 + CMPEQ」
+...
 test-smv-subj = () {
     src = 'u = (n i64) (r i64) {\n    r = n: {\n        1 -> 10\n        3 -> 30\n        -> 0\n    }\n}\n'
     t = ast.make()
@@ -1373,7 +1424,8 @@ test-smv-subj = () {
     runner.eq(ir.contains('ret i64 %v18'), 1, 'smv-subj ret loaded')
 }
 
-; ── s103 负例：臂体不是「inline 块包单表达式陈述」⇒ 计 unsup 整函数不产码 ──
+; s103 负例：臂体不是「inline 块包单表达式陈述」⇒ 计 unsup 整函数不产码
+...
 test-smv-gate = () {
     src = 'p2 = (n i64) (r i64) {\n    r = {\n        n > 3 -> {\n            x = 1\n            x\n        }\n        -> 0\n    }\n}\n'
     t = ast.make()
@@ -1386,7 +1438,8 @@ test-smv-gate = () {
     runner.eq(ir.contains('define'), 0, 'smv-multistmt no code')
 }
 
-; ── 控制流侧门禁：surface match 链 / 计数循环 / 区间遍历 / 无槽型别都计 unsup 且不产码 ──
+; 控制流侧门禁：surface match 链 / 计数循环 / 区间遍历 / 无槽型别都计 unsup 且不产码
+...
 test-flow-gate = () {
 
     ; s103 转正：值位链 `r = { c -> v  -> d }` 已放行（逐臂 STORE 进 entry 结果槽、汇聚块 LOAD）；
@@ -1452,7 +1505,9 @@ test-flow-gate = () {
     runner.eq(ir6.contains('define'), 0, 'wild-not-last no code')
 }
 
-; ── s59：guard 块里的 return——共享 ret 块懒开，终结处只发 BR；尾块再 BR 过去 LOAD+RET ──
+; s59：guard 块里的 return——共享 ret 块懒开，终结处只发 BR；尾块再 BR 过去 LOAD+RET
+...
+
 ; 形制钉自 tmp/probe-s59-ir.no（SRC-RET）：then 块 store 42 后 br bb4＋不可达 br bb3；
 ; bb3 后继语句照降；bb4 只读一次槽。若无 return 块形制（s57 的 ret 落当前块）被误用，
 ; bb4 的 define 尾形与双 BR 序列都会断言失败。
@@ -1477,7 +1532,8 @@ test-term-ret = () {
     runner.eq(ir.contains('bb5:'), 0, 'ret no spare block')
 }
 
-; ── s59：循环体内 continue——guard 块 BR 回 hdr（重判条件），不可达汇聚 BR 同块尾 ──
+; s59：循环体内 continue——guard 块 BR 回 hdr（重判条件），不可达汇聚 BR 同块尾
+...
 test-term-cont = () {
     src = 'g59 = (n i64) (r i64) {\n    r = 0\n    i = n\n    (i > 0) {\n        i = i - 1\n        i > 3 -> continue\n        r = r + i\n    }\n}\n'
     t = ast.make()
@@ -1499,7 +1555,8 @@ test-term-cont = () {
     runner.eq(ir.contains('bb3:\n\t%v22 = load i64, i64* %s4\n\tret i64 %v22'), 1, 'cont exit ret')
 }
 
-; ── s59：循环体内 break——BR 落 exit，且循环后的继语句在 exit 块照跑 ──
+; s59：循环体内 break——BR 落 exit，且循环后的继语句在 exit 块照跑
+...
 test-term-brk = () {
     src = 'h59 = (n i64) (r i64) {\n    r = 0\n    i = n\n    (i > 0) {\n        i = i - 1\n        i < 2 -> break\n        r = r + i\n    }\n    r = r + 100\n}\n'
     t = ast.make()
@@ -1519,7 +1576,8 @@ test-term-brk = () {
     runner.eq(ir.contains('ret i64 %v25'), 1, 'brk ret trailing value')
 }
 
-; ── s59：链臂体的裸终结形（单陈述 inline 臂 `n > 9 -> return`）＋共享 ret 块多入口 ──
+; s59：链臂体的裸终结形（单陈述 inline 臂 `n > 9 -> return`）＋共享 ret 块多入口
+...
 test-term-chain = () {
     src = 'k59 = (n i64) (r i64) {\n    {\n        n > 9 -> return\n        -> r = 5\n    }\n}\n'
     t = ast.make()
@@ -1538,7 +1596,8 @@ test-term-chain = () {
     runner.eq(ir.contains('bb4:\n\t%v11 = load i64, i64* %s4\n\tret i64 %v11'), 1, 'chain shared ret')
 }
 
-; ── s59：无输出参函数的 return——延迟零值由 ret 块的 CONST 0 落地（Go 的 void ret 形不在覆盖面）──
+; s59：无输出参函数的 return——延迟零值由 ret 块的 CONST 0 落地（Go 的 void ret 形不在覆盖面）
+...
 test-term-ret-noout = () {
     src = 'q59 = (n i64) {\n    n > 0 -> return\n}\n'
     t = ast.make()
@@ -1551,7 +1610,8 @@ test-term-ret-noout = () {
     runner.eq(ir.contains('bb4:\n\t%v8 = add i64 0, 0\n\tret i64 %v8'), 1, 'noout ret zero')
 }
 
-; ── s59 门禁：终结形非末条 / 循环外 break / 输出参槽型不符都计 unsup 且不产码 ──
+; s59 门禁：终结形非末条 / 循环外 break / 输出参槽型不符都计 unsup 且不产码
+...
 test-term-gate = () {
 
     ; return 后面还有陈述 ⇒ 其后不可达，末位门禁计 unsup
@@ -1573,7 +1633,9 @@ test-term-gate = () {
     runner.eq(ir2.contains('define'), 0, 'outer-break no code')
 }
 
-; ── s60m：计数循环前置形 `3 * { }`——四块轮转（hdr/body/update/exit）+ 合成计数器槽 ──
+; s60m：计数循环前置形 `3 * { }`——四块轮转（hdr/body/update/exit）+ 合成计数器槽
+...
+
 ; 形制钉自 tmp/probe-s60m-ir.no（函数 a）：计数器是 entry 的第三个 alloca（%s6），计数值只在
 ; 进循环前算一次并 STORE，header 每次重新 LOAD 判 >0，body 结尾 BR 到 update（不是 hdr）。
 ; 若把回边直接接回 hdr（漏掉自减），update 块就不会出现 sub；若沿用 SSA 重绑，body 里就是旧值。
@@ -1614,7 +1676,9 @@ test-cnt-fwd = () {
     runner.eq(ir.contains('bb5:'), 0, 'cnt-fwd no spare block')
 }
 
-; ── s60m：后置形 `{ } * 3` 与前置形归一为同一 AST ⇒ 降级出的 IR 逐字节同形 ──
+; s60m：后置形 `{ } * 3` 与前置形归一为同一 AST ⇒ 降级出的 IR 逐字节同形
+...
+
 ; 实测（tmp/probe-s60m-ast.no）：ps.no 的两个 builder 把块体统一落在 kid[5]、字面量落在 kid[3]，
 ; 故本例的断言集合与 test-cnt-fwd 完全一致（只有函数名不同）——这同时钉住「两种写法不会各走一路」。
 test-cnt-postfix = () {
@@ -1634,7 +1698,8 @@ test-cnt-postfix = () {
     runner.eq(ir.contains('bb4:\n\t%v19 = load i64, i64* %s4\n\tret i64 %v19'), 1, 'cnt-post exit ret')
 }
 
-; ── s60m：非正计数（-2 与 0）照发 header 判定——语义「N <= 0 时体一次不进」由 sgt 保证 ──
+; s60m：非正计数（-2 与 0）照发 header 判定——语义「N <= 0 时体一次不进」由 sgt 保证
+...
 test-cnt-nonpos = () {
     src = 'cn = (n i64) (r i64) {\n    r = 0\n    -2 * {\n        r = r + 1\n    }\n}\n\ncz = (n i64) (r i64) {\n    r = 0\n    0 * {\n        r = r + 1\n    }\n}\n'
     t = ast.make()
@@ -1655,7 +1720,8 @@ test-cnt-nonpos = () {
     runner.eq(ir.contains('define i64 @cz(i64 %v1)'), 1, 'cnt-nonpos zero-count func emitted')
 }
 
-; ── s60m：计数循环内 break——BR 落 exit（不是 hdr），循环后的继语句在 exit 块照跑 ──
+; s60m：计数循环内 break——BR 落 exit（不是 hdr），循环后的继语句在 exit 块照跑
+...
 test-cnt-break = () {
     src = 'cc = (n i64) (r i64) {\n    r = 0\n    5 * {\n        r = r + 1\n        r > 3 -> break\n    }\n    r = r + 100\n}\n'
     t = ast.make()
@@ -1681,7 +1747,9 @@ test-cnt-break = () {
     runner.eq(ir.contains('ret i64 %v25'), 1, 'cnt-brk ret trailing value')
 }
 
-; ── s60m：计数循环内 continue——目标是 update 块（先自减再重判），不是 hdr ──
+; s60m：计数循环内 continue——目标是 update 块（先自减再重判），不是 hdr
+...
+
 ; 与条件循环的 continue（test-term-cont 回 hdr）形成对照：计数循环若把 continue 接回 hdr，
 ; 计数器永不递减 ⇒ 活锁。循环栈存的因此是 (continue 目标, exit) 而非固定的 (hdr, exit)。
 test-cnt-cont = () {
@@ -1705,7 +1773,8 @@ test-cnt-cont = () {
     runner.eq(ir.contains('bb4:\n\t%v22 = load i64, i64* %s4\n\tret i64 %v22'), 1, 'cnt-cont exit ret')
 }
 
-; ── s60m：嵌套计数循环——两个独立的计数器槽，内层 exit 接回外层 update ──
+; s60m：嵌套计数循环——两个独立的计数器槽，内层 exit 接回外层 update
+...
 test-cnt-nested = () {
     src = 'ce = (n i64) (r i64) {\n    r = 0\n    2 * {\n        3 * {\n            r = r + 1\n        }\n    }\n}\n'
     t = ast.make()
@@ -1734,7 +1803,9 @@ test-cnt-nested = () {
     runner.eq(ir.contains('bb4:\n\t%v28 = load i64, i64* %s4\n\tret i64 %v28'), 1, 'cnt-nest exit ret')
 }
 
-; ── s60m 门禁：计数与条件同时存在 / 计数位是字符串字面量，都计 unsup 且不产码 ──
+; s60m 门禁：计数与条件同时存在 / 计数位是字符串字面量，都计 unsup 且不产码
+...
+
 ; 真实源路造不出这两个形状（Go lowerFor 是 count 优先、条件被静默丢弃），故按 s57 的先例用
 ; ast.add/kid-add 合成同形 ForStatement 节点，钉住「宁缺勿错」而非跟着 Go 静默丢条件。
 test-cnt-gate = () {
@@ -1802,7 +1873,9 @@ test-cnt-gate = () {
     runner.eq(ir2.contains('define'), 0, 'str-counter no code')
 }
 
-; ── s61：区间遍历升序右开 `i <- [0..5)`——11 块方向分派（init 双臂／hdr 双臂／upd 双臂）──
+; s61：区间遍历升序右开 `i <- [0..5)`——11 块方向分派（init 双臂／hdr 双臂／upd 双臂）
+...
+
 ; 形制钉自 tmp/probe-s61-ir.no（用例 A）：两端点只求值一次（%v12／%v13），方向由 lo <= hi 的
 ; 运行期分支决定（IR 无 select ⇒ 不能像计数循环那样单块轮转），循环变量是 entry 的 alloca 槽 %s9
 ; （体内 LOAD 取当前值，跨迭代存活）；三个方向判定点都复用同一对端点值 id ⇒ 端点不会每轮重算
@@ -1853,7 +1926,8 @@ test-rng-asc = () {
     runner.eq(ir.contains('icmp sle i64 %v20'), 0, 'rng-asc right-open not inclusive')
 }
 
-; ── s61：右闭 ']' 把两臂的比较谓词换成 sle／sge（差一个端点是否进体）──
+; s61：右闭 ']' 把两臂的比较谓词换成 sle／sge（差一个端点是否进体）
+...
 test-rng-closed = () {
     src = 'rb = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..5]: {\n        r = r + i\n    }\n}\n'
     t = ast.make()
@@ -1872,7 +1946,8 @@ test-rng-closed = () {
     runner.eq(ir.contains('icmp sgt i64 %v22'), 0, 'rng-closed not sgt')
 }
 
-; ── s61：左开 '(' 只改起始值的偏移量（两臂各 ±1），比较谓词仍由右括号决定 ──
+; s61：左开 '(' 只改起始值的偏移量（两臂各 ±1），比较谓词仍由右括号决定
+...
 test-rng-openleft = () {
     src = 'rc = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- (0..5]: {\n        r = r + i\n    }\n}\n'
     t = ast.make()
@@ -1891,7 +1966,9 @@ test-rng-openleft = () {
     runner.eq(ir.contains('%c32 = icmp sle i64 %v20, %v13'), 1, 'rng-openleft hd-asc sle')
 }
 
-; ── s61：降序区间 `[5..0)`——方向不在编译期折成常量，仍发运行期分支选臂 ──
+; s61：降序区间 `[5..0)`——方向不在编译期折成常量，仍发运行期分支选臂
+...
+
 ; Go 同形（hir2mir.go:5103 起：三处 OpLe(start,end) 各开一次分支），opt 才会把不变谓词提出循环
 test-rng-desc = () {
     src = 'rd = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [5..0): {\n        r = r + i\n    }\n}\n'
@@ -1913,7 +1990,8 @@ test-rng-desc = () {
     runner.eq(ir.contains('bb10:\n\t%v31 = load i64, i64* %s9\n\t%v32 = add i64 0, 1\n\t%v33 = sub i64 %v31, %v32'), 1, 'rng-desc desc step decrements')
 }
 
-; ── s61：变量端点 `i <- [lo..hi)`——端点从形参槽 LOAD 一次，其后各块复用同一对值 id ──
+; s61：变量端点 `i <- [lo..hi)`——端点从形参槽 LOAD 一次，其后各块复用同一对值 id
+...
 test-rng-var = () {
     src = 're = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [lo..hi): {\n        r = r + i\n    }\n}\n'
     t = ast.make()
@@ -1937,7 +2015,8 @@ test-rng-var = () {
     runner.eq(ir.contains('bb8:\n\t%v27 = load'), 0, 'rng-var update not reloading bounds')
 }
 
-; ── s61：区间遍历体内 break——BR 落 exit，循环后继语句仍在 exit 块照跑 ──
+; s61：区间遍历体内 break——BR 落 exit，循环后继语句仍在 exit 块照跑
+...
 test-rng-break = () {
     src = 'rf = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..4): {\n        i == 2 -> break\n        r = r + i\n    }\n    r = r + 100\n}\n'
     t = ast.make()
@@ -1964,7 +2043,9 @@ test-rng-break = () {
     runner.eq(ir.contains('ret i64 %v40'), 1, 'rng-brk ret trailing value')
 }
 
-; ── s61：区间遍历体内 continue——目标是 update 块（先步进再重判），不是 hdr ──
+; s61：区间遍历体内 continue——目标是 update 块（先步进再重判），不是 hdr
+...
+
 ; 与计数循环同口径：若把 continue 接回 hdr，本轮的 ±1 被跳过 ⇒ 活锁
 test-rng-cont = () {
     src = 'rg = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..4): {\n        i == 1 -> continue\n        r = r + i\n    }\n}\n'
@@ -1984,7 +2065,9 @@ test-rng-cont = () {
     runner.eq(ir.contains('bb12:\n\tbr label %bb11'), 0, 'rng-cont not exit')
 }
 
-; ── s61：`for i <- [0..3) { }` 关键字形（Condition 就是循环变量自身）──
+; s61：`for i <- [0..3) { }` 关键字形（Condition 就是循环变量自身）
+...
+
 ; ps.no:5762 会同时写下 Condition=IDENT{i} 与 IterRange，两者同义不矛盾 ⇒ 不另计形位；
 ; 降级结果与 `<-` 运算符形同形（只差端点常量），钉住「两种写法走同一条路」
 test-rng-kw = () {
@@ -2002,7 +2085,9 @@ test-rng-kw = () {
     runner.eq(ir.contains('bb11:\n\t%v34 = load i64, i64* %s7\n\tret i64 %v34'), 1, 'rng-kw exit ret')
 }
 
-; ── s61 门禁：嵌套同名区间循环／容器遍历／开边界都计 unsup 且不产码 ──
+; s61 门禁：嵌套同名区间循环／容器遍历／开边界都计 unsup 且不产码
+...
+
 ; 嵌套同名：两层若共用一颗循环变量槽，内层会把外层的计数踩掉（Go 给内层另开一颗槽并改
 ;   l.locals，但循环后再读该名仍指向内层槽），语义两边都不干净 ⇒ 宁缺勿错
 test-rng-gate = () {
@@ -2036,7 +2121,9 @@ test-rng-gate = () {
     runner.eq(ir3.contains('define'), 0, 'rng-open-bound no code')
 }
 
-; ── s62：容器遍历 `v <- xs`（[]i64 形参）——五块 pre/hdr/body/upd/exit，复用 OP-VECLEN/OP-VECGET ──
+; s62：容器遍历 `v <- xs`（[]i64 形参）——五块 pre/hdr/body/upd/exit，复用 OP-VECLEN/OP-VECGET
+...
+
 ; 形制钉自 tmp/probe-s62-ir.no（用例 A）：容器是【形参】⇒ 不铺槽，各块直接引用 entry 就存在的
 ; %vc1（SSA 支配关系合法）；长度只求一次（%v9），hdr 拿 %v11（索引槽 LOAD）与它比；
 ; 两颗 i64 槽：%s4 = 循环变量同名槽（体内 LOAD 取当前元素）、%s6 = 合成索引槽 @idx<node>
@@ -2079,7 +2166,8 @@ test-coll-basic = () {
     runner.eq(ir.contains('%v9 = call i64 @vec_len(%vec %vc1)\n\t%v10 = add i64 0, 0'), 1, 'coll-basic len not recomputed')
 }
 
-; ── s62：`for v <- xs { }` 关键字形（cond 位 = 循环变量自身 IDENT）与运算符形走同一条路 ──
+; s62：`for v <- xs { }` 关键字形（cond 位 = 循环变量自身 IDENT）与运算符形走同一条路
+...
 test-coll-kw = () {
     src = 'vb = (xs []i64) (r i64) {\n    r = 0\n    for v <- xs {\n        r = r + v\n    }\n}\n'
     t = ast.make()
@@ -2097,7 +2185,8 @@ test-coll-kw = () {
     runner.eq(ir.contains('bb4:\n\t%v20 = load i64, i64* %s2\n\tret i64 %v20'), 1, 'coll-kw same exit')
 }
 
-; ── s62：体内 guard break——跳出落 exit，循环后继语句照跑（与 s60m/s61 同口径）──
+; s62：体内 guard break——跳出落 exit，循环后继语句照跑（与 s60m/s61 同口径）
+...
 test-coll-break = () {
     src = 'vc = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        v == 2 -> break\n        r = r + v\n    }\n    r = r + 100\n}\n'
     t = ast.make()
@@ -2114,7 +2203,8 @@ test-coll-break = () {
     runner.eq(ir.contains('bb4:\n\t%v23 = load i64, i64* %s2\n\t%v24 = add i64 0, 100'), 1, 'coll-break exit runs successor')
 }
 
-; ── s62：体内 guard continue——落 update（先自增再判），本轮累加被跳过 ──
+; s62：体内 guard continue——落 update（先自增再判），本轮累加被跳过
+...
 test-coll-cont = () {
     src = 'vd = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        v == 1 -> continue\n        r = r + v\n    }\n}\n'
     t = ast.make()
@@ -2130,7 +2220,8 @@ test-coll-cont = () {
     runner.eq(ir.contains('bb7:\n\t%v17 = load i64, i64* %s2\n\t%v18 = load i64, i64* %s4'), 1, 'coll-cont merge after guard')
 }
 
-; ── s62：嵌套异名容器遍历——四颗独立槽（两颗循环变量 + 两颗索引），内层 exit 落到外层 update ──
+; s62：嵌套异名容器遍历——四颗独立槽（两颗循环变量 + 两颗索引），内层 exit 落到外层 update
+...
 test-coll-nested = () {
     src = 've = (xs []i64, ys []i64) (r i64) {\n    r = 0\n    a <- xs: {\n        b <- ys: {\n            r = r + 1\n        }\n    }\n}\n'
     t = ast.make()
@@ -2152,7 +2243,9 @@ test-coll-nested = () {
     runner.eq(ir.contains('bb8:\n\tbr label %bb3'), 1, 'coll-nested inner exit falls to outer update')
 }
 
-; ── s62 门禁：容器源／用法的入形边界 ──
+; s62 门禁：容器源／用法的入形边界
+...
+
 ;   五类仍不入形（str 源 / 体内改写循环变量 / 嵌套同名 / 标量源 / 元素非 i64）：
 ;   均计 unsup 且不产码；第六类「vec 作返回值」已由切片 6 ② 放行，末条反过来钉住它。
 test-coll-gate = () {
@@ -2214,7 +2307,9 @@ test-coll-gate = () {
     runner.eq(ir6.contains('define'), 0, 'coll-gate-elem-str no code')
 }
 
-; ── s63：三臂值匹配——逐臂在本臂判定块内 LOAD 主体并与型样发 icmp eq──
+; s63：三臂值匹配——逐臂在本臂判定块内 LOAD 主体并与型样发 icmp eq
+...
+
 ; ⚠️ 收闸前的错码形是「型样字面量直接当布尔条件」（%c = icmp ne i64 <pat>, 0 且主体从不 load），
 ;     本例同时钉住【错码形不得出现】
 test-vm-arm3 = () {
@@ -2239,7 +2334,8 @@ test-vm-arm3 = () {
     runner.eq(ir.contains('%c11 = icmp ne i64 %v7, 0'), 0, 'vm3 pattern-not-used-as-condition')
 }
 
-; ── s63：单值样臂无兜底——假路直落汇聚块，不留空判定块──
+; s63：单值样臂无兜底——假路直落汇聚块，不留空判定块
+...
 test-vm-nowild = () {
     src = 'g = (x i64) (r i64) {\n    r = 7\n    x: {\n        3 -> r = 1\n    }\n}\n'
     t = ast.make()
@@ -2255,7 +2351,9 @@ test-vm-nowild = () {
     runner.eq(ir.contains('ret i64 %v11'), 1, 'vmnw ret loaded')
 }
 
-; ── s63：主体是局部量（不只有形参）——槽表前扫描已登记，校验期查到同名 i64 槽即可──
+; s63：主体是局部量（不只有形参）——槽表前扫描已登记，校验期查到同名 i64 槽即可
+...
+
 ; ⚠️ 主体初始化用【拷贝】y i64 = x 而非 y i64 = x - 1：实测 Go 侧 checker 拒「把 ?i64 赋给 i64 变量」
 ;     （算术结果带 option，需就地解包），语料必须两侧都合法才能对拍
 test-vm-local = () {
@@ -2273,7 +2371,8 @@ test-vm-local = () {
     runner.eq(ir.contains('ret i64 %v15'), 1, 'vmlocal ret loaded')
 }
 
-; ── s63：臂体是多陈述块——两条陈述同块发射，块尾单条 BR 回汇聚──
+; s63：臂体是多陈述块——两条陈述同块发射，块尾单条 BR 回汇聚
+...
 test-vm-block = () {
     src = 'q = (x i64) (r i64) {\n    r = 0\n    x: {\n        1 -> {\n            r = 5\n            r = r * 2\n        }\n        -> r = 1\n    }\n}\n'
     t = ast.make()
@@ -2290,7 +2389,8 @@ test-vm-block = () {
     runner.eq(ir.contains('ret i64 %v15'), 1, 'vmblock ret loaded')
 }
 
-; ── s63：区间遍历体内套值匹配（s61 × s63）——主体就是遍历变量槽──
+; s63：区间遍历体内套值匹配（s61 × s63）——主体就是遍历变量槽
+...
 test-vm-in-range = () {
     src = 's = (n i64) (r i64) {\n    r = 0\n    i <- [0..3): {\n        i: {\n            0 -> r = r + 1\n            1 -> r = r + 10\n            -> r = r + 100\n        }\n    }\n}\n'
     t = ast.make()
@@ -2308,7 +2408,8 @@ test-vm-in-range = () {
     runner.eq(ir.contains('ret i64 %v43'), 1, 'vmrange exit ret')
 }
 
-; ── s63：值匹配臂体内再套值匹配（嵌套链）——内链汇聚块只拿到外链臂体的尾 BR──
+; s63：值匹配臂体内再套值匹配（嵌套链）——内链汇聚块只拿到外链臂体的尾 BR
+...
 test-vm-nested = () {
     src = 'u = (x i64, y i64) (r i64) {\n    r = 0\n    x: {\n        1 -> {\n            y: {\n                2 -> r = 8\n                -> r = 9\n            }\n        }\n        -> r = 7\n    }\n}\n'
     t = ast.make()
@@ -2325,7 +2426,8 @@ test-vm-nested = () {
     runner.eq(ir.contains('ret i64 %v19'), 1, 'vmnest ret loaded')
 }
 
-; ── s63 值匹配形状门禁：主体与型样只要超出「i64 变量名 + 裸整型字面量」一律整函数不产码──
+; s63 值匹配形状门禁：主体与型样只要超出「i64 变量名 + 裸整型字面量」一律整函数不产码
+...
 test-vm-gate = () {
 
     ; 主体是 str：cg 的 OP-CMPEQ 只会发 icmp i64，%str 比不了
@@ -2367,6 +2469,28 @@ test-vm-gate = () {
     runner.eq(ir4.contains('define'), 1, 'vm-expr-subj emits')
     runner.eq(ir4.contains('icmp eq i64'), 1, 'vm-expr-subj compares i64')
 
+    ; s117：str.byte(i) 的值位 match 主体（`s.byte(0): { ok -> it }`）——原語料里 63 處 `): {` 的主體。
+    ;   str.byte 回 ?byte ⇒ omode 三態臂；OP-STRBYTE 按【字節】取（非碼點），越界 ⇒ nil。
+    src-b = 'm = (s str) (r i64) {\n    r = 0\n    r = s.byte(0): {\n        ok -> it\n\n        -> 0\n    }\n}\n'
+    tb = ast.make()
+    rb = ps.parse(tb, ps.new(src-b.to-bytes()))
+    aggb = h2m-new()
+    irb = h2m-lower-program(tb, aggb, rb)
+    runner.eq(aggb.unsup, 0, 'vm-strbyte-subj no unsup')
+    runner.eq(irb.contains('define'), 1, 'vm-strbyte-subj emits')
+    runner.eq(irb.contains('getelementptr i8'), 1, 'vm-strbyte-subj lowers OP-STRBYTE')
+
+    ; s118：括號主體 `(a + b): { 7 -> 1 … }` —— 值匹配（vmode）+ 常量臂。
+    ;   ⚠️ parse 白名單缺 K-GROUPED-EXPRESSION 時整檔 unsupported（實測）。
+    src-g = 'm = (a i64, b i64) (r i64) {\n    r = (a + b): {\n        7 -> 1\n\n        -> 0\n    }\n}\n'
+    tg = ast.make()
+    rg = ps.parse(tg, ps.new(src-g.to-bytes()))
+    aggg = h2m-new()
+    irg = h2m-lower-program(tg, aggg, rg)
+    runner.eq(aggg.unsup, 0, 'vm-grouped-subj no unsup')
+    runner.eq(irg.contains('define'), 1, 'vm-grouped-subj emits')
+    runner.eq(irg.contains('icmp eq i64'), 1, 'vm-grouped-subj compares i64')
+
     ; 主体未登记（既非形参也非局部量）：槽表查不到 ⇒ 无法证明它是可读的 i64
     src-u = 'm = (x i64) (r i64) {\n    r = 0\n    zz: {\n        1 -> r = 1\n        -> r = 2\n    }\n}\n'
     t5 = ast.make()
@@ -2386,8 +2510,9 @@ test-vm-gate = () {
     runner.eq(ir6.contains('define'), 0, 'vm-gate-bool-pattern no code')
 }
 
-; ── s65 前置：循環目標棧出栈時必须真刪除——只减计数留陈项 ⇒ 兄弟循環第二顆的 break/continue
-;    查到第一顆的 block（實測 tmp/s65-sib-ir.txt：arm 块 %bb7 → br label %bb3，運行即死循環回跳）──
+; s65 前置：循環目標棧出栈時必须真刪除——只减计数留陈项 ⇒ 兄弟循環第二顆的 break/continue
+;    查到第一顆的 block（實測 tmp/s65-sib-ir.txt：arm 块 %bb7 → br label %bb3，運行即死循環回跳）
+...
 test-sib-loop-target = () {
 
     ; 第二個兄弟前置循環體內 break ⇒ BR 落自己的 exit（%bb6），不是第一顆的 %bb3
@@ -2411,7 +2536,8 @@ test-sib-loop-target = () {
     runner.eq(ir2.contains('bb7:\n\tbr label %bb1'), 0, 'sib-cont not stale hdr')
 }
 
-; ── s65 前置：epl 元素位名栈陈项 ⇒ 第二個兄弟容器遍历改写循環变量遯漏門禁（静默错码）──
+; s65 前置：epl 元素位名栈陈项 ⇒ 第二個兄弟容器遍历改写循環变量遯漏門禁（静默错码）
+...
 test-coll-sibling-write-gate = () {
     src = 'gs65 = (xs []i64, ys []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        r = r + 1\n    }\n    w <- ys: {\n        w = 9\n    }\n}\n'
     t = ast.make()
@@ -2422,7 +2548,8 @@ test-coll-sibling-write-gate = () {
     runner.eq(ir.contains('define'), 0, 'coll-sib-write no code')
 }
 
-; ── s65 前置：rnms 栈名陈项 ⇒ 已退出的外层循環名被兄弟循環的内层同名误拒 ──
+; s65 前置：rnms 栈名陈项 ⇒ 已退出的外层循環名被兄弟循環的内层同名误拒
+...
 test-rng-sibling-rnms-false-gate = () {
 
     ; 第一颗区间遍历用 i（已退出）；第二颗用 j，其体内再开 i ——i 与活栈上只有 j 可比 ⇒ 应合法
@@ -2435,7 +2562,8 @@ test-rng-sibling-rnms-false-gate = () {
     runner.eq(ir.contains('define'), 1, 'rng-sib-rnms code')
 }
 
-; ── s65：值匹配臂体里的 `it` 隐式绑定——判定块 LOAD 的主体值压栈后在臂体内直读────
+; s65：值匹配臂体里的 `it` 隐式绑定——判定块 LOAD 的主体值压栈后在臂体内直读
+...
 test-it-basic = () {
     src = 'i1x = (n i64) (r i64) {\n    r = 0\n    n: {\n        1 -> r = it\n        -> r = 0\n    }\n}\n'
     t = ast.make()
@@ -2512,7 +2640,8 @@ test-it-gate = () {
     runner.eq(ir3.contains('define'), 0, 'it-gate-outside no code')
 }
 
-; ── s66：前缀表达式 -x / !x ──────────────────────────────────────
+; s66：前缀表达式 -x / !x
+...
 
 ; 前缀负号作用于变量：r = -x ⇒ sub i64 0, %vx
 test-neg-var = () {
@@ -2635,7 +2764,9 @@ test-prefix-gate = () {
     runner.eq(ir.contains('define'), 0, 'prefix-gate no code')
 }
 
-; ── f64 主体位非 ~x 负向门禁哨兵（s86）──────────────────────────
+; f64 主体位非 ~x 负向门禁哨兵（s86）
+...
+
 ;   Go 侧 f64 `~` 属未定义区：运行路 hir2mir.go:8878 OpXor(rt=f64) 经 emitBitwise
 ;   发 `xor double`（LLVM 非法指令，s86 实测 clang "instruction requires integer or
 ;   integer vector operands" build fail，见 tmp/probe-s86-b.no）；
@@ -3218,7 +3349,9 @@ test-neg-f64-gate = () {
     runner.eq(ir.contains('define'), 0, 'neg-f64-gate no code')
 }
 
-; ── u64 前缀 -x / ~x（s81）────────────────────────────────────────
+; u64 前缀 -x / ~x（s81）
+...
+
 ; s81：u64 主体的 '-' ⇒ OP-NEG（dest TY-U64），cg 整数臂发 sub i64 0（二补回绕，与 i64 同 IR 形）
 ;   镜像 src/mir/codegen.go emitNeg 非 option 非 float 路径；s76–s80 u64 族收尾（前缀 NEG/bit-not）
 test-pfx-u64-neg = () {
@@ -3396,7 +3529,9 @@ test-arith-i64-div-mem = () {
     runner.eq(ir.contains('load i64, i64*'), 1, 'arith-i64-div-mem load')
 }
 
-; ── (MIN,-1) 護欄翼（s85）────────────────────────────────
+; (MIN,-1) 護欄翼（s85）
+...
+
 ; s85 實釘：i64 '/' '%' 端到端 IR 必含 (MIN,-1) 翼（%dmn/%dn1/%db/%dall 四臂）——
 ;   鏡像 Go codegen.go emitArith OpDiv/OpMod 有符號分支；執行面值見 tmp/probe-s85-ir
 ;   （MIN/-1⇒MIN、MIN%-1⇒0、除零錨共存 exit 7 == oracle）；u64 側負向斷言已在 s76 釘住
@@ -3430,7 +3565,9 @@ test-arith-i64-mod-min-wing = () {
     runner.eq(ir.contains('call void @__nolang_div_zero_report(i1 %dz.'), 1, 'arith-i64-mod-min-wing report on zeroDiv not dall')
 }
 
-; ── u64 除／模（s76）────────────────────────────────────────
+; u64 除／模（s76）
+...
+
 ; s76：u64 '/' 放行 ⇒ udiv i64 ＋ 除零護欄（镜像 Go plain 路径 OpUDiv 分支：
 ;   護欄仅零检、无 (MIN,-1)——负向断言 %dmn. 不现；且不得混发有符號 sdiv）
 test-arith-u64-div-plain = () {
@@ -3584,7 +3721,9 @@ test-arith-u64-mixed-gate = () {
     runner.eq(ir.contains('define'), 0, 'arith-u64-mixed-gate no code')
 }
 
-; ── u64 逻辑族 && ||（s83）────────────────────────────
+; u64 逻辑族 && ||（s83）
+...
+
 ; s83：u64 逻辑族放行——探针实钉（tmp/probe-s83-a/c.no 走 Go oracle）：12 && 10 ⇒ 8、12 || 10 ⇒ 14、
 ;   0 || 5 ⇒ 5、5 && 0 ⇒ 0、0 && 1 ⇒ 0——Go 对 u64 的 && || 发裸位形 and/or 且**非短路**；
 ;   镜像 src/mir/codegen.go emitLogic（裸 and/or <lt>）+ hir2mir typeOfNode KInfix（cmp=false ⇒ 结果型=左操作数型 u64）；
@@ -3623,7 +3762,9 @@ test-logic-u64-and-lit = () {
     runner.eq(ir.contains('and i64'), 1, 'logic-u64-and-lit and')
 }
 
-; ── u64 位运算／移位族（s79）────────────────────────────────
+; u64 位运算／移位族（s79）
+...
+
 ; s79：u64 的 '&' 放行——and/or/xor/shl 与签／无签无关（逐位运算，64 位宽位元相同），
 ;   Go 侧无 OpBitAndU 等衍生算子（无符號路由表只有除模与序比较），恒发裸 and i64
 ;
@@ -3736,7 +3877,9 @@ test-bit-u64-and-mem = () {
     runner.eq(ir.contains('load i64, i64*'), 1, 'bit-u64-and-mem load')
 }
 
-; ── u64 比较族（s77）────────────────────────────────────────
+; u64 比较族（s77）
+...
+
 ; s77：u64 的 '<' 放行 ⇒ OP-CMPLTU（icmp ult i64 + zext i1→i64），dest 恒 TY-I64
 ;   （镜像 Go hir2mir.go 的 post-lowering 路由 OpLt⇒OpULt：任一侧 sourceUnsigned 即走无符號；
 ;    有符號 slt 会把最高位为 1 的 u64 当负数而误序）
@@ -3865,7 +4008,9 @@ test-arith-f64-mod-lit = () {
     runner.eq(ir.contains('frem double'), 1, 'arith-f64-mod-lit frem')
 }
 
-; ── f64 比较（s72）──────────────────────────────────────────
+; f64 比较（s72）
+...
+
 ; f64 小于：x < y（两 f64 形参）⇒ fcmp olt double ＋ zext i1→i64（比较结果恒 i64，走 %v 命名空间）
 ;   ⚠ 与 f64 算术臂分岔：算术 dest 记 TY-F64（发 fadd 等），比较 dest 记 TY-I64（zext 到 i64）
 test-cmp-f64-lt = () {
@@ -3948,7 +4093,9 @@ test-logic-f64-gate = () {
     runner.eq(ir.contains('define'), 0, 'logic-f64 no code')
 }
 
-; ── f64 字面量（s73）────────────────────────────────────────
+; f64 字面量（s73）
+...
+
 ; f64 字面量参与算术：x * 2.0 ⇒ 字面量经 OP-CONST(TY-F64) 物化为 %fd = fadd double 0.0, 2.0，再 fmul double
 ;   ⚠ 与 i64 字面量分岔：i64 走 add i64 0, <int>；f64 走 fadd double 0.0, <raw>（raw 取 slot1 源文，含小数点）
 test-f64-lit-arith = () {
@@ -3989,7 +4136,9 @@ test-f64-lit-gate = () {
     runner.eq(ir.contains('define'), 0, 'f64-lit-gate no code')
 }
 
-; ── f64 局部变量 / 控制流（s74）──────────────────────────────
+; f64 局部变量 / 控制流（s74）
+...
+
 ; mem 模式下 f64 局部量铺 alloca double 槽：带标注声明 `y f64 = 1.5` + guard 改写 + 末尾读回 ⇒
 ;   alloca double / store double / load double 全套（字面量零初始化走 sym='0.0' 的 fadd 物化）
 test-f64-slot-flow = () {
@@ -4414,7 +4563,9 @@ test-s99n-vec-elem-type-gate()
 test-s99n-vec-field-mk-gate()
 test-s99n-vec-field-set-gate()
 
-; ── s99k：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 mem==0 限制）──
+; s99k：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 mem==0 限制）
+...
+
 ;   證明：mem==1 下輸出參住槽、退出重讀是 STLOAD 新 id，故 s99j 原本只放行 mem==0；本件
 ;   (1) 追蹤「最後寫入輸出槽的值 id = outsv」於釋放時跳過（正確跳過回傳值，防雙重釋放）；
 ;   (2) 加保守閘門——mem==1 且函數【含 OP-CALL】時不放行（本地結構體 move 給被調後 caller/callee
@@ -4460,9 +4611,10 @@ test-s99k-return-no-release = () {
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99k return NO release (outsv skip)')
 }
 
-; ── s99m：解除 s99k 的 hc 整函數閘門（§5.6.1 鐵律：傳參不 retain／callee 不 release 參數／caller 最後使用後
+; s99m：解除 s99k 的 hc 整函數閘門（§5.6.1 鐵律：傳參不 retain／callee 不 release 參數／caller 最後使用後
 ;   release）⇒ call 是借用而非 move，含 OP-CALL 的 mem==1 函數亦可釋放局部自擁有值；雙重釋放改由 retset
-;   兜住「間接回傳 r = u」（mem==1 下 STLOAD 新 id ≠ owner，舊 skip/outsv 覆蓋不到）。──
+;   兜住「間接回傳 r = u」（mem==1 下 STLOAD 新 id ≠ owner，舊 skip/outsv 覆蓋不到）。
+...
 
 test-s99m-call-borrow-release = () {
 
@@ -4504,7 +4656,9 @@ test-s99m-indirect-return-no-release = () {
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99m indirect-return NO release (owner skip)')
 }
 
-; ── s99l：純 str RC 的取得所有權站點（str 拼接 'a' + 'b' / 'a' - 'b' ⇒ OP-STRCAT）──
+; s99l：純 str RC 的取得所有權站點（str 拼接 'a' + 'b' / 'a' - 'b' ⇒ OP-STRCAT）
+...
+
 ;   @str_concat 造 rc=1 自擁有（兩操作數各 memcpy 一份、不消耗）⇒ 結果登記 scope-exit 釋放；
 ;   操作數按只讀不釋放（字面量指向靜態常量）。混合 str/i64、str/txt（Go 會先轉標量再拼）
 ;   h2m 未建模 ⇒ 落默認 mark 計 unsup（寧缺勿錯）。
@@ -4570,7 +4724,9 @@ test-s99l-strcat-mixed-gate = () {
     runner.eq(ir.contains('call %str-long @str_concat('), 0, 's99l mixed no strcat')
 }
 
-; ── s104：str 相等/不等（'==' ⇒ OP-STEREQ / '!=' ⇒ OP-STNEQ）──
+; s104：str 相等/不等（'==' ⇒ OP-STEREQ / '!=' ⇒ OP-STNEQ）
+...
+
 ; 镜像 Go 专用 OpStrEq：icmp %str-long 非法 ⇒ 降运行时 helper @str_eq（cg-runtime-str-eq）。
 ; 本件零改 cg / 零改 mir——OP-STEREQ=63 / OP-STNEQ=64 早已就位，缺的只是 h2m 这条降级臂。
 ; 结果恒 TY-I64（0/1）：与 s72 f64 比较、s77 u64 比较同口径——比较结果不是 str，
@@ -4667,7 +4823,9 @@ test-s104-streq-mem = () {
     runner.eq(ir2.contains('store %str-long %sv10, %str-long* %ss4'), 1, 's104 strcat mem store to str slot')
 }
 
-; ── s99n：vec 的取得所有權站點 + scope-exit 釋放（M4-e 最後一件）──
+; s99n：vec 的取得所有權站點 + scope-exit 釋放（M4-e 最後一件）
+...
+
 ; 核心：切片字面量 K-SLICE-LITERAL（元素限 i64）降 OP-VECNEW + 逐元素 OP-VECPUSH，**最終** %vec
 ;   登記釋放清單；函數退出時 h2m-emit-releases 對 TY-VEC 發 OP-VEC-FREE（cg → `call void @vec_free`）。
 ; ⚠️ vec 緩衝無 RC 頭（§11 B5）⇒ 無 retain、只有一次性 free ⇒ 所有權必須唯一：
@@ -4771,7 +4929,9 @@ test-s99n-vec-field-set-gate = () {
     runner.eq(ir.contains('@vec_new'), 0, 's99n no vec_new when escaping via field-set')
 }
 
-; ── 切片 B：[]str 降级臂（TY-VECSTR）─────────────────────────────────────
+; 切片 B：[]str 降级臂（TY-VECSTR）
+...
+
 ; 签名 gate 放行 []str 作形参/返回（LLVM 层同为 %vec）；索引读回借用 str（OP-VECGETSTR）。
 test-sb-str-param-sig = () {
 
@@ -4829,7 +4989,8 @@ test-sb-str-field-gate = () {
     runner.eq(agg.unsup > 0, 1, 'sB str field counted unsup')
 }
 
-; ── 切片 B 第三层：with-cap 容量预留 + push 原地重绑 ─────────────────────
+; 切片 B 第三层：with-cap 容量预留 + push 原地重绑
+...
 test-sb3-withcap-i64 = () {
 
     ; []i64 with-cap(n) → OP-VECNEWCAP（vec_new_cap_i64），cap 保留（跨帧 buf.cap 语义）
@@ -4893,7 +5054,9 @@ test-sb3-push-own-i64 = () {
     runner.eq(ir.split('call void @vec_free(').len(), 2, 'sb3 push i64 free once')
 }
 
-; ── s107：unsupported 归因——块上下文栈（BlockStatement 不再冒充失败构造）──
+; s107：unsupported 归因——块上下文栈（BlockStatement 不再冒充失败构造）
+...
+
 ; ⚠️ 用例里的条件一律写**箭头形** `cond -> { }`：`(cond) { }` 花括号形当前被 Go 工具链编成死循环
 ;    （§s107 缺陷记录），用它写用例会让本档挂死。
 test-s107-attrib = () {
@@ -4945,7 +5108,9 @@ test-s107-reject-named = () {
     runner.eq(agg.unsup > 0, 1, 's107 rejected sig counted')
 }
 
-; ── s108：叶子级 unsup 归因——与块级日志并行、同序等长的第二条通道 ──
+; s108：叶子级 unsup 归因——与块级日志并行、同序等长的第二条通道
+...
+
 ; 块级（s107）把失败归到「就近未认领的块」，叶子构造被掩盖；本通道记 c.cur-k
 ; （h2m-lower-expr 入口设的节点 kind），让 Identifier / CallExpression 等叶子可单独归因。
 ; ⚠️ 条件一律箭头形：`(cond) { }` 花括号形当前被 Go 工具链编成死循环（§s107 缺陷记录）。
@@ -4984,7 +5149,9 @@ test-s108-leaf-attrib = () {
     runner.eq(agg2.lfsk.len(), agg2.unsk.len(), 's108 module path parallel lengths')
 }
 
-; ── s109：Identifier 逐条归因——失败标识符名字旁路通道 ──
+; s109：Identifier 逐条归因——失败标识符名字旁路通道
+...
+
 ; K-IDENTIFIER 三表（names / it 栈 / arm-local）都未命中时记一条 "fn:name"，
 ; 让「哪类变量没被 h2m-scan 铺槽」可见（模块名 / 常量名 / 局部名）。
 ; ⚠️ 条件一律箭头形：`(cond) { }` 花括号形当前被 Go 工具链编成死循环（§s107 缺陷记录）。
@@ -5030,7 +5197,9 @@ test-s109-id-attrib = () {
     runner.eq(ir3.contains('define i64 @h('), 1, 's109 bound ident body has code')
 }
 
-; ── s110：跨模組點號呼叫回值型別推斷（h2m-ty-of 的 K-CALL/DOT 臂）──
+; s110：跨模組點號呼叫回值型別推斷（h2m-ty-of 的 K-CALL/DOT 臂）
+...
+
 ; 修復前只認純 IDENTIFIER callee ⇒ mod.fn() 回值推不出 (-1) ⇒ let 槽不綁名 ⇒ 體內引用連鎖失敗。
 ; 本測試手工造 CALL(DOT(mod,fn)) + 手填 sg[mod.fn]=TY-I64，直接釘 ty-of 的回值。
 test-s110-dot-call-ty = () {
@@ -5067,7 +5236,9 @@ test-s110-dot-call-ty = () {
     runner.eq(ty2, -1, 's110 unregistered dot-call still -1')
 }
 
-; ── s111：跨模組常量 mod.CONST（tok.EOF / asp.K-* 等）──
+; s111：跨模組常量 mod.CONST（tok.EOF / asp.K-* 等）
+...
+
 ; 修復前 K-DOT-EXPRESSION 一律先降接收者為值 ⇒ 模組名未綁定 ⇒ 475+ 條 ID 失敗連鎖。
 ; 常量表由 drv 的整包前置 pass 填進 h2m-sigs；本測試直接填表釘 ty-of 與 lower-expr。
 test-s111-mod-const = () {
@@ -5102,7 +5273,9 @@ test-s111-mod-const = () {
     runner.eq(v2, 0, 's111 unregistered module const no value')
 }
 
-; ── s112：模組自身的裸常量引用（TY-I64 / OP-ADD / B-LF ...）──
+; s112：模組自身的裸常量引用（TY-I64 / OP-ADD / B-LF ...）
+...
+
 ; s111 只收 `mod.CONST` 點號形；self-host 源碼大量在自己模組內寫裸名，三表皆空 ⇒ 連鎖失敗。
 ; 常量表按短名再給一條旁路，優先級仍在局部名之後（不遮蔽局部变量）。
 test-s112-bare-const = () {
@@ -5133,7 +5306,9 @@ test-s112-bare-const = () {
     runner.eq(v2, 0, 's112 unregistered bare const no value')
 }
 
-; ── s113：接收者為值的方法呼叫回值型別（a.len() / s.len-bytes() / a.push(x)）──
+; s113：接收者為值的方法呼叫回值型別（a.len() / s.len-bytes() / a.push(x)）
+...
+
 ; ㉗ 的點號呼叫只認模組函式；方法呼叫不走簽名表 ⇒ ty-of 回 -1 ⇒ let 槽不綁名，
 ; 大量 `n = c.stn.len()` / `n = s.len-bytes()` 連鎖失敗。ty-of 必須與 lower-expr 的方法臂同口徑。
 test-s113-method-call-ty = () {
@@ -5176,16 +5351,26 @@ test-s113-method-call-ty = () {
     runner.eq(h2m-ty-of(t, sg, lv, agg, call-push), TY-VEC, 's113 vec push ty')
     runner.eq(h2m-ty-of(t, sg, lv2, agg, call-push), TY-VECSTR, 's113 vecstr push ty')
 
-    ; 對照：未支持的方法仍 -1（門禁不放寬）
+    ; ④ s117：str.byte(i) ⇒ TY-OPT（?byte，恆裝箱）——原語料里 `s.byte(0): { ok -> it }` 的值位 match 主體
+    dot-byte = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-byte, recv)
+    ast.set-slot(t, dot-byte, 0, ast.put-str(t, 'byte'))
+    call-byte = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-byte, dot-byte)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, call-byte), TY-OPT, 's117 str byte ty')
+
+    ; 對照：未支持的方法仍 -1（門禁不放寬；s113 原用 str.byte 作對照，s117 起它已支持 ⇒ 換名）
     dot-bad = ast.add(t, asp.K-DOT-EXPRESSION)
     ast.kid-add(t, dot-bad, recv)
-    ast.set-slot(t, dot-bad, 0, ast.put-str(t, 'byte'))
+    ast.set-slot(t, dot-bad, 0, ast.put-str(t, 'nosuch-method'))
     call-bad = ast.add(t, asp.K-CALL-EXPRESSION)
     ast.kid-add(t, call-bad, dot-bad)
     runner.eq(h2m-ty-of(t, sg, ls, agg, call-bad), -1, 's113 unsupported method still -1')
 }
 
-; ── s113b：索引讀取的回值型別（ops[k] ⇒ str / xs[k] ⇒ i64）──
+; s113b：索引讀取的回值型別（ops[k] ⇒ str / xs[k] ⇒ i64）
+...
+
 ; s113 放行 cg-emit-cfg-t 後暴露 op=ops[k]：lower-expr 已支援 OP-VECGETSTR，但 ty-of 不認
 ; K-INDEX-EXPRESSION ⇒ 槽寬 -1。與 lower-expr 兩條索引臂同步。
 test-s113b-index-ty = () {
@@ -5211,7 +5396,9 @@ test-s113b-index-ty = () {
     runner.eq(h2m-ty-of(t, sg, lb, agg, at), -1, 's113b unsupported index base still -1')
 }
 
-; ── s114：模組內裸連字符呼叫（`mod-fn(x)`）──
+; s114：模組內裸連字符呼叫（`mod-fn(x)`）
+...
+
 ; 整包表的 key 是點號形 `mod.fn`（drv.pkg-ll 剝 mod 前綴後重組），而 self-host 源碼在模組內
 ; 寫裸連字符名（`ps-peek(p)`）⇒ h2m-sig-find 的精確匹配必然落空。
 ; 修復前：h2m-ty-of 回 -1 ⇒ h2m-scan 的 let 槽不綁名 ⇒ 體內每次讀該名記一條 ID 失敗；
@@ -5278,7 +5465,9 @@ test-s114-bare-call = () {
     runner.eq(v3, 0, 's114 unregistered bare call no value')
 }
 
-; ── s115：顯式 match 的表達式主體（`expr: { ok -> it }`）──
+; s115：顯式 match 的表達式主體（`expr: { ok -> it }`）
+...
+
 ; ㉛⑤ 點名：顯式 match 的主體除裸標識符外應覆蓋一般表達式；本輪落地的是「主體降級成值 id
 ; （sv0）後按值型別定 vmode/omode」這條通路，連帶兩個臂形態的認臂修補：
 ;   · `ok ->`（無綁定名，`it` 隱式解包）——AST 裡 bindingVariant 為空（對齊 oracle dump），

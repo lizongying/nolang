@@ -7,7 +7,8 @@
 
 # std/net/http
 
-; ── 測試 1: http-request 結構體與 init ──
+; 測試 1: http-request 結構體與 init
+...
 req = http.request{}
 req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
 {
@@ -34,7 +35,8 @@ req.init('PUT', 'http://example.com/api/item', '{"name":"test"}')
     -> print('fail: http-request.init header-count')
 }
 
-; ── 測試 2: add-header ──
+; 測試 2: add-header
+...
 ok1 = req.add-header('Content-Type', 'application/json')
 {
     ok1 -> print('ok: add-header Content-Type')
@@ -53,7 +55,8 @@ ok2 = req.add-header('Authorization', 'Bearer token123')
     -> print('fail: add-header Authorization')
 }
 
-; ── 測試 3: http.response 擴充欄位 ──
+; 測試 3: http.response 擴充欄位
+...
 r = http.response{}
 r.status-code = 200
 r.status-text = 'OK'
@@ -65,7 +68,8 @@ r.body = '<html></html>'
     -> print('fail: http.response status-code')
 }
 
-; ── 測試 4: parse-headers（手動填充 headers 後解析）
+; 測試 4: parse-headers（手動填充 headers 後解析）
+...
 r.parse-headers()
 {
     r.header-count == 2 -> print('ok: parse-headers count=2')
@@ -76,7 +80,8 @@ r.parse-headers()
     }
 }
 
-; ── 測試 5: get-header ──
+; 測試 5: get-header
+...
 ct = r.get-header('Content-Type')
 ct: {
     nil -> print('fail: get-header Content-Type not found')
@@ -113,7 +118,8 @@ none: {
     -> print('fail: get-header nonexistent should return nil')
 }
 
-; ── 測試 6: http-put 便捷函數（vet-only，需網路才能執行）
+; 測試 6: http-put 便捷函數（vet-only，需網路才能執行）
+...
 resp = http.put('http://example.com/api/item', 'data')
 resp: {
     nil -> print('skip: http-put (no network)')
@@ -126,7 +132,8 @@ resp: {
     }
 }
 
-; ── 測試 7: http-delete 便捷函數
+; 測試 7: http-delete 便捷函數
+...
 resp2 = http.delete('http://example.com/api/item/1')
 resp2: {
     nil -> print('skip: http-delete (no network)')
@@ -134,7 +141,8 @@ resp2: {
     -> print('ok: http-delete connected')
 }
 
-; ── 測試 8: http-patch 便捷函數
+; 測試 8: http-patch 便捷函數
+...
 resp3 = http.patch('http://example.com/api/item/1', '{"key":"v"}')
 resp3: {
     nil -> print('skip: http-patch (no network)')
@@ -142,7 +150,8 @@ resp3: {
     -> print('ok: http-patch connected')
 }
 
-; ── 測試 9: http-do-req（自訂標頭）
+; 測試 9: http-do-req（自訂標頭）
+...
 req2 = http.request{}
 req2.init('POST', 'http://example.com/api/auth', '{"user":"admin"}')
 req2.add-header('Content-Type', 'application/json')

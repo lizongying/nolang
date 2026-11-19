@@ -7,7 +7,8 @@
 
 # /test/runner
 
-; ── 解析 ──────────────────────────────────────
+; 解析
+...
 
 ; 解析 JSON 對象：parse 回 ok 且 is-obj 為真
 t-parse-obj = () {
@@ -117,7 +118,8 @@ t-parse-error = () {
     runner.is-true(is-err, 'parse empty -> err')
 }
 
-; ── 物件存取 ──────────────────────────────────
+; 物件存取
+...
 
 ; get-str 取對象字符串字段：键存在時回 ok 且值與源文一致
 t-get-str = () {
@@ -224,7 +226,8 @@ t-get-bool = () {
     runner.is-true(val, 'get-bool value')
 }
 
-; ── 陣列操作 ──────────────────────────────────
+; 陣列操作
+...
 
 ; arr-len 取數組長度：5 元素數組回 5
 t-arr-len = () {
@@ -277,7 +280,8 @@ t-arr-get = () {
     runner.str-eq(val2, 'a', 'arr-get(0) content')
 }
 
-; ── 序列化 ────────────────────────────────────
+; 序列化
+...
 
 ; stringify 序列化對象：输出與源文等價（键值對無多餘空白）
 t-stringify-obj = () {
@@ -312,7 +316,8 @@ t-stringify-arr = () {
     runner.str-eq(s, '[1,2,3]', 'stringify arr content')
 }
 
-; ── 構建與設定 ────────────────────────────────
+; 構建與設定
+...
 
 ; 構建設置字符串字段：json.new 後 set-str，stringify 得 {"name":"Bob"}
 t-set-str = () {
@@ -346,7 +351,8 @@ t-set-bool = () {
     runner.str-eq(s, '{"ok":true}', 'set-bool true stringify')
 }
 
-; ── 往返測試 ──────────────────────────────────
+; 往返測試
+...
 
 ; 解析再序列化往返：多類型混合對象的 stringify 與源文逐字一致
 t-roundtrip = () {
@@ -365,7 +371,8 @@ t-roundtrip = () {
     runner.str-eq(s, '{"x":1,"y":"abc","z":true}', 'roundtrip')
 }
 
-; ── 取值助手 ──────────────────────────────────
+; 取值助手
+...
 
 ; ?i64 三態哨兵：9000001 = nil、9000002 = err
 i64-of = (v ?i64) (out i64) {
@@ -435,7 +442,8 @@ json-state = (v ?json) (out i64) {
     }
 }
 
-; ── 池級 API（低級） ─────────────────────────
+; 池級 API（低級）
+...
 
 ; 新建池為空；alloc 依序發號；init 可重置
 t-pool-init-alloc = () {
@@ -574,7 +582,8 @@ t-clone-tree = () {
     runner.str-eq(gv.stringify(), '{"m":1,"n":[2,3]}', '來源未被 clone 改動')
 }
 
-; ── 高級 API：kind / overflowed / 取值 ────────
+; 高級 API：kind / overflowed / 取值
+...
 
 ; kind() 對五種型別回對應常量
 t-kind = () {
@@ -661,7 +670,8 @@ t-scalar-getters = () {
     }
 }
 
-; ── 高級 API：物件操作 ───────────────────────
+; 高級 API：物件操作
+...
 
 ; get()：取子節點為獨立深拷貝句柄；未命中或非物件回 nil
 t-get = () {
@@ -763,7 +773,8 @@ t-delete-key = () {
     }
 }
 
-; ── 高級 API：構建 ───────────────────────────
+; 高級 API：構建
+...
 
 ; alloc-node + set(key, val-idx)：值為本池節點索引（此處為空節點 → null）
 t-set = () {
@@ -862,7 +873,8 @@ t-arr-push-scalars = () {
     runner.str-eq(a2.stringify(), '[false]', 'arr-push-bool false 序列化')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('json.parse-obj', t-parse-obj)
 p2, f2 = runner.test('json.parse-arr', t-parse-arr)

@@ -4,7 +4,8 @@
 ; 保留獨立：json.no(受 ast_write_gate_test.go/build.yml 引用)、
 ; json-crosspool-mutate.no(§5.3 KNOWN-BUG 錨點，故意 FAIL 行，原樣保留)。
 
-; ── from tests/json-get-clone.no ──
+; from tests/json-get-clone.no
+...
 jgc-run = () {
 
     ; json-get-clone.no — 回归：json.get / arr-get / get-key 返回“独立深拷贝子树”，
@@ -146,7 +147,8 @@ jgc-run = () {
     print('end')
 }
 
-; ── from tests/json-heap-cap.no ──
+; from tests/json-heap-cap.no
+...
 jhc-run = () {
 
     ; json-heap-cap.no — 驗證 json 節點池改用堆 vec 後不再有固定容量上限
@@ -292,7 +294,8 @@ jhc-run = () {
     }
 }
 
-; ── from tests/json-set-key-self.no ──
+; from tests/json-set-key-self.no
+...
 jks-run = () {
 
     ; json-set-key-self.no — 回歸測試：set-key 寫回同池自引用子樹

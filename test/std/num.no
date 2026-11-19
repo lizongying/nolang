@@ -117,7 +117,8 @@ t-abs = () {
     runner.eq(a5, min, 'abs(i64.MIN) wraps back to i64.MIN')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('num.clamp', t-clamp)
 p2, f2 = runner.test('num.sign', t-sign)

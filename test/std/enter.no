@@ -40,7 +40,8 @@ life.enter = () {
     log-add('/tmp/no-life-enter.txt', 'E' - .tag)
 }
 
-; ── 1. 顯式標註型別 ⇒ 注入，且發生在宣告之後、下一句之前 ──
+; 1. 顯式標註型別 ⇒ 注入，且發生在宣告之後、下一句之前
+...
 
 t-enter-fires = () {
     fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())
@@ -58,7 +59,8 @@ t-enter-fires = () {
     runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Ea', 'enter: 不會被重複呼叫')
 }
 
-; ── 2. 不帶標註（推斷）的宣告同樣注入 ──
+; 2. 不帶標註（推斷）的宣告同樣注入
+...
 ;
 ; 這正是 `no fmt` 之後的形態：`b life = life{…}` 的標註被當成冗餘移除，
 ; 剩下的就是這一行。行為必須與帶標註時一致，否則排版改變語義。
@@ -76,7 +78,8 @@ t-enter-inferred = () {
     runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Eb', 'enter: 不帶標註的宣告只注入一次')
 }
 
-; ── 3. 由呼叫結果推斷的宣告同樣注入 ──
+; 3. 由呼叫結果推斷的宣告同樣注入
+...
 ;
 ; 與第 2 點不同的一條路徑：`mk()` 的返回型別由 parser 寫進 inferred Type，
 ; 注入器從 s.Type 就讀得到，不需要看初始化式形態。
@@ -94,7 +97,8 @@ t-enter-from-call = () {
     }
 }
 
-; ── 4. 同區塊多個變數：各注入一次，按宣告順序 ──
+; 4. 同區塊多個變數：各注入一次，按宣告順序
+...
 
 t-enter-order = () {
     fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())
@@ -115,7 +119,8 @@ t-enter-order = () {
     runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'E1E2E3', 'enter: 三個變數按宣告順序各注入一次')
 }
 
-; ── 5. 巢狀區塊：內層宣告同樣被注入 ──
+; 5. 巢狀區塊：內層宣告同樣被注入
+...
 
 t-enter-nested = () {
     fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())

@@ -1,35 +1,3 @@
-;
-; 目標（M2，見 docs/design/nolang-selfhost.md §5.3）：把 token 串
-; （lx.scan-all 的產物）解析成 ast 的 arena，使 `noc ast <file>` 的 dump
-; 與 L2 oracle `no ast <file>` **逐位元組相同**。
-;
-; ⚠️ 本檔是【第一片】——只涵蓋足以重現下列最小 fixture 的子集合：
-;   * `42`                                  ExpressionStatement + IntegerLiteral
-;   * `main = () { 42 }`                    FunctionDefinition + BlockStatement
-;   * `x = 1` / `b = true` / `s = 'hi'`     LetStatement + 型別推論（i64/bool/str）
-;   尚未涵蓋：明示型別標註、infix/前綴運算式、多數陳述與運算式種類、參數
-;   型別與預設值、註解、annotations。這些是後續增量擴充的目標。
-;
-; ── arena 的建構順序（關鍵不變式）──────────────────────────────────
-; `ast.add` 在呼叫當下把 `kid0` 固定成「目前 kids 陣列的長度」。因此必須
-; **先建子節點（含它們的子樹），再建父節點並 kid-add 子節點**（自底向上），
-; 這樣每個節點的 kid0 才會正確指到它在 kids 陣列裡的子樹起點。所有
-; ps-parse-* 都遵守這個順序。
-;
-; ── 必須複製的是「建構路徑」，不只是語義（§5.3.2）──────────────────
-;   `x = 1` 的型別不是寫在原始碼裡的，而是 Go 端 lowering 推論出 `i64`、
-;   並在 NamedType 上標 `inferred: true`。noc 要綠燈就必須在同一路徑上
-;   合成這個 NamedType——本檔的 ps-infer-type 就是做這件事。
-;
-; ── SHS 合規 ──────────────────────────────────────────────────────
-;   無模組級可變狀態、無一等函式值、無指針、無 map 欄位。
-; ⚠️ 整數運算預設回 option<int>：每條算術陳述都要 #{overflow=wrap}。
-; ⚠️ 索引讀取 `arr[i]` 回傳 `?T`，需以值 match / `?=` / place-match 顯式消費。
-; ⚠️ `;` 是**行註解**，不是陳述分隔符。
-; ⚠️ `(cond) { … }` 才是迴圈；`v: { … }` 是 match 臂。
-;
-; ── 結構體回傳值的釋放陷阱（oracle 後端缺陷，見 docs/design/
-;    nolang-selfhost.md §2.2.x / 記憶）─────────────────────────────
 ;   tk 結構體含 7 個 str 欄位。**實測（noc 編譯产物，M2）**：「把
 ;   []tk 的元素讀進一個結構體暫存值」是**淺別名**（`t = p.toks[i]` 不
 ;   深拷貝 str 欄位），於是任何持有這份別名的區域變數在作用域結束時
@@ -51,10 +19,52 @@
 # /compiler/src/tok
 # /compiler/src/ix
 
+;
+; 目標（M2，見 docs/design/nolang-selfhost.md §5.3）：把 token 串
+; （lx.scan-all 的產物）解析成 ast 的 arena，使 `noc ast <file>` 的 dump
+; 與 L2 oracle `no ast <file>` **逐位元組相同**。
+;
+; ⚠️ 本檔是【第一片】——只涵蓋足以重現下列最小 fixture 的子集合：
+;   * `42`                                  ExpressionStatement + IntegerLiteral
+;   * `main = () { 42 }`                    FunctionDefinition + BlockStatement
+;   * `x = 1` / `b = true` / `s = 'hi'`     LetStatement + 型別推論（i64/bool/str）
+;   尚未涵蓋：明示型別標註、infix/前綴運算式、多數陳述與運算式種類、參數
+;   型別與預設值、註解、annotations。這些是後續增量擴充的目標。
+;
+; arena 的建構順序（關鍵不變式）
+...
+
+; `ast.add` 在呼叫當下把 `kid0` 固定成「目前 kids 陣列的長度」。因此必須
+; **先建子節點（含它們的子樹），再建父節點並 kid-add 子節點**（自底向上），
+; 這樣每個節點的 kid0 才會正確指到它在 kids 陣列裡的子樹起點。所有
+; ps-parse-* 都遵守這個順序。
+;
+; 必須複製的是「建構路徑」，不只是語義（§5.3.2）
+...
+
+;   `x = 1` 的型別不是寫在原始碼裡的，而是 Go 端 lowering 推論出 `i64`、
+;   並在 NamedType 上標 `inferred: true`。noc 要綠燈就必須在同一路徑上
+;   合成這個 NamedType——本檔的 ps-infer-type 就是做這件事。
+;
+; SHS 合規
+...
+
+;   無模組級可變狀態、無一等函式值、無指針、無 map 欄位。
+; ⚠️ 整數運算預設回 option<int>：每條算術陳述都要 #{overflow=wrap}。
+; ⚠️ 索引讀取 `arr[i]` 回傳 `?T`，需以值 match / `?=` / place-match 顯式消費。
+; ⚠️ `;` 是**行註解**，不是陳述分隔符。
+; ⚠️ `(cond) { … }` 才是迴圈；`v: { … }` 是 match 臂。
+;
+; 結構體回傳值的釋放陷阱（oracle 後端缺陷，見 docs/design/
+;    nolang-selfhost.md §2.2.x / 記憶）
+...
+
 ; ps — Nolang 語法分析器（M2 的第一片）
 ...
 
-; ── 解析器狀態 ──
+; 解析器狀態
+...
+
 ; ⚠️ 結構體名 psst（不是 ps）：模組短名是 ps（來自 `# /compiler/src/ps`），
 ;    若結構體也叫 ps 會和模組名撞名，導致 EmitLLVM: unknown callee ps.new。
 ;   跨模組呼叫寫 ps.new / ps.parse —— 必須對應【裸】函式名 `new` / `parse`
@@ -129,7 +139,9 @@ psst {
 ; s58：方法簽名表鍵 'recv.method'（Go methodSignatures）
 ; s58：值=回傳值型別起始 token 下標（-1=無型別）
 
-; ── s51：parse 期型別推斷表（對齊 Go parser 的 funcSignatures / VarTypes / FuncVarTypes / DeclaredVars）──
+; s51：parse 期型別推斷表（對齊 Go parser 的 funcSignatures / VarTypes / FuncVarTypes / DeclaredVars）
+...
+
 ; 當前函式名（'' = 頂層）；Go p.curFuncName
 ; ps-parse-param 最近一次型別起始 token 下標（-1=無型別）
 ; 同檔函式簽名：函式名（最後註冊覆蓋先前的）
@@ -141,7 +153,9 @@ psst {
 
 ; VarTypes（模組級）
 
-; ── S7 match 表示開關（2026-10-20，見 docs/design/nolang-selfhost.md §5.3.4）──
+; S7 match 表示開關（2026-10-20，見 docs/design/nolang-selfhost.md §5.3.4）
+...
+
 ;   0 = 降糖成 if/else 鏈（舊預設，保留為 a/B 基線）；1 = 直接產 SurfaceMatch（預設）。
 ;   **S7 裁定①（2026-10-21，使用者拍板）**：noc 改產 SurfaceMatch（parser 忠實，P1），
 ;   降糖留待 M4 的 hir.no 重新實作。開關保留作回歸對照（翻 0 重編即得降糖基線）。
@@ -403,7 +417,9 @@ ps-peek-at = (p psst, k i64) (typ i64) {
     typ = ps-tok-typ(p, i)
 }
 
-; ── token 欄位讀取 ──
+; token 欄位讀取
+...
+
 ;
 ; D11 之後 `p.toks[i]` 是 `?tk`，鏈式欄位讀 `ps-tok-typ(p, i)` 不再是普通值。
 ; 這裡按欄位各給一個函式：**不回傳整個 `tk`**，把向量元素賦給區域變數會
@@ -790,7 +806,9 @@ ps-expect = (p psst, want i64) {
     }
 }
 
-; ── s10：語法錯誤收集器（M3-c 首族）───────────────────────────────
+; s10：語法錯誤收集器（M3-c 首族）
+...
+
 ; 對齊 Go parser 的 Diagnostic 通道（src/parser/error.go）：本檔只存【結構化】
 ; 欄位（行/列/正文/碼），位置前綴「line L, column C:」從不進正文——渲染Shape
 ; 由消費端負責（diag.render 的面向使用者行形、FormatDiagnostics 的中間串形）。
@@ -830,7 +848,9 @@ ps-err-count = (p psst) (n i64) {
     n = p.e-ln.len()
 }
 
-; ── 進入點 ──
+; 進入點
+...
+
 ; ps-parse：解析整份原始碼，回傳 Program 節點索引。
 ;
 ; ⚠️ 單一回傳值（i64）：arena `t` 與解析器 `p` 由呼叫端建立並作為【輸入參數】
@@ -2992,6 +3012,10 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
     ast.kind-at(t, idx) == asp.K-DOT-EXPRESSION -> match-subj = 1
     ast.kind-at(t, idx) == asp.K-CALL-EXPRESSION -> match-subj = 1
     ast.kind-at(t, idx) == asp.K-INFIX-EXPRESSION -> match-subj = 1
+
+    ; s118：`(a + b): { … }` —— primary 括號分支建 K-GROUPED-EXPRESSION
+    ;   （h2m 的 ty-of / lower-expr 兩處本就認它），白名單缺它 ⇒ `:` 未消費 ⇒ 整檔 unsupported。
+    ast.kind-at(t, idx) == asp.K-GROUPED-EXPRESSION -> match-subj = 1
     ps-peek(p) == tok.COLON && ps-peek-at(p, 1) == tok.LBRACE && match-subj == 1 && prec <= 0 && p.in-for-cond == 0 -> {
         subj-name = ast.node-string(t, idx)
         ps-bump(p); 消費 COLON
@@ -3038,10 +3062,13 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
     idx
 }
 
-; ── s51：parse 期型別推斷輔助群（復刻 Go parser 的簽名表/變數型別表/宣告表與 gate）──
+; s51：parse 期型別推斷輔助群（復刻 Go parser 的簽名表/變數型別表/宣告表與 gate）
+...
 
 ; ps-sig-find：反向掃描同檔函式簽名（最後註冊覆蓋先前，對應 Go map 語意）。回傳回傳值型別起始 token 下標；-1=未找到。
-; ── s51b：O(1) 字串→i64 雜湊查表（開放定址；模數按需增長 = ht-k.len()，負載>=0.75 翻倍重哈希）──
+; s51b：O(1) 字串→i64 雜湊查表（開放定址；模數按需增長 = ht-k.len()，負載>=0.75 翻倍重哈希）
+...
+
 ; s: 字串
 ; h: 結果數值
 ps-hash = (s str) (h i64) {
@@ -3535,7 +3562,9 @@ ps-reg-let = (t ast, p psst, name str, tn i64) {
     ps-mark-dcl(p, name)
 }
 
-; ── s53：頂層型別別名（TypeAlias / UnionType / FunctionType）─────────────────────
+; s53：頂層型別別名（TypeAlias / UnionType / FunctionType）
+...
+
 ;   Go 權威：type.go:554 looksLikeEqualsTypeAlias、type.go:626 scanIsUnionTypeAlias、
 ;   type.go:688 parseTypeAlias、type.go:433 isFunctionTypeAliasShape、type.go:512 parseFunctionTypeAlias；
 ;   分派序 stmt.go:151-170（isFnDef → isFnTypeAlias → looksLikeEqAlias → let）。
@@ -3944,7 +3973,9 @@ ps-parse-fn-type-alias = (t ast, p psst, name str) (idx i64) {
 }
 
 ; ps-parse-let：解析 `name = expr`（推論型別：字面量→NamedType，SliceLiteral→SliceType(NamedType)）
-; ── s54：D6 算術 option 推斷（inferOptionArith）───────────────────────
+; s54：D6 算術 option 推斷（inferOptionArith）
+...
+
 ;   Go 權威：src/parser/lowering.go:493 inferOptionArith（walk 於 parse 後逐 LetStatement 執行）：
 ;   無明示型別、非合成、值（剝括號後）為 op ∈ {+ - * / %} 的 InfixExpression 且兩側運算元
 ;   皆「静态可知有號整數」時，就地合成 NullableType{NamedType{base}}（不標 inferred——

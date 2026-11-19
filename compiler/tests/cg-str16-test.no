@@ -22,7 +22,8 @@
 # /compiler/src/cg
 # /compiler/src/mir
 
-; ── 以真實 MIR op 序列發一個函式（全部落入 block 0）──────────
+; 以真實 MIR op 序列發一個函式（全部落入 block 0）
+...
 emit-fn = (name str, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
     n = ops.len()
     blks []i64 = []
@@ -32,7 +33,9 @@ emit-fn = (name str, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r s
     r = cg-emit-cfg(name, 0, blks, ops, dsts, xa, bs, syms, [])
 }
 
-; ── 四個覆蓋所有受影響發射點的函式 ─────────────────────────
+; 四個覆蓋所有受影響發射點的函式
+...
+
 ; f-len：STRCONST（i32 字面量）+ STRLEN/STRCAP（zext i32→i64）
 str16-len = () (r str) {
     ops []i64 = []
@@ -168,12 +171,14 @@ str16-vec = () (r str) {
     r = emit-fn('f-vec', ops, dsts, xa, bs, syms)
 }
 
-; ── 完整模組（供 opt / clang 外部驗證）──────────────────────
+; 完整模組（供 opt / clang 外部驗證）
+...
 cg-str16-module = () (r str) {
     r = cg-runtime-prelude-full() + str16-len() + str16-cat() + str16-opt() + str16-vec()
 }
 
-; ── 斷言 ──────────────────────────────────────────────────
+; 斷言
+...
 test-str16-prelude = () {
     m = cg-str16-module()
     runner.eq(m.contains('%str-long = type { i32, i32, i8* }'), 1, 'str-long is 16B u32 header')
@@ -245,7 +250,8 @@ test-str16-vec = () {
     runner.eq(s.contains('%sfp1 = inttoptr i64 %sfd1 to i8*'), 1, 'STRFROMVEC data still inttoptr')
 }
 
-; ── dump 模式（供 shell 取 .ll 送 opt / clang）──────────────
+; dump 模式（供 shell 取 .ll 送 opt / clang）
+...
 dump-mode = () (yes bool) {
     yes = false
     a = os.arg(1)

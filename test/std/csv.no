@@ -5,7 +5,8 @@
 
 # /test/runner
 
-; ── parse-line ────────────────────────────────
+; parse-line
+...
 
 ; 驗證未加引號的行「a,b,c」被解析為三個欄位 a、b、c
 t-parse-simple = () {
@@ -113,7 +114,8 @@ t-parse_empty_line = () {
     runner.eq(fields.len(), 0, 'parse empty line len == 0')
 }
 
-; ── parse-field（直接測試，守衛 KIndex 下沉修復）──
+; parse-field（直接測試，守衛 KIndex 下沉修復）
+...
 ; 直接測 parse-field 能確保欄位內字元寫入（field[fn] = c 下標 sink）
 ; 與回傳的多值都正確；這是 fields[n], pos = parse-field(...) 多返回值
 ; 寫入陣列元素下沉限制的守衛。
@@ -145,7 +147,8 @@ t-parse-field-empty = () {
     runner.eq(np, 0, 'parse-field empty new-pos == 0')
 }
 
-; ── encode-field ─────────────────────────────
+; encode-field
+...
 
 ; 驗證無需轉義的欄位原樣編碼輸出（hello → hello）
 t-encode-simple = () {
@@ -166,7 +169,8 @@ t-encode-quote = () {
     runner.str-eq(out, '"say ""hi"""', 'encode quote == "say ""hi"""')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('csv.parse-simple', t-parse-simple)
 p2, f2 = runner.test('csv.parse-empty-fields', t-parse-empty-fields)

@@ -27,7 +27,8 @@
 
 # /test/runner
 
-; ── bytes：長度與逐位元組 ──
+; bytes：長度與逐位元組
+...
 s = 'abc'
 b = s.bytes()
 runner.eq(b.len(), 3, 'bytes().len() == 3')
@@ -35,16 +36,19 @@ runner.eq(b[0], 97, 'bytes()[0] == a')
 runner.eq(b[1], 98, 'bytes()[1] == b')
 runner.eq(b[2], 99, 'bytes()[2] == c')
 
-; ── bytes：零拷貝，寫視圖即寫原字串 ──
+; bytes：零拷貝，寫視圖即寫原字串
+...
 b[0] = 122
 runner.str-eq(s, 'zbc', 'bytes() 視圖共享原 str 緩衝')
 
-; ── bytes：空串 ──
+; bytes：空串
+...
 e = ''
 eb = e.bytes()
 runner.eq(eb.len(), 0, '空串 bytes().len() == 0')
 
-; ── bytes：多字節 UTF-8（'中' = e4 b8 ad）──
+; bytes：多字節 UTF-8（'中' = e4 b8 ad）
+...
 u = '中'
 ub = u.bytes()
 runner.eq(ub.len(), 3, 'UTF-8 bytes().len() == 3')
@@ -52,7 +56,8 @@ runner.eq(ub[0], 228, 'UTF-8 byte 0')
 runner.eq(ub[1], 184, 'UTF-8 byte 1')
 runner.eq(ub[2], 173, 'UTF-8 byte 2')
 
-; ── from-chars：公開安全構造器（每 char 低 8 位寫 1 個位元組、新緩衝）──
+; from-chars：公開安全構造器（每 char 低 8 位寫 1 個位元組、新緩衝）
+...
 ; 用 push 構造 []char：`["h","i"]` 字面量目前有既有 codegen bug
 ; （`@cs = global [3 x i64] [i32 ...]`，與本 builtin 無關）。
 cs []char
@@ -69,7 +74,8 @@ cs2.push("中")
 t2 = str.from-chars(cs2)
 runner.eq(t2.len-bytes(), 1, 'from-chars 多字節 char 只寫 1 位元組')
 
-; ── txt 側同族構造器：from-bytes / from-chars ──
+; txt 側同族構造器：from-bytes / from-chars
+...
 ; txt 是固定 256 位元組的內聯結構（data [255]byte; len byte），沒有外部緩衝可接管，
 ; 所以 txt._from-bytes 是「逐位元組拷貝」，與 str._from-bytes 的零拷貝語義不同（只名字對齊）。
 ; _from-bytes 是私有符號，用戶碼不可直呼（raqvyltn），故只測公開的 from-bytes。

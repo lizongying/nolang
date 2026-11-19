@@ -34,7 +34,8 @@
 ; http-write-ok 的落盤目標
 HT = '/tmp/nolang_http_test.bin'
 
-; ── 構造器（型別標註放在簽名裡，見檔頭第 1 條）────
+; 構造器（型別標註放在簽名裡，見檔頭第 1 條）
+...
 
 mk-req = (method str, url str, body str) (r http.request) {
     r.zero()
@@ -70,7 +71,8 @@ res-val = (r http.response, i i64) (s str) {
     }
 }
 
-; ── request.init ─────────────────────────────
+; request.init
+...
 
 ; init 只寫 method/url/body 並把 header-count 歸零
 t-request-init = () {
@@ -82,7 +84,8 @@ t-request-init = () {
     runner.eq(r.header-count, 0, 'init: header-count 歸零')
 }
 
-; ── request.add-header ───────────────────────
+; request.add-header
+...
 
 ; 追加 'Name: Value'、推進 header-count，滿 16 條後回 false 且不再推進
 t-request-headers = () {
@@ -110,7 +113,8 @@ t-request-headers = () {
     runner.str-eq(req-hdr(r, 15), 'X: y', 'add-header: 最後一格是第 16 條')
 }
 
-; ── 認證標頭 ─────────────────────────────────
+; 認證標頭
+...
 
 ; basic = Authorization: Basic base64(user:pass)；bearer / api-key 各走自己的前綴
 t-auth = () {
@@ -130,7 +134,8 @@ t-auth = () {
     runner.str-eq(req-hdr(k, 0), 'X-API-Key: k1', 'set-api-key: 自訂標頭名')
 }
 
-; ── response.parse-headers / get-header ──────
+; response.parse-headers / get-header
+...
 
 ; 逐行拆 'Name: Value'；get-header 是**大小寫敏感**的線性搜尋
 t-response = () {
@@ -173,7 +178,8 @@ t-response = () {
     runner.eq(e.header-count, 0, 'parse-headers: 空 headers 得 count 0')
 }
 
-; ── http-dl-location ─────────────────────────
+; http-dl-location
+...
 
 ; 從標頭文字撈 Location（大小寫不敏感），沒有就 nil
 t-dl-location = () {
@@ -202,7 +208,8 @@ t-dl-location = () {
     }
 }
 
-; ── http-dl-resolve ──────────────────────────
+; http-dl-resolve
+...
 
 ; 絕對 URL 直接沿用；根相對接在 scheme+host(+port) 後；一般相對多補一個 '/'
 t-dl-resolve = () {
@@ -219,7 +226,8 @@ t-dl-resolve = () {
     runner.str-eq(d, 'https://other/y', 'dl-resolve: 絕對 URL 原樣返回')
 }
 
-; ── http-write-ok ────────────────────────────
+; http-write-ok
+...
 
 ; 把 ?bool 折成 bool，並真的落盤
 t-write-ok = () {
@@ -234,7 +242,8 @@ t-write-ok = () {
     fs.remove(HT)
 }
 
-; ── ping ─────────────────────────────────────
+; ping
+...
 
 ; 固定回 'pong'（原始碼註解稱它是辨識「載入來源檔還是內嵌 std」的探針，
 ;  但它被公開成 API，理應有測試釘住；若日後刪除，這裡會一起變紅）
@@ -254,7 +263,8 @@ t-dechunk = () {
     runner.str-eq(s, 'wikipedia', 'dechunk: 內容還原')
 }
 
-; ── 需要真 socket 的 13 個入口 ─────────────────────────
+; 需要真 socket 的 13 個入口
+...
 ;
 ; 為什麼要 fork：本語言的協程是**協作式**的，客戶端 recv 阻塞時不會讓出線程
 ; ⇒ 同一個進程裡「先 dial 再 accept」必然互鎖。fork 出子進程當伺服器，父子
@@ -470,7 +480,8 @@ t-live = () {
     fs.remove('/tmp/no_http_live_up.txt')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('http.request-init', t-request-init)
 p2, f2 = runner.test('http.request-headers', t-request-headers)

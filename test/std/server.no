@@ -68,7 +68,8 @@ flags-of = (v ?str) (n i64) {
     }
 }
 
-; ── 純函式 ────────────────────────────────────────────────
+; 純函式
+...
 
 t-secure-compare = () {
     runner.is-true(server.secure-compare('abc', 'abc'), 'secure-compare: 同串 ⇒ true')
@@ -79,7 +80,8 @@ t-secure-compare = () {
     runner.is-false(server.secure-compare('abcdefgh', 'abcdefgi'), 'secure-compare: 長串中段差異 ⇒ false')
 }
 
-; ── server 未開啟臂（fd = -1）────────────────────────────
+; server 未開啟臂（fd = -1）
+...
 
 t-server-unopened = () {
     srv = server.server{}
@@ -108,7 +110,8 @@ flags-of-conn = (v ?server.server-conn) (n i64) {
     }
 }
 
-; ── server-conn 白盒（不碰 socket）────────────────────────
+; server-conn 白盒（不碰 socket）
+...
 
 t-conn-reset = () {
     c = server.server-conn{}
@@ -181,7 +184,8 @@ cookie-key = () (k []byte) {
     k.push(0)
 }
 
-; ── server-conn 寫入方法：fd = -1 全部失敗 ────────────────
+; server-conn 寫入方法：fd = -1 全部失敗
+...
 
 t-conn-write-unopened = () {
     c = server.server-conn{}
@@ -205,7 +209,8 @@ t-conn-write-unopened = () {
     runner.is-false(c.parse(), 'server-conn.parse: fd<0 ⇒ false')
 }
 
-; ── https-server / https-server-conn 白盒 ─────────────────
+; https-server / https-server-conn 白盒
+...
 
 t-https-server-unopened = () {
     srv = server.https-server{}
@@ -265,7 +270,8 @@ t-https-conn-whitebox = () {
     runner.eq(flags-of(c.get-header('X-Other')), -1, 'https-server-conn.get-header: 未命中 ⇒ nil')
 }
 
-; ── loopback：server / listen / listen-on ────────────────
+; loopback：server / listen / listen-on
+...
 
 t-server-listen = () {
     srv = server.server{}
@@ -318,7 +324,8 @@ t-listen-on-busy = () {
     first.close()
 }
 
-; ── loopback：完整 HTTP 請求／回應 ───────────────────────
+; loopback：完整 HTTP 請求／回應
+...
 
 t-http-roundtrip = () {
     srv = server.server{}
@@ -621,7 +628,8 @@ t-accept-nb = () {
     srv.close()
 }
 
-; ── loopback：https-server（TLS 監聽本身不需要憑證）──────
+; loopback：https-server（TLS 監聽本身不需要憑證）
+...
 
 t-https-server-listen = () {
     srv = server.https-server{}
@@ -666,7 +674,8 @@ t-https-accept-nil = () {
     srv.close()
 }
 
-; ── 執行 ──────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('server.secure-compare', t-secure-compare)
 p2, f2 = runner.test('server.server-unopened', t-server-unopened)

@@ -22,7 +22,8 @@
 ;   同日 `txt.set-byte` 私有化為 `_set-byte`（僅 std 內部可用），原本的
 ;   `txt.set-byte` 一組改寫為 `txt.cp-write`，測碼點原位寫入。
 ;
-; ── 2026-09-26 已修（本檔這幾條斷言就是它們的迴歸釘）──────────────
+; 2026-09-26 已修（本檔這幾條斷言就是它們的迴歸釘）
+...
 ;   1. `txt.to-bytes()` 原本**無法編譯**：實作是 `out.set-byte(i, .byte(i))`，
 ;      但 out 是 **[]byte**，而 set-byte 內建只認 str / txt receiver
 ;      （emitBuiltinRawBytePut 的 GEP 是照 %txt 內聯緩衝 / %str-long data 指標
@@ -45,7 +46,8 @@
 ;      `',a,'.split(',')` 跑 200 次有 1 次 r[0]/r[2] 非空。
 ;      重現：/tmp/p_sliceempty.no、/tmp/p_splitloop.no（修復後皆為 0）。
 ;
-; ── 仍然存在的 bug（都在 HEAD 上重現，與本次 `no fmt` 無關）────────
+; 仍然存在的 bug（都在 HEAD 上重現，與本次 `no fmt` 無關）
+...
 ;   4. `[]char = ["a","b","c"]` 切片字面量降成元素型別不符的 global
 ;      （宣告 [N x i64]、元素 i32）→ opt-verify 失敗；在函式內區域變數則報
 ;      `unsupported builtin []t.set-byte`。改用 `.push("a")` 建構即可，
@@ -80,7 +82,8 @@ at-or = (b ?byte, dflt i64) (v i64) {
     }
 }
 
-; ── 長度 / 空值 ────────────────────────────────
+; 長度 / 空值
+...
 
 ; 長度/空值斷言：'Hello, World' 長度 12，空 txt 長度 0 且 empty 為真、非空 empty 為假
 t-len = () {
@@ -92,7 +95,8 @@ t-len = () {
     runner.is-false(t.empty(), 'non-empty txt.empty == false')
 }
 
-; ── 比較 ───────────────────────────────────────
+; 比較
+...
 
 ; eq/compare 斷言：eq 判同異，compare 相等得 0、較小得 -1、較大得 1
 t-eq-compare = () {
@@ -104,7 +108,8 @@ t-eq-compare = () {
     runner.eq(t.compare('abb'), 1, 'txt.compare greater == 1')
 }
 
-; ── 轉換 ───────────────────────────────────────
+; 轉換
+...
 
 ; 轉換斷言：to-str/to-bytes/to-hex 各輸出正確內容（含 to-bytes 修復的迴歸釘）
 t-convert = () {
@@ -194,7 +199,8 @@ t-from = () {
     }
 }
 
-; ── 搜尋 ───────────────────────────────────────
+; 搜尋
+...
 
 ; 搜尋斷言：逐一校驗 index/index-from/last-index/rindex/rindex-from（from 起最後一次出現之意語）/contains/starts-with/ends-with
 t-search = () {
@@ -222,7 +228,8 @@ t-search = () {
     runner.is-false(t.ends-with('Hello'), 'not ends-with Hello')
 }
 
-; ── 切片 / 索引 ────────────────────────────────
+; 切片 / 索引
+...
 
 ; 切片/索引斷言：slice 取區間、at（碼點索引、回傳 ?byte、越界 nil）經 at-or 攤平、decode-cp 回傳碼點與位元組長度
 t-slice-at = () {
@@ -248,7 +255,8 @@ t-slice-at = () {
     runner.eq(clen, 1, 'decode-cp(0) byte length == 1')
 }
 
-; ── 大小寫 / trim ──────────────────────────────
+; 大小寫 / trim
+...
 
 ; 大小寫/修剪斷言：to-upper/to-lower 轉大小寫、trim 去空白、trim-char 去指定字符
 t-case-trim = () {
@@ -261,7 +269,8 @@ t-case-trim = () {
     runner.str-eq(q.trim-char("-").to-str(), 'edge', 'trim-char -')
 }
 
-; ── 修改 ───────────────────────────────────────
+; 修改
+...
 
 ; 追加斷言：push 單位元組（碼點 'c'）、push-str 字串、push-txt 另一 txt，逐步校驗長度與內容
 t-push = () {
@@ -326,7 +335,8 @@ t-repeat-count-reverse = () {
     runner.str-eq(t.reverse().to-str(), 'ba', 'reverse')
 }
 
-; ── 數值解析 ───────────────────────────────────
+; 數值解析
+...
 
 ; 數值解析斷言：to-i64 及委派它的 to-i8/i16/i32 加範圍檢查，對合法/越界輸入回傳正確 ?整數
 t-to-int = () {
@@ -449,7 +459,8 @@ t-to-int = () {
     ;   （真正的元兇是 `?bool` 的 match 取值，不是 to-bool 本身）
 }
 
-; ── 取代 ───────────────────────────────────────
+; 取代
+...
 
 ; 取代斷言：replace-char（char 引數）保長度、replace-str 全數取代、replace-n 依 n 限次（0=不變、無匹配=不變）
 t-replace = () {
@@ -466,7 +477,8 @@ t-replace = () {
     runner.str-eq(u.replace-n('zzz', '1', 2).to-str(), 'one two one', 'replace-n no match')
 }
 
-; ── 分割 ───────────────────────────────────────
+; 分割
+...
 
 ; 分割斷言：split 逐分隔符（前導/尾隨/相鄰產生空元素）、split-n 限最大段數、fields 按空白分段、lines 切 \n 與 \r\n，並釘住空區間 slice(x,x) 長度 0
 t-split = () {
@@ -641,7 +653,8 @@ t-split = () {
     runner.str-eq(l-2.to-str(), 'c', 'lines[2]')
 }
 
-; ── hex / 相等 / 邊界 ──────────────────────────
+; hex / 相等 / 邊界
+...
 
 ; hex/相等/邊界斷言：from-hex 解合法十六進位得內容、奇數長度或非法字元回 err，及各 txt 相等邊界情形
 t-hex-and-eq = () {
@@ -687,7 +700,8 @@ t-hex-and-eq = () {
     runner.is-false(a.eq('hellp'), 'eq must reject same-length-different (bug 9)')
 }
 
-; ── 執行 ───────────────────────────────────────
+; 執行
+...
 
 passed = 0
 failed = 0
@@ -798,7 +812,8 @@ passed = passed + p15
 #{overflow=wrap}
 failed = failed + f15
 
-; ── 補齊的轉換 / 內建位元組寫入 ────────────────
+; 補齊的轉換 / 內建位元組寫入
+...
 ;
 ; 這一組原本被列在檔頭「已知未測」裡。其中 to-bool 當年是因為「`?bool` 的 match
 ; 取值恆為 false」而整族放棄，本輪實測該問題已不存在（`x: { ok(b) -> … }` 取得

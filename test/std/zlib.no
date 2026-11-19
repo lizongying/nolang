@@ -18,7 +18,8 @@
 
 # /test/runner
 
-; ── 1. Adler-32 ──────────────────────────────────────────────────────
+; 1. Adler-32
+...
 
 t-adler-32 = () {
     empty []byte = with-cap(0)
@@ -33,7 +34,8 @@ t-adler-32 = () {
     runner.eq(zlib.adler-32(upper, 5), 0x058c01f5, 'adler-32 "Hello" = 0x058C01F5（大小寫敏感）')
 }
 
-; ── 2. compress 輸出佈局 ────────────────────────────────────────
+; 2. compress 輸出佈局
+...
 
 t-compress = () {
     data []byte = [104, 101, 108, 108, 111]
@@ -74,7 +76,8 @@ t-compress = () {
     runner.eq(len(empty-comp), 11, '空輸入：2 + 5 + 0 + 4 = 11')
 }
 
-; ── 3. decompress-stored：單塊 / 多塊 / 失敗 ────────────────────
+; 3. decompress-stored：單塊 / 多塊 / 失敗
+...
 
 t-stored-single = () {
     data []byte = [72, 101, 108, 108, 111]
@@ -138,7 +141,8 @@ t-stored-nil = () {
     runner.eq(n2, 0, 'BTYPE=01（fixed Huffman）→ nil')
 }
 
-; ── 4. decompress：完整路徑 ────────────────────────────────────
+; 4. decompress：完整路徑
+...
 
 t-decompress-stored = () {
     data []byte = [
@@ -237,7 +241,8 @@ t-decompress-fdict = () {
     runner.eq(len(back), 29, 'FDICT 標頭被跳過，DEFLATE 主體仍能解出')
 }
 
-; ── 5. consumed-stored ─────────────────────────────────────────
+; 5. consumed-stored
+...
 
 t-consumed = () {
     data []byte = [72, 101, 108, 108, 111]
@@ -276,7 +281,8 @@ t-consumed-zero = () {
     runner.eq(zlib.consumed-stored(fixed), 0, 'BTYPE=01 → 0')
 }
 
-; ── 執行 ────────────────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('zlib.adler-32', t-adler-32)
 p2, f2 = runner.test('zlib.compress', t-compress)

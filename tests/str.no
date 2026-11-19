@@ -100,7 +100,9 @@ print('=== done ===')
 ; str-split-replace-more.no — 合併自 str split / replace 碎片（頂層拼接，非函數包裹）
 ; 來源：split2.no, replace2.no
 ; 保留錨點：split.no（基名）；replace.no（基名）；str.no / str-more.no（str 標準庫測試，另行保留）
-; ── 來自 split2.no ──
+; 來自 split2.no
+...
+
 ; test-split2: test str.split without element access
 ...
 s-1 = 'hello world hello'
@@ -111,7 +113,9 @@ print('parts:{n.to-str()}')
 
 print('---')
 
-; ── 來自 replace2.no ──
+; 來自 replace2.no
+...
+
 ; test-replace2: simpler str.replace-str test
 ; 頂層 s 與 split2 衝突，改名 s2 避免模組級重宣告
 s2 = 'abc'
@@ -594,7 +598,9 @@ a = '2'
 ;   - 成員方法（str.*/txt.* 原版）不受別名影響
 ...
 
-; ── union 參數：str 實參單態化 ──
+; union 參數：str 實參單態化
+...
+
 ; s: 要量長度的字串；本檔用 'hello' 與 txt 各呼叫一次
 ; n: len(s) 的結果，'hello' 得 5
 take-bytes = (s string) (n i64) {
@@ -614,7 +620,8 @@ test-str-arg = () {
 test-str-arg()
 print(0)
 
-; ── union 參數：txt 實參單態化 ──
+; union 參數：txt 實參單態化
+...
 test-txt-arg = () {
     t txt = 'hi'
     n = take-bytes(t)
@@ -627,7 +634,9 @@ test-txt-arg = () {
 test-txt-arg()
 print(1)
 
-; ── union 返回值：pick 按實參型別單態化，str/txt 各自保留原型別 ──
+; union 返回值：pick 按實參型別單態化，str/txt 各自保留原型別
+...
+
 ; a: 首選字串，本測試傳 'hello'
 ; b: 備選字串 'world'（此實作未使用，僅示範多參數單態化）
 ; r: 直接回傳 a，型別與實參一致
@@ -651,7 +660,8 @@ test-pick = () {
 test-pick()
 print(2)
 
-; ── 成員方法不受 string 別名影響（str.len/txt.len 仍為碼點數）──
+; 成員方法不受 string 別名影響（str.len/txt.len 仍為碼點數）
+...
 test-member-methods = () {
     a = '你好ab'
     n = a.len()

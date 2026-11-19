@@ -39,7 +39,8 @@ mk-fill = (n i64, ch i64) (out []byte) {
 ; 整條丟棄，綁定從未 materialize（w 是 void）。顯式標註之所以正常，是因為
 ; walkType 的 NamedType 分支早就把前綴拆出來了。已改成兩條路徑同口徑，
 ; 所以這裡回到最自然的 `zip.writer{}` 推導形態。
-; ── 1. u16le / u32le 位元組輔助 ──────────────────────────────────────
+; 1. u16le / u32le 位元組輔助
+...
 t-bytes-helpers = () {
     raw [8]byte = [0x34, 0x12, 0xef, 0xcd, 0xab, 0x89, 0x01, 0x00]
     v = raw.slice(0, 8)
@@ -50,7 +51,8 @@ t-bytes-helpers = () {
     runner.eq(zip.u32le(v, 4), 0x000189ab, 'u32le 偏移 4 = 0x000189AB')
 }
 
-; ── 2. writer 基本寫入單元 ───────────────────────────────────────────
+; 2. writer 基本寫入單元
+...
 t-primitives = () {
     w = zip.writer{}
     w.write-u16(0x1234)
@@ -70,7 +72,8 @@ t-primitives = () {
     runner.eq(len(w.data), 7, 'cd-* 不影響本地資料區')
 }
 
-; ── 3. write-local-file 標頭布局（PK\x03\x04）────────────────────────
+; 3. write-local-file 標頭布局（PK\x03\x04）
+...
 t-local = () {
     w = zip.writer{}
     w.write-local-file('m.txt', 'xy'.to-bytes(), 0x12345678)
@@ -88,7 +91,8 @@ t-local = () {
     runner.str-eq(ct.to-hex(), '7879', '內容緊跟名稱')
 }
 
-; ── 4. write-cd-entry（PK\x01\x02）與 write-eocd（PK\x05\x06）────────
+; 4. write-cd-entry（PK\x01\x02）與 write-eocd（PK\x05\x06）
+...
 t-cd-eocd = () {
     w = zip.writer{}
     w.write-cd-entry('m.txt', 0, 2, 2, 0x12345678)
@@ -107,7 +111,8 @@ t-cd-eocd = () {
     runner.str-eq(eh.to-hex(), '504B0506000000000000000000000000000000000000', 'EOCD 空歸檔全 0')
 }
 
-; ── 5. writer round-trip：add-file ×2 + add-dir + finalize ────────────
+; 5. writer round-trip：add-file ×2 + add-dir + finalize
+...
 t-roundtrip = () {
     w = zip.writer{}
     w.add-file('a.txt', 'hello'.to-bytes())
@@ -155,7 +160,8 @@ t-roundtrip = () {
     runner.str-eq(e1.name(), 'sub/', 'entry(2).name() 目錄補斜線')
 }
 
-; ── 6. method=8（deflate）讀取：Python zipfile 產生的樣本 ─────────────
+; 6. method=8（deflate）讀取：Python zipfile 產生的樣本
+...
 ; 條目 d.txt，原始 29 位元組 'hello hello hello world hello'，deflate 後 17 位元組
 t-deflate = () {
     hex = '504B0304140000000800F64D6A5D2BBF7A74110000001D00000005000000642E747874CB48CDC9C957C84022CBF38B7252206C00504B01021403140000000800F64D6A5D2BBF7A74110000001D000000050000000000000000000000800100000000642E747874504B0506000000000100010033000000340000000000'
@@ -181,7 +187,8 @@ t-deflate = () {
     runner.str-eq(out.to-str(), 'hello hello hello world hello', 'extract 還原內容')
 }
 
-; ── 7. 損壞 / 非 ZIP 資料的容錯 ──────────────────────────────────────
+; 7. 損壞 / 非 ZIP 資料的容錯
+...
 t-garbage = () {
     z = zip{}
     z.data = mk-fill(64, 65)

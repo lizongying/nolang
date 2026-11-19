@@ -64,7 +64,8 @@ deref-f = (x ?f64) (v f64) {
 ; 全部斷言以此旗標彙整（於 top-level main scope 更新）
 allok = true
 
-; ── 1. i64 最小堆：push / peek / pop 順序 ──
+; 1. i64 最小堆：push / peek / pop 順序
+...
 data [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 h = heap.init(data)
 h.push(5)
@@ -85,13 +86,15 @@ r4 = h.pop()
 allok = allok && check(deref(r4) == 7, 'pop 4th == 7')
 allok = allok && check(h.empty(), 'empty after all pops')
 
-; ── 2. 空堆 pop / peek -> nil ──
+; 2. 空堆 pop / peek -> nil
+...
 data2 [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 h2 = heap.init(data2)
 allok = allok && check(deref(h2.pop()) == -999, 'pop empty == nil')
 allok = allok && check(deref(h2.peek()) == -999, 'peek empty == nil')
 
-; ── 3. 重複元素 ──
+; 3. 重複元素
+...
 data3 [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 h3 = heap.init(data3)
 h3.push(5)
@@ -103,7 +106,9 @@ allok = allok && check(deref(d1) == 5, 'dup pop 1st == 5')
 allok = allok && check(deref(d2) == 5, 'dup pop 2nd == 5')
 allok = allok && check(h3.size() == 1, 'after 2 pops size == 1')
 
-; ── 4. 泛型 f64 元素型別（驗證 t 單態化推斷）──
+; 4. 泛型 f64 元素型別（驗證 t 單態化推斷）
+...
+
 ; 註：f64 陣列作為 top-level 全域 + 泛型方法寫入會觸發編譯器 codegen bug
 ;     （全域被誤標為 [N x i64]），故放入函式內以區域變數（stack alloca）避開。
 ; ok: f64 堆三次 pop 依序得到 3.0 / 2.0 / 1.5 才為 true
@@ -124,7 +129,8 @@ t-f64 = () (ok bool) {
 }
 allok = allok && t-f64()
 
-; ── 結果 ──
+; 結果
+...
 {
     allok -> {
         print('heap test ALL PASSED')

@@ -1,29 +1,3 @@
-;
-; 構建：  ./bin/no build -o /tmp/shs-check compiler/tools/shs-check.no
-; 執行：  /tmp/shs-check compiler/src compiler/tests compiler/tools
-; 退出碼：0 乾淨 / 1 有違規 / 2 用法錯誤
-;
-; ── 為什麼不是「正則掃描」──
-; Nolang 有三種註釋（`;` 行 / `//` 行 / `;;…;;` 塊），且 `/` 上下文敏感
-; （正則字面量 vs 除法）。一個只認 `//` 與 `/* */` 的掃描器會把 `;` 註釋裡的
-; 中文當成程式碼。所以本檔先做**字符級狀態機**：把註釋整段換成空白、把字面量
-; 的**內容**換成 `x`（保留引號），輸出與原檔**等長、等行**。所有檢查都在遮罩
-; 後的文本上做。
-;
-; 註釋語義照抄 `src/lexer/lexer.go`（`isBlockCommentStart` / `readBlockComment`
-; / `case ';'` / `case '/'`），不是猜的：
-;   `;`     行註釋到行尾
-;   `//`    行註釋到行尾（永遠優先於正則）
-;   `;;`    其後（跳過空白）是換行/EOF ⇒ 塊註釋，直到另一個同樣條件的 `;;`
-;   `;;`    其後還有內容              ⇒ 行註釋到行尾
-;
-; ── 已知近似（寫明，不隱藏）──
-; `/` 的正則判定在字符層無法完全複製 `src/lexer` 的 `prevTokenType` 規則
-; （`a-b` 是識別符而 `a - b` 是減法，字符層分不出）。近似規則見
-; `shs-slash-regex`。**`compiler/` 的 SHS 源碼不使用正則字面量**，所以這個近似
-; 不影響門禁；但若把 `shs-mask` 用於含正則的檔案，需人工複核。
-;
-; ── SHS 規則（本工具強制）──
 ;   S1  型別名（struct / enum / interface）長度 >= 2
 ;   S2  型別名不得是 t / n / v / k / s（與泛型型別變數衝突）
 ;   S3  禁止 `#{c}` FFI 宣告
@@ -40,15 +14,50 @@
 # /compiler/src/util/sb.sb
 # /compiler/src/ix
 
+;
+; 構建：  ./bin/no build -o /tmp/shs-check compiler/tools/shs-check.no
+; 執行：  /tmp/shs-check compiler/src compiler/tests compiler/tools
+; 退出碼：0 乾淨 / 1 有違規 / 2 用法錯誤
+;
+; 為什麼不是「正則掃描」
+...
+
+; Nolang 有三種註釋（`;` 行 / `//` 行 / `;;…;;` 塊），且 `/` 上下文敏感
+; （正則字面量 vs 除法）。一個只認 `//` 與 `/* */` 的掃描器會把 `;` 註釋裡的
+; 中文當成程式碼。所以本檔先做**字符級狀態機**：把註釋整段換成空白、把字面量
+; 的**內容**換成 `x`（保留引號），輸出與原檔**等長、等行**。所有檢查都在遮罩
+; 後的文本上做。
+;
+; 註釋語義照抄 `src/lexer/lexer.go`（`isBlockCommentStart` / `readBlockComment`
+; / `case ';'` / `case '/'`），不是猜的：
+;   `;`     行註釋到行尾
+;   `//`    行註釋到行尾（永遠優先於正則）
+;   `;;`    其後（跳過空白）是換行/EOF ⇒ 塊註釋，直到另一個同樣條件的 `;;`
+;   `;;`    其後還有內容              ⇒ 行註釋到行尾
+;
+; 已知近似（寫明，不隱藏）
+...
+
+; `/` 的正則判定在字符層無法完全複製 `src/lexer` 的 `prevTokenType` 規則
+; （`a-b` 是識別符而 `a - b` 是減法，字符層分不出）。近似規則見
+; `shs-slash-regex`。**`compiler/` 的 SHS 源碼不使用正則字面量**，所以這個近似
+; 不影響門禁；但若把 `shs-mask` 用於含正則的檔案，需人工複核。
+;
+; SHS 規則（本工具強制）
+...
+
 ; shs-check — SHS（Self-Hosting Subset）白名單守護
 ...
 
-; ── 退出碼 ──
+; 退出碼
+...
 EXIT-OK = 0
 EXIT-BAD = 1
 EXIT-USAGE = 2
 
-; ── 遮罩狀態 ──
+; 遮罩狀態
+...
+
 ; ⚠️ 編號必須與 `shs-mask` 的 match 臂逐個對應（0=字串 … 6=程式碼）。
 ;    這裡曾經把 ST-CODE 寫成 0，於是初始狀態落進「字串」臂，整份檔案被塗成 x，
 ;    所有檢查因此靜默通過（長度不變 ⇒ 只比長度看不出來）。
@@ -60,7 +69,8 @@ ST-LINE = 4
 ST-BLOCK = 5
 ST-CODE = 6
 
-; ── 位元組常量 ──
+; 位元組常量
+...
 B-TAB = 9
 B-LF = 10
 B-CR = 13
@@ -101,7 +111,9 @@ B-LOWER-S = 115
 B-LOWER-T = 116
 B-LOWER-V = 118
 
-; ── 資料結構 ──
+; 資料結構
+...
+
 ; 一筆違規。⚠️ 結構體名 >= 2 字元（SHS S1）。
 finding {
     file str

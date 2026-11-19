@@ -1,11 +1,3 @@
-; lx-test.no — compiler/src/lx 的 scan-all 單元測試
-;
-; 執行： ./bin/no run compiler/tests/lx-test.no
-;
-; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    exit(1)，否則差分 harness 會把失敗讀成通過。
-;
-; ── 為什麼需要本檔（L1 門禁不夠嗎？）──
 ; L1 比的是 **dump()** 的輸出。M2 起解析器改用 **scan-all()**（token 陣列）。
 ; 兩者共用 lx-scan-token，但陣列化多了一步「把 t push 進 []tk」。若 push 是
 ; **別名**而不是深拷貝，scan-all 會全錯而 dump 全對 ⇒ **L1 完全照不到**。
@@ -27,6 +19,16 @@
 # /test/runner.summary
 # /compiler/src/tok
 # /compiler/src/lx
+
+; lx-test.no — compiler/src/lx 的 scan-all 單元測試
+;
+; 執行： ./bin/no run compiler/tests/lx-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+;
+; 為什麼需要本檔（L1 門禁不夠嗎？）
+...
 
 ; 1. 空輸入：恰好一個 EOF
 ...

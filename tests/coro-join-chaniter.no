@@ -21,7 +21,8 @@ trigger.close()
 
 waiter = (s chan[i64], d chan[i64]) {
     <- s: {
-        ok -> { }
+        ok -> {
+        }
 
         -> {
         }
@@ -42,20 +43,24 @@ awy {
             co signaler(signal)
         }
 
-        nil -> { }
+        nil -> {
+        }
 
-        err -> { }
+        err -> {
+        }
     }
 }
 
 ; With join-all the waiter is woken and closes `done` before the group ends.
-n i64 = 0
+n = 0
 <- done: {
     ok -> n = 1
 
-    nil -> { }
+    nil -> {
+    }
 
-    err -> { }
+    err -> {
+    }
 }
 runner.eq(n, 1, 'join-all: chan-iteration-arm co joined at group tail')
 runner.summary()

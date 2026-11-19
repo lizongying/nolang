@@ -177,7 +177,8 @@ t-str-grow = () {
     }
 }
 
-; ── int 键模板 ────────────────────────────────
+; int 键模板
+...
 
 ; init / hash / put / get / contains / remove / clear / len / is-empty（int 键）
 t-int-key = () {
@@ -215,7 +216,8 @@ t-int-key = () {
     runner.eq(m.len(), 0, 'int key: clear resets len')
 }
 
-; ── bool 键模板（固定 2 槽，无 rehash）────────
+; bool 键模板（固定 2 槽，无 rehash）
+...
 
 ; put / get / contains / remove / len（bool 键）
 t-bool-key = () {
@@ -260,7 +262,8 @@ t-bool-key = () {
     runner.eq(m.len(), 0, 'bool key: clear resets len')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('map str init', t-str-init)
 p2, f2 = runner.test('map str put', t-str-put)

@@ -17,7 +17,8 @@
 
 # /test/runner
 
-; ── 分類：ASCII 邊界 ───────────────────────────
+; 分類：ASCII 邊界
+...
 
 ; 驗證 is-digit：0-9 回 true，邊界外（斜線、冒號）與字母、空白皆回 false
 t-is-digit = () {
@@ -99,7 +100,8 @@ t-is-case = () {
     runner.is-false("5".is-lower(), 'is-lower "5" false')
 }
 
-; ── 轉換 ───────────────────────────────────────
+; 轉換
+...
 
 ; 驗證 char.to-upper：小寫轉大寫（碼點減 32），非小寫原樣返回，轉後 to-str 得字串 A
 t-to-upper = () {
@@ -233,7 +235,8 @@ t-to-txt = () {
     }
 }
 
-; ── []char 字面量（回歸）─────────────────────────
+; []char 字面量（回歸）
+...
 ; 歷史 bug：slice 字面量降級為全域 [N x i64] 卻發出 i32 元素，
 ;   觸發 opt-verify 失敗 / `unsupported builtin []t.set-byte`。
 ;   現已修復：長度、索引、元素賦值、固定長度 [N]char 陣列皆可用。
@@ -280,7 +283,8 @@ t-slice-char-literal = () {
     runner.eq(fixed.len(), 3, '[3]char len == 3')
 }
 
-; ── 執行 ───────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('char.is-digit', t-is-digit)
 p2, f2 = runner.test('char.is-letter', t-is-letter)

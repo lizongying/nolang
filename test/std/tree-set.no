@@ -206,7 +206,8 @@ t-clear = () {
     runner.is-false(no, 'after clear, 1 gone')
 }
 
-; ── 內部機制（節點池 / 高度 / 平衡因子 / 旋轉 / 再平衡 / 後繼）──
+; 內部機制（節點池 / 高度 / 平衡因子 / 旋轉 / 再平衡 / 後繼）
+...
 ;
 ; 這些方法作用在**節點索引**上，最可靠的斷言方式是**手工構樹**：
 ; 直接寫 keys/left/right/parent/height 與 root，完全不依賴 add 的插入順序。

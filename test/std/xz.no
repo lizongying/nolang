@@ -20,7 +20,8 @@
 
 # /test/runner
 
-; ── 1. 範圍解碼器（range coder）初始狀態 ─────────────────────────────
+; 1. 範圍解碼器（range coder）初始狀態
+...
 t-range-init = () {
     rd = lzma-rd{}
 
@@ -37,7 +38,8 @@ t-range-init = () {
     runner.eq(rd.range, 0xffffffff, 'range 不變')
 }
 
-; ── 2. decode-bit / decode-direct-bits ───────────────────────────────
+; 2. decode-bit / decode-direct-bits
+...
 ; code=0 且 prob=0x400 時，bound = (0xFFFFFFFF >> 11) * 0x400 > 0，
 ; 故 code < bound 恆成立 → bit = 0（LZMA 規格）
 t-range-bits = () {
@@ -53,7 +55,8 @@ t-range-bits = () {
     runner.eq(res, 0, 'code=0 時 decode-direct-bits(3) = 0')
 }
 
-; ── 3. 位元樹解碼 ────────────────────────────────────────────────────
+; 3. 位元樹解碼
+...
 t-bit-tree = () {
     rd = lzma-rd{}
     rd.init([0x00, 0x00, 0x00, 0x00, 0x00], 0)
@@ -78,7 +81,8 @@ t-bit-tree = () {
     runner.lt(s2, 16, '反向位元樹符號落在 4 位元範圍')
 }
 
-; ── 4. 解碼器機率表初始化 ────────────────────────────────────────────
+; 4. 解碼器機率表初始化
+...
 t-init-probs = () {
     d = lzma-decoder{}
     d.init-probs()
@@ -91,7 +95,8 @@ t-init-probs = () {
     runner.eq(d.literal[0x2ff], 0x400, 'literal[0x2ff] 初始化為 0x400')
 }
 
-; ── 5. 狀態機（僅驗可呼叫、狀態維持在合法 12 態內）─────────────────
+; 5. 狀態機（僅驗可呼叫、狀態維持在合法 12 態內）
+...
 ; LZMA 狀態機有 12 個狀態；此處只保證不會跑出範圍（語意待 §5.2 #14 補完）
 t-state = () {
     d = lzma-decoder{}
@@ -113,7 +118,8 @@ t-state = () {
     runner.eq(d.state, 9, 'state 0 + shortrep → 9（LZMA 規格）')
 }
 
-; ── 6. 內部解碼入口（形狀驗證；語意見 §5.2 #14）────────────────────
+; 6. 內部解碼入口（形狀驗證；語意見 §5.2 #14）
+...
 t-decoder-entries = () {
     d = lzma-decoder{}
     d.init-probs()
@@ -144,7 +150,8 @@ t-decoder-entries = () {
     runner.lt(dist, 0x100000000, 'decode-distance 回傳在 32 位元範圍')
 }
 
-; ── 7. 壓縮 / 解壓 round-trip（本模組自產自解）─────────────────────
+; 7. 壓縮 / 解壓 round-trip（本模組自產自解）
+...
 t-roundtrip = () {
     src = 'hello hello hello world'.to-bytes()
 
@@ -168,7 +175,8 @@ t-roundtrip = () {
     runner.eq(len(s3), 0, 'lzma-decompress 對短輸入回空')
 }
 
-; ── 8. lzma-decoder.decode 主迴圈（形狀驗證；語意見 §5.2 #14）─────────
+; 8. lzma-decoder.decode 主迴圈（形狀驗證；語意見 §5.2 #14）
+...
 ; 樣本為真 LZMA1 位元流：Python `lzma.compress(b'hello lzma world',
 ; FORMAT_RAW, filters=[{LZMA1, lc=3, lp=0, pb=2, dict=4096}])` = 26 位元組。
 ; 目前主迴圈能跑完、能產出位元組，但內容不是原文（解碼器尚未完成，見 §5.2），

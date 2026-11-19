@@ -4,7 +4,8 @@
 
 ; # std/time
 
-; ── 1. now-s 回傳正值 ──
+; 1. now-s 回傳正值
+...
 ts = 0
 ts = time.now-s()
 {
@@ -13,7 +14,8 @@ ts = time.now-s()
     -> print('fail: now-s')
 }
 
-; ── 2. now-ms 回傳正值 ──
+; 2. now-ms 回傳正值
+...
 ms = 0
 ms = time.now-ms()
 {
@@ -22,7 +24,8 @@ ms = time.now-ms()
     -> print('fail: now-ms')
 }
 
-; ── 3. duration-between 計算差值 ──
+; 3. duration-between 計算差值
+...
 start = 1000
 end = 1010
 diff = 0
@@ -33,11 +36,13 @@ diff = time.duration-between(start, end)
     -> print('fail: duration-between')
 }
 
-; ── 4. sleep-ms(100) 睡眠 ──
+; 4. sleep-ms(100) 睡眠
+...
 time.sleep-ms(100)
 print('ok: sleep-ms')
 
-; ── 5. since-ms 計算經過時間 ──
+; 5. since-ms 計算經過時間
+...
 before = 0
 before = time.now-ms()
 time.sleep-ms(50)
@@ -49,7 +54,8 @@ elapsed = time.since-ms(before)
     -> print('fail: since-ms')
 }
 
-; ── 6. timer 計時器（需明確宣告型別 t timer 才能正確解析方法）──
+; 6. timer 計時器（需明確宣告型別 t timer 才能正確解析方法）
+...
 t = timer{
     start-ts: 0
     end-ts: 0
@@ -65,6 +71,7 @@ t-ms = t.elapsed-ms()
     -> print('fail: timer elapsed-ms')
 }
 
-; ── 7. format-duration(3661) 輸出 '1h1m1s' ──
+; 7. format-duration(3661) 輸出 '1h1m1s'
+...
 time.format-duration(3661)
 print('ok: format-duration')

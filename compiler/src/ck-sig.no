@@ -42,7 +42,8 @@ ck-sig {
     bo []str
 }
 
-; ── 表构造（首块字面量整賦＋余块 push 链，仿 asp.no strs/tape 形制）──
+; 表构造（首块字面量整賦＋余块 push 链，仿 asp.no strs/tape 形制）
+...
 
 ck-sig.new = () (t ck-sig) {
     t = ck-sig{
@@ -87,7 +88,8 @@ ck-sig.new = () (t ck-sig) {
     ck-sig-fill-bo(t)
 }
 
-; ── 各列数据（生成区）──
+; 各列数据（生成区）
+...
 ck-sig-fill-fk = (t ck-sig) {
     t.fk = [
         '[]byte.index',
@@ -17965,7 +17967,8 @@ ck-sig-fill-bo = (t ck-sig) {
     ]
 }
 
-; ── 查找層 ──
+; 查找層
+...
 
 ; ck-sig-str-at：str 欄位安全取值。⚠️ 不用 []t.at——外掛 receiver 的泛型容器方法
 ; 單態化在當代 Go 工具鏈報 'EmitLLVM: unknown callee []t.at'（實測）；索引讀回

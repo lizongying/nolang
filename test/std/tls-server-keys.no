@@ -22,7 +22,8 @@
 
 # /test/runner
 
-; ── helpers ──
+; helpers
+...
 
 ; [256]byte → []byte（逐元素 push，避開 `arr[i] = v` 的 idxwrite 禁令）
 b256 = (a [256]byte) (b []byte) {
@@ -114,7 +115,8 @@ mismatch = (a []byte, b []byte) (n i64) {
     }
 }
 
-; ── 1. 形狀：常量存在、寬度正確 ──
+; 1. 形狀：常量存在、寬度正確
+...
 
 t-shape = () {
 
@@ -129,7 +131,8 @@ t-shape = () {
     runner.is-true(tls-server-keys.TLS-SERVER-RSA-E != 0, 'E: 非零')
 }
 
-; ── 2. 模數 n：2048 bit、奇數、無前導零、非退化 ──
+; 2. 模數 n：2048 bit、奇數、無前導零、非退化
+...
 
 t-modulus = () {
     n0 = bat(tls-server-keys.TLS-SERVER-RSA-N, 0)
@@ -153,7 +156,8 @@ t-modulus = () {
     runner.eq(sum-of(tls-server-keys.TLS-SERVER-RSA-N), 30877, 'N: 位元組總和 = 30877（整份常量的指紋）')
 }
 
-; ── 3. 私鑰指數 d：同寬但嚴格小於 n、奇數、非退化 ──
+; 3. 私鑰指數 d：同寬但嚴格小於 n、奇數、非退化
+...
 
 t-private = () {
     d0 = bat(tls-server-keys.TLS-SERVER-RSA-D, 0)
@@ -180,7 +184,8 @@ t-private = () {
     runner.eq(mismatch(nb, b256(tls-server-keys.TLS-SERVER-RSA-D)), 255, 'D 與 N 有 255 位元組不同（第 70 格偶然相同）')
 }
 
-; ── 4. RSA 往返：n / e / d 互相匹配的硬證據 ──
+; 4. RSA 往返：n / e / d 互相匹配的硬證據
+...
 
 ; 明文取 32 位元組、首字節 66（0x42）：
 ;   - 首字節非 0，解密回來不會被剝掉前導零，可以逐位元組比對；
@@ -232,7 +237,8 @@ t-rsa-roundtrip = () {
     runner.eq(mismatch(pt, msg), 0, 'rsa: 明文與還原結果完全一致 ⇒ n/e/d 是同一對金鑰')
 }
 
-; ── 5. x509 端到端：常量能被真實的憑證簽章流程消費 ──
+; 5. x509 端到端：常量能被真實的憑證簽章流程消費
+...
 
 t-x509 = () {
     nb = b256(tls-server-keys.TLS-SERVER-RSA-N)

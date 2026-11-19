@@ -27,7 +27,8 @@ done chan[i64] = with-cap(1)
 
 waiter = (s chan[i64], d chan[i64]) {
     <- s: {
-        ok -> { }
+        ok -> {
+        }
 
         -> {
         }
@@ -41,9 +42,9 @@ signaler = (s chan[i64]) {
     s.close()
 }
 
-i i64 = 0
+i = 0
 awy {
-    for i < 2 {
+    (i < 2) {
         i == 0 -> {
             co waiter(signal, done)
         }
@@ -56,7 +57,7 @@ awy {
 
 ; With join-all, the waiter has already been woken and closed `done`.
 ; The receive loop below therefore terminates with `ok` (not `nil`).
-n i64 = 0
+n = 0
 <- done: {
     ok -> n = 1
 

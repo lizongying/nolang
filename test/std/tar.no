@@ -25,7 +25,8 @@ mk-fill = (n i64, ch i64) (out []byte) {
     }
 }
 
-; ── 1. write-octal 單元（前導零填充 + 尾端 NUL）────────────────────────
+; 1. write-octal 單元（前導零填充 + 尾端 NUL）
+...
 ; 420 → "0000644\0"、0 → "00000000\0"、511 → "00000777\0"、11 → "00000000013\0"
 t-octal = () {
     b = builder{}
@@ -67,7 +68,8 @@ t-octal = () {
     runner.eq(c37, 0, 'write-octal：26+11 尾端補 NUL')
 }
 
-; ── 2. write-header 單元（欄位配置 vs ustar 規範）──────────────────────
+; 2. write-header 單元（欄位配置 vs ustar 規範）
+...
 ; 情境：name='x.txt'、typeflag='0'、size=5、uid/gid/mtime 全 0
 t-header = () {
     b = builder{}
@@ -119,7 +121,8 @@ t-header = () {
     runner.eq(gap-sum, 0, 'name 之後的 95 位元組保持 0')
 }
 
-; ── 3. chksum 正確性（規範金標）──────────────────────────────────────
+; 3. chksum 正確性（規範金標）
+...
 ; 情境：name='abc.txt'、typeflag='0'、size=3
 ; 規範總和 = 0o7064 = 3636；欄位內容應為 "007064\0 "
 t-checksum = () {
@@ -134,7 +137,8 @@ t-checksum = () {
     runner.str-eq(n157.to-hex(), '00', 'chksum 之後的 linkname 區保持 0')
 }
 
-; ── 4. builder round-trip：讀回自身產出的歸檔 ──────────────────────────
+; 4. builder round-trip：讀回自身產出的歸檔
+...
 ; 條目：0 a.txt(5B) / 1 dir/（目錄） / 2 raw.bin(3B, add-bytes) / 3 empty(0B)
 t-roundtrip = () {
     b = builder{}
@@ -196,7 +200,8 @@ t-roundtrip = () {
     runner.str-eq(e2.read().to-str(), 'abc', 'entry(2).read()')
 }
 
-; ── 5. 跨區塊內容（>512 位元組）與 512 對齊邊界 ────────────────────────
+; 5. 跨區塊內容（>512 位元組）與 512 對齊邊界
+...
 t-big = () {
     big = mk-fill(1200, 90)
 
@@ -215,7 +220,8 @@ t-big = () {
     runner.str-eq(ar.read(1).to-str(), 'tail', 'read(1) 內容')
 }
 
-; ── 6. open-gz：gzip 包裝的 tar ────────────────────────────────────
+; 6. open-gz：gzip 包裝的 tar
+...
 t-open-gz = () {
     b = builder{}
     b.add-file('gz.txt', 'gzipped tar'.to-bytes())
@@ -230,7 +236,8 @@ t-open-gz = () {
     runner.str-eq(back.read(0).to-str(), 'gzipped tar', 'open-gz：內容還原')
 }
 
-; ── 7. 讀取器容忍 BSD/GNU tar 的空格填數字欄 ──────────────────────────
+; 7. 讀取器容忍 BSD/GNU tar 的空格填數字欄
+...
 ; macOS bsdtar 寫出的是 "000644 \0"（末位空格）與 "00000000243 "（無 NUL），
 ; 本模組的解析只取 48~57，故須照樣讀對。
 t-space-padded = () {

@@ -164,7 +164,8 @@ new-tables = () (t hpack.tables) {
     t.init()
 }
 
-; ── tables：静态表 / 动态表 ───────────────────
+; tables：静态表 / 动态表
+...
 
 ; 静态表（RFC 7541 附录 A）：全匹配 2 号是 :method GET，只比名字 accept 是 19
 t-tables-static = () {

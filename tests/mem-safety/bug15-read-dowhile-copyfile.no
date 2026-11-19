@@ -10,7 +10,9 @@
 ;      修復：改為 } (true) 無限循環 + n <= 0 -> break。
 ;   3. copy-file 使用 [4096]byte 定長陣列，write 的 StrDataArg 僅支援 str 類型。
 
-; ── 測試 1: fs.read 正確讀入 buf ──
+; 測試 1: fs.read 正確讀入 buf
+...
+
 ; ok: 4096 位元組 buf 讀回的內容等於 'Hello World' 才為 true
 test-read-into-buf = () (ok bool) {
 
@@ -31,7 +33,9 @@ test-read-into-buf = () (ok bool) {
     }
 }
 
-; ── 測試 2: copy-file 正確複製內容 ──
+; 測試 2: copy-file 正確複製內容
+...
+
 ; ok: 複製成功且目的檔內容等於 'Hello Nolang' 才為 true
 test-copy-file = () (ok bool) {
 
@@ -55,7 +59,9 @@ test-copy-file = () (ok bool) {
     }
 }
 
-; ── 測試 3: process.cmd 正確捕獲 stdout ──
+; 測試 3: process.cmd 正確捕獲 stdout
+...
+
 ; ok: echo 行程退出碼 0 且捕獲到的 stdout 非空才為 true
 test-cmd-capture = () (ok bool) {
 
@@ -69,7 +75,9 @@ test-cmd-capture = () (ok bool) {
     }
 }
 
-; ── 測試 4: { body } (true) 無限循環 + break ──
+; 測試 4: { body } (true) 無限循環 + break
+...
+
 ; ok: count 恰好累加到 10 才為 true（break 真的生效）
 test-infinite-break = () (ok bool) {
     count = 0
@@ -92,7 +100,9 @@ test-infinite-break = () (ok bool) {
     count == 10 -> ok = true
 }
 
-; ── 測試 5: 前測循環 } (cond) 正確工作（條件變數在循環外初始化）──
+; 測試 5: 前測循環 } (cond) 正確工作（條件變數在循環外初始化）
+...
+
 ; ok: 前測循環累加 5+4+3+2+1 等於 15 才為 true
 test-pretest-loop = () (ok bool) {
 

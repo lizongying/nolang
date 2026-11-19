@@ -29,7 +29,9 @@
 passed = 0
 failed = 0
 
-; ── 排空已關閉的通道 ──────────────────────────
+; 排空已關閉的通道
+...
+
 ; 三個值全部取到，取空後落到 nil 臂（而不是 err）。
 t-drain = () {
     c chan[i64] = with-cap(4)
@@ -55,7 +57,9 @@ t-drain = () {
     runner.str-eq(done, 'closed', 'drain: 取空後落到 nil 臂')
 }
 
-; ── 關閉且空：nil 臂（不是 err）──────────────
+; 關閉且空：nil 臂（不是 err）
+...
+
 ; 打開但空的通道現在是「等」，所以 nil 與 err 的分界移到「關閉」與
 ; 「未初始化」上。
 t-closed-empty = () {
@@ -72,7 +76,9 @@ t-closed-empty = () {
     runner.str-eq(done, 'closed', 'closed-empty: 關閉且空走 nil 臂')
 }
 
-; ── 元素形態 ──────────────────────────────────
+; 元素形態
+...
+
 ; body 不對迴圈變數做 match ⇒ 變數綁元素本身，只跑收到值的那幾輪。
 t-elem-form = () {
     c chan[i64] = with-cap(2)
@@ -86,7 +92,9 @@ t-elem-form = () {
     runner.eq(s, 16, 'elem: 只有收到值的兩輪進 body，且元素可直接參與算術')
 }
 
-; ── 顯式接收（不丟棄變數）────────────────────
+; 顯式接收（不丟棄變數）
+...
+
 ; 每輪拿到的是三態 ?T，作者自己分辨；ok 臂的 it 是元素本身。
 t-explicit = () {
     c chan[i64] = with-cap(2)
@@ -109,7 +117,8 @@ t-explicit = () {
     runner.eq(got, 5, 'explicit: it 綁的是元素而不是 ?i64')
 }
 
-; ── 容量與長度 ────────────────────────────────
+; 容量與長度
+...
 t-len-cap = () {
     c chan[i64] = with-cap(8)
     runner.eq(c.cap(), 8, 'len-cap: cap 回報初始容量')
@@ -121,7 +130,9 @@ t-len-cap = () {
     runner.eq(c.len(), 2, 'len-cap: 關閉後既有的值仍在隊列裡')
 }
 
-; ── str 載荷深拷貝 ────────────────────────────
+; str 載荷深拷貝
+...
+
 ; 發送時把值拷進環；改寫來源不得影響通道裡的值。
 t-str-payload = () {
     c chan[str] = with-cap(2)
@@ -145,7 +156,9 @@ t-str-payload = () {
     runner.str-eq(end, 'closed', 'str: 取完一輪後落到 nil 臂')
 }
 
-; ── 裸宣告即分配 + 按需增長 ───────────────────
+; 裸宣告即分配 + 按需增長
+...
+
 ; `c chan[i64]` 等價於 with-cap(0)：不預分配緩衝，發送時倍增，永不丟值。
 t-bare-decl = () {
     c chan[i64]
@@ -163,7 +176,9 @@ t-bare-decl = () {
     runner.eq(sum, 15, 'bare: 按需增長後取值順序不變')
 }
 
-; ── break 提前退出 ────────────────────────────
+; break 提前退出
+...
+
 ; 三態循環支援 break；已入隊但未取的值留在環裡。
 ; 這裡刻意不 close：break 在通道還是「打開且空」之前就跳出了，
 ; 因此不會走到需要等待的那一輪。
@@ -187,7 +202,9 @@ t-break = () {
     runner.eq(c.len(), 1, 'break: 未取的值仍留在環裡')
 }
 
-; ── 協程組內收發 ──────────────────────────────
+; 協程組內收發
+...
+
 ; `awy { }` 組內的 co 是無棧協程：producer 先把值放進環並關閉，consumer 再排空。
 t-awy = () {
     c chan[i64] = with-cap(4)
@@ -198,7 +215,9 @@ t-awy = () {
     runner.eq(c.len(), 0, 'awy: producer 兩個值已全部入隊並被消費光')
 }
 
-; ── 空讀掛起：consumer 先跑，空讀即 park ──────
+; 空讀掛起：consumer 先跑，空讀即 park
+...
+
 ; 兩個任務在組內按 spawn 顺序入隊：consumer 先跑，通道是空的 ⇒ 掛起；
 ; producer 接著跑，send 把等待者從通道的 waiters 鏈上摘下並重新入隊。
 ; 這個檔能通過本身就證明 consumer 真的被掛起又恢復了——若它只是「讀空就
@@ -212,7 +231,9 @@ t-park = () {
     runner.eq(c.len(), 0, 'park: 兩個值都被取走')
 }
 
-; ── 掛起後被更晚的 send 喚醒 ──────────────────
+; 掛起後被更晚的 send 喚醒
+...
+
 ; producer 先讓出一次才發送：consumer 的恢復因此排在自己 park 之後的第二輪
 ; 排程，證明恢復不依賴「生產者緊接在後」這個巧合。
 t-park-after-yield = () {
@@ -224,7 +245,9 @@ t-park-after-yield = () {
     runner.eq(c.len(), 0, 'park-yield: 讓出後再發送仍能喚醒等待者')
 }
 
-; ── 多個等待者、一個值：喚醒後必須重新檢查 ────
+; 多個等待者、一個值：喚醒後必須重新檢查
+...
+
 ; 一個 send 會喚醒整條等待鏈，但只有一個能拿到值；另一個恢復後重新判斷
 ; 可讀性（此時是「已關閉且空」）⇒ 走 nil 臂正常結束，而不是誤判成拿到值。
 t-two-waiters = () {

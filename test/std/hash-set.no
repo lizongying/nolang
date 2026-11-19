@@ -97,7 +97,8 @@ t-for-each = () {
     runner.eq(s2.for-each(), 3, 'single element returned as-is')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('hash-set.init', t-init)
 p2, f2 = runner.test('hash-set.add/contains', t-add-contains)

@@ -14,7 +14,8 @@
 
 # /test/runner
 
-; ── 1. 位元讀取器（LSB-first）────────────────────────────────────────
+; 1. 位元讀取器（LSB-first）
+...
 t-bit-reader = () {
     br = zs-bit-reader{}
     br.init([0xb5, 0x01, 0xac, 0x02], 0)
@@ -46,7 +47,8 @@ t-bit-reader = () {
     runner.eq(z, 0, '資料耗盡時 read-bit 回 0')
 }
 
-; ── 2. bits-for-count = 需要幾位元表示該計數（bit length）─────────────
+; 2. bits-for-count = 需要幾位元表示該計數（bit length）
+...
 ; 實作為「每右移一次計一次」，故 count=1 → 1、count=255 → 8、count=256 → 9
 t-bits-for-count = () {
     runner.eq(zstd.bits-for-count(0), 0, 'zstd.bits-for-count(0) = 0（非正值）')
@@ -60,7 +62,8 @@ t-bits-for-count = () {
     runner.eq(zstd.bits-for-count(256), 9, 'zstd.bits-for-count(256) = 9')
 }
 
-; ── 3. FSE 表建構 / 解碼 ─────────────────────────────────────────────
+; 3. FSE 表建構 / 解碼
+...
 ; 兩個符號、table-log=1 → 每符號佔 1 個表項
 t-fse = () {
     norm = [1, 1]
@@ -78,7 +81,8 @@ t-fse = () {
     runner.lt(new-state, 2, 'new-state 落在表範圍內')
 }
 
-; ── 4. zstd Huffman 表建構 / 解碼 ────────────────────────────────────
+; 4. zstd Huffman 表建構 / 解碼
+...
 ; 兩符號、長度各 1 → 規範碼 0 與 1；首位元 0 應解出符號 0
 t-huffman = () {
     lens = [1, 1]
@@ -96,7 +100,8 @@ t-huffman = () {
     runner.eq(s1, 1, '首位元 1 解出符號 1')
 }
 
-; ── 5. 幀頭解析 + raw 區塊解碼 ───────────────────────────────────────
+; 5. 幀頭解析 + raw 區塊解碼
+...
 t-frame = () {
     src = 'hello hello hello world'.to-bytes()
     frame = zstd.compress(src)
@@ -121,7 +126,8 @@ t-frame = () {
     runner.is-true(bad || ! bad, 'decode-compressed-block 回傳 bool（不崩潰）')
 }
 
-; ── 6. 壓縮 / 解壓 round-trip（含 fcs_flag=1 的 2 位元組長度路徑）────
+; 6. 壓縮 / 解壓 round-trip（含 fcs_flag=1 的 2 位元組長度路徑）
+...
 t-roundtrip = () {
     small = 'hello hello hello world'.to-bytes()
     z1 = zstd.compress(small)

@@ -15,7 +15,8 @@
 passed = 0
 failed = 0
 
-; ── 定長陣列 [N]T：界內 ok、越界 err ────────────────────────────
+; 定長陣列 [N]T：界內 ok、越界 err
+...
 t-arr-fixed = () {
     a [4]i64 = [10, 20, 30, 40]
     in1 = a[1]: {
@@ -46,7 +47,8 @@ t-arr-fixed = () {
     runner.str-eq(neg, 'err', '[N]i64 負下標 → err')
 }
 
-; ── 越界的 err 帶得動訊息與位置 ──────────────────────────────────
+; 越界的 err 帶得動訊息與位置
+...
 t-arr-oob-msg = () {
     a [4]i64 = [10, 20, 30, 40]
     msg = a[9]: {
@@ -57,7 +59,8 @@ t-arr-oob-msg = () {
     runner.str-eq(msg, 'index out of range', '越界 err 的訊息可讀')
 }
 
-; ── 切片 []T ────────────────────────────────────────────────────
+; 切片 []T
+...
 t-slice = () {
     v = [7, 8, 9]
     in1 = v[2]: {
@@ -77,7 +80,8 @@ t-slice = () {
     runner.str-eq(out1, 'err', '[]i64 越界 → err')
 }
 
-; ── str 的碼點下標（OpLen 是位元組，必須用 -1 哨兵判定）─────────
+; str 的碼點下標（OpLen 是位元組，必須用 -1 哨兵判定）
+...
 t-str-codepoint = () {
     s = 'héllo'
     in1 = s[1]: {
@@ -98,7 +102,8 @@ t-str-codepoint = () {
     runner.str-eq(out1, 'err', 'str 碼點越界 → err')
 }
 
-; ── [N]?T / []?T：三態齊備（ok / nil / err）─────────────────────
+; [N]?T / []?T：三態齊備（ok / nil / err）
+...
 t-opt-elem-array = () {
     b [4]?i64 = [1, nil, 3, nil]
 
@@ -158,7 +163,8 @@ t-opt-elem-slice = () {
     runner.str-eq(st9, 'err', '[]?i64 越界 → err')
 }
 
-; ── map 缺鍵仍是 nil（值確實不存在，不是越界）───────────────────
+; map 缺鍵仍是 nil（值確實不存在，不是越界）
+...
 t-map-nil = () {
     m [str]i64 = { }
     r = m['nope']: {
@@ -171,7 +177,8 @@ t-map-nil = () {
     runner.str-eq(r, 'nil', 'map 缺鍵 → nil')
 }
 
-; ── 值 → option 的隱式提升：宣告、重綁、欄位、字面量元素、元素寫入 ──
+; 值 → option 的隱式提升：宣告、重綁、欄位、字面量元素、元素寫入
+...
 t-promote {
     i ?i64
 }
@@ -229,7 +236,8 @@ t-promote-literal = () {
     runner.eq(v2, 33, '[N]?i64 元素 = 裸值 → ok(33)')
 }
 
-; ── ?T 不能隱式落回 T：`?=` 是推薦的上拋寫法 ─────────────────────
+; ?T 不能隱式落回 T：`?=` 是推薦的上拋寫法
+...
 ;
 ; 註：`runner.test` 目前無法接受「帶結果參數」的函式值（會 SIGTRAP，HEAD
 ; 4179e2ee 同樣復現，屬既有限制），而 `?=` 需要外層有結果參數承載上拋，
@@ -250,7 +258,8 @@ t-unwrap-assign = () {
     runner.eq(t-unwrap-helper(2), 30, 'x ?= a[2] 取到 30')
 }
 
-; ── 寫目標 `?=` 的 RHS 也是 option：一次 `?=` 同時消費「寫目標位置」與「RHS 值」──
+; 寫目標 `?=` 的 RHS 也是 option：一次 `?=` 同時消費「寫目標位置」與「RHS 值」
+...
 ;
 ; 重點是 RHS 越界時 err 必須上拋到函式的 option 結果，不能被 `it = <option>`
 ; 的隱式解包靜默吞掉（舊行為：dst 維持 0、函式回 ok(0)）。

@@ -7,7 +7,8 @@
 
 # /test/runner
 
-; ── 解包輔助 ──────────────────────────────────
+; 解包輔助
+...
 
 ; 解包 ?i64：ok 取內值，nil/err 回 -999 哨兵（供斷言直接使用）
 ; o: 待解包的可選整數（如 child-at 的結果）
@@ -81,7 +82,8 @@ dp-attr = (p dom-pool, node i64, nm str) (v str) {
     }
 }
 
-; ── XML 解析 ──────────────────────────────────
+; XML 解析
+...
 
 ; XML 基本解析：根元素 kind/name、屬性計數與取值、子節點數與文本內容
 t-xml-basic = () {
@@ -262,7 +264,8 @@ t-xml-roundtrip = () {
     runner.is-true(ihb == false, 'xml mode not html')
 }
 
-; ── HTML 解析 ─────────────────────────────────
+; HTML 解析
+...
 
 ; HTML 大小寫規则：標簽名轉小寫、閉合標簽大小寫不敏感、屬性名不敏感而屬性值保留原樣
 t-html-case = () {
@@ -489,7 +492,8 @@ t-html-empty-pair = () {
     runner.is-true(outer.eq-full('<span></span>'), 'html empty pairs close tag')
 }
 
-; ── 屬性索引與移除 ────────────────────────────
+; 屬性索引與移除
+...
 
 ; 屬性順序與移除：attribute-name/value 按源文順序索引；remove-attribute 命中回 true，再次移除同名回 false
 t-attr-order = () {
@@ -523,7 +527,8 @@ t-attr-order = () {
     runner.is-true(rm2 == false, 'remove-attr again miss')
 }
 
-; ── 變異 API ──────────────────────────────────
+; 變異 API
+...
 
 ; 變異 API 全鏈路：create/append/insert-before/replace/remove/set-node-value/set-attribute 後 outer-html 符合預期
 t-mutation = () {
@@ -581,7 +586,8 @@ t-esc-serialize = () {
     runner.eq(d.child-count(r), 0, 'set-text-content empty clears')
 }
 
-; ── 邊界與雜項 ────────────────────────────────
+; 邊界與雜項
+...
 
 ; 邊界與哨兵值：無效索引 kind 回 -1、child-at 越界回 nil、缺失屬性回 nil、根元素的 parent 為 doc.root 索引
 t-misc = () {
@@ -623,9 +629,11 @@ t-misc = () {
     runner.eq(parent, rootidx, 'root element parent is doc')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
-; ── 節點池基礎操作直測 ──────────────────────────
+; 節點池基礎操作直測
+...
 
 ; 節點池的分配/合法性/子鏈表/屬性邊表/摘除等原語，
 ; 以及 XML 解析與序列化入口在「裸池」上的行為
@@ -708,7 +716,8 @@ t-pool = () {
     runner.eq(n.parent, -1, 'detach 後父節點為 -1')
 }
 
-; ── 自由函數直測（名字判定 / 實體 / 跳空白 / 轉義 / class） ──────
+; 自由函數直測（名字判定 / 實體 / 跳空白 / 轉義 / class）
+...
 
 t-free-helpers = () {
 
@@ -797,7 +806,8 @@ t-free-helpers = () {
     runner.is-false(dom.class-has('', 'a'), 'class-has 空值回 false')
 }
 
-; ── 解析/序列化入口在裸池上的直測 ──────────────────
+; 解析/序列化入口在裸池上的直測
+...
 
 t-pool-parse = () {
     px dom-pool
@@ -850,7 +860,8 @@ t-pool-parse = () {
     eq-str(ph.ser(hroot, true), '<ul><li>a</li><li>b</li></ul>', 'ser HTML 補齊結尾標籤')
 }
 
-; ── 解析原語直測（xml/html 各自的單步掃描器） ──────────
+; 解析原語直測（xml/html 各自的單步掃描器）
+...
 
 t-parse-prims = () {
 

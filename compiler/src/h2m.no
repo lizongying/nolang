@@ -1,9 +1,25 @@
+;   不支持的构造让 agg.unsup += 1。呼叫方必须以 unsup == 0 判定本轮产码可信，
+;   不得把「产出了 IR」当成「降级正确」。
+;
+; SHS 合规：无模块级可变状态、无一等函数值、无指针、无 map 字段；
+;   一律【普通函数 + 显式结构体参数】，不用方法（带 vec 字段的跨模块方法同 ast.no 风险面）。
+; ⚠️ 整数运算默认回 option<int>：每条算术陈述都要 #{overflow=wrap}；
+;    索引读取 arr[i] 返回 ?T，需以值 match / ?= / place-match 显式消费。
+
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/util/sb.sb
+
 ;
 ; 目标（M4-e，s55 首件 / s56 第二件 / s57 第三件）：把 ps.no 产出的 AST arena 降级成 cg.no 消费的 MIR 指令流，
 ; 打通「源码 → IR」的第一条真实路径。此前 compiler/ 里每一段 IR 都来自手写的 op 数组
 ; （cg-test.no / tmp/probe-sNN.no）——等于「codegen 有测试、前端无出口」。
 ;
-; ── 覆盖面（刻意极小，且小得可测量）─────────────────────────────
+; 覆盖面（刻意极小，且小得可测量）
+...
+
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
 ;         Identifier / IntegerLiteral / BooleanLiteral（s90：true/false ⇒ OP-CONST(TY-I64, 0/1)，镜像 Go hir2mir.go KBoolLit；自举 bool 走 i64 宽 0/1，与 s57 比较族「布尔=i64 0/1」同口径）/ CharLiteral（s91：双引号单码点 ⇒ UTF-8 首码点解码 ⇒ OP-CONST(TY-I64, cp)，镜像 Go lowerCharLit；自举 char 走 i64 码点、无 i32 槽，同 bool 宽口径）/ GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67，s79 起 u64 亦放行——uty 下 >> 重映射 OP-SHRU 发 lshr、其余发裸 and/or/xor/shl i64；s80：'>>' 无条件重映射 OP-SHRU——i64 侧亦发 lshr，镜像 Go OpShr 恒逻辑移位，s35 的 i64=ashr 设计被推翻，cg 的 ashr 臂转死代码）；逻辑 && || s68，复用 OP-AND/OR（s83 起 u64 亦放行——Go 对 u64 逻辑族即裸位形 and/or 非短路，探针实钉）；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' s87 放行 ⇒ OP-MOD 入 is-arith 发 frem double（AArch64 llc 降为 libm fmod：trunc 语义，与 Go 同 IR 形制同 lowering；oracle 实钉 7.0%2.5=2.0），f64 算术 + - * / % 族收齐）/
@@ -80,7 +96,9 @@
 ;         值匹配的非收形（s63）：解构绑定 ok(v)/err(e)、'ok' 关键字臂（dot-val）、raw-cond ok(<expr>) 臂、
 ;         型别臂（typePattern／typeArm）、非 i64 主体（str／vec／option）、非字面量型样（具名／-1 前缀式／布尔／字符串）
 ;
-; ── 实参侧池 args（s64：摘掉旧「连续 id 契约」§11 B16）──────────────
+; 实参侧池 args（s64：摘掉旧「连续 id 契约」§11 B16）
+...
+
 ;   cg 的 CALL 臂按 args[xa[k] + j] 读第 j 个实参的值 id ⇒ 实参入池必须是**连续段**，
 ;   但段内的值 id 可任意散布；生产侧先把一次调用的实参落临时 vec，校验全过后再按
 ;   调用点顺序整段追加进同一个池（嵌套调用实参降期自己会推池项，边降边推会挤偏基址）。Go 侧 Inst.Args 就是任意
@@ -91,12 +109,16 @@
 ;   ⚠️ 池单调追加、不回收：被拒调用不入池（校验在整段追加之前完成）；每个 CALL 各取自己
 ;     入池那一刻的 args.len() 作基址；函数一被计 unsup 就整函数不产码。
 ;
-; ── 值 id 模型（与 cg.cg-emit-cfg-t 的约定对齐）───────────────────
+; 值 id 模型（与 cg.cg-emit-cfg-t 的约定对齐）
+...
+
 ;   id 0 = 哑元（vty[0] 先占位，永不引用）；1..nargs = 形参（s56 起按形参序单调分配）；
 ;   nargs+1 起由降级期单调分配。每个 LetStatement 把右值表达式的结果 id 直接绑到名字，
 ;   同名重复绑定 = 覆盖（镜像 §3.11「函数作用域内同名重复赋值 = 重赋值」）。
 ;
-; ── 两种存储模式（s57：按体内有无控制流二选一，判据来自 h2m-scan 前扫描）─────
+; 两种存储模式（s57：按体内有无控制流二选一，判据来自 h2m-scan 前扫描）
+...
+
 ;   mem == 0（直线式，s55/s56 原样）：SSA 名即槽，**不发 alloca/store/load**。
 ;   mem == 1（体内有分支/循环）：**全部局部量（含形参）落 entry 块 alloca 槽**（-O0 风格），
 ;     读 = OP-LOAD/OP-SLOAD，写 = OP-STORE/OP-SSTORE。理由是 cg 只用 blks 数组切标签、
@@ -107,25 +129,15 @@
 ;     ⚠️ 槽型别只认 i64 / str（cg 只有 alloca i64 与 alloca %str-long 两种；f64 无槽 op）；
 ;       前扫描推不出型别的局部量（如 vec / 结构体）⇒ 计 unsup，整函数不产码。
 ;
-; ── 诚实门禁 ─────────────────────────────────────────────────────
-;   不支持的构造让 agg.unsup += 1。呼叫方必须以 unsup == 0 判定本轮产码可信，
-;   不得把「产出了 IR」当成「降级正确」。
-;
-; SHS 合规：无模块级可变状态、无一等函数值、无指针、无 map 字段；
-;   一律【普通函数 + 显式结构体参数】，不用方法（带 vec 字段的跨模块方法同 ast.no 风险面）。
-; ⚠️ 整数运算默认回 option<int>：每条算术陈述都要 #{overflow=wrap}；
-;    索引读取 arr[i] 返回 ?T，需以值 match / ?= / place-match 显式消费。
-
-# /compiler/src/asp
-# /compiler/src/ast
-# /compiler/src/mir
-# /compiler/src/cg
-# /compiler/src/util/sb.sb
+; 诚实门禁
+...
 
 ; h2m — AST → MIR 降级（对齐 src/mir/hir2mir.go）
 ...
 
-; ── 降级上下文（指令流 + 值 id arena + 变量绑定表 + 块游标 + 诚实计数器）──
+; 降级上下文（指令流 + 值 id arena + 变量绑定表 + 块游标 + 诚实计数器）
+...
+
 ; ⚠️ 块游标纪律（s57）：cg 主循环按 `blks[k] != cur` 发标签 ⇒ **每块必须是指令序中的连续段**。
 ;   故本文件只单向推进块 id（entry → arms / loop 区域 → 汇聚块），回边只发 OP-BR 不再发指令；
 ;   一旦离开某块就绝不再写它（写回去会重复发标签，opt 报标签重定义）。
@@ -953,7 +965,9 @@ h2m-var-bind = (c h2m-ctx, name str, id i64) {
     }
 }
 
-; ── mem 模式（s57）：局部量落 alloca 槽的三件套 ────────────────────
+; mem 模式（s57）：局部量落 alloca 槽的三件套
+...
+
 ; 名字在 c.names 中的下标；-1 = 未登记（与 h2m-var-find 共用线性扫，表长只几个局部量）
 ; c: 上下文
 ; name: 变量名
@@ -1382,7 +1396,9 @@ h2m-tynode-code = (t ast, agg h2m-ctx, tn i64) (code i64) {
     }
 }
 
-; ── s99：结构体表查询 helper（表存 c.stn/stid/stfc/stft/stfldn，定义序即 id 序）──
+; s99：结构体表查询 helper（表存 c.stn/stid/stfc/stft/stfldn，定义序即 id 序）
+...
+
 ; 按名查结构体 id（-1 = 未登记）
 h2m-struct-find = (c h2m-ctx, name str) (sid i64) {
     sid = -1
@@ -1833,7 +1849,8 @@ h2m-coll-check = (t ast, ie i64, cond i64) (src i64) {
     }
 }
 
-; ── 模块级函数签名表（调用点据此解析返回型别与实参个数，对齐 Go 的函数表查找）──
+; 模块级函数签名表（调用点据此解析返回型别与实参个数，对齐 Go 的函数表查找）
+...
 h2m-sigs {
     fname []str
     fret []i64
@@ -2000,7 +2017,9 @@ h2m-sig-arg = (s h2m-sigs, i i64, j i64) (t i64) {
     }
 }
 
-; ── 前扫描（s57：mem 模式定槽宽 + 控制流探测）───────────────────
+; 前扫描（s57：mem 模式定槽宽 + 控制流探测）
+...
+
 ; 槽必须在 entry，而 entry 指令又必须先于 body 发出 ⇒ 进 body 前就得知道「有哪些局部量、各是什么型别」。
 ; 本段就是一个不指令的小型Syntax walker：只做两件事——登记 let 名取型别、发现控制流节点置 flow。
 ; ⚠️ 与降级器的型别判定彼此独立⇒可能偏离；偏离不会发错码：写入口 h2m-var-write 会再比一次
@@ -2232,6 +2251,10 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                         mt == TY-VEC && mf == 'len' -> code = TY-I64
                         mt == TY-VECSTR && mf == 'len' -> code = TY-I64
                         mt == TY-STR && mf == 'len-bytes' -> code = TY-I64
+
+                        ; s117：str.byte(i) 回 ?byte（option 恆裝箱）⇒ let 槽型別 TY-OPT，
+                        ;   供值位 match 主体（`s.byte(0): { ok -> it }`）定 omode。
+                        mt == TY-STR && mf == 'byte' -> code = TY-OPT
                         mt == TY-VEC && mf == 'push' -> code = TY-VEC
                         mt == TY-VECSTR && mf == 'push' -> code = TY-VECSTR
                     }
@@ -3097,6 +3120,20 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                 v = cid
                                 ok-method = 1
                                 ok-call = 0
+                            }
+
+                            ; s117：str.byte(i) 取第 i 個【字節】，越界 ⇒ nil（發 OP-STRBYTE）。
+                            ;   ⚠️ 只收正好一參且參數為 i64 的形；其餘落門禁（不猜）。
+                            mname == 'byte' && ok-method == 0 && na == 1 -> {
+                                bytek = ast.kid-at(t, argbase)
+                                bv = h2m-lower-expr(t, c, sg, bytek)
+                                bv > 0 && h2m-vty-at(c, bv) == TY-I64 -> {
+                                    ov = h2m-alloc(c, TY-OPT)
+                                    h2m-emit(c, OP-STRBYTE, ov, rv, bv, '', TY-OPT)
+                                    v = ov
+                                    ok-method = 1
+                                    ok-call = 0
+                                }
                             }
                         }
                     }
@@ -4466,18 +4503,36 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 last-j < arms -> bad = 1
             }
 
-            ; s63 值匹配臂群门禁：除 wildcard 外只认裸整型字面量型样，带任何解构／型别／raw-cond 标记即出局
+            ; s63 值匹配臂群门禁：除 wildcard 外只认裸整型字面量型样，带任何解构／型別／raw-cond 標記即出局
+            ;   s119：i64 值匹配的【變體臂】ok/nil/err 是例外——對齐 Go 實測（4 組對照）：
+            ;   三者在 i64 主體下【都匹配常量 0】，`it` = 主體值。
+            ;   `ok ->`（無綁定）dot-val 置位；`nil ->` bindingVariant='nil'；
+            ;   `err ->`（無綁定）Condition 是標識符。
             vmode == 1 -> {
-                ast.aux-at(t, hb + 0) != 0 -> bad = 1
-                ast.aux-at(t, hb + 1) != 0 -> bad = 1
-                ast.aux-at(t, hb + 2) != 0 -> bad = 1
-                ast.aux-at(t, hb + 3) != 0 -> bad = 1
-                ast.aux-at(t, hb + 5) != 0 -> bad = 1
-                ast.aux-at(t, hb + 6) != 0 -> bad = 1
-                ast.aux-at(t, hb + 8) != 0 -> bad = 1
-                wi <= 0 -> {
-                    pd = ast.nd-at(t, cn)
-                    pd.kind != asp.K-INTEGER-LITERAL || pd.nkid != 0 -> bad = 1
+                a1 = ast.aux-at(t, hb + 1)
+                a2 = ast.aux-at(t, hb + 2)
+                a3 = ast.aux-at(t, hb + 3)
+                a5 = ast.aux-at(t, hb + 5)
+                a6 = ast.aux-at(t, hb + 6)
+                a8 = ast.aux-at(t, hb + 8)
+
+                varm = 0
+                a1 != 0 -> varm = 1
+                a1 == 0 && a5 != 0 -> varm = 1
+                a1 == 0 && a5 == 0 && cnid != 0 -> varm = 1
+
+                varm == 0 -> {
+                    a2 == 0 && a3 == 0 && a6 == 0 && a8 == 0 -> {
+                        wi <= 0 -> {
+                            pd = ast.nd-at(t, cn)
+                            pd.kind != asp.K-INTEGER-LITERAL || pd.nkid != 0 -> bad = 1
+                        }
+                    }
+
+                    a2 != 0 -> bad = 1
+                    a3 != 0 -> bad = 1
+                    a6 != 0 -> bad = 1
+                    a8 != 0 -> bad = 1
                 }
             }
 
@@ -4653,7 +4708,18 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                     ; 原有 i64 值匹配（s63）+ 裸链（s58）路
                     omode == 0 -> {
-                        pv = h2m-lower-expr(t, c, sg, cn)
+                        ; s119：變體臂（ok/nil/err）在 i64 主體下按【常量 0】匹配（對齐 Go 實測）。
+                        ;   不 lowering Condition（`err ->` 的 Condition 是標識符，查槽表必失敗）。
+                        varm-e = 0
+                        bvar != '' -> varm-e = 1
+                        bvar == '' && dotv != 0 -> varm-e = 1
+                        bvar == '' && dotv == 0 && cnid != 0 -> varm-e = 1
+                        pv = 0
+                        varm-e == 1 -> {
+                            pv = h2m-alloc(c, TY-I64)
+                            h2m-emit(c, OP-CONST, pv, 0, 0, '', TY-I64)
+                        }
+                        varm-e == 0 -> pv = h2m-lower-expr(t, c, sg, cn)
                         cv = pv
                         sv = 0
                         vmode == 1 && pv > 0 -> {
@@ -4711,7 +4777,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     h2m-bk-pop(c)
 }
 
-; ── 块终结形（s59）：return / break / continue ───────────────────
+; 块终结形（s59）：return / break / continue
+...
+
 ; 三种节点均要**作为本块最后一条陈述**才可降级（呼叫方把关 last）：其后陈述不可达，
 ;   若照降则臂体里的不支持构造会被静默吞掉（产码 ≠ 产对码），同 s58「兜底不在末位」纪律。
 ; 形制（实测 tmp/probe-s59-ast.no，钉于 tmp/s59-ast-out.txt）：

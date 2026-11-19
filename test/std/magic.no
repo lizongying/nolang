@@ -6,7 +6,8 @@
 
 # /test/runner
 
-; ── get-extension ─────────────────────────────
+; get-extension
+...
 
 ; 副檔名取用：'file.txt' → 'txt'、'file.json' → 'json'；
 ; 無副檔名或路徑中含 '.' 的目錄名時回空字串
@@ -21,7 +22,8 @@ t-get-extension = () {
     runner.eq(ext4.len(), 0, 'get-extension /a/b.c/d len == 0 (dir-like)')
 }
 
-; ── detect-by-extension ──────────────────────
+; detect-by-extension
+...
 
 ; 依副檔名判定類型：txt → 'ASCII text'、json → 'JSON data'、no → 'Nolang source'，未知得空字串
 t-detect-by-extension = () {
@@ -35,7 +37,8 @@ t-detect-by-extension = () {
     runner.eq(kind4.len(), 0, 'detect ext unknown len == 0')
 }
 
-; ── detect-type (extension-based, via temp file) ──
+; detect-type (extension-based, via temp file)
+...
 
 ; detect-type 綜合判定：暫時的 .txt 檔（含內容）應判定為 'ASCII text'
 t-detect-type-txt = () {
@@ -65,7 +68,8 @@ t-detect-type-txt = () {
     fs.remove(tmp)
 }
 
-; ── detect-type (directory) ──────────────────
+; detect-type (directory)
+...
 
 ; detect-type 對目錄應回 'directory'（目錄判斷優先於內容偵測）
 t-detect-type-dir = () {
@@ -73,7 +77,8 @@ t-detect-type-dir = () {
     runner.str-eq(kind, 'directory', 'detect-type /tmp == directory')
 }
 
-; ── detect-type (nonexistent) ────────────────
+; detect-type (nonexistent)
+...
 
 ; detect-type 對不存在的路徑應回 'unknown (not found)'
 t-detect-type-nonexistent = () {
@@ -81,7 +86,8 @@ t-detect-type-nonexistent = () {
     runner.str-eq(kind, 'unknown (not found)', 'detect-type nonexistent')
 }
 
-; ── detect-by-magic ─────────────────────────
+; detect-by-magic
+...
 
 ; detect-by-magic 只看前 64 字節的魔數：PNG 檔頭應判為 'PNG image'，
 ; 純文字內容不命中任何魔數回空串，檔案不存在也回空串
@@ -108,7 +114,8 @@ t-detect-by-magic = () {
     runner.eq(kind3.len(), 0, 'missing file -> empty')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('magic.get-extension', t-get-extension)
 p2, f2 = runner.test('magic.detect-by-extension', t-detect-by-extension)

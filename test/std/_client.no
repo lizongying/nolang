@@ -40,7 +40,8 @@
 
 # /test/runner
 
-; ── helpers ──────────────────────────────────────────────────────
+; helpers
+...
 
 ; 字串比較：先比長度（避開 str-eq 的 n 超界讀），再逐位元組
 seq = (a str, b str, msg str) {
@@ -97,7 +98,8 @@ cvv = (o ?client.client) (c client) {
     }
 }
 
-; ── 1. 結構體零值 ─────────────────────────────────────────────────
+; 1. 結構體零值
+...
 
 t-struct = () {
     cl = client{}
@@ -106,7 +108,8 @@ t-struct = () {
     runner.eq(cl.port, 0, 'client{}: port 零值 = 0')
 }
 
-; ── 2. 未連接時所有方法的早退 ─────────────────────────────────────
+; 2. 未連接時所有方法的早退
+...
 
 t-unconnected = () {
     cl = client{}
@@ -128,7 +131,8 @@ t-unconnected = () {
     runner.eq(cst(cl.recv-line()), 0, 'close 後 recv-line ⇒ 仍 nil')
 }
 
-; ── 3. connect / is-connected ────────────────────────────────────
+; 3. connect / is-connected
+...
 
 t-connect = () {
     P = 39321
@@ -163,7 +167,8 @@ t-connect = () {
     net.close(lf)
 }
 
-; ── 4. send / recv / recv-line / send-line ───────────────────────
+; 4. send / recv / recv-line / send-line
+...
 
 t-send-recv = () {
     P = 39322
@@ -218,7 +223,8 @@ t-send-recv = () {
     net.close(lf)
 }
 
-; ── 5. request（請求-回應模式）────────────────────────────────────
+; 5. request（請求-回應模式）
+...
 
 t-request = () {
     P = 39323
@@ -250,7 +256,8 @@ t-request = () {
     net.close(lf)
 }
 
-; ── 6. reconnect ─────────────────────────────────────────────────
+; 6. reconnect
+...
 
 t-reconnect = () {
     P = 39324
@@ -279,7 +286,8 @@ t-reconnect = () {
     net.close(a2)
 }
 
-; ── 7. client-create ─────────────────────────────────────────────
+; 7. client-create
+...
 
 t-client-create = () {
     P = 39325
@@ -306,7 +314,8 @@ t-client-create = () {
     net.close(lf)
 }
 
-; ── 執行 ─────────────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('client.struct', t-struct)
 p2, f2 = runner.test('client.unconnected', t-unconnected)

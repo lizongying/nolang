@@ -22,7 +22,8 @@
 ;   - lcm  (a int, b int) (r int) — 整型泛型
 ...
 
-; ── max：變參泛型，回傳最大值 ──
+; max：變參泛型，回傳最大值
+...
 test-max = () {
     r = math.max(10, 20)
     print(r); expect: 20
@@ -36,7 +37,8 @@ test-max = () {
 test-max()
 print(0)
 
-; ── min：變參泛型，回傳最小值 ──
+; min：變參泛型，回傳最小值
+...
 test-min = () {
     r = math.min(10, 20)
     print(r); expect: 10
@@ -47,7 +49,8 @@ test-min = () {
 test-min()
 print(1)
 
-; ── abs：num 方法（裸函數形式 abs(x)，x 為接收者），回傳絕對值 ──
+; abs：num 方法（裸函數形式 abs(x)，x 為接收者），回傳絕對值
+...
 test-abs = () {
 
     #{overflow=wrap}
@@ -61,7 +64,8 @@ test-abs = () {
 test-abs()
 print(2)
 
-; ── sign：方法泛型，回傳符號（-1, 0, 1）──
+; sign：方法泛型，回傳符號（-1, 0, 1）
+...
 test-sign = () {
     r = sign(5)
     print(r); expect: 1
@@ -75,7 +79,8 @@ test-sign = () {
 test-sign()
 print(3)
 
-; ── even / odd：整型泛型，回傳 bool ──
+; even / odd：整型泛型，回傳 bool
+...
 test-even-odd = () {
     yes = math.even(4)
     print(yes); expect: true
@@ -89,7 +94,8 @@ test-even-odd = () {
 test-even-odd()
 print(4)
 
-; ── pow：整型冪 ──
+; pow：整型冪
+...
 test-pow = () {
     r = number.pow(2, 10)
     print(r); expect: 1024
@@ -103,7 +109,8 @@ test-pow = () {
 test-pow()
 print(5)
 
-; ── gcd：最大公因數 ──
+; gcd：最大公因數
+...
 test-gcd = () {
     r = math.gcd(48, 18)
     print(r); expect: 6
@@ -121,7 +128,8 @@ test-gcd = () {
 test-gcd()
 print(6)
 
-; ── lcm：最小公倍數 ──
+; lcm：最小公倍數
+...
 test-lcm = () {
     r = math.lcm(4, 6)
     print(r); expect: 12
@@ -142,7 +150,9 @@ print(7)
 ; 來源：mod.no, u8-direct-minimal.no, u128.no
 ; 保留錨點：number.no（基名）；unsigned-lit.no（無符號字面量獨立）；
 ;           number-more.no（既有合併檔，另行保留）
-; ── 來自 mod.no ──
+; 來自 mod.no
+...
+
 ; mod.no — 測試取模運算
 ...
 test = () {
@@ -155,7 +165,8 @@ test()
 
 print('---')
 
-; ── 來自 u8-direct-minimal.no ──
+; 來自 u8-direct-minimal.no
+...
 test-method = () {
     n = 'abc'.to-i64()
     {
@@ -173,7 +184,9 @@ test-method()
 
 print('---')
 
-; ── 來自 u128.no ──
+; 來自 u128.no
+...
+
 ; 測試 u128-basic（編譯探針，無 stdout）
 test-u128-basic = () (r i64) {
     r = 1
@@ -213,7 +226,8 @@ demo-number()
 ; `int.mod=(b int)(r ?int)`，且 clamp 以結果參數接收，故改寫如下。
 ...
 
-; ── div：整數除法 ──
+; div：整數除法
+...
 test-div = () {
     r = 0
 
@@ -240,7 +254,8 @@ test-div = () {
 test-div()
 print(111)
 
-; ── mod：整數取模 ──
+; mod：整數取模
+...
 test-mod = () {
     r = 0
 
@@ -262,7 +277,8 @@ test-mod = () {
 test-mod()
 print(222)
 
-; ── clamp：數值限幅（方法，結果參數 r）──
+; clamp：數值限幅（方法，結果參數 r）
+...
 test-clamp = () {
     r = 0
 
@@ -343,7 +359,8 @@ print('u32 -2 = ')
 print(w)
 print('\n')
 
-; ── 反向守衛：有號型別維持原樣 ──
+; 反向守衛：有號型別維持原樣
+...
 s i8 = -1
 print('i8 -1 = ')
 print(s)
@@ -354,7 +371,8 @@ print('i64 -1 = ')
 print(n)
 print('\n')
 
-; ── []byte 元素必須與上面一致（同一個字面量，兩種存放位置）──
+; []byte 元素必須與上面一致（同一個字面量，兩種存放位置）
+...
 v []byte = with-len(1)
 v[0] = -1
 print('vec elem -1 = ')

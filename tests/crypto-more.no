@@ -3,7 +3,9 @@
 ; 含 std 模組導入者以模組級片段串接（導入行留在頂層並去重），頂層符號加 per-file 前綴避免衝突。
 ; golden/引用件保留獨立：i-sha256、aes-enc、aes-vectors。
 ;
-; ── from tests/hmac.no ──
+; from tests/hmac.no
+...
+
 ; test-hmac — 測試 hmac-sha256
 ; # std/crypto/hmac
 
@@ -21,7 +23,9 @@ print('after hmac')
 print(hmac-a[0])
 print('done')
 
-; ── from tests/hmac2.no ──
+; from tests/hmac2.no
+...
+
 ; test-hmac2 — 測試 hmac-sha256 輸出參數形式
 
 print('start')
@@ -38,15 +42,20 @@ print('after hmac')
 print(hmac2-a[0])
 print('done')
 
-; ── from tests/hash-crc.no ──
+; from tests/hash-crc.no
+...
+
 ; hash-crc.no
 
 print('hello')
 
-; ── from tests/hash-deps.no ──
+; from tests/hash-deps.no
+...
 print('hash deps ok')
 
-; ── from tests/fe-cswap.no ──
+; from tests/fe-cswap.no
+...
+
 ; test-fe-cswap — 驗證 fe-cswap 是否正確交換兩個陣列
 ; # std/crypto/x25519
 
@@ -103,7 +112,9 @@ eprint(fec-b[0])
     fec-b[0] != 1 -> print('FAIL: b swapped (mask=0)')
 }
 
-; ── from tests/fe-mul-simple.no ──
+; from tests/fe-mul-simple.no
+...
+
 ; test-fe-mul-simple — 驗證 fe-mul 基本正確性
 
 ; 測試 1: 2 * 3 = 6
@@ -225,7 +236,9 @@ i <- [0..10): {
     fem-h4[0] != 1 -> print('FAIL: (p-1)^2')
 }
 
-; ── from tests/fe-ops.no ──
+; from tests/fe-ops.no
+...
+
 ; test-fe-ops — 測試 X25519 域元素基本操作
 
 ; 列印域元素

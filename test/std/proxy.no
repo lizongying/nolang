@@ -34,7 +34,8 @@
 
 # /test/runner
 
-; ── helpers ──────────────────────────────────────────────────────
+; helpers
+...
 
 seq = (a str, b str, msg str) {
     la = a.len-bytes()
@@ -76,7 +77,8 @@ read-req = (path str) (s str) {
     s = b.to-bytes-str()
 }
 
-; ── 子行程：HTTP 假代理 ───────────────────────────────────────────
+; 子行程：HTTP 假代理
+...
 ;
 ; accept 一次 → 讀走 CONNECT 請求（存檔）→ 回 `reply` → 結束。
 ; reply 為空字串時什麼都不送，用於測「對端立刻 EOF」。
@@ -91,7 +93,8 @@ http-child = (lf fd, reply str, path str) {
     exit(0)
 }
 
-; ── 子行程：SOCKS5 假代理（無認證）─────────────────────────────────
+; 子行程：SOCKS5 假代理（無認證）
+...
 ;
 ; 1. 讀方法協商 → 回 [5, 0]（選中「無認證」）
 ; 2. 讀 CONNECT 請求（存檔）→ 回 [5, 0, 0, 1, 0,0,0,0, 0,0]
@@ -124,7 +127,8 @@ s5-child = (lf fd, path str) {
     exit(0)
 }
 
-; ── 子行程：SOCKS5 假代理（用戶名/密碼認證）───────────────────────
+; 子行程：SOCKS5 假代理（用戶名/密碼認證）
+...
 ;
 ; 1. 讀方法協商 → 回 [5, 2]（選中「用戶名密碼」）
 ; 2. 讀認證請求（存檔）→ 回 [1, 0]
@@ -166,7 +170,8 @@ s5-child-auth = (lf fd, path str) {
     exit(0)
 }
 
-; ── 子行程：SOCKS5 假代理（可設定「第一步回應」的錯誤）────────────
+; 子行程：SOCKS5 假代理（可設定「第一步回應」的錯誤）
+...
 ;
 ; mode: 1=版本不符（回 4,0）2=方法不可接受（回 5,255）3=rep != 0（回 5,5,..）
 ;       4=回應不足 2 位元組（只回 1 位元組就 EOF）
@@ -201,7 +206,8 @@ s5-child-bad = (lf fd, mode i64, path str) {
     exit(0)
 }
 
-; ── 子行程：SOCKS5 假代理（協商成功但 CONNECT 回應 rep != 0）─────
+; 子行程：SOCKS5 假代理（協商成功但 CONNECT 回應 rep != 0）
+...
 s5-child-rep = (lf fd, path str) {
     af = net.net-accept(lf)
     net.net-set-recv-timeout(af, 3000)
@@ -231,7 +237,8 @@ s5-child-rep = (lf fd, path str) {
     exit(0)
 }
 
-; ── 子行程：HTTP 假代理，回一大段沒有 \r\n\r\n 的垃圾 ──────────────
+; 子行程：HTTP 假代理，回一大段沒有 \r\n\r\n 的垃圾
+...
 ;
 ; 觸發 connect 的「累積緩衝超限 ⇒ 放棄」保護（total > 3 * PROXY-BUF-SIZE）。
 http-child-flood = (lf fd, path str) {
@@ -249,7 +256,8 @@ http-child-flood = (lf fd, path str) {
     exit(0)
 }
 
-; ── 1. 常數 ──────────────────────────────────────────────────────
+; 1. 常數
+...
 
 t-const = () {
     runner.eq(proxy.PROXY-BUF-SIZE, 4096, 'PROXY-BUF-SIZE = 4096')
@@ -262,7 +270,8 @@ t-const = () {
     runner.eq(proxy.SOCKS5-ATYP-DOMAIN, 3, 'SOCKS5-ATYP-DOMAIN = 3')
 }
 
-; ── 2. config 結構體 ──────────────────────────────────────────────
+; 2. config 結構體
+...
 
 t-config = () {
     cfg = proxy.config{}
@@ -278,7 +287,8 @@ t-config = () {
     runner.is-true(tc == nil, 'config.tls-connect: 隧道失敗 ⇒ nil')
 }
 
-; ── 3. HTTP CONNECT 成功臂 ────────────────────────────────────────
+; 3. HTTP CONNECT 成功臂
+...
 
 t-http-ok = () {
     p = 39341
@@ -305,7 +315,8 @@ t-http-ok = () {
     net.close(lf)
 }
 
-; ── 4. HTTP CONNECT 帶 Basic 認證 ─────────────────────────────────
+; 4. HTTP CONNECT 帶 Basic 認證
+...
 
 t-http-auth = () {
     p = 39342
@@ -332,7 +343,8 @@ t-http-auth = () {
     net.close(lf)
 }
 
-; ── 5. HTTP CONNECT：200 但不帶 reason 短語 ───────────────────────
+; 5. HTTP CONNECT：200 但不帶 reason 短語
+...
 
 t-http-no-reason = () {
     p = 39343
@@ -351,7 +363,8 @@ t-http-no-reason = () {
     net.close(lf)
 }
 
-; ── 6. HTTP CONNECT 失敗臂 ───────────────────────────────────────
+; 6. HTTP CONNECT 失敗臂
+...
 
 t-http-fail = () {
 
@@ -407,7 +420,8 @@ t-http-fail = () {
     runner.eq(proxy.connect('127.0.0.1', 39349, 't.example', 443, '', ''), -1, 'connect: 代理埠不通 ⇒ -1')
 }
 
-; ── 7. dial / dial-auth 轉發 ────────────────────────────────────
+; 7. dial / dial-auth 轉發
+...
 
 t-dial = () {
 
@@ -439,7 +453,8 @@ t-dial = () {
     net.close(lf2)
 }
 
-; ── 8. proxy-tls-dial 失敗臂 ────────────────────────────────────
+; 8. proxy-tls-dial 失敗臂
+...
 
 t-tls-dial-fail = () {
 
@@ -460,7 +475,8 @@ t-tls-dial-fail = () {
     net.close(lf)
 }
 
-; ── 9. SOCKS5 成功臂（無認證）───────────────────────────────────
+; 9. SOCKS5 成功臂（無認證）
+...
 
 t-s5-ok = () {
     p = 39354
@@ -495,7 +511,8 @@ t-s5-ok = () {
     net.close(lf)
 }
 
-; ── 10. SOCKS5 成功臂（用戶名/密碼認證）──────────────────────────
+; 10. SOCKS5 成功臂（用戶名/密碼認證）
+...
 
 t-s5-auth = () {
     p = 39355
@@ -532,7 +549,8 @@ t-s5-auth = () {
     net.close(lf)
 }
 
-; ── 11. SOCKS5 失敗臂 ───────────────────────────────────────────
+; 11. SOCKS5 失敗臂
+...
 
 t-s5-fail = () {
 
@@ -577,7 +595,8 @@ t-s5-fail = () {
     runner.eq(proxy.socks5-dial('127.0.0.1', 39360, 'h', 80), -1, 'socks5-dial: 代理埠不通 ⇒ -1')
 }
 
-; ── 12. config.connect 成功臂 ───────────────────────────────────
+; 12. config.connect 成功臂
+...
 
 t-config-connect = () {
     p = 39361
@@ -609,7 +628,8 @@ t-config-connect = () {
     net.close(lf)
 }
 
-; ── 執行 ─────────────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('proxy.const', t-const)
 p2, f2 = runner.test('proxy.config', t-config)

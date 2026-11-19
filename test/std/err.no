@@ -42,7 +42,8 @@ t-format = () {
     runner.str-eq(s, 'code.io: read error', 'format content')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('err.new', t-new)
 p2, f2 = runner.test('err.is', t-is)

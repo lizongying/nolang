@@ -86,7 +86,8 @@ new-conn = () (c http2.conn) {
     c.init()
 }
 
-; ── 常數 ─────────────────────────────────────────────────────────
+; 常數
+...
 
 t-const = () {
     runner.eq(http2.HTTP2-FRAME-HEADER-SIZE, 9, 'HTTP2-FRAME-HEADER-SIZE = 9')
@@ -114,7 +115,8 @@ t-const = () {
     runner.eq(http2.FLAG-PRIORITY, 32, 'FLAG-PRIORITY = 32')
 }
 
-; ── frame.serialize / frame.parse ────────────────────────────────
+; frame.serialize / frame.parse
+...
 
 t-frame-codec = () {
     f http2.frame
@@ -177,7 +179,8 @@ t-frame-codec = () {
     runner.eq(big2.length, 65535, 'parse: length = 65535')
 }
 
-; ── conn 狀態機：未連線時所有 I/O 都必須安全失敗 ─────────────────
+; conn 狀態機：未連線時所有 I/O 都必須安全失敗
+...
 
 t-conn-idle = () {
     c = new-conn()
@@ -222,7 +225,8 @@ t-conn-idle = () {
     runner.eq(c.fd, -1, 'close: 未連線仍為 -1')
 }
 
-; ── 真實 socket 上的 send-frame / recv-frame 回環 ────────────────
+; 真實 socket 上的 send-frame / recv-frame 回環
+...
 ;
 ; 用 127.0.0.1 上的一對 TCP fd 當「自己對自己」的通道：A 端 send-* 寫出的位元組，
 ; 由 B 端 recv-frame 解析回來。不需要真伺服器，也不碰外網。
@@ -351,7 +355,8 @@ t-frame-io = () {
     runner.eq(b.fd, -1, 'close: fd 歸 -1')
 }
 
-; ── 連線失敗分支：connect / connect-tls ──────────────────────────
+; 連線失敗分支：connect / connect-tls
+...
 
 t-connect-fail = () {
 
@@ -362,7 +367,8 @@ t-connect-fail = () {
     runner.eq(cv(http2.connect-tls('', 1)), -1, 'connect-tls: 空主機 ⇒ nil')
 }
 
-; ── 高層便捷函數：失敗臂 + URL 解析 ──────────────────────────────
+; 高層便捷函數：失敗臂 + URL 解析
+...
 ;
 ; 註：成功臂需要一台真的 h2c 伺服器，屬於端到端驗證，不進單元測試。
 ; 這裡用「一定連不上」的位址，確認 ok / ?response 的失敗語義與 URL 解析。
@@ -409,7 +415,8 @@ t-do-fail = () {
     runner.eq(rv(http2.get('https://127.0.0.1:1/')), -1, 'get: https 分支連不上 ⇒ nil')
 }
 
-; ── 執行 ─────────────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('http2.const', t-const)
 p2, f2 = runner.test('http2.frame-codec', t-frame-codec)

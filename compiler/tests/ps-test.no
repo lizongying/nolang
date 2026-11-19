@@ -1,16 +1,3 @@
-; ps-test.no — compiler/src/ps 的 parser 迴歸測試
-;
-; 執行： ./bin/no run compiler/tests/ps-test.no
-;
-; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    exit(1)，否則差分 harness 會把失敗讀成通過。
-;
-; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
-;
-; ── 這些期望字串從哪來 ────────────────────────────────────────────
-; 全部由 L2 oracle 實測取得（`./bin/no ast <檔>`），**不是**手寫猜的。
-;
-; ── 本檔釘住什麼（s59：IN 上下文關鍵字）─────────────────────────
 ; Go expr.go:96 把 IN 與 IDENT 同軌（`case IDENT, IN, MATCH: parseIdentifier`），
 ; `in` 在表達式位是合法識別字（std/crypto 大量用作參數名）。ps.no 的
 ; ps-parse-expr-prec 曾缺 IN 臂 ⇒ 表達式位的 `in` 無 primary 可取（回 idx=0
@@ -39,6 +26,23 @@
 # /compiler/src/lx
 # /compiler/src/tok
 # /compiler/src/ps
+
+; ps-test.no — compiler/src/ps 的 parser 迴歸測試
+;
+; 執行： ./bin/no run compiler/tests/ps-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+;
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; 這些期望字串從哪來
+...
+
+; 全部由 L2 oracle 實測取得（`./bin/no ast <檔>`），**不是**手寫猜的。
+;
+; 本檔釘住什麼（s59：IN 上下文關鍵字）
+...
 
 ; helper：parse + dump（對齊 drv.cmd-ast 的管線）
 ...
@@ -738,6 +742,14 @@ test-expr-subj-infix = () {
     runner.is-true(got.eq-full(want), 'a + b: {} -> SurfaceMatch 主體 = InfixExpression{a, b}（非 a + (b: {})）')
 }
 
+; s118：括號主體 `(a + b): { … }` —— primary 括號分支建 K-GROUPED-EXPRESSION，
+;   明示 match 白名單缺它 ⇒ `:` 未消費 ⇒ 整檔 unsupported。
+test-expr-subj-grouped = () {
+    got = parse-dump('x = (a + b): {\n    ok -> it\n\n    -> 0\n}\n')
+    want = 'Program{}\n    LetStatement{name: x, value: SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            GroupedExpression\n                InfixExpression{op: +}\n                    Identifier{name: a}\n                    Identifier{name: b}\n            MatchArm{wildcard: true, dotVal: true, valueCtx: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    ExpressionStatement{it}\n                        Identifier{name: it}\n            MatchArm{wildcard: true, valueCtx: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    ExpressionStatement{0}\n                        IntegerLiteral{value: 0, raw: 0}'
+    runner.is-true(got.eq-full(want), '(a + b): {} -> SurfaceMatch 主體 = GroupedExpression{InfixExpression{a, b}}')
+}
+
 ; s116：for 條件形的冒號是迴圈語法（Go CTX_FOR_COND），不得被明示 match 搶成裸 match。
 ;   ⚠️ 無 in-for-cond 守衛時，`for n: { }` 的條件 `n` 被搶成 1 臂裸 match、body 丟失。
 test-for-cond-not-match = () {
@@ -752,6 +764,7 @@ test-use-as-alias()
 test-use-bare-alias()
 test-use-bare-alias-std()
 test-expr-subj-infix()
+test-expr-subj-grouped()
 test-for-cond-not-match()
 
 runner.summary()

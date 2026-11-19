@@ -257,7 +257,9 @@ cg-runtime-struct-decls = (sfc []i64, sft []i64) (r str) {
     r = b.str()
 }
 
-; ── 向量 helper（M4-c 第六件；**刻意不照抄 Go 的 inline 展开**）──────────
+; 向量 helper（M4-c 第六件；**刻意不照抄 Go 的 inline 展开**）
+...
+
 ; Go 的 `vec.push` 在每个调用点 inline 展开（load %vec / 扩容 / store），
 ; 好处是零调用开销，代价是每个 push 站点几百行 IR。M4 阶段以**行为等价**
 ; 为验收（§5.6.3 第①层），故改为 4 个小 helper：IR 量级差一个数量级，
@@ -371,7 +373,9 @@ cg-runtime-vec-free = () (r str) {
     r = b.str()
 }
 
-; ── 切片 B 底座：str 元素向量助手（%vec = {i32 len, i32 cap, i64 data}，元素 %str-long 16B）──
+; 切片 B 底座：str 元素向量助手（%vec = {i32 len, i32 cap, i64 data}，元素 %str-long 16B）
+...
+
 ; ⚠️ 所有權（鏡像 Go vecDeepClone/vecDeepFree，適配 self-host 無 magic 頭的 rc_release）：
 ;   - 陣列緩衝用裸 @malloc/@free（與 i64 vec 一致，無 RC 頭）；
 ;   - 元素 str 用 @nolang_rc_alloc/@nolang_rc_release，push 時【clone】元素到新 rc 塊

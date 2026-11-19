@@ -39,7 +39,8 @@ conn-fd-at = (p pool.pool, idx i64) (v i64) {
     }
 }
 
-; ── 建構與邊界夾取 ────────────────────────────────────────
+; 建構與邊界夾取
+...
 
 t-create = () {
     p = pool.pool{}
@@ -85,7 +86,8 @@ t-create-fn = () {
     runner.eq(q.port, 39304, 'pool.with-size: port')
 }
 
-; ── get 的失敗臂 ─────────────────────────────────────────
+; get 的失敗臂
+...
 
 ; 127.0.0.1:1 必定 connection refused ⇒ get 回 nil 且池不增長
 t-get-fail = () {
@@ -104,7 +106,8 @@ t-get-fail = () {
     runner.eq(p.total-count(), 0, 'pool.get: 失敗時 total-count 仍 0')
 }
 
-; ── get 成功 / put 歸還 / close-all ──────────────────────
+; get 成功 / put 歸還 / close-all
+...
 
 t-get-put = () {
     lfd = listen-fd(39305)
@@ -157,7 +160,8 @@ t-get-put = () {
     net.close(lfd)
 }
 
-; ── close-conn：越界臂與實際移除 ─────────────────────────
+; close-conn：越界臂與實際移除
+...
 
 t-close-conn = () {
     lfd = listen-fd(39306)
@@ -194,7 +198,8 @@ t-close-conn = () {
     net.close(lfd)
 }
 
-; ── put 一個「不在池中」的 conn ⇒ 直接關閉 ────────────────
+; put 一個「不在池中」的 conn ⇒ 直接關閉
+...
 
 t-put-unknown = () {
     lfd = listen-fd(39307)
@@ -214,7 +219,8 @@ t-put-unknown = () {
     net.close(lfd)
 }
 
-; ── 滿池時不再新建 ───────────────────────────────────────
+; 滿池時不再新建
+...
 
 t-max-size-cap = () {
     lfd = listen-fd(39308)
@@ -243,7 +249,8 @@ t-max-size-cap = () {
     net.close(lfd)
 }
 
-; ── 執行 ──────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('pool.create', t-create)
 p2, f2 = runner.test('pool.init-clamp', t-init-clamp)

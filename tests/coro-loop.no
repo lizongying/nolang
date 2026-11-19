@@ -43,9 +43,9 @@ put1 = (ch chan[i64], n i64) {
 ; k: 轮数（本档传 4）
 ; 送回 0 + 1 + … + k-1
 sum-await = (ch chan[i64], k i64) {
-    total i64 = 0
-    i i64 = 0
-    for i < k {
+    total = 0
+    i = 0
+    (i < k) {
         one chan[i64] = with-cap(1)
         awy {
             co put1(one, i)
@@ -68,9 +68,9 @@ sum-await = (ch chan[i64], k i64) {
 ; k: 上界（本档传 4，累加 1..4）
 ; 送回 1 + … + k
 sum-yield = (ch chan[i64], k i64) {
-    total i64 = 0
-    i i64 = 1
-    for i <= k {
+    total = 0
+    i = 1
+    (i <= k) {
         async-yield()
         total = add(total, i)
         i = add(i, 1)
@@ -83,9 +83,9 @@ sum-yield = (ch chan[i64], k i64) {
 ; k: 轮数（本档传 3）
 ; 送回 每轮加 2 的和 = 6
 sum-mixed = (ch chan[i64], k i64) {
-    total i64 = 0
-    i i64 = 0
-    for i < k {
+    total = 0
+    i = 0
+    (i < k) {
         async-yield()
         one chan[i64] = with-cap(1)
         awy {
@@ -110,11 +110,11 @@ sum-mixed = (ch chan[i64], k i64) {
 ; inner: 内层轮数
 ; 送回 outer * inner
 sum-nested = (ch chan[i64], outer i64, inner i64) {
-    total i64 = 0
-    a i64 = 0
-    for a < outer {
+    total = 0
+    a = 0
+    (a < outer) {
         b i64 = 0
-        for b < inner {
+        (b < inner) {
             one chan[i64] = with-cap(1)
             awy {
                 co put1(one, 1)

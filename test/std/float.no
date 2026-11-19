@@ -84,7 +84,8 @@ t-is-inf = () {
     runner.is-false(e, 'NaN.is-inf == false')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('float.div', t-div)
 p2, f2 = runner.test('float.div by zero', t-div-by-zero)

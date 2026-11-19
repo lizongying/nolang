@@ -8,7 +8,8 @@
 
 # /test/runner
 
-; ── 助手 ──────────────────────────────────────
+; 助手
+...
 
 ; 字串相等斷言（走 eq-full，免手算位元組長度）
 se = (a str, b str, msg str) {
@@ -207,7 +208,8 @@ t-cmp = () {
     runner.lt(r, 0, 'nil < non-nil')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('uuid.new-v4', t-new-v4)
 p2, f2 = runner.test('uuid.to-str', t-to-str)

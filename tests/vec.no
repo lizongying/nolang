@@ -18,7 +18,9 @@ a = [1]
 ; a[10] = 3
 ; a.full(8)
 
-; ── slice .len = rejection ──
+; slice .len = rejection
+...
+
 ; []byte (and all []T) types reject direct .len = assignment.
 ; Use .truncate(n) instead (sets len = max(0, min(len, n))).
 b []byte = with-len(4)

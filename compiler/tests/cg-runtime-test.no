@@ -14,7 +14,8 @@
 # /compiler/src/cg-runtime
 # /compiler/src/cg-rc
 
-; ── 类型/声明 ────────────────────────────────────────────
+; 类型/声明
+...
 test-runtime-types = () {
     p = cg-runtime-prelude()
     runner.eq(p.contains('%nolang_hdr = type { i64, i64 }'), 1, 'hdr type present')
@@ -54,7 +55,8 @@ test-runtime-types = () {
     runner.eq(p.contains('@write'), 1, 'write decl present')
 }
 
-; ── RC helper IR 文本 ────────────────────────────────────
+; RC helper IR 文本
+...
 test-rc-ir = () {
     a = cg-rc-alloc()
     runner.eq(a.contains('@nolang_rc_alloc'), 1, 'alloc define')
@@ -70,7 +72,8 @@ test-rc-ir = () {
     runner.eq(cg-rc-hdr-magic(), 7957698232306827265, 'hdr magic')
 }
 
-; ── check-rc-balance：平衡通过 ────────────────────────────
+; check-rc-balance：平衡通过
+...
 test-balance-pass = () {
     vids []i64 = []
     ops []i64 = []
@@ -82,7 +85,8 @@ test-balance-pass = () {
     runner.eq(e.len-bytes(), 0, 'balanced passes')
 }
 
-; ── check-rc-balance：欠计数（release 多于 retain）⇒ 报错 ──
+; check-rc-balance：欠计数（release 多于 retain）⇒ 报错
+...
 test-balance-under = () {
     vids []i64 = []
     ops []i64 = []
@@ -93,7 +97,8 @@ test-balance-under = () {
     runner.eq(e.contains('under-count'), 1, 'under-count message')
 }
 
-; ── check-rc-balance：过计数是接受的泄漏，不报错 ──────────
+; check-rc-balance：过计数是接受的泄漏，不报错
+...
 test-balance-over-ok = () {
     vids []i64 = []
     ops []i64 = []
@@ -107,7 +112,9 @@ test-balance-over-ok = () {
     runner.eq(e.len-bytes(), 0, 'over-count allowed')
 }
 
-; ── prelude-full：完整 prelude 的组成与顺序 ────────────────
+; prelude-full：完整 prelude 的组成与顺序
+...
+
 ; @str_concat 调 @nolang_rc_alloc ⇒ 顺序必须是 RC 在前。
 test-prelude-full = () {
     p = cg-runtime-prelude-full()
@@ -130,7 +137,9 @@ test-prelude-full = () {
     runner.eq(p.contains('define i1 @__nolang_vec_eq_i64(%vec %a, %vec %b)'), 1, 'vec_eq present')
 }
 
-; ── str 相等 helper IR 文本（s42；B28 後為 u32 header）────
+; str 相等 helper IR 文本（s42；B28 後為 u32 header）
+...
+
 ; 逐字对照 Go @str_eq：len 欄先 extractvalue 到 i32、zext 回 i64 → icmp → memcmp → phi。
 ; 2 空格缩进。
 test-str-eq-helper = () {
@@ -153,7 +162,9 @@ test-str-eq-helper = () {
     runner.eq(e.contains('%la = extractvalue %str-long %a, 0'), 0, 'no legacy i64 len extract')
 }
 
-; ── B28：%str-long 16B 佈局氣闩（對齊 Go emitPrelude）────────
+; B28：%str-long 16B 佈局氣闩（對齊 Go emitPrelude）
+...
+
 ; 目標：型別宣告、@str_eq 的 zext、@str_concat 的 trunc + i32 聚合常數，
 ;       以及「24B 殘片完全消失」四件事一次釘住。%option slot / %vec 不得被改動。
 test-str16-layout = () {
@@ -199,7 +210,8 @@ test-vec-eq-helper = () {
     runner.eq(e.contains('icmp %vec'), 0, 'no icmp on vec')
 }
 
-; ── 向量 helper IR 文本 ───────────────────────────────────
+; 向量 helper IR 文本
+...
 test-vec-helpers = () {
     p = cg-runtime-prelude()
     runner.eq(p.contains('%vec = type { i32, i32, i64 }'), 1, 'vec type')
@@ -227,7 +239,8 @@ test-vec-helpers = () {
     runner.eq(f.contains('define void @vec_free(%vec %v)'), 1, 'full has vec_free')
 }
 
-; ── 切片 B 底座：str-vec 助手 IR 文本（元素 %str-long 16B，所有权 clone/release）──
+; 切片 B 底座：str-vec 助手 IR 文本（元素 %str-long 16B，所有权 clone/release）
+...
 test-strvec-helpers = () {
 
     ; push：元素 clone 成独立 rc 塊（字面量无 rc 頭亦可持有）；stride 16；扩容只 free 舊陣列緩衝
@@ -260,7 +273,8 @@ test-strvec-helpers = () {
     runner.eq(pf.contains('define void @vec_free_str'), 1, 'full has vec_free_str')
 }
 
-; ── 切片 B 第三层：with-cap 容量预留助手（cap 有真实语义，不可当空 vec）──
+; 切片 B 第三层：with-cap 容量预留助手（cap 有真实语义，不可当空 vec）
+...
 test-withcap-helpers = () {
     ci = cg-runtime-vec-new-cap-i64()
     runner.eq(ci.contains('define %vec @vec_new_cap_i64(i64 %cap)'), 1, 'cap_i64 sig')

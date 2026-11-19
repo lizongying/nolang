@@ -58,7 +58,7 @@ after-yield-into = (ch chan[i64], n i64) {
 ; n: 输入值（本档传 7）
 ; 送回 n + 2（= x + y，y 来自子任务）
 keep-local-into = (ch chan[i64], n i64) {
-    x i64 = n
+    x = n
     inner chan[i64] = with-cap(1)
     awy {
         co ident-into(inner, 2)

@@ -33,7 +33,9 @@ dbl-into = (out chan[i64], n i64) {
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
-            ok -> out <- it
+            ok -> {
+                out <- it
+            }
 
             ->
         }

@@ -34,7 +34,8 @@ t-encode-decode = () {
     runner.is-true(ok, 'roundtrip decode matches original')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('pem.encode', t-encode)
 p2, f2 = runner.test('pem.encode/decode roundtrip', t-encode-decode)

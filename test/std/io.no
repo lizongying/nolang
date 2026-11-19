@@ -22,7 +22,8 @@ se = (a str, b str, msg str) {
     runner.is-true(a.eq-full(b), msg)
 }
 
-; ── 標準輸出 ──────────────────────────────────
+; 標準輸出
+...
 
 ; 驗證 io.out：寫字串到 stdout，返回寫入位元組數應大於 0
 t-out = () {
@@ -36,7 +37,8 @@ t-outln = () {
     runner.gt(n, 0, 'outln returns > 0')
 }
 
-; ── 標準錯誤 ──────────────────────────────────
+; 標準錯誤
+...
 
 ; 驗證 io.err：寫字串到 stderr，返回位元組數非負即算成功
 t-err = () {
@@ -51,7 +53,8 @@ t-errln = () {
     runner.gt(n, 0, 'errln returns > 0')
 }
 
-; ── writer ────────────────────────────────────
+; writer
+...
 
 ; 驗證 writer.from-stdout 建構的寫入器：write-str 輸出 hello 後返回位元組數應大於 0
 t-writer-stdout = () {
@@ -74,7 +77,8 @@ t-writer-write-line = () {
     runner.gt(n, 0, 'writer.write-line returns > 0')
 }
 
-; ── writer.stderr ─────────────────────────────
+; writer.stderr
+...
 
 ; 驗證 writer.from-stderr 建構的寫入器：write-str 輸出到 stderr 後返回位元組數應大於 0
 t-writer-stderr = () {
@@ -83,7 +87,8 @@ t-writer-stderr = () {
     runner.gt(n, 0, 'writer.stderr write-str returns > 0')
 }
 
-; ── reader 建構 ───────────────────────────────
+; reader 建構
+...
 
 ; 驗證 reader.from-stdin：只檢查建構出的讀取器 fd 為 0（STDIN），實際讀取不在測試範圍
 t-reader-stdin = () {
@@ -93,7 +98,8 @@ t-reader-stdin = () {
     runner.eq(r.fd, 0, 'reader.from-stdin fd == 0')
 }
 
-; ── 檔案 reader ───────────────────────────────
+; 檔案 reader
+...
 
 ; 驗證 reader.from-fd / read / read-byte / read-line / read-all：
 ; 對同一個檔案依序做「讀 2 位元組 → 讀 1 位元組 → 讀一行 → 到 EOF」，
@@ -177,7 +183,8 @@ c', 'read-all bytes')
     runner.eq(r3.read-all(buf, 2), 0, 'invalid fd read-all returns 0')
 }
 
-; ── 檔案 writer ───────────────────────────────
+; 檔案 writer
+...
 
 ; 驗證 writer.from-fd / write：寫入檔案後可原樣讀回；無效 fd 回 0
 t-writer-file = () {
@@ -195,7 +202,8 @@ t-writer-file = () {
     fs.remove(IO-W)
 }
 
-; ── 標準輸入 read-line ────────────────────────
+; 標準輸入 read-line
+...
 
 ; 驗證 io.read-line：在子進程裡關掉 fd 0 後呼叫，應立刻回 nil（不阻塞、不吃測器輸入）
 t-read-line-stdin = () {
@@ -218,7 +226,8 @@ t-read-line-stdin = () {
     runner.eq(process.process-waitpid(pid, 0), 1, 'io.read-line on closed stdin returns nil')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('io.out', t-out)
 p2, f2 = runner.test('io.outln', t-outln)

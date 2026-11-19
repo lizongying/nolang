@@ -53,7 +53,8 @@
 
 # /test/runner
 
-; ── helpers ──────────────────────────────────────────────────────
+; helpers
+...
 
 ; 取 str 的位元組（str.byte(i) 回 ?byte）
 sb = (s str, i i64) (v i64) {
@@ -171,7 +172,8 @@ readn = (f i64, want i64) (s str) {
     }
 }
 
-; ── 常數 / event 結構體 ──────────────────────────────────────────
+; 常數 / event 結構體
+...
 
 t-const = () {
     runner.eq(sse.SSE-BUF-SIZE, 8192, 'SSE-BUF-SIZE = 8192')
@@ -191,7 +193,8 @@ t-const = () {
     runner.eq(e.retry, 1500, 'event.retry 落地')
 }
 
-; ── next-event：純緩衝區解析（不碰網路）───────────────────────────
+; next-event：純緩衝區解析（不碰網路）
+...
 
 t-parse = () {
     nl = '\n'
@@ -290,7 +293,8 @@ t-parse = () {
     seq(eerr(rh), 'event too large', 'next-event: 緩衝區滿的訊息')
 }
 
-; ── next-event：真 socket IO + 跨封包拼接 + EOF ─────────────────
+; next-event：真 socket IO + 跨封包拼接 + EOF
+...
 
 t-io = () {
     P = 39303
@@ -344,7 +348,8 @@ t-io = () {
     fs.close(lf-fd)
 }
 
-; ── client.close / is-connected / reconnect（失敗臂）──────────────
+; client.close / is-connected / reconnect（失敗臂）
+...
 
 t-client-misc = () {
     P = 39304
@@ -381,7 +386,8 @@ t-client-misc = () {
     fs.close(lf-fd)
 }
 
-; ── sse-connect 的錯誤臂 ─────────────────────────────────────────
+; sse-connect 的錯誤臂
+...
 
 t-connect-err = () {
     c1 = sse.sse-connect('ftp://127.0.0.1/x')
@@ -409,7 +415,8 @@ t-connect-err = () {
     seq(cerr(c6), 'TLS connection failed', 'sse-connect: TLS 失敗訊息')
 }
 
-; ── server.listen / listen-on / close ────────────────────────────
+; server.listen / listen-on / close
+...
 
 t-server = () {
     P = 39301
@@ -451,7 +458,8 @@ t-server = () {
     runner.eq(s5b.fd, -1, 'server.close: 第二個 server 也歸 -1')
 }
 
-; ── server.accept + server-conn 全鏈路 ───────────────────────────
+; server.accept + server-conn 全鏈路
+...
 
 t-accept = () {
     P = 39301
@@ -538,7 +546,8 @@ t-accept = () {
     runner.eq(scv(srv.accept()), 0, 'accept: server 關閉後 ⇒ nil')
 }
 
-; ── handshake 的失敗臂 ───────────────────────────────────────────
+; handshake 的失敗臂
+...
 
 t-handshake-fail = () {
     P = 39302
@@ -605,7 +614,8 @@ t-handshake-fail = () {
     srv.close()
 }
 
-; ── 執行 ─────────────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('sse.const', t-const)
 p2, f2 = runner.test('sse.parse', t-parse)

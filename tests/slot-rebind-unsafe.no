@@ -10,11 +10,14 @@
 ; out: 結果通道（呼叫方建，容量 1；close 由本函式做）
 ; n: 輸入值，本測試傳 7
 double-into = (out chan[i64], n i64) {
+
     #{overflow=wrap}
     {
         r-opt = n * 2
         r-opt: {
-            ok -> out <- it
+            ok -> {
+                out <- it
+            }
 
             ->
         }

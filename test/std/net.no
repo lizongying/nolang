@@ -75,7 +75,8 @@ chk-plain = (d ?str) (r i64) {
     }
 }
 
-; ── TCP：listen / dial / accept / send / recv ──────────────
+; TCP：listen / dial / accept / send / recv
+...
 
 ; 完整一輪：綁定 → 撥號 → 送 → accept → 收 → 各自關閉
 t-tcp-basic = () {
@@ -246,7 +247,8 @@ t-accept-nb = () {
     }
 }
 
-; ── 逾時族 ────────────────────────────────────────────────
+; 逾時族
+...
 
 ; set-recv-timeout / set-timeout / recv-with-timeout 都要能設上並在無資料時回 0
 t-timeout = () {
@@ -331,7 +333,8 @@ t-dial-timeout = () {
     runner.eq(cv, -1, 'dial-timeout: 無人監聽回 nil')
 }
 
-; ── UDP ──────────────────────────────────────────────────
+; UDP
+...
 
 ; UDP 沒有 bind API，所以只能測「送出成功」與「無資料時逾時回 0」兩條路徑
 t-udp = () {
@@ -386,7 +389,8 @@ t-udp = () {
     runner.eq(net.close(fd), 0, 'net close: 關閉 UDP fd 回 0')
 }
 
-; ── 加密通道（AES-256-GCM）────────────────────────────────
+; 加密通道（AES-256-GCM）
+...
 
 ; 同一把 key 的兩端能雙向傳明文；這條同時鎖住 2026-11-11 修的 to-bytes-str 缺陷
 t-enc = () {
@@ -494,7 +498,8 @@ t-gen-iv = () {
     runner.eq(z0, 0, 'enc-conn.gen-iv: seq 高位在 iv[0]，小 seq 時為 0')
 }
 
-; ── 裸 socket 函式（不經 conn/listener 包裝）────────────────
+; 裸 socket 函式（不經 conn/listener 包裝）
+...
 
 ; net-listen / net-dial / net-accept / net-send / net-recv / net-accept-nb / close
 t-raw-sock = () {
@@ -559,7 +564,8 @@ t-ctors = () {
     uc.close()
 }
 
-; ── ICMP ──────────────────────────────────────────────────
+; ICMP
+...
 
 ; macOS 走非特權 SOCK_DGRAM；Linux 走 ping_group_range 授權的 SOCK_DGRAM
 ; ping socket。未授權的環境（沙箱 / ping_group_range 關閉）net-icmp-open 回 -1，
@@ -614,7 +620,8 @@ t-icmp = () {
     net.ping-count('127.0.0.1', 1)
 }
 
-; ── 系統表（沙箱內可能為空，這裡只釘住「可呼叫且回傳陣列」）──
+; 系統表（沙箱內可能為空，這裡只釘住「可呼叫且回傳陣列」）
+...
 
 t-sysinfo = () {
     ifs = net.ifconfig-list()
@@ -627,7 +634,8 @@ t-sysinfo = () {
     runner.is-true(arps.len() >= 0, 'arp-list: 可呼叫並回傳陣列')
 }
 
-; ── 純函式 ────────────────────────────────────────────────
+; 純函式
+...
 
 ; ICMP 16 位一補數校驗和的三個邊界
 t-checksum = () {
@@ -677,7 +685,8 @@ t-split-ws = () {
     runner.eq(w.len(), 0, 'split-ws: 全空白 ⇒ 0 欄')
 }
 
-; ── 執行 ──────────────────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('net.tcp-basic', t-tcp-basic)
 p2, f2 = runner.test('net.tcp-recv', t-tcp-recv)

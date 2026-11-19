@@ -1,21 +1,3 @@
-; ast-test.no — compiler/src/ast.no 的單元測試
-;
-; 執行： ./bin/no run compiler/tests/ast-test.no
-;
-; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
-;    exit(1)，否則差分 harness 會把失敗讀成通過。
-;
-; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
-;
-; ── 這些期望字串從哪來 ────────────────────────────────────────────
-; 全部由 L2 oracle 實測取得，**不是**手寫猜的。重跑方式：
-;     printf '42\n' > /tmp/t1.no && ./bin/no ast /tmp/t1.no
-; 得到：
-;     Program{}
-;         ExpressionStatement{42}
-;             IntegerLiteral{value: 42, raw: 42}
-;
-; ── 這支測試釘住什麼 ──────────────────────────────────────────────
 ; ast.no 是「解譯 asp.no 的指令帶」的解釋器。沒有這支測試時，它只能被
 ; 編譯器檢查型別，**無法**證明解譯語意正確。這裡手工組出 arena，
 ; 逐位元組比對 dump 結果，於是：
@@ -31,6 +13,28 @@
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/util/sb.sb
+
+; ast-test.no — compiler/src/ast.no 的單元測試
+;
+; 執行： ./bin/no run compiler/tests/ast-test.no
+;
+; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
+;    exit(1)，否則差分 harness 會把失敗讀成通過。
+;
+; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串。
+;
+; 這些期望字串從哪來
+...
+
+; 全部由 L2 oracle 實測取得，**不是**手寫猜的。重跑方式：
+;     printf '42\n' > /tmp/t1.no && ./bin/no ast /tmp/t1.no
+; 得到：
+;     Program{}
+;         ExpressionStatement{42}
+;             IntegerLiteral{value: 42, raw: 42}
+;
+; 這支測試釘住什麼
+...
 
 ; 手工組裝 arena
 ...

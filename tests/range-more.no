@@ -4,7 +4,8 @@
 ; 以模組級片段串接並加 rt- 前綴。保護/特殊件保留獨立：
 ; range-inline(checker_on_sugar_test)、parse-min(plan)、min-repro(含模組級 struct 型別)。
 ;
-; ── from tests/range-open.no ──
+; from tests/range-open.no
+...
 ro-run = () {
 
     ; Regression: all 16 for-range interval notations must parse and lower.
@@ -214,7 +215,8 @@ ro-run = () {
     print('[3..1)', sum); 3+2   = 5  （')' 不含右端点 = 排除上界）
 }
 
-; ── from tests/split-loop.no ──
+; from tests/split-loop.no
+...
 sp-run = () {
 
     ; Test str.index-from in a loop
@@ -238,7 +240,8 @@ sp-run = () {
     print('done')
 }
 
-; ── from tests/for-recv.no ──
+; from tests/for-recv.no
+...
 fr-run = () {
 
     ; test-for-recv — 測試 for 循環中的 str 變數
@@ -250,7 +253,8 @@ fr-run = () {
     print('done')
 }
 
-; ── from tests/forloop.no ──
+; from tests/forloop.no
+...
 fl-run = () {
 
     ; test-forloop — 測試 for 循環變數
@@ -262,7 +266,8 @@ fl-run = () {
     print('end')
 }
 
-; ── from tests/forloop2.no ──
+; from tests/forloop2.no
+...
 fl2-run = () {
 
     ; test-forloop2 — 測試 for 循環變數 (顯式型別)
@@ -274,7 +279,8 @@ fl2-run = () {
     print('end')
 }
 
-; ── from tests/forloop3.no ──
+; from tests/forloop3.no
+...
 fl3-run = () {
 
     ; test-forloop3 — 測試 for 循環變數 (不同名稱)
@@ -286,7 +292,8 @@ fl3-run = () {
     print('end')
 }
 
-; ── from tests/repeat3.no ──
+; from tests/repeat3.no
+...
 r3-run = () {
 
     ; test-repeat3 — str.repeat 測試
@@ -298,7 +305,8 @@ r3-run = () {
     print('end')
 }
 
-; ── from tests/repeat4.no ──
+; from tests/repeat4.no
+...
 r4-run = () {
 
     ; test-repeat4 — str.repeat 簡化測試
@@ -310,7 +318,8 @@ r4-run = () {
     print('end')
 }
 
-; ── from tests/min-print.no ──
+; from tests/min-print.no
+...
 mp-run = () {
     print('start')
     print('done')
@@ -326,7 +335,9 @@ r3-run()
 r4-run()
 mp-run()
 
-; ── from tests/range-test.no ──
+; from tests/range-test.no
+...
+
 ; range-test.no — 測試 range-for 各種情況
 ; 包含遞增、遞減、常量、變量邊界
 

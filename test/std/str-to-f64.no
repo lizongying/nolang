@@ -25,7 +25,8 @@ fbits = (s str) (b u64) {
 passed = 0
 failed = 0
 
-; ── 基本解析 ──────────────────────────────────
+; 基本解析
+...
 
 ; 基本形式：整數 / 小數 / 正負號 / 指數 / 前後空白 / 極小數，比對 IEEE-754 位元模式
 t-basic = () {
@@ -42,7 +43,8 @@ t-basic = () {
     runner.is-true(fbits('3e-08') == 0x3e601b2b29a4692b, 'basic exp lead zero')
 }
 
-; ── 17 位精度（舊 f64 累積實作會差 1 ULP 的案例）──
+; 17 位精度（舊 f64 累積實作會差 1 ULP 的案例）
+...
 
 ; 17 位以上有效數字的捨入：含 ties-to-even 與 1e23 這類累積誤差經典案例
 t-precision = () {
@@ -57,7 +59,8 @@ t-precision = () {
     runner.is-true(fbits('2.2204460492503131e-16') == 0x3cb0000000000000, 'eps/2-ish')
 }
 
-; ── 次正規 ────────────────────────────────────
+; 次正規
+...
 
 ; 次正規數：最小次正規 5e-324、向下捨入與完全下溢至零的邊界
 t-subnormal = () {
@@ -68,7 +71,8 @@ t-subnormal = () {
     runner.is-true(fbits('1e-320') == 0x00000000000007e8, 'subnormal 1e-320')
 }
 
-; ── 上下溢 / INF ──────────────────────────────
+; 上下溢 / INF
+...
 
 ; 上溢 / 飽和：超過 DBL-MAX 得 ±inf，最大有限值仍可精確解析
 t-inf = () {
@@ -79,7 +83,8 @@ t-inf = () {
     runner.is-true(fbits('1e308') == 0x7fe1ccf385ebc8a0, 'finite near max')
 }
 
-; ── 零符號（位元模式直接驗證 -0.0）───────────
+; 零符號（位元模式直接驗證 -0.0）
+...
 
 ; 零的符號位：'-0.0' 與 '-0e5' 保留符號位，'0' / '+0.0' 不得有符號位
 t-zero-sign = () {
@@ -89,7 +94,8 @@ t-zero-sign = () {
     runner.is-true(fbits('-0e5') == 0x8000000000000000, '-0e5 sign bit')
 }
 
-; ── to-str 往返（shortest round-trip）─────────
+; to-str 往返（shortest round-trip）
+...
 
 ; to-str / to-f64 往返：任意 f64 格式化後再解析應得完全相同的位元模式
 t-roundtrip = () {
@@ -112,7 +118,8 @@ t-roundtrip = () {
     runner.is-true(fbits(t.to-str()) == t.to-bits(), 'roundtrip small frac')
 }
 
-; ── option 語義 ───────────────────────────────
+; option 語義
+...
 
 ; option 語義：空字串得 nil、無法解析得 err、合法輸入得 ok
 t-option = () {
@@ -123,7 +130,8 @@ t-option = () {
     runner.is-true(fbits('1.0') == 0x3ff0000000000000, 'valid -> ok')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('str.to-f64 basic', t-basic)
 p2, f2 = runner.test('str.to-f64 precision', t-precision)

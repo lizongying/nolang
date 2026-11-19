@@ -7,7 +7,8 @@
 
 TMP-FILE = '/tmp/nolang_bufio_test.txt'
 
-; ── reader.init ──────────────────────────────
+; reader.init
+...
 
 ; 讀取器初始化：open-read 取得有效 fd 後，pos / avail 應歸零（尚未載入任何資料）
 t-reader-init = () {
@@ -45,7 +46,8 @@ t-reader-init = () {
     fs.remove(TMP-FILE)
 }
 
-; ── reader.fill + read-byte ──────────────────
+; reader.fill + read-byte
+...
 
 ; 逐位元組讀取：先 fill 載入緩衝，再依序取 'X'(88)、'Y'(89)，兩次都應成功
 t-reader-read-byte = () {
@@ -100,7 +102,8 @@ t-reader-read-byte = () {
     fs.remove(TMP-FILE)
 }
 
-; ── reader.read-line ─────────────────
+; reader.read-line
+...
 
 ; 按行讀取：'Hello\nWorld\n' 應依序得到兩行，讀到 EOF 時回傳 nil
 t-reader-read-line = () {
@@ -162,7 +165,8 @@ t-reader-read-line = () {
     fs.remove(TMP-FILE)
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('bufio.reader-init', t-reader-init)
 p2, f2 = runner.test('bufio.reader-read-byte', t-reader-read-byte)

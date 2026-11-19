@@ -51,7 +51,9 @@ pool {
     nodes []node
 }
 
-; ── 1) ?node -> ?i64：ok 路径 ────────────────────────────────────────
+; 1) ?node -> ?i64：ok 路径
+...
+
 ; 链根 `p.nodes[0]` 是 `?node`，结果槽是 `?i64`。
 pick = (p pool) (out ?i64) {
     out ?= p.nodes[0].kind
@@ -77,7 +79,9 @@ t-ok = () {
     ck('chain-ok', read-i64(pick(p)) == 7)
 }
 
-; ── 2) ?node -> ?i64：err 路径 ──────────────────────────────────────
+; 2) ?node -> ?i64：err 路径
+...
+
 ; 空容器上的索引越界是 **err**（不是 nil），err 变体要跨型别搬过去：
 ; seed 只带 tag + 装箱的 err，不带 ok 载荷。
 ; 顺带钉住「不准静默变成 ok」——旧复制越界时会读到相邻栈内容。
@@ -86,7 +90,9 @@ t-oob = () {
     ck('chain-err', read-i64(pick(empty)) == -2000)
 }
 
-; ── 3) err 的消息文本要活下来（箱体是**克隆**而不是共享）──────────────
+; 3) err 的消息文本要活下来（箱体是**克隆**而不是共享）
+...
+
 ; 目标载荷 `?str`：与 `?node` 不同宽，同样走跨载荷传播；err 箱里拥有 msg
 ; 缓冲，若两侧共享同一箱，源 option 的 drop 会把 msg 一起释放掉。
 pick-text = (p pool) (out ?str) {
@@ -109,7 +115,9 @@ t-err-msg = () {
     ck('err-msg-survives', err-msg-len(m) > 0)
 }
 
-; ── 4) 非链式跨载荷 seed（std 里 `size ?= fstat-size(.fd)` 的形状）────
+; 4) 非链式跨载荷 seed（std 里 `size ?= fstat-size(.fd)` 的形状）
+...
+
 ; RHS 是裸 option：nil/err 臂里才做传播，ok 路径完全由用户代码写。
 probe = (o ?i64) (out ?str) {
     out = 'start'
@@ -145,7 +153,9 @@ t-non-chain = () {
     ck('non-chain-nil', str-of(b) == '<nil>')
 }
 
-; ── 5) 同载荷对照：跨载荷只有 tag/err 可搬，但同载荷必须是**整值**传播 ──
+; 5) 同载荷对照：跨载荷只有 tag/err 可搬，但同载荷必须是**整值**传播
+...
+
 ; 若把「只搬 tag + err」错误地套到同载荷上，这里会退化成空消息。
 mk-err = (k i64) (out ?str) {
     out = err('boom')

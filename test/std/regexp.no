@@ -12,7 +12,8 @@
 
 # /test/runner
 
-; ── 基本匹配 ──────────────────────────────────
+; 基本匹配
+...
 
 ; 驗證 regexp-match 對字面子串在開頭與中段皆可匹配、無匹配時回傳 false
 t-match-literal = () {
@@ -33,7 +34,8 @@ t-find-literal = () {
     runner.eq(result2.len(), 0, 'find not found len == 0')
 }
 
-; ── 量詞 ──────────────────────────────────────
+; 量詞
+...
 
 ; 驗證量詞 * 匹配零次或多次：ab*c 同時匹配 ac 與 abc
 t-star = () {
@@ -61,7 +63,8 @@ t-question = () {
     runner.is-false(matched3, 'question: ab?c not match abbc')
 }
 
-; ── 任意字元 ──────────────────────────────────
+; 任意字元
+...
 
 ; 驗證句點 . 匹配任意單一字元，字元數不符的目標則不匹配
 t-dot = () {
@@ -73,7 +76,8 @@ t-dot = () {
     runner.is-false(matched3, 'dot: h.llo not match hxo')
 }
 
-; ── 字元類別 ──────────────────────────────────
+; 字元類別
+...
 
 ; 驗證字元類別匹配集合內任一字元，含列舉 [abc] 與範圍 [a-z]
 t-char-class = () {
@@ -114,7 +118,8 @@ t-word-class = () {
     runner.is-false(matched2, 'word: \\w+ not match spaces')
 }
 
-; ── 錨點 ──────────────────────────────────────
+; 錨點
+...
 
 ; 驗證起首錨點 ^ 僅在目標開頭匹配，出現在中段或尾部時不匹配
 t-start-anchor = () {
@@ -132,7 +137,8 @@ t-end-anchor = () {
     runner.is-false(matched2, 'anchor: world$ not match at start')
 }
 
-; ── 便捷函數 find ─────────────────────────────
+; 便捷函數 find
+...
 
 ; 驗證 find 搭配類別 [0-9]+ 抽出首段連續數字子串
 t-find-digits = () {
@@ -147,7 +153,8 @@ t-find-not-found = () {
     runner.eq(result.len(), 0, 'find not found len == 0')
 }
 
-; ── 內部編譯管線（逐層直調） ─────────────────
+; 內部編譯管線（逐層直調）
+...
 ;
 ; 下面幾組直接驅動 regexp 的編譯流水線：emit → class bitmap → parse-* →
 ; emit-quantized → compile → match-at。目的不只是點亮符號，而是釘住每一層的
@@ -640,7 +647,8 @@ t-top-funcs-dotted = () {
     runner.is-true(re.matches('aab'), 'regexp.regexp-compile: 可直接匹配')
 }
 
-; ── 容量上限（修前為靜默截斷，見 README §5.1n） ───
+; 容量上限（修前為靜默截斷，見 README §5.1n）
+...
 
 ; 類別 bitmap 容量：3 個量詞偵測類 + N 個 [...] 必須 <= RE-CLS-MAX(32)
 t-capacity-class = () {
@@ -704,7 +712,8 @@ t-capacity-op = () {
     runner.is-false(r-over.matches(s-over), '容量: 溢出後不匹配且有旗標可判')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('regexp.match-literal', t-match-literal)
 p2, f2 = runner.test('regexp.find-literal', t-find-literal)

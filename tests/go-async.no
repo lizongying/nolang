@@ -80,7 +80,9 @@ pair-into = (out chan[i64], n i64) {
         #{overflow=wrap}
         r-opt3 = n + cv
         r-opt3: {
-            ok -> out <- it
+            ok -> {
+                out <- it
+            }
 
             ->
         }

@@ -122,7 +122,8 @@ t-bool = () {
     runner.str-eq(b, 'false', 'fmt-bool false')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('fmt.fmt-parse-spec', t-parse-spec)
 p2, f2 = runner.test('fmt.fmt-apply-spec', t-apply-spec)

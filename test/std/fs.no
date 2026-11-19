@@ -44,7 +44,8 @@ FIFO2 = '/tmp/nolang_fs_test_dir/node1'
 S1 = '/tmp/nolang_fs_stdin_one.txt'
 S2 = '/tmp/nolang_fs_stdin_two.txt'
 
-; ── 檔案存在性檢查 ────────────────────────────
+; 檔案存在性檢查
+...
 
 ; is-file：目錄 /tmp 不是普通檔案，應回 false
 t-is-file = () {
@@ -62,7 +63,8 @@ t-is-dir = () {
     runner.is-false(yes2, 'is-dir nonexistent == false')
 }
 
-; ── open + write + read + close ──────────────
+; open + write + read + close
+...
 
 ; 寫入再讀回：open 寫入成功 → 檔案存在 → 讀回內容一致（結束清理臨時檔）
 t-open-write-read = () {
@@ -125,7 +127,8 @@ t-open-write-read = () {
     fs.remove(TMP-FILE)
 }
 
-; ── stat-size ────────────────────────────────
+; stat-size
+...
 
 ; stat-size：剛寫入 10 位元組的檔案應解出 ok(10)，非 nil / err
 t-stat-size = () {
@@ -163,7 +166,8 @@ t-stat-size = () {
     fs.remove(TMP-FILE)
 }
 
-; ── copy-file ────────────────────────────────
+; copy-file
+...
 
 ; copy-file：複製 7 位元組檔案後，目標應存在且大小為 7
 t-copy-file = () {
@@ -212,7 +216,8 @@ t-copy-file = () {
     fs.remove(TMP-FILE2)
 }
 
-; ── list-dir ────────────────────────────────
+; list-dir
+...
 
 ; list-dir：/tmp 應至少列出一個項目
 t-list-dir = () {
@@ -220,7 +225,8 @@ t-list-dir = () {
     runner.gt(entries.len(), 0, 'list-dir /tmp has entries')
 }
 
-; ── 擴充：目錄 / 連結 / fd / file 方法 ────────
+; 擴充：目錄 / 連結 / fd / file 方法
+...
 
 ; ?str 解包：非 ok 回哨兵
 ; o: 待解包的可選字串
@@ -549,7 +555,8 @@ t-special-files = () {
     fs.remove(FIFO)
 }
 
-; ── 標準輸入三兄弟（get-line / read-stdin / read-stdin-str）────
+; 標準輸入三兄弟（get-line / read-stdin / read-stdin-str）
+...
 ;
 ; 全部跑在 fork 出來的子進程裡，並先把 fd 0 換成內容已知的臨時檔（見檔頭說明）。
 ; 子進程只回傳一個整數碼：0 = 全部符合預期，其餘是失敗步驟號 —— 這樣即使斷言
@@ -700,7 +707,8 @@ t-stdin-nil = () {
     runner.eq(in-child(4), 0, 'read-stdin / read-stdin-str 在 fd 0 關閉時都回 nil')
 }
 
-; ── 執行 ──────────────────────────────────────
+; 執行
+...
 
 p1, f1 = runner.test('fs.is-file', t-is-file)
 p2, f2 = runner.test('fs.is-dir', t-is-dir)

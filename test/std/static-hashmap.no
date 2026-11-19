@@ -59,7 +59,8 @@ fnv1a = (s str) (h i64) {
     }
 }
 
-; ── 1. 常量本體 ──
+; 1. 常量本體
+...
 
 t-consts = () {
 
@@ -77,7 +78,8 @@ t-consts = () {
     runner.is-true(static-hashmap.HASHMAP-STR-I64-CAP > 192, '容量 256 > 建議上限 192')
 }
 
-; ── 2. 用已知答案驗 FNV 參數 ──
+; 2. 用已知答案驗 FNV 參數
+...
 
 t-fnv = () {
 
