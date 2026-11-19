@@ -1,6 +1,3 @@
-; ═══════════════════════════════════════════════════════════════════
-; h2m — AST → MIR 降级（对齐 src/mir/hir2mir.go）
-; ═══════════════════════════════════════════════════════════════════
 ;
 ; 目标（M4-e，s55 首件 / s56 第二件 / s57 第三件）：把 ps.no 产出的 AST arena 降级成 cg.no 消费的 MIR 指令流，
 ; 打通「源码 → IR」的第一条真实路径。此前 compiler/ 里每一段 IR 都来自手写的 op 数组
@@ -124,6 +121,9 @@
 # /compiler/src/mir
 # /compiler/src/cg
 # /compiler/src/util/sb.sb
+
+; h2m — AST → MIR 降级（对齐 src/mir/hir2mir.go）
+...
 
 ; ── 降级上下文（指令流 + 值 id arena + 变量绑定表 + 块游标 + 诚实计数器）──
 ; ⚠️ 块游标纪律（s57）：cg 主循环按 `blks[k] != cur` 发标签 ⇒ **每块必须是指令序中的连续段**。
@@ -5400,9 +5400,9 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
     }
 }
 
-; ═══════════════════════════════════════════════════════════════════
 ; M4-d（2026-11-12，§11 後 ⑧）：模块级降级入口——合成 @main
-; ═══════════════════════════════════════════════════════════════════
+...
+
 ; Go 後端把 `main` 保留為關鍵字（實測 `'main' is a reserved name ... [xgs17cqx]`），
 ;   entry 由**頂層陳述**自動合成。既有 h2m-lower-program 只認 FunctionDefinition /
 ;   StructDefinition，任何頂層陳述一律計 unsup ⇒ 無法直接給 drv.cmd-build 用。
@@ -5421,7 +5421,9 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
 ;    **立刻**加完 kids 才建立下一個節點，否則 kid 段會互相覆蓋（探針實釘）。
 ; ⚠️ 誠實門禁：頂層內建模組導入／`print` 等非簽名表呼叫、跨函式讀頂層 let
 ;    全局，仍由既有 h2m 路徑計 unsup，呼叫方以 agg.unsup > 0 直接失敗，不靜默產碼。
-; ═══ s102：字面量插值（`print('a={x}')`）═══════════════════════════════════
+; s102：字面量插值（`print('a={x}')`）
+...
+
 ; 权威侧的判定在 Go hir2mir.go formatSegmentsOf：字面量必须
 ;   ① parser.ParseFormatString 解析成功，**且** ② 至少有一个 Field，
 ; 才走「命名格式」降级；否则整串**原样输出**（连 {{ / }} 都不反转义——

@@ -28,9 +28,8 @@
 # /compiler/src/tok
 # /compiler/src/lx
 
-; ═══════════════════════════════════════════════
 ; 1. 空輸入：恰好一個 EOF
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 empty
 test-empty = () {
@@ -47,11 +46,10 @@ test-empty = () {
     runner.eq(t.cl, 1, 'EOF at col 1')
 }
 
-; ═══════════════════════════════════════════════
 ; 2. 別名偵測（本檔最重要的測試）
 ;    三個識別符的字面量必須互不相同。若 push 只存指標/reference，
 ;    三個元素都會讀到最後一次的 'ghi'。
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 no-alias
 test-no-alias = () {
@@ -86,9 +84,8 @@ test-no-alias = () {
     runner.eq(t2.cl, 9, 'ghi at col 9')
 }
 
-; ═══════════════════════════════════════════════
 ; 3. 型別序列：a = 1
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 assign
 test-assign = () {
@@ -128,9 +125,8 @@ test-assign = () {
     runner.eq(d.cl, 6, 'EOF at col 6')
 }
 
-; ═══════════════════════════════════════════════
 ; 4. 換行 token：'1 + 2\n'
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 newline
 test-newline = () {
@@ -175,9 +171,8 @@ test-newline = () {
     runner.eq(d.cl, 0, 'NEWLINE column is always 0')
 }
 
-; ═══════════════════════════════════════════════
 ; 5. char（雙引號）vs string（單引號）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 char-vs-string
 test-char-vs-string = () {
@@ -206,9 +201,8 @@ test-char-vs-string = () {
     runner.str-eq(s.raw, '\'x\'', 'string raw keeps its quotes')
 }
 
-; ═══════════════════════════════════════════════
 ; 6. 註釋：marker 欄位區分 `;` 與 `//`
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 comment-marker
 test-comment-marker = () {
@@ -235,12 +229,11 @@ test-comment-marker = () {
     runner.str-eq(c2.mk, '//', 'slash comment marker is //')
 }
 
-; ═══════════════════════════════════════════════
 ; 7. 科學計數 ILLEGAL 檢測（s82：鏡像 Go lexer.go:999-1008）
 ;    期望行形由 L3 oracle 實測釘死（/tmp/nolang-v413/bin/no vet /tmp/orb-p*.no）：
 ;      `x = 1e5` ⇒ 1:5 sci ErrMsg【一條】；`0x1e5` 合法（hex loop 吞 e）；
 ;      `1e`【不是】sci（e 後無指數位 ⇒ INT+IDENT）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 sci-notation
 test-sci-notation = () {
@@ -351,12 +344,11 @@ test-sci-notation = () {
     runner.str-eq(a7.emsg, '', 'bare ILLEGAL has no emsg')
 }
 
-; ═══════════════════════════════════════════════
 ; 8. `..` vs `...`（s101）
 ;    `..` = 範圍運算符（tok.ELLIPSIS，歷史命名）；`...` = 佔位陳述（tok.ELLIPSIS3）。
 ;    兩者必須是**不同** token：混用會讓 `[0...n)` 這種誤寫靜默成為合法範圍，
 ;    而 Go lexer.go:906 刻意把它收成單一 token 正是為了擋這條。
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 ellipsis-vs-ellipsis3
 test-ellipsis = () {
@@ -411,8 +403,6 @@ test-ellipsis = () {
     runner.eq(d5.typ, tok.ELLIPSIS3, '.... first is ELLIPSIS3')
     runner.eq(d6.typ, tok.DOT, '.... second is DOT')
 }
-
-; ═══════════════════════════════════════════════
 
 test-empty()
 test-no-alias()

@@ -346,9 +346,9 @@ drv.cmd-vet = () (code i64) {
     }
 }
 
-; ═══════════════════════════════════════════════════════════════════
 ; M4-d（2026-11-12，§11 後 ⑧）：build / run 接線
-; ═══════════════════════════════════════════════════════════════════
+...
+
 ; 鏈路：read-bytes → ast.make/ps.new/ps.parse → h2m-lower-module（合成 @main）
 ;       → cg-runtime-prelude-full() + body = 完整 .ll → link.compile（clang -x ir）
 ; ⚠️ 與 §5.7 M5 的界線：本件**不做** workspace / package / `#` 導入合併／target 解析／快取；
@@ -382,7 +382,6 @@ drv.build-ll = (src []byte) (r str) {
     r = b.str()
 }
 
-; ═══════════════════════════════════════════════════════════════════
 ; ⑭ 切片 2（2026-11-13）：`#` 模組導入解析——整包載入器（入口 → 依序模組清單）
 ;   路徑解析（④）：`# /X` 去前導 `/`；尾 `.sb` ⇒ `.no`；尾 `/` ⇒ `main.no`；否則補 `.no`。
 ;   ⚠️ 僅處理 compiler 單包；跨包 / workspace 合併留待 M5 後續（⑫）。
@@ -403,7 +402,7 @@ drv.build-ll = (src []byte) (r str) {
 ;      改為 pathchain（祖先鏈）參數，只在「重訪節點落在祖先鏈上」時才報真循環。
 ;   設計權衡（仍成立）：全程 str 串接累積（r / pathchain），不對 []str 下標；build-package 回傳單一
 ;     str，bp-walk 回傳單一 bpctx struct（欄位皆 str / bool）；membership 用 str.contains。
-; ═══════════════════════════════════════════════════════════════════
+...
 
 ; bp-walk 共享上下文（str 欄位，避免 []str 下標）：
 ;   r：依序模組路徑清單，`:`-分隔（首項前也有 `:`）；同時兼作「已處理」集合（diamond 去重）
@@ -530,7 +529,6 @@ drv.bp-resolve = (imp str) (file str) {
     file = file - '.no'
 }
 
-; ═══════════════════════════════════════════════════════════════════
 ; ⑭ 切片 3（2026-11-13）：全域簽名表 + 單 `agg` struct 註冊（⑤ B／C）
 ;   目標：整包所有模組的結構體定義登記進【同一份】agg（共享結構體名→sid 表），
 ;        每個頂層函式以 `mod.fn` 為 key 登記進【同一份】簽名表 sg；
@@ -553,7 +551,7 @@ drv.bp-resolve = (imp str) (file str) {
 ;      自舉 `ps.parse` 對此類定義的 signature 計數有 bug（c5 多算 1），致 h2m-func-sig 全判 bad=1 略過。
 ;      裸名模組（ps/ast/h2m/lx/…）不受影響，切片 3 驗收（ps.parse/ast.str-at）達標；要讓
 ;      `drv.dispatch`→`ps.parse` 這類跨模組點號呼叫通，須先修該 parser 計數 bug（切片 5 前置）。
-; ═══════════════════════════════════════════════════════════════════
+...
 
 ; 讀模組檔 → 原始位元組（option 錯誤靜默成空，由呼叫方判空）
 drv.read-mod = (f str) (src []byte) {
@@ -725,7 +723,6 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
     }
 }
 
-; ═══════════════════════════════════════════════════════════════════
 ; ⑭ 切片 4（2026-11-13）：整包降級——多模組 body 串接 + @<mod>.<fn> 命名（⑤ D／⑦）
 ;   目標：整包所有模組降成【同一份】.ll，函式以 @<mod.fn> 命名（入口 main 仍 @main），
 ;         body 串接，供 opt -passes=verify 與 clang 連結。
@@ -743,7 +740,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
 ;      故入口 main 若含跨模組呼叫會計 unsup（真 compiler/main.no 即如此）——切片 5 前置修 parser 後才通。
 ;   ⚠️ bin/no codegen 坑（同切片 2／3）：呼叫 drv.pkg-ll 的測試必須直接 import 全套傳遞依賴，
 ;      否則 drv.* 內部 h2m-*／ast.*／ps.* 呼叫 codegen 失敗（consumer reads value 0）。
-; ═══════════════════════════════════════════════════════════════════
+...
 
 ; 入口 .no 檔 → 整包完整 LLVM IR 模組文字（多模組 body 串接、函式 @<mod.fn>、入口 @main）。
 ;   path: 入口檔（相對 cwd = workspace 根）

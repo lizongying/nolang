@@ -17,9 +17,8 @@
 # /test/runner.summary
 # /compiler/src/tok
 
-; ═══════════════════════════════════════════════
 ; 編號（iota 順序，錯一位就會讓 L1 全線 DIFF）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 numbering
 test-numbering = () {
@@ -43,9 +42,8 @@ test-numbering = () {
     runner.eq(tok.TILDE, 91, 'TILDE = 91')
 }
 
-; ═══════════════════════════════════════════════
 ; 名字表：0..91 全部有名字（不得回 UNKNOWN）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 names-cover-all
 test-names-cover-all = () {
@@ -74,9 +72,8 @@ test-names-cover-all = () {
     runner.str-eq(tok.name(tok.TILDE), 'TILDE', 'name of TILDE')
 }
 
-; ═══════════════════════════════════════════════
 ; str-eq：位元組相等，且**前綴不得誤判**（少了長度比較就會錯）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 str-eq
 test-str-eq = () {
@@ -91,9 +88,8 @@ test-str-eq = () {
     runner.eq(tok.str-eq('中', '中中'), false, 'multibyte prefix')
 }
 
-; ═══════════════════════════════════════════════
 ; keyword：23 個關鍵字 + while 別名 FOR + 非關鍵字回 ILLEGAL
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 keyword
 test-keyword = () {
@@ -117,6 +113,7 @@ test-keyword = () {
     runner.eq(tok.keyword('ptr'), tok.PTR, 'kw ptr')
     runner.eq(tok.keyword('chan'), tok.CHAN, 'kw chan')
     runner.eq(tok.keyword('use'), tok.USE, 'kw use')
+
     ; run 關鍵字已移除（2026-11-17）：run 現在是普通識別符
     runner.eq(tok.keyword('run'), tok.ILLEGAL, 'run is no longer a keyword')
     runner.eq(tok.keyword('awy'), tok.AWY, 'kw awy')
@@ -132,8 +129,6 @@ test-keyword = () {
     ; 前綴陷阱：in 是關鍵字，int 不是
     runner.eq(tok.keyword('int'), tok.ILLEGAL, 'int is not in, prefix trap')
 }
-
-; ═══════════════════════════════════════════════
 
 test-numbering()
 test-names-cover-all()

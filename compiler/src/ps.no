@@ -1,6 +1,3 @@
-; ═════════════════════════════════════════════════════════════════
-; ps — Nolang 語法分析器（M2 的第一片）
-; ═════════════════════════════════════════════════════════════════
 ;
 ; 目標（M2，見 docs/design/nolang-selfhost.md §5.3）：把 token 串
 ; （lx.scan-all 的產物）解析成 ast 的 arena，使 `noc ast <file>` 的 dump
@@ -54,6 +51,9 @@
 # /compiler/src/tok
 # /compiler/src/ix
 
+; ps — Nolang 語法分析器（M2 的第一片）
+...
+
 ; ── 解析器狀態 ──
 ; ⚠️ 結構體名 psst（不是 ps）：模組短名是 ps（來自 `# /compiler/src/ps`），
 ;    若結構體也叫 ps 會和模組名撞名，導致 EmitLLVM: unknown callee ps.new。
@@ -66,6 +66,7 @@ psst {
     in-blk i64
     in-match i64
     val-ctx i64
+    in-for-cond i64
     fn str
     last-tp i64
     sig-n []str
@@ -157,6 +158,7 @@ new = (src []byte) (r psst) {
         in-blk: 0
         in-match: 0
         val-ctx: 0
+        in-for-cond: 0
         fn: ''
         last-tp: -1
         sig-n: with-cap(4)
@@ -2947,29 +2949,6 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             idx = sl
             handled = 1
         }
-        match-subj = 0
-        ast.kind-at(t, idx) == asp.K-IDENTIFIER -> match-subj = 1
-        ast.kind-at(t, idx) == asp.K-INDEX-EXPRESSION -> match-subj = 1
-        ast.kind-at(t, idx) == asp.K-DOT-EXPRESSION -> match-subj = 1
-        ast.kind-at(t, idx) == asp.K-CALL-EXPRESSION -> match-subj = 1
-        nt == tok.COLON && ps-peek-at(p, 1) == tok.LBRACE && match-subj == 1 -> {
-
-            ; 明示 match：`subj: { pat -> body … }` ⇒ desugar 成 if/else 鏈（見 ps-parse-match）。
-            ; s66c：主體放寬到 IDENT / IndexExpression / DotExpression，並把主體【節點】傳入
-            ;   ps-parse-match（subj 字串仍供降糖路用），覆蓋率 17%→68%（見 §5.3.4）。
-            ; s115：再放寬到 CallExpression——`f(x): { ok -> it }`（.option 呼叫結果直接解包）
-            ;   是 std 里 63 處 `): {` 的值位 match 主體；Go 對任意 leftExp 都試
-            ;   parseMatchExprFrom，故 CALL 主體本就合法。
-            ;   ⚠️ 尚未覆盖：InfixExpression 主體（`a + b: { }`）——它在中綴迴圈後才成形，
-            ;     需把本檢查移到中綴迴圈之後（並為 for-cond 加 ctx 守衛），留待下一步。
-            subj-name = ast.node-string(t, idx)
-            ps-bump(p); 消費 COLON
-            ps-bump(p); 消費 LBRACE
-            mm = ps-parse-match(t, p, subj-name, idx)
-            ps-expect(p, tok.RBRACE)
-            idx = mm
-            handled = 1
-        }
         handled == 0 -> pgo = false
     }
 
@@ -2997,6 +2976,29 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
             ; 右運算元缺失：Go 報錯後回左值；這裡保留左值並終止迴圈
             right <= 0 -> go = false
         }
+    }
+
+    ; ---------- 明示 match：`subj: { pat -> body … }` ----------
+    ; ⚙️ s116：本檢查從【後綴迴圈】移到【中綴迴圈之後】——InfixExpression 主體（`a + b: { }）
+    ;   要等中綴成形才算 leftExp；留在後綴迴圈里，`:` 會被右運算元那層（`b`）搶走，
+    ;   建成 `a + (b: { })` ⇒ `ok -> it` 的 `it` 變成 b 而非「a+b 的匹配結果」（實測 d1）。
+    ;   Go 的對應檢查在主迴圈每次迭代末（expr.go:134-190），故 `:` 總是綁在整個 leftExp 上。
+    ;   守衛（對齊 Go）：prec <= 0（precedence==LOWEST）且 p.in-for-cond == 0
+    ;   （!CTX_FOR_COND——`for cond: { }`／`i <- src: { }` 的 `:` 是迴圈語法，不是 match；
+    ;   無此守衛則 for 條件形會被搶成裸 match，body 丢失，實測 d3/d4）。
+    match-subj = 0
+    ast.kind-at(t, idx) == asp.K-IDENTIFIER -> match-subj = 1
+    ast.kind-at(t, idx) == asp.K-INDEX-EXPRESSION -> match-subj = 1
+    ast.kind-at(t, idx) == asp.K-DOT-EXPRESSION -> match-subj = 1
+    ast.kind-at(t, idx) == asp.K-CALL-EXPRESSION -> match-subj = 1
+    ast.kind-at(t, idx) == asp.K-INFIX-EXPRESSION -> match-subj = 1
+    ps-peek(p) == tok.COLON && ps-peek-at(p, 1) == tok.LBRACE && match-subj == 1 && prec <= 0 && p.in-for-cond == 0 -> {
+        subj-name = ast.node-string(t, idx)
+        ps-bump(p); 消費 COLON
+        ps-bump(p); 消費 LBRACE
+        mm = ps-parse-match(t, p, subj-name, idx)
+        ps-expect(p, tok.RBRACE)
+        idx = mm
     }
 
     ; 三元運算式 `? :`（CONDITIONAL 優先級=2；對應 Go parseExpression 尾的 QUESTION 檢查，expr.go:599）。
@@ -5051,7 +5053,6 @@ ps-idx-elem-of = (ty str) (r str) {
     }
 }
 
-; ═════════════════════════════════════════════════════════════════════
 ; 元素型別串形狀判定 / 切分
 ;
 ; ⚠️ 為什麼這些都要獨立成【以 str 為參數】的函式：
@@ -5065,7 +5066,7 @@ ps-idx-elem-of = (ty str) (r str) {
 ;       實測 `'[2]i64'.starts-with('?')` 竟回 TRUE，不可用。
 ;   但【參數】上的 .byte() 實測可靠（ps-idx-elem-of 的 ty.byte(0) 正確），
 ;   故把形狀判定與切分下推到這些小函式，由它們對參數取 .byte()。
-; ═════════════════════════════════════════════════════════════════════
+...
 
 ; 元素型別串形狀。0=扁平名稱 / 1=`?X` / 2=`[]X` / 3=`[N]X`
 ; e: 錯誤訊息
@@ -5738,7 +5739,12 @@ ps-for-source = (t ast, p psst) (src i64, src-expr i64) {
             ast.kid-add(t, src, st)
             ast.kid-add(t, src, en)
         }
-        kind == 2 -> src-expr = ps-parse-expr(t, p)
+        kind == 2 -> {
+            fc = p.in-for-cond
+            p.in-for-cond = 1
+            src-expr = ps-parse-expr(t, p)
+            p.in-for-cond = fc
+        }
         kind == 0 -> {
             ps-bump(p); 消費 `[`
             left-inc = 'true'
@@ -5790,7 +5796,12 @@ ps-for-source = (t ast, p psst) (src i64, src-expr i64) {
             ast.set-slot(t, src-expr, 0, ast.put-str(t, src-tk.lit))
             ps-bump(p); 消費 ident
         }
-        bare-ident-colon == 0 -> src-expr = ps-parse-expr(t, p)
+        bare-ident-colon == 0 -> {
+            fc = p.in-for-cond
+            p.in-for-cond = 1
+            src-expr = ps-parse-expr(t, p)
+            p.in-for-cond = fc
+        }
     }
 }
 
@@ -5914,7 +5925,13 @@ ps-parse-for-kw = (t ast, p psst) (idx i64) {
 
         ; 條件形：for expr { } / while expr { }
         is-range == 0 -> {
+
+            ; s116：for 條件的 `:` 是迴圈語法（Go CTX_FOR_COND），不得被明示 match 搶成
+            ;   `cond: { }` 的裸 match（實測 d3/d4：body 丢失、条件變 match）。
+            fc = p.in-for-cond
+            p.in-for-cond = 1
             cond = ps-parse-expr(t, p)
+            p.in-for-cond = fc
             hc = ps-peek(p)
             has-col = 0
             hc == tok.COLON -> {
@@ -8939,7 +8956,9 @@ ps-parse-if = (t ast, p psst) (idx i64) {
     idx
 }
 
-; ═══ match desugar（明示形 `subj: { pat -> body … }`）═══════════════════
+; match desugar（明示形 `subj: { pat -> body … }`）
+...
+
 ; 見設計文檔 §6.3（t23 片）與 nolang-parser-lowering-invariants.md §22（S1 收官）。
 ; ⚠️ 2026-10-19 分歧記錄（S7）：bin/no 的 parser 現已【保留 SurfaceMatch】不展開
 ;   （S1：翻轉 b918dba9、刪除舊降糖路徑 d6965622；降糖改到 H0 lowering pass 執行）。

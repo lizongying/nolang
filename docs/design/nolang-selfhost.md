@@ -2894,3 +2894,185 @@ stub 版 `drv.pkg-ll-cov('compiler/src/drv.no')` 產 569 條 `fn:Kind:construct`
 - 下一步：**顯式 match 的表達式主體**（`expr: { ok -> it }`）——它同時解釋 `ok` 43 條 ID 與
   `ps-int-lit-value` 等解析 core 函式的丟棄；邊際清晰、可受控復現（t7 已證實），
   槓桿比 ㉚ ⑤ 點名的 `cg-emit-cfg-t` 1520 條葉子大。
+
+### ㉜ 2026-11-19 再續：顯式 match 的表達式主體（s115）——ID 979→918，`ok` 臂不再被當兜底（**執行輪次**）
+
+> 本節是 as-built 實作：①定位 ②修復 ③量測 ④驗證 ⑤誠實邊界。㉛ ⑤ 把「顯式 match 的表達式
+> 主體」列為下一步；本輪交付該通路的**機制**（主体恰好求值一次、按值型別定 vmode/omode、
+> `ok ->`／`err ->` 無綁定認臂、`it` 取載荷），並用 t8 九形受控語料釘住。
+
+**① 定位：九形矩陣 × 三類根因**
+
+t8 語料（`compiler/tests/t8/`，既有 f1–f6 + 本輪補 f7–f9）把「显式 match × 主體形態」
+全部枚舉，用 `drv.pkg-ll-cov` 逐形量「`define @fN(` 是否出現」：
+
+| 形 | 主體 | 臂 | 修复前 | 修复後 |
+| --- | --- | --- | --- | --- |
+| f1 | `s.byte(0)` | `ok -> it` / `-> 0` | 未發射 | 未發射（② 遺留） |
+| f2 | `s.byte(0)` | `-> it` | 未發射 | 未發射（② 遺留） |
+| f3 | 裸标识符 `x`（`x = s.byte(0)`） | `ok -> it` / `-> 0` | 未發射 | 未發射（② 遺留） |
+| f4 | 裸标识符 `x`（`x = 1`） | `ok -> it` / `-> 0` | 未發射 | 未發射（缺口子） |
+| f5 | 裸标识符 `a ?i64` | `ok -> it` / `-> 0` | 未發射 | **發射** |
+| f6 | `s.byte(0)` | `ok(v) -> v` / `-> 0` | 未發射 | 未發射（② 遺留） |
+| f7 | 裸标识符 `a ?i64` | `ok -> it` / `err -> 0` / `-> 0` | 未發射 | **發射** |
+| f8 | `s.byte(0)` | `ok -> it` / `err -> 0` / `-> 0` | 未發射 | 未發射（② 遺留） |
+| f9 | `s.byte(0)` | `ok(v) -> v` / `err -> 0` / `-> 0` | 未發射 | 未發射（② 遺留） |
+
+三類根因（全部實測）：
+
+1. **parser 拆分**（f1/f2/f6/f8/f9）：`ps.no` 的明示 match 檢查在後綴迴圈內，`match-subj`
+   只認 `K-IDENTIFIER` / `K-INDEX-EXPRESSION` / `K-DOT-EXPRESSION`。`s.byte(0):` 的 `:`
+   沒被消費 ⇒ 陳述級進度守則強制 bump `:` ⇒ ` { … } ` 被 `ps-parse-brace-stmt` 解析成
+   **裸 match**（`ExpressionStatement{SurfaceMatch(subject=0)}`），整函被丟。
+   oracle 口徑：`src/parser/expr.go:134-190` 的 `parseMatchExprFrom(leftExp)` 對**任意**
+   leftExp 都試，守衛是 `precedence == LOWEST && !CTX_FOR_COND && !CTX_MATCH_COND && !isIncDec`。
+2. **omode 門禁誤判**（f5/f7）：`ok ->`（無綁定名）在 AST 里 `bindingVariant` 空、
+   `dotVal=true`（對齊 oracle dump：`MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }`）。
+   h2m 的 `is-wild = wi>0 && cn<=0 && bvx==0` 把它判成 catch-all ⇒ 被「兜底臂必須在末位」槍斃。
+   `err ->`（無綁定）同形：無 variant、無 dot-val，`Condition` 是標識符 `err`，
+   被 `bvx==0 && dotv==0 -> is-wild==0 -> bad=1` 誤殺。
+3. **`it` 語義錯位**（f5）：omode 的 `c.itv.push(sv)` 壓的是 **option 本身**；oracle 語义
+   `it` 是**載荷**（`ok -> it` 等價於 `ok(v) -> v`）。
+
+**② 修復（`compiler/src/h2m.no` 4 處門禁 + 8 處 emit；`compiler/src/ps.no` 1 處）**
+
+- **主体判定**（`h2m-lower-surface` 頭部）：裸標識符走槽表查型；一般表達式走
+  `h2m-lower-expr` 得 `sv0`。**表達式主体在當前塊恰好求值一次**（`sv0`），逐臂不再重算——
+  避免有副作用的呼叫被多次執行。`sty = h2m-vty-at(c, sv0)` 定 vmode/omode。
+- **認臂**：`dotv = ast.aux-at(t, hb + 5)` 參與 `is-wild` 與 `wild` 判定 ⇒ `ok ->` 不再當兜底；
+  新增 `cnid`（`Condition` 節點 kind 是 `K-IDENTIFIER`）⇒ `err ->` 無綁定靠它認 err 臂。
+  **不讀字串**：`str-at` 在降級早期滯後（既有註釋已警告），且 option 三態已窮盡
+  （ok 有 dot-val、nil 的 `bindingVariant` 無條件填 `nil`），「無 variant + 無 dot-val +
+  Condition 為標識符」即 err，無歧義。
+- **emit**：兜底臂的 `iv1` 與 omode/vmode 的 `sv` 改取 `sv0`（表達式主体）或
+  `h2m-var-read`（裸标识符主体）；`et` 推導加 `bvar=='' && dotv!=0 -> et=0` 與
+  `bvar=='' && dotv==0 && cnid!=0 -> et=2`；`it` 棧改為壓 `OP-OPTGET` 的**載荷**，
+  與 `ok(v)` 的綁定**共用同一條 OPTGET**（不重複發射）。
+- **ps.no**：`match-subj` 加 `ast.kind-at(t, idx) == asp.K-CALL-EXPRESSION`。
+  ⚠️ 不動 `bindingVariant` 的口徑——`compiler/tests/ps-test.no` 精確 pin 了
+  `MatchArm{binding: , bindingVariant: }` 的 dump（`ok ->`／`err ->` 無綁定皆空），
+  認臂改在 h2m 側做。
+
+**③ 量測（`drv.pkg-ll-cov` 逐檔跑 `compiler/src/*.no`，同一二進位、`git stash` 配對基線）**
+
+| 指標 | 基線 | 修後 | Δ |
+| --- | --- | --- | --- |
+| ID（`ID:` 行，14 檔合計） | 979 | **918** | −61（−6.2%） |
+| 去重 (函数,名) 條目 | — | — | 固定 **41** / 新增 **21** |
+| t8 發射形數 | 0/9 | **2/9**（f5、f7） | +2 |
+
+- 固定的 41 個條目分布在 20 個函式，最大宗是 `ps-int-lit-value`（6）、`str-eq`（3）、
+  `ps-intlit-hex`（3）、`ps-detect-generic`（3），其餘各 1–2——正是 ㉛ ⑤ 點名的
+  「解析 core 函式被丟棄」那批。
+- 新增的 21 個是本輪新代碼的未覆蓋尾部（`ps-parse-match` 7、`ps-parse-enum-def` 3、
+  `h2m-lower-expr` 3、`ps-parse-method-func` 2、`ps-parse-func` 2、`ps-parse-bare-match` 2、
+  `h2m-sig-arg` 1、`ps-ht-put` 1）。
+- **净收益 −61 而非 −41**：固定 41 個去重條目對應的原始 ID 行數更多（同一 (函式,名) 在
+  cov 日誌裡逐塊重複出現），新增 21 個同理。
+
+**④ 驗證**
+
+| 項 | 結果 |
+| --- | --- |
+| `h2m-test` | 1175 → **1181**（s115 新增 2 用例 6 條斷言：`ok -> it` + 兜底、`ok -> it` + `err -> 0` + 兜底）。先紅後綠：把 `dotv`/`cnid` 的認臂臨時拿掉，兩用例的 `unsup == 0` 即紅 |
+| 全量門禁 | `pkg-ll-call` 5、`cg` 363、`cg-runtime` 114、`cg-str16` 41、`ck` 20、`ck-sig` 50、`ps` 49、`ps-err` 46、`lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、`pkg-sigs` 5、`pkg-ll` 10 **全綠** |
+| `pkg-sigs`／`pkg-ll` | 因耗時（95s／225s）超出 `no test` 的 60s 工具逾時，改用 `no run` 跑綠——非退化 |
+| `ast-test` | 既有失敗（`KIND-COUNT` 等 kind 編號漂移）；該檔只導入 `asp`／`ast`／`sb`，**不導入 ps/h2m** ⇒ 與本輪無關 |
+| 格式 | `no fmt -w` 後 `h2m.no`／`ps.no`／`h2m-test.no` 的 `no fmt -d` 皆為空 |
+| 臨時探針 | `probe-s115-{ast,cov,stmt,allcov}.no` 已刪；t8 的 f7–f9 作為受控語料保留 |
+
+**⑤ 誠實邊界與下一步**
+
+- **本輪解的是「機制」不是「覆蓋面」**：f5/f7（裸标识符主体）轉綠，证明 sv0 求值、值型別推導、
+  認臂、`it` 載荷四件事都對；但 **f1/f2/f6/f8/f9 仍紅**，卡點不在 match——在
+  `h2m-lower-expr` 的**方法族降級**：`str.byte` 不在 s113 的方法臂里，且 `cg.no` 沒有
+  `OP-STRBYTE`（Go 側作 `#{buildin}` + `emitBuiltinRawByteAt`，含 str/txt 雙型、越界 select、
+  option 構造）。
+- **f3 是同族缺口的另一面**：主体 `x` 是裸標識符，但 `x = s.byte(0)` 的 let 槽型別解不出
+  ⇒ vmode/omode 皆 0 ⇒ bad。**要解 f1/f3/f6/f8/f9，先要解 `str.byte` 的型別與降級。**
+- **f4 是覆蓋缺口**：i64 主体 + `ok ->` 臂——oracle 實測該形合法（`ok` 作值樣不匹配，結果 0），
+  h2m 的 vmode 門禁 `aux[5] != 0 -> bad`（dot-val 在 i64 主体上無意義）尚未開。
+- **std 語料分布**（`grep "): {" src/std/*.no` 374 處，含區間遍歷）：主體 `byte` **49**、
+  `bytes` **32**、`len` 21。**支持 `str.byte` 的降級是本輪最大的未完成槓桿。**
+- **INFIX 主体未覆蓋**：`a + b: { }` 的 `:` 要等到中綴迴圈後才成形，而本輪的 ps 檢查在後綴
+  迴圈里。修法是把它移到中綴迴圈之後，並補 `for-cond` 守衛（Go 有 `!CTX_FOR_COND`，
+  noc 無 `in-for` 標誌）——**這是下一個高杠桿點**：std 裡約 70 處算術主体
+  （`c.len = al + bl: {`）。
+- 本輪不碰 `bindingVariant` 口徑（`ps-test` 的 dump 斷言釘死），故 `ok ->` 無綁定在 AST 里
+  仍與真·兜底共享「bindingVariant 空」——乾净的長期修法是在 ps 側為 `ok ->` 填 `ok` 並同步
+  更新 `ps-test` 的 pin（本輪刻意不為之，避免把 parser 語义改動混進 match 主體的增量）。
+
+### ㉝ 2026-11-19 三續：INFIX 主體 + for-cond 守衛（s116）——ID 918→759（−17.3%），0 新未覆蓋（**執行輪次**）
+
+> 本節是 as-built 實作：①定位 ②修復 ③量測 ④驗證 ⑤誠實邊界。㉜ ⑤ 把「INFIX 主體」列為
+> 下一個高杠桿點（std 約 70 處算術主体）；本輪交付，並順帶修掉一個**既有**的 for 條件形缺陷。
+
+**① 定位：兩個實證缺陷（用 noc 自己的 parser 側寫探針 dump，非 `./bin/no`）**
+
+⚠️ 教訓：`./bin/no ast` 走的是 **Go oracle**，不能用來判斷 noc 的行為。本輪改用
+`# /compiler/src/ps` 直接 dump（`ps.new(src)` + `ast.dump`），才看到 noc 的真實形制。
+
+| 形 | 修復前 noc 的 AST | 后果 |
+| --- | --- | --- |
+| `x = a + b: { ok -> it }` | `LetStatement{value: InfixExpression{op:+}}` 里，`SurfaceMatch` 掛在**右運算元 `b`** 上 ⇒ `a + (b: {…})` | `ok -> it` 的 `it` 是 **b**，不是「a+b 的匹配結果」——語义错（oracle 是 `SurfaceMatch → InfixExpression{a,b}`） |
+| `for n: { print(n) }` | `ForStatement{ cond: SurfaceMatch{arms:1} }`，body 丟失 | 條件 `n` 被搶成 1 臂裸 match——**既有缺陷**，非本輪引入 |
+| `while n: { … }` | 同上的 `ForStatement{cond: SurfaceMatch}` | 同上 |
+
+根因（同一處）：`ps-parse-expr-prec` 的明示 match 檢查住在**後綴迴圈**里，而 `:` 的綁定對象
+取決於「檢查發生時 `idx` 是什麼」。在後綴迴圈里，`a + b: {` 的 `:` 遇到的是內層
+`b` 那層（`ps-parse-expr-prec(t, p, oprec)`）⇒ 搶走。Go 的對應檢查在主迴圈每次迭代末
+（`src/parser/expr.go:134-190`），所以 `:` 永遠綁在整個 leftExp 上。
+
+**② 修復（`compiler/src/ps.no`，3 處）**
+
+- **冒號檢查移到中綴迴圈之後**：删掉後綴迴圈里的 `match-subj` 判定與 `COLON` 處理塊，
+  在 infix 循環結束、三元檢查之前插入新塊。白名單加 `K-INFIX-EXPRESSION`。
+  守衛對齊 Go：`prec <= 0`（`precedence == LOWEST`）——內層（`prec > 0`）不消費，
+  避免 `a + b: { }` 的 `:` 再被右運算元那層搶走。
+- **新增 `psst.in-for-cond`**（默認 0）：`ps-parse-for-kw` 的**條件形**（`for expr { }`／
+  `while expr { }`）與 `ps-for-source` 的兩處表示式解析（`kind==2` 容器源、
+  `bare-ident-colon == 0` 的表達式源）在解析前置 1、出口還原。守衛加
+  `&& p.in-for-cond == 0`。
+  `ps-for-source` 的裸 IDENT 特判（`ps-no` 既有，`i <- a: { }` 防誤觸）已在表達式層之外，
+  故 for 源守衛實際只作用於 CALL／表達式源。
+
+**③ 量測（`drv.pkg-ll-cov` 逐檔 14 個 `compiler/src/*.no`，`git stash` 配對基線）**
+
+| 指標 | 基線 | 修後 | Δ |
+| --- | --- | --- | --- |
+| ID（`ID:` 行，14 檔合計） | 918 | **759** | **−159（−17.3%）** |
+| 去重 (函数,名) 條目 | — | — | 固定 **23** / 新增 **0** |
+
+- **新增 0** 是本輪最值得記的數字：`in-for-cond` 守衛與移動後的 match 塊全部被既有語料
+  走到，沒有留下未覆蓋尾巴。
+- 固定的 23 個分布：`ps-int-lit-value`、`ps-hash`、`ps-skip-type-idx`、`ps-signed-int-operand`、
+  `ps-mk-opt-arith-type`、`ps-is-map-assign-let`、`ps-is-enum-def`、`node`、`lx-hex-digit`、
+  `ix.inc`、`ix.dec`、`implements`、`h2m-struct-resolve-range`、`h2m-struct-resolve`、
+  `h2m-struct-base`、`h2m-sig-arg`、`h2m-inc`、`h2m-dec`、`drv.src-arg`、`ck-sig-lt` 等
+  （各 1）——**解析路徑上的名字大批浮現**，说明「值位 match 主体」是這些節點的主要入口。
+
+**④ 驗證**
+
+| 項 | 結果 |
+| --- | --- |
+| `ps-test` | 49 → **51**。新增 `test-expr-subj-infix`（釘 `SurfaceMatch → InfixExpression{a,b}`）與 `test-for-cond-not-match`（釘 `ForStatement{cond: Identifier{n}, body: BlockStatement}`）。**皆先紅後綠**：拿掉 `K-INFIX-EXPRESSION` 白名單 ⇒ 前者紅；拿掉兩處 `p.in-for-cond = 1` ⇒ 後者紅 |
+| `h2m-test` | 1181 → **1182**。`vm-gate-expr-subj` 的語义**翻轉**：該用例原本釘「主體是表達式 `n + 1` 時必須不產碼」（s63 的舊缺陷行為），本輪起改為斷言 `unsup == 0` + 有 `define` + 有 `icmp eq i64`——**如實記錄語义變更，非放行** |
+| oracle 語义對照 | `f(0)`／`f(1)` 跑 `./bin/no run` 得 `1 2`：`n + 1` 整體匹配（`0+1==1` 命中臂 1；`1+1==2` 走兜底臂 2）——與 `SurfaceMatch → InfixExpression` 的結構一致 |
+| 全量門禁 | `pkg-ll-call` 5、`cg` 363、`cg-runtime` 114、`cg-str16` 41、`ck` 20、`ck-sig` 50、`ps` 51、`ps-err` 46、`lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、`pkg-sigs` 5、`pkg-ll` 10 **全綠**（後兩個用 `no run` 跑，95s／225s） |
+| 格式 | `no fmt -w` 後 `no fmt -d` 為空 |
+| 臨時探針 | `probe-s116*.no`／`t9/probe-ir.no` 已刪；`t9/g1.no` 作為受控語料保留 |
+
+**⑤ 誠實邊界與下一步**
+
+- **本輪只解 INFIX**。**CALL 主體的方法降級仍是最大的未完成槓桿**（㉜ ⑤ 已記錄）：
+  f1/f2/f6/f8/f9 卡在 `h2m-lower-expr` 的方法族（`str.byte` 不在 s113 臂里，`cg.no` 無
+  `OP-STRBYTE`）。std 里 `): {` 374 處，主體 `byte` **49**、`bytes` **32**。
+- **`prec <= 0` 守衛的邊界**：內層（`prec > 0`）不消費 `: {`。因此 `(a + b): { }` 這種
+  **括號主體**走的是 primary 的括號分支，其後的 `:` 由外層消費——本輪未專門驗證此形，
+  留作下一步的回歸點。
+- **`in-for-cond` 的覆蓋面**：只覆蓋 `for`／`while` 條件形與 for 源。Go 的 `CTX_FOR_COND`
+  還覆蓋 range 端點等路徑；noc 那些路徑本不該出現 `: {`，但**未逐一對齊**。
+- **未動 `bindingVariant` 口徑**（沿用 ㉜ ⑤ 的決定）：`ok ->`／`err ->` 無綁定在 AST 里
+  仍與真·兜底共享「bindingVariant 空」，靠 `dot-val`／`Condition 是標識符` 認臂。
+- 下一輪候選優先級：① **`str.byte` 的方法族降級**（cg 新 OP + h2m ty-of／lower-expr 臂，
+  解 5 個受控形 + std 49 處）；② 括號／其它主體形態的回歸補齊。

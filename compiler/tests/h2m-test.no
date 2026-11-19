@@ -1011,7 +1011,8 @@ test-ret-str()
 test-call-fwd()
 test-call-args()
 
-; ═══ s57：控制流降级 ═══════════════════════════════════════════
+; s57：控制流降级
+...
 
 ; 跳块写回 ⇒ 体内有分支/循环时全部局部量（含形参）落 entry alloca 槽（-O0 风格）
 test-flow-if = () {
@@ -2354,14 +2355,17 @@ test-vm-gate = () {
     runner.eq(agg3.unsup > 0, 1, 'vm-gate-named-pattern counted')
     runner.eq(ir3.contains('define'), 0, 'vm-gate-named-pattern no code')
 
-    ; 主体是表达式 `n + 1: { … }`：实测 ps.no 不把它建进 Matched（主体丢失）⇒ 退化形照样计 unsup
+    ; 主体是表達式 `n + 1: { … }`：s63 其時 ps.no 的冒號檢查在後綴迴圈里，`:` 被右運算元 `1`
+    ;   那層搶走 ⇒ 退化形計 unsup；s116 把檢查移到中綴迴圈之後 ⇒ InfixExpression 主體生效，
+    ;   本形轉為【可降級】（語义：比 `n + 1 == 1`，命中走臂 1，否則走兜底臂 2）。
     src-e = 'k = (n i64) (r i64) {\n    r = 0\n    n + 1: {\n        1 -> r = 1\n        -> r = 2\n    }\n}\n'
     t4 = ast.make()
     r4 = ps.parse(t4, ps.new(src-e.to-bytes()))
     agg4 = h2m-new()
     ir4 = h2m-lower-program(t4, agg4, r4)
-    runner.eq(agg4.unsup > 0, 1, 'vm-gate-expr-subj counted')
-    runner.eq(ir4.contains('define'), 0, 'vm-gate-expr-subj no code')
+    runner.eq(agg4.unsup, 0, 'vm-expr-subj no unsup')
+    runner.eq(ir4.contains('define'), 1, 'vm-expr-subj emits')
+    runner.eq(ir4.contains('icmp eq i64'), 1, 'vm-expr-subj compares i64')
 
     ; 主体未登记（既非形参也非局部量）：槽表查不到 ⇒ 无法证明它是可读的 i64
     src-u = 'm = (x i64) (r i64) {\n    r = 0\n    zz: {\n        1 -> r = 1\n        -> r = 2\n    }\n}\n'

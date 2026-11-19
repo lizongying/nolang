@@ -25,9 +25,8 @@
 ;    整數字面量與構造後賦值 `d.level = diag.LEVEL-ERROR` 均正常。
 ;    參照：/tmp/diag-probe2.no 三例（0 / 2 / 2）。故本檔 level 一律構造後賦值。
 
-; ═══════════════════════════════════════════════
 ; level-name — 三個級別的名字
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 level-name
 test-level-name = () {
@@ -47,9 +46,8 @@ test-level-name = () {
     runner.str-eq(d.level-name(), 'HINT', 'level-name HINT')
 }
 
-; ═══════════════════════════════════════════════
 ; render — 面向使用者的行形（含 line==0 檔案級分支）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 render
 test-render = () {
@@ -79,9 +77,8 @@ test-render = () {
     runner.str-eq(d.render(), 'x.no:4:0: [WARNING] nolang-compile: boom [E_GENERAL]', 'render warning')
 }
 
-; ═══════════════════════════════════════════════
 ; render-mid — 中間編譯錯誤串的一條（無檔名前綴）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 render-mid
 test-render-mid = () {
@@ -97,7 +94,6 @@ test-render-mid = () {
     runner.str-eq(d.render-mid(), 'line 4, column 0: expected expression [E_GENERAL]', 'render-mid shape')
 }
 
-; ═══════════════════════════════════════════════
 test-level-name()
 test-render()
 test-render-mid()

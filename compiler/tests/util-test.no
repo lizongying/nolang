@@ -13,9 +13,8 @@
 # /compiler/src/util/sb.sb
 # /compiler/src/util/intern.itab
 
-; ═══════════════════════════════════════════════
 ; sb — 字串構建器
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 sb
 test-sb = () {
@@ -49,9 +48,8 @@ test-sb = () {
     runner.str-eq(s2, 'AB', 'sb.push-byte')
 }
 
-; ═══════════════════════════════════════════════
 ; intern — 字串駐留（M0 線性掃描；雜湊版待缺陷修復，見 src/util/intern.no 檔頭）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 intern
 test-intern = () {
@@ -145,7 +143,6 @@ test-intern-many = () {
     runner.str-eq(back, 'key-99', 'intern.at roundtrip at scale')
 }
 
-; ═══════════════════════════════════════════════
 test-sb()
 test-intern()
 test-intern-many()

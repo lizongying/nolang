@@ -27,9 +27,8 @@ CK-SIG-N-STRUCTMOD = 102
 CK-SIG-N-ENUM = 3
 CK-SIG-N-MODULE = 119
 
-; ═══════════════════════════════════════════════
 ; ck-sig-lt — 逐字節字典序（鍵全 ASCII）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 lt
 test-lt = () {
@@ -44,9 +43,8 @@ test-lt = () {
     runner.eq(ck-sig-lt('[]t.at', 'arr-stack.clear'), 1, 'bracket sorts before letter')
 }
 
-; ═══════════════════════════════════════════════
 ; 表規模（盤點氣閂）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 sizes
 ; t: 輸入
@@ -62,9 +60,8 @@ test-sizes = (t ck-sig) {
     runner.eq(t.mok.len(), CK-SIG-N-MODULE, 'module table size')
 }
 
-; ═══════════════════════════════════════════════
 ; func 表查找（首/尾/中/miss）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 find-func
 ; t: 輸入
@@ -89,9 +86,8 @@ test-find-func = (t ck-sig) {
     runner.eq(ck-sig-find-func(t, 'AAA'), -1, 'head miss')
 }
 
-; ═══════════════════════════════════════════════
 ; method 表查找
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 find-method
 ; t: 輸入
@@ -111,9 +107,8 @@ test-find-method = (t ck-sig) {
     runner.eq(ck-sig-find-method(t, 'nope.nope'), -1, 'method miss')
 }
 
-; ═══════════════════════════════════════════════
 ; struct-fields / aliases / struct-mod / enums / modules
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 find-others
 ; t: 輸入
@@ -140,9 +135,8 @@ test-find-others = (t ck-sig) {
     runner.str-eq(ck-sig-str-at(t.moo, mo), 'crypto/aes', 'aes -> crypto/aes')
 }
 
-; ═══════════════════════════════════════════════
 ; ck-sig-types — 逗號串 ⇒ 型串 vec
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 types
 test-types = () {
@@ -156,7 +150,6 @@ test-types = () {
     runner.eq(r3.len(), 1, 'option-slice is one type')
 }
 
-; ═══════════════════════════════════════════════
 test-lt()
 t = ck-sig.new()
 test-sizes(t)

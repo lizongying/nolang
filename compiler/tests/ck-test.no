@@ -61,9 +61,8 @@ at = (v []str, i i64) (r str) {
     r = x
 }
 
-; ═══════════════════════════════════════════════
 ; 沉默面：不報
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 silent
 test-silent = () {
@@ -100,9 +99,8 @@ test-silent = () {
     runner.eq(ck-run-in('x = cancelled\n', '/r/src/std/async.no').len(), 0, 'self-module kept')
 }
 
-; ═══════════════════════════════════════════════
 ; 報錯面：門控帶提示 / 門控無提示 / 完全未知
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 gated-hint
 test-gated-hint = () {
@@ -143,7 +141,6 @@ test-order = () {
     runner.str-eq(w1.slice-bytes(0, p1), '2', 'second at line 2')
 }
 
-; ═══════════════════════════════════════════════
 test-silent()
 test-gated-hint()
 test-gated-nohint()

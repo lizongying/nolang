@@ -141,7 +141,9 @@ sig [64]byte = [
     0x4b, 0x09, 0x4c, 0x20, 0x16, 0x36, 0x3a, 0x69,
 ]
 
-; ═══ P-256 ECDH 已知答案向量（Go crypto/elliptic 作為 oracle）═══
+; P-256 ECDH 已知答案向量（Go crypto/elliptic 作為 oracle）
+...
+
 ; SHARED = x(dA * pubB) = x(dB * pubA)
 ; 覆蓋 ecdh-p256 的「對任意對端點做標量乘法」路徑（TLS ECDHE 用的正是此路徑，
 ; 而非 ecdsa-publickey 的「僅對基點 G 乘法」），驗證 ec-bytes-to-point 解碼、

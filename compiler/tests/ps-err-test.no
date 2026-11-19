@@ -34,9 +34,8 @@
 # /compiler/src/tok
 # /compiler/src/ps
 
-; ═══════════════════════════════════════════════
 ; helper：parse 一段源碼，回傳收集器（呼叫端負責讀欄位）
-; ═══════════════════════════════════════════════
+...
 
 ; 解析 err
 ; src: 來源
@@ -48,9 +47,8 @@ parse-err = (src str) (p psst) {
     _ = root
 }
 
-; ═══════════════════════════════════════════════
 ; 1. 實參缺逗號：'x = foo(1 2)' ⇒ 恰 2 條（s12：逗號錯 + 同位級聯 nil 錯）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 call-missing-comma
 test-call-missing-comma = () {
@@ -65,9 +63,8 @@ test-call-missing-comma = () {
     runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 'call-comma cascade msg')
 }
 
-; ═══════════════════════════════════════════════
 ; 2. let RHS 落空：'y =\n' ⇒ expected expression, got nil instead
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 let-nil-value
 test-let-nil-value = () {
@@ -78,9 +75,8 @@ test-let-nil-value = () {
     runner.str-eq(p.e-msg[0], 'expected expression, got nil instead', 'let-nil msg')
 }
 
-; ═══════════════════════════════════════════════
 ; 3. 分組缺 RPAREN：'x = (1 + 2\n' ⇒ 恰 2 條（s12：2:0 括號錯 + 同位級聯 nil 錯）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 group-missing-rparen
 test-group-missing-rparen = () {
@@ -94,11 +90,10 @@ test-group-missing-rparen = () {
     runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 'group cascade msg')
 }
 
-; ═══════════════════════════════════════════════
 ; 4. 去重鍵 (ln, cl, msg)：同鍵只留一條（Go saveError 同形）；異鍵新增
 ;    （s12 基線：'x = (1 + 2\n' 錄 2 條——括號錯與級聯 nil 錯同位不同文，
 ;      異鍵故都在；重報任一條才觸發同鍵去重）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 dedup
 test-dedup = () {
@@ -140,9 +135,8 @@ test-dedup = () {
     n0 != 2 -> runner.eq(n0, 2, 'dedup: baseline two errors (group + cascade)')
 }
 
-; ═══════════════════════════════════════════════
 ; 5. 合法源碼零錯誤 + 空參呼叫不誤報
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 clean-no-errors
 test-clean-no-errors = () {
@@ -150,9 +144,8 @@ test-clean-no-errors = () {
     runner.eq(ps-err-count(p), 0, 'clean count')
 }
 
-; ═══════════════════════════════════════════════
 ; 6. 多行呼叫（實參前後換行）不誤報——實參循環重寫的回歸釘樁
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 multiline-call
 test-multiline-call = () {
@@ -160,10 +153,9 @@ test-multiline-call = () {
     runner.eq(ps-err-count(p), 0, 'multiline-call count')
 }
 
-; ═══════════════════════════════════════════════
 ; 7. 表達式語句不級聯：'print((1 + 2\n' ⇒ 2 條皆為括號族、無 nil 錯
 ;    （oracle p62：2:0 分組錯 + 2:1 逗號錯；Go「got nil」只住 parseLetStatement）
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 expr-stmt-no-cascade
 test-expr-stmt-no-cascade = () {
@@ -173,13 +165,12 @@ test-expr-stmt-no-cascade = () {
     runner.str-eq(p.e-msg[1], 'expected comma or right parenthesis, got EOF instead', 'expr-stmt-cascade msg1')
 }
 
-; ═══════════════════════════════════════════════
 ; 8. ILLEGAL 報錯族接線（s82：鏡像 Go expr.go:395-409 operand 位臂）
 ;    期望全部由 L3 oracle 實測釘死（no vet /tmp/orb-p*.no / orb-q*.no）：
 ;      `x = 1e5` ⇒ 【恰 1 條】1:5 sci [1gybkrrq]，let 站級聯被 n-illegal 抑制
 ;      `print(1e5)` ⇒ 2 條：1:7 sci + 1:8 逗號族（鏡像 p5 實測）
 ;      `x = $`     ⇒ 【恰 1 條】1:5 'illegal token "$"' [ghvjbe8q] + 級聯抑制
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 illegal-sci-let
 test-illegal-sci-let = () {
@@ -231,7 +222,6 @@ test-illegal-guards = () {
     runner.eq(ps-err-count(p2), 0, 'guard 1e not sci at ps layer')
 }
 
-; ═══════════════════════════════════════════════
 test-call-missing-comma()
 test-let-nil-value()
 test-group-missing-rparen()
