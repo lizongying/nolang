@@ -1982,6 +1982,42 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(', 1, 0\n')
         }
+        op == OP-STRBYTES -> {
+
+            ; s121：str.bytes() —— 回底層 UTF-8 位元組的【零拷貝視圖】（%vec）。
+            ;   鏡像 Go emitBuiltinStrBytes（src/mir/builtin_str_bytes.go:29）：
+            ;     len  = strLenI64(sv)（欄 0 已是 i32，直接插 %vec 欄 0）；
+            ;     cap  = 0（【借用標記】——@vec_free 見 cap==0 即跳過釋放）；
+            ;     data = ptrtoint i8*(extractvalue %str-long, 2) to i64。
+            ;   %vec = { i32 len, i32 cap, i64 data }（cg-runtime.no:194）；中間名按指令下標 k 編號。
+            b.push('\t%sbL')
+            b.push(k.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 0\n\t%sbP')
+            b.push(k.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 2\n\t%sbD')
+            b.push(k.to-str())
+            b.push(' = ptrtoint i8* %sbP')
+            b.push(k.to-str())
+            b.push(' to i64\n\t%vb0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %vec zeroinitializer, i32 %sbL')
+            b.push(k.to-str())
+            b.push(', 0\n\t%vb1')
+            b.push(k.to-str())
+            b.push(' = insertvalue %vec %vb0')
+            b.push(k.to-str())
+            b.push(', i32 0, 1\n\t%vc')
+            b.push(d.to-str())
+            b.push(' = insertvalue %vec %vb1')
+            b.push(k.to-str())
+            b.push(', i64 %sbD')
+            b.push(k.to-str())
+            b.push(', 2\n')
+        }
         op == OP-STRCAT -> {
             b.push('\t%sv')
             b.push(d.to-str())

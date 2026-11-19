@@ -9,7 +9,7 @@
 ;   # /test/runner
 ;
 ;   runner.eq(1, 1, 'test 1')
-;   p, f = runner.test('name', t-func)
+;   p, f = runner.test('name', t-func); p, f 為本案例通過／失敗的斷言數
 ;   runner.summary()
 ;   f-count = runner.failed-count()
 ;   f-count > 0 -> exit(1)
@@ -228,13 +228,29 @@ callback = ()
 ; 執行一個無參數回呼函式並計數
 ; name: 測試案例名稱（執行前列印）
 ; cb: 待執行的無參回呼函式（其內部斷言累加至全域計數）
-; passed: 本案例通過計數（名義恆為 1）
-; failed: 本案例失敗計數（名義恆為 0）
+; passed: 本案例通過的斷言數（cb 執行前後全域通過計數的差值）
+; failed: 本案例失敗的斷言數（cb 執行前後全域失敗計數的差值）
 test = (name str, cb callback) (passed i64, failed i64) {
     print('TEST:', name)
+    passed-before = COUNT-PASSED
+    failed-before = COUNT-FAILED
     cb()
-    passed = 1
-    failed = 0
+
+    ; 整數減法回 ?i64（overflow 策略隻影響溢位時的取值，型別仍是 option），
+    ; 故用值位 match 顯式解包，讓回傳型別保持 i64。
+    #{overflow=wrap}
+    passed = COUNT-PASSED - passed-before: {
+        ok -> it
+
+        -> 0
+    }
+
+    #{overflow=wrap}
+    failed = COUNT-FAILED - failed-before: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; 記錄一筆測試通過（兼容舊用法）

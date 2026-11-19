@@ -594,3 +594,21 @@ OP-VECNEWCAPSTR = 100
 ;       %sb0<k>=insertvalue %option zeroinitializer,i64 %sbT<k>,0；%op<dst>=insertvalue %option %sb0<k>,i64 %sbY<k>,1,0
 ; ⚠ op 碼接在既有最大碼 OP-VECNEWCAPSTR=100 之後（取 101），不重排既有碼。
 OP-STRBYTE = 101
+
+; str.bytes()：回底層 UTF-8 位元組的【零拷貝視圖】（s121；鏡像 Go emitBuiltinStrBytes，
+;   src/mir/builtin_str_bytes.go:29）。語義：[]byte（%vec），與 str.to-bytes() 的
+;   O(N) 複製不同——不分配、不複製，視圖與原 str 共享 data 緩衝。
+; ⚠️ 視圖的 cap 恆為 0（【借用標記】）：@vec_free / @__nolang_vec_free_* 見 cap==0 即跳過釋放，
+;   故視圖的作用域結束【不】歸還 str 的緩衝（所有權仍屬原 str）；寫入視圖會反映到原 str。
+;   這正是 Go 側 `vecFromParts(lenV, "0", dataI)` 的第二個引數 "0"。
+; ⚠️ 結果型別是 TY-VEC（[]byte 與 []i64 在 noc 共用 %vec 命名空間，見 cg.no 的切片 B）——
+;   本 op 只組描述符、不搬資料，元素型別在運行期不參與。
+; OP-STRBYTES：dst = vec 值 id（TY-VEC，落 %vc）；x = 字符串值 id（TY-STR，落 %sv）；y 不用（0）。
+;   發：%sbL<k>=extractvalue %str-long %sv<x>,0（i32 len，直接插 %vec 欄 0，無需 zext）；
+;       %sbP<k>=extractvalue %str-long %sv<x>,2（i8* data）；
+;       %sbD<k>=ptrtoint i8* %sbP<k> to i64；
+;       %vb0<k>=insertvalue %vec zeroinitializer, i32 %sbL<k>, 0；
+;       %vb1<k>=insertvalue %vec %vb0<k>, i32 0, 1（cap=0 借用標記）；
+;       %vc<dst>=insertvalue %vec %vb1<k>, i64 %sbD<k>, 2
+; ⚠ op 碼接在既有最大碼 OP-STRBYTE=101 之後（取 102），不重排既有碼。
+OP-STRBYTES = 102

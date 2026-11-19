@@ -108,7 +108,7 @@ export PATH="/opt/homebrew/opt/llvm/bin:/Library/Developer/CommandLineTools/usr/
 | `runner.is-false` | `(val bool, msg str)` | `val == false` |
 | `runner.str-eq` | `(a str, b str, msg str)` | 先比 `len-bytes()`，相等再用 `str.eq` 比全串 |
 | `runner.f64-eq` | `(a f64, b f64, eps f64, msg str)` | `|a-b| < eps` |
-| `runner.test` | `(name str, cb callback) (passed i64, failed i64)` | 印 `TEST: <name>` 並執行回呼 |
+| `runner.test` | `(name str, cb callback) (passed i64, failed i64)` | 印 `TEST: <name>` 並執行回呼；回傳本案例通過／失敗的**斷言數**（`cb` 執行前後全域計數的差值） |
 | `runner.failed-count` | `() (n i64)` | 目前失敗數 |
 | `runner.summary` | `() (total i64)` | 印 `--- Test Summary ---` 與 passed/failed/total |
 

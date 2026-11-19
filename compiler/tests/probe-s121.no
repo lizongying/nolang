@@ -1,0 +1,27 @@
+; probe-s121.no — 臨時：str.bytes() 的降級現狀
+; ⚠️ 臨時探針，追記前刪除。
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+# /compiler/src/drv
+# /compiler/src/ix
+
+SRC = 'f = (s str) (v []byte) {\n    v = s.bytes()\n}\n'
+ll = drv.build-ll(SRC.to-bytes())
+eprint('bytes len=' - ll.len-bytes().to-str() - ' define=' - ll.contains('define').to-str())
+
+SRC2 = 'f = (s str) (v []byte) {\n    v = s.to-bytes()\n}\n'
+ll2 = drv.build-ll(SRC2.to-bytes())
+eprint('to-bytes len=' - ll2.len-bytes().to-str() - ' define=' - ll2.contains('define').to-str())

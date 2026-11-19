@@ -2255,6 +2255,10 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                         ; s117：str.byte(i) 回 ?byte（option 恆裝箱）⇒ let 槽型別 TY-OPT，
                         ;   供值位 match 主体（`s.byte(0): { ok -> it }`）定 omode。
                         mt == TY-STR && mf == 'byte' -> code = TY-OPT
+
+                        ; s121：str.bytes() 回底层 UTF-8 位元組的【零拷貝視圖】[]byte ⇒ TY-VEC
+                        ;   （[]byte 與 []i64 在 noc 共用 %vec 命名空間，見 cg.no 的切片 B）。
+                        mt == TY-STR && mf == 'bytes' -> code = TY-VEC
                         mt == TY-VEC && mf == 'push' -> code = TY-VEC
                         mt == TY-VECSTR && mf == 'push' -> code = TY-VECSTR
                     }
@@ -3134,6 +3138,18 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                     ok-method = 1
                                     ok-call = 0
                                 }
+                            }
+
+                            ; s121：str.bytes() —— 零拷貝視圖（發 OP-STRBYTES）。
+                            ;   ⚠️ 只收【無參】形（na == 0）；帶參的 `bytes(...)` 落門禁（不猜）。
+                            ;   ⚠️ 視圖的 cap 恆 0（借用標記）⇒ 作用域結束不釋放原 str 緩衝；
+                            ;     結果不進 rel 追蹤（rel-add 會令离开作用域時嘗試釋放借用緩衝）。
+                            mname == 'bytes' && ok-method == 0 && na == 0 -> {
+                                bvv = h2m-alloc(c, TY-VEC)
+                                h2m-emit(c, OP-STRBYTES, bvv, rv, 0, '', TY-VEC)
+                                v = bvv
+                                ok-method = 1
+                                ok-call = 0
                             }
                         }
                     }
@@ -4487,9 +4503,13 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
             ;   option 主體的三態已窮盡（ok 有 dot-val、nil 的 bvar 無條件填 'nil'），
             ;   故「無 variant + 無 dot-val + Condition 為標識符」即 err 臂——不讀字串（str-at 早期滯後）。
             cnid = 0
+            cnid-nm = ''
             cn > 0 -> {
                 cnd = ast.nd-at(t, cn)
-                cnd.kind == asp.K-IDENTIFIER -> cnid = 1
+                cnd.kind == asp.K-IDENTIFIER -> {
+                    cnid = 1
+                    cnid-nm = ast.str-at(t, cnd.s0)
+                }
             }
 
             ; 真·兜底臂（catch-all `_`）：无 variant（bvx==0）、无 Condition、无 dot-val、wildcard 标记置位。
@@ -4519,7 +4539,11 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 varm = 0
                 a1 != 0 -> varm = 1
                 a1 == 0 && a5 != 0 -> varm = 1
-                a1 == 0 && a5 == 0 && cnid != 0 -> varm = 1
+
+                ; ⚠️ 必須驗名字：`y ->`（未定義裸標識符）與 `err ->` 的 Condition 同為
+                ;   K-IDENTIFIER，只認「無 variant + 無 dot-val + 標識符」會把前者也放行
+                ;   （Go 側 `zzz ->` 是【編譯錯誤】，s118 實測）。
+                a1 == 0 && a5 == 0 && cnid-nm == 'err' -> varm = 1
 
                 varm == 0 -> {
                     a2 == 0 && a3 == 0 && a6 == 0 && a8 == 0 -> {
@@ -4581,11 +4605,16 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 bvar = ast.str-at(t, ast.aux-at(t, hb + 1))
                 dotv = ast.aux-at(t, hb + 5)
 
-                ; s115：同門禁側，`err ->`（無綁定）靠「Condition 是標識符」認臂（不讀字串）
+                ; s115：同門禁側，`err ->`（無綁定）靠「Condition 是標識符」認臂。
+                ;   s119：兼取名字（`cnid-nm`）——區辨 `err` 與未定義裸標識符（如 `y ->`）。
                 cnid = 0
+                cnid-nm = ''
                 cn > 0 -> {
                     cnd = ast.nd-at(t, cn)
-                    cnd.kind == asp.K-IDENTIFIER -> cnid = 1
+                    cnd.kind == asp.K-IDENTIFIER -> {
+                        cnid = 1
+                        cnid-nm = ast.str-at(t, cnd.s0)
+                    }
                 }
 
                 wild = 0
@@ -4708,12 +4737,13 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                     ; 原有 i64 值匹配（s63）+ 裸链（s58）路
                     omode == 0 -> {
+
                         ; s119：變體臂（ok/nil/err）在 i64 主體下按【常量 0】匹配（對齐 Go 實測）。
                         ;   不 lowering Condition（`err ->` 的 Condition 是標識符，查槽表必失敗）。
                         varm-e = 0
                         bvar != '' -> varm-e = 1
                         bvar == '' && dotv != 0 -> varm-e = 1
-                        bvar == '' && dotv == 0 && cnid != 0 -> varm-e = 1
+                        bvar == '' && dotv == 0 && cnid-nm == 'err' -> varm-e = 1
                         pv = 0
                         varm-e == 1 -> {
                             pv = h2m-alloc(c, TY-I64)

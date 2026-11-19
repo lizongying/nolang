@@ -2491,6 +2491,69 @@ test-vm-gate = () {
     runner.eq(irg.contains('define'), 1, 'vm-grouped-subj emits')
     runner.eq(irg.contains('icmp eq i64'), 1, 'vm-grouped-subj compares i64')
 
+    ; s119：i64 值匹配的【變體臂】ok/nil/err ⇒ 按常量 0 匹配（對齐 Go 實測 4 組對照）。
+    ;   单臂用例（f4 同源形）+ 三臂混合用例（Go 語義：三者皆 0，首臂勝出）。
+    src-k = 'm = (x i64) (r i64) {\n    r = x: {\n        ok -> 5\n\n        -> 0\n    }\n}\n'
+    tk = ast.make()
+    rk = ps.parse(tk, ps.new(src-k.to-bytes()))
+    aggk = h2m-new()
+    irk = h2m-lower-program(tk, aggk, rk)
+    runner.eq(aggk.unsup, 0, 'vm-variant-ok no unsup')
+    runner.eq(irk.contains('define'), 1, 'vm-variant-ok emits')
+    runner.eq(irk.contains('icmp eq i64'), 1, 'vm-variant-ok compares i64')
+
+    src-k3 = 'm = (x i64) (r i64) {\n    r = x: {\n        ok -> 1\n\n        nil -> 2\n\n        err -> 3\n\n        -> 4\n    }\n}\n'
+    tk3 = ast.make()
+    rk3 = ps.parse(tk3, ps.new(src-k3.to-bytes()))
+    aggk3 = h2m-new()
+    irk3 = h2m-lower-program(tk3, aggk3, rk3)
+    runner.eq(aggk3.unsup, 0, 'vm-variant-3 no unsup')
+    runner.eq(irk3.contains('define'), 1, 'vm-variant-3 emits')
+
+    ; s120：兩個【已知邊界】的回歸鎖定——門禁刻意保留，不是待修缺口。
+    ;   ① 陳述位 match 的「表達式臂體」（`-> 5`）：Go 接受，但其值可觀測地寫進
+    ;      「其後那條賦值語句的目標」（語義實驗：`z=5; w=1; match; r = z &^ w` 得 7，
+    ;      即臂值本身；`r = z` / `r = w` 皆 7）——語義依賴 stmtVal 串接，晦澀且像
+    ;      實現 artifact，故 noc 不照抄（同 s93「自舉產物不得比權威更寬鬆」的口徑）。
+    src-s = 'm = (x i64) (r i64) {\n    r = 0\n    x: {\n        1 -> 5\n\n        -> 0\n    }\n}\n'
+    ts = ast.make()
+    rs = ps.parse(ts, ps.new(src-s.to-bytes()))
+    aggs = h2m-new()
+    irs = h2m-lower-program(ts, aggs, rs)
+    runner.gt(aggs.unsup, 0, 's120 stmt-position expr arm body still gated')
+
+    ;   ② 值位 wild 臂的 `it`（`r = s.byte(0): { -> it }`，即 t8 f2）：Go 接受且
+    ;      it 形同【未綁定零值】（型別隨目標），非 s115 的 OPTGET 載荷路徑。
+    ;      為一種隱晦語义，門禁保留；f2 仍是 t8 唯一残留。
+    src-w = 'm = (s str) (r i64) {\n    r = s.byte(0): {\n        -> it\n    }\n}\n'
+    tw = ast.make()
+    rw = ps.parse(tw, ps.new(src-w.to-bytes()))
+    aggw = h2m-new()
+    irw = h2m-lower-program(tw, aggw, rw)
+    runner.gt(aggw.unsup, 0, 's120 value wild-arm it still gated')
+
+    ; s121：str.bytes() —— 回底層 UTF-8 位元組的【零拷貝視圖】[]byte（發 OP-STRBYTES）。
+    ;   ⚠️ 視圖 cap 恆 0（借用標記）⇒ 作用域結束不釋放原 str 緩衝，故【不】進 rel 追蹤。
+    ;   ⚠️ 輸出參只用到 2 個：h2m 現僅支援至多 2 個輸出參（3 輸出會是既存的 unsup 噪點，
+    ;     與本輪无关，實測 `() (a i64) (b i64) (c i64) {}` ⇒ unsup 2）。
+    src-y = 'm = (s str) (r i64) {\n    b = s.bytes()\n    r = b.len()\n}\n'
+    ty = ast.make()
+    ry = ps.parse(ty, ps.new(src-y.to-bytes()))
+    aggy = h2m-new()
+    iry = h2m-lower-program(ty, aggy, ry)
+    runner.eq(aggy.unsup, 0, 'vm-strbytes no unsup')
+    runner.eq(iry.contains('define'), 1, 'vm-strbytes emits')
+    runner.eq(iry.contains('insertvalue %vec'), 1, 'vm-strbytes assembles %vec')
+    runner.eq(iry.contains('ptrtoint i8*'), 1, 'vm-strbytes borrows str data')
+
+    ;   門禁對照：帶參的 `s.bytes(1)` 不在本輪定義內 ⇒ 仍計 unsup（不猜）
+    src-y1 = 'm = (s str) (r i64) {\n    r = s.bytes(1)\n}\n'
+    ty1 = ast.make()
+    ry1 = ps.parse(ty1, ps.new(src-y1.to-bytes()))
+    aggy1 = h2m-new()
+    iry1 = h2m-lower-program(ty1, aggy1, ry1)
+    runner.gt(aggy1.unsup, 0, 's121 bytes with-arg still gated')
+
     ; 主体未登记（既非形参也非局部量）：槽表查不到 ⇒ 无法证明它是可读的 i64
     src-u = 'm = (x i64) (r i64) {\n    r = 0\n    zz: {\n        1 -> r = 1\n        -> r = 2\n    }\n}\n'
     t5 = ast.make()
@@ -5358,6 +5421,14 @@ test-s113-method-call-ty = () {
     call-byte = ast.add(t, asp.K-CALL-EXPRESSION)
     ast.kid-add(t, call-byte, dot-byte)
     runner.eq(h2m-ty-of(t, sg, ls, agg, call-byte), TY-OPT, 's117 str byte ty')
+
+    ; ⑤ s121：str.bytes() ⇒ TY-VEC（[]byte 零拷貝視圖，與 []i64 共用 %vec 命名空間）
+    dot-bytes = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-bytes, recv)
+    ast.set-slot(t, dot-bytes, 0, ast.put-str(t, 'bytes'))
+    call-bytes = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-bytes, dot-bytes)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, call-bytes), TY-VEC, 's121 str bytes ty')
 
     ; 對照：未支持的方法仍 -1（門禁不放寬；s113 原用 str.byte 作對照，s117 起它已支持 ⇒ 換名）
     dot-bad = ast.add(t, asp.K-DOT-EXPRESSION)
