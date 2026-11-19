@@ -2538,7 +2538,6 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
 
         ; `run` 關鍵字已移除（2026-11-17）：run 現在是普通識別符，
         ; 由 tok.keyword 回 ILLEGAL ⇒ IDENT，走一般識別元路徑。
-
         tk.typ == tok.CO -> {
             dot-after = ps-peek-at(p, 1) == tok.DOT
             dot-after == 1 -> {
@@ -2555,6 +2554,7 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
         }
 
         tk.typ == tok.AWY -> {
+
             ; `awy { ... }` 協程組（新語法）：awy 後緊接 { 時解析為普通 BlockStatement。
             ; Go 側的 IsAwaitGroup 標記對 ast dump 不可見（dump 只印 inline 欄位），
             ; 故自舉側產出 K-BLOCK-STATEMENT 即可與 `no ast` 逐位元組一致。
@@ -2569,6 +2569,7 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
                 }
             }
             is-group == 0 -> {
+
                 ; 保守解析後續運算式，避免丟 token（語料已遷移，正常不該走到這）。
                 idx = ps-parse-expr-prec(t, p, 0)
             }
@@ -2950,11 +2951,17 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
         ast.kind-at(t, idx) == asp.K-IDENTIFIER -> match-subj = 1
         ast.kind-at(t, idx) == asp.K-INDEX-EXPRESSION -> match-subj = 1
         ast.kind-at(t, idx) == asp.K-DOT-EXPRESSION -> match-subj = 1
+        ast.kind-at(t, idx) == asp.K-CALL-EXPRESSION -> match-subj = 1
         nt == tok.COLON && ps-peek-at(p, 1) == tok.LBRACE && match-subj == 1 -> {
 
             ; 明示 match：`subj: { pat -> body … }` ⇒ desugar 成 if/else 鏈（見 ps-parse-match）。
             ; s66c：主體放寬到 IDENT / IndexExpression / DotExpression，並把主體【節點】傳入
             ;   ps-parse-match（subj 字串仍供降糖路用），覆蓋率 17%→68%（見 §5.3.4）。
+            ; s115：再放寬到 CallExpression——`f(x): { ok -> it }`（.option 呼叫結果直接解包）
+            ;   是 std 里 63 處 `): {` 的值位 match 主體；Go 對任意 leftExp 都試
+            ;   parseMatchExprFrom，故 CALL 主體本就合法。
+            ;   ⚠️ 尚未覆盖：InfixExpression 主體（`a + b: { }`）——它在中綴迴圈後才成形，
+            ;     需把本檢查移到中綴迴圈之後（並為 for-cond 加 ctx 守衛），留待下一步。
             subj-name = ast.node-string(t, idx)
             ps-bump(p); 消費 COLON
             ps-bump(p); 消費 LBRACE
@@ -9886,6 +9893,8 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             ; bindingVariant：記錄 option 三態臂的變體名（ok(v)⇒ok / err(e)⇒err / nil⇒nil）。
             ;   h2m 降級側依此區分三態並決定 tag（ok=0 / nil=1 / err=2）；nil 無載荷故即便無綁定名也填 'nil'，
             ;   否則 nil 臂的 bindingVariant 留空、與真·兜底臂（wildcard）無法區分 ⇒ 門禁誤判。
+            ;   ⚠️ 對齊 oracle：`ok ->`（無綁定名）【不】填 bindingVariant（dump 印空），
+            ;   它靠 dot-val 認臂（見 h2m 側 s115 的 et 推導）；此處僅 err(e)⇒err。
             bvar = ''
             kvar == 'ok' -> {
                 bname != '' -> bvar = 'ok'

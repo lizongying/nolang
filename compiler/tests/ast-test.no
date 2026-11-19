@@ -32,9 +32,9 @@
 # /compiler/src/ast
 # /compiler/src/util/sb.sb
 
-; ═══════════════════════════════════════════════
 ; 手工組裝 arena
-; ═══════════════════════════════════════════════
+...
+
 ;
 ; 對應 Go 端的 `*parser.Program{ Statements: [ *ExpressionStatement{
 ; Expression: *IntegerLiteral{Value: 42, Raw: "42"} } ] }`
@@ -61,9 +61,8 @@ build-forty-two = () (t ast, root i64) {
     ast.kid-add(t, root, es)
 }
 
-; ═══════════════════════════════════════════════
 ; 1. 最小程式：逐位元組比對
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 minimal
 test-minimal = () {
@@ -75,9 +74,9 @@ test-minimal = () {
     runner.eq(ast.gaps(t), 0, 'minimal program hits no unreproducible summary branch')
 }
 
-; ═══════════════════════════════════════════════
 ; 2. 尾端換行必須被剪掉（dump.go 的 strings.TrimRight）
-; ═══════════════════════════════════════════════
+...
+
 ;
 ; 少了這一步，每個 fixture 都會多一個空行，而 `rc` 完全測不出來。
 
@@ -96,9 +95,9 @@ test-trim = () {
     runner.eq(ast.trim-nl('\n').len-bytes(), 0, 'trim-nl of newline-only is empty')
 }
 
-; ═══════════════════════════════════════════════
 ; 3. nodeString / typeString 的 nil 不對稱
-; ═══════════════════════════════════════════════
+...
+
 ;
 ; ⚠️ 這是最容易寫錯的一條：dump.go 的 nodeString **沒有** nil 守衛
 ;    （`%T` of nil 是 "<nil>"），typeString 有（回 ""）。
@@ -112,9 +111,9 @@ test-nil-asymmetry = () {
     runner.is-true(ast.type-string(t, 999999).eq-full(''), 'typeString(out of range) = empty')
 }
 
-; ═══════════════════════════════════════════════
 ; 4. wanted：五種印出政策
-; ═══════════════════════════════════════════════
+...
+
 ;
 ; 對照 dump.go 的 kv / kvs / kvb / kvn / kvc：
 ;   always→1  nonempty→val!=""  true→val=="true"  nonzero→val!="0"  count→val!="0"
@@ -132,9 +131,8 @@ test-wanted = () {
     runner.eq(ast.wanted(asp.P-COUNT, '3'), 1, 'count keeps 3')
 }
 
-; ═══════════════════════════════════════════════
 ; 5. type-string：型別的摘要印法
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 type-string
 test-type-string = () {
@@ -202,9 +200,9 @@ test-type-string = () {
     runner.eq(ast.gaps(t), 0, 'type-string does not count gaps')
 }
 
-; ═══════════════════════════════════════════════
 ; 6. expr-string：ArrayType 大小運算式的常數折疊
-; ═══════════════════════════════════════════════
+...
+
 ;
 ; parser.exprToString 對 InfixExpression 會先試 evalConstIntExpr：
 ;   160+16 → 176（折疊成功），a+b → "a + b"（折疊失敗，退回拼接）。
@@ -287,9 +285,9 @@ test-expr-string = () {
     runner.is-true(ast.expr-string(t, ss).eq-full("'" - 'x' - "'"), 'StringLiteral without Raw -> quoted x')
 }
 
-; ═══════════════════════════════════════════════
 ; 7. unsupported：未接線的 opcode 必須被計數，不能靜默略過
-; ═══════════════════════════════════════════════
+...
+
 ;
 ; s8y 起 interfaceMethod 已接線（sqlite/ps-test 需要），不再是缺線哨兵。
 ; AnnotationStructValue（kind 9）的 tape 帶一支 OP-HELPER(annotationStructField)，
@@ -304,9 +302,8 @@ test-unsupported-is-live = () {
     runner.eq(ast.unsupported(t), 1, 'annotationStructField helper is counted as unsupported')
 }
 
-; ═══════════════════════════════════════════════
 ; 8. 語料覆蓋：74 種節點都有 id 且名字唯一
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 kind-table
 test-kind-table = () {
@@ -323,6 +320,7 @@ test-kind-table = () {
     ;      於是折出錯的常量（evalConstIfBranch）。現在改成一律放棄折疊。
     ; 下面仍先落到區域變數，只是為了讓失敗訊息看得懂，不再有繞路作用。
     kprog = asp.K-PROGRAM
+
     ; 2026-11-17：刪除 RunExpression/AwaitExpression 後 kind 總數 74 → 72，
     ; 後續 kind 編號跟著前移兩位（Program 55 → 54、SurfaceMatch 67 → 65、
     ; Identifier 37 → 36、IntegerLiteral 41 → 40）。
@@ -346,9 +344,10 @@ test-kind-table = () {
     runner.eq(asp.kind-id('NoSuchNode'), 0, 'kind-id of an unknown name is 0')
 }
 
-; ═══════════════════════════════════════════════
 ; s66：matchArm —— SurfaceMatch 的臂（ast.no 的 helper 分派）
 ;
+...
+
 ; ⚠️ MatchArm **不是 Node**（dump.go:876-877），只經 SurfaceMatch 的 HELPER
 ;    到達 ⇒ ps.no 尚未產 SurfaceMatch，本測試是這條支路**唯一**的可達路徑
 ;    （語料 653 檔全部走不到）。沒有它，helper 裡那一支只能被型別檢查，
@@ -357,7 +356,6 @@ test-kind-table = () {
 ; 期望字串 = oracle 對最小復現檔的實測輸出：
 ;     printf 'h[0]: {\n    ok -> it = 0\n    -> _\n}\n' > /tmp/m1.no
 ;     ./bin/no ast /tmp/m1.no
-; ═══════════════════════════════════════════════
 
 ; 功能待補充
 ; t: 返回結果
@@ -458,8 +456,6 @@ test-match-arm-helper = () {
     want = 'Program{}\n    ExpressionStatement{SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            IndexExpression\n                Identifier{name: h}\n                IntegerLiteral{value: 0, raw: 0}\n            MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    LetStatement{name: it, type: i64, value: 0}\n                        NamedType{name: i64, inferred: true}\n                        IntegerLiteral{value: 0, raw: 0}\n            MatchArm{wildcard: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    ExpressionStatement{nil}'
     runner.is-true(got.eq-full(want), 'matchArm helper reproduces the oracle SurfaceMatch dump byte-for-byte')
 }
-
-; ═══════════════════════════════════════════════
 
 test-minimal()
 test-trim()

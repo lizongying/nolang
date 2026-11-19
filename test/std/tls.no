@@ -674,9 +674,10 @@ t-server-conn = () {
     runner.eq(by(sc2.hs-buf, k4), 22, 'server-conn.append-hs-from: 内容[4] = src[3] = 22')
 }
 
-; ══════════════════════════════════════════════════════════════════════
 ; 握手層
 ;
+...
+
 ; 手法：在同一個線程裡把 loopback 的**兩端**都拿到手 ——
 ;   lfd = net.net-listen('127.0.0.1', PORT)
 ;   cfd = net.net-dial(...)      ; TCP 三次握手由內核 backlog 完成，不必先 accept

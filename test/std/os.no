@@ -273,7 +273,45 @@ t-stat = () {
     runner.is-true(os.flock(fd, 8), 'flock 解鎖')
     fd >= 0 -> fs.close(fd)
 
-    runner.is-true(os.set-priority(0, 0, 0), 'set-priority 設回預設 nice')
+    ; set-priority：成功路徑在 macOS App Sandbox（本專案的開發／CI 環境）會被
+    ; setpriority(2) 以 EPERM（errno 1）擋下，即使 nice 已是 0、即使只是降低
+    ; 優先級也一樣。故契約分兩支，不得寫成「必須成功」：
+    ;   成功 ⇒ nice 變 0
+    ;   失敗 ⇒ errno 必須是權限類（EPERM=1 / EACCES=13），且不得改變現有 nice
+    nice-before = 0
+    b = os.get-priority(0, 0)
+    b: {
+        ok -> {
+            nice-before = it
+        }
+
+        -> _
+    }
+
+    set-ok = os.set-priority(0, 0, 0)
+    set-errno = os.get-errno()
+
+    nice-after = 0
+    a = os.get-priority(0, 0)
+    a: {
+        ok -> {
+            nice-after = it
+        }
+
+        -> _
+    }
+
+    {
+        set-ok -> {
+            runner.is-true(nice-after == 0, 'set-priority 成功後 nice == 0')
+        }
+
+        ! set-ok -> {
+            runner.is-true(set-errno == 1 || set-errno == 13, 'set-priority 失敗為 EPERM/EACCES')
+            runner.is-true(nice-after == nice-before, 'set-priority 失敗時 nice 不变')
+        }
+    }
+
     fs.remove(OS-FILE)
 }
 

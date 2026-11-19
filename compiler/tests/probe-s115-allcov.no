@@ -1,0 +1,24 @@
+; probe-s115-allcov.no — 临时：對單檔跑 drv.pkg-ll-cov（cov 日誌由 pkg-ll print 到 stdout）。
+; 用法：./bin/no run compiler/tests/probe-s115-allcov.no <rel-path>
+; ⚠️ 臨時探針，追記前刪除。
+
+# /compiler/src/drv
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+
+f = drv.arg-at(1)
+ll = drv.pkg-ll-cov(f)
+print('ALLOCOV-FILE ' - f - ' bytes=' - ll.len-bytes().to-str())

@@ -4368,6 +4368,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     omode = 0
     vctx = 0
     r = 0
+    sty = 0
+    sv0 = 0
+    subj-expr = 0
     snm != '' -> vctx = 1
     arms <= 0 -> h2m-mark(c)
     arms > 0 -> {
@@ -4375,13 +4378,16 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
         sslot = 0
 
         ; 主体判定——裸链 kid[0] = 0（占位），显式 match kid[0] = 主体节点
-        ;   主体只认【已在槽表登记且槽型 i64 或 option 的裸标识符】：查表在发指令之前完成，校验期不发 LOAD
         ;   i64 主体走 s63 值匹配（vmode）；option 主体走 s98 三态臂匹配（omode）
+        ; s115：主体除【已在槽表登记的裸标识符】（查槽型，不额外发 LOAD）外，
+        ;   一般表达式（呼叫／算术／索引…）也收——降级成值 id 后按值型别定 vmode/omode。
+        ;   ⚠️ 表达式主体在【当前块】恰好求值一次（sv0），逐臂不再重算（避免有副作用的呼叫被多次执行）。
         subj = h2m-kid-i(t, n, 0)
         subj > 0 -> {
             sd = ast.nd-at(t, subj)
-            sd.kind != asp.K-IDENTIFIER || sd.nkid != 0 -> bad = 1
-            bad == 0 -> {
+            subj-ident = 0
+            sd.kind == asp.K-IDENTIFIER && sd.nkid == 0 -> subj-ident = 1
+            subj-ident == 1 -> {
                 sname = ast.str-at(t, sd.s0)
                 si = h2m-name-find(c, sname)
                 si < 0 -> bad = 1
@@ -4390,6 +4396,17 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                     sty == TY-I64 -> vmode = 1
                     sty == TY-OPT -> omode = 1
                     sty != TY-I64 && sty != TY-OPT -> bad = 1
+                }
+            }
+            subj-ident == 0 -> {
+                sv0 = h2m-lower-expr(t, c, sg, subj)
+                sv0 <= 0 -> bad = 1
+                sv0 > 0 -> {
+                    sty = h2m-vty-at(c, sv0)
+                    sty == TY-I64 -> vmode = 1
+                    sty == TY-OPT -> omode = 1
+                    sty != TY-I64 && sty != TY-OPT -> bad = 1
+                    subj-expr = 1
                 }
             }
         }
@@ -4424,12 +4441,26 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
             bvx = ast.aux-at(t, hb + 1)
             bn <= 0 -> bad = 1
 
-            ; 真·兜底臂（catch-all `_`）：无 variant（bvx==0）、无 Condition、wildcard 标记置位。
+            ; dotv = dot-val 标记（s115）：`ok ->`（無綁定名，`it` 隱式解包）在 AST 里
+            ;   bindingVariant 為空（對齊 oracle dump），單靠 bvx 無法與真·兜底區分。
+            dotv = ast.aux-at(t, hb + 5)
+
+            ; s115：`err ->`（無綁定）在 AST 裡 bindingVariant 空、dot-val 未置、Condition 是標識符 err
+            ;   （對齊 oracle dump：`MatchArm{blockBody: true, binding: , bindingVariant: }`）。
+            ;   option 主體的三態已窮盡（ok 有 dot-val、nil 的 bvar 無條件填 'nil'），
+            ;   故「無 variant + 無 dot-val + Condition 為標識符」即 err 臂——不讀字串（str-at 早期滯後）。
+            cnid = 0
+            cn > 0 -> {
+                cnd = ast.nd-at(t, cn)
+                cnd.kind == asp.K-IDENTIFIER -> cnid = 1
+            }
+
+            ; 真·兜底臂（catch-all `_`）：无 variant（bvx==0）、无 Condition、无 dot-val、wildcard 标记置位。
             ;   仅此一种需「末位」约束；option 三态臂 ok/nil/err 各吃掉一个变体，不是 catch-all。
             ;   ⚠️ hb+4 是 wildcard 字符串字段（'true'/''），parser 对 nil 臂也填非空，
             ;      故不能单凭 wi>0 判 catch-all——必须叠加 bvx==0 才是真兜底。
             is-wild = 0
-            wi > 0 && cn <= 0 && bvx == 0 -> is-wild = 1
+            wi > 0 && cn <= 0 && bvx == 0 && dotv == 0 -> is-wild = 1
             is-wild == 1 -> {
                 last-j = j + 1
                 last-j < arms -> bad = 1
@@ -4459,9 +4490,11 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 ast.aux-at(t, hb + 6) != 0 -> bad = 1
                 ast.aux-at(t, hb + 8) != 0 -> bad = 1
 
-                ; 无 variant（bvx==0）：只能是真·兜底臂（is-wild），否则不合法
-                bvx == 0 -> {
-                    is-wild == 0 -> bad = 1
+                ; 无 variant（bvx==0）且非 dot-val：只能是真·兜底臂（is-wild）或 `err ->`（無綁定，cnid），
+                ;   否则不合法。
+                ;   s115：`ok ->`（無綁定）bindingVariant 空但 dot-val 置位 ⇒ 按 dot-val 認 ok 臂
+                bvx == 0 && dotv == 0 -> {
+                    is-wild == 0 && cnid == 0 -> bad = 1
                 }
             }
 
@@ -4491,10 +4524,20 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 bn = ast.aux-at(t, hb + 11)
                 wi = ast.aux-at(t, hb + 4)
                 bvar = ast.str-at(t, ast.aux-at(t, hb + 1))
+                dotv = ast.aux-at(t, hb + 5)
+
+                ; s115：同門禁側，`err ->`（無綁定）靠「Condition 是標識符」認臂（不讀字串）
+                cnid = 0
+                cn > 0 -> {
+                    cnd = ast.nd-at(t, cn)
+                    cnd.kind == asp.K-IDENTIFIER -> cnid = 1
+                }
+
                 wild = 0
 
                 ; 真·兜底臂才走 s65 无判定块路；option 三态臂（ok/nil/err，bvar 非空）必须走 tag 比较
-                wi > 0 && cn <= 0 && bvar == '' -> wild = 1
+                ;   s115：dot-val 臂（`ok ->` 無綁定）同樣不是兜底 ⇒ 必須走 tag 比較
+                wi > 0 && cn <= 0 && bvar == '' && dotv == 0 -> wild = 1
                 h2m-set-block(c, next-id)
 
                 #{overflow=wrap}
@@ -4505,7 +4548,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                     ;   （判定臂的栈压入复用判定块已有 load，不新增指令）
                     bound = 0
                     (vmode == 1 || omode == 1) && h2m-subtree-uses-it(t, bn) == 1 -> {
-                        iv1 = h2m-var-read(c, sname)
+                        iv1 = 0
+                        subj-expr == 1 -> iv1 = sv0
+                        subj-expr == 0 -> iv1 = h2m-var-read(c, sname)
                         iv1 <= 0 -> h2m-mark(c)
                         iv1 > 0 -> {
                             bound = 1
@@ -4527,7 +4572,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                     ; s98：option 主体三态臂降级（ok/nil/err），tag 比较而非整值比较
                     omode == 1 -> {
-                        sv = h2m-var-read(c, sname)
+                        sv = 0
+                        subj-expr == 1 -> sv = sv0
+                        subj-expr == 0 -> sv = h2m-var-read(c, sname)
                         sv <= 0 -> {
                             stop = 1
                         }
@@ -4542,6 +4589,11 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                             et = 1
                             bvar == 'ok' -> et = 0
                             bvar == 'err' -> et = 2
+
+                            ; s115：`ok ->`（無綁定）bindingVariant 空、dot-val 置位 ⇒ 按 dot-val 認 ok 臂；
+                            ;   `err ->`（無綁定）無 variant 無 dot-val，靠 cnid 認 err 臂
+                            bvar == '' && dotv != 0 -> et = 0
+                            bvar == '' && dotv == 0 && cnid != 0 -> et = 2
                             ect = h2m-alloc(c, TY-I64)
                             h2m-emit(c, OP-CONST, ect, et, 0, '', TY-I64)
                             eqv = h2m-alloc(c, TY-I64)
@@ -4557,13 +4609,18 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                                 h2m-emit(c, OP-CONDBR, ftgt, cv, arm-id, '', 0)
                                 h2m-set-block(c, arm-id)
 
-                                ; it = subject option 值（同 i64 路）
-                                c.itv.push(sv)
-
+                                ; s115：`it` 在 ok 臂是【載荷】（OP-OPTGET），不是 option 本身——
+                                ;   `ok ->`（無綁定）與 `ok(v) ->` 共用同一條 OPTGET，不重複發指令。
+                                itv-v = sv
+                                et == 0 -> {
+                                    itv-v = h2m-alloc(c, TY-I64)
+                                    h2m-emit(c, OP-OPTGET, itv-v, sv, 0, '', TY-I64)
+                                }
+                                c.itv.push(itv-v)
                                 c.itv-n = h2m-inc(c.itv-n)
 
                                 ; ok(v)：payload 绑定到臂局部名（跨 mem 直返 SSA，出臂 pop 还原）
-                                bvar == 'ok' -> {
+                                et == 0 && bvar == 'ok' -> {
 
                                     ; ⚠️ 实参**不能**写成算术式（哪怕 `hb + 0` 这种恒等式）：
                                     ;   实参含算术 ⇒ 整條 let 被 option 捕获改写成 `?i64`
@@ -4575,16 +4632,14 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                                     ;   索引读回只取到 tag 那 8 字节 ⇒ 查表恒 miss。
                                     ;   hb 本身就是 i64，直接传。
                                     bidx = ast.aux-at(t, hb)
-                                    pv = h2m-alloc(c, TY-I64)
-                                    h2m-emit(c, OP-OPTGET, pv, sv, 0, '', TY-I64)
                                     c.alidx.push(bidx)
-                                    c.alv.push(pv)
+                                    c.alv.push(itv-v)
                                 }
 
                                 ; err(e)：err 结构暂不可绑（无 TY-ERR），体引用 e → h2m-var-read 查不到 → unsup（安全）
                                 h2m-smv-body(t, c, sg, bn, vctx, sslot)
                                 h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
-                                bvar == 'ok' -> {
+                                et == 0 && bvar == 'ok' -> {
                                     c.alidx.pop()
                                     c.alv.pop()
                                 }
@@ -4602,7 +4657,8 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                         cv = pv
                         sv = 0
                         vmode == 1 && pv > 0 -> {
-                            sv = h2m-var-read(c, sname)
+                            subj-expr == 1 -> sv = sv0
+                            subj-expr == 0 -> sv = h2m-var-read(c, sname)
                             sv > 0 -> {
                                 eqv = h2m-alloc(c, TY-I64)
                                 h2m-emit(c, OP-CMPEQ, eqv, sv, pv, '', TY-I64)

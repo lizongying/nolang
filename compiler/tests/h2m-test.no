@@ -5274,6 +5274,171 @@ test-s114-bare-call = () {
     runner.eq(v3, 0, 's114 unregistered bare call no value')
 }
 
+; ── s115：顯式 match 的表達式主體（`expr: { ok -> it }`）──
+; ㉛⑤ 點名：顯式 match 的主體除裸標識符外應覆蓋一般表達式；本輪落地的是「主體降級成值 id
+; （sv0）後按值型別定 vmode/omode」這條通路，連帶兩個臂形態的認臂修補：
+;   · `ok ->`（無綁定名，`it` 隱式解包）——AST 裡 bindingVariant 為空（對齊 oracle dump），
+;     單靠 wildcard 會與真·兜底混淆 ⇒ 靠 dot-val 認臂；且 `it` 是【載荷】（OP-OPTGET）而非 option 本身。
+;   · `err ->`（無綁定名）——無 variant 無 dot-val，靠 Condition 是標識符認臂（不讀字串，str-at 早期滯後）。
+; ⚠️ 主體是呼叫的形（`f(x): { }`）本輪【不】覆蓋：卡在 h2m-lower-expr 的方法族降級（s113 缺口），
+;   見 ㉜ ⑤ 的记录。
+test-s115-expr-subject = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+
+    ; 主體：IDENT('a')，槽表 a: TY-OPT ⇒ omode 三態臂
+    subj = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, subj, 0, ast.put-str(t, 'a'))
+
+    ; 臂1 體：`it`（BlockStatement{nkid=1} → ExpressionStatement{nkid=1} → IDENT('it')）
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    it1 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, it1, 0, ast.put-str(t, 'it'))
+    ast.kid-add(t, e1, it1)
+    b1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b1, e1)
+
+    ; 臂2 體：`0`
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    z2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, z2, 0, ast.put-str(t, '0'))
+    ast.kid-add(t, e2, z2)
+    b2 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b2, e2)
+
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 2)
+
+    ; 臂1 = `ok -> it`（dot-val 認臂；bindingVariant 空是 oracle 口徑）
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); wildcard
+    ast.aux-add(t, ast.put-str(t, 'true')); dot-val
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b1)
+
+    ; 臂2 = `-> 0`（真·兜底，必須在末位）
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); wildcard
+    ast.aux-add(t, 0); dot-val
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b2)
+
+    c = h2m-new()
+    c.cur-fn = 'caller'
+    h2m-slot-decl(c, 'a', TY-OPT)
+    h2m-slot-decl(c, 'r', TY-I64)
+    v = h2m-lower-surface(t, c, sg, sm, 'r')
+    runner.eq(c.unsup, 0, 's115 ok-arm dot-val no unsup')
+    runner.eq(v > 0, 1, 's115 ok-arm dot-val emits value')
+    runner.eq(h2m-vty-at(c, v), TY-I64, 's115 ok-arm dot-val result i64')
+    runner.eq(c.ops[0], OP-OPTALLOC, 's115 slot a optalloc first')
+}
+
+; s115 用例二：`ok -> it` / `err -> 0` / `-> 0` 三臂——`err ->`（無綁定）靠 cnid 認 err 臂
+test-s115-err-arm-nobind = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+
+    subj = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, subj, 0, ast.put-str(t, 'a'))
+
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    it1 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, it1, 0, ast.put-str(t, 'it'))
+    ast.kid-add(t, e1, it1)
+    b1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b1, e1)
+
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    z2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, z2, 0, ast.put-str(t, '0'))
+    ast.kid-add(t, e2, z2)
+    b2 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b2, e2)
+
+    e3 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    z3 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, z3, 0, ast.put-str(t, '0'))
+    ast.kid-add(t, e3, z3)
+    b3 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b3, e3)
+
+    ; 臂2 的 Condition 是標識符 err（`err ->` 無綁定）
+    cerr = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, cerr, 0, ast.put-str(t, 'err'))
+
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '3'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 3)
+
+    ; 臂1 = `ok -> it`
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b1)
+
+    ; 臂2 = `err -> 0`（無 variant、無 dot-val，Condition=IDENT('err')）
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0); wildcard
+    ast.aux-add(t, 0); dot-val
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, cerr)
+    ast.aux-add(t, b2)
+
+    ; 臂3 = `-> 0`
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b3)
+
+    c = h2m-new()
+    c.cur-fn = 'caller'
+    h2m-slot-decl(c, 'a', TY-OPT)
+    h2m-slot-decl(c, 'r', TY-I64)
+    v = h2m-lower-surface(t, c, sg, sm, 'r')
+    runner.eq(c.unsup, 0, 's115 err-arm-nobind no unsup')
+    runner.eq(v > 0, 1, 's115 err-arm-nobind emits value')
+}
+
 test-sb-vec-mixed-elem-gate()
 test-sb-str-param-sig()
 test-sb-str-index()
@@ -5293,6 +5458,8 @@ test-s112-bare-const()
 test-s113-method-call-ty()
 test-s113b-index-ty()
 test-s114-bare-call()
+test-s115-expr-subject()
+test-s115-err-arm-nobind()
 
 runner.summary()
 f = runner.failed-count()

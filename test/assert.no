@@ -233,12 +233,12 @@ str-ne = (a str, b str, n i64, msg str) (ok bool) {
     }
 }
 
-; 字串為空（n == 0）
-; s: 目標字串（供失敗資訊上下文）
-; n: 待判定的長度（為 0 才通過）
+; 字串為空（len == 0）
+; s: 目標字串
 ; msg: 斷言失敗時列印的說明
-; ok: true=n==0 為空；false=n!=0 且已印 FAIL
-str-empty = (s str, n i64, msg str) (ok bool) {
+; ok: true=s 為空；false=s 非空且已印 FAIL
+str-empty = (s str, msg str) (ok bool) {
+    n = s.len()
     {
         n != 0 -> {
             ok = false
@@ -251,11 +251,11 @@ str-empty = (s str, n i64, msg str) (ok bool) {
 }
 
 ; 字串非空
-; s: 目標字串（供失敗資訊上下文）
-; n: 待判定的長度（非 0 才通過）
+; s: 目標字串
 ; msg: 斷言失敗時列印的說明
-; ok: true=n!=0 非空；false=n==0 且已印 FAIL
-str-not-empty = (s str, n i64, msg str) (ok bool) {
+; ok: true=s 非空；false=s 為空且已印 FAIL
+str-not-empty = (s str, msg str) (ok bool) {
+    n = s.len()
     {
         n == 0 -> {
             ok = false

@@ -1,0 +1,52 @@
+; s115 勘察探针：语句层结构（f1 vs f4）
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/tok
+# /compiler/src/ps
+# /compiler/src/ix
+# /compiler/src/util/sb.sb
+
+kname = (k i64) (s str) {
+    s = k.to-str()
+    k == 14 -> s = '14:BLOCK'
+    k == 29 -> s = '29:EXPR-STAT'
+    k == 34 -> s = '34:FUNCDEF'
+    k == 35 -> s = '35:IDENT'
+    k == 38 -> s = '38:INFIX'
+    k == 39 -> s = '39:INT-LIT'
+    k == 40 -> s = '40:EXPR-STAT2'
+    k == 42 -> s = '42:LET'
+    k == 45 -> s = '45:CALL'
+    k == 56 -> s = '56:RETURN'
+    k == 65 -> s = '65:SURFACE-MATCH'
+    k == 67 -> s = '67:SURFACE-MATCH2'
+}
+
+walk = (t ast, n i64, ind str) {
+    d = ast.nd-at(t, n)
+    print(ind - 'kind=' - kname(d.kind) - ' nkid=' - d.nkid.to-str() - ' s0=' - ast.node-string(t, n))
+    i = 0
+    (i < d.nkid) {
+        p = d.kid0
+        #{overflow=wrap}
+        p = p + i
+        kid = ast.kid-at(t, p)
+        kid > 0 -> walk(t, kid, ind - '  ')
+        kid <= 0 -> print(ind - '  <0>')
+        i = ix.inc(i)
+    }
+}
+
+one = (name str) {
+    print('=== ' - name - ' ===')
+    bb = fs.read-file('compiler/tests/t8/' - name - '.no')
+    t = ast.make()
+    p = ps.new(bb)
+    root = ps.parse(t, p)
+    walk(t, root, '')
+}
+
+one('f1')
+one('f4')
+print('done')
