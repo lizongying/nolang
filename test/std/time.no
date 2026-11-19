@@ -111,13 +111,13 @@ t-format-date = () {
     d.min = 30
     d.sec = 45
     s = time.format-date(d)
-    runner.str-eq(s, '2024-01-15 12:30:45', 19, 'format-date')
+    runner.str-eq(s, '2024-01-15 12:30:45', 'format-date')
 }
 
 ; 驗證 format-time-str 將 Unix 秒格式化為 UTC 日期時間字串
 t-format-time-str = () {
     s = time.format-time-str(0)
-    runner.str-eq(s, '1970-01-01 00:00:00', 19, 'format-time-str(0)')
+    runner.str-eq(s, '1970-01-01 00:00:00', 'format-time-str(0)')
 }
 
 ; ── 解析 ──────────────────────────────────────
@@ -170,11 +170,11 @@ t-timer = () {
 ; 驗證 format-duration 將秒數格式化為 NhNmNs（含超過 24 小時）
 t-format-duration = () {
     s1 = time.format-duration(3661)
-    runner.str-eq(s1, '1h1m1s', 6, 'format-duration(3661) == 1h1m1s')
+    runner.str-eq(s1, '1h1m1s', 'format-duration(3661) == 1h1m1s')
     s2 = time.format-duration(0)
-    runner.str-eq(s2, '0h0m0s', 6, 'format-duration(0) == 0h0m0s')
+    runner.str-eq(s2, '0h0m0s', 'format-duration(0) == 0h0m0s')
     s3 = time.format-duration(90061)
-    runner.str-eq(s3, '25h1m1s', 7, 'format-duration(90061) == 25h1m1s')
+    runner.str-eq(s3, '25h1m1s', 'format-duration(90061) == 25h1m1s')
 }
 
 ; ── time 結構體 ────────────────────────────────
@@ -193,7 +193,7 @@ t-time-struct = () {
     ; .format 格式化（UTC）
     tz = time.unix-to-time(0)
     s = tz.format()
-    runner.str-eq(s, '1970-01-01 00:00:00', 19, 'time.format(0)')
+    runner.str-eq(s, '1970-01-01 00:00:00', 'time.format(0)')
 
     ; .add-seconds / .unix-ms
     t1 = tz.add-seconds(3600)

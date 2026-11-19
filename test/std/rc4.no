@@ -54,7 +54,7 @@ bhex = (data []byte) (hex str) {
 ; 已知答案：key = 'Key'、明文 = 'Plaintext' 的密文應為 bbf316e8d940af0ad3
 t-vector = () {
     out = rc4.rc4('Plaintext'.to-bytes(), 'Key'.to-bytes())
-    runner.str-eq(bhex(out), 'bbf316e8d940af0ad3', 18, 'rc4 Key/Plaintext KAT')
+    runner.str-eq(bhex(out), 'bbf316e8d940af0ad3', 'rc4 Key/Plaintext KAT')
 }
 
 ; RC4 對稱：用同一把金鑰再加密一次即還原明文
@@ -64,9 +64,7 @@ t-roundtrip = () {
     ct = rc4.rc4(pt, key)
     back = rc4.rc4(ct, key)
 
-    #{overflow=wrap}
-    blen = back.len() * 2
-    runner.str-eq(bhex(back), bhex(pt), blen, 'rc4 symmetric round-trip')
+    runner.str-eq(bhex(back), bhex(pt), 'rc4 symmetric round-trip')
 }
 p1 = runner.test('rc4.vector', t-vector)
 p2 = runner.test('rc4.roundtrip', t-roundtrip)

@@ -39,7 +39,7 @@ t-overwrite = () {
     n bool = m.put('k', 'v2')
     runner.is-false(n, 're-put same key not new')
     runner.eq(m.len(), 1, 'len stays 1 after overwrite')
-    runner.str-eq(m.to-str(), '{k: v2}', 7, 'overwrite updates value')
+    runner.str-eq(m.to-str(), '{k: v2}', 'overwrite updates value')
 }
 
 ; get 命中時以 ok 回傳原值 'Tokyo'，查無此鍵時回 nil（不是空字串）
@@ -61,7 +61,7 @@ t-get = () {
         nil ->
     }
     runner.is-true(hit, 'get found')
-    runner.str-eq(val, 'Tokyo', 5, 'get returns correct value')
+    runner.str-eq(val, 'Tokyo', 'get returns correct value')
 
     miss = m.get('nope')
     found = false
@@ -132,16 +132,16 @@ t-for-each = () {
     m.init()
     m.put('only', 'solo')
     k, v = m.for-each()
-    runner.str-eq(k, 'only', 4, 'single entry: for-each k')
-    runner.str-eq(v, 'solo', 4, 'single entry: for-each v')
+    runner.str-eq(k, 'only', 'single entry: for-each k')
+    runner.str-eq(v, 'solo', 'single entry: for-each v')
 
     m2 = str-map{}
     m2.init()
     m2.put('k2', 'v2')
     m2.put('k1', 'v1')
     k2, v2 = m2.for-each()
-    runner.str-eq(k2, 'k1', 2, 'two entries: higher slot (k1) wins')
-    runner.str-eq(v2, 'v1', 2, 'two entries: value stays paired')
+    runner.str-eq(k2, 'k1', 'two entries: higher slot (k1) wins')
+    runner.str-eq(v2, 'v1', 'two entries: value stays paired')
 }
 
 total = runner.summary()

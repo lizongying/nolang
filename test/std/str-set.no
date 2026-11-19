@@ -99,12 +99,12 @@ t-for-each = () {
     s.add('hello')
     s.add('world')
     v = s.for-each()
-    runner.str-eq(v, 'world', 5, 'higher slot (world) wins')
+    runner.str-eq(v, 'world', 'higher slot (world) wins')
 
     s2 = str-set{}
     s2.init()
     s2.add('solo')
-    runner.str-eq(s2.for-each(), 'solo', 4, 'single element returned as-is')
+    runner.str-eq(s2.for-each(), 'solo', 'single element returned as-is')
 }
 
 total = runner.summary()

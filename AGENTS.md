@@ -6,7 +6,7 @@
 > 范围：生成或修改 `src/std/**/*.no`（标准库）、`tests/**/*.no`（测试）、
 > `example/**/*.no`（示例）以及编译器本身的 Go 代码时遵循本文件。
 > 不含任何贡献流程 / 评审 / LLM 使用政策章节。
-> 完整语法细节见 `.agents/skills/nolang-syntax/SKILL.md`（本文件是其面向代理的精简版）。
+> 完整语法细节见 `.agents/skills/nolang-core/SKILL.md`（本文件是其面向代理的精简版，用法见 §1.4）。
 
 ---
 
@@ -31,7 +31,7 @@ Nolang 是一门**内存安全、无 GC、语法极简**的系统编程语言。
 | `src/builtin/` | 编译器内建（print、数值转换、str/vec 内建方法等）。 |
 | `tests/` | 端到端测试。每个 `.no` 独立构建并运行，失败返回非零退出码。 |
 | `example/` | 示例程序（如 `example/test1`）。 |
-| `glossary/` | **Nolang 词条化知识库**（244 条 / 10 域）。数据是 `glossary/data/*.noml`，前端是 Nolang 写的 CLI + MCP。**查语言名词、std 模块、已知坑先查它**：`./glossary/dist/glossary get <id>`、`search <关键词>`、`list --domain=traps`。详见 `glossary/README.md`。 |
+| `glossary/` | **Nolang 词条化知识库**（244 条 / 10 域）。数据是 `glossary/data/*.noml`，前端是 Nolang 写的 CLI + MCP 服务器（工具 `glossary_get` / `glossary_search` / `glossary_list` / `glossary_related`）。**查语言名词、std 模块、已知坑先用 MCP 工具**；未接入 MCP 时退回 CLI：`./glossary/dist/glossary get <id>`、`search <关键词>`、`list --domain=traps`。详见 `glossary/README.md`。 |
 | `workspace.noml` | 工作区根定义，登记各包路径（如 `test: '/test'`）。 |
 | `Makefile` | 构建入口。**改编译器或 std 一律走 `make`，勿 `cd src && go build`。** |
 
@@ -66,6 +66,42 @@ no build glossary            # 构建词条库前端 -> glossary/dist/glossary
 需要格式化时一律 `no fmt <f>` 输出到 /tmp → `diff -u` → 只 `patch` 目标 hunk。
 （`#{index-out}` 已于 D11 全量移除，不得再新增。）
 
+### 1.4 Agent Skills 使用指南
+
+本项目把语言 / 编译器的深层知识放在 **skill** 里，AGENTS.md 只是面向代理的精简版。
+**动手前先查 skill**：命中场景时先读对应 `SKILL.md`，再按其内部协议加载，不要凭记忆或整目录硬读。
+
+**优先级**：工作区 skill（`.agents/skills/`）优先；同名 / 同功能时以工作区版为准。
+
+**权威顺序**（冲突时按此裁决）：实测 > `AGENTS.md`（语法与编码权威）>
+`.agents/rules/nolang-red-lines.md`（红线全文）> `nolang-core` skill > 记忆笔记。
+
+| skill | 位置 | 何时用 |
+| --- | --- | --- |
+| `nolang-core` | `.agents/skills/nolang-core`（工作区，优先） | **本项目主力**：写 / 改 `.no`、查语法 / 类型 / 注解 / FFI、查 std 模块签名、`make` / `no vet` / `no test`、修 parser / fmt / LSP 缺陷、内存与所有权、内建函数注册、embed / import 路径解析、自举性能、英文文档 i18n、打 tag 发版 |
+
+**`nolang-core` 加载协议**（由十多个旧 skill 合并而来，正文按开关分档）：
+
+1. **先读 `SKILL.md`**，不要直接翻 `modules/` 目录；开关表与路由都在里面。
+2. **按开关表分档加载**：`default: true` 的 `build` / `verify` 常驻；`auto` 的 `syntax` / `std`
+   命中 trigger 才载；`false` 的（`cli` / `debug` / `builtin` / `path-resolution` /
+   `selfhost-perf` / `docs-i18n` / `release` / `memory`）仅显式点名或 `requires` 拉起才载。
+3. **子视图再挑一档**：`syntax/`（7 个视图）与 `std/`（10 个视图）命中父模块后按 trigger
+   只读一两个，**不要整目录读**。
+4. **预算**：单次加载正文上限 **1200 行**；超了先只读路由（`m10-syntax` / `m20-std`），正文按需追加。
+5. **旧名仍是触发词**：`nolang-syntax` / `nolang-std` / `nolang-build` / `nolang-vet` /
+   `nolang-debug` / `nolang-memory` / `nolang-builtin` / `nolang-path-resolution` /
+   `nolang-selfhost-perf` / `nolang-docs-i18n` / `nolang-release` 说旧名等价于载对应模块。
+6. **两个特殊档**：`memory` 已 `quarantined`（内容部分失效，默认关，加载必须先打失效横幅，
+   活实现在 `src/mir/`）；`release` **执行前必须用户确认**，且禁 `git add -A`。
+7. **改 skill 配置后**：`python3 .agents/skills/nolang-core/scripts/core.py gen` 重渲染开关表；
+   提交前跑 `python3 .agents/skills/nolang-core/scripts/core.py check`（漂移 / 路径 / 孤儿模块）
+   与 `... links`（内部相对链接可达）。**不要手改 SKILL.md 里的开关表**。
+
+> 另有一条平行的知识源：`glossary/`（Nolang 词条库，244 条 / 10 域，**以 MCP 服务器提供**，
+> 工具 `glossary_get` / `glossary_search` / `glossary_list` / `glossary_related`；未接入时用 CLI），
+> 查语言名词、std 模块、已知坑先查它（见 §1.1）。skill 与 glossary 都不替代 §2 黄金法则。
+
 ---
 
 ## 2. 黄金法则
@@ -75,7 +111,7 @@ no build glossary            # 构建词条库前端 -> glossary/dist/glossary
 
 ---
 
-## 3. 语言参考（从 `.agents/skills/nolang-syntax` 提炼）
+## 3. 语言参考（从 `.agents/skills/nolang-core` 提炼）
 
 ### 3.1 注释与文件组织
 
@@ -893,7 +929,7 @@ pick = (a []i64, i i64) (out ?i64) {
 
 ### 6.10 全局变量必须大写；模块内避免全局可变状态
 全局小写会被当局部 → 未定义引用错误。模块内优先用局部变量 / 结构体封装状态，避免跨函数全局地址不一致的
-编译器已知缺陷（见 `.agents/skills/nolang-syntax` 的「Avoid Global Variables」）。
+编译器已知缺陷（见 `.agents/skills/nolang-core` 的「Avoid Global Variables」）。
 
 ### 6.11 不要重写合法代码来「修复」疑似编译器 / 解析器 bug
 遵循 §2 黄金法则：即使怀疑工具错误，也只报告，不修改合法代码。

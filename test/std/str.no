@@ -313,9 +313,9 @@ t-starts-ends = () {
 t-case = () {
     s = 'Hello42'
     up = s.to-upper()
-    runner.str-eq(up, 'HELLO42', 7, 'to-upper')
+    runner.str-eq(up, 'HELLO42', 'to-upper')
     low = s.to-lower()
-    runner.str-eq(low, 'hello42', 7, 'to-lower')
+    runner.str-eq(low, 'hello42', 'to-lower')
 }
 
 ; 驗證 trim 去除首尾空白，且無首尾空白的字串保持不變
@@ -323,7 +323,7 @@ t-trim = () {
     s1 = '  hi  '
     t1 = s1.trim()
     runner.eq(t1.len(), 2, 'trim both sides len')
-    runner.str-eq(t1, 'hi', 2, 'trim both sides content')
+    runner.str-eq(t1, 'hi', 'trim both sides content')
     s2 = 'hi'
     t2 = s2.trim()
     runner.eq(t2.len(), 2, 'trim no-space unchanged')
@@ -337,7 +337,7 @@ t-repeat = () {
     ab = 'ab'
     r = ab.repeat(3)
     runner.eq(r.len(), 6, 'repeat ab x3 len')
-    runner.str-eq(r, 'ababab', 6, 'repeat ab x3 content')
+    runner.str-eq(r, 'ababab', 'repeat ab x3 content')
 }
 
 ; 驗證 slice(start, end) 取出子字串檢視，其長度與內容正確
@@ -345,9 +345,9 @@ t-slice = () {
     s = 'hello world'
     v = s.slice(6, 11)
     runner.eq(v.len(), 5, 'slice len')
-    runner.str-eq(v, 'world', 5, 'slice content')
+    runner.str-eq(v, 'world', 'slice content')
     v2 = s.slice(0, 5)
-    runner.str-eq(v2, 'hello', 5, 'slice from 0')
+    runner.str-eq(v2, 'hello', 'slice from 0')
 }
 
 ; 驗證 to-bytes 將字串轉為位元組陣列，首尾位元組值與來源對應
@@ -435,7 +435,7 @@ t-fill = () {
     s = 'abc'
     s.fill(122)
     runner.eq(s.len-bytes(), 3, 'fill keeps len')
-    runner.str-eq(s, 'zzz', 3, 'fill with z')
+    runner.str-eq(s, 'zzz', 'fill with z')
 }
 
 ; ── 位元組存取 ────────────────────────────────
@@ -532,15 +532,15 @@ t-rindex = () {
 ; 驗證 slice-bytes 取位元組區間、to-str 保留完整內容
 t-slice-bytes-to-str = () {
     s = 'hello world'
-    runner.str-eq(s.slice-bytes(0, 5), 'hello', 5, 'slice-bytes 0..5')
-    runner.str-eq(s.slice-bytes(6, 11), 'world', 5, 'slice-bytes 6..11')
-    runner.str-eq(s.to-str(), 'hello world', 11, 'to-str keeps content')
+    runner.str-eq(s.slice-bytes(0, 5), 'hello', 'slice-bytes 0..5')
+    runner.str-eq(s.slice-bytes(6, 11), 'world', 'slice-bytes 6..11')
+    runner.str-eq(s.to-str(), 'hello world', 'to-str keeps content')
 }
 
 ; 驗證 reverse 依位元組逆序（ASCII 正確；多字節 UTF-8 的碼點級反轉見 README §5.2）
 t-reverse = () {
-    runner.str-eq('abc'.reverse(), 'cba', 3, 'reverse abc')
-    runner.str-eq(''.reverse(), '', 0, 'reverse empty')
+    runner.str-eq('abc'.reverse(), 'cba', 'reverse abc')
+    runner.str-eq(''.reverse(), '', 'reverse empty')
 }
 
 ; 驗證 compare 的字典序結果 -1 / 0 / 1
@@ -585,10 +585,10 @@ t-to-unsigned = () {
     runner.eq(byte-of('-1'), 9000002, 'to-byte -1 == err')
 
     ; u64 沒有 .to-i64，只能經 .to-str() 比字串
-    runner.str-eq(u64-of('18446744073709551615'), '18446744073709551615', 20, 'to-u64 max value')
-    runner.str-eq(u64-of('-1'), 'err', 3, 'to-u64 -1 == err')
-    runner.str-eq(u64-of(''), 'nil', 3, 'to-u64 empty == nil')
-    runner.str-eq(u64-of('+7'), '7', 1, 'to-u64 +7 == 7')
+    runner.str-eq(u64-of('18446744073709551615'), '18446744073709551615', 'to-u64 max value')
+    runner.str-eq(u64-of('-1'), 'err', 'to-u64 -1 == err')
+    runner.str-eq(u64-of(''), 'nil', 'to-u64 empty == nil')
+    runner.str-eq(u64-of('+7'), '7', 'to-u64 +7 == 7')
 }
 
 ; 驗證 to-f64 / to-f32 / str-to-f64 的解析（含科學記號、前導空白）與非法輸入
@@ -621,10 +621,10 @@ t-to-bool = () {
 
 ; 驗證 replace-char 換單一字元、trim-char 只削掉首尾的指定字元
 t-replace-char = () {
-    runner.str-eq('abc'.replace-char("a", "x"), 'xbc', 3, 'replace-char a->x')
-    runner.str-eq('aaa'.replace-char("a", "z"), 'zzz', 3, 'replace-char all')
-    runner.str-eq('---hi---'.trim-char("-"), 'hi', 2, 'trim-char -')
-    runner.str-eq('hi'.trim-char("-"), 'hi', 2, 'trim-char no match')
+    runner.str-eq('abc'.replace-char("a", "x"), 'xbc', 'replace-char a->x')
+    runner.str-eq('aaa'.replace-char("a", "z"), 'zzz', 'replace-char all')
+    runner.str-eq('---hi---'.trim-char("-"), 'hi', 'trim-char -')
+    runner.str-eq('hi'.trim-char("-"), 'hi', 'trim-char no match')
 }
 
 ; 驗證 empty 的判定與 with-cap/with-len/with-len-cap/new 的長度語義
@@ -635,16 +635,16 @@ t-mode-ctors = () {
     runner.eq(''.with-len(4).len-bytes(), 4, 'with-len sets len 4')
     runner.eq(''.with-len-cap(3, 9).len-bytes(), 3, 'with-len-cap sets len 3')
     cs = ["a", "b", "c"]
-    runner.str-eq(str.new(cs), 'abc', 3, 'new from []char')
+    runner.str-eq(str.new(cs), 'abc', 'new from []char')
 }
 
 ; ── 十六進位 / 大整數 / txt ───────────────────
 
 ; 驗證 to-hex / str-hex-val / from-hex 的三向互轉與錯誤分支
 t-hex = () {
-    runner.str-eq('Hi'.to-hex(), '4869', 4, 'to-hex Hi')
-    runner.str-eq(''.to-hex(), '', 0, 'to-hex empty')
-    runner.str-eq('中文'.to-hex(), 'e4b8ade69687', 12, 'to-hex 中文')
+    runner.str-eq('Hi'.to-hex(), '4869', 'to-hex Hi')
+    runner.str-eq(''.to-hex(), '', 'to-hex empty')
+    runner.str-eq('中文'.to-hex(), 'e4b8ade69687', 'to-hex 中文')
     runner.eq(str.str-hex-val(65), 10, 'str-hex-val A == 10')
     runner.eq(str.str-hex-val(102), 15, 'str-hex-val f == 15')
     runner.eq(str.str-hex-val(122), -1, 'str-hex-val z == -1')
@@ -658,13 +658,13 @@ t-hex = () {
 
 ; 驗證 to-bigint 自動判進位制（0x/0o/0b/十進）與 bigint-bitlen 的位長
 t-to-bigint = () {
-    runner.str-eq(bi-of('255'), '255', 3, 'to-bigint 255 value')
-    runner.str-eq(bi-of('-255'), '-255', 4, 'to-bigint -255 value')
-    runner.str-eq(bi-of('0x1f'), '31', 2, 'to-bigint 0x1f == 31')
-    runner.str-eq(bi-of('0o17'), '15', 2, 'to-bigint 0o17 == 15')
-    runner.str-eq(bi-of('0b101'), '5', 1, 'to-bigint 0b101 == 5')
-    runner.str-eq(bi-of(''), 'nil', 3, 'to-bigint empty == nil')
-    runner.str-eq(bi-of('xyz'), 'err', 3, 'to-bigint xyz == err')
+    runner.str-eq(bi-of('255'), '255', 'to-bigint 255 value')
+    runner.str-eq(bi-of('-255'), '-255', 'to-bigint -255 value')
+    runner.str-eq(bi-of('0x1f'), '31', 'to-bigint 0x1f == 31')
+    runner.str-eq(bi-of('0o17'), '15', 'to-bigint 0o17 == 15')
+    runner.str-eq(bi-of('0b101'), '5', 'to-bigint 0b101 == 5')
+    runner.str-eq(bi-of(''), 'nil', 'to-bigint empty == nil')
+    runner.str-eq(bi-of('xyz'), 'err', 'to-bigint xyz == err')
 
     ; bitlen = floor(log2(n)) + 1
     runner.eq(str.bigint-bitlen(bigint.from-i64(1)), 1, 'bitlen 1 == 1')
@@ -675,10 +675,10 @@ t-to-bigint = () {
 
 ; 驗證 to-txt：<=255 位元組回 ok(txt)，超過回 nil（不靜默截斷）
 t-to-txt = () {
-    runner.str-eq(txt-of('ABC'), 'ABC', 3, 'to-txt ABC value')
-    runner.str-eq(txt-of(''), '', 0, 'to-txt empty == ok(empty)')
+    runner.str-eq(txt-of('ABC'), 'ABC', 'to-txt ABC value')
+    runner.str-eq(txt-of(''), '', 'to-txt empty == ok(empty)')
     big str = with-len(300)
-    runner.str-eq(txt-of(big), 'nil', 3, 'to-txt 300 bytes == nil')
+    runner.str-eq(txt-of(big), 'nil', 'to-txt 300 bytes == nil')
 }
 
 ; ── 分割 / 替換（字串版）─────────────────────
@@ -694,14 +694,14 @@ t-split = () {
 
         -> '?'
     }
-    runner.str-eq(p0, 'a', 1, 'split[0] == a')
+    runner.str-eq(p0, 'a', 'split[0] == a')
     p2 = '?'
     p2 = p[2]: {
         ok(x) -> x
 
         -> '?'
     }
-    runner.str-eq(p2, 'c', 1, 'split[2] == c')
+    runner.str-eq(p2, 'c', 'split[2] == c')
 
     adj = 'a,,b'.split(',')
     runner.eq(adj.len(), 3, 'split adjacent len == 3')
@@ -728,14 +728,14 @@ t-split-n = () {
 
         -> '?'
     }
-    runner.str-eq(p0, 'a', 1, 'split-n[0] == a')
+    runner.str-eq(p0, 'a', 'split-n[0] == a')
     p1 = '?'
     p1 = p[1]: {
         ok(x) -> x
 
         -> '?'
     }
-    runner.str-eq(p1, 'b,c', 3, 'split-n[1] == b,c')
+    runner.str-eq(p1, 'b,c', 'split-n[1] == b,c')
 }
 
 ; 驗證 fields 按空白分段（省略空段）、lines 切 \n 與 \r\n
@@ -748,7 +748,7 @@ t-fields-lines = () {
 
         -> '?'
     }
-    runner.str-eq(f1, 'b', 1, 'fields[1] == b')
+    runner.str-eq(f1, 'b', 'fields[1] == b')
 
     l = 'a\nb\r\nc'.lines()
     runner.eq(l.len(), 3, 'lines len == 3')
@@ -758,30 +758,30 @@ t-fields-lines = () {
 
         -> '?'
     }
-    runner.str-eq(l0, 'a', 1, 'lines[0] == a')
+    runner.str-eq(l0, 'a', 'lines[0] == a')
     l1 = '?'
     l1 = l[1]: {
         ok(x) -> x
 
         -> '?'
     }
-    runner.str-eq(l1, 'b', 1, 'lines[1] strips CR')
+    runner.str-eq(l1, 'b', 'lines[1] strips CR')
     l2 = '?'
     l2 = l[2]: {
         ok(x) -> x
 
         -> '?'
     }
-    runner.str-eq(l2, 'c', 1, 'lines[2] == c')
+    runner.str-eq(l2, 'c', 'lines[2] == c')
 }
 
 ; 驗證 replace-str 全替換、replace-n 限定次數（n <= 0 不替換）
 t-replace = () {
     s = 'a-b-c'
-    runner.str-eq(s.replace-str('-', '+'), 'a+b+c', 5, 'replace-str all')
-    runner.str-eq(s.replace-n('-', '+', 0), 'a-b-c', 5, 'replace-n 0 == unchanged')
-    runner.str-eq(s.replace-n('-', '+', 1), 'a+b-c', 5, 'replace-n 1')
-    runner.str-eq(s.replace-n('-', '+', 2), 'a+b+c', 5, 'replace-n 2')
+    runner.str-eq(s.replace-str('-', '+'), 'a+b+c', 'replace-str all')
+    runner.str-eq(s.replace-n('-', '+', 0), 'a-b-c', 'replace-n 0 == unchanged')
+    runner.str-eq(s.replace-n('-', '+', 1), 'a+b-c', 'replace-n 1')
+    runner.str-eq(s.replace-n('-', '+', 2), 'a+b+c', 'replace-n 2')
 }
 
 ; 追加断言：push（按码点，原地增长）与 push-str（按位元组，原地增长）
@@ -793,7 +793,7 @@ t-replace = () {
 t-push = () {
     s = 'ab'
     s.push("c")
-    runner.str-eq(s, 'abc', 3, 'push ascii value')
+    runner.str-eq(s, 'abc', 'push ascii value')
     runner.eq(s.len-bytes(), 3, 'push ascii len-bytes')
 
     s.push("中")
@@ -811,12 +811,12 @@ t-push = () {
     ; 空源：什么都不变
     t = 'keep'
     t.push-str('')
-    runner.str-eq(t, 'keep', 4, 'push-str 空源不改變內容')
+    runner.str-eq(t, 'keep', 'push-str 空源不改變內容')
 
     ; 自我追加：源與接收者同一塊緩衝
     u = 'zz'
     u.push-str(u)
-    runner.str-eq(u, 'zzzz', 4, '自追加 push-str')
+    runner.str-eq(u, 'zzzz', '自追加 push-str')
 
     ; 空 str 起手（data == null 走 alloc 分支）
     w = ''

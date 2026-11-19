@@ -17,7 +17,7 @@
 ; msg: 斷言描述，長度不符時自動加 ' [len]' 後綴
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; 純量解析：字串 / 整數 / 布林 / 浮點四種型別都要能由 get-* 正確解出，
@@ -42,7 +42,7 @@ ratio = 1.5')
                 -> so = false
             }
             runner.is-true(so, 'name decode ok')
-            runner.str-eq(s, 'nolang', 6, 'get-str name')
+            runner.str-eq(s, 'nolang', 'get-str name')
             p i64 = 0
             po = false
             pn = toml.get-i64(doc, 'port')
@@ -158,7 +158,7 @@ port = 8080 # inline comment')
                 -> ho = false
             }
             runner.is-true(ho, 'server.host ok')
-            runner.str-eq(h, 'localhost', 9, 'get-str dotted key')
+            runner.str-eq(h, 'localhost', 'get-str dotted key')
             p i64 = 0
             pn = toml.get-i64(doc, 'server.port')
             pn: {
@@ -232,7 +232,7 @@ t-helpers = () {
         -> uo = false
     }
     runner.is-true(uo, 'unquote ok')
-    runner.str-eq(u, 'hi', 2, 'unquote basic string')
+    runner.str-eq(u, 'hi', 'unquote basic string')
 
     sc = toml.strip-comment('a = 1 # note')
     eq-str(sc, 'a = 1', 'strip inline comment')
@@ -288,7 +288,7 @@ t-build-roundtrip = () {
 
         -> _
     }
-    runner.str-eq(s, 'hello', 5, 'roundtrip get-str')
+    runner.str-eq(s, 'hello', 'roundtrip get-str')
     st = toml.stringify(doc)
     eq-str(st, 'title = "hello"
 n = 42', 'stringify roundtrip')

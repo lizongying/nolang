@@ -143,13 +143,13 @@ t-zero-one = () {
     z = x25519.fe-zero-v()
     runner.eq(limb(z, 0), 0, 'fe-zero-v limb0')
     runner.eq(limb(z, 9), 0, 'fe-zero-v limb9')
-    runner.str-eq(hx(x25519.fe-tobytes-v(z)), '0000000000000000000000000000000000000000000000000000000000000000', 64, 'fe-zero-v -> 0')
+    runner.str-eq(hx(x25519.fe-tobytes-v(z)), '0000000000000000000000000000000000000000000000000000000000000000', 'fe-zero-v -> 0')
 
     o = x25519.fe-one-v()
     runner.eq(limb(o, 0), 1, 'fe-one-v limb0')
     runner.eq(limb(o, 1), 0, 'fe-one-v limb1')
     runner.eq(limb(o, 9), 0, 'fe-one-v limb9')
-    runner.str-eq(hx(x25519.fe-tobytes-v(o)), '0100000000000000000000000000000000000000000000000000000000000000', 64, 'fe-one-v -> 1')
+    runner.str-eq(hx(x25519.fe-tobytes-v(o)), '0100000000000000000000000000000000000000000000000000000000000000', 'fe-one-v -> 1')
 
     ; 就地版本
     w []i64 = with-len(10)
@@ -173,7 +173,7 @@ t-zero-one = () {
     x25519.fe-copy(t, a)
     runner.eq(limb(t, 0), 10, 'fe-copy limb0')
     runner.eq(limb(t, 1), 0, 'fe-copy limb1')
-    runner.str-eq(hx(x25519.fe-tobytes-v(t)), '0a00000000000000000000000000000000000000000000000000000000000000', 64, 'fe-copy 後 tobytes')
+    runner.str-eq(hx(x25519.fe-tobytes-v(t)), '0a00000000000000000000000000000000000000000000000000000000000000', 'fe-copy 後 tobytes')
 }
 
 ; ---- 加／減（limb 逐項，未進位；由 fe-tobytes 負責規約）----
@@ -184,16 +184,16 @@ t-add-sub = () {
     s1 []i64 = with-len(10)
     x25519.fe-add(s1, a, b)
     runner.eq(limb(s1, 0), 8, 'fe-add 3+5 limb0')
-    runner.str-eq(hx(x25519.fe-tobytes-v(s1)), '0800000000000000000000000000000000000000000000000000000000000000', 64, 'fe-add 3+5 -> 8')
+    runner.str-eq(hx(x25519.fe-tobytes-v(s1)), '0800000000000000000000000000000000000000000000000000000000000000', 'fe-add 3+5 -> 8')
 
     s2 []i64 = with-len(10)
     x25519.fe-sub(s2, a, b)
     runner.eq(limb(s2, 0), -2, 'fe-sub 3-5 limb0')
-    runner.str-eq(hx(x25519.fe-tobytes-v(s2)), 'ebffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 64, 'fe-sub 3-5 -> p-2')
+    runner.str-eq(hx(x25519.fe-tobytes-v(s2)), 'ebffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 'fe-sub 3-5 -> p-2')
 
     ; 回值版本
-    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-add-v(a, b))), '0800000000000000000000000000000000000000000000000000000000000000', 64, 'fe-add-v 3+5')
-    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-sub-v(a, b))), 'ebffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 64, 'fe-sub-v 3-5')
+    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-add-v(a, b))), '0800000000000000000000000000000000000000000000000000000000000000', 'fe-add-v 3+5')
+    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-sub-v(a, b))), 'ebffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 'fe-sub-v 3-5')
 }
 
 ; ---- 乘／平方／乘 121665 ----
@@ -203,28 +203,28 @@ t-mul-sq = () {
 
     m []i64 = with-len(10)
     x25519.fe-mul(m, a, b)
-    runner.str-eq(hx(x25519.fe-tobytes-v(m)), '0f00000000000000000000000000000000000000000000000000000000000000', 64, 'fe-mul 3*5 -> 15')
+    runner.str-eq(hx(x25519.fe-tobytes-v(m)), '0f00000000000000000000000000000000000000000000000000000000000000', 'fe-mul 3*5 -> 15')
 
     q []i64 = with-len(10)
     x25519.fe-sq(q, a)
-    runner.str-eq(hx(x25519.fe-tobytes-v(q)), '0900000000000000000000000000000000000000000000000000000000000000', 64, 'fe-sq 3^2 -> 9')
+    runner.str-eq(hx(x25519.fe-tobytes-v(q)), '0900000000000000000000000000000000000000000000000000000000000000', 'fe-sq 3^2 -> 9')
 
     k []i64 = with-len(10)
     x25519.fe-mul121665(k, a)
-    runner.str-eq(hx(x25519.fe-tobytes-v(k)), 'c391050000000000000000000000000000000000000000000000000000000000', 64, 'fe-mul121665 3*121665')
+    runner.str-eq(hx(x25519.fe-tobytes-v(k)), 'c391050000000000000000000000000000000000000000000000000000000000', 'fe-mul121665 3*121665')
 
     ; 回值版本
-    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-mul-v(a, b))), '0f00000000000000000000000000000000000000000000000000000000000000', 64, 'fe-mul-v 3*5')
-    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-sq-v(a))), '0900000000000000000000000000000000000000000000000000000000000000', 64, 'fe-sq-v 3^2')
+    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-mul-v(a, b))), '0f00000000000000000000000000000000000000000000000000000000000000', 'fe-mul-v 3*5')
+    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-sq-v(a))), '0900000000000000000000000000000000000000000000000000000000000000', 'fe-sq-v 3^2')
 
     ; 大數乘法交叉驗證：p-1 ≡ -1，乘 -1 應得 1
     pm1 = fv('ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f')
     one2 = fv('0100000000000000000000000000000000000000000000000000000000000000')
     sq []i64 = with-len(10)
     x25519.fe-mul(sq, pm1, pm1)
-    runner.str-eq(hx(x25519.fe-tobytes-v(sq)), '0100000000000000000000000000000000000000000000000000000000000000', 64, '(p-1)^2 -> 1')
+    runner.str-eq(hx(x25519.fe-tobytes-v(sq)), '0100000000000000000000000000000000000000000000000000000000000000', '(p-1)^2 -> 1')
     x25519.fe-mul(sq, pm1, one2)
-    runner.str-eq(hx(x25519.fe-tobytes-v(sq)), 'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 64, '(p-1)*1 -> p-1')
+    runner.str-eq(hx(x25519.fe-tobytes-v(sq)), 'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', '(p-1)*1 -> p-1')
 }
 
 ; ---- 反元素 ----
@@ -234,38 +234,38 @@ t-invert = () {
     two = fv('0200000000000000000000000000000000000000000000000000000000000000')
     i2 []i64 = with-len(10)
     x25519.fe-invert(i2, two)
-    runner.str-eq(hx(x25519.fe-tobytes-v(i2)), 'f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f', 64, 'fe-invert(2)')
-    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-invert-v(two))), 'f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f', 64, 'fe-invert-v(2)')
+    runner.str-eq(hx(x25519.fe-tobytes-v(i2)), 'f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f', 'fe-invert(2)')
+    runner.str-eq(hx(x25519.fe-tobytes-v(x25519.fe-invert-v(two))), 'f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f', 'fe-invert-v(2)')
 
     ; inv(3) * 3 == 1
     three = fv('0300000000000000000000000000000000000000000000000000000000000000')
     i3 = x25519.fe-invert-v(three)
-    runner.str-eq(hx(x25519.fe-tobytes-v(i3)), '4955555555555555555555555555555555555555555555555555555555555555', 64, 'fe-invert(3)')
+    runner.str-eq(hx(x25519.fe-tobytes-v(i3)), '4955555555555555555555555555555555555555555555555555555555555555', 'fe-invert(3)')
     prod []i64 = with-len(10)
     x25519.fe-mul(prod, i3, three)
-    runner.str-eq(hx(x25519.fe-tobytes-v(prod)), '0100000000000000000000000000000000000000000000000000000000000000', 64, 'fe-invert(3)*3 -> 1')
+    runner.str-eq(hx(x25519.fe-tobytes-v(prod)), '0100000000000000000000000000000000000000000000000000000000000000', 'fe-invert(3)*3 -> 1')
 
     ; inv(121665)：Montgomery ladder 的 A-2 常數
     k = fv('41db010000000000000000000000000000000000000000000000000000000000')
     ik = x25519.fe-invert-v(k)
-    runner.str-eq(hx(x25519.fe-tobytes-v(ik)), 'a9073632890d1fdad1ab86bd6729a2f499304632ebdee9d4bc312aeb2d816f3f', 64, 'fe-invert(121665)')
+    runner.str-eq(hx(x25519.fe-tobytes-v(ik)), 'a9073632890d1fdad1ab86bd6729a2f499304632ebdee9d4bc312aeb2d816f3f', 'fe-invert(121665)')
     pr []i64 = with-len(10)
     x25519.fe-mul(pr, ik, k)
-    runner.str-eq(hx(x25519.fe-tobytes-v(pr)), '0100000000000000000000000000000000000000000000000000000000000000', 64, 'fe-invert(121665)*121665 -> 1')
+    runner.str-eq(hx(x25519.fe-tobytes-v(pr)), '0100000000000000000000000000000000000000000000000000000000000000', 'fe-invert(121665)*121665 -> 1')
 }
 
 ; ---- 位元組轉換 ----
 t-bytes = () {
 
     ; 往返恆等（含跨 limb 邊界會產生負 limb 的 inv(2)）
-    runner.str-eq(rt('0000000000000000000000000000000000000000000000000000000000000000'), '0000000000000000000000000000000000000000000000000000000000000000', 64, '往返 0')
-    runner.str-eq(rt('0100000000000000000000000000000000000000000000000000000000000000'), '0100000000000000000000000000000000000000000000000000000000000000', 64, '往返 1')
-    runner.str-eq(rt('f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f'), 'f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f', 64, '往返 inv(2)（limb0 為負）')
-    runner.str-eq(rt('ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f'), 'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 64, '往返 p-1')
+    runner.str-eq(rt('0000000000000000000000000000000000000000000000000000000000000000'), '0000000000000000000000000000000000000000000000000000000000000000', '往返 0')
+    runner.str-eq(rt('0100000000000000000000000000000000000000000000000000000000000000'), '0100000000000000000000000000000000000000000000000000000000000000', '往返 1')
+    runner.str-eq(rt('f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f'), 'f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f', '往返 inv(2)（limb0 為負）')
+    runner.str-eq(rt('ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f'), 'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', '往返 p-1')
 
     ; p 與 p+1 應規約回 0 / 1
-    runner.str-eq(rt('edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f'), '0000000000000000000000000000000000000000000000000000000000000000', 64, 'to p -> 0')
-    runner.str-eq(rt('eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f'), '0100000000000000000000000000000000000000000000000000000000000000', 64, 'to p+1 -> 1')
+    runner.str-eq(rt('edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f'), '0000000000000000000000000000000000000000000000000000000000000000', 'to p -> 0')
+    runner.str-eq(rt('eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f'), '0100000000000000000000000000000000000000000000000000000000000000', 'to p+1 -> 1')
 
     ; fe-frombytes 的 limb 佈局（26/25 交替）與最高位遮罩。
     ; ⚠️ ref10 的進位順序（9,1,3,5,7,0,2,4,6,8）產生的是「半規約形」：limb 可為小負數，
@@ -288,12 +288,12 @@ t-bytes = () {
     ; 最高位（bit 255）被遮掉：全 0xFF 只剩 2^255-1 ≡ 18
     top = fv('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
     runner.eq(limb(top, 0), 18, 'fe-frombytes 遮掉 bit255 -> 18')
-    runner.str-eq(hx(x25519.fe-tobytes-v(top)), '1200000000000000000000000000000000000000000000000000000000000000', 64, '全 0xFF 規約回 18')
+    runner.str-eq(hx(x25519.fe-tobytes-v(top)), '1200000000000000000000000000000000000000000000000000000000000000', '全 0xFF 規約回 18')
 
     ; fe-tobytes 就地版本
     o [32]byte
     x25519.fe-tobytes(o, a)
-    runner.str-eq(hx(o), '0300000000000000000000000000000000000000000000000000000000000000', 64, 'fe-tobytes 就地 3')
+    runner.str-eq(hx(o), '0300000000000000000000000000000000000000000000000000000000000000', 'fe-tobytes 就地 3')
 
     ; fe-frombytes 就地版本
     g []i64 = with-len(10)
@@ -302,7 +302,7 @@ t-bytes = () {
     x25519.fe-frombytes(g, e7)
     runner.eq(limb(g, 0), 7, 'fe-frombytes 就地 limb0')
     runner.eq(limb(g, 1), 0, 'fe-frombytes 就地 limb1')
-    runner.str-eq(hx(x25519.fe-tobytes-v(g)), '0700000000000000000000000000000000000000000000000000000000000000', 64, 'fe-frombytes 就地 -> tobytes')
+    runner.str-eq(hx(x25519.fe-tobytes-v(g)), '0700000000000000000000000000000000000000000000000000000000000000', 'fe-frombytes 就地 -> tobytes')
 }
 
 ; ---- 條件交換 ----
@@ -329,7 +329,7 @@ t-cswap = () {
 ; ---- 基點 ----
 t-basepoint = () {
     bp [32]byte = x25519.x25519-get-basepoint()
-    runner.str-eq(hx(bp), '0900000000000000000000000000000000000000000000000000000000000000', 64, 'get-basepoint = u(9)')
+    runner.str-eq(hx(bp), '0900000000000000000000000000000000000000000000000000000000000000', 'get-basepoint = u(9)')
 }
 
 ; ---- RFC 7748 §6.1 Diffie-Hellman ----
@@ -347,23 +347,23 @@ t-dh = () {
         28, 47, 139, 39, 255, 136, 224, 235,
     ]
     apub = x25519.x25519-scalarmult-base(apriv)
-    runner.str-eq(bhex(apub), '8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a', 64, 'x25519 Alice pub')
+    runner.str-eq(bhex(apub), '8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a', 'x25519 Alice pub')
     bpub = x25519.x25519-scalarmult-base(bpri)
-    runner.str-eq(bhex(bpub), 'de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f', 64, 'x25519 Bob pub')
+    runner.str-eq(bhex(bpub), 'de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f', 'x25519 Bob pub')
     ka = x25519.x25519-scalarmult(apriv, bpub)
-    runner.str-eq(bhex(ka), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 64, 'x25519 shared (a,Kb)')
+    runner.str-eq(bhex(ka), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 'x25519 shared (a,Kb)')
     kb = x25519.x25519-scalarmult(bpri, apub)
-    runner.str-eq(bhex(kb), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 64, 'x25519 shared (b,Ka)')
+    runner.str-eq(bhex(kb), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 'x25519 shared (b,Ka)')
 
     ; []byte API 與 [32]byte API 必須一致
     pb []byte = apriv.slice(0, 32)
     qb []byte = bpub.slice(0, 32)
     sh = x25519.x25519-scalarmult-bytes(pb, qb)
-    runner.str-eq(bhex(sh), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 64, 'scalarmult-bytes shared')
+    runner.str-eq(bhex(sh), '4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742', 'scalarmult-bytes shared')
 
     pb2 []byte = bpri.slice(0, 32)
     pub-b = x25519.x25519-scalarmult-base-bytes(pb2)
-    runner.str-eq(bhex(pub-b), 'de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f', 64, 'scalarmult-base-bytes Bob pub')
+    runner.str-eq(bhex(pub-b), 'de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f', 'scalarmult-base-bytes Bob pub')
 }
 
 ; ---- RFC 7748 §5.2 單發測試向量 ----
@@ -381,7 +381,7 @@ t-single = () {
         16, 169, 3, 166, 208, 171, 28, 76,
     ]
     oa5 = x25519.x25519-scalarmult(sa5, ua5)
-    runner.str-eq(bhex(oa5), 'c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552', 64, 'x25519 single-shot a5')
+    runner.str-eq(bhex(oa5), 'c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552', 'x25519 single-shot a5')
     s4b [32]byte = [
         75, 102, 233, 212, 209, 180, 103, 60,
         90, 210, 38, 145, 149, 125, 106, 245,
@@ -395,21 +395,21 @@ t-single = () {
         252, 76, 213, 73, 199, 21, 164, 147,
     ]
     o4b = x25519.x25519-scalarmult(s4b, u4b)
-    runner.str-eq(bhex(o4b), '95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957', 64, 'x25519 single-shot 4b')
+    runner.str-eq(bhex(o4b), '95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957', 'x25519 single-shot 4b')
 
     ; []byte 版本同一向量
     sb []byte = sa5.slice(0, 32)
     ub []byte = ua5.slice(0, 32)
     ob = x25519.x25519-scalarmult-bytes(sb, ub)
-    runner.str-eq(bhex(ob), 'c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552', 64, 'scalarmult-bytes a5')
+    runner.str-eq(bhex(ob), 'c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552', 'scalarmult-bytes a5')
 }
 
 ; ---- 金鑰生成 ----
 t-keypair = () {
     priv, pub = x25519.x25519-gen-keypair(1)
     priv2, pub2 = x25519.x25519-gen-keypair(1)
-    runner.str-eq(hx(priv), hx(priv2), 64, 'gen-keypair 同種子私鑰可重現')
-    runner.str-eq(hx(pub), hx(pub2), 64, 'gen-keypair 同種子公鑰可重現')
+    runner.str-eq(hx(priv), hx(priv2), 'gen-keypair 同種子私鑰可重現')
+    runner.str-eq(hx(pub), hx(pub2), 'gen-keypair 同種子公鑰可重現')
 
     p0 = priv[0]: {
         ok -> it
@@ -426,7 +426,7 @@ t-keypair = () {
     runner.eq(p31 & 64, 64, 'gen-keypair priv[31] bit6 置一')
 
     ; 公鑰 = 私鑰 × 基點
-    runner.str-eq(hx(x25519.x25519-scalarmult-base(priv)), hx(pub), 64, 'gen-keypair pub = priv × B')
+    runner.str-eq(hx(x25519.x25519-scalarmult-base(priv)), hx(pub), 'gen-keypair pub = priv × B')
 
     ; 不同種子應產生不同私鑰（極高機率）
     priv3, pub3 = x25519.x25519-gen-keypair(2)

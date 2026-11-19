@@ -20,7 +20,7 @@ t-in-bounds = () {
             p = ''
         }
     }
-    runner.str-eq(p.to-str(), 'a', 1, 'in-bounds payload == a')
+    runner.str-eq(p.to-str(), 'a', 'in-bounds payload == a')
 }
 
 t-out-of-bounds = () {
@@ -36,13 +36,13 @@ t-out-of-bounds = () {
             p = 'OOB'
         }
     }
-    runner.str-eq(p.to-str(), 'OOB', 3, 'out-of-bounds -> nil arm == OOB')
+    runner.str-eq(p.to-str(), 'OOB', 'out-of-bounds -> nil arm == OOB')
 }
 
 t-replace-n = () {
     s txt = 'a-b-c-d'
     r = s.replace-n('-', '.', 2)
-    runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'txt.replace-n 2x')
+    runner.str-eq(r.to-str(), 'a.b.c-d', 'txt.replace-n 2x')
 }
 
 t-join = () {
@@ -50,7 +50,7 @@ t-join = () {
     parts = s.split('-')
     j = parts.join('.')
     print('J=[{j.to-str()}] len={j.len-bytes()}')
-    runner.str-eq(j.to-str(), 'a.b.c.d', 7, '[]txt.join')
+    runner.str-eq(j.to-str(), 'a.b.c.d', '[]txt.join')
 }
 p1, f1 = runner.test('in-bounds', t-in-bounds)
 p2, f2 = runner.test('out-of-bounds', t-out-of-bounds)

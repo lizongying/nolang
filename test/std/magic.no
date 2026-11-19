@@ -12,9 +12,9 @@
 ; 無副檔名或路徑中含 '.' 的目錄名時回空字串
 t-get-extension = () {
     ext = magic.get-extension('file.txt')
-    runner.str-eq(ext, 'txt', 3, 'get-extension file.txt == txt')
+    runner.str-eq(ext, 'txt', 'get-extension file.txt == txt')
     ext2 = magic.get-extension('/path/to/file.json')
-    runner.str-eq(ext2, 'json', 4, 'get-extension file.json == json')
+    runner.str-eq(ext2, 'json', 'get-extension file.json == json')
     ext3 = magic.get-extension('noext')
     runner.eq(ext3.len(), 0, 'get-extension noext len == 0')
     ext4 = magic.get-extension('/a/b.c/d')
@@ -26,11 +26,11 @@ t-get-extension = () {
 ; 依副檔名判定類型：txt → 'ASCII text'、json → 'JSON data'、no → 'Nolang source'，未知得空字串
 t-detect-by-extension = () {
     kind = magic.detect-by-extension('txt')
-    runner.str-eq(kind, 'ASCII text', 10, 'detect ext txt == ASCII text')
+    runner.str-eq(kind, 'ASCII text', 'detect ext txt == ASCII text')
     kind2 = magic.detect-by-extension('json')
-    runner.str-eq(kind2, 'JSON data', 9, 'detect ext json == JSON data')
+    runner.str-eq(kind2, 'JSON data', 'detect ext json == JSON data')
     kind3 = magic.detect-by-extension('no')
-    runner.str-eq(kind3, 'Nolang source', 13, 'detect ext no == Nolang source')
+    runner.str-eq(kind3, 'Nolang source', 'detect ext no == Nolang source')
     kind4 = magic.detect-by-extension('unknown')
     runner.eq(kind4.len(), 0, 'detect ext unknown len == 0')
 }
@@ -61,7 +61,7 @@ t-detect-type-txt = () {
         }
     }
     kind = magic.detect-type(tmp)
-    runner.str-eq(kind, 'ASCII text', 10, 'detect-type .txt == ASCII text')
+    runner.str-eq(kind, 'ASCII text', 'detect-type .txt == ASCII text')
     fs.remove(tmp)
 }
 
@@ -70,7 +70,7 @@ t-detect-type-txt = () {
 ; detect-type 對目錄應回 'directory'（目錄判斷優先於內容偵測）
 t-detect-type-dir = () {
     kind = magic.detect-type('/tmp')
-    runner.str-eq(kind, 'directory', 9, 'detect-type /tmp == directory')
+    runner.str-eq(kind, 'directory', 'detect-type /tmp == directory')
 }
 
 ; ── detect-type (nonexistent) ────────────────
@@ -78,7 +78,7 @@ t-detect-type-dir = () {
 ; detect-type 對不存在的路徑應回 'unknown (not found)'
 t-detect-type-nonexistent = () {
     kind = magic.detect-type('/nonexistent/path/xyz123')
-    runner.str-eq(kind, 'unknown (not found)', 19, 'detect-type nonexistent')
+    runner.str-eq(kind, 'unknown (not found)', 'detect-type nonexistent')
 }
 
 ; ── detect-by-magic ─────────────────────────
@@ -92,7 +92,7 @@ t-detect-by-magic = () {
     ok = fs.write-file(tmp, data)
     runner.is-true(ok, 'write png header file')
     kind = magic.detect-by-magic(tmp)
-    runner.str-eq(kind, 'PNG image', 9, 'png magic -> PNG image')
+    runner.str-eq(kind, 'PNG image', 'png magic -> PNG image')
     fs.remove(tmp)
 
     plain = '/tmp/nolang_magic_plain.txt'

@@ -67,11 +67,11 @@ test-names-cover-all = () {
     }
     runner.eq(bad, 0, 'every code 0..91 has a name, no UNKNOWN')
 
-    runner.str-eq(tok.name(tok.ILLEGAL), 'ILLEGAL', 7, 'name of code 0')
-    runner.str-eq(tok.name(tok.IF), 'IF', 2, 'name of IF')
-    runner.str-eq(tok.name(tok.NOT-EQUALS), 'NOT_EQUALS', 10, 'name of NOT_EQUALS')
-    runner.str-eq(tok.name(tok.HASH-LBRACE), 'HASH_LBRACE', 11, 'name of HASH_LBRACE')
-    runner.str-eq(tok.name(tok.TILDE), 'TILDE', 5, 'name of TILDE')
+    runner.str-eq(tok.name(tok.ILLEGAL), 'ILLEGAL', 'name of code 0')
+    runner.str-eq(tok.name(tok.IF), 'IF', 'name of IF')
+    runner.str-eq(tok.name(tok.NOT-EQUALS), 'NOT_EQUALS', 'name of NOT_EQUALS')
+    runner.str-eq(tok.name(tok.HASH-LBRACE), 'HASH_LBRACE', 'name of HASH_LBRACE')
+    runner.str-eq(tok.name(tok.TILDE), 'TILDE', 'name of TILDE')
 }
 
 ; ═══════════════════════════════════════════════

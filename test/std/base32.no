@@ -52,17 +52,17 @@ bhex = (data []byte) (hex str) {
 
 ; RFC 4648 向量：'a' → 'ME======'（不足 5 位元組以 '=' 補滿 8 字元）
 t-enc-a = () {
-    runner.str-eq(base32.encode('a'.to-bytes()), 'ME======', 8, 'base32("a")')
+    runner.str-eq(base32.encode('a'.to-bytes()), 'ME======', 'base32("a")')
 }
 
 ; RFC 4648 向量：'ab' → 'MFRA===='
 t-enc-ab = () {
-    runner.str-eq(base32.encode('ab'.to-bytes()), 'MFRA====', 8, 'base32("ab")')
+    runner.str-eq(base32.encode('ab'.to-bytes()), 'MFRA====', 'base32("ab")')
 }
 
 ; 跨塊邊界：7 位元組 = 1 個完整 5 位元組塊 + 2 位元組尾塊，應得 'MFRGGZDFMZTQ===='
 t-enc-abcdefg = () {
-    runner.str-eq(base32.encode('abcdefg'.to-bytes()), 'MFRGGZDFMZTQ====', 16, 'base32("abcdefg")')
+    runner.str-eq(base32.encode('abcdefg'.to-bytes()), 'MFRGGZDFMZTQ====', 'base32("abcdefg")')
 }
 
 ; 空輸入應編碼為空字串（不產生填充）
@@ -77,9 +77,7 @@ t-roundtrip = () {
     e = base32.encode(s.to-bytes())
     d = base32.decode(e)
 
-    #{overflow=wrap}
-    blen = d.len() * 2
-    runner.str-eq(bhex(d), bhex(s.to-bytes()), blen, 'base32 round-trip preserves bytes')
+    runner.str-eq(bhex(d), bhex(s.to-bytes()), 'base32 round-trip preserves bytes')
 }
 p1 = runner.test('base32.enc-a', t-enc-a)
 p2 = runner.test('base32.enc-ab', t-enc-ab)

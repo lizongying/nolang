@@ -59,7 +59,7 @@ t-enc-128 = () {
         0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
     ]
     out = aes.enc-128(blk, key)
-    runner.str-eq(hex16(out), '69c4e0d86a7b0430d8cdb78070b4c55a', 32, 'aes-128 enc KAT')
+    runner.str-eq(hex16(out), '69c4e0d86a7b0430d8cdb78070b4c55a', 'aes-128 enc KAT')
 }
 
 ; AES-128 單區塊往返：加密後解密還原原始 16 位元組
@@ -74,7 +74,7 @@ t-dec-128 = () {
     ]
     ct = aes.enc-128(pt, key)
     back = aes.dec-128(ct, key)
-    runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 32, 'aes-128 dec round-trip')
+    runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 'aes-128 dec round-trip')
 }
 
 ; FIPS-197 附錄 C.3 已知答案測試：32 位元組金鑰的 AES-256 單區塊加密
@@ -90,7 +90,7 @@ t-enc-256 = () {
         0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
     ]
     out = aes.enc-256(blk, key)
-    runner.str-eq(hex16(out), '8ea2b7ca516745bfeafc49904b496089', 32, 'aes-256 enc KAT')
+    runner.str-eq(hex16(out), '8ea2b7ca516745bfeafc49904b496089', 'aes-256 enc KAT')
 }
 
 ; AES-256 單區塊往返：驗證 14 輪子金鑰逆序使用的正確性
@@ -107,7 +107,7 @@ t-dec-256 = () {
     ]
     ct = aes.enc-256(pt, key)
     back = aes.dec-256(ct, key)
-    runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 32, 'aes-256 dec round-trip')
+    runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 'aes-256 dec round-trip')
 }
 
 ; ── 低階 API（本輪補齊）────────────────────────
@@ -163,7 +163,7 @@ t-sub-bytes = () {
 
     aes.inv-sub-bytes(st, 16)
     after = st.to-hex()
-    runner.str-eq(after, before, 32, 'inv-sub-bytes undoes sub-bytes')
+    runner.str-eq(after, before, 'inv-sub-bytes undoes sub-bytes')
 }
 
 ; ShiftRows：state 为列主序（byte 索引 = 4*col + row），第 r 行左移 r 格
@@ -203,7 +203,7 @@ t-shift-rows = () {
 
     aes.inv-shift-rows(st)
     after = st.to-hex()
-    runner.str-eq(after, before, 32, 'inv-shift-rows restores the state')
+    runner.str-eq(after, before, 'inv-shift-rows restores the state')
 }
 
 ; MixColumns：FIPS-197 §5.1.3 的例子 [db,13,53,45] -> [8e,4d,a1,bc]
@@ -252,7 +252,7 @@ t-mix-columns = () {
 
     aes.inv-mix-columns(st)
     after = st.to-hex()
-    runner.str-eq(after, before, 32, 'inv-mix-columns restores the state')
+    runner.str-eq(after, before, 'inv-mix-columns restores the state')
 }
 
 ; AddRoundKey：逐字节异或；add-round-key-at 从轮密钥的任意偏移取 16 字节
@@ -326,7 +326,8 @@ t-key-expand = () {
     ]
     ek = aes.key-expand(key128)
     runner.eq(ek.len(), 176, 'key-expand(AES-128) is 176 bytes')
-    runner.str-eq(ek.to-hex(), '000102030405060708090A0B0C0D0E0FD6AA74FDD2AF72FADAA678F1D6AB76FE', 64, 'expanded key: round 0 == cipher key, round 1 == FIPS-197 w[4..7]')
+    ek-hex = ek.to-hex()
+    runner.str-eq(ek-hex[..64), '000102030405060708090A0B0C0D0E0FD6AA74FDD2AF72FADAA678F1D6AB76FE', 'expanded key: round 0 == cipher key, round 1 == FIPS-197 w[4..7]')
 
     key256 [32]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -350,10 +351,10 @@ t-block = () {
     ]
     ek = aes.key-expand(key)
     ct = aes.enc-block(pt, ek)
-    runner.str-eq(hex16(ct), '69c4e0d86a7b0430d8cdb78070b4c55a', 32, 'enc-block KAT == enc-128')
+    runner.str-eq(hex16(ct), '69c4e0d86a7b0430d8cdb78070b4c55a', 'enc-block KAT == enc-128')
 
     back = aes.dec-block(ct, ek)
-    runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 32, 'dec-block round-trip')
+    runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 'dec-block round-trip')
 }
 
 p1 = runner.test('aes.enc128', t-enc-128)

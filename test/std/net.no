@@ -654,21 +654,21 @@ t-split-ws = () {
 
         -> ''
     }
-    runner.str-eq(f0, 'a', 1, 'split-ws: 第 1 欄 a')
+    runner.str-eq(f0, 'a', 'split-ws: 第 1 欄 a')
 
     f1 = r[1]: {
         ok -> it
 
         -> ''
     }
-    runner.str-eq(f1, 'b', 1, 'split-ws: 第 2 欄 b')
+    runner.str-eq(f1, 'b', 'split-ws: 第 2 欄 b')
 
     f2 = r[2]: {
         ok -> it
 
         -> ''
     }
-    runner.str-eq(f2, 'c', 1, 'split-ws: 第 3 欄 c')
+    runner.str-eq(f2, 'c', 'split-ws: 第 3 欄 c')
 
     e = net.split-ws('')
     runner.eq(e.len(), 0, 'split-ws: 空串 ⇒ 0 欄')

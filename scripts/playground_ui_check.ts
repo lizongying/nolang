@@ -76,6 +76,10 @@ eq(normalizeLocale('zh-Hant'), 'zh-Hant', 'zh-Hant locale');
 eq(normalizeLocale('zh-TW'), 'zh-Hant', 'zh-TW maps to zh-Hant');
 eq(normalizeLocale('zh-Hans'), 'zh-Hans', 'zh-Hans locale');
 eq(normalizeLocale('zh-CN'), 'zh-Hans', 'zh-CN maps to zh-Hans');
+eq(normalizeLocale('ja'), 'ja', 'ja locale');
+eq(normalizeLocale('ja-JP'), 'ja', 'ja-JP maps to ja');
+eq(normalizeLocale('ko'), 'ko', 'ko locale');
+eq(normalizeLocale('ko-KR'), 'ko', 'ko-KR maps to ko');
 eq(normalizeLocale('en'), 'en', 'en locale');
 eq(normalizeLocale(undefined), 'en', 'missing locale falls back to en');
 eq(formatMessage(STRINGS.en.timedOut, {ms: 8000}).includes('8000 ms'), true,
@@ -86,16 +90,22 @@ eq(formatMessage(STRINGS['zh-Hans'].firstCompileWaited, {s: 42}).includes('42'),
   'firstCompileWaited template interpolates seconds (zh-Hans)');
 eq(formatMessage(STRINGS.en.firstCompileWaited, {s: 42}).includes('42'), true,
   'firstCompileWaited template interpolates seconds (en)');
-eq(STRINGS['zh-Hant'].firstCompileHint.length > 0 &&
-   STRINGS['zh-Hans'].firstCompileHint.length > 0 && STRINGS.en.firstCompileHint.length > 0, true,
-  'first-compile hint is present in all three locales');
+eq(formatMessage(STRINGS.ja.firstCompileWaited, {s: 42}).includes('42'), true,
+  'firstCompileWaited template interpolates seconds (ja)');
+eq(formatMessage(STRINGS.ko.firstCompileWaited, {s: 42}).includes('42'), true,
+  'firstCompileWaited template interpolates seconds (ko)');
+eq(['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko'].every(
+     (loc) => STRINGS[loc as keyof typeof STRINGS].firstCompileHint.length > 0), true,
+  'first-compile hint is present in all five locales');
 eq(examples.length >= 18 && examples.length <= 24, true, 'demo count within 18-24');
 eq(new Set(examples.map((e) => e.id)).size, examples.length, 'demo ids are unique');
 eq(CATEGORY_ORDER.every((c) => examples.some((e) => e.category === c.id)), true,
   'every category has at least one demo');
-eq(examples.every((e) => e.i18n['zh-Hant']?.description &&
-   e.i18n['zh-Hans']?.description && e.i18n.en?.description), true,
-  'every demo has all three locales');
+eq(examples.every((e) => ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko'].every(
+     (loc) => e.i18n[loc as keyof typeof e.i18n]?.description)), true,
+  'every demo has all five locales');
+eq(CATEGORY_ORDER.every((c) => c.i18n.ja?.description && c.i18n.ko?.description), true,
+  'every category has ja/ko locales');
 
 // ---------------------------------------------------------------------------
 // Runner watchdog (fake Worker)

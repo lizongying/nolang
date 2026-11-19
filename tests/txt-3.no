@@ -165,7 +165,7 @@ t-join = () {
 t-first = () {
     s txt = 'a-b-c-d'
     r = s.replace-n('-', '.', 2)
-    runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'x')
+    runner.str-eq(r.to-str(), 'a.b.c-d', 'x')
 }
 runner.test('first', t-first)
 runner.test('join', t-join)

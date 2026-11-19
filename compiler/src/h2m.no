@@ -1910,6 +1910,32 @@ h2m-sig-find = (s h2m-sigs, name str) (i i64) {
     }
 }
 
+; s114：按【源函数名】（femit，AST 裸名 verbatim）反查签名下标；-1 = 未找到或有歧义。
+;   self-host 源码的模组内呼叫写裸连字符名（`ps-peek(p)`），而整包表的 key 是 `mod.short`
+;   （点号形，如 `ps.peek`）⇒ 精确查表必然落空。emit 名与定义 `define @<femit>` 逐字一致，
+;   故 femit 反查是「裸名 → 签名项」的唯一无歧义还原通道（单模组路径 femit==fname，不经过本件）。
+; ⚠️ 歧义即回 -1（0 命中或 >1 命中都不猜）：多模组存在同名函数时交回诚实门禁，
+;   绝不退化成「取第一个」——那会把 ID 通道的静默错值换成静默错码。
+; s: 签名表
+; name: 源函数名（femit）
+; i: 签名下标（-1 = 未找到 / 有歧义）
+h2m-sig-find-emit = (s h2m-sigs, name str) (i i64) {
+    hit = -1
+    cnt = 0
+    j = 0
+    (j < s.femit.len()) {
+        nm = s.femit[j]
+        nm == name -> {
+            hit = j
+            cnt = h2m-inc(cnt)
+        }
+
+        j = h2m-inc(j)
+    }
+    i = -1
+    cnt == 1 -> i = hit
+}
+
 ; s111：登记一个跨模组整型常量（key = `mod.CONST`）
 h2m-sig-const-add = (s h2m-sigs, name str, val i64) {
     s.ckey.push(name)
@@ -2159,7 +2185,21 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                             -> -1
                         }
                     }
+
+                    ; s114：模組內裸連字符呼叫（`ps-peek(p)`）——key 是點號形 `ps.peek` ⇒ 精確查表落空。
+                    ;   按源函數名（femit）反查；歧義／未命中仍回 -1（門禁不放松，絕不取第一個）。
+                    si < 0 -> {
+                        si = h2m-sig-find-emit(sg, cn)
+                        si >= 0 -> {
+                            code = sg.fret[si]: {
+                                ok -> it
+
+                                -> -1
+                            }
+                        }
+                    }
                 }
+
                 ; s110：跨模組點號呼叫 mod.fn(x)——self-host 源碼的呼叫主力（ast.make() / drv.pkg-split() …）。
                 ;   舊版只認純 IDENTIFIER callee ⇒ 點號呼叫的回值型別推不出 (-1) ⇒ let 槽不綁名 ⇒
                 ;   體內所有引用該變數的 K-IDENTIFIER 連鎖失敗（s109 的 1940 條局部名主因）。
@@ -3088,7 +3128,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             }
             ok-call == 1 && cn != 'print' && cn != 'eprint' -> {
                 si = h2m-sig-find(sg, cn)
-                si < 0 -> ok-call = 0
+
+                ; s114：裸連字符呼叫（`ps-peek(p)`）的精確查表回落——按源函數名（femit）反查。
+                ;   與 h2m-ty-of 同口徑：歧義／未命中才落闸门（ok-call=0 ⇒ 整函不产码），绝不错猜。
+                si < 0 -> {
+                    si = h2m-sig-find-emit(sg, cn)
+                    si < 0 -> ok-call = 0
+                }
 
                 ; 切片 6：命中後把 cn 覆寫為【定義 emit 名】（femit），使 call 符號與
                 ;   define 符號一致（根除「定義 @testmod-bar / 呼叫 @testmod.bar」錯位）。
@@ -5144,6 +5190,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         agg.lfsk.push(lkd)
         li = h2m-inc(li)
     }
+
     ; s109：失败标识符名并回模块级（旁路通道，与块级/叶子级记录无关）
     ii = 0
     (ii < c.idn.len()) {

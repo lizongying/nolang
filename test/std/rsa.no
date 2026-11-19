@@ -270,36 +270,36 @@ t-bytes-edge = () {
     ; 明文 0 → 密文 0（_limbs-to-bytes 對 0 回單位元組 [0]）
     c0 = rsa.rsa-encrypt-bytes(zero, e, n)
     runner.eq(c0.len(), 1, '加密 0 回單位元組')
-    runner.str-eq(bhex(c0), '00', 2, '加密 0 -> 0')
+    runner.str-eq(bhex(c0), '00', '加密 0 -> 0')
 
     ; 空明文視同 0
     empty []byte = with-len(0)
     c-empty = rsa.rsa-encrypt-bytes(empty, e, n)
-    runner.str-eq(bhex(c-empty), '00', 2, '加密空明文 -> 0')
+    runner.str-eq(bhex(c-empty), '00', '加密空明文 -> 0')
 
     ; 前導零位元組無害：0x0041 與 0x41 同值
     lead []byte = [0, 65]
     one []byte = [65]
     ca = rsa.rsa-encrypt-bytes(one, e, n)
     cb = rsa.rsa-encrypt-bytes(lead, e, n)
-    runner.str-eq(bhex(ca), '0ae6', 4, '65^17 mod 3233 = 2790')
-    runner.str-eq(bhex(cb), '0ae6', 4, '帶前導零的 0x0041 同值')
+    runner.str-eq(bhex(ca), '0ae6', '65^17 mod 3233 = 2790')
+    runner.str-eq(bhex(cb), '0ae6', '帶前導零的 0x0041 同值')
 
     ; 密文帶前導零也能解回 65
     ct-zero []byte = [0, 10, 230]
     dv []byte = [10, 193]
     pt = rsa.rsa-decrypt-bytes(ct-zero, dv, n)
-    runner.str-eq(bhex(pt), '41', 2, '帶前導零的密文解回 65')
+    runner.str-eq(bhex(pt), '41', '帶前導零的密文解回 65')
 
     ; m = n-1 → c = n-1（(-1)^奇數 ≡ -1）
     nm1 []byte = [12, 160]
     c1 = rsa.rsa-encrypt-bytes(nm1, e, n)
-    runner.str-eq(bhex(c1), '0ca0', 4, '(n-1)^17 mod n = n-1')
+    runner.str-eq(bhex(c1), '0ca0', '(n-1)^17 mod n = n-1')
 
     ; 模數 1：任何明文都同餘 0
     one-mod []byte = [1]
     c-mod1 = rsa.rsa-encrypt-bytes(one, e, one-mod)
-    runner.str-eq(bhex(c-mod1), '00', 2, 'mod 1 -> 0')
+    runner.str-eq(bhex(c-mod1), '00', 'mod 1 -> 0')
 }
 
 ; 256-bit 金鑰的位元組往返
@@ -310,10 +310,10 @@ t-bytes-256 = () {
     e []byte = [1, 0, 1]
 
     c = rsa.rsa-encrypt-bytes(m, e, n)
-    runner.str-eq(bhex(c), '2cdfe6e6b30dd7d06630b18ff774614dfebe9e0f31680113a0a91ce346fed20a', 64, 'bytes 加密 == Python c')
+    runner.str-eq(bhex(c), '2cdfe6e6b30dd7d06630b18ff774614dfebe9e0f31680113a0a91ce346fed20a', 'bytes 加密 == Python c')
 
     pt = rsa.rsa-decrypt-bytes(c, d, n)
-    runner.str-eq(bhex(pt), bhex(m), 42, 'bytes 解密回 m')
+    runner.str-eq(bhex(pt), bhex(m), 'bytes 解密回 m')
 }
 
 p1 = runner.test('rsa.textbook', t-textbook)

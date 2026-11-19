@@ -23,7 +23,7 @@
 ; want: 期望字串
 ; msg: 斷言描述
 eq-str = (got str, want str, msg str) {
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; ── 建構 ──────────────────────────────────────
@@ -32,23 +32,23 @@ eq-str = (got str, want str, msg str) {
 t-from-i64 = () {
     a = bigint.from-i64(42)
     s = a.to-str()
-    runner.str-eq(s, '42', 2, 'from-i64(42) to-str')
+    runner.str-eq(s, '42', 'from-i64(42) to-str')
     b = bigint.from-i64(-99)
     s2 = b.to-str()
-    runner.str-eq(s2, '-99', 3, 'from-i64(-99) to-str')
+    runner.str-eq(s2, '-99', 'from-i64(-99) to-str')
     c = bigint.from-i64(0)
     s3 = c.to-str()
-    runner.str-eq(s3, '0', 1, 'from-i64(0) to-str')
+    runner.str-eq(s3, '0', 'from-i64(0) to-str')
 }
 
 ; 驗證 zero() / one() 兩個構造子分別產出字串 0 與 1
 t-zero-one = () {
     z = bigint.zero()
     zs = z.to-str()
-    runner.str-eq(zs, '0', 1, 'zero to-str')
+    runner.str-eq(zs, '0', 'zero to-str')
     o = bigint.one()
     os = o.to-str()
-    runner.str-eq(os, '1', 1, 'one to-str')
+    runner.str-eq(os, '1', 'one to-str')
 }
 
 ; ── 比較 ──────────────────────────────────────
@@ -104,12 +104,12 @@ t-add = () {
     b = bigint.from-i64(20)
     c = a + b
     s = c.to-str()
-    runner.str-eq(s, '30', 2, 'add(10, 20) == 30')
+    runner.str-eq(s, '30', 'add(10, 20) == 30')
     d = bigint.from-i64(-5)
     e = bigint.from-i64(8)
     f = d + e
     s2 = f.to-str()
-    runner.str-eq(s2, '3', 1, 'add(-5, 8) == 3')
+    runner.str-eq(s2, '3', 'add(-5, 8) == 3')
 }
 
 ; 驗證 - 運算子相減兩個 bigint，小減大得負值
@@ -118,12 +118,12 @@ t-sub = () {
     b = bigint.from-i64(10)
     c = a - b
     s = c.to-str()
-    runner.str-eq(s, '10', 2, 'sub(20, 10) == 10')
+    runner.str-eq(s, '10', 'sub(20, 10) == 10')
     d = bigint.from-i64(5)
     e = bigint.from-i64(8)
     f = d - e
     s2 = f.to-str()
-    runner.str-eq(s2, '-3', 2, 'sub(5, 8) == -3')
+    runner.str-eq(s2, '-3', 'sub(5, 8) == -3')
 }
 
 ; ── 乘法 ──────────────────────────────────────
@@ -134,12 +134,12 @@ t-mul = () {
     b = bigint.from-i64(7)
     c = a * b
     s = c.to-str()
-    runner.str-eq(s, '42', 2, 'mul(6, 7) == 42')
+    runner.str-eq(s, '42', 'mul(6, 7) == 42')
     d = bigint.from-i64(-3)
     e = bigint.from-i64(4)
     f = d * e
     s2 = f.to-str()
-    runner.str-eq(s2, '-12', 3, 'mul(-3, 4) == -12')
+    runner.str-eq(s2, '-12', 'mul(-3, 4) == -12')
 }
 
 ; ── 除法 ──────────────────────────────────────
@@ -150,9 +150,9 @@ t-div-mod = () {
     b = bigint.from-i64(7)
     q, r = a.div-mod(b)
     qs = q.to-str()
-    runner.str-eq(qs, '14', 2, 'div-mod(100, 7) q == 14')
+    runner.str-eq(qs, '14', 'div-mod(100, 7) q == 14')
     rs = r.to-str()
-    runner.str-eq(rs, '2', 1, 'div-mod(100, 7) r == 2')
+    runner.str-eq(rs, '2', 'div-mod(100, 7) r == 2')
 }
 
 ; 多 limb（Knuth D）除法：除數 >= 2^32 時走正的長除法路徑。
@@ -162,14 +162,14 @@ t-div-mod-multi = () {
     a0 = bigint.from-i64(18014398509481984)
     b0 = bigint.from-i64(4503599627370496)
     q0, r0 = a0.div-mod(b0)
-    runner.str-eq(q0.to-str(), '4', 1, 'div-mod(2^54, 2^52) q == 4')
-    runner.str-eq(r0.to-str(), '0', 1, 'div-mod(2^54, 2^52) r == 0')
+    runner.str-eq(q0.to-str(), '4', 'div-mod(2^54, 2^52) q == 4')
+    runner.str-eq(r0.to-str(), '0', 'div-mod(2^54, 2^52) r == 0')
 
     a1 = bigint.from-i64(9007199254740993)
     b1 = bigint.from-i64(4294967297)
     q1, r1 = a1.div-mod(b1)
-    runner.str-eq(q1.to-str(), '2097151', 7, 'div-mod(2^53+1, 2^32+1) q')
-    runner.str-eq(r1.to-str(), '4292870146', 10, 'div-mod(2^53+1, 2^32+1) r')
+    runner.str-eq(q1.to-str(), '2097151', 'div-mod(2^53+1, 2^32+1) q')
+    runner.str-eq(r1.to-str(), '4292870146', 'div-mod(2^53+1, 2^32+1) r')
 
     ; 不變式：q*b + r == a 且 r < b
     back = (q1 * b1) + r1
@@ -185,10 +185,10 @@ t-mod-public = () {
     a = bigint.from-i64(100)
 
     m = a % 7
-    runner.str-eq(m.to-str(), '2', 1, '100 % 7 == 2')
+    runner.str-eq(m.to-str(), '2', '100 % 7 == 2')
 
     z = a % 0
-    runner.str-eq(z.to-str(), '0', 1, '100 % 0 == 0（除零回傳零，對齊 div-mod）')
+    runner.str-eq(z.to-str(), '0', '100 % 0 == 0（除零回傳零，對齊 div-mod）')
 }
 
 ; to-i64：把值域受限的 bigint 取回 i64 的公開出口。測的是「不靜默截斷」這個契約。
@@ -251,11 +251,11 @@ t-pow = () {
     a = bigint.from-i64(2)
     c = a.pow(10)
     s = c.to-str()
-    runner.str-eq(s, '1024', 4, 'pow(2, 10) == 1024')
+    runner.str-eq(s, '1024', 'pow(2, 10) == 1024')
     b = bigint.from-i64(3)
     d = b.pow(0)
     s2 = d.to-str()
-    runner.str-eq(s2, '1', 1, 'pow(3, 0) == 1')
+    runner.str-eq(s2, '1', 'pow(3, 0) == 1')
 }
 
 ; ── GCD/LCM ───────────────────────────────────
@@ -266,7 +266,7 @@ t-gcd = () {
     b = bigint.from-i64(8)
     g = a.gcd(b)
     s = g.to-str()
-    runner.str-eq(s, '4', 1, 'gcd(12, 8) == 4')
+    runner.str-eq(s, '4', 'gcd(12, 8) == 4')
 }
 
 ; 驗證 lcm 求兩數最小公倍數
@@ -275,7 +275,7 @@ t-lcm = () {
     b = bigint.from-i64(6)
     l = a.lcm(b)
     s = l.to-str()
-    runner.str-eq(s, '12', 2, 'lcm(4, 6) == 12')
+    runner.str-eq(s, '12', 'lcm(4, 6) == 12')
 }
 
 ; ── 混合運算數運算符重載（bigint ⊕ i64）──────────
@@ -286,44 +286,44 @@ t-lcm = () {
 t-operator-mixed = () {
     a = bigint.from-i64(100)
     s1 = (a + 1).to-str()
-    runner.str-eq(s1, '101', 3, 'a(100) + 1 == 101')
+    runner.str-eq(s1, '101', 'a(100) + 1 == 101')
     s2 = (a - 1).to-str()
-    runner.str-eq(s2, '99', 2, 'a(100) - 1 == 99')
+    runner.str-eq(s2, '99', 'a(100) - 1 == 99')
     s3 = (a * 256).to-str()
-    runner.str-eq(s3, '25600', 5, 'a(100) * 256 == 25600')
+    runner.str-eq(s3, '25600', 'a(100) * 256 == 25600')
     s4 = (a / 2).to-str()
-    runner.str-eq(s4, '50', 2, 'a(100) / 2 == 50')
+    runner.str-eq(s4, '50', 'a(100) / 2 == 50')
     s5 = (a % 9).to-str()
-    runner.str-eq(s5, '1', 1, 'a(100) % 9 == 1')
+    runner.str-eq(s5, '1', 'a(100) % 9 == 1')
 
     ; i64 區域變數實參同樣命中 i64 臂（非僅字面量）
     n = 5
     s6 = (a + n).to-str()
-    runner.str-eq(s6, '105', 3, 'a(100) + n(5) == 105')
+    runner.str-eq(s6, '105', 'a(100) + n(5) == 105')
 
     ; 同型 bigint ⊕ bigint 命中 bigint 臂
     b = bigint.from-i64(7)
     s7 = (a + b).to-str()
-    runner.str-eq(s7, '107', 3, 'a(100) + b(7) == 107')
+    runner.str-eq(s7, '107', 'a(100) + b(7) == 107')
     s8 = (a * b).to-str()
-    runner.str-eq(s8, '700', 3, 'a(100) * b(7) == 700')
+    runner.str-eq(s8, '700', 'a(100) * b(7) == 700')
 
     ; 負運算數：守衛型別臂內命名輸出形參的符號回寫（曾誤為正號）
     na = bigint.from-i64(-100)
     s9 = (na + 3).to-str()
-    runner.str-eq(s9, '-97', 3, 'na(-100) + 3 == -97')
+    runner.str-eq(s9, '-97', 'na(-100) + 3 == -97')
     s10 = (na - 3).to-str()
-    runner.str-eq(s10, '-103', 4, 'na(-100) - 3 == -103')
+    runner.str-eq(s10, '-103', 'na(-100) - 3 == -103')
     s11 = (na + b).to-str()
-    runner.str-eq(s11, '-93', 3, 'na(-100) + b(7) == -93')
+    runner.str-eq(s11, '-93', 'na(-100) + b(7) == -93')
     s12 = (na - b).to-str()
-    runner.str-eq(s12, '-107', 4, 'na(-100) - b(7) == -107')
+    runner.str-eq(s12, '-107', 'na(-100) - b(7) == -107')
     s13 = (na * b).to-str()
-    runner.str-eq(s13, '-700', 4, 'na(-100) * b(7) == -700')
+    runner.str-eq(s13, '-700', 'na(-100) * b(7) == -700')
     s14 = (na / b).to-str()
-    runner.str-eq(s14, '-14', 3, 'na(-100) / b(7) == -14')
+    runner.str-eq(s14, '-14', 'na(-100) / b(7) == -14')
     s15 = (na % b).to-str()
-    runner.str-eq(s15, '-2', 2, 'na(-100) % b(7) == -2')
+    runner.str-eq(s15, '-2', 'na(-100) % b(7) == -2')
 }
 
 ; ── 內部核心：絕對值加減、同型加減 ──────────────

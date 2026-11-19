@@ -18,16 +18,14 @@
 ; 用法（顯式參數模式）：
 ;   runner.summary(passed, failed)
 
-; ═══════════════════════════════════════════════
 ; 全局計數器
-; ═══════════════════════════════════════════════
+...
 
-count-passed = 0
-count-failed = 0
+COUNT-PASSED = 0
+COUNT-FAILED = 0
 
-; ═══════════════════════════════════════════════
 ; i64 斷言
-; ═══════════════════════════════════════════════
+...
 
 ; i64 相等斷言 a == b
 ; a: 實際值（i64）
@@ -36,12 +34,12 @@ count-failed = 0
 eq = (a i64, b i64, msg str) {
     {
         a != b -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: eq -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
@@ -53,12 +51,12 @@ eq = (a i64, b i64, msg str) {
 ne = (a i64, b i64, msg str) {
     {
         a == b -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: ne -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
@@ -70,12 +68,12 @@ ne = (a i64, b i64, msg str) {
 gt = (a i64, b i64, msg str) {
     {
         a <= b -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: gt -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
@@ -87,19 +85,18 @@ gt = (a i64, b i64, msg str) {
 lt = (a i64, b i64, msg str) {
     {
         a >= b -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: lt -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 布林斷言
-; ═══════════════════════════════════════════════
+...
 
 ; 布林值為 true
 ; val: 被斷言的布林值（為 true 才通過）
@@ -107,12 +104,12 @@ lt = (a i64, b i64, msg str) {
 is-true = (val bool, msg str) {
     {
         ! val -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: is-true -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
@@ -123,50 +120,49 @@ is-true = (val bool, msg str) {
 is-false = (val bool, msg str) {
     {
         val -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: is-false -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 字串斷言
-; ═══════════════════════════════════════════════
+...
 
-; 字串相等（比較前 n 個字節）
-; a: 第一條字串
-; b: 第二條字串
-; n: 參與比較的頭部位元組數
+; 字串相等（全串比較）
+; a: 實際字串
+; b: 期望字串
 ; msg: 斷言失敗時列印的說明
 ;
-; ⚠️ 本函式直接把 n 交給 `a.eq(b, n)`（`str.eq` → `eq-raw`），**不檢查長度**：
-; n 大於任一字串的實際長度時，內部的 memcmp 會讀到邊界外（實測 `multipart` 檔
-; 整片 SIGSEGV 就是這條路徑）。目前不改語義，因為一旦改成「n 超過長度即判失敗」，
-; 有 5 個檔（`json`/`noml`/`rc4`/`str-map`/`time`）的呼叫端把 n 寫大了幾個位元組
-; （例如 `str-eq(h, 'bbf316e8d940af0ad3', 20, …)` —— 那條字面量其實是 18 位元組）
-; 會立刻翻紅。2026-11-14 已把這 5 檔寫大的 n 逐檔改回字面量精確位元組數，
-; 「收緊前先修 n」的前置條件已具備；但目前仍保留不檢查長度的語義。
+; 先比長度，再用 `str.eq` 比較全串：`str.eq(b, n)` 是 memcmp，不檢查長度，
+; n 大于任一字串實際長度時會讀到邊界外（SIGSEGV）。故不再由呼叫端傳 n，
+; 改成內部取 `a.len-bytes()` 並先確認兩串等長。
 ; 詳見 `test/README.md §5.2 #84`。
-str-eq = (a str, b str, n i64, msg str) {
+str-eq = (a str, b str, msg str) {
+    n = a.len-bytes()
     {
+        n != b.len-bytes() -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: str-eq -', msg)
+        }
+
         a.eq(b, n) == false -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: str-eq -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 浮點斷言
-; ═══════════════════════════════════════════════
+...
 
 ; 浮點近似相等 |a - b| < eps
 ; a: 第一個浮點值
@@ -178,24 +174,23 @@ f64-eq = (a f64, b f64, eps f64, msg str) {
     diff < 0.0 -> diff = 0.0 - diff
     {
         diff >= eps -> {
-            count-failed = fail(count-failed)
+            COUNT-FAILED = fail(COUNT-FAILED)
             print('FAIL: f64-eq -', msg)
         }
 
         -> {
-            count-passed = pass(count-passed)
+            COUNT-PASSED = pass(COUNT-PASSED)
         }
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 計數與彙總
-; ═══════════════════════════════════════════════
+...
 
 ; 返回失敗計數
 ; n: 迄今累計的全域失敗計數
 failed-count = () (n i64) {
-    n = count-failed
+    n = COUNT-FAILED
 }
 
 ; 輸出測試結果彙總
@@ -203,14 +198,14 @@ failed-count = () (n i64) {
 ; total: 通過與失敗計數之和（取自全域計數器）
 summary = () (total i64) {
     print('--- Test Summary ---')
-    print('passed:', count-passed)
-    print('failed:', count-failed)
+    print('passed:', COUNT-PASSED)
+    print('failed:', COUNT-FAILED)
 
     ; 整數加法一律回 ?i64（`#{overflow=wrap}` 只決定溢位時取什麼值，型別仍是 ?i64），
     ; 直接寫 `total = a + b` 會讓 summary 的回傳型別退化成 ?i64，
     ; 呼叫端 `total = runner.summary()` 便會撞上 optunuse。故先收成 option 再顯式解包。
     #{overflow=wrap}
-    total-opt = count-passed + count-failed
+    total-opt = COUNT-PASSED + COUNT-FAILED
     total = total-opt: {
         ok -> it
 
@@ -218,15 +213,14 @@ summary = () (total i64) {
     }
     print('total:', total)
     {
-        count-failed == 0 -> print('ALL TESTS PASSED')
+        COUNT-FAILED == 0 -> print('ALL TESTS PASSED')
 
         -> print('SOME TESTS FAILED')
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 具名回呼測試
-; ═══════════════════════════════════════════════
+...
 
 ; 具名函式型別（無參無返回）
 callback = ()

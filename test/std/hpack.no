@@ -111,7 +111,7 @@ t-str-codec = () {
     runner.eq(es.byte(0), 13, 'enc len byte')
     runner.eq(es.byte(1), 67, 'enc first char')
     ds, dp = hpack.decode-str(es, 0)
-    runner.str-eq(ds, 'Custom-Header', 13, 'roundtrip content')
+    runner.str-eq(ds, 'Custom-Header', 'roundtrip content')
     runner.eq(ds.len-bytes(), 13, 'roundtrip len')
     runner.eq(dp, 14, 'roundtrip pos')
 }
@@ -177,8 +177,8 @@ t-tables-static = () {
 
     n, v, ok = t.lookup(2)
     runner.is-true(ok, 'lookup 2 ok')
-    runner.str-eq(n, ':method', 7, 'lookup 2 name')
-    runner.str-eq(v, 'GET', 3, 'lookup 2 value')
+    runner.str-eq(n, ':method', 'lookup 2 name')
+    runner.str-eq(v, 'GET', 'lookup 2 value')
 
     n0, v0, ok0 = t.lookup(0)
     runner.is-false(ok0, 'lookup 0 -> not ok')
@@ -194,8 +194,8 @@ t-tables-dynamic = () {
     runner.eq(t.find-name('x-custom'), 62, 'find-name sees dyn entry')
     n, v, ok = t.lookup(62)
     runner.is-true(ok, 'lookup 62 ok')
-    runner.str-eq(n, 'x-custom', 8, 'dyn lookup name')
-    runner.str-eq(v, 'abc', 3, 'dyn lookup value')
+    runner.str-eq(n, 'x-custom', 'dyn lookup name')
+    runner.str-eq(v, 'abc', 'dyn lookup value')
 }
 
 ; 动态表移位：连续插入 3 条（index 62..64），旧条目必须整体后移且内容不丢
@@ -218,18 +218,18 @@ t-dyn-add-shift = () {
     ; 最新一条在 62，最旧一条在 64
     n0, v0, ok0 = t.lookup(62)
     runner.is-true(ok0, 'dyn-add: lookup(62) 命中')
-    runner.str-eq(n0, 'x-c', 3, 'dyn-add: 62 = 最新加入的 x-c')
-    runner.str-eq(v0, 'ccc', 3, 'dyn-add: 62 的值完整（移位未截断）')
+    runner.str-eq(n0, 'x-c', 'dyn-add: 62 = 最新加入的 x-c')
+    runner.str-eq(v0, 'ccc', 'dyn-add: 62 的值完整（移位未截断）')
 
     n1, v1, ok1 = t.lookup(63)
     runner.is-true(ok1, 'dyn-add: lookup(63) 命中')
-    runner.str-eq(n1, 'x-b', 3, 'dyn-add: 63 = 次新的 x-b')
-    runner.str-eq(v1, 'bbb', 3, 'dyn-add: 63 的值完整')
+    runner.str-eq(n1, 'x-b', 'dyn-add: 63 = 次新的 x-b')
+    runner.str-eq(v1, 'bbb', 'dyn-add: 63 的值完整')
 
     n2, v2, ok2 = t.lookup(64)
     runner.is-true(ok2, 'dyn-add: lookup(64) 命中')
-    runner.str-eq(n2, 'x-a', 3, 'dyn-add: 64 = 最旧的 x-a（被移到位）')
-    runner.str-eq(v2, 'aaa', 3, 'dyn-add: 64 的值完整')
+    runner.str-eq(n2, 'x-a', 'dyn-add: 64 = 最旧的 x-a（被移到位）')
+    runner.str-eq(v2, 'aaa', 'dyn-add: 64 的值完整')
 
     ; 动态表封顶：第 65 条起被丢弃，不得崩
     k <- [0..70): {
@@ -263,8 +263,8 @@ t-decode-multi = () {
 
         -> _
     }
-    runner.str-eq(n3, 'x-trace', 7, 'multi: names[3] = x-trace')
-    runner.str-eq(v3, 'abc-123', 7, 'multi: values[3] = abc-123')
+    runner.str-eq(n3, 'x-trace', 'multi: names[3] = x-trace')
+    runner.str-eq(v3, 'abc-123', 'multi: values[3] = abc-123')
 }
 
 ; encode-header / decode-headers：往返一致；空块解出 0 条且 ok
@@ -283,7 +283,7 @@ t-encode-decode = () {
 
         -> _
     }
-    runner.str-eq(n0, 'accept', 6, 'roundtrip name')
+    runner.str-eq(n0, 'accept', 'roundtrip name')
 
     v0 = 'x'
     values[0]: {
@@ -291,7 +291,7 @@ t-encode-decode = () {
 
         -> _
     }
-    runner.str-eq(v0, '*/*', 3, 'roundtrip value')
+    runner.str-eq(v0, '*/*', 'roundtrip value')
 
     names2, values2, cnt2, ok2 = t.decode-headers('')
     runner.is-true(ok2, 'empty block decodes ok')

@@ -4908,7 +4908,7 @@ test-s107-attrib = () {
     cov = h2m-cov-join(agg.unsf, agg.unsk)
     want = 'f:BlockStatement:construct\nf:IfExpression:construct\n'
     runner.eq(cov.len-bytes(), want.len-bytes(), 's107 nested cov length')
-    runner.str-eq(cov, want, want.len-bytes(), 's107 nested attribution')
+    runner.str-eq(cov, want, 's107 nested attribution')
     runner.eq(agg.unsup, 2, 's107 nested count')
 
     ; ② 单条失败（无嵌套块）：记录必须在、且带函数名；产码判定不变（整函数不产码）。
@@ -4985,6 +4985,7 @@ test-s108-leaf-attrib = () {
 ; 让「哪类变量没被 h2m-scan 铺槽」可见（模块名 / 常量名 / 局部名）。
 ; ⚠️ 条件一律箭头形：`(cond) { }` 花括号形当前被 Go 工具链编成死循环（§s107 缺陷记录）。
 test-s109-id-attrib = () {
+
     ; ① 裸未定义标识符作 RHS：三表未命中 ⇒ 记一条 f:missing，unsup 与两通道仍对齐。
     src = 'f = () (r i64) {\n    r = missing\n}\n'
     t = ast.make()
@@ -4995,7 +4996,7 @@ test-s109-id-attrib = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.idn.len(), 1, 's109 one failed ident recorded')
     want = 'f:missing'
-    runner.str-eq(agg.idn[0], want, want.len-bytes(), 's109 failed ident name is fn:name')
+    runner.str-eq(agg.idn[0], want, 's109 failed ident name is fn:name')
     runner.eq(agg.unsup, 1, 's109 ident failure still counted once')
     runner.eq(agg.lfsk.len(), agg.unsk.len(), 's109 s108 channels still parallel')
     runner.eq(agg.unsk.len(), agg.idn.len(), 's109 id channel aligns with unsup here')
@@ -5010,7 +5011,7 @@ test-s109-id-attrib = () {
     ir2 = h2m-lower-program(t2, agg2, root2)
     runner.eq(agg2.idn.len(), 1, 's109 one module-base ident recorded')
     want2 = 'g:tok'
-    runner.str-eq(agg2.idn[0], want2, want2.len-bytes(), 's109 module base name captured')
+    runner.str-eq(agg2.idn[0], want2, 's109 module base name captured')
 
     ; ③ 正常绑定的标识符不记：r = a（a 是输出参数，已在 names 表）⇒ idn 空、unsup 0、产码。
     src3 = 'h = (a i64) (r i64) {\n    r = a\n}\n'
@@ -5206,6 +5207,73 @@ test-s113b-index-ty = () {
     runner.eq(h2m-ty-of(t, sg, lb, agg, at), -1, 's113b unsupported index base still -1')
 }
 
+; ── s114：模組內裸連字符呼叫（`mod-fn(x)`）──
+; 整包表的 key 是點號形 `mod.fn`（drv.pkg-ll 剝 mod 前綴後重組），而 self-host 源碼在模組內
+; 寫裸連字符名（`ps-peek(p)`）⇒ h2m-sig-find 的精確匹配必然落空。
+; 修復前：h2m-ty-of 回 -1 ⇒ h2m-scan 的 let 槽不綁名 ⇒ 體內每次讀該名記一條 ID 失敗；
+;   h2m-lower-expr 落閘門 ⇒ 整函不产码（實測 @ps-peek / @ast-make / @lx-scan-token 全未發射）。
+; 修復：按源函數名（femit）反查，唯一命中才認；歧義／未命中回 -1（門禁不放鬆，絕不取第一個）。
+test-s114-bare-call = () {
+    t = ast.make()
+
+    ; CALL：callee = IDENTIFIER('testmod-fn')，實參 = INTEGER-LITERAL('7')
+    callee = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, callee, 0, ast.put-str(t, 'testmod-fn'))
+    call = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call, callee)
+    arg = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, arg, 0, ast.put-str(t, '7'))
+    ast.kid-add(t, call, arg)
+
+    ; ⚠️ kid-add 只 push kids、不填 c0（c0 = KIDS[0] 組的元素數，由 ast.set-count 填）；
+    ;   缺 c0 ⇒ lower-expr 讀到實參數 0 ⇒ 走「缺參」分支落閘門（與是否命中簽名無關）。
+    ast.set-count(t, call, 0, 1)
+
+    ; 整包表口徑：key = `testmod.fn`（點號），femit = `testmod-fn`（裸連字符）
+    sg = h2m-sigs-new()
+    argt []i64 = []
+    argt.push(TY-I64)
+    h2m-sig-add(sg, 'testmod.fn', 'testmod-fn', TY-I64, argt)
+
+    loc = h2m-lst-new()
+    agg = h2m-new()
+
+    ; ① ty-of：回值型別推得出（修復前為 -1 ⇒ let 槽不綁名 ⇒ ID 連鎖失敗）
+    runner.eq(h2m-ty-of(t, sg, loc, agg, call), TY-I64, 's114 bare hyphen call return type inferred')
+
+    ; ② lower-expr：發 OP-CALL，call 符號取 femit 名（與定義 @testmod-fn 逐字一致）
+    c = h2m-new()
+    c.cur-fn = 'caller'
+    v = h2m-lower-expr(t, c, sg, call)
+    runner.eq(c.unsup, 0, 's114 bare call no unsup')
+    runner.eq(v > 0, 1, 's114 bare call emits value')
+    runner.eq(h2m-vty-at(c, v), TY-I64, 's114 bare call vty')
+
+    ; 指令序：實參常量（OP-CONST）在前、OP-CALL 在末位（s64 的「實參先落臨時 al、後整段入池」）
+    runner.eq(c.ops.len(), 2, 's114 bare call two ops')
+    runner.eq(c.syms.len(), 2, 's114 bare call two symbols')
+    runner.eq(c.callee.len(), 1, 's114 bare call callee recorded')
+    runner.eq(c.ops[1], OP-CALL, 's114 bare call emits OP-CALL')
+    runner.str-eq(c.syms[1], 'testmod-fn', 's114 bare call symbol is femit name')
+    runner.str-eq(c.callee[0], 'testmod-fn', 's114 bare call callee is femit name')
+
+    ; ③ 歧義：兩個模組同名函式 ⇒ femit 反查回 -1（絕不取第一個）
+    sg2 = h2m-sigs-new()
+    h2m-sig-add(sg2, 'a.dup', 'dup-fn', TY-I64, argt)
+    h2m-sig-add(sg2, 'b.dup', 'dup-fn', TY-I64, argt)
+    c2 = h2m-new()
+    v2 = h2m-lower-expr(t, c2, sg2, call)
+    runner.eq(c2.unsup > 0, 1, 's114 ambiguous femit still gated')
+    runner.eq(v2, 0, 's114 ambiguous femit no value')
+
+    ; ④ 未登記：裸名查無此函 ⇒ 誠實計 unsup（門禁不放寬）
+    sg3 = h2m-sigs-new()
+    c3 = h2m-new()
+    v3 = h2m-lower-expr(t, c3, sg3, call)
+    runner.eq(c3.unsup > 0, 1, 's114 unregistered bare call still gated')
+    runner.eq(v3, 0, 's114 unregistered bare call no value')
+}
+
 test-sb-vec-mixed-elem-gate()
 test-sb-str-param-sig()
 test-sb-str-index()
@@ -5224,6 +5292,7 @@ test-s111-mod-const()
 test-s112-bare-const()
 test-s113-method-call-ty()
 test-s113b-index-ty()
+test-s114-bare-call()
 
 runner.summary()
 f = runner.failed-count()

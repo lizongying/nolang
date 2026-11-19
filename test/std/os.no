@@ -50,7 +50,7 @@ t-get-env = () {
 
         err -> got = ''
     }
-    runner.str-eq(got, 'xyz', 3, 'get-env after set-env')
+    runner.str-eq(got, 'xyz', 'get-env after set-env')
 }
 
 ; 未設定的變數應回 nil（而非空字串）

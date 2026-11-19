@@ -75,9 +75,9 @@ test-no-alias = () {
 
         -> _
     }
-    runner.str-eq(t0.lit, 'abc', 3, 'elem 0 literal is abc (not aliased)')
-    runner.str-eq(t1.lit, 'def', 3, 'elem 1 literal is def (not aliased)')
-    runner.str-eq(t2.lit, 'ghi', 3, 'elem 2 literal is ghi (not aliased)')
+    runner.str-eq(t0.lit, 'abc', 'elem 0 literal is abc (not aliased)')
+    runner.str-eq(t1.lit, 'def', 'elem 1 literal is def (not aliased)')
+    runner.str-eq(t2.lit, 'ghi', 'elem 2 literal is ghi (not aliased)')
     runner.eq(t0.typ, tok.IDENT, 'elem 0 is IDENT')
     runner.eq(t1.typ, tok.IDENT, 'elem 1 is IDENT')
     runner.eq(t2.typ, tok.IDENT, 'elem 2 is IDENT')
@@ -122,7 +122,7 @@ test-assign = () {
     runner.eq(b.typ, tok.ASSIGN, 'tok1 ASSIGN')
     runner.eq(c.typ, tok.INT, 'tok2 INT')
     runner.eq(d.typ, tok.EOF, 'tok3 EOF')
-    runner.str-eq(b.lit, '=', 1, 'ASSIGN literal is =')
+    runner.str-eq(b.lit, '=', 'ASSIGN literal is =')
     runner.eq(b.cl, 3, 'ASSIGN at col 3')
     runner.eq(c.cl, 5, 'INT at col 5')
     runner.eq(d.cl, 6, 'EOF at col 6')
@@ -190,8 +190,8 @@ test-char-vs-string = () {
         -> _
     }
     runner.eq(c.typ, tok.CHAR, 'double quotes -> CHAR')
-    runner.str-eq(c.lit, 'x', 1, 'char value is x')
-    runner.str-eq(c.raw, '"x"', 3, 'char raw keeps its quotes')
+    runner.str-eq(c.lit, 'x', 'char value is x')
+    runner.str-eq(c.raw, '"x"', 'char raw keeps its quotes')
 
     ss = lx.scan-all('\'x\'')
     runner.eq(ss.len(), 2, 'string literal -> 2 tokens')
@@ -202,8 +202,8 @@ test-char-vs-string = () {
         -> _
     }
     runner.eq(s.typ, tok.STRING, 'single quotes -> STRING')
-    runner.str-eq(s.lit, 'x', 1, 'string value is x')
-    runner.str-eq(s.raw, '\'x\'', 3, 'string raw keeps its quotes')
+    runner.str-eq(s.lit, 'x', 'string value is x')
+    runner.str-eq(s.raw, '\'x\'', 'string raw keeps its quotes')
 }
 
 ; ═══════════════════════════════════════════════
@@ -221,8 +221,8 @@ test-comment-marker = () {
         -> _
     }
     runner.eq(c.typ, tok.COMMENT, 'tok0 COMMENT')
-    runner.str-eq(c.mk, ';', 1, 'semicolon comment marker is ;')
-    runner.str-eq(c.lit, ' hi', 3, 'comment text keeps the leading space')
+    runner.str-eq(c.mk, ';', 'semicolon comment marker is ;')
+    runner.str-eq(c.lit, ' hi', 'comment text keeps the leading space')
 
     ts2 = lx.scan-all('// hi\n')
 
@@ -232,7 +232,7 @@ test-comment-marker = () {
         -> _
     }
     runner.eq(c2.typ, tok.COMMENT, 'slash comment -> COMMENT')
-    runner.str-eq(c2.mk, '//', 2, 'slash comment marker is //')
+    runner.str-eq(c2.mk, '//', 'slash comment marker is //')
 }
 
 ; ═══════════════════════════════════════════════
@@ -262,10 +262,10 @@ test-sci-notation = () {
     runner.eq(a.typ, tok.ILLEGAL, 'sci tok2 is ILLEGAL')
     runner.eq(a.ln, 1, 'sci line')
     runner.eq(a.cl, 5, 'sci col')
-    runner.str-eq(a.lit, '1', 1, 'sci lit keeps the consumed number')
-    runner.str-eq(a.emsg, sci, 156, 'sci emsg exact wording')
+    runner.str-eq(a.lit, '1', 'sci lit keeps the consumed number')
+    runner.str-eq(a.emsg, sci, 'sci emsg exact wording')
     runner.eq(b.typ, tok.IDENT, 'e5 residual is IDENT')
-    runner.str-eq(b.lit, 'e5', 2, 'e5 literal')
+    runner.str-eq(b.lit, 'e5', 'e5 literal')
     runner.eq(b.cl, 6, 'e5 starts at the e')
 
     ; 有點形（3.5e-2）：先 FLOAT 後被 sci 檢測覆寫為 ILLEGAL；游標停在 e 不消耗
@@ -278,15 +278,15 @@ test-sci-notation = () {
         -> _
     }
     runner.eq(a2.typ, tok.ILLEGAL, 'dotted sci is ILLEGAL not FLOAT')
-    runner.str-eq(a2.lit, '3.5', 3, 'dotted sci lit is the number part')
-    runner.str-eq(a2.emsg, sci, 156, 'dotted sci emsg')
+    runner.str-eq(a2.lit, '3.5', 'dotted sci lit is the number part')
+    runner.str-eq(a2.emsg, sci, 'dotted sci emsg')
 
     b2 = ts2[1]: {
         ok -> it
 
         -> _
     }
-    runner.str-eq(b2.lit, 'e-2', 3, 'e-2 residual IDENT (isLetter includes -)')
+    runner.str-eq(b2.lit, 'e-2', 'e-2 residual IDENT (isLetter includes -)')
 
     ; 1e+5：'+' 後跟指數位 ⇒ sci
     ts3 = lx.scan-all('1e+5')
@@ -297,7 +297,7 @@ test-sci-notation = () {
         -> _
     }
     runner.eq(a3.typ, tok.ILLEGAL, '1e+5 is sci')
-    runner.str-eq(a3.emsg, sci, 156, '1e+5 emsg')
+    runner.str-eq(a3.emsg, sci, '1e+5 emsg')
 
     ; 大寫 E 同檢
     ts4 = lx.scan-all('2E7')
@@ -325,7 +325,7 @@ test-sci-notation = () {
 
         -> _
     }
-    runner.str-eq(b5.lit, 'e', 1, '1e residual IDENT')
+    runner.str-eq(b5.lit, 'e', '1e residual IDENT')
 
     ; 反例保衛：hex 的 e 被 isHex loop 吞掉，尾字符不可能是 e ⇒ 絕不觸發
     ts6 = lx.scan-all('0x1e5')
@@ -337,7 +337,7 @@ test-sci-notation = () {
         -> _
     }
     runner.eq(a6.typ, tok.INT, 'hex 0x1e5 stays INT')
-    runner.str-eq(a6.lit, '0x1e5', 5, 'hex lit intact')
+    runner.str-eq(a6.lit, '0x1e5', 'hex lit intact')
 
     ; 裸 ILLEGAL（未知字符）無 emsg —— Go 走 ps 側 'illegal token %q' 第二句
     ts7 = lx.scan-all('$')
@@ -348,7 +348,7 @@ test-sci-notation = () {
         -> _
     }
     runner.eq(a7.typ, tok.ILLEGAL, 'dollar is bare ILLEGAL')
-    runner.str-eq(a7.emsg, '', 0, 'bare ILLEGAL has no emsg')
+    runner.str-eq(a7.emsg, '', 'bare ILLEGAL has no emsg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -369,7 +369,7 @@ test-ellipsis = () {
         -> _
     }
     runner.eq(d2.typ, tok.ELLIPSIS, 'a..b middle token is ELLIPSIS (..)')
-    runner.str-eq(d2.lit, '..', 2, '.. literal is two dots')
+    runner.str-eq(d2.lit, '..', '.. literal is two dots')
 
     t3 = lx.scan-all('...')
     runner.eq(t3.len(), 2, '... -> 2 tokens (ELLIPSIS3 + EOF)')
@@ -380,7 +380,7 @@ test-ellipsis = () {
         -> _
     }
     runner.eq(d3.typ, tok.ELLIPSIS3, '... is ELLIPSIS3, not ELLIPSIS')
-    runner.str-eq(d3.lit, '...', 3, '... literal is three dots')
+    runner.str-eq(d3.lit, '...', '... literal is three dots')
 
     ; 三個點後面接識別符也必須整體成一個 ELLIPSIS3（不得切成 .. + .ident）
     t4 = lx.scan-all('[0...n)')

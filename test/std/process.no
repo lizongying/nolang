@@ -163,7 +163,7 @@ t-cmd-input = () {
     ]
     out, stderr, code, err = process.cmd('sh', a, '', 'piped', [], 0, false)
     runner.eq(code, 0, 'cmd input code 0')
-    runner.str-eq(out, 'piped', 5, 'cmd input 經 stdin 送達子進程')
+    runner.str-eq(out, 'piped', 'cmd input 經 stdin 送達子進程')
 }
 
 ; cmd：env 前綴注入生效
@@ -177,7 +177,7 @@ t-cmd-env = () {
     ]
     out, stderr, code, err = process.cmd('sh', a, '', '', env, 0, false)
     runner.eq(code, 0, 'cmd env code 0')
-    runner.str-eq(out, 'envok', 5, 'cmd env 注入環境變數')
+    runner.str-eq(out, 'envok', 'cmd env 注入環境變數')
 }
 
 ; cmd：不存在的命令歸一化為 code=-1 且 err 非空（而非 127）
@@ -199,7 +199,7 @@ t-start-opts = () {
     runner.gt(p.pid-of(), 0, 'start-with-opts pid > 0')
     runner.is-true(p.is-running(), 'start-with-opts 後 running')
     content, n = p.read-all()
-    runner.str-eq(content, 'hi\n', 3, 'read-all 捕獲 echo 輸出')
+    runner.str-eq(content, 'hi\n', 'read-all 捕獲 echo 輸出')
     runner.eq(n, 3, 'read-all 位元組數 3')
     code = p.wait()
     runner.eq(code, 0, 'wait 得 0')
@@ -231,7 +231,7 @@ t-start-opts-input = () {
     content, n = p.read-all()
     p.wait()
     p.close()
-    runner.str-eq(content, 'abc', 3, 'input 經 stdin 送達')
+    runner.str-eq(content, 'abc', 'input 經 stdin 送達')
 }
 
 ; merge-err=true：stderr 併入 out，實例不保留獨立 stderr 管道
@@ -262,7 +262,7 @@ t-start-opts-split-err = () {
     content, n = p.read-all()
     p.wait()
     p.close()
-    runner.str-eq(content, 'out\n', 4, 'read-all 只讀 stdout')
+    runner.str-eq(content, 'out\n', 'read-all 只讀 stdout')
 }
 
 ; ── process.start（單參數便捷版） ─────────────
@@ -275,7 +275,7 @@ t-start = () {
     code = p.wait()
     p.close()
     runner.eq(code, 0, 'start 後 wait 得 0')
-    runner.str-eq(content, 'xy', 2, 'start 傳遞單一參數')
+    runner.str-eq(content, 'xy', 'start 傳遞單一參數')
 }
 
 ; ── process.wait-nohang ──────────────────────
@@ -342,7 +342,7 @@ t-read = () {
     p.wait()
     p.close()
     runner.eq(rn, 3, 'read 讀到 3 位元組')
-    runner.str-eq(got, 'hi\n', 3, 'read 內容正確')
+    runner.str-eq(got, 'hi\n', 'read 內容正確')
 }
 
 ; read-line：取一行（含換行）
@@ -354,7 +354,7 @@ t-read-line = () {
     line = p.read-line()
     p.wait()
     p.close()
-    runner.str-eq(line-of(line), 'hi\n', 3, 'read-line 得到 hi\\n')
+    runner.str-eq(line-of(line), 'hi\n', 'read-line 得到 hi\\n')
 }
 
 ; read-all / close-stdout：關閉 stdout 後 read-all 讀不到資料
@@ -367,7 +367,7 @@ t-close-streams = () {
     p.close-stdout()
     content, n = p.read-all()
     runner.eq(n, 0, 'close-stdout 後 read-all 得 0')
-    runner.str-eq(content, '', 0, 'close-stdout 後內容為空')
+    runner.str-eq(content, '', 'close-stdout 後內容為空')
     p.close-stdin()
     p.close-stderr()
     p.wait()
@@ -414,7 +414,7 @@ t-output = () {
     p = process.new()
     content, code = p.output('echo', 'hi')
     runner.eq(code, 0, 'output code 0')
-    runner.str-eq(content, 'hi\n', 3, 'output 捕獲 stdout')
+    runner.str-eq(content, 'hi\n', 'output 捕獲 stdout')
 }
 
 ; ── process-shell（已棄用，回原始 wait 狀態） ─
@@ -432,11 +432,11 @@ t-shell-quote = () {
     q = '\''
     esc = q - '\\' - q - q
     want-plain = q - 'a b' - q
-    runner.str-eq(process.shell-quote('a b'), want-plain, 5, 'shell-quote 包裹普通字串')
+    runner.str-eq(process.shell-quote('a b'), want-plain, 'shell-quote 包裹普通字串')
     want-sq = q - 'it' - esc - 's' - q
-    runner.str-eq(process.shell-quote('it\'s'), want-sq, 9, 'shell-quote 轉義內部單引號')
+    runner.str-eq(process.shell-quote('it\'s'), want-sq, 'shell-quote 轉義內部單引號')
     want-empty = q - q
-    runner.str-eq(process.shell-quote(''), want-empty, 2, 'shell-quote 空字串得兩個引號')
+    runner.str-eq(process.shell-quote(''), want-empty, 'shell-quote 空字串得兩個引號')
 }
 
 ; ── process.exec（結構體選項） ────────────────
@@ -450,7 +450,7 @@ t-exec = () {
         'zz',
     ], o)
     runner.eq(res.code, 0, 'exec code 0')
-    runner.str-eq(res.stdout, 'zz\n', 3, 'exec 捕獲 stdout')
+    runner.str-eq(res.stdout, 'zz\n', 'exec 捕獲 stdout')
     runner.eq(res.stderr.len(), 0, 'exec stderr 為空')
 }
 
@@ -468,7 +468,7 @@ t-exec-opts = () {
         'cat',
     ], o)
     runner.eq(res.code, 0, 'exec(opts) code 0')
-    runner.str-eq(res.stdout, 'xyz', 3, 'exec(opts) stdin 透傳')
+    runner.str-eq(res.stdout, 'xyz', 'exec(opts) stdin 透傳')
 }
 
 ; ── 進程列表與查找 ───────────────────────────

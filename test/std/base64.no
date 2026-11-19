@@ -15,7 +15,7 @@ t-encode-std-3bytes = () {
     data []byte = [65, 66, 67]
     s = base64.encode-std(data)
     runner.eq(s.len(), 4, 'encode-std 3 bytes len == 4')
-    runner.str-eq(s, 'QUJD', 4, 'encode-std ABC')
+    runner.str-eq(s, 'QUJD', 'encode-std ABC')
 }
 
 ; 1 位元組尾塊：'A' → 'QQ=='（補兩個 '='）
@@ -23,7 +23,7 @@ t-encode-std-1byte = () {
     data []byte = [65]
     s = base64.encode-std(data)
     runner.eq(s.len(), 4, 'encode-std 1 byte len == 4')
-    runner.str-eq(s, 'QQ==', 4, 'encode-std A')
+    runner.str-eq(s, 'QQ==', 'encode-std A')
 }
 
 ; 2 位元組尾塊：'AB' → 'QUI='（補一個 '='）
@@ -31,7 +31,7 @@ t-encode-std-2bytes = () {
     data []byte = [65, 66]
     s = base64.encode-std(data)
     runner.eq(s.len(), 4, 'encode-std 2 bytes len == 4')
-    runner.str-eq(s, 'QUI=', 4, 'encode-std AB')
+    runner.str-eq(s, 'QUI=', 'encode-std AB')
 }
 
 ; 空輸入應編碼為空字串
@@ -48,7 +48,7 @@ t-encode-url-3bytes = () {
     data []byte = [0xfb, 0xff, 0xbf]
     s = base64.encode-url(data)
     runner.eq(s.len(), 4, 'encode-url 3 bytes len == 4')
-    runner.str-eq(s, '-_-_', 4, 'encode-url 0xFBFFBF')
+    runner.str-eq(s, '-_-_', 'encode-url 0xFBFFBF')
 }
 
 ; ── 解碼 ──────────────────────────────────────
@@ -185,13 +185,13 @@ failed = failed + f8
 ; 同一份輸入分別用標準表與 URL 表編碼
 t-encode-table = () {
     data []byte = [65, 66]
-    runner.str-eq(base64.encode(data, base64.BASE64-STD), 'QUI=', 4, 'encode 標準表')
-    runner.str-eq(base64.encode(data, base64.BASE64-URL), 'QUI=', 4, 'encode URL 表（本例同形）')
+    runner.str-eq(base64.encode(data, base64.BASE64-STD), 'QUI=', 'encode 標準表')
+    runner.str-eq(base64.encode(data, base64.BASE64-URL), 'QUI=', 'encode URL 表（本例同形）')
 
     ; 產生 +/ 的輸入：0xFB 0xFF 0xBF 在標準表出 '+/+/'，URL 表出 '-_-_'
     hi []byte = [251, 255, 191]
-    runner.str-eq(base64.encode(hi, base64.BASE64-STD), '+/+/', 4, 'encode 標準表出 +/')
-    runner.str-eq(base64.encode(hi, base64.BASE64-URL), '-_-_', 4, 'encode URL 表出 -_')
+    runner.str-eq(base64.encode(hi, base64.BASE64-STD), '+/+/', 'encode 標準表出 +/')
+    runner.str-eq(base64.encode(hi, base64.BASE64-URL), '-_-_', 'encode URL 表出 -_')
 
     ; 空輸入（結果必須先落區域變數：多實參 std 函式的回傳直接當方法接收者
     ; 時 MIR 會報 `unknown callee` / `NoVal`，見 test/README §5.2）
@@ -202,7 +202,7 @@ t-encode-table = () {
     ; 自訂字母表：64 個 'A' 時所有輸出位都是 'A'（長度不變）
     flat = base64.encode(data, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
     runner.eq(flat.len-bytes(), 4, '自訂字母表輸出長度仍為 4')
-    runner.str-eq(flat, 'AAA=', 4, '自訂字母表輸出全 A（末位仍是填充）')
+    runner.str-eq(flat, 'AAA=', '自訂字母表輸出全 A（末位仍是填充）')
 }
 
 ; 單字元查表：'=' 回 0，字母表外回 -1

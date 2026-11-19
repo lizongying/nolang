@@ -17,7 +17,7 @@
 ; msg: 斷言失敗時的標識訊息（長度與內容兩條斷言共用）
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; 驗證 url-parse 完整 URL：scheme/host/port/path/query/fragment/user/password 逐字段拆取正確

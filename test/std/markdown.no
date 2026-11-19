@@ -15,7 +15,7 @@
 ; msg: 斷言失敗時的標識訊息（長度與內容兩條斷言共用）
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; 驗證 markdown.escape-html：< > & " 分別轉為 &lt; &gt; &amp; &quot; 實體，純文字原樣通過

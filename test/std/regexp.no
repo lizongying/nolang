@@ -28,7 +28,7 @@ t-match-literal = () {
 t-find-literal = () {
     result = regexp-find('world', 'hello world')
     runner.eq(result.len(), 5, 'find world len == 5')
-    runner.str-eq(result, 'world', 5, 'find world content')
+    runner.str-eq(result, 'world', 'find world content')
     result2 = regexp-find('xyz', 'hello world')
     runner.eq(result2.len(), 0, 'find not found len == 0')
 }
@@ -103,7 +103,7 @@ t-digit-class = () {
     runner.is-false(matched2, 'digit: \\d+ not match in abcdef')
     result = regexp-find('\\d+', 'abc123def456')
     runner.eq(result.len(), 3, 'digit find len == 3')
-    runner.str-eq(result, '123', 3, 'digit find content == 123')
+    runner.str-eq(result, '123', 'digit find content == 123')
 }
 
 ; 驗證反斜線 w 字元類別匹配字元組成、不匹配純空白
@@ -138,7 +138,7 @@ t-end-anchor = () {
 t-find-digits = () {
     result = regexp-find('[0-9]+', 'abc123def456')
     runner.eq(result.len(), 3, 'find [0-9]+ len == 3')
-    runner.str-eq(result, '123', 3, 'find [0-9]+ content == 123')
+    runner.str-eq(result, '123', 'find [0-9]+ content == 123')
 }
 
 ; 驗證 find 完全無匹配時回傳長度為 0 的空字串
@@ -614,7 +614,7 @@ t-matches-find-direct = () {
     }
     res = r2.find('xxaabzz')
     runner.eq(res.len(), 3, 'find 直調: 長度 3')
-    runner.str-eq(res, 'aab', 3, 'find 直調: 內容 aab')
+    runner.str-eq(res, 'aab', 'find 直調: 內容 aab')
 
     ; 量詞可全不取 ⇒ 空匹配，find 必須回空字串而不是死循環
     r3 = regexp{
@@ -631,7 +631,7 @@ t-top-funcs-dotted = () {
 
     f = regexp.regexp-find('[0-9]+', 'abc123def')
     runner.eq(f.len(), 3, 'regexp.regexp-find: 長度 3')
-    runner.str-eq(f, '123', 3, 'regexp.regexp-find: 內容 123')
+    runner.str-eq(f, '123', 'regexp.regexp-find: 內容 123')
     empty = regexp.regexp-find('xyz', 'abc')
     runner.eq(empty.len(), 0, 'regexp.regexp-find: 未命中回空字串')
 

@@ -125,13 +125,13 @@ t-conn-reset = () {
 
     c.reset()
 
-    runner.str-eq(c.method, '', 0, 'server-conn.reset: method 清空')
-    runner.str-eq(c.path, '', 0, 'server-conn.reset: path 清空')
-    runner.str-eq(c.query, '', 0, 'server-conn.reset: query 清空')
-    runner.str-eq(c.version, '', 0, 'server-conn.reset: version 清空')
-    runner.str-eq(c.headers, '', 0, 'server-conn.reset: headers 清空')
+    runner.str-eq(c.method, '', 'server-conn.reset: method 清空')
+    runner.str-eq(c.path, '', 'server-conn.reset: path 清空')
+    runner.str-eq(c.query, '', 'server-conn.reset: query 清空')
+    runner.str-eq(c.version, '', 'server-conn.reset: version 清空')
+    runner.str-eq(c.headers, '', 'server-conn.reset: headers 清空')
     runner.eq(c.header-count, 0, 'server-conn.reset: header-count 歸零')
-    runner.str-eq(c.body, '', 0, 'server-conn.reset: body 清空')
+    runner.str-eq(c.body, '', 'server-conn.reset: body 清空')
     runner.eq(c.recv-buf-len, 0, 'server-conn.reset: recv-buf-len 歸零')
 }
 
@@ -248,13 +248,13 @@ t-https-conn-whitebox = () {
 
     c.reset()
 
-    runner.str-eq(c.method, '', 0, 'https-server-conn.reset: method 清空')
-    runner.str-eq(c.path, '', 0, 'https-server-conn.reset: path 清空')
-    runner.str-eq(c.query, '', 0, 'https-server-conn.reset: query 清空')
-    runner.str-eq(c.version, '', 0, 'https-server-conn.reset: version 清空')
-    runner.str-eq(c.headers, '', 0, 'https-server-conn.reset: headers 清空')
+    runner.str-eq(c.method, '', 'https-server-conn.reset: method 清空')
+    runner.str-eq(c.path, '', 'https-server-conn.reset: path 清空')
+    runner.str-eq(c.query, '', 'https-server-conn.reset: query 清空')
+    runner.str-eq(c.version, '', 'https-server-conn.reset: version 清空')
+    runner.str-eq(c.headers, '', 'https-server-conn.reset: headers 清空')
     runner.eq(c.header-count, 0, 'https-server-conn.reset: header-count 歸零')
-    runner.str-eq(c.body, '', 0, 'https-server-conn.reset: body 清空')
+    runner.str-eq(c.body, '', 'https-server-conn.reset: body 清空')
     runner.eq(c.recv-buf-len, 0, 'https-server-conn.reset: recv-buf-len 歸零')
 
     ; 填一筆標頭再查（大小寫不敏感路徑與 server-conn 共用同一份實作）
@@ -272,7 +272,7 @@ t-server-listen = () {
     ok = srv.listen('127.0.0.1', 39211)
     runner.is-true(ok, 'server.listen: 綁定 127.0.0.1:39211 成功')
     runner.eq(srv.fd-of() >= 0, 1, 'server.fd-of: 綁定後 fd >= 0')
-    runner.str-eq(srv.host, '127.0.0.1', 9, 'server.listen: 記錄 host')
+    runner.str-eq(srv.host, '127.0.0.1', 'server.listen: 記錄 host')
     runner.eq(srv.port, 39211, 'server.listen: 記錄 port')
 
     ; 同埠再綁一次必須失敗（還佔用著）
@@ -345,10 +345,10 @@ t-http-roundtrip = () {
             parsed = c.parse()
             runner.is-true(parsed, 'server-conn.parse: 解析成功')
 
-            runner.str-eq(c.method, 'GET', 3, 'parse: method = GET')
-            runner.str-eq(c.path, '/hello', 6, 'parse: path = /hello')
-            runner.str-eq(c.query, 'x=1', 3, 'parse: query = x=1')
-            runner.str-eq(c.version, 'HTTP/1.1', 8, 'parse: version = HTTP/1.1')
+            runner.str-eq(c.method, 'GET', 'parse: method = GET')
+            runner.str-eq(c.path, '/hello', 'parse: path = /hello')
+            runner.str-eq(c.query, 'x=1', 'parse: query = x=1')
+            runner.str-eq(c.version, 'HTTP/1.1', 'parse: version = HTTP/1.1')
             runner.eq(flags-of(c.get-header('Host')), 1, 'parse 後 get-header(Host) 命中')
 
             ; 回應：狀態行 + 標頭 + 空行 + 本體

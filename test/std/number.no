@@ -120,15 +120,15 @@ t-i64-to-str = () {
     v42 = 42
     s = v42.to-str()
     runner.eq(s.len-bytes(), 2, 'i64-to-str 42 len')
-    runner.str-eq(s, '42', 2, 'i64-to-str 42 content')
+    runner.str-eq(s, '42', 'i64-to-str 42 content')
     vn = -456
     n = vn.to-str()
     runner.eq(n.len-bytes(), 4, 'i64-to-str -456 len')
-    runner.str-eq(n, '-456', 4, 'i64-to-str -456 content')
+    runner.str-eq(n, '-456', 'i64-to-str -456 content')
     v0 = 0
     z = v0.to-str()
     runner.eq(z.len-bytes(), 1, 'i64-to-str 0 len')
-    runner.str-eq(z, '0', 1, 'i64-to-str 0 content')
+    runner.str-eq(z, '0', 'i64-to-str 0 content')
 }
 
 ; 驗證 i64 變數.to-str() 方法形態：正數、負數（帶負號）與零都轉出精確十進位字串
@@ -136,13 +136,13 @@ t-i64-method-to-str = () {
     v = 123
     s = v.to-str()
     runner.eq(s.len-bytes(), 3, 'i64.to-str 123 len')
-    runner.str-eq(s, '123', 3, 'i64.to-str 123 content')
+    runner.str-eq(s, '123', 'i64.to-str 123 content')
 
     #{overflow=wrap}
     n = 0 - 789
     ns = n.to-str()
     runner.eq(ns.len-bytes(), 4, 'i64.to-str -789 len')
-    runner.str-eq(ns, '-789', 4, 'i64.to-str -789 content')
+    runner.str-eq(ns, '-789', 'i64.to-str -789 content')
 }
 
 ; 驗證 u64.to-str()：255 與 0 轉十進位字串，無符號故永不帶負號
@@ -150,28 +150,28 @@ t-u64-to-str = () {
     u255 u64 = 255
     s = u255.to-str()
     runner.eq(s.len(), 3, 'u64-to-str 255 len')
-    runner.str-eq(s, '255', 3, 'u64-to-str 255 content')
+    runner.str-eq(s, '255', 'u64-to-str 255 content')
     u0 u64 = 0
     z = u0.to-str()
     runner.eq(z.len(), 1, 'u64-to-str 0 len')
-    runner.str-eq(z, '0', 1, 'u64-to-str 0 content')
+    runner.str-eq(z, '0', 'u64-to-str 0 content')
 }
 
 ; ── 浮點轉字串 ────────────────────────────────
 t-f64-to-str = () {
     f314 = 3.14
     s = f314.to-str()
-    runner.str-eq(s, '3.14', 4, 'f64-to-str 3.14')
+    runner.str-eq(s, '3.14', 'f64-to-str 3.14')
     f0 = 0.0
     z = f0.to-str()
-    runner.str-eq(z, '0', 1, 'f64-to-str 0.0')
+    runner.str-eq(z, '0', 'f64-to-str 0.0')
 }
 
 ; 驗證 f64 變數.to-str()：2.5 轉為最短十進位表示的字串 2.5
 t-f64-method-to-str = () {
     v = 2.5
     s = v.to-str()
-    runner.str-eq(s, '2.5', 3, 'f64.to-str 2.5')
+    runner.str-eq(s, '2.5', 'f64.to-str 2.5')
 }
 
 ; ── 128 位範圍常數（i128/u128）──────────────────
@@ -179,13 +179,13 @@ t-f64-method-to-str = () {
 ; 以 .to-str() 斷言精確位元組長度與內容。128 位算術已打通（見下方 sqrt/is-prime 測試）。
 t-int128-range-const = () {
     a = i128.MAX
-    runner.str-eq(a.to-str(), '170141183460469231731687303715884105727', 39, 'i128.MAX')
+    runner.str-eq(a.to-str(), '170141183460469231731687303715884105727', 'i128.MAX')
     b = i128.MIN
-    runner.str-eq(b.to-str(), '-170141183460469231731687303715884105728', 40, 'i128.MIN')
+    runner.str-eq(b.to-str(), '-170141183460469231731687303715884105728', 'i128.MIN')
     c = u128.MAX
-    runner.str-eq(c.to-str(), '340282366920938463463374607431768211455', 39, 'u128.MAX')
+    runner.str-eq(c.to-str(), '340282366920938463463374607431768211455', 'u128.MAX')
     d = u128.MIN
-    runner.str-eq(d.to-str(), '0', 1, 'u128.MIN')
+    runner.str-eq(d.to-str(), '0', 'u128.MIN')
 
     ; 邊界比較（已打通能力）
     x i128 = i128.MAX
@@ -199,23 +199,23 @@ t-int128-range-const = () {
 t-int128-sqrt = () {
     imax i128 = i128.MAX
     s1 = imax.sqrt()
-    runner.str-eq(s1.to-str(), '13043817825332782212', 20, 'i128.MAX.sqrt')
+    runner.str-eq(s1.to-str(), '13043817825332782212', 'i128.MAX.sqrt')
 
     imin i128 = i128.MIN
     s2 = imin.sqrt()
-    runner.str-eq(s2.to-str(), '0', 1, 'i128.MIN.sqrt (負數 -> 0)')
+    runner.str-eq(s2.to-str(), '0', 'i128.MIN.sqrt (負數 -> 0)')
 
     t124 i128 = 1000000000000000000000000
     s3 = t124.sqrt()
-    runner.str-eq(s3.to-str(), '1000000000000', 13, 'i128.1e24.sqrt')
+    runner.str-eq(s3.to-str(), '1000000000000', 'i128.1e24.sqrt')
 
     umax u128 = u128.MAX
     s4 = umax.sqrt()
-    runner.str-eq(s4.to-str(), '18446744073709551615', 20, 'u128.MAX.sqrt (= 2^64-1)')
+    runner.str-eq(s4.to-str(), '18446744073709551615', 'u128.MAX.sqrt (= 2^64-1)')
 
     u124 u128 = 1000000000000000000000000
     s5 = u124.sqrt()
-    runner.str-eq(s5.to-str(), '1000000000000', 13, 'u128.1e24.sqrt')
+    runner.str-eq(s5.to-str(), '1000000000000', 'u128.1e24.sqrt')
 }
 
 ; 驗證 i128/u128 .is-prime()：97 與 1000003 判為質數，100 與 1e18 判為合數
@@ -248,86 +248,86 @@ neg-f = (x f64) (out f64) {
 ; 剝零後留下裸小數點（10.）。
 t-fmt-fixed = () {
     f1 = 1.23456
-    runner.str-eq(f1.to-str-fixed(3), '1.235', 5, 'fixed 1.23456@3')
+    runner.str-eq(f1.to-str-fixed(3), '1.235', 'fixed 1.23456@3')
 
     ; 進位跨越整數位：小數點後的 0 必須保留
     f2 = 9.99
-    runner.str-eq(f2.to-str-fixed(1), '10.0', 4, 'fixed 9.99@1 = 10.0')
+    runner.str-eq(f2.to-str-fixed(1), '10.0', 'fixed 9.99@1 = 10.0')
     f3 = 9.999
-    runner.str-eq(f3.to-str-fixed(2), '10.00', 5, 'fixed 9.999@2 = 10.00')
+    runner.str-eq(f3.to-str-fixed(2), '10.00', 'fixed 9.999@2 = 10.00')
     f4 = 9.9
-    runner.str-eq(f4.to-str-fixed(0), '10', 2, 'fixed 9.9@0 = 10')
+    runner.str-eq(f4.to-str-fixed(0), '10', 'fixed 9.9@0 = 10')
 
     ; 負值與 .5 邊界（二進位無法精確表示 0.005 / 2.675，按實際 double 值捨入）
     f5 = -0.005
-    runner.str-eq(f5.to-str-fixed(2), '-0.01', 5, 'fixed -0.005@2 = -0.01')
+    runner.str-eq(f5.to-str-fixed(2), '-0.01', 'fixed -0.005@2 = -0.01')
     f6 = 1.005
-    runner.str-eq(f6.to-str-fixed(2), '1.00', 4, 'fixed 1.005@2 = 1.00')
+    runner.str-eq(f6.to-str-fixed(2), '1.00', 'fixed 1.005@2 = 1.00')
     f7 = 2.675
-    runner.str-eq(f7.to-str-fixed(2), '2.68', 4, 'fixed 2.675@2 = 2.68')
+    runner.str-eq(f7.to-str-fixed(2), '2.68', 'fixed 2.675@2 = 2.68')
     f8 = 2.5
-    runner.str-eq(f8.to-str-fixed(0), '3', 1, 'fixed 2.5@0 = 3')
+    runner.str-eq(f8.to-str-fixed(0), '3', 'fixed 2.5@0 = 3')
     f9 = 0.5
-    runner.str-eq(f9.to-str-fixed(0), '1', 1, 'fixed 0.5@0 = 1')
+    runner.str-eq(f9.to-str-fixed(0), '1', 'fixed 0.5@0 = 1')
 
     ; 負零：捨入結果為 -0 時保留符號（與 Go 一致）
     fa = -0.4
-    runner.str-eq(fa.to-str-fixed(0), '-0', 2, 'fixed -0.4@0 = -0')
+    runner.str-eq(fa.to-str-fixed(0), '-0', 'fixed -0.4@0 = -0')
     fb = 0.0
-    runner.str-eq(fb.to-str-fixed(2), '0.00', 4, 'fixed 0.0@2 = 0.00')
+    runner.str-eq(fb.to-str-fixed(2), '0.00', 'fixed 0.0@2 = 0.00')
     fc = -1.7
-    runner.str-eq(fc.to-str-fixed(1), '-1.7', 4, 'fixed -1.7@1 = -1.7')
+    runner.str-eq(fc.to-str-fixed(1), '-1.7', 'fixed -1.7@1 = -1.7')
 }
 
 ; 驗證 f64.to-str-sci：指數形式 `d.ddde±NN`，指數恆帶符號且至少兩位
 t-fmt-sci = () {
     s1 = 0.0001234
-    runner.str-eq(s1.to-str-sci(2), '1.23e-04', 8, 'sci 0.0001234@2')
+    runner.str-eq(s1.to-str-sci(2), '1.23e-04', 'sci 0.0001234@2')
 
     ; 負指數不得渲染成 `e--04`（曾因區塊形式的取絕對值不生效而出錯）
     s2 = -0.0001234
-    runner.str-eq(s2.to-str-sci(2), '-1.23e-04', 9, 'sci -0.0001234@2')
+    runner.str-eq(s2.to-str-sci(2), '-1.23e-04', 'sci -0.0001234@2')
 
     s3 = 1234.5
-    runner.str-eq(s3.to-str-sci(2), '1.23e+03', 8, 'sci 1234.5@2')
+    runner.str-eq(s3.to-str-sci(2), '1.23e+03', 'sci 1234.5@2')
 
     ; 進位跨越指數（9.99@1 → 1.0e+01，而非 10.0e+00）
     s4 = 9.99
-    runner.str-eq(s4.to-str-sci(1), '1.0e+01', 7, 'sci 9.99@1 = 1.0e+01')
+    runner.str-eq(s4.to-str-sci(1), '1.0e+01', 'sci 9.99@1 = 1.0e+01')
     s5 = 9.9
-    runner.str-eq(s5.to-str-sci(0), '1e+01', 5, 'sci 9.9@0 = 1e+01')
+    runner.str-eq(s5.to-str-sci(0), '1e+01', 'sci 9.9@0 = 1e+01')
 
     ; 精度 0 與整數值
     s6 = 1.0
-    runner.str-eq(s6.to-str-sci(3), '1.000e+00', 9, 'sci 1.0@3')
+    runner.str-eq(s6.to-str-sci(3), '1.000e+00', 'sci 1.0@3')
     s7 = 0.0
-    runner.str-eq(s7.to-str-sci(0), '0e+00', 5, 'sci 0.0@0')
+    runner.str-eq(s7.to-str-sci(0), '0e+00', 'sci 0.0@0')
 
     ; 非有限值：走 inf / nan 字面，不進桁架
     s8 = 1.0 / 0.0
-    runner.str-eq(s8.to-str-sci(2), 'inf', 3, 'sci +Inf')
+    runner.str-eq(s8.to-str-sci(2), 'inf', 'sci +Inf')
     s9 = 0.0 / 0.0
-    runner.str-eq(s9.to-str-sci(2), 'nan', 3, 'sci NaN')
+    runner.str-eq(s9.to-str-sci(2), 'nan', 'sci NaN')
 }
 
 ; 驗證 f64.to-str-general：有效位數 n，常規量級用定點、極端量級退指數並剝尾隨零
 t-fmt-general = () {
     g1 = 9.99
-    runner.str-eq(g1.to-str-general(2), '10', 2, 'general 9.99@2 = 10')
+    runner.str-eq(g1.to-str-general(2), '10', 'general 9.99@2 = 10')
     g2 = 9.9
-    runner.str-eq(g2.to-str-general(1), '1e+01', 5, 'general 9.9@1 = 1e+01')
+    runner.str-eq(g2.to-str-general(1), '1e+01', 'general 9.9@1 = 1e+01')
     g3 = 999.9
-    runner.str-eq(g3.to-str-general(3), '1e+03', 5, 'general 999.9@3 = 1e+03')
+    runner.str-eq(g3.to-str-general(3), '1e+03', 'general 999.9@3 = 1e+03')
     g4 = 123456.789
-    runner.str-eq(g4.to-str-general(5), '1.2346e+05', 10, 'general 123456.789@5')
+    runner.str-eq(g4.to-str-general(5), '1.2346e+05', 'general 123456.789@5')
     g5 = 0.000999
-    runner.str-eq(g5.to-str-general(3), '0.000999', 8, 'general 0.000999@3')
+    runner.str-eq(g5.to-str-general(3), '0.000999', 'general 0.000999@3')
     g6 = 1.0
-    runner.str-eq(g6.to-str-general(4), '1', 1, 'general 1.0@4 = 1')
+    runner.str-eq(g6.to-str-general(4), '1', 'general 1.0@4 = 1')
     g7 = 0.0
-    runner.str-eq(g7.to-str-general(3), '0', 1, 'general 0.0@3 = 0')
+    runner.str-eq(g7.to-str-general(3), '0', 'general 0.0@3 = 0')
     g8 = -1.5
-    runner.str-eq(g8.to-str-general(3), '-1.5', 4, 'general -1.5@3')
+    runner.str-eq(g8.to-str-general(3), '-1.5', 'general -1.5@3')
 }
 
 ; ── 數值轉換 ──────────────────────────────────
@@ -338,8 +338,8 @@ t-conv-f64-int = () {
     runner.eq(neg-f(2.9).to-i64(), -2, '-2.9.to-i64 = -2')
     runner.eq(300.0.to-u32().to-i64(), 300, '300.0.to-u32')
     runner.eq(300.0.to-i32().to-i64(), 300, '300.0.to-i32')
-    runner.str-eq(1.5.to-u64().to-str(), '1', 1, '1.5.to-u64 = 1')
-    runner.str-eq(neg-f(1.5).to-u64().to-str(), '0', 1, '-1.5.to-u64 飽和為 0')
+    runner.str-eq(1.5.to-u64().to-str(), '1', '1.5.to-u64 = 1')
+    runner.str-eq(neg-f(1.5).to-u64().to-str(), '0', '-1.5.to-u64 飽和為 0')
     runner.eq(neg-f(1.5).to-u32().to-i64(), 0, '-1.5.to-u32 飽和為 0')
     runner.eq(neg-f(1.5).to-i32().to-i64(), -1, '-1.5.to-i32 = -1')
 }
@@ -389,11 +389,11 @@ narrow-i32 = (x i32) (out i64) {
 t-conv-width = () {
     b byte = 200
     runner.eq(b.to-i64(), 200, 'byte 200 -> i64')
-    runner.str-eq(b.to-u64().to-str(), '200', 3, 'byte 200 -> u64')
+    runner.str-eq(b.to-u64().to-str(), '200', 'byte 200 -> u64')
 
     u8v u8 = 250
     runner.eq(u8v.to-i64(), 250, 'u8 250 -> i64')
-    runner.str-eq(u8v.to-u64().to-str(), '250', 3, 'u8 250 -> u64')
+    runner.str-eq(u8v.to-u64().to-str(), '250', 'u8 250 -> u64')
 
     ; 有號窄型別必須符號擴展：-100 / -30000 / -2e9 皆原樣帶出
     runner.eq(narrow-i8(-100), -100, 'i8 -100 -> i64 符號擴展')
@@ -402,11 +402,11 @@ t-conv-width = () {
 
     u16v u16 = 60000
     runner.eq(u16v.to-i64(), 60000, 'u16 60000 -> i64 零擴展')
-    runner.str-eq(u16v.to-u64().to-str(), '60000', 5, 'u16 60000 -> u64')
+    runner.str-eq(u16v.to-u64().to-str(), '60000', 'u16 60000 -> u64')
 
     u32v u32 = 4000000000
     runner.eq(u32v.to-i64(), 4000000000, 'u32 4e9 -> i64 零擴展')
-    runner.str-eq(u32v.to-u64().to-str(), '4000000000', 10, 'u32 4e9 -> u64')
+    runner.str-eq(u32v.to-u64().to-str(), '4000000000', 'u32 4e9 -> u64')
 }
 
 ; 取出 []byte 元素值必須經帶 byte 參數的助手：`v byte = be[i]` 這種宣告
@@ -420,7 +420,7 @@ t-bits = () {
 
     ; 1.5 = 0x3FF8000000000000
     bits = 1.5.to-bits()
-    runner.str-eq(bits.to-str(), '4609434218613702656', 19, '1.5.to-bits')
+    runner.str-eq(bits.to-str(), '4609434218613702656', '1.5.to-bits')
 
     back = bits.from-bits()
     runner.f64-eq(back, 1.5, 0.000001, 'to-bits/from-bits 往返')
@@ -499,7 +499,7 @@ t-exp-f64-fn = () {
     ; 故先比大小再比字串（Inf 的格式化走 inf 字面）
     inf = number.exp-f64(1000.0)
     runner.is-true(inf > 1000000000000000.0, 'exp-f64(1000) 遠大於有限值')
-    runner.str-eq(inf.to-str-sci(2), 'inf', 3, 'exp-f64(1000) = +Inf')
+    runner.str-eq(inf.to-str-sci(2), 'inf', 'exp-f64(1000) = +Inf')
 }
 
 ; f32 方法：全部拓寬至 f64 計算後收窄，容差放寬到 1e-5

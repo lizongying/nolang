@@ -1,5 +1,5 @@
 /**
- * Playground UI strings (zh-Hant / zh-Hans / en).
+ * Playground UI strings (zh-Hant / zh-Hans / en / ja / ko).
  *
  * These strings are deliberately kept in an explicit local map instead of
  * Docusaurus `translate()` + `i18n/en/code.json`: most of them are produced
@@ -8,17 +8,19 @@
  * catalog on every UI change.
  *
  * The playground page passes `useDocusaurusContext().i18n.currentLocale`
- * through `normalizeLocale()`; anything that is not Chinese falls back to en.
+ * through `normalizeLocale()`; unknown locales fall back to en.
  */
 
-export type Locale = 'zh-Hant' | 'zh-Hans' | 'en';
+export type Locale = 'zh-Hant' | 'zh-Hans' | 'en' | 'ja' | 'ko';
 
 /** Ids of the groups shown in the Examples dropdown. */
 export type CategoryId = 'basics' | 'control' | 'data' | 'types' | 'std' | 'errors';
 
 export const DEFAULT_LOCALE: Locale = 'zh-Hant';
 
-export const SUPPORTED_LOCALES: readonly Locale[] = ['zh-Hant', 'zh-Hans', 'en'];
+export const SUPPORTED_LOCALES: readonly Locale[] = [
+  'zh-Hant', 'zh-Hans', 'en', 'ja', 'ko',
+];
 
 /** Text attached to a demo or a demo category, one entry per supported locale. */
 export interface LocalizedExampleText {
@@ -29,11 +31,13 @@ export interface LocalizedExampleText {
 export type LocalizedText = Record<Locale, string>;
 export type ExampleI18n = Record<Locale, LocalizedExampleText>;
 
-/** Map a Docusaurus locale id onto the two locales the playground ships. */
+/** Map a Docusaurus locale id onto a locale the playground ships. */
 export function normalizeLocale(raw: string | undefined | null): Locale {
   const l = (raw ?? '').toLowerCase();
   if (l === 'zh-hant' || l === 'zh-tw') return 'zh-Hant';
   if (l.startsWith('zh')) return 'zh-Hans';
+  if (l === 'ja' || l === 'ja-jp') return 'ja';
+  if (l === 'ko' || l === 'ko-kr') return 'ko';
   return 'en';
 }
 
@@ -164,6 +168,82 @@ export const STRINGS: Record<Locale, PlaygroundStrings> = {
     initializingButton: '初始化中…',
     initFailed: '運行環境初始化失敗：{reason}',
     retryInit: '重試',
+  },
+  ja: {
+      run: '▶ 実行',
+      running: '実行中…',
+      format: 'フォーマット',
+      examples: 'サンプル',
+      status: 'ステータス',
+      editor: 'エディタ',
+      output: '出力',
+      stderr: '標準エラー',
+      diagnostics: '診断',
+      runErrors: '実行エラー',
+      aboutExample: 'サンプルの説明',
+      outputPlaceholder: '（出力はここに表示されます）',
+      stderrPlaceholder: '（標準エラーはここに表示されます）',
+      noDiagnostics: '（診断はありません）',
+      jumpHint: 'クリックして該当箇所にジャンプ',
+      dismiss: 'ヒントを閉じる',
+      statusIdle: '待機中',
+      statusCompiling: 'コンパイル中',
+      statusRunning: '実行中',
+      statusDone: '完了',
+      statusError: 'エラー',
+      wasmLoadFailed: '{name} を読み込めません：{reason}。ページを更新して再試行してください。失敗が続く場合は、サイトに構築された WASM リソースが不足しているか期限切れです。',
+      lspInitFailed: '言語サーバーの初期化に失敗しました：{reason}。エディタでの実行は可能ですが、補完、ホバー、フォーマットは利用できません。',
+      timedOut: '実行がタイムアウトしました（{ms} ms）：コンパイルまたは実行がこの時間内に完了しなかったため、ワーカースレッドを再起動しました。',
+      workerCrashed: 'ワーカースレッドが異常終了しました：{reason}。自動的に再構築しましたので、もう一度実行してください。',
+      formatFailed: 'フォーマットに失敗しました：{reason}',
+      lspUnavailable: 'フォーマット：言語サーバーを利用できません。',
+      runnerUnavailable: 'ランナーがまだ準備できていません。しばらくしてから再試行してください。',
+      compilerFailed: 'コンパイルに失敗しました。標準エラー出力を確認してください。',
+      runtimeFailed: 'プログラムの実行に失敗しました。標準エラー出力を確認してください。',
+      firstCompileHint: '初回コンパイルは時間がかかります：ブラウザーでコンパイラをダウンロードし標準ライブラリを構築する必要があり、通常 30～60 秒、場合によってはそれ以上かかります。しばらくお待ちください。以降の実行は高速です。',
+      firstCompileWaited: '{s} 秒待機しました…',
+      initializing: '実行環境を初期化しています：コンパイラを読み込み中です（約 27 MB）。しばらくお待ちください…',
+      initializingButton: '初期化中…',
+      initFailed: '実行環境の初期化に失敗しました：{reason}',
+      retryInit: '再試行',
+  },
+  ko: {
+      run: '▶ 실행',
+      running: '실행 중…',
+      format: '포맷',
+      examples: '예제',
+      status: '상태',
+      editor: '편집기',
+      output: '출력',
+      stderr: '표준 오류',
+      diagnostics: '진단',
+      runErrors: '실행 오류',
+      aboutExample: '예제 설명',
+      outputPlaceholder: '（출력이 여기에 표시됩니다）',
+      stderrPlaceholder: '（표준 오류가 여기에 표시됩니다）',
+      noDiagnostics: '（진단 없음）',
+      jumpHint: '클릭하여 해당 위치로 이동합니다',
+      dismiss: '힌트 닫기',
+      statusIdle: '대기',
+      statusCompiling: '컴파일 중',
+      statusRunning: '실행 중',
+      statusDone: '완료',
+      statusError: '오류',
+      wasmLoadFailed: '{name}을(를) 로드할 수 없습니다: {reason}. 페이지를 새로고침하여 다시 시도하세요. 계속 실패하는 경우 사이트에 빌드된 WASM 리소스가 누락되었거나 만료된 것일 수 있습니다.',
+      lspInitFailed: '언어 서비스 초기화에 실패했습니다: {reason}. 편집기는 계속 실행할 수 있지만 자동 완성, 호버 및 포맷을 사용할 수 없습니다.',
+      timedOut: '실행 시간 초과({ms} ms): 컴파일 또는 실행이 지정된 시간 내에 완료되지 않아 작업 스레드를 다시 시작했습니다.',
+      workerCrashed: '작업 스레드가 비정상적으로 종료되었습니다: {reason}. 자동으로 다시 생성했으니 다시 실행해 주세요.',
+      formatFailed: '포맷 실패: {reason}',
+      lspUnavailable: '포맷: 언어 서비스를 사용할 수 없습니다.',
+      runnerUnavailable: '러너가 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.',
+      compilerFailed: '컴파일에 실패했습니다. 표준 오류 출력을 확인해 주세요.',
+      runtimeFailed: '프로그램 실행에 실패했습니다. 표준 오류 출력을 확인해 주세요.',
+      firstCompileHint: '첫 컴파일은 시간이 더 걸립니다. 브라우저에서 컴파일러를 다운로드하고 표준 라이브러리를 빌드해야 하므로 보통 30~60초, 그 이상 걸릴 수도 있습니다. 기다려 주세요. 이후 실행은 훨씬 빠릅니다.',
+      firstCompileWaited: '{s}초 기다렸습니다…',
+      initializing: '실행 환경을 초기화하는 중입니다. 컴파일러(약 27 MB)를 로드하고 있으니 잠시 기다려 주세요…',
+      initializingButton: '초기화 중…',
+      initFailed: '실행 환경 초기화에 실패했습니다: {reason}',
+      retryInit: '다시 시도',
   },
   en: {
     run: '▶ Run',

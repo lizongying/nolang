@@ -192,7 +192,7 @@ t-int-key = () {
 
     g = m.get(7)
     g: {
-        ok -> runner.str-eq(it, 'SEVEN', 5, 'int key: get returns overwritten value')
+        ok -> runner.str-eq(it, 'SEVEN', 'int key: get returns overwritten value')
 
         nil -> runner.is-true(false, 'int key: 7 must be present')
 
@@ -282,7 +282,7 @@ t-for-each = () {
     ms [str]i64 = { }
     ms.put('only', 5)
     sk, sv = ms.for-each()
-    runner.str-eq(sk, 'only', 4, 'str for-each k')
+    runner.str-eq(sk, 'only', 'str for-each k')
     runner.eq(sv, 5, 'str for-each v')
 
     mi [i64]i64 = { }

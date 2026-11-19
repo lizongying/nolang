@@ -52,7 +52,7 @@ t-drain = () {
     }
     runner.eq(rounds, 3, 'drain: 三個值各跑一輪')
     runner.eq(c.len(), 0, 'drain: 取空後隊列歸零')
-    runner.str-eq(done, 'closed', 6, 'drain: 取空後落到 nil 臂')
+    runner.str-eq(done, 'closed', 'drain: 取空後落到 nil 臂')
 }
 
 ; ── 關閉且空：nil 臂（不是 err）──────────────
@@ -69,7 +69,7 @@ t-closed-empty = () {
 
         err -> done = 'empty'
     }
-    runner.str-eq(done, 'closed', 6, 'closed-empty: 關閉且空走 nil 臂')
+    runner.str-eq(done, 'closed', 'closed-empty: 關閉且空走 nil 臂')
 }
 
 ; ── 元素形態 ──────────────────────────────────
@@ -141,8 +141,8 @@ t-str-payload = () {
 
         err -> end = 'empty'
     }
-    runner.str-eq(got, 'ab', 2, 'str: 發送是深拷貝，改寫來源不影響環內值')
-    runner.str-eq(end, 'closed', 6, 'str: 取完一輪後落到 nil 臂')
+    runner.str-eq(got, 'ab', 'str: 發送是深拷貝，改寫來源不影響環內值')
+    runner.str-eq(end, 'closed', 'str: 取完一輪後落到 nil 臂')
 }
 
 ; ── 裸宣告即分配 + 按需增長 ───────────────────

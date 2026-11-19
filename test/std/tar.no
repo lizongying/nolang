@@ -39,7 +39,7 @@ t-octal = () {
     hx = v.to-hex()
 
     want = '3030303036343400303030303030303000303030303037373700303030303030303030313300'
-    runner.str-eq(hx, want, 76, 'write-octal：前導零填充 + 尾端 NUL（420/0/511/11）')
+    runner.str-eq(hx, want, 'write-octal：前導零填充 + 尾端 NUL（420/0/511/11）')
 
     c7 = b.buf[7]: {
         ok -> it
@@ -79,28 +79,28 @@ t-header = () {
     h = b.buf.slice(0, 512)
 
     nm = h.slice(0, 5)
-    runner.str-eq(nm.to-hex(), '782E747874', 10, 'name 欄（偏移 0）')
+    runner.str-eq(nm.to-hex(), '782E747874', 'name 欄（偏移 0）')
 
     md = h.slice(100, 108)
-    runner.str-eq(md.to-hex(), '3030303036343400', 16, 'mode 欄（偏移 100，0000644 + NUL）')
+    runner.str-eq(md.to-hex(), '3030303036343400', 'mode 欄（偏移 100，0000644 + NUL）')
 
     uid = h.slice(108, 116)
-    runner.str-eq(uid.to-hex(), '3030303030303000', 16, 'uid 欄（偏移 108，7 個 0 + NUL）')
+    runner.str-eq(uid.to-hex(), '3030303030303000', 'uid 欄（偏移 108，7 個 0 + NUL）')
 
     gid = h.slice(116, 124)
-    runner.str-eq(gid.to-hex(), '3030303030303000', 16, 'gid 欄（偏移 116）')
+    runner.str-eq(gid.to-hex(), '3030303030303000', 'gid 欄（偏移 116）')
 
     sz = h.slice(124, 136)
-    runner.str-eq(sz.to-hex(), '303030303030303030303500', 24, 'size 欄（偏移 124，00000000005 + NUL）')
+    runner.str-eq(sz.to-hex(), '303030303030303030303500', 'size 欄（偏移 124，00000000005 + NUL）')
 
     mt = h.slice(136, 148)
-    runner.str-eq(mt.to-hex(), '303030303030303030303000', 24, 'mtime 欄（偏移 136，全 0）')
+    runner.str-eq(mt.to-hex(), '303030303030303030303000', 'mtime 欄（偏移 136，全 0）')
 
     tf = h.slice(156, 157)
-    runner.str-eq(tf.to-hex(), '30', 2, 'typeflag 欄（偏移 156，"0" = 普通檔案）')
+    runner.str-eq(tf.to-hex(), '30', 'typeflag 欄（偏移 156，"0" = 普通檔案）')
 
     mg = h.slice(257, 263)
-    runner.str-eq(mg.to-hex(), '757374617200', 12, 'ustar magic（偏移 257，"ustar\\0"）')
+    runner.str-eq(mg.to-hex(), '757374617200', 'ustar magic（偏移 257，"ustar\\0"）')
 
     gap = h.slice(5, 100)
     gap-sum = 0
@@ -128,10 +128,10 @@ t-checksum = () {
     h = b.buf.slice(0, 512)
 
     ck = h.slice(148, 156)
-    runner.str-eq(ck.to-hex(), '3030373036340020', 16, 'chksum 欄 = "007064\\0 "（規範總和 0o7064）')
+    runner.str-eq(ck.to-hex(), '3030373036340020', 'chksum 欄 = "007064\\0 "（規範總和 0o7064）')
 
     n157 = h.slice(157, 158)
-    runner.str-eq(n157.to-hex(), '00', 2, 'chksum 之後的 linkname 區保持 0')
+    runner.str-eq(n157.to-hex(), '00', 'chksum 之後的 linkname 區保持 0')
 }
 
 ; ── 4. builder round-trip：讀回自身產出的歸檔 ──────────────────────────
@@ -152,26 +152,26 @@ t-roundtrip = () {
     runner.eq(ar.offset(2), 1536, 'offset(2) = 目錄只有標頭')
     runner.eq(ar.offset(3), 2560, 'offset(3)')
 
-    runner.str-eq(ar.name(0), 'a.txt', 5, 'name(0)')
-    runner.str-eq(ar.name(1), 'dir/', 4, 'name(1)')
-    runner.str-eq(ar.name(2), 'raw.bin', 7, 'name(2)')
-    runner.str-eq(ar.name(3), 'empty', 5, 'name(3)')
+    runner.str-eq(ar.name(0), 'a.txt', 'name(0)')
+    runner.str-eq(ar.name(1), 'dir/', 'name(1)')
+    runner.str-eq(ar.name(2), 'raw.bin', 'name(2)')
+    runner.str-eq(ar.name(3), 'empty', 'name(3)')
 
     runner.eq(ar.size(0), 5, 'size(0) = 5')
     runner.eq(ar.size(1), 0, 'size(1) 目錄 = 0')
     runner.eq(ar.size(2), 3, 'size(2) = 3')
     runner.eq(ar.size(3), 0, 'size(3) 空檔案 = 0')
 
-    runner.str-eq(ar.type(0), 'file', 4, 'type(0) = file')
-    runner.str-eq(ar.type(1), 'dir', 3, 'type(1) = dir')
+    runner.str-eq(ar.type(0), 'file', 'type(0) = file')
+    runner.str-eq(ar.type(1), 'dir', 'type(1) = dir')
     runner.is-true(ar.is-file(0), 'is-file(0)')
     runner.is-false(ar.is-dir(0), 'is-dir(0) = false')
     runner.is-true(ar.is-dir(1), 'is-dir(1)')
     runner.is-false(ar.is-file(1), 'is-file(1) = false')
 
-    runner.str-eq(ar.read(0).to-str(), 'hello', 5, 'read(0) 內容')
+    runner.str-eq(ar.read(0).to-str(), 'hello', 'read(0) 內容')
     runner.eq(len(ar.read(1)), 0, 'read(1) 目錄內容為空')
-    runner.str-eq(ar.read(2).to-str(), 'abc', 3, 'read(2) 內容')
+    runner.str-eq(ar.read(2).to-str(), 'abc', 'read(2) 內容')
     runner.eq(len(ar.read(3)), 0, 'read(3) 空檔案內容為空')
 
     runner.eq(ar.mode(0), 420, 'mode(0) = 0o644')
@@ -182,18 +182,18 @@ t-roundtrip = () {
     e1 = ar.entry(1)
     e2 = ar.entry(2)
 
-    runner.str-eq(e0.name(), 'a.txt', 5, 'entry.name()')
+    runner.str-eq(e0.name(), 'a.txt', 'entry.name()')
     runner.eq(e0.size(), 5, 'entry.size()')
-    runner.str-eq(e0.type(), 'file', 4, 'entry.type()')
+    runner.str-eq(e0.type(), 'file', 'entry.type()')
     runner.is-true(e0.is-file(), 'entry.is-file()')
     runner.is-false(e0.is-dir(), 'entry.is-dir() = false')
-    runner.str-eq(e0.read().to-str(), 'hello', 5, 'entry.read()')
+    runner.str-eq(e0.read().to-str(), 'hello', 'entry.read()')
     runner.eq(e0.mode(), 420, 'entry.mode()')
     runner.eq(e0.mtime(), 0, 'entry.mtime()')
 
     runner.is-true(e1.is-dir(), 'entry(1).is-dir()')
-    runner.str-eq(e1.type(), 'dir', 3, 'entry(1).type()')
-    runner.str-eq(e2.read().to-str(), 'abc', 3, 'entry(2).read()')
+    runner.str-eq(e1.type(), 'dir', 'entry(1).type()')
+    runner.str-eq(e2.read().to-str(), 'abc', 'entry(2).read()')
 }
 
 ; ── 5. 跨區塊內容（>512 位元組）與 512 對齊邊界 ────────────────────────
@@ -211,8 +211,8 @@ t-big = () {
     runner.eq(len(ar.read(0)), 1200, 'read(0) 長度 = 1200')
 
     head = ar.read(0).slice(0, 4)
-    runner.str-eq(head.to-str(), 'ZZZZ', 4, 'read(0) 內容為填充值')
-    runner.str-eq(ar.read(1).to-str(), 'tail', 4, 'read(1) 內容')
+    runner.str-eq(head.to-str(), 'ZZZZ', 'read(0) 內容為填充值')
+    runner.str-eq(ar.read(1).to-str(), 'tail', 'read(1) 內容')
 }
 
 ; ── 6. open-gz：gzip 包裝的 tar ────────────────────────────────────
@@ -226,8 +226,8 @@ t-open-gz = () {
 
     back = tar.open-gz(gz)
     runner.eq(back.count(), 1, 'open-gz：count = 1')
-    runner.str-eq(back.name(0), 'gz.txt', 6, 'open-gz：name')
-    runner.str-eq(back.read(0).to-str(), 'gzipped tar', 11, 'open-gz：內容還原')
+    runner.str-eq(back.name(0), 'gz.txt', 'open-gz：name')
+    runner.str-eq(back.read(0).to-str(), 'gzipped tar', 'open-gz：內容還原')
 }
 
 ; ── 7. 讀取器容忍 BSD/GNU tar 的空格填數字欄 ──────────────────────────
@@ -246,7 +246,7 @@ t-space-padded = () {
     ar2 = tar{}
     ar2.data = raw
     runner.eq(ar2.size(0), 5, 'size 欄帶空格填充仍解出 5')
-    runner.str-eq(ar2.read(0).to-str(), 'hello', 5, '內容照樣讀出')
+    runner.str-eq(ar2.read(0).to-str(), 'hello', '內容照樣讀出')
 }
 
 p1 = runner.test('tar.write-octal', t-octal)

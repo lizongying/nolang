@@ -2009,7 +2009,7 @@ tag 比較與 `let it T` 綁定；`lowerer.inferValueMatchResult` 把值位 matc
 
 **⑤ 本輪更正清單**：檔頭定位、§4.1.1 標題＋警示＋表頭＋as-built 校正、§6 M4 列、§6.5 M4-e 條、§11.2 B4、文末 2026-11-06 快照標記為歷史並補 2026-11-12 快照；**第二輪**再補 §5.3.4.bh 歷史警示、§6.5 三條 M4-c 摘要的過期標記、§11.2 B8 理由校正，並**新增 B28 記帳**（`%str-long` 24B→16B 當日未同步，**已於 ⑥ 清償**）。**凡 2026-10-09（`HEAD = 4feaaf70`）的行號／計數一律保留為歷史證據**；§11.2 既有基線表 B1–B27 原文亦保留（其 `:2148` 一類行號同屬歷史座標），只在 B8 尾與表末 B28 追加校正；B28 於 ⑥ 由「未同步」改記為「已清償」。**以上①–⑤兩輪均為 doc-only，未動 `compiler/`；⑥ 與 ⑦ 才是後續兩輪實作輪次。**
 
-> ⑥–⑯（2026-11-12 ~ 2026-11-15）的 11 節歷史追記已原樣遷至 [`nolang-selfhost-history.md` §二](nolang-selfhost-history.md)，本文自 ⑰ 起保留連續追記（最新 ㉗ 在文末）。
+> ⑥–⑯（2026-11-12 ~ 2026-11-15）的 11 節歷史追記已原樣遷至 [`nolang-selfhost-history.md` §二](nolang-selfhost-history.md)，本文自 ⑰ 起保留連續追記（最新 ㉛ 在文末）。
 
 ## 附錄 A：實測證據與可重跑命令
 
@@ -2806,3 +2806,91 @@ stub 版 `drv.pkg-ll-cov('compiler/src/drv.no')` 產 569 條 `fn:Kind:construct`
 - IR bytes 未變（323866）：本輪只讓更多槽可綁名，尚未把新放行的函式完整產碼。
 - 下一步：**分診 `cg-emit-cfg-t` 的 1520 條葉子 Identifier 真實來源**，或回到 str 常量
   （`NOC-NAME = 'noc'` 10 條 ID）；前者槓桿大但需先區分 cur-k 噪聲，後者邊界清晰。
+
+### ㉛ 2026-11-19 追記（再續）：s114 裸連字符呼叫——整包 IR 只有 64 個 define 的真根因（**執行輪次**）
+
+> 本節是 as-built 實作：①定位 ②修復 ③量測 ④驗證 ⑤誠實邊界。㉚ ⑤ 把 ID 通道的局部名缺口
+> 讀成「槽登記／控制流鋪槽」問題；本輪先做了第三條診斷，結論是 **ID 通道裡最大的一批局部名是
+> 症狀、不是病因**——病因是**模組內裸連字符呼叫根本查不到簽名**，而簽名的 key 是點號形。
+
+**① 定位：ID 通道最大的一批局部名是「症狀」**
+
+- 签名表 key 的構造在 `drv.pkg-sigs`（drv.no:834）：`pre-dot = mod - '.'`、`pre-hyp = mod - '-'，
+  `nm.starts-with(...)` ⇒ `short = nm.slice-bytes(mod.len-bytes()+1, ...)`、`key = mod - '.' - short`。
+  於是 `ps-peek` 的 key 是 **`ps.peek`**，而 `femit` 是源函數名 verbatim **`ps-peek`**。
+- 而 self-host 源碼在模組內寫的是**裸連字符名**：`ps-peek(p)`（ps.no:564、620）、
+  `lx-scan-token(lx, t)`、`ast.str-at(t, ...)`。`h2m-sig-find` 只做精確匹配 ⇒ **必然落空**。
+- 實測（探針，`drv.pkg-sigs('compiler/main.no')`，496 條簽名）：
+  `h2m-sig-find(sg, 'ps.peek') = 143`、`h2m-sig-find(sg, 'ps-peek') = -1`、`sg.femit[143] = 'ps-peek'`。
+- 三重證據：
+  1. 上面那條平面查詢（key 口径 vs 裸名口径）。
+  2. 整包 IR 只有 **64 個 `define`**；`@ps-peek`／`@ast-make`／`@ps-parse`／`@lx-scan-token`
+     全部未發射，已發射的都是**無內部呼叫的葉子函式**。
+  3. t6 受控實驗（`baremod-f` 葉子 + `baremod-g` 祗呼 `baremod-f(x)`）：`baremod-f` 發射、
+     `baremod-g` **未發射** ⇒ 缺口與函式體複雜度無關，純呼叫解析。
+- 連鎖機制（ID 通道為何飆高）：`h2m-ty-of` 回 -1 ⇒ `h2m-scan` 的 let 槽 `ty < 0` ⇒
+  `h2m-slot-decl` `ok-slot == 0` ⇒ **不把名字 push 進 `c.names`** ⇒ 之後每次讀該名 →
+  三表未命中 → `h2m-id-name` 記一條 ID。所以 ID 1032 裡很大一部分是**同一根因的下游症狀**。
+- 可行性前提：496 條簽名的 `femit` 與 `fname` **皆無重複**（探針實測 dup pairs 均為 0）
+  ⇒ 用 `femit` 反查做裸名 fallback 在當前語料下無歧義。
+
+**② 修復（`compiler/src/h2m.no`，三處）**
+
+- `h2m.no:1913` 新增 `h2m-sig-find-emit(s, name)`：掃 `s.femit`，**0 命中或 >1 命中一律回 -1**。
+  歧義時絕不取第一個——那會把「静默錯值」換成「静默錯碼」，比落空更糟。
+- 兩個接入點，同口徑：
+  - `h2m.no:2189` —— `h2m-ty-of` 的 K-CALL-EXPRESSION / IDENTIFIER callee 臂；
+  - `h2m.no:3132` —— `h2m-lower-expr` 的 CALL 臂 `si` 解析處，**仍落空才** `ok-call = 0` 落閘門。
+- 單模組路徑（`h2m-lower-program`）`femit == fname == nm`，精確匹配已命中 ⇒ 反查永不觸發，**零回歸**。
+
+**③ 量測（`./bin/no run compiler/tests/cov-measure.no`，與 ㉚ 同一檔）**
+
+| 指標 | 基線 | 修後 | Δ |
+| --- | --- | --- | --- |
+| ID（`ID:` 行） | 1032 | **426** | −606（−58.7%） |
+| LF（`LF:` 行） | 9114 | **5805** | −3309（−36.3%） |
+| unsup | 9149 | **5916** | −3233（−35.3%） |
+| IR bytes | 323866 | **330710** | +6844（+2.1%） |
+| `dropped (calls unsupported)` | 35 | 111 | +76 |
+| 整包 `define` 數 | 64 | **69** | +5 |
+
+- 基線由「同一二進位、把兩處 fallback 改成 `si = -1`」**配對**量得，連跑兩次基線
+  ID／LF／IR 完全一致（確定性）。
+- `dropped` 上升**不是退化**：那條日誌是「逐函降级時遇到不支援的被呼叫者」的記錄，
+  放行更多函式 ⇒ 更多這類記錄。
+- 新增的 5 個 `define` 全是葉子：`lx-hex-val`／`lx-is-digit`／`lx-is-hex`／`lx-is-ident-char`／
+  `lx-is-letter`（無一例外）——再次印證「求精先放行葉子」。
+- t6 受控實驗：`baremod-g` 由**未發射 → 發射**，IR 14202 → 14294。
+
+**④ 驗證**
+
+| 項 | 結果 |
+| --- | --- |
+| 先紅後綠 | 把兩處 `si = h2m-sig-find-emit(sg, cn)` 臨時改成 `si = -1`（回到修前口徑），`h2m-test` 裡 14 條 s114 斷言**6 條失敗**（ty-of 1 + lower-expr 5）；恢復後 **1175/1175 全綠** |
+| `h2m-test` | 1161 → **1175**（s114 新增 14 條：ty-of 1、lower-expr 10、歧義 2、未登記 2——後四條是**門禁不收緊**的釘子） |
+| 其餘 selfhost | `pkg-sigs`／`pkg-ll`／`pkg-ll-call`／`cg`／`ck`／`ck-sig`／`ps`／`lx`／`tok`／`diag`／`build-package`／`util`／`ps-err` 全綠 |
+| `ast-test` | 5/48 失敗——**既有**（`KIND-COUNT = 72` 等 kind 編號漂移）。該檔只導入 `asp`／`ast`／`sb`、**不導入 h2m**；把 fallback 停用後重跑仍是同樣 5 條 ⇒ 與本輪無關 |
+| 格式 | `no fmt -w` 後 `h2m.no`／`h2m-test.no` 的 `no fmt -d` 皆為空 |
+
+**⑤ 誠實邊界與下一步**
+
+- **`ok` 43 條（占剩餘 ID 的 10.1%）已定位**：`ps.no:7284` 的注释明示
+  「Condition（`_`/bare-> 臂=0；**ok-> 臂=Identifier{ok}**）」，即**顯式 match 形**
+  （`expr: { ok -> it }`）的 Condition aux 是標識符節點 `ok`，被 `h2m-scan-arms`／
+  `h2m-lower-expr` 當名字讀。受控實驗（t7）：**identifier 主體形**（`a: { ok -> it }`，
+  `i64` 或 `?i64`）不產生 `ID:ok` 且能產碼；**表達式主體形**（`s.byte(0): { ok -> it }`）
+  產生 `ID:ok` 且整函被丟棄 ⇒ 這 43 條**不是純假陽**，是「顯式 match × 表達式主體」
+  這個缺口的伴生症狀。
+- 剩餘 ID 名分布（前幾名）：`n` 28（`ast-str-intern`／`drv.cmd-*`）、`h` 19（`ast-str-hash`／
+  `ps-ht-*`）、`cur` 15（`node`）、`kvar` 12（`ps-parse-match`）、`nm` 11（`cg-emit-cfg-t`／
+  `drv.pkg-ll`／`h2m-*`）、`NOC-NAME` 11（`drv.bp-walk`／`build-to`／`cmd-*`）、`p` 10、
+  `c` 8、`base` 8、`self` 7（`diag.render*`）、`gnames` 7（`ps-parse-func`／`ps-parse-method-func`）。
+- **LF 基線口径差異**：本輪配對基線 LF = **9114**，㉚ 記 9103（差 11；ID 1032 與
+  IR 323866 完全一致）。本輪的 Δ 一律用配對值計算，不與 ㉚ 的 LF 直接相減。
+- **IR bytes 只 +2.1%**：本輪解的是**解析**、不是**降到葉子**。`ps-peek`／`ast-make`／
+  `ps-parse`／`lx-scan-token` 仍未發射——`ps-peek` 只被 `ps-skip-trivia`（已在 `dropped`
+  清單裡）與 `ps-skip-trivia-doc` 呼叫，從 `main` 的 callee-closure 不可達；這是**下游**缺口，
+  與本輪的解析缺口無關，仍未分診。
+- 下一步：**顯式 match 的表達式主體**（`expr: { ok -> it }`）——它同時解釋 `ok` 43 條 ID 與
+  `ps-int-lit-value` 等解析 core 函式的丟棄；邊際清晰、可受控復現（t7 已證實），
+  槓桿比 ㉚ ⑤ 點名的 `cg-emit-cfg-t` 1520 條葉子大。

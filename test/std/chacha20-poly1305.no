@@ -235,7 +235,7 @@ t-seal = () {
     plain = 'Chacha20-Poly1305 AEAD test vector for nolang'.to-bytes()
     sealed = chacha20-poly1305.chacha20-poly1305-seal(key, nonce, aad, plain)
     runner.eq(sealed.len(), 61, 'ccpoly sealed len = 45 ct + 16 tag')
-    runner.str-eq(bhex(sealed), 'dc13883e699c728a38b2e0974fb0399ef4e0c97a48454eaab8f9a4a723e760d121eceb5ec3fc7e45d7b6d3619d8381201392ca82f46516577efe95d888', 122, 'ccpoly seal ct||tag')
+    runner.str-eq(bhex(sealed), 'dc13883e699c728a38b2e0974fb0399ef4e0c97a48454eaab8f9a4a723e760d121eceb5ec3fc7e45d7b6d3619d8381201392ca82f46516577efe95d888', 'ccpoly seal ct||tag')
 }
 
 ; 以相同 key / nonce / AAD 解封應還原明文（需認證通過才輸出）
@@ -258,20 +258,18 @@ t-open = () {
     sealed = chacha20-poly1305.chacha20-poly1305-seal(key, nonce, aad, plain)
     back = chacha20-poly1305.chacha20-poly1305-open(key, nonce, aad, sealed)
 
-    #{overflow=wrap}
-    blen = back.len() * 2
-    runner.str-eq(bhex(back), bhex(plain), blen, 'ccpoly open round-trip')
+    runner.str-eq(bhex(back), bhex(plain), 'ccpoly open round-trip')
 }
 
 ; ---- 內部構成 ----
 
 ; 32-bit 循環左移
 t-rotl32 = () {
-    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(1, 1)), '00000002', 8, 'rotl32 1,1')
-    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x80000000, 1)), '00000001', 8, 'rotl32 最高位回捲')
-    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x01234567, 8)), '23456701', 8, 'rotl32 8')
-    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0xdeadbeef, 16)), 'beefdead', 8, 'rotl32 16')
-    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x01234567, 31)), '8091a2b3', 8, 'rotl32 31')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(1, 1)), '00000002', 'rotl32 1,1')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x80000000, 1)), '00000001', 'rotl32 最高位回捲')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x01234567, 8)), '23456701', 'rotl32 8')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0xdeadbeef, 16)), 'beefdead', 'rotl32 16')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x01234567, 31)), '8091a2b3', 'rotl32 31')
 }
 
 ; quarter-round：state = 0..15，作用於 (0,4,8,12)。
@@ -280,23 +278,23 @@ t-qr = () {
     st = qr-in[..16)
     chacha20-poly1305.qr(st, 0, 4, 8, 12)
 
-    runner.str-eq(u32-hex(at32(st, 0)), '8000c004', 8, 'qr state[a]')
-    runner.str-eq(u32-hex(at32(st, 4)), '64624444', 8, 'qr state[b]')
-    runner.str-eq(u32-hex(at32(st, 8)), '08c80488', 8, 'qr state[c]')
-    runner.str-eq(u32-hex(at32(st, 12)), '08c00480', 8, 'qr state[d]')
+    runner.str-eq(u32-hex(at32(st, 0)), '8000c004', 'qr state[a]')
+    runner.str-eq(u32-hex(at32(st, 4)), '64624444', 'qr state[b]')
+    runner.str-eq(u32-hex(at32(st, 8)), '08c80488', 'qr state[c]')
+    runner.str-eq(u32-hex(at32(st, 12)), '08c00480', 'qr state[d]')
 
     ; 未參與的四字必須原封不動
-    runner.str-eq(u32-hex(at32(st, 1)), '00000001', 8, 'qr 不動 state[1]')
-    runner.str-eq(u32-hex(at32(st, 5)), '00000005', 8, 'qr 不動 state[5]')
+    runner.str-eq(u32-hex(at32(st, 1)), '00000001', 'qr 不動 state[1]')
+    runner.str-eq(u32-hex(at32(st, 5)), '00000005', 'qr 不動 state[5]')
 
     ; 不同 (a,b,c,d) 應給出不同結果 —— 驗證索引確實被使用
     st2 = qr-in[..16)
     chacha20-poly1305.qr(st2, 1, 5, 9, 13)
-    runner.str-eq(u32-hex(at32(st2, 1)), 'b000c006', 8, 'qr 換索引起點 state[1]')
-    runner.str-eq(u32-hex(at32(st2, 5)), 'e5e35cdd', 8, 'qr 換索引起點 state[5]')
-    runner.str-eq(u32-hex(at32(st2, 9)), '0bcb06b9', 8, 'qr 換索引起點 state[9]')
-    runner.str-eq(u32-hex(at32(st2, 13)), '0bc006b0', 8, 'qr 換索引起點 state[13]')
-    runner.str-eq(u32-hex(at32(st2, 0)), '00000000', 8, 'qr 換索引不動 state[0]')
+    runner.str-eq(u32-hex(at32(st2, 1)), 'b000c006', 'qr 換索引起點 state[1]')
+    runner.str-eq(u32-hex(at32(st2, 5)), 'e5e35cdd', 'qr 換索引起點 state[5]')
+    runner.str-eq(u32-hex(at32(st2, 9)), '0bcb06b9', 'qr 換索引起點 state[9]')
+    runner.str-eq(u32-hex(at32(st2, 13)), '0bc006b0', 'qr 換索引起點 state[13]')
+    runner.str-eq(u32-hex(at32(st2, 0)), '00000000', 'qr 換索引不動 state[0]')
 }
 
 ; ChaCha20 區塊函式：RFC 8439 §2.3.2（key 00..1f、counter 1、
@@ -307,7 +305,7 @@ t-block = () {
 
     blk [64]byte = chacha20-poly1305.chacha20-block(key, 1, nonce)
     v = arr(blk)
-    runner.str-eq(bhex(v), '10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e', 128, 'RFC 8439 §2.3.2 block ctr=1')
+    runner.str-eq(bhex(v), '10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e', 'RFC 8439 §2.3.2 block ctr=1')
 
     ; counter 參與初始狀態 ⇒ 換 counter 換金鑰流
     b0 [64]byte = chacha20-poly1305.chacha20-block(key, 0, nonce)
@@ -321,7 +319,7 @@ t-block = () {
     z12 [12]byte = mk12('000000000000000000000000')
     bz [64]byte = chacha20-poly1305.chacha20-block(z32, 0, z12)
     vz = arr(bz)
-    runner.str-eq(bhex(vz), '76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586', 128, 'chacha20-block 全零向量')
+    runner.str-eq(bhex(vz), '76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586', 'chacha20-block 全零向量')
 }
 
 ; ChaCha20 串流加密：45 位元組（單塊內）與 134 位元組（跨三塊）
@@ -332,17 +330,17 @@ t-xor = () {
     p1 = 'ChaCha20 stream cipher test vector for nolang'.to-bytes()
     c1 = chacha20-poly1305.chacha20-xor(key, 1, nonce, p1)
     runner.eq(c1.len(), 45, 'chacha20-xor 長度 = 資料長度')
-    runner.str-eq(bhex(c1), '612730b0287aebd10fad531ddd0270cdef7a6fea585e26961b3cbecce896ac0ce5492ac51d122afcda1515a38a', 90, 'chacha20-xor 45B 單塊')
+    runner.str-eq(bhex(c1), '612730b0287aebd10fad531ddd0270cdef7a6fea585e26961b3cbecce896ac0ce5492ac51d122afcda1515a38a', 'chacha20-xor 45B 單塊')
 
     ; 跨塊：第二、三塊的 counter 必須自動遞增
     p2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz0123456789'.to-bytes()
     c2 = chacha20-poly1305.chacha20-xor(key, 1, nonce, p2)
     runner.eq(c2.len(), 134, 'chacha20-xor 跨塊長度')
-    runner.str-eq(bhex(c2), '630d12b7055d9ea966946c23f52d52bddd414cd6687a51ba2715faddacc0fb4dbc0c329a130269f6d01f13a58441f8581422d530b74c47b99f575b34890700f52ae231d9782b460b6986b366a31d952c7580613b27e1d529c3d8f709f0396f7201b20fb879e749efa60f83a7fb7113459c13057100546fd7ff83c59209a0f6defcd8307b56aa', 268, 'chacha20-xor 134B 跨三塊')
+    runner.str-eq(bhex(c2), '630d12b7055d9ea966946c23f52d52bddd414cd6687a51ba2715faddacc0fb4dbc0c329a130269f6d01f13a58441f8581422d530b74c47b99f575b34890700f52ae231d9782b460b6986b366a31d952c7580613b27e1d529c3d8f709f0396f7201b20fb879e749efa60f83a7fb7113459c13057100546fd7ff83c59209a0f6defcd8307b56aa', 'chacha20-xor 134B 跨三塊')
 
     ; 對合：再加密一次還原
     back = chacha20-poly1305.chacha20-xor(key, 1, nonce, c2)
-    runner.str-eq(bhex(back), bhex(p2), 268, 'chacha20-xor 為對合')
+    runner.str-eq(bhex(back), bhex(p2), 'chacha20-xor 為對合')
 
     ; 空資料
     none = zeros(0)
@@ -356,19 +354,19 @@ t-poly1305 = () {
     msg = 'Cryptographic Forum Research Group'.to-bytes()
     tag [16]byte = chacha20-poly1305.poly1305(k, msg)
     tv = arr16(tag)
-    runner.str-eq(bhex(tv), 'a8061dc1305136c6c22b8baf0c0127a9', 32, 'poly1305 RFC 8439 §2.5.2')
+    runner.str-eq(bhex(tv), 'a8061dc1305136c6c22b8baf0c0127a9', 'poly1305 RFC 8439 §2.5.2')
 
     ; 空訊息 ⇒ h=0，tag 就是 s（key 的後 16 位元組）
     k0 [32]byte = mk32('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f')
     none = zeros(0)
     t2 [16]byte = chacha20-poly1305.poly1305(k0, none)
     v2 = arr16(t2)
-    runner.str-eq(bhex(v2), '101112131415161718191a1b1c1d1e1f', 32, 'poly1305 空訊息 = s')
+    runner.str-eq(bhex(v2), '101112131415161718191a1b1c1d1e1f', 'poly1305 空訊息 = s')
 
     ; 不足一個區塊（3 位元組，走「補 2^(8n)」的短區塊路徑）
     t3 [16]byte = chacha20-poly1305.poly1305(k0, 'abc'.to-bytes())
     v3 = arr16(t3)
-    runner.str-eq(bhex(v3), 'e591505e87b0d9022c557ea7d0f9224c', 32, 'poly1305 abc（不完整區塊）')
+    runner.str-eq(bhex(v3), 'e591505e87b0d9022c557ea7d0f9224c', 'poly1305 abc（不完整區塊）')
 
     ; r 的 clamp 生效：兩把只差在 clamp 位元的金鑰應得同一標籤
     ka [32]byte = mk32('ffffffffffffffffffffffffffffffff101112131415161718191a1b1c1d1e1f')
@@ -379,8 +377,8 @@ t-poly1305 = () {
     tb [16]byte = chacha20-poly1305.poly1305(kb, msg)
     va = arr16(ta)
     vb = arr16(tb)
-    runner.str-eq(bhex(va), bhex(vb), 32, 'poly1305 r clamp 生效')
-    runner.str-eq(bhex(va), 'e673beea6a9a6dd3e1c80885ab1ac591', 32, 'poly1305 clamp 後標籤')
+    runner.str-eq(bhex(va), bhex(vb), 'poly1305 r clamp 生效')
+    runner.str-eq(bhex(va), 'e673beea6a9a6dd3e1c80885ab1ac591', 'poly1305 clamp 後標籤')
 }
 
 ; 一次性金鑰：ChaCha20 block0 的前 32 位元組（RFC 8439 §2.6.2 的 poly key）
@@ -389,7 +387,7 @@ t-keygen = () {
     nonce [12]byte = mk12('070000004041424344454647')
     otk [32]byte = chacha20-poly1305.poly1305-key-gen(k, nonce)
     v = arr32(otk)
-    runner.str-eq(bhex(v), '7bac2b252db447af09b67a55a4e955840ae1d6731075d9eb2a9375783ed553ff', 64, 'poly1305-key-gen RFC 8439 §2.6.2')
+    runner.str-eq(bhex(v), '7bac2b252db447af09b67a55a4e955840ae1d6731075d9eb2a9375783ed553ff', 'poly1305-key-gen RFC 8439 §2.6.2')
 
     ; 換 nonce 換金鑰
     nonce2 [12]byte = mk12('070000004041424344454648')

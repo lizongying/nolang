@@ -50,8 +50,8 @@ t-get-program = () {
     runner.gt(p.len(), 0, 'program non-empty (was empty)')
     runner.eq(g0.len(), o0.len(), 'get(0).len == os.arg(0).len')
     n = p.len()
-    runner.str-eq(g0, o0, n, 'get(0) == os.arg(0)')
-    runner.str-eq(p, o0, n, 'program == os.arg(0)')
+    runner.str-eq(g0, o0, 'get(0) == os.arg(0)')
+    runner.str-eq(p, o0, 'program == os.arg(0)')
 }
 
 ; os.arg 的**算術引數**（i + 1）與**宣告為 option 的目標**：

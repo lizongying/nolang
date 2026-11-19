@@ -58,7 +58,7 @@ t-primitives = () {
     w.put(7)
 
     d = w.data.slice(0, len(w.data))
-    runner.str-eq(d.to-hex(), '3412EFCDAB8907', 14, 'write-u16/u32/put 皆為小端序')
+    runner.str-eq(d.to-hex(), '3412EFCDAB8907', 'write-u16/u32/put 皆為小端序')
 
     runner.eq(len(w.cd-data), 0, 'put 不寫入中央目錄緩衝')
 
@@ -66,7 +66,7 @@ t-primitives = () {
     w.cd-write-u16(0x0102)
     w.cd-write-u32(0x11223344)
     c = w.cd-data.slice(0, len(w.cd-data))
-    runner.str-eq(c.to-hex(), '09020144332211', 14, 'cd-put/cd-write-u16/u32 寫入中央目錄緩衝')
+    runner.str-eq(c.to-hex(), '09020144332211', 'cd-put/cd-write-u16/u32 寫入中央目錄緩衝')
     runner.eq(len(w.data), 7, 'cd-* 不影響本地資料區')
 }
 
@@ -79,13 +79,13 @@ t-local = () {
 
     h = w.data.slice(0, 30)
     want = '504B03041400000000000000000078563412020000000200000005000000'
-    runner.str-eq(h.to-hex(), want, 60, 'local file header 各欄位')
+    runner.str-eq(h.to-hex(), want, 'local file header 各欄位')
 
     nm = w.data.slice(30, 35)
-    runner.str-eq(nm.to-hex(), '6D2E747874', 10, '名稱緊跟標頭')
+    runner.str-eq(nm.to-hex(), '6D2E747874', '名稱緊跟標頭')
 
     ct = w.data.slice(35, 37)
-    runner.str-eq(ct.to-hex(), '7879', 4, '內容緊跟名稱')
+    runner.str-eq(ct.to-hex(), '7879', '內容緊跟名稱')
 }
 
 ; ── 4. write-cd-entry（PK\x01\x02）與 write-eocd（PK\x05\x06）────────
@@ -95,16 +95,16 @@ t-cd-eocd = () {
     runner.eq(len(w.cd-data), 51, 'central directory entry = 46 + 名稱 5')
 
     sig = w.cd-data.slice(0, 4)
-    runner.str-eq(sig.to-hex(), '504B0102', 8, '中央目錄簽名')
+    runner.str-eq(sig.to-hex(), '504B0102', '中央目錄簽名')
 
     nl = w.cd-data.slice(28, 30)
-    runner.str-eq(nl.to-hex(), '0500', 4, '中央目錄名稱長度欄 = 5')
+    runner.str-eq(nl.to-hex(), '0500', '中央目錄名稱長度欄 = 5')
 
     e = zip.writer{}
     e.write-eocd(0, 0)
     runner.eq(len(e.data), 22, 'EOCD 固定 22 位元組')
     eh = e.data.slice(0, 22)
-    runner.str-eq(eh.to-hex(), '504B0506000000000000000000000000000000000000', 44, 'EOCD 空歸檔全 0')
+    runner.str-eq(eh.to-hex(), '504B0506000000000000000000000000000000000000', 'EOCD 空歸檔全 0')
 }
 
 ; ── 5. writer round-trip：add-file ×2 + add-dir + finalize ────────────
@@ -131,28 +131,28 @@ t-roundtrip = () {
     runner.eq(z.entry-off(1), 172, 'entry-off(1) = 121 + (46+5)')
     runner.eq(z.entry-off(2), 223, 'entry-off(2) = 172 + (46+5)')
 
-    runner.str-eq(z.name(0), 'a.txt', 5, 'name(0)')
-    runner.str-eq(z.name(1), 'b.txt', 5, 'name(1)')
-    runner.str-eq(z.name(2), 'sub/', 4, 'add-dir 自動補斜線')
+    runner.str-eq(z.name(0), 'a.txt', 'name(0)')
+    runner.str-eq(z.name(1), 'b.txt', 'name(1)')
+    runner.str-eq(z.name(2), 'sub/', 'add-dir 自動補斜線')
 
     runner.eq(z.size(0), 5, 'size(0) = 5')
     runner.eq(z.size(1), 12, 'size(1) = 12')
     runner.eq(z.compressed-size(0), 5, 'stored 條目壓縮後大小等於原始大小')
     runner.eq(z.method(0), 0, 'stored 條目 method = 0')
 
-    runner.str-eq(z.extract(0).to-str(), 'hello', 5, 'extract(0)')
-    runner.str-eq(z.extract(1).to-str(), 'second entry', 12, 'extract(1)')
+    runner.str-eq(z.extract(0).to-str(), 'hello', 'extract(0)')
+    runner.str-eq(z.extract(1).to-str(), 'second entry', 'extract(1)')
     runner.eq(len(z.extract(2)), 0, '目錄條目內容為空')
 
     ; entry 視圖必須與 zip.* 一致
     e0 = z.entry(0)
     e1 = z.entry(2)
-    runner.str-eq(e0.name(), 'a.txt', 5, 'entry.name()')
+    runner.str-eq(e0.name(), 'a.txt', 'entry.name()')
     runner.eq(e0.size(), 5, 'entry.size()')
     runner.eq(e0.compressed-size(), 5, 'entry.compressed-size()')
     runner.eq(e0.method(), 0, 'entry.method()')
-    runner.str-eq(e0.extract().to-str(), 'hello', 5, 'entry.extract()')
-    runner.str-eq(e1.name(), 'sub/', 4, 'entry(2).name() 目錄補斜線')
+    runner.str-eq(e0.extract().to-str(), 'hello', 'entry.extract()')
+    runner.str-eq(e1.name(), 'sub/', 'entry(2).name() 目錄補斜線')
 }
 
 ; ── 6. method=8（deflate）讀取：Python zipfile 產生的樣本 ─────────────
@@ -171,14 +171,14 @@ t-deflate = () {
     z.data = raw
 
     runner.eq(z.count(), 1, 'count = 1')
-    runner.str-eq(z.name(0), 'd.txt', 5, 'name(0)')
+    runner.str-eq(z.name(0), 'd.txt', 'name(0)')
     runner.eq(z.size(0), 29, 'size = 29（解壓後）')
     runner.eq(z.compressed-size(0), 17, 'compressed-size = 17')
     runner.eq(z.method(0), 8, 'method = 8（deflate）')
 
     out = z.extract(0)
     runner.eq(len(out), 29, 'extract 還原長度 29')
-    runner.str-eq(out.to-str(), 'hello hello hello world hello', 29, 'extract 還原內容')
+    runner.str-eq(out.to-str(), 'hello hello hello world hello', 'extract 還原內容')
 }
 
 ; ── 7. 損壞 / 非 ZIP 資料的容錯 ──────────────────────────────────────

@@ -29,7 +29,7 @@ t-in-bounds = () {
             p = ''
         }
     }
-    runner.str-eq(p.to-str(), 'a', 1, 'in-bounds payload == a')
+    runner.str-eq(p.to-str(), 'a', 'in-bounds payload == a')
 }
 
 ; 越界：nil 臂生效（安全索引回传 nil option）
@@ -46,14 +46,14 @@ t-out-of-bounds = () {
             p = 'OOB'
         }
     }
-    runner.str-eq(p.to-str(), 'OOB', 3, 'out-of-bounds -> nil arm == OOB')
+    runner.str-eq(p.to-str(), 'OOB', 'out-of-bounds -> nil arm == OOB')
 }
 
 ; 依赖该语法的 std 函数（之前 bus error / receiver has no slot）
 t-replace-n = () {
     s txt = 'a-b-c-d'
     r = s.replace-n('-', '.', 2)
-    runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'txt.replace-n 2x')
+    runner.str-eq(r.to-str(), 'a.b.c-d', 'txt.replace-n 2x')
 }
 
 ; txt.split 得到 []txt 後呼叫 join('.'): 'a-b-c-d' → 'a.b.c.d'
@@ -61,7 +61,7 @@ t-join = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')
     j = parts.join('.')
-    runner.str-eq(j.to-str(), 'a.b.c.d', 7, '[]txt.join')
+    runner.str-eq(j.to-str(), 'a.b.c.d', '[]txt.join')
 }
 
 ; 直接字面量数组（['a','b','c','d'] → []str）的索引主体 option-match：
@@ -86,7 +86,7 @@ t-literal-in-bounds = () {
             p = 'MISS'
         }
     }
-    runner.str-eq(p, 'b', 1, 'literal in-bounds payload == b')
+    runner.str-eq(p, 'b', 'literal in-bounds payload == b')
 }
 
 ; 字面量陣列越界：下標 9 應落進 nil 臂（p 取得 'OOB'），不得崩潰
@@ -107,7 +107,7 @@ t-literal-out-of-bounds = () {
             p = 'OOB'
         }
     }
-    runner.str-eq(p, 'OOB', 1, 'literal out-of-bounds -> nil arm == OOB')
+    runner.str-eq(p, 'OOB', 'literal out-of-bounds -> nil arm == OOB')
 }
 
 p1, f1 = runner.test('in-bounds', t-in-bounds)

@@ -156,7 +156,7 @@ t-get-str = () {
         err -> found = false
     }
     runner.is-true(found, 'get-str ok')
-    runner.str-eq(val, 'Alice', 5, 'get-str content')
+    runner.str-eq(val, 'Alice', 'get-str content')
 }
 
 ; get-num 取對象浮點字段：值與 3.14 在誤差內相等
@@ -288,7 +288,7 @@ t-arr-get = () {
         err -> ok2 = false
     }
     runner.is-true(ok2, 'arr-get(0) str ok')
-    runner.str-eq(val2, 'a', 1, 'arr-get(0) content')
+    runner.str-eq(val2, 'a', 'arr-get(0) content')
 }
 
 ; ── 序列化 ────────────────────────────────────
@@ -307,7 +307,7 @@ t-stringify-obj = () {
         }
     }
     runner.gt(s.len-bytes(), 5, 'stringify obj len > 5')
-    runner.str-eq(s, '{"a":1}', 7, 'stringify obj content')
+    runner.str-eq(s, '{"a":1}', 'stringify obj content')
 }
 
 ; stringify 序列化數組：输出 [1,2,3]（元素間無空白）
@@ -323,7 +323,7 @@ t-stringify-arr = () {
         err -> {
         }
     }
-    runner.str-eq(s, '[1,2,3]', 7, 'stringify arr content')
+    runner.str-eq(s, '[1,2,3]', 'stringify arr content')
 }
 
 ; ── 構建與設定 ────────────────────────────────
@@ -333,7 +333,7 @@ t-set-str = () {
     j = json.new()
     j.set-str('name', 'Bob')
     s = j.stringify()
-    runner.str-eq(s, '{"name":"Bob"}', 14, 'set-str stringify')
+    runner.str-eq(s, '{"name":"Bob"}', 'set-str stringify')
 }
 
 ; 構建設置浮點字段：set-num 後 stringify 得 {"val":3.14}
@@ -341,7 +341,7 @@ t-set-num = () {
     j = json.new()
     j.set-num('val', 3.14)
     s = j.stringify()
-    runner.str-eq(s, '{"val":3.14}', 11, 'set-num stringify')
+    runner.str-eq(s, '{"val":3.14}', 'set-num stringify')
 }
 
 ; 構建設置整數字段：set-i64 後 stringify 得 {"count":42}
@@ -349,7 +349,7 @@ t-set-i64 = () {
     j = json.new()
     j.set-i64('count', 42)
     s = j.stringify()
-    runner.str-eq(s, '{"count":42}', 12, 'set-i64 stringify')
+    runner.str-eq(s, '{"count":42}', 'set-i64 stringify')
 }
 
 ; 構建設置布爾字段：set-bool 後 stringify 得 {"ok":true}
@@ -357,7 +357,7 @@ t-set-bool = () {
     j = json.new()
     j.set-bool('ok', true)
     s = j.stringify()
-    runner.str-eq(s, '{"ok":true}', 10, 'set-bool true stringify')
+    runner.str-eq(s, '{"ok":true}', 'set-bool true stringify')
 }
 
 ; ── 往返測試 ──────────────────────────────────
@@ -376,7 +376,7 @@ t-roundtrip = () {
         err -> {
         }
     }
-    runner.str-eq(s, '{"x":1,"y":"abc","z":true}', 25, 'roundtrip')
+    runner.str-eq(s, '{"x":1,"y":"abc","z":true}', 'roundtrip')
 }
 
 ; ── 取值助手 ──────────────────────────────────
@@ -485,7 +485,7 @@ t-pool-parse-str = () {
     p.nodes[si].kind = json.JSON-KIND-STR
     nxt = p.parse-str(si, '"plain"', 0)
     runner.eq(i64-of(nxt), 7, 'parse-str 回閉引號後位置 7')
-    runner.str-eq(str-of(p.get-str(si)), 'plain', 5, 'parse-str 寫入字串值')
+    runner.str-eq(str-of(p.get-str(si)), 'plain', 'parse-str 寫入字串值')
 
     ; 引號未閉合 → nil
     bi = p.alloc()
@@ -572,12 +572,12 @@ t-clone-tree = () {
     }
     cl = json.clone-tree(gv.pool, gv.root)
     runner.eq(cl.kind(), json.JSON-KIND-OBJ, 'clone 根為物件')
-    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3]}', 17, 'clone 內容一致')
+    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3]}', 'clone 內容一致')
 
     ; 深拷貝獨立性：改 clone 不得影響來源
     cl.set-str('extra', 'y')
-    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3],"extra":"y"}', 29, 'clone 可獨立擴充')
-    runner.str-eq(gv.stringify(), '{"m":1,"n":[2,3]}', 17, '來源未被 clone 改動')
+    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3],"extra":"y"}', 'clone 可獨立擴充')
+    runner.str-eq(gv.stringify(), '{"m":1,"n":[2,3]}', '來源未被 clone 改動')
 }
 
 ; ── 高級 API：kind / overflowed / 取值 ────────
@@ -642,7 +642,7 @@ t-scalar-getters = () {
             runner.f64-eq(f64-of(it.num()), 42.9, eps, 'num() 取 42.9')
             runner.eq(i64-of(it.i64()), 42, 'i64() 截斷取 42')
             runner.eq(bool-of(it.bool()), 2, 'num 上 bool() 回 nil')
-            runner.str-eq(it.str-val(), '', 0, 'num 上 str-val 回空字串')
+            runner.str-eq(it.str-val(), '', 'num 上 str-val 回空字串')
         }
 
         -> runner.eq(-1, 0, 'parse 42.9 失敗')
@@ -659,7 +659,7 @@ t-scalar-getters = () {
     s = json.parse('"hi"')
     s: {
         ok -> {
-            runner.str-eq(it.str-val(), 'hi', 2, 'str-val 取 hi')
+            runner.str-eq(it.str-val(), 'hi', 'str-val 取 hi')
             runner.eq(i64-of(it.i64()), 9000001, 'str 上 i64() 回 nil')
         }
 
@@ -678,7 +678,7 @@ t-get = () {
             c1: {
                 ok -> {
                     runner.eq(it.kind(), json.JSON-KIND-OBJ, 'get(a) 為物件')
-                    runner.str-eq(it.stringify(), '{"b":2}', 7, 'get(a) 內容')
+                    runner.str-eq(it.stringify(), '{"b":2}', 'get(a) 內容')
                 }
 
                 -> runner.eq(-1, 0, 'get(a) 未命中')
@@ -724,13 +724,13 @@ t-obj-iter = () {
     j: {
         ok -> {
             runner.eq(it.obj-len(), 3, 'obj-len == 3')
-            runner.str-eq(str-of(it.obj-key(0)), 'a', 1, 'obj-key(0) == a')
-            runner.str-eq(str-of(it.obj-key(2)), 'c', 1, 'obj-key(2) == c')
+            runner.str-eq(str-of(it.obj-key(0)), 'a', 'obj-key(0) == a')
+            runner.str-eq(str-of(it.obj-key(2)), 'c', 'obj-key(2) == c')
 
             ; obj-key 回的是 ?str ⇒ 用 str-of 的 'nil' 哨兵斷言越界，
             ; i64-of 收的是 ?i64，兩者 option 佈局不同（見 test/README §5.2n）
-            runner.str-eq(str-of(it.obj-key(3)), 'nil', 3, 'obj-key 越界回 nil')
-            runner.str-eq(it.obj-keys-str(), 'a\nb\nc\n', 6, 'obj-keys-str 依序拼接')
+            runner.str-eq(str-of(it.obj-key(3)), 'nil', 'obj-key 越界回 nil')
+            runner.str-eq(it.obj-keys-str(), 'a\nb\nc\n', 'obj-keys-str 依序拼接')
         }
 
         -> runner.eq(-1, 0, 'parse 物件失敗')
@@ -741,7 +741,7 @@ t-obj-iter = () {
     a: {
         ok -> {
             runner.eq(it.obj-len(), 0, '陣列上 obj-len == 0')
-            runner.str-eq(it.obj-keys-str(), '', 0, '陣列上 obj-keys-str 為空')
+            runner.str-eq(it.obj-keys-str(), '', '陣列上 obj-keys-str 為空')
         }
 
         -> runner.eq(-1, 0, 'parse 陣列失敗')
@@ -754,7 +754,7 @@ t-delete-key = () {
     j: {
         ok -> {
             runner.is-true(it.delete-key('a'), 'delete-key 命中回 true')
-            runner.str-eq(it.stringify(), '{"b":2}', 7, '刪除後剩 b')
+            runner.str-eq(it.stringify(), '{"b":2}', '刪除後剩 b')
             runner.eq(it.obj-len(), 1, '刪除後 obj-len == 1')
             runner.is-false(it.delete-key('zz'), 'delete-key 未命中回 false')
         }
@@ -777,7 +777,7 @@ t-set = () {
     idx = j.alloc-node()
     runner.eq(idx, 0, 'alloc-node 首個索引 0')
     runner.is-true(j.set('k', idx), 'set 寫入節點索引')
-    runner.str-eq(j.stringify(), '{"k":null}', 9, 'set 後序列化為 {"k":null}')
+    runner.str-eq(j.stringify(), '{"k":null}', 'set 後序列化為 {"k":null}')
 
     ; root 為字串時拒絕寫入
     s = json.parse('"x"')
@@ -792,7 +792,7 @@ t-set = () {
 t-set-null = () {
     j = json.new()
     runner.is-true(j.set-null('n'), 'set-null 成功')
-    runner.str-eq(j.stringify(), '{"n":null}', 9, 'set-null 序列化')
+    runner.str-eq(j.stringify(), '{"n":null}', 'set-null 序列化')
     runner.is-true(j.set-null('m'), 'set-null 第二個鍵')
     runner.eq(j.obj-len(), 2, '兩個 null 鍵 obj-len == 2')
 }
@@ -807,7 +807,7 @@ t-set-key = () {
 
         -> runner.eq(-1, 0, 'parse [1,2] 失敗')
     }
-    runner.str-eq(outer.stringify(), '{"name":"top","list":[1,2]}', 27, '嵌套序列化')
+    runner.str-eq(outer.stringify(), '{"name":"top","list":[1,2]}', '嵌套序列化')
 
     ; 無效來源（空 json，root < 0）→ false
     empty = json.new()
@@ -820,7 +820,7 @@ t-arr-push-idx = () {
     idx = a.alloc-node()
     runner.is-true(a.arr-push-idx(idx), 'arr-push-idx 成功')
     runner.eq(a.arr-len(), 1, 'arr-push-idx 後 arr-len == 1')
-    runner.str-eq(a.stringify(), '[null]', 6, 'arr-push-idx 序列化')
+    runner.str-eq(a.stringify(), '[null]', 'arr-push-idx 序列化')
 
     ; root 為物件時拒絕追加
     o = json.new()
@@ -840,7 +840,7 @@ t-arr-push = () {
         -> runner.eq(-1, 0, 'parse {"x":1} 失敗')
     }
     runner.eq(out.arr-len(), 1, 'arr-push 後 arr-len == 1')
-    runner.str-eq(out.stringify(), '[{"x":1}]', 9, 'arr-push 深拷貝元素內容')
+    runner.str-eq(out.stringify(), '[{"x":1}]', 'arr-push 深拷貝元素內容')
     runner.eq(out.pool.count, 3, 'arr-push 把 2 個來源節點拷入本池')
 
     ; 再追加一個陣列元素，驗證多次追加不串位
@@ -851,7 +851,7 @@ t-arr-push = () {
         -> runner.eq(-1, 0, 'parse [7] 失敗')
     }
     runner.eq(out.arr-len(), 2, '兩次 arr-push 後 arr-len == 2')
-    runner.str-eq(out.stringify(), '[{"x":1},[7]]', 13, '兩次 arr-push 序列化正確')
+    runner.str-eq(out.stringify(), '[{"x":1},[7]]', '兩次 arr-push 序列化正確')
 }
 
 ; arr-push-str / arr-push-num / arr-push-bool：標量元素
@@ -861,11 +861,11 @@ t-arr-push-scalars = () {
     runner.is-true(a.arr-push-num(2.5), 'arr-push-num 成功')
     runner.is-true(a.arr-push-bool(true), 'arr-push-bool 成功')
     runner.eq(a.arr-len(), 3, '三個標量元素 arr-len == 3')
-    runner.str-eq(a.stringify(), '["s",2.5,true]', 14, '標量元素序列化')
+    runner.str-eq(a.stringify(), '["s",2.5,true]', '標量元素序列化')
 
     a2 = json.new()
     a2.arr-push-bool(false)
-    runner.str-eq(a2.stringify(), '[false]', 7, 'arr-push-bool false 序列化')
+    runner.str-eq(a2.stringify(), '[false]', 'arr-push-bool false 序列化')
 }
 
 ; ── 執行 ──────────────────────────────────────

@@ -76,9 +76,9 @@ res-val = (r http.response, i i64) (s str) {
 t-request-init = () {
     r = mk-req('POST', 'http://example.com/a', 'body')
 
-    runner.str-eq(r.method, 'POST', 4, 'init: method 入庫')
-    runner.str-eq(r.url, 'http://example.com/a', 20, 'init: url 入庫')
-    runner.str-eq(r.body, 'body', 4, 'init: body 入庫')
+    runner.str-eq(r.method, 'POST', 'init: method 入庫')
+    runner.str-eq(r.url, 'http://example.com/a', 'init: url 入庫')
+    runner.str-eq(r.body, 'body', 'init: body 入庫')
     runner.eq(r.header-count, 0, 'init: header-count 歸零')
 }
 
@@ -91,12 +91,12 @@ t-request-headers = () {
     ok1 = r.add-header('X-A', '1')
     runner.is-true(ok1, 'add-header: 第一條回 true')
     runner.eq(r.header-count, 1, 'add-header: count 1')
-    runner.str-eq(req-hdr(r, 0), 'X-A: 1', 6, 'add-header: 組出 Name: Value')
+    runner.str-eq(req-hdr(r, 0), 'X-A: 1', 'add-header: 組出 Name: Value')
 
     ok2 = r.add-header('Accept', 'application/json')
     runner.is-true(ok2, 'add-header: 第二條回 true')
     runner.eq(r.header-count, 2, 'add-header: count 2')
-    runner.str-eq(req-hdr(r, 1), 'Accept: application/json', 24, 'add-header: 第二條內容')
+    runner.str-eq(req-hdr(r, 1), 'Accept: application/json', 'add-header: 第二條內容')
 
     ; 補到上限（16）：2 + 14 = 16
     i <- [0..14): {
@@ -107,7 +107,7 @@ t-request-headers = () {
     over = r.add-header('X-Last', 'z')
     runner.is-false(over, 'add-header: 第 17 條回 false')
     runner.eq(r.header-count, 16, 'add-header: 超限後 count 不動')
-    runner.str-eq(req-hdr(r, 15), 'X: y', 4, 'add-header: 最後一格是第 16 條')
+    runner.str-eq(req-hdr(r, 15), 'X: y', 'add-header: 最後一格是第 16 條')
 }
 
 ; ── 認證標頭 ─────────────────────────────────
@@ -117,17 +117,17 @@ t-auth = () {
     p = mk-req('GET', 'http://x/', '')
     b-ok = http.set-basic-auth(p, 'user', 'pass')
     runner.is-true(b-ok, 'set-basic-auth: 回 true')
-    runner.str-eq(req-hdr(p, 0), 'Authorization: Basic dXNlcjpwYXNz', 33, 'set-basic-auth: base64(user:pass)')
+    runner.str-eq(req-hdr(p, 0), 'Authorization: Basic dXNlcjpwYXNz', 'set-basic-auth: base64(user:pass)')
 
     q = mk-req('GET', 'http://x/', '')
     t-ok = http.set-bearer-auth(q, 'tok')
     runner.is-true(t-ok, 'set-bearer-auth: 回 true')
-    runner.str-eq(req-hdr(q, 0), 'Authorization: Bearer tok', 25, 'set-bearer-auth: 前綴 Bearer')
+    runner.str-eq(req-hdr(q, 0), 'Authorization: Bearer tok', 'set-bearer-auth: 前綴 Bearer')
 
     k = mk-req('GET', 'http://x/', '')
     a-ok = http.set-api-key(k, 'X-API-Key', 'k1')
     runner.is-true(a-ok, 'set-api-key: 回 true')
-    runner.str-eq(req-hdr(k, 0), 'X-API-Key: k1', 13, 'set-api-key: 自訂標頭名')
+    runner.str-eq(req-hdr(k, 0), 'X-API-Key: k1', 'set-api-key: 自訂標頭名')
 }
 
 ; ── response.parse-headers / get-header ──────
@@ -139,14 +139,14 @@ t-response = () {
     res.parse-headers()
 
     runner.eq(res.header-count, 2, 'parse-headers: 拆出 2 條')
-    runner.str-eq(res-name(res, 0), 'Content-Type', 12, 'parse-headers: 第一條名')
-    runner.str-eq(res-val(res, 0), 'text/plain', 10, 'parse-headers: 第一條值')
-    runner.str-eq(res-name(res, 1), 'X-A', 3, 'parse-headers: 第二條名')
-    runner.str-eq(res-val(res, 1), '1', 1, 'parse-headers: 第二條值')
+    runner.str-eq(res-name(res, 0), 'Content-Type', 'parse-headers: 第一條名')
+    runner.str-eq(res-val(res, 0), 'text/plain', 'parse-headers: 第一條值')
+    runner.str-eq(res-name(res, 1), 'X-A', 'parse-headers: 第二條名')
+    runner.str-eq(res-val(res, 1), '1', 'parse-headers: 第二條值')
 
     hit = res.get-header('Content-Type')
     hit: {
-        ok -> runner.str-eq(it, 'text/plain', 10, 'get-header: 精確大小寫命中')
+        ok -> runner.str-eq(it, 'text/plain', 'get-header: 精確大小寫命中')
 
         -> runner.is-true(false, 'get-header: 精確大小寫應命中')
     }
@@ -180,7 +180,7 @@ t-dl-location = () {
     h1 = 'HTTP/1.1 302 Found\r\nLocation: /next\r\n'
     l1 = http.http-dl-location(h1)
     l1: {
-        ok -> runner.str-eq(it, '/next', 5, 'dl-location: 撈到 /next')
+        ok -> runner.str-eq(it, '/next', 'dl-location: 撈到 /next')
 
         -> runner.is-true(false, 'dl-location: 應撈到 /next')
     }
@@ -188,7 +188,7 @@ t-dl-location = () {
     h2 = 'HTTP/1.1 301 Moved\r\nlocation: https://x/y\r\n'
     l2 = http.http-dl-location(h2)
     l2: {
-        ok -> runner.str-eq(it, 'https://x/y', 11, 'dl-location: 小寫 location 也認')
+        ok -> runner.str-eq(it, 'https://x/y', 'dl-location: 小寫 location 也認')
 
         -> runner.is-true(false, 'dl-location: 小寫 location 應命中')
     }
@@ -207,16 +207,16 @@ t-dl-location = () {
 ; 絕對 URL 直接沿用；根相對接在 scheme+host(+port) 後；一般相對多補一個 '/'
 t-dl-resolve = () {
     a = http.http-dl-resolve(false, 'example.com', 80, '/next')
-    runner.str-eq(a, 'http://example.com/next', 22, 'dl-resolve: 根相對 + 預設埠省 :80')
+    runner.str-eq(a, 'http://example.com/next', 'dl-resolve: 根相對 + 預設埠省 :80')
 
     b = http.http-dl-resolve(false, 'example.com', 8080, '/next')
-    runner.str-eq(b, 'http://example.com:8080/next', 27, 'dl-resolve: 非預設埠帶上 :8080')
+    runner.str-eq(b, 'http://example.com:8080/next', 'dl-resolve: 非預設埠帶上 :8080')
 
     c = http.http-dl-resolve(true, 'example.com', 443, 'sub/x')
-    runner.str-eq(c, 'https://example.com/sub/x', 25, 'dl-resolve: tls + 一般相對補 /')
+    runner.str-eq(c, 'https://example.com/sub/x', 'dl-resolve: tls + 一般相對補 /')
 
     d = http.http-dl-resolve(false, 'example.com', 80, 'https://other/y')
-    runner.str-eq(d, 'https://other/y', 15, 'dl-resolve: 絕對 URL 原樣返回')
+    runner.str-eq(d, 'https://other/y', 'dl-resolve: 絕對 URL 原樣返回')
 }
 
 ; ── http-write-ok ────────────────────────────
@@ -229,7 +229,7 @@ t-write-ok = () {
 
     back = fs.read-file(HT)
     runner.eq(back.len(), 3, 'http-write-ok: 落盤 3 位元組')
-    runner.str-eq(back.to-bytes-str(), 'abc', 3, 'http-write-ok: 內容一致')
+    runner.str-eq(back.to-bytes-str(), 'abc', 'http-write-ok: 內容一致')
 
     fs.remove(HT)
 }
@@ -240,7 +240,7 @@ t-write-ok = () {
 ;  但它被公開成 API，理應有測試釘住；若日後刪除，這裡會一起變紅）
 t-ping = () {
     p = http.ping()
-    runner.str-eq(p, 'pong', 4, 'ping: 固定回 pong')
+    runner.str-eq(p, 'pong', 'ping: 固定回 pong')
 }
 
 ; 回歸 §5.2 #87：兩塊 chunked body 必須完整解出 'wikipedia'（9 位元組）。
@@ -251,7 +251,7 @@ t-dechunk = () {
     o = http.http-dl-dechunk(b)
     runner.eq(o.len(), 9, 'dechunk: 兩塊共 9 位元組')
     s = o.to-bytes-str()
-    runner.str-eq(s, 'wikipedia', 9, 'dechunk: 內容還原')
+    runner.str-eq(s, 'wikipedia', 'dechunk: 內容還原')
 }
 
 ; ── 需要真 socket 的 13 個入口 ─────────────────────────
@@ -357,7 +357,7 @@ check-live = (v ?http.response, what str) {
         ok -> {
             r = it
             runner.eq(r.status-code, 200, what - ': 狀態碼 200')
-            runner.str-eq(r.body, 'hello-nolang', 12, what - ': 內文')
+            runner.str-eq(r.body, 'hello-nolang', what - ': 內文')
             hit = true
         }
 
@@ -432,7 +432,7 @@ t-live = () {
 
         -> _
     }
-    runner.str-eq(dl-txt, 'hello-nolang', 12, 'download: 檔案內容正確')
+    runner.str-eq(dl-txt, 'hello-nolang', 'download: 檔案內容正確')
 
     dtf = http.download-to-file(url-ok, '/tmp/no_http_live_dtf.txt')
     runner.is-true(dtf, 'download-to-file: 回 true')
@@ -443,7 +443,7 @@ t-live = () {
 
         -> _
     }
-    runner.str-eq(dtf-txt, 'hello-nolang', 12, 'download-to-file: 檔案內容正確')
+    runner.str-eq(dtf-txt, 'hello-nolang', 'download-to-file: 檔案內容正確')
 
     dlo = http.http-dl-open(url-ok, '/tmp/no_http_live_dlo.txt', 0)
     runner.is-true(dlo, 'http-dl-open: depth 0 回 true')

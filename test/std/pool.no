@@ -45,7 +45,7 @@ t-create = () {
     p = pool.pool{}
     p.init('127.0.0.1', 39301, 5)
 
-    runner.str-eq(p.host, '127.0.0.1', 9, 'pool.init: 記錄 host')
+    runner.str-eq(p.host, '127.0.0.1', 'pool.init: 記錄 host')
     runner.eq(p.port, 39301, 'pool.init: 記錄 port')
     runner.eq(p.max-size, 5, 'pool.init: max-size = 5')
     runner.eq(p.count, 0, 'pool.init: 新池 count = 0')
@@ -75,7 +75,7 @@ t-init-clamp = () {
 
 t-create-fn = () {
     p = pool.create('127.0.0.1', 39303, 6)
-    runner.str-eq(p.host, '127.0.0.1', 9, 'pool.create: host')
+    runner.str-eq(p.host, '127.0.0.1', 'pool.create: host')
     runner.eq(p.port, 39303, 'pool.create: port')
     runner.eq(p.max-size, 6, 'pool.create: max-size 由參數決定')
     runner.eq(p.count, 0, 'pool.create: 初始 count = 0')

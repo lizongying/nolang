@@ -40,11 +40,11 @@ test-level-name = () {
         code: 'c'
     }
     d.level = diag.LEVEL-ERROR
-    runner.str-eq(d.level-name(), 'ERROR', 5, 'level-name ERROR')
+    runner.str-eq(d.level-name(), 'ERROR', 'level-name ERROR')
     d.level = diag.LEVEL-WARNING
-    runner.str-eq(d.level-name(), 'WARNING', 7, 'level-name WARNING')
+    runner.str-eq(d.level-name(), 'WARNING', 'level-name WARNING')
     d.level = diag.LEVEL-HINT
-    runner.str-eq(d.level-name(), 'HINT', 4, 'level-name HINT')
+    runner.str-eq(d.level-name(), 'HINT', 'level-name HINT')
 }
 
 ; ═══════════════════════════════════════════════
@@ -64,19 +64,19 @@ test-render = () {
     d.level = diag.LEVEL-ERROR
 
     ; 有位置：file:line:col: [ERROR] source: msg [code]
-    runner.str-eq(d.render(), 'x.no:231:17: [ERROR] nolang-compile: boom [idxwrite]', 52, 'render positioned')
+    runner.str-eq(d.render(), 'x.no:231:17: [ERROR] nolang-compile: boom [idxwrite]', 'render positioned')
 
     ; 檔案級（line==0）：不得出現 ':0:0:'——printLintResults 的 else 分支
     d.line = 0
     d.col = 0
-    runner.str-eq(d.render(), 'x.no: [ERROR] nolang-compile: boom [idxwrite]', 45, 'render file-level')
+    runner.str-eq(d.render(), 'x.no: [ERROR] nolang-compile: boom [idxwrite]', 'render file-level')
 
     ; WARNING / HINT 級別名必須原樣出現在方括號內（L3 歸一化的 [ERROR] 過濾依賴此形）
     d.line = 4
     d.col = 0
     d.level = diag.LEVEL-WARNING
     d.code = 'E_GENERAL'
-    runner.str-eq(d.render(), 'x.no:4:0: [WARNING] nolang-compile: boom [E_GENERAL]', 52, 'render warning')
+    runner.str-eq(d.render(), 'x.no:4:0: [WARNING] nolang-compile: boom [E_GENERAL]', 'render warning')
 }
 
 ; ═══════════════════════════════════════════════
@@ -94,7 +94,7 @@ test-render-mid = () {
         code: 'E_GENERAL'
     }
     d.level = diag.LEVEL-ERROR
-    runner.str-eq(d.render-mid(), 'line 4, column 0: expected expression [E_GENERAL]', 49, 'render-mid shape')
+    runner.str-eq(d.render-mid(), 'line 4, column 0: expected expression [E_GENERAL]', 'render-mid shape')
 }
 
 ; ═══════════════════════════════════════════════

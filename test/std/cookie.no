@@ -20,7 +20,7 @@
 ; msg: 斷言訊息前綴，長度不符時會附加 ' [len]'
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; Set-Cookie 解析：完整屬性（Path/Domain/Max-Age/Secure/HttpOnly/SameSite）、
@@ -169,7 +169,7 @@ t-header-roundtrip = () {
 
         -> _
     }
-    runner.str-eq(n0, 'a', 1, 'first name')
+    runner.str-eq(n0, 'a', 'first name')
 
     v0 = 'x'
     ov[0]: {
@@ -177,7 +177,7 @@ t-header-roundtrip = () {
 
         -> _
     }
-    runner.str-eq(v0, '1', 1, 'first value')
+    runner.str-eq(v0, '1', 'first value')
 
     n1 = 'x'
     on[1]: {
@@ -185,16 +185,16 @@ t-header-roundtrip = () {
 
         -> _
     }
-    runner.str-eq(n1, 'b', 1, 'second name')
+    runner.str-eq(n1, 'b', 'second name')
 
     built = cookie.build-header(on, ov, cnt)
     exp = 'a=1; b=2'
-    runner.str-eq(built, exp, exp.len(), 'build-header roundtrip')
+    runner.str-eq(built, exp, 'build-header roundtrip')
 
     ; 空標頭：count 0，build-header 回空串
     en2, ev2, cnt2 = cookie.parse-header('')
     runner.eq(cnt2, 0, 'empty header -> 0 pairs')
-    runner.str-eq(cookie.build-header(en2, ev2, 0), '', 0, 'build-header empty')
+    runner.str-eq(cookie.build-header(en2, ev2, 0), '', 'build-header empty')
 }
 runner.test('parse-set', t-parse-set)
 runner.test('build-set full', t-build-set-full)

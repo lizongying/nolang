@@ -24,16 +24,16 @@ t-64 = () {
     src = 'abc'.to-bytes()
     e = src.slice(0, 0)
     h0 = fnv.fnv-1a-64(e)
-    runner.str-eq(h0.to-str(), '14695981039346656037', 20, 'fnv-1a-64("") == offset basis')
+    runner.str-eq(h0.to-str(), '14695981039346656037', 'fnv-1a-64("") == offset basis')
 
     ha = fnv.fnv-1a-64('a'.to-bytes())
-    runner.str-eq(ha.to-str(), '12638187200555641996', 20, 'fnv-1a-64("a")')
+    runner.str-eq(ha.to-str(), '12638187200555641996', 'fnv-1a-64("a")')
 
     habc = fnv.fnv-1a-64(src)
-    runner.str-eq(habc.to-str(), '16654208175385433931', 20, 'fnv-1a-64("abc")')
+    runner.str-eq(habc.to-str(), '16654208175385433931', 'fnv-1a-64("abc")')
 
     hh = fnv.fnv-1a-64('hello'.to-bytes())
-    runner.str-eq(hh.to-str(), '11831194018420276491', 20, 'fnv-1a-64("hello")')
+    runner.str-eq(hh.to-str(), '11831194018420276491', 'fnv-1a-64("hello")')
 }
 
 ; ── 執行 ──────────────────────────────────────

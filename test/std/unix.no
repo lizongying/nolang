@@ -130,7 +130,7 @@ t-listen-on = () {
         -> unix.unix-listener{}
     }
     runner.is-true(lst.fd-of() >= 0, 'listener.fd-of: 回有效 fd')
-    runner.str-eq(lst.path-of(), p, p.len-bytes(), 'listener.path-of: 原樣返回路徑')
+    runner.str-eq(lst.path-of(), p, 'listener.path-of: 原樣返回路徑')
 
     ; 直接在上游結構體上調 listen（unix-listen-on 的內部路徑）
     lst2 = unix.unix-listener{}

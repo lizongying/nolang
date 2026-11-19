@@ -1,0 +1,46 @@
+---
+sidebar_position: 4.3
+---
+
+## グローバル（Global）
+
+### global — グローバル組み込み関数
+
+モジュール接頭辞なしで呼び出せる関数です。以下の 7 個のグローバル関数のみで、それ以外のモジュール間呼び出しにはモジュール接頭辞が必要です（例：`fs.read`、`os.get-env`）：
+
+```no
+; 容量/長度構造（型別由賦值左側推斷）
+s str = with-cap(256); 預分配 256 位元組 str（len=0）
+v []i64 = with-cap(100); 預分配 100 元素切片（len=0）
+s str = with-len(10); 長度為 10 的 str
+v []i64 = with-len(100); 長度為 100 的切片
+v []i64 = with-cap-len(200, 100); 容量 200、長度 100 的切片
+
+; 也可作為 str/vec 方法調用：
+s = ''.with-cap(256)
+s = ''.with-len(10)
+s = ''.with-len-cap(10, 256)
+v = [].with-cap(100)
+v = [].with-len(100)
+v = [].with-len-cap(100, 200)
+
+; 輸出/格式化（具名格式字串 {name:spec}）
+print('x={x}'); 具名格式，stdout + 換行
+eprint('err {x}'); 具名格式，stderr + 換行
+s = format('x={x}'); 返回格式化字串
+print(a, b, c); 多參數：空格分隔，末尾只有一個換行
+print('result={val}', 42, 'result={val}'); 多參數時，每個字面量各自是模板
+
+; （{val} 從呼叫點作用域取值，不是 C 風格格式串）
+;
+; 欄位可以是「變數 / 欄位路徑 / 無參方法 / 下標」，且可以逐層串接：
+print('{user.name} {user.name.len()} {tags[0]}')
+print('{m[\'k\']} {m[\'k\'].len()}'); map 取值（模板裡用 \' 轉義，或寫 m["k"]）
+
+; 只做「每層剝一個後綴」的降糖：帶參方法（{s.slice(0)}）與任意表達式（{a + 1}）不支援。
+
+; 行程控制
+exit(0); 以狀態碼 0 結束行程（原 os.exit，已提升為全域）
+```
+
+---

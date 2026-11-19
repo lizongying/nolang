@@ -71,7 +71,7 @@ t-ok-payloads = () {
     }
     b ?str = 'hi'
     b: {
-        ok(v) -> runner.str-eq(v, 'hi', 2, '?str ok payload')
+        ok(v) -> runner.str-eq(v, 'hi', '?str ok payload')
 
         nil -> runner.is-true(false, '?str must be ok')
 
@@ -196,7 +196,7 @@ t-err = () {
 
         nil -> runner.is-true(false, 'err must not be nil')
 
-        err -> runner.str-eq(it.msg(), 'boom', 4, 'err it == message')
+        err -> runner.str-eq(it.msg(), 'boom', 'err it == message')
     }
 
     ; 空訊息
@@ -224,7 +224,7 @@ t-it-binding = () {
     }
     b ?str = 'xyz'
     b: {
-        ok -> runner.str-eq(it, 'xyz', 3, 'ok it for ?str')
+        ok -> runner.str-eq(it, 'xyz', 'ok it for ?str')
 
         nil -> runner.is-true(false, 'must be ok')
 

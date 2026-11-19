@@ -18,7 +18,7 @@
 ; msg: 斷言訊息前綴，長度不符時會附加 ' [len]'
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; 造 45-byte 應答：提問 example.com/A + 應答（指標 C0 0C）+ 4-byte IPv4 1.2.3.4

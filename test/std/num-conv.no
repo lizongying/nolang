@@ -52,23 +52,23 @@ t-f64-str = () {
     za = 0.0
     zb = 0.0
     nan = za / zb
-    runner.str-eq(nan.to-str(), 'NaN', 3, 'NaN → "NaN"')
+    runner.str-eq(nan.to-str(), 'NaN', 'NaN → "NaN"')
     oa = 1.0
     inf = oa / zb
-    runner.str-eq(inf.to-str(), '+Inf', 4, '+Inf → "+Inf"')
+    runner.str-eq(inf.to-str(), '+Inf', '+Inf → "+Inf"')
     ninf = 0.0 - inf
-    runner.str-eq(ninf.to-str(), '-Inf', 4, '-Inf → "-Inf"')
+    runner.str-eq(ninf.to-str(), '-Inf', '-Inf → "-Inf"')
 
     ; 普通值仍按十進制打印
     z = 0.0
-    runner.str-eq(z.to-str(), '0', 1, '0.0 → "0"')
+    runner.str-eq(z.to-str(), '0', '0.0 → "0"')
     a = 1500.0
-    runner.str-eq(a.to-str(), '1500', 4, '1500.0 → "1500"')
+    runner.str-eq(a.to-str(), '1500', '1500.0 → "1500"')
 
     ; 超 i64 位緩衝的大值歸一化成科学計數法（2^63）。最短往返只要 16 位有效數字：
     ; 9223372036854776e3（19 位的精確展開 9223372036854775808 不是最短形）。
     two63 = 9223372036854775808.0
-    runner.str-eq(two63.to-str(), '9.223372036854776e+18', 21, '2^63 → 9.223372036854776e+18')
+    runner.str-eq(two63.to-str(), '9.223372036854776e+18', '2^63 → 9.223372036854776e+18')
 }
 
 ; ── B3：f64→f32 真實精度損失（fptrunc+fpext 往返）──────────────

@@ -14,7 +14,7 @@
 ; msg: 斷言失敗時的標識訊息（長度與內容兩條斷言共用）
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; 取 ?i64 的值，非 ok 回哨兵 -999
@@ -175,7 +175,7 @@ server:
             runner.eq(doc.kind(), 6, 'root is map')
             sopt = doc.find-str('name')
             sopt: {
-                ok -> runner.str-eq(it, 'nolang', 6, 'find-str name')
+                ok -> runner.str-eq(it, 'nolang', 'find-str name')
 
                 -> runner.is-true(false, 'find name ok')
             }
@@ -199,7 +199,7 @@ server:
             }
             hopt = doc.find-str('server.host')
             hopt: {
-                ok -> runner.str-eq(it, 'localhost', 9, 'find-str server.host')
+                ok -> runner.str-eq(it, 'localhost', 'find-str server.host')
 
                 -> runner.is-true(false, 'nested path ok')
             }
@@ -250,7 +250,7 @@ t-seq = () {
                             e1 = it
                             svopt = e1.str()
                             svopt: {
-                                ok -> runner.str-eq(it, 'b', 1, 'list[1] str')
+                                ok -> runner.str-eq(it, 'b', 'list[1] str')
 
                                 -> runner.is-true(false, 'e1 str ok')
                             }
@@ -308,7 +308,7 @@ nul: null')
             }
             dsopt = doc.find-str('d')
             dsopt: {
-                ok -> runner.str-eq(it, 'off', 3, 'off stays string')
+                ok -> runner.str-eq(it, 'off', 'off stays string')
 
                 -> runner.is-true(false, 'find d ok')
             }
@@ -396,7 +396,7 @@ fm: {a: 1, b: two}')
                     runner.eq(fmk.len(), 2, 'flow map len')
                     k0opt = fmk.key(0)
                     k0opt: {
-                        ok -> runner.str-eq(it, 'a', 1, 'flow map key0')
+                        ok -> runner.str-eq(it, 'a', 'flow map key0')
 
                         -> runner.is-true(false, 'key 0 ok')
                     }
@@ -434,7 +434,7 @@ alias: *b')
             }
             alop = doc.find-str('alias')
             alop: {
-                ok -> runner.str-eq(it, 'hello', 5, 'alias == anchor value')
+                ok -> runner.str-eq(it, 'hello', 'alias == anchor value')
 
                 -> runner.is-true(false, 'alias resolved')
             }

@@ -60,7 +60,7 @@ chk-frame = (f str, want-b0 i64, want-b1 i64, tag str) {
 ; RFC 6455 §1.3 的金標準向量：key ⇒ accept
 t-pure = () {
     a = ws.compute-accept('dGhlIHNhbXBsZSBub25jZQ==')
-    runner.str-eq(a, 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=', 28, 'compute-accept: RFC 6455 標準向量')
+    runner.str-eq(a, 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=', 'compute-accept: RFC 6455 標準向量')
 
     ; 換 key 必須換結果
     b = ws.compute-accept('AAAAAAAAAAAAAAAAAAAAAA==')
@@ -84,7 +84,7 @@ t-pure = () {
     ; gen-client-key：16 位元組的 base64 ⇒ 24 字元含 padding
     ck = ws.gen-client-key(42)
     runner.eq(ck.len-bytes(), 24, 'gen-client-key: base64 長度 24')
-    runner.str-eq(ck.slice(22, 24), '==', 2, 'gen-client-key: 以 == 結尾')
+    runner.str-eq(ck.slice(22, 24), '==', 'gen-client-key: 以 == 結尾')
 
     ; build-frame：不 mask 的文字幀 'hi'
     f1 = ws.build-frame(1, 'hi', false, '')
@@ -152,7 +152,7 @@ t-server-conn = () {
     ; 客戶端這一側必須收到 101
     resp = rd(cfd, 512)
     runner.eq(resp.len-bytes() > 12, 1, 'handshake: 收到 101 回應')
-    runner.str-eq(resp.slice(0, 12), 'HTTP/1.1 101', 12, 'handshake: 狀態行是 101')
+    runner.str-eq(resp.slice(0, 12), 'HTTP/1.1 101', 'handshake: 狀態行是 101')
     runner.eq(resp.index('Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=') > 0, 1, 'handshake: Accept 值正確')
 
     ; send-text：server 不加 mask

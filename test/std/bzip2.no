@@ -145,7 +145,7 @@ t-compress-prefix = () {
     z = bzip2.compress(src)
 
     head = z.slice(0, 4)
-    runner.str-eq(head.to-hex(), '425A6839', 8, 'BZh9 魔數（block-size 9 = 900k）')
+    runner.str-eq(head.to-hex(), '425A6839', 'BZh9 魔數（block-size 9 = 900k）')
 }
 
 ; ── 執行 ──────────────────────────────────────

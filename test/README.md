@@ -96,7 +96,7 @@ export PATH="/opt/homebrew/opt/llvm/bin:/Library/Developer/CommandLineTools/usr/
 # /test/runner
 ```
 
-`runner.no` 用**模組級全局計數器**（`count-passed` / `count-failed`）累計結果。
+`runner.no` 用**模組級全局計數器**（`COUNT-PASSED` / `COUNT-FAILED`）累計結果。
 
 | 函數 | 簽名 | 說明 |
 |---|---|---|
@@ -2618,7 +2618,7 @@ blk = 0
 | `xz` | `xz -d -c` | ❌ `Compressed data is corrupt`（見 §5.2 #14） |
 
 另外 `test/runner.no` 的 `summary()` 也修了一處 **測試基建** bug：
-`#{overflow=wrap}` 只決定溢位時取什麼值，加法結果仍是 `?i64`；`total = count-passed + count-failed`
+`#{overflow=wrap}` 只決定溢位時取什麼值，加法結果仍是 `?i64`；`total = COUNT-PASSED + COUNT-FAILED`
 直接把 `?i64` 落進 i64 回傳槽，會讓 `summary` 的回傳型別退化成 `?i64`，
 於是**每個測試檔尾**的 `total = runner.summary()` 都撞上 `optunuse`
 （`no test` / `no vet` 全紅，`no run` 不報，所以很容易誤判成「測試檔寫壞了」）。

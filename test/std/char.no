@@ -117,7 +117,7 @@ t-to-upper = () {
     runner.eq("`".to-upper(), 96, 'to-upper "`" unchanged')
 
     ; 轉完再 to-str 應得到字串
-    runner.str-eq("a".to-upper().to-str(), 'A', 1, 'to-upper "a" to-str')
+    runner.str-eq("a".to-upper().to-str(), 'A', 'to-upper "a" to-str')
 }
 
 ; 驗證 char.to-lower：大寫轉小寫（碼點加 32），非大寫原樣返回，邊界 @ 不被轉換
@@ -129,24 +129,24 @@ t-to-lower = () {
 
     ; 邊界：'@'=64（緊鄰大寫 A）不該被轉
     runner.eq("@".to-lower(), 64, 'to-lower "@" unchanged')
-    runner.str-eq("A".to-lower().to-str(), 'a', 1, 'to-lower "A" to-str')
+    runner.str-eq("A".to-lower().to-str(), 'a', 'to-lower "A" to-str')
 }
 
 ; 驗證 char.to-str：產生單字符 str；str.len 回的是碼點數而非位元組數，位元組數須經 to-bytes/to-hex（中→3 位元組 e4b8ad）
 t-to-str = () {
-    runner.str-eq("A".to-str(), 'A', 1, 'to-str "A"')
-    runner.str-eq("5".to-str(), '5', 1, 'to-str "5"')
-    runner.str-eq(" ".to-str(), ' ', 1, 'to-str space')
+    runner.str-eq("A".to-str(), 'A', 'to-str "A"')
+    runner.str-eq("5".to-str(), '5', 'to-str "5"')
+    runner.str-eq(" ".to-str(), ' ', 'to-str space')
 
     ; ⚠️ `str.len()` 回傳的是**碼點數**，不是位元組數（'中' -> 1）
     ;    要拿位元組數得走 `.to-bytes().len()`（-> 3）。兩個都釘住。
     s = "中".to-str()
     runner.eq(s.len(), 1, 'to-str non-ASCII: len is 1 CODEPOINT')
     runner.eq(s.to-bytes().len(), 3, 'to-str non-ASCII: 3 BYTES (UTF-8)')
-    runner.str-eq(s, '中', 3, 'to-str non-ASCII content')
+    runner.str-eq(s, '中', 'to-str non-ASCII content')
 
     ; 同一件事用 hex 再驗一次：'中' == E4 B8 AD
-    runner.str-eq(s.to-hex(), 'e4b8ad', 6, 'to-str non-ASCII hex == e4b8ad')
+    runner.str-eq(s.to-hex(), 'e4b8ad', 'to-str non-ASCII hex == e4b8ad')
 
     ; 往返：to-str 的結果是 str，可以和 str 字面量比較
     runner.is-true("A".to-str().eq('A', 1), 'to-str roundtrip via str.eq')
@@ -198,7 +198,7 @@ t-to-txt = () {
     a: {
         ok(t) -> {
             runner.eq(t.len(), 1, 'to-txt "A" len == 1')
-            runner.str-eq(t.to-str(), 'A', 1, 'to-txt "A" value')
+            runner.str-eq(t.to-str(), 'A', 'to-txt "A" value')
         }
 
         nil -> runner.is-true(false, 'to-txt "A" == nil')
@@ -213,7 +213,7 @@ t-to-txt = () {
         ok(t) -> {
             runner.eq(t.len(), 1, 'to-txt non-ASCII: len is 1 CODEPOINT')
             runner.eq(t.len-bytes(), 3, 'to-txt non-ASCII: 3 BYTES (UTF-8)')
-            runner.str-eq(t.to-str(), '中', 3, 'to-txt non-ASCII value')
+            runner.str-eq(t.to-str(), '中', 'to-txt non-ASCII value')
         }
 
         nil -> runner.is-true(false, 'to-txt non-ASCII == nil')
@@ -246,14 +246,14 @@ t-slice-char-literal = () {
         -> _
     }
 
-    runner.str-eq(arr-0.to-str(), 'a', 1, '[]char[0] == a')
+    runner.str-eq(arr-0.to-str(), 'a', '[]char[0] == a')
     arr-2 = arr[2]: {
         ok -> it
 
         -> _
     }
 
-    runner.str-eq(arr-2.to-str(), 'c', 1, '[]char[2] == c')
+    runner.str-eq(arr-2.to-str(), 'c', '[]char[2] == c')
 
     ; 元素寫入走 place-match（ok 臂的 it 是元素位置，可讀可寫）——
     ;    直接 `arr[1] = "Z"` 會被 checker 的 idxwrite 規則拒掉。
@@ -268,7 +268,7 @@ t-slice-char-literal = () {
         -> _
     }
 
-    runner.str-eq(arr-1.to-str(), 'Z', 1, '[]char[1] assign == Z')
+    runner.str-eq(arr-1.to-str(), 'Z', '[]char[1] assign == Z')
     fixed [3]char = ["x", "y", "z"]
     fixed-0 = fixed[0]: {
         ok -> it
@@ -276,7 +276,7 @@ t-slice-char-literal = () {
         -> _
     }
 
-    runner.str-eq(fixed-0.to-str(), 'x', 1, '[3]char[0] == x')
+    runner.str-eq(fixed-0.to-str(), 'x', '[3]char[0] == x')
     runner.eq(fixed.len(), 3, '[3]char len == 3')
 }
 

@@ -56,7 +56,7 @@ t-enc = () {
     key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
     pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
     ct = des.des-enc(pt, 8, key)
-    runner.str-eq(bhex(ct), '85e813540f0ab405', 16, 'des enc KAT')
+    runner.str-eq(bhex(ct), '85e813540f0ab405', 'des enc KAT')
 }
 
 ; 解密還原：對加密結果再解密應得原明文 0123456789abcdef
@@ -65,7 +65,7 @@ t-dec = () {
     pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
     ct = des.des-enc(pt, 8, key)
     back = des.des-dec(ct, 8, key)
-    runner.str-eq(bhex(back), '0123456789abcdef', 16, 'des dec round-trip')
+    runner.str-eq(bhex(back), '0123456789abcdef', 'des dec round-trip')
 }
 
 ; ---- 助手 ----
@@ -108,16 +108,16 @@ arr96 = (a [96]byte) (v []byte) {
 t-permute = () {
 
     ; IP(0123456789abcdef) = cc00ccfff0aaf0aa（DES 教學標準中間值）
-    runner.str-eq(i64-hex(des.permute(0x0123456789abcdef, des.IP-TBL[..64), 64, 64)), 'cc00ccfff0aaf0aa', 16, 'permute IP')
+    runner.str-eq(i64-hex(des.permute(0x0123456789abcdef, des.IP-TBL[..64), 64, 64)), 'cc00ccfff0aaf0aa', 'permute IP')
 
     ; FP 是 IP 的逆：FP(IP(x)) 應還原 x
     ip = des.permute(0x0123456789abcdef, des.IP-TBL[..64), 64, 64)
     back = des.permute(ip, des.FP-TBL[..64), 64, 64)
-    runner.str-eq(i64-hex(back), '0123456789abcdef', 16, 'permute FP∘IP = id')
+    runner.str-eq(i64-hex(back), '0123456789abcdef', 'permute FP∘IP = id')
 
     ; E 擴展：全 1 仍為全 1（48 位）
-    runner.str-eq(i64-hex(des.permute(0xffffffff, des.E-TBL[..48), 48, 32)), '0000ffffffffffff', 16, 'permute E 全 1')
-    runner.str-eq(i64-hex(des.permute(0, des.E-TBL[..48), 48, 32)), '0000000000000000', 16, 'permute E 全 0')
+    runner.str-eq(i64-hex(des.permute(0xffffffff, des.E-TBL[..48), 48, 32)), '0000ffffffffffff', 'permute E 全 1')
+    runner.str-eq(i64-hex(des.permute(0, des.E-TBL[..48), 48, 32)), '0000000000000000', 'permute E 全 0')
 }
 
 ; S-box 查表：row = b1b6、col = b2b3b4b5
@@ -133,8 +133,8 @@ t-sbox = () {
 
 ; F 輪函數：E 擴展 → 異或子金鑰 → 8 個 S 盒 → P 置換
 t-f = () {
-    runner.str-eq(i64-hex(des.f(0x12345678, 0)), '000000005101d5dd', 16, 'f(12345678, 0)')
-    runner.str-eq(i64-hex(des.f(0xffffffff, 0xffffffffffff)), '00000000d8d8dbbc', 16, 'f(ffffffff, 全 1)')
+    runner.str-eq(i64-hex(des.f(0x12345678, 0)), '000000005101d5dd', 'f(12345678, 0)')
+    runner.str-eq(i64-hex(des.f(0xffffffff, 0xffffffffffff)), '00000000d8d8dbbc', 'f(ffffffff, 全 1)')
 
     ; R 與 K 都換 ⇒ 結果必不同
     a = des.f(0x12345678, 0)
@@ -149,13 +149,13 @@ t-key-schedule = () {
     key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
     ks [96]byte = des.des-key-schedule(key)
     v = arr96(ks)
-    runner.str-eq(bhex(v), '1b02effc707279aed9dbc9e555fc8a42cf9972add6db351d7cec07eb53a863a53e507b2fec84b7f618bcf78a3ac13bfbe0dbebede781b1f347ba464f215fd3ded3867571f59467e997c5d1faba415f43b7f2e73abf918d3d3f0acb3d8b0e17f5', 192, 'des-key-schedule 16 組子金鑰')
+    runner.str-eq(bhex(v), '1b02effc707279aed9dbc9e555fc8a42cf9972add6db351d7cec07eb53a863a53e507b2fec84b7f618bcf78a3ac13bfbe0dbebede781b1f347ba464f215fd3ded3867571f59467e997c5d1faba415f43b7f2e73abf918d3d3f0acb3d8b0e17f5', 'des-key-schedule 16 組子金鑰')
 
     ; 全零金鑰 ⇒ 36 個 0 位元 ⇒ 全部子金鑰為 0
     zkey [8]byte = [0, 0, 0, 0, 0, 0, 0, 0]
     zks [96]byte = des.des-key-schedule(zkey)
     zv = arr96(zks)
-    runner.str-eq(bhex(zv), '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', 192, 'des-key-schedule 零金鑰')
+    runner.str-eq(bhex(zv), '000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', 'des-key-schedule 零金鑰')
 
     ; 只改奇偶校驗位（每字節最低位）⇒ 子金鑰必須完全不變
     ; 0xf1 → 0xf0、0x13 → 0x12 都只動到 LSB，故 PC-1 取不到
@@ -163,7 +163,7 @@ t-key-schedule = () {
     pks [96]byte = des.des-key-schedule(pkey)
     pv = arr96(pks)
     s1 = bhex(v)
-    runner.str-eq(bhex(pv), s1, 192, 'des-key-schedule 忽略奇偶校驗位')
+    runner.str-eq(bhex(pv), s1, 'des-key-schedule 忽略奇偶校驗位')
 
     ; 改一個真正的資料位（0x13 → 0x11）⇒ 子金鑰必須全變
     key2 [8]byte = [0x11, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
@@ -181,20 +181,20 @@ t-block = () {
 
     ct = des.des-block(pt, 8, ks, 1)
     runner.eq(ct.len(), 8, 'des-block 輸出 8 位元組')
-    runner.str-eq(bhex(ct), '85e813540f0ab405', 16, 'des-block encrypt=1')
+    runner.str-eq(bhex(ct), '85e813540f0ab405', 'des-block encrypt=1')
 
     ; 解密 = 逆序子金鑰
     back = des.des-block(ct, 8, ks, 0)
-    runner.str-eq(bhex(back), '0123456789abcdef', 16, 'des-block encrypt=0 還原')
+    runner.str-eq(bhex(back), '0123456789abcdef', 'des-block encrypt=0 還原')
 
     ; 對任意非 1 的 encrypt 值都走解密路徑
     back2 = des.des-block(ct, 8, ks, 7)
-    runner.str-eq(bhex(back2), '0123456789abcdef', 16, 'des-block encrypt≠1 亦為解密')
+    runner.str-eq(bhex(back2), '0123456789abcdef', 'des-block encrypt≠1 亦為解密')
 
     ; 明文全零
     zero8 []byte = [0, 0, 0, 0, 0, 0, 0, 0]
     cz = des.des-block(zero8, 8, ks, 1)
-    runner.str-eq(bhex(cz), '948a43f98a834f7e', 16, 'des-block 明文全零')
+    runner.str-eq(bhex(cz), '948a43f98a834f7e', 'des-block 明文全零')
 }
 
 p1 = runner.test('des.enc', t-enc)

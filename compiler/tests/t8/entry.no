@@ -1,0 +1,1 @@
+# /compiler/tests/t8/f1.no

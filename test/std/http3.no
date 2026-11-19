@@ -24,7 +24,7 @@
 ; 斷言兩個字串等長且等內容，失敗訊息附帶 [len] 標記
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; 造兩組標頭陣列（[16]str 結果參數進來是未初始化記憶體，先 zero）

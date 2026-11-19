@@ -42,7 +42,7 @@ t-compress = () {
     runner.eq(len(comp), 16, 'len = 2(header) + 5(block hdr) + 5(data) + 4(adler)')
 
     hdr = comp.slice(0, 2)
-    runner.str-eq(hdr.to-hex(), '789C', 4, 'zlib header = 78 9C')
+    runner.str-eq(hdr.to-hex(), '789C', 'zlib header = 78 9C')
 
     ; stored block 首個位元組：bit0 = BFINAL、bit1..2 = BTYPE(00)
     bf = comp[2]: {
@@ -66,7 +66,7 @@ t-compress = () {
     runner.eq(nlen, 0xfa, 'NLEN 低位 = ~5 & 0xFF = 0xFA')
 
     tail = comp.slice(12, 16)
-    runner.str-eq(tail.to-hex(), '062C0215', 8, '尾端 4 位元組 = Adler-32 大端')
+    runner.str-eq(tail.to-hex(), '062C0215', '尾端 4 位元組 = Adler-32 大端')
 
     ; 空輸入仍然要有合法骨架
     none []byte = with-cap(0)
@@ -88,7 +88,7 @@ t-stored-single = () {
         -> back
     }
     runner.eq(len(back), 5, '單塊 stored 還原 5 位元組')
-    runner.str-eq(back.to-str(), 'Hello', 5, '內容還原')
+    runner.str-eq(back.to-str(), 'Hello', '內容還原')
 }
 
 t-stored-multi = () {
@@ -155,7 +155,7 @@ t-decompress-stored = () {
         -> back
     }
     runner.eq(len(back), 11, 'stored 串流經 decompress 還原 11 位元組')
-    runner.str-eq(back.to-str(), 'hello world', 11, 'stored 串流內容')
+    runner.str-eq(back.to-str(), 'hello world', 'stored 串流內容')
 }
 
 ; 真 DEFLATE（fixed Huffman）包進 zlib 殼：78 9C + raw + Adler-32
@@ -179,7 +179,7 @@ t-decompress-inflate = () {
         -> back
     }
     runner.eq(len(back), 29, 'fixed Huffman 區塊還原 29 位元組')
-    runner.str-eq(back.to-str(), 'hello hello hello world hello', 29, 'inflate 路徑內容')
+    runner.str-eq(back.to-str(), 'hello hello hello world hello', 'inflate 路徑內容')
 }
 
 t-decompress-nil = () {

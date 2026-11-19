@@ -25,7 +25,7 @@ t-arr-fixed = () {
 
         err -> 'err'
     }
-    runner.str-eq(in1, 'ok', 2, '[N]i64 界內 → ok')
+    runner.str-eq(in1, 'ok', '[N]i64 界內 → ok')
 
     out1 = a[9]: {
         ok -> 'ok'
@@ -34,7 +34,7 @@ t-arr-fixed = () {
 
         err -> 'err'
     }
-    runner.str-eq(out1, 'err', 3, '[N]i64 越界 → err（不是 nil）')
+    runner.str-eq(out1, 'err', '[N]i64 越界 → err（不是 nil）')
 
     neg = a[0 - 1]: {
         ok -> 'ok'
@@ -43,7 +43,7 @@ t-arr-fixed = () {
 
         err -> 'err'
     }
-    runner.str-eq(neg, 'err', 3, '[N]i64 負下標 → err')
+    runner.str-eq(neg, 'err', '[N]i64 負下標 → err')
 }
 
 ; ── 越界的 err 帶得動訊息與位置 ──────────────────────────────────
@@ -54,7 +54,7 @@ t-arr-oob-msg = () {
 
         -> 'no-err'
     }
-    runner.str-eq(msg, 'index out of range', 18, '越界 err 的訊息可讀')
+    runner.str-eq(msg, 'index out of range', '越界 err 的訊息可讀')
 }
 
 ; ── 切片 []T ────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ t-slice = () {
 
         -> 'bad'
     }
-    runner.str-eq(in1, 'ok', 2, '[]i64 界內 → ok')
+    runner.str-eq(in1, 'ok', '[]i64 界內 → ok')
 
     out1 = v[5]: {
         ok -> 'ok'
@@ -74,7 +74,7 @@ t-slice = () {
 
         err -> 'err'
     }
-    runner.str-eq(out1, 'err', 3, '[]i64 越界 → err')
+    runner.str-eq(out1, 'err', '[]i64 越界 → err')
 }
 
 ; ── str 的碼點下標（OpLen 是位元組，必須用 -1 哨兵判定）─────────
@@ -85,7 +85,7 @@ t-str-codepoint = () {
 
         -> 'bad'
     }
-    runner.str-eq(in1, 'ok', 2, 'str 界內碼點 → ok')
+    runner.str-eq(in1, 'ok', 'str 界內碼點 → ok')
 
     ; 5 個碼點、6 個位元組：s[5] 在「位元組界內」但「碼點界外」。
     out1 = s[5]: {
@@ -95,7 +95,7 @@ t-str-codepoint = () {
 
         err -> 'err'
     }
-    runner.str-eq(out1, 'err', 3, 'str 碼點越界 → err')
+    runner.str-eq(out1, 'err', 'str 碼點越界 → err')
 }
 
 ; ── [N]?T / []?T：三態齊備（ok / nil / err）─────────────────────
@@ -109,7 +109,7 @@ t-opt-elem-array = () {
 
         err -> 'err'
     }
-    runner.str-eq(st0, 'ok', 2, '[N]?i64 有值槽 → ok')
+    runner.str-eq(st0, 'ok', '[N]?i64 有值槽 → ok')
 
     st1 = b[1]: {
         ok -> 'ok'
@@ -118,7 +118,7 @@ t-opt-elem-array = () {
 
         err -> 'err'
     }
-    runner.str-eq(st1, 'nil', 3, '[N]?i64 空槽 → nil（不是 err）')
+    runner.str-eq(st1, 'nil', '[N]?i64 空槽 → nil（不是 err）')
 
     st9 = b[9]: {
         ok -> 'ok'
@@ -127,7 +127,7 @@ t-opt-elem-array = () {
 
         err -> 'err'
     }
-    runner.str-eq(st9, 'err', 3, '[N]?i64 越界 → err')
+    runner.str-eq(st9, 'err', '[N]?i64 越界 → err')
 }
 
 t-opt-elem-slice = () {
@@ -137,7 +137,7 @@ t-opt-elem-slice = () {
 
         -> 'bad'
     }
-    runner.str-eq(st0, 'ok', 2, '[]?i64 有值槽 → ok')
+    runner.str-eq(st0, 'ok', '[]?i64 有值槽 → ok')
 
     st1 = b[1]: {
         ok -> 'ok'
@@ -146,7 +146,7 @@ t-opt-elem-slice = () {
 
         err -> 'err'
     }
-    runner.str-eq(st1, 'nil', 3, '[]?i64 空槽 → nil')
+    runner.str-eq(st1, 'nil', '[]?i64 空槽 → nil')
 
     st9 = b[9]: {
         ok -> 'ok'
@@ -155,7 +155,7 @@ t-opt-elem-slice = () {
 
         err -> 'err'
     }
-    runner.str-eq(st9, 'err', 3, '[]?i64 越界 → err')
+    runner.str-eq(st9, 'err', '[]?i64 越界 → err')
 }
 
 ; ── map 缺鍵仍是 nil（值確實不存在，不是越界）───────────────────
@@ -168,7 +168,7 @@ t-map-nil = () {
 
         err -> 'err'
     }
-    runner.str-eq(r, 'nil', 3, 'map 缺鍵 → nil')
+    runner.str-eq(r, 'nil', 'map 缺鍵 → nil')
 }
 
 ; ── 值 → option 的隱式提升：宣告、重綁、欄位、字面量元素、元素寫入 ──
@@ -278,7 +278,7 @@ t-unwrap-index-rhs = () {
 
         err -> 'err'
     }
-    runner.str-eq(st, 'err', 3, 'RHS 越界由 ?= 上拋 err（不是靜默略過）')
+    runner.str-eq(st, 'err', 'RHS 越界由 ?= 上拋 err（不是靜默略過）')
 }
 
 p1, f1 = runner.test('index.out.fixed', t-arr-fixed)

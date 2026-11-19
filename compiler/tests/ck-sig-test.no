@@ -74,13 +74,13 @@ test-find-func = (t ck-sig) {
 
     ; ⚠️ 欄位取值一律走 ck-sig-str-at：外掛 receiver 的 []str.at() 單態化會報
     ;    'EmitLLVM: unknown callee []t.at'（實測），索引讀 x=v[i] 回 ?str 亦不可直接使用。
-    runner.str-eq(ck-sig-str-at(t.fp, i), 'str', 3, '[]byte.index params=str')
-    runner.str-eq(ck-sig-str-at(t.fr, i), 'i64', 3, '[]byte.index results=i64')
+    runner.str-eq(ck-sig-str-at(t.fp, i), 'str', '[]byte.index params=str')
+    runner.str-eq(ck-sig-str-at(t.fr, i), 'i64', '[]byte.index results=i64')
 
     runner.eq(ck-sig-find-func(t, 'zstd.decompress'), 887, 'last key hit at 887')
     j = ck-sig-find-func(t, 'fs.read-bytes')
     runner.eq(j >= 0, 1, 'fs.read-bytes hit')
-    runner.str-eq(ck-sig-str-at(t.fr, j), '?[]byte', 7, 'fs.read-bytes results=?[]byte')
+    runner.str-eq(ck-sig-str-at(t.fr, j), '?[]byte', 'fs.read-bytes results=?[]byte')
 
     ; fmt.print 不存在（只有 printf/println 族）——miss 必回 -1
     runner.eq(ck-sig-find-func(t, 'fmt.print'), -1, 'fmt.print is not a std func')
@@ -101,13 +101,13 @@ test-find-method = (t ck-sig) {
     ; methodSigs 只收具名 receiver（str.*、zstd.* 等）——兩張表的分界以此為準。
     m = ck-sig-find-func(t, '[]t.at')
     runner.eq(m, 16, '[]t.at in func table at 16')
-    runner.str-eq(ck-sig-str-at(t.fp, m), 'i64', 3, '[]t.at params=i64')
-    runner.str-eq(ck-sig-str-at(t.fr, m), '?t', 2, '[]t.at results=?t')
+    runner.str-eq(ck-sig-str-at(t.fp, m), 'i64', '[]t.at params=i64')
+    runner.str-eq(ck-sig-str-at(t.fr, m), '?t', '[]t.at results=?t')
 
     runner.eq(ck-sig-find-method(t, 'zstd.zs-huffman.decode'), 2621, 'last method key')
     u = ck-sig-find-method(t, 'str.to-upper')
     runner.eq(u >= 0, 1, 'str.to-upper hit')
-    runner.str-eq(ck-sig-str-at(t.mp, u), '', 0, 'str.to-upper params empty')
+    runner.str-eq(ck-sig-str-at(t.mp, u), '', 'str.to-upper params empty')
     runner.eq(ck-sig-find-method(t, 'nope.nope'), -1, 'method miss')
 }
 
@@ -120,24 +120,24 @@ test-find-method = (t ck-sig) {
 test-find-others = (t ck-sig) {
     s = ck-sig-find-struct-field(t, 'arp-info.mac')
     runner.eq(s >= 0, 1, 'arp-info.mac hit')
-    runner.str-eq(ck-sig-str-at(t.sft, s), 'str', 3, 'arp-info.mac type=str')
+    runner.str-eq(ck-sig-str-at(t.sft, s), 'str', 'arp-info.mac type=str')
     runner.eq(ck-sig-find-struct-field(t, 'arp-info.nope'), -1, 'struct-field miss')
 
     a = ck-sig-find-alias(t, 'fd')
     runner.eq(a, 0, 'fd alias at 0')
-    runner.str-eq(ck-sig-str-at(t.alt, a), 'i64', 3, 'fd -> i64')
+    runner.str-eq(ck-sig-str-at(t.alt, a), 'i64', 'fd -> i64')
 
     sm = ck-sig-find-struct-mod(t, 'arp-info')
     runner.eq(sm >= 0, 1, 'arp-info module hit')
-    runner.str-eq(ck-sig-str-at(t.smt, sm), 'net', 3, 'arp-info -> net')
+    runner.str-eq(ck-sig-str-at(t.smt, sm), 'net', 'arp-info -> net')
 
     e = ck-sig-find-enum(t, 'code')
     runner.eq(e >= 0, 1, 'code enum hit')
-    runner.str-eq(ck-sig-str-at(t.evt, e), 'ok,not-found,permission,io,timeout,parse,invalid,overflow', 57, 'code variants')
+    runner.str-eq(ck-sig-str-at(t.evt, e), 'ok,not-found,permission,io,timeout,parse,invalid,overflow,index-out,unknown', 'code variants')
 
     mo = ck-sig-find-module(t, 'aes')
     runner.eq(mo >= 0, 1, 'aes module hit')
-    runner.str-eq(ck-sig-str-at(t.moo, mo), 'crypto/aes', 10, 'aes -> crypto/aes')
+    runner.str-eq(ck-sig-str-at(t.moo, mo), 'crypto/aes', 'aes -> crypto/aes')
 }
 
 ; ═══════════════════════════════════════════════

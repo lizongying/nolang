@@ -8,9 +8,8 @@
 ;   ok = assert.eq(a, b, 'msg')
 ;   ok == false -> return 1
 
-; ═══════════════════════════════════════════════
 ; 泛型斷言
-; ═══════════════════════════════════════════════
+...
 
 ; a == b
 ; a: 實際值（泛型 t）
@@ -50,11 +49,11 @@ ne = (a t, b t, msg str) (ok bool) {
 ; val: 被斷言的布林值（為真才通過）
 ; msg: 斷言失敗時列印的說明
 ; ok: true=val 為 true；false=val 為 false 且已印 FAIL
-true = (val bool, msg str) (ok bool) {
+is-true = (val bool, msg str) (ok bool) {
     {
         ! val -> {
             ok = false
-            print('FAIL: true')
+            print('FAIL: is-true')
             print(msg)
         }
 
@@ -66,11 +65,11 @@ true = (val bool, msg str) (ok bool) {
 ; val: 被斷言的布林值（為假才通過）
 ; msg: 斷言失敗時列印的說明
 ; ok: true=val 為 false；false=val 為 true 且已印 FAIL
-false = (val bool, msg str) (ok bool) {
+is-false = (val bool, msg str) (ok bool) {
     {
         val -> {
             ok = false
-            print('FAIL: false')
+            print('FAIL: is-false')
             print(msg)
         }
 
@@ -146,9 +145,8 @@ le = (a t, b t, msg str) (ok bool) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 浮點斷言
-; ═══════════════════════════════════════════════
+...
 
 ; |a - b| < eps
 ; a: 第一個浮點值
@@ -190,18 +188,23 @@ f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 字串斷言
-; ═══════════════════════════════════════════════
+...
 
-; 字串相等（比較前 n 個字節）
+; 字串相等（全串比較）
 ; a: 第一條字串
 ; b: 第二條字串
-; n: 參與比較的頭部位元組數
 ; msg: 斷言失敗時列印的說明
-; ok: true=a、b 前 n 位元組相同；false=不同且已印 FAIL
-str-eq = (a str, b str, n i64, msg str) (ok bool) {
+; ok: true=a、b 相等；false=不同且已印 FAIL
+str-eq = (a str, b str, msg str) (ok bool) {
+    n = a.len-bytes()
     {
+        n != b.len-bytes() -> {
+            ok = false
+            print('FAIL: str-eq')
+            print(msg)
+        }
+
         a.eq(b, n) == false -> {
             ok = false
             print('FAIL: str-eq')
@@ -264,9 +267,8 @@ str-not-empty = (s str, n i64, msg str) (ok bool) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 指標斷言
-; ═══════════════════════════════════════════════
+...
 
 ; nil: 指標為空
 ; p: 以整數表示的指標值（為 0 才通過）

@@ -23,24 +23,24 @@
 t-to-str = () {
     a i128 = 42
     s = a.to-str()
-    runner.str-eq(s, '42', 2, 'i128.to-str 42')
+    runner.str-eq(s, '42', 'i128.to-str 42')
 
     z i128 = 0
     s0 = z.to-str()
-    runner.str-eq(s0, '0', 1, 'i128.to-str 0')
+    runner.str-eq(s0, '0', 'i128.to-str 0')
 
     n i128 = -17
     sn = n.to-str()
-    runner.str-eq(sn, '-17', 3, 'i128.to-str -17')
+    runner.str-eq(sn, '-17', 'i128.to-str -17')
 
     ; 2^64：超出 i64 范围，检验逐位除法在宽型别高位也正确
     big u128 = 18446744073709551616
     sb = big.to-str()
-    runner.str-eq(sb, '18446744073709551616', 20, 'u128.to-str 2^64')
+    runner.str-eq(sb, '18446744073709551616', 'u128.to-str 2^64')
 
     one u128 = 1
     s1 = one.to-str()
-    runner.str-eq(s1, '1', 1, 'u128.to-str 1')
+    runner.str-eq(s1, '1', 'u128.to-str 1')
 }
 
 ; div：商数向零截断；除零必须是 err（编译器插入的零除守卫）

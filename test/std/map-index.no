@@ -107,7 +107,7 @@ t-i64-key-str-val = () {
     runner.eq(m.len(), 2, 'i64-key map: insert then overwrite')
     v = m.get(1)
     v: {
-        ok -> runner.str-eq(v, 'ONE', 3, 'i64-key map: overwrite wins')
+        ok -> runner.str-eq(v, 'ONE', 'i64-key map: overwrite wins')
 
         nil -> runner.is-true(false, 'key 1 must be present')
 

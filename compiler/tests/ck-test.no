@@ -108,7 +108,7 @@ test-silent = () {
 test-gated-hint = () {
     d = ck-run('x = cancelled\n')
     runner.eq(d.len(), 1, 'cancelled one diag')
-    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'cancelled\' is not defined; call it as \'async.cancelled\' (cross-module calls must be module-qualified)', 115, 'cancelled hint form')
+    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'cancelled\' is not defined; call it as \'async.cancelled\' (cross-module calls must be module-qualified)', 'cancelled hint form')
 }
 
 ; 測試 gated-nohint
@@ -117,7 +117,7 @@ test-gated-nohint = () {
     ; 門控無 unique owner（僅方法短名）⇒ 裸形態（oracle smoke4 實測同文）
     d = ck-run('x = from-bits\n')
     runner.eq(d.len(), 1, 'from-bits one diag')
-    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'from-bits\' is not defined', 39, 'from-bits bare form')
+    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'from-bits\' is not defined', 'from-bits bare form')
 }
 
 ; 測試 unknown
@@ -126,7 +126,7 @@ test-unknown = () {
     ; 完全未知名（'@'）⇒ 裸形態（正主同形）
     d = ck-run('x = wuzzle\n')
     runner.eq(d.len(), 1, 'wuzzle one diag')
-    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'wuzzle\' is not defined', 36, 'wuzzle bare form')
+    runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'wuzzle\' is not defined', 'wuzzle bare form')
 }
 
 ; 測試 order
@@ -137,10 +137,10 @@ test-order = () {
     runner.eq(d.len(), 2, 'two unknowns')
     w0 = at(d, 0)
     p0 = w0.index('|')
-    runner.str-eq(w0.slice-bytes(0, p0), '1', 1, 'first at line 1')
+    runner.str-eq(w0.slice-bytes(0, p0), '1', 'first at line 1')
     w1 = at(d, 1)
     p1 = w1.index('|')
-    runner.str-eq(w1.slice-bytes(0, p1), '2', 1, 'second at line 2')
+    runner.str-eq(w1.slice-bytes(0, p1), '2', 'second at line 2')
 }
 
 ; ═══════════════════════════════════════════════

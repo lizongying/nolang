@@ -37,7 +37,7 @@ runner.eq(b[2], 99, 'bytes()[2] == c')
 
 ; ── bytes：零拷貝，寫視圖即寫原字串 ──
 b[0] = 122
-runner.str-eq(s, 'zbc', 3, 'bytes() 視圖共享原 str 緩衝')
+runner.str-eq(s, 'zbc', 'bytes() 視圖共享原 str 緩衝')
 
 ; ── bytes：空串 ──
 e = ''
@@ -61,7 +61,7 @@ cs.push("i")
 cs.push("!")
 t = str.from-chars(cs)
 runner.eq(t.len-bytes(), 3, 'from-chars 長度')
-runner.str-eq(t, 'hi!', 3, 'from-chars 內容')
+runner.str-eq(t, 'hi!', 'from-chars 內容')
 
 ; char 只取低 8 位（'中' = U+4E2D → 0x2D = 45），不做 UTF-8 重編碼
 cs2 []char
@@ -78,7 +78,7 @@ tb.push(65)
 tb.push(66)
 tt = txt.from-bytes(tb)
 runner.eq(tt.len-bytes(), 2, 'txt.from-bytes 長度')
-runner.str-eq(tt.to-str(), 'AB', 2, 'txt.from-bytes 內容')
+runner.str-eq(tt.to-str(), 'AB', 'txt.from-bytes 內容')
 
 ; 255 硬上限：300 位元組截到 255
 bigb []byte
@@ -102,7 +102,7 @@ tch = txt.from-chars(tcs)
 tch: {
     ok(v) -> {
         runner.eq(v.len-bytes(), 3, 'txt.from-chars 長度')
-        runner.str-eq(v.to-str(), 'hi!', 3, 'txt.from-chars 內容')
+        runner.str-eq(v.to-str(), 'hi!', 'txt.from-chars 內容')
     }
 
     nil -> runner.is-true(false, 'txt.from-chars 不該回 nil')

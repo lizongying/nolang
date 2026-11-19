@@ -369,19 +369,19 @@ t-char-to-str = () {
     a char = 65
     s = math.char-to-str(a)
     runner.eq(s.len-bytes(), 1, 'U+0041 ⇒ 1 位元組')
-    runner.str-eq(s, 'A', 1, 'char-to-str(U+0041)')
+    runner.str-eq(s, 'A', 'char-to-str(U+0041)')
 
     ; U+4E2D 中 ⇒ 3 位元組 E4 B8 AD
     b char = 0x4e2d
     s2 = math.char-to-str(b)
     runner.eq(s2.len-bytes(), 3, 'U+4E2D ⇒ 3 位元組')
-    runner.str-eq(s2, '中', 3, 'char-to-str(U+4E2D)')
+    runner.str-eq(s2, '中', 'char-to-str(U+4E2D)')
 
     ; U+1F600 😀 ⇒ 4 位元組 F0 9F 98 80
     c char = 0x1f600
     s3 = math.char-to-str(c)
     runner.eq(s3.len-bytes(), 4, 'U+1F600 ⇒ 4 位元組')
-    runner.str-eq(s3, '😀', 4, 'char-to-str(U+1F600)')
+    runner.str-eq(s3, '😀', 'char-to-str(U+1F600)')
 }
 
 ; rotate-left / rotate-right：映射到 LLVM fshl / fshr，位數對 64 取模

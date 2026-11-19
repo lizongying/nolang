@@ -28,7 +28,7 @@ t-xorshift = () {
 t-str = () {
     s = rand.rand-str(12345, 10)
     runner.eq(s.len(), 10, 'rand-str length')
-    runner.str-eq(s, 'aZWqBKc0UW', 10, 'rand-str golden')
+    runner.str-eq(s, 'aZWqBKc0UW', 'rand-str golden')
 }
 p1 = runner.test('rand.xorshift', t-xorshift)
 p2 = runner.test('rand.str', t-str)

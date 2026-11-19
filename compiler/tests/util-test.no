@@ -29,7 +29,7 @@ test-sb = () {
     runner.eq(b.len(), 11, 'sb.push total 11 bytes')
 
     s = b.str()
-    runner.str-eq(s, 'hello world', 11, 'sb.str content')
+    runner.str-eq(s, 'hello world', 'sb.str content')
 
     ; 空 push 不改變長度
     b.push('')
@@ -46,7 +46,7 @@ test-sb = () {
     b.push-byte(65)
     b.push-byte(66)
     s2 = b.str()
-    runner.str-eq(s2, 'AB', 2, 'sb.push-byte')
+    runner.str-eq(s2, 'AB', 'sb.push-byte')
 }
 
 ; ═══════════════════════════════════════════════
@@ -84,7 +84,7 @@ test-intern = () {
 
     ; 反查
     s = intern.at(t, 2)
-    runner.str-eq(s, 'beta', 4, 'intern.at roundtrip')
+    runner.str-eq(s, 'beta', 'intern.at roundtrip')
 
     ; 越界回空字串
     s0 = intern.at(t, 99)
@@ -142,7 +142,7 @@ test-intern-many = () {
 
     ; 反查
     back = intern.at(t, 100)
-    runner.str-eq(back, 'key-99', 6, 'intern.at roundtrip at scale')
+    runner.str-eq(back, 'key-99', 'intern.at roundtrip at scale')
 }
 
 ; ═══════════════════════════════════════════════

@@ -39,7 +39,7 @@ u-str = (o ?str) (v str) {
 ; msg: 斷言描述，長度不符時自動加 ' [len]' 後綴
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; ?dom 是否為 err（1=err, 0=其他）

@@ -136,7 +136,7 @@ t-reader-read-line = () {
 
         -> _
     }
-    runner.str-eq(l1, 'Hello', 5, 'read-line 1st == Hello')
+    runner.str-eq(l1, 'Hello', 'read-line 1st == Hello')
 
     ; 第二行
     l2 = ''
@@ -146,7 +146,7 @@ t-reader-read-line = () {
 
         -> _
     }
-    runner.str-eq(l2, 'World', 5, 'read-line 2nd == World')
+    runner.str-eq(l2, 'World', 'read-line 2nd == World')
 
     ; EOF 回傳 nil
     eof = false

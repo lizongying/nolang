@@ -58,11 +58,11 @@ test-call-missing-comma = () {
     runner.eq(ps-err-count(p), 2, 'call-comma count')
     runner.eq(p.e-ln[0], 1, 'call-comma line')
     runner.eq(p.e-cl[0], 11, 'call-comma col')
-    runner.str-eq(p.e-msg[0], 'expected comma or right parenthesis, got INT instead', 52, 'call-comma msg')
-    runner.str-eq(p.e-code[0], 'E_GENERAL', 9, 'call-comma code')
+    runner.str-eq(p.e-msg[0], 'expected comma or right parenthesis, got INT instead', 'call-comma msg')
+    runner.str-eq(p.e-code[0], 'E_GENERAL', 'call-comma code')
     runner.eq(p.e-ln[1], 1, 'call-comma cascade line')
     runner.eq(p.e-cl[1], 11, 'call-comma cascade col')
-    runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 36, 'call-comma cascade msg')
+    runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 'call-comma cascade msg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -75,7 +75,7 @@ test-let-nil-value = () {
     runner.eq(ps-err-count(p), 1, 'let-nil count')
     runner.eq(p.e-ln[0], 2, 'let-nil line')
     runner.eq(p.e-cl[0], 1, 'let-nil col')
-    runner.str-eq(p.e-msg[0], 'expected expression, got nil instead', 36, 'let-nil msg')
+    runner.str-eq(p.e-msg[0], 'expected expression, got nil instead', 'let-nil msg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -88,10 +88,10 @@ test-group-missing-rparen = () {
     runner.eq(ps-err-count(p), 2, 'group count')
     runner.eq(p.e-ln[0], 2, 'group line')
     runner.eq(p.e-cl[0], 0, 'group col (oracle 2:0 NEWLINE — s11 游標對齊)')
-    runner.str-eq(p.e-msg[0], 'expected right parenthesis, got NEWLINE instead', 47, 'group msg')
+    runner.str-eq(p.e-msg[0], 'expected right parenthesis, got NEWLINE instead', 'group msg')
     runner.eq(p.e-ln[1], 2, 'group cascade line')
     runner.eq(p.e-cl[1], 0, 'group cascade col (oracle p12: 級聯同位 2:0)')
-    runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 36, 'group cascade msg')
+    runner.str-eq(p.e-msg[1], 'expected expression, got nil instead', 'group cascade msg')
 }
 
 ; ═══════════════════════════════════════════════
@@ -169,8 +169,8 @@ test-multiline-call = () {
 test-expr-stmt-no-cascade = () {
     p = parse-err('print((1 + 2\n')
     runner.eq(ps-err-count(p), 2, 'expr-stmt-cascade count')
-    runner.str-eq(p.e-msg[0], 'expected right parenthesis, got NEWLINE instead', 47, 'expr-stmt-cascade msg0')
-    runner.str-eq(p.e-msg[1], 'expected comma or right parenthesis, got EOF instead', 52, 'expr-stmt-cascade msg1')
+    runner.str-eq(p.e-msg[0], 'expected right parenthesis, got NEWLINE instead', 'expr-stmt-cascade msg0')
+    runner.str-eq(p.e-msg[1], 'expected comma or right parenthesis, got EOF instead', 'expr-stmt-cascade msg1')
 }
 
 ; ═══════════════════════════════════════════════
@@ -188,8 +188,8 @@ test-illegal-sci-let = () {
     runner.eq(ps-err-count(p), 1, 'sci-let count (cascade suppressed by n-illegal)')
     runner.eq(p.e-ln[0], 1, 'sci-let line')
     runner.eq(p.e-cl[0], 5, 'sci-let col')
-    runner.str-eq(p.e-msg[0], sci, 156, 'sci-let msg')
-    runner.str-eq(p.e-code[0], '1gybkrrq', 8, 'sci-let code')
+    runner.str-eq(p.e-msg[0], sci, 'sci-let msg')
+    runner.str-eq(p.e-code[0], '1gybkrrq', 'sci-let code')
 }
 
 ; 測試 illegal-sci-call
@@ -198,10 +198,10 @@ test-illegal-sci-call = () {
     p = parse-err('print(1e5)\n')
     runner.eq(ps-err-count(p), 2, 'sci-call count')
     runner.eq(p.e-cl[0], 7, 'sci-call col')
-    runner.str-eq(p.e-msg[0], sci, 156, 'sci-call msg')
-    runner.str-eq(p.e-code[0], '1gybkrrq', 8, 'sci-call code')
+    runner.str-eq(p.e-msg[0], sci, 'sci-call msg')
+    runner.str-eq(p.e-code[0], '1gybkrrq', 'sci-call code')
     runner.eq(p.e-cl[1], 8, 'sci-call cascade col')
-    runner.str-eq(p.e-msg[1], 'expected comma or right parenthesis, got IDENT instead', 52, 'sci-call cascade msg')
+    runner.str-eq(p.e-msg[1], 'expected comma or right parenthesis, got IDENT instead', 'sci-call cascade msg')
 }
 
 ; 測試 illegal-bare：無 emsg 的 ILLEGAL ⇒ Go 第二句 illegal token %q
@@ -210,8 +210,8 @@ test-illegal-bare = () {
     runner.eq(ps-err-count(p), 1, 'bare count (nil cascade suppressed)')
     runner.eq(p.e-ln[0], 1, 'bare line')
     runner.eq(p.e-cl[0], 5, 'bare col')
-    runner.str-eq(p.e-msg[0], 'illegal token \"$\"', 17, 'bare msg %q form')
-    runner.str-eq(p.e-code[0], 'ghvjbe8q', 8, 'bare code')
+    runner.str-eq(p.e-msg[0], 'illegal token \"$\"', 'bare msg %q form')
+    runner.str-eq(p.e-code[0], 'ghvjbe8q', 'bare code')
 }
 
 ; 測試 illegal-suppresses-cascade：sci 錯同位的 let 級聯【不報】nil 錯，
@@ -220,7 +220,7 @@ test-illegal-bare = () {
 test-illegal-suppresses-cascade = () {
     p = parse-err('y = 1e5\n')
     runner.eq(ps-err-count(p), 1, 'suppress count')
-    runner.str-eq(p.e-msg[0], 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)', 156, 'suppress msg')
+    runner.str-eq(p.e-msg[0], 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)', 'suppress msg')
 }
 
 ; 測試 guards：合法浮點/非 sci 形態零誤報（1.5 無 e、`1e` 是 INT+IDENT）

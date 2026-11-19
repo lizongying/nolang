@@ -18,7 +18,7 @@
 ; msg: 斷言訊息前綴，長度不符時會附加 ' [len]'
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
-    runner.str-eq(got, want, want.len-bytes(), msg)
+    runner.str-eq(got, want, msg)
 }
 
 ; 方法呼叫前需一次 ip-parse 觸發跨模組實例化（工具鏈特性）。
@@ -268,7 +268,7 @@ t-from-str = () {
 
         err -> got = 'err'
     }
-    runner.str-eq(got, '192.168.1.1', 11, 'from-str parses dotted quad')
+    runner.str-eq(got, '192.168.1.1', 'from-str parses dotted quad')
 
     b = ip.ip-addr.from-str('256.1.1.1')
     bad = 'none'
@@ -279,7 +279,7 @@ t-from-str = () {
 
         err -> bad = 'err'
     }
-    runner.str-eq(bad, 'nil', 3, 'out-of-range octet -> nil')
+    runner.str-eq(bad, 'nil', 'out-of-range octet -> nil')
 
     c = ip.ip-addr.from-str('not-an-ip')
     bad2 = 'none'
@@ -290,7 +290,7 @@ t-from-str = () {
 
         err -> bad2 = 'err'
     }
-    runner.str-eq(bad2, 'nil', 3, 'garbage -> nil')
+    runner.str-eq(bad2, 'nil', 'garbage -> nil')
 }
 runner.test('parse', t-parse)
 runner.test('classify', t-classify)

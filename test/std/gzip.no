@@ -73,7 +73,7 @@ t-empty = () {
 
     d = gzip.deflate-stored(none)
     runner.eq(len(d), 5, '空輸入 deflate-stored = 5 位元組（1+2+2）')
-    runner.str-eq(d.to-hex(), '010000FFFF', 10, '空輸入 = BFINAL=1 / LEN=0 / NLEN=0xFFFF')
+    runner.str-eq(d.to-hex(), '010000FFFF', '空輸入 = BFINAL=1 / LEN=0 / NLEN=0xFFFF')
 
     g = gzip.compress(none)
     runner.eq(len(g), 23, 'gzip 空串流 = 10(header) + 5(body) + 8(trailer)')
@@ -231,7 +231,7 @@ t-inflate-fixed = () {
 
     out = inflate-decompress(raw, 29)
     runner.eq(len(out), 29, 'fixed 區塊還原 29 位元組')
-    runner.str-eq(out.to-str(), 'hello hello hello world hello', 29, 'fixed 區塊內容')
+    runner.str-eq(out.to-str(), 'hello hello hello world hello', 'fixed 區塊內容')
 }
 
 ; ── inflate：dynamic Huffman 區塊（btype=2）─────────────────────────
@@ -251,7 +251,7 @@ t-inflate-dynamic = () {
     runner.eq(len(out), 2292, 'dynamic 區塊還原 2292 位元組')
 
     head = out.slice(0, 10)
-    runner.str-eq(head.to-str(), 'zeta gamma', 10, 'dynamic 區塊開頭內容')
+    runner.str-eq(head.to-str(), 'zeta gamma', 'dynamic 區塊開頭內容')
 
     a = zlib.adler-32(out, len(out))
     runner.eq(a, 289291758, 'dynamic 區塊 Adler-32 與原文一致')
