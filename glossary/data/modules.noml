@@ -82,13 +82,21 @@ PASS1 收签名 -> PASS2 lazy-load 函数体
       kind: 'concept'
       status: 'stable'
       summary: '给模块级 str 标量赋值不生效：函数内同名局部把它遮住了。'
-      aliases: ['全局遮蔽', 'global shadow', '模块级变量']
+      aliases: ['全局遮蔽', 'global shadow', '模块级变量', '跨模块小写', 'cross-module global']
       definition: `
 实测约束：模块级 **str 标量**的赋值会被同名局部变量遮蔽 ——
 在函数内写 NAME = v 之后，全局仍是空串。而模块级 i64 标量与结构体字段赋值正常。
 
-这不是「语义设计」而是当前实现的行为，踩了会得到「明明赋了值却是空」的诡异结果。
-规避方式：模块级可变状态一律用结构体字段承载（RES resolved 这种写法）。
+頂層數據綁定命名规则（2026-11-20 最终版）：按首字符分四檔（\`build/global_case.go\` 管同模組、\`build/module_check.go\` 管跨模組，診斷給出原因和改名建議）：
+- \`BUF\` 大寫 = **全局**：跨函式 / 跨模組引用，合法。
+- \`buf\` 小寫 = **局部**：被函式引用 → 硬錯誤（改 \`Buf\`）；跨模組 \`mod.buf\` 也硬錯誤。不被函式引用的純 main 局部（如 \`passed = 0\`）完全合法。
+- \`_BUF\` = **私有全局**：**同模組跨函式讀寫合法**（\`_\` 是「模組私有」標記）；只有**跨模組** \`mod._BUF\` 訪問 → 硬錯誤（去底線改 \`BUF\`）。
+- \`_buf\` = **私有局部**：Nolang 不開放，**無條件硬錯誤**（改 \`Buf\` 或去前綴）。全局由大寫前綴唯一標識；單獨 \`_\` 是通配綁定，放行。
+- **函數名、方法名、接口名、結構體名可以小寫 / \`_\` 開頭**（如 \`foo\`、\`_helper\`、\`_rsa-bn-add\`），不受此限。
+- \`with-len(0)\` 這類 call-init 容器只有大寫名才註冊為 module global；小寫名即使在純 main 內 push 也失敗（\`vec.push: needs receiver and element\`）。
+
+需要跨函式 / 跨模組共享的數據一律用大寫全局，或用結構體字段承載（RES resolved 寫法）。
+曾把門檻誤判為「只限跨模組」（TraceID 7gk2m9qn）、又誤以為 \`_\` 小寫放行，均已更正。
 `
       syntax: `
 RES resolved

@@ -19,12 +19,14 @@ hreq {
     body str
     clen i64
     head-end i64
+    over bool
 }
 
 HR hreq
 
 HBUF = 4096
 HREQ-LIMIT = 65536
+HREQ-BODY-LIMIT = 1048576
 DEFAULT-PORT = 8765
 
 ; 小工具
@@ -237,6 +239,7 @@ read-req = (c conn) (ok bool) {
     HR.body = ''
     HR.clen = 0
     HR.head-end = -1
+    HR.over = false
     acc []byte = []
 
     ; 第一阶段：凑齐请求头
@@ -263,6 +266,13 @@ read-req = (c conn) (ok bool) {
     HR.method = nth-field(first, 0)
     HR.path = nth-field(first, 1)
     HR.clen = content-length-of(head)
+
+    ; 正文长度上限：不设限的话一个 4GB 的 Content-Length 就能把进程撑爆
+    too-big = HR.clen > HREQ-BODY-LIMIT
+    too-big -> {
+        HR.over = true
+        return
+    }
 
     ; 第二阶段：按 Content-Length 补足正文
     need = add(HR.head-end, HR.clen)
@@ -348,25 +358,39 @@ respond = (c conn, status str, ctype str, body str) {
 serve-conn = (c conn) {
     got = read-req(c)
     got: {
-        false -> respond(c, '400 Bad Request', 'text/plain', 'bad request')
+        false -> {
+            over = HR.over
+            over: {
+                true -> respond(c, '413 Payload Too Large', 'text/plain', 'request body too large')
+
+                false -> respond(c, '400 Bad Request', 'text/plain', 'bad request')
+            }
+        }
 
         true -> {
-            m = HR.method
-            m: {
-                'POST' -> {
-                    want = mcp.handle-line(HR.body.trim())
-                    want: {
-                        true -> respond(c, '200 OK', 'application/json', mcp.last-resp())
+            on-path = HR.path.eq-full('/mcp')
+            on-path: {
+                false -> respond(c, '404 Not Found', 'text/plain', 'only /mcp')
 
-                        false -> respond(c, '202 Accepted', 'application/json', '')
+                true -> {
+                    m = HR.method
+                    m: {
+                        'POST' -> {
+                            want = mcp.handle-line(HR.body.trim())
+                            want: {
+                                true -> respond(c, '200 OK', 'application/json', mcp.last-resp())
+
+                                false -> respond(c, '202 Accepted', 'application/json', '')
+                            }
+                        }
+
+                        'OPTIONS' -> respond(c, '204 No Content', '', '')
+
+                        'GET' -> respond(c, '405 Method Not Allowed', 'text/plain', 'only POST /mcp')
+
+                        -> respond(c, '405 Method Not Allowed', 'text/plain', 'only POST /mcp')
                     }
                 }
-
-                'OPTIONS' -> respond(c, '204 No Content', '', '')
-
-                'GET' -> respond(c, '405 Method Not Allowed', 'text/plain', 'only POST /mcp')
-
-                -> respond(c, '405 Method Not Allowed', 'text/plain', 'only POST /mcp')
             }
         }
     }

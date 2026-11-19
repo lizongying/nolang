@@ -1,0 +1,41 @@
+; 回归：大写全局容器用 with-len 初始化 + 被函数引用
+; 曾有两个缺陷：
+;   1. 全局名未注册为 module storage（with-len 是 call，foldConstText 为空被跳过），
+;      函数内 push 报 "vec.push: needs receiver and element"。
+;   2. 注册为全局后 initializer 被 synthesizeMain 丢弃，@BUF 停在 zeroinitializer
+;      (len 0)，with-len(3) 的预分配长度丢失。
+; 语言规范要求 module 级数据用大写名开头（docs/docs/lang/syntax.md），
+; 小写同名写法是 main 局部变量，函数引用它是源码错误，不在本测试范围。
+
+BUF []i64 = with-len(3)
+S []str = with-len(0)
+
+fill = () {
+    BUF[0] = 10
+    BUF[1] = 20
+    BUF[2] = 30
+    S.push('a')
+    S.push('b')
+}
+
+blen = () (n i64) {
+    n = BUF.len()
+}
+
+slen = () (n i64) {
+    n = S.len()
+}
+
+get = (i i64) (v i64) {
+    v = BUF[i]
+}
+
+before = blen()
+print('init-len={before}')
+
+fill()
+after = blen()
+safter = slen()
+v0 = get(0)
+v2 = get(2)
+print('len={after} s-len={safter} v0={v0} v2={v2}')

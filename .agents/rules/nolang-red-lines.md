@@ -45,7 +45,15 @@ std 未修缺陷查 `test/README.md §5.2`，名词查 `./glossary/dist/glossary
 - 🔴 不写 `free`（deferred move + 作用域退出自动销毁）；协程只能写成 `awy { r = co f() }`，`co` 组外非法（`E_CO_OUTSIDE_GROUP`）；`go` **不是**关键字，`run` 已移除，`awy <handle>` 已废除。
 - 🔴 match 各臂绑定变量**不得同名**（不同类型同名会静默串型，checker 不报）；`?t` 解包优先用 `it`。
 - 🔴 `#{overflow=...}` **只作用于下一行陈述**（L3），挂在函数头 / 块头上对 codegen 无效。
-- 🔴 全局变量必须大写开头；模块内避免全局可变状态。
+- 🔴 **頂層數據綁定（全局/常量）按首字符四檔**（`build/global_case.go` 的 `checkLowercaseGlobals` 管同模組、`build/module_check.go` 的 `checkUnresolvedModuleCalls` 管跨模組，訊息含原因 + 改名建議）：
+  - `BUF` 大寫 = **全局**：跨函式 / 跨模組都合法。
+  - `buf` 小寫 = **局部**：被函式引用 → 硬錯誤（改 `Buf`）；跨模組 `mod.buf` 也硬錯誤。純 main 局部（如 `passed = 0`）合法。
+  - `_BUF` = **私有全局**：**同模組跨函式讀寫合法**（`_` 是「模組私有」標記，不是「不可被函式引用」）；只有**跨模組** `mod._BUF` 訪問 → 硬錯誤（去底線改 `BUF`）。
+  - `_buf` = **私有局部**：Nolang **不開放**，無條件硬錯誤（改 `Buf` 或去前綴）。全局由大寫前綴唯一標識；單獨 `_` 是通配綁定，放行。
+  - **函數名、方法名、接口名、結構體名不受限**，可小寫 / `_` 開頭（如 `foo`、`_helper`、`_rsa-bn-add`）。別把合法的小寫函數名 / main 局部 / `_` 通配誤判成錯誤。
+- 🔴 `with-len(0)` 这类 call-init 容器**只有大写名才注册为 module global**；小写名即使在同模块函数内 `push` 也会失败（`vec.push: needs receiver and element`）。跨函数共享的数据一律大写。
+- 🔴 `(cond) { }` 是**条件循环（while）**，`(cond) -> { }` 才是一次性守卫（guard）。把 guard 写成 `(cond) { }` 且 body 不改条件会**死循环**（noui 内核 `el-add` 曾因此卡死）；两种写法见 `docs/docs/lang/syntax.md` 循环章节。
+- 🔴 模块内避免全局可变状态。
 - 每条语句独占一行（`;` 是注释标记，不是语句分隔符）；4 空格缩进；文件以单个换行结尾。
 
 ## 5. 版本闸：`parser.ASTVersion` 双向

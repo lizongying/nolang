@@ -420,6 +420,7 @@ Variable names, function names, struct names, etc. can start with an underscore,
 
 **Case conventions (mandatory):**
 - **Global constants, global variables**: **must** start with an uppercase letter (e.g., `NOLANG`, `MAX-SIZE`, `HEX-CHARS`). Private globals use an underscore prefix followed by uppercase (e.g., `_NOLANG`, `_PRIVATE-CONST`).
+  A private global is visible only inside its declaring module: reading/writing it from a function in the **same module** is fine, but a cross-module access `mod._BUF` is a hard error (drop the `_` to make it a public global). `_` means "module-private", not "unreadable by functions".
 - **Local variables, function parameters**: use lowercase letters (e.g., `hex-chars`, `data-len`). Do **NOT** use the `_` prefix for local variables — they are inherently private to their scope and do not need a visibility marker. The `_` prefix is reserved for private globals and FFI private declarations only.
 - **Function names, struct names**: use lowercase letters (e.g., `sha1-block`, `db-mysql`)
 

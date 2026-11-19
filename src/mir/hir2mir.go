@@ -1262,7 +1262,19 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			// (compiler/tests/probe-glob.no). The registration loop has already
 			// decided the name is shared state, so honour that decision here
 			// instead of re-deciding it from the initializer's foldability.
-			if gnid, ok := l.globalNodes[pkg.Str(n.S)]; ok && gnid == id {
+			//
+			// A GLOBAL-STYLE container with a CALL initializer
+			// (`BUF []i64 = with-len(3)`) is ALSO registered by the new
+			// `globalRefInit` case, but unlike a bare declaration it HAS an
+			// initializer that must run at startup: with-len allocates the
+			// len-3 backing store. Skipping the KLet here would leave @BUF as
+			// zeroinitializer (len 0), so helper functions see an empty vector
+			// and BUF[0] is out of bounds. Keep such a let in main so with-len
+			// executes and lowerStmtInner's owned-global write-back stores the
+			// result into @BUF. A bare declOnly (`BUF []i64`, no initializer)
+			// has nothing to execute and still takes this `continue`.
+			if gnid, ok := l.globalNodes[pkg.Str(n.S)]; ok && gnid == id &&
+				!l.letValueIsCall(n) {
 				continue
 			}
 			raw := l.letTypeRaw(n)
@@ -1291,6 +1303,14 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 					// `not five`/`not five`). Without this guard the reassignment
 					// was folded into the initializer and the runtime store was
 					// dropped, so the variable never changed value.
+					//
+					// NOTE: a GLOBAL-STYLE container with a CALL initializer
+					// (`BUF []i64 = with-len(3)`) never reaches THIS branch —
+					// foldConstText is empty for a call, so the enclosing
+					// `if raw != "" && foldConstText != ""` is skipped entirely
+					// and the let is inlined below. Its initializer is stored
+					// into the global by the owned-global write-back in
+					// lowerStmtInner (the `globalVisible(name)` gate), not here.
 					continue
 				}
 				// Otherwise (a reassignment to a previously-declared global, or a
@@ -1680,7 +1700,38 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				if referencedByFunc && raw != "" {
 					constStruct = l.foldStructLitConst(l.letInitNode(n), raw, gname) != ""
 				}
-				if !(referencedByFunc && (declOnly || constArr || constStr || constEnum || constStruct)) {
+				//  6. A top-level GLOBAL-STYLE container binding initialized by a
+				//     runtime call (`BUF []i64 = with-len(0)`, `DATA []byte =
+				//     with-cap(64)`), read/written from a helper function. The
+				//     language reference requires module-level data to use an
+				//     uppercase name ("全局常量、全局變量：必須使用大寫字母開頭",
+				//     docs/docs/lang/syntax.md), and isGlobalStyleName enforces
+				//     exactly that spelling. Without this case such a binding
+				//     fell through to `foldConstText(...) == ""` → `continue` below
+				//     (with-len is a call, not a foldable constant), so it was
+				//     NOT registered as module storage. synthesizeMainForTopLevel
+				//     then inlined it into main as a LOCAL %vec, while the helper
+				//     function resolved the same name to a void `const` — the two
+				//     sides silently diverged and every container builtin on the
+				//     function side failed:
+				//
+				//       BUF []i64 = with-len(0)
+				//       add = (v i64) { BUF.push(v) }
+				//       add(1)                          ; EmitLLVM: vec.push: needs
+				//                                       receiver and element
+				//
+				//     This is the same "local of main cannot serve another frame"
+				//     bug as declOnly (#1), just with a call initializer. Register
+				//     it as module storage so the function reads the same vector.
+				//     LOWERCASE call-initialized bindings are deliberately NOT
+				//     covered: syntax.md says a lowercase top-level binding is a
+				//     local of main, so a function referencing it is a source-level
+				//     error, not a global (matches the declOnly case, which is also
+				//     name-agnostic only because a declaration has no initializer
+				//     to inline at all).
+				globalRefInit := referencedByFunc && isGlobalStyleName(gname) &&
+					l.isUnsafeInlineType(raw) && l.letValueIsCall(n)
+				if !(referencedByFunc && (declOnly || constArr || constStr || constEnum || constStruct || globalRefInit)) {
 					if raw == "" || l.foldConstText(n, raw) == "" {
 						continue
 					}
@@ -4055,8 +4106,22 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// value so both sides agree. Owned (heap) types are left to the
 			// fresh-slot path: their move needs clone/drop bookkeeping the
 			// global slot does not have.
+			// A GLOBAL-STYLE container initialized by a runtime call
+			// (`BUF []i64 = with-len(3)`) is registered as module storage so
+			// helper functions can push/index it. Its initializer is a HEAP-OWNED
+			// %vec, which the plain write-back gate below refuses (owned values
+			// normally get a fresh slot + clone/drop bookkeeping). For a TOP-LEVEL
+			// initializer that refusal loses a real defect: the with-len(N) value
+			// lands in a main local while the global stays zeroinitialized (len 0),
+			// so helper functions see an empty vector. A module global's lifetime is
+			// the whole program — it needs no scope-exit drop — so moving the
+			// freshly built %vec into @BUF once, here, is safe. Restrict to
+			// synthesized main + call initializer + visible global so no owned
+			// function-local rebind is affected.
+			ownedGlobalInit := l.curFuncName() == "main" && l.letValueIsCall(n) &&
+				name != "" && l.globalVisible(name)
 			if l.globalVisible(name) && !armScoped {
-				if gv := l.lowerGlobalRef(name); gv != NoVal && !l.isOwnedLocal(gv) {
+				if gv := l.lowerGlobalRef(name); gv != NoVal && (ownedGlobalInit || !l.isOwnedLocal(gv)) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
 						// 目標型別已寫明（全域宣告處）⇒ 先按 `<src>.to-<目標>`
 						// 契約轉換，再談寫回。少了這一步，`x i32 = big` 之後的

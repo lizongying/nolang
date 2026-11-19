@@ -2101,15 +2101,22 @@ test-rng-gate = () {
     runner.eq(agg1.unsup > 0, 1, 'rng-nest-samename counted')
     runner.eq(ir1.contains('define'), 0, 'rng-nest-samename no code')
 
-    ; 容器遍历 `x <- xs`（无型别标注的 let 名）：s62 后仍不产码——h2m-ty-of 推不出 xs 的型别
-    ;   （K-SLICE-LITERAL 无降级路径）⇒ 铺槽阶段即计 unsup；s62 收的是 []i64 形参作源
+    ; 容器遍历 `x <- xs`（无型别标注的 let 名）：s61 时计 unsup 不产码——h2m-ty-of 推不出
+    ;   xs 的型别（K-SLICE-LITERAL 无降级路径）⇒ 铺槽阶段即计 unsup；s62 收的是 []i64 形参作源。
+    ;   ⚠️ s122 撤此门禁：ty-of 补 K-SLICE-LITERAL 臂后型别可见 ⇒ 入形产码，形制与 s62 同构
+    ;   （只差容器值是函数内新建的 %vc… 而非 entry 就有的形参）。
     src-coll = 'gc = (lo i64, hi i64) (r i64) {\n    r = 0\n    xs = [1, 2, 3]\n    x <- xs: {\n        r = r + 1\n    }\n}\n'
     t2 = ast.make()
     r2 = ps.parse(t2, ps.new(src-coll.to-bytes()))
     agg2 = h2m-new()
     ir2 = h2m-lower-program(t2, agg2, r2)
-    runner.eq(agg2.unsup > 0, 1, 'rng-container counted')
-    runner.eq(ir2.contains('define'), 0, 'rng-container no code')
+
+    ; 「门禁已撤」的反向钉子：再有人在 ty-of 把 K-SLICE-LITERAL 挡回去，这里会红
+    runner.eq(agg2.unsup, 0, 'rng-container gate lifted (unsup==0)')
+    runner.eq(ir2.contains('define i64 @gc'), 1, 'rng-container produces code')
+    runner.eq(ir2.contains('call i64 @vec_len('), 1, 'rng-container len via vec_len')
+    runner.eq(ir2.contains('call i64 @vec_get_i64('), 1, 'rng-container elem via vec_get_i64')
+    runner.eq(ir2.contains('call void @vec_free(%vec '), 1, 'rng-container frees local vec')
 
     ; 开边界 `[0..]` 与 `(0..)`：任一端缺位即不产码（Go 用型别极值补齐，量级不可验证）
     src-open = 'gz = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..]: {\n        r = r + 1\n    }\n}\n'
@@ -4623,6 +4630,11 @@ test-s104-streq-mem()
 test-s99n-vec-literal-release()
 test-s99n-vec-empty-literal()
 test-s99n-vec-elem-type-gate()
+test-s122-vec-local-mem1()
+test-s123-str-const()
+test-s124-str-arm()
+test-s125-const-arm()
+test-s126-str-subj()
 test-s99n-vec-field-mk-gate()
 test-s99n-vec-field-set-gate()
 
@@ -4948,6 +4960,57 @@ test-s99n-vec-elem-type-gate = () {
     runner.eq(ir.split('call void @vec_free_str(%vec ').len(), 2, 'sB str one free_str')
     runner.eq(ir.contains('@vec_push_i64('), 0, 'sB str no i64 push')
     runner.eq(ir.contains('@vec_free(%vec '), 0, 'sB str no i64 free')
+}
+
+; s122：含控制流（mem==1）的函數裡，vec 局部量【不鋪槽】——名字直接綁到 AST 值 id。
+;   值 id 在【函數體頂層塊】定義 ⇒ 支配全函數各塊，循環/分支內讀都合法；值域結束時
+;   h2m-emit-releases 對最終 %vec 發一次 OP-VEC-FREE（中間 push 值不入清單，同 s99n）。
+;   ⚠️ 門禁（刻意保留）：vec 局部量的【宣告塊】必須是函數體頂層塊（bkn == fnbk）。
+;      宣告在受制塊（循環體/分支臂）內時，值 id 不支配後繼塊，且 scope-exit 釋放會落到
+;      函數出口（跨塊使用 ⇒ 非法 SSA）⇒ 計 unsup，寧缺勿錯。
+test-s122-vec-local-mem1 = () {
+
+    ; ① 頂層宣告 + 計數循環內讀：無 unsup；不發「store i64 %v…, i64* %s0」這種
+    ;    指向未定義 slot 0 的非法 IR（s122 的 TY-VECSTR 漏排除曾經產出它）
+    src = 'f = () (r i64) {\n    B []i64 = [1, 2, 3]\n    1 * {\n        r = B.len()\n    }\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's122 top decl no unsup')
+    runner.eq(ir.contains('call %vec @vec_new()'), 1, 's122 vec_new')
+    runner.eq(ir.contains('call i64 @vec_len('), 1, 's122 vec_len')
+    runner.eq(ir.contains('call void @vec_free(%vec '), 1, 's122 one vec_free')
+    runner.eq(ir.contains('i64* %s0'), 0, 's122 no store into undefined slot 0')
+
+    ; ② []str 局部（TY-VECSTR 同樣不鋪槽）+ 計數循環內讀 ⇒ vec_push_str / vec_free_str
+    src-s = 'f = () (r i64) {\n    B []str = [\'a\', \'bc\']\n    1 * {\n        r = B.len()\n    }\n}\n'
+    ts = ast.make()
+    rs = ps.parse(ts, ps.new(src-s.to-bytes()))
+    aggs = h2m-new()
+    irs = h2m-lower-program(ts, aggs, rs)
+    runner.eq(aggs.unsup, 0, 's122 vecstr local no unsup')
+    runner.eq(irs.contains('call %vec @vec_push_str('), 1, 's122 vecstr push_str')
+    runner.eq(irs.contains('call void @vec_free_str(%vec '), 1, 's122 vecstr free_str')
+    runner.eq(irs.contains('i64* %s0'), 0, 's122 vecstr no store into slot 0')
+
+    ; ③ 短路鏈各臂讀同一個頂層 vec 局部（值支配全函數各塊）
+    src-c = 'f = (c i64) (r i64) {\n    B []i64 = [1, 2, 3]\n    {\n        c == 1 -> r = B.len()\n\n        -> r = 0\n    }\n}\n'
+    tc = ast.make()
+    rc = ps.parse(tc, ps.new(src-c.to-bytes()))
+    aggc = h2m-new()
+    irc = h2m-lower-program(tc, aggc, rc)
+    runner.eq(aggc.unsup, 0, 's122 chain-read no unsup')
+
+    ; ④ 門禁：循環體內的 vec 局部 ⇒ 仍計 unsup（不信者強降）
+    src-g = 'f = () (r i64) {\n    1 * {\n        B []i64 = [1]\n        r = B.len()\n    }\n}\n'
+    tg = ast.make()
+    rg = ps.parse(tg, ps.new(src-g.to-bytes()))
+    aggg = h2m-new()
+    h2m-lower-program(tg, aggg, rg)
+    runner.gt(aggg.unsup, 0, 's122 loop-body vec local still gated')
 }
 
 test-sb-vec-mixed-elem-gate = () {
@@ -5369,6 +5432,351 @@ test-s112-bare-const = () {
     runner.eq(v2, 0, 's112 unregistered bare const no value')
 }
 
+; s123：模組自身的裸【str】常量引用（drv 的 NOC-NAME / NOC-VERSION 族）
+...
+
+; s111/s112 只收整數常量；根層 `CONST = 'lit'` 由 drv.sig-consts-add 收進另一份 str 表。
+; 裸名（模組內自用）與點號形（`mod.CONST`）兩條路一併釘；未登記的 str 名仍誠實 unsup。
+test-s123-str-const = () {
+    t = ast.make()
+    id = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, id, 0, ast.put-str(t, 'NOC-NAME'))
+
+    sg = h2m-sigs-new()
+    h2m-sig-strconst-add(sg, 'drv.NOC-NAME', 'noc')
+    loc = h2m-lst-new()
+    agg = h2m-new()
+
+    ty = h2m-ty-of(t, sg, loc, agg, id)
+    runner.eq(ty, TY-STR, 's123 bare str const ty')
+
+    c = h2m-new()
+    v = h2m-lower-expr(t, c, sg, id)
+    runner.eq(c.unsup, 0, 's123 bare str const no unsup')
+    runner.eq(v > 0, 1, 's123 bare str const emits value')
+    runner.eq(h2m-vty-at(c, v), TY-STR, 's123 bare str const vty')
+
+    ; 個號形 mod.CONST：K-DOT-EXPRESSION（接收者 = 模組名識別符）
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'drv'))
+    dot = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot, base)
+    ast.set-slot(t, dot, 0, ast.put-str(t, 'NOC-VERSION'))
+
+    sg2 = h2m-sigs-new()
+    h2m-sig-strconst-add(sg2, 'drv.NOC-VERSION', 'v0.0.1-m0')
+    ty2 = h2m-ty-of(t, sg2, loc, agg, dot)
+    runner.eq(ty2, TY-STR, 's123 module str const ty')
+
+    c2 = h2m-new()
+    v2 = h2m-lower-expr(t, c2, sg2, dot)
+    runner.eq(c2.unsup, 0, 's123 module str const no unsup')
+    runner.eq(v2 > 0, 1, 's123 module str const emits value')
+    runner.eq(h2m-vty-at(c2, v2), TY-STR, 's123 module str const vty')
+
+    ; 對照：未登記的 str 名仍誠實 unsup（門禁不放寬）
+    miss = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, miss, 0, ast.put-str(t, 'NOPE-STR'))
+    c3 = h2m-new()
+    v3 = h2m-lower-expr(t, c3, sg, miss)
+    runner.eq(c3.unsup > 0, 1, 's123 unregistered str const still unsup')
+    runner.eq(v3, 0, 's123 unregistered str const no value')
+}
+
+; s124：值位 match 的 str 臂值——結果槽型別由 h2m-smv-ty 逐臂推（全 str ⇒ TY-STR），
+;   降級側按槽型別選 OP-SSTORE／OP-SLOAD（h2m-smv-store／h2m-smv-load）。
+;   重現 asp.kind-name 的形制（`r = id: { 1 -> '…'  …  -> 'UNKNOWN-KIND' }`）。
+test-s124-str-arm = () {
+    src = 'kn = (id i64) (r str) {\n    r = id: {\n        1 -> \'one\'\n        2 -> \'two\'\n        -> \'other\'\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's124 str-arm unsup')
+    runner.eq(ir.contains('define'), 1, 's124 str-arm emits code')
+    runner.eq(ir.contains('store %str-long'), 1, 's124 str-arm SSTORE')
+    runner.eq(ir.contains('load %str-long'), 1, 's124 str-arm SLOAD')
+
+    ; 混合型別臂（str + int）⇒ h2m-smv-ty 回 -1 ⇒ 回退 TY-I64 舊口徑 ⇒ str 臂值型別不符 ⇒ 計 unsup
+    src-mix = 'mx = (id i64) (r str) {\n    r = id: {\n        1 -> \'one\'\n        -> 0\n    }\n}\n'
+    t2 = ast.make()
+    p2 = ps.new(src-mix.to-bytes())
+    r2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 's124 mixed-arm counted')
+    runner.eq(ir2.contains('define'), 0, 's124 mixed-arm no code')
+}
+
+; s125：值位 match 的【常量型樣臂條件】——`id: { ONE -> 'one'  -> 'other' }`，
+;   ONE 是模組根層整型常量（對齊 tok.name 的 `ILLEGAL -> 'ILLEGAL'`，93 個常量 × 4 個量測模組）。
+;   s63 門禁原只認【裸整型字面量】⇒ 整條鏈不降（tok.name 在 drv／lx／ps／tok 各 1 條 unsup）。
+;   Go 側語意（實測 tmp/s125/p1.no）：常量型樣與字面量【等價】——kn(1)=='one'、kn(9)=='other'。
+;   ⚠️ 主體是【裸標識符】且槽型 TY-I64 ⇒ vmode；臂值全 str ⇒ 本測試同時走 s124 的
+;      OP-SSTORE／OP-SLOAD 槽路（結果槽 r 鋪 TY-STR）。
+test-s125-const-arm = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    h2m-sig-const-add(sg, 'm.ONE', 1)
+
+    ; 主體：IDENT('id')，槽表 id: TY-I64 ⇒ vmode（嫌整條鏈降）
+    subj = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, subj, 0, ast.put-str(t, 'id'))
+
+    ; 臂1 體：`'one'`
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l1 = ast.add(t, asp.K-STRING-LITERAL)
+    ast.set-slot(t, l1, 0, ast.put-str(t, 'one'))
+    ast.kid-add(t, e1, l1)
+    b1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b1, e1)
+
+    ; 臂2 體：`'other'`（真·兜底）
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l2 = ast.add(t, asp.K-STRING-LITERAL)
+    ast.set-slot(t, l2, 0, ast.put-str(t, 'other'))
+    ast.kid-add(t, e2, l2)
+    b2 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b2, e2)
+
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 2)
+
+    ; 臂1 = `ONE -> 'one'`（Condition = 常量標識符，非字面量）
+    c1 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, c1, 0, ast.put-str(t, 'ONE'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0); wildcard
+    ast.aux-add(t, 0); dot-val
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, c1); Condition
+    ast.aux-add(t, b1); Body
+
+    ; 臂2 = `-> 'other'`
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); wildcard
+    ast.aux-add(t, 0); dot-val
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, 0); Condition（無）
+    ast.aux-add(t, b2); Body
+
+    c = h2m-new()
+    c.cur-fn = 'kn'
+    h2m-slot-decl(c, 'id', TY-I64)
+    h2m-slot-decl(c, 'r', TY-STR)
+    v = h2m-lower-surface(t, c, sg, sm, 'r')
+    runner.eq(c.unsup, 0, 's125 const-arm no unsup')
+    runner.eq(v > 0, 1, 's125 const-arm emits value')
+    runner.eq(h2m-vty-at(c, v), TY-STR, 's125 const-arm result str')
+
+    ; 常量型的值必須真的落成 OP-CONST 1（降級走 h2m-lower-expr 的 s112 裸常量旁路）
+    hit = 0
+    i = 0
+    (i < c.ops.len()) {
+        oi = c.ops[i]: {
+            ok -> it
+
+            -> -1
+        }
+        oi == OP-CONST -> {
+            x = c.xa[i]: {
+                ok -> it
+
+                -> 0
+            }
+            x == 1 -> hit = 1
+        }
+
+        i = h2m-inc(i)
+    }
+    runner.eq(hit, 1, 's125 const-arm emits CONST 1')
+
+    ; 對照：未登記的裸標識符型樣仍誠實 unsup（門禁不放寬，不比對到常量就出局）
+    t2 = ast.make()
+    sg2 = h2m-sigs-new()
+    subj2 = ast.add(t2, asp.K-IDENTIFIER)
+    ast.set-slot(t2, subj2, 0, ast.put-str(t2, 'id'))
+    e3 = ast.add(t2, asp.K-EXPRESSION-STATEMENT)
+    l3 = ast.add(t2, asp.K-STRING-LITERAL)
+    ast.set-slot(t2, l3, 0, ast.put-str(t2, 'one'))
+    ast.kid-add(t2, e3, l3)
+    b3 = ast.add(t2, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t2, b3, e3)
+    e4 = ast.add(t2, asp.K-EXPRESSION-STATEMENT)
+    l4 = ast.add(t2, asp.K-STRING-LITERAL)
+    ast.set-slot(t2, l4, 0, ast.put-str(t2, 'other'))
+    ast.kid-add(t2, e4, l4)
+    b4 = ast.add(t2, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t2, b4, e4)
+    sm2 = ast.add(t2, asp.K-SURFACE-MATCH)
+    ast.set-slot(t2, sm2, 0, ast.put-str(t2, '2'))
+    ast.kid-add(t2, sm2, subj2)
+    ast.helper-begin(t2, sm2, 2)
+    c2 = ast.add(t2, asp.K-IDENTIFIER)
+    ast.set-slot(t2, c2, 0, ast.put-str(t2, 'NOPE'))
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, ast.put-str(t2, 'true'))
+    ast.aux-add(t2, c2)
+    ast.aux-add(t2, b3)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, ast.put-str(t2, 'true'))
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, ast.put-str(t2, 'true'))
+    ast.aux-add(t2, 0)
+    ast.aux-add(t2, b4)
+
+    c2x = h2m-new()
+    c2x.cur-fn = 'kn'
+    h2m-slot-decl(c2x, 'id', TY-I64)
+    h2m-slot-decl(c2x, 'r', TY-STR)
+    v2 = h2m-lower-surface(t2, c2x, sg2, sm2, 'r')
+    runner.eq(c2x.unsup > 0, 1, 's125 unregistered const-arm still unsup')
+    runner.eq(v2, 0, 's125 unregistered const-arm no value')
+}
+
+; s126：值位 match 的【str 主體 + str 字面量臂條件】——`r = name: { 'one' -> 1  'two' -> 2  -> 3 }`
+;   （對齐 asp.kind-id 的 `r = name: { 'AnnotationArrayValue' -> 1 … }`）。
+;   s126 前：主體判定只認 TY-I64／TY-OPT ⇒ str 主體整條鏈不降（kind-id 6／keyword 4／ck-name-silent 2 坐標）。
+;   s126 起：主體 TY-STR ⇒ vmode；s63 門禁增【型別一致】——主体 str ⇒ 臂條件只認 str 字面量／str 常量。
+;   ⚠️ 降級按主體型別分派：TY-STR ⇒ OP-STEREQ（str 相等），不是 OP-CMPEQ（那會發 icmp i64）。
+test-s126-str-subj = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+
+    ; 主體：IDENT('name')，槽表 name: TY-STR ⇒ vmode（嫌整條鏈降）
+    subj = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, subj, 0, ast.put-str(t, 'name'))
+
+    ; 臂1 體：`1`
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l1, 0, ast.put-str(t, '1'))
+    ast.kid-add(t, e1, l1)
+    b1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b1, e1)
+
+    ; 臂2 體：`2`
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l2, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, e2, l2)
+    b2 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b2, e2)
+
+    ; 臂3 體：`3`（真·兜底）
+    e3 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l3 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l3, 0, ast.put-str(t, '3'))
+    ast.kid-add(t, e3, l3)
+    b3 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b3, e3)
+
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '3'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 3)
+
+    ; 臂1 = `'one' -> 1`（Condition = str 字面量）
+    c1 = ast.add(t, asp.K-STRING-LITERAL)
+    ast.set-slot(t, c1, 0, ast.put-str(t, 'one'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, c1); Condition
+    ast.aux-add(t, b1); Body
+
+    ; 臂2 = `'two' -> 2`
+    c2 = ast.add(t, asp.K-STRING-LITERAL)
+    ast.set-slot(t, c2, 0, ast.put-str(t, 'two'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, c2); Condition
+    ast.aux-add(t, b2); Body
+
+    ; 臂3 = `-> 3`
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); wildcard
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true')); valueCtx
+    ast.aux-add(t, 0); Condition（無）
+    ast.aux-add(t, b3); Body
+
+    c = h2m-new()
+    c.cur-fn = 'kid'
+    h2m-slot-decl(c, 'name', TY-STR)
+    h2m-slot-decl(c, 'r', TY-I64)
+    v = h2m-lower-surface(t, c, sg, sm, 'r')
+    runner.eq(c.unsup, 0, 's126 str-subj no unsup')
+    runner.eq(v > 0, 1, 's126 str-subj emits value')
+    runner.eq(h2m-vty-at(c, v), TY-I64, 's126 str-subj result i64')
+
+    ; str 主体的值匹配必須發 OP-STEREQ（而非 OP-CMPEQ——後者對 %str-long 發 icmp i64）
+    hit = 0
+    i = 0
+    (i < c.ops.len()) {
+        oi = c.ops[i]: {
+            ok -> it
+
+            -> -1
+        }
+        oi == OP-STEREQ -> hit = 1
+
+        i = h2m-inc(i)
+    }
+    runner.eq(hit, 1, 's126 str-subj emits STEREQ')
+}
+
 ; s113：接收者為值的方法呼叫回值型別（a.len() / s.len-bytes() / a.push(x)）
 ...
 
@@ -5429,6 +5837,22 @@ test-s113-method-call-ty = () {
     call-bytes = ast.add(t, asp.K-CALL-EXPRESSION)
     ast.kid-add(t, call-bytes, dot-bytes)
     runner.eq(h2m-ty-of(t, sg, ls, agg, call-bytes), TY-VEC, 's121 str bytes ty')
+
+    ; ⑥ s122：切片字面量 ⇒ vec 槽寬。首元素 str 字面量 ⇒ TY-VECSTR，其餘／空 ⇒ TY-VEC。
+    ;   缺這一支時，含控制流的函數裡 `B []i64 = [1]` 会在鋪槽階段計 unsup（ty-of 留 -1），
+    ;   而同一份代碼在直線式（mem==0）下不鋪槽 ⇒ 正常產碼——兩種模式行為分岔。
+    sl-i = ast.add(t, asp.K-SLICE-LITERAL)
+    ikl = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.kid-add(t, sl-i, ikl)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, sl-i), TY-VEC, 's122 i64 slice lit ty')
+
+    sl-s = ast.add(t, asp.K-SLICE-LITERAL)
+    skl = ast.add(t, asp.K-STRING-LITERAL)
+    ast.kid-add(t, sl-s, skl)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, sl-s), TY-VECSTR, 's122 str slice lit ty')
+
+    sl-e = ast.add(t, asp.K-SLICE-LITERAL)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, sl-e), TY-VEC, 's122 empty slice lit ty')
 
     ; 對照：未支持的方法仍 -1（門禁不放寬；s113 原用 str.byte 作對照，s117 起它已支持 ⇒ 換名）
     dot-bad = ast.add(t, asp.K-DOT-EXPRESSION)

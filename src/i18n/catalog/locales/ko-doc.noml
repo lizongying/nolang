@@ -9219,10 +9219,6 @@ match = re.find('price: 123')
 matched = regexp-match('hello.*world', 'hello nolang world')
 result = regexp-find('[0-9]+', 'abc123def456')
 `
-  'regexp._re-quant-none': `
-수량 지정자 내부 코드 (42/43/63 같은 원시 문자값을 비교 상수로 쓰지 마세요.
-LLVM에 == 42 최적화 버그가 있기 때문입니다. 대신 안전한 값 1/2/3을 사용하세요.)
-`
   'regexp.alloc-class': `
 새 문자 클래스를 할당하고 그 인덱스를 반환한다
 반환 cls-idx: 클래스 인덱스
@@ -11559,7 +11555,6 @@ duration-time, since-time, parse-time 같은 함수와 .unix/.date/.format 같�
 여기서 재정의되지 않습니다(사용자 함수가 동명 내장을 가려 재귀를 유발함);
 내장으로 직접 호출됩니다.
 `
-  'time._days-in-month': '월별 일수 표 (평년)'
   'time.add-seconds': `
 초를 더한 새 time 을 반환한다
 n: 더할 초 수(음수 가능)

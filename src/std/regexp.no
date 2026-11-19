@@ -53,11 +53,11 @@ RE-OP-END = 11
 
 ; 量詞內部代碼（避免使用 42/43/63 等原始字元值作為比較常量，
 ; 因為 LLVM 對 == 42 有優化 bug。改用 1/2/3 這些安全值。）
-; [_RE-QUANT-NONE](#regexp._re-quant-none)
-_RE-QUANT-NONE = 0
-_RE-QUANT-STAR = 1
-_RE-QUANT-PLUS = 2
-_RE-QUANT-QUESTION = 3
+; [RE-QUANT-NONE](#regexp.re-quant-none)
+RE-QUANT-NONE = 0
+RE-QUANT-STAR = 1
+RE-QUANT-PLUS = 2
+RE-QUANT-QUESTION = 3
 
 ; 每個字元類別 bitmap 大小（32 bytes = 256 bits）
 ; [RE-CLS-SIZE](#regexp.re-cls-size)
@@ -866,7 +866,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
     q = .tmp-quant
 
     ; * — 零次或多次（貪婪）
-    q == _RE-QUANT-STAR -> {
+    q == RE-QUANT-STAR -> {
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -893,7 +893,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
     }
 
     ; + — 一次或多次（貪婪）
-    q == _RE-QUANT-PLUS -> {
+    q == RE-QUANT-PLUS -> {
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
 
@@ -910,7 +910,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
     }
 
     ; ? — 零次或一次（貪婪）
-    q == _RE-QUANT-QUESTION -> {
+    q == RE-QUANT-QUESTION -> {
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -935,7 +935,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         return
     }
 
-    ; 默認（q == _RE-QUANT-NONE）：不是量詞，直接發射 atom
+    ; 默認（q == RE-QUANT-NONE）：不是量詞，直接發射 atom
     .emit-atom(atom-type, atom-char, atom-cls)
     .tmp-next-i = atom-i
 }
@@ -1017,15 +1017,15 @@ regexp.compile = () {
             atom-cls = .tmp-atom-cls
 
             ; 偵測量詞：使用 bitmap 位元測試
-            .tmp-quant = _RE-QUANT-NONE
+            .tmp-quant = RE-QUANT-NONE
             atom-i < n -> {
                 qc = pat[atom-i]
                 is-star = .in-class(star-cls, qc)
-                is-star -> .tmp-quant = _RE-QUANT-STAR
+                is-star -> .tmp-quant = RE-QUANT-STAR
                 is-plus = .in-class(plus-cls, qc)
-                is-plus -> .tmp-quant = _RE-QUANT-PLUS
+                is-plus -> .tmp-quant = RE-QUANT-PLUS
                 is-quest = .in-class(quest-cls, qc)
-                is-quest -> .tmp-quant = _RE-QUANT-QUESTION
+                is-quest -> .tmp-quant = RE-QUANT-QUESTION
             }
 
             ; 委派給獨立方法處理量詞分派

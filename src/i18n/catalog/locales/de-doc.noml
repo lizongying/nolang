@@ -9229,10 +9229,6 @@ match = re.find('price: 123')
 matched = regexp-match('hello.*world', 'hello nolang world')
 result = regexp-find('[0-9]+', 'abc123def456')
 `
-  'regexp._re-quant-none': `
-interne Quantor-Codes (rohe Zeichenwerte wie 42/43/63 nicht als Vergleichskonstanten verwenden,
-da LLVM einen Optimierungsfehler bei == 42 hat. Stattdessen die sicheren Werte 1/2/3 verwenden.)
-`
   'regexp.alloc-class': `
 Weist eine neue Zeichenklasse zu und gibt ihren Index zurück
 Rückgabe cls-idx: der Klassenindex
@@ -11531,7 +11527,6 @@ Hinweis: now-ms, now-us, now-ns, sleep-us, sleep-ns werden bereits von Builtins 
 und hier nicht neu definiert (eine Benutzerfunktion würde das gleichnamige Builtin überschatten und Rekursion verursachen);
 sie werden direkt als Builtins aufgerufen.
 `
-  'time._days-in-month': 'Tabelle der Tage pro Monat (nicht-Schaltjahr)'
   'time.add-seconds': `
 addiert Sekunden und gibt eine neue Zeit zurück
 n: zu addierende Sekunden (dürfen negativ sein)

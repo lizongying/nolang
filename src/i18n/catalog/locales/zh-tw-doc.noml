@@ -7767,10 +7767,6 @@ match = re.find('price: 123')
 matched = regexp-match('hello.*world', 'hello nolang world')
 result = regexp-find('[0-9]+', 'abc123def456')
 `
-  'regexp._re-quant-none': `
-量詞的內部代碼（避免拿 42/43/63 之類的原始字元值當比較常數，
-因為 LLVM 在 == 42 上有最佳化 bug。請改用 1/2/3 等安全值。）
-`
   'regexp.alloc-class': `
 分配一個新的字元類別，回傳索引
 回傳 cls-idx: 類別索引
@@ -9889,7 +9885,6 @@ duration-time、since-time、parse-time 等函式，以及 .unix/.date/.format �
 此處不再重新定義（使用者函式會遮蔽同名內建並造成遞迴）；
 直接以內建形式呼叫。
 `
-  'time._days-in-month': '月份天數表（非閏年）'
   'time.add-seconds': '增加秒數，回傳新的 time'
   'time.date': '轉換為 date 結構（UTC，忽略 nsec）'
   'time.date-2': 'date: 日期時間結構（UTC）'

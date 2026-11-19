@@ -9229,10 +9229,6 @@ match = re.find('price: 123')
 matched = regexp-match('hello.*world', 'hello nolang world')
 result = regexp-find('[0-9]+', 'abc123def456')
 `
-  'regexp._re-quant-none': `
-códigos internos de quantificadores (evite usar valores de caractere brutos como 42/43/63 como constantes de comparação,
-porque o LLVM tem um bug de otimização com == 42. Use em vez disso os valores seguros 1/2/3.)
-`
   'regexp.alloc-class': `
 aloca uma nova classe de caracteres e retorna seu índice
 Retorno cls-idx: o índice da classe
@@ -11531,7 +11527,6 @@ nota: now-ms, now-us, now-ns, sleep-us, sleep-ns já são fornecidos pelos built
 e não são redefinidos aqui (uma função de usuário sombrearia o builtin de mesmo nome e causaria recursão);
 são chamados diretamente como builtins.
 `
-  'time._days-in-month': 'tabela de dias por mês (ano não bissexto)'
   'time.add-seconds': `
 adiciona segundos e retorna um novo tempo
 n: segundos a adicionar (pode ser negativo)

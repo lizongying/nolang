@@ -165,7 +165,7 @@ call-tool = (t str) {
                 }
 
                 true -> {
-                    idx = db.find(id)
+                    idx = db.find-loose(id)
                     idx: {
                         -1 -> {
                             TOOL.text = '未找到词条: ' - id - '。可先用 glossary_list 或 glossary_search 定位。'
@@ -180,14 +180,25 @@ call-tool = (t str) {
 
         'glossary_search' -> {
             q = arg-str(t, 'query')
-            lim = arg-int(t, 'limit', 0)
-            lim <= 0 -> lim = 10
-            ids = db.search(q, lim)
-            cnt = ids.len()
-            cnt: {
-                0 -> TOOL.text = '没有匹配「' - q - '」的词条。'
+            has-q = q.len-bytes() > 0
+            has-q: {
+                false -> {
+                    TOOL.text = '缺少参数 query'
+                    TOOL.is-error = true
+                }
 
-                -> TOOL.text = render.list-md(ids)
+                true -> {
+                    lim = arg-int(t, 'limit', 0)
+                    lim <= 0 -> lim = 10
+                    lim > 50 -> lim = 50
+                    ids = db.search(q, lim)
+                    cnt = ids.len()
+                    cnt: {
+                        0 -> TOOL.text = '没有匹配「' - q - '」的词条。'
+
+                        -> TOOL.text = render.list-md(ids)
+                    }
+                }
             }
         }
 
@@ -213,22 +224,33 @@ call-tool = (t str) {
 
         'glossary_related' -> {
             id = arg-str(t, 'id')
-            dp = arg-int(t, 'depth', 0)
-            dp <= 0 -> dp = 1
-            idx = db.find(id)
-            idx: {
-                -1 -> {
-                    TOOL.text = '未找到词条: ' - id
+            has-id = id.len-bytes() > 0
+            has-id: {
+                false -> {
+                    TOOL.text = '缺少参数 id'
                     TOOL.is-error = true
                 }
 
-                -> {
-                    ids = db.related(idx, dp)
-                    cnt = ids.len()
-                    cnt: {
-                        0 -> TOOL.text = '「' - id - '」没有关联词条。'
+                true -> {
+                    dp = arg-int(t, 'depth', 0)
+                    dp <= 0 -> dp = 1
+                    dp > 3 -> dp = 3
+                    idx = db.find-loose(id)
+                    idx: {
+                        -1 -> {
+                            TOOL.text = '未找到词条: ' - id
+                            TOOL.is-error = true
+                        }
 
-                        -> TOOL.text = render.list-md(ids)
+                        -> {
+                            ids = db.related(idx, dp)
+                            cnt = ids.len()
+                            cnt: {
+                                0 -> TOOL.text = '「' - id - '」没有关联词条。'
+
+                                -> TOOL.text = render.list-md(ids)
+                            }
+                        }
                     }
                 }
             }
@@ -286,25 +308,45 @@ handle-line = (t str) (has-resp bool) {
     mv = jsonp.root-field(t, 'method')
     method = jsonp.str-at(t, mv)
     method: {
-        'initialize' -> {
-            IOB.resp = resp-ok(id-text, init-result())
-            has-resp = true
+        'initialize' -> notif: {
+            true -> _
+
+            false -> {
+                IOB.resp = resp-ok(id-text, init-result())
+                has-resp = true
+            }
         }
 
-        'ping' -> {
-            IOB.resp = resp-ok(id-text, '{}')
-            has-resp = true
+        'ping' -> notif: {
+            true -> _
+
+            false -> {
+                IOB.resp = resp-ok(id-text, '{}')
+                has-resp = true
+            }
         }
 
-        'tools/list' -> {
-            IOB.resp = resp-ok(id-text, tools-json())
-            has-resp = true
+        'tools/list' -> notif: {
+            true -> _
+
+            false -> {
+                IOB.resp = resp-ok(id-text, tools-json())
+                has-resp = true
+            }
         }
 
         'tools/call' -> {
+
+            ; 通知形态也要执行（副作用要有），但不能回帧
             call-tool(t)
-            IOB.resp = resp-ok(id-text, call-result(TOOL.text, TOOL.is-error))
-            has-resp = true
+            notif: {
+                true -> _
+
+                false -> {
+                    IOB.resp = resp-ok(id-text, call-result(TOOL.text, TOOL.is-error))
+                    has-resp = true
+                }
+            }
         }
 
         -> notif: {

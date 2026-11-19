@@ -625,6 +625,9 @@ drv.pkg-split = (s str) (r []str) {
 ;   根層 let 在 selfhost AST 中是 K-LET-STATEMENT（s0 = 常量名，kid0 = 推斷出的
 ;   K-NAMED-TYPE 'i64'，kid1 = K-INTEGER-LITERAL）；只收整數字面量，函數內 let /
 ;   非字面量初值不收（誠實門禁不變）。
+; s123：同一形狀的 str 常量（`CONST = 'lit'`，kid1 = K-STRING-LITERAL）收進另一份表
+;   （h2m-sig-strconst-add）——整數表與 str 表ByKey 查找需型別信息，不可混用一份值表。
+;   非字面量初值（`CONST = f()` / `CONST = OTHER`）同樣不收，門禁不放寬。
 drv.sig-consts-add = (sg h2m-sigs, t ast, nk i64, base i64, mod str) {
     m = 0
     (m < nk) {
@@ -646,6 +649,12 @@ drv.sig-consts-add = (sg h2m-sigs, t ast, nk i64, base i64, mod str) {
                     -> {
                     }
                 }
+            }
+
+            lnd.kind == asp.K-NAMED-TYPE && rnd.kind == asp.K-STRING-LITERAL -> {
+                cn = ast.str-at(t, kd.s0)
+                cs = ast.str-at(t, rnd.s0)
+                h2m-sig-strconst-add(sg, mod - '.' - cn, cs)
             }
         }
 

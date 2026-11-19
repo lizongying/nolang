@@ -99,6 +99,57 @@ need = (v str, name str, id str, dom str) {
     n == 0 -> err('[' - dom - '] `' - id - '`：缺少必填字段 ' - name)
 }
 
+; 文本里是否含 NUL 字节
+;
+; 编译器目前有个可复现缺陷：把多字节正文写进 str 缓冲时，超过某个位置后的写入
+; 会静默失败，值长度照旧、尾部补 0。这类损坏在 CLI/JSON 输出里只表现为「少了
+; 一段话」，肉眼看不出，所以必须在体检阶段挡住。
+; s: 待检查文本
+; yes: true=含 NUL
+; [has-nul](#schema.has-nul)
+has-nul = (s str) (yes bool) {
+    yes = false
+    n = s.len-bytes()
+    i <- [0..n): {
+        c = s.byte(i)
+        c: {
+            ok -> {
+                v = it.to-i64()
+                z = v == 0
+                z: {
+                    true -> {
+                        yes = true
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 正文字段完整性检查（含 NUL 即判为损坏）
+; v: 字段值
+; name: 字段名
+; id: 词条 id
+; dom: 语义域
+; [need-clean](#schema.need-clean)
+need-clean = (v str, name str, id str, dom str) {
+    n = v.len-bytes()
+    n == 0 -> return
+    bad = has-nul(v)
+    bad: {
+        true -> warn('[' - dom - '] `' - id - '`：' - name - ' 含 NUL 字节，内容在载入时被截断（编译器缺陷，非数据问题）')
+
+        false -> _
+    }
+}
+
 ; 去掉 refs 里的 ':行号' 后缀
 ; s: 形如 src/std/str.no:628
 ; out: 纯路径
@@ -128,6 +179,13 @@ check-one = (idx i64, root str) {
     need(db.field(idx, 'kind'), 'kind', id, dom)
     need(db.field(idx, 'summary'), 'summary', id, dom)
     need(db.field(idx, 'definition'), 'definition', id, dom)
+
+    ; 正文字段完整性：载入期被截断的正文（尾部补 NUL）在这里暴露
+    need-clean(db.field(idx, 'title'), 'title', id, dom)
+    need-clean(db.field(idx, 'summary'), 'summary', id, dom)
+    need-clean(db.field(idx, 'definition'), 'definition', id, dom)
+    need-clean(db.field(idx, 'syntax'), 'syntax', id, dom)
+    need-clean(db.field(idx, 'example'), 'example', id, dom)
 
     k = db.field(idx, 'kind')
     kn = k.len-bytes()
@@ -217,19 +275,107 @@ check-dups = (n i64) {
     }
 }
 
+; domain 字段与文件名 stem 一致性
+;
+; load-domain 在缺字段时会退回 stem，所以不一致不会让载入失败：整域词条会静默
+; 改名，跨域 related 随即悬空、按域过滤也查不到。必须在体检阶段挡住。
+; [check-domains](#schema.check-domains)
+check-domains = () {
+    n = db.domain-count()
+    i <- [0..n): {
+        dom = db.domain-at(i)
+        stem = db.domain-stem-at(i)
+        same = dom.eq-full(stem)
+        same: {
+            false -> err('域 `' - dom - '` 与文件名 `' - stem - '.noml` 不一致（domain 字段必须等于文件名 stem）')
+
+            true -> _
+        }
+    }
+}
+
+; 某个文件名是否已登记在 index.noml
+; name: 文件名
+; yes: true=已登记
+; [registered](#schema.registered)
+registered = (name str) (yes bool) {
+    yes = false
+    n = db.file-count()
+    i <- [0..n): {
+        same = db.file-at(i).eq-full(name)
+        same: {
+            true -> {
+                yes = true
+                break
+            }
+
+            false -> _
+        }
+    }
+}
+
+; index.noml 与数据目录的全集比对
+;
+; 没登记进 index 的域文件从来不会被载入：整个域的词条凭空消失，而载入流程、
+; 检索与渲染都毫无异常。这类「多写了文件」的疏漏只能在体检里发现。
+; dir: 词库数据目录
+; [check-index](#schema.check-index)
+check-index = (dir str) {
+    entries = fs.list-dir(dir)
+    i <- [0..entries.len()): {
+        e = entries[i]
+        e: {
+            ok -> {
+                name = it
+                is-noml = name.ends-with('.noml')
+                is-noml: {
+                    false -> _
+
+                    true -> {
+                        skip = name.eq-full('index.noml')
+                        skip: {
+                            true -> _
+
+                            false -> {
+                                known = registered(name)
+                                known: {
+                                    false -> err('数据目录里的 `' - name - '` 未登记到 index.noml，整个域不会被载入')
+
+                                    true -> _
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
 ; 跑一遍体检
-; root: 仓库根前缀
+; root: 仓库根前缀（refs 的解析基准）
+; dir: 词库数据目录（index 覆盖检查用）
 ; errors: ERROR 条数
 ; [check-all](#schema.check-all)
-check-all = (root str) (errors i64) {
+check-all = (root str, dir str) (errors i64) {
     CK.errors = 0
     CK.warns = 0
+    e0 []str = []
+    w0 []str = []
+    CK.errs = e0
+    CK.wrns = w0
     n = db.count()
     n == 0 -> err('词库为空：一条词条都没载入')
     n > 0 -> {
         i <- [0..n): check-one(i, root)
         check-dups(n)
     }
+    check-domains()
+    check-index(dir)
     errors = CK.errors
 }
 

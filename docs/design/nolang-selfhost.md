@@ -3335,3 +3335,505 @@ ID 持平：本輪只放行了**本來就合法**的語法形態，不新增 nam
   寫進語言規範）；在規範缺席前不動。
 - 下一輪候選優先級：① **`bytes` 方法族**（std 32 處，語義清晰：回 `?[]byte`／越界 nil，
   可比照 s117 的 `str.byte` 序列）；② 括號主體之外的**其它主體形態**回歸盤點。
+
+### ㊳ s121 —— `str.bytes()` 零拷貝視圖降級（OP-STRBYTES）（2026-11-19）
+
+**① 定位：`str.bytes()` 無 h2m 臂，且 ㊲⑥ 對它的定性是錯的**
+
+- ㊲⑥ 把「`bytes` 方法族」描述為「回 `?[]byte`／越界 nil，可比照 s117 的 `str.byte` 序列」——
+  **兩個方法被混為一個**：`str.byte(i)` 才回 `?byte`（越界 nil）；`str.bytes()` 回的是
+  **零拷貝 `[]byte` 視圖**，簽名 `() (val []byte)`（`src/std/str.no:688`，`#{buildin}` 桩），
+  不帶參、不越界、不失敗。
+- 語義以 std 文檔 + Go 實現雙向釘死：`src/std/str.no:676-686` 明寫「回傳的 []byte 共享 str 的
+  data 緩衝……視圖的 cap 為 0（借用標記），作用域結束時 vec_free 會跳過釋放，所有權仍屬原 str」；
+  Go 側 `src/mir/builtin_str_bytes.go:29` 的 `emitBuiltinStrBytes` 用
+  `vecFromParts(strLenI64(sv), "0", ptrtoint dataPtr)` —— 第二個引數 `"0"` 就是 cap 借用標記。
+- **徵結**：`h2m-ty-of` 無 `mf == 'bytes'` 臂、`h2m-lower-expr` 無對應臂 ⇒ `s.bytes()` 落
+  `uns-unsup`。**呼叫處為零**：`grep -rn '\.bytes()' src/std/*.no` 只命中 `str.no:676` 的
+  注释一行，std 里沒有活的調用點 ⇒ 本輪是**向前補齊內建語義**，當下無語料收益。
+
+**② 修復：OP-STRBYTES=102 + cg 發射臂 + h2m 兩臂**
+
+- `compiler/src/mir.no`：`OP-STRBYTES = 102`（接在 s117 的 `OP-STRBYTE = 101` 之後，不重排）。
+  語義：`dst` = vec 值 id（TY-VEC）；`x` = str 值 id（TY-STR）；`y` 不用。
+- `compiler/src/cg.no`：發射臂按 `%vec = { i32 len, i32 cap, i64 data }`（`cg-runtime.no:194`）
+  三段 `insertvalue` 組出：
+  - `%sbL = extractvalue %str-long %sv<x>, 0`（i32 len，**直接插欄 0，不 zext**——s117 的
+    `OP-STRBYTE` 為做邊界比較才 zext，這裡不需要）；
+  - `%vb0 = insertvalue %vec zeroinitializer, i32 %sbL, 0`；
+  - `%vb1 = insertvalue %vec %vb0, i32 0, 1`（**cap = 0 借用標記**）；
+  - `%sbP = extractvalue %str-long %sv<x>, 2`；`%sbD = ptrtoint i8* %sbP to i64`；
+  - `%vc<dst> = insertvalue %vec %vb1, i64 %sbD, 2`。
+
+  中間名一律帶指令下標 `k`（沿用 s99n 的「世界只有一箇可認單名」手法）。
+- `compiler/src/h2m.no`：`h2m-ty-of` 加 `mt == TY-STR && mf == 'bytes' -> code = TY-VEC`；
+  `h2m-lower-expr` 在 `rty == TY-STR` 分支加臂：
+  `mname == 'bytes' && ok-method == 0 && na == 0` ⇒ `h2m-alloc(c, TY-VEC)` +
+  `h2m-emit(c, OP-STRBYTES, …, rv, 0, '', TY-VEC)`。
+  **門禁只收無參形**（比 s117 的 `byte` 多一條 `na == 0`）；**不進 rel 追蹤**——視圖 cap=0
+  已自描述所有權，若走 `rel-add` 令人為賦予所有權，作用域結束會去釋放借用的緩衝。
+
+**③ 量測**
+
+| 指標 | 本輪前 | 本輪後 | Δ |
+| --- | --- | --- | --- |
+| ID（`ID:` 行，16 檔合計） | 759 | **759** | 0 |
+| h2m-test 斷言 | 1196 | **1202** | +6（1 ty-of + 4 降級 + 1 帶參門禁） |
+| 源碼改動 | — | **4 檔**（mir 17 行 / cg 36 行 / h2m 16 行 / 測試 29 行） | — |
+
+**④ 驗證**
+
+- **先紅後綠**：`h2m-test` 新增 `vm-strbytes`（`b = s.bytes()` ⇒ unsup 0 + 發射含
+  `insertvalue %vec` / `ptrtoint i8*`）與 `s121 str bytes ty`（`ty-of ⇒ TY-VEC`）；
+  另加**帶參門禁對照** `s.bytes(1)` ⇒ 仍 unsup > 0（本輪只定義無參形）。
+- **語义端到端**（`drv.build-to` 鏈出可執行檔實跑，全部與 Go oracle 逐值對齊）：
+
+  | 程序 | 含義 | noc | Go oracle |
+  | --- | --- | --- | --- |
+  | `B = S.bytes(); exit(B.len())`，`S = 'ABC'` | 視圖 len = 字節數 | rc **3** | 3 |
+  | 同上，`S = 'hello, 中'` | 非 ASCII 按 UTF-8 字節（非碼點） | rc **10** | 10 |
+  | `f = (s str) (r i64) { B = s.bytes(); r = B.len() }`；`X = f('ABC')`、`Y = f('abcabc')`；`exit(X + Y)` | 視圖 borrow 不釋原緩衝 | rc **9** | 9 |
+  | 同一字面 `f('ABC')` 調用兩次；`exit(X + Y)` | 視圖作用域結束不釋放來源緩衝 | rc **6** | 6 |
+
+- **IR 層面的所有權證據**（`drv.build-ll` 取 `f = (s str) (r i64) { B = s.bytes(); r = B.len() }`）：
+
+  ```llvm
+  define i64 @f(%str-long %sv1) {
+  entry:
+      %sbL0 = extractvalue %str-long %sv1, 0
+      %sbP0 = extractvalue %str-long %sv1, 2
+      %sbD0 = ptrtoint i8* %sbP0 to i64
+      %vb00 = insertvalue %vec zeroinitializer, i32 %sbL0, 0
+      %vb10 = insertvalue %vec %vb00, i32 0, 1      ; cap = 0（借用標記）
+      %vc2  = insertvalue %vec %vb10, i64 %sbD0, 2
+      %v3 = call i64 @vec_len(%vec %vc2)
+      ret i64 %v3
+  }
+  ```
+
+  `@f` 內**沒有任何 `@vec_free`** ⇒ 「不進 rel 追蹤」不止是構造上的宣告，產物可查。
+  而 `@main` 把字面 `'ABC'` 做成 `.rodata` 常量（`@.s.main.0 = private unnamed_addr constant
+  [4 x i8]`）——**不是堆**——所以上面最後一條 e2e（同一字面調用兩次）是**真的在探自由**：
+  視圖若帶 cap 被釋放，`free()` 會收到一個非堆指標而 abort；rc=6 乾淨返回即通過。
+- **全量門禁**（`no run` 口徑）：`ps` 52、`h2m` 1202、`cg` 363、`ck` 20、`ck-sig` 50、
+  `lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、`ps-err` 46、
+  `pkg-ll-call` 5、`pkg-sigs` 5、`pkg-ll` 10 **全綠**。`no fmt -d` 為空。
+- S0→S1（`no build -o /tmp/noc-s1 compiler`）rc=0。
+
+**⑤ 誠實邊界與下一步**
+
+- **零語料收益如實記載**：std 里 `str.bytes()` **沒有活的調用點**（唯一命中是注释），
+  所以本輪 `ID` 759 持平、t8 仍 8/9。這是「向前補齊內建語義」，不是「修好一個卡住的語料」。
+- **本輪順帶量到的既存缺口**（皆與 `bytes` 無關，勿記到本輪頭上）：
+  ① `h2m` 只支援**至多 2 個輸出參**——`() (a i64) (b i64) (c i64) {}` ⇒ unsup 2（n-1）；
+  ② **函式內讀全局 str** 未支援——`S = 'ABC'; f = () { N = S.len() }` ⇒ unsup 1；
+  ③ **計數迴圈體內的 vec 局部**未支援——`1 * { B []i64 = [1] }` ⇒ unsup 2
+  （`[]i64` 字面同樣失敗，故非 `bytes` 引入）；
+  ④ 裸塊 `{ … }` 未支援；⑤ `drv.build-to` 仍拒絕目錄（S2 趟不了）。
+  ⇒ 想做「視圖作用域结束不釋放來源緩衝」的**直接**驗證（用計數迴圈造內層作用域）目前
+  走不通，只能以「同一字面調用兩次不崩、值正確」作間接證據。
+- **下一步優先級**：① ㊲⑥ 的②——**括號主體之外的其它主體形態**回歸盤點；
+  ② 上述既存缺口裡最便宜的一個（② 函式內讀全局 str，或 ③ 計數迴圈 vec 局部）任選其一。
+
+### ㊴ s122 —— `vec` 局部量在【含控制流】下降級：`h2m-ty-of` 補 `K-SLICE-LITERAL` 臂（2026-11-19）
+
+#### ① 定位：缺口就是 s121 量到的 `a3`／`b3`，根因在 `h2m-ty-of` 的 `K-SLICE-LITERAL` 缺口
+
+- **缺口形態**：`B []i64 = [1, 2, 3]` 這種**切片字面量 `let`**，落在【含控制流（`c.mem == 1`）】的函式裡 ⇒ 2 條 unsup（`unsup-slot-noun` ×2：`h2m-slot-decl` 一計、`h2m-var-write` 查不到名字再一計）。**同一份程式碼在【直線式（`c.mem == 0`）】下不鋪槽 ⇒ 正常產碼**——**兩種 mem 模式行為分岔**，只有走控制流的那支會暴露。
+- **誰寫的**：`compiler/src/h2m.no` —— `h2m-ty-of`（無 `K-SLICE-LITERAL` 臂，回 -1）、`h2m-slot-decl`（名字未綁定即 `h2m-mark`）、`h2m-var-read` / `h2m-var-write`（只做**形參來源**的 vec，`s62` 開的門）。
+- **為何繞**：`vec` 局部量**不鋪槽**——`cg` 無 `alloca %vec`，值 id 由 `h2m-var-write` 在寫點繫結（`s62` 註：「本路徑不做別名／生命期分析」）。`s62` 為**形參來源**開的路是「`h2m-var-read` 直接回傳 entry 的 incoming 值 id」；**字面量來源**的 vec 局部量從 `h2m-scan` 起就拿不到型別 ⇒ 鋪槽階段即 unsup。這正是 `h2m-ty-of` 的 **`P6` 缺口**（§2.4）——自 `s60` 就記歪了，一直沒對到 `s121` 的既存缺口表。
+- **與 `s121` ① 的關係**：`s121` 量到的 ㊲⑥② 表裡 `a3`／`b3`（2 unsup）正是本缺口；`b1`／`b4`（同一份 vec 局部 + 控制流）亦然。**「`ty-of` 缺 `K-SLICE-LITERAL` 臂」是同一共同根因**，`s121` 只解 `s102` 的 3 個徵結故摸不到。
+
+#### ② 修復：`h2m-ty-of` 補臂 ＋ `vec` 槽的三處配套 ＋ 一個順帶的非法 IR
+
+1. **`h2m-ty-of` 補 `K-SLICE-LITERAL` 臂**（`h2m.no:2154` 後）：`code = TY-VEC`；`d.nkid > 0` 且首元素是 `K-STRING-LITERAL` ⇒ `TY-VECSTR`。**鏡像降級側** `K-SLICE-LITERAL` 的 vec-ty 預判——與 `s104`（`str` 比較／拼接）、`s74` 同族：`ty-of` 與降級側的型別推斷必須一起改。
+2. **`h2m-slot-decl`**：`i0 < 0`（名字尚無綁定）由 `h2m-mark` 改為**登記佔位**（`vids=0`）——絕不錯殺 `s62` 為**形參來源**開的路。
+3. **`h2m-var-read`**：`TY-VEC` / `TY-VECSTR` 分支加 `sid == 0` 門禁 ⇒ 已登記但未寫（未初始化）**計 unsup**，不交 0 值 id 糊過去。
+4. **`h2m-var-write`**：新增 vec 槽寫臂——`vt == st && c.bkn == c.fnbk` 時 `h2m-var-bind`（同 `mem==0` 的 var-bind）。**只在函式體頂層塊放行**：值 id 在函式體塊定義 ⇒ 支配全函式各塊；寫在**被控塊**（迴圈／if／match 臂）裡則值 id 不支配其後繼，跨塊讀會變非法 SSA。
+5. **`h2m-ctx` 新增 `fnbk`**（函式體塊的棧深；`0` = 未設），`h2m-lower-func` 在進 body 前記 `bkn + 1`——讓上一條的門禁判得出「現在是否就在函式體頂層塊」。
+6. **順帶修掉第二個 bug**：`h2m-var-write` 的**標量槽寫臂**漏排 `TY-VECSTR` ⇒ `[]str` 局部量會在佔位槽（`vids=0`）上發 `OP-STORE`，產出 `store i64 %v…, i64* %s0` 這種指向**未定義 slot 0** 的非法 IR（e2e 實測 clang 報 `use of undefined value '%s0'`）。補 `&& st != TY-VECSTR`（同 `h2m-slot-init-arg` 口徑）。
+
+#### ③ 量測：ID 759 → 513，LF 15180 → 14216
+
+`drv.pkg-ll-cov` 逐檔 16 個 `compiler/src/*.no`（腳本 `tmp/cov-all2.no`，以 `BEGIN`／`END` 切檔；pre = `git show HEAD:compiler/src/h2m.no` 臨時回退，以與 ㊲／㊳ 口徑一致）：
+
+| 檔 | pre ID／LF | post ID／LF | ΔID | ΔLF | pre／post unsup |
+| --- | --- | --- | --- | --- | --- |
+| `asp` | 0／77 | 0／77 | 0 | 0 | 77／77 |
+| `ast` | 25／299 | 24／293 | −1 | −6 | 320／314 |
+| `cg-rc` | 0／99 | 0／99 | 0 | 0 | 100／100 |
+| `cg-runtime` | 0／542 | 0／542 | 0 | 0 | 543／543 |
+| `cg` | 3／2481 | 3／2478 | 0 | −3 | 2485／2482 |
+| `ck-sig` | 0／74 | 0／74 | 0 | 0 | 75／75 |
+| `ck` | 35／451 | 29／418 | −6 | −33 | 474／441 |
+| `diag` | 8／35 | 8／35 | 0 | 0 | 35／35 |
+| `drv` | 367／5636 | 242／5151 | **−125** | **−485** | 5749／5264 |
+| `h2m` | 74／3356 | 65／3337 | −9 | −19 | 3418／3399 |
+| `ix` | 0／3 | 0／3 | 0 | 0 | 3／3 |
+| `link` | 2／22 | 2／18 | 0 | −4 | 22／18 |
+| `lx` | 16／164 | 16／164 | 0 | 0 | 166／166 |
+| `mir` | 0／0 | 0／0 | 0 | 0 | 0／0 |
+| `ps` | 229／1938 | 124／1524 | **−105** | **−414** | 2005／1591 |
+| `tok` | 0／3 | 0／3 | 0 | 0 | 3／3 |
+| **合計** | **759／15180** | **513／14216** | **−246** | **−964** | **15475／14511** |
+
+- **落點**：`drv`（−125／−485）與 `ps`（−105／−414）佔大頭——兩檔的函式體裡遍佈切片字面量，正是 ㊲⑥ 那 9103 條「型別未明」的主體；`h2m` 自身 −9／−19。
+- **歸因（重要）**：`ID` 通道本輪的可信度完全依賴「同一支腳本、同一組 import 套」——**進口套會改變 `drv.pkg-ll` 的產出**（`drv.no` 註：「呼叫 `drv.pkg-ll` 的測試必須直接 import 全套傳遞依賴，否則 `drv.*` 內部 `h2m-*`／`ast.*`／`ps.*` 呼叫 codegen 失敗（consumer reads value 0）」）。本輪 pre 值 **759 與 ㊲ 所載完全一致** ⇒ 腳本口徑相同。
+- **拆分歸因**：把 `ty-of` 臂單獨拿掉（其餘 4 處保留）⇒ ID 533 ⇒ **`ty-of` 臂占 −226**，其餘 4 處共 −20。即本輪的 ID 下降**幾乎全部來自「型別可見」**，而非門禁／佔位槽的調整。
+
+#### ④ 驗證
+
+- **單元**（`compiler/tests/h2m-test.no` 新增 `test-s122-vec-local-mem1` ＋ 3 條 `ty-of` 斷言）：**1219 全綠**（㊳ 的 1215 ＋本輪 16 條 − 撤門禁後 2 條）。
+  - ① 頂層 `B []i64 = [1,2,3]` ＋ 計數迴圈內讀：`unsup==0`、有 `@vec_new`／`@vec_len`／`@vec_free`、**不含** `i64* %s0`。
+  - ② `B []str = ['a','bc']`：`unsup==0`、有 `@vec_push_str`／`@vec_free_str`、不含 `i64* %s0`。
+  - ③ 短路鏈各臂讀同一個頂層 vec 局部：`unsup==0`（值 id 支配全函式各塊）。
+  - ④ **門禁**：**迴圈體內的 vec 局部** ⇒ 仍 `unsup > 0`（值 id 不支配後繼）。
+- **e2e**（go oracle vs `/tmp/noc-s122`，`tmp/s122-e2e/`）：
+
+| 例 | go | noc | 判定 |
+| --- | --- | --- | --- |
+| `e1` vec 局部 ＋ 計數迴圈讀 | 3 | 3 | ✅ |
+| `e3` `[]str` 局部 | 2 | 2 | ✅ |
+| `e4` `with-cap` 局部 | 0 | 0 | ✅ |
+| `e5` 迴圈體內宣告 vec | 1 | BUILD FAIL（3 unsup） | ✅ 門禁 |
+| `e6` 短路鏈各臂讀 | 3 | 3 | ✅ |
+| `e7` 下標讀 ＋ 值位 match | 7 | **0** | ❌ 既存缺陷（見 ⑤） |
+
+- **14 套全綠**：`ps 1587／h2m 1219／cg 420／ck 675／ck-sig 41／lx 149／tok 124／diag 11／build-package 14／util 122／ps-err 120／pkg-ll-call 1／pkg-sigs 146／pkg-ll 10`。
+- **撤門禁**：`s61` 的 `rng-container`（「容器遍歷 `x <- xs`（無標注 let 名）不產碼」）**已失效** ⇒ 改為**反向釘子**（`unsup==0` ＋ 產碼 ＋ `@vec_len`／`@vec_get_i64`／`@vec_free`）。實測 IR 與 `s62` 形參源同構：`%v… = call i64 @vec_len(%vec %vc…)` 只算一次、表頭只讀 idx、`@vec_get_i64` 在迴圈體、`@vec_free` 唯一落函式出口。
+
+#### ⑤ 誠實邊界與下一步
+
+- **門禁仍在**：**被控塊內**宣告的 vec 局部量（迴圈體／match 臂）仍 `unsup`——值 id 不支配後繼塊，且 scope-exit 釋放會落到函式出口（跨塊使用 ⇒ 非法 SSA）。這需要真正的「槽化 ＋ 顯式釋放」或支配點分析，不是本輪的「值 id 重綁」能覆蓋的。
+- **`e7` 是既存缺陷，但本輪把它從「大聲 unsup」變成了「靜默錯值」**：下標讀 `B[0]` 的值位 match 得 0（go 7）。**旁證**：把 `B` 改成 **vec 形參**（`f = (B []i64)`，完全不經過 s122 的 vec 局部路徑）在 **baseline 與 s122 下都**得 0 ⇒ 根因在 `h2m-lower-surface` 的 vmode（`s119`：i64 值匹配下 `ok` 臂匹配常量 0），屬 **ck 層的 option 推斷缺口**（`B[0]` 被降級成 plain `i64` 而非 `?i64`）。baseline 的 `e7` 因 vec 局部那 2 條 unsup 而**整整函式不產碼**（4 unsup、無 `define`），s122 修掉那 2 條後**暴露**了既存的錯值。**本輪不加新門禁**——那會波及其它 option 推斷缺口。
+- **`vec` 局部量不可重新賦值**：`B = [7]`／`B = g()`／`B = with-cap(4)` 在 Go 側全報 `sm7rjfcm` duplicate variable（Go 的 ck 把 `let` 名當已宣告；`x i64 = 1; x = 2` 則合法）；**noc 接受**。這是 **ck 分歧**，本輪不處理。
+- 本輪只解 `a3`／`b3`／`b4`（同一份 vec 局部 ＋ 控制流）的**共同根因**；**未動** `x1`／`y5`（既存 bug，絕非 `P6` 缺口）。
+
+**下一步優先級**：① ㊲⑥ 的②——**括號主體之外的其它主體形態**回歸盤點（仍未做）；② **函式內讀全域 `str`**（㊲⑥② 另一個最便宜的缺口）。
+
+### ㊵ s123 —— 函式內讀全域 `str` 常量（`NOC-NAME`／`NOC-VERSION` 族）（2026-11-20）
+
+**① 定位**
+
+- **先做 ㊴⑤① 的「括號主體之外的其它主體形態」盤點**（`tmp/s123/f1-ident.no` … `f22-logic.no`，22 個最小重現，逐檔 `drv.pkg-ll-cov` 量）：
+  - **已支持（0 unsup）**：標識符 `x:`、索引 `a[0]:`、點號 `p.n:`、呼叫 `g():`、中綴 `a + b:`、括號 `(a + b):`、**常量中綴 `1 + 2:`**（s116 歸一化）、深點號 `o.i.n:`、點號呼叫 `mk(v).n:`、比較 `x == 1:`、邏輯 `x && true:`。
+  - **不支持（11 種）**：字面量／常量家族 7 種——整數 `1:`（3）、字串 `'a':`（4）、浮點 `1.5:`（4）、char `"a":`（3）、`nil:`（4）、`true:`（3）、切片 `[1, 2]:`（4）；一元家族 3 種——`-x:`（3）、`!x:`（3）、`-1:`（3）；外加**點號索引 `a[0].n:`**（2）。
+  - 語料 grep（`compiler/src` + `src/std`）：**語句位與賦值 RHS 位的「字面量／一元主體」零命中**（`src/std/net/quic.no:358` 的 `].length: {` 是**中綴**主體 `r-pos + frames[count].length:`，屬已支持族，非點號索引主體）⇒ **零語料收益**，本輪不做。
+- **缺口重新定性（重要修正）**：`noc build` 走 `drv.build-ll`（單文件、**無 sg 常量表**），該口徑下整數／字串／vec／bool 全局讀**全部**失敗；但在 `drv.pkg-ll` 口徑下，**整數全局常量本來就被 s111（`mod.CONST`）／s112（裸名）覆蓋**，真正的缺口是**非整數（`str`）全局常量讀**。
+- 語料實證：`compiler/src/drv.no` 的 `NOC-NAME`（`:45` 定義）與 `NOC-VERSION`（`:46`）在 ID 日誌中佔 **12 ＋ 2 ＝ 14 條**（12 個函式各 1 條，`drv.pkg-ll` 2 條）。
+
+**② 修復**
+
+- `compiler/src/h2m.no` 的 `h2m-sigs` 加 3 欄 `stkey []str`／`stval []str`／`stname []str`，與 s111 的 `ckey`／`cval`／`csname` **平行**——**整數表與 str 表不可混用一份值表**，因為查表命中後要決定回 `TY-I64` 還是 `TY-STR`（型別信息在值表裡沒有）。`h2m-sigs-new` 同步加 3 個 `[]`。
+- 新增 3 個函式（插在 `h2m-sig-const-find-short` 之後）：`h2m-sig-strconst-add`（推 key、值、短名）、`h2m-sig-strconst-find`（`mod.CONST` 線性掃）、`h2m-sig-strconst-find-short`（裸名線性掃）。短名口徑與 `h2m-sig-const-add` 一致（第一個 `.` 之後）。
+- `compiler/src/drv.no` 的 `drv.sig-consts-add` 加 str 收集臂：`lnd.kind == asp.K-NAMED-TYPE && rnd.kind == asp.K-STRING-LITERAL` ⇒ `h2m-sig-strconst-add(sg, mod - '.' - cn, cs)`。**非字面量初值**（`CONST = f()` / `CONST = OTHER`）同樣不收，門禁不放寬。
+- `h2m-ty-of` 兩臂：K-IDENTIFIER 在 `bci < 0`（整數短名表未命中）後查 str 短名表 ⇒ `TY-STR`；K-DOT-EXPRESSION 在 `ci < 0`（整數表未命中）後查 str 全鍵表 ⇒ `TY-STR`。**`ty-of` 必須與降級側一起改**（同 s104／s74／s122 族）：槽寬推錯 ⇒ `h2m-slot-decl` 與 `h2m-var-write` 各計一次 unsup。
+- `h2m-lower-expr` 兩臂：K-IDENTIFIER 在 `bci < 0` 分支查 str 短名表，命中 ⇒ `h2m-alloc(c, TY-STR)` + `h2m-emit(c, OP-STRCONST, …, ssv, TY-STR)`（`sym` 即字串內文，cg 包成 `.rodata` 全域常量，與 K-STRING-LITERAL 臂同口徑）；**未命中才** `h2m-mark` + `h2m-id-name`。K-DOT-EXPRESSION 在 `ci < 0` 分支同理，命中發 `OP-STRCONST`，未命中才走原 struct 欄位路徑（原路徑整段包進 `csi < 0 -> { … }`，抬高縮進一層）。
+- 源碼改動：**3 檔**（`h2m.no` 淨 +107 行／`drv.no` +9 行／`h2m-test.no` +10 斷言）。
+
+**③ 量測**
+
+配對基線（`tmp/cov-all2.no`：16 模組各跑一次 `drv.pkg-ll-cov`；pre = `tmp/s123/cov-post.txt`，post = `tmp/s123/cov-s123.txt`）：
+
+| 指標 | 本輪前 | 本輪後 | Δ |
+| --- | --- | --- | --- |
+| ID（`ID:` 行，16 檔合計） | 513 | **503** | **−10** |
+| ← `drv` | 62 | 48 | −14（= `NOC-NAME` 12 ＋ `NOC-VERSION` 2） |
+| ← `h2m` | 76 | 80 | +4（兩個新 find 函式各 2 條 `nm`） |
+| LF（`LF:` 行，16 檔合計） | 14216 | **14251** | **+35** |
+| ← `drv` | 405 | 366 | −39（12 個函式的 unsup 路徑不再走） |
+| ← `h2m` | 1156 | 1230 | +74（本輪新碼） |
+| unsup（`pkg-ll` 句尾，16 檔合計） | 14511 | **14546** | +35 |
+| h2m-test 斷言 | 1219 | **1229** | +10 |
+
+- **LF +74 明細**（全部是本輪新增）：`h2m-sig-strconst-find` +18、`h2m-sig-strconst-find-short` +18、`h2m-sig-strconst-add` +14、`h2m-lower-expr` +12、`h2m-sigs-new` +6、`h2m-sigs.stkey`／`stval`／`stname` 各 +2（+6）。新函式與既有同類**同口徑**（`h2m-sig-const-find`／`-short` 各 18 LF）。
+- **ID −14 逐條可查**：`drv.bp-walk`／`build-to`／`cmd-ast`／`cmd-build`／`cmd-run`／`cmd-tokens`／`cmd-version`／`name`／`not-implemented`／`pkg-ll`（×2）／`usage` 各減 1 條 `NOC-NAME`，`cmd-version`／`version` 各減 1 條 `NOC-VERSION`；無一新 ID 來自語料。
+
+**④ 驗證**
+
+- **先紅後綠**：`compiler/tests/h2m-test.no` 新增 `test-s123-str-const`（10 條）——裸名 `NOC-NAME`（`ty-of ⇒ TY-STR`、`lower-expr` unsup 0／有值／vty `TY-STR`）、點號形 `drv.NOC-VERSION`（同三條）、**未登記的 `NOPE-STR` 仍誠實 unsup 且無值**（門禁不放寬）。`h2m-test` 1219 → **1229 全綠**。
+- **IR 層證據**：`S = 'ABC'` 的 IR 出現 `@.s.f.5 = private unnamed_addr constant [4 x i8] [i8 65, i8 66, i8 67, i8 0]`，`@f` 內以 `%str_eq` 比較。
+- **語義端到端**（go oracle vs `/tmp/s123-e2`…`/tmp/s123-e4`，語料與驅動腳本見 `tmp/s123-e2e/` 與 `tmp/s123/probe-e2e.no`；`drv.pkg-ll` + `link.compile` 鏈出可執行檔實跑，全部逐值對齊。Go oracle 的 **`Error: exit status N` 即子進程退出碼 N**）：
+
+  | 程序 | 含義 | noc | Go oracle |
+  | --- | --- | --- | --- |
+  | `S = 'ABC'`；`f = () (r i64) { r = 0; S == 'ABC' -> r = 1 }`；`exit(f())` | 裸名全域 str 作比較運算元 | rc **1** | 1 |
+  | 同上再加 `T = 'ABD'`，`S == T -> r = 1` 在前 | 不同全域 str 不相等 | rc **2** | 2 |
+  | `g = (x str) (r i64) { r = x.len-bytes() }`；`f = () (r i64) { r = g(S) }` | 全域 str 作呼叫引數 | rc **3** | 3 |
+  | `dep.V`（跨模組 `# /…/dep` 導入） | 點號形跨模組 str 常量 | rc **1** | 1 |
+
+- **全量門禁 14 套全綠**：`ps` 52、`h2m` 1229、`cg` 363、`ck` 20、`ck-sig` 50、`lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、`ps-err` 46、`pkg-ll-call` 5、`pkg-sigs` 5、`pkg-ll` 10。
+- **口徑提醒**：㊴⑤ 的門禁數字（`ps` 1587／`cg` 420／`ck` 675／`pkg-sigs` 146…）**在本輪無法以 `no run` 口徑重現**——同一套命令下實測 `ps` 52／`cg` 363／`ck` 20／`pkg-sigs` 5，與 ㊲／㊳ 完全一致（`h2m` 1219 除外，那是 ㊴ 當輪的斷言數，本輪 1229）。**本輪以及後續輪次一律以實測數字為準。**
+- 格式：`no fmt -d` 三檔（`h2m.no`／`drv.no`／`h2m-test.no`）全空。
+- S0→S1（`./bin/no build -o /tmp/noc-s123 compiler`）rc=0；`/tmp/noc-s123 version` ⇒ `noc v0.0.1-m0`。
+
+**⑤ 誠實邊界與下一步**
+
+- **只覆蓋字面量初值的 str 常量**：`CONST = f()` / `CONST = OTHER` 仍 unsup（收集臂只收 `K-STRING-LITERAL`）。
+- **只走 `pkg-ll` 口徑**：`noc build`（`drv.build-ll`，單文件、無 sg）仍讀不到跨模組常量——本輪完全不碰那條路徑。
+- **LF 淨增 +35 是 gate 放行的誠實暴露，不是被動回歸**（s113 先例）：本輪配對賬是 **ID −10 / LF +35**，缺口縮小但葉子總數上升。
+- **新增 4 條 ID**（`h2m-sig-strconst-find:nm` ×2、`h2m-sig-strconst-find-short:nm` ×2）：`nm` 未綁名，與既有 `h2m-sig-const-find:nm` 同族。**不遮掩**。
+- **S1→S2 未通**：`noc build -o /tmp/noc-s123-s2 compiler/main.no` 仍報 `2` 條 unsup，與 `/tmp/noc-s122`、`/tmp/noc-s1` **逐字相同**（既存缺口，非本輪回歸）；且該路徑走 `drv.build-ll`（單文件、無 sg），與 S0→S1 的 `no build compiler`（整包 `pkg-ll`）**不同口徑**，不能相互代表。
+- **文檔示例混了兩個缺口**：`S = 'ABC'; f = () { N = S.len() }` 的 `str.len()`／`len-bytes()` 方法呼叫仍是 2 條 unsup（獨立缺口，未在本輪處理）。
+- **葉子通道暴露了當前最大單一 unsup 來源**：`kind-name:SurfaceMatch:construct` **432 條** + `kind-name:StringLiteral:construct` **456 條**（16 檔合計），全部來自 `asp.kind-name`（`id: { 1 -> 'AnnotationArrayValue' … }`，74 個字串臂 + 1 個 `-> 0` 兜底）——每個含 `asp` 的模組量測（`asp`／`ast`／`ck`／`drv`／`h2m`／`ps` 共 6 個）各重現 72 + 76 條。根因是 s103 的门禁「**值位 match 的臂值型別必須 `TY-I64`**，str／vec 值無處可落」（`h2m.no:1760`）。
+
+**下一步優先級**：① **值位 match 的 `str` 臂值**——上述 432／456 條 unsup 全是它，且 `asp.kind-name` 被 `ast`／`ck`／`drv`／`h2m`／`ps` 傳遞依賴，回報最大；② 其餘非整數全域常量（`vec`／`bool`／`f64`）先做語料盤點再決定（仿本輪 ① 的「零命中即跳過」）。
+
+### ㊶ s124 —— 值位 match 的 `str` 臂值（`asp.kind-name` 族）（2026-11-20）
+
+**① 定位**
+
+- **接手 ㊵⑤ 點名的最大單一 unsup 來源**：`kind-name:SurfaceMatch:construct` **432 條** + `kind-name:StringLiteral:construct` **456 條**（16 檔合計，全部來自 `asp.kind-name`）。
+- **先更正 ㊵ 的事實錯誤**：`asp.kind-name` 是 **75 個臂、全部是字串字面量**——`1 -> 'AnnotationArrayValue'` … `74 -> 'ViewType'`，末臂是 `-> 'UNKNOWN-KIND'`，**沒有 `-> 0` 兜底**（`awk` 精確計數 75，`grep '\-> 0$'` 零命中）。㊵ 寫的「74 個字串臂 + 1 個 `-> 0` 兜底」不成立。
+- **語料盤點**（临时插桩 `SMVPROBE:` 逐臂記 `[臂值 AST kind]:[型別碼]`，跑 `tmp/cov-all2.no` 16 模組，`tmp/s124/cov-probe.txt`）：**1122 條值位 match 臂值**——`Identifier:0` 464、`StringLiteral:1` 450、`IntegerLiteral:0` 206、`DotExpression:0` 2。**非 i64 臂值只有 `kind-name` 的 450 條**（75 臂 × 6 個含 `asp` 的模組），**不存在混合型別的值位 match**。
+- **Go 權威語義**（實測 `tmp/s124/p-b.no`／`p-c.no`）：值位 match 的**臂值型別必須一致**，否則編譯錯誤 `match arm has inconsistent return types: str vs i64`（`dwkhnsmo`）。即混合臂（`n > 0 -> 'x'` + `-> 0`）在 Go 側是**編譯錯誤**，不是「运行时走到哪條算哪條」——這決定了修法的形狀：**實在一致才定型，不一致就回退**，而不是猜一個型別硬鋪。
+- **根因**：s103 的 `h2m-smv-body` 門禁写死「臂值型別必須 `== TY-I64`」，且 `h2m-scan` 把結果槽固定鋪成 `TY-I64` ⇒ str 臂值無處可落，乾脆整條鏈不降。
+
+**② 修復**
+
+- **`compiler/src/h2m.no` 新增 3 個函式**（`h2m-smv-arm-val` 之後）：
+  - `h2m-smv-ty`：前掃描逐臂取 `h2m-smv-arm-val` 的臂值表達式，用 `h2m-ty-of` 推型別；**全部臂一致才回該型別**，否則回 `-1`（混合型別／有臂推不出）。**必須在前掃描定**——結果槽的 alloca 要鋪在 entry，`h2m` 離開 entry 就回不去。
+  - `h2m-smv-store`：按槽型別選 op 寫入結果槽——`TY-I64/U64/F64 → OP-STORE`、`TY-STR → OP-SSTORE`、`TY-OPT → OP-OPTSTORE`、`>= TY-STRUCT-BASE → OP-STSTORE`（與 `h2m-var-write` 同口徑）。
+  - `h2m-smv-load`：按槽型別選 op 讀出——`TY-I64/U64/F64 → OP-LOAD`、`TY-STR → OP-SLOAD`、`TY-OPT → OP-OPTLOAD`、結構體 → `OP-STLOAD`（與 `h2m-var-read` 同口徑）。
+- **`h2m-scan`** 的 `K-LET-STATEMENT` / `K-SURFACE-MATCH` 分支：`ty = h2m-smv-ty(...)`，**`ty < 0 -> ty = TY-I64`**——推不出就回退舊口徑，行為與 s124 之前**逐字相同**，不放寬門禁。
+- **`h2m-lower-surface`**：查表取 `sty`（結果槽型別）；3 處 `h2m-smv-body` 呼叫傳 `sty`；`h2m-smv-body` 的門禁由 `== TY-I64` 改為 `== sty`（型別不符仍計 unsup，寧缺勿錯）；匯聚塊改用 `h2m-smv-load`。
+- **源碼改動：2 檔**——`h2m.no` 淨 +110 / −12 行（3 新函式 + 4 處改寫）、`h2m-test.no` +6 斷言。
+
+**③ 量測**
+
+配對基線（`tmp/cov-all2.no`：16 模組各跑一次 `drv.pkg-ll-cov`；pre = `tmp/s123/cov-s123.txt`，post = `tmp/s124/cov-s124.txt`）：
+
+| 檔 | pre ID／LF | post ID／LF | ΔID | ΔLF | pre／post unsup |
+| --- | --- | --- | --- | --- | --- |
+| `asp` | 0／77 | 0／1 | 0 | **−76** | 77／**1** |
+| `ast` | 24／293 | 24／217 | 0 | −76 | 314／238 |
+| `cg-rc` | 0／99 | 0／99 | 0 | 0 | 100／100 |
+| `cg-runtime` | 0／542 | 0／542 | 0 | 0 | 543／543 |
+| `cg` | 3／2478 | 3／2478 | 0 | 0 | 2482／2482 |
+| `ck-sig` | 0／74 | 0／74 | 0 | 0 | 75／75 |
+| `ck` | 29／418 | 29／342 | 0 | −76 | 441／365 |
+| `diag` | 8／35 | 8／35 | 0 | 0 | 35／35 |
+| `drv` | 230／5149 | 230／5074 | 0 | −75 | 5262／5188 |
+| `h2m` | 67／3374 | 67／3300 | 0 | −74 | 3436／3363 |
+| `ix` | 0／3 | 0／3 | 0 | 0 | 3／3 |
+| `link` | 2／18 | 2／18 | 0 | 0 | 18／18 |
+| `lx` | 16／164 | 16／163 | 0 | −1 | 166／165 |
+| `mir` | 0／0 | 0／0 | 0 | 0 | 0／0 |
+| `ps` | 124／1524 | 124／1447 | 0 | −77 | 1591／1514 |
+| `tok` | 0／3 | 0／2 | 0 | −1 | 3／2 |
+| **合計** | **503／14251** | **503／13795** | **0** | **−456** | **14546／14092** |
+
+- **ID 通道零變化（503 → 503）**：本輪完全沒有動「失敗標識符」路径，`kind-name` 的所有臂本來就沒有未定義名。
+- **LF −456 全部可查**：`kind-name:StringLiteral:construct` 456 → 0（76 × 6 模組）。**76 的拆分**（逐模組 Block 通道佐證）：**72 條 `kind-name:SurfaceMatch`** + **4 條整函級聯**（`FunctionDefinition` ×2、`BlockStatement` ×1、`Program` ×1）——即 `kind-name` 整條鏈不降後，`h2m-lower-func` ／ `h2m-lower-module` 順勢把整個函式、函式體塊、Program 各記一筆。**不是** 「75 臂 + 1」。
+- **unsup −454 與 LF −456 的 2 條差**：本輪新增了 2 條 block 級記錄（`h2m-smv-store:BlockStatement`／`h2m-smv-load:BlockStatement` 各 1，只在 `drv`／`h2m` 出現），見 ⑤。
+- **附帶收成**：`tok.name`（`r = c: { ILLEGAL -> 'ILLEGAL' … }`）與 `lx` 各 −1——`tok.no` 的 `name` 是**同一個 str 臂值形制**，被 `drv`／`lx`／`ps`／`tok` 四個量測重現，故 block 通道另見 `name:FunctionDefinition` −4（整函不再不產碼）。
+
+**④ 驗證**
+
+- **先紅後綠**：`compiler/tests/h2m-test.no` 新增 `test-s124-str-arm`（6 條）——重現 `kind-name` 形制（`r = id: { 1 -> 'one'  2 -> 'two'  -> 'other' }`）斷言 `unsup==0`／有 `define`／有 `store %str-long`（`OP-SSTORE`）／有 `load %str-long`（`OP-SLOAD`）；另釘混合臂（str + int）**仍** `unsup > 0` 且無 `define`。
+  - **紅**：以 s124 前的 `h2m.no`（備份 `/tmp/s124-h2m.no.bak`）跑 ⇒ `FAIL: eq - s124 str-arm unsup`／`emits code`／`SSTORE`／`SLOAD` **4 條紅**（混合臂那 2 條在紅綠兩側都通過，符合「Go 側本是編譯錯誤」的定性）。
+  - **綠**：換回 s124 版 ⇒ **1235 全綠**（㊵ 的 1229 ＋ 本輪 6）。
+- **14 套全量門禁全綠**：`ps` 52、`h2m` 1235、`cg` 363、`ck` 20、`ck-sig` 50、`lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、`ps-err` 46、`pkg-ll-call` 5、`pkg-sigs` 5、`pkg-ll` 10。
+- **語義端到端**（go oracle vs `tmp/s124/noc`，`tmp/s124-e2e/` ＋ 驅動 `tmp/s124/probe-e2e.no`；`drv.pkg-ll` + `link.compile` 鏈出可執行檔實跑，`go` 側的 `Error: exit status N` 即子進程退出碼 N）：
+
+| 程序 | 含義 | noc | Go oracle |
+| --- | --- | --- | --- |
+| `e1` | `kn(1) == 'one'`（臂 1 命中） | rc **1** | 1 |
+| `e2` | `kn(2) == 'two'`（臂 2 命中） | rc **2** | 2 |
+| `e3` | `kn(9) == 'other'`（兜底臂） | rc **3** | 3 |
+| `e4` | 混合臂 `1 -> 'one'` ＋ `-> 0` | **BUILD FAIL**（4 unsup，`compile ok=false`） | 編譯錯誤 `match arm has inconsistent return types: str vs i64` |
+
+- **格式**：`no fmt -d` 兩檔（`h2m.no`／`h2m-test.no`）全空（`h2m.no` 首檢出 1 處缺空行，已補）。
+- **S0→S1**：`./bin/no build -o tmp/s124/noc compiler` rc=0（`Build successful: tmp/s124/noc`）；`./tmp/s124/noc version` ⇒ `noc v0.0.1-m0`。
+
+**⑤ 誠實邊界與下一步**
+
+- **`asp` 的 77 → 1，剩下那 1 條是另一個缺口**：`kind-id`（`r = name: { 'AnnotationArrayValue' -> 1 … }`）——**str 主體**的值位 match。`h2m-lower-surface` 的主體判定只認 `TY-I64`／`TY-OPT`（`sty != TY-I64 && sty != TY-OPT -> bad = 1`），與本輪的「臂值型別」是**獨立的兩條門禁**，未動。
+- **`tok.name`／`lx` 的 1 條也是另一個缺口**：臂**條件**是全局常量型樣（`ILLEGAL -> 'ILLEGAL'`），而 s63 的門禁只認**裸整型字面量**（`pd.kind != asp.K-INTEGER-LITERAL -> bad = 1`）。探針實測（`tmp/s124/probe-const-arm.no`）：`1 -> 'one'` ⇒ 0 unsup；`ONE -> 'one'`（`ONE = 1` 全局常量）⇒ 1 unsup。**不是**本輪的臂值缺口。
+- **本輪只覆蓋「臂值型別一致」的值位 match**：混合型別在 Go 側是**編譯錯誤**，故 noc 側的設計是「回退 `TY-I64` 舊口徑，再由 `h2m-smv-body` 的型別門禁誠計 unsup」（`e4` 實測 4 unsup + 連結失敗）。**不猜型別**是新代碼的紀律。
+- **新增的 2 條 block ＋ 2 條 LF 是誠實暴露，非被動回歸**：`h2m-smv-store:BlockStatement`／`h2m-smv-load:BlockStatement` 各 1（`drv`／`h2m`），與既有同族 `h2m-smv-name` 完全同口徑（該函式自 s103 起就是每模組 1 條）；LF 側 `h2m-smv-load:Identifier`／`h2m-smv-store:IntegerLiteral` 各 1。
+- **新增 2 條 `noc: dropped (calls unsupported): h2m-smv-ty`**（`drv`／`h2m`）：新函式本身在**自舉編譯器**裡仍是 dropped（它呼叫的 `h2m-ty-of` 屬既有的 dropped 族），與 `h2m-smv-arm-val`／`h2m-smv-body` 同列。**不遮掩**。
+- **本輪未動 `drv.build-ll` 口徑**：`noc build`（單文件、無 sg）下的值位 match 行徑與 `pkg-ll` 不同，未納入。
+
+**下一步優先級**：① **值位 match 的常量型樣臂條件**（`tok.name` 那 1 條 ＋ 語料盤點；s63 門禁只認裸整型字面量）；② **str 主體的值位 match**（`asp.kind-id`，主體判定只認 i64／option）；③ 其餘非整數**臂值**型別（`vec`／`option`／結構體）——`h2m-smv-ty` 已把型別推出來、`h2m-smv-store`／`h2m-smv-load` 的映射已備好，但**語料為零**（本輪 ① 的 1122 條盤點裡只有 str 與 i64），須先盤點再決定。
+
+### ㊷ s125 —— 值位 match 的常量型樣臂條件（`tok.name` 族）（2026-11-20）
+
+**① 定位**
+
+- 接手 ㊶⑤ 的①：`tok.name`（`r = c: { ILLEGAL -> 'ILLEGAL' … }`，**93 個常量臂**）在 `drv`／`lx`／`ps`／`tok` 各剩 1 條 unsup，根因是 s63 門禁「臂條件只認**裸整型字面量**」。
+- **語料盤點**（臨時插樁 `SMVCPROBE:` 於 `h2m-scan-arms`，跑 `tmp/cov-all2.no` 16 模組，`tmp/s125/cov-probe.txt`）：**4234 條 SurfaceMatch 臂**（`h2m-scan-arms` 同時服務陳述位與值位，故這是**全部**臂，非僅值位）——
+  `IntegerLiteral` 444、`StringLiteral` 601、`InfixExpression` 1152、`Identifier` 382、`CallExpression` 45、`NilLiteral` 10、 wildcard（Condition 缺空）1600。
+- **裸標識符臂條件全部可歸因，只有兩個來源**：`err` **10 條**（option 三態臂，走 omode 門禁，**不受 s63 管**）＋ `tok.name` 的 **93 個枚舉常量 × 4 個量測模組 = 372 條**。
+  即**除 `tok.name` 外，整個 `compiler/src` 沒有任何常量型樣臂條件**——本輪射程是**一處**（4 個量測座標），不是散彈。
+- **Go 權威語意**（實測 `tmp/s125/p1.no`）：`ONE = 1` 的 `id: { ONE -> 'one'  TWO -> 'two'  -> 'other' }` 與字面量版型**逐值等價**——`kn(1)=='one'`、`kn(2)=='two'`、`kn(9)=='other'`。
+  臂條件在 Go 側就是**表達式**（switch case 語意），常量只是表達式的一種。
+- **根因**：`h2m-lower-surface` 的 s63 門禁 `pd.kind != asp.K-INTEGER-LITERAL || pd.nkid != 0 -> bad = 1` 把常量標識符擋在門外；
+  而**降級側早就認得常量**——`h2m-lower-expr` 的 s112 裸常量旁路（發 `OP-CONST`）與 `h2m-ty-of` 的 s112（推 `TY-I64`）都在。**只有門禁沒跟上**。
+
+**② 修復**
+
+- `compiler/src/h2m.no` **只動一處**（淨 +16 / −1）：s63 門禁的臂條件型樣由「裸整型字面量」擴為「裸整型字面量**或**模組根層整型常量」——`K-IDENTIFIER` 且 `h2m-sig-const-find-short(sg, pnm) >= 0` 才放行。
+  仍要求 `pd.nkid == 0`（不帶解構）；其餘標記（typePattern／typeBinding／typeArm／raw-cond 的 `a2`／`a3`／`a6`／`a8`）判定**一字未動**。
+- **絕不猜**：未命中常量表的裸標識符維持出局（`h2m-test` 的 s125 對照臂釘死）。**降級側不改**——s112 的 `OP-CONST` 旁路早就在，門禁一開就通了。
+- 源碼改動：**1 檔**（`h2m.no` +16/−1）；`h2m-test.no` +6 斷言。
+
+**③ 量測**
+
+配對基線（`tmp/cov-all2.no`：16 模組各跑一次 `drv.pkg-ll-cov`；pre = `tmp/s124/cov-s124.txt`，post = `tmp/s125/cov-s125.txt`）：
+
+| 檔 | pre ID／LF | post ID／LF | ΔID | ΔLF | pre／post unsup |
+| --- | --- | --- | --- | --- | --- |
+| `asp` | 0／1 | 0／1 | 0 | 0 | 1／1 |
+| `ast` | 24／217 | 24／217 | 0 | 0 | 238／238 |
+| `cg-rc` | 0／99 | 0／99 | 0 | 0 | 100／100 |
+| `cg-runtime` | 0／542 | 0／542 | 0 | 0 | 543／543 |
+| `cg` | 3／2478 | 3／2478 | 0 | 0 | 2482／2482 |
+| `ck-sig` | 0／74 | 0／74 | 0 | 0 | 75／75 |
+| `ck` | 29／342 | 29／342 | 0 | 0 | 365／365 |
+| `diag` | 8／35 | 8／35 | 0 | 0 | 35／35 |
+| `drv` | 230／5074 | 230／5073 | 0 | **−1** | 5188／5187 |
+| `h2m` | 67／3300 | 67／3300 | 0 | 0 | 3363／3363 |
+| `ix` | 0／3 | 0／3 | 0 | 0 | 3／3 |
+| `link` | 2／18 | 2／18 | 0 | 0 | 18／18 |
+| `lx` | 16／163 | 16／162 | 0 | **−1** | 165／164 |
+| `mir` | 0／0 | 0／0 | 0 | 0 | 0／0 |
+| `ps` | 124／1447 | 124／1446 | 0 | **−1** | 1514／1513 |
+| `tok` | 0／2 | 0／1 | 0 | **−1** | 2／1 |
+| **合計** | **503／13795** | **503／13791** | **0** | **−4** | **14092／14088** |
+
+- **落點干淨得罕見**：LF −4 **全部**是 `name:SurfaceMatch:construct` 4 → 0（block 通道同一條），也就是 `tok.name` 的 4 個量測座標；
+  `drv`／`lx`／`ps`／`tok` 各 −1，**其餘 12 檔逐項零變化**。
+- **ID 通道零變化（503 → 503）**：常量名本來就在常量表裡，三表未命中的失敗路徑從未被觸發。
+- **無任何新增條目**：`cmp.py` 的 block／leaf／id 三通道 diff **只有一行 −4**，沒有一行正數——本輪是**純消除**，不是「消除一處、換來另一處」。
+
+**④ 驗證**
+
+- **先紅後綠**：`compiler/tests/h2m-test.no` 新增 `test-s125-const-arm`（6 條）——手工搭 AST 重現 `id: { ONE -> 'one'  -> 'other' }`（主體裸標識符 `id` 為 `TY-I64` ⇒ vmode；臂值全 str ⇒ 走 s124 的 `OP-SSTORE`／`OP-SLOAD` 槽路），斷言 `unsup==0`／有值／結果 `TY-STR`／**真的發了 `OP-CONST 1`**；另以**未登記的裸標識符** `NOPE` 作對照臂，斷言仍 `unsup > 0` 且無值。
+  - **紅**：以 s125 前的 `h2m.no`（備份 `/tmp/s125-h2m.no.bak`）跑 ⇒ `no unsup`／`emits value`／`result str`／`emits CONST 1` **4 條紅**（對照臂 2 條在紅綠兩側都過，符合「門禁原本就擋未登記名」）。
+  - **綠**：換回 s125 版 ⇒ **1241 全綠**（㊶ 的 1235 ＋ 本輪 6）。
+- **14 套全量門禁全綠**：`ps` 52、`h2m` 1241、`cg` 363、`ck` 20、`ck-sig` 50、`lx` 81、`tok` 62、`diag` 7、`build-package` 8、`util` 27、`ps-err` 46、`pkg-ll-call` 5、`pkg-sigs` 5、`pkg-ll` 10。
+- **語義端到端**（go oracle vs `tmp/s125/noc`，`tmp/s125-e2e/` ＋ 驅動 `tmp/s125/probe-e2e.no`；`go` 側的 `Error: exit status N` 即子進程退出碼 N）：
+
+| 程序 | 含義 | noc | Go oracle |
+| --- | --- | --- | --- |
+| `c1` | `kn(1) == 'one'`（常量臂 1 命中） | rc **1** | 1 |
+| `c2` | `kn(2) == 'two'`（常量臂 2 命中） | rc **2** | 2 |
+| `c3` | `kn(9) == 'other'`（兜底臂） | rc **3** | 3 |
+| `c4` | 小寫未定義名 `nope` 作臂條件 | **BUILD FAIL**（3 unsup，`compile ok=false`） | 編譯錯誤 `'nope' is not defined` |
+| `c5` | 大寫未定義名 `NOPE` 作臂條件 | **BUILD FAIL**（3 unsup，`compile ok=false`） | **建置成功但執行期 SIGTRAP**（rc 133） |
+
+- **格式**：`no fmt -d` 兩檔（`h2m.no`／`h2m-test.no`）全空。
+- **S0→S1**：`./bin/no build -o tmp/s125/noc compiler` rc=0（`Build successful: tmp/s125/noc`）；`./tmp/s125/noc version` ⇒ `noc v0.0.1-m0`。
+
+**⑤ 誠實邊界與下一步**
+
+- **本輪只開「常量」，不開「局域變數」臂條件**：Go 也接受局域變數（實測 `tmp/s125/p2.no`：`c = 1` 後 `id: { c -> 'hit'  -> 'other' }` ⇒ 打印 `hit`／`other`），
+  且降級側 `h2m-lower-expr` 本來就能讀局域槽——但**門禁仍只認常量**，局域名一律出局。
+  理由：**語料為零**（4234 條臂裡沒有任何局域名臂條件），且放開等於親手打開「臂條件可為任意表達式」的大門，須先盤點。**刻意收窄，不是遺漏**。
+- **新暴露的 Go 側漏洞（誠實記一筆）**：臂條件是**未定義的**裸標識符時，Go 的行為**依大小寫分岔**——
+  小寫 `nope` 是編譯錯誤（`'nope' is not defined`），**全大寫 `NOPE` 卻建置成功**、執行期 SIGTRAP（rc 133，`c5` 實測）；
+  `X`／`Y`／`Z`／`ABC`／`FOO`／`QQ` 同樣建置成功，`nope`／`Nope`／`zzz` 則是編譯錯誤（`zsh tmp/s125/case-probe.sh` 10 名批次實測）。應是「大寫＝全域常量」的命名慣例被套用到解析路徑。
+  **noc 對兩者皆 BUILD FAIL**（3 unsup）——**不跟著產出會 trap 的碼**，這是寧缺勿錯，不是對齊。
+- **剩下的 str 主體缺口未動**：`asp.kind-id`（`r = name: { 'AnnotationArrayValue' -> 1 … }`，6 個量測座標）與 `tok.keyword`（`r = s: { 'if' -> IF … }`，4 個量測座標）都是 **str 主體的值位 match**，撞在主體判定 `sty != TY-I64 && sty != TY-OPT -> bad = 1`——與本輪的「臂條件型樣」是**獨立的兩條門禁**。
+- **本輪未動 `drv.build-ll` 口徑**：`noc build`（單文件、無 sg）下的值位 match 行徑與 `pkg-ll` 不同，未納入。
+
+**下一步優先級**：① **str 主體的值位 match**（`asp.kind-id` 6 坐標 ＋ `tok.keyword` 4 坐標 ＋ 各自的整函級聯）——先做語料盤點確認「str 主體」的總座標數，再定案；
+② **局域變數臂條件**（Go 接受、語料零，須先盤點）；③ 其餘非整數的**臂值**型別（`vec`／`option`／結構體）——`h2m-smv-store`／`h2m-smv-load` 的映射已備，但值位 match 的臂值語料只有 str 與 i64。
+
+### ㊸ s126 —— 值位 match 的 str 主體（常量型樣臂）（2026-11-20）
+
+**① 定位**
+
+承接 ㊷ ⑤ 的下一步①「先做語料盤點確認『str 主體』的總座標數」。在 `h2m-lower-surface` 主體判定後
+插臨時探針（`S126PROBE`，只記 `vctx == 1` 的值位 match）跑 16 模組全量（`tmp/s126/cov-probe.txt`，
+523 條），按主體型別碼（`mir.no`：`TY-I64=0`／`TY-STR=1`／`TY-VEC=2`／`TY-OPT=3`）統計：
+
+| 主體型別 | 座標數 | 處置 |
+| --- | --- | --- |
+| `TY-I64` | 411 | s63 既有射程 |
+| `TY-OPT` | 86 | s98 既有射程 |
+| `TY-STR` | **26** | 本輪前全部 `bad = 1` |
+
+26 個 str 主體按**臂條件形態**分兩類（這是本輪的關鍵細化，比 ㊷⑤ 的「6 ＋ 4」多出一倍）：
+
+- **A 類（12 個）常量型樣臂**——`asp.kind-id` 6、`tok.keyword` 4、`ck-name-silent` 2：
+  主體是 **str 裸標識符**，臂條件是 **str 字面量**（`'AnnotationArrayValue' -> 1`、`'if' -> IF`、
+  `'val' -> 1`），臂值 i64。對齐 Go 的 `switch s { case "if": … }`（`src/lexer/token.go:lookupKeyword`）。
+- **B 類（14 個）索引讀 option 臂**——`ix.at-s` 10、`ck-str-at` 2、`h2m-cov-join` 2：
+  主體是 `[]str` 的索引讀 `a[k]`（型別碼 `TY-STR`），臂 `ok -> it` ＋ 兜底。
+
+根因是 ㊷⑤ 已指認的主體判定（`compiler/src/h2m.no` `h2m-lower-surface`）：
+
+```
+sty == TY-I64 -> vmode = 1
+sty == TY-OPT -> omode = 1
+sty != TY-I64 && sty != TY-OPT -> bad = 1     ← A／B 兩類都撞這裡
+```
+
+**B 類的深層根因（本輪新發現）**：`OP-VECGETSTR`（`cg.no`）回**裸借用視圖**（`TY-STR`），
+**索引讀的 option 語意尚未 option 化**——而語言語义上 `a[k]` 恆 `?T`（D11）。所以 B 類即使放開主體，
+也**不能**按「str 常量型樣」降級；它的 `ok` 臂屬 option 三態，須先做「索引讀 option 化」。
+
+**② 修復**（`compiler/src/h2m.no`，5 處，對 s125 版淨改 61 行）
+
+1. **主體型別碼留存**：新區域變數 `subjty`，在兩處主體判定（裸標識符 / 表達式）把 `sty` 先記進 `subjty`。
+2. **放開 TY-STR 主體的值匹配**：兩處 `sty == TY-STR -> vmode = 1`，即 A／B 類都先取得 vmode 身分。
+3. **s63 型別一致門禁**：原「只認裸整型字面量／整型常量」改為**按主體型別分流**——
+   `subjty == TY-STR` ⇒ 臂條件只認 str 字面量／str 常量（`h2m-sig-strconst-find-short`）；
+   `subjty == TY-I64` ⇒ 維持整型字面量／整型常量（s63／s125 原射程）。型別不符（str 主體配 i64 臂）⇒ `bad`。
+4. **s119 變體臂例外限定 i64 主體**：把 `varm` 的三條判定包進 `subjty == TY-I64 -> { … }`；
+   並新增「**str 主體的變體臂**（`a1 != 0 || a5 != 0`）明確 `bad`」——把 B 類釘在 SurfaceMatch 歸因。
+5. **降級按主體型別分派比較 op**：原 `OP-CMPEQ`（對 `sv` 發 `icmp eq`）改為讀 `stv = h2m-vty-at(c, sv)`，
+   `TY-STR` ⇒ `OP-STEREQ`（s104 已備），否则 `OP-CMPEQ`。
+
+**③ 量測**（pre = `tmp/s125/cov-s125.txt`，post = `tmp/s126/cov-s126c.txt`）
+
+| 通道 | pre | post | 差 |
+| --- | --- | --- | --- |
+| Block | 8212 | 8200 | **−12** |
+| LF | 13791 | 13779 | **−12** |
+| ID | 503 | 503 | 0 |
+| **GRAND TOTAL** | **14088** | **14076** | **−12** |
+
+明細（`tmp/s125/cmp.py`）：`kind-id:SurfaceMatch` −6、`keyword:SurfaceMatch` −4、
+`ck-name-silent:SurfaceMatch` −2（Block 與 LF 通道各一份）；**ID 零變化**；**無任何正數**（純消除）。
+B 類（`ps-star-label`／`ck-str-at`／`h2m-cov-join`／`ix.at-s`／`ck-sig-str-at`）落點**逐字不變**。
+（陰影通道：若不在第 4 點把 str 主體變體臂釘住，B 類會從 `SurfaceMatch` **移位**成 `BlockStatement`
+——實測 `ps-star-label:SurfaceMatch` −8 ＋ `ps-star-label:BlockStatement` +16，總數不變但落點髒；
+本輪以明確擋回，故最終無此移位。）
+
+**④ 驗證**
+
+- **先紅後綠**：以 s125 版 `h2m.no`（`/tmp/s126-h2m.no.bak`）跑 `h2m-test` ⇒ 新測試 3 條紅
+  （`s126 str-subj no unsup`／`emits value`／`emits STEREQ`）；s126 版 **1245 全綠**（+4 斷言）。
+- **14 套門禁全綠**（`tmp/s126/gate2.txt`）：ps 52／h2m 1245／cg 363／ck 20／ck-sig 50／lx 81／
+  tok 62／diag 7／build-package 8／util 27／ps-err 46／pkg-ll-call 5／pkg-sigs 5／pkg-ll 10。
+- **e2e**（`tmp/s126-e2e/probe.no`，走 noc 路徑 `drv.pkg-ll` ＋ `link.compile`，非 `./bin/no build`）：
+
+| 案例 | 形制 | s125 版 | s126 版 |
+| --- | --- | --- | --- |
+| e1 | `r = name: { 'one' -> 'ONE' … }` | `ok=false`（dropped f/main，3 unsup） | **`ok=true`，rc=1**（3 名逐值全對） |
+| e2 | 同上但臂条件為 str 常量 `ONE='one'` | `ok=false`（dropped） | **`ok=true`，rc=1** |
+| e3 | str 主體 ＋ i64 臂（型別不符） | `ok=false` | `ok=false`（門禁生效） |
+| e4 | str 主體 ＋ 未登記 str 常量臂 | `ok=false` | `ok=false`（門禁不放鬆） |
+| e5 | 索引讀 `ok` 臂（B 類） | `ok=true` | `ok=true`（落點一致） |
+
+- **格式**：`no fmt -d compiler/src/h2m.no compiler/tests/h2m-test.no` 干淨。
+- **存量重構**：零。
+
+**⑤ 誠實邊界與下一步**
+
+- **只開常量型樣，不放局部變數**：Go 側 str switch 亦接受局部 str 量作 case，語料零（先不開，同 s125 口徑）。
+- **B 類 14 個坐标仍 unsup，且是「降級語意」層缺口**：`OP-VECGETSTR` 回裸借用視圖、未 option 化。
+  修它**不是**值位 match 專屬改動，會動到**所有 `[]str` 索引讀降級點**，須先做全域盤點（型別碼、
+  邊界檢查、既有的 `?=`／索引讀消費路徑）——不在本輪射程。
+- **`wi > 0` 放行路徑是既有漏洞**：s63 的型樣判定只在 `wi <= 0` 時執行，`wi > 0` 直接跳過（放行）。
+  s126 放開主體後才暴露（B 類曾短暂由此漏入降級）；現以「str 主體變體臂明確擋」釘住，但
+  **i64 主體的 `wi > 0` 非兜底臂仍可能走同一條路徑**——未盤點，記為待查。
+- **e5「建成功」是假象**：noc 版 `ks` 被 drop（unsupported），但 e5 的 `main`（`exit(0)`）不依賴它
+  ⇒ 無 dropped 訊息、link 成功。要讓 drop 可見須讓 `main` 呼叫 `ks`（對照 e3／e4 有 dropped 訊息）。
+- **本輪未動 `drv.build-ll` 口徑**（單文件、無 sg），同 ㊷。
+
+**下一步優先級**：① **索引讀 option 化**（B 類 14 坐標＋`OP-VECGETSTR` 語意）——先做型別碼與降級點盤點；
+② **局部變數臂條件**（Go 接受、語料零，須先盤點）；③ 其餘非整數的**臂值**型別（`vec`／`option`／結構體）。

@@ -4,7 +4,7 @@
 示例、关联引用与一句话摘要。数据是 `.noml`，前端是一个不依赖第三方库的
 CLI + MCP 服务器（本仓库用 Nolang 自身写成）。
 
-当前规模：**244 条词条 / 10 个语义域**，覆盖语言类型、语法构造、注解、内存模型、
+当前规模：**277 条词条 / 10 个语义域**，覆盖语言类型、语法构造、注解、内存模型、
 错误处理、模块系统、编译器内部、工具链、std 全部模块，以及一批实测踩过的坑。
 
 ---
@@ -40,12 +40,12 @@ make no && ./bin/no build glossary
 
 | 子命令 | 说明 |
 | --- | --- |
-| `get <id>` | 取单条词条全文 |
+| `get <id\|title\|别名>` | 取单条词条全文（先按 id，再按 title / 别名全等匹配） |
 | `search <关键词>` | 关键词检索（大小写不敏感），默认 10 条 |
 | `related <id>` | 沿 `related` 引用展开，1–3 层 |
 | `list [--domain=X] [--kind=X] [--status=X]` | 列出词条 |
 | `domains` | 列出语义域与条数 |
-| `check` | 一致性体检（CI 用） |
+| `check [--strict]` | 一致性体检（CI 用；`--strict` 时 WARN 也返回 1） |
 | `mcp` | 启动 MCP 服务器（stdio） |
 | `mcp --http=<host:port>` | 启动 MCP 服务器（HTTP） |
 | `version` | 版本与数据统计 |
@@ -55,9 +55,9 @@ make no && ./bin/no build glossary
 
 | 选项 | 说明 |
 | --- | --- |
-| `--data=<dir>` | 词库数据目录（默认自动探测） |
+| `--data=<dir>` | 词库数据目录（默认自动探测；路径以 `glossary/data` 结尾时会据此反推 refs 基准） |
 | `--format=text\|md\|json` | 输出形态，默认 `text` |
-| `--limit=N` | `search` 条数上限 |
+| `--limit=N` | `search` 条数上限；`0` 表示不限，默认 10 |
 | `--depth=N` | `related` 展开层数（1–3，默认 1） |
 
 三种输出形态都实现了：`text` 供人读、`md` 可直接拼进文档、`json` 供程序消费。
@@ -108,15 +108,15 @@ HTTP 侧回 `202` 空体；`id` 原样回显（支持数字、字符串、`null`
 glossary/data/
   index.noml        域清单（数组顺序 = CLI/渲染顺序）
   types.noml        类型系统            21
-  syntax.noml       语法                22
-  annotations.noml  注解                 5
+  syntax.noml       语法                23
+  annotations.noml  注解                 6
   memory.noml       内存管理            12
   errors.noml       错误处理            10
   modules.noml      模块与符号           7
   compiler.noml     编译器内部          13
   toolchain.noml    工具链              17
   std.noml          标准库模块索引     119
-  traps.noml        已知坑              18
+  traps.noml        已知坑              49
 ```
 
 `index.noml`：
@@ -162,7 +162,7 @@ glossary/data/
 | 键名（`'option':`） | 是 | 词条 id，同时是 `glossary get` 的参数；`#overflow` 这类以 `#` 开头的要加引号 |
 | `title` | 是 | 显示名 |
 | `kind` | 是 | `type`/`annotation`/`keyword`/`operator`/`concept`/`builtin`/`attr`/`macro`/`flag`/`module`/`trap` |
-| `status` | 是 | `stable`/`unstable`/`removed`/`unused`/`deprecated`/`trap`/`experimental` |
+| `status` | 否 | 缺省 `stable`；允许 `stable`/`unstable`/`removed`/`unused`/`deprecated`/`trap`/`experimental` |
 | `summary` | 是 | 一句话摘要，检索结果与 MCP 默认返回 |
 | `aliases` | 否 | 别名 / 报错码（如 `15w45dqk`、`m7vq3xrt`），检索会命中 |
 | `definition` | 是 | 多行定义 |
@@ -179,15 +179,21 @@ glossary/data/
 ## 一致性体检
 
 ```bash
-./glossary/dist/glossary check      # 0 error / 0 warning，rc=0
+./glossary/dist/glossary check            # 结构错误即 rc=1
+./glossary/dist/glossary check --strict   # 警告也当失败（CI 推荐）
 ```
 
 - **ERROR（rc=1）**：缺必填字段、`kind`/`status` 不在允许集、id 与域内键不一致、
-  跨域重复 id、`domain` 字段与文件名不符。
-- **WARN（rc=0）**：`related` 指向不存在的词条、`refs` 指向的文件不存在。
+  跨域重复 id、`domain` 字段与文件名 stem 不符、数据目录里有 `.noml` 没登记进
+  `index.noml`（整个域不会被载入）。
+- **WARN（rc=0）**：`related` 指向不存在的词条、`refs` 指向的文件不存在、
+  正文字段含 NUL 字节（载入期被编译器截断，见「已知问题」）。
 
 之所以把引用类问题降为 WARN：词库是逐步补的，「先写引用、目标稍后补」是正常过程；
-但结构错了就是错，必须挡住。当前基线是 **0 error / 0 warning**，新增词条后请保持。
+但结构错了就是错，必须挡住。需要把 WARN 也拦在 CI 里时加 `--strict`。
+
+当前基线是 **0 error / 1 warning**：唯一告警是 `toolchain.noml` 里
+`fmt-shape-gate` 的定义被编译器截断（见下节），数据本身没写错。
 
 ---
 
@@ -196,7 +202,7 @@ glossary/data/
 1. 选定语义域；没有合适的域就新建 `xxx.noml`（`domain` = 文件名 stem），
    并在 `index.noml` 的 `domains` 里加一行。
 2. 在 `terms` 里加一个条目，`kind`/`status` 取允许值。
-3. 跑 `./glossary/dist/glossary check`，直到 0 error / 0 warning。
+3. 跑 `./glossary/dist/glossary check`，直到 0 error（WARN 视约定处理）。
 4. 跑 `./glossary/dist/glossary get <新id>` 确认渲染正常（尤其是反引号块里的缩进）。
 
 `.noml` 的三条硬约束（否则解析失败）：
@@ -242,11 +248,44 @@ glossary/
 保留在 `tests/` 供后续修编译器时回归；`probe.no` 则用来在换机器/换编译器版本后
 快速确认本项目依赖的三个前提仍然成立。
 
+### 已知问题：编译器截断长正文（2026-11）
+
+`core` 的 `str` 缓冲在**按下标逐字节写入多字节内容**时，会在中途开始静默丢写：
+目标长度不变，从某个位置起全是 `0x00`。`std/noml` 的 `pool.parse-raw`（反引号原始块）
+与 `pool.quote` 都走这条路径，于是长正文（含 CJK）可能被截掉尾巴。
+
+本仓库受影响的是 `data/toolchain.noml` 的 `fmt-shape-gate`：定义 446 字节，
+载入后只有 432 字节有效，尾部「会被发现。」永久丢失（`get` 里表现为定义结尾突然断掉）。
+复现要点：
+
+```python
+# 1) 同一条正文单独放一个小文件里能完整解析；
+# 2) 放回 toolchain.noml 原位置就必坏；
+# 3) 把它挪到该文件 terms 的第一条又恢复正常 —— 与位置/前序内容有关，与内容本身无关。
+```
+
+最小机制的探针（与词库无关）：
+
+```nolang
+buf str = with-len(822)
+k = 0
+(k < 822) {
+    c = src.byte(k)          ; src 是含 CJK 的 822 字节串
+    buf[k]: { ok -> it = c, -> _ }   ; 从第 493 次写入开始静默失败
+    k = k + 1
+}
+```
+
+改成 `[]byte` + `buf.push(...)` + `to-bytes-str()` 复制即完全正确。修法建议：
+`std/noml` 的 `parse-raw` / `quote` 改用 `[]byte` 构造。在修好之前，
+`glossary check` 会把这类损坏报成 WARN（`--strict` 下直接失败），不至于静默出货。
+
 ---
 
 ## 已知限制
 
 - 词库是**手写数据 + 机械校验**，不是从编译器源码派生，所以和源码之间没有强一致约束；
-  `check` 只保证结构与引用不悬空，不保证内容与最新实现同步。
-- `refs` 路径相对工作区根解析，脱离本仓库单独分发二进制时这些路径仅供人看。
+  `check` 保证结构、引用与正文完整性（无 NUL 截断），不保证内容与最新实现同步。
+- `refs` 路径相对工作区根解析；用 `--data` 指向非 `.../glossary/data` 的目录时基准无从推导，
+  这类引用校验会退化成按当前目录判断（脱离本仓库分发二进制时这些路径仅供人看）。
 - `search` 是子串匹配 + 权重排序，没有分词与同义词扩展；中文靠别名与摘要原文命中。

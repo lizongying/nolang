@@ -248,6 +248,11 @@ h2m-ctx {
     bkp []i64
     bkm []i64
     bkn i64
+    ; s122：函数体块的栈深（h2m-lower-func 在进 body 前记下 bkn+1）。
+    ;   vec 局部量【不铺槽】（cg 无 alloca %vec），其绑定是 SSA 值 id —— 只有写在函数体顶层块
+    ;   （值 id 在函数体块定义）才支配全函数各块；写在被控块（循环/if/match 臂）里则不支配其后继，
+    ;   故 s122 的 vec 写门禁按 bkn == fnbk 判定，其余位置仍计 unsup。0 = 未设（非函数体上下文）。
+    fnbk i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -323,6 +328,7 @@ h2m-new = () (c h2m-ctx) {
         bkp: []
         bkm: []
         bkn: 0
+        fnbk: 0
     }
     c.vty.push(TY-I64)
     h2m-bk-root(c)
@@ -1001,7 +1007,15 @@ h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
                 -> _
             }
         }
-        i0 < 0 -> h2m-mark(c)
+
+        ; s122：名字尚无绑定（vec 局部量）——**不再**计 unsup，改为登记占位（vids=0）。
+        ;   mem==1 下 vec 不铺槽，值 id 由 h2m-var-write 在写点绑上；未写先读由 h2m-var-read
+        ;   的 sid==0 门禁计 unsup（诚实：拿到的是「未初始化」）。
+        i0 < 0 -> {
+            c.names.push(name)
+            c.vids.push(0)
+            c.tys.push(ty)
+        }
     }
     ty != TY-VEC && ty != TY-VECSTR -> {
         sid = h2m-alloc(c, ty)
@@ -1171,8 +1185,15 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
                 }
 
                 ; s62 / 切片 B：TY-VEC / TY-VECSTR 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
-                st == TY-VEC -> v = sid
-                st == TY-VECSTR -> v = sid
+                ;   s122：sid == 0 = 已登记但未写（未初始化）⇒ 计 unsup，不交 0 值 id 糊过去
+                st == TY-VEC -> {
+                    sid == 0 -> h2m-mark(c)
+                    sid > 0 -> v = sid
+                }
+                st == TY-VECSTR -> {
+                    sid == 0 -> h2m-mark(c)
+                    sid > 0 -> v = sid
+                }
                 st >= TY-STRUCT-BASE -> {
                     v = h2m-alloc(c, st)
                     h2m-emit(c, OP-STLOAD, v, sid, 0, '', st)
@@ -1248,7 +1269,11 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
             sid = c.vids[i]
             st = c.tys[i]
             vt = h2m-vty-at(c, val)
-            st == vt && st != TY-STR && st != TY-VEC && st != TY-OPT && st < TY-STRUCT-BASE -> {
+
+            ; ⚠️ 排除 TY-VECSTR：它與 TY-VEC 同樣【不鋪槽】（s62）——漏排除時該臂會在
+            ;   s122 登記的占位槽（vids=0）上發 OP-STORE ⇒ 產出 `store i64 %v…, i64* %s0`
+            ;   這種指向未定義 slot 0 的非法 IR（實測 []str 局部 + 計數循環）。同 h2m-slot-init-arg:1101。
+            st == vt && st != TY-STR && st != TY-VEC && st != TY-VECSTR && st != TY-OPT && st < TY-STRUCT-BASE -> {
                 h2m-emit(c, OP-STORE, 0, val, sid, '', 0)
                 ok-w = 1
             }
@@ -1269,6 +1294,17 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
                 wv = h2m-opt-wrap(c, val)
                 wv != val -> {
                     h2m-emit(c, OP-OPTSTORE, 0, wv, sid, '', 0)
+                    ok-w = 1
+                }
+            }
+
+            ; s122：vec 槽写——vec 局部量不铺槽，写就是「把名字重绑到本值 id」（同 mem==0 的 var-bind）。
+            ;   ⚠️ 只在**函数体顶层块**（bkn == fnbk）放行：值 id 在函数体块定义 ⇒ 支配全函数各块；
+            ;     写在被控块（循环/if/match 臂）里则值 id 不支配其后继，跨块读会变非法 SSA
+            ;     （cg 的 opt dominator 检查会拒），故那些位置仍计 unsup（如循环体内声明 vec 局部）。
+            st == TY-VEC || st == TY-VECSTR -> {
+                vt == st && c.bkn == c.fnbk -> {
+                    h2m-var-bind(c, name, val)
                     ok-w = 1
                 }
             }
@@ -1720,8 +1756,111 @@ h2m-smv-arm-val = (t ast, bn i64) (ex i64) {
     }
 }
 
+; s124：值位 SurfaceMatch 的結果型別——逐臂取臂值表達式，用 h2m-ty-of 推型別；
+;   全部臂一致才回該型別，否則回 -1（混合型別／有臂推不出 ⇒ 呼叫方保守回退 TY-I64 舊口徑）。
+;   ⚠️ 型別必須在前掃描定，因為結果槽的 alloca 要鋪在 entry（h2m 離開 entry 就回不去）；
+;      降級期的實際值型別仍由 h2m-smv-body 再比一次，兩者不一致即計 unsup（寧缺勿錯）。
+;   ⚠️ 與 h2m-ty-of 同口徑：「推不出」即 -1（如 `_` 臂），不做任何猜測。
+; t: AST arena；sg: 模組級簽名表；l: 已登記的局部量表；agg: 結構體表
+; n: SurfaceMatch 節點 id
+; ty: 型別碼（-1 = 不一致或推不出）
+h2m-smv-ty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (ty i64) {
+    ty = -1
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        arms = d.hcount
+        arms > 0 -> {
+            j = 0
+            seen = 0
+            acc = 0
+            ok = 1
+            (j < arms && ok == 1) {
+
+                #{overflow=wrap}
+                hb = d.hbase + 12 * j
+                bn = ast.aux-at(t, hb + 11)
+                ex = h2m-smv-arm-val(t, bn)
+                ex <= 0 -> ok = 0
+                ex > 0 -> {
+                    at = h2m-ty-of(t, sg, l, agg, ex)
+                    at < 0 -> ok = 0
+                    at >= 0 -> {
+                        seen == 0 -> {
+                            acc = at
+                            seen = 1
+                        }
+
+                        seen == 1 && acc != at -> ok = 0
+                    }
+                }
+
+                j = h2m-inc(j)
+            }
+            ok == 1 && seen == 1 -> ty = acc
+        }
+    }
+}
+
+; s124：值位結果槽寫入——按槽型別選 op（與 h2m-var-write 的同型別映射一致）。
+;   回 1 = 已發指令；0 = 型別不在映射內（不發指令，由呼叫方的型別門禁負責）。
+; c: 上下文；ty: 槽型別碼；val: 右值 id；slot: 槽 id
+; ok: 1 = 已發指令
+h2m-smv-store = (c h2m-ctx, ty i64, val i64, slot i64) (ok i64) {
+    ok = 0
+    ty == TY-I64 || ty == TY-U64 || ty == TY-F64 -> {
+        h2m-emit(c, OP-STORE, 0, val, slot, '', 0)
+        ok = 1
+    }
+
+    ty == TY-STR -> {
+        h2m-emit(c, OP-SSTORE, 0, val, slot, '', 0)
+        ok = 1
+    }
+
+    ty == TY-OPT -> {
+        h2m-emit(c, OP-OPTSTORE, 0, val, slot, '', 0)
+        ok = 1
+    }
+
+    ty >= TY-STRUCT-BASE -> {
+        h2m-emit(c, OP-STSTORE, 0, val, slot, '', 0)
+        ok = 1
+    }
+
+    ok
+}
+
+; s124：值位結果槽讀出——按槽型別選 op（與 h2m-var-read 的同型別映射一致）。
+; c: 上下文；ty: 槽型別碼；slot: 槽 id
+; v: 值 id（0 = 型別不在映射內）
+h2m-smv-load = (c h2m-ctx, ty i64, slot i64) (v i64) {
+    v = 0
+    ty == TY-I64 || ty == TY-U64 || ty == TY-F64 -> {
+        v = h2m-alloc(c, ty)
+        h2m-emit(c, OP-LOAD, v, slot, 0, '', ty)
+    }
+
+    ty == TY-STR -> {
+        v = h2m-alloc(c, TY-STR)
+        h2m-emit(c, OP-SLOAD, v, slot, 0, '', TY-STR)
+    }
+
+    ty == TY-OPT -> {
+        v = h2m-alloc(c, TY-OPT)
+        h2m-emit(c, OP-OPTLOAD, v, slot, 0, '', TY-OPT)
+    }
+
+    ty >= TY-STRUCT-BASE -> {
+        v = h2m-alloc(c, ty)
+        h2m-emit(c, OP-STLOAD, v, slot, 0, '', ty)
+    }
+
+    v
+}
+
 ; 臂体降级分派（s103）：陈述位走 h2m-lower-branch（原有路），值位降臂值表达式再 STORE 进结果槽
-;   ⚠️ 臂值型别必须是 TY-I64：结果槽按 i64 铺（h2m-slot-decl），str/vec 值无处可落 ⇒ 计 unsup
+;   s124：臂值型別改與【結果槽型別】對齊（前掃描 h2m-smv-ty 定，見上），不再限 TY-I64；
+;      型別不符（含前掃描推錯／降級側偏離）⇒ 計 unsup，寧缺勿錯。
 ;   ⚠️ h2m-smv-arm-val 回的是【AST 节点 id】，不是值 id——必须先 h2m-lower-expr 才拿到值 id；
 ;      直接把节点 id 当值 id 用会发 `store i64 %v7` 这种引用未定义值的 IR（实测 build-mo 首版即此坑）
 ; t: AST arena
@@ -1730,15 +1869,16 @@ h2m-smv-arm-val = (t ast, bn i64) (ex i64) {
 ; bn: 臂体节点 id
 ; vctx: 1 = 值位
 ; sslot: 值位结果槽的槽 id（vctx==0 时不用）
-h2m-smv-body = (t ast, c h2m-ctx, sg h2m-sigs, bn i64, vctx i64, sslot i64) {
+; sty: 值位结果槽的型别码（s124）
+h2m-smv-body = (t ast, c h2m-ctx, sg h2m-sigs, bn i64, vctx i64, sslot i64, sty i64) {
     vctx == 0 -> h2m-lower-branch(t, c, sg, bn)
     vctx == 1 -> {
         ex = h2m-smv-arm-val(t, bn)
         ex > 0 -> {
             xv = h2m-lower-expr(t, c, sg, ex)
             xv > 0 -> {
-                h2m-vty-at(c, xv) == TY-I64 -> h2m-emit(c, OP-STORE, 0, xv, sslot, '', 0)
-                h2m-vty-at(c, xv) != TY-I64 -> h2m-mark(c)
+                h2m-vty-at(c, xv) == sty -> h2m-smv-store(c, sty, xv, sslot)
+                h2m-vty-at(c, xv) != sty -> h2m-mark(c)
             }
             xv <= 0 -> h2m-mark(c)
         }
@@ -1867,6 +2007,14 @@ h2m-sigs {
     ;   self-host 源碼在模組自己內部寫裸名，失敗時三表皆空；短名旁路只作 fallback，
     ;   優先級仍在臂局部 / it / 局部名之後，不遮蔽局部變量。
     csname []str
+    ; s123：整包跨模組【str 常量】表（key = `mod.CONST`，值為字串內文）。
+    ;   與上面整數常量表（ckey/cval）平行——ByKey 查找需型別信息，不可混用一份值表；
+    ;   由 drv.sig-consts-add 從各模組根層 `CONST = 'lit'` 收集；
+    ;   h2m-lower-expr 的 K-IDENTIFIER / K-DOT-EXPRESSION 與 h2m-ty-of 同步查此表，
+    ;   命中發 OP-STRCONST（sym 即字串內文，cg 包成 .rodata 全域常量）。
+    stkey []str
+    stval []str
+    stname []str
 }
 
 ; 新建签名表
@@ -1882,6 +2030,9 @@ h2m-sigs-new = () (s h2m-sigs) {
         ckey: []
         cval: []
         csname: []
+        stkey: []
+        stval: []
+        stname: []
     }
 }
 
@@ -1986,6 +2137,54 @@ h2m-sig-const-find-short = (s h2m-sigs, name str) (i i64) {
     j = 0
     (j < s.csname.len() && i < 0) {
         nm = s.csname[j]
+        nm == name -> i = j
+
+        j = h2m-inc(j)
+    }
+}
+
+; s123：登记一个跨模组 str 常量（key = `mod.CONST`）
+; s: 签名表
+; name: 查表键（`mod.CONST`）
+; val: 字串內文（去引號後）
+h2m-sig-strconst-add = (s h2m-sigs, name str, val str) {
+    s.stkey.push(name)
+    s.stval.push(val)
+
+    ; 短名 = 第一個 '.' 之後的部分（與 h2m-sig-const-add 同口徑）
+    short = name
+    p = name.index('.')
+    p >= 0 -> {
+        p = h2m-inc(p)
+        short = name.slice-bytes(p, name.len-bytes())
+    }
+    s.stname.push(short)
+}
+
+; s123：按 `mod.CONST` 查 str 常量下标；-1 = 未登记
+; s: 签名表
+; name: 查表键
+; i: 下标（-1 = 未找到）
+h2m-sig-strconst-find = (s h2m-sigs, name str) (i i64) {
+    i = -1
+    j = 0
+    (j < s.stkey.len() && i < 0) {
+        nm = s.stkey[j]
+        nm == name -> i = j
+
+        j = h2m-inc(j)
+    }
+}
+
+; s123：按裸名（不含模組前綴）查 str 常量下标；-1 = 未登记
+; s: 签名表
+; name: 裸名
+; i: 下标（-1 = 未找到）
+h2m-sig-strconst-find-short = (s h2m-sigs, name str) (i i64) {
+    i = -1
+    j = 0
+    (j < s.stname.len() && i < 0) {
+        nm = s.stname[j]
         nm == name -> i = j
 
         j = h2m-inc(j)
@@ -2118,6 +2317,22 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
 
         ; s74：f64 字面量初值 ⇒ 槽宽 TY-F64（与降级侧 K-FLOAT-LITERAL 同口径；裸指数形如 1e5 降级侧必 mark，整函数不产码，槽宽推错无害）
         d.kind == asp.K-FLOAT-LITERAL -> code = TY-F64
+
+        ; s122：切片字面量 [e0, e1, …] ⇒ vec 槽宽——镜像降级侧 K-SLICE-LITERAL 的 vec-ty 预判
+        ;   （首元素 K-STRING-LITERAL ⇒ TY-VECSTR，其余／空 ⇒ TY-VEC）。
+        ;   🔴 缺这一支时 `B []i64 = [1]` 落在【含控制流（mem==1）】的函数里必挂：h2m-scan 推不出
+        ;      槽宽（留 -1）⇒ h2m-slot-decl 计 unsup，随后 h2m-var-write 查不到名字再计一次
+        ;      （实测两条 unsup）；同一份代码在直线式（mem==0）下不铺槽 ⇒ 正常产码——
+        ;      两种 mem 模式行为分岔，只有走控制流的那支才暴露。
+        ;      与 s104（str 比较/拼接）、s74 同族：ty-of 与降级侧的型别推断必须一起改。
+        d.kind == asp.K-SLICE-LITERAL -> {
+            code = TY-VEC
+            d.nkid > 0 -> {
+                slk = ast.kid-at(t, d.kid0)
+                sld = ast.nd-at(t, slk)
+                sld.kind == asp.K-STRING-LITERAL -> code = TY-VECSTR
+            }
+        }
         d.kind == asp.K-GROUPED-EXPRESSION -> {
             k = ast.kid-at(t, d.kid0)
             code = h2m-ty-of(t, sg, l, agg, k)
@@ -2184,6 +2399,13 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
             i < 0 && nm != 'it' -> {
                 bci = h2m-sig-const-find-short(sg, nm)
                 bci >= 0 -> code = TY-I64
+
+                ; s123：裸 str 常量（drv 的 NOC-NAME / NOC-VERSION 族）——整數表未命中才查，
+                ;   命中推 TY-STR（與降級側 OP-STRCONST 的 dest 同口徑）。
+                bci < 0 -> {
+                    ssi = h2m-sig-strconst-find-short(sg, nm)
+                    ssi >= 0 -> code = TY-STR
+                }
             }
         }
         d.kind == asp.K-PREFIX-EXPRESSION -> {
@@ -2302,6 +2524,12 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                 cf = ast.str-at(t, d.s0)
                 ci = h2m-sig-const-find(sg, cmn - '.' - cf)
                 ci >= 0 -> code = TY-I64
+
+                ; s123：模組 str 常量 mod.CONST —— 整數表未命中才查，命中推 TY-STR。
+                ci < 0 -> {
+                    csi = h2m-sig-strconst-find(sg, cmn - '.' - cf)
+                    csi >= 0 -> code = TY-STR
+                }
             }
         }
 
@@ -2432,11 +2660,15 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
                 ; 注：scan 的 agg 即函数 ctx 的浅拷来源，h2m-tynode-code 只读 struct 表，agg 可用
 
                 ; s103：值位 SurfaceMatch 右值（`r = { c -> v  -> d }`）——h2m-ty-of 不认 K-SURFACE-MATCH，
-                ;   故就地定型 TY-I64（本件只收 i64 臂值，str/vec 值仍由降级侧门禁计 unsup）；
+                ;   故就地定型（s124 起由 h2m-smv-ty 逐臂推型，推不出才回退 TY-I64）；
                 ;   同时登记结果槽合成名，让 entry 把 alloca 铺出来（降级侧逐臂 STORE、汇聚块 LOAD）
                 vkd.kind == asp.K-SURFACE-MATCH -> {
-                    ty = TY-I64
-                    h2m-lst-add(l, h2m-smv-name(n), TY-I64)
+
+                    ; s124：結果槽型別 = 各臂值表達式的【一致】型別（h2m-smv-ty）；
+                    ;   推不出／不一致 ⇒ 回退 TY-I64 舊口徑（行為與 s124 之前逐字相同，不放寬門禁）。
+                    ty = h2m-smv-ty(t, sg, l, agg, vk)
+                    ty < 0 -> ty = TY-I64
+                    h2m-lst-add(l, h2m-smv-name(n), ty)
                 }
                 h2m-lst-add(l, nm, ty)
                 f0 = h2m-scan-kids(t, sg, l, agg, vk)
@@ -2726,10 +2958,28 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                     v = bcid
                 }
                 bci < 0 -> {
-                    h2m-mark(c)
 
-                    ; s109：逐条归因——记下未命中的标识符名（旁路观测，不改降级语义）
-                    h2m-id-name(c, nm)
+                    ; s123：裸 str 常量（drv 的 NOC-NAME / NOC-VERSION 族）——整數表未命中才查，
+                    ;   命中發 OP-STRCONST(TY-STR)，與 K-STRING-LITERAL 臂同口徑（sym = 字串內文）。
+                    ssi = h2m-sig-strconst-find-short(sg, nm)
+                    ssi >= 0 -> {
+                        ssv = sg.stval[ssi]: {
+                            ok -> it
+
+                            -> ''
+                        }
+                        ssid = h2m-alloc(c, TY-STR)
+                        h2m-emit(c, OP-STRCONST, ssid, 0, 0, ssv, TY-STR)
+                        v = ssid
+                    }
+
+                    ; 未命中才记 unsup / ID（门禁不放宽）
+                    ssi < 0 -> {
+                        h2m-mark(c)
+
+                        ; s109：逐条归因——记下未命中的标识符名（旁路观测，不改降级语义）
+                        h2m-id-name(c, nm)
+                    }
                 }
             }
         }
@@ -3469,21 +3719,38 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             }
 
             ci < 0 -> {
-                sv = h2m-lower-expr(t, c, sg, recv)
-                sv > 0 -> {
-                    stcode = h2m-vty-at(c, sv)
 
-                    #{overflow=wrap}
-                    sid = stcode - TY-STRUCT-BASE
-                    (sid < 0 || sid >= c.stn.len()) -> h2m-mark(c)
-                    sid >= 0 && sid < c.stn.len() -> {
-                        fi = h2m-struct-field-idx(c, sid, fname)
-                        fi < 0 -> h2m-mark(c)
-                        fi >= 0 -> {
-                            fty = h2m-struct-field-ty(c, sid, fi)
-                            fv = h2m-alloc(c, fty)
-                            h2m-emit(c, OP-STRUCT-GET, fv, sv, fi, '', fty)
-                            v = fv
+                ; s123：跨模組 str 常量（`mod.CONST`）——整數表未命中才查，
+                ;   命中發 OP-STRCONST(TY-STR)，不進 struct 欄位路徑。
+                csi = h2m-sig-strconst-find(sg, ckey)
+                csi >= 0 -> {
+                    csv = sg.stval[csi]: {
+                        ok -> it
+
+                        -> ''
+                    }
+                    csvid = h2m-alloc(c, TY-STR)
+                    h2m-emit(c, OP-STRCONST, csvid, 0, 0, csv, TY-STR)
+                    v = csvid
+                }
+
+                csi < 0 -> {
+                    sv = h2m-lower-expr(t, c, sg, recv)
+                    sv > 0 -> {
+                        stcode = h2m-vty-at(c, sv)
+
+                        #{overflow=wrap}
+                        sid = stcode - TY-STRUCT-BASE
+                        (sid < 0 || sid >= c.stn.len()) -> h2m-mark(c)
+                        sid >= 0 && sid < c.stn.len() -> {
+                            fi = h2m-struct-field-idx(c, sid, fname)
+                            fi < 0 -> h2m-mark(c)
+                            fi >= 0 -> {
+                                fty = h2m-struct-field-ty(c, sid, fi)
+                                fv = h2m-alloc(c, fty)
+                                h2m-emit(c, OP-STRUCT-GET, fv, sv, fi, '', fty)
+                                v = fv
+                            }
                         }
                     }
                 }
@@ -3499,6 +3766,10 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bv = h2m-lower-expr(t, c, sg, bk)
             bv > 0 -> {
                 bt = h2m-vty-at(c, bv)
+
+                ; S127A（临时）：索引读降级点盘点
+                print('S127A::' - c.cur-fn - '::' - bt - ':')
+
                 bt == TY-VEC -> {
                     iv = h2m-lower-expr(t, c, sg, ik)
                     iv > 0 -> {
@@ -4422,6 +4693,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     vctx = 0
     r = 0
     sty = 0
+    subjty = 0
     sv0 = 0
     subj-expr = 0
     snm != '' -> vctx = 1
@@ -4429,6 +4701,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     arms > 0 -> {
         bad = 0
         sslot = 0
+        sty = 0
 
         ; 主体判定——裸链 kid[0] = 0（占位），显式 match kid[0] = 主体节点
         ;   i64 主体走 s63 值匹配（vmode）；option 主体走 s98 三态臂匹配（omode）
@@ -4446,19 +4719,25 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 si < 0 -> bad = 1
                 si >= 0 -> {
                     sty = c.tys[si]
+                    subjty = sty
                     sty == TY-I64 -> vmode = 1
+                    sty == TY-STR -> vmode = 1
                     sty == TY-OPT -> omode = 1
-                    sty != TY-I64 && sty != TY-OPT -> bad = 1
+                    sty != TY-I64 && sty != TY-STR && sty != TY-OPT -> bad = 1
                 }
             }
             subj-ident == 0 -> {
                 sv0 = h2m-lower-expr(t, c, sg, subj)
                 sv0 <= 0 -> bad = 1
                 sv0 > 0 -> {
+                    ; S127B（临时）：值位／陳述位 match 主體是索引讀的落點盤點
+                    sd.kind == asp.K-INDEX-EXPRESSION -> print('S127B::' - c.cur-fn - '::' - vctx - '::' - h2m-vty-at(c, sv0) - ':')
                     sty = h2m-vty-at(c, sv0)
+                    subjty = sty
                     sty == TY-I64 -> vmode = 1
+                    sty == TY-STR -> vmode = 1
                     sty == TY-OPT -> omode = 1
-                    sty != TY-I64 && sty != TY-OPT -> bad = 1
+                    sty != TY-I64 && sty != TY-STR && sty != TY-OPT -> bad = 1
                     subj-expr = 1
                 }
             }
@@ -4472,6 +4751,11 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
             si < 0 -> bad = 1
             si >= 0 -> {
                 sslot = c.vids[si]: {
+                    ok -> it
+
+                    -> 0
+                }
+                sty = c.tys[si]: {
                     ok -> it
 
                     -> 0
@@ -4524,6 +4808,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
             }
 
             ; s63 值匹配臂群门禁：除 wildcard 外只认裸整型字面量型样，带任何解构／型別／raw-cond 標記即出局
+            ;   s125：型樣增認【模組根層整型常量】（見下方 wi <= 0 分支）——不动其余標記判定。
             ;   s119：i64 值匹配的【變體臂】ok/nil/err 是例外——對齐 Go 實測（4 組對照）：
             ;   三者在 i64 主體下【都匹配常量 0】，`it` = 主體值。
             ;   `ok ->`（無綁定）dot-val 置位；`nil ->` bindingVariant='nil'；
@@ -4537,19 +4822,59 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 a8 = ast.aux-at(t, hb + 8)
 
                 varm = 0
-                a1 != 0 -> varm = 1
-                a1 == 0 && a5 != 0 -> varm = 1
 
-                ; ⚠️ 必須驗名字：`y ->`（未定義裸標識符）與 `err ->` 的 Condition 同為
-                ;   K-IDENTIFIER，只認「無 variant + 無 dot-val + 標識符」會把前者也放行
-                ;   （Go 側 `zzz ->` 是【編譯錯誤】，s118 實測）。
-                a1 == 0 && a5 == 0 && cnid-nm == 'err' -> varm = 1
+                ; s126：str 主體的【變體臂】（ok/nil/err，a1/a5 非零）不在本門禁射程——索引讀的
+                ;   option 語意尚未 option 化（OP-VECGETSTR 回裸借用視圖），放行會產出型別錯亂的碼。
+                ;   明確擋下，維持 SurfaceMatch 歸因（與 s126 前落點一致，不移位）。
+                subjty == TY-STR && (a1 != 0 || a5 != 0) -> bad = 1
+
+                ; s126：變體臂例外【只適用 i64 主體】——s119 的「匹配常量 0」語意是 i64 主體專有。
+                ;   str 主體的 `ok ->`（索引讀 option 臂）若也走本例外，會被誤當成常量 0 型樣放行，
+                ;   而後在降級側與 str 主體做型別錯亂的比較（實測 ps-star-label 等 14 處翻紅）。
+                subjty == TY-I64 -> {
+                    a1 != 0 -> varm = 1
+                    a1 == 0 && a5 != 0 -> varm = 1
+
+                    ; ⚠️ 必須驗名字：`y ->`（未定義裸標識符）與 `err ->` 的 Condition 同為
+                    ;   K-IDENTIFIER，只認「無 variant + 無 dot-val + 標識符」會把前者也放行
+                    ;   （Go 側 `zzz ->` 是【編譯錯誤】，s118 實測）。
+                    a1 == 0 && a5 == 0 && cnid-nm == 'err' -> varm = 1
+                }
 
                 varm == 0 -> {
                     a2 == 0 && a3 == 0 && a6 == 0 && a8 == 0 -> {
                         wi <= 0 -> {
                             pd = ast.nd-at(t, cn)
-                            pd.kind != asp.K-INTEGER-LITERAL || pd.nkid != 0 -> bad = 1
+
+                            ; s125：型樣=裸整型字面量（s63）或【模組根層整型常量】——裸標識符且
+                            ;   h2m-sig-const-find-short 命中。對齊 Go 的 switch case 表達式語意：
+                            ;   實測 `ONE = 1` 的 `id: { ONE -> 'one' }` 與 `1 -> 'one'` 等價
+                            ;   （tmp/s125/p1.no：kn(1)=='one'、kn(2)=='two'、kn(9)=='other'）。
+                            ;   仍要求 pd.nkid == 0（不帶解構）；未命中常量表的裸標識符維持出局
+                            ;   （門禁不放鬆，見 h2m-test 的 s125 對照臂）。
+                            ; s126：型別一致——主体 i64 ⇒ 臂條件只认整型字面量／整型常量；
+                            ;   主体 str ⇒ 臂條件只认 str 字面量／str 常量。型別不符（如 str 主体配 i64 臂）
+                            ;   ⇒ bad（Go 側亦是編譯錯誤，見 h2m-test 的 vm-gate-str-subj）。
+                            subjty == TY-STR -> {
+                                pd.kind != asp.K-STRING-LITERAL -> {
+                                    pd.kind != asp.K-IDENTIFIER -> bad = 1
+                                    pd.kind == asp.K-IDENTIFIER -> {
+                                        pnm = ast.str-at(t, pd.s0)
+                                        h2m-sig-strconst-find-short(sg, pnm) < 0 -> bad = 1
+                                    }
+                                }
+                            }
+                            subjty == TY-I64 -> {
+                                pd.kind != asp.K-INTEGER-LITERAL -> {
+                                    pd.kind != asp.K-IDENTIFIER -> bad = 1
+                                    pd.kind == asp.K-IDENTIFIER -> {
+                                        pnm = ast.str-at(t, pd.s0)
+                                        h2m-sig-const-find-short(sg, pnm) < 0 -> bad = 1
+                                    }
+                                }
+                            }
+                            subjty != TY-I64 && subjty != TY-STR -> bad = 1
+                            pd.nkid != 0 -> bad = 1
                         }
                     }
 
@@ -4643,7 +4968,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                             c.itv-n = h2m-inc(c.itv-n)
                         }
                     }
-                    h2m-smv-body(t, c, sg, bn, vctx, sslot)
+                    h2m-smv-body(t, c, sg, bn, vctx, sslot, sty)
                     h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
                     bound == 1 -> {
                         c.itv.pop()
@@ -4721,7 +5046,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                                 }
 
                                 ; err(e)：err 结构暂不可绑（无 TY-ERR），体引用 e → h2m-var-read 查不到 → unsup（安全）
-                                h2m-smv-body(t, c, sg, bn, vctx, sslot)
+                                h2m-smv-body(t, c, sg, bn, vctx, sslot, sty)
                                 h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
                                 et == 0 && bvar == 'ok' -> {
                                     c.alidx.pop()
@@ -4757,7 +5082,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                             subj-expr == 0 -> sv = h2m-var-read(c, sname)
                             sv > 0 -> {
                                 eqv = h2m-alloc(c, TY-I64)
-                                h2m-emit(c, OP-CMPEQ, eqv, sv, pv, '', TY-I64)
+                                stv = h2m-vty-at(c, sv)
+                                stv == TY-STR -> h2m-emit(c, OP-STEREQ, eqv, sv, pv, '', TY-I64)
+                                stv != TY-STR -> h2m-emit(c, OP-CMPEQ, eqv, sv, pv, '', TY-I64)
                                 cv = eqv
                             }
                             sv <= 0 -> cv = 0
@@ -4780,7 +5107,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                                 c.itv-n = h2m-inc(c.itv-n)
                             }
-                            h2m-smv-body(t, c, sg, bn, vctx, sslot)
+                            h2m-smv-body(t, c, sg, bn, vctx, sslot, sty)
                             h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
                             ab == 1 -> {
                                 c.itv.pop()
@@ -4797,9 +5124,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
             h2m-set-block(c, merge-id)
 
             ; s103：值位——汇聚块从结果槽 LOAD 出整链的值交回呼叫方（h2m-lower-let 再写进目标变量）
+            ;   s124：讀取 op 按槽型別選（h2m-smv-load），不再限 i64。
             vctx == 1 -> {
-                lv = h2m-alloc(c, TY-I64)
-                h2m-emit(c, OP-LOAD, lv, sslot, 0, '', TY-I64)
+                lv = h2m-smv-load(c, sty, sslot)
                 r = lv
             }
         }
@@ -5213,7 +5540,13 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             od2 = ast.nd-at(t, ok2)
             c.outn = ast.str-at(t, od2.s0)
         }
-        bc >= 0 -> h2m-lower-block(t, c, sg, body)
+
+        ; s122：记下函数体块的栈深（h2m-lower-block 入口会再压一块 ⇒ bkn+1）。
+        ;   供 h2m-var-write 的 vec 写门禁判定「当前是否就在函数体顶层块」。
+        bc >= 0 -> {
+            c.fnbk = h2m-inc(c.bkn)
+            h2m-lower-block(t, c, sg, body)
+        }
 
         ; 恰一个输出参数时：它绑定的值 id 即返回值
         rid = 0

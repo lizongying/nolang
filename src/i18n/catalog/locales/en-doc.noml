@@ -9220,10 +9220,6 @@ match = re.find('price: 123')
 matched = regexp-match('hello.*world', 'hello nolang world')
 result = regexp-find('[0-9]+', 'abc123def456')
 `
-  'regexp._re-quant-none': `
-internal quantifier codes (avoid using raw character values like 42/43/63 as comparison constants,
-because LLVM has an optimization bug with == 42. Use safe values 1/2/3 instead.)
-`
   'regexp.alloc-class': `
 allocates a new character class and returns its index
 returns cls-idx: the class index
@@ -11522,7 +11518,6 @@ note: now-ms, now-us, now-ns, sleep-us, sleep-ns are already provided by builtin
 and are not redefined here (a user function would shadow the same-named builtin and cause recursion);
 they are called directly as builtins.
 `
-  'time._days-in-month': 'days-in-month table (non-leap year)'
   'time.add-seconds': `
 adds seconds and returns a new time
 n: seconds to add (may be negative)

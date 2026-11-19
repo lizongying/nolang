@@ -9223,10 +9223,6 @@ match = re.find('price: 123')
 matched = regexp-match('hello.*world', 'hello nolang world')
 result = regexp-find('[0-9]+', 'abc123def456')
 `
-  'regexp._re-quant-none': `
-量指定子の内部コード（42/43/63 のような生の文字値を比較定数に使わないでください。
-LLVM に == 42 の最適化バグがあるためです。代わりに安全な値 1/2/3 を使います。）
-`
   'regexp.alloc-class': `
 新しい文字クラスを確保し、そのインデックスを返す
 戻り値 cls-idx: クラスのインデックス
@@ -11563,7 +11559,6 @@ duration-time, since-time, parse-time などの関数や、.unix/.date/.format �
 ここでは再定義されません（ユーザー関数が同名の組み込みを隠して再帰を引き起こします）；
 組み込みとして直接呼び出されます。
 `
-  'time._days-in-month': '月ごとの日数表（平年）'
   'time.add-seconds': `
 秒を加えて新しい time を返す
 n: 加算する秒数（負も可）

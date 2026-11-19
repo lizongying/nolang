@@ -96,7 +96,7 @@ int-of = (s str, dft i64) (v i64) {
     }
 }
 
-; 取第一个非选项位置参数
+; 取第一个位置参数（只把 `--` 开头的当作选项）
 ; start: 起始下标
 ; v: 参数值或空串
 ; [positional](#drv.positional)
@@ -105,7 +105,7 @@ positional = (start i64) (v str) {
     n = os.args().len()
     i <- [start..n): {
         a = arg-at(i)
-        is-opt = a.contains('--')
+        is-opt = a.starts-with('--')
         is-opt: {
             true -> _
 
@@ -117,8 +117,78 @@ positional = (start i64) (v str) {
     }
 }
 
+; argv 里是否有某个裸开关（如 --strict）
+; name: 开关原文
+; yes: true=出现
+; [has-flag](#drv.has-flag)
+has-flag = (name str) (yes bool) {
+    yes = false
+    n = os.args().len()
+    i <- [0..n): {
+        a = arg-at(i)
+        same = a.eq-full(name)
+        same: {
+            true -> {
+                yes = true
+                break
+            }
+
+            false -> _
+        }
+    }
+}
+
+; 整数减法（两段式解包）
+; a: 左操作数
+; b: 右操作数
+; r: a - b；溢出取 0
+; [sub-of](#drv.sub-of)
+sub-of = (a i64, b i64) (r i64) {
+    t = a - b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
 ; 数据目录解析
 ...
+
+; 记录显式数据目录，并顺手推导 refs 的解析基准
+;
+; 只给 --data / GLOSSARY_DATA 用。目录以 glossary/data 结尾时，把前缀当作仓库根；
+; 否则 refs 只能按当前目录解析（check 的引用校验会整体失真）。
+; dir: 数据目录
+; [set-dir](#drv.set-dir)
+set-dir = (dir str) {
+
+    ; 容忍结尾斜杠：`--data=glossary/data/` 与不带斜杠等价
+    d = dir
+    slash = d.ends-with('/')
+    slash: {
+        true -> {
+            n0 = d.len-bytes()
+            cut0 = sub-of(n0, 1)
+            d = d.slice-bytes(0, cut0)
+        }
+
+        false -> _
+    }
+    RES.dir = d
+    RES.root = ''
+    RES.ok = true
+    tail = d.ends-with('glossary/data')
+    tail: {
+        true -> {
+            n = d.len-bytes()
+            cut = sub-of(n, 13)
+            RES.root = d.slice-bytes(0, cut)
+        }
+
+        false -> _
+    }
+}
 
 ; 解析数据目录，结果写入 RES
 ; explicit: --data 的值；空串表示未指定
@@ -127,18 +197,14 @@ positional = (start i64) (v str) {
 resolve = (explicit str) (ok bool) {
     ok = false
     explicit.len-bytes() > 0 -> {
-        RES.dir = explicit
-        RES.root = ''
-        RES.ok = true
+        set-dir(explicit)
         ok = true
         return
     }
 
     env = env-of('GLOSSARY_DATA')
     env.len-bytes() > 0 -> {
-        RES.dir = env
-        RES.root = ''
-        RES.ok = true
+        set-dir(env)
         ok = true
         return
     }
@@ -262,12 +328,12 @@ usage = () {
     print('')
     print('用法: ' - GNAME - ' <子命令> [参数]')
     print('')
-    print('  get <id>              取单条词条全文')
+    print('  get <id|title|别名>   取单条词条全文')
     print('  search <关键词>       关键词检索（大小写不敏感）')
     print('  related <id>          沿关联引用展开')
     print('  list [--domain=X]     列出词条（默认全部）')
     print('  domains               列出语义域与条数')
-    print('  check                 一致性体检（CI 用）')
+    print('  check [--strict]      一致性体检（CI 用；--strict 让警告也返回 1）')
     print('  mcp                   启动 MCP 服务器（stdio）')
     print('  mcp --http=<host:port>')
     print('                        启动 MCP 服务器（HTTP）')
@@ -277,8 +343,8 @@ usage = () {
     print('选项:')
     print('  --data=<dir>          指定词库数据目录（默认自动探测）')
     print('  --format=text|md|json 输出形态（默认 text）')
-    print('  --limit=N             search 的条数上限（默认 10）')
-    print('  --depth=N       related 的展开层数（1-3，默认 1）')
+    print('  --limit=N             search 的条数上限（0=不限，默认 10）')
+    print('  --depth=N             related 的展开层数（1-3，默认 1）')
 }
 
 ; version 子命令
@@ -323,7 +389,7 @@ cmd-get = () (code i64) {
 
         true -> _
     }
-    idx = db.find(id)
+    idx = db.find-loose(id)
     idx: {
         -1 -> {
             eprint('未找到词条: ' - id)
@@ -355,7 +421,7 @@ cmd-search = () (code i64) {
         true -> _
     }
     lim = int-of(opt-of('--limit'), 10)
-    lim <= 0 -> lim = 10
+    lim < 0 -> lim = 10
     ids = db.search(q, lim)
     print(emit-list(ids, opt-of('--format'), '没有匹配「' - q - '」的词条。'))
 }
@@ -383,7 +449,7 @@ cmd-related = () (code i64) {
     dp = int-of(opt-of('--depth'), 1)
     dp <= 0 -> dp = 1
     dp > 3 -> dp = 3
-    idx = db.find(id)
+    idx = db.find-loose(id)
     idx: {
         -1 -> {
             eprint('未找到词条: ' - id)
@@ -457,7 +523,7 @@ cmd-mcp = () (code i64) {
 }
 
 ; check 子命令：一致性体检
-; code: 退出码（有 ERROR 即 1）
+; code: 退出码（有 ERROR 即 1；--strict 时 WARN 也算失败）
 ; [cmd-check](#drv.cmd-check)
 cmd-check = () (code i64) {
     code = 0
@@ -470,7 +536,7 @@ cmd-check = () (code i64) {
 
         true -> _
     }
-    errs = schema.check-all(RES.root)
+    errs = schema.check-all(RES.root, RES.dir)
     e-lines = schema.err-report()
     en = e-lines.len-bytes()
     en > 0 -> print(e-lines)
@@ -479,6 +545,10 @@ cmd-check = () (code i64) {
     wn > 0 -> print(w-lines)
     print(schema.summary(errs))
     errs > 0 -> code = 1
+    strict = has-flag('--strict')
+    warns = schema.warn-count()
+    strict-warn = strict && warns > 0
+    strict-warn -> code = 1
 }
 
 ; 分派

@@ -47,11 +47,14 @@ gl-term {
 gl-db {
     terms []gl-term
     strs []str
+    str-lens []i64
     alias-ids []i64
     rel-ids []i64
     ref-ids []i64
     domains []str
     domain-titles []str
+    domain-stems []str
+    files []str
     loaded i64
     err str
 }
@@ -75,8 +78,39 @@ add = (a i64, b i64) (r i64) {
     }
 }
 
+; 整数减法（带默认值解包）
+; a: 左操作数
+; b: 右操作数
+; r: a - b；溢出时取 0
+; [sub](#db.sub)
+sub = (a i64, b i64) (r i64) {
+    t = a - b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
 ; 文本驻留
 ...
+
+; 取驻留串的长度（驻留时的长度快照，用于长度预筛）
+; i: DB.strs 下标
+; v: 长度；越界回 -1
+; [len-at](#db.len-at)
+len-at = (i i64) (v i64) {
+    v = -1
+    i < 0 -> return
+    e = DB.str-lens[i]
+    e: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
 
 ; 取驻留串
 ; i: DB.strs 下标；越界或空位回空串
@@ -96,38 +130,65 @@ str-at = (i i64) (v str) {
 }
 
 ; 驻留一个字符串，返回其下标（相同内容复用同一槽）
+;
+; 去重先用「长度」预筛再比内容：词库里的定义/语法/示例长短高度离散，长度过滤能
+; 把全库数百万次 eq-full 压到一个可忽略的量级（改造前单次 CLI 启动固定 0.6s）。
 ; s: 待驻留字符串
 ; idx: DB.strs 下标
 ; [intern](#db.intern)
 intern = (s str) (idx i64) {
     hit = -1
     n = DB.strs.len()
+    want = s.len-bytes()
     i <- [0..n): {
-        e = DB.strs[i]
-        e: {
-            ok -> {
-                ev = it
-                same = ev.eq-full(s)
-                same: {
-                    true -> {
-                        hit = i
-                        break
+        ln = len-at(i)
+        same-len = ln == want
+        same-len: {
+            true -> {
+                e = DB.strs[i]
+                e: {
+                    ok -> {
+                        ev = it
+                        same = ev.eq-full(s)
+                        same: {
+                            true -> {
+                                hit = i
+                                break
+                            }
+
+                            false -> _
+                        }
                     }
 
-                    false -> _
+                    nil -> _
+
+                    err -> _
                 }
             }
 
-            nil -> _
-
-            err -> _
+            false -> _
         }
     }
     idx = hit
     hit < 0 -> {
         idx = DB.strs.len()
         DB.strs.push(s)
+        DB.str-lens.push(want)
     }
+}
+
+; 直接追加，不去重
+;
+; 只给定义/语法/示例这类长正文用：它们几乎不可能重复，去重的比较成本反而是
+; 启动耗时的大头。短字段（id/title/domain/kind/status/summary/别名/关联/来源）
+; 仍然走 intern，检索与渲染都依赖它们共享同一槽位。
+; s: 待追加字符串
+; idx: DB.strs 下标
+; [intern-unique](#db.intern-unique)
+intern-unique = (s str) (idx i64) {
+    idx = DB.strs.len()
+    DB.strs.push(s)
+    DB.str-lens.push(s.len-bytes())
 }
 
 ; 载入
@@ -173,14 +234,15 @@ load-term = (d noml.doc, tidx i64, tid str, dom str) {
     t.kind = intern(nav.str-or(d, tidx, 'kind', ''))
     t.status = intern(nav.str-or(d, tidx, 'status', 'stable'))
     t.summary = intern(nav.str-or(d, tidx, 'summary', ''))
-    t.definition = intern(nav.str-or(d, tidx, 'definition', ''))
-    t.syntax = intern(nav.str-or(d, tidx, 'syntax', ''))
-    t.example = intern(nav.str-or(d, tidx, 'example', ''))
+    t.definition = intern-unique(nav.str-or(d, tidx, 'definition', ''))
+    t.syntax = intern-unique(nav.str-or(d, tidx, 'syntax', ''))
+    t.example = intern-unique(nav.str-or(d, tidx, 'example', ''))
 
-    ; 别名：先记录起始位置，再全量追加，最后用「阵列长度」确定条数（不做算术）
+    ; 别名：先记录起始位置，再全量追加，最后用「阵列长度之差」确定条数（不做算术）。
+    ; 不能用源数组长度：nav.str-arr 会跳过非字符串元素，两者在坏数据上会分叉，
+    ; 区间随后就会读到下一个词条的别名。
     al = nav.str-arr(d, tidx, 'aliases')
     t.alias-off = DB.alias-ids.len()
-    t.alias-n = al.len()
     i <- [0..al.len()): {
         e = al[i]
         e: {
@@ -191,10 +253,10 @@ load-term = (d noml.doc, tidx i64, tid str, dom str) {
             err -> _
         }
     }
+    t.alias-n = sub(DB.alias-ids.len(), t.alias-off)
 
     rl = nav.str-arr(d, tidx, 'related')
     t.rel-off = DB.rel-ids.len()
-    t.rel-n = rl.len()
     i <- [0..rl.len()): {
         e = rl[i]
         e: {
@@ -205,10 +267,10 @@ load-term = (d noml.doc, tidx i64, tid str, dom str) {
             err -> _
         }
     }
+    t.rel-n = sub(DB.rel-ids.len(), t.rel-off)
 
     rf = nav.str-arr(d, tidx, 'refs')
     t.ref-off = DB.ref-ids.len()
-    t.ref-n = rf.len()
     i <- [0..rf.len()): {
         e = rf[i]
         e: {
@@ -219,6 +281,7 @@ load-term = (d noml.doc, tidx i64, tid str, dom str) {
             err -> _
         }
     }
+    t.ref-n = sub(DB.ref-ids.len(), t.ref-off)
 
     DB.terms.push(t)
     DB.loaded = DB.terms.len()
@@ -261,6 +324,8 @@ load-domain = (dir str, file str) (ok bool) {
     title = nav.str-or(d, d.root, 'title', dom)
     DB.domains.push(dom)
     DB.domain-titles.push(title)
+    DB.domain-stems.push(stem)
+    DB.files.push(file)
 
     ti = nav.idx-or(d, d.root, 'terms')
     ti < 0 -> {
@@ -286,6 +351,32 @@ load-domain = (dir str, file str) (ok bool) {
     ok = true
 }
 
+; 清空全部索引状态（重复 open 时不会叠加旧词条）
+; [reset](#db.reset)
+reset = () {
+    terms []gl-term = []
+    strs []str = []
+    lens []i64 = []
+    aids []i64 = []
+    rids []i64 = []
+    fids []i64 = []
+    doms []str = []
+    titles []str = []
+    stems []str = []
+    files []str = []
+    DB.terms = terms
+    DB.strs = strs
+    DB.str-lens = lens
+    DB.alias-ids = aids
+    DB.rel-ids = rids
+    DB.ref-ids = fids
+    DB.domains = doms
+    DB.domain-titles = titles
+    DB.domain-stems = stems
+    DB.files = files
+    DB.loaded = 0
+}
+
 ; 打开词库：读 index.noml 的域清单，逐个载入
 ; dir: 数据目录（含 index.noml）
 ; ok: true=全部域文件载入成功
@@ -293,6 +384,7 @@ load-domain = (dir str, file str) (ok bool) {
 open = (dir str) (ok bool) {
     ok = false
     DB.err = ''
+    reset()
     idx-path = dir - '/index.noml'
     txt = read-text(idx-path)
     txt.len-bytes() == 0 -> {
@@ -400,6 +492,45 @@ domain-title-at = (i i64) (v str) {
     }
 }
 
+; 第 i 个语义域的源文件名（如 types.noml）
+; i: 域下标
+; v: 文件名；越界为空串
+; [file-at](#db.file-at)
+file-at = (i i64) (v str) {
+    v = ''
+    d = DB.files[i]
+    d: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 已登记（index.noml 列出）的域文件数
+; n: 文件数
+; [file-count](#db.file-count)
+file-count = () (n i64) {
+    n = DB.files.len()
+}
+
+; 第 i 个语义域的源文件名 stem
+; i: 域下标
+; v: stem；越界为空串
+; [domain-stem-at](#db.domain-stem-at)
+domain-stem-at = (i i64) (v str) {
+    v = ''
+    d = DB.domain-stems[i]
+    d: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
 ; 按 id 查词条下标
 ; id: 词条 id
 ; idx: 词条下标；-1 表示不存在
@@ -415,6 +546,90 @@ find = (id str) (idx i64) {
                 sid = str-at(et.id)
                 same = sid.eq-full(id)
                 same: {
+                    true -> {
+                        idx = i
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 字符串阵列是否含某值（逐项全等比较）
+; vs: 待搜索阵列
+; v: 目标值
+; yes: true=存在
+; [str-vec-has](#db.str-vec-has)
+str-vec-has = (vs []str, v str) (yes bool) {
+    yes = false
+    i <- [0..vs.len()): {
+        e = vs[i]
+        e: {
+            ok -> {
+                same = it.eq-full(v)
+                same: {
+                    true -> {
+                        yes = true
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 宽松查找：先按 id，再按 title 全等，最后按别名全等
+;
+; 词库面向人直接提问，输入「三态」「option (?T)」这类显示名是常态；
+; 只按 id 匹配会让最自然的输入得到「未找到」。
+; q: 查询串
+; idx: 词条下标；-1 表示不存在
+; [find-loose](#db.find-loose)
+find-loose = (q str) (idx i64) {
+    idx = find(q)
+    idx >= 0 -> return
+    n = DB.terms.len()
+    i <- [0..n): {
+        e = DB.terms[i]
+        e: {
+            ok -> {
+                t = it
+                same = str-at(t.title).eq-full(q)
+                same: {
+                    true -> {
+                        idx = i
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    idx >= 0 -> return
+    i <- [0..n): {
+        e = DB.terms[i]
+        e: {
+            ok -> {
+                hit = str-vec-has(list(i, 'aliases'), q)
+                hit: {
                     true -> {
                         idx = i
                         break

@@ -31,6 +31,13 @@ func looksLikeConstName(name string) bool {
 	return true
 }
 
+// isPrivateGlobalName 判定 `_大寫` 私有全局：底線前綴 + 大寫字母開頭。
+// 與 mir.isGlobalStyleName 的私有分支同款規則。私有全局在宣告模組內可見，
+// 跨模組以 `mod._BUF` 訪問是硬錯誤。
+func isPrivateGlobalName(name string) bool {
+	return len(name) > 1 && name[0] == '_' && name[1] >= 'A' && name[1] <= 'Z'
+}
+
 // checkUnresolvedModuleCalls 在檢查期（module merge 完成、ResolveModuleCalls
 // 之後）對主程式中的 `module.fn()` 呼叫與 `module.CONST` 常量讀取做存在性
 // 驗證。
@@ -64,6 +71,24 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 	propNames := make(map[string]bool)          // 帶點名的最後一段（方法名/前綴函數名）
 	moduleFnsOf := make(map[string][]string)    // 短名模組 → 該模組頂層函數（供建議）
 	moduleConstsOf := make(map[string][]string) // 短名模組 → 該模組頂層常量（供建議）
+	// shortModuleOf 把完整 owner 路徑轉成最後一段短名（與 importedModules 對齊）。
+	shortModuleOf := func(owner string) string {
+		if idx := strings.LastIndex(owner, "/"); idx >= 0 {
+			return owner[idx+1:]
+		}
+		return owner
+	}
+	// moduleLowerBindingsOf：短名模組 → 該模組的小寫頂層「數據綁定」名。
+	//
+	// 語言規範：module-level global 必須大寫開頭。小寫頂層綁定是模組私有的局部
+	// （合成 main 的局部），跨模組以 `mod.lower-name` 訪問它會讀到另一份存储或
+	// 靜默失敗。同模組內函式讀寫小寫頂層是完全合法的（局部變量），因此這裡
+	// 只收集「有 owner 的模組語句」，主程序綁定（owner == ""）不納入。
+	//
+	// modulePrivateGlobalsOf：短名模組 → 該模組的 `_大寫` 私有全局名。
+	// 私有全局只在宣告它的模組內可見；跨模組以 `mod._BUF` 訪問是硬錯誤。
+	moduleLowerBindingsOf := make(map[string]map[string]bool)
+	modulePrivateGlobalsOf := make(map[string]map[string]bool)
 	for _, stmt := range merged.Statements {
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
@@ -78,10 +103,23 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 				// 模組常量（module.CONST 讀取也走 DotExpression）
 				known[s.Name.Value] = true
 				if owner := merged.Sem.ModuleOwnerOf(stmt); owner != "" {
-					if idx := strings.LastIndex(owner, "/"); idx >= 0 {
-						owner = owner[idx+1:]
+					short := shortModuleOf(owner)
+					moduleConstsOf[short] = append(moduleConstsOf[short], s.Name.Value)
+					// 小寫開頭的頂層數據綁定：跨模組訪問需診斷。
+					// `_大寫` 私有全局另歸 modulePrivateGlobalsOf，不進這裡。
+					if !looksLikeConstName(s.Name.Value) && !isPrivateGlobalName(s.Name.Value) {
+						if moduleLowerBindingsOf[short] == nil {
+							moduleLowerBindingsOf[short] = make(map[string]bool)
+						}
+						moduleLowerBindingsOf[short][s.Name.Value] = true
 					}
-					moduleConstsOf[owner] = append(moduleConstsOf[owner], s.Name.Value)
+					// `_大寫` 私有全局：跨模組訪問需診斷。
+					if isPrivateGlobalName(s.Name.Value) {
+						if modulePrivateGlobalsOf[short] == nil {
+							modulePrivateGlobalsOf[short] = make(map[string]bool)
+						}
+						modulePrivateGlobalsOf[short][s.Name.Value] = true
+					}
 				}
 			}
 		case *parser.StructDefinition:
@@ -157,6 +195,48 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 		errs = append(errs, msg)
 	}
 
+	// reportLowerGlobal 報告「跨模組訪問小寫頂層綁定」：這類綁定是模組私有的
+	// 局部（合成 main 的局部），不是 module global。跨模組以 mod.name 訪問它
+	// 只會讀到另一份存储或靜默失敗（MIR 的 lowerModuleScopedBinding 會因 owner
+	// 不匹配降級為 NoVal）。診斷同時給出原因與修復方式（改名為大寫全局）。
+	// 注意：同模組內函式讀寫小寫頂層是完全合法的局部變量，不在這裡檢查。
+	reportLowerGlobal := func(dot *parser.DotExpression, modPath, name string) {
+		short := shortModuleOf(modPath)
+		key := "lower:" + short + "." + name
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		pos := dot.Pos()
+		suggest := name
+		if suggest != "" {
+			r := []byte(suggest)
+			if r[0] >= 'a' && r[0] <= 'z' {
+				r[0] -= 'a' - 'A'
+			}
+			suggest = string(r)
+		}
+		errs = append(errs, fmt.Sprintf(
+			"line %d: cross-module access to lowercase binding '%s.%s': module-level globals must start with an uppercase letter; a lowercase binding is module-private and reads a separate copy across modules. Rename it to '%s' in module '%s' (and update references).",
+			pos.Line, short, name, suggest, short))
+	}
+
+	// reportPrivateGlobal 報告「跨模組訪問私有全局 `_大寫`」：私有全局只在宣告
+	// 它的模組內可見（同模組函式可自由讀寫），從別的模組以 `mod._BUF` 訪問
+	// 是硬錯誤。修復方式是去掉底線前綴，升級為公開全局。
+	reportPrivateGlobal := func(dot *parser.DotExpression, modPath, name string) {
+		short := shortModuleOf(modPath)
+		key := "private:" + short + "." + name
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		pos := dot.Pos()
+		errs = append(errs, fmt.Sprintf(
+			"line %d: cross-module access to private global '%s.%s': a '_'-prefixed uppercase binding is private to its module and cannot be referenced from another module. Remove the underscore prefix to make it a public global in module '%s' (and update references).",
+			pos.Line, short, name, short))
+	}
+
 	var checkExpr func(e parser.Expression)
 	var checkStmt func(s parser.Statement)
 	checkExpr = func(e parser.Expression) {
@@ -206,6 +286,19 @@ func checkUnresolvedModuleCalls(merged *parser.Program, importedModules []string
 				if !stdMods[short] && looksLikeConstName(name) &&
 					!known[name] && !known[short+"."+name] && !propNames[name] {
 					reportConst(x, modPath, name)
+				}
+				// 跨模組訪問小寫頂層數據綁定：module global 必須大寫開頭，
+				// 小寫綁定是模組私有的局部，跨模組只會讀到另一份存儲或靜默失敗。
+				// 只報「目標模組確實宣告了同名小寫頂層數據綁定」的情況，避免
+				// 誤傷 struct 欄位 / 方法 / std 模組成員（後者不在 merged）。
+				if !stdMods[short] && !looksLikeConstName(name) &&
+					moduleLowerBindingsOf[short][name] {
+					reportLowerGlobal(x, modPath, name)
+				}
+				// 跨模組訪問 `_大寫` 私有全局：只在宣告模組內可見，跨模組是硬錯誤。
+				if !stdMods[short] && isPrivateGlobalName(name) &&
+					modulePrivateGlobalsOf[short][name] {
+					reportPrivateGlobal(x, modPath, name)
 				}
 			}
 			checkExpr(x.Receiver)

@@ -672,5 +672,10 @@ func (a *compileAssembly) secondStageResolution() error {
 	if err := checkUnresolvedModuleCalls(a.merged, a.importedModules); err != nil {
 		return i18n.Errorf("trdj5rp8", "check error: %v", err)
 	}
+	// 語言規範診斷：頂層（全局/常量）綁定必須大寫開頭，即使同模組跨函式
+	// 存取也一樣；函式/方法/結構體名與 main 局部變量不受限。
+	if errs := checkLowercaseGlobals(a.merged); len(errs) > 0 {
+		return i18n.Errorf("trdj5rp8", "check error: %v", strings.Join(errs, "\n"))
+	}
 	return nil
 }
