@@ -6,6 +6,14 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.28
+
+- feat(match): support general expressions as explicit match subjects
+- fix(match): distinguish binding-less ok and err arms using dot-val markers
+- fix(h2m): resolve bare hyphen function calls within modules
+- feat(h2m): collect cross-module integer constants and report unresolved identifiers
+- docs(readme): add multilingual READMEs and reorganize self-host design documents
+
 ## v0.4.27
 
 - refactor(async): remove the deprecated run keyword and awy handle form, allowing co only inside awy coroutine groups
