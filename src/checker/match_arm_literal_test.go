@@ -30,6 +30,24 @@ func hasCannotAssign(results []ValidateResult) bool {
 	return false
 }
 
+// hasArmConflict 回報 results 是否帶 kv3rm9ws 臂一致性診斷。2026-11-20 起，
+// 值 match 的各臂必須統一為一個型別，不同基型（如 char vs str）在賦值之前
+// 就由統一階段拒絕，不再落到 15w45dqk。
+func hasArmConflict(results []ValidateResult) bool {
+	for _, r := range results {
+		if r.TraceID == "kv3rm9ws" {
+			return true
+		}
+	}
+	return false
+}
+
+// rejectedByEither 回報「仍以任一型別診斷拒絕」。臂一致性規則出現後，有些
+// 寫法從 15w45dqk 改報 kv3rm9ws；這些測試要守的是「仍然被拒絕」，不是訊息 id。
+func rejectedByEither(results []ValidateResult) bool {
+	return hasCannotAssign(results) || hasArmConflict(results)
+}
+
 // TestMatchArmIntLiteralNarrowsToDeclared：數字型別都可以用 `0` 這樣的字面量。
 //
 // 值 match 的預設臂 `-> 0` 是常數轉換，不是執行期 i64→u8 窄化：
@@ -122,7 +140,7 @@ f = (a []char, i i64) (res char) {
     }
 }
 `)
-	if !hasCannotAssign(bad) {
+	if !rejectedByEither(bad) {
 		t.Fatalf("str literal 'x' assigned to char must still be rejected, got: %v", bad)
 	}
 }

@@ -1,0 +1,6 @@
+add = (v i64) {
+  g.push(v)
+}
+g []i64 = with-len(0)
+g.push(5)
+print(g[0])

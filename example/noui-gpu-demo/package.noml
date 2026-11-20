@@ -1,0 +1,8 @@
+{
+  name: 'noui-gpu-demo'
+  description: 'noui SDL_GPU 后端演示 —— Metal/Vulkan/DX12 彩色矩形'
+  license: 'Apache-2.0'
+  compiler: {
+    link-libs: ['noui-gpu-shim', 'SDL3']
+  }
+}

@@ -531,7 +531,6 @@ Package created: %s
 
 `
   'fd9jkb5k': 'member %q is an empty array: annotate it with #{type = \'[]<elem>\'}'
-  'fdwcn8i8': 'match arm never returns a value'
   'fe0a5wt2': 'cannot compare option value \'%s\' (%s) with \'%s\' (%s): unwrap it first (`v ?= expr`) or match on ok/nil/err'
   'fftzl9dl': `
 clear failed: %v
@@ -706,6 +705,7 @@ AST cache directory: %s
   'kmm43ypb': 'resolving %s from lock: %w'
   'krvc469y': 'vec.clear: needs receiver'
   'ksvya88a': 'Usage: no cache <stat|clear>'
+  'kv3rm9ws': 'match arms have inconsistent value types: %s vs %s; all arms must unify to one type — t|t = t, t|?t = ?t, t|never = t (return/break/continue/_ arms produce no value), t|nil = ?t'
   'kvp8bxoc': 'Lock file and integrity sums saved.'
   'kxikdkzu': 'net-accept: no result slot'
   'kzomgjsg': 'empty ~match statement'

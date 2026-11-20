@@ -1,0 +1,3 @@
+g []str = with-len(0)
+g.push('hello')
+print(g[0])

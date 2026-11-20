@@ -178,6 +178,10 @@ h2m-ctx {
     args []i64
     itv []i64
     itv-n i64
+    ; s128：当前降级/扫描中的值位 match 主體【載荷型別】——臂内 `it` 的型別由此推斷
+    ;   （h2m-ty-of 讀它，不再恆 I64）。由 h2m-smv-ty / h2m-scan-arms 在掃臂前 save-set、
+    ;   掃完 restore；默認 TY-I64 = s65 舊口徑（靜態推不出的主體，如 option 裸標識符）。
+    it-pty i64
     aln []str
     alv []i64
     alidx []i64
@@ -285,6 +289,7 @@ h2m-new = () (c h2m-ctx) {
         args: []
         itv: []
         itv-n: 0
+        it-pty: TY-I64
         aln: []
         alv: []
         alidx: []
@@ -1756,11 +1761,37 @@ h2m-smv-arm-val = (t ast, bn i64) (ex i64) {
     }
 }
 
+; s128：值位 match 主體的【載荷型別】——臂内 `it` 的型別由此推斷（不再恆 I64）。
+;   主體索引讀：基型 TY-VECSTR ⇒ TY-STR；TY-VEC ⇒ TY-I64（與 h2m-lower-safe-index 同口徑，
+;   見 h2m.no 的 h2m-lower-safe-index 4704/4705 行）。
+;   其餘（含 option 裸標識符／str 主體）：靜態推不出 ⇒ 默認 TY-I64（維持 s65 舊口徑，不放寬門禁）。
+; t: AST arena；sg: 模組級簽名表；l: 已登記的局部量表；agg: 結構體表
+; n: SurfaceMatch 節點 id
+; pty: 載荷型別碼（TY-I64 / TY-STR）
+h2m-smv-pty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (pty i64) {
+    pty = TY-I64
+    n > 0 -> {
+        subj = h2m-kid-i(t, n, 0)
+        subj > 0 -> {
+            sd = ast.nd-at(t, subj)
+            sd.kind == asp.K-INDEX-EXPRESSION -> {
+                bk = h2m-kid-i(t, subj, 0)
+                bk > 0 -> {
+                    bt = h2m-ty-of(t, sg, l, agg, bk)
+                    bt == TY-VECSTR -> pty = TY-STR
+                    bt == TY-VEC -> pty = TY-I64
+                }
+            }
+        }
+    }
+}
+
 ; s124：值位 SurfaceMatch 的結果型別——逐臂取臂值表達式，用 h2m-ty-of 推型別；
 ;   全部臂一致才回該型別，否則回 -1（混合型別／有臂推不出 ⇒ 呼叫方保守回退 TY-I64 舊口徑）。
 ;   ⚠️ 型別必須在前掃描定，因為結果槽的 alloca 要鋪在 entry（h2m 離開 entry 就回不去）；
 ;      降級期的實際值型別仍由 h2m-smv-body 再比一次，兩者不一致即計 unsup（寧缺勿錯）。
 ;   ⚠️ 與 h2m-ty-of 同口徑：「推不出」即 -1（如 `_` 臂），不做任何猜測。
+; s128：扫臂前把主體載荷型別寫進 agg.it-pty（save-set／掃完 restore），使臂內 `it` 推對型別。
 ; t: AST arena；sg: 模組級簽名表；l: 已登記的局部量表；agg: 結構體表
 ; n: SurfaceMatch 節點 id
 ; ty: 型別碼（-1 = 不一致或推不出）
@@ -1770,6 +1801,8 @@ h2m-smv-ty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (ty i64) {
         d = ast.nd-at(t, n)
         arms = d.hcount
         arms > 0 -> {
+            sv-pty = agg.it-pty
+            agg.it-pty = h2m-smv-pty(t, sg, l, agg, n)
             j = 0
             seen = 0
             acc = 0
@@ -1796,6 +1829,7 @@ h2m-smv-ty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (ty i64) {
 
                 j = h2m-inc(j)
             }
+            agg.it-pty = sv-pty
             ok == 1 && seen == 1 -> ty = acc
         }
     }
@@ -2390,9 +2424,10 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                 }
             }
 
-            ; s65：`it` 不进槽表——它的值 = 值匹配臂主体（s63 门禁限 i64 槽），槽宽直推 I64；
-            ;   裸链／match 外的 `it` 在这里同样推成 I64，但降级侧 var-read/write 栈空即计 unsup，门禁不放松
-            i < 0 && nm == 'it' -> code = TY-I64
+            ; s65：`it` 不进槽表——它的值 = 值匹配臂主体。s128 起型别由【主体载荷型别】推断
+            ;   （agg.it-pty，由 h2m-smv-ty / h2m-scan-arms 在扫臂前设定）；裸链／match 外的 `it`
+            ;   仍取默认 TY-I64，而降级侧 var-read/write 栈空即计 unsup，门禁不放松
+            i < 0 && nm == 'it' -> code = agg.it-pty
 
             ; s112：裸常量（TY-I64 / OP-ADD / B-LF ...）——模組自己在函式內引用，
             ;   三表未命中時才查短名旁路；優先級不變（局部名永遠先命中）。
@@ -2598,6 +2633,10 @@ h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
     flow = 0
     n > 0 -> {
         d = ast.nd-at(t, n)
+
+        ; s128：臂內若有 `x = it` 之類約定，得先知道主體載荷型別（與 h2m-smv-ty 同口徑）
+        sv-pty = agg.it-pty
+        agg.it-pty = h2m-smv-pty(t, sg, l, agg, n)
         j = 0
         (j < d.hcount) {
 
@@ -2614,6 +2653,7 @@ h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
 
             j = h2m-inc(j)
         }
+        agg.it-pty = sv-pty
     }
 }
 
@@ -3767,9 +3807,6 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bv > 0 -> {
                 bt = h2m-vty-at(c, bv)
 
-                ; S127A（临时）：索引读降级点盘点
-                print('S127A::' - c.cur-fn - '::' - bt - ':')
-
                 bt == TY-VEC -> {
                     iv = h2m-lower-expr(t, c, sg, ik)
                     iv > 0 -> {
@@ -4682,6 +4719,90 @@ h2m-subtree-uses-it = (t ast, n i64) (u i64) {
 ; n: SurfaceMatch 节点 id
 ; snm: 值位结果槽的合成名（'' = 陈述位，不发值）
 ; r: 交出的值 id（0 = 陈述位或降级失败）
+; s127：索引讀的 safe-index 降級（對齐 Go lowerSafeIndexAt，src/mir/hir2mir.go:5225）——
+;   語義：in range ⇒ ok(elem)；out of range ⇒ 越界。Go 越界回 err(tag 2, code.index-out)，
+;   自舉無 err 構造 op 且本鏈語料臂只有兜底（不讀錯誤值）⇒ none 塊存 nil(tag 1)，等價
+;   （誠實邊界，見 ㊹）。
+;   str 載荷：VECGETSTR 回【借用視圖】（與容器共享 data），包進 option 前須 RETAIN 取得所有權
+;   （OPTMKSTR 只存儲不自动 retain，見 mir.no:211），否則 option/容器各自 drop 會双重釋放。
+;   i64 載荷：OP-VECGET 回值，直接 OPTSOME。
+;   ⚠️ 块模型：本函數目前塊 = 主體降級點，開 ok/none/merge 三塊後【當前塊停在 merge】，
+;      由呼叫方（h2m-lower-surface）在其後繼續鋪臂塊——與 Go 的 mergeBlk 返回同構。
+; n: K-INDEX-EXPRESSION 節點
+; r: option 值 id（TY-OPT）；0 = 降級失敗
+; pty: 載荷型別（TY-I64 / TY-STR）；-1 = 不在覆蓋面
+h2m-lower-safe-index = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (r i64, pty i64) {
+    r = 0
+    pty = -1
+    d = ast.nd-at(t, n)
+    bk = ast.kid-at(t, d.kid0)
+    ik = ast.kid-at(t, d.kid0 + 1)
+    bv = h2m-lower-expr(t, c, sg, bk)
+    bv <= 0 -> h2m-mark(c)
+    bv > 0 -> {
+        bt = h2m-vty-at(c, bv)
+        bt == TY-VEC -> pty = TY-I64
+        bt == TY-VECSTR -> pty = TY-STR
+        pty >= 0 -> {
+            iv = h2m-lower-expr(t, c, sg, ik)
+            iv > 0 -> {
+
+                ; sink：nil option 槽（各臂只覆寫它，無 phi）
+                sink = h2m-alloc(c, TY-OPT)
+                h2m-emit(c, OP-OPTALLOC, sink, 0, 0, '', TY-OPT)
+                zid = h2m-alloc(c, TY-OPT)
+                h2m-emit(c, OP-OPTNONE, zid, 0, 0, '', TY-OPT)
+                h2m-emit(c, OP-OPTSTORE, 0, zid, sink, '', 0)
+
+                ; 邊界檢查：0 <= idx < len
+                nv = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-VECLEN, nv, bv, 0, '', TY-I64)
+                zt = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, zt, 0, 0, '', TY-I64)
+                ng = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CMPGE, ng, iv, zt, '', TY-I64)
+                irl = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CMPLT, irl, iv, nv, '', TY-I64)
+                okb = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-AND, okb, ng, irl, '', TY-I64)
+
+                okblk = h2m-block-new(c)
+                noneblk = h2m-block-new(c)
+                mergeblk = h2m-block-new(c)
+                h2m-emit(c, OP-CONDBR, noneblk, okb, okblk, '', 0)
+
+                ; ok 塊：取元素 → 包 option → 存 sink
+                h2m-set-block(c, okblk)
+                wv = h2m-alloc(c, TY-OPT)
+                pty == TY-STR -> {
+                    ev = h2m-alloc(c, TY-STR)
+                    h2m-emit(c, OP-VECGETSTR, ev, bv, iv, '', TY-STR)
+                    h2m-emit(c, OP-RETAIN, 0, ev, 0, '', 0)
+                    h2m-emit(c, OP-OPTMKSTR, wv, ev, 0, '', TY-OPT)
+                }
+                pty == TY-I64 -> {
+                    ev = h2m-alloc(c, TY-I64)
+                    h2m-emit(c, OP-VECGET, ev, bv, iv, '', TY-I64)
+                    h2m-emit(c, OP-OPTSOME, wv, ev, 0, '', TY-OPT)
+                }
+                h2m-emit(c, OP-OPTSTORE, 0, wv, sink, '', 0)
+                h2m-emit(c, OP-BR, 0, mergeblk, 0, '', 0)
+
+                ; none 塊：存 nil（越界；見誠實邊界）
+                h2m-set-block(c, noneblk)
+                h2m-emit(c, OP-OPTSTORE, 0, zid, sink, '', 0)
+                h2m-emit(c, OP-BR, 0, mergeblk, 0, '', 0)
+
+                ; merge：讀出 option 交回
+                h2m-set-block(c, mergeblk)
+                lv = h2m-alloc(c, TY-OPT)
+                h2m-emit(c, OP-OPTLOAD, lv, sink, 0, '', TY-OPT)
+                r = lv
+            }
+        }
+    }
+}
+
 h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     h2m-set-cur-k(c, t, n)
     h2m-bk-push(c, asp.K-SURFACE-MATCH, n)
@@ -4696,6 +4817,11 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     subjty = 0
     sv0 = 0
     subj-expr = 0
+
+    ; s127：主體是否為索引讀（⇒ safe-index 降級）；subj-pty = 主體 option 的載荷型別
+    ;   （默認 TY-I64 ⇒ 維持 s98 既有 omode 行為；索引讀主体才帶 str 載荷）
+    subj-index = 0
+    subj-pty = TY-I64
     snm != '' -> vctx = 1
     arms <= 0 -> h2m-mark(c)
     arms > 0 -> {
@@ -4727,18 +4853,33 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 }
             }
             subj-ident == 0 -> {
-                sv0 = h2m-lower-expr(t, c, sg, subj)
-                sv0 <= 0 -> bad = 1
-                sv0 > 0 -> {
-                    ; S127B（临时）：值位／陳述位 match 主體是索引讀的落點盤點
-                    sd.kind == asp.K-INDEX-EXPRESSION -> print('S127B::' - c.cur-fn - '::' - vctx - '::' - h2m-vty-at(c, sv0) - ':')
-                    sty = h2m-vty-at(c, sv0)
-                    subjty = sty
-                    sty == TY-I64 -> vmode = 1
-                    sty == TY-STR -> vmode = 1
-                    sty == TY-OPT -> omode = 1
-                    sty != TY-I64 && sty != TY-STR && sty != TY-OPT -> bad = 1
-                    subj-expr = 1
+
+                ; s127：索引讀主体（`a[k]`）恆 ?T ⇒ 走 safe-index 降級（邊界檢查 + option 包裹），
+                ;   不得按裸值（OP-VECGET/OP-VECGETSTR）降——那是「索引讀 option 化」的缺口（㊸⑤）。
+                sd.kind == asp.K-INDEX-EXPRESSION -> subj-index = 1
+                subj-index == 1 -> {
+                    sv0, subj-pty = h2m-lower-safe-index(t, c, sg, subj)
+                    sv0 <= 0 -> bad = 1
+                    sv0 > 0 -> {
+                        sty = h2m-vty-at(c, sv0)
+                        subjty = sty
+                        sty == TY-OPT -> omode = 1
+                        sty != TY-OPT -> bad = 1
+                        subj-expr = 1
+                    }
+                }
+                subj-index == 0 -> {
+                    sv0 = h2m-lower-expr(t, c, sg, subj)
+                    sv0 <= 0 -> bad = 1
+                    sv0 > 0 -> {
+                        sty = h2m-vty-at(c, sv0)
+                        subjty = sty
+                        sty == TY-I64 -> vmode = 1
+                        sty == TY-STR -> vmode = 1
+                        sty == TY-OPT -> omode = 1
+                        sty != TY-I64 && sty != TY-STR && sty != TY-OPT -> bad = 1
+                        subj-expr = 1
+                    }
                 }
             }
         }
@@ -4823,10 +4964,11 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                 varm = 0
 
-                ; s126：str 主體的【變體臂】（ok/nil/err，a1/a5 非零）不在本門禁射程——索引讀的
-                ;   option 語意尚未 option 化（OP-VECGETSTR 回裸借用視圖），放行會產出型別錯亂的碼。
-                ;   明確擋下，維持 SurfaceMatch 歸因（與 s126 前落點一致，不移位）。
-                subjty == TY-STR && (a1 != 0 || a5 != 0) -> bad = 1
+                ; s126：【裸 str 主體】的變體臂（ok/nil/err，a1/a5 非零）不在本門禁射程——
+                ;   s119 的「匹配常量 0」只適用 i64 主體，裸 str 主體配變體臂放行會產出型別錯亂的碼。
+                ;   ⚠️ s127 后【索引讀主體】已 safe-index 成 TY-OPT（走 omode），不再命中本擋；
+                ;   本擋此刻只射「裸 str 型別的主體」（實測語料為零，屬向前防禦）。
+                subjty == TY-STR && subj-index == 0 && (a1 != 0 || a5 != 0) -> bad = 1
 
                 ; s126：變體臂例外【只適用 i64 主體】——s119 的「匹配常量 0」語意是 i64 主體專有。
                 ;   str 主體的 `ok ->`（索引讀 option 臂）若也走本例外，會被誤當成常量 0 型樣放行，
@@ -5020,10 +5162,18 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                                 ; s115：`it` 在 ok 臂是【載荷】（OP-OPTGET），不是 option 本身——
                                 ;   `ok ->`（無綁定）與 `ok(v) ->` 共用同一條 OPTGET，不重複發指令。
+                                ; s127：載荷讀取按【主體 option 的載荷型別】分派——索引讀主体帶 str 載荷
+                                ;   （[]str）⇒ OPTGETSTR；其餘（默認 TY-I64）維持 OPTGET。
                                 itv-v = sv
                                 et == 0 -> {
-                                    itv-v = h2m-alloc(c, TY-I64)
-                                    h2m-emit(c, OP-OPTGET, itv-v, sv, 0, '', TY-I64)
+                                    subj-pty == TY-STR -> {
+                                        itv-v = h2m-alloc(c, TY-STR)
+                                        h2m-emit(c, OP-OPTGETSTR, itv-v, sv, 0, '', TY-STR)
+                                    }
+                                    subj-pty != TY-STR -> {
+                                        itv-v = h2m-alloc(c, TY-I64)
+                                        h2m-emit(c, OP-OPTGET, itv-v, sv, 0, '', TY-I64)
+                                    }
                                 }
                                 c.itv.push(itv-v)
                                 c.itv-n = h2m-inc(c.itv-n)

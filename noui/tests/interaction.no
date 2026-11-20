@@ -1,0 +1,57 @@
+; noui 交互逻辑单元测试（无窗口，验证命中测试 + 计数状态机 + 事件解码）
+; 断言结果用返回值 + 顶层布尔合取，避免函数内全局累加的作用域陷阱。
+
+point-in-rect = (px f64, py f64, x f64, y f64, w f64, h f64) (hit bool) {
+    hit = px >= x && px <= x + w && py >= y && py <= y + h
+}
+
+evt-type = (e i64) (t i64) {
+    t = e & 255
+}
+evt-x = (e i64) (x f64) {
+    xi = (e >> 8) & 0xFFFFFF
+    x = xi.to-f64()
+}
+evt-y = (e i64) (y f64) {
+    yi = (e >> 32) & 0xFFFFFF
+    y = yi.to-f64()
+}
+
+BTN1-X = 60.0
+BTN1-Y = 200.0
+BTN2-X = 260.0
+BTN2-Y = 200.0
+BTN-W = 160.0
+BTN-H = 64.0
+
+; --- 命中测试 ---
+r1 = point-in-rect(100.0, 220.0, BTN1-X, BTN1-Y, BTN-W, BTN-H)
+r2 = point-in-rect(340.0, 220.0, BTN2-X, BTN2-Y, BTN-W, BTN-H)
+r3 = point-in-rect(10.0, 10.0, BTN1-X, BTN1-Y, BTN-W, BTN-H)
+r4 = point-in-rect(240.0, 220.0, BTN1-X, BTN1-Y, BTN-W, BTN-H)
+
+; --- 事件解码（shim 编码：type | x<<8 | y<<32） ---
+e1 = 2 | (340 << 8) | (220 << 32)
+r5 = evt-type(e1) == 2
+r6 = evt-x(e1) == 340.0
+r7 = evt-y(e1) == 220.0
+
+; --- 计数状态机（模拟 + - +） ---
+count = 0
+nc = count + 1
+nc: { ok -> count = it err -> _ }
+r8 = count == 1
+nc = count - 1
+nc: { ok -> count = it err -> _ }
+r9 = count == 0
+nc = count + 1
+nc: { ok -> count = it err -> _ }
+r10 = count == 1
+
+all-ok = r1 && r2 && !r3 && !r4 && r5 && r6 && r7 && r8 && r9 && r10
+print('hit-minus={r1} hit-plus={r2} outside={r3} gap={r4}')
+print('decode-type={r5} decode-x={r6} decode-y={r7}')
+print('count-seq={count} r8={r8} r9={r9} r10={r10}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL INTERACTION TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') }

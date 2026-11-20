@@ -1,0 +1,110 @@
+; 核心 10 组件深度交互测试
+; 覆盖 hover/click/focus/键盘/勾选/值域，验证状态机而非仅构造。
+;   cd noui && ../bin/no run -cc ./ccwrap.sh tests/components-core.no
+# /noui/src/components
+
+; ---- 1. Button：hover / click 计数 / disabled ----
+btn = cmp-button('OK')
+button-hover(btn, true)
+btn-hover = cmp-has(btn, F-HOVERED)
+button-click(btn)
+button-click(btn)
+btn-clicks = button-clicks(btn)
+cmp-flag-set(btn, F-DISABLED)
+button-click(btn)
+btn-disabled-ok = button-clicks(btn) == 2 && btn-hover && !cmp-has(btn, F-FOCUSED)
+
+; ---- 2. Input：追加 / 退格 / 清空 / 焦点 / disabled ----
+inp = cmp-input('name')
+input-focus(inp, true)
+inp-focus = cmp-has(inp, F-FOCUSED)
+input-append(inp, 'a')
+input-append(inp, 'b')
+inp-v1 = input-value(inp) == 'ab'
+input-backspace(inp)
+inp-v2 = input-value(inp) == 'a'
+input-clear(inp)
+inp-v3 = input-value(inp) == ''
+cmp-flag-set(inp, F-DISABLED)
+input-append(inp, 'x')
+inp-disabled-ok = input-value(inp) == ''
+
+; ---- 3. Checkbox：toggle 往返 ----
+cb = cmp-checkbox('remember')
+cb0 = !checkbox-checked(cb)
+checkbox-toggle(cb)
+cb1 = checkbox-checked(cb)
+checkbox-toggle(cb)
+cb2 = !checkbox-checked(cb)
+
+; ---- 4. Switch：toggle + disabled ----
+sw = cmp-switch()
+switch-toggle(sw)
+sw1 = switch-on(sw)
+cmp-flag-set(sw, F-DISABLED)
+switch-toggle(sw)
+sw2 = switch-on(sw)
+
+; ---- 5. Select：add-option / open / choose / close ----
+sel = cmp-select('choose')
+i0 = select-add-option(sel, 'Alpha')
+i1 = select-add-option(sel, 'Beta')
+select-open(sel)
+sel-open = cmp-has(sel, F-OPEN)
+select-choose(sel, 1)
+sel-val = select-selected(sel) == 1
+sel-text = cmp-text(sel) == 'Beta'
+sel-closed = !cmp-has(sel, F-OPEN)
+
+; ---- 6. Tab：add / select / next / prev 环绕 ----
+tabs = cmp-tab()
+t0 = tab-add(tabs, 'One')
+t1 = tab-add(tabs, 'Two')
+t2 = tab-add(tabs, 'Three')
+tab-select(tabs, 0)
+tab-next(tabs)
+tab-next(tabs)
+tab-next(tabs)
+tn-wrap = tab-active(tabs) == 0
+tab-prev(tabs)
+tp-wrap = tab-active(tabs) == 2
+
+; ---- 7. Dialog：open/confirm/close ----
+dlg = cmp-dialog('Confirm')
+dialog-open(dlg)
+dlg-open = dialog-is-open(dlg)
+dialog-confirm(dlg)
+dlg-closed = !dialog-is-open(dlg) && cmp-value(dlg) == 1
+
+; ---- 8. Tooltip：show/hide ----
+tip = cmp-tooltip('hint')
+tooltip-show(tip)
+tip1 = tooltip-visible(tip)
+tooltip-hide(tip)
+tip2 = !tooltip-visible(tip)
+
+; ---- 9. Progress：钳制 + 百分比 ----
+pg = cmp-progress()
+progress-set(pg, 150, 100)
+pg-clamp = cmp-value(pg) == 100
+progress-set(pg, 25, 100)
+pg-pct = progress-percent(pg) == 25
+
+; ---- 10. Slider：set/step + 边界 ----
+sld = cmp-slider(0, 10)
+slider-range(sld, 0, 10)
+slider-set(sld, 5)
+sl1 = slider-value(sld) == 5
+slider-step(sld, 3)
+sl2 = slider-value(sld) == 8
+slider-step(sld, 5)
+sl3 = slider-value(sld) == 10
+
+all-ok = btn-disabled-ok && inp-focus && inp-v1 && inp-v2 && inp-v3 && inp-disabled-ok && cb0 && cb1 && cb2 && sw1 && sw2 && sel-open && sel-val && sel-text && sel-closed && tn-wrap && tp-wrap && dlg-open && dlg-closed && tip1 && tip2 && pg-clamp && pg-pct && sl1 && sl2 && sl3
+print('button={btn-disabled-ok} input={inp-focus}{inp-v1}{inp-v2}{inp-v3}{inp-disabled-ok}')
+print('checkbox={cb0}{cb1}{cb2} switch={sw1}{sw2} select={sel-open}{sel-val}{sel-text}{sel-closed}')
+print('tab={tn-wrap}{tp-wrap} dialog={dlg-open}{dlg-closed} tooltip={tip1}{tip2}')
+print('progress={pg-clamp}{pg-pct} slider={sl1}{sl2}{sl3}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL CORE COMPONENT TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

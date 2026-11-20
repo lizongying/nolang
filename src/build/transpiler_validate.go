@@ -1766,5 +1766,64 @@ func validateMergedProgram(merged *parser.Program) error {
 		}
 		return &DiagnosticError{Lints: lints}
 	}
+	// `#` 導入的模組硬錯誤檢查見 (*Transpiler).checkImportedModuleHardErrors：
+	// 它在模組 AST 剛解析時執行，不能放在合併後，也不能放在本函式裡提前回傳，
+	// 否則會截斷 RunAllLints 的 overflow / 未用變數等既有診斷。
 	return nil
+}
+
+// checkImportedModuleHardErrors 對剛解析完成的用戶模組補跑硬錯誤檢查：
+// 型別錯誤與 optunuse。validateEntryProgram 只看入口 AST，vet 對 merged
+// 跑 RunAllLints 時又 SkipTypeChecks=true —— 兩條路徑都看不到模組函數體：
+//   - `r = 'not-an-int'` 在入口 build 成功、執行時靜默降級（型別錯誤）
+//   - `x = 1 + 1` 未消費只在 no vet 可見，no build 成功（optunuse）
+//
+// 🔴 必須在模組 AST 剛 clone、尚未 Merge / prefixModuleStatements 時呼叫：
+// 合併後的 merged 會丟失模組的 Sem 注解側表，`#{overflow=wrap}` 查不到，
+// 合法的 `i = i + 1` 會被誤報成 15w45dqk（lib_export_sem_test 的失效形态）。
+// std 模組不檢查：它由 `no vet src/std` 單獨守護，且其泛型 / 單態化程式碼
+// 在沒有 entry 語境的單檔檢查下會產生既有誤報。
+func (t *Transpiler) checkImportedModuleHardErrors(prog *parser.Program, modFile, usePath string) {
+	if prog == nil || prog.Sem == nil || modFile == "" {
+		return
+	}
+	if usePath == "std" || strings.HasPrefix(usePath, "std/") {
+		return
+	}
+	if t.importHardSeen == nil {
+		t.importHardSeen = make(map[string]bool)
+	}
+	if t.importHardSeen[modFile] {
+		return
+	}
+	t.importHardSeen[modFile] = true
+	// 型別診斷本身不帶位置歸因；先把來源檔寫到語句級 SideTable，
+	// runTypesCore 會把它帶到 ValidateResult.File（見 checker.go）。
+	// optunuse 自帶 File（curFile → mainFile 回退），傳 modFile 當 mainFile。
+	for _, stmt := range prog.Statements {
+		prog.Sem.SetSourceFileOf(stmt, modFile)
+	}
+	view := checker.BuildTHIRView(prog)
+	for _, e := range checker.ValidateTypesTHIR(prog, view) {
+		t.appendImportDiagnostic(e, modFile)
+	}
+	// optunuse 是唯一該讓 build 失敗的 overflow 診斷（ovfhndld 仍只是 HINT）。
+	// 入口側同口徑見 validateEntryProgram 的 OptUnuseTraceID 過濾。
+	for _, e := range checker.ValidateUnhandledOverflowTHIR(prog, modFile, view) {
+		if e.TraceID != checker.OptUnuseTraceID {
+			continue
+		}
+		t.appendImportDiagnostic(e, modFile)
+	}
+}
+
+// appendImportDiagnostic 把模組診斷轉為帶精確 File 歸因的 LintResult。
+func (t *Transpiler) appendImportDiagnostic(e checker.ValidateResult, modFile string) {
+	file := e.File
+	if file == "" {
+		file = modFile
+	}
+	lint := validateResultToLint(e)
+	lint.File = file
+	t.importHardLints = append(t.importHardLints, lint)
 }

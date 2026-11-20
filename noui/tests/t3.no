@@ -1,0 +1,8 @@
+g2 []i64 = with-len(0)
+f = (kind i64, hit i64) (idx i64) {
+    g2.push(kind)
+    g2.push(hit)
+    idx = g2.len() - 1
+}
+x = f(1, 0)
+print('x={x}')

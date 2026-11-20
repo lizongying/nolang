@@ -532,7 +532,6 @@ AST 依存 %s の同期エラー: %v
 
 `
   'fd9jkb5k': 'メンバー %q は空の配列です。#{type = \'[]<elem>\'} で注釈してください'
-  'fdwcn8i8': 'match アームが値を返しません'
   'fe0a5wt2': 'option 値 \'%s\'（%s）と \'%s\'（%s）を比較できません: 先にアンラップする（`v ?= expr`）か、ok/nil/err で match してください'
   'fftzl9dl': `
 削除に失敗しました: %v
@@ -708,6 +707,7 @@ AST キャッシュディレクトリ: %s
   'kmm43ypb': 'ロックから %s を解決中: %w'
   'krvc469y': 'vec.clear: レシーバが必要です'
   'ksvya88a': '使い方: no cache <stat|clear>'
+  'kv3rm9ws': 'match の各アームの値型が一致しません: %s vs %s。すべてのアームは 1 つの型に統一する必要があります — t|t = t、t|?t = ?t、t|never = t（return/break/continue/_ のアームは値を返しません）、t|nil = ?t'
   'kvp8bxoc': 'ロックファイルと完全性チェックサムを保存しました。'
   'kxikdkzu': 'net-accept: 結果スロットがありません'
   'kzomgjsg': '~match 文が空です'

@@ -1,0 +1,189 @@
+; ============================================================================
+; noui L3 应用层 —— Ctx 帧上下文 + Action/keymap + 焦点系统
+; 基于 core-v4.no 的 L1/L2 池（Entity / Element / Scene）。
+; 全部用大写全局池 + 函数封装 + 标量 i64 句柄，符合 Nolang 命名规范。
+; 纯 Nolang 逻辑，无窗口依赖，可直接 no run 验证。
+;
+; 规避约束（实测编译器缺陷）：函式内连续写回多个【独立标量全局】会丢失
+; 第 4 个及以后的赋值（f64/i64 混合尤甚）；而写【全局数组槽 CTX[i]】完全可靠。
+; 故 Ctx 状态统一放进 CTX []i64 池（坐标用定点 i64 = 实际值*100）。
+; 另：辅助函式（keymap-resolve）被另一函式调用会破坏写回，故只在顶层调用。
+; ============================================================================
+
+; ---------- Action 枚举（keymap 的目标） ----------
+A-NONE = 0
+A-QUIT = 1
+A-INCREMENT = 2
+A-DECREMENT = 3
+A-FOCUS-NEXT = 4
+A-FOCUS-PREV = 5
+A-ACTIVATE = 6
+
+; ---------- keymap：key code -> action（平行数组，i64 标量） ----------
+KM-KEY []i64 = with-len(0)
+KM-ACTION []i64 = with-len(0)
+
+keymap-bind = (key i64, action i64) {
+    KM-KEY.push(key)
+    KM-ACTION.push(action)
+}
+
+; keymap-resolve：线性查表，命中返回 action，否则 A-NONE
+keymap-resolve = (key i64) (a i64) {
+    a = A-NONE
+    n = KM-KEY.len()
+    i = 0
+    (i < n) {
+        k = KM-KEY[i]
+        (k == key) -> {
+            a = KM-ACTION[i]
+        }
+        ni = i + 1: {
+            ok -> it
+            err -> i
+        }
+        i = ni
+    }
+}
+
+; ---------- 焦点系统：全局焦点实体 i64 + 焦点环（实体句柄队列） ----------
+FOCUS-ID = -1
+FOCUS-RING []i64 = with-len(0)
+
+focus-add = (h i64) {
+    FOCUS-RING.push(h)
+    (FOCUS-ID == -1) -> {
+        FOCUS-ID = h
+    }
+}
+
+focus-get = () (h i64) {
+    h = FOCUS-ID
+}
+
+focus-set = (h i64) {
+    FOCUS-ID = h
+}
+
+; focus-cycle：在焦点环里前/后移动，dir=+1/-1；环空则保持 -1
+focus-cycle = (dir i64) (h i64) {
+    h = FOCUS-ID
+    n = FOCUS-RING.len()
+    (n > 0) -> {
+        ; 找到当前焦点在环中的位置（找不到时从 -1 起算）
+        idx = -1
+        j = 0
+        (j < n) {
+            e = FOCUS-RING[j]
+            (e == FOCUS-ID) -> {
+                idx = j
+            }
+            nj = j + 1: {
+                ok -> it
+                err -> j
+            }
+            j = nj
+        }
+        ; 环形步进，处理负数取模
+        next = idx + dir
+        (next < 0) -> { next = n - 1 }
+        (next >= n) -> { next = 0 }
+        h = FOCUS-RING[next]
+        FOCUS-ID = h
+    }
+}
+
+; ---------- Ctx 帧上下文：状态全部放 CTX []i64 池 ----------
+; 槽位：0=w 1=h 2=mouse-x 3=mouse-y 4=has-mouse 5=hover 6=action
+; 坐标用定点 i64（实际 f64 * 100），避免 f64 全局写回缺陷
+CTX []i64 = with-len(8)
+
+CTX-W = 0
+CTX-H = 1
+CTX-MX = 2
+CTX-MY = 3
+CTX-HAS-MOUSE = 4
+CTX-HOVER = 5
+CTX-ACTION = 6
+
+ctx-set-int = (slot i64, v i64) {
+    CTX[slot] = v
+}
+
+ctx-get = (slot i64) (v i64) {
+    v = CTX[slot]
+}
+
+; ctx-begin：一帧的状态写入（坐标先由顶层转成定点 i64）
+ctx-begin = (w i64, h i64, mx i64, my i64, has-mouse i64, action i64) {
+    CTX[CTX-W] = w
+    CTX[CTX-H] = h
+    CTX[CTX-MX] = mx
+    CTX[CTX-MY] = my
+    CTX[CTX-HAS-MOUSE] = has-mouse
+    CTX[CTX-ACTION] = action
+}
+
+; ctx-hit-entity：命中测试 + 命中则登记 hover 实体（矩形坐标用定点 i64）
+ctx-hit-entity = (x i64, y i64, w i64, h i64, entity i64) (hit bool) {
+    hit = false
+    (CTX[CTX-HAS-MOUSE] == 1) -> {
+        mx = CTX[CTX-MX]
+        my = CTX[CTX-MY]
+        (mx >= x && mx <= x + w && my >= y && my <= y + h) -> {
+            hit = true
+            CTX[CTX-HOVER] = entity
+        }
+    }
+}
+
+; ---------- 测试 ----------
+print('=== L3 app layer tests ===')
+
+; keymap：ESC->QUIT, +键(61)->INCREMENT, -键(45)->DECREMENT, Tab(23)->FOCUS-NEXT
+keymap-bind(27, A-QUIT)
+keymap-bind(61, A-INCREMENT)
+keymap-bind(45, A-DECREMENT)
+keymap-bind(23, A-FOCUS-NEXT)
+
+ka = keymap-resolve(27)
+kb = keymap-resolve(61)
+kc = keymap-resolve(45)
+kd = keymap-resolve(23)
+ke = keymap-resolve(999)
+
+; 焦点环
+focus-add(10)
+focus-add(20)
+focus-add(30)
+f0 = focus-get()
+f1 = focus-cycle(1)
+f2 = focus-cycle(1)
+f3 = focus-cycle(1)
+f4 = focus-cycle(-1)
+
+; Ctx 帧：action 先在顶层解析；坐标 *100 转定点
+frame-action = keymap-resolve(61)
+ctx-begin(40000, 30000, 10000, 22000, 1, frame-action)
+ctx-action = ctx-get(CTX-ACTION)
+h1 = ctx-hit-entity(6000, 20000, 16000, 6400, 99)
+hover1 = ctx-get(CTX-HOVER)
+h2 = ctx-hit-entity(26000, 20000, 16000, 6400, 100)
+ctx-view-w = ctx-get(CTX-W)
+
+r1 = ka == A-QUIT
+r2 = kb == A-INCREMENT
+r3 = kc == A-DECREMENT
+r4 = kd == A-FOCUS-NEXT
+r5 = ke == A-NONE
+r6 = f0 == 10 && f1 == 20 && f2 == 30 && f3 == 10 && f4 == 30
+r7 = ctx-action == A-INCREMENT
+r8 = h1 && hover1 == 99
+r9 = !h2
+r10 = ctx-view-w == 40000
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10
+print('keymap={r1}{r2}{r3}{r4}{r5} focus={r6} ctx-action={r7} hit={r8}{r9}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-LAYER TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') }

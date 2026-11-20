@@ -1,0 +1,43 @@
+; ============================================================================
+; noui SDL_GPU 后端演示 —— 真正的 Metal/Vulkan/DX12 渲染（经 C shim）
+; 画几个彩色矩形；ESC 退出。无窗口环境链接后运行会因无显示而失败，
+; 但 build 成功即证明 FFI + SDL_GPU pipeline 代码完整可链接。
+; ============================================================================
+
+#{c}
+_noui-gpu-init = () (ok i32)
+#{c}
+_noui-gpu-window-create = (title str, w i32, h i32) (handle i64)
+#{c}
+_noui-gpu-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-gpu-frame = () ()
+#{c}
+_noui-gpu-should-quit = (yes i32)
+#{c}
+_noui-gpu-delay = (ms i32) ()
+#{c}
+_noui-gpu-quit = () ()
+
+C-BG = 0x1E1E28FF
+ok = _noui-gpu-init()
+(ok == 0) -> { print('gpu init failed') }
+
+handle = _noui-gpu-window-create('noui / SDL_GPU', 400, 300)
+print('window handle: {handle}')
+
+; 背景 + 两个面板 + 一个按钮（GPU 三角形矩形）
+_noui-gpu-draw-rect(0.0, 0.0, 400.0, 300.0, 30, 30, 40, 255)
+_noui-gpu-draw-rect(20.0, 20.0, 360.0, 60.0, 42, 42, 58, 255)
+_noui-gpu-draw-rect(60.0, 120.0, 160.0, 64.0, 74, 144, 226, 255)
+_noui-gpu-frame()
+
+looping = 1
+(looping == 1) {
+    _noui-gpu-delay(16)
+    q = _noui-gpu-should-quit()
+    (q == 1) -> { looping = 0 }
+}
+
+_noui-gpu-quit()
+print('bye')

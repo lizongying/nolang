@@ -529,7 +529,6 @@ Pacote criado: %s
 
 `
   'fd9jkb5k': 'o membro %q é um array vazio: anote-o com #{type = \'[]<elem>\'}'
-  'fdwcn8i8': 'o braço de match nunca retorna um valor'
   'fe0a5wt2': 'não é possível comparar o valor option \'%s\' (%s) com \'%s\' (%s): desencapsule-o primeiro (`v ?= expr`) ou faça match sobre ok/nil/err'
   'fftzl9dl': `
 falha ao limpar: %v
@@ -704,6 +703,7 @@ Diretório do cache AST: %s
   'kmm43ypb': 'resolvendo %s do lock: %w'
   'krvc469y': 'vec.clear: precisa de receptor'
   'ksvya88a': 'Uso: no cache <stat|clear>'
+  'kv3rm9ws': 'os bracos de match tem tipos de valor inconsistentes: %s vs %s; todos os bracos devem unificar em um tipo — t|t = t, t|?t = ?t, t|never = t (os bracos return/break/continue/_ nao produzem valor), t|nil = ?t'
   'kvp8bxoc': 'Arquivo de lock e somas de integridade salvos.'
   'kxikdkzu': 'net-accept: sem espaço de resultado'
   'kzomgjsg': 'instrução ~match vazia'

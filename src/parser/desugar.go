@@ -158,8 +158,20 @@ func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []MatchArm) bool 
 			continue
 		}
 		last := arm.Body.Statements[len(arm.Body.Statements)-1]
-		// D5：`-> return` 早退臂直接从当前函数返回，不产出值，跳过一致性检查。
+		// D5 既有：值 match 的臂以 return 收尾，不產值。2026-11-20 的 never 型別
+		// 規定（return / break / continue / `_` 皆 never，t|never = t）把 D5
+		// 由豁免升級為正式語意：never 臂由型別統一當么元吸收。
 		if _, isRet := last.(*ReturnStatement); isRet {
+			continue
+		}
+		if _, isBrk := last.(*BreakStatement); isBrk {
+			continue
+		}
+		if _, isCnt := last.(*ContinueStatement); isCnt {
+			continue
+		}
+		// `_ = expr` 丟棄尾（塊形臂）：顯式不取值，never。
+		if ls, isLet := last.(*LetStatement); isLet && ls.Name != nil && ls.Name.Value == "_" {
 			continue
 		}
 		es, ok := last.(*ExpressionStatement)
@@ -167,12 +179,17 @@ func (p *Parser) validateMatchArmReturns(tok lexer.Token, arms []MatchArm) bool 
 			p.saveErrorf("9q9raufb", "line %d, column %d: match arm in expression context must end with an expression", tok.Line, tok.Column)
 			return false
 		}
+		// `-> _`（裸底線臂）產出空 ExpressionStatement：never，跳過一致性檢查。
+		if es.Expression == nil {
+			continue
+		}
 
 		info := p.classifyExprReturnKind(es.Expression)
 		switch info.kind {
 		case returnNever:
-			p.saveErrorf("fdwcn8i8", "line %d, column %d: match arm never returns a value", tok.Line, tok.Column)
-			return false
+			// 2026-11-20：never 臂（如 `-> if cond { return }`）不產值，
+			// t|never = t 由型別統一吸收，不再是 parse 錯誤。
+			continue
 		case returnConcrete:
 			if info.typeName != "unknown" {
 				if firstConcreteType == "" {

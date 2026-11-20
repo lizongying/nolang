@@ -296,6 +296,11 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	// S5 stage 6：模組解析輸出同樣不可變——取工作副本後綴續（原樹留在
 	// fileCache / audit root 中保持乾淨）。
 	modProg = parser.CloneProgram(modProg)
+	// 在模組 AST 剛解析、Sem 註解側表仍完整的時刻補跑型別檢查。合併後對
+	// merged 補跑不可行：FilterByExports 等步驟會丟棄模組 Sem，
+	// `#{overflow=wrap}` 查不到，合法的 `i = i + 1` 會被誤報成 15w45dqk。
+	// 必須在 Merge / prefixModuleStatements 之前、且只用剛 clone 的工作副本。
+	t.checkImportedModuleHardErrors(modProg, modFile, use.Path)
 	a.merged.Sem.Merge(modProg.Sem)
 	a.merged.FmtTrivia.Merge(modProg.FmtTrivia)
 	if use.Alias == "" {

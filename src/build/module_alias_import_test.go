@@ -34,7 +34,12 @@ func TestModuleAliasImportLLVM(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(utilDir, "helper.no"), []byte(
 		"h-fn = (x i64) (r i64) {\n"+
-			"    r = x + 1\n"+
+			"    #{overflow=wrap}\n"+
+			"    k = x + 1\n"+
+			"    k: {\n"+
+			"        ok -> r = it\n"+
+			"        ->\n"+
+			"    }\n"+
 			"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}

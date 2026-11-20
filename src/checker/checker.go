@@ -511,25 +511,21 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 		}
 		return ""
 	case *parser.SurfaceMatch:
-		// S1：糖形態 match 作為值，型別由臂體末尾表達式決定（對應 IfExpression 分支）。
-		mt := ""
-		if id, ok := e.Matched.(*parser.Identifier); ok {
-			mt = varTypes[id.Value]
-		}
-		for i := range e.Arms {
-			arm := &e.Arms[i]
-			for _, b := range matchArmBindings(e, &e.Arms[i], mt) {
-				if b.Name != "" {
-					varTypes[b.Name] = b.Type
-				}
-			}
-			if arm.Body != nil {
-				if t := blockTrailingExprType(arm.Body, varTypes, funcTypes, selfType); t != "" {
-					return t
-				}
-			}
-		}
-		return ""
+		// S1：糖形態 match 作為值，型別由各臂末值**統一**得出（2026-11-20 規定）：
+		//
+		//   - 全臂都是 t            → t
+		//   - t 與 ?t 共存          → ?t
+		//   - never 臂（return / break / continue / `_` 丟棄）是么元，被吸收：
+		//     t|never = t、?t|never = ?t
+		//   - 推斷不出型別的臂（""）忽略，以有型別的臂為準
+		//   - 基型不一致（如 i64 vs str）→ 衝突：此處回 ""，由 validateStmtTypes
+		//     的值 match 臂一致性檢查報錯（inferExprType 沒有錯誤通道）。
+		//
+		// 舊行為「第一個非空臂的型別即整個 match 的型別」已廢除——那是 `n =
+		// ARR[0] + 1: { ok -> it; -> ARR[0] }` 被推斷成 plain i64、`r = n` 放行
+		// 隱含解包的根源。
+		u, _, _, _ := surfaceMatchValueType(e, varTypes, funcTypes, selfType)
+		return u
 	case *parser.IfExpression:
 		// `x = cond -> v` (short-circuit pipeline) and `x = subject: { arms }`
 		// (a match used as a value) both lower to an if-chain whose VALUE is an
@@ -1149,13 +1145,21 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 	topLevelVarTypes := make(map[string]string)
 	for _, stmt := range program.Statements {
 		if ls, ok := stmt.(*parser.LetStatement); ok {
-			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value {
+			// parser 會為推斷型別的 let 合成 `type: T, inferred: true` 標注
+			// （如 `cnt = ARR[0]` 猜 plain i64）。那是 parser 的猜測，不得在
+			// checker 推斷／升格之前先行登記，否則 safe-index 捕獲會被提前釘成
+			// plain，升格分支看不見它（真正型別是 ?i64）。只有使用者親手寫的
+			// 標注才先登記。
+			if ls.Type != nil && ls.Type.String() != "" && ls.Type.String() != ls.Name.Value && !isInferredType(ls.Type) {
 				if _, exists := topLevelVarTypes[ls.Name.Value]; !exists {
 					topLevelVarTypes[ls.Name.Value] = declTypeOfRaw(view, ls, ls.Type.String())
 				}
 			}
 		}
 	}
+	// 頂層語句共用同一份 varTypes：let 依序登記的推斷型別必須對後續語句可見，
+	// 否則 `n = ARR[0] + 1: { ok -> it; -> ARR[0] }` 之後 `m i64 = n` 看不到 n 的
+	// ?i64，?i64 → i64 的隱含解包就不會開火（與函式體內口頭一致）。
 	for i, stmt := range program.Statements {
 		// 判斷是否為 struct 方法
 		selfType := ""
@@ -1178,11 +1182,17 @@ func runTypesCore(program *parser.Program, view *THIRView) []ValidateResult {
 			}
 		}
 		// 使用預填的頂層變數型別，避免跨語句型別推斷失敗
-		localVarTypes := make(map[string]string)
-		for k, v := range topLevelVarTypes {
-			localVarTypes[k] = v
+		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, topLevelVarTypes, i == len(program.Statements)-1, program.Sem, "", view)
+		// 合併模式下同一份 Program 同時含入口與多個 `#` 導入模組的語句，
+		// 而型別診斷本身不帶位置歸因。這裡統一用語句級 SourceFile 補上，
+		// 讓呼叫方（build.validateMergedProgram）能把 std 內部的既有診斷
+		// 與用戶模組的真實錯誤分開。單檔路徑的 SourceFile 就是入口本身，
+		// 下游 validateResultToLint 仍會丟棄此欄位，CLI 輸出不變。
+		for i := range errs {
+			if errs[i].File == "" {
+				errs[i].File = program.Sem.SourceFileOf(stmt)
+			}
 		}
-		errs := validateStmtTypes(stmt, funcNames, funcTypes, selfType, localVarTypes, i == len(program.Statements)-1, program.Sem, "", view)
 		results = append(results, errs...)
 	}
 
@@ -2717,7 +2727,7 @@ func assignTargetBaseName(target parser.Expression) string {
 	}
 	return ""
 }
-func collectReadNames(stmts []parser.Statement, read map[string]bool) {
+func collectReadNames(stmts []parser.Statement, read map[string]bool, view ...*THIRView) {
 	for _, stmt := range stmts {
 		if stmt == nil {
 			continue
@@ -2725,64 +2735,64 @@ func collectReadNames(stmts []parser.Statement, read map[string]bool) {
 		switch s := stmt.(type) {
 		case *parser.LetStatement:
 			if s.Value != nil {
-				collectReadNamesInExpr(s.Value, read)
+				collectReadNamesInExpr(s.Value, read, view...)
 			}
 		case *parser.MultiAssignStatement:
 			for _, target := range s.Targets {
 				switch t := target.(type) {
 				case *parser.IndexExpression:
 					// out[i] = val → reads out (to get data pointer) and i
-					collectReadNamesInExpr(t.Left, read)
-					collectReadNamesInExpr(t.Index, read)
+					collectReadNamesInExpr(t.Left, read, view...)
+					collectReadNamesInExpr(t.Index, read, view...)
 				case *parser.DotExpression:
 					// out.field = val → reads out (to get struct pointer)
-					collectReadNamesInExpr(t.Receiver, read)
+					collectReadNamesInExpr(t.Receiver, read, view...)
 				}
 				// Identifier targets are pure writes — not reads
 			}
 			if s.Value != nil {
-				collectReadNamesInExpr(s.Value, read)
+				collectReadNamesInExpr(s.Value, read, view...)
 			}
 		case *parser.BlockStatement:
-			collectReadNames(s.Statements, read)
+			collectReadNames(s.Statements, read, view...)
 		case *parser.BlockMatchStatement:
 			// 塊 match 主體內 `x ?= f()` 就是對 f() 回傳 option 的消費；
 			// 漏了這個 case 會讓 optunuse 把「只在塊 match 裡被消費」的
 			// option 誤報成從未消費。
-			collectReadNames(blockMatchChildStatements(s), read)
+			collectReadNames(blockMatchChildStatements(s), read, view...)
 		case *parser.ForStatement:
 			if s.Init != nil {
-				collectReadNames([]parser.Statement{s.Init}, read)
+				collectReadNames([]parser.Statement{s.Init}, read, view...)
 			}
 			if s.Condition != nil {
-				collectReadNamesInExpr(s.Condition, read)
+				collectReadNamesInExpr(s.Condition, read, view...)
 			}
 			if s.Update != nil {
-				collectReadNames([]parser.Statement{s.Update}, read)
+				collectReadNames([]parser.Statement{s.Update}, read, view...)
 			}
 			if s.IterRange != nil {
 				if s.IterRange.RangeExpr != nil {
-					collectReadNamesInExpr(s.IterRange.RangeExpr, read)
+					collectReadNamesInExpr(s.IterRange.RangeExpr, read, view...)
 				}
 				if s.IterRange.Range != nil {
 					if s.IterRange.Range.Start != nil {
-						collectReadNamesInExpr(s.IterRange.Range.Start, read)
+						collectReadNamesInExpr(s.IterRange.Range.Start, read, view...)
 					}
 					if s.IterRange.Range.End != nil {
-						collectReadNamesInExpr(s.IterRange.Range.End, read)
+						collectReadNamesInExpr(s.IterRange.Range.End, read, view...)
 					}
 				}
 			}
 			if s.Body != nil {
-				collectReadNames(s.Body.Statements, read)
+				collectReadNames(s.Body.Statements, read, view...)
 			}
 		case *parser.ExpressionStatement:
 			if s.Expression != nil {
-				collectReadNamesInExpr(s.Expression, read)
+				collectReadNamesInExpr(s.Expression, read, view...)
 			}
 		case *parser.ReturnStatement:
 			if s.ReturnValue != nil {
-				collectReadNamesInExpr(s.ReturnValue, read)
+				collectReadNamesInExpr(s.ReturnValue, read, view...)
 			}
 		case *parser.UnwrapAssignStatement:
 			// `v ?= expr` reads expr（上拋即消費），且 D9 下標寫入
@@ -2790,10 +2800,10 @@ func collectReadNames(stmts []parser.Statement, read map[string]bool) {
 			// S3 後 ?= 存活到 checker，此分支缺失會讓被上拋的 option 綁定
 			// 被 optunuse 誤報成「從未消費」。
 			if s.Value != nil {
-				collectReadNamesInExpr(s.Value, read)
+				collectReadNamesInExpr(s.Value, read, view...)
 			}
 			if s.Target != nil {
-				collectReadNamesInExpr(s.Target, read)
+				collectReadNamesInExpr(s.Target, read, view...)
 			}
 		}
 	}
@@ -2827,7 +2837,7 @@ func collectFormatFieldReads(s string, read map[string]bool) {
 	}
 }
 
-func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
+func collectReadNamesInExpr(expr parser.Expression, read map[string]bool, view ...*THIRView) {
 	if expr == nil {
 		return
 	}
@@ -2835,7 +2845,7 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 	case *parser.Identifier:
 		read[e.Value] = true
 	case *parser.CallExpression:
-		collectReadNamesInExpr(e.Function, read)
+		collectReadNamesInExpr(e.Function, read, view...)
 		// 具名格式字串的 `{field}` 欄位只在 **print 家族呼叫點**被替換成變數的值
 		//（mir/hir2mir.go 的 reportUnloweredInterp 寫明：「substituted ONLY at a
 		// print-family call site」），故此處是真正的**讀取**。
@@ -2852,102 +2862,124 @@ func collectReadNamesInExpr(expr parser.Expression, read map[string]bool) {
 			}
 		}
 		for _, arg := range e.Arguments {
-			collectReadNamesInExpr(arg, read)
+			collectReadNamesInExpr(arg, read, view...)
 		}
 	case *parser.DotExpression:
 		// out.field → reads out (the receiver)
-		collectReadNamesInExpr(e.Receiver, read)
+		collectReadNamesInExpr(e.Receiver, read, view...)
 	case *parser.IndexExpression:
 		// out[i] → reads out and i
-		collectReadNamesInExpr(e.Left, read)
-		collectReadNamesInExpr(e.Index, read)
+		collectReadNamesInExpr(e.Left, read, view...)
+		collectReadNamesInExpr(e.Index, read, view...)
 	case *parser.SliceExpression:
-		collectReadNamesInExpr(e.Left, read)
+		collectReadNamesInExpr(e.Left, read, view...)
 		if e.Range != nil {
 			if e.Range.Start != nil {
-				collectReadNamesInExpr(e.Range.Start, read)
+				collectReadNamesInExpr(e.Range.Start, read, view...)
 			}
 			if e.Range.End != nil {
-				collectReadNamesInExpr(e.Range.End, read)
+				collectReadNamesInExpr(e.Range.End, read, view...)
 			}
 		}
 	case *parser.InfixExpression:
+		// 🔴 字符串拼接不算 option 的「消費」。`'v=' - a`（a 為 ?i64）會把
+		// option 的底層位模式直接拼進字符串（實測輸出 12884901891），是沉默
+		// 泄漏而非解包。真正的消費只有 ?= / match，以及 print/format 家族
+		// 呼叫點的 `{field}` 插值（見上方 CallExpression 分支）。
+		//
+		// 只跳過**直接作為運算元的 Identifiers**：方法呼叫（`v.to-str()`）、
+		// 下標等子樹仍須收集讀取，否則 `row - ' ' - v.to-str()` 會把 v
+		// 的正常讀取也丟掉，與舊版入口產生 optunuse 口徑漂移。
+		// 沒有傳 view 的其他呼叫方（未使用變數檢查）維持舊行為，不跳過任何讀取。
+		if len(view) > 0 && isStrConcatInfix(view[0], e) {
+			if e.Left != nil {
+				if _, isIdent := e.Left.(*parser.Identifier); !isIdent {
+					collectReadNamesInExpr(e.Left, read, view...)
+				}
+			}
+			if e.Right != nil {
+				if _, isIdent := e.Right.(*parser.Identifier); !isIdent {
+					collectReadNamesInExpr(e.Right, read, view...)
+				}
+			}
+			return
+		}
 		if e.Left != nil {
-			collectReadNamesInExpr(e.Left, read)
+			collectReadNamesInExpr(e.Left, read, view...)
 		}
 		if e.Right != nil {
-			collectReadNamesInExpr(e.Right, read)
+			collectReadNamesInExpr(e.Right, read, view...)
 		}
 	case *parser.PrefixExpression:
 		if e.Right != nil {
-			collectReadNamesInExpr(e.Right, read)
+			collectReadNamesInExpr(e.Right, read, view...)
 		}
 	case *parser.GroupedExpression:
 		if e.Expression != nil {
-			collectReadNamesInExpr(e.Expression, read)
+			collectReadNamesInExpr(e.Expression, read, view...)
 		}
 	case *parser.IfExpression:
 		if e.Condition != nil {
-			collectReadNamesInExpr(e.Condition, read)
+			collectReadNamesInExpr(e.Condition, read, view...)
 		}
 		if e.Consequence != nil {
-			collectReadNames(e.Consequence.Statements, read)
+			collectReadNames(e.Consequence.Statements, read, view...)
 		}
 		if e.Alternative != nil {
-			collectReadNames(e.Alternative.Statements, read)
+			collectReadNames(e.Alternative.Statements, read, view...)
 		}
 	case *parser.AssignExpression:
 		// out.field = val → reads out (via DotExpression.Receiver)
 		if dot, ok := e.Left.(*parser.DotExpression); ok {
-			collectReadNamesInExpr(dot.Receiver, read)
+			collectReadNamesInExpr(dot.Receiver, read, view...)
 		}
 		if idx, ok := e.Left.(*parser.IndexExpression); ok {
-			collectReadNamesInExpr(idx.Left, read)
-			collectReadNamesInExpr(idx.Index, read)
+			collectReadNamesInExpr(idx.Left, read, view...)
+			collectReadNamesInExpr(idx.Index, read, view...)
 		}
 		if e.Value != nil {
-			collectReadNamesInExpr(e.Value, read)
+			collectReadNamesInExpr(e.Value, read, view...)
 		}
 	case *parser.ConditionalExpression:
 		if e.Condition != nil {
-			collectReadNamesInExpr(e.Condition, read)
+			collectReadNamesInExpr(e.Condition, read, view...)
 		}
 		if e.Consequence != nil {
-			collectReadNamesInExpr(e.Consequence, read)
+			collectReadNamesInExpr(e.Consequence, read, view...)
 		}
 		if e.Alternative != nil {
-			collectReadNamesInExpr(e.Alternative, read)
+			collectReadNamesInExpr(e.Alternative, read, view...)
 		}
 	case *parser.ArrayLiteral:
 		for _, elem := range e.Elements {
-			collectReadNamesInExpr(elem, read)
+			collectReadNamesInExpr(elem, read, view...)
 		}
 	case *parser.SliceLiteral:
 		for _, elem := range e.Elements {
-			collectReadNamesInExpr(elem, read)
+			collectReadNamesInExpr(elem, read, view...)
 		}
 	case *parser.StructLiteral:
 		for _, f := range e.Fields {
 			if f.Value != nil {
-				collectReadNamesInExpr(f.Value, read)
+				collectReadNamesInExpr(f.Value, read, view...)
 			}
 		}
 	case *parser.MapLiteral:
 		for _, pair := range e.Pairs {
-			collectReadNamesInExpr(pair.Key, read)
-			collectReadNamesInExpr(pair.Value, read)
+			collectReadNamesInExpr(pair.Key, read, view...)
+			collectReadNamesInExpr(pair.Value, read, view...)
 		}
 	case *parser.CastExpression:
 		if e.Expr != nil {
-			collectReadNamesInExpr(e.Expr, read)
+			collectReadNamesInExpr(e.Expr, read, view...)
 		}
 	case *parser.SurfaceMatch:
 		// S1：臂體內的讀取。本函式是 functionScopeFacts 的讀取側，餵
 		// ValidateUnhandledOverflow 的 curReadNames ⇒ 少了這一支，只在臂內
 		// 被消費的 option 會被誤報 optunuse。詳見 sugar_walk.go。
 		walkSurfaceMatchChildren(e, nil,
-			func(x parser.Expression) { collectReadNamesInExpr(x, read) },
-			func(s parser.Statement) { collectReadNames([]parser.Statement{s}, read) })
+			func(x parser.Expression) { collectReadNamesInExpr(x, read, view...) },
+			func(s parser.Statement) { collectReadNames([]parser.Statement{s}, read, view...) })
 		// Literals (Integer, String, Float, Char, Boolean, Byte, Nil, Regex) don't read variables
 		// FunctionLiteral: don't recurse (nested function has its own scope)
 	}
@@ -5841,7 +5873,9 @@ const OptUnuseTraceID = optUnuseTraceID
 // 與「lowering 剛替 `x = a + b` 合成的 ?T」，前者不該再報 ovfhndld HINT。
 func functionScopeFacts(body []parser.Statement, results []*parser.Parameter, view *THIRView) (map[string]bool, map[string]string) {
 	read := map[string]bool{}
-	collectReadNames(body, read)
+	// 傳入 view：字符串拼接（- / +）中的标识符不算 option 的消費，
+	// 而 print/format 家族的 {field} 插值仍算（CallExpression 分支）。
+	collectReadNames(body, read, view)
 	resultTypes := map[string]string{}
 	for _, rp := range results {
 		if rp == nil || rp.Name == "" {
@@ -7656,6 +7690,48 @@ func isStringConcatChain(view *THIRView, e parser.Expression) bool {
 		}
 	}
 	return false
+}
+
+// isStrConcatChainShape 是 isStringConcatChain 的無 view 形態版：只沿 AST
+// 形態判定拼接鏈（字符串字面量 / 括號 / +/- 中綴）。供舊版
+// ValidateUnhandledOverflow 使用，保證它與 THIR 版的 optunuse 診斷集合一致
+// （thir_shadow_test 對拍兩版，口徑漂移會被抓到）。
+func isStrConcatChainShape(e parser.Expression) bool {
+	switch x := e.(type) {
+	case *parser.StringLiteral:
+		return true
+	case *parser.GroupedExpression:
+		return isStrConcatChainShape(x.Expression)
+	case *parser.InfixExpression:
+		if x.Operator == "-" || x.Operator == "+" {
+			return isStrConcatChainShape(x.Left) || isStrConcatChainShape(x.Right)
+		}
+	}
+	return false
+}
+
+// isStrConcatInfix 判定一個中綴節點是否為字符串拼接站點，覆蓋 Nolang 的
+// 兩種形態：`-`（正規拼接）與 `+`（錯誤拼接寫法，ValidateStringConcat 會報）。
+// 供 optunuse 的讀取收集使用：拼接不是 option 的消費，option 的位模式會被
+// 直接拼進字符串（沉默泄漏）。
+func isStrConcatInfix(view *THIRView, e *parser.InfixExpression) bool {
+	if e == nil {
+		return false
+	}
+	if view != nil {
+		if isStringConcatSite(view, e) {
+			return true
+		}
+		return e.Operator == "-" &&
+			(isStringConcatChain(view, e.Left) || isStringConcatChain(view, e.Right))
+	}
+	// view==nil（ValidateUnhandledOverflow 舊版入口 / LSP）：走形態版拼接鏈，
+	// 與上面 THIR 版同樣沿 +/- 鏈遞迴（如 `row - ' ' - v.to-str()`），避免
+	// 兩版 optunuse 診斷集合漂移（thir_shadow_test 對拍會抓）。
+	if e.Operator != "-" && e.Operator != "+" {
+		return false
+	}
+	return isStrConcatChainShape(e.Left) || isStrConcatChainShape(e.Right)
 }
 
 func checkStringConcatInExpr(view *THIRView, expr parser.Expression, file string) []ValidateResult {
@@ -10617,8 +10693,15 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
-		// 進入函式體，用新的作用域
-		localTypes := make(map[string]string)
+		// 進入函式體，用新的作用域。**繼承外層 varTypes**（頂層呼叫傳入的是
+		// 已預填全域顯式型別的 localVarTypes）：函式本來就看得到全域，過去這裡
+		// 只放參數／結果，導致函體內的 `ARR[0]` 之 index 推斷不出型別、值 match
+		// 的主語（`ARR[0] + 1`）拿不到 mt，臂統一退化。引數後填會覆蓋同名全域
+		// （遮蔽），區域 let 依序處理也會覆蓋，語意不變。
+		localTypes := make(map[string]string, len(varTypes)+len(s.Parameters)+len(s.Results))
+		for k, v := range varTypes {
+			localTypes[k] = v
+		}
 		// 參數加入作用域
 		for _, p := range s.Parameters {
 			if p.Type != nil {
@@ -10743,7 +10826,11 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		}
 
 		// 記錄型別
-		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value {
+		// parser 會為推斷型別的 let 合成 `type: i64, inferred: true` 標注；那種
+		// 標注只是 parser 的猜測（如 `cnt = ARR[0]` 猜 plain i64），不得在
+		// checker 的推斷／升格之前先行登記，否則 option 捕獲會被提前釘成
+		// plain、 upgrading 分支雙雙看不見它。只有使用者親手寫的標注才登記。
+		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value && !isInferredType(s.Type) {
 			// 只有新變數才記錄顯式型別；已存在的變數（如函式結果參數）不覆寫
 			if _, exists := varTypes[s.Name.Value]; !exists {
 				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
@@ -10766,6 +10853,20 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			}
 			// 型別推斷
 			inferredType := inferExprType(s.Value, varTypes, funcTypes, selfType)
+			// 值 match 臂型別一致性（2026-11-20 規定）：基型不一致的臂（如 i64 vs
+			// str）在此報錯。inferExprType 沒有錯誤通道，統一衝突只能回 ""，
+			// 故在這裡重算一次（冪等：臂內 it 綁定重複登記無副作用）。
+			if sm, isSM := s.Value.(*parser.SurfaceMatch); isSM {
+				if _, ta, tb, conflict := surfaceMatchValueType(sm, varTypes, funcTypes, selfType); conflict {
+					pos := sm.Matched.Pos()
+					results = append(results, ValidateResult{
+						TraceID: "kv3rm9ws",
+						Line:    pos.Line,
+						Column:  pos.Column,
+						Message: i18n.T("kv3rm9ws", "match arms have inconsistent value types: %s vs %s; all arms must unify to one type — t|t = t, t|?t = ?t, t|never = t (return/break/continue/_ arms produce no value), t|nil = ?t", ta, tb),
+					})
+				}
+			}
 			// D1 嚴格模式：本行帶著使用者親手寫下的 plain 整數標註、右值本質是 option
 			// 算術時升格為 `?T`，交由下方 15w45dqk 拒絕（明文標註不是把 option 拉回
 			// plain 的開關，而是靜默丟掉 err 分支的隱含解包）。
@@ -10783,6 +10884,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					// option / 借用，由 optionTypesCompatible 與 isViewBorrow 管。
 					// （`k i64 = a + b` 與 `b i64 = s.byte(0)` 在這裡匯合到同一條
 					// 15w45dqk：明文標註不是把 option 拉回 plain 的開關。）
+					tt := declTypeOfRaw(view, s, s.Type.String())
+					if !ty.IsOptionRaw(tt) && !ty.IsViewRaw(tt) {
+						inferredType = up
+					}
+				} else if up := optionIndexCaptureType(s.Value, varTypes, funcTypes, selfType); up != "" {
+					// `k i64 = ARR[i]`：safe-index 捕獲在 lowering 已合成 `?T`，
+					// 明文標註不是把 option 拉回 plain 的開關，一樣交 15w45dqk 拒絕。
+					// 目標已是 `?T` 時升格不改變任何語意（`k ?i64 = ARR[i]` 照舊合法）。
 					tt := declTypeOfRaw(view, s, s.Type.String())
 					if !ty.IsOptionRaw(tt) && !ty.IsViewRaw(tt) {
 						inferredType = up
@@ -10817,6 +10926,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					if optRHS == "" && !isPureLiteralArith(s.Value) {
 						if p := ovfOptionArithPayloadType(s.Value, varTypes, selfType); p != "" {
 							optRHS = "?" + p
+						} else if idxOpt := optionIndexCaptureType(s.Value, varTypes, funcTypes, selfType); idxOpt != "" {
+							optRHS = idxOpt
 						}
 					}
 					// inferExprType 對 `p = p + 1` 只回 "i64"（它看不到 overflow option），
@@ -10871,6 +10982,29 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							Column:  valPos.Column,
 							Message: i18n.T("nnqq67ko", "cannot infer type for '%s': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)", s.Name.Value, fnName, fnName),
 						})
+					}
+				}
+			}
+			// 首次賦值：無標註的 option 算術／option 呼叫／safe-index 右值在 lowering
+			// 會就地合成 `?T`，但 inferExprType 只看得見 `T`（module 限定呼叫甚至
+			// 直接回 ""，不做正向查表）。若此處記成 `T` 或乾脆不記，之後
+			// `plain = k` 會被當成 plain→plain 放行 —— option 的 tag 被靜默丟掉
+			// 卻不報錯。補上升格，讓既有的 15w45dqk 在取用點開火。
+			//
+			// 2026-11-20：升格本來夾在 `if inferredType != ""` 之內，於是
+			// `c = fs.read-str(path)` 這種 inferExprType 回 "" 的綁定連型別都登不上，
+			// 隨後的 `src = c` 完全看不見 option。改為只要「本行是新綁定」就升格，
+			// 與「已存在 plain 變數」的升格（上方 10928 區塊）同源。
+			if s.Name != nil {
+				if _, exists := varTypes[s.Name.Value]; !exists {
+					if !ty.IsOptionRaw(inferredType) && !isPureLiteralArith(s.Value) {
+						if optRHS := optionResultOfCallTarget(s.Value, varTypes, selfType); optRHS != "" {
+							inferredType = optRHS
+						} else if p := ovfOptionArithPayloadType(s.Value, varTypes, selfType); p != "" {
+							inferredType = "?" + p
+						} else if idxOpt := optionIndexCaptureType(s.Value, varTypes, funcTypes, selfType); idxOpt != "" {
+							inferredType = idxOpt
+						}
 					}
 				}
 			}
@@ -10999,19 +11133,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						})
 					}
 				} else {
-					// 首次賦值，記錄推斷型別。
-					// 無標註的 option 算術／option 呼叫右值在 lowering 會就地合成 `?T`，
-					// 但 inferExprType 只看得見 `T`；若此處記成 `T`，之後 `plain = k`
-					// 會被當成 plain→plain 放行 —— option 的 tag 被靜默丟掉卻不報錯。
-					// 補上升格，讓既有的 15w45dqk 在取用點開火（與 10116 的
-					// 「已存在 plain 變數」升格同源，差別只在這裡是新綁定）。
-					if !ty.IsOptionRaw(inferredType) && !isPureLiteralArith(s.Value) {
-						if optRHS := optionResultOfCallTarget(s.Value, varTypes, selfType); optRHS != "" {
-							inferredType = optRHS
-						} else if p := ovfOptionArithPayloadType(s.Value, varTypes, selfType); p != "" {
-							inferredType = "?" + p
-						}
-					}
+					// 首次賦值，記錄推斷型別（option 來源的升格見上方）。
 					varTypes[s.Name.Value] = inferredType
 				}
 			}

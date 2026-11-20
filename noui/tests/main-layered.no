@@ -1,0 +1,326 @@
+; ============================================================================
+; noui — 分层内核 + SDL3 后端的可运行纵切面（编译器修复后版本）
+;
+; 架构（GPUI 精神内核）：
+;   L1 Entity registry  — 大写全局 SoA 池 + i64 句柄 + observe/dirty
+;   L2 Element tree     — 大写全局 SoA 池 + parent/children 关系
+;   L3 Scene            — 后端无关的绘制指令池（rect/text）
+;   L4 Backend          — C shim 摊平 SDL3（底层 Metal/Vulkan）
+;
+; 语言要点：module 级数据用大写名开头（语言规范），配合编译器的
+; with-len 全局修复，函数内可 push/get/set 同一份 module vec。
+; ============================================================================
+
+; ---- 平台 FFI（C shim） ----
+#{c}
+_noui-init = () (ok i32)
+#{c}
+_noui-window-create = (title str, w i32, h i32) (handle i64)
+#{c}
+_noui-quit = () ()
+#{c}
+_noui-begin-frame = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-set-color = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-text = (x f64, y f64, text str) ()
+#{c}
+_noui-end-frame = () ()
+#{c}
+_noui-poll = () (e i64)
+#{c}
+_noui-should-quit = () (yes i32)
+#{c}
+_noui-delay = (ms i32) ()
+#{c}
+_noui-version = () (v str)
+
+; ============================================================================
+; L1 Entity registry
+; ============================================================================
+ENT-KIND []i64 = with-len(0)
+ENT-VALUE []i64 = with-len(0)
+ENT-DIRTY []i64 = with-len(0)
+
+ENT-COUNTER = 1
+ENT-BUTTON = 2
+
+ent-new = (kind i64) (h i64) {
+    ENT-KIND.push(kind)
+    ENT-VALUE.push(0)
+    ENT-DIRTY.push(1)
+    h = ENT-KIND.len() - 1
+}
+
+ent-get = (h i64) (v i64) {
+    v = ENT-VALUE[h]
+}
+
+ent-set = (h i64, x i64) {
+    ENT-VALUE[h] = x
+    ENT-DIRTY[h] = 1
+}
+
+; ============================================================================
+; L2 Element tree
+; ============================================================================
+EL-KIND []i64 = with-len(0)
+EL-COLOR []i64 = with-len(0)
+EL-X []f64 = with-len(0)
+EL-Y []f64 = with-len(0)
+EL-W []f64 = with-len(0)
+EL-H []f64 = with-len(0)
+EL-TEXT []str = with-len(0)
+EL-PARENT []i64 = with-len(0)
+EL-HEAD []i64 = with-len(0)
+EL-COUNT []i64 = with-len(0)
+CHILD []i64 = with-len(0)
+
+EL-CONTAINER = 1
+EL-RECT = 2
+KIND-TEXT = 3
+
+el-new = (kind i64, color i64, txt str, parent i64) (h i64) {
+    EL-KIND.push(kind)
+    EL-COLOR.push(color)
+    EL-X.push(0.0)
+    EL-Y.push(0.0)
+    EL-W.push(0.0)
+    EL-H.push(0.0)
+    EL-TEXT.push(txt)
+    EL-PARENT.push(parent)
+    EL-HEAD.push(-1)
+    EL-COUNT.push(0)
+    h = EL-KIND.len() - 1
+}
+
+el-container = () (h i64) {
+    h = el-new(EL-CONTAINER, 0, '', -1)
+}
+
+el-text = (txt str, color i64) (h i64) {
+    h = el-new(KIND-TEXT, color, txt, -1)
+}
+
+el-button = (txt str, color i64, ent i64) (h i64) {
+    h = el-new(EL-RECT, color, txt, -1)
+}
+
+el-add = (parent i64, child i64) {
+    cnt = EL-COUNT[parent]
+    (cnt == 0) -> {
+        EL-HEAD[parent] = CHILD.len()
+    }
+    CHILD.push(child)
+    nxt = cnt + 1: {
+        ok -> it
+
+        -> cnt
+    }
+    EL-COUNT[parent] = nxt
+}
+
+; ============================================================================
+; L3 Scene（绘制指令池）
+; ============================================================================
+SC-KIND []i64 = with-len(0)
+SC-X []f64 = with-len(0)
+SC-Y []f64 = with-len(0)
+SC-W []f64 = with-len(0)
+SC-H []f64 = with-len(0)
+SC-COLOR []i64 = with-len(0)
+SC-TEXT []str = with-len(0)
+
+DRAW-RECT = 1
+DRAW-TEXT = 2
+
+scene-rect = (x f64, y f64, w f64, h f64, color i64) {
+    SC-KIND.push(DRAW-RECT)
+    SC-X.push(x)
+    SC-Y.push(y)
+    SC-W.push(w)
+    SC-H.push(h)
+    SC-COLOR.push(color)
+    SC-TEXT.push('')
+}
+
+scene-text = (x f64, y f64, color i64, txt str) {
+    SC-KIND.push(DRAW-TEXT)
+    SC-X.push(x)
+    SC-Y.push(y)
+    SC-W.push(0.0)
+    SC-H.push(0.0)
+    SC-COLOR.push(color)
+    SC-TEXT.push(txt)
+}
+
+; 颜色分量（shim 用 RRGGBBAA 整数，这里拆分量）
+col-r = (c i64) (v i32) {
+    v = (c >> 24) & 0xFF
+}
+col-g = (c i64) (v i32) {
+    v = (c >> 16) & 0xFF
+}
+col-b = (c i64) (v i32) {
+    v = (c >> 8) & 0xFF
+}
+
+; 绘制一条 Scene 指令（动态文本 cnt-str 由调用方传入用于覆盖 count 文本）
+scene-paint-one = (i i64, cnt-str str, minus-color i64, plus-color i64) {
+    k = SC-KIND[i]
+    x = SC-X[i]
+    y = SC-Y[i]
+    w = SC-W[i]
+    h = SC-H[i]
+    c = SC-COLOR[i]
+    t = SC-TEXT[i]
+    (k == DRAW-RECT) -> {
+        ; 按钮 rect 用 hover 颜色覆盖
+        bc = c
+        (c == 0x4A90E2FF) -> { bc = minus-color }
+        (c == 0x5AA0F2FF) -> { bc = plus-color }
+        _noui-draw-rect(x, y, w, h, col-r(bc), col-g(bc), col-b(bc), 255)
+    }
+    (k == DRAW-TEXT) -> {
+        txt = t
+        (t == '#COUNT#') -> { txt = cnt-str }
+        _noui-set-color(col-r(c), col-g(c), col-b(c), 255)
+        _noui-draw-text(x, y, txt)
+    }
+}
+
+; 事件坐标解码
+evt-type = (e i64) (t i64) {
+    t = e & 0xFF
+}
+evt-x = (e i64) (x f64) {
+    raw = (e >> 8) & 0xFFFFFF
+    x = raw.to-f64()
+}
+evt-y = (e i64) (y f64) {
+    raw = (e >> 32) & 0xFFFFFF
+    y = raw.to-f64()
+}
+point-in-rect = (px f64, py f64, x f64, y f64, w f64, h f64) (hit bool) {
+    hit = px >= x && px <= x + w && py >= y && py <= y + h
+}
+
+; ============================================================================
+; 颜色 / 按钮常量
+; ============================================================================
+C-BG = 0x1E1E28FF
+C-PANEL = 0x2A2A3AFF
+C-BTN = 0x4A90E2FF
+C-BTN-HOVER = 0x5AA0F2FF
+C-BTN-TEXT = 0xFFFFFFFF
+C-TEXT = 0xE8E8F0FF
+C-ACCENT = 0x50C878FF
+
+BTN-NONE = 0
+BTN-MINUS = 1
+BTN-PLUS = 2
+BTN1-X = 60.0
+BTN1-Y = 200.0
+BTN2-X = 260.0
+BTN2-Y = 200.0
+BTN-W = 160.0
+BTN-H = 64.0
+
+; ============================================================================
+; 启动：构建 View 树 + 一次性 paint 成 Scene
+; ============================================================================
+ver = _noui-version()
+print('noui (layered) on SDL {ver}')
+ok = _noui-init()
+ok == 0 -> {
+    print('SDL init failed')
+    return
+}
+handle = _noui-window-create('noui / layered kernel', 480, 320)
+(handle == 0) -> {
+    print('window create failed')
+    _noui-quit()
+    return
+}
+print('window handle: {handle}')
+
+counter = ent-new(ENT-COUNTER)
+ent-set(counter, 0)
+ent-new(ENT-BUTTON)
+ent-new(ENT-BUTTON)
+
+root = el-container()
+el-add(root, el-text('noui / layered kernel', C-TEXT))
+el-add(root, el-text('#COUNT#', C-TEXT))
+
+; paint：把 View 树摊平成 Scene 指令（本例布局固定）
+scene-rect(0.0, 0.0, 480.0, 320.0, C-BG)
+scene-rect(20.0, 20.0, 440.0, 60.0, C-PANEL)
+scene-text(40.0, 40.0, C-TEXT, 'noui / layered kernel')
+scene-text(40.0, 110.0, C-TEXT, '#COUNT#')
+scene-rect(BTN1-X, BTN1-Y, BTN-W, BTN-H, C-BTN)
+scene-rect(BTN2-X, BTN2-Y, BTN-W, BTN-H, C-BTN-HOVER)
+scene-text(BTN1-X + 70.0, BTN1-Y + 24.0, C-BTN-TEXT, '-')
+scene-text(BTN2-X + 70.0, BTN2-Y + 24.0, C-BTN-TEXT, '+')
+
+sc-n = SC-KIND.len()
+ec-n = EL-KIND.len()
+en-n = ENT-KIND.len()
+print('scene={sc-n} elements={ec-n} entities={en-n}')
+
+; 交互状态（顶层标量，主循环直接管理）
+count = 0
+hover = BTN-NONE
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    !! {
+        e = _noui-poll()
+        (e == 0) -> { ** }
+        t = evt-type(e)
+        (t == 3) -> {
+            mx = evt-x(e)
+            my = evt-y(e)
+            hover = BTN-NONE
+            (point-in-rect(mx, my, BTN1-X, BTN1-Y, BTN-W, BTN-H)) -> { hover = BTN-MINUS }
+            (point-in-rect(mx, my, BTN2-X, BTN2-Y, BTN-W, BTN-H)) -> { hover = BTN-PLUS }
+        }
+        (t == 2) -> {
+            cx = evt-x(e)
+            cy = evt-y(e)
+            (point-in-rect(cx, cy, BTN1-X, BTN1-Y, BTN-W, BTN-H)) -> {
+                nc = count - 1
+                nc: { ok -> count = it  err -> _ }
+                ent-set(counter, count)
+            }
+            (point-in-rect(cx, cy, BTN2-X, BTN2-Y, BTN-W, BTN-H)) -> {
+                nc = count + 1
+                nc: { ok -> count = it  err -> _ }
+                ent-set(counter, count)
+            }
+        }
+    }
+    (1 == _noui-should-quit()) -> { ** }
+
+    _noui-begin-frame(col-r(C-BG), col-g(C-BG), col-b(C-BG), 255)
+
+    b1 = C-BTN
+    (hover == BTN-MINUS) -> { b1 = C-BTN-HOVER }
+    b2 = C-BTN
+    (hover == BTN-PLUS) -> { b2 = C-BTN-HOVER }
+
+    cnt-str = 'count: {count}'
+    i <- [0..sc-n): {
+        scene-paint-one(i, cnt-str, b1, b2)
+    }
+
+    _noui-end-frame()
+    _noui-delay(16)
+}
+
+_noui-quit()
+print('bye')

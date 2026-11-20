@@ -1,0 +1,27 @@
+; ==================== 测试====================
+
+print('=== build view tree ===')
+
+root = el-container(FLEX-COL, 1.0, 10.0, 20.0)
+title = el-text('noui counter', COLOR-TEXT)
+el-add(root, title)
+
+counter = entity-new(ENTITY-COUNTER)
+entity-set-i0(counter, 0)
+count-text = el-text('count text', COLOR-TEXT)
+el-add(root, count-text)
+
+row = el-container(FLEX-ROW, 0.0, 12.0, 0.0)
+el-add(root, row)
+btn-minus = el-button('-', COLOR-ACCENT, entity-new(ENTITY-BUTTON), 1.0)
+el-add(row, btn-minus)
+btn-plus = el-button('+', COLOR-ACCENT, entity-new(ENTITY-BUTTON), 1.0)
+el-add(row, btn-plus)
+
+n = e-kind.len()
+print('elements: {n}')
+
+hit = render-frame(root, 400.0, 300.0, -1.0, -1.0, false)
+print('rendered, hit={hit}')
+
+print('ALL KERNEL TESTS PASSED')

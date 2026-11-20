@@ -1,0 +1,7 @@
+G []i64 = with-len(0)
+add = (v i64) {
+  G.push(v)
+}
+get = (i i64) (v i64) {
+  v = G[i]
+}

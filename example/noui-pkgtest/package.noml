@@ -1,0 +1,5 @@
+{
+  name: "pkgtest"
+  compiler: { }
+  output: "/dist"
+}

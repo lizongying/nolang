@@ -63,7 +63,14 @@ func TestTransitiveImportLLVM(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(deepDir, "dep.no"),
-		[]byte("deep-fn = (x i64) (r i64) {\n    r = x + 100\n}\n"), 0644); err != nil {
+		[]byte("deep-fn = (x i64) (r i64) {\n"+
+		"    #{overflow=wrap}\n"+
+		"    k = x + 100\n"+
+		"    k: {\n"+
+		"        ok -> r = it\n"+
+		"        ->\n"+
+		"    }\n"+
+		"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,7 +129,14 @@ func TestTransitiveImportJS(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(deepDir, "dep.no"),
-		[]byte("deep-fn = (x i64) (r i64) {\n    r = x + 100\n}\n"), 0644); err != nil {
+		[]byte("deep-fn = (x i64) (r i64) {\n"+
+		"    #{overflow=wrap}\n"+
+		"    k = x + 100\n"+
+		"    k: {\n"+
+		"        ok -> r = it\n"+
+		"        ->\n"+
+		"    }\n"+
+		"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -213,7 +227,14 @@ func TestTransitiveImportThreeLevels(t *testing.T) {
 
 	// c.no — deepest module (3 hops from main)
 	if err := os.WriteFile(filepath.Join(tmpDir, "c.no"),
-		[]byte("level3-fn = (x i64) (r i64) {\n    r = x + 300\n}\n"), 0644); err != nil {
+		[]byte("level3-fn = (x i64) (r i64) {\n"+
+		"    #{overflow=wrap}\n"+
+		"    k = x + 300\n"+
+		"    k: {\n"+
+		"        ok -> r = it\n"+
+		"        ->\n"+
+		"    }\n"+
+		"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -279,7 +300,14 @@ func TestTransitiveImportDiamond(t *testing.T) {
 
 	// shared.no — imported by both left and right
 	if err := os.WriteFile(filepath.Join(tmpDir, "shared.no"),
-		[]byte("shared-fn = (x i64) (r i64) {\n    r = x * 2\n}\n"), 0644); err != nil {
+		[]byte("shared-fn = (x i64) (r i64) {\n"+
+			"    #{overflow=wrap}\n"+
+			"    k = x * 2\n"+
+			"    k: {\n"+
+			"        ok -> r = it\n"+
+			"        ->\n"+
+			"    }\n"+
+			"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -358,7 +386,14 @@ func TestTransitiveImportEntryUsesDeepFn(t *testing.T) {
 
 	// c.no — defines c-fn
 	if err := os.WriteFile(filepath.Join(tmpDir, "c.no"),
-		[]byte("c-fn = (x i64) (r i64) {\n    r = x + 1\n}\n"), 0644); err != nil {
+		[]byte("c-fn = (x i64) (r i64) {\n"+
+		"    #{overflow=wrap}\n"+
+		"    k = x + 1\n"+
+		"    k: {\n"+
+		"        ok -> r = it\n"+
+		"        ->\n"+
+		"    }\n"+
+		"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

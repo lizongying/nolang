@@ -3,4 +3,5 @@
   test2: '/example/test2'
   test: '/test'
   glossary: '/glossary'
+  noui: '/noui'
 }

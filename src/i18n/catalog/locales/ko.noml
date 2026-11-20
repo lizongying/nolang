@@ -532,7 +532,6 @@ AST 의존성 %s 동기화 오류: %v
 
 `
   'fd9jkb5k': '멤버 %q은(는) 빈 배열입니다. #{type = \'[]<elem>\'}로 주석하세요'
-  'fdwcn8i8': 'match arm이 값을 반환하지 않습니다'
   'fe0a5wt2': 'option 값 \'%s\'(%s)과(와) \'%s\'(%s)을(를) 비교할 수 없습니다: 먼저 언랩(`v ?= expr`)하거나 ok/nil/err로 match하세요'
   'fftzl9dl': `
 삭제 실패: %v
@@ -708,6 +707,7 @@ AST 캐시 디렉터리: %s
   'kmm43ypb': 'lock에서 %s 해석 중: %w'
   'krvc469y': 'vec.clear: 수신자가 필요합니다'
   'ksvya88a': '사용법: no cache <stat|clear>'
+  'kv3rm9ws': 'match 암의 값 타입이 일관되지 않습니다: %s vs %s. 모든 암은 하나의 타입으로 통일되어야 합니다 — t|t = t, t|?t = ?t, t|never = t (return/break/continue/_ 암은 값을 반환하지 않습니다), t|nil = ?t'
   'kvp8bxoc': '잠금 파일과 무결성 체크섬을 저장했습니다.'
   'kxikdkzu': 'net-accept: 결과 슬롯이 없습니다'
   'kzomgjsg': '~match 문이 비어 있습니다'

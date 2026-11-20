@@ -1,0 +1,211 @@
+; ============================================================================
+; noui — 用 Nolang 重写 GPUI 精神内核的可运行纵切面
+;
+; 架构约束（实测）：Nolang MIR 后端无法在函数内访问全局 vec，
+; 故所有 UI 状态用标量全局变量 + 顶层主循环管理；纯计算用函数（只读标量参数）。
+; 平台层用 C shim 摊平 SDL3（底层 Metal/Vulkan），FFI 只传标量/str。
+; ============================================================================
+
+; ---- 平台 FFI（C shim） ----
+#{c}
+_noui-init = () (ok i32)
+#{c}
+_noui-window-create = (title str, w i32, h i32) (handle i64)
+#{c}
+_noui-quit = () ()
+#{c}
+_noui-begin-frame = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-set-color = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-text = (x f64, y f64, text str) ()
+#{c}
+_noui-font-init = (path str, size f64) (ok i32)
+#{c}
+_noui-font-draw = (x f64, y f64, r i32, g i32, b i32, a i32, text str) ()
+#{c}
+_noui-end-frame = () ()
+; 事件编码：低8位=类型(0无 1退出 2左键 3移动 4按键)，24位=x，24位=y
+#{c}
+_noui-poll = () (e i64)
+#{c}
+_noui-should-quit = () (yes i32)
+#{c}
+_noui-delay = (ms i32) ()
+#{c}
+_noui-version = () (v str)
+
+; ---- 颜色常量（0xRRGGBBAA） ----
+C-BG = 0x1E1E28FF
+C-PANEL = 0x2A2A3AFF
+C-BTN = 0x4A90E2FF
+C-BTN-HOVER = 0x6AA5F5FF
+C-BTN-TEXT = 0xFFFFFFFF
+C-TEXT = 0xE8E8F0FF
+C-ACCENT = 0x50C878FF
+
+; 组件 id
+BTN-MINUS = 1
+BTN-PLUS = 2
+BTN-NONE = 0
+
+; ---- 纯函数：颜色分量 ----
+col-r = (c i64) (v i32) {
+    v = (c >> 24) & 255
+}
+col-g = (c i64) (v i32) {
+    v = (c >> 16) & 255
+}
+col-b = (c i64) (v i32) {
+    v = (c >> 8) & 255
+}
+col-a = (c i64) (v i32) {
+    v = c & 255
+}
+
+; ---- 纯函数：矩形命中测试 ----
+point-in-rect = (px f64, py f64, x f64, y f64, w f64, h f64) (hit bool) {
+    hit = px >= x && px <= x + w && py >= y && py <= y + h
+}
+
+; ---- 纯函数：从事件编码解出类型 / x / y ----
+evt-type = (e i64) (t i64) {
+    t = e & 255
+}
+evt-x = (e i64) (x f64) {
+    xi = (e >> 8) & 0xFFFFFF
+    x = xi.to-f64()
+}
+evt-y = (e i64) (y f64) {
+    yi = (e >> 32) & 0xFFFFFF
+    y = yi.to-f64()
+}
+
+; ============================================================================
+; 应用状态（标量全局变量，顶层读写）
+; ============================================================================
+count = 0
+hover = BTN-NONE
+mx = 0.0
+my = 0.0
+
+; 按钮几何（窗口 480x320）
+; 减号按钮：x=60 y=200 w=160 h=64
+; 加号按钮：x=260 y=200 w=160 h=64
+BTN1-X = 60.0
+BTN1-Y = 200.0
+BTN2-X = 260.0
+BTN2-Y = 200.0
+BTN-W = 160.0
+BTN-H = 64.0
+
+; ============================================================================
+; 启动
+; ============================================================================
+ver = _noui-version()
+print('noui on SDL {ver}')
+
+ok = _noui-init()
+ok == 0 -> {
+    print('SDL init failed')
+    return
+}
+
+; 阶段6：加载 TTF 字体（HarfBuzz shaping）；失败则 shim 回退 DebugText
+font-ok = _noui-font-init('/System/Library/Fonts/Supplemental/Arial.ttf', 20.0)
+print('font shaping: {font-ok}')
+
+handle = _noui-window-create('noui · counter', 480, 320)
+(handle == 0) -> {
+    print('window create failed')
+    _noui-quit()
+    return
+}
+print('window handle: {handle}')
+
+; ============================================================================
+; 主循环（顶层语句 + 循环体，符合 MIR 全局访问约束）
+; ============================================================================
+!! {
+    ; ---- 事件阶段（poll 直到无事件） ----
+    !! {
+        e = _noui-poll()
+        (e == 0) -> { ** }
+
+        t = evt-type(e)
+
+        ; 鼠标移动：解出坐标，更新 hover
+        (t == 3) -> {
+            mx = evt-x(e)
+            my = evt-y(e)
+            hover = BTN-NONE
+            (point-in-rect(mx, my, BTN1-X, BTN1-Y, BTN-W, BTN-H)) -> {
+                hover = BTN-MINUS
+            }
+            (point-in-rect(mx, my, BTN2-X, BTN2-Y, BTN-W, BTN-H)) -> {
+                hover = BTN-PLUS
+            }
+        }
+
+        ; 左键按下：命中测试 → 更新计数
+        (t == 2) -> {
+            cx = evt-x(e)
+            cy = evt-y(e)
+            (point-in-rect(cx, cy, BTN1-X, BTN1-Y, BTN-W, BTN-H)) -> {
+                nc = count - 1
+                nc: {
+                    ok -> count = it
+                    err -> _
+                }
+            }
+            (point-in-rect(cx, cy, BTN2-X, BTN2-Y, BTN-W, BTN-H)) -> {
+                nc = count + 1
+                nc: {
+                    ok -> count = it
+                    err -> _
+                }
+            }
+        }
+    }
+
+    (1 == _noui-should-quit()) -> { ** }
+
+    ; ---- 渲染阶段 ----
+    _noui-begin-frame(col-r(C-BG), col-g(C-BG), col-b(C-BG), 255)
+
+    ; 顶部面板
+    _noui-draw-rect(20.0, 20.0, 440.0, 60.0, col-r(C-PANEL), col-g(C-PANEL), col-b(C-PANEL), 255)
+
+    ; 标题（阶段6：显式 TTF shaping 绘制）
+    _noui-font-draw(40.0, 40.0, col-r(C-TEXT), col-g(C-TEXT), col-b(C-TEXT), 255, 'noui / Nolang UI kernel')
+
+    ; 计数值文本
+    cnt = 'count: {count}'
+    _noui-draw-text(40.0, 110.0, cnt)
+
+    ; 减号按钮（hover 高亮）
+    b1 = C-BTN
+    (hover == BTN-MINUS) -> { b1 = C-BTN-HOVER }
+    _noui-draw-rect(BTN1-X, BTN1-Y, BTN-W, BTN-H, col-r(b1), col-g(b1), col-b(b1), 255)
+    _noui-set-color(col-r(C-BTN-TEXT), col-g(C-BTN-TEXT), col-b(C-BTN-TEXT), 255)
+    _noui-draw-text(BTN1-X + 70.0, BTN1-Y + 24.0, '-')
+
+    ; 加号按钮（hover 高亮）
+    b2 = C-BTN
+    (hover == BTN-PLUS) -> { b2 = C-BTN-HOVER }
+    _noui-draw-rect(BTN2-X, BTN2-Y, BTN-W, BTN-H, col-r(b2), col-g(b2), col-b(b2), 255)
+    _noui-set-color(col-r(C-BTN-TEXT), col-g(C-BTN-TEXT), col-b(C-BTN-TEXT), 255)
+    _noui-draw-text(BTN2-X + 70.0, BTN2-Y + 24.0, '+')
+
+    ; 底部提示
+    _noui-set-color(col-r(C-ACCENT), col-g(C-ACCENT), col-b(C-ACCENT), 255)
+    _noui-draw-text(40.0, 290.0, 'click -/+ to change count, ESC to quit')
+
+    _noui-end-frame()
+    _noui-delay(16)
+}
+
+_noui-quit()
+print('bye')

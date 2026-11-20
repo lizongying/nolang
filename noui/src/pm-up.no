@@ -1,0 +1,10 @@
+BUF []i64
+add = (v i64) {
+  BUF.push(v)
+}
+get = (i i64) (v i64) {
+  v = BUF[i]
+}
+len = () (n i64) {
+  n = BUF.len()
+}

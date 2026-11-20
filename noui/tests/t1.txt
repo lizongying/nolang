@@ -1,0 +1,6 @@
+; 测试1：仅构造元素树
+root = el-container(FLEX-COL, 1.0, 10.0, 20.0)
+title = el-text('hi', COLOR-TEXT)
+el-add(root, title)
+n = e-kind.len()
+print('elements: {n}')

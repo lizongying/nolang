@@ -1,0 +1,783 @@
+; ============================================================================
+; noui 组件库 —— gpui-kit 86 模块的 Nolang API 层
+; 单文件收敛：规避跨 # 模块的函数内 vec.push 限制（见 ARCHITECTURE.md §5.1）。
+; 全部组件实例存于大写全局 SoA 池；不支持 vec-of-struct，字段一律平行数组。
+; 组件清单见 components-catalog.md。
+;
+; 写法约束（均已实测）：
+;   - 大写顶层数据，函数内读写合法；
+;   - 计数自增用 `n + 1: { ok -> it  -> n }` 解包 option；
+;   - guard 用 `(cond) -> { }`，`(cond) { }` 是 while；
+;   - 字符串用单引号，追加用插值 `s = '{s}{x}'`。
+; ============================================================================
+
+; ---------- 组件 kind 常量（对应 components-catalog.md 的 83 项）----------
+; A 基础
+C-LABEL = 1
+C-BUTTON = 2
+C-BADGE = 3
+C-TAG = 4
+C-ICON = 5
+C-KBD = 6
+C-LINK = 7
+C-SEPARATOR = 8
+C-AVATAR = 9
+C-EMPTY = 10
+C-SPINNER = 11
+C-MARKER = 12
+; B 表单
+C-CHECKBOX = 20
+C-RADIO = 21
+C-SWITCH = 22
+C-INPUT = 23
+C-TEXTAREA = 24
+C-NUMBER-INPUT = 25
+C-OTP-INPUT = 26
+C-SEARCH = 27
+C-SELECT = 28
+C-COMBOBOX = 29
+C-SLIDER = 30
+C-STEPPER = 31
+C-COLOR-PICKER = 32
+C-DATE-PICKER = 33
+C-FORM = 34
+C-QUESTIONNAIRE = 35
+; C 导航
+C-TAB = 40
+C-BREADCRUMB = 41
+C-SIDEBAR = 42
+C-MENU = 43
+C-PAGINATION = 44
+C-TOOLBAR = 45
+C-TITLE-BAR = 46
+C-STATUS-BAR = 47
+C-COMMAND = 48
+C-HISTORY = 49
+; D 覆盖层/反馈
+C-DIALOG = 50
+C-POPOVER = 51
+C-TOOLTIP = 52
+C-HOVER-CARD = 53
+C-NOTIFICATION = 54
+C-ALERT = 55
+C-MESSAGE = 56
+C-MESSAGE-SCROLLER = 57
+C-SHEET = 58
+C-PROGRESS = 59
+C-SKELETON = 60
+C-SHIMMER = 61
+C-BUBBLE = 62
+C-SPEECH = 63
+C-INSPECTOR = 64
+C-WINDOW-BORDER = 65
+C-NATIVE-MENU = 66
+C-ATTACHMENT = 67
+; E 数据展示
+C-TABLE = 70
+C-LIST = 71
+C-VIRTUAL-LIST = 72
+C-TREE = 73
+C-ACCORDION = 74
+C-CAROUSEL = 75
+C-CHART = 76
+C-PLOT = 77
+C-RATING = 78
+C-DESCRIPTION-LIST = 79
+C-GROUP-BOX = 80
+C-COLLAPSIBLE = 81
+C-DIFF = 82
+C-HIGHLIGHTER = 83
+C-CLIPBOARD = 84
+C-SCROLL = 85
+; F 布局/容器
+C-RESIZABLE = 90
+C-DOCK = 91
+C-GRID = 92
+C-TEXT = 93
+C-THEME = 94
+C-SIZING = 95
+C-STYLED = 96
+C-ROOT = 97
+C-WINDOW-EXT = 98
+; G 其他
+C-SEARCHABLE-LIST = 99
+C-INDEX-PATH = 100
+
+; ---------- flag 位（CMP-FLAGS 用位或组合）----------
+F-VISIBLE = 1
+F-ENABLED = 2
+F-FOCUSED = 4
+F-HOVERED = 8
+F-CHECKED = 16
+F-OPEN = 32
+F-DISABLED = 64
+F-SELECTED = 128
+F-ACTIVE = 256
+
+; ---------- 组件实例 SoA 池 ----------
+CMP-KIND []i64 = with-len(0)
+CMP-TEXT []str = with-len(0)        ; 主文本 / 标题 / 输入缓冲
+CMP-TEXT2 []str = with-len(0)       ; 副文本 / placeholder / 副标题
+CMP-COLOR []i64 = with-len(0)       ; 打包颜色 0xRRGGBBAA
+CMP-VALUE []i64 = with-len(0)       ; 主数值（value / count / page）
+CMP-VALUE2 []i64 = with-len(0)      ; 次数值（max / total / active）
+CMP-VALUE3 []i64 = with-len(0)      ; 第三数值
+CMP-X []i64 = with-len(0)           ; 布局盒，定点坐标（值*100）
+CMP-Y []i64 = with-len(0)
+CMP-W []i64 = with-len(0)
+CMP-H []i64 = with-len(0)
+CMP-FLAGS []i64 = with-len(0)
+CMP-PARENT []i64 = with-len(0)
+CMP-HEAD []i64 = with-len(0)        ; 子节点表起始
+CMP-COUNT []i64 = with-len(0)       ; 子节点数
+CHILD-IDX []i64 = with-len(0)
+
+; ============================================================================
+; 通用基础设施
+; ============================================================================
+
+; 内部：追加一个组件槽，返回句柄（所有构造函数共用）
+cmp-alloc = (kind i64, text str, text2 str, color i64, value i64) (h i64) {
+    CMP-KIND.push(kind)
+    CMP-TEXT.push(text)
+    CMP-TEXT2.push(text2)
+    CMP-COLOR.push(color)
+    CMP-VALUE.push(value)
+    CMP-VALUE2.push(0)
+    CMP-VALUE3.push(0)
+    CMP-X.push(0)
+    CMP-Y.push(0)
+    CMP-W.push(0)
+    CMP-H.push(0)
+    CMP-FLAGS.push(F-VISIBLE | F-ENABLED)
+    CMP-PARENT.push(-1)
+    CMP-HEAD.push(-1)
+    CMP-COUNT.push(0)
+    h = CMP-KIND.len() - 1
+}
+
+; 组件总数
+cmp-count = () (n i64) {
+    n = CMP-KIND.len()
+}
+
+; getter：类型 / 文本 / 数值 / flag
+cmp-kind = (h i64) (k i64) {
+    k = CMP-KIND[h]
+}
+cmp-text = (h i64) (s str) {
+    s = CMP-TEXT[h]: {
+        ok -> it
+
+        -> ''
+    }
+}
+cmp-text2 = (h i64) (s str) {
+    s = CMP-TEXT2[h]: {
+        ok -> it
+
+        -> ''
+    }
+}
+cmp-value = (h i64) (v i64) {
+    v = CMP-VALUE[h]
+}
+cmp-value2 = (h i64) (v i64) {
+    v = CMP-VALUE2[h]
+}
+cmp-flags = (h i64) (f i64) {
+    f = CMP-FLAGS[h]
+}
+cmp-valid = (h i64) (ok bool) {
+    ok = h >= 0 && h < CMP-KIND.len()
+}
+
+; flag 查询
+cmp-has = (h i64, bit i64) (yes bool) {
+    yes = (CMP-FLAGS[h] & bit) != 0
+}
+
+; 通用 setter
+cmp-set-text = (h i64, s str) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-TEXT[h] = s }
+}
+cmp-set-text2 = (h i64, s str) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-TEXT2[h] = s }
+}
+cmp-set-color = (h i64, c i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-COLOR[h] = c }
+}
+cmp-set-value = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-VALUE[h] = v }
+}
+cmp-set-value2 = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-VALUE2[h] = v }
+}
+cmp-set-bounds = (h i64, x i64, y i64, w i64, ht i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> {
+        CMP-X[h] = x
+        CMP-Y[h] = y
+        CMP-W[h] = w
+        CMP-H[h] = ht
+    }
+}
+cmp-flag-set = (h i64, bit i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-FLAGS[h] = CMP-FLAGS[h] | bit }
+}
+cmp-flag-clear = (h i64, bit i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ bit) }
+}
+
+; 父子挂载（用于容器类组件）
+cmp-add-child = (parent i64, child i64) {
+    (parent < 0 || child < 0) -> return
+    cnt = CMP-COUNT[parent]
+    (cnt == 0) -> { CMP-HEAD[parent] = CHILD-IDX.len() }
+    CHILD-IDX.push(child)
+    nc = cnt + 1: {
+        ok -> it
+
+        -> cnt
+    }
+    CMP-COUNT[parent] = nc
+    CMP-PARENT[child] = parent
+}
+cmp-child = (parent i64, i i64) (c i64) {
+    c = -1
+    (i >= 0 && i < CMP-COUNT[parent]) -> {
+        c = CHILD-IDX[CMP-HEAD[parent] + i]
+    }
+}
+
+; ============================================================================
+; 全目录构造函数（83 个）—— 每个返回组件句柄，核心属性走 cmp-set-*
+; 统一走 cmp-alloc(kind, 主文本, 副文本, 颜色, 主数值)
+; ============================================================================
+
+; A 基础
+cmp-label = (text str) (h i64) {
+    h = cmp-alloc(C-LABEL, text, '', 0xE8E8F0FF, 0)
+}
+cmp-button = (text str) (h i64) {
+    h = cmp-alloc(C-BUTTON, text, '', 0x4A90E2FF, 0)
+}
+cmp-badge = (text str) (h i64) {
+    h = cmp-alloc(C-BADGE, text, '', 0x4A90E2FF, 0)
+}
+cmp-tag = (text str) (h i64) {
+    h = cmp-alloc(C-TAG, text, '', 0x2A2A3AFF, 0)
+}
+cmp-icon = (name str) (h i64) {
+    h = cmp-alloc(C-ICON, name, '', 0xE8E8F0FF, 0)
+}
+cmp-kbd = (key str) (h i64) {
+    h = cmp-alloc(C-KBD, key, '', 0x9AA0B4FF, 0)
+}
+cmp-link = (text str) (h i64) {
+    h = cmp-alloc(C-LINK, text, '', 0x4A90E2FF, 0)
+}
+cmp-separator = () (h i64) {
+    h = cmp-alloc(C-SEPARATOR, '', '', 0x3A3A4AFF, 0)
+}
+cmp-avatar = (name str) (h i64) {
+    h = cmp-alloc(C-AVATAR, name, '', 0x4A90E2FF, 0)
+}
+cmp-empty = (text str) (h i64) {
+    h = cmp-alloc(C-EMPTY, text, '', 0x9AA0B4FF, 0)
+}
+cmp-spinner = () (h i64) {
+    h = cmp-alloc(C-SPINNER, '', '', 0x4A90E2FF, 0)
+}
+cmp-marker = (text str) (h i64) {
+    h = cmp-alloc(C-MARKER, text, '', 0x50C878FF, 0)
+}
+
+; B 表单
+cmp-checkbox = (text str) (h i64) {
+    h = cmp-alloc(C-CHECKBOX, text, '', 0xE8E8F0FF, 0)
+}
+cmp-radio = (text str) (h i64) {
+    h = cmp-alloc(C-RADIO, text, '', 0xE8E8F0FF, 0)
+}
+cmp-switch = () (h i64) {
+    h = cmp-alloc(C-SWITCH, '', '', 0x3A3A4AFF, 0)
+}
+cmp-input = (placeholder str) (h i64) {
+    h = cmp-alloc(C-INPUT, '', placeholder, 0xE8E8F0FF, 0)
+}
+cmp-textarea = (placeholder str) (h i64) {
+    h = cmp-alloc(C-TEXTAREA, '', placeholder, 0xE8E8F0FF, 0)
+}
+cmp-number-input = () (h i64) {
+    h = cmp-alloc(C-NUMBER-INPUT, '', '', 0xE8E8F0FF, 0)
+}
+cmp-otp-input = (slots i64) (h i64) {
+    h = cmp-alloc(C-OTP-INPUT, '', '', 0xE8E8F0FF, slots)
+}
+cmp-search = () (h i64) {
+    h = cmp-alloc(C-SEARCH, '', 'Search...', 0xE8E8F0FF, 0)
+}
+cmp-select = (placeholder str) (h i64) {
+    h = cmp-alloc(C-SELECT, '', placeholder, 0xE8E8F0FF, 0)
+}
+cmp-combobox = () (h i64) {
+    h = cmp-alloc(C-COMBOBOX, '', '', 0xE8E8F0FF, 0)
+}
+cmp-slider = (min i64, max i64) (h i64) {
+    h = cmp-alloc(C-SLIDER, '', '', 0x4A90E2FF, min)
+    CMP-VALUE2[h] = max
+}
+cmp-stepper = () (h i64) {
+    h = cmp-alloc(C-STEPPER, '', '', 0xE8E8F0FF, 0)
+}
+cmp-color-picker = () (h i64) {
+    h = cmp-alloc(C-COLOR-PICKER, '', '', 0x4A90E2FF, 0)
+}
+cmp-date-picker = () (h i64) {
+    h = cmp-alloc(C-DATE-PICKER, '', '', 0xE8E8F0FF, 0)
+}
+cmp-form = () (h i64) {
+    h = cmp-alloc(C-FORM, '', '', 0x1E1E28FF, 0)
+}
+cmp-questionnaire = () (h i64) {
+    h = cmp-alloc(C-QUESTIONNAIRE, '', '', 0x1E1E28FF, 0)
+}
+
+; C 导航
+cmp-tab = () (h i64) {
+    h = cmp-alloc(C-TAB, '', '', 0x2A2A3AFF, 0)
+}
+cmp-breadcrumb = () (h i64) {
+    h = cmp-alloc(C-BREADCRUMB, '', '', 0x9AA0B4FF, 0)
+}
+cmp-sidebar = () (h i64) {
+    h = cmp-alloc(C-SIDEBAR, '', '', 0x2A2A3AFF, 0)
+}
+cmp-menu = () (h i64) {
+    h = cmp-alloc(C-MENU, '', '', 0x2A2A3AFF, 0)
+}
+cmp-pagination = (total i64) (h i64) {
+    h = cmp-alloc(C-PAGINATION, '', '', 0xE8E8F0FF, 1)
+    CMP-VALUE2[h] = total
+}
+cmp-toolbar = () (h i64) {
+    h = cmp-alloc(C-TOOLBAR, '', '', 0x2A2A3AFF, 0)
+}
+cmp-title-bar = (title str) (h i64) {
+    h = cmp-alloc(C-TITLE-BAR, title, '', 0x2A2A3AFF, 0)
+}
+cmp-status-bar = () (h i64) {
+    h = cmp-alloc(C-STATUS-BAR, '', '', 0x2A2A3AFF, 0)
+}
+cmp-command = () (h i64) {
+    h = cmp-alloc(C-COMMAND, '', '', 0x2A2A3AFF, 0)
+}
+cmp-history = () (h i64) {
+    h = cmp-alloc(C-HISTORY, '', '', 0x2A2A3AFF, 0)
+}
+
+; D 覆盖层/反馈
+cmp-dialog = (title str) (h i64) {
+    h = cmp-alloc(C-DIALOG, title, '', 0x2A2A3AFF, 0)
+}
+cmp-popover = () (h i64) {
+    h = cmp-alloc(C-POPOVER, '', '', 0x2A2A3AFF, 0)
+}
+cmp-tooltip = (text str) (h i64) {
+    h = cmp-alloc(C-TOOLTIP, text, '', 0x1E1E28FF, 0)
+}
+cmp-hover-card = () (h i64) {
+    h = cmp-alloc(C-HOVER-CARD, '', '', 0x2A2A3AFF, 0)
+}
+cmp-notification = (text str) (h i64) {
+    h = cmp-alloc(C-NOTIFICATION, text, '', 0x50C878FF, 0)
+}
+cmp-alert = (text str) (h i64) {
+    h = cmp-alloc(C-ALERT, text, '', 0xE2575AFF, 0)
+}
+cmp-message = (text str) (h i64) {
+    h = cmp-alloc(C-MESSAGE, text, '', 0x4A90E2FF, 0)
+}
+cmp-message-scroller = () (h i64) {
+    h = cmp-alloc(C-MESSAGE-SCROLLER, '', '', 0x1E1E28FF, 0)
+}
+cmp-sheet = (title str) (h i64) {
+    h = cmp-alloc(C-SHEET, title, '', 0x2A2A3AFF, 0)
+}
+cmp-progress = () (h i64) {
+    h = cmp-alloc(C-PROGRESS, '', '', 0x4A90E2FF, 0)
+}
+cmp-skeleton = () (h i64) {
+    h = cmp-alloc(C-SKELETON, '', '', 0x3A3A4AFF, 0)
+}
+cmp-shimmer = () (h i64) {
+    h = cmp-alloc(C-SHIMMER, '', '', 0x6AA5F5FF, 0)
+}
+cmp-bubble = (text str) (h i64) {
+    h = cmp-alloc(C-BUBBLE, text, '', 0x4A90E2FF, 0)
+}
+cmp-speech = (text str) (h i64) {
+    h = cmp-alloc(C-SPEECH, text, '', 0x9AA0B4FF, 0)
+}
+cmp-inspector = () (h i64) {
+    h = cmp-alloc(C-INSPECTOR, '', '', 0x2A2A3AFF, 0)
+}
+cmp-window-border = () (h i64) {
+    h = cmp-alloc(C-WINDOW-BORDER, '', '', 0x3A3A4AFF, 0)
+}
+cmp-native-menu = () (h i64) {
+    h = cmp-alloc(C-NATIVE-MENU, '', '', 0x2A2A3AFF, 0)
+}
+cmp-attachment = (name str) (h i64) {
+    h = cmp-alloc(C-ATTACHMENT, name, '', 0x9AA0B4FF, 0)
+}
+
+; E 数据展示
+cmp-table = (cols i64, rows i64) (h i64) {
+    h = cmp-alloc(C-TABLE, '', '', 0x2A2A3AFF, cols)
+    CMP-VALUE2[h] = rows
+}
+cmp-list = () (h i64) {
+    h = cmp-alloc(C-LIST, '', '', 0x2A2A3AFF, 0)
+}
+cmp-virtual-list = (len i64) (h i64) {
+    h = cmp-alloc(C-VIRTUAL-LIST, '', '', 0x2A2A3AFF, len)
+}
+cmp-tree = () (h i64) {
+    h = cmp-alloc(C-TREE, '', '', 0x2A2A3AFF, 0)
+}
+cmp-accordion = () (h i64) {
+    h = cmp-alloc(C-ACCORDION, '', '', 0x2A2A3AFF, 0)
+}
+cmp-carousel = () (h i64) {
+    h = cmp-alloc(C-CAROUSEL, '', '', 0x2A2A3AFF, 0)
+}
+cmp-chart = () (h i64) {
+    h = cmp-alloc(C-CHART, '', '', 0x2A2A3AFF, 0)
+}
+cmp-plot = () (h i64) {
+    h = cmp-alloc(C-PLOT, '', '', 0x2A2A3AFF, 0)
+}
+cmp-rating = (max i64) (h i64) {
+    h = cmp-alloc(C-RATING, '', '', 0x50C878FF, 0)
+    CMP-VALUE2[h] = max
+}
+cmp-description-list = () (h i64) {
+    h = cmp-alloc(C-DESCRIPTION-LIST, '', '', 0x2A2A3AFF, 0)
+}
+cmp-group-box = (title str) (h i64) {
+    h = cmp-alloc(C-GROUP-BOX, title, '', 0x2A2A3AFF, 0)
+}
+cmp-collapsible = (title str) (h i64) {
+    h = cmp-alloc(C-COLLAPSIBLE, title, '', 0x2A2A3AFF, 0)
+}
+cmp-diff = () (h i64) {
+    h = cmp-alloc(C-DIFF, '', '', 0x2A2A3AFF, 0)
+}
+cmp-highlighter = (code str) (h i64) {
+    h = cmp-alloc(C-HIGHLIGHTER, code, '', 0x1E1E28FF, 0)
+}
+cmp-clipboard = () (h i64) {
+    h = cmp-alloc(C-CLIPBOARD, '', '', 0x9AA0B4FF, 0)
+}
+cmp-scroll = () (h i64) {
+    h = cmp-alloc(C-SCROLL, '', '', 0x1E1E28FF, 0)
+}
+
+; F 布局/容器
+cmp-resizable = () (h i64) {
+    h = cmp-alloc(C-RESIZABLE, '', '', 0x2A2A3AFF, 0)
+}
+cmp-dock = () (h i64) {
+    h = cmp-alloc(C-DOCK, '', '', 0x2A2A3AFF, 0)
+}
+cmp-grid = (cols i64, rows i64) (h i64) {
+    h = cmp-alloc(C-GRID, '', '', 0x2A2A3AFF, cols)
+    CMP-VALUE2[h] = rows
+}
+cmp-text-node = (text str) (h i64) {
+    h = cmp-alloc(C-TEXT, text, '', 0xE8E8F0FF, 0)
+}
+cmp-theme = () (h i64) {
+    h = cmp-alloc(C-THEME, '', '', 0x4A90E2FF, 0)
+}
+cmp-sizing = () (h i64) {
+    h = cmp-alloc(C-SIZING, '', '', 0x2A2A3AFF, 0)
+}
+cmp-styled = () (h i64) {
+    h = cmp-alloc(C-STYLED, '', '', 0x2A2A3AFF, 0)
+}
+cmp-root = () (h i64) {
+    h = cmp-alloc(C-ROOT, '', '', 0x1E1E28FF, 0)
+}
+cmp-window-ext = () (h i64) {
+    h = cmp-alloc(C-WINDOW-EXT, '', '', 0x1E1E28FF, 0)
+}
+
+; G 其他
+cmp-searchable-list = () (h i64) {
+    h = cmp-alloc(C-SEARCHABLE-LIST, '', '', 0x2A2A3AFF, 0)
+}
+cmp-index-path = () (h i64) {
+    h = cmp-alloc(C-INDEX-PATH, '', '', 0x9AA0B4FF, 0)
+}
+
+; ============================================================================
+; 核心 10 组件 —— 完整状态机（hover/click/focus/键盘/值变更）
+; 全部用 flag 位 + VALUE/VUE2 表达状态，避免函数内多标量全局写回缺陷。
+; ============================================================================
+; 核心 10 组件 —— 完整状态机
+; 🔴 关键约束（实测）：本段函数体内**不得调用任何辅助函数**（cmp-has / cmp-flag-set 等），
+;    否则调用者的全局数组写回会丢失（记忆「辅助函式嵌套调用缺陷」）。全部内联位运算。
+;    字符串插值里不得放数组下标表达式（会变字面量），先存局部变量再插值。
+
+; ---- 1. Button ----
+button-hover = (h i64, on bool) {
+    (on) -> { CMP-FLAGS[h] = CMP-FLAGS[h] | F-HOVERED }
+    (!on) -> { CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-HOVERED) }
+}
+button-press = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] | F-FOCUSED
+}
+button-release = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-FOCUSED)
+}
+button-click = (h i64) {
+    #{overflow=wrap}
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cnt = CMP-VALUE[h]
+    n = cnt + 1: {
+        ok -> it
+
+        -> cnt
+    }
+    CMP-VALUE[h] = n
+}
+button-clicks = (h i64) (n i64) {
+    n = CMP-VALUE[h]
+}
+
+; ---- 2. Input ----
+input-focus = (h i64, on bool) {
+    (on) -> { CMP-FLAGS[h] = CMP-FLAGS[h] | F-FOCUSED }
+    (!on) -> { CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-FOCUSED) }
+}
+; 追加：str 数组下标是 ?str，先解包；用 push-str 原地追加（插值 + option 有 optunuse bug）
+input-append = (h i64, ch str) {
+    #{overflow=wrap}
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    txt = CMP-TEXT[h]: {
+        ok -> it
+
+        -> ''
+    }
+    txt.push-str(ch)
+    CMP-TEXT[h] = txt
+}
+input-clear = (h i64) {
+    CMP-TEXT[h] = ''
+}
+input-value = (h i64) (s str) {
+    s = CMP-TEXT[h]: {
+        ok -> it
+
+        -> ''
+    }
+}
+input-backspace = (h i64) {
+    n = CMP-TEXT[h].len()
+    (n > 0) -> {
+        txt = CMP-TEXT[h]: {
+            ok -> it
+
+            -> ''
+        }
+        CMP-TEXT[h] = txt.slice(0, n - 1)
+    }
+}
+
+; ---- 3. Checkbox ----
+checkbox-toggle = (h i64) {
+    #{overflow=wrap}
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    checked = CMP-FLAGS[h] & F-CHECKED
+    (checked != 0) -> {
+        CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-CHECKED)
+    }
+    (checked == 0) -> {
+        CMP-FLAGS[h] = CMP-FLAGS[h] | F-CHECKED
+    }
+}
+checkbox-checked = (h i64) (yes bool) {
+    yes = (CMP-FLAGS[h] & F-CHECKED) != 0
+}
+
+; ---- 4. Radio ----
+radio-select = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] | F-SELECTED
+}
+radio-deselect = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-SELECTED)
+}
+radio-selected = (h i64) (yes bool) {
+    yes = (CMP-FLAGS[h] & F-SELECTED) != 0
+}
+
+; ---- 5. Switch ----
+switch-toggle = (h i64) {
+    #{overflow=wrap}
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    checked = CMP-FLAGS[h] & F-CHECKED
+    (checked != 0) -> {
+        CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-CHECKED)
+    }
+    (checked == 0) -> {
+        CMP-FLAGS[h] = CMP-FLAGS[h] | F-CHECKED
+    }
+}
+switch-on = (h i64) (yes bool) {
+    yes = (CMP-FLAGS[h] & F-CHECKED) != 0
+}
+
+; ---- 6. Select ----
+select-open = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] | F-OPEN
+}
+select-close = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-OPEN)
+}
+select-add-option = (h i64, label str) (idx i64) {
+    opt = cmp-label(label)
+    cnt = CMP-COUNT[h]
+    (cnt == 0) -> { CMP-HEAD[h] = CHILD-IDX.len() }
+    CHILD-IDX.push(opt)
+    nc = cnt + 1: {
+        ok -> it
+
+        -> cnt
+    }
+    CMP-COUNT[h] = nc
+    idx = CMP-COUNT[h] - 1
+}
+select-choose = (h i64, idx i64) {
+    (idx >= 0 && idx < CMP-COUNT[h]) -> {
+        CMP-VALUE[h] = idx
+        CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-OPEN)
+        c = CHILD-IDX[CMP-HEAD[h] + idx]
+        CMP-TEXT[h] = CMP-TEXT[c]: {
+            ok -> it
+
+            -> ''
+        }
+    }
+}
+select-selected = (h i64) (idx i64) {
+    idx = CMP-VALUE[h]
+}
+
+; ---- 7. Tab ----
+tab-add = (h i64, title str) (idx i64) {
+    t = cmp-label(title)
+    cnt = CMP-COUNT[h]
+    (cnt == 0) -> { CMP-HEAD[h] = CHILD-IDX.len() }
+    CHILD-IDX.push(t)
+    nc = cnt + 1: {
+        ok -> it
+
+        -> cnt
+    }
+    CMP-COUNT[h] = nc
+    idx = CMP-COUNT[h] - 1
+    (CMP-VALUE[h] < 0) -> { CMP-VALUE[h] = 0 }
+}
+tab-active = (h i64) (idx i64) {
+    idx = CMP-VALUE[h]
+}
+tab-select = (h i64, idx i64) {
+    (idx >= 0 && idx < CMP-COUNT[h]) -> { CMP-VALUE[h] = idx }
+}
+tab-next = (h i64) {
+    n = CMP-COUNT[h]
+    (n > 0) -> {
+        i = CMP-VALUE[h] + 1
+        (i >= n) -> { i = 0 }
+        CMP-VALUE[h] = i
+    }
+}
+tab-prev = (h i64) {
+    n = CMP-COUNT[h]
+    (n > 0) -> {
+        i = CMP-VALUE[h] - 1
+        (i < 0) -> { i = n - 1 }
+        CMP-VALUE[h] = i
+    }
+}
+
+; ---- 8. Dialog ----
+dialog-open = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] | F-OPEN
+}
+dialog-close = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-OPEN)
+}
+dialog-confirm = (h i64) {
+    CMP-VALUE[h] = 1
+    CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-OPEN)
+}
+dialog-is-open = (h i64) (yes bool) {
+    yes = (CMP-FLAGS[h] & F-OPEN) != 0
+}
+
+; ---- 9. Tooltip ----
+tooltip-show = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] | F-VISIBLE
+}
+tooltip-hide = (h i64) {
+    CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-VISIBLE)
+}
+tooltip-visible = (h i64) (yes bool) {
+    yes = (CMP-FLAGS[h] & F-VISIBLE) != 0
+}
+
+; ---- 10. Progress / Slider ----
+progress-set = (h i64, v i64, max i64) {
+    x = v
+    (x < 0) -> { x = 0 }
+    (x > max) -> { x = max }
+    CMP-VALUE[h] = x
+    CMP-VALUE2[h] = max
+}
+progress-percent = (h i64) (pct i64) {
+    m = CMP-VALUE2[h]
+    pct = 0
+    (m > 0) -> {
+        pct = CMP-VALUE[h] * 100 / m
+    }
+}
+slider-range = (h i64, lo i64, hi i64) {
+    CMP-VALUE3[h] = lo
+    CMP-VALUE2[h] = hi
+}
+slider-set = (h i64, v i64) {
+    lo = CMP-VALUE3[h]
+    hi = CMP-VALUE2[h]
+    x = v
+    (x < lo) -> { x = lo }
+    (x > hi) -> { x = hi }
+    CMP-VALUE[h] = x
+}
+slider-step = (h i64, dir i64) {
+    lo = CMP-VALUE3[h]
+    hi = CMP-VALUE2[h]
+    x = CMP-VALUE[h] + dir
+    (x < lo) -> { x = lo }
+    (x > hi) -> { x = hi }
+    CMP-VALUE[h] = x
+}
+slider-value = (h i64) (v i64) {
+    v = CMP-VALUE[h]
+}

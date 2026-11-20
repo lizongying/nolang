@@ -1,0 +1,12 @@
+node {
+  x i64
+}
+NODES []node
+add = (v i64) {
+  n node
+  n.x = v
+  NODES.push(n)
+}
+get = (i i64) (v i64) {
+  v = NODES[i].x
+}

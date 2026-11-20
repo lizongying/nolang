@@ -3837,3 +3837,245 @@ B 類（`ps-star-label`／`ck-str-at`／`h2m-cov-join`／`ix.at-s`／`ck-sig-str
 
 **下一步優先級**：① **索引讀 option 化**（B 類 14 坐標＋`OP-VECGETSTR` 語意）——先做型別碼與降級點盤點；
 ② **局部變數臂條件**（Go 接受、語料零，須先盤點）；③ 其餘非整數的**臂值**型別（`vec`／`option`／結構體）。
+
+### ㊹ s127 —— 值位 match 主體的索引讀 option 化（`h2m-lower-safe-index`）（2026-11-20）
+
+**① 定位**
+
+承接 ㊸ ⑤ 下一步①。先做**型別碼與降級點盤點**（這是 ㊸ 指定順序）：
+
+- **降級點**：`h2m-lower-expr` 的 `K-INDEX-EXPRESSION` 分支（3774 行）**仍發裸 `OP-VECGET`／`OP-VECGETSTR`**——
+  所以 **let 路徑**（`ck-str-at` 的 `o = v[i]`，兩步 match 形）**未** option 化；`h2m-cov-join` 的
+  `kv = unsk[i]: { ok -> it … }` 則是**值位 match 形式**（走 `h2m-lower-surface`，非本分支）。
+- **值位 match 主體的索引讀**（本輪前，s126）：走 `h2m-lower-surface` 的 `subj-ident == 0` 路徑，
+  `sv0 = h2m-lower-expr(...)` 發**裸** `VECGET`／`VECGETSTR` ⇒ `sty` 是**元素型別**（`TY-I64`／`TY-STR`）
+  ⇒ 被判成 **vmode**（值匹配），而臂是 option 三態（`ok` 的 a1/a5 非零）⇒ 靠 s126 的「str 主體變體臂擋」
+  與 s119 的 i64 限定齊擋，歸因 `SurfaceMatch`（即 ㊸ 的 B 類 14 坐標）。
+  **根因即「索引讀未 option 化」**：主體本應是 `?elem`，卻拿了裸借用視圖當純值。
+- **Go 参照**：`lowerSafeIndexAt`（`src/mir/hir2mir.go:5225`）——in range ⇒ `ok(elem)`；out of range ⇒ `err`（tag 2, `code.index-out`）。
+- **型別碼**（`mir.no`）：`TY-I64`＝0／`TY-STR`＝1／`TY-VEC`＝2／`TY-OPT`＝3／`TY-U64`＝4／`TY-F64`＝5／`TY-VECSTR`＝6。
+- **option op**：`OP-OPTALLOC`＝60／`OPTNONE`＝22／`OPTSOME`＝23／`OPTTAG`＝24／`OPTISOK`＝25／`OPTGET`＝26／
+  `OP-RETAIN`＝27／`OPTMKSTR`＝29／`OPTGETSTR`＝30／`OPTSTORE`＝61／`OPTLOAD`＝62。
+- **所有權陷阱（本輪最先踩到）**：`OPTMKSTR` **只存不 retain**（`mir.no:211`），而 `VECGETSTR` 回**借用視圖**
+  （與容器共享 data）⇒ str 載荷進 option 前必須先 `OP-RETAIN`，否則 option 與容器各自 drop 會雙重釋放。
+
+**② 修復**（`compiler/src/h2m.no`，5 處，對 s126 版 **+129 / −18** 行）
+
+1. **新函數 `h2m-lower-safe-index`**（兩輸出 `(r i64, pty i64)`）：`pty` 由容器型別碼決定
+   （`TY-VEC` ⇒ `TY-I64`；`TY-VECSTR` ⇒ `TY-STR`；其餘 −1）。開 `sink`（先填 nil 的 option 槽）＋
+   **邊界檢查** `0 <= idx < len`（`CMPGE` + `CMPLT` + `AND`）＋ **三塊** `okblk`／`noneblk`／`mergeblk`；
+   ok 塊取元素後包裹（str：`VECGETSTR` → `OP-RETAIN` → `OPTMKSTR`；i64：`VECGET` → `OPTSOME`），
+   存 `sink`；none 塊存 nil；merge 塊 `OPTLOAD` 交出。
+   ⚠️ **塊模型**：函數結束時**當前塊停在 `merge`**，由呼叫方（`h2m-lower-surface`）在其後接續鋪臂塊——與 Go 的 `mergeBlk` 返回同構。
+2. **`h2m-lower-surface` 頂部**新增 `subj-index`／`subj-pty` 兩個區域變數（`subj-pty` 默認 `TY-I64` ⇒ 維持 s98 既有 omode 行為）。
+3. **主體判定分流**：`sd.kind == K-INDEX-EXPRESSION -> subj-index = 1`；走 safe-index 並要求 `sty == TY-OPT`（否則 `bad`）；
+   `subj-index == 0` 走原路徑（`vmode`／`omode` 維持 s126 口徑不變）。
+4. **s126 的「str 主體變體臂」擋收窄**為 `subjty == TY-STR && subj-index == 0 && (a1 != 0 || a5 != 0)`——
+   索引讀主體已 safe-index 成 `TY-OPT`（走 omode）不再命中本擋；本擋此刻只射「裸 str 型別的主體」（實測語料為零，屬向前防禦）。
+5. **omode ok 臂載荷按 `subj-pty` 分派**：`TY-STR` ⇒ `OP-OPTGETSTR`（`TY-STR` 暫存）；否則 `OP-OPTGET`（`TY-I64`）。
+   （另一處：`h2m-lower-expr` 的 `K-INDEX-EXPRESSION` 分支刪一個空行，無語意。）
+
+**③ 量測**（乾淨配對；pre = `tmp/s127/cov-base-final.txt`（HEAD 剝離 S127A/S127B 探針的 6275 行基線版），
+post = `tmp/s127/cov-post-final.txt`（本輪工作版，探針全清；後以交付版 6389 行重跑爲
+`cov-post-final2.txt`，逐字一致，見 ⑤）；工具 `tmp/s125/cmp.py`）
+
+| 模組 | pre | post | 差 |
+| --- | --- | --- | --- |
+| `ast` | 237 | 234 | −3 |
+| `ck` | 363 | 360 | −3 |
+| `drv` | 5184 | 5181 | −3 |
+| `h2m` | 3362 | 3354 | −8 |
+| `ps` | 1511 | 1513 | **+2** |
+| `ix` | 3 | 3 | 0 |
+| 其餘 9 個模組 | — | — | 0 |
+| **GRAND TOTAL** | **14076** | **14061** | **−15** |
+
+明細（Block／LF 通道各一份，逐字對稱）：
+
+- **清零**：`ps-star-label:SurfaceMatch` 8→0、`nd-at:Program` 5→0、`nd-put:BlockStatement` 5→0、
+  `str-at:SurfaceMatch` 10→5、`h2m-lower-func` 8→0、`h2m-struct-field-idx:ForStatement` 2→0、
+  `h2m-var-read:ForStatement` 2→0、`ps-tok-{cl,emsg,lit,ln,mk,raw,typ}` 各 2→0。
+- **新增**：`h2m-lower-safe-index:FunctionDefinition` 0→2（新函數自身：塊模型上限，同 s98 口徑）、
+  `h2m-cov-join:BlockStatement` 2→4、`h2m-lower-surface:BlockStatement` 14→16、
+  `h2m-lower-expr` `BlockStatement` +4／`SurfaceMatch` +12／`Identifier` +16、
+  `ps-parse-match:SurfaceMatch` 16→24、`ps-parse-enum-def:SurfaceMatch` 14→22、`ps-star-label:BlockStatement` 2→18。
+- **ID 通道零變化**。
+- **結論：多為歸因移位，非純修復。** `ps-star-label` 的 8 個 B 類坐標從 `SurfaceMatch`／`IntegerLiteral`
+  移到 `BlockStatement`／`Identifier`／`StringLiteral`（淨 +2）——索引讀主體改走 safe-index 後落入新造的塊。
+
+**④ 驗證**
+
+- **先紅後綠**：以 s126 版（`tmp/s127/h2m-base-clean.no`）跑 `h2m-test` ⇒ 新測試 3 條紅；本輪版 **1257 全綠**（+12 斷言）。
+- **14 套門禁全綠**（`tmp/s127/gate3.txt`，重跑於 `bin/no` 07:43 版 ＋ 本輪最終 `h2m.no` 6389 行）：
+  ps 52／h2m 1257／cg 363／ck 20／ck-sig 50／lx 81／tok 62／diag 7／build-package 8／util 27／
+  ps-err 46／pkg-ll-call 5／pkg-sigs 5／pkg-ll 10。
+- **e2e（`tmp/s127-e2e/`，走 noc 路徑 `drv.pkg-ll` ＋ `link.compile`，非 `./bin/no build`）**：
+
+| 案例 | 形制 | Go 版參照（`./bin/no build`） | noc 自舉路徑 |
+| --- | --- | --- | --- |
+| e1 | `r = xs[k]: { ok -> it \n -> '' }`（`[]str`） | rc=1（三個斷言全成立） | **`ok=false`**（`f`／`main` 皆 dropped，5 unsup ⇒ link 無 `_main`） |
+| e2 | 同上但 `[]i64`，兜底 `0` | rc=1 | **`ok=true`，rc=1** ✅ |
+| e3 | 陳述位索引讀 match（`ok` 改局部／兜底 `r = 4`） | rc=4（越界走兜底臂） | **`ok=true`，rc=4** ✅ |
+
+  e2／e3 為**本輪新增的成功案例**（索引讀主體的值位 match 首次能自舉建出並跑出正確結果）。
+  **e1 失敗即 ⑤-(a) 缺口的活證**：`[]str` 載荷的 `it` 被 `h2m-ty-of` 當成 `TY-I64`，
+  與兜底 `''`（STR）型別不一致 ⇒ `h2m-smv-ty` 回 −1 ⇒ 結果槽退 `TY-I64` ⇒ 存值型別不符 ⇒ drop。
+- **格式**：`no fmt -d compiler/src/h2m.no compiler/tests/h2m-test.no` 乾淨（`h2m.no` 量測後補了 3 個空行，見 ⑤「量測與交付版一致」）。
+- **存量重構**：零（只刪一個空行）。
+
+**⑤ 誠實邊界與下一步**
+
+- **越界語意是 `nil`，不是 `err`**：Go `lowerSafeIndexAt` 越界回 `err`（tag 2, `code.index-out`）；
+  自舉無 err 構造 op，且本鏈語料臂只有兜底（**不讀錯誤值**）⇒ none 塊存 `nil`（tag 1）。
+  等價性**僅限於「臂不讀錯誤值」**；若臂為 `err -> it.msg()`，自舉語意即與 Go 不同。
+- **只覆蓋「值位 match 主體的索引讀」**，三處殘留缺口：
+  - **(a) `h2m-ty-of` 的 `it` 恆推 `TY-I64`**（2404 行）⇒ `h2m-smv-ty` 對「臂 `it` ＋ 兜底 str／i64 值」的
+    型別不一致回 −1 ⇒ 結果槽回退 `TY-I64` ⇒ 存值型別不符。**兩處活證**：量測端
+    `S127G::smv-ty-mismatch::h2m-cov-join::sty=0::xvty=1`（`h2m-cov-join` 的 2 個坐標未清零，量測 2→4）；
+    e2e 端 **e1（`[]str`） dropped**，而 e2（`[]i64`，臂 `it` 與兜底 `0` 型別一致）成功——同根因的一體兩面。
+  - **(b) `h2m-lower-expr` 的 `K-INDEX-EXPRESSION` 仍發裸 `VECGET`／`VECGETSTR`** ⇒ let／`?=` 路徑未 option 化
+    （`ck-str-at` 的 `o = v[i]` 走此路）。
+  - **(c) 值位 match 的 `_` 臂**（`ExpressionStatement{Expression:nil}`，kid＝0）不在 `h2m-smv-arm-val` 射程
+    ⇒ 回 0 ⇒ `bad`。**Go 語義已實測為元素型別零值**（`ix.at-i(a,5)` → `0`；`ix.at-s(b,9)` → `''`）。
+- **陰影通道**：`ps-star-label:SurfaceMatch −8` ／ `ps-star-label:BlockStatement +16` ——索引讀主體改走 safe-index 後
+  歸因由 `SurfaceMatch` 移到 `BlockStatement`（淨 +2，非純修復）。
+- **曾經的外部阻塞（已解決，留作記錄）**：量測期間（07:35）有**外部進行中的 merged 型別檢查**
+  （`src/build/transpiler_validate.go` +42 行：`validateMergedProgram` 對合併 Program 補跑 `ValidateTypesTHIR`；
+  `src/checker/checker.go` +10 行為診斷補 `SourceFile` 歸因）令 `compiler/src/h2m.no` **自身**出現 46 處
+  `15w45dqk`（`?i64` 隱式賦值，如 `h2m.no:5559 p = p + q`），`compiler/src/drv.no:324`
+  （`d.line = ln-part.to-i64()`，`str.to-i64()` 回 `?i64`）同因，自舉 e2e 一度全部阻塞。
+  **以本輪基線版實測同為 46 處 ⇒ 非本輪引入**；該改動隨後收尾（`bin/no` 07:43 起），門禁與 e2e 已重跑（見 ④）。
+- **`h2m-lower-safe-index` 自負 2 個 unsup**：新通道 `h2m-lower-safe-index:FunctionDefinition`（塊模型：入口塊），
+  與 s98 既有口徑一致，不追求清零。
+- **量測與交付版一致**：③ 的 post 先跑於 `h2m.no` 6386 行（`no fmt` 前），fmt 後交付版 6389 行
+  （三處 `-> {` 與註釋間補空行）——**已用交付版重跑**（`tmp/s127/cov-post-final2.txt`），
+  與 fmt 前**逐字一致**（`GRAND TOTAL` 同爲 14061），量測數字可直接對應交付版。
+- 未動 `drv.build-ll` 口徑（單文件、無 sg），同 ㊸。
+
+**下一步優先級**：① **(a) `it` 的型別推斷**——值位 match 的 `it` 必須按**主體 option 的載荷型別**推斷（而非恆 `I64`），
+這是 `h2m-cov-join` 清零與 (c) 的前置；② **(b) `h2m-lower-expr` 索引讀 option 化**（let／`?=` 路徑）；
+③ **(c) `_` 臂的零值語義**（Go 已實測，直接對齊）。
+
+### ㊺ s128 —— `it` 的型別推斷（`h2m-smv-pty`：按主體 option 載荷定型）（2026-11-20）
+
+**① 定位**
+
+承接 ㊹ ⑤ 下一步①。s127 把值位 match 主體的索引讀做成 option 化（`h2m-lower-safe-index`），
+但**解包臂的隱式綁定 `it` 的型別仍是 `h2m-ty-of` 的恆 `TY-I64`**（K-IDENTIFIER 分支裡 `nm == 'it'`
+直接回 `TY-I64`）。這在 `[]str` 索引讀主體上必然出錯：`it` 實際是 `str` 載荷，卻被當成 `i64` 與兜底臂的
+`''`（STR）相比 —— `h2m-smv-ty` 判定臂間型別不一致 ⇒ 回 `-1` ⇒ 結果槽回退 `TY-I64` ⇒ 存值型別不符
+⇒ 整鏈 drop。
+
+活證（兩條，互相獨立）：
+
+- **量測端**：`h2m-cov-join` 的 8 個 unsup 從未清零（`BlockStatement` 4／`IfExpression` 2／
+  `SurfaceMatch` 2）—— 正是它自己的 `fnv = unsf[i]: { ok -> it … -> '' }`（`unsf []str`）。
+- **e2e 端**：`tmp/s128-e2e/e1.no`（`r = xs[k]: { ok -> it … -> '' }`，`xs []str`）在 s127 版
+  `dropped (calls unsupported): f` / `main`，`link.compile` 回 `false`。
+
+**② 修復**
+
+`compiler/src/h2m.no`（6389 → 6429 行，`no fmt` 後）：
+
+1. `h2m-ctx` 新增 `it-pty i64`（默認 `TY-I64`），`h2m-new` 初始化 —— `it` 的型別改為**可上下文
+   設定的暫存**，而非型別碼分支裡的常數。
+2. 新函數 `h2m-smv-pty`：主體（`kid[0]`）是 `K-INDEX-EXPRESSION` 時取其基型（`kid[0]`）——
+   `TY-VECSTR` ⇒ `TY-STR`、`TY-VEC` ⇒ `TY-I64`（與 `h2m-lower-safe-index` 4744/4745 同口徑）；
+   **其餘（含 option 裸標識符／str 主體）靜態推不出 ⇒ 維持 `TY-I64` 默認，不放寬門禁**。
+3. `h2m-smv-ty`：掃臂前 `sv-pty = agg.it-pty` → `agg.it-pty = h2m-smv-pty(...)`，掃完 restore
+   （1804/1805/1832）。型別必須在前掃定（結果槽 alloca 鋪在 entry，離開 entry 就回不去）。
+4. `h2m-scan-arms`：同樣 save-set／restore（2638/2639/2656），給 `h2m-scan` 前掃定型用。
+5. `h2m-ty-of` 的 `K-IDENTIFIER`：`nm == 'it'` 且不在局部量表 ⇒ `code = agg.it-pty`（2430）；
+   裸鏈／match 外的 `it` 仍取默認 `TY-I64`，而降級側 `var-read`／`var-write` 棧空即計 unsup
+   ⇒ 門禁不放鬆。
+
+**③ 量測**（pre = `tmp/s128/cov-pre-s128.txt`，post = `tmp/s128/cov-post.txt`；`tmp/s125/cmp.py`）
+
+| 通道 | pre | post | 差 |
+| --- | --- | --- | --- |
+| Block | 14057 | 14073 | **+16** |
+| LF | 14069 | 14085 | **+16** |
+| ID | 503 | 515 | **+12** |
+| **GRAND TOTAL** | **14061** | **14077** | **+16** |
+
+明細：
+
+- `ps-parse-match:IfExpression` 196 → 216（**+20**，聚合；單條目 98 → 108）。
+- `h2m-cov-join` 8 → 0（**−8**：`BlockStatement` −4／`IfExpression` −2／`SurfaceMatch` −2）
+  —— **本輪目標 (a) 達成**。
+- `dropped (calls unsupported)` +4 行：`h2m-smv-pty`（新函數，調用被剔除的 `h2m-ty-of`）、
+  `h2m-cov-join`（清零後轉為「可產碼但調用被剔除的 `h2m-cov-line`」）各 2 個入口。
+- 其餘函式**逐條零變化**。
+
+**+20 是回歸嗎？—— 是「前向型別修正的如實暴露」，不是新增失敗。** 排查（`tmp/s128/ifcv-pre.txt`／
+`ifcv-post.txt`、`mark-pre.txt`／`mark-post.txt`、`one-pre.txt`／`one-post.txt`）：
+
+1. `ps.no:9476` 的 `bname = bns2[0]: { ok -> it … -> '' }`（`bns2 []str`）是全語料**唯一**因本輪
+   改動而換槽型別的點：s127 版 `it` 推 I64 與 `''`（STR）不符 ⇒ 回退 I64 ⇒ `bname` 槽 = I64；
+   s128 版推 STR ⇒ 與 `''` 一致 ⇒ `bname` 槽 = **STR**。
+   （`h2m-slot-decl` 插樁：`bt`／`elem`／`kvar` 兩版皆 `ty=-1`、`ol`／`oe`／`onil` 皆 0，
+   **僅 `bname` 0→1**；`h2m-scan` 的 `SMVLET` 插樁：117 條值位 match let 僅 `bname` 一條換型別。）
+2. 槽型別換對後，`bname != ''`（`ps.no:9568` 與 `9642`）由 **I64 vs STR 混合型別**
+   （`h2m-lower-expr` K-INFIX 五條臂全不命中 ⇒ `h2m-mark`，`cv=0`）變為 **OP-STNEQ 成功**
+   （`cv>0`）。
+3. `h2m-lower-if` 僅在 `cv > 0` 時開 then／else／merge 塊並降級體（4175）；`cv == 0` 時**整段體
+   不降級**（4174）。故 s127 版這兩個守衛體內的構造**從未被走訪**，s128 版走訪到 ⇒ 如實計數。
+4. 實測：`IFCV` 探針（每條 `h2m-lower-if` 印 `cv`／條件節點／kind／op）pre 122 行／22 條 `cv=0`，
+   post 125 行／22 條 `cv=0`；pre 的 `n=37442 op=!=`、`n=37450 op=!=` 兩條 `cv=0` 在 post 成功
+   （907／911），post 另在新進入的體內有 `n=37467 op=&&`、`n=37488 op=&&` 兩條 `cv=0`。
+   `h2m-mark` 探針（印 `cur-k`／塊 kind）：pre 232 條、post 242 條，`bk=39`（IfExpression）
+   98 → 108，其餘塊 kind 逐條不變。
+5. `ps-parse-match` 在 pre／post **皆因 `unsup > 0` 被整函丟棄**（`dropped` 列表兩版都有），
+   故 +20 不影響任何可產碼性 —— 是**覆蓋計數從「漏計」變「如實計」**。
+
+對照實驗（分離「`it-pty` 的值」與「`h2m-scan-arms` 的設置」）：
+
+| 變體 | 改動 | delta |
+| --- | --- | --- |
+| `cov-varC` | `h2m-smv-pty` 恒回 `TY-I64` | **+2**（僅 dropped `h2m-smv-pty` ×2） |
+| `cov-varD` | 只在 `h2m-smv-ty` 設 `it-pty`，不在 `h2m-scan-arms` 設 | **+16**（＝完整版） |
+
+⇒ 全部 +14（聚合）來自 `it-pty` 的**值**；`h2m-scan-arms` 的設置對 cov **零貢獻**。
+
+**④ 驗證**
+
+- **先紅後綠**：以 s127 版 `h2m.no` 跑 `h2m-test` ⇒ **5 條斷言紅**（`test-s128-it-ty-str` 的
+  unsup／emits code／SSTORE／SLOAD 4 條 ＋ `test-s128-smv-ty-direct` 的 `[]str it` 1 條；
+  `test-s128-it-ty-i64`／`test-s128-it-ty-mixed-gate` 在 s127 版已綠，因它們測的是默認型別與門禁）；
+  s128 版 **1268 全綠**。
+- **14 套門禁全綠**（`tmp/s128/gate.txt`，逐套明細見檔）：
+  ps 52／h2m 1268／cg 363／ck 20／ck-sig 50／lx 81／tok 62／diag 7／build-package 8／util 27／
+  ps-err 46／pkg-ll-call 5／pkg-sigs 5／pkg-ll 10 —— **合計 2004 passed / 0 failed**。
+- **e2e**（`tmp/s128-e2e/probe.no`，走 noc 路徑 `drv.pkg-ll` ＋ `link.compile`）：
+  `e1`／`e2`／`e3` 執行檔由 worktree 基線 `v0.4.28-4-gd21fbb35` 的 `bin/no` 構建 ——
+  主樹 `bin/no` 是 `dev` 版且對 `compiler/src/h2m.no` 報 `optunuse`，不可用於本輪。
+
+| 案例 | 形制 | s127 版 | s128 版 |
+| --- | --- | --- | --- |
+| e1 | `r = xs[k]: { ok -> it … -> '' }`（`[]str`） | `ok=false`（dropped `f`／`main`） | **`ok=true`，exit 1**（3 斷言全對） |
+| e2 | 同上但 `[]i64` 載荷 | `ok=true` | **`ok=true`，exit 1** |
+| e3 | 陳述位索引讀 match（`[]i64`） | `ok=true` | **`ok=true`，exit 4**（`xs[0]` ok→1、`xs[5]` nil→4） |
+
+- **格式**：`no fmt -d compiler/src/h2m.no compiler/tests/h2m-test.no` 乾淨。
+- **存量重構**：零。
+
+**⑤ 誠實邊界與下一步**
+
+- **`h2m-smv-pty` 只認索引讀主體**：主體是 option 裸標識符（`x: { … }`，`x ?T`）或 str 主體時
+  靜態推不出 ⇒ 仍默認 `TY-I64`。語料中這類 `it` 要的正是 I64（默認即對），但**若遇到 `?str` 裸標識符
+  主體就會回退** —— 未盤點，記為待查（同 ㊹ ⑤「只開常量型樣」的剋制口徑）。
+- **`h2m-scan-arms` 的設置目前是多餘的**：varD 對照顯示它對 cov 零貢獻（`h2m-scan` 的值位分支
+  會自己調 `h2m-smv-ty`）。保留它是與 `h2m-smv-ty` 對稱、且對將來的非值位前掃路徑無害；
+  **不宣稱它有效**。
+- **`it` 在降級側仍不進槽表**：`var-read`／`var-write` 的 it 棧為空即計 unsup（門禁不放鬆），
+  本輪只改**靜定型別**，未改降級語意。
+- **`ps-parse-match` 的 +20 是「如實暴露」而非修好**：那兩個守衛體內的構造（Identifier／
+  StringLiteral／IntegerLiteral）**仍然是 genuinely unsupported**，只是現在被走訪到。真正的修復是
+  下一步 (b)／(c)。
+- **量測與交付版一致**：③ 的 post 跑於 `h2m-post-backup.no`（6429 行），與 `no fmt` 後交付版
+  **逐字一致**（`diff -q` 乾淨），量測數字可直接對應交付版。
+- 未動 `drv.build-ll` 口徑（單文件、無 sg），同 ㊸／㊹。
+
+**下一步優先級**：① **(b) `h2m-lower-expr` 索引讀 option 化**（let／`?=` 路徑）—— +20 暴露的
+落差（單條目 10 條）都在這條路上；② **(c) `_` 臂的零值語義**（Go 已實測，直接對齊）；
+③ 盤點 `?str` 裸標識符主體的 `it` 載荷型別。

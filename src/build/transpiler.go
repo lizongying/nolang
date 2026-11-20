@@ -42,6 +42,14 @@ type Transpiler struct {
 	// transpiler_resolve.go），`no vet example/esm-imports` 因此誤報 ERROR。
 	jsBackend bool
 	vetLints  []checker.LintResult // vet 模式下收集的 lint 結果
+	// importHardLints 收集 `#` 導入的用戶模組在「模組 AST 剛解析、註解側表
+	// 完整」時補跑的硬錯誤診斷（型別錯誤 + optunuse）。不能在合併後對 merged
+	// 補跑：FilterByExports 等步驟會丟棄模組的 Sem，#{overflow=wrap} 側表
+	// 查不到，合法的 `i = i + 1` 會被誤報成 15w45dqk（詳見 lib_export_sem_test）。
+	// vet 路徑只 append 型別錯誤（optunuse 已由 RunAllLints 報告，避免重複）；
+	// build 路徑把全部診斷轉成硬錯誤。
+	importHardLints []checker.LintResult
+	importHardSeen  map[string]bool // 按模組檔案去重（同一模組可被別名重複導入）
 	// chainedIfHints 收集主程序（非 std 库）中链式 -> 条件的 lint 提示，
 	// 由 buildWithPkg 在编译成功后打印到 stderr，提醒用户改用合并条件或 { } 块。
 	chainedIfHints []string
@@ -345,6 +353,10 @@ func (t *Transpiler) Compile(source string) (string, error) {
 	// 同一 std 模組在 preloadModuleSignatures、checker.ValidateFuncArgs、merge 步驟中
 	// 會被重複載入，快取後僅解析一次。
 	t.fileCache = make(map[string]*parser.Program)
+	// 導入模組的硬錯誤診斷是本次 Compile 的累積結果；重複使用同一 Transpiler
+	// 時不能把上一輪的診斷帶進新一輪（vet 會重複報、build 會誤攔）。
+	t.importHardLints = nil
+	t.importHardSeen = nil
 	// 保留全域模組解析快取（parseProgramFileCache + tokenCache），
 	// 使 no test / no build workspace 等多文件場景可跨文件復用。
 	// 快取在命令級別清空（BuildFile / BuildWorkspace / VetFile 入口），
@@ -452,7 +464,22 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			MainFileVarNames: mainVarNames,
 			SkipTypeChecks:   true,
 		})...)
+		// 補上 `#` 導入模組的函數體型別錯誤。必須 append 而非提前回傳，
+		// 否則 RunAllLints 的 overflow / 未用變數等診斷會被截斷。
+		// optunuse 跳過：RunAllLints 的 unhandled-overflow 已對 merged 報告，
+		// 再 append 會讓 no vet 出現兩條同址診斷。build 路徑仍把它當硬錯誤。
+		for _, l := range t.importHardLints {
+			if l.TraceID == checker.OptUnuseTraceID {
+				continue
+			}
+			t.vetLints = append(t.vetLints, l)
+		}
 		return "", nil
+	}
+	// build 路徑：導入模組的型別錯誤與 optunuse 都是硬錯誤（修復前前者會
+	// 編出靜默降級的二進位，後者只在 vet 可見）。
+	if len(t.importHardLints) > 0 {
+		return "", &DiagnosticError{Lints: t.importHardLints, Prefix: "errors in imported modules"}
 	}
 	// codegen：HIR lowering + MIR emit（唯一 codegen 路徑，見 lowerToIR）
 	return t.lowerToIR(asm.merged)

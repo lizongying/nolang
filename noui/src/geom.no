@@ -1,0 +1,61 @@
+; geom — noui 的几何与颜色基础类型
+; 全部用纯标量字段，可安全存于堆 vec / 按值传递。
+
+; 二维向量（当前用于位置与尺寸，标量实现）
+vec2 {
+    x f64
+    y f64
+}
+
+; 矩形：x/y 为左上角，w/h 为宽高
+rect {
+    x f64
+    y f64
+    w f64
+    h f64
+}
+
+; 颜色：RGBA 各占一字节，打包进一个 i64（0xRRGGBBAA）
+; 用 i64 而非 struct，便于作为 FFI 标量参数传递。
+
+; 由 0..255 的四个分量构造颜色
+color-rgba = (r i64, g i64, b i64, a i64) (c i64) {
+    c = (r << 24) | (g << 16) | (b << 8) | a
+}
+
+; 常用颜色常量（布局同样是 RRGGBBAA）
+COLOR-BLACK = 0
+COLOR-WHITE = 0xFFFFFFFF
+COLOR-RED = 0xFF0000FF
+COLOR-GREEN = 0x00FF00FF
+COLOR-BLUE = 0x0000FFFF
+
+; 从打包颜色里取红色分量
+color-r = (c i64) (v i64) {
+    v = (c >> 24) & 255
+}
+
+; 从打包颜色里取绿色分量
+color-g = (c i64) (v i64) {
+    v = (c >> 16) & 255
+}
+
+; 从打包颜色里取蓝色分量
+color-b = (c i64) (v i64) {
+    v = (c >> 8) & 255
+}
+
+; 从打包颜色里取 alpha 分量
+color-a = (c i64) (v i64) {
+    v = c & 255
+}
+
+; 点是否落在矩形内（含边界）
+rect-hit = (r rect, px f64, py f64) (hit bool) {
+    hit = px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h
+}
+
+; 两个矩形是否相交
+rect-overlap = (a rect, b rect) (yes bool) {
+    yes = a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}

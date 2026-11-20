@@ -1,0 +1,123 @@
+; noui 全目录组件 smoke 测试 —— 逐一构造 gpui-kit 的 83 个组件并断言
+; 验证全目录 API 都能编译、构造、读回。运行：
+;   cd noui && ../bin/no run -cc ./ccwrap.sh tests/components-smoke.no
+# /noui/src/components
+
+; ---------- A 基础（12）----------
+a1 = cmp-label('label')
+a2 = cmp-button('button')
+a3 = cmp-badge('badge')
+a4 = cmp-tag('tag')
+a5 = cmp-icon('check')
+a6 = cmp-kbd('Ctrl')
+a7 = cmp-link('link')
+a8 = cmp-separator()
+a9 = cmp-avatar('Al')
+a10 = cmp-empty('empty')
+a11 = cmp-spinner()
+a12 = cmp-marker('todo')
+r-a = cmp-kind(a1) == C-LABEL && cmp-kind(a12) == C-MARKER && cmp-count() == 12
+
+; ---------- B 表单（16）----------
+b1 = cmp-checkbox('remember')
+b2 = cmp-radio('option a')
+b3 = cmp-switch()
+b4 = cmp-input('type here')
+b5 = cmp-textarea('notes')
+b6 = cmp-number-input()
+b7 = cmp-otp-input(6)
+b8 = cmp-search()
+b9 = cmp-select('choose')
+b10 = cmp-combobox()
+b11 = cmp-slider(0, 100)
+b12 = cmp-stepper()
+b13 = cmp-color-picker()
+b14 = cmp-date-picker()
+b15 = cmp-form()
+b16 = cmp-questionnaire()
+r-b = cmp-kind(b4) == C-INPUT && cmp-kind(b16) == C-QUESTIONNAIRE && cmp-count() == 28
+
+; ---------- C 导航（10）----------
+c1 = cmp-tab()
+c2 = cmp-breadcrumb()
+c3 = cmp-sidebar()
+c4 = cmp-menu()
+c5 = cmp-pagination(10)
+c6 = cmp-toolbar()
+c7 = cmp-title-bar('Title')
+c8 = cmp-status-bar()
+c9 = cmp-command()
+c10 = cmp-history()
+r-c = cmp-kind(c1) == C-TAB && cmp-kind(c10) == C-HISTORY && cmp-count() == 38
+
+; ---------- D 覆盖层/反馈（18）----------
+d1 = cmp-dialog('Confirm')
+d2 = cmp-popover()
+d3 = cmp-tooltip('hint')
+d4 = cmp-hover-card()
+d5 = cmp-notification('saved')
+d6 = cmp-alert('warning')
+d7 = cmp-message('hello')
+d8 = cmp-message-scroller()
+d9 = cmp-sheet('Settings')
+d10 = cmp-progress()
+d11 = cmp-skeleton()
+d12 = cmp-shimmer()
+d13 = cmp-bubble('hi')
+d14 = cmp-speech('hello')
+d15 = cmp-inspector()
+d16 = cmp-window-border()
+d17 = cmp-native-menu()
+d18 = cmp-attachment('file.txt')
+r-d = cmp-kind(d1) == C-DIALOG && cmp-kind(d18) == C-ATTACHMENT && cmp-count() == 56
+
+; ---------- E 数据展示（16）----------
+e1 = cmp-table(4, 100)
+e2 = cmp-list()
+e3 = cmp-virtual-list(1000)
+e4 = cmp-tree()
+e5 = cmp-accordion()
+e6 = cmp-carousel()
+e7 = cmp-chart()
+e8 = cmp-plot()
+e9 = cmp-rating(5)
+e10 = cmp-description-list()
+e11 = cmp-group-box('Group')
+e12 = cmp-collapsible('More')
+e13 = cmp-diff()
+e14 = cmp-highlighter('let x = 1')
+e15 = cmp-clipboard()
+e16 = cmp-scroll()
+r-e = cmp-kind(e1) == C-TABLE && cmp-kind(e16) == C-SCROLL && cmp-count() == 72
+
+; ---------- F 布局/容器（9）----------
+f1 = cmp-resizable()
+f2 = cmp-dock()
+f3 = cmp-grid(3, 3)
+f4 = cmp-text-node('styled')
+f5 = cmp-theme()
+f6 = cmp-sizing()
+f7 = cmp-styled()
+f8 = cmp-root()
+f9 = cmp-window-ext()
+r-f = cmp-kind(f1) == C-RESIZABLE && cmp-kind(f9) == C-WINDOW-EXT && cmp-count() == 81
+
+; ---------- G 其他（2）----------
+g1 = cmp-searchable-list()
+g2 = cmp-index-path()
+r-g = cmp-kind(g1) == C-SEARCHABLE-LIST && cmp-kind(g2) == C-INDEX-PATH && cmp-count() == 83
+
+; ---------- 通用 setter/getter ----------
+cmp-set-text(a1, 'changed')
+cmp-set-color(a1, 0xFF0000FF)
+cmp-set-value(a1, 42)
+cmp-set-bounds(a1, 100, 200, 300, 400)
+cmp-flag-set(a1, F-SELECTED)
+r-set = cmp-text(a1) == 'changed' && cmp-value(a1) == 42 && cmp-has(a1, F-SELECTED) && cmp-valid(a1)
+
+all-ok = r-a && r-b && r-c && r-d && r-e && r-f && r-g && r-set
+total = cmp-count()
+print('A={r-a} B={r-b} C={r-c} D={r-d} E={r-e} F={r-f} G={r-g} set={r-set}')
+print('total components = {total}')
+(all-ok) -> { print('ALL COMPONENT SMOKE TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

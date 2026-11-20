@@ -529,7 +529,6 @@ Parser ASTVersion: %s
 
 `
   'fd9jkb5k': '成员 %q 是空数组: 请用 #{type = \'[]<elem>\'} 标注它'
-  'fdwcn8i8': 'match 臂从未返回值'
   'fe0a5wt2': '不能将 option 值 “%s” (%s) 与 “%s” (%s) 比较: 请先解包（`v ?= expr`），或对 ok/nil/err 做 match'
   'fftzl9dl': `
 清空失败: %v
@@ -704,6 +703,7 @@ AST 缓存目录: %s
   'kmm43ypb': '从锁文件解析 %s 失败: %w'
   'krvc469y': 'vec.clear: 需要 receiver'
   'ksvya88a': '用法: no cache <stat|clear>'
+  'kv3rm9ws': 'match 各臂的值类型不一致：%s vs %s；所有臂必须统一为一个类型 — t|t = t，t|?t = ?t，t|never = t（return/break/continue/_ 臂不产生值），t|nil = ?t'
   'kvp8bxoc': '锁文件与完整性校验和已保存。'
   'kxikdkzu': 'net-accept: 没有结果槽位'
   'kzomgjsg': '空的 ~match 语句'

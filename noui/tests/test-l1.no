@@ -1,0 +1,52 @@
+; noui L1 层集成测试（几何 + 实体注册表）
+
+# /noui/src/geom
+# /noui/src/entity
+
+print('=== geom tests ===')
+
+c = geom.color-rgba(255, 128, 0, 255)
+cr = geom.color-r(c)
+cg = geom.color-g(c)
+cb = geom.color-b(c)
+ca = geom.color-a(c)
+print('color components: r={cr} g={cg} b={cb} a={ca}')
+
+r rect
+r.x = 10
+r.y = 10
+r.w = 100
+r.h = 50
+
+hi = geom.rect-hit(r, 50, 30)
+ho = geom.rect-hit(r, 200, 30)
+print('hit inside: {hi}')
+print('hit outside: {ho}')
+
+print('=== entity tests ===')
+
+h = entity.entity-new(entity.ENTITY-COUNTER)
+valid = entity.entity-valid(h)
+i0 = entity.entity-i0(h)
+print('entity handle: {h}')
+print('valid: {valid}')
+print('initial i0: {i0}')
+
+entity.entity-set-i0(h, 7)
+i0 = entity.entity-i0(h)
+dirty = entity.entity-is-dirty(h)
+print('after set: {i0}')
+print('dirty: {dirty}')
+
+entity.entity-clear-dirty(h)
+dirty = entity.entity-is-dirty(h)
+print('after clear dirty: {dirty}')
+
+obs = entity.entity-new(entity.ENTITY-VIEW)
+entity.entity-observe(h, obs, entity.EVENT-CHANGED)
+n = entity.entity-emit(h, entity.EVENT-CHANGED)
+oi0 = entity.entity-i0(obs)
+print('notified: {n}')
+print('observer i0: {oi0}')
+
+print('ALL L1 TESTS PASSED')

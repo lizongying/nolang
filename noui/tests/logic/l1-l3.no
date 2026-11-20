@@ -1,0 +1,207 @@
+; noui L1-L3 纯逻辑测试（no test 覆盖：实体注册 / 布局计算 / scene dump）
+; 自包含：把 L1/L2/L3 的 SoA 池与函数内联在单档，避免跨模块 vec.push 的已知限制。
+; 写法沿用 core-v4.no（已端到端验证）：大写全局池 + 数组索引写回（可靠），
+; 计数自增用 match 解包 option 绕过循环内溢出注解不生效的坑。
+
+; ---------------------------------------------------------------------------
+; L1 Entity registry（SoA，i64 句柄）
+; ---------------------------------------------------------------------------
+ENT-KIND []i64 = with-len(0)
+ENT-VALUE []i64 = with-len(0)
+ENT-DIRTY []i64 = with-len(0)
+
+ENT-COUNTER = 1
+ENT-BUTTON = 2
+
+ent-new = (kind i64) (h i64) {
+    ENT-KIND.push(kind)
+    ENT-VALUE.push(0)
+    ENT-DIRTY.push(1)
+    h = ENT-KIND.len() - 1
+}
+
+ent-get = (h i64) (v i64) {
+    v = ENT-VALUE[h]
+}
+
+ent-set = (h i64, x i64) {
+    ENT-VALUE[h] = x
+    ENT-DIRTY[h] = 1
+}
+
+ent-dirty = (h i64) (d i64) {
+    d = ENT-DIRTY[h]
+}
+
+; ---------------------------------------------------------------------------
+; L2 Element pool（SoA）+ children
+; ---------------------------------------------------------------------------
+EL-KIND []i64 = with-len(0)
+EL-X []f64 = with-len(0)
+EL-Y []f64 = with-len(0)
+EL-W []f64 = with-len(0)
+EL-H []f64 = with-len(0)
+EL-GROW []f64 = with-len(0)
+EL-HEAD []i64 = with-len(0)
+EL-COUNT []i64 = with-len(0)
+CHILD []i64 = with-len(0)
+
+EL-CONTAINER = 1
+KIND-TEXT = 2
+EL-RECT = 3
+
+el-new = (kind i64, grow f64) (h i64) {
+    EL-KIND.push(kind)
+    EL-X.push(0.0)
+    EL-Y.push(0.0)
+    EL-W.push(0.0)
+    EL-H.push(0.0)
+    EL-GROW.push(grow)
+    EL-HEAD.push(-1)
+    EL-COUNT.push(0)
+    h = EL-KIND.len() - 1
+}
+
+el-container = (grow f64) (h i64) {
+    h = el-new(EL-CONTAINER, grow)
+}
+
+el-text = (txt str) (h i64) {
+    h = el-new(KIND-TEXT, 0.0)
+}
+
+el-button = (txt str) (h i64) {
+    h = el-new(EL-RECT, 1.0)
+}
+
+el-add = (parent i64, child i64) {
+    cnt = EL-COUNT[parent]
+    (cnt == 0) -> {
+        EL-HEAD[parent] = CHILD.len()
+    }
+    CHILD.push(child)
+    new-cnt = cnt + 1: {
+        ok -> it
+
+        -> cnt
+    }
+    EL-COUNT[parent] = new-cnt
+}
+
+el-child-at = (parent i64, i i64) (c i64) {
+    c = -1
+    cnt = EL-COUNT[parent]
+    (i >= 0 && i < cnt) -> {
+        h = EL-HEAD[parent]
+        c = CHILD[h + i]
+    }
+}
+
+; 一层 flex 行布局：子节点按 grow 权重平分可用宽度（顶层调用，避免嵌套调用写回丢失）
+layout-row = (root i64, avail-w f64) {
+    n = EL-COUNT[root]
+    (n == 0) -> return
+    total-grow = 0.0
+    i <- [0..n): {
+        c = el-child-at(root, i)
+        total-grow = total-grow + EL-GROW[c]
+    }
+    (total-grow <= 0.0) -> { total-grow = n.to-f64() }
+    cx = 0.0
+    i <- [0..n): {
+        c = el-child-at(root, i)
+        cw = avail-w * (EL-GROW[c] / total-grow)
+        EL-X[c] = cx
+        EL-W[c] = cw
+        EL-Y[c] = 0.0
+        EL-H[c] = 32.0
+        cx = cx + cw
+    }
+}
+
+; ---------------------------------------------------------------------------
+; L3 Scene 指令池（绘制指令 + dump）
+; ---------------------------------------------------------------------------
+SC-KIND []i64 = with-len(0)
+SC-X []f64 = with-len(0)
+SC-Y []f64 = with-len(0)
+SC-W []f64 = with-len(0)
+SC-H []f64 = with-len(0)
+SC-COLOR []i64 = with-len(0)
+SC-TEXT []str = with-len(0)
+
+SC-RECT = 1
+DRAW-TEXT = 2
+
+scene-rect = (x f64, y f64, w f64, h f64, color i64) {
+    SC-KIND.push(SC-RECT)
+    SC-X.push(x)
+    SC-Y.push(y)
+    SC-W.push(w)
+    SC-H.push(h)
+    SC-COLOR.push(color)
+    SC-TEXT.push('')
+}
+
+scene-text = (x f64, y f64, color i64, txt str) {
+    SC-KIND.push(DRAW-TEXT)
+    SC-X.push(x)
+    SC-Y.push(y)
+    SC-W.push(0.0)
+    SC-H.push(0.0)
+    SC-COLOR.push(color)
+    SC-TEXT.push(txt)
+}
+
+scene-dump = () (s str) {
+    s = ''
+    i <- [0..SC-KIND.len()): {
+        (SC-KIND[i] == SC-RECT) -> {
+            s = '{s}rect({SC-X[i]},{SC-Y[i]},{SC-W[i]},{SC-H[i]})\n'
+        }
+        (SC-KIND[i] == DRAW-TEXT) -> {
+            s = '{s}text({SC-X[i]},{SC-Y[i]})={SC-TEXT[i]}\n'
+        }
+    }
+}
+
+; ===========================================================================
+; 测试主体
+; ===========================================================================
+
+; --- L1 实体注册 ---
+c-ent = ent-new(ENT-COUNTER)
+b-ent = ent-new(ENT-BUTTON)
+ent-set(c-ent, 42)
+r-l1a = c-ent == 0 && b-ent == 1
+r-l1b = ent-get(c-ent) == 42
+r-l1c = ent-dirty(c-ent) == 1
+
+; --- L2 元素树 + flex 行布局 ---
+root = el-container(1.0)
+minus = el-button('-')
+plus = el-button('+')
+el-add(root, minus)
+el-add(root, plus)
+r-l2a = EL-COUNT[root] == 2
+r-l2b = el-child-at(root, 0) == minus && el-child-at(root, 1) == plus
+r-l2c = el-child-at(root, 2) == -1
+layout-row(root, 200.0)
+r-l2d = EL-W[minus] == 100.0 && EL-W[plus] == 100.0
+r-l2e = EL-X[minus] == 0.0 && EL-X[plus] == 100.0
+
+; --- L3 scene 指令 + dump ---
+scene-rect(0.0, 0.0, 400.0, 300.0, 0x1E1E28FF)
+scene-text(30.0, 120.0, 0xFFFFFFFF, '+')
+r-l3a = SC-KIND.len() == 2
+r-l3b = SC-KIND[0] == SC-RECT && SC-KIND[1] == DRAW-TEXT
+dump = scene-dump()
+r-l3c = dump.len() > 0
+
+all-ok = r-l1a && r-l1b && r-l1c && r-l2a && r-l2b && r-l2c && r-l2d && r-l2e && r-l3a && r-l3b && r-l3c
+print('L1: reg={r-l1a} get={r-l1b} dirty={r-l1c}')
+print('L2: tree={r-l2a}{r-l2b}{r-l2c} layout={r-l2d}{r-l2e}')
+print('L3: cmds={r-l3a} kinds={r-l3b} dump={r-l3c}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

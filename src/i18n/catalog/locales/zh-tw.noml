@@ -529,7 +529,6 @@ Parser ASTVersion: %s
 
 `
   'fd9jkb5k': '成員 %q 是空陣列: 請用 #{type = \'[]<elem>\'} 標註它'
-  'fdwcn8i8': 'match 臂從未回傳值'
   'fe0a5wt2': '不能將 option 值 “%s” (%s) 與 “%s” (%s) 比較: 請先解包（`v ?= expr`），或對 ok/nil/err 做 match'
   'fftzl9dl': `
 清空失敗: %v
@@ -704,6 +703,7 @@ AST 快取目錄: %s
   'kmm43ypb': '從鎖定檔解析 %s 失敗: %w'
   'krvc469y': 'vec.clear: 需要 receiver'
   'ksvya88a': '用法: no cache <stat|clear>'
+  'kv3rm9ws': 'match 各臂的值型別不一致：%s vs %s；所有臂必須統一為一個型別 — t|t = t，t|?t = ?t，t|never = t（return/break/continue/_ 臂不產生值），t|nil = ?t'
   'kvp8bxoc': '鎖檔與完整性校驗和已儲存。'
   'kxikdkzu': 'net-accept: 沒有結果槽位'
   'kzomgjsg': '空的 ~match 語句'

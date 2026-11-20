@@ -313,3 +313,333 @@ func walkSurfaceMatchArmBodies(sm *parser.SurfaceMatch, varTypes map[string]stri
 		}
 	}
 }
+
+// ---- 值 match 的臂型別統一（2026-11-20 規定） -------------------------------
+//
+// 規定：match 作為值時，各臂末值型別必須能統一成一個型別：
+//
+//	全 t  → t
+//	t|?t  → ?t（共存即加寬）
+//	t|never = t、?t|never = ?t —— return / break / continue / `_` 丟棄臂
+//	不產值，是統一的么元；「可以忽略 _，以有型別的臂為準」由此形式化。
+//	t|nil = ?t —— nil 臂只貢獻 option 標記。
+//	基型不一致（i64 vs str 等）→ 衝突，報錯。
+//
+// `n = ARR[0] + 1: { ok -> it; -> ARR[0] }` 與 `… { ok -> it; -> cnt }`
+// （cnt = ARR[0]）因此都統一成 `?i64`：ok 臂的 it 是解包後的 i64，兜底臂是
+// safe-index 的 ?i64。若 n 已被標成 plain t，則 ?t 臂使統一結果變 ?t，
+// 交由既有 15w45dqk 在該宣告行報「?i64 不能賦值給 i64」。
+
+// matchArmTail 是一個臂的「末值分類」。
+type matchArmTail struct {
+	t      string // 末值型別（"" = 推斷不出，統一時忽略）
+	never  bool   // return / break / continue / `_` 丟棄尾：不產值（never）
+	nilLit bool   // 末值是 nil 字面量：只貢獻 option 標記
+	lit    bool   // 末值是數值字面量：可被另一個同族具體型別吸收（u8|0 → u8）
+	litInt int64  // lit 為整數字面量時的值（範圍檢查用；`-> 300` 進 u8 不得吸收）
+}
+
+// matchArmTailOf 分類一個臂的末值。
+//
+// 形狀升級與 let 路徑的 option 升格同口徑：safe-index 臂（`-> ARR[0]`）記成
+// `?elem`（str/txt 下標是哨兵 char，不升格）；option 算術臂（`-> it + 1`）記成
+// `?payload`；option 回傳呼叫臂記成其 option 型別。inferExprType 對 index 一律
+// 回 plain elem，所以這裡必須按形狀補回 `?`，否則 `-> ARR[0]` 會被當成 i64，
+// 統一結果錯成 plain t。
+func matchArmTailOf(arm *parser.MatchArm, varTypes map[string]string, funcTypes map[string]string, selfType string) matchArmTail {
+	if arm == nil || arm.Body == nil || len(arm.Body.Statements) == 0 {
+		return matchArmTail{}
+	}
+	last := arm.Body.Statements[len(arm.Body.Statements)-1]
+	switch st := last.(type) {
+	case *parser.ReturnStatement, *parser.BreakStatement, *parser.ContinueStatement:
+		// never 臂：控制流離開 match，不產值（t|never = t）。
+		return matchArmTail{never: true}
+	case *parser.LetStatement:
+		// 臂體以 `_ = expr` 收尾（塊形臂）：顯式丟棄，never。
+		// 其他 let 尾在值語境被 parser 拒收（9q9raufb），到不了這裡。
+		if st.Name != nil && st.Name.Value == "_" {
+			return matchArmTail{never: true}
+		}
+		return matchArmTail{}
+	case *parser.ExpressionStatement:
+		e := st.Expression
+		if e == nil {
+			// `-> _`（裸底線臂）：parser 產出空 ExpressionStatement。
+			return matchArmTail{never: true}
+		}
+		if id, ok := e.(*parser.Identifier); ok && id.Value == "_" {
+			return matchArmTail{never: true}
+		}
+		if as, ok := e.(*parser.AssignExpression); ok {
+			if id, ok := as.Left.(*parser.Identifier); ok && id.Value == "_" {
+				return matchArmTail{never: true}
+			}
+		}
+		t := inferExprType(e, varTypes, funcTypes, selfType)
+		// `err` 是變體標記不是真型別：與 let 路徑（validateStmtTypes）同口徑
+		// 正規化成 err 載荷型別，統一時才不會和 ok 臂的具體型別假性衝突。
+		if t == "err" {
+			t = errVariantPayloadType
+		}
+		tail := matchArmTail{t: t}
+		// 形狀升級：剝括號後按末值形狀補回 option / 字面量資訊。
+		core := e
+		for {
+			g, ok := core.(*parser.GroupedExpression)
+			if !ok {
+				break
+			}
+			core = g.Expression
+		}
+		switch c := core.(type) {
+		case *parser.IntegerLiteral, *parser.FloatLiteral:
+			tail.lit = true
+			if v, ok := integerLiteralValue(core); ok {
+				tail.litInt = v
+			}
+		case *parser.NilLiteral:
+			tail.nilLit = true
+			tail.t = ""
+		case *parser.IndexExpression:
+			if c.Left != nil {
+				lt := inferExprType(c.Left, varTypes, funcTypes, selfType)
+				if lt != "str" && lt != "txt" && strings.HasPrefix(lt, "[") {
+					if elem := extractArrayElemType(lt); elem != "" {
+						tail.t = "?" + elem
+					}
+				}
+			}
+		case *parser.InfixExpression:
+			if p := ovfOptionArithPayloadType(core, varTypes, selfType); p != "" && !isPureLiteralArith(core) {
+				tail.t = "?" + p
+				tail.lit = false
+			}
+		case *parser.CallExpression:
+			if opt := optionResultOfCallTarget(core, varTypes, selfType); opt != "" {
+				tail.t = opt
+				tail.lit = false
+			}
+		}
+		return tail
+	}
+	return matchArmTail{}
+}
+
+// matchTypeFamily 把型別歸族：整數一族（寬度不同的整數字面量臂可被吸收）、
+// 浮點一族；其餘型別各自一族。
+func matchTypeFamily(t string) string {
+	if isIntType(t) {
+		return "int"
+	}
+	if t == "f32" || t == "f64" {
+		return "float"
+	}
+	return t
+}
+
+// unifyMatchArms 統一各臂末值型別。
+//
+// 回 (統一型別, 衝突型別A, 衝突型別B, 是否衝突)。規則（2026-11-20 規定）：
+//   - t|t = t；t|?t = ?t；t|never = t（return/break/continue/`_` 不產值）
+//   - t|nil = ?t
+//   - 同族字面量吸收：`u8|0 → u8`，但僅在字面量值可表示於該型別時成立；
+//     `-> 300` 進 u8 不可表示，保持 i64，由賦值點的 15w45dqk 報窄化
+//   - 同族具體整數取較寬者（u8|i64 → i64），避免窄化被統一悄悄吸收
+//   - 不同族（如 char vs str）→ 衝突，回 ("", base, t, true)
+//
+// ""（推斷不出）與 never 臂一律忽略，以有型別的臂為準。
+func unifyMatchArms(arms []matchArmTail) (string, string, string, bool) {
+	base := ""
+	opt := false
+	seen := false
+	baseIsLit := false
+	for _, a := range arms {
+		if a.never {
+			continue // t|never = t
+		}
+		if a.nilLit {
+			opt = true // t|nil = ?t
+			continue
+		}
+		t := a.t
+		if t == "" {
+			continue // 無型別臂忽略，以有型別的臂為準
+		}
+		o := ty.IsOptionRaw(t)
+		if o {
+			t = ty.StripOptionRaw(t)
+		}
+		if !seen {
+			base, opt, seen, baseIsLit = t, o, true, a.lit
+			continue
+		}
+		if t == base {
+			opt = opt || o
+			baseIsLit = baseIsLit && a.lit
+			continue
+		}
+		if matchTypeFamily(t) != matchTypeFamily(base) {
+			return "", base, t, true
+		}
+		switch {
+		case a.lit && !baseIsLit:
+			// 字面量讓步的條件是值可表示於 base（`-> 0` 進 u8 合法，
+			// `-> 300` 進 u8 是真實數值溢位，仍交由 15w45dqk 拒絕）。
+			if matchLiteralFitsType(a, base) {
+				opt = opt || o
+				continue
+			}
+			base, opt, baseIsLit = t, opt || o, false
+		case !a.lit && baseIsLit:
+			base, opt, baseIsLit = t, opt || o, false
+		default:
+			// 兩個具體同族型別：取較寬者，窄化留給賦值點的既有判定把關。
+			if integerBitWidth(t) > integerBitWidth(base) {
+				base = t
+			}
+			opt = opt || o
+			baseIsLit = false
+		}
+	}
+	if !seen {
+		// 全 never / 全 nil / 全無型別：統一不出具體型別，回 ""（寬鬆方向）。
+		return "", "", "", false
+	}
+	if opt {
+		return "?" + base, "", "", false
+	}
+	return base, "", "", false
+}
+
+// matchLiteralFitsType 報告一個數值字面量臂的值是否可表示於 t（同族時才呼叫）。
+// 整數看範圍；浮點字面量對 f32/f64 一律視為常量轉換（與 isFloatLiteralToDeclared
+// 同口徑）。非整數型別（浮點等）回 true，交由既有賦值判定處理。
+func matchLiteralFitsType(a matchArmTail, t string) bool {
+	min, max, ok := intTypeRange(t)
+	if !ok {
+		return true
+	}
+	return a.litInt >= min && a.litInt <= max
+}
+
+// surfaceMatchSubjectType 推斷被匹配值的靜態型別。舊實作只認 Identifier 主語
+// （varTypes 查表），`ARR[0] + 1: { ok -> it … }` 這類表達式主語拿不到 mt，
+// ok 臂的 it 便綁不上載荷型別。這裡與 lowering 的主語正規化（resolveSubjectMatch
+// → matchSubjectTypeRaw）同口徑：safe-index 主語是 `?elem`、option 算術主語是
+// `?payload`、option 回傳呼叫主語取其 option 型別。
+func surfaceMatchSubjectType(e parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
+	for {
+		g, ok := e.(*parser.GroupedExpression)
+		if !ok {
+			break
+		}
+		e = g.Expression
+	}
+	switch x := e.(type) {
+	case *parser.Identifier:
+		return varTypes[x.Value]
+	case *parser.IndexExpression:
+		if x.Left != nil {
+			lt := inferExprType(x.Left, varTypes, funcTypes, selfType)
+			if lt == "str" || lt == "txt" {
+				return "char"
+			}
+			if strings.HasPrefix(lt, "[") {
+				if elem := extractArrayElemType(lt); elem != "" {
+					return "?" + elem
+				}
+			}
+		}
+		return ""
+	case *parser.InfixExpression:
+		if p := ovfOptionArithPayloadType(x, varTypes, selfType); p != "" {
+			return "?" + p
+		}
+		return inferExprType(x, varTypes, funcTypes, selfType)
+	case *parser.CallExpression:
+		if opt := optionResultOfCallTarget(x, varTypes, selfType); opt != "" {
+			return opt
+		}
+		return inferExprType(x, varTypes, funcTypes, selfType)
+	default:
+		return inferExprType(e, varTypes, funcTypes, selfType)
+	}
+}
+
+// surfaceMatchValueType 計算值 match 的統一結果型別。
+//
+// 副作用：把各臂的 it / 析構綁定登記進 varTypes（與舊 inferExprType SurfaceMatch
+// 分支一致——臂體型別推斷需要看見本臂綁定）。validateStmtTypes 的臂一致性檢查
+// 會在 inferExprType 之後再呼叫一次，重複登記是冪等的。
+// 回 (統一型別, 衝突型別A, 衝突型別B, 是否衝突)。
+func surfaceMatchValueType(sm *parser.SurfaceMatch, varTypes map[string]string, funcTypes map[string]string, selfType string) (string, string, string, bool) {
+	mt := surfaceMatchSubjectType(sm.Matched, varTypes, funcTypes, selfType)
+	// 類型解構 match（union / type-set 的 `w i64 -> …` 臂）本来就異質：各臂綁定
+	// 不同型別，統一規定不適用。沿用舊行為（第一個非空臂末值型別），也不報衝突。
+	for i := range sm.Arms {
+		if sm.Arms[i].IsTypeArm {
+			return surfaceMatchLegacyType(sm, mt, varTypes, funcTypes, selfType)
+		}
+	}
+	var tails []matchArmTail
+	for i := range sm.Arms {
+		arm := &sm.Arms[i]
+		for _, b := range matchArmBindings(sm, arm, mt) {
+			if b.Name != "" {
+				varTypes[b.Name] = b.Type
+			}
+		}
+		tails = append(tails, matchArmTailOf(arm, varTypes, funcTypes, selfType))
+	}
+	return unifyMatchArms(tails)
+}
+
+// surfaceMatchLegacyType 是類型解構 match 的舊行為：第一個非空臂末值型別即整個
+// match 的型別（对应旧 inferExprType SurfaceMatch 分支）。
+func surfaceMatchLegacyType(sm *parser.SurfaceMatch, mt string, varTypes map[string]string, funcTypes map[string]string, selfType string) (string, string, string, bool) {
+	for i := range sm.Arms {
+		arm := &sm.Arms[i]
+		for _, b := range matchArmBindings(sm, arm, mt) {
+			if b.Name != "" {
+				varTypes[b.Name] = b.Type
+			}
+		}
+		if arm.Body != nil {
+			if t := blockTrailingExprType(arm.Body, varTypes, funcTypes, selfType); t != "" {
+				return t, "", "", false
+			}
+		}
+	}
+	return "", "", "", false
+}
+
+// optionIndexCaptureType 報告右值是否為 safe-index 捕獲（`x = ARR[i]`），是則回
+// `?elem`。lowering 的 capture 早已把這類右值合成 `?T`（synthesizeNullableType →
+// publishInferredType），redundant lint 也認得（producesOptionIndex）；唯有
+// validateStmtTypes 的型別登記一直把它記成 plain elem，使 `m i64 = cnt`（cnt =
+// ARR[0]）被當成 plain→plain 放行、option 的 tag 被靜默丟掉。str/txt 下標回哨兵
+// char（越界 -1），不產生 option，故不升格。
+func optionIndexCaptureType(v parser.Expression, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
+	for {
+		g, ok := v.(*parser.GroupedExpression)
+		if !ok {
+			break
+		}
+		v = g.Expression
+	}
+	idx, ok := v.(*parser.IndexExpression)
+	if !ok || idx.Left == nil {
+		return ""
+	}
+	lt := inferExprType(idx.Left, varTypes, funcTypes, selfType)
+	if lt == "str" || lt == "txt" {
+		return ""
+	}
+	if strings.HasPrefix(lt, "[") {
+		if elem := extractArrayElemType(lt); elem != "" {
+			return "?" + elem
+		}
+	}
+	return ""
+}

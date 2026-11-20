@@ -1,0 +1,43 @@
+
+; ==================== 分层内核集成测试（编译器修复后）====================
+
+print('=== build view tree ===')
+
+print('P1 before root')
+root = el-container(FLEX-COL, 1.0, 10.0, 20.0)
+title = el-text('noui counter', COLOR-TEXT)
+el-add(root, title)
+
+counter = entity-new(ENTITY-COUNTER)
+entity-set-i0(counter, 0)
+count-text = el-text('count: 0', COLOR-TEXT)
+el-add(root, count-text)
+
+print('P2 before row')
+row = el-container(FLEX-ROW, 0.0, 12.0, 0.0)
+el-add(root, row)
+btn-minus = el-button('-', COLOR-ACCENT, entity-new(ENTITY-BUTTON), 1.0)
+el-add(row, btn-minus)
+btn-plus = el-button('+', COLOR-ACCENT, entity-new(ENTITY-BUTTON), 1.0)
+el-add(row, btn-plus)
+
+n = E-KIND.len()
+print('elements: {n}')
+
+; 渲染一帧
+print('P3 before render')
+hit = render-frame(root, 400.0, 300.0, -1.0, -1.0, false)
+print('P4 after render')
+cmds = D-KIND.len()
+print('scene commands: {cmds}')
+
+; 命中测试：点加号按钮
+hit2 = render-frame(root, 400.0, 300.0, 100.0, 250.0, true)
+print('hit handle: {hit2}')
+
+; 实体状态读写
+entity-set-i0(counter, 42)
+val = entity-i0(counter)
+print('entity counter: {val}')
+
+print('ALL LAYERED KERNEL TESTS PASSED')

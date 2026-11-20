@@ -4635,6 +4635,13 @@ test-s123-str-const()
 test-s124-str-arm()
 test-s125-const-arm()
 test-s126-str-subj()
+test-s127-idx-read-str()
+test-s127-idx-read-i64()
+test-s127-idx-read-const-arm-gate()
+test-s128-it-ty-str()
+test-s128-it-ty-i64()
+test-s128-it-ty-mixed-gate()
+test-s128-smv-ty-direct()
 test-s99n-vec-field-mk-gate()
 test-s99n-vec-field-set-gate()
 
@@ -5775,6 +5782,465 @@ test-s126-str-subj = () {
         i = h2m-inc(i)
     }
     runner.eq(hit, 1, 's126 str-subj emits STEREQ')
+}
+
+; s127：值位 match 主體為【索引讀】（[]str / []i64）——降級成 option（safe-index：
+;   邊界檢查 + ok 包裹），走 s98 omode 三態臂，ok 臂按【載荷型別】發 OPTGET / OPTGETSTR。
+;   對齐 Go lowerSafeIndexAt（src/mir/hir2mir.go:5225）：in range ⇒ ok(elem)，
+;   out of range ⇒ err(tag 2)。自舉無 err 構造 op 且語料臂只有兜底（不讀錯誤值）⇒
+;   none 塊存 nil（tag 1），語義等價（誠實邊界，見 ㊹）。
+test-s127-idx-read-str = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'xs'))
+    idx = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '0'))
+    subj = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj, base)
+    ast.kid-add(t, subj, idx)
+
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l1, 0, ast.put-str(t, '7'))
+    ast.kid-add(t, e1, l1)
+    b1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b1, e1)
+
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l2, 0, ast.put-str(t, '0'))
+    ast.kid-add(t, e2, l2)
+    b2 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b2, e2)
+
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 2)
+
+    ; 臂1 = `ok -> it`（dot-val：hb+5='true'，hb+9=valueCtx）
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b1)
+
+    ; 臂2 = `-> 0`（wild：hb+4='true'）
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b2)
+
+    c = h2m-new()
+    c.cur-fn = 'at'
+    h2m-slot-decl(c, 'xs', TY-VECSTR)
+    h2m-slot-decl(c, 'r', TY-I64)
+    xi = h2m-name-find(c, 'xs')
+    c.vids[xi]: {
+        ok -> it = h2m-alloc(c, TY-VECSTR)
+
+        -> _
+    }
+    v = h2m-lower-surface(t, c, sg, sm, 'r')
+    runner.eq(c.unsup, 0, 's127 idx-read-str no unsup')
+    runner.eq(v > 0, 1, 's127 idx-read-str emits value')
+
+    hit-gs = 0
+    hit-tag = 0
+    hit-og = 0
+    i = 0
+    (i < c.ops.len()) {
+        oi = c.ops[i]: {
+            ok -> it
+
+            -> -1
+        }
+        oi == OP-VECGETSTR -> hit-gs = 1
+        oi == OP-OPTTAG -> hit-tag = 1
+        oi == OP-OPTGETSTR -> hit-og = 1
+        i = h2m-inc(i)
+    }
+    runner.eq(hit-gs, 1, 's127 idx-read-str emits VECGETSTR')
+    runner.eq(hit-tag, 1, 's127 idx-read-str emits OPTTAG')
+    runner.eq(hit-og, 1, 's127 idx-read-str emits OPTGETSTR')
+}
+
+; s127：[]i64 索引讀主體——同鏈但載荷為 i64 ⇒ 發 OPTGET（而非 OPTGETSTR）
+test-s127-idx-read-i64 = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'xs'))
+    idx = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '0'))
+    subj = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj, base)
+    ast.kid-add(t, subj, idx)
+
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l1, 0, ast.put-str(t, '7'))
+    ast.kid-add(t, e1, l1)
+    b1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b1, e1)
+
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l2, 0, ast.put-str(t, '0'))
+    ast.kid-add(t, e2, l2)
+    b2 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b2, e2)
+
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 2)
+
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b1)
+
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, b2)
+
+    c = h2m-new()
+    c.cur-fn = 'at'
+    h2m-slot-decl(c, 'xs', TY-VEC)
+    h2m-slot-decl(c, 'r', TY-I64)
+    xi = h2m-name-find(c, 'xs')
+    c.vids[xi]: {
+        ok -> it = h2m-alloc(c, TY-VEC)
+
+        -> _
+    }
+    v = h2m-lower-surface(t, c, sg, sm, 'r')
+    runner.eq(c.unsup, 0, 's127 idx-read-i64 no unsup')
+    runner.eq(v > 0, 1, 's127 idx-read-i64 emits value')
+
+    hit-g = 0
+    hit-og = 0
+    hit-ogs = 0
+    i = 0
+    (i < c.ops.len()) {
+        oi = c.ops[i]: {
+            ok -> it
+
+            -> -1
+        }
+        oi == OP-VECGET -> hit-g = 1
+        oi == OP-OPTGET -> hit-og = 1
+        oi == OP-OPTGETSTR -> hit-ogs = 1
+        i = h2m-inc(i)
+    }
+    runner.eq(hit-g, 1, 's127 idx-read-i64 emits VECGET')
+    runner.eq(hit-og, 1, 's127 idx-read-i64 emits OPTGET')
+    runner.eq(hit-ogs, 0, 's127 idx-read-i64 no OPTGETSTR')
+}
+
+; s127 門禁：索引讀主體（option 語意）配【常量臂】⇒ 仍 unsup（不把 option 當裸值降）
+test-s127-idx-read-const-arm-gate = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'xs'))
+    idx = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '0'))
+    subj = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj, base)
+    ast.kid-add(t, subj, idx)
+
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    l1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, l1, 0, ast.put-str(t, '7'))
+    ast.kid-add(t, e1, l1)
+    b1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, b1, e1)
+
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '1'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 1)
+
+    ; 臂1 = `1 -> 7`（常量臂：Condition = 整型字面量）
+    c1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, c1, 0, ast.put-str(t, '1'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, c1)
+    ast.aux-add(t, b1)
+
+    c = h2m-new()
+    c.cur-fn = 'at'
+    h2m-slot-decl(c, 'xs', TY-VEC)
+    h2m-slot-decl(c, 'r', TY-I64)
+    xi = h2m-name-find(c, 'xs')
+    c.vids[xi]: {
+        ok -> it = h2m-alloc(c, TY-VEC)
+
+        -> _
+    }
+    v = h2m-lower-surface(t, c, sg, sm, 'r')
+    runner.gt(c.unsup, 0, 's127 idx-read const-arm still gated')
+    runner.eq(v, 0, 's127 idx-read const-arm no value')
+}
+
+; s128：`it` 的型別推斷——值位 match 的 ok 臂隱式綁定 `it` 必須按【主體 option 的載荷型別】定型，
+;   而非 h2m-ty-of 的恆 TY-I64。語料靶：h2m-cov-join 的
+;   `fnv = unsf[i]: { ok -> it  -> '' }`（unsf []str ⇒ 載荷 str；it 推 I64 與兜底 '' 的 STR
+;   不一致 ⇒ h2m-smv-ty 回 -1 ⇒ 結果槽回退 I64 ⇒ 存值型別不符 ⇒ 整鏈 drop）。
+;   對齐 Go：ok 臂的隱式 `it` 型別 = 主體 option 的載荷型別。
+test-s128-it-ty-str = () {
+    src = 'cj-s128 = (unsf []str, i i64) (r str) {\n    r = unsf[i]: {\n        ok -> it\n\n        -> \'\'\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's128 it-ty-str unsup')
+    runner.eq(ir.contains('define'), 1, 's128 it-ty-str emits code')
+    runner.eq(ir.contains('store %str-long'), 1, 's128 it-ty-str SSTORE')
+    runner.eq(ir.contains('load %str-long'), 1, 's128 it-ty-str SLOAD')
+}
+
+; s128 回歸：[]i64 索引讀主體的 `it` 仍是 TY-I64（默認載荷型別路徑），鏈照常可降
+test-s128-it-ty-i64 = () {
+    src = 'cj-i-s128 = (unsk []i64, i i64) (r i64) {\n    r = unsk[i]: {\n        ok -> it\n\n        -> 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's128 it-ty-i64 unsup')
+    runner.eq(ir.contains('define'), 1, 's128 it-ty-i64 emits code')
+}
+
+; s128 門禁：`it`（str 載荷）與兜底 i64 值混合型別 ⇒ h2m-smv-ty 仍回 -1 ⇒ 回退 I64 ⇒ 存值不符 ⇒ unsup
+;   （型別一致才放行，不一致舊口徑不變——不由本件放寛）
+test-s128-it-ty-mixed-gate = () {
+    src = 'mx-s128 = (unsf []str, i i64) (r str) {\n    r = unsf[i]: {\n        ok -> it\n\n        -> 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's128 mixed-arm counted')
+    runner.eq(ir.contains('define'), 0, 's128 mixed-arm no code')
+}
+
+; s128 單元：h2m-smv-ty 直接對【索引讀主體】推 ok 臂 `it` 的型別
+;   ① []str 基 ⇒ TY-STR；② []i64 基 ⇒ TY-I64；③ 混合型別臂 ⇒ -1
+test-s128-smv-ty-direct = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+
+    lv = h2m-lst-new()
+    h2m-lst-add(lv, 'xs', TY-VECSTR)
+    h2m-lst-add(lv, 'xi', TY-I64)
+
+    ; ① []str 基：主體 INDEX(IDENT('xs'), INT('0'))
+    b1 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, b1, 0, ast.put-str(t, 'xs'))
+    k1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, k1, 0, ast.put-str(t, '0'))
+    subj1 = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj1, b1)
+    ast.kid-add(t, subj1, k1)
+
+    ; 臂1 體 = `it`（ok 臂隱式綁定）
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    i1 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, i1, 0, ast.put-str(t, 'it'))
+    ast.kid-add(t, e1, i1)
+    arm1 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, arm1, e1)
+
+    ; 臂2 體 = `''`（兜底）
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    s2 = ast.add(t, asp.K-STRING-LITERAL)
+    ast.set-slot(t, s2, 0, ast.put-str(t, ''))
+    ast.kid-add(t, e2, s2)
+    arm2 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, arm2, e2)
+
+    m1 = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, m1, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, m1, subj1)
+    ast.helper-begin(t, m1, 2)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, arm1)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, arm2)
+    runner.eq(h2m-smv-ty(t, sg, lv, agg, m1), TY-STR, 's128 smv-ty []str it')
+
+    ; ② []i64 基：主體 INDEX(IDENT('xi'), INT('0'))；臂2 體 = `0`
+    b2 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, b2, 0, ast.put-str(t, 'xi'))
+    k2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, k2, 0, ast.put-str(t, '0'))
+    subj2 = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj2, b2)
+    ast.kid-add(t, subj2, k2)
+
+    e3 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    i3 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, i3, 0, ast.put-str(t, 'it'))
+    ast.kid-add(t, e3, i3)
+    arm3 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, arm3, e3)
+
+    e4 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    n4 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, n4, 0, ast.put-str(t, '0'))
+    ast.kid-add(t, e4, n4)
+    arm4 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, arm4, e4)
+
+    m2 = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, m2, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, m2, subj2)
+    ast.helper-begin(t, m2, 2)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, arm3)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, arm4)
+    runner.eq(h2m-smv-ty(t, sg, lv, agg, m2), TY-I64, 's128 smv-ty []i64 it')
+
+    ; ③ []str 基 + 兜底 `0` ⇒ str vs i64 ⇒ -1
+    b3 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, b3, 0, ast.put-str(t, 'xs'))
+    k3 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, k3, 0, ast.put-str(t, '0'))
+    subj3 = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj3, b3)
+    ast.kid-add(t, subj3, k3)
+
+    e5 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    i5 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, i5, 0, ast.put-str(t, 'it'))
+    ast.kid-add(t, e5, i5)
+    arm5 = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, arm5, e5)
+
+    m3 = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, m3, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, m3, subj3)
+    ast.helper-begin(t, m3, 2)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, arm5)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, arm4)
+    runner.eq(h2m-smv-ty(t, sg, lv, agg, m3), -1, 's128 smv-ty mixed -1')
 }
 
 ; s113：接收者為值的方法呼叫回值型別（a.len() / s.len-bytes() / a.push(x)）

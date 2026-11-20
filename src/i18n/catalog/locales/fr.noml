@@ -533,7 +533,6 @@ Paquet créé : %s
 
 `
   'fd9jkb5k': 'le membre %q est un tableau vide : annotez-le avec #{type = \'[]<elem>\'}'
-  'fdwcn8i8': 'la branche de match ne renvoie jamais de valeur'
   'fe0a5wt2': 'impossible de comparer la valeur option « %s » (%s) avec « %s » (%s) : déballez-la d’abord (`v ?= expr`) ou faites un match sur ok/nil/err'
   'fftzl9dl': `
 échec du nettoyage : %v
@@ -709,6 +708,7 @@ Répertoire du cache AST : %s
   'kmm43ypb': 'résolution de %s depuis le verrou : %w'
   'krvc469y': 'vec.clear : récepteur requis'
   'ksvya88a': 'Utilisation : no cache <stat|clear>'
+  'kv3rm9ws': 'les bras de match ont des types de valeur incompatibles : %s vs %s ; tous les bras doivent etre unifies en un seul type — t|t = t, t|?t = ?t, t|never = t (les bras return/break/continue/_ ne produisent aucune valeur), t|nil = ?t'
   'kvp8bxoc': 'Fichier de verrouillage et sommes d\'intégrité enregistrés.'
   'kxikdkzu': 'net-accept : aucun emplacement de résultat'
   'kzomgjsg': 'instruction ~match vide'

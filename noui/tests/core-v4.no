@@ -1,0 +1,160 @@
+; noui 分层内核 v4 —— Entity + Element（含 children）+ Scene
+; 全部用大写全局池（语言规范要求 module 级数据大写）+ with-len 初始化
+
+; ---------------------------------------------------------------------------
+; L1 Entity registry（SoA，i64 句柄）
+; ---------------------------------------------------------------------------
+ENT-KIND []i64 = with-len(0)
+ENT-VALUE []i64 = with-len(0)
+ENT-DIRTY []i64 = with-len(0)
+
+ENT-COUNTER = 1
+ENT-BUTTON = 2
+
+ent-new = (kind i64) (h i64) {
+    ENT-KIND.push(kind)
+    ENT-VALUE.push(0)
+    ENT-DIRTY.push(1)
+    h = ENT-KIND.len() - 1
+}
+
+ent-get = (h i64) (v i64) {
+    v = ENT-VALUE[h]
+}
+
+ent-set = (h i64, x i64) {
+    ENT-VALUE[h] = x
+    ENT-DIRTY[h] = 1
+}
+
+; ---------------------------------------------------------------------------
+; L2 Element pool（SoA，i64 句柄）
+; ---------------------------------------------------------------------------
+EL-KIND []i64 = with-len(0)
+EL-COLOR []i64 = with-len(0)
+EL-X []f64 = with-len(0)
+EL-Y []f64 = with-len(0)
+EL-W []f64 = with-len(0)
+EL-H []f64 = with-len(0)
+EL-TEXT []str = with-len(0)
+EL-PARENT []i64 = with-len(0)
+EL-HEAD []i64 = with-len(0)
+EL-COUNT []i64 = with-len(0)
+EL-GROW []f64 = with-len(0)
+CHILD []i64 = with-len(0)
+
+EL-CONTAINER = 1
+EL-RECT = 2
+KIND-TEXT = 3
+
+el-new = (kind i64, color i64, txt str, parent i64, grow f64) (h i64) {
+    EL-KIND.push(kind)
+    EL-COLOR.push(color)
+    EL-X.push(0.0)
+    EL-Y.push(0.0)
+    EL-W.push(0.0)
+    EL-H.push(0.0)
+    EL-TEXT.push(txt)
+    EL-PARENT.push(parent)
+    EL-HEAD.push(-1)
+    EL-COUNT.push(0)
+    EL-GROW.push(grow)
+    h = EL-KIND.len() - 1
+}
+
+el-container = (grow f64) (h i64) {
+    h = el-new(EL-CONTAINER, 0, '', -1, grow)
+}
+
+el-text = (txt str, color i64) (h i64) {
+    h = el-new(KIND-TEXT, color, txt, -1, 0.0)
+}
+
+el-button = (txt str) (h i64) {
+    h = el-new(EL-RECT, 0x4A90E2FF, txt, -1, 1.0)
+}
+
+el-add = (parent i64, child i64) {
+    cnt = EL-COUNT[parent]
+    (cnt == 0) -> {
+        EL-HEAD[parent] = CHILD.len()
+    }
+    CHILD.push(child)
+    new-cnt = cnt + 1: {
+        ok -> it
+
+        -> cnt
+    }
+    EL-COUNT[parent] = new-cnt
+}
+
+el-child-at = (parent i64, i i64) (c i64) {
+    c = -1
+    cnt = EL-COUNT[parent]
+    (i >= 0 && i < cnt) -> {
+        h = EL-HEAD[parent]
+        c = CHILD[h + i]
+    }
+}
+
+; ---------------------------------------------------------------------------
+; L3 Scene（绘制指令池）
+; ---------------------------------------------------------------------------
+SC-KIND []i64 = with-len(0)
+SC-X []f64 = with-len(0)
+SC-Y []f64 = with-len(0)
+SC-W []f64 = with-len(0)
+SC-H []f64 = with-len(0)
+SC-COLOR []i64 = with-len(0)
+SC-TEXT []str = with-len(0)
+
+SC-RECT = 1
+DRAW-TEXT = 2
+
+scene-rect = (x f64, y f64, w f64, h f64, color i64) {
+    SC-KIND.push(SC-RECT)
+    SC-X.push(x)
+    SC-Y.push(y)
+    SC-W.push(w)
+    SC-H.push(h)
+    SC-COLOR.push(color)
+    SC-TEXT.push('')
+}
+
+scene-text = (x f64, y f64, color i64, txt str) {
+    SC-KIND.push(DRAW-TEXT)
+    SC-X.push(x)
+    SC-Y.push(y)
+    SC-W.push(0.0)
+    SC-H.push(0.0)
+    SC-COLOR.push(color)
+    SC-TEXT.push(txt)
+}
+
+; ---------------------------------------------------------------------------
+; 测试
+; ---------------------------------------------------------------------------
+root = el-container(1.0)
+title = el-text('counter', 0xFFFFFFFF)
+el-add(root, title)
+c = ent-new(ENT-COUNTER)
+count-txt = el-text('count: 0', 0xFFFFFFFF)
+el-add(root, count-txt)
+row = el-container(0.0)
+el-add(root, row)
+minus = el-button('-')
+plus = el-button('+')
+el-add(row, minus)
+el-add(row, plus)
+
+scene-rect(0.0, 0.0, 400.0, 300.0, 0x1E1E28FF)
+scene-rect(20.0, 100.0, 160.0, 64.0, 0x4A90E2FF)
+scene-text(30.0, 120.0, 0xFFFFFFFF, '+')
+
+h0 = el-child-at(root, 0)
+h1 = el-child-at(root, 1)
+rcc = EL-COUNT[root]
+scc = SC-KIND.len()
+ne = EL-KIND.len()
+print('children: h0={h0} h1={h1} cnt={rcc}')
+print('scene cmds={scc} elements={ne}')

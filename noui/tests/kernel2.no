@@ -1,0 +1,470 @@
+; ============================================================================
+; noui kernel — GPUI 精神内核的单文件实现（数据层 + 三阶段渲染管线）
+; 由于 MIR 后端跨模块 vec.push 受限，内核全部集中在此文件。
+; 平台层（SDL3）通过 C shim 在 app.no 中接入。
+; ============================================================================
+
+; ---------------------------------------------------------------------------
+; L1 几何与颜色
+; ---------------------------------------------------------------------------
+
+; 矩形：x/y 左上角，w/h 宽高
+rect {
+    x f64
+    y f64
+    w f64
+    h f64
+}
+
+; 颜色打包进 i64：0xRRGGBBAA
+color-rgba = (r i64, g i64, b i64, a i64) (c i64) {
+    c = (r << 24) | (g << 16) | (b << 8) | a
+}
+color-r = (c i64) (v i64) {
+    v = (c >> 24) & 255
+}
+color-g = (c i64) (v i64) {
+    v = (c >> 16) & 255
+}
+color-b = (c i64) (v i64) {
+    v = (c >> 8) & 255
+}
+color-a = (c i64) (v i64) {
+    v = c & 255
+}
+
+COLOR-WHITE = 0xFFFFFFFF
+COLOR-BLACK = 0x000000FF
+COLOR-BG = 0x1E1E1EFF
+COLOR-ACCENT = 0x4A90E2FF
+COLOR-ACCENT-HOVER = 0x5AA0F2FF
+COLOR-TEXT = 0xF2F2F2FF
+
+; 点是否命中矩形（含边界）
+rect-hit = (r rect, px f64, py f64) (hit bool) {
+    hit = px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h
+}
+
+; ---------------------------------------------------------------------------
+; L1 Entity 注册表（SoA 平行数组，i64 句柄）
+; ---------------------------------------------------------------------------
+
+G-KIND []i64 = with-len(0)
+G-I0 []i64 = with-len(0)
+G-I1 []i64 = with-len(0)
+G-S0 []str = with-len(0)
+G-DIRTY []i64 = with-len(0)
+
+ENTITY-COUNTER = 1
+ENTITY-BUTTON = 2
+ENTITY-VIEW = 3
+EVENT-CHANGED = 1
+EVENT-CLICK = 2
+
+entity-new = (kind i64) (h i64) {
+    G-KIND.push(kind)
+    G-I0.push(0)
+    G-I1.push(0)
+    G-S0.push('')
+    G-DIRTY.push(1)
+    h = G-KIND.len() - 1
+}
+
+entity-valid = (h i64) (ok bool) {
+    ok = h >= 0 && h < G-KIND.len()
+}
+
+entity-i0 = (h i64) (v i64) {
+    v = 0
+    entity-valid(h) -> {
+        v = G-I0[h]
+    }
+}
+
+entity-s0 = (h i64) (v str) {
+    v = ''
+    entity-valid(h) -> {
+        v = G-S0[h]
+    }
+}
+
+entity-set-i0 = (h i64, v i64) {
+    entity-valid(h) -> {
+        G-I0[h] = v
+        G-DIRTY[h] = 1
+    }
+}
+
+entity-set-s0 = (h i64, v str) {
+    entity-valid(h) -> {
+        G-S0[h] = v
+        G-DIRTY[h] = 1
+    }
+}
+
+entity-notify = (h i64) {
+    entity-valid(h) -> {
+        G-DIRTY[h] = 1
+    }
+}
+
+entity-is-dirty = (h i64) (dirty bool) {
+    dirty = false
+    entity-valid(h) -> {
+        dirty = G-DIRTY[h] == 1
+    }
+}
+
+entity-clear-dirty = (h i64) {
+    entity-valid(h) -> {
+        G-DIRTY[h] = 0
+    }
+}
+
+; ---------------------------------------------------------------------------
+; L2 Element 树（SoA 平行数组）+ Scene 绘制指令
+; ---------------------------------------------------------------------------
+
+; 元素种类
+EL-RECT = 1
+EL-TEXT = 2
+EL-CONTAINER = 3
+
+; 布局方向：0=行 1=列
+FLEX-ROW = 0
+FLEX-COL = 1
+
+; 元素字段（每个索引一个元素）
+E-KIND []i64 = with-len(0)
+E-COLOR []i64 = with-len(0)
+E-X []f64 = with-len(0)
+E-Y []f64 = with-len(0)
+E-W []f64 = with-len(0)
+E-H []f64 = with-len(0)
+E-GAP []f64 = with-len(0)
+E-PAD []f64 = with-len(0)
+E-FLEX []i64 = with-len(0)
+E-GROW []f64 = with-len(0)
+E-TEXT []str = with-len(0)
+E-ENTITY []i64 = with-len(0)
+E-HIT []i64 = with-len(0)       ; 是否参与命中测试（按钮=1）
+E-CHILDREN-HEAD []i64 = with-len(0)
+E-CHILDREN-COUNT []i64 = with-len(0)
+
+; 子节点索引表（每个父节点的子节点连续存放；用 head + count 定位）
+CHILD-IDX []i64 = with-len(0)
+
+; 绘制指令
+CMD-RECT = 1
+CMD-TEXT = 2
+D-KIND []i64 = with-len(0)
+D-X []f64 = with-len(0)
+D-Y []f64 = with-len(0)
+D-W []f64 = with-len(0)
+D-H []f64 = with-len(0)
+D-COLOR []i64 = with-len(0)
+D-TEXT []str = with-len(0)
+
+scene-reset = () {
+    D-KIND []i64 = with-len(0)
+    D-X []f64 = with-len(0)
+    D-Y []f64 = with-len(0)
+    D-W []f64 = with-len(0)
+    D-H []f64 = with-len(0)
+    D-COLOR []i64 = with-len(0)
+    D-TEXT []str = with-len(0)
+}
+
+scene-dump = () (s str) {
+    s = ''
+    i <- [0..D-KIND.len()): {
+        (D-KIND[i] == CMD-RECT) -> {
+            s = '{s}rect({D-X[i]},{D-Y[i]},{D-W[i]},{D-H[i]})={D-COLOR[i]}\n'
+        }
+        (D-KIND[i] == CMD-TEXT) -> {
+            s = '{s}text({D-X[i]},{D-Y[i]})={D-TEXT[i]}\n'
+        }
+    }
+}
+
+; ---------------------------------------------------------------------------
+; L2 Element 构造 API
+; ---------------------------------------------------------------------------
+
+; 内部：追加一个元素槽，返回索引
+elem-alloc = (kind i64, color i64, flex i64, grow f64, gap f64, pad f64, txt str, ent i64, hit i64) (idx i64) {
+    E-KIND.push(kind)
+    E-COLOR.push(color)
+    E-X.push(0.0)
+    E-Y.push(0.0)
+    E-W.push(0.0)
+    E-H.push(0.0)
+    E-GAP.push(gap)
+    E-PAD.push(pad)
+    E-FLEX.push(flex)
+    E-GROW.push(grow)
+    E-TEXT.push(txt)
+    E-ENTITY.push(ent)
+    E-HIT.push(hit)
+    E-CHILDREN-HEAD.push(-1)
+    E-CHILDREN-COUNT.push(0)
+    idx = E-KIND.len() - 1
+}
+
+; 创建容器（flex 布局）
+el-container = (flex i64, grow f64, gap f64, pad f64) (idx i64) {
+    idx = elem-alloc(EL-CONTAINER, 0, flex, grow, gap, pad, '', -1, 0)
+}
+
+; 创建纯色矩形
+el-rect = (color i64, grow f64) (idx i64) {
+    idx = elem-alloc(EL-RECT, color, FLEX-ROW, grow, 0.0, 0.0, '', -1, 0)
+}
+
+; 创建文字元素
+el-text = (txt str, color i64) (idx i64) {
+    idx = elem-alloc(EL-TEXT, color, FLEX-ROW, 0.0, 0.0, 0.0, txt, -1, 0)
+}
+
+; 创建按钮（可命中，绑定一个 entity）
+el-button = (txt str, color i64, ent i64, grow f64) (idx i64) {
+    idx = elem-alloc(EL-RECT, color, FLEX-ROW, grow, 0.0, 0.0, txt, ent, 1)
+}
+
+; 给父元素挂一个子元素
+el-add = (parent i64, child i64) {
+    (parent < 0 || child < 0) -> return
+    (E-CHILDREN-COUNT[parent] == 0) -> {
+        E-CHILDREN-HEAD[parent] = CHILD-IDX.len()
+    }
+    CHILD-IDX.push(child)
+    #{overflow=wrap}
+    E-CHILDREN-COUNT[parent] = E-CHILDREN-COUNT[parent] + 1
+}
+
+; 取父元素的第 i 个子元素索引
+el-child = (parent i64, i i64) (c i64) {
+    c = -1
+    (i >= 0 && i < E-CHILDREN-COUNT[parent]) -> {
+        c = CHILD-IDX[E-CHILDREN-HEAD[parent] + i]
+    }
+}
+
+; 每帧重置元素池
+el-reset = () {
+    E-KIND []i64 = with-len(0)
+    E-COLOR []i64 = with-len(0)
+    E-X []f64 = with-len(0)
+    E-Y []f64 = with-len(0)
+    E-W []f64 = with-len(0)
+    E-H []f64 = with-len(0)
+    E-GAP []f64 = with-len(0)
+    E-PAD []f64 = with-len(0)
+    E-FLEX []i64 = with-len(0)
+    E-GROW []f64 = with-len(0)
+    E-TEXT []str = with-len(0)
+    E-ENTITY []i64 = with-len(0)
+    E-HIT []i64 = with-len(0)
+    E-CHILDREN-HEAD []i64 = with-len(0)
+    E-CHILDREN-COUNT []i64 = with-len(0)
+    CHILD-IDX []i64 = with-len(0)
+}
+
+; ---------------------------------------------------------------------------
+; L2 布局：flex 子集（行/列 + gap + padding + grow 权重）
+; ---------------------------------------------------------------------------
+
+; 递归布局：给定元素、可用矩形，计算自身及子树的 frame
+layout-node = (idx i64, avail rect) {
+    (idx < 0) -> return
+    (E-FLEX[idx] == FLEX-COL) -> {
+        layout-column(idx, avail)
+    }
+    (E-FLEX[idx] == FLEX-ROW) -> {
+        layout-row(idx, avail)
+    }
+    (E-KIND[idx] != EL-CONTAINER) -> {
+        ; 非容器：grow>0 撑满可用空间，否则按可用尺寸
+        E-X[idx] = avail.x
+        E-Y[idx] = avail.y
+        (E-GROW[idx] > 0.0) -> {
+            E-W[idx] = avail.w
+            E-H[idx] = avail.h
+        }
+        (E-GROW[idx] <= 0.0) -> {
+            E-W[idx] = 60.0
+            E-H[idx] = 32.0
+        }
+    }
+}
+
+; 列布局：可用高度按 grow 权重在子节点间分配，gap/pad 计入间距
+layout-column = (idx i64, avail rect) {
+    E-X[idx] = avail.x
+    E-Y[idx] = avail.y
+    E-W[idx] = avail.w
+    E-H[idx] = avail.h
+
+    pad = E-PAD[idx]
+    gap = E-GAP[idx]
+    n = E-CHILDREN-COUNT[idx]
+    (n == 0) -> return
+
+    total-grow = 0.0
+    i <- [0..n): {
+        c = el-child(idx, i)
+        total-grow = total-grow + E-GROW[c]
+    }
+
+    inner-h = avail.h - pad * 2.0 - gap * (n - 1)
+    (inner-h < 0.0) -> { inner-h = 0.0 }
+    cx = avail.x + pad
+    cy = avail.y + pad
+    inner-w = avail.w - pad * 2.0
+    (inner-w < 0.0) -> { inner-w = 0.0 }
+
+    i <- [0..n): {
+        c = el-child(idx, i)
+        (total-grow > 0.0) -> {
+            ch = inner-h * (E-GROW[c] / total-grow)
+        }
+        (total-grow <= 0.0) -> {
+            ch = inner-h / n
+        }
+        cr rect
+        cr.x = cx
+        cr.y = cy
+        cr.w = inner-w
+        cr.h = ch
+        layout-node(c, cr)
+        cy = cy + ch + gap
+    }
+}
+
+; 行布局：可用宽度按 grow 权重分配
+layout-row = (idx i64, avail rect) {
+    E-X[idx] = avail.x
+    E-Y[idx] = avail.y
+    E-W[idx] = avail.w
+    E-H[idx] = avail.h
+
+    pad = E-PAD[idx]
+    gap = E-GAP[idx]
+    n = E-CHILDREN-COUNT[idx]
+    (n == 0) -> return
+
+    total-grow = 0.0
+    i <- [0..n): {
+        c = el-child(idx, i)
+        total-grow = total-grow + E-GROW[c]
+    }
+
+    inner-w = avail.w - pad * 2.0 - gap * (n - 1)
+    (inner-w < 0.0) -> { inner-w = 0.0 }
+    cx = avail.x + pad
+    cy = avail.y + pad
+    inner-h = avail.h - pad * 2.0
+    (inner-h < 0.0) -> { inner-h = 0.0 }
+
+    i <- [0..n): {
+        c = el-child(idx, i)
+        (total-grow > 0.0) -> {
+            cw = inner-w * (E-GROW[c] / total-grow)
+        }
+        (total-grow <= 0.0) -> {
+            cw = inner-w / n
+        }
+        cr rect
+        cr.x = cx
+        cr.y = cy
+        cr.w = cw
+        cr.h = inner-h
+        layout-node(c, cr)
+        cx = cx + cw + gap
+    }
+}
+
+; ---------------------------------------------------------------------------
+; L2 prepaint：命中测试（返回被点击元素的 entity 句柄，-1 表示无）
+; ---------------------------------------------------------------------------
+
+hit-test = (idx i64, px f64, py f64) (h i64) {
+    h = -1
+    (idx < 0) -> return
+    (E-HIT[idx] == 1) -> {
+        r rect
+        r.x = E-X[idx]
+        r.y = E-Y[idx]
+        r.w = E-W[idx]
+        r.h = E-H[idx]
+        (rect-hit(r, px, py)) -> {
+            h = E-ENTITY[idx]
+        }
+    }
+    i <- [0..E-CHILDREN-COUNT[idx]): {
+        c = el-child(idx, i)
+        ch = hit-test(c, px, py)
+        (ch >= 0) -> {
+            h = ch
+        }
+    }
+}
+
+; ---------------------------------------------------------------------------
+; L2 paint：把元素树渲染成 Scene 指令
+; ---------------------------------------------------------------------------
+
+paint-node = (idx i64) {
+    (idx < 0) -> return
+
+    (E-KIND[idx] == EL-RECT) -> {
+        D-KIND.push(CMD-RECT)
+        D-X.push(E-X[idx])
+        D-Y.push(E-Y[idx])
+        D-W.push(E-W[idx])
+        D-H.push(E-H[idx])
+        D-COLOR.push(E-COLOR[idx])
+        D-TEXT.push('')
+    }
+    (E-KIND[idx] == EL-TEXT) -> {
+        D-KIND.push(CMD-TEXT)
+        D-X.push(E-X[idx])
+        D-Y.push(E-Y[idx])
+        D-W.push(E-W[idx])
+        D-H.push(E-H[idx])
+        D-COLOR.push(E-COLOR[idx])
+        D-TEXT.push(E-TEXT[idx])
+    }
+    i <- [0..E-CHILDREN-COUNT[idx]): {
+        paint-node(el-child(idx, i))
+    }
+}
+
+; ---------------------------------------------------------------------------
+; L3 三阶段管线：layout → prepaint → paint
+; ---------------------------------------------------------------------------
+
+render-frame = (root i64, width f64, height f64, pointer-x f64, pointer-y f64, clicked bool) (hit i64) {
+    el-reset()
+    scene-reset()
+
+    ; （ View 构造树由上层在 render-frame 之前完成，root 指向刚构造的树根 ）
+
+    avail rect
+    avail.x = 0.0
+    avail.y = 0.0
+    avail.w = width
+    avail.h = height
+
+    ; 阶段 1：layout
+    layout-node(root, avail)
+
+    ; 阶段 2：prepaint（命中测试）
+    hit = -1
+    (clicked) -> {
+        hit = hit-test(root, pointer-x, pointer-y)
+    }
+
+    ; 阶段 3：paint
+    paint-node(root)
+}
