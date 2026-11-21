@@ -1,0 +1,132 @@
+; ============================================================================
+; noui 应用装配层测试（阶段 9）—— src/app.no 纯逻辑验证
+; 窗口尺寸 / 坐标换算 / 颜色通道 / 底色读写 / 退出标志 / hover 命中，
+; 无窗口、无 SDL 调用，no run 直接跑。
+; ============================================================================
+# /noui/src/app
+
+print('=== app-assemble tests ===')
+
+; ---- 窗口尺寸一致性（像素 <-> 定点）----
+r1 = app-win-w() == 560 && app-win-h() == 420
+r2 = app-win-wf() == 56000 && app-win-hf() == 42000
+wf-ok = app-win-wf() == app-win-w() * 100
+hf-ok = app-win-hf() == app-win-h() * 100
+r3 = wf-ok && hf-ok
+
+; ---- 坐标换算 fx(px) ----
+r4 = fx(0.0) == 0 && fx(12.0) == 1200 && fx(-3.5) == -350 && fx(560.0) == 56000
+
+; ---- 颜色通道 col-r/g/b ----
+r5 = col-r(0x1E1E28FF) == 0x1E && col-g(0x1E1E28FF) == 0x1E && col-b(0x1E1E28FF) == 0x28
+r6 = col-r(0x50C878FF) == 0x50 && col-g(0x50C878FF) == 0xC8 && col-b(0x50C878FF) == 0x78
+
+; ---- 底色读写 ----
+app-set-bg(0x101018FF)
+r7 = app-bg() == 0x101018FF
+app-set-bg(0x1E1E28FF)
+r8 = app-bg() == 0x1E1E28FF
+
+; ---- 退出标志初值 ----
+r9 = (!app-quit())
+
+; ---- 装配一棵表单树：label / input / select / slider / button；dialog 作叠加层 ----
+root = cmp-root()
+lab = cmp-label('name')
+inp = cmp-input('type here')
+sel = cmp-select('pick')
+o0 = select-add-option(sel, 'alpha')
+o1 = select-add-option(sel, 'beta')
+sld = cmp-slider(0, 100)
+cmp-set-value(sld, 40)
+btn = cmp-button('submit')
+dlg = cmp-dialog('confirm')
+dbtn = cmp-button('ok')
+cmp-add-child(dlg, dbtn)
+
+cmp-add-child(root, lab)
+cmp-add-child(root, inp)
+cmp-add-child(root, sel)
+cmp-add-child(root, sld)
+cmp-add-child(root, btn)
+
+; ---- 布局（收起状态）----
+cs-layout(root, 0, 0, 56000, 42000)
+
+lx, ly, lw, lh = cs-rect(lab)
+r10 = lx == CS-PAD && ly == CS-PAD && lw == 53600 && lh == 2400
+
+ix, iy, iw, ih = cs-rect(inp)
+r11 = ix == CS-PAD && iy == 4400 && ih == CS-BTN-H
+
+sx, sy, swd, sh = cs-rect(sel)
+r12 = sx == CS-PAD && sy == 9200 && sh == CS-BTN-H
+
+slx, sly, slw, slh = cs-rect(sld)
+r13 = sly == 14000 && slh == 2400
+
+bx, by, bw, bh = cs-rect(btn)
+r14 = by == 17200 && bh == CS-BTN-H
+
+; ---- select 展开：选项布局 + 反查下标 ----
+select-open(sel)
+cs-layout(root, 0, 0, 56000, 42000)
+oh0 = select-option(sel, 0)
+oh1 = select-option(sel, 1)
+r15 = select-index-of(sel, oh0) == 0 && select-index-of(sel, oh1) == 1
+r16 = select-index-of(sel, btn) == -1
+
+h0x, h0y, h0w, h0h = cs-rect(oh0)
+h1x, h1y, h1w, h1h = cs-rect(oh1)
+r17 = h0x == sx && h0y == sy + CS-BTN-H + CS-GAP && h0h == CS-LINE-H
+r18 = h1y == h0y + CS-LINE-H + CS-GAP
+
+; 展开时能点中选项
+r22 = cs-hit(root, h0x + 100, h0y + 100) == oh0
+
+; ---- 收起后重新布局，选项不再参与命中 ----
+select-close(sel)
+cs-layout(root, 0, 0, 56000, 42000)
+r23 = cs-hit(root, sx + 100, sy + 100) == sel
+
+; ---- hover 命中 + 高亮切换（app 层行为）----
+hh = app-hover(root, bx + 100, by + 100)
+r19 = hh == btn && cmp-has(btn, F-HOVERED)
+hh2 = app-hover(root, 50000, 41000)
+r20 = hh2 == root && (!cmp-has(btn, F-HOVERED))
+hh3 = app-hover(root, sx + 100, sy + 100)
+r21 = hh3 == sel
+
+; ---- slider 拖拽取值（px 为绝对坐标）----
+r24 = slider-value-at(sld, slx, slx, slw) == 0
+r25 = slider-value-at(sld, slx + slw, slx, slw) == 100
+r26 = slider-value-at(sld, slx + slw / 2, slx, slw) == 50
+
+; ---- Scene 摊平数量 ----
+cs-clear()
+cs-paint(root)
+c-root = cs-scene-count()
+r27 = c-root > 10
+cs-clear()
+cs-paint(dlg)
+c-closed = cs-scene-count()
+r28 = c-closed == 0
+dialog-open(dlg)
+cs-clear()
+cs-paint(dlg)
+c-open = cs-scene-count()
+r29 = c-open == 5
+dialog-close(dlg)
+
+; ---- 汇总 ----
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13
+all-ok = all-ok && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23
+all-ok = all-ok && r24 && r25 && r26 && r27 && r28 && r29
+print('win={r1}{r2}{r3} fx={r4} col={r5}{r6} bg={r7}{r8} quit={r9}')
+print('layout={r10}{r11}{r12}{r13}{r14}')
+print('select={r15}{r16}{r17}{r18} hit-open={r22} hit-closed={r23}')
+print('hover={r19}{r20}{r21} slider={r24}{r25}{r26}')
+print('scene root={c-root} dlg-closed={c-closed} dlg-open={c-open} -> {r27}{r28}{r29}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-ASSEMBLE TESTS PASSED') }
+(!all-ok) -> { print('SOME APP-ASSEMBLE TESTS FAILED') }

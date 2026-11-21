@@ -1,0 +1,1785 @@
+; ============================================================================
+; noui 声明式视图层（dv = declarative view）
+;
+; 思想：UI = f(state)。用户每帧用 dv-* 构造器把「当前状态对应的视图」描述成
+; 一棵纯数据树（本模块的 SoA 池），再调用 dv-render 把它调和进命令式的
+; components.no 组件池。调和按 (key, kind) 匹配：同 key 同 kind 的组件对象
+; 跨帧复用（输入框文本 / 焦点不丢），只对变化的部分做 props 更新；
+; 新增 / 删除 / 重排都走最小操作。
+;
+; 与命令式层的边界：dv 不替代 components.no / cmp-scene.no。
+;   - 组件对象、布局、绘制、命中仍然是命令式的；
+;   - dv 只负责「视图描述 → 组件池」的映射与增量同步；
+;   - 事件由应用层用 cs-hit + cmp-key 拿 key，再 dv-dispatch(key) 取视图自带的
+;     (act, payload) 分派；要动活组件对象时用 dv-live-by-key(live, key)。
+;
+; 行为也是数据：dv-act(node, act, payload) 把「点了意味着什么」挂到视图节点上。
+;   dv-act 与 dv-node 同生命周期 —— dv-clear() 会清空动作池，所以每帧重建视图
+;   时都要重新挂一次（载荷因此可以携带当前状态）。
+;
+; 重复原语：dv-repeat（同形状 n 份）/ dv-repeat-labels（全量）/
+;   dv-repeat-labels-n（前 n 份）。key 从 key0 递增，跨帧稳定 -> 列表长度变化只发差量。
+;
+; 布局也是数据：dv-lay(node, bits, gap, pad) 把「怎么排」挂到视图节点上，
+; 随 props 一起同步进组件（CMP-LAY / CMP-GAP / CMP-PAD），由 cmp-scene 的
+;   cs-measure / cs-layout 消费 —— 容器方向、拉伸、交叉轴对齐、间距 / 内边距覆盖。
+;   bits 复用 components.no 的 L-H / L-GROW / L-AE / L-AC。
+;
+; 用法：
+;   dv-clear()
+;   r = dv-form(1, -1)                 ; key=1，父=-1（顶层）
+;   dv-label(2, '名字', r)
+;   b = dv-button(3, '确定', r)
+;   dv-act(b, DV-A-CLICK, DEMO-CMD-OK)  ; 动作 + 应用层自定义载荷
+;   dv-repeat-labels-n(r, 80, ROWS, n) ; 列表：行数由状态决定
+;   dv-render(app-root(), r)           ; 调和进活组件树
+;   ; 事件侧：hit = cs-hit(root, x, y) -> dv-dispatch(cmp-key(hit))
+;
+; 命名约束：模块级数据一律大写；计数器走数组槽，规避标量全局写回缺陷。
+; ============================================================================
+# /noui/src/components
+# /noui/src/cmp-scene
+
+; ---------- 视图节点 SoA 池 ----------
+DV-KIND []i64 = with-len(0)
+DV-KEY []i64 = with-len(0)
+DV-TEXT []str = with-len(0)
+DV-TEXT2 []str = with-len(0)
+DV-COLOR []i64 = with-len(0)
+DV-VALUE []i64 = with-len(0)
+DV-VALUE2 []i64 = with-len(0)
+DV-FLAGS []i64 = with-len(0)
+DV-PARENT []i64 = with-len(0)
+; 声明式行为：DV-ACT[view 节点] = 动作 id（0 = 无），DV-ACT2 = 载荷
+; 视图因此不只描述「长什么样」，也描述「点了意味着什么」；
+; 应用层只需按 (act, payload) 分派，不必把 key 硬编码成 if-else 链。
+DV-ACT []i64 = with-len(0)
+DV-ACT2 []i64 = with-len(0)
+
+; 布局提示：让「怎么排」也变成数据。bits 复用 components.no 的 L-* 位
+; （L-H 横向 / L-GROW 吃掉主轴剩余 / L-AE 交叉轴末端 / L-AC 交叉轴居中），
+; gap / pad = 0 表示用 cmp-scene 的默认 CS-GAP / CS-PAD。
+DV-LAY []i64 = with-len(0)
+DV-GAP []i64 = with-len(0)
+DV-PAD []i64 = with-len(0)
+; 尺寸提示（0 = 自动）+ 文本对齐（0 = 按 kind 默认）
+DV-SW []i64 = with-len(0)
+DV-SH []i64 = with-len(0)
+DV-ALIGN []i64 = with-len(0)
+; 变体（0 = 默认；非 0 时由 cmp-scene 的 cs-var-color 映射到主题语义色）
+DV-VAR []i64 = with-len(0)
+; 锚定浮层：DV-ANCHOR[view 节点] = 锚点视图 key（-1 = 无锚点 -> 父矩形内居中）。
+; 调和时同步到活节点的 CMP-ANCHOR，cmp-scene 布局时按 key 反查锚点矩形。
+DV-ANCHOR []i64 = with-len(0)
+; hover（声明式）：DV-HOVER[view 节点] = 状态槽 + 1（0 = 未声明）。
+; 装配层每帧按「当前命中 key 是否等于本节点 key」把 1/0 写进那个状态槽，
+; 于是「鼠标停在谁身上」也进得了 UI = f(state) —— 视图再用 dv-cond 决定
+; 是否建一个锚在该节点上的 tooltip / hover-card。
+DV-HOVER []i64 = with-len(0)
+; 标签页（阶段 19）：DV-TAB-ACT[视图节点] = 当前页下标（-1 = 不是标签条）。
+; 声明式层用 dv-on-sel() 表达选中（绘制 / 命中都认），但 C-TAB 组件本身
+; 画高亮时读的是自己的 CMP-VALUE，所以调和时按这个池调 tab-select 同步过去。
+DV-TAB-ACT []i64 = with-len(0)
+; 绑定（受控输入）：DV-BIND[view 节点] = 字符串状态槽 + 1（0 = 未绑定），
+; DV-BIND-MAX = 该槽允许的最大字符数（0 = 不限）。装配层每帧做双向同步：
+; 组件文本变了 -> 写回状态；状态被（归约器 / reset）改了 -> 推回组件。
+DV-BIND []i64 = with-len(0)
+DV-BIND-MAX []i64 = with-len(0)
+; 快捷键：键码 -> (动作, 载荷, 视图 key)。与 dv-act 同生命周期（每帧重挂）。
+; 语义：无输入焦点时按键，命中就当作「点了那个节点」走同一条归约路径。
+DV-HOT-KEY []i64 = with-len(0)
+DV-HOT-ACT []i64 = with-len(0)
+DV-HOT-PAY []i64 = with-len(0)
+DV-HOT-VKEY []i64 = with-len(0)
+
+; 空的 flags 平行数组：给「不关心每项 flags」的原语当默认值用（阶段 20）。
+; 与 DV-EMPTY-F 同语义的空数组只能有一个实例，否则每次传参都白占一个池对象。
+DV-EMPTY-F []i64 = with-len(0)
+
+; 动作 id（应用层自定义语义，这里只约定常用几个）
+DV-A-CLICK = 1   ; 点击
+DV-A-CHANGE = 2  ; 值变化（滑杆 / 输入）
+DV-A-SUBMIT = 3  ; 提交
+DV-A-OPEN = 4    ; 展开
+DV-A-CLOSE = 5   ; 收起
+; 状态归约类动作（配合 dv-apply）：payload = 状态池下标，value / value2 = 操作数
+DV-A-SET = 6     ; S[payload] = value
+DV-A-TOGGLE = 7  ; S[payload] = 1 - S[payload]
+DV-A-DELTA = 8   ; S[payload] = clamp(S[payload] + value, 0, value2)
+DV-A-ITEM = 9    ; 列表项被点（dv-repeat-items 的载荷 = 行号，语义由应用层定）
+; 选中并收起：S[payload] = value（选中下标），S[value2] = 0（展开槽）。
+; 一个动作要写两个槽（select 选中 + 关下拉），单槽的 SET 表达不了，所以单独开一个码。
+DV-A-CHOOSE = 10
+
+; 调和状态：DV-MATCH[view 节点] = 活组件句柄（-1 = 未匹配）
+;           DV-USED[活句柄] = 帧号（帧号不同即视为未认领）
+DV-MATCH []i64 = with-len(0)
+DV-USED []i64 = with-len(0)
+; 帧计数从 1 起：0 留给「从未标记过 / 没有通知」当哨兵（dv-is-used 比的就是它）。
+DV-FRAME []i64 = with-len(1)
+DV-FRAME[0] = 1
+
+; 视图 flags 位（描述期望状态，映射到 CMP 的 F-* 位）
+; 注意这是 dv 自己的紧凑编码，与 CMP 的 F-* 数值不同；组合用字面量或函数内位或，
+; 不要写「顶层变量 = 位或表达式」（main 作用域有编译器缺陷，见 ARCHITECTURE §5.4）。
+DV-F-VIS = 1    ; 可见
+DV-F-EN = 2     ; 可用（清除时置 DISABLED）
+DV-F-CHK = 4    ; 勾选（checkbox / switch / radio）
+DV-F-SEL = 8    ; 选中（tab / menu / list 项）
+DV-F-ACT = 16   ; 激活（当前页 / 当前项）
+DV-F-OPEN = 32  ; 展开（折叠面板 / 下拉 / 弹层）
+DV-F-OVL = 64   ; 叠加层（不参与父级流布局，改为在父矩形内居中 / 锚定）
+DV-F-PASS = 128 ; 非模态叠加层（tooltip / hover-card / 通知）：仍最后画、仍可命中，
+                 ; 但没命中时不设模态屏障，点得穿到下面的内容
+
+; ============================================================================
+; 算术 / 数组辅助
+; ============================================================================
+dv-inc = (a i64) (r i64) {
+    x = a + 1: {
+        ok -> it
+
+        -> a
+    }
+    r = x
+}
+dv-add = (a i64, b i64) (r i64) {
+    x = a + b: {
+        ok -> it
+
+        -> a
+    }
+    r = x
+}
+; 注意：填充值必须是 -1（「未匹配」哨兵），不能是 0 —— 否则被推出来的空槽
+; 会被 dv-arr-getm 读成「匹配到句柄 0」。
+dv-ensure = (a []i64, n i64) () {
+    !! {
+        (a.len() >= n) -> { ** }
+        a.push(-1)
+    }
+}
+dv-arr-set = (a []i64, i i64, v i64) () {
+    ni = dv-inc(i)
+    dv-ensure(a, ni)
+    a[i]: {
+        ok -> it = v
+        -> _
+    }
+}
+dv-arr-get = (a []i64, i i64) (v i64) {
+    v = 0
+    (i >= 0) -> {
+        (i < a.len()) -> {
+            x = a[i]: {
+                ok -> it
+
+                -> 0
+            }
+            v = x
+        }
+    }
+}
+; 默认 -1 的读法：专供 DV-MATCH（「未匹配」必须与「句柄 0」区分开）
+dv-arr-getm = (a []i64, i i64) (v i64) {
+    v = -1
+    (i >= 0) -> {
+        (i < a.len()) -> {
+            x = a[i]: {
+                ok -> it
+
+                -> -1
+            }
+            v = x
+        }
+    }
+}
+dv-arr-get-s = (a []str, i i64) (v str) {
+    v = ''
+    (i >= 0) -> {
+        (i < a.len()) -> {
+            x = a[i]: {
+                ok -> it
+
+                -> ''
+            }
+            v = x
+        }
+    }
+}
+
+; ============================================================================
+; 视图节点读写
+; ============================================================================
+dv-kind = (v i64) (k i64) {
+    k = dv-arr-get(DV-KIND, v)
+}
+dv-key = (v i64) (k i64) {
+    k = dv-arr-get(DV-KEY, v)
+}
+dv-text = (v i64) (s str) {
+    s = dv-arr-get-s(DV-TEXT, v)
+}
+dv-text2 = (v i64) (s str) {
+    s = dv-arr-get-s(DV-TEXT2, v)
+}
+dv-color = (v i64) (c i64) {
+    c = dv-arr-get(DV-COLOR, v)
+}
+dv-value = (v i64) (x i64) {
+    x = dv-arr-get(DV-VALUE, v)
+}
+dv-value2 = (v i64) (x i64) {
+    x = dv-arr-get(DV-VALUE2, v)
+}
+dv-flags = (v i64) (f i64) {
+    f = dv-arr-get(DV-FLAGS, v)
+}
+dv-parent = (v i64) (p i64) {
+    p = dv-arr-get(DV-PARENT, v)
+}
+dv-lay-of = (v i64) (f i64) {
+    f = dv-arr-get(DV-LAY, v)
+}
+dv-gap-of = (v i64) (g i64) {
+    g = dv-arr-get(DV-GAP, v)
+}
+dv-pad-of = (v i64) (p i64) {
+    p = dv-arr-get(DV-PAD, v)
+}
+dv-sw-of = (v i64) (w i64) {
+    w = dv-arr-get(DV-SW, v)
+}
+dv-sh-of = (v i64) (h i64) {
+    h = dv-arr-get(DV-SH, v)
+}
+dv-align-of = (v i64) (a i64) {
+    a = dv-arr-get(DV-ALIGN, v)
+}
+dv-var-of = (v i64) (a i64) {
+    a = dv-arr-get(DV-VAR, v)
+}
+; 锚点 key：-1 = 无锚点（用 getm，越界 / 未匹配也返回 -1）
+dv-anchor-of = (v i64) (k i64) {
+    k = dv-arr-getm(DV-ANCHOR, v)
+}
+; hover 槽位：-1 = 未声明，>= 0 = 状态池下标（装配层每帧写 1/0）
+dv-hover-of = (v i64) (s i64) {
+    s = dv-arr-get(DV-HOVER, v)
+    s = dv-add(s, -1)
+}
+; 标签条当前页：-1 = 不是标签条
+dv-tab-active-of = (v i64) (a i64) {
+    a = dv-arr-get(DV-TAB-ACT, v)
+}
+; 绑定槽位：-1 = 未绑定，>= 0 = 字符串状态池下标
+dv-bind-of = (v i64) (s i64) {
+    s = dv-arr-get(DV-BIND, v)
+    s = dv-add(s, -1)
+}
+dv-bind-max-of = (v i64) (m i64) {
+    m = dv-arr-get(DV-BIND-MAX, v)
+}
+; 视图节点总数（绑定同步按池下标遍历用）
+dv-node-count = () (n i64) {
+    n = DV-KIND.len()
+}
+
+; ============================================================================
+; 建树
+; ============================================================================
+dv-clear = () () {
+    DV-KIND.truncate(0)
+    DV-KEY.truncate(0)
+    DV-TEXT.truncate(0)
+    DV-TEXT2.truncate(0)
+    DV-COLOR.truncate(0)
+    DV-VALUE.truncate(0)
+    DV-VALUE2.truncate(0)
+    DV-FLAGS.truncate(0)
+    DV-PARENT.truncate(0)
+    DV-ACT.truncate(0)
+    DV-ACT2.truncate(0)
+    DV-LAY.truncate(0)
+    DV-GAP.truncate(0)
+    DV-PAD.truncate(0)
+    DV-SW.truncate(0)
+    DV-SH.truncate(0)
+    DV-ALIGN.truncate(0)
+    DV-VAR.truncate(0)
+    DV-ANCHOR.truncate(0)
+    DV-HOVER.truncate(0)
+    DV-TAB-ACT.truncate(0)
+    DV-BIND.truncate(0)
+    DV-BIND-MAX.truncate(0)
+    DV-HOT-KEY.truncate(0)
+    DV-HOT-ACT.truncate(0)
+    DV-HOT-PAY.truncate(0)
+    DV-HOT-VKEY.truncate(0)
+    DV-MATCH.truncate(0)
+}
+
+; 追加一个视图节点，返回节点 id
+dv-node = (kind i64, key i64, text str, text2 str, color i64, value i64, value2 i64, flags i64, parent i64) (h i64) {
+    h = DV-KIND.len()
+    DV-KIND.push(kind)
+    DV-KEY.push(key)
+    DV-TEXT.push(text)
+    DV-TEXT2.push(text2)
+    DV-COLOR.push(color)
+    DV-VALUE.push(value)
+    DV-VALUE2.push(value2)
+    DV-FLAGS.push(flags)
+    DV-PARENT.push(parent)
+    DV-ACT.push(0)
+    DV-ACT2.push(0)
+    DV-LAY.push(0)
+    DV-GAP.push(0)
+    DV-PAD.push(0)
+    DV-SW.push(0)
+    DV-SH.push(0)
+    DV-ALIGN.push(0)
+    DV-VAR.push(0)
+    DV-ANCHOR.push(-1)
+    DV-HOVER.push(0)
+    DV-TAB-ACT.push(-1)
+    DV-BIND.push(0)
+    DV-BIND-MAX.push(0)
+}
+
+; 给视图节点挂一个动作（builder 返回节点 id，随后 dv-act 挂行为）
+dv-act = (h i64, act i64, payload i64) () {
+    (h >= 0) -> {
+        dv-arr-set(DV-ACT, h, act)
+        dv-arr-set(DV-ACT2, h, payload)
+    }
+}
+dv-act-of = (v i64) (a i64) {
+    a = dv-arr-get(DV-ACT, v)
+}
+dv-act-payload = (v i64) (p i64) {
+    p = dv-arr-get(DV-ACT2, v)
+}
+
+; 布局提示写入：bits 复用 components.no 的 L-* 位，gap / pad 为 0 表示用默认。
+; 与 dv-act 同生命周期（dv-clear 会清空），每帧重建视图时一起重挂。
+dv-lay = (h i64, bits i64, gap i64, pad i64) () {
+    (h >= 0) -> {
+        dv-arr-set(DV-LAY, h, bits)
+        dv-arr-set(DV-GAP, h, gap)
+        dv-arr-set(DV-PAD, h, pad)
+    }
+}
+
+; 布局位组合子（函数内位或，数值稳定 —— 顶层位或初始化有编译器缺陷）
+dv-lay-h = () (f i64) { f = L-H }
+dv-lay-grow = () (f i64) { f = L-GROW }
+dv-lay-end = () (f i64) { f = L-AE }
+dv-lay-center = () (f i64) { f = L-AC }
+dv-lay-h-grow = () (f i64) { f = L-H | L-GROW }
+dv-lay-h-end = () (f i64) { f = L-H | L-AE }
+dv-lay-grow-end = () (f i64) { f = L-GROW | L-AE }
+
+; 尺寸提示：0 = 自动（走 intrinsic 测算），非 0 覆盖。容器同样生效 ——
+; 「定宽侧栏 / 定高工具条」也是纯数据。
+dv-size = (h i64, w i64, ht i64) () {
+    (h >= 0) -> {
+        dv-arr-set(DV-SW, h, w)
+        dv-arr-set(DV-SH, h, ht)
+    }
+}
+
+; 文本对齐提示：复用 components.no 的 A-LEFT / A-CENTER / A-RIGHT，0 = 按 kind 默认
+dv-align = (h i64, al i64) () {
+    (h >= 0) -> { dv-arr-set(DV-ALIGN, h, al) }
+}
+dv-align-left = () (a i64) { a = A-LEFT }
+dv-align-center = () (a i64) { a = A-CENTER }
+dv-align-right = () (a i64) { a = A-RIGHT }
+
+; 变体：把「主色 / 次要 / 幽灵 / 危险」写成视图数据，绘制时映射到主题语义色
+; （cs-var-color：1 ACCENT / 2 MUTED / 3 FG / 4 DANGER）。0 = 默认，渲染逐位不变。
+; 与 dv-act / dv-lay / dv-size 同生命周期：dv-clear() 会清空 DV-VAR，每帧重建视图时重挂。
+dv-variant = (h i64, v i64) () {
+    (h >= 0) -> { dv-arr-set(DV-VAR, h, v) }
+}
+dv-var-primary = () (v i64) { v = 1 }
+dv-var-secondary = () (v i64) { v = 2 }
+dv-var-ghost = () (v i64) { v = 3 }
+dv-var-danger = () (v i64) { v = 4 }
+
+; 主题：调色板也是数据。槽位复用 cmp-scene 的 CS-TH-*（BG / FG / ACCENT / FIELD /
+; TRACK / MUTED / TIP / OK / DANGER）。主题是全局的，不随 dv-clear() 清空，
+; 所以在 dva-run 之前设一次即可。
+dv-theme-set = (slot i64, c i64) () {
+    cs-theme-set(slot, c)
+}
+dv-theme-reset = () {
+    cs-theme-reset()
+}
+
+; ============================================================================
+; 受控输入（绑定）与快捷键
+; ============================================================================
+; 绑定：把输入类节点的文本与「字符串状态池」的一个槽位连起来，双向同步由装配层做
+; （dv-app 的 dva-sync-binds，每帧一次）：组件文本变了 -> 写回状态；状态被归约器
+; 改了 -> 推回组件。于是「输入框里写了什么」也是状态，视图可以读它、reset 可以清它。
+; max = 该槽允许的最大字符数（0 = 不限）。
+; 与 dv-act 同生命周期：dv-clear() 会清空 DV-BIND，每帧重建视图时重挂。
+dv-bind = (h i64, slot i64, max i64) () {
+    (h >= 0) -> {
+        dv-arr-set(DV-BIND, h, dv-add(slot, 1))
+        dv-arr-set(DV-BIND-MAX, h, max)
+    }
+}
+
+; 字符串状态池：绑定的归约目标。与主题一样是全局的，不随 dv-clear() 清空
+; （dv-clear 只清「视图描述」，状态不是视图的一部分）。
+; 数组参数只能 place-match 写，这里直接操作模块全局，读写都走 match 解包。
+DV-BIND-T []str = with-len(0)
+dv-bound = (slot i64) (s str) {
+    s = DV-BIND-T[slot]: {
+        ok -> it
+
+        -> ''
+    }
+}
+dv-bound-set = (slot i64, s str) () {
+    DV-BIND-T[slot]: {
+        ok -> it = s
+
+        -> _
+    }
+}
+dv-bind-t-count = () (n i64) {
+    n = DV-BIND-T.len()
+}
+; 给字符串池补槽（应用声明「我要用 N 个文本槽」）
+dv-bind-t-ensure = (n i64) () {
+    !! {
+        (DV-BIND-T.len() >= n) -> { ** }
+        DV-BIND-T.push('')
+    }
+}
+; 把组件文本截到 max（超长返回截断后的串）
+dv-bound-cap = (s str, max i64) (r str) {
+    r = s
+    (max > 0) -> {
+        (s.len() > max) -> { r = s.slice(0, max) }
+    }
+}
+
+; 快捷键：键码 keycode 命中 = 「点了这个节点」，走与点击完全相同的归约路径。
+; 语义：只在没有输入焦点时生效（正在敲字时按键不该触发全局动作）。
+dv-hotkey = (h i64, keycode i64, act i64, pay i64) () {
+    (h >= 0) -> {
+        DV-HOT-KEY.push(keycode)
+        DV-HOT-ACT.push(act)
+        DV-HOT-PAY.push(pay)
+        DV-HOT-VKEY.push(dv-key(h))
+    }
+}
+; 命中返回 (act, pay, vkey)；没命中 act = 0
+dv-hot-dispatch = (keycode i64) (act i64, pay i64, vkey i64) {
+    act = 0
+    pay = 0
+    vkey = -1
+    i = 0
+    n = DV-HOT-KEY.len()
+    !! {
+        (i >= n) -> { ** }
+        (act != 0) -> { ** }
+        k = DV-HOT-KEY[i]: {
+            ok -> it
+
+            -> -1
+        }
+        (k == keycode) -> {
+            a = DV-HOT-ACT[i]: {
+                ok -> it
+
+                -> 0
+            }
+            p = DV-HOT-PAY[i]: {
+                ok -> it
+
+                -> 0
+            }
+            vk = DV-HOT-VKEY[i]: {
+                ok -> it
+
+                -> -1
+            }
+            ; 目标节点被禁用 -> 不触发（阶段 18）。
+            ; 注意 DV-HOT-VKEY 存的是**声明式 key**（dva-run 要拿它当动作目标），
+            ; 所以先反查视图节点再看 flags —— dv-disabled-of 吃的是视图句柄。
+            tv = dv-node-by-key(vk)
+            (tv >= 0) -> {
+                (dv-disabled-of(tv) == 0) -> {
+                    act = a
+                    pay = p
+                    vkey = vk
+                }
+            }
+            (tv < 0) -> {
+                act = a
+                pay = p
+                vkey = vk
+            }
+        }
+        i = dv-inc(i)
+    }
+}
+dv-hot-count = () (n i64) {
+    n = DV-HOT-KEY.len()
+}
+
+; 按 key 找视图节点（key 在全树唯一；线性扫描，树很小）
+dv-node-by-key = (k i64) (v i64) {
+    v = -1
+    i = 0
+    n = DV-KIND.len()
+    !! {
+        (i >= n) -> { ** }
+        kk = dv-key(i)
+        (kk == k) -> {
+            v = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; key -> 视图父节点 id / 父节点 kind（-1 = 无）。供应用层做「结构相关的组件侧动作」
+; （例：选中下拉项后收起弹层），而不必把 key 硬编码进主循环。
+dv-parent-of-key = (k i64) (p i64) {
+    v = dv-node-by-key(k)
+    p = -1
+    (v >= 0) -> { p = dv-parent(v) }
+}
+dv-parent-kind-of-key = (k i64) (kd i64) {
+    p = dv-parent-of-key(k)
+    kd = -1
+    (p >= 0) -> { kd = dv-kind(p) }
+}
+
+; 事件分发：命中句柄 -> key -> 视图动作。返回 (act, payload)，无动作时 (0, 0)
+; 事件命中 -> 视图动作的反向查找。禁用的节点**不出动作**（阶段 18）：
+; 命中仍然有效（hover / tooltip 该照常工作，禁用原因往往就要靠 tooltip 解释），
+; 但点击不该产生任何归约。
+dv-dispatch = (k i64) (act i64, payload i64) {
+    v = dv-node-by-key(k)
+    act = 0
+    payload = 0
+    (v >= 0) -> {
+        (dv-disabled-of(v) == 0) -> {
+            act = dv-act-of(v)
+            payload = dv-act-payload(v)
+        }
+    }
+}
+
+; ============================================================================
+; 状态归约：把「点击」直接表述成对状态池的赋值，主循环不再写 key 链
+; ============================================================================
+; 语义（act 决定操作，payload 是状态池下标，节点的 value / value2 是操作数）：
+;   DV-A-SET    S[payload] = value
+;   DV-A-TOGGLE S[payload] = 1 - S[payload]（0/1 翻转）
+;   DV-A-DELTA  S[payload] = clamp(S[payload] + value, 0, value2)（value2=0 表示无上限）
+; 返回写过的状态槽个数（0 = 这个 key 不归约器管，调用方自行处理）。
+; 状态池由应用层给（这里是 []i64），dv 不绑定任何具体状态数组。
+dv-clamp = (v i64, lo i64, hi i64) (r i64) {
+    r = v
+    (v < lo) -> { r = lo }
+    (hi > 0) -> {
+        (v > hi) -> { r = hi }
+    }
+}
+
+dv-apply = (S []i64, k i64) (n i64) {
+    n = 0
+    v = dv-node-by-key(k)
+    (v >= 0) -> {
+        a = dv-act-of(v)
+        pl = dv-act-payload(v)
+        val = dv-value(v)
+        (a == DV-A-SET) -> {
+            S[pl]: {
+                ok -> it = val
+                -> _
+            }
+            n = dv-inc(n)
+        }
+        (a == DV-A-TOGGLE) -> {
+            cur = S[pl]: {
+                ok -> it
+                -> 0
+            }
+            nv = 0
+            (cur == 0) -> { nv = 1 }
+            S[pl]: {
+                ok -> it = nv
+                -> _
+            }
+            n = dv-inc(n)
+        }
+        (a == DV-A-DELTA) -> {
+            cur = S[pl]: {
+                ok -> it
+                -> 0
+            }
+            hi = dv-value2(v)
+            nv = dv-clamp(dv-add(cur, val), 0, hi)
+            S[pl]: {
+                ok -> it = nv
+                -> _
+            }
+            n = dv-inc(n)
+        }
+        ; 选中并收起（阶段 21）：一次要写两个槽 —— 选中下标 + 清展开槽。
+        ; value = 选中下标，value2 = 展开槽（< 0 = 没有展开槽，只写选中）。
+        (a == DV-A-CHOOSE) -> {
+            S[pl]: {
+                ok -> it = val
+                -> _
+            }
+            n = dv-inc(n)
+            c2 = dv-value2(v)
+            (c2 >= 0) -> {
+                S[c2]: {
+                    ok -> it = 0
+                    -> _
+                }
+                n = dv-inc(n)
+            }
+        }
+    }
+}
+
+; 可见 + 可用（默认）
+dv-on = () (f i64) {
+    f = DV-F-VIS | DV-F-EN
+}
+; 可见 + 可用 + 勾选（checkbox / switch 用）
+dv-on-chk = () (f i64) {
+    f = DV-F-VIS | DV-F-EN | DV-F-CHK
+}
+
+; ============================================================================
+; 禁用态（阶段 18）：可见，但不可交互
+; ============================================================================
+; 「禁用」在声明式里就是 flags 少一个 DV-F-EN —— 视图每帧读状态重建，所以
+; 「未勾选同意时提交按钮禁用」这类派生天然成立，不需要额外的状态槽。
+; 与 dv-off() 的区别：dv-off 把 flags 清零（连可见一起没了），是「隐藏」；
+; dv-disabled 保留 DV-F-VIS，控件还在原地、只是点不动。
+; 绘制层早就消费 F-DISABLED（components.no 的按钮 / 开关 / 输入框分支会画成灰色），
+; 阶段 18 补的是行为语义：命中 / 焦点 / 快捷键 / 动作派发都要尊重它。
+dv-disabled = () (f i64) {
+    f = DV-F-VIS
+}
+; dv-on() 的显式别名（语义对照用）
+dv-enabled = () (f i64) {
+    f = DV-F-VIS | DV-F-EN
+}
+; 视图节点当前是否禁用（1 = 禁用）。派发 / 焦点用它在动作生效前拦一道
+dv-disabled-of = (v i64) (d i64) {
+    d = 0
+    (v >= 0) -> {
+        ((dv-flags(v) & DV-F-EN) == 0) -> { d = 1 }
+    }
+}
+
+dv-label = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-LABEL, key, text, '', 0, 0, 0, f, parent)
+}
+dv-button = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-BUTTON, key, text, '', 0, 0, 0, f, parent)
+}
+dv-badge = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-BADGE, key, text, '', 0, 0, 0, f, parent)
+}
+dv-tag = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TAG, key, text, '', 0, 0, 0, f, parent)
+}
+dv-link = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-LINK, key, text, '', 0, 0, 0, f, parent)
+}
+dv-separator = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SEPARATOR, key, '', '', 0, 0, 0, f, parent)
+}
+dv-empty = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-EMPTY, key, text, '', 0, 0, 0, f, parent)
+}
+dv-spinner = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SPINNER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-checkbox = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-CHECKBOX, key, text, '', 0, 0, 0, f, parent)
+}
+dv-switch = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SWITCH, key, '', '', 0, 0, 0, f, parent)
+}
+dv-input = (key i64, placeholder str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-INPUT, key, '', placeholder, 0, 0, 0, f, parent)
+}
+dv-textarea = (key i64, placeholder str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TEXTAREA, key, '', placeholder, 0, 0, 0, f, parent)
+}
+dv-select = (key i64, placeholder str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SELECT, key, '', placeholder, 0, 0, 0, f, parent)
+}
+dv-slider = (key i64, lo i64, hi i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SLIDER, key, '', '', 0, lo, hi, f, parent)
+}
+dv-progress = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-PROGRESS, key, '', '', 0, 0, 0, f, parent)
+}
+dv-option = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-LABEL, key, text, '', 0, 0, 0, f, parent)
+}
+dv-tab-item = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-LABEL, key, text, '', 0, 0, 0, f, parent)
+}
+
+; ---------- 容器 ----------
+dv-root = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-ROOT, key, '', '', 0, 0, 0, f, parent)
+}
+dv-form = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-FORM, key, '', '', 0, 0, 0, f, parent)
+}
+; 横向容器（等价 C-GRID 的默认行为；要 L-H 的话用 dv-lay 加在任意容器上）
+dv-row = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-GRID, key, '', '', 0, 0, 0, f, parent)
+}
+; 拉伸容器：纵向堆叠 + 吃掉父容器主轴剩余空间（配合父容器的 L-GROW 使用）
+dv-fill = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-FORM, key, '', '', 0, 0, 0, f, parent)
+    dv-lay(h, dv-lay-grow(), 0, 0)
+}
+dv-list = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-LIST, key, '', '', 0, 0, 0, f, parent)
+}
+dv-group-box = (key i64, title str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-GROUP-BOX, key, title, '', 0, 0, 0, f, parent)
+}
+dv-grid = (key i64, cols i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-GRID, key, '', '', 0, cols, 0, f, parent)
+}
+dv-scroll = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SCROLL, key, '', '', 0, 0, 0, f, parent)
+}
+dv-toolbar = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TOOLBAR, key, '', '', 0, 0, 0, f, parent)
+}
+dv-status-bar = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-STATUS-BAR, key, '', '', 0, 0, 0, f, parent)
+}
+dv-title-bar = (key i64, title str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TITLE-BAR, key, title, '', 0, 0, 0, f, parent)
+}
+dv-dialog = (key i64, title str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-DIALOG, key, title, '', 0, 0, 0, f, parent)
+}
+
+; 可见 + 可用 + 选中（tab / menu / list 项）
+dv-on-sel = () (f i64) {
+    f = DV-F-VIS | DV-F-EN | DV-F-SEL
+}
+; 可见 + 可用 + 激活（当前页 / 当前项）
+dv-on-act = () (f i64) {
+    f = DV-F-VIS | DV-F-EN | DV-F-ACT
+}
+; 可见 + 可用 + 展开（折叠面板 / 下拉 / 弹层）
+dv-on-open = () (f i64) {
+    f = DV-F-VIS | DV-F-EN | DV-F-OPEN
+}
+
+; ---------- 其余组件：命名构造器（全目录） ----------
+dv-icon = (key i64, name str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-ICON, key, name, '', 0, 0, 0, f, parent)
+}
+dv-kbd = (key i64, name str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-KBD, key, name, '', 0, 0, 0, f, parent)
+}
+dv-avatar = (key i64, name str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-AVATAR, key, name, '', 0, 0, 0, f, parent)
+}
+dv-marker = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-MARKER, key, text, '', 0, 0, 0, f, parent)
+}
+dv-radio = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-RADIO, key, text, '', 0, 0, 0, f, parent)
+}
+dv-number-input = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-NUMBER-INPUT, key, '', '', 0, 0, 0, f, parent)
+}
+dv-otp-input = (key i64, slots i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-OTP-INPUT, key, '', '', 0, slots, 0, f, parent)
+}
+dv-search = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SEARCH, key, '', '', 0, 0, 0, f, parent)
+}
+dv-combobox = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-COMBOBOX, key, '', '', 0, 0, 0, f, parent)
+}
+dv-stepper = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-STEPPER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-color-picker = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-COLOR-PICKER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-date-picker = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-DATE-PICKER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-questionnaire = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-QUESTIONNAIRE, key, '', '', 0, 0, 0, f, parent)
+}
+dv-tab = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TAB, key, '', '', 0, 0, 0, f, parent)
+}
+dv-breadcrumb = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-BREADCRUMB, key, '', '', 0, 0, 0, f, parent)
+}
+dv-sidebar = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SIDEBAR, key, '', '', 0, 0, 0, f, parent)
+}
+dv-menu = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-MENU, key, '', '', 0, 0, 0, f, parent)
+}
+dv-pagination = (key i64, total i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-PAGINATION, key, '', '', 0, 0, total, f, parent)
+}
+dv-command = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-COMMAND, key, '', '', 0, 0, 0, f, parent)
+}
+dv-history = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-HISTORY, key, '', '', 0, 0, 0, f, parent)
+}
+dv-popover = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-POPOVER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-tooltip = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TOOLTIP, key, text, '', 0, 0, 0, f, parent)
+}
+dv-hover-card = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-HOVER-CARD, key, '', '', 0, 0, 0, f, parent)
+}
+dv-notification = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-NOTIFICATION, key, text, '', 0, 0, 0, f, parent)
+}
+dv-alert = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-ALERT, key, text, '', 0, 0, 0, f, parent)
+}
+dv-message = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-MESSAGE, key, text, '', 0, 0, 0, f, parent)
+}
+dv-message-scroller = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-MESSAGE-SCROLLER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-sheet = (key i64, title str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SHEET, key, title, '', 0, 0, 0, f, parent)
+}
+dv-skeleton = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SKELETON, key, '', '', 0, 0, 0, f, parent)
+}
+dv-shimmer = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SHIMMER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-bubble = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-BUBBLE, key, text, '', 0, 0, 0, f, parent)
+}
+dv-speech = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SPEECH, key, text, '', 0, 0, 0, f, parent)
+}
+dv-inspector = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-INSPECTOR, key, '', '', 0, 0, 0, f, parent)
+}
+dv-window-border = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-WINDOW-BORDER, key, '', '', 0, 0, 0, f, parent)
+}
+dv-native-menu = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-NATIVE-MENU, key, '', '', 0, 0, 0, f, parent)
+}
+dv-attachment = (key i64, name str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-ATTACHMENT, key, name, '', 0, 0, 0, f, parent)
+}
+dv-table = (key i64, cols i64, rows i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TABLE, key, '', '', 0, cols, rows, f, parent)
+}
+dv-virtual-list = (key i64, len i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-VIRTUAL-LIST, key, '', '', 0, len, 0, f, parent)
+}
+dv-tree = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TREE, key, '', '', 0, 0, 0, f, parent)
+}
+dv-accordion = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-ACCORDION, key, '', '', 0, 0, 0, f, parent)
+}
+dv-carousel = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-CAROUSEL, key, '', '', 0, 0, 0, f, parent)
+}
+dv-chart = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-CHART, key, '', '', 0, 0, 0, f, parent)
+}
+dv-plot = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-PLOT, key, '', '', 0, 0, 0, f, parent)
+}
+dv-rating = (key i64, max i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-RATING, key, '', '', 0, 0, max, f, parent)
+}
+dv-description-list = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-DESCRIPTION-LIST, key, '', '', 0, 0, 0, f, parent)
+}
+dv-collapsible = (key i64, title str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-COLLAPSIBLE, key, title, '', 0, 0, 0, f, parent)
+}
+dv-diff = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-DIFF, key, '', '', 0, 0, 0, f, parent)
+}
+dv-highlighter = (key i64, code str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-HIGHLIGHTER, key, code, '', 0, 0, 0, f, parent)
+}
+dv-clipboard = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-CLIPBOARD, key, '', '', 0, 0, 0, f, parent)
+}
+dv-resizable = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-RESIZABLE, key, '', '', 0, 0, 0, f, parent)
+}
+dv-dock = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-DOCK, key, '', '', 0, 0, 0, f, parent)
+}
+dv-text-node = (key i64, text str, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-TEXT, key, text, '', 0, 0, 0, f, parent)
+}
+dv-theme = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-THEME, key, '', '', 0, 0, 0, f, parent)
+}
+dv-sizing = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SIZING, key, '', '', 0, 0, 0, f, parent)
+}
+dv-styled = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-STYLED, key, '', '', 0, 0, 0, f, parent)
+}
+dv-window-ext = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-WINDOW-EXT, key, '', '', 0, 0, 0, f, parent)
+}
+dv-searchable-list = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-SEARCHABLE-LIST, key, '', '', 0, 0, 0, f, parent)
+}
+dv-index-path = (key i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-INDEX-PATH, key, '', '', 0, 0, 0, f, parent)
+}
+
+; 条件节点：cond 为 0 时返回 -1，调用方据此跳过子树
+dv-cond = (key i64, cond i64, parent i64) (h i64) {
+    h = -1
+    (cond != 0) -> {
+        f = dv-on()
+        h = dv-node(C-FORM, key, '', '', 0, 0, 0, f, parent)
+    }
+}
+
+; 重复节点：同一形状造 n 份，key 从 key0 递增（key 稳定 -> 跨帧复用，不重建）
+; 返回首个节点 id（n=0 时 -1）。列表类 UI 的声明式原语。
+dv-repeat = (parent i64, key0 i64, n i64, kind i64, text str, text2 str, color i64, value i64, value2 i64, flags i64) (h i64) {
+    h = -1
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        nh = dv-node(kind, dv-add(key0, i), text, text2, color, value, value2, flags, parent)
+        (i == 0) -> { h = nh }
+        i = dv-inc(i)
+    }
+}
+
+; 重复标签（限量）：texts 的前 n 个各造一个 label，key 从 key0 递增。
+; n 超出长度按长度算，负数按 0 算 —— 列表长度由状态决定时用这个。
+dv-repeat-labels-n = (parent i64, key0 i64, texts []str, n i64) (h i64) {
+    h = -1
+    i = 0
+    m = texts.len()
+    lim = n
+    (lim > m) -> { lim = m }
+    (lim < 0) -> { lim = 0 }
+    !! {
+        (i >= lim) -> { ** }
+        t = texts[i]: {
+            ok -> it
+
+            -> ''
+        }
+        f = dv-on()
+        nh = dv-node(C-LABEL, dv-add(key0, i), t, '', 0, 0, 0, f, parent)
+        (i == 0) -> { h = nh }
+        i = dv-inc(i)
+    }
+}
+
+; 重复标签（全量）：texts 里每个字符串一个 label
+dv-repeat-labels = (parent i64, key0 i64, texts []str) (h i64) {
+    m = texts.len()
+    h = dv-repeat-labels-n(parent, key0, texts, m)
+}
+
+; 重复列表项：把「平行数组」映射成 n 个同 kind 节点 —— 列表项也是纯数据。
+; 第 i 项：文案 texts[i]（不足补 ''）、value = values[i]、动作 acts[i]（0 = 不挂）、
+; 载荷 pays[i]（不足补 0）。于是「第 i 行点了 = 动作 acts[i]，payload = pays[i]」
+; 不用再手写 key 的 if-else 链。key 从 key0 递增 -> 跨帧稳定，长度变化只发差量。
+; n 超出 texts 长度按长度算，负数按 0 算（与 dv-repeat-labels-n 同语义）。
+dv-repeat-items-f = (parent i64, key0 i64, n i64, kind i64, texts []str, values []i64, acts []i64, pays []i64, flags []i64) (h i64) {
+    h = -1
+    i = 0
+    m = texts.len()
+    mv = values.len()
+    ma = acts.len()
+    mp = pays.len()
+    mf = flags.len()
+    lim = n
+    (lim > m) -> { lim = m }
+    (lim < 0) -> { lim = 0 }
+    !! {
+        (i >= lim) -> { ** }
+        t = texts[i]: {
+            ok -> it
+
+            -> ''
+        }
+        v = 0
+        (i < mv) -> { v = dv-arr-get(values, i) }
+        a = 0
+        (i < ma) -> { a = dv-arr-get(acts, i) }
+        p = 0
+        (i < mp) -> { p = dv-arr-get(pays, i) }
+        ; 每项 flags 也是数据：不足（或传 DV-EMPTY-F）补 dv-on()，
+        ; 于是「哪些行选中 / 禁用」能由状态推导 —— 声明式多选列表的地基。
+        f = dv-on()
+        (i < mf) -> { f = dv-arr-get(flags, i) }
+        nh = dv-node(kind, dv-add(key0, i), t, '', 0, v, 0, f, parent)
+        (a != 0) -> { dv-act(nh, a, p) }
+        (i == 0) -> { h = nh }
+        i = dv-inc(i)
+    }
+}
+
+; 重复列表项（无 flags 参数）：签名保持不变，内部转调 dv-repeat-items-f。
+; 这样既有的调用方 / 测试一个字都不用改。
+dv-repeat-items = (parent i64, key0 i64, n i64, kind i64, texts []str, values []i64, acts []i64, pays []i64) (h i64) {
+    h = dv-repeat-items-f(parent, key0, n, kind, texts, values, acts, pays, DV-EMPTY-F)
+}
+
+; 从状态槽推导每项 flags（阶段 20 的常用形态）：S[slot0+i] 非 0 -> dv-on-sel()，
+; 否则 dv-on()。返回与 n 等长的数组，直接喂给 dv-repeat-items-f。
+; 于是「选中的行」完全是状态的函数，不需要每帧手写 if。
+; n 负数 / 超槽一律按 0 / 实际槽位算（dv-arr-get 越界返回 0 -> dv-on()）。
+dv-sel-flags = (S []i64, slot0 i64, n i64) (f []i64) {
+    f = with-len(0)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        v = dv-arr-get(S, dv-add(slot0, i))
+        x = dv-on()
+        (v != 0) -> { x = dv-on-sel() }
+        f.push(x)
+        i = dv-inc(i)
+    }
+}
+
+; 删掉列表第 i 项：把 i 之后的项前移一格，返回新长度（数组本身不变长）。
+; i 越界 / 负数 / n <= 0 一律原样返回 n —— 调用方（dv-app-click）只需比较返回值。
+; 与 dv-repeat-items 配套：视图侧给 (DV-A-ITEM, 行号)，应用侧按行号删。
+dv-rows-del = (texts []str, n i64, i i64) (nn i64) {
+    nn = n
+    good = (n > 0) && (i >= 0) && (i < n)
+    (good) -> {
+        j = i
+        !! {
+            (j >= dv-add(n, -1)) -> { ** }
+            nx = texts[dv-add(j, 1)]: {
+                ok -> it
+
+                -> ''
+            }
+            texts[j]: {
+                ok -> it = nx
+
+                -> _
+            }
+            j = dv-inc(j)
+        }
+        nn = dv-add(n, -1)
+    }
+}
+
+; ---------------------------------------------------------------------------
+; 标签页（阶段 19）：一条 C-TAB 标题条 + 一个内容容器，返回**内容容器**句柄。
+;   active = 当前页下标（视图函数从状态读出来后传进来）
+;   slot   = 「当前页」状态槽；点第 i 个标题 = SET slot = i（复用现有归约）
+;   labels = 标题文案（平行数组）
+;   base   = 标题条的 key；标题用 base+1+i，内容容器用 base+1+n
+; 页面内容由应用往返回的容器里按 active 条件挂 —— 视图每帧重建，所以「切页」
+; 就是条件分支建不同的子树，容器本身同 key 复用（不增删组件）。
+; 选中态用 flags 表达（dv-on-sel，绘制 / 命中都认）；调和时再把 active 同步到
+; C-TAB 自己的 CMP-VALUE（cs-paint-tab 画高亮读的是它）。
+dv-tabs = (parent i64, active i64, slot i64, labels []str, base i64) (page i64) {
+    n = labels.len()
+    ; 越界收敛到最后一页：让「视图说的当前页」和 flags / 活树永远一致。
+    ; 否则 cmp-set-value 会先把 CMP-VALUE 打成 0，tab-select 又因越界忽略，
+    ; 标题条就悄悄跳回第 0 页了。
+    a = active
+    (n <= 0) -> { a = 0 }
+    (n > 0) -> {
+        (a < 0) -> { a = 0 }
+        (a >= n) -> { a = dv-add(n, -1) }
+    }
+    bar = dv-node(C-TAB, base, '', '', 0, 0, 0, dv-on(), parent)
+    dv-arr-set(DV-TAB-ACT, bar, a)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        lt = labels[i]: {
+            ok -> it
+
+            -> ''
+        }
+        f = dv-on()
+        (i == a) -> { f = dv-on-sel() }
+        ; SET 的载荷 = 状态槽，值 = 页号（dv-node 的第 6 个参数 value；
+        ; 注意第 5 个是 color，别把页号塞进 color 里）
+        hi = dv-node(C-LABEL, dv-add(base, dv-add(i, 1)), lt, '', 0, i, 0, f, bar)
+        dv-act(hi, DV-A-SET, slot)
+        i = dv-inc(i)
+    }
+    page = dv-node(C-FORM, dv-add(base, dv-add(n, 1)), '', '', 0, 0, 0, dv-on(), parent)
+}
+
+; 声明式下拉（阶段 21）：把「选项数组 / 选中 / 展开」三样都接回状态。
+;   S        状态池（选中下标 / 展开标志都是它的槽）
+;   parent   父节点
+;   key      字段节点 key（= base）
+;   selslot  选中下标槽（-1 / 越界 = 未选）
+;   openslot 展开槽（非 0 = 展开）
+;   labels   选项文案数组（选项 key = base+1+i）
+;   ph       占位符（未选中时显示，落到 text2）
+;   base     选项 key 起点
+; 返回字段节点句柄。语义：
+;   - 字段本身挂 DV-A-TOGGLE(openslot) —— 点字段 = 展开 / 收起；
+;   - 每个选项挂 DV-A-CHOOSE(selslot) —— 选中并收起（dv-apply 一次写两个槽，
+;     选项的 value = 下标、value2 = 展开槽，正是 CHOOSE 需要的两个操作数）；
+;   - 选项**常驻**（不条件挂载），收起时不可命中 —— cs-hit 的 C-SELECT 分支
+;     已有这条语义（未 OPEN 时不动子节点），所以展开 / 收起零结构操作；
+;   - 字段文案 = labels[S[selslot]]（未选 / 越界 = 空 -> 绘制回退到占位符），
+;     选中下标走 value -> CMP-VALUE（cs-paint-select 的选项高亮读它）。
+dv-select-from = (S []i64, parent i64, key i64, selslot i64, openslot i64, labels []str, ph str, base i64) (h i64) {
+    n = labels.len()
+    sel = S[selslot]: {
+        ok -> it
+
+        -> -1
+    }
+    opn = S[openslot]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 越界 / 未选都当「空文案」，别让字段显示成莫名的一项
+    t = ''
+    (sel >= 0) -> {
+        (sel < n) -> {
+            t = labels[sel]: {
+                ok -> it
+
+                -> ''
+            }
+        }
+    }
+    f = dv-on()
+    (opn != 0) -> { f = dv-on-open() }
+    h = dv-node(C-SELECT, key, t, ph, 0, sel, 0, f, parent)
+    dv-act(h, DV-A-TOGGLE, openslot)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        lt = labels[i]: {
+            ok -> it
+
+            -> ''
+        }
+        hi = dv-node(C-LABEL, dv-add(base, dv-add(i, 1)), lt, '', 0, i, openslot, dv-on(), h)
+        dv-act(hi, DV-A-CHOOSE, selslot)
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 通知（阶段 22）：让「时间」进状态
+; ============================================================================
+; 通知的存活不是布尔开关，而是「触发于哪一帧」—— 视图每帧拿当前帧和它比，
+; 过期就整棵子树不建（和 dv-cond 同一个思路）。触发帧从视图节点的 value 进来
+; （视图算好 dv-frame() 再交给 dv-apply），所以「何时触发」也是 UI = f(state)。
+; 槽里存触发时的 dv-frame()；0 = 没有通知（帧计数从 1 起，不会假活）。
+dv-toast-alive = (S []i64, slot i64, ttl i64) (yes i64) {
+    yes = 0
+    t = dv-arr-get(S, slot)
+    (t > 0) -> {
+        (dv-frame() < dv-add(t, ttl)) -> { yes = 1 }
+    }
+}
+; 通知本体：活着才建，非模态叠加层（dv-on-tip）—— 不参与流布局、在窗口矩形内居中、
+; 绘制最后，但不挡点击（点得穿）。关闭按钮把触发帧写回 0 = 立即过期。
+dv-toast = (S []i64, parent i64, key i64, slot i64, text str, ttl i64, base i64) (h i64) {
+    h = -1
+    (dv-toast-alive(S, slot, ttl) != 0) -> {
+        h = dv-node(C-POPOVER, key, '', '', 0, 0, 0, dv-on-tip(), parent)
+        dv-node(C-LABEL, base, text, '', 0, 0, 0, dv-on(), h)
+        cb = dv-node(C-BUTTON, dv-add(base, 1), 'dismiss', '', 0, 0, 0, dv-on(), h)
+        dv-act(cb, DV-A-SET, slot)
+    }
+}
+
+; ============================================================================
+; 视图树遍历（线性扫描：树很小，避免再维护一套子链表）
+; ============================================================================
+dv-child-count = (view i64) (n i64) {
+    n = 0
+    i = 0
+    cnt = DV-KIND.len()
+    !! {
+        (i >= cnt) -> { ** }
+        p = dv-parent(i)
+        (p == view) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+dv-child = (view i64, want i64) (c i64) {
+    c = -1
+    seen = 0
+    i = 0
+    cnt = DV-KIND.len()
+    !! {
+        (i >= cnt) -> { ** }
+        p = dv-parent(i)
+        (p == view) -> {
+            (seen == want) -> {
+                c = i
+                **
+            }
+            seen = dv-inc(seen)
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 调和状态
+; ============================================================================
+dv-frame = () (f i64) {
+    f = dv-arr-get(DV-FRAME, 0)
+}
+dv-bump-frame = () () {
+    f = dv-frame()
+    dv-arr-set(DV-FRAME, 0, dv-inc(f))
+}
+dv-is-used = (h i64) (yes i64) {
+    f = dv-frame()
+    v = dv-arr-get(DV-USED, h)
+    yes = 0
+    (v == f) -> { yes = 1 }
+}
+dv-mark-used = (h i64) () {
+    f = dv-frame()
+    dv-arr-set(DV-USED, h, f)
+}
+
+; ============================================================================
+; 视图节点 -> 活组件
+; ============================================================================
+; 全目录分派：每个 kind 走自己的构造器（保留组件库的默认配色 / 初始值）。
+; 未列出的 kind 落到 cmp-alloc 兵底 —— 声明式层对组件目录是「全函数」，
+; 新增组件 kind 时不必同步改这里也能用 dv-node(kind, ...) 表达。
+dv-create = (v i64) (h i64) {
+    h = -1
+    kd = dv-kind(v)
+    t = dv-text(v)
+    t2 = dv-text2(v)
+    val = dv-value(v)
+    val2 = dv-value2(v)
+    {
+        ; --- A 基础 ---
+        kd == C-LABEL -> { h = cmp-label(t) }
+        kd == C-BUTTON -> { h = cmp-button(t) }
+        kd == C-BADGE -> { h = cmp-badge(t) }
+        kd == C-TAG -> { h = cmp-tag(t) }
+        kd == C-ICON -> { h = cmp-icon(t) }
+        kd == C-KBD -> { h = cmp-kbd(t) }
+        kd == C-LINK -> { h = cmp-link(t) }
+        kd == C-SEPARATOR -> { h = cmp-separator() }
+        kd == C-AVATAR -> { h = cmp-avatar(t) }
+        kd == C-EMPTY -> { h = cmp-empty(t) }
+        kd == C-SPINNER -> { h = cmp-spinner() }
+        kd == C-MARKER -> { h = cmp-marker(t) }
+        ; --- B 表单 ---
+        kd == C-CHECKBOX -> { h = cmp-checkbox(t) }
+        kd == C-RADIO -> { h = cmp-radio(t) }
+        kd == C-SWITCH -> { h = cmp-switch() }
+        kd == C-INPUT -> { h = cmp-input(t2) }
+        kd == C-TEXTAREA -> { h = cmp-textarea(t2) }
+        kd == C-NUMBER-INPUT -> { h = cmp-number-input() }
+        kd == C-OTP-INPUT -> { h = cmp-otp-input(val) }
+        kd == C-SEARCH -> { h = cmp-search() }
+        kd == C-SELECT -> { h = cmp-select(t2) }
+        kd == C-COMBOBOX -> { h = cmp-combobox() }
+        kd == C-SLIDER -> { h = cmp-slider(val, val2) }
+        kd == C-STEPPER -> { h = cmp-stepper() }
+        kd == C-COLOR-PICKER -> { h = cmp-color-picker() }
+        kd == C-DATE-PICKER -> { h = cmp-date-picker() }
+        kd == C-FORM -> { h = cmp-form() }
+        kd == C-QUESTIONNAIRE -> { h = cmp-questionnaire() }
+        ; --- C 导航 ---
+        kd == C-TAB -> { h = cmp-tab() }
+        kd == C-BREADCRUMB -> { h = cmp-breadcrumb() }
+        kd == C-SIDEBAR -> { h = cmp-sidebar() }
+        kd == C-MENU -> { h = cmp-menu() }
+        kd == C-PAGINATION -> { h = cmp-pagination(val2) }
+        kd == C-TOOLBAR -> { h = cmp-toolbar() }
+        kd == C-TITLE-BAR -> { h = cmp-title-bar(t) }
+        kd == C-STATUS-BAR -> { h = cmp-status-bar() }
+        kd == C-COMMAND -> { h = cmp-command() }
+        kd == C-HISTORY -> { h = cmp-history() }
+        ; --- D 覆盖层 / 反馈 ---
+        kd == C-DIALOG -> { h = cmp-dialog(t) }
+        kd == C-POPOVER -> { h = cmp-popover() }
+        kd == C-TOOLTIP -> { h = cmp-tooltip(t) }
+        kd == C-HOVER-CARD -> { h = cmp-hover-card() }
+        kd == C-NOTIFICATION -> { h = cmp-notification(t) }
+        kd == C-ALERT -> { h = cmp-alert(t) }
+        kd == C-MESSAGE -> { h = cmp-message(t) }
+        kd == C-MESSAGE-SCROLLER -> { h = cmp-message-scroller() }
+        kd == C-SHEET -> { h = cmp-sheet(t) }
+        kd == C-PROGRESS -> { h = cmp-progress() }
+        kd == C-SKELETON -> { h = cmp-skeleton() }
+        kd == C-SHIMMER -> { h = cmp-shimmer() }
+        kd == C-BUBBLE -> { h = cmp-bubble(t) }
+        kd == C-SPEECH -> { h = cmp-speech(t) }
+        kd == C-INSPECTOR -> { h = cmp-inspector() }
+        kd == C-WINDOW-BORDER -> { h = cmp-window-border() }
+        kd == C-NATIVE-MENU -> { h = cmp-native-menu() }
+        kd == C-ATTACHMENT -> { h = cmp-attachment(t) }
+        ; --- E 数据展示 ---
+        kd == C-TABLE -> { h = cmp-table(val, val2) }
+        kd == C-LIST -> { h = cmp-list() }
+        kd == C-VIRTUAL-LIST -> { h = cmp-virtual-list(val) }
+        kd == C-TREE -> { h = cmp-tree() }
+        kd == C-ACCORDION -> { h = cmp-accordion() }
+        kd == C-CAROUSEL -> { h = cmp-carousel() }
+        kd == C-CHART -> { h = cmp-chart() }
+        kd == C-PLOT -> { h = cmp-plot() }
+        kd == C-RATING -> { h = cmp-rating(val2) }
+        kd == C-DESCRIPTION-LIST -> { h = cmp-description-list() }
+        kd == C-GROUP-BOX -> { h = cmp-group-box(t) }
+        kd == C-COLLAPSIBLE -> { h = cmp-collapsible(t) }
+        kd == C-DIFF -> { h = cmp-diff() }
+        kd == C-HIGHLIGHTER -> { h = cmp-highlighter(t) }
+        kd == C-CLIPBOARD -> { h = cmp-clipboard() }
+        kd == C-SCROLL -> { h = cmp-scroll() }
+        ; --- F 布局 / 容器 ---
+        kd == C-RESIZABLE -> { h = cmp-resizable() }
+        kd == C-DOCK -> { h = cmp-dock() }
+        kd == C-GRID -> { h = cmp-grid(val, val2) }
+        kd == C-TEXT -> { h = cmp-text-node(t) }
+        kd == C-THEME -> { h = cmp-theme() }
+        kd == C-SIZING -> { h = cmp-sizing() }
+        kd == C-STYLED -> { h = cmp-styled() }
+        kd == C-ROOT -> { h = cmp-root() }
+        kd == C-WINDOW-EXT -> { h = cmp-window-ext() }
+        ; --- G 其他 ---
+        kd == C-SEARCHABLE-LIST -> { h = cmp-searchable-list() }
+        kd == C-INDEX-PATH -> { h = cmp-index-path() }
+        ; --- 兵底：未列出的 kind 也能声明式表达 ---
+        -> { h = cmp-alloc(kd, t, t2, 0, val) }
+    }
+    (h >= 0) -> { cmp-set-key(h, dv-key(v)) }
+}
+
+; flags 同步：DV-F-VIS / DV-F-EN / DV-F-CHK / DV-F-SEL / DV-F-ACT / DV-F-OPEN
+dv-apply-flags = (L i64, f i64) {
+    vis = f & 1
+    (vis != 0) -> { cmp-flag-set(L, F-VISIBLE) }
+    (vis == 0) -> { cmp-flag-clear(L, F-VISIBLE) }
+    en = f & 2
+    (en != 0) -> {
+        cmp-flag-set(L, F-ENABLED)
+        cmp-flag-clear(L, F-DISABLED)
+    }
+    (en == 0) -> {
+        cmp-flag-clear(L, F-ENABLED)
+        cmp-flag-set(L, F-DISABLED)
+    }
+    chk = f & 4
+    (chk != 0) -> { cmp-flag-set(L, F-CHECKED) }
+    (chk == 0) -> { cmp-flag-clear(L, F-CHECKED) }
+    sel = f & 8
+    (sel != 0) -> { cmp-flag-set(L, F-SELECTED) }
+    (sel == 0) -> { cmp-flag-clear(L, F-SELECTED) }
+    act = f & 16
+    (act != 0) -> { cmp-flag-set(L, F-ACTIVE) }
+    (act == 0) -> { cmp-flag-clear(L, F-ACTIVE) }
+    opn = f & 32
+    (opn != 0) -> { cmp-flag-set(L, F-OPEN) }
+    (opn == 0) -> { cmp-flag-clear(L, F-OPEN) }
+    ovl = f & 64
+    (ovl != 0) -> { cmp-flag-set(L, F-OVERLAY) }
+    (ovl == 0) -> { cmp-flag-clear(L, F-OVERLAY) }
+    pas = f & 128
+    (pas != 0) -> { cmp-flag-set(L, F-PASS) }
+    (pas == 0) -> { cmp-flag-clear(L, F-PASS) }
+}
+
+dv-apply-props = (L i64, v i64) {
+    cmp-set-key(L, dv-key(v))
+    kd = dv-kind(v)
+    ; 输入类组件是「非受控」的：文本缓冲与焦点归组件自己所有，
+    ; 视图只给 placeholder（text2）。若这里把 dv-text 同步进去，
+    ; 每帧都会把用户刚敲的字清掉。要受控就在事件里改写组件文本，
+    ; 并让 dv-input 的 text 携带该状态（此时别再依赖组件内缓冲）。
+    (kd != C-INPUT && kd != C-TEXTAREA) -> { cmp-set-text(L, dv-text(v)) }
+    cmp-set-text2(L, dv-text2(v))
+    cmp-set-color(L, dv-color(v))
+    cmp-set-value(L, dv-value(v))
+    ; VALUE2 的语义按 kind 而定：只有「构造参数落在 VALUE2」的组件才同步
+    ; （slider 上限 / grid 行数 / table 行数 / pagination 总数 / rating 满分）
+    (kd == C-SLIDER) -> { cmp-set-value2(L, dv-value2(v)) }
+    (kd == C-GRID) -> { cmp-set-value2(L, dv-value2(v)) }
+    (kd == C-TABLE) -> { cmp-set-value2(L, dv-value2(v)) }
+    (kd == C-PAGINATION) -> { cmp-set-value2(L, dv-value2(v)) }
+    (kd == C-RATING) -> { cmp-set-value2(L, dv-value2(v)) }
+    dv-apply-flags(L, dv-flags(v))
+    ; 布局提示（bits / gap / pad）：0 = 默认，所以每帧无条件同步是安全的
+    cmp-set-lay(L, dv-lay-of(v))
+    cmp-set-gap(L, dv-gap-of(v))
+    cmp-set-pad(L, dv-pad-of(v))
+    ; 尺寸 / 对齐提示：0 = 默认，所以每帧无条件同步是安全的
+    cmp-set-sw(L, dv-sw-of(v))
+    cmp-set-sh(L, dv-sh-of(v))
+    cmp-set-align(L, dv-align-of(v))
+    ; 变体：0 = 默认，所以每帧无条件同步是安全的
+    cmp-set-var(L, dv-var-of(v))
+    ; 锚点：-1 = 无锚点，所以每帧无条件同步是安全的
+    cmp-set-anchor(L, dv-anchor-of(v))
+}
+
+; 叠加层（模态弹层）：把视图节点标成 DV-F-OVL —— 调和时经 dv-apply-flags 落到活节点的
+; F-OVERLAY：不参与父级流布局，改为在父矩形内居中；命中时先于其它子节点，点不穿。
+; 注意视图池（DV-*）与活组件池（CMP-*）是两套下标，所以这里写 DV-FLAGS 而不是
+; cmp-flag-set（后者写的是活池，视图句柄会被误解成组件下标）。
+dv-overlay = (h i64) () {
+    dv-arr-set(DV-FLAGS, h, dv-flags(h) | DV-F-OVL)
+}
+
+; 声明式写法：开 + 叠加层（弹层可见，且作为模态层挂在父矩形中央）
+dv-on-overlay = () (f i64) {
+    f = DV-F-VIS | DV-F-EN | DV-F-OPEN | DV-F-OVL
+}
+
+; 锚定浮层（阶段 16）：在 dv-overlay 之上再给一个锚点 key —— 调和时经 dv-apply-props
+; 落到活节点的 CMP-ANCHOR，cmp-scene 布局时按 key 反查锚点矩形，把浮层放在锚点下方
+; （贴边时翻到上方）并夹紧在父矩形内。锚点找不到就退化为父矩形内居中。
+dv-overlay-anchor = (h i64, anchor-key i64) () {
+    dv-overlay(h)
+    dv-arr-set(DV-ANCHOR, h, anchor-key)
+}
+
+; 非模态叠加层（阶段 17）：在 dv-overlay 之上加 DV-F-PASS —— 调和时落到活节点 F-PASS。
+; 语义：不参与流布局、仍最后画、仍可被命中，但**不设模态屏障**：
+; 浮层自己没接住点击时，命中继续往下面的兄弟找（点得穿），也不会让父节点返回 -2。
+; tooltip / hover-card / 通知用这一档；模态弹层（对话框 / 菜单）保持 dv-on-overlay()。
+dv-pass = (h i64) () {
+    dv-arr-set(DV-FLAGS, h, dv-flags(h) | DV-F-PASS)
+}
+
+; 声明式写法：开 + 非模态叠加层（tooltip：可见、可命中、点得穿）
+dv-on-tip = () (f i64) {
+    f = DV-F-VIS | DV-F-EN | DV-F-PASS | DV-F-OVL
+}
+
+; hover 声明（阶段 17）：把「本节点是否被 hover」写进状态槽 slot。
+; 装配层每帧按当前命中 key 是否等于本节点 key 写 1/0，视图再据此建 tooltip。
+; 与 dv-act 同生命周期（dv-clear 清掉，每帧重建视图时重挂）。
+dv-hover = (h i64, slot i64) () {
+    dv-arr-set(DV-HOVER, h, dv-add(slot, 1))
+}
+
+; ============================================================================
+; 调和器
+; ============================================================================
+; 在 live 的子节点里按 key 找句柄（事件命中 -> 视图节点 的反向查找）
+dv-live-by-key = (live i64, k i64) (h i64) {
+    h = -1
+    n = cmp-children(live)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        c = cmp-child(live, i)
+        ck = cmp-key(c)
+        (ck == k) -> {
+            h = c
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 深度查找：跨任意层级按 key 找活组件
+; 两栏 / 嵌套容器之后，事件侧的 key 不再是 root 的直接子节点。
+; 用显式队列做 BFS（语言没有可用的递归 fn 值，就不冒递归的险）。
+; 必须在 dv-live-by-key 之后定义（定义顺序会影响解析）。
+; ============================================================================
+DV-QUEUE []i64 = with-len(0)
+dv-live-deep = (live i64, k i64) (h i64) {
+    h = -1
+    done = 0
+    DV-QUEUE.truncate(0)
+    DV-QUEUE.push(live)
+    qi = 0
+    !! {
+        (qi >= DV-QUEUE.len()) -> { ** }
+        (done != 0) -> { ** }
+        cur = DV-QUEUE[qi]: {
+            ok -> it
+
+            -> -1
+        }
+        (cur >= 0) -> {
+            f = dv-live-by-key(cur, k)
+            (f >= 0) -> {
+                h = f
+                done = 1
+            }
+            cn = cmp-children(cur)
+            j = 0
+            !! {
+                (j >= cn) -> { ** }
+                DV-QUEUE.push(cmp-child(cur, j))
+                j = dv-inc(j)
+            }
+        }
+        qi = dv-inc(qi)
+    }
+}
+
+; 在 live 的子节点里找一个 (key, kind) 匹配且本帧未认领的组件
+dv-find-free = (live i64, k i64, kd i64) (h i64) {
+    h = -1
+    n = cmp-children(live)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        c = cmp-child(live, i)
+        ck = cmp-key(c)
+        ckk = cmp-kind(c)
+        used = dv-is-used(c)
+        ((ck == k) && (ckk == kd) && (used == 0)) -> {
+            h = c
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+dv-sync = (live i64, view i64) (ops i64) {
+    ops = 0
+    vn = dv-child-count(view)
+
+    ; --- 1. 按 (key, kind) 认领活组件 ---
+    i = 0
+    !! {
+        (i >= vn) -> { ** }
+        v = dv-child(view, i)
+        k = dv-key(v)
+        kd = dv-kind(v)
+        lf = dv-find-free(live, k, kd)
+        (lf >= 0) -> {
+            dv-mark-used(lf)
+            dv-arr-set(DV-MATCH, v, lf)
+        }
+        i = dv-inc(i)
+    }
+
+    ; --- 2. 删除未被认领的活子节点 ---
+    j = 0
+    !! {
+        cn = cmp-children(live)
+        (j >= cn) -> { ** }
+        ldel = cmp-child(live, j)
+        (ldel < 0) -> { ** }
+        used = dv-is-used(ldel)
+        (used != 0) -> { j = dv-inc(j) }
+        (used == 0) -> {
+            okd = cmp-detach(live, ldel)
+            (okd == true) -> { ops = dv-inc(ops) }
+            (okd == false) -> { j = dv-inc(j) }
+        }
+    }
+
+    ; --- 3. 为未匹配的视图节点新建组件 ---
+    i = 0
+    !! {
+        (i >= vn) -> { ** }
+        v = dv-child(view, i)
+        m = dv-arr-getm(DV-MATCH, v)
+        (m < 0) -> {
+            lnew = dv-create(v)
+            (lnew >= 0) -> {
+                dv-arr-set(DV-MATCH, v, lnew)
+                ops = dv-inc(ops)
+            }
+        }
+        i = dv-inc(i)
+    }
+
+    ; --- 4. 属性同步 + 递归 ---
+    i = 0
+    !! {
+        (i >= vn) -> { ** }
+        v = dv-child(view, i)
+        m = dv-arr-getm(DV-MATCH, v)
+        (m >= 0) -> {
+            dv-apply-props(m, v)
+            o2 = dv-sync(m, v)
+            ops = dv-add(ops, o2)
+        }
+        i = dv-inc(i)
+    }
+
+    ; --- 5. 重排：让活子节点顺序 == 视图顺序 ---
+    ordered = 1
+    i = 0
+    !! {
+        (i >= vn) -> { ** }
+        v = dv-child(view, i)
+        m = dv-arr-getm(DV-MATCH, v)
+        (m >= 0) -> {
+            cur = cmp-child(live, i)
+            (cur != m) -> {
+                ordered = 0
+                **
+            }
+        }
+        i = dv-inc(i)
+    }
+    (ordered == 0) -> {
+        !! {
+            lrm = cmp-child(live, 0)
+            (lrm < 0) -> { ** }
+            cmp-detach(live, lrm)
+        }
+        i = 0
+        !! {
+            (i >= vn) -> { ** }
+            v = dv-child(view, i)
+            m = dv-arr-getm(DV-MATCH, v)
+            (m >= 0) -> { cmp-add-child(live, m) }
+            i = dv-inc(i)
+        }
+    }
+    ; 标签条当前页（阶段 19）：必须放在**最后** —— CMP-COUNT 要等子节点挂好才准，
+    ; 而 dv-apply-props 跑在递归之前，那时容器可能还没孩子（tab-select 会因越界被吞）。
+    ; cs-paint-tab 画高亮读的是 tab-active(h)（= CMP-VALUE），cmp-set-value 又会把
+    ; dv-value（标题条是 0）写进去，所以这里按 DV-TAB-ACT 再覆盖一次。
+    ta = dv-tab-active-of(view)
+    (ta >= 0) -> { tab-select(live, ta) }
+}
+
+; 顶层入口：换帧号（让上一帧的认领标记失效），再调和
+dv-render = (live i64, view i64) (ops i64) {
+    dv-bump-frame()
+    ops = dv-sync(live, view)
+}

@@ -163,6 +163,12 @@ h2m-ctx {
     names []str
     vids []i64
     tys []i64
+    ; s132：option 載荷型別追蹤（併行表，只讀不發指令）——
+    ;   vpty 按【值 id】平行 vty：該值是 %option 時的載荷型別碼，0 = 非 option / 未知。
+    ;   用途：`?T` 接收者的內建型別方法分派（h2m-lower-expr 的 TY-OPT 臂）須先知道載荷型別；
+    ;   靜態推不出（0）就落回閘門，不放寬、不猜。
+    ;   ⚠️ 槽（名字）不另立表：槽的值 id 由 c.vids[i] 給出，槽載荷即 vpty[c.vids[i]]。
+    vpty []i64
     nid i64
     blk i64
     bnext i64
@@ -274,6 +280,7 @@ h2m-new = () (c h2m-ctx) {
         names: []
         vids: []
         tys: []
+        vpty: []
         nid: 1
         blk: 0
         bnext: 1
@@ -336,6 +343,7 @@ h2m-new = () (c h2m-ctx) {
         fnbk: 0
     }
     c.vty.push(TY-I64)
+    c.vpty.push(0)
     h2m-bk-root(c)
 }
 
@@ -345,6 +353,7 @@ h2m-new = () (c h2m-ctx) {
 ; id: 新分配的值 id
 h2m-alloc = (c h2m-ctx, ty i64) (id i64) {
     c.vty.push(ty)
+    c.vpty.push(0)
     id = c.nid
 
     c.nid = h2m-inc(c.nid)
@@ -1087,7 +1096,8 @@ h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
 ; name: 形参名
 ; vid: 形参的值 id（1..nargs）
 ; ty: 槽型别码
-h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
+; pty: option 载荷型别码（0 = 未知；s134：供 ?str 形参主体推 `it` 載荷）
+h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64, pty i64) {
     sid = 0
     st = -1
     i = h2m-name-find(c, name)
@@ -1103,8 +1113,20 @@ h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
             -> -1
         }
     }
-    st == ty && ty != TY-VEC && ty != TY-VECSTR && ty != TY-STR && ty < TY-STRUCT-BASE -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
+    st == ty && ty != TY-VEC && ty != TY-VECSTR && ty != TY-STR && ty != TY-OPT && ty < TY-STRUCT-BASE -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
     st == ty && ty == TY-STR -> h2m-emit(c, OP-SSTORE, 0, vid, sid, '', 0)
+
+    ; s133：option 形参 incoming 值落 %os<sid> 槽——与 h2m-var-write 的「option 槽 ← option 值」
+    ;   直存同口径（cg OP-OPTSTORE：xa=值、bs=槽）。漏这条时 TY-OPT 会落进上面的 OP-STORE 臂，
+    ;   发 `store i64 %v…, i64* %s…` 指向【未定义】的 %s 槽（%option 槽是 %os 命名空间）⇒ clang 报
+    ;   `use of undefined value`。?i64 形参同此（s94 起 TY-OPT 已入形，本条补齐存放半）。
+    st == ty && ty == TY-OPT -> {
+        h2m-emit(c, OP-OPTSTORE, 0, vid, sid, '', 0)
+
+        ; s134：把形参標注的載荷型別抄到槽上——否則槽 vpty 恒 0，隨後的 OPTLOAD 拷到值上仍是 0，
+        ;   降級期主體判定的 `h2m-vpty-at` 就推不出 `it` 的 str 載荷（?str 形參主体）
+        sid > 0 && pty > 0 -> h2m-vpty-set(c, sid, pty)
+    }
 
     ; s99c：结构体形参 incoming 值落 %sts<sid> 槽（cg OP-STSTORE：xa=值、bs=槽）
     st == ty && ty >= TY-STRUCT-BASE -> h2m-emit(c, OP-STSTORE, 0, vid, sid, '', 0)
@@ -1187,6 +1209,9 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
                 st == TY-OPT -> {
                     v = h2m-alloc(c, TY-OPT)
                     h2m-emit(c, OP-OPTLOAD, v, sid, 0, '', TY-OPT)
+
+                    ; s132：把槽的載荷型别抄到值上（h2m-vpty-at 回 0 = 未知，臂内不得放行）
+                    h2m-vpty-set(c, v, h2m-vpty-at(c, sid))
                 }
 
                 ; s62 / 切片 B：TY-VEC / TY-VECSTR 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
@@ -1233,11 +1258,17 @@ h2m-opt-wrap = (c h2m-ctx, rid i64) (wrapped i64) {
         some-w == 1 -> {
             wid = h2m-alloc(c, TY-OPT)
             h2m-emit(c, OP-OPTSOME, wid, rid, 0, '', TY-OPT)
+
+            ; s132：包出来的 option，載荷就是被包的整型別
+            h2m-vpty-set(c, wid, pty)
             wrapped = wid
         }
         some-wf == 1 -> {
             widf = h2m-alloc(c, TY-OPT)
             h2m-emit(c, OP-OPTMKF64, widf, rid, 0, '', TY-OPT)
+
+            ; s132：同上，f64 載荷
+            h2m-vpty-set(c, widf, TY-F64)
             wrapped = widf
         }
     }
@@ -1290,6 +1321,9 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
             ; s97：option 槽 ← option 值（nil 字面量／另一 ?T 右值）——直存 OP-OPTSTORE
             st == TY-OPT && st == vt -> {
                 h2m-emit(c, OP-OPTSTORE, 0, val, sid, '', 0)
+
+                ; s132：槽載荷 = 右值載荷（沿路抄，使后续 `x.method()` 能判载荷型别）
+                h2m-vpty-set(c, sid, h2m-vpty-at(c, val))
                 ok-w = 1
             }
 
@@ -1299,6 +1333,9 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
                 wv = h2m-opt-wrap(c, val)
                 wv != val -> {
                     h2m-emit(c, OP-OPTSTORE, 0, wv, sid, '', 0)
+
+                    ; s132：some-wrap 的載荷就是被包的純量型別
+                    h2m-vpty-set(c, sid, vt)
                     ok-w = 1
                 }
             }
@@ -1348,6 +1385,32 @@ h2m-vty-at = (c h2m-ctx, id i64) (t i64) {
     }
 }
 
+; s132：安全读某值 id 的 option 載荷型别码（越界 / 非 option / 未知 ⇒ 0）
+; c: 上下文
+; id: 值 id
+; p: 載荷型別碼（0 = 未知，调用方不得放行）
+h2m-vpty-at = (c h2m-ctx, id i64) (p i64) {
+    p = c.vpty[id]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; s132：写某值 id 的 option 載荷型别码（越界则忽略——那時 vpty 尚未追上 vty）
+; c: 上下文
+; id: 值 id
+; p: 載荷型別碼
+h2m-vpty-set = (c h2m-ctx, id i64, p i64) {
+    id >= 0 && id < c.vpty.len() -> {
+        c.vpty[id]: {
+            ok -> it = p
+
+            -> _
+        }
+    }
+}
+
 ; 具名型别 → MIR 型别码；本件只收四个基础型别，认不出回 -1（呼叫方计 unsup）
 ; s: 型别名文本（K-NAMED-TYPE 的 s0）
 ; t: 型别码（-1 = 不在覆盖面）
@@ -1369,12 +1432,13 @@ h2m-ty-code = (s str) (t i64) {
 
 ; 型别 AST 节点 → MIR 型别码（s94 共用判据）：K-NAMED-TYPE 走 h2m-ty-code，
 ;   K-NULLABLE-TYPE(50) nkid=1、kid[0]=内层型别节点（ps.no 实测形制：tok.QUESTION 分支只
-;   ast.kid-add 唯一 guarded CHILD=Type，无槽位）——只收 ?u64／?i64／?f64 ⇒ TY-OPT：noc 的 %option 載荷槽是
+;   ast.kid-add 唯一 guarded CHILD=Type，无槽位）——收 ?u64／?i64／?f64／?str ⇒ TY-OPT：noc 的 %option 載荷槽是
 ;   [3 x i64]、TY-OPT 不挾載荷型别；i64／u64 内层同为 64 位整宽槽（回值位 OP-OPTSOME）、f64 内层亦为
 ;   64 位（double 舆槽元素等宽，回值位 OP-OPTMKF64 以 bitcast double→i64 落 slot[0]）——
 ;   三内层皆已放行（与 Go 一致：optionPayloadCoerced 仅对 str/txt 内层做位形转换，整型／f64 内层
-;   占同一 [3 x i64] 槽无分岔）；内层 str／vec（載荷降级卡 M4-d RC／ptrtoint，未入形）
-;   一律不入——宁缺勿错（与 Go 一致：?T 在 MIR 层就是单一 %option）
+;   占同一 [3 x i64] 槽无分岔；s133 補上 str——入槽 OP-OPTMKSTR、出槽 OP-OPTGETSTR 皆已入形）；
+;   內層 vec 仍不入（[])str 緩沖無 retain，欄位外流會 UAF）——宁缺勿错
+;   （与 Go 一致：?T 在 MIR 层就是单一 %option）
 ;   ⚠️ 签名侧（h2m-param-ty）与 let 标注侧（h2m-lower-let）共用本式子——两条型别判定必须同口径（§11 B7）
 ; t: AST arena
 ; tn: 型别节点 id（0 = 缺位）
@@ -1405,7 +1469,12 @@ h2m-tynode-code = (t ast, agg h2m-ctx, tn i64) (code i64) {
                     ;   已放行 TY-I64／TY-U64 載荷），Go 侧整型内层不做位形转换，两口径同形
                     ; s96：内层 f64 放宽——?f64 载荷 double 舆 [3 x i64] 槽元素等宽，回值位 some-wrap
                     ;   走 OP-OPTMKF64（bitcast double→i64，与整型的 OP-OPTSOME 分岔但同为入形）
-                    inm == 'u64' || inm == 'i64' || inm == 'f64' -> code = TY-OPT
+                    ; s133：内层 str 放宽——?str 载荷是 %str-long{ptr,len}，入槽走 OP-OPTMKSTR
+                    ;   （:4962 索引讀的包 option 路徑，只存不 retain，與 Go 的 optionPayloadCoerced
+                    ;   位形轉換同軸）、
+                    ;   出槽走 OP-OPTGETSTR（s132 的 TY-OPT 臂已用同一條取用口徑）⇒ 入形齊備，
+                    ;   故與整型／f64 一併放行；vec 內層仍不入（[])str 緩衝無 retain，字段外流會 UAF）
+                    inm == 'u64' || inm == 'i64' || inm == 'f64' || inm == 'str' -> code = TY-OPT
                 }
             }
         }
@@ -1427,10 +1496,50 @@ h2m-tynode-code = (t ast, agg h2m-ctx, tn i64) (code i64) {
                     enm = ast.str-at(t, ed.s0)
                     enm == 'i64' -> code = TY-VEC
 
+                    ; s136：[]byte 與 []i64 在 noc 運行期【共用 %vec】（ cg-runtime 的
+                    ;   @vec_get_i64／@vec_push_i64 是單型 helper，元素就是 i64 槽）——
+                    ;   Go 側 MIR 亦把 byte 壓成 i64 寬（codegen.go:1587 的 "i64","i8","i1","byte"
+                    ;   同列、intBitsOfRaw 只用來判宣告寬度），故 byte 元素入槽／出槽與 i64 同形。
+                    ;   ⚠️ 這是【口徑合併】而非新增表示：`[]byte` 與 `[]i64` 在自舉型別系統裡不可區分
+                    ;     （與 `[]str` → TY-VECSTR 的嚴格分岔不同），故 sb.buf／lxst.input 这类
+                    ;     位元緩衝一律按 i64 元素讀寫，讀回值域 0..255 由上層語義負責。
+                    ;   此前 `[]byte` 回 -1 ⇒ lxst.input 與 sb.buf 的【欄位型別解析】整個失敗，
+                    ;   連帶 lx-read-char／lx-peek／lx-sub／lx-scan-token 全包 dropped（非本臂之過）。
+                    enm == 'byte' -> code = TY-VEC
+
                     ; 切片 B：[]str → TY-VECSTR（元素 stride 16，走 vec_push_str/get_str/free_str 助手）。
                     ;   ⚠️ struct 字段解析也走本 helper——str-vec 缓冲无 retain、字段外流会 UAF，
                     ;   故 h2m-struct-resolve[-range] 在下游保守把 TY-VECSTR 拦回 -1（特性 s99f 门禁）。
                     enm == 'str' -> code = TY-VECSTR
+                }
+            }
+        }
+    }
+}
+
+; s134：型別 AST 節點 → option 載荷型別碼（只認 ?i64／?u64／?f64／?str，其餘回 0 = 未知）。
+;   與 h2m-tynode-code 的 K-NULLABLE-TYPE 臂同口徑（內層名稱判定逐字一致），
+;   但回的是【載荷】而非 TY-OPT——供前掃描期登記 h2m-lst.lpty。
+;   ?u64 載荷與 ?i64 同為 64 位整寬（OP-OPTGET 一口徑）⇒ 一併歸 TY-I64。
+; ⚠️ 內層 kid 取用【直接】走 ast.kid-at(t, d.kid0)，不經 h2m-kid-i——h2m-kid-i 本身在
+;   noc 降級裡是 dropped（自舉覆蓋曲線既存項），經它中转会把本函式一起拖下水。
+; t: AST arena
+; tn: 型別節點 id
+; pty: 載荷型別碼（0 = 不在覆盖面）
+h2m-pty-of-type = (t ast, agg h2m-ctx, tn i64) (pty i64) {
+    pty = 0
+    tn > 0 -> {
+        d = ast.nd-at(t, tn)
+        d.kind == asp.K-NULLABLE-TYPE && d.nkid == 1 -> {
+            ik = ast.kid-at(t, d.kid0)
+            ik > 0 -> {
+                ind = ast.nd-at(t, ik)
+                ind.kind == asp.K-NAMED-TYPE -> {
+                    inm = ast.str-at(t, ind.s0)
+                    inm == 'i64' -> pty = TY-I64
+                    inm == 'u64' -> pty = TY-I64
+                    inm == 'f64' -> pty = TY-F64
+                    inm == 'str' -> pty = TY-STR
                 }
             }
         }
@@ -1761,13 +1870,41 @@ h2m-smv-arm-val = (t ast, bn i64) (ex i64) {
     }
 }
 
+; s131：值位 match 的 `_` 丟棄臂（`-> _`）判定。實測形制（tmp/s131/probe-shape.no）：
+;   臂體 = BlockStatement{nkid==1} 包 ExpressionStatement{nkid==1, kid0==0}
+;   （對齊 ps.no:2098 的 `ast.kid-add(t, idx, 0)`；dump 印 `ExpressionStatement{nil}`）。
+;   ⚠️ 與「裸 `->`」（BlockStatement{nkid==0}）及 `-> ""`（block 的 kid 為 id 0）形制不同——
+;      本 helper 只認 `_`，後兩者維持 unsup（見 ⑤ 誠實邊界）。
+; 語義：`_` 臂不產值 ⇒ 結果槽保持 entry 的零初始化值（對齊 Go `captureArmValue` 對 NoVal
+;   直接 return、sink 由首條產值臂零初始化的口徑）。
+; t: AST arena
+; bn: 臂體節點 id
+; d: 1 = `_` 丟棄臂
+h2m-smv-arm-discard = (t ast, bn i64) (d i64) {
+    d = 0
+    bn > 0 -> {
+        bd = ast.nd-at(t, bn)
+        bd.kind == asp.K-BLOCK-STATEMENT && bd.nkid == 1 -> {
+            k0 = h2m-kid-i(t, bn, 0)
+            k0 > 0 -> {
+                ed = ast.nd-at(t, k0)
+                ed.kind == asp.K-EXPRESSION-STATEMENT && ed.nkid == 1 && h2m-kid-i(t, k0, 0) == 0 -> d = 1
+            }
+        }
+    }
+}
+
 ; s128：值位 match 主體的【載荷型別】——臂内 `it` 的型別由此推斷（不再恆 I64）。
 ;   主體索引讀：基型 TY-VECSTR ⇒ TY-STR；TY-VEC ⇒ TY-I64（與 h2m-lower-safe-index 同口徑，
 ;   見 h2m.no 的 h2m-lower-safe-index 4704/4705 行）。
-;   其餘（含 option 裸標識符／str 主體）：靜態推不出 ⇒ 默認 TY-I64（維持 s65 舊口徑，不放寬門禁）。
+;   s134 起裸標識符 option 主体由 let 標注登記（下詳）；其餘（str 主体现有形非 option 主体）：
+;   靜態推不出 ⇒ 默認 TY-I64（維持 s65 舊口徑，不放寬門禁）。
 ; t: AST arena；sg: 模組級簽名表；l: 已登記的局部量表；agg: 結構體表
 ; n: SurfaceMatch 節點 id
-; pty: 載荷型別碼（TY-I64 / TY-STR）
+; pty: 載荷型別碼（TY-I64 / TY-STR / TY-F64）
+; s134：裸標識碼主体（`v: { ... }`）的載荷型別由【let 標注】靜態登記（h2m-lst.lpty）——
+;   本函式跑在前掃描期，其時 c.vids 尚未鋪（h2m-slot-decl 在掃完後才跑）⇒ 不可用 h2m-vpty-at；
+;   標注型別是掃描期唯一可得的靜態載荷來源，故與 h2m-lst-pty-set 同一條口徑。
 h2m-smv-pty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (pty i64) {
     pty = TY-I64
     n > 0 -> {
@@ -1782,6 +1919,24 @@ h2m-smv-pty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (pty i64) {
                     bt == TY-VEC -> pty = TY-I64
                 }
             }
+
+            ; s134：裸標識符主体——該名的局部量表項若為 TY-OPT，載荷型別取 let 標注登記值
+            ;   （0 = 未登記 ⇒ 維持默認 TY-I64，門禁不放松）
+            sd.kind == asp.K-IDENTIFIER && sd.nkid == 0 -> {
+                snm = ast.str-at(t, sd.s0)
+                si = h2m-lst-find(l, snm)
+                si >= 0 -> {
+                    slty = l.lty[si]: {
+                        ok -> it
+
+                        -> -1
+                    }
+                    slty == TY-OPT -> {
+                        spty = h2m-lst-pty-at(l, snm)
+                        spty > 0 -> pty = spty
+                    }
+                }
+            }
         }
     }
 }
@@ -1790,8 +1945,9 @@ h2m-smv-pty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (pty i64) {
 ;   全部臂一致才回該型別，否則回 -1（混合型別／有臂推不出 ⇒ 呼叫方保守回退 TY-I64 舊口徑）。
 ;   ⚠️ 型別必須在前掃描定，因為結果槽的 alloca 要鋪在 entry（h2m 離開 entry 就回不去）；
 ;      降級期的實際值型別仍由 h2m-smv-body 再比一次，兩者不一致即計 unsup（寧缺勿錯）。
-;   ⚠️ 與 h2m-ty-of 同口徑：「推不出」即 -1（如 `_` 臂），不做任何猜測。
+;   ⚠️ 與 h2m-ty-of 同口徑：「推不出」即 -1，不做任何猜測。
 ; s128：扫臂前把主體載荷型別寫進 agg.it-pty（save-set／掃完 restore），使臂內 `it` 推對型別。
+; s131：`_` 丟棄臂【不產值】⇒ 跳過（不作型別證據，也不令 ok=0）；全臂皆丟棄 ⇒ seen==0 ⇒ 回 -1。
 ; t: AST arena；sg: 模組級簽名表；l: 已登記的局部量表；agg: 結構體表
 ; n: SurfaceMatch 節點 id
 ; ty: 型別碼（-1 = 不一致或推不出）
@@ -1812,18 +1968,23 @@ h2m-smv-ty = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (ty i64) {
                 #{overflow=wrap}
                 hb = d.hbase + 12 * j
                 bn = ast.aux-at(t, hb + 11)
-                ex = h2m-smv-arm-val(t, bn)
-                ex <= 0 -> ok = 0
-                ex > 0 -> {
-                    at = h2m-ty-of(t, sg, l, agg, ex)
-                    at < 0 -> ok = 0
-                    at >= 0 -> {
-                        seen == 0 -> {
-                            acc = at
-                            seen = 1
-                        }
 
-                        seen == 1 && acc != at -> ok = 0
+                ; s131：`_` 丟棄臂跳過——型別由其餘產值臂決定（② 让 `str` 主體的槽型別不再回退 I64）
+                disc = h2m-smv-arm-discard(t, bn)
+                disc == 0 -> {
+                    ex = h2m-smv-arm-val(t, bn)
+                    ex <= 0 -> ok = 0
+                    ex > 0 -> {
+                        at = h2m-ty-of(t, sg, l, agg, ex)
+                        at < 0 -> ok = 0
+                        at >= 0 -> {
+                            seen == 0 -> {
+                                acc = at
+                                seen = 1
+                            }
+
+                            seen == 1 && acc != at -> ok = 0
+                        }
                     }
                 }
 
@@ -1897,6 +2058,7 @@ h2m-smv-load = (c h2m-ctx, ty i64, slot i64) (v i64) {
 ;      型別不符（含前掃描推錯／降級側偏離）⇒ 計 unsup，寧缺勿錯。
 ;   ⚠️ h2m-smv-arm-val 回的是【AST 节点 id】，不是值 id——必须先 h2m-lower-expr 才拿到值 id；
 ;      直接把节点 id 当值 id 用会发 `store i64 %v7` 这种引用未定义值的 IR（实测 build-mo 首版即此坑）
+; s131：`_` 丟棄臂（h2m-smv-arm-discard）⇒ 不發值也不 STORE，結果槽保持 entry 零初始化。
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -1916,7 +2078,12 @@ h2m-smv-body = (t ast, c h2m-ctx, sg h2m-sigs, bn i64, vctx i64, sslot i64, sty 
             }
             xv <= 0 -> h2m-mark(c)
         }
-        ex <= 0 -> h2m-mark(c)
+        ex <= 0 -> {
+
+            ; s131：`_` 丟棄臂 ⇒ 不發值（結果槽保持 entry 零初始化）；其余仍計 unsup
+            disc = h2m-smv-arm-discard(t, bn)
+            disc != 1 -> h2m-mark(c)
+        }
     }
 }
 
@@ -2260,6 +2427,9 @@ h2m-sig-arg = (s h2m-sigs, i i64, j i64) (t i64) {
 h2m-lst {
     lname []str
     lty []i64
+    ; s134：與 lty 平行的 option 載荷型別碼（0 = 未知／非 option）。僅 lty == TY-OPT 時有語意，
+    ;   供 h2m-smv-pty 在前掃描期推裸標識碼 option 主體的 `it` 載荷型別。
+    lpty []i64
 }
 
 ; 新建局部量表
@@ -2268,6 +2438,7 @@ h2m-lst-new = () (l h2m-lst) {
     l = h2m-lst{
         lname: []
         lty: []
+        lpty: []
     }
 }
 
@@ -2298,10 +2469,51 @@ h2m-lst-add = (l h2m-lst, name str, ty i64) {
 
             -> _
         }
+
+        ; s134：覆蓋時(payload 來源變了)同步清載荷型別，避免残留上一次的登記
+        l.lpty[i]: {
+            ok -> it = 0
+
+            -> _
+        }
     }
     i < 0 -> {
         l.lname.push(name)
         l.lty.push(ty)
+        l.lpty.push(0)
+    }
+}
+
+; s134：查局部量的 option 載荷型別碼（0 = 未知／非 option）
+; l: 局部量表
+; name: 變數名
+; p: 載荷型別碼
+h2m-lst-pty-at = (l h2m-lst, name str) (p i64) {
+    i = h2m-lst-find(l, name)
+    i >= 0 -> {
+
+        ; ⚠️ 值位 match：輸出參 p 直接接收載荷（第一句 `p = 0` 的樣板由 `-> 0` 臂承擔；
+        ;   i < 0 時走延遲零值 §3.11）。`no fmt` 會把「語句位 place-match 寫進 p」歸一化成本形。
+        p = l.lpty[i]: {
+            ok -> it
+
+            -> 0
+        }
+    }
+}
+
+; s134：登記局部量的 option 載荷型別碼（只改已登記項；未登記忽略，不求冊）
+; l: 局部量表
+; name: 變數名
+; p: 載荷型別碼（0 = 清空）
+h2m-lst-pty-set = (l h2m-lst, name str, p i64) {
+    i = h2m-lst-find(l, name)
+    i >= 0 -> {
+        l.lpty[i]: {
+            ok -> it = p
+
+            -> _
+        }
     }
 }
 
@@ -2500,7 +2712,7 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                     ; s113：接收者是【值】的方法呼叫不走簽名表（lower-expr 的內建方法臂）——
                     ;   舊版只認 mod.fn ⇒ `n = c.stn.len()` / `n = s.len-bytes()` 的 RHS 回 -1 ⇒
                     ;   let 槽不綁名 ⇒ 後續每次讀 n/i/b 都記 ID 失敗。
-                    ;   只覆蓋 lower-expr 已支援的三個方法，dest 與該臂逐字同口徑；
+                    ;   只覆蓋 lower-expr 已支援的方法，dest 與該臂逐字同口徑；
                     ;   其餘（byte/index/to-i64/…）仍回 -1，門禁不放寬。
                     code == -1 -> {
                         mt = h2m-ty-of(t, sg, l, agg, bk)
@@ -2508,6 +2720,19 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                         mt == TY-VEC && mf == 'len' -> code = TY-I64
                         mt == TY-VECSTR && mf == 'len' -> code = TY-I64
                         mt == TY-STR && mf == 'len-bytes' -> code = TY-I64
+
+                        ; s135：與 lower-expr 的 str 臂新 `len` 分支同口徑（码點數 ⇒ TY-I64）。
+                        ;   ⚠️ 只認纯 str——option 接收者的 `.len()` 在語言上非法（s113 註同）。
+                        mt == TY-STR && mf == 'len' -> code = TY-I64
+
+                        ; s130：?T 接收者的值方法——語言上合法（Go checker 只守衛 len/cap，
+                        ;   見 src/checker/option_member_access.go:158）， resolved callee 走
+                        ;   StripOptionRaw（hir2mir.go:12241）後按【載荷型別】查表。
+                        ;   以下三條的回值型別與載荷型別無關，故只憑 TY-OPT 即可定型；
+                        ;   len 在 option 接收者上非法、bytes 語料未出現 ⇒ 仍回 -1（門禁不放寬）。
+                        mt == TY-OPT && mf == 'len-bytes' -> code = TY-I64
+                        mt == TY-OPT && mf == 'byte' -> code = TY-OPT
+                        mt == TY-OPT && mf == 'to-str' -> code = TY-STR
 
                         ; s117：str.byte(i) 回 ?byte（option 恆裝箱）⇒ let 槽型別 TY-OPT，
                         ;   供值位 match 主体（`s.byte(0): { ok -> it }`）定 omode。
@@ -2568,13 +2793,16 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
             }
         }
 
-        ; s113b：索引讀取回值型別——與 lower-expr 的 OP-VECGET / OP-VECGETSTR 兩臂同口徑：
-        ;   []i64[k] ⇒ TY-I64、[]str[k] ⇒ TY-STR（回借用 str 視圖）；其餘基底仍 -1（門禁不變）。
+        ; s113b：索引讀取回值型別——s129 起【恒 TY-OPT】（`a[k]` 在語言上恆 ?T，D11），
+        ;   與降級側 h2m-lower-expr K-INDEX 的 option 化同口徑。舊形按基底推元素型別
+        ;   （[]i64[k] ⇒ TY-I64、[]str[k] ⇒ TY-STR）⇒ let 槽按元素型別鋪、右值卻是 %option
+        ;   ⇒ h2m-var-write 無臂可落（正是 (b) 的缺口）。
+        ;   ⚠️ 基底型別仍要判：非 vec（str/struct/arr）保持 -1（門禁不變），不得無條件回 TY-OPT。
         d.kind == asp.K-INDEX-EXPRESSION -> {
             ib = ast.kid-at(t, d.kid0)
             ity = h2m-ty-of(t, sg, l, agg, ib)
-            ity == TY-VEC -> code = TY-I64
-            ity == TY-VECSTR -> code = TY-STR
+            ity == TY-VEC -> code = TY-OPT
+            ity == TY-VECSTR -> code = TY-OPT
         }
     }
 }
@@ -2711,6 +2939,14 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
                     h2m-lst-add(l, h2m-smv-name(n), ty)
                 }
                 h2m-lst-add(l, nm, ty)
+
+                ; s134：裸標識碼 option 主體的分場景載荷型別——只看【標注】（`v ?str = …`），
+                ;   無標注（`v = xs[0]`）時無靜態來源 ⇒ 不登記，h2m-smv-pty 回退默認 TY-I64（不放寬門禁）
+                ty == TY-OPT && d.nkid > 1 -> {
+                    lpty0 = h2m-pty-of-type(t, agg, ast.kid-at(t, d.kid0))
+                    lpty0 > 0 -> h2m-lst-pty-set(l, nm, lpty0)
+                }
+
                 f0 = h2m-scan-kids(t, sg, l, agg, vk)
                 f0 > flow -> flow = f0
 
@@ -2779,6 +3015,43 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
 ; sg: 模块级签名表（调用点解析用）
 ; n: 表达式节点 id
 ; v: 值 id
+; s129：option 值 vs 另一侧值 ⇒ 回 option 的【载荷】值 id。
+;   镜 Go：emitCmp 的 option-vs-scalar 走 payload 比较（optionPayloadComparable），
+;   算术侧 unwrapOptionOperand 亦取 payload。载荷型别由【另一侧】型别决定。
+;   只处理「本侧 option 且另一侧 plain 标量」：两侧皆 option（Go 走 tag+payload 结构比较）、
+;   或另一侧非上述型别（聚合载荷）⇒ 原值回传，落呼叫侧诚实 mark。
+; c: 上下文；v: 本侧值 id；other: 另一侧值 id
+; r: 载荷值 id（不适用时 = v）
+h2m-opt-unwrap-vs = (c h2m-ctx, v i64, other i64) (r i64) {
+    r = v
+    vo = 0
+    v > 0 && other > 0 && h2m-vty-at(c, v) == TY-OPT -> vo = 1
+    ot = h2m-vty-at(c, other)
+    vo == 1 && (ot == TY-I64 || ot == TY-U64) -> {
+        pv = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-OPTGET, pv, v, 0, '', TY-I64)
+        r = pv
+    }
+
+    vo == 1 && ot == TY-F64 -> {
+        pv = h2m-alloc(c, TY-F64)
+        h2m-emit(c, OP-OPTGETF64, pv, v, 0, '', TY-F64)
+        r = pv
+    }
+
+    vo == 1 && ot == TY-STR -> {
+        pv = h2m-alloc(c, TY-STR)
+        h2m-emit(c, OP-OPTGETSTR, pv, v, 0, '', TY-STR)
+        r = pv
+    }
+
+    vo == 1 && ot == TY-VEC -> {
+        pv = h2m-alloc(c, TY-VEC)
+        h2m-emit(c, OP-OPTGETVEC, pv, v, 0, '', TY-VEC)
+        r = pv
+    }
+}
+
 h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
     h2m-set-cur-k(c, t, n)
     v = 0
@@ -3039,6 +3312,12 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             yk = ast.kid-at(t, yp)
             lv = h2m-lower-expr(t, c, sg, xk)
             rv = h2m-lower-expr(t, c, sg, yk)
+
+            ; s129：option 运算元取【载荷】——`op = ops[k]`（?i64）后 `op == OP-X` 必须能降级，
+            ;   否则 h2m-lower-if 的 cv==0 会把整段分支体跳过（实测 A+B 版 cg-emit-cfg-t 构造计数
+            ;   246，本臂补上后 1677 —— 是「跳过」而非「支持」）。镜 Go emitCmp / unwrapOptionOperand。
+            lv = h2m-opt-unwrap-vs(c, lv, rv)
+            rv = h2m-opt-unwrap-vs(c, rv, lv)
             bop = 0
             {
                 osym == '+' -> bop = OP-ADD
@@ -3338,6 +3617,11 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 head.kind == asp.K-IDENTIFIER -> {
                     rn = ast.str-at(t, head.s0)
                     h2m-name-find(c, rn) >= 0 -> recv-is-value = 1
+
+                    ; s134：`it` 不進 names/槽表（值走 c.itv 棧，見 h2m-var-read）⇒ 上面的查表必落空，
+                    ;   落跨模組路把 `it.len-bytes()` 拼成 `it.len-bytes` 查簽名表 ⇒ 必然 unsup。
+                    ;   故單獨認領：棧非空（= 確在某臂內）才當值接收者，Method 名隨 payload 型別分派。
+                    rn == 'it' && c.itv-n > 0 -> recv-is-value = 1
                 }
                 recv-is-value == 1 -> {
 
@@ -3406,11 +3690,25 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                             }
                         }
 
-                        ; str 方法：len-bytes() 取字节长
+                        ; str 方法：len-bytes() 取字节长；len() 取码点数（s135）
                         rty == TY-STR -> {
                             mname == 'len-bytes' -> {
                                 cid = h2m-alloc(c, TY-I64)
                                 h2m-emit(c, OP-STRLEN, cid, rv, 0, '', TY-I64)
+                                v = cid
+                                ok-method = 1
+                                ok-call = 0
+                            }
+
+                            ; s135：str.len() —— 碼點數（UTF-8 首字節計數），發 OP-STRCPLEN。
+                            ;   與 len-bytes 同一接收者臂、僅 helper 不同（一位元欄讀 vs 循環）。
+                            ;   ⚠️ 與 `?T` 臂的 len-bytes 不同：語言禁 `.len()`／`.cap()` 於 option 接收者
+                            ;      （src/checker/option_member_access.go:158 qwl2enr7）⇒ 本臂【只做纯 str】，
+                            ;      不得加進 TY-OPT 臂（那會靜默放行非法碼）。
+                            ;   ⚠️ 只收【無參】形（na == 0）；帶參的 `len(...)` 落門禁（不猜）。
+                            mname == 'len' && ok-method == 0 && na == 0 -> {
+                                cid = h2m-alloc(c, TY-I64)
+                                h2m-emit(c, OP-STRCPLEN, cid, rv, 0, '', TY-I64)
                                 v = cid
                                 ok-method = 1
                                 ok-call = 0
@@ -3442,10 +3740,49 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                 ok-call = 0
                             }
                         }
+
+                        ; s132：option 接收者值方法 `?T.method()`——补齐 h2m-lower-expr 的第四個臂。
+                        ;   語言側只守衛 len/cap（src/checker/option_member_access.go:158），其餘方法合法，
+                        ;   並按【載荷型別】查表（hir2mir.go:12241 StripOptionRaw）。h2m 只追載荷型別
+                        ;   （c.vpty），故**僅在靜態推得出載荷時放行**；推不出（0）⇒ 落回閘門，不猜。
+                        ;   ⚠️ 不需要 OpClone：OP-OPTGETSTR 只做 extractvalue，不產生獨立 drop
+                        ;     （Go 需要 clone 是因為它的 unwrap 是獨立 owned local，見 hir2mir.go:12203）。
+                        rty == TY-OPT -> {
+                            pty = h2m-vpty-at(c, rv)
+
+                            ; `?str` 載荷：先发 OP-OPTGETSTR 取出 %str-long，再走 str 內建方法
+                            ;   （與 rty == TY-STR 臂同口徑：byte 只收正好一參 i64）
+                            pty == TY-STR -> {
+                                sv = h2m-alloc(c, TY-STR)
+                                h2m-emit(c, OP-OPTGETSTR, sv, rv, 0, '', TY-STR)
+
+                                mname == 'len-bytes' -> {
+                                    cid = h2m-alloc(c, TY-I64)
+                                    h2m-emit(c, OP-STRLEN, cid, sv, 0, '', TY-I64)
+                                    v = cid
+                                    ok-method = 1
+                                    ok-call = 0
+                                }
+
+                                mname == 'byte' && ok-method == 0 && na == 1 -> {
+                                    bytek = ast.kid-at(t, argbase)
+                                    bv = h2m-lower-expr(t, c, sg, bytek)
+                                    bv > 0 && h2m-vty-at(c, bv) == TY-I64 -> {
+                                        ov = h2m-alloc(c, TY-OPT)
+                                        h2m-emit(c, OP-STRBYTE, ov, sv, bv, '', TY-OPT)
+                                        v = ov
+                                        ok-method = 1
+                                        ok-call = 0
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     ; 接收者是值但方法不支持 / 降级失败 ⇒ 落闸门（不进跨模組 cn 路径，避免误当模块调用）
-                    ok-method == 0 -> ok-call = 0
+                    ok-method == 0 -> {
+                        ok-call = 0
+                    }
                 }
                 recv-is-value == 0 -> {
                     base-nd = recv-nd
@@ -3797,36 +4134,26 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             }
         }
 
-        ; s99i：索引读取 expr[i]（就地索引 vec 欄位 / 本地 vec 變量）——base 降級出 %vec 值 id 後發 OP-VECGET 取第 i 個 i64 元素
-        ;   base 須是 TY-VEC（[]i64 欄位 / vec 形參 / mem==0 下綁定的 vec 局部）；其餘型別（str/struct/arr）不在本臂，計 unsup
-        ;   kid[0] = base、kid[1] = 下標（i64）；元素型別恒 i64（自舉 vec 元素僅收 i64，與 @vec_get_i64 單型 helper 一致）
+        ; s129：索引讀取 `a[k]` 恆 ?T（D11）——本臂【option 化】：邊界檢查 + 元素包裹成 %option，
+        ;   與 Go lowerSafeIndexAt（hir2mir.go:9718 → 5225）同口徑。s99i 舊形發裸 OP-VECGET / OP-VECGETSTR
+        ;   （plain 值）⇒ let／`?=` 路徑把 ?T 當纯值用：賦進 ?str 輸出參時 h2m-var-write 無臂可落 ⇒ 整函 dropped；
+        ;   賦進 str 局部則是「自舉比權威更寬鬆」的假陰性。
+        ;   base 須是 TY-VEC（[]i64 欄位 / vec 形參 / mem==0 下綁定的 vec 局部）或 TY-VECSTR（切片 B）；
+        ;   其餘型別（str/struct/arr）不在本臂，計 unsup。
+        ;   ⚠️ 降級本體移交 h2m-lower-safe-index（與值位 match 主體同一條路，不留兩套包裹口徑）；
+        ;      它只在 base 根深失敗（bv <= 0）時自計 unsup，其餘失敗靜默回 0 ⇒ 此處按 c.unsup 快照補計一次，
+        ;      不重複。
         d.kind == asp.K-INDEX-EXPRESSION -> {
-            bk = ast.kid-at(t, d.kid0)
-            ik = ast.kid-at(t, d.kid0 + 1)
-            bv = h2m-lower-expr(t, c, sg, bk)
-            bv > 0 -> {
-                bt = h2m-vty-at(c, bv)
+            u0 = c.unsup
+            iv0, ipty = h2m-lower-safe-index(t, c, sg, n)
+            iv0 <= 0 && c.unsup == u0 -> h2m-mark(c)
 
-                bt == TY-VEC -> {
-                    iv = h2m-lower-expr(t, c, sg, ik)
-                    iv > 0 -> {
-                        ev = h2m-alloc(c, TY-I64)
-                        h2m-emit(c, OP-VECGET, ev, bv, iv, '', TY-I64)
-                        v = ev
-                    }
-                }
-
-                ; 切片 B：[]str 索引 → OP-VECGETSTR，回借用 str 視圖（TY-STR，呼叫方不得 drop）
-                bt == TY-VECSTR -> {
-                    iv = h2m-lower-expr(t, c, sg, ik)
-                    iv > 0 -> {
-                        sv = h2m-alloc(c, TY-STR)
-                        h2m-emit(c, OP-VECGETSTR, sv, bv, iv, '', TY-STR)
-                        v = sv
-                    }
-                }
-                bt != TY-VEC && bt != TY-VECSTR -> h2m-mark(c)
+            ; s132：索引讀出來的 option 帶有【元素型別】載荷（ipty ∈ {TY-I64, TY-STR}）——
+            ;   沿路登记，后续 `t.len-bytes()` / `t.byte(i)` 才能判載荷型别
+            iv0 > 0 -> {
+                h2m-vpty-set(c, iv0, ipty)
             }
+            v = iv0
         }
 
         ; s99n：切片字面量 [e0, e1, …] → OP-VECNEW + 逐元素 OP-VECPUSH（镜像 Go lowerSliceLiteral 的整数元素形）
@@ -4797,6 +5124,9 @@ h2m-lower-safe-index = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (r i64, pty i64) {
                 h2m-set-block(c, mergeblk)
                 lv = h2m-alloc(c, TY-OPT)
                 h2m-emit(c, OP-OPTLOAD, lv, sink, 0, '', TY-OPT)
+
+                ; s132：merge 讀回的 option，載荷型別就是元素型别（供 `x.method()` 判定）
+                h2m-vpty-set(c, lv, pty)
                 r = lv
             }
         }
@@ -4819,7 +5149,8 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     subj-expr = 0
 
     ; s127：主體是否為索引讀（⇒ safe-index 降級）；subj-pty = 主體 option 的載荷型別
-    ;   （默認 TY-I64 ⇒ 維持 s98 既有 omode 行為；索引讀主体才帶 str 載荷）
+    ;   （默認 TY-I64 ⇒ 維持 s98 既有 omode 行為；索引讀主體由 safe-index 帶 str 載荷，
+    ;   s134 起裸標識碼 option 主體由值的 vpty 補上，見下方主体判定 subj-ident 分支的 TY-OPT 臂）
     subj-index = 0
     subj-pty = TY-I64
     snm != '' -> vctx = 1
@@ -4848,7 +5179,20 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                     subjty = sty
                     sty == TY-I64 -> vmode = 1
                     sty == TY-STR -> vmode = 1
-                    sty == TY-OPT -> omode = 1
+                    sty == TY-OPT -> {
+                        omode = 1
+
+                        ; s134：裸標識碼 option 主體的【載荷型別】——值的 vpty 由寫點沿途抄來
+                        ;   （h2m-var-write 的 OPTSTORE 分支 / h2m-var-bind 直綁原值 id），
+                        ;   與 h2m-smv-pty 的標注登記同口徑；> 0 才採用，否則維持默認 TY-I64
+                        svid = c.vids[si]: {
+                            ok -> it
+
+                            -> 0
+                        }
+                        spty0 = h2m-vpty-at(c, svid)
+                        spty0 > 0 -> subj-pty = spty0
+                    }
                     sty != TY-I64 && sty != TY-STR && sty != TY-OPT -> bad = 1
                 }
             }
@@ -5046,11 +5390,15 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
             ; s103 值位门禁：valueCtx 必须置位（否则本链其实在陈述位，按值降会读错语境），
             ;   且臂体必须恰好是「inline 块包单表达式陈述」——解不出值表达式即出局
+            ; s131：`_` 丟棄臂（不產值）放行——零值由結果槽的 entry 零初始化提供（h2m-smv-body 不發值）
             vctx == 1 -> {
                 ast.aux-at(t, hb + 9) == 0 -> bad = 1
                 ast.aux-at(t, hb + 9) != 0 -> {
                     ex0 = h2m-smv-arm-val(t, bn)
-                    ex0 <= 0 -> bad = 1
+                    ex0 <= 0 -> {
+                        d0 = h2m-smv-arm-discard(t, bn)
+                        d0 != 1 -> bad = 1
+                    }
                 }
             }
 
@@ -5162,8 +5510,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
                                 ; s115：`it` 在 ok 臂是【載荷】（OP-OPTGET），不是 option 本身——
                                 ;   `ok ->`（無綁定）與 `ok(v) ->` 共用同一條 OPTGET，不重複發指令。
-                                ; s127：載荷讀取按【主體 option 的載荷型別】分派——索引讀主体帶 str 載荷
+                                ; s127：載荷讀取按【主體 option 的載荷型別】分派——索引讀主體帶 str 載荷
                                 ;   （[]str）⇒ OPTGETSTR；其餘（默認 TY-I64）維持 OPTGET。
+                                ;   s134：裸標識碼 option 主體的 subj-pty 由值 vpty 補上 ⇒ 同口徑覆盖 `?str` 局部量。
                                 itv-v = sv
                                 et == 0 -> {
                                     subj-pty == TY-STR -> {
@@ -5424,6 +5773,16 @@ h2m-param-ty = (t ast, agg h2m-ctx, p i64) (code i64, bad i64) {
                         code = TY-VECSTR
                         bad = 0
                     }
+
+                    ; s136：[]byte 形参/返回入形 → TY-VEC。與 h2m-tynode-code 的 K-SLICE-TYPE 臂
+                    ;   同口徑（該處補 byte 臂後，本函式仍是獨立第二站，必須同步，否則
+                    ;   `lx-sub(s []byte, …)`／`lx-new(src []byte)` 這類签名照旧 bad=1 整函不產碼）。
+                    ;   ⚠️ 舊註「另一套 helper」在自舉側不成立：noc 的 @vec_get_i64／@vec_push_i64
+                    ;   就是唯一的一套（[]str 才走 stride 16 的 str 助手），byte 元素即 i64 槽。
+                    enm == 'byte' -> {
+                        code = TY-VEC
+                        bad = 0
+                    }
                 }
             }
         }
@@ -5612,6 +5971,19 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             h2m-var-bind(c, pnm, vid)
             h2m-lst-add(loc, pnm, pt)
 
+            ; s134：?T 形參的載荷型別同樣由標注型別靜態可得（`n: ?str`）——
+            ;   与 let 标注同一條口徑，使函式體內 `n: { ok -> it.len-bytes() }` 走得通
+            pt == TY-OPT -> {
+                ppty = h2m-pty-of-type(t, agg, ast.kid-at(t, pd.kid0))
+                ppty > 0 -> {
+                    h2m-lst-pty-set(loc, pnm, ppty)
+
+                    ; mem==0 不鋪槽：名字直綁在這顆 alloc 值上 ⇒ 值自帶 vpty 才傳得出載荷型別
+                    ;   （mem==1 走 h2m-slot-init-arg 抄進槽，見該處注）
+                    h2m-vpty-set(c, vid, ppty)
+                }
+            }
+
             q = h2m-inc(q)
         }
 
@@ -5663,7 +6035,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
                     avid = 0
 
                     avid = h2m-inc(m)
-                    h2m-slot-init-arg(c, lnm, avid, lty)
+                    h2m-slot-init-arg(c, lnm, avid, lty, h2m-lst-pty-at(loc, lnm))
                 }
 
                 m = h2m-inc(m)

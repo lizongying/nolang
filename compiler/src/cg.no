@@ -37,6 +37,9 @@
 ;     NOT⇒xor i64 1, %v…（翻转 0/1 布尔）。均单块降级、无 helper；忠实 Go emitNeg（非 option 路不插溢出护栏）／emitNot
 ;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec。B28b：len/cap 本就是 i32（%vec 16B），直接 insertvalue，无需 trunc
 ;   str 容量欄（s50）：OP-STRCAP——extractvalue %str-long field 1（与 OP-STRLEN 的 field 0 成对，Go 原以 fieldIdx 分派）；单块降级、无 helper；忠实 Go emitLenCap 的 OpCap/KindStr 分支。B28：讀出後 zext i32→i64
+;   str 碼點數（s135）：OP-STRCPLEN——**非**栏位读取（無計數原語可組），發 call i64 @str_cp_len(%str-long)；
+;     單塊降級、helper 走 cg-runtime prelude（含 phi 循環，與 @digits/@str_concat 同級）。語義 = std str.len = cp-index(len-bytes())，
+;     即「b<0x80 或 (b&0xc0)==0xc0」的字節數（與 s[i] 的碼點索引語義一致）
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
@@ -2017,6 +2020,19 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', i64 %sbD')
             b.push(k.to-str())
             b.push(', 2\n')
+        }
+        op == OP-STRCPLEN -> {
+
+            ; s135：str.len() —— 码点数（UTF-8 首字节计数）。不是栏位读取：Go 后端把 std
+            ;   str.len 编成 .cp-index 循环，无「计数」原语可组 ⇒ 走 helper @str_cp_len
+            ;   （cg-runtime-str-cp-len，每模块 prelude 发一次）。
+            ;   ⚠️ 只出【值】不建 helper 内联展开——循环体含 phi，与 @digits/@str_concat
+            ;      同级的 runtime helper 路径（mir.no:145 的 OP-STRLEN 是纯 extractvalue，勿混）。
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @str_cp_len(%str-long %sv')
+            b.push(x.to-str())
+            b.push(')\n')
         }
         op == OP-STRCAT -> {
             b.push('\t%sv')

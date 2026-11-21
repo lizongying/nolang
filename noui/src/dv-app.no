@@ -1,0 +1,365 @@
+; ============================================================================
+; noui 声明式应用装配层（阶段 11）—— src/dv-app.no
+;
+; 把「轮询 → 命中 → 归约 → 重建视图 → 调和 → 布局 → 上屏」这条主循环收进框架，
+; 应用侧只剩三样东西：状态池 + 视图函数 + 事件回调。命令式内核（components /
+; cmp-scene / app）一行没改 —— 这一层只是把「装配」也变成数据驱动的最终产物。
+;
+; 应用必须按名提供三个回调（语言没有可用的 fn 值，只能按名调用）：
+;   dv-app-view   = () (page i64)                                  每帧：状态 -> 视图树
+;   dv-app-reduce = (S []i64, k i64) (nw i64)                      点击：把视图动作归约进状态池
+;   dv-app-click  = (S []i64, k i64, act i64, pay i64, nw i64) ()  归约之外的事件侧动作
+;
+; 计数器（模块全局，dva-run 结束后应用可打印）：
+;   dva-frames() / dva-ops() / dva-clicks()
+;
+; 受控输入（阶段13）：视图用 dv-bind(node, slot, max) 把输入类组件的文本绑到
+; dv 侧的字符串状态池 DV-BIND-T[slot]（应用用 dv-bound / dv-bound-set 读写）；
+; 装配层每帧双向同步（dva-sync-binds），签名与阶段 11 完全一致。
+; 快捷键（阶段13）：视图用 dv-hotkey(node, keycode, act, pay) 声明全局键；
+; 无输入焦点时按键命中 -> 走与点击相同的归约路径。
+;
+; 运行：# /noui/src/dv-app  然后  dva-run(S, 'title', 900)
+; ============================================================================
+# /noui/src/app
+# /noui/src/dv
+
+DVA-FRAMES []i64 = [0]
+DVA-OPS []i64 = [0]
+DVA-CLICKS []i64 = [0]
+DVA-FOCUS []i64 = [-1]
+DVA-PX []i64 = [0]
+DVA-PY []i64 = [0]
+; 是否收到过鼠标事件（0 = 还没有，此时不猜命中，避免开局在 (0,0) 误报 hover）
+DVA-MOUSE []i64 = [0]
+; 最近一次布局后算出的命中句柄（-1 无命中，-2 被模态层挡住），供 hover 状态同步用
+DVA-HIT []i64 = [-1]
+
+DVA-AZ = 'abcdefghijklmnopqrstuvwxyz'
+DVA-DIG = '0123456789'
+
+dva-frames = () (n i64) {
+    n = DVA-FRAMES[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+dva-ops = () (n i64) {
+    n = DVA-OPS[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+dva-clicks = () (n i64) {
+    n = DVA-CLICKS[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+; 事件回调里要拿活组件树根（配合 dv-live-deep）
+dva-root = () (h i64) {
+    h = app-root()
+}
+; 最近一次点击 / 移动的定点坐标（事件回调里做几何换算用）
+dva-px = () (x i64) {
+    x = DVA-PX[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+dva-py = () (y i64) {
+    y = DVA-PY[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+; 状态池写入：S 是数组参数，只能 place-match（同 dv-apply 的写法）
+dva-set = (S []i64, i i64, v i64) () {
+    S[i]: {
+        ok -> it = v
+        -> _
+    }
+}
+
+; ---------------------------------------------------------------------------
+; 输入类组件：点击后持续拥有键盘（焦点不是「动作」，是组件的持有状态）
+; ---------------------------------------------------------------------------
+dva-is-input-kind = (kd i64) (yes i64) {
+    yes = 0
+    (kd == C-INPUT) -> { yes = 1 }
+    (kd == C-TEXTAREA) -> { yes = 1 }
+    (kd == C-SEARCH) -> { yes = 1 }
+    (kd == C-NUMBER-INPUT) -> { yes = 1 }
+    (kd == C-OTP-INPUT) -> { yes = 1 }
+}
+
+; 点击命中后的焦点移交：输入类接管，其余（含点空白）释放
+; 焦点交接（阶段 18 起尊重禁用）：禁用的节点不接焦点 —— 尤其禁用输入框，
+; 点了不该开始编辑。命中本身仍然有效（hover / tooltip 照常），只是不交互。
+dva-focus = (hit i64) () {
+    fh = DVA-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    h = hit
+    (cmp-has(h, F-DISABLED)) -> { h = -1 }
+    (h >= 0) -> {
+        kd = cmp-kind(h)
+        (dva-is-input-kind(kd) == 1) -> {
+            (fh >= 0 && fh != h) -> { input-focus(fh, false) }
+            DVA-FOCUS[0] = h
+            input-focus(h, true)
+        }
+        (dva-is-input-kind(kd) == 0) -> {
+            (fh >= 0) -> { input-focus(fh, false) }
+            DVA-FOCUS[0] = -1
+        }
+    }
+    (h < 0) -> {
+        (fh >= 0) -> { input-focus(fh, false) }
+        DVA-FOCUS[0] = -1
+    }
+}
+
+; 键盘喂给当前焦点组件：退格 / 空格 / 数字 / 小写字母
+dva-keyboard = (kk i64) () {
+    fh = DVA-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (fh >= 0) -> {
+        (cmp-has(fh, F-FOCUSED)) -> {
+            (kk == 8) -> { input-backspace(fh) }
+            (kk == 32) -> { input-append(fh, ' ') }
+            (kk >= 48) -> {
+                (kk <= 57) -> {
+                    i0 = cs-sub(kk, 48)
+                    ch = DVA-DIG.slice(i0, cs-inc(i0))
+                    input-append(fh, ch)
+                }
+            }
+            (kk >= 97) -> {
+                (kk <= 122) -> {
+                    i0 = cs-sub(kk, 97)
+                    ch = DVA-AZ.slice(i0, cs-inc(i0))
+                    input-append(fh, ch)
+                }
+            }
+        }
+    }
+}
+
+; ============================================================================
+; 受控输入：字符串状态池 <-> 输入类组件的双向同步
+; ============================================================================
+; 视图侧用 dv-bind(node, slot, max) 声明「这个输入框的文本 = T[slot]」。
+; 每帧一次：组件文本变了 -> 写回 DV-BIND-T[slot]；该槽被归约器 / reset 改了 -> 推回组件。
+; shadow（DVA-BIND-LAST）记住上一次同步值，用来分辨「谁改了谁」，避免互相覆盖。
+DVA-BIND-LAST []str = with-len(0)
+
+dva-last-ensure = (slot i64) () {
+    !! {
+        (DVA-BIND-LAST.len() > slot) -> { ** }
+        DVA-BIND-LAST.push('')
+    }
+}
+dva-last-get = (slot i64) (s str) {
+    s = DVA-BIND-LAST[slot]: {
+        ok -> it
+
+        -> ''
+    }
+}
+
+; 字符串池就是 dv 侧的 DV-BIND-T（应用用 dv-bound / dv-bound-set 读写）
+dva-str-get = (i i64) (s str) {
+    s = dv-bound(i)
+}
+dva-str-set = (i i64, s str) () {
+    dv-bound-set(i, s)
+}
+
+dva-sync-binds = (root i64) () {
+    n = dv-node-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        slot = dv-bind-of(i)
+        (slot >= 0) -> {
+            live = dv-live-deep(root, dv-key(i))
+            (live >= 0) -> {
+                (dva-is-input-kind(cmp-kind(live)) == 1) -> {
+                    dva-last-ensure(slot)
+                    mx = dv-bind-max-of(i)
+                    ; 用「原始组件文本」与 shadow 比：超长被截断后仍能和上次区分开
+                    raw = input-value(live)
+                    last = dva-last-get(slot)
+                    (raw != last) -> {
+                        ; 组件侧变了（含用户敲字）：截到 max，写回状态与组件
+                        capped = dv-bound-cap(raw, mx)
+                        dva-str-set(slot, capped)
+                        cmp-set-text(live, capped)
+                        DVA-BIND-LAST[slot] = capped
+                    }
+                    (raw == last) -> {
+                        ; 组件没动：状态侧被归约器 / reset 改了就推回组件
+                        tv = dva-str-get(slot)
+                        capped = dv-bound-cap(tv, mx)
+                        (tv != capped) -> { dva-str-set(slot, capped) }
+                        (capped != last) -> {
+                            cmp-set-text(live, capped)
+                            DVA-BIND-LAST[slot] = capped
+                        }
+                    }
+                }
+            }
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ---------------------------------------------------------------------------
+; hover 状态同步（阶段 17）：把「鼠标停在哪个视图节点上」写进状态池
+; ---------------------------------------------------------------------------
+; 视图节点用 dv-hover(node, slot) 声明「我被 hover 时把 1 写进 S[slot]」。
+; 这里每帧按最近一次布局算出的命中 key（DVA-HIT）写 1/0 —— 于是 hover 也进得了
+; UI = f(state)，视图再据此决定是否建一个锚在该节点上的 tooltip / hover-card。
+; 值没变就不写，避免无谓的状态变更（写状态 = 通知应用「状态变了」）。
+dva-sync-hover = (S []i64) () {
+    hk = DVA-HIT[0]: {
+        ok -> it
+
+        -> -1
+    }
+    n = dv-node-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        slot = dv-hover-of(i)
+        (slot >= 0) -> {
+            v = 0
+            (hk >= 0) -> {
+                (cmp-key(hk) == dv-key(i)) -> { v = 1 }
+            }
+            cur = S[slot]: {
+                ok -> it
+
+                -> 0
+            }
+            (cur != v) -> { dva-set(S, slot, v) }
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 声明式主循环
+; ============================================================================
+dva-run = (S []i64, title str, max-frames i64) () {
+    r = app-init(title)
+    root = app-root()
+    ; 主题底色接上窗口（声明式主题的最后一块：连窗口背景也是数据）
+    app-set-bg(cs-theme(CS-TH-BG))
+    run = r == 0
+    fr = 0
+    !! {
+        (run == 0) -> { ** }
+        (fr >= max-frames) -> { ** }
+
+        t, mx, my = app-poll()
+
+        ; ---- 鼠标移动：hover 高亮 ----
+        (t == 3) -> {
+            px = fx(mx)
+            py = fx(my)
+            DVA-PX[0] = px
+            DVA-PY[0] = py
+            DVA-MOUSE[0] = 1
+            app-hover(root, px, py)
+        }
+
+        ; ---- 左键：命中 -> key -> 视图动作 -> 归约进状态池 ----
+        ; 「点击意味着什么」由视图节点的 dv-act 数据决定，循环里没有 key 的 if-else 链。
+        (t == 2) -> {
+            px = fx(mx)
+            py = fx(my)
+            DVA-PX[0] = px
+            DVA-PY[0] = py
+            DVA-MOUSE[0] = 1
+            hit = cs-hit(root, px, py)
+            k = cmp-key(hit)
+            dva-focus(hit)
+            act, pay = dv-dispatch(k)
+            nw = dv-app-reduce(S, k)
+            (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+            dv-app-click(S, k, act, pay, nw)
+        }
+
+        ; ---- 键盘：q 退出；有输入焦点 -> 喂字；无焦点 -> 先试快捷键 ----
+        ; 快捷键语义：正在敲字时按键不触发全局动作（否则打不出 'r'）。
+        (t == 4) -> {
+            kk = mx.to-i64()
+            (kk == 113) -> { APP-QUIT[0] = 1 }
+            fh = DVA-FOCUS[0]: {
+                ok -> it
+
+                -> -1
+            }
+            (fh >= 0) -> { dva-keyboard(kk) }
+            (fh < 0) -> {
+                ha, hp, hk = dv-hot-dispatch(kk)
+                (ha != 0) -> {
+                    nw2 = dv-app-reduce(S, hk)
+                    (nw2 > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+                    dv-app-click(S, hk, ha, hp, nw2)
+                }
+            }
+        }
+
+        ; ---- 退出 ----
+        (app-quit()) -> { ** }
+        (app-should-quit()) -> { ** }
+
+        ; ---- hover -> 状态（必须在建视图之前，本帧就能看到 tooltip）----
+        dva-sync-hover(S)
+
+        ; ---- 状态 -> 视图 -> 活组件树（调和）----
+        page = dv-app-view()
+        ops = dv-render(root, page)
+        DVA-OPS[0] = dv-add(DVA-OPS[0], ops)
+        ; 受控输入：字符串状态 <-> 组件文本（必须在布局之前，文本影响宽度）
+        dva-sync-binds(root)
+
+        ; ---- 布局 -> 摊平 -> 上屏 ----
+        cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+        ; 布局已定：重算命中并缓存，供下一帧的 hover 状态同步（鼠标没动也要刷新，
+        ; 因为布局可能变了 —— 例如 tooltip 出现把别的东西挤开）
+        (DVA-MOUSE[0] == 1) -> {
+            DVA-HIT[0] = cs-hit(root, dva-px(), dva-py())
+        }
+        cs-clear()
+        cs-paint(root)
+        app-frame()
+        app-delay(16)
+
+        fr = dv-inc(fr)
+        DVA-FRAMES[0] = fr
+    }
+
+    ; 收尾：释放焦点、关窗
+    fh = DVA-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (fh >= 0) -> { input-focus(fh, false) }
+    DVA-FOCUS[0] = -1
+    app-shutdown()
+}

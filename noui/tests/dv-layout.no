@@ -1,0 +1,325 @@
+; ============================================================================
+; noui 声明式布局测试（阶段 10 续）—— dv-lay 布局提示 + cmp-scene 消费
+;
+; 验证「怎么排」也是数据：容器方向（L-H）、间距 / 内边距覆盖（gap / pad）、
+; 主轴拉伸（L-GROW）、交叉轴对齐（L-AE / L-AC）从视图节点一路同步到活组件，
+; 并被 cs-measure / cs-layout 真正消费。无窗口，no run 直接跑。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dv-layout.no
+; ============================================================================
+# /noui/src/cmp-scene
+# /noui/src/dv
+
+print('=== dv-layout tests ===')
+
+; ============================================================================
+; 场景 L：布局提示随 props 同步进活组件
+; ============================================================================
+root-l = cmp-root()
+dv-clear()
+pl = dv-form(1, -1)
+hb = dv-form(2, pl)
+dv-lay(hb, dv-lay-h(), 1600, 2400)
+cl = dv-label(3, 'x', hb)
+dv-lay(cl, dv-lay-grow-end(), 0, 0)
+ops-l = dv-render(root-l, pl)
+lv = dv-live-by-key(root-l, 2)
+lc = dv-live-by-key(lv, 3)
+r70 = ops-l == 2
+r71 = cmp-lay(lv) == dv-lay-h() && cmp-gap(lv) == 1600 && cmp-pad(lv) == 2400
+r72 = cmp-lay(lc) == dv-lay-grow-end()
+
+; 改稿：只改提示（bits 换成 L-AC），结构零操作
+dv-clear()
+pl = dv-form(1, -1)
+hb = dv-form(2, pl)
+dv-lay(hb, dv-lay-h(), 1600, 2400)
+cl = dv-label(3, 'x', hb)
+dv-lay(cl, dv-lay-center(), 0, 0)
+ops-l2 = dv-render(root-l, pl)
+r73 = ops-l2 == 0 && cmp-lay(lc) == dv-lay-center()
+
+; ============================================================================
+; 场景 M：C-FORM + L-H 变成横向（等价 C-GRID）
+; ============================================================================
+root-m = cmp-root()
+dv-clear()
+pm = dv-form(1, -1)
+hm = dv-form(2, pm)
+dv-lay(hm, dv-lay-h(), 0, 0)
+c3 = dv-label(3, 'abcdefgh', hm)
+c4 = dv-label(4, 'abcdefghijkl', hm)
+ops-m = dv-render(root-m, pm)
+cs-layout(root-m, 0, 0, 80000, 60000)
+l3 = dv-live-by-key(dv-live-by-key(root-m, 2), 3)
+l4 = dv-live-by-key(dv-live-by-key(root-m, 2), 4)
+x3, y3, w3, h3 = cs-rect(l3)
+x4, y4, w4, h4 = cs-rect(l4)
+; 横向：两者 y 相同（顶对齐），第二个的 x = 第一个 x + 第一个宽 + GAP
+r74 = ops-m == 3
+r75 = x3 == 2400 && y3 == 2400 && w3 == 8800 && h3 == 2400
+r76 = x4 == 12000 && y4 == 2400
+; 对照：同样的两个 label 放在普通 C-FORM（纵向）里，第二个应该换行
+root-m2 = cmp-root()
+dv-clear()
+pm2 = dv-form(1, -1)
+vm = dv-form(2, pm2)
+dv-label(3, 'abcdefgh', vm)
+dv-label(4, 'abcdefghijkl', vm)
+ops-m2 = dv-render(root-m2, pm2)
+cs-layout(root-m2, 0, 0, 80000, 60000)
+v3 = dv-live-by-key(dv-live-by-key(root-m2, 2), 3)
+v4 = dv-live-by-key(dv-live-by-key(root-m2, 2), 4)
+vx3, vy3, _, _ = cs-rect(v3)
+vx4, vy4, _, _ = cs-rect(v4)
+r77 = vy3 == 2400 && vy4 == 5600 && vx3 == 2400 && vx4 == 2400
+
+; ============================================================================
+; 场景 N：gap / pad 覆盖
+; ============================================================================
+root-n = cmp-root()
+dv-clear()
+pn = dv-form(1, -1)
+hn = dv-form(2, pn)
+dv-lay(hn, dv-lay-h(), 1600, 2400)
+dv-label(3, 'abcdefgh', hn)
+dv-label(4, 'abcdefghijkl', hn)
+ops-n = dv-render(root-n, pn)
+cs-layout(root-n, 0, 0, 80000, 60000)
+n3 = dv-live-by-key(dv-live-by-key(root-n, 2), 3)
+n4 = dv-live-by-key(dv-live-by-key(root-n, 2), 4)
+nx3, ny3, _, _ = cs-rect(n3)
+nx4, ny4, _, _ = cs-rect(n4)
+; pad=2400 -> 内容起点 x = 1200(顶层) + 2400 = 3600；gap=1600
+r78 = nx3 == 3600 && ny3 == 3600
+r79 = nx4 == 14000 && ny4 == 3600
+
+; ============================================================================
+; 场景 O：L-GROW 吃掉主轴剩余空间（根容器高度显式给定）
+; ============================================================================
+root-o = cmp-root()
+dv-clear()
+po = dv-form(1, -1)
+dv-label(2, 'head', po)
+gf = dv-fill(3, po)
+dv-label(4, 'inner', gf)
+ops-o = dv-render(root-o, po)
+cs-layout(root-o, 0, 0, 80000, 100000)
+o2 = dv-live-by-key(root-o, 2)
+o3 = dv-live-by-key(root-o, 3)
+ox2, oy2, ow2, oh2 = cs-rect(o2)
+ox3, oy3, ow3, oh3 = cs-rect(o3)
+; 顶层 pad=1200 gap=800：label 占 2400，剩余全给 grow 子节点
+; grow 底边 = 100000 - 1200
+r80 = ops-o == 3
+r81 = oy2 == 1200 && oh2 == 2400 && oy3 == 4400
+r82 = oh3 == 94400 && cs-add(oy3, oh3) == 98800
+
+; 无 grow 提示时对照：第二个子节点只拿 intrinsic 高
+root-o2 = cmp-root()
+dv-clear()
+po2 = dv-form(1, -1)
+dv-label(2, 'head', po2)
+ng = dv-form(3, po2)
+dv-label(4, 'inner', ng)
+ops-o2 = dv-render(root-o2, po2)
+cs-layout(root-o2, 0, 0, 80000, 100000)
+p2 = dv-live-by-key(root-o2, 2)
+p3 = dv-live-by-key(root-o2, 3)
+px2, py2, _, ph2 = cs-rect(p2)
+px3, py3, _, ph3 = cs-rect(p3)
+r83 = py3 == 4400 && ph3 == 4800
+
+; ============================================================================
+; 场景 P：交叉轴对齐（纵向容器里靠右 / 居中）
+; ============================================================================
+root-p = cmp-root()
+dv-clear()
+pp = dv-form(1, -1)
+ap = dv-form(2, pp)
+dv-label(3, 'ab', ap)
+a4 = dv-label(4, 'abcdefghijkl', ap)
+dv-lay(a4, dv-lay-end(), 0, 0)
+ops-p = dv-render(root-p, pp)
+cs-layout(root-p, 0, 0, 80000, 60000)
+p3 = dv-live-by-key(dv-live-by-key(root-p, 2), 3)
+p4 = dv-live-by-key(dv-live-by-key(root-p, 2), 4)
+px3, py3, pw3, _ = cs-rect(p3)
+px4, py4, pw4, _ = cs-rect(p4)
+; 视图根 pp 只是分组节点，真正挂到 root 上的是 ap（key 2），
+; 所以 ap 拿到 root 的内容区 (1200,1200,77600)；ap 自己再留 pad=1200，
+; 内容宽 = 75200 - 2400 = 72800... 实为 77600 - 2400 = 75200。
+; intrinsic 宽 12000 靠右 -> x = 2400 + 75200 - 12000 = 65600
+r84 = ops-p == 3
+r85 = px3 == 2400 && pw3 == 75200
+r86 = px4 == 65600 && pw4 == 12000 && py4 == 5600
+
+; 居中
+dv-clear()
+pp = dv-form(1, -1)
+ap = dv-form(2, pp)
+dv-label(3, 'ab', ap)
+a4 = dv-label(4, 'abcdefghijkl', ap)
+dv-lay(a4, dv-lay-center(), 0, 0)
+ops-p2 = dv-render(root-p, pp)
+cs-layout(root-p, 0, 0, 80000, 60000)
+q3 = dv-live-by-key(dv-live-by-key(root-p, 2), 3)
+q4 = dv-live-by-key(dv-live-by-key(root-p, 2), 4)
+qx4, qy4, qw4, _ = cs-rect(q4)
+r87 = qx4 == 34000 && qw4 == 12000 && qy4 == 5600
+
+; ============================================================================
+; 场景 Q：回归 —— C-GRID 仍然横向，默认 gap / pad 不变
+; ============================================================================
+root-q = cmp-root()
+dv-clear()
+pq = dv-form(1, -1)
+gq = dv-row(2, pq)
+dv-label(3, 'abcdefgh', gq)
+dv-label(4, 'abcdefghijkl', gq)
+ops-q = dv-render(root-q, pq)
+cs-layout(root-q, 0, 0, 80000, 60000)
+q3b = dv-live-by-key(dv-live-by-key(root-q, 2), 3)
+q4b = dv-live-by-key(dv-live-by-key(root-q, 2), 4)
+gx3, gy3, _, _ = cs-rect(q3b)
+gx4, gy4, _, _ = cs-rect(q4b)
+r88 = ops-q == 3
+r89 = gx3 == 2400 && gy3 == 2400 && gx4 == 12000 && gy4 == 2400
+; 默认值未被提示影响：gap / pad 读回来仍是 0（cmp-scene 内部回落到 CS-GAP / CS-PAD）
+r90 = cmp-gap(dv-live-by-key(root-q, 2)) == 0 && cmp-pad(dv-live-by-key(root-q, 2)) == 0
+
+; ============================================================================
+; 场景 R：真实两栏（main-dv 的骨架）—— 页头全宽 + 一行两列，各吃一半
+; ============================================================================
+root-r = cmp-root()
+dv-clear()
+pr = dv-form(1, -1)
+dv-label(2, 'noui declarative', pr)
+dv-label(15, 'sum', pr)
+cols = dv-row(90, pr)
+dv-lay(cols, dv-lay-h-grow(), 1600, 0)
+lc = dv-fill(91, cols)
+rc = dv-fill(92, cols)
+dv-label(3, 'a', lc)
+dv-label(4, 'b', rc)
+ops-r = dv-render(root-r, pr)
+cs-layout(root-r, 0, 0, 80000, 60000)
+lcol = dv-live-by-key(root-r, 90)
+lleft = dv-live-by-key(lcol, 91)
+lright = dv-live-by-key(lcol, 92)
+llb = dv-live-by-key(lleft, 3)
+lrb = dv-live-by-key(lright, 4)
+lx, ly, lw, lh = cs-rect(lleft)
+rx, ry, rw, rh = cs-rect(lright)
+bx, by, _, _ = cs-rect(llb)
+cx2, cy2, _, _ = cs-rect(lrb)
+; 同一行（y 相同）且右栏在左栏右边；两栏等宽；间距 = 1600
+r91 = ops-r == 7
+r92 = ly == ry && rx > lx && lw == rw
+r93 = rx == cs-add(lx, cs-add(lw, 1600)) && lw == 37600
+; 左栏的子节点落在左栏里，右栏的子节点落在右栏里（没有串栏）
+r94 = bx >= lx && cs-add(bx, 6400) <= cs-add(lx, lw)
+r95 = cx2 >= rx && cs-add(cx2, 6400) <= cs-add(rx, rw)
+; 页头仍全宽：第一行 label 的宽 = 根内容宽
+h1 = dv-live-by-key(root-r, 2)
+h1x, h1y, h1w, _ = cs-rect(h1)
+r96 = h1y == 1200 && h1w == 77600
+
+print('L sync={r70}{r71}{r72} edit={r73}')
+print('M horiz={r74}{r75}{r76} vert={r77}')
+print('N gap-pad={r78}{r79}')
+print('O grow={r80}{r81}{r82} plain={r83}')
+print('P align={r84}{r85}{r86} center={r87}')
+print('Q grid={r88}{r89} defaults={r90}')
+print('R twocol={r91}{r92}{r93} inside={r94}{r95} header={r96}')
+
+; ============================================================================
+; 场景 S：固定尺寸（dv-size）—— 叶子与容器都认，0 = 自动
+; ============================================================================
+root-sz = cmp-root()
+dv-clear()
+psz = dv-form(1, -1)
+lsz = dv-label(2, 'wide', psz)
+dv-size(lsz, 30000, 5000)
+rsz = dv-row(3, psz)
+dv-size(rsz, 20000, 4000)
+dv-lay(rsz, dv-lay-h(), 0, 0)
+dv-label(4, 'x', rsz)
+dv-label(5, 'tail', psz)
+ops-sz = dv-render(root-sz, psz)
+cs-layout(root-sz, 0, 0, 80000, 60000)
+msw, msh = cs-measure(dv-live-by-key(root-sz, 2))
+r97 = msw == 30000 && msh == 5000
+mrw, mrh = cs-measure(dv-live-by-key(root-sz, 3))
+r98 = mrw == 20000 && mrh == 4000
+; 未提示的叶子仍走 intrinsic：'tail' 4 字 = 5600 → 夹到最小 6400
+nrw, nrh = cs-measure(dv-live-by-key(root-sz, 5))
+r99 = nrw == 6400 && nrh == 2400
+szl = dv-live-by-key(root-sz, 2)
+szr = dv-live-by-key(root-sz, 3)
+sz5 = dv-live-by-key(root-sz, 5)
+szx2, szy2, szw2, szh2 = cs-rect(szl)
+szx3, szy3, szw3, szh3 = cs-rect(szr)
+szx5, szy5, _, szh5 = cs-rect(sz5)
+r100 = ops-sz == 4
+r101 = szx2 == 1200 && szy2 == 1200 && szw2 == 30000 && szh2 == 5000
+r102 = szx3 == 1200 && szy3 == 7000 && szw3 == 20000 && szh3 == 4000
+r103 = szx5 == 1200 && szy5 == 11800 && szh5 == 2400
+; 定宽容器内部仍按横向排布（子节点没有溢出容器）
+sz4 = dv-live-by-key(szr, 4)
+szx4, _, szw4, _ = cs-rect(sz4)
+r104 = szx4 >= szx3 && cs-add(szx4, szw4) <= cs-add(szx3, szw3)
+
+; ============================================================================
+; 场景 T：文本对齐（dv-align）—— 0 = 按 kind 默认，1 左 / 2 中 / 3 右
+; ============================================================================
+root-al = cmp-root()
+dv-clear()
+pal = dv-form(1, -1)
+lal = dv-label(2, 'hello', pal)
+dv-align(lal, dv-align-right())
+bal = dv-button(3, 'hi', pal)
+dv-align(bal, dv-align-left())
+mal = dv-label(4, 'mid', pal)
+dv-align(mal, dv-align-center())
+dv-label(5, 'z', pal)
+dv-button(6, 'q', pal)
+ops-al = dv-render(root-al, pal)
+cs-layout(root-al, 0, 0, 80000, 60000)
+r105 = cs-align-of(dv-live-by-key(root-al, 2), C-LABEL) == A-RIGHT
+r106 = cs-align-of(dv-live-by-key(root-al, 3), C-BUTTON) == A-LEFT
+r107 = cs-align-of(dv-live-by-key(root-al, 4), C-LABEL) == A-CENTER
+; 未提示时复刻旧渲染：label 左对齐、button 居中
+r108 = cs-align-of(dv-live-by-key(root-al, 5), C-LABEL) == A-LEFT && cs-align-of(dv-live-by-key(root-al, 6), C-BUTTON) == A-CENTER
+; 绘制层真的按提示落字：右对齐 label 的字起点 = 右缘 - 字宽（'hello' 5 字 = 4000）
+cs-clear()
+cs-paint(root-al)
+nt = cs-scene-count()
+ti = -1
+i = 0
+!! {
+    (i >= nt) -> { ** }
+    (cs-scene-kind(i) == CS-TEXT && cs-scene-t(i) == 'hello') -> { ti = i
+** }
+    i = dv-inc(i)
+}
+ll = dv-live-by-key(root-al, 2)
+llx, _, llw, _ = cs-rect(ll)
+r109 = ti >= 0 && cs-scene-x(ti) == cs-sub(cs-add(llx, llw), 4000)
+; 左对齐 button 的字起点 = 矩形左缘（默认居中的覆盖生效）
+bi = -1
+i = 0
+!! {
+    (i >= nt) -> { ** }
+    (cs-scene-kind(i) == CS-TEXT && cs-scene-t(i) == 'hi') -> { bi = i
+** }
+    i = dv-inc(i)
+}
+r110 = bi >= 0 && cs-scene-x(bi) == llx
+print('S size={r97}{r98}{r99} rect={r100}{r101}{r102}{r103} inside={r104}')
+print('T align={r105}{r106}{r107}{r108} paint={r109}{r110}')
+
+all-ok = r70 && r71 && r72 && r73 && r74 && r75 && r76 && r77 && r78 && r79 && r80 && r81 && r82 && r83 && r84 && r85 && r86 && r87 && r88 && r89 && r90 && r91 && r92 && r93 && r94 && r95 && r96 && r97 && r98 && r99 && r100 && r101 && r102 && r103 && r104 && r105 && r106 && r107 && r108 && r109 && r110
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DV-LAYOUT TESTS PASSED') }
+(!all-ok) -> { print('DV-LAYOUT TESTS FAILED') }

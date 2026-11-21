@@ -19,7 +19,11 @@ ent-new = (kind i64) (h i64) {
 }
 
 ent-get = (h i64) (v i64) {
-    v = ENT-VALUE[h]
+    v = ENT-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ent-set = (h i64, x i64) {
@@ -93,7 +97,11 @@ el-child-at = (parent i64, i i64) (c i64) {
     cnt = EL-COUNT[parent]
     (i >= 0 && i < cnt) -> {
         h = EL-HEAD[parent]
-        c = CHILD[h + i]
+        c = CHILD[h + i]: {
+            ok -> it
+
+            -> -1
+        }
     }
 }
 

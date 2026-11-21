@@ -36,11 +36,16 @@ keymap-resolve = (key i64) (a i64) {
     (i < n) {
         k = KM-KEY[i]
         (k == key) -> {
-            a = KM-ACTION[i]
+            a = KM-ACTION[i]: {
+                ok -> it
+
+                -> A-NONE
+            }
         }
         ni = i + 1: {
             ok -> it
-            err -> i
+
+            -> i
         }
         i = ni
     }
@@ -80,7 +85,8 @@ focus-cycle = (dir i64) (h i64) {
             }
             nj = j + 1: {
                 ok -> it
-                err -> j
+
+                -> j
             }
             j = nj
         }
@@ -88,7 +94,11 @@ focus-cycle = (dir i64) (h i64) {
         next = idx + dir
         (next < 0) -> { next = n - 1 }
         (next >= n) -> { next = 0 }
-        h = FOCUS-RING[next]
+        h = FOCUS-RING[next]: {
+            ok -> it
+
+            -> -1
+        }
         FOCUS-ID = h
     }
 }
@@ -111,7 +121,11 @@ ctx-set-int = (slot i64, v i64) {
 }
 
 ctx-get = (slot i64) (v i64) {
-    v = CTX[slot]
+    v = CTX[slot]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; ctx-begin：一帧的状态写入（坐标先由顶层转成定点 i64）

@@ -1,0 +1,191 @@
+; ============================================================================
+; noui 窗口端到端表单 demo（阶段 9）—— 用 src/app.no 装配层串起全流程
+;
+; 流水线：app-init（SDL/窗口/字体/根组件）
+;   -> cmp-* 组装表单组件树（输入框 / 下拉 / 滑杆 / 勾选 / 开关 / 按钮 / 弹窗）
+;   -> cs-layout 布局 -> cs-paint 摊平 Scene -> app-frame 上屏
+;   -> app-poll 事件泵：hover 高亮 / 点击 / 键盘输入 / ESC 退出
+;
+; 命令式写法：顶层标量存表单状态，主循环直接读写，无声明式视图层。
+;
+; 退出：ESC / 窗口关闭 / 按 q / 帧数上限（FORM-MAX-FRAMES，防挂死）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-form.no
+; ============================================================================
+# /noui/src/app
+
+; ---- 键盘字符表（顶层 str 全局）----
+FORM-AZ = 'abcdefghijklmnopqrstuvwxyz'
+FORM-DIG = '0123456789'
+
+; 帧数上限：0 = 不限；默认 900 帧（约 15s）后自动收尾，保证生命周期完整
+FORM-MAX-FRAMES = 900
+
+; ---- 表单状态（顶层标量）----
+form-frames = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui form')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui form')
+hint = cmp-label('click / type / ESC quit')
+inp = cmp-input('name')
+sel = cmp-select('type')
+o0 = select-add-option(sel, 'personal')
+o1 = select-add-option(sel, 'team')
+o2 = select-add-option(sel, 'enterprise')
+sld = cmp-slider(0, 100)
+cmp-set-value(sld, 40)
+chk = cmp-checkbox('agree')
+sw = cmp-switch()
+cmp-flag-set(sw, F-CHECKED)
+submit = cmp-button('submit')
+reset = cmp-button('reset')
+
+cmp-add-child(root, title)
+cmp-add-child(root, inp)
+cmp-add-child(root, sel)
+cmp-add-child(root, sld)
+cmp-add-child(root, chk)
+cmp-add-child(root, sw)
+cmp-add-child(root, submit)
+cmp-add-child(root, reset)
+cmp-add-child(root, hint)
+
+; 弹窗（叠加层，不进 root；open 时才画 / 才参与命中）
+dlg = cmp-dialog('submit')
+dlab = cmp-label('summary')
+dok = cmp-button('ok')
+dcancel = cmp-button('cancel')
+cmp-add-child(dlg, dlab)
+cmp-add-child(dlg, dok)
+cmp-add-child(dlg, dcancel)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover 高亮 ----
+    (t == 3) -> {
+        mxf = fx(mx)
+        myf = fx(my)
+        app-hover(root, mxf, myf)
+    }
+
+    ; ---- 左键按下 ----
+    (t == 2) -> {
+        cxf = fx(mx)
+        cyf = fx(my)
+
+        ; 弹窗开着时先点弹窗；点不中则不穿透到主树
+        hit = -1
+        (dialog-is-open(dlg)) -> {
+            hit = cs-hit(dlg, cxf, cyf)
+            (hit < 0) -> { hit = -2 }
+        }
+        (hit == -1) -> { hit = cs-hit(root, cxf, cyf) }
+
+        ; 输入框聚焦 / 失焦
+        (hit == inp) -> { input-focus(inp, true) }
+        (hit != inp) -> { input-focus(inp, false) }
+
+        ; 弹窗按钮
+        (hit == dok) -> {
+            dialog-confirm(dlg)
+            cmp-set-text(dlab, 'submitted!')
+        }
+        (hit == dcancel) -> { dialog-close(dlg) }
+
+        ; 下拉：点开 / 收起；展开时把命中的选项句柄翻译回下标
+        (hit == sel) -> {
+            (cmp-has(sel, F-OPEN)) -> { select-close(sel) }
+            (!cmp-has(sel, F-OPEN)) -> { select-open(sel) }
+        }
+        (cmp-has(sel, F-OPEN)) -> {
+            oi = select-index-of(sel, hit)
+            (oi >= 0) -> { select-choose(sel, oi) }
+        }
+        (hit == sld) -> {
+            slx, sly, slw, slh = cs-rect(sld)
+            dv = slider-value-at(sld, cxf, slx, slw)
+            slider-set(sld, dv)
+        }
+        (hit == chk) -> { checkbox-toggle(chk) }
+        (hit == sw) -> { switch-toggle(sw) }
+        (hit == submit) -> { dialog-open(dlg) }
+        (hit == reset) -> {
+            input-clear(inp)
+            cmp-set-value(sel, -1)
+            cmp-set-text(sel, '')
+            select-close(sel)
+            slider-set(sld, 40)
+            cmp-flag-clear(chk, F-CHECKED)
+            cmp-flag-set(sw, F-CHECKED)
+        }
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (cmp-has(inp, F-FOCUSED)) -> {
+            (k == 8) -> { input-backspace(inp) }
+            (k == 13) -> { dialog-open(dlg) }
+            (k == 32) -> { input-append(inp, ' ') }
+            (k >= 48) -> {
+                (k <= 57) -> {
+                    i0 = cs-sub(k, 48)
+                    ch = FORM-DIG.slice(i0, cs-inc(i0))
+                    input-append(inp, ch)
+                }
+            }
+            (k >= 97) -> {
+                (k <= 122) -> {
+                    i0 = cs-sub(k, 97)
+                    ch = FORM-AZ.slice(i0, cs-inc(i0))
+                    input-append(inp, ch)
+                }
+            }
+        }
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    nm = input-value(inp)
+    tp = cmp-text(sel)
+    ct = slider-value(sld)
+    ag = checkbox-checked(chk)
+    nt = switch-on(sw)
+    cmp-set-text(dlab, 'name={nm} type={tp} count={ct}')
+    cmp-set-text(hint, 'agree={ag} notify={nt}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-layout(dlg, 16000, 12000, 24000, 17000)
+    cs-clear()
+    cs-paint(root)
+    (dialog-is-open(dlg)) -> { cs-paint(dlg) }
+    app-frame()
+    app-delay(16)
+
+    form-frames = cs-inc(form-frames)
+    (FORM-MAX-FRAMES > 0) -> {
+        (form-frames >= FORM-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+print('bye')
+
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

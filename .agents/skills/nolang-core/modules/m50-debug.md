@@ -205,7 +205,7 @@ The new test is now a regression guard. Keep it in the same file as other tests 
 
 ## Build Artifacts
 
-Only two binaries are needed during development. **Do not build into other locations** (e.g. `/tmp/*.go` programs that import the local module) — this fails with `package …: go.mod file not found`.
+Only two binaries are needed during development. **Do not build into other locations** (e.g. scratch `.go` programs outside the module trying to import it) — this fails with `package …: go.mod file not found`. Scratch files, if any, go under project-local `tmp/`.
 
 ```bash
 # from project root
@@ -214,6 +214,34 @@ make lsp    # builds vscode-nolang/server/lsp
 ```
 
 Both targets run `cd src && go build …`. The Go test suite (`go test ./...`) does not require rebuilding these binaries — it runs the source directly. Only invoke `make` when you need to actually use the `no` or `lsp` binary (e.g. to test the LSP server end-to-end).
+
+## Temporary / Scratch Files
+
+Put **all** temporary artifacts — probe `.no` files, baseline binaries, AST/IR dumps, scratch Go files, output of `no fmt -d` redirects — under the project-local `tmp/` directory (`<project-root>/tmp/`), **not** the OS system temp (`/tmp`, `$TMPDIR`).
+
+Why:
+- The system temp can be wiped at any time (reboots, cleanup tools, other sessions), silently deleting files you still need mid-debug.
+- Sandboxed tool calls are often restricted to the workspace; files in `/tmp` are shared across projects and can hit cross-project permission/collision issues. Project-local `tmp/` stays inside the permission boundary.
+- `tmp/` is git-ignored, so scratch artifacts never pollute the repo.
+
+```bash
+mkdir -p tmp
+# probe file
+printf '...' > tmp/probe.no
+./bin/no run tmp/probe.no
+# baseline binary for A/B triage
+make no && cp bin/no tmp/no-baseline
+```
+
+Note: design/canonical artifacts do **not** belong here — put design docs in `docs/design/`. `tmp/` is only for disposable debug scratch.
+
+### Cleaning up `tmp/`
+
+`tmp/` is shared by every session/person working in this repo. **Only delete files you created yourself.** Never clean up, overwrite, or rename files created by others (other agents, other sessions, teammates) — even if they look like disposable scratch. If ownership is unclear, leave the file alone.
+
+Namespace your own scratch files so ownership is obvious (e.g. `tmp/<task>-probe.no`) and restrict any bulk delete to your own namespace. When in doubt, don't delete — a leftover file in git-ignored `tmp/` is harmless.
+
+Worktrees follow the same rule plus a naming/meta convention — see `.agents/rules/nolang-red-lines.md` §1〈Worktree 约定〉.
 
 ## Debugging Tips
 
@@ -266,8 +294,8 @@ compiler bug**. Rule these out before filing anything as a codegen defect.
    comparison and emits invalid IR such as `icmp eq i64 <ptr>, <structvalue>`.
 
 **Triage order when a probe misbehaves:** first run the same file with a known-good
-baseline binary (e.g. `make no` from an older commit checked out in `/tmp/no-head`).
-If the baseline behaves identically, the cause is either long-standing or — far more
+baseline binary (e.g. build `bin/no` from a baseline worktree, then copy it under
+project-local `tmp/` such as `tmp/no-head`). If the baseline behaves identically, the cause is either long-standing or — far more
 likely for a freshly written probe — a syntax error on your side. Re-read
 `.agents/skills/nolang-syntax/SKILL.md` before touching codegen.
 
@@ -344,7 +372,7 @@ This follows Nolang's compiler semantics where the hidden `self` parameter enabl
 
 ## Anti-Patterns
 
-- Writing a throwaway `go run /tmp/foo.go` to import the local package — fails due to `go.mod`. Use the test file instead.
+- Writing a throwaway standalone `go run` program to import the local package instead of adding a proper test file — use a test file in the target package instead; keep any scratch file under `tmp/`.
 - Editing the user's `.no` file as the "fix" — that only papers over the real bug. Fix the compiler.
 - Deleting the regression test "to clean up" — defeats the purpose.
 - Trusting the editor display of a file you just edited — verify with `sed -n` or `od -c` from a terminal.

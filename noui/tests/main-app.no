@@ -1,0 +1,248 @@
+; ============================================================================
+; noui — 组件层 + 场景层 + SDL3 后端的可运行纵切面（命令式）
+;
+; 流水线：组件树（components.no）
+;   -> cs-layout 布局（cmp-scene.no）
+;   -> cs-paint  摊平成 Scene 指令池（rect / fill / text）
+;   -> app-draw-scene 逐条送 SDL shim 绘制
+;
+; 交互：mousemove 命中测试置 hover，左键点击更新组件状态，ESC 退出。
+; ============================================================================
+
+; ---- 平台 FFI（C shim） ----
+#{c}
+_noui-init = () (ok i32)
+#{c}
+_noui-window-create = (title str, w i32, h i32) (handle i64)
+#{c}
+_noui-quit = () ()
+#{c}
+_noui-begin-frame = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-set-color = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-text = (x f64, y f64, text str) ()
+#{c}
+_noui-font-init = (path str, size f64) (ok i32)
+#{c}
+_noui-font-draw = (x f64, y f64, r i32, g i32, b i32, a i32, text str) ()
+#{c}
+_noui-end-frame = () ()
+#{c}
+_noui-poll = () (e i64)
+#{c}
+_noui-should-quit = () (yes i32)
+#{c}
+_noui-delay = (ms i32) ()
+#{c}
+_noui-version = () (v str)
+
+# /noui/src/cmp-scene
+
+; 字体是否可用（1=TTF 渲染，0=SDL DebugText 回退）
+APP-FONT []i64 = with-len(1)
+
+; ============================================================================
+; 颜色与坐标工具
+; ============================================================================
+col-r = (c i64) (v i32) {
+    v = (c >> 24) & 0xFF
+}
+col-g = (c i64) (v i32) {
+    v = (c >> 16) & 0xFF
+}
+col-b = (c i64) (v i32) {
+    v = (c >> 8) & 0xFF
+}
+
+; 像素（f64）-> 定点（i64，1px = 100）
+; f64.to-i64 是 #{buildin}，直接返回 i64（非 option）
+fx = (p f64) (v i64) {
+    m = p * 100.0
+    v = m.to-i64()
+}
+
+; 事件坐标解码
+evt-type = (e i64) (t i64) {
+    t = e & 0xFF
+}
+evt-x = (e i64) (x f64) {
+    raw = (e >> 8) & 0xFFFFFF
+    x = raw.to-f64()
+}
+evt-y = (e i64) (y f64) {
+    raw = (e >> 32) & 0xFFFFFF
+    y = raw.to-f64()
+}
+
+; ============================================================================
+; Scene 指令 -> SDL 绘制
+; ============================================================================
+app-draw-scene = () {
+    n = cs-scene-count()
+    i <- [0..n): {
+        k = cs-scene-kind(i)
+        x = cs-scene-x(i)
+        y = cs-scene-y(i)
+        c = cs-scene-c(i)
+        xf = x.to-f64() / 100.0
+        yf = y.to-f64() / 100.0
+        (k == CS-TEXT) -> {
+            t = cs-scene-t(i)
+            fv = APP-FONT[0]: {
+                ok -> it
+
+                -> 0
+            }
+            (fv == 1) -> {
+                _noui-font-draw(xf, yf, col-r(c), col-g(c), col-b(c), 255, t)
+            }
+            (fv == 0) -> {
+                _noui-set-color(col-r(c), col-g(c), col-b(c), 255)
+                _noui-draw-text(xf, yf, t)
+            }
+        }
+        (k == CS-RECT) -> {
+            w = cs-scene-w(i)
+            ht = cs-scene-h(i)
+            _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), 255)
+        }
+        (k == CS-FILL) -> {
+            w = cs-scene-w(i)
+            ht = cs-scene-h(i)
+            _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), 255)
+        }
+    }
+}
+
+; ============================================================================
+; 启动
+; ============================================================================
+C-BG = 0x1E1E28FF
+WIN-W = 560
+WIN-H = 420
+WIN-WF = 56000
+WIN-HF = 42000
+
+ver = _noui-version()
+print('noui (app) on SDL {ver}')
+ok = _noui-init()
+(ok == 0) -> {
+    print('SDL init failed')
+    return
+}
+handle = _noui-window-create('noui / component app', WIN-W, WIN-H)
+(handle == 0) -> {
+    print('window create failed')
+    _noui-quit()
+    return
+}
+print('window handle: {handle}')
+
+; ---- 字体（失败则回退到 SDL DebugText） ----
+APP-FONT[0] = _noui-font-init('/System/Library/Fonts/Supplemental/Arial.ttf', 16.0)
+(APP-FONT[0] == 0) -> { print('font init failed, fallback to debug text') }
+
+; ---- 组件树 ----
+root = cmp-root()
+title = cmp-label('noui · component scene')
+count-label = cmp-label('count: 0')
+minus = cmp-button('-')
+plus = cmp-button('+')
+prog = cmp-progress()
+cmp-set-value(prog, 0)
+cmp-set-value2(prog, 100)
+chk = cmp-checkbox('enable')
+sw = cmp-switch()
+inp = cmp-input('name')
+hint = cmp-label('hover / click · ESC quit')
+
+cmp-add-child(root, title)
+cmp-add-child(root, count-label)
+cmp-add-child(root, minus)
+cmp-add-child(root, plus)
+cmp-add-child(root, prog)
+cmp-add-child(root, chk)
+cmp-add-child(root, sw)
+cmp-add-child(root, inp)
+cmp-add-child(root, hint)
+
+; 交互状态（顶层标量，主循环直接管理）
+count = 0
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    !! {
+        e = _noui-poll()
+        (e == 0) -> { ** }
+        t = evt-type(e)
+        (t == 3) -> {
+            mx = evt-x(e)
+            my = evt-y(e)
+            mxf = fx(mx)
+            myf = fx(my)
+            cmp-flag-clear(minus, F-HOVERED)
+            cmp-flag-clear(plus, F-HOVERED)
+            hh = cs-hit(root, mxf, myf)
+            (hh == minus) -> { cmp-flag-set(minus, F-HOVERED) }
+            (hh == plus) -> { cmp-flag-set(plus, F-HOVERED) }
+        }
+        (t == 2) -> {
+            cx = evt-x(e)
+            cy = evt-y(e)
+            cxf = fx(cx)
+            cyf = fx(cy)
+            hh = cs-hit(root, cxf, cyf)
+            (hh == minus) -> {
+                nc = count - 1: {
+                    ok -> it
+
+                    -> count
+                }
+                count = nc
+            }
+            (hh == plus) -> {
+                nc = count + 1: {
+                    ok -> it
+
+                    -> count
+                }
+                count = nc
+            }
+            (hh == chk) -> {
+                (cmp-has(chk, F-CHECKED)) -> { cmp-flag-clear(chk, F-CHECKED) }
+                (!cmp-has(chk, F-CHECKED)) -> { cmp-flag-set(chk, F-CHECKED) }
+            }
+            (hh == sw) -> {
+                (cmp-has(sw, F-CHECKED)) -> { cmp-flag-clear(sw, F-CHECKED) }
+                (!cmp-has(sw, F-CHECKED)) -> { cmp-flag-set(sw, F-CHECKED) }
+            }
+            (hh == inp) -> { cmp-flag-set(inp, F-FOCUSED) }
+        }
+    }
+    (1 == _noui-should-quit()) -> { ** }
+
+    ; 状态 -> 组件
+    cmp-set-text(count-label, 'count: {count}')
+    pv = count
+    (pv < 0) -> { pv = 0 }
+    (pv > 100) -> { pv = 100 }
+    cmp-set-value(prog, pv)
+
+    ; 组件树 -> 布局 -> Scene -> SDL
+    cs-layout(root, 0, 0, WIN-WF, WIN-HF)
+    cs-clear()
+    cs-paint(root)
+
+    _noui-begin-frame(col-r(C-BG), col-g(C-BG), col-b(C-BG), 255)
+    app-draw-scene()
+    _noui-end-frame()
+    _noui-delay(16)
+}
+
+_noui-quit()
+print('bye')

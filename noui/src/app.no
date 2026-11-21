@@ -1,0 +1,264 @@
+; ============================================================================
+; noui 应用装配层（阶段 9）—— 窗口 + 组件树 + 场景 + 事件 的装配底座
+;
+; 命令式写法：大写全局状态 + 函数封装 + 定点 i64 坐标（值 = 像素 * 100）。
+; 入口文件只需四步：
+;   app-init('title')        初始化 SDL / 窗口 / 字体 / 根组件（0=成功）
+;   cmp-add-child(app-root(), ...)   组装组件树
+;   cs-layout / cs-paint / app-frame  布局 -> 摊平 -> 上屏
+;   app-poll + app-quit + app-should-quit  事件泵与退出
+;
+; 对外 API：
+;   app-init(title) (ok i64)        初始化；0 成功，-1 失败
+;   app-root() (h i64)              根组件句柄
+;   app-set-bg(c) / app-bg()        窗口底色（0xRRGGBBAA）
+;   app-win-w() / app-win-h()       窗口像素尺寸
+;   app-win-wf() / app-win-hf()     窗口定点尺寸
+;   app-draw-scene()                cs-paint 结果逐条送 SDL
+;   app-frame()                     begin_frame + draw_scene + end_frame
+;   app-poll() (t, x, y)            取一个事件（t=0 无；1 退出 2 左键 3 移动 4 按键）
+;   app-quit() (yes bool)           退出事件标志（t==1 后置位）
+;   app-should-quit() (yes bool)     ESC 请求退出
+;   app-hover(root, px, py) (h)     命中测试 + hover 高亮切换
+;   app-delay(ms) / app-shutdown()
+;   col-r/g/b(c) / fx(px)           颜色通道 / 像素->定点
+; ============================================================================
+
+; ---- 平台 FFI（C shim） ----
+#{c}
+_noui-init = () (ok i32)
+#{c}
+_noui-window-create = (title str, w i32, h i32) (handle i64)
+#{c}
+_noui-quit = () ()
+#{c}
+_noui-begin-frame = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-set-color = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-text = (x f64, y f64, text str) ()
+#{c}
+_noui-font-init = (path str, size f64) (ok i32)
+#{c}
+_noui-font-draw = (x f64, y f64, r i32, g i32, b i32, a i32, text str) ()
+#{c}
+_noui-end-frame = () ()
+#{c}
+_noui-poll = () (e i64)
+#{c}
+_noui-should-quit = () (yes i32)
+#{c}
+_noui-delay = (ms i32) ()
+#{c}
+_noui-version = () (v str)
+
+# /noui/src/cmp-scene
+
+; ---------- 应用状态（大写全局，单声明；可变状态一律用 vec 承载）----------
+APP-BGC []i64 = [0x1E1E28FF]    ; 窗口底色
+APP-FONT []i64 = with-len(1)    ; 1=TTF 可用，0=回退 DebugText
+APP-ROOT []i64 = with-len(1)    ; 根组件句柄
+APP-QUIT []i64 = with-len(1)    ; 1=请求退出
+APP-HOVER []i64 = with-len(1)   ; 当前 hover 句柄（-1 无）
+
+APP-WIN-W = 560
+APP-WIN-H = 420
+APP-WIN-WF = 56000
+APP-WIN-HF = 42000
+
+; ============================================================================
+; 颜色与坐标工具
+; ============================================================================
+col-r = (c i64) (v i32) {
+    v = (c >> 24) & 0xFF
+}
+col-g = (c i64) (v i32) {
+    v = (c >> 16) & 0xFF
+}
+col-b = (c i64) (v i32) {
+    v = (c >> 8) & 0xFF
+}
+
+; 像素（f64）-> 定点（i64，1px = 100）
+; 注意：f64.to-i64 是 #{buildin}，直接返回 i64（非 option），不要再套 match
+fx = (p f64) (v i64) {
+    m = p * 100.0
+    v = m.to-i64()
+}
+
+; ============================================================================
+; 状态读写
+; ============================================================================
+app-root = () (h i64) {
+    x = APP-ROOT[0]: {
+        ok -> it
+
+        -> 0
+    }
+    h = x
+}
+app-set-bg = (c i64) {
+    APP-BGC[0] = c
+}
+app-bg = () (c i64) {
+    x = APP-BGC[0]: {
+        ok -> it
+
+        -> 0x1E1E28FF
+    }
+    c = x
+}
+app-win-w = () (w i64) {
+    w = APP-WIN-W
+}
+app-win-h = () (h i64) {
+    h = APP-WIN-H
+}
+app-win-wf = () (w i64) {
+    w = APP-WIN-WF
+}
+app-win-hf = () (h i64) {
+    h = APP-WIN-HF
+}
+app-quit = () (yes bool) {
+    x = APP-QUIT[0]: {
+        ok -> it
+
+        -> 0
+    }
+    yes = x != 0
+}
+
+; ESC 键请求退出（noui_poll 置位后返回 true）
+app-should-quit = () (yes bool) {
+    v = _noui-should-quit(): {
+        ok -> it
+
+        -> 0
+    }
+    yes = v != 0
+}
+
+; ============================================================================
+; 初始化 / 关闭
+; ============================================================================
+app-init = (title str) (ok i64) {
+    APP-QUIT[0] = 0
+    APP-HOVER[0] = -1
+    v = _noui-version()
+    print('noui on SDL {v}')
+    r = _noui-init()
+    (r == 0) -> {
+        print('SDL init failed')
+        ok = -1
+        return
+    }
+    h = _noui-window-create(title, APP-WIN-W, APP-WIN-H)
+    (h == 0) -> {
+        print('window create failed')
+        _noui-quit()
+        ok = -1
+        return
+    }
+    print('window handle: {h}')
+    APP-FONT[0] = _noui-font-init('/System/Library/Fonts/Supplemental/Arial.ttf', 16.0)
+    (APP-FONT[0] == 0) -> { print('font init failed, fallback to debug text') }
+    APP-ROOT[0] = cmp-root()
+    ok = 0
+}
+
+app-shutdown = () {
+    _noui-quit()
+}
+app-delay = (ms i32) {
+    _noui-delay(ms)
+}
+
+; ============================================================================
+; 事件泵：取一个事件，解码类型与像素坐标；退出事件置 APP-QUIT
+; ============================================================================
+app-poll = () (t i64, x f64, y f64) {
+    t = 0
+    x = 0.0
+    y = 0.0
+    e = _noui-poll()
+    (e == 0) -> return
+    t = e & 0xFF
+    rx = (e >> 8) & 0xFFFFFF
+    ry = (e >> 32) & 0xFFFFFF
+    x = rx.to-f64()
+    y = ry.to-f64()
+    (t == 1) -> { APP-QUIT[0] = 1 }
+}
+
+; ============================================================================
+; 命中 + hover 高亮
+; ============================================================================
+app-hover = (root i64, px i64, py i64) (h i64) {
+    hh = cs-hit(root, px, py)
+    prev = APP-HOVER[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (prev >= 0) -> {
+        (prev != hh) -> { cmp-flag-clear(prev, F-HOVERED) }
+    }
+    (hh >= 0) -> { cmp-flag-set(hh, F-HOVERED) }
+    APP-HOVER[0] = hh
+    h = hh
+}
+
+; ============================================================================
+; Scene 指令 -> SDL 绘制
+; ============================================================================
+app-draw-scene = () {
+    n = cs-scene-count()
+    i <- [0..n): {
+        k = cs-scene-kind(i)
+        x = cs-scene-x(i)
+        y = cs-scene-y(i)
+        c = cs-scene-c(i)
+        xf = x.to-f64() / 100.0
+        yf = y.to-f64() / 100.0
+        (k == CS-TEXT) -> {
+            t = cs-scene-t(i)
+            fv = APP-FONT[0]: {
+                ok -> it
+
+                -> 0
+            }
+            (fv == 1) -> {
+                _noui-font-draw(xf, yf, col-r(c), col-g(c), col-b(c), 255, t)
+            }
+            (fv == 0) -> {
+                _noui-set-color(col-r(c), col-g(c), col-b(c), 255)
+                _noui-draw-text(xf, yf, t)
+            }
+        }
+        (k == CS-RECT) -> {
+            w = cs-scene-w(i)
+            ht = cs-scene-h(i)
+            _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), 255)
+        }
+        (k == CS-FILL) -> {
+            w = cs-scene-w(i)
+            ht = cs-scene-h(i)
+            _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), 255)
+        }
+    }
+}
+
+; 一帧：清屏底色 -> 绘制 Scene -> present
+app-frame = () {
+    c = APP-BGC[0]: {
+        ok -> it
+
+        -> 0x1E1E28FF
+    }
+    _noui-begin-frame(col-r(c), col-g(c), col-b(c), 255)
+    app-draw-scene()
+    _noui-end-frame()
+}

@@ -1,0 +1,644 @@
+; ============================================================================
+; noui 窗口端到端声明式 demo（阶段 10~22）—— src/dv.no 视图层 + src/dv-app.no 装配层
+;
+; 与 tests/main-form.no 的对照：
+;   main-form：命令式，顶层标量存状态，主循环直接 cmp-add-child / cmp-set-*，
+;             事件靠 key 的 if-else 链翻译；
+;   main-dv  ：声明式，整个 main 只有几行 ——
+;       1) dva-run(DEMO, title, 900) 接管主循环（轮询 / 命中 / 归约 / 焦点 / 键盘 /
+;          重建视图 / 调和 / 布局 / 上屏），应用只按名提供三个回调：
+;       2) dv-app-view()   把状态重建成一棵纯数据视图树（结构 + 行为 + 布局 + 尺寸 + 对齐）；
+;       3) dv-app-reduce() 把视图动作归约进状态池（dv-apply）；
+;       4) dv-app-click()  处理归约表达不了的组件侧动作（select 收起 / 滑杆几何 / reset）。
+;     组件对象跨帧复用，输入框文本 / 焦点不丢；结构变化走最小增删；
+;     列表用 dv-repeat-labels-n 按状态长度增量增删；两栏用 dv-lay / dv-size 声明；
+;     列表项也是数据：dv-repeat-items 把「文案 / 动作 / 载荷」的平行数组映射成 n 行，
+;     点任意一行 = 删掉这一行（载荷 = 行号），不用再手写 key 的 if-else 链；
+;     样式也是数据：dv-theme-set 调 9 色调色板 + dv-variant 变体（主色 / 次要 / 幽灵 / 危险），
+;     hover / 焦点描边 / 勾选 / 轨道 / 浮层 / 输入底色全部跟着主题走。
+;
+; 阶段 15 加的声明式弹层：
+;     模态对话框：dv-on-overlay() 把 C-DIALOG 标成叠加层 —— 不参与流布局、在窗口矩形
+;               内居中、命中时先于其它子节点（点不穿）、绘制时最后画（盖在最上面）。
+;               「开关」就是状态槽的 1/0：为 1 时视图建这个节点，为 0 时根本不存在。
+;
+; 阶段 18 加的声明式禁用态：
+;     「禁用」就是 flags 少一个 DV-F-EN（dv-disabled() = VIS，保留可见）。
+;     视图每帧读状态重建，所以「行数到上限 -> add row 禁用」「行数为 0 -> del row 禁用」
+;     这类派生不需要额外的状态槽。与 dv-cond 的区别：cond 是「不存在」，禁用是
+;     「在原地但点不动」—— 绘制画成灰色，点击不出动作（dv-dispatch 拦掉），
+;     快捷键与焦点同样尊重它；但**命中仍有效**，所以 tooltip 能解释禁用原因。
+;     demo 里鼠标停在禁用的 add row 上会浮出「at the row cap」。
+;
+; 阶段 17 加的声明式 hover 提示：
+;     hover 也是状态：dv-hover(node, slot) 声明「我被 hover 时把 1 写进状态槽」，
+;               装配层每帧按最近布局的命中 key 归约（dva-sync-hover），视图据此建 tooltip。
+;     tooltip 是非模态叠加层：dv-on-tip() = VIS|EN|PASS|OVL —— 仍最后画、自身可被命中，
+;               但没接住点击就继续找下面的内容（点得穿），不像对话框那样挡住整屏。
+;               demo 里鼠标停在「dialog」按钮上，它下面浮出说明文字。
+;
+; 阶段 19 加的声明式标签页：
+;     dv-tabs(parent, active, slot, labels, base) 一次建出「C-TAB 标题条 + n 个标题
+;     + 内容容器」，返回内容容器。当前页就是状态槽（视图每帧读出来当 active），
+;     点第 i 个标题 = SET slot = i —— 复用现有归约，主循环一行没改。
+;     选中态用 flags（dv-on-sel）表达；调和末尾再把 active 同步到 C-TAB 自己的
+;     CMP-VALUE，因为 cs-paint-tab 画高亮读的是 tab-active(h)。
+;     页面内容按 active 条件挂进返回的容器：切页 = 换子树，容器同 key 复用。
+;     越界的 active 在 dv-tabs 里收敛到最后一页，避免标题条悄悄跳回第 0 页。
+;     demo 右栏底部有一条三页标签。
+;
+; 阶段 20 加的声明式多选（列表项的 flags 也是数据）：
+;     dv-repeat-items 原来把每项的 flags 硬编码成 dv-on()，所以「哪些行选中 /
+;     哪些行禁用」没法由状态推导。阶段 20 补 dv-repeat-items-f（多一个 flags
+;     平行数组）与 dv-sel-flags(S, slot0, n)（状态槽非 0 -> dv-on-sel()）。
+;     于是多选列表就是：dv-repeat-items-f(..., dv-sel-flags(DEMO, D-SEL0, 3))，
+;     每项挂 (DV-A-TOGGLE, 自己的槽) —— 点一项 = 翻自己的槽，视图下一帧读出来
+;     重建 flags，活树选中态跟着走。全选 / 清空是「一次写 N 个槽」，归约器表达不了，
+;     所以走 DV-A-CLICK + 显式命令 id（和 reset 同一套路）。
+;     demo 右栏顶部就是这条三行多选 + all / none 两个按钮。
+;
+; 阶段 21 加的声明式下拉（选项 / 选中 / 展开都是数据）：
+;     命令式用法要 cmp-select + 逐个 select-add-option + select-open/close +
+;     select-choose 四步；声明式层补 dv-select-from(S, parent, key, selslot,
+;     openslot, labels, ph, base) 一次建出「字段 + n 个常驻选项」：
+;       字段挂 DV-A-TOGGLE(openslot)（点字段 = 展开 / 收起）；
+;       每个选项挂 DV-A-CHOOSE(selslot) —— 新动作码，dv-apply 一次写两个槽
+;       （选中下标 + 清展开槽），选项的 value = 下标、value2 = 展开槽正好是操作数；
+;       字段文案 = labels[S[selslot]]（未选 / 越界 = 空 -> 显示占位符）。
+;     选项常驻（不条件挂载），收起时靠 cs-hit 的 C-SELECT 分支不可命中，
+;     所以展开 / 收起是零结构操作。
+;     demo 左栏的下拉（原来手写 C-SELECT + 3 个选项 + DV-A-OPEN/DV-A-SET）
+;     换成这一行，于是它第一次真的能展开、能选。
+;
+; 阶段 22 加的声明式通知（让「时间」进状态）：
+;     前面所有状态都是「应用写了什么就是什么」，通知不一样 —— 它自己会过期。
+;     dv-toast-alive(S, slot, ttl) 拿 dv-frame() 和槽里存的**触发帧**比：
+;     t > 0 且 dv-frame() < t + ttl 才活着（0 = 没有通知，帧计数从 1 起）。
+;     dv-toast(S, parent, key, slot, text, ttl, base) 活着才建整棵子树：
+;       C-POPOVER + dv-on-tip()（非模态叠加层：仍最后画、自身可命中，但点得穿），
+;       里面一个标签 + 一个关闭按钮（DV-A-SET slot = 0 = 立即过期）。
+;     触发按钮本身也是纯视图数据：value = dv-frame()，动作 DV-A-SET(D-TOAST) ——
+;     「什么时候触发」同样是 UI = f(state)，主循环一行没改。
+;     过期不需要定时器、不需要事件：下一帧视图重建时 dv-toast-alive 自己说「没了」，
+;     dv-sync 把那棵子树摘掉（只算被摘掉的直接子节点 = 1 次操作）。
+;     demo 左栏的 notify 按钮点一下，「saved」会在窗口中间停一会儿再自己消失。
+;
+; 阶段 16 加的声明式锚定浮层：
+;     dv-overlay-anchor(node, anchor-key) = 叠加层 + 一个锚点 key —— 布局时按 key 反查
+;              锚点活节点矩形，把浮层放在锚点下方（贴边时翻到上方）并夹紧在父矩形内。
+;              锚点找不到就退化为居中。demo 里是「popover」按钮下拉的菜单。
+;
+; 阶段 13 加的两种声明式写法：
+;     受控输入：dv-bind(input, slot, max) —— 输入框文本就是字符串状态 DV-BIND-T[slot]，
+;               装配层每帧双向同步（敲字 -> 状态；reset 改状态 -> 输入框），
+;               视图用 dv-bound(slot) 读它，所以「输入框里写了什么」也进得了 UI = f(state)。
+;     快捷键  ：dv-hotkey(node, keycode, act, pay) —— 无输入焦点时按键 = 点了那个节点，
+;               走同一条归约路径（这里是 r = 重置）。
+;
+; 退出：ESC / 窗口关闭 / 按 q / 帧数上限（防挂死）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-dv.no
+; ============================================================================
+# /noui/src/dv-app
+# /noui/src/dv
+
+; ---- 状态槽位：一帧状态集中在一个数组池里（规避标量全局写回缺陷）----
+; 帧数与累计调和操作数不再占状态槽 —— dva-run 自己维护（dva-frames() / dva-ops()）。
+DEMO []i64 = with-len(17)
+D-AGREE = 0      ; 勾选
+D-NOTIFY = 1     ; 开关
+D-COUNT = 2      ; 滑杆值
+D-CHOICE = 3     ; 下拉选中项
+D-SHOW = 4       ; 条件块开关
+D-LIST = 5       ; 重复行数（0..3）
+D-CLICKS = 6     ; 显式命令命中计数（归约命中由 dva-clicks() 统计）
+D-DIALOG = 7     ; 模态对话框开关（1 = 视图里存在那个叠加层节点）
+D-POP = 8        ; 锚定浮层开关（1 = 视图里存在那个锚在触发按钮下的浮层节点）
+D-TIP = 9        ; hover 提示开关（1 = 鼠标正停在 key=19 上，视图里出现那个 tooltip）
+D-TIP2 = 10      ; 禁用原因提示（1 = 鼠标停在禁用的 add row 上）
+D-TAB = 11       ; 标签页当前页（0..2，点标题 = SET 本槽）
+D-SEL0 = 12      ; 多选列表的选中位（阶段 20）：D-SEL0+i 非 0 = 第 i 项选中
+D-SOPEN = 15     ; 下拉展开槽（阶段 21）：非 0 = 视图里那个 C-SELECT 是展开的
+D-TOAST = 16     ; 通知触发帧（阶段 22）：0 = 没有通知；非 0 = dv-frame() 触发于哪一帧
+
+; 通知存活时长（帧）：dv-toast-alive 判活用的 ttl
+DEMO-TOAST-TTL = 180
+
+; 受控输入的字符串状态槽（DV-BIND-T 的下标，与上面的 i64 状态池分开）
+D-TEXT = 0
+
+DEMO-MAX-FRAMES = 900
+DEMO-MAX-ROWS = 3    ; 行数上限（add row 的 DELTA value2 也是它）
+
+; 下拉选项文案（阶段 21：声明式下拉的选项数组，选项 key = base+1+i）
+DEMO-OPTS []str = with-len(3)
+DEMO-OPTS[0] = 'alpha'
+DEMO-OPTS[1] = 'beta'
+DEMO-OPTS[2] = 'gamma'
+
+; 重复行文案（顶层 str 数组全局；行数由 D-LIST 决定）
+DEMO-ROWS []str = with-len(3)
+DEMO-ROWS[0] = 'row alpha'
+DEMO-ROWS[1] = 'row beta'
+DEMO-ROWS[2] = 'row gamma'
+
+; 列表项的平行数组（阶段 14）：文案 = DEMO-ROWS，动作统一 DV-A-ITEM，载荷 = 行号。
+; 点第 i 行 -> dv-repeat-items 挂上 (DV-A-ITEM, i)，dv-app-click 按行号移位删除。
+; values 给空数组：所有项 value 走默认 0（短数组补默认的语义）。
+DEMO-ROW-ACTS []i64 = with-len(3)
+DEMO-ROW-ACTS[0] = 9
+DEMO-ROW-ACTS[1] = 9
+DEMO-ROW-ACTS[2] = 9
+DEMO-ROW-PAYS []i64 = with-len(3)
+DEMO-ROW-PAYS[0] = 0
+DEMO-ROW-PAYS[1] = 1
+DEMO-ROW-PAYS[2] = 2
+DEMO-ROW-VALS []i64 = with-len(0)
+
+; 标签页标题（阶段 19）：dv-tabs 的 labels 参数
+DEMO-TABS []str = with-len(3)
+DEMO-TABS[0] = 'alpha'
+DEMO-TABS[1] = 'beta'
+DEMO-TABS[2] = 'gamma'
+
+; 多选列表（阶段 20）：文案 = DEMO-SEL，选中位 = DEMO[D-SEL0+i]，
+; 每项挂 (DV-A-TOGGLE, D-SEL0+i) —— 点一项 = 翻自己的槽。
+; values 给空数组：所有项 value 走默认 0（短数组补默认的语义）。
+DEMO-SEL []str = with-len(3)
+DEMO-SEL[0] = 'apple'
+DEMO-SEL[1] = 'banana'
+DEMO-SEL[2] = 'cherry'
+DEMO-SEL-N = 3
+DEMO-SEL-ACTS []i64 = with-len(3)
+DEMO-SEL-ACTS[0] = 7
+DEMO-SEL-ACTS[1] = 7
+DEMO-SEL-ACTS[2] = 7
+DEMO-SEL-PAYS []i64 = with-len(3)
+DEMO-SEL-PAYS[0] = 12
+DEMO-SEL-PAYS[1] = 13
+DEMO-SEL-PAYS[2] = 14
+DEMO-SEL-VALS []i64 = with-len(0)
+
+; ---- 动作载荷：语义命令 id（DV-A-CLICK + 自定义 payload，应用层自定）----
+; 绝大多数交互是状态归约（DV-A-SET / TOGGLE / DELTA），归约器表达不了的
+; （一次写多个槽）才回落到这里，由一个显式命令 id 承担。
+DEMO-CMD-RESET = 1
+DEMO-CMD-ALL = 2     ; 全选（一次写 N 个槽，归约器表达不了 -> 显式命令）
+DEMO-CMD-NONE = 3    ; 清空
+
+; 动作命中计数 +1（返回新值，便于打印）
+dv-demo-bump = () (n i64) {
+    c = DEMO[D-CLICKS]: {
+        ok -> it
+
+        -> 0
+    }
+    n = dv-add(c, 1)
+    DEMO[D-CLICKS] = n
+}
+
+; 多选列表的选中数（阶段 20）：把「选中位」折成一个数，给页头回显用。
+; 也是「UI = f(state)」的一部分 —— 页头那行 sel=N 完全是状态的函数。
+dv-demo-sel-count = () (n i64) {
+    n = 0
+    i = 0
+    !! {
+        (i >= DEMO-SEL-N) -> { ** }
+        v = DEMO[dv-add(D-SEL0, i)]: {
+            ok -> it
+
+            -> 0
+        }
+        (v != 0) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+
+; 选项文案取用（阶段 21）：DEMO-OPTS[i] 是 ?str，要 match 解包。
+; 右栏单选组和左栏下拉共用这一份选项数据 —— 标签也是数据。
+dv-demo-opt = (i i64) (s str) {
+    s = DEMO-OPTS[i]: {
+        ok -> it
+
+        -> ''
+    }
+}
+
+; ============================================================================
+; 声明式视图：状态 -> 视图树（长什么样 + 点了意味着什么，都是数据）
+; ============================================================================
+dv-demo-view = () (page i64) {
+    dv-clear()
+
+    ; 先读状态（下标读统一走 match 解包）
+    ag = DEMO[D-AGREE]: {
+        ok -> it
+
+        -> 0
+    }
+    nt = DEMO[D-NOTIFY]: {
+        ok -> it
+
+        -> 0
+    }
+    ct = DEMO[D-COUNT]: {
+        ok -> it
+
+        -> 0
+    }
+    sh = DEMO[D-SHOW]: {
+        ok -> it
+
+        -> 0
+    }
+    nl = DEMO[D-LIST]: {
+        ok -> it
+
+        -> 0
+    }
+    ck = DEMO[D-CLICKS]: {
+        ok -> it
+
+        -> 0
+    }
+    ch = DEMO[D-CHOICE]: {
+        ok -> it
+
+        -> 0
+    }
+    dl = DEMO[D-DIALOG]: {
+        ok -> it
+
+        -> 0
+    }
+    pp = DEMO[D-POP]: {
+        ok -> it
+
+        -> 0
+    }
+    tp = DEMO[D-TIP]: {
+        ok -> it
+
+        -> 0
+    }
+    tt = DEMO[D-TOAST]: {
+        ok -> it
+
+        -> 0
+    }
+    tab = DEMO[D-TAB]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 受控输入的字符串状态（dv-bind 的归约目标）
+    tx = dv-bound(D-TEXT)
+    ; 多选列表的选中数（阶段 20）：页头回显也由状态推导
+    ns = dv-demo-sel-count()
+
+    page = dv-form(1, -1)
+
+    ; 页头（全宽）：标题 / 输入框 / 两行状态摘要
+    ; 标题用 dv-align 声明居中（0 = 按 kind 默认，这里是覆盖）
+    t = dv-label(2, 'noui declarative', page)
+    dv-align(t, dv-align-center())
+    inp = dv-input(3, 'type here', page)
+    dv-bind(inp, D-TEXT, 0)            ; 受控输入：输入框文本 = DV-BIND-T[D-TEXT]
+    dv-label(15, format('agree={ag} notify={nt} count={ct}'), page)
+    dv-label(18, format('clicks={ck} rows={nl} typed={tx} dlg={dl} pop={pp} tip={tp} tab={tab} sel={ns} pick={ch} tst={tt}'), page)
+
+    ; ---- 两栏：布局也是数据（dv-lay / dv-size 挂在视图节点上）----
+    ; 整行吃掉页头以下的剩余高度；左栏定宽 30000（dv-size），右栏吃掉剩余宽度
+    cols = dv-row(90, page)
+    dv-lay(cols, dv-lay-h-grow(), 1600, 0)
+    lc = dv-form(91, cols)
+    dv-size(lc, 30000, 0)
+    rc = dv-fill(92, cols)
+
+    ; 左栏：交互控件。下拉（阶段 21）：选项数组 / 选中 / 展开都是数据 ——
+    ; dv-select-from 一次建出「字段 + 3 个常驻选项」：字段挂 TOGGLE(展开槽)，
+    ; 选项挂 CHOOSE(选中槽)（选中并收起，一次写两个槽）。
+    ; 字段文案由 labels[DEMO[D-CHOICE]] 派生，所以「显示什么」也是状态的函数。
+    dv-select-from(DEMO, lc, 4, D-CHOICE, D-SOPEN, DEMO-OPTS, 'pick', 4)
+
+    ; 滑杆：value = 状态，min/max 走 value2；拖动是 CHANGE 动作（几何换算留命令式）
+    sld = dv-node(C-SLIDER, 8, '', '', 0, ct, 100, dv-on(), lc)
+    dv-act(sld, DV-A-CHANGE, 0)
+
+    ; 勾选框 / 开关 / 条件块：状态 -> flags 位；点击 = TOGGLE 状态槽
+    fa = dv-on()
+    (ag != 0) -> { fa = dv-on-chk() }
+    chk = dv-node(C-CHECKBOX, 9, 'agree', '', 0, 0, 0, fa, lc)
+    dv-act(chk, DV-A-TOGGLE, D-AGREE)
+
+    fn = dv-on()
+    (nt != 0) -> { fn = dv-on-chk() }
+    sw = dv-node(C-SWITCH, 10, '', '', 0, 0, 0, fn, lc)
+    dv-act(sw, DV-A-TOGGLE, D-NOTIFY)
+
+    b11 = dv-button(11, 'toggle extra', lc)
+    dv-variant(b11, dv-var-primary())          ; 变体：主色
+    dv-act(b11, DV-A-TOGGLE, D-SHOW)
+
+    ; 通知（阶段 22）：存活不是布尔，是「触发于哪一帧」。
+    ; value = dv-frame()（建视图时的帧），点击 = SET D-TOAST = 当前帧；
+    ; dv-toast 每帧拿 dv-frame() 和它比，过期就整棵子树不建 —— 没有定时器、没有事件。
+    b77 = dv-node(C-BUTTON, 77, 'notify', '', 0, dv-frame(), 0, dv-on(), lc)
+    dv-variant(b77, dv-var-primary())          ; 变体：主色
+    dv-act(b77, DV-A-SET, D-TOAST)
+
+    ; 行数加减：DELTA（value = 步长，value2 = 上限 DEMO-MAX-ROWS）
+    ; 禁用态也是派生（阶段 18）：视图每帧读状态重建，flags 少一个 DV-F-EN 就禁用 ——
+    ; 绘制画成灰色，点击不出动作（dv-dispatch 拦掉），快捷键与焦点同样尊重它。
+    ; 与 dv-cond 对照：dv-cond 是「不存在」，禁用是「在原地但点不动」。
+    fa = dv-on()
+    (nl >= DEMO-MAX-ROWS) -> { fa = dv-disabled() }
+    fd = dv-on()
+    (nl <= 0) -> { fd = dv-disabled() }
+    b16 = dv-node(C-BUTTON, 16, 'add row', '', 0, 1, 3, fa, lc)
+    dv-variant(b16, dv-var-ghost())            ; 变体：幽灵
+    dv-act(b16, DV-A-DELTA, D-LIST)
+    ; 禁用节点照样能被 hover（阶段 18 有意保留命中）—— 禁用原因就靠 tooltip 解释
+    dv-hover(b16, D-TIP2)
+    b17 = dv-node(C-BUTTON, 17, 'del row', '', 0, -1, 3, fd, lc)
+    dv-variant(b17, dv-var-secondary())        ; 变体：次要
+    dv-act(b17, DV-A-DELTA, D-LIST)
+
+    ; 重置要一次写多个槽，归约器表达不了 —— 保留为一个显式命令
+    b12 = dv-button(12, 'reset', lc)
+    dv-variant(b12, dv-var-danger())           ; 变体：危险
+    dv-act(b12, DV-A-CLICK, DEMO-CMD-RESET)
+    dv-hotkey(b12, 114, DV-A-CLICK, DEMO-CMD-RESET)   ; 快捷键：r = 重置（无输入焦点时）
+
+    ; 开对话框：DV-A-SET 把 D-DIALOG 写成 1 —— 「开关」就是同一个状态槽的 1/0
+    b19 = dv-node(C-BUTTON, 19, 'dialog', '', 0, 1, 0, dv-on(), lc)
+    dv-variant(b19, dv-var-primary())          ; 变体：主色
+    dv-act(b19, DV-A-SET, D-DIALOG)
+    ; hover 也是状态：鼠标停在本按钮上 -> 装配层把 D-TIP 写成 1（dva-sync-hover）
+    dv-hover(b19, D-TIP)
+
+    ; 开锚定浮层：DV-A-SET 把 D-POP 写成 1（锚点就是本按钮的 key=70）
+    b70 = dv-node(C-BUTTON, 70, 'popover', '', 0, 1, 0, dv-on(), lc)
+    dv-variant(b70, dv-var-ghost())            ; 变体：幽灵
+    dv-act(b70, DV-A-SET, D-POP)
+
+    ; 条件节点：状态为 0 时整棵子树不出现在视图里
+    extra = dv-cond(13, sh, lc)
+    (extra >= 0) -> { dv-label(14, 'extra line', extra) }
+
+    ; 重复行：行数由状态决定，key 稳定 -> 只增删差量；
+    ; 每行挂 (DV-A-ITEM, 行号) —— 点任意一行 = 删掉这一行（平行数组 -> 列表项）
+    dv-repeat-items(lc, 80, nl, C-LABEL, DEMO-ROWS, DEMO-ROW-VALS, DEMO-ROW-ACTS, DEMO-ROW-PAYS)
+
+    ; ---- 模态对话框（阶段 15）：开关 = 视图里有没有这个节点 ----
+    ; dv-on-overlay() 标出叠加层：不参与页头的流布局，改为在整个窗口矩形内居中；
+    ; 命中时先于其它子节点、点不穿；绘制时最后画（盖在最上面）。
+    ; 开 = D-DIALOG 为 1（b19 写的）；关 = ok / cancel 把同一个槽写回 0。
+    (dl != 0) -> {
+        dlg = dv-node(C-DIALOG, 60, 'modal', '', 0, 0, 0, dv-on-overlay(), page)
+        dv-node(C-LABEL, 61, 'click outside is blocked', '', 0, 0, 0, dv-on(), dlg)
+        dok = dv-node(C-BUTTON, 62, 'ok', '', 0, 0, 0, dv-on(), dlg)
+        dv-act(dok, DV-A-SET, D-DIALOG)
+        dcan = dv-node(C-BUTTON, 63, 'cancel', '', 0, 0, 0, dv-on(), dlg)
+        dv-act(dcan, DV-A-SET, D-DIALOG)
+    }
+
+    ; ---- 锚定浮层（阶段 16）：叠加层 + 一个锚点 key ----
+    ; dv-overlay-anchor(pop, 70)：布局时按 key=70 反查触发按钮的矩形，把菜单放到它下方，
+    ; 下方放不下就翻到上方，最后夹紧在窗口矩形内；绘制最后画、命中先于其它子节点。
+    ; 锚点找不到（例如触发按钮还没进活树）就退化为窗口内居中。
+    (pp != 0) -> {
+        pop = dv-node(C-POPOVER, 71, 'menu', '', 0, 0, 0, dv-on-overlay(), page)
+        dv-overlay-anchor(pop, 70)
+        dv-node(C-LABEL, 72, 'item one', '', 0, 0, 0, dv-on(), pop)
+        dv-node(C-LABEL, 73, 'item two', '', 0, 0, 0, dv-on(), pop)
+        pclose = dv-node(C-BUTTON, 74, 'close', '', 0, 0, 0, dv-on(), pop)
+        dv-act(pclose, DV-A-SET, D-POP)
+    }
+
+    ; ---- hover 提示（阶段 17）：非模态叠加层（点得穿）+ 锚在触发节点上 ----
+    ; 与上面两档的区别：tooltip 不该挡住点击 —— dv-on-tip() 带 DV-F-PASS，
+    ; 绘制仍最后画、自身仍可被命中，但没接住点击就继续找下面的内容。
+    ; 触发不是「点」，是 hover：D-TIP 由装配层按命中 key 每帧归约（dv-hover(b19, D-TIP)）。
+    (tp != 0) -> {
+        tip = dv-node(C-LABEL, 75, 'modal: click outside is blocked', '', 0, 0, 0, dv-on-tip(), page)
+        dv-overlay-anchor(tip, 19)
+    }
+    ; 禁用原因提示：停在禁用的 add row 上 -> 浮层说明「到上限了」
+    tq = DEMO[D-TIP2]: {
+        ok -> it
+
+        -> 0
+    }
+    (tq != 0) -> {
+        tip2 = dv-node(C-LABEL, 76, 'at the row cap', '', 0, 0, 0, dv-on-tip(), page)
+        dv-overlay-anchor(tip2, 16)
+    }
+
+    ; ---- 通知（阶段 22）：非模态叠加层，存活 = 触发帧 + ttl > 当前帧 ----
+    ; 与 tooltip 同档（dv-on-tip：仍最后画、自身可命中，但点得穿），区别是驱动它的
+    ; 不是 hover 而是时间：建不建只看 dv-toast-alive，所以「过期」是下一帧视图重建的
+    ; 自然结果 —— 槽里存的是触发帧，0 = 没有通知（帧计数从 1 起，不会假活）。
+    dv-toast(DEMO, page, 78, D-TOAST, 'saved', DEMO-TOAST-TTL, 79)
+
+    ; ---- 右栏：组件目录速写（命名构造器 + 新 flags 位）----
+    ; ---- 多选列表（阶段 20）：列表项的 flags 也是数据 ----
+    ; 每项的选中态不是手写 if，而是 dv-sel-flags(DEMO, D-SEL0, 3) —— 状态槽非 0
+    ; 就带 DV-F-SEL，下一帧活树就画成选中（C-RADIO 画 F-SELECTED 时用 CS-TH-OK）。
+    ; 点第 i 项 = TOGGLE 自己的槽（pays 平行数组给出槽号），走的还是同一条归约路径。
+    dv-repeat-items-f(rc, 53, DEMO-SEL-N, C-RADIO, DEMO-SEL, DEMO-SEL-VALS, DEMO-SEL-ACTS, DEMO-SEL-PAYS, dv-sel-flags(DEMO, D-SEL0, DEMO-SEL-N))
+    ball = dv-node(C-BUTTON, 51, 'all', '', 0, 0, 0, dv-on(), rc)
+    dv-variant(ball, dv-var-ghost())           ; 变体：幽灵
+    dv-act(ball, DV-A-CLICK, DEMO-CMD-ALL)
+    bnone = dv-node(C-BUTTON, 52, 'none', '', 0, 0, 0, dv-on(), rc)
+    dv-variant(bnone, dv-var-ghost())          ; 变体：幽灵
+    dv-act(bnone, DV-A-CLICK, DEMO-CMD-NONE)
+
+    ; 单选组：选中项由状态决定（state -> flags），点击 = SET D-CHOICE。
+    ; 文案从 DEMO-OPTS 数组里读（和左栏下拉同一份数据）—— 标签不必是字面量。
+    f0 = dv-on()
+    (ch == 0) -> { f0 = dv-on-sel() }
+    r0 = dv-node(C-RADIO, 25, dv-demo-opt(0), '', 0, 0, 0, f0, rc)
+    dv-act(r0, DV-A-SET, D-CHOICE)
+    f1 = dv-on()
+    (ch == 1) -> { f1 = dv-on-sel() }
+    r1 = dv-node(C-RADIO, 26, dv-demo-opt(1), '', 0, 1, 0, f1, rc)
+    dv-act(r1, DV-A-SET, D-CHOICE)
+    f2 = dv-on()
+    (ch == 2) -> { f2 = dv-on-sel() }
+    r2 = dv-node(C-RADIO, 27, dv-demo-opt(2), '', 0, 2, 0, f2, rc)
+    dv-act(r2, DV-A-SET, D-CHOICE)
+
+    dv-icon(20, 'star', rc)
+    bdg = dv-badge(21, 'new', rc)
+    dv-variant(bdg, dv-var-primary())          ; 变体：主色徽章
+    tg = dv-tag(22, 'declarative', rc)
+    dv-variant(tg, dv-var-secondary())         ; 变体：次要标签
+    dv-kbd(23, 'Ctrl', rc)
+    dv-separator(24, rc)
+    dv-progress(28, rc)
+    dv-pagination(29, 12, rc)
+    dv-rating(30, 5, rc)
+
+    ; 折叠面板：展开态由 flags 描述（OPEN 位）
+    dv-collapsible(31, 'more', rc)
+    dv-node(C-COLLAPSIBLE, 32, 'less', '', 0, 0, 0, dv-on-open(), rc)
+
+    dv-tooltip(33, 'hint', rc)
+    dv-alert(34, 'heads up', rc)
+    dv-table(35, 3, 2, rc)
+    dv-text-node(36, 'raw text', rc)
+
+    ; 一个「激活态」标签：ACT 位
+    dv-node(C-LABEL, 37, 'active', '', 0, 0, 0, dv-on-act(), rc)
+
+    ; ---- 标签页（阶段 19）：dv-tabs 一次建出「标题条 + n 个标题 + 内容容器」----
+    ; active 就是状态槽 D-TAB（视图每帧读出来传进去）；点第 i 个标题 = SET D-TAB = i，
+    ; 走的还是同一条归约路径（dv-apply），主循环里没有一行 if-else。
+    ; 选中态用 flags（dv-on-sel），调和末尾再把 active 同步到 C-TAB 的 CMP-VALUE
+    ; 供 cs-paint-tab 画高亮；越界的 active 收敛到最后一页。
+    ; 页面内容按 active 条件挂进返回的容器 —— 切页 = 换子树，容器同 key 复用。
+    tb = dv-tabs(rc, tab, D-TAB, DEMO-TABS, 40)
+    (tab == 0) -> {
+        dv-label(45, 'page alpha: the view is a function of state', tb)
+        dv-node(C-LABEL, 48, 'click beta above', '', 0, 0, 0, dv-on(), tb)
+    }
+    (tab == 1) -> {
+        dv-label(46, 'page beta: headers are data too', tb)
+        dv-progress(49, tb)
+    }
+    (tab == 2) -> {
+        dv-label(47, 'page gamma: switching pages swaps the subtree', tb)
+        dv-badge(50, 'tab', tb)
+    }
+}
+
+; ============================================================================
+; dva-run 契约回调（按名调用 —— 语言没有可用的 fn 值，只能约定名字）
+; ============================================================================
+dv-app-view = () (page i64) {
+    page = dv-demo-view()
+}
+
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    ; 归约命中计数（select 的「选中并收起」也是纯归约：dv-apply 的 CHOOSE 分支
+    ; 一次写两个槽，不需要事件侧再补一次 select-close）
+    (nw > 0) -> { dv-demo-bump() }
+
+    ; 归约器表达不了的（一次写多个槽）：显式命令（数组参数只能 place-match 写）
+    (pay == DEMO-CMD-RESET) -> {
+        dva-set(S, D-AGREE, 0)
+        dva-set(S, D-NOTIFY, 0)
+        dva-set(S, D-COUNT, 40)
+        dva-set(S, D-CHOICE, 0)
+        dva-set(S, D-SOPEN, 0)         ; 下拉收起（阶段 21）
+        dva-set(S, D-TOAST, 0)         ; 通知立即过期（阶段 22：触发帧写回 0）
+        dva-set(S, D-SHOW, 0)
+        dva-set(S, D-LIST, 2)
+        dva-set(S, D-DIALOG, 0)        ; 关对话框 = 视图里不再建那个叠加层节点
+        dva-set(S, D-POP, 0)           ; 关锚定浮层 = 视图里不再建那个锚定节点
+        dva-set(S, D-TIP, 0)           ; 关 hover 提示（鼠标还停着的话下一帧会被 sync-hover 写回 1）
+        dva-set(S, D-TIP2, 0)          ; 关禁用原因提示
+        dva-set(S, D-TAB, 0)           ; 标签页回到第一页
+        dva-set(S, D-SEL0, 0)          ; 多选列表清空（阶段 20）
+        dva-set(S, dv-add(D-SEL0, 1), 0)
+        dva-set(S, dv-add(D-SEL0, 2), 0)
+        dv-bound-set(D-TEXT, '')       ; 字符串状态也在 reset 里清零（下一帧推回输入框）
+        dv-demo-bump()
+    }
+
+    ; 多选列表的全选 / 清空（阶段 20）：一次写 N 个槽，归约器表达不了 -> 显式命令。
+    ; 与 reset 同一套路（DV-A-CLICK + 命令 id），主循环里没有一行 if-else。
+    (pay == DEMO-CMD-ALL) -> {
+        ia = 0
+        !! {
+            (ia >= DEMO-SEL-N) -> { ** }
+            dva-set(S, dv-add(D-SEL0, ia), 1)
+            ia = dv-inc(ia)
+        }
+        dv-demo-bump()
+    }
+    (pay == DEMO-CMD-NONE) -> {
+        ib = 0
+        !! {
+            (ib >= DEMO-SEL-N) -> { ** }
+            dva-set(S, dv-add(D-SEL0, ib), 0)
+            ib = dv-inc(ib)
+        }
+        dv-demo-bump()
+    }
+
+    ; 列表项点击（阶段 14）：pay = 行号 -> 删掉这一行。
+    ; 行号由 dv-repeat-items 的 pays 平行数组给出，删除是纯数组操作（dv-rows-del）。
+    ; 用专用的 DV-A-ITEM 与「reset」的 DV-A-CLICK 区分开。
+    (act == DV-A-ITEM) -> {
+        nlc = S[D-LIST]: {
+            ok -> it
+
+            -> 0
+        }
+        nn = dv-rows-del(DEMO-ROWS, nlc, pay)
+        (nn != nlc) -> {
+            dva-set(S, D-LIST, nn)
+            dv-demo-bump()
+        }
+    }
+
+    ; 值变化：滑杆拖动（几何换算留在事件侧，语义仍在视图上）
+    (act == DV-A-CHANGE) -> {
+        live = dv-live-deep(dva-root(), k)
+        (live >= 0) -> {
+            rx, ry, rw, rh = cs-rect(live)
+            v = slider-value-at(live, dva-px(), rx, rw)
+            dva-set(S, D-COUNT, v)
+        }
+    }
+}
+
+; ============================================================================
+; 装配：主题 + 状态初值 + 一行主循环
+; ============================================================================
+; 主题：调色板是数据，dva-run 之前设一次（全局，不随每帧 dv-clear() 清空）。
+; 默认值 = 旧常量，这里整体换成一套偏紫的深色，窗口底色 / hover / 焦点描边 /
+; 勾选 / 轨道 / 浮层 / 输入底 / 次要文本全部跟着走。
+dv-theme-set(CS-TH-BG, 0x14161FFF)
+dv-theme-set(CS-TH-FG, 0xF2F4F8FF)
+dv-theme-set(CS-TH-ACCENT, 0x7C5CFFFF)
+dv-theme-set(CS-TH-FIELD, 0x1B1E2AFF)
+dv-theme-set(CS-TH-TRACK, 0x2E3242FF)
+dv-theme-set(CS-TH-MUTED, 0x8B93A7FF)
+dv-theme-set(CS-TH-TIP, 0x232636FF)
+dv-theme-set(CS-TH-OK, 0x4CC9A0FF)
+dv-theme-set(CS-TH-DANGER, 0xE05560FF)
+
+; 受控输入的字符串状态池：声明用几个槽（不清空，跨帧存在）
+dv-bind-t-ensure(1)
+dv-bound-set(D-TEXT, '')
+
+DEMO[D-COUNT] = 40
+DEMO[D-LIST] = 2
+dva-run(DEMO, 'noui declarative', DEMO-MAX-FRAMES)
+
+fr = dva-frames()
+ops = dva-ops()
+cks = dva-clicks()
+nlr = DEMO[D-LIST]: {
+    ok -> it
+
+    -> 0
+}
+nsr = dv-demo-sel-count()
+chr = DEMO[D-CHOICE]: {
+    ok -> it
+
+    -> 0
+}
+tst = DEMO[D-TOAST]: {
+    ok -> it
+
+    -> 0
+}
+print('bye frames={fr} ops={ops} clicks={cks} rows={nlr} sel={nsr} pick={chr} tst={tst}')

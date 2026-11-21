@@ -113,6 +113,26 @@ F-OPEN = 32
 F-DISABLED = 64
 F-SELECTED = 128
 F-ACTIVE = 256
+F-OVERLAY = 512 ; 叠加层：不参与父级流布局，改为在父矩形内居中，命中时先于兄弟（模态）
+F-PASS = 1024    ; 非模态叠加层（tooltip / hover-card / 通知）：仍最后画、仍可命中，
+                 ; 但不设模态屏障 —— 没命中就继续找下面的兄弟（点得穿）
+
+; ---------- 布局提示位（CMP-LAY 用位或组合；声明式视图层同步过来）----------
+; 让「怎么排」也变成数据：容器方向 / 子节点拉伸 / 交叉轴对齐。
+; 0 = 无提示（走 cmp-scene 的默认：容器纵向堆叠，C-GRID 横向）。
+L-H = 1        ; 容器：横向排列（等价 C-GRID 的行为）
+L-GROW = 2     ; 子节点：吃掉主轴剩余空间（容器给它多余的那份）
+L-AE = 4       ; 子节点：交叉轴末端对齐（纵向容器靠右 / 横向容器靠下）
+L-AC = 8       ; 子节点：交叉轴居中
+
+; ---------- 尺寸 / 文本对齐提示（CMP-SW / CMP-SH / CMP-ALIGN）----------
+; 让「多大」「字怎么对齐」也变成数据。0 = 自动（走 cs-measure 的 intrinsic 尺寸），
+; 非 0 = 覆盖：cs-layout 直接按这个尺寸摆，cs-measure 也按这个尺寸报。
+; 对齐：0 = 按 kind 的默认（label/text 左对齐，button/badge 等居中），
+; 1 = 左，2 = 中，3 = 右。
+A-LEFT = 1
+A-CENTER = 2
+A-RIGHT = 3
 
 ; ---------- 组件实例 SoA 池 ----------
 CMP-KIND []i64 = with-len(0)
@@ -130,6 +150,15 @@ CMP-FLAGS []i64 = with-len(0)
 CMP-PARENT []i64 = with-len(0)
 CMP-HEAD []i64 = with-len(0)        ; 子节点表起始
 CMP-COUNT []i64 = with-len(0)       ; 子节点数
+CMP-KEY []i64 = with-len(0)         ; 声明式视图层的稳定 key（-1 = 无）
+CMP-LAY []i64 = with-len(0)         ; 布局提示位（L-*），0 = 默认行为
+CMP-GAP []i64 = with-len(0)         ; 容器兄弟间距覆盖（0 = 默认 CS-GAP）
+CMP-PAD []i64 = with-len(0)         ; 容器内边距覆盖（0 = 默认 CS-PAD）
+CMP-SW []i64 = with-len(0)          ; 固定宽覆盖（0 = 自动 / intrinsic）
+CMP-SH []i64 = with-len(0)          ; 固定高覆盖（0 = 自动 / intrinsic）
+CMP-ALIGN []i64 = with-len(0)       ; 文本对齐（0 = 按 kind 默认，A-LEFT/CENTER/RIGHT）
+CMP-VAR []i64 = with-len(0)         ; 变体（0 = 默认；非 0 时取主题语义色，见 cmp-scene cs-var-color）
+CMP-ANCHOR []i64 = with-len(0)      ; 锚定浮层的锚点 key（-1 = 无锚点 -> 退化为父矩形内居中）
 CHILD-IDX []i64 = with-len(0)
 
 ; ============================================================================
@@ -153,6 +182,15 @@ cmp-alloc = (kind i64, text str, text2 str, color i64, value i64) (h i64) {
     CMP-PARENT.push(-1)
     CMP-HEAD.push(-1)
     CMP-COUNT.push(0)
+    CMP-KEY.push(-1)
+    CMP-LAY.push(0)
+    CMP-GAP.push(0)
+    CMP-PAD.push(0)
+    CMP-SW.push(0)
+    CMP-SH.push(0)
+    CMP-ALIGN.push(0)
+    CMP-VAR.push(0)
+    CMP-ANCHOR.push(-1)
     h = CMP-KIND.len() - 1
 }
 
@@ -163,7 +201,12 @@ cmp-count = () (n i64) {
 
 ; getter：类型 / 文本 / 数值 / flag
 cmp-kind = (h i64) (k i64) {
-    k = CMP-KIND[h]
+    v = CMP-KIND[h]: {
+        ok -> it
+
+        -> 0
+    }
+    k = v
 }
 cmp-text = (h i64) (s str) {
     s = CMP-TEXT[h]: {
@@ -180,13 +223,28 @@ cmp-text2 = (h i64) (s str) {
     }
 }
 cmp-value = (h i64) (v i64) {
-    v = CMP-VALUE[h]
+    x = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
 }
 cmp-value2 = (h i64) (v i64) {
-    v = CMP-VALUE2[h]
+    x = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
 }
 cmp-flags = (h i64) (f i64) {
-    f = CMP-FLAGS[h]
+    x = CMP-FLAGS[h]: {
+        ok -> it
+
+        -> 0
+    }
+    f = x
 }
 cmp-valid = (h i64) (ok bool) {
     ok = h >= 0 && h < CMP-KIND.len()
@@ -195,6 +253,112 @@ cmp-valid = (h i64) (ok bool) {
 ; flag 查询
 cmp-has = (h i64, bit i64) (yes bool) {
     yes = (CMP-FLAGS[h] & bit) != 0
+}
+; 渲染层用的只读 getter（下标读统一走 match 解包，保持 vet 干净）
+cmp-color = (h i64) (c i64) {
+    v = CMP-COLOR[h]: {
+        ok -> it
+
+        -> 0
+    }
+    c = v
+}
+cmp-children = (h i64) (n i64) {
+    v = CMP-COUNT[h]: {
+        ok -> it
+
+        -> 0
+    }
+    n = v
+}
+; 子链表在 CHILD-IDX 中的起始槽位（声明式调和器做 key→slot 映射时用）
+cmp-head = (h i64) (v i64) {
+    x = CMP-HEAD[h]: {
+        ok -> it
+
+        -> -1
+    }
+    v = x
+}
+; 声明式 key 读写（调和器据此跨帧复用组件对象）
+cmp-key = (h i64) (v i64) {
+    x = CMP-KEY[h]: {
+        ok -> it
+
+        -> -1
+    }
+    v = x
+}
+cmp-set-key = (h i64, k i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-KEY[h] = k }
+}
+cmp-value3 = (h i64) (v i64) {
+    x = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+
+; 布局提示读写（声明式视图层 dv-lay 的落点；cmp-scene 布局时消费）
+cmp-lay = (h i64) (v i64) {
+    x = CMP-LAY[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-gap = (h i64) (v i64) {
+    x = CMP-GAP[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-pad = (h i64) (v i64) {
+    x = CMP-PAD[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+
+; 尺寸 / 文本对齐提示读写（dv-size / dv-align 的落点）
+cmp-sw = (h i64) (v i64) {
+    x = CMP-SW[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-sh = (h i64) (v i64) {
+    x = CMP-SH[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-align = (h i64) (v i64) {
+    x = CMP-ALIGN[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-var = (h i64) (v i64) {
+    x = CMP-VAR[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
 }
 
 ; 通用 setter
@@ -212,6 +376,40 @@ cmp-set-value = (h i64, v i64) {
 }
 cmp-set-value2 = (h i64, v i64) {
     (h >= 0 && h < CMP-KIND.len()) -> { CMP-VALUE2[h] = v }
+}
+cmp-set-lay = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-LAY[h] = v }
+}
+cmp-set-gap = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-GAP[h] = v }
+}
+cmp-set-pad = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-PAD[h] = v }
+}
+cmp-set-sw = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-SW[h] = v }
+}
+cmp-set-sh = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-SH[h] = v }
+}
+cmp-set-align = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-ALIGN[h] = v }
+}
+cmp-set-var = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-VAR[h] = v }
+}
+; 锚定浮层的锚点 key（-1 = 无锚点）。cmp-scene 布局时按 key 反查锚点活节点矩形，
+; 把浮层放在锚点下方（贴边时翻到上方）并夹紧在父矩形内；锚点找不到则退化为居中。
+cmp-anchor = (h i64) (v i64) {
+    x = CMP-ANCHOR[h]: {
+        ok -> it
+
+        -> -1
+    }
+    v = x
+}
+cmp-set-anchor = (h i64, k i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-ANCHOR[h] = k }
 }
 cmp-set-bounds = (h i64, x i64, y i64, w i64, ht i64) {
     (h >= 0 && h < CMP-KIND.len()) -> {
@@ -244,8 +442,134 @@ cmp-add-child = (parent i64, child i64) {
 }
 cmp-child = (parent i64, i i64) (c i64) {
     c = -1
-    (i >= 0 && i < CMP-COUNT[parent]) -> {
-        c = CHILD-IDX[CMP-HEAD[parent] + i]
+    cnt = CMP-COUNT[parent]: {
+        ok -> it
+
+        -> 0
+    }
+    (i >= 0 && i < cnt) -> {
+        hd = CMP-HEAD[parent]: {
+            ok -> it
+
+            -> -1
+        }
+        s = hd + i: {
+            ok -> it
+
+            -> -1
+        }
+        v = CHILD-IDX[s]: {
+            ok -> it
+
+            -> -1
+        }
+        c = v
+    }
+}
+
+; 从父组件上摘除子组件（保留子树本身，仅解除挂载关系）
+; 供声明式视图层的调和器做「删除」操作：把 CHILD-IDX 中该槽左移压实，
+; 并修正所有 head 落在被删槽之后的父组件。返回是否真的摘掉了。
+cmp-detach = (parent i64, child i64) (ok bool) {
+    ok = false
+    (parent >= 0 && child >= 0) -> {
+        cnt = CMP-COUNT[parent]: {
+            ok -> it
+
+            -> 0
+        }
+        hd = CMP-HEAD[parent]: {
+            ok -> it
+
+            -> -1
+        }
+        (cnt > 0 && hd >= 0) -> {
+            pos = -1
+            i = 0
+            !! {
+                (i >= cnt) -> { ** }
+                s = hd + i: {
+                    ok -> it
+
+                    -> -1
+                }
+                v = CHILD-IDX[s]: {
+                    ok -> it
+
+                    -> -1
+                }
+                (v == child) -> {
+                    pos = s
+                    **
+                }
+                ni = i + 1: {
+                    ok -> it
+
+                    -> i
+                }
+                i = ni
+            }
+            (pos >= 0) -> {
+                ; CHILD-IDX 是全局扁平数组：删掉一槽后，其后所有元素（包括别的父的子链）
+                ; 都要整体左移一格，否则后续父的 head 会指错位置。
+                last = CHILD-IDX.len()
+                j = pos
+                !! {
+                    nj = j + 1: {
+                        ok -> it
+
+                        -> j
+                    }
+                    (nj >= last) -> { ** }
+                    v = CHILD-IDX[nj]: {
+                        ok -> it
+
+                        -> -1
+                    }
+                    CHILD-IDX[j] = v
+                    j = nj
+                }
+                nl = CHILD-IDX.len()
+                keep = nl - 1: {
+                    ok -> it
+
+                    -> nl
+                }
+                CHILD-IDX.truncate(keep)
+                nc = cnt - 1: {
+                    ok -> it
+
+                    -> 0
+                }
+                CMP-COUNT[parent] = nc
+                CMP-PARENT[child] = -1
+                n = CMP-KIND.len()
+                p = 0
+                !! {
+                    (p >= n) -> { ** }
+                    hp = CMP-HEAD[p]: {
+                        ok -> it
+
+                        -> -1
+                    }
+                    (hp > pos) -> {
+                        nh = hp - 1: {
+                            ok -> it
+
+                            -> hp
+                        }
+                        CMP-HEAD[p] = nh
+                    }
+                    np = p + 1: {
+                        ok -> it
+
+                        -> p
+                    }
+                    p = np
+                }
+                ok = true
+            }
+        }
     }
 }
 
@@ -555,7 +879,12 @@ button-click = (h i64) {
     CMP-VALUE[h] = n
 }
 button-clicks = (h i64) (n i64) {
-    n = CMP-VALUE[h]
+    x = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    n = x
 }
 
 ; ---- 2. Input ----
@@ -676,7 +1005,12 @@ select-choose = (h i64, idx i64) {
     }
 }
 select-selected = (h i64) (idx i64) {
-    idx = CMP-VALUE[h]
+    x = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    idx = x
 }
 
 ; ---- 7. Tab ----
@@ -695,7 +1029,12 @@ tab-add = (h i64, title str) (idx i64) {
     (CMP-VALUE[h] < 0) -> { CMP-VALUE[h] = 0 }
 }
 tab-active = (h i64) (idx i64) {
-    idx = CMP-VALUE[h]
+    x = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    idx = x
 }
 tab-select = (h i64, idx i64) {
     (idx >= 0 && idx < CMP-COUNT[h]) -> { CMP-VALUE[h] = idx }
@@ -703,7 +1042,16 @@ tab-select = (h i64, idx i64) {
 tab-next = (h i64) {
     n = CMP-COUNT[h]
     (n > 0) -> {
-        i = CMP-VALUE[h] + 1
+        v = CMP-VALUE[h]: {
+            ok -> it
+
+            -> 0
+        }
+        i = v + 1: {
+            ok -> it
+
+            -> 0
+        }
         (i >= n) -> { i = 0 }
         CMP-VALUE[h] = i
     }
@@ -712,7 +1060,14 @@ tab-prev = (h i64) {
     n = CMP-COUNT[h]
     (n > 0) -> {
         i = CMP-VALUE[h] - 1
-        (i < 0) -> { i = n - 1 }
+        (i < 0) -> {
+            m = n - 1: {
+                ok -> it
+
+                -> 0
+            }
+            i = m
+        }
         CMP-VALUE[h] = i
     }
 }
@@ -763,21 +1118,182 @@ slider-range = (h i64, lo i64, hi i64) {
     CMP-VALUE2[h] = hi
 }
 slider-set = (h i64, v i64) {
-    lo = CMP-VALUE3[h]
-    hi = CMP-VALUE2[h]
+    lo = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+    hi = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
     x = v
     (x < lo) -> { x = lo }
     (x > hi) -> { x = hi }
     CMP-VALUE[h] = x
 }
 slider-step = (h i64, dir i64) {
-    lo = CMP-VALUE3[h]
-    hi = CMP-VALUE2[h]
-    x = CMP-VALUE[h] + dir
+    lo = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+    hi = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+    cur = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    x = cur + dir: {
+        ok -> it
+
+        -> 0
+    }
     (x < lo) -> { x = lo }
     (x > hi) -> { x = hi }
     CMP-VALUE[h] = x
 }
 slider-value = (h i64) (v i64) {
-    v = CMP-VALUE[h]
+    x = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+
+; ============================================================================
+; 11. 渲染支撑（供 cmp-scene 渲染层读取复合组件的子项 / 状态）
+; ============================================================================
+; select / tab 的选项存在 CHILD-IDX（CMP-HEAD 起、CMP-COUNT 个），
+; 渲染层要遍历它们画下拉面板 / tab 条，故在此开只读窗口。
+
+; 选项个数
+select-option-count = (h i64) (n i64) {
+    x = CMP-COUNT[h]: {
+        ok -> it
+
+        -> 0
+    }
+    n = x
+}
+
+; 第 i 个选项的组件句柄（越界返回 -1）
+select-option = (h i64, i i64) (c i64) {
+    head = CMP-HEAD[h]: {
+        ok -> it
+
+        -> -1
+    }
+    hi = head + i: {
+        ok -> it
+
+        -> -1
+    }
+    x = CHILD-IDX[hi]: {
+        ok -> it
+
+        -> -1
+    }
+    c = x
+}
+
+; 反查：给定选项句柄，返回它的下标（不存在返回 -1）
+; 供命中测试把「点到的选项组件」翻译回 select-choose 需要的下标。
+select-index-of = (h i64, c i64) (idx i64) {
+    n = select-option-count(h)
+    idx = -1
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        o = select-option(h, i)
+        (o == c) -> {
+            idx = i
+            **
+        }
+        ni = i + 1: {
+            ok -> it
+
+            -> i
+        }
+        i = ni
+    }
+}
+
+; tab 标题数 / 第 i 个标题文本
+tab-count = (h i64) (n i64) {
+    n = select-option-count(h)
+}
+tab-title = (h i64, i i64) (s str) {
+    c = select-option(h, i)
+    (c < 0) -> {
+        s = ''
+        return
+    }
+    s = cmp-text(c)
+}
+
+; input / textarea：placeholder 在 CMP-TEXT2，值在 CMP-TEXT
+input-placeholder = (h i64) (s str) {
+    s = cmp-text2(h)
+}
+; 整段替换输入值（渲染层据此画光标位置）
+input-set = (h i64, s str) {
+    CMP-TEXT[h] = s
+}
+
+; slider：给定像素 x（组件内局部坐标）反算值域上的取值
+; lo/hi 取自 CMP-VALUE3 / CMP-VALUE2，与 slider-range 一致
+slider-value-at = (h i64, px i64, x i64, w i64) (v i64) {
+    lo = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+    hi = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+    (hi <= lo) -> {
+        v = lo
+        return
+    }
+    (w <= 0) -> {
+        v = lo
+        return
+    }
+    d = px - x: {
+        ok -> it
+
+        -> 0
+    }
+    (d < 0) -> { d = 0 }
+    (d > w) -> { d = w }
+    r = hi - lo: {
+        ok -> it
+
+        -> 0
+    }
+    m = d * r: {
+        ok -> it
+
+        -> 0
+    }
+    q = m / w: {
+        ok -> it
+
+        -> 0
+    }
+    a = lo + q: {
+        ok -> it
+
+        -> lo
+    }
+    v = a
 }

@@ -1,0 +1,166 @@
+; ============================================================================
+; noui 声明式「模态弹层 = 视图里的一个叠加层节点」测试（阶段 15）—— src/dv.no + src/cmp-scene.no
+;
+; dv-overlay / dv-on-overlay 把节点标成 DV-F-OVL，调和时落到活节点的 F-OVERLAY。
+; 场景钉住：
+;   U 标记：视图 flags 加位 -> 活节点带 F-OVERLAY（普通节点不受影响）
+;   V 测量：叠加层不参与父级流布局（有 / 无叠加层的容器同尺寸）
+;   W 布局：叠加层在父矩形内居中，且不打扰流子节点的位置
+;   X 命中：弹层内命中最深节点；弹层外点不穿（返回 -1）；无弹层时照常命中
+;   Y 绘制：叠加层最后画（永远盖在最上面）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-overlay.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-overlay tests ===')
+
+; 场景辅助：某个颜色第一次出现的场景下标（-1 = 没画过）
+first-c = (c i64) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-c(i) == c) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 U：标记 —— 视图 flags 加 DV-F-OVL -> 活节点带 F-OVERLAY
+; ============================================================================
+root-u = cmp-root()
+dv-clear()
+pu = dv-form(1, -1)
+du = dv-node(C-DIALOG, 40, 'confirm', '', 0, 0, 0, dv-on-open(), pu)
+nu = dv-node(C-LABEL, 41, 'plain', '', 0, 0, 0, dv-on(), pu)
+dv-overlay(du)
+
+fu = dv-flags(du)
+fn = dv-flags(nu)
+r1 = (fu & 64) != 0
+r2 = (fn & 64) == 0
+; 声明式写法一次给全：可见 + 可用 + 展开 + 叠加层
+r3 = dv-on-overlay() == 99
+
+ops-u = dv-render(root-u, pu)
+lu = dv-live-deep(root-u, 40)
+lun = dv-live-deep(root-u, 41)
+r4 = ops-u == 2 && lu >= 0 && lun >= 0
+r5 = cmp-has(lu, F-OVERLAY) && cmp-has(lu, F-OPEN)
+r6 = (!cmp-has(lun, F-OVERLAY))
+
+; ============================================================================
+; 场景 V：测量 —— 叠加层不参与父级流布局
+; ============================================================================
+; 对照：只有两个 label 的容器
+root-v1 = cmp-root()
+dv-clear()
+p1 = dv-form(1, -1)
+b1 = dv-form(2, p1)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), b1)
+dv-node(C-LABEL, 4, 'b', '', 0, 0, 0, dv-on(), b1)
+dv-render(root-v1, p1)
+lb1 = dv-live-deep(root-v1, 2)
+wa, ha = cs-measure(lb1)
+
+; 实验：同样两个 label + 一个叠加层弹层
+root-v2 = cmp-root()
+dv-clear()
+p2 = dv-form(1, -1)
+b2 = dv-form(2, p2)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), b2)
+dv-node(C-LABEL, 4, 'b', '', 0, 0, 0, dv-on(), b2)
+ov2 = dv-node(C-DIALOG, 5, 'dlg', '', 0, 0, 0, dv-on-overlay(), b2)
+dv-node(C-LABEL, 6, 'sure', '', 0, 0, 0, dv-on(), ov2)
+dv-render(root-v2, p2)
+lb2 = dv-live-deep(root-v2, 2)
+lov2 = dv-live-deep(root-v2, 5)
+wb, hb = cs-measure(lb2)
+
+r7 = wa == wb && ha == hb && lov2 >= 0
+; 流视图里根本看不到叠加层（第 3 个流子节点不存在）
+r8 = cs-child-flow(lb2, 0) >= 0 && cs-child-flow(lb2, 1) >= 0 && cs-child-flow(lb2, 2) == -1
+
+; ============================================================================
+; 场景 W：布局 —— 叠加层在父矩形内居中，且不打扰流子节点
+; ============================================================================
+cs-layout(root-v1, 0, 0, 80000, 60000)
+cs-layout(root-v2, 0, 0, 80000, 60000)
+
+l3a = dv-live-deep(root-v1, 3)
+l4a = dv-live-deep(root-v1, 4)
+l3b = dv-live-deep(root-v2, 3)
+l4b = dv-live-deep(root-v2, 4)
+ax3, ay3, aw3, ah3 = cs-rect(l3a)
+bx3, by3, bw3, bh3 = cs-rect(l3b)
+ax4, ay4, aw4, ah4 = cs-rect(l4a)
+bx4, by4, bw4, bh4 = cs-rect(l4b)
+; 流子节点位置逐位相同 —— 叠加层的存在没有挤占流布局
+r9 = ax3 == bx3 && ay3 == by3 && aw3 == bw3 && ah3 == bh3
+r10 = ax4 == bx4 && ay4 == by4 && aw4 == bw4 && ah4 == bh4
+
+; 弹层在盒子矩形内居中（先夹到盒子大小，再居中）
+bx, by, bw, bh = cs-rect(lb2)
+ox, oy, ow, oh = cs-rect(lov2)
+r11 = ox == bx + cs-div(cs-sub(bw, ow), 2) && oy == by + cs-div(cs-sub(bh, oh), 2)
+
+; ============================================================================
+; 场景 X：命中 —— 弹层内命中最深节点；弹层外点不穿
+; ============================================================================
+l6 = dv-live-deep(root-v2, 6)
+lx, ly, lw, lh = cs-rect(l6)
+; 弹层内部（label 中心）-> 命中该 label
+r12 = cs-hit(root-v2, lx + 1, ly + 1) == l6
+; 弹层面板本身（标题行）-> 命中弹层
+r13 = cs-hit(root-v2, ox + 1, oy + 1) == lov2
+; 弹层外、盒子内（第一个 label）-> 模态不穿透：返回 -2（被挡住），而不是流内容
+r14 = cs-hit(root-v2, ax3 + 1, ay3 + 1) == -2
+; 对照：没有弹层时同一个点照常命中 label
+r15 = cs-hit(root-v1, ax3 + 1, ay3 + 1) == l3a
+
+; ============================================================================
+; 场景 Y：绘制 —— 叠加层最后画（盖在最上面）
+; ============================================================================
+cmp-set-color(lb2, 0x11223344)
+cmp-set-color(lov2, 0x55667788)
+cs-clear()
+cs-paint(root-v2)
+ib = first-c(0x11223344)
+id = first-c(0x55667788)
+r16 = ib >= 0 && id >= 0 && id > ib
+; 弹层关闭（视图里不建这个节点）后，活树里也没有它
+dv-clear()
+p3 = dv-form(1, -1)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), p3)
+dv-render(root-v2, p3)
+r17 = dv-live-deep(root-v2, 5) == -1
+
+print('U mark={r1}{r2}{r3}{r4}{r5}{r6}')
+print('V measure={r7}{r8}')
+print('W layout={r9}{r10}{r11}')
+print('X hit={r12}{r13}{r14}{r15}')
+print('Y paint={r16}{r17}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-OVERLAY TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-OVERLAY TESTS FAILED')
+}

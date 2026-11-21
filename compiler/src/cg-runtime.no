@@ -186,6 +186,44 @@ cg-runtime-str-concat = () (r str) {
     r = b.str()
 }
 
+; str-cp-len：@str_cp_len —— UTF-8 码点数（s135）。
+;   语义 = std str.len（src/std/str.no:47）= .cp-index(.len-bytes())：数「b < 0x80 或
+;   (b & 0xc0) == 0xc0」的字节（即首字节个数 = 码点数），与 s[i] 的码点索引语义一致。
+;   Go 后端把 str.len 编成 .cp-index 循环（emitStrCpIndex 是 s[i] 的【读】，非计数）
+;   ⇒ 无原语可组，故走 helper。纯计算、不分配、无 libc 依赖。
+;   ⚠️ phi 的 incoming 块必须真实是前驱：loop 的前驱是 entry 与 body（body 末尾 br loop）。
+; r: 结果字串
+cg-runtime-str-cp-len = () (r str) {
+    b = sb.init(1024)
+    b.push('define i64 @str_cp_len(%str-long %s) {\n')
+    b.push('entry:\n')
+    b.push('  %len.i32 = extractvalue %str-long %s, 0\n')
+    b.push('  %len = zext i32 %len.i32 to i64\n')
+    b.push('  %data = extractvalue %str-long %s, 2\n')
+    b.push('  br label %loop\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %entry ], [ %inext, %body ]\n')
+    b.push('  %n = phi i64 [ 0, %entry ], [ %nnext, %body ]\n')
+    b.push('  %go = icmp slt i64 %i, %len\n')
+    b.push('  br i1 %go, label %body, label %done\n')
+    b.push('body:\n')
+    b.push('  %p = getelementptr i8, i8* %data, i64 %i\n')
+    b.push('  %b = load i8, i8* %p\n')
+    b.push('  %bw = zext i8 %b to i64\n')
+    b.push('  %lo = icmp slt i64 %bw, 128\n')
+    b.push('  %and = and i64 %bw, 192\n')
+    b.push('  %hi = icmp eq i64 %and, 192\n')
+    b.push('  %inc = or i1 %lo, %hi\n')
+    b.push('  %nadd = add i64 %n, 1\n')
+    b.push('  %nnext = select i1 %inc, i64 %nadd, i64 %n\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('done:\n')
+    b.push('  ret i64 %n\n')
+    b.push('}\n')
+    r = b.str()
+}
+
 ; vec-type：向量（Go codegen.go 逐字）。16B = u32 len + u32 cap + i64 data（data 存成 i64 裸指针）。
 ; 對外 API（.len()）仍是 i64 ⇒ 讀寫該兩欄一律 zext/trunc 在邊界做，
 ; 不可用 i64 直接 load/store（opaque pointer 下 LLVM 不會攔，會靜默讀到 len+cap 打包值）。
@@ -690,6 +728,7 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-str-eq())
     b.push('\n')
     b.push(cg-runtime-str-concat())
+    b.push(cg-runtime-str-cp-len())
     b.push(cg-runtime-vec-new())
     b.push(cg-runtime-vec-len())
     b.push(cg-runtime-vec-get())

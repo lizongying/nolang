@@ -14,8 +14,31 @@ std 未修缺陷查 `test/README.md §5.2`，名词查 `./glossary/dist/glossary
 
 - 🔴 **禁止** `git checkout` / `reset` / `restore` / `stash` / `clean` / `push --force`。
 - 本仓库常有**多个并发 session** 同时改同一棵树，上述命令会静默覆盖别人的在飞改动。
-- 回看旧版：`git show <rev>:<path>`、`git diff <rev> -- <path>`。要比对/实验：`git worktree add /tmp/no-base <sha>`。
+- 回看旧版：`git show <rev>:<path>`、`git diff <rev> -- <path>`。要比对/实验用隔离 worktree，
+  目录放项目内 `tmp/` 下并按 `{type}/{short-id}` 命名（见下方 worktree 约定），不写系统 `/tmp`。
 - 动工前后各跑一次 `git status`；**不属于本任务**的已修改文件一律不碰、不「顺手修复」。
+
+### Worktree 约定（防孤悬）
+
+- 目录名**短、稳定、可机器识别**：`{type}/{short-id}` 或 `{ticket}/{short-tag}`，例如
+  `feat/option-3state`、`fix/verify-rule`、`refactor/hir-rebuild`；统一挂在 `tmp/` 下，如
+  `tmp/feat/option-3state`。
+- 🔴 每个 worktree **必须带元信息**，否则就是「谁建的、目的、能不能清理」都不明的孤悬树。
+  worktree 内放 `worktree-meta.noml`（集中索引示例路径 `.worktree-meta/feat-option-3state.noml`，
+  把 `/` 换成 `-`），至少写清**一句话 desc、创建人、时间、原因**，可选工单/PR 链接：
+
+  ```noml
+  {
+    name: 'feat/option-3state'
+    creator: 'lizongying'
+    created-at: '2026-11-21'
+    desc: '重构 Option 三态 ok/nil/err 校验逻辑，验证 ?= 上抛分支规则，临时验证，不合并到主分支'
+    link: 'https://xxx/issue/123'
+  }
+  ```
+
+- 🔴 清理 worktree 前**先读 `worktree-meta.noml`**：只删自己建的；他人建的、或归属/目的不明的
+  一律留着（与 `tmp/` 清理红线一致）。用完 `git worktree remove` 及时收掉自己的树，每棵 100M+。
 
 ## 2. 构建：只走 make，别绕签名表
 

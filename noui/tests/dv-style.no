@@ -1,0 +1,141 @@
+; ============================================================================
+; noui 声明式样式测试（阶段 12）—— 主题色板 + 变体 + 绘制层真实发色
+;
+; 验证「长什么样」的最后一层也是数据：
+;   1) 主题色板（CS-TH 的 9 个槽位）默认值逐一复刻旧 CS-* 常量，不写主题时渲染逐位不变；
+;   2) dv-theme-set / dv-theme-reset 改的是调色板，绘制层（hover / 焦点 / 勾选 / 轨道 /
+;      浮层 / 输入底）全部跟着变；
+;   3) dv-variant 把「主色 / 次要 / 幽灵 / 危险」写成视图数据，经 cs-var-color 映射到
+;      主题语义色，且优先级高于节点自带颜色。
+; 无窗口，no run 直接跑。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dv-style.no
+; ============================================================================
+# /noui/src/cmp-scene
+# /noui/src/dv
+
+print('=== dv-style tests ===')
+
+; 场景辅助：场景里是否出现过某个颜色
+has-c = (c i64) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-c(i) == c) -> {
+            yes = true
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 Y：主题默认值 = 旧常量（不写主题时渲染逐位不变）
+; ============================================================================
+r1 = cs-theme(CS-TH-BG) == 0x1E1E28FF
+r2 = cs-theme(CS-TH-FG) == 0xFFFFFFFF
+r3 = cs-theme(CS-TH-ACCENT) == 0x5AA0F2FF
+r4 = cs-theme(CS-TH-FIELD) == 0x1E1E28FF
+r5 = cs-theme(CS-TH-TRACK) == 0x3A3A4AFF
+r6 = cs-theme(CS-TH-MUTED) == 0x9AA0B4FF
+r7 = cs-theme(CS-TH-TIP) == 0x2A2A38FF
+r8 = cs-theme(CS-TH-OK) == 0x50C878FF
+r9 = cs-theme(CS-TH-DANGER) == 0xE05560FF
+
+; ============================================================================
+; 场景 Z：主题写入 / 越界忽略 / 复位
+; ============================================================================
+cs-theme-set(CS-TH-ACCENT, 0x11223344)
+r10 = cs-theme(CS-TH-ACCENT) == 0x11223344
+r11 = cs-theme(CS-TH-FG) == 0xFFFFFFFF
+cs-theme-set(99, 0xFF0000FF)
+r12 = cs-theme(CS-TH-DANGER) == 0xE05560FF
+cs-theme-reset()
+r13 = cs-theme(CS-TH-ACCENT) == 0x5AA0F2FF
+
+; ============================================================================
+; 场景 AA：变体 -> 主题语义色（cs-var-color）
+; ============================================================================
+root-v = cmp-root()
+dv-clear()
+pv = dv-form(1, -1)
+bv1 = dv-button(2, 'v', pv)
+dv-variant(bv1, dv-var-primary())
+bv2 = dv-button(3, 'w', pv)
+dv-variant(bv2, dv-var-danger())
+bv3 = dv-button(4, 'u', pv)
+ops-v = dv-render(root-v, pv)
+lv1 = dv-live-by-key(root-v, 2)
+lv2 = dv-live-by-key(root-v, 3)
+lv3 = dv-live-by-key(root-v, 4)
+r14 = cmp-var(lv1) == 1 && cmp-var(lv2) == 4 && cmp-var(lv3) == 0
+r15 = cs-var-color(lv1, C-BUTTON) == cs-theme(CS-TH-ACCENT)
+r16 = cs-var-color(lv2, C-BUTTON) == cs-theme(CS-TH-DANGER)
+r17 = cs-var-color(lv3, C-BUTTON) == 0
+; 变体跟随主题：改 ACCENT 后重读立即变
+cs-theme-set(CS-TH-ACCENT, 0x00FF00FF)
+r18 = cs-var-color(lv1, C-BUTTON) == 0x00FF00FF
+cs-theme-reset()
+r19 = cs-var-color(lv1, C-BUTTON) == 0x5AA0F2FF
+
+; ============================================================================
+; 场景 AB：绘制层真的按主题 / 变体发色
+; ============================================================================
+root-s = cmp-root()
+dv-clear()
+ps = dv-form(1, -1)
+bh = dv-button(2, 'hover', ps)                 ; hover -> ACCENT
+bd = dv-button(3, 'danger', ps)
+dv-variant(bd, dv-var-danger())                 ; -> DANGER
+bm = dv-badge(4, 'muted', ps)
+dv-variant(bm, dv-var-secondary())              ; -> MUTED
+ck = dv-node(C-CHECKBOX, 5, 'ok', '', 0, 0, 0, dv-on-chk(), ps)   ; 勾选 -> OK
+ip = dv-input(6, 'txt', ps)                     ; 聚焦 -> FIELD + ACCENT 描边
+tp = dv-tooltip(7, 'tip', ps)                   ; 可见 -> TIP 底
+pr = dv-progress(8, ps)                         ; 轨道 TRACK + 自定义填充色
+ops-s = dv-render(root-s, ps)
+lh = dv-live-by-key(root-s, 2)
+cmp-flag-set(lh, F-HOVERED)
+lc = dv-live-by-key(root-s, 5)
+cmp-flag-set(lc, F-CHECKED)
+li = dv-live-by-key(root-s, 6)
+input-focus(li, true)
+lp = dv-live-by-key(root-s, 8)
+cmp-set-color(lp, 0x12345678)
+cmp-set-value(lp, 50)
+cmp-set-value2(lp, 100)
+; 变体优先级高于节点自带颜色
+ld = dv-live-by-key(root-s, 3)
+cmp-set-color(ld, 0x0000FFFF)
+cs-layout(root-s, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-s)
+r20 = has-c(cs-theme(CS-TH-ACCENT))
+r21 = has-c(cs-theme(CS-TH-DANGER))
+r22 = has-c(cs-theme(CS-TH-MUTED))
+r23 = has-c(cs-theme(CS-TH-OK))
+r24 = has-c(cs-theme(CS-TH-TIP))
+r25 = has-c(cs-theme(CS-TH-FIELD))
+r26 = has-c(0x12345678)
+r27 = has-c(cs-theme(CS-TH-TRACK))
+; 变体覆盖自带颜色：0x0000FFFF 不应出现
+r28 = !has-c(0x0000FFFF)
+
+; 改主题后旧 hover 色消失、新色出现（证明绘制读的是主题而不是常量）
+cs-theme-set(CS-TH-ACCENT, 0x00FF00FF)
+cs-clear()
+cs-paint(root-s)
+r29 = has-c(0x00FF00FF) && (!has-c(CS-HOVER))
+cs-theme-reset()
+
+print('Y theme-def={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}')
+print('Z theme-set={r10}{r11}{r12}{r13}')
+print('AA var={r14}{r15}{r16}{r17}{r18}{r19}')
+print('AB paint={r20}{r21}{r22}{r23}{r24}{r25}{r26}{r27}{r28}{r29}')
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DV-STYLE TESTS PASSED') }
+(!all-ok) -> { print('DV-STYLE TESTS FAILED') }

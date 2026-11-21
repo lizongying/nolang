@@ -1,0 +1,186 @@
+; ============================================================================
+; noui 声明式「锚定浮层 = 叠加层 + 一个锚点 key」测试（阶段 16）—— src/dv.no + src/cmp-scene.no
+;
+; dv-overlay-anchor(node, anchor-key) = dv-overlay + DV-ANCHOR；调和时经 dv-apply-props
+; 落到活节点的 CMP-ANCHOR。cmp-scene 布局时按 key 反查锚点矩形（cs-find-key），把浮层
+; 放在锚点下方，下方放不下就翻到上方，最后夹紧在父矩形内；锚点找不到则退化为居中。
+; 场景钉住：
+;   Z 标记：视图层加 DV-F-OVL + DV-ANCHOR；dv-anchor-of 读回来；默认 -1；dv-clear 清掉
+;   Y 调和：活节点带 F-OVERLAY + CMP-ANCHOR；没挂锚点的叠加层是 -1
+;   L 布局：下方优先（x 对齐锚点、y = 锚点底 + CS-GAP）；贴边翻转 + 夹紧到父矩形
+;   H 命中：锚定浮层内命中最深节点；浮层外点不穿（-2）
+;   P 绘制：锚定浮层仍然最后画
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-anchor.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-anchor tests ===')
+
+; 场景辅助：某个颜色第一次出现的场景下标（-1 = 没画过）
+first-c = (c i64) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-c(i) == c) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 Z：标记 —— dv-overlay-anchor 一次给「叠加层 + 锚点」，读回来
+; ============================================================================
+dv-clear()
+pz0 = dv-form(1, -1)
+n0 = dv-node(C-POPOVER, 40, 'pop', '', 0, 0, 0, dv-on(), pz0)
+r1 = dv-anchor-of(n0) == -1
+dv-overlay-anchor(n0, 10)
+r2 = (dv-flags(n0) & 64) != 0
+r3 = dv-anchor-of(n0) == 10
+; dv-clear 之后新节点回到 -1（每帧重建视图时不会残留上一帧的锚点）
+dv-clear()
+pz1 = dv-form(1, -1)
+n1 = dv-node(C-POPOVER, 40, 'pop', '', 0, 0, 0, dv-on(), pz1)
+r4 = dv-anchor-of(n1) == -1
+
+; ============================================================================
+; 场景 Y：调和 —— 活节点带 F-OVERLAY + CMP-ANCHOR；没挂锚点的叠加层是 -1
+; ============================================================================
+root-y = cmp-root()
+dv-clear()
+py = dv-form(1, -1)
+by = dv-node(C-BUTTON, 10, 'trigger', '', 0, 0, 0, dv-on(), py)
+oy = dv-node(C-POPOVER, 11, 'pop', '', 0, 0, 0, dv-on-overlay(), py)
+dv-overlay-anchor(oy, 10)
+cy = dv-node(C-POPOVER, 12, 'plain', '', 0, 0, 0, dv-on-overlay(), py)
+ops-y = dv-render(root-y, py)
+lby = dv-live-deep(root-y, 10)
+loy = dv-live-deep(root-y, 11)
+lcy = dv-live-deep(root-y, 12)
+r5 = ops-y == 3 && lby >= 0 && loy >= 0 && lcy >= 0
+r6 = cmp-has(loy, F-OVERLAY) && cmp-anchor(loy) == 10
+r7 = cmp-has(lcy, F-OVERLAY) && cmp-anchor(lcy) == -1
+; cs-find-key：按 key 反查活句柄（锚点就是靠它找到的）
+r8 = cs-find-key(10) == lby && cs-find-key(999) == -1
+
+; ============================================================================
+; 场景 L1：布局 —— 下方优先（x 对齐锚点，y = 锚点底 + CS-GAP）
+; ============================================================================
+root-l1 = cmp-root()
+dv-clear()
+pl1 = dv-form(1, -1)
+bx1 = dv-form(2, pl1)
+dv-size(bx1, 80000, 60000)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), bx1)
+bt1 = dv-node(C-BUTTON, 21, 'trigger', '', 0, 0, 0, dv-on(), bx1)
+dv-size(bt1, 10000, 2000)
+po1 = dv-node(C-POPOVER, 11, 'pop', '', 0, 0, 0, dv-on-overlay(), bx1)
+dv-overlay-anchor(po1, 21)
+dv-node(C-LABEL, 12, 'only', '', 0, 0, 0, dv-on(), po1)
+dv-render(root-l1, pl1)
+lb1 = dv-live-deep(root-l1, 2)
+lt1 = dv-live-deep(root-l1, 21)
+lp1 = dv-live-deep(root-l1, 11)
+cs-layout(root-l1, 0, 0, 80000, 60000)
+gx1, gy1, gw1, gh1 = cs-rect(lb1)
+tx1, ty1, tw1, th1 = cs-rect(lt1)
+px1, py1, pw1, ph1 = cs-rect(lp1)
+print('L1 box={gx1},{gy1},{gw1},{gh1} anchor={tx1},{ty1},{tw1},{th1} pop={px1},{py1},{pw1},{ph1}')
+r9 = px1 == tx1
+r10 = py1 == cs-add(ty1, cs-add(th1, CS-GAP))
+; 夹紧在父矩形内
+r11 = px1 >= gx1 && py1 >= gy1 && cs-add(px1, pw1) <= cs-add(gx1, gw1) && cs-add(py1, ph1) <= cs-add(gy1, gh1)
+
+; ============================================================================
+; 场景 L2：布局 —— 下方放不下 -> 翻到锚点上方，再夹紧到父矩形
+; ============================================================================
+root-l2 = cmp-root()
+dv-clear()
+pl2 = dv-form(1, -1)
+bx2 = dv-form(2, pl2)
+dv-size(bx2, 80000, 6000)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), bx2)
+bt2 = dv-node(C-BUTTON, 31, 'trigger', '', 0, 0, 0, dv-on(), bx2)
+dv-size(bt2, 10000, 2000)
+po2 = dv-node(C-POPOVER, 11, 'pop', '', 0, 0, 0, dv-on-overlay(), bx2)
+dv-overlay-anchor(po2, 31)
+dv-node(C-LABEL, 12, 'item one', '', 0, 0, 0, dv-on(), po2)
+dv-node(C-LABEL, 13, 'item two', '', 0, 0, 0, dv-on(), po2)
+dv-render(root-l2, pl2)
+lb2 = dv-live-deep(root-l2, 2)
+lt2 = dv-live-deep(root-l2, 31)
+lp2 = dv-live-deep(root-l2, 11)
+cs-layout(root-l2, 0, 0, 80000, 60000)
+gx2, gy2, gw2, gh2 = cs-rect(lb2)
+tx2, ty2, tw2, th2 = cs-rect(lt2)
+px2, py2, pw2, ph2 = cs-rect(lp2)
+print('L2 box={gx2},{gy2},{gw2},{gh2} anchor={tx2},{ty2},{tw2},{th2} pop={px2},{py2},{pw2},{ph2}')
+; 下方确实放不下（否则这条断言就没在测翻转）
+below2 = cs-add(ty2, cs-add(th2, CS-GAP))
+r12 = cs-add(below2, ph2) > cs-add(gy2, gh2)
+; 翻转后夹紧：顶到父矩形上沿
+r13 = py2 == gy2
+; 横向仍对齐锚点
+r14 = px2 == tx2
+
+; ============================================================================
+; 场景 H：命中 —— 锚定浮层内命中最深节点；浮层外点不穿（-2）
+; ============================================================================
+l12 = dv-live-deep(root-l2, 12)
+hx, hy, hw, hh = cs-rect(l12)
+r15 = cs-hit(root-l2, hx + 1, hy + 1) == l12
+; 浮层外、父矩形内（右侧空白）-> 被浮层挡住（-2 向上传播）
+r16 = cs-hit(root-l2, cs-add(gx2, 40000), cs-add(gy2, 1)) == -2
+; 对照：同一构型但「没有浮层」的树，同一个点照常命中（盒子本身）
+root-h0 = cmp-root()
+dv-clear()
+ph0 = dv-form(1, -1)
+bh0 = dv-form(2, ph0)
+dv-size(bh0, 80000, 6000)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), bh0)
+dv-render(root-h0, ph0)
+cs-layout(root-h0, 0, 0, 80000, 60000)
+lh0 = dv-live-deep(root-h0, 2)
+hx0, hy0, hw0, hh0 = cs-rect(lh0)
+r16b = cs-hit(root-h0, cs-add(hx0, 40000), cs-add(hy0, 1)) == lh0
+
+; ============================================================================
+; 场景 P：绘制 —— 锚定浮层仍然最后画
+; ============================================================================
+cmp-set-color(lb2, 0x11223344)
+cmp-set-color(lp2, 0x55667788)
+cs-clear()
+cs-paint(root-l2)
+ib2 = first-c(0x11223344)
+ip2 = first-c(0x55667788)
+r17 = ib2 >= 0 && ip2 >= 0 && ip2 > ib2
+
+print('Z mark={r1}{r2}{r3}{r4}')
+print('Y live={r5}{r6}{r7}{r8}')
+print('L layout={r9}{r10}{r11}{r12}{r13}{r14}')
+print('H hit={r15}{r16}{r16b}')
+print('P paint={r17}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r16b && r17
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-ANCHOR TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-ANCHOR TESTS FAILED')
+}

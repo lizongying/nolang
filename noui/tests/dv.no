@@ -1,0 +1,646 @@
+; ============================================================================
+; noui 声明式视图层测试（阶段 10）—— src/dv.no 纯逻辑验证
+; 视图树 -> 调和 -> 活组件树：新建 / 复用 / 改稿 / 删除 / 重排 / 嵌套 / 条件 / flags
+; 无窗口、无 SDL 调用，no run 直接跑。
+; ============================================================================
+# /noui/src/dv
+
+print('=== dv tests ===')
+
+; ============================================================================
+; 场景 A：同 key 复用、改稿、删除、重排
+; ============================================================================
+root-a = cmp-root()
+
+; ---- frame 1：两个子节点全部新建 ----
+dv-clear()
+ra = dv-form(1, -1)
+dv-label(2, 'name', ra)
+dv-button(3, 'ok', ra)
+ops-a1 = dv-render(root-a, ra)
+r1 = ops-a1 == 2 && cmp-children(root-a) == 2
+r2 = cmp-kind(cmp-child(root-a, 0)) == C-LABEL && cmp-text(cmp-child(root-a, 0)) == 'name' && cmp-key(cmp-child(root-a, 0)) == 2
+r3 = cmp-kind(cmp-child(root-a, 1)) == C-BUTTON && cmp-text(cmp-child(root-a, 1)) == 'ok' && cmp-key(cmp-child(root-a, 1)) == 3
+ha = cmp-child(root-a, 0)
+hb = cmp-child(root-a, 1)
+
+; ---- frame 2：同 key 同 kind，只改文本 -> 组件对象复用，零结构操作 ----
+dv-clear()
+ra = dv-form(1, -1)
+dv-label(2, 'name2', ra)
+dv-button(3, 'ok', ra)
+ops-a2 = dv-render(root-a, ra)
+r4 = ops-a2 == 0 && cmp-children(root-a) == 2
+r5 = cmp-child(root-a, 0) == ha && cmp-child(root-a, 1) == hb
+r6 = cmp-text(ha) == 'name2'
+
+; ---- frame 3：视图里去掉 button -> 删除 ----
+dv-clear()
+ra = dv-form(1, -1)
+dv-label(2, 'name2', ra)
+ops-a3 = dv-render(root-a, ra)
+r7 = ops-a3 == 1 && cmp-children(root-a) == 1 && cmp-child(root-a, 0) == ha
+
+; ---- frame 4：button 回来且排在 label 之前 ----
+dv-clear()
+ra = dv-form(1, -1)
+dv-button(3, 'ok', ra)
+dv-label(2, 'name2', ra)
+ops-a4 = dv-render(root-a, ra)
+hb2 = cmp-child(root-a, 0)
+r8 = ops-a4 == 1 && cmp-children(root-a) == 2
+r9 = cmp-kind(hb2) == C-BUTTON && cmp-child(root-a, 1) == ha
+
+; ---- frame 5：再换回 label 在前，无增删只重排 ----
+dv-clear()
+ra = dv-form(1, -1)
+dv-label(2, 'name2', ra)
+dv-button(3, 'ok', ra)
+ops-a5 = dv-render(root-a, ra)
+r10 = ops-a5 == 0 && cmp-child(root-a, 0) == ha && cmp-child(root-a, 1) == hb2
+
+; ============================================================================
+; 场景 B：嵌套容器递归调和
+; ============================================================================
+root-b = cmp-root()
+dv-clear()
+rb = dv-form(1, -1)
+g = dv-group-box(10, 'group', rb)
+dv-label(11, 'a', g)
+dv-label(12, 'b', g)
+ops-b1 = dv-render(root-b, rb)
+gc = cmp-child(root-b, 0)
+r11 = ops-b1 == 3
+r12 = cmp-kind(gc) == C-GROUP-BOX && cmp-text(gc) == 'group' && cmp-key(gc) == 10
+r13 = cmp-children(gc) == 2
+r14 = cmp-text(cmp-child(gc, 0)) == 'a' && cmp-key(cmp-child(gc, 0)) == 11
+r15 = cmp-text(cmp-child(gc, 1)) == 'b' && cmp-key(cmp-child(gc, 1)) == 12
+
+; 嵌套层改稿：group 标题 + 子项文本
+dv-clear()
+rb = dv-form(1, -1)
+g = dv-group-box(10, 'group2', rb)
+dv-label(11, 'a2', g)
+dv-label(12, 'b2', g)
+ops-b2 = dv-render(root-b, rb)
+r16 = ops-b2 == 0 && cmp-text(gc) == 'group2'
+r17 = cmp-text(cmp-child(gc, 0)) == 'a2' && cmp-text(cmp-child(gc, 1)) == 'b2'
+
+; 嵌套层删除一个子项
+dv-clear()
+rb = dv-form(1, -1)
+g = dv-group-box(10, 'group2', rb)
+dv-label(11, 'a2', g)
+ops-b3 = dv-render(root-b, rb)
+r18 = ops-b3 == 1 && cmp-children(gc) == 1 && cmp-text(cmp-child(gc, 0)) == 'a2'
+
+; ============================================================================
+; 场景 C：条件节点（cond=0 时节点不出现，子树整体消失）
+; ============================================================================
+root-c = cmp-root()
+dv-clear()
+rc = dv-form(1, -1)
+g = dv-cond(20, 0, rc)
+r19 = g == -1
+dv-label(21, 'shown', rc)
+ops-c1 = dv-render(root-c, rc)
+r20 = ops-c1 == 1 && cmp-children(root-c) == 1 && cmp-text(cmp-child(root-c, 0)) == 'shown'
+
+dv-clear()
+rc = dv-form(1, -1)
+g = dv-cond(20, 1, rc)
+dv-label(22, 'yes', g)
+ops-c2 = dv-render(root-c, rc)
+c20 = cmp-child(root-c, 0)
+r21 = ops-c2 == 3 && cmp-kind(c20) == C-FORM
+r22 = cmp-children(c20) == 1 && cmp-text(cmp-child(c20, 0)) == 'yes'
+
+dv-clear()
+rc = dv-form(1, -1)
+g = dv-cond(20, 0, rc)
+dv-label(21, 'shown', rc)
+ops-c3 = dv-render(root-c, rc)
+r23 = ops-c3 == 2 && cmp-children(root-c) == 1 && cmp-kind(cmp-child(root-c, 0)) == C-LABEL
+
+; ============================================================================
+; 场景 D：select 的选项也是子节点（key 复用 + 改稿）
+; ============================================================================
+root-d = cmp-root()
+dv-clear()
+rd = dv-form(1, -1)
+sel = dv-select(30, 'pick', rd)
+dv-option(31, 'alpha', sel)
+dv-option(32, 'beta', sel)
+ops-d1 = dv-render(root-d, rd)
+sc = cmp-child(root-d, 0)
+r24 = cmp-kind(sc) == C-SELECT && cmp-children(sc) == 2
+r25 = select-option-count(sc) == 2
+r26 = cmp-text(select-option(sc, 0)) == 'alpha' && cmp-text(select-option(sc, 1)) == 'beta'
+r27 = cmp-key(select-option(sc, 0)) == 31 && cmp-key(select-option(sc, 1)) == 32
+
+dv-clear()
+rd = dv-form(1, -1)
+sel = dv-select(30, 'pick', rd)
+dv-option(31, 'alpha2', sel)
+dv-option(32, 'beta', sel)
+ops-d2 = dv-render(root-d, rd)
+r28 = ops-d2 == 0 && cmp-text(select-option(sc, 0)) == 'alpha2'
+
+; ============================================================================
+; 场景 E：flags 同步（checked / disabled）
+; ============================================================================
+root-e = cmp-root()
+; ⚠️ flags 位组合直接写字面量，不要写「顶层变量 = 位或表达式」：
+; main 作用域的位或初始化有编译器缺陷，同一份代码会取到 1 / 5 / 7（不稳定，
+; 已实测复现）。函数内的位或（如 dv-on）不受影响。
+f-on = 7
+dv-clear()
+re = dv-form(1, -1)
+dv-node(C-CHECKBOX, 40, 'agree', '', 0, 0, 0, f-on, re)
+ops-e1 = dv-render(root-e, re)
+cc = cmp-child(root-e, 0)
+r29 = cmp-kind(cc) == C-CHECKBOX && cmp-has(cc, F-CHECKED)
+r30 = cmp-has(cc, F-ENABLED) && !cmp-has(cc, F-DISABLED)
+
+f-off = 3
+dv-clear()
+re = dv-form(1, -1)
+dv-node(C-CHECKBOX, 40, 'agree', '', 0, 0, 0, f-off, re)
+ops-e2 = dv-render(root-e, re)
+r31 = ops-e2 == 0 && !cmp-has(cc, F-CHECKED)
+
+f-dis = 1
+dv-clear()
+re = dv-form(1, -1)
+dv-node(C-CHECKBOX, 40, 'agree', '', 0, 0, 0, f-dis, re)
+ops-e3 = dv-render(root-e, re)
+r32 = ops-e3 == 0 && cmp-has(cc, F-DISABLED) && !cmp-has(cc, F-ENABLED)
+
+; ============================================================================
+; 场景 F：声明式动作（视图描述「点了意味着什么」，应用层按 (act, payload) 分派）
+; ============================================================================
+root-f = cmp-root()
+dv-clear()
+rf = dv-form(1, -1)
+bf = dv-button(50, 'go', rf)
+lf = dv-label(51, 'plain', rf)
+dv-act(bf, DV-A-CLICK, 77)
+ops-f1 = dv-render(root-f, rf)
+r33 = ops-f1 == 2 && dv-act-of(bf) == DV-A-CLICK && dv-act-payload(bf) == 77
+r34 = dv-act-of(lf) == 0 && dv-act-payload(lf) == 0
+r35 = dv-node-by-key(50) == bf && dv-node-by-key(51) == lf && dv-node-by-key(999) == -1
+af, pf = dv-dispatch(50)
+r36 = af == DV-A-CLICK && pf == 77
+af2, pf2 = dv-dispatch(51)
+r37 = af2 == 0 && pf2 == 0
+
+; 同一节点改动作与载荷：结构零操作，dispatch 立刻取到新值
+dv-act(bf, DV-A-SUBMIT, 1)
+ops-f2 = dv-render(root-f, rf)
+af3, pf3 = dv-dispatch(50)
+r38 = ops-f2 == 0 && af3 == DV-A-SUBMIT && pf3 == 1
+
+; ============================================================================
+; 场景 G：重复节点（同形状 n 份，key 稳定 -> 跨帧复用 / 最小 diff）
+; ============================================================================
+root-g = cmp-root()
+G-TEXTS []str = with-len(3)
+G-TEXTS[0] = 'a'
+G-TEXTS[1] = 'bb'
+G-TEXTS[2] = 'ccc'
+G-TEXTS5 []str = with-len(5)
+G-TEXTS5[0] = 'a'
+G-TEXTS5[1] = 'bb'
+G-TEXTS5[2] = 'ccc'
+G-TEXTS5[3] = 'dddd'
+G-TEXTS5[4] = 'eeeee'
+G-TEXTS1 []str = with-len(1)
+G-TEXTS1[0] = 'a'
+
+dv-clear()
+rg = dv-form(1, -1)
+h0 = dv-repeat-labels(rg, 60, G-TEXTS)
+ops-g1 = dv-render(root-g, rg)
+g0 = cmp-child(root-g, 0)
+g1 = cmp-child(root-g, 1)
+g2 = cmp-child(root-g, 2)
+r39 = ops-g1 == 3 && h0 >= 0 && cmp-children(root-g) == 3
+r40 = cmp-key(g0) == 60 && cmp-key(g1) == 61 && cmp-key(g2) == 62
+r41 = cmp-text(g0) == 'a' && cmp-text(g1) == 'bb' && cmp-text(g2) == 'ccc'
+
+; 同长度重渲染：零结构操作，句柄不变
+dv-clear()
+rg = dv-form(1, -1)
+h0b = dv-repeat-labels(rg, 60, G-TEXTS)
+ops-g2 = dv-render(root-g, rg)
+r42 = ops-g2 == 0 && h0b == h0 && cmp-child(root-g, 0) == g0 && cmp-child(root-g, 1) == g1 && cmp-child(root-g, 2) == g2
+
+; 增长到 5：只新增 2 个，前 3 个句柄不变
+dv-clear()
+rg = dv-form(1, -1)
+dv-repeat-labels(rg, 60, G-TEXTS5)
+ops-g3 = dv-render(root-g, rg)
+r43 = ops-g3 == 2 && cmp-children(root-g) == 5 && cmp-child(root-g, 0) == g0 && cmp-child(root-g, 1) == g1 && cmp-child(root-g, 2) == g2
+r44 = cmp-key(cmp-child(root-g, 3)) == 63 && cmp-text(cmp-child(root-g, 3)) == 'dddd' && cmp-text(cmp-child(root-g, 4)) == 'eeeee'
+
+; 收缩到 1：只删 4 个
+dv-clear()
+rg = dv-form(1, -1)
+dv-repeat-labels(rg, 60, G-TEXTS1)
+ops-g4 = dv-render(root-g, rg)
+r45 = ops-g4 == 4 && cmp-children(root-g) == 1 && cmp-text(cmp-child(root-g, 0)) == 'a'
+
+; 定长重复（dv-repeat 原语）：n=0 不产节点，返回 -1
+root-g2 = cmp-root()
+dv-clear()
+rg2 = dv-form(1, -1)
+hn = dv-repeat(rg2, 70, 0, C-LABEL, 'x', '', 0, 0, 0, 7)
+ops-g5 = dv-render(root-g2, rg2)
+r46 = hn == -1 && ops-g5 == 0 && cmp-children(root-g2) == 0
+
+; 限量重复：n 小于长度只造 n 个；n 超长度按长度算
+root-g3 = cmp-root()
+dv-clear()
+rg3 = dv-form(1, -1)
+dv-repeat-labels-n(rg3, 90, G-TEXTS5, 2)
+ops-g6 = dv-render(root-g3, rg3)
+r47 = ops-g6 == 2 && cmp-children(root-g3) == 2 && cmp-text(cmp-child(root-g3, 1)) == 'bb'
+
+root-g4 = cmp-root()
+dv-clear()
+rg4 = dv-form(1, -1)
+dv-repeat-labels-n(rg4, 90, G-TEXTS5, 99)
+ops-g7 = dv-render(root-g4, rg4)
+r48 = ops-g7 == 5 && cmp-children(root-g4) == 5
+
+; ============================================================================
+; 场景 H：事件回路（dispatch 取动作 -> live-by-key 取句柄 -> 改状态 -> 重渲染）
+; ============================================================================
+root-h = cmp-root()
+dv-clear()
+rh = dv-form(1, -1)
+bh = dv-button(100, 'inc', rh)
+dv-act(bh, DV-A-CLICK, 1)
+dv-label(101, 'n=0', rh)
+ops-h1 = dv-render(root-h, rh)
+live-b = dv-live-by-key(root-h, 100)
+live-l = dv-live-by-key(root-h, 101)
+r49 = ops-h1 == 2 && live-b >= 0 && live-l >= 0 && dv-live-by-key(root-h, 999) == -1
+
+; 模拟三次点击：每次 dispatch -> 取 live 句柄 -> 改状态 -> 重建视图
+n = 0
+i = 0
+!! {
+    (i >= 3) -> { ** }
+    a1, p1 = dv-dispatch(100)
+    (a1 == DV-A-CLICK) -> {
+        lb = dv-live-by-key(root-h, 100)
+        (lb >= 0) -> { n = dv-add(n, 1) }
+    }
+    ; dv-act 是视图描述的一部分，与 dv-node 同生命周期：
+    ; dv-clear() 会清空动作池，所以每帧重建视图时都要重新挂一次。
+    dv-clear()
+    rh = dv-form(1, -1)
+    bh = dv-button(100, 'inc', rh)
+    dv-act(bh, DV-A-CLICK, 1)
+    dv-label(101, format('n={n}'), rh)
+    o = dv-render(root-h, rh)
+    (i == 0) -> { ops-h2 = o }
+    (i > 0) -> { ops-h3 = o }
+    i = dv-inc(i)
+}
+r50 = n == 3 && cmp-text(live-l) == 'n=3'
+r51 = ops-h2 == 0 && ops-h3 == 0
+
+; ============================================================================
+; 场景 I：全组件目录可声明式构造（83 kind）+ 新 flags 位（SEL / ACT / OPEN）
+; ============================================================================
+; 组件目录全表：声明式层应当是「全函数」—— 任一 kind 都能用 dv-node(kind, ...) 表达。
+I-KINDS []i64 = with-len(83)
+I-KINDS[0] = C-LABEL
+I-KINDS[1] = C-BUTTON
+I-KINDS[2] = C-BADGE
+I-KINDS[3] = C-TAG
+I-KINDS[4] = C-ICON
+I-KINDS[5] = C-KBD
+I-KINDS[6] = C-LINK
+I-KINDS[7] = C-SEPARATOR
+I-KINDS[8] = C-AVATAR
+I-KINDS[9] = C-EMPTY
+I-KINDS[10] = C-SPINNER
+I-KINDS[11] = C-MARKER
+I-KINDS[12] = C-CHECKBOX
+I-KINDS[13] = C-RADIO
+I-KINDS[14] = C-SWITCH
+I-KINDS[15] = C-INPUT
+I-KINDS[16] = C-TEXTAREA
+I-KINDS[17] = C-NUMBER-INPUT
+I-KINDS[18] = C-OTP-INPUT
+I-KINDS[19] = C-SEARCH
+I-KINDS[20] = C-SELECT
+I-KINDS[21] = C-COMBOBOX
+I-KINDS[22] = C-SLIDER
+I-KINDS[23] = C-STEPPER
+I-KINDS[24] = C-COLOR-PICKER
+I-KINDS[25] = C-DATE-PICKER
+I-KINDS[26] = C-FORM
+I-KINDS[27] = C-QUESTIONNAIRE
+I-KINDS[28] = C-TAB
+I-KINDS[29] = C-BREADCRUMB
+I-KINDS[30] = C-SIDEBAR
+I-KINDS[31] = C-MENU
+I-KINDS[32] = C-PAGINATION
+I-KINDS[33] = C-TOOLBAR
+I-KINDS[34] = C-TITLE-BAR
+I-KINDS[35] = C-STATUS-BAR
+I-KINDS[36] = C-COMMAND
+I-KINDS[37] = C-HISTORY
+I-KINDS[38] = C-DIALOG
+I-KINDS[39] = C-POPOVER
+I-KINDS[40] = C-TOOLTIP
+I-KINDS[41] = C-HOVER-CARD
+I-KINDS[42] = C-NOTIFICATION
+I-KINDS[43] = C-ALERT
+I-KINDS[44] = C-MESSAGE
+I-KINDS[45] = C-MESSAGE-SCROLLER
+I-KINDS[46] = C-SHEET
+I-KINDS[47] = C-PROGRESS
+I-KINDS[48] = C-SKELETON
+I-KINDS[49] = C-SHIMMER
+I-KINDS[50] = C-BUBBLE
+I-KINDS[51] = C-SPEECH
+I-KINDS[52] = C-INSPECTOR
+I-KINDS[53] = C-WINDOW-BORDER
+I-KINDS[54] = C-NATIVE-MENU
+I-KINDS[55] = C-ATTACHMENT
+I-KINDS[56] = C-TABLE
+I-KINDS[57] = C-LIST
+I-KINDS[58] = C-VIRTUAL-LIST
+I-KINDS[59] = C-TREE
+I-KINDS[60] = C-ACCORDION
+I-KINDS[61] = C-CAROUSEL
+I-KINDS[62] = C-CHART
+I-KINDS[63] = C-PLOT
+I-KINDS[64] = C-RATING
+I-KINDS[65] = C-DESCRIPTION-LIST
+I-KINDS[66] = C-GROUP-BOX
+I-KINDS[67] = C-COLLAPSIBLE
+I-KINDS[68] = C-DIFF
+I-KINDS[69] = C-HIGHLIGHTER
+I-KINDS[70] = C-CLIPBOARD
+I-KINDS[71] = C-SCROLL
+I-KINDS[72] = C-RESIZABLE
+I-KINDS[73] = C-DOCK
+I-KINDS[74] = C-GRID
+I-KINDS[75] = C-TEXT
+I-KINDS[76] = C-THEME
+I-KINDS[77] = C-SIZING
+I-KINDS[78] = C-STYLED
+I-KINDS[79] = C-ROOT
+I-KINDS[80] = C-WINDOW-EXT
+I-KINDS[81] = C-SEARCHABLE-LIST
+I-KINDS[82] = C-INDEX-PATH
+
+root-i = cmp-root()
+dv-clear()
+ri = dv-form(1, -1)
+ii = 0
+!! {
+    (ii >= 83) -> { ** }
+    kd = I-KINDS[ii]: {
+        ok -> it
+        -> -1
+    }
+    dv-node(kd, dv-add(1000, ii), 'k', '', 0, 0, 0, 3, ri)
+    ii = dv-inc(ii)
+}
+ops-i1 = dv-render(root-i, ri)
+
+; 逐个核对活组件树的 kind / key 与视图一致
+bad = 0
+ii = 0
+!! {
+    (ii >= 83) -> { ** }
+    ch = cmp-child(root-i, ii)
+    kd2 = I-KINDS[ii]: {
+        ok -> it
+        -> -1
+    }
+    (cmp-kind(ch) != kd2) -> { bad = dv-inc(bad) }
+    (cmp-key(ch) != dv-add(1000, ii)) -> { bad = dv-inc(bad) }
+    ii = dv-inc(ii)
+}
+r52 = ops-i1 == 83 && cmp-children(root-i) == 83 && bad == 0
+
+; 新 flags 位：SEL / ACT / OPEN 要映射到 CMP 的 F-SELECTED / F-ACTIVE / F-OPEN。
+; 59 = DV-F-VIS|DV-F-EN|DV-F-SEL|DV-F-ACT|DV-F-OPEN（字面量，规避顶层位或缺陷）
+root-i2 = cmp-root()
+dv-clear()
+ri2 = dv-form(1, -1)
+dv-node(C-CHECKBOX, 200, 'sel', '', 0, 0, 0, 59, ri2)
+ops-i2 = dv-render(root-i2, ri2)
+lc = cmp-child(root-i2, 0)
+r53 = ops-i2 == 1 && cmp-has(lc, F-SELECTED) && cmp-has(lc, F-ACTIVE) && cmp-has(lc, F-OPEN) && !cmp-has(lc, F-CHECKED)
+
+; 同 key 同 kind 改 flags：只清掉三位，零结构操作
+dv-clear()
+ri2 = dv-form(1, -1)
+dv-node(C-CHECKBOX, 200, 'sel', '', 0, 0, 0, 3, ri2)
+ops-i3 = dv-render(root-i2, ri2)
+r54 = ops-i3 == 0 && !cmp-has(lc, F-SELECTED) && !cmp-has(lc, F-ACTIVE) && !cmp-has(lc, F-OPEN)
+
+; 兜底：不在目录里的 kind 也走 cmp-alloc，kind 不丢
+root-i3 = cmp-root()
+dv-clear()
+ri3 = dv-form(1, -1)
+dv-node(900, 300, 'x', '', 0, 0, 0, 3, ri3)
+ops-i4 = dv-render(root-i3, ri3)
+r55 = ops-i4 == 1 && cmp-kind(cmp-child(root-i3, 0)) == 900 && cmp-key(cmp-child(root-i3, 0)) == 300
+
+; ============================================================================
+; 场景 J：命名构造器（全目录）+ flags 组合子
+; ============================================================================
+root-j = cmp-root()
+dv-clear()
+rj = dv-form(1, -1)
+dv-icon(1001, 'star', rj)
+dv-kbd(1002, 'Ctrl', rj)
+dv-avatar(1003, 'ab', rj)
+dv-marker(1004, 'm', rj)
+dv-radio(1005, 'r1', rj)
+dv-otp-input(1006, 6, rj)
+dv-search(1007, rj)
+dv-combobox(1008, rj)
+dv-stepper(1009, rj)
+dv-color-picker(1010, rj)
+dv-date-picker(1011, rj)
+dv-questionnaire(1012, rj)
+dv-tab(1013, rj)
+dv-breadcrumb(1014, rj)
+dv-sidebar(1015, rj)
+dv-menu(1016, rj)
+dv-pagination(1017, 42, rj)
+dv-command(1018, rj)
+dv-history(1019, rj)
+dv-popover(1020, rj)
+dv-tooltip(1021, 'tip', rj)
+dv-hover-card(1022, rj)
+dv-notification(1023, 'hi', rj)
+dv-alert(1024, 'warn', rj)
+dv-message(1025, 'msg', rj)
+dv-message-scroller(1026, rj)
+dv-sheet(1027, 'sheet', rj)
+dv-skeleton(1028, rj)
+dv-shimmer(1029, rj)
+dv-bubble(1030, 'b', rj)
+dv-speech(1031, 's', rj)
+dv-inspector(1032, rj)
+dv-window-border(1033, rj)
+dv-native-menu(1034, rj)
+dv-attachment(1035, 'f.zip', rj)
+dv-table(1036, 3, 4, rj)
+dv-virtual-list(1037, 50, rj)
+dv-tree(1038, rj)
+dv-accordion(1039, rj)
+dv-carousel(1040, rj)
+dv-chart(1041, rj)
+dv-plot(1042, rj)
+dv-rating(1043, 5, rj)
+dv-description-list(1044, rj)
+dv-collapsible(1045, 'sec', rj)
+dv-diff(1046, rj)
+dv-highlighter(1047, 'let x = 1', rj)
+dv-clipboard(1048, rj)
+dv-resizable(1049, rj)
+dv-dock(1050, rj)
+dv-text-node(1051, 'raw', rj)
+dv-theme(1052, rj)
+dv-sizing(1053, rj)
+dv-styled(1054, rj)
+dv-window-ext(1055, rj)
+dv-searchable-list(1056, rj)
+dv-index-path(1057, rj)
+ops-j1 = dv-render(root-j, rj)
+r56 = ops-j1 == 57 && cmp-children(root-j) == 57
+
+; 抽查：首尾 kind、VALUE / VALUE2 语义（otp 格数 / 表格列行 / 分页总数 / 评分满分）
+r57 = cmp-kind(cmp-child(root-j, 0)) == C-ICON
+    && cmp-value(cmp-child(root-j, 5)) == 6
+    && cmp-kind(cmp-child(root-j, 16)) == C-PAGINATION
+    && cmp-value2(cmp-child(root-j, 16)) == 42
+    && cmp-kind(cmp-child(root-j, 35)) == C-TABLE
+    && cmp-value(cmp-child(root-j, 35)) == 3
+    && cmp-value2(cmp-child(root-j, 35)) == 4
+    && cmp-kind(cmp-child(root-j, 42)) == C-RATING
+    && cmp-value2(cmp-child(root-j, 42)) == 5
+    && cmp-text(cmp-child(root-j, 50)) == 'raw'
+    && cmp-kind(cmp-child(root-j, 56)) == C-INDEX-PATH
+
+; flags 组合子（函数内位或，数值稳定）
+r58 = dv-on-sel() == 11 && dv-on-act() == 19 && dv-on-open() == 35
+
+; ============================================================================
+; 场景 K：状态归约（dv-apply）—— 「点击」直接表述成对状态池的赋值
+; ============================================================================
+K-S []i64 = with-len(4)
+K-S[0] = 0     ; 勾选
+K-S[1] = 40    ; 选中项
+K-S[2] = 2     ; 行数
+K-S[3] = 7     ; 无关槽（验证不误写）
+
+root-k = cmp-root()
+dv-clear()
+rk = dv-form(1, -1)
+chkk = dv-node(C-CHECKBOX, 200, 'agree', '', 0, 0, 0, dv-on(), rk)
+dv-act(chkk, DV-A-TOGGLE, 0)
+optk = dv-node(C-LABEL, 201, 'gamma', '', 0, 2, 0, dv-on(), rk)
+dv-act(optk, DV-A-SET, 1)
+addk = dv-node(C-BUTTON, 202, 'add', '', 0, 1, 3, dv-on(), rk)
+dv-act(addk, DV-A-DELTA, 2)
+delk = dv-node(C-BUTTON, 203, 'del', '', 0, -1, 3, dv-on(), rk)
+dv-act(delk, DV-A-DELTA, 2)
+dv-label(204, 'plain', rk)
+ops-k1 = dv-render(root-k, rk)
+r59 = ops-k1 == 5
+
+n1 = dv-apply(K-S, 200)   ; toggle 槽 0：0 -> 1
+n2 = dv-apply(K-S, 201)   ; set 槽 1 = 2
+n3 = dv-apply(K-S, 202)   ; delta 槽 2：2 -> 3
+n4 = dv-apply(K-S, 202)   ; delta 槽 2：3 -> 3（到顶截断）
+n5 = dv-apply(K-S, 203)   ; delta 槽 2：3 -> 2
+n6 = dv-apply(K-S, 203)   ; delta 槽 2：2 -> 1
+n7 = dv-apply(K-S, 203)   ; delta 槽 2：1 -> 0
+n8 = dv-apply(K-S, 203)   ; delta 槽 2：0 -> 0（到底截断）
+r60 = n1 == 1 && n2 == 1 && n3 == 1 && n4 == 1 && n5 == 1 && n6 == 1 && n7 == 1 && n8 == 1
+
+s0 = K-S[0]: {
+    ok -> it
+    -> -1
+}
+s1 = K-S[1]: {
+    ok -> it
+    -> -1
+}
+s2 = K-S[2]: {
+    ok -> it
+    -> -1
+}
+s3 = K-S[3]: {
+    ok -> it
+    -> -1
+}
+r61 = s0 == 1 && s1 == 2 && s2 == 0 && s3 == 7
+
+; 无动作的 key、未知 key 都不归约（返回 0，状态不变）
+r62 = dv-apply(K-S, 204) == 0 && dv-apply(K-S, 999) == 0
+
+; 再翻一次：toggle 可逆
+dv-apply(K-S, 200)
+s0b = K-S[0]: {
+    ok -> it
+    -> -1
+}
+r63 = s0b == 0
+
+; 归约后重建视图：状态 -> flags（勾选框回到未勾选）
+dv-clear()
+rk2 = dv-form(1, -1)
+fa2 = dv-on()
+(s0b != 0) -> { fa2 = dv-on-chk() }
+chkk2 = dv-node(C-CHECKBOX, 200, 'agree', '', 0, 0, 0, fa2, rk2)
+ops-k2 = dv-render(root-k, rk2)
+; 旧视图的另外 4 个节点被删掉（4 次结构操作），勾选框复用且未勾选
+r64 = ops-k2 == 4 && cmp-children(root-k) == 1 && !cmp-has(cmp-child(root-k, 0), F-CHECKED)
+
+; clamp 单测
+r65 = dv-clamp(5, 0, 3) == 3 && dv-clamp(-2, 0, 3) == 0 && dv-clamp(2, 0, 0) == 2 && dv-clamp(2, 0, 3) == 2
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10
+all-ok = all-ok && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18
+all-ok = all-ok && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28
+all-ok = all-ok && r29 && r30 && r31 && r32
+all-ok = all-ok && r33 && r34 && r35 && r36 && r37 && r38
+all-ok = all-ok && r39 && r40 && r41 && r42 && r43 && r44 && r45 && r46 && r47 && r48
+all-ok = all-ok && r49 && r50 && r51
+all-ok = all-ok && r52 && r53 && r54 && r55
+all-ok = all-ok && r56 && r57 && r58
+all-ok = all-ok && r59 && r60 && r61 && r62 && r63 && r64 && r65
+print('A build={r1}{r2}{r3} reuse={r4}{r5}{r6} del={r7} add+order={r8}{r9} reorder={r10}')
+print('B nest={r11}{r12}{r13}{r14}{r15} edit={r16}{r17} nest-del={r18}')
+print('C cond={r19}{r20} on={r21}{r22} off={r23}')
+print('D select={r24}{r25}{r26}{r27} edit={r28}')
+print('E flags={r29}{r30}{r31}{r32}')
+print('F act={r33}{r34}{r35} dispatch={r36}{r37} edit={r38}')
+print('G repeat={r39}{r40}{r41} reuse={r42} grow={r43}{r44} shrink={r45} empty={r46} clamp={r47}{r48}')
+print('H loop={r49} state={r50} diff={r51}')
+print('I catalog={r52} flags-on={r53} flags-off={r54} fallback={r55}')
+print('J builders={r56} props={r57} flag-fns={r58}')
+print('K reduce={r59}{r60}{r61} skip={r62} back={r63} view={r64} clamp={r65}')
+print('ops A={ops-a1},{ops-a2},{ops-a3},{ops-a4},{ops-a5} B={ops-b1},{ops-b2},{ops-b3} C={ops-c1},{ops-c2},{ops-c3} D={ops-d1},{ops-d2} E={ops-e1},{ops-e2},{ops-e3}')
+print('ops F={ops-f1},{ops-f2} G={ops-g1},{ops-g2},{ops-g3},{ops-g4},{ops-g5},{ops-g6},{ops-g7} H={ops-h1},{ops-h2},{ops-h3}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DV TESTS PASSED') }
+(!all-ok) -> { print('SOME DV TESTS FAILED') }

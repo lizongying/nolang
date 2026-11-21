@@ -1,0 +1,252 @@
+; ============================================================================
+; noui 声明式「hover 也是状态 + 非模态叠加层」测试（阶段 17）—— src/dv.no + src/dv-app.no + src/cmp-scene.no
+;
+; 阶段 15/16 的叠加层是模态的（对话框 / 菜单）：点不穿。tooltip / hover-card / 通知
+; 需要相反的一档 —— 仍最后画、仍可被命中，但没接住点击就继续往下找（点得穿）。
+; 阶段 17 补两件事：
+;   1) F-PASS（活池）/ DV-F-PASS（视图池）+ dv-pass / dv-on-tip，cs-hit 分档处理；
+;   2) hover 进状态：dv-hover(node, slot) 声明「我被 hover 时把 1 写进 S[slot]」，
+;      装配层每帧按最近一次布局的命中 key 归约（dva-sync-hover），
+;      视图再据此建一个锚在触发节点上的 tooltip —— hover 因此也进得了 UI = f(state)。
+;
+; 场景钉住：
+;   Z 标记  ：dv-hover 只动 DV-HOVER；dv-hover-of 读回；默认 -1；dv-clear 清掉；
+;             dv-pass 加 DV-F-PASS；dv-on-tip = VIS|EN|PASS|OVL
+;   Y 调和  ：活节点带 F-OVERLAY + F-PASS；普通叠加层没有 F-PASS；
+;             同一 key 第二帧改成普通叠加层后 F-PASS 被「覆盖式」清掉
+;   S 同步  ：dva-sync-hover 按 DVA-HIT 写 1/0；未声明的槽不动；-1 / -2 都算没命中
+;   H 命中  ：非模态浮层自身可命中；点穿到下面的兄弟；对照模态树同点是 -2；
+;             对照无浮层树同点命中盒子
+;   P 绘制  ：非模态浮层仍然最后画
+;   T 端到端：hover 槽为 1 时视图里出现锚在触发节点上的 tooltip，为 0 时消失
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-hover.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-hover tests ===')
+
+; 场景辅助：某个颜色第一次出现的场景下标（-1 = 没画过）
+first-c = (c i64) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-c(i) == c) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 Z：标记 —— dv-hover / dv-pass / dv-on-tip
+; ============================================================================
+dv-clear()
+pz = dv-form(1, -1)
+nz = dv-node(C-LABEL, 40, 'a', '', 0, 0, 0, dv-on(), pz)
+r1 = dv-hover-of(nz) == -1
+dv-hover(nz, 3)
+r2 = dv-hover-of(nz) == 3
+; dv-hover 只动 hover 池，不动 flags
+r3 = (dv-flags(nz) & 128) == 0
+dv-pass(nz)
+r4 = (dv-flags(nz) & 128) != 0
+; dv-on-tip = VIS | EN | PASS | OVL
+ft = dv-on-tip()
+r5 = (ft & 1) != 0 && (ft & 2) != 0 && (ft & 128) != 0 && (ft & 64) != 0
+; dv-clear 之后新节点回到默认（每帧重建视图时不会残留上一帧的 hover / pass）
+dv-clear()
+pz2 = dv-form(1, -1)
+nz2 = dv-node(C-LABEL, 40, 'a', '', 0, 0, 0, dv-on(), pz2)
+r6 = dv-hover-of(nz2) == -1 && (dv-flags(nz2) & 128) == 0
+
+; ============================================================================
+; 场景 Y：调和 —— 活节点带 F-OVERLAY + F-PASS；普通叠加层没有 F-PASS；
+;           flags 是「覆盖式」同步（第二帧降级要能把 F-PASS 清掉）
+; ============================================================================
+root-y = cmp-root()
+dv-clear()
+py = dv-form(1, -1)
+by = dv-node(C-BUTTON, 10, 'trigger', '', 0, 0, 0, dv-on(), py)
+ty = dv-node(C-LABEL, 11, 'hint', '', 0, 0, 0, dv-on-tip(), py)
+oy = dv-node(C-POPOVER, 12, 'pop', '', 0, 0, 0, dv-on-overlay(), py)
+ops-y = dv-render(root-y, py)
+lby = dv-live-deep(root-y, 10)
+lty = dv-live-deep(root-y, 11)
+loy = dv-live-deep(root-y, 12)
+r7 = ops-y == 3 && lby >= 0 && lty >= 0 && loy >= 0
+r8 = cmp-has(lty, F-OVERLAY) && cmp-has(lty, F-PASS)
+r9 = cmp-has(loy, F-OVERLAY) && (!cmp-has(loy, F-PASS))
+; 第二帧：同一个 key=11 改成普通叠加层（同 key 同 kind -> 复用，ops 应为 0）
+dv-clear()
+py2 = dv-form(1, -1)
+dv-node(C-BUTTON, 10, 'trigger', '', 0, 0, 0, dv-on(), py2)
+dv-node(C-LABEL, 11, 'hint', '', 0, 0, 0, dv-on-overlay(), py2)
+dv-node(C-POPOVER, 12, 'pop', '', 0, 0, 0, dv-on-overlay(), py2)
+ops-y2 = dv-render(root-y, py2)
+lty2 = dv-live-deep(root-y, 11)
+r10 = ops-y2 == 0 && cmp-has(lty2, F-OVERLAY) && (!cmp-has(lty2, F-PASS))
+
+; ============================================================================
+; 场景 S：hover 状态同步 —— dva-sync-hover 按 DVA-HIT 写 1/0
+; ============================================================================
+ST []i64 = with-len(4)
+ST[1] = 0
+ST[2] = 7
+root-s = cmp-root()
+dv-clear()
+ps = dv-form(1, -1)
+bs = dv-node(C-BUTTON, 21, 'b', '', 0, 0, 0, dv-on(), ps)
+dv-hover(bs, 1)
+ls = dv-node(C-LABEL, 22, 'x', '', 0, 0, 0, dv-on(), ps)
+dv-render(root-s, ps)
+lb = dv-live-deep(root-s, 21)
+ll = dv-live-deep(root-s, 22)
+; 命中声明过的节点 -> 写 1
+DVA-HIT[0] = lb
+dva-sync-hover(ST)
+r11 = ST[1] == 1
+; 没声明 hover 的槽不受影响
+r12 = ST[2] == 7
+; 命中别的节点 -> 写回 0
+DVA-HIT[0] = ll
+dva-sync-hover(ST)
+r13 = ST[1] == 0
+; 无命中（-1）-> 0
+DVA-HIT[0] = -1
+dva-sync-hover(ST)
+r14 = ST[1] == 0
+; 被模态层挡住（-2）-> 也算没命中
+DVA-HIT[0] = -2
+dva-sync-hover(ST)
+r15 = ST[1] == 0
+
+; ============================================================================
+; 场景 H：命中 —— 非模态浮层可命中、点得穿；对照模态树 / 无浮层树
+; ============================================================================
+root-h = cmp-root()
+dv-clear()
+ph = dv-form(1, -1)
+bh = dv-form(2, ph)
+dv-size(bh, 80000, 60000)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), bh)
+th = dv-node(C-LABEL, 11, 'hint', '', 0, 0, 0, dv-on-tip(), bh)
+dv-render(root-h, ph)
+lh = dv-live-deep(root-h, 2)
+lth = dv-live-deep(root-h, 11)
+cs-layout(root-h, 0, 0, 80000, 60000)
+bx, by, bw, bh2 = cs-rect(lh)
+tx, ty, tw, th2 = cs-rect(lth)
+print('H box={bx},{by},{bw},{bh2} tip={tx},{ty},{tw},{th2}')
+; 非模态浮层自身可命中
+r16 = cs-hit(root-h, cs-add(tx, 1), cs-add(ty, 1)) == lth
+; 盒内、浮层外的一点（右下角）
+qx = cs-sub(cs-add(bx, bw), 1)
+qy = cs-sub(cs-add(by, bh2), 1)
+out = (qx < tx) || (qx > cs-add(tx, tw)) || (qy < ty) || (qy > cs-add(ty, th2))
+; 点穿：命中的是盒子本身
+r17 = out && cs-hit(root-h, qx, qy) == lh
+; 对照 1：同构但浮层是模态的 -> 同一点被挡住（-2）
+root-h2 = cmp-root()
+dv-clear()
+ph2 = dv-form(1, -1)
+bh3 = dv-form(2, ph2)
+dv-size(bh3, 80000, 60000)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), bh3)
+dv-node(C-LABEL, 11, 'hint', '', 0, 0, 0, dv-on-overlay(), bh3)
+dv-render(root-h2, ph2)
+cs-layout(root-h2, 0, 0, 80000, 60000)
+r18 = cs-hit(root-h2, qx, qy) == -2
+; 对照 2：同构但没有浮层 -> 同一点命中盒子
+root-h0 = cmp-root()
+dv-clear()
+ph0 = dv-form(1, -1)
+bh0 = dv-form(2, ph0)
+dv-size(bh0, 80000, 60000)
+dv-node(C-LABEL, 3, 'a', '', 0, 0, 0, dv-on(), bh0)
+dv-render(root-h0, ph0)
+lh0 = dv-live-deep(root-h0, 2)
+cs-layout(root-h0, 0, 0, 80000, 60000)
+r19 = cs-hit(root-h0, qx, qy) == lh0
+
+; ============================================================================
+; 场景 P：绘制 —— 非模态浮层仍然最后画
+; ============================================================================
+cmp-set-color(lh, 0x11223344)
+cmp-set-color(lth, 0x55667788)
+cs-clear()
+cs-paint(root-h)
+ib = first-c(0x11223344)
+ip = first-c(0x55667788)
+r20 = ib >= 0 && ip >= 0 && ip > ib
+
+; ============================================================================
+; 场景 T：端到端 —— hover 槽为 1 时视图里出现锚在触发节点上的 tooltip，为 0 时消失
+; ============================================================================
+ST2 []i64 = with-len(2)
+root-t = cmp-root()
+ST2[0] = 1
+dv-clear()
+pt = dv-form(1, -1)
+bt = dv-node(C-BUTTON, 21, 'b', '', 0, 0, 0, dv-on(), pt)
+dv-hover(bt, 0)
+hv = ST2[0]: {
+    ok -> it
+
+    -> 0
+}
+(hv != 0) -> {
+    tp = dv-node(C-LABEL, 31, 'hint', '', 0, 0, 0, dv-on-tip(), pt)
+    dv-overlay-anchor(tp, 21)
+}
+dv-render(root-t, pt)
+lt = dv-live-deep(root-t, 31)
+r21 = lt >= 0 && cmp-has(lt, F-PASS) && cmp-has(lt, F-OVERLAY) && cmp-anchor(lt) == 21
+; hover 槽归 0 -> 视图里不再建这个节点
+ST2[0] = 0
+dv-clear()
+pt2 = dv-form(1, -1)
+bt2 = dv-node(C-BUTTON, 21, 'b', '', 0, 0, 0, dv-on(), pt2)
+dv-hover(bt2, 0)
+hv2 = ST2[0]: {
+    ok -> it
+
+    -> 0
+}
+(hv2 != 0) -> {
+    tp2 = dv-node(C-LABEL, 31, 'hint', '', 0, 0, 0, dv-on-tip(), pt2)
+    dv-overlay-anchor(tp2, 21)
+}
+dv-render(root-t, pt2)
+r22 = dv-live-deep(root-t, 31) == -1
+; 触发节点本身还在（同 key 复用，没被误删）
+r23 = dv-live-deep(root-t, 21) >= 0
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}')
+print('Y live={r7}{r8}{r9}{r10}')
+print('S sync={r11}{r12}{r13}{r14}{r15}')
+print('H hit={r16}{r17}{r18}{r19}')
+print('P paint={r20}')
+print('T e2e={r21}{r22}{r23}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-HOVER TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-HOVER TESTS FAILED')
+}

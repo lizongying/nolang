@@ -55,7 +55,11 @@ ent-new = (kind i64) (h i64) {
 }
 
 ent-get = (h i64) (v i64) {
-    v = ENT-VALUE[h]
+    v = ENT-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ent-set = (h i64, x i64) {
@@ -293,13 +297,21 @@ hover = BTN-NONE
             cx = evt-x(e)
             cy = evt-y(e)
             (point-in-rect(cx, cy, BTN1-X, BTN1-Y, BTN-W, BTN-H)) -> {
-                nc = count - 1
-                nc: { ok -> count = it  err -> _ }
+                nc = count - 1: {
+                    ok -> it
+
+                    -> count
+                }
+                count = nc
                 ent-set(counter, count)
             }
             (point-in-rect(cx, cy, BTN2-X, BTN2-Y, BTN-W, BTN-H)) -> {
-                nc = count + 1
-                nc: { ok -> count = it  err -> _ }
+                nc = count + 1: {
+                    ok -> it
+
+                    -> count
+                }
+                count = nc
                 ent-set(counter, count)
             }
         }

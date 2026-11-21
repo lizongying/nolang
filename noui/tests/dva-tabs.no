@@ -1,0 +1,244 @@
+; ============================================================================
+; noui 声明式「标签页」测试（阶段 19）—— src/dv.no
+;
+; 命令式内核里 C-TAB 早就能画（cs-paint-tab）能命中，但用法是命令式的：
+; 手动 cmp-alloc(C-TAB) + 逐个建标题子节点 + tab-select 改当前页。
+; 阶段 19 补一个声明式入口 dv-tabs(parent, active, slot, labels, base)：
+;   - 一条 C-TAB 标题条（key = base）+ n 个标题（key = base+1+i）+ 内容容器
+;     （key = base+1+n，函数返回它）；
+;   - 标题的选中态用 flags 表达（dv-on-sel），点第 i 个标题 = SET slot = i
+;     （复用现有归约，主循环一行不用改）；
+;   - 当前页另记在 DV-TAB-ACT[bar]，调和时同步到 C-TAB 自己的 CMP-VALUE
+;     —— 因为 cs-paint-tab 画高亮读的是 tab-active(h)（= CMP-VALUE）。
+;
+; 场景钉住：
+;   Z 标记  ：dv-tabs 建出「条 + n 标题 + 内容容器」；key 分配；标题文案 / value /
+;             动作（SET slot）；active 标题带 DV-F-SEL；dv-tab-active-of 读回；
+;             非标签节点 DV-TAB-ACT 是 -1
+;   Y 调和  ：活 C-TAB 的 tab-active / tab-count / tab-title；同 key 换 active
+;             不产生结构操作；越界的 active 被 tab-select 挡掉（保持原页）
+;   D 派发  ：点标题 key -> DV-A-SET + slot；dv-apply 把页号写进状态池
+;   L 布局  ：标题同一行、x 递增；内容容器在标题条下方；标题可命中
+;   P 绘制  ：选中标题用 CS-TH-ACCENT（全场景只此一处的强调色），切页后
+;             强调色在场景里的位置跟着移动
+;   E 端到端：布局 -> cs-hit -> cmp-key -> dispatch -> apply -> 重建视图 ->
+;            活树当前页变、页面内容子树切换（走的是主循环那条真实命中路径）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-tabs.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-tabs tests ===')
+
+; 场景辅助：某个颜色出现的次数 / 第一次出现的场景下标
+count-c = (c i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-c(i) == c) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+first-c = (c i64) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-c(i) == c) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; 共用数据
+LB []str = ['one', 'two', 'three']
+D-TAB-SLOT = 5
+D-TAB-BASE = 100
+
+; ============================================================================
+; 场景 Z：标记 —— dv-tabs 的结构 / key / 文案 / value / 动作 / 选中 flags
+; ============================================================================
+dv-clear()
+pz = dv-form(1, -1)
+page = dv-tabs(pz, 1, D-TAB-SLOT, LB, D-TAB-BASE)
+r1 = page >= 0 && dv-kind(page) == C-FORM && dv-key(page) == 104
+bar = dv-node-by-key(D-TAB-BASE)
+r2 = bar >= 0 && dv-kind(bar) == C-TAB
+r3 = dv-tab-active-of(bar) == 1
+; 内容容器本身不是标签条（默认 -1，调和时不会被 tab-select 误写）
+r4 = dv-tab-active-of(page) == -1
+h0 = dv-node-by-key(101)
+h1 = dv-node-by-key(102)
+h2 = dv-node-by-key(103)
+r5 = h0 >= 0 && dv-text(h0) == 'one' && dv-value(h0) == 0
+r6 = h1 >= 0 && dv-text(h1) == 'two' && dv-value(h1) == 1
+; 选中态用 flags 表达：active 那个标题带 DV-F-SEL，别的标题不带
+r7 = (dv-flags(h1) & DV-F-SEL) != 0 && (dv-flags(h0) & DV-F-SEL) == 0 && (dv-flags(h2) & DV-F-SEL) == 0
+; 动作：点标题 = SET 状态槽，操作数是自己的页号
+r8 = dv-act-of(h0) == DV-A-SET && dv-act-payload(h0) == D-TAB-SLOT && dv-act-of(h2) == DV-A-SET
+; 父节点的直接子节点 = 标题条 + 内容容器
+r9 = dv-child-count(pz) == 2 && dv-child-count(bar) == 3
+
+; ============================================================================
+; 场景 Y：调和 —— 活 C-TAB 的当前页 / 标题数 / 标题文案；换页不产生结构操作；
+;           越界 active 被 tab-select 挡掉
+; ============================================================================
+root-y = cmp-root()
+dv-clear()
+py = dv-form(1, -1)
+dv-tabs(py, 1, D-TAB-SLOT, LB, D-TAB-BASE)
+ops-y = dv-render(root-y, py)
+lb = dv-live-deep(root-y, D-TAB-BASE)
+r10 = ops-y == 5 && lb >= 0
+r11 = tab-active(lb) == 1 && tab-count(lb) == 3 && tab-title(lb, 1) == 'two'
+; 第二帧：同一个 base、active 改成 2 —— 同 key 同 kind，结构零操作
+dv-clear()
+py2 = dv-form(1, -1)
+dv-tabs(py2, 2, D-TAB-SLOT, LB, D-TAB-BASE)
+ops-y2 = dv-render(root-y, py2)
+r12 = ops-y2 == 0 && tab-active(lb) == 2
+; 越界：active=99 不在 [0, 3) —— tab-select 忽略，当前页保持 2
+dv-clear()
+py3 = dv-form(1, -1)
+dv-tabs(py3, 99, D-TAB-SLOT, LB, D-TAB-BASE)
+ops-y3 = dv-render(root-y, py3)
+r13 = ops-y3 == 0 && tab-active(lb) == 2
+
+; ============================================================================
+; 场景 D：派发 + 归约 —— 点标题 = SET slot = 页号
+; ============================================================================
+ST []i64 = with-len(6)
+ST[D-TAB-SLOT] = 0
+act1, pay1 = dv-dispatch(102)
+r14 = act1 == DV-A-SET && pay1 == D-TAB-SLOT
+n1 = dv-apply(ST, 102)
+r15 = n1 == 1 && ST[D-TAB-SLOT] == 1
+n2 = dv-apply(ST, 103)
+r16 = n2 == 1 && ST[D-TAB-SLOT] == 2
+
+; ============================================================================
+; 场景 L：布局 —— 标题同一行、x 递增；内容容器在标题条下方；标题可命中
+; ============================================================================
+root-l = cmp-root()
+dv-clear()
+pl = dv-form(1, -1)
+dv-tabs(pl, 0, D-TAB-SLOT, LB, D-TAB-BASE)
+dv-render(root-l, pl)
+cs-layout(root-l, 0, 0, 80000, 60000)
+lb2 = dv-live-deep(root-l, D-TAB-BASE)
+l0 = dv-live-deep(root-l, 101)
+l1 = dv-live-deep(root-l, 102)
+x0, y0, w0, h0 = cs-rect(l0)
+x1, y1, w1, h1 = cs-rect(l1)
+bx, by, bw, bh = cs-rect(lb2)
+r17 = l0 >= 0 && l1 >= 0 && y0 == y1 && x1 > x0
+lp = dv-live-deep(root-l, 104)
+px, py2, pw, ph = cs-rect(lp)
+r18 = lp >= 0 && py2 >= cs-add(by, bh)
+r19 = cs-hit(root-l, cs-add(x0, 1), cs-add(y0, 1)) == l0
+
+; ============================================================================
+; 场景 P：绘制 —— 选中标题用 CS-TH-ACCENT，切页后强调色位置跟着走
+; ============================================================================
+acc = cs-theme(CS-TH-ACCENT)
+cs-clear()
+cs-paint(root-l)
+ia0 = first-c(acc)
+r20 = count-c(acc) == 1 && ia0 >= 0
+; 切到第二页重画：强调色应该出现在更靠后的场景下标上（第二个标题的矩形）
+dv-clear()
+pl2 = dv-form(1, -1)
+dv-tabs(pl2, 1, D-TAB-SLOT, LB, D-TAB-BASE)
+dv-render(root-l, pl2)
+cs-layout(root-l, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-l)
+ia1 = first-c(acc)
+r21 = count-c(acc) == 1 && ia1 > ia0
+
+; ============================================================================
+; 场景 E：端到端 —— 点击标题 -> 归约 -> 重建视图 -> 当前页与页面内容一起变
+; ============================================================================
+ST2 []i64 = with-len(6)
+root-e = cmp-root()
+ST2[D-TAB-SLOT] = 0
+; 第一帧：active=0，页面内容挂 key=200
+av = ST2[D-TAB-SLOT]: {
+    ok -> it
+
+    -> 0
+}
+dv-clear()
+pe = dv-form(1, -1)
+pg = dv-tabs(pe, av, D-TAB-SLOT, LB, D-TAB-BASE)
+dv-node(C-LABEL, 200, 'page zero', '', 0, 0, 0, dv-on(), pg)
+ops-e1 = dv-render(root-e, pe)
+r22 = ops-e1 == 6 && tab-active(dv-live-deep(root-e, D-TAB-BASE)) == 0
+; 真实命中：布局后点第二个标题矩形的中心，走 cs-hit -> cmp-key -> dv-dispatch
+cs-layout(root-e, 0, 0, 80000, 60000)
+lh = dv-live-deep(root-e, 102)
+hx, hy, hw, hh = cs-rect(lh)
+hit = cs-hit(root-e, cs-add(hx, cs-div(hw, 2)), cs-add(hy, cs-div(hh, 2)))
+r27 = lh >= 0 && hit == lh
+kk = cmp-key(hit)
+act2, pay2 = dv-dispatch(kk)
+ne = dv-apply(ST2, kk)
+r23 = kk == 102 && act2 == DV-A-SET && ne == 1 && ST2[D-TAB-SLOT] == 1
+; 第二帧：active=1 -> 换内容子树（200 删、201 建），标题条与容器同 key 复用
+av2 = ST2[D-TAB-SLOT]: {
+    ok -> it
+
+    -> 0
+}
+dv-clear()
+pe2 = dv-form(1, -1)
+pg2 = dv-tabs(pe2, av2, D-TAB-SLOT, LB, D-TAB-BASE)
+dv-node(C-LABEL, 201, 'page one', '', 0, 0, 0, dv-on(), pg2)
+ops-e2 = dv-render(root-e, pe2)
+r24 = ops-e2 == 2 && tab-active(dv-live-deep(root-e, D-TAB-BASE)) == 1
+r25 = dv-live-deep(root-e, 201) >= 0 && dv-live-deep(root-e, 200) == -1
+; 再点第三个标题 -> 内容再换（202），标题条仍然复用
+act3, pay3 = dv-dispatch(103)
+dv-apply(ST2, 103)
+av3 = ST2[D-TAB-SLOT]: {
+    ok -> it
+
+    -> 0
+}
+dv-clear()
+pe3 = dv-form(1, -1)
+pg3 = dv-tabs(pe3, av3, D-TAB-SLOT, LB, D-TAB-BASE)
+dv-node(C-LABEL, 202, 'page two', '', 0, 0, 0, dv-on(), pg3)
+ops-e3 = dv-render(root-e, pe3)
+r26 = ops-e3 == 2 && dv-live-deep(root-e, 202) >= 0 && dv-live-deep(root-e, 201) == -1
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}')
+print('Y live={r10}{r11}{r12}{r13}')
+print('D disp={r14}{r15}{r16}')
+print('L lay={r17}{r18}{r19}')
+print('P paint={r20}{r21}')
+print('E e2e={r22}{r23}{r24}{r25}{r26}{r27}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-TABS TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-TABS TESTS FAILED')
+}

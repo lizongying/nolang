@@ -1,0 +1,310 @@
+; ============================================================================
+; noui 声明式「多选 / 列表项 flags」测试（阶段 20）—— src/dv.no
+;
+; 缺口：dv-repeat-items 把每项的 flags 硬编码成 dv-on()、value2 硬编码成 0，
+; 于是「哪些行选中 / 哪些行禁用」没法由状态推导 —— 声明式多选列表缺地基。
+; 阶段 20 补：
+;   - dv-repeat-items-f(parent, key0, n, kind, texts, values, acts, pays, flags)
+;     flags 是平行数组，第 i 项取 flags[i]，不足（或传 DV-EMPTY_F）补 dv-on()；
+;   - dv-repeat-items(...) 签名不动，内部转调 f 版（既有调用方一字不改）；
+;   - dv-sel-flags(S, slot0, n)：从状态槽推导 flags —— 非 0 -> dv-on-sel()，
+;     否则 dv-on()。于是「选中的行」完全是状态的函数。
+;
+; 场景钉住：
+;   Z 标记  ：f 版结构 / key 递增 / 文案 / 每项 flags（选中 + 禁用）/ 每项动作载荷；
+;             短 flags 数组补默认；空数组 = 全默认；旧签名回归；n 收敛
+;   F 推导  ：dv-sel-flags 的长度 / 取值 / 越界槽补 dv-on()
+;   Y 调和  ：活节点按 flags 带 F-SELECTED / F-DISABLED；换 flags 零结构操作；
+;             禁用项派发不出动作（阶段 18 的语义不被破坏）
+;   D 派发  ：点第 i 项 = DV-A-TOGGLE + 自己的状态槽；dv-apply 翻转它
+;   E 端到端：布局 -> cs-hit -> cmp-key -> dispatch -> apply -> 用 dv-sel-flags
+;             重建视图 -> 活树选中态跟着状态走；全选 / 清空一次写 N 个槽；
+;             C-RADIO 画 F-SELECTED 时用 CS-TH-OK（选中真的看得见）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-sel.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-sel tests ===')
+
+; 场景辅助：某个颜色出现的次数
+count-c = (c i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-c(i) == c) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+
+; 共用数据
+SL []str = ['apple', 'banana', 'cherry']
+D-SEL0 = 12
+D-SEL-N = 3
+D-SEL-BASE = 200
+VALS []i64 = with-len(3)
+ACTS []i64 = with-len(3)
+PAYS []i64 = with-len(3)
+VALS[0] = 0
+VALS[1] = 1
+VALS[2] = 2
+ACTS[0] = DV-A-TOGGLE
+ACTS[1] = DV-A-TOGGLE
+ACTS[2] = DV-A-TOGGLE
+PAYS[0] = 12
+PAYS[1] = 13
+PAYS[2] = 14
+
+; ============================================================================
+; 场景 Z：标记 —— 结构 / key / 文案 / 每项 flags / 每项动作载荷 / 边界收敛
+; ============================================================================
+dv-clear()
+rz = dv-form(1, -1)
+lc = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), rz)
+SZ []i64 = with-len(3)
+SZ[0] = 0
+SZ[1] = 1
+SZ[2] = 0
+hz = dv-repeat-items-f(lc, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(SZ, 0, 3))
+i0 = dv-node-by-key(D-SEL-BASE)
+i1 = dv-node-by-key(201)
+i2 = dv-node-by-key(202)
+r1 = hz == i0 && i0 >= 0 && dv-kind(i0) == C-RADIO
+r2 = dv-key(i1) == 201 && dv-key(i2) == 202 && dv-text(i0) == 'apple' && dv-text(i2) == 'cherry'
+; 每项 flags 是数据：选中态按状态池来
+r3 = (dv-flags(i1) & DV-F-SEL) != 0 && (dv-flags(i0) & DV-F-SEL) == 0 && (dv-flags(i2) & DV-F-SEL) == 0
+; 每项动作载荷是数据：点自己 = 翻自己的槽
+r4 = dv-act-of(i0) == DV-A-TOGGLE && dv-act-payload(i0) == 12 && dv-act-of(i1) == DV-A-TOGGLE && dv-act-payload(i1) == 13 && dv-act-of(i2) == DV-A-TOGGLE && dv-act-payload(i2) == 14
+r5 = dv-child-count(lc) == 3
+
+; 短 flags 数组：第 3 项（下标 2）取不到 -> 补 dv-on()
+dv-clear()
+rz2 = dv-form(1, -1)
+lc2 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), rz2)
+FS []i64 = with-len(2)
+FS[0] = dv-on-sel()
+FS[1] = dv-on-sel()
+dv-repeat-items-f(lc2, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, FS)
+s2 = dv-node-by-key(202)
+s0 = dv-node-by-key(200)
+r6 = (dv-flags(s2) & DV-F-SEL) == 0 && (dv-flags(s0) & DV-F-SEL) != 0 && dv-child-count(lc2) == 3
+
+; 旧签名回归：不传 flags 时行为一字不改
+dv-clear()
+rz3 = dv-form(1, -1)
+lc3 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), rz3)
+ho = dv-repeat-items(lc3, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS)
+o0 = dv-node-by-key(200)
+r7 = ho == o0 && dv-child-count(lc3) == 3 && (dv-flags(o0) & DV-F-SEL) == 0
+
+; n 收敛：超出 texts 长度按长度算；负数按 0 算
+dv-clear()
+rz4 = dv-form(1, -1)
+lc4 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), rz4)
+dv-repeat-items-f(lc4, D-SEL-BASE, 9, C-RADIO, SL, VALS, ACTS, PAYS, DV-EMPTY-F)
+r8 = dv-child-count(lc4) == 3
+dv-clear()
+rz5 = dv-form(1, -1)
+lc5 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), rz5)
+dv-repeat-items-f(lc5, D-SEL-BASE, -2, C-RADIO, SL, VALS, ACTS, PAYS, DV-EMPTY-F)
+r9 = dv-child-count(lc5) == 0
+
+; ============================================================================
+; 场景 F：推导 —— dv-sel-flags 的长度 / 取值 / 越界槽
+; ============================================================================
+SY []i64 = with-len(4)
+SY[0] = 1
+SY[1] = 0
+SY[2] = 7
+FY = dv-sel-flags(SY, 0, 3)
+q0 = FY[0]: {
+    ok -> it
+
+    -> 0
+}
+q1 = FY[1]: {
+    ok -> it
+
+    -> 0
+}
+q2 = FY[2]: {
+    ok -> it
+
+    -> 0
+}
+r10 = FY.len() == 3 && q0 == dv-on-sel() && q1 == dv-on() && q2 == dv-on-sel()
+; 负数长度 -> 空数组
+FN = dv-sel-flags(SY, 0, -1)
+r11 = FN.len() == 0
+; 槽位越界（slot0=2 取第 3 项 = 槽 4，池里没有）-> dv-arr-get 给 0 -> dv-on()
+FO = dv-sel-flags(SY, 2, 3)
+q3 = FO[2]: {
+    ok -> it
+
+    -> 0
+}
+r12 = q3 == dv-on()
+
+; ============================================================================
+; 场景 Y：调和 —— 活节点带 F-SELECTED / F-DISABLED；换 flags 零结构操作；
+;           禁用项派发不出动作
+; ============================================================================
+root-y = cmp-root()
+dv-clear()
+py = dv-form(1, -1)
+ly = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), py)
+dv-repeat-items-f(ly, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(SZ, 0, 3))
+ops-y = dv-render(root-y, py)
+ly0 = dv-live-deep(root-y, 200)
+ly1 = dv-live-deep(root-y, 201)
+ly2 = dv-live-deep(root-y, 202)
+r13 = ops-y == 4 && ly0 >= 0 && ly1 >= 0 && ly2 >= 0
+r14 = cmp-kind(ly0) == C-RADIO && cmp-has(ly1, F-SELECTED) && (!cmp-has(ly0, F-SELECTED)) && (!cmp-has(ly2, F-SELECTED))
+; 第二帧：同 key 同 kind，只换 flags -> 结构零操作，活树选中态跟着状态走
+SZ[1] = 0
+SZ[0] = 1
+dv-clear()
+py2 = dv-form(1, -1)
+ly2c = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), py2)
+dv-repeat-items-f(ly2c, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(SZ, 0, 3))
+ops-y2 = dv-render(root-y, py2)
+r15 = ops-y2 == 0 && cmp-has(ly0, F-SELECTED) && (!cmp-has(ly1, F-SELECTED))
+; 禁用态：flags 少一个 DV-F-EN -> 活节点带 F-DISABLED
+FD []i64 = with-len(3)
+FD[0] = dv-on()
+FD[1] = dv-disabled()
+FD[2] = dv-on()
+dv-clear()
+py3 = dv-form(1, -1)
+ly3 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), py3)
+dv-repeat-items-f(ly3, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, FD)
+ops-y3 = dv-render(root-y, py3)
+r16 = ops-y3 == 0 && cmp-has(ly1, F-DISABLED) && (!cmp-has(ly0, F-DISABLED))
+; 禁用项派发不出动作（阶段 18 的语义：命中仍有效，但点击不产生归约）
+da, dp = dv-dispatch(201)
+r17 = da == 0 && dp == 0
+
+; ============================================================================
+; 场景 D：派发 + 归约 —— 点第 i 项 = 翻自己的槽
+; ============================================================================
+; 先重建一帧「全部可用」的视图：上一帧把第 2 项（key 201）禁用了，
+; 禁用项按阶段 18 的语义派发不出动作，这里先恢复再测归约路径。
+dv-clear()
+pd = dv-form(1, -1)
+ld = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), pd)
+dv-repeat-items-f(ld, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, DV-EMPTY-F)
+dv-render(root-y, pd)
+ST []i64 = with-len(15)
+act1, pay1 = dv-dispatch(201)
+r18 = act1 == DV-A-TOGGLE && pay1 == 13
+n1 = dv-apply(ST, 201)
+r19 = n1 == 1 && ST[13] == 1
+n2 = dv-apply(ST, 201)
+r20 = n2 == 1 && ST[13] == 0
+; 容器节点没有动作
+act2, pay2 = dv-dispatch(300)
+r21 = act2 == 0 && pay2 == 0
+
+; ============================================================================
+; 场景 E：端到端 —— 命中 -> 派发 -> 归约 -> 用状态推导 flags 重建 -> 活树跟随；
+;           全选 / 清空一次写 N 个槽；选中在绘制上可见
+; ============================================================================
+ST2 []i64 = with-len(15)
+root-e = cmp-root()
+dv-clear()
+pe = dv-form(1, -1)
+le = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), pe)
+dv-repeat-items-f(le, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(ST2, D-SEL0, D-SEL-N))
+ops-e1 = dv-render(root-e, pe)
+r22 = ops-e1 == 4 && (!cmp-has(dv-live-deep(root-e, 201), F-SELECTED))
+cs-layout(root-e, 0, 0, 80000, 60000)
+lh = dv-live-deep(root-e, 202)
+hx, hy, hw, hh = cs-rect(lh)
+hit = cs-hit(root-e, cs-add(hx, cs-div(hw, 2)), cs-add(hy, cs-div(hh, 2)))
+r23 = lh >= 0 && hit == lh
+kk = cmp-key(hit)
+ea, ep = dv-dispatch(kk)
+ne = dv-apply(ST2, kk)
+r24 = kk == 202 && ea == DV-A-TOGGLE && ep == 14 && ne == 1 && ST2[14] == 1
+; 重建：选中态跟着状态走，结构零操作
+dv-clear()
+pe2 = dv-form(1, -1)
+le2 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), pe2)
+dv-repeat-items-f(le2, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(ST2, D-SEL0, D-SEL-N))
+ops-e2 = dv-render(root-e, pe2)
+r25 = ops-e2 == 0 && cmp-has(dv-live-deep(root-e, 202), F-SELECTED) && (!cmp-has(dv-live-deep(root-e, 200), F-SELECTED))
+; 全选：应用层一次写 N 个槽（相当于 dv-app-click 里的命令分支）
+j = 0
+!! {
+    (j >= D-SEL-N) -> { ** }
+    ST2[dv-add(D-SEL0, j)] = 1
+    j = dv-inc(j)
+}
+dv-clear()
+pe3 = dv-form(1, -1)
+le3 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), pe3)
+dv-repeat-items-f(le3, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(ST2, D-SEL0, D-SEL-N))
+ops-e3 = dv-render(root-e, pe3)
+r26 = ops-e3 == 0 && cmp-has(dv-live-deep(root-e, 200), F-SELECTED) && cmp-has(dv-live-deep(root-e, 201), F-SELECTED) && cmp-has(dv-live-deep(root-e, 202), F-SELECTED)
+; 清空
+j2 = 0
+!! {
+    (j2 >= D-SEL-N) -> { ** }
+    ST2[dv-add(D-SEL0, j2)] = 0
+    j2 = dv-inc(j2)
+}
+dv-clear()
+pe4 = dv-form(1, -1)
+le4 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), pe4)
+dv-repeat-items-f(le4, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(ST2, D-SEL0, D-SEL-N))
+ops-e4 = dv-render(root-e, pe4)
+r27 = ops-e4 == 0 && (!cmp-has(dv-live-deep(root-e, 200), F-SELECTED)) && (!cmp-has(dv-live-deep(root-e, 202), F-SELECTED))
+; 绘制：C-RADIO 画 F-SELECTED 时用 CS-TH-OK —— 清空时不应有，全选时应该多出来
+cs-layout(root-e, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-e)
+ok-c = cs-theme(CS-TH-OK)
+c-none = count-c(ok-c)
+j3 = 0
+!! {
+    (j3 >= D-SEL-N) -> { ** }
+    ST2[dv-add(D-SEL0, j3)] = 1
+    j3 = dv-inc(j3)
+}
+dv-clear()
+pe5 = dv-form(1, -1)
+le5 = dv-node(C-FORM, 300, '', '', 0, 0, 0, dv-on(), pe5)
+dv-repeat-items-f(le5, D-SEL-BASE, D-SEL-N, C-RADIO, SL, VALS, ACTS, PAYS, dv-sel-flags(ST2, D-SEL0, D-SEL-N))
+dv-render(root-e, pe5)
+cs-layout(root-e, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-e)
+c-all = count-c(ok-c)
+r28 = c-all > c-none
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}')
+print('F fill={r10}{r11}{r12}')
+print('Y live={r13}{r14}{r15}{r16}{r17}')
+print('D disp={r18}{r19}{r20}{r21}')
+print('E e2e={r22}{r23}{r24}{r25}{r26}{r27}{r28}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-SEL TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-SEL TESTS FAILED')
+}

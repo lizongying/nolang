@@ -1,0 +1,108 @@
+; ============================================================================
+; noui 声明式应用装配层测试（阶段 11）—— src/dv-app.no
+;
+; dva-run 本身要 SDL 窗口，这里测它的无窗口部件：输入类 kind 判定、点击后的焦点移交、
+; 键盘喂字、计数器读取。三个回调契约（dv-app-view / dv-app-reduce / dv-app-click）
+; 由 tests/main-dv.no 端到端验证 —— 下面的 dummy 定义同时证明契约是「编译期强制」的。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva tests ===')
+
+; ============================================================================
+; 场景 U：输入类 kind 判定
+; ============================================================================
+r1 = dva-is-input-kind(C-INPUT) == 1
+r2 = dva-is-input-kind(C-TEXTAREA) == 1
+r3 = dva-is-input-kind(C-SEARCH) == 1
+r4 = dva-is-input-kind(C-NUMBER-INPUT) == 1
+r5 = dva-is-input-kind(C-OTP-INPUT) == 1
+r6 = dva-is-input-kind(C-LABEL) == 0 && dva-is-input-kind(C-BUTTON) == 0 && dva-is-input-kind(C-CHECKBOX) == 0
+
+; ============================================================================
+; 场景 V：点击后的焦点移交（输入类接管，其余释放）
+; ============================================================================
+root-v = cmp-root()
+dv-clear()
+pv = dv-form(1, -1)
+dv-node(C-INPUT, 1, '', '', 0, 0, 0, dv-on(), pv)
+dv-node(C-LABEL, 2, 'txt', '', 0, 0, 0, dv-on(), pv)
+dv-node(C-BUTTON, 3, 'go', '', 0, 0, 0, dv-on(), pv)
+ops-v = dv-render(root-v, pv)
+lin = dv-live-by-key(root-v, 1)
+llb = dv-live-by-key(root-v, 2)
+lbt = dv-live-by-key(root-v, 3)
+
+DVA-FOCUS[0] = -1
+r7 = ops-v == 3
+
+; 命中输入框：接管焦点
+dva-focus(lin)
+r8 = DVA-FOCUS[0] == lin && cmp-has(lin, F-FOCUSED)
+; 命中普通 label：释放
+dva-focus(llb)
+r9 = DVA-FOCUS[0] == -1 && (!cmp-has(lin, F-FOCUSED))
+; 命中输入框：再次接管（此时旧焦点已空，不应重复操作崩溃）
+dva-focus(lin)
+r10 = DVA-FOCUS[0] == lin && cmp-has(lin, F-FOCUSED)
+; 命中 button：释放（button 不是输入类）
+dva-focus(lbt)
+r11 = DVA-FOCUS[0] == -1 && (!cmp-has(lin, F-FOCUSED))
+; 命中输入框后点空白（hit = -1）：释放
+dva-focus(lin)
+dva-focus(-1)
+r12 = DVA-FOCUS[0] == -1 && (!cmp-has(lin, F-FOCUSED))
+
+; ============================================================================
+; 场景 W：键盘喂给焦点组件（退格 / 空格 / 数字 / 小写字母）
+; ============================================================================
+dva-focus(lin)
+dva-keyboard(97)     ; a
+dva-keyboard(48)     ; 0
+dva-keyboard(32)     ; 空格
+r13 = input-value(lin) == 'a0 '
+dva-keyboard(8)      ; 退格
+r14 = input-value(lin) == 'a0'
+; 没有焦点时敲键盘：不该崩、不该改字
+dva-focus(-1)
+dva-keyboard(98)
+r15 = input-value(lin) == 'a0'
+; 非字母数字键被忽略
+dva-focus(lin)
+dva-keyboard(27)     ; ESC
+r16 = input-value(lin) == 'a0'
+
+; ============================================================================
+; 场景 X：计数器（dva-run 的观测窗口）
+; ============================================================================
+DVA-FRAMES[0] = 0
+DVA-OPS[0] = 0
+DVA-CLICKS[0] = 0
+r17 = dva-frames() == 0 && dva-ops() == 0 && dva-clicks() == 0
+DVA-FRAMES[0] = 900
+DVA-OPS[0] = 38
+DVA-CLICKS[0] = 7
+r18 = dva-frames() == 900 && dva-ops() == 38 && dva-clicks() == 7
+
+print('U input-kind={r1}{r2}{r3}{r4}{r5}{r6}')
+print('V focus={r7}{r8}{r9}{r10}{r11}{r12}')
+print('W keyboard={r13}{r14}{r15}{r16}')
+print('X counters={r17}{r18}')
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DVA TESTS PASSED') }
+(!all-ok) -> { print('DVA TESTS FAILED') }

@@ -1,0 +1,132 @@
+; ============================================================================
+; noui 声明式「受控输入 + 快捷键」测试（阶段 13）—— src/dv-app.no
+;
+; dva-run-s 本身要 SDL 窗口，这里测它的无窗口部件：
+;   dv-bind 元数据 / dv-hotkey 分派 / dva-sync-binds 的双向同步与 max 截断。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-bind.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-bind tests ===')
+
+; ============================================================================
+; 场景 Y：dv-bind 元数据（挂得上 / 读得回 / 未绑定是 -1）
+; ============================================================================
+dv-clear()
+py = dv-form(1, -1)
+iy = dv-input(3, 'name', py)
+ly = dv-label(4, 'x', py)
+dv-bind(iy, 0, 0)
+dv-bind(ly, 2, 5)
+
+r1 = dv-bind-of(iy) == 0 && dv-bind-max-of(iy) == 0
+r2 = dv-bind-of(ly) == 2 && dv-bind-max-of(ly) == 5
+r3 = dv-bind-of(py) == -1
+r4 = dv-node-count() == 3
+
+; ============================================================================
+; 场景 Z：dv-hotkey 分派（命中 -> act/pay/vkey；未命中 act=0）
+; ============================================================================
+by = dv-node(C-BUTTON, 9, 'reset', '', 0, 1, 3, dv-on(), py)
+dv-act(by, DV-A-DELTA, 3)
+dv-hotkey(by, 114, DV-A-CLICK, 7)       ; r -> 当作点了 key=9
+ha, hp, hk = dv-hot-dispatch(114)
+r5 = ha == DV-A-CLICK && hp == 7 && hk == 9
+ma, mp, mk = dv-hot-dispatch(115)
+r6 = ma == 0 && mk == -1
+r7 = dv-hot-count() == 1
+
+; 快捷键命中后走的是「同一条归约路径」：对 hk 调 dv-apply 等价于点了那个节点
+SZ []i64 = with-len(4)
+SZ[3] = 1
+nw-z = dv-apply(SZ, hk)
+r8 = nw-z == 1 && SZ[3] == 2       ; DELTA value=1 value2=3 -> 1+1
+
+; ============================================================================
+; 场景 AA：dva-sync-binds 双向同步
+; ============================================================================
+root-aa = cmp-root()
+dv-bind-t-ensure(3)
+dv-bound-set(0, '')
+dv-bound-set(1, '')
+dv-bound-set(2, '')
+DVA-BIND-LAST.truncate(0)
+
+dv-clear()
+pa = dv-form(1, -1)
+ia = dv-input(3, 'name', pa)
+dv-bind(ia, 0, 0)
+ib = dv-input(4, 'nick', pa)
+dv-bind(ib, 1, 3)                  ; max 3
+lb = dv-label(5, 'plain', pa)
+dv-bind(lb, 2, 0)                  ; 绑在非输入类节点上：应被忽略
+ops-aa = dv-render(root-aa, pa)
+live-a = dv-live-deep(root-aa, 3)
+live-b = dv-live-deep(root-aa, 4)
+live-l = dv-live-deep(root-aa, 5)
+
+r9 = ops-aa == 3 && live-a >= 0 && live-b >= 0 && live-l >= 0
+; 预置组件文本（模拟用户已经敲过字）；max=3 所以 'seed' 会被截成 'see'
+cmp-set-text(live-b, 'seed')
+
+; --- 同步 #1：组件 -> 状态 ---
+dva-sync-binds(root-aa)
+r10 = dv-bound(0) == '' && dv-bound(1) == 'see' && dv-bound(2) == ''
+r11 = cmp-text(live-l) == 'plain'      ; 非输入类节点不受绑定影响
+
+; --- 同步 #2：输入框敲字 -> 状态 ---
+cmp-set-text(live-a, 'hello')
+dva-sync-binds(root-aa)
+r12 = dv-bound(0) == 'hello' && dv-bound(1) == 'see'
+
+; --- 同步 #3：无变化 = 无操作（幂等，不互相覆盖）---
+dva-sync-binds(root-aa)
+r13 = dv-bound(0) == 'hello' && dv-bound(1) == 'see' && cmp-text(live-a) == 'hello'
+
+; --- 同步 #4：归约器 / reset 改状态 -> 推回组件 ---
+dv-bound-set(0, 'reset')
+dva-sync-binds(root-aa)
+r14 = cmp-text(live-a) == 'reset' && dv-bound(0) == 'reset'
+
+; --- 同步 #5：状态侧超长 -> 按 max 截断，并写回状态 ---
+dv-bound-set(1, 'abcdef')
+dva-sync-binds(root-aa)
+r15 = cmp-text(live-b) == 'abc' && dv-bound(1) == 'abc'
+
+; --- 同步 #6：组件侧超长 -> 也按 max 截断 ---
+cmp-set-text(live-b, 'abcdefgh')
+dva-sync-binds(root-aa)
+r16 = dv-bound(1) == 'abc' && cmp-text(live-b) == 'abc'
+
+; --- 同步 #7：输入原语（append）之后照样回流 ---
+input-append(live-a, '!')
+dva-sync-binds(root-aa)
+r17 = dv-bound(0) == 'reset!' && cmp-text(live-a) == 'reset!'
+
+; --- 同步 #8：dv-clear 之后绑定消失（每帧重挂）---
+dv-clear()
+r18 = dv-bind-of(ia) == -1 && dv-node-count() == 0
+
+print('Y bind={r1}{r2}{r3}{r4}')
+print('Z hot={r5}{r6}{r7}{r8}')
+print('AA sync={r9}{r10}{r11}{r12}{r13}{r14}{r15}{r16}{r17}{r18}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-BIND TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-BIND TESTS FAILED')
+}

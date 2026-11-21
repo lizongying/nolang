@@ -1,0 +1,250 @@
+; ============================================================================
+; noui 声明式「通知 / toast：让时间进状态」测试（阶段 22）—— src/dv.no
+;
+; 缺口：前面的声明式状态都是「应用写了什么就是什么」（开关 / 选中 / 展开），
+; 没有「自己会变」的状态。通知是典型的时序状态：点一下弹出来，过几帧自己没。
+; 阶段 22 补：
+;   - dv-toast-alive(S, slot, ttl)：槽里存的是**触发时的帧号**，
+;     视图每帧拿 dv-frame() 和「触发帧 + ttl」比，过期即死。
+;   - dv-toast(S, parent, key, slot, text, ttl, base)：活着才建整棵子树
+;     （dv-cond 的思路），非模态叠加层（dv-on-tip）—— 不挡点击、绘制最后；
+;     关闭按钮把触发帧写回 0 = 立即过期。
+;   触发按钮本身只需要把 dv-frame() 当 value 挂 DV-A-SET —— 「何时触发」
+;   也是视图算出来的数据，归约器仍然只写一个槽。
+;
+; 场景钉住：
+;   Z 标记  ：alive 的边界（0 槽 / 界内 / 界外 / ttl=0 / 越界槽）；
+;             死的时候不建节点；活的时候结构 / flags / 子节点 / 关闭按钮动作
+;   Y 调和  ：活 -> ops 3（toast + 文案 + 按钮）；关 -> ops 1（只摘直接子节点）
+;             且活树里没了；活节点带 F-OVERLAY / F-PASS
+;   D 派发  ：点关闭 = DV-A-SET + 触发槽，值 0；toast 本体没动作
+;   E 端到端：布局 -> cs-hit 命中 toast -> 点关闭 -> 重建后消失；
+;             帧推进到 ttl 之后自动消失；绘制层文案随存活出现 / 消失；
+;             触发按钮接线（value = dv-frame() + DV-A-SET）与 main-dv 一致
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-toast.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-toast tests ===')
+
+; 场景辅助：某个颜色出现的次数
+count-c = (c i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-c(i) == c) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+
+; 场景辅助：某段文案有没有被画出来
+has-text = (t str) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        s = cs-scene-t(i)
+        (s == t) -> { yes = 1 }
+        i = dv-inc(i)
+    }
+}
+
+; 直接把帧计数拨到 f（测试里代替「等真实时间」）
+set-frame = (f i64) () {
+    dv-arr-set(DV-FRAME, 0, f)
+}
+
+; 共用数据
+D-TT = 0          ; 触发帧槽（0 = 没有通知）
+TOAST-TTL = 3     ; 存活帧数
+TOAST-KEY = 300   ; toast 本体
+TOAST-BASE = 301  ; 文案 301，关闭按钮 302
+ST []i64 = with-len(4)
+
+; ============================================================================
+; 场景 Z：标记 —— alive 边界 + 结构
+; ============================================================================
+dv-clear()
+rz = dv-form(1, -1)
+h0 = dv-toast(ST, rz, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r1 = h0 < 0 && dv-node-count() == 1
+
+set-frame(100)
+ST[D-TT] = 100
+r2 = dv-toast-alive(ST, D-TT, TOAST-TTL) == 1
+ST[D-TT] = 98
+r3 = dv-toast-alive(ST, D-TT, TOAST-TTL) == 1
+ST[D-TT] = 97
+r4 = dv-toast-alive(ST, D-TT, TOAST-TTL) == 0
+ST[D-TT] = 100
+r5 = dv-toast-alive(ST, D-TT, 0) == 0
+r6 = dv-toast-alive(ST, -1, TOAST-TTL) == 0
+
+ST[D-TT] = 100
+dv-clear()
+rz2 = dv-form(1, -1)
+ht = dv-toast(ST, rz2, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r7 = ht >= 0 && dv-kind(ht) == C-POPOVER && dv-key(ht) == TOAST-KEY
+r8 = (dv-flags(ht) & DV-F-PASS) != 0 && (dv-flags(ht) & DV-F-OVL) != 0
+r9 = dv-child-count(ht) == 2 && dv-parent(ht) == rz2
+lbl = dv-node-by-key(TOAST-BASE)
+r10 = lbl >= 0 && dv-kind(lbl) == C-LABEL && dv-text(lbl) == 'saved'
+db = dv-node-by-key(dv-add(TOAST-BASE, 1))
+r11 = db >= 0 && dv-kind(db) == C-BUTTON && dv-act-of(db) == DV-A-SET && dv-act-payload(db) == D-TT && dv-value(db) == 0
+
+; ============================================================================
+; 场景 Y：调和 —— 活建 3 个节点，关时 3 个删除
+; ============================================================================
+root-y = cmp-root()
+set-frame(100)
+ST[D-TT] = 100
+dv-clear()
+py = dv-form(1, -1)
+dv-toast(ST, py, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+opy = dv-render(root-y, py)
+r12 = opy == 3
+ly = dv-live-deep(root-y, TOAST-KEY)
+r13 = ly >= 0 && cmp-kind(ly) == C-POPOVER && cmp-has(ly, F-OVERLAY) && cmp-has(ly, F-PASS)
+r14 = cmp-children(ly) == 2
+
+ST[D-TT] = 0
+dv-clear()
+py2 = dv-form(1, -1)
+dv-toast(ST, py2, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+opy2 = dv-render(root-y, py2)
+; 删除只算「被摘掉的直接子节点」：整棵 toast 子树随本体一起走，所以是 1 次
+r15 = opy2 == 1 && dv-live-deep(root-y, TOAST-KEY) < 0
+
+; ============================================================================
+; 场景 D：派发 —— 点关闭 = SET 触发槽 = 0
+; ============================================================================
+set-frame(200)
+ST[D-TT] = 200
+dv-clear()
+pd = dv-form(1, -1)
+dv-toast(ST, pd, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+da, dp = dv-dispatch(dv-add(TOAST-BASE, 1))
+r16 = da == DV-A-SET && dp == D-TT
+nw = dv-apply(ST, dv-add(TOAST-BASE, 1))
+r17 = nw == 1 && ST[D-TT] == 0
+da2, dp2 = dv-dispatch(TOAST-KEY)
+r18 = da2 == 0 && dp2 == 0
+
+; ============================================================================
+; 场景 E：端到端 —— 命中 / 关闭 / 自动消失 / 绘制层
+; ============================================================================
+root-e = cmp-root()
+set-frame(300)
+ST[D-TT] = 300
+dv-clear()
+pe = dv-form(1, -1)
+dv-toast(ST, pe, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+ope = dv-render(root-e, pe)
+r19 = ope == 3
+cs-layout(root-e, 0, 0, 80000, 60000)
+lt = dv-live-deep(root-e, TOAST-KEY)
+lx, ly2, lw, lh = cs-rect(lt)
+hit1 = cs-hit(root-e, cs-add(lx, cs-div(lw, 2)), cs-add(ly2, cs-div(lh, 2)))
+r20 = hit1 >= 0 && (hit1 == lt || hit1 == dv-live-deep(root-e, TOAST-BASE) || hit1 == dv-live-deep(root-e, dv-add(TOAST-BASE, 1)))
+
+; 点关闭按钮：命中它 -> 派发 -> 归约 -> 重建后整棵消失
+lb = dv-live-deep(root-e, dv-add(TOAST-BASE, 1))
+bx, by, bw, bh = cs-rect(lb)
+hit2 = cs-hit(root-e, cs-add(bx, cs-div(bw, 2)), cs-add(by, cs-div(bh, 2)))
+r21 = hit2 == lb
+a2, p2 = dv-dispatch(cmp-key(hit2))
+nw2 = dv-apply(ST, cmp-key(hit2))
+r22 = a2 == DV-A-SET && p2 == D-TT && nw2 == 1 && ST[D-TT] == 0
+dv-clear()
+pe2 = dv-form(1, -1)
+dv-toast(ST, pe2, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r23 = dv-render(root-e, pe2) == 1 && dv-live-deep(root-e, TOAST-KEY) < 0
+
+; 时间推进：触发于 400、ttl 3 —— 帧 400/401/402 活，403 起自己没。
+; 已经建好的节点再渲染是零结构操作，只有「活 -> 死」那一次摘除算 1。
+set-frame(400)
+ST[D-TT] = 400
+dv-clear()
+pt = dv-form(1, -1)
+dv-toast(ST, pt, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r24 = dv-render(root-e, pt) == 3
+dv-clear()
+pt2 = dv-form(1, -1)
+dv-toast(ST, pt2, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r25 = dv-render(root-e, pt2) == 0 && dv-live-deep(root-e, TOAST-KEY) >= 0
+dv-clear()
+pt3 = dv-form(1, -1)
+dv-toast(ST, pt3, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r26 = dv-render(root-e, pt3) == 0 && dv-live-deep(root-e, TOAST-KEY) >= 0
+dv-clear()
+pt4 = dv-form(1, -1)
+dv-toast(ST, pt4, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r27 = dv-render(root-e, pt4) == 1 && dv-live-deep(root-e, TOAST-KEY) < 0
+
+; 绘制层：文案随存活出现 / 消失
+set-frame(500)
+ST[D-TT] = 500
+dv-clear()
+pp = dv-form(1, -1)
+dv-toast(ST, pp, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+dv-render(root-e, pp)
+cs-layout(root-e, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-e)
+r28 = has-text('saved') == 1
+ST[D-TT] = 0
+dv-clear()
+pp2 = dv-form(1, -1)
+dv-toast(ST, pp2, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+dv-render(root-e, pp2)
+cs-layout(root-e, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-e)
+r29 = has-text('saved') == 0
+
+; 触发按钮接线与 main-dv 完全一致：value = dv-frame()，动作 DV-A-SET(触发槽)
+set-frame(600)
+dv-clear()
+pbtn = dv-form(1, -1)
+bt = dv-node(C-BUTTON, 900, 'notify', '', 0, dv-frame(), 0, dv-on(), pbtn)
+dv-act(bt, DV-A-SET, D-TT)
+ST[D-TT] = 0
+dv-render(root-e, pbtn)
+a3, p3 = dv-dispatch(900)
+nw3 = dv-apply(ST, 900)
+r30 = a3 == DV-A-SET && p3 == D-TT && nw3 == 1 && ST[D-TT] == 600
+; 触发后同一帧的视图里就该有通知（600 < 600 + ttl）。
+; 视图和 main-dv 一样同时带触发按钮 + toast，所以只有 toast 子树是新增（3 次）。
+dv-clear()
+pb2 = dv-form(1, -1)
+bt2 = dv-node(C-BUTTON, 900, 'notify', '', 0, dv-frame(), 0, dv-on(), pb2)
+dv-act(bt2, DV-A-SET, D-TT)
+dv-toast(ST, pb2, TOAST-KEY, D-TT, 'saved', TOAST-TTL, TOAST-BASE)
+r31 = dv-render(root-e, pb2) == 3 && dv-live-deep(root-e, TOAST-KEY) >= 0
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}{r10}{r11}')
+print('Y live={r12}{r13}{r14}{r15}')
+print('D disp={r16}{r17}{r18}')
+print('E e2e={r19}{r20}{r21}{r22}{r23}{r24}{r25}{r26}{r27}{r28}{r29}{r30}{r31}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29 && r30 && r31
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-TOAST TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-TOAST TESTS FAILED')
+}

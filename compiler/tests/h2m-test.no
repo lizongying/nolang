@@ -673,10 +673,12 @@ test-s99g-struct-no-retain = () {
 ; 核心：h2m-lower-expr 新增 K-INDEX-EXPRESSION 分支——base 降級出 %vec 值 id 後發 OP-VECGET 取第 i 個 i64 元素；
 ;   base 須是 TY-VEC（[]i64 欄位 / vec 形參 / mem==0 下綁定的 vec 局部），其餘型別（str/struct/arr）計 unsup。
 ;   cg 早已支援 OP-VECGET（→ call i64 @vec_get_i64(%vec, i64)），本件是純 h2m 改動。
+;   ⚠️ s129 起索引讀恆 ?T（D11）：`r i64 = v[i]` 在語言上是型別錯誤（實測 15w45dqk），
+;   故本件（及同族三件）改走【option 輸出參】`r ?i64 = v[i]` —— 正好是 (b) 的目標路徑。
 test-s99i-vec-index-param = () {
 
-    ; 本地 vec 變量（形參 v: []i64）就地索引：r = v[i]
-    src = 'consume = (v []i64, i i64) (r i64) {\n    r = v[i]\n}\n'
+    ; 本地 vec 變量（形參 v: []i64）就地索引：r ?i64 = v[i]
+    src = 'consume = (v []i64, i i64) (r ?i64) {\n    r = v[i]\n}\n'
     t = ast.make()
     b = src.to-bytes()
     p = ps.new(b)
@@ -684,17 +686,18 @@ test-s99i-vec-index-param = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99i vec param index unsup')
-    runner.eq(ir.contains('define i64 @consume(%vec %vc1'), 1, 's99i consume sig')
+    runner.eq(ir.contains('define %option @consume(%vec %vc1'), 1, 's99i consume sig')
 
-    ; 就地索引：vec 形參 %vc1 直接 OP-VECGET，下標是形參 i（%v2），結果 i64 %v3
+    ; 就地索引：vec 形參 %vc1 直接 OP-VECGET，下標是形參 i（%v2），元素包成 %option 回傳
     runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc1, i64 %v2)'), 1, 's99i vec param index VECGET')
-    runner.eq(ir.contains('ret i64 %v3'), 1, 's99i consume ret i64')
+    runner.eq(ir.contains('ret %option %op12'), 1, 's99i consume ret option')
 }
 
 test-s99i-vec-field-index = () {
 
     ; vec 欄位就地索引：r = b.data[i]（結構體欄位 GET + 索引，兩步皆 %vec 值流轉，無槽）
-    src = 'Buf {\n    data []i64\n    id i64\n}\n\nconsume = (v []i64, i i64) (r i64) {\n    r = v[i]\n}\n\nsum = (b Buf, i i64) (r i64) {\n    r = b.data[i]\n}\n'
+    ;   s129：輸出參改 ?i64（索引讀恆 ?T，r i64 = v[i] 已是型別錯誤）
+    src = 'Buf {\n    data []i64\n    id i64\n}\n\nconsume = (v []i64, i i64) (r ?i64) {\n    r = v[i]\n}\n\nsum = (b Buf, i i64) (r ?i64) {\n    r = b.data[i]\n}\n'
     t = ast.make()
     b = src.to-bytes()
     p = ps.new(b)
@@ -703,20 +706,21 @@ test-s99i-vec-field-index = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99i vec field index unsup')
     runner.eq(ir.contains('%struct.s0 = type { %vec, i64 }'), 1, 's99i struct decl')
-    runner.eq(ir.contains('define i64 @sum(%struct.s0 %st1'), 1, 's99i sum sig')
+    runner.eq(ir.contains('define %option @sum(%struct.s0 %st1'), 1, 's99i sum sig')
 
     ; b.data → OP-STRUCT-GET 抽 %vec（%vc3 = extractvalue %struct.s0 %st1, 0）
     runner.eq(ir.contains('%vc3 = extractvalue %struct.s0 %st1, 0'), 1, 's99i GET vec field')
 
     ; 就地索引：被抽出的 %vc3 直接 OP-VECGET，下標是形參 i（%v2）
     runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc3, i64 %v2)'), 1, 's99i vec field index VECGET')
-    runner.eq(ir.contains('ret i64 %v4'), 1, 's99i sum ret i64')
+    runner.eq(ir.contains('ret %option %op13'), 1, 's99i sum ret option')
 }
 
 test-s99i-vec-local-bind = () {
 
     ; 本地 vec 變量：d = b.data；r = d[i]（mem==0 直綁值 id，無槽；d 綁定到 GET 抽出的 %vec）
-    src = 'Buf {\n    data []i64\n    id i64\n}\n\ng = (b Buf, i i64) (r i64) {\n    d = b.data\n    r = d[i]\n}\n'
+    ;   s129：輸出參改 ?i64（索引讀恆 ?T）
+    src = 'Buf {\n    data []i64\n    id i64\n}\n\ng = (b Buf, i i64) (r ?i64) {\n    d = b.data\n    r = d[i]\n}\n'
     t = ast.make()
     b = src.to-bytes()
     p = ps.new(b)
@@ -724,14 +728,14 @@ test-s99i-vec-local-bind = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99i vec local bind unsup')
-    runner.eq(ir.contains('define i64 @g(%struct.s0 %st1'), 1, 's99i g sig')
+    runner.eq(ir.contains('define %option @g(%struct.s0 %st1'), 1, 's99i g sig')
 
     ; d = b.data → GET 抽 %vec（%vc3）
     runner.eq(ir.contains('%vc3 = extractvalue %struct.s0 %st1, 0'), 1, 's99i local bind GET')
 
     ; r = d[i] → 直接對綁定的 %vc3 做 OP-VECGET（下標 %v2）
     runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc3, i64 %v2)'), 1, 's99i local bind VECGET')
-    runner.eq(ir.contains('ret i64 %v4'), 1, 's99i g ret i64')
+    runner.eq(ir.contains('ret %option %op13'), 1, 's99i g ret option')
 }
 
 test-s99i-index-scalar-gate = () {
@@ -4642,6 +4646,33 @@ test-s128-it-ty-str()
 test-s128-it-ty-i64()
 test-s128-it-ty-mixed-gate()
 test-s128-smv-ty-direct()
+test-s129-idx-valmatch-str()
+test-s129-idx-let-opt-i64()
+test-s129-ty-of-index-opt()
+test-s129-lower-expr-index-opt()
+test-s129-idx-arg-gate()
+test-s130-ty-of-opt-method()
+test-s131-smv-discard-ty()
+test-s131-smv-discard-lower()
+test-s131-smv-discard-lower-i64()
+test-s131-smv-bare-arrow-gate()
+test-s132-opt-str-len-bytes()
+test-s132-opt-str-byte()
+test-s132-opt-i64-to-str-gate()
+test-s133-opt-str-idx-return()
+test-s133-opt-str-param-in()
+test-s133-opt-str-let-ann()
+test-s133-opt-vec-inner-gate()
+test-s134-opt-str-bare-ident-method()
+test-s134-opt-str-bare-ident-let-body()
+test-s134-opt-str-param-method()
+test-s134-opt-i64-bare-ident-gate()
+test-s135-str-len-local()
+test-s135-str-len-param()
+test-s135-str-len-bytes-unaffected()
+test-s135-str-len-arg-gate()
+test-s135-opt-str-it-len()
+test-s135-str-len-ty-of()
 test-s99n-vec-field-mk-gate()
 test-s99n-vec-field-set-gate()
 
@@ -4937,7 +4968,8 @@ test-s99n-vec-literal-release = () {
 test-s99n-vec-empty-literal = () {
 
     ; 空切片 []：只發 VECNEW（無 PUSH）；仍登記釋放（@vec_free 對 dat==0 內部短路）
-    src = 'z = () (r i64) {\n    w []i64 = []\n    r = w[0]\n}\n'
+    ;   s129：輸出參改 ?i64（索引讀恆 ?T，r i64 = w[0] 已是型別錯誤）
+    src = 'z = () (r ?i64) {\n    w []i64 = []\n    r = w[0]\n}\n'
     t = ast.make()
     b = src.to-bytes()
     p = ps.new(b)
@@ -5066,10 +5098,11 @@ test-s99n-vec-field-set-gate = () {
 ...
 
 ; 签名 gate 放行 []str 作形参/返回（LLVM 层同为 %vec）；索引读回借用 str（OP-VECGETSTR）。
+;   s129：索引读恆 ?T ⇒ 改走值位 match 解包（`r = xs[i]: { ok -> it  -> '' }`）。
 test-sb-str-param-sig = () {
 
     ; []str 形参 + 返回：签名侧 TY-VECSTR → %vec（与 []i64 同 LLVM 型别）
-    src = 'pick = (xs []str, i i64) (r str) {\n    r = xs[i]\n}\n'
+    src = 'pick = (xs []str, i i64) (r str) {\n    r = xs[i]: {\n        ok -> it\n\n        -> \'\'\n    }\n}\n'
     t = ast.make()
     b = src.to-bytes()
     p = ps.new(b)
@@ -5083,14 +5116,15 @@ test-sb-str-param-sig = () {
 test-sb-str-index = () {
 
     ; []str 索引 → OP-VECGETSTR，回借用 %sv（vec_get_str），而非 i64 vec_get
-    src = 'pick = (xs []str, i i64) (r str) {\n    r = xs[i]\n}\n'
+    ;   s129：索引读恆 ?T ⇒ 值位 match 解包（下標 i 由 match 主體的槽載入 ⇒ %v9）
+    src = 'pick = (xs []str, i i64) (r str) {\n    r = xs[i]: {\n        ok -> it\n\n        -> \'\'\n    }\n}\n'
     t = ast.make()
     b = src.to-bytes()
     p = ps.new(b)
     root = ps.parse(t, p)
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
-    runner.eq(ir.contains('call %str-long @vec_get_str(%vec %vc1, i64 %v2)'), 1, 'sB str index get_str')
+    runner.eq(ir.contains('call %str-long @vec_get_str(%vec %vc1, i64 %v9)'), 1, 'sB str index get_str')
     runner.eq(ir.contains('@vec_get_i64('), 0, 'sB str index no i64 get')
 }
 
@@ -5229,7 +5263,7 @@ test-s107-attrib = () {
 test-s107-reject-named = () {
 
     ; ③ 被拒函数签名在【签名前置 pass】就登记一条带函数名的记录（此前只有产码 pass 计，日志无从查证是谁）
-    src = 'h = (p []byte) (r i64) {\n    r = 1\n}\n'
+    src = 'h = (p []f64) (r i64) {\n    r = 1\n}\n'
     t = ast.make()
     b = src.to-bytes()
     p = ps.new(b)
@@ -5270,7 +5304,7 @@ test-s108-leaf-attrib = () {
     runner.eq(agg.lfsk.len(), agg.unsup, 's108 leaf length equals unsup count')
 
     ; ③ module 级 mark-at 也记叶子（退化为同码）——被拒签名在两通道都在、且带函数名。
-    src2 = 'h = (p []byte) (r i64) {\n    r = 1\n}\n'
+    src2 = 'h = (p []f64) (r i64) {\n    r = 1\n}\n'
     t2 = ast.make()
     b2 = src2.to-bytes()
     p2 = ps.new(b2)
@@ -6243,6 +6277,576 @@ test-s128-smv-ty-direct = () {
     runner.eq(h2m-smv-ty(t, sg, lv, agg, m3), -1, 's128 smv-ty mixed -1')
 }
 
+; s129：(b) h2m-lower-expr 的索引讀【option 化】——`a[k]` 在語言上恆 ?T（D11），
+;   本件前本臂發裸 OP-VECGET / OP-VECGETSTR（plain 值）⇒ 消費端把 ?T 當纯值用。
+;   對齐 Go lowerSafeIndexAt（hir2mir.go:5225）：邊界檢查 + 元素包裹成 %option。
+;   ⚠️ 越界語意自舉存 nil、Go 存 err（見 ㊹ ⑤ 誠實邊界），等價性限於「臂不讀錯誤值」。
+;   ⚠️ 本件走【值位 match】而非 `?str` 輸出參：`h2m-param-ty` 尚不认 ?str 輸出參
+;   （實測 unsup=2，另一个缺口），故 str 载荷的 option 包裹由值位 match 路徑驗。
+test-s129-idx-valmatch-str = () {
+    src = 'cj-s129a = () (r str) {\n    xs []str = [\'a\', \'b\']\n    r = xs[0]: {\n        ok -> it\n\n        -> \'\'\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's129 idx-valmatch-str unsup')
+    runner.eq(ir.contains('define'), 1, 's129 idx-valmatch-str emits code')
+    runner.eq(ir.contains('alloca %option'), 1, 's129 idx-valmatch-str option slot')
+    runner.eq(ir.contains('store %option'), 1, 's129 idx-valmatch-str OPTSTORE')
+    runner.eq(ir.contains('icmp sge i64'), 1, 's129 idx-valmatch-str bounds check')
+    runner.eq(ir.contains('call %str-long @vec_get_str('), 1, 's129 idx-valmatch-str VECGETSTR')
+}
+
+; s129：[]i64 索引讀同形——option 化後應產生 %option 值（不是裸 i64）
+test-s129-idx-let-opt-i64 = () {
+    src = 'cj-s129b = () (r ?i64) {\n    xs []i64 = [1, 2]\n    r = xs[0]\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's129 idx-let-opt-i64 unsup')
+    runner.eq(ir.contains('define'), 1, 's129 idx-let-opt-i64 emits code')
+    runner.eq(ir.contains('store %option'), 1, 's129 idx-let-opt-i64 OPTSTORE')
+}
+
+; s129 單元：h2m-ty-of 的 K-INDEX 必須回 TY-OPT（與降級側同口徑），
+;   否則 let 槽按元素型別鋪（STR/I64）而右值是 %option ⇒ h2m-var-write 無臂可落。
+test-s129-ty-of-index-opt = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    lv = h2m-lst-new()
+    h2m-lst-add(lv, 'xs', TY-VECSTR)
+    h2m-lst-add(lv, 'xi', TY-VEC)
+
+    b1 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, b1, 0, ast.put-str(t, 'xs'))
+    k1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, k1, 0, ast.put-str(t, '0'))
+    s1 = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, s1, b1)
+    ast.kid-add(t, s1, k1)
+
+    b2 = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, b2, 0, ast.put-str(t, 'xi'))
+    k2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, k2, 0, ast.put-str(t, '0'))
+    s2 = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, s2, b2)
+    ast.kid-add(t, s2, k2)
+
+    runner.eq(h2m-ty-of(t, sg, lv, agg, s1), TY-OPT, 's129 ty-of []str index is option')
+    runner.eq(h2m-ty-of(t, sg, lv, agg, s2), TY-OPT, 's129 ty-of []i64 index is option')
+}
+
+; s130 單元：h2m-ty-of 的「?T 接收者值方法」臂。
+;   語言側 option 接收者只守衛 len/cap（src/checker/option_member_access.go:158），
+;   其餘方法合法並按【載荷型別】查表（hir2mir.go:12241 StripOptionRaw）。
+;   ty-of 只憑 TY-OPT 碼無法區分載荷型別，故僅放行【回值型別與載荷型別無關】者：
+;   len-bytes→TY-I64、byte→TY-OPT、to-str→TY-STR。
+;   len 在 option 接收者上非法、bytes 語料未出現 ⇒ 仍 -1（門禁不放寬）。
+test-s130-ty-of-opt-method = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 'a'))
+    lv = h2m-lst-new()
+    h2m-lst-add(lv, 'a', TY-OPT)
+
+    dot-lb = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-lb, recv)
+    ast.set-slot(t, dot-lb, 0, ast.put-str(t, 'len-bytes'))
+    call-lb = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-lb, dot-lb)
+    runner.eq(h2m-ty-of(t, sg, lv, agg, call-lb), TY-I64, 's130 opt len-bytes ty')
+
+    dot-byte = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-byte, recv)
+    ast.set-slot(t, dot-byte, 0, ast.put-str(t, 'byte'))
+    call-byte = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-byte, dot-byte)
+    runner.eq(h2m-ty-of(t, sg, lv, agg, call-byte), TY-OPT, 's130 opt byte ty')
+
+    dot-ts = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-ts, recv)
+    ast.set-slot(t, dot-ts, 0, ast.put-str(t, 'to-str'))
+    call-ts = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-ts, dot-ts)
+    runner.eq(h2m-ty-of(t, sg, lv, agg, call-ts), TY-STR, 's130 opt to-str ty')
+
+    ; 門禁：len（option 接收者上非法）與 bytes（語料未出現）仍回 -1
+    dot-len = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-len, recv)
+    ast.set-slot(t, dot-len, 0, ast.put-str(t, 'len'))
+    call-len = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-len, dot-len)
+    runner.eq(h2m-ty-of(t, sg, lv, agg, call-len), -1, 's130 opt len still -1')
+
+    dot-bytes = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-bytes, recv)
+    ast.set-slot(t, dot-bytes, 0, ast.put-str(t, 'bytes'))
+    call-bytes = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-bytes, dot-bytes)
+    runner.eq(h2m-ty-of(t, sg, lv, agg, call-bytes), -1, 's130 opt bytes still -1')
+}
+
+; s131：`_` 丟棄臂的臂體——BlockStatement{nkid=1} 包 ExpressionStatement{nkid=1, kid0=0}
+;   （對齊 ps.no:2098 的 `ast.kid-add(t, idx, 0)`；dump 印 `ExpressionStatement{nil}`）。
+;   ⚠️ 與「裸 `->`」（BlockStatement{nkid=0}）形制不同，本 helper 只造 `_`。
+mk-sm-discard = (t ast) (bn i64) {
+    e = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    ast.kid-add(t, e, 0)
+    bn = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, bn, e)
+}
+
+; s131：合成一條值位 SurfaceMatch（兩臂）——臂1 = `ok -> <a1>`（dot-val），臂2 = wild（`_`／`<a2>`）。
+;   臂群走 aux 陣（12 欄/臂）：a4=wildcard、a5=dotVal、a9=valueCtx 為 'true'，a11=臂體。
+mk-sm2 = (t ast, subj i64, a1 i64, a2 i64) (sm i64) {
+    sm = ast.add(t, asp.K-SURFACE-MATCH)
+    ast.set-slot(t, sm, 0, ast.put-str(t, '2'))
+    ast.kid-add(t, sm, subj)
+    ast.helper-begin(t, sm, 2)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, a1)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, 0)
+    ast.aux-add(t, ast.put-str(t, 'true'))
+    ast.aux-add(t, 0)
+    ast.aux-add(t, a2)
+}
+
+; s131 單元：h2m-smv-ty 對 `_` 丟棄臂——【跳過】（不作型別證據，也不令 ok=0），
+;   型別由其餘產值臂決定。本件前 `_` 臂令 ok=0 ⇒ 回 -1 ⇒ 呼叫方回退 TY-I64，
+;   str 主體（`it` 為 str）會拿到錯的槽型別。
+;   ① []str 基 + ok(it) + `_` ⇒ TY-STR；② []i64 基 + ok(it) + `_` ⇒ TY-I64；③ 全臂皆 `_` ⇒ -1。
+test-s131-smv-discard-ty = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    lv = h2m-lst-new()
+    h2m-lst-add(lv, 'xs', TY-VECSTR)
+    h2m-lst-add(lv, 'xi', TY-VEC)
+
+    da = mk-sm-discard(t)
+
+    b1 = mk-ident(t, 'xs')
+    k1 = mk-int(t, '0')
+    subj1 = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj1, b1)
+    ast.kid-add(t, subj1, k1)
+
+    i1 = mk-ident(t, 'it')
+    e1 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    ast.kid-add(t, e1, i1)
+    arm1 = mk-block1(t, e1)
+
+    m1 = mk-sm2(t, subj1, arm1, da)
+    runner.eq(h2m-smv-ty(t, sg, lv, agg, m1), TY-STR, 's131 smv-ty []str with _ arm')
+
+    b2 = mk-ident(t, 'xi')
+    k2 = mk-int(t, '0')
+    subj2 = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj2, b2)
+    ast.kid-add(t, subj2, k2)
+
+    i2 = mk-ident(t, 'it')
+    e2 = ast.add(t, asp.K-EXPRESSION-STATEMENT)
+    ast.kid-add(t, e2, i2)
+    arm2 = mk-block1(t, e2)
+
+    m2 = mk-sm2(t, subj2, arm2, da)
+    runner.eq(h2m-smv-ty(t, sg, lv, agg, m2), TY-I64, 's131 smv-ty []i64 with _ arm')
+
+    ; ③ 全臂皆 `_` ⇒ seen==0 ⇒ -1（與舊口徑一致，不由本件放寛）
+    m3 = mk-sm2(t, subj1, da, da)
+    runner.eq(h2m-smv-ty(t, sg, lv, agg, m3), -1, 's131 smv-ty all-discard -1')
+}
+
+; s131：值位 match 的 `_` 臂整鏈可降——`r = xs[i]: { ok -> it / -> _ }`（[]str 載荷）。
+;   `_` 臂【不發值】：結果槽保持 entry 的零初始化（對齊 Go captureArmValue 對 NoVal 直接 return）。
+test-s131-smv-discard-lower = () {
+    src = 'cj-s131a = () (r str) {\n    xs []str = [\'a\', \'b\']\n    r = xs[0]: {\n        ok -> it\n\n        -> _\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's131 discard-lower unsup')
+    runner.eq(ir.contains('define'), 1, 's131 discard-lower emits code')
+    runner.eq(ir.contains('store %str-long'), 1, 's131 discard-lower SSTORE')
+    runner.eq(ir.contains('load %str-long'), 1, 's131 discard-lower SLOAD')
+}
+
+; s131：同鏈但 []i64 載荷——語料活例形制（ps.no 的 `v = p.toks[i]: { ok -> it.typ / -> _ }`）
+test-s131-smv-discard-lower-i64 = () {
+    src = 'cj-s131b = () (r i64) {\n    xs []i64 = [1, 2]\n    r = xs[0]: {\n        ok -> it\n\n        -> _\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's131 discard-lower-i64 unsup')
+    runner.eq(ir.contains('define'), 1, 's131 discard-lower-i64 emits code')
+    runner.eq(ir.contains('store i64'), 1, 's131 discard-lower-i64 STORE')
+}
+
+; s131 門禁：裸 `->`（非 `_`）臂體形制不同（BlockStatement{nkid=0}）⇒ 仍計 unsup，本輪不放寛。
+test-s131-smv-bare-arrow-gate = () {
+    src = 'cj-s131g = () (r str) {\n    xs []str = [\'a\', \'b\']\n    r = xs[0]: {\n        ok -> it\n\n        ->\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's131 bare arrow counted')
+    runner.eq(ir.contains('define'), 0, 's131 bare arrow no code')
+}
+
+; s129 單元：h2m-lower-expr 的 K-INDEX 直接回傳 TY-OPT 值（邊界檢查塊 + 元素包裹）
+test-s129-lower-expr-index-opt = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+
+    base = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, base, 0, ast.put-str(t, 'xs'))
+    idx = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, idx, 0, ast.put-str(t, '0'))
+    subj = ast.add(t, asp.K-INDEX-EXPRESSION)
+    ast.kid-add(t, subj, base)
+    ast.kid-add(t, subj, idx)
+
+    c = h2m-new()
+    c.cur-fn = 'at'
+    h2m-slot-decl(c, 'xs', TY-VECSTR)
+    xi = h2m-name-find(c, 'xs')
+    c.vids[xi]: {
+        ok -> it = h2m-alloc(c, TY-VECSTR)
+
+        -> _
+    }
+    v = h2m-lower-expr(t, c, sg, subj)
+    runner.eq(c.unsup, 0, 's129 lower-expr index unsup')
+    runner.eq(v > 0, 1, 's129 lower-expr index value')
+    runner.eq(h2m-vty-at(c, v), TY-OPT, 's129 lower-expr index is option')
+}
+
+; s132：`?str` 接收者的值方法——`t = syms[0]`（索引讀 ⇒ ?str）後 `t.len-bytes()`。
+;   載荷型別由 c.vpty 沿「索引讀 → 寫點 → 槽 → 讀」一路抄过来；本件证明整條鏈閉合。
+test-s132-opt-str-len-bytes = () {
+    src = 'cj-s132a = (syms []str) (n i64) {\n    t = syms[0]\n    n = t.len-bytes()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's132 opt-str len-bytes unsup')
+    runner.eq(ir.contains('define'), 1, 's132 opt-str len-bytes emits code')
+    runner.eq(ir.contains('extractvalue %option %op'), 1, 's132 opt-str len-bytes OPTGETSTR')
+    runner.eq(ir.contains('%slr'), 1, 's132 opt-str len-bytes STRLEN')
+}
+
+; s132：同鏈的 `t.byte(i)`——額外套 OP-OPTGETSTR 後發 OP-STRBYTE（回 ?byte）。
+test-s132-opt-str-byte = () {
+    src = 'cj-s132b = (syms []str) {\n    t = syms[0]\n    t.byte(0)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's132 opt-str byte unsup')
+    runner.eq(ir.contains('extractvalue %option %op'), 1, 's132 opt-str byte OPTGETSTR')
+    runner.eq(ir.contains('%sbL'), 1, 's132 opt-str byte STRBYTE')
+}
+
+; s132 門禁：`?i64` 接收者的 `to-str()` 仍落閘門——cg 沒有 int→str 的 OP 原語，
+;   本輪**不**新增（誠實邊界）。載荷型別本身是已知的（TY-I64），放行也没有對應指令可發。
+test-s132-opt-i64-to-str-gate = () {
+    src = 'cj-s132c = (ds []i64) (s str) {\n    d = ds[0]\n    s = d.to-str()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's132 opt-i64 to-str still gated')
+    runner.eq(ir.contains('define'), 0, 's132 opt-i64 to-str no code')
+}
+
+; s133：`?str` 輸出參——`h2m-tynode-code` 的 K-NULLABLE-TYPE 放行內層 str。
+;   此前只收 u64／i64／f64 ⇒ `h2m-param-ty` 對 `(r ?str)` 回 bad=1 ⇒ 整函 dropped（㊼ ⑤ 缺口）。
+;   載荷是 %str-long{ptr,len}：入槽走 OP-OPTMKSTR（s129 索引讀出值位），出槽走 OP-OPTGETSTR（s132）。
+test-s133-opt-str-idx-return = () {
+    src = 'cj-s133a = () (r ?str) {\n    xs []str = [\'a\', \'b\']\n    r = xs[0]\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's133 opt-str idx-return unsup')
+    runner.eq(ir.contains('define %option @cj-s133a'), 1, 's133 opt-str idx-return define %option')
+    runner.eq(ir.contains('call %str-long @vec_get_str('), 1, 's133 opt-str idx-return VECGETSTR')
+    runner.eq(ir.contains('ret %option %op'), 1, 's133 opt-str idx-return ret option')
+}
+
+; s133：`?str` 輸入參——與輸出參同一條签名判据（§11 B7 共用 helper）。
+;   ⚠️ 下行配套的存放半：`h2m-slot-init-arg` 必须發 OP-OPTSTORE。漏這條時 TY-OPT 落進通用
+;   OP-STORE 臂 ⇒ `store i64 %v…, i64* %s…` 指向【未定義】的 %s 槽（%option 槽是 %os 命名空間）
+;   ⇒ clang 報 `use of undefined value`。`?i64` 形參同此（s94 起已入形，本條補齊存放半）。
+test-s133-opt-str-param-in = () {
+    src = 'g = (s ?str) (r i64) {\n    s: {\n        ok -> r = 1\n\n        -> r = 0\n    }\n}\n\nf = () (r i64) {\n    xs []str = [\'one\']\n    r = 0\n    v ?str = xs[0]\n    g(v)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's133 opt-str param-in unsup')
+    runner.eq(ir.contains('define i64 @g(%option %op1)'), 1, 's133 opt-str param-in define')
+    runner.eq(ir.contains('store %option %op1, %option* %os2'), 1, 's133 opt-str param-in OPTSTORE')
+    runner.eq(ir.contains('ret i64 %v'), 1, 's133 opt-str param-in ret i64')
+}
+
+; s133：let 標注 `?str`——與簽名側同一條 `h2m-tynode-code` 判据（§11 B7「签名侧与 let 标注侧同口径」）。
+test-s133-opt-str-let-ann = () {
+    src = 'f = () (r i64) {\n    xs []str = [\'one\']\n    r = 0\n    v ?str = xs[0]\n    v == \'one\' -> r = 1\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's133 opt-str let-ann unsup')
+    runner.eq(ir.contains('alloca %option'), 1, 's133 opt-str let-ann option slot')
+}
+
+; s133 門禁：內層 vec（`?[]str`）仍不入形——[]str 緩沖無 retain，字段外流會 UAF（同 s99f 口徑）。
+test-s133-opt-vec-inner-gate = () {
+    src = 'f = () (r ?[]str) {\n    r = nil\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's133 ?[]str still gated')
+    runner.eq(ir.contains('define'), 0, 's133 ?[]str no code')
+}
+
+; s134：裸標識碼 `?str` 主体（`v ?str = xs[0]` 後 `v: { ok -> … }`）——臂內 `it` 的載荷型別。
+;   ① 缺口（㊿ ⑤ ④）：h2m-smv-pty 只認索引讀主体，裸標識碼主体默認 TY-I64 ⇒
+;    arm 內 `it` 走 OP-OPTGET（i64）取 slot[0]——而 ?str 的 slot[0] 是【len】而非 ptr
+;    ⇒ 靜默錯碼（`r = it` 回字串長度）。實測 'two' → 3、'abcdef' → 6。
+;   ② 修法：前掃描期由 let 標注登記 h2m-lst.lpty（c.vids 尚未鋪，唯一靜態來源），
+;    降級期主體判定再用值的 vpty 兜底（s132/s133 沿寫點抄來）。
+;    `it.len-bytes()` 走 str 内建 ⇒ 必須emit OP-STRLEN（獨有暫存名 %slr），證載荷是 str 而非 i64。
+test-s134-opt-str-bare-ident-method = () {
+    src = 'f = () (r i64) {\n    xs []str = [\'two\']\n    r = 0\n    v ?str = xs[0]\n    v: {\n        ok -> r = it.len-bytes()\n\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's134 opt-str bare-ident method unsup')
+    runner.eq(ir.contains('%slr'), 1, 's134 opt-str bare-ident STRLEN')
+    runner.eq(ir.contains('extractvalue %option'), 1, 's134 opt-str bare-ident OPTGETSTR')
+}
+
+; s134：同一主體、臂體為多陳述塊（`n = it.len-bytes(); r = n`）——不得因臂體形而退化。
+test-s134-opt-str-bare-ident-let-body = () {
+    src = 'f = () (r i64) {\n    xs []str = [\'abcdef\']\n    r = 0\n    v ?str = xs[0]\n    v: {\n        ok -> {\n            n = it.len-bytes()\n            r = n\n        }\n\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's134 opt-str bare-ident let-body unsup')
+    runner.eq(ir.contains('%slr'), 1, 's134 opt-str bare-ident let-body STRLEN')
+}
+
+; s134：`?str` 形參主体（`(s ?str)`）——載荷型別由形參標注登記，經 h2m-slot-init-arg 抄進槽 vpty。
+;   漏掉那次 h2m-vpty-set 時槽 vpty 恒 0 ⇒ OPTLOAD 拷到值上仍是 0 ⇒ 主體判定推不出 str 載荷。
+test-s134-opt-str-param-method = () {
+    src = 'g = (s ?str) (r i64) {\n    s: {\n        ok -> r = it.len-bytes()\n\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's134 opt-str param-method unsup')
+    runner.eq(ir.contains('%slr'), 1, 's134 opt-str param-method STRLEN')
+}
+
+; s134 門禁：`?i64` 裸標識碼主体行為不變——仍走 OP-OPTGET（i64 載荷），不得因 s134 改成 str 路徑。
+test-s134-opt-i64-bare-ident-gate = () {
+    src = 'f = () (r i64) {\n    xs []i64 = [7]\n    r = 0\n    v ?i64 = xs[0]\n    v: {\n        ok -> r = it\n\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's134 opt-i64 bare-ident unsup')
+    runner.eq(ir.contains('extractvalue %option'), 1, 's134 opt-i64 bare-ident OPTGET')
+    runner.eq(ir.contains('%slr'), 0, 's134 opt-i64 bare-ident no STRLEN')
+}
+
+; s135：`str.len()` —— 纯 str 接收者取【碼點】數（發 OP-STRCPLEN → call @str_cp_len）。
+;   缺口定位（承 ㊿ ⑤ ①）：str 臂只有 len-bytes/byte/bytes，無 len ⇒ 任何 plain str 局部
+;   （乃至 `it` 以外的 str 值）的 `.len()` 都落閘門。活證：a1/c3 探針、lx.no:1521（字符字面量
+;   碼點計數，位於 lx-scan-token）、ps.no:4067/4159（ps-signed-int-operand / ps-mk-opt-arith-type
+;   的型別名寬度比較）——皆因這條缺而整函 dropped。
+;   ⚠️ 斷言「非 %slr」是關鍵：len 是循環計數，不是 %str-long 的欄 0 讀值（那會變成 len-bytes）。
+test-s135-str-len-local = () {
+    src = 'f = () (r i64) {\n    s str = \'héllo\'\n    r = s.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's135 str.len local unsup')
+    runner.eq(ir.contains('call i64 @str_cp_len('), 1, 's135 str.len local STRCPLEN')
+    runner.eq(ir.contains('%slr'), 0, 's135 str.len local not a field read')
+}
+
+; s135：str 形參接收者同一條臂（`h2m-name-find` 命中形參 ⇒ recv-is-value）。
+test-s135-str-len-param = () {
+    src = 'g = (s str) (r i64) {\n    r = s.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's135 str.len param unsup')
+    runner.eq(ir.contains('call i64 @str_cp_len('), 1, 's135 str.len param STRCPLEN')
+}
+
+; s135：`len-bytes` 不得被新臂接管——它仍是 %str-long 欄 0 的讀值（獨有暫存名 %slr）。
+test-s135-str-len-bytes-unaffected = () {
+    src = 'f = () (r i64) {\n    s str = \'ab\'\n    r = s.len-bytes()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's135 len-bytes unsup')
+    runner.eq(ir.contains('%slr'), 1, 's135 len-bytes still STRLEN')
+    runner.eq(ir.contains('@str_cp_len('), 0, 's135 len-bytes no STRCPLEN')
+}
+
+; s135 門禁：`len` 只收【無參】形——帶參的 `s.len(1)` 落閘門（語言上 str.len 無參，
+;   Go 由 checker 前置拒；自舉無 checker，故在降級點兜住，絕不猜）。
+test-s135-str-len-arg-gate = () {
+    src = 'f = () (r i64) {\n    s str = \'ab\'\n    r = s.len(1)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's135 str.len(1) counted')
+    runner.eq(ir.contains('define i64 @f'), 0, 's135 str.len(1) no f code')
+}
+
+; s135：臂內 `it` 的型別是【載荷】（不是 option）——`it.len()` 在 `ok ->` 臂裡是合法碼
+;   （Go 實測接受，'two' 回 3）。s134 曾把這條當「缺口 A 的顯式門禁」（當時 str 臂尚無 len），
+;   s135 補上 `len` 後該門禁已移除，改成本條正向斷言。
+;   ⚠️ 反側同場釘住：`err ->` 臂的 `it` 是 err.err 結構 ⇒ Go 拒編（receiver %err_err），
+;     本臂的 rty 守衛必須让它落閘門（e2e l12 探針對拍）。
+test-s135-opt-str-it-len = () {
+    src = 'f = () (r i64) {\n    xs []str = [\'two\']\n    r = 0\n    v ?str = xs[0]\n    v: {\n        ok -> r = it.len()\n\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's135 opt-str it.len unsup')
+    runner.eq(ir.contains('call i64 @str_cp_len('), 1, 's135 opt-str it.len STRCPLEN')
+    runner.eq(ir.contains('extractvalue %option'), 1, 's135 opt-str it.len OPTGETSTR')
+
+    ; 反側哨兵：`err ->` 臂的 it 是 err.err 結構 ⇒ `.len()` 不是 str 臂 ⇒ 必須落閘門。
+    ;   （Go 實測拒編：unsupported receiver type %err_err；e2e l12 探針對拍。）
+    src2 = 'f = () (r i64) {\n    xs []str = [\'two\']\n    r = 0\n    v ?str = xs[0]\n    v: {\n        ok -> r = 0\n\n        err -> r = it.len()\n\n        -> r = 0\n    }\n}\n'
+    t2 = ast.make()
+    p2 = ps.new(src2.to-bytes())
+    root2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, root2)
+
+    runner.eq(agg2.unsup > 0, 1, 's135 err-str it.len gated')
+    runner.eq(ir2.contains('define i64 @f'), 0, 's135 err-str it.len no f code')
+}
+
+; s135：`h2m-ty-of` 與 lower-expr 同口徑——str 接收者的 `.len()` 回 TY-I64
+;   （s113 紀律：ty-of 不回型別 ⇒ let 槽不綁名 ⇒ 後續每次讀都記 ID 失敗）。
+test-s135-str-len-ty-of = () {
+    t = ast.make()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 's'))
+
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+
+    dot-len = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, dot-len, recv)
+    ast.set-slot(t, dot-len, 0, ast.put-str(t, 'len'))
+    call-len = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, call-len, dot-len)
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 's', TY-STR)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, call-len), TY-I64, 's135 str.len ty')
+}
+
+; s129 門禁：option 化後「把索引讀當纯值用」必須【計 unsup】——
+;   `id(xs[0])`（id 收 str）在語言上是型別錯誤，自舉不得靜默放行。
+;   本件前為 UNSUP=0（假陰性：裸 VECGETSTR 就交進去了）。
+test-s129-idx-arg-gate = () {
+    src = 'id-s129 = (s str) (r str) {\n    r = s\n}\n\ncj-s129g = () (r str) {\n    xs []str = [\'a\', \'b\']\n    r = id-s129(xs[0])\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's129 index-as-arg counted')
+    runner.eq(ir.contains('@cj-s129g'), 0, 's129 index-as-arg no code')
+}
+
 ; s113：接收者為值的方法呼叫回值型別（a.len() / s.len-bytes() / a.push(x)）
 ...
 
@@ -6329,7 +6933,8 @@ test-s113-method-call-ty = () {
     runner.eq(h2m-ty-of(t, sg, ls, agg, call-bad), -1, 's113 unsupported method still -1')
 }
 
-; s113b：索引讀取的回值型別（ops[k] ⇒ str / xs[k] ⇒ i64）
+; s113b：索引讀取的回值型別——s129 起【恒 TY-OPT】（`a[k]` 在語言上恆 ?T，D11）；
+;   非 vec 基底（str/struct/arr）仍回 -1（門禁不放寬）。
 ...
 
 ; s113 放行 cg-emit-cfg-t 後暴露 op=ops[k]：lower-expr 已支援 OP-VECGETSTR，但 ty-of 不認
@@ -6348,10 +6953,10 @@ test-s113b-index-ty = () {
     agg = h2m-new()
     li = h2m-lst-new()
     h2m-lst-add(li, 'xs', TY-VEC)
-    runner.eq(h2m-ty-of(t, sg, li, agg, at), TY-I64, 's113b vec index ty')
+    runner.eq(h2m-ty-of(t, sg, li, agg, at), TY-OPT, 's113b vec index ty')
     ls = h2m-lst-new()
     h2m-lst-add(ls, 'xs', TY-VECSTR)
-    runner.eq(h2m-ty-of(t, sg, ls, agg, at), TY-STR, 's113b vecstr index ty')
+    runner.eq(h2m-ty-of(t, sg, ls, agg, at), TY-OPT, 's113b vecstr index ty')
     lb = h2m-lst-new()
     h2m-lst-add(lb, 'xs', TY-STR)
     runner.eq(h2m-ty-of(t, sg, lb, agg, at), -1, 's113b unsupported index base still -1')
@@ -6593,6 +7198,76 @@ test-s115-err-arm-nobind = () {
     runner.eq(v > 0, 1, 's115 err-arm-nobind emits value')
 }
 
+; s136：`[]byte` 入形 —— 與 `[]i64` 共用 TY-VEC（@vec_len／@vec_get_i64 單型 helper）。
+;   此前 h2m-tynode-code 的 K-SLICE-TYPE 臂只認 i64/str ⇒ `[]byte` 回 -1，
+;   lxst.input 與 sb.buf 的【欄位型別解析】整批失敗，連帶整條 lex 鏈 dropped。
+test-s136-byte-slice-local = () {
+    src = 'f = () (r i64) {\n    xs []byte = with-cap(2)\n    r = xs.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's136 []byte local unsup')
+    runner.eq(ir.contains('call %vec @vec_new_cap_i64('), 1, 's136 []byte local cap helper')
+    runner.eq(ir.contains('@vec_len('), 1, 's136 []byte local VECLEN')
+}
+
+; s136：struct 欄位 `[]byte` 的【型別解析】（正向）——此前 SliceType 落閘門，
+;   整批領域型別失敗，連帶 lx-read-char／lx-peek／lx-sub／lx-scan-token 全包 dropped。
+test-s136-byte-slice-field = () {
+    src = 'h {\n    buf []byte\n}\n\nf = () (r i64) {\n    r = 0\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's136 []byte field type resolves')
+    runner.eq(ir.contains('SliceType'), 0, 's136 []byte field no SliceType mark')
+}
+
+; s136：`[]byte` 索引讀 → `?i64`，值位 match 解包（走 @vec_get_i64）。
+test-s136-byte-slice-index = () {
+    src = 'f = (xs []byte, k i64) (r i64) {\n    r = xs[k]: {\n        ok -> it\n\n        -> 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's136 []byte index unsup')
+    runner.eq(ir.contains('@vec_get_i64('), 1, 's136 []byte index VECGET')
+}
+
+; s136 反側守衛：【欄位接收者方法呼叫】（`q.buf.len()`，path-expression 接收者）仍落閘門。
+;   型別已可解析（上條），但方法臂的接收者只能是個名字/值，喂不进欄位路徑 ⇒ 留在 ⑤ 的下一個缺口。
+test-s136-field-recv-gate = () {
+    src = 'h {\n    buf []byte\n}\n\nf = (q h) (r i64) {\n    r = q.buf.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's136 field recv method gated')
+    runner.eq(ir.contains('@vec_len('), 0, 's136 field recv no VECLEN')
+}
+
+; s136 反側守衛：`[]f64` 仍不得入形（單型 i64 helper 之外不放寬、不猜）。
+test-s136-f64-slice-gate = () {
+    src = 'f = () (r i64) {\n    xs []f64 = with-cap(2)\n    r = xs.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 's136 []f64 still gated')
+    runner.eq(ir.contains('define i64 @f'), 0, 's136 []f64 no f code')
+}
+
 test-sb-vec-mixed-elem-gate()
 test-sb-str-param-sig()
 test-sb-str-index()
@@ -6614,6 +7289,11 @@ test-s113b-index-ty()
 test-s114-bare-call()
 test-s115-expr-subject()
 test-s115-err-arm-nobind()
+test-s136-byte-slice-local()
+test-s136-byte-slice-field()
+test-s136-byte-slice-index()
+test-s136-field-recv-gate()
+test-s136-f64-slice-gate()
 
 runner.summary()
 f = runner.failed-count()

@@ -77,14 +77,22 @@ entity-valid = (h i64) (ok bool) {
 entity-i0 = (h i64) (v i64) {
     v = 0
     entity-valid(h) -> {
-        v = G-I0[h]
+        v = G-I0[h]: {
+            ok -> it
+
+            -> 0
+        }
     }
 }
 
 entity-s0 = (h i64) (v str) {
     v = ''
     entity-valid(h) -> {
-        v = G-S0[h]
+        v = G-S0[h]: {
+            ok -> it
+
+            -> ''
+        }
     }
 }
 
@@ -246,7 +254,11 @@ el-add = (parent i64, child i64) {
 el-child = (parent i64, i i64) (c i64) {
     c = -1
     (i >= 0 && i < E-CHILDREN-COUNT[parent]) -> {
-        c = CHILD-IDX[E-CHILDREN-HEAD[parent] + i]
+        c = CHILD-IDX[E-CHILDREN-HEAD[parent] + i]: {
+            ok -> it
+
+            -> -1
+        }
     }
 }
 
@@ -398,7 +410,11 @@ hit-test = (idx i64, px f64, py f64) (h i64) {
         r.w = E-W[idx]
         r.h = E-H[idx]
         (rect-hit(r, px, py)) -> {
-            h = E-ENTITY[idx]
+            h = E-ENTITY[idx]: {
+                ok -> it
+
+                -> 0
+            }
         }
     }
     i <- [0..E-CHILDREN-COUNT[idx]): {

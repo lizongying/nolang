@@ -1,0 +1,242 @@
+; ============================================================================
+; noui 声明式「下拉选项 / 选中 / 展开都是数据」测试（阶段 21）—— src/dv.no
+;
+; 缺口：命令式用法是 cmp-select(ph) + 逐个 select-add-option + select-open/close
+; + select-choose 四步，声明式层只有 dv-select（建一个空字段）+ dv-option（一个
+; 选项），「选项数组 / 当前选中 / 展开态」都得应用层自己写命令式代码。
+; 阶段 21 补：
+;   - dv-select-from(S, parent, key, selslot, openslot, labels, ph, base)
+;     一次建出「字段 + n 个常驻选项」并返回字段句柄：
+;       字段挂 DV-A-TOGGLE(openslot)（点字段 = 展开 / 收起）；
+;       每个选项挂 DV-A-CHOOSE(selslot)（选中并收起）；
+;       字段文案 = labels[S[selslot]]，选中下标走 value -> CMP-VALUE；
+;       选项常驻，收起时靠 cs-hit 的 C-SELECT 分支不可命中 -> 展开 / 收起零结构操作。
+;   - 新动作码 DV-A-CHOOSE = 10：dv-apply 一次写两个槽（S[payload] = value，
+;     S[value2] = 0）。选项的 value = 下标、value2 = 展开槽，正是这两个操作数。
+;
+; 场景钉住：
+;   Z 标记  ：字段 kind / key / 文案 / 占位符 / value / flags（含展开）；
+;             选项 key 递增 / 文案 / value = 下标 / value2 = 展开槽 / 动作载荷；
+;             字段动作；子节点数；越界 / 未选时文案为空
+;   Y 调和  ：活字段 kind / CMP-VALUE / CMP-TEXT / F-OPEN；换状态零结构操作；
+;             select-option-count / select-selected / 选项活节点文案
+;   D 派发  ：点字段 = TOGGLE(展开槽)；点选项 = CHOOSE(选中槽)；
+;             dv-apply 一次写两个槽（选中 + 收起）
+;   E 端到端：布局（展开时选项在字段下方）-> cs-hit（收起时选项点不到）->
+;             dispatch -> apply -> 重建 -> 字段文案与活树选中跟着状态走；
+;             绘制层选项面板的高亮色计数随展开 / 选中变化
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-select.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-select tests ===')
+
+; 场景辅助：某个颜色出现的次数
+count-c = (c i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-c(i) == c) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+
+; 共用数据
+OP []str = ['personal', 'team', 'enterprise']
+D-SS = 5          ; 选中下标槽
+D-SO = 6          ; 展开槽
+D-SB = 300        ; key 起点（字段 300，选项 301..303）
+ST []i64 = with-len(8)
+ST[D-SS] = 1
+ST[D-SO] = 0
+
+; ============================================================================
+; 场景 Z：标记 —— 字段 / 选项 / 动作载荷 / 边界
+; ============================================================================
+dv-clear()
+rz = dv-form(1, -1)
+hz = dv-select-from(ST, rz, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+o0 = dv-node-by-key(301)
+o1 = dv-node-by-key(302)
+o2 = dv-node-by-key(303)
+r1 = hz >= 0 && dv-kind(hz) == C-SELECT && dv-key(hz) == 300
+r2 = dv-text(hz) == 'team' && dv-text2(hz) == 'pick one' && dv-value(hz) == 1
+r3 = dv-flags(hz) == dv-on() && o0 >= 0 && o1 >= 0 && o2 >= 0
+r4 = dv-key(o0) == 301 && dv-key(o2) == 303 && dv-text(o0) == 'personal' && dv-text(o2) == 'enterprise'
+r5 = dv-value(o0) == 0 && dv-value(o1) == 1 && dv-value(o2) == 2
+r6 = dv-value2(o0) == 6 && dv-value2(o1) == 6 && dv-value2(o2) == 6
+r7 = dv-act-of(o0) == DV-A-CHOOSE && dv-act-payload(o0) == 5 && dv-act-of(o2) == DV-A-CHOOSE && dv-act-payload(o2) == 5
+r8 = dv-act-of(hz) == DV-A-TOGGLE && dv-act-payload(hz) == 6
+r9 = dv-child-count(hz) == 3
+
+; 展开态：字段 flags 带 DV-F-OPEN
+ST[D-SO] = 1
+dv-clear()
+rz2 = dv-form(1, -1)
+hz2 = dv-select-from(ST, rz2, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+r10 = (dv-flags(hz2) & DV-F-OPEN) != 0
+; 未选：文案空、value = -1
+ST[D-SS] = -1
+dv-clear()
+rz3 = dv-form(1, -1)
+hz3 = dv-select-from(ST, rz3, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+r11 = dv-text(hz3) == '' && dv-value(hz3) == -1
+; 越界：文案空、不崩
+ST[D-SS] = 9
+dv-clear()
+rz4 = dv-form(1, -1)
+hz4 = dv-select-from(ST, rz4, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+r12 = dv-text(hz4) == '' && dv-value(hz4) == 9
+
+; ============================================================================
+; 场景 Y：调和 —— 活字段状态随视图走，换状态零结构操作
+; ============================================================================
+ST[D-SS] = 1
+ST[D-SO] = 0
+root-y = cmp-root()
+dv-clear()
+py = dv-form(1, -1)
+dv-select-from(ST, py, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+ops-y = dv-render(root-y, py)
+ly = dv-live-deep(root-y, D-SB)
+ly0 = dv-live-deep(root-y, 301)
+ly2 = dv-live-deep(root-y, 303)
+r13 = ops-y == 4 && ly >= 0 && ly0 >= 0 && ly2 >= 0
+r14 = cmp-kind(ly) == C-SELECT && cmp-value(ly) == 1 && cmp-text(ly) == 'team' && cmp-text2(ly) == 'pick one'
+r15 = (!cmp-has(ly, F-OPEN)) && select-option-count(ly) == 3 && select-selected(ly) == 1
+r16 = cmp-text(ly0) == 'personal' && cmp-text(ly2) == 'enterprise'
+; 第二帧：展开（只改状态槽）-> 零结构操作，活树跟着走
+ST[D-SO] = 1
+dv-clear()
+py2 = dv-form(1, -1)
+dv-select-from(ST, py2, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+ops-y2 = dv-render(root-y, py2)
+r17 = ops-y2 == 0 && cmp-has(ly, F-OPEN)
+; 第三帧：换选中 + 收起 -> 零结构操作，文案 / CMP-VALUE 跟着状态
+ST[D-SS] = 2
+ST[D-SO] = 0
+dv-clear()
+py3 = dv-form(1, -1)
+dv-select-from(ST, py3, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+ops-y3 = dv-render(root-y, py3)
+r18 = ops-y3 == 0 && cmp-text(ly) == 'enterprise' && cmp-value(ly) == 2 && select-selected(ly) == 2 && (!cmp-has(ly, F-OPEN))
+
+; ============================================================================
+; 场景 D：派发 + 归约 —— 点字段展开，点选项「选中并收起」
+; ============================================================================
+ST[D-SS] = 0
+ST[D-SO] = 1
+dv-clear()
+pd = dv-form(1, -1)
+dv-select-from(ST, pd, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+a1, p1 = dv-dispatch(D-SB)
+r19 = a1 == DV-A-TOGGLE && p1 == 6
+a2, p2 = dv-dispatch(302)
+r20 = a2 == DV-A-CHOOSE && p2 == 5
+ST[D-SS] = 0
+ST[D-SO] = 1
+n1 = dv-apply(ST, 302)
+r21 = n1 == 2 && ST[D-SS] == 1 && ST[D-SO] == 0
+n2 = dv-apply(ST, D-SB)
+r22 = n2 == 1 && ST[D-SO] == 1
+; 没有展开槽的 CHOOSE（value2 < 0）只写一个槽
+dv-clear()
+pz = dv-form(1, -1)
+nz = dv-node(C-LABEL, 301, 'x', '', 0, 3, -1, dv-on(), pz)
+dv-act(nz, DV-A-CHOOSE, D-SS)
+ST[D-SS] = 0
+n3 = dv-apply(ST, 301)
+r23 = n3 == 1 && ST[D-SS] == 3
+
+; ============================================================================
+; 场景 E：端到端 —— 命中 -> 派发 -> 归约 -> 重建 -> 活树 / 绘制跟随
+; ============================================================================
+ST2 []i64 = with-len(8)
+ST2[D-SS] = -1
+ST2[D-SO] = 0
+root-e = cmp-root()
+dv-clear()
+pe = dv-form(1, -1)
+dv-select-from(ST2, pe, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+ops-e1 = dv-render(root-e, pe)
+r24 = ops-e1 == 4
+cs-layout(root-e, 0, 0, 80000, 60000)
+lf = dv-live-deep(root-e, D-SB)
+lo = dv-live-deep(root-e, 301)
+fx, fy, fw, fh = cs-rect(lf)
+hit = cs-hit(root-e, cs-add(fx, cs-div(fw, 2)), cs-add(fy, cs-div(fh, 2)))
+r25 = lf >= 0 && hit == lf
+; 点字段 = 展开
+ha, hp = dv-dispatch(cmp-key(hit))
+ne = dv-apply(ST2, cmp-key(hit))
+r27 = ha == DV-A-TOGGLE && hp == 6 && ne == 1 && ST2[D-SO] == 1
+dv-clear()
+pe2 = dv-form(1, -1)
+dv-select-from(ST2, pe2, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+ops-e2 = dv-render(root-e, pe2)
+r28 = ops-e2 == 0 && cmp-has(lf, F-OPEN)
+; 展开后选项可命中
+cs-layout(root-e, 0, 0, 80000, 60000)
+ox2, oy2, ow2, oh2 = cs-rect(lo)
+hit3 = cs-hit(root-e, cs-add(ox2, cs-div(ow2, 2)), cs-add(oy2, cs-div(oh2, 2)))
+r29 = hit3 == lo
+ha2, hp2 = dv-dispatch(cmp-key(hit3))
+ne2 = dv-apply(ST2, cmp-key(hit3))
+r30 = ha2 == DV-A-CHOOSE && hp2 == 5 && ne2 == 2 && ST2[D-SS] == 0 && ST2[D-SO] == 0
+; 重建：字段文案 = 选中项，活树选中态跟着状态
+dv-clear()
+pe3 = dv-form(1, -1)
+dv-select-from(ST2, pe3, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+ops-e3 = dv-render(root-e, pe3)
+r31 = ops-e3 == 0 && cmp-text(lf) == 'personal' && cmp-value(lf) == 0 && select-selected(lf) == 0
+; 绘制：展开 + 选中时选项面板有高亮（CS-TH-ACCENT）；收起时没有
+cs-layout(root-e, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-e)
+ac = cs-theme(CS-TH-ACCENT)
+c-closed = count-c(ac)
+ST2[D-SO] = 1
+dv-clear()
+pe4 = dv-form(1, -1)
+dv-select-from(ST2, pe4, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+dv-render(root-e, pe4)
+cs-layout(root-e, 0, 0, 80000, 60000)
+cs-clear()
+cs-paint(root-e)
+c-open = count-c(ac)
+r32 = c-open > c-closed
+; 收起后再点同一位置：选项不再可命中（cs-hit 的 C-SELECT 分支：未 OPEN 不动子节点）
+ST2[D-SO] = 0
+dv-clear()
+pe5 = dv-form(1, -1)
+dv-select-from(ST2, pe5, D-SB, D-SS, D-SO, OP, 'pick one', D-SB)
+dv-render(root-e, pe5)
+cs-layout(root-e, 0, 0, 80000, 60000)
+hit4 = cs-hit(root-e, cs-add(ox2, cs-div(ow2, 2)), cs-add(oy2, cs-div(oh2, 2)))
+r33 = hit4 != lo
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}{r10}{r11}{r12}')
+print('Y live={r13}{r14}{r15}{r16}{r17}{r18}')
+print('D disp={r19}{r20}{r21}{r22}{r23}')
+print('E e2e={r24}{r25}{r27}{r28}{r29}{r30}{r31}{r32}{r33}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r27 && r28 && r29 && r30 && r31 && r32 && r33
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-SELECT TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-SELECT TESTS FAILED')
+}

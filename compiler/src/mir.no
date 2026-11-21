@@ -612,3 +612,14 @@ OP-STRBYTE = 101
 ;       %vc<dst>=insertvalue %vec %vb1<k>, i64 %sbD<k>, 2
 ; ⚠ op 碼接在既有最大碼 OP-STRBYTE=101 之後（取 102），不重排既有碼。
 OP-STRBYTES = 102
+
+; str.len()：回【碼點】數（s135；不是一個欄位讀值——無 OP 可組，需循環）。
+;   語義等價 std str.len（src/std/str.no:47）= .cp-index(.len-bytes())：
+;   逐字節數「< 0x80 或 (b & 0xc0) == 0xc0」的個數（即 UTF-8 首字節數 = 碼點數）。
+;   Go 後端無對應「計數」原語：str.len 是 std 函式，編譯為 .cp-index 循環
+;   （emitStrCpIndex 是 s[i] 的【讀】，非計數）。故本 op 走 helper 路徑。
+; OP-STRCPLEN：dst = i64 值 id（落 %v）；x = 字符串值 id（TY-STR，落 %sv）；y 不用（0）。
+;   發：%v<dst> = call i64 @str_cp_len(%str-long %sv<x)
+;   helper @str_cp_len 由 cg-runtime-prelude-full 每模組發一次（見 cg-runtime-str-cp-len）。
+; ⚠ op 碼接在既有最大碼 OP-STRBYTES=102 之後（取 103），不重排既有碼。
+OP-STRCPLEN = 103

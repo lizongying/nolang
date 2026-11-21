@@ -1,0 +1,148 @@
+; ============================================================================
+; noui 声明式「列表项 = 平行数组」测试（阶段 14）—— src/dv.no
+;
+; dv-repeat-items 把 texts / values / acts / pays 四个平行数组映射成 n 个同 kind
+; 节点：第 i 项的文案、value、动作、载荷都按索引取。这里钉住：
+;   ① 构造（key 递增 / 逐项取数组 / 返回首个 handle）
+;   ② 短数组补默认（value 0 / 不挂动作）与 n 的钳制（超长按长度、负数按 0）
+;   ③ 与 dv-render + dv-dispatch 的回路：点第 i 行 = (acts[i], pays[i])
+;   ④ 删除一行后重建：key 稳定 -> 只改文案 + 删尾节点（差量）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-repeat.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-repeat tests ===')
+
+; 文案 / 动作 / 载荷三个平行数组（values 故意给短 -> 走默认 0）
+RT []str = with-len(3)
+RT[0] = 'row alpha'
+RT[1] = 'row beta'
+RT[2] = 'row gamma'
+RA []i64 = with-len(3)
+RA[0] = DV-A-ITEM
+RA[1] = DV-A-ITEM
+RA[2] = DV-A-ITEM
+RP []i64 = with-len(3)
+RP[0] = 0
+RP[1] = 1
+RP[2] = 2
+RV []i64 = with-len(0)          ; 空数组：所有项 value 都是 0
+
+; ============================================================================
+; 场景 P：构造 —— key 递增 / 逐项取数组 / 返回首个 handle
+; ============================================================================
+dv-clear()
+pp = dv-form(1, -1)
+h0 = dv-repeat-items(pp, 80, 3, C-LABEL, RT, RV, RA, RP)
+
+r1 = h0 >= 0 && dv-node-count() == 4
+r2 = dv-key(h0) == 80 && dv-key(dv-add(h0, 1)) == 81 && dv-key(dv-add(h0, 2)) == 82
+r3 = dv-text(h0) == 'row alpha' && dv-text(dv-add(h0, 1)) == 'row beta' && dv-text(dv-add(h0, 2)) == 'row gamma'
+r4 = dv-value(h0) == 0 && dv-value(dv-add(h0, 1)) == 0 && dv-value(dv-add(h0, 2)) == 0
+; 动作与载荷逐项挂在节点上（「点第 i 行 = 动作 acts[i]，payload = pays[i]」）
+r5 = dv-act-of(h0) == DV-A-ITEM && dv-act-payload(h0) == 0
+r6 = dv-act-of(dv-add(h0, 1)) == DV-A-ITEM && dv-act-payload(dv-add(h0, 1)) == 1
+r7 = dv-act-of(dv-add(h0, 2)) == DV-A-ITEM && dv-act-payload(dv-add(h0, 2)) == 2
+r8 = dv-parent(h0) == pp && dv-kind(h0) == C-LABEL
+
+; ============================================================================
+; 场景 Q：短数组补默认 + n 钳制（超长按 texts 长度、负数按 0）
+; ============================================================================
+dv-clear()
+pq = dv-form(1, -1)
+RS []str = with-len(2)
+RS[0] = 'only a'
+RS[1] = 'only b'
+h1 = dv-repeat-items(pq, 90, 5, C-LABEL, RS, RV, RA, RP)   ; n=5 超长度 -> 只造 2 个
+r9 = h1 >= 0 && dv-node-count() == 3
+r10 = dv-text(h1) == 'only a' && dv-text(dv-add(h1, 1)) == 'only b'
+; pays 只有 3 个，第 2 项（下标 1）取得到；acts 也是 3 个
+r11 = dv-act-payload(dv-add(h1, 1)) == 1
+
+; acts 给空数组 -> 不挂动作（act = 0）
+dv-clear()
+pq2 = dv-form(1, -1)
+h2 = dv-repeat-items(pq2, 95, 2, C-LABEL, RS, RV, RV, RP)
+r12 = h2 >= 0 && dv-act-of(h2) == 0 && dv-act-payload(h2) == 0
+
+; n 为负 -> 0 个节点，返回 -1
+dv-clear()
+pq3 = dv-form(1, -1)
+h3 = dv-repeat-items(pq3, 96, -1, C-LABEL, RS, RV, RA, RP)
+r13 = h3 == -1 && dv-node-count() == 1
+
+; ============================================================================
+; 场景 R：与 dv-render + dv-dispatch 的回路（点第 i 行 = (acts[i], pays[i])）
+; ============================================================================
+root-r = cmp-root()
+dv-clear()
+pr = dv-form(1, -1)
+dv-repeat-items(pr, 80, 3, C-LABEL, RT, RV, RA, RP)
+ops-r = dv-render(root-r, pr)
+live0 = dv-live-deep(root-r, 80)
+live1 = dv-live-deep(root-r, 81)
+live2 = dv-live-deep(root-r, 82)
+r14 = ops-r == 3 && live0 >= 0 && live1 >= 0 && live2 >= 0
+
+da0, dp0 = dv-dispatch(80)
+da1, dp1 = dv-dispatch(81)
+da2, dp2 = dv-dispatch(82)
+r15 = da0 == DV-A-ITEM && dp0 == 0
+r16 = da1 == DV-A-ITEM && dp1 == 1
+r17 = da2 == DV-A-ITEM && dp2 == 2
+; 组件文本与数组一致
+r18 = cmp-text(live1) == 'row beta'
+
+; ============================================================================
+; 场景 S：删掉第 1 行后重建 —— key 稳定，只改文案 + 删尾节点（差量）
+; ============================================================================
+; 模拟应用侧的「删除第 1 行」：dv-rows-del 前移 + 行数 -1（真现在 main-dv 的 dv-app-click）
+nn-s = dv-rows-del(RT, 3, 1)
+r19 = nn-s == 2 && RT[0] == 'row alpha' && RT[1] == 'row gamma'
+; 下一帧重建视图（dv-clear 清掉旧视图池，key 稳定 -> 活组件跨帧复用）
+dv-clear()
+pr2 = dv-form(1, -1)
+dv-repeat-items(pr2, 80, nn-s, C-LABEL, RT, RV, RA, RP)
+ops-s2 = dv-render(root-r, pr2)
+live1b = dv-live-deep(root-r, 81)
+live2b = dv-live-deep(root-r, 82)
+r20 = live1b >= 0 && cmp-text(live1b) == 'row gamma' && live2b == -1 && cmp-children(root-r) == 2
+
+; ============================================================================
+; 场景 T：dv-rows-del —— 删除第 i 项（前移），返回新长度；越界原样返回
+; ============================================================================
+TD []str = with-len(3)
+TD[0] = 'a'
+TD[1] = 'b'
+TD[2] = 'c'
+n1 = dv-rows-del(TD, 3, 1)
+r21 = n1 == 2 && TD[0] == 'a' && TD[1] == 'c'
+n2 = dv-rows-del(TD, n1, 0)
+r22 = n2 == 1 && TD[0] == 'c'
+r23 = dv-rows-del(TD, n2, 5) == 1 && dv-rows-del(TD, n2, -1) == 1 && dv-rows-del(TD, 0, 0) == 0
+
+print('P build={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}')
+print('Q clamp={r9}{r10}{r11}{r12}{r13}')
+print('R loop={r14}{r15}{r16}{r17}{r18}')
+print('S diff={r19}{r20}')
+print('T del={r21}{r22}{r23}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-REPEAT TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-REPEAT TESTS FAILED')
+}

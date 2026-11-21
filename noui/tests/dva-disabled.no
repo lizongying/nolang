@@ -1,0 +1,183 @@
+; ============================================================================
+; noui 声明式「禁用态」测试（阶段 18）—— src/dv.no + src/dv-app.no
+;
+; 「禁用」在声明式里就是 flags 少一个 DV-F-EN：视图每帧读状态重建，所以
+; 「未勾选同意时提交按钮禁用」这类派生天然成立，不需要额外的状态槽。
+; 与 dv-off() 的区别：dv-off 把 flags 清零（连可见一起没了 = 隐藏），
+; dv-disabled() 保留 DV-F-VIS，控件还在原地、只是点不动。
+;
+; 阶段 18 补的是**行为语义**（绘制层早就消费 F-DISABLED 画成灰色）：
+;   命中仍有效（hover / tooltip 照常 —— 禁用原因往往就要靠 tooltip 解释），
+;   但动作派发 / 快捷键 / 焦点三处都要尊重它。
+;
+; 场景钉住：
+;   Z 标记  ：dv-disabled() = VIS（无 EN）；dv-enabled() = VIS|EN；dv-disabled-of
+;   Y 调和  ：dv-disabled() -> 活节点 F-DISABLED 有、F-ENABLED 无；dv-on() 反向；
+;             同一 key 第二帧从禁用改回启用要能把 F-DISABLED 清掉（覆盖式同步）
+;   D 派发  ：禁用节点 dv-dispatch 返回 act=0；启用节点照常出动作
+;   K 快捷键：dv-hotkey 挂禁用节点 -> dv-hot-dispatch 返回 act=0；挂启用节点正常
+;   F 焦点  ：禁用的输入框点击后不接焦点；启用的输入框正常接
+;   H 命中  ：禁用节点仍能被 cs-hit 命中（hover / tooltip 要用）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-disabled.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-disabled tests ===')
+
+; ============================================================================
+; 场景 Z：标记 —— dv-disabled / dv-enabled / dv-disabled-of
+; ============================================================================
+dv-clear()
+pz = dv-form(1, -1)
+nz = dv-node(C-LABEL, 40, 'a', '', 0, 0, 0, dv-on(), pz)
+r1 = dv-disabled() == DV-F-VIS
+r2 = (dv-disabled() & DV-F-EN) == 0
+r3 = dv-enabled() == (DV-F-VIS | DV-F-EN)
+r4 = dv-disabled-of(nz) == 0
+; 同一个节点改成禁用（视图层改写 flags 池）
+dv-arr-set(DV-FLAGS, nz, dv-disabled())
+r5 = dv-disabled-of(nz) == 1
+; dv-clear 之后新节点回到默认可用（每帧重建不残留）
+dv-clear()
+pz2 = dv-form(1, -1)
+nz2 = dv-node(C-LABEL, 40, 'a', '', 0, 0, 0, dv-on(), pz2)
+r6 = dv-disabled-of(nz2) == 0
+
+; ============================================================================
+; 场景 Y：调和 —— 活节点带 F-DISABLED；覆盖式同步能改回来
+; ============================================================================
+root-y = cmp-root()
+dv-clear()
+py = dv-form(1, -1)
+by = dv-node(C-BUTTON, 10, 'add', '', 0, 0, 0, dv-disabled(), py)
+cy = dv-node(C-BUTTON, 11, 'ok', '', 0, 0, 0, dv-on(), py)
+dv-render(root-y, py)
+lby = dv-live-deep(root-y, 10)
+lcy = dv-live-deep(root-y, 11)
+r7 = lby >= 0 && lcy >= 0
+r8 = cmp-has(lby, F-DISABLED) && (!cmp-has(lby, F-ENABLED))
+r9 = cmp-has(lcy, F-ENABLED) && (!cmp-has(lcy, F-DISABLED))
+; 第二帧同一个 key=10 改回启用：F-DISABLED 必须被清掉（同 key 同 kind -> 复用）
+dv-clear()
+py2 = dv-form(1, -1)
+dv-node(C-BUTTON, 10, 'add', '', 0, 0, 0, dv-on(), py2)
+dv-node(C-BUTTON, 11, 'ok', '', 0, 0, 0, dv-on(), py2)
+ops-y2 = dv-render(root-y, py2)
+lby2 = dv-live-deep(root-y, 10)
+r10 = ops-y2 == 0 && cmp-has(lby2, F-ENABLED) && (!cmp-has(lby2, F-DISABLED))
+
+; ============================================================================
+; 场景 D：动作派发 —— 禁用节点不出动作
+; ============================================================================
+dv-clear()
+pd = dv-form(1, -1)
+bd = dv-node(C-BUTTON, 20, 'add', '', 0, 0, 0, dv-disabled(), pd)
+dv-act(bd, DV-A-SET, 5)
+ed = dv-node(C-BUTTON, 21, 'ok', '', 0, 0, 0, dv-on(), pd)
+dv-act(ed, DV-A-SET, 6)
+ad, ap = dv-dispatch(20)
+r11 = ad == 0 && ap == 0
+ad2, ap2 = dv-dispatch(21)
+r12 = ad2 == DV-A-SET && ap2 == 6
+; 本来就没挂动作的节点仍是 0（不受影响）
+ad3, ap3 = dv-dispatch(999)
+r13 = ad3 == 0 && ap3 == 0
+
+; ============================================================================
+; 场景 K：快捷键 —— 目标禁用则不触发
+; ============================================================================
+dv-clear()
+pk = dv-form(1, -1)
+hk1 = dv-node(C-BUTTON, 30, 'a', '', 0, 0, 0, dv-disabled(), pk)
+dv-hotkey(hk1, 114, DV-A-SET, 7)          ; 114 = SDLK_r
+hk2 = dv-node(C-BUTTON, 31, 'b', '', 0, 0, 0, dv-on(), pk)
+dv-hotkey(hk2, 115, DV-A-SET, 8)          ; 115 = SDLK_s
+ha1, hp1, hv1 = dv-hot-dispatch(114)
+r14 = ha1 == 0 && hp1 == 0
+ha2, hp2, hv2 = dv-hot-dispatch(115)
+; vkey 是声明式 key（dva-run 拿它当动作目标），不是视图句柄
+r15 = ha2 == DV-A-SET && hp2 == 8 && hv2 == dv-key(hk2)
+
+; ============================================================================
+; 场景 F：焦点 —— 禁用的输入框不接焦点
+; ============================================================================
+root-f = cmp-root()
+dv-clear()
+pf = dv-form(1, -1)
+iy = dv-node(C-INPUT, 40, 'dis', '', 0, 0, 0, dv-disabled(), pf)
+iw = dv-node(C-INPUT, 41, 'ena', '', 0, 0, 0, dv-on(), pf)
+dv-render(root-f, pf)
+liy = dv-live-deep(root-f, 40)
+liw = dv-live-deep(root-f, 41)
+DVA-FOCUS[0] = -1
+dva-focus(liy)
+fz = DVA-FOCUS[0]: {
+    ok -> it
+
+    -> -1
+}
+r16 = fz == -1
+dva-focus(liw)
+fh = DVA-FOCUS[0]: {
+    ok -> it
+
+    -> -1
+}
+r17 = fh == liw
+; 交回空白（禁用节点 -> 释放焦点）
+dva-focus(liy)
+fh2 = DVA-FOCUS[0]: {
+    ok -> it
+
+    -> -1
+}
+r18 = fh2 == -1
+
+; ============================================================================
+; 场景 H：命中 —— 禁用节点仍可被命中（hover / tooltip 要用）
+; ============================================================================
+cs-layout(root-f, 0, 0, 80000, 60000)
+hx, hy, hw, hh = cs-rect(liy)
+r19 = cs-hit(root-f, cs-add(hx, 1), cs-add(hy, 1)) == liy
+
+; ============================================================================
+; 场景 V：main-dv 里那个「按状态派生 flags」的写法本身
+; ============================================================================
+; 视图每帧重建，所以在视图函数里按状态给 flags 选值就是声明式禁用 ——
+; 这里把 demo 的写法单独钉住（局部标量在块内改写在视图函数里必须生效）。
+view-flags = (nl i64) (f i64) {
+    f = dv-on()
+    (nl >= 3) -> { f = dv-disabled() }
+}
+r20 = view-flags(0) == (DV-F-VIS | DV-F-EN)
+r21 = view-flags(2) == (DV-F-VIS | DV-F-EN)
+r22 = view-flags(3) == DV-F-VIS
+r23 = view-flags(9) == DV-F-VIS
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}')
+print('Y live={r7}{r8}{r9}{r10}')
+print('D dispatch={r11}{r12}{r13}')
+print('K hotkey={r14}{r15}')
+print('F focus={r16}{r17}{r18}')
+print('H hit={r19}')
+print('V view={r20}{r21}{r22}{r23}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-DISABLED TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-DISABLED TESTS FAILED')
+}
