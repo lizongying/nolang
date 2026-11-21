@@ -118,6 +118,10 @@ Globale Optionen:
       no ast src/std/vec.no      AST für vec.no ausgeben
 
   no info               Umgebung und Quellverzeichnis anzeigen
+  no search <query>   Community-Pakete aus der nohub-Registry suchen
+  no info <pkg>       Metadaten eines Registry-Pakets anzeigen
+  no docs <pkg>       Dokumentations-URL eines Registry-Pakets ausgeben
+  Quellen: ~/no/sources.noml  ($NOHUB_SOURCES überschreibt; -source <name> wählt)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
                     Abhängigkeit hinzufügen (vorgebautes AST: <tool>.ast.zip)

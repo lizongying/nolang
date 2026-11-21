@@ -6,6 +6,20 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.29
+
+- feat(core): add zero-copy str.bytes() slice view and str.byte operator for UTF-8 byte access
+- feat(core): track option payload types through lowering for typed builtin method dispatch
+- feat(h2m): downgrade index reads to typed option results with safe-index handling
+- feat(mir): add UTF-8 codepoint length and integer-to-string ops with codegen helpers
+- fix(compiler): enforce top-level binding naming tiers and initialize global calls before use
+- refactor(compiler): clarify code comments and replace decorative separators with ellipsis
+- feat(cli): add nohub registry search, info and docs commands with multi-source index loading
+- build: add curl-based install script and document installation in ten localized READMEs
+- fix(mir): type method-builtin arithmetic arguments from the receiver so large string byte indexes stay valid
+- feat(std): add opt-in TLS peer certificate hostname and validity verification
+- chore(docs): document agent worktree, scratch-file and plan/spec conventions
+
 ## v0.4.28
 
 - feat(match): support general expressions as explicit match subjects

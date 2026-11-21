@@ -118,6 +118,10 @@ Nolang 프로그래밍 언어 (버전 %s)
       no ast src/std/vec.no      vec.no의 AST 출력
 
   no info               환경 및 소스 디렉터리 정보 표시
+  no search <query>   nohub 레지스트리에서 커뮤니티 패키지 검색
+  no info <pkg>       레지스트리 패키지의 메타데이터 표시
+  no docs <pkg>       레지스트리 패키지의 문서 URL 출력
+  소스: ~/no/sources.noml  ($NOHUB_SOURCES 재정의, -source <name> 선택)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
                     의존성 추가 (미리 빌드된 AST: <tool>.ast.zip)

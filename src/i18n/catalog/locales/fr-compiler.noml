@@ -118,6 +118,10 @@ Options globales :
       no ast src/std/vec.no      afficher l'AST de vec.no
 
   no info               Afficher l'environnement et le répertoire source
+  no search <query>   Rechercher des paquets communautaires dans le registre nohub
+  no info <pkg>       Afficher les métadonnées d'un paquet du registre
+  no docs <pkg>       Afficher l'URL de documentation d'un paquet du registre
+  Sources : ~/no/sources.noml  ($NOHUB_SOURCES remplace ; -source <name> sélectionne)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
                     Ajouter une dépendance (AST précompilé : <tool>.ast.zip)

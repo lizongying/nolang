@@ -32,6 +32,8 @@ Nolang 是一门**内存安全、无 GC、语法极简**的系统编程语言。
 | `tests/` | 端到端测试。每个 `.no` 独立构建并运行，失败返回非零退出码。 |
 | `example/` | 示例程序（如 `example/test1`）。 |
 | `glossary/` | **Nolang 词条化知识库**（244 条 / 10 域）。数据是 `glossary/data/*.noml`，前端是 Nolang 写的 CLI + MCP 服务器（工具 `glossary_get` / `glossary_search` / `glossary_list` / `glossary_related`）。**查语言名词、std 模块、已知坑先用 MCP 工具**；未接入 MCP 时退回 CLI：`./glossary/dist/glossary get <id>`、`search <关键词>`、`list --domain=traps`。详见 `glossary/README.md`。 |
+| `.agents/plans/` | **AI 实施计划**的落盘目录（见 §1.5）；文件用小写 kebab-case + `.md`，沿用 YAML frontmatter（`name` / `overview` / `todos`）。 |
+| `.agents/specs/` | **AI 需求 / 技术规格**的落盘目录（见 §1.5）；文件用小写 kebab-case + `.md`。 |
 | `workspace.noml` | 工作区根定义，登记各包路径（如 `test: '/test'`）。 |
 | `Makefile` | 构建入口。**改编译器或 std 一律走 `make`，勿 `cd src && go build`。** |
 
@@ -101,6 +103,23 @@ no build glossary            # 构建词条库前端 -> glossary/dist/glossary
 > 另有一条平行的知识源：`glossary/`（Nolang 词条库，244 条 / 10 域，**以 MCP 服务器提供**，
 > 工具 `glossary_get` / `glossary_search` / `glossary_list` / `glossary_related`；未接入时用 CLI），
 > 查语言名词、std 模块、已知坑先查它（见 §1.1）。skill 与 glossary 都不替代 §2 黄金法则。
+
+### 1.5 AI 工作产物落盘约定
+
+AI（agent）产出的规划与设计文档，**必须**写到仓库内以下固定目录，不要写系统 `/tmp` 或
+散落在项目根目录：
+
+| 产物 | 目录 | 说明 |
+| --- | --- | --- |
+| 计划（plan） | `.agents/plans/` | 实施计划、任务拆解、阶段验收顺序 |
+| 规格（spec） | `.agents/specs/` | 需求规格、技术方案、接口契约、设计决策 |
+
+- 文件名一律**小写 kebab-case + `.md`**（如 `.agents/plans/option-3state.md`、
+  `.agents/specs/checker-error-model.md`）。
+- plan 文件沿用 `.agents/plans/` 现有格式：顶部 YAML frontmatter（`name` / `overview` /
+  `todos`），正文再展开目标 / 范围 / 阶段 / 验收。
+- 这两处是 AI 产出物的**正式落点**，可入库、可被后续 session 检索；不要与 `tmp/` 混淆——
+  探针、dump、一次性 scratch 仍按既有约定留在项目内 `tmp/`，不放进 plan / spec 目录。
 
 ---
 

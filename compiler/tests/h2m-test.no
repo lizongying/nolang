@@ -4659,6 +4659,7 @@ test-s131-smv-bare-arrow-gate()
 test-s132-opt-str-len-bytes()
 test-s132-opt-str-byte()
 test-s132-opt-i64-to-str-gate()
+test-s143-i64-to-str()
 test-s133-opt-str-idx-return()
 test-s133-opt-str-param-in()
 test-s133-opt-str-let-ann()
@@ -6586,8 +6587,10 @@ test-s132-opt-str-byte = () {
     runner.eq(ir.contains('%sbL'), 1, 's132 opt-str byte STRBYTE')
 }
 
-; s132 門禁：`?i64` 接收者的 `to-str()` 仍落閘門——cg 沒有 int→str 的 OP 原語，
-;   本輪**不**新增（誠實邊界）。載荷型別本身是已知的（TY-I64），放行也没有對應指令可發。
+; s143：`?i64` 接收者的 `to-str()` —— 發 OP-OPTGET 取載荷後走 OP-ITOSTR。
+;   語義鏡像 Go 的「剝 option 取載荷再呼叫」（hir2mir.go:12226 unwrapOptionOperand，
+;   不檢查 tag：nil 的載荷槽為零 ⇒ "0"，宿主实測 b=[0]、ok(42) ⇒ "42"）。
+;   s132 舊版把本形態記為「網關」（cg 無 int→str 原語）；s143 補 OP-ITOSTR=104 後放行。
 test-s132-opt-i64-to-str-gate = () {
     src = 'cj-s132c = (ds []i64) (s str) {\n    d = ds[0]\n    s = d.to-str()\n}\n'
     t = ast.make()
@@ -6596,8 +6599,25 @@ test-s132-opt-i64-to-str-gate = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
 
-    runner.eq(agg.unsup > 0, 1, 's132 opt-i64 to-str still gated')
-    runner.eq(ir.contains('define'), 0, 's132 opt-i64 to-str no code')
+    runner.eq(agg.unsup, 0, 's143 opt-i64 to-str unsup')
+    runner.eq(ir.contains('define'), 1, 's143 opt-i64 to-str emits code')
+    runner.eq(ir.contains('extractvalue %option %op'), 1, 's143 opt-i64 to-str OPTGET')
+    runner.eq(ir.contains('@str_from_i64'), 1, 's143 opt-i64 to-str ITOSTR')
+}
+
+; s143：純 i64 接收者的 `to-str()` —— 直接發 OP-ITOSTR（不經 OPTGET）。
+test-s143-i64-to-str = () {
+    src = 'cj-s143a = (n i64) (s str) {\n    s = n.to-str()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's143 i64 to-str unsup')
+    runner.eq(ir.contains('define'), 1, 's143 i64 to-str emits code')
+    runner.eq(ir.contains('@str_from_i64'), 1, 's143 i64 to-str ITOSTR')
+    runner.eq(ir.contains('extractvalue %option %op'), 0, 's143 i64 to-str no OPTGET')
 }
 
 ; s133：`?str` 輸出參——`h2m-tynode-code` 的 K-NULLABLE-TYPE 放行內層 str。

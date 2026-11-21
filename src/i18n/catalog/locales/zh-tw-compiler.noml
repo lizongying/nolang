@@ -118,6 +118,10 @@ Nolang 程式語言（版本 %s）
       no ast src/std/vec.no      印出 vec.no 的 AST
 
   no info               顯示環境與源目錄資訊
+  no search <query>   從 nohub registry 搜尋社群包
+  no info <pkg>       顯示 registry 套件的中繼資料
+  no docs <pkg>       列印 registry 套件的文件網址
+  來源列表: ~/no/sources.noml  ($NOHUB_SOURCES 覆蓋；-source <name> 選擇)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
                     新增依賴（預先建置的 AST：<tool>.ast.zip）

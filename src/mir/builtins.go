@@ -141,10 +141,15 @@ var variadicPlaceholderBuiltins = map[string]bool{
 // defined with type 'i64' but expected '%str-long'"). The same leak made the
 // plain `x str = os.arg(i + 1)` silently drop the option's nil branch.
 //
-// Only GLOBAL builtins qualify. A METHOD builtin's registry entry lists the
-// method's OWN parameters, while the call's argv[0] is the RECEIVER — the two
-// lists do not line up, so the HIR path (which prepends self's type) stays
-// authoritative for methods.
+// Method builtins qualify too: prepend the receiver's raw type so the list
+// lines up with lowerCallArgsWith's argv layout (argv[0] is the receiver,
+// whether it was prepended explicitly or came from the HIR's `self` arg).
+// Without this, a builtin method with no HIR body (e.g. `str.byte`) leaves the
+// argument position without an expected type, and the enclosing statement's
+// hint leaks in: `cbv = s.byte(a + i)` inferred `a + i` as `?byte`, so a byte
+// range check (>255) turned every index >= 256 into nil — the 4+ entry index
+// bug in nogit. Generic receivers ([]t / [n]t / chan) have no concrete raw
+// name here, so they stay unknown rather than seeding a bogus hint.
 //
 // The resolution deliberately reuses `lookupBuiltin`, i.e. the SAME table the
 // call is dispatched with: if the callee has no HIR definition, the call WILL
@@ -166,10 +171,21 @@ func builtinParamTypes(callee string) []string {
 		return nil
 	}
 	bm, _, ok := lookupBuiltin(callee)
-	if !ok || bm.ReceiverType != builtin.ReceiverGlobal {
+	if !ok {
 		return nil
 	}
 	var out []string
+	if bm.ReceiverType != builtin.ReceiverGlobal {
+		switch bm.ReceiverType {
+		case builtin.ReceiverVec, builtin.ReceiverArr, builtin.ReceiverChan:
+			return nil // generic/indirect receiver: no concrete raw type
+		}
+		recv := bm.ReceiverType.String()
+		if recv == "" || recv == "unknown" {
+			return nil
+		}
+		out = append(out, recv)
+	}
 	for _, p := range bm.Params {
 		if p == nil {
 			continue

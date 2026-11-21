@@ -22,8 +22,10 @@ import (
 // 見 builtinParamTypes 與 lowerCallArgsWith。
 //
 // 本檔釘住兩件事：
-//  1. builtinParamTypes 只回**全域**內建的參數型別（方法內建的 registry 條目列的
-//     是方法自己的參數，與 argv[0]（接收者）對不齊，必須排除）。
+//  1. builtinParamTypes 回傳的型別必須與 lowerCallArgsWith 的 argv 配置對齊：
+//     方法內建把接收者型別放在第 0 項，後面才是方法自己的參數（原本排除方法
+//     內建，讓 str.byte(a+i) 的引數提示由外層 ?byte 洩漏進去，索引 >=256 被
+//     byte 範圍檢查判成 nil——nogit 4+ entry 空白/SIGBUS 的根因）。
 //  2. 一個帶**算術引數**的全域內建呼叫，其引數不得被降成字串型別。
 func TestBuiltinParamTypesForGlobalBuiltins(t *testing.T) {
 	// os.arg → (idx i64)
@@ -36,9 +38,9 @@ func TestBuiltinParamTypesForGlobalBuiltins(t *testing.T) {
 	if len(got) != 1 || got[0] != "i64" {
 		t.Fatalf("with-len params must resolve to [i64], got %v", got)
 	}
-	// 方法內建必須排除：registry 條目列的是方法自己的參數，而 argv[0] 是接收者。
-	if got := builtinParamTypes("str.byte"); got != nil {
-		t.Fatalf("a method builtin's params must not be used as the argument list, got %v", got)
+	// 方法內建：argv[0] 是接收者，所以先補接收者型別再接方法參數。
+	if got := builtinParamTypes("str.byte"); len(got) != 2 || got[0] != "str" || got[1] != "i64" {
+		t.Fatalf("str.byte params must resolve to [str i64], got %v", got)
 	}
 	// 未知內建 → 不猜。
 	if got := builtinParamTypes("no-such-builtin"); got != nil {
@@ -101,5 +103,49 @@ p: {
 	}
 	if !strings.Contains(pb, "add i64") {
 		t.Fatalf("@probe: the index arithmetic must be an integer add\n%s", indented(pb))
+	}
+}
+
+// TestMethodBuiltinArithArgumentKeepsIntegerType 釘住 nogit 4+ entry 的根因：
+// `s.byte(a + i)` 的引數 a+i 必須用 str.byte 宣告的 i64 參數型別下降，
+// 不得被左值 cbv 的 ?byte 提示帶成 ?byte（那會插入 >255 範圍檢查，
+// 讓索引 >= 256 全部回 nil，讀出空白 / SIGBUS）。
+func TestMethodBuiltinArithArgumentKeepsIntegerType(t *testing.T) {
+	const src = `probe = (s str, a i64, n i64) (out str) {
+    cs []char
+    i <- [0..n): {
+        cbv = s.byte(a + i)
+        v i32 = 0
+        cbv: {
+            ok -> v = it
+
+            -> _
+        }
+        cs.push(v)
+    }
+    out = str.from-chars(cs)
+}
+
+s str = 'abcdefghij'
+out = probe(s, 4, 2)
+print(out)
+`
+	mod, diags := lowerSrcWithDiags(t, src)
+	if len(diags) != 0 {
+		t.Fatalf("unexpected lowering diagnostics: %v", diags)
+	}
+	ll, err := mod.EmitLLVM()
+	if err != nil {
+		t.Fatalf("EmitLLVM failed: %v", err)
+	}
+	pb := extractDefineBlock(t, ll, "@probe")
+	if pb == "" {
+		t.Fatalf("@probe not found in the emitted module:\n%s", ll)
+	}
+	if !strings.Contains(pb, "add i64") {
+		t.Fatalf("@probe: the index arithmetic must be an integer add\n%s", indented(pb))
+	}
+	if strings.Contains(pb, ", 255") {
+		t.Fatalf("@probe: byte range check leaked into the index argument\n%s", indented(pb))
 	}
 }

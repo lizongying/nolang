@@ -172,6 +172,14 @@ conn {
     hs-c-secret [32]byte
     hs-prk-field [32]byte
     master-secret []byte
+
+    ; 伺服器憑證驗証（opt-in）
+    ; verify-peer: true 時，交握讀到憑證後會驗 hostname + 有效期，失敗即中斷
+    ; expected-host: 要比對的主機名（空字串時用 connect() 傳入的 host）
+    ; peer-cert: 交握後保存的伺服器憑證 DER（可供呼叫端做指紋 pinning）
+    verify-peer bool
+    expected-host str
+    peer-cert []byte
 }
 
 ; TLS 1.3 欄位
@@ -3131,6 +3139,9 @@ conn.handshake-12-body = () (ok bool) {
     cert []byte = with-len(16400)
     ok = .read-certificate(cert)
     ok == false -> return
+    ; 伺服器憑証驗証（opt-in，失敗即中斷交握）
+    ok = .check-peer-cert(cert)
+    ok == false -> return
     ecdhe = cipher-is-ecdhe(.cipher-id)
 
     ; 2. ECDHE: 讀取 ServerKeyExchange 取得伺服器臨時公鑰
@@ -4939,6 +4950,34 @@ conn.connect-13 = () (ok bool) {
     cert-type, cert-data = .read-encrypted-handshake-13()
     cert-type != TLS-HS-CERTIFICATE -> return
 
+    ; 伺服器憑証驗証（opt-in）：Certificate body = total_certs_len(3) + cert_len(3) + DER
+    .verify-peer -> {
+        cert-data.len() >= 7 -> {
+            #{overflow=wrap}
+            c3 = cert-data[3]: {
+                ok -> it
+                -> 0
+            }
+            #{overflow=wrap}
+            c4 = cert-data[4]: {
+                ok -> it
+                -> 0
+            }
+            #{overflow=wrap}
+            c5 = cert-data[5]: {
+                ok -> it
+                -> 0
+            }
+            #{overflow=wrap}
+            cert-body-len = (c3 << 16) | (c4 << 8) | c5
+            cert-body-len > 0 && cert-body-len <= cert-data.len() - 6 -> {
+                der13 []byte = cert-data[6..6 + cert-body-len)
+                ok = .check-peer-cert(der13)
+                ok == false -> return
+            }
+        }
+    }
+
     ; 7. 讀取 CertificateVerify（跳過Verify（跳過驗證，僅讀取）
     cv-type = 0
     cv-data []byte
@@ -5064,9 +5103,53 @@ conn.init = () {
     .ap-write-seq = 0
     .ap-read-seq = 0
 
+    ; 憑証驗証預設關閉（向後相容：內建 self-signed 測試仍可通過）
+    .verify-peer = false
+    .expected-host = ''
+    .peer-cert = with-cap(0)
+
     ; 用時間戳 + PID 初始化 PRNG（fork 後父子進程會有不同 PID）
     .rand-state = time.now-ns() ^ os.get-pid()
     .rand-state == 0 -> .rand-state = 1
+}
+
+; 启用水服务器憑証驗証（opt-in）。
+; 在 connect() 之前呼叫。host 為期望的伺服器 hostname（SAN/CN 比對用）；
+; 傳空字串時使用 connect() 傳入的 host。
+; [verify-peer-cert](#tls.conn.verify-peer-cert)
+conn.verify-peer-cert = (host str) {
+    .verify-peer = true
+    .expected-host = host
+}
+
+; 驗證已讀取的伺服器憑証（內部使用）。
+; cert: 伺服器憑証 DER
+; 回傳 true=通過；verify-peer 關閉時一律通過。
+conn.check-peer-cert = (cert []byte) (ok bool) {
+    ok = true
+    ! .verify-peer -> { return }
+
+    ; 保存憑証供指紋 pinning 使用
+    .peer-cert = cert
+
+    host = .expected-host
+    host.len-bytes() == 0 -> { host = .host }
+    host.len-bytes() == 0 -> {
+        ok = false
+        return
+    }
+
+    ; hostname 比對（SAN dNSName / CN 回退，含萬用字元）
+    x509.x509-hostname-matches(cert, host) == false -> {
+        ok = false
+        return
+    }
+
+    ; 有效期比對（fail-closed）
+    x509.x509-valid-at(cert, time.now-s()) == false -> {
+        ok = false
+        return
+    }
 }
 
 ; 建立 TLS 連線（自動協商 1.3/1.2）

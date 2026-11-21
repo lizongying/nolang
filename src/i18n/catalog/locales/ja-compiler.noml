@@ -118,6 +118,10 @@ Nolang プログラミング言語（バージョン %s）
       no ast src/std/vec.no      vec.no の AST を出力
 
   no info               環境とソースディレクトリの情報を表示
+  no search <query>   nohub レジストリのコミュニティパッケージを検索
+  no info <pkg>       レジストリパッケージのメタデータを表示
+  no docs <pkg>       レジストリパッケージのドキュメント URL を表示
+  ソース: ~/no/sources.noml  ($NOHUB_SOURCES で上書き、-source <name> で選択)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
                     依存を追加（事前ビルド済み AST: <tool>.ast.zip）

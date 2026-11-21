@@ -47,6 +47,7 @@ type ProjectConfig struct {
 	Name         string            `json:"name"`
 	Version      string            `json:"version"`
 	Description  string            `json:"description"`
+	Category     string            `json:"category"`
 	Keywords     []string          `json:"keywords"`
 	Author       string            `json:"author"`
 	Email        string            `json:"email"`
@@ -257,7 +258,15 @@ func main() {
 	case "cache":
 		cacheCommand(os.Args[2:])
 	case "info":
-		infoCommand()
+		if len(os.Args) > 2 {
+			hubInfoCommand(os.Args[2:])
+		} else {
+			infoCommand()
+		}
+	case "search":
+		hubSearchCommand(os.Args[2:])
+	case "docs":
+		hubDocsCommand(os.Args[2:])
 	default:
 		printUsage()
 	}
@@ -379,6 +388,10 @@ func printUsage() {
 	fmt.Println("      no ast src/std/vec.no      print AST for vec.no")
 	fmt.Println("")
 	fmt.Println("  no info               Show environment and source directory info")
+	fmt.Println("  no search <query>   Search community packages from the nohub registry")
+	fmt.Println("  no info <pkg>       Show metadata of a registry package")
+	fmt.Println("  no docs <pkg>       Print a registry package's documentation URL")
+	fmt.Println("  Sources: ~/no/sources.noml  ($NOHUB_SOURCES overrides; -source <name> selects)")
 	fmt.Println("")
 	fmt.Println("  no add <tool>[:<version>]@<host>/<owner>/<repo>")
 	fmt.Println("                    Add a dependency (prebuilt AST: <tool>.ast.zip)")

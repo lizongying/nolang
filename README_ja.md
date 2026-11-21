@@ -12,6 +12,42 @@ Nolang は、メモリセーフで高い性能、極めて簡潔な構文を備�
 - **意図駆動**: 開発者の意図を十分に尊重し、意味が人間の直観に沿う
 - **決してクラッシュしない**: 暗黙のクラッシュ経路を排除
 
+## インストール
+
+ワンコマンドでインストール（macOS / Linux / Windows Git Bash）。最新の `no` を `$HOME/.local/bin` にダウンロードします：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
+```
+
+デフォルトは**LLVM 内蔵**版（`no-llvm_*`、LLVM / opt / llc の別途インストール不要）です。サイズの小さい純 Go 版を使う場合は `NO_FLAVOR=plain` を指定し、`no build -cc zig` と組み合わせてください：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh
+```
+
+バージョンやインストール先を固定する場合（環境変数を `sh` に渡すため、一度ファイルに保存してから実行します）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh -o install.sh
+NO_VERSION=0.4.28 NO_INSTALL_DIR="$HOME/bin" sh install.sh
+```
+
+| 環境変数          | 既定値               | 説明                                                                     |
+| ----------------- | -------------------- | ------------------------------------------------------------------------ |
+| `NO_VERSION`      | `latest`             | バージョン（`0.4.28` または `v0.4.28`）                                 |
+| `NO_FLAVOR`       | `embedded`           | `embedded` は LLVM 内蔵、`plain` は純 Go（システム LLVM が必要）         |
+| `NO_INSTALL_DIR`  | `$HOME/.local/bin`   | インストール先                                                           |
+| `NO_REPO`         | `lizongying/nolang`  | 取得元リポジトリ                                                         |
+
+インストール後は `no version` で確認できます。`$HOME/.local/bin` が `PATH` にない場合は追加してください：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+> `.no` プログラムのコンパイルには C リンカも必要です。`no build -cc zig`（zig に clang / lld / libc が同梱）を推奨します。clang を別途インストールしても構いません。
+
 ## Usage
 
 ドキュメント
@@ -25,6 +61,34 @@ VSCode プラグイン
 nolang CLI
 
 [nolang](https://github.com/lizongying/nolang/releases/latest)
+
+nohub パッケージ一覧（コミュニティパッケージ検索）
+
+[nohub](https://lizongying.github.io/nohub/)
+
+### コミュニティパッケージ検索（nohub）
+
+`no` は nohub のパッケージインデックスを直接読み取り、3 つの読み取り専用コマンドを提供します：
+
+```bash
+no search <query>    # 名前・キーワード・カテゴリで検索
+no info <pkg>        # パッケージ情報とインストール/取り込みコマンドを表示
+no docs <pkg>        # ドキュメント URL を表示（docs → homepage → repository）
+```
+
+既定では公共インデックスを読み込みます。複数の nohub インスタンスを重ねるには `~/no/sources.noml` にソース一覧を設定します（配列順が優先順位）：
+
+```
+{
+  sources: [
+    'https://lizongying.github.io/nohub',
+    'corp = https://corp.example/nohub',
+  ]
+}
+```
+
+`NOHUB_SOURCES`（カンマ区切り）で一時的に上書きできます。三つのコマンドは `-source <name>` で特定のソースだけを参照でき、`no search` の出力には `SOURCE` 列が入り、同名同バージョンは先のソースが優先されます。取得に失敗したソースは警告のみで他に影響しません。`no` は各ソースの `index.noml`（`<base>/index.noml`、検索ページの最初に読み込むものと同じく各パッケージの最新バージョンを 1 件ずつ保持）だけを fetch し、tarball も `data.js` も読みません。フィールドの対応は `web/app.js` に揃えています。[nohub 検索ページ](https://lizongying.github.io/nohub/) でも同じデータを閲覧できます。
+
 
 ### CLI コマンド
 
@@ -41,6 +105,9 @@ nolang CLI
 | `no update <pkg>`                                            | 依存関係を更新する                                                                |
 | `no update-all`                                              | すべての依存関係を更新する                                                         |
 | `no list`                                                    | 依存関係を一覧表示する                                                             |
+| `no search <query>`                                            | 名前・キーワード・カテゴリでコミュニティパッケージを検索 |
+| `no info <pkg>`                                                | パッケージの情報とインストール/取り込みコマンドを表示 |
+| `no docs <pkg>`                                                | パッケージのドキュメント URL を表示 |
 | `no sync`                                                    | 依存関係を同期する                                                                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]` | binary をインストールする (~/no/bin/ + シンボリックリンク)                          |
 | `no uninstall <name>`                                        | binary とシンボリックリンクを削除する                                               |
@@ -174,6 +241,10 @@ no build glossary                        # 成果物: glossary/dist/glossary
 ---
 
 ## 関連プロジェクト
+
+- [nohub — Nolang エコシステムのコミュニティパッケージ一覧検索](https://lizongying.github.io/nohub/)
+
+  パッケージ名・キーワード・カテゴリで収録済みのコミュニティパッケージを検索し、パッケージ情報、バージョンスナップショット、ソースへの入口を確認できます。インデックスは `web/build.mjs` が `packages/` のスナップショットから生成します。
 
 - [Benchmarks Game — Nolang vs C vs Rust 性能比較レポート](https://github.com/lizongying/no-benchmarks/results/report.md)
 

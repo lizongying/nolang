@@ -118,6 +118,10 @@ Nolang 编程语言（版本 %s）
       no ast src/std/vec.no      打印 vec.no 的 AST
 
   no info               显示环境与源目录信息
+  no search <query>   从 nohub registry 搜索社区包
+  no info <pkg>       显示 registry 包的元数据
+  no docs <pkg>       打印 registry 包的文档地址
+  源列表: ~/no/sources.noml  ($NOHUB_SOURCES 覆盖；-source <name> 选择)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
                     添加依赖（预构建 AST：<tool>.ast.zip）

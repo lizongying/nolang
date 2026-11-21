@@ -12,6 +12,42 @@ Nolang — это системный язык программирования, 
 - **Ориентация на намерение разработчика**: в полной мере учитывает намерения разработчика, семантика соответствует человеческой интуиции
 - **Никогда не аварийно завершается**: устранены скрытые пути к сбоям
 
+## Установка
+
+Установка одной командой (macOS / Linux / Windows Git Bash): скрипт загрузит последнюю версию `no` в `$HOME/.local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
+```
+
+По умолчанию устанавливается сборка **со встроенным LLVM** (`no-llvm_*`, отдельно ставить LLVM / opt / llc не нужно). Для более компактной сборки на чистом Go используйте `NO_FLAVOR=plain` вместе с `no build -cc zig`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh
+```
+
+Чтобы зафиксировать версию или каталог установки (переменные должны дойти до `sh`, поэтому сначала сохраните скрипт):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh -o install.sh
+NO_VERSION=0.4.28 NO_INSTALL_DIR="$HOME/bin" sh install.sh
+```
+
+| Переменная        | Значение по умолчанию | Описание                                                        |
+| ----------------- | --------------------- | --------------------------------------------------------------- |
+| `NO_VERSION`      | `latest`              | Версия, например `0.4.28` или `v0.4.28`                        |
+| `NO_FLAVOR`       | `embedded`            | `embedded` — со встроенным LLVM; `plain` — чистый Go (нужен системный LLVM) |
+| `NO_INSTALL_DIR`  | `$HOME/.local/bin`    | Каталог установки                                               |
+| `NO_REPO`         | `lizongying/nolang`   | Исходный репозиторий                                            |
+
+Проверьте установку командой `no version`. Если `$HOME/.local/bin` отсутствует в `PATH`, добавьте его:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+> Для компиляции программ `.no` также нужен C-линкер: рекомендуется `no build -cc zig` (zig включает clang / lld / libc), либо установите clang самостоятельно.
+
 ## Использование
 
 doc
@@ -25,6 +61,34 @@ doc
 CLI Nolang
 
 [nolang](https://github.com/lizongying/nolang/releases/latest)
+
+nohub — индекс пакетов (пакеты сообщества)
+
+[nohub](https://lizongying.github.io/nohub/)
+
+### Поиск пакетов сообщества (nohub)
+
+`no` напрямую читает индекс пакетов nohub и предоставляет три команды только для чтения:
+
+```bash
+no search <query>    # поиск по имени / ключевому слову / категории
+no info <pkg>        # метаданные пакета и команды установки/импорта
+no docs <pkg>        # URL документации (docs → homepage → repository)
+```
+
+По умолчанию используется публичный индекс. Чтобы объединить несколько экземпляров nohub, настройте список источников в `~/no/sources.noml` (порядок в массиве задаёт приоритет):
+
+```
+{
+  sources: [
+    'https://lizongying.github.io/nohub',
+    'corp = https://corp.example/nohub',
+  ]
+}
+```
+
+`NOHUB_SOURCES` (через запятую) временно переопределяет список. Все три команды принимают `-source <name>`; `no search` выводит столбец `SOURCE`, а пакет с тем же именем и версией берётся из более раннего источника. Ошибка загрузки одного источника лишь выдаёт предупреждение. `no` загружает только `index.noml` каждого источника (`<base>/index.noml` — тот же файл, который страница поиска читает первым, по одной записи на пакет в последней версии); без tarball и `data.js`, сопоставление полей совпадает с `web/app.js`. Те же данные доступны на [странице поиска nohub](https://lizongying.github.io/nohub/).
+
 
 ### Команды CLI
 
@@ -41,6 +105,9 @@ CLI Nolang
 | `no update <pkg>`                                            | Обновляет зависимость                                                                                    |
 | `no update-all`                                              | Обновляет все зависимости                                                                                |
 | `no list`                                                    | Выводит список зависимостей                                                                              |
+| `no search <query>`                                            | Поиск пакетов сообщества по имени / ключевому слову / категории |
+| `no info <pkg>`                                                | Показать метаданные и команды установки/импорта |
+| `no docs <pkg>`                                                | Вывести URL документации пакета |
 | `no sync`                                                    | Синхронизирует зависимости                                                                               |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]` | Устанавливает бинарный файл (~/no/bin/ + символическая ссылка)                                          |
 | `no uninstall <name>`                                        | Удаляет бинарный файл и символическую ссылку                                                             |
@@ -171,6 +238,10 @@ no build glossary                        # результат: glossary/dist/glo
 ---
 
 ## Связанные проекты
+
+- [nohub — поиск реестра пакетов сообщества экосистемы Nolang](https://lizongying.github.io/nohub/)
+
+  Поиск пакетов сообщества по имени, ключевому слову или категории; просмотр информации о пакете, снимков версий и ссылок на исходный код. Индекс создаётся `web/build.mjs` из снимков `packages/`.
 
 - [Benchmarks Game — отчёт о сравнении производительности Nolang, C и Rust](https://github.com/lizongying/no-benchmarks/results/report.md)
 

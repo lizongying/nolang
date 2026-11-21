@@ -578,6 +578,51 @@ cg-runtime-vec-new-cap-str = () (r str) {
     r = b.str()
 }
 
+; str_from_i64：把 i64 渲染成【新分配】的 %str-long（十進制、帶符號）。
+;   s143：OP-ITOSTR 的執行期助手。逐字鏡像 Go src/mir/codegen.go:4643 的 @str_from_i64
+;   （相同於 @print_i64 的數字發射，但產物是 rc=1 堆緩衝而非直接 write）。
+;   ⚠️ 與 Go 的差異：Go 原版【沒有】i64.MIN 的 isMin select 護欄（`sub i64 0, %v` 對 MIN
+;      是 poison，靠執行期回繞成 2^63 才得到正確量值）。自舉側按本檔案 @print_i64 的既有
+;      口徑補上護欄，避免 opt 把 poison 折成垃圾（見 cg-runtime-print-helpers 註釋）。
+;   ⚠️ 依賴 @digits（本檔 cg-runtime-print-helpers）與 @nolang_rc_alloc（cg-rc.no）
+;      ⇒ 必須排在兩者之後。
+; r: 結果字串
+cg-runtime-str-from-i64 = () (r str) {
+    b = sb.init(1024)
+    b.push('define %str-long @str_from_i64(i64 %v) {\n')
+    b.push('entry:\n')
+    b.push('  %buf = alloca [24 x i8]\n')
+    b.push('  %neg = icmp slt i64 %v, 0\n')
+    b.push('  %isMin = icmp eq i64 %v, -9223372036854775808\n')
+    b.push('  %negv = sub i64 0, %v\n')
+    b.push('  %absNeg = select i1 %isMin, i64 9223372036854775808, i64 %negv\n')
+    b.push('  %abs = select i1 %neg, i64 %absNeg, i64 %v\n')
+    b.push('  %end = getelementptr [24 x i8], [24 x i8]* %buf, i64 0, i64 23\n')
+    b.push('  store i8 0, i8* %end\n')
+    b.push('  %sp = call i8* @digits(i64 %abs, i8* %end)\n')
+    b.push('  br i1 %neg, label %negw, label %emit\n')
+    b.push('negw:\n')
+    b.push('  %sn = getelementptr i8, i8* %sp, i64 -1\n')
+    b.push('  store i8 45, i8* %sn\n')
+    b.push('  br label %emit\n')
+    b.push('emit:\n')
+    b.push('  %start = phi i8* [ %sn, %negw ], [ %sp, %entry ]\n')
+    b.push('  %ep = getelementptr [24 x i8], [24 x i8]* %buf, i64 0, i64 23\n')
+    b.push('  %epp = ptrtoint i8* %ep to i64\n')
+    b.push('  %startp = ptrtoint i8* %start to i64\n')
+    b.push('  %len = sub i64 %epp, %startp\n')
+    b.push('  %nbuf = call i8* @nolang_rc_alloc(i64 %len)\n')
+    b.push('  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %start, i64 %len, i1 0)\n')
+    b.push('  %s0.i32 = trunc i64 %len to i32\n')
+    b.push('  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0\n')
+    b.push('  %s1.i32 = trunc i64 %len to i32\n')
+    b.push('  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1\n')
+    b.push('  %s2 = insertvalue %str-long %s1, i8* %nbuf, 2\n')
+    b.push('  ret %str-long %s2\n')
+    b.push('}\n')
+    r = b.str()
+}
+
 ; prelude：类型 + 声明（RC helper 见 cg-rc.no）。M4-a 的「最小 prelude」。
 ; r: 結果字串
 cg-runtime-prelude = () (r str) {
@@ -741,5 +786,6 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-vec-new-cap-str())
     b.push(cg-runtime-vec-eq())
     b.push(cg-runtime-print-helpers())
+    b.push(cg-runtime-str-from-i64())
     r = b.str()
 }

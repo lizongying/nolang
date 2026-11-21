@@ -3446,3 +3446,509 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     content.truncate(total)
     cert = der-enc-sequence(content)
 }
+
+; ============================================================
+; TLS peer verification helpers (opt-in)
+;
+; 這些函式讓呼叫端在 TLS 交握後驗證伺服器憑證的「主體名稱」與
+; 「有效期」。注意：本 stdlib 尚無 RSA 簽章驗證 / CA 信任鏈，
+; 故这些函式不提供完整 PKI 験證，只提供 hostname + validity 験證；
+; 呼叫端若需防中間人，應另行做憑證指紋 pinning（見 x509-fingerprint）。
+; ============================================================
+
+; 從 DER 資料的 pos 讀取一個 ASCII 字串（長度 n）
+x509-ascii-at = (data []byte, pos i64, n i64) (s str) {
+    s = ''
+    i <- [0..n): {
+        #{overflow=wrap}
+        idx = pos + i
+        c = data[idx]: {
+            ok -> it
+
+            -> 0
+        }
+        cs []char
+        cs.push(c)
+        s = s - str.from-chars(cs)
+    }
+}
+
+; D1-safe: a + b, plain i64 in/out
+x509-add-plain = (a i64, b i64) (out i64) {
+    #{overflow=wrap}
+    v = a + b: {
+        ok -> it
+        -> 0
+    }
+    out = v
+}
+
+; D1-safe: a - b, plain i64 in/out
+x509-sub-plain = (a i64, b i64) (out i64) {
+    #{overflow=wrap}
+    v = a - b: {
+        ok -> it
+        -> 0
+    }
+    out = v
+}
+
+; 萬用字元 hostname 比對：pattern 可含前導 "*."，大小寫不敏感
+x509-host-pattern-match = (pattern str, host str) (matched bool) {
+    matched = false
+    p = pattern.to-lower()
+    h = host.to-lower()
+    p.starts-with('*.') -> {
+        ; "*.example.com" 符合 "a.example.com" / "b.example.com"，但不符 "example.com"
+        plen = p.len-bytes()
+        hlen = h.len-bytes()
+        plen < 3 -> { return }
+        hlen <= plen -> { return }
+        suffix = p[2..plen)
+        ; host 必須以 "." + suffix 結尾，且 "*" 只匹配一段（不含 "."）
+        plenminus2 = x509-sub-plain(plen, 2)
+        dotpos = x509-sub-plain(hlen, x509-add-plain(plenminus2, 1))
+        dotpos <= 0 -> { return }
+        h[dotpos] == 46 -> {
+            ; 戳出的第一段不得含 "."
+            seg = h[0..dotpos)
+            seg.contains('.') -> { return }
+            dpos1 = x509-add-plain(dotpos, 1)
+            suffix == h[dpos1..hlen) -> { matched = true }
+        }
+        return
+    }
+    p == h -> { matched = true }
+}
+
+; 從憑證的 SAN 延伸或 CN 取出所有 hostname 比對 host
+; 回傳 true 表示至少有一個名稱符合
+x509-hostname-matches = (data []byte, host str) (matched bool) {
+    matched = false
+    ts, te = x509-tbs-range(data)
+    ts == 0 -> { return }
+    te <= ts -> { return }
+
+    #{overflow=wrap}
+    p = ts + 1
+    tl, tadv = der-len(data, p)
+    #{overflow=wrap}
+    q = p + tadv
+    q >= te -> { return }
+
+    t = data[q]: {
+        ok -> it
+
+        -> 0
+    }
+    t == 160 -> {
+        q = der-skip(data, q)
+        q >= te -> { return }
+    }
+    ; q = serial, +3 => validity
+    q = der-skip(data, q)
+    q = der-skip(data, q)
+    q = der-skip(data, q)
+    q >= te -> { return }
+    ; q = validity
+    q = der-skip(data, q)
+    q >= te -> { return }
+    ; q = subject — 先記下，稍後由 CN 回退使用
+    subject-pos = q
+    q = der-skip(data, q)
+    q >= te -> { return }
+    ; q = spki
+    q = der-skip(data, q)
+    q >= te -> { return }
+    ; q = extensions [3]（可選）
+    etag = data[q]: {
+        ok -> it
+
+        -> 0
+    }
+    etag != 163 -> {
+        ; 無 extensions → 僅用 CN 回退
+        cn = x509-cn-from-name(data, subject-pos)
+        cn.len-bytes() > 0 -> { matched = x509-host-pattern-match(cn, host) }
+        return
+    }
+
+    #{overflow=wrap}
+    el, eadv = der-len(data, q + 1)
+    #{overflow=wrap}
+    ep = q + 1 + eadv
+    etag2 = data[ep]: {
+        ok -> it
+
+        -> 0
+    }
+    etag2 != 48 -> {
+        cn = x509-cn-from-name(data, subject-pos)
+        cn.len-bytes() > 0 -> { matched = x509-host-pattern-match(cn, host) }
+        return
+    }
+    #{overflow=wrap}
+    sl, sadv = der-len(data, ep + 1)
+    #{overflow=wrap}
+    fp = ep + 1 + sadv
+    #{overflow=wrap}
+    fend = ep + 1 + sadv + sl
+
+    cur = fp
+    i <- [0..64): {
+        cur >= fend -> { break }
+        #{overflow=wrap}
+        clen, cadv = der-len(data, cur + 1)
+        #{overflow=wrap}
+        cbody = cur + 1 + cadv
+        otag = data[cbody]: {
+            ok -> it
+
+            -> 0
+        }
+        otag != 6 -> {
+            #{overflow=wrap}
+            cur = der-skip(data, cur)
+            continue
+        }
+        #{overflow=wrap}
+        oidl, oadv = der-len(data, cbody + 1)
+        #{overflow=wrap}
+        oval = cbody + 1 + oadv
+        ; SAN OID = 2.5.29.17 = 55 1D 11
+        ob0 = data[oval]: {
+            ok -> it
+
+            -> 0
+        }
+        ob1 = data[oval + 1]: {
+            ok -> it
+
+            -> 0
+        }
+        ob2 = data[oval + 2]: {
+            ok -> it
+
+            -> 0
+        }
+        oidl == 3 && ob0 == 85 && ob1 == 29 && ob2 == 17 -> {
+            ; extnValue (OCTET STRING) 在 OID 之後
+            #{overflow=wrap}
+            vb = oval + oidl
+            vtag = data[vb]: {
+                ok -> it
+
+                -> 0
+            }
+            vtag == 4 -> {
+                #{overflow=wrap}
+                vlen, vadv = der-len(data, vb + 1)
+                #{overflow=wrap}
+                sanp = vb + 1 + vadv
+                ; SAN 內容是 SEQUENCE OF GeneralName
+                stag = data[sanp]: {
+                    ok -> it
+
+                    -> 0
+                }
+                stag == 48 -> {
+                    #{overflow=wrap}
+                    stl, stadv = der-len(data, sanp + 1)
+                    #{overflow=wrap}
+                    gp = sanp + 1 + stadv
+                    #{overflow=wrap}
+                    gend = sanp + 1 + stadv + stl
+                    j <- [0..64): {
+                        gp >= gend -> { break }
+                        gtag = data[gp]: {
+                            ok -> it
+
+                            -> 0
+                        }
+                        #{overflow=wrap}
+                        glen, gadv = der-len(data, gp + 1)
+                        #{overflow=wrap}
+                        gval = gp + 1 + gadv
+                        ; dNSName = context tag 2 (0x82)
+                        gtag == 130 -> {
+                            nm = x509-ascii-at(data, gval, glen)
+                            matched == false -> {
+                                matched = x509-host-pattern-match(nm, host)
+                            }
+                        }
+                        #{overflow=wrap}
+                        gp = der-skip(data, gp)
+                    }
+                }
+            }
+            matched -> { break }
+        }
+        #{overflow=wrap}
+        cur = der-skip(data, cur)
+    }
+
+    ; SAN 無符合 → 回退 CN
+    matched == false -> {
+        cn = x509-cn-from-name(data, subject-pos)
+        cn.len-bytes() > 0 -> { matched = x509-host-pattern-match(cn, host) }
+    }
+}
+
+; 從 Name (RDNSequence) 取出第一個 CN
+x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
+    cn = ''
+    tag = data[name-pos]: {
+        ok -> it
+
+        -> 0
+    }
+    tag != 48 -> { return }
+    #{overflow=wrap}
+    nl, nadv = der-len(data, name-pos + 1)
+    #{overflow=wrap}
+    rp = name-pos + 1 + nadv
+    #{overflow=wrap}
+    rend = name-pos + 1 + nadv + nl
+    i <- [0..16): {
+        rp >= rend -> { break }
+        ; RDN = SET (0x31)
+        rtag = data[rp]: {
+            ok -> it
+
+            -> 0
+        }
+        rtag == 49 -> {
+            #{overflow=wrap}
+            rl, radv = der-len(data, rp + 1)
+            #{overflow=wrap}
+            ap = rp + 1 + radv
+            #{overflow=wrap}
+            aend = rp + 1 + radv + rl
+            j <- [0..8): {
+                ap >= aend -> { break }
+                ; AttributeTypeAndValue = SEQUENCE
+                atag = data[ap]: {
+                    ok -> it
+
+                    -> 0
+                }
+                atag == 48 -> {
+                    #{overflow=wrap}
+                    al, aadv = der-len(data, ap + 1)
+                    #{overflow=wrap}
+                    abody = ap + 1 + aadv
+                    ; OID
+                    otag = data[abody]: {
+                        ok -> it
+
+                        -> 0
+                    }
+                    otag == 6 -> {
+                        #{overflow=wrap}
+                        oidl, oadv = der-len(data, abody + 1)
+                        #{overflow=wrap}
+                        oval = abody + 1 + oadv
+                        ; CN OID = 2.5.4.3 = 55 04 03
+                        ob0 = data[oval]: {
+                            ok -> it
+
+                            -> 0
+                        }
+                        ob1 = data[oval + 1]: {
+                            ok -> it
+
+                            -> 0
+                        }
+                        ob2 = data[oval + 2]: {
+                            ok -> it
+
+                            -> 0
+                        }
+                        oidl == 3 && ob0 == 85 && ob1 == 4 && ob2 == 3 -> {
+                            #{overflow=wrap}
+                            vtagpos = oval + oidl
+                            vt = data[vtagpos]: {
+                                ok -> it
+
+                                -> 0
+                            }
+                            ; UTF8String (0x0C) / PrintableString (0x13) / IA5String (0x16)
+                            vt == 12 || vt == 19 || vt == 22 -> {
+                                #{overflow=wrap}
+                                vlen, vadv = der-len(data, vtagpos + 1)
+                                cn = x509-ascii-at(data, vtagpos + 1 + vadv, vlen)
+                                return
+                            }
+                        }
+                    }
+                }
+                #{overflow=wrap}
+                ap = der-skip(data, ap)
+            }
+        }
+        #{overflow=wrap}
+        rp = der-skip(data, rp)
+    }
+}
+
+; D1-safe: acc*10 + digit, both plain i64 in/out
+x509-acc-digit = (acc i64, d i64) (out i64) {
+    #{overflow=wrap}
+    v = acc * 10 + d: {
+        ok -> it
+        -> 0
+    }
+    out = v
+}
+
+; UTCTime (YYMMDDHHMMSSZ) → Unix 秒。失敗回 0
+x509-utc-to-unix = (s str) (ts i64) {
+    ts = 0
+    s.len-bytes() != 13 -> { return }
+    s[12] != 90 -> { return }
+    yy = 0
+    i <- [0..2): {
+        #{overflow=wrap}
+        c = s[i]: {
+            ok -> it
+
+            -> 0
+        }
+        c < 48 || c > 57 -> { return }
+        digit = c - 48
+        yy = x509-acc-digit(yy, digit)
+    }
+    ; X.509: YY >= 50 → 19YY, else 20YY
+    year = 2000
+    yy >= 50 -> { year = 1900 }
+    #{overflow=wrap}
+    year = year + yy: {
+        ok -> it
+        -> 2000
+    }
+    mo = 0
+    i <- [2..4): {
+        #{overflow=wrap}
+        c = s[i]: {
+            ok -> it
+
+            -> 0
+        }
+        digit = c - 48
+        mo = x509-acc-digit(mo, digit)
+    }
+    da = 0
+    i <- [4..6): {
+        #{overflow=wrap}
+        c = s[i]: {
+            ok -> it
+
+            -> 0
+        }
+        digit = c - 48
+        da = x509-acc-digit(da, digit)
+    }
+    hh = 0
+    i <- [6..8): {
+        #{overflow=wrap}
+        c = s[i]: {
+            ok -> it
+
+            -> 0
+        }
+        digit = c - 48
+        hh = x509-acc-digit(hh, digit)
+    }
+    mm = 0
+    i <- [8..10): {
+        #{overflow=wrap}
+        c = s[i]: {
+            ok -> it
+
+            -> 0
+        }
+        digit = c - 48
+        mm = x509-acc-digit(mm, digit)
+    }
+    ss = 0
+    i <- [10..12): {
+        #{overflow=wrap}
+        c = s[i]: {
+            ok -> it
+
+            -> 0
+        }
+        digit = c - 48
+        ss = x509-acc-digit(ss, digit)
+    }
+    mo < 1 || mo > 12 -> { return }
+    da < 1 || da > 31 -> { return }
+    hh > 23 || mm > 59 || ss > 59 -> { return }
+    d date
+    d.year = year
+    d.month = mo
+    d.day = da
+    d.hour = hh
+    d.min = mm
+    d.sec = ss
+    d.wday = 0
+    ts = time.date-to-unix(d)
+}
+
+; 檢查憑證在 now-ts 時是否有效（notBefore <= now <= notAfter）
+; 無法解析時間時回 false（fail-closed）
+x509-valid-at = (data []byte, now-ts i64) (valid bool) {
+    valid = false
+    ts, te = x509-tbs-range(data)
+    ts == 0 -> { return }
+    #{overflow=wrap}
+    p = ts + 1
+    tl, tadv = der-len(data, p)
+    #{overflow=wrap}
+    q = p + tadv
+    q >= te -> { return }
+    t = data[q]: {
+        ok -> it
+
+        -> 0
+    }
+    t == 160 -> {
+        q = der-skip(data, q)
+        q >= te -> { return }
+    }
+    q = der-skip(data, q)
+    q = der-skip(data, q)
+    q = der-skip(data, q)
+    q >= te -> { return }
+    ; q = validity SEQUENCE
+    #{overflow=wrap}
+    vl, vadv = der-len(data, q + 1)
+    #{overflow=wrap}
+    vp = q + 1 + vadv
+    nbt = data[vp]: {
+        ok -> it
+
+        -> 0
+    }
+    #{overflow=wrap}
+    nbl, nbadv = der-len(data, vp + 1)
+    #{overflow=wrap}
+    vap = vp + 1 + nbadv + nbl
+    nat = data[vap]: {
+        ok -> it
+
+        -> 0
+    }
+    #{overflow=wrap}
+    nal, naadv = der-len(data, vap + 1)
+    ; 僅處理 UTCTime (0x17)；GeneralizedTime (0x18) 暫不支援 → fail-closed
+    nbt != 23 || nat != 23 -> { return }
+    nbstr = x509-ascii-at(data, vp + 1 + nbadv, nbl)
+    nastr = x509-ascii-at(data, vap + 1 + naadv, nal)
+    nbts = x509-utc-to-unix(nbstr)
+    nats = x509-utc-to-unix(nastr)
+    nbts == 0 || nats == 0 -> { return }
+    now-ts < nbts -> { return }
+    now-ts > nats -> { return }
+    valid = true
+}

@@ -4,6 +4,8 @@ Thumbs.db
 .vscode
 .README.md
 
+.agents/plans
+.agents/specs
 .reasonix
 .deveco
 .mimocode
@@ -13,6 +15,7 @@ Thumbs.db
 .claude
 .codex
 .catpaw
+.meituan-catpaw
 .workbuddy
 .workbuddy-ai
 .workspace.noml

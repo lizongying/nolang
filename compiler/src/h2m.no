@@ -520,6 +520,36 @@ h2m-vec-own = (c h2m-ctx, vid i64) (yes i64) {
     vid > 0 && h2m-rel-has(c, vid) == 1 && (h2m-vty-at(c, vid) == TY-VEC || h2m-vty-at(c, vid) == TY-VECSTR) -> yes = 1
 }
 
+; s146：點號接收者 push 的「寫回字段」——把 push 出來的新 vec 值 nv 寫回 base 的字段。
+;   rv 是【字段讀值】（我方 DOT-EXPRESSION 臂降級出的 OP-STRUCT-GET 結果，值型別是 vec/vecstr），
+;   不是結構體值 ⇒ 需另取 base 名的結構體值 sv，發 OP-STRUCT-SET 后再重綁 base 名。
+;   ⚠️ 只認【兩段】點號（recv-nd.kid0 是已綁定值的 K-IDENTIFIER）；更深鏈（a.b.f）不覆蓋。
+;   ⚠️ 本函式【不計 unsup】，失败回 0，由調用點統一計一次（避免重複 mark）。
+; c: 上下文；t: AST；recv-nd: 點號節點（nd）；bnm: base 名；nv: 新 vec 值
+; ok: 1 = 寫回成功
+h2m-push-field-set = (c h2m-ctx, t ast, recv-nd nd, bnm str, nv i64) (ok i64) {
+    ok = 0
+    sv = h2m-var-read(c, bnm)
+    sv > 0 -> {
+        stcode = h2m-vty-at(c, sv)
+
+        #{overflow=wrap}
+        sid = stcode - TY-STRUCT-BASE
+        (sid < 0 || sid >= c.stn.len()) -> {}
+        sid >= 0 && sid < c.stn.len() -> {
+            fname = ast.str-at(t, recv-nd.s0)
+            fi = h2m-struct-field-idx(c, sid, fname)
+            fi < 0 -> {}
+            fi >= 0 -> {
+                dsv = h2m-alloc(c, stcode)
+                h2m-emit(c, OP-STRUCT-SET, dsv, sv, nv, '', fi)
+                h2m-var-write(c, bnm, dsv)
+                ok = 1
+            }
+        }
+    }
+}
+
 ; s99m：把一个 owner 并入「可能被回传」集合（按 vid 去重；may-return 分析）
 ; c: 上下文
 ; vid: owner 值 id
@@ -1177,7 +1207,10 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
         }
         fal == 0 -> {
             i = h2m-name-find(c, name)
-            i < 0 -> h2m-mark(c)
+            i < 0 -> {
+                h2m-id-name(c, 'vr-miss-' - name)
+                h2m-mark(c)
+            }
             i >= 0 && c.mem == 0 -> {
                 v = c.vids[i]: {
                     ok -> it
@@ -1704,10 +1737,6 @@ h2m-struct-resolve = (c h2m-ctx, t ast) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
 
-            ; 切片 B 保守门禁：str-vec 缓冲无 retain（§11 B5）⇒ 写进结构体字段后，
-            ;   局部 vec 与字段别名同一缓冲，scope-exit 的 vec_free_str 会与字段owner双释放 ⇒ UAF。
-            ;   故 []str 字段拦回 -1 计 unsup（与 s99f 的「元素非 i64 字段不入形」同口径）。
-            fty == TY-VECSTR -> fty = -1
             fty < 0 -> {
 
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
@@ -1757,8 +1786,6 @@ h2m-struct-resolve-range = (c h2m-ctx, t ast, from i64, to i64) {
             ftn = c.stftn[off + j]
             fty = h2m-tynode-code(t, c, ftn)
 
-            ; 切片 B 保守门禁：同 h2m-struct-resolve——[]str 字段无 retain，双释放风险 ⇒ 拦回 unsup。
-            fty == TY-VECSTR -> fty = -1
             fty < 0 -> {
 
                 ; 切片 6 ②：字段型别不支持的 mark 带上「所属结构体名.字段名」与型别节点 kind，
@@ -2734,6 +2761,12 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                         mt == TY-OPT && mf == 'byte' -> code = TY-OPT
                         mt == TY-OPT && mf == 'to-str' -> code = TY-STR
 
+                        ; s143：整數接收者的 to-str() ⇒ str。與 lower-expr 的 TY-I64/TY-U64
+                        ;   臂（OP-ITOSTR）同口徑；i64.to-str 是 #{buildin}（src/std/number.no），
+                        ;   後端轉 @str_from_i64（src/mir/codegen.go:4643）。
+                        mt == TY-I64 && mf == 'to-str' -> code = TY-STR
+                        mt == TY-U64 && mf == 'to-str' -> code = TY-STR
+
                         ; s117：str.byte(i) 回 ?byte（option 恆裝箱）⇒ let 槽型別 TY-OPT，
                         ;   供值位 match 主体（`s.byte(0): { ok -> it }`）定 omode。
                         mt == TY-STR && mf == 'byte' -> code = TY-OPT
@@ -3049,6 +3082,42 @@ h2m-opt-unwrap-vs = (c h2m-ctx, v i64, other i64) (r i64) {
         pv = h2m-alloc(c, TY-VEC)
         h2m-emit(c, OP-OPTGETVEC, pv, v, 0, '', TY-VEC)
         r = pv
+    }
+}
+
+; s144：呼叫實參是 option、形參是 plain ⇒ 回載荷值 id（鏡 Go hir2mir.go:14399-14407：
+;   參數型別非 option 而實參值為 option 時，剥出 payload 再傳；否則整個 %option 會被
+;   塞進 callee 的 plain 參數槽 ⇒ opt 校驗「%lv defined with type '%option' but
+;   expected '%str-long'」（nouv config.no get-dev-dependencies/get-name）。
+;   宿主實測：`d = xs[9]`（nil）→ `f(d)` 印出未初始化垃圾 4383807216 ⇒ 語意是
+;   「不檢查 tag、直取載荷槽」。本函式按此鏡像，不自創 nil 防護（同 s143 to-str 口徑）。
+;   ⚠️ 只處理「實參 TY-OPT 且形參非 TY-OPT」；其餘（含形態不符）回 0，落呼叫側門禁。
+;   ⚠️ 呼叫側另擋「索引表達式實參」（s129 門禁 / 宿主 idxbruse）——本函式不見 AST，
+;      只認值 id，故型別檢查里外兩層，缺一不可。
+; c: 上下文；v: 實參值 id；want: 形參型別碼
+; r: 載荷值 id（不適用 = 0）
+h2m-opt-peek = (c h2m-ctx, v i64, want i64) (r i64) {
+    r = 0
+    v > 0 && want != TY-OPT && h2m-vty-at(c, v) == TY-OPT -> {
+        want == TY-F64 -> {
+            r = h2m-alloc(c, TY-F64)
+            h2m-emit(c, OP-OPTGETF64, r, v, 0, '', TY-F64)
+        }
+
+        want == TY-STR -> {
+            r = h2m-alloc(c, TY-STR)
+            h2m-emit(c, OP-OPTGETSTR, r, v, 0, '', TY-STR)
+        }
+
+        want == TY-VEC -> {
+            r = h2m-alloc(c, TY-VEC)
+            h2m-emit(c, OP-OPTGETVEC, r, v, 0, '', TY-VEC)
+        }
+
+        (want == TY-I64 || want == TY-U64) -> {
+            r = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-OPTGET, r, v, 0, '', TY-I64)
+        }
     }
 }
 
@@ -3661,6 +3730,41 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                     ok-call = 0
                                 }
                             }
+
+                            ; s146：點號接收者（`base.field.push(x)`）——字段讀值 rv 已在手，
+                            ;   push 後把新 vec 寫回字段（OP-STRUCT-SET + 重綁 base）。
+                            ;   ⚠️ 只認 base 是【已綁定值】的兩段點號；更深鏈落門禁（4013）如實上報。
+                            mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-DOT-EXPRESSION -> {
+                                bid = ast.kid-at(t, recv-nd.kid0)
+                                bd = ast.nd-at(t, bid)
+                                bd.kind == asp.K-IDENTIFIER -> {
+                                    bnm = ast.str-at(t, bd.s0)
+                                    h2m-name-find(c, bnm) >= 0 -> {
+                                        pushk = ast.kid-at(t, argbase)
+                                        pv = h2m-lower-expr(t, c, sg, pushk)
+                                        pv > 0 && h2m-vty-at(c, pv) == TY-I64 -> {
+                                            nv = h2m-alloc(c, TY-VEC)
+                                            h2m-emit(c, OP-VECPUSH, nv, rv, pv, '', TY-VEC)
+                                            okf = h2m-push-field-set(c, t, recv-nd, bnm, nv)
+                                            {
+                                                okf == 1 -> {
+                                                    ; s147：push 進字段 = 所有權移轉（vec 緩衝無 RC 頭，§11 B5）⇒ 字段持有緩衝，不入 rel-list。
+                                                    ;   否則 scope-exit 的 OP-VEC-FREE 會釋放字段別名緩衝 ⇒ 字段懸垂（UAF）。
+                                                }
+
+                                                okf == 0 -> {
+                                                    h2m-mark(c)
+                                                    h2m-rel-add(c, nv, TY-VEC, 0)
+                                                }
+                                            }
+                                            h2m-rel-drop(c, rv)
+                                            v = nv
+                                            ok-method = 1
+                                            ok-call = 0
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         ; 切片 B 第三层：str vec —— len() 复用 OP-VECLEN（len 字段在 %vec 描述符，
@@ -3686,6 +3790,38 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                     v = nv
                                     ok-method = 1
                                     ok-call = 0
+                                }
+                            }
+
+                            ; s146：點號接收者 push(str)——同 vec 臂口径，寫回字段走 OP-STRUCT-SET。
+                            mname == 'push' && ok-method == 0 && c.mem == 0 && recv-nd.kind == asp.K-DOT-EXPRESSION -> {
+                                bid = ast.kid-at(t, recv-nd.kid0)
+                                bd = ast.nd-at(t, bid)
+                                bd.kind == asp.K-IDENTIFIER -> {
+                                    bnm = ast.str-at(t, bd.s0)
+                                    h2m-name-find(c, bnm) >= 0 -> {
+                                        pushk = ast.kid-at(t, argbase)
+                                        pv = h2m-lower-expr(t, c, sg, pushk)
+                                        pv > 0 && h2m-vty-at(c, pv) == TY-STR -> {
+                                            nv = h2m-alloc(c, TY-VECSTR)
+                                            h2m-emit(c, OP-VECPUSHSTR, nv, rv, pv, '', TY-VECSTR)
+                                            okf = h2m-push-field-set(c, t, recv-nd, bnm, nv)
+                                            {
+                                                okf == 1 -> {
+                                                    ; s147：同 vec 臂口径——字段持有緩衝，不入 rel-list（否則 OP-VEC-FREE-STR ⇒ 字段懸垂）。
+                                                }
+
+                                                okf == 0 -> {
+                                                    h2m-mark(c)
+                                                    h2m-rel-add(c, nv, TY-VECSTR, 0)
+                                                }
+                                            }
+                                            h2m-rel-drop(c, rv)
+                                            v = nv
+                                            ok-method = 1
+                                            ok-call = 0
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3741,6 +3877,42 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                             }
                         }
 
+                        ; s143：整數接收者的 to-str() —— 發 OP-ITOSTR（helper @str_from_i64）。
+                        ;   镜像 Go：i64.to-str 是 #{buildin}（src/std/number.no:87），後端由
+                        ;   src/builtin/strconv.go 的 ForwardFunc `i64-to-str` 攔截成 @str_from_i64；
+                        ;   自舉的簽名表無此項 ⇒ 必須在值方法分派認領，否則整函落閘門。
+                        ;   ⚠️ 只收【無參】形（na == 0）；帶參的 to-str(...) 落門禁（不猜）。
+                        ;   ⚠️ 結果 rc=1 自擁有堆緩衝 ⇒ h2m-rel-add 登記 scope-exit 釋放（同 OP-STRCAT）。
+                        rty == TY-I64 || rty == TY-U64 -> {
+                            mname == 'to-str' && ok-method == 0 && na == 0 -> {
+                                cid = h2m-alloc(c, TY-STR)
+                                h2m-emit(c, OP-ITOSTR, cid, rv, 0, '', TY-STR)
+                                h2m-rel-add(c, cid, TY-STR, 0)
+                                v = cid
+                                ok-method = 1
+                                ok-call = 0
+                            }
+                        }
+
+                        ; s141：结构体接收者的方法 —— 转发为【跨模块调用】（不传 self）。
+                        ;   探针（s140）证实：`b = sb.init(8)` 可用；`b.buf.push(1)` 因「接收者须为
+                        ;   識別字」失败；`sb.push('x')` 在签名表里（不含 self）；`sb.push(b,'x')` /
+                        ;   `sb.len(b)` 失败。根因：h2m 的值方法分派【没有 TY-STRUCT 臂】——
+                        ;   sb.push 的签名项存在但隐式 self 不入签名表，故无法命中。
+                        ;   这里按 c.stn[sid] - '.' - mname 拼名查表，命中即走跨模块路径（self 不传）。
+                        rty >= TY-STRUCT-BASE -> {
+                            sid2 = rty - TY-STRUCT-BASE
+                            (sid2 >= 0 && sid2 < c.stn.len()) -> {
+                                sn2 = c.stn[sid2]
+                                cn2 = sn2 - '.' - mname
+                                si2 = h2m-sig-find(sg, cn2)
+                                si2 >= 0 -> {
+                                    cn = cn2
+                                    ok-method = 1
+                                }
+                            }
+                        }
+
                         ; s132：option 接收者值方法 `?T.method()`——补齐 h2m-lower-expr 的第四個臂。
                         ;   語言側只守衛 len/cap（src/checker/option_member_access.go:158），其餘方法合法，
                         ;   並按【載荷型別】查表（hir2mir.go:12241 StripOptionRaw）。h2m 只追載荷型別
@@ -3749,6 +3921,22 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         ;     （Go 需要 clone 是因為它的 unwrap 是獨立 owned local，見 hir2mir.go:12203）。
                         rty == TY-OPT -> {
                             pty = h2m-vpty-at(c, rv)
+
+                            ; s143：`?i64.to-str()` / `?u64.to-str()` —— 語義等價 Go 的
+                            ;   「剝 option 取載荷再呼叫」（hir2mir.go:12226 unwrapOptionOperand，
+                            ;   不檢查 tag：nil 的載荷槽為零 ⇒ "0"，宿主實測 b=[0]；ok(42) ⇒ "42"）。
+                            ;   先發 OP-OPTGET 取 i64 載荷，再走 OP-ITOSTR。
+                            ;   ⚠️ 只認載荷型別已静態推斷為整數者（pty 推不出 ⇒ 落回閘門，不猜）。
+                            (pty == TY-I64 || pty == TY-U64) && mname == 'to-str' && ok-method == 0 && na == 0 -> {
+                                iv = h2m-alloc(c, TY-I64)
+                                h2m-emit(c, OP-OPTGET, iv, rv, 0, '', TY-I64)
+                                cid = h2m-alloc(c, TY-STR)
+                                h2m-emit(c, OP-ITOSTR, cid, iv, 0, '', TY-STR)
+                                h2m-rel-add(c, cid, TY-STR, 0)
+                                v = cid
+                                ok-method = 1
+                                ok-call = 0
+                            }
 
                             ; `?str` 載荷：先发 OP-OPTGETSTR 取出 %str-long，再走 str 內建方法
                             ;   （與 rty == TY-STR 臂同口徑：byte 只收正好一參 i64）
@@ -3864,7 +4052,26 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         ok-call == 1 -> {
                             at = h2m-vty-at(c, av)
                             want = h2m-sig-arg(sg, si, j)
-                            want != at -> ok-call = 0
+
+                            ; s144：option 實參 → plain 形參：取載荷再傳（镜 Go hir2mir.go:14399-14407）。
+                            ;   缺這一支時 `cg-vty-at(vty, d)`（d = dsts[k] 為 ?i64）在呼叫側
+                            ;   計 unsup ⇒ cg-emit-cfg-t 的每個守門塊都敗，整函不產碼。
+                            ;   ⚠️ 只對【實參非索引表達式】生效：宿主對 `f(xs[0])`（索引讀直接當實參）
+                            ;   明確拒編（idxbruse，宿主實測 p1/p3），s129 門禁即鏡像它；而
+                            ;   `d = xs[0]` 後 `f(d)`（Identifier）宿主接受（實測 p2），cg.no 的
+                            ;   `cg-vty-at(vty, d)` 即此型 —— 本支只救後者，不去碰前者。
+                            at != want -> {
+                                akd = ast.nd-at(t, ak)
+                                akd.kind == asp.K-INDEX-EXPRESSION -> ok-call = 0
+                                akd.kind != asp.K-INDEX-EXPRESSION -> {
+                                    pv = h2m-opt-peek(c, av, want)
+                                    pv > 0 -> {
+                                        av = pv
+                                        at = want
+                                    }
+                                    pv == 0 -> ok-call = 0
+                                }
+                            }
                             ok-call == 1 -> al.push(av)
                         }
                     }
@@ -4003,6 +4210,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 nf != want -> h2m-mark(c)
                 nf == want -> {
                     fvs []i64 = []
+                    fve []i64 = []
                     i = 0
                     (i < nf) {
 
@@ -4015,6 +4223,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         fv = h2m-lower-expr(t, c, sg, vexpr)
                         fv == 0 -> h2m-mark(c)
                         fvs.push(fv)
+
+                        ; s145：标记「空切片字面量」字段值（无缓冲 ⇒ 无所有权可外流）。
+                        ;   逃逸门禁据此放行；非空字面量与标识符不标记。
+                        is-e = 0
+                        ved = ast.nd-at(t, vexpr)
+                        ved.kind == asp.K-SLICE-LITERAL && ved.nkid == 0 -> is-e = 1
+                        fve.push(is-e)
 
                         i = h2m-inc(i)
                     }
@@ -4029,7 +4244,12 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                             -> 0
                         }
-                        h2m-vec-own(c, fvv) == 1 -> h2m-mark(c)
+                        fev = fve[vi]: {
+                            ok -> it
+
+                            -> 0
+                        }
+                        fev == 0 && h2m-vec-own(c, fvv) == 1 -> h2m-mark(c)
 
                         vi = h2m-inc(vi)
                     }
@@ -4242,7 +4462,10 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     h2m-set-cur-k(c, t, n)
     d = ast.nd-at(t, n)
-    d.nkid == 0 -> h2m-mark(c)
+    d.nkid == 0 -> {
+        h2m-id-name(c, 'let-nkid0')
+        h2m-mark(c)
+    }
     d.nkid > 0 -> {
         nm = ast.str-at(t, d.s0)
         vp = d.kid0
@@ -4285,9 +4508,15 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                     h2m-rel-add(c, nv, TY-VECSTR, 0)
                     cap-ok = 1
                 }
-                cap-ok == 0 -> h2m-mark(c)
+                cap-ok == 0 -> {
+                h2m-id-name(c, 'let-cap')
+                h2m-mark(c)
             }
-            cv == 0 -> h2m-mark(c)
+            }
+            cv == 0 -> {
+                h2m-id-name(c, 'let-cv')
+                h2m-mark(c)
+            }
         }
         vkd.kind != asp.K-SURFACE-MATCH && h2m-is-withcap(t, vk) == 0 -> vv = h2m-lower-expr(t, c, sg, vk)
         vv > 0 -> h2m-var-write(c, nm, vv)
@@ -4306,7 +4535,10 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 code >= 0 && code == h2m-vty-at(c, vv) -> tc = 1
             }
         }
-        tc < 0 -> h2m-mark(c)
+        tc < 0 -> {
+        h2m-id-name(c, 'let-tc')
+        h2m-mark(c)
+    }
     }
 }
 
@@ -4343,19 +4575,24 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             hd = h2m-lower-term-stmt(t, c, sg, kid, last)
         }
         kk.kind == asp.K-LET-STATEMENT -> {
+            h2m-id-name(c, 'blk-let')
             h2m-lower-let(t, c, sg, kid)
             hd = 1
         }
         kk.kind == asp.K-IF-EXPRESSION -> {
+            h2m-id-name(c, 'blk-if')
             h2m-lower-if(t, c, sg, kid)
             hd = 1
         }
         kk.kind == asp.K-FOR-STATEMENT -> {
+            h2m-id-name(c, 'blk-for')
             h2m-lower-for(t, c, sg, kid)
             hd = 1
         }
         kk.kind == asp.K-SURFACE-MATCH -> {
+            h2m-id-name(c, 'blk-surface')
             h2m-lower-surface(t, c, sg, kid, '')
+            h2m-id-name(c, 'blk-surface-after')
             hd = 1
         }
 
@@ -4365,6 +4602,7 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 
         ; 述层的单行 `cond -> stmt`：ExpressionStatement 包一个 IfExpression（实测 kid 序 [expr]）
         kk.kind == asp.K-EXPRESSION-STATEMENT -> {
+            h2m-id-name(c, 'blk-expr')
             sub = h2m-kid-i(t, kid, 0)
             sub > 0 -> {
                 sd = ast.nd-at(t, sub)
@@ -4374,6 +4612,7 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 }
                 sd.kind == asp.K-SURFACE-MATCH -> {
                     h2m-lower-surface(t, c, sg, sub, '')
+                    h2m-id-name(c, 'blk-expr-surf-after')
                     hd = 1
                 }
 
@@ -4447,11 +4686,17 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 }
             }
         }
-        hd == 0 -> h2m-mark(c)
+        kk.kind == 13 -> h2m-id-name(c, 'k13-blockmatch')
+        kk.kind == 67 -> h2m-id-name(c, 'k67-surface')
+        hd == 0 -> {
+            h2m-id-name(c, 'blk-unhandled')
+            h2m-mark(c)
+        }
 
         i = h2m-inc(i)
     }
     h2m-bk-pop(c)
+    h2m-id-name(c, 'blk-done')
 }
 
 ; 分支体降级：Block 走 h2m-lower-block；嵌套 IfExpression 走 h2m-lower-if（elif 链就靠这一路）；
@@ -5070,8 +5315,13 @@ h2m-lower-safe-index = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (r i64, pty i64) {
         bt = h2m-vty-at(c, bv)
         bt == TY-VEC -> pty = TY-I64
         bt == TY-VECSTR -> pty = TY-STR
+        bt == TY-VEC -> h2m-id-name(c, 'si-bt-vec')
+        bt == TY-VECSTR -> h2m-id-name(c, 'si-bt-vecstr')
+        bt != TY-VEC && bt != TY-VECSTR -> h2m-id-name(c, 'si-bt-other')
         pty >= 0 -> {
             iv = h2m-lower-expr(t, c, sg, ik)
+            iv > 0 -> h2m-id-name(c, 'si-iv-ok')
+            iv <= 0 -> h2m-id-name(c, 'si-iv-bad')
             iv > 0 -> {
 
                 ; sink：nil option 槽（各臂只覆寫它，無 phi）
@@ -5134,6 +5384,7 @@ h2m-lower-safe-index = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (r i64, pty i64) {
 }
 
 h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
+    h2m-id-name(c, 'surf')
     h2m-set-cur-k(c, t, n)
     h2m-bk-push(c, asp.K-SURFACE-MATCH, n)
     d = ast.nd-at(t, n)
@@ -5167,7 +5418,9 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
         ;   ⚠️ 表达式主体在【当前块】恰好求值一次（sv0），逐臂不再重算（避免有副作用的呼叫被多次执行）。
         subj = h2m-kid-i(t, n, 0)
         subj > 0 -> {
+            h2m-id-name(c, 'surf-subj-ok')
             sd = ast.nd-at(t, subj)
+            sd.kind == asp.K-INDEX-EXPRESSION -> h2m-id-name(c, 'surf-subj-idx')
             subj-ident = 0
             sd.kind == asp.K-IDENTIFIER && sd.nkid == 0 -> subj-ident = 1
             subj-ident == 1 -> {
@@ -5404,7 +5657,10 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
 
             j = h2m-inc(j)
         }
-        bad != 0 -> h2m-mark(c)
+        bad != 0 -> {
+            h2m-id-name(c, 'surf-bad')
+            h2m-mark(c)
+        }
         bad == 0 -> {
             merge-id = h2m-block-new(c)
             next-id = c.blk
@@ -5909,6 +6165,7 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
 ;   再切过去发 LOAD+RET（读输出参槽——entry 零铺槽即「延迟零值」）；
 ;   无 return 的函数走原路（终结指令落当前块），IR 逐字节不变
 h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
+    h2m-id-name(agg, 'lfunc')
     r = ''
     c = h2m-new()
 
@@ -6253,6 +6510,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 ; root: Program 节点 id
 ; r: 模块函数文本（不含 prelude / main）
 h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
+    h2m-id-name(agg, 'lprog')
     r = ''
     sg = h2m-sigs-new()
     d = ast.nd-at(t, root)
@@ -6636,6 +6894,7 @@ h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
 ; name: 'print' 或 'eprint'
 ; r: 1 = 已降级；0 = 计了 unsup（已 mark）
 h2m-lower-print = (t ast, c h2m-ctx, sg h2m-sigs, n i64, name str) (r i64) {
+    h2m-id-name(c, 'pr')
     r = 1
     d = ast.nd-at(t, n)
     na = d.c0
@@ -6671,7 +6930,11 @@ h2m-lower-print = (t ast, c h2m-ctx, sg h2m-sigs, n i64, name str) (r i64) {
         }
         r == 1 && fcl == 0 -> {
             av = h2m-lower-expr(t, c, sg, ak)
-            av == 0 -> r = 0
+            av > 0 -> h2m-id-name(c, 'pr-av-ok')
+            av == 0 -> {
+                h2m-id-name(c, 'pr-av0')
+                r = 0
+            }
             r == 1 -> {
 
                 ; 实参之间的分隔空格：只在第 2 个及以后发（第一个之前不发）

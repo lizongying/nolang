@@ -205,7 +205,9 @@ The new test is now a regression guard. Keep it in the same file as other tests 
 
 ## Build Artifacts
 
-Only two binaries are needed during development. **Do not build into other locations** (e.g. scratch `.go` programs outside the module trying to import it) — this fails with `package …: go.mod file not found`. Scratch files, if any, go under project-local `tmp/`.
+Only two binaries are canonical build artifacts: `make no` → `bin/no`, `make lsp` → `bin/lsp`. **Do not build Go scratch programs into arbitrary locations** (e.g. standalone `.go` files outside the module trying to import it) — this fails with `package …: go.mod file not found`.
+
+**Temporary builds also go under project-root `tmp/`** — any ad-hoc `no build -o …`, one-off compile probe, or throwaway executable belongs in `tmp/`, never system `/tmp`. The `bin/` binaries above are the only ones built to a permanent location; everything else is disposable and lives in `tmp/`.
 
 ```bash
 # from project root
@@ -217,7 +219,7 @@ Both targets run `cd src && go build …`. The Go test suite (`go test ./...`) d
 
 ## Temporary / Scratch Files
 
-Put **all** temporary artifacts — probe `.no` files, baseline binaries, AST/IR dumps, scratch Go files, output of `no fmt -d` redirects — under the project-local `tmp/` directory (`<project-root>/tmp/`), **not** the OS system temp (`/tmp`, `$TMPDIR`).
+Put **all** temporary artifacts — probe `.no` files, **temporary build outputs** (`no build -o …`, ad-hoc compiled executables), baseline binaries, AST/IR dumps, scratch Go files, output of `no fmt -d` redirects — under the project-local `tmp/` directory (`<project-root>/tmp/`), **not** the OS system temp (`/tmp`, `$TMPDIR`).
 
 Why:
 - The system temp can be wiped at any time (reboots, cleanup tools, other sessions), silently deleting files you still need mid-debug.
@@ -231,6 +233,8 @@ printf '...' > tmp/probe.no
 ./bin/no run tmp/probe.no
 # baseline binary for A/B triage
 make no && cp bin/no tmp/no-baseline
+# temporary build output
+./bin/no build -o tmp/probe-bin tmp/probe.no
 ```
 
 Note: design/canonical artifacts do **not** belong here — put design docs in `docs/design/`. `tmp/` is only for disposable debug scratch.

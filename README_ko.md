@@ -12,6 +12,42 @@ Nolang은 메모리 안전성, 강력한 성능, 극도로 간결한 문법을 �
 - **의도 중심**: 개발자의 의도를 최대한 존중하며, 의미가 인간의 직관에 부합
 - **절대 충돌하지 않음**: 암묵적인 충돌 경로 제거
 
+## 설치
+
+원 커맨드로 설치합니다（macOS / Linux / Windows Git Bash）. 최신 `no` 를 `$HOME/.local/bin` 에 내려받습니다:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
+```
+
+기본값은 **LLVM 내장** 빌드입니다（`no-llvm_*`, LLVM / opt / llc 를 따로 설치할 필요 없음）. 크기가 작은 순수 Go 빌드를 원한다면 `NO_FLAVOR=plain` 을 지정하고 `no build -cc zig` 와 함께 사용하세요:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh
+```
+
+버전이나 설치 디렉터리를 고정하려면（환경 변수를 `sh` 에 전달해야 하므로 먼저 파일로 저장한 뒤 실행）:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh -o install.sh
+NO_VERSION=0.4.28 NO_INSTALL_DIR="$HOME/bin" sh install.sh
+```
+
+| 환경 변수         | 기본값               | 설명                                                             |
+| ----------------- | -------------------- | ---------------------------------------------------------------- |
+| `NO_VERSION`      | `latest`             | 버전（`0.4.28` 또는 `v0.4.28`）                                  |
+| `NO_FLAVOR`       | `embedded`           | `embedded` 는 LLVM 내장, `plain` 은 순수 Go（시스템 LLVM 필요）  |
+| `NO_INSTALL_DIR`  | `$HOME/.local/bin`   | 설치 디렉터리                                                    |
+| `NO_REPO`         | `lizongying/nolang`  | 소스 저장소                                                      |
+
+설치 후 `no version` 으로 확인하세요. `$HOME/.local/bin` 이 `PATH` 에 없다면 추가하세요:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+> `.no` 프로그램 컴파일에는 C 링커가 추가로 필요합니다. `no build -cc zig` 를 권장하며（zig 에 clang / lld / libc 포함）, clang 을 직접 설치해도 됩니다.
+
 ## Usage
 
 문서
@@ -25,6 +61,34 @@ VSCode 플러그인
 nolang CLI
 
 [nolang](https://github.com/lizongying/nolang/releases/latest)
+
+nohub 패키지 목록（커뮤니티 패키지 검색）
+
+[nohub](https://lizongying.github.io/nohub/)
+
+### 커뮤니티 패키지 검색 (nohub)
+
+`no` 는 nohub 의 패키지 인덱스를 직접 읽어 세 가지 읽기 전용 명령을 제공합니다:
+
+```bash
+no search <query>    # 이름/키워드/카테고리로 커뮤니티 패키지 검색
+no info <pkg>        # 패키지 메타데이터와 설치/가져오기 명령 표시
+no docs <pkg>        # 패키지 문서 URL 출력 (docs → homepage → repository)
+```
+
+기본값은 공개 인덱스입니다. 여러 nohub 인스턴스를 겹치려면 `~/no/sources.noml` 에 소스 목록을 설정합니다 (배열 순서가 우선순위):
+
+```
+{
+  sources: [
+    'https://lizongying.github.io/nohub',
+    'corp = https://corp.example/nohub',
+  ]
+}
+```
+
+`NOHUB_SOURCES` (쉼표 구분) 는 일시적으로 덮어씁니다. 세 명령 모두 `-source <name>` 로 특정 소스만 볼 수 있고, `no search` 출력에는 `SOURCE` 열이 포함되며 이름과 버전이 같은 패키지는 앞쪽 소스가 우선합니다. 한 소스의 조회 실패는 경고만 출력하고 나머지에는 영향을 주지 않습니다. `no` 는 각 소스의 `index.noml` (`<base>/index.noml` — 검색 페이지가 먼저 읽는 것과 동일하며 패키지마다 최신 버전을 한 건씩 포함) 만 fetch 하고 tarball 이나 `data.js` 는 읽지 않으며, 필드 매핑은 `web/app.js` 와 동일합니다. [nohub 검색 페이지](https://lizongying.github.io/nohub/) 에서도 같은 데이터를 볼 수 있습니다.
+
 
 ### CLI 명령
 
@@ -41,6 +105,9 @@ nolang CLI
 | `no update <pkg>`                                            | 의존성 업데이트                                                                |
 | `no update-all`                                              | 모든 의존성 업데이트                                                           |
 | `no list`                                                    | 의존성 목록 표시                                                               |
+| `no search <query>`                                            | 이름/키워드/카테고리로 커뮤니티 패키지 검색 |
+| `no info <pkg>`                                                | 패키지 메타데이터와 설치/가져오기 명령 표시 |
+| `no docs <pkg>`                                                | 패키지 문서 URL 출력 |
 | `no sync`                                                    | 의존성 동기화                                                                  |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]` | binary 설치 (~/no/bin/ + 심볼릭 링크)                                          |
 | `no uninstall <name>`                                        | binary 및 심볼릭 링크 제거                                                     |
@@ -174,6 +241,10 @@ no build glossary                        # 산출물: glossary/dist/glossary
 ---
 
 ## 관련 프로젝트
+
+- [nohub — Nolang 생태계의 커뮤니티 패키지 목록 검색](https://lizongying.github.io/nohub/)
+
+  패키지 이름・키워드・카테고리로 수록된 커뮤니티 패키지를 검색하고, 패키지 정보・버전 스냅샷・소스 진입점을 확인할 수 있습니다. 색인은 `web/build.mjs` 가 `packages/` 스냅샷에서 생성합니다.
 
 - [Benchmarks Game — Nolang vs C vs Rust 성능 비교 보고서](https://github.com/lizongying/no-benchmarks/results/report.md)
 

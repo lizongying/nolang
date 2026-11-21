@@ -623,3 +623,18 @@ OP-STRBYTES = 102
 ;   helper @str_cp_len 由 cg-runtime-prelude-full 每模組發一次（見 cg-runtime-str-cp-len）。
 ; ⚠ op 碼接在既有最大碼 OP-STRBYTES=102 之後（取 103），不重排既有碼。
 OP-STRCPLEN = 103
+
+; i64/u64 → str（s143）：整數的十進制字串化。
+;   語義等價 std `#{buildin} i64.to-str`（src/std/number.no）——Go 後端無原生格式化器，
+;   由 src/builtin/strconv.go 的 ForwardFunc `i64-to-str` 攔截成 @str_from_i64
+;   （src/mir/codegen.go:4643，逐字鏡像在 cg-runtime-str-from-i64）。
+;   ⚠️ 與 Go 的差異：Go 的 @str_from_i64 **沒有** i64.MIN 的 isMin select 護欄，
+;      靠 `sub i64 0, %v` 在執行期回繞成 2^63 才得到正確量值（宿主實測 i64.MIN 正確，
+;      但那是 opt 未折 poison 的運氣）。自舉側按本檔案 @print_i64 的既有口徑補上護欄，
+;      刻意比 Go 防禦性更強（見 cg-runtime-print-helpers 的註釋）。
+; OP-ITOSTR：dst = str 值 id（TY-STR，落 %sv）；x = 整數 value id（TY-I64/TY-U64，落 %v）；y 不用（0）。
+;   發：%sv<dst> = call %str-long @str_from_i64(i64 %v<x>)
+;   helper @str_from_i64 由 cg-runtime-prelude-full 每模組發一次（見 cg-runtime-str-from-i64）。
+;   ⚠️ 結果是 rc=1 自擁有堆緩衝 ⇒ h2m 側須 h2m-rel-add 登記 scope-exit 釋放（同 OP-STRCAT）。
+; ⚠ op 碼接在既有最大碼 OP-STRCPLEN=103 之後（取 104），不重排既有碼。
+OP-ITOSTR = 104

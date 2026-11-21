@@ -37,6 +37,8 @@
 ;     NOT⇒xor i64 1, %v…（翻转 0/1 布尔）。均单块降级、无 helper；忠实 Go emitNeg（非 option 路不插溢出护栏）／emitNot
 ;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec。B28b：len/cap 本就是 i32（%vec 16B），直接 insertvalue，无需 trunc
 ;   str 容量欄（s50）：OP-STRCAP——extractvalue %str-long field 1（与 OP-STRLEN 的 field 0 成对，Go 原以 fieldIdx 分派）；单块降级、无 helper；忠实 Go emitLenCap 的 OpCap/KindStr 分支。B28：讀出後 zext i32→i64
+;   i64/u64 → str（s143）：OP-ITOSTR——發 call %str-long @str_from_i64(i64)，helper 見 cg-runtime-str-from-i64；
+;     結果 rc=1 自擁有 ⇒ h2m 側 h2m-rel-add 登記释放。
 ;   str 碼點數（s135）：OP-STRCPLEN——**非**栏位读取（無計數原語可組），發 call i64 @str_cp_len(%str-long)；
 ;     單塊降級、helper 走 cg-runtime prelude（含 phi 循環，與 @digits/@str_concat 同級）。語義 = std str.len = cp-index(len-bytes())，
 ;     即「b<0x80 或 (b&0xc0)==0xc0」的字節數（與 s[i] 的碼點索引語義一致）
@@ -2041,6 +2043,18 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(x.to-str())
             b.push(', %str-long %sv')
             b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-ITOSTR -> {
+
+            ; s143：i64/u64 → str。走 helper @str_from_i64（cg-runtime-str-from-i64，
+            ;   每模块 prelude 发一次）——LLVM 無原生整數格式化器，Go 後端同樣降成 helper 呼叫
+            ;   （src/builtin/strconv.go 的 ForwardFunc `i64-to-str`）。
+            ;   ⚠️ 結果是 rc=1 自擁有堆緩衝，h2m 侧已 h2m-rel-add 登記释放（同 OP-STRCAT）。
+            b.push('\t%sv')
+            b.push(d.to-str())
+            b.push(' = call %str-long @str_from_i64(i64 %v')
+            b.push(x.to-str())
             b.push(')\n')
         }
         op == OP-SALLOC -> {

@@ -50,6 +50,8 @@ std 未修缺陷查 `test/README.md §5.2`，名词查 `./glossary/dist/glossary
 - 🔴 `bin/no` 陈旧 ⇒ 整片假象（绿色/红色都不可信）：行为诡异先比 mtime；exit 137 或零输出先
   `rm -f bin/no && make gen no`。
 - 裸 `no`（`/usr/local/bin/no`）与 `./bin/no` **不是同一个二进制**；排查「你绿我红」先比 `version`。
+- 🔴 **临时构建也写项目根 `tmp/`**：ad-hoc `no build -o …`、一次性编译探针、临时可执行一律输出
+  到 `tmp/`，不要写系统 `/tmp`。`bin/no` / `bin/lsp` 是 `make` 产出的正式二进制，是唯一例外。
 
 ## 3. std：绝不对 `src/std` 跑 `no fmt -w`
 

@@ -118,6 +118,10 @@ Nolang — язык программирования (версия %s)
       no ast src/std/vec.no      вывести AST для vec.no
 
   no info               Показать сведения об окружении и каталоге исходников
+  no search <query>   Поиск пакетов сообщества в реестре nohub
+  no info <pkg>       Показать метаданные пакета из реестра
+  no docs <pkg>       Вывести URL документации пакета из реестра
+  Источники: ~/no/sources.noml  ($NOHUB_SOURCES переопределяет; -source <name> выбирает)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
                     Добавить зависимость (предсобранный AST: <tool>.ast.zip)

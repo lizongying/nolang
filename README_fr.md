@@ -12,6 +12,42 @@ Nolang est un langage de programmation système sûr en mémoire, très performa
 - **Guidé par l'intention** : respecte pleinement l'intention du développeur, avec une sémantique conforme à l'intuition humaine
 - **Ne plante jamais** : élimine les chemins de plantage implicites
 
+## Installation
+
+Installation en une commande (macOS / Linux / Windows Git Bash) : le script télécharge la dernière version de `no` dans `$HOME/.local/bin` :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
+```
+
+Par défaut, c'est la version **LLVM intégré** qui est installée (`no-llvm_*`, aucun LLVM / opt / llc séparé n'est nécessaire). Pour la version Go pur, plus légère, utilisez `NO_FLAVOR=plain` avec `no build -cc zig` :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh
+```
+
+Pour épingler une version ou un répertoire personnalisé (les variables doivent atteindre `sh`, enregistrez d'abord le script) :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh -o install.sh
+NO_VERSION=0.4.28 NO_INSTALL_DIR="$HOME/bin" sh install.sh
+```
+
+| Variable           | Valeur par défaut   | Description                                                              |
+| ------------------ | ------------------- | ------------------------------------------------------------------------ |
+| `NO_VERSION`       | `latest`            | Version, par ex. `0.4.28` ou `v0.4.28`                                  |
+| `NO_FLAVOR`        | `embedded`          | `embedded` : LLVM intégré ; `plain` : Go pur (LLVM système requis)       |
+| `NO_INSTALL_DIR`   | `$HOME/.local/bin`  | Répertoire d'installation                                                |
+| `NO_REPO`          | `lizongying/nolang` | Dépôt source                                                             |
+
+Vérifiez avec `no version`. Si `$HOME/.local/bin` n'est pas dans le `PATH`, ajoutez-le :
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+> La compilation de programmes `.no` nécessite également un éditeur de liens C : `no build -cc zig` est recommandé (zig fournit clang / lld / libc), ou installez clang vous-même.
+
 ## Usage
 
 doc
@@ -25,6 +61,34 @@ Extension VSCode
 CLI Nolang
 
 [nolang](https://github.com/lizongying/nolang/releases/latest)
+
+nohub — index des paquets (paquets communautaires)
+
+[nohub](https://lizongying.github.io/nohub/)
+
+### Recherche de paquets communautaires (nohub)
+
+`no` lit directement l’index de paquets de nohub et propose trois commandes en lecture seule :
+
+```bash
+no search <query>    # rechercher par nom / mot-clé / catégorie
+no info <pkg>        # afficher les métadonnées et les commandes d’installation/import
+no docs <pkg>        # afficher l’URL de documentation (docs → homepage → repository)
+```
+
+L’index public est utilisé par défaut. Pour combiner plusieurs instances nohub, configurez une liste de sources dans `~/no/sources.noml` (l’ordre du tableau définit la priorité) :
+
+```
+{
+  sources: [
+    'https://lizongying.github.io/nohub',
+    'corp = https://corp.example/nohub',
+  ]
+}
+```
+
+`NOHUB_SOURCES` (séparé par des virgules) la remplace temporairement. Les trois commandes acceptent `-source <name>` ; `no search` affiche une colonne `SOURCE`, et un paquet de même nom et même version est résolu par la première source. Une source inaccessible ne produit qu’un avertissement. `no` ne récupère que le `index.noml` de chaque source (`<base>/index.noml` — le même fichier chargé en premier par la page de recherche, une entrée par paquet à sa dernière version) : ni tarball ni `data.js`, avec un mappage des champs identique à `web/app.js`. Les mêmes données sont consultables sur la [page de recherche nohub](https://lizongying.github.io/nohub/).
+
 
 ### Commandes CLI
 
@@ -41,6 +105,9 @@ CLI Nolang
 | `no update <pkg>`                                            | Met à jour une dépendance                                                                  |
 | `no update-all`                                              | Met à jour toutes les dépendances                                                          |
 | `no list`                                                    | Liste les dépendances                                                                      |
+| `no search <query>`                                            | Rechercher des paquets communautaires par nom / mot-clé / catégorie |
+| `no info <pkg>`                                                | Afficher les métadonnées et les commandes d’installation/import |
+| `no docs <pkg>`                                                | Afficher l’URL de documentation du paquet |
 | `no sync`                                                    | Synchronise les dépendances                                                                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]` | Installe un binaire (~/no/bin/ + lien symbolique)                                          |
 | `no uninstall <name>`                                        | Supprime le binaire et le lien symbolique                                                  |
@@ -174,6 +241,10 @@ La sortie peut être choisie avec `--format=text|md|json`. Voir [`glossary/READM
 ---
 
 ## Projets liés
+
+- [nohub — recherche de l'index des paquets communautaires de l'écosystème Nolang](https://lizongying.github.io/nohub/)
+
+  Recherche des paquets communautaires par nom, mot-clé ou catégorie ; consultation des informations sur le paquet, des instantanés de version et des points d'entrée vers le code source. L'index est généré par `web/build.mjs` à partir des instantanés de `packages/`.
 
 - [Benchmarks Game — rapport de comparaison des performances Nolang vs C vs Rust](https://github.com/lizongying/no-benchmarks/results/report.md)
 

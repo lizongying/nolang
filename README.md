@@ -12,6 +12,42 @@ Nolang 是一種內存安全、性能強勁、語法極簡的系統編程語言�
 - **意圖驅動**: 充分尊重開發者意圖，語義符合人類直覺
 - **永不崩溃**: 消除隱式崩潰路徑
 
+## 安裝
+
+一鍵安裝（macOS / Linux / Windows Git Bash），會自動下載最新的 `no` 到 `$HOME/.local/bin`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
+```
+
+默認裝**內置 LLVM** 的版本（`no-llvm_*`，不必另裝 LLVM / opt / llc）。若想要體積較小的純 Go 版，用 `NO_FLAVOR=plain` 並搭配 `no build -cc zig`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh
+```
+
+需要固定版本或自訂目錄時（環境變數要傳給 `sh`，所以先存檔再執行）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh -o install.sh
+NO_VERSION=0.4.28 NO_INSTALL_DIR="$HOME/bin" sh install.sh
+```
+
+| 環境變數         | 預設                   | 說明                                                |
+| ---------------- | ---------------------- | --------------------------------------------------- |
+| `NO_VERSION`    | `latest`               | 版本號，可寫 `0.4.28` 或 `v0.4.28`                 |
+| `NO_FLAVOR`     | `embedded`             | `embedded` 內置 LLVM；`plain` 純 Go（需系統 LLVM） |
+| `NO_INSTALL_DIR` | `$HOME/.local/bin`     | 安裝目錄                                            |
+| `NO_REPO`       | `lizongying/nolang`    | 來源倉庫                                            |
+
+安裝後執行 `no version` 驗證。若 `$HOME/.local/bin` 不在 `PATH`，請自行加入：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+> 編譯 `.no` 程式還需要一個 C 連結器：推薦 `no build -cc zig`（zig 自帶 clang / lld / libc），或自行安裝 clang。
+
 ## Usage
 
 doc
@@ -25,6 +61,34 @@ vscode 插件
 nolang cli
 
 [nolang](https://github.com/lizongying/nolang/releases/latest)
+
+nohub 包清單（社群包搜尋）
+
+[nohub](https://lizongying.github.io/nohub/)
+
+### 社群包搜尋（nohub）
+
+`no` 直接讀取 nohub 的套件索引，提供三個唯讀命令：
+
+```bash
+no search <query>    # 依包名、關鍵詞、分類搜尋社群包
+no info <pkg>        # 顯示套件中繼資料與安裝/導入命令
+no docs <pkg>        # 列印套件文件網址（docs → homepage → repository）
+```
+
+預設讀取公共索引。要疊加多個 nohub 實例，在 `~/no/sources.noml` 配置源列表（陣列順序即優先順序）：
+
+```
+{
+  sources: [
+    'https://lizongying.github.io/nohub',
+    'corp = https://corp.example/nohub',
+  ]
+}
+```
+
+`NOHUB_SOURCES`（逗號分隔）可暫時覆蓋。三個命令都接受 `-source <name>` 只看指定源；`no search` 的輸出含 `SOURCE` 欄，同名同版本由靠前的源優先。單一源拉取失敗只會告警，不影響其他源。`no` 只 fetch 每個源的 `index.noml`（`<地址>/index.noml`，與搜尋頁首屏同一份資料，每包一條最新版本），不下載 tarball、不讀取 `data.js`，詳情欄位映射與 `web/app.js` 一致。也可在 [nohub 搜尋頁](https://lizongying.github.io/nohub/) 用網頁瀏覽。
+
 
 ### CLI 命令
 
@@ -41,6 +105,9 @@ nolang cli
 | `no update <pkg>`                                            | 更新依賴                               |
 | `no update-all`                                              | 更新所有依賴                           |
 | `no list`                                                    | 列出依賴                               |
+| `no search <query>`                                            | 依包名、關鍵詞、分類搜尋社群包 |
+| `no info <pkg>`                                                | 顯示套件中繼資料與安裝/導入命令 |
+| `no docs <pkg>`                                                | 列印套件文件網址 |
 | `no sync`                                                    | 同步依賴                               |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]` | 安裝 binary（~/no/bin/ + 軟鏈接）     |
 | `no uninstall <name>`                                        | 移除 binary 及軟鏈接                   |
@@ -172,6 +239,10 @@ no build glossary                        # 產物：glossary/dist/glossary
 ---
 
 ## 相關項目
+
+- [nohub — Nolang 生態的社群包清單搜尋](https://lizongying.github.io/nohub/)
+
+  按包名、關鍵詞、分類檢索收錄的社群包，查看包資訊、版本快照與原始碼入口；索引由 `web/build.mjs` 從 `packages/` 快照產生。
 
 - [Benchmarks Game — Nolang vs C vs Rust 性能對比報告](https://github.com/lizongying/no-benchmarks/results/report.md)
 
