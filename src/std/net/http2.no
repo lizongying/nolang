@@ -108,7 +108,11 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     .stream-id = ((data.byte(pos + 5) & 127) << 24) | (data.byte(pos + 6) << 16) | (data.byte(pos + 7) << 8) | data.byte(pos + 8)
 
     #{overflow=wrap}
-    next-pos = pos + HTTP2-FRAME-HEADER-SIZE
+    next-pos = pos + HTTP2-FRAME-HEADER-SIZE: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; 將影格標頭序列化到 buf 的 pos 位置
@@ -181,7 +185,11 @@ frame.serialize = (buf str, pos i64) (next-pos i64) {
     }
 
     #{overflow=wrap}
-    next-pos = pos + HTTP2-FRAME-HEADER-SIZE
+    next-pos = pos + HTTP2-FRAME-HEADER-SIZE: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; 連線管理

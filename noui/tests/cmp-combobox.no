@@ -1,0 +1,212 @@
+; ============================================================================
+; noui combobox 测试（阶段 42）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录写着 C-COMBOBOX「query, options, selected」，但命令式侧它只有
+; cmp-combobox() 一个空壳构造（无选项 API、无查询、无选中），渲染还落在单行
+; cs-paint-field。阶段 42 补：
+;   - 模型（组件模块）：查询串 = CMP-TEXT（复用 INP-CAR 光标池），选项与 select
+;     同构存 CHILD-IDX；另存匹配表 CB-MBASE / CB-MN / CB-MLIST（扁平只增）+
+;     CB-MCUR 高亮。combobox-query / -set-query / -add-option / -option-count /
+;     -option / -selected / -choose / -match-count / -match / -match-label /
+;     -match-index / -match-index-of / -highlight(-set/-move) / -choose-match /
+;     -apply / -refresh / -insert / -backspace / -delete / -clear。
+;   - 匹配规则：查询空 = 全选；否则选项 to-lower contains 查询 to-lower。
+;   - 渲染层新增 cs-paint-combobox（字段 + 查询 + 光标 + 右端 'v' + 展开面板），
+;     cs-measure / cs-layout / cs-hit 都改成走**匹配表**（cs-hit-child）。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-combobox tests/cmp-combobox.no
+;       ./dist/cmp-combobox
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+; Scene 里是否有某段文本
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; Scene 里是否有给定几何的矩形
+cs-rect-at = (x i64, y i64, w i64, ht i64) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; 同上，但要求颜色也一致
+cs-rect-color-at = (x i64, y i64, w i64, ht i64, c i64) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht) && (cs-scene-c(i) == c)) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; ---- 1. 构造 ----
+cb = cmp-combobox()
+t1 = cmp-kind(cb) == C-COMBOBOX
+t2 = combobox-query(cb) == '' && combobox-option-count(cb) == 0 && combobox-match-count(cb) == 0
+t3 = combobox-highlight(cb) == -1 && combobox-selected(cb) == 0
+
+; ---- 2. 加选项：空查询 = 全选 ----
+i0 = combobox-add-option(cb, 'Apple')
+i1 = combobox-add-option(cb, 'Banana')
+i2 = combobox-add-option(cb, 'Cherry')
+t4 = i0 == 0 && i1 == 1 && i2 == 2
+t5 = combobox-option-count(cb) == 3 && combobox-match-count(cb) == 3
+t6 = combobox-match-label(cb, 0) == 'Apple' && combobox-match-label(cb, 1) == 'Banana' && combobox-match-label(cb, 2) == 'Cherry'
+t7 = combobox-match-index(cb, 0) == 0 && combobox-match-index(cb, 2) == 2
+
+; ---- 3. 查询过滤（大小写不敏感）----
+combobox-set-query(cb, 'ap')
+t8 = combobox-match-count(cb) == 1 && combobox-match-label(cb, 0) == 'Apple'
+combobox-set-query(cb, 'AN')
+t9 = combobox-match-count(cb) == 1 && combobox-match-label(cb, 0) == 'Banana'
+combobox-set-query(cb, 'z')
+t10 = combobox-match-count(cb) == 0 && combobox-highlight(cb) == -1
+combobox-set-query(cb, '')
+t11 = combobox-match-count(cb) == 3 && combobox-highlight(cb) == 0
+; 越界匹配下标 -> -1
+t12 = combobox-match(cb, -1) == -1 && combobox-match(cb, 9) == -1
+
+; ---- 4. 匹配反查 ----
+oc = combobox-option(cb, 1)
+t13 = combobox-match-index-of(cb, oc) == 1 && combobox-match-index-of(cb, cb) == -1
+
+; ---- 5. 高亮夹紧 / 移动 ----
+combobox-highlight-set(cb, -5)
+t14 = combobox-highlight(cb) == -1
+combobox-highlight-set(cb, 99)
+t15 = combobox-highlight(cb) == 2
+combobox-highlight-set(cb, 1)
+combobox-highlight-move(cb, -1)
+t16 = combobox-highlight(cb) == 0
+combobox-highlight-move(cb, -1)
+t17 = combobox-highlight(cb) == 0
+combobox-highlight-move(cb, 1)
+combobox-highlight-move(cb, 1)
+combobox-highlight-move(cb, 1)
+t18 = combobox-highlight(cb) == 2
+
+; ---- 6. 选中 ----
+combobox-choose(cb, 1)
+t19 = combobox-selected(cb) == 1 && combobox-query(cb) == 'Banana' && (!cmp-has(cb, F-OPEN))
+; 选中后查询 = 该选项文本，匹配表跟着变
+t20 = combobox-match-count(cb) == 1 && combobox-match-label(cb, 0) == 'Banana'
+; choose-match / apply
+combobox-set-query(cb, '')
+combobox-highlight-set(cb, 2)
+combobox-choose-match(cb, 2)
+t21 = combobox-selected(cb) == 2 && combobox-query(cb) == 'Cherry'
+combobox-set-query(cb, '')
+combobox-highlight-set(cb, 0)
+combobox-apply(cb)
+t22 = combobox-selected(cb) == 0 && combobox-query(cb) == 'Apple'
+
+; ---- 7. 编辑查询（复用输入框光标语义）----
+combobox-set-query(cb, '')
+combobox-insert(cb, 'a')
+t23 = combobox-query(cb) == 'a' && input-caret(cb) == 1 && combobox-match-count(cb) == 2
+combobox-insert(cb, 'n')
+t24 = combobox-query(cb) == 'an' && combobox-match-count(cb) == 1
+combobox-backspace(cb)
+t25 = combobox-query(cb) == 'a' && combobox-match-count(cb) == 2
+combobox-delete(cb)
+t26 = combobox-query(cb) == 'a' && input-caret(cb) == 1
+combobox-clear(cb)
+t27 = combobox-query(cb) == '' && input-caret(cb) == 0 && combobox-match-count(cb) == 3
+
+; ---- 8. disabled：写操作全无效 ----
+combobox-set-query(cb, 'ap')
+cmp-flag-set(cb, F-DISABLED)
+combobox-set-query(cb, 'zz')
+combobox-insert(cb, 'q')
+combobox-backspace(cb)
+combobox-delete(cb)
+combobox-clear(cb)
+t28 = combobox-query(cb) == 'ap' && combobox-match-count(cb) == 1
+cmp-flag-clear(cb, F-DISABLED)
+
+; ---- 9. 布局 / 测算 ----
+root = cmp-root()
+cmp-add-child(root, cb)
+combobox-set-query(cb, '')
+mw, mh = cs-measure(cb)
+t29 = mh == 4000 && mw == 6400
+; 展开：宽 = 最宽匹配项 + 2*PAD；'Banana'/'Cherry' 6 字 = 7200 -> 9600
+select-open(cb)
+mw2, mh2 = cs-measure(cb)
+t30 = mh2 == 4000 && mw2 == 9600
+; 展开后面板行高 = label 的 2400，行距 800
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+fx, fy, fw, fh = cs-rect(cb)
+t31 = fh == 4000
+t32 = cs-rect-at(fx, cs-add(cs-add(fy, 4000), 800), fw, 2400)
+t33 = cs-rect-at(fx, cs-add(cs-add(fy, 4000), 4000), fw, 2400)
+
+; ---- 10. 渲染：字段 / 箭头 / 面板 / 高亮 ----
+t34 = cs-has-text('v')
+t35 = cs-has-text('Apple') && cs-has-text('Banana') && cs-has-text('Cherry')
+ac = cs-theme(CS-TH-ACCENT)
+t36 = cs-rect-color-at(fx, cs-add(cs-add(fy, 4000), 800), fw, 2400, ac)
+; 收起：面板不可见（选项文本消失）
+select-close(cb)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+t37 = (!cs-has-text('Apple')) && cs-has-text('v')
+
+; ---- 11. 命中：展开时点选项 -> 选项句柄；收起 -> 不命中 ----
+select-open(cb)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+py1 = cs-add(cs-add(fy, 4000), 800)
+r1 = cs-hit(cb, cs-add(fx, 1000), cs-add(py1, 1200))
+t38 = r1 == combobox-option(cb, 0)
+py2 = cs-add(py1, 3200)
+r2 = cs-hit(cb, cs-add(fx, 1000), cs-add(py2, 1200))
+t39 = r2 == combobox-option(cb, 1)
+; 点字段 -> combobox 自身
+r3 = cs-hit(cb, cs-add(fx, 1000), cs-add(fy, 2000))
+t40 = r3 == cb
+select-close(cb)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+r4 = cs-hit(cb, cs-add(fx, 1000), cs-add(py1, 1200))
+t41 = r4 == -1
+
+all-ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30 && t31 && t32 && t33 && t34 && t35 && t36 && t37 && t38 && t39 && t40 && t41
+print('ctor={t1}{t2}{t3} add={t4}{t5}{t6}{t7}')
+print('query={t8}{t9}{t10}{t11}{t12} find={t13}')
+print('hl={t14}{t15}{t16}{t17}{t18} choose={t19}{t20}{t21}{t22}')
+print('edit={t23}{t24}{t25}{t26}{t27} dis={t28}')
+print('layout={t29}{t30}{t31}{t32}{t33}')
+print('paint={t34}{t35}{t36}{t37} hit={t38}{t39}{t40}{t41}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL COMBOBOX TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

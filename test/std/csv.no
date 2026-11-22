@@ -122,8 +122,8 @@ t-parse_empty_line = () {
 
 ; 驗證 parse-field 自指定位置逐欄解析，回傳欄位值與下一欄起點（守衛陣列元素下沉修復）
 t-parse-field-basic = () {
-    f, np = csv.parse-field('a,b,c', 0)
-    runner.str-eq(f, 'a', 'parse-field basic field == a')
+    F, np = csv.parse-field('a,b,c', 0)
+    runner.str-eq(F, 'a', 'parse-field basic field == a')
     runner.eq(np, 2, 'parse-field basic new-pos == 2')
     f2, np2 = csv.parse-field('a,b,c', 2)
     runner.str-eq(f2, 'b', 'parse-field second field == b')
@@ -135,15 +135,15 @@ t-parse-field-basic = () {
 
 ; 驗證 parse-field 解析帶引號欄位時剝除外層引號並回傳其後位置
 t-parse-field-quoted = () {
-    f, np = csv.parse-field('"hello,world"', 0)
-    runner.str-eq(f, 'hello,world', 'parse-field quoted == hello,world')
+    F, np = csv.parse-field('"hello,world"', 0)
+    runner.str-eq(F, 'hello,world', 'parse-field quoted == hello,world')
     runner.eq(np, 13, 'parse-field quoted new-pos == 13')
 }
 
 ; 驗證 parse-field 解析空輸入得空欄位且位置仍為 0
 t-parse-field-empty = () {
-    f, np = csv.parse-field('', 0)
-    runner.eq(f.len(), 0, 'parse-field empty field len == 0')
+    F, np = csv.parse-field('', 0)
+    runner.eq(F.len(), 0, 'parse-field empty field len == 0')
     runner.eq(np, 0, 'parse-field empty new-pos == 0')
 }
 
@@ -186,9 +186,9 @@ p11, f11 = runner.test('csv.parse-field-quoted', t-parse-field-quoted)
 p12, f12 = runner.test('csv.parse-field-empty', t-parse-field-empty)
 
 total = runner.summary()
-f = runner.failed-count()
+F = runner.failed-count()
 {
-    f > 0 -> exit(1)
+    F > 0 -> exit(1)
 
     -> exit(0)
 }

@@ -1,0 +1,236 @@
+; ============================================================================
+; noui 命令式「代码编辑器」测试（阶段 34）—— src/components.no
+;
+; 缺口：内核有 C-SCROLL + 虚拟列表（CMP-SCROLL-CONTENT / CMP-SCROLL-START），
+; 声明式侧有 dv-code-editor，但命令式侧没有对应的编辑器原语（阶段 34 之前）。
+; 阶段 34 补：
+;   - 文本模型 ED-LINES（全局单份行数组）+ ED-KEEP（删 / 插行的临时副本）。
+;   - 光标按句柄存 ED-L / ED-C；跟随标记 ED-SEEN；行标记 ED-ROW。
+;   - 滚动偏移的真源是 CMP-VALUE[根]（cs-layout 读它、滚轮也写它）。
+;   - cmp-editor-* 编辑原语（insert / backspace / enter / move / key /
+;     del-line / ins-line / clamp）。
+;   - cmp-win-range / cmp-editor-follow：可见窗口 + 光标跟随。
+;   - cmp-editor-row / cmp-editor-sync：行号 + 着色 token + 光标 -> 真组件树。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-editor tests/cmp-editor.no
+;       DYLD_LIBRARY_PATH=... SDL_VIDEODRIVER=dummy ./dist/cmp-editor
+; ============================================================================
+# /noui/src/components
+
+FG = 0xE8E8F0FF
+MUT = 0x888899FF
+ACC = 0x4A90E2FF
+OK = 0x5FC98AFF
+
+T4 = 'let x = 1\nif x > 0 { print("hi") }\n; comment\nreturn x'
+T10 = 'l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9'
+
+; 在 row 的子节点里找 text 相同的那个（返回句柄，没找到 -1）
+ed-find-text = (row i64, t str) (c i64) {
+    c = -1
+    i = 0
+    cnt = cmp-children(row)
+    !! {
+        (i >= cnt) -> { ** }
+        (c >= 0) -> { ** }
+        x = cmp-child(row, i)
+        (cmp-text(x) == t) -> { c = x }
+        i = ct-inc(i)
+    }
+    c = c
+}
+
+; 在 row 的子节点里找 kind 相同的第一个（返回句柄，没找到 -1）
+ed-find-kind = (row i64, k i64) (c i64) {
+    c = -1
+    i = 0
+    cnt = cmp-children(row)
+    !! {
+        (i >= cnt) -> { ** }
+        (c >= 0) -> { ** }
+        x = cmp-child(row, i)
+        (cmp-kind(x) == k) -> { c = x }
+        i = ct-inc(i)
+    }
+    c = c
+}
+
+; ---- 1. 构造：根是 C-SCROLL，pad / gap 是字面量 ----
+e = cmp-editor()
+k1 = cmp-kind(e) == C-SCROLL
+v1 = cmp-value(e) == 0
+s1 = cmp-value2(e) == 3200
+p1 = cmp-pad(e) == 1200
+g1 = cmp-gap(e) == 800
+
+; ---- 2. 文本模型 ----
+n1 = cmp-editor-set-text(e, T4) == 4
+l1 = cmp-editor-line(0) == 'let x = 1' && cmp-editor-line(3) == 'return x'
+j1 = cmp-editor-text() == T4
+cmp-editor-set-line(1, 'IF x')
+l2 = cmp-editor-line(1) == 'IF x' && cmp-editor-lines() == 4
+n2 = cmp-editor-set-text(e, '') == 1 && cmp-editor-line(0) == ''
+; 末尾空行保留（「在最后一行末尾按回车」才进得去）
+n3 = cmp-editor-set-text(e, 'a\n') == 2
+
+; ---- 3. 光标夹紧 ----
+cmp-editor-set-text(e, T4)
+cmp-editor-set-cur(e, 99, 0)
+c1 = cmp-editor-line-of(e) == 3 && cmp-editor-col-of(e) == 0
+cmp-editor-set-cur(e, 1, 999)
+c2 = cmp-editor-line-of(e) == 1 && cmp-editor-col-of(e) == 24
+cmp-editor-set-cur(e, -5, -5)
+c3 = cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 0
+cmp-editor-set-cur(e, 2, 4)
+c4 = cmp-editor-line-of(e) == 2 && cmp-editor-col-of(e) == 4
+
+; ---- 4. 插入 / 退格 / 回车 / 删行 / 插行 ----
+cmp-editor-set-text(e, 'abc\ndef')
+cmp-editor-set-cur(e, 0, 3)
+cmp-editor-backspace(e)
+b1 = cmp-editor-line(0) == 'ab' && cmp-editor-col-of(e) == 2
+cmp-editor-insert(e, 'Z')
+i1 = cmp-editor-line(0) == 'abZ' && cmp-editor-col-of(e) == 3
+cmp-editor-enter(e)
+en1 = cmp-editor-lines() == 3 && cmp-editor-line(0) == 'abZ' && cmp-editor-line(1) == '' && cmp-editor-line(2) == 'def'
+en2 = cmp-editor-line-of(e) == 1 && cmp-editor-col-of(e) == 0
+cmp-editor-insert(e, 'Q')
+i2 = cmp-editor-line(1) == 'Q' && cmp-editor-col-of(e) == 1
+cmp-editor-del-line(0)
+d1 = cmp-editor-lines() == 2 && cmp-editor-line(0) == 'Q' && cmp-editor-line(1) == 'def'
+cmp-editor-ins-line(0, 'X')
+d2 = cmp-editor-lines() == 3 && cmp-editor-line(0) == 'X' && cmp-editor-line(1) == 'Q' && cmp-editor-line(2) == 'def'
+; 行首退格 -> 并入上一行，光标落到拼接处
+cmp-editor-set-text(e, 'ab\ncd')
+cmp-editor-set-cur(e, 1, 0)
+cmp-editor-backspace(e)
+b2 = cmp-editor-lines() == 1 && cmp-editor-line(0) == 'abcd' && cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 2
+; 第一行行首退格 -> 什么都不做
+cmp-editor-set-text(e, 'ab')
+cmp-editor-set-cur(e, 0, 0)
+cmp-editor-backspace(e)
+b3 = cmp-editor-lines() == 1 && cmp-editor-line(0) == 'ab' && cmp-editor-col-of(e) == 0
+
+; ---- 5. 光标移动（跨行夹列）----
+cmp-editor-set-text(e, 'abc\nde')
+cmp-editor-set-cur(e, 0, 3)
+cmp-editor-move(e, 0, 1)
+m1 = cmp-editor-line-of(e) == 1 && cmp-editor-col-of(e) == 0
+cmp-editor-move(e, 0, -1)
+m2 = cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 3
+cmp-editor-move(e, 1, 0)
+m3 = cmp-editor-line-of(e) == 1 && cmp-editor-col-of(e) == 2
+cmp-editor-move(e, 1, 0)
+m4 = cmp-editor-line-of(e) == 1 && cmp-editor-col-of(e) == 2
+cmp-editor-move(e, -1, 0)
+m5 = cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 2
+cmp-editor-move(e, 0, -1)
+cmp-editor-move(e, 0, -1)
+cmp-editor-move(e, 0, -1)
+m6 = cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 0
+cmp-editor-move(e, 0, -1)
+m7 = cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 0
+
+; ---- 6. 键盘入口 ----
+cmp-editor-set-text(e, 'ab')
+cmp-editor-set-cur(e, 0, 2)
+cmp-editor-key(e, 113)
+y1 = cmp-editor-line(0) == 'abq' && cmp-editor-col-of(e) == 3
+cmp-editor-key(e, 8)
+y2 = cmp-editor-line(0) == 'ab' && cmp-editor-col-of(e) == 2
+cmp-editor-key(e, 9)
+y3 = cmp-editor-line(0) == 'ab    ' && cmp-editor-col-of(e) == 6
+cmp-editor-key(e, 13)
+y4 = cmp-editor-lines() == 2 && cmp-editor-line(1) == '' && cmp-editor-line-of(e) == 1
+cmp-editor-key(e, ED-K-UP)
+y5 = cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 0
+cmp-editor-key(e, ED-K-LEFT)
+y6 = cmp-editor-line-of(e) == 0 && cmp-editor-col-of(e) == 0
+
+; ---- 7. 可见窗口 [i0, i1)（viewh=8000 / rowh=2400 -> 行距 3200）----
+wr []i64 = with-len(2)
+cmp-win-range(0, 8000, 2400, 10, wr)
+w1 = ct-get(wr, 0) == 0 && ct-get(wr, 1) == 3
+cmp-win-range(6400, 8000, 2400, 10, wr)
+w2 = ct-get(wr, 0) == 1 && ct-get(wr, 1) == 5
+cmp-win-range(0, 8000, 2400, 0, wr)
+w3 = ct-get(wr, 0) == 0 && ct-get(wr, 1) == 0
+cmp-win-range(999999, 8000, 2400, 10, wr)
+w4 = ct-get(wr, 0) == 9 && ct-get(wr, 1) == 10
+
+; ---- 8. 光标跟随：光标动了才重排；滚轮推走不拽回 ----
+cmp-editor-set-text(e, T10)
+cmp-editor-set-cur(e, 0, 0)
+cmp-editor-set-off(e, 0)
+f1 = cmp-editor-follow(e, 8000, 2400) == 0
+cmp-editor-set-cur(e, 2, 0)
+f2 = cmp-editor-follow(e, 8000, 2400) == 0
+cmp-editor-set-cur(e, 5, 0)
+f3 = cmp-editor-follow(e, 8000, 2400) == 12400
+cmp-editor-set-off(e, 0)
+f4 = cmp-editor-follow(e, 8000, 2400) == 0
+cmp-editor-set-cur(e, 4, 0)
+f5 = cmp-editor-follow(e, 8000, 2400) == 9200
+cmp-editor-set-cur(e, 0, 0)
+f6 = cmp-editor-follow(e, 8000, 2400) == 0
+
+; ---- 9. sync：可见行 -> 真组件树 ----
+cmp-editor-set-text(e, T10)
+cmp-editor-set-cur(e, 0, 0)
+cmp-editor-set-off(e, 0)
+r1 = cmp-editor-sync(e, 8000, 4800, 2400, FG, MUT, ACC, OK)
+y1s = r1 == 3 && cmp-children(e) == 3
+y2s = cmp-scroll-content(e) == 33600
+y3s = cmp-scroll-start(e) == 0
+row0 = cmp-child(e, 0)
+y4s = cmp-lay(row0) == L-H && cmp-sh(row0) == 2400
+y5s = cmp-sw(cmp-child(row0, 0)) == 4800 && cmp-text(cmp-child(row0, 0)) == '0'
+old0 = row0
+r2 = cmp-editor-sync(e, 8000, 4800, 2400, FG, MUT, ACC, OK)
+y6s = r2 == 3 && cmp-children(e) == 3 && cmp-parent-of(old0) == -1 && ct-get(ED-ROW, old0) == 0
+row1 = cmp-child(e, 1)
+g1c = cmp-child(row1, 0)
+y7s = cmp-editor-row-of(e, g1c) == row1 && cmp-editor-row-of(e, row1) == row1 && cmp-editor-row-of(e, e) == -1
+cmp-editor-set-cur(e, 5, 0)
+r3 = cmp-editor-sync(e, 8000, 4800, 2400, FG, MUT, ACC, OK)
+y8s = r3 == 3 && cmp-scroll-start(e) == 3
+
+; ---- 10. 着色：关键字 / 字符串 / 注释 / 数字 / 光标 ----
+cmp-editor-set-text(e, T4)
+cmp-editor-set-cur(e, 0, 0)
+r4 = cmp-editor-sync(e, 60000, 4800, 2400, FG, MUT, ACC, OK)
+cr0 = cmp-child(e, 0)
+kw = ed-find-text(cr0, 'let')
+co1 = kw >= 0 && cmp-color(kw) == ACC
+st = ed-find-text(cmp-child(e, 1), '"hi"')
+co2 = st >= 0 && cmp-color(st) == OK
+nu = ed-find-text(cr0, '1')
+co3 = nu >= 0 && cmp-color(nu) == ED-C-NUM
+cr2 = cmp-child(e, 2)
+cm = ed-find-text(cr2, '; comment')
+co4 = cm >= 0 && cmp-color(cm) == MUT
+car = ed-find-kind(cr0, C-SEPARATOR)
+co5 = car >= 0 && cmp-sw(car) == ED-CARET-W && cmp-sh(car) == 2400 && cmp-color(car) == ACC
+co6 = ed-find-kind(cmp-child(e, 1), C-SEPARATOR) < 0
+co7 = r4 == 4
+
+; ---- 11. 两个句柄：文本共享、光标 / 行各自独立 ----
+e2 = cmp-editor()
+cmp-editor-set-cur(e, 2, 3)
+cmp-editor-set-cur(e2, 0, 0)
+z1 = cmp-editor-line-of(e) == 2 && cmp-editor-col-of(e) == 3 && cmp-editor-line-of(e2) == 0
+r5 = cmp-editor-sync(e2, 60000, 4800, 2400, FG, MUT, ACC, OK)
+r6 = cmp-editor-sync(e, 60000, 4800, 2400, FG, MUT, ACC, OK)
+z2 = r5 == 4 && r6 == 4 && cmp-children(e2) == 4 && cmp-children(e) == 4
+z3 = ed-find-kind(cmp-child(e2, 0), C-SEPARATOR) >= 0 && ed-find-kind(cmp-child(e, 2), C-SEPARATOR) >= 0
+
+all-ok = k1 && v1 && s1 && p1 && g1 && n1 && l1 && j1 && l2 && n2 && n3 && c1 && c2 && c3 && c4 && b1 && i1 && en1 && en2 && i2 && d1 && d2 && b2 && b3 && m1 && m2 && m3 && m4 && m5 && m6 && m7 && y1 && y2 && y3 && y4 && y5 && y6 && w1 && w2 && w3 && w4 && f1 && f2 && f3 && f4 && f5 && f6 && y1s && y2s && y3s && y4s && y5s && y6s && y7s && y8s && co1 && co2 && co3 && co4 && co5 && co6 && co7 && z1 && z2 && z3
+print('ctor={k1}{v1}{s1}{p1}{g1} text={n1}{l1}{j1}{l2}{n2}{n3}')
+print('clamp={c1}{c2}{c3}{c4} edit={b1}{i1}{en1}{en2}{i2}{d1}{d2}{b2}{b3}')
+print('move={m1}{m2}{m3}{m4}{m5}{m6}{m7} key={y1}{y2}{y3}{y4}{y5}{y6}')
+print('win={w1}{w2}{w3}{w4} follow={f1}{f2}{f3}{f4}{f5}{f6}')
+print('sync={y1s}{y2s}{y3s}{y4s}{y5s}{y6s}{y7s}{y8s}')
+print('color={co1}{co2}{co3}{co4}{co5}{co6}{co7} isolate={z1}{z2}{z3}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL EDITOR TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

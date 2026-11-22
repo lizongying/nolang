@@ -1,0 +1,166 @@
+; ============================================================================
+; noui 多行文本域测试（阶段 39）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录写着 C-TEXTAREA「multiline value」，但命令式侧它只有 cmp-textarea
+; 一个空壳构造 —— 没有行概念（input-set 塞多行也只按一行画，走的是单行 cs-paint-field），
+; 没有上下移光标，也没有视口。阶段 39 补：
+;   - 行几何（组件模块）：ta-line-count / -line-start / -line-len / -line-text /
+;     ta-caret-line / ta-caret-col / ta-move-up / ta-move-down。
+;     文本与光标仍走 CMP-TEXT + INP-CAR（阶段38 的字节下标），换行 / 退格 / 前删
+;     直接复用 input-insert / input-backspace / input-delete。
+;   - 视口：TA-OFF 每句柄首行行号 + ta-off / ta-set-off / ta-follow（夹紧到
+;     「最后 cap 行」）。
+;   - 渲染层新增 cs-paint-textarea（逐行画 + CS-CLIP 裁到视口 + 行内光标），
+;     C-TEXTAREA 改走它；cs-measure 的高已经是 2 * CS-BTN-H。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-textarea tests/cmp-textarea.no
+;       ./dist/cmp-textarea
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+; Scene 里是否有某段文本
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; ---- 1. 构造：kind / placeholder / 初始行数 ----
+ta = cmp-textarea('notes')
+t1 = cmp-kind(ta) == C-TEXTAREA
+t2 = input-placeholder(ta) == 'notes' && input-value(ta) == '' && input-caret(ta) == 0
+t3 = ta-line-count(ta) == 1
+
+; ---- 2. 行几何 ----
+input-set(ta, 'ab\ncd')
+t4 = ta-line-count(ta) == 2 && input-caret(ta) == 5
+t5 = ta-line-start(ta, 0) == 0 && ta-line-start(ta, 1) == 3
+t6 = ta-line-len(ta, 0) == 2 && ta-line-len(ta, 1) == 2
+t7 = ta-line-text(ta, 0) == 'ab' && ta-line-text(ta, 1) == 'cd'
+; 行号越界夹到最后一行
+t8 = ta-line-start(ta, 99) == 3 && ta-line-len(ta, 99) == 2
+
+; ---- 3. 光标的行 / 列 ----
+input-set-caret(ta, 0)
+t9 = ta-caret-line(ta) == 0 && ta-caret-col(ta) == 0
+input-set-caret(ta, 2)
+t10 = ta-caret-line(ta) == 0 && ta-caret-col(ta) == 2
+input-set-caret(ta, 3)
+t11 = ta-caret-line(ta) == 1 && ta-caret-col(ta) == 0
+input-set-caret(ta, 4)
+t12 = ta-caret-line(ta) == 1 && ta-caret-col(ta) == 1
+
+; ---- 4. 上下移：保持列 ----
+input-set-caret(ta, 1)
+ta-move-down(ta)
+t13 = ta-caret-line(ta) == 1 && ta-caret-col(ta) == 1
+ta-move-up(ta)
+t14 = ta-caret-line(ta) == 0 && ta-caret-col(ta) == 1
+
+; ---- 5. 列夹紧 + 首/末行不动 ----
+input-set(ta, 'abcdef\nxy')
+input-set-caret(ta, 5)
+ta-move-down(ta)
+t15 = ta-caret-line(ta) == 1 && ta-caret-col(ta) == 2
+ta-move-down(ta)
+t16 = ta-caret-line(ta) == 1 && ta-caret-col(ta) == 2
+ta-move-up(ta)
+input-set-caret(ta, 0)
+ta-move-up(ta)
+t17 = ta-caret-line(ta) == 0 && ta-caret-col(ta) == 0
+
+; ---- 6. 插入换行 = 多一行，光标落在新行行首 ----
+input-set(ta, 'ab\ncd')
+input-set-caret(ta, 1)
+input-insert(ta, '\n')
+t18 = input-value(ta) == 'a\nb\ncd' && ta-line-count(ta) == 3
+t19 = ta-caret-line(ta) == 1 && ta-caret-col(ta) == 0
+
+; ---- 7. 行首退格 = 合并上一行 ----
+input-set-caret(ta, 2)
+input-backspace(ta)
+t20 = input-value(ta) == 'ab\ncd' && ta-line-count(ta) == 2 && ta-caret-col(ta) == 1
+
+; ---- 8. 行尾前删 = 合并下一行 ----
+input-set-caret(ta, 2)
+input-delete(ta)
+t21 = input-value(ta) == 'abcd' && ta-line-count(ta) == 1 && ta-caret-col(ta) == 2
+
+; ---- 9. disabled：写操作全无效 ----
+ta2 = cmp-textarea('x')
+cmp-flag-set(ta2, F-DISABLED)
+input-insert(ta2, 'a')
+input-insert(ta2, '\n')
+input-backspace(ta2)
+input-delete(ta2)
+t22 = input-value(ta2) == '' && ta-line-count(ta2) == 1
+
+; ---- 10. 视口：读 / 写 / 夹紧 ----
+input-set(ta, 'a\nb\nc\nd')
+ta-set-off(ta, -5)
+t23 = ta-off(ta) == 0
+ta-set-off(ta, 2)
+t24 = ta-off(ta) == 2
+input-set-caret(ta, 0)
+ta-follow(ta, 2)
+t25 = ta-off(ta) == 0
+input-set-caret(ta, 7)
+ta-follow(ta, 2)
+t26 = ta-off(ta) == 2
+input-set-caret(ta, 5)
+ta-follow(ta, 2)
+t27 = ta-off(ta) == 2
+input-set-caret(ta, 0)
+ta-follow(ta, 2)
+t28 = ta-off(ta) == 0
+; cap 非正数按 1 处理
+input-set-caret(ta, 7)
+ta-follow(ta, 0)
+t29 = ta-off(ta) == 3
+
+; ---- 11. 渲染：视口内逐行画，滚出视口的不画 ----
+root = cmp-root()
+cmp-add-child(root, ta)
+input-set(ta, 'l0\nl1\nl2\nl3\nl4')
+input-set-caret(ta, 0)
+input-focus(ta, true)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+t30 = cs-has-text('l0') && cs-has-text('l1') && cs-has-text('l2')
+t31 = (!cs-has-text('l3')) && (!cs-has-text('l4'))
+; 光标行滚出视口后，视口跟着走：现在画 l2/l3/l4
+input-set-caret(ta, 12)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+t32 = cs-has-text('l4') && cs-has-text('l2') && (!cs-has-text('l0')) && (!cs-has-text('l1'))
+t33 = ta-off(ta) == 2
+
+; ---- 12. placeholder / 空文本光标 ----
+ta3 = cmp-textarea('empty here')
+cmp-add-child(root, ta3)
+input-focus(ta3, true)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+t34 = cs-has-text('empty here')
+
+all-ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30 && t31 && t32 && t33 && t34
+print('geom={t1}{t2}{t3}{t4}{t5}{t6}{t7}{t8}')
+print('caret={t9}{t10}{t11}{t12}{t13}{t14}{t15}{t16}{t17}')
+print('edit={t18}{t19}{t20}{t21}{t22}')
+print('view={t23}{t24}{t25}{t26}{t27}{t28}{t29}')
+print('paint={t30}{t31}{t32}{t33}{t34}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL TEXTAREA TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

@@ -48,8 +48,14 @@ deque.push-front = (val i64) {
     }
     idx = new-head
 
-    #{overflow=wrap}
-    idx < 0 -> idx = idx + .cap
+    idx < 0 -> {
+        #{overflow=wrap}
+        idx = idx + .cap: {
+            ok -> it
+
+            -> 0
+        }
+    }
 
     {
         .buf[idx] ?= val

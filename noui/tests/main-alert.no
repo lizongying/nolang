@@ -1,0 +1,189 @@
+; ============================================================================
+; noui 窗口 demo：提示族（阶段 44）—— message / alert / notification
+;
+; 流水线：app-init -> cmp-message / cmp-alert / cmp-notification
+;   -> 鼠标：点 alert 的关闭钮把 closable 关掉（'x' 消失）
+;   -> 键盘：l = message level 循环；t = alert level 循环；c = alert closable 开关；
+;     n = notification level 循环；, = 剩余时间 -1；. = 重置剩余时间；
+;     r = 全部重置；q / Esc 退出
+;   -> cs-layout / cs-paint（三者分别走 cs-paint-message / cs-paint-alert /
+;     cs-paint-notification；cs-measure 给三者各自的 intrinsic 尺寸）
+;   -> app-frame
+;
+; 这个 demo 是阶段44 的现场：message 一条左色条 + 字形 + 文本；
+; alert 多一个右端 'x'；notification 多一行剩余时间条（按 ntf-ratio 缩短）。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-alert.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+; ---- 计数（顶层标量）----
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 上一帧布局出来的矩形（命中要用）----
+g-al-x = 0
+g-al-y = 0
+g-al-w = 0
+g-al-h = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui alert')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui 阶段44: message / alert / notification')
+hint = cmp-label('click alert x to close; l msg level; t alert level; c closable; n ntf level; , drain; . reset; r reset; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+stat3 = cmp-label('')
+
+msg = cmp-message('message: info level, plain row')
+msg-set-level(msg, LV-INFO)
+al = cmp-alert('alert: danger, closable')
+msg-set-level(al, LV-ERR)
+alert-set-closable(al, 1)
+nt = cmp-notification('notification: warning, 5s timeout')
+msg-set-level(nt, LV-WARN)
+ntf-set-timeout(nt, 5)
+
+cmp-add-child(root, title)
+cmp-add-child(root, msg)
+cmp-add-child(root, al)
+cmp-add-child(root, nt)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：alert 的关闭钮 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == al) -> {
+            r = alert-hit(al, px, py, g-al-x, g-al-y, g-al-w, g-al-h)
+            (r == 1) -> {
+                alert-set-closable(al, 0)
+                cmp-set-text(al, 'alert: closed (closable off)')
+            }
+        }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; l：message level 循环 0..3
+        (k == 108) -> {
+            lv = msg-level(msg)
+            (lv >= 3) -> { lv = 0 }
+            (lv < 3) -> { lv = cs-inc(lv) }
+            msg-set-level(msg, lv)
+        }
+        ; t：alert level 循环 0..3
+        (k == 116) -> {
+            lv = msg-level(al)
+            (lv >= 3) -> { lv = 0 }
+            (lv < 3) -> { lv = cs-inc(lv) }
+            msg-set-level(al, lv)
+        }
+        ; n：notification level 循环 0..3
+        (k == 110) -> {
+            lv = msg-level(nt)
+            (lv >= 3) -> { lv = 0 }
+            (lv < 3) -> { lv = cs-inc(lv) }
+            msg-set-level(nt, lv)
+        }
+        ; c：alert closable 开关
+        (k == 99) -> {
+            c = alert-closable(al)
+            (c == 1) -> { alert-set-closable(al, 0) }
+            (c == 0) -> { alert-set-closable(al, 1) }
+        }
+        ; ,：剩余时间 -1
+        (k == 44) -> { ntf-set-remain(nt, cs-sub(ntf-remain(nt), 1)) }
+        ; .：剩余时间重置成总时长
+        (k == 46) -> { ntf-set-remain(nt, ntf-timeout(nt)) }
+        ; r：全部重置
+        (k == 114) -> {
+            msg-set-level(msg, LV-INFO)
+            msg-set-level(al, LV-ERR)
+            alert-set-closable(al, 1)
+            cmp-set-text(al, 'alert: danger, closable')
+            msg-set-level(nt, LV-WARN)
+            ntf-set-timeout(nt, 5)
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    ml = msg-level(msg)
+    alv = msg-level(al)
+    nlv = msg-level(nt)
+    ac = alert-closable(al)
+    to = ntf-timeout(nt)
+    rm = ntf-remain(nt)
+    ra = ntf-ratio(nt)
+    cmp-set-text(stat, 'msg level={ml}  alert level={alv} closable={ac}  ntf level={nlv}')
+    cmp-set-text(stat2, 'ntf timeout={to} remain={rm} ratio={ra}/10000')
+    cmp-set-text(stat3, 'click the x at the right end of the alert row')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    ; 存下本帧矩形，给下一帧的命中用
+    g-al-x, g-al-y, g-al-w, g-al-h = cs-rect(al)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+ml = msg-level(msg)
+alv = msg-level(al)
+ac = alert-closable(al)
+nlv = msg-level(nt)
+ra = ntf-ratio(nt)
+print('bye frames={fr} keys={kk} clicks={ck} msg-level={ml} alert-level={alv} closable={ac} ntf-level={nlv} ntf-ratio={ra}')
+(sc > 0) -> { print('alert render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

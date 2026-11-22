@@ -1,0 +1,344 @@
+; ============================================================================
+; noui 声明式「树」测试（阶段 31）—— src/dv.no
+;
+; 缺口：内核有 C-TREE 这个容器 kind（cmp-tree + cs-is-container），但**没有绘制分支**，
+; 声明式层只有一个空壳 dv-tree(key, parent)。命令式用法要应用自己维护
+; 「节点数组 + 展开集合 + 选中」并手写递归渲染 —— 层级、缩进、拍平、虚拟窗口
+; 全在应用层。
+; 阶段 31 补：
+;   - dv-tree-flat(S, openslot, n, kids0, kids, parents, out, deps)：
+;     把「展开态」这根状态轴作用到树上，得到**可见行表**（先序）+ 每行层级。
+;     迭代式先序（显式栈）—— 语言没有可用递归，深度也不该由数据决定。
+;     约束：每个节点的孩子落在连续下标块里（kids0 .. kids0+kids-1），
+;     也就是「先序序列 + 兄弟块相邻」，和 DOM 的扁平序列化同构。
+;   - dv-tree-row(...)：一行 = C-FORM + 「缩进 + 箭头」右对齐标签 + 文本标签。
+;     选中态三处一起变（flags / 行底色 / 文本色）；箭头只在有孩子时挂
+;     DV-A-TOGGLE(openslot + 节点)，行挂 DV-A-SET(selslot)。
+;   - dv-tree-view(...)：一行式树视图 = dv-scroll + dv-scroll-content +
+;     dv-win-range + 逐行 dv-tree-row。偏移真源是状态槽 offslot。
+;   - 新动作码 DV-A-FILL = 11：把 S[payload .. payload+value2) 全写成 value。
+;     「全部展开 / 全部收起」只是同一个动作的两个操作数，应用层不写循环。
+;
+; 场景钉住：
+;   Z 标记  ：可见行表顺序 / 层级 / 行结构（行 + 箭头 + 文本）/ 箭头宽度与文案 /
+;             叶子箭头无动作 / 行动作 = SET 选中槽 / 内容高 / 选中态三处一致
+;   Y 调和  ：换选中零结构操作，活树跟着状态变；展开态变化才增删节点
+;   D 派发  ：点箭头 = TOGGLE(openslot+节点)；点行 = SET(selslot)；
+;             FILL 一次写 13 个槽；dv-apply 的槽数回执
+;   E 端到端：布局 -> cs-hit 命中行 / 箭头 -> 派发 -> 归约 -> 重建 -> 活树跟随；
+;             滚动偏移 -> 只挂可见窗口那几行；全部展开后 13 行全在
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-tree.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = t-page()
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-tree tests ===')
+
+; ---- 数据：先序序列 + 兄弟块相邻（13 个节点）----
+; idx  text            kids0  kids  parent
+; 0    noui            1      4     -1
+; 1    src             5      3     0
+; 2    tests           8      3     0
+; 3    docs            11     2     0
+; 4    Makefile        -1     0     0
+; 5    dv.no           -1     0     1
+; 6    dv-app.no       -1     0     1
+; 7    components.no   -1     0     1
+; 8    dva-tree.no     -1     0     2
+; 9    dva-editor.no   -1     0     2
+; 10   main-dv.no      -1     0     2
+; 11   README.md       -1     0     3
+; 12   ARCHITECTURE.md -1     0     3
+; 注意：模块级 []str **字面量**在函数体里读出来是空的（语言只把这种绑定折成固定
+; 数组常量，且只在该绑定被当作常量折叠时生效，见 ARCHITECTURE §5.25）。树视图是
+; 函数、又要把它往下游传，所以这里必须用 with-len + 逐项写。
+T-TEXTS []str = with-len(13)
+T-TEXTS[0] = 'noui'
+T-TEXTS[1] = 'src'
+T-TEXTS[2] = 'tests'
+T-TEXTS[3] = 'docs'
+T-TEXTS[4] = 'Makefile'
+T-TEXTS[5] = 'dv.no'
+T-TEXTS[6] = 'dv-app.no'
+T-TEXTS[7] = 'components.no'
+T-TEXTS[8] = 'dva-tree.no'
+T-TEXTS[9] = 'dva-editor.no'
+T-TEXTS[10] = 'main-dv.no'
+T-TEXTS[11] = 'README.md'
+T-TEXTS[12] = 'ARCHITECTURE.md'
+T-K0 []i64 = [1, 5, 8, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+T-KN []i64 = [4, 3, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+T-PAR []i64 = [-1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3]
+T-N = 13
+T-KEY = 900
+T-VIEWH = 24000
+T-ROWH = 2400
+T-STEP = 3200
+
+D-OPEN = 4      ; 展开槽基址：S[D-OPEN+i] 非 0 = 节点 i 展开
+D-SEL = 20      ; 选中槽：节点号（-1 = 没选）
+D-OFF = 21      ; 滚动偏移槽
+
+ST []i64 = with-len(32)
+
+; 复位：全清 -> 根展开 + src 展开 + 没选中 + 偏移 0
+t-reset = () () {
+    i = 0
+    !! {
+        (i >= 32) -> { ** }
+        ST[i] = 0
+        i = dv-inc(i)
+    }
+    ST[D-OPEN] = 1
+    ST[D-OPEN + 1] = 1
+    ST[D-SEL] = -1
+    ST[D-OFF] = 0
+}
+
+t-page = () (p i64) {
+    p = dv-form(1, -1)
+    dv-tree-view(ST, 50, D-OFF, T-STEP, T-VIEWH, T-ROWH, T-N,
+        T-TEXTS, T-K0, T-KN, T-PAR, D-OPEN, D-SEL, T-KEY, p)
+}
+
+; 直接拍平（纯函数）：把可见行表收进调用方给的数组
+FL []i64 = with-len(0)
+DP []i64 = with-len(0)
+t-flat = () (m i64) {
+    FL.clear()
+    DP.clear()
+    m = dv-tree-flat(ST, D-OPEN, T-N, T-K0, T-KN, T-PAR, FL, DP)
+}
+
+; 把全部节点的展开槽写成 1（等价于 DV-A-FILL 的批量写法，这里直接写状态）
+t-open-all = () () {
+    i = 0
+    !! {
+        (i >= T-N) -> { ** }
+        ST[dv-add(D-OPEN, i)] = 1
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 Z：标记 —— 可见行表 / 行结构 / 缩进 / 箭头 / 选中态
+; ============================================================================
+t-reset()
+m0 = t-flat()
+r1 = m0 == 8
+r2 = FL[0] == 0 && FL[1] == 1 && FL[2] == 5 && FL[3] == 6 && FL[4] == 7 && FL[5] == 2 && FL[6] == 3 && FL[7] == 4
+r3 = DP[0] == 0 && DP[1] == 1 && DP[2] == 2 && DP[3] == 2 && DP[4] == 2 && DP[5] == 1 && DP[6] == 1 && DP[7] == 1
+
+dv-clear()
+pz = t-page()
+hz = dv-node-by-key(50)
+row0 = dv-node-by-key(T-KEY)
+row1 = dv-node-by-key(dv-add(T-KEY, TR-STRIDE))
+ar0 = dv-node-by-key(dv-add(T-KEY, 1))
+tx0 = dv-node-by-key(dv-add(T-KEY, 2))
+r4 = hz >= 0 && dv-kind(hz) == C-SCROLL && dv-key(hz) == 50 && dv-child-count(hz) == 8
+r5 = row0 >= 0 && dv-kind(row0) == C-FORM && dv-value(row0) == 0 && dv-child-count(row0) == 2
+r6 = dv-act-of(row0) == DV-A-SET && dv-act-payload(row0) == D-SEL
+r7 = ar0 >= 0 && dv-kind(ar0) == C-LABEL && dv-text(ar0) == TR-ARROW-OPEN && dv-sw-of(ar0) == TR-ARROW-W
+r8 = tx0 >= 0 && dv-text(tx0) == 'noui'
+; src 行：层级 1 -> 箭头槽 = 缩进 + 箭头宽；仍展开
+ar1 = dv-node-by-key(dv-add(dv-add(T-KEY, TR-STRIDE), 1))
+r9 = row1 >= 0 && dv-value(row1) == 1 && dv-text(ar1) == TR-ARROW-OPEN && dv-sw-of(ar1) == cs-add(TR-INDENT, TR-ARROW-W)
+; tests 行：收起 -> '>'，箭头挂 TOGGLE(展开槽 + 节点号)
+row2 = dv-node-by-key(dv-add(T-KEY, cs-mul(2, TR-STRIDE)))
+ar2 = dv-node-by-key(dv-add(dv-add(T-KEY, cs-mul(2, TR-STRIDE)), 1))
+r10 = dv-value(row2) == 2 && dv-text(ar2) == TR-ARROW-SHUT
+r11 = dv-act-of(ar2) == DV-A-TOGGLE && dv-act-payload(ar2) == dv-add(D-OPEN, 2)
+; 叶子（Makefile，可见行第 7 行）：箭头空、无动作，但宽度仍按层级给
+row4 = dv-node-by-key(dv-add(T-KEY, cs-mul(4, TR-STRIDE)))
+ar4 = dv-node-by-key(dv-add(dv-add(T-KEY, cs-mul(4, TR-STRIDE)), 1))
+r12 = dv-value(row4) == 4 && dv-text(ar4) == '' && dv-act-of(ar4) == 0 && dv-sw-of(ar4) == cs-add(TR-INDENT, TR-ARROW-W)
+; 内容高 = 行高和 + 间隙 + 两端内边距
+r13 = dv-scroll-content-of(hz) == 27200
+; 起始行 = 0（顺序排）
+r14 = dv-scroll-start-of(hz) == 0
+; 选中态：flags / 行底色 / 文本色三处一起变
+ST[D-SEL] = 3
+dv-clear()
+pz2 = t-page()
+row3 = dv-node-by-key(dv-add(T-KEY, cs-mul(3, TR-STRIDE)))
+tx3 = dv-node-by-key(dv-add(dv-add(T-KEY, cs-mul(3, TR-STRIDE)), 2))
+r15 = dv-flags(row3) == dv-on-sel() && dv-color(row3) == cs-theme(CS-TH-TRACK) && dv-color(tx3) == cs-theme(CS-TH-ACCENT)
+ST[D-SEL] = -1
+dv-clear()
+pz3 = t-page()
+row3b = dv-node-by-key(dv-add(T-KEY, cs-mul(3, TR-STRIDE)))
+r16 = dv-flags(row3b) == dv-on() && dv-color(row3b) == 0
+
+; ============================================================================
+; 场景 Y：调和 —— 只改选中 = 零结构操作；改进展 = 才增删节点
+; ============================================================================
+t-reset()
+root-y = cmp-root()
+dv-clear()
+py = t-page()
+ops-y = dv-render(root-y, py)
+r17 = ops-y == 1 + 8 * 3
+ly0 = dv-live-deep(root-y, T-KEY)
+ly1 = dv-live-deep(root-y, dv-add(T-KEY, TR-STRIDE))
+r18 = ly0 >= 0 && ly1 >= 0 && cmp-kind(ly0) == C-FORM && cmp-text(dv-live-deep(root-y, dv-add(T-KEY, 2))) == 'noui'
+; 换选中：同一个 key 集合 -> 零结构操作，活树颜色跟着状态
+ST[D-SEL] = 5
+dv-clear()
+py2 = t-page()
+ops-y2 = dv-render(root-y, py2)
+r19 = ops-y2 == 0 && cmp-color(dv-live-deep(root-y, dv-add(T-KEY, cs-mul(5, TR-STRIDE)))) == cs-theme(CS-TH-TRACK)
+; 收起 src：子树整块消失 -> 有结构操作
+ST[D-OPEN + 1] = 0
+dv-clear()
+py3 = t-page()
+ops-y3 = dv-render(root-y, py3)
+r20 = ops-y3 > 0 && dv-live-deep(root-y, dv-add(T-KEY, cs-mul(5, TR-STRIDE))) < 0
+; 再展开：节点回来
+ST[D-OPEN + 1] = 1
+dv-clear()
+py4 = t-page()
+ops-y4 = dv-render(root-y, py4)
+r21 = ops-y4 > 0 && dv-live-deep(root-y, dv-add(T-KEY, cs-mul(5, TR-STRIDE))) >= 0
+
+; ============================================================================
+; 场景 D：派发 + 归约 —— 箭头 TOGGLE / 行 SET / FILL 区间填充
+; ============================================================================
+t-reset()
+dv-clear()
+pd = t-page()
+a1, p1 = dv-dispatch(dv-add(dv-add(T-KEY, TR-STRIDE), 1))
+r22 = a1 == DV-A-TOGGLE && p1 == dv-add(D-OPEN, 1)
+a2, p2 = dv-dispatch(T-KEY)
+r23 = a2 == DV-A-SET && p2 == D-SEL
+; 点箭头：src 从展开变收起
+n1 = dv-apply(ST, dv-add(dv-add(T-KEY, TR-STRIDE), 1))
+r24 = n1 == 1 && ST[D-OPEN + 1] == 0
+; 点行：选中写节点号
+ST[D-SEL] = -1
+n2 = dv-apply(ST, T-KEY)
+r25 = n2 == 1 && ST[D-SEL] == 0
+; 叶子箭头没有动作 -> dispatch 回落到父行（命中测试返回最深，叶子箭头无 act 时
+; dv-dispatch 只认自己那个 key，所以这里直接验「叶子箭头 dispatch = 0」）
+a3, p3 = dv-dispatch(dv-add(dv-add(T-KEY, cs-mul(4, TR-STRIDE)), 1))
+r26 = a3 == 0 && p3 == 0
+; FILL：全部展开（value=1，13 个槽）
+dv-clear()
+pf = dv-form(1, -1)
+nf = dv-node(C-LABEL, 77, '', '', 0, 1, T-N, dv-on(), pf)
+dv-act(nf, DV-A-FILL, D-OPEN)
+t-reset()
+n3 = dv-apply(ST, 77)
+r27 = n3 == T-N && ST[D-OPEN] == 1 && ST[D-OPEN + 12] == 1
+mf = t-flat()
+r28 = mf == T-N
+; FILL：全部收起（value=0）-> 只剩根
+dv-clear()
+pf2 = dv-form(1, -1)
+nf2 = dv-node(C-LABEL, 78, '', '', 0, 0, T-N, dv-on(), pf2)
+dv-act(nf2, DV-A-FILL, D-OPEN)
+n4 = dv-apply(ST, 78)
+r29 = n4 == T-N && ST[D-OPEN] == 0 && ST[D-OPEN + 12] == 0
+mc = t-flat()
+r30 = mc == 1 && FL[0] == 0
+; FILL 的 value2 <= 0：不写、不崩、回执 0
+dv-clear()
+pf3 = dv-form(1, -1)
+nf3 = dv-node(C-LABEL, 79, '', '', 0, 1, 0, dv-on(), pf3)
+dv-act(nf3, DV-A-FILL, D-OPEN)
+t-reset()
+ST[D-OPEN] = 1
+n5 = dv-apply(ST, 79)
+r31 = n5 == 0 && ST[D-OPEN] == 1
+
+; ============================================================================
+; 场景 E：端到端 —— 命中 -> 派发 -> 归约 -> 重建 -> 活树 / 窗口跟随
+; ============================================================================
+t-reset()
+root-e = cmp-root()
+dv-clear()
+pe = t-page()
+ops-e = dv-render(root-e, pe)
+r32 = ops-e == 1 + 8 * 3
+cs-layout(root-e, 0, 0, 80000, 60000)
+; 命中 src 行正中
+lr = dv-live-deep(root-e, dv-add(T-KEY, TR-STRIDE))
+rx, ry, rw, rh = cs-rect(lr)
+hit = cs-hit(root-e, cs-add(rx, cs-div(rw, 2)), cs-add(ry, cs-div(rh, 2)))
+r33 = hit == lr
+; 点行 = 选中
+ha, hp = dv-dispatch(cmp-key(hit))
+ne = dv-apply(ST, cmp-key(hit))
+r34 = ha == DV-A-SET && hp == D-SEL && ne == 1 && ST[D-SEL] == 1
+dv-clear()
+pe2 = t-page()
+ops-e2 = dv-render(root-e, pe2)
+r35 = ops-e2 == 0 && cmp-color(lr) == cs-theme(CS-TH-TRACK)
+; 命中箭头（缩进 + 箭头槽的正中）-> TOGGLE
+la = dv-live-deep(root-e, dv-add(dv-add(T-KEY, TR-STRIDE), 1))
+ax, ay, aw, ah = cs-rect(la)
+hit2 = cs-hit(root-e, cs-add(ax, cs-div(aw, 2)), cs-add(ay, cs-div(ah, 2)))
+r36 = hit2 == la
+ha2, hp2 = dv-dispatch(cmp-key(hit2))
+ne2 = dv-apply(ST, cmp-key(hit2))
+r37 = ha2 == DV-A-TOGGLE && hp2 == dv-add(D-OPEN, 1) && ne2 == 1 && ST[D-OPEN + 1] == 0
+; 重建：src 的子树整块消失
+dv-clear()
+pe3 = t-page()
+ops-e3 = dv-render(root-e, pe3)
+r38 = ops-e3 > 0 && dv-live-deep(root-e, dv-add(T-KEY, cs-mul(5, TR-STRIDE))) < 0
+; 滚动：偏移 100px -> 可见窗口滑到第 3..7 行
+t-reset()
+root-s = cmp-root()
+dv-clear()
+ps = t-page()
+dv-render(root-s, ps)
+cs-layout(root-s, 0, 0, 80000, 60000)
+ST[D-OFF] = 10000
+dv-clear()
+ps2 = t-page()
+dv-render(root-s, ps2)
+hs = dv-live-deep(root-s, 50)
+r39 = hs >= 0 && cmp-children(hs) == 5
+; 首行 = 可见表第 3 项（节点 6 = dv-app.no），末行 = 节点 4
+fr = cmp-child(hs, 0)
+lr2 = cmp-child(hs, 4)
+r40 = fr >= 0 && lr2 >= 0 && cmp-key(fr) == dv-add(T-KEY, cs-mul(6, TR-STRIDE)) && cmp-key(lr2) == dv-add(T-KEY, cs-mul(4, TR-STRIDE))
+; 全部展开：13 行全在（内容高变大 -> 仍能滚）
+ST[D-OFF] = 0
+t-open-all()
+dv-clear()
+ps3 = t-page()
+dv-render(root-s, ps3)
+hs2 = dv-live-deep(root-s, 50)
+r41 = hs2 >= 0 && cmp-children(hs2) == 8 && cmp-scroll-max(hs2) > 0
+; 选中行在活树里的文本色
+ST[D-SEL] = 8
+dv-clear()
+ps4 = t-page()
+dv-render(root-s, ps4)
+lt = dv-live-deep(root-s, dv-add(dv-add(T-KEY, cs-mul(8, TR-STRIDE)), 2))
+r42 = lt >= 0 && cmp-color(lt) == cs-theme(CS-TH-ACCENT)
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}{r10}{r11}{r12}{r13}{r14}{r15}{r16}')
+print('Y live={r17}{r18}{r19}{r20}{r21}')
+print('D disp={r22}{r23}{r24}{r25}{r26}{r27}{r28}{r29}{r30}{r31}')
+print('E e2e={r32}{r33}{r34}{r35}{r36}{r37}{r38}{r39}{r40}{r41}{r42}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29 && r30 && r31 && r32 && r33 && r34 && r35 && r36 && r37 && r38 && r39 && r40 && r41 && r42
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-TREE TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-TREE TESTS FAILED')
+}

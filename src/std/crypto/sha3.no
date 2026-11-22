@@ -160,7 +160,11 @@ keccak-f1600 = (state []u64) {
             y <- [0..5): {
 
                 #{overflow=wrap}
-                rc u64 = KECCAK-RHO[x + 5 * y]
+                rc u64 = KECCAK-RHO[x + 5 * y]: {
+                    ok -> it
+
+                    -> 0
+                }
 
                 #{overflow=wrap}
                 val u64 = state[x + 5 * y]: {

@@ -1,0 +1,228 @@
+; ============================================================================
+; noui 会话族测试（阶段 45）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录第 53 / 54 行给 C-BUBBLE 承诺「text, position」、C-SPEECH 承诺
+; 「text, lang」，但命令式侧两者都只有一个构造函数 —— position / lang 都没有
+; API，渲染还落在通用 `rect + text` 兜底里。
+; 阶段 45 补：
+;   - bubble：CMP-VALUE = position（0 左 / 1 右），CMP-TEXT = 文本，
+;     CMP-COLOR = 气泡底色；bubble-pos / bubble-set-pos（夹紧 0/1）。
+;   - speech：CMP-TEXT = 文本，CMP-TEXT2 = 语言标签（空 = 不画标签行）；
+;     speech-lang / speech-set-lang。
+;   - 渲染层 cs-paint-bubble（底色方块 + 内边距里的文本 + 底边小尾巴方块）/
+;     cs-paint-speech（文本行 + 细分隔线 + 语言标签行），cs-measure 给两者
+;     各自的 intrinsic 尺寸。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-bubble tests/cmp-bubble.no
+;       ./dist/cmp-bubble
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-fill-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-FILL) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 1. bubble：position 读写与夹紧
+; ============================================================================
+b = cmp-bubble('hello')
+t1 = cmp-kind(b) == C-BUBBLE
+t2 = bubble-pos(b) == 0
+t3 = cmp-text(b) == 'hello'
+bubble-set-pos(b, 1)
+t4 = bubble-pos(b) == 1
+bubble-set-pos(b, -5)
+t5 = bubble-pos(b) == 0
+bubble-set-pos(b, 9)
+t6 = bubble-pos(b) == 1
+cmp-flag-set(b, F-DISABLED)
+bubble-set-pos(b, 0)
+t7 = bubble-pos(b) == 1
+cmp-flag-clear(b, F-DISABLED)
+t8 = bb-pad() == 1200 && bb-tail() == 1200
+
+; ============================================================================
+; 2. bubble 测算：宽 = 文本宽 + 左右内边距，高 = 行高 + 上下内边距
+; ============================================================================
+bw1, bh1 = cs-measure(b)
+t9 = bw1 == 6400 && bh1 == 4800
+b2 = cmp-bubble('hi')
+bw2, bh2 = cs-measure(b2)
+t10 = bw2 == 6400 && bh2 == 4800
+b3 = cmp-bubble('hello world')
+bw3, bh3 = cs-measure(b3)
+t11 = bw3 == 11200 && bh3 == 4800
+
+; ============================================================================
+; 3. bubble 渲染：position 0（左）
+; ============================================================================
+bubble-set-pos(b, 0)
+root = cmp-root()
+cmp-add-child(root, b)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+bx, by, bw, bh = cs-rect(b)
+t12 = cs-rect-color-at(bx, by, bw, bh) == 0x4A90E2FF
+t13 = cs-text-color-at('hello', cs-add(bx, 1200), cs-add(by, 1200)) == cs-theme(CS-TH-BG)
+t14 = cs-fill-color-at(cs-add(bx, 1200), cs-sub(cs-add(by, bh), 600), 1200, 1200) == 0x4A90E2FF
+
+; ============================================================================
+; 4. bubble 渲染：position 1（右）—— 文本右对齐、尾巴靠右
+; ============================================================================
+bubble-set-pos(b, 1)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+t15 = cs-text-color-at('hello', cs-sub(cs-sub(cs-add(bx, bw), 1200), 4000), cs-add(by, 1200)) == cs-theme(CS-TH-BG)
+t16 = cs-fill-color-at(cs-sub(cs-sub(cs-add(bx, bw), 1200), 1200), cs-sub(cs-add(by, bh), 600), 1200, 1200) == 0x4A90E2FF
+
+; ============================================================================
+; 5. speech：lang 读写
+; ============================================================================
+s = cmp-speech('hello')
+t17 = cmp-kind(s) == C-SPEECH
+t18 = speech-lang(s) == ''
+speech-set-lang(s, 'en')
+t19 = speech-lang(s) == 'en'
+cmp-flag-set(s, F-DISABLED)
+speech-set-lang(s, 'zh')
+t20 = speech-lang(s) == 'en'
+cmp-flag-clear(s, F-DISABLED)
+
+; ============================================================================
+; 6. speech 测算：宽取文本 / 标签里更宽的；有标签时多一行
+; ============================================================================
+sw1, sh1 = cs-measure(s)
+t21 = sw1 == 6400 && sh1 == 8100
+s2 = cmp-speech('hi')
+speech-set-lang(s2, 'zh-Hans-CN')
+sw2, sh2 = cs-measure(s2)
+t22 = sw2 == 10400 && sh2 == 8100
+s3 = cmp-speech('hello')
+sw3, sh3 = cs-measure(s3)
+t23 = sw3 == 6400 && sh3 == 4800
+
+; ============================================================================
+; 7. speech 渲染：文本行 + 细分隔线 + 语言标签行
+; ============================================================================
+root2 = cmp-root()
+cmp-add-child(root2, s)
+cs-clear()
+cs-layout(root2, 0, 0, 40000, 20000)
+cs-paint(root2)
+sx, sy, sw, sh = cs-rect(s)
+t24 = cs-rect-color-at(sx, sy, sw, sh) == 0x9AA0B4FF
+t25 = cs-text-color-at('hello', cs-add(sx, 1200), cs-add(sy, 1200)) == cs-theme(CS-TH-BG)
+t26 = cs-rect-color-at(cs-add(sx, 1200), cs-add(sy, 3600), cs-sub(sw, 2400), 100) == cs-theme(CS-TH-BG)
+t27 = cs-text-color-at('en', cs-add(sx, 1200), cs-add(sy, 4500)) == cs-theme(CS-TH-BG)
+
+; ============================================================================
+; 8. speech 无语言标签：不画分隔线、不画标签行
+; ============================================================================
+speech-set-lang(s, '')
+cs-clear()
+cs-layout(root2, 0, 0, 40000, 20000)
+cs-paint(root2)
+t28 = cs-rect-color-at(cs-add(sx, 1200), cs-add(sy, 3600), cs-sub(sw, 2400), 100) == -1 && cs-has-text('en') == false
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all-ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28
+
+print('bubble-api=...')
+print(t1)
+print(t2)
+print(t3)
+print(t4)
+print(t5)
+print(t6)
+print(t7)
+print(t8)
+print('bubble-measure=...')
+print(t9)
+print(t10)
+print(t11)
+print('bubble-render-left=...')
+print(t12)
+print(t13)
+print(t14)
+print('bubble-render-right=...')
+print(t15)
+print(t16)
+print('speech-api=...')
+print(t17)
+print(t18)
+print(t19)
+print(t20)
+print('speech-measure=...')
+print(t21)
+print(t22)
+print(t23)
+print('speech-render=...')
+print(t24)
+print(t25)
+print(t26)
+print(t27)
+print('speech-nolang=...')
+print(t28)
+print('---')
+print(all-ok)
+(all-ok) -> {
+    print('ALL BUBBLE TESTS PASSED')
+}
+(!all-ok) -> {
+    print('SOME TESTS FAILED')
+    exit(1)
+}

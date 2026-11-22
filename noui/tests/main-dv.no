@@ -1,5 +1,5 @@
 ; ============================================================================
-; noui 窗口端到端声明式 demo（阶段 10~22）—— src/dv.no 视图层 + src/dv-app.no 装配层
+; noui 窗口端到端声明式 demo（阶段 10~24）—— src/dv.no 视图层 + src/dv-app.no 装配层
 ;
 ; 与 tests/main-form.no 的对照：
 ;   main-form：命令式，顶层标量存状态，主循环直接 cmp-add-child / cmp-set-*，
@@ -83,6 +83,88 @@
 ;     dv-sync 把那棵子树摘掉（只算被摘掉的直接子节点 = 1 次操作）。
 ;     demo 左栏的 notify 按钮点一下，「saved」会在窗口中间停一会儿再自己消失。
 ;
+; 阶段 23 加的声明式滚动（几何进状态，视口裁剪进绘制）：
+;     dv-scroll(S, key, offslot, step, parent) 一次建出滚动容器：每帧把 S[offslot]
+;     读出来当组件 value，布局据此把内容整体上移（子节点不拉伸，保持自身高度），
+;     step 放 value2 当滚轮每格步长。偏移的真源是状态槽 —— 布局只做「夹紧后排版」，
+;     不写回状态；写回发生在事件侧：滚轮命中 -> 顺着父链找到滚动容器 -> 拿
+;     cmp-scroll-max（布局算出的「内容高 - 视口高」）夹紧 -> dva-set 回同一个槽。
+;     绘制层给滚动容器的每条指令带上裁剪矩形（cs-emit-clip），视口外的内容直接不画；
+;     命中层把视口外的点直接判不命中，视口内的点按全局坐标直接命中（子节点矩形本身
+;     已带 -off 偏移，不用再换算一次）。
+;     于是「滚到哪了」也是 UI = f(state)：页头那行 scrl=N 就是当前偏移。
+;
+; 阶段 24 加的声明式虚拟列表（可见窗口按需挂载）：
+;     dv-list-view(S, key, offslot, step, viewh, rowh, n, texts, vals, acts, pays,
+;                  key0, parent) 一行原语 = 滚动容器 + 定高 + 声明内容高 + 可见窗口：
+;     内容高 = n*rowh + (n-1)*间隙 + 2*内边距，经 dv-scroll-content 声明给布局，
+;     所以 cmp-scroll-max 不依赖「所有行都在场」；布局按 index*行距 定位可见行
+;     （首个挂载子的绝对行号由 dv-scroll-start 声明，否则会全被排到窗口顶部）。
+;     行 key = key0 + 绝对行号，所以滚动时同一行 key 不变 -> 组件对象跨滚动复用。
+;     demo 右栏顶部就是这条 20 行、视口 160px 的虚拟列表：内容 736px，
+;     任意时刻只挂可见的那 5 行。
+;
+; 阶段 26 加的声明式排序 / 分组（顺序也是状态）：
+;     dv-order-list 在 dv-list-view / dv-filter-list 之上加一个 mode 槽：
+;     0 源序 / 1 键升 / 2 键降 / 3 分组 / 4 分组降。整条链是纯函数：
+;       keys/grps -> dv-sort-map（**稳定**插入排序，出下标表）
+;                 -> dv-group-plan（下标表 -> 混合行表：token<0 = 组标题）
+;                 -> dv-win-range（混合行表里取可见窗口）
+;                 -> dv-repeat-plan（按混合行表挂行 / 挂标题）
+;     内容高按**混合行数**算，所以分组后「能滚多远」也跟着变（多出行标题）。
+;     行 key 仍是 key0 + 源行号（标题 = hkey0 + 组号），所以换模式时同一行
+;     还是同一个 key —— dv-sync 尽量复用，不相关的行不动。
+;     demo 右栏那条列表现在由「order」下拉驱动（dv-select-from 的第二次出场）：
+;     切到 group 会真的多出一行行标题，切回 source 标题消失，主循环一行没改。
+;
+; 阶段 27 加的声明式表单校验（规则也是数据）：
+;     dv-field = 标签 + 输入框 + （揭示后）一行错误文案，规则查的是**字符串状态槽**
+;     （dv-bind 的那份），所以「输入框里写了什么」和「合法吗」都在 UI = f(state) 里。
+;     规则表是扁平的：kinds / pars / msgs 逐条排，字段只存「从第几条开始、几条」，
+;     于是新增字段不必重排文案；dv-form-bad 把四个字段的违规数折成一个数。
+;     「揭示」是单独一根轴（D-VSHOW）：不合格时不自动蹦错误，点提交才揭示 ——
+;     归约器表达不了「按一次按钮改一个槽 + 计数」，所以提交走 DV-A-CLICK + 命令 id。
+;     demo 左栏顶部就是这条四字段表单；左栏同时改成可滚（dv-scroll），
+;     否则窗口 420px 高，表单会被后面的控件顶出视口。
+;
+; 阶段 28 加的声明式虚拟表格（一行 N 列 + 表头 + 虚拟滚动）：
+;     dv-table-rows = 把窗口内的混合行表挂成 C-GRID 行（每行 ncols 个单元格），
+;     列宽 / 表宽 / 行高全是**声明**的（不靠实测 —— 可见行只有几行，实测宽会飘）；
+;     dv-table-list = 表头 + 滚动容器 + 可见窗口的行，是 dv-order-list 的超集
+;     （ncols=1 且不分组时行为等价）。组标题在表格里是通栏的禁用行。
+;     demo 右栏顶部那条列表升级成两列（name / key）：表头不滚，行滚动，
+;     分组模式下多出来的「组标题」变成通栏行 —— 顺序链一点没变，还是
+;     keys/grps -> dv-sort-map -> dv-group-plan -> 混合行表。
+;
+; 阶段 29 加的声明式可拆面板（Dock：分栏位置也是状态）：
+;     dv-dock-split(key, slot, minw, maxw, gw, parent) = C-DOCK 横向容器 + 一条
+;     **间隙就是拖杆**的声明：gap = gw 是拖杆命中区，动作 DV-A-CHANGE + 载荷 = slot
+;     （左屏宽的真源），value / value2 = 夹紧界。两块面板之间的 gap 不属于任何子
+;     节点，命中测试落到容器自己身上（cs-hit 的自身矩形兜底），所以不需要新增节点
+;     种类、也不需要给布局引擎加分支 —— C-DOCK 只是一台通了电的横向容器。
+;     shim 补了左键抬起（type 6），拖拽才是完整的「按下抓住 / 移动 / 松开放手」三段；
+;     事件侧 dva-drag-down / -move / -up 做间隙判定 + 光标换算 + 夹紧 + 写回，
+;     主循环 t==2 先试拖杆，抓住了就不走点击路径。
+;     demo 里左右两栏就是这条缝拖开的：页头 dock=N 就是当前左屏宽，
+;     拖它 -> 写 D-DOCK -> 下一帧视图重建时 dv-size(lc, dk, 0) 跟着变。
+;     抹掉 L-H（dv-lay(dock, 0, gap, pad)）就是竖着拆，状态槽改存上屏高。
+;
+; 阶段 30 加的声明式代码编辑器（多行编辑 + 行号 + 语法高亮 + 光标）：
+;     dv-code-editor(S, key, tslot, offslot, step, viewh, rowh, gutter, key0, parent)
+;     一次建出「滚动容器 + 可见窗口的行」：文本是字符串状态 DV-BIND-T[tslot]，
+;     按 \n 切行（dv-edit-split 保留结尾空行），每行一个 C-FORM，行内 token 是
+;     着色的 C-LABEL（关键字 = 主色 / 字符串 = OK / 注释 = MUTED / 数字 = 琥珀），
+;     行号是右对齐的 C-LABEL，光标是定宽 2px 的 C-SEPARATOR。
+;     内容高 = n*行高 + (n-1)*间隙 + 2*内边距，经 dv-scroll-content 声明给布局，
+;     所以「能滚多远」不依赖所有行都在场；行 key = key0 + 绝对行号，滚动时同一行
+;     还是同一个 key —— 与虚拟列表 / 虚拟表格同一套路。
+;     光标是 dv 侧的 DV-EDIT-L / DV-EDIT-C[tslot]（按文本槽存，不按视图节点），
+;     滚轮偏移是应用状态槽 S[offslot]；dv-edit-follow 只在光标**动了**时重排窗口，
+;     所以滚轮把窗口推走时不会被弹回去。
+;     键盘喂字在 dv 侧（dv-edit-key）：装配层只负责「命中 -> 焦点 = 编辑器 key」，
+;     之后每个按键改写文本状态，下一帧视图重建出新的行 / token / 光标。
+;     demo 左栏底部就是这个编辑器，点进去直接敲 —— 'q' 也打得出来。
+;
 ; 阶段 16 加的声明式锚定浮层：
 ;     dv-overlay-anchor(node, anchor-key) = 叠加层 + 一个锚点 key —— 布局时按 key 反查
 ;              锚点活节点矩形，把浮层放在锚点下方（贴边时翻到上方）并夹紧在父矩形内。
@@ -103,7 +185,7 @@
 
 ; ---- 状态槽位：一帧状态集中在一个数组池里（规避标量全局写回缺陷）----
 ; 帧数与累计调和操作数不再占状态槽 —— dva-run 自己维护（dva-frames() / dva-ops()）。
-DEMO []i64 = with-len(17)
+DEMO []i64 = with-len(44)
 D-AGREE = 0      ; 勾选
 D-NOTIFY = 1     ; 开关
 D-COUNT = 2      ; 滑杆值
@@ -119,12 +201,33 @@ D-TAB = 11       ; 标签页当前页（0..2，点标题 = SET 本槽）
 D-SEL0 = 12      ; 多选列表的选中位（阶段 20）：D-SEL0+i 非 0 = 第 i 项选中
 D-SOPEN = 15     ; 下拉展开槽（阶段 21）：非 0 = 视图里那个 C-SELECT 是展开的
 D-TOAST = 16     ; 通知触发帧（阶段 22）：0 = 没有通知；非 0 = dv-frame() 触发于哪一帧
+D-SCROLL = 17    ; 滚动偏移（阶段 23）：右栏那条列表滚到哪了（0..内容高-视口高）
+D-SORT = 18      ; 排序 / 分组模式（阶段 26）：0 源序 1 键升 2 键降 3 分组 4 分组降
+D-SOPEN2 = 19    ; 排序下拉的展开槽（阶段 26）
+D-VSHOW = 20     ; 校验表单的「揭示」轴（阶段 27）：0 = 不显示错误行，1 = 显示
+D-VSUB = 21      ; 校验表单的成功提交次数（阶段 27）
+D-LSCROLL = 22   ; 左栏滚动偏移（阶段 27）：左栏改成 dv-scroll，内容超高可滚
+D-DOCK = 23      ; 可拆面板的左屏宽（阶段29）：两栏之间的那条缝拖到哪里
+D-ED-OFF = 24    ; 代码编辑器的滚动偏移（阶段30）：光标不动时滚轮推到的位置
+D-TOPEN = 25    ; 树的展开槽基址（阶段31）：DEMO[D-TOPEN+i] 非 0 = 节点 i 展开
+D-TSEL = 38     ; 树的选中槽（阶段31）：节点号（-1 = 没选）
+D-TOFF = 39     ; 树的滚动偏移槽（阶段31）
+D-PAL-OPEN = 40 ; 命令面板开关（阶段32）：1 = 视图里存在那个模态叠加层
+D-PAL-OFF = 41  ; 命令面板列表的滚动偏移（阶段32）
+D-PAL-CMD = 42  ; 命令面板最近执行的命令码（阶段32）
 
 ; 通知存活时长（帧）：dv-toast-alive 判活用的 ttl
 DEMO-TOAST-TTL = 180
 
 ; 受控输入的字符串状态槽（DV-BIND-T 的下标，与上面的 i64 状态池分开）
 D-TEXT = 0
+D-QUERY = 1       ; 搜索词（阶段 25）：右栏列表按它过滤，列表内容 = 它的函数
+D-VN = 2          ; 校验表单四个字段（阶段 27）：name / age / code / confirm
+D-VA = 3
+D-VC = 4
+D-VF = 5
+D-ED-TEXT = 6    ; 代码编辑器的文本（阶段30）：真源是这份字符串状态，光标在 DV-EDIT-*
+D-PAL-Q = 7      ; 命令面板的查询串（阶段32）：面板自己收键盘，直接往这份字符串状态里写
 
 DEMO-MAX-FRAMES = 900
 DEMO-MAX-ROWS = 3    ; 行数上限（add row 的 DELTA value2 也是它）
@@ -178,12 +281,265 @@ DEMO-SEL-PAYS[1] = 13
 DEMO-SEL-PAYS[2] = 14
 DEMO-SEL-VALS []i64 = with-len(0)
 
+; 虚拟列表（阶段 24）：文案数组 + 行数。dv-list-view 按偏移算出可见窗口，只挂那几行；
+; 内容高 = n*行高 + (n-1)*间隙 + 2*内边距，由 dv-scroll-content 声明给布局，
+; 所以「能滚多远」不依赖所有行都在场. items 不挂动作（纯展示）。
+DEMO-SCROLL []str = with-len(20)
+DEMO-SCROLL[0] = 'scroll 01'
+DEMO-SCROLL[1] = 'scroll 02'
+DEMO-SCROLL[2] = 'scroll 03'
+DEMO-SCROLL[3] = 'scroll 04'
+DEMO-SCROLL[4] = 'scroll 05'
+DEMO-SCROLL[5] = 'scroll 06'
+DEMO-SCROLL[6] = 'scroll 07'
+DEMO-SCROLL[7] = 'scroll 08'
+DEMO-SCROLL[8] = 'scroll 09'
+DEMO-SCROLL[9] = 'scroll 10'
+DEMO-SCROLL[10] = 'scroll 11'
+DEMO-SCROLL[11] = 'scroll 12'
+DEMO-SCROLL[12] = 'scroll 13'
+DEMO-SCROLL[13] = 'scroll 14'
+DEMO-SCROLL[14] = 'scroll 15'
+DEMO-SCROLL[15] = 'scroll 16'
+DEMO-SCROLL[16] = 'scroll 17'
+DEMO-SCROLL[17] = 'scroll 18'
+DEMO-SCROLL[18] = 'scroll 19'
+DEMO-SCROLL[19] = 'scroll 20'
+DEMO-SCROLL-N = 20
+DEMO-SCROLL-STEP = 400       ; 滚轮每格 4px
+DEMO-SCROLL-VIEW = 11200     ; 视口高 112px：让出表头行(36px) + order 下拉(40px) 的位置
+DEMO-SCROLL-ROWH = 2800      ; 行高 28px（dv-repeat-at 给每行定高）
+DEMO-SCROLL-VALS []i64 = with-len(0)
+
+; 排序 / 分组数据（阶段 26）：key 故意乱序（(i*7)%20），grp 前 10 行一组、后 10 行一组。
+; 于是「排序」真的改变行序，「分组」真的多出行标题 —— 演示这两种模式都不是摆设。
+DEMO-SCROLL-KEY []i64 = with-len(20)
+DEMO-SCROLL-KEY[0] = 0
+DEMO-SCROLL-KEY[1] = 7
+DEMO-SCROLL-KEY[2] = 14
+DEMO-SCROLL-KEY[3] = 1
+DEMO-SCROLL-KEY[4] = 8
+DEMO-SCROLL-KEY[5] = 15
+DEMO-SCROLL-KEY[6] = 2
+DEMO-SCROLL-KEY[7] = 9
+DEMO-SCROLL-KEY[8] = 16
+DEMO-SCROLL-KEY[9] = 3
+DEMO-SCROLL-KEY[10] = 10
+DEMO-SCROLL-KEY[11] = 17
+DEMO-SCROLL-KEY[12] = 4
+DEMO-SCROLL-KEY[13] = 11
+DEMO-SCROLL-KEY[14] = 18
+DEMO-SCROLL-KEY[15] = 5
+DEMO-SCROLL-KEY[16] = 12
+DEMO-SCROLL-KEY[17] = 19
+DEMO-SCROLL-KEY[18] = 6
+DEMO-SCROLL-KEY[19] = 13
+DEMO-SCROLL-GRP []i64 = with-len(20)
+DEMO-SCROLL-GRP[0] = 0
+DEMO-SCROLL-GRP[1] = 0
+DEMO-SCROLL-GRP[2] = 0
+DEMO-SCROLL-GRP[3] = 0
+DEMO-SCROLL-GRP[4] = 0
+DEMO-SCROLL-GRP[5] = 0
+DEMO-SCROLL-GRP[6] = 0
+DEMO-SCROLL-GRP[7] = 0
+DEMO-SCROLL-GRP[8] = 0
+DEMO-SCROLL-GRP[9] = 0
+DEMO-SCROLL-GRP[10] = 1
+DEMO-SCROLL-GRP[11] = 1
+DEMO-SCROLL-GRP[12] = 1
+DEMO-SCROLL-GRP[13] = 1
+DEMO-SCROLL-GRP[14] = 1
+DEMO-SCROLL-GRP[15] = 1
+DEMO-SCROLL-GRP[16] = 1
+DEMO-SCROLL-GRP[17] = 1
+DEMO-SCROLL-GRP[18] = 1
+DEMO-SCROLL-GRP[19] = 1
+DEMO-SCROLL-GNAME []str = with-len(2)
+DEMO-SCROLL-GNAME[0] = 'rows 01-10'
+DEMO-SCROLL-GNAME[1] = 'rows 11-20'
+
+; ---- 虚拟表格（阶段 28）：一行 N 列 ----
+; 列宽逐列声明（表宽 = 2*内边距 + 列宽和 + (列数-1)*间隙，由 dv-table-list 算），
+; 行文案是**行主序**的单元格表：cells[源行号*列数 + 列号]。第二列是键的文本。
+DEMO-TABLE-NC = 2
+DEMO-TABLE-COLW []i64 = with-len(2)
+DEMO-TABLE-COLW[0] = 10000
+DEMO-TABLE-COLW[1] = 9600
+DEMO-TABLE-HEADERS []str = with-len(2)
+DEMO-TABLE-HEADERS[0] = 'name'
+DEMO-TABLE-HEADERS[1] = 'key'
+DEMO-TABLE-CELLS []str = with-len(40)
+DEMO-TABLE-ACTS []i64 = with-len(0)
+DEMO-TABLE-PAYS []i64 = with-len(0)
+DEMO-TABLE-ROW-K = 93      ; 数据行 key 基数
+DEMO-TABLE-CELL-K = 900    ; 单元格 key 基数
+DEMO-TABLE-HDR-K = 920     ; 表头行 key
+DEMO-TABLE-GRP-K = 9000    ; 组标题行 key 基数
+
+; ---- 可拆面板（阶段 29）：两栏之间那条 8px 的缝就是拖杆 ----
+; 间隙不属于任何子节点，命中测试落到容器自己身上（cs-hit 的自身矩形兜底），
+; 事件侧 dva-drag-* 再按光标换算成「左屏宽」写回 D-DOCK。所以拖栏和滚动一样，
+; 都是「空间写进状态」—— 区别只是滚动沿内容轴、拖栏沿分栏轴。
+DEMO-DOCK-KEY = 95     ; 容器 key（拖杆命中它）
+DEMO-DOCK-GAP = 800     ; 拖杆命中区 8px（= CS-GAP）
+DEMO-DOCK-MIN = 12000  ; 左屏最小宽 120px
+DEMO-DOCK-MAX = 42000  ; 左屏最大宽 420px
+DEMO-DOCK-DEF = 22000  ; 左屏初始宽 220px
+
+; ---- 代码编辑器（阶段30）：文本 / 行号 / 着色 / 光标全是声明出来的 ----
+; dv-code-editor 不新增任何组件种类：文本按 \n 切行（dv-edit-split），每行一个
+; C-FORM，行内 token 是着色的 C-LABEL（关键字=主色 / 字符串=OK / 注释=MUTED /
+; 数字=琥珀），行号是右对齐的 C-LABEL，光标是定宽 2px 的 C-SEPARATOR，
+; 整体套在 dv-scroll 里做虚拟窗口（只挂可见的那几行）。
+; 文本的真源是字符串状态 DV-BIND-T[D-ED-TEXT]，光标是 DV-EDIT-L/C[D-ED-TEXT]，
+; 滚动偏移是 DEMO[D-ED-OFF] —— 三份状态都是既有池，零内核改动。
+; 键盘：点进编辑器 -> 装配层把「编辑器 key」记进 DVA-EDIT-FOCUS，之后每个按键
+; 走 dv-edit-key 改文本状态；'q' 因此打得出来（编辑器也算「正在敲字」）。
+DEMO-ED-KEY = 960     ; 编辑器根（C-SCROLL）的 key
+DEMO-ED-KEY0 = 9700   ; 行 key 基数（行 key = key0 + i*10000000）
+DEMO-ED-ROW = 2400    ; 行高 24px
+DEMO-ED-VIEW = 14400  ; 视口高 144px（5 行 + 4 间隙 + 2 内边距）
+DEMO-ED-GUTTER = 4800 ; 行号槽宽 48px
+DEMO-ED-STEP = 3200   ; 滚轮每格 32px
+DEMO-ED-CODE = 'let name = "noui"\n; a comment\nlet n = 42\nlet ok = 1'
+
+; ---- 声明式树（阶段31）：层级 / 缩进 / 拍平 / 虚拟窗口全是数据 ----
+; 数据模型是「先序序列 + 兄弟块相邻」：每个节点的孩子落在连续下标块里
+; （kids0 .. kids0+kids-1），所以展开 / 收起只是数组算术，拍平是迭代式先序。
+; 展开态的真源是状态槽 DEMO[D-TOPEN+i]，选中是 D-TSEL，滚动偏移是 D-TOFF。
+; 注意 []str 必须 with-len + 逐项写：模块级 []str **字面量**在函数体里读出来是
+; 空的（语言只把那种绑定折成常量固定数组），而树视图是函数、还要往下游传。
+DEMO-TREE-N = 13
+DEMO-TREE-KEY = 980     ; 树根（C-SCROLL）的 key
+DEMO-TREE-KEY0 = 9800   ; 行 key 基数（行 key = key0 + 节点号*10000000）
+DEMO-TREE-ROW = 2400    ; 行高 24px
+DEMO-TREE-VIEW = 16800  ; 视口高 168px
+DEMO-TREE-STEP = 3200   ; 滚轮每格 32px
+DEMO-TREE-TEXTS []str = with-len(13)
+DEMO-TREE-TEXTS[0] = 'noui'
+DEMO-TREE-TEXTS[1] = 'src'
+DEMO-TREE-TEXTS[2] = 'tests'
+DEMO-TREE-TEXTS[3] = 'docs'
+DEMO-TREE-TEXTS[4] = 'Makefile'
+DEMO-TREE-TEXTS[5] = 'dv.no'
+DEMO-TREE-TEXTS[6] = 'dv-app.no'
+DEMO-TREE-TEXTS[7] = 'components.no'
+DEMO-TREE-TEXTS[8] = 'dva-tree.no'
+DEMO-TREE-TEXTS[9] = 'dva-editor.no'
+DEMO-TREE-TEXTS[10] = 'main-dv.no'
+DEMO-TREE-TEXTS[11] = 'README.md'
+DEMO-TREE-TEXTS[12] = 'ARCHITECTURE.md'
+DEMO-TREE-K0 []i64 = [1, 5, 8, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+DEMO-TREE-KN []i64 = [4, 3, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+DEMO-TREE-PAR []i64 = [-1, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3]
+
+; 命令面板（阶段32）：和树同一套路 —— 文案数组 + 命令码数组 + 行 key 基数。
+; 行 key 按**源行号**（key0 + 源行号*100），所以查询过滤后同一行复用同一批组件。
+DEMO-PAL-N = 8
+DEMO-PAL-KEY = 99     ; 面板根（输入 100 / 列表 101）
+DEMO-PAL-KEY0 = 2000  ; 行 key 基数（行 key = key0 + 源行号*100，+1 = 文本）
+                        ; 避开编辑器（960 / 9700+）与树（980 / 9800+）的 key 段
+DEMO-PAL-TEXTS []str = with-len(8)
+DEMO-PAL-TEXTS[0] = 'new file'
+DEMO-PAL-TEXTS[1] = 'open file'
+DEMO-PAL-TEXTS[2] = 'save'
+DEMO-PAL-TEXTS[3] = 'save as'
+DEMO-PAL-TEXTS[4] = 'close tab'
+DEMO-PAL-TEXTS[5] = 'find in files'
+DEMO-PAL-TEXTS[6] = 'toggle terminal'
+DEMO-PAL-TEXTS[7] = 'quit'
+DEMO-PAL-ACTS []i64 = [101, 102, 103, 104, 105, 106, 107, 108]
+
+; 把「源行号 -> 两列文案」摊平成行主序（i64 -> str 用 to-str）
+dv-demo-fill-table = () () {
+    i = 0
+    !! {
+        (i >= DEMO-SCROLL-N) -> { ** }
+        DEMO-TABLE-CELLS[cs-mul(i, 2)] = DEMO-SCROLL[i]: {
+            ok -> it
+
+            -> ''
+        }
+        kv = DEMO-SCROLL-KEY[i]: {
+            ok -> it
+
+            -> 0
+        }
+        DEMO-TABLE-CELLS[cs-add(cs-mul(i, 2), 1)] = kv.to-str()
+        i = dv-inc(i)
+    }
+}
+dv-demo-fill-table()
+
+; 排序下拉选项（阶段 26）：文案数组，选中项 = DEMO[D-SORT]
+SORT-OPTS []str = with-len(5)
+SORT-OPTS[0] = 'source'
+SORT-OPTS[1] = 'key asc'
+SORT-OPTS[2] = 'key desc'
+SORT-OPTS[3] = 'group'
+SORT-OPTS[4] = 'group desc'
+
+; ---- 校验表单（阶段 27）：规则也是数据 ----
+; 四个字段 = 四张平行数组（slot / 规则基址 / 规则条数）+ 一张**全局**规则表。
+; 规则表扁平：kinds / pars / msgs 逐条排，字段只存「从第几条开始、几条」，
+; 所以文案表第 i 条就是第 i 条规则 —— 加字段不必重排文案，查错也不会错位。
+; 规则种类：REQ 非空 / MINL 最短 / MAXL 最长 / MINV 数值下限 / MAXV 数值上限 /
+;           EQ 等于另一槽 / HAS 含某子串。
+V-NF = 4
+V-SLOTS []i64 = with-len(4)
+V-SLOTS[0] = D-VN
+V-SLOTS[1] = D-VA
+V-SLOTS[2] = D-VC
+V-SLOTS[3] = D-VF
+V-BASES []i64 = with-len(4)
+V-BASES[0] = 0
+V-BASES[1] = 2
+V-BASES[2] = 5
+V-BASES[3] = 7
+V-NS []i64 = with-len(4)
+V-NS[0] = 2
+V-NS[1] = 3
+V-NS[2] = 2
+V-NS[3] = 1
+V-KINDS []i64 = with-len(8)
+V-KINDS[0] = DV-R-REQ
+V-KINDS[1] = DV-R-MINL
+V-KINDS[2] = DV-R-REQ
+V-KINDS[3] = DV-R-MINV
+V-KINDS[4] = DV-R-MAXV
+V-KINDS[5] = DV-R-REQ
+V-KINDS[6] = DV-R-HAS
+V-KINDS[7] = DV-R-EQ
+V-PARS []i64 = with-len(8)
+V-PARS[0] = 0
+V-PARS[1] = 2
+V-PARS[2] = 0
+V-PARS[3] = 18
+V-PARS[4] = 99
+V-PARS[5] = 0
+V-PARS[6] = 0
+V-PARS[7] = D-VN       ; EQ 比的是**另一个字符串槽**：confirm 必须等于 name（D-VN），
+                       ; 不是 0 —— 0 号槽是页头那个 'type here' 输入框。
+V-SPARS []str = with-len(1)
+V-SPARS[0] = 'X'
+V-MSGS []str = with-len(8)
+V-MSGS[0] = 'name required'
+V-MSGS[1] = 'name too short'
+V-MSGS[2] = 'age required'
+V-MSGS[3] = 'age must be >= 18'
+V-MSGS[4] = 'age must be <= 99'
+V-MSGS[5] = 'code required'
+V-MSGS[6] = 'code needs an X'
+V-MSGS[7] = 'confirm must match name'
+
 ; ---- 动作载荷：语义命令 id（DV-A-CLICK + 自定义 payload，应用层自定）----
 ; 绝大多数交互是状态归约（DV-A-SET / TOGGLE / DELTA），归约器表达不了的
 ; （一次写多个槽）才回落到这里，由一个显式命令 id 承担。
 DEMO-CMD-RESET = 1
 DEMO-CMD-ALL = 2     ; 全选（一次写 N 个槽，归约器表达不了 -> 显式命令）
 DEMO-CMD-NONE = 3    ; 清空
+DEMO-CMD-SUBMIT = 4  ; 校验表单提交（阶段 27）：不合格改揭示槽 + 合格计数，归约器表达不了
 
 ; 动作命中计数 +1（返回新值，便于打印）
 dv-demo-bump = () (n i64) {
@@ -221,6 +577,30 @@ dv-demo-opt = (i i64) (s str) {
 
         -> ''
     }
+}
+
+; 顺序表（阶段 26）：mode 槽 -> 混合行表。dv-order-list 内部就是这一套，
+; 阶段 28 抽成 demo 侧的纯函数，好让只吃 plan 的表格（dv-table-list）复用。
+dv-demo-order-plan = (S []i64) (plan []i64) {
+    mode = dv-arr-get(S, D-SORT)
+    idxs []i64 = with-len(0)
+    grp = 0
+    {
+        (mode == 1) -> { idxs = dv-sort-map(1, DEMO-SCROLL-N, DEMO-SCROLL-KEY) }
+        (mode == 2) -> { idxs = dv-sort-map(2, DEMO-SCROLL-N, DEMO-SCROLL-KEY) }
+        (mode == 3) -> {
+            idxs = dv-sort-map(1, DEMO-SCROLL-N, DEMO-SCROLL-GRP)
+            grp = 1
+        }
+        (mode == 4) -> {
+            idxs = dv-sort-map(2, DEMO-SCROLL-N, DEMO-SCROLL-GRP)
+            grp = 1
+        }
+        -> { idxs = dv-sort-map(0, DEMO-SCROLL-N, DEMO-SCROLL-KEY) }
+    }
+    out []i64 = with-len(0)
+    m = dv-group-plan(grp, idxs.len(), DEMO-SCROLL-GRP, idxs, out)
+    plan = out
 }
 
 ; ============================================================================
@@ -294,6 +674,64 @@ dv-demo-view = () (page i64) {
     tx = dv-bound(D-TEXT)
     ; 多选列表的选中数（阶段 20）：页头回显也由状态推导
     ns = dv-demo-sel-count()
+    ; 滚动偏移（阶段 23）：页头回显「滚到哪了」—— 几何也是状态
+    so = DEMO[D-SCROLL]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 排序模式（阶段 26）：页头回显「列表按什么顺序显示」—— 顺序也是状态
+    sr = DEMO[D-SORT]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 校验表单（阶段 27）：揭示轴 + 成功提交数 —— 页头那行 vsub= 也是状态的函数
+    vsh = DEMO[D-VSHOW]: {
+        ok -> it
+
+        -> 0
+    }
+    vs = DEMO[D-VSUB]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 左栏滚动偏移（阶段 27）：页头回显「左栏滚到哪了」—— 几何也是状态
+    lco = DEMO[D-LSCROLL]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 可拆面板（阶段 29）：页头回显「左屏多宽」—— 分栏位置也是状态
+    dk = DEMO[D-DOCK]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 代码编辑器（阶段30）：页头回显「编辑器滚到哪了」—— 几何也是状态
+    edo = DEMO[D-ED-OFF]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 树（阶段 31）：页头回显「选中了哪个节点 / 树滚到哪了」
+    tsl = DEMO[D-TSEL]: {
+        ok -> it
+
+        -> 0
+    }
+    tof = DEMO[D-TOFF]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 命令面板（阶段32）：页头回显「最近执行了哪条命令」—— 命令码也是状态
+    pc = DEMO[D-PAL-CMD]: {
+        ok -> it
+
+        -> 0
+    }
 
     page = dv-form(1, -1)
 
@@ -303,16 +741,45 @@ dv-demo-view = () (page i64) {
     dv-align(t, dv-align-center())
     inp = dv-input(3, 'type here', page)
     dv-bind(inp, D-TEXT, 0)            ; 受控输入：输入框文本 = DV-BIND-T[D-TEXT]
-    dv-label(15, format('agree={ag} notify={nt} count={ct}'), page)
-    dv-label(18, format('clicks={ck} rows={nl} typed={tx} dlg={dl} pop={pp} tip={tp} tab={tab} sel={ns} pick={ch} tst={tt}'), page)
+    dv-label(15, format('agree={ag} notify={nt} count={ct} vsub={vs}'), page)
+    dv-label(18, format('clicks={ck} rows={nl} typed={tx} dlg={dl} pop={pp} tip={tp} tab={tab} sel={ns} pick={ch} tst={tt} scrl={so} sort={sr} lsc={lco} dock={dk} edoff={edo} tsel={tsl} toff={tof} pal={pc}'), page)
 
     ; ---- 两栏：布局也是数据（dv-lay / dv-size 挂在视图节点上）----
-    ; 整行吃掉页头以下的剩余高度；左栏定宽 30000（dv-size），右栏吃掉剩余宽度
-    cols = dv-row(90, page)
-    dv-lay(cols, dv-lay-h-grow(), 1600, 0)
-    lc = dv-form(91, cols)
-    dv-size(lc, 30000, 0)
+    ; 阶段 29 把这一行从 dv-row 换成 dv-dock-split：两栏之间那条 8px 的间隙就是
+    ; 拖杆，按住它拖 = 写 D-DOCK（左屏宽），和滚动同一模式（空间写进状态）。
+    ; 整行吃掉页头以下的剩余高度（L-H | L-GROW），间隙即命中区。
+    ; 阶段 28 把右栏让给两列表格：左屏 22000 时右栏内容宽 252px，表格内容盒 228px，
+    ; 两列 100 + 96 正好放得下（表宽 = 24 + 100 + 96 + 8 = 228）。
+    cols = dv-dock-split(DEMO-DOCK-KEY, D-DOCK, DEMO-DOCK-MIN, DEMO-DOCK-MAX, DEMO-DOCK-GAP, page)
+    dv-lay(cols, dv-lay-h-grow(), DEMO-DOCK-GAP, 0)
+    ; 左栏改成滚动容器（阶段 27）：窗口只有 420px 高，左栏控件本来就装不下，
+    ; 加了校验表单更装不下。dv-scroll 的偏移真源是状态槽 D-LSCROLL ——
+    ; 滚轮命中后 dva-wheel 顺着父链找到本容器，拿 cmp-scroll-max 夹紧写回；
+    ; 布局把内容整体上移、绘制按视口裁剪，所以「滚到哪了」也是 UI = f(state)。
+    lc = dv-scroll(DEMO, 91, D-LSCROLL, 400, cols)
+    dv-size(lc, dk, 0)
     rc = dv-fill(92, cols)
+
+    ; ---- 校验表单（阶段 27）：规则是数据，校验是纯函数 ----
+    ; dv-field = 标签 + 输入框 + （揭示后）一行错误文案；规则查的是 dv-bind 的那份
+    ; 字符串状态，所以「输入框里写了什么」和「合法吗」都在 UI = f(state) 里。
+    ; 揭示是单独一根轴（D-VSHOW）：不合格不会自动蹦错误，点提交才揭示。
+    vf = dv-form(310, lc)
+    dv-field(200, 400, D-VN, 'name', 'your name', vsh, V-SPARS, V-KINDS, V-PARS, 0, 2, V-MSGS, vf)
+    dv-field(210, 410, D-VA, 'age', '18-99', vsh, V-SPARS, V-KINDS, V-PARS, 2, 3, V-MSGS, vf)
+    dv-field(220, 420, D-VC, 'code', 'contains X', vsh, V-SPARS, V-KINDS, V-PARS, 5, 2, V-MSGS, vf)
+    dv-field(230, 430, D-VF, 'confirm', 'same as name', vsh, V-SPARS, V-KINDS, V-PARS, 7, 1, V-MSGS, vf)
+    ; 状态行：违规数每帧重算（纯函数），提交数是状态槽 —— 两者都是状态的函数
+    vbd = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, V-NF)
+    vbv = DEMO[D-VSUB]: {
+        ok -> it
+
+        -> 0
+    }
+    dv-label(301, format('bad={vbd} submits={vbv}'), vf)
+    vsb = dv-node(C-BUTTON, 300, 'submit', '', 0, 0, 0, dv-on(), vf)
+    dv-variant(vsb, dv-var-primary())          ; 变体：主色
+    dv-act(vsb, DV-A-CLICK, DEMO-CMD-SUBMIT)
 
     ; 左栏：交互控件。下拉（阶段 21）：选项数组 / 选中 / 展开都是数据 ——
     ; dv-select-from 一次建出「字段 + 3 个常驻选项」：字段挂 TOGGLE(展开槽)，
@@ -389,7 +856,50 @@ dv-demo-view = () (page i64) {
     ; 每行挂 (DV-A-ITEM, 行号) —— 点任意一行 = 删掉这一行（平行数组 -> 列表项）
     dv-repeat-items(lc, 80, nl, C-LABEL, DEMO-ROWS, DEMO-ROW-VALS, DEMO-ROW-ACTS, DEMO-ROW-PAYS)
 
-    ; ---- 模态对话框（阶段 15）：开关 = 视图里有没有这个节点 ----
+    ; ---- 代码编辑器（阶段30）：多行编辑 + 行号 + 语法高亮 + 光标 ----
+    ; 一行原语 dv-code-editor：文本槽 / 偏移槽 / 行高 / 视口高 / 行号槽宽 /
+    ; 行 key 基数 + 父节点。文本按 \n 切行，每行一个 C-FORM，行内 token 是
+    ; 着色的 C-LABEL，行号右对齐，光标是定宽 2px 的 C-SEPARATOR，整体套在
+    ; dv-scroll 里只挂可见的那几行 —— 零内核改动（不新增组件种类）。
+    ; 点进去就能敲字（'q' 也打得出来，编辑器算「正在敲字」）；滚轮滚的是偏移槽，
+    ; 光标没动时窗口不会被拽回。演示文本就是一段 noui 代码，着色看得最清楚。
+    dv-label(88, 'editor', lc)
+    ed = dv-code-editor(DEMO, DEMO-ED-KEY, D-ED-TEXT, D-ED-OFF, DEMO-ED-STEP,
+        DEMO-ED-VIEW, DEMO-ED-ROW, DEMO-ED-GUTTER, DEMO-ED-KEY0, lc)
+    dv-size(ed, dk, DEMO-ED-VIEW)
+
+    ; ---- 声明式树（阶段31）：一行式树视图 = 滚动容器 + 可见窗口那几行 ----
+    ; 每行 = C-FORM + 「缩进 + 箭头」右对齐标签 + 文本标签：选中态三处一起变
+    ; （flags / 行底色 / 文本色），箭头只在有孩子时挂 DV-A-TOGGLE(D-TOPEN+节点)，
+    ; 行挂 DV-A-SET(D-TSEL)。展开 / 收起 / 选中 / 滚动四根轴全是既有状态池。
+    ; 「全部展开 / 全部收起」是新动作 DV-A-FILL：一个动作码 + 三个操作数
+    ; （起始槽 / 个数 / 值），归约器一次写 13 个槽 —— 应用层不写循环。
+    dv-label(89, 'tree', lc)
+    tr = dv-tree-view(DEMO, DEMO-TREE-KEY, D-TOFF, DEMO-TREE-STEP, DEMO-TREE-VIEW,
+        DEMO-TREE-ROW, DEMO-TREE-N, DEMO-TREE-TEXTS, DEMO-TREE-K0, DEMO-TREE-KN,
+        DEMO-TREE-PAR, D-TOPEN, D-TSEL, DEMO-TREE-KEY0, lc)
+    dv-size(tr, dk, DEMO-TREE-VIEW)
+    bea = dv-node(C-BUTTON, 86, 'expand all', '', 0, 1, DEMO-TREE-N, dv-on(), lc)
+    dv-variant(bea, dv-var-ghost())            ; 变体：幽灵
+    dv-act(bea, DV-A-FILL, D-TOPEN)
+    bca = dv-node(C-BUTTON, 87, 'collapse all', '', 0, 0, DEMO-TREE-N, dv-on(), lc)
+    dv-variant(bca, dv-var-ghost())            ; 变体：幽灵
+    dv-act(bca, DV-A-FILL, D-TOPEN)
+
+    ; ---- 命令面板（阶段32）：模态叠加层 + 查询输入 + 虚拟列表 ----
+    ; 开 = D-PAL-OPEN 为 1（和对话框 / 浮层同一个「开关 = 视图里有没有这个节点」套路）；
+    ; 面板开着的时候**键盘全归面板**（装配层每帧把 DVA-PAL-FOCUS 指向它），
+    ; 所以按 p 打开后直接敲字就在过滤，回车执行当前行，ESC 关掉。
+    ; 执行 = DV-A-RUN：value = 命令码写进 D-PAL-CMD，value2 = D-PAL-OPEN 写 0 ——
+    ; 一个动作同时「记住命令」和「关面板」，归约器一次写两个槽，应用层不写分支。
+    bpal = dv-node(C-BUTTON, 83, 'palette', '', 0, 1, 0, dv-on(), lc)
+    dv-variant(bpal, dv-var-primary())         ; 变体：主色
+    dv-act(bpal, DV-A-SET, D-PAL-OPEN)
+    dv-hotkey(bpal, 112, DV-A-SET, D-PAL-OPEN) ; 快捷键：p = 打开命令面板（无输入焦点时）
+    dv-command-palette(DEMO, DEMO-PAL-KEY, D-PAL-OPEN, D-PAL-Q, D-PAL-OFF, D-PAL-CMD,
+        DEMO-PAL-N, DEMO-PAL-TEXTS, DEMO-PAL-ACTS, DEMO-PAL-KEY0, page)
+
+    ; ---- 模态对话框（阶段15）：开关 = 视图里有没有这个节点 ----
     ; dv-on-overlay() 标出叠加层：不参与页头的流布局，改为在整个窗口矩形内居中；
     ; 命中时先于其它子节点、点不穿；绘制时最后画（盖在最上面）。
     ; 开 = D-DIALOG 为 1（b19 写的）；关 = ok / cancel 把同一个槽写回 0。
@@ -439,6 +949,27 @@ dv-demo-view = () (page i64) {
     ; 不是 hover 而是时间：建不建只看 dv-toast-alive，所以「过期」是下一帧视图重建的
     ; 自然结果 —— 槽里存的是触发帧，0 = 没有通知（帧计数从 1 起，不会假活）。
     dv-toast(DEMO, page, 78, D-TOAST, 'saved', DEMO-TOAST-TTL, 79)
+
+    ; ---- 虚拟表格（阶段 24~28）：表头 + 可见窗口的行，一行 N 列 ----
+    ; dv-table-list = dv-order-list 的「每行 N 列」版：表头（逐列定宽）挂在滚动容器
+    ; **外面**（不滚），容器里只挂可见窗口那几行，每行一个 C-GRID + ncols 个单元格。
+    ;   - 行序仍是那条纯函数链：mode 槽 -> dv-sort-map -> dv-group-plan -> 混合行表
+    ;     （dv-demo-order-plan），所以「order」下拉的 5 档照用，主循环一行没改；
+    ;   - 组标题在表格里是**通栏行**（占满表宽的禁用标签），数据行才是 N 列；
+    ;   - 内容高按混合行数 m 算，所以分组后「能滚多远」也跟着变大；
+    ;   - 表宽 = 2*内边距 + 列宽和 + (列数-1)*间隙，由 dv-table-list 自己算 ——
+    ;     列宽是声明出来的，不靠实测（可见行只有几行，实测宽会随窗口内容飘）；
+    ;   - 行 key = 93 + 源行号、单元格 key = 900 + 源行号*列数 + 列号、
+    ;     组标题 key = 9000 + 组号 —— 换模式 / 滚窗口都按源行号复用组件；
+    ;   - 偏移的真源仍是状态槽 DEMO[D-SCROLL]（写回在事件侧 dva-wheel）。
+    tplan = dv-demo-order-plan(DEMO)
+    dsc = dv-table-list(DEMO, 55, DEMO-TABLE-HDR-K, D-SCROLL, DEMO-SCROLL-STEP, DEMO-SCROLL-VIEW, DEMO-SCROLL-ROWH,
+        tplan, DEMO-TABLE-NC, DEMO-TABLE-COLW, DEMO-TABLE-HEADERS, DEMO-SCROLL-GNAME, DEMO-TABLE-CELLS,
+        DEMO-TABLE-ACTS, DEMO-TABLE-PAYS, DEMO-TABLE-ROW-K, DEMO-TABLE-CELL-K, DEMO-TABLE-GRP-K, CS-TH-MUTED, rc)
+
+    ; 排序模式下拉（阶段 26）：和左栏的 pick 同一个原语 dv-select-from ——
+    ; 选项数组 / 选中 / 展开都是数据，字段文案 = SORT-OPTS[DEMO[D-SORT]]。
+    dv-select-from(DEMO, rc, 56, D-SORT, D-SOPEN2, SORT-OPTS, 'order', 57)
 
     ; ---- 右栏：组件目录速写（命名构造器 + 新 flags 位）----
     ; ---- 多选列表（阶段 20）：列表项的 flags 也是数据 ----
@@ -536,6 +1067,7 @@ dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
         dva-set(S, D-CHOICE, 0)
         dva-set(S, D-SOPEN, 0)         ; 下拉收起（阶段 21）
         dva-set(S, D-TOAST, 0)         ; 通知立即过期（阶段 22：触发帧写回 0）
+        dva-set(S, D-SCROLL, 0)        ; 滚动回到顶（阶段 23）
         dva-set(S, D-SHOW, 0)
         dva-set(S, D-LIST, 2)
         dva-set(S, D-DIALOG, 0)        ; 关对话框 = 视图里不再建那个叠加层节点
@@ -547,6 +1079,31 @@ dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
         dva-set(S, dv-add(D-SEL0, 1), 0)
         dva-set(S, dv-add(D-SEL0, 2), 0)
         dv-bound-set(D-TEXT, '')       ; 字符串状态也在 reset 里清零（下一帧推回输入框）
+        dva-set(S, D-SORT, 0)          ; 排序回到源序（阶段 26）
+        dva-set(S, D-SOPEN2, 0)        ; 排序下拉收起（阶段 26）
+        dva-set(S, D-VSHOW, 0)         ; 校验表单收起错误行（阶段 27）
+        dva-set(S, D-VSUB, 0)          ; 提交计数清零（阶段 27）
+        dva-set(S, D-LSCROLL, 0)       ; 左栏滚回顶（阶段 27）
+        dv-bound-set(D-VN, '')         ; 四个字段重新置空（下一帧推回输入框）
+        dv-bound-set(D-VA, '')
+        dv-bound-set(D-VC, '')
+        dv-bound-set(D-VF, '')
+        dva-set(S, D-TOPEN, 1)         ; 树回到「根 + src 展开」（阶段31）
+        dva-set(S, dv-add(D-TOPEN, 1), 1)
+        ti = 2
+        !! {
+            (ti >= DEMO-TREE-N) -> { ** }
+            dva-set(S, dv-add(D-TOPEN, ti), 0)
+            ti = dv-inc(ti)
+        }
+        dva-set(S, D-TSEL, -1)         ; 树取消选中（阶段31）
+        dva-set(S, D-TOFF, 0)          ; 树滚回顶（阶段31）
+        dva-set(S, D-PAL-OPEN, 0)      ; 关命令面板（阶段32）
+        dva-set(S, D-PAL-CMD, 0)       ; 清空最近命令码（阶段32）
+        dv-bound-set(D-PAL-Q, '')      ; 查询串清空（下一帧推回输入框）
+        dv-pal-reset(DEMO-PAL-KEY)     ; 游标回 0（面板自己那本跨帧的账）
+        dva-set(S, D-ED-OFF, 0)        ; 编辑器滚回顶（阶段30）
+        dv-bound-set(D-ED-TEXT, DEMO-ED-CODE)   ; 文本也回到初始那段（下一帧推回视图）
         dv-demo-bump()
     }
 
@@ -571,6 +1128,32 @@ dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
         dv-demo-bump()
     }
 
+    ; 校验表单提交（阶段 27）：校验是纯函数 —— 不合格就揭示错误行（D-VSHOW = 1），
+    ; 合格就计数 + 弹通知。两件事一次做完，归约器表达不了 -> 显式命令（和 reset 同套路）。
+    (pay == DEMO-CMD-SUBMIT) -> {
+        bad = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, V-NF)
+        (bad > 0) -> {
+            dva-set(S, D-VSHOW, 1)
+        }
+        (bad == 0) -> {
+            vbv = S[D-VSUB]: {
+                ok -> it
+
+                -> 0
+            }
+            dva-set(S, D-VSUB, dv-inc(vbv))
+            dva-set(S, D-TOAST, dv-frame())   ; 复用通知：'saved' 也就是「表单已提交」
+        }
+        dv-demo-bump()
+    }
+
+    ; 命令面板执行（阶段32）：命令码已经由归约器写进 D-PAL-CMD（DV-A-RUN 一次写
+    ; 「命令码 + 关面板」两个槽）。归约器表达不了「顺带弹个通知」，所以留一条显式
+    ; 命令补上 —— 点行和回车走的是同一条 DV-A-RUN，都会经过这里。
+    (pay == D-PAL-CMD) -> {
+        dva-set(S, D-TOAST, dv-frame())
+    }
+
     ; 列表项点击（阶段 14）：pay = 行号 -> 删掉这一行。
     ; 行号由 dv-repeat-items 的 pays 平行数组给出，删除是纯数组操作（dv-rows-del）。
     ; 用专用的 DV-A-ITEM 与「reset」的 DV-A-CLICK 区分开。
@@ -587,13 +1170,17 @@ dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
         }
     }
 
-    ; 值变化：滑杆拖动（几何换算留在事件侧，语义仍在视图上）
+    ; 值变化：滑杆拖动（几何换算留在事件侧，语义仍在视图上）。
+    ; 只认 C-SLIDER —— 滚动容器也挂 DV-A-CHANGE（载荷是偏移槽），它的几何在装配层
+    ; 的 dva-wheel 里；不拦住的话点一下滚动空白就会把滑杆值写坏。
     (act == DV-A-CHANGE) -> {
         live = dv-live-deep(dva-root(), k)
         (live >= 0) -> {
-            rx, ry, rw, rh = cs-rect(live)
-            v = slider-value-at(live, dva-px(), rx, rw)
-            dva-set(S, D-COUNT, v)
+            (cmp-kind(live) == C-SLIDER) -> {
+                rx, ry, rw, rh = cs-rect(live)
+                v = slider-value-at(live, dva-px(), rx, rw)
+                dva-set(S, D-COUNT, v)
+            }
         }
     }
 }
@@ -615,11 +1202,22 @@ dv-theme-set(CS-TH-OK, 0x4CC9A0FF)
 dv-theme-set(CS-TH-DANGER, 0xE05560FF)
 
 ; 受控输入的字符串状态池：声明用几个槽（不清空，跨帧存在）
-dv-bind-t-ensure(1)
+dv-bind-t-ensure(8)
 dv-bound-set(D-TEXT, '')
+dv-bound-set(D-QUERY, '')
+dv-bound-set(D-VN, '')
+dv-bound-set(D-VA, '')
+dv-bound-set(D-VC, '')
+dv-bound-set(D-VF, '')
+dv-bound-set(D-ED-TEXT, DEMO-ED-CODE)   ; 代码编辑器（阶段30）的初始文本
+dv-bound-set(D-PAL-Q, '')               ; 命令面板（阶段32）初始无查询
 
 DEMO[D-COUNT] = 40
 DEMO[D-LIST] = 2
+DEMO[D-DOCK] = DEMO-DOCK-DEF
+DEMO[D-TOPEN] = 1             ; 树（阶段31）：根展开
+DEMO[D-TOPEN + 1] = 1         ; src 展开（其余节点默认收起）
+DEMO[D-TSEL] = -1             ; 没选中任何节点
 dva-run(DEMO, 'noui declarative', DEMO-MAX-FRAMES)
 
 fr = dva-frames()
@@ -641,4 +1239,49 @@ tst = DEMO[D-TOAST]: {
 
     -> 0
 }
-print('bye frames={fr} ops={ops} clicks={cks} rows={nlr} sel={nsr} pick={chr} tst={tst}')
+scr = DEMO[D-SCROLL]: {
+    ok -> it
+
+    -> 0
+}
+srt = DEMO[D-SORT]: {
+    ok -> it
+
+    -> 0
+}
+vsr = DEMO[D-VSUB]: {
+    ok -> it
+
+    -> 0
+}
+lsc = DEMO[D-LSCROLL]: {
+    ok -> it
+
+    -> 0
+}
+dkr = DEMO[D-DOCK]: {
+    ok -> it
+
+    -> 0
+}
+edor = DEMO[D-ED-OFF]: {
+    ok -> it
+
+    -> 0
+}
+tslr = DEMO[D-TSEL]: {
+    ok -> it
+
+    -> 0
+}
+tofr = DEMO[D-TOFF]: {
+    ok -> it
+
+    -> 0
+}
+pcr = DEMO[D-PAL-CMD]: {
+    ok -> it
+
+    -> 0
+}
+print('bye frames={fr} ops={ops} clicks={cks} rows={nlr} sel={nsr} pick={chr} tst={tst} scrl={scr} sort={srt} vsub={vsr} lsc={lsc} dock={dkr} edoff={edor} tsel={tslr} toff={tofr} pal={pcr}')

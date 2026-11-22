@@ -82,7 +82,6 @@ no docs <pkg>        # ドキュメント URL を表示（docs → homepage → 
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

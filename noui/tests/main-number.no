@@ -1,0 +1,190 @@
+; ============================================================================
+; noui 窗口 demo：数字输入 / 步进器 / 搜索框（阶段 40）
+;
+; 流水线：app-init -> cmp-number-input / cmp-stepper / cmp-search
+;   -> 点控件聚焦；点步进器左右钮 = 减 / 加；点搜索框右端 = 清除
+;   -> 键盘：数字输入可键入数字 + 回车提交（num-commit），上下键按步长增减；
+;     步进器方向键增减；搜索框自由文本 + 退格
+;   -> r 重置、q / ESC 退出
+;   -> cs-layout / cs-paint（三者各走 cs-paint-number-input / -stepper / -search）
+;   -> app-frame
+;
+; 退出：ESC / q / 帧数上限（NB-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-number.no
+; ============================================================================
+# /noui/src/app
+
+NB-AZ = 'abcdefghijklmnopqrstuvwxyz'
+NB-DIG = '0123456789'
+NB-MAX-FRAMES = 900
+
+; ---- 计数 / 焦点（顶层标量）----
+nb-frames = 0
+nb-keys = 0
+nb-clicks = 0
+nb-cur = -1
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui number')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui number: number input / stepper / search')
+hint = cmp-label('click to focus; stepper buttons +/-; search right end clears; r reset, q quit')
+stat = cmp-label('')
+
+num = cmp-number-input()
+cmp-set-sw(num, 20000)
+num-range(num, 0, 100)
+num-step-set(num, 5)
+num-set(num, 40)
+
+stp = cmp-stepper()
+cmp-set-sw(stp, 24000)
+num-range(stp, 0, 100)
+num-step-set(stp, 10)
+num-set(stp, 50)
+
+srch = cmp-search()
+cmp-set-sw(srch, 32000)
+
+cmp-add-child(root, title)
+cmp-add-child(root, num)
+cmp-add-child(root, stp)
+cmp-add-child(root, srch)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+input-focus(num, true)
+nb-cur = num
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：聚焦 / 按钮 / 清除 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+        (hit == num) -> {
+            input-focus(num, true)
+            nb-cur = num
+        }
+        (hit == stp) -> {
+            sx, sy, sw, sh = cs-rect(stp)
+            d = stepper-hit(stp, px, py, sx, sy, sw, sh)
+            (d == -1) -> { num-bump(stp, -1) }
+            (d == 1) -> { num-bump(stp, 1) }
+            input-focus(stp, true)
+            nb-cur = stp
+        }
+        (hit == srch) -> {
+            sx, sy, sw, sh = cs-rect(srch)
+            (search-hit(srch, px, py, sx, sy, sw, sh) == 1) -> { search-clear(srch) }
+            input-focus(srch, true)
+            nb-cur = srch
+        }
+        (hit != num) -> { input-focus(num, false) }
+        (hit != stp) -> { input-focus(stp, false) }
+        (hit != srch) -> { input-focus(srch, false) }
+        (hit != num && hit != stp && hit != srch) -> { nb-cur = -1 }
+        nb-clicks = cs-inc(nb-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 114) -> {
+            num-range(num, 0, 100)
+            num-step-set(num, 5)
+            num-set(num, 40)
+            num-range(stp, 0, 100)
+            num-step-set(stp, 10)
+            num-set(stp, 50)
+            search-clear(srch)
+        }
+        (nb-cur == num) -> {
+            (k == 8) -> { input-backspace(num) }
+            (k == 127) -> { input-delete(num) }
+            (k == ED-K-LEFT) -> { input-move(num, -1) }
+            (k == ED-K-RIGHT) -> { input-move(num, 1) }
+            (k == ED-K-UP) -> { num-bump(num, 1) }
+            (k == ED-K-DOWN) -> { num-bump(num, -1) }
+            (k == 13) -> { num-commit(num) }
+            ((k >= 48) && (k <= 57)) -> {
+                input-insert(num, NB-DIG.slice(cs-sub(k, 48), cs-sub(k, 47)))
+            }
+        }
+        (nb-cur == stp) -> {
+            (k == ED-K-UP) -> { num-bump(stp, 1) }
+            (k == ED-K-DOWN) -> { num-bump(stp, -1) }
+            (k == ED-K-LEFT) -> { num-bump(stp, -1) }
+            (k == ED-K-RIGHT) -> { num-bump(stp, 1) }
+            (k == 13) -> { num-commit(stp) }
+        }
+        (nb-cur == srch) -> {
+            (k == 8) -> { input-backspace(srch) }
+            (k == 127) -> { input-delete(srch) }
+            (k == ED-K-LEFT) -> { input-move(srch, -1) }
+            (k == ED-K-RIGHT) -> { input-move(srch, 1) }
+            (k == 32) -> { input-insert(srch, ' ') }
+            ((k >= 48) && (k <= 57)) -> {
+                input-insert(srch, NB-DIG.slice(cs-sub(k, 48), cs-sub(k, 47)))
+            }
+            ((k >= 97) && (k <= 122)) -> {
+                input-insert(srch, NB-AZ.slice(cs-sub(k, 97), cs-sub(k, 96)))
+            }
+        }
+        nb-keys = cs-inc(nb-keys)
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    nv = num-value(num)
+    ns = num-step(num)
+    sv = num-value(stp)
+    q = search-query(srch)
+    cmp-set-text(stat, 'num: {nv} (step {ns}) | stepper: {sv} | search: {q}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+    app-frame()
+    app-delay(16)
+
+    nb-frames = cs-inc(nb-frames)
+    (NB-MAX-FRAMES > 0) -> {
+        (nb-frames >= NB-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = nb-frames
+kk = nb-keys
+ck = nb-clicks
+nv = num-value(num)
+sv = num-value(stp)
+q = search-query(srch)
+print('bye frames={fr} keys={kk} clicks={ck} num={nv} stepper={sv} search={q}')
+(sc > 0) -> { print('number render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

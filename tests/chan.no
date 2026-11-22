@@ -259,11 +259,11 @@ t-two-waiters = () {
         co produce-one(c)
     }
     out.close()
-    total = 0
+    sum = 0
     i <- out: {
-        total = total + i
+        sum = sum + i
     }
-    runner.eq(total, 7, 'waiters: 兩個等待者裡只有一個拿到 7')
+    runner.eq(sum, 7, 'waiters: 兩個等待者裡只有一個拿到 7')
 }
 
 produce = (c chan[i64]) {

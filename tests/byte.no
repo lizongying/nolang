@@ -67,7 +67,11 @@ print('bs.len = {n}')
 j = 0
 c = 0
 j <- [0..bs.len()): {
-    c = bs[j]
+    c = bs[j]: {
+        ok -> it
+    
+        -> 0
+    }
     print('byte[{j}] = {c}')
 }
 

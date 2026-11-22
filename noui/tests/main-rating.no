@@ -1,0 +1,193 @@
+; ============================================================================
+; noui 窗口 demo：值域型展示控件（阶段 43）—— slider 下限 / rating / pagination / empty
+;
+; 流水线：app-init -> cmp-slider(20,100) / cmp-rating(5) / cmp-pagination(12) /
+;   cmp-empty(标题) + cmp-set-text2(描述)
+;   -> 鼠标：点星条设星数 / 点页码钮翻页 / 点滑条设值
+;   -> 键盘：a d = 星数 -1 / +1；z x = 上一页 / 下一页；s w = 滑条 -10 / +10；
+;     e = 空态描述开关；r = 重置；q / Esc 退出
+;   -> cs-layout / cs-paint（C-RATING 走 cs-paint-rating、C-PAGINATION 走
+;     cs-paint-pagination、C-EMPTY 走 cs-paint-empty、C-SLIDER 读 slider-min/max）
+;   -> app-frame
+;
+; 这个 demo 同时是阶段43 修的那条回归的现场：滑条下限 20（不是 0），
+; 拖到最左端 stat 应显示 20。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-rating.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+; ---- 计数（顶层标量）----
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 上一帧布局出来的矩形（命中要用）----
+g-sld-x = 0
+g-sld-y = 0
+g-sld-w = 0
+g-sld-h = 0
+g-rt-x = 0
+g-rt-y = 0
+g-rt-w = 0
+g-rt-h = 0
+g-pg-x = 0
+g-pg-y = 0
+g-pg-w = 0
+g-pg-h = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui rating')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui 阶段43: slider 下限 / rating / pagination / empty')
+hint = cmp-label('click stars/pager/slider; a d stars; z x page; s w slider; e empty desc; r reset; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+stat3 = cmp-label('')
+
+sld = cmp-slider(20, 100)
+cmp-set-value(sld, 40)
+rt = cmp-rating(5)
+rating-set(rt, 3)
+pg = cmp-pagination(12)
+em = cmp-empty('nothing here')
+cmp-set-text2(em, 'try again')
+
+cmp-add-child(root, title)
+cmp-add-child(root, sld)
+cmp-add-child(root, rt)
+cmp-add-child(root, pg)
+cmp-add-child(root, em)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：星条 / 页码钮 / 滑条 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == rt) -> {
+            r = rating-hit(rt, px, py, g-rt-x, g-rt-y, g-rt-w, g-rt-h)
+            (r >= 0) -> { rating-set(rt, cs-inc(r)) }
+        }
+        (hit == pg) -> {
+            r = pagination-hit(pg, px, py, g-pg-x, g-pg-y, g-pg-w, g-pg-h)
+            (r == 0) -> { pagination-prev(pg) }
+            (r == 2) -> { pagination-next(pg) }
+        }
+        (hit == sld) -> {
+            v = slider-value-at(sld, px, g-sld-x, g-sld-w)
+            slider-set(sld, v)
+        }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a / d：星数 -1 / +1
+        (k == 97) -> { rating-set(rt, cs-sub(rating-value(rt), 1)) }
+        (k == 100) -> { rating-set(rt, cs-add(rating-value(rt), 1)) }
+        ; z / x：上一页 / 下一页
+        (k == 122) -> { pagination-prev(pg) }
+        (k == 120) -> { pagination-next(pg) }
+        ; s / w：滑条 -10 / +10（夹在 20..100）
+        (k == 115) -> { slider-set(sld, cs-sub(slider-value(sld), 10)) }
+        (k == 119) -> { slider-set(sld, cs-add(slider-value(sld), 10)) }
+        ; e：空态描述开关
+        (k == 101) -> {
+            d = cmp-text2(em)
+            (d.len() > 0) -> { cmp-set-text2(em, '') }
+            (d.len() == 0) -> { cmp-set-text2(em, 'try again') }
+        }
+        ; r：重置
+        (k == 114) -> {
+            cmp-set-value(sld, 40)
+            rating-set(rt, 3)
+            pagination-set(pg, 1)
+            cmp-set-text2(em, 'try again')
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    sv = slider-value(sld)
+    rv = rating-value(rt)
+    rm = rating-max(rt)
+    pv = pagination-page(pg)
+    pt = pagination-total(pg)
+    pl = pagination-label(pg)
+    dl = cmp-text2(em).len()
+    ; 滑条下限回归的现场：按 intrinsic 宽取左 / 中 / 右三个采样点
+    mw, mh = cs-measure(sld)
+    la = slider-value-at(sld, 0, 0, mw)
+    lm = slider-value-at(sld, cs-div(mw, 2), 0, mw)
+    lr = slider-value-at(sld, mw, 0, mw)
+    cmp-set-text(stat, 'slider={sv} (min 20 max 100)  rating={rv}/{rm}  page={pv}/{pt}')
+    cmp-set-text(stat2, 'pager label={pl}  empty desc len={dl}')
+    cmp-set-text(stat3, 'slider at-left={la} at-mid={lm} at-right={lr}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    ; 存下本帧矩形，给下一帧的命中用
+    g-sld-x, g-sld-y, g-sld-w, g-sld-h = cs-rect(sld)
+    g-rt-x, g-rt-y, g-rt-w, g-rt-h = cs-rect(rt)
+    g-pg-x, g-pg-y, g-pg-w, g-pg-h = cs-rect(pg)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+sv = slider-value(sld)
+rv = rating-value(rt)
+rm = rating-max(rt)
+pv = pagination-page(pg)
+pt = pagination-total(pg)
+pl = pagination-label(pg)
+print('bye frames={fr} keys={kk} clicks={ck} slider={sv} rating={rv}/{rm} page={pv}/{pt} label={pl}')
+(sc > 0) -> { print('rating render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

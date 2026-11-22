@@ -1,0 +1,277 @@
+; ============================================================================
+; noui 声明式「命令面板」测试（阶段 32）—— src/dv.no + src/dv-app.no
+;
+; 缺口：声明式层有 dv-command(key, parent) 这个空壳（只有一个 C-COMMAND 节点），
+; 没有「搜索 -> 过滤 -> 键盘导航 -> 执行」这整套。命令式用法要应用自己维护
+; 查询串、命中表、游标、滚动偏移，并手写键盘分流。
+; 阶段 32 补：
+;   - dv-command-palette(S, key, openslot, qslot, offslot, cmdslot, n, texts,
+;     acts, key0, parent)：一行式面板 = 模态叠加层 + 受控查询输入 + 虚拟列表 +
+;     逐行（行 + 文本）。命中表由 dv-filter-map 给，行 key 按**源行号**，
+;     游标行带 dv-on-sel()。
+;   - 新动作码 DV-A-RUN = 12：S[payload] = value（命令码），S[value2] = 0（关面板）。
+;     点行 = 执行 + 收起，两个槽一次写完。
+;   - dv-pal-* 一族：面板 key 登记 / 哪个面板开着 / 游标移动 / 游标行 key /
+;     关面板 / 查询串追加 / 查询串退格。面板状态按**面板 key**存（跨帧存活）。
+;   - 装配层：DVA-PAL-FOCUS + dva-pal-find + dva-pal-keyboard。键盘优先级
+;     面板 > 输入 > 编辑器 > 全局 —— 面板开着时整段键盘归它。
+;
+; 场景钉住：
+;   Z 标记  ：关着不建子树 / 开着是模态叠加层 / 输入绑定查询槽 / 行 key 按源行号 /
+;             行动作 = RUN(cmdslot) 且 value = 命令码、value2 = 开关槽 /
+;             内容高 / 游标行高亮 / 哪个面板开着
+;   Y 调和  ：开->关有结构操作；查询过滤才增删；游标移动零结构操作
+;   D 派发  ：行 = RUN；dv-apply 写命令码 + 清开关槽（回执 2）；空命中游标 -1
+;   E 端到端：布局 -> cs-hit 命中行 -> 派发 -> 归约 -> 活树；
+;             dva-pal-keyboard 的上/下/回车/ESC/退格/可打印字符
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-palette.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = p-page()
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = S
+    _ = act
+    _ = nw
+    LAST-K[0] = k
+    LAST-PAY[0] = pay
+}
+LAST-K []i64 = [0]
+LAST-PAY []i64 = [0]
+
+print('=== dva-palette tests ===')
+
+; ---- 数据：8 条命令（源行号 -> 文案 / 命令码）----
+; 注意：模块级 []str **字面量**在函数体里读出来是空的（见 ARCHITECTURE §5.25），
+; 所以文案表必须 with-len + 逐项写。
+P-TEXTS []str = with-len(8)
+P-TEXTS[0] = 'new file'
+P-TEXTS[1] = 'open file'
+P-TEXTS[2] = 'save'
+P-TEXTS[3] = 'save as'
+P-TEXTS[4] = 'close tab'
+P-TEXTS[5] = 'find in files'
+P-TEXTS[6] = 'toggle terminal'
+P-TEXTS[7] = 'quit'
+P-ACTS []i64 = [101, 102, 103, 104, 105, 106, 107, 108]
+P-N = 8
+
+P-KEY = 300       ; 面板根 key（输入 301 / 列表 302）
+P-KEY0 = 3000     ; 行 key 基数：P-KEY0 + 源行号*100（+1 = 文本）
+
+D-OPEN = 8        ; 开关槽：非 0 = 面板开着
+D-OFF = 9         ; 列表滚动偏移槽
+D-CMD = 10        ; 命令码槽
+D-Q = 60          ; 查询串（字符串槽）
+
+ST []i64 = with-len(64)
+
+p-reset = () () {
+    i = 0
+    !! {
+        (i >= 64) -> { ** }
+        ST[i] = 0
+        i = dv-inc(i)
+    }
+    dv-bind-t-ensure(64)
+    dv-bound-set(D-Q, '')
+    dv-pal-reset(P-KEY)
+}
+
+p-page = () (p i64) {
+    p = dv-form(1, -1)
+    dv-command-palette(ST, P-KEY, D-OPEN, D-Q, D-OFF, D-CMD, P-N,
+        P-TEXTS, P-ACTS, P-KEY0, p)
+}
+
+; ============================================================================
+; 场景 Z：标记 —— 关着不建 / 开着结构 / 行 key / 动作 / 内容高 / 游标
+; ============================================================================
+p-reset()
+dv-clear()
+pz0 = p-page()
+r1 = pz0 >= 0 && dv-node-by-key(P-KEY) < 0 && dv-pal-open-key(ST) == -1
+
+ST[D-OPEN] = 1
+dv-clear()
+pz = p-page()
+box = dv-node-by-key(P-KEY)
+inp = dv-node-by-key(dv-add(P-KEY, 1))
+sc = dv-node-by-key(dv-add(P-KEY, 2))
+r2 = box >= 0 && dv-kind(box) == C-FORM && dv-flags(box) == dv-on-overlay()
+r3 = inp >= 0 && dv-kind(inp) == C-INPUT && dv-bind-of(inp) == D-Q
+r4 = sc >= 0 && dv-kind(sc) == C-SCROLL && dv-child-count(sc) == P-N
+
+row0 = dv-node-by-key(P-KEY0)
+tx0 = dv-node-by-key(dv-add(P-KEY0, 1))
+r5 = row0 >= 0 && dv-kind(row0) == C-FORM && dv-value(row0) == P-ACTS[0] && dv-act-of(row0) == DV-A-RUN && dv-act-payload(row0) == D-CMD
+r6 = dv-value2(row0) == D-OPEN
+r7 = tx0 >= 0 && dv-text(tx0) == 'new file'
+; 游标在 0 -> 第 0 行高亮，第 1 行不高亮
+row1 = dv-node-by-key(dv-add(P-KEY0, 100))
+r8 = dv-flags(row0) == dv-on-sel() && dv-flags(row1) == dv-on()
+; 行 key 按**源行号**（不是可见行号）
+row5 = dv-node-by-key(dv-add(P-KEY0, 500))
+tx5 = dv-node-by-key(dv-add(dv-add(P-KEY0, 500), 1))
+r9 = row5 >= 0 && dv-value(row5) == P-ACTS[5] && dv-text(tx5) == 'find in files'
+; 内容高 = 8*行高 + 7*间隙 + 两端内边距
+r10 = dv-scroll-content-of(sc) == 30400
+; 面板侧记：命中数 / 游标 / 游标行 key
+r11 = dv-arr-get(DV-PAL-M, P-KEY) == P-N && dv-arr-get(DV-PAL-CUR, P-KEY) == 0 && dv-pal-cur-key(P-KEY) == P-KEY0
+r12 = dv-pal-open-key(ST) == P-KEY && dv-pal-cur-key(P-KEY) == P-KEY0
+; 输入框是占位显示：它自己不收键盘（装配层把面板内点击拦掉了）
+r13 = dv-kind(inp) == C-INPUT && dv-pal-of(box) == P-KEY
+; 关面板：整棵子树消失
+dv-pal-close(ST, P-KEY)
+dv-clear()
+pz2 = p-page()
+r14 = dv-node-by-key(P-KEY) < 0 && dv-pal-open-key(ST) == -1
+
+; ============================================================================
+; 场景 Y：调和 —— 开/关与过滤才增删；游标移动零结构操作
+; ============================================================================
+p-reset()
+root-y = cmp-root()
+ST[D-OPEN] = 1
+dv-clear()
+py = p-page()
+ops-y = dv-render(root-y, py)
+; 根 + 输入 + 列表 + 8 行 × 2
+r15 = ops-y == 3 + P-N * 2
+ly0 = dv-live-deep(root-y, P-KEY0)
+r16 = ly0 >= 0 && cmp-kind(ly0) == C-FORM && cmp-text(dv-live-deep(root-y, dv-add(P-KEY0, 1))) == 'new file'
+; 过滤成 2 行（'s' 命中 save / save as）：增删节点
+dv-bound-set(D-Q, 's')
+dv-clear()
+py2 = p-page()
+ops-y2 = dv-render(root-y, py2)
+r17 = ops-y2 > 0 && dv-arr-get(DV-PAL-M, P-KEY) == 4
+; 游标移动：零结构操作
+dv-pal-move(P-KEY, 1)
+dv-clear()
+py3 = p-page()
+ops-y3 = dv-render(root-y, py3)
+r18 = ops-y3 == 0 && dv-arr-get(DV-PAL-CUR, P-KEY) == 1
+; 退格回空查询：8 行全回来
+dv-pal-backspace(P-KEY)
+dv-clear()
+py4 = p-page()
+ops-y4 = dv-render(root-y, py4)
+r19 = ops-y4 > 0 && dv-arr-get(DV-PAL-M, P-KEY) == P-N && dv-bound(D-Q) == ''
+; 关面板：有结构操作，活树里的面板根消失
+dv-pal-close(ST, P-KEY)
+dv-clear()
+py5 = p-page()
+ops-y5 = dv-render(root-y, py5)
+r20 = ops-y5 > 0 && dv-live-deep(root-y, P-KEY) < 0
+
+; ============================================================================
+; 场景 D：派发 + 归约 —— RUN 写命令码 + 清开关槽；空命中游标 -1
+; ============================================================================
+p-reset()
+ST[D-OPEN] = 1
+dv-clear()
+pd = p-page()
+ha, hp = dv-dispatch(P-KEY0)
+r21 = ha == DV-A-RUN && hp == D-CMD
+nw = dv-apply(ST, P-KEY0)
+r22 = nw == 2 && ST[D-CMD] == P-ACTS[0] && ST[D-OPEN] == 0
+; 过滤 'sa' -> 2 行；过滤 'z' -> 0 行
+ST[D-OPEN] = 1
+dv-bound-set(D-Q, 'sa')
+dv-clear()
+pd2 = p-page()
+r23 = dv-arr-get(DV-PAL-M, P-KEY) == 2 && dv-arr-get(DV-PAL-CUR, P-KEY) == 0
+ST[D-OPEN] = 1
+dv-bound-set(D-Q, 'z')
+dv-clear()
+pd3 = p-page()
+r24 = dv-arr-get(DV-PAL-M, P-KEY) == 0 && dv-arr-get(DV-PAL-CUR, P-KEY) == -1 && dv-pal-cur-key(P-KEY) == -1
+; 空命中时移动游标不动
+dv-pal-move(P-KEY, 1)
+r25 = dv-arr-get(DV-PAL-CUR, P-KEY) == -1
+; 查询串追加 / 退格
+dv-pal-type(P-KEY, 'f')
+r26 = dv-bound(D-Q) == 'zf'
+dv-pal-backspace(P-KEY)
+r27 = dv-bound(D-Q) == 'z'
+
+; ============================================================================
+; 场景 E：端到端 —— 命中行 / 派发 / 归约 / dva-pal-keyboard
+; ============================================================================
+p-reset()
+root-e = cmp-root()
+ST[D-OPEN] = 1
+dv-bound-set(D-Q, '')
+dv-clear()
+pe = p-page()
+dv-render(root-e, pe)
+cs-layout(root-e, 0, 0, 80000, 60000)
+lr = dv-live-deep(root-e, P-KEY0)
+rx, ry, rw, rh = cs-rect(lr)
+hit = cs-hit(root-e, cs-add(rx, cs-div(rw, 2)), cs-add(ry, cs-div(rh, 2)))
+r28 = hit == lr || cmp-parent-of(hit) == lr
+ha2, hp2 = dv-dispatch(cmp-key(hit))
+ne = dv-apply(ST, cmp-key(hit))
+r29 = ha2 == DV-A-RUN && hp2 == D-CMD && ne == 2 && ST[D-CMD] == P-ACTS[0] && ST[D-OPEN] == 0
+; 键盘：面板焦点 -> 下移 -> 回车执行游标行
+p-reset()
+ST[D-OPEN] = 1
+dv-clear()
+pe2 = p-page()
+dv-render(root-e, pe2)
+DVA-PAL-FOCUS[0] = P-KEY
+dva-pal-keyboard(ST, ED-K-DOWN)
+r30 = dv-arr-get(DV-PAL-CUR, P-KEY) == 1 && dv-pal-cur-key(P-KEY) == dv-add(P-KEY0, 100)
+dva-pal-keyboard(ST, 13)
+; 用局部变量拼这个合取：直接把数组下标读塞进 && 链会算错（语言的老毛病）
+c31 = ST[D-CMD]
+o31 = ST[D-OPEN]
+k31 = P-ACTS[1]
+cl31 = dva-clicks()
+r31 = c31 == k31 && o31 == 0 && cl31 == 1
+; 可打印字符进查询串（面板自己收键盘，不需要先点输入框）
+p-reset()
+ST[D-OPEN] = 1
+dv-clear()
+pe3 = p-page()
+dv-render(root-e, pe3)
+DVA-PAL-FOCUS[0] = P-KEY
+dva-pal-keyboard(ST, 113)
+; 命中数是**建视图时**算的，按完键得重建一次才看得到新值
+dv-clear()
+pe3b = p-page()
+bq = dv-bound(D-Q)
+mq = dv-arr-get(DV-PAL-M, P-KEY)
+r32 = bq == 'q' && mq == 1
+; ESC 关面板
+dva-pal-keyboard(ST, 27)
+r33 = ST[D-OPEN] == 0
+; 命中面板里的输入框也算「在面板里」（装配层据此不把焦点交给它）
+p-reset()
+ST[D-OPEN] = 1
+dv-clear()
+pe4 = p-page()
+dv-render(root-e, pe4)
+cs-layout(root-e, 0, 0, 80000, 60000)
+li = dv-live-deep(root-e, dv-add(P-KEY, 1))
+r34 = li >= 0 && dva-pal-find(li) == P-KEY
+
+print('Z mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}{r10}{r11}{r12}{r13}{r14}')
+print('Y live={r15}{r16}{r17}{r18}{r19}{r20}')
+print('D disp={r21}{r22}{r23}{r24}{r25}{r26}{r27}')
+print('E e2e={r28}{r29}{r30}{r31}{r32}{r33}{r34}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29 && r30 && r31 && r32 && r33 && r34
+print('all-ok={all-ok}')
+(all-ok) -> {
+    print('ALL DVA-PALETTE TESTS PASSED')
+}
+(!all-ok) -> {
+    print('DVA-PALETTE TESTS FAILED')
+}

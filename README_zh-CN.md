@@ -82,7 +82,6 @@ no docs <pkg>        # 打印包文档地址（docs → homepage → repository�
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

@@ -27,8 +27,8 @@ i <- [0..n): {
 print('=== str repeat (*) basic ===')
 s = 'ab' * 3
 print(s)
-n = 'x' * 5
-print(n)
+ns = 'x' * 5
+print(ns)
 
 print('=== str repeat (*) inside loop body ===')
 

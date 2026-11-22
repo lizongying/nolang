@@ -82,7 +82,6 @@ no docs <pkg>        # 列印套件文件網址（docs → homepage → reposito
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

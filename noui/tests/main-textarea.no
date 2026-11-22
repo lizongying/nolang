@@ -1,0 +1,141 @@
+; ============================================================================
+; noui 窗口 demo：多行文本域（阶段 39）
+;
+; 流水线：app-init -> cmp-textarea（大字段）-> 点字段聚焦
+;   -> 键盘在光标处插入 / 换行 / 退格 / 前删 / 上下左右移光标
+;   -> r 重置样例、q / ESC 退出
+;   -> cs-layout / cs-paint（C-TEXTAREA 走 cs-paint-textarea，逐行画 + 视口裁剪）
+;   -> app-frame
+;
+; 退出：ESC / q / 帧数上限（TA-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-textarea.no
+; ============================================================================
+# /noui/src/app
+
+TA-AZ = 'abcdefghijklmnopqrstuvwxyz'
+TA-DIG = '0123456789'
+TA-SAMPLE = 'let x = 1\nlet y = 2\n; done'
+TA-MAX-FRAMES = 900
+
+; ---- 计数（顶层标量）----
+ta-frames = 0
+ta-keys = 0
+ta-clicks = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui textarea')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui textarea: multiline value')
+hint = cmp-label('click field, type, enter, arrows move, bksp / del, r reset, q quit')
+stat = cmp-label('')
+
+field = cmp-textarea('type notes')
+cmp-set-sw(field, 48000)
+cmp-set-sh(field, 16000)
+
+cmp-add-child(root, title)
+cmp-add-child(root, field)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+input-set(field, TA-SAMPLE)
+input-focus(field, true)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：聚焦 / 失焦 ----
+    (t == 2) -> {
+        hit = cs-hit(root, fx(mx), fx(my))
+        (hit == field) -> { input-focus(field, true) }
+        (hit != field) -> { input-focus(field, false) }
+        ta-clicks = cs-inc(ta-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 114) -> {
+            input-set(field, TA-SAMPLE)
+            ta-set-off(field, 0)
+        }
+        (cmp-has(field, F-FOCUSED)) -> {
+            (k == 8) -> { input-backspace(field) }
+            (k == 127) -> { input-delete(field) }
+            (k == 13) -> { input-insert(field, '\n') }
+            (k == ED-K-LEFT) -> { input-move(field, -1) }
+            (k == ED-K-RIGHT) -> { input-move(field, 1) }
+            (k == ED-K-UP) -> { ta-move-up(field) }
+            (k == ED-K-DOWN) -> { ta-move-down(field) }
+            (k == 32) -> { input-insert(field, ' ') }
+            (k >= 48) -> {
+                (k <= 57) -> {
+                    input-insert(field, TA-DIG.slice(cs-sub(k, 48), cs-sub(k, 47)))
+                }
+            }
+            (k >= 97) -> {
+                (k <= 122) -> {
+                    input-insert(field, TA-AZ.slice(cs-sub(k, 97), cs-sub(k, 96)))
+                }
+            }
+        }
+        ta-keys = cs-inc(ta-keys)
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    v = input-value(field)
+    car = input-caret(field)
+    ln = ta-caret-line(field)
+    cl = ta-caret-col(field)
+    of = ta-off(field)
+    nl = ta-line-count(field)
+    vl = v.len()
+    cmp-set-text(stat, 'caret: {car} | line: {ln} col: {cl} | off: {of} | lines: {nl} | chars: {vl}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    app-frame()
+    app-delay(16)
+
+    ta-frames = cs-inc(ta-frames)
+    (TA-MAX-FRAMES > 0) -> {
+        (ta-frames >= TA-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = ta-frames
+kk = ta-keys
+ck = ta-clicks
+v = input-value(field)
+car = input-caret(field)
+ln = ta-caret-line(field)
+cl = ta-caret-col(field)
+of = ta-off(field)
+nl = ta-line-count(field)
+print('bye frames={fr} keys={kk} clicks={ck} value={v} caret={car} line={ln} col={cl} off={of} lines={nl}')
+(nl > 0) -> { print('textarea render OK') }
+(nl <= 0) -> { print('FAIL: no lines') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

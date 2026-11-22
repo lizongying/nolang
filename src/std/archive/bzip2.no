@@ -193,7 +193,11 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         }
 
         #{overflow=wrap}
-        pp = pp + count-at-length
+        pp = pp + count-at-length: {
+            ok -> it
+
+            -> 0
+        }
     }
 
     ; 計算 limit 陣列
@@ -964,7 +968,11 @@ decompress = (data []byte) (out []byte) {
                 }
 
                 #{overflow=wrap}
-                total = total + count-i
+                total = total + count-i: {
+                    ok -> it
+
+                    -> 0
+                }
             }
 
             ; 計算 LF mapping

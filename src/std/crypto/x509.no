@@ -3812,7 +3812,7 @@ x509-utc-to-unix = (s str) (ts i64) {
         c = s[i]: {
             ok -> it
 
-            -> 0
+            -> "0"
         }
         c < 48 || c > 57 -> { return }
         digit = c - 48
@@ -3832,7 +3832,7 @@ x509-utc-to-unix = (s str) (ts i64) {
         c = s[i]: {
             ok -> it
 
-            -> 0
+            -> "0"
         }
         digit = c - 48
         mo = x509-acc-digit(mo, digit)
@@ -3843,7 +3843,7 @@ x509-utc-to-unix = (s str) (ts i64) {
         c = s[i]: {
             ok -> it
 
-            -> 0
+            -> "0"
         }
         digit = c - 48
         da = x509-acc-digit(da, digit)
@@ -3854,7 +3854,7 @@ x509-utc-to-unix = (s str) (ts i64) {
         c = s[i]: {
             ok -> it
 
-            -> 0
+            -> "0"
         }
         digit = c - 48
         hh = x509-acc-digit(hh, digit)
@@ -3865,7 +3865,7 @@ x509-utc-to-unix = (s str) (ts i64) {
         c = s[i]: {
             ok -> it
 
-            -> 0
+            -> "0"
         }
         digit = c - 48
         mm = x509-acc-digit(mm, digit)
@@ -3876,7 +3876,7 @@ x509-utc-to-unix = (s str) (ts i64) {
         c = s[i]: {
             ok -> it
 
-            -> 0
+            -> "0"
         }
         digit = c - 48
         ss = x509-acc-digit(ss, digit)

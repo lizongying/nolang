@@ -1,0 +1,236 @@
+; ============================================================================
+; noui 声明式「可拆面板：间隙就是拖杆」测试（阶段 29）—— src/dv.no + src/dv-app.no
+;
+; 缺口：阶段 23 的滚动把「空间」写进了状态，但只能沿一个轴滚；面板的**分栏**
+; 位置（左屏多宽）同样是空间，同样该由状态说了算。命令式内核里 C-DOCK 只是一台
+; 通了电的横向容器（cs-is-container 认它，但没有分栏语义），C-RESIZABLE 更是
+; 只有构造器 —— 两者都没有「哪条缝能拖」这件事。
+;
+; 阶段 29 补：
+;   - dv-dock-split(key, slot, minw, maxw, gw, parent)：C-DOCK 横向容器，gap = gw，
+;     动作 DV-A-CHANGE + 载荷 = slot（左屏宽的真源），value / value2 = 夹紧界；
+;   - shim：左键抬起（type 6）—— 拖拽需要「按下抓住 / 移动 / 松开放手」三段，
+;     缺了抬起就只能靠再次按下结束拖拽；
+;   - dva-drag-down / dva-drag-move / dva-drag-up：命中 -> 间隙判定 -> 光标换算
+;     -> 夹紧 -> 写回状态槽。主循环 t==2 先试拖杆，抓住了就不走点击路径。
+;
+; 场景钉住：
+;   M 标记  ：dv-dock 的 kind / 布局位（L-H）/ gap / value / value2 / 动作载荷
+;   L 布局  ：左屏宽 = 状态；右屏吃掉剩余；间隙宽度 = 声明值
+;   H 命中  ：间隙命中容器；面板内部命中面板；容器内边距命中容器；容器外不命中
+;   D 拖拽  ：抓住 / 换算 / 上下界夹紧 / 松手后不再动 / 非拖杆处不抓
+;   V 竖拆  ：抹掉 L-H 后按 py 换算上屏高
+;   R 重建  ：拖完改状态 -> 重建零结构操作 -> 左屏宽跟着变（声明式闭环）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-dock.no
+; ============================================================================
+# /noui/src/dv-app
+
+print('=== dva-dock tests ===')
+
+; 共用数据
+DK-SLOT = 2        ; 左屏宽状态槽（真源）
+DK-VSLOT = 3       ; 上屏高状态槽（竖拆）
+DK-KEY = 700       ; 横向 dock
+DK-A = 701         ; 左屏
+DK-B = 702         ; 右屏
+DK-MIN = 8000      ; 左屏最小宽 80px
+DK-MAX = 28000     ; 左屏最大宽 280px
+DK-GAP = 1200      ; 拖杆命中区 12px
+DK-PH = 12000      ; 面板高 120px
+DK-VKEY = 710      ; 竖向 dock
+DK-VA = 711
+DK-VB = 712
+DK-VH = 10000      ; 上屏高 100px
+DK-VDOCK-H = 20000 ; 竖拆 dock 总高 200px
+
+X0 = 1200          ; root 内边距
+DOCK-X = 1200      ; dock 左边（form 通栏，只有 form 自己的内边距）
+DOCK-W = 37600     ; 40000 - 2*1200
+A-X = 2400         ; 左屏左边（再加 dock 内边距）
+
+ST []i64 = with-len(4)
+
+; 横向：左屏定宽（= 状态），右屏 grow
+mk-page = () (p i64) {
+    dv-clear()
+    t = dv-form(1, -1)
+    d = dv-dock-split(DK-KEY, DK-SLOT, DK-MIN, DK-MAX, DK-GAP, t)
+    a = dv-group-box(DK-A, 'left', d)
+    dv-size(a, dv-arr-get(ST, DK-SLOT), DK-PH)
+    b = dv-group-box(DK-B, 'right', d)
+    dv-lay(b, dv-lay-grow(), 0, 0)
+    dv-size(b, 0, DK-PH)
+    p = t
+}
+
+; 竖向：抹掉 L-H，上屏定高（= 状态），下屏 grow
+mk-vpage = () (p i64) {
+    dv-clear()
+    t = dv-form(1, -1)
+    d = dv-dock-split(DK-VKEY, DK-VSLOT, DK-MIN, DK-MAX, DK-GAP, t)
+    dv-lay(d, 0, DK-GAP, CS-PAD)
+    dv-size(d, 0, DK-VDOCK-H)
+    a = dv-group-box(DK-VA, 'top', d)
+    dv-size(a, 0, dv-arr-get(ST, DK-VSLOT))
+    b = dv-group-box(DK-VB, 'bottom', d)
+    dv-lay(b, dv-lay-grow(), 0, 0)
+    p = t
+}
+
+; ============================================================================
+; 场景 M：标记 —— dv-dock-split 的数据
+; ============================================================================
+root-m = cmp-root()
+ST[DK-SLOT] = 12000
+pm = mk-page()
+dv-render(root-m, pm)
+dm = dv-live-deep(root-m, DK-KEY)
+r1 = dm >= 0 && cmp-kind(dm) == C-DOCK
+r2 = (cmp-lay(dm) & L-H) != 0
+r3 = cmp-gap(dm) == DK-GAP
+r4 = cmp-value(dm) == DK-MIN && cmp-value2(dm) == DK-MAX
+am, plm = dv-dispatch(DK-KEY)
+r5 = am == DV-A-CHANGE && plm == DK-SLOT
+vm = dv-node-by-key(DK-KEY)
+r6 = (dv-flags(vm) & DV-F-VIS) != 0 && (dv-flags(vm) & DV-F-EN) != 0
+
+; 改状态 -> 重建 -> 夹紧界不动（声明式闭环的另一半：结构不变）
+ST[DK-SLOT] = 15000
+pm2 = mk-page()
+r7 = dv-render(root-m, pm2) == 0
+dm2 = dv-live-deep(root-m, DK-KEY)
+r8 = cmp-value(dm2) == DK-MIN && cmp-value2(dm2) == DK-MAX
+
+; ============================================================================
+; 场景 L：布局 —— 左屏宽 = 状态；右屏吃掉剩余；间隙 = 声明值
+; ============================================================================
+root-l = cmp-root()
+ST[DK-SLOT] = 12000
+pl = mk-page()
+dv-render(root-l, pl)
+cs-layout(root-l, 0, 0, 40000, 30000)
+da = dv-live-deep(root-l, DK-A)
+db = dv-live-deep(root-l, DK-B)
+ax, ay, aw, ah = cs-rect(da)
+bx, by, bw, bh = cs-rect(db)
+r9 = ax == A-X
+r10 = aw == 12000
+r11 = ah == DK-PH
+r12 = bx == cs-add(cs-add(ax, aw), DK-GAP)
+r13 = bx + bw == cs-sub(cs-add(DOCK-X, DOCK-W), X0)
+r14 = by == ay && bh == DK-PH
+
+; ============================================================================
+; 场景 H：命中 —— 间隙是容器，面板是面板，容器外不是
+; ============================================================================
+dd = dv-live-deep(root-l, DK-KEY)
+h1 = cs-hit(root-l, cs-add(ax, 6000), cs-add(ay, 6000))
+r15 = h1 == da
+h2 = cs-hit(root-l, cs-add(cs-add(ax, aw), 600), cs-add(ay, 6000))
+r16 = h2 == dd
+h3 = cs-hit(root-l, cs-add(DOCK-X, 600), cs-add(ay, 6000))
+r17 = h3 == dd
+h4 = cs-hit(root-l, 500, 500)
+r18 = h4 != dd
+
+; ============================================================================
+; 场景 D：拖拽 —— 间隙抓住 / 光标换算 / 上下界夹紧 / 松手
+; ============================================================================
+root-d = cmp-root()
+ST[DK-SLOT] = 12000
+pd = mk-page()
+dv-render(root-d, pd)
+cs-layout(root-d, 0, 0, 40000, 30000)
+ddr = dv-live-deep(root-d, DK-KEY)
+dar = dv-live-deep(root-d, DK-A)
+axr, ayr, awr, ahr = cs-rect(dar)
+
+gy = cs-add(ayr, 6000)
+gx = cs-add(cs-add(axr, awr), 600)
+
+g1 = dva-drag-down(ST, root-d, gx, gy)
+r19 = g1 == 1 && dva-drag-of() == ddr
+
+; px = 20000 -> 左屏宽 = 20000 - 2400 = 17600
+m1 = dva-drag-move(ST, 20000, gy)
+r20 = m1 == 1 && ST[DK-SLOT] == 17600
+
+; 下界夹紧：拖到左屏左边以内 -> 8000
+m2 = dva-drag-move(ST, 1000, gy)
+r21 = m2 == 1 && ST[DK-SLOT] == DK-MIN
+
+; 上界夹紧：拖出右边界 -> 28000
+m3 = dva-drag-move(ST, 99999, gy)
+r22 = m3 == 1 && ST[DK-SLOT] == DK-MAX
+
+; 松手后再移动：不动
+dva-drag-up()
+m4 = dva-drag-move(ST, 20000, gy)
+r23 = m4 == 0 && ST[DK-SLOT] == DK-MAX && dva-drag-of() == -1
+
+; 面板内部不抓（命中的是面板，不是 dock）
+g2 = dva-drag-down(ST, root-d, cs-add(axr, 6000), gy)
+r24 = g2 == 0
+; 容器内边距不抓（命中 dock，但不在间隙里）
+g3 = dva-drag-down(ST, root-d, cs-add(DOCK-X, 600), gy)
+r25 = g3 == 0
+
+; ============================================================================
+; 场景 V：竖拆 —— 抹掉 L-H 后按 py 换算上屏高
+; ============================================================================
+root-v = cmp-root()
+ST[DK-VSLOT] = DK-VH
+pv = mk-vpage()
+dv-render(root-v, pv)
+cs-layout(root-v, 0, 0, 40000, 30000)
+vd = dv-live-deep(root-v, DK-VKEY)
+va = dv-live-deep(root-v, DK-VA)
+vx, vy, vw, vh = cs-rect(va)
+r26 = vd >= 0 && vy == cs-add(DOCK-X, 1200) && vh == DK-VH
+g4 = dva-drag-down(ST, root-v, cs-add(vx, 6000), cs-add(cs-add(vy, vh), 600))
+r27 = g4 == 1
+m5 = dva-drag-move(ST, cs-add(vx, 6000), 20000)
+r28 = m5 == 1 && ST[DK-VSLOT] == 17600
+dva-drag-up()
+; 竖拆时按 px 拖不动（换算只认 py）：px 甩到 30000，py 不动 -> 值不变
+g5 = dva-drag-down(ST, root-v, cs-add(vx, 6000), cs-add(cs-add(vy, vh), 600))
+m6 = dva-drag-move(ST, 30000, 20000)
+r29 = g5 == 1 && m6 == 0 && ST[DK-VSLOT] == 17600
+dva-drag-up()
+
+; ============================================================================
+; 场景 R：重建 —— 拖完改状态，视图跟着变且零结构操作
+; ============================================================================
+root-r = cmp-root()
+ST[DK-SLOT] = 12000
+pr = mk-page()
+dv-render(root-r, pr)
+cs-layout(root-r, 0, 0, 40000, 30000)
+drr = dv-live-deep(root-r, DK-KEY)
+dra = dv-live-deep(root-r, DK-A)
+axr2, ayr2, awr2, ahr2 = cs-rect(dra)
+dva-drag-down(ST, root-r, cs-add(cs-add(axr2, awr2), 600), cs-add(ayr2, 6000))
+dva-drag-move(ST, 20000, cs-add(ayr2, 6000))
+dva-drag-up()
+pr2 = mk-page()
+r30 = drr >= 0 && dv-render(root-r, pr2) == 0
+cs-layout(root-r, 0, 0, 40000, 30000)
+dra2 = dv-live-deep(root-r, DK-A)
+_, _, awr3, _ = cs-rect(dra2)
+r31 = awr3 == 17600
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29 && r30 && r31
+
+print('M mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}')
+print('L layout={r9}{r10}{r11}{r12}{r13}{r14}')
+print('H hit={r15}{r16}{r17}{r18}')
+print('D drag={r19}{r20}{r21}{r22}{r23}{r24}{r25}')
+print('V vertical={r26}{r27}{r28}{r29}')
+print('R rebuild={r30}{r31}')
+print('all-ok={ok}')
+(ok) -> { print('ALL DVA-DOCK TESTS PASSED') }
+(!ok) -> { print('DVA-DOCK FAILURES') }

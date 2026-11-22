@@ -201,7 +201,11 @@ next-rand = () (r i64) {
     ; 對 plain 值做選項匹配會靜默走 fallback 臂，永遠拿到 0。
     ; 故先用 `#{overflow=wrap}` 讓加法落在 plain 域，再寫回全域。
     #{overflow=wrap}
-    nxt = RAND-COUNTER + 1
+    nxt = RAND-COUNTER + 1: {
+        ok -> it
+
+        -> 0
+    }
     RAND-COUNTER = nxt
 
     ; LCG: r = (nxt * 1103515245 + 12345) & 0x7fffffff

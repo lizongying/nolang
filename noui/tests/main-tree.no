@@ -1,0 +1,315 @@
+; ============================================================================
+; noui 命令式「树」窗口 demo（阶段 33）—— src/components.no 的 cmp-tree-*
+;
+; 和 tests/main-form.no 同一条命令式路子：顶层标量存状态，主循环直接读写，
+; 没有声明式视图层。树不是新组件种类，而是**应用调出来的**：
+;   cmp-tree-add   建节点（first-child / next-sibling 链，展开态在 TR-OPEN）
+;   cmp-tree-sync  把可见行重建成真组件树（横向 C-FORM 行 + 箭头标签 + 文本标签）
+;   布局 / 绘制 / 命中全走 C-TREE 作为普通纵向容器的通用路径
+;
+; 交互：
+;   点行       = 选中该节点
+;   点箭头     = 展开 / 收起（叶子没箭头，点了只选中）
+;   ↑ / ↓      = 在可见行里移动选中
+;   ← / →      = 收起 / 展开选中节点
+;   Enter      = 切换选中节点
+;   滚轮       = 滚动（命中顺着父链找到 C-SCROLL，夹紧到 cmp-scroll-max）
+;   e / c      = 全部展开 / 全部收起
+;   r          = 重置（全收起 + 清空选中 + 滚回顶部）
+;   ESC / q    = 退出
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-tree.no
+; ============================================================================
+# /noui/src/app
+
+; ---- 颜色（主题槽，阶段 12 的九槽色板）----
+SELB = 0
+FG = 0
+MUT = 0
+ACC = 0
+
+; 帧数上限：0 = 不限；默认 900 帧（约 15s）后自动收尾，保证生命周期完整
+TREE-MAX-FRAMES = 900
+
+; ---- 句柄 ----
+TREE = 0
+SC = 0
+DLAB1 = 0
+DLAB2 = 0
+DLAB3 = 0
+DLAB4 = 0
+DLAB5 = 0
+tree-frames = 0
+tree-clicks = 0
+
+; ============================================================================
+; 函数（nolang 要求先定义后调用，所以放在初始化之前）
+; ============================================================================
+
+; 状态 -> 组件：按当前展开态重建行，再把选中节点的信息刷到右栏
+tree-refresh = () () {
+    cmp-tree-sync(TREE, SELB, FG, MUT, ACC)
+    nd = cmp-tree-selected(TREE)
+    (nd >= 0) -> {
+        t = cmp-text(nd)
+        d = cmp-tree-depth(TREE, nd)
+        k = cmp-tree-kids(TREE, nd)
+        o = cmp-tree-open-of(TREE, nd)
+        cmp-set-text(DLAB1, 'node: {t}')
+        cmp-set-text(DLAB2, 'depth: {d}')
+        cmp-set-text(DLAB3, 'kids: {k}')
+        cmp-set-text(DLAB4, 'open: {o}')
+    }
+    (nd < 0) -> {
+        cmp-set-text(DLAB1, 'node: (none)')
+        cmp-set-text(DLAB2, 'depth: -')
+        cmp-set-text(DLAB3, 'kids: -')
+        cmp-set-text(DLAB4, 'open: -')
+    }
+    rows = cmp-children(TREE)
+    tot = cmp-tree-nodes(TREE)
+    cmp-set-text(DLAB5, 'rows: {rows} / nodes: {tot}')
+}
+
+; 选中移到第 dir 个可见行（dir = +1 / -1）
+tree-move = (dir i64) () {
+    n = cmp-children(TREE)
+    (n <= 0) -> return
+    cur = -1
+    j = 0
+    !! {
+        (j >= n) -> { ** }
+        (cur >= 0) -> { ** }
+        r = cmp-child(TREE, j)
+        (cmp-tree-node-of(TREE, r) == cmp-tree-selected(TREE)) -> { cur = j }
+        j = cs-inc(j)
+    }
+    t = cur + dir: {
+        ok -> it
+
+        -> cur
+    }
+    (t < 0) -> { t = 0 }
+    hi = n - 1: {
+        ok -> it
+
+        -> 0
+    }
+    (t > hi) -> { t = hi }
+    (t < 0) -> { t = 0 }
+    r = cmp-child(TREE, t)
+    cmp-tree-select(TREE, cmp-tree-node-of(TREE, r))
+    tree-refresh()
+}
+
+; 命中链上有没有这个滚动容器（滚轮只在该滚的地方滚）
+hit-in = (c i64, want i64) (yes i64) {
+    yes = 0
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (yes != 0) -> { ** }
+        (p == want) -> { yes = 1 }
+        p = cmp-parent-of(p)
+    }
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui tree')
+(ok == 0) -> {
+
+    SELB = cs-theme(CS-TH-TRACK)
+    FG = cs-theme(CS-TH-FG)
+    MUT = cs-theme(CS-TH-MUTED)
+    ACC = cs-theme(CS-TH-ACCENT)
+
+    root = app-root()
+    cmp-set-lay(root, L-H)
+    cmp-set-gap(root, CS-GAP)
+
+    ; ---- 左：滚动容器包着树 ----
+    SC = cmp-scroll()
+    cmp-set-sw(SC, 220000)
+    ; 窗口 42000 高 - root 上下 padding 2400 = 39600
+    cmp-set-sh(SC, 39600)
+    cmp-set-value2(SC, 3200)
+
+    TREE = cmp-tree()
+    cmp-set-gap(TREE, 0)
+    cmp-add-child(SC, TREE)
+
+    ; src 6 个 / tests 4 个 / docs 3 个 / tmp 2 个 + 4 个根 = 19 个节点，
+    ; 全展开 19 行 × 2400 = 45600 > 视口 39600，滚轮因此真的能用
+    n0 = cmp-tree-add(TREE, -1, 'src')
+    cmp-tree-add(TREE, n0, 'main.no')
+    cmp-tree-add(TREE, n0, 'app.no')
+    cmp-tree-add(TREE, n0, 'cmp-scene.no')
+    cmp-tree-add(TREE, n0, 'components.no')
+    cmp-tree-add(TREE, n0, 'dv.no')
+    cmp-tree-add(TREE, n0, 'dv-app.no')
+    n1 = cmp-tree-add(TREE, -1, 'tests')
+    cmp-tree-add(TREE, n1, 'cmp-tree.no')
+    cmp-tree-add(TREE, n1, 'main-tree.no')
+    cmp-tree-add(TREE, n1, 'main-form.no')
+    cmp-tree-add(TREE, n1, 'main-dv.no')
+    n2 = cmp-tree-add(TREE, -1, 'docs')
+    cmp-tree-add(TREE, n2, 'README.md')
+    cmp-tree-add(TREE, n2, 'ARCHITECTURE.md')
+    cmp-tree-add(TREE, n2, 'components-catalog.md')
+    n3 = cmp-tree-add(TREE, -1, 'tmp')
+    cmp-tree-add(TREE, n3, 'scratch')
+    cmp-tree-add(TREE, n3, 'old')
+    cmp-tree-open-all(TREE, 1)
+
+    ; ---- 右：详情面板 ----
+    detail = cmp-form()
+    cmp-set-lay(detail, L-GROW)
+    dtitle = cmp-label('imperative tree')
+    dhint = cmp-label('click row select / arrow expand / arrows+enter / wheel / e,c all / r reset')
+    dsep = cmp-separator()
+    DLAB1 = cmp-label('node: -')
+    DLAB2 = cmp-label('depth: -')
+    DLAB3 = cmp-label('kids: -')
+    DLAB4 = cmp-label('open: -')
+    DLAB5 = cmp-label('rows: -')
+    cmp-add-child(detail, dtitle)
+    cmp-add-child(detail, dhint)
+    cmp-add-child(detail, dsep)
+    cmp-add-child(detail, DLAB1)
+    cmp-add-child(detail, DLAB2)
+    cmp-add-child(detail, DLAB3)
+    cmp-add-child(detail, DLAB4)
+    cmp-add-child(detail, DLAB5)
+
+    cmp-add-child(root, SC)
+    cmp-add-child(root, detail)
+
+    tree-refresh()
+}
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover 高亮 ----
+    (t == 3) -> {
+        mxf = fx(mx)
+        myf = fx(my)
+        app-hover(root, mxf, myf)
+    }
+
+    ; ---- 左键按下 ----
+    (t == 2) -> {
+        cxf = fx(mx)
+        cyf = fx(my)
+        hit = cs-hit(root, cxf, cyf)
+        row = cmp-tree-row-of(TREE, hit)
+        (row >= 0) -> {
+            node = cmp-tree-node-of(TREE, row)
+            ar = cmp-tree-arrow-of(TREE, row)
+            ((hit == ar) && (cmp-tree-has-kids(TREE, node) == 1)) -> {
+                cmp-tree-toggle(TREE, node)
+                tree-clicks = cs-inc(tree-clicks)
+                tree-refresh()
+            }
+            ((hit != ar) || (cmp-tree-has-kids(TREE, node) == 0)) -> {
+                cmp-tree-select(TREE, node)
+                tree-clicks = cs-inc(tree-clicks)
+                tree-refresh()
+            }
+        }
+    }
+
+    ; ---- 滚轮 ----
+    (t == 5) -> {
+        dy = app-wheel()
+        (dy != 0) -> {
+            hit = cs-hit(root, fx(mx), fx(my))
+            (hit-in(hit, SC) == 1) -> {
+                lim = cmp-scroll-max(SC)
+                cur = cmp-value(SC)
+                nv = cur + dy * 3200: {
+                    ok -> it
+
+                    -> cur
+                }
+                (nv < 0) -> { nv = 0 }
+                (nv > lim) -> { nv = lim }
+                cmp-set-value(SC, nv)
+            }
+        }
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 1073741906) -> { tree-move(-1) }
+        (k == 1073741905) -> { tree-move(1) }
+        (k == 1073741904) -> {
+            nd = cmp-tree-selected(TREE)
+            (nd >= 0) -> {
+                (cmp-tree-open-of(TREE, nd) != 0) -> {
+                    cmp-tree-set-open(TREE, nd, 0)
+                    tree-refresh()
+                }
+            }
+        }
+        (k == 1073741903) -> {
+            nd = cmp-tree-selected(TREE)
+            (nd >= 0) -> {
+                (cmp-tree-has-kids(TREE, nd) == 1) -> {
+                    cmp-tree-set-open(TREE, nd, 1)
+                    tree-refresh()
+                }
+            }
+        }
+        (k == 13) -> {
+            nd = cmp-tree-selected(TREE)
+            (nd >= 0) -> {
+                cmp-tree-toggle(TREE, nd)
+                tree-refresh()
+            }
+        }
+        (k == 101) -> {
+            cmp-tree-open-all(TREE, 1)
+            tree-refresh()
+        }
+        (k == 99) -> {
+            cmp-tree-open-all(TREE, 0)
+            tree-refresh()
+        }
+        (k == 114) -> {
+            cmp-tree-open-all(TREE, 0)
+            cmp-tree-select(TREE, -1)
+            cmp-set-value(SC, 0)
+            tree-refresh()
+        }
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    app-frame()
+    app-delay(16)
+
+    tree-frames = cs-inc(tree-frames)
+    (TREE-MAX-FRAMES > 0) -> {
+        (tree-frames >= TREE-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+fr = tree-frames
+ck = tree-clicks
+print('bye frames={fr} clicks={ck}')

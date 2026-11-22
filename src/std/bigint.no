@@ -815,7 +815,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         qhat >> 32 > 0 -> {
 
             #{overflow=wrap}
-            qhat = BASE - 1
+            {
+                qhat ?= BASE - 1
+            }: {
+                err -> _
+
+                -> _
+            }
         }
 
         ; Knuth 修正：檢查 qhat*bt1 是否超過 (rhat*BASE + an2)，超過則 qhat 偏大，減 1（至多 2 次）。

@@ -34,6 +34,13 @@ DVA-PY []i64 = [0]
 DVA-MOUSE []i64 = [0]
 ; 最近一次布局后算出的命中句柄（-1 无命中，-2 被模态层挡住），供 hover 状态同步用
 DVA-HIT []i64 = [-1]
+; 代码编辑器（阶段30）的键盘焦点：存的是**编辑器根的声明式 key**，不是活句柄 ——
+; 活句柄每帧随调和变，key 不变。dva-edit-find 顺着活父链上溯到 dv-edit 声明处。
+DVA-EDIT-FOCUS []i64 = [-1]
+; 命令面板（阶段32）的键盘焦点：存的是**面板的声明式 key**（-1 = 没有面板开着）。
+; 与编辑器同一个理由 —— 活句柄每帧随调和变，key 不变；而且面板要跨帧记住
+; 「游标在第几行」，那些状态本来就存在 dv 侧的 DV-PAL-* 池里。
+DVA-PAL-FOCUS []i64 = [-1]
 
 DVA-AZ = 'abcdefghijklmnopqrstuvwxyz'
 DVA-DIG = '0123456789'
@@ -98,10 +105,82 @@ dva-is-input-kind = (kd i64) (yes i64) {
     (kd == C-OTP-INPUT) -> { yes = 1 }
 }
 
+; 代码编辑器（阶段30）：从命中句柄顺活父链上溯，找 dv-edit 声明过的最近祖先。
+; 返回它的**声明式 key**（-1 = 不在任何编辑器里）。活句柄 -> key -> 视图节点 ->
+; dv-edit-of 查编辑槽，两层间接是因为 dv-edit 记在视图描述上、命中给的是活句柄。
+dva-edit-find = (hit i64) (k i64) {
+    k = -1
+    (hit >= 0) -> {
+        v = hit
+        guard = 0
+        !! {
+            (guard >= 64) -> { ** }
+            (v < 0) -> { ** }
+            kk = cmp-key(v)
+            d = dv-node-by-key(kk)
+            (d >= 0) -> {
+                s = dv-edit-of(d)
+                (s >= 0) -> {
+                    k = kk
+                    **
+                }
+            }
+            v = cmp-parent-of(v)
+            guard = dv-inc(guard)
+        }
+    }
+    k
+}
+
+; 命令面板（阶段32）：从命中句柄顺活父链上溯，找 dv-command-palette 声明过的最近祖先。
+; 返回面板 key（-1 = 不在任何面板里）—— 和 dva-edit-find 同一形状。
+; 用途：点击落在面板里时不该把键盘焦点交给面板内的输入框（面板自己收键盘）。
+dva-pal-find = (hit i64) (pk i64) {
+    pk = -1
+    (hit >= 0) -> {
+        v = hit
+        guard = 0
+        !! {
+            (guard >= 64) -> { ** }
+            (v < 0) -> { ** }
+            kk = cmp-key(v)
+            d = dv-node-by-key(kk)
+            (d >= 0) -> {
+                q = dv-pal-of(d)
+                (q >= 0) -> {
+                    pk = q
+                    **
+                }
+            }
+            v = cmp-parent-of(v)
+            guard = dv-inc(guard)
+        }
+    }
+    pk
+}
+
 ; 点击命中后的焦点移交：输入类接管，其余（含点空白）释放
 ; 焦点交接（阶段 18 起尊重禁用）：禁用的节点不接焦点 —— 尤其禁用输入框，
 ; 点了不该开始编辑。命中本身仍然有效（hover / tooltip 照常），只是不交互。
+; 阶段30：代码编辑器与输入类**互斥** —— 点在编辑器里就交出输入焦点，
+; 反之点进输入框就交出编辑器焦点（否则两处都在改文本）。
 dva-focus = (hit i64) () {
+    ; 阶段32：命中在命令面板里 -> 面板自己收键盘，不把焦点交给面板内的输入框
+    pk = dva-pal-find(hit)
+    (pk >= 0) -> {
+        fh0 = DVA-FOCUS[0]: {
+            ok -> it
+
+            -> -1
+        }
+        (fh0 >= 0) -> { input-focus(fh0, false) }
+        DVA-FOCUS[0] = -1
+        DVA-EDIT-FOCUS[0] = -1
+    }
+    (pk < 0) -> { dva-focus-raw(hit) }
+}
+
+dva-focus-raw = (hit i64) () {
     fh = DVA-FOCUS[0]: {
         ok -> it
 
@@ -109,25 +188,34 @@ dva-focus = (hit i64) () {
     }
     h = hit
     (cmp-has(h, F-DISABLED)) -> { h = -1 }
-    (h >= 0) -> {
-        kd = cmp-kind(h)
-        (dva-is-input-kind(kd) == 1) -> {
-            (fh >= 0 && fh != h) -> { input-focus(fh, false) }
-            DVA-FOCUS[0] = h
-            input-focus(h, true)
+    ek = dva-edit-find(h)
+    (ek >= 0) -> {
+        (fh >= 0) -> { input-focus(fh, false) }
+        DVA-FOCUS[0] = -1
+        DVA-EDIT-FOCUS[0] = ek
+    }
+    (ek < 0) -> {
+        DVA-EDIT-FOCUS[0] = -1
+        (h >= 0) -> {
+            kd = cmp-kind(h)
+            (dva-is-input-kind(kd) == 1) -> {
+                (fh >= 0 && fh != h) -> { input-focus(fh, false) }
+                DVA-FOCUS[0] = h
+                input-focus(h, true)
+            }
+            (dva-is-input-kind(kd) == 0) -> {
+                (fh >= 0) -> { input-focus(fh, false) }
+                DVA-FOCUS[0] = -1
+            }
         }
-        (dva-is-input-kind(kd) == 0) -> {
+        (h < 0) -> {
             (fh >= 0) -> { input-focus(fh, false) }
             DVA-FOCUS[0] = -1
         }
     }
-    (h < 0) -> {
-        (fh >= 0) -> { input-focus(fh, false) }
-        DVA-FOCUS[0] = -1
-    }
 }
 
-; 键盘喂给当前焦点组件：退格 / 空格 / 数字 / 小写字母
+; 键盘喂给当前焦点输入框：退格 / 空格 / 数字 / 小写字母
 dva-keyboard = (kk i64) () {
     fh = DVA-FOCUS[0]: {
         ok -> it
@@ -152,6 +240,58 @@ dva-keyboard = (kk i64) () {
                     input-append(fh, ch)
                 }
             }
+        }
+    }
+}
+
+; 键盘喂给当前打开的命令面板（阶段32）：
+;   上 / 下 = 游标在命中行之间移动；回车 = 执行游标行的命令
+;           （走与点击**完全相同**的派发 -> 归约 -> 事件回调路径）；
+;   ESC = 关面板；退格 = 查询串退一格；可打印 ASCII = 追加进查询串。
+; 语义（游标 / 查询串 / 关面板）全在 dv 侧，装配层只做按键归类。
+dva-pal-keyboard = (S []i64, kk i64) () {
+    pk = DVA-PAL-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (pk >= 0) -> {
+        (kk == ED-K-UP) -> { dv-pal-move(pk, -1) }
+        (kk == ED-K-DOWN) -> { dv-pal-move(pk, 1) }
+        (kk == 13) -> {
+            ck = dv-pal-cur-key(pk)
+            (ck >= 0) -> {
+                act, pay = dv-dispatch(ck)
+                nw = dv-app-reduce(S, ck)
+                (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+                dv-app-click(S, ck, act, pay, nw)
+            }
+        }
+        (kk == 27) -> { dv-pal-close(S, pk) }
+        (kk == 8) -> { dv-pal-backspace(pk) }
+        (kk >= 32) -> {
+            (kk <= 126) -> {
+                i0 = cs-sub(kk, 32)
+                ch = ED-PRINT.slice(i0, dv-inc(i0))
+                dv-pal-type(pk, ch)
+            }
+        }
+    }
+}
+
+; 键盘喂给焦点代码编辑器（阶段30）：key -> 视图节点 -> 编辑槽 -> dv-edit-key。
+; 语义（退格 / 回车 / Tab / 方向键 / 可打印 ASCII）全在 dv 侧，装配层只做寻址。
+dva-edit-keyboard = (kk i64) () {
+    ek = DVA-EDIT-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (ek >= 0) -> {
+        v = dv-node-by-key(ek)
+        (v >= 0) -> {
+            slot = dv-edit-of(v)
+            (slot >= 0) -> { dv-edit-key(slot, kk) }
         }
     }
 }
@@ -260,6 +400,134 @@ dva-sync-hover = (S []i64) () {
 }
 
 ; ============================================================================
+; 滚轮（阶段23）：让空间进状态
+; ============================================================================
+; 视图侧 dv-scroll 声明「偏移 = S[offslot]，步长 = value2」；这里只做几何：
+; 光标命中 -> 顺着父链找到滚动容器 -> 读它的动作载荷（= 偏移槽）和最大偏移
+; （布局阶段算好的 cmp-scroll-max）-> 夹紧后写回状态池。返回是否真的动了。
+; 与滑杆同一模式：语义在视图上，换算在事件侧。
+dva-wheel = (S []i64, root i64) (moved i64) {
+    moved = 0
+    dy = app-wheel()
+    hit = cs-hit(root, dva-px(), dva-py())
+    sh = hit
+    !! {
+        (sh < 0) -> { ** }
+        (cmp-kind(sh) == C-SCROLL) -> { ** }
+        sh = cmp-parent-of(sh)
+    }
+    (sh >= 0) -> {
+        a5, p5 = dv-dispatch(cmp-key(sh))
+        (a5 == DV-A-CHANGE) -> {
+            lim = cmp-scroll-max(sh)
+            cur = S[p5]: {
+                ok -> it
+
+                -> 0
+            }
+            st = cmp-value2(sh)
+            nv = dv-clamp(dv-add(cur, cs-mul(dy, st)), 0, lim)
+            (nv != cur) -> {
+                dva-set(S, p5, nv)
+                moved = 1
+            }
+        }
+    }
+}
+
+; ============================================================================
+; 拖分栏（阶段29）：间隙就是拖杆 —— 按下抓住 -> 移动写状态 -> 松开放手
+; ============================================================================
+; 视图侧 dv-dock-split 声明「左屏宽 = S[slot]，夹紧在 [value, value2]」；这里只做几何：
+; 抓住时记下容器句柄，移动时按光标换算成左屏宽写回同一个槽。
+; 与滚轮同一模式：语义在视图上，换算在事件侧。
+;
+; 为什么不用新增节点：两块面板之间的 gap 不属于任何子节点，cs-hit 的
+; 「自身矩形兜底」会把它算到容器头上 —— 间隙自己就是拖杆的命中区。
+; 只有落在 gap 里才算抓住（容器内边距不算，否则点空白就开始拖）。
+DVA-DRAG []i64 = [-1]
+
+; 点下：命中可拆面板的间隙 -> 抓住。返回 1 = 抓住了（调用方据此跳过点击路径）。
+dva-drag-down = (S []i64, root i64, px i64, py i64) (grabbed i64) {
+    grabbed = 0
+    hit = cs-hit(root, px, py)
+    (hit >= 0) -> {
+        kd = cmp-kind(hit)
+        ((kd == C-DOCK) || (kd == C-RESIZABLE)) -> {
+            a6, p6 = dv-dispatch(cmp-key(hit))
+            (a6 == DV-A-CHANGE) -> {
+                c0 = cs-child-flow(hit, 0)
+                (c0 >= 0) -> {
+                    x0, y0, w0, h0 = cs-rect(c0)
+                    g6 = cs-gap-of(hit)
+                    ingap = 0
+                    (cs-is-h(hit) == 1) -> {
+                        bx = cs-add(x0, w0)
+                        ((px >= bx) && (px <= cs-add(bx, g6))) -> { ingap = 1 }
+                    }
+                    (cs-is-h(hit) == 0) -> {
+                        by = cs-add(y0, h0)
+                        ((py >= by) && (py <= cs-add(by, g6))) -> { ingap = 1 }
+                    }
+                    (ingap == 1) -> {
+                        DVA-DRAG[0] = hit
+                        grabbed = 1
+                    }
+                }
+            }
+        }
+    }
+    grabbed
+}
+
+; 移动：把光标换算成左屏宽（横向 = px - 左屏左边；竖向 = py - 上屏上边），
+; 夹紧到视图声明的 [value, value2]，写回状态槽。返回是否真的动了。
+dva-drag-move = (S []i64, px i64, py i64) (moved i64) {
+    moved = 0
+    d = DVA-DRAG[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (d >= 0) -> {
+        a7, p7 = dv-dispatch(cmp-key(d))
+        (a7 == DV-A-CHANGE) -> {
+            c0 = cs-child-flow(d, 0)
+            (c0 >= 0) -> {
+                x0, y0, _, _ = cs-rect(c0)
+                nv = 0
+                (cs-is-h(d) == 1) -> { nv = cs-sub(px, x0) }
+                (cs-is-h(d) == 0) -> { nv = cs-sub(py, y0) }
+                nv = dv-clamp(nv, cmp-value(d), cmp-value2(d))
+                cur = S[p7]: {
+                    ok -> it
+
+                    -> 0
+                }
+                (nv != cur) -> {
+                    dva-set(S, p7, nv)
+                    moved = 1
+                }
+            }
+        }
+    }
+    moved
+}
+
+; 松开：清掉抓握。拖拽结束后鼠标继续移动不再改分栏。
+dva-drag-up = () () {
+    DVA-DRAG[0] = -1
+}
+; 当前抓握的容器句柄（-1 = 没在拖）。测试与调试用。
+dva-drag-of = () (h i64) {
+    h = DVA-DRAG[0]: {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; ============================================================================
 ; 声明式主循环
 ; ============================================================================
 dva-run = (S []i64, title str, max-frames i64) () {
@@ -275,7 +543,7 @@ dva-run = (S []i64, title str, max-frames i64) () {
 
         t, mx, my = app-poll()
 
-        ; ---- 鼠标移动：hover 高亮 ----
+        ; ---- 鼠标移动：hover 高亮 + 拖分栏（阶段29）----
         (t == 3) -> {
             px = fx(mx)
             py = fx(my)
@@ -283,6 +551,7 @@ dva-run = (S []i64, title str, max-frames i64) () {
             DVA-PY[0] = py
             DVA-MOUSE[0] = 1
             app-hover(root, px, py)
+            dva-drag-move(S, px, py)
         }
 
         ; ---- 左键：命中 -> key -> 视图动作 -> 归约进状态池 ----
@@ -293,32 +562,77 @@ dva-run = (S []i64, title str, max-frames i64) () {
             DVA-PX[0] = px
             DVA-PY[0] = py
             DVA-MOUSE[0] = 1
-            hit = cs-hit(root, px, py)
-            k = cmp-key(hit)
-            dva-focus(hit)
-            act, pay = dv-dispatch(k)
-            nw = dv-app-reduce(S, k)
-            (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
-            dv-app-click(S, k, act, pay, nw)
+            ; 拖杆优先：落在可拆面板的间隙里就是拖分栏，不是点击
+            grab = dva-drag-down(S, root, px, py)
+            (grab == 0) -> {
+                hit = cs-hit(root, px, py)
+                k = cmp-key(hit)
+                dva-focus(hit)
+                act, pay = dv-dispatch(k)
+                nw = dv-app-reduce(S, k)
+                (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+                dv-app-click(S, k, act, pay, nw)
+            }
         }
 
-        ; ---- 键盘：q 退出；有输入焦点 -> 喂字；无焦点 -> 先试快捷键 ----
-        ; 快捷键语义：正在敲字时按键不触发全局动作（否则打不出 'r'）。
+        ; ---- 左键抬起（阶段29）：松开放手 ----
+        (t == 6) -> {
+            px = fx(mx)
+            py = fx(my)
+            DVA-PX[0] = px
+            DVA-PY[0] = py
+            DVA-MOUSE[0] = 1
+            dva-drag-up()
+        }
+
+        ; ---- 滚轮（阶段23）：命中 -> 顺着父链找滚动容器 -> 偏移进状态池 ----
+        ; 语义仍在视图上：dv-scroll 声明「偏移 = S[offslot]，步长 = value2」；
+        ; 几何（命中换算、最大偏移夹紧）留在事件侧，与滑杆同一模式。
+        (t == 5) -> {
+            px = fx(mx)
+            py = fx(my)
+            DVA-PX[0] = px
+            DVA-PY[0] = py
+            DVA-MOUSE[0] = 1
+            dva-wheel(S, root)
+        }
+
+        ; ---- 键盘：有面板焦点 -> 喂面板；有输入焦点 -> 喂输入框；有编辑器焦点 ->
+        ;      喂编辑器；都没有 -> q 退出 + 全局快捷键 ----
+        ; 快捷键语义：正在敲字时按键不触发全局动作（否则打不出 'r'）。阶段30：
+        ; 编辑器也算「正在敲字」—— 否则打不出 'q'。阶段32：命令面板也算，
+        ; 而且它排在最前 —— 面板开着时整段键盘归它（过滤、导航、执行、ESC 关闭）。
         (t == 4) -> {
             kk = mx.to-i64()
-            (kk == 113) -> { APP-QUIT[0] = 1 }
-            fh = DVA-FOCUS[0]: {
+            pk = DVA-PAL-FOCUS[0]: {
                 ok -> it
 
                 -> -1
             }
-            (fh >= 0) -> { dva-keyboard(kk) }
-            (fh < 0) -> {
-                ha, hp, hk = dv-hot-dispatch(kk)
-                (ha != 0) -> {
-                    nw2 = dv-app-reduce(S, hk)
-                    (nw2 > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
-                    dv-app-click(S, hk, ha, hp, nw2)
+            (pk >= 0) -> { dva-pal-keyboard(S, kk) }
+            (pk < 0) -> {
+                fh = DVA-FOCUS[0]: {
+                    ok -> it
+
+                    -> -1
+                }
+                (fh >= 0) -> { dva-keyboard(kk) }
+                (fh < 0) -> {
+                    ek = DVA-EDIT-FOCUS[0]: {
+                        ok -> it
+
+                        -> -1
+                    }
+                    (ek >= 0) -> { dva-edit-keyboard(kk) }
+                    (ek < 0) -> {
+                        (kk == 113) -> { APP-QUIT[0] = 1 }
+                        ha, hp, hk = dv-hot-dispatch(kk)
+                        (ha != 0) -> {
+                            nw2 = dv-app-reduce(S, hk)
+                            (nw2 > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+                            dv-app-click(S, hk, ha, hp, nw2)
+                        }
+                    }
                 }
             }
         }
@@ -332,6 +646,21 @@ dva-run = (S []i64, title str, max-frames i64) () {
 
         ; ---- 状态 -> 视图 -> 活组件树（调和）----
         page = dv-app-view()
+        ; 命令面板（阶段32）：哪个面板开着，键盘就归谁。必须在建视图**之后**问 ——
+        ; 面板 key 是视图构建时才登记的。面板是模态的，它开着的时候输入框 /
+        ; 编辑器都不该继续吃键盘（点面板里的输入框也不会抢走焦点，见 dva-focus）。
+        pk2 = dv-pal-open-key(S)
+        DVA-PAL-FOCUS[0] = pk2
+        (pk2 >= 0) -> {
+            fh2 = DVA-FOCUS[0]: {
+                ok -> it
+
+                -> -1
+            }
+            (fh2 >= 0) -> { input-focus(fh2, false) }
+            DVA-FOCUS[0] = -1
+            DVA-EDIT-FOCUS[0] = -1
+        }
         ops = dv-render(root, page)
         DVA-OPS[0] = dv-add(DVA-OPS[0], ops)
         ; 受控输入：字符串状态 <-> 组件文本（必须在布局之前，文本影响宽度）
@@ -353,7 +682,7 @@ dva-run = (S []i64, title str, max-frames i64) () {
         DVA-FRAMES[0] = fr
     }
 
-    ; 收尾：释放焦点、关窗
+    ; 收尾：释放焦点、松手（阶段29）、关窗
     fh = DVA-FOCUS[0]: {
         ok -> it
 
@@ -361,5 +690,8 @@ dva-run = (S []i64, title str, max-frames i64) () {
     }
     (fh >= 0) -> { input-focus(fh, false) }
     DVA-FOCUS[0] = -1
+    DVA-EDIT-FOCUS[0] = -1
+    DVA-PAL-FOCUS[0] = -1
+    dva-drag-up()
     app-shutdown()
 }

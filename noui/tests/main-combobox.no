@@ -1,0 +1,235 @@
+; ============================================================================
+; noui 窗口 demo：combobox 可输入下拉（阶段 42）
+;
+; 流水线：app-init -> cmp-combobox（两个：水果 / 颜色）
+;   -> 点字段 = 展开 / 收起（F-OPEN）；展开时面板只列**匹配项**
+;   -> 键盘：字母过滤查询（combobox-insert 后自动展开）、退格 / 前删、
+;     ↑↓ 移高亮、Enter = combobox-apply 选中高亮项、Esc 收起
+;   -> c 清空查询；r 重置；q / Esc 退出
+;   -> cs-layout / cs-paint（C-COMBOBOX 走 cs-paint-combobox：字段 + 查询 +
+;     光标 + 右端 'v' + 展开面板，面板行 = 匹配项）
+;   -> app-frame
+;
+; 退出：ESC / q / 帧数上限（CB-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-combobox.no
+; ============================================================================
+# /noui/src/app
+
+CB-MAX-FRAMES = 900
+CB-AZ = 'abcdefghijklmnopqrstuvwxyz'
+
+; ---- 计数（顶层标量）----
+cb-frames = 0
+cb-keys = 0
+cb-clicks = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui combobox')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui combobox: filterable dropdown')
+hint = cmp-label('click field opens; type filters; up/down move; enter picks; esc closes; c clear; r reset; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+cb1 = cmp-combobox()
+cb2 = cmp-combobox()
+
+cmp-add-child(root, title)
+cmp-add-child(root, cb1)
+cmp-add-child(root, cb2)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+combobox-add-option(cb1, 'Apple')
+combobox-add-option(cb1, 'Banana')
+combobox-add-option(cb1, 'Cherry')
+combobox-add-option(cb1, 'Durian')
+combobox-add-option(cb2, 'Red')
+combobox-add-option(cb2, 'Green')
+combobox-add-option(cb2, 'Blue')
+
+combobox-choose(cb1, 1)
+combobox-choose(cb2, 2)
+input-focus(cb1, true)
+; 默认展开 cb1，让面板直接可见
+select-open(cb1)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展开面板上点选项 / 点字段开关 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+        done = 0
+
+        ; cb1 展开：命中选项 -> 选中（命中句柄经匹配表反查下标）
+        ((done == 0) && (cmp-has(cb1, F-OPEN))) -> {
+            oi = combobox-match-index-of(cb1, hit)
+            (oi >= 0) -> {
+                combobox-choose(cb1, oi)
+                done = 1
+            }
+        }
+        ; cb2 展开：同上
+        ((done == 0) && (cmp-has(cb2, F-OPEN))) -> {
+            oi = combobox-match-index-of(cb2, hit)
+            (oi >= 0) -> {
+                combobox-choose(cb2, oi)
+                done = 1
+            }
+        }
+        ; 点字段：开 / 关
+        (done == 0) -> {
+            (hit == cb1) -> {
+                (cmp-has(cb1, F-OPEN)) -> { select-close(cb1) }
+                (!cmp-has(cb1, F-OPEN)) -> { select-open(cb1) }
+                done = 1
+            }
+            (hit == cb2) -> {
+                (cmp-has(cb2, F-OPEN)) -> { select-close(cb2) }
+                (!cmp-has(cb2, F-OPEN)) -> { select-open(cb2) }
+                done = 1
+            }
+        }
+
+        ; 聚焦 / 失焦
+        (hit == cb1) -> { input-focus(cb1, true) }
+        (hit == cb2) -> { input-focus(cb2, true) }
+        (hit != cb1) -> { input-focus(cb1, false) }
+        (hit != cb2) -> { input-focus(cb2, false) }
+        cb-clicks = cs-inc(cb-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        ; Esc：先收起展开的面板，都没开才退出
+        (k == 27) -> {
+            closed = 0
+            (cmp-has(cb1, F-OPEN)) -> {
+                select-close(cb1)
+                closed = 1
+            }
+            (cmp-has(cb2, F-OPEN)) -> {
+                select-close(cb2)
+                closed = 1
+            }
+            (closed == 0) -> { APP-QUIT[0] = 1 }
+        }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; ---- cb1 聚焦时 ----
+        (cmp-has(cb1, F-FOCUSED)) -> {
+            (k == 8) -> { combobox-backspace(cb1) }
+            (k == 127) -> { combobox-delete(cb1) }
+            (k == ED-K-UP) -> { combobox-highlight-move(cb1, -1) }
+            (k == ED-K-DOWN) -> { combobox-highlight-move(cb1, 1) }
+            (k == 13) -> { combobox-apply(cb1) }
+            (k == 99) -> { combobox-clear(cb1) }
+            (k == 114) -> {
+                combobox-clear(cb1)
+                combobox-choose(cb1, 1)
+                select-open(cb1)
+            }
+            ; 字母：过滤（c / r / q 是指令键，不插字）
+            (k >= 97) -> {
+                (k <= 122) -> {
+                    iscmd = (k == 99) || (k == 113) || (k == 114)
+                    (!iscmd) -> {
+                        i0 = cs-sub(k, 97)
+                        combobox-insert(cb1, CB-AZ.slice(i0, cs-inc(i0)))
+                        (!cmp-has(cb1, F-OPEN)) -> { select-open(cb1) }
+                    }
+                }
+            }
+        }
+        ; ---- cb2 聚焦时 ----
+        (cmp-has(cb2, F-FOCUSED)) -> {
+            (k == 8) -> { combobox-backspace(cb2) }
+            (k == 127) -> { combobox-delete(cb2) }
+            (k == ED-K-UP) -> { combobox-highlight-move(cb2, -1) }
+            (k == ED-K-DOWN) -> { combobox-highlight-move(cb2, 1) }
+            (k == 13) -> { combobox-apply(cb2) }
+            (k == 99) -> { combobox-clear(cb2) }
+            (k == 114) -> {
+                combobox-clear(cb2)
+                combobox-choose(cb2, 2)
+                select-open(cb2)
+            }
+            (k >= 97) -> {
+                (k <= 122) -> {
+                    iscmd = (k == 99) || (k == 113) || (k == 114)
+                    (!iscmd) -> {
+                        i0 = cs-sub(k, 97)
+                        combobox-insert(cb2, CB-AZ.slice(i0, cs-inc(i0)))
+                        (!cmp-has(cb2, F-OPEN)) -> { select-open(cb2) }
+                    }
+                }
+            }
+        }
+        cb-keys = cs-inc(cb-keys)
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    q1 = combobox-query(cb1)
+    s1 = combobox-selected(cb1)
+    m1 = combobox-match-count(cb1)
+    h1 = combobox-highlight(cb1)
+    op1 = cmp-has(cb1, F-OPEN)
+    q2 = combobox-query(cb2)
+    s2 = combobox-selected(cb2)
+    op2 = cmp-has(cb2, F-OPEN)
+    cmp-set-text(stat, 'fruit: query={q1} sel={s1} match={m1} hl={h1} open={op1}')
+    cmp-set-text(stat2, 'color: query={q2} sel={s2} open={op2}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+    app-frame()
+    app-delay(16)
+
+    cb-frames = cs-inc(cb-frames)
+    (CB-MAX-FRAMES > 0) -> {
+        (cb-frames >= CB-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = cb-frames
+kk = cb-keys
+ck = cb-clicks
+q1 = combobox-query(cb1)
+s1 = combobox-selected(cb1)
+m1 = combobox-match-count(cb1)
+op1 = cmp-has(cb1, F-OPEN)
+q2 = combobox-query(cb2)
+s2 = combobox-selected(cb2)
+op2 = cmp-has(cb2, F-OPEN)
+print('bye frames={fr} keys={kk} clicks={ck} cb1={q1} sel1={s1} match1={m1} open1={op1} cb2={q2} sel2={s2} open2={op2}')
+(sc > 0) -> { print('combobox render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

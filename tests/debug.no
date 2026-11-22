@@ -62,14 +62,38 @@ pz2 = 0.0
 mi = 0.0
 vi = 0.0
 i <- [0..5): {
-    mi = mass[i]
-    vi = vx[i]
+    mi = mass[i]: {
+        ok -> it
+    
+        -> 0.0
+    }
+    vi = vx[i]: {
+        ok -> it
+    
+        -> 0.0
+    }
     px2 = px2 + mi * vi
-    mi = mass[i]
-    vi = vy[i]
+    mi = mass[i]: {
+        ok -> it
+    
+        -> 0.0
+    }
+    vi = vy[i]: {
+        ok -> it
+    
+        -> 0.0
+    }
     py2 = py2 + mi * vi
-    mi = mass[i]
-    vi = vz[i]
+    mi = mass[i]: {
+        ok -> it
+    
+        -> 0.0
+    }
+    vi = vz[i]: {
+        ok -> it
+    
+        -> 0.0
+    }
     pz2 = pz2 + mi * vi
 }
 vx[0] = -px2 / sm

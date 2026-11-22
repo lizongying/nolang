@@ -1,0 +1,307 @@
+; ============================================================================
+; noui 命令式「可拆面板（Dock）」测试（阶段 36）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：内核里 C-DOCK 只是一台通了电的横向容器（cs-is-container 认它，但没有
+; 分栏语义），C-RESIZABLE 只有构造器；声明式侧的阶段 29 已经把「间隙就是拖杆」
+; 做完了（dv-dock-split + dva-drag-*），命令式侧没有对应物。
+;
+; 阶段 36 补：
+;   - cmp-dock-split(h, minw, maxw, gw) / cmp-dock-split-v(...)：把间隙声明成
+;     拖杆命中区，minw / maxw 写进 value / value2 当夹紧界，当前位置写进
+;     DK-SPLIT-V（真源）并初始化成 minw；
+;   - cmp-dock-splittable / cmp-dock-split-val / cmp-dock-set-split /
+;     cmp-dock-grab / cmp-dock-up：标记、位置、抓握状态；
+;   - cs-dock-down / cs-dock-move：命中 -> 间隙判定 -> 光标换算 -> 夹紧 ->
+;     写回 DK-SPLIT-V。主循环 t==2 先试拖杆，抓住了就不走点击路径。
+;
+; 为什么不用新增节点：两块面板之间的 gap 不属于任何子节点，cs-hit-inner 的
+; 「自身矩形兜底」会把它算到容器头上 —— 间隙自己就是拖杆的命中区。
+;
+; 场景钉住：
+;   M 标记  ：cmp-dock 的 kind / 可拆标记 / 布局位 / gap / pad / value / value2 /
+;             当前位置
+;   C 夹紧  ：ct-clamp 的上下界与 hi <= 0 = 不夹上限
+;   L 布局  ：左屏宽 = 当前位置；右屏吃掉剩余；间隙宽度 = 声明值
+;   H 命中  ：间隙命中容器；面板内部命中面板；容器内边距命中容器；容器外不命中
+;   D 拖拽  ：抓住 / 换算 / 上下界夹紧 / 松手后不再动 / 非拖杆处不抓
+;   V 竖拆  ：抹掉 L-H 后按 py 换算上屏高；px 不参与换算
+;   I 隔离  ：两个 dock 各有一份位置，抓一个不影响另一个
+;   N 普通  ：没声明成可拆的普通 C-DOCK 不抓
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-dock tests/cmp-dock.no
+;       DYLD_LIBRARY_PATH=... SDL_VIDEODRIVER=dummy ./dist/cmp-dock
+; ============================================================================
+# /noui/src/components
+# /noui/src/cmp-scene
+
+print('=== cmp-dock tests ===')
+
+DK-MIN = 8000
+DK-MAX = 28000
+DK-GAP = 1200
+DK-PH = 12000
+DK-VH = 10000
+DK-VDOCK-H = 20000
+PAD = 1200
+
+; ============================================================================
+; 场景 M：标记 —— 构造器 / 可拆标记 / 布局位 / gap / pad / value / value2 / 位置
+; ============================================================================
+d0 = cmp-dock()
+mk1 = cmp-kind(d0) == C-DOCK
+mk2 = cmp-dock-splittable(d0) == 0
+mk3 = cmp-dock-split-val(d0) == 0
+
+d1 = cmp-dock()
+d1 = cmp-dock-split(d1, DK-MIN, DK-MAX, DK-GAP)
+mk4 = cmp-dock-splittable(d1) == 1
+mk5 = (cmp-lay(d1) & L-H) != 0
+mk6 = cmp-gap(d1) == DK-GAP
+mk7 = cmp-pad(d1) == PAD
+mk8 = cmp-value(d1) == DK-MIN && cmp-value2(d1) == DK-MAX
+mk9 = cmp-dock-split-val(d1) == DK-MIN
+
+; 竖拆：抹掉 L-H（回到默认纵向）
+d2 = cmp-dock()
+d2 = cmp-dock-split-v(d2, DK-MIN, DK-MAX, DK-GAP)
+mk10 = cmp-dock-splittable(d2) == 1
+mk11 = cmp-lay(d2) == 0
+mk12 = cmp-gap(d2) == DK-GAP && cmp-pad(d2) == PAD
+mk13 = cmp-value(d2) == DK-MIN && cmp-value2(d2) == DK-MAX
+mk14 = cmp-dock-split-val(d2) == DK-MIN
+
+; 改位置只动 DK-SPLIT-V，夹紧界（value / value2）不动
+cmp-dock-set-split(d1, 15000)
+mk15 = cmp-dock-split-val(d1) == 15000 && cmp-value(d1) == DK-MIN && cmp-value2(d1) == DK-MAX
+cmp-dock-set-split(d1, DK-MIN)
+
+; ============================================================================
+; 场景 C：夹紧 —— ct-clamp 的语义（hi <= 0 = 不夹上限）
+; ============================================================================
+cl1 = ct-clamp(5, DK-MIN, DK-MAX) == DK-MIN
+cl2 = ct-clamp(30000, DK-MIN, DK-MAX) == DK-MAX
+cl3 = ct-clamp(12000, DK-MIN, DK-MAX) == 12000
+cl4 = ct-clamp(99999, DK-MIN, 0) == 99999
+cl5 = ct-clamp(-5, 0, 0) == 0
+cl6 = ct-clamp(0, 0, 0) == 0
+cl7 = ct-clamp(DK-MAX, DK-MIN, DK-MAX) == DK-MAX
+
+; ============================================================================
+; 场景 L：布局 —— 左屏宽 = 当前位置；右屏吃掉剩余；间隙 = 声明值
+; ============================================================================
+root-l = cmp-root()
+cmp-set-pad(root-l, PAD)
+
+dl = cmp-dock()
+dl = cmp-dock-split(dl, DK-MIN, DK-MAX, DK-GAP)
+al = cmp-group-box('left')
+cmp-set-sw(al, DK-MIN)
+cmp-set-sh(al, DK-PH)
+cmp-add-child(dl, al)
+bl = cmp-group-box('right')
+cmp-set-lay(bl, L-GROW)
+cmp-set-sh(bl, DK-PH)
+cmp-add-child(dl, bl)
+cmp-add-child(root-l, dl)
+
+cs-layout(root-l, 0, 0, 40000, 30000)
+ldx, ldy, ldw, ldh = cs-rect(dl)
+lax, lay, law, lah = cs-rect(al)
+lbx, lby, lbw, lbh = cs-rect(bl)
+
+lay1 = ldx == PAD && ldy == PAD
+lay2 = ldw == 37600
+lay3 = ldh == DK-PH + 2 * PAD
+lay4 = lax == 2 * PAD && lay == 2 * PAD
+lay5 = law == DK-MIN
+lay6 = lah == DK-PH
+lay7 = lbx == cs-add(cs-add(lax, law), DK-GAP)
+lay8 = lbx + lbw == cs-sub(cs-add(ldx, ldw), PAD)
+lay9 = lby == lay && lbh == DK-PH
+
+; 把位置推到 12000 再布局：左屏宽跟着走，右屏吃掉剩余
+cmp-dock-set-split(dl, 12000)
+cmp-set-sw(al, 12000)
+cs-layout(root-l, 0, 0, 40000, 30000)
+lax, lay, law, lah = cs-rect(al)
+lbx, lby, lbw, lbh = cs-rect(bl)
+lay10 = law == 12000
+lay11 = lbx == cs-add(cs-add(lax, law), DK-GAP)
+lay12 = lbx + lbw == cs-sub(cs-add(ldx, ldw), PAD)
+
+; ============================================================================
+; 场景 H：命中 —— 间隙是容器，面板是面板，容器外不是
+; ============================================================================
+hit1 = cs-hit(root-l, cs-add(lax, 6000), cs-add(lay, 6000))
+hit2 = cs-hit(root-l, cs-add(cs-add(lax, law), 600), cs-add(lay, 6000))
+hit3 = cs-hit(root-l, cs-add(ldx, 600), cs-add(lay, 6000))
+hit4 = cs-hit(root-l, 500, 500)
+hs1 = hit1 == al
+hs2 = hit2 == dl
+hs3 = hit3 == dl
+hs4 = hit4 != dl
+
+; ============================================================================
+; 场景 D：拖拽 —— 抓住 / 换算 / 上下界夹紧 / 松手
+; ============================================================================
+gy = cs-add(lay, 6000)
+gx = cs-add(cs-add(lax, law), 600)
+
+g1 = cs-dock-down(root-l, gx, gy)
+dg1 = g1 == 1 && cmp-dock-grab() == dl
+
+; px = 20000 -> 左屏宽 = 20000 - 2400 = 17600
+mv1 = cs-dock-move(20000, gy)
+dg2 = mv1 == 1 && cmp-dock-split-val(dl) == 17600
+
+; 下界夹紧：拖到左屏左边以内 -> 8000
+mv2 = cs-dock-move(1000, gy)
+dg3 = mv2 == 1 && cmp-dock-split-val(dl) == DK-MIN
+
+; 上界夹紧：拖出右边界 -> 28000
+mv3 = cs-dock-move(99999, gy)
+dg4 = mv3 == 1 && cmp-dock-split-val(dl) == DK-MAX
+
+; 夹紧界本身没被写掉（value 是下界，不是当前位置）
+dg5 = cmp-value(dl) == DK-MIN && cmp-value2(dl) == DK-MAX
+
+; 松手后再移动：不动
+cmp-dock-up()
+mv4 = cs-dock-move(20000, gy)
+dg6 = mv4 == 0 && cmp-dock-split-val(dl) == DK-MAX && cmp-dock-grab() == -1
+
+; 面板内部不抓（命中的是面板，不是 dock）
+g2 = cs-dock-down(root-l, cs-add(lax, 6000), gy)
+dg7 = g2 == 0
+; 容器内边距不抓（命中 dock，但不在间隙里）
+g3 = cs-dock-down(root-l, cs-add(ldx, 600), gy)
+dg8 = g3 == 0
+; 容器外不抓
+g4 = cs-dock-down(root-l, 500, 500)
+dg9 = g4 == 0
+
+; ============================================================================
+; 场景 V：竖拆 —— 抹掉 L-H 后按 py 换算上屏高；px 不参与换算
+; ============================================================================
+root-v = cmp-root()
+cmp-set-pad(root-v, PAD)
+
+dv = cmp-dock()
+dv = cmp-dock-split-v(dv, DK-MIN, DK-MAX, DK-GAP)
+cmp-set-sh(dv, DK-VDOCK-H)
+va = cmp-group-box('top')
+cmp-set-sh(va, DK-VH)
+cmp-add-child(dv, va)
+vb = cmp-group-box('bottom')
+cmp-set-lay(vb, L-GROW)
+cmp-add-child(dv, vb)
+cmp-add-child(root-v, dv)
+
+cs-layout(root-v, 0, 0, 40000, 30000)
+vdx, vdy, vdw, vdh = cs-rect(dv)
+vax, vay, vaw, vah = cs-rect(va)
+vbx, vby, vbw, vbh = cs-rect(vb)
+
+ver1 = vdx == PAD && vdy == PAD
+ver2 = vdw == 37600 && vdh == DK-VDOCK-H
+ver3 = vax == 2 * PAD && vay == 2 * PAD && vah == DK-VH
+ver4 = vby == cs-add(cs-add(vay, vah), DK-GAP)
+
+vgy = cs-add(cs-add(vay, vah), 600)
+vgx = cs-add(vax, 6000)
+g5 = cs-dock-down(root-v, vgx, vgy)
+ver5 = g5 == 1 && cmp-dock-grab() == dv
+mv5 = cs-dock-move(vgx, 20000)
+ver6 = mv5 == 1 && cmp-dock-split-val(dv) == 17600
+cmp-dock-up()
+
+; 竖拆只认 py：px 甩到 30000、py 不动 -> 值不变
+g6 = cs-dock-down(root-v, vgx, vgy)
+mv6 = cs-dock-move(30000, 20000)
+ver7 = g6 == 1 && mv6 == 0 && cmp-dock-split-val(dv) == 17600
+cmp-dock-up()
+
+; ============================================================================
+; 场景 I：隔离 —— 两个 dock 各有一份位置，抓一个不影响另一个
+; ============================================================================
+root-a = cmp-root()
+cmp-set-pad(root-a, PAD)
+da = cmp-dock()
+da = cmp-dock-split(da, DK-MIN, DK-MAX, DK-GAP)
+aa = cmp-group-box('a')
+cmp-set-sw(aa, DK-MIN)
+cmp-set-sh(aa, DK-PH)
+cmp-add-child(da, aa)
+ba = cmp-group-box('b')
+cmp-set-lay(ba, L-GROW)
+cmp-set-sh(ba, DK-PH)
+cmp-add-child(da, ba)
+cmp-add-child(root-a, da)
+
+root-b = cmp-root()
+cmp-set-pad(root-b, PAD)
+db = cmp-dock()
+db = cmp-dock-split(db, DK-MIN, DK-MAX, DK-GAP)
+ab = cmp-group-box('a')
+cmp-set-sw(ab, DK-MIN)
+cmp-set-sh(ab, DK-PH)
+cmp-add-child(db, ab)
+bb = cmp-group-box('b')
+cmp-set-lay(bb, L-GROW)
+cmp-set-sh(bb, DK-PH)
+cmp-add-child(db, bb)
+cmp-add-child(root-b, db)
+
+cs-layout(root-a, 0, 0, 40000, 30000)
+cs-layout(root-b, 0, 0, 40000, 30000)
+aax, aay, aaw, aah = cs-rect(aa)
+abx, aby, abw, abh = cs-rect(ab)
+
+cs-dock-down(root-a, cs-add(cs-add(aax, aaw), 600), cs-add(aay, 6000))
+cs-dock-move(20000, cs-add(aay, 6000))
+iso1 = cmp-dock-split-val(da) == 17600 && cmp-dock-split-val(db) == DK-MIN
+
+cs-dock-down(root-b, cs-add(cs-add(abx, abw), 600), cs-add(aby, 6000))
+cs-dock-move(20000, cs-add(aby, 6000))
+iso2 = cmp-dock-split-val(db) == 17600 && cmp-dock-split-val(da) == 17600
+cmp-dock-up()
+
+; ============================================================================
+; 场景 N：普通 —— 没声明成可拆的 C-DOCK 不抓
+; ============================================================================
+root-n = cmp-root()
+cmp-set-pad(root-n, PAD)
+dn = cmp-dock()
+an = cmp-group-box('a')
+cmp-set-sw(an, DK-MIN)
+cmp-set-sh(an, DK-PH)
+cmp-add-child(dn, an)
+bn = cmp-group-box('b')
+cmp-set-lay(bn, L-GROW)
+cmp-set-sh(bn, DK-PH)
+cmp-add-child(dn, bn)
+cmp-add-child(root-n, dn)
+
+cs-layout(root-n, 0, 0, 40000, 30000)
+anx, any, anw, anh = cs-rect(an)
+g7 = cs-dock-down(root-n, cs-add(cs-add(anx, anw), 600), cs-add(any, 6000))
+pln1 = g7 == 0 && cmp-dock-grab() == -1
+; 普通 dock 的间隙仍然命中容器（只是不可拖）
+hn = cs-hit(root-n, cs-add(cs-add(anx, anw), 600), cs-add(any, 6000))
+pln2 = hn == dn
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all-ok = mk1 && mk2 && mk3 && mk4 && mk5 && mk6 && mk7 && mk8 && mk9 && mk10 && mk11 && mk12 && mk13 && mk14 && mk15 && cl1 && cl2 && cl3 && cl4 && cl5 && cl6 && cl7 && lay1 && lay2 && lay3 && lay4 && lay5 && lay6 && lay7 && lay8 && lay9 && lay10 && lay11 && lay12 && hs1 && hs2 && hs3 && hs4 && dg1 && dg2 && dg3 && dg4 && dg5 && dg6 && dg7 && dg8 && dg9 && ver1 && ver2 && ver3 && ver4 && ver5 && ver6 && ver7 && iso1 && iso2 && pln1 && pln2
+
+print('mark={mk1}{mk2}{mk3}{mk4}{mk5}{mk6}{mk7}{mk8}{mk9}{mk10}{mk11}{mk12}{mk13}{mk14}{mk15}')
+print('clamp={cl1}{cl2}{cl3}{cl4}{cl5}{cl6}{cl7}')
+print('layout={lay1}{lay2}{lay3}{lay4}{lay5}{lay6}{lay7}{lay8}{lay9}{lay10}{lay11}{lay12}')
+print('hit={hs1}{hs2}{hs3}{hs4}')
+print('drag={dg1}{dg2}{dg3}{dg4}{dg5}{dg6}{dg7}{dg8}{dg9}')
+print('vert={ver1}{ver2}{ver3}{ver4}{ver5}{ver6}{ver7}')
+print('iso={iso1}{iso2} plain={pln1}{pln2}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DOCK TESTS PASSED') }
+(all-ok == 0) -> { print('DOCK TESTS FAILED') }

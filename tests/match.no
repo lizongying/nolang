@@ -188,7 +188,7 @@ bool-str = (b bool) (r str) {
 ; (1)(2)(3)(4) 裸臂 + 綁定臂混用；bool 臂內巢狀第二條型別 match。
 ; 內層 match 的主體是 union 別名（num）型別的局部變數——靜態型別是 union，
 ; 走 buildTypeMatchDesugar 的主體型別派發路徑（與外層 mixed 同形）。
-gi64 = 7
+GI64 = 7
 
 ; 巢狀型別 match：外層對 mixed 判 bool，內層再對 union 別名 num 判具體寬度
 ; a: 外層要判型別的 union 值
@@ -196,7 +196,7 @@ gi64 = 7
 nested = (a mixed) (r str) {
     r = a: {
         v bool -> {
-            inner num = gi64
+            inner num = GI64
             w = inner: {
                 u i64 -> 'bool+int64'
 
@@ -319,8 +319,8 @@ bf: {
     err -> print('ERR')
 }
 
-s = mk-str()
-g-str(s)
+S = mk-str()
+g-str(S)
 
 ; merged from tests/option-match.no
 ; option-match.no — 測試 option 變數的 match 語法
@@ -557,8 +557,8 @@ a = clamp0(ai64, 0, hi64); -> i64 臂 -> hi = 10
 print(a)
 bi32 i32 = 3
 hi32 i32 = 9
-b = clamp0(bi32, bi32, 0); -> i32 臂 -> lo = 3
-print(b)
+clamped = clamp0(bi32, bi32, 0); -> i32 臂 -> lo = 3
+print(clamped)
 bf64 = 2.5
 hf64 = 9.0
 c = clamp0(bf64, bf64, hf64); -> 無 f64 臂 -> 預設臂 -> r = x = 2.5
@@ -630,8 +630,8 @@ probe-min = () (out str) {
 
         -> {
             got = it.to-str()
-            b ?i64 = mk-inner()
-            b: {
+            inner-opt ?i64 = mk-inner()
+            inner-opt: {
                 nil -> print('  inner nil')
 
                 err -> print('  inner err')
@@ -660,8 +660,8 @@ probe-deep = () (out str) {
 
         -> {
             out = it.to-str()
-            b ?i64 = mk-inner()
-            b: {
+            inner-opt ?i64 = mk-inner()
+            inner-opt: {
                 nil -> out = 'b nil'
 
                 err -> out = 'b err'
@@ -700,8 +700,8 @@ probe-else = () (out str) {
 
         -> {
             o = it.to-str()
-            b ?i64 = mk-inner()
-            b: {
+            inner-opt ?i64 = mk-inner()
+            inner-opt: {
                 nil -> print('  b nil')
 
                 err -> print('  b err')

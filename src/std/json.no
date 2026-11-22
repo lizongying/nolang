@@ -149,7 +149,11 @@ pool.init = () {
     .overflowed = false
 
     #{overflow=wrap}
-    .id = JSON-POOL-NEXT-ID + 1
+    .id = JSON-POOL-NEXT-ID + 1: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; 分配新節點，返回索引（堆 vec 自動擴容，不再有池滿上限）
@@ -1970,10 +1974,13 @@ json.delete-key = (key str) (ok bool) {
             }
 
             ; 若命中邊為尾則更新 last
-            last = .pool.nodes[.root]: {
-                ok -> it.last
+            last = -1
+            {
+                last ?= .pool.nodes[.root].last
+            }: {
+                err -> _
 
-                -> -1
+                -> _
             }
             last == e -> {
                 .pool.nodes[.root].last = prev

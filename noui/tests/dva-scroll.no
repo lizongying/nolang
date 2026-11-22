@@ -1,0 +1,294 @@
+; ============================================================================
+; noui 声明式「滚动：让空间进状态」测试（阶段 23）—— src/dv.no
+;
+; 缺口：前面所有声明式状态都是「应用写了什么就是什么」（开关 / 选中 / 展开 /
+; 通知触发帧），组件的几何（位置、尺寸）全是布局算出来的，应用碰不到。
+; 滚动是第一个「把空间写进状态」的原语：偏移量的真源是状态槽，视图每帧把它
+; 读成组件 value，布局据此把内容上移，事件侧（滚轮）再夹紧写回同一个槽。
+;
+; 阶段 23 补：
+;   - dv-scroll(S, key, offslot, step, parent)：C-SCROLL + value = S[offslot]，
+;     value2 = step，动作 DV-A-CHANGE + 载荷 = offslot（语义在视图上）；
+;   - cmp-scroll-max(h)：布局阶段算好的「内容高 - 视口高」，事件侧拿它夹紧；
+;   - cs-paint 的 C-SCROLL 分支：设裁剪矩形后画子节点（每条 Scene 指令带裁剪）；
+;   - cs-hit 的包装：视口外的点不命中，视口内的点按全局坐标直接命中（子节点
+;             矩形本身已带 -off 偏移，不再换算一次）；
+;   - dva-wheel(S, root)：命中 -> 顺父链找滚动容器 -> 偏移进状态池。
+;
+; 场景钉住：
+;   M 标记  ：dv-scroll 的 kind / value（= 状态槽）/ value2（步长）/ 动作载荷，
+;             以及「改状态 -> 重建 -> value 跟着变」（声明式闭环）
+;   L 布局  ：子节点按 -off 上移；cmp-scroll-max 正确；off 夹紧；**不写回状态**
+;   P 绘制  ：滚动子孙的每条 Scene 指令都带裁剪矩形；滚动外面的节点不带
+;   H 命中  ：视口内换算命中正确的子节点；视口外不命中；视口内命中会顺父链冒泡
+;   W 滚轮  ：dva-wheel 把偏移写进状态（含上下界夹紧、到顶/到底不动、
+;             落在非滚动区不动）；改偏移不产生结构操作
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-scroll.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    t = dv-form(1, -1)
+    page = t
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-scroll tests ===')
+
+; 共用数据
+D-OFF = 0          ; 滚动偏移槽（真源）
+SC-STEP = 400      ; 滚轮每格 4px
+SC-KEY = 500       ; 滚动容器
+K1 = 501           ; 四行内容
+K2 = 502
+K3 = 503
+K4 = 504
+KOUT = 600         ; 滚动外面的兄弟（「滚不动」的区域）
+VIEW-H = 20000     ; 视口高 200px
+ROW-H = 5000       ; 每行 50px
+X0 = 1200          ; 根表单内边距
+SC-X = 1200        ; 滚动容器左上角
+SC-Y = 1200
+SC-W = 37600       ; 40000 - 2*1200
+ROW-Y0 = 2400      ; 第一行顶部（滚动内边距之后）
+MAX-OFF = 4800     ; 内容高 24800 - 视口高 20000
+
+ST []i64 = with-len(4)
+
+; 造一页：根表单 -> 滚动容器(定高) -> 四行；滚动外面再挂一个兄弟标签
+mk-page = () (p i64) {
+    dv-clear()
+    t = dv-form(1, -1)
+    sc = dv-scroll(ST, SC-KEY, D-OFF, SC-STEP, t)
+    dv-size(sc, 0, VIEW-H)
+    a1 = dv-node(C-LABEL, K1, 'one', '', 0, 0, 0, dv-on(), sc)
+    dv-size(a1, 0, ROW-H)
+    a2 = dv-node(C-LABEL, K2, 'two', '', 0, 0, 0, dv-on(), sc)
+    dv-size(a2, 0, ROW-H)
+    a3 = dv-node(C-LABEL, K3, 'three', '', 0, 0, 0, dv-on(), sc)
+    dv-size(a3, 0, ROW-H)
+    a4 = dv-node(C-LABEL, K4, 'four', '', 0, 0, 0, dv-on(), sc)
+    dv-size(a4, 0, ROW-H)
+    o = dv-node(C-LABEL, KOUT, 'out', '', 0, 0, 0, dv-on(), t)
+    p = t
+}
+
+; 把光标放到定点坐标（事件回调里做几何换算用）
+set-cursor = (px i64, py i64) () {
+    dv-arr-set(DVA-PX, 0, px)
+    dv-arr-set(DVA-PY, 0, py)
+}
+; 冒充一次滚轮事件（shim 侧的增量槽）
+set-wheel = (d i64) () {
+    dv-arr-set(APP-WHEEL, 0, d)
+}
+
+; 场景辅助：按文案找 Scene 指令下标
+find-text = (t str) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-t(i) == t) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+; 场景辅助：某个裁剪标记出现的次数
+count-cf = (f i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-cf(i) == f) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 M：标记 —— dv-scroll 的数据 + 状态驱动
+; ============================================================================
+root-m = cmp-root()
+ST[D-OFF] = 0
+pm = mk-page()
+dv-render(root-m, pm)
+scm = dv-live-deep(root-m, SC-KEY)
+r1 = scm >= 0 && cmp-kind(scm) == C-SCROLL
+r2 = cmp-value(scm) == 0
+r3 = cmp-value2(scm) == SC-STEP
+a1m, p1m = dv-dispatch(SC-KEY)
+r4 = a1m == DV-A-CHANGE && p1m == D-OFF
+r5 = (dv-flags(scm) & DV-F-VIS) != 0 && (dv-flags(scm) & DV-F-EN) != 0
+
+; 改状态 -> 重建 -> value 跟着改（声明式闭环，结构不变）
+ST[D-OFF] = 2500
+pm2 = mk-page()
+r6 = dv-render(root-m, pm2) == 0
+r7 = cmp-value(scm) == 2500
+
+; ============================================================================
+; 场景 L：布局 —— 偏移上移 / 最大偏移 / 夹紧 / 不写回状态
+; ============================================================================
+root-l = cmp-root()
+ST[D-OFF] = 0
+pl = mk-page()
+dv-render(root-l, pl)
+cs-layout(root-l, 0, 0, 40000, 30000)
+scl = dv-live-deep(root-l, SC-KEY)
+r8 = cmp-scroll-max(scl) == MAX-OFF
+l1 = dv-live-deep(root-l, K1)
+x1, y1, w1, h1 = cs-rect(l1)
+r10 = y1 == ROW-Y0
+
+ST[D-OFF] = MAX-OFF
+pl2 = mk-page()
+dv-render(root-l, pl2)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l1b = dv-live-deep(root-l, K1)
+l2b = dv-live-deep(root-l, K2)
+_, y1b, _, _ = cs-rect(l1b)
+_, y2b, _, _ = cs-rect(l2b)
+r11 = y1b == cs-sub(ROW-Y0, MAX-OFF)
+r12 = y2b == cs-add(cs-sub(ROW-Y0, MAX-OFF), 5800)
+
+; 夹紧：状态写超界，布局夹紧，但**不写回状态**
+ST[D-OFF] = 99999
+pl3 = mk-page()
+dv-render(root-l, pl3)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l1c = dv-live-deep(root-l, K1)
+_, y1c, _, _ = cs-rect(l1c)
+r13 = y1c == cs-sub(ROW-Y0, MAX-OFF)
+r14 = ST[D-OFF] == 99999
+
+; 负数也夹紧回 0
+ST[D-OFF] = -500
+pl4 = mk-page()
+dv-render(root-l, pl4)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l1d = dv-live-deep(root-l, K1)
+_, y1d, _, _ = cs-rect(l1d)
+r15 = y1d == ROW-Y0
+r16 = ST[D-OFF] == -500
+
+; ============================================================================
+; 场景 P：绘制 —— 滚动子孙带裁剪矩形，滚动外面不带
+; ============================================================================
+ST[D-OFF] = 0
+pl5 = mk-page()
+dv-render(root-l, pl5)
+cs-layout(root-l, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root-l)
+i2 = find-text('two')
+r17 = i2 >= 0 && cs-scene-cf(i2) == 1
+r18 = cs-scene-cx(i2) == SC-X && cs-scene-cy(i2) == SC-Y
+r19 = cs-scene-cw(i2) == SC-W && cs-scene-ch(i2) == VIEW-H
+io = find-text('out')
+r20 = io >= 0 && cs-scene-cf(io) == 0
+
+; ============================================================================
+; 场景 H：命中 —— 视口内换算 / 视口外不命中
+; ============================================================================
+ST[D-OFF] = MAX-OFF
+pl6 = mk-page()
+dv-render(root-l, pl6)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l2h = dv-live-deep(root-l, K2)
+h1 = cs-hit(scl, 5000, 7000)
+r21 = h1 == l2h
+; 视口外（下 / 左）不命中
+r22 = cs-hit(scl, 5000, 25000) == -1
+r23 = cs-hit(scl, 500, 2000) == -1
+; 从整页根命中也会顺父链走到同一行
+h2 = cs-hit(root-l, 5000, 7000)
+r24 = h2 == l2h
+
+ST[D-OFF] = 0
+pl7 = mk-page()
+dv-render(root-l, pl7)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l1h = dv-live-deep(root-l, K1)
+r25 = cs-hit(scl, 5000, 3000) == l1h
+
+; ============================================================================
+; 场景 W：滚轮 —— dva-wheel 把偏移归约进状态池
+; ============================================================================
+root-w = cmp-root()
+ST[D-OFF] = 0
+pw = mk-page()
+dv-render(root-w, pw)
+cs-layout(root-w, 0, 0, 40000, 30000)
+scw = dv-live-deep(root-w, SC-KEY)
+
+; 光标停在第二行上，滚一格
+set-cursor(5000, 2200)
+set-wheel(1)
+m1 = dva-wheel(ST, root-w)
+r26 = m1 == 1 && ST[D-OFF] == SC-STEP
+
+; 上界夹紧：4600 + 10 格 -> 4800
+ST[D-OFF] = 4600
+set-wheel(10)
+m2 = dva-wheel(ST, root-w)
+r27 = m2 == 1 && ST[D-OFF] == MAX-OFF
+
+; 已经到底：不动
+set-wheel(1)
+m3 = dva-wheel(ST, root-w)
+r28 = m3 == 0 && ST[D-OFF] == MAX-OFF
+
+; 下界夹紧：100 - 1 格 -> 0
+ST[D-OFF] = 100
+set-wheel(-1)
+m4 = dva-wheel(ST, root-w)
+r29 = m4 == 1 && ST[D-OFF] == 0
+
+; 已经在顶：不动
+set-wheel(-1)
+m5 = dva-wheel(ST, root-w)
+r30 = m5 == 0 && ST[D-OFF] == 0
+
+; 落在滚动外面的兄弟上：不动
+set-cursor(5000, 22500)
+set-wheel(1)
+m6 = dva-wheel(ST, root-w)
+r31 = m6 == 0 && ST[D-OFF] == 0
+
+; 命中落在滚动容器自身的空白处也认（父链第一站就是它）
+set-cursor(5000, 1200)
+set-wheel(1)
+m7 = dva-wheel(ST, root-w)
+r32 = m7 == 1 && ST[D-OFF] == SC-STEP
+
+; 滚轮改偏移是纯状态变更：重建视图零结构操作，布局后位置真的变了
+pw2 = mk-page()
+r33 = dv-render(root-w, pw2) == 0
+cs-layout(root-w, 0, 0, 40000, 30000)
+w1 = dv-live-deep(root-w, K1)
+_, yw1, _, _ = cs-rect(w1)
+r34 = yw1 == cs-sub(ROW-Y0, SC-STEP)
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29 && r30 && r31 && r32 && r33 && r34
+
+print('M mark={r1}{r2}{r3}{r4}{r5}{r6}{r7}')
+print('L layout={r8}{r10}{r11}{r12}{r13}{r14}{r15}{r16}')
+print('P paint={r17}{r18}{r19}{r20}')
+print('H hit={r21}{r22}{r23}{r24}{r25}')
+print('W wheel={r26}{r27}{r28}{r29}{r30}{r31}{r32}{r33}{r34}')
+print('all-ok={ok}')
+(ok) -> { print('ALL DVA-SCROLL TESTS PASSED') }
+(!ok) -> { print('DVA-SCROLL FAILURES') }

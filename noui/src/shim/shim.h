@@ -14,6 +14,9 @@ void noui_font_close(void);
 void noui_font_draw(double x, double y, int r, int g, int b, int a, const char *text);
 void noui_set_color(int r, int g, int b, int a);
 void noui_end_frame(void);
+/* 阶段23：滚动容器的裁剪（SDL_RenderSetClipRect；clear = 传 NULL） */
+void noui_clip(int x, int y, int w, int h);
+void noui_clip_clear(void);
 
 long long noui_poll(void);
 int noui_should_quit(void);

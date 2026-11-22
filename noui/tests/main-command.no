@@ -1,0 +1,296 @@
+; ============================================================================
+; noui 命令式「命令面板」窗口 demo（阶段 37）—— src/components.no 的 cmp-command-*
+;
+; 和 tests/main-editor.no / main-dock.no 同一条命令式路子：顶层标量存状态，
+; 主循环直接读写，没有声明式视图层。面板不是新组件种类，而是**应用调出来的**：
+;   cmp-command()                 根就是 C-COMMAND（普通竖排容器）
+;   cmp-command-add(name, act)    应用写命令表（全局单份，面板只读）
+;   cmp-command-sync(...)         输入框 + 滚动体 + 任意时刻只挂可见行
+;   cmp-command-type / -backspace 查询串编辑
+;   cmp-command-move / -run       键盘导航 / 执行（游标是命中表下标）
+;   cmp-command-row-of / -row-src 命中上溯到源行号（点字等于点行）
+;
+; 面板是**模态叠加层**：cmp-flag-set(panel, F-OVERLAY) 之后 cs-layout 把它
+; 在父矩形内居中、cs-hit 先于其它子节点命中（components.no 不写死模态行为，
+; 和 cmp-dialog 一样交给调用方）。
+;
+; 交互：
+;   p             = 打开面板（清空查询 / 游标 / 偏移）
+;   ESC           = 关面板（面板开着时）；没开时退出程序
+;   打字          = 过滤命令（大小写不敏感子串）
+;   Backspace     = 删一个字符
+;   ↑ / ↓         = 移动游标
+;   Enter         = 执行游标行
+;   点行          = 执行该行（点文字也算，行和标签挂同一个源行号）
+;   点面板外      = 关面板（模态屏障返回 -2）
+;   滚轮          = 滚列表（指针在面板内才滚）
+;   q             = 退出（面板关着时）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-command.no
+; ============================================================================
+# /noui/src/app
+
+; ---- 颜色（主题槽）----
+FG = 0
+ACC = 0
+SELB = 0
+
+CP-MAX-FRAMES = 900
+PAL-ROWH = 2800      ; 一行高 28px（和声明式 PAL-ROWH 一致）
+CP-STEP = 3200        ; 滚轮步长 32px（和声明式 PAL-STEP 一致；步长在应用手里，
+                     ; sync 只负责按偏移摆行）
+PAL-VIEW = 28000     ; 列表视口高 280px
+PAL-W = 480000       ; 面板宽 480px
+PAL-SH = 34000       ; 面板高 = 2*pad + 行高 + gap + 视口高
+
+; ---- 句柄 ----
+panel = 0
+DLAB1 = 0
+DLAB2 = 0
+DLAB3 = 0
+DLAB4 = 0
+DLAB5 = 0
+
+cp-frames = 0
+cp-keys = 0
+cp-clicks = 0
+cp-runs = 0
+cp-open = 0
+cp-rows = 0
+cp-last = ''
+
+; ============================================================================
+; 函数（nolang 要求先定义后调用，所以放在初始化之前）
+; ============================================================================
+
+; 命中链上有没有这个容器（滚轮只在该滚的地方滚）
+cp-hit-in = (c i64, want i64) (yes i64) {
+    yes = 0
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (yes != 0) -> { ** }
+        (p == want) -> { yes = 1 }
+        p = cmp-parent-of(p)
+    }
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui command')
+(ok == 0) -> {
+
+    FG = cs-theme(CS-TH-FG)
+    ACC = cs-theme(CS-TH-ACCENT)
+    SELB = cs-theme(CS-TH-TRACK)
+
+    ; ---- 命令表（应用写，全局单份）----
+    cmp-command-add('new file', 1)
+    cmp-command-add('open file', 2)
+    cmp-command-add('save file', 3)
+    cmp-command-add('save as', 4)
+    cmp-command-add('close tab', 5)
+    cmp-command-add('close all tabs', 6)
+    cmp-command-add('find in files', 7)
+    cmp-command-add('go to line', 8)
+    cmp-command-add('toggle sidebar', 9)
+    cmp-command-add('toggle terminal', 10)
+    cmp-command-add('run task', 11)
+    cmp-command-add('build project', 12)
+
+    root = app-root()
+    cmp-set-lay(root, L-H)
+    cmp-set-gap(root, CS-GAP)
+
+    ; ---- 主区 ----
+    main = cmp-form()
+    cmp-set-lay(main, L-GROW)
+    t1 = cmp-label('imperative command palette')
+    t2 = cmp-label('p open | type filter | up/down | enter run | click row | esc close')
+    DLAB1 = cmp-label('open: no')
+    DLAB2 = cmp-label('query: ')
+    DLAB3 = cmp-label('match: 0')
+    DLAB4 = cmp-label('last: -')
+    DLAB5 = cmp-label('keys: 0 clicks: 0 runs: 0')
+    cmp-add-child(main, t1)
+    cmp-add-child(main, t2)
+    cmp-add-child(main, DLAB1)
+    cmp-add-child(main, DLAB2)
+    cmp-add-child(main, DLAB3)
+    cmp-add-child(main, DLAB4)
+    cmp-add-child(main, DLAB5)
+
+    cmp-add-child(root, main)
+
+    ; ---- 命令面板：模态叠加层（不参与流布局，cs-layout 居中）----
+    panel = cmp-command()
+    cmp-flag-set(panel, F-OVERLAY)
+    cmp-set-pad(panel, CS-PAD)
+    cmp-set-gap(panel, CS-GAP)
+    cmp-set-sw(panel, PAL-W)
+    cmp-set-sh(panel, PAL-SH)
+    cmp-add-child(root, panel)
+
+    ; 打开状态起步：headless（dummy 驱动）没有真事件，自动开着才能真跑一遍
+    ; 「过滤 -> 两段式建行 -> 布局 -> 命中」的完整链路（见文末 rows 检查）。
+    cmp-flag-set(panel, F-VISIBLE)
+    cp-open = 1
+
+    cp-last = ''
+    ncmd = cmp-command-count()
+    print('init-done cmds={ncmd}')
+}
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> {
+        app-hover(root, fx(mx), fx(my))
+    }
+
+    ; ---- 左键按下 ----
+    (t == 2) -> {
+        hit = cs-hit(root, fx(mx), fx(my))
+        (cp-open == 1) -> {
+            ; 模态屏障：点面板外 -> 关面板
+            (hit == -2) -> {
+                cp-open = 0
+                cmp-flag-clear(panel, F-VISIBLE)
+            }
+            (hit >= 0) -> {
+                row = cmp-command-row-of(panel, hit)
+                (row >= 0) -> {
+                    src = cmp-command-row-src(row)
+                    (src >= 0) -> {
+                        cp-last = ed-arr-get-s(CP-TEXT, src)
+                        cp-runs = cs-inc(cp-runs)
+                        cp-clicks = cs-inc(cp-clicks)
+                    }
+                    cp-open = 0
+                    cmp-flag-clear(panel, F-VISIBLE)
+                }
+            }
+        }
+    }
+
+    ; ---- 滚轮：指针在面板内才滚 ----
+    (t == 5) -> {
+        dy = app-wheel()
+        (dy != 0) -> {
+            (cp-open == 1) -> {
+                hit = cs-hit(root, fx(mx), fx(my))
+                (cp-hit-in(hit, panel) == 1) -> {
+                    cur = cmp-command-off(panel)
+                    nv = cur + dy * CP-STEP: {
+                        ok -> it
+
+                        -> cur
+                    }
+                    (nv < 0) -> { nv = 0 }
+                    cmp-command-set-off(panel, nv)
+                }
+            }
+        }
+    }
+
+    ; ---- 键盘 ----
+    ; 注意：';' 在 nolang 里是行注释，不是语句分隔符。分支体里多句必须换行写。
+    (t == 4) -> {
+        k = mx.to-i64()
+        (cp-open == 1) -> {
+            (k == 27) -> {
+                cp-open = 0
+                cmp-flag-clear(panel, F-VISIBLE)
+            }
+            (k == 13) -> {
+                src = cmp-command-cur-src(panel)
+                (src >= 0) -> {
+                    cp-last = ed-arr-get-s(CP-TEXT, src)
+                    cp-runs = cs-inc(cp-runs)
+                }
+                cp-open = 0
+                cmp-flag-clear(panel, F-VISIBLE)
+            }
+            (k == 8) -> {
+                cmp-command-backspace(panel)
+                cp-keys = cs-inc(cp-keys)
+            }
+            (k == 1073741906) -> {
+                cmp-command-move(panel, -1)
+                cp-keys = cs-inc(cp-keys)
+            }
+            (k == 1073741905) -> {
+                cmp-command-move(panel, 1)
+                cp-keys = cs-inc(cp-keys)
+            }
+            (k >= 32) -> {
+                (k <= 126) -> {
+                    i0 = cs-sub(k, 32)
+                    ch = ED-PRINT.slice(i0, cs-inc(i0))
+                    cmp-command-type(panel, ch)
+                    cp-keys = cs-inc(cp-keys)
+                }
+            }
+        }
+        (cp-open == 0) -> {
+            (k == 27) -> { APP-QUIT[0] = 1 }
+            (k == 113) -> { APP-QUIT[0] = 1 }
+            (k == 112) -> {
+                cmp-command-set-query(panel, '')
+                cmp-command-set-cur(panel, -1)
+                cmp-command-set-off(panel, 0)
+                cmp-flag-set(panel, F-VISIBLE)
+                cp-open = 1
+                cp-keys = cs-inc(cp-keys)
+            }
+        }
+    }
+
+    ; ---- 退出条件 ----
+    ; 两个退出查询各调一次：_noui-should-quit 第二次调用会返回 true（dummy 驱动下
+    ; 没有真事件，标志被消费掉），调两次会立刻退出循环。
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件：开着才重建（关了就不挂行，省一遍两段式）----
+    ; 同步放在主循环顶层：命令式组件树必须在顶层作用域里重建，
+    ; 经函数中转会拿到错位的子链（见 README 阶段 34/35 的踩坑记录）。
+    (cp-open == 1) -> {
+        cmp-command-sync(panel, PAL-VIEW, PAL-ROWH, FG, ACC, SELB)
+        cp-rows = cmp-children(cmp-command-scroll(panel))
+    }
+    op = 'no'
+    (cp-open == 1) -> { op = 'yes' }
+    cmp-set-text(DLAB1, 'open: {op}')
+    q = cmp-command-query(panel)
+    cmp-set-text(DLAB2, 'query: {q}')
+    cur = cmp-command-cur(panel)
+    nm = cmp-command-count()
+    cmp-set-text(DLAB3, 'match: {nm} cur: {cur} rows: {cp-rows}')
+    cmp-set-text(DLAB4, 'last: {cp-last}')
+    cmp-set-text(DLAB5, 'keys: {cp-keys} clicks: {cp-clicks} runs: {cp-runs}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    app-frame()
+    app-delay(16)
+
+    cp-frames = cs-inc(cp-frames)
+    (CP-MAX-FRAMES > 0) -> {
+        (cp-frames >= CP-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+fr = cp-frames
+rr = cp-rows
+print('bye frames={fr} rows={rr} keys={cp-keys} clicks={cp-clicks} runs={cp-runs}')
+(rr > 0) -> { print('command render OK') }
+(rr <= 0) -> { print('FAIL: palette rendered no rows') }

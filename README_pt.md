@@ -82,7 +82,6 @@ Por padrão, o índice público é usado. Para combinar várias instâncias nohu
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

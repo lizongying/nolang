@@ -548,13 +548,25 @@ sc-reduce = (s []byte) (out [32]byte) {
                     -> _
                 }
 
-                #{overflow=wrap}
-                dv = acc-j - lv - borrow
+                {
+                    #{overflow=wrap}
+                    dv ?= acc-j - lv - borrow
+                }: {
+                    err -> _
+
+                    -> _
+                }
                 {
                     dv < 0 -> {
 
-                        #{overflow=wrap}
-                        dv = dv + 256
+                        {
+                            #{overflow=wrap}
+                            dv ?= dv + 256
+                        }: {
+                            err -> _
+
+                            -> _
+                        }
                         borrow = 1
                     }
 

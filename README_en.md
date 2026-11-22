@@ -82,7 +82,6 @@ The public index is used by default. To stack several nohub instances, configure
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

@@ -326,16 +326,18 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
         names-i = names[i]: {
             ok -> it
 
-            -> _
+            -> ''
         }
 
         values-i = values[i]: {
             ok -> it
 
-            -> _
+            -> ''
         }
 
-        out = out - names-i - '=' - values-i
+        out.push-str(names-i)
+        out.push-str('=')
+        out.push-str(values-i)
     }
 }
 
@@ -619,21 +621,25 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
 
     ; 轉為 hex 字串
     hex-chars = '0123456789abcdef'
-    hex-str str = with-len(64)
+    hex-str str = ''
     i <- [0..32): {
-        {
-            word ?= mac[i]
+        word = mac[i]: {
+            ok -> it
 
-            #{overflow=wrap}
-            hex-str[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex-str[i * 2 + 1] ?= hex-chars[word & 15]
-        }: {
-            err -> _
-
-            -> _
+            -> 0
         }
+        hi = hex-chars[(word >> 4) & 15]: {
+            ok -> it
+
+            -> "0"
+        }
+        lo = hex-chars[word & 15]: {
+            ok -> it
+
+            -> "0"
+        }
+        hex-str.push(hi)
+        hex-str.push(lo)
     }
 
     signed = value - '.' - hex-str

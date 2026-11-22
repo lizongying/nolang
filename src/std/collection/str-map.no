@@ -54,7 +54,11 @@ str-map.hash = (key str) (idx i64) {
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
-        h = h * FNV-PRIME
+        h = h * FNV-PRIME: {
+            ok -> it
+
+            -> 0
+        }
     }
 
     idx = h & (.cap - 1)

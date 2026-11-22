@@ -147,66 +147,66 @@ print(tmp-word)
 ; merged from tests/str-to-option.no
 ; str-to-option.no — 驗證 str.to-i8/i16/i32/u8/u16/u32/u64/byte/bool 返回 Option
 ;
-; 使用 if n == err / if n == nil 模式處理 Option（不依賴 match 語法）
+; 使用 if nv == err / if nv == nil 模式處理 Option（不依賴 match 語法）
 ...
 
 ; str.to-i64
 ...
 test-to-i64-ok = () {
-    n = '12345'.to-i64()
+    nv ?i64 = '12345'.to-i64()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i64-neg
 test-to-i64-neg = () {
-    n = '-42'.to-i64()
+    nv ?i64 = '-42'.to-i64()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i64-empty
 test-to-i64-empty = () {
-    n = ''.to-i64()
+    nv ?i64 = ''.to-i64()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i64-invalid
 test-to-i64-invalid = () {
-    n = 'abc'.to-i64()
+    nv ?i64 = 'abc'.to-i64()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -214,60 +214,60 @@ test-to-i64-invalid = () {
 ; str.to-i8
 ...
 test-to-i8-ok = () {
-    n = '127'.to-i8()
+    nv ?i8 = '127'.to-i8()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i8-neg
 test-to-i8-neg = () {
-    n = '-128'.to-i8()
+    nv ?i8 = '-128'.to-i8()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i8-overflow
 test-to-i8-overflow = () {
-    n = '128'.to-i8()
+    nv ?i8 = '128'.to-i8()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i8-invalid
 test-to-i8-invalid = () {
-    n = '12a'.to-i8()
+    nv ?i8 = '12a'.to-i8()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -275,30 +275,30 @@ test-to-i8-invalid = () {
 ; str.to-i16
 ...
 test-to-i16-ok = () {
-    n = '32767'.to-i16()
+    nv ?i16 = '32767'.to-i16()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i16-overflow
 test-to-i16-overflow = () {
-    n = '32768'.to-i16()
+    nv ?i16 = '32768'.to-i16()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -306,30 +306,30 @@ test-to-i16-overflow = () {
 ; str.to-i32
 ...
 test-to-i32-ok = () {
-    n = '2147483647'.to-i32()
+    nv ?i32 = '2147483647'.to-i32()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-i32-overflow
 test-to-i32-overflow = () {
-    n = '2147483648'.to-i32()
+    nv ?i32 = '2147483648'.to-i32()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -337,45 +337,45 @@ test-to-i32-overflow = () {
 ; str.to-u8
 ...
 test-to-u8-ok = () {
-    n = '255'.to-u8()
+    nv ?u8 = '255'.to-u8()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-u8-overflow
 test-to-u8-overflow = () {
-    n = '256'.to-u8()
+    nv ?u8 = '256'.to-u8()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-u8-negative
 test-to-u8-negative = () {
-    n = '-1'.to-u8()
+    nv ?u8 = '-1'.to-u8()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -383,30 +383,30 @@ test-to-u8-negative = () {
 ; str.to-u16
 ...
 test-to-u16-ok = () {
-    n = '65535'.to-u16()
+    nv ?u16 = '65535'.to-u16()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-u16-overflow
 test-to-u16-overflow = () {
-    n = '65536'.to-u16()
+    nv ?u16 = '65536'.to-u16()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -414,30 +414,30 @@ test-to-u16-overflow = () {
 ; str.to-u32
 ...
 test-to-u32-ok = () {
-    n = '4294967295'.to-u32()
+    nv ?u32 = '4294967295'.to-u32()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-u32-overflow
 test-to-u32-overflow = () {
-    n = '4294967296'.to-u32()
+    nv ?u32 = '4294967296'.to-u32()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -445,30 +445,30 @@ test-to-u32-overflow = () {
 ; str.to-u64
 ...
 test-to-u64-ok = () {
-    n = '99999'.to-u64()
+    nv ?u64 = '99999'.to-u64()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
 
 ; 測試 to-u64-negative
 test-to-u64-negative = () {
-    n = '-1'.to-u64()
+    nv ?u64 = '-1'.to-u64()
     {
-        n == nil -> print('nil')
+        nv == nil -> print('nil')
 
-        n == err -> print('err')
+        nv == err -> print('err')
 
         -> {
             print('val=')
-            print(n)
+            print(nv)
         }
     }
 }
@@ -575,7 +575,7 @@ a = 'cabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcab
 ; print(a.len)
 
 ; compilation error: cannot modify read-only field 'len' of string 'a'
-; Use a.truncate(n) instead (sets len = max(0, min(len, n)))
+; Use a.truncate(nv) instead (sets len = max(0, min(len, nv)))
 ; a.len = 2
 
 ; a[0] = 2
@@ -602,20 +602,20 @@ a = '2'
 ...
 
 ; s: 要量長度的字串；本檔用 'hello' 與 txt 各呼叫一次
-; n: len(s) 的結果，'hello' 得 5
-take-bytes = (s string) (n i64) {
-    n = len(s)
+; nv: len(s) 的結果，'hello' 得 5
+take-bytes = (s string) (nv i64) {
+    nv = len(s)
 }
 
 ; 測試 str-arg
 test-str-arg = () {
     a = 'hello'
-    n = take-bytes(a)
-    print(n); expect: 5
+    nv = take-bytes(a)
+    print(nv); expect: 5
 
     b = '你好ab'
-    n = take-bytes(b)
-    print(n); expect: 8 ; len() 內建為字節數（UTF-8）
+    nv = take-bytes(b)
+    print(nv); expect: 8 ; len() 內建為字節數（UTF-8）
 }
 test-str-arg()
 print(0)
@@ -624,12 +624,12 @@ print(0)
 ...
 test-txt-arg = () {
     t txt = 'hi'
-    n = take-bytes(t)
-    print(n); expect: 2
+    nv = take-bytes(t)
+    print(nv); expect: 2
 
     u txt = 'abc'
-    n = take-bytes(u)
-    print(n); expect: 3
+    nv = take-bytes(u)
+    print(nv); expect: 3
 }
 test-txt-arg()
 print(1)
@@ -654,8 +654,8 @@ test-pick = () {
     p txt = 'yes'
     q txt = 'no'
     y = pick(p, q)
-    n = len(y)
-    print(n); expect: 3
+    nv = len(y)
+    print(nv); expect: 3
 }
 test-pick()
 print(2)
@@ -664,12 +664,12 @@ print(2)
 ...
 test-member-methods = () {
     a = '你好ab'
-    n = a.len()
-    print(n); expect: 4
+    nv = a.len()
+    print(nv); expect: 4
 
     t txt = '你好'
-    n = t.len()
-    print(n); expect: 2
+    nv = t.len()
+    print(nv); expect: 2
 
     ok = a.empty()
     print(ok); expect: false
@@ -711,7 +711,7 @@ test-upper()
 ;
 ; str-map 長期沒有任何測試覆蓋（tests/mem-safety/test-minimal-str-map*.no 用的是
 ; 內建 [str]str，不是這個 struct），所以下列三類 bug 一直沒被發現：
-;   1. put() 用 `.keys[idx].len = n` + 逐字節拷貝：`.len = n` 是裸欄位寫入，
+;   1. put() 用 `.keys[idx].len = nv` + 逐字節拷貝：`.len = nv` 是裸欄位寫入，
 ;      不會分配緩衝區，新槽位的 data 仍是 null，下一個 [i] = 直接 SIGSEGV。
 ;   2. hash() 的 `key[i]` 讀到的是多字節（i8 元素被當成目標寬度載入）；而且 h0
 ;      每次呼叫都不同 —— `h = FNV-OFFSET` 把 h 綁成了全域 FNV-OFFSET 的別名，

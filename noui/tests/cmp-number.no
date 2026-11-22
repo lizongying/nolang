@@ -1,0 +1,210 @@
+; ============================================================================
+; noui 数字输入 / 步进器 / 搜索框测试（阶段 40）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录写着 C-NUMBER-INPUT「value, min, max, step」、C-STEPPER「digits, slots」、
+; C-SEARCH「query, clear」，但命令式侧三者都只走单行 cs-paint-field —— 没有值域 /
+; 步长 / 吸附，没有 [−]/[+] 按钮，也没有清除钮。阶段 40 补：
+;   - 值域与步长（组件模块）：num-range / num-step-set / num-step / num-min /
+;     num-max / num-clamp / num-snap / num-value / num-set / num-bump / num-commit。
+;     槽位沿用 slider 的约定：VALUE = 当前值，VALUE3 = 下限，VALUE2 = 上限，
+;     新增 VALUE4 = 步长（<= 0 按 1）。
+;   - 搜索：search-query / search-clear / search-hit（右端清除区）。
+;   - 步进器：stepper-hit（-1 左 / 0 中 / 1 右）。
+;   - 渲染层新增 cs-paint-number-input（右对齐 + 贴右端光标）、cs-paint-stepper
+;     （[−] 值 [+]）、cs-paint-search（文本 + 光标 + 右端清除钮），三者改走各自分支。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-number tests/cmp-number.no
+;       ./dist/cmp-number
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+; Scene 里是否有某段文本
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; Scene 里是否有某段文本落在给定 x（用来钉「右对齐 / 居中」的落点）
+cs-text-at = (t str, x i64) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        ((cs-scene-t(i) == t) && (cs-scene-x(i) == x)) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; Scene 里是否有给定几何的实心块（用来钉步进器的 − / + 杠）
+cs-fill-at = (x i64, y i64, w i64, ht i64) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        ((cs-scene-kind(i) == CS-FILL) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; ---- 1. 构造：kind / 初始值 / 步长默认 ----
+num = cmp-number-input()
+stp = cmp-stepper()
+srch = cmp-search()
+t1 = cmp-kind(num) == C-NUMBER-INPUT && cmp-kind(stp) == C-STEPPER && cmp-kind(srch) == C-SEARCH
+t2 = num-value(num) == 0 && num-step(num) == 1
+t3 = num-min(num) == 0 && num-max(num) == 0
+t4 = input-placeholder(srch) == 'Search...'
+
+; ---- 2. 值域与步长读写 ----
+num-range(num, 0, 100)
+t5 = num-min(num) == 0 && num-max(num) == 100
+num-step-set(num, 10)
+t6 = num-step(num) == 10
+num-step-set(num, -3)
+t7 = num-step(num) == 1
+num-step-set(num, 10)
+
+; ---- 3. 吸附：夹紧 + 四舍五入到最近的一格 ----
+t8 = num-snap(num, 23) == 20
+t9 = num-snap(num, 25) == 30
+t10 = num-snap(num, 27) == 30
+t11 = num-snap(num, -5) == 0
+t12 = num-snap(num, 200) == 100
+
+; ---- 4. hi <= 0 = 不设上限（与 ct-clamp 同语义）----
+num-range(num, 5, 0)
+t13 = num-clamp(num, 99999) == 99999 && num-clamp(num, 1) == 5
+num-range(num, 0, 100)
+
+; ---- 5. num-set：写 VALUE 并同步 CMP-TEXT ----
+num-set(num, 23)
+t14 = num-value(num) == 20 && input-value(num) == '20'
+num-set(num, 200)
+t15 = num-value(num) == 100 && input-value(num) == '100'
+
+; ---- 6. num-bump：方向 * 步长，disabled 不动 ----
+num-bump(num, 1)
+t16 = num-value(num) == 100
+num-set(num, 50)
+num-bump(num, -1)
+t17 = num-value(num) == 40
+num-bump(num, 1)
+t18 = num-value(num) == 50
+num2 = cmp-number-input()
+num-range(num2, 0, 100)
+num-step-set(num2, 10)
+num-set(num2, 50)
+cmp-flag-set(num2, F-DISABLED)
+num-bump(num2, 1)
+num-bump(num2, -1)
+t19 = num-value(num2) == 50
+
+; ---- 7. num-commit：解析 CMP-TEXT 写回；失败不动值 ----
+; 注意：to-i64 不做空白裁剪，' 77 ' 这类带空格的文本按非法处理
+num-set(num, 40)
+cmp-set-text(num, '77')
+t20 = num-commit(num) && num-value(num) == 80
+cmp-set-text(num, ' 77 ')
+t21 = (!num-commit(num)) && num-value(num) == 80
+cmp-set-text(num, 'abc')
+t22 = (!num-commit(num)) && num-value(num) == 80
+cmp-set-text(num, '')
+t23 = (!num-commit(num)) && num-value(num) == 80
+cmp-set-text(num, '500')
+t24 = num-commit(num) && num-value(num) == 100
+
+; ---- 8. search：query / clear / 右端清除区命中 ----
+t25 = search-query(srch) == ''
+cmp-set-text(srch, 'hello')
+t26 = search-query(srch) == 'hello'
+search-clear(srch)
+t27 = search-query(srch) == '' && input-caret(srch) == 0
+; 区域 0,0,20000,4000：清除区是右端 4000 宽
+t28 = search-hit(srch, 19000, 2000, 0, 0, 20000, 4000) == 1
+t29 = search-hit(srch, 15000, 2000, 0, 0, 20000, 4000) == 0
+t30 = search-hit(srch, 19000, 5000, 0, 0, 20000, 4000) == 0
+
+; ---- 9. stepper-hit：-1 左 / 1 右 / 0 中 ----
+; 区域 0,0,24000,4000：按钮宽 = ht = 4000
+t31 = stepper-hit(stp, 1000, 2000, 0, 0, 24000, 4000) == -1
+t32 = stepper-hit(stp, 23000, 2000, 0, 0, 24000, 4000) == 1
+t33 = stepper-hit(stp, 12000, 2000, 0, 0, 24000, 4000) == 0
+t34 = stepper-hit(stp, 1000, 5000, 0, 0, 24000, 4000) == 0
+; 控件太窄：按钮对半分
+t35 = stepper-hit(stp, 1000, 2000, 0, 0, 6000, 4000) == -1 && stepper-hit(stp, 5000, 2000, 0, 0, 6000, 4000) == 1
+
+; ---- 10. 渲染：数字输入右对齐值；步进器画值；搜索框清除钮 ----
+root = cmp-root()
+cmp-add-child(root, num)
+cmp-add-child(root, stp)
+cmp-add-child(root, srch)
+num-range(num, 0, 100)
+num-step-set(num, 10)
+num-set(num, 40)
+num-set(stp, 70)
+cmp-set-text(srch, 'abc')
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+t36 = cs-has-text('40') && cs-has-text('70')
+t37 = cs-has-text('abc') && cs-has-text('x')
+; 清空文本后清除钮不再画
+search-clear(srch)
+srch2 = cmp-search()
+cmp-add-child(root, srch2)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+t38 = cs-has-text('Search...') && (!cs-has-text('x'))
+
+; ---- 11. 几何：数值右对齐、步进器值居中、− / + 杠落在左右钮上 ----
+; 重新布局一次（上一轮布局后 srch 已清空，但三个控件矩形不变）
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+nx, ny, nw, nh = cs-rect(num)
+t39 = cs-text-at('40', cs-sub(cs-add(nx, nw), cs-text-w('40')))
+sx, sy, sw, sh = cs-rect(stp)
+bw = sh
+(sw < cs-mul(bw, 2)) -> { bw = cs-div(sw, 2) }
+mx = cs-add(sx, bw)
+mw = cs-sub(cs-sub(sw, bw), bw)
+t40 = cs-text-at('70', cs-add(mx, cs-div(cs-sub(mw, cs-text-w('70')), 2)))
+ly = cs-add(sy, cs-div(cs-sub(sh, 200), 2))
+lx = cs-add(sx, cs-div(cs-sub(bw, 1200), 2))
+t41 = cs-fill-at(lx, ly, 1200, 200)
+rx = cs-sub(cs-add(sx, sw), bw)
+rpx = cs-add(rx, cs-div(cs-sub(bw, 1200), 2))
+vy = cs-add(sy, cs-div(cs-sub(sh, 1200), 2))
+t42 = cs-fill-at(cs-add(rpx, 500), vy, 200, 1200)
+
+all-ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30 && t31 && t32 && t33 && t34 && t35 && t36 && t37 && t38 && t39 && t40 && t41 && t42
+print('ctor={t1}{t2}{t3}{t4}')
+print('range={t5}{t6}{t7}')
+print('snap={t8}{t9}{t10}{t11}{t12}{t13}')
+print('set={t14}{t15}')
+print('bump={t16}{t17}{t18}{t19}')
+print('commit={t20}{t21}{t22}{t23}{t24}')
+print('search={t25}{t26}{t27}{t28}{t29}{t30}')
+print('stepper={t31}{t32}{t33}{t34}{t35}')
+print('paint={t36}{t37}{t38}')
+print('geom={t39}{t40}{t41}{t42}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL NUMBER TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

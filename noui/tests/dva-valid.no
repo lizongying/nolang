@@ -1,0 +1,409 @@
+; ============================================================================
+; noui 声明式「表单校验：规则也是数据」测试（阶段 27）—— src/dv.no
+;
+; 缺口：到阶段 26 为止，「显示什么」已经全是状态的函数（条件 / 重复 / 过滤 / 排序 /
+; 分组 / 禁用），但「这个字段合不合法」仍是应用手写的 if-else 链，错误文案也硬编码
+; 在事件回调里。校验规则同样应该是**数据**：一张规则表（kinds / pars 平行数组，
+; 按 base + n 切片）描述每个字段「怎样算不合法」。
+;
+; 阶段 27 补：
+;   - dv-rule-check ：单字段单规则表 -> 第一条违反的规则号（1 基），全过 0；
+;   - dv-rule-msg   ：规则号 -> 文案（文案挂在**规则**上，不是字段上）；
+;   - dv-form-bad   ：多字段汇总成「坏了几项」（提交按钮的禁用态就是它的函数）；
+;   - dv-field       ：一行 = 标签 + 输入（绑字符串槽）+ 错误行（只在违反且揭示时建）。
+;
+; 场景钉住：
+;   V 规则  ：必填 / 最小长度 / 最大长度 / 最小值 / 最大值（含不可解析）/
+;            与另一槽相等 / 包含子串；trim 生效；多规则取第一条；
+;            base+n 切片；n=0；越界 base 吞掉；未知种类忽略
+;   F 汇总  ：全过 / 坏 1 / 坏 2 / 全坏；nf=0；nf 超表长按表长；空规则字段不算坏
+;   L 视图  ：揭示槽为 0 时错误行**不存在**（首次进页面不该一片红）；
+;            揭示后错误行出现且文案正确、带危险变体；合法时不建错误行；
+;            输入确实绑到了字符串槽；提交按钮 flags = f(坏项数)；
+;            改值重建时同一输入 key 复用同一组件对象；同状态重复 render 零操作
+;   P 绘制  ：揭示后错误文案真的画出来；未揭示时场景里没有它
+;   H 命中  ：禁用提交被命中也不出动作；合法时提交 = DELTA(D-SUB)
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-valid.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = -1
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-valid tests ===')
+
+; ---- 共用数据 --------------------------------------------------------------
+; 四个字段，每个字段的规则是规则表里的一段（base + n 切片）：
+;   0 name   槽0  必填 + 最短 2            base 0 n 2
+;   1 age    槽1  必填 + 18..99            base 2 n 3
+;   2 code   槽2  必填 + 含 'X'            base 5 n 2
+;   3 confirm 槽3  必须等于槽 0            base 7 n 1
+D-SHOW = 0         ; 揭示槽：1 = 显示错误行（提交失败时应用层写 1）
+D-SUB = 1          ; 提交计数（合法时 DELTA +1）
+
+V-NF = 4
+V-SLOTS []i64 = with-len(4)
+V-SLOTS[0] = 0
+V-SLOTS[1] = 1
+V-SLOTS[2] = 2
+V-SLOTS[3] = 3
+V-BASES []i64 = with-len(4)
+V-BASES[0] = 0
+V-BASES[1] = 2
+V-BASES[2] = 5
+V-BASES[3] = 7
+V-NS []i64 = with-len(4)
+V-NS[0] = 2
+V-NS[1] = 3
+V-NS[2] = 2
+V-NS[3] = 1
+
+V-KINDS []i64 = with-len(8)
+V-KINDS[0] = DV-R-REQ
+V-KINDS[1] = DV-R-MINL
+V-KINDS[2] = DV-R-REQ
+V-KINDS[3] = DV-R-MINV
+V-KINDS[4] = DV-R-MAXV
+V-KINDS[5] = DV-R-REQ
+V-KINDS[6] = DV-R-HAS
+V-KINDS[7] = DV-R-EQ
+V-PARS []i64 = with-len(8)
+V-PARS[0] = 0
+V-PARS[1] = 2
+V-PARS[2] = 0
+V-PARS[3] = 18
+V-PARS[4] = 99
+V-PARS[5] = 0
+V-PARS[6] = 0
+V-PARS[7] = 0
+V-SPARS []str = with-len(1)
+V-SPARS[0] = 'X'
+
+; 文案挂在**规则**上（不是字段上）—— 同一种规则在不同字段可以写不同的措辞
+V-MSGS []str = with-len(8)
+V-MSGS[0] = 'name required'
+V-MSGS[1] = 'name too short'
+V-MSGS[2] = 'age required'
+V-MSGS[3] = 'age must be >= 18'
+V-MSGS[4] = 'age must be <= 99'
+V-MSGS[5] = 'code required'
+V-MSGS[6] = 'code needs an X'
+V-MSGS[7] = 'must match name'
+
+; 字段 key：label = key / input = key+1 / 错误行 = errkey（三者不撞）
+V-K0 = 100
+V-K1 = 110
+V-K2 = 120
+V-K3 = 130
+V-E0 = 200
+V-E1 = 210
+V-E2 = 220
+V-E3 = 230
+V-SUBMIT = 300
+
+; 字符串状态池：4 个字段槽
+dv-bind-t-ensure(4)
+dv-bound-set(0, '')
+dv-bound-set(1, '')
+dv-bound-set(2, '')
+dv-bound-set(3, '')
+
+ST []i64 = with-len(2)
+
+mk-page = () (p i64) {
+    dv-clear()
+    show = ST[D-SHOW]: {
+        ok -> it
+
+        -> 0
+    }
+    p = dv-form(1, -1)
+    dv-field(V-K0, V-E0, 0, 'name', 'your name', show, V-SPARS, V-KINDS, V-PARS, 0, 2, V-MSGS, p)
+    dv-field(V-K1, V-E1, 1, 'age', '18-99', show, V-SPARS, V-KINDS, V-PARS, 2, 3, V-MSGS, p)
+    dv-field(V-K2, V-E2, 2, 'code', 'has X', show, V-SPARS, V-KINDS, V-PARS, 5, 2, V-MSGS, p)
+    dv-field(V-K3, V-E3, 3, 'confirm', 'repeat name', show, V-SPARS, V-KINDS, V-PARS, 7, 1, V-MSGS, p)
+    ; 提交按钮的可用性 = 「坏了几项」的函数（禁用态也是派生，不是手写 if）
+    bad = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, V-NF)
+    fs = dv-on()
+    (bad > 0) -> { fs = dv-disabled() }
+    sb = dv-node(C-BUTTON, V-SUBMIT, 'submit', '', 0, 1, 0, fs, p)
+    dv-act(sb, DV-A-DELTA, D-SUB)
+    p = p
+}
+
+count-kids = (h i64) (n i64) {
+    n = 0
+    !! {
+        c = cs-child-flow(h, n)
+        (c < 0) -> { ** }
+        n = dv-inc(n)
+    }
+}
+
+find-text = (t str) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-t(i) == t) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; 合法的整表单
+fill-ok = () () {
+    dv-bound-set(0, 'ada')
+    dv-bound-set(1, '42')
+    dv-bound-set(2, 'X-1')
+    dv-bound-set(3, 'ada')
+}
+
+; ============================================================================
+; 场景 V：规则 —— dv-rule-check
+; ============================================================================
+; 必填（trim 后非空）
+dv-bound-set(0, '')
+v1 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 2) == 1
+dv-bound-set(0, '   ')
+v2 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 2) == 1
+dv-bound-set(0, 'ada')
+v3 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 2) == 0
+
+; 最短 2：边界上算过，差 1 算违反（第 2 条规则）
+dv-bound-set(0, 'ab')
+v4 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 2) == 0
+dv-bound-set(0, 'a')
+v5 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 2) == 2
+; 前导 / 后导空白先 trim 再量长度
+dv-bound-set(0, '  a  ')
+v6 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 2) == 2
+
+; 最长（单开一段规则表）
+W-K []i64 = with-len(1)
+W-K[0] = DV-R-MAXL
+W-P []i64 = with-len(1)
+W-P[0] = 3
+W-S []str = with-len(0)
+dv-bound-set(0, 'abc')
+v7 = dv-rule-check(dv-bound(0), W-S, W-K, W-P, 0, 1) == 0
+dv-bound-set(0, 'abcd')
+v8 = dv-rule-check(dv-bound(0), W-S, W-K, W-P, 0, 1) == 1
+
+; 数值区间（age 字段：必填 + >=18 + <=99）
+dv-bound-set(1, '18')
+v9 = dv-rule-check(dv-bound(1), V-SPARS, V-KINDS, V-PARS, 2, 3) == 0
+dv-bound-set(1, '99')
+v10 = dv-rule-check(dv-bound(1), V-SPARS, V-KINDS, V-PARS, 2, 3) == 0
+dv-bound-set(1, '17')
+v11 = dv-rule-check(dv-bound(1), V-SPARS, V-KINDS, V-PARS, 2, 3) == 4
+dv-bound-set(1, '100')
+v12 = dv-rule-check(dv-bound(1), V-SPARS, V-KINDS, V-PARS, 2, 3) == 5
+; 不可解析算违反（最小值那条先撞上）
+dv-bound-set(1, 'abc')
+v13 = dv-rule-check(dv-bound(1), V-SPARS, V-KINDS, V-PARS, 2, 3) == 4
+dv-bound-set(1, ' 42 ')
+v14 = dv-rule-check(dv-bound(1), V-SPARS, V-KINDS, V-PARS, 2, 3) == 0
+
+; 与另一槽相等（confirm 字段：base 7 n 1，par = 槽 0）
+dv-bound-set(0, 'ada')
+dv-bound-set(3, 'ada')
+v15 = dv-rule-check(dv-bound(3), V-SPARS, V-KINDS, V-PARS, 7, 1) == 0
+dv-bound-set(3, 'bob')
+v16 = dv-rule-check(dv-bound(3), V-SPARS, V-KINDS, V-PARS, 7, 1) == 8
+
+; 包含子串（code 字段：必填 + 含 'X'）
+dv-bound-set(2, 'X-1')
+v17 = dv-rule-check(dv-bound(2), V-SPARS, V-KINDS, V-PARS, 5, 2) == 0
+dv-bound-set(2, 'x-1')
+v18 = dv-rule-check(dv-bound(2), V-SPARS, V-KINDS, V-PARS, 5, 2) == 7
+dv-bound-set(2, '')
+v19 = dv-rule-check(dv-bound(2), V-SPARS, V-KINDS, V-PARS, 5, 2) == 6
+
+; 多规则取**第一条**违反；n=0；越界 base 吞掉；未知种类忽略
+dv-bound-set(0, '')
+v20 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 2) == 1
+dv-bound-set(0, 'ada')
+v21 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 0, 0) == 0
+v22 = dv-rule-check(dv-bound(0), V-SPARS, V-KINDS, V-PARS, 99, 2) == 0
+W-K2 []i64 = with-len(1)
+W-K2[0] = 99
+v23 = dv-rule-check(dv-bound(0), W-S, W-K2, W-P, 0, 1) == 0
+
+; ============================================================================
+; 场景 F：汇总 —— dv-form-bad
+; ============================================================================
+fill-ok()
+f1 = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, V-NF) == 0
+
+dv-bound-set(1, '')
+f2 = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, V-NF) == 1
+
+dv-bound-set(3, 'bob')
+f3 = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, V-NF) == 2
+
+dv-bound-set(0, '')
+dv-bound-set(2, '')
+f4 = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, V-NF) == 4
+
+; nf = 0 -> 0；nf 超表长 -> 按表长（不会越界读出假字段）。
+; 这里把 confirm 也置空，让它与同样为空的 name 相等 —— 于是坏项恰好 1 个，
+; 钉住的是「超出的 nf 不会凭空多算字段」，而不是被 confirm 的连带违反干扰。
+fill-ok()
+f5 = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, 0) == 0
+dv-bound-set(0, '')
+dv-bound-set(3, '')
+f6 = dv-form-bad(V-SLOTS, V-BASES, V-NS, V-SPARS, V-KINDS, V-PARS, 99) == 1
+
+; 空规则字段（base/n 越界）不算坏
+E-SL []i64 = with-len(1)
+E-SL[0] = 0
+E-B []i64 = with-len(1)
+E-B[0] = 99
+E-N []i64 = with-len(1)
+E-N[0] = 2
+dv-bound-set(0, '')
+f7 = dv-form-bad(E-SL, E-B, E-N, V-SPARS, V-KINDS, V-PARS, 1) == 0
+
+; ============================================================================
+; 场景 L：视图 —— dv-field 建出什么 / 不建什么
+; ============================================================================
+root-l = cmp-root()
+
+; 揭示槽为 0：错误行**不存在**（值是坏的，但还没提交过，不该一片红）
+fill-ok()
+dv-bound-set(1, '')
+ST[D-SHOW] = 0
+pl = mk-page()
+dv-render(root-l, pl)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l1 = dv-live-deep(root-l, V-E1) == -1
+; 但提交按钮仍然是禁用的 —— 「不可提交」不需要等揭示
+sb1 = dv-live-deep(root-l, V-SUBMIT)
+l2 = (cmp-flags(sb1) & F-ENABLED) == 0 && (cmp-flags(sb1) & F-DISABLED) != 0
+
+; 揭示后：错误行出现，文案 = 该字段第一条违反规则的文案，且带危险变体
+ST[D-SHOW] = 1
+pl2 = mk-page()
+dv-render(root-l, pl2)
+cs-layout(root-l, 0, 0, 40000, 30000)
+e1 = dv-live-deep(root-l, V-E1)
+l3 = e1 >= 0 && cmp-text(e1) == 'age required' && cmp-var(e1) == dv-var-danger()
+; 其它合法字段仍然没有错误行
+l4 = dv-live-deep(root-l, V-E0) == -1 && dv-live-deep(root-l, V-E3) == -1
+
+; 全部合法 + 揭示：所有错误行都不建
+fill-ok()
+ST[D-SHOW] = 1
+pl3 = mk-page()
+dv-render(root-l, pl3)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l5 = dv-live-deep(root-l, V-E0) == -1 && dv-live-deep(root-l, V-E1) == -1 &&
+     dv-live-deep(root-l, V-E2) == -1 && dv-live-deep(root-l, V-E3) == -1
+sb3 = dv-live-deep(root-l, V-SUBMIT)
+l6 = (cmp-flags(sb3) & F-ENABLED) != 0 && (cmp-flags(sb3) & F-DISABLED) == 0
+
+; 输入确实绑到了字符串槽：dv-bind-of(视图节点) 返回**槽号**（0 = 没绑）。
+; 视图节点用 dv-node-by-key 反查（活组件池是另一套下标，不能拿句柄去问视图池）。
+vn1 = dv-node-by-key(V-K1 + 1)
+l7 = vn1 >= 0 && dv-bind-of(vn1) == 1 && dv-kind(vn1) == C-INPUT
+
+; 流子节点：4 个字段各「标签 + 输入」= 8，加提交 = 9（全合法，无错误行）。
+; 注意页面根表单（key=1）**不单独建活组件** —— dv-sync 直接把它的子节点挂到
+; 窗口根上，所以数根的孩子就是数这一页的孩子。
+l8 = count-kids(root-l) == 9
+
+; 改值重建：同一输入 key 复用同一组件对象（零结构操作地改文本）
+ia = dv-live-deep(root-l, V-K0 + 1)
+dv-bound-set(0, 'bo')
+ST[D-SHOW] = 0
+pl4 = mk-page()
+dv-render(root-l, pl4)
+cs-layout(root-l, 0, 0, 40000, 30000)
+ib = dv-live-deep(root-l, V-K0 + 1)
+l9 = ia >= 0 && ia == ib
+
+; 同状态重复 render：零操作
+pl5 = mk-page()
+dv-render(root-l, pl5)
+ops5 = dv-render(root-l, pl5)
+l10 = ops5 == 0
+
+; ============================================================================
+; 场景 P：绘制 —— 错误文案真的画出来
+; ============================================================================
+dv-bound-set(0, 'bo')
+dv-bound-set(1, '7')
+ST[D-SHOW] = 1
+pl6 = mk-page()
+dv-render(root-l, pl6)
+cs-layout(root-l, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root-l)
+p1 = find-text('age must be >= 18') >= 0
+
+; 未揭示时场景里没有错误文案
+ST[D-SHOW] = 0
+pl7 = mk-page()
+dv-render(root-l, pl7)
+cs-layout(root-l, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root-l)
+p2 = find-text('age must be >= 18') == -1
+
+; ============================================================================
+; 场景 H：命中 —— 禁用提交不出动作；合法提交 = DELTA(D-SUB)
+; ============================================================================
+root-h = cmp-root()
+dv-bound-set(1, '7')
+dv-bound-set(0, '')
+ST[D-SHOW] = 0
+ph = mk-page()
+dv-render(root-h, ph)
+cs-layout(root-h, 0, 0, 40000, 30000)
+hh = dv-live-deep(root-h, V-SUBMIT)
+_, yh, _, _ = cs-rect(hh)
+h1 = cs-hit(root-h, 5000, dv-add(yh, 1000)) == hh
+am1, py1 = dv-dispatch(V-SUBMIT)
+h2 = am1 == 0 && py1 == 0
+
+fill-ok()
+ST[D-SHOW] = 1
+ph2 = mk-page()
+dv-render(root-h, ph2)
+cs-layout(root-h, 0, 0, 40000, 30000)
+hh2 = dv-live-deep(root-h, V-SUBMIT)
+_, yh2, _, _ = cs-rect(hh2)
+h3 = cs-hit(root-h, 5000, dv-add(yh2, 1000)) == hh2
+am2, py2 = dv-dispatch(V-SUBMIT)
+h4 = am2 == DV-A-DELTA && py2 == D-SUB
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = v1 && v2 && v3 && v4 && v5 && v6 && v7 && v8 && v9 && v10 && v11 && v12 &&
+     v13 && v14 && v15 && v16 && v17 && v18 && v19 && v20 && v21 && v22 && v23 &&
+     f1 && f2 && f3 && f4 && f5 && f6 && f7 &&
+     l1 && l2 && l3 && l4 && l5 && l6 && l7 && l8 && l9 && l10 &&
+     p1 && p2 && h1 && h2 && h3 && h4
+
+print('V rule={v1}{v2}{v3}{v4}{v5}{v6}{v7}{v8}{v9}{v10}{v11}{v12}{v13}{v14}{v15}{v16}{v17}{v18}{v19}{v20}{v21}{v22}{v23}')
+print('F form={f1}{f2}{f3}{f4}{f5}{f6}{f7}')
+print('L view={l1}{l2}{l3}{l4}{l5}{l6}{l7}{l8}{l9}{l10}')
+print('P paint={p1}{p2}')
+print('H hit={h1}{h2}{h3}{h4}')
+print('all-ok={ok}')
+(ok) -> {
+    print('ALL DVA-VALID TESTS PASSED')
+}

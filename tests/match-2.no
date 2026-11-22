@@ -140,14 +140,19 @@ z: {
 ; score: 待評分的選項；ok 時以 it 參與條件判斷
 ; r: 90+ 為 'A'、80~89 為 'B'、60~79 為 'C'，其餘（含 nil/err）為 'F'
 grade = (score ?i64) (r str) {
-    r = score: {
-        ok(it >= 90) -> 'A'
+    r = 'F'
+    score: {
+        nil -> r = 'F'
 
-        ok(it >= 80 && it < 90) -> 'B'
+        err -> r = 'F'
 
-        ok(it >= 60 && it < 80) -> 'C'
+        ok -> {
+            it >= 90 -> r = 'A'
 
-        -> 'F'
+            it >= 80 && it < 90 -> r = 'B'
+
+            it >= 60 && it < 80 -> r = 'C'
+        }
     }
 }
 
@@ -155,17 +160,20 @@ grade = (score ?i64) (r str) {
 ; v: 待分類的選項，ok 時以 it 判斷正負
 ; r: 負數細分 'very-negative'（< -100）或 'negative'，其餘見實作
 classify = (v ?i64) (r str) {
-    r = v: {
-        ok(it < 0) -> {
-            w = v: {
-                ok(it < -100) -> 'very-negative'
+    r = 'non-negative'
+    v: {
+        nil -> r = 'non-negative'
 
-                -> 'negative'
+        err -> r = 'non-negative'
+
+        ok -> {
+            qv i64 = it
+            qv < 0 -> {
+                qv < -100 -> r = 'very-negative'
+
+                r = 'negative'
             }
-            w
         }
-
-        -> 'non-negative'
     }
 }
 
@@ -183,9 +191,9 @@ double = (n i64) (r ?i64) {
 ; b: 第二個選項
 ; r: a + b 的 ok 值；任一側非 ok 時保留其 nil / err
 sum-two = (a ?i64, b ?i64) (r ?i64) {
-    x ?= a
+    dx ?= a
     y ?= b
-    r = x + y
+    r = dx + y
 }
 
 ; ?= 只能在有 option 結果參數的函式內使用，故傳播驅動也包一層。

@@ -58,7 +58,11 @@ hashmap-str-tmpl.hash = (key str) (idx i64) {
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
-        h = h * FNV-PRIME
+        h = h * FNV-PRIME: {
+            ok -> it
+
+            -> 0
+        }
     }
 
     idx = h & (.cap - 1)
@@ -327,7 +331,11 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
     {
         i <- [0..old-cap): {
             old-occ[i] == 1 -> {
-                k str = old-keys[i]
+                k = old-keys[i]: {
+                    ok -> it
+
+                    -> ''
+                }
 
                 v = old-vals[i]
                 idx = .hash(k)
@@ -871,7 +879,11 @@ hashmap-bool-tmpl.for-each = () (k bool, v v) {
         i <- [0..n): {
             used ?= .occ[i]
             used == 1 -> {
-                k = .keys[i]
+                k = .keys[i]: {
+                    ok -> it
+
+                    -> false
+                }
 
                 v = .vals[i]
             }

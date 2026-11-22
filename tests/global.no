@@ -51,15 +51,21 @@ print('n={n}')
 print('i={i}')
 print('m={m}')
 
-total = 0
+TOTAL = 0
 
 ; 加入
 ; v: 要累加到全域 total 的整數（overflow 採 wrap）
 add = (v i64) {
 
-    #{overflow=wrap}
-    total = total + v
+    {
+        #{overflow=wrap}
+        TOTAL ?= TOTAL + v
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 add(3)
 add(4)
-print('total={total}')
+print('total={TOTAL}')

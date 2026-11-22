@@ -520,7 +520,11 @@ txt.at = (idx i64) (b ?byte) {
 ; clen: 該碼點 UTF-8 序列位元組長度（1~4）
 ; [decode-cp](#txt.decode-cp)
 txt.decode-cp = (i i64) (cp i64, clen i64) {
-    b = .byte(i)
+    b = .byte(i): {
+        ok -> it
+
+        -> 0
+    }
     cp = b
     clen = 1
     {
@@ -530,7 +534,12 @@ txt.decode-cp = (i i64) (cp i64, clen i64) {
         }
 
         b < 0xe0 -> {
-            cp = ((b & 0x1f) << 6) | (.byte(i + 1) & 0x3f)
+            b1 = .byte(i + 1): {
+                ok -> it
+
+                -> 0
+            }
+            cp = ((b & 0x1f) << 6) | (b1 & 0x3f)
             clen = 2
         }
 

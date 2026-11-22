@@ -71,6 +71,13 @@ DV-VAR []i64 = with-len(0)
 ; 锚定浮层：DV-ANCHOR[view 节点] = 锚点视图 key（-1 = 无锚点 -> 父矩形内居中）。
 ; 调和时同步到活节点的 CMP-ANCHOR，cmp-scene 布局时按 key 反查锚点矩形。
 DV-ANCHOR []i64 = with-len(0)
+; 阶段24 虚拟列表：DV-SCROLL-CONTENT[view 节点] = 声明内容高（含 padding）。
+; 0 = 没声明 -> 布局实测子节点；> 0 -> 布局按声明值算可滚范围，子节点只挂可见窗口。
+; 调和时同步到活节点的 CMP-SCROLL-CONTENT。
+DV-SCROLL-CONTENT []i64 = with-len(0)
+; 阶段24 虚拟列表：DV-SCROLL-START[view 节点] = 首个挂载子的绝对行号。
+; 0 = 顺序排（实测模式不变）；> 0 -> 布局把第 j 个儿子排在 (i0+j)*行距 上。
+DV-SCROLL-START []i64 = with-len(0)
 ; hover（声明式）：DV-HOVER[view 节点] = 状态槽 + 1（0 = 未声明）。
 ; 装配层每帧按「当前命中 key 是否等于本节点 key」把 1/0 写进那个状态槽，
 ; 于是「鼠标停在谁身上」也进得了 UI = f(state) —— 视图再用 dv-cond 决定
@@ -87,10 +94,46 @@ DV-BIND []i64 = with-len(0)
 DV-BIND-MAX []i64 = with-len(0)
 ; 快捷键：键码 -> (动作, 载荷, 视图 key)。与 dv-act 同生命周期（每帧重挂）。
 ; 语义：无输入焦点时按键，命中就当作「点了那个节点」走同一条归约路径。
+; 阶段30 代码编辑器：编辑槽 / 光标 / 着色器与行切分的临时池（声明在前，
+; dv-node / dv-clear 要按同一下标 push / truncate）
+DV-EDIT []i64 = with-len(0)
+DV-EDIT-L []i64 = with-len(0)
+DV-EDIT-C []i64 = with-len(0)
+DV-RUN-T []str = with-len(0)
+DV-RUN-C []i64 = with-len(0)
+DV-ED-LINES []str = with-len(0)
+DV-ED-KEEP []str = with-len(0)
+DV-ED-SEEN []i64 = with-len(0)
+
 DV-HOT-KEY []i64 = with-len(0)
 DV-HOT-ACT []i64 = with-len(0)
 DV-HOT-PAY []i64 = with-len(0)
 DV-HOT-VKEY []i64 = with-len(0)
+
+; 命令面板（阶段 32）：与 DV-EDIT-* 同性质 —— 按**面板 key**（不是视图节点）存，
+; 所以 dv-clear() 不清（清了等于每帧把面板游标弹回 0）。
+;   DV-PAL-KEYS  登记过的面板 key（装配层每帧找「哪个面板开着」）
+;   DV-PAL-ROOT  view 节点 -> 面板 key（0 = 不是面板），装配层顺父链上溯用
+;   DV-PAL-OPEN  面板 key -> 开关状态槽
+;   DV-PAL-Q     面板 key -> 查询字符串槽
+;   DV-PAL-CMD   面板 key -> 命令码状态槽
+;   DV-PAL-CUR   面板 key -> 游标行（-1 = 没有命中行）
+;   DV-PAL-M     面板 key -> 命中行数
+;   DV-PAL-WAS   面板 key -> 上一帧的开关值（翻转 = 刚打开/刚关上 -> 重置游标与滚动）
+;   DV-PAL-KEY0  面板 key -> 行 key 基数
+DV-PAL-KEYS []i64 = with-len(0)
+DV-PAL-ROOT []i64 = with-len(0)
+DV-PAL-OPEN []i64 = with-len(0)
+DV-PAL-Q []i64 = with-len(0)
+DV-PAL-CMD []i64 = with-len(0)
+DV-PAL-CUR []i64 = with-len(0)
+DV-PAL-M []i64 = with-len(0)
+DV-PAL-WAS []i64 = with-len(0)
+DV-PAL-KEY0 []i64 = with-len(0)
+; 命中表（源行号）的**扁平只增副本**：DV-PAL-SB[面板 key] = 该面板在 DV-PAL-SRC
+; 里的基址。游标移动不重建视图，dv-pal-cur-key 靠它即时算出「游标 -> 行 key」。
+DV-PAL-SB []i64 = with-len(0)
+DV-PAL-SRC []i64 = with-len(0)
 
 ; 空的 flags 平行数组：给「不关心每项 flags」的原语当默认值用（阶段 20）。
 ; 与 DV-EMPTY-F 同语义的空数组只能有一个实例，否则每次传参都白占一个池对象。
@@ -110,6 +153,13 @@ DV-A-ITEM = 9    ; 列表项被点（dv-repeat-items 的载荷 = 行号，语义
 ; 选中并收起：S[payload] = value（选中下标），S[value2] = 0（展开槽）。
 ; 一个动作要写两个槽（select 选中 + 关下拉），单槽的 SET 表达不了，所以单独开一个码。
 DV-A-CHOOSE = 10
+; 区间填充：把 S[payload .. payload+value2) 全写成 value。树的「全部展开 / 全部收起」
+; 只是一个动作 —— 不需要应用层写循环，也不需要为树单独开一个动作码。
+DV-A-FILL = 11
+; 执行命令并收起面板（阶段32）：S[payload] = value（命令码），S[value2] = 0（开关槽）。
+; 形状和 CHOOSE 一样是「一个动作写两个槽」，语义不同 —— CHOOSE 是「选中 + 关下拉」，
+; RUN 是「执行 + 关面板」，命令码本身由应用层解释（比如把它当子视图号写进另一个槽）。
+DV-A-RUN = 12
 
 ; 调和状态：DV-MATCH[view 节点] = 活组件句柄（-1 = 未匹配）
 ;           DV-USED[活句柄] = 帧号（帧号不同即视为未认领）
@@ -308,10 +358,18 @@ dv-clear = () () {
     DV-ALIGN.truncate(0)
     DV-VAR.truncate(0)
     DV-ANCHOR.truncate(0)
+    DV-SCROLL-CONTENT.truncate(0)
+    DV-SCROLL-START.truncate(0)
     DV-HOVER.truncate(0)
     DV-TAB-ACT.truncate(0)
     DV-BIND.truncate(0)
     DV-BIND-MAX.truncate(0)
+    DV-EDIT.truncate(0)
+    ; 阶段32 命令面板：DV-PAL-ROOT 是「view 节点 -> 面板 key」的映射，按帧清；
+    ; 其余 DV-PAL-* 按**面板 key**存，跨帧存活（清了就等于每帧把游标弹回 0）。
+    DV-PAL-ROOT.truncate(0)
+    ; 光标池**不按帧清**：它按文本槽存（不是按视图节点），清了就等于每帧把光标
+    ; 弹回行首。DV-EDIT 是「节点 -> 编辑槽」的映射，必须按帧清。
     DV-HOT-KEY.truncate(0)
     DV-HOT-ACT.truncate(0)
     DV-HOT-PAY.truncate(0)
@@ -341,10 +399,14 @@ dv-node = (kind i64, key i64, text str, text2 str, color i64, value i64, value2 
     DV-ALIGN.push(0)
     DV-VAR.push(0)
     DV-ANCHOR.push(-1)
+    DV-SCROLL-CONTENT.push(0)
+    DV-SCROLL-START.push(0)
     DV-HOVER.push(0)
     DV-TAB-ACT.push(-1)
     DV-BIND.push(0)
     DV-BIND-MAX.push(0)
+    DV-EDIT.push(0)
+    DV-PAL-ROOT.push(0)
 }
 
 ; 给视图节点挂一个动作（builder 返回节点 id，随后 dv-act 挂行为）
@@ -387,6 +449,22 @@ dv-size = (h i64, w i64, ht i64) () {
         dv-arr-set(DV-SW, h, w)
         dv-arr-set(DV-SH, h, ht)
     }
+}
+
+; 阶段24 虚拟列表：声明滚动容器的内容高（含 padding）。0 = 不声明，布局实测子节点；
+; > 0 = 内容高由 n * 行高 + 间隙 + padding 算出来，子节点只挂可见窗口那几行。
+dv-scroll-content = (h i64, ch i64) () {
+    (h >= 0) -> { dv-arr-set(DV-SCROLL-CONTENT, h, ch) }
+}
+dv-scroll-content-of = (v i64) (ch i64) {
+    ch = dv-arr-get(DV-SCROLL-CONTENT, v)
+}
+; 阶段24 虚拟列表：首个挂载子的绝对行号（0 = 顺序排）
+dv-scroll-start = (h i64, i0 i64) () {
+    (h >= 0) -> { dv-arr-set(DV-SCROLL-START, h, i0) }
+}
+dv-scroll-start-of = (v i64) (i0 i64) {
+    i0 = dv-arr-get(DV-SCROLL-START, v)
 }
 
 ; 文本对齐提示：复用 components.no 的 A-LEFT / A-CENTER / A-RIGHT，0 = 按 kind 默认
@@ -653,6 +731,39 @@ dv-apply = (S []i64, k i64) (n i64) {
                 n = dv-inc(n)
             }
         }
+        ; 区间填充（阶段31）：把 S[payload .. payload+value2) 全写成 value。
+        ; 树的「全部展开 / 全部收起」只是同一个动作的两个操作数，不需要应用层写循环。
+        (a == DV-A-FILL) -> {
+            cnt = dv-value2(v)
+            (cnt > 0) -> {
+                i = 0
+                !! {
+                    (i >= cnt) -> { ** }
+                    S[dv-add(pl, i)]: {
+                        ok -> it = val
+                        -> _
+                    }
+                    i = dv-inc(i)
+                }
+                n = dv-add(n, cnt)
+            }
+        }
+        ; 执行命令并收起面板（阶段32）：S[payload] = value（命令码），S[value2] = 0（开关槽）。
+        (a == DV-A-RUN) -> {
+            S[pl]: {
+                ok -> it = val
+                -> _
+            }
+            n = dv-inc(n)
+            c2 = dv-value2(v)
+            (c2 >= 0) -> {
+                S[c2]: {
+                    ok -> it = 0
+                    -> _
+                }
+                n = dv-inc(n)
+            }
+        }
     }
 }
 
@@ -790,9 +901,14 @@ dv-grid = (key i64, cols i64, parent i64) (h i64) {
     f = dv-on()
     h = dv-node(C-GRID, key, '', '', 0, cols, 0, f, parent)
 }
-dv-scroll = (key i64, parent i64) (h i64) {
+; 滚动容器（阶段23）：偏移的真源是状态槽 offslot —— 视图每帧把 S[offslot] 读出来
+; 当组件 value，布局据此把内容上移。step 是滚轮每格步长（放 value2），
+; 事件侧拿「最大偏移」（cmp-scroll-max）夹紧后写回同一个槽。
+dv-scroll = (S []i64, key i64, offslot i64, step i64, parent i64) (h i64) {
     f = dv-on()
-    h = dv-node(C-SCROLL, key, '', '', 0, 0, 0, f, parent)
+    off = dv-arr-get(S, offslot)
+    h = dv-node(C-SCROLL, key, '', '', 0, off, step, f, parent)
+    dv-act(h, DV-A-CHANGE, offslot)
 }
 dv-toolbar = (key i64, parent i64) (h i64) {
     f = dv-on()
@@ -1155,6 +1271,425 @@ dv-repeat-items = (parent i64, key0 i64, n i64, kind i64, texts []str, values []
     h = dv-repeat-items-f(parent, key0, n, kind, texts, values, acts, pays, DV-EMPTY-F)
 }
 
+; 阶段24 虚拟列表：dv-repeat-items 的「按绝对下标取切片」版本 ——
+; 第 i 项读 texts[start+i]（越界补 ''/0/0/dv-on()），key = key0 + start + i。
+; key 用**绝对行号**而不是窗口内序号：滚动时同一行的 key 不变，调和才能复用组件
+; （虚拟列表省掉的不只是挂载，还有跨滚动的对象复用）。
+dv-repeat-at = (parent i64, key0 i64, start i64, count i64, kind i64, texts []str, values []i64, acts []i64, pays []i64, flags []i64, rowh i64) (h i64) {
+    h = -1
+    i = 0
+    m = texts.len()
+    mv = values.len()
+    ma = acts.len()
+    mp = pays.len()
+    mf = flags.len()
+    lim = count
+    (lim < 0) -> { lim = 0 }
+    !! {
+        (i >= lim) -> { ** }
+        idx = dv-add(start, i)
+        t = ''
+        (idx >= 0) -> {
+            (idx < m) -> {
+                t = texts[idx]: {
+                    ok -> it
+
+                    -> ''
+                }
+            }
+        }
+        v = dv-arr-get(values, idx)
+        a = dv-arr-get(acts, idx)
+        p = dv-arr-get(pays, idx)
+        f = dv-on()
+        (idx >= 0) -> {
+            (idx < mf) -> { f = dv-arr-get(flags, idx) }
+        }
+        nh = dv-node(kind, dv-add(key0, idx), t, '', 0, v, 0, f, parent)
+        ; rowh > 0：给每行定高 —— 声明内容高（dv-list-view 的 rowh 参数）才与实际行高一致，
+        ; 否则布局实测出的行距会和窗口计算用的行距打架。0 = 不设，用组件固有高。
+        (rowh > 0) -> { dv-size(nh, 0, rowh) }
+        (a != 0) -> { dv-act(nh, a, p) }
+        (i == 0) -> { h = nh }
+        i = dv-inc(i)
+    }
+}
+
+; 阶段25：可见窗口 [i0, i1)（行 i 的内容顶 = CS-PAD + i*行距，屏幕顶 =
+; y + CS-PAD - off + i*行距；可见 <=> 屏幕底 > y 且 屏幕顶 < y + viewh）。
+; 两端各放宽一行（多挂的那行被视口裁掉，少挂会露空白）。n <= 0 时 0,0。
+; 结果写进 out[0] = i0、out[1] = i1（形参不能回写，所以走数组）。
+dv-win-range = (off i64, viewh i64, rowh i64, n i64, out []i64) () {
+    i0 = 0
+    i1 = 0
+    st = cs-add(rowh, CS-GAP)
+    (n > 0) -> {
+        i0 = cs-add(cs-div(cs-sub(cs-sub(off, CS-PAD), rowh), st), 1)
+        (i0 < 0) -> { i0 = 0 }
+        (i0 >= n) -> { i0 = cs-sub(n, 1) }
+        i1 = cs-div(cs-add(cs-sub(off, CS-PAD), cs-add(viewh, cs-sub(st, 1))), st)
+        (i1 > n) -> { i1 = n }
+        (i1 < cs-inc(i0)) -> { i1 = cs-inc(i0) }
+    }
+    dv-arr-set(out, 0, i0)
+    dv-arr-set(out, 1, i1)
+}
+
+; 阶段25 声明式过滤：dv-repeat-at 的「按下标表取行」版本。
+; idxs[j] = 第 j 个**源**行号；本原语挂的是 idxs[start .. start+count)，
+; 行 key = key0 + idxs[...]（绝对源行号）—— 所以查询变化 / 窗口滑动都按源行号
+; 复用组件（同一行永远同一个 key），只有真正不同的行才会增删。
+dv-repeat-mapped = (parent i64, key0 i64, start i64, count i64, kind i64, idxs []i64, texts []str, values []i64, acts []i64, pays []i64, flags []i64, rowh i64) (h i64) {
+    h = -1
+    i = 0
+    m = texts.len()
+    mv = values.len()
+    ma = acts.len()
+    mp = pays.len()
+    mf = flags.len()
+    mi = idxs.len()
+    lim = count
+    (lim < 0) -> { lim = 0 }
+    ; 表比 count 短时只挂到表尾 —— 否则越界的 j 会全部兜底成 idx=0，
+    ; 建出一堆 key 相同的行（dv-sync 按 (key, kind) 复用 -> 互相覆盖）。
+    (mi < lim) -> { lim = mi }
+    !! {
+        (i >= lim) -> { ** }
+        (m <= 0) -> { ** }
+        j = dv-add(start, i)
+        idx = 0
+        (j >= 0) -> {
+            (j < mi) -> { idx = dv-arr-get(idxs, j) }
+        }
+        (idx < 0) -> { idx = 0 }
+        (idx >= m) -> { idx = cs-sub(m, 1) }
+        t = texts[idx]: {
+            ok -> it
+
+            -> ''
+        }
+        v = dv-arr-get(values, idx)
+        a = dv-arr-get(acts, idx)
+        p = dv-arr-get(pays, idx)
+        f = dv-on()
+        (idx < mf) -> { f = dv-arr-get(flags, idx) }
+        nh = dv-node(kind, dv-add(key0, idx), t, '', 0, v, 0, f, parent)
+        (rowh > 0) -> { dv-size(nh, 0, rowh) }
+        (a != 0) -> { dv-act(nh, a, p) }
+        (i == 0) -> { h = nh }
+        i = dv-inc(i)
+    }
+}
+
+; 阶段24 声明式虚拟列表：一行原语把「长列表」变成「可见窗口」。
+;   S/offslot = 偏移真源（dv-scroll 会把它当组件 value）；step = 滚轮每格；
+;   viewh = 视口高（dv-size 的固定高）；rowh = 行高（内容坐标里每行占的实测高）；
+;   n = 总行数；texts/vals/acts/pays = 全量平行数组（**只挂切片**）；
+;   key0 = 行 key 基数（key = key0 + 绝对行号）；parent = 滚动容器的父节点。
+; 内容高 = n*rowh + (n-1)*CS-GAP + 2*CS-PAD —— 由 dv-scroll-content 声明给布局，
+; 于是 cmp-scroll-max 不依赖「所有行都挂出来」；布局按 index*行距 定位可见行。
+; 窗口两端各放宽一行（多挂的一行被视口裁掉，少挂会露空白）。
+dv-list-view = (S []i64, key i64, offslot i64, step i64, viewh i64, rowh i64, n i64, texts []str, vals []i64, acts []i64, pays []i64, key0 i64, parent i64) (h i64) {
+    off = dv-arr-get(S, offslot)
+    r []i64 = with-len(2)
+    dv-win-range(off, viewh, rowh, n, r)
+    i0 = dv-arr-get(r, 0)
+    i1 = dv-arr-get(r, 1)
+    ch = 0
+    (n > 0) -> {
+        ch = cs-add(cs-mul(n, rowh), cs-mul(cs-sub(n, 1), CS-GAP))
+        ch = cs-add(ch, cs-mul(CS-PAD, 2))
+    }
+    h = dv-scroll(S, key, offslot, step, parent)
+    dv-size(h, 0, viewh)
+    dv-scroll-content(h, ch)
+    dv-scroll-start(h, i0)
+    cnt = cs-sub(i1, i0)
+    (cnt > 0) -> {
+        dv-repeat-at(h, key0, i0, cnt, C-LABEL, texts, vals, acts, pays, DV-EMPTY-F, rowh)
+    }
+    h = h
+}
+
+; 阶段25 声明式过滤：查询串来自动态字符串状态 DV-BIND-T[qslot]（dv-bound 读），
+; 大小写不敏感（两边都 to-lower），空查询命中全部（''.index('') == 0）。
+; 把命中行的**源下标**写进 idxs 并返回命中数 m —— 「显示哪些」也是状态的函数。
+dv-filter-map = (qslot i64, n i64, texts []str, idxs []i64) (m i64) {
+    q = dv-bound(qslot)
+    ql = q.to-lower()
+    m = 0
+    i = 0
+    lim = n
+    (lim > texts.len()) -> { lim = texts.len() }
+    (lim < 0) -> { lim = 0 }
+    !! {
+        (i >= lim) -> { ** }
+        t = texts[i]: {
+            ok -> it
+
+            -> ''
+        }
+        hit = 0
+        (t.to-lower().index(ql) >= 0) -> { hit = 1 }
+        (hit != 0) -> {
+            dv-arr-set(idxs, m, i)
+            m = dv-inc(m)
+        }
+        i = dv-inc(i)
+    }
+    m = m
+}
+
+; 命中数（给「N results」这种回显用）
+dv-filter-count = (qslot i64, n i64, texts []str) (m i64) {
+    idxs []i64 = with-len(0)
+    m = dv-filter-map(qslot, n, texts, idxs)
+}
+
+; 阶段25 声明式过滤列表：dv-list-view 的过滤版 —— 先按查询算出命中行号表，
+; 再只挂可见窗口那几行。签名在 dv-list-view 基础上多一个 qslot（查询槽）。
+; 内容高 = m*rowh + (m-1)*CS-GAP + 2*CS-PAD（m = 命中数），所以查询一变，
+; 「能滚多远」跟着变；行 key = key0 + 源行号，滚动 / 改查询都按源行复用。
+dv-filter-list = (S []i64, key i64, offslot i64, step i64, viewh i64, rowh i64, n i64, texts []str, vals []i64, acts []i64, pays []i64, qslot i64, key0 i64, parent i64) (h i64) {
+    idxs []i64 = with-len(0)
+    m = dv-filter-map(qslot, n, texts, idxs)
+    off = dv-arr-get(S, offslot)
+    r []i64 = with-len(2)
+    dv-win-range(off, viewh, rowh, m, r)
+    i0 = dv-arr-get(r, 0)
+    i1 = dv-arr-get(r, 1)
+    ch = 0
+    (m > 0) -> {
+        ch = cs-add(cs-mul(m, rowh), cs-mul(cs-sub(m, 1), CS-GAP))
+        ch = cs-add(ch, cs-mul(CS-PAD, 2))
+    }
+    h = dv-scroll(S, key, offslot, step, parent)
+    dv-size(h, 0, viewh)
+    dv-scroll-content(h, ch)
+    dv-scroll-start(h, i0)
+    cnt = cs-sub(i1, i0)
+    (cnt > 0) -> {
+        dv-repeat-mapped(h, key0, i0, cnt, C-LABEL, idxs, texts, vals, acts, pays, DV-EMPTY-F, rowh)
+    }
+    h = h
+}
+
+; ============================================================================
+; 阶段 26 声明式排序 / 分组：列表的**顺序**也是状态的函数
+; ============================================================================
+; dv-sort-run：对下标表做**稳定**插入排序（原地，desc != 0 = 倒序）。
+; 稳定的理由：分组要「先按组排、组内保持源序」，非稳定排序会把组内顺序打乱；
+; 另外键相等时保持源序，视觉上更可预测。
+dv-sort-run = (idxs []i64, n i64, keys []i64, desc i64) () {
+    i = 1
+    !! {
+        (i >= n) -> { ** }
+        cur = dv-arr-get(idxs, i)
+        ck = dv-arr-get(keys, cur)
+        j = i
+        !! {
+            (j <= 0) -> { ** }
+            pv = dv-arr-get(idxs, dv-add(j, -1))
+            pk = dv-arr-get(keys, pv)
+            mv = 0
+            (desc == 0) -> { (ck < pk) -> { mv = 1 } }
+            (desc != 0) -> { (ck > pk) -> { mv = 1 } }
+            (mv == 0) -> { ** }
+            dv-arr-set(idxs, j, pv)
+            j = dv-add(j, -1)
+        }
+        dv-arr-set(idxs, j, cur)
+        i = dv-inc(i)
+    }
+}
+
+; dv-sort-map：把 0..n-1 按 keys[] 排成**下标表**（不是排数据本身 —— 数据是
+; 平行数组，动不得）。mode：0 = 源顺序，1 = 升序，2 = 降序，其余按源顺序。
+; n 夹到 keys.len()（键比行少时只排有的那些），负数按 0。
+dv-sort-map = (mode i64, n i64, keys []i64) (idxs []i64) {
+    idxs = with-len(0)
+    lim = n
+    (lim > keys.len()) -> { lim = keys.len() }
+    (lim < 0) -> { lim = 0 }
+    i = 0
+    !! {
+        (i >= lim) -> { ** }
+        idxs.push(i)
+        i = dv-inc(i)
+    }
+    (mode == 1) -> { dv-sort-run(idxs, lim, keys, 0) }
+    (mode == 2) -> { dv-sort-run(idxs, lim, keys, 1) }
+    idxs = idxs
+}
+
+; dv-group-plan：把「已按组排好」的下标表展开成**混合行表** ——
+;   token >= 0  = 源行号；token < 0 = 组标题，组号 = 0 - token - 1。
+; on == 0 时原样复制（不分组）；否则遇到新组就先压一个标题 token。
+; 组号本身不排序（顺序由传入的 plan 决定），所以「按组排序」= 先用
+; dv-sort-map(mode, n, grps) 把 plan 排好，再走这里。
+dv-group-plan = (on i64, n i64, grps []i64, plan []i64, out []i64) (m i64) {
+    m = 0
+    lim = n
+    (lim > plan.len()) -> { lim = plan.len() }
+    (lim < 0) -> { lim = 0 }
+    {
+        (on == 0) -> {
+            i = 0
+            !! {
+                (i >= lim) -> { ** }
+                dv-arr-set(out, i, dv-arr-get(plan, i))
+                m = dv-inc(m)
+                i = dv-inc(i)
+            }
+        }
+        (on != 0) -> {
+            cur = -1
+            j = 0
+            !! {
+                (j >= lim) -> { ** }
+                src = dv-arr-get(plan, j)
+                g = dv-arr-get(grps, src)
+                (g != cur) -> {
+                    dv-arr-set(out, m, dv-add(0 - g, -1))
+                    m = dv-inc(m)
+                    cur = g
+                }
+                dv-arr-set(out, m, src)
+                m = dv-inc(m)
+                j = dv-inc(j)
+            }
+        }
+    }
+    m = m
+}
+
+; dv-repeat-plan：混合行表渲染器（dv-repeat-mapped 的「标题 + 数据」版）。
+; token < 0 → 标题行：文案取 names[组号]，key = hkey0 + 组号，flags = dv-disabled()
+; （标题不可点，但仍可 hover）；token >= 0 → 数据行，与 dv-repeat-mapped 同语义。
+; 所有行都 dv-size 成 rowh —— 滚动容器的行距取自**首行实测高**，标题行与数据行
+; 同高，混排才不会把行距撑歪。
+dv-repeat-plan = (parent i64, key0 i64, hkey0 i64, start i64, count i64, kind i64, plan []i64, texts []str, vals []i64, acts []i64, pays []i64, flags []i64, names []str, icolor i64, hcolor i64, rowh i64) (h i64) {
+    h = -1
+    i = 0
+    mi = texts.len()
+    mv = vals.len()
+    ma = acts.len()
+    mp = pays.len()
+    mf = flags.len()
+    mn = names.len()
+    ml = plan.len()
+    lim = count
+    (lim < 0) -> { lim = 0 }
+    ; 按**混合行表**长度夹（不是 texts 长度）—— 分组时 m = 行数 + 组数，
+    ; 窗口行数可能超过数据行数，用 texts 夹会把标题行切掉。
+    (ml < lim) -> { lim = ml }
+    !! {
+        (i >= lim) -> { ** }
+        (mi <= 0) -> { ** }
+        j = dv-add(start, i)
+        tok = 0
+        (j >= 0) -> {
+            (j < ml) -> { tok = dv-arr-get(plan, j) }
+        }
+        hdr = 0
+        idx = tok
+        (tok < 0) -> {
+            hdr = 1
+            idx = dv-add(0 - tok, -1)
+        }
+        (idx < 0) -> { idx = 0 }
+        k = mi
+        (hdr != 0) -> { k = mn }
+        (k <= 0) -> { ** }
+        (idx >= k) -> { idx = dv-add(k, -1) }
+        t = ''
+        v = 0
+        a = 0
+        p = 0
+        f = dv-on()
+        c = icolor
+        key = dv-add(key0, idx)
+        (hdr != 0) -> {
+            t = names[idx]: {
+                ok -> it
+
+                -> ''
+            }
+            f = dv-disabled()
+            c = hcolor
+            key = dv-add(hkey0, idx)
+        }
+        (hdr == 0) -> {
+            t = texts[idx]: {
+                ok -> it
+
+                -> ''
+            }
+            v = dv-arr-get(vals, idx)
+            a = dv-arr-get(acts, idx)
+            p = dv-arr-get(pays, idx)
+            (idx < mf) -> { f = dv-arr-get(flags, idx) }
+        }
+        nh = dv-node(kind, key, t, '', c, v, 0, f, parent)
+        (rowh > 0) -> { dv-size(nh, 0, rowh) }
+        (a != 0) -> { dv-act(nh, a, p) }
+        (i == 0) -> { h = nh }
+        i = dv-inc(i)
+    }
+}
+
+; dv-order-list：dv-list-view / dv-filter-list 的「顺序」版 —— 一个 mode 槽决定
+;   0 = 源顺序；1 = 按 keys 升序；2 = 按 keys 降序；
+;   3 = 按 grps 分组（升序，组内源序）；4 = 按 grps 分组（降序）。
+; 内容高按**混合行数** m 算（分组时 m = 行数 + 组数），所以「能滚多远」跟着模式变。
+; 行 key = key0 + 源行号（数据行）/ hkey0 + 组号（标题行）—— 换模式时同一行
+; 仍然同一个 key，dv-sync 尽量复用，不相关的行不动。
+dv-order-list = (S []i64, key i64, offslot i64, step i64, viewh i64, rowh i64, n i64, keys []i64, grps []i64, names []str, texts []str, vals []i64, acts []i64, pays []i64, modeslot i64, key0 i64, hkey0 i64, parent i64) (h i64) {
+    mode = dv-arr-get(S, modeslot)
+    idxs []i64 = with-len(0)
+    grp = 0
+    {
+        (mode == 1) -> {
+            idxs = dv-sort-map(1, n, keys)
+        }
+        (mode == 2) -> {
+            idxs = dv-sort-map(2, n, keys)
+        }
+        (mode == 3) -> {
+            idxs = dv-sort-map(1, n, grps)
+            grp = 1
+        }
+        (mode == 4) -> {
+            idxs = dv-sort-map(2, n, grps)
+            grp = 1
+        }
+        -> {
+            idxs = dv-sort-map(0, n, keys)
+        }
+    }
+    out []i64 = with-len(0)
+    m = dv-group-plan(grp, idxs.len(), grps, idxs, out)
+    off = dv-arr-get(S, offslot)
+    r []i64 = with-len(2)
+    dv-win-range(off, viewh, rowh, m, r)
+    i0 = dv-arr-get(r, 0)
+    i1 = dv-arr-get(r, 1)
+    ch = 0
+    (m > 0) -> {
+        ch = cs-add(cs-mul(m, rowh), cs-mul(cs-sub(m, 1), CS-GAP))
+        ch = cs-add(ch, cs-mul(CS-PAD, 2))
+    }
+    h = dv-scroll(S, key, offslot, step, parent)
+    dv-size(h, 0, viewh)
+    dv-scroll-content(h, ch)
+    dv-scroll-start(h, i0)
+    cnt = cs-sub(i1, i0)
+    (cnt > 0) -> {
+        dv-repeat-plan(h, key0, hkey0, i0, cnt, C-LABEL, out, texts, vals, acts, pays, DV-EMPTY-F, names, CS-TH-FG, CS-TH-MUTED, rowh)
+    }
+    h = h
+}
+
 ; 从状态槽推导每项 flags（阶段 20 的常用形态）：S[slot0+i] 非 0 -> dv-on-sel()，
 ; 否则 dv-on()。返回与 n 等长的数组，直接喂给 dv-repeat-items-f。
 ; 于是「选中的行」完全是状态的函数，不需要每帧手写 if。
@@ -1170,6 +1705,320 @@ dv-sel-flags = (S []i64, slot0 i64, n i64) (f []i64) {
         f.push(x)
         i = dv-inc(i)
     }
+}
+
+; ============================================================================
+; 阶段 27：声明式表单校验
+; ============================================================================
+; 校验规则也是数据：一张「规则表」（kinds / pars 两个平行数组，按 base + n 切片）
+; 描述每个字段「怎样算不合法」，值本身来自受控输入的字符串槽（DV-BIND-T）。
+; 纯函数 dv-rule-check 返回**第一条**违反的规则号（1 基），全过返回 0；
+; dv-form-bad 把多个字段汇总成「坏了几项」；dv-field 一行建出
+; 「标签 + 输入 + 错误行」，错误行只在（有违反 && 揭示槽为 1）时出现在视图里。
+;
+; 规则种类（DV-R-*）：
+;   1 必填（trim 后非空）          2 最小长度（trim 后）   3 最大长度
+;   4 最小值（可解析成 i64 且 >= par，解析失败算违反）
+;   5 最大值（同理，解析失败算违反）
+;   6 与另一槽相等（par = 槽号，如「确认密码」）
+;   7 包含子串（par = spars 下标，取子串常量）
+;
+; 「什么时候显示错误」是另一根轴：reveal 槽为 0 时只禁用提交、不显示红字
+; （首次进页面不该一片红）；提交失败（坏项 > 0）时应用层把 reveal 写成 1。
+; 于是「错误文案 / 提交可用与否」都是状态的函数，视图里没有 if-else 链。
+
+DV-R-REQ = 1
+DV-R-MINL = 2
+DV-R-MAXL = 3
+DV-R-MINV = 4
+DV-R-MAXV = 5
+DV-R-EQ = 6
+DV-R-HAS = 7
+
+; 单条规则检查：返回第一条违反的规则号（1 基），全过 0。
+; spars 只是给 DV-R-HAS 取子串常量用（其它规则传空数组即可）。
+; base / n 越界一律按「没有这条规则」吞掉（下标解包失败 -> k=0 -> 不匹配任何种类）。
+dv-rule-check = (v str, spars []str, kinds []i64, pars []i64, base i64, n i64) (code i64) {
+    code = 0
+    t = v.trim()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        bi = cs-add(base, i)
+        k = kinds[bi]: {
+            ok -> it
+
+            -> 0
+        }
+        p = pars[bi]: {
+            ok -> it
+
+            -> 0
+        }
+        bad = 0
+        (k == DV-R-REQ) -> {
+            (t.empty()) -> { bad = 1 }
+        }
+        (k == DV-R-MINL) -> {
+            (t.len() < p) -> { bad = 1 }
+        }
+        (k == DV-R-MAXL) -> {
+            (t.len() > p) -> { bad = 1 }
+        }
+        (k == DV-R-MINV) -> {
+            nv = 0
+            okp = 0
+            t.to-i64(): {
+                ok -> {
+                    okp = 1
+                    nv = it
+                }
+
+                -> {
+                    okp = 0
+                }
+            }
+            (okp == 0) -> { bad = 1 }
+            (okp == 1) -> {
+                (nv < p) -> { bad = 1 }
+            }
+        }
+        (k == DV-R-MAXV) -> {
+            nv = 0
+            okp = 0
+            t.to-i64(): {
+                ok -> {
+                    okp = 1
+                    nv = it
+                }
+
+                -> {
+                    okp = 0
+                }
+            }
+            (okp == 0) -> { bad = 1 }
+            (okp == 1) -> {
+                (nv > p) -> { bad = 1 }
+            }
+        }
+        (k == DV-R-EQ) -> {
+            (t.compare(dv-bound(p)) != 0) -> { bad = 1 }
+        }
+        (k == DV-R-HAS) -> {
+            sub = spars[p]: {
+                ok -> it
+
+                -> ''
+            }
+            (t.index(sub) < 0) -> { bad = 1 }
+        }
+        (bad != 0) -> {
+            ; code 是**全局规则下标** +1（不是切片内序号）—— 文案表 msgs 是逐条规则
+            ; 一张扁平表，按字段切片后仍要能直接查到那条规则的措辞。
+            code = cs-add(bi, 1)
+            **
+        }
+        i = dv-inc(i)
+    }
+    code = code
+}
+
+; 规则号 -> 文案（0 / 越界一律空串）
+dv-rule-msg = (code i64, msgs []str) (s str) {
+    s = ''
+    (code > 0) -> {
+        s = msgs[cs-sub(code, 1)]: {
+            ok -> it
+
+            -> ''
+        }
+    }
+    s = s
+}
+
+; 整个表单：坏了几项。slots / bases / ns 三个平行数组按字段下标取
+; （slots[i] = 该字段的字符串槽，bases[i] / ns[i] = 规则表切片起点与条数）。
+; nf 超出表长按表长算（越界解包 -> 0 -> 空规则 -> 不违反）。
+dv-form-bad = (slots []i64, bases []i64, ns []i64, spars []str, kinds []i64, pars []i64, nf i64) (bad i64) {
+    bad = 0
+    i = 0
+    !! {
+        (i >= nf) -> { ** }
+        sl = slots[i]: {
+            ok -> it
+
+            -> 0
+        }
+        bs = bases[i]: {
+            ok -> it
+
+            -> 0
+        }
+        nn = ns[i]: {
+            ok -> it
+
+            -> 0
+        }
+        c = dv-rule-check(dv-bound(sl), spars, kinds, pars, bs, nn)
+        (c != 0) -> { bad = dv-inc(bad) }
+        i = dv-inc(i)
+    }
+    bad = bad
+}
+
+; 一行字段：标签（key）+ 输入（key+1，绑到 slot）+ 错误行（errkey，只在违反且 show 时建）。
+; key 取字段间隔（如 20 的倍数），errkey 取该字段专属的另一个 key —— 三者不能撞，
+; 撞了会被 dv-sync 按 (key, kind) 互相覆盖。返回输入节点句柄。
+dv-field = (key i64, errkey i64, slot i64, label str, ph str, show i64, spars []str, kinds []i64, pars []i64, base i64, n i64, msgs []str, parent i64) (h i64) {
+    dv-label(key, label, parent)
+    h = dv-input(dv-add(key, 1), ph, parent)
+    dv-bind(h, slot, 0)
+    c = dv-rule-check(dv-bound(slot), spars, kinds, pars, base, n)
+    (c != 0) -> {
+        (show != 0) -> {
+            el = dv-label(errkey, dv-rule-msg(c, msgs), parent)
+            dv-variant(el, dv-var-danger())       ; 变体 -> 主题 DANGER 色
+        }
+    }
+}
+
+; ============================================================================
+; 阶段 28：声明式虚拟表格（DataTable）
+; ============================================================================
+; 列表的「一行一个标签」升级成「一行 N 列」：dv-table-rows 把窗口内的行挂成
+; C-GRID（每行 ncols 个 C-LABEL 单元格），dv-table-list 在它之上补一条表头
+; 与滚动容器 —— 表头 / 可见窗口的行 / 能滚多远，全都是声明出来的。
+;
+; 行表 plan 的语义与 dv-repeat-plan 完全一致（同一套 dv-sort-map / dv-group-plan）：
+;   token >= 0 = 源行号；token < 0 = 组标题（组号 = -token-1）。
+; 组标题在表格里是**通栏行**（一个占满表宽、禁用的标签），数据行才是 N 列 ——
+; 所以 dv-table-list 是 dv-order-list 的严格超集：ncols = 1 且不分组时行为等价。
+;
+; 宽度是**声明**出来的（colws 逐列给，tw = 2*pad + 列宽和 + (ncols-1)*gap），
+; 不靠实测 —— 否则「可见窗口的行」只有几行，实测宽会随窗口内容浮动。
+
+; dv-table-rows：挂混合行表 [start, start+count) 这段。
+;   key0 = 数据行 key 基数（key = key0 + 源行号）；hkey0 = 组标题行 key 基数；
+;   ckey0 = 单元格 key 基数（key = ckey0 + 源行号*ncols + 列号）；
+;   tw = 表宽；plan 里 token < 0 = 组标题。返回第一行句柄。
+dv-table-rows = (parent i64, key0 i64, hkey0 i64, ckey0 i64, start i64, count i64, ncols i64, colws []i64, tw i64, plan []i64, names []str, cells []str, acts []i64, pays []i64, hcolor i64, rowh i64) (h i64) {
+    h = -1
+    i = 0
+    mn = names.len()
+    mc = cells.len()
+    ma = acts.len()
+    mp = pays.len()
+    ml = plan.len()
+    ; 起点先夹进 [0, ml]，再按「剩余可挂行数」夹 count —— 两端都越界时一行不挂。
+    ; （dv-win-range 给的 i0 本来就在 [0, n) 里，这一步是防御性的：否则越界的
+    ; start 会全部兜底成第 0 行，建出一堆 key 相同的行，dv-sync 会互相覆盖。）
+    st = start
+    (st < 0) -> { st = 0 }
+    (st > ml) -> { st = ml }
+    lim = count
+    (lim < 0) -> { lim = 0 }
+    av = cs-sub(ml, st)
+    (av < lim) -> { lim = av }
+    !! {
+        (i >= lim) -> { ** }
+        j = dv-add(st, i)
+        tok = 0
+        (j >= 0) -> {
+            (j < ml) -> { tok = dv-arr-get(plan, j) }
+        }
+        hdr = 0
+        idx = tok
+        (tok < 0) -> {
+            hdr = 1
+            idx = dv-add(0 - tok, -1)
+        }
+        (idx < 0) -> { idx = 0 }
+        nh = -1
+        (hdr != 0) -> {
+            ; 组标题：通栏一行；组号越界 / 没有名字表就整行不挂
+            k = mn
+            (k <= 0) -> { ** }
+            (idx >= k) -> { idx = dv-add(k, -1) }
+            t = names[idx]: {
+                ok -> it
+
+                -> ''
+            }
+            nh = dv-node(C-LABEL, dv-add(hkey0, idx), t, '', hcolor, 0, 0, dv-disabled(), parent)
+            dv-size(nh, tw, rowh)
+        }
+        (hdr == 0) -> {
+            (mc <= 0) -> { ** }
+            row = dv-grid(dv-add(key0, idx), ncols, parent)
+            dv-size(row, tw, rowh)
+            c = 0
+            !! {
+                (c >= ncols) -> { ** }
+                cell = dv-label(dv-add(dv-add(ckey0, cs-mul(idx, ncols)), c), dv-arr-get-s(cells, dv-add(cs-mul(idx, ncols), c)), row)
+                cw = dv-arr-get(colws, c)
+                (cw > 0) -> { dv-size(cell, cw, 0) }
+                c = dv-inc(c)
+            }
+            a = dv-arr-get(acts, idx)
+            (a != 0) -> { dv-act(row, a, dv-arr-get(pays, idx)) }
+            nh = row
+        }
+        (i == 0) -> { h = nh }
+        i = dv-inc(i)
+    }
+    h = h
+}
+
+; dv-table-list：表头 + 滚动容器 + 可见窗口的行。
+;   S/offslot = 偏移真源（dv-scroll 把它当组件 value）；step = 滚轮每格；
+;   viewh = 视口高；rowh = 行高；plan = 混合行表（见上）；
+;   headers = 表头文案（逐列）；names = 组标题名字；hcolor = 表头 / 组标题颜色；
+;   cells = 全量单元格文案，**行主序**（cells[源行号*ncols + 列号]）。
+; 内容高 = m*rowh + (m-1)*CS-GAP + 2*CS-PAD，由 dv-scroll-content 声明给布局，
+; 于是 cmp-scroll-max 不依赖「所有行都挂出来」。表头在滚动容器**外面**（不滚）。
+dv-table-list = (S []i64, key i64, hkey i64, offslot i64, step i64, viewh i64, rowh i64, plan []i64, ncols i64, colws []i64, headers []str, names []str, cells []str, acts []i64, pays []i64, key0 i64, ckey0 i64, hkey0 i64, hcolor i64, parent i64) (h i64) {
+    m = plan.len()
+    ; 表宽 = 2*pad + 列宽之和 + (ncols-1)*gap
+    tw = cs-mul(CS-PAD, 2)
+    c = 0
+    !! {
+        (c >= ncols) -> { ** }
+        tw = cs-add(tw, cs-add(dv-arr-get(colws, c), CS-GAP))
+        c = dv-inc(c)
+    }
+    (ncols > 0) -> { tw = cs-sub(tw, CS-GAP) }
+    ; 表头：一行 C-GRID，逐列一个定宽标签（颜色 = hcolor）
+    hg = dv-grid(hkey, ncols, parent)
+    ; 表头行高 = 内边距 + 一行文字（C-GRID 交叉轴默认顶对齐，标签正好落在
+    ; y+pad .. y+pad+行高，不散出下边距）—— 比让它自动量（2*pad+行高）省一行边距。
+    dv-size(hg, tw, cs-add(CS-PAD, CS-LINE-H))
+    c = 0
+    !! {
+        (c >= ncols) -> { ** }
+        hc = dv-node(C-LABEL, dv-add(hkey, dv-add(1, c)), dv-arr-get-s(headers, c), '', hcolor, 0, 0, dv-on(), hg)
+        cw = dv-arr-get(colws, c)
+        (cw > 0) -> { dv-size(hc, cw, 0) }
+        c = dv-inc(c)
+    }
+    off = dv-arr-get(S, offslot)
+    r []i64 = with-len(2)
+    dv-win-range(off, viewh, rowh, m, r)
+    i0 = dv-arr-get(r, 0)
+    i1 = dv-arr-get(r, 1)
+    ch = 0
+    (m > 0) -> {
+        ch = cs-add(cs-mul(m, rowh), cs-mul(cs-sub(m, 1), CS-GAP))
+        ch = cs-add(ch, cs-mul(CS-PAD, 2))
+    }
+    h = dv-scroll(S, key, offslot, step, parent)
+    dv-size(h, 0, viewh)
+    dv-scroll-content(h, ch)
+    dv-scroll-start(h, i0)
+    cnt = cs-sub(i1, i0)
+    (cnt > 0) -> {
+        dv-table-rows(h, key0, hkey0, ckey0, i0, cnt, ncols, colws, tw, plan, names, cells, acts, pays, hcolor, rowh)
+    }
+    h = h
 }
 
 ; 删掉列表第 i 项：把 i 之后的项前移一格，返回新长度（数组本身不变长）。
@@ -1540,6 +2389,10 @@ dv-apply-props = (L i64, v i64) {
     (kd == C-TABLE) -> { cmp-set-value2(L, dv-value2(v)) }
     (kd == C-PAGINATION) -> { cmp-set-value2(L, dv-value2(v)) }
     (kd == C-RATING) -> { cmp-set-value2(L, dv-value2(v)) }
+    ; 滚动容器的 value2 = 滚轮步长（事件侧 dva-wheel 拿它换算偏移）
+    (kd == C-SCROLL) -> { cmp-set-value2(L, dv-value2(v)) }
+    ; 阶段29 可拆面板：value2 = 左屏宽上限（事件侧 dva-drag-move 拿它夹紧）
+    (kd == C-DOCK) -> { cmp-set-value2(L, dv-value2(v)) }
     dv-apply-flags(L, dv-flags(v))
     ; 布局提示（bits / gap / pad）：0 = 默认，所以每帧无条件同步是安全的
     cmp-set-lay(L, dv-lay-of(v))
@@ -1553,6 +2406,10 @@ dv-apply-props = (L i64, v i64) {
     cmp-set-var(L, dv-var-of(v))
     ; 锚点：-1 = 无锚点，所以每帧无条件同步是安全的
     cmp-set-anchor(L, dv-anchor-of(v))
+    ; 阶段24 虚拟列表：声明内容高（0 = 没声明 -> 布局实测子节点），无条件同步安全
+    cmp-set-scroll-content(L, dv-scroll-content-of(v))
+    ; 阶段24 虚拟列表：首个挂载子的绝对行号（0 = 顺序排），无条件同步安全
+    cmp-set-scroll-start(L, dv-scroll-start-of(v))
 }
 
 ; 叠加层（模态弹层）：把视图节点标成 DV-F-OVL —— 调和时经 dv-apply-flags 落到活节点的
@@ -1782,4 +2639,1092 @@ dv-sync = (live i64, view i64) (ops i64) {
 dv-render = (live i64, view i64) (ops i64) {
     dv-bump-frame()
     ops = dv-sync(live, view)
+}
+
+; ============================================================================
+; 阶段 29：声明式可拆面板（Dock）
+; ============================================================================
+; 两块面板 + 中间一条可拖的间隙。**间隙本身就是拖杆**：它不属于任何子节点，
+; 命中测试（cs-hit 的「自身矩形兜底」）落到容器自己身上，事件侧再用光标位置
+; 判断是不是落在那条间隙里（dva-drag-*）。所以这里不需要新增任何节点种类，
+; 也不需要给布局引擎加分支 —— C-DOCK 只是一台通了电的横向容器。
+;
+; 宽度是**声明**的，真源是状态槽 slot（与 dv-scroll 的偏移同一模式）：
+;
+;   dock  = dv-dock-split(D-KEY, D-SLOT, D-MIN, D-MAX, D-GAP, parent)
+;   paneA = dv-...(dock)                        ; 左屏
+;   dv-size(paneA, dv-arr-get(S, D-SLOT), 0)    ; 左屏宽 = 状态
+;   paneB = dv-...(dock)                        ; 右屏
+;   dv-lay(paneB, dv-lay-grow(), 0, 0)          ; 右屏吃掉剩余宽
+;
+; 竖着拆：再补一句 dv-lay(dock, 0, D-GAP, CS-PAD) 把 L-H 抹掉，
+; 左屏改成 dv-size(paneA, 0, dv-arr-get(S, D-SLOT))（状态槽存的是**上屏高**）。
+;
+; dv-dock-split：C-DOCK 横向容器，gap = gw（拖杆命中区），动作 DV-A-CHANGE +
+; 载荷 = slot（语义在视图上：slot 存左屏宽），value = minw / value2 = maxw
+; （事件侧夹紧用）。名字带 -split 是因为 2 参数的 dv-dock(key, parent) 已经
+; 作为「83 kind 构造器」之一存在（tests/dv.no 覆盖），这里不覆盖它。
+dv-dock-split = (key i64, slot i64, minw i64, maxw i64, gw i64, parent i64) (h i64) {
+    f = dv-on()
+    h = dv-node(C-DOCK, key, '', '', 0, minw, maxw, f, parent)
+    dv-lay(h, dv-lay-h(), gw, CS-PAD)
+    dv-act(h, DV-A-CHANGE, slot)
+    h
+}
+
+; ============================================================================
+; 阶段 30：声明式代码编辑器（多行编辑 + 行号 + 语法高亮 + 光标）
+; ============================================================================
+; 命令式内核里 C-HIGHLIGHTER 只有 API + 最小状态：cs-paint-leaf 没有它的分支
+; （落到默认「底色 + 单行字」）。C-TEXTAREA 自阶段39 起有真的多行渲染
+; （cs-paint-textarea：逐行 + 视口 + 行内光标），C-NUMBER-INPUT / C-STEPPER /
+; C-SEARCH 自阶段40 起也各有真渲染（数字右对齐 + 焦点框、[−]/[+] 加值条、
+; 右端 'x' 清除区），但那些仍是「一整个字段」的画法，
+; 没有行号、没有按 token 着色、光标也不是「行内第几列」的语义——所以
+; 「代码编辑器」仍然不该指望某个组件 kind 通吃，它本来就是**组合**：
+; 一行 = 行号 + 若干着色 token + 光标。声明式层把这三样全变成数据：
+;
+;   ed = dv-code-editor(S, E-KEY, E-TEXT, E-OFF, 400, 24000, 2400, 5600, 9000, page)
+;
+; 文本的真源是**字符串状态** DV-BIND-T[E-TEXT]（dv-bound 读 / dv-bound-set 写），
+; 光标是 dv 侧的 DV-EDIT-L[E-TEXT] / DV-EDIT-C[E-TEXT]（与受控输入同一个池），
+; 滚动偏移是应用状态槽 S[E-OFF]（dv-scroll 的老模式）。
+;
+; 零内核改动：着色发生在 dv 侧（token -> 颜色），行是 C-FORM、token 是 C-LABEL、
+; 行号是右对齐的 C-LABEL、光标是定宽 2px 的 C-SEPARATOR，全部走既有布局 / 绘制 /
+; 命中路径。C-HIGHLIGHTER 保持「API + 最小状态」，这里不覆盖它。
+;
+; 键盘喂字在 dv 侧（dv-edit-key）：装配层只负责「命中 -> 焦点 = 编辑器 key」，
+; 之后每个按键都改写状态，下一帧视图重建出新的行 / token / 光标。
+; 与 dv-act 同一哲学：**行为也是数据**，循环里没有 key 的 if-else 链。
+
+; 编辑槽：0 = 不是编辑器，>= 1 = 文本槽 + 1（与 dv-hover / dv-bind 同一编码）
+; （池声明在文件顶部，见「阶段30」那一段）
+
+; 行 key 步长：row key = key0 + i*ED-STRIDE；行内子节点用 +1 .. +500000
+ED-STRIDE = 10000000
+ED-CARET-W = 200       ; 光标宽 2px
+ED-TAB = '    '        ; Tab = 4 空格（等宽字体下才对齐）
+
+; SDL 键码（装配层把 e.key.key 原样传进来）：方向键在 0x40000000 段
+ED-K-LEFT = 1073741904
+ED-K-RIGHT = 1073741903
+ED-K-UP = 1073741906
+ED-K-DOWN = 1073741905
+
+; 可打印 ASCII 32..126（按键码 -> 字符的唯一查表来源，省掉 char<->int 转换）
+ED-PRINT = ' !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
+
+; 数字 token 的颜色：主题里没有「琥珀色」语义槽，先用常量（关键字 / 字符串 / 注释
+; 都走主题，换主题时只有数字不跟着变 —— 这是有意的折中，避免动 cmp-scene）
+DV-C-NUM = 0xF2C14EFF
+
+dv-c-kw = () (c i64) { c = cs-theme(CS-TH-ACCENT) }
+dv-c-str = () (c i64) { c = cs-theme(CS-TH-OK) }
+dv-c-com = () (c i64) { c = cs-theme(CS-TH-MUTED) }
+dv-c-def = () (c i64) { c = cs-theme(CS-TH-FG) }
+dv-c-num = () (c i64) { c = DV-C-NUM }
+
+; 字节读取：s.byte(i) 是 ?byte，越界给 0
+dv-byte-at = (s str, i i64) (b i64) {
+    b = 0
+    (i >= 0) -> {
+        x = s.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        b = x
+    }
+    b
+}
+
+; []str 下标写（place-match 是唯一的合法写法，见编译器 idxwrite 诊断）
+dv-arr-set-s = (a []str, i i64, v str) () {
+    ni = dv-inc(i)
+    !! {
+        (a.len() >= ni) -> { ** }
+        a.push('')
+    }
+    (i >= 0) -> {
+        a[i]: {
+            ok -> it = v
+            -> _
+        }
+    }
+}
+
+; 标识符字符：字母 / 数字 / 下划线（数字开头会先被数字分支吃掉）
+dv-word-byte = (b i64) (yes i64) {
+    yes = 0
+    ((b >= 65) && (b <= 90)) -> { yes = 1 }
+    ((b >= 97) && (b <= 122)) -> { yes = 1 }
+    ((b >= 48) && (b <= 57)) -> { yes = 1 }
+    (b == 95) -> { yes = 1 }
+    yes
+}
+
+; 关键字表：',kw,' 包夹后查 haystack。每次调用重建 haystack —— 关键字表很短，
+; 而建表语句不能出现在模块层（没有 `+` 连接 str，模块层也跑不了语句）。
+dv-is-kw = (w str) (yes i64) {
+    yes = 0
+    (w.len-bytes() > 0) -> {
+        hay = ''
+        hay.push-str(',let,var,fn,if,else,while,for,return,break,continue,')
+        hay.push-str('match,case,struct,enum,impl,trait,type,use,with,where,')
+        hay.push-str('import,export,module,pub,const,static,class,new,self,')
+        hay.push-str('this,super,and,or,not,in,is,as,do,loop,yield,async,')
+        hay.push-str('await,ref,mut,priv,get,set,value,component,props,state,')
+        pat = ','
+        pat.push-str(w)
+        pat.push-str(',')
+        (hay.index(pat) >= 0) -> { yes = 1 }
+    }
+    yes
+}
+
+; 引号配对：从 i（引号本身）找到闭合引号，返回闭合引号之后的位置
+dv-lex-quote = (line str, i i64, qb i64) (j i64) {
+    len = line.len-bytes()
+    j = dv-inc(i)
+    !! {
+        (j >= len) -> { ** }
+        (dv-byte-at(line, j) == qb) -> {
+            j = dv-inc(j)
+            **
+        }
+        j = dv-inc(j)
+    }
+    j
+}
+
+; token 入池：与上一个同色就并进去（少挂节点，且跨帧 key 更稳）
+dv-run-push = (t str, c i64) () {
+    n = DV-RUN-T.len()
+    (n > 0) -> {
+        pc = dv-arr-get(DV-RUN-C, cs-sub(n, 1))
+        (pc == c) -> {
+            pt = dv-arr-get-s(DV-RUN-T, cs-sub(n, 1))
+            pt.push-str(t)
+            DV-RUN-T.truncate(cs-sub(n, 1))
+            DV-RUN-C.truncate(cs-sub(n, 1))
+            DV-RUN-T.push(pt)
+            DV-RUN-C.push(c)
+        }
+        (pc != c) -> {
+            DV-RUN-T.push(t)
+            DV-RUN-C.push(c)
+        }
+    }
+    (n == 0) -> {
+        DV-RUN-T.push(t)
+        DV-RUN-C.push(c)
+    }
+}
+
+; 一行 -> token 序列（写进 DV-RUN-T / DV-RUN-C，返回 token 数）
+; 分类：字符串 / 数字 / 标识符（含关键字）/ 空白 / 单字符标点。
+; 注释按 nolang 的 `;` 算 —— 从分号到行尾整段灰色。
+dv-lex-line = (line str) (n i64) {
+    DV-RUN-T.truncate(0)
+    DV-RUN-C.truncate(0)
+    len = line.len-bytes()
+    i = 0
+    (len > 0) -> {
+        ; 分支链写成「纯臂 if-group」（兜底臂是裸 `->`）—— nolang 要求兜底臂
+        ; 必须待在 if-group 里，且 group 里不能有前置语句，所以 b 在外面取。
+        !! {
+            (i >= len) -> { ** }
+            b = dv-byte-at(line, i)
+            {
+                ; 注释：; 到行尾
+                (b == 59) -> {
+                    dv-run-push(line.slice-bytes(i, len), dv-c-com())
+                    i = len
+                }
+                ; 字符串
+                ((b == 34) || (b == 39)) -> {
+                    j = dv-lex-quote(line, i, b)
+                    dv-run-push(line.slice-bytes(i, j), dv-c-str())
+                    i = j
+                }
+                ; 数字
+                ((b >= 48) && (b <= 57)) -> {
+                    j = i
+                    !! {
+                        (j >= len) -> { ** }
+                        (dv-byte-at(line, j) < 48) -> { ** }
+                        (dv-byte-at(line, j) > 57) -> { ** }
+                        j = dv-inc(j)
+                    }
+                    dv-run-push(line.slice-bytes(i, j), dv-c-num())
+                    i = j
+                }
+                ; 标识符 / 关键字
+                (dv-word-byte(b) == 1) -> {
+                    j = i
+                    !! {
+                        (j >= len) -> { ** }
+                        (dv-word-byte(dv-byte-at(line, j)) == 0) -> { ** }
+                        j = dv-inc(j)
+                    }
+                    w = line.slice-bytes(i, j)
+                    c = dv-c-def()
+                    (dv-is-kw(w) == 1) -> { c = dv-c-kw() }
+                    dv-run-push(w, c)
+                    i = j
+                }
+                ; 空白（合并成一段，token 数少一半）
+                (b == 32) -> {
+                    j = i
+                    !! {
+                        (j >= len) -> { ** }
+                        (dv-byte-at(line, j) != 32) -> { ** }
+                        j = dv-inc(j)
+                    }
+                    dv-run-push(line.slice-bytes(i, j), dv-c-def())
+                    i = j
+                }
+                ; 其余：单字符（标点 / 运算符）
+                -> {
+                    dv-run-push(line.slice-bytes(i, dv-inc(i)), dv-c-def())
+                    i = dv-inc(i)
+                }
+            }
+        }
+    }
+    n = DV-RUN-T.len()
+}
+
+; ---------------------------------------------------------------------------
+; 文本模型：行数组（保留末尾空行 —— 否则「在最后一行末尾按回车」进不去）
+; ---------------------------------------------------------------------------
+dv-edit-split = (t str) (n i64) {
+    DV-ED-LINES.truncate(0)
+    cur = ''
+    i = 0
+    nb = t.len-bytes()
+    !! {
+        (i >= nb) -> { ** }
+        b = dv-byte-at(t, i)
+        (b == 10) -> {
+            DV-ED-LINES.push(cur)
+            cur = ''
+        }
+        (b != 10) -> {
+            cur.push-str(t.slice-bytes(i, dv-inc(i)))
+        }
+        i = dv-inc(i)
+    }
+    DV-ED-LINES.push(cur)
+    n = DV-ED-LINES.len()
+}
+
+dv-edit-join = () (s str) {
+    s = ''
+    i = 0
+    n = DV-ED-LINES.len()
+    !! {
+        (i >= n) -> { ** }
+        (i > 0) -> { s.push-str('\n') }
+        x = DV-ED-LINES[i]: {
+            ok -> it
+
+            -> ''
+        }
+        s.push-str(x)
+        i = dv-inc(i)
+    }
+    s
+}
+
+; 删掉第 at 行 / 在第 at 行前插入一行（重建数组 —— []str 没有 remove）
+dv-edit-del-line = (at i64) () {
+    DV-ED-KEEP.truncate(0)
+    i = 0
+    n = DV-ED-LINES.len()
+    !! {
+        (i >= n) -> { ** }
+        (i != at) -> {
+            x = DV-ED-LINES[i]: {
+                ok -> it
+
+                -> ''
+            }
+            DV-ED-KEEP.push(x)
+        }
+        i = dv-inc(i)
+    }
+    DV-ED-LINES.truncate(0)
+    j = 0
+    m = DV-ED-KEEP.len()
+    !! {
+        (j >= m) -> { ** }
+        y = DV-ED-KEEP[j]: {
+            ok -> it
+
+            -> ''
+        }
+        DV-ED-LINES.push(y)
+        j = dv-inc(j)
+    }
+}
+
+dv-edit-ins-line = (at i64, s str) () {
+    DV-ED-KEEP.truncate(0)
+    i = 0
+    n = DV-ED-LINES.len()
+    !! {
+        (i >= n) -> { ** }
+        (i == at) -> { DV-ED-KEEP.push(s) }
+        x = DV-ED-LINES[i]: {
+            ok -> it
+
+            -> ''
+        }
+        DV-ED-KEEP.push(x)
+        i = dv-inc(i)
+    }
+    (at >= n) -> { DV-ED-KEEP.push(s) }
+    DV-ED-LINES.truncate(0)
+    j = 0
+    m = DV-ED-KEEP.len()
+    !! {
+        (j >= m) -> { ** }
+        y = DV-ED-KEEP[j]: {
+            ok -> it
+
+            -> ''
+        }
+        DV-ED-LINES.push(y)
+        j = dv-inc(j)
+    }
+}
+
+; 写回文本 + 夹紧光标（每次编辑后调用；行数组此时已是新内容）
+dv-edit-set = (slot i64) () {
+    s = dv-edit-join()
+    dv-bound-set(slot, s)
+    n = DV-ED-LINES.len()
+    l = dv-arr-get(DV-EDIT-L, slot)
+    c = dv-arr-get(DV-EDIT-C, slot)
+    (l < 0) -> { l = 0 }
+    (l >= n) -> { l = cs-sub(n, 1) }
+    (l < 0) -> { l = 0 }
+    ln = ''
+    (l < n) -> {
+        ln = DV-ED-LINES[l]: {
+            ok -> it
+
+            -> ''
+        }
+    }
+    (c < 0) -> { c = 0 }
+    (c > ln.len-bytes()) -> { c = ln.len-bytes() }
+    dv-arr-set(DV-EDIT-L, slot, l)
+    dv-arr-set(DV-EDIT-C, slot, c)
+}
+
+dv-edit-insert = (slot i64, ch str) () {
+    t = dv-bound(slot)
+    dv-edit-split(t)
+    l = dv-arr-get(DV-EDIT-L, slot)
+    c = dv-arr-get(DV-EDIT-C, slot)
+    n = DV-ED-LINES.len()
+    (l >= 0) -> {
+        (l < n) -> {
+            a = DV-ED-LINES[l]: {
+                ok -> it
+
+                -> ''
+            }
+            (c < 0) -> { c = 0 }
+            (c > a.len-bytes()) -> { c = a.len-bytes() }
+            pre = a.slice-bytes(0, c)
+            suf = a.slice-bytes(c, a.len-bytes())
+            pre.push-str(ch)
+            pre.push-str(suf)
+            dv-arr-set-s(DV-ED-LINES, l, pre)
+            ; 光标前进**插入串的长度**（Tab 是 4 个空格，不是 1）
+            dv-arr-set(DV-EDIT-C, slot, cs-add(c, ch.len-bytes()))
+        }
+    }
+    dv-edit-set(slot)
+}
+
+; 退格：行内删前一个字符；行首则并入上一行（光标落到拼接处）
+dv-edit-backspace = (slot i64) () {
+    t = dv-bound(slot)
+    dv-edit-split(t)
+    l = dv-arr-get(DV-EDIT-L, slot)
+    c = dv-arr-get(DV-EDIT-C, slot)
+    n = DV-ED-LINES.len()
+    (l >= 0) -> {
+        (l < n) -> {
+            a = DV-ED-LINES[l]: {
+                ok -> it
+
+                -> ''
+            }
+            (c > 0) -> {
+                pre = a.slice-bytes(0, cs-sub(c, 1))
+                suf = a.slice-bytes(c, a.len-bytes())
+                pre.push-str(suf)
+                dv-arr-set-s(DV-ED-LINES, l, pre)
+                dv-arr-set(DV-EDIT-C, slot, cs-sub(c, 1))
+            }
+            (c <= 0) -> {
+                (l > 0) -> {
+                    pa = DV-ED-LINES[cs-sub(l, 1)]: {
+                        ok -> it
+
+                        -> ''
+                    }
+                    pl = pa.len-bytes()
+                    pa.push-str(a)
+                    dv-arr-set-s(DV-ED-LINES, cs-sub(l, 1), pa)
+                    dv-edit-del-line(l)
+                    dv-arr-set(DV-EDIT-L, slot, cs-sub(l, 1))
+                    dv-arr-set(DV-EDIT-C, slot, pl)
+                }
+            }
+        }
+    }
+    dv-edit-set(slot)
+}
+
+; 回车：在光标处把一行拆成两行
+dv-edit-enter = (slot i64) () {
+    t = dv-bound(slot)
+    dv-edit-split(t)
+    l = dv-arr-get(DV-EDIT-L, slot)
+    c = dv-arr-get(DV-EDIT-C, slot)
+    n = DV-ED-LINES.len()
+    (l >= 0) -> {
+        (l < n) -> {
+            a = DV-ED-LINES[l]: {
+                ok -> it
+
+                -> ''
+            }
+            (c < 0) -> { c = 0 }
+            (c > a.len-bytes()) -> { c = a.len-bytes() }
+            pre = a.slice-bytes(0, c)
+            suf = a.slice-bytes(c, a.len-bytes())
+            dv-arr-set-s(DV-ED-LINES, l, pre)
+            dv-edit-ins-line(dv-inc(l), suf)
+            dv-arr-set(DV-EDIT-L, slot, dv-inc(l))
+            dv-arr-set(DV-EDIT-C, slot, 0)
+        }
+    }
+    dv-edit-set(slot)
+}
+
+; 光标移动（dl / dc 只有一个非 0）；跨行时列夹到新行长度
+dv-edit-move = (slot i64, dl i64, dc i64) () {
+    t = dv-bound(slot)
+    dv-edit-split(t)
+    n = DV-ED-LINES.len()
+    l = dv-arr-get(DV-EDIT-L, slot)
+    c = dv-arr-get(DV-EDIT-C, slot)
+    (l < 0) -> { l = 0 }
+    (l >= n) -> { l = cs-sub(n, 1) }
+    (l < 0) -> { l = 0 }
+    (dc != 0) -> {
+        ln = DV-ED-LINES[l]: {
+            ok -> it
+
+            -> ''
+        }
+        nc = cs-add(c, dc)
+        (nc < 0) -> {
+            ; 跨到上一行末尾；已经在第一行才夹到 0。
+            ; 夹取必须发生在 l 自减**之前**判断，否则「从第 1 行行首左移」会被
+            ; 误判成「已经在第一行」而吞掉（r33 踩过）。
+            back = 0
+            (l > 0) -> {
+                l = cs-sub(l, 1)
+                pl = DV-ED-LINES[l]: {
+                    ok -> it
+
+                    -> ''
+                }
+                nc = pl.len-bytes()
+                back = 1
+            }
+            (back == 0) -> { nc = 0 }
+        }
+        (nc > ln.len-bytes()) -> {
+            ; 跨到下一行行首；已经在最后一行才夹到行尾。
+            adv = 0
+            (l < cs-sub(n, 1)) -> {
+                l = dv-inc(l)
+                nc = 0
+                adv = 1
+            }
+            (adv == 0) -> { nc = ln.len-bytes() }
+        }
+        c = nc
+    }
+    (dl != 0) -> {
+        nl = cs-add(l, dl)
+        (nl < 0) -> { nl = 0 }
+        (nl >= n) -> { nl = cs-sub(n, 1) }
+        (nl >= 0) -> {
+            nln = DV-ED-LINES[nl]: {
+                ok -> it
+
+                -> ''
+            }
+            (c > nln.len-bytes()) -> { c = nln.len-bytes() }
+            l = nl
+        }
+    }
+    dv-arr-set(DV-EDIT-L, slot, l)
+    dv-arr-set(DV-EDIT-C, slot, c)
+}
+
+; 键盘入口：装配层解析出「焦点编辑器」后调它，语义全在 dv 侧
+dv-edit-key = (slot i64, kk i64) () {
+    (slot >= 0) -> {
+        ; 光标池按槽位存，从没写过就是 -1（dv-ensure 的填充值）—— 归零，
+        ; 否则第一次按键会因为 l < 0 被当成「没有光标」而吞掉。
+        l0 = dv-arr-get(DV-EDIT-L, slot)
+        (l0 < 0) -> {
+            dv-arr-set(DV-EDIT-L, slot, 0)
+            dv-arr-set(DV-EDIT-C, slot, 0)
+        }
+        (kk == 8) -> { dv-edit-backspace(slot) }
+        (kk == 13) -> { dv-edit-enter(slot) }
+        (kk == 9) -> { dv-edit-insert(slot, ED-TAB) }
+        (kk == ED-K-LEFT) -> { dv-edit-move(slot, 0, -1) }
+        (kk == ED-K-RIGHT) -> { dv-edit-move(slot, 0, 1) }
+        (kk == ED-K-UP) -> { dv-edit-move(slot, -1, 0) }
+        (kk == ED-K-DOWN) -> { dv-edit-move(slot, 1, 0) }
+        (kk >= 32) -> {
+            (kk <= 126) -> {
+                i0 = cs-sub(kk, 32)
+                ch = ED-PRINT.slice(i0, dv-inc(i0))
+                dv-edit-insert(slot, ch)
+            }
+        }
+    }
+}
+
+; ---------------------------------------------------------------------------
+; 光标跟随：只有光标**动了**才重排窗口
+; 滚轮把窗口推走时不动光标，此时不许把窗口拽回来 —— 否则滚轮一滚就被弹回。
+; ---------------------------------------------------------------------------
+dv-edit-follow = (S []i64, slot i64, offslot i64, n i64, viewh i64, rowh i64) (off i64) {
+    off = dv-arr-get(S, offslot)
+    l = dv-arr-get(DV-EDIT-L, slot)
+    seen = dv-arr-get(DV-ED-SEEN, slot)
+    (l != seen) -> {
+        st = cs-add(rowh, CS-GAP)
+        r []i64 = with-len(2)
+        dv-win-range(off, viewh, rowh, n, r)
+        i0 = dv-arr-get(r, 0)
+        i1 = dv-arr-get(r, 1)
+        (l < i0) -> { off = cs-sub(cs-mul(l, st), CS-PAD) }
+        (l >= i1) -> {
+            off = cs-sub(cs-add(cs-mul(l, st), st), cs-sub(viewh, CS-PAD))
+        }
+        (off < 0) -> { off = 0 }
+        dv-arr-set(S, offslot, off)
+    }
+    dv-arr-set(DV-ED-SEEN, slot, l)
+    off
+}
+
+; ---------------------------------------------------------------------------
+; 行渲染：行号 + 着色 token + 光标
+; ---------------------------------------------------------------------------
+dv-edit-line = (body i64, key0 i64, i i64, line str, cur i64, col i64, gutter i64, rowh i64) () {
+    f = dv-on()
+    rk = cs-add(key0, cs-mul(i, ED-STRIDE))
+    row = dv-node(C-FORM, rk, '', '', 0, 0, 0, f, body)
+    dv-lay(row, dv-lay-h(), 0, 0)
+    dv-size(row, 0, rowh)
+    ; 行号：右对齐在定宽槽里（等宽数字 -> 视觉对齐）
+    ns = i.to-str()
+    g = dv-node(C-LABEL, dv-add(rk, 1), ns, '', cs-theme(CS-TH-MUTED), 0, 0, f, row)
+    dv-size(g, gutter, 0)
+    dv-align(g, A-RIGHT)
+    nt = dv-lex-line(line)
+    ll = line.len-bytes()
+    cc = col
+    (cc < 0) -> { cc = 0 }
+    (cc > ll) -> { cc = ll }
+    ; 光标落在哪个 token（token 覆盖整行，所以必然命中）
+    cj = -1
+    cin = 0
+    acc = 0
+    j = 0
+    !! {
+        (j >= nt) -> { ** }
+        t = dv-arr-get-s(DV-RUN-T, j)
+        tl = t.len-bytes()
+        ((cc >= acc) && (cc <= cs-add(acc, tl))) -> {
+            cj = j
+            cin = cs-sub(cc, acc)
+            **
+        }
+        acc = cs-add(acc, tl)
+        j = dv-inc(j)
+    }
+    ; 逐 token 挂 label；光标所在 token 拆成 前缀 / 光标 / 后缀
+    j = 0
+    !! {
+        (j >= nt) -> { ** }
+        t = dv-arr-get-s(DV-RUN-T, j)
+        c = dv-arr-get(DV-RUN-C, j)
+        tl = t.len-bytes()
+        ((cur != 0) && (j == cj)) -> {
+            (tl > 0) -> {
+                pre = t.slice-bytes(0, cin)
+                suf = t.slice-bytes(cin, tl)
+                (pre.len-bytes() > 0) -> {
+                    dv-node(C-LABEL, dv-add(rk, cs-add(2, j)), pre, '', c, 0, 0, f, row)
+                }
+                car = dv-node(C-SEPARATOR, dv-add(rk, 100000), '', '', cs-theme(CS-TH-ACCENT), 0, 0, f, row)
+                dv-size(car, ED-CARET-W, rowh)
+                (suf.len-bytes() > 0) -> {
+                    dv-node(C-LABEL, dv-add(rk, cs-add(500000, j)), suf, '', c, 0, 0, f, row)
+                }
+            }
+            (tl <= 0) -> {
+                car2 = dv-node(C-SEPARATOR, dv-add(rk, 100000), '', '', cs-theme(CS-TH-ACCENT), 0, 0, f, row)
+                dv-size(car2, ED-CARET-W, rowh)
+            }
+        }
+        ((cur == 0) || (j != cj)) -> {
+            (tl > 0) -> {
+                dv-node(C-LABEL, dv-add(rk, cs-add(2, j)), t, '', c, 0, 0, f, row)
+            }
+        }
+        j = dv-inc(j)
+    }
+    ; 空行：没有 token 也要有光标
+    ((cur != 0) && (nt <= 0)) -> {
+        car3 = dv-node(C-SEPARATOR, dv-add(rk, 100000), '', '', cs-theme(CS-TH-ACCENT), 0, 0, f, row)
+        dv-size(car3, ED-CARET-W, rowh)
+    }
+}
+
+; ---------------------------------------------------------------------------
+; 原语
+; ---------------------------------------------------------------------------
+; dv-edit：把一个视图节点声明成「代码编辑器的根」（它同时是滚动容器）。
+; slot 是文本槽（DV-BIND-T[slot]）；光标自动按同一个槽存 L/C。
+dv-edit = (h i64, slot i64) () {
+    (h >= 0) -> {
+        dv-arr-set(DV-EDIT, h, dv-add(slot, 1))
+        dv-bind-t-ensure(dv-add(slot, 1))
+    }
+}
+dv-edit-of = (v i64) (s i64) {
+    s = dv-arr-get(DV-EDIT, v)
+    s = dv-add(s, -1)
+}
+dv-edit-line-of = (slot i64) (l i64) {
+    l = dv-arr-get(DV-EDIT-L, slot)
+}
+dv-edit-col-of = (slot i64) (c i64) {
+    c = dv-arr-get(DV-EDIT-C, slot)
+}
+
+; 一行原语：滚动容器 + 可见窗口 + 行号 + 着色 + 光标。
+;   S        = 应用状态池（滚动偏移的真源是 S[offslot]）
+;   key      = 编辑器根（C-SCROLL）的 key
+;   tslot    = 文本槽（DV-BIND-T[tslot]）
+;   offslot  = 滚动偏移槽；step = 滚轮每格；viewh / rowh = 视口高 / 行高
+;   gutter   = 行号槽宽；key0 = 行 key 基数；parent = 父节点
+dv-code-editor = (S []i64, key i64, tslot i64, offslot i64, step i64, viewh i64, rowh i64, gutter i64, key0 i64, parent i64) (h i64) {
+    code = dv-bound(tslot)
+    n = dv-edit-split(code)
+    off = dv-edit-follow(S, tslot, offslot, n, viewh, rowh)
+    r []i64 = with-len(2)
+    dv-win-range(off, viewh, rowh, n, r)
+    i0 = dv-arr-get(r, 0)
+    i1 = dv-arr-get(r, 1)
+    ch = 0
+    (n > 0) -> {
+        ch = cs-add(cs-mul(n, rowh), cs-mul(cs-sub(n, 1), CS-GAP))
+        ch = cs-add(ch, cs-mul(CS-PAD, 2))
+    }
+    h = dv-scroll(S, key, offslot, step, parent)
+    dv-size(h, 0, viewh)
+    dv-scroll-content(h, ch)
+    dv-scroll-start(h, i0)
+    dv-edit(h, tslot)
+    body = dv-node(C-FORM, dv-add(key, 1), '', '', 0, 0, 0, dv-on(), h)
+    dv-lay(body, 0, 0, 0)
+    cl = dv-arr-get(DV-EDIT-L, tslot)
+    cc0 = dv-arr-get(DV-EDIT-C, tslot)
+    (cl < 0) -> { cl = 0 }
+    (cc0 < 0) -> { cc0 = 0 }
+    i = i0
+    !! {
+        (i >= i1) -> { ** }
+        line = ''
+        (i < n) -> {
+            line = DV-ED-LINES[i]: {
+                ok -> it
+
+                -> ''
+            }
+        }
+        cur = 0
+        (i == cl) -> { cur = 1 }
+        dv-edit-line(body, key0, i, line, cur, cc0, gutter, rowh)
+        i = dv-inc(i)
+    }
+    h
+}
+
+; ============================================================================
+; 阶段 31：声明式树（Tree）
+; ============================================================================
+; 数据模型（平行数组，下标 = 节点号）：
+;   texts   节点文案
+;   kids0   第一个孩子的下标（叶子 = -1）
+;   kids    孩子个数
+;   parents 父节点下标（根 = -1）
+; 约束：每个节点的孩子必须落在**连续下标块**里（kids0 .. kids0+kids-1），也就是
+; 「先序序列 + 兄弟块相邻」—— 和 DOM 的扁平序列化同构。有了这条约束，展开 / 收起
+; 才是纯数组运算：拍平时按 kids0 / kids 直接切出整块子树，不需要父指针回溯。
+; 状态：S[openslot + i] 非 0 = 节点 i 展开（只对 kids > 0 有意义）；
+;       S[selslot] = 选中的节点号（-1 = 没选）。
+; 树视图 = dv-scroll + dv-scroll-content + dv-win-range + 逐行 C-FORM：
+;   行内一个「缩进 + 箭头」右对齐标签（宽 = 层级 * TR-INDENT + TR-ARROW-W），
+;   再加一个文本标签。箭头标签挂 DV-A-TOGGLE(openslot + 节点)，行挂
+;   DV-A-SET(selslot)。内核没有 C-TREE 的绘制分支，所以树完全由 C-FORM / C-LABEL
+;   组合出来 —— 和阶段 28 的表格同一个思路（不新增组件种类）。
+; 「全部展开 / 全部收起」不写树专用逻辑：DV-A-FILL 把一段状态槽填成同一个值。
+
+TR-STRIDE = 10000000   ; 每个节点在 key 空间里占的步长（行内子标签用 +1 / +2）
+TR-INDENT = 1400       ; 每级缩进 14px
+TR-ARROW-W = 1600      ; 箭头槽宽 16px
+TR-ARROW-OPEN = 'v'          ; 展开态箭头（ASCII —— 字体一定画得出来）
+TR-ARROW-SHUT = '>'          ; 收起态箭头
+
+; 拍平：把「展开态」这根状态轴作用到树上，得到可见行表。
+; out[j]  = 第 j 个可见行的节点号；deps[j] = 它的层级（0 = 根）。
+; 迭代式先序（显式栈）—— 语言没有可用的递归，且递归深度也不该由数据决定。
+; 根节点倒着入栈、子节点也倒着入栈，弹出顺序才是正序。
+; 栈用「下标 + dv-arr-set/get」而不是 vec.pop：pop 在本编译器里带 option 类型，
+; 而栈深上限就是 n，预开 n 格更划算（r31 实测）。
+dv-tree-flat = (S []i64, openslot i64, n i64, kids0 []i64, kids []i64, parents []i64, out []i64, deps []i64) (m i64) {
+    m = 0
+    st []i64 = with-len(n)
+    sd []i64 = with-len(n)
+    sp = 0
+    i = cs-sub(n, 1)
+    !! {
+        (i < 0) -> { ** }
+        (dv-arr-get(parents, i) < 0) -> {
+            dv-arr-set(st, sp, i)
+            dv-arr-set(sd, sp, 0)
+            sp = dv-inc(sp)
+        }
+        i = cs-sub(i, 1)
+    }
+    !! {
+        (sp <= 0) -> { ** }
+        sp = cs-sub(sp, 1)
+        d = dv-arr-get(sd, sp)
+        v = dv-arr-get(st, sp)
+        out.push(v)
+        deps.push(d)
+        m = dv-inc(m)
+        ; 只有「有孩子 且 展开」才把整块孩子压进去；收起 = 子树整块不出现
+        k = dv-arr-get(kids, v)
+        (k > 0) -> {
+            (dv-arr-get(S, dv-add(openslot, v)) != 0) -> {
+                j = cs-sub(k, 1)
+                !! {
+                    (j < 0) -> { ** }
+                    dv-arr-set(st, sp, dv-add(dv-arr-get(kids0, v), j))
+                    dv-arr-set(sd, sp, dv-inc(d))
+                    sp = dv-inc(sp)
+                    j = cs-sub(j, 1)
+                }
+            }
+        }
+    }
+    m = m
+}
+
+; 一行树节点：C-FORM 行 + 「缩进 + 箭头」标签 + 文本标签。
+; 选中态三处一起变：flags 带 DV-F-SEL、行底色 CS-TH-TRACK、文本主色。
+; 箭头只在有孩子时挂动作 —— 叶子那一格是空的定宽占位，层级因此仍然对齐。
+dv-tree-row = (parent i64, key0 i64, v i64, d i64, texts []str, kids []i64, S []i64, openslot i64, selslot i64, rowh i64) (h i64) {
+    rk = dv-add(key0, cs-mul(v, TR-STRIDE))
+    k = dv-arr-get(kids, v)
+    f = dv-on()
+    bg = 0
+    tc = cs-theme(CS-TH-FG)
+    (dv-arr-get(S, selslot) == v) -> {
+        f = dv-on-sel()
+        bg = cs-theme(CS-TH-TRACK)
+        tc = cs-theme(CS-TH-ACCENT)
+    }
+    row = dv-node(C-FORM, rk, '', '', bg, v, 0, f, parent)
+    dv-lay(row, dv-lay-h(), 0, 0)
+    dv-size(row, 0, rowh)
+    dv-act(row, DV-A-SET, selslot)
+    at = ''
+    ac = cs-theme(CS-TH-MUTED)
+    (k > 0) -> {
+        ac = cs-theme(CS-TH-FG)
+        at = TR-ARROW-SHUT
+        (dv-arr-get(S, dv-add(openslot, v)) != 0) -> { at = TR-ARROW-OPEN }
+    }
+    an = dv-node(C-LABEL, dv-add(rk, 1), at, '', ac, 0, 0, dv-on(), row)
+    dv-size(an, cs-add(cs-mul(d, TR-INDENT), TR-ARROW-W), 0)
+    dv-align(an, dv-align-right())
+    (k > 0) -> { dv-act(an, DV-A-TOGGLE, dv-add(openslot, v)) }
+    t = dv-arr-get-s(texts, v)
+    dv-node(C-LABEL, dv-add(rk, 2), t, '', tc, 0, 0, f, row)
+    h = row
+}
+
+; 一行式树视图：可见行表 -> 虚拟窗口 -> 逐行 C-FORM。
+; 偏移真源是状态槽 offslot（写回在事件侧 dva-wheel），和列表 / 表格 / 编辑器同一条路。
+dv-tree-view = (S []i64, key i64, offslot i64, step i64, viewh i64, rowh i64, n i64, texts []str, kids0 []i64, kids []i64, parents []i64, openslot i64, selslot i64, key0 i64, parent i64) (h i64) {
+    flat []i64 = with-len(0)
+    deps []i64 = with-len(0)
+    m = dv-tree-flat(S, openslot, n, kids0, kids, parents, flat, deps)
+    off = dv-arr-get(S, offslot)
+    r []i64 = with-len(2)
+    dv-win-range(off, viewh, rowh, m, r)
+    i0 = dv-arr-get(r, 0)
+    i1 = dv-arr-get(r, 1)
+    ch = 0
+    (m > 0) -> {
+        ch = cs-add(cs-mul(m, rowh), cs-mul(cs-sub(m, 1), CS-GAP))
+        ch = cs-add(ch, cs-mul(CS-PAD, 2))
+    }
+    h = dv-scroll(S, key, offslot, step, parent)
+    dv-size(h, 0, viewh)
+    dv-scroll-content(h, ch)
+    dv-scroll-start(h, i0)
+    i = i0
+    !! {
+        (i >= i1) -> { ** }
+        dv-tree-row(h, key0, dv-arr-get(flat, i), dv-arr-get(deps, i), texts, kids, S, openslot, selslot, rowh)
+        i = dv-inc(i)
+    }
+    h = h
+}
+
+; ============================================================================
+; 命令面板（阶段 32）：搜索 -> 过滤 -> 键盘导航 -> 执行
+; ============================================================================
+; 命令面板是 GPUI 的招牌组件，但它不需要新内核原语 —— 全部由已有机器拼出来：
+;   dv-filter-map      查询串 -> 命中的**源行号**表（空查询命中全部，大小写不敏感）
+;   dv-scroll + dv-scroll-content
+;                     命中行数变化 -> 内容高变化 -> 滚动上限跟着变
+;   dv-on-overlay      模态叠加层：不参与父级流布局，在父矩形内居中
+;   dv-bind            查询串是状态，输入框是受控组件（每帧 dva-sync-binds 推回显示）
+;   dv-act + DV-A-RUN  点行 = 写命令码 + 关面板，两个槽一次写完
+; 面板只描述「长什么样 + 点了意味着什么」；**键盘导航是装配层的事** ——
+; 键盘事件只有一份（主循环），而「当前哪个面板开着」必须跨帧存活（DV-PAL-* 池）。
+;
+; 状态槽（应用层给，dv 不绑定具体数组）：
+;   openslot  非 0 = 面板开着；0 = 整棵子树不建（dv-toast 同一个套路）
+;   qslot     查询串（dv-bound 读，dv-filter-map 拿它过滤）
+;   offslot   列表滚动偏移（写回在 dva-wheel，和树 / 列表 / 编辑器同一条路）
+;   cmdslot   命令码槽：点行时把该行的命令码写进来，同时把 openslot 清 0
+PAL-ROWH = 2800     ; 一行高
+PAL-VIEW = 28000    ; 列表视口高（8 行 × 行距 3600 能整屏挂下）
+PAL-STEP = 3200     ; 滚轮步长
+PAL-STRIDE = 100    ; 一行的 key 跨度（行 + 文本两个节点，留够不撞）
+
+; 面板 key 登记（装配层每帧要问「哪个面板开着」）
+dv-pal-keys-ensure = (key i64) () {
+    i = 0
+    n = DV-PAL-KEYS.len()
+    found = 0
+    !! {
+        (i >= n) -> { ** }
+        (found != 0) -> { ** }
+        v = dv-arr-get(DV-PAL-KEYS, i)
+        (v == key) -> { found = 1 }
+        i = dv-inc(i)
+    }
+    (found == 0) -> { DV-PAL-KEYS.push(key) }
+}
+
+; 视图节点 -> 面板 key（0 / 越界 = 不是面板）
+dv-pal-of = (node i64) (k i64) {
+    k = dv-arr-get(DV-PAL-ROOT, node)
+    (k <= 0) -> { k = -1 }
+}
+
+; 哪个面板开着（-1 = 没有）。装配层每帧调它决定键盘归谁。
+dv-pal-open-key = (S []i64) (pk i64) {
+    pk = -1
+    i = 0
+    n = DV-PAL-KEYS.len()
+    !! {
+        (i >= n) -> { ** }
+        (pk >= 0) -> { ** }
+        k = dv-arr-get(DV-PAL-KEYS, i)
+        o = dv-arr-get(DV-PAL-OPEN, k)
+        (dv-arr-get(S, o) != 0) -> { pk = k }
+        i = dv-inc(i)
+    }
+    pk = pk
+}
+
+; 游标上下移动（夹在 [0, m-1]；空列表不动）
+dv-pal-move = (pk i64, d i64) () {
+    m = dv-arr-get(DV-PAL-M, pk)
+    (m > 0) -> {
+        cur = dv-arr-get(DV-PAL-CUR, pk)
+        (cur < 0) -> { cur = 0 }
+        cur = cs-add(cur, d)
+        (cur < 0) -> { cur = 0 }
+        (cur >= m) -> { cur = cs-sub(m, 1) }
+        dv-arr-set(DV-PAL-CUR, pk, cur)
+    }
+}
+
+; 游标行的视图 key（-1 = 没有命中行）。
+; 走 DV-PAL-SRC 的扁平副本现算 —— 游标移动**不重建视图**，
+; 缓存要等下一帧才新鲜，而回车必须立刻知道当前游标指的是哪一行。
+dv-pal-cur-key = (pk i64) (k i64) {
+    k = -1
+    m = dv-arr-get(DV-PAL-M, pk)
+    (m > 0) -> {
+        cur = dv-arr-get(DV-PAL-CUR, pk)
+        (cur >= 0) -> {
+            (cur < m) -> {
+                base = dv-arr-get(DV-PAL-SB, pk)
+                src = dv-arr-get(DV-PAL-SRC, dv-add(base, cur))
+                key0 = dv-arr-get(DV-PAL-KEY0, pk)
+                k = dv-add(key0, cs-mul(src, PAL-STRIDE))
+            }
+        }
+    }
+    k = k
+}
+
+; 面板复位：游标回 0。应用在「重置状态」时调（和清空查询串一起），
+; 否则重开面板时游标还停在上次的位置。
+dv-pal-reset = (pk i64) () {
+    dv-arr-set(DV-PAL-CUR, pk, 0)
+}
+
+; 关面板（把开关槽写 0；下一帧视图整棵子树消失）
+dv-pal-close = (S []i64, pk i64) () {
+    o = dv-arr-get(DV-PAL-OPEN, pk)
+    (o >= 0) -> {
+        S[o]: {
+            ok -> it = 0
+            -> _
+        }
+    }
+}
+
+; 查询串追加一个字符（面板自己收键盘，所以自己改状态；dv-bind 会推回输入框显示）
+dv-pal-type = (pk i64, ch str) () {
+    q = dv-arr-get(DV-PAL-Q, pk)
+    s = dv-bound(q)
+    s.push-str(ch)
+    dv-bound-set(q, s)
+}
+
+; 查询串退一格（按字节切，和编辑器的 slice-bytes 一致）
+dv-pal-backspace = (pk i64) () {
+    q = dv-arr-get(DV-PAL-Q, pk)
+    s = dv-bound(q)
+    n = s.len-bytes()
+    (n > 0) -> {
+        dv-bound-set(q, s.slice-bytes(0, cs-sub(n, 1)))
+    }
+}
+
+; 一行式命令面板：模态叠加层 + 查询输入 + 虚拟列表 + 逐行（行 + 文本）。
+; 行 key = key0 + 源行号*PAL-STRIDE（**按源行号**，查询变化时同一行复用同一批组件）。
+; 行挂 DV-A-RUN(cmdslot)：value = 该行的命令码，value2 = openslot（执行完顺手关面板）。
+dv-command-palette = (S []i64, key i64, openslot i64, qslot i64, offslot i64, cmdslot i64, n i64, texts []str, acts []i64, key0 i64, parent i64) (h i64) {
+    h = -1
+    ; 登记与「开关翻转」检测**在关着的时候也做** —— 否则重开时游标还停在上次
+    ; 的位置（WAS 只在开的时候更新，关了就不动了）。
+    dv-pal-keys-ensure(key)
+    dv-arr-set(DV-PAL-OPEN, key, openslot)
+    dv-arr-set(DV-PAL-Q, key, qslot)
+    dv-arr-set(DV-PAL-CMD, key, cmdslot)
+    dv-arr-set(DV-PAL-KEY0, key, key0)
+    was = dv-arr-get(DV-PAL-WAS, key)
+    now = dv-arr-get(S, openslot)
+    (was != now) -> {
+        dv-arr-set(DV-PAL-CUR, key, 0)
+        S[offslot]: {
+            ok -> it = 0
+            -> _
+        }
+    }
+    dv-arr-set(DV-PAL-WAS, key, now)
+    (now != 0) -> {
+        ; 面板本体：竖排 = 查询行 + 列表；高度写死（叠加层在父矩形内居中）
+        box = dv-node(C-FORM, key, '', '', 0, 0, 0, dv-on-overlay(), parent)
+        dv-arr-set(DV-PAL-ROOT, box, key)
+        dv-lay(box, 0, 0, cs-mul(CS-PAD, 2))
+        dv-size(box, 0, cs-add(cs-add(cs-mul(CS-PAD, 2), PAL-ROWH), cs-add(CS-GAP, PAL-VIEW)))
+        inp = dv-input(dv-add(key, 1), 'type a command', box)
+        dv-bind(inp, qslot, 0)
+        dv-size(inp, 0, PAL-ROWH)
+        sc = dv-scroll(S, dv-add(key, 2), offslot, PAL-STEP, box)
+        dv-lay(sc, dv-lay-grow(), 0, 0)
+        idxs []i64 = with-len(0)
+        m = dv-filter-map(qslot, n, texts, idxs)
+        chh = 0
+        (m > 0) -> {
+            chh = cs-add(cs-mul(m, PAL-ROWH), cs-mul(cs-sub(m, 1), CS-GAP))
+            chh = cs-add(chh, cs-mul(CS-PAD, 2))
+        }
+        dv-scroll-content(sc, chh)
+        dv-scroll-start(sc, 0)
+        ; 游标夹到命中区间内（查询一变，旧的游标可能就越界了）
+        cur = dv-arr-get(DV-PAL-CUR, key)
+        (m <= 0) -> { cur = -1 }
+        (m > 0) -> {
+            (cur < 0) -> { cur = 0 }
+            (cur >= m) -> { cur = cs-sub(m, 1) }
+        }
+        dv-arr-set(DV-PAL-CUR, key, cur)
+        dv-arr-set(DV-PAL-M, key, m)
+        ; 命中表抄一份**只增不减**的扁平副本（DV-PAL-SRC + 每面板基址 DV-PAL-SB）：
+        ; 游标移动不重建视图，dv-pal-cur-key 得能立刻把「游标 -> 行 key」算出来。
+        base = DV-PAL-SRC.len()
+        dv-arr-set(DV-PAL-SB, key, base)
+        j = 0
+        !! {
+            (j >= m) -> { ** }
+            DV-PAL-SRC.push(dv-arr-get(idxs, j))
+            j = dv-inc(j)
+        }
+        i = 0
+        !! {
+            (i >= m) -> { ** }
+            src = dv-arr-get(idxs, i)
+            f = dv-on()
+            (i == cur) -> { f = dv-on-sel() }
+            rk = dv-add(key0, cs-mul(src, PAL-STRIDE))
+            row = dv-node(C-FORM, rk, '', '', 0, dv-arr-get(acts, src), openslot, f, sc)
+            dv-lay(row, dv-lay-h(), 0, 0)
+            dv-size(row, 0, PAL-ROWH)
+            dv-act(row, DV-A-RUN, cmdslot)
+            ; 文本也挂同一个动作：命中返回的是最深的节点（点字等于点行），
+            ; 只挂行的话「点命令名字」会什么也不发生。
+            lb = dv-node(C-LABEL, dv-add(rk, 1), dv-arr-get-s(texts, src), '', 0, dv-arr-get(acts, src), openslot, f, row)
+            dv-act(lb, DV-A-RUN, cmdslot)
+            i = dv-inc(i)
+        }
+        h = box
+    }
+    h = h
 }

@@ -77,10 +77,10 @@ cvv = (o ?client.client) (c client) {
         connected: false
     }
     c = d
-    c = o: {
-        ok -> it
+    o: {
+        ok -> c = it
 
-        -> d
+        -> _
     }
 }
 

@@ -214,7 +214,7 @@ make-conn = () (result ?conn) {
         path: '/api/health'
         port: 8080
     }
-    result = c
+    result = ok(c)
 }
 
 ; 直接访问 ?struct 的字段（不经 it 解包）

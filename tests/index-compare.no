@@ -125,7 +125,11 @@ print('ok: comparison after a read-modify-write')
 
 ; 12. 綁定形式（顯式 plain / option）與直接比較同值
 h = [4, 5]
-plain i64 = h[0]
+plain = h[0]: {
+    ok -> it
+
+    -> 0
+}
 opt ?i64 = h[0]
 expect(plain == 4, 33)
 expect(h[0] == plain, 34)

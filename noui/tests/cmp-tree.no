@@ -1,0 +1,136 @@
+; ============================================================================
+; noui 命令式「树」测试（阶段 33）—— src/components.no
+;
+; 缺口：内核有 C-TREE 这个容器 kind，但 cmp-tree() 只是个空壳（阶段 33 之前）——
+; 命令式用法要应用自己维护节点数组 / 展开集合 / 选中，并手写递归渲染。
+; 阶段 33 补：
+;   - 模型池 TR-*（节点句柄 -> 父 / first-child / next-sibling / 展开），
+;     节点表按树分段存在 TR-ALL（TR-TSTART / TR-TCOUNT 记段界）。
+;   - cmp-tree-add：建节点 + 挂兄弟链 + 追加进本树段。
+;   - cmp-tree-flat：迭代式先序（显式栈）拍平「展开态」这根轴，得到可见行 + 层级。
+;   - cmp-tree-row / cmp-tree-sync：把可见行重建成一棵**真组件树**
+;     （横向 C-FORM 行 + 右对齐「缩进 + 箭头」标签 + 文本标签），
+;     所以 C-TREE 仍是普通纵向容器 —— 布局 / 绘制 / 命中全走通用路径。
+;   - 选中存 CMP-VALUE[树]；行 / 文本的选中态三处一起变（flags / 底色 / 文本色）。
+;
+; 运行：cd noui && ../bin/no run -cc ./ccwrap.sh tests/cmp-tree.no
+; ============================================================================
+# /noui/src/components
+
+; ---- 1. 构造：空树 ----
+t1 = cmp-tree()
+k1 = cmp-kind(t1) == C-TREE
+v1 = cmp-value(t1) == -1
+n0 = cmp-tree-nodes(t1) == 0
+
+; ---- 2. 建一棵三层树（r0 有两个孩子，a0 有一个孩子，b0 是第二个根）----
+r0 = cmp-tree-add(t1, -1, 'r0')
+a0 = cmp-tree-add(t1, r0, 'a0')
+a1 = cmp-tree-add(t1, a0, 'a1')
+a2 = cmp-tree-add(t1, r0, 'a2')
+b0 = cmp-tree-add(t1, -1, 'b0')
+n1 = cmp-tree-nodes(t1) == 5
+tx1 = cmp-text(r0) == 'r0' && cmp-text(a1) == 'a1' && cmp-text(b0) == 'b0'
+kids1 = cmp-tree-kids(t1, r0) == 2 && cmp-tree-kids(t1, a0) == 1 && cmp-tree-kids(t1, b0) == 0
+hk1 = cmp-tree-has-kids(t1, r0) == 1 && cmp-tree-has-kids(t1, b0) == 0
+
+; ---- 3. 拍平：展开态决定可见行（先序）----
+f1 []i64 = with-len(0)
+d1 []i64 = with-len(0)
+m1 = cmp-tree-flat(t1, f1, d1)
+; 全收起：只有两个根
+o1 = m1 == 2 && ct-get(f1, 0) == r0 && ct-get(f1, 1) == b0
+dep1 = ct-get(d1, 0) == 0 && ct-get(d1, 1) == 0
+cmp-tree-set-open(t1, r0, 1)
+f2 []i64 = with-len(0)
+d2 []i64 = with-len(0)
+m2 = cmp-tree-flat(t1, f2, d2)
+o2 = m2 == 4 && ct-get(f2, 0) == r0 && ct-get(f2, 1) == a0 && ct-get(f2, 2) == a2 && ct-get(f2, 3) == b0
+dep2 = ct-get(d2, 0) == 0 && ct-get(d2, 1) == 1 && ct-get(d2, 2) == 1 && ct-get(d2, 3) == 0
+cmp-tree-set-open(t1, a0, 1)
+f3 []i64 = with-len(0)
+d3 []i64 = with-len(0)
+m3 = cmp-tree-flat(t1, f3, d3)
+o3 = m3 == 5 && ct-get(f3, 2) == a1
+dep3 = ct-get(d3, 2) == 2
+tg1 = cmp-tree-toggle(t1, r0) == 0
+f4 []i64 = with-len(0)
+d4 []i64 = with-len(0)
+m4 = cmp-tree-flat(t1, f4, d4)
+o4 = m4 == 2
+cmp-tree-toggle(t1, r0)
+
+; ---- 4. sync：可见行 -> 真组件树 ----
+SELB = 0x2A2A3AFF
+FG = 0xE8E8F0FF
+MUT = 0x888899FF
+ACC = 0x4A90E2FF
+rows1 = cmp-tree-sync(t1, SELB, FG, MUT, ACC)
+c1 = rows1 == 5 && cmp-children(t1) == 5
+row0 = cmp-child(t1, 0)
+row2 = cmp-child(t1, 2)
+row4 = cmp-child(t1, 4)
+map1 = cmp-tree-node-of(t1, row0) == r0 && cmp-tree-node-of(t1, row2) == a1 && cmp-tree-node-of(t1, row4) == b0
+; 行 = 横向容器，两个儿子：箭头标签 + 文本标签
+shape1 = cmp-lay(row0) == L-H && cmp-children(row0) == 2
+an0 = cmp-child(row0, 0)
+tx0 = cmp-child(row0, 1)
+arrow1 = cmp-kind(an0) == C-LABEL && cmp-align(an0) == A-RIGHT && cmp-text(an0) == CT-OPEN
+; 缩进 0 层 -> 箭头槽就是 CT-ARROW-W
+w1 = cmp-sw(an0) == CT-ARROW-W
+txt1 = cmp-kind(tx0) == C-LABEL && cmp-text(tx0) == 'r0'
+; 叶子（a1，第 3 行）：箭头格留空但宽度 = 2*CT-INDENT + CT-ARROW-W
+an2 = cmp-child(row2, 0)
+leaf1 = cmp-text(an2) == '' && cmp-sw(an2) == 2 * CT-INDENT + CT-ARROW-W
+; 未选中：行底 0、文本主色
+unsel1 = cmp-color(row0) == 0 && cmp-color(tx0) == FG
+
+; ---- 5. 选中：三处一起变 ----
+cmp-tree-select(t1, a1)
+sel1 = cmp-tree-selected(t1) == a1
+rows2 = cmp-tree-sync(t1, SELB, FG, MUT, ACC)
+row2b = cmp-child(t1, 2)
+tx2b = cmp-child(row2b, 1)
+sel2 = cmp-color(row2b) == SELB && cmp-has(row2b, F-SELECTED) && cmp-color(tx2b) == ACC
+sel3 = cmp-color(tx0) == FG
+
+; ---- 6. 二次 sync：旧行被摘掉，不翻倍 ----
+old0 = row0
+rows3 = cmp-tree-sync(t1, SELB, FG, MUT, ACC)
+again1 = rows3 == 5 && cmp-children(t1) == 5
+again2 = cmp-parent-of(old0) == -1
+again3 = cmp-tree-node-of(t1, old0) == -1 && cmp-tree-arrow-of(t1, old0) == -1
+
+; ---- 7. 命中上溯：cs-hit 返回最深节点，可能命中的是行里的文本标签 ----
+rowx = cmp-child(t1, 2)
+txtx = cmp-child(rowx, 1)
+arx = cmp-child(rowx, 0)
+up1 = cmp-tree-row-of(t1, txtx) == rowx && cmp-tree-row-of(t1, arx) == rowx && cmp-tree-row-of(t1, rowx) == rowx
+up2 = cmp-tree-row-of(t1, t1) == -1
+up3 = cmp-tree-arrow-of(t1, rowx) == arx
+
+; ---- 8. 两棵树分段互不干扰 ----
+t2 = cmp-tree()
+x0 = cmp-tree-add(t2, -1, 'x0')
+x1 = cmp-tree-add(t2, x0, 'x1')
+cmp-tree-set-open(t2, x0, 1)
+f5 []i64 = with-len(0)
+d5 []i64 = with-len(0)
+m5 = cmp-tree-flat(t2, f5, d5)
+iso1 = m5 == 2 && ct-get(f5, 0) == x0 && ct-get(f5, 1) == x1
+iso2 = cmp-tree-nodes(t1) == 5 && cmp-tree-nodes(t2) == 2
+f6 []i64 = with-len(0)
+d6 []i64 = with-len(0)
+iso3 = cmp-tree-flat(t1, f6, d6) == 5
+rows4 = cmp-tree-sync(t2, SELB, FG, MUT, ACC)
+iso4 = rows4 == 2 && cmp-children(t2) == 2 && cmp-children(t1) == 5
+
+all-ok = k1 && v1 && n0 && n1 && tx1 && kids1 && hk1 && o1 && dep1 && o2 && dep2 && o3 && dep3 && tg1 && o4 && c1 && map1 && shape1 && arrow1 && w1 && txt1 && leaf1 && unsel1 && sel1 && sel2 && sel3 && again1 && again2 && again3 && up1 && up2 && up3 && iso1 && iso2 && iso3 && iso4
+print('ctor={k1}{v1}{n0} model={n1}{tx1}{kids1}{hk1}')
+print('flat={o1}{dep1}{o2}{dep2}{o3}{dep3}{tg1}{o4}')
+print('sync={c1}{map1}{shape1}{arrow1}{w1}{txt1}{leaf1}{unsel1}')
+print('select={sel1}{sel2}{sel3} resync={again1}{again2}{again3}')
+print('hit={up1}{up2}{up3} isolate={iso1}{iso2}{iso3}{iso4}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL TREE TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

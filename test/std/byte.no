@@ -87,11 +87,23 @@ t-slice = () {
     data []byte = [10, 20, 30, 40, 50]
     sub = data.slice(1, 4)
     runner.eq(sub.len(), 3, 'slice len == 3')
-    b0 i64 = sub[0]
+    b0 = sub[0]: {
+        ok -> it
+
+        -> 0
+    }
     runner.eq(b0, 20, 'slice [0] == 20')
-    b1 i64 = sub[1]
+    b1 = sub[1]: {
+        ok -> it
+
+        -> 0
+    }
     runner.eq(b1, 30, 'slice [1] == 30')
-    b2 i64 = sub[2]
+    b2 = sub[2]: {
+        ok -> it
+
+        -> 0
+    }
     runner.eq(b2, 40, 'slice [2] == 40')
 }
 

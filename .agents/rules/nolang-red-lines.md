@@ -31,7 +31,7 @@ std 未修缺陷查 `test/README.md §5.2`，名词查 `./glossary/dist/glossary
   {
     name: 'feat/option-3state'
     creator: 'lizongying'
-    created-at: '2026-11-21'
+    created-at: '2026-11-21 00:00:00'
     desc: '重构 Option 三态 ok/nil/err 校验逻辑，验证 ?= 上抛分支规则，临时验证，不合并到主分支'
     link: 'https://xxx/issue/123'
   }

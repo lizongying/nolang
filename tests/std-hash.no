@@ -395,14 +395,14 @@ print('')
 
 ; 測試 sha512
 test-sha512 = () {
-    h0 u64 = 0
-    h1 u64 = 0
-    h2 u64 = 0
-    h3 u64 = 0
-    h4 u64 = 0
-    h5 u64 = 0
-    h6 u64 = 0
-    h7 u64 = 0
+    s0 u64 = 0
+    s1 u64 = 0
+    s2 u64 = 0
+    s3 u64 = 0
+    s4 u64 = 0
+    s5 u64 = 0
+    s6 u64 = 0
+    s7 u64 = 0
 
     block512 []u64 = [
         0, 0, 0, 0, 0, 0, 0, 0,
@@ -410,24 +410,24 @@ test-sha512 = () {
     ]
 
     ; sha512-zero-block=cf7881d5774acbe8533362e0fbc780700267639d87460eda3086cb40e85931b0717dc95288a023a396bab2c14ce0b5e06fc4fe04eae33e0b91f4d80cbd668bee
-    h0 = 7640891576956012808
-    h1 = 13503953896175478587
-    h2 = 4354685564936845355
-    h3 = 11912009170470909681
-    h4 = 5840696475078001361
-    h5 = 11170449401992604703
-    h6 = 2270897969802886507
-    h7 = 6620516959819538809
-    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512, h0, h1, h2, h3, h4, h5, h6, h7)
+    s0 = 7640891576956012808
+    s1 = 13503953896175478587
+    s2 = 4354685564936845355
+    s3 = 11912009170470909681
+    s4 = 5840696475078001361
+    s5 = 11170449401992604703
+    s6 = 2270897969802886507
+    s7 = 6620516959819538809
+    s0, s1, s2, s3, s4, s5, s6, s7 = sha512.sha512-block(block512, s0, s1, s2, s3, s4, s5, s6, s7)
     io.out('sha512-zero-block=')
-    io.out(format('{h0:016x}'))
-    io.out(format('{h1:016x}'))
-    io.out(format('{h2:016x}'))
-    io.out(format('{h3:016x}'))
-    io.out(format('{h4:016x}'))
-    io.out(format('{h5:016x}'))
-    io.out(format('{h6:016x}'))
-    io.out(format('{h7:016x}'))
+    io.out(format('{s0:016x}'))
+    io.out(format('{s1:016x}'))
+    io.out(format('{s2:016x}'))
+    io.out(format('{s3:016x}'))
+    io.out(format('{s4:016x}'))
+    io.out(format('{s5:016x}'))
+    io.out(format('{s6:016x}'))
+    io.out(format('{s7:016x}'))
     print('')
 
     ; SHA-512（空字串填充區塊）
@@ -438,24 +438,24 @@ test-sha512 = () {
         0, 0, 0, 0, 0, 0, 0, 0,
     ]
 
-    h0 = 7640891576956012808
-    h1 = 13503953896175478587
-    h2 = 4354685564936845355
-    h3 = 11912009170470909681
-    h4 = 5840696475078001361
-    h5 = 11170449401992604703
-    h6 = 2270897969802886507
-    h7 = 6620516959819538809
-    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
+    s0 = 7640891576956012808
+    s1 = 13503953896175478587
+    s2 = 4354685564936845355
+    s3 = 11912009170470909681
+    s4 = 5840696475078001361
+    s5 = 11170449401992604703
+    s6 = 2270897969802886507
+    s7 = 6620516959819538809
+    s0, s1, s2, s3, s4, s5, s6, s7 = sha512.sha512-block(block512empty, s0, s1, s2, s3, s4, s5, s6, s7)
     io.out('sha512-empty=')
-    io.out(format('{h0:016x}'))
-    io.out(format('{h1:016x}'))
-    io.out(format('{h2:016x}'))
-    io.out(format('{h3:016x}'))
-    io.out(format('{h4:016x}'))
-    io.out(format('{h5:016x}'))
-    io.out(format('{h6:016x}'))
-    io.out(format('{h7:016x}'))
+    io.out(format('{s0:016x}'))
+    io.out(format('{s1:016x}'))
+    io.out(format('{s2:016x}'))
+    io.out(format('{s3:016x}'))
+    io.out(format('{s4:016x}'))
+    io.out(format('{s5:016x}'))
+    io.out(format('{s6:016x}'))
+    io.out(format('{s7:016x}'))
     print('')
 
     ; SHA-512（"abc" 填充區塊）
@@ -466,47 +466,47 @@ test-sha512 = () {
         0, 0, 0, 0, 0, 0, 0, 24,
     ]
 
-    h0 = 7640891576956012808
-    h1 = 13503953896175478587
-    h2 = 4354685564936845355
-    h3 = 11912009170470909681
-    h4 = 5840696475078001361
-    h5 = 11170449401992604703
-    h6 = 2270897969802886507
-    h7 = 6620516959819538809
-    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512abc, h0, h1, h2, h3, h4, h5, h6, h7)
+    s0 = 7640891576956012808
+    s1 = 13503953896175478587
+    s2 = 4354685564936845355
+    s3 = 11912009170470909681
+    s4 = 5840696475078001361
+    s5 = 11170449401992604703
+    s6 = 2270897969802886507
+    s7 = 6620516959819538809
+    s0, s1, s2, s3, s4, s5, s6, s7 = sha512.sha512-block(block512abc, s0, s1, s2, s3, s4, s5, s6, s7)
     io.out('sha512-abc=')
-    io.out(format('{h0:016x}'))
-    io.out(format('{h1:016x}'))
-    io.out(format('{h2:016x}'))
-    io.out(format('{h3:016x}'))
-    io.out(format('{h4:016x}'))
-    io.out(format('{h5:016x}'))
-    io.out(format('{h6:016x}'))
-    io.out(format('{h7:016x}'))
+    io.out(format('{s0:016x}'))
+    io.out(format('{s1:016x}'))
+    io.out(format('{s2:016x}'))
+    io.out(format('{s3:016x}'))
+    io.out(format('{s4:016x}'))
+    io.out(format('{s5:016x}'))
+    io.out(format('{s6:016x}'))
+    io.out(format('{s7:016x}'))
     print('')
 
     ; SHA-512（完整哈希：""）
     ...
 
-    h0 = 7640891576956012808
-    h1 = 13503953896175478587
-    h2 = 4354685564936845355
-    h3 = 11912009170470909681
-    h4 = 5840696475078001361
-    h5 = 11170449401992604703
-    h6 = 2270897969802886507
-    h7 = 6620516959819538809
-    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512empty, h0, h1, h2, h3, h4, h5, h6, h7)
+    s0 = 7640891576956012808
+    s1 = 13503953896175478587
+    s2 = 4354685564936845355
+    s3 = 11912009170470909681
+    s4 = 5840696475078001361
+    s5 = 11170449401992604703
+    s6 = 2270897969802886507
+    s7 = 6620516959819538809
+    s0, s1, s2, s3, s4, s5, s6, s7 = sha512.sha512-block(block512empty, s0, s1, s2, s3, s4, s5, s6, s7)
     io.out('sha512("")=')
-    io.out(format('{h0:016x}'))
-    io.out(format('{h1:016x}'))
-    io.out(format('{h2:016x}'))
-    io.out(format('{h3:016x}'))
-    io.out(format('{h4:016x}'))
-    io.out(format('{h5:016x}'))
-    io.out(format('{h6:016x}'))
-    io.out(format('{h7:016x}'))
+    io.out(format('{s0:016x}'))
+    io.out(format('{s1:016x}'))
+    io.out(format('{s2:016x}'))
+    io.out(format('{s3:016x}'))
+    io.out(format('{s4:016x}'))
+    io.out(format('{s5:016x}'))
+    io.out(format('{s6:016x}'))
+    io.out(format('{s7:016x}'))
     print('')
 
     ; SHA-512（完整哈希："hello"）
@@ -517,24 +517,24 @@ test-sha512 = () {
         0, 0, 0, 0, 0, 0, 0, 40,
     ]
 
-    h0 = 7640891576956012808
-    h1 = 13503953896175478587
-    h2 = 4354685564936845355
-    h3 = 11912009170470909681
-    h4 = 5840696475078001361
-    h5 = 11170449401992604703
-    h6 = 2270897969802886507
-    h7 = 6620516959819538809
-    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512hello, h0, h1, h2, h3, h4, h5, h6, h7)
+    s0 = 7640891576956012808
+    s1 = 13503953896175478587
+    s2 = 4354685564936845355
+    s3 = 11912009170470909681
+    s4 = 5840696475078001361
+    s5 = 11170449401992604703
+    s6 = 2270897969802886507
+    s7 = 6620516959819538809
+    s0, s1, s2, s3, s4, s5, s6, s7 = sha512.sha512-block(block512hello, s0, s1, s2, s3, s4, s5, s6, s7)
     io.out('sha512("hello")=')
-    io.out(format('{h0:016x}'))
-    io.out(format('{h1:016x}'))
-    io.out(format('{h2:016x}'))
-    io.out(format('{h3:016x}'))
-    io.out(format('{h4:016x}'))
-    io.out(format('{h5:016x}'))
-    io.out(format('{h6:016x}'))
-    io.out(format('{h7:016x}'))
+    io.out(format('{s0:016x}'))
+    io.out(format('{s1:016x}'))
+    io.out(format('{s2:016x}'))
+    io.out(format('{s3:016x}'))
+    io.out(format('{s4:016x}'))
+    io.out(format('{s5:016x}'))
+    io.out(format('{s6:016x}'))
+    io.out(format('{s7:016x}'))
     print('')
 
     ; SHA-512（完整哈希："The quick brown fox..."）
@@ -545,24 +545,24 @@ test-sha512 = () {
         0, 0, 0, 0, 0, 0, 0, 344,
     ]
 
-    h0 = 7640891576956012808
-    h1 = 13503953896175478587
-    h2 = 4354685564936845355
-    h3 = 11912009170470909681
-    h4 = 5840696475078001361
-    h5 = 11170449401992604703
-    h6 = 2270897969802886507
-    h7 = 6620516959819538809
-    h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block512fox, h0, h1, h2, h3, h4, h5, h6, h7)
+    s0 = 7640891576956012808
+    s1 = 13503953896175478587
+    s2 = 4354685564936845355
+    s3 = 11912009170470909681
+    s4 = 5840696475078001361
+    s5 = 11170449401992604703
+    s6 = 2270897969802886507
+    s7 = 6620516959819538809
+    s0, s1, s2, s3, s4, s5, s6, s7 = sha512.sha512-block(block512fox, s0, s1, s2, s3, s4, s5, s6, s7)
     io.out('sha512("fox")=')
-    io.out(format('{h0:016x}'))
-    io.out(format('{h1:016x}'))
-    io.out(format('{h2:016x}'))
-    io.out(format('{h3:016x}'))
-    io.out(format('{h4:016x}'))
-    io.out(format('{h5:016x}'))
-    io.out(format('{h6:016x}'))
-    io.out(format('{h7:016x}'))
+    io.out(format('{s0:016x}'))
+    io.out(format('{s1:016x}'))
+    io.out(format('{s2:016x}'))
+    io.out(format('{s3:016x}'))
+    io.out(format('{s4:016x}'))
+    io.out(format('{s5:016x}'))
+    io.out(format('{s6:016x}'))
+    io.out(format('{s7:016x}'))
     print('')
 }
 test-sha512()

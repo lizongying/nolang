@@ -87,7 +87,7 @@ t-multilimb = () {
 
 ; ---- 助手 ----
 
-hex-chars = '0123456789abcdef'
+HEX-CHARS = '0123456789abcdef'
 
 ; []byte → 小寫 hex 字串（供長位元組串比對）
 bhex = (data []byte) (hex str) {
@@ -104,15 +104,15 @@ bhex = (data []byte) (hex str) {
             -> 0
         }
 
-        hi = hex-chars[(b >> 4) & 15]: {
+        hi = HEX-CHARS[(b >> 4) & 15]: {
             ok -> it
 
-            -> '?'
+            -> "?"
         }
-        lo = hex-chars[b & 15]: {
+        lo = HEX-CHARS[b & 15]: {
             ok -> it
 
-            -> '?'
+            -> "?"
         }
 
         #{overflow=wrap}
@@ -192,7 +192,7 @@ tail-zero = (v []i64, rn i64) (ok bool) {
     ok = true
     i <- [rn..v.len()): {
         x = v[i]: {
-            got -> it
+            ok -> it
 
             -> 1
         }

@@ -1,0 +1,305 @@
+; ============================================================================
+; noui 声明式「虚拟列表：可见窗口按需挂载」测试（阶段 24）—— src/dv.no
+;
+; 缺口：阶段 23 的滚动已经把「空间」写进状态，但内容仍要**整份挂出来** ——
+; 10 行没问题，10000 行就会把组件池撑爆。虚拟列表把「挂什么」也变成状态的函数：
+; 视图按偏移算出可见窗口 [i0, i1)，只挂这几行；内容高由 dv-scroll-content
+; **声明**给布局，于是 cmp-scroll-max 不依赖「所有行都在场」。
+;
+; 阶段 24 补：
+;   - cmp-scroll-content / cmp-set-scroll-content：C-SCROLL 的声明内容高；
+;   - cs-layout 的 C-SCROLL 分支：声明模式下按 index*行距定位（实测模式不变）；
+;   - dv-scroll-content / dv-scroll-content-of：视图侧的声明内容高；
+;   - dv-repeat-at：dv-repeat-items 的「按绝对下标取切片」版本，key = 绝对行号；
+;   - dv-list-view：一行原语 = 滚动容器 + 定高 + 声明内容高 + 可见窗口切片。
+;
+; 场景钉住：
+;   M 标记  ：dv-list-view 的 kind / value / value2 / 声明内容高（视图侧 + 活节点侧）
+;   L 布局  ：cmp-scroll-max 由**声明**内容高算出；只挂可见窗口那几行；
+;             行位 = index*行距；off 夹紧；**不写回状态**
+;   P 绘制  ：可见行的 Scene 指令带裁剪矩形
+;   H 命中  ：窗口内命中正确的行；视口外不命中
+;   W 滚轮  ：偏移进状态 -> 重建后窗口真的滑动；行 key 跨滚动不变（组件复用）；
+;             上下界夹紧
+;   R 切片  ：dv-repeat-at 越界补空（窗口放宽的那一行可能是半截）
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-virtual.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    t = dv-form(1, -1)
+    page = t
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-virtual tests ===')
+
+; 共用数据
+D-OFF = 1          ; 滚动偏移槽（真源）
+VL-KEY = 500       ; 滚动容器
+VL-ROW0 = 520      ; 行 key 基数（key = VL-ROW0 + 绝对行号）
+VL-N = 20          ; 总行数
+VL-VIEWH = 20000   ; 视口高 200px
+VL-ROWH = 5000     ; 行高 50px
+VL-STEP = 400      ; 滚轮每格 4px
+VL-CONTENT = 117600 ; 20*5000 + 19*800 + 2*1200
+VL-MAXOFF = 97600   ; 117600 - 20000
+VL-STRIDE = 5800    ; 5000 + 800
+ROW-Y0 = 2400       ; 根(0,0) -> 表单 pad 1200 -> 滚动 pad 1200
+
+ST []i64 = with-len(4)
+VL-TXT []str = with-len(20)
+VL-VAL []i64 = with-len(20)
+VL-SC []i64 = with-len(1)   ; mk-page 把滚动**视图**节点句柄放这里
+
+VL-TXT[0] = 'v00'
+VL-TXT[1] = 'v01'
+VL-TXT[2] = 'v02'
+VL-TXT[3] = 'v03'
+VL-TXT[4] = 'v04'
+VL-TXT[5] = 'v05'
+VL-TXT[6] = 'v06'
+VL-TXT[7] = 'v07'
+VL-TXT[8] = 'v08'
+VL-TXT[9] = 'v09'
+VL-TXT[10] = 'v10'
+VL-TXT[11] = 'v11'
+VL-TXT[12] = 'v12'
+VL-TXT[13] = 'v13'
+VL-TXT[14] = 'v14'
+VL-TXT[15] = 'v15'
+VL-TXT[16] = 'v16'
+VL-TXT[17] = 'v17'
+VL-TXT[18] = 'v18'
+VL-TXT[19] = 'v19'
+
+; 造一页：根表单 -> dv-list-view（滚动容器 + 可见窗口）
+mk-page = () (p i64) {
+    dv-clear()
+    t = dv-form(1, -1)
+    na []i64 = with-len(0)
+    sc = dv-list-view(ST, VL-KEY, D-OFF, VL-STEP, VL-VIEWH, VL-ROWH, VL-N, VL-TXT, VL-VAL, na, na, VL-ROW0, t)
+    VL-SC[0] = sc
+    p = t
+}
+
+; 数一数 20 行里真正挂出来几行
+count-mounted = (root i64) (n i64) {
+    n = 0
+    i = 0
+    !! {
+        (i >= VL-N) -> { ** }
+        (dv-live-deep(root, dv-add(VL-ROW0, i)) >= 0) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+
+; 数某个活节点的流子节点数
+count-kids = (h i64) (n i64) {
+    n = 0
+    !! {
+        c = cs-child-flow(h, n)
+        (c < 0) -> { ** }
+        n = dv-inc(n)
+    }
+}
+
+; 值数组：VL-VAL[i] = i（证明「值也是数据」）
+init-vals = () {
+    i = 0
+    !! {
+        (i >= VL-N) -> { ** }
+        VL-VAL[i] = i
+        i = dv-inc(i)
+    }
+}
+
+; 光标 / 滚轮增量
+set-cursor = (px i64, py i64) () {
+    dv-arr-set(DVA-PX, 0, px)
+    dv-arr-set(DVA-PY, 0, py)
+}
+set-wheel = (d i64) () {
+    dv-arr-set(APP-WHEEL, 0, d)
+}
+
+find-text = (t str) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-t(i) == t) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 M：标记
+; ============================================================================
+root-m = cmp-root()
+ST[D-OFF] = 0
+init-vals()
+pm = mk-page()
+dv-render(root-m, pm)
+scm = dv-live-deep(root-m, VL-KEY)
+r1 = scm >= 0 && cmp-kind(scm) == C-SCROLL
+r2 = cmp-value(scm) == 0 && cmp-value2(scm) == VL-STEP
+r3 = dv-scroll-content-of(VL-SC[0]) == VL-CONTENT
+r4 = cmp-scroll-content(scm) == VL-CONTENT
+am, py1 = dv-dispatch(VL-KEY)
+r5 = am == DV-A-CHANGE && py1 == D-OFF
+r6 = (dv-flags(scm) & DV-F-VIS) != 0 && (dv-flags(scm) & DV-F-EN) != 0
+
+; ============================================================================
+; 场景 L：布局 —— 声明内容高驱动 max；只挂可见窗口；index*行距定位
+; ============================================================================
+root-l = cmp-root()
+ST[D-OFF] = 0
+pl = mk-page()
+dv-render(root-l, pl)
+cs-layout(root-l, 0, 0, 40000, 30000)
+scl = dv-live-deep(root-l, VL-KEY)
+r7 = cmp-scroll-max(scl) == VL-MAXOFF
+r8 = count-mounted(root-l) == 4
+r9 = dv-live-deep(root-l, VL-ROW0) >= 0 && dv-live-deep(root-l, VL-ROW0 + 4) == -1
+l0 = dv-live-deep(root-l, VL-ROW0)
+r10 = cmp-text(l0) == 'v00'
+_, y0, _, _ = cs-rect(l0)
+r11 = y0 == ROW-Y0
+l1 = dv-live-deep(root-l, VL-ROW0 + 1)
+_, y1, _, _ = cs-rect(l1)
+r12 = y1 == cs-add(ROW-Y0, VL-STRIDE)
+
+; 滚到底：窗口滑到 16..19
+ST[D-OFF] = VL-MAXOFF
+pl2 = mk-page()
+dv-render(root-l, pl2)
+cs-layout(root-l, 0, 0, 40000, 30000)
+r13 = count-mounted(root-l) == 4
+r14 = dv-live-deep(root-l, VL-ROW0 + 16) >= 0 && dv-live-deep(root-l, VL-ROW0 + 15) == -1
+l16 = dv-live-deep(root-l, VL-ROW0 + 16)
+r15 = cmp-text(l16) == 'v16'
+_, y16, _, _ = cs-rect(l16)
+r16 = y16 == -2400
+
+; 状态写超界：布局夹紧到 max，**不写回状态**
+ST[D-OFF] = 999999
+pl3 = mk-page()
+dv-render(root-l, pl3)
+cs-layout(root-l, 0, 0, 40000, 30000)
+r17 = count-mounted(root-l) == 1
+l19 = dv-live-deep(root-l, VL-ROW0 + 19)
+_, y19, _, _ = cs-rect(l19)
+r18 = y19 == 15000
+r19 = ST[D-OFF] == 999999
+
+; ============================================================================
+; 场景 P：绘制 —— 可见行带裁剪矩形
+; ============================================================================
+ST[D-OFF] = 0
+pl4 = mk-page()
+dv-render(root-l, pl4)
+cs-layout(root-l, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root-l)
+ip = find-text('v00')
+r20 = ip >= 0 && cs-scene-cf(ip) == 1
+
+; ============================================================================
+; 场景 H：命中 —— 窗口内命中正确的行；视口外不命中
+; ============================================================================
+hl1 = dv-live-deep(root-l, VL-ROW0 + 1)
+r21 = cs-hit(scl, 5000, 9200) == hl1
+r22 = cs-hit(scl, 5000, 25000) == -1
+
+ST[D-OFF] = VL-MAXOFF
+pl5 = mk-page()
+dv-render(root-l, pl5)
+cs-layout(root-l, 0, 0, 40000, 30000)
+hl17 = dv-live-deep(root-l, VL-ROW0 + 17)
+r23 = cs-hit(scl, 5000, 4000) == hl17
+
+; ============================================================================
+; 场景 W：滚轮 —— 偏移进状态 -> 窗口真的滑动；key 跨滚动不变；上下界夹紧
+; ============================================================================
+root-w = cmp-root()
+ST[D-OFF] = 0
+pw = mk-page()
+dv-render(root-w, pw)
+cs-layout(root-w, 0, 0, 40000, 30000)
+
+set-cursor(5000, 9200)
+set-wheel(20)
+w1 = dva-wheel(ST, root-w)
+r24 = w1 == 1 && ST[D-OFF] == 8000
+
+pw2 = mk-page()
+r25 = dv-render(root-w, pw2) >= 0
+cs-layout(root-w, 0, 0, 40000, 30000)
+r26 = count-mounted(root-w) == 4
+r27 = dv-live-deep(root-w, VL-ROW0) == -1 && dv-live-deep(root-w, VL-ROW0 + 4) >= 0
+l1w = dv-live-deep(root-w, VL-ROW0 + 1)
+_, y1w, _, _ = cs-rect(l1w)
+r28 = y1w == 200
+
+; 同一行的 key 不变 -> 组件对象跨滚动复用
+hbefore = dv-live-deep(root-w, VL-ROW0 + 1)
+ST[D-OFF] = 9000
+pw3 = mk-page()
+r29 = dv-render(root-w, pw3) == 0
+cs-layout(root-w, 0, 0, 40000, 30000)
+r30 = dv-live-deep(root-w, VL-ROW0 + 1) == hbefore
+
+; 下界夹紧
+ST[D-OFF] = 97000
+set-wheel(10)
+w2 = dva-wheel(ST, root-w)
+r31 = w2 == 1 && ST[D-OFF] == VL-MAXOFF
+set-wheel(1)
+w3 = dva-wheel(ST, root-w)
+r32 = w3 == 0 && ST[D-OFF] == VL-MAXOFF
+
+; 上界夹紧
+ST[D-OFF] = 100
+set-wheel(-1)
+w4 = dva-wheel(ST, root-w)
+r33 = w4 == 1 && ST[D-OFF] == 0
+
+; ============================================================================
+; 场景 R：切片 —— dv-repeat-at 越界补空
+; ============================================================================
+root-r = cmp-root()
+dv-clear()
+tr = dv-form(1, -1)
+na2 []i64 = with-len(0)
+_ = dv-repeat-at(tr, 700, 18, 5, C-LABEL, VL-TXT, na2, na2, na2, na2, 0)
+dv-render(root-r, tr)
+; 注意 dv-render 挂的是 view 的**孩子们**（页节点本身不挂），所以 5 行直接挂在根上
+r34 = count-kids(root-r) == 5
+r35 = cmp-text(dv-live-deep(root-r, 718)) == 'v18' && cmp-text(dv-live-deep(root-r, 719)) == 'v19'
+r36 = cmp-text(dv-live-deep(root-r, 720)) == ''
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29 && r30 && r31 && r32 && r33 && r34 && r35 && r36
+
+print('M mark={r1}{r2}{r3}{r4}{r5}{r6}')
+print('L layout={r7}{r8}{r9}{r10}{r11}{r12}{r13}{r14}{r15}{r16}{r17}{r18}{r19}')
+print('P paint={r20}')
+print('H hit={r21}{r22}{r23}')
+print('W wheel={r24}{r25}{r26}{r27}{r28}{r29}{r30}{r31}{r32}{r33}')
+print('R slice={r34}{r35}{r36}')
+print('all-ok={ok}')
+(ok) -> { print('ALL DVA-VIRTUAL TESTS PASSED') }
+(!ok) -> { print('DVA-VIRTUAL FAILURES') }

@@ -1,0 +1,250 @@
+; ============================================================================
+; noui 命令式「可拆面板（Dock）」窗口 demo（阶段 36）—— src/components.no 的
+; cmp-dock-* + src/cmp-scene.no 的 cs-dock-*
+;
+; 和 tests/main-table.no / main-editor.no / main-tree.no 同一条命令式路子：顶层标量
+; 存状态，主循环直接读写，没有声明式视图层。间隙就是拖杆 —— 不新增节点种类：
+;   cmp-dock()              造一台 C-DOCK 横向容器
+;   cmp-dock-split(h, min, max, gw)  把它声明成可拆：gap = 拖杆命中区，
+;                                    min / max 写进 value / value2 当夹紧界，
+;                                    当前位置写进 DK-SPLIT-V（真源）
+;   cs-dock-down(root, x, y) 点在这条缝上 -> 抓住（返回 1，调用方跳过点击路径）
+;   cs-dock-move(x, y)       光标换算成左屏宽，夹紧后写回 DK-SPLIT-V
+;   cmp-dock-up()            松手
+;
+; 主循环每帧把 DK-SPLIT-V 同步到左屏的固定宽（cmp-set-sw）—— 和 cmp-table-sync
+; 同一模式：状态在应用手里，组件树只负责摆。
+;
+; 交互：
+;   拖两条面板之间的缝 = 改分栏位置（夹紧在 min / max）
+;   点左屏某行        = 选中该行
+;   r                 = 分栏回到 min
+;   ESC / q           = 退出
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-dock.no
+; ============================================================================
+# /noui/src/app
+
+; ---- 颜色（主题槽）----
+FG = 0
+MUT = 0
+ACC = 0
+SELB = 0
+
+; ---- 分栏参数 ----
+D-MIN = 12000        ; 左屏最小宽 120px
+D-MAX = 60000        ; 左屏最大宽 600px
+D-GAP = 1200         ; 拖杆命中区 12px
+DK-MAX-FRAMES = 900
+DK-N = 12
+
+; ---- 句柄 ----
+dock = 0
+pane-a = 0
+pane-b = 0
+af = 0
+DLAB1 = 0
+DLAB2 = 0
+DLAB3 = 0
+DLAB4 = 0
+DLAB5 = 0
+
+A-ROWS []i64 = with-len(0)
+
+dk-frames = 0
+dk-keys = 0
+dk-clicks = 0
+dk-drag = 0
+dk-sel = -1
+dk-moved = 0
+
+NAMES = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel', 'india', 'juliet', 'kilo', 'lima']
+
+; ============================================================================
+; 函数（nolang 要求先定义后调用，所以放在初始化之前）
+; ============================================================================
+
+; 视口高：窗口高 - root 上下内边距
+dk-viewh = () (v i64) {
+    v = cs-sub(app-win-hf(), cs-mul(CS-PAD, 2))
+    (v < 2400) -> { v = 60000 }
+}
+
+; 命中链上有没有这个容器
+dk-hit-in = (c i64, want i64) (yes i64) {
+    yes = 0
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (yes != 0) -> { ** }
+        (p == want) -> { yes = 1 }
+        p = cmp-parent-of(p)
+    }
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui dock')
+(ok == 0) -> {
+
+    FG = cs-theme(CS-TH-FG)
+    MUT = cs-theme(CS-TH-MUTED)
+    ACC = cs-theme(CS-TH-ACCENT)
+    SELB = cs-theme(CS-TH-TRACK)
+
+    root = app-root()
+    cmp-set-lay(root, L-H)
+    cmp-set-gap(root, CS-GAP)
+
+    ; ---- 可拆面板：左屏定宽（= 分栏位置），右屏吃掉剩余 ----
+    dock = cmp-dock()
+    dock = cmp-dock-split(dock, D-MIN, D-MAX, D-GAP)
+    cmp-set-lay(dock, L-GROW)
+    cmp-set-sh(dock, dk-viewh())
+
+    pane-a = cmp-group-box('explorer')
+    cmp-set-sw(pane-a, D-MIN)
+    cmp-set-sh(pane-a, dk-viewh())
+    af = cmp-form()
+    cmp-set-lay(af, 0)
+    i = 0
+    !! {
+        (i >= DK-N) -> { ** }
+        lb = cmp-label(NAMES[i])
+        A-ROWS.push(lb)
+        cmp-add-child(af, lb)
+        i = cs-inc(i)
+    }
+    cmp-add-child(pane-a, af)
+    cmp-add-child(dock, pane-a)
+
+    pane-b = cmp-group-box('detail')
+    cmp-set-lay(pane-b, L-GROW)
+    cmp-set-sh(pane-b, dk-viewh())
+    bf = cmp-form()
+    cmp-set-lay(bf, 0)
+    DLAB1 = cmp-label('split: -')
+    DLAB2 = cmp-label('drag: no')
+    DLAB3 = cmp-label('sel: -')
+    DLAB4 = cmp-label('seam: 12px wide')
+    DLAB5 = cmp-label('r reset | esc quit')
+    cmp-add-child(bf, DLAB1)
+    cmp-add-child(bf, DLAB2)
+    cmp-add-child(bf, DLAB3)
+    cmp-add-child(bf, DLAB4)
+    cmp-add-child(bf, DLAB5)
+    cmp-add-child(pane-b, bf)
+    cmp-add-child(dock, pane-b)
+
+    cmp-add-child(root, dock)
+
+    sp0 = cmp-dock-split-val(dock)
+    print('init-done split={sp0}')
+}
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover；拖着分栏时换算光标 ----
+    (t == 3) -> {
+        app-hover(root, fx(mx), fx(my))
+        (dk-drag == 1) -> {
+            (cs-dock-move(fx(mx), fx(my)) == 1) -> {
+                dk-moved = cs-inc(dk-moved)
+            }
+        }
+    }
+
+    ; ---- 左键按下：先试拖杆，抓住了就不走点击路径 ----
+    (t == 2) -> {
+        g = cs-dock-down(root, fx(mx), fx(my))
+        {
+            (g == 1) -> {
+                dk-drag = 1
+                dk-clicks = cs-inc(dk-clicks)
+            }
+            -> {
+                hit = cs-hit(root, fx(mx), fx(my))
+                i = 0
+                !! {
+                    (i >= A-ROWS.len()) -> { ** }
+                    (dk-sel >= 0) -> { ** }
+                    (ct-get(A-ROWS, i) == hit) -> { dk-sel = i }
+                    i = cs-inc(i)
+                }
+            }
+        }
+    }
+
+    ; ---- 左键抬起：松手 ----
+    (t == 6) -> {
+        (dk-drag == 1) -> {
+            cmp-dock-up()
+            dk-drag = 0
+        }
+    }
+
+    ; ---- 键盘 ----
+    ; 注意：';' 在 nolang 里是行注释，不是语句分隔符。分支体里多句必须换行写。
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 114) -> {
+            cmp-dock-set-split(dock, D-MIN)
+            dk-sel = -1
+            dk-keys = cs-inc(dk-keys)
+        }
+    }
+
+    ; ---- 退出条件 ----
+    ; 两个退出查询各调一次：_noui-should-quit 第二次调用会返回 true（dummy 驱动下
+    ; 没有真事件，标志被消费掉），调两次会立刻退出循环。
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件：分栏位置同步到左屏宽，信息刷到右屏 ----
+    ; 同步放在主循环顶层：命令式组件树必须在顶层作用域里改，
+    ; 经函数中转会拿到错位的子链（见 ARCHITECTURE.md 阶段 34/35 的踩坑记录）。
+    sp = cmp-dock-split-val(dock)
+    cmp-set-sw(pane-a, sp)
+    cmp-set-text(DLAB1, 'split: {sp}')
+    dr = 'no'
+    (dk-drag == 1) -> { dr = 'yes' }
+    cmp-set-text(DLAB2, 'drag: {dr}')
+    sn = '-'
+    (dk-sel >= 0) -> {
+        q = NAMES[dk-sel]: {
+            ok -> it
+
+            -> '-'
+        }
+        sn = q
+    }
+    cmp-set-text(DLAB3, 'sel: {sn}')
+    cmp-set-text(DLAB4, 'seam: 12px wide')
+    cmp-set-text(DLAB5, 'keys: {dk-keys} clicks: {dk-clicks} moved: {dk-moved}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    app-frame()
+    app-delay(16)
+
+    dk-frames = cs-inc(dk-frames)
+    (DK-MAX-FRAMES > 0) -> {
+        (dk-frames >= DK-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+fr = dk-frames
+sp = cmp-dock-split-val(dock)
+sl = dk-sel
+print('bye frames={fr} split={sp} sel={sl} clicks={dk-clicks} moved={dk-moved}')
+(sp >= D-MIN && sp <= D-MAX) -> { print('dock render OK') }

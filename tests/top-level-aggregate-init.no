@@ -11,7 +11,7 @@ point {
     n i64
 }
 
-pr = point{
+PR = point{
     n: 7
 }
 
@@ -20,17 +20,17 @@ e-num {
     lo,
 }
 
-a e-num = lo
-b e-num = hi(42)
+A e-num = lo
+B e-num = hi(42)
 
 ; 三種讀法都必須看到初值：欄位讀、單位變體匹配、載荷綁定。
 read-pr = () (out i64) {
-    out = pr.n
+    out = PR.n
 }
 
 read-a = () (out i64) {
     out = 0
-    a: {
+    A: {
         hi(v) -> out = v
 
         lo -> out = 99
@@ -39,7 +39,7 @@ read-a = () (out i64) {
 
 read-b = () (out i64) {
     out = 0
-    b: {
+    B: {
         hi(v) -> out = v
 
         lo -> out = 99

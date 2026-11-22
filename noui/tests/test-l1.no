@@ -13,13 +13,13 @@ ca = geom.color-a(c)
 print('color components: r={cr} g={cg} b={cb} a={ca}')
 
 r rect
-r.x = 10
-r.y = 10
-r.w = 100
-r.h = 50
+r.x = 10.0
+r.y = 10.0
+r.w = 100.0
+r.h = 50.0
 
-hi = geom.rect-hit(r, 50, 30)
-ho = geom.rect-hit(r, 200, 30)
+hi = geom.rect-hit(r, 50.0, 30.0)
+ho = geom.rect-hit(r, 200.0, 30.0)
 print('hit inside: {hi}')
 print('hit outside: {ho}')
 

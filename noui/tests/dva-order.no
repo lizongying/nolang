@@ -1,0 +1,495 @@
+; ============================================================================
+; noui 声明式「排序 / 分组：顺序也是状态」测试（阶段 26）—— src/dv.no
+;
+; 缺口：阶段 24/25 让「挂多少 / 挂哪些」变成状态（偏移 / 查询）的函数，但
+; 「按什么顺序挂」仍是应用手写 if。列表的顺序同样应该是**模式的纯函数**：
+; 一个 mode 槽决定 源顺序 / 按键升序 / 按键降序 / 按组分组（升 / 降）。
+;
+; 阶段 26 补：
+;   - dv-sort-run   ：稳定插入排序（原地，desc != 0 = 倒序）；
+;   - dv-sort-map   ：0..n-1 按 keys[] 排成**下标表**（数据是平行数组，动不得）；
+;   - dv-group-plan ：把「已按组排好」的下标表展开成混合行表
+;                     （token >= 0 = 源行号；token < 0 = 组标题，组号 = -token-1）；
+;   - dv-repeat-plan：混合行表渲染器（标题行 + 数据行，标题不可点、颜色另给）；
+;   - dv-order-list ：dv-list-view / dv-filter-list 的「顺序」版（多一个 mode 槽）。
+;
+; 场景钉住：
+;   S 排序  ：源顺序 / 升序 / 降序；**稳定性**（同键保持源序）；n 夹到 keys.len()；
+;            负数 n；非法 mode 按源顺序
+;   G 分组  ：on=0 原样复制；标题 token 编码（-token-1 = 组号）；m = 行数 + 组数；
+;            组顺序**跟随传入的 plan**（所以「按组排序」= 先 sort-map 再 group-plan）；
+;            空表 / n=0 / plan 比 n 短
+;   L 布局  ：混合行挂载（标题 + 数据）；行 key = key0+源行号 / hkey0+组号；
+;            内容高与 maxoff 随**混合行数**变；行位 = 窗口序号*行距；
+;            标题禁用态（可见不可点）+ 单独颜色；换模式同行同 key（组件复用）；
+;            滚到底部；非法 mode；布局夹紧**不写回状态**
+;   P 绘制  ：标题文案真的画出来
+;   H 命中  ：命中标题 -> 禁用 -> 不出动作；命中数据行 -> 动作载荷 = **源行号**
+;   W 滚轮  ：分组后 maxoff 变大 -> 滚轮按新上限夹紧；换模式换上限
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-order.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = -1
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-order tests ===')
+
+; 共用数据
+D-OFF = 1          ; 滚动偏移槽（真源）
+D-MODE = 2         ; 顺序模式槽（0 源 / 1 键升 / 2 键降 / 3 组升 / 4 组降）
+OL-KEY = 600       ; 滚动容器
+OL-ROW0 = 620      ; 数据行 key 基数（key = OL-ROW0 + 源行号）
+OL-HDR0 = 9000     ; 标题行 key 基数（key = OL-HDR0 + 组号）
+OL-N = 10          ; 数据行数
+OL-VIEWH = 16000   ; 视口高 160px
+OL-ROWH = 2800     ; 行高 28px
+OL-STEP = 400      ; 滚轮每格 4px
+OL-STRIDE = 3600   ; 2800 + 800
+ROW-Y0 = 2400      ; 根(0,0) -> 表单 pad 1200 -> 滚动 pad 1200
+OL-CONTENT = 37600     ; 10 行：10*2800 + 9*800 + 2*1200
+OL-MAXOFF = 21600      ; 37600 - 16000
+OL-G-CONTENT = 44800   ; 12 混合行（10 数据 + 2 标题）
+OL-G-MAXOFF = 28800
+
+ST []i64 = with-len(4)
+OL-TXT []str = with-len(10)
+OL-SKEY []i64 = with-len(10)    ; 排序键（一个排列，排序效果肉眼可见）
+OL-GRP []i64 = with-len(10)     ; 组键
+OL-NAME []str = with-len(2)     ; 组标题文案
+OL-VAL []i64 = with-len(10)
+OL-ACT []i64 = with-len(10)
+OL-PAY []i64 = with-len(10)
+OL-SC []i64 = with-len(1)       ; mk-page 把滚动**视图**节点句柄放这里
+
+; 排序键 = (i * 3) % 10 -> [0,3,6,9,2,5,8,1,4,7]：升序后源行号序为
+; [0,7,4,1,8,5,2,9,6,3]，降序为其逆 —— 顺序变化明显，且源序本身不被打乱。
+; 组键 = ((i + 5) % 10) / 5 -> [1,1,1,1,1,0,0,0,0,0]：组 0 = 源 5..9，
+; 组 1 = 源 0..4（所以「按组升序」会把 5..9 挪到最前面，与源序不同）。
+OL-TXT[0] = 'row 00'
+OL-TXT[1] = 'row 01'
+OL-TXT[2] = 'row 02'
+OL-TXT[3] = 'row 03'
+OL-TXT[4] = 'row 04'
+OL-TXT[5] = 'row 05'
+OL-TXT[6] = 'row 06'
+OL-TXT[7] = 'row 07'
+OL-TXT[8] = 'row 08'
+OL-TXT[9] = 'row 09'
+OL-SKEY[0] = 0
+OL-SKEY[1] = 3
+OL-SKEY[2] = 6
+OL-SKEY[3] = 9
+OL-SKEY[4] = 2
+OL-SKEY[5] = 5
+OL-SKEY[6] = 8
+OL-SKEY[7] = 1
+OL-SKEY[8] = 4
+OL-SKEY[9] = 7
+OL-GRP[0] = 1
+OL-GRP[1] = 1
+OL-GRP[2] = 1
+OL-GRP[3] = 1
+OL-GRP[4] = 1
+OL-GRP[5] = 0
+OL-GRP[6] = 0
+OL-GRP[7] = 0
+OL-GRP[8] = 0
+OL-GRP[9] = 0
+OL-NAME[0] = 'rows 05-09'
+OL-NAME[1] = 'rows 00-04'
+OL-VAL[0] = 0
+OL-VAL[1] = 1
+OL-VAL[2] = 2
+OL-VAL[3] = 3
+OL-VAL[4] = 4
+OL-VAL[5] = 5
+OL-VAL[6] = 6
+OL-VAL[7] = 7
+OL-VAL[8] = 8
+OL-VAL[9] = 9
+OL-ACT[0] = DV-A-CLICK
+OL-ACT[1] = DV-A-CLICK
+OL-ACT[2] = DV-A-CLICK
+OL-ACT[3] = DV-A-CLICK
+OL-ACT[4] = DV-A-CLICK
+OL-ACT[5] = DV-A-CLICK
+OL-ACT[6] = DV-A-CLICK
+OL-ACT[7] = DV-A-CLICK
+OL-ACT[8] = DV-A-CLICK
+OL-ACT[9] = DV-A-CLICK
+OL-PAY[0] = 0
+OL-PAY[1] = 1
+OL-PAY[2] = 2
+OL-PAY[3] = 3
+OL-PAY[4] = 4
+OL-PAY[5] = 5
+OL-PAY[6] = 6
+OL-PAY[7] = 7
+OL-PAY[8] = 8
+OL-PAY[9] = 9
+
+; 造一页：根表单 -> dv-order-list（滚动容器 + 可见窗口的混合行）
+mk-page = () (p i64) {
+    dv-clear()
+    t = dv-form(1, -1)
+    sc = dv-order-list(ST, OL-KEY, D-OFF, OL-STEP, OL-VIEWH, OL-ROWH, OL-N,
+        OL-SKEY, OL-GRP, OL-NAME, OL-TXT, OL-VAL, OL-ACT, OL-PAY, D-MODE,
+        OL-ROW0, OL-HDR0, t)
+    OL-SC[0] = sc
+    p = t
+}
+
+; 数某个活节点的流子节点数
+count-kids = (h i64) (n i64) {
+    n = 0
+    !! {
+        c = cs-child-flow(h, n)
+        (c < 0) -> { ** }
+        n = dv-inc(n)
+    }
+}
+
+set-cursor = (px i64, py i64) () {
+    dv-arr-set(DVA-PX, 0, px)
+    dv-arr-set(DVA-PY, 0, py)
+}
+set-wheel = (d i64) () {
+    dv-arr-set(APP-WHEEL, 0, d)
+}
+
+find-text = (t str) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-t(i) == t) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 S：排序 —— dv-sort-map 的下标表
+; ============================================================================
+qa = dv-sort-map(0, OL-N, OL-SKEY)
+s1 = qa.len() == 10 && dv-arr-get(qa, 0) == 0 && dv-arr-get(qa, 9) == 9
+qb = dv-sort-map(1, OL-N, OL-SKEY)
+s2 = dv-arr-get(qb, 0) == 0 && dv-arr-get(qb, 1) == 7 && dv-arr-get(qb, 2) == 4 &&
+     dv-arr-get(qb, 9) == 3
+qc = dv-sort-map(2, OL-N, OL-SKEY)
+s3 = dv-arr-get(qc, 0) == 3 && dv-arr-get(qc, 1) == 6 && dv-arr-get(qc, 9) == 0
+
+; 稳定性：同键保持源序（分组要「组内源序」就靠它）
+K2 []i64 = with-len(4)
+K2[0] = 1
+K2[1] = 1
+K2[2] = 0
+K2[3] = 0
+q2a = dv-sort-map(1, 4, K2)
+s4 = dv-arr-get(q2a, 0) == 2 && dv-arr-get(q2a, 1) == 3 &&
+     dv-arr-get(q2a, 2) == 0 && dv-arr-get(q2a, 3) == 1
+q2b = dv-sort-map(2, 4, K2)
+s5 = dv-arr-get(q2b, 0) == 0 && dv-arr-get(q2b, 1) == 1 &&
+     dv-arr-get(q2b, 2) == 2 && dv-arr-get(q2b, 3) == 3
+
+; n 夹到 keys.len()；负数 n = 空表；非法 mode 按源顺序
+q2c = dv-sort-map(1, 99, K2)
+s6 = q2c.len() == 4 && dv-arr-get(q2c, 3) == 1
+q2d = dv-sort-map(1, -5, K2)
+s7 = q2d.len() == 0
+q2e = dv-sort-map(7, 4, K2)
+s8 = q2e.len() == 4 && dv-arr-get(q2e, 0) == 0 && dv-arr-get(q2e, 3) == 3
+
+; ============================================================================
+; 场景 G：分组 —— dv-group-plan 的混合行表
+; ============================================================================
+G-OUT []i64 = with-len(32)
+G-P3 []i64 = with-len(3)
+G-P3[0] = 0
+G-P3[1] = 1
+G-P3[2] = 2
+G-EMPTY []i64 = with-len(0)
+G-IDX []i64 = with-len(10)
+G-SORTED []i64 = with-len(10)
+G-P5 []i64 = with-len(3)
+G-P5[0] = 5
+G-P5[1] = 6
+G-P5[2] = 7
+G-IDX[0] = 0
+G-IDX[1] = 1
+G-IDX[2] = 2
+G-IDX[3] = 3
+G-IDX[4] = 4
+G-IDX[5] = 5
+G-IDX[6] = 6
+G-IDX[7] = 7
+G-IDX[8] = 8
+G-IDX[9] = 9
+G-SORTED[0] = 5
+G-SORTED[1] = 6
+G-SORTED[2] = 7
+G-SORTED[3] = 8
+G-SORTED[4] = 9
+G-SORTED[5] = 0
+G-SORTED[6] = 1
+G-SORTED[7] = 2
+G-SORTED[8] = 3
+G-SORTED[9] = 4
+
+; on = 0：原样复制（不分组）
+m1 = dv-group-plan(0, 3, OL-GRP, G-P3, G-OUT)
+g1 = m1 == 3 && dv-arr-get(G-OUT, 0) == 0 && dv-arr-get(G-OUT, 2) == 2
+
+; 已按组排好（组 0 在前）-> 组 0 标题 token = -1，组 1 标题 token = -2
+m2 = dv-group-plan(1, 10, OL-GRP, G-SORTED, G-OUT)
+g2 = m2 == 12 && dv-arr-get(G-OUT, 0) == -1 && dv-arr-get(G-OUT, 1) == 5 &&
+     dv-arr-get(G-OUT, 5) == 9 && dv-arr-get(G-OUT, 6) == -2 &&
+     dv-arr-get(G-OUT, 7) == 0 && dv-arr-get(G-OUT, 11) == 4
+
+; 组顺序**跟随 plan**：同一份组键，plan 是源序时先遇到组 1 -> 组 1 的标题在前
+m3 = dv-group-plan(1, 10, OL-GRP, G-IDX, G-OUT)
+g3 = m3 == 12 && dv-arr-get(G-OUT, 0) == -2 && dv-arr-get(G-OUT, 1) == 0 &&
+     dv-arr-get(G-OUT, 5) == 4 && dv-arr-get(G-OUT, 6) == -1 &&
+     dv-arr-get(G-OUT, 7) == 5
+
+; 空表 / n = 0
+m4 = dv-group-plan(1, 10, OL-GRP, G-EMPTY, G-OUT)
+g4 = m4 == 0
+m5 = dv-group-plan(1, 0, OL-GRP, G-IDX, G-OUT)
+g5 = m5 == 0
+
+; plan 比 n 短：只展开到表尾（3 行同组 -> 1 标题 + 3 行）
+m6 = dv-group-plan(1, 5, OL-GRP, G-P5, G-OUT)
+g6 = m6 == 4 && dv-arr-get(G-OUT, 0) == -1 && dv-arr-get(G-OUT, 1) == 5 &&
+     dv-arr-get(G-OUT, 3) == 7
+
+; ============================================================================
+; 场景 L：布局 —— 混合行挂载 / 内容高 / 禁用标题 / 复用 / 夹紧不写回
+; ============================================================================
+root-l = cmp-root()
+ST[D-OFF] = 0
+ST[D-MODE] = 0
+pl = mk-page()
+dv-render(root-l, pl)
+cs-layout(root-l, 0, 0, 40000, 30000)
+scl = dv-live-deep(root-l, OL-KEY)
+
+; 源顺序：窗口 5 行，行 key = 620..624，内容高按 10 行算
+l1 = count-kids(scl) == 5
+l2 = cmp-text(dv-live-deep(root-l, OL-ROW0)) == 'row 00' &&
+     cmp-text(dv-live-deep(root-l, OL-ROW0 + 4)) == 'row 04'
+l3 = cmp-scroll-content(scl) == OL-CONTENT && cmp-scroll-max(scl) == OL-MAXOFF
+l4 = dv-scroll-content-of(OL-SC[0]) == OL-CONTENT &&
+     dv-scroll-start-of(OL-SC[0]) == 0
+
+; 键升序：窗口里是源行 0,7,4,1,8
+ST[D-MODE] = 1
+pl2 = mk-page()
+dv-render(root-l, pl2)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l5 = cmp-text(dv-live-deep(root-l, OL-ROW0)) == 'row 00' &&
+     cmp-text(dv-live-deep(root-l, OL-ROW0 + 7)) == 'row 07' &&
+     cmp-text(dv-live-deep(root-l, OL-ROW0 + 1)) == 'row 01'
+
+; 键降序：窗口里是源行 3,6,9,2,5
+ST[D-MODE] = 2
+pl3 = mk-page()
+dv-render(root-l, pl3)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l6 = cmp-text(dv-live-deep(root-l, OL-ROW0 + 3)) == 'row 03' &&
+     cmp-text(dv-live-deep(root-l, OL-ROW0 + 6)) == 'row 06' &&
+     cmp-text(dv-live-deep(root-l, OL-ROW0 + 5)) == 'row 05'
+
+; 分组（组升序）：窗口 = [组0标题, 行5, 行6, 行7, 行8]
+ST[D-MODE] = 3
+pl4 = mk-page()
+dv-render(root-l, pl4)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l7 = count-kids(scl) == 5
+l8 = dv-live-deep(root-l, OL-HDR0) >= 0 &&
+     cmp-text(dv-live-deep(root-l, OL-HDR0)) == 'rows 05-09'
+l9 = cmp-text(dv-live-deep(root-l, OL-ROW0 + 5)) == 'row 05' &&
+     cmp-text(dv-live-deep(root-l, OL-ROW0 + 8)) == 'row 08'
+l10 = cmp-scroll-content(scl) == OL-G-CONTENT && cmp-scroll-max(scl) == OL-G-MAXOFF
+
+; 标题：可见但禁用（少 F-ENABLED，且绘制层按 F-DISABLED 画灰）；数据行：可用。
+; 注意活组件池的 flags 用 cmp-flags + F-* 位（视图池的 dv-flags 是另一套下标）。
+hf = dv-live-deep(root-l, OL-HDR0)
+l11 = (cmp-flags(hf) & F-VISIBLE) != 0 && (cmp-flags(hf) & F-ENABLED) == 0 &&
+      (cmp-flags(hf) & F-DISABLED) != 0
+rf5 = dv-live-deep(root-l, OL-ROW0 + 5)
+l12 = (cmp-flags(rf5) & F-ENABLED) != 0
+l13 = cmp-color(hf) == CS-TH-MUTED && cmp-color(rf5) == CS-TH-FG
+
+; 行位：标题在 2400，紧随的数据行在 2400 + 行距（标题与数据行同高，行距才不歪）
+_, yh, _, _ = cs-rect(hf)
+_, y5, _, _ = cs-rect(rf5)
+l14 = yh == ROW-Y0 && y5 == cs-add(ROW-Y0, OL-STRIDE)
+
+; 分组降序：窗口 = [组1标题, 行0, 行1, 行2, 行3]
+ST[D-MODE] = 4
+pl5 = mk-page()
+dv-render(root-l, pl5)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l15 = cmp-text(dv-live-deep(root-l, OL-HDR0 + 1)) == 'rows 00-04' &&
+      cmp-text(dv-live-deep(root-l, OL-ROW0)) == 'row 00'
+
+; 非法 mode：按源顺序，且不挂标题
+ST[D-MODE] = 9
+pl6 = mk-page()
+dv-render(root-l, pl6)
+cs-layout(root-l, 0, 0, 40000, 30000)
+l16 = cmp-text(dv-live-deep(root-l, OL-ROW0)) == 'row 00' &&
+      cmp-text(dv-live-deep(root-l, OL-ROW0 + 1)) == 'row 01' &&
+      dv-live-deep(root-l, OL-HDR0) == -1
+
+; 换模式：同一行仍是同一个 key -> 同一个活组件对象（零结构操作地复用）
+root-r = cmp-root()
+ST[D-OFF] = 0
+ST[D-MODE] = 0
+pr = mk-page()
+dv-render(root-r, pr)
+cs-layout(root-r, 0, 0, 40000, 30000)
+ha = dv-live-deep(root-r, OL-ROW0)
+ST[D-MODE] = 1
+pr2 = mk-page()
+dv-render(root-r, pr2)
+cs-layout(root-r, 0, 0, 40000, 30000)
+hb = dv-live-deep(root-r, OL-ROW0)
+l17 = ha >= 0 && ha == hb
+
+; 分组滚到接近底部（off = maxoff - 行距）：窗口 = [组1标题, 行0, 行1, 行2, 行3, 行4]
+ST[D-MODE] = 3
+ST[D-OFF] = cs-sub(OL-G-MAXOFF, OL-STRIDE)
+pr3 = mk-page()
+dv-render(root-r, pr3)
+cs-layout(root-r, 0, 0, 40000, 30000)
+l18 = count-kids(dv-live-deep(root-r, OL-KEY)) == 6 &&
+      dv-live-deep(root-r, OL-HDR0 + 1) >= 0 &&
+      dv-live-deep(root-r, OL-ROW0) >= 0 &&
+      dv-live-deep(root-r, OL-ROW0 + 4) >= 0 &&
+      dv-live-deep(root-r, OL-ROW0 + 9) == -1
+
+; 状态写超界：布局夹紧，但**不写回状态**。
+; 窗口由**未夹紧的 off** 算（dv-win-range 只把 i0 夹到 n-1），所以超界时
+; 只剩最后一行（plan[11] = 行4）—— 与 dva-filter r27/r28 的钉法一致。
+ST[D-OFF] = 999999
+pr4 = mk-page()
+dv-render(root-r, pr4)
+cs-layout(root-r, 0, 0, 40000, 30000)
+l19-r4 = dv-live-deep(root-r, OL-ROW0 + 4)
+_, l19-y, _, _ = cs-rect(l19-r4)
+l19-r0 = dv-live-deep(root-r, OL-ROW0)
+l19 = ST[D-OFF] == 999999 &&
+      l19-r4 >= 0 && l19-y == 13200 &&
+      l19-r0 == -1 && dv-live-deep(root-r, OL-ROW0 + 9) == -1
+
+; ============================================================================
+; 场景 P：绘制 —— 组标题文案真的画出来
+; ============================================================================
+ST[D-MODE] = 3
+ST[D-OFF] = 0
+pl7 = mk-page()
+dv-render(root-l, pl7)
+cs-layout(root-l, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root-l)
+ip = find-text('rows 05-09')
+l20 = ip >= 0
+
+; ============================================================================
+; 场景 H：命中 —— 标题禁用不出动作；数据行动作载荷 = 源行号
+; ============================================================================
+root-h = cmp-root()
+ST[D-MODE] = 0
+ST[D-OFF] = 0
+ph = mk-page()
+dv-render(root-h, ph)
+cs-layout(root-h, 0, 0, 40000, 30000)
+h2n = dv-live-deep(root-h, OL-ROW0 + 2)
+_, yh2, _, _ = cs-rect(h2n)
+h1 = cs-hit(root-h, 5000, dv-add(yh2, 1000)) == h2n
+am2, py2 = dv-dispatch(OL-ROW0 + 2)
+h2 = am2 == DV-A-CLICK && py2 == 2
+
+; 标题命中 -> 禁用 -> 归约器收不到动作
+ST[D-MODE] = 3
+ph2 = mk-page()
+dv-render(root-h, ph2)
+cs-layout(root-h, 0, 0, 40000, 30000)
+hh2 = dv-live-deep(root-h, OL-HDR0)
+h3 = cs-hit(root-h, 5000, dv-add(ROW-Y0, 1000)) == hh2
+am3, py3 = dv-dispatch(OL-HDR0)
+h4 = am3 == 0 && py3 == 0
+
+; 视口外不命中（用滚动容器当命中根：表单本身是个大矩形，拿 root 判没意义）
+sh = dv-live-deep(root-h, OL-KEY)
+h5 = cs-hit(sh, 5000, 26000) == -1
+
+; ============================================================================
+; 场景 W：滚轮 —— 上限跟着模式变
+; ============================================================================
+root-w = cmp-root()
+ST[D-MODE] = 3
+ST[D-OFF] = 0
+pw = mk-page()
+dv-render(root-w, pw)
+cs-layout(root-w, 0, 0, 40000, 30000)
+
+set-cursor(5000, 3000)
+set-wheel(20)
+w1 = dva-wheel(ST, root-w) == 1 && ST[D-OFF] == 8000
+pw2 = mk-page()
+dv-render(root-w, pw2)
+cs-layout(root-w, 0, 0, 40000, 30000)
+; off = 8000 -> 窗口 [行6, 行7, 行8, 行9, 组1标题]
+w2 = dv-live-deep(root-w, OL-ROW0 + 6) >= 0 &&
+     dv-live-deep(root-w, OL-HDR0 + 1) >= 0 &&
+     dv-live-deep(root-w, OL-ROW0 + 5) == -1
+
+; 夹到新上限（分组后 maxoff 变大）
+ST[D-OFF] = 999999
+set-cursor(5000, 3000)
+set-wheel(10)
+w3 = dva-wheel(ST, root-w) == 1 && ST[D-OFF] == OL-G-MAXOFF
+
+; 换回源顺序：上限变小（21600），同一状态值被新上限夹回
+ST[D-MODE] = 0
+ST[D-OFF] = OL-G-MAXOFF
+pw3 = mk-page()
+dv-render(root-w, pw3)
+cs-layout(root-w, 0, 0, 40000, 30000)
+set-cursor(5000, 3000)
+set-wheel(10)
+w4 = dva-wheel(ST, root-w) == 1 && ST[D-OFF] == OL-MAXOFF
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = s1 && s2 && s3 && s4 && s5 && s6 && s7 && s8 &&
+     g1 && g2 && g3 && g4 && g5 && g6 &&
+     l1 && l2 && l3 && l4 && l5 && l6 && l7 && l8 && l9 && l10 && l11 && l12 &&
+     l13 && l14 && l15 && l16 && l17 && l18 && l19 && l20 &&
+     h1 && h2 && h3 && h4 && h5 && w1 && w2 && w3 && w4
+
+print('S sort={s1}{s2}{s3}{s4}{s5}{s6}{s7}{s8}')
+print('G group={g1}{g2}{g3}{g4}{g5}{g6}')
+print('L layout={l1}{l2}{l3}{l4}{l5}{l6}{l7}{l8}{l9}{l10}{l11}{l12}{l13}{l14}{l15}{l16}{l17}{l18}{l19}')
+print('P paint={l20}')
+print('H hit={h1}{h2}{h3}{h4}{h5}')
+print('W wheel={w1}{w2}{w3}{w4}')
+print('all-ok={ok}')
+(ok) -> { print('ALL DVA-ORDER TESTS PASSED') }
+(!ok) -> { print('DVA-ORDER FAILURES') }

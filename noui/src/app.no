@@ -53,6 +53,11 @@ _noui-should-quit = () (yes i32)
 _noui-delay = (ms i32) ()
 #{c}
 _noui-version = () (v str)
+#{c}
+; 阶段23：滚动视口裁剪（SDL_RenderSetClipRect）
+_noui-clip = (x i32, y i32, w i32, h i32) ()
+#{c}
+_noui-clip-clear = () ()
 
 # /noui/src/cmp-scene
 
@@ -62,6 +67,7 @@ APP-FONT []i64 = with-len(1)    ; 1=TTF 可用，0=回退 DebugText
 APP-ROOT []i64 = with-len(1)    ; 根组件句柄
 APP-QUIT []i64 = with-len(1)    ; 1=请求退出
 APP-HOVER []i64 = with-len(1)   ; 当前 hover 句柄（-1 无）
+APP-WHEEL []i64 = with-len(1)   ; 阶段23：最近一次滚轮增量（格子数，负=上滚）
 
 APP-WIN-W = 560
 APP-WIN-H = 420
@@ -86,6 +92,10 @@ col-b = (c i64) (v i32) {
 fx = (p f64) (v i64) {
     m = p * 100.0
     v = m.to-i64()
+}
+; 定点（i64）-> 像素（i32，给裁剪 FFI 用）；赋值给 i32 形参时自动窄化（同 col-r）
+pxi = (v i64) (r i32) {
+    r = cs-div(v, 100)
 }
 
 ; ============================================================================
@@ -147,6 +157,7 @@ app-should-quit = () (yes bool) {
 app-init = (title str) (ok i64) {
     APP-QUIT[0] = 0
     APP-HOVER[0] = -1
+    APP-WHEEL[0] = 0
     v = _noui-version()
     print('noui on SDL {v}')
     r = _noui-init()
@@ -190,7 +201,24 @@ app-poll = () (t i64, x f64, y f64) {
     ry = (e >> 32) & 0xFFFFFF
     x = rx.to-f64()
     y = ry.to-f64()
+    ; 阶段23：滚轮增量在 bit56..63（int8 补码），单独解一个槽给事件侧用
+    kw = (e >> 56) & 0xFF
+    dw = kw: {
+        ok -> it
+
+        -> 0
+    }
+    (dw >= 128) -> { dw = cs-sub(dw, 256) }
+    APP-WHEEL[0] = dw
     (t == 1) -> { APP-QUIT[0] = 1 }
+}
+; 最近一次滚轮事件的有符号增量（格子数，上滚为负）
+app-wheel = () (d i64) {
+    d = APP-WHEEL[0]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; ============================================================================
@@ -223,6 +251,17 @@ app-draw-scene = () {
         c = cs-scene-c(i)
         xf = x.to-f64() / 100.0
         yf = y.to-f64() / 100.0
+        ; 阶段23：每条指令自带裁剪矩形（滚动视口），按指令逐个设置
+        cf = cs-scene-cf(i)
+        (cf == 1) -> {
+            _noui-clip(
+                pxi(cs-scene-cx(i)),
+                pxi(cs-scene-cy(i)),
+                pxi(cs-scene-cw(i)),
+                pxi(cs-scene-ch(i))
+            )
+        }
+        (cf == 0) -> { _noui-clip-clear() }
         (k == CS-TEXT) -> {
             t = cs-scene-t(i)
             fv = APP-FONT[0]: {

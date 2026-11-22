@@ -82,7 +82,6 @@ no docs <pkg>        # URL документации (docs → homepage → repos
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

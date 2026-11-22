@@ -82,7 +82,6 @@ no docs <pkg>        # 패키지 문서 URL 출력 (docs → homepage → reposi
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

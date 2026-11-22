@@ -49,11 +49,11 @@ rect-hit = (r rect, px f64, py f64) (hit bool) {
 ; L1 Entity 注册表（SoA 平行数组，i64 句柄）
 ; ---------------------------------------------------------------------------
 
-g-kind []i64 = with-len(0)
-g-i0 []i64 = with-len(0)
-g-i1 []i64 = with-len(0)
-g-s0 []str = with-len(0)
-g-dirty []i64 = with-len(0)
+G-KIND []i64 = with-len(0)
+G-I0 []i64 = with-len(0)
+G-I1 []i64 = with-len(0)
+G-S0 []str = with-len(0)
+G-DIRTY []i64 = with-len(0)
 
 ENTITY-COUNTER = 1
 ENTITY-BUTTON = 2
@@ -62,22 +62,22 @@ EVENT-CHANGED = 1
 EVENT-CLICK = 2
 
 entity-new = (kind i64) (h i64) {
-    g-kind.push(kind)
-    g-i0.push(0)
-    g-i1.push(0)
-    g-s0.push('')
-    g-dirty.push(1)
-    h = g-kind.len() - 1
+    G-KIND.push(kind)
+    G-I0.push(0)
+    G-I1.push(0)
+    G-S0.push('')
+    G-DIRTY.push(1)
+    h = G-KIND.len() - 1
 }
 
 entity-valid = (h i64) (ok bool) {
-    ok = h >= 0 && h < g-kind.len()
+    ok = h >= 0 && h < G-KIND.len()
 }
 
 entity-i0 = (h i64) (v i64) {
     v = 0
     entity-valid(h) -> {
-        v = g-i0[h]: {
+        v = G-I0[h]: {
             ok -> it
 
             -> 0
@@ -88,7 +88,7 @@ entity-i0 = (h i64) (v i64) {
 entity-s0 = (h i64) (v str) {
     v = ''
     entity-valid(h) -> {
-        v = g-s0[h]: {
+        v = G-S0[h]: {
             ok -> it
 
             -> ''
@@ -98,34 +98,34 @@ entity-s0 = (h i64) (v str) {
 
 entity-set-i0 = (h i64, v i64) {
     entity-valid(h) -> {
-        g-i0[h] = v
-        g-dirty[h] = 1
+        G-I0[h] = v
+        G-DIRTY[h] = 1
     }
 }
 
 entity-set-s0 = (h i64, v str) {
     entity-valid(h) -> {
-        g-s0[h] = v
-        g-dirty[h] = 1
+        G-S0[h] = v
+        G-DIRTY[h] = 1
     }
 }
 
 entity-notify = (h i64) {
     entity-valid(h) -> {
-        g-dirty[h] = 1
+        G-DIRTY[h] = 1
     }
 }
 
 entity-is-dirty = (h i64) (dirty bool) {
     dirty = false
     entity-valid(h) -> {
-        dirty = g-dirty[h] == 1
+        dirty = G-DIRTY[h] == 1
     }
 }
 
 entity-clear-dirty = (h i64) {
     entity-valid(h) -> {
-        g-dirty[h] = 0
+        G-DIRTY[h] = 0
     }
 }
 
@@ -143,54 +143,54 @@ FLEX-ROW = 0
 FLEX-COL = 1
 
 ; 元素字段（每个索引一个元素）
-e-kind []i64 = with-len(0)
-e-color []i64 = with-len(0)
-e-x []f64 = with-len(0)
-e-y []f64 = with-len(0)
-e-w []f64 = with-len(0)
-e-h []f64 = with-len(0)
-e-gap []f64 = with-len(0)
-e-pad []f64 = with-len(0)
-e-flex []i64 = with-len(0)
-e-grow []f64 = with-len(0)
-e-text []str = with-len(0)
-e-entity []i64 = with-len(0)
-e-hit []i64 = with-len(0)       ; 是否参与命中测试（按钮=1）
-e-children-head []i64 = with-len(0)
-e-children-count []i64 = with-len(0)
+E-KIND []i64 = with-len(0)
+E-COLOR []i64 = with-len(0)
+E-X []f64 = with-len(0)
+E-Y []f64 = with-len(0)
+E-W []f64 = with-len(0)
+E-H []f64 = with-len(0)
+E-GAP []f64 = with-len(0)
+E-PAD []f64 = with-len(0)
+E-FLEX []i64 = with-len(0)
+E-GROW []f64 = with-len(0)
+E-TEXT []str = with-len(0)
+E-ENTITY []i64 = with-len(0)
+E-HIT []i64 = with-len(0)       ; 是否参与命中测试（按钮=1）
+E-CHILDREN-HEAD []i64 = with-len(0)
+E-CHILDREN-COUNT []i64 = with-len(0)
 
 ; 子节点索引表（每个父节点的子节点连续存放；用 head + count 定位）
-child-idx []i64 = with-len(0)
+CHILD-IDX []i64 = with-len(0)
 
 ; 绘制指令
 CMD-RECT = 1
 CMD-TEXT = 2
-d-kind []i64 = with-len(0)
-d-x []f64 = with-len(0)
-d-y []f64 = with-len(0)
-d-w []f64 = with-len(0)
-d-h []f64 = with-len(0)
-d-color []i64 = with-len(0)
-d-text []str = with-len(0)
+D-KIND []i64 = with-len(0)
+D-X []f64 = with-len(0)
+D-Y []f64 = with-len(0)
+D-W []f64 = with-len(0)
+D-H []f64 = with-len(0)
+D-COLOR []i64 = with-len(0)
+D-TEXT []str = with-len(0)
 
 scene-reset = () {
-    d-kind []i64 = with-len(0)
-    d-x []f64 = with-len(0)
-    d-y []f64 = with-len(0)
-    d-w []f64 = with-len(0)
-    d-h []f64 = with-len(0)
-    d-color []i64 = with-len(0)
-    d-text []str = with-len(0)
+    D-KIND []i64 = with-len(0)
+    D-X []f64 = with-len(0)
+    D-Y []f64 = with-len(0)
+    D-W []f64 = with-len(0)
+    D-H []f64 = with-len(0)
+    D-COLOR []i64 = with-len(0)
+    D-TEXT []str = with-len(0)
 }
 
 scene-dump = () (s str) {
     s = ''
-    i <- [0..d-kind.len()): {
-        (d-kind[i] == CMD-RECT) -> {
-            s = '{s}rect({d-x[i]},{d-y[i]},{d-w[i]},{d-h[i]})={d-color[i]}\n'
+    i <- [0..D-KIND.len()): {
+        (D-KIND[i] == CMD-RECT) -> {
+            s = '{s}rect({D-X[i]},{D-Y[i]},{D-W[i]},{D-H[i]})={D-COLOR[i]}\n'
         }
-        (d-kind[i] == CMD-TEXT) -> {
-            s = '{s}text({d-x[i]},{d-y[i]})={d-text[i]}\n'
+        (D-KIND[i] == CMD-TEXT) -> {
+            s = '{s}text({D-X[i]},{D-Y[i]})={D-TEXT[i]}\n'
         }
     }
 }
@@ -201,22 +201,22 @@ scene-dump = () (s str) {
 
 ; 内部：追加一个元素槽，返回索引
 elem-alloc = (kind i64, color i64, flex i64, grow f64, gap f64, pad f64, txt str, ent i64, hit i64) (idx i64) {
-    e-kind.push(kind)
-    e-color.push(color)
-    e-x.push(0.0)
-    e-y.push(0.0)
-    e-w.push(0.0)
-    e-h.push(0.0)
-    e-gap.push(gap)
-    e-pad.push(pad)
-    e-flex.push(flex)
-    e-grow.push(grow)
-    e-text.push(txt)
-    e-entity.push(ent)
-    e-hit.push(hit)
-    e-children-head.push(-1)
-    e-children-count.push(0)
-    idx = e-kind.len() - 1
+    E-KIND.push(kind)
+    E-COLOR.push(color)
+    E-X.push(0.0)
+    E-Y.push(0.0)
+    E-W.push(0.0)
+    E-H.push(0.0)
+    E-GAP.push(gap)
+    E-PAD.push(pad)
+    E-FLEX.push(flex)
+    E-GROW.push(grow)
+    E-TEXT.push(txt)
+    E-ENTITY.push(ent)
+    E-HIT.push(hit)
+    E-CHILDREN-HEAD.push(-1)
+    E-CHILDREN-COUNT.push(0)
+    idx = E-KIND.len() - 1
 }
 
 ; 创建容器（flex 布局）
@@ -242,19 +242,19 @@ el-button = (txt str, color i64, ent i64, grow f64) (idx i64) {
 ; 给父元素挂一个子元素
 el-add = (parent i64, child i64) {
     (parent < 0 || child < 0) -> return
-    (e-children-count[parent] == 0) -> {
-        e-children-head[parent] = child-idx.len()
+    (E-CHILDREN-COUNT[parent] == 0) -> {
+        E-CHILDREN-HEAD[parent] = CHILD-IDX.len()
     }
-    child-idx.push(child)
+    CHILD-IDX.push(child)
     #{overflow=wrap}
-    e-children-count[parent] = e-children-count[parent] + 1
+    E-CHILDREN-COUNT[parent] = E-CHILDREN-COUNT[parent] + 1
 }
 
 ; 取父元素的第 i 个子元素索引
 el-child = (parent i64, i i64) (c i64) {
     c = -1
-    (i >= 0 && i < e-children-count[parent]) -> {
-        c = child-idx[e-children-head[parent] + i]: {
+    (i >= 0 && i < E-CHILDREN-COUNT[parent]) -> {
+        c = CHILD-IDX[E-CHILDREN-HEAD[parent] + i]: {
             ok -> it
 
             -> -1
@@ -264,22 +264,22 @@ el-child = (parent i64, i i64) (c i64) {
 
 ; 每帧重置元素池
 el-reset = () {
-    e-kind []i64 = with-len(0)
-    e-color []i64 = with-len(0)
-    e-x []f64 = with-len(0)
-    e-y []f64 = with-len(0)
-    e-w []f64 = with-len(0)
-    e-h []f64 = with-len(0)
-    e-gap []f64 = with-len(0)
-    e-pad []f64 = with-len(0)
-    e-flex []i64 = with-len(0)
-    e-grow []f64 = with-len(0)
-    e-text []str = with-len(0)
-    e-entity []i64 = with-len(0)
-    e-hit []i64 = with-len(0)
-    e-children-head []i64 = with-len(0)
-    e-children-count []i64 = with-len(0)
-    child-idx []i64 = with-len(0)
+    E-KIND []i64 = with-len(0)
+    E-COLOR []i64 = with-len(0)
+    E-X []f64 = with-len(0)
+    E-Y []f64 = with-len(0)
+    E-W []f64 = with-len(0)
+    E-H []f64 = with-len(0)
+    E-GAP []f64 = with-len(0)
+    E-PAD []f64 = with-len(0)
+    E-FLEX []i64 = with-len(0)
+    E-GROW []f64 = with-len(0)
+    E-TEXT []str = with-len(0)
+    E-ENTITY []i64 = with-len(0)
+    E-HIT []i64 = with-len(0)
+    E-CHILDREN-HEAD []i64 = with-len(0)
+    E-CHILDREN-COUNT []i64 = with-len(0)
+    CHILD-IDX []i64 = with-len(0)
 }
 
 ; ---------------------------------------------------------------------------
@@ -289,43 +289,43 @@ el-reset = () {
 ; 递归布局：给定元素、可用矩形，计算自身及子树的 frame
 layout-node = (idx i64, avail rect) {
     (idx < 0) -> return
-    (e-flex[idx] == FLEX-COL) -> {
+    (E-FLEX[idx] == FLEX-COL) -> {
         layout-column(idx, avail)
     }
-    (e-flex[idx] == FLEX-ROW) -> {
+    (E-FLEX[idx] == FLEX-ROW) -> {
         layout-row(idx, avail)
     }
-    (e-kind[idx] != EL-CONTAINER) -> {
+    (E-KIND[idx] != EL-CONTAINER) -> {
         ; 非容器：grow>0 撑满可用空间，否则按可用尺寸
-        e-x[idx] = avail.x
-        e-y[idx] = avail.y
-        (e-grow[idx] > 0.0) -> {
-            e-w[idx] = avail.w
-            e-h[idx] = avail.h
+        E-X[idx] = avail.x
+        E-Y[idx] = avail.y
+        (E-GROW[idx] > 0.0) -> {
+            E-W[idx] = avail.w
+            E-H[idx] = avail.h
         }
-        (e-grow[idx] <= 0.0) -> {
-            e-w[idx] = 60.0
-            e-h[idx] = 32.0
+        (E-GROW[idx] <= 0.0) -> {
+            E-W[idx] = 60.0
+            E-H[idx] = 32.0
         }
     }
 }
 
 ; 列布局：可用高度按 grow 权重在子节点间分配，gap/pad 计入间距
 layout-column = (idx i64, avail rect) {
-    e-x[idx] = avail.x
-    e-y[idx] = avail.y
-    e-w[idx] = avail.w
-    e-h[idx] = avail.h
+    E-X[idx] = avail.x
+    E-Y[idx] = avail.y
+    E-W[idx] = avail.w
+    E-H[idx] = avail.h
 
-    pad = e-pad[idx]
-    gap = e-gap[idx]
-    n = e-children-count[idx]
+    pad = E-PAD[idx]
+    gap = E-GAP[idx]
+    n = E-CHILDREN-COUNT[idx]
     (n == 0) -> return
 
     total-grow = 0.0
     i <- [0..n): {
         c = el-child(idx, i)
-        total-grow = total-grow + e-grow[c]
+        total-grow = total-grow + E-GROW[c]
     }
 
     inner-h = avail.h - pad * 2.0 - gap * (n - 1)
@@ -338,7 +338,7 @@ layout-column = (idx i64, avail rect) {
     i <- [0..n): {
         c = el-child(idx, i)
         (total-grow > 0.0) -> {
-            ch = inner-h * (e-grow[c] / total-grow)
+            ch = inner-h * (E-GROW[c] / total-grow)
         }
         (total-grow <= 0.0) -> {
             ch = inner-h / n
@@ -355,20 +355,20 @@ layout-column = (idx i64, avail rect) {
 
 ; 行布局：可用宽度按 grow 权重分配
 layout-row = (idx i64, avail rect) {
-    e-x[idx] = avail.x
-    e-y[idx] = avail.y
-    e-w[idx] = avail.w
-    e-h[idx] = avail.h
+    E-X[idx] = avail.x
+    E-Y[idx] = avail.y
+    E-W[idx] = avail.w
+    E-H[idx] = avail.h
 
-    pad = e-pad[idx]
-    gap = e-gap[idx]
-    n = e-children-count[idx]
+    pad = E-PAD[idx]
+    gap = E-GAP[idx]
+    n = E-CHILDREN-COUNT[idx]
     (n == 0) -> return
 
     total-grow = 0.0
     i <- [0..n): {
         c = el-child(idx, i)
-        total-grow = total-grow + e-grow[c]
+        total-grow = total-grow + E-GROW[c]
     }
 
     inner-w = avail.w - pad * 2.0 - gap * (n - 1)
@@ -381,7 +381,7 @@ layout-row = (idx i64, avail rect) {
     i <- [0..n): {
         c = el-child(idx, i)
         (total-grow > 0.0) -> {
-            cw = inner-w * (e-grow[c] / total-grow)
+            cw = inner-w * (E-GROW[c] / total-grow)
         }
         (total-grow <= 0.0) -> {
             cw = inner-w / n
@@ -403,21 +403,21 @@ layout-row = (idx i64, avail rect) {
 hit-test = (idx i64, px f64, py f64) (h i64) {
     h = -1
     (idx < 0) -> return
-    (e-hit[idx] == 1) -> {
+    (E-HIT[idx] == 1) -> {
         r rect
-        r.x = e-x[idx]
-        r.y = e-y[idx]
-        r.w = e-w[idx]
-        r.h = e-h[idx]
+        r.x = E-X[idx]
+        r.y = E-Y[idx]
+        r.w = E-W[idx]
+        r.h = E-H[idx]
         (rect-hit(r, px, py)) -> {
-            h = e-entity[idx]: {
+            h = E-ENTITY[idx]: {
                 ok -> it
 
                 -> 0
             }
         }
     }
-    i <- [0..e-children-count[idx]): {
+    i <- [0..E-CHILDREN-COUNT[idx]): {
         c = el-child(idx, i)
         ch = hit-test(c, px, py)
         (ch >= 0) -> {
@@ -433,25 +433,25 @@ hit-test = (idx i64, px f64, py f64) (h i64) {
 paint-node = (idx i64) {
     (idx < 0) -> return
 
-    (e-kind[idx] == EL-RECT) -> {
-        d-kind.push(CMD-RECT)
-        d-x.push(e-x[idx])
-        d-y.push(e-y[idx])
-        d-w.push(e-w[idx])
-        d-h.push(e-h[idx])
-        d-color.push(e-color[idx])
-        d-text.push('')
+    (E-KIND[idx] == EL-RECT) -> {
+        D-KIND.push(CMD-RECT)
+        D-X.push(E-X[idx])
+        D-Y.push(E-Y[idx])
+        D-W.push(E-W[idx])
+        D-H.push(E-H[idx])
+        D-COLOR.push(E-COLOR[idx])
+        D-TEXT.push('')
     }
-    (e-kind[idx] == EL-TEXT) -> {
-        d-kind.push(CMD-TEXT)
-        d-x.push(e-x[idx])
-        d-y.push(e-y[idx])
-        d-w.push(e-w[idx])
-        d-h.push(e-h[idx])
-        d-color.push(e-color[idx])
-        d-text.push(e-text[idx])
+    (E-KIND[idx] == EL-TEXT) -> {
+        D-KIND.push(CMD-TEXT)
+        D-X.push(E-X[idx])
+        D-Y.push(E-Y[idx])
+        D-W.push(E-W[idx])
+        D-H.push(E-H[idx])
+        D-COLOR.push(E-COLOR[idx])
+        D-TEXT.push(E-TEXT[idx])
     }
-    i <- [0..e-children-count[idx]): {
+    i <- [0..E-CHILDREN-COUNT[idx]): {
         paint-node(el-child(idx, i))
     }
 }

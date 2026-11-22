@@ -160,21 +160,21 @@ get-default-char = (arr []char, i i64) (res char) {
     }
 }
 
-a = [10, 20, 30]
+A = [10, 20, 30]
 
 ; 1) ?= 傳播：越界回傳 none/err，不崩潰
-safe-get(a, 5)
+safe-get(A, 5)
 io.out('safe-get OOB: no-crash')
 print('')
 
 ; 2) 值 match 預設值：越界回傳 0
-d = get-default(a, 5)
+d = get-default(A, 5)
 io.out('get-default OOB -> ')
 io.out(d)
 print('')
 
 ; 3) 自動傳播：越界回傳 none/err，不崩潰
-auto-prop(a, 5)
+auto-prop(A, 5)
 io.out('auto-prop OOB: no-crash')
 print('')
 
@@ -188,13 +188,13 @@ unwrap-var-rhs(21)
 unwrap-infix-rhs(21)
 
 ; 4a) 值 match 範圍內取值正確（i64）
-ok = get-default(a, 1)
+ok = get-default(A, 1)
 io.out('get-default in-bounds[1] -> ')
 io.out(ok)
 print('')
 
 ; 4b) ?= 範圍內取值正確（解箱後印字元碼）
-v = safe-get(a, 2)
+v = safe-get(A, 2)
 v
 nil -> io.out('safe-get in-bounds: none')
 

@@ -999,6 +999,15 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
             idv.len-bytes() > 0 -> print('ID:' - idv)
             ii = ix.inc(ii)
         }
+
+        ; s151：诊断标记逐条（blk-*/si-*/surf-*/pr-*）——"DB:fn:tag"，与 ID 通道分离。
+        ;   v0.4.29 起这些定位标记曾挤占 idn 造成 s109 六连败，现走独立通道，语义零影响。
+        ii = 0
+        (ii < agg.dbg.len()) {
+            dbv = agg.dbg[ii]
+            dbv.len-bytes() > 0 -> print('DB:' - dbv)
+            ii = ix.inc(ii)
+        }
     }
 }
 

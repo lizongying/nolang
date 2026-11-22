@@ -39,6 +39,7 @@ type Package struct {
 	Name            string            `json:"name"`
 	Version         string            `json:"version,omitempty"`
 	Description     string            `json:"description,omitempty"`
+	Category        string            `json:"category,omitempty"`
 	Keywords        []string          `json:"keywords,omitempty"`
 	Author          string            `json:"author,omitempty"`
 	Email           string            `json:"email,omitempty"`

@@ -136,7 +136,7 @@ zeros = (n i64) (v []byte) {
     }
 }
 
-prk-hex = '077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5'
+PRK-HEX = '077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5'
 
 ; ---- extract / expand ----
 
@@ -238,7 +238,7 @@ p3 = runner.test('hkdf.expand-len', t-expand-len)
 ; 直接驗證單輪：HMAC-SHA256(prk, T(i-1) || info || i)，counter=0 時不加計數字節。
 ; 金標 = python hmac.new(prk, msg, sha256)。
 t-expand-hmac = () {
-    prk = mkb(prk-hex)
+    prk = mkb(PRK-HEX)
     t-data = mkb('616263')
     info = mkb('0020')
     none = zeros(0)
@@ -271,7 +271,7 @@ t-expand-hmac = () {
 ; info = uint16(out-len) || uint8(len('tls13 '+label)) || 'tls13 '+label
 ;        || uint8(len(ctx)) || ctx
 t-expand-label = () {
-    prk [32]byte = mk32(prk-hex)
+    prk [32]byte = mk32(PRK-HEX)
     none = zeros(0)
     z32 = zeros(32)
 
@@ -299,7 +299,7 @@ t-expand-label = () {
 ; ---- expand-label-vec（prk 以 []byte 接收）----
 
 t-expand-label-vec = () {
-    prk = mkb(prk-hex)
+    prk = mkb(PRK-HEX)
     z32 = zeros(32)
 
     v64 = hkdf.hkdf-expand-label-vec(prk, 'key', z32, 64)
@@ -307,7 +307,7 @@ t-expand-label-vec = () {
     runner.str-eq(bhex(v64), '212f2fe07518560b4184d0e2fe2e4ceefea7bd163895e8d6f0eed98d213faf9995a15422376c41eae1091ea5c7a73cff83c49d8017b97fe1c24a49090dcf4a90', 'expand-label-vec key/32×0x00/64')
 
     ; 與 [32]byte 版結果必須一致
-    arr [32]byte = mk32(prk-hex)
+    arr [32]byte = mk32(PRK-HEX)
     a64 = hkdf.hkdf-expand-label(arr, 'key', z32, 64)
     runner.str-eq(bhex(a64), bhex(v64), 'vec 版與 [32]byte 版同值')
 
@@ -323,7 +323,7 @@ t-expand-label-vec = () {
 ; ---- derive-secret（= expand-label-vec(…, 32)）----
 
 t-derive-secret = () {
-    secret = mkb(prk-hex)
+    secret = mkb(PRK-HEX)
     z32 = zeros(32)
 
     o = hkdf.hkdf-derive-secret(secret, 'c hs traffic', z32)

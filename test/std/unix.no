@@ -129,7 +129,7 @@ t-listen-on = () {
     lst = l: {
         ok -> it
 
-        -> unix.unix-listener{}
+        -> nil
     }
     runner.is-true(lst.fd-of() >= 0, 'listener.fd-of: 回有效 fd')
     runner.str-eq(lst.path-of(), p, 'listener.path-of: 原樣返回路徑')
@@ -164,14 +164,14 @@ t-conn-io = () {
     c1 = c: {
         ok -> it
 
-        -> unix.unix-conn{}
+        -> nil
     }
     a0 = lst.accept()
     runner.eq(cv(a0), 1, 'unix-dial-to 的連線能被 accept 接住')
     a0v = a0: {
         ok -> it
 
-        -> unix.unix-conn{}
+        -> nil
     }
     c1.close()
     a0v.close()
@@ -187,7 +187,7 @@ t-conn-io = () {
     av = a: {
         ok -> it
 
-        -> unix.unix-conn{}
+        -> nil
     }
     runner.is-true(av.fd-of() >= 0, 'accept 出的 conn.fd-of 有效')
 
@@ -205,9 +205,9 @@ t-conn-io = () {
     runner.eq(w2, 2, 'conn.send: 再送 2 位元組')
     fs.close(cn.fd-of())
 
-    content, total = av.recv-all()
-    runner.eq(total, 2, 'conn.recv-all: 累計 2 位元組')
-    runner.eq(content.len-bytes(), 2, 'conn.recv-all: 內容長度 = total')
+    content, TOTAL = av.recv-all()
+    runner.eq(TOTAL, 2, 'conn.recv-all: 累計 2 位元組')
+    runner.eq(content.len-bytes(), 2, 'conn.recv-all: 內容長度 = TOTAL')
     runner.eq(sb(content, 0), 65, 'conn.recv-all: 首位元組 A')
 
     av.close()
@@ -315,7 +315,7 @@ t-dial-timeout = () {
     cn = c: {
         ok -> it
 
-        -> unix.unix-conn{}
+        -> nil
     }
     runner.is-true(cn.fd-of() >= 0, 'unix-dial-timeout: fd 有效')
 
@@ -359,8 +359,8 @@ t-closed = () {
     buf str = with-len(8)
     n = av.recv(buf, 8)
     runner.eq(n, -1, 'conn.recv: 已關閉回 -1')
-    _, total = av.recv-all()
-    runner.eq(total, 0, 'conn.recv-all: 已關閉回 0 位元組')
+    _, TOTAL = av.recv-all()
+    runner.eq(TOTAL, 0, 'conn.recv-all: 已關閉回 0 位元組')
     runner.is-false(av.set-recv-timeout(10), 'conn.set-recv-timeout: 已關閉回 false')
     runner.is-false(av.set-timeout(10), 'conn.set-timeout: 已關閉回 false')
     n2 = av.recv-with-timeout(buf, 8, 10)
@@ -392,7 +392,7 @@ p5, f5 = runner.test('unix.accept-timeout', t-accept-timeout)
 p6, f6 = runner.test('unix.dial-timeout', t-dial-timeout)
 p7, f7 = runner.test('unix.closed', t-closed)
 
-total = runner.summary()
+TOTAL = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)

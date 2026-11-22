@@ -75,7 +75,11 @@ static-hashmap-str-tmpl.hash = (key str) (idx i64) {
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
-        h = h * FNV-PRIME
+        h = h * FNV-PRIME: {
+            ok -> it
+
+            -> 0
+        }
     }
 
     idx = h & (.cap - 1)
@@ -755,7 +759,11 @@ static-hashmap-bool-tmpl.for-each = () (k bool, v v) {
         i <- [0..self.cap): {
             used ?= .occ[i]
             used == 1 -> {
-                k = .keys[i]
+                k = .keys[i]: {
+                    ok -> it
+
+                    -> false
+                }
 
                 v = .vals[i]
             }

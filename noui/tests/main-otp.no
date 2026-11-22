@@ -1,0 +1,167 @@
+; ============================================================================
+; noui 窗口 demo：OTP 数字验证码输入（阶段 41）
+;
+; 流水线：app-init -> cmp-otp-input（6 槽 + 4 槽两个）
+;   -> 点任意槽 = 把活动槽移过去；键盘在活动槽写数字（otp-put 自动跳下一空槽）
+;   -> 退格 / 前删 / 左右移活动槽；c 清空；r 重置；q / ESC 退出
+;   -> cs-layout / cs-paint（C-OTP-INPUT 走 cs-paint-otp：每槽一格 + 数字居中 +
+;     聚焦活动槽强调描边 + 空槽光标）
+;   -> app-frame
+;
+; 退出：ESC / q / 帧数上限（OT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-otp.no
+; ============================================================================
+# /noui/src/app
+
+OT-DIG = '0123456789'
+OT-MAX-FRAMES = 900
+
+; ---- 计数（顶层标量）----
+ot-frames = 0
+ot-keys = 0
+ot-clicks = 0
+ot-cur = -1
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui otp')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui otp: 6 / 4 digit code inputs')
+hint = cmp-label('click a cell; type digits; bksp / del; arrows move; c clear; r reset; q quit')
+stat = cmp-label('')
+
+otp = cmp-otp-input(6)
+otp2 = cmp-otp-input(4)
+
+cmp-add-child(root, title)
+cmp-add-child(root, otp)
+cmp-add-child(root, otp2)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+otp-set(otp, '123456')
+otp-set(otp2, '2468')
+input-focus(otp, true)
+ot-cur = otp
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：点槽 = 活动槽移过去 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+        (hit == otp) -> {
+            ox, oy, ow, oh = cs-rect(otp)
+            s = otp-hit(otp, px, py, ox, oy, ow, oh)
+            (s >= 0) -> { otp-cur-set(otp, s) }
+            input-focus(otp, true)
+            ot-cur = otp
+        }
+        (hit == otp2) -> {
+            ox, oy, ow, oh = cs-rect(otp2)
+            s = otp-hit(otp2, px, py, ox, oy, ow, oh)
+            (s >= 0) -> { otp-cur-set(otp2, s) }
+            input-focus(otp2, true)
+            ot-cur = otp2
+        }
+        (hit != otp) -> { input-focus(otp, false) }
+        (hit != otp2) -> { input-focus(otp2, false) }
+        (hit != otp && hit != otp2) -> { ot-cur = -1 }
+        ot-clicks = cs-inc(ot-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 99) -> {
+            (ot-cur == otp2) -> { otp-clear(otp2) }
+            (ot-cur != otp2) -> { otp-clear(otp) }
+        }
+        (k == 114) -> {
+            otp-set(otp, '123456')
+            otp-set(otp2, '2468')
+            input-focus(otp, true)
+            ot-cur = otp
+        }
+        (ot-cur == otp2) -> {
+            (k == 8) -> { otp-backspace(otp2) }
+            (k == 127) -> { otp-delete(otp2) }
+            (k == ED-K-LEFT) -> { otp-left(otp2) }
+            (k == ED-K-RIGHT) -> { otp-right(otp2) }
+            (k == ED-K-UP) -> { otp-right(otp2) }
+            (k == ED-K-DOWN) -> { otp-left(otp2) }
+            ((k >= 48) && (k <= 57)) -> {
+                otp-put(otp2, cs-sub(k, 48))
+            }
+        }
+        (ot-cur != otp2) -> {
+            (k == 8) -> { otp-backspace(otp) }
+            (k == 127) -> { otp-delete(otp) }
+            (k == ED-K-LEFT) -> { otp-left(otp) }
+            (k == ED-K-RIGHT) -> { otp-right(otp) }
+            (k == ED-K-UP) -> { otp-right(otp) }
+            (k == ED-K-DOWN) -> { otp-left(otp) }
+            ((k >= 48) && (k <= 57)) -> {
+                otp-put(otp, cs-sub(k, 48))
+            }
+        }
+        ot-keys = cs-inc(ot-keys)
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    v1 = otp-value(otp)
+    c1 = otp-cur(otp)
+    f1 = otp-filled(otp)
+    n1 = otp-slots(otp)
+    v2 = otp-value(otp2)
+    c2 = otp-cur(otp2)
+    f2 = otp-filled(otp2)
+    cmp-set-text(stat, '6-slot: {v1} (cur {c1}, filled {f1}/{n1}) | 4-slot: {v2} (cur {c2}, filled {f2}/4)')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+    app-frame()
+    app-delay(16)
+
+    ot-frames = cs-inc(ot-frames)
+    (OT-MAX-FRAMES > 0) -> {
+        (ot-frames >= OT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = ot-frames
+kk = ot-keys
+ck = ot-clicks
+v1 = otp-value(otp)
+c1 = otp-cur(otp)
+v2 = otp-value(otp2)
+c2 = otp-cur(otp2)
+print('bye frames={fr} keys={kk} clicks={ck} otp={v1} cur={c1} otp2={v2} cur2={c2}')
+(sc > 0) -> { print('otp render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

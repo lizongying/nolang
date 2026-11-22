@@ -1,0 +1,167 @@
+; ============================================================================
+; noui 窗口 demo：会话族（阶段 45）—— bubble / speech
+;
+; 流水线：app-init -> cmp-bubble / cmp-speech
+;   -> 鼠标：点左气泡切换 position（0 左 / 1 右），点语音泡切换语言标签行
+;   -> 键盘：l = 左气泡 position 开关；r = 右气泡 position 开关；
+;     g = 语音泡语言标签开关；h = 无标签泡的标签开关；q / Esc 退出
+;   -> cs-layout / cs-paint（两者分别走 cs-paint-bubble / cs-paint-speech；
+;     cs-measure 给两者各自的 intrinsic 尺寸）
+;   -> app-frame
+;
+; 这个 demo 是阶段45 的现场：气泡底色方块 + 内边距里的文本（按 position 左 / 右
+; 对齐）+ 底边小尾巴；语音泡在文本行之下多一条细分隔线 + 语言标签行。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-bubble.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+g-b1-x = 0
+g-b1-y = 0
+g-b1-w = 0
+g-b1-h = 0
+g-sp-x = 0
+g-sp-y = 0
+g-sp-w = 0
+g-sp-h = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui bubble')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段45: bubble / speech')
+hint = cmp-label('click bubble to flip side; click speech to toggle lang; l/r bubble side; g/h lang; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+b1 = cmp-bubble('left bubble')
+bubble-set-pos(b1, 0)
+b2 = cmp-bubble('right bubble')
+bubble-set-pos(b2, 1)
+sp = cmp-speech('speech with lang')
+speech-set-lang(sp, 'zh-CN')
+sp2 = cmp-speech('speech no lang')
+
+cmp-add-child(root, title)
+cmp-add-child(root, b1)
+cmp-add-child(root, b2)
+cmp-add-child(root, sp)
+cmp-add-child(root, sp2)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：点气泡翻面，点语音泡开关语言标签 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == b1) -> {
+            p = bubble-pos(b1)
+            (p == 0) -> { bubble-set-pos(b1, 1) }
+            (p == 1) -> { bubble-set-pos(b1, 0) }
+        }
+        (hit == sp) -> {
+            l = speech-lang(sp)
+            (l.len() > 0) -> { speech-set-lang(sp, '') }
+            (l.len() == 0) -> { speech-set-lang(sp, 'zh-CN') }
+        }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; l：左气泡翻面
+        (k == 108) -> {
+            p = bubble-pos(b1)
+            (p == 0) -> { bubble-set-pos(b1, 1) }
+            (p == 1) -> { bubble-set-pos(b1, 0) }
+        }
+        ; r：右气泡翻面
+        (k == 114) -> {
+            p = bubble-pos(b2)
+            (p == 0) -> { bubble-set-pos(b2, 1) }
+            (p == 1) -> { bubble-set-pos(b2, 0) }
+        }
+        ; g：语音泡语言标签开关
+        (k == 103) -> {
+            l = speech-lang(sp)
+            (l.len() > 0) -> { speech-set-lang(sp, '') }
+            (l.len() == 0) -> { speech-set-lang(sp, 'zh-CN') }
+        }
+        ; h：无标签泡的标签开关
+        (k == 104) -> {
+            l = speech-lang(sp2)
+            (l.len() > 0) -> { speech-set-lang(sp2, '') }
+            (l.len() == 0) -> { speech-set-lang(sp2, 'en-US') }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件 ----
+    p1 = bubble-pos(b1)
+    p2 = bubble-pos(b2)
+    sl = speech-lang(sp)
+    sl2 = speech-lang(sp2)
+    cmp-set-text(stat, 'bubble1 pos={p1}  bubble2 pos={p2}')
+    cmp-set-text(stat2, 'speech lang="{sl}"  speech2 lang="{sl2}"')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    g-b1-x, g-b1-y, g-b1-w, g-b1-h = cs-rect(b1)
+    g-sp-x, g-sp-y, g-sp-w, g-sp-h = cs-rect(sp)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+p1 = bubble-pos(b1)
+p2 = bubble-pos(b2)
+sl = speech-lang(sp)
+sl2 = speech-lang(sp2)
+print('bye frames={fr} keys={kk} clicks={ck} b1-pos={p1} b2-pos={p2} sp-lang={sl} sp2-lang={sl2}')
+(sc > 0) -> { print('bubble render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

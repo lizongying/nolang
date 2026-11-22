@@ -115,7 +115,11 @@ _rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
                 }
 
                 #{overflow=wrap}
-                sum = sum + a-i
+                sum = sum + a-i: {
+                    ok -> it
+
+                    -> 0
+                }
             }
 
             i < bn -> {
@@ -126,7 +130,11 @@ _rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
                 }
 
                 #{overflow=wrap}
-                sum = sum + b-i
+                sum = sum + b-i: {
+                    ok -> it
+
+                    -> 0
+                }
             }
         }
 

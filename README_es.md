@@ -82,7 +82,6 @@ Por defecto se usa el índice público. Para combinar varias instancias de nohub
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

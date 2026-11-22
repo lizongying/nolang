@@ -192,9 +192,9 @@ t-tcp-recv = () {
                             runner.eq(w3, 3, 'recv-all 前置: 送出 3 位元組')
                             cli.close()
 
-                            content, total = sv.recv-all()
-                            runner.eq(total, 5, 'conn.recv-all: 累計 5 位元組')
-                            runner.eq(content.len-bytes(), 5, 'conn.recv-all: 內容長度 = total')
+                            content, TOTAL = sv.recv-all()
+                            runner.eq(TOTAL, 5, 'conn.recv-all: 累計 5 位元組')
+                            runner.eq(content.len-bytes(), 5, 'conn.recv-all: 內容長度 = TOTAL')
                             runner.eq(sb(content, 0), 65, 'recv-all: 首位元組 A')
                             runner.eq(sb(content, 4), 69, 'recv-all: 末位元組 E')
 
@@ -704,7 +704,7 @@ p13, f13 = runner.test('net.ctors', t-ctors)
 p14, f14 = runner.test('net.icmp', t-icmp)
 p15, f15 = runner.test('net.sysinfo', t-sysinfo)
 
-total = runner.summary()
+TOTAL = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)

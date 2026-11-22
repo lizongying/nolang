@@ -1,0 +1,171 @@
+; ============================================================================
+; noui 窗口 demo：输入框富文本 / 语法高亮（阶段 38）
+;
+; 流水线：app-init -> cmp-input 两个字段（一个开高亮、一个纯文本）
+;   -> 点字段聚焦 -> 键盘在光标处插入 / 退格 / 前删 / 左右移光标
+;   -> p 切高亮、r 重置样例、q / ESC 退出
+;   -> cs-layout / cs-paint（C-INPUT 走 cs-paint-input）-> app-frame
+;
+; 退出：ESC / q / 帧数上限（INP-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-input.no
+; ============================================================================
+# /noui/src/app
+
+INP-AZ = 'abcdefghijklmnopqrstuvwxyz'
+INP-DIG = '0123456789'
+INP-SAMPLE = 'let x = 42 ; hi'
+INP-MAX-FRAMES = 900
+
+; ---- 计数（顶层标量）----
+inp-frames = 0
+inp-keys = 0
+inp-clicks = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui input')
+(ok == 0) -> {
+
+; ---- 组装组件树 ----
+root = app-root()
+
+title = cmp-label('noui input: rich text / syntax highlight')
+hint = cmp-label('click field, type, <- -> move, backspace, p highlight, r reset, q quit')
+stat = cmp-label('')
+
+field = cmp-input('type nolang')
+cmp-set-sw(field, 32000)
+cmp-set-sh(field, 4000)
+plain = cmp-input('plain')
+cmp-set-sw(plain, 32000)
+cmp-set-sh(plain, 4000)
+
+cmp-add-child(root, title)
+cmp-add-child(root, field)
+cmp-add-child(root, plain)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+input-set(field, INP-SAMPLE)
+input-syntax(field, true)
+input-focus(field, true)
+input-set(plain, INP-SAMPLE)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：聚焦 / 失焦 ----
+    (t == 2) -> {
+        hit = cs-hit(root, fx(mx), fx(my))
+        (hit == field) -> { input-focus(field, true) }
+        (hit == plain) -> { input-focus(plain, true) }
+        (hit != field) -> { input-focus(field, false) }
+        (hit != plain) -> { input-focus(plain, false) }
+        inp-clicks = cs-inc(inp-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 114) -> {
+            input-set(field, INP-SAMPLE)
+            input-set(plain, INP-SAMPLE)
+        }
+        (k == 112) -> {
+            (cmp-has(field, F-FOCUSED)) -> {
+                m = input-syntax-mode(field)
+                (m == 0) -> { input-syntax(field, true) }
+                (m != 0) -> { input-syntax(field, false) }
+            }
+            (cmp-has(plain, F-FOCUSED)) -> {
+                m2 = input-syntax-mode(plain)
+                (m2 == 0) -> { input-syntax(plain, true) }
+                (m2 != 0) -> { input-syntax(plain, false) }
+            }
+        }
+        ; 聚焦字段的光标 / 编辑
+        (cmp-has(field, F-FOCUSED)) -> {
+            (k == 8) -> { input-backspace(field) }
+            (k == 127) -> { input-delete(field) }
+            (k == ED-K-LEFT) -> { input-move(field, -1) }
+            (k == ED-K-RIGHT) -> { input-move(field, 1) }
+            (k == 32) -> { input-insert(field, ' ') }
+            (k >= 48) -> {
+                (k <= 57) -> {
+                    input-insert(field, INP-DIG.slice(cs-sub(k, 48), cs-sub(k, 47)))
+                }
+            }
+            (k >= 97) -> {
+                (k <= 122) -> {
+                    input-insert(field, INP-AZ.slice(cs-sub(k, 97), cs-sub(k, 96)))
+                }
+            }
+        }
+        (cmp-has(plain, F-FOCUSED)) -> {
+            (k == 8) -> { input-backspace(plain) }
+            (k == 127) -> { input-delete(plain) }
+            (k == ED-K-LEFT) -> { input-move(plain, -1) }
+            (k == ED-K-RIGHT) -> { input-move(plain, 1) }
+            (k == 32) -> { input-insert(plain, ' ') }
+            (k >= 48) -> {
+                (k <= 57) -> {
+                    input-insert(plain, INP-DIG.slice(cs-sub(k, 48), cs-sub(k, 47)))
+                }
+            }
+            (k >= 97) -> {
+                (k <= 122) -> {
+                    input-insert(plain, INP-AZ.slice(cs-sub(k, 97), cs-sub(k, 96)))
+                }
+            }
+        }
+        inp-keys = cs-inc(inp-keys)
+    }
+
+    ; ---- 退出条件 ----
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件（插值不支持函数调用，先取局部）----
+    v = input-value(field)
+    car = input-caret(field)
+    lm = input-syntax-mode(field)
+    nt = input-lex-build(field)
+    cmp-set-text(stat, 'value: {v} | caret: {car} | lex: {lm} | tokens: {nt}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    app-frame()
+    app-delay(16)
+
+    inp-frames = cs-inc(inp-frames)
+    (INP-MAX-FRAMES > 0) -> {
+        (inp-frames >= INP-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = inp-frames
+kk = inp-keys
+ck = inp-clicks
+v = input-value(field)
+car = input-caret(field)
+lm = input-syntax-mode(field)
+nt = input-lex-build(field)
+print('bye frames={fr} keys={kk} clicks={ck} value={v} caret={car} lex={lm} tokens={nt}')
+(nt > 0) -> { print('input render OK') }
+(nt <= 0) -> { print('FAIL: no highlight segments') }
+
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

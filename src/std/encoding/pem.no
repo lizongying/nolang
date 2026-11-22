@@ -150,7 +150,11 @@ pem.encode = (label str, data []byte) (out str) {
         }
 
         #{overflow=wrap}
-        src = src + PEM-LINE-LEN
+        src = src + PEM-LINE-LEN: {
+            ok -> it
+
+            -> 0
+        }
     }
 
     ; 寫入 footer

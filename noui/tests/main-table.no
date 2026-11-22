@@ -1,0 +1,289 @@
+; ============================================================================
+; noui 命令式「虚拟表格」窗口 demo（阶段 35）—— src/components.no 的 cmp-table-*
+;
+; 和 tests/main-editor.no / main-tree.no 同一条命令式路子：顶层标量存状态，
+; 主循环直接读写，没有声明式视图层。表格不是新组件种类，而是**应用调出来的**：
+;   cmp-table(cols, rows)   根 = C-TABLE（纵向：表头 + 滚动体）
+;   cmp-table-set-head      表头文案（逐列，表头定义列数）
+;   cmp-table-set-col-w     列宽（0 = 自适应）
+;   cmp-table-set-cell      单元格文案（行主序，全局数据模型）
+;   cmp-table-set-key       排序键（缺省 0）
+;   cmp-table-sort(desc)    按 TB-KEY 对 TB-ORDER 做稳定插入排序
+;   cmp-table-reset-order   恢复源顺序
+;   cmp-table-select        选中行（源行号，-1 = 取消）
+;   cmp-table-sync          表头 + 滚动体 + 可见行（任意时刻只挂可见行）
+;   cmp-table-row-of / -cell-of / -cell-rc   命中上溯到源行号 / 行列
+;
+; 偏移真源 = TB-OFF[句柄]（sync 建滚动体时写进 CMP-VALUE），和内核滚动容器、
+; 声明式 dv-table-list 的「内容高声明给布局」完全一致：内容高
+; = m*rowh + (m-1)*800 + 2*1200，于是 cmp-scroll-max 不依赖「所有行都挂出来」。
+;
+; 交互：
+;   点行        = 选中该行（底色 / 文字色变化；选中跟随源行号，排序后仍指同一行）
+;   点单元格    = 右栏显示命中的 源行:列
+;   1 / 2 / 0   = 升序 / 降序 / 源顺序（稳定排序，同键保持源序）
+;   滚轮        = 滚动（命中链上有表格根才滚，夹紧到 cmp-scroll-max）
+;   r           = 取消选中 + 滚回顶部 + 恢复源顺序
+;   ESC / q     = 退出
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-table.no
+; ============================================================================
+# /noui/src/app
+
+; ---- 颜色（主题槽）----
+FG = 0
+MUT = 0
+ACC = 0
+SELB = 0
+HC = 0
+
+TB-ROWH = 2400
+TB-MAX-FRAMES = 900
+
+; ---- 句柄 ----
+T = 0
+DLAB1 = 0
+DLAB2 = 0
+DLAB3 = 0
+DLAB4 = 0
+DLAB5 = 0
+DLAB6 = 0
+DLAB7 = 0
+
+tb-frames = 0
+tb-keys = 0
+tb-clicks = 0
+tb-rows = 0
+tb-mode = 0
+tb-sel = -1
+tb-cr = -1
+tb-cc = -1
+
+NAMES []str = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel', 'india', 'juliet', 'kilo', 'lima', 'mike', 'november', 'oscar', 'papa', 'quebec', 'romeo', 'sierra', 'tango']
+GRPS []str = ['core', 'ext', 'ui', 'net']
+TB-N = 20
+
+; ============================================================================
+; 函数（nolang 要求先定义后调用，所以放在初始化之前）
+; ============================================================================
+
+; 视口高：窗口高 - root 上下内边距
+tb-viewh = () (v i64) {
+    v = cs-sub(app-win-hf(), cs-mul(CS-PAD, 2))
+    (v < 2400) -> { v = 60000 }
+}
+
+; 滚动体高 = 视口高 - 表头（内边距 + 一行）
+tb-bodyh = () (v i64) {
+    v = cs-sub(cs-sub(tb-viewh(), 1200), TB-ROWH)
+    (v < 2400) -> { v = 2400 }
+}
+
+; 命中链上有没有这个容器（滚轮只在该滚的地方滚）
+tb-hit-in = (c i64, want i64) (yes i64) {
+    yes = 0
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (yes != 0) -> { ** }
+        (p == want) -> { yes = 1 }
+        p = cmp-parent-of(p)
+    }
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui table')
+(ok == 0) -> {
+
+    FG = cs-theme(CS-TH-FG)
+    MUT = cs-theme(CS-TH-MUTED)
+    ACC = cs-theme(CS-TH-ACCENT)
+    HC = cs-theme(CS-TH-MUTED)
+    SELB = cs-theme(CS-TH-TRACK)
+
+    root = app-root()
+    cmp-set-lay(root, L-H)
+    cmp-set-gap(root, CS-GAP)
+
+    ; ---- 数据模型：3 列 20 行，键故意打乱（(i*7)%20），排序后能看到行真的换序 ----
+    cmp-table-set-head(0, 'name')
+    cmp-table-set-head(1, 'key')
+    cmp-table-set-head(2, 'grp')
+    i = 0
+    !! {
+        (i >= TB-N) -> { ** }
+        nm = NAMES[i]
+        gp = GRPS[i % 4]
+        cmp-table-set-cell(i, 0, nm)
+        cmp-table-set-cell(i, 1, 'k')
+        cmp-table-set-cell(i, 2, gp)
+        cmp-table-set-key(i, cs-mul(i, 7) % 20)
+        i = cs-inc(i)
+    }
+
+    ; ---- 左：表格 ----
+    T = cmp-table(3, TB-N)
+    cmp-set-lay(T, L-GROW)
+    cmp-set-sh(T, tb-viewh())
+
+    ; ---- 右：状态面板 ----
+    detail = cmp-form()
+    cmp-set-sw(detail, 260000)
+    dtitle = cmp-label('imperative table')
+    dhint = cmp-label('click row / cell | 1 asc 2 desc 0 source | wheel | r reset')
+    dsep = cmp-separator()
+    DLAB1 = cmp-label('sel: -')
+    DLAB2 = cmp-label('cell: -')
+    DLAB3 = cmp-label('off: -')
+    DLAB4 = cmp-label('max: -')
+    DLAB5 = cmp-label('rows: -')
+    DLAB6 = cmp-label('mode: source')
+    DLAB7 = cmp-label('keys: 0 clicks: 0')
+    cmp-add-child(detail, dtitle)
+    cmp-add-child(detail, dhint)
+    cmp-add-child(detail, dsep)
+    cmp-add-child(detail, DLAB1)
+    cmp-add-child(detail, DLAB2)
+    cmp-add-child(detail, DLAB3)
+    cmp-add-child(detail, DLAB4)
+    cmp-add-child(detail, DLAB5)
+    cmp-add-child(detail, DLAB6)
+    cmp-add-child(detail, DLAB7)
+
+    cmp-add-child(root, T)
+    cmp-add-child(root, detail)
+
+    cmp-table-sync(T, tb-bodyh(), TB-ROWH, FG, ACC, SELB, HC)
+    rows = cmp-children(cmp-table-scroll(T))
+    cmp-set-text(DLAB5, 'rows: {rows}')
+}
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> {
+        app-hover(root, fx(mx), fx(my))
+    }
+
+    ; ---- 左键按下：选中行 / 记下命中的单元格 ----
+    (t == 2) -> {
+        hit = cs-hit(root, fx(mx), fx(my))
+        row = cmp-table-row-of(T, hit)
+        (row >= 0) -> {
+            cmp-table-select(T, row)
+            tb-clicks = cs-inc(tb-clicks)
+        }
+        rc []i64 = with-len(2)
+        cmp-table-cell-rc(T, hit, rc)
+        r0 = ct-get(rc, 0)
+        r1 = ct-get(rc, 1)
+        (r0 >= 0) -> {
+            tb-cr = r0
+            tb-cc = r1
+        }
+    }
+
+    ; ---- 滚轮 ----
+    (t == 5) -> {
+        dy = app-wheel()
+        (dy != 0) -> {
+            hit = cs-hit(root, fx(mx), fx(my))
+            (tb-hit-in(hit, T) == 1) -> {
+                scr = cmp-table-scroll(T)
+                lim = cmp-scroll-max(scr)
+                cur = cmp-table-off(T)
+                nv = cs-add(cur, cs-mul(dy, 3200))
+                (nv < 0) -> { nv = 0 }
+                (nv > lim) -> { nv = lim }
+                cmp-table-set-off(T, nv)
+            }
+        }
+    }
+
+    ; ---- 键盘 ----
+    ; 注意：';' 在 nolang 里是行注释，不是语句分隔符。分支体里多句必须换行写，
+    ; 写成 `{ a; b; c }` 会把 '}' 一起注释掉，块一直吃到后面的 '}'，整段错版。
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 49) -> {
+            cmp-table-sort(0)
+            tb-mode = 1
+            tb-keys = cs-inc(tb-keys)
+        }
+        (k == 50) -> {
+            cmp-table-sort(1)
+            tb-mode = 2
+            tb-keys = cs-inc(tb-keys)
+        }
+        (k == 48) -> {
+            cmp-table-reset-order()
+            tb-mode = 0
+            tb-keys = cs-inc(tb-keys)
+        }
+        (k == 114) -> {
+            cmp-table-select(T, -1)
+            cmp-table-set-off(T, 0)
+            cmp-table-reset-order()
+            tb-mode = 0
+            tb-cr = -1
+            tb-cc = -1
+        }
+    }
+
+    ; ---- 退出条件 ----
+    ; 两个退出查询各调一次：_noui-should-quit 第二次调用会返回 true（dummy 驱动下
+    ; 没有真事件，标志被消费掉），调两次会立刻退出循环。
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件：重建表头 + 可见行，再把信息刷到右栏 ----
+    ; 同步放在主循环顶层：命令式组件树必须在顶层作用域里重建，
+    ; 经函数中转会拿到错位的子链（见 ARCHITECTURE.md 阶段 34/35 的踩坑记录）。
+    cmp-table-sync(T, tb-bodyh(), TB-ROWH, FG, ACC, SELB, HC)
+    sel = cmp-table-selected(T)
+    off = cmp-table-off(T)
+    rows = cmp-children(cmp-table-scroll(T))
+    scr = cmp-table-scroll(T)
+    lim = cmp-scroll-max(scr)
+    cmp-set-text(DLAB1, 'sel: {sel}')
+    cmp-set-text(DLAB2, 'cell: {tb-cr}:{tb-cc}')
+    cmp-set-text(DLAB3, 'off: {off}')
+    cmp-set-text(DLAB4, 'max: {lim}')
+    cmp-set-text(DLAB5, 'rows: {rows}')
+    md = 'source'
+    (tb-mode == 1) -> { md = 'asc' }
+    (tb-mode == 2) -> { md = 'desc' }
+    cmp-set-text(DLAB6, 'mode: {md}')
+    cmp-set-text(DLAB7, 'keys: {tb-keys} clicks: {tb-clicks}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    app-frame()
+    app-delay(16)
+
+    tb-frames = cs-inc(tb-frames)
+    tb-rows = rows
+    tb-sel = sel
+    (TB-MAX-FRAMES > 0) -> {
+        (tb-frames >= TB-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+fr = tb-frames
+kk = tb-keys
+ck = tb-clicks
+sl = tb-sel
+print('bye frames={fr} keys={kk} clicks={ck} rows={tb-rows} sel={sl}')
+(tb-rows <= 0) -> { print('FAIL: table rendered no rows') }
+(tb-rows > 0) -> { print('table render OK') }

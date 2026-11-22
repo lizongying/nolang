@@ -1,0 +1,255 @@
+; ============================================================================
+; noui 命令式「代码编辑器」窗口 demo（阶段 34）—— src/components.no 的 cmp-editor-*
+;
+; 和 tests/main-tree.no 同一条命令式路子：顶层标量存状态，主循环直接读写，
+; 没有声明式视图层。编辑器不是新组件种类，而是**应用调出来的**：
+;   cmp-editor()           根就是 C-SCROLL（内边距 1200 / 间距 800 / 滚轮步长 3200）
+;   cmp-editor-set-text     一层文本模型（全局行数组）
+;   cmp-editor-key          键盘入口（可打印字符 / 退格 / 回车 / Tab / 方向键）
+;   cmp-editor-sync         可见行 -> 真组件树（行号 + 着色 token + 光标）
+;   滚动偏移真源 = CMP-VALUE[根]，和内核滚动容器、声明式 dv-code-editor 完全一致
+;
+; 交互：
+;   打字        = 插入字符（32..126）
+;   Backspace   = 删字符 / 行首并入上一行
+;   Enter       = 拆行
+;   Tab         = 四个空格
+;   ↑↓←→        = 移光标（跨行自动夹列）
+;   点行        = 光标跳到该行行首（命中顺着父链找到行壳）
+;   滚轮        = 滚动（命中链上有编辑器根才滚，夹紧到 cmp-scroll-max）
+;   r           = 重置示例文本 + 光标归零 + 滚回顶部
+;   ESC / q     = 退出
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-editor.no
+; ============================================================================
+# /noui/src/app
+
+; ---- 颜色（主题槽）----
+FG = 0
+MUT = 0
+ACC = 0
+OK = 0
+
+; 帧数上限：0 = 不限；默认 900 帧（约 15s）后自动收尾，保证生命周期完整
+ED-MAX-FRAMES = 900
+
+; ---- 句柄 ----
+ED = 0
+DLAB1 = 0
+DLAB2 = 0
+DLAB3 = 0
+DLAB4 = 0
+DLAB5 = 0
+ed-frames = 0
+ed-keys = 0
+ed-clicks = 0
+
+SAMPLE = 'let n = 10\n; 命令式代码编辑器（阶段 34）\nfn sum(a i64, b i64) i64 {\n    return a + b\n}\n\nprint(sum(n, 2))'
+
+; ============================================================================
+; 函数（nolang 要求先定义后调用，所以放在初始化之前）
+; ============================================================================
+
+; 视口高：窗口高 - root 上下内边距
+ed-viewh = () (v i64) {
+    v = app-win-hf() - 2 * CS-PAD: {
+        ok -> it
+
+        -> 60000
+    }
+    (v < 2400) -> { v = 60000 }
+}
+
+; 命中链上有没有这个容器（滚轮只在该滚的地方滚）
+ed-hit-in = (c i64, want i64) (yes i64) {
+    yes = 0
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (yes != 0) -> { ** }
+        (p == want) -> { yes = 1 }
+        p = cmp-parent-of(p)
+    }
+}
+
+; 点行 -> 光标跳到该行行首（点中返回 1，没点中返回 0）
+ed-click = (hit i64) (yes i64) {
+    yes = 0
+    row = cmp-editor-row-of(ED, hit)
+    (row >= 0) -> {
+        ; 行在滚动容器子链里的下标 + 起始行号 = 绝对行号
+        i0 = cmp-scroll-start(ED)
+        j = 0
+        n = cmp-children(ED)
+        ln = i0
+        !! {
+            (j >= n) -> { ** }
+            (ln != i0) -> { ** }
+            (cmp-child(ED, j) == row) -> { ln = cs-add(i0, j) }
+            j = cs-inc(j)
+        }
+        cmp-editor-set-cur(ED, ln, 0)
+        yes = 1
+    }
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui editor')
+(ok == 0) -> {
+
+    FG = cs-theme(CS-TH-FG)
+    MUT = cs-theme(CS-TH-MUTED)
+    ACC = cs-theme(CS-TH-ACCENT)
+    OK = cs-theme(CS-TH-OK)
+
+    root = app-root()
+    cmp-set-lay(root, L-H)
+    cmp-set-gap(root, CS-GAP)
+
+    ; ---- 左：编辑器（根本身就是 C-SCROLL）----
+    ED = cmp-editor()
+    cmp-set-lay(ED, L-GROW)
+    cmp-set-sh(ED, ed-viewh())
+    cmp-editor-set-text(ED, SAMPLE)
+    cmp-editor-set-cur(ED, 0, 0)
+    cmp-editor-set-off(ED, 0)
+
+    ; ---- 右：状态面板 ----
+    detail = cmp-form()
+    cmp-set-sw(detail, 260000)
+    dtitle = cmp-label('imperative editor')
+    dhint = cmp-label('type / bksp / enter / tab / arrows / click row / wheel / r reset')
+    dsep = cmp-separator()
+    DLAB1 = cmp-label('lines: -')
+    DLAB2 = cmp-label('cursor: -')
+    DLAB3 = cmp-label('offset: -')
+    DLAB4 = cmp-label('rows: -')
+    DLAB5 = cmp-label('keys: 0 clicks: 0')
+    cmp-add-child(detail, dtitle)
+    cmp-add-child(detail, dhint)
+    cmp-add-child(detail, dsep)
+    cmp-add-child(detail, DLAB1)
+    cmp-add-child(detail, DLAB2)
+    cmp-add-child(detail, DLAB3)
+    cmp-add-child(detail, DLAB4)
+    cmp-add-child(detail, DLAB5)
+
+    cmp-add-child(root, ED)
+    cmp-add-child(root, detail)
+
+    vh = ed-viewh()
+    cmp-editor-sync(ED, vh, 4800, CS-LINE-H, FG, MUT, ACC, OK)
+    n = cmp-editor-lines()
+    l = cmp-editor-line-of(ED)
+    c = cmp-editor-col-of(ED)
+    off = cmp-editor-off(ED)
+    rows = cmp-children(ED)
+    cmp-set-text(DLAB1, 'lines: {n}')
+    cmp-set-text(DLAB2, 'cursor: {l}:{c}')
+    cmp-set-text(DLAB3, 'offset: {off}')
+    cmp-set-text(DLAB4, 'rows: {rows}')
+}
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    ; ---- 鼠标移动：hover ----
+    (t == 3) -> {
+        app-hover(root, fx(mx), fx(my))
+    }
+
+    ; ---- 左键按下：把光标放到点中的行 ----
+    (t == 2) -> {
+        hit = cs-hit(root, fx(mx), fx(my))
+        (ed-click(hit) == 1) -> { ed-clicks = cs-inc(ed-clicks) }
+    }
+
+    ; ---- 滚轮 ----
+    (t == 5) -> {
+        dy = app-wheel()
+        (dy != 0) -> {
+            hit = cs-hit(root, fx(mx), fx(my))
+            (ed-hit-in(hit, ED) == 1) -> {
+                lim = cmp-scroll-max(ED)
+                cur = cmp-value(ED)
+                nv = cur + dy * 3200: {
+                    ok -> it
+
+                    -> cur
+                }
+                (nv < 0) -> { nv = 0 }
+                (nv > lim) -> { nv = lim }
+                cmp-set-value(ED, nv)
+                    }
+        }
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+        (k == 114) -> {
+            cmp-editor-set-text(ED, SAMPLE)
+            cmp-editor-set-cur(ED, 0, 0)
+            cmp-editor-set-off(ED, 0)
+            }
+        ; 其它键全交给编辑器（退出键已经上面吃掉了）
+        (k != 27) -> {
+            (k != 113) -> {
+                (k != 114) -> {
+                    cmp-editor-key(ED, k)
+                    ed-keys = cs-inc(ed-keys)
+                            }
+            }
+        }
+    }
+
+    ; ---- 退出条件 ----
+    ; 两个退出查询各调一次：_noui-should-quit 第二次调用会返回 true（dummy 驱动下
+    ; 没有真事件，标志被消费掉），调两次会立刻退出循环。
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件：重建可见行，再把光标 / 滚动信息刷到右栏 ----
+    ; 这里平铺在主循环里（不抽 ed-refresh()）：阶段 34 时函数里调 sync 会拿到
+    ; undef 句柄（编译器没把 ED 登记成模块存储），2026-11-22 已修，抽函数也正确。
+    ; 见 ARCHITECTURE.md §5.28 与 src/mir/global_scalar_ref_test.go。
+    vh = ed-viewh()
+    cmp-editor-sync(ED, vh, 4800, CS-LINE-H, FG, MUT, ACC, OK)
+    n = cmp-editor-lines()
+    l = cmp-editor-line-of(ED)
+    c = cmp-editor-col-of(ED)
+    off = cmp-editor-off(ED)
+    rows = cmp-children(ED)
+    cmp-set-text(DLAB1, 'lines: {n}')
+    cmp-set-text(DLAB2, 'cursor: {l}:{c}')
+    cmp-set-text(DLAB3, 'offset: {off}')
+    cmp-set-text(DLAB4, 'rows: {rows}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    app-frame()
+    app-delay(16)
+
+    ed-frames = cs-inc(ed-frames)
+    ed-rows = rows
+    (ED-MAX-FRAMES > 0) -> {
+        (ed-frames >= ED-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+fr = ed-frames
+kk = ed-keys
+ck = ed-clicks
+print('bye frames={fr} keys={kk} clicks={ck} rows={ed-rows}')
+(ed-rows <= 0) -> { print('FAIL: editor rendered no rows') }
+(ed-rows > 0) -> { print('editor render OK') }

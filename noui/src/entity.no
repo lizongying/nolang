@@ -4,17 +4,17 @@
 ; 池与 dom.no 的做法一致：i64 索引即句柄，索引在注册表生命周期内有效。
 
 ; 实体槽的平行数组（每个索引是一个实体）
-g-kind []i64 = with-len(0)
-g-i0 []i64 = with-len(0)
-g-i1 []i64 = with-len(0)
-g-s0 []str = with-len(0)
-g-dirty []i64 = with-len(0)
+G-KIND []i64 = with-len(0)
+G-I0 []i64 = with-len(0)
+G-I1 []i64 = with-len(0)
+G-S0 []str = with-len(0)
+G-DIRTY []i64 = with-len(0)
 
 ; 订阅表的平行数组
-g-sub-target []i64 = with-len(0)
-g-sub-observer []i64 = with-len(0)
-g-sub-event []i64 = with-len(0)
-g-sub-active []i64 = with-len(0)
+G-SUB-TARGET []i64 = with-len(0)
+G-SUB-OBSERVER []i64 = with-len(0)
+G-SUB-EVENT []i64 = with-len(0)
+G-SUB-ACTIVE []i64 = with-len(0)
 
 ; 实体种类常量
 ENTITY-COUNTER = 1
@@ -27,24 +27,28 @@ EVENT-CLICK = 2
 
 ; 创建一个实体，返回句柄（索引）
 entity-new = (kind i64) (h i64) {
-    g-kind.push(kind)
-    g-i0.push(0)
-    g-i1.push(0)
-    g-s0.push('')
-    g-dirty.push(1)
-    h = g-kind.len() - 1
+    G-KIND.push(kind)
+    G-I0.push(0)
+    G-I1.push(0)
+    G-S0.push('')
+    G-DIRTY.push(1)
+    h = G-KIND.len() - 1
 }
 
 ; 句柄是否有效
 entity-valid = (h i64) (ok bool) {
-    ok = h >= 0 && h < g-kind.len()
+    ok = h >= 0 && h < G-KIND.len()
 }
 
 ; 读取 i0 载荷
 entity-i0 = (h i64) (v i64) {
     v = 0
     entity-valid(h) -> {
-        v = g-i0[h]
+        v = G-I0[h]: {
+            ok -> it
+
+            -> 0
+        }
     }
 }
 
@@ -52,7 +56,11 @@ entity-i0 = (h i64) (v i64) {
 entity-i1 = (h i64) (v i64) {
     v = 0
     entity-valid(h) -> {
-        v = g-i1[h]
+        v = G-I1[h]: {
+            ok -> it
+
+            -> 0
+        }
     }
 }
 
@@ -60,38 +68,42 @@ entity-i1 = (h i64) (v i64) {
 entity-s0 = (h i64) (v str) {
     v = ''
     entity-valid(h) -> {
-        v = g-s0[h]
+        v = G-S0[h]: {
+            ok -> it
+
+            -> ''
+        }
     }
 }
 
 ; 设置 i0 载荷（不触发通知）
 entity-set-i0 = (h i64, v i64) {
     entity-valid(h) -> {
-        g-i0[h] = v
-        g-dirty[h] = 1
+        G-I0[h] = v
+        G-DIRTY[h] = 1
     }
 }
 
 ; 设置 i1 载荷
 entity-set-i1 = (h i64, v i64) {
     entity-valid(h) -> {
-        g-i1[h] = v
-        g-dirty[h] = 1
+        G-I1[h] = v
+        G-DIRTY[h] = 1
     }
 }
 
 ; 设置 str 载荷
 entity-set-s0 = (h i64, v str) {
     entity-valid(h) -> {
-        g-s0[h] = v
-        g-dirty[h] = 1
+        G-S0[h] = v
+        G-DIRTY[h] = 1
     }
 }
 
 ; 标记实体为脏（需要重新渲染）
 entity-notify = (h i64) {
     entity-valid(h) -> {
-        g-dirty[h] = 1
+        G-DIRTY[h] = 1
     }
 }
 
@@ -99,34 +111,37 @@ entity-notify = (h i64) {
 entity-is-dirty = (h i64) (dirty bool) {
     dirty = false
     entity-valid(h) -> {
-        dirty = g-dirty[h] == 1
+        dirty = G-DIRTY[h] == 1
     }
 }
 
 ; 清除脏标记
 entity-clear-dirty = (h i64) {
     entity-valid(h) -> {
-        g-dirty[h] = 0
+        G-DIRTY[h] = 0
     }
 }
 
 ; 订阅：observer 关注 target 的 event 事件
 entity-observe = (target i64, observer i64, event i64) {
-    g-sub-target.push(target)
-    g-sub-observer.push(observer)
-    g-sub-event.push(event)
-    g-sub-active.push(1)
+    G-SUB-TARGET.push(target)
+    G-SUB-OBSERVER.push(observer)
+    G-SUB-EVENT.push(event)
+    G-SUB-ACTIVE.push(1)
 }
 
 ; 发出事件：遍历订阅表，把事件写到观察者的 i0 载荷（回调的 Nolang 简化）
 ; 返回被通知的观察者数量
 entity-emit = (target i64, event i64) (n i64) {
     n = 0
-    i <- [0..g-sub-target.len()): {
-        (g-sub-active[i] == 1 && g-sub-target[i] == target && g-sub-event[i] == event) {
-            entity-set-i0(g-sub-observer[i], event)
-            #{overflow=wrap}
-            n = n + 1
+    i <- [0..G-SUB-TARGET.len()): {
+        (G-SUB-ACTIVE[i] == 1 && G-SUB-TARGET[i] == target && G-SUB-EVENT[i] == event) -> {
+            entity-set-i0(G-SUB-OBSERVER[i], event)
+            n = n + 1: {
+                ok -> it
+
+                -> n
+            }
         }
     }
 }

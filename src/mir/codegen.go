@@ -1265,15 +1265,15 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 	// verification ("defined with type 'i64' but expected 'double'").
 	// This covers the JSON parse test family where `x = i + f` produces an
 	// i64-typed MIR value used in a double fadd.
-	if toT == "double" && fromT != "double" && fromT != "float" {
+	if (toT == "double" || toT == "float") && fromT != "double" && fromT != "float" {
 		fw, fok := intWidth(fromT)
 		if fok {
 			c.loadSeq++
 			r := fmt.Sprintf("%%cv.%d", c.loadSeq)
 			if fw == 64 {
-				fmt.Fprintf(c.sb, "  %s = sitofp i64 %s to double\n", r, v)
+				fmt.Fprintf(c.sb, "  %s = sitofp i64 %s to %s\n", r, v, toT)
 			} else {
-				fmt.Fprintf(c.sb, "  %s = sitofp %s %s to double\n", r, fromT, v)
+				fmt.Fprintf(c.sb, "  %s = sitofp %s %s to %s\n", r, fromT, v, toT)
 			}
 			return r
 		}
@@ -12621,6 +12621,17 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// `.tmp-atom-char = c` (char -> i64 field) hit exactly this.
 	if vw, vwOK := intWidth(valLT); vwOK {
 		if fw, fwOK := intWidth(fieldLT); fwOK && vw != fw {
+			valV = c.coerceInt(valV, valLT, fieldLT)
+			valLT = fieldLT
+		} else if fieldLT == "double" || fieldLT == "float" {
+			// Integer -> floating-point FIELD. fieldLT was re-derived from the
+			// field DECLARATION above, so `r.x = 10` on `rect{ x f64 }` reaches
+			// the generic `store double %lv, double* %gp` at the end of this
+			// function with %lv still defined as i64 -> opt-verify fails with
+			// "'%lv' defined with type 'i64' but expected 'double'" and clang
+			// only reports it at LINK time. The arithmetic path (coerceInt) and
+			// emitIndexStore both already convert; the field store did not, which
+			// forced every f64 literal in noui to be written with a `.0`.
 			valV = c.coerceInt(valV, valLT, fieldLT)
 			valLT = fieldLT
 		}

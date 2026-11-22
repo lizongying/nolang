@@ -1,0 +1,220 @@
+; ============================================================================
+; noui 命令式「命令面板」测试（阶段 37）—— src/components.no
+;
+; 缺口：内核有 C-COMMAND（只有 kind + 一个值），声明式侧有 dv-command-palette，
+; 但命令式侧只有 cmp-command 一个构造器（阶段 37 之前）。阶段 37 补：
+;   - 全局命令表 CP-TEXT / CP-ACT（应用写、面板读，源行主序）。
+;   - 句柄级状态 CP-Q / CP-CUR / CP-OFF / CP-SB / CP-INP-H / CP-SCR-H /
+;     CP-ROW-SRC（随 cmp-alloc 一起长）。
+;   - cmp-command-add / -count / -query / -set-query / -type / -backspace。
+;   - cmp-command-sync：输入框 + 滚动体 + 任意时刻只挂可见行；
+;     内容高声明给布局（m*rowh + (m-1)*gap + 2*pad）。
+;   - cmp-command-move / -cur / -set-cur / -cur-src / -run。
+;   - cmp-command-row-of / -row-src：命中上溯到源行号。
+;
+; 注意（阶段 34/35 的踩坑同样适用）：cmp-command-sync 必须在**顶层作用域**
+; 调用，经函数中转会挂歪子链。本文件所有 sync 都在顶层。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-command tests/cmp-command.no
+;       DYLD_LIBRARY_PATH=... SDL_VIDEODRIVER=dummy ./dist/cmp-command
+; ============================================================================
+# /noui/src/components
+
+FG = 0xE8E8F0FF
+ACC = 0x4A90E2FF
+SELB = 0x2A3A5AFF
+
+ROWH = 2800
+VIEWH = 28000
+
+; 在 scr 的子节点里找 row_src == want 的第一个（返回句柄，没找到 -1）
+cp-find-row = (scr i64, want i64) (h i64) {
+    h = -1
+    i = 0
+    n = cmp-children(scr)
+    !! {
+        (i >= n) -> { ** }
+        (h >= 0) -> { ** }
+        r = cmp-child(scr, i)
+        (cmp-command-row-src(r) == want) -> { h = r }
+        i = ct-inc(i)
+    }
+    h = h
+}
+
+; ---- 1. 构造：根是 C-COMMAND，初始什么都没有 ----
+p = cmp-command()
+k1 = cmp-kind(p) == C-COMMAND
+k2 = cmp-children(p) == 0
+k3 = cmp-command-query(p) == '' && cmp-command-cur(p) == -1 && cmp-command-off(p) == 0
+k4 = cmp-command-input(p) == -1 && cmp-command-scroll(p) == -1
+
+; ---- 2. 命令表（应用写，全局单份）----
+cmp-command-add('new file', 10)
+cmp-command-add('open file', 20)
+cmp-command-add('save file', 30)
+cmp-command-add('save as', 40)
+cmp-command-add('close tab', 50)
+cmp-command-add('close all', 60)
+cmp-command-add('find in files', 70)
+cmp-command-add('go to line', 80)
+cmp-command-add('toggle sidebar', 90)
+cmp-command-add('run task', 100)
+m0 = cmp-command-count() == 10
+
+; ---- 3. 查询串：设置 / 追加 / 退格（退格到空之后再退不动）----
+cmp-command-set-query(p, 'file')
+q1 = cmp-command-query(p) == 'file'
+cmp-command-type(p, '!')
+q2 = cmp-command-query(p) == 'file!'
+cmp-command-backspace(p)
+q3 = cmp-command-query(p) == 'file'
+cmp-command-backspace(p)
+cmp-command-backspace(p)
+cmp-command-backspace(p)
+cmp-command-backspace(p)
+q4 = cmp-command-query(p) == ''
+cmp-command-backspace(p)
+q5 = cmp-command-query(p) == ''
+
+; ---- 4. sync 结构：空查询命中全部 10 条，可见 8 行 ----
+cmp-command-set-query(p, '')
+m = cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+s1 = m == 10
+s2 = cmp-children(p) == 2
+inp = cmp-child(p, 0)
+scr = cmp-child(p, 1)
+s3 = cmp-kind(inp) == C-INPUT && cmp-kind(scr) == C-SCROLL
+s4 = cmp-sh(inp) == ROWH
+s5 = cmp-text(inp) == ''
+s6 = cmp-lay(scr) == L-GROW && cmp-sh(scr) == VIEWH && cmp-pad(scr) == 1200 && cmp-gap(scr) == 800
+s7 = cmp-scroll-content(scr) == 37600
+s8 = cmp-scroll-start(scr) == 0
+s9 = cmp-children(scr) == 8
+r0 = cmp-child(scr, 0)
+s10 = cmp-kind(r0) == C-FORM && cmp-children(r0) == 1 && cmp-sh(r0) == ROWH && cmp-lay(r0) == L-H
+lb0 = cmp-child(r0, 0)
+s11 = cmp-kind(lb0) == C-LABEL && cmp-text(lb0) == 'new file'
+s12 = cmp-color(lb0) == ACC && cmp-color(r0) == SELB
+s13 = (cmp-flags(r0) & F-SELECTED) != 0
+s14 = cmp-command-row-src(r0) == 0
+r1 = cmp-child(scr, 1)
+s15 = (cmp-flags(r1) & F-SELECTED) == 0 && cmp-color(cmp-child(r1, 0)) == FG
+s16 = cmp-command-row-src(r1) == 1
+s17 = cmp-command-row-src(cmp-child(scr, 7)) == 7
+
+; ---- 5. 命中上溯：点文本标签也能上溯到行；面板 / 输入框 / 滚动体都不是行 ----
+h1 = cmp-command-row-of(p, lb0) == r0
+h2 = cmp-command-row-of(p, r0) == r0
+h3 = cmp-command-row-of(p, inp) == -1 && cmp-command-row-of(p, p) == -1
+h4 = cmp-command-row-src(scr) == -1 && cp-find-row(scr, 9) == -1
+
+; ---- 6. 游标 / 执行：游标是命中表下标，run 取源行的命令码 ----
+s18 = cmp-command-cur(p) == 0 && cmp-command-cur-src(p) == 0 && cmp-command-run(p) == 10
+
+; ---- 7. 导航：夹在 [0, m-1] ----
+cmp-command-move(p, 1)
+n1 = cmp-command-cur(p) == 1 && cmp-command-cur-src(p) == 1 && cmp-command-run(p) == 20
+cmp-command-move(p, -1)
+n2 = cmp-command-cur(p) == 0
+cmp-command-move(p, -1)
+n3 = cmp-command-cur(p) == 0
+cmp-command-move(p, 99)
+n4 = cmp-command-cur(p) == 9 && cmp-command-cur-src(p) == 9 && cmp-command-run(p) == 100
+cmp-command-move(p, -99)
+n5 = cmp-command-cur(p) == 0
+
+; ---- 8. 过滤：大小写不敏感子串，空查询命中全部 ----
+cmp-command-set-query(p, 'file')
+m2 = cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+f1 = m2 == 4
+f2 = cmp-children(scr) == 4
+f3 = cmp-command-row-src(cmp-child(scr, 0)) == 0
+f4 = cmp-command-row-src(cmp-child(scr, 1)) == 1
+f5 = cmp-command-row-src(cmp-child(scr, 2)) == 2
+f6 = cmp-command-row-src(cmp-child(scr, 3)) == 6
+f7 = cmp-text(cmp-child(cmp-child(scr, 3), 0)) == 'find in files'
+f8 = cmp-scroll-content(scr) == 16000
+f9 = cmp-scroll-start(scr) == 0
+f10 = cmp-command-cur(p) == 0 && cmp-command-run(p) == 10
+cmp-command-set-query(p, 'FILE')
+m3 = cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+f11 = m3 == 4
+cmp-command-set-query(p, 'save')
+m4 = cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+f12 = m4 == 2
+f13 = cmp-command-row-src(cmp-child(scr, 0)) == 2 && cmp-command-row-src(cmp-child(scr, 1)) == 3
+
+; ---- 9. 空命中：游标清空，不挂行 ----
+cmp-command-set-query(p, 'zzz')
+m5 = cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+e1 = m5 == 0
+e2 = cmp-command-cur(p) == -1
+e3 = cmp-command-cur-src(p) == -1
+e4 = cmp-command-run(p) == -1
+e5 = cmp-children(scr) == 0
+e6 = cmp-scroll-content(scr) == 2400
+e7 = cmp-scroll-start(scr) == 0
+cmp-command-move(p, 1)
+e8 = cmp-command-cur(p) == -1
+
+; ---- 10. 命中后游标夹紧（查询一变，旧游标可能越界）----
+cmp-command-set-query(p, 'file')
+cmp-command-set-cur(p, 99)
+cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+c1 = cmp-command-cur(p) == 3
+cmp-command-set-cur(p, -5)
+cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+c2 = cmp-command-cur(p) == 0
+
+; ---- 11. 滚动：窗口跟着偏移走（内容高不变）----
+cmp-command-set-query(p, '')
+cmp-command-set-off(p, 0)
+cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+o1 = cmp-scroll-start(scr) == 0 && cmp-children(scr) == 8
+o2 = cmp-command-row-src(cmp-child(scr, 0)) == 0
+cmp-command-set-off(p, 4000)
+cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+o3 = cmp-scroll-start(scr) == 1 && cmp-children(scr) == 8
+o4 = cmp-command-row-src(cmp-child(scr, 0)) == 1
+o5 = cmp-scroll-content(scr) == 37600
+cmp-command-set-off(p, 999999)
+cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+o6 = cmp-scroll-start(scr) == 9 && cmp-children(scr) == 1
+o7 = cmp-command-row-src(cmp-child(scr, 0)) == 9
+
+; ---- 12. 重复 sync：输入框 / 滚动体复用，子链不累积 ----
+cmp-command-set-off(p, 0)
+m6 = cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+d1 = cmp-children(p) == 2 && m6 == 10
+d2 = cmp-command-input(p) == inp && cmp-command-scroll(p) == scr
+d3 = cmp-text(inp) == ''
+d4 = cmp-children(scr) == 8
+
+; ---- 13. 两个面板：命令表共享，查询 / 游标 / 偏移各自独立 ----
+p2 = cmp-command()
+cmp-command-set-query(p, '')
+cmp-command-set-off(p, 0)
+cmp-command-sync(p, VIEWH, ROWH, FG, ACC, SELB)
+cmp-command-set-query(p2, 'save')
+m7 = cmp-command-sync(p2, VIEWH, ROWH, FG, ACC, SELB)
+t1 = m7 == 2
+t2 = cmp-command-count() == 10
+t3 = cmp-command-query(p) == '' && cmp-command-query(p2) == 'save'
+t4 = cmp-command-cur(p) == 0 && cmp-command-cur(p2) == 0
+t5 = cmp-command-row-src(cmp-child(cmp-command-scroll(p2), 0)) == 2
+t6 = cmp-command-row-src(cmp-child(cmp-command-scroll(p), 0)) == 0
+cmp-command-set-off(p2, 8000)
+cmp-command-sync(p2, VIEWH, ROWH, FG, ACC, SELB)
+t7 = cmp-command-off(p) == 0 && cmp-command-off(p2) == 8000
+t8 = cmp-command-scroll(p) != cmp-command-scroll(p2) && cmp-command-input(p) != cmp-command-input(p2)
+
+all-ok = k1 && k2 && k3 && k4 && m0 && q1 && q2 && q3 && q4 && q5 && s1 && s2 && s3 && s4 && s5 && s6 && s7 && s8 && s9 && s10 && s11 && s12 && s13 && s14 && s15 && s16 && s17 && h1 && h2 && h3 && h4 && s18 && n1 && n2 && n3 && n4 && n5 && f1 && f2 && f3 && f4 && f5 && f6 && f7 && f8 && f9 && f10 && f11 && f12 && f13 && e1 && e2 && e3 && e4 && e5 && e6 && e7 && e8 && c1 && c2 && o1 && o2 && o3 && o4 && o5 && o6 && o7 && d1 && d2 && d3 && d4 && t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8
+print('ctor={k1}{k2}{k3}{k4} table={m0} query={q1}{q2}{q3}{q4}{q5}')
+print('sync={s1}{s2}{s3}{s4}{s5}{s6}{s7}{s8}{s9}{s10}{s11}{s12}{s13}{s14}{s15}{s16}{s17}')
+print('hit={h1}{h2}{h3}{h4} cur={s18} move={n1}{n2}{n3}{n4}{n5}')
+print('filter={f1}{f2}{f3}{f4}{f5}{f6}{f7}{f8}{f9}{f10}{f11}{f12}{f13}')
+print('empty={e1}{e2}{e3}{e4}{e5}{e6}{e7}{e8} clamp={c1}{c2}')
+print('off={o1}{o2}{o3}{o4}{o5}{o6}{o7} resync={d1}{d2}{d3}{d4}')
+print('two={t1}{t2}{t3}{t4}{t5}{t6}{t7}{t8}')
+print('ALL={all-ok}')

@@ -58,10 +58,10 @@ fmh-run = () {
     ; 為了讓填充空白可見，部分用例以 '[' 與 ']' 包夾輸出。
 
     print('=== fmt-parse-spec ===')
-    fill, align, sign, alt, zero, width, grouping, precision, typ = fmt.fmt-parse-spec('<+08.2f')
+    fill, align, sign-ch, alt, zero, width, grouping, precision, typ = fmt.fmt-parse-spec('<+08.2f')
     print(fill)
     print(align)
-    print(sign)
+    print(sign-ch)
     print(alt)
     print(zero)
     print(width)
@@ -234,8 +234,8 @@ nf-run = () {
     print('u={u:08x}')
 
     ; byte (u8)
-    b byte = 65
-    print('b={b}')
+    bt byte = 65
+    print('b={bt}')
 
     ; 浮點數
     pi = 3.14159

@@ -66,10 +66,41 @@ func nomlParseProjectConfig(data []byte) (*ProjectConfig, error) {
 
 // ─── package.noml template ───────────────────────────────────────────────────
 
+// packageCategoryComment 列出 category 欄位的建議取值（英文小寫），以 ;
+// 註解形式寫在產生出的 package.noml 最上方供使用者參考。順序與官方分類一致。
+const packageCategoryComment = `; category (optional, lowercase), one of:
+;   books
+;   business
+;   developer tools
+;   education
+;   entertainment
+;   finance
+;   food & drink
+;   graphics & design
+;   health & fitness
+;   lifestyle
+;   magazines & newspapers
+;   medical
+;   music
+;   navigation
+;   news
+;   photo & video
+;   productivity
+;   reference
+;   safari extensions
+;   shopping
+;   social networking
+;   sports
+;   travel
+;   utilities
+;   weather
+`
+
 // renderPackageNoml renders a package.noml document from ProjectConfig.
 // dependencies 以 'key:version' 字串陣列落地（排序後輸出求確定性）。
 func renderPackageNoml(config ProjectConfig) string {
 	var sb strings.Builder
+	sb.WriteString(packageCategoryComment)
 	sb.WriteString("{\n")
 	writePair := func(key, value string) {
 		sb.WriteString("  ")
@@ -80,6 +111,7 @@ func renderPackageNoml(config ProjectConfig) string {
 	}
 	writePair("name", config.Name)
 	writePair("description", config.Description)
+	writePair("category", config.Category)
 	sb.WriteString("  keywords: []\n")
 	writePair("author", config.Author)
 	writePair("email", config.Email)

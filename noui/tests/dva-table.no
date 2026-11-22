@@ -1,0 +1,339 @@
+; ============================================================================
+; noui 声明式「虚拟表格：一行 N 列」测试（阶段 28）—— src/dv.no
+;
+; 缺口：到阶段 27 为止，声明式列表只有「一行一个标签」（dv-list-view /
+; dv-filter-list / dv-order-list）。真实表格要「一行 N 列 + 表头 + 虚拟滚动」，
+; ARCHITECTURE 的功能对等长期项里明确写着「DataTable 虚拟滚动」。
+;
+; 阶段 28 补：
+;   - dv-table-rows ：把窗口内的混合行表挂成 C-GRID 行（每行 ncols 个单元格），
+;                      列宽 / 表宽 / 行高全是**声明**的（不靠实测）；
+;   - dv-table-list ：表头 + 滚动容器 + 可见窗口的行 —— dv-order-list 的超集
+;                      （ncols = 1 且不分组时行为等价）。
+;
+; 场景钉住：
+;   R 行  ：列数 / 文案 / 行宽高 / 列宽；plan 映射；通栏组标题；
+;           count 夹到混合行表长度；越界 token 兜底
+;   L 列表：表头（列宽 / 文案 / 颜色）；内容高声明 -> cmp-scroll-max；
+;           只挂可见行；偏移真源是状态槽；滚动后同一行复用同一组件；
+;           同状态重复 render 零操作；空表
+;   P 绘制：表头与单元格文案真的画出来
+;   H 命中：单元格可命中；行上的动作可派发
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-table.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = -1
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-table tests ===')
+
+; ---- 数据 ------------------------------------------------------------------
+T-N = 20
+T-NC = 2
+T-ROW-H = 2800
+T-VIEW-H = 10000      ; 视口高 100px -> 约 3 行可见
+T-STEP = 400
+T-TW = 14800          ; 表宽 = 2*12 + 60 + 56 + 8 = 148
+T-KEY = 55            ; 滚动容器 key
+T-HKEY = 920          ; 表头行 key
+T-KEY0 = 93           ; 数据行 key 基数
+T-CKEY0 = 900         ; 单元格 key 基数
+T-HKEY0 = 9000        ; 组标题行 key 基数
+T-P = 0               ; 偏移状态槽
+
+T-C0 []str = with-len(20)
+T-C1 []str = with-len(20)
+T-KEYS []i64 = with-len(20)
+T-GRP []i64 = with-len(20)
+T-CELLS []str = with-len(40)
+T-VALS []i64 = with-len(20)
+T-ACTS []i64 = with-len(20)
+T-PAYS []i64 = with-len(20)
+T-COLW []i64 = with-len(2)
+T-COLW[0] = 6000
+T-COLW[1] = 5600
+T-HEADERS []str = with-len(2)
+T-HEADERS[0] = 'name'
+T-HEADERS[1] = 'key'
+T-GNAME []str = with-len(2)
+T-GNAME[0] = 'grp a'
+T-GNAME[1] = 'grp b'
+
+t-fill = () () {
+    i = 0
+    !! {
+        (i >= T-N) -> { ** }
+        T-KEYS[i] = cs-mul(i, 37) % 11
+        T-GRP[i] = i / 10
+        T-C0[i] = format('row {i}')
+        T-C1[i] = format('k{i}')
+        T-CELLS[cs-mul(i, 2)] = T-C0[i]: {
+            ok -> it
+
+            -> ''
+        }
+        T-CELLS[cs-add(cs-mul(i, 2), 1)] = T-C1[i]: {
+            ok -> it
+
+            -> ''
+        }
+        i = dv-inc(i)
+    }
+}
+t-fill()
+
+; 行动作：只给第 0 行挂一个 SET（命中测试用），其余为 0
+T-ACTS[0] = DV-A-SET
+T-PAYS[0] = 7
+
+ST []i64 = with-len(1)
+
+count-kids = (h i64) (n i64) {
+    n = 0
+    !! {
+        c = cs-child-flow(h, n)
+        (c < 0) -> { ** }
+        n = dv-inc(n)
+    }
+}
+
+find-text = (t str) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-t(i) == t) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ---- 行表（plan）-----------------------------------------------------------
+t-plan-src = () (p []i64) {
+    p = dv-sort-map(0, T-N, T-KEYS)
+}
+t-plan-asc = () (p []i64) {
+    p = dv-sort-map(1, T-N, T-KEYS)
+}
+; 分组：先按组排，再展开成混合行表（token < 0 = 组标题）
+t-plan-grp = () (p []i64) {
+    idxs = dv-sort-map(1, T-N, T-GRP)
+    out []i64 = with-len(0)
+    m = dv-group-plan(1, T-N, T-GRP, idxs, out)
+    p = out
+}
+
+; ---- 视图 ------------------------------------------------------------------
+mk-rows = (plan []i64, start i64, count i64) (p i64) {
+    dv-clear()
+    p = dv-form(1, -1)
+    dv-table-rows(p, T-KEY0, T-HKEY0, T-CKEY0, start, count, T-NC, T-COLW, T-TW,
+                  plan, T-GNAME, T-CELLS, T-ACTS, T-PAYS, CS-TH-MUTED, T-ROW-H)
+    p = p
+}
+
+mk-list = (plan []i64, off i64) (p i64) {
+    dv-clear()
+    ST[T-P] = off
+    p = dv-form(1, -1)
+    dv-table-list(ST, T-KEY, T-HKEY, T-P, T-STEP, T-VIEW-H, T-ROW-H,
+                  plan, T-NC, T-COLW, T-HEADERS, T-GNAME, T-CELLS,
+                  T-ACTS, T-PAYS, T-KEY0, T-CKEY0, T-HKEY0, CS-TH-MUTED, p)
+    p = p
+}
+
+root = cmp-root()
+
+; ============================================================================
+; 场景 R：行 —— dv-table-rows
+; ============================================================================
+plan-src = t-plan-src()
+pr = mk-rows(plan-src, 0, 3)
+dv-render(root, pr)
+cs-layout(root, 0, 0, 40000, 30000)
+
+; 挂出了 3 行，行 key = key0 + 源行号（源序 -> 0,1,2）
+r1 = count-kids(root) == 3
+rr0 = dv-live-deep(root, T-KEY0)
+rr1 = dv-live-deep(root, T-KEY0 + 1)
+r2 = rr0 >= 0 && rr1 >= 0 && cmp-kind(rr0) == C-GRID
+
+; 每行 ncols 个单元格，文案 = cells[源行号*ncols + c]；行宽 = tw、行高 = rowh
+r3 = cmp-kind(dv-live-deep(root, T-CKEY0)) == C-LABEL &&
+     cmp-text(dv-live-deep(root, T-CKEY0)) == dv-arr-get-s(T-CELLS, 0) &&
+     cmp-text(dv-live-deep(root, T-CKEY0 + 1)) == dv-arr-get-s(T-CELLS, 1)
+_, _, rw, rh = cs-rect(rr0)
+r4 = rw == T-TW && rh == T-ROW-H
+_, _, cw0, _ = cs-rect(dv-live-deep(root, T-CKEY0))
+_, _, cw1, _ = cs-rect(dv-live-deep(root, T-CKEY0 + 1))
+r5 = cw0 == dv-arr-get(T-COLW, 0) && cw1 == dv-arr-get(T-COLW, 1)
+
+; plan 映射：乱序 plan 里第 2..4 行 -> 行 key = key0 + plan[j]
+plan-asc = t-plan-asc()
+pr2 = mk-rows(plan-asc, 2, 3)
+dv-render(root, pr2)
+cs-layout(root, 0, 0, 40000, 30000)
+r6 = dv-live-deep(root, T-KEY0 + dv-arr-get(plan-asc, 2)) >= 0 &&
+     dv-live-deep(root, T-KEY0 + dv-arr-get(plan-asc, 4)) >= 0 &&
+     dv-live-deep(root, T-KEY0 + dv-arr-get(plan-asc, 5)) == -1
+
+; 通栏组标题：token < 0 -> 一个占满表宽、禁用的标签，文案 = names[组号]
+plan-grp = t-plan-grp()
+pr3 = mk-rows(plan-grp, 0, 4)
+dv-render(root, pr3)
+cs-layout(root, 0, 0, 40000, 30000)
+gh = -1
+gi = 0
+!! {
+    (gi >= plan-grp.len()) -> { ** }
+    (dv-arr-get(plan-grp, gi) < 0) -> {
+        gh = dv-live-deep(root, T-HKEY0 + (0 - dv-arr-get(plan-grp, gi) - 1))
+        **
+    }
+    gi = dv-inc(gi)
+}
+r7 = gh >= 0 && cmp-kind(gh) == C-LABEL && cmp-text(gh) == dv-arr-get-s(T-GNAME, 0)
+r8 = (cmp-flags(gh) & F-ENABLED) == 0 && (cmp-flags(gh) & F-DISABLED) != 0
+_, _, ghw, ghh = cs-rect(gh)
+r9 = ghw == T-TW && ghh == T-ROW-H
+
+; count 夹到混合行表长度（分组表 22 行，要 99 也只挂 22）
+pr4 = mk-rows(plan-grp, 0, 99)
+dv-render(root, pr4)
+cs-layout(root, 0, 0, 40000, 30000)
+r10 = count-kids(root) == 22
+
+; start 越界：一行都不挂（不兜底成第 0 行 / 不建假行）
+pr5 = mk-rows(plan-src, 99, 3)
+dv-render(root, pr5)
+cs-layout(root, 0, 0, 40000, 30000)
+r11 = count-kids(root) == 0
+
+; ============================================================================
+; 场景 L：列表 —— dv-table-list
+; ============================================================================
+pl = mk-list(plan-src, 0)
+dv-render(root, pl)
+cs-layout(root, 0, 0, 40000, 30000)
+
+; 表头：一行 C-GRID + ncols 个定宽标签，文案 / 颜色都对
+hh = dv-live-deep(root, T-HKEY)
+l1 = hh >= 0 && cmp-kind(hh) == C-GRID
+hc0 = dv-live-deep(root, T-HKEY + 1)
+hc1 = dv-live-deep(root, T-HKEY + 2)
+l2 = cmp-text(hc0) == 'name' && cmp-text(hc1) == 'key' &&
+     cmp-color(hc0) == CS-TH-MUTED
+_, _, hw, _ = cs-rect(hh)
+l3 = hw == T-TW
+
+; 内容高是**声明**的：20 行 -> 20*28 + 19*8 + 24 = 736；maxoff = 736 - 100 = 636
+hs = dv-live-deep(root, T-KEY)
+l4 = cmp-scroll-content(hs) == 73600
+l5 = cmp-scroll-max(hs) == 63600
+l6 = cmp-scroll-start(hs) == 0
+
+; 只挂可见的 3 行（不是 20 行）
+l7 = count-kids(hs) == 3
+l8 = dv-live-deep(root, T-KEY0 + 2) >= 0 && dv-live-deep(root, T-KEY0 + 3) == -1
+
+; 偏移的真源是状态槽：改写后重建，窗口跟着走
+ST[T-P] = 3600
+pl2 = mk-list(plan-src, 3600)
+dv-render(root, pl2)
+cs-layout(root, 0, 0, 40000, 30000)
+hs2 = dv-live-deep(root, T-KEY)
+l9 = cmp-value(hs2) == 3600
+l10 = cmp-scroll-start(hs2) == 1
+l11 = dv-live-deep(root, T-KEY0 + 1) >= 0 && dv-live-deep(root, T-KEY0 + 0) == -1
+
+; 滚动后同一行复用同一组件对象（结构最小增删）
+ra = dv-live-deep(root, T-KEY0 + 1)
+ST[T-P] = 7200
+pl3 = mk-list(plan-src, 7200)
+dv-render(root, pl3)
+cs-layout(root, 0, 0, 40000, 30000)
+rb = dv-live-deep(root, T-KEY0 + 1)
+l12 = ra >= 0 && ra == rb
+
+; 同状态重复 render：零操作
+pl4 = mk-list(plan-src, 7200)
+dv-render(root, pl4)
+ops4 = dv-render(root, pl4)
+l13 = ops4 == 0
+
+; 分组表：内容高按混合行数算（22 行），组标题也是通栏行
+plg = mk-list(plan-grp, 0)
+dv-render(root, plg)
+cs-layout(root, 0, 0, 40000, 30000)
+hsg = dv-live-deep(root, T-KEY)
+l14 = cmp-scroll-content(hsg) == 80800 && cmp-scroll-max(hsg) == 70800
+l15 = count-kids(hsg) == 3
+
+; 空表：内容高 = 上下 padding，maxoff = 0，不挂行
+E-PLAN []i64 = with-len(0)
+ple = mk-list(E-PLAN, 0)
+dv-render(root, ple)
+cs-layout(root, 0, 0, 40000, 30000)
+hse = dv-live-deep(root, T-KEY)
+l16 = cmp-scroll-content(hse) == 0 && cmp-scroll-max(hse) == 0 && count-kids(hse) == 0
+
+; ============================================================================
+; 场景 P：绘制 —— 表头与单元格文案真的画出来
+; ============================================================================
+pj = mk-list(plan-src, 0)
+dv-render(root, pj)
+cs-layout(root, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root)
+p1 = find-text('name') >= 0 && find-text('key') >= 0
+p2 = find-text(dv-arr-get-s(T-CELLS, 0)) >= 0 && find-text(dv-arr-get-s(T-CELLS, 1)) >= 0
+
+; ============================================================================
+; 场景 H：命中 —— 单元格可命中；行上的动作可派发
+; ============================================================================
+root-h = cmp-root()
+ph = mk-list(plan-src, 0)
+dv-render(root-h, ph)
+cs-layout(root-h, 0, 0, 40000, 30000)
+cell = dv-live-deep(root-h, T-CKEY0)
+cx, cy, cw, chh = cs-rect(cell)
+h1 = cs-hit(root-h, cs-add(cx, cs-div(cw, 2)), cs-add(cy, cs-div(chh, 2))) == cell
+
+; 行动作：第 0 行挂了 (DV-A-SET, 7)
+am, py = dv-dispatch(T-KEY0)
+h2 = am == DV-A-SET && py == 7
+; 没挂动作的行不出动作
+am2, py2 = dv-dispatch(T-KEY0 + 1)
+h3 = am2 == 0 && py2 == 0
+; 组标题禁用：命中有效但不出动作
+am3, py3 = dv-dispatch(T-HKEY0)
+h4 = am3 == 0 && py3 == 0
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 &&
+     l1 && l2 && l3 && l4 && l5 && l6 && l7 && l8 && l9 && l10 && l11 && l12 &&
+     l13 && l14 && l15 && l16 &&
+     p1 && p2 && h1 && h2 && h3 && h4
+
+print('R rows={r1}{r2}{r3}{r4}{r5}{r6}{r7}{r8}{r9}{r10}{r11}')
+print('L list={l1}{l2}{l3}{l4}{l5}{l6}{l7}{l8}{l9}{l10}{l11}{l12}{l13}{l14}{l15}{l16}')
+print('P paint={p1}{p2}')
+print('H hit={h1}{h2}{h3}{h4}')
+print('all-ok={ok}')
+(ok) -> {
+    print('ALL DVA-TABLE TESTS PASSED')
+}

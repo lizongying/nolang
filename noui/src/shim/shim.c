@@ -95,13 +95,29 @@ void noui_end_frame(void) {
     SDL_RenderPresent(g_renderer);
 }
 
+/* 阶段23：滚动视口裁剪。坐标是逻辑像素（调用方已把定点 /100）。
+ * w<=0 或 h<=0 视为清除，避免 SDL 对空矩形的未定义行为。 */
+void noui_clip(int x, int y, int w, int h) {
+    if (!g_renderer) return;
+    if (w <= 0 || h <= 0) { noui_clip_clear(); return; }
+    SDL_Rect rect;
+    rect.x = x; rect.y = y; rect.w = w; rect.h = h;
+    SDL_SetRenderClipRect(g_renderer, &rect);
+}
+
+void noui_clip_clear(void) {
+    if (!g_renderer) return;
+    SDL_SetRenderClipRect(g_renderer, NULL);
+}
+
 /* 事件摊平：编码进一个 i64 返回。
  * 返回 0=无事件；否则低 8 位=事件类型，中 24 位=x 坐标(int)，高 24 位=y 坐标(int)。
- * 按键事件把 key code 放 x 槽。这样 Nolang 只需处理标量，避开输出指针。 */
+ * 按键事件把 key code 放 x 槽。滚轮额外用 bit56..63 带符号增量（见下）。
+ * 这样 Nolang 只需处理标量，避开输出指针。 */
 long long noui_poll(void) {
     SDL_Event e;
     if (!SDL_PollEvent(&e)) return 0;
-    long long type = 0, x = 0, y = 0;
+    long long type = 0, x = 0, y = 0, d = 0;
     switch (e.type) {
         case SDL_EVENT_QUIT:
             g_quit = 1;
@@ -114,9 +130,30 @@ long long noui_poll(void) {
                 return 0;
             }
             break;
+        /* 阶段29：左键抬起。拖分栏（Dock）需要「按下抓住 -> 移动 -> 松开放手」
+         * 的完整三段，缺了抬起就只能靠再次按下结束拖拽。坐标槽与按下一致。 */
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (e.button.button == SDL_BUTTON_LEFT) {
+                type = 6; x = (long long)e.button.x; y = (long long)e.button.y;
+            } else {
+                return 0;
+            }
+            break;
         case SDL_EVENT_MOUSE_MOTION:
             type = 3; x = (long long)e.motion.x; y = (long long)e.motion.y;
             break;
+        /* 阶段23：滚轮。x/y 槽放光标位置（命中要用），增量走 integer_y
+         * （整格 tick，SDL3 >= 3.2.12），夹到 int8 放 bit56..63 —— 24 位掩码装不下负数。 */
+        case SDL_EVENT_MOUSE_WHEEL: {
+            type = 5;
+            x = (long long)e.wheel.mouse_x;
+            y = (long long)e.wheel.mouse_y;
+            long long w = (long long)e.wheel.integer_y;
+            if (w > 127) w = 127;
+            if (w < -128) w = -128;
+            d = w;
+            break;
+        }
         case SDL_EVENT_KEY_DOWN:
             type = 4; x = (long long)e.key.key;
             if (e.key.key == SDLK_ESCAPE) g_quit = 1;
@@ -127,7 +164,7 @@ long long noui_poll(void) {
     /* 每槽限制 24 位，避免相互覆盖 */
     x &= 0xFFFFFF;
     y &= 0xFFFFFF;
-    return type | (x << 8) | (y << 32);
+    return type | (x << 8) | (y << 32) | ((d & 0xFF) << 56);
 }
 
 int noui_should_quit(void) { return g_quit; }

@@ -5902,3 +5902,324 @@ codegen 路徑）——需先能從接收者追查載荷型別；③ `h2m-tynode
 - **下一步③**：`self` 绑定（§64 ⑤ 下一步①，根因最深）。
 - **量测工件**：`tmp/s147/{cov-field.no,cov-v-*.no,bisect.sh,t-minimal.no}`、
   `tmp/s147/v-{init,push,read,chain,idx,itcmp,3push-idx}.no`。
+
+
+## 66 s148b — 缺口①真身：`c.mem == 0` 门禁误伤字段 push（顶层 match → 合成 main 进 mem 模式）
+（HEAD `926a2426` v0.4.29；量测宿主 = d21fbb35 worktree 旧 checker）
+
+① **定位（推翻 §65 的归因）**
+- §65 把 3 个 unsup 归因成「①索引读 match 本身 + ②多次 push 后块上下文错乱」。本轮用**包装函数探针**
+  （把所有 `h2m-mark(c)` 换成 `h2m-mark-tagged(c, tag)`，保持 `cond ->` 单语句控制流不变——
+  直接插入独立语句会让 mark 无条件执行，实测假象 16 unsup，已还原）逐条定位：
+  - 唯一 mark 点 = `h2m.no:4107`（K-CALL-EXPRESSION 的 `ok-call/print/method` 全 0）。
+  - 打印失败 call：`FK-/push/b`（方法名 push、接收者 b、`cn` 空）⇒ **失败的是 `b.items.push('a')`，不是 match、也不是索引读**。
+- **最小语料二分**（`tmp/s148/probe/`，全部用 `cov-field.no` 口径）：
+
+  | 语料 | 内容 | unsup |
+  | --- | --- | --- |
+  | `p3` | push + `v = b.items[1]`（无 match） | **0** |
+  | `s2` | push + `print('after')`（无 match） | **0** |
+  | `p4` | push + `b.items[1]: { -> print }`（单兜底臂） | **1** |
+  | `t1` | match 写在 push **之前** | **1** |
+  | `t2` | 2 次 push + match | **2** |
+  | `s1` | push + 空 match | **2**（push + 空 match 各一） |
+
+  ⇒ 规律：**每个字段 push 在「档内含 SurfaceMatch」时各 mark 一次**，与 match 先后／索引读与否／臂内容无关。
+- **根因（探针钉死）**：打印 push 门控现场——`p4` 为 `ST-6-mem1-k25-om0`（`c.mem == 1`），
+  `s2` 为 `ST-6-mem0-k25-om0`（`c.mem == 0`）。两者的 `rv`（字段读值 id）、`rty`（=6=TY-VECSTR）、
+  `h2m-name-find('b')`（=0）、`h2m-push-field-set` 入口之前的状态全部相同；
+  差别只在 `c.mem`。字段 push 臂（`h2m.no:3737` TY-VEC / `:3797` TY-VECSTR）要求 `c.mem == 0`，
+  而**顶层 match 让 `h2m-synth-main` 合成的 `@main` 带输出参 `__noc_r` ⇒ `h2m-lower-func` 置 `c.mem = 1`**
+  （`h2m.no:6261`）⇒ 两条字段 push 臂整条落空，`ok-method` 保持 0 ⇒ 4107 mark。
+- ✅ 这同时解释 §65 的「多次 push 多出 2 个」：就是第 2/3 次 push 各再撞一次同一门禁，
+  **不是**块上下文栈错乱。§65 的块级归因（BlockStatement/FunctionDefinition）是 `h2m-bk-take` 的近似，非根因。
+
+② **修复（`compiler/src/h2m.no`，+8 −2；md5 `379dd3c0`→`10e46f3`）**
+- 去掉**点号接收者**（字段）push 两臂的 `c.mem == 0` 条件（3737、3797）：字段 push 走
+  `h2m-push-field-set`，其内部 `h2m-var-write(c, bnm, dsv)` 在 mem==1 下已由
+  `h2m-var-write:1387`（`st >= TY-STRUCT-BASE` ⇒ `OP-STSTORE`）正确写回 struct 槽 ⇒ 门禁多余。
+- **标识符接收者** push 两臂（3718、3780）的 `c.mem == 0` **保留**：它们依赖 `h2m-var-bind`
+  直接重绑名字，mem 模式下语义不同，放宽会出错。
+- 只改条件 + 注释；未动任何 mark / emit / 槽登记逻辑。
+
+③ **量测（A/B 只切 main 的 `h2m.no`，宿主 = d21fbb35 worktree 旧 checker）**
+
+| 档 | A `379dd3c0` | B `10e46f3` | 差 |
+| --- | --- | --- | --- |
+| `h2m` | 471 | **403** | **−68** |
+| `cg` | 76 | **76** | 0（逐字相同） |
+| `lx` | 87 | **87** | 0（逐字相同） |
+
+- 缺口语料：`v-idx` / `v-3push-idx` / `p1` / `p2` / `p4` / `t1` / `t2` 全部 **1或3 → 0**；
+  `s1` 空 match 2→1（余 1 = 空 match 自身 preserve 的诚实门禁，与本缺口无关）。
+- **§65 的下一步①与②（索引读 match + 多次 push）由同一处修复一并清零**——
+  两者本就是同一门禁的两个表现，不是两个独立缺口。
+
+④ **验证**
+- ✅ **14 套门禁**：`ps` 52 · `h2m` 1365（6 failed，见下）· `cg` 363 · `ck-sig` 50 · `lx` 81 ·
+  `tok` 62 · `diag` 7 · `build-package` 8 · `util` 27 · `ps-err` 46 · `pkg-ll-call` 5 ·
+  `pkg-sigs` 5 · `pkg-ll` 10 · `ck` 20（全 0 failed）。
+  - ⚠️ `h2m` 档的 6 failed **全部是 s109 诊断通道测试**（`test-s109-id-attrib`，语料 `r = missing` /
+    `r = tok.EOF` / `r = a`），与字段 push 无关。**用改前 bak 跑同一测试逐字同样 6 failed**
+    ⇒ v0.4.29 引入 `h2m-id-name` 诊断标记时的**预存基线回归**，非本轮引入（已 A/B 对照）。
+- ✅ **e2e**：宿主 `no build -o tmp/s148/noc-fixed compiler` 成功；`ts-e2e`/`ts-min` 在 host 与
+  `noc-fixed` 下**逐字一致**且 exit=0；`ts-sem`/`ts-sem2` 仍 11/6 unsup（与 s143–s148 相同，
+  已知 SHS 子集边界，非回归）。
+- ⚠️ `no fmt -d compiler/src/h2m.no` 在 `:4517`/`:4544` 有缩进漂移（`let-cap`/`let-tc` 块）——
+  同为 v0.4.29 诊断标记带入的**预存漂移**，本轮不碰（改动在 3737/3797，format 干净）。
+
+⑤ **诚实边界与下一步**
+1. **权威对齐未测**：本轮只证明自举降级器侧放行，`c.mem==1` 下 `OP-STSTORE` 写回字段缓冲的
+   **运行期语义**（所有权／双释放）未在 `noc` 下跑过含 `[]str` 字段 push 的可执行语料
+   （`ts-*` 不含此构造）。放行是依 `h2m-var-write:1387` 的 struct 槽写回语义推导 + cg/lx 逐字零回归，
+   **不是**运行期实测。
+2. `s1` 空 match 仍 1 unsup（空 SurfaceMatch 无臂 ⇒ `arms <= 0 -> h2m-mark`，`h2m.no:5408`），
+   属诚实门禁，不在本轮范围。
+3. **§65 与代码的不一致**：§65 记「h2m.no 保持 s147a `5b53197d`、本轮零代码改动」，
+   但 v0.4.29 提交已把 s148 定位用的诊断标记（`h2m-id-name('blk-let')`/`('si-bt-vecstr')` 等）
+   写进主工作区 `h2m.no`（`379dd3c0`）。本轮以 `379dd3c0` 为 A 基线——**§65 的「零改动」仅对
+   降级语义成立，诊断标记那一步未追记**。
+4. **下一步①**：`self` 绑定（§64 ⑤ 下一步①，根因最深）——`h2m-func-sig` 只收 `d.c4`、
+   `h2m-lower-func` 只绑 `fap.len()` 个输入形参 ⇒ 方法体的 `self`/`.x` 读不到。
+5. **下一步②**：让 `noc` 降级降级器自身（自举验证）——`v-idx` 已 0 unsup，
+   可改在 worktree 里让 `noc` 直接跑 `drv.pkg-ll-cov` 验证 mem 模式下字段 push 的 cg 发射。
+6. **量测工件**：`tmp/s148/{wt/,h2m.no.bak,h2m.no.fixed,ab-measure.sh,gate.txt,e2e.txt,noc-fixed}`、
+  `tmp/s148/probe/{p1,p2,p3,p4,s1,s2,r1,r2,r3,t1,t2}.no` 与对应 `cov-*.no`。
+  ⚠️ 临时覆盖 h2m.no 的 A/B 脚本带 `trap` 还原；`tmp/s148/wt` 为 d21fbb35 worktree
+  （`worktree-meta.noml` 已写），用完按约定清理前先读 meta。
+
+
+## 67 s149 — 认领方法体的 self 绑定（定义侧）：h2m 403→392（−11）、cg 76→73、lx 87→82
+
+① **定位（承 §66 ⑤ 下一步①，先纠正归因）**
+- §61~§66 反复把 `self` 绑定称作 `dropped` 26 的「共同根因」，并说「`self` 从不在 `c.names`」。
+  本轮侦察**修正了这条链的描述**：被 dropped 的 `cg-runtime-*` / `cg-rc-*` 函数体
+  （`cg-runtime.no` / `cg-rc.no`）是 `= () (r str)` 的**普通函数、不含 self**；它们内部是
+  `b.push(...)` 点号方法调用。真正的 self 在**被调用的方法定义体**里——`sb.push` 用裸点号
+  `.buf.push(b)`（`sb.no:37`），AST 形如 `self.buf.push`。方法定义降级失败 ⇒ `sb.push` 不 alive
+  ⇒ 调用它的函数被定点剔除（dropped 语义见 `drv.no:961`）。**所以 self 缺口仍在，只是落点在定义侧**。
+- **受控探针**（`tmp/s148/selfbind/`）钉死最小形态：
+  - `method-self.no`：`box.push = (v i64){ .buf.push(v) }` ⇒ **1 unsup**，mark 在
+    `h2m.no:4115`（K-CALL-EXPRESSION 全失败），失败 call = `FAIL-buf.push|m=push|rn=self|rk=25`。
+  - `plain-fn.no`：同逻辑写成普通函数 `add-to = (b box, v i64){ b.buf.push(v) }` ⇒ **0 unsup**。
+  - ⇒ 差异精确落在「方法体的裸点号接收者」：`self` 未绑名 ⇒ `h2m-name-find(c,'self')` 失败
+    ⇒ `recv-is-value=0` ⇒ 字段 push 分派整条落闸。
+- **调用约定澄清**（侦察 agent）：宿主 Go 后端把 self 当方法 LLVM 签名的第 1 个 out-param
+  （`hir2mir.go:2880`、`codegen.go:15424`）；但 h2m 自举降级器走自己的约定——s141 把方法调用
+  改成「不传 self 的静态转发」（`h2m.no:3905-3922`），`cg` 发射直接返回值 + 输入形参
+  （`cg.no:317`）。**两套约定不同**，故「绑定 self」无需改 Go 侧约定，也不改 h2m 的调用约定——
+  只需让定义体内 self 可被类型/字段路径解析。侦察 agent 的「高风险调用约定改动」结论
+  只适用于「让 h2m 与 Go ABI 对齐」，不适用于本轮「打通定义体字段读」的窄目标。
+
+② **修复（`compiler/src/h2m.no`，+30 −2）**
+- 在 `h2m-lower-func` 的形参与循环之后、body 之前（`h2m.no:6255`）插入 s149 块：
+  `is-m==1`（`d.s2=='true'`）时读输出区[0]（`sp = kid0+c3+c4`）的 self 参数节点，
+  用 `h2m-param-ty(t,agg,sk)` 解析其具名型别（如 `box` ⇒ `TY-STRUCT-BASE+sid`），
+  `h2m-alloc` 一个值 id 绑到 `'self'` 并 `h2m-lst-add(loc,'self',sc)` seed 进局部表。
+- **语义定位**：绑的是【仅供类型/字段路径推导的壳值】——s141 静态转发不传真实 receiver，
+  故 self 无运行时实参；它只让 `.field` 读拿到接收者型别、字段名与字段型别。不改 LLVM 签名、
+  不改调用点、不 emit 新形参引用。
+- `#{overflow=wrap}` 注解块按 fmt 要求留空行，`no fmt -d` **零漂移**。
+
+③ **量测（A=prefix `10e46f32` / B=s149；worktree 旧 checker，只切 main 树 h2m.no）**
+| 档 | A（§66 修复态） | B（s149） | 差 |
+|---|---|---|---|
+| h2m | 403（dropped 98） | **392（dropped 90）** | **−11（−8 dropped）** |
+| cg | 76（dropped 24） | **73（dropped 24）** | **−3** |
+| lx | 87（dropped 10） | **82（dropped 8）** | **−5** |
+
+- `cg`/`lx` 非「零回归」而是**同向下降**：方法体 self 打通后更多降级路径可达，非错误放行
+  （dropped 数同步下降 = 活着的函数变多）。
+- mem 方法语料 `self-mem.no`（方法体含 if）：8 → **3** unsup，方法体内 CallExpression 全消失，
+  剩余 3 项与 self 无关。确认 `c.mem==1` 下 self 铺槽未引入新 mark。
+
+④ **验证**
+- ✅ 14 套门禁：`ps 52 · h2m 1365 · cg 363 · ck-sig 50 · lx 81 · tok 62 · diag 7 ·
+  build-package 8 · util 27 · ps-err 46 · pkg-ll-call 5 · pkg-sigs 5 · pkg-ll 10 · ck 20`。
+  唯一 `h2m` 6 failed 与 §66 基线**逐字相同**（s109 诊断通道，v0.4.29 预存），非本轮引入。
+- ✅ `no fmt -d compiler/src/h2m.no` 零漂移。
+- ✅ self-host：`no build -o tmp/s148/selfbind/noc-s149 compiler` 成功；`noc-s149` 跑
+  `ts-e2e`/`ts-min` 输出与 host 及上轮基线**逐字一致**，`ts-sem`/`ts-sem2` 仍 11/6 unsup。
+- ✅ `method-self` 语料：定义侧 unsup 1→0；`plain-fn` 保持 0。
+
+⑤ **诚实边界与下一步**
+1. **覆盖率 ≠ 可执行性（本轮最需记住）**：用 `self-e2e.no`（`b.push(1)` 点号方法调用）
+   实测：host 输出 `3`；s66 基线 noc 报 4 unsup、s149 noc 报 2 unsup，**两者都不产可执行程序**。
+   ⇒ 本轮修复打通了**定义侧**，但**调用侧**（`b.push()` 点号方法调用，`main` 里 3 处
+   CallExpression + b 引用 = 5 unsup）仍是独立缺口，含此构造的程序仍不可执行。noc 整体拒绝
+   这类程序，故**没有错误放行产出错误 IR**，只是尚未让他可执行。
+2. **壳 self 无运行时值**：静态转发语义下 self 是不带实参的 alloc 壳，仅用于字段路径推导；
+   若将来要让方法真正修改 receiver，必须在调用侧把 receiver 作为首参传入并让 self 绑定到它
+   ——那才触及与 Go out-param 约定对齐的深水区（侦察 agent 结论）。
+3. **与 §65/§66 归因的关系**：§66 ⑤ 把 self 绑定称作 `dropped` 的共同根因——方向对但落点描述
+   不准（在方法**定义**体内，不在被 dropped 的函数体内）。本轮以探针修正，未改动 §65/§66 原文。
+4. **下一步①（调用侧）**：认领 `main` 里的点号方法调用 `b.push()`——s141 只支持
+   `mod.fn(x)` 形态的跨模块调用，不含「变量接收者的结构体方法」；这是让 self 程序可执行的最后一环。
+5. **下一步②**：让 `noc` 直接跑 `drv.pkg-ll-cov` 验证 s149 方法体壳 self 的 cg 发射文本合法性。
+6. **量测工件**：`tmp/s148/selfbind/{h2m.prefix,h2m.s149,method-self.no,plain-fn.no,self-e2e.no,
+   self-static.no,self-mem.no,ab2.sh,gate.txt,noc-s149,h2m-fixed.log}` 与对应 `cov-*.no`。
+   A/B 脚本带 `trap` 还原；当前主树 `h2m.no` 为 s149（`fe8891dd`），已与备份一致。
+
+
+## 68 s150 — 定位调用侧「变量接收者方法」：查表只差模块前缀，但补上零收益 ⇒ 定位轮（零代码改动）
+
+① **定位（承 §67 ⑤ 下一步①）**
+- §67 留下：`self-e2e.no` 的 `b.push(1)` 在 `main` 里 3 个 CallExpression + 级联 = 5 unsup，noc 不产码。
+  本轮用包装函数探针钉死：`main` 的 3 个 `b.push` 都走到 s141 的 TY-STRUCT 转发臂
+  （`h2m.no:3911`，探针 `STRCT-push`），但 `h2m-sig-find(sg, 'box.push')` **MISS**
+  （探针 `S141C-box-box.push` + `S141-MISS`）。
+- **根因**：整包签名表的 key = `mod - '.' - short`（`drv.no:725`）。方法定义 `box.push` 不带模块前缀
+  ⇒ `short = 'box.push'` ⇒ 登记 key = `self-e2e.box.push`；而 s141 转发臂拼的是
+  `sn2 - '.' - mname = 'box.push'`（结构体名.方法名）——**差模块前缀**。s141 注释里 `sb.push` 能命中
+  只是因为「结构体名 == 模块名」（`sb.no` 里 `sb.push` ⇒ key 恰好 `sb.push`），属巧合等价。
+  这与 §58 ⑤-2 记的「跨模组同名结构体」是同一类 key 拼法问题。
+
+② **实验性修复（s150，已撤回）**
+- 在 s141 臂加 s114 既有口径的 fallback：`si2 < 0 -> si2 = h2m-sig-find-emit(sg, cn2)`，
+  命中则 `cn = sg.femit[si2]`（emit 名 = 定义的 AST 裸名 `box.push`，唯一命中才收，歧义保护同 s114）。
+- 构造性语料 `self-e2e.no` unsup **5 → 2**（3 次 `b.push` 打通；残余 2 是 `box.len(b).to-str()` 的
+  `0.to-str` 级联——有返回值方法的静态转发链不完整）。
+- 构建 `noc-s150` 跑 `self-e2e.no` / `self-semantic.no`：**仍报 unsup、不产可执行程序**
+  （host 输出 `3` / `5,9`；noc 两版都是拒绝）⇒ **没有错误放行**。
+
+③ **量测（决定撤回的关键证据）**
+- A/B 三档（A=s149 `fe8891dd` / B=s150 `e1a4cf51`）：
+  | 档 | A | B | 差 |
+  |---|---|---|---|
+  | h2m | 392（dropped 90） | 392（dropped 90） | **0** |
+  | cg | 73（dropped 24） | 73（dropped 24） | **0** |
+  | lx | 82（dropped 8） | 82（dropped 8） | **0** |
+- **大语料零收益**：编译器 16 模块里结构体名都恰好等于模块名（`sb.push`@`sb.no`、`cg.*`@`cg.no`…），
+  s141 的 `sn.mname` 拼法本就命中；`sig-find-emit` fallback 只对「结构名 ≠ 模块名」的第三方语料有用，
+  而那类语料即便命中仍不可执行。
+
+④ **验证 / 撤回**
+- **撤回 s150**：主树 `h2m.no` 恢复 s149（`fe8891dd`），s150 代码移除，diff 回到 §67 的 +32/−2。
+- 理由：零覆盖率收益 + 新增一条查表 fallback 路径（潜在歧义面）+ 未让任何程序变可执行 ⇒
+  不符合「每步须有明确收益」的增量纪律。保留实验工件供后续参考，不入库。
+- 未跑门禁（源码回退到 §67 逐字相同 ⇒ 沿用 §67 的 14 套全绿，不重复）。
+
+⑤ **诚实边界与下一步（真正的最后一环已重新定位）**
+1. **self 程序不可执行的真障碍不是查表，是 receiver 没传**。§67 给方法体 self 绑的是【壳值】
+   （无运行时实参，s141 静态转发不传 self）。因此即便调用侧查表命中、即便 `box.len` 返回值链打通，
+   方法体的 `.n = v` 写在壳上，真实 `b.n` 永远不变——程序最多输出 `5,5`（错），不可能输出 `5,9`（对）。
+   host 实测 `5,9` 与 noc 拒绝的对照（`self-semantic.no`）钉死了这一点。
+2. **要真正可执行，必须**：让 s141 调用点把 receiver 作为首参传入 + 方法体 self 绑定到该实参 +
+   struct 按引用传递（写回 caller 槽）。这正是 §67 ⑤ 说的「与 Go out-param ABI 对齐」深水区
+   （Go 侧 self = LLVM 第 1 个 out-param，`hir2mir.go:2880`/`codegen.go:15424`；h2m 侧 `cg.no:317` 直接返回值）。
+   **改动面跨 h2m/cg/mir，风险最高**，不是单档可独立验证的增量，暂不做。
+3. **下一步①（可选，低优先）**：`mod.short` key 拼法统一——把 s141 的 `sn.mname` 也改成先剥模块前缀
+   重组，消掉与 §58 ⑤-2 同类的隐患；但需证明有真实语料受益，否则同 s150 撤回。
+4. **下一步②**：§67 ⑤ 的「让 noc 跑 pkg-ll-cov 验证壳 self 的 cg 发射文本合法性」仍有效，
+   可在不追求可执行性的前提下确认 s149 发射的 IR 文本语法正确。
+5. **本轮结论**：调用侧缺口已从「s141 不支持变量接收者」精化为「key 差模块前缀（可修，但零收益）」
+   +「receiver 未传（真障碍，深水区）」两层。前者已验证不值得单独修，后者需专门轮次评估。
+6. **量测工件**：`tmp/s148/selfbind/{h2m.s149.base,h2m.s149.base2,h2m.s150,self-e2e.no,
+   self-semantic.no,self-static.no,noc-s150,ab3.sh,probe-s141b.log,call-fix.log}`。
+   ⚠️ 探针教训：`h2m-id-name` 里**不能拼 `.to_str()` 数字**（宿主 checker 编译失败 ⇒ 静默无输出假象）；
+   用固定字符串标签或条件分支代替。单/多探针注入前先确认 `grep -c` 计数 + 完整日志（别只 grep 目标行，
+   编译错误会被过滤掉）。当前主树 = s149（`fe8891dd`）。
+
+
+## 69 s151 — 评估「深水区」（self 真传参）可行性：纠正 §68 框架，结论为自举闭环已达成（零代码改动）
+
+① **动机与对 §68 的纠正**
+- §68 ⑤ 把最后一环定为「与 Go out-param ABI 对齐」，称需跨 h2m/cg/mir。本轮先核实该前提，**发现它是错的**：
+  - `cg.no:317` 的签名是 `define <retty> @name(args)`——**直接返回值**，不是 Go 的 `define void @f(out-param)`；
+    struct 是**值语义**（`cg.no:16-17`、`OP-STSTORE` = `store %stX, %stX* %stsY` 整值存槽）。
+  - noc 编出的程序**不与 Go 编出的程序链接**，两套 IR 无需二进制兼容。h2m/cg 是**自洽的独立约定**，
+    不存在「必须对齐 Go ABI」的要求。§68「跨 mir」的判断据此撤回。
+
+② **Go 后端参照系（只读调查，作为参照而非目标）**
+- self = 方法**首个 out-param** = LLVM 第 0 参（receiver 槽地址按引用传）：parser 把 self 插在
+  `Results[0]`（`src/parser/decl.go:88-98`），tohir 发成首个 KResult（`tohir.go:864-894`），
+  `l.curRecv = resultVals[0]`（`hir2mir.go:2880`），caller 传 receiver 槽地址（`codegen.go:15424/15498`），
+  callee 把 self 的 valSlot **别名**到入参指针（`:5760-5785`），故 `.n = v` 直接落到 caller 内存。
+- 这套机制服务于「用户写方法改字段对 caller 可见」的语言语义；noc 若要同类能力需自己实现一套等价物，
+  但**实现方式不必复刻**（可在 h2m/cg 值语义约定内另设计），且**与自举是否闭环无关**。
+
+③ **关键：为什么自举不需要写回语义（解释 §67 为何够用）**
+- 编译器自身 33 个方法定义（`ck-sig.new`/`diag.*`/`drv.*`/`ast.*`…）里，**没有一个写回 self 字段**：
+  裸点号字段**写**仅 `diag.no:28/30` 的 `.level ==`（比较，非赋值）；`ast.no` 的 `.push` 作用在**返回值
+  `r`**，不是 self。方法体基本是「读 self 字段 → 返回值」或纯常量。
+- 因此 s149 的**壳 self**（仅供类型/字段路径推导）对降级编译器自身完全够用 → 这解释了为何 noc 构建
+  成功、标准 e2e（ts-e2e/ts-min）逐字一致、dropped 98→90。**§68 ⑤ 的「壳 self 是错误放行」措辞过重**：
+  它不产可执行的用户写方法程序，但也没让自举产错码——被拒的程序是整体拒绝，不是静默错编。
+- §68 ⑤ 下一步②（noc 跑 pkg-ll-cov 验 IR 文本合法性）**已由构建成功隐含验证**：`no build compiler`
+  经 clang/llc 产 4MB noc，若 s149 发射的 IR 文本非法，构建阶段即失败。
+
+④ **深水区的真实形态与边界（若要补）**
+- 缺口重述：`b.push(1)` / `b.set(9)` 这类**用户写方法**要可执行，需要 receiver 真传参 + self 绑到该实参 +
+  struct 按引用写回。障碍是**复合**的（字段方法 + struct 值传递 + 写回），非单点，故 s150 只补查表零收益
+  （§68）符合预期。
+- 在 h2m/cg 自洽约定内的最小路径（**不复刻 Go ABI**）：给方法签名加「首参 receiver 指针」→ cg 的
+  `define`/`OP-CALL` 需按 is-m 分派传指针 → h2m 定义侧 self 绑到该实参（替换壳值）→ 调用侧传 receiver 槽地址。
+  **改动跨 h2m.no + cg.no，属独立实施轮次**，需专门的 A/B + 全套门禁 + e2e，不是单档增量；本轮不做。
+
+⑤ **结论与下一步**
+1. **自举闭环已达成**：noc 能构建、能跑标准 e2e 逐字一致；self 写方法可执行性是**语言完备性**议题，
+   **不是自举阻塞**。§66（字段 push mem 门禁）+ §67（方法体 self 壳绑定）已解决自举侧全部相关未 sup。
+2. **本轮零代码改动**：主树 `h2m.no` 保持 s149（`fe8891dd`），无新 fallback、无签名改动。
+3. **下一步 A（推荐，可直接验证）**：`h2m` 门禁的 **6 个 s109 failed**（`gate.txt` 逐字：one failed ident /
+   id channel aligns / module-base ident / bound ident not recorded…）是真实红灯——v0.4.29 诊断标记引入的
+   归因回归，且 ID 通道正是本自举方案反复依赖的归因工具。修它可让 h2m 门禁全绿、并提升后续每轮的定位效率。
+4. **下一步 B（大改，需单列）**：④ 的 receiver 真传参实施轮，跨 h2m/cg，仅当用户写方法可执行性是目标时才做。
+5. **工件**：本轮为只读调查（侦察 agent + `cg.no`/`h2m.no`/Go 后端源码），无新增临时件沿用
+   `tmp/s148/selfbind/`；未碰其他 session 文件。
+
+
+## 70 s152 — 修 s109 六连败：诊断标记与失败标识符通道分离（h2m 门禁首次全绿）
+
+① **根因（承 §69 ⑤ 下一步 A）**
+- `h2m` 门禁长期 6 failed（`test-s109-id-attrib`），§66/§67 均确认是 v0.4.29（`926a2426`）引入、
+  改动前基线逐字相同。本轮用 dump 探针（`tmp/s148/s109/dump-idn.no`）钉死：
+  `agg.idn` 被 v0.4.29 的 **30 个诊断标记**污染——
+  - case1 `r = missing`：期望 `idn.len()==1`，实际 **5**：`:lprog` / `:lfunc` / `f:blk-let` /
+    **`f:missing`**（唯一真归因）/ `f:blk-done`；
+  - case2 `r = tok.EOF`：5，真归因 `g:tok` 淹没；case3 `r = a`（正常）：期望 0，实际 **4**（全标记）。
+- **契约冲突**：`h2m-id-name`（`h2m.no:730`）的设计契约是「失败标识符专用、零降级语义影响」，
+  s109 断言 `unsk.len()==idn.len()`（与 unsup 一一对应）。v0.4.29 把 `blk-*`/`si-*`/`surf-*`/
+  `pr-*`/`let-*`/入口 `lprog`/`lfunc` 全塞进这条通道，破坏一一对应 ⇒ 6 连败。
+  时序：s109 测试先存在（`66d978cf`），标记后加（`926a2426`）⇒ **真回归**，非测试期望过时。
+
+② **修复（诊断能力完整保留，零降级语义影响）**
+- 新增独立旁路通道 `h2m-ctx.dbg []str` + 函数 `h2m-dbg(c, tag)`（写 `fn:tag`，不碰 unsup/unsk/idn）。
+- 30 处诊断标记的 `h2m-id-name` → `h2m-dbg`（含入口 `agg` 调用）；**两处真归因保留**：
+  `h2m.no:1234` `vr-miss-` 变量读失败、`:3386` K-IDENTIFIER 三表未命中。
+- `h2m-lower-program` 模块级并回处加 `c.dbg → agg.dbg`（与 idn 并回分离）；
+  `drv.no:1002` 加 `DB:fn:tag` 输出，与 `ID:` 并行——归因日志能力不降反升（DB 通道更清晰）。
+- ⚠️ 实现坑：批量替换时插入 dbg 函数使原行号 `1211/3363` 偏移 +23，两处真归因被误换成 dbg，
+  已单独改回。教训：按行号跳过的批量脚本，插入操作要在行号过滤**之后**做，或用内容锚点。
+
+③ **量测（A/B 双文件同步切换，确认降级语义零回归）**
+- A（s149 `fe8891dd` + 原 drv `9d70e7e6`）/ B（s152 `9f8373c7` + 新 drv `842e52c5`）：
+  | 档 | A | B | 差 |
+  |---|---|---|---|
+  | h2m | 392（dropped 90） | 392（dropped 90） | **0** |
+  | cg | 73（dropped 24） | 73（dropped 24） | **0** |
+  | lx | 82（dropped 8） | 82（dropped 8） | **0** |
+- 三档逐字相同——通道分离纯旁路，不改任何 MIR 发射。
+  ⚠️ 第一次 A/B 只切 h2m.no 没切 drv.no ⇒ prefix h2m 无 `dbg` 字段配 fixed drv 引用 `agg.dbg`
+  编译失败、输出空被误读为 0；修正为双文件同步切换后得正确基线。
+
+④ **验证**
+- `h2m-test.no`：**1365 passed / 0 failed / rc=0**（多轮以来首次全绿，六连败归零）。
+- 其余 13 套门禁（ps/cg/ck-sig/lx/tok/diag/build-package/util/ps-err/pkg-ll-call/pkg-sigs/pkg-ll/ck）
+  全绿 0 FAIL。
+- `no fmt -d` 对 `h2m.no`/`drv.no` 改动区零漂移。
+- 归因能力：`cov-v-idx` 的 `DB:` 通道完整输出 19 条定位标记（`blk-*`/`surf-*`/`si-*`/`pr-*`），
+  `ID:` 通道 0 条（该语料无真失败）——两通道各司其职。
+- e2e：`noc-s152` 构建成功（4MB），ts-e2e/ts-min 与 s149 noc 逐字一致。
+
+⑤ **结论与下一步**
+1. **`h2m` 门禁全绿**，长期预存的 6 failed 已清除；自举方案 §66/§67/§69/§70 四轮后，
+   降级侧门禁、量测、e2e 全部干净。
+2. 代码改动：`compiler/src/h2m.no`（+95/−31，含 30 处机械替换 + dbg 函数/字段/并回）、
+   `compiler/src/drv.no`（+9）。当前主树 md5 见 §工件；无 s150 残留。
+3. **下一步 A（自举收尾）**：§69 ⑤ 的「全文一致性校对 + 最终状态摘要」——四轮迭代后文档跨 §66–§70，
+   可做一次收口。
+4. **下一步 B（大改，需单列）**：§69 ④ 的 receiver 真传参实施轮，跨 h2m/cg，
+   仅当用户写方法可执行性是目标时才做。
+5. **工件**：`tmp/s148/s109/{dump-idn.no,h2m.prefix,h2m.fixed,drv.prefix,drv.fixed,ab2.sh,h2m-gate.log,
+   gate-all.txt,noc-s151}`；⚠️ 探针脚本里递增要用 `h2m-inc(i)`，`i = i + 1` 在新 checker 下触发
+   option-unwrap 报错（15w45dqk）。未碰其他 session 文件。

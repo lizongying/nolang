@@ -1,0 +1,174 @@
+; ============================================================================
+; noui 输入框「富文本 / 语法高亮」测试（阶段 38）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：命令式侧的 C-INPUT 一直只是个空壳构造（cmp-input 只 cmp-alloc 一个节点），
+; 没有光标概念（只能 append / 删末字符），也没有富文本 —— 组件目录里最后一条
+; 「功能对等长期项」就是它。阶段 38 补：
+;   - 光标按句柄存 INP-CAR（字节下标）：input-caret / -set-caret / -move。
+;   - 定点编辑：input-insert（光标处插入）/ input-delete（向前删）/
+;     input-backspace（删光标前一个，caret=0 无操作）；append 保持旧语义
+;     （追加到末尾并把光标推过去），input-set 整段替换后光标落末尾。
+;   - 语法高亮开关 input-syntax / -syntax-mode；段由组件模块的
+;     input-lex-build 用 ed-lex-line 就地 token 化后摊平进只增池
+;     INP-SG / INP-SGC（渲染层只读，避免跨模块 vec.push）。
+;   - 渲染层新增 cs-paint-input（纯文本 / 高亮两条路径），C-INPUT 改走它。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-input tests/cmp-input.no
+;       ./dist/cmp-input
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+FG = 0xE8E8F0FF
+
+; 把所有高亮段拼回字符串（验证 token 化无损）
+inp-join = (h i64, n i64) (s str) {
+    s = ''
+    j = 0
+    !! {
+        (j >= n) -> { ** }
+        s.push-str(input-lex-seg(h, j))
+        j = ct-inc(j)
+    }
+    s = s
+}
+
+; Scene 里是否有某色的文本指令
+cs-has-col = (c i64) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-c(i) == c)) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; Scene 里是否有某段文本
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; ---- 1. 构造 / placeholder / 初始光标 ----
+inp = cmp-input('name')
+i1 = input-value(inp) == '' && input-placeholder(inp) == 'name' && input-caret(inp) == 0
+
+; ---- 2. append：值追加到末尾，光标跟着到末尾 ----
+input-append(inp, 'a')
+input-append(inp, 'b')
+i2 = input-value(inp) == 'ab' && input-caret(inp) == 2
+
+; ---- 3. set-caret 夹紧 ----
+input-set-caret(inp, -5)
+i3 = input-caret(inp) == 0
+input-set-caret(inp, 99)
+i4 = input-caret(inp) == 2
+
+; ---- 4. insert 在光标处（中段） ----
+input-set-caret(inp, 1)
+input-insert(inp, 'X')
+i5 = input-value(inp) == 'aXb' && input-caret(inp) == 2
+
+; ---- 5. backspace 删光标前一个；caret=0 无操作 ----
+input-backspace(inp)
+i6 = input-value(inp) == 'ab' && input-caret(inp) == 1
+input-set-caret(inp, 0)
+input-backspace(inp)
+i7 = input-value(inp) == 'ab' && input-caret(inp) == 0
+
+; ---- 6. delete 向前删 ----
+input-set-caret(inp, 1)
+input-delete(inp)
+i8 = input-value(inp) == 'a' && input-caret(inp) == 1
+
+; ---- 7. move 夹紧 ----
+input-set-caret(inp, 0)
+input-move(inp, -3)
+i9 = input-caret(inp) == 0
+input-move(inp, 4)
+i10 = input-caret(inp) == 1
+
+; ---- 8. set / clear 重置光标 ----
+input-set(inp, 'hello')
+i11 = input-value(inp) == 'hello' && input-caret(inp) == 5
+input-clear(inp)
+i12 = input-value(inp) == '' && input-caret(inp) == 0
+
+; ---- 9. disabled：写操作全无效 ----
+inp2 = cmp-input('x')
+cmp-flag-set(inp2, F-DISABLED)
+input-append(inp2, 'a')
+input-insert(inp2, 'b')
+input-delete(inp2)
+input-backspace(inp2)
+i13 = input-value(inp2) == '' && input-caret(inp2) == 0
+
+; ---- 10. 高亮：token 化 / 颜色 / 无损拼接 ----
+src = 'a = 1 ; hi'
+input-set(inp, src)
+input-syntax(inp, true)
+i14 = input-syntax-mode(inp) == 1
+n = input-lex-build(inp)
+i15 = n == 4
+i16 = input-lex-seg(inp, 0) == 'a = ' && input-lex-color(inp, 0) == cmp-color(inp)
+i17 = input-lex-seg(inp, 1) == '1' && input-lex-color(inp, 1) == ED-C-NUM
+i18 = input-lex-seg(inp, 2) == ' ' && input-lex-color(inp, 2) == cmp-color(inp)
+i19 = input-lex-seg(inp, 3) == '; hi' && input-lex-color(inp, 3) == INP-C-COM
+i20 = inp-join(inp, n) == src
+input-syntax(inp, false)
+i21 = input-syntax-mode(inp) == 0
+input-syntax(inp, true)
+
+; ---- 11. 渲染：纯文本一条文本 vs 高亮四条 ----
+root = cmp-root()
+input-set(inp, src)
+cmp-add-child(root, inp)
+
+input-syntax(inp, false)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+plain-n = cs-scene-count()
+i22 = plain-n > 0 && cs-has-text('a = 1 ; hi')
+
+input-syntax(inp, true)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+lex-n = cs-scene-count()
+i23 = lex-n > plain-n
+i24 = cs-has-col(INP-C-COM) && cs-has-col(ED-C-NUM)
+
+; ---- 12. 光标落进 token（聚焦 + 中段 caret）/ 光标在末尾 ----
+input-focus(inp, true)
+input-set-caret(inp, 5)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+i25 = cs-scene-count() > 0 && cs-has-col(INP-C-COM)
+input-set-caret(inp, 8)
+cs-clear()
+cs-layout(root, 0, 0, 16000, 8000)
+cs-paint(root)
+i26 = cs-scene-count() > 0
+
+all-ok = i1 && i2 && i3 && i4 && i5 && i6 && i7 && i8 && i9 && i10 && i11 && i12 && i13 && i14 && i15 && i16 && i17 && i18 && i19 && i20 && i21 && i22 && i23 && i24 && i25 && i26
+print('edit={i1}{i2}{i3}{i4}{i5}{i6}{i7}{i8}{i9}{i10}{i11}{i12}{i13}')
+print('lex={i14}{i15}{i16}{i17}{i18}{i19}{i20}{i21}')
+print('paint={i22}{i23}{i24}{i25}{i26} plain={plain-n} lex={lex-n}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL INPUT TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

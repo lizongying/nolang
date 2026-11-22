@@ -2,6 +2,7 @@
 {
   name: 'esm-imports'
   description: 'Third-party ESM (npm) imports with the Nolang JS backend'
+  category: 'developer tools'
   keywords: ['nolang', 'js', 'esm']
   author: 'lizongying'
   email: 'lizongying@msn.com'

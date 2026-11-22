@@ -206,9 +206,9 @@ p6 = runner.test('des.key-schedule', t-key-schedule)
 p7 = runner.test('des.block', t-block)
 
 total = runner.summary()
-f = runner.failed-count()
+FAILED = runner.failed-count()
 {
-    f > 0 -> exit(1)
+    FAILED > 0 -> exit(1)
 
     -> exit(0)
 }

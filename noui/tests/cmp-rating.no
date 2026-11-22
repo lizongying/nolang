@@ -1,0 +1,248 @@
+; ============================================================================
+; noui 值域型展示控件测试（阶段 43）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录给 C-RATING 承诺「value, max」、C-PAGINATION 承诺「page, total」、
+; C-EMPTY 承诺「title, description」，但命令式侧三者都只有一个构造函数 ——
+; rating / pagination 连值都没有 API，empty 的描述（CMP-TEXT2）没人画。
+; 另外审计还挖出一个真 bug：cmp-slider(min,max) 把 min 写进 CMP-VALUE（初值），
+; 却从没写 CMP-VALUE3（下限真源）—— slider-value-at / slider-set / cs-paint-leaf
+; 都按 VALUE3 当下限，于是 min != 0 时左端点返回 0 而不是 min。
+; 阶段 43 补：
+;   - slider：构造函数补写 CMP-VALUE3 + 对称读取器 slider-min / slider-max。
+;   - rating：rating-max / -value / -set（夹紧 0..max、disabled 不动）/
+;     rating-cell / rating-hit（命中第几颗星）。
+;   - pagination：pagination-total / -page / -clamp / -set / -prev / -next /
+;     -btn-w / -label / -hit（-1 / 0 上一页 / 1 标签 / 2 下一页）。
+;     C-PAGINATION 同时从 cs-is-container 白名单里拿掉 —— 页码按钮是数据不是
+;     视觉子节点（同 C-SELECT / C-COMBOBOX / C-TAB）。
+;   - empty：描述走 CMP-TEXT2，渲染两行都画。
+;   - 渲染层新增 cs-paint-rating / cs-paint-pagination / cs-paint-empty，
+;     cs-measure 给三者各自的 intrinsic 尺寸。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-rating tests/cmp-rating.no
+;       ./dist/cmp-rating
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+; Scene 里是否有某段文本
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+; Scene 里给定文本 + 给定左上角的那条文字指令的颜色（找不到 -1）
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; 星格文字的落点：星格宽 2400、字符宽 800 -> 居中偏移 800；行高 = 格宽 -> 纵向不偏
+cs-star-tx = (i i64, x i64) (sx i64) {
+    sx = cs-add(cs-add(x, cs-mul(i, 2400)), 800)
+}
+
+; 页码钮文字的落点：钮宽 4000、字符宽 800 -> 横向偏移 1600；行高 2400 -> 纵向偏移 800
+cs-pg-btn-tx = (side i64, x i64, w i64) (bx i64) {
+    bx = x
+    (side == 2) -> { bx = cs-sub(cs-add(x, w), 4000) }
+    bx = cs-add(bx, 1600)
+}
+
+; ============================================================================
+; 1. slider 下限槽位（回归修复）
+; ============================================================================
+sld = cmp-slider(20, 100)
+cmp-set-value(sld, 20)
+t1 = slider-min(sld) == 20 && slider-max(sld) == 100
+t2 = slider-value(sld) == 20
+t3 = slider-value-at(sld, 0, 0, 10000) == 20
+t4 = slider-value-at(sld, 5000, 0, 10000) == 60
+t5 = slider-value-at(sld, 10000, 0, 10000) == 100
+slider-set(sld, 500)
+t6 = slider-value(sld) == 100
+slider-set(sld, -5)
+t7 = slider-value(sld) == 20
+; min == 0 的旧行为不变（既有测试全拿 0 构造，不能回归）
+sld0 = cmp-slider(0, 100)
+cmp-set-value(sld0, 40)
+t8 = slider-value-at(sld0, 0, 0, 10000) == 0 && slider-value-at(sld0, 5000, 0, 10000) == 50
+
+; ============================================================================
+; 2. rating：构造 / 读写 / 夹紧
+; ============================================================================
+rt = cmp-rating(5)
+t9 = cmp-kind(rt) == C-RATING
+t10 = rating-max(rt) == 5 && rating-value(rt) == 0
+rating-set(rt, 3)
+t11 = rating-value(rt) == 3
+rating-set(rt, 99)
+t12 = rating-value(rt) == 5
+rating-set(rt, -1)
+t13 = rating-value(rt) == 0
+rating-set(rt, 4)
+; disabled 写不动
+cmp-flag-set(rt, F-DISABLED)
+rating-set(rt, 1)
+t14 = rating-value(rt) == 4
+cmp-flag-clear(rt, F-DISABLED)
+
+; ============================================================================
+; 3. rating：命中（星格宽 = 行高 2400，左对齐）
+; ============================================================================
+rx = 1200
+ry = 1200
+rw = 37600
+rh = 2400
+t15 = rating-hit(rt, 1300, 1300, rx, ry, rw, rh) == 0
+t16 = rating-hit(rt, 3700, 1300, rx, ry, rw, rh) == 1
+t17 = rating-hit(rt, 10900, 1300, rx, ry, rw, rh) == 4
+; 右边界外（5 颗星占 1200..13200）/ 下方 / 上方都不命中
+t18 = rating-hit(rt, 13200, 1300, rx, ry, rw, rh) == -1
+t19 = rating-hit(rt, 1300, 4000, rx, ry, rw, rh) == -1
+t20 = rating-hit(rt, 1300, 1100, rx, ry, rw, rh) == -1
+
+; ============================================================================
+; 4. rating：测算 / 渲染
+; ============================================================================
+mw, mh = cs-measure(rt)
+t21 = mw == 12000 && mh == 2400
+root = cmp-root()
+cmp-add-child(root, rt)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+fx, fy, fw, fh = cs-rect(rt)
+t22 = fh == 2400
+; 5 颗星，前 4 颗组件色（0x50C878FF），最后一颗 MUTED
+rc = cmp-color(rt)
+mc = cs-theme(CS-TH-MUTED)
+t23 = cs-text-color-at('*', cs-star-tx(0, fx), fy) == rc
+t24 = cs-text-color-at('*', cs-star-tx(1, fx), fy) == rc
+t25 = cs-text-color-at('*', cs-star-tx(2, fx), fy) == rc
+t26 = cs-text-color-at('*', cs-star-tx(3, fx), fy) == rc
+t27 = cs-text-color-at('*', cs-star-tx(4, fx), fy) == mc
+
+; ============================================================================
+; 5. pagination：构造 / 读写 / 夹紧 / label
+; ============================================================================
+pg = cmp-pagination(12)
+t28 = cmp-kind(pg) == C-PAGINATION
+t29 = pagination-page(pg) == 1 && pagination-total(pg) == 12
+t30 = pagination-label(pg) == '1/12'
+pagination-set(pg, 5)
+t31 = pagination-page(pg) == 5 && pagination-label(pg) == '5/12'
+pagination-set(pg, 99)
+t32 = pagination-page(pg) == 12
+pagination-set(pg, 0)
+t33 = pagination-page(pg) == 1
+pagination-next(pg)
+t34 = pagination-page(pg) == 2
+pagination-prev(pg)
+pagination-prev(pg)
+t35 = pagination-page(pg) == 1
+; 只有 1 页时 prev / next 都夹在 1
+pg1 = cmp-pagination(1)
+pagination-next(pg1)
+t36 = pagination-page(pg1) == 1
+; disabled 写不动
+cmp-flag-set(pg, F-DISABLED)
+pagination-set(pg, 7)
+t37 = pagination-page(pg) == 1
+cmp-flag-clear(pg, F-DISABLED)
+
+; ============================================================================
+; 6. pagination：命中（-1 / 0 上一页 / 1 标签 / 2 下一页）
+; ============================================================================
+px = 1200
+py = 1200
+pw = 13600
+ph = 4000
+t38 = pagination-hit(pg, 1300, 1300, px, py, pw, ph) == 0
+t39 = pagination-hit(pg, 7000, 1300, px, py, pw, ph) == 1
+t40 = pagination-hit(pg, 13500, 1300, px, py, pw, ph) == 2
+t41 = pagination-hit(pg, 1300, 6000, px, py, pw, ph) == -1
+t42 = pagination-hit(pg, 1300, 1100, px, py, pw, ph) == -1
+; 控件太窄（装不下两个钮）-> 一律不命中
+t43 = pagination-hit(pg, 1300, 1300, px, py, 4000, ph) == -1
+
+; ============================================================================
+; 7. pagination：测算 / 渲染（到顶时左钮 MUTED）
+; ============================================================================
+mw2, mh2 = cs-measure(pg)
+t44 = mh2 == 4000 && mw2 == 13600
+root2 = cmp-root()
+cmp-add-child(root2, pg)
+cs-clear()
+cs-layout(root2, 0, 0, 40000, 20000)
+cs-paint(root2)
+gx, gy, gw, gh = cs-rect(pg)
+pty = cs-add(gy, 800)
+pc = cmp-color(pg)
+t45 = cs-has-text('<') && cs-has-text('>') && cs-has-text('1/12')
+t46 = cs-text-color-at('<', cs-pg-btn-tx(1, gx, gw), pty) == mc
+t47 = cs-text-color-at('>', cs-pg-btn-tx(2, gx, gw), pty) == pc
+; 翻到最后一页：右钮转 MUTED，左钮恢复组件色
+pagination-set(pg, 12)
+cs-clear()
+cs-layout(root2, 0, 0, 40000, 20000)
+cs-paint(root2)
+t48 = cs-text-color-at('<', cs-pg-btn-tx(1, gx, gw), pty) == pc
+t49 = cs-text-color-at('>', cs-pg-btn-tx(2, gx, gw), pty) == mc
+
+; ============================================================================
+; 8. empty：描述读写 / 测算 / 渲染
+; ============================================================================
+em = cmp-empty('nothing here')
+cmp-set-text2(em, 'try again')
+t50 = cmp-text(em) == 'nothing here' && cmp-text2(em) == 'try again'
+ew, eh = cs-measure(em)
+; 标题 12 字 = 12000 宽；描述 9 字 = 9600 -> 取宽的；两行高
+t51 = ew == 12000 && eh == 4800
+root3 = cmp-root()
+cmp-add-child(root3, em)
+cs-clear()
+cs-layout(root3, 0, 0, 40000, 20000)
+cs-paint(root3)
+t52 = cs-has-text('nothing here') && cs-has-text('try again')
+; 没有描述：只画标题、单行高
+em2 = cmp-empty('hi')
+ew2, eh2 = cs-measure(em2)
+t53 = eh2 == 2400 && ew2 == 6400
+root4 = cmp-root()
+cmp-add-child(root4, em2)
+cs-clear()
+cs-layout(root4, 0, 0, 40000, 20000)
+cs-paint(root4)
+t54 = cs-has-text('hi') && (!cs-has-text('try again'))
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all-ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30 && t31 && t32 && t33 && t34 && t35 && t36 && t37 && t38 && t39 && t40 && t41 && t42 && t43 && t44 && t45 && t46 && t47 && t48 && t49 && t50 && t51 && t52 && t53 && t54
+print('slider={t1}{t2}{t3}{t4}{t5}{t6}{t7}{t8}')
+print('rating={t9}{t10}{t11}{t12}{t13}{t14} hit={t15}{t16}{t17}{t18}{t19}{t20}')
+print('r-disp={t21}{t22}{t23}{t24}{t25}{t26}{t27}')
+print('pager={t28}{t29}{t30}{t31}{t32}{t33}{t35}{t36}{t37} hit={t38}{t39}{t40}{t41}{t42}{t43}')
+print('p-disp={t44}{t45}{t46}{t47}{t48}{t49}')
+print('empty={t50}{t51}{t52}{t53}{t54}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL RATING TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

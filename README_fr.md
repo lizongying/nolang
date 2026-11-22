@@ -82,7 +82,6 @@ L’index public est utilisé par défaut. Pour combiner plusieurs instances noh
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

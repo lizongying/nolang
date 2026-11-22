@@ -82,7 +82,6 @@ Standardmäßig wird der öffentliche Index verwendet. Um mehrere nohub-Instanze
 {
   sources: [
     'https://lizongying.github.io/nohub',
-    'corp = https://corp.example/nohub',
   ]
 }
 ```

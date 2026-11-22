@@ -1,0 +1,203 @@
+; ============================================================================
+; noui 命令式「虚拟表格」测试（阶段 35）—— src/components.no
+;
+; 缺口：内核有 C-TABLE（只有 kind + cols/rows 两个值）与 C-SCROLL 虚拟列表，
+; 声明式侧有 dv-table-list，但命令式侧没有对应的表格原语（阶段 35 之前）。
+; 阶段 35 补：
+;   - 全局数据模型 TB-HEAD / TB-COLW / TB-CELL / TB-KEY / TB-ORDER。
+;   - 句柄级状态 TB-OFF / TB-SEL / TB-HEAD-H / TB-SCR-H /
+;     TB-ROW-SRC / TB-CELL-SRC / TB-CELL-COL（随 cmp-alloc 一起长）。
+;   - cmp-table-* 读写 + cmp-table-sort 稳定插入排序 + cmp-table-reset-order。
+;   - cmp-table-sync：表头（不滚）+ 滚动体 + 任意时刻只挂可见行；
+;     内容高声明给布局（m*rowh + (m-1)*gap + 2*pad）。
+;   - cmp-table-row-of / -cell-of / -cell-rc：命中上溯到源行号 / 行列。
+;
+; 注意（阶段 34 的踩坑同样适用）：cmp-table-sync 必须在**顶层作用域**调用，
+; 经函数中转会挂歪子链。本文件所有 sync 都在顶层。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-table tests/cmp-table.no
+;       DYLD_LIBRARY_PATH=... SDL_VIDEODRIVER=dummy ./dist/cmp-table
+; ============================================================================
+# /noui/src/components
+
+FG = 0xE8E8F0FF
+ACC = 0x4A90E2FF
+SELB = 0x2A3A5AFF
+HC = 0x9AA7C7FF
+
+COLS = 3
+NROWS = 10
+ROWH = 2400
+VIEWH = 24000
+
+; 在 scr 的子节点里找 row_of == want 的第一个（返回句柄，没找到 -1）
+tb-find-row = (t i64, scr i64, want i64) (h i64) {
+    h = -1
+    i = 0
+    n = cmp-children(scr)
+    !! {
+        (i >= n) -> { ** }
+        (h >= 0) -> { ** }
+        r = cmp-child(scr, i)
+        (cmp-table-row-of(t, r) == want) -> { h = r }
+        i = ct-inc(i)
+    }
+    h = h
+}
+
+; ---- 1. 构造：根是 C-TABLE，value = 列数、value2 = 行数 ----
+t = cmp-table(3, 10)
+k1 = cmp-kind(t) == C-TABLE
+k2 = cmp-value(t) == 3 && cmp-value2(t) == 10
+k3 = cmp-children(t) == 0 && cmp-table-selected(t) == -1 && cmp-table-off(t) == 0
+
+; ---- 2. 数据模型：表头 / 列宽 / 单元格 ----
+cmp-table-set-head(0, 'name')
+cmp-table-set-head(1, 'key')
+cmp-table-set-head(2, 'grp')
+m1 = cmp-table-cols() == 3
+cmp-table-set-col-w(0, 120000)
+cmp-table-set-col-w(1, 60000)
+m2 = cmp-table-col-w(0) == 120000 && cmp-table-col-w(2) == 0
+m3 = cmp-table-head(1) == 'key' && cmp-table-head(7) == ''
+
+r = 0
+!! {
+    (r >= NROWS) -> { ** }
+    c = 0
+    !! {
+        (c >= COLS) -> { ** }
+        cmp-table-set-cell(r, c, 'v')
+        c = ct-inc(c)
+    }
+    r = ct-inc(r)
+}
+cmp-table-set-cell(0, 0, 'A')
+cmp-table-set-cell(9, 2, 'B')
+m4 = cmp-table-rows() == 10
+m5 = cmp-table-cell(0, 0) == 'A' && cmp-table-cell(9, 2) == 'B' && cmp-table-cell(5, 0) == 'v'
+m6 = cmp-table-cell(99, 0) == '' && cmp-table-cell(0, 99) == '' && cmp-table-cell(-1, 0) == ''
+
+; ---- 3. 排序键：缺省 0，显式设键 ----
+r = 0
+!! {
+    (r >= NROWS) -> { ** }
+    cmp-table-set-key(r, ct-mul(r, 7) % 20)
+    r = ct-inc(r)
+}
+g1 = cmp-table-key(0) == 0 && cmp-table-key(1) == 7 && cmp-table-key(9) == 3
+g2 = cmp-table-key(99) == 0
+
+; ---- 4. sync 结构：表头 + 滚动体 + 可见行（8 行 / 共 10 行）----
+w = cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s1 = w == 10
+s2 = cmp-children(t) == 2
+hg = cmp-child(t, 0)
+scr = cmp-child(t, 1)
+s3 = cmp-kind(hg) == C-GRID && cmp-kind(scr) == C-SCROLL
+s4 = cmp-children(hg) == 3
+h0 = cmp-child(hg, 0)
+s5 = cmp-kind(h0) == C-LABEL && cmp-text(h0) == 'name' && cmp-color(h0) == HC
+s6 = cmp-sw(cmp-child(hg, 0)) == 120000 && cmp-sw(cmp-child(hg, 1)) == 60000 && cmp-sw(cmp-child(hg, 2)) == 0
+s7 = cmp-lay(hg) == L-H && cmp-sh(hg) == ct-add(1200, ROWH) && cmp-sh(scr) == VIEWH && cmp-lay(scr) == L-GROW
+s8 = cmp-scroll-content(scr) == 33600
+s9 = cmp-scroll-start(scr) == 0
+s10 = cmp-children(scr) == 8
+r0 = cmp-child(scr, 0)
+s11 = cmp-kind(r0) == C-GRID && cmp-children(r0) == 3 && cmp-sh(r0) == ROWH && cmp-lay(r0) == L-H
+c0 = cmp-child(r0, 0)
+s12 = cmp-kind(c0) == C-LABEL && cmp-text(c0) == 'A' && cmp-sw(c0) == 120000
+s13 = cmp-color(c0) == FG
+
+; ---- 5. 选中：标记 / 底色 / 文字色 ----
+cmp-table-select(t, 4)
+w2 = cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s14 = cmp-table-selected(t) == 4 && w2 == 10
+rs = tb-find-row(t, cmp-child(t, 1), 4)
+s15 = rs >= 0 && (cmp-flags(rs) & F-SELECTED) != 0 && cmp-color(rs) == SELB
+s16 = cmp-color(cmp-child(rs, 0)) == ACC
+s17 = (cmp-flags(cmp-child(cmp-child(t, 1), 0)) & F-SELECTED) == 0
+
+; ---- 6. 命中上溯：源行号 / 单元格 / 行列 ----
+s18 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 0)) == 0
+s19 = cmp-table-row-of(t, rs) == 4
+cc = cmp-child(rs, 2)
+s20 = cmp-table-cell-of(t, cc) == cc
+s21 = cmp-table-row-of(t, cc) == 4
+rc []i64 = with-len(2)
+cmp-table-cell-rc(t, cc, rc)
+s22 = rc[0] == 4 && rc[1] == 2
+s23 = cmp-table-row-of(t, hg) == -1 && cmp-table-cell-of(t, h0) == -1 && cmp-table-row-of(t, t) == -1
+
+; ---- 7. 滚动：窗口跟着偏移走 ----
+cmp-table-set-off(t, 4000)
+w3 = cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s24 = w3 == 10 && cmp-scroll-start(cmp-child(t, 1)) == 1 && cmp-children(cmp-child(t, 1)) == 8
+s25 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 0)) == 1
+s26 = cmp-scroll-content(cmp-child(t, 1)) == 33600
+
+; ---- 8. 两个句柄：数据共享、选中 / 偏移各自独立 ----
+t2 = cmp-table(3, 0)
+cmp-table-select(t2, 2)
+cmp-table-set-off(t2, 8000)
+w4 = cmp-table-sync(t2, VIEWH, ROWH, FG, ACC, SELB, HC)
+s27 = cmp-table-selected(t2) == 2 && cmp-table-selected(t) == 4 && w4 == 10
+s28 = cmp-table-off(t) == 4000 && cmp-table-off(t2) == 8000
+s29 = cmp-children(t2) == 2 && cmp-table-row-of(t2, cmp-child(cmp-child(t2, 1), 0)) == 2
+s30 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 0)) == 1
+
+; ---- 9. 恢复源顺序 ----
+cmp-table-set-off(t, 0)
+cmp-table-reset-order()
+w5 = cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s31 = w5 == 10 && cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 0)) == 0
+s32 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 5)) == 5
+s33 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 7)) == 7
+
+; ---- 10. 稳定排序：同键保持源序 ----
+r = 0
+!! {
+    (r >= NROWS) -> { ** }
+    cmp-table-set-key(r, 0)
+    r = ct-inc(r)
+}
+cmp-table-set-key(2, 5)
+cmp-table-set-key(7, 5)
+cmp-table-sort(0)
+w6 = cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s34 = w6 == 10 && cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 0)) == 0
+s35 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 1)) == 1
+s36 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 2)) == 3
+s37 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 7)) == 9
+cmp-table-sort(1)
+cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s38 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 0)) == 2
+s39 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 1)) == 7
+s40 = cmp-table-row-of(t, cmp-child(cmp-child(t, 1), 2)) == 0
+
+; ---- 11. 空表头：行数为 0，sync 不挂任何东西 ----
+TB-HEAD.truncate(0)
+s41 = cmp-table-cols() == 0 && cmp-table-rows() == 0
+w8 = cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s42 = w8 == 0 && cmp-children(t) == 2 && cmp-children(cmp-child(t, 1)) == 0
+s43 = cmp-scroll-content(cmp-child(t, 1)) == 2400
+
+; ---- 12. 重新定义表头后恢复 ----
+TB-CELL.truncate(0)
+cmp-table-set-head(0, 'x')
+s44 = cmp-table-cols() == 1 && cmp-table-rows() == 0
+cmp-table-set-cell(0, 0, 'q')
+s45 = cmp-table-rows() == 1 && cmp-table-cell(0, 0) == 'q'
+w9 = cmp-table-sync(t, VIEWH, ROWH, FG, ACC, SELB, HC)
+s46 = w9 == 1 && cmp-children(cmp-child(t, 0)) == 1 && cmp-children(cmp-child(t, 1)) == 1
+
+all-ok = k1 && k2 && k3 && m1 && m2 && m3 && m4 && m5 && m6 && g1 && g2 && s1 && s2 && s3 && s4 && s5 && s6 && s7 && s8 && s9 && s10 && s11 && s12 && s13 && s14 && s15 && s16 && s17 && s18 && s19 && s20 && s21 && s22 && s23 && s24 && s25 && s26 && s27 && s28 && s29 && s30 && s31 && s32 && s33 && s34 && s35 && s36 && s37 && s38 && s39 && s40 && s41 && s42 && s43 && s44 && s45 && s46
+print('ctor={k1}{k2}{k3} model={m1}{m2}{m3}{m4}{m5}{m6} key={g1}{g2}')
+print('sync={s1}{s2}{s3}{s4}{s5}{s6}{s7}{s8}{s9}{s10}{s11}{s12}{s13}')
+print('sel={s14}{s15}{s16}{s17} hit={s18}{s19}{s20}{s21}{s22}{s23}')
+print('off={s24}{s25}{s26} two={s27}{s28}{s29}{s30}')
+print('order={s31}{s32}{s33} stable={s34}{s35}{s36}{s37} desc={s38}{s39}{s40}')
+print('empty={s41}{s42}{s43} redef={s44}{s45}{s46}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL TABLE TESTS PASSED') }
+(all-ok == 0) -> { print('TABLE TESTS FAILED') }

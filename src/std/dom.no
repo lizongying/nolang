@@ -565,7 +565,13 @@ find-entity = (name str) (cp i64) {
             v i64 = 0
             b = 0
             (d < blob.len-bytes()) {
-                b = blob.byte(d)
+                {
+                    b ?= blob.byte(d)
+                }: {
+                    err -> _
+
+                    -> _
+                }
                 b == 32 -> break
                 b < 48 || b > 57 -> break
                 {

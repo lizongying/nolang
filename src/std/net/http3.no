@@ -221,13 +221,13 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
         names-i = names[i]: {
             ok -> it
 
-            -> _
+            -> ''
         }
 
         values-i = values[i]: {
             ok -> it
 
-            -> _
+            -> ''
         }
 
         hdr-buf, hdr-n = encode-header(names-i, values-i)

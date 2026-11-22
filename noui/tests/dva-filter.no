@@ -1,0 +1,402 @@
+; ============================================================================
+; noui 声明式「过滤列表：显示哪些也是状态」测试（阶段 25）—— src/dv.no
+;
+; 缺口：阶段 24 让「挂多少」变成偏移的函数，但「挂哪些」仍是应用手写 if。
+; 搜索框是最典型的场景 —— 列表内容应该是**查询串的纯函数**：查询来自动态
+; 字符串状态 DV-BIND-T[qslot]（dv-bound 读），列表按它过滤，大小写不敏感。
+;
+; 阶段 25 补：
+;   - dv-win-range：可见窗口 [i0, i1) 计算（dv-list-view 也改用它，单一真源）；
+;   - dv-repeat-mapped：dv-repeat-at 的「按下标表取行」版，行 key = 源行号；
+;   - dv-filter-map / dv-filter-count：查询 -> 命中行号表 / 命中数；
+;   - dv-filter-list：dv-list-view 的过滤版（多一个 qslot 参数）。
+;
+; 场景钉住：
+;   M 标记  ：dv-filter-list 的 kind / value / value2 / 声明内容高（视图 + 活节点）
+;   F 过滤  ：空查询 = 全量；子串命中；大小写不敏感；命中数；无命中 = 0 行；
+;             值数组按**源下标**取（不是按窗口位置）
+;   L 布局  ：内容高随命中数变；行位 = 窗口序号*行距；off 夹紧；**不写回状态**
+;   P 绘制  ：可见行带裁剪矩形
+;   H 命中  ：窗口内命中正确的源行（off = 0 / off = max）
+;   W 滚轮  ：偏移进状态 -> 窗口真的滑动；同一批行 key 不变（组件复用）；
+;             上下界夹紧
+;   R 映射  ：dv-repeat-mapped 按下标表取行 + 越界防护
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-filter.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    t = dv-form(1, -1)
+    page = t
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-filter tests ===')
+
+; 共用数据
+D-OFF = 1          ; 滚动偏移槽（真源）
+D-Q = 2            ; 查询串槽（DV-BIND-T[D-Q]）
+VL-KEY = 500       ; 滚动容器
+VL-ROW0 = 520      ; 行 key 基数（key = VL-ROW0 + 源行号）
+VL-N = 20          ; 总行数
+VL-VIEWH = 20000   ; 视口高 200px
+VL-ROWH = 5000     ; 行高 50px
+VL-STEP = 400      ; 滚轮每格 4px
+VL-STRIDE = 5800   ; 5000 + 800
+ROW-Y0 = 2400      ; 根(0,0) -> 表单 pad 1200 -> 滚动 pad 1200
+VL-M-CONTENT = 30600   ; 命中 5 行：5*5000 + 4*800 + 2*1200
+VL-M-MAXOFF = 10600    ; 30600 - 20000
+VL-ALL-CONTENT = 117600 ; 20 行
+VL-ALL-MAXOFF = 97600
+
+ST []i64 = with-len(4)
+VL-TXT []str = with-len(20)
+VL-VAL []i64 = with-len(20)
+VL-SC []i64 = with-len(1)   ; mk-page 把滚动**视图**节点句柄放这里
+
+VL-TXT[0] = 'alpha 0'
+VL-TXT[1] = 'alpha 1'
+VL-TXT[2] = 'alpha 2'
+VL-TXT[3] = 'alpha 3'
+VL-TXT[4] = 'alpha 4'
+VL-TXT[5] = 'beta 5'
+VL-TXT[6] = 'beta 6'
+VL-TXT[7] = 'beta 7'
+VL-TXT[8] = 'beta 8'
+VL-TXT[9] = 'beta 9'
+VL-TXT[10] = 'gamma 10'
+VL-TXT[11] = 'gamma 11'
+VL-TXT[12] = 'gamma 12'
+VL-TXT[13] = 'gamma 13'
+VL-TXT[14] = 'gamma 14'
+VL-TXT[15] = 'delta 15'
+VL-TXT[16] = 'delta 16'
+VL-TXT[17] = 'delta 17'
+VL-TXT[18] = 'delta 18'
+VL-TXT[19] = 'delta 19'
+
+; 字符串状态池（dv-bound 读它）
+dv-bind-t-ensure(4)
+set-query = (q str) () {
+    dv-bound-set(D-Q, q)
+}
+
+; 值数组：VL-VAL[i] = i（证明「值按源下标取，不是按窗口位置」——
+; 命中 'gamma 1' 时窗口第 0 行是源第 10 行，value 应该是 10 而不是 0）
+init-vals = () {
+    i = 0
+    !! {
+        (i >= VL-N) -> { ** }
+        VL-VAL[i] = i
+        i = dv-inc(i)
+    }
+}
+
+; 造一页：根表单 -> dv-filter-list（滚动容器 + 命中窗口）
+mk-page = () (p i64) {
+    dv-clear()
+    t = dv-form(1, -1)
+    na []i64 = with-len(0)
+    sc = dv-filter-list(ST, VL-KEY, D-OFF, VL-STEP, VL-VIEWH, VL-ROWH, VL-N,
+        VL-TXT, VL-VAL, na, na, D-Q, VL-ROW0, t)
+    VL-SC[0] = sc
+    p = t
+}
+
+; 数一数 20 行里真正挂出来几行
+count-mounted = (root i64) (n i64) {
+    n = 0
+    i = 0
+    !! {
+        (i >= VL-N) -> { ** }
+        (dv-live-deep(root, dv-add(VL-ROW0, i)) >= 0) -> { n = dv-inc(n) }
+        i = dv-inc(i)
+    }
+}
+
+; 数某个活节点的流子节点数
+count-kids = (h i64) (n i64) {
+    n = 0
+    !! {
+        c = cs-child-flow(h, n)
+        (c < 0) -> { ** }
+        n = dv-inc(n)
+    }
+}
+
+set-cursor = (px i64, py i64) () {
+    dv-arr-set(DVA-PX, 0, px)
+    dv-arr-set(DVA-PY, 0, py)
+}
+set-wheel = (d i64) () {
+    dv-arr-set(APP-WHEEL, 0, d)
+}
+
+find-text = (t str) (idx i64) {
+    idx = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (cs-scene-t(i) == t) -> {
+            idx = i
+            **
+        }
+        i = dv-inc(i)
+    }
+}
+
+; ============================================================================
+; 场景 M：标记
+; ============================================================================
+root-m = cmp-root()
+ST[D-OFF] = 0
+set-query('')
+init-vals()
+pm = mk-page()
+dv-render(root-m, pm)
+scm = dv-live-deep(root-m, VL-KEY)
+r1 = scm >= 0 && cmp-kind(scm) == C-SCROLL
+r2 = cmp-value(scm) == 0 && cmp-value2(scm) == VL-STEP
+r3 = dv-scroll-content-of(VL-SC[0]) == VL-ALL-CONTENT
+r4 = cmp-scroll-content(scm) == VL-ALL-CONTENT
+am, py1 = dv-dispatch(VL-KEY)
+r5 = am == DV-A-CHANGE && py1 == D-OFF
+r6 = (dv-flags(scm) & DV-F-VIS) != 0 && (dv-flags(scm) & DV-F-EN) != 0
+
+; ============================================================================
+; 场景 F：过滤 —— 「显示哪些」是查询的纯函数
+; ============================================================================
+root-f = cmp-root()
+ST[D-OFF] = 0
+
+; 空查询 = 全量
+set-query('')
+pf = mk-page()
+dv-render(root-f, pf)
+cs-layout(root-f, 0, 0, 40000, 30000)
+scf = dv-live-deep(root-f, VL-KEY)
+r7 = dv-filter-count(D-Q, VL-N, VL-TXT) == 20
+r8 = count-mounted(root-f) == 4 && cmp-scroll-max(scf) == VL-ALL-MAXOFF
+
+; 子串命中：alpha -> 5 行（源 0..4），只挂窗口那 4 行
+set-query('alpha')
+pf2 = mk-page()
+dv-render(root-f, pf2)
+cs-layout(root-f, 0, 0, 40000, 30000)
+r9 = dv-filter-count(D-Q, VL-N, VL-TXT) == 5
+r10 = count-mounted(root-f) == 4
+r11 = cmp-text(dv-live-deep(root-f, VL-ROW0)) == 'alpha 0' &&
+      cmp-text(dv-live-deep(root-f, VL-ROW0 + 3)) == 'alpha 3'
+r12 = cmp-scroll-max(scf) == VL-M-MAXOFF
+r13 = cmp-scroll-content(scf) == VL-M-CONTENT
+
+; 大小写不敏感
+set-query('ALPHA')
+pf3 = mk-page()
+dv-render(root-f, pf3)
+cs-layout(root-f, 0, 0, 40000, 30000)
+r14 = count-mounted(root-f) == 4 &&
+      cmp-text(dv-live-deep(root-f, VL-ROW0)) == 'alpha 0'
+
+; 另一个子串：eta -> beta 5..9
+set-query('eta')
+pf4 = mk-page()
+dv-render(root-f, pf4)
+cs-layout(root-f, 0, 0, 40000, 30000)
+r15 = dv-filter-count(D-Q, VL-N, VL-TXT) == 5 &&
+      cmp-text(dv-live-deep(root-f, VL-ROW0 + 5)) == 'beta 5'
+
+; 数字子串：'1' -> alpha 1 + gamma 10..14 + delta 15..19 = 11 行
+set-query('1')
+pf5 = mk-page()
+dv-render(root-f, pf5)
+cs-layout(root-f, 0, 0, 40000, 30000)
+r16 = dv-filter-count(D-Q, VL-N, VL-TXT) == 11 &&
+      cmp-text(dv-live-deep(root-f, VL-ROW0 + 10)) == 'gamma 10'
+
+; 无命中：0 行、内容高 0、max 0
+set-query('zzz')
+pf6 = mk-page()
+dv-render(root-f, pf6)
+cs-layout(root-f, 0, 0, 40000, 30000)
+r17 = dv-filter-count(D-Q, VL-N, VL-TXT) == 0
+r18 = count-mounted(root-f) == 0 && cmp-scroll-max(scf) == 0
+
+; 值按**源下标**取：gamma 10 的 value 应该是 10（不是窗口位置 0）
+set-query('gamma 1')
+pf7 = mk-page()
+dv-render(root-f, pf7)
+cs-layout(root-f, 0, 0, 40000, 30000)
+g10 = dv-live-deep(root-f, VL-ROW0 + 10)
+r19 = cmp-value(g10) == 10
+
+; ============================================================================
+; 场景 L：布局 —— 内容高随命中数变；窗口序号*行距；夹紧不写回
+; ============================================================================
+root-l = cmp-root()
+ST[D-OFF] = 0
+set-query('gamma 1')
+pl = mk-page()
+dv-render(root-l, pl)
+cs-layout(root-l, 0, 0, 40000, 30000)
+scl = dv-live-deep(root-l, VL-KEY)
+r20 = count-mounted(root-l) == 4
+l10 = dv-live-deep(root-l, VL-ROW0 + 10)
+_, y10, _, _ = cs-rect(l10)
+r21 = y10 == ROW-Y0
+l11 = dv-live-deep(root-l, VL-ROW0 + 11)
+_, y11, _, _ = cs-rect(l11)
+r22 = y11 == cs-add(ROW-Y0, VL-STRIDE)
+
+; 滚到底（命中 5 行，max = 10600）：窗口滑到 11..14
+ST[D-OFF] = VL-M-MAXOFF
+pl2 = mk-page()
+dv-render(root-l, pl2)
+cs-layout(root-l, 0, 0, 40000, 30000)
+r23 = count-mounted(root-l) == 4
+r24 = dv-live-deep(root-l, VL-ROW0 + 11) >= 0 && dv-live-deep(root-l, VL-ROW0 + 10) == -1
+_, y11b, _, _ = cs-rect(dv-live-deep(root-l, VL-ROW0 + 11))
+r25 = y11b == -2400
+_, y14, _, _ = cs-rect(dv-live-deep(root-l, VL-ROW0 + 14))
+r26 = y14 == 15000
+
+; 状态写超界：夹紧到 max，**不写回状态**
+ST[D-OFF] = 999999
+pl3 = mk-page()
+dv-render(root-l, pl3)
+cs-layout(root-l, 0, 0, 40000, 30000)
+r27 = count-mounted(root-l) == 1
+_, y14b, _, _ = cs-rect(dv-live-deep(root-l, VL-ROW0 + 14))
+r28 = y14b == 15000 && ST[D-OFF] == 999999
+
+; ============================================================================
+; 场景 P：绘制 —— 可见行带裁剪矩形
+; ============================================================================
+ST[D-OFF] = 0
+set-query('alpha')
+pl4 = mk-page()
+dv-render(root-l, pl4)
+cs-layout(root-l, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root-l)
+ip = find-text('alpha 0')
+r29 = ip >= 0 && cs-scene-cf(ip) == 1
+
+; ============================================================================
+; 场景 H：命中 —— 窗口内命中正确的源行
+; ============================================================================
+set-query('beta')
+ST[D-OFF] = 0
+ph = mk-page()
+dv-render(root-l, ph)
+cs-layout(root-l, 0, 0, 40000, 30000)
+hb6 = dv-live-deep(root-l, VL-ROW0 + 6)
+r30 = cs-hit(scl, 5000, 9200) == hb6
+r31 = cs-hit(scl, 5000, 25000) == -1
+
+ST[D-OFF] = VL-M-MAXOFF
+ph2 = mk-page()
+dv-render(root-l, ph2)
+cs-layout(root-l, 0, 0, 40000, 30000)
+hb8 = dv-live-deep(root-l, VL-ROW0 + 8)
+r32 = cs-hit(scl, 5000, 9200) == hb8
+
+; ============================================================================
+; 场景 W：滚轮 —— 偏移进状态 -> 窗口真的滑动；行 key 跨滚动复用
+; ============================================================================
+root-w = cmp-root()
+ST[D-OFF] = 0
+set-query('beta')
+pw = mk-page()
+dv-render(root-w, pw)
+cs-layout(root-w, 0, 0, 40000, 30000)
+
+set-cursor(5000, 9200)
+set-wheel(20)
+w1 = dva-wheel(ST, root-w)
+r33 = w1 == 1 && ST[D-OFF] == 8000
+
+pw2 = mk-page()
+r34 = dv-render(root-w, pw2) >= 0
+cs-layout(root-w, 0, 0, 40000, 30000)
+r35 = count-mounted(root-w) == 4
+r36 = dv-live-deep(root-w, VL-ROW0 + 5) == -1 && dv-live-deep(root-w, VL-ROW0 + 6) >= 0
+_, y6w, _, _ = cs-rect(dv-live-deep(root-w, VL-ROW0 + 6))
+r37 = y6w == 200
+
+; 同一批行 -> 组件对象复用（零结构操作）
+hbefore = dv-live-deep(root-w, VL-ROW0 + 6)
+ST[D-OFF] = 9000
+pw3 = mk-page()
+r38 = dv-render(root-w, pw3) == 0
+cs-layout(root-w, 0, 0, 40000, 30000)
+r39 = dv-live-deep(root-w, VL-ROW0 + 6) == hbefore
+
+; 下界夹紧
+ST[D-OFF] = 20000
+set-wheel(10)
+w2 = dva-wheel(ST, root-w)
+r40 = w2 == 1 && ST[D-OFF] == VL-M-MAXOFF
+set-wheel(1)
+w3 = dva-wheel(ST, root-w)
+r41 = w3 == 0 && ST[D-OFF] == VL-M-MAXOFF
+
+; 上界夹紧
+ST[D-OFF] = 100
+set-wheel(-1)
+w4 = dva-wheel(ST, root-w)
+r42 = w4 == 1 && ST[D-OFF] == 0
+
+; ============================================================================
+; 场景 R：映射 —— dv-repeat-mapped 按下标表取行（越界防护）
+; ============================================================================
+root-r = cmp-root()
+dv-clear()
+tr = dv-form(1, -1)
+mx []i64 = with-len(3)
+mx[0] = 3
+mx[1] = 1
+mx[2] = 0
+na2 []i64 = with-len(0)
+_ = dv-repeat-mapped(tr, 700, 0, 3, C-LABEL, mx, VL-TXT, na2, na2, na2, na2, 0)
+dv-render(root-r, tr)
+r43 = count-kids(root-r) == 3
+r44 = cmp-text(dv-live-deep(root-r, 703)) == 'alpha 3' &&
+      cmp-text(dv-live-deep(root-r, 701)) == 'alpha 1' &&
+      cmp-text(dv-live-deep(root-r, 700)) == 'alpha 0'
+
+; 下标表比 count 短：只挂到表尾（2 行），行 key = key0 + 源行号
+root-r2 = cmp-root()
+dv-clear()
+tr2 = dv-form(1, -1)
+mx2 []i64 = with-len(2)
+mx2[0] = 19
+mx2[1] = 18
+_ = dv-repeat-mapped(tr2, 800, 0, 5, C-LABEL, mx2, VL-TXT, na2, na2, na2, na2, 0)
+dv-render(root-r2, tr2)
+r45 = count-kids(root-r2) == 2
+r46 = cmp-text(dv-live-deep(root-r2, 819)) == 'delta 19' &&
+      cmp-text(dv-live-deep(root-r2, 818)) == 'delta 18'
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14 && r15 && r16 && r17 && r18 && r19 && r20 && r21 && r22 && r23 && r24 && r25 && r26 && r27 && r28 && r29 && r30 && r31 && r32 && r33 && r34 && r35 && r36 && r37 && r38 && r39 && r40 && r41 && r42 && r43 && r44 && r45 && r46
+
+print('M mark={r1}{r2}{r3}{r4}{r5}{r6}')
+print('F filter={r7}{r8}{r9}{r10}{r11}{r12}{r13}{r14}{r15}{r16}{r17}{r18}{r19}')
+print('L layout={r20}{r21}{r22}{r23}{r24}{r25}{r26}{r27}{r28}')
+print('P paint={r29}')
+print('H hit={r30}{r31}{r32}')
+print('W wheel={r33}{r34}{r35}{r36}{r37}{r38}{r39}{r40}{r41}{r42}')
+print('R mapped={r43}{r44}{r45}{r46}')
+print('all-ok={ok}')
+(ok) -> { print('ALL DVA-FILTER TESTS PASSED') }
+(!ok) -> { print('DVA-FILTER FAILURES') }

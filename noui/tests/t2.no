@@ -1,10 +1,10 @@
-g []str = with-len(0)
-g2 []i64 = with-len(0)
+G []str = with-len(0)
+G2 []i64 = with-len(0)
 f = (kind i64, txt str, hit i64) (idx i64) {
-    g2.push(kind)
-    g.push(txt)
-    g2.push(hit)
-    idx = g2.len() - 1
+    G2.push(kind)
+    G.push(txt)
+    G2.push(hit)
+    idx = G2.len() - 1
 }
 x = f(1, 'hi', 0)
-print('x={x} str={g[0]}')
+print('x={x} str={G[0]}')

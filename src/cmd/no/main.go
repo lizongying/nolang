@@ -1155,19 +1155,45 @@ func removeDependency(name string) {
 	fmt.Printf(i18n.P("c6eld4s3", "Removed dependency: %s\n"), name)
 }
 
-func updateDependency(pkg string) {
+// resolvedDepVersion 計算依賴鍵更新後應寫回 package.noml 的版本。
+//
+// 預編 AST 依賴鍵（<tool>@<host>/<owner>/<repo>，如
+// glossary@github.com/lizongying/nolang）有對應的 GitHub release，查 releases/latest
+// 得到具體 tag 並寫回——與 add / install 的語義一致，避免把 latest / * 寫進 manifest
+// 造成下次解析漂移。其餘鍵（本地路徑、workspace 套件、普通原始碼依賴）沒有單一
+// release tag 可尋，維持 "*"（見 pkg.warnWorkspaceDepVersion 的約定）。
+//
+// latest 以參數注入，便於單測不依賴網路。
+func resolvedDepVersion(key string, latest func(host, owner, repo string) (string, error)) (string, error) {
+	if !pkg.IsASTDependencyKey(key) {
+		return "*", nil
+	}
+	spec, err := pkg.ParseToolSpec(key)
+	if err != nil {
+		return "", err
+	}
+	return latest(spec.Host, spec.Owner, spec.Repo)
+}
+
+func updateDependency(key string) {
 	config, err := loadProjectConfig()
 	if err != nil {
 		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
-	if _, ok := config.Dependencies[pkg]; !ok {
-		fmt.Printf(i18n.P("t5l89pst", "Dependency %s not found.\n"), pkg)
+	if _, ok := config.Dependencies[key]; !ok {
+		fmt.Printf(i18n.P("t5l89pst", "Dependency %s not found.\n"), key)
 		return
 	}
-	config.Dependencies[pkg] = "*"
+	newVer, err := resolvedDepVersion(key, pkg.LatestReleaseTag)
+	if err != nil {
+		fmt.Printf(i18n.P("amyp0ig8", "Error resolving latest release: %v\n"), err)
+		return
+	}
+	config.Dependencies[key] = newVer
 	createConfigFile(*config)
-	fmt.Printf(i18n.P("0lur3tbm", "Updated %s\n"), pkg)
+	fmt.Printf(i18n.P("0lur3tbm", "Updated %s\n"), key)
+	fmt.Printf("  version: %s\n", newVer)
 }
 
 func updateAllDependencies() {
@@ -1182,7 +1208,13 @@ func updateAllDependencies() {
 	}
 	fmt.Println(i18n.P("ex8l4y2k", "Updating dependencies..."))
 	for name := range config.Dependencies {
-		config.Dependencies[name] = "*"
+		newVer, err := resolvedDepVersion(name, pkg.LatestReleaseTag)
+		if err != nil {
+			// 不寫回：避免部分依賴已改、部分未改的不一致狀態。
+			fmt.Printf(i18n.P("amyp0ig8", "Error resolving latest release: %v\n"), err)
+			return
+		}
+		config.Dependencies[name] = newVer
 		fmt.Printf(i18n.P("7mckxr6e", "  Updated %s\n"), name)
 	}
 	createConfigFile(*config)

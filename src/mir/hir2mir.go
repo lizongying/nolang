@@ -1244,8 +1244,14 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 			// unconditionally used to leave such lets as unmaterialized global
 			// markers -> every later read was `undef` (test-fd-newtype trapped at
 			// `bad-fd < 0`).
+			// `|| isGlobalStyleName(...)`: a global-style binding is module
+			// storage even when a nested block also assigns it (see the
+			// registration loop). Skipping the inlining is what makes the
+			// nested store land in the GLOBAL rather than in a main-local of
+			// the same name — inlining here would recreate the very split this
+			// comment warns about.
 			if n.Has(hir.FlagModuleConst) && l.foldConstText(n, l.letTypeRaw(n)) != "" &&
-				writes[pkg.Str(n.S)] == 0 {
+				(writes[pkg.Str(n.S)] == 0 || isGlobalStyleName(pkg.Str(n.S))) {
 				continue
 			}
 			// A top-level `let` the registration loop already turned into module
@@ -1290,7 +1296,7 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 				if l.isUnsafeInlineType(raw) {
 					// fall through to inline as a local
 				} else if gnid, ok := l.globalNodes[pkg.Str(n.S)]; ok && gnid == id &&
-					writes[pkg.Str(n.S)] == 0 {
+					(writes[pkg.Str(n.S)] == 0 || isGlobalStyleName(pkg.Str(n.S))) {
 					// This `let` IS the registered module-constant declaration
 					// (its initializer folds to a real LLVM constant and was
 					// materialized as a lazily-materialized global). It must NOT
@@ -1729,8 +1735,19 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				//     error, not a global (matches the declOnly case, which is also
 				//     name-agnostic only because a declaration has no initializer
 				//     to inline at all).
+				//     The container restriction (isUnsafeInlineType) was dropped:
+				//     a SCALAR global-style binding with a call initializer has the
+				//     exact same defect. `ED = cmp-editor()` read from a helper is
+				//     left as a local of the synthetic main (foldConstText is empty
+				//     for a call), so the helper resolved the name to `undef` and
+				//     silently operated on a garbage handle — noui's
+				//     cmp-editor-sync then attached its rows to handle undef while
+				//     the real editor stayed empty (kids=0), or crashed. Registering
+				//     it as module storage lets synthesizeMainForTopLevel inline
+				//     the initializer and lowerStmtInner's owned-global write-back
+				//     store the handle into @ED, so both frames agree.
 				globalRefInit := referencedByFunc && isGlobalStyleName(gname) &&
-					l.isUnsafeInlineType(raw) && l.letValueIsCall(n)
+					l.letValueIsCall(n)
 				if !(referencedByFunc && (declOnly || constArr || constStr || constEnum || constStruct || globalRefInit)) {
 					if raw == "" || l.foldConstText(n, raw) == "" {
 						continue
@@ -1818,7 +1835,18 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				// by synthesizeMainForTopLevel, which inlines it so
 				// lowerStmt/lowerAssignNode emit the store. Guard with existence
 				// so reassignments never overwrite the declaration's slot.
-				if _, exists := l.globals[gname]; !exists && topWrites[gname] == 0 {
+				// A GLOBAL-STYLE name is documented module data
+				// (docs/docs/lang/syntax.md: 全局變量必須大寫), so it is registered
+				// even when it is also assigned inside a nested block. Block-only
+				// assignment is the ONLY way to reassign a top-level binding (a
+				// second top-level `let` of the same name is a duplicate-variable
+				// error), and refusing to register turned the binding into a local
+				// of the synthetic main: a helper function then read `undef`/the
+				// stale initializer. `ED = 0` + `ED = cmp-editor()` inside the init
+				// guard is exactly main-editor.no's shape. The nested store is
+				// emitted into the global by lowerAssignNode, so both frames agree.
+				if _, exists := l.globals[gname]; !exists &&
+					(topWrites[gname] == 0 || isGlobalStyleName(gname)) {
 					// A fixed-array override wins: the binding's own type is a
 					// slice, which cannot describe the fixed-array constant its
 					// initializer folds to (see fixedArrayConstGlobalType).

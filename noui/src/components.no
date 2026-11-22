@@ -8,7 +8,11 @@
 ;   - 大写顶层数据，函数内读写合法；
 ;   - 计数自增用 `n + 1: { ok -> it  -> n }` 解包 option；
 ;   - guard 用 `(cond) -> { }`，`(cond) { }` 是 while；
-;   - 字符串用单引号，追加用插值 `s = '{s}{x}'`。
+;   - 字符串用单引号；**拼接一律 `s.push-str(t)`** —— 插值 `{x}` 只在字符串
+;     字面量处于**实参位**（`print` / `cmp-set-text`）时展开，写在赋值号右边
+;     就是字面量，而且插值里**不能调函数**（见 ARCHITECTURE.md §5.36 / §5.37）；
+;   - `;` 是**到行尾的注释**，不是语句分隔符 —— `{ a; b }` 里的 `b` 和收尾的
+;     `}` 会一起被注释掉，这个 `{` 再不闭合，**整个模块从该行起静默截断**。
 ; ============================================================================
 
 ; ---------- 组件 kind 常量（对应 components-catalog.md 的 83 项）----------
@@ -142,6 +146,7 @@ CMP-COLOR []i64 = with-len(0)       ; 打包颜色 0xRRGGBBAA
 CMP-VALUE []i64 = with-len(0)       ; 主数值（value / count / page）
 CMP-VALUE2 []i64 = with-len(0)      ; 次数值（max / total / active）
 CMP-VALUE3 []i64 = with-len(0)      ; 第三数值
+CMP-VALUE4 []i64 = with-len(0)      ; 第四数值（阶段40：数字输入 / 步进器的步长）
 CMP-X []i64 = with-len(0)           ; 布局盒，定点坐标（值*100）
 CMP-Y []i64 = with-len(0)
 CMP-W []i64 = with-len(0)
@@ -159,7 +164,65 @@ CMP-SH []i64 = with-len(0)          ; 固定高覆盖（0 = 自动 / intrinsic�
 CMP-ALIGN []i64 = with-len(0)       ; 文本对齐（0 = 按 kind 默认，A-LEFT/CENTER/RIGHT）
 CMP-VAR []i64 = with-len(0)         ; 变体（0 = 默认；非 0 时取主题语义色，见 cmp-scene cs-var-color）
 CMP-ANCHOR []i64 = with-len(0)      ; 锚定浮层的锚点 key（-1 = 无锚点 -> 退化为父矩形内居中）
+CMP-SCROLL-MAX []i64 = with-len(0)  ; 阶段23：滚动容器的最大偏移（内容高 - 视口高，<=0 = 未知）
+CMP-SCROLL-CONTENT []i64 = with-len(0)  ; 阶段24：滚动容器的**声明**内容高（含 padding）。0 = 没声明 -> 布局实测子节点；> 0 = 虚拟列表（内容高 = n*行高+间隙+padding，子节点只挂可见窗口）
+CMP-SCROLL-START []i64 = with-len(0)   ; 阶段24：虚拟列表首个挂载子的绝对行号（0 = 顺序排）
 CHILD-IDX []i64 = with-len(0)
+
+; ---- 阶段33：命令式树的模型池（下标一律 = 组件句柄，随 cmp-alloc 一起长）----
+; 节点本身也是组件（cmp-label），但**不是树的视觉子节点** —— 树的子节点是
+; cmp-tree-sync 重建出来的「行」。节点表按树分段存在 TR-ALL 里（TR-TSTART /
+; TR-TCOUNT 记段界），兄弟关系是 first-child / next-sibling 链。
+TR-ALL []i64 = with-len(0)        ; 所有树的节点句柄（按 TR-TSTART 分段，只增）
+TR-PAR []i64 = with-len(0)        ; 父节点句柄（-1 = 根）
+TR-FIRST []i64 = with-len(0)      ; 第一个孩子句柄（-1 = 无）
+TR-NEXT []i64 = with-len(0)       ; 下一个兄弟句柄（-1 = 无）
+TR-OPEN []i64 = with-len(0)       ; 展开标记（非 0 = 展开）
+TR-ROW-NODE []i64 = with-len(0)   ; 视觉行句柄 -> 节点句柄（-1 = 不是树行）
+TR-ARROW []i64 = with-len(0)      ; 视觉行句柄 -> 该行的「缩进 + 箭头」标签句柄
+TR-TSTART []i64 = with-len(0)     ; 树句柄 -> 本树节点在 TR-ALL 里的段起始
+TR-TCOUNT []i64 = with-len(0)     ; 树句柄 -> 本树节点数
+
+; ---- 阶段34：命令式代码编辑器的池 ----
+; 文本模型是**全局单份**行数组（和声明式 dv-code-editor 的 DV-ED-LINES 一致 ——
+; 一层缓冲区，多个编辑器句柄可以各自带光标看同一份文本）。
+; 光标 / 跟随标记按句柄索引，随 cmp-alloc 一起长。
+; 滚动偏移**不另开池**：真源就是 CMP-VALUE[编辑器根]（cs-layout 的 C-SCROLL
+; 分支读的正是它，事件侧滚轮也写它）—— 和内核滚动容器同一套约定。
+ED-LINES []str = with-len(0)      ; 行数组（保留末尾空行）
+ED-KEEP []str = with-len(0)       ; 删行 / 插行的临时副本
+ED-L []i64 = with-len(0)          ; 光标行
+ED-C []i64 = with-len(0)          ; 光标列（字节）
+ED-SEEN []i64 = with-len(0)       ; 上次「跟随」时的光标行（光标没动就不重排窗口）
+ED-ROW []i64 = with-len(0)        ; 视觉行标记（>0 = 是编辑器行）
+
+; 阶段38：输入框（C-INPUT）的富文本 / 语法高亮。
+; 光标按句柄存 INP-CAR（**字节**下标，和 slice-bytes 一致）；INP-SY 是开关。
+; 高亮段由组件模块自己 token 化后摊平进只增池 INP-SG / INP-SGC（每句柄一段，
+; INP-SGO 记基址、INP-SGN 记段数）—— 渲染层只读这些段，不在别的模块里 push。
+INP-CAR []i64 = with-len(0)        ; 光标字节下标（0..len-bytes）
+INP-SY []i64 = with-len(0)         ; 1 = 语法高亮，0 = 纯文本
+INP-SGO []i64 = with-len(0)        ; 每句柄高亮段在 INP-SG 里的基址
+INP-SGN []i64 = with-len(0)        ; 每句柄高亮段数
+INP-SG []str = with-len(0)         ; 高亮段文本（扁平，只增，和 CP-SRC 同构）
+INP-SGC []i64 = with-len(0)        ; 高亮段颜色（扁平）
+; 阶段39：多行文本域视口（下标 = 句柄）——首行行号，随 cmp-alloc 一起长
+TA-OFF []i64 = with-len(0)
+; 阶段41：OTP 输入（下标 = 句柄）——定长数字串（空格 = 空槽）+ 活动槽号
+OT-CODE []str = with-len(0)
+OT-CUR []i64 = with-len(0)
+; 阶段42：combobox 的过滤匹配表（下标 = 句柄）。查询串就是 CMP-TEXT，
+; 选项与 select 同构存 CHILD-IDX；这里只存「哪些选项匹配」：
+;   CB-MBASE 匹配表在 CB-MLIST 里的基址（扁平只增，同 INP-SG 段池思路）
+;   CB-MN    匹配数
+;   CB-MCUR  高亮匹配下标（-1 = 无）
+CB-MBASE []i64 = with-len(0)
+CB-MN []i64 = with-len(0)
+CB-MCUR []i64 = with-len(0)
+CB-MLIST []i64 = with-len(0)
+INP-C-KW = 0x4A90E2FF              ; 关键字 / 标识符强调
+INP-C-STR = 0x50C878FF             ; 字符串
+INP-C-COM = 0x9AA0B4FF             ; 注释（nolang 的 `;` 到行尾）
 
 ; ============================================================================
 ; 通用基础设施
@@ -174,6 +237,7 @@ cmp-alloc = (kind i64, text str, text2 str, color i64, value i64) (h i64) {
     CMP-VALUE.push(value)
     CMP-VALUE2.push(0)
     CMP-VALUE3.push(0)
+    CMP-VALUE4.push(0)
     CMP-X.push(0)
     CMP-Y.push(0)
     CMP-W.push(0)
@@ -191,6 +255,55 @@ cmp-alloc = (kind i64, text str, text2 str, color i64, value i64) (h i64) {
     CMP-ALIGN.push(0)
     CMP-VAR.push(0)
     CMP-ANCHOR.push(-1)
+    CMP-SCROLL-MAX.push(0)
+    CMP-SCROLL-CONTENT.push(0)
+    CMP-SCROLL-START.push(0)
+    ; 阶段33：树模型池随每个组件槽一起长（下标 = 句柄）
+    TR-PAR.push(-1)
+    TR-FIRST.push(-1)
+    TR-NEXT.push(-1)
+    TR-OPEN.push(0)
+    TR-ROW-NODE.push(-1)
+    TR-ARROW.push(-1)
+    TR-TSTART.push(0)
+    TR-TCOUNT.push(0)
+    ; 阶段34：编辑器状态池随每个组件槽一起长（下标 = 句柄）
+    ED-L.push(0)
+    ED-C.push(0)
+    ED-SEEN.push(-1)
+    ED-ROW.push(0)
+    ; 阶段35：表格状态池随每个组件槽一起长（下标 = 句柄）
+    TB-OFF.push(0)
+    TB-SEL.push(-1)
+    TB-HEAD-H.push(-1)
+    TB-SCR-H.push(-1)
+    TB-ROW-SRC.push(-1)
+    TB-CELL-SRC.push(-1)
+    TB-CELL-COL.push(-1)
+    ; 阶段36：可拆面板标记 / 分栏位置随每个组件槽一起长
+    DK-SPLIT.push(0)
+    DK-SPLIT-V.push(0)
+    ; 阶段37：命令面板状态池随每个组件槽一起长（下标 = 句柄）
+    CP-CUR.push(-1)
+    CP-OFF.push(0)
+    CP-SB.push(0)
+    CP-INP-H.push(-1)
+    CP-SCR-H.push(-1)
+    CP-ROW-SRC.push(-1)
+    ; 阶段38：输入框光标 / 高亮开关 / 段基址（下标 = 句柄；段池本身只增）
+    INP-CAR.push(0)
+    INP-SY.push(0)
+    INP-SGO.push(0)
+    INP-SGN.push(0)
+    ; 阶段39：文本域视口首行
+    TA-OFF.push(0)
+    ; 阶段41：OTP 定长码 + 活动槽
+    OT-CODE.push('')
+    OT-CUR.push(0)
+    ; 阶段42：combobox 过滤匹配表
+    CB-MBASE.push(0)
+    CB-MN.push(0)
+    CB-MCUR.push(-1)
     h = CMP-KIND.len() - 1
 }
 
@@ -245,6 +358,15 @@ cmp-flags = (h i64) (f i64) {
         -> 0
     }
     f = x
+}
+; 阶段23：父句柄（滚轮命中要顺着链向外找滚动容器）；-1 = 没有父
+cmp-parent-of = (h i64) (v i64) {
+    x = CMP-PARENT[h]: {
+        ok -> it
+
+        -> -1
+    }
+    v = x
 }
 cmp-valid = (h i64) (ok bool) {
     ok = h >= 0 && h < CMP-KIND.len()
@@ -410,6 +532,42 @@ cmp-anchor = (h i64) (v i64) {
 }
 cmp-set-anchor = (h i64, k i64) {
     (h >= 0 && h < CMP-KIND.len()) -> { CMP-ANCHOR[h] = k }
+}
+; 阶段23：滚动容器的最大偏移（布局阶段算，事件侧拿它夹紧滚轮）
+cmp-scroll-max = (h i64) (v i64) {
+    x = CMP-SCROLL-MAX[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-set-scroll-max = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-SCROLL-MAX[h] = v }
+}
+; 阶段24：声明内容高的读写（虚拟列表用；0 = 没声明 -> 布局实测子节点）
+cmp-scroll-content = (h i64) (v i64) {
+    x = CMP-SCROLL-CONTENT[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-set-scroll-content = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-SCROLL-CONTENT[h] = v }
+}
+; 阶段24：首个挂载子的**绝对行号**（虚拟列表用；0 = 顺序排，兼容实测模式）
+cmp-scroll-start = (h i64) (v i64) {
+    x = CMP-SCROLL-START[h]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cmp-set-scroll-start = (h i64, v i64) {
+    (h >= 0 && h < CMP-KIND.len()) -> { CMP-SCROLL-START[h] = v }
 }
 cmp-set-bounds = (h i64, x i64, y i64, w i64, ht i64) {
     (h >= 0 && h < CMP-KIND.len()) -> {
@@ -650,6 +808,9 @@ cmp-combobox = () (h i64) {
 cmp-slider = (min i64, max i64) (h i64) {
     h = cmp-alloc(C-SLIDER, '', '', 0x4A90E2FF, min)
     CMP-VALUE2[h] = max
+    ; 下限真源是 CMP-VALUE3（slider-value-at / slider-set / cs-paint-leaf 都读它）；
+    ; 以前只写 VALUE（初值）不写 VALUE3，min != 0 时左端点会返回 0（阶段43 修）
+    CMP-VALUE3[h] = min
 }
 cmp-stepper = () (h i64) {
     h = cmp-alloc(C-STEPPER, '', '', 0xE8E8F0FF, 0)
@@ -767,8 +928,19 @@ cmp-list = () (h i64) {
 cmp-virtual-list = (len i64) (h i64) {
     h = cmp-alloc(C-VIRTUAL-LIST, '', '', 0x2A2A3AFF, len)
 }
+; 阶段33：value = -1 表示「没选中任何节点」（选中存 CMP-VALUE[树]）
 cmp-tree = () (h i64) {
-    h = cmp-alloc(C-TREE, '', '', 0x2A2A3AFF, 0)
+    h = cmp-alloc(C-TREE, '', '', 0x2A2A3AFF, -1)
+}
+; 阶段34：命令式代码编辑器 —— 根就是 C-SCROLL（和声明式 dv-code-editor 一样），
+; 可见行直接挂在滚动容器上（虚拟列表：内容高 / 起始行号由 cmp-editor-sync 声明）。
+; 内边距 / 间距写**字面量**：components.no 不能 import cmp-scene，看不到 CS-PAD /
+; CS-GAP（那两个常量定义在 cmp-scene.no，值就是 1200 / 800）。
+cmp-editor = () (h i64) {
+    h = cmp-alloc(C-SCROLL, '', '', 0x1E1E28FF, 0)
+    cmp-set-value2(h, 3200)
+    cmp-set-pad(h, 1200)
+    cmp-set-gap(h, 800)
 }
 cmp-accordion = () (h i64) {
     h = cmp-alloc(C-ACCORDION, '', '', 0x2A2A3AFF, 0)
@@ -892,21 +1064,9 @@ input-focus = (h i64, on bool) {
     (on) -> { CMP-FLAGS[h] = CMP-FLAGS[h] | F-FOCUSED }
     (!on) -> { CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-FOCUSED) }
 }
-; 追加：str 数组下标是 ?str，先解包；用 push-str 原地追加（插值 + option 有 optunuse bug）
-input-append = (h i64, ch str) {
-    #{overflow=wrap}
-    disabled = CMP-FLAGS[h] & F-DISABLED
-    (disabled != 0) -> return
-    txt = CMP-TEXT[h]: {
-        ok -> it
-
-        -> ''
-    }
-    txt.push-str(ch)
-    CMP-TEXT[h] = txt
-}
 input-clear = (h i64) {
     CMP-TEXT[h] = ''
+    ct-set(INP-CAR, h, 0)
 }
 input-value = (h i64) (s str) {
     s = CMP-TEXT[h]: {
@@ -915,16 +1075,583 @@ input-value = (h i64) (s str) {
         -> ''
     }
 }
+; ---- 阶段38：光标（字节下标）与定点编辑 ----
+input-caret = (h i64) (i i64) {
+    i = ct-get(INP-CAR, h)
+}
+input-set-caret = (h i64, i i64) () {
+    n = CMP-TEXT[h].len-bytes()
+    (i < 0) -> { i = 0 }
+    (i > n) -> { i = n }
+    ct-set(INP-CAR, h, i)
+}
+input-move = (h i64, d i64) () {
+    input-set-caret(h, ct-add(input-caret(h), d))
+}
+; 在光标处插入（append 是它在「光标在末尾」时的特例）
+input-insert = (h i64, ch str) {
+    #{overflow=wrap}
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    txt = CMP-TEXT[h]: {
+        ok -> it
+
+        -> ''
+    }
+    car = input-caret(h)
+    n = txt.len-bytes()
+    (car < 0) -> { car = 0 }
+    (car > n) -> { car = n }
+    pre = txt.slice-bytes(0, car)
+    suf = txt.slice-bytes(car, n)
+    pre.push-str(ch)
+    pre.push-str(suf)
+    CMP-TEXT[h] = pre
+    input-set-caret(h, ct-add(car, ch.len-bytes()))
+}
+input-append = (h i64, ch str) {
+    ; 旧语义是「追加到末尾」：先把光标推到末尾，再走同一条插入路径
+    input-set-caret(h, CMP-TEXT[h].len-bytes())
+    input-insert(h, ch)
+}
 input-backspace = (h i64) {
-    n = CMP-TEXT[h].len()
-    (n > 0) -> {
+    #{overflow=wrap}
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    car = input-caret(h)
+    (car > 0) -> {
         txt = CMP-TEXT[h]: {
             ok -> it
 
             -> ''
         }
-        CMP-TEXT[h] = txt.slice(0, n - 1)
+        n = txt.len-bytes()
+        (car <= n) -> {
+            pre = txt.slice-bytes(0, ct-sub(car, 1))
+            suf = txt.slice-bytes(car, n)
+            pre.push-str(suf)
+            CMP-TEXT[h] = pre
+            ct-set(INP-CAR, h, ct-sub(car, 1))
+        }
     }
+}
+; 向前删（光标处往后一个字节）
+input-delete = (h i64) {
+    #{overflow=wrap}
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    car = input-caret(h)
+    txt = CMP-TEXT[h]: {
+        ok -> it
+
+        -> ''
+    }
+    n = txt.len-bytes()
+    (car < n) -> {
+        pre = txt.slice-bytes(0, car)
+        suf = txt.slice-bytes(ct-add(car, 1), n)
+        pre.push-str(suf)
+        CMP-TEXT[h] = pre
+    }
+}
+
+; ---- 阶段38：语法高亮（复用编辑器的 ed-lex-line，颜色按 nolang 语感取）----
+input-syntax = (h i64, on bool) {
+    (on) -> { ct-set(INP-SY, h, 1) }
+    (!on) -> { ct-set(INP-SY, h, 0) }
+}
+input-syntax-mode = (h i64) (m i64) {
+    m = ct-get(INP-SY, h)
+}
+; 把当前文本 token 化并摊平进只增段池（在组件模块内 push）
+input-lex-build = (h i64) (n i64) {
+    ts []str = with-len(0)
+    tc []i64 = with-len(0)
+    t = input-value(h)
+    n = ed-lex-line(t, ts, tc, INP-C-KW, INP-C-STR, INP-C-COM, cmp-color(h))
+    ct-set(INP-SGO, h, INP-SG.len())
+    ct-set(INP-SGN, h, n)
+    j = 0
+    !! {
+        (j >= n) -> { ** }
+        INP-SG.push(ed-arr-get-s(ts, j))
+        INP-SGC.push(ct-get(tc, j))
+        j = ct-inc(j)
+    }
+    n = n
+}
+input-lex-count = (h i64) (n i64) {
+    n = ct-get(INP-SGN, h)
+}
+input-lex-seg = (h i64, j i64) (s str) {
+    s = ed-arr-get-s(INP-SG, ct-add(ct-get(INP-SGO, h), j))
+}
+input-lex-color = (h i64, j i64) (c i64) {
+    c = ct-get(INP-SGC, ct-add(ct-get(INP-SGO, h), j))
+}
+
+; ---- 阶段39：多行文本域（C-TEXTAREA）行几何 + 视口 ----
+; 文本 / 光标仍走 CMP-TEXT + INP-CAR（字节下标，和阶段38 的编辑原语同构），
+; 这里只加「行」的算法：行 = '\n' 分隔，换行符归上一行的行尾（空文本算 1 行）。
+; 换行 / 退格 / 前删直接复用 input-insert / input-backspace / input-delete。
+ta-line-count = (h i64) (n i64) {
+    t = input-value(h)
+    nb = t.len-bytes()
+    n = 1
+    i = 0
+    !! {
+        (i >= nb) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+; 第 l 行（0 基）起始字节下标；l 越界夹到最后一行
+ta-line-start = (h i64, l i64) (b i64) {
+    t = input-value(h)
+    nb = t.len-bytes()
+    b = 0
+    i = 0
+    seen = 0
+    !! {
+        (seen >= l) -> { ** }
+        (i >= nb) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> {
+            seen = ct-inc(seen)
+            b = ct-inc(i)
+        }
+        i = ct-inc(i)
+    }
+    b = b
+}
+; 第 l 行内容长度（**不含**结尾的 '\n'，按字节）
+ta-line-len = (h i64, l i64) (n i64) {
+    t = input-value(h)
+    nb = t.len-bytes()
+    n = 0
+    i = ta-line-start(h, l)
+    !! {
+        (i >= nb) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> { ** }
+        n = ct-inc(n)
+        i = ct-inc(i)
+    }
+    n = n
+}
+; 第 l 行的文本（不含换行符）
+ta-line-text = (h i64, l i64) (s str) {
+    t = input-value(h)
+    b = ta-line-start(h, l)
+    s = t.slice-bytes(b, ct-add(b, ta-line-len(h, l)))
+}
+ta-caret-line = (h i64) (l i64) {
+    t = input-value(h)
+    car = input-caret(h)
+    l = 0
+    i = 0
+    !! {
+        (i >= car) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> { l = ct-inc(l) }
+        i = ct-inc(i)
+    }
+    l = l
+}
+; 光标在第 l 行内的字节列
+ta-caret-col = (h i64) (c i64) {
+    c = ct-sub(input-caret(h), ta-line-start(h, ta-caret-line(h)))
+}
+; 上移一行：保持列，夹到上一行长度；已在首行不动
+ta-move-up = (h i64) () {
+    l = ta-caret-line(h)
+    (l <= 0) -> return
+    c = ta-caret-col(h)
+    pl = ct-sub(l, 1)
+    n = ta-line-len(h, pl)
+    (c > n) -> { c = n }
+    input-set-caret(h, ct-add(ta-line-start(h, pl), c))
+}
+; 下移一行：保持列，夹到下一行长度；已在末行不动
+ta-move-down = (h i64) () {
+    l = ta-caret-line(h)
+    nl = ct-inc(l)
+    (nl >= ta-line-count(h)) -> return
+    c = ta-caret-col(h)
+    n = ta-line-len(h, nl)
+    (c > n) -> { c = n }
+    input-set-caret(h, ct-add(ta-line-start(h, nl), c))
+}
+; 视口首行（行号）读 / 写
+ta-off = (h i64) (v i64) {
+    v = ct-get(TA-OFF, h)
+}
+ta-set-off = (h i64, v i64) () {
+    (v < 0) -> { v = 0 }
+    ct-set(TA-OFF, h, v)
+}
+; 让光标行落进 [off, off+cap)：不够就滚，且不滚过「最后 cap 行」
+ta-follow = (h i64, cap i64) () {
+    (cap <= 0) -> { cap = 1 }
+    lines = ta-line-count(h)
+    l = ta-caret-line(h)
+    off = ct-get(TA-OFF, h)
+    (off < 0) -> { off = 0 }
+    maxoff = ct-sub(lines, cap)
+    (maxoff < 0) -> { maxoff = 0 }
+    (l < off) -> { off = l }
+    (l >= ct-add(off, cap)) -> { off = ct-sub(l, ct-sub(cap, 1)) }
+    (off > maxoff) -> { off = maxoff }
+    (off < 0) -> { off = 0 }
+    ct-set(TA-OFF, h, off)
+}
+
+; ---- 阶段40：数字输入 / 步进器 / 搜索框 ----
+; 槽位沿用 slider 的约定：VALUE = 当前值，VALUE3 = 下限，VALUE2 = 上限；
+; VALUE4 = 步长（<= 0 一律按 1）。文本在 CMP-TEXT，光标复用 INP-CAR。
+num-range = (h i64, lo i64, hi i64) () {
+    CMP-VALUE3[h] = lo
+    CMP-VALUE2[h] = hi
+}
+num-step-set = (h i64, s i64) () {
+    (s <= 0) -> { s = 1 }
+    CMP-VALUE4[h] = s
+}
+num-step = (h i64) (s i64) {
+    s = ct-get(CMP-VALUE4, h)
+    (s <= 0) -> { s = 1 }
+}
+num-min = (h i64) (v i64) {
+    v = ct-get(CMP-VALUE3, h)
+}
+num-max = (h i64) (v i64) {
+    v = ct-get(CMP-VALUE2, h)
+}
+; 夹紧到 [lo, hi]（hi <= 0 = 不设上限，与 ct-clamp 同语义）
+num-clamp = (h i64, v i64) (r i64) {
+    r = ct-clamp(v, ct-get(CMP-VALUE3, h), ct-get(CMP-VALUE2, h))
+}
+; 先夹紧，再吸附到 lo + k*step（四舍五入到最近的一格），最后再夹一次
+num-snap = (h i64, v i64) (r i64) {
+    r = num-clamp(h, v)
+    st = num-step(h)
+    lo = ct-get(CMP-VALUE3, h)
+    q = ct-div(ct-add(ct-sub(r, lo), ct-div(st, 2)), st)
+    r = ct-add(lo, ct-mul(q, st))
+    r = num-clamp(h, r)
+}
+num-value = (h i64) (v i64) {
+    v = ct-get(CMP-VALUE, h)
+}
+; 写值：吸附 + 写 VALUE + 同步 CMP-TEXT（渲染层据此画右对齐数值）
+num-set = (h i64, v i64) () {
+    x = num-snap(h, v)
+    CMP-VALUE[h] = x
+    cmp-set-text(h, x.to-str())
+}
+num-bump = (h i64, dir i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    st = num-step(h)
+    cur = ct-get(CMP-VALUE, h)
+    num-set(h, ct-add(cur, ct-mul(dir, st)))
+}
+; 把 CMP-TEXT 解析成数字写回；解析失败不动值，返回 0
+; 注意：to-i64 的 ok 臂标签本身是个 bool 变量，返回值不能也叫 ok（会撞名）
+num-commit = (h i64) (done bool) {
+    done = false
+    t = input-value(h)
+    parsed = 0
+    pv = 0
+    t.to-i64(): {
+        ok -> {
+            parsed = 1
+            pv = it
+        }
+
+        -> {
+            parsed = 0
+        }
+    }
+    (parsed == 1) -> {
+        num-set(h, pv)
+        done = true
+    }
+}
+; 搜索框：值就是文本，另给「清除」
+search-query = (h i64) (s str) {
+    s = input-value(h)
+}
+search-clear = (h i64) () {
+    input-clear(h)
+}
+; 命中右端清除区（宽 = ht 的正方形）；返回 1 = 命中
+search-hit = (h i64, px i64, py i64, x i64, y i64, w i64, ht i64) (r i64) {
+    r = 0
+    cx = ct-sub(ct-add(x, w), ht)
+    ((px >= cx) && (px < ct-add(x, w)) && (py >= y) && (py < ct-add(y, ht))) -> { r = 1 }
+    r = r
+}
+; 命中：-1 = 左（减），1 = 右（加），0 = 中间值区
+stepper-hit = (h i64, px i64, py i64, x i64, y i64, w i64, ht i64) (r i64) {
+    r = 0
+    bw = ht
+    (w < ct-mul(bw, 2)) -> { bw = ct-div(w, 2) }
+    iny = ((py >= y) && (py < ct-add(y, ht)))
+    ((iny) && (px >= x) && (px < ct-add(x, bw))) -> { r = -1 }
+    rx = ct-sub(ct-add(x, w), bw)
+    ((iny) && (px >= rx) && (px < ct-add(x, w))) -> { r = 1 }
+    r = r
+}
+
+; ---- 阶段41：OTP 输入（C-OTP-INPUT）----
+; 槽数 = CMP-VALUE（构造参数 cmp-otp-input(len)）；每位一个数字存 OT-CODE
+; （**定长**字符串，空格 = 空槽），活动槽 = OT-CUR。写操作一律先查 F-DISABLED。
+; 槽格几何：格宽 = 控件高（正方格），格距 800 —— 与 cmp-scene 的 CS-GAP 同值；
+; components.no 看不到 CS-GAP，只能写字面量（同 §5.31 的写法）。
+otp-slots = (h i64) (n i64) {
+    n = ct-get(CMP-VALUE, h)
+    (n <= 0) -> { n = 1 }
+}
+otp-cur = (h i64) (i i64) {
+    i = ct-get(OT-CUR, h)
+}
+otp-cur-set = (h i64, i i64) () {
+    n = otp-slots(h)
+    (i < 0) -> { i = 0 }
+    (i >= n) -> { i = ct-sub(n, 1) }
+    ct-set(OT-CUR, h, i)
+}
+; 取定长码：短了补空格，长了截断（渲染 / 命中都按这个长度算）
+otp-code = (h i64) (s str) {
+    n = otp-slots(h)
+    s = OT-CODE[h]: {
+        ok -> it
+
+        -> ''
+    }
+    nb = s.len-bytes()
+    !! {
+        (nb >= n) -> { ** }
+        s.push-str(' ')
+        nb = ct-inc(nb)
+    }
+    (nb > n) -> { s = s.slice-bytes(0, n) }
+    s = s
+}
+; 单个字符 -> 数字；不是数字返回 -1
+otp-char-digit = (ch str) (d i64) {
+    d = -1
+    ch.to-i64(): {
+        ok -> {
+            (it >= 0) -> {
+                (it <= 9) -> { d = it }
+            }
+        }
+
+        -> { d = -1 }
+    }
+    d = d
+}
+; 第 i 槽的数字；空槽 / 越界返回 -1
+otp-digit = (h i64, i i64) (d i64) {
+    d = -1
+    n = otp-slots(h)
+    ((i < 0) || (i >= n)) -> { d = -1 }
+    ((i >= 0) && (i < n)) -> {
+        c = otp-code(h)
+        ch = c.slice-bytes(i, ct-add(i, 1))
+        d = otp-char-digit(ch)
+    }
+    d = d
+}
+; 写第 i 槽（d 不在 0..9 = 清空），并把活动槽移到第 i 槽
+otp-set-digit = (h i64, i i64, d i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = otp-slots(h)
+    ((i < 0) || (i >= n)) -> return
+    c = otp-code(h)
+    ch = ' '
+    ((d >= 0) && (d <= 9)) -> { ch = d.to-str() }
+    pre = c.slice-bytes(0, i)
+    pre.push-str(ch)
+    pre.push-str(c.slice-bytes(ct-add(i, 1), c.len-bytes()))
+    OT-CODE[h] = pre
+    ct-set(OT-CUR, h, i)
+}
+otp-clear-slot = (h i64, i i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = otp-slots(h)
+    ((i < 0) || (i >= n)) -> return
+    c = otp-code(h)
+    pre = c.slice-bytes(0, i)
+    pre.push-str(' ')
+    pre.push-str(c.slice-bytes(ct-add(i, 1), c.len-bytes()))
+    OT-CODE[h] = pre
+}
+otp-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = otp-slots(h)
+    pre = ''
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        pre.push-str(' ')
+        i = ct-inc(i)
+    }
+    OT-CODE[h] = pre
+    ct-set(OT-CUR, h, 0)
+}
+; 已填槽数
+otp-filled = (h i64) (n i64) {
+    c = otp-code(h)
+    nb = c.len-bytes()
+    n = 0
+    i = 0
+    !! {
+        (i >= nb) -> { ** }
+        ch = c.slice-bytes(i, ct-add(i, 1))
+        (ch != ' ') -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+; 去掉空格的「已输入码」（给状态栏 / 表单提交用）
+otp-digits = (h i64) (s str) {
+    c = otp-code(h)
+    nb = c.len-bytes()
+    s = ''
+    i = 0
+    !! {
+        (i >= nb) -> { ** }
+        ch = c.slice-bytes(i, ct-add(i, 1))
+        (ch != ' ') -> { s.push-str(ch) }
+        i = ct-inc(i)
+    }
+    s = s
+}
+; 值 = 已输入码（不含空格）
+otp-value = (h i64) (s str) {
+    s = otp-digits(h)
+}
+otp-complete = (h i64) (yes bool) {
+    yes = otp-filled(h) == otp-slots(h)
+}
+; 在活动槽写一位，然后跳到**下一个空槽**（没有空槽就停在末槽）
+otp-put = (h i64, d i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = otp-slots(h)
+    cur = ct-get(OT-CUR, h)
+    (cur < 0) -> { cur = 0 }
+    (cur >= n) -> { cur = ct-sub(n, 1) }
+    otp-set-digit(h, cur, d)
+    c = otp-code(h)
+    nx = -1
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ch = c.slice-bytes(i, ct-add(i, 1))
+        ((ch == ' ') && (nx < 0)) -> { nx = i }
+        i = ct-inc(i)
+    }
+    (nx >= 0) -> { ct-set(OT-CUR, h, nx) }
+    (nx < 0) -> { ct-set(OT-CUR, h, ct-sub(n, 1)) }
+}
+; 退格：活动槽有数字就清它；否则回退一格清上一格
+otp-backspace = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = otp-slots(h)
+    cur = ct-get(OT-CUR, h)
+    (cur < 0) -> { cur = 0 }
+    (cur >= n) -> { cur = ct-sub(n, 1) }
+    d = otp-digit(h, cur)
+    (d >= 0) -> {
+        otp-clear-slot(h, cur)
+        ct-set(OT-CUR, h, cur)
+    }
+    (d < 0) -> {
+        (cur > 0) -> {
+            pv = ct-sub(cur, 1)
+            otp-clear-slot(h, pv)
+            ct-set(OT-CUR, h, pv)
+        }
+    }
+}
+; 前删：只清活动槽，不移动
+otp-delete = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cur = ct-get(OT-CUR, h)
+    otp-clear-slot(h, cur)
+}
+otp-left = (h i64) () {
+    otp-cur-set(h, ct-sub(ct-get(OT-CUR, h), 1))
+}
+otp-right = (h i64) () {
+    otp-cur-set(h, ct-add(ct-get(OT-CUR, h), 1))
+}
+; 从字符串灌入：只取数字字符，按槽序填，多余的忽略；活动槽回到 0
+otp-set = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    otp-clear(h)
+    n = otp-slots(h)
+    nb = s.len-bytes()
+    i = 0
+    k = 0
+    !! {
+        (i >= nb) -> { ** }
+        (k >= n) -> { ** }
+        ch = s.slice-bytes(i, ct-add(i, 1))
+        d = otp-char-digit(ch)
+        (d >= 0) -> {
+            otp-set-digit(h, k, d)
+            k = ct-inc(k)
+        }
+        i = ct-inc(i)
+    }
+    ct-set(OT-CUR, h, 0)
+}
+; ---- 槽格几何（渲染层也调这两个，保证「画的」和「点的」一致）----
+otp-slot-w = (h i64, w i64, ht i64) (sw i64) {
+    n = otp-slots(h)
+    sw = ht
+    need = ct-add(ct-mul(n, ht), ct-mul(ct-sub(n, 1), 800))
+    (w < need) -> {
+        sw = ct-div(ct-sub(w, ct-mul(ct-sub(n, 1), 800)), n)
+        (sw < 1200) -> { sw = 1200 }
+    }
+    (sw <= 0) -> { sw = 1200 }
+    sw = sw
+}
+otp-slot-x = (h i64, i i64, x i64, w i64, ht i64) (sx i64) {
+    sw = otp-slot-w(h, w, ht)
+    sx = ct-add(x, ct-mul(i, ct-add(sw, 800)))
+}
+; 命中第几槽；没命中返回 -1
+otp-hit = (h i64, px i64, py i64, x i64, y i64, w i64, ht i64) (r i64) {
+    r = -1
+    n = otp-slots(h)
+    ((py < y) || (py >= ct-add(y, ht))) -> { r = -1 }
+    ((py >= y) && (py < ct-add(y, ht))) -> {
+        i = 0
+        !! {
+            (i >= n) -> { ** }
+            (r >= 0) -> { ** }
+            sx = otp-slot-x(h, i, x, w, ht)
+            sw = otp-slot-w(h, w, ht)
+            ((px >= sx) && (px < ct-add(sx, sw))) -> { r = i }
+            i = ct-inc(i)
+        }
+    }
+    r = r
 }
 
 ; ---- 3. Checkbox ----
@@ -1012,6 +1739,7 @@ select-selected = (h i64) (idx i64) {
     }
     idx = x
 }
+
 
 ; ---- 7. Tab ----
 tab-add = (h i64, title str) (idx i64) {
@@ -1168,7 +1896,1870 @@ slider-value = (h i64) (v i64) {
 }
 
 ; ============================================================================
-; 11. 渲染支撑（供 cmp-scene 渲染层读取复合组件的子项 / 状态）
+; 11. 树（阶段33：命令式侧功能对等）
+; ============================================================================
+; 节点本身也是组件（cmp-label），但**不是树的视觉子节点** —— 节点表存在 TR-ALL 里
+; （按树分段，TR-TSTART / TR-TCOUNT 记段界），兄弟关系是 first-child / next-sibling
+; 链。树的**视觉子节点**是 cmp-tree-sync 重建出来的「行」（横向 C-FORM 行 + 右对齐
+; 「缩进 + 箭头」标签 + 文本标签），所以 C-TREE 仍是普通纵向容器：布局 / 绘制 / 命中
+; 全走通用路径，渲染层不需要新分支（和阶段 28 的表格同一个思路）。
+;
+; 命令式层没有每帧调和器 —— 展开 / 选中之后由应用调一次 cmp-tree-sync 重建行。
+; 颜色不写死在组件库里（components.no 不 import cmp-scene，拿不到 cs-theme），
+; 由调用方把主题色当参数传进来。
+
+CT-INDENT = 2400   ; 每层缩进 24px
+CT-ARROW-W = 1600  ; 箭头槽宽 16px（叶子留空但仍占位，文本起点因此对齐）
+CT-ROW-H = 2400    ; 行高 24px
+CT-OPEN = 'v'      ; 展开态箭头（ASCII —— 字体一定画得出来）
+CT-SHUT = '>'      ; 收起态箭头
+
+; 树里用的小工具：数组读写（下标越界给零值 / 不写）与解包算术
+ct-get = (a []i64, i i64) (v i64) {
+    v = 0
+    (i >= 0) -> {
+        (i < a.len()) -> {
+            x = a[i]: {
+                ok -> it
+
+                -> 0
+            }
+            v = x
+        }
+    }
+}
+ct-set = (a []i64, i i64, v i64) () {
+    (i >= 0) -> {
+        (i < a.len()) -> {
+            a[i]: {
+                ok -> it = v
+                -> _
+            }
+        }
+    }
+}
+ct-add = (a i64, b i64) (v i64) {
+    x = a + b: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+ct-sub = (a i64, b i64) (v i64) {
+    x = a - b: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+ct-inc = (a i64) (v i64) {
+    x = a + 1: {
+        ok -> it
+
+        -> a
+    }
+    v = x
+}
+ct-mul = (a i64, b i64) (v i64) {
+    x = a * b: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+; 整数除法（components.no 不能 import cmp-scene，所以自己带一份；除数 <= 0 给 0）
+ct-div = (a i64, b i64) (v i64) {
+    v = 0
+    (b > 0) -> {
+        x = a / b: {
+            ok -> it
+
+            -> 0
+        }
+        v = x
+    }
+    v = v
+}
+; 夹紧（阶段36 可拆面板用；语义与声明式 dv-clamp 一致：hi <= 0 = 不夹上限）
+ct-clamp = (v i64, lo i64, hi i64) (r i64) {
+    r = v
+    (v < lo) -> { r = lo }
+    (hi > 0) -> {
+        (v > hi) -> { r = hi }
+    }
+    r = r
+}
+
+; ============================================================================
+; 值域型展示控件（阶段43）—— slider 下限读取器 + rating / pagination / empty
+; ============================================================================
+; 审计发现：组件目录给 C-RATING 承诺「value, max」、C-PAGINATION 承诺「page, total」、
+; C-EMPTY 承诺「title, description」，但命令式侧三者都只有一个构造函数 ——
+; rating / pagination 连值都没有 API，empty 的描述（CMP-TEXT2）更是没人画。
+; 这里补读数 / 写值（夹紧）/ 命中，渲染落 cmp-scene.no。
+;
+; 槽位沿用既有约定：VALUE = 当前值，VALUE2 = 上限 / 满分 / 总页数，VALUE3 = 下限。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-LINE-H = 2400（星格宽 = 行高）、CS-GAP = 800、CS-PAD = 1200、CS-BTN-H = 4000。
+
+; ---- slider：对称的 min / max 读取器（渲染层改走它们，别再直读 CMP-VALUE3/2）----
+slider-min = (h i64) (lo i64) {
+    lo = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+slider-max = (h i64) (hi i64) {
+    hi = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; ---- rating：VALUE = 当前星数，VALUE2 = 满分 ----
+rating-max = (h i64) (m i64) {
+    m = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+rating-value = (h i64) (v i64) {
+    v = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+rating-set = (h i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    m = rating-max(h)
+    (v < 0) -> { v = 0 }
+    (v > m) -> { v = m }
+    CMP-VALUE[h] = v
+}
+; 星格宽 = 行高 2400（= CS-LINE-H）
+rating-cell = () (w i64) {
+    w = 2400
+}
+; 命中第几颗星（0 起）；没命中返回 -1
+rating-hit = (h i64, px i64, py i64, x i64, y i64, w i64, ht i64) (r i64) {
+    r = -1
+    m = rating-max(h)
+    cw = rating-cell()
+    (m > 0) -> {
+        ((py >= y) && (py < ct-add(y, ht))) -> {
+            ((px >= x) && (px < ct-add(x, ct-mul(m, cw)))) -> {
+                r = ct-div(ct-sub(px, x), cw)
+            }
+        }
+    }
+    r = r
+}
+
+; ---- pagination：VALUE = 当前页（1 起），VALUE2 = 总页数 ----
+pagination-total = (h i64) (n i64) {
+    n = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+pagination-page = (h i64) (p i64) {
+    p = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+; 页码夹到 [1, total]（total <= 0 按 1 页）
+pagination-clamp = (h i64, p i64) (v i64) {
+    n = pagination-total(h)
+    (n <= 0) -> { n = 1 }
+    (p < 1) -> { p = 1 }
+    (p > n) -> { p = n }
+    v = p
+}
+pagination-set = (h i64, p i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-VALUE[h] = pagination-clamp(h, p)
+}
+pagination-prev = (h i64) () {
+    pagination-set(h, ct-sub(pagination-page(h), 1))
+}
+pagination-next = (h i64) () {
+    pagination-set(h, ct-add(pagination-page(h), 1))
+}
+; 左右钮各一个 CS-BTN-H（4000）方钮
+pagination-btn-w = () (w i64) {
+    w = 4000
+}
+; 中间标签文案 = 「页/总数」
+pagination-label = (h i64) (s str) {
+    s = ''
+    s.push-str(pagination-page(h).to-str())
+    s.push-str('/')
+    s.push-str(pagination-total(h).to-str())
+}
+; 命中：-1 没命中 / 0 上一页 / 1 页码标签 / 2 下一页
+pagination-hit = (h i64, px i64, py i64, x i64, y i64, w i64, ht i64) (r i64) {
+    r = -1
+    bw = pagination-btn-w()
+    (w >= ct-add(bw, bw)) -> {
+        ((py >= y) && (py < ct-add(y, ht))) -> {
+            ((px >= x) && (px < ct-add(x, bw))) -> { r = 0 }
+            ((px >= ct-sub(ct-add(x, w), bw)) && (px < ct-add(x, w))) -> { r = 2 }
+            ((px >= ct-add(x, bw)) && (px < ct-sub(ct-add(x, w), bw))) -> { r = 1 }
+        }
+    }
+    r = r
+}
+
+; ---- empty：CMP-TEXT = 标题，CMP-TEXT2 = 描述（渲染层两行都画）----
+
+; ============================================================================
+; 提示族（阶段44）—— message / alert / notification 的 level 语义
+; ============================================================================
+; 审计发现：组件目录给 C-MESSAGE 承诺「level」、C-ALERT 承诺「level, closable」、
+; C-NOTIFICATION 承诺「level, timeout」，但命令式侧三者都只有一个构造函数 ——
+; 连 level 都没有 API，渲染还落在通用 `rect + text` 兜底里。这里补 level 读写、
+; alert 的关闭钮、notification 的剩余时间条，渲染落 cmp-scene.no。
+;
+; 槽位沿用既有约定：VALUE = level，VALUE2 = 总时长，VALUE3 = 剩余 / closable。
+; level 的四档与主题槽对应：0 info -> ACCENT、1 success -> OK、
+; 2 warning -> 琥珀常量（主题里没有警告槽，同 dv.no 的 DV-C-NUM 先例）、
+; 3 danger -> DANGER；其它值按 info 画。
+;
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、
+;   CS-PROGRESS-H=800、CS-MIN-LEAF-W=6400。
+
+LV-INFO = 0
+LV-OK = 1
+LV-WARN = 2
+LV-ERR = 3
+
+; level -> 主题槽下标（抄 CS-TH-* 的字面量：2 = ACCENT、7 = OK、8 = DANGER；
+; -1 = 没有对应主题槽，渲染层用琥珀常量）。表驱动而不是在渲染层写一串 `==`，
+; 顺带让 LV-* 四个常量都有真源。
+lv-slot = (lv i64) (s i64) {
+    s = 2
+    (lv == LV-INFO) -> { s = 2 }
+    (lv == LV-OK) -> { s = 7 }
+    (lv == LV-WARN) -> { s = -1 }
+    (lv == LV-ERR) -> { s = 8 }
+    s = s
+}
+
+; 左侧色条粗 4px
+lv-bar-w = () (w i64) {
+    w = 400
+}
+; level 字形格 = 行高（2400 = CS-LINE-H）
+lv-glyph-w = () (w i64) {
+    w = 2400
+}
+; notification 的剩余时间条高（800 = CS-PROGRESS-H）
+lv-progress-h = () (h i64) {
+    h = 800
+}
+
+; ---- message：VALUE = level ----
+msg-level = (h i64) (lv i64) {
+    lv = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+msg-set-level = (h i64, lv i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-VALUE[h] = lv
+}
+
+; ---- alert：VALUE = level，VALUE3 = closable（1 = 画关闭钮）----
+alert-closable = (h i64) (c i64) {
+    c = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+alert-set-closable = (h i64, c i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-VALUE3[h] = c
+}
+; 关闭钮格 = 行高见方
+alert-close-w = () (w i64) {
+    w = 2400
+}
+; 关闭钮左缘（右端留一个 CS-PAD）
+alert-close-x = (x i64, w i64) (cx i64) {
+    cx = ct-sub(ct-sub(ct-add(x, w), 1200), alert-close-w())
+}
+; 命中：-1 没命中 / 0 主体 / 1 关闭钮
+alert-hit = (h i64, px i64, py i64, x i64, y i64, w i64, ht i64) (r i64) {
+    r = -1
+    ((py >= y) && (py < ct-add(y, ht))) -> {
+        ((px >= x) && (px < ct-add(x, w))) -> {
+            r = 0
+            cw = alert-close-w()
+            cx = alert-close-x(x, w)
+            ((alert-closable(h) == 1) && (px >= cx) && (px < ct-add(cx, cw))) -> { r = 1 }
+        }
+    }
+    r = r
+}
+
+; ---- notification：VALUE = level，VALUE2 = 总时长，VALUE3 = 剩余 ----
+; 时长单位任意（渲染只用比值），demo 里按「秒」用
+ntf-timeout = (h i64) (t i64) {
+    t = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+ntf-remain = (h i64) (t i64) {
+    t = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+ntf-set-timeout = (h i64, t i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-VALUE2[h] = t
+    CMP-VALUE3[h] = t
+}
+ntf-set-remain = (h i64, t i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-VALUE3[h] = t
+}
+; 剩余占比（0..10000 定点百分数；total <= 0 或 remain <= 0 -> 0）
+ntf-ratio = (h i64) (r i64) {
+    t = ntf-timeout(h)
+    v = ntf-remain(h)
+    r = 0
+    (t > 0) -> {
+        (v < 0) -> { v = 0 }
+        (v > t) -> { v = t }
+        r = ct-div(ct-mul(v, 10000), t)
+    }
+    r = r
+}
+
+; ============================================================================
+; 阶段45：会话族 bubble / speech
+; ============================================================================
+; 目录第 53 / 54 行承诺 bubble「text, position」、speech「text, lang」，
+; 但命令式侧只有构造函数（连 position / lang 都没有 API）。这里补：
+;   bubble：CMP-VALUE = position（0 左 / 1 右 —— 尾巴朝哪一边、文本怎么对齐），
+;           CMP-TEXT = 文本，CMP-COLOR = 气泡底色。
+;   speech：CMP-TEXT = 文本，CMP-TEXT2 = 语言标签（空 = 不画标签行）。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-LINE-H=2400、CS-GAP=800、CS-SEP-H=100、
+;   CS-MIN-LEAF-W=6400、尾巴方块 1200。
+
+; 气泡内边距（= CS-PAD）
+bb-pad = () (p i64) { p = 1200 }
+; 尾巴方块边长
+bb-tail = () (s i64) { s = 1200 }
+
+bubble-pos = (h i64) (p i64) {
+    p = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+bubble-set-pos = (h i64, p i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (p < 0) -> { p = 0 }
+    (p > 1) -> { p = 1 }
+    CMP-VALUE[h] = p
+}
+
+speech-lang = (h i64) (l str) {
+    l = CMP-TEXT2[h]: {
+        ok -> it
+
+        -> ''
+    }
+}
+speech-set-lang = (h i64, l str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT2[h] = l
+}
+
+; 追加节点（parent < 0 = 挂在根），返回节点句柄
+cmp-tree-add = (h i64, parent i64, text str) (node i64) {
+    node = cmp-label(text)
+    ct-set(TR-PAR, node, parent)
+    ct-set(TR-FIRST, node, -1)
+    ct-set(TR-NEXT, node, -1)
+    ct-set(TR-OPEN, node, 0)
+    (parent >= 0) -> {
+        ; 注意 `->` 链**不互斥**：第一个分支改了 TR-FIRST，第二个分支的条件
+        ; 会跟着变真，两个都会跑（实测把 NEXT[节点] 写成了节点自己 -> 死循环）。
+        ; 所以条件先取到局部 has 里，再分支。
+        has = 0
+        (ct-get(TR-FIRST, parent) >= 0) -> { has = 1 }
+        (has == 0) -> { ct-set(TR-FIRST, parent, node) }
+        (has != 0) -> {
+            s = ct-get(TR-FIRST, parent)
+            !! {
+                (ct-get(TR-NEXT, s) < 0) -> { ** }
+                s = ct-get(TR-NEXT, s)
+            }
+            ct-set(TR-NEXT, s, node)
+        }
+    }
+    n = ct-get(TR-TCOUNT, h)
+    (n == 0) -> { ct-set(TR-TSTART, h, TR-ALL.len()) }
+    TR-ALL.push(node)
+    ct-set(TR-TCOUNT, h, ct-inc(n))
+    node = node
+}
+
+cmp-tree-nodes = (h i64) (n i64) { n = ct-get(TR-TCOUNT, h) }
+cmp-tree-open-of = (h i64, node i64) (v i64) { v = ct-get(TR-OPEN, node) }
+cmp-tree-set-open = (h i64, node i64, v i64) { ct-set(TR-OPEN, node, v) }
+cmp-tree-toggle = (h i64, node i64) (v i64) {
+    ; 同上：条件先取局部，否则第一个分支把值改成 0 之后第二个分支又会把它改回 1
+    open = ct-get(TR-OPEN, node)
+    (open != 0) -> { ct-set(TR-OPEN, node, 0) }
+    (open == 0) -> { ct-set(TR-OPEN, node, 1) }
+    v = ct-get(TR-OPEN, node)
+}
+cmp-tree-has-kids = (h i64, node i64) (yes i64) {
+    yes = 0
+    (ct-get(TR-FIRST, node) >= 0) -> { yes = 1 }
+}
+cmp-tree-kids = (h i64, node i64) (n i64) {
+    n = 0
+    c = ct-get(TR-FIRST, node)
+    !! {
+        (c < 0) -> { ** }
+        n = ct-inc(n)
+        c = ct-get(TR-NEXT, c)
+    }
+}
+; 选中的节点存在 CMP-VALUE[树]（-1 = 没选中）
+cmp-tree-selected = (h i64) (node i64) { node = ct-get(CMP-VALUE, h) }
+cmp-tree-select = (h i64, node i64) { ct-set(CMP-VALUE, h, node) }
+
+; 层级（0 = 根）：顺着 TR-PAR 往上走
+cmp-tree-depth = (h i64, node i64) (d i64) {
+    d = 0
+    p = ct-get(TR-PAR, node)
+    !! {
+        (p < 0) -> { ** }
+        d = ct-inc(d)
+        p = ct-get(TR-PAR, p)
+    }
+}
+
+; 整棵树统一展开 / 收起（reset 这类操作要用的「一把梭」）
+cmp-tree-open-all = (h i64, v i64) () {
+    n = ct-get(TR-TCOUNT, h)
+    (n > 0) -> {
+        base = ct-get(TR-TSTART, h)
+        i = 0
+        !! {
+            (i >= n) -> { ** }
+            ct-set(TR-OPEN, ct-get(TR-ALL, ct-add(base, i)), v)
+            i = ct-inc(i)
+        }
+    }
+}
+
+; 拍平：可见节点按**先序**写进 out，层级写进 deps，返回可见行数。
+; 迭代式先序（显式栈）—— 语言没有可用的递归，深度也不该由数据决定。
+; 根倒着入栈、孩子也倒着入栈，弹出顺序才是正序。栈深上限就是节点数。
+cmp-tree-flat = (h i64, out []i64, deps []i64) (m i64) {
+    m = 0
+    n = ct-get(TR-TCOUNT, h)
+    (n > 0) -> {
+        st []i64 = with-len(n)
+        sd []i64 = with-len(n)
+        sp = 0
+        base = ct-get(TR-TSTART, h)
+        i = ct-sub(n, 1)
+        !! {
+            (i < 0) -> { ** }
+            v = ct-get(TR-ALL, ct-add(base, i))
+            (ct-get(TR-PAR, v) < 0) -> {
+                ct-set(st, sp, v)
+                ct-set(sd, sp, 0)
+                sp = ct-inc(sp)
+            }
+            i = ct-sub(i, 1)
+        }
+        !! {
+            (sp <= 0) -> { ** }
+            sp = ct-sub(sp, 1)
+            d = ct-get(sd, sp)
+            v = ct-get(st, sp)
+            out.push(v)
+            deps.push(d)
+            m = ct-inc(m)
+            ; 只有「有孩子 且 展开」才把整块孩子压进去；收起 = 子树整块不出现。
+            ; 兄弟是单向链表，不能倒着走 —— 先正序收进 ks，再**倒着**压栈，
+            ; 弹出顺序才是正序（同 dv-tree-flat 的 j = k-1 .. 0）。
+            c = ct-get(TR-FIRST, v)
+            (c >= 0) -> {
+                (ct-get(TR-OPEN, v) != 0) -> {
+                    ks []i64 = with-len(0)
+                    !! {
+                        (c < 0) -> { ** }
+                        ks.push(c)
+                        c = ct-get(TR-NEXT, c)
+                    }
+                    j = ct-sub(ks.len(), 1)
+                    !! {
+                        (j < 0) -> { ** }
+                        ct-set(st, sp, ct-get(ks, j))
+                        ct-set(sd, sp, ct-inc(d))
+                        sp = ct-inc(sp)
+                        j = ct-sub(j, 1)
+                    }
+                }
+            }
+        }
+    }
+    m = m
+}
+
+; 命中链上溯到「行」（cs-hit 返回最深节点，可能命中的是行里的文本标签）
+cmp-tree-row-of = (h i64, c i64) (row i64) {
+    row = -1
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (row >= 0) -> { ** }
+        (ct-get(TR-ROW-NODE, p) >= 0) -> { row = p }
+        p = ct-get(CMP-PARENT, p)
+    }
+}
+cmp-tree-node-of = (h i64, row i64) (node i64) { node = ct-get(TR-ROW-NODE, row) }
+cmp-tree-arrow-of = (h i64, row i64) (a i64) { a = ct-get(TR-ARROW, row) }
+
+; 一行的「壳」：横向 C-FORM + 选中态（底色 / flags），挂到树上并登记 TR-ROW-NODE。
+; 单独把壳拆出来是因为 CHILD-IDX 是**全局扁平数组**：一个父的子节点必须
+; 连续挂载（cmp-child 按 HEAD + i 取），所以 cmp-tree-sync 要先把所有行壳
+; 一口气挂到树上，再逐行填内容 —— 边建行边填内容会让行的标签插进树的子链里。
+cmp-tree-row-head = (h i64, node i64, selbg i64) (row i64) {
+    f = F-VISIBLE | F-ENABLED
+    bg = 0
+    (ct-get(CMP-VALUE, h) == node) -> {
+        f = f | F-SELECTED
+        bg = selbg
+    }
+    row = cmp-form()
+    cmp-set-lay(row, L-H)
+    cmp-set-pad(row, 0)
+    cmp-set-gap(row, 0)
+    cmp-set-sh(row, CT-ROW-H)
+    ct-set(CMP-COLOR, row, bg)
+    ct-set(CMP-FLAGS, row, f)
+    cmp-add-child(h, row)
+    ct-set(TR-ROW-NODE, row, node)
+    row = row
+}
+
+; 一行的「内容」：右对齐「缩进 + 箭头」标签 + 文本标签（都挂在行上）。
+; 选中态从行自己的 F-SELECTED 读（壳已经记下），文本主色跟着变 accent。
+; 箭头标签只在有孩子时给真箭头 —— 叶子那一格是空的定宽占位，层级因此仍然对齐。
+cmp-tree-row-body = (row i64, node i64, d i64, fg i64, muted i64, accent i64) () {
+    f = F-VISIBLE | F-ENABLED
+    tc = fg
+    (cmp-has(row, F-SELECTED)) -> {
+        f = f | F-SELECTED
+        tc = accent
+    }
+    at = ''
+    ac = muted
+    (ct-get(TR-FIRST, node) >= 0) -> {
+        ac = fg
+        at = CT-SHUT
+        (ct-get(TR-OPEN, node) != 0) -> { at = CT-OPEN }
+    }
+    an = cmp-alloc(C-LABEL, at, '', ac, 0)
+    cmp-set-sw(an, ct-add(ct-mul(d, CT-INDENT), CT-ARROW-W))
+    cmp-set-align(an, A-RIGHT)
+    ct-set(CMP-FLAGS, an, f)
+    cmp-add-child(row, an)
+    ct-set(TR-ARROW, row, an)
+    t = cmp-alloc(C-LABEL, cmp-text(node), '', tc, 0)
+    ct-set(CMP-FLAGS, t, f)
+    cmp-add-child(row, t)
+}
+
+; 单行 convenience（只建一行时用；批量重建走 cmp-tree-sync 的两段式）
+cmp-tree-row = (h i64, node i64, d i64, selbg i64, fg i64, muted i64, accent i64) (row i64) {
+    row = cmp-tree-row-head(h, node, selbg)
+    cmp-tree-row-body(row, node, d, fg, muted, accent)
+    row = row
+}
+
+; 重建视觉行：先摘掉上一轮的旧行（顺手清 TR-ROW-NODE / TR-ARROW），再按当前
+; 展开态拍平、逐行重建。返回可见行数。
+cmp-tree-sync = (h i64, selbg i64, fg i64, muted i64, accent i64) (n i64) {
+    rows []i64 = with-len(0)
+    cnt = ct-get(CMP-COUNT, h)
+    hd = ct-get(CMP-HEAD, h)
+    i = 0
+    !! {
+        (i >= cnt) -> { ** }
+        c = ct-get(CHILD-IDX, ct-add(hd, i))
+        (ct-get(TR-ROW-NODE, c) >= 0) -> {
+            rows.push(c)
+            ct-set(TR-ROW-NODE, c, -1)
+            ct-set(TR-ARROW, c, -1)
+        }
+        i = ct-inc(i)
+    }
+    i = 0
+    !! {
+        (i >= rows.len()) -> { ** }
+        cmp-detach(h, ct-get(rows, i))
+        i = ct-inc(i)
+    }
+    flat []i64 = with-len(0)
+    deps []i64 = with-len(0)
+    m = cmp-tree-flat(h, flat, deps)
+    ; 两段式：先挂全部行壳（树的子链连续），再逐行填内容（行的子链连续）
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        cmp-tree-row-head(h, ct-get(flat, i), selbg)
+        i = ct-inc(i)
+    }
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        r = cmp-child(h, i)
+        cmp-tree-row-body(r, ct-get(flat, i), ct-get(deps, i), fg, muted, accent)
+        i = ct-inc(i)
+    }
+    n = m
+}
+
+; ============================================================================
+; 12. 代码编辑器（阶段34：命令式侧功能对等）
+; ============================================================================
+; 根就是 C-SCROLL（构造器 cmp-editor），可见行**直接挂在滚动容器上** —— 不走
+; 声明式 dv-code-editor 那层 body C-FORM 中转。内容高 / 起始行号由
+; cmp-editor-sync 声明给布局（CMP-SCROLL-CONTENT / CMP-SCROLL-START），
+; 于是 cs-layout 的 C-SCROLL 虚拟列表分支给出：行 i 的内容顶 =
+; y + pad - off + i*行距，和 cmp-win-range 的窗口算式严格对齐。
+;
+; 文本模型是全局单份 ED-LINES（和声明式 DV-ED-LINES 同构：一层缓冲区，多个
+; 编辑器句柄可以各自带光标看同一份文本）。光标按句柄存 ED-L / ED-C。
+; 滚动偏移的真源是 CMP-VALUE[根]（cs-layout 读它、事件侧滚轮也写它），
+; 不另开池 —— 和内核滚动容器同一套约定。
+; 颜色不写死在组件库里（components.no 不 import cmp-scene，拿不到 cs-theme），
+; 由调用方把主题色当参数传进来。
+
+ED-CARET-W = 200       ; 光标宽 2px
+ED-TAB = '    '        ; Tab = 4 空格（等宽字体下才对齐）
+
+; SDL 键码（事件侧把 e.key.key 原样传进来）：方向键在 0x40000000 段
+ED-K-LEFT = 1073741904
+ED-K-RIGHT = 1073741903
+ED-K-UP = 1073741906
+ED-K-DOWN = 1073741905
+
+; 可打印 ASCII 32..126（按键码 -> 字符的唯一查表来源，省掉 char<->int 转换）
+ED-PRINT = ' !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
+
+; 数字 token 的颜色：主题里没有「琥珀色」语义槽，先用常量（关键字 / 字符串 / 注释
+; 都走主题，换主题时只有数字不跟着变 —— 这是有意的折中，避免动 cmp-scene）
+ED-C-NUM = 0xF2C14EFF
+
+; ---- 小工具：字节 / []str 读写 ----
+; 字节读取：s.byte(i) 是 ?byte，越界给 0
+ed-byte-at = (s str, i i64) (b i64) {
+    b = 0
+    (i >= 0) -> {
+        x = s.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        b = x
+    }
+    b = b
+}
+
+ed-arr-get-s = (a []str, i i64) (v str) {
+    v = ''
+    (i >= 0) -> {
+        (i < a.len()) -> {
+            x = a[i]: {
+                ok -> it
+
+                -> ''
+            }
+            v = x
+        }
+    }
+    v = v
+}
+
+; []str 下标写（place-match 是唯一的合法写法，见编译器 idxwrite 诊断）
+ed-arr-set-s = (a []str, i i64, v str) () {
+    ni = ct-inc(i)
+    !! {
+        (a.len() >= ni) -> { ** }
+        a.push('')
+    }
+    (i >= 0) -> {
+        a[i]: {
+            ok -> it = v
+            -> _
+        }
+    }
+}
+
+; 标识符字符：字母 / 数字 / 下划线（数字开头会先被数字分支吃掉）
+ed-word-byte = (b i64) (yes i64) {
+    yes = 0
+    ((b >= 65) && (b <= 90)) -> { yes = 1 }
+    ((b >= 97) && (b <= 122)) -> { yes = 1 }
+    ((b >= 48) && (b <= 57)) -> { yes = 1 }
+    (b == 95) -> { yes = 1 }
+    yes = yes
+}
+
+; 关键字表：',kw,' 包夹后查 haystack。每次调用重建 haystack —— 关键字表很短，
+; 而建表语句不能出现在模块层（没有 `+` 连接 str，模块层也跑不了语句）。
+ed-is-kw = (w str) (yes i64) {
+    yes = 0
+    (w.len-bytes() > 0) -> {
+        hay = ''
+        hay.push-str(',let,var,fn,if,else,while,for,return,break,continue,')
+        hay.push-str('match,case,struct,enum,impl,trait,type,use,with,where,')
+        hay.push-str('import,export,module,pub,const,static,class,new,self,')
+        hay.push-str('this,super,and,or,not,in,is,as,do,loop,yield,async,')
+        hay.push-str('await,ref,mut,priv,get,set,value,component,props,state,')
+        pat = ','
+        pat.push-str(w)
+        pat.push-str(',')
+        (hay.index(pat) >= 0) -> { yes = 1 }
+    }
+    yes = yes
+}
+
+; 引号配对：从 i（引号本身）找到闭合引号，返回闭合引号之后的位置
+ed-lex-quote = (line str, i i64, qb i64) (j i64) {
+    len = line.len-bytes()
+    j = ct-inc(i)
+    !! {
+        (j >= len) -> { ** }
+        (ed-byte-at(line, j) == qb) -> {
+            j = ct-inc(j)
+            **
+        }
+        j = ct-inc(j)
+    }
+    j = j
+}
+
+; token 入池：与上一个同色就并进去（少挂节点）
+ed-run-push = (ts []str, tc []i64, t str, c i64) () {
+    n = ts.len()
+    (n > 0) -> {
+        pc = ct-get(tc, ct-sub(n, 1))
+        (pc == c) -> {
+            pt = ed-arr-get-s(ts, ct-sub(n, 1))
+            pt.push-str(t)
+            ts.truncate(ct-sub(n, 1))
+            tc.truncate(ct-sub(n, 1))
+            ts.push(pt)
+            tc.push(c)
+        }
+        (pc != c) -> {
+            ts.push(t)
+            tc.push(c)
+        }
+    }
+    (n == 0) -> {
+        ts.push(t)
+        tc.push(c)
+    }
+}
+
+; 一行 -> token 序列（写进调用方给的 ts / tc，返回 token 数）
+; 分类：字符串 / 数字 / 标识符（含关键字）/ 空白 / 单字符标点。
+; 注释按 nolang 的 `;` 算 —— 从分号到行尾整段灰色。
+; 颜色由调用方传：kwc 关键字 / strc 字符串 / comc 注释 / defc 默认（数字用常量）。
+ed-lex-line = (line str, ts []str, tc []i64, kwc i64, strc i64, comc i64, defc i64) (n i64) {
+    ts.truncate(0)
+    tc.truncate(0)
+    len = line.len-bytes()
+    i = 0
+    (len > 0) -> {
+        ; 分支链写成「纯臂 if-group」（兜底臂是裸 `->`）—— nolang 要求兜底臂
+        ; 必须待在 if-group 里，且 group 里不能有前置语句，所以 b 在外面取。
+        !! {
+            (i >= len) -> { ** }
+            b = ed-byte-at(line, i)
+            {
+                ; 注释：; 到行尾
+                (b == 59) -> {
+                    ed-run-push(ts, tc, line.slice-bytes(i, len), comc)
+                    i = len
+                }
+                ; 字符串
+                ((b == 34) || (b == 39)) -> {
+                    j = ed-lex-quote(line, i, b)
+                    ed-run-push(ts, tc, line.slice-bytes(i, j), strc)
+                    i = j
+                }
+                ; 数字
+                ((b >= 48) && (b <= 57)) -> {
+                    j = i
+                    !! {
+                        (j >= len) -> { ** }
+                        (ed-byte-at(line, j) < 48) -> { ** }
+                        (ed-byte-at(line, j) > 57) -> { ** }
+                        j = ct-inc(j)
+                    }
+                    ed-run-push(ts, tc, line.slice-bytes(i, j), ED-C-NUM)
+                    i = j
+                }
+                ; 标识符 / 关键字
+                (ed-word-byte(b) == 1) -> {
+                    j = i
+                    !! {
+                        (j >= len) -> { ** }
+                        (ed-word-byte(ed-byte-at(line, j)) == 0) -> { ** }
+                        j = ct-inc(j)
+                    }
+                    w = line.slice-bytes(i, j)
+                    c = defc
+                    (ed-is-kw(w) == 1) -> { c = kwc }
+                    ed-run-push(ts, tc, w, c)
+                    i = j
+                }
+                ; 空白（合并成一段，token 数少一半）
+                (b == 32) -> {
+                    j = i
+                    !! {
+                        (j >= len) -> { ** }
+                        (ed-byte-at(line, j) != 32) -> { ** }
+                        j = ct-inc(j)
+                    }
+                    ed-run-push(ts, tc, line.slice-bytes(i, j), defc)
+                    i = j
+                }
+                ; 其余：单字符（标点 / 运算符）
+                -> {
+                    ed-run-push(ts, tc, line.slice-bytes(i, ct-inc(i)), defc)
+                    i = ct-inc(i)
+                }
+            }
+        }
+    }
+    n = ts.len()
+}
+
+; ---- 可见窗口 [i0, i1) ----
+; 行 i 的内容顶 = pad + i*行距；屏幕顶 = y + pad - off。可见 <=> 屏幕底 > 内容顶
+; 且 屏幕顶 < 内容顶 + 行高。行距 = 行高 + 间距（800 = CS-GAP 的字面量，
+; components.no 看不到 CS-GAP）。out 由调用方给（长度 >= 2）。
+cmp-win-range = (off i64, viewh i64, rowh i64, n i64, out []i64) () {
+    i0 = 0
+    i1 = 0
+    st = ct-add(rowh, 800)
+    (n > 0) -> {
+        (st > 0) -> {
+            i0 = ct-add(ct-div(ct-sub(ct-sub(off, 1200), rowh), st), 1)
+            (i0 < 0) -> { i0 = 0 }
+            (i0 >= n) -> { i0 = ct-sub(n, 1) }
+            i1 = ct-div(ct-add(ct-sub(off, 1200), ct-add(viewh, ct-sub(st, 1))), st)
+            (i1 > n) -> { i1 = n }
+            (i1 < ct-inc(i0)) -> { i1 = ct-inc(i0) }
+        }
+    }
+    ct-set(out, 0, i0)
+    ct-set(out, 1, i1)
+}
+
+; ---- 文本模型 ----
+; 夹紧光标（每次改完行数组后调用；行数组此时已是新内容）
+cmp-editor-clamp = (h i64) () {
+    n = ED-LINES.len()
+    l = ct-get(ED-L, h)
+    c = ct-get(ED-C, h)
+    (l < 0) -> { l = 0 }
+    (l >= n) -> { l = ct-sub(n, 1) }
+    (l < 0) -> { l = 0 }
+    ln = ''
+    (l < n) -> {
+        ln = ED-LINES[l]: {
+            ok -> it
+
+            -> ''
+        }
+    }
+    (c < 0) -> { c = 0 }
+    (c > ln.len-bytes()) -> { c = ln.len-bytes() }
+    ct-set(ED-L, h, l)
+    ct-set(ED-C, h, c)
+}
+
+cmp-editor-set-text = (h i64, t str) (n i64) {
+    ED-LINES.truncate(0)
+    cur = ''
+    i = 0
+    nb = t.len-bytes()
+    !! {
+        (i >= nb) -> { ** }
+        b = ed-byte-at(t, i)
+        (b == 10) -> {
+            ED-LINES.push(cur)
+            cur = ''
+        }
+        (b != 10) -> {
+            cur.push-str(t.slice-bytes(i, ct-inc(i)))
+        }
+        i = ct-inc(i)
+    }
+    ED-LINES.push(cur)
+    n = ED-LINES.len()
+    cmp-editor-clamp(h)
+    n = n
+}
+
+cmp-editor-text = () (s str) {
+    s = ''
+    i = 0
+    n = ED-LINES.len()
+    !! {
+        (i >= n) -> { ** }
+        (i > 0) -> { s.push-str('\n') }
+        x = ED-LINES[i]: {
+            ok -> it
+
+            -> ''
+        }
+        s.push-str(x)
+        i = ct-inc(i)
+    }
+    s = s
+}
+
+cmp-editor-lines = () (n i64) { n = ED-LINES.len() }
+cmp-editor-line = (i i64) (s str) { s = ed-arr-get-s(ED-LINES, i) }
+cmp-editor-set-line = (i i64, s str) () { ed-arr-set-s(ED-LINES, i, s) }
+
+cmp-editor-line-of = (h i64) (l i64) { l = ct-get(ED-L, h) }
+cmp-editor-col-of = (h i64) (c i64) { c = ct-get(ED-C, h) }
+cmp-editor-set-cur = (h i64, l i64, c i64) () {
+    ct-set(ED-L, h, l)
+    ct-set(ED-C, h, c)
+    cmp-editor-clamp(h)
+}
+
+; 删掉第 at 行 / 在第 at 行前插入一行（重建数组 —— []str 没有 remove）
+cmp-editor-del-line = (at i64) () {
+    ED-KEEP.truncate(0)
+    i = 0
+    n = ED-LINES.len()
+    !! {
+        (i >= n) -> { ** }
+        (i != at) -> {
+            x = ED-LINES[i]: {
+                ok -> it
+
+                -> ''
+            }
+            ED-KEEP.push(x)
+        }
+        i = ct-inc(i)
+    }
+    ED-LINES.truncate(0)
+    j = 0
+    m = ED-KEEP.len()
+    !! {
+        (j >= m) -> { ** }
+        y = ED-KEEP[j]: {
+            ok -> it
+
+            -> ''
+        }
+        ED-LINES.push(y)
+        j = ct-inc(j)
+    }
+}
+
+cmp-editor-ins-line = (at i64, s str) () {
+    ED-KEEP.truncate(0)
+    i = 0
+    n = ED-LINES.len()
+    !! {
+        (i >= n) -> { ** }
+        (i == at) -> { ED-KEEP.push(s) }
+        x = ED-LINES[i]: {
+            ok -> it
+
+            -> ''
+        }
+        ED-KEEP.push(x)
+        i = ct-inc(i)
+    }
+    (at >= n) -> { ED-KEEP.push(s) }
+    ED-LINES.truncate(0)
+    j = 0
+    m = ED-KEEP.len()
+    !! {
+        (j >= m) -> { ** }
+        y = ED-KEEP[j]: {
+            ok -> it
+
+            -> ''
+        }
+        ED-LINES.push(y)
+        j = ct-inc(j)
+    }
+}
+
+; ---- 编辑原语（都只改全局行数组 + 本句柄的光标）----
+cmp-editor-insert = (h i64, ch str) () {
+    l = ct-get(ED-L, h)
+    c = ct-get(ED-C, h)
+    n = ED-LINES.len()
+    (l >= 0) -> {
+        (l < n) -> {
+            a = ED-LINES[l]: {
+                ok -> it
+
+                -> ''
+            }
+            (c < 0) -> { c = 0 }
+            (c > a.len-bytes()) -> { c = a.len-bytes() }
+            pre = a.slice-bytes(0, c)
+            suf = a.slice-bytes(c, a.len-bytes())
+            pre.push-str(ch)
+            pre.push-str(suf)
+            ed-arr-set-s(ED-LINES, l, pre)
+            ; 光标前进**插入串的长度**（Tab 是 4 个空格，不是 1）
+            ct-set(ED-C, h, ct-add(c, ch.len-bytes()))
+        }
+    }
+    cmp-editor-clamp(h)
+}
+
+; 退格：行内删前一个字符；行首则并入上一行（光标落到拼接处）
+cmp-editor-backspace = (h i64) () {
+    l = ct-get(ED-L, h)
+    c = ct-get(ED-C, h)
+    n = ED-LINES.len()
+    (l >= 0) -> {
+        (l < n) -> {
+            a = ED-LINES[l]: {
+                ok -> it
+
+                -> ''
+            }
+            (c > 0) -> {
+                pre = a.slice-bytes(0, ct-sub(c, 1))
+                suf = a.slice-bytes(c, a.len-bytes())
+                pre.push-str(suf)
+                ed-arr-set-s(ED-LINES, l, pre)
+                ct-set(ED-C, h, ct-sub(c, 1))
+            }
+            (c <= 0) -> {
+                (l > 0) -> {
+                    pa = ED-LINES[ct-sub(l, 1)]: {
+                        ok -> it
+
+                        -> ''
+                    }
+                    pl = pa.len-bytes()
+                    pa.push-str(a)
+                    ed-arr-set-s(ED-LINES, ct-sub(l, 1), pa)
+                    cmp-editor-del-line(l)
+                    ct-set(ED-L, h, ct-sub(l, 1))
+                    ct-set(ED-C, h, pl)
+                }
+            }
+        }
+    }
+    cmp-editor-clamp(h)
+}
+
+; 回车：在光标处把一行拆成两行
+cmp-editor-enter = (h i64) () {
+    l = ct-get(ED-L, h)
+    c = ct-get(ED-C, h)
+    n = ED-LINES.len()
+    (l >= 0) -> {
+        (l < n) -> {
+            a = ED-LINES[l]: {
+                ok -> it
+
+                -> ''
+            }
+            (c < 0) -> { c = 0 }
+            (c > a.len-bytes()) -> { c = a.len-bytes() }
+            pre = a.slice-bytes(0, c)
+            suf = a.slice-bytes(c, a.len-bytes())
+            ed-arr-set-s(ED-LINES, l, pre)
+            cmp-editor-ins-line(ct-inc(l), suf)
+            ct-set(ED-L, h, ct-inc(l))
+            ct-set(ED-C, h, 0)
+        }
+    }
+    cmp-editor-clamp(h)
+}
+
+; 光标移动（dl / dc 只有一个非 0）；跨行时列夹到新行长度
+cmp-editor-move = (h i64, dl i64, dc i64) () {
+    n = ED-LINES.len()
+    l = ct-get(ED-L, h)
+    c = ct-get(ED-C, h)
+    (l < 0) -> { l = 0 }
+    (l >= n) -> { l = ct-sub(n, 1) }
+    (l < 0) -> { l = 0 }
+    (dc != 0) -> {
+        nc = ct-add(c, dc)
+        (nc < 0) -> {
+            ; 跨到上一行末尾；已经在第一行才夹到 0。
+            ; 夹取必须发生在 l 自减**之前**判断，否则「从第 1 行行首左移」会被
+            ; 误判成「已经在第一行」而吞掉。
+            back = 0
+            (l > 0) -> {
+                l = ct-sub(l, 1)
+                pl = ED-LINES[l]: {
+                    ok -> it
+
+                    -> ''
+                }
+                nc = pl.len-bytes()
+                back = 1
+            }
+            (back == 0) -> { nc = 0 }
+        }
+        ; 前进检查必须用**当前行**的长度：上面 back 分支可能已经把 l 减了一行，
+        ; 还拿旧行的 ln 比就会把「跨到上一行末尾」误判成「越过行尾」又跳回去
+        ; （声明式 dv-edit-move 有同样的存量缺陷，见 §5.28）。
+        cln = ED-LINES[l]: {
+            ok -> it
+
+            -> ''
+        }
+        (nc > cln.len-bytes()) -> {
+            ; 跨到下一行行首；已经在最后一行才夹到行尾。
+            adv = 0
+            (l < ct-sub(n, 1)) -> {
+                l = ct-inc(l)
+                nc = 0
+                adv = 1
+            }
+            (adv == 0) -> { nc = cln.len-bytes() }
+        }
+        c = nc
+    }
+    (dl != 0) -> {
+        nl = ct-add(l, dl)
+        (nl < 0) -> { nl = 0 }
+        (nl >= n) -> { nl = ct-sub(n, 1) }
+        (nl >= 0) -> {
+            nln = ED-LINES[nl]: {
+                ok -> it
+
+                -> ''
+            }
+            (c > nln.len-bytes()) -> { c = nln.len-bytes() }
+            l = nl
+        }
+    }
+    ct-set(ED-L, h, l)
+    ct-set(ED-C, h, c)
+}
+
+; 键盘入口：事件侧解析出「焦点编辑器」后调它，语义全在这里
+cmp-editor-key = (h i64, kk i64) () {
+    ; 光标池按句柄存，从没写过就是 -1 —— 归零，否则第一次按键会因为
+    ; l < 0 被当成「没有光标」而吞掉。
+    l0 = ct-get(ED-L, h)
+    (l0 < 0) -> {
+        ct-set(ED-L, h, 0)
+        ct-set(ED-C, h, 0)
+    }
+    (kk == 8) -> { cmp-editor-backspace(h) }
+    (kk == 13) -> { cmp-editor-enter(h) }
+    (kk == 9) -> { cmp-editor-insert(h, ED-TAB) }
+    (kk == ED-K-LEFT) -> { cmp-editor-move(h, 0, -1) }
+    (kk == ED-K-RIGHT) -> { cmp-editor-move(h, 0, 1) }
+    (kk == ED-K-UP) -> { cmp-editor-move(h, -1, 0) }
+    (kk == ED-K-DOWN) -> { cmp-editor-move(h, 1, 0) }
+    (kk >= 32) -> {
+        (kk <= 126) -> {
+            i0 = ct-sub(kk, 32)
+            ch = ED-PRINT.slice(i0, ct-inc(i0))
+            cmp-editor-insert(h, ch)
+        }
+    }
+}
+
+; ---- 光标跟随：只有光标**动了**才重排窗口 ----
+; 滚轮把窗口推走时不动光标，此时不许把窗口拽回来 —— 否则滚轮一滚就被弹回。
+; 偏移写回 CMP-VALUE[根]（cs-layout 读它）。
+cmp-editor-follow = (h i64, viewh i64, rowh i64) (off i64) {
+    off = cmp-value(h)
+    l = ct-get(ED-L, h)
+    seen = ct-get(ED-SEEN, h)
+    (l != seen) -> {
+        st = ct-add(rowh, 800)
+        r []i64 = with-len(2)
+        cmp-win-range(off, viewh, rowh, ED-LINES.len(), r)
+        i0 = ct-get(r, 0)
+        i1 = ct-get(r, 1)
+        (l < i0) -> { off = ct-sub(ct-mul(l, st), 1200) }
+        (l >= i1) -> {
+            off = ct-sub(ct-add(ct-mul(l, st), st), ct-sub(viewh, 1200))
+        }
+        (off < 0) -> { off = 0 }
+        cmp-set-value(h, off)
+    }
+    ct-set(ED-SEEN, h, l)
+    off = off
+}
+
+cmp-editor-off = (h i64) (v i64) { v = cmp-value(h) }
+cmp-editor-set-off = (h i64, v i64) () { cmp-set-value(h, v) }
+
+; ---- 行渲染：行号 + 着色 token + 光标 ----
+; 行壳是横向 C-FORM（定高 rowh、无内边距 / 间距），挂在滚动容器上并登记 ED-ROW。
+; 行内：右对齐行号标签（定宽 gutter）+ token 标签 + 定宽 2px 的 C-SEPARATOR 光标。
+;
+; 🔴 和树同一个坑：CHILD-IDX 是**全局扁平数组**，一个父的子节点必须连续挂载
+; （cmp-child 按 HEAD + i 取）。所以必须**先把所有行壳一口气挂到滚动容器上，
+; 再逐行填内容** —— 边建行边填内容会把行里的标签插进滚动容器的子链里
+; （cmp-children(根) 会数错、cmp-child(根,1) 拿到上一行的行号标签）。
+cmp-editor-row-head = (h i64, rowh i64) (row i64) {
+    row = cmp-form()
+    cmp-set-lay(row, L-H)
+    cmp-set-pad(row, 0)
+    cmp-set-gap(row, 0)
+    cmp-set-sh(row, rowh)
+    cmp-add-child(h, row)
+    ct-set(ED-ROW, row, 1)
+    row = row
+}
+
+cmp-editor-row-body = (h i64, row i64, i i64, gutter i64, rowh i64, fg i64, muted i64, accent i64, okc i64) () {
+    f = F-VISIBLE | F-ENABLED
+    ; 行号：右对齐在定宽槽里（等宽数字 -> 视觉对齐）
+    ns = i.to-str()
+    g = cmp-alloc(C-LABEL, ns, '', muted, 0)
+    cmp-set-sw(g, gutter)
+    cmp-set-align(g, A-RIGHT)
+    ct-set(CMP-FLAGS, g, f)
+    cmp-add-child(row, g)
+    ; 文本
+    line = ''
+    (i < ED-LINES.len()) -> {
+        line = ED-LINES[i]: {
+            ok -> it
+
+            -> ''
+        }
+    }
+    cur = 0
+    (ct-get(ED-L, h) == i) -> { cur = 1 }
+    col = ct-get(ED-C, h)
+    ts []str = with-len(0)
+    tc []i64 = with-len(0)
+    nt = ed-lex-line(line, ts, tc, accent, okc, muted, fg)
+    ll = line.len-bytes()
+    cc = col
+    (cc < 0) -> { cc = 0 }
+    (cc > ll) -> { cc = ll }
+    ; 光标落在哪个 token（token 覆盖整行，所以必然命中）
+    cj = -1
+    cin = 0
+    acc = 0
+    j = 0
+    !! {
+        (j >= nt) -> { ** }
+        t = ed-arr-get-s(ts, j)
+        tl = t.len-bytes()
+        ((cc >= acc) && (cc <= ct-add(acc, tl))) -> {
+            cj = j
+            cin = ct-sub(cc, acc)
+            **
+        }
+        acc = ct-add(acc, tl)
+        j = ct-inc(j)
+    }
+    ; 逐 token 挂 label；光标所在 token 拆成 前缀 / 光标 / 后缀
+    j = 0
+    !! {
+        (j >= nt) -> { ** }
+        t = ed-arr-get-s(ts, j)
+        c = ct-get(tc, j)
+        tl = t.len-bytes()
+        ((cur != 0) && (j == cj)) -> {
+            (tl > 0) -> {
+                pre = t.slice-bytes(0, cin)
+                suf = t.slice-bytes(cin, tl)
+                (pre.len-bytes() > 0) -> {
+                    lb = cmp-alloc(C-LABEL, pre, '', c, 0)
+                    ct-set(CMP-FLAGS, lb, f)
+                    cmp-add-child(row, lb)
+                }
+                car = cmp-alloc(C-SEPARATOR, '', '', accent, 0)
+                cmp-set-sw(car, ED-CARET-W)
+                cmp-set-sh(car, rowh)
+                ct-set(CMP-FLAGS, car, f)
+                cmp-add-child(row, car)
+                (suf.len-bytes() > 0) -> {
+                    lb2 = cmp-alloc(C-LABEL, suf, '', c, 0)
+                    ct-set(CMP-FLAGS, lb2, f)
+                    cmp-add-child(row, lb2)
+                }
+            }
+            (tl <= 0) -> {
+                car2 = cmp-alloc(C-SEPARATOR, '', '', accent, 0)
+                cmp-set-sw(car2, ED-CARET-W)
+                cmp-set-sh(car2, rowh)
+                ct-set(CMP-FLAGS, car2, f)
+                cmp-add-child(row, car2)
+            }
+        }
+        ((cur == 0) || (j != cj)) -> {
+            (tl > 0) -> {
+                lb3 = cmp-alloc(C-LABEL, t, '', c, 0)
+                ct-set(CMP-FLAGS, lb3, f)
+                cmp-add-child(row, lb3)
+            }
+        }
+        j = ct-inc(j)
+    }
+    ; 空行：没有 token 也要有光标
+    ((cur != 0) && (nt <= 0)) -> {
+        car3 = cmp-alloc(C-SEPARATOR, '', '', accent, 0)
+        cmp-set-sw(car3, ED-CARET-W)
+        cmp-set-sh(car3, rowh)
+        ct-set(CMP-FLAGS, car3, f)
+        cmp-add-child(row, car3)
+    }
+}
+
+; 单行 convenience（只建一行时用；批量重建走 cmp-editor-sync 的两段式）
+cmp-editor-row = (h i64, i i64, gutter i64, rowh i64, fg i64, muted i64, accent i64, okc i64) (row i64) {
+    row = cmp-editor-row-head(h, rowh)
+    cmp-editor-row-body(h, row, i, gutter, rowh, fg, muted, accent, okc)
+    row = row
+}
+
+; 命中链上溯到「行」（cs-hit 返回最深节点，可能命中的是行里的标签 / 光标）
+cmp-editor-row-of = (h i64, c i64) (row i64) {
+    row = -1
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (row >= 0) -> { ** }
+        (ct-get(ED-ROW, p) > 0) -> { row = p }
+        p = ct-get(CMP-PARENT, p)
+    }
+    row = row
+}
+
+; 重建可见行：先摘掉上一轮的旧行（顺手清 ED-ROW），再跟随光标、算窗口、
+; 声明内容高 / 起始行号，最后逐行重建。返回可见行数。
+cmp-editor-sync = (h i64, viewh i64, gutter i64, rowh i64, fg i64, muted i64, accent i64, okc i64) (m i64) {
+    rows []i64 = with-len(0)
+    cnt = ct-get(CMP-COUNT, h)
+    hd = ct-get(CMP-HEAD, h)
+    i = 0
+    !! {
+        (i >= cnt) -> { ** }
+        c = ct-get(CHILD-IDX, ct-add(hd, i))
+        (ct-get(ED-ROW, c) > 0) -> {
+            rows.push(c)
+            ct-set(ED-ROW, c, 0)
+        }
+        i = ct-inc(i)
+    }
+    i = 0
+    !! {
+        (i >= rows.len()) -> { ** }
+        cmp-detach(h, ct-get(rows, i))
+        i = ct-inc(i)
+    }
+    off = cmp-editor-follow(h, viewh, rowh)
+    n = ED-LINES.len()
+    r []i64 = with-len(2)
+    cmp-win-range(off, viewh, rowh, n, r)
+    i0 = ct-get(r, 0)
+    i1 = ct-get(r, 1)
+    ; 内容高 = n*rowh + (n-1)*间距 + 2*内边距（1200 / 800 = CS-PAD / CS-GAP 字面量）
+    ch = ct-mul(1200, 2)
+    (n > 0) -> {
+        ch = ct-add(ct-mul(n, rowh), ct-mul(ct-sub(n, 1), 800))
+        ch = ct-add(ch, ct-mul(1200, 2))
+    }
+    cmp-set-scroll-content(h, ch)
+    cmp-set-scroll-start(h, i0)
+    ; 两段式：先挂全部行壳（滚动容器的子链连续），再逐行填内容（行的子链连续）
+    i = i0
+    !! {
+        (i >= i1) -> { ** }
+        cmp-editor-row-head(h, rowh)
+        i = ct-inc(i)
+    }
+    j = 0
+    i = i0
+    !! {
+        (i >= i1) -> { ** }
+        cmp-editor-row-body(h, cmp-child(h, j), i, gutter, rowh, fg, muted, accent, okc)
+        j = ct-inc(j)
+        i = ct-inc(i)
+    }
+    m = ct-sub(i1, i0)
+}
+
+; ============================================================================
+; 阶段 35：命令式虚拟表格（DataTable）
+; ============================================================================
+; 语义与声明式 dv-table-list 对齐：表头（不滚）+ 滚动体 + 任意时刻只挂可见行 +
+; 内容高**声明**给布局。差别只是「声明」换成「应用直接调」：
+;   cmp-table(cols, rows)         根 = C-TABLE（纵向：表头 + 滚动体）
+;   cmp-table-set-head(i, s)      表头文案（逐列，表头定义列数）
+;   cmp-table-set-col-w(i, w)     列宽（0 = 自适应）
+;   cmp-table-set-cell(r, c, s)   单元格文案（行主序）
+;   cmp-table-set-key(r, k)       排序键（数字，缺省 0）
+;   cmp-table-sort(desc)          按 TB-ORDER 稳定插入排序
+;   cmp-table-reset-order()       恢复源顺序
+;   cmp-table-select(h, r)        选中行（-1 = 取消）
+;   cmp-table-sync(...)           重建表头 + 可见行
+;   cmp-table-row-of / -cell-of / -cell-rc   命中上溯
+; 和编辑器一样，**数据模型全局单份**（一张表的数据）；句柄级的偏移 / 选中 /
+; 表头行 / 滚动体 / 行->源行号 / 单元格->行列都按句柄存，所以多张表能共存
+; （各自的光标状态独立，共享同一份数据 —— 与 cmp-editor 的文本共享同构）。
+;
+; 内容高 = m*rowh + (m-1)*800 + 2*1200（m = 当前顺序的行数），声明给布局，
+; 于是 cmp-scroll-max 不依赖「所有行都挂出来」。
+; 1200 / 800 是字面量：components.no 看不到 CS-PAD / CS-GAP。
+
+TB-HEAD []str = with-len(0)     ; 表头文案（列，同时定义列数）
+TB-COLW []i64 = with-len(0)     ; 列宽（0 = 自适应）
+TB-CELL []str = with-len(0)     ; 单元格文案（行主序，长度 = 行数*列数）
+TB-KEY []i64 = with-len(0)      ; 每行排序键（源行号 -> 键，缺省 0）
+TB-ORDER []i64 = with-len(0)    ; 当前显示顺序（源行号表）
+
+; 句柄级池（随 cmp-alloc 一起长，下标 = 句柄）
+TB-OFF []i64 = with-len(0)      ; 滚动偏移（真源）
+TB-SEL []i64 = with-len(0)      ; 选中行（-1 = 无）
+TB-HEAD-H []i64 = with-len(0)   ; 表头行句柄（-1 = 没有）
+TB-SCR-H []i64 = with-len(0)    ; 滚动体句柄（-1 = 没有）
+TB-ROW-SRC []i64 = with-len(0)  ; 行句柄 -> 源行号（-1 = 不是表格行）
+TB-CELL-SRC []i64 = with-len(0) ; 单元格句柄 -> 源行号
+TB-CELL-COL []i64 = with-len(0) ; 单元格句柄 -> 列号
+
+; ---- 阶段36：可拆面板 ----
+DK-SPLIT []i64 = with-len(0)    ; 1 = 可拖分栏（cmp-dock-split 标记，随 cmp-alloc 长）
+DK-SPLIT-V []i64 = with-len(0)  ; 分栏位置真源（左屏宽 / 上屏高），随 cmp-alloc 长
+DK-GRAB = [-1]                  ; 当前抓握的 dock 句柄（-1 = 没在拖；全局单份）
+
+; ---- 阶段37：命令面板 ----
+; 命令表是**全局单份**（应用写、面板读）：CP-TEXT 命令名 / CP-ACT 命令码，
+; 源行主序。查询串按面板存 CP-Q（和编辑器的 ED-LINES 同一个路子：一层状态，
+; 多个面板句柄可以各自带查询看同一张命令表）。
+CP-TEXT []str = with-len(0)     ; 命令名（源行主序）
+CP-ACT []i64 = with-len(0)      ; 命令码（源行主序）
+CP-Q []str = with-len(0)        ; 每面板查询串（随 cmp-alloc 长）
+CP-CUR []i64 = with-len(0)      ; 每面板游标 = 命中表下标（-1 = 无）
+CP-OFF []i64 = with-len(0)      ; 每面板滚动偏移（真源，和 TB-OFF 同构）
+CP-SB []i64 = with-len(0)       ; 每面板命中表在 CP-SRC 里的基址
+CP-SRC []i64 = with-len(0)      ; 命中源行号扁平表（只增，和 DV-PAL-SRC 同构）
+CP-INP-H []i64 = with-len(0)    ; 每面板输入框句柄（-1 = 没有）
+CP-SCR-H []i64 = with-len(0)    ; 每面板滚动体句柄（-1 = 没有）
+CP-ROW-SRC []i64 = with-len(0)  ; 行句柄 -> 源行号（-1 = 不是面板行）
+
+; []i64 下标写：先按需补 0，再 place-match 写（越界 / 负数什么都不做）
+tb-arr-set = (a []i64, i i64, v i64) () {
+    ni = ct-inc(i)
+    !! {
+        (a.len() >= ni) -> { ** }
+        a.push(0)
+    }
+    (i >= 0) -> {
+        a[i]: {
+            ok -> it = v
+            -> _
+        }
+    }
+}
+
+cmp-table-cols = () (n i64) { n = TB-HEAD.len() }
+cmp-table-rows = () (n i64) {
+    n = 0
+    cols = TB-HEAD.len()
+    (cols > 0) -> { n = ct-div(TB-CELL.len(), cols) }
+}
+
+cmp-table-set-head = (i i64, s str) () {
+    ed-arr-set-s(TB-HEAD, i, s)
+    tb-arr-set(TB-COLW, i, 0)
+}
+cmp-table-head = (i i64) (s str) { s = ed-arr-get-s(TB-HEAD, i) }
+cmp-table-set-col-w = (i i64, w i64) () { tb-arr-set(TB-COLW, i, w) }
+cmp-table-col-w = (i i64) (w i64) { w = ct-get(TB-COLW, i) }
+cmp-table-set-cell = (r i64, c i64, s str) () {
+    cols = TB-HEAD.len()
+    (cols > 0) -> {
+        (r >= 0) -> {
+            (c >= 0) -> {
+                (c < cols) -> {
+                    need = ct-mul(ct-add(r, 1), cols)
+                    !! {
+                        (TB-CELL.len() >= need) -> { ** }
+                        TB-CELL.push('')
+                    }
+                    i = ct-add(ct-mul(r, cols), c)
+                    TB-CELL[i]: {
+                        ok -> it = s
+                        -> _
+                    }
+                }
+            }
+        }
+    }
+}
+cmp-table-cell = (r i64, c i64) (s str) {
+    s = ''
+    cols = TB-HEAD.len()
+    (cols > 0) -> {
+        (r >= 0) -> {
+            (c >= 0) -> {
+                (c < cols) -> { s = ed-arr-get-s(TB-CELL, ct-add(ct-mul(r, cols), c)) }
+            }
+        }
+    }
+}
+cmp-table-set-key = (r i64, k i64) () { tb-arr-set(TB-KEY, r, k) }
+cmp-table-key = (r i64) (k i64) { k = ct-get(TB-KEY, r) }
+
+; 恢复源顺序（0..rows-1）
+cmp-table-reset-order = () () {
+    TB-ORDER.truncate(0)
+    n = 0
+    rows = cmp-table-rows()
+    !! {
+        (n >= rows) -> { ** }
+        TB-ORDER.push(n)
+        n = ct-inc(n)
+    }
+}
+
+; 按 TB-KEY 对 TB-ORDER 做**稳定**插入排序（和 dv-sort-run 同一形状）：
+; desc = 0 升序，非 0 降序。键缺省 0，所以没设键的行彼此保持源序。
+cmp-table-sort = (desc i64) () {
+    n = TB-ORDER.len()
+    i = 1
+    !! {
+        (i >= n) -> { ** }
+        cur = ct-get(TB-ORDER, i)
+        ck = ct-get(TB-KEY, cur)
+        j = i
+        !! {
+            (j <= 0) -> { ** }
+            pv = ct-get(TB-ORDER, ct-sub(j, 1))
+            pk = ct-get(TB-KEY, pv)
+            mv = 0
+            (desc == 0) -> { (ck < pk) -> { mv = 1 } }
+            (desc != 0) -> { (ck > pk) -> { mv = 1 } }
+            (mv == 0) -> { ** }
+            tb-arr-set(TB-ORDER, j, pv)
+            j = ct-sub(j, 1)
+        }
+        tb-arr-set(TB-ORDER, j, cur)
+        i = ct-inc(i)
+    }
+}
+
+cmp-table-select = (h i64, r i64) () { ct-set(TB-SEL, h, r) }
+cmp-table-selected = (h i64) (r i64) { r = ct-get(TB-SEL, h) }
+cmp-table-scroll = (h i64) (s i64) { s = ct-get(TB-SCR-H, h) }
+cmp-table-off = (h i64) (v i64) { v = ct-get(TB-OFF, h) }
+cmp-table-set-off = (h i64, v i64) () { ct-set(TB-OFF, h, v) }
+
+; 命中上溯：cs-hit 给的是最深节点（单元格标签 / 行 / 表头），要沿 CMP-PARENT 找回
+; 行号 = **源行号**（排序后依然对，因为行壳上记的是源行号）。
+cmp-table-row-of = (h i64, c i64) (row i64) {
+    row = -1
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (p == h) -> { ** }
+        (row >= 0) -> { ** }
+        (ct-get(TB-ROW-SRC, p) >= 0) -> { row = ct-get(TB-ROW-SRC, p) }
+        p = cmp-parent-of(p)
+    }
+}
+cmp-table-cell-of = (h i64, c i64) (cell i64) {
+    cell = -1
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (p == h) -> { ** }
+        (cell >= 0) -> { ** }
+        (ct-get(TB-CELL-SRC, p) >= 0) -> { cell = p }
+        p = cmp-parent-of(p)
+    }
+}
+cmp-table-cell-rc = (h i64, c i64, out []i64) () {
+    ct-set(out, 0, -1)
+    ct-set(out, 1, -1)
+    cell = cmp-table-cell-of(h, c)
+    (cell >= 0) -> {
+        ct-set(out, 0, ct-get(TB-CELL-SRC, cell))
+        ct-set(out, 1, ct-get(TB-CELL-COL, cell))
+    }
+}
+
+; 清掉旧滚动体里所有行 / 单元格的句柄标记（行壳摘掉后就再也命中不到它们，
+; 但标记留着会误导下一次「是不是表格行」的判断）
+tb-clear-marks = (scr i64) () {
+    n = ct-get(CMP-COUNT, scr)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        r = cmp-child(scr, i)
+        ct-set(TB-ROW-SRC, r, -1)
+        nc = ct-get(CMP-COUNT, r)
+        j = 0
+        !! {
+            (j >= nc) -> { ** }
+            c = cmp-child(r, j)
+            ct-set(TB-CELL-SRC, c, -1)
+            ct-set(TB-CELL-COL, c, -1)
+            j = ct-inc(j)
+        }
+        i = ct-inc(i)
+    }
+}
+
+; 行壳：L-H 的 C-GRID，定高 rowh，零内边距零间距（和声明式 dv-table-rows 一致）
+cmp-table-row-head = (scr i64, cols i64, rowh i64) (row i64) {
+    row = cmp-grid(cols, 1)
+    cmp-set-lay(row, L-H)
+    cmp-set-pad(row, 0)
+    cmp-set-gap(row, 0)
+    cmp-set-sh(row, rowh)
+    cmp-add-child(scr, row)
+    row = row
+}
+
+; 行内容：底色 / 文字色随选中态；逐列一个 C-LABEL 单元格（定宽就 cmp-set-sw）
+cmp-table-row-body = (h i64, row i64, src i64, cols i64, fg i64, accent i64, selbg i64) () {
+    f = F-VISIBLE | F-ENABLED
+    tc = fg
+    bg = 0
+    (ct-get(TB-SEL, h) == src) -> {
+        f = f | F-SELECTED
+        bg = selbg
+        tc = accent
+    }
+    ct-set(CMP-FLAGS, row, f)
+    ct-set(CMP-COLOR, row, bg)
+    ct-set(TB-ROW-SRC, row, src)
+    c = 0
+    !! {
+        (c >= cols) -> { ** }
+        cell = cmp-label(ed-arr-get-s(TB-CELL, ct-add(ct-mul(src, cols), c)))
+        cmp-set-color(cell, tc)
+        cw = ct-get(TB-COLW, c)
+        (cw > 0) -> { cmp-set-sw(cell, cw) }
+        cmp-add-child(row, cell)
+        ct-set(TB-CELL-SRC, cell, src)
+        ct-set(TB-CELL-COL, cell, c)
+        c = ct-inc(c)
+    }
+}
+
+; 重建：表头（根的第 0 个子）+ 滚动体（第 1 个子）+ 可见行（滚动体的子）。
+; 两段式：先挂全部行壳，再逐行填单元格 —— CHILD-IDX 是全局扁平数组，
+; 一个父的孩子必须连续挂载。
+cmp-table-sync = (h i64, viewh i64, rowh i64, fg i64, accent i64, selbg i64, hcolor i64) (m i64) {
+    cols = TB-HEAD.len()
+    (TB-ORDER.len() != cmp-table-rows()) -> { cmp-table-reset-order() }
+    m = TB-ORDER.len()
+    ; 表宽 = 2*内边距 + 列宽之和 + (列数-1)*间距
+    tw = ct-mul(1200, 2)
+    c = 0
+    !! {
+        (c >= cols) -> { ** }
+        tw = ct-add(tw, ct-add(ct-get(TB-COLW, c), 800))
+        c = ct-inc(c)
+    }
+    (cols > 0) -> { tw = ct-sub(tw, 800) }
+    ; 摘掉旧的表头 / 滚动体（行标记一并清掉，否则下一次 sync 会去摘死行）
+    oh = ct-get(TB-HEAD-H, h)
+    (oh >= 0) -> {
+        cmp-detach(h, oh)
+        ct-set(TB-HEAD-H, h, -1)
+    }
+    os = ct-get(TB-SCR-H, h)
+    (os >= 0) -> {
+        tb-clear-marks(os)
+        cmp-detach(h, os)
+        ct-set(TB-SCR-H, h, -1)
+    }
+    ; 表头：一行 C-GRID，高 = 内边距 + 一行（交叉轴顶对齐，标签落在 y+pad..y+pad+行高）
+    hg = cmp-grid(cols, 1)
+    cmp-set-lay(hg, L-H)
+    cmp-set-pad(hg, 0)
+    cmp-set-gap(hg, 0)
+    cmp-set-sh(hg, ct-add(1200, rowh))
+    cmp-add-child(h, hg)
+    ct-set(TB-HEAD-H, h, hg)
+    ; 滚动体：**先挂**（CHILD-IDX 是全局扁平数组，一个父的直接子必须连续挂载，
+    ; 否则先填表头会把表头的子插进「表头 + 滚动体」中间，滚动体就挂在错位置）
+    scr = cmp-alloc(C-SCROLL, '', '', 0x1E1E28FF, ct-get(TB-OFF, h))
+    cmp-set-lay(scr, L-GROW)
+    cmp-set-sh(scr, viewh)
+    cmp-set-pad(scr, 1200)
+    cmp-set-gap(scr, 800)
+    cmp-add-child(h, scr)
+    ct-set(TB-SCR-H, h, scr)
+    ; 再填表头
+    c = 0
+    !! {
+        (c >= cols) -> { ** }
+        lab = cmp-label(ed-arr-get-s(TB-HEAD, c))
+        cmp-set-color(lab, hcolor)
+        cw = ct-get(TB-COLW, c)
+        (cw > 0) -> { cmp-set-sw(lab, cw) }
+        cmp-add-child(hg, lab)
+        c = ct-inc(c)
+    }
+    off = ct-get(TB-OFF, h)
+    r []i64 = with-len(2)
+    cmp-win-range(off, viewh, rowh, m, r)
+    i0 = ct-get(r, 0)
+    i1 = ct-get(r, 1)
+    ch = ct-mul(1200, 2)
+    (m > 0) -> {
+        ch = ct-add(ct-mul(m, rowh), ct-mul(ct-sub(m, 1), 800))
+        ch = ct-add(ch, ct-mul(1200, 2))
+    }
+    cmp-set-scroll-content(scr, ch)
+    cmp-set-scroll-start(scr, i0)
+    i = i0
+    !! {
+        (m <= 0) -> { ** }
+        (i >= i1) -> { ** }
+        cmp-table-row-head(scr, cols, rowh)
+        i = ct-inc(i)
+    }
+    j = 0
+    i = i0
+    !! {
+        (m <= 0) -> { ** }
+        (i >= i1) -> { ** }
+        cmp-table-row-body(h, cmp-child(scr, j), ct-get(TB-ORDER, i), cols, fg, accent, selbg)
+        j = ct-inc(j)
+        i = ct-inc(i)
+    }
+    m = m
+}
+
+; ============================================================================
+; 12b. 可拆面板（阶段36：命令式侧功能对等）
+; ============================================================================
+; 两块面板 + 中间一条可拖的间隙。**间隙本身就是拖杆**：它不属于任何子节点，
+; cs-hit 的「自身矩形兜底」（cs-hit-inner 末尾）会把它算到容器头上，
+; 事件侧再用光标位置判断是不是落在那条间隙里（cs-dock-down / cs-dock-move）。
+; 所以不新增节点种类、也不给布局引擎加分支 —— C-DOCK 只是一台通了电的
+; 横向容器（cs-is-container 早就有 C-DOCK 分支）。
+;
+; 宽度是**声明**的：左屏宽的真源是 DK-SPLIT-V[dock]（命令式侧的状态槽，
+; 对应声明式 dv-dock-split 的 slot）。cmp-dock-split 把 minw / maxw 写进
+; value / value2 当夹紧界，并把 DK-SPLIT-V 初始化成 minw；事件侧换算出新的
+; 左屏宽写回 DK-SPLIT-V，主循环再把它同步到首子的固定宽（cmp-set-sw）——
+; 和 cmp-table-sync 同一模式：状态在应用手里，每帧同步。
+; 注意 value 不能拿来存当前位置：它是夹紧的下界，写掉就丢了 minw。
+;
+; 拖拽的几何（cs-hit / cs-rect / cs-child-flow / cs-gap-of）在 cmp-scene.no，
+; 那里也是这些函数的家（components.no 没有 # import，看不到 cs-*）；
+; 本模块只管配置、可拖标记和抓握状态。
+;
+; 1200 是字面量：components.no 看不到 CS-PAD。
+; gap 必须 > 0：cs-gap-of 把 <= 0 的 gap 兜底成 CS-GAP，拖杆命中区会跟着变大。
+; maxw 传 0 = 不夹上限（ct-clamp 的约定，与 dv-clamp 一致）。
+
+cmp-dock-split = (h i64, minw i64, maxw i64, gw i64) (r i64) {
+    cmp-set-lay(h, L-H)
+    cmp-set-gap(h, gw)
+    cmp-set-pad(h, 1200)
+    cmp-set-value(h, minw)
+    cmp-set-value2(h, maxw)
+    ct-set(DK-SPLIT, h, 1)
+    ct-set(DK-SPLIT-V, h, minw)
+    r = h
+}
+
+; 竖着拆：把 L-H 抹掉（回到默认纵向），状态槽存的是**上屏高**
+cmp-dock-split-v = (h i64, minw i64, maxw i64, gw i64) (r i64) {
+    cmp-set-lay(h, 0)
+    cmp-set-gap(h, gw)
+    cmp-set-pad(h, 1200)
+    cmp-set-value(h, minw)
+    cmp-set-value2(h, maxw)
+    ct-set(DK-SPLIT, h, 1)
+    ct-set(DK-SPLIT-V, h, minw)
+    r = h
+}
+
+; 这个容器是不是可拖分栏（普通 C-DOCK 容器 = 0）
+cmp-dock-splittable = (h i64) (yes i64) {
+    yes = ct-get(DK-SPLIT, h)
+}
+
+; 当前分栏位置（横向 = 左屏宽；竖向 = 上屏高）。真源：
+; 事件侧拖完写这里，应用每帧把它同步到首子的固定宽 / 高。
+cmp-dock-split-val = (h i64) (v i64) {
+    v = ct-get(DK-SPLIT-V, h)
+}
+
+cmp-dock-set-split = (h i64, v i64) () {
+    ct-set(DK-SPLIT-V, h, v)
+}
+
+; 当前抓握的容器（-1 = 没在拖）。全局单份：鼠标只有一只，同时只能拖一条缝。
+cmp-dock-grab = () (h i64) {
+    h = ct-get(DK-GRAB, 0)
+}
+
+; 松开：清掉抓握。拖拽结束后鼠标继续移动不再改分栏。
+cmp-dock-up = () () {
+    DK-GRAB[0] = -1
+}
+
+; ============================================================================
+; 13. 渲染支撑（供 cmp-scene 渲染层读取复合组件的子项 / 状态）
 ; ============================================================================
 ; select / tab 的选项存在 CHILD-IDX（CMP-HEAD 起、CMP-COUNT 个），
 ; 渲染层要遍历它们画下拉面板 / tab 条，故在此开只读窗口。
@@ -1238,13 +3829,164 @@ tab-title = (h i64, i i64) (s str) {
     s = cmp-text(c)
 }
 
+; ---- 阶段42：combobox（可输入的下拉）----
+; 查询串就是 CMP-TEXT（单行输入缓冲，复用 INP-CAR 光标池；编辑走 input-insert /
+; input-backspace / input-delete）。选项与 select 同构，存 CHILD-IDX（cmp-child 可读），
+; 另存一份「匹配表」：CB-MBASE / CB-MN / CB-MLIST（扁平只增）+ CB-MCUR 高亮。
+; 匹配规则：查询为空 = 全选；否则选项文本 to-lower 后 contains 查询 to-lower
+; （大小写不敏感）。所有写操作先查 F-DISABLED。
+combobox-refresh = (h i64) () {
+    q = cmp-text(h).to-lower()
+    n = select-option-count(h)
+    base = CB-MLIST.len()
+    ct-set(CB-MBASE, h, base)
+    ct-set(CB-MN, h, 0)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        c = select-option(h, i)
+        (c >= 0) -> {
+            lab = cmp-text(c).to-lower()
+            ok = (q.len() == 0) || lab.contains(q)
+            (ok) -> {
+                CB-MLIST.push(c)
+                ct-set(CB-MN, h, ct-inc(ct-get(CB-MN, h)))
+            }
+        }
+        i = ct-inc(i)
+    }
+    ; 高亮夹紧：没匹配 = -1；有高亮但越界就收回末尾
+    mn = ct-get(CB-MN, h)
+    cur = ct-get(CB-MCUR, h)
+    (mn <= 0) -> { ct-set(CB-MCUR, h, -1) }
+    ((mn > 0) && (cur < 0)) -> { ct-set(CB-MCUR, h, 0) }
+    ((mn > 0) && (cur >= mn)) -> { ct-set(CB-MCUR, h, ct-sub(mn, 1)) }
+}
+combobox-query = (h i64) (s str) {
+    s = cmp-text(h)
+}
+combobox-set-query = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+    input-set-caret(h, s.len-bytes())
+    combobox-refresh(h)
+}
+combobox-add-option = (h i64, label str) (idx i64) {
+    idx = select-add-option(h, label)
+    combobox-refresh(h)
+}
+combobox-option-count = (h i64) (n i64) {
+    n = select-option-count(h)
+}
+combobox-option = (h i64, i i64) (c i64) {
+    c = select-option(h, i)
+}
+combobox-selected = (h i64) (idx i64) {
+    idx = select-selected(h)
+}
+combobox-choose = (h i64, idx i64) () {
+    select-choose(h, idx)
+    combobox-refresh(h)
+}
+combobox-match-count = (h i64) (n i64) {
+    n = ct-get(CB-MN, h)
+}
+combobox-match = (h i64, i i64) (c i64) {
+    c = -1
+    n = ct-get(CB-MN, h)
+    ((i < 0) || (i >= n)) -> { c = -1 }
+    ((i >= 0) && (i < n)) -> {
+        base = ct-get(CB-MBASE, h)
+        c = ct-get(CB-MLIST, ct-add(base, i))
+    }
+    c = c
+}
+combobox-match-label = (h i64, i i64) (s str) {
+    s = ''
+    c = combobox-match(h, i)
+    (c >= 0) -> { s = cmp-text(c) }
+    s = s
+}
+combobox-match-index = (h i64, i i64) (idx i64) {
+    idx = -1
+    c = combobox-match(h, i)
+    (c >= 0) -> { idx = select-index-of(h, c) }
+    idx = idx
+}
+; 反查：给定选项句柄，返回它在匹配表里的下标（不存在返回 -1）
+combobox-match-index-of = (h i64, c i64) (idx i64) {
+    idx = -1
+    n = ct-get(CB-MN, h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (idx >= 0) -> { ** }
+        (combobox-match(h, i) == c) -> { idx = i }
+        i = ct-inc(i)
+    }
+    idx = idx
+}
+combobox-highlight = (h i64) (i i64) {
+    i = ct-get(CB-MCUR, h)
+}
+combobox-highlight-set = (h i64, i i64) () {
+    n = ct-get(CB-MN, h)
+    (n <= 0) -> {
+        ct-set(CB-MCUR, h, -1)
+        return
+    }
+    (i < 0) -> { i = -1 }
+    (i >= n) -> { i = ct-sub(n, 1) }
+    ct-set(CB-MCUR, h, i)
+}
+combobox-highlight-move = (h i64, d i64) () {
+    n = ct-get(CB-MN, h)
+    (n <= 0) -> return
+    k = ct-get(CB-MCUR, h)
+    (k < 0) -> { k = 0 }
+    k = ct-add(k, d)
+    (k < 0) -> { k = 0 }
+    (k >= n) -> { k = ct-sub(n, 1) }
+    ct-set(CB-MCUR, h, k)
+}
+combobox-choose-match = (h i64, i i64) () {
+    idx = combobox-match-index(h, i)
+    (idx >= 0) -> { combobox-choose(h, idx) }
+}
+combobox-apply = (h i64) () {
+    i = ct-get(CB-MCUR, h)
+    (i >= 0) -> { combobox-choose-match(h, i) }
+}
+; ---- 编辑查询：都先改 CMP-TEXT / INP-CAR（复用输入框光标语义），再 refresh ----
+combobox-insert = (h i64, ch str) () {
+    input-insert(h, ch)
+    combobox-refresh(h)
+}
+combobox-backspace = (h i64) () {
+    input-backspace(h)
+    combobox-refresh(h)
+}
+combobox-delete = (h i64) () {
+    input-delete(h)
+    combobox-refresh(h)
+}
+combobox-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = ''
+    input-set-caret(h, 0)
+    combobox-refresh(h)
+}
+
 ; input / textarea：placeholder 在 CMP-TEXT2，值在 CMP-TEXT
 input-placeholder = (h i64) (s str) {
     s = cmp-text2(h)
 }
-; 整段替换输入值（渲染层据此画光标位置）
+; 整段替换输入值（渲染层据此画光标位置）；光标随之落到末尾
 input-set = (h i64, s str) {
     CMP-TEXT[h] = s
+    input-set-caret(h, s.len-bytes())
 }
 
 ; slider：给定像素 x（组件内局部坐标）反算值域上的取值
@@ -1297,3 +4039,250 @@ slider-value-at = (h i64, px i64, x i64, w i64) (v i64) {
     }
     v = a
 }
+
+; ============================================================================
+; 12c. 命令面板（阶段37：命令式侧功能对等）
+; ============================================================================
+; 根就是 C-COMMAND（普通竖排容器）：输入框 + 滚动体两个直接子节点，滚动体里是
+; cmp-command-sync 重建出来的「行」（横向 C-FORM 行 + 文本标签）。和树 / 表格 /
+; 编辑器同一个路子 —— 内核没有 C-COMMAND 的专用绘制分支，面板完全由应用调出来的
+; 真组件拼出来，渲染层只走通用容器路径。
+;
+; 声明式 dv-command-palette 的四件事在这里的落点：
+;   查询过滤   cp-filter（大小写不敏感子串，空查询命中全部）
+;   虚拟列表   cmp-win-range + CMP-SCROLL-CONTENT / CMP-SCROLL-START
+;   键盘导航   cmp-command-move / cmp-command-run（游标存 CP-CUR）
+;   执行       行挂源行号（CP-ROW-SRC），点行 / 回车都取 CP-ACT[源行号]
+;
+; 游标是**命中表下标**而不是源行号 —— 查询一变命中表就变，拿源行号当游标会指错行。
+; 命中表抄一份只增的扁平副本（CP-SRC + 每面板基址 CP-SB），于是 cmp-command-move
+; 不重建视图也能立刻把「游标 -> 源行号」算出来（和 dv-pal-cur-key 同一个理由）。
+; 代价：CP-SRC 只增不减，长会话里会随每次 sync 变长（和 DV-PAL-SRC 一样，有界）。
+;
+; 面板是模态的：应用自己 `cmp-flag-set(root, F-OVERLAY)`（components.no 不写死
+; 模态行为，和 cmp-dialog 一样交给调用方）。面板内边距 / 间距也要应用自己设
+; （pad 1200 / gap 800 与滚动体的 pad / gap 对齐，窗口算式才成立）。
+
+; 行高由调用方按帧传（声明式侧 PAL-ROWH=2800）；滚轮步长不在 sync 里 ——
+; 步长是应用的事（demo 用 3200，和声明式 PAL-STEP 一致），sync 只按偏移摆行。
+
+; ---- 命令表（应用写）----
+cmp-command-count = () (n i64) { n = CP-TEXT.len() }
+cmp-command-add = (text str, act i64) () {
+    CP-TEXT.push(text)
+    CP-ACT.push(act)
+}
+
+; ---- 查询串（每面板一份）----
+cmp-command-query = (h i64) (s str) { s = ed-arr-get-s(CP-Q, h) }
+cmp-command-set-query = (h i64, s str) () { ed-arr-set-s(CP-Q, h, s) }
+cmp-command-type = (h i64, ch str) () {
+    s = ed-arr-get-s(CP-Q, h)
+    s.push-str(ch)
+    ed-arr-set-s(CP-Q, h, s)
+}
+cmp-command-backspace = (h i64) () {
+    s = ed-arr-get-s(CP-Q, h)
+    n = s.len-bytes()
+    (n > 0) -> { ed-arr-set-s(CP-Q, h, s.slice-bytes(0, ct-sub(n, 1))) }
+}
+
+; ---- 滚动 ----
+cmp-command-off = (h i64) (v i64) { v = ct-get(CP-OFF, h) }
+cmp-command-set-off = (h i64, v i64) () { ct-set(CP-OFF, h, v) }
+cmp-command-scroll = (h i64) (s i64) { s = ct-get(CP-SCR-H, h) }
+cmp-command-input = (h i64) (i i64) { i = ct-get(CP-INP-H, h) }
+
+; 查询串 -> 命中的**源行号**表（大小写不敏感子串；空查询命中全部）
+cp-filter = (h i64, out []i64) (m i64) {
+    ql = ed-arr-get-s(CP-Q, h).to-lower()
+    m = 0
+    n = CP-TEXT.len()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (ed-arr-get-s(CP-TEXT, i).to-lower().index(ql) >= 0) -> {
+            out.push(i)
+            m = ct-inc(m)
+        }
+        i = ct-inc(i)
+    }
+    m = m
+}
+
+; 一行的「壳」：横向 C-FORM + 选中态（底色 / flags），挂到滚动体上。
+; 单独拆出来是因为 CHILD-IDX 是全局扁平数组：一个父的直接子必须连续挂载
+; （cmp-child 按 HEAD + i 取），所以要先一口气挂完所有行壳，再逐行填内容。
+cp-row-head = (scr i64, isel i64, rowh i64, selbg i64) (row i64) {
+    f = F-VISIBLE | F-ENABLED
+    bg = 0
+    (isel != 0) -> {
+        f = f | F-SELECTED
+        bg = selbg
+    }
+    row = cmp-form()
+    cmp-set-lay(row, L-H)
+    cmp-set-pad(row, 0)
+    cmp-set-gap(row, 0)
+    cmp-set-sh(row, rowh)
+    ct-set(CMP-COLOR, row, bg)
+    ct-set(CMP-FLAGS, row, f)
+    cmp-add-child(scr, row)
+    row = row
+}
+
+; 一行的「内容」：文本标签（挂在行上，选中态从行自己的 F-SELECTED 读）。
+cp-row-body = (row i64, src i64, fg i64, accent i64) () {
+    f = F-VISIBLE | F-ENABLED
+    tc = fg
+    (cmp-has(row, F-SELECTED)) -> {
+        f = f | F-SELECTED
+        tc = accent
+    }
+    t = cmp-alloc(C-LABEL, ed-arr-get-s(CP-TEXT, src), '', tc, 0)
+    ct-set(CMP-FLAGS, t, f)
+    cmp-add-child(row, t)
+    ct-set(CP-ROW-SRC, row, src)
+}
+
+; 重建可见行：过滤 -> 夹游标 -> 全摘旧行 -> 声明内容高 / 起始行号 ->
+; 两段式重挂行壳 -> 逐行填内容。输入框 / 滚动体第一次建好就复用。返回命中数 m。
+cmp-command-sync = (h i64, viewh i64, rowh i64, fg i64, accent i64, selbg i64) (m i64) {
+    ; 输入框 / 滚动体：第一次建，之后**复用**（每次重建输入框会丢焦点）。
+    ; 两个都挂在面板上、之后不再摘 —— 摘一个留一个的话，cmp-add-child 会把
+    ; 新子节点追加到 CHILD-IDX 末尾，和面板既有的子链不连续（全局扁平数组的
+    ; 固有权衡：一个父的直接子必须占一段连续槽位）。
+    inp = ct-get(CP-INP-H, h)
+    (inp < 0) -> {
+        inp = cmp-input('type a command')
+        cmp-add-child(h, inp)
+        ct-set(CP-INP-H, h, inp)
+        scr = cmp-scroll()
+        cmp-set-lay(scr, L-GROW)
+        cmp-add-child(h, scr)
+        ct-set(CP-SCR-H, h, scr)
+    }
+    scr = ct-get(CP-SCR-H, h)
+    cmp-set-sh(inp, rowh)
+    cmp-set-sh(scr, viewh)
+    cmp-set-pad(scr, 1200)
+    cmp-set-gap(scr, 800)
+    cmp-set-text(inp, ed-arr-get-s(CP-Q, h))
+    ; 命中表：抄一份只增的扁平副本（CP-SRC + 每面板基址 CP-SB）
+    idxs []i64 = with-len(0)
+    m = cp-filter(h, idxs)
+    base = CP-SRC.len()
+    ct-set(CP-SB, h, base)
+    j = 0
+    !! {
+        (j >= m) -> { ** }
+        CP-SRC.push(ct-get(idxs, j))
+        j = ct-inc(j)
+    }
+    ; 游标夹到命中区间内（查询一变，旧的游标可能就越界了）
+    cur = ct-get(CP-CUR, h)
+    (m <= 0) -> { cur = -1 }
+    (m > 0) -> {
+        (cur < 0) -> { cur = 0 }
+        (cur >= m) -> { cur = ct-sub(m, 1) }
+    }
+    ct-set(CP-CUR, h, cur)
+    ; 摘掉旧行（顺手清 CP-ROW-SRC，否则下一次 sync 会去摘死行）。
+    ; **全摘**是关键：全摘后 COUNT[scr] 归零，下一轮 cmp-add-child 会重设
+    ; HEAD[scr]，新挂的行才是连续的一段（和 cmp-tree-sync 同一个理由）。
+    rows []i64 = with-len(0)
+    cnt = ct-get(CMP-COUNT, scr)
+    hd = ct-get(CMP-HEAD, scr)
+    i = 0
+    !! {
+        (i >= cnt) -> { ** }
+        rows.push(ct-get(CHILD-IDX, ct-add(hd, i)))
+        i = ct-inc(i)
+    }
+    i = 0
+    !! {
+        (i >= rows.len()) -> { ** }
+        rw = ct-get(rows, i)
+        ct-set(CP-ROW-SRC, rw, -1)
+        cmp-detach(scr, rw)
+        i = ct-inc(i)
+    }
+    off = ct-get(CP-OFF, h)
+    r []i64 = with-len(2)
+    cmp-win-range(off, viewh, rowh, m, r)
+    i0 = ct-get(r, 0)
+    i1 = ct-get(r, 1)
+    ch = ct-mul(1200, 2)
+    (m > 0) -> {
+        ch = ct-add(ct-mul(m, rowh), ct-mul(ct-sub(m, 1), 800))
+        ch = ct-add(ch, ct-mul(1200, 2))
+    }
+    cmp-set-scroll-content(scr, ch)
+    cmp-set-scroll-start(scr, i0)
+    ; 两段式：先挂全部行壳（滚动体的子链连续），再逐行填内容（行的子链连续）
+    i = i0
+    !! {
+        (i >= i1) -> { ** }
+        sel = 0
+        (i == cur) -> { sel = 1 }
+        cp-row-head(scr, sel, rowh, selbg)
+        i = ct-inc(i)
+    }
+    j = 0
+    i = i0
+    !! {
+        (i >= i1) -> { ** }
+        cp-row-body(cmp-child(scr, j), ct-get(CP-SRC, ct-add(base, i)), fg, accent)
+        j = ct-inc(j)
+        i = ct-inc(i)
+    }
+    m = m
+}
+
+; ---- 导航 / 执行 ----
+cmp-command-cur = (h i64) (c i64) { c = ct-get(CP-CUR, h) }
+cmp-command-set-cur = (h i64, c i64) () { ct-set(CP-CUR, h, c) }
+cmp-command-move = (h i64, d i64) () {
+    idxs []i64 = with-len(0)
+    m = cp-filter(h, idxs)
+    (m > 0) -> {
+        cur = ct-get(CP-CUR, h)
+        (cur < 0) -> { cur = 0 }
+        cur = ct-add(cur, d)
+        (cur < 0) -> { cur = 0 }
+        (cur >= m) -> { cur = ct-sub(m, 1) }
+        ct-set(CP-CUR, h, cur)
+    }
+}
+; 游标行的源行号（-1 = 没有命中行）
+cmp-command-cur-src = (h i64) (src i64) {
+    src = -1
+    cur = ct-get(CP-CUR, h)
+    (cur >= 0) -> {
+        base = ct-get(CP-SB, h)
+        (cur < ct-sub(CP-SRC.len(), base)) -> {
+            src = ct-get(CP-SRC, ct-add(base, cur))
+        }
+    }
+    src = src
+}
+; 执行游标行的命令码（-1 = 没有命中行）
+cmp-command-run = (h i64) (act i64) {
+    act = -1
+    src = cmp-command-cur-src(h)
+    (src >= 0) -> { act = ct-get(CP-ACT, src) }
+    act = act
+}
+; 命中链上溯到「行」（cs-hit 返回最深节点，可能命中的是行里的文本标签）
+cmp-command-row-of = (h i64, c i64) (row i64) {
+    row = -1
+    p = c
+    !! {
+        (p < 0) -> { ** }
+        (row >= 0) -> { ** }
+        (ct-get(CP-ROW-SRC, p) >= 0) -> { row = p }
+        p = ct-get(CMP-PARENT, p)
+    }
+    row = row
+}
+cmp-command-row-src = (row i64) (src i64) { src = ct-get(CP-ROW-SRC, row) }

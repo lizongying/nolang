@@ -348,7 +348,11 @@ days-in-month-fn = (y i64, m i64) (d i64) {
     }
 
     #{overflow=wrap}
-    d = DAYS-IN-MONTH[m - 1]
+    d = DAYS-IN-MONTH[m - 1]: {
+        ok -> it
+
+        -> 0
+    }
     m == 2 -> {
         leap bool = is-leap(y)
         leap -> d = 29
@@ -384,10 +388,18 @@ unix-to-date = (ts i64) (d date) {
 
     ; 時、分、秒
     #{overflow=wrap}
-    d.hour = rem / 3600
+    d.hour = rem / 3600: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
-    d.min = (rem % 3600) / 60
+    d.min = (rem % 3600) / 60: {
+        ok -> it
+
+        -> 0
+    }
     d.sec = rem % 60
 
     ; 將 1970-01-01 起的天數轉為日期
