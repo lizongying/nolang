@@ -10688,30 +10688,36 @@ func checkReadOnlyLenAssign(a *parser.AssignExpression, varTypes, funcTypes map[
 	}
 }
 
+// validateStmtTypes 是對外入口：把呼叫方的頂層 varTypes 包成 scopeTable。
+// scopeTable.flat 直接引用傳入的 map，因此頂層 let 的 Bind 仍寫回呼叫方，
+// 與重構前「同一份 map 遞迴傳遞」的語意一致。
 func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, varTypes map[string]string, isBlockValue bool, sem *parser.SemanticContext, overflowMode string, view *THIRView) []ValidateResult {
+	return validateStmtTypesIn(stmt, funcNames, funcTypes, selfType, newScopeTable(varTypes), isBlockValue, sem, overflowMode, view)
+}
+
+// validateStmtTypesIn 是主链实现。st 承载词法帧；varTypes 是 st.Flat() 的稳定
+// 视图，供既有唯读 helper 零改动消费。所有写入必须走 st.Bind/Unbind。
+func validateStmtTypesIn(stmt parser.Statement, funcNames map[string]bool, funcTypes map[string]string, selfType string, st *scopeTable, isBlockValue bool, sem *parser.SemanticContext, overflowMode string, view *THIRView) []ValidateResult {
+	varTypes := st.Flat()
 	var results []ValidateResult
 
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
-		// 進入函式體，用新的作用域。**繼承外層 varTypes**（頂層呼叫傳入的是
-		// 已預填全域顯式型別的 localVarTypes）：函式本來就看得到全域，過去這裡
-		// 只放參數／結果，導致函體內的 `ARR[0]` 之 index 推斷不出型別、值 match
-		// 的主語（`ARR[0] + 1`）拿不到 mt，臂統一退化。引數後填會覆蓋同名全域
-		// （遮蔽），區域 let 依序處理也會覆蓋，語意不變。
-		localTypes := make(map[string]string, len(varTypes)+len(s.Parameters)+len(s.Results))
-		for k, v := range varTypes {
-			localTypes[k] = v
-		}
-		// 參數加入作用域
+		// 進入函式體，開一層函式幀。外層（頂層）仍可見：flat 保留了頂層綁定，
+		// Resolve 能查到 `ARR[0]` 的宣告型別（保住 dfe9be7d 想修的 index 推斷）。
+		// 與舊版「整份複製頂層」的差別：頂層同名不再被複製進函式幀，
+		// 因此 BoundHere 能正確分辨「本幀宣告」與「外層同名」，let 可遮蔽頂層。
+		st.Push()
+		defer st.Pop()
+		// 參數與結果參數加入函式幀（結果參數亦在此幀，位於最內、優先）。
 		for _, p := range s.Parameters {
 			if p.Type != nil {
-				localTypes[p.Name] = declTypeOfRaw(view, p, p.Type.String())
+				st.Bind(p.Name, declTypeOfRaw(view, p, p.Type.String()))
 			}
 		}
-		// 結果參數加入作用域
 		for _, p := range s.Results {
 			if p.Type != nil {
-				localTypes[p.Name] = declTypeOfRaw(view, p, p.Type.String())
+				st.Bind(p.Name, declTypeOfRaw(view, p, p.Type.String()))
 			}
 		}
 		// 進入方法體時，更新 selfType
@@ -10739,7 +10745,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				fdMode = overflowMode
 			}
 			for i, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, localFuncNames, funcTypes, methodSelfType, localTypes, i == len(s.Body.Statements)-1, sem, fdMode, view)
+				errs := validateStmtTypesIn(bStmt, localFuncNames, funcTypes, methodSelfType, st, i == len(s.Body.Statements)-1, sem, fdMode, view)
 				results = append(results, errs...)
 			}
 		}
@@ -10749,14 +10755,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		if s.IsSynthetic {
 			// Still record its declared type so later synthetic references can resolve it
 			if s.Type != nil && s.Type.String() != "" {
-				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
+				st.Bind(s.Name.Value, declTypeOfRaw(view, s, s.Type.String()))
 			} else if s.Name != nil && s.Name.Value == "it" {
 				// Untyped shared `it` binding（ok/wildcard 臂在 parse 期無法確定
 				// matched 型別時不帶 Type 標注）。清掉前一個 arm 的 typed binding
 				// 殘留在 varTypes["it"] 的型別（如 err 臂的 "err"），否則本臂的
 				// `v = it` 會把 v 推斷成 "err"，後續 `x ?= ...` + `x = v` 誤報
 				// "cannot assign err value to ?i64 variable"（trace 15w45dqk）。
-				delete(varTypes, "it")
+				st.Unbind("it")
 			}
 			break
 		}
@@ -10800,7 +10806,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					})
 				}
 				// 記錄型別
-				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
+				st.Bind(s.Name.Value, declTypeOfRaw(view, s, s.Type.String()))
 				break
 			}
 			// 無顯式型別，檢查是否已有型別
@@ -10831,9 +10837,11 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		// checker 的推斷／升格之前先行登記，否則 option 捕獲會被提前釘成
 		// plain、 upgrading 分支雙雙看不見它。只有使用者親手寫的標注才登記。
 		if s.Type != nil && s.Type.String() != "" && s.Type.String() != s.Name.Value && !isInferredType(s.Type) {
-			// 只有新變數才記錄顯式型別；已存在的變數（如函式結果參數）不覆寫
-			if _, exists := varTypes[s.Name.Value]; !exists {
-				varTypes[s.Name.Value] = declTypeOfRaw(view, s, s.Type.String())
+			// declare 語意：只看「目前幀」是否已宣告。頂層同名（在外層幀）不算，
+			// 因此函式內 `h0 u64` 能遮蔽頂層 `h0 u32`；結果參數在同一幀已 Bind，
+			// 仍被攔住不覆寫。
+			if !st.BoundHere(s.Name.Value) {
+				st.Bind(s.Name.Value, declTypeOfRaw(view, s, s.Type.String()))
 			}
 		}
 		if s.Value != nil {
@@ -11134,7 +11142,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					}
 				} else {
 					// 首次賦值，記錄推斷型別（option 來源的升格見上方）。
-					varTypes[s.Name.Value] = inferredType
+					st.Bind(s.Name.Value, inferredType)
 				}
 			}
 		}
@@ -11169,13 +11177,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// 用戶自定義枚舉的 variant，不能簡單當作廢棄的 Option 構造器報錯。
 			if ifExpr.Consequence != nil {
 				for i, bStmt := range ifExpr.Consequence.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Consequence.Statements)-1, sem, overflowMode, view)
+					errs := validateStmtTypesIn(bStmt, funcNames, funcTypes, selfType, st, i == len(ifExpr.Consequence.Statements)-1, sem, overflowMode, view)
 					results = append(results, errs...)
 				}
 			}
 			if ifExpr.Alternative != nil {
 				for i, bStmt := range ifExpr.Alternative.Statements {
-					errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(ifExpr.Alternative.Statements)-1, sem, overflowMode, view)
+					errs := validateStmtTypesIn(bStmt, funcNames, funcTypes, selfType, st, i == len(ifExpr.Alternative.Statements)-1, sem, overflowMode, view)
 					results = append(results, errs...)
 				}
 			}
@@ -11221,12 +11229,12 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			for _, arm := range sm.Arms {
 				for _, b := range matchArmBindings(sm, &arm, mt) {
 					if b.Name != "" {
-						varTypes[b.Name] = b.Type
+						st.Bind(b.Name, b.Type)
 					}
 				}
 				if arm.Body != nil {
 					for i, bStmt := range arm.Body.Statements {
-						errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(arm.Body.Statements)-1, sem, overflowMode, view)
+						errs := validateStmtTypesIn(bStmt, funcNames, funcTypes, selfType, st, i == len(arm.Body.Statements)-1, sem, overflowMode, view)
 						results = append(results, errs...)
 					}
 				}
@@ -11393,7 +11401,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							}
 						}
 						if valType != "" {
-							varTypes[ident.Value] = valType
+							st.Bind(ident.Value, valType)
 						}
 					}
 				}
@@ -11443,14 +11451,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 	case *parser.ForStatement:
 		if s.Body != nil {
 			for i, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Body.Statements)-1, sem, overflowMode, view)
+				errs := validateStmtTypesIn(bStmt, funcNames, funcTypes, selfType, st, i == len(s.Body.Statements)-1, sem, overflowMode, view)
 				results = append(results, errs...)
 			}
 		}
 
 	case *parser.BlockStatement:
 		for i, bStmt := range s.Statements {
-			errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, i == len(s.Statements)-1, sem, overflowMode, view)
+			errs := validateStmtTypesIn(bStmt, funcNames, funcTypes, selfType, st, i == len(s.Statements)-1, sem, overflowMode, view)
 			results = append(results, errs...)
 		}
 
@@ -11460,14 +11468,14 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 		// 是 err 載荷、catch-all 臂是 ?i64；展開後的 CPS 節點不經 checker，
 		// 這裡是唯一替合成 subject 建立靜態型別的地方。
 		if s.Subject != "" {
-			varTypes[s.Subject] = blockMatchSubjectType
+			st.Bind(s.Subject, blockMatchSubjectType)
 		}
 		// 主體是純陳述、沒有 block-tail value（使用者定案 2），所以每條都
 		// 以 isBlockValue=false 走訪。展開後這些陳述與臂體共用同一函式作用域，
 		// 不另開 scope，故直接沿用 varTypes。
 		if s.Body != nil {
 			for _, bStmt := range s.Body.Statements {
-				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, false, sem, overflowMode, view)
+				errs := validateStmtTypesIn(bStmt, funcNames, funcTypes, selfType, st, false, sem, overflowMode, view)
 				results = append(results, errs...)
 			}
 		}
@@ -11481,12 +11489,12 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 				arm := &sm.Arms[i]
 				for _, b := range matchArmBindings(sm, arm, mt) {
 					if b.Name != "" {
-						varTypes[b.Name] = b.Type
+						st.Bind(b.Name, b.Type)
 					}
 				}
 				if arm.Body != nil {
 					for j, bStmt := range arm.Body.Statements {
-						errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, j == len(arm.Body.Statements)-1, sem, overflowMode, view)
+						errs := validateStmtTypesIn(bStmt, funcNames, funcTypes, selfType, st, j == len(arm.Body.Statements)-1, sem, overflowMode, view)
 						results = append(results, errs...)
 					}
 				}
@@ -11495,9 +11503,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// 同函式後面的陳述（見 checker/sugar_walk.go 的註解）。塊 match
 			// 不該把合成 subject 的型別外洩，用完還原。
 			if hadIt {
-				varTypes["it"] = savedIt
+				st.Bind("it", savedIt)
 			} else {
-				delete(varTypes, "it")
+				st.Unbind("it")
 			}
 		}
 
@@ -11555,7 +11563,7 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						} else {
 							// First assignment: record the inferred type
 							if inferredType != "" {
-								varTypes[ident.Value] = inferredType
+								st.Bind(ident.Value, inferredType)
 							}
 						}
 					}
