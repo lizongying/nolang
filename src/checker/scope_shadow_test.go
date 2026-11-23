@@ -51,6 +51,41 @@ g()`
 	}
 }
 
+// TestImplicitLetShadowsTopLevelSameName 守護隱式推斷 let 的同名遮蔽誤報：
+// 函式內 `b = a`（a 為 [][]i64）必須遮蔽頂層 `b = g[..]`（[]i64），不能被
+// 頂層 b 的型別擋成 15w45dqk。這是 scope_shadow 系列在「無型別註記」路徑上
+// 的缺口：顯式註解走 st.BoundHere，隱式推斷此前誤用 st.Flat 的 exists。
+func TestImplicitLetShadowsTopLevelSameName(t *testing.T) {
+	src := `g = [1, 2, 3]
+b = g[..]
+
+f = () (ok bool) {
+    a [][]i64
+    b = a
+    ok = b.len() == 0
+}
+f()`
+	res := ValidateTypes(parseProg(t, src))
+	if n := countTrace(res, "15w45dqk"); n != 0 {
+		t.Fatalf("函式內隱式 let 應遮蔽頂層同名 b，實際 %d 條 15w45dqk: %+v", n, res)
+	}
+}
+
+// TestSameFrameReassignStillChecked 確保 BoundHere 改動沒有放過真正的
+// 同幀再指派型別不符：函式內 b 先推斷為 []i64，再指派 [][]i64 仍須報錯。
+func TestSameFrameReassignStillChecked(t *testing.T) {
+	src := `f = () {
+    b = [1, 2, 3]
+    a [][]i64
+    b = a
+}
+f()`
+	res := ValidateTypes(parseProg(t, src))
+	if n := countTrace(res, "15w45dqk"); n != 1 {
+		t.Fatalf("同幀再指派型別不符應報 1 條 15w45dqk，實際 %d: %+v", n, res)
+	}
+}
+
 // TestScopeTableBindPopRestore 直接單測 scopeTable 的 declare/resolve 分流。
 func TestScopeTableBindPopRestore(t *testing.T) {
 	top := map[string]string{"h0": "u32"}

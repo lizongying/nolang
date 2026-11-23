@@ -567,7 +567,13 @@ print('Hello, I am {n}')
 age = u.age
 print('Age: {age}')
 
-u.age = u.age + 1
+; A field target is still a value context: the ?i64 sum needs an explicit
+; value match, falling back to the old age when the addition overflows.
+u.age = u.age + 1: {
+    ok -> it
+
+    -> u.age
+}
 age = u.age
 print('After birthday: {age}')
 

@@ -11004,7 +11004,10 @@ func validateStmtTypesIn(stmt parser.Statement, funcNames map[string]bool, funcT
 			// 隨後的 `src = c` 完全看不見 option。改為只要「本行是新綁定」就升格，
 			// 與「已存在 plain 變數」的升格（上方 10928 區塊）同源。
 			if s.Name != nil {
-				if _, exists := varTypes[s.Name.Value]; !exists {
+				// 與顯式註解的 declare 判定（10843 行 st.BoundHere）保持一致：
+				// 只看「目前幀」是否綁定過。用 Flat 的 exists 會把頂層同名
+				// 誤當成既有綁定，導致函式內遮蔽變數的 option 升格被跳過。
+				if !st.BoundHere(s.Name.Value) {
 					if !ty.IsOptionRaw(inferredType) && !isPureLiteralArith(s.Value) {
 						if optRHS := optionResultOfCallTarget(s.Value, varTypes, selfType); optRHS != "" {
 							inferredType = optRHS
@@ -11017,7 +11020,10 @@ func validateStmtTypesIn(stmt parser.Statement, funcNames map[string]bool, funcT
 				}
 			}
 			if inferredType != "" {
-				if existingType, exists := varTypes[s.Name.Value]; exists {
+				// 「已宣告」只看目前幀：外層（頂層）同名不算，函式內 let 可遮蔽。
+				// 用 Flat 的 exists 會把頂層 `b = g[..]` 當成函式內 `b = a` 的
+				// 再指派，誤報 15w45dqk；與顯式註解的 BoundHere 判定一致。
+				if existingType, exists := varTypes[s.Name.Value]; exists && st.BoundHere(s.Name.Value) {
 					// 變數已有型別，檢查是否相容
 					// 集合字面量 (ArrayLiteral/SliceLiteral) 可初始化陣列變數，跳過型別不匹配檢查
 					_, isSlice := s.Value.(*parser.SliceLiteral)

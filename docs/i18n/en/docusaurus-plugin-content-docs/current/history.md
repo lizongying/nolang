@@ -6,6 +6,12 @@ sidebar_position: 2
 
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
+## v0.4.31
+
+- fix(checker): resolve implicit-let shadowing of top-level bindings via scope-frame BoundHere so same-name locals no longer raise false 15w45dqk errors
+- fix(playground): unwrap the optional field-increment result in the birthday demo so the example compiles under strict option semantics
+- test(checker): pin implicit-let shadowing and same-frame reassignment regressions for the BoundHere fix
+
 ## v0.4.30
 
 - fix(checker): scope local lets so they shadow top-level bindings instead of resolving to globals
