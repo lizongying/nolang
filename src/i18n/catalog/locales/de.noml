@@ -941,6 +941,7 @@ Fehler beim Schreiben von lib.no: %v
   'r28q9t6z': 'Schleifenkörper nach Marke #%s erwartet, %s erhalten'
   'r315uabz': 'net-send: Datenzeiger von Argument 1 kann nicht genommen werden'
   'r4mh5mrg': 'waitpid-nohang: auf windows nicht unterstützt'
+  'r4ng3f0r': 'Das Schlüsselwort \'for\' ist für die Container-Iteration ungültig; verwende stattdessen \'%s <- xs:\''
   'r5fkc5h1': '  no build --js --browser main.no                    Browser-JS + HTML-Wrapper erzeugen'
   'r60tokvf': '\'=\' nach der Mehrvariablenliste erwartet'
   'r6gf3a7m': 'Variantenname im markierten enum erwartet, stattdessen %s erhalten'

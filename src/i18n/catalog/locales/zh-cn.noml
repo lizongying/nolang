@@ -941,6 +941,7 @@ and left unchanged. -fix does not apply to them.
   'r28q9t6z': '标签 #%s 后应为循环体，实际得到 %s'
   'r315uabz': 'net-send: 无法获取第 1 个参数的数据指针'
   'r4mh5mrg': 'waitpid-nohang: 在 windows 上不受支持'
+  'r4ng3f0r': '\'for\' 关键字不能用于容器遍历；请改用 \'%s <- xs:\''
   'r5fkc5h1': '  no build --js --browser main.no                    生成浏览器 JS + HTML 包装'
   'r60tokvf': '多变量列表后应为 \'=\''
   'r6gf3a7m': '带标签枚举中期望变体名，实际得到 %s'

@@ -947,6 +947,7 @@ Erreur d'écriture de lib.no : %v
   'r28q9t6z': 'corps de boucle attendu après l’étiquette #%s, %s obtenu'
   'r315uabz': 'net-send : impossible de prendre le pointeur de données de l’argument 1'
   'r4mh5mrg': 'waitpid-nohang : non pris en charge sous windows'
+  'r4ng3f0r': 'le mot-clé \'for\' est invalide pour l’itération de conteneur ; utilisez \'%s <- xs:\' à la place'
   'r5fkc5h1': '  no build --js --browser main.no                    générer le JS navigateur + le wrapper HTML'
   'r60tokvf': '« = » attendu après la liste de variables multiples'
   'r6gf3a7m': 'nom de variante attendu dans l’énumération étiquetée, %s obtenu'

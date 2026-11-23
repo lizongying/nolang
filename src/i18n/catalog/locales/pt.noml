@@ -941,6 +941,7 @@ Erro ao escrever lib.no: %v
   'r28q9t6z': 'esperado corpo de laço após o rótulo #%s, obtido %s'
   'r315uabz': 'net-send: não é possível obter o ponteiro de dados do argumento 1'
   'r4mh5mrg': 'waitpid-nohang: não suportado em windows'
+  'r4ng3f0r': 'a palavra-chave \'for\' é inválida para iteração de contêiner; use \'%s <- xs:\' em vez disso'
   'r5fkc5h1': '  no build --js --browser main.no                    gerar JS de navegador + wrapper HTML'
   'r60tokvf': 'esperado \'=\' após a lista de múltiplas variáveis'
   'r6gf3a7m': 'esperado nome de variante no enum rotulado, obtido %s em vez disso'

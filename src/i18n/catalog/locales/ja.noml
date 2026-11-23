@@ -946,6 +946,7 @@ lib.no の書き込みエラー: %v
   'r28q9t6z': 'ラベル #%s の後にループ本体を期待しましたが %s でした'
   'r315uabz': 'net-send: 第 1 引数のデータポインタを取得できません'
   'r4mh5mrg': 'waitpid-nohang: windows では未対応です'
+  'r4ng3f0r': '\'for\' キーワードはコンテナ反復では使用できません。代わりに \'%s <- xs:\' を使用してください'
   'r5fkc5h1': '  no build --js --browser main.no                    ブラウザ向け JS + HTML を生成'
   'r60tokvf': '複数変数のリストの後に \'=\' を期待しました'
   'r6gf3a7m': 'タグ付き enum 内にバリアント名を期待しましたが %s でした'

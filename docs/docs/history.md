@@ -6,6 +6,18 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.30
+
+- fix(checker): scope local lets so they shadow top-level bindings instead of resolving to globals
+- fix(compiler): bind self correctly in method definitions for static forwarding and type inference
+- fix(compiler): route h2m diagnostic tags through a dedicated channel so they no longer consume identifier slots
+- fix(compiler): lower struct field push in mem mode by relaxing the mem==0 gate for dot receivers
+- fix(mir): coerce integer operands to float targets as well as double
+- feat(cli): resolve AST dependency keys to concrete release tags on update and surface category metadata in generated package.noml
+- fix(parser): reject for-keyword container iteration with a diagnostic instead of panicking the formatter
+- chore(i18n): localize the invalid for-range diagnostic across all catalogs
+- docs: remove invalid source entry from localized READMEs and expand noui architecture notes
+
 ## v0.4.29
 
 - feat(core): add zero-copy str.bytes() slice view and str.byte operator for UTF-8 byte access

@@ -944,6 +944,7 @@ Error al escribir lib.no: %v
   'r28q9t6z': 'se esperaba el cuerpo del bucle después de la etiqueta #%s, se obtuvo %s'
   'r315uabz': 'net-send: no se puede obtener el puntero de datos del argumento 1'
   'r4mh5mrg': 'waitpid-nohang: no admitido en windows'
+  'r4ng3f0r': 'la palabra clave \'for\' no es válida para la iteración de contenedores; usa \'%s <- xs:\' en su lugar'
   'r5fkc5h1': '  no build --js --browser main.no                    generar JS de navegador + envoltorio HTML'
   'r60tokvf': 'se esperaba \'=\' después de la lista de variables múltiples'
   'r6gf3a7m': 'se esperaba el nombre de la variante en el enum etiquetado, se obtuvo %s'

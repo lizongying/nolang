@@ -943,6 +943,7 @@ Error writing lib.no: %v
   'r28q9t6z': 'expected loop body after label #%s, got %s'
   'r315uabz': 'net-send: cannot take data pointer of arg 1'
   'r4mh5mrg': 'waitpid-nohang: unsupported on windows'
+  'r4ng3f0r': '\'for\' keyword is invalid for container iteration; use \'%s <- xs:\' instead'
   'r5fkc5h1': '  no build --js --browser main.no                    emit browser JS + HTML wrapper'
   'r60tokvf': 'expected \'=\' after multi-variable list'
   'r6gf3a7m': 'expected variant name in tagged enum, got %s instead'

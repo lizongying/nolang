@@ -946,6 +946,7 @@ lib.no 쓰기 오류: %v
   'r28q9t6z': '레이블 #%s 뒤에 루프 본문을 기대했지만 %s을(를) 받았습니다'
   'r315uabz': 'net-send: 첫 번째 인수의 데이터 포인터를 가져올 수 없습니다'
   'r4mh5mrg': 'waitpid-nohang: windows에서는 지원되지 않습니다'
+  'r4ng3f0r': '\'for\' 키워드는 컨테이너 반복에 사용할 수 없습니다. 대신 \'%s <- xs:\'를 사용하세요'
   'r5fkc5h1': '  no build --js --browser main.no                    브라우저용 JS + HTML 생성'
   'r60tokvf': '다중 변수 목록 뒤에 \'=\'를 기대했습니다'
   'r6gf3a7m': '태그된 enum에 변형 이름을 기대했지만 %s을(를) 받았습니다'

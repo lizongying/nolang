@@ -73,6 +73,12 @@ func TestOldSyntax(t *testing.T) {
 		{name: "empty_paren_loop", input: "{\n    break\n} ()", wantErr: false},
 		{name: "counted_loop", input: "{\n    break\n} * 10", wantErr: false},
 		{name: "for_string", input: "for i <- 'abc' {\n}", wantErr: false},
+		// for 关键字 + 容器遍歷（`for v <- xs:` / `for v in xs:`）不存在；
+		// 唯一合法寫法是裸形式 `v <- xs:`。見 diagnostic r4ng3f0r。
+		{name: "for_container_arrow_invalid", input: "for r <- rep.repos: {\n}", wantErr: true},
+		{name: "for_container_ident_invalid", input: "for a <- authors: {\n}", wantErr: true},
+		{name: "for_container_in_invalid", input: "for a in authors: {\n}", wantErr: true},
+		{name: "for_container_slice_invalid", input: "for x <- [1, 2, 3]: {\n}", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

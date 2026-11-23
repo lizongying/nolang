@@ -2905,6 +2905,15 @@ func (p *Parser) parseForStatement() Statement {
 				p.nextToken() // skip IN/ARROW
 				p.parseForRange(ir)
 				stmt.IterRange = ir
+				// Nolang 的 range-for 只有 `v <- xs:` 一种写法；`for v <- xs:` /
+				// `for v in xs:` 这种 for 关键字 + 容器遍历的形式不存在，必须报错。
+				// 区分依据：容器遍历的操作数落在 RangeExpr（如 rep.repos），而区间
+				// `for i <- [a..b)` 落在 Range、字符串 `for i <- 'abc'` 落在 RangeStr，
+				// 后两者是旧语法兼容路径，仍合法。
+				if ir.RangeExpr != nil {
+					p.saveErrorf("r4ng3f0r", "line %d, column %d: 'for' keyword is invalid for container iteration; use '%s <- xs:' instead",
+						ir.Token.Line, ir.Token.Column, ident.Value)
+				}
 				goto parseBody
 			}
 		}

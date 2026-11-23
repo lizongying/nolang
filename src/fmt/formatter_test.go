@@ -588,7 +588,7 @@ a   [3]=   [1,   2, 3]
 
 
 
-for i <- a {
+i <- a: {
     print(i)
 }
 			`),
@@ -604,7 +604,7 @@ i <- a: {
 			input: strings.TrimSpace(`
 a   [3]=   [1,   2, 3]
 
-for i <- a {
+i <- a: {
     print(i)
 }
 			`),
@@ -1907,18 +1907,18 @@ func TestFormatProgram(t *testing.T) {
 	}{
 		{
 			name:     "import then function adds blank line",
-			input:    "# std/bigint\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
-			expected: "# std/bigint\n\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
+			input:    "# aaa/bigint\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
+			expected: "# aaa/bigint\n\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
 		},
 		{
 			name:     "multiple imports no blanks between",
-			input:    "# std/hash/md5\n# std/hash/sha1\n# std/fmt\ntest-fn = () {\n    fmt.println('ok')\n}",
-			expected: "# std/hash/md5\n# std/hash/sha1\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			input:    "# aaa/md5\n# bbb/sha1\n# ccc/fmt\ntest-fn = () {\n    fmt.println('ok')\n}",
+			expected: "# aaa/md5\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
 		},
 		{
 			name:     "import blanks compressed",
-			input:    "# std/hash/md5\n\n# std/hash/sha1\n# std/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
-			expected: "# std/hash/md5\n# std/hash/sha1\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			input:    "# aaa/md5\n\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			expected: "# aaa/md5\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
 		},
 	}
 
