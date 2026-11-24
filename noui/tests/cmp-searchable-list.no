@@ -1,0 +1,307 @@
+; 阶段66：C-SEARCHABLE-LIST（条目池 + 查询过滤）无窗口断言
+; 纯逻辑：默认 / 条目池读写 / 查询与匹配 / 高亮与选择 /
+;          多句柄隔离 / disabled 空操作 / 测算 intrinsic / 渲染几何
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：0 条、越界读空串、空查询、未 disabled、不是视觉容器
+; ============================================================================
+sl = cmp-searchable-list()
+
+u1 = cmp-kind(sl) == C-SEARCHABLE-LIST
+u2 = sl-count(sl) == 0
+u3 = sl-item(sl, 0) == ''
+u4 = sl-item(sl, -1) == ''
+u5 = sl-query(sl) == ''
+u6 = sl-match-count(sl) == 0
+u7 = sl-match(sl, 0) == -1
+u8 = sl-highlight(sl) == -1
+u9 = sl-selected(sl) == -1
+u10 = cmp-has(sl, F-DISABLED) == 0
+u11 = cs-is-container(cmp-kind(sl)) == 0
+
+; ============================================================================
+; 2. 条目池读写
+; ============================================================================
+i0 = sl-add(sl, 'alpha')
+i1 = sl-add(sl, 'beta')
+i2 = sl-add(sl, 'gamma longer')
+i3 = sl-add(sl, 'delta')
+u12 = (i0 == 0) & (i2 == 2)
+u13 = i3 == 3
+u14 = sl-count(sl) == 4
+u15 = sl-item(sl, 0) == 'alpha'
+u16 = sl-item(sl, 2) == 'gamma longer'
+u17 = sl-item(sl, 4) == ''
+
+sl-set-item(sl, 1, 'BETA')
+u18 = sl-item(sl, 1) == 'BETA'
+sl-set-item(sl, 9, 'x')
+u19 = sl-count(sl) == 4
+
+; ============================================================================
+; 3. 查询 / 过滤
+;    条目：alpha / BETA / gamma longer / delta
+; ============================================================================
+u20 = sl-match-count(sl) == 4
+sl-set-query(sl, 'a')
+u21 = sl-match-count(sl) == 4
+sl-set-query(sl, 'AL')
+u22 = sl-match-count(sl) == 1
+u23 = sl-match(sl, 0) == 0
+u24 = sl-match(sl, 1) == -1
+u25 = sl-match(sl, 2) == -1
+sl-set-query(sl, 'gamma')
+u26 = sl-match-count(sl) == 1
+u27 = sl-match(sl, 0) == 2
+sl-set-query(sl, 'xyz')
+u28 = sl-match-count(sl) == 0
+u29 = sl-highlight(sl) == -1
+u30 = sl-selected(sl) == -1
+sl-set-query(sl, '')
+u31 = sl-match-count(sl) == 4
+u32 = sl-item(sl, 3) == 'delta'
+
+; ============================================================================
+; 4. 高亮 / 选择
+; ============================================================================
+u33 = sl-highlight(sl) == 0
+u34 = sl-selected(sl) == 0
+sl-select(sl, 2)
+u35 = sl-highlight(sl) == 2
+u36 = sl-selected(sl) == 2
+sl-select(sl, -1)
+u37 = sl-highlight(sl) == -1
+u38 = sl-selected(sl) == -1
+sl-select-next(sl)
+u39 = sl-highlight(sl) == 0
+sl-select-prev(sl)
+u40 = sl-highlight(sl) == 0
+sl-select-prev(sl)
+u41 = sl-highlight(sl) == 0
+sl-select-next(sl)
+u42 = sl-highlight(sl) == 1
+sl-select-next(sl)
+u43 = sl-highlight(sl) == 2
+sl-select-next(sl)
+u44 = sl-highlight(sl) == 3
+sl-select(sl, 99)
+
+; ============================================================================
+; 5. 多句柄隔离
+; ============================================================================
+s2 = cmp-searchable-list()
+s3 = cmp-searchable-list()
+sl-add(s2, 'zzz')
+sl-add(s3, 'yyy')
+sl-add(s3, 'xxx')
+u45 = sl-count(s2) == 1
+u46 = sl-count(s3) == 2
+u47 = sl-item(s2, 0) == 'zzz'
+u48 = sl-item(s3, 1) == 'xxx'
+u49 = sl-count(sl) == 4
+
+sl-clear(s2)
+u50 = sl-count(s2) == 0
+u51 = sl-match-count(s2) == 0
+u52 = sl-count(s3) == 2
+sl-add(s2, 'again')
+u53 = sl-item(s2, 0) == 'again'
+u54 = sl-item(s3, 0) == 'yyy'
+
+; ============================================================================
+; 6. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(s3, F-DISABLED)
+sl-add(s3, 'no')
+sl-set-item(s3, 0, 'no')
+sl-set-query(s3, 'q')
+sl-select(s3, 0)
+sl-select-next(s3)
+sl-clear(s3)
+u55 = sl-count(s3) == 2
+u56 = sl-item(s3, 0) == 'yyy'
+u57 = sl-query(s3) == ''
+cmp-flag-clear(s3, F-DISABLED)
+
+; ============================================================================
+; 7. 测算 intrinsic
+;    空：宽下限 6400、高 = 2*CS-PAD + CS-LINE-H = 4800（查询行还在）
+;    宽 = 2*CS-PAD + max(查询串宽, 最长匹配标签)，高 = 2*CS-PAD +
+;         CS-LINE-H + (有匹配 ? CS-SEP-H + N*CS-LINE-H : 0)
+; ============================================================================
+m1 = cmp-searchable-list()
+v1w, v1h = cs-measure(m1)
+u58 = v1w == 6400
+u59 = v1h == 4800
+
+; 单条 'abc'(2400)：宽 2400+2400=4800 夹 6400；高 2400+2400+100+2400=7300
+m2 = cmp-searchable-list()
+sl-add(m2, 'abc')
+v2w, v2h = cs-measure(m2)
+u60 = v2w == 6400
+u61 = v2h == 7300
+
+; 长标签 'abcdefghij'(8000)：宽 2400+8000=10400；高 7300
+m3 = cmp-searchable-list()
+sl-add(m3, 'abcdefghij')
+v3w, v3h = cs-measure(m3)
+u62 = v3w == 10400
+u63 = v3h == 7300
+
+; 两条：高 = 2400 + 2400+100+4800 = 9700
+m4 = cmp-searchable-list()
+sl-add(m4, 'aa')
+sl-add(m4, 'bb')
+v4w, v4h = cs-measure(m4)
+u64 = v4w == 6400
+u65 = v4h == 9700
+
+; 只有查询串很宽、没有条目：宽 10400、高 2400+2400=4800
+m5 = cmp-searchable-list()
+sl-set-query(m5, 'abcdefghij')
+v5w, v5h = cs-measure(m5)
+u66 = v5w == 10400
+u67 = v5h == 4800
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m4, 20000)
+cmp-set-sh(m4, 9000)
+v6w, v6h = cs-measure(m4)
+u68 = v6w == 20000
+u69 = v6h == 9000
+cmp-set-sw(m4, 0)
+cmp-set-sh(m4, 0)
+
+; ============================================================================
+; 8. 渲染
+;    外层 18000 → 内容宽 15600（intrinsic 10400，叶子横向被拉伸到父内容宽）
+;    面板 (1200,1200,15600,14500) FIELD
+;    查询 'a' @ (bx+1200, by+1200) FG
+;    分隔线 (bx, by+1200+2400, bw, 100) TRACK
+;    第 0 行高亮底 (bx, ry0, bw, 2400) TRACK，'alpha' @ (bx+1200, ry0) FG
+;    其余三行 'BETA' / 'gamma longer' / 'delta' 各相隔 2400
+;    文本指令共 5 条
+; ============================================================================
+cs-clear()
+r = cmp-searchable-list()
+sl-add(r, 'alpha')
+sl-add(r, 'BETA')
+sl-add(r, 'gamma longer')
+sl-add(r, 'delta')
+sl-set-query(r, 'a')
+rt = cmp-root()
+cmp-add-child(rt, r)
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+
+p0 = 1200
+lh = 2400
+sep = 100
+
+bx, by, bw, bh = cs-rect(r)
+tx = cs-add(bx, p0)
+qy = cs-add(by, p0)
+sy = cs-add(qy, lh)
+ry0 = cs-add(sy, sep)
+ry1 = cs-add(ry0, lh)
+ry2 = cs-add(ry1, lh)
+ry3 = cs-add(ry2, lh)
+
+u70 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u71 = cs-text-color-at('a', tx, qy) == cs-theme(CS-TH-FG)
+u72 = cs-rect-color-at(bx, sy, bw, sep) == cs-theme(CS-TH-TRACK)
+u73 = cs-rect-color-at(bx, ry0, bw, lh) == cs-theme(CS-TH-TRACK)
+u74 = cs-text-color-at('alpha', tx, ry0) == cs-theme(CS-TH-FG)
+u75 = cs-text-color-at('BETA', tx, ry1) == cs-theme(CS-TH-FG)
+u76 = cs-text-color-at('gamma longer', tx, ry2) == cs-theme(CS-TH-FG)
+u77 = cs-text-color-at('delta', tx, ry3) == cs-theme(CS-TH-FG)
+u78 = cs-text-count() == 5
+
+; 高亮切到第 2 行：高亮底跟着走
+sl-select(r, 2)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u79 = cs-rect-color-at(bx, ry0, bw, lh) == -1
+u80 = cs-rect-color-at(bx, ry2, bw, lh) == cs-theme(CS-TH-TRACK)
+
+; 查询过滤成空：分隔线消失、只剩查询文本
+sl-set-query(r, 'xyz')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u81 = cs-rect-color-at(bx, sy, bw, sep) == -1
+u82 = cs-text-count() == 1
+
+; 清空条目：连查询文本一起没有（查询串还在，但一行文本是查询本身）
+sl-clear(r)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u83 = sl-count(r) == 0
+u84 = sl-match-count(r) == 0
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11
+ok = ok & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19
+ok = ok & u20 & u21 & u22 & u23 & u24 & u25 & u26 & u27
+ok = ok & u28 & u29 & u30 & u31 & u32
+ok = ok & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40
+ok = ok & u41 & u42 & u43 & u44
+ok = ok & u45 & u46 & u47 & u48 & u49 & u50 & u51 & u52 & u53 & u54
+ok = ok & u55 & u56 & u57
+ok = ok & u58 & u59 & u60 & u61 & u62 & u63 & u64 & u65
+ok = ok & u66 & u67 & u68 & u69
+ok = ok & u70 & u71 & u72 & u73 & u74 & u75 & u76 & u77 & u78
+ok = ok & u79 & u80 & u81 & u82 & u83 & u84
+(ok == 1) -> {
+    print('ALL SEARCHABLE-LIST TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME SEARCHABLE-LIST TESTS FAILED')
+}

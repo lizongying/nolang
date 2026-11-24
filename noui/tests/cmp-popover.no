@@ -1,0 +1,293 @@
+; 阶段64：C-POPOVER（锚定小弹层）无窗口断言
+; 纯逻辑：默认关闭 / 开合与锚定边 / 标题与正文行池 / 多句柄隔离 /
+;          disabled 空操作 / 测算 intrinsic（含关闭态塌成最小叶片）/ 渲染几何
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+cs-text-n = (t str) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：关闭、锚定边 0、无标题、无正文、未被 disabled、不是视觉容器
+; ============================================================================
+pv = cmp-popover()
+
+t1 = cmp-kind(pv) == C-POPOVER
+t2 = pv-open(pv) == 0
+t3 = pv-side(pv) == 0
+t4 = pv-title(pv) == ''
+t5 = pv-count(pv) == 0
+t6 = pv-line(pv, 0) == ''
+t7 = cmp-has(pv, F-DISABLED) == 0
+t8 = cs-is-container(cmp-kind(pv)) == 0
+
+; ============================================================================
+; 2. 开合与锚定边
+; ============================================================================
+pv-set-open(pv, 1)
+t9 = pv-open(pv) == 1
+pv-set-open(pv, -3)
+t10 = pv-open(pv) == 0
+pv-set-open(pv, 7)
+t11 = pv-open(pv) == 1
+
+pv-set-side(pv, 3)
+t12 = pv-side(pv) == 3
+pv-set-side(pv, 9)
+t13 = pv-side(pv) == 3
+pv-set-side(pv, -2)
+t14 = pv-side(pv) == 0
+pv-set-side(pv, 2)
+t15 = pv-side(pv) == 2
+
+; ============================================================================
+; 3. 标题 / 正文行池
+; ============================================================================
+pv-set-title(pv, 'popover')
+t16 = pv-title(pv) == 'popover'
+pv-add(pv, 'line one')
+pv-add(pv, 'second')
+t17 = pv-count(pv) == 2
+t18 = pv-line(pv, 0) == 'line one'
+t19 = pv-line(pv, 1) == 'second'
+t20 = pv-line(pv, 2) == ''
+t21 = pv-line(pv, -1) == ''
+
+pv-set-line(pv, 1, 'SECOND')
+t22 = pv-line(pv, 1) == 'SECOND'
+pv-set-line(pv, 9, 'x')
+t23 = pv-line(pv, 1) == 'SECOND'
+
+; ============================================================================
+; 4. 多句柄隔离
+; ============================================================================
+q2 = cmp-popover()
+q3 = cmp-popover()
+pv-set-open(q2, 1)
+pv-set-title(q2, 'aa')
+pv-add(q2, 'bb')
+pv-set-open(q3, 1)
+pv-add(q3, 'cc')
+
+t24 = pv-count(q2) == 1
+t25 = pv-count(q3) == 1
+t26 = pv-line(q2, 0) == 'bb'
+t27 = pv-line(q3, 0) == 'cc'
+t28 = pv-open(q3) == 1
+
+pv-clear(q2)
+t29 = pv-count(q2) == 0
+t30 = pv-count(q3) == 1
+pv-add(q2, 'again')
+t31 = pv-line(q2, 0) == 'again'
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(q3, F-DISABLED)
+pv-set-open(q3, 0)
+pv-set-side(q3, 1)
+pv-set-title(q3, 'no')
+pv-add(q3, 'no')
+pv-set-line(q3, 0, 'no')
+pv-clear(q3)
+t32 = pv-open(q3) == 1
+t33 = pv-side(q3) == 0
+t34 = pv-title(q3) == ''
+t35 = pv-count(q3) == 1
+t36 = pv-line(q3, 0) == 'cc'
+cmp-flag-clear(q3, F-DISABLED)
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    关闭：w = CS-MIN-LEAF-W，ht = CS-BTN-H（不画）
+;    展开：w = 2*CS-PAD + 箭头 800 + 间隙 800 + max(标题, 最长正文行)，下限 6400
+;          ht = 2*CS-PAD + 标题行 + （有标题且有正文 ? CS-SEP-H : 0）+ N*CS-LINE-H
+; ============================================================================
+c1h = cmp-popover()
+m1w, m1h = cs-measure(c1h)
+t37 = m1w == 6400
+t38 = m1h == 4000
+
+; 展开但空：宽 2400+800+800 = 4000 夹 6400；高 2400 夹 4000
+e1 = cmp-popover()
+pv-set-open(e1, 1)
+m2w, m2h = cs-measure(e1)
+t39 = m2w == 6400
+t40 = m2h == 4000
+
+; 只有标题 'x'(800)：宽 2400+800+800+800 = 4800 夹 6400；高 2400+2400 = 4800
+e2 = cmp-popover()
+pv-set-open(e2, 1)
+pv-set-title(e2, 'x')
+m3w, m3h = cs-measure(e2)
+t41 = m3w == 6400
+t42 = m3h == 4800
+
+; 标题 'popover'(5600) + 两行 'line one'(6400) / 'second'(4000)
+;   mw = 6400 → 宽 2400+800+800+6400 = 10400
+;   高 = 2400 + 2400 + 100 + 2*2400 = 9700
+p1 = cmp-popover()
+pv-set-open(p1, 1)
+pv-set-title(p1, 'popover')
+pv-add(p1, 'line one')
+pv-add(p1, 'second')
+m4w, m4h = cs-measure(p1)
+t43 = m4w == 10400
+t44 = m4h == 9700
+
+; 长正文 'abcdefghij'(8000)：宽 12000；高 2400+2400 = 4800
+p2 = cmp-popover()
+pv-set-open(p2, 1)
+pv-add(p2, 'abcdefghij')
+m5w, m5h = cs-measure(p2)
+t45 = m5w == 12000
+t46 = m5h == 4800
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(p1, 20000)
+cmp-set-sh(p1, 9000)
+m6w, m6h = cs-measure(p1)
+t47 = m6w == 20000
+t48 = m6h == 9000
+cmp-set-sw(p1, 0)
+cmp-set-sh(p1, 0)
+
+; ============================================================================
+; 7. 渲染
+;     外层 18000 → 内容宽 15600（intrinsic 10400，叶子横向被拉伸到父内容宽）
+;     面板 (1200,1200,15600,9700) FIELD
+;     箭头 side 0（下）：(1200+1600, 1200, 800, 800) ACCENT
+;     标题 'popover' @2400,2400 FG
+;     分隔线 (1200,4800,15600,100) TRACK
+;     正文 'line one' @2400,4900 MUTED、'second' @2400,7300 MUTED
+;     文本指令共 3 条
+; ============================================================================
+cs-clear()
+r = cmp-popover()
+pv-set-open(r, 1)
+pv-set-title(r, 'popover')
+pv-add(r, 'line one')
+pv-add(r, 'second')
+rr = cmp-root()
+cmp-add-child(rr, r)
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+
+t49 = cs-rect-color-at(1200, 1200, 15600, 9700) == cs-theme(CS-TH-FIELD)
+t50 = cs-rect-color-at(2800, 1200, 800, 800) == cs-theme(CS-TH-ACCENT)
+t51 = cs-text-color-at('popover', 2400, 2400) == cs-theme(CS-TH-FG)
+t52 = cs-rect-color-at(1200, 4800, 15600, 100) == cs-theme(CS-TH-TRACK)
+t53 = cs-text-color-at('line one', 2400, 4900) == cs-theme(CS-TH-MUTED)
+t54 = cs-text-color-at('second', 2400, 7300) == cs-theme(CS-TH-MUTED)
+t55 = cs-text-count() == 3
+
+; 换锚定边：side 1（上）→ 箭头贴底边；side 2（左）→ 贴左边；side 3（右）→ 贴右边
+pv-set-side(r, 1)
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t56 = cs-rect-color-at(2800, 10100, 800, 800) == cs-theme(CS-TH-ACCENT)
+
+pv-set-side(r, 2)
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t57 = cs-rect-color-at(1200, 2800, 800, 800) == cs-theme(CS-TH-ACCENT)
+
+pv-set-side(r, 3)
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t58 = cs-rect-color-at(16000, 2800, 800, 800) == cs-theme(CS-TH-ACCENT)
+
+; 改正文：标题与行位置不变，只换文案
+pv-set-line(r, 0, 'renamed')
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t59 = cs-text-color-at('renamed', 2400, 4900) == cs-theme(CS-TH-MUTED)
+
+; 清空正文：只剩标题 + 面板（没有分隔线、没有正文）
+pv-clear(r)
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t60 = cs-text-count() == 1
+t61 = cs-rect-color-at(1200, 4800, 15600, 100) == -1
+
+; 关闭：弹层自身一笔画不出，只剩 root 背景矩形
+pv-set-open(r, 0)
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t62 = cs-scene-count() == 1
+
+; ============================================================================
+; 8. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5 & t6 & t7 & t8
+ok = ok & t9 & t10 & t11 & t12 & t13 & t14 & t15
+ok = ok & t16 & t17 & t18 & t19 & t20 & t21 & t22 & t23
+ok = ok & t24 & t25 & t26 & t27 & t28 & t29 & t30 & t31
+ok = ok & t32 & t33 & t34 & t35 & t36
+ok = ok & t37 & t38 & t39 & t40 & t41 & t42 & t43 & t44 & t45 & t46 & t47 & t48
+ok = ok & t49 & t50 & t51 & t52 & t53 & t54 & t55
+ok = ok & t56 & t57 & t58 & t59 & t60 & t61 & t62
+(ok == 1) -> {
+    print('ALL POPOVER TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME POPOVER TESTS FAILED')
+}

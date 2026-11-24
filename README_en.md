@@ -236,6 +236,8 @@ no build glossary                        # output: glossary/dist/glossary
 
 Output can be switched with `--format=text|md|json`. For integration and data format details, see [`glossary/README.md`](glossary/README.md).
 
+You can also browse the glossary package on nohub: [glossary on nohub](https://lizongying.github.io/nohub/?package=glossary:latest@github.com/lizongying/nolang)
+
 ---
 
 ## Related Projects
@@ -243,6 +245,8 @@ Output can be switched with `--format=text|md|json`. For integration and data fo
 - [nohub — community package index for the Nolang ecosystem](https://lizongying.github.io/nohub/)
 
   Search indexed community packages by name, keyword, or category, and view package details, version snapshots, and source entry points. The index is generated from `packages/` snapshots by `web/build.mjs`.
+
+- [noui — a UI toolkit rewriting the spirit of GPUI in Nolang (nohub package)](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
 - [Benchmarks Game — Nolang vs C vs Rust performance comparison report](https://github.com/lizongying/no-benchmarks/results/report.md)
 

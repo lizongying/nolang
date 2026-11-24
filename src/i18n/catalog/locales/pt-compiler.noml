@@ -124,7 +124,7 @@ Opções globais:
   Fontes: ~/no/sources.noml  ($NOHUB_SOURCES substitui; -source <name> seleciona)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
-                    Adicionar uma dependência (AST pré-compilado: <tool>.ast.zip)
+                    Adicionar uma dependência (AST pré-compilado: <tool>-ast.zip)
                     Versão omitida = última release; a chave gravada em
                     package.noml é <tool>@<host>/<owner>/<repo>.
     Exemplos:
@@ -152,11 +152,11 @@ Opções globais:
       no uninstall nogit
   no sync              Sincronizar/baixar dependências
   no pack [-o <file>] [<dir|file.no>]
-                    Empacotar a AST de um módulo como <tool>.ast.zip (gob + zip).
+                    Empacotar a AST de um módulo como <tool>-ast.zip (gob + zip).
                     Somente lexer+parser — sem toolchain LLVM, adequado para CI.
     Exemplos:
-      no pack                     empacotar o pacote atual -> dist/<name>.ast.zip
-      no pack -o nogit.ast.zip    caminho de saída explícito (amigável para CI)
+      no pack                     empacotar o pacote atual -> dist/<name>-ast.zip
+      no pack -o nogit-ast.zip    caminho de saída explícito (amigável para CI)
       no pack nogit.no            empacotar um único arquivo-fonte
   no pub [-o <file>]  Empacotar (igual a no pack) e publicar; o upload para o registry
                     ainda não está implementado, então hoje só empacota

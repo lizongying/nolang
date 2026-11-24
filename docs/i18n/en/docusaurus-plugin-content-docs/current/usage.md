@@ -28,7 +28,7 @@ Install the Nolang extension from the [VS Code Marketplace](https://marketplace.
 | `no version`                                                 | Print version info      |
 | `no init`                                                    | Define the workspace (creates workspace.noml, no package.noml) |
 | `no new <name>`                                              | Create a new package under the workspace (subdir + package.noml, registered in workspace.noml) |
-| `no fmt [-w] [-d] <file\|dir>`                               | Format source code (dedups/sorts imports, drops `# std/fmt`) |
+| `no fmt [-w] [-d] <file\|dir>`                               | Format source code (dedups/sorts imports, drops unaliased std module imports) |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [<file\|dir>]` | Build (output executable) |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | Build and run (package/dir/file) |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | Run tests               |
@@ -40,7 +40,7 @@ Install the Nolang extension from the [VS Code Marketplace](https://marketplace.
 | `no sync`                                                    | Sync dependencies       |
 | `no install [-u] [<pkg>@<version>]`                          | Install binary          |
 | `no uninstall <name>`                                        | Remove binary           |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | Package the AST (`<tool>.ast.zip`) |
+| `no pack [-o <file>] [<dir\|file.no>]`                       | Package the AST (`<tool>-ast.zip`) |
 | `no pub [-o <file>]`                                         | Same as `no pack` (registry upload not implemented) |
 
 ## Quick Start
@@ -330,20 +330,23 @@ no sync
 
 ### Pre-built AST Dependencies
 
-Dependencies added as `no add <tool>@<host>/<owner>/<repo>` ship **AST only, with no source code**: at compile time `no sync` fetches `<tool>.ast.zip` (a MetaMessage + zip) from the release, decodes it and injects it straight into the compile pipeline. Usage:
+Dependencies added as `no add <tool>@<host>/<owner>/<repo>` ship **AST only, with no source code**: at compile time `no sync` fetches `<tool>-ast.zip` (a zip with one `.gob` entry per module) from the release, decodes it and injects it straight into the compile pipeline. Usage:
 
 ```nolang
 #{fmt-skip}
-use nogit            ; or use <host>/<owner>/<repo>/nogit
+# nogit                                    # package alias; modules are nogit.<module>
+# nogit/remote                             # import module remote (also nogit.remote)
+# nogit.fn                                  # nogit is only a package name; locate the module defining fn
+# <host>/<owner>/<repo>/nogit/remote        # same, via the full repository path
 ```
 
-One zip is one module — a deeper path such as `use <repo>/<submod>` is not supported. The version must be a concrete value (`no sync` and compilation both report an error when they see `""` or `"*"`). Zips are cached under `~/no/cache/ast/`, overridable with `$NOLANG_AST_CACHE_DIR`.
+One zip is one package, which may contain multiple modules, each stored as a `<modulePath>.gob` entry. There is no entry module: `# nogit` only creates a package alias (use `nogit.<module>` for a module, e.g. `nogit.remote.greet(...)`); `# nogit/remote` imports a module directly; `# nogit.fn` locates a module by function. `no fmt` removes unused `# nogit` / `# nogit/remote` imports. For a nested module path such as `deep/util`, call it by the last path segment: `nogit.util.greet(...)` under `# nogit`, or `util.greet(...)` under `# nogit/deep/util` — HIR resolves only `<module>.<symbol>` (two segments) at call sites. The version must be a concrete value (`no sync` and compilation both report an error when they see `""` or `"*"`). Zips are cached under `~/no/cache/ast/`, overridable with `$NOLANG_AST_CACHE_DIR`.
 
 Produce the artifact with `no pack` (lexer + parser only — no LLVM toolchain needed, so it is CI-friendly):
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # a single source file
-no pack -o nogit.ast.zip ./nogit       # a package directory
+no pack -o nogit-ast.zip nogit.no      # a single source file
+no pack -o nogit-ast.zip ./nogit       # a package directory
 ```
 
 ### Dependency Types & Version Rules

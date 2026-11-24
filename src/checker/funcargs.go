@@ -975,6 +975,15 @@ func lookupCalleeSig(call *parser.CallExpression, sigs map[string]*funcSig, varT
 		}
 		return nil
 	case *parser.DotExpression:
+		// 多層模組路徑（包別名 `# mymod` + 子模組）：`mymod.remote.fn`。
+		// 這類呼叫的根標識符不是變數，直接按完整點號路徑查 sigs。
+		if path, root, ok := dottedCallName(fn); ok {
+			if _, isVar := varTypes[root]; !isVar {
+				if sig, ok := sigs[path]; ok {
+					return sig
+				}
+			}
+		}
 		if recv, ok := fn.Receiver.(*parser.Identifier); ok {
 			recvType, isVar := varTypes[recv.Value]
 			if isVar {
@@ -989,6 +998,23 @@ func lookupCalleeSig(call *parser.CallExpression, sigs map[string]*funcSig, varT
 		return uniqueMethodSuffixSig(sigs, fn.Property)
 	default:
 		return nil
+	}
+}
+
+// dottedCallName 把 a.b.c 形式的 DotExpression 攤平成完整路徑，並回傳最左側
+// 的根標識符（用來分辨「模組名」與「變數.方法」）。非純標識符鏈回傳 ok=false。
+func dottedCallName(expr parser.Expression) (path, root string, ok bool) {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		return e.Value, e.Value, true
+	case *parser.DotExpression:
+		left, root, ok := dottedCallName(e.Receiver)
+		if !ok {
+			return "", "", false
+		}
+		return left + "." + e.Property, root, true
+	default:
+		return "", "", false
 	}
 }
 
@@ -1023,6 +1049,13 @@ func stdCalleeResultType(call *parser.CallExpression, varTypes map[string]string
 	case *parser.Identifier:
 		return stdEntryResultType(fn.Value)
 	case *parser.DotExpression:
+		if path, root, ok := dottedCallName(fn); ok {
+			if _, isVar := varTypes[root]; !isVar {
+				if t := stdEntryResultType(path); t != "" {
+					return t
+				}
+			}
+		}
 		if recv, ok := fn.Receiver.(*parser.Identifier); ok {
 			if recvType, isVar := varTypes[recv.Value]; isVar {
 				return stdEntryResultType(baseTypeNameForMethod(recvType) + "." + fn.Property)

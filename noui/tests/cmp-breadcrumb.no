@@ -1,0 +1,239 @@
+; 阶段53：C-BREADCRUMB（面包屑）无窗口断言
+; 纯逻辑：构造默认 / 条目池（扁平只增 + 基址）/ 多句柄隔离 / 分隔符可改 /
+;         拼接 / 末项下标 / disabled 空操作 / 测算 intrinsic / 渲染几何
+;         （祖先 muted、当前页前景色、分隔符 TRACK）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    空条目 / 默认分隔符「 / 」/ 末项 -1 / 拼接空串
+; ============================================================================
+bc = cmp-breadcrumb()
+
+t1 = cmp-kind(bc) == C-BREADCRUMB
+t2 = bc-count(bc) == 0
+t3 = bc-last(bc) == -1
+t4 = bc-sep(bc) == ' / '
+t5 = bc-item(bc, 0) == ''
+t6 = bc-join(bc) == ''
+t7 = cmp-has(bc, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 条目池：追加 / 读取 / 拼接 / 末项
+;    'home' / 'docs' / 'noui' 各 4 字 → 各 3200
+; ============================================================================
+bc-add-item(bc, 'home')
+t8 = bc-count(bc) == 1
+t9 = bc-last(bc) == 0
+t10 = bc-item(bc, 0) == 'home'
+t11 = bc-join(bc) == 'home'
+
+bc-add-item(bc, 'docs')
+bc-add-item(bc, 'noui')
+t12 = bc-count(bc) == 3
+t13 = bc-last(bc) == 2
+t14 = bc-item(bc, 1) == 'docs'
+t15 = bc-item(bc, 2) == 'noui'
+t16 = bc-item(bc, 3) == ''
+t17 = bc-item(bc, -1) == ''
+t18 = bc-join(bc) == 'home / docs / noui'
+
+; 越界写不影响池：条目数只增，旧基址不变
+bc-clear(bc)
+t19 = bc-count(bc) == 0
+t20 = bc-last(bc) == -1
+bc-add-item(bc, 'again')
+t21 = bc-count(bc) == 1
+t22 = bc-item(bc, 0) == 'again'
+t23 = bc-join(bc) == 'again'
+
+; ============================================================================
+; 3. 多句柄隔离（扁平池 + 每句柄基址）
+; ============================================================================
+b2 = cmp-breadcrumb()
+b3 = cmp-breadcrumb()
+bc-add-item(b2, 'alpha')
+bc-add-item(b2, 'beta')
+bc-add-item(b3, 'gamma')
+
+t24 = bc-count(b2) == 2
+t25 = bc-count(b3) == 1
+t26 = bc-item(b2, 0) == 'alpha'
+t27 = bc-item(b2, 1) == 'beta'
+t28 = bc-item(b3, 0) == 'gamma'
+t29 = bc-item(b3, 1) == ''
+
+bc-clear(b2)
+t30 = bc-count(b2) == 0
+t31 = bc-item(b3, 0) == 'gamma'
+t32 = bc-join(b3) == 'gamma'
+
+; ============================================================================
+; 4. 分隔符可改（宽度随之变）
+;    ' >> ' 4 字 → 3200；'::' 2 字 → 1600
+; ============================================================================
+bc-set-sep(b3, ' >> ')
+t33 = bc-sep(b3) == ' >> '
+t34 = bc-join(b3) == 'gamma'
+
+bc-set-sep(b2, '::')
+bc-add-item(b2, 'one')
+bc-add-item(b2, 'two')
+t35 = bc-sep(b2) == '::'
+t36 = bc-join(b2) == 'one::two'
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(b3, F-DISABLED)
+bc-add-item(b3, 'nope')
+bc-clear(b3)
+bc-set-sep(b3, 'xx')
+t37 = bc-count(b3) == 1
+t38 = bc-item(b3, 0) == 'gamma'
+t39 = bc-sep(b3) == ' >> '
+cmp-flag-clear(b3, F-DISABLED)
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    宽 = 2*CS-PAD + Σ条目宽 + (n-1)*分隔符宽，夹到 CS-MIN-LEAF-W；高 = CS-BTN-H
+;    3 条 4 字 + 默认「 / 」→ 2400 + 9600 + 2*2400 = 16800
+;    空 → 2400 → 夹到 6400
+; ============================================================================
+b6 = cmp-breadcrumb()
+bc-add-item(b6, 'home')
+bc-add-item(b6, 'docs')
+bc-add-item(b6, 'noui')
+m1w, m1h = cs-measure(b6)
+t40 = m1w == 16800
+t41 = m1h == 4000
+
+m2w, m2h = cs-measure(b2)
+t42 = m2w == 8800
+t43 = m2h == 4000
+
+m3w, m3h = cs-measure(b3)
+t44 = m3w == 6400
+t45 = m3h == 4000
+
+; 改分隔符宽度会反映到测算上：' >> ' 4 字 → +1600
+bc-set-sep(b2, ' >> ')
+m4w, m4h = cs-measure(b2)
+t46 = m4w == 10400
+t47 = m4h == 4000
+bc-set-sep(b2, '::')
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(bc, 30000)
+cmp-set-sh(bc, 5000)
+m5w, m5h = cs-measure(bc)
+t48 = m5w == 30000
+t49 = m5h == 5000
+cmp-set-sw(bc, 0)
+cmp-set-sh(bc, 0)
+
+; ============================================================================
+; 7. 渲染
+;     外层 20800 → 内容宽 18400；bc2 两条 'one' / 'two' + '::' → w=8800
+;     矩形 (1200,1200,8800,4000)；ty = 1200 + (4000-2400)/2 = 2000
+;     cx: 'one'@2400(2400) → sep@4800(1600) → 'two'@6400(2400)
+; ============================================================================
+cs-clear()
+r1 = cmp-root()
+cmp-add-child(r1, b2)
+cs-layout(r1, 0, 0, 20800, 40000)
+cs-paint(r1)
+
+t50 = cs-text-color-at('one', 2400, 2000) == cs-theme(CS-TH-MUTED)
+t51 = cs-text-color-at('two', 6400, 2000) == cs-theme(CS-TH-FG)
+t52 = cs-text-color-at('::', 4800, 2000) == cs-theme(CS-TH-TRACK)
+t53 = cs-text-color-at('one', 2400, 2400) == -1
+
+; 三条目 + 默认分隔符：'home / docs / noui'
+cs-clear()
+b4 = cmp-breadcrumb()
+bc-add-item(b4, 'home')
+bc-add-item(b4, 'docs')
+bc-add-item(b4, 'noui')
+r2 = cmp-root()
+cmp-add-child(r2, b4)
+cs-layout(r2, 0, 0, 20800, 40000)
+cs-paint(r2)
+
+t54 = cs-text-color-at('home', 2400, 2000) == cs-theme(CS-TH-MUTED)
+t55 = cs-text-color-at('docs', 8000, 2000) == cs-theme(CS-TH-MUTED)
+t56 = cs-text-color-at('noui', 13600, 2000) == cs-theme(CS-TH-FG)
+t57 = cs-text-color-at(' / ', 5600, 2000) == cs-theme(CS-TH-TRACK)
+t58 = cs-text-color-at(' / ', 11200, 2000) == cs-theme(CS-TH-TRACK)
+; 只有最后一项是前景色，中间项不再是前景色
+t59 = cs-text-color-at('docs', 8000, 2000) != cs-theme(CS-TH-FG)
+
+; 空条目：不产生任何文本指令
+cs-clear()
+b5 = cmp-breadcrumb()
+r3 = cmp-root()
+cmp-add-child(r3, b5)
+cs-layout(r3, 0, 0, 20800, 40000)
+cs-paint(r3)
+t60 = cs-text-count() == 0
+
+; ============================================================================
+; 8. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5 & t6 & t7
+ok = ok & t8 & t9 & t10 & t11 & t12 & t13 & t14 & t15 & t16 & t17 & t18
+ok = ok & t19 & t20 & t21 & t22 & t23
+ok = ok & t24 & t25 & t26 & t27 & t28 & t29 & t30 & t31 & t32
+ok = ok & t33 & t34 & t35 & t36 & t37 & t38 & t39
+ok = ok & t40 & t41 & t42 & t43 & t44 & t45 & t46 & t47 & t48 & t49
+ok = ok & t50 & t51 & t52 & t53 & t54 & t55 & t56 & t57 & t58 & t59 & t60
+
+(ok == 1) -> {
+    print('ALL BREADCRUMB TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME BREADCRUMB TESTS FAILED')
+}

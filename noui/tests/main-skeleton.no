@@ -1,0 +1,198 @@
+; ============================================================================
+; noui 窗口 demo：骨架屏（阶段 54）—— C-SKELETON
+;
+; 流水线：app-init -> cmp-skeleton -> sk-* 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-SKELETON 分支 +
+;      cs-paint-skeleton）：TRACK 底 + N 条 MUTED 占位条 + 相位扫光 FG 带
+;   -> 键盘：l / L = 行数 − / +；g = 换行距；p = 相位 +10；
+;            a = 自动推进开关；d = 切换 disabled；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-skeleton.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+rt-auto = 1
+
+; ---- 场景矩形查找（收尾自检用）----
+find-rect = (x i64, y i64, w i64, ht i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui skeleton')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段54: skeleton')
+hint = cmp-label('l/L=lines g=gap p=phase a=auto d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+sk = cmp-skeleton()
+sk-set-lines(sk, 3)
+sk-set-gap(sk, 800)
+
+cmp-add-child(root, title)
+cmp-add-child(root, sk)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：骨架屏是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; l / L：行数 − / +
+        (k == 108) -> { sk-set-lines(sk, cs-sub(sk-lines(sk), 1)) }
+        (k == 76) -> { sk-set-lines(sk, cs-inc(sk-lines(sk))) }
+        ; g：换行距
+        (k == 103) -> {
+            g = sk-gap(sk)
+            (g == 800) -> { g = 1600 }
+            (g == 1600) -> { g = 2400 }
+            (g == 2400) -> { g = 800 }
+            sk-set-gap(sk, g)
+        }
+        ; p：相位 +10
+        (k == 112) -> { sk-set-phase(sk, cs-add(sk-phase(sk), 10)) }
+        ; a：自动推进开关
+        (k == 97) -> {
+            (rt-auto != 0) -> { rt-auto = 0 }
+            (rt-auto == 0) -> { rt-auto = 1 }
+        }
+        ; d：切换 disabled（写操作变空操作）
+        (k == 100) -> {
+            v = cmp-has(sk, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(sk, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(sk, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 自动推进扫光相位 ----
+    (rt-auto != 0) -> {
+        ph = cs-add(sk-phase(sk), 2)
+        (ph > 100) -> { ph = 0 }
+        sk-set-phase(sk, ph)
+    }
+
+    ; ---- 状态 -> 标签 ----
+    ln = sk-lines(sk)
+    gp = sk-gap(sk)
+    ph = sk-phase(sk)
+    dis = cmp-has(sk, F-DISABLED)
+    cmp-set-text(stat, 'lines={ln} gap={gp} phase={ph} disabled={dis}')
+    cmp-set-text(stat2, 'auto={rt-auto}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：固定 4 行 / 行距 800 / 相位 50，按真实矩形逐条核对
+; ============================================================================
+sk-set-lines(sk, 4)
+sk-set-gap(sk, 800)
+sk-set-phase(sk, 50)
+rt-auto = 0
+cmp-flag-clear(sk, F-DISABLED)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+sx, sy, sw, sh = cs-rect(sk)
+bw3 = cs-sub(sw, 2400)
+band3 = cs-div(bw3, 3)
+span3 = cs-sub(bw3, band3)
+off3 = cs-mul(50, cs-div(span3, 100))
+bx3 = cs-add(cs-add(sx, 1200), off3)
+by0 = cs-add(sy, 1200)
+
+c1 = sk-lines(sk) == 4
+c2 = sk-gap(sk) == 800
+c3 = sk-phase(sk) == 50
+c4 = find-rect-color(sx, sy, sw, sh) == cs-theme(CS-TH-TRACK)
+c5 = find-rect-color(cs-add(sx, 1200), by0, bw3, 2400) == cs-theme(CS-TH-MUTED)
+c6 = find-rect-color(cs-add(sx, 1200), cs-add(by0, 3200), bw3, 2400) == cs-theme(CS-TH-MUTED)
+c7 = find-rect-color(cs-add(sx, 1200), cs-add(by0, 6400), bw3, 2400) == cs-theme(CS-TH-MUTED)
+c8 = find-rect-color(cs-add(sx, 1200), cs-add(by0, 9600), bw3, 2400) == cs-theme(CS-TH-MUTED)
+c9 = find-rect-color(bx3, by0, band3, 2400) == cs-theme(CS-TH-FG)
+c10 = find-rect-color(bx3, cs-add(by0, 3200), band3, 2400) == cs-theme(CS-TH-FG)
+c11 = find-rect-color(bx3, cs-add(by0, 6400), band3, 2400) == cs-theme(CS-TH-FG)
+c12 = find-rect-color(bx3, cs-add(by0, 9600), band3, 2400) == cs-theme(CS-TH-FG)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+print('bye frames={fr} keys={kk} clicks={ck} lines=4 gap=800 phase=50 w={sw} h={sh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12) -> {
+    print('skeleton render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12)) -> {
+    print('FAIL: skeleton render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

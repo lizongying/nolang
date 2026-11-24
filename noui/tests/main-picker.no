@@ -1,0 +1,150 @@
+; ============================================================================
+; noui 窗口 demo：输入族（阶段 47）—— color-picker / date-picker
+;
+; 流水线：app-init -> cmp-color-picker / cmp-date-picker
+;   -> 鼠标：点取色器循环 hue（213 -> 0 -> 120 -> 240 -> 213）；点日期翻月
+;   -> 键盘：o = 取色器 hue 循环；d = 日期翻月；y = 日期换年；
+;     q / Esc 退出
+;   -> cs-layout / cs-paint（分别走 cs-paint-color-picker / cs-paint-date-picker；
+;     cs-measure 的兜底分支给两者 intrinsic 尺寸）
+;   -> app-frame
+;
+; 这个 demo 是阶段47 的现场：取色器左色板（当前色）+ 「#RRGGBB」+ hue 数字；
+; 日期字段底 + 「YYYY-MM-DD」。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-picker.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+g-oc-x = 0
+g-oc-y = 0
+g-oc-w = 0
+g-oc-h = 0
+g-dp-x = 0
+g-dp-y = 0
+g-dp-w = 0
+g-dp-h = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui picker')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段47: color-picker / date-picker')
+hint = cmp-label('click color=hue cycle, date=next month; o/d/y keys; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+oc = cmp-color-picker()
+cp-set-hue(oc, 213)
+dp = cmp-date-picker()
+dp-set-date(dp, 2026, 11, 21)
+
+cmp-add-child(root, title)
+cmp-add-child(root, oc)
+cmp-add-child(root, dp)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == oc) -> {
+            h = cp-hue(oc)
+            (h == 213) -> { cp-set-hue(oc, 0) }
+            (h == 0) -> { cp-set-hue(oc, 120) }
+            (h == 120) -> { cp-set-hue(oc, 240) }
+            (h == 240) -> { cp-set-hue(oc, 213) }
+        }
+        (hit == dp) -> { dp-next-month(dp) }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; o：取色器 hue 循环
+        (k == 111) -> {
+            h = cp-hue(oc)
+            (h == 213) -> { cp-set-hue(oc, 0) }
+            (h == 0) -> { cp-set-hue(oc, 120) }
+            (h == 120) -> { cp-set-hue(oc, 240) }
+            (h == 240) -> { cp-set-hue(oc, 213) }
+        }
+        ; d：日期翻下一个月
+        (k == 100) -> { dp-next-month(dp) }
+        ; y：日期换年
+        (k == 121) -> {
+            y = dp-year(dp)
+            (y == 2026) -> { dp-set-year(dp, 2024) }
+            (y == 2024) -> { dp-set-year(dp, 2026) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件 ----
+    hx = cp-hex(oc)
+    hu = cp-hue(oc)
+    dl = dp-label(dp)
+    cmp-set-text(stat, 'color {hx}  hue={hu}')
+    cmp-set-text(stat2, 'date {dl}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    g-oc-x, g-oc-y, g-oc-w, g-oc-h = cs-rect(oc)
+    g-dp-x, g-dp-y, g-dp-w, g-dp-h = cs-rect(dp)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+hx = cp-hex(oc)
+hu = cp-hue(oc)
+dl = dp-label(dp)
+print('bye frames={fr} keys={kk} clicks={ck} hex={hx} hue={hu} date={dl}')
+(sc > 0) -> { print('picker render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

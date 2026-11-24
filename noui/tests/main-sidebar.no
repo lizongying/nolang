@@ -1,0 +1,341 @@
+; ============================================================================
+; noui 窗口 demo：侧栏（阶段 69）—— C-SIDEBAR
+;
+; 流水线：app-init -> cmp-sidebar -> sdb-add-group / sdb-add-item /
+;          sdb-set-group / sdb-set-item / sdb-set-collapsed / sdb-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-SIDEBAR 分支 +
+;      cs-paint-sidebar）：FIELD 底 + 组头 MUTED + 展开时该组条目 FG（缩进 1600）
+;   -> 键盘：a=往最后一组追加条目；g=新增一组；i=往第 0 组追加条目；
+;            t=改第 0 组标题；f=切换折叠；c=清空；r=重建默认；
+;            d=切换 disabled；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-sidebar.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选组名（g 轮取）----
+sd-cand-group = (i i64) (s str) {
+    s = 'prefs'
+    (i == 1) -> { s = 'tools' }
+    (i == 2) -> { s = 'cloud' }
+    (i == 3) -> { s = 'lab' }
+    (i == 0) -> { s = 'prefs' }
+    s = s
+}
+
+; ---- 候选条目标签（a / i 轮取）----
+sd-cand-item = (i i64) (s str) {
+    s = 'alpha'
+    (i == 1) -> { s = 'beta' }
+    (i == 2) -> { s = 'gamma longer' }
+    (i == 3) -> { s = 'delta' }
+    (i == 0) -> { s = 'alpha' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+sd-build-default = (h i64) () {
+    sdb-clear(h)
+    sdb-add-group(h, 'nav')
+    sdb-add-item(h, 0, 'home')
+    sdb-add-item(h, 0, 'inbox')
+    sdb-add-item(h, 0, 'starred')
+    sdb-add-group(h, 'system')
+    sdb-add-item(h, 1, 'settings')
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui sidebar')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段69: sidebar')
+hint = cmp-label('a=item-last g=new-group i=item-g0 t=group-title f=collapse c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+sd = cmp-sidebar()
+sd-build-default(sd)
+
+cmp-add-child(root, title)
+cmp-add-child(root, sd)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：往最后一组追加一个条目
+        (k == 97) -> {
+            ng = sdb-group-count(sd)
+            (ng > 0) -> {
+                ni = sdb-item-count(sd)
+                j = ct-rem(ni, 4)
+                sdb-add-item(sd, ct-sub(ng, 1), sd-cand-item(j))
+            }
+        }
+        ; g：新增一组
+        (k == 103) -> {
+            ng = sdb-group-count(sd)
+            j = ct-rem(ng, 4)
+            sdb-add-group(sd, sd-cand-group(j))
+        }
+        ; i：往第 0 组追加一个条目
+        (k == 105) -> {
+            ni = sdb-item-count(sd)
+            j = ct-rem(ni, 4)
+            sdb-add-item(sd, 0, sd-cand-item(j))
+        }
+        ; t：改第 0 组标题
+        (k == 116) -> {
+            cur = sdb-group(sd, 0)
+            (cur == 'renamed') -> { sdb-set-group(sd, 0, 'nav') }
+            (cur != 'renamed') -> { sdb-set-group(sd, 0, 'renamed') }
+        }
+        ; f：切换折叠
+        (k == 102) -> {
+            v = sdb-collapsed(sd)
+            (v != 0) -> { sdb-set-collapsed(sd, 0) }
+            (v == 0) -> { sdb-set-collapsed(sd, 1) }
+        }
+        ; c：清空
+        (k == 99) -> { sdb-clear(sd) }
+        ; r：重建默认
+        (k == 114) -> { sd-build-default(sd) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(sd, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(sd, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(sd, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    ng = sdb-group-count(sd)
+    ni = sdb-item-count(sd)
+    col = sdb-collapsed(sd)
+    dis = cmp-has(sd, F-DISABLED)
+    cmp-set-text(stat, 'groups={ng} items={ni} collapsed={col} disabled={dis}')
+    (ni > 0) -> {
+        cmp-set-text(stat2, 'first={sdb-item(sd, 0)} last={sdb-item(sd, ct-sub(ni, 1))}')
+    }
+    (ni <= 0) -> { cmp-set-text(stat2, 'no items') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（'nav': home/inbox/starred；'system': settings），按
+;   cs-rect(sd) 推导坐标。内边距 1200 / 行高 2400 / 条目缩进 1600 / 组间距 800。
+;   高 = 2400 + (2400+3*2400) + 800 + (2400+2400) = 17600
+;   宽 = 2400 + max(组头宽, 条目宽+缩进) = 2400 + 7200 = 9600（叶子被拉伸到
+;       父内容宽 53600）；折叠后高 = 2400 + 2*2400 + 800 = 8000。
+;   场景里还有 title / hint / stat / stat2 四条标签文本，加侧栏 6 条 → 共 10 条。
+; ============================================================================
+cmp-flag-clear(sd, F-DISABLED)
+sd-build-default(sd)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+qpad = 1200
+lh = 2400
+ind = 1600
+gap = 800
+
+bx, by, bw, bh = cs-rect(sd)
+gx = cs-add(bx, qpad)
+ix = cs-add(gx, ind)
+ay = cs-add(by, qpad)
+hy = cs-add(ay, lh)
+iy = cs-add(hy, lh)
+ty = cs-add(iy, lh)
+sy = cs-add(cs-add(ty, lh), gap)
+sey = cs-add(sy, lh)
+
+c1 = sdb-group-count(sd) == 2
+c2 = sdb-item-count(sd) == 4
+c3 = sdb-group(sd, 0) == 'nav'
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = bh == 17600
+c6 = bw == 53600
+c7 = find-text-color('nav', gx, ay) == cs-theme(CS-TH-MUTED)
+c8 = find-text-color('system', gx, sy) == cs-theme(CS-TH-MUTED)
+c9 = find-text('home', ix, hy) == 1
+c10 = find-text-color('home', ix, hy) == cs-theme(CS-TH-FG)
+c11 = find-text('inbox', ix, iy) == 1
+c12 = find-text('starred', ix, ty) == 1
+c13 = find-text('settings', ix, sey) == 1
+dbg-cnt = cs-text-count()
+c14 = dbg-cnt == 10
+
+; 折叠：面板变矮（只剩两个组头），条目全不画
+sdb-set-collapsed(sd, 1)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(sd)
+c15 = bh == 8000
+c16 = cs-text-count() == 6
+c17 = find-text('home', ix, hy) == 0
+
+; 展开回来：几何复原
+sdb-set-collapsed(sd, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(sd)
+c18 = bh == 17600
+c19 = find-text('settings', ix, sey) == 1
+
+; 改组标题 / 条目文案
+sdb-set-group(sd, 0, 'NAV')
+sdb-set-item(sd, 0, 'HOME')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c20 = find-text-color('NAV', gx, ay) == cs-theme(CS-TH-MUTED)
+c21 = find-text-color('HOME', ix, hy) == cs-theme(CS-TH-FG)
+
+; 清空：只剩 FIELD 底，一条文本都不发
+sdb-clear(sd)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(sd)
+c22 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c23 = cs-text-count() == 4
+c24 = bh == 4000
+
+; disabled：写操作全部空操作
+sd-build-default(sd)
+cmp-flag-set(sd, F-DISABLED)
+sdb-add-group(sd, 'no')
+sdb-set-group(sd, 0, 'no')
+sdb-add-item(sd, 0, 'no')
+sdb-clear(sd)
+c25 = sdb-group-count(sd) == 2
+c26 = sdb-item-count(sd) == 4
+c27 = sdb-group(sd, 0) == 'nav'
+cmp-flag-clear(sd, F-DISABLED)
+
+; 重建默认：几何回到最初
+sd-build-default(sd)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(sd)
+c28 = find-text-color('nav', gx, ay) == cs-theme(CS-TH-MUTED)
+c29 = find-text('home', ix, hy) == 1
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+ng5 = sdb-group-count(sd)
+print('bye frames={fr} keys={kk} clicks={ck} groups={ng5} w={bw} h={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29) -> {
+    print('sidebar render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29)) -> {
+    print('FAIL: sidebar render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

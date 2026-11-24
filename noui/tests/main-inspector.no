@@ -1,0 +1,302 @@
+; ============================================================================
+; noui 窗口 demo：对象检查器（阶段 61）—— C-INSPECTOR
+;
+; 流水线：app-init -> cmp-inspector -> in-set-target / in-add / in-set-label /
+;          in-set-value / in-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-INSPECTOR 分支 +
+;      cs-paint-inspector）：FIELD 底 + 目标行「ACCENT 标记条 + FG 目标名」+
+;      N 行字段「MUTED 标签 + FG 值」+ 行间 TRACK 分隔线
+;   -> 键盘：a=追加字段；t=换目标名；e=清空字段；r=重建默认；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-inspector.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选目标名（t 轮取）----
+ins-cand-target = (i i64) (s str) {
+    s = 'widget'
+    (i == 1) -> { s = 'panel' }
+    (i == 2) -> { s = 'sidebar' }
+    (i == 3) -> { s = 'editor' }
+    (i == 4) -> { s = 'toolbar' }
+    (i == 5) -> { s = 'session' }
+    (i == 0) -> { s = 'workspace' }
+    s = s
+}
+
+; ---- 候选字段（a 轮取）----
+ins-cand-lab = (i i64) (s str) {
+    s = 'id'
+    (i == 1) -> { s = 'type' }
+    (i == 2) -> { s = 'title' }
+    (i == 3) -> { s = 'index' }
+    (i == 4) -> { s = 'origin' }
+    (i == 5) -> { s = 'author' }
+    (i == 0) -> { s = 'flags' }
+    s = s
+}
+
+ins-cand-val = (i i64) (s str) {
+    s = 'w-001'
+    (i == 1) -> { s = 'stack' }
+    (i == 2) -> { s = 'main view' }
+    (i == 3) -> { s = '3 / 7' }
+    (i == 4) -> { s = 'local' }
+    (i == 5) -> { s = 'me' }
+    (i == 0) -> { s = '2' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+ins-build-default = (h i64) () {
+    in-set-target(h, 'widget')
+    in-clear(h)
+    in-add(h, 'name', 'alpha')
+    in-add(h, 'kind', 'button')
+    in-add(h, 'size', '120x40')
+}
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui inspector')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段61: inspector')
+hint = cmp-label('a=add-field t=target e=erase r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+ins = cmp-inspector()
+ins-build-default(ins)
+
+cmp-add-child(root, title)
+cmp-add-child(root, ins)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：检查器是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一个字段
+        (k == 97) -> {
+            n = in-count(ins)
+            j = ct-rem(n, 7)
+            in-add(ins, ins-cand-lab(j), ins-cand-val(j))
+        }
+        ; t：换目标名
+        (k == 116) -> {
+            n = in-count(ins)
+            in-set-target(ins, ins-cand-target(ct-rem(n, 7)))
+        }
+        ; e：清空字段
+        (k == 101) -> { in-clear(ins) }
+        ; r：重建默认
+        (k == 114) -> { ins-build-default(ins) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(ins, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(ins, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(ins, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = in-count(ins)
+    tg = in-target(ins)
+    dis = cmp-has(ins, F-DISABLED)
+    cmp-set-text(stat, 'target={tg} fields={cn} disabled={dis}')
+    (cn > 0) -> {
+        li = cs-sub(cn, 1)
+        cmp-set-text(stat2, 'last={in-label(ins, li)}={in-value(ins, li)}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no fields') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认，按面板实测矩形推导坐标逐项核对
+;   内边距 1200 / 标记条宽 800 / 标记与文字间隙 800 / 行高 2400 / 行间距 2500
+;   （行高 + 分隔线 100）/ 目标行顶 = by+1200 / 字段行 i 顶 = by+3600+i*2500
+;   分隔线 i = 字段行 i 顶 + 2400 / 标签列宽 = 最长标签 = 3200（默认三条）
+;   文字垂直居中：行高 == CS-LINE-H，文字 y = 行顶
+; ============================================================================
+cmp-flag-clear(ins, F-DISABLED)
+ins-build-default(ins)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+mw0 = 800
+gg0 = 800
+lh0 = 2400
+sep0 = 100
+rowstep = 2500
+labw = 3200
+
+bx, by, bw, bh = cs-rect(ins)
+mx0 = cs-add(bx, p0)
+cx0 = cs-add(cs-add(cs-add(bx, p0), mw0), gg0)
+vx0 = cs-add(cx0, cs-add(labw, gg0))
+ty0 = cs-add(by, p0)
+ry0 = cs-add(ty0, lh0)
+ry1 = cs-add(ry0, rowstep)
+ry2 = cs-add(ry1, rowstep)
+sy0 = cs-add(ry0, lh0)
+sy1 = cs-add(ry1, lh0)
+
+c1 = in-count(ins) == 3
+c2 = in-target(ins) == 'widget'
+c3 = in-label(ins, 0) == 'name'
+c4 = in-value(ins, 0) == 'alpha'
+c5 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c6 = find-rect-color(mx0, ty0, mw0, lh0) == cs-theme(CS-TH-ACCENT)
+c7 = find-text('widget', cx0, ty0) == 1
+c8 = find-text-color('widget', cx0, ty0) == cs-theme(CS-TH-FG)
+c9 = find-text('name', cx0, ry0) == 1
+c10 = find-text-color('name', cx0, ry0) == cs-theme(CS-TH-MUTED)
+c11 = find-text('alpha', vx0, ry0) == 1
+c12 = find-text-color('alpha', vx0, ry0) == cs-theme(CS-TH-FG)
+c13 = find-rect-color(bx, sy0, bw, sep0) == cs-theme(CS-TH-TRACK)
+c14 = find-text('kind', cx0, ry1) == 1
+c15 = find-text-color('kind', cx0, ry1) == cs-theme(CS-TH-MUTED)
+c16 = find-text('button', vx0, ry1) == 1
+c17 = find-text-color('button', vx0, ry1) == cs-theme(CS-TH-FG)
+c18 = find-rect-color(bx, sy1, bw, sep0) == cs-theme(CS-TH-TRACK)
+c19 = find-text('size', cx0, ry2) == 1
+c20 = find-text-color('size', cx0, ry2) == cs-theme(CS-TH-MUTED)
+c21 = find-text('120x40', vx0, ry2) == 1
+c22 = find-text-color('120x40', vx0, ry2) == cs-theme(CS-TH-FG)
+; 场景里还有 title / hint / stat / stat2 四条标签文本，所以总数要算上
+c23 = cs-text-count() == 11
+
+; 换目标名：目标行文本跟着换
+in-set-target(ins, 'abcdefghij')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c24 = find-text('abcdefghij', cx0, ty0) == 1
+c25 = find-text-color('abcdefghij', cx0, ty0) == cs-theme(CS-TH-FG)
+
+; 清空字段：只剩目标行一条文本，标记条仍在
+in-clear(ins)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c26 = cs-text-count() == 5
+c27 = find-rect-color(mx0, ty0, mw0, lh0) == cs-theme(CS-TH-ACCENT)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+tg2 = in-target(ins)
+nf = in-count(ins)
+print('bye frames={fr} keys={kk} clicks={ck} target={tg2} fields={nf} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23 && c24 && c25 && c26 && c27) -> {
+    print('inspector render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23 && c24 && c25 && c26 && c27)) -> {
+    print('FAIL: inspector render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

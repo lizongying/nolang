@@ -1,0 +1,256 @@
+; 阶段65：C-QUESTIONNAIRE（题池）无窗口断言
+; 纯逻辑：默认 / 题池读写 / 必答与进度 / 多句柄隔离 /
+;          disabled 空操作 / 测算 intrinsic / 渲染几何
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：0 题、越界读空串、未 disabled、不是视觉容器
+; ============================================================================
+qa = cmp-questionnaire()
+
+t1 = cmp-kind(qa) == C-QUESTIONNAIRE
+t2 = qa-count(qa) == 0
+t3 = qa-prompt(qa, 0) == ''
+t4 = qa-answer(qa, 0) == ''
+t5 = qa-required(qa, 0) == 0
+t6 = qa-prompt(qa, -1) == ''
+t7 = qa-answer(qa, 9) == ''
+t8 = cmp-has(qa, F-DISABLED) == 0
+t9 = cs-is-container(cmp-kind(qa)) == 0
+t10 = qa-answered(qa) == 0
+t11 = qa-progress(qa) == 0
+t12 = qa-complete(qa) == 1
+
+; ============================================================================
+; 2. 题池读写
+; ============================================================================
+qa-add(qa, 'name?', '')
+qa-add(qa, 'quest?', 'lin')
+t13 = qa-count(qa) == 2
+t14 = qa-prompt(qa, 0) == 'name?'
+t15 = qa-answer(qa, 0) == ''
+t16 = qa-answer(qa, 1) == 'lin'
+t17 = qa-prompt(qa, 2) == ''
+
+qa-set-prompt(qa, 1, 'quest2')
+t18 = qa-prompt(qa, 1) == 'quest2'
+qa-set-answer(qa, 0, 'ada')
+t19 = qa-answer(qa, 0) == 'ada'
+qa-set-prompt(qa, 7, 'x')
+qa-set-answer(qa, -1, 'x')
+t20 = qa-count(qa) == 2
+
+; ============================================================================
+; 3. 必答 / 进度 / 完成度
+; ============================================================================
+qa-set-required(qa, 0, 1)
+t21 = qa-required(qa, 0) == 1
+t22 = qa-required(qa, 1) == 0
+t23 = qa-answered(qa) == 2
+t24 = qa-progress(qa) == 100
+t25 = qa-complete(qa) == 1
+
+qa-set-answer(qa, 1, '')
+t26 = qa-answered(qa) == 1
+t27 = qa-progress(qa) == 50
+t28 = qa-complete(qa) == 1
+
+qa-set-required(qa, 1, 1)
+t29 = qa-complete(qa) == 0
+
+qa-clear(qa)
+t30 = qa-count(qa) == 0
+t31 = qa-progress(qa) == 0
+t32 = qa-complete(qa) == 1
+
+; ============================================================================
+; 4. 多句柄隔离
+; ============================================================================
+q2 = cmp-questionnaire()
+q3 = cmp-questionnaire()
+qa-add(q2, 'aa', 'bb')
+qa-add(q3, 'cc', 'dd')
+qa-add(q3, 'ee', 'ff')
+
+t33 = qa-count(q2) == 1
+t34 = qa-count(q3) == 2
+t35 = qa-prompt(q2, 0) == 'aa'
+t36 = qa-answer(q3, 1) == 'ff'
+
+qa-clear(q2)
+t37 = qa-count(q2) == 0
+t38 = qa-count(q3) == 2
+qa-add(q2, 'again', '')
+t39 = qa-prompt(q2, 0) == 'again'
+t40 = qa-answer(q3, 0) == 'dd'
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(q3, F-DISABLED)
+qa-add(q3, 'no', 'no')
+qa-set-prompt(q3, 0, 'no')
+qa-set-answer(q3, 0, 'no')
+qa-set-required(q3, 0, 1)
+qa-clear(q3)
+t41 = qa-count(q3) == 2
+t42 = qa-prompt(q3, 0) == 'cc'
+t43 = qa-answer(q3, 0) == 'dd'
+t44 = qa-required(q3, 0) == 0
+cmp-flag-clear(q3, F-DISABLED)
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    空：宽下限 6400、高下限 CS-BTN-H(4000)
+;    宽 = 2*CS-PAD + max(题干, 答案)，高 = 2*CS-PAD + N*2*CS-LINE-H + (N-1)*gap
+; ============================================================================
+e1 = cmp-questionnaire()
+m1w, m1h = cs-measure(e1)
+t45 = m1w == 6400
+t46 = m1h == 4000
+
+; 单题：题干 'q'(800)、答案 'a'(800) → 宽 2400+800=3200 夹 6400；高 2400+4800=7200
+e2 = cmp-questionnaire()
+qa-add(e2, 'q', 'a')
+m2w, m2h = cs-measure(e2)
+t47 = m2w == 6400
+t48 = m2h == 7200
+
+; 长答案 'abcdefghij'(8000)：宽 2400+8000=10400；高 7200
+e3 = cmp-questionnaire()
+qa-add(e3, 'q', 'abcdefghij')
+m3w, m3h = cs-measure(e3)
+t49 = m3w == 10400
+t50 = m3h == 7200
+
+; 两题：题干 'name?'(4000)/'quest?'(4800)、答案 'ada'(2400)/'lin'(2400)
+;   宽 = 2400 + 4800 = 7200；高 = 2400 + 2*4800 + 800 = 12800
+p1 = cmp-questionnaire()
+qa-add(p1, 'name?', 'ada')
+qa-add(p1, 'quest?', 'lin')
+m4w, m4h = cs-measure(p1)
+t51 = m4w == 7200
+t52 = m4h == 12800
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(p1, 20000)
+cmp-set-sh(p1, 9000)
+m5w, m5h = cs-measure(p1)
+t53 = m5w == 20000
+t54 = m5h == 9000
+cmp-set-sw(p1, 0)
+cmp-set-sh(p1, 0)
+
+; ============================================================================
+; 7. 渲染
+;     外层 18000 → 内容宽 15600（intrinsic 7200，叶子横向被拉伸到父内容宽）
+;     面板 (1200,1200,15600,12800) FIELD
+;     第 0 题（必答）：标记方块 (1200+1200, by+1200+800, 800, 800) TRACK
+;                     题干 @ (1200+1200+1600, by+1200) FG
+;     第 0 题答案 @ (bx+1200, by+1200+2400) ACCENT
+;     第 1 题题干 @ (bx+1200, by+1200+2400+2400+800) FG
+;     第 1 题答案 @ 再 +2400 ACCENT
+;     文本指令共 4 条
+; ============================================================================
+cs-clear()
+r = cmp-questionnaire()
+qa-add(r, 'name?', 'ada')
+qa-add(r, 'quest?', 'lin')
+qa-set-required(r, 0, 1)
+rr = cmp-root()
+cmp-add-child(rr, r)
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+
+p0 = 1200
+lh = 2400
+gap = 800
+
+bx, by, bw, bh = cs-rect(r)
+tx = cs-add(bx, p0)
+qy0 = cs-add(by, p0)
+ay0 = cs-add(qy0, lh)
+qy1 = cs-add(cs-add(ay0, lh), gap)
+ay1 = cs-add(qy1, lh)
+
+t55 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+t56 = cs-rect-color-at(tx, cs-add(qy0, 800), 800, 800) == cs-theme(CS-TH-TRACK)
+t57 = cs-text-color-at('name?', cs-add(tx, 1600), qy0) == cs-theme(CS-TH-FG)
+t58 = cs-text-color-at('ada', tx, ay0) == cs-theme(CS-TH-ACCENT)
+t59 = cs-text-color-at('quest?', tx, qy1) == cs-theme(CS-TH-FG)
+t60 = cs-text-color-at('lin', tx, ay1) == cs-theme(CS-TH-ACCENT)
+t61 = cs-text-count() == 4
+
+; 取消必答：标记方块消失
+qa-set-required(r, 0, 0)
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t62 = cs-rect-color-at(tx, cs-add(qy0, 800), 800, 800) == -1
+
+; 清空：只剩 root 背景矩形，没有文本
+qa-clear(r)
+cs-clear()
+cs-layout(rr, 0, 0, 18000, 20000)
+cs-paint(rr)
+t63 = cs-text-count() == 0
+
+; ============================================================================
+; 8. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5 & t6 & t7 & t8 & t9 & t10 & t11 & t12
+ok = ok & t13 & t14 & t15 & t16 & t17 & t18 & t19 & t20
+ok = ok & t21 & t22 & t23 & t24 & t25 & t26 & t27 & t28 & t29
+ok = ok & t30 & t31 & t32 & t33 & t34 & t35 & t36 & t37 & t38 & t39 & t40
+ok = ok & t41 & t42 & t43 & t44
+ok = ok & t45 & t46 & t47 & t48 & t49 & t50 & t51 & t52 & t53 & t54
+ok = ok & t55 & t56 & t57 & t58 & t59 & t60 & t61 & t62 & t63
+(ok == 1) -> {
+    print('ALL QUESTIONNAIRE TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME QUESTIONNAIRE TESTS FAILED')
+}

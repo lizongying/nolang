@@ -5,7 +5,8 @@ import (
 	"encoding/gob"
 	"sort"
 
-	"github.com/lizongying/nolang/ty")
+	"github.com/lizongying/nolang/ty"
+)
 
 // ---------------------------------------------------------------------------
 // Deterministic (byte-reproducible) encoding of CachedProgram.
@@ -248,6 +249,10 @@ type detSem struct {
 
 type detProgram struct {
 	Statements []Statement
+	// 模組的兩個隱式註解（見 Program.SourcePath / Program.ModulePath）。
+	// 必須與 Program 同步，否則 gob 往返會把它們靜默丟掉。
+	SourcePath string
+	ModulePath string
 	// Doc 是模組 doc（見 Program.Doc）。它與 TrailingComments 同類：都是掛在
 	// Program 上的註解群組，必須原樣往返，否則「讀快取」與「fresh parse」會
 	// 得到兩棵不同的樹（Program.Doc 為 nil）。
@@ -323,7 +328,6 @@ func detTypesMap(m map[string]map[string]string) map[string]map[string]*ty.Type 
 	return out
 }
 
-
 // ---- struct -> shadow ----
 
 func detFromSem(s *SemanticContext) detSem {
@@ -379,6 +383,8 @@ func detFromProgram(p *Program) *detProgram {
 	}
 	d := &detProgram{
 		Statements:       p.Statements,
+		SourcePath:       p.SourcePath,
+		ModulePath:       p.ModulePath,
 		Doc:              p.Doc,
 		FreeComments:     p.FreeComments,
 		TrailingComments: p.TrailingComments,
@@ -399,6 +405,8 @@ func detToProgram(d *detProgram) *Program {
 	}
 	p := &Program{
 		Statements:       d.Statements,
+		SourcePath:       d.SourcePath,
+		ModulePath:       d.ModulePath,
 		Doc:              d.Doc,
 		FreeComments:     d.FreeComments,
 		TrailingComments: d.TrailingComments,

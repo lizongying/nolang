@@ -2135,9 +2135,12 @@ test-rng-gate = () {
 ; s62：容器遍历 `v <- xs`（[]i64 形参）——五块 pre/hdr/body/upd/exit，复用 OP-VECLEN/OP-VECGET
 ...
 
-; 形制钉自 tmp/probe-s62-ir.no（用例 A）：容器是【形参】⇒ 不铺槽，各块直接引用 entry 就存在的
-; %vc1（SSA 支配关系合法）；长度只求一次（%v9），hdr 拿 %v11（索引槽 LOAD）与它比；
-; 两颗 i64 槽：%s4 = 循环变量同名槽（体内 LOAD 取当前元素）、%s6 = 合成索引槽 @idx<node>
+; 形制钉自 tmp/probe-s62-ir.no（用例 A）：容器是【形参】；长度只求一次，hdr 拿索引槽 LOAD 与它比；
+; 两颗 i64 槽：循环变量同名槽（体内 LOAD 取当前元素）、合成索引槽 @idx<node>。
+; ⚠️ s163 起 vec 形參【同鋪 %vs 槽】：entry 先 %vs2 = alloca %vec、存零初始化空 vec，再由
+;    h2m-slot-init-arg 把实参 %vc1 抄进去；此後各塊讀容器一律 VECLOAD 出新 %vc（Dominance 合法）。
+;    故本件的值 id 整體後移（旧制：%s2 out／%s4 循環變數／%s6 索引；新制：%vs2 槽、%s4 out、
+;    %s6 循環變數、%s8 索引，容器值 %vc11、長度 %v12）。型别/塊數/支配關係不變。
 test-coll-basic = () {
     src = 'va = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        r = r + v\n    }\n}\n'
     t = ast.make()
@@ -2149,32 +2152,33 @@ test-coll-basic = () {
     runner.eq(agg.unsup, 0, 'coll-basic unsup')
     runner.eq(ir.contains('define i64 @va(%vec %vc1)'), 1, 'coll-basic define vec param')
 
-    ; entry：三颗 i64 槽（r / v / @idx）按 loc 序铺开；vec 形参【不得】出现 alloca %vec
-    runner.eq(ir.contains('%s2 = alloca i64'), 1, 'coll-basic out slot')
-    runner.eq(ir.contains('%s4 = alloca i64'), 1, 'coll-basic loop-var slot')
-    runner.eq(ir.contains('%s6 = alloca i64'), 1, 'coll-basic index slot')
-    runner.eq(ir.contains('alloca %vec'), 0, 'coll-basic no vec alloca')
+    ; entry：vec 形參鋪槽（s163）＋三颗 i64 槽（r / v / @idx）按 loc 序铺开
+    runner.eq(ir.contains('%vs2 = alloca %vec'), 1, 'coll-basic vec param slot')
+    runner.eq(ir.contains('store %vec %vc1, %vec* %vs2'), 1, 'coll-basic arg copied into slot')
+    runner.eq(ir.contains('%s4 = alloca i64'), 1, 'coll-basic out slot')
+    runner.eq(ir.contains('%s6 = alloca i64'), 1, 'coll-basic loop-var slot')
+    runner.eq(ir.contains('%s8 = alloca i64'), 1, 'coll-basic index slot')
 
     ; pre：索引置 0 + 长度只求一次（紧接着 BR hdr）
-    runner.eq(ir.contains('%v10 = add i64 0, 0\n\tstore i64 %v10, i64* %s6\n\tbr label %bb1'), 1, 'coll-basic idx zero')
-    runner.eq(ir.contains('%v9 = call i64 @vec_len(%vec %vc1)'), 1, 'coll-basic len once')
+    runner.eq(ir.contains('%v13 = add i64 0, 0\n\tstore i64 %v13, i64* %s8\n\tbr label %bb1'), 1, 'coll-basic idx zero')
+    runner.eq(ir.contains('%v12 = call i64 @vec_len(%vec %vc11)'), 1, 'coll-basic len once')
 
     ; hdr：LOAD 索引 → slt(len) → CONDBR(body bb2, exit bb4)
-    runner.eq(ir.contains('bb1:\n\t%v11 = load i64, i64* %s6\n\t%c16 = icmp slt i64 %v11, %v9'), 1, 'coll-basic header cmp against single len')
-    runner.eq(ir.contains('br i1 %c17, label %bb2, label %bb4'), 1, 'coll-basic condbr body/exit')
+    runner.eq(ir.contains('bb1:\n\t%v14 = load i64, i64* %s8\n\t%c21 = icmp slt i64 %v14, %v12'), 1, 'coll-basic header cmp against single len')
+    runner.eq(ir.contains('br i1 %c22, label %bb2, label %bb4'), 1, 'coll-basic condbr body/exit')
 
-    ; body：VECGET(vec, idx) 落进循环变量槽，体内读的是槽
-    runner.eq(ir.contains('bb2:\n\t%v13 = call i64 @vec_get_i64(%vec %vc1, i64 %v11)\n\tstore i64 %v13, i64* %s4'), 1, 'coll-basic body get+store')
-    runner.eq(ir.contains('%v14 = load i64, i64* %s2\n\t%v15 = load i64, i64* %s4\n\t%v16 = add i64 %v14, %v15'), 1, 'coll-basic body reads slot')
-    runner.eq(ir.contains('store i64 %v16, i64* %s2\n\tbr label %bb3'), 1, 'coll-basic body br update')
+    ; body：VECGET(槽内容器, idx) 落进循环变量槽，体内读的是槽
+    runner.eq(ir.contains('bb2:\n\t%v16 = call i64 @vec_get_i64(%vec %vc11, i64 %v14)\n\tstore i64 %v16, i64* %s6'), 1, 'coll-basic body get+store')
+    runner.eq(ir.contains('%v17 = load i64, i64* %s4\n\t%v18 = load i64, i64* %s6\n\t%v19 = add i64 %v17, %v18'), 1, 'coll-basic body reads slot')
+    runner.eq(ir.contains('store i64 %v19, i64* %s4\n\tbr label %bb3'), 1, 'coll-basic body br update')
 
     ; upd：索引 +1 后跳回 hdr；exit：后继即隐式 RET
-    runner.eq(ir.contains('bb3:\n\t%v17 = load i64, i64* %s6\n\t%v18 = add i64 0, 1\n\t%v19 = add i64 %v17, %v18\n\tstore i64 %v19, i64* %s6\n\tbr label %bb1'), 1, 'coll-basic update steps and loops')
-    runner.eq(ir.contains('bb4:\n\t%v20 = load i64, i64* %s2\n\tret i64 %v20'), 1, 'coll-basic exit ret')
+    runner.eq(ir.contains('bb3:\n\t%v20 = load i64, i64* %s8\n\t%v21 = add i64 0, 1\n\t%v22 = add i64 %v20, %v21\n\tstore i64 %v22, i64* %s8\n\tbr label %bb1'), 1, 'coll-basic update steps and loops')
+    runner.eq(ir.contains('bb4:\n\t%v23 = load i64, i64* %s4\n\tret i64 %v23'), 1, 'coll-basic exit ret')
 
     ; 鉴别力：块数恰好 5（entry+bb1..bb4）；长度不得被第二次求出（再求会挤掉后续值 id）
     runner.eq(ir.contains('bb5:'), 0, 'coll-basic no spare block')
-    runner.eq(ir.contains('%v9 = call i64 @vec_len(%vec %vc1)\n\t%v10 = add i64 0, 0'), 1, 'coll-basic len not recomputed')
+    runner.eq(ir.contains('%v12 = call i64 @vec_len(%vec %vc11)\n\t%v13 = add i64 0, 0'), 1, 'coll-basic len not recomputed')
 }
 
 ; s62：`for v <- xs { }` 关键字形（cond 位 = 循环变量自身 IDENT）与运算符形走同一条路
@@ -2191,9 +2195,10 @@ test-coll-kw = () {
     runner.eq(ir.contains('define i64 @vb(%vec %vc1)'), 1, 'coll-kw define')
 
     ; 与运算符形同形：同一个 hdr 比较、同一个 body get、同一个 upd 回跳（只差函数名）
-    runner.eq(ir.contains('bb1:\n\t%v11 = load i64, i64* %s6\n\t%c16 = icmp slt i64 %v11, %v9'), 1, 'coll-kw same header as operator form')
-    runner.eq(ir.contains('%v13 = call i64 @vec_get_i64(%vec %vc1, i64 %v11)'), 1, 'coll-kw same body')
-    runner.eq(ir.contains('bb4:\n\t%v20 = load i64, i64* %s2\n\tret i64 %v20'), 1, 'coll-kw same exit')
+    ;   ⚠️ s163：值 id 随 vec 形參鋪槽後移（vc11 容器、v12 長度、v14 索引、v16 元素、s4 out、s8 索引槽）
+    runner.eq(ir.contains('bb1:\n\t%v14 = load i64, i64* %s8\n\t%c21 = icmp slt i64 %v14, %v12'), 1, 'coll-kw same header as operator form')
+    runner.eq(ir.contains('%v16 = call i64 @vec_get_i64(%vec %vc11, i64 %v14)'), 1, 'coll-kw same body')
+    runner.eq(ir.contains('bb4:\n\t%v23 = load i64, i64* %s4\n\tret i64 %v23'), 1, 'coll-kw same exit')
 }
 
 ; s62：体内 guard break——跳出落 exit，循环后继语句照跑（与 s60m/s61 同口径）
@@ -2207,11 +2212,11 @@ test-coll-break = () {
     ir = h2m-lower-program(t, agg, root)
 
     runner.eq(agg.unsup, 0, 'coll-break unsup')
-    runner.eq(ir.contains('bb2:\n\t%v13 = call i64 @vec_get_i64(%vec %vc1, i64 %v11)\n\tstore i64 %v13, i64* %s4\n\t%v14 = load i64, i64* %s4'), 1, 'coll-break body loads element')
+    runner.eq(ir.contains('bb2:\n\t%v16 = call i64 @vec_get_i64(%vec %vc11, i64 %v14)\n\tstore i64 %v16, i64* %s6\n\t%v17 = load i64, i64* %s6'), 1, 'coll-break body loads element')
 
     ; break 目标 = exit（bb4），不是 update（bb3）；其后后继语句也在 bb4 照跑
     runner.eq(ir.contains('bb5:\n\tbr label %bb4'), 1, 'coll-break br to exit not update')
-    runner.eq(ir.contains('bb4:\n\t%v23 = load i64, i64* %s2\n\t%v24 = add i64 0, 100'), 1, 'coll-break exit runs successor')
+    runner.eq(ir.contains('bb4:\n\t%v26 = load i64, i64* %s4\n\t%v27 = add i64 0, 100'), 1, 'coll-break exit runs successor')
 }
 
 ; s62：体内 guard continue——落 update（先自增再判），本轮累加被跳过
@@ -2228,7 +2233,7 @@ test-coll-cont = () {
 
     ; continue 目标 = update（bb3）：落它就能自增索引，不会活锁
     runner.eq(ir.contains('bb5:\n\tbr label %bb3'), 1, 'coll-cont br to update not exit')
-    runner.eq(ir.contains('bb7:\n\t%v17 = load i64, i64* %s2\n\t%v18 = load i64, i64* %s4'), 1, 'coll-cont merge after guard')
+    runner.eq(ir.contains('bb7:\n\t%v20 = load i64, i64* %s4\n\t%v21 = load i64, i64* %s6'), 1, 'coll-cont merge after guard')
 }
 
 ; s62：嵌套异名容器遍历——四颗独立槽（两颗循环变量 + 两颗索引），内层 exit 落到外层 update
@@ -2244,11 +2249,12 @@ test-coll-nested = () {
     runner.eq(agg.unsup, 0, 'coll-nested unsup')
     runner.eq(ir.contains('define i64 @ve(%vec %vc1, %vec %vc2)'), 1, 'coll-nested define')
 
-    ; 两个容器各取一次长度，各用自己的 %vc（索引槽 %s7 属外层、%s11 属内层）
-    runner.eq(ir.contains('%v14 = call i64 @vec_len(%vec %vc1)'), 1, 'coll-nested outer len')
-    runner.eq(ir.contains('%v19 = call i64 @vec_len(%vec %vc2)'), 1, 'coll-nested inner len')
-    runner.eq(ir.contains('bb1:\n\t%v16 = load i64, i64* %s7'), 1, 'coll-nested outer hdr uses outer idx slot')
-    runner.eq(ir.contains('bb5:\n\t%v21 = load i64, i64* %s11'), 1, 'coll-nested inner hdr uses inner idx slot')
+    ; 两个容器各取一次长度，各用自己的 %vc（槽 %vs3／%vs5；索引槽 %s11 属外层、%s15 属内层）
+    ;   ⚠️ s163：值 id 隨 vec 形參鋪槽後移（外層容器 %vc18、內層 %vc24）
+    runner.eq(ir.contains('%v19 = call i64 @vec_len(%vec %vc18)'), 1, 'coll-nested outer len')
+    runner.eq(ir.contains('%v25 = call i64 @vec_len(%vec %vc24)'), 1, 'coll-nested inner len')
+    runner.eq(ir.contains('bb1:\n\t%v21 = load i64, i64* %s11'), 1, 'coll-nested outer hdr uses outer idx slot')
+    runner.eq(ir.contains('bb5:\n\t%v27 = load i64, i64* %s15'), 1, 'coll-nested inner hdr uses inner idx slot')
 
     ; 内层 exit（bb8）后继即外层 update（bb3）⇒ 外层计数照走
     runner.eq(ir.contains('bb8:\n\tbr label %bb3'), 1, 'coll-nested inner exit falls to outer update')
@@ -5002,12 +5008,11 @@ test-s99n-vec-elem-type-gate = () {
     runner.eq(ir.contains('@vec_free(%vec '), 0, 'sB str no i64 free')
 }
 
-; s122：含控制流（mem==1）的函數裡，vec 局部量【不鋪槽】——名字直接綁到 AST 值 id。
+; s122：含控制流（mem==1）的函數裡的 vec 局部量。s122 其口徑為【不鋪槽、名字直綁 AST 值 id】——
 ;   值 id 在【函數體頂層塊】定義 ⇒ 支配全函數各塊，循環/分支內讀都合法；值域結束時
-;   h2m-emit-releases 對最終 %vec 發一次 OP-VEC-FREE（中間 push 值不入清單，同 s99n）。
-;   ⚠️ 門禁（刻意保留）：vec 局部量的【宣告塊】必須是函數體頂層塊（bkn == fnbk）。
-;      宣告在受制塊（循環體/分支臂）內時，值 id 不支配後繼塊，且 scope-exit 釋放會落到
-;      函數出口（跨塊使用 ⇒ 非法 SSA）⇒ 計 unsup，寧缺勿錯。
+;   h2m-emit-releases 對最終 %vec 發一次 OP-VEC-FREE。
+;   ⚠️ s163 起改走【%vs 槽】：宣告塊不再有限制（循環體／match 臂內宣告亦放行），因為槽在 entry、
+;      體內寫回、塊外 load，SSA 支配恆合法；受控塊那條門禁（bkn == fnbk）已撤（见 ④）。
 test-s122-vec-local-mem1 = () {
 
     ; ① 頂層宣告 + 計數循環內讀：無 unsup；不發「store i64 %v…, i64* %s0」這種
@@ -5044,13 +5049,20 @@ test-s122-vec-local-mem1 = () {
     irc = h2m-lower-program(tc, aggc, rc)
     runner.eq(aggc.unsup, 0, 's122 chain-read no unsup')
 
-    ; ④ 門禁：循環體內的 vec 局部 ⇒ 仍計 unsup（不信者強降）
+    ; ④ 循環體內的 vec 局部：s122 時【值 id 不支配後繼塊】⇒ 門禁；s163 起改走 %vs 槽
+    ;   （槽在 entry，體內的 vec_new/push 一律寫回槽，塊外.load 回來讀）⇒ 門禁撤除，改釘
+    ;     「槽在 entry 鋪」、「退出前 VECLOAD + vec_free」。
+    ;   ⚠️ 已知殘余（leak 非 double-free）：槽只記「最後寫入值」，同一槽每輪迭代推入的舊緩衝
+    ;      會被最後一天覆蓋 ⇒ 只釋放最後一顆（與 h2m-emit-releases 註 ① 同族）。
     src-g = 'f = () (r i64) {\n    1 * {\n        B []i64 = [1]\n        r = B.len()\n    }\n}\n'
     tg = ast.make()
     rg = ps.parse(tg, ps.new(src-g.to-bytes()))
     aggg = h2m-new()
-    h2m-lower-program(tg, aggg, rg)
-    runner.gt(aggg.unsup, 0, 's122 loop-body vec local still gated')
+    irg = h2m-lower-program(tg, aggg, rg)
+    runner.eq(aggg.unsup, 0, 's122 loop-body vec local gate lifted')
+    runner.eq(irg.contains('%vs3 = alloca %vec'), 1, 's122 loop-body vec slotted in entry')
+    runner.eq(irg.contains('store %vec %vc13, %vec* %vs3'), 1, 's122 loop-body write-back to slot')
+    runner.eq(irg.contains('call void @vec_free(%vec '), 1, 's122 loop-body vec freed at exit')
 }
 
 test-sb-vec-mixed-elem-gate = () {
@@ -5117,7 +5129,8 @@ test-sb-str-param-sig = () {
 test-sb-str-index = () {
 
     ; []str 索引 → OP-VECGETSTR，回借用 %sv（vec_get_str），而非 i64 vec_get
-    ;   s129：索引读恆 ?T ⇒ 值位 match 解包（下標 i 由 match 主體的槽載入 ⇒ %v9）
+    ;   s129：索引读恆 ?T ⇒ 值位 match 解包
+    ;   ⚠️ s163：vec 形參鋪 %vs 槽 ⇒ 接收者由 entry 的 VECLOAD 得到（%vc11），下標 %v12
     src = 'pick = (xs []str, i i64) (r str) {\n    r = xs[i]: {\n        ok -> it\n\n        -> \'\'\n    }\n}\n'
     t = ast.make()
     b = src.to-bytes()
@@ -5125,7 +5138,7 @@ test-sb-str-index = () {
     root = ps.parse(t, p)
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
-    runner.eq(ir.contains('call %str-long @vec_get_str(%vec %vc1, i64 %v9)'), 1, 'sB str index get_str')
+    runner.eq(ir.contains('call %str-long @vec_get_str(%vec %vc11, i64 %v12)'), 1, 'sB str index get_str')
     runner.eq(ir.contains('@vec_get_i64('), 0, 'sB str index no i64 get')
 }
 
@@ -7314,6 +7327,515 @@ test-s136-byte-slice-field()
 test-s136-byte-slice-index()
 test-s136-field-recv-gate()
 test-s136-f64-slice-gate()
+
+; s158：str 子串四件套（starts-with / ends-with / contains / index）—— 值方法表 + 四個新 op。
+;   語義逐字鏡像 src/std/str.no:460/481/450/420；結果恒 i64（bool 走 0/1）。
+test-s158-strpref = () {
+    src = 'm = (s str) (r i64) {\n    r = s.starts-with(\'a\')\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's158 starts-with no unsup')
+    runner.eq(ir.contains('call i1 @str_starts_with('), 1, 's158 starts-with OP-STRPREF')
+    runner.eq(ir.contains('zext i1 %sp'), 1, 's158 starts-with zext to i64')
+}
+
+test-s158-strsuff = () {
+    src = 'm = (s str) (r i64) {\n    r = s.ends-with(\'a\')\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's158 ends-with no unsup')
+    runner.eq(ir.contains('call i1 @str_ends_with('), 1, 's158 ends-with OP-STRSUFF')
+}
+
+test-s158-strctns = () {
+    src = 'm = (s str) (r i64) {\n    r = s.contains(\'a\')\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's158 contains no unsup')
+    runner.eq(ir.contains('call i1 @str_contains('), 1, 's158 contains OP-STRCTNS')
+}
+
+test-s158-stridx = () {
+    src = 'm = (s str) (r i64) {\n    r = s.index(\'a\')\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's158 index no unsup')
+    runner.eq(ir.contains('call i64 @str_index('), 1, 's158 index OP-STRIDX')
+}
+
+; s158 門禁對照：缺參 / 參非 str 皆落門禁（不放寬、不猜）。
+test-s158-strpref-gate = () {
+    src = 'm = (s str) (r i64) {\n    r = s.starts-with()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    h2m-lower-program(t, agg, root)
+    runner.gt(agg.unsup, 0, 's158 starts-with no-arg gated')
+
+    src2 = 'm = (s str) (r i64) {\n    r = s.starts-with(1)\n}\n'
+    t2 = ast.make()
+    p2 = ps.new(src2.to-bytes())
+    root2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    h2m-lower-program(t2, agg2, root2)
+    runner.gt(agg2.unsup, 0, 's158 starts-with i64-arg gated')
+}
+
+; s158：h2m-ty-of 同步——四法皆 TY-I64（聽差落在 let 槽不綁 ⇒ 體內讀取記 ID 失敗）。
+test-s158-str-substr-ty = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 'a'))
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 'a', TY-STR)
+
+    ; ① starts-with
+    d1 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d1, recv)
+    ast.set-slot(t, d1, 0, ast.put-str(t, 'starts-with'))
+    c1 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c1, d1)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c1), TY-I64, 's158 starts-with ty')
+
+    ; ② ends-with
+    d2 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d2, recv)
+    ast.set-slot(t, d2, 0, ast.put-str(t, 'ends-with'))
+    c2 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c2, d2)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c2), TY-I64, 's158 ends-with ty')
+
+    ; ③ contains
+    d3 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d3, recv)
+    ast.set-slot(t, d3, 0, ast.put-str(t, 'contains'))
+    c3 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c3, d3)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c3), TY-I64, 's158 contains ty')
+
+    ; ④ index
+    d4 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d4, recv)
+    ast.set-slot(t, d4, 0, ast.put-str(t, 'index'))
+    c4 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c4, d4)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c4), TY-I64, 's158 index ty')
+
+    ; 對照：未支持的方法仍 -1（門禁不放寬）
+    d5 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d5, recv)
+    ast.set-slot(t, d5, 0, ast.put-str(t, 'nosuch-method'))
+    c5 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c5, d5)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c5), -1, 's158 unsupported method still -1')
+}
+
+; s159：str.to-bytes() —— O(N) 複製成自有 []byte（OP-STRTOBYTES）。
+;   語義逐字鏡像 src/std/str.no:694；結果型別 TY-VEC、rc=1 ⇒ rel-add 登記。
+test-s159-strtobytes = () {
+    src = 'm = (s str) (r []byte) {\n    r = s.to-bytes()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's159 to-bytes no unsup')
+    runner.eq(ir.contains('call %vec @str_to_bytes(%str-long'), 1, 's159 to-bytes OP-STRTOBYTES')
+    ; 結果必須登记釋放：作用域結束應發 OP-VEC-FREE（rc=1 自擁有緩衝）
+    runner.eq(ir.contains('@str_to_bytes'), 1, 's159 to-bytes helper wired')
+}
+
+; s159 門禁對照：帶參的 to-bytes(...) 落門禁（na == 0 才放行，不猜）。
+test-s159-strtobytes-gate = () {
+    src = 'm = (s str) (r []byte) {\n    r = s.to-bytes(1)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    h2m-lower-program(t, agg, root)
+    runner.gt(agg.unsup, 0, 's159 to-bytes with-arg gated')
+}
+
+; s159：h2m-ty-of 同步——to-bytes ⇒ TY-VEC（[]byte 與 []i64 共用 %vec 命名空間）。
+test-s159-strtobytes-ty = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 'a'))
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 'a', TY-STR)
+
+    d = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d, recv)
+    ast.set-slot(t, d, 0, ast.put-str(t, 'to-bytes'))
+    c = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c, d)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c), TY-VEC, 's159 to-bytes ty')
+
+    ; 對照：未支持的方法仍 -1（門禁不放寬）
+    d2 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d2, recv)
+    ast.set-slot(t, d2, 0, ast.put-str(t, 'slice-bytes'))
+    c2 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c2, d2)
+    ; ⚠️ s160 起 slice-bytes 已認領（回 TY-STR）——本條【原】斷言為 -1，是 s159 當時的
+    ;    誠實邊界（見 §79 ④）；改由 test-s160-strsliceb-ty 以 TY-STR 釘住现行語意。
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c2), TY-STR, 's159 slice-bytes ty (s160 起放行)')
+}
+
+; s160：str.slice-bytes(start,end) —— 按【字節偏移】截取子串 [start,end)，回【新配置】的 str。
+;   語義逐字鏡像 src/std/str.no:642（鉗制 + 逐元 1:1 複製）。三運算元走側池（同 OP-CALL）。
+test-s160-strsliceb = () {
+    src = 'm = (s str) (r str) {\n    r = s.slice-bytes(1, 3)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's160 slice-bytes no unsup')
+    runner.eq(ir.contains('call %str-long @str_slice_bytes('), 1, 's160 slice-bytes OP-STRSLICEB')
+    ; 接收者走型別反查（%sv），兩個引數是 i64 ⇒ Side-pool 三運算元都出现在呼叫裡
+    runner.eq(ir.contains('@str_slice_bytes(%str-long %sv'), 1, 's160 slice-bytes receiver is str value')
+    runner.eq(ir.contains(', i64 %v2, i64 %v3)'), 1, 's160 slice-bytes two i64 operands')
+}
+
+; s160 所有權：結果 rc=1 自擁有 ⇒ h2m-rel-add 登記；值被丟棄時作用域結束發 OP-RELEASE。
+;   （若直接流到輸出參 r，則所有權移轉給呼叫方，不發 RELEASE——與 s158/s159 同口徑。）
+test-s160-strsliceb-release = () {
+    src = 'm = (s str) (r str) {\n    x = s.slice-bytes(1, 3)\n    r = s\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's160 slice-bytes release no unsup')
+    runner.eq(ir.contains('@nolang_rc_release'), 1, 's160 slice-bytes discarded ⇒ OP-RELEASE')
+}
+
+; s160 門禁對照：只收【兩參】形（na == 2）；單參／三參落門禁（不猜）。
+test-s160-strsliceb-gate = () {
+    src = 'm = (s str) (r str) {\n    r = s.slice-bytes(1)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    h2m-lower-program(t, agg, root)
+    runner.gt(agg.unsup, 0, 's160 slice-bytes arity 1 gated')
+
+    src3 = 'm = (s str) (r str) {\n    r = s.slice-bytes(1, 2, 3)\n}\n'
+    t3 = ast.make()
+    p3 = ps.new(src3.to-bytes())
+    root3 = ps.parse(t, p3)
+    agg3 = h2m-new()
+    h2m-lower-program(t, agg3, root3)
+    runner.gt(agg3.unsup, 0, 's160 slice-bytes arity 3 gated')
+}
+
+; s160：h2m-ty-of 同步——slice-bytes ⇒ TY-STR（结果是新配置的 str，不是 []byte）。
+test-s160-strsliceb-ty = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 'a'))
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 'a', TY-STR)
+
+    d = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d, recv)
+    ast.set-slot(t, d, 0, ast.put-str(t, 'slice-bytes'))
+    c = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c, d)
+    a1 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, a1, 0, ast.put-str(t, '1'))
+    ast.kid-add(t, c, a1)
+    a2 = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, a2, 0, ast.put-str(t, '3'))
+    ast.kid-add(t, c, a2)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c), TY-STR, 's160 slice-bytes ty')
+
+    ; 對照：拿 str 方法表的其它未支持項仍 -1（門禁不放寬）
+    d2 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d2, recv)
+    ast.set-slot(t, d2, 0, ast.put-str(t, 'no-such-method'))
+    c2 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c2, d2)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c2), -1, 's160 unknown method still -1')
+}
+
+; s161：byte.to-i64() —— 恆等認領。noc 自舉子集【無 TY-BYTE】：byte 與 i64 共用
+;   TY-I64 碼／%v 槽（mir.no s136 口徑），故本臂不發任何指令（同 s152 的 str.copy 形）。
+;   語料真值路徑：compiler/src/ps.no:2287 `c = cb.to-i64()`（cb 為 byte）。
+test-s161-byte-toi64 = () {
+    ; 連叫兩次：恆等臂必須【非破壞】且可重放（不移動、不消費接收者值）
+    src = 'cj-s161a = (s str) (r i64) {\n    cb = s.byte(0): {\n        ok -> it\n\n        -> 0\n    }\n    c = cb.to-i64()\n    d = cb.to-i64()\n    r = c + d - 65\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's161 byte to-i64 unsup')
+    ; 恆等 ⇒ 不得引入任何執行期轉換helper（Go 側走 zext i8→i64，noc 不發指令）
+    runner.eq(ir.contains('to_i64'), 0, 's161 byte to-i64 no helper symbol')
+    ; c/d 已綁名 ⇒ 後續每次讀取值不再記 ID 失敗（ps-int-lit-value:c ×6 的消除）
+    runner.eq(ir.contains('ID:'), 0, 's161 byte to-i64 no ID failure')
+}
+
+; s161 門禁對照：帶參的 to-i64(...) 不落臂（na == 0 才放行，不猜）。
+test-s161-byte-toi64-gate = () {
+    src = 'cj-s161b = (s str) (r i64) {\n    cb = s.byte(0): {\n        ok -> it\n\n        -> 0\n    }\n    r = cb.to-i64(1)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    h2m-lower-program(t, agg, root)
+    runner.gt(agg.unsup, 0, 's161 byte to-i64 with-arg gated')
+}
+
+; s161：h2m-ty-of 同步——to-i64 ⇒ TY-I64；未支持的方法仍 -1（門禁不放寬）。
+test-s161-byte-toi64-ty = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 'a'))
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 'a', TY-I64)
+
+    d = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d, recv)
+    ast.set-slot(t, d, 0, ast.put-str(t, 'to-i64'))
+    c = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c, d)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c), TY-I64, 's161 to-i64 ty')
+
+    ; 對照：同型別的未支持項仍 -1（門禁不放寬）
+    d2 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d2, recv)
+    ast.set-slot(t, d2, 0, ast.put-str(t, 'to-u64'))
+    c2 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c2, d2)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c2), -1, 's161 to-u64 still -1')
+}
+
+; s162：[]结构体（TY-VECSTRUCT=7）—— 具名结构体元素的切片。
+;   ① 解析：`pts []Pt` 的欄位型別節點此前在 h2m-tynode-code 的 K-SLICE-TYPE 臂只認
+;      i64/byte/str，元素是具名結構體時回 -1 ⇒ psst.toks／ast.nodes 等欄位連【只讀描述符】
+;      的 .len() 都推不出型別（ps-peek／ps-peek-at／ps-peek-token 整批 dropped）。
+;   ② LLVM 層：vec 描述符 {i32 len,i32 cap,i64 data} 與元素型別無關 ⇒ TY-VECSTRUCT 映射
+;      %vec/%vc，.len() 逐字正確（同 TY-VEC/TY-VECSTR 口徑）。
+;   ③ ⚠️ 元素級操作（索引讀／push／contains…）在自舉子集【沒有】單型助手 ⇒ 仍按門禁。
+test-s162-vecstruct-len = () {
+    src = 'Pt {\n    x i64\n}\n\nHolder {\n    pts []Pt\n    id i64\n}\n\nf = (h Holder) (r i64) {\n    r = h.pts.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's162 vecstruct .len() unsup')
+    ; 描述符計數走 @vec_len(%vec %vc<…>)——與元素型別無關的同一助手
+    runner.eq(ir.contains('call i64 @vec_len'), 1, 's162 vecstruct len emits vec_len')
+    ; 欄位型別必須真的解析成 TY-VECSTRUCT（7），而不是回落 -1
+    runner.eq(ir.contains('%struct.s1 = type { %vec, i64 }'), 1, 's162 struct decl has %vec field')
+    ; 接收者 h 已綁名 ⇒ 不得有 ID 失敗
+    runner.eq(ir.contains('ID:'), 0, 's162 vecstruct len no ID failure')
+}
+
+; s162 門禁對照：[]结构体的【元素級】方法（.push）不得落臂—— TY-VEC 那塊的 push 臂
+;   不帶 rty 守衛，一旦把 TY-VECSTRUCT 放寬進去會靜默發成 OP-VECPUSH（@vec_push_i64
+;   是單型 i64 助手，误用之會寫壞結構體元素）⇒ 错码。此用例釘住「不放寬」。
+test-s162-vecstruct-gate = () {
+    src = 'Pt {\n    x i64\n}\n\nHolder {\n    pts []Pt\n    id i64\n}\n\nf = (h Holder) (r i64) {\n    h.pts.push(1)\n    r = h.id\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    h2m-lower-program(t, agg, root)
+    runner.gt(agg.unsup, 0, 's162 vecstruct element-level method gated')
+}
+
+; s162：h2m-ty-of 同步——TY-VECSTRUCT 接收者的 .len() ⇒ TY-I64；其它方法仍 -1。
+test-s162-vecstruct-len-ty = () {
+    t = ast.make()
+    sg = h2m-sigs-new()
+    agg = h2m-new()
+    recv = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, recv, 0, ast.put-str(t, 'a'))
+    ls = h2m-lst-new()
+    h2m-lst-add(ls, 'a', TY-VECSTRUCT)
+
+    d = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d, recv)
+    ast.set-slot(t, d, 0, ast.put-str(t, 'len'))
+    c = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c, d)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c), TY-I64, 's162 vecstruct len ty')
+
+    ; 對照：同型別的未支持項仍 -1（門禁不放寬）
+    d2 = ast.add(t, asp.K-DOT-EXPRESSION)
+    ast.kid-add(t, d2, recv)
+    ast.set-slot(t, d2, 0, ast.put-str(t, 'push'))
+    c2 = ast.add(t, asp.K-CALL-EXPRESSION)
+    ast.kid-add(t, c2, d2)
+    runner.eq(h2m-ty-of(t, sg, ls, agg, c2), -1, 's162 vecstruct push still -1')
+}
+
+; s163：mem 模式下 vec.push（%vs 槽寫回）。舊口徑要求 c.mem == 0——只要函式體內有控制流即入 mem，
+;   vec 局部量【不鋪槽】、值 id 由名字綁定傳遞，值 id 在受控塊內定義就不支配合併塊 ⇒ 整條 push 落門禁。
+;   s163 補上 vec 槽三件套（OP-VECALLOC/STORE/LOAD）：push 後把【新】描述符 store 回槽，跨塊讀才拿得到。
+test-s163-mempush-if = () {
+    src = 'f = () (r i64) {\n    xs []i64 = with-cap(2)\n    c = 1\n    if c == 1 {\n        xs.push(7)\n    }\n    r = xs.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's163 mem-mode if-block push unsup')
+    ; 槽三件套齊備：entry 鋪 alloca %vec、push 結果 store 回槽、塊外 load 回來讀 len
+    runner.eq(ir.contains('%vs'), 1, 's163 mempush has %vs slot namespace')
+    runner.eq(ir.contains('alloca %vec'), 1, 's163 mempush emits alloca %vec')
+    runner.eq(ir.contains('store %vec'), 1, 's163 mempush stores pushed vec')
+    runner.eq(ir.contains('load %vec'), 1, 's163 mempush loads vec after block')
+    runner.eq(ir.contains('call %vec @vec_push_i64'), 1, 's163 mempush still uses vec_push_i64')
+    ; 不得有 ID 失敗（接收者必须查得到名）
+    runner.eq(ir.contains('ID:'), 0, 's163 mempush no ID failure')
+}
+
+; s163：vec 形參在 mem 模式下同鋪槽——push 寫回的是【形參的槽】（h2m-slot-init-arg 先存了实参）。
+;   漏掉 slot-init-arg 這條會令槽內只剩零初始化的空 vec ⇒ 體內讀到错值（静默错码），故本用例釘住。
+test-s163-mempush-param = () {
+    src = 'f = (ys []i64) (r i64) {\n    c = 1\n    if c == 1 {\n        ys.push(3)\n    }\n    r = ys.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's163 mem-mode param push unsup')
+    runner.eq(ir.contains('alloca %vec'), 1, 's163 param push has vec slot')
+    runner.eq(ir.contains('store %vec'), 1, 's163 param push writes back to slot')
+}
+
+; s163 門禁對照：推入【非裸標識符】接收者（`a[0].push(x)`）仍須落門禁——無從寫回槽，
+;   認領它只能靠「發了 VECPUSH 卻丟進死碼」的静默错码。此用例釘住「不放寬」。
+test-s163-mempush-gate = () {
+    src = 'f = (zs []i64) (r i64) {\n    c = 1\n    if c == 1 {\n        zs[0].push(1)\n    }\n    r = zs.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    h2m-lower-program(t, agg, root)
+
+    runner.gt(agg.unsup, 0, 's163 index-receiver push still gated')
+}
+
+; s163：釋放改以【槽】為單位。push 結果的值 id 隻支配受控塊，直接拿它發 OP-VEC-FREE 是
+;   「非支配指令」（實測 clang 拒收：Instruction does not dominate all uses!）；
+;   退出時必須 VECLOAD 槽 → @vec_free。此用例釘住「釋放走槽」這條新口徑。
+test-s163-mempush-release = () {
+    src = 'f = () (r i64) {\n    xs []i64 = with-cap(2)\n    c = 1\n    if c == 1 {\n        xs.push(7)\n    }\n    r = xs.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's163 mempush release unsup')
+    runner.eq(ir.contains('%vs'), 1, 's163 release has vec slot namespace')
+    runner.eq(ir.contains('= load %vec, %vec* %vs'), 1, 's163 release loads slot before free')
+    runner.eq(ir.contains('call void @vec_free(%vec'), 1, 's163 release frees via vec_free')
+}
+
+; s164：mem 槽模式（flow>0 ⇒ c.mem==1）下，已標注 vec 名的【無標注再賦值】
+;   `xs = with-cap(n)`——註解位是空節點（K-LET-STATEMENT），tynode-code 必然回 -1；
+;   舊路徑把已知型別降成 -1、直落 cap-ok==0 門禁。修法：名字已在 mem 槽且槽型別是
+;   vec ⇒「賦值不改型別」沿用槽型別發 OP-VECNEWCAPSTR + OP-VECSTORE。
+test-s164-vec-reassign-mem = () {
+    src = 'f = () (r i64) {\n    xs []str = with-cap(2)\n    n = xs.len()\n    c = 1\n    if c == 1 {\n        xs = with-cap(0)\n    }\n    r = n + xs.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's164 mem reassign unsup')
+    runner.eq(ir.contains('%vs'), 1, 's164 mem reassign uses vec slot namespace')
+    runner.eq(ir.contains('store %vec %vc'), 1, 's164 mem reassign stores vec back to slot')
+    runner.eq(ir.contains('call %vec @vec_new_cap_str('), 1, 's164 mem reassign keeps cap helper')
+}
+
+; s164：無控制流（mem==0）的 decl + 無標注再賦值——走 var 表（h2m-var-find/vty-at）
+;   沿用既有 vec 型別：同樣 0 unsup，且不鋪 %vs 槽（值模式）。
+test-s164-vec-reassign-straight = () {
+    src = 'f = () (r i64) {\n    g []str = with-cap(2)\n    g = with-cap(0)\n    r = g.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's164 straight reassign unsup')
+    runner.eq(ir.contains('call %vec @vec_new_cap_str('), 1, 's164 straight keeps cap helper')
+    runner.eq(ir.contains('%vs'), 0, 's164 straight stays value mode no slot')
+}
+
+; s164 守衛：名字從未被標注（首見即無標注 with-cap）⇒ 無型別可沿用，仍應落門禁。
+test-s164-vec-reassign-gate = () {
+    src = 'f = () (r i64) {\n    c = 1\n    if c == 1 {\n        g = with-cap(0)\n    }\n    r = g.len()\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    h2m-lower-program(t, agg, root)
+
+    runner.gt(agg.unsup, 0, 's164 first-seen unannotated still gated')
+}
+
+test-s158-strpref()
+test-s158-strsuff()
+test-s158-strctns()
+test-s158-stridx()
+test-s158-strpref-gate()
+test-s158-str-substr-ty()
+test-s159-strtobytes()
+test-s159-strtobytes-gate()
+test-s159-strtobytes-ty()
+test-s160-strsliceb()
+test-s160-strsliceb-release()
+test-s160-strsliceb-gate()
+test-s160-strsliceb-ty()
+test-s161-byte-toi64()
+test-s161-byte-toi64-gate()
+test-s161-byte-toi64-ty()
+test-s162-vecstruct-len()
+test-s162-vecstruct-gate()
+test-s162-vecstruct-len-ty()
+test-s163-mempush-if()
+test-s163-mempush-param()
+test-s163-mempush-gate()
+test-s163-mempush-release()
+test-s164-vec-reassign-mem()
+test-s164-vec-reassign-straight()
+test-s164-vec-reassign-gate()
 
 runner.summary()
 f = runner.failed-count()

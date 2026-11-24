@@ -58,6 +58,31 @@ _noui-version = () (v str)
 _noui-clip = (x i32, y i32, w i32, h i32) ()
 #{c}
 _noui-clip-clear = () ()
+#{c}
+; 阶段52：窗口选项（C-WINDOW-EXT 的真窗口出口）
+_noui-window-set-title = (t str) ()
+#{c}
+_noui-window-set-resizable = (yes i32) ()
+#{c}
+_noui-window-set-min-size = (w i32, h i32) ()
+#{c}
+_noui-window-set-max-size = (w i32, h i32) ()
+#{c}
+_noui-window-set-fullscreen = (yes i32) ()
+#{c}
+_noui-window-set-always-on-top = (yes i32) ()
+#{c}
+_noui-window-set-bordered = (yes i32) ()
+#{c}
+_noui-window-set-opacity = (o f64) ()
+#{c}
+_noui-window-set-size = (w i32, h i32) ()
+#{c}
+_noui-window-get-size = () (wh i64)
+#{c}
+_noui-window-get-flags = () (f i64)
+#{c}
+_noui-window-get-title = () (t str)
 
 # /noui/src/cmp-scene
 
@@ -222,6 +247,71 @@ app-wheel = () (d i64) {
 }
 
 ; ============================================================================
+; 阶段52：窗口选项（C-WINDOW-EXT 的真窗口出口）
+;
+; 设计：components.no 只持有纯状态（we-* 池），真窗口调用集中在这里，
+; 因为 components.no 不能 import app.no（会成环：app -> cmp-scene -> components）。
+; 每帧 app-frame() 统一扫一遍已挂载的 C-WINDOW-EXT，谁 on 谁生效。
+; ============================================================================
+; SDL 窗口标志位（与 SDL3 的 SDL_WindowFlags 对齐，供 app-window-flags 判位）
+APP-WF-FULLSCREEN = 1
+APP-WF-BORDERLESS = 16
+APP-WF-RESIZABLE = 32
+APP-WF-ALWAYS-ON-TOP = 65536
+
+; 把一个 C-WINDOW-EXT 的状态推到真窗口；h 非法/非该类型/on=0 时静默跳过
+app-window-apply = (h i64) () {
+    (h < 0) -> return
+    (cmp-kind(h) != C-WINDOW-EXT) -> return
+    (we-on(h) == 0) -> return
+    _noui-window-set-title(we-title(h))
+    _noui-window-set-resizable(we-resizable(h))
+    _noui-window-set-min-size(we-min-x(h), we-min-y(h))
+    _noui-window-set-max-size(we-max-x(h), we-max-y(h))
+    _noui-window-set-fullscreen(we-fullscreen(h))
+    _noui-window-set-always-on-top(we-always-on-top(h))
+    _noui-window-set-bordered(we-bordered(h))
+    _noui-window-set-opacity(we-opacity(h).to-f64() / 100.0)
+    ; 显式尺寸：两边都 >0 才覆盖窗口大小，并同步 app 侧的布局尺寸
+    (we-w(h) > 0) -> {
+        (we-h(h) > 0) -> {
+            _noui-window-set-size(we-w(h), we-h(h))
+            APP-WIN-W = we-w(h)
+            APP-WIN-H = we-h(h)
+            APP-WIN-WF = cs-mul(we-w(h), 100)
+            APP-WIN-HF = cs-mul(we-h(h), 100)
+        }
+    }
+}
+
+; 扫全部组件句柄，逐个应用窗口选项
+app-window-apply-all = () () {
+    n = cmp-count()
+    i <- [0..n): {
+        (cmp-kind(i) == C-WINDOW-EXT) -> { app-window-apply(i) }
+    }
+}
+
+; 真窗口标题（供 demo / 断言读回）
+app-window-title = () (t str) {
+    t = _noui-window-get-title()
+}
+
+; 真窗口像素尺寸（宽、高）
+app-window-size = () (w i64, h i64) {
+    wh = _noui-window-get-size()
+    w = wh >> 32
+    h = wh & 0xFFFFFFFF
+    (w < 0) -> { w = 0 }
+    (h < 0) -> { h = 0 }
+}
+
+; 真窗口 SDL 标志位（用 APP-WF-* 常量判位）
+app-window-flags = () (f i64) {
+    f = _noui-window-get-flags()
+}
+
+; ============================================================================
 ; 命中 + hover 高亮
 ; ============================================================================
 app-hover = (root i64, px i64, py i64) (h i64) {
@@ -290,8 +380,10 @@ app-draw-scene = () {
     }
 }
 
-; 一帧：清屏底色 -> 绘制 Scene -> present
+; 一帧：应用窗口选项 -> 清屏底色 -> 绘制 Scene -> present
 app-frame = () {
+    ; 阶段52：先把挂载的 C-WINDOW-EXT 推到真窗口，再按新尺寸布局/绘制
+    app-window-apply-all()
     c = APP-BGC[0]: {
         ok -> it
 

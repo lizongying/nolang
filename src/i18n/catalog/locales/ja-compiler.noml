@@ -124,7 +124,7 @@ Nolang プログラミング言語（バージョン %s）
   ソース: ~/no/sources.noml  ($NOHUB_SOURCES で上書き、-source <name> で選択)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
-                    依存を追加（事前ビルド済み AST: <tool>.ast.zip）
+                    依存を追加（事前ビルド済み AST: <tool>-ast.zip）
                     バージョン省略時は最新リリース。package.noml に書き込まれる
                     キーは <tool>@<host>/<owner>/<repo> です。
     例:
@@ -152,11 +152,11 @@ Nolang プログラミング言語（バージョン %s）
       no uninstall nogit
   no sync              依存を同期/ダウンロード
   no pack [-o <file>] [<dir|file.no>]
-                    モジュールの AST を <tool>.ast.zip（gob + zip）にパッケージ
+                    モジュールの AST を <tool>-ast.zip（gob + zip）にパッケージ
                     字句解析+構文解析のみ——LLVM ツールチェーン不要、CI に最適。
     例:
-      no pack                     現在のパッケージをパッケージ -> dist/<name>.ast.zip
-      no pack -o nogit.ast.zip    出力パスを明示（CI 向け）
+      no pack                     現在のパッケージをパッケージ -> dist/<name>-ast.zip
+      no pack -o nogit-ast.zip    出力パスを明示（CI 向け）
       no pack nogit.no            単一のソースファイルをパッケージ
   no pub [-o <file>]  パッケージ（no pack と同じ）して公開、registry への
                     アップロードは未実装のため現状はパッケージのみ

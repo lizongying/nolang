@@ -1,0 +1,305 @@
+; ============================================================================
+; noui 窗口 demo：工具栏（阶段 68）—— C-TOOLBAR
+;
+; 流水线：app-init -> cmp-toolbar -> tlb-add / tlb-set-item / tlb-select /
+;          tlb-select-next / tlb-select-prev / tlb-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-TOOLBAR 分支 +
+;      cs-paint-toolbar）：FIELD 底 + 一条横排 chip
+;      （未选中 TRACK 盒、当前项 ACCENT 盒，文案一律 FG 垂直居中）
+;   -> 键盘：a=追加条目；n/p=下一项 / 上一项；x=改第 0 项；c=清空；
+;            r=重建默认；d=切换 disabled；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-toolbar.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选条目标签（a 轮取）----
+tl-cand-label = (i i64) (s str) {
+    s = 'file'
+    (i == 1) -> { s = 'edit' }
+    (i == 2) -> { s = 'view' }
+    (i == 3) -> { s = 'help' }
+    (i == 4) -> { s = 'tools' }
+    (i == 0) -> { s = 'file' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+tl-build-default = (h i64) () {
+    tlb-clear(h)
+    tlb-add(h, 'file')
+    tlb-add(h, 'edit')
+    tlb-add(h, 'view')
+    tlb-select(h, 0)
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui toolbar')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段68: toolbar')
+hint = cmp-label('a=add n=next p=prev x=item0 c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+tl = cmp-toolbar()
+tl-build-default(tl)
+
+cmp-add-child(root, title)
+cmp-add-child(root, tl)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一个条目
+        (k == 97) -> {
+            n = tlb-count(tl)
+            j = ct-rem(n, 5)
+            tlb-add(tl, tl-cand-label(j))
+        }
+        ; n：下一项
+        (k == 110) -> { tlb-select-next(tl) }
+        ; p：上一项
+        (k == 112) -> { tlb-select-prev(tl) }
+        ; x：改第 0 项
+        (k == 120) -> {
+            n = tlb-count(tl)
+            (n > 0) -> {
+                cur = tlb-item(tl, 0)
+                (cur == 'renamed') -> { tlb-set-item(tl, 0, 'file') }
+                (cur != 'renamed') -> { tlb-set-item(tl, 0, 'renamed') }
+            }
+        }
+        ; c：清空条目
+        (k == 99) -> { tlb-clear(tl) }
+        ; r：重建默认
+        (k == 114) -> { tl-build-default(tl) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(tl, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(tl, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(tl, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = tlb-count(tl)
+    sel = tlb-selected(tl)
+    dis = cmp-has(tl, F-DISABLED)
+    cmp-set-text(stat, 'count={cn} selected={sel} disabled={dis}')
+    (cn > 0) -> {
+        cmp-set-text(stat2, 'first={tlb-item(tl, 0)} last={tlb-item(tl, cs-sub(cn, 1))}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no items') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（'file' / 'edit' / 'view'，选中第 0 项），按 cs-rect(tl)
+;   推导坐标。内边距 1200 / 条高 4000 / chip 内白 800 / chip 间距 800。
+;   槽顶 sy = by+1200；文本垂直居中 → 文本顶 ty = sy + (4000-2400)/2 = sy+800。
+;   每个 chip 盒宽 = 文案宽 + 1600，左缘依次累加（盒宽 + 800）。
+;   场景里还有 title / hint / stat / stat2 四条标签文本。
+; ============================================================================
+cmp-flag-clear(tl, F-DISABLED)
+tl-build-default(tl)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+qpad = 1200
+barh = 4000
+cpad = 800
+cgap = 800
+toff = 800
+
+bx, by, bw, bh = cs-rect(tl)
+sy = cs-add(by, qpad)
+ty = cs-add(sy, toff)
+cw0 = cs-add(cs-text-w('file'), cs-mul(cpad, 2))
+step = cs-add(cw0, cgap)
+cx0 = cs-add(bx, qpad)
+cx1 = cs-add(cx0, step)
+cx2 = cs-add(cx1, step)
+
+c1 = tlb-count(tl) == 3
+c2 = tlb-selected(tl) == 0
+c3 = tlb-item(tl, 0) == 'file'
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = bh == 6400
+c6 = find-rect-color(cx0, sy, cw0, barh) == cs-theme(CS-TH-ACCENT)
+c7 = find-rect-color(cx1, sy, cw0, barh) == cs-theme(CS-TH-TRACK)
+c8 = find-rect-color(cx2, sy, cw0, barh) == cs-theme(CS-TH-TRACK)
+c9 = find-text('file', cs-add(cx0, cpad), ty) == 1
+c10 = find-text-color('file', cs-add(cx0, cpad), ty) == cs-theme(CS-TH-FG)
+c11 = find-text('edit', cs-add(cx1, cpad), ty) == 1
+c12 = find-text('view', cs-add(cx2, cpad), ty) == 1
+c13 = cs-text-count() == 7
+
+; 把当前项切到第 2 项：ACCENT 跟着走
+tlb-select(tl, 2)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c14 = tlb-selected(tl) == 2
+c15 = find-rect-color(cx0, sy, cw0, barh) == cs-theme(CS-TH-TRACK)
+c16 = find-rect-color(cx2, sy, cw0, barh) == cs-theme(CS-TH-ACCENT)
+
+; 清空：只剩 FIELD 底，一条文本指令都不发
+tlb-clear(tl)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tl)
+c17 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c18 = cs-text-count() == 4
+c19 = tlb-selected(tl) == -1
+
+; 重新加一项：自动高亮第 0 项
+tlb-add(tl, 'solo')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tl)
+sw = cs-add(cs-text-w('solo'), cs-mul(cpad, 2))
+c20 = tlb-count(tl) == 1
+c21 = tlb-selected(tl) == 0
+c22 = find-rect-color(cs-add(bx, qpad), cs-add(by, qpad), sw, barh) == cs-theme(CS-TH-ACCENT)
+c23 = cs-text-count() == 5
+
+; disabled：写操作全部空操作
+cmp-flag-set(tl, F-DISABLED)
+tlb-add(tl, 'no')
+tlb-set-item(tl, 0, 'no')
+tlb-select(tl, 1)
+tlb-select-next(tl)
+tlb-clear(tl)
+c24 = tlb-count(tl) == 1
+c25 = tlb-item(tl, 0) == 'solo'
+c26 = tlb-selected(tl) == 0
+cmp-flag-clear(tl, F-DISABLED)
+
+; 重建默认：几何回到最初
+tl-build-default(tl)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tl)
+c27 = find-rect-color(cs-add(bx, qpad), cs-add(by, qpad), cw0, barh) == cs-theme(CS-TH-ACCENT)
+c28 = find-text('file', cs-add(cs-add(bx, qpad), cpad), ty) == 1
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+cn5 = tlb-count(tl)
+print('bye frames={fr} keys={kk} clicks={ck} count={cn5} w={bw} h={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28) -> {
+    print('toolbar render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28)) -> {
+    print('FAIL: toolbar render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

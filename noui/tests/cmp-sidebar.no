@@ -1,0 +1,343 @@
+; 阶段69：C-SIDEBAR（分组 + 条目 + 折叠）无窗口断言
+; 纯逻辑：默认 / 组池 / 条目池（含所属组）/ 折叠位 /
+;          多句柄隔离 / disabled 空操作 / 测算 intrinsic / 渲染几何
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：0 组 / 0 条 / 越界空串 / 未折叠 / 未 disabled / 不是视觉容器
+; ============================================================================
+sd = cmp-sidebar()
+
+u1 = cmp-kind(sd) == C-SIDEBAR
+u2 = sdb-group-count(sd) == 0
+u3 = sdb-item-count(sd) == 0
+u4 = sdb-group(sd, 0) == ''
+u5 = sdb-group(sd, -1) == ''
+u6 = sdb-item(sd, 0) == ''
+u7 = sdb-item-group(sd, 0) == -1
+u8 = sdb-collapsed(sd) == 0
+u9 = cmp-has(sd, F-DISABLED) == 0
+u10 = cs-is-container(cmp-kind(sd)) == 0
+
+; ============================================================================
+; 2. 组池读写
+; ============================================================================
+g0 = sdb-add-group(sd, 'alpha')
+g1 = sdb-add-group(sd, 'beta')
+g2 = sdb-add-group(sd, 'gamma')
+u11 = g0 == 0
+u12 = g1 == 1
+u13 = g2 == 2
+u14 = sdb-group-count(sd) == 3
+u15 = sdb-group(sd, 0) == 'alpha'
+u16 = sdb-group(sd, 2) == 'gamma'
+
+sdb-set-group(sd, 1, 'BETA')
+u17 = sdb-group(sd, 1) == 'BETA'
+sdb-set-group(sd, 9, 'x')
+sdb-set-group(sd, -1, 'x')
+u18 = sdb-group-count(sd) == 3
+u19 = sdb-group(sd, 0) == 'alpha'
+
+; ============================================================================
+; 3. 条目池（扁平）+ 所属组
+; ============================================================================
+i0 = sdb-add-item(sd, 0, 'one')
+i1 = sdb-add-item(sd, 0, 'two')
+i2 = sdb-add-item(sd, 1, 'three')
+u20 = i0 == 0
+u21 = i1 == 1
+u22 = i2 == 2
+u23 = sdb-item-count(sd) == 3
+u24 = sdb-item(sd, 0) == 'one'
+u25 = sdb-item(sd, 2) == 'three'
+u26 = sdb-item-group(sd, 0) == 0
+u27 = sdb-item-group(sd, 1) == 0
+u28 = sdb-item-group(sd, 2) == 1
+u29 = sdb-item(sd, 3) == ''
+u30 = sdb-item-group(sd, 3) == -1
+
+sdb-set-item(sd, 0, 'ONE')
+u31 = sdb-item(sd, 0) == 'ONE'
+sdb-set-item(sd, 9, 'x')
+sdb-set-item(sd, -1, 'x')
+u32 = sdb-item-count(sd) == 3
+u33 = sdb-item(sd, 2) == 'three'
+
+; 组号越界：写空操作，返回 -1
+bad = sdb-add-item(sd, 9, 'no')
+u34 = bad == -1
+bad2 = sdb-add-item(sd, -1, 'no')
+u35 = bad2 == -1
+u36 = sdb-item-count(sd) == 3
+
+; 各组条目数
+u37 = sdb-group-size(sd, 0) == 2
+u38 = sdb-group-size(sd, 1) == 1
+u39 = sdb-group-size(sd, 2) == 0
+u40 = sdb-group-size(sd, 9) == 0
+
+; ============================================================================
+; 4. 折叠位
+; ============================================================================
+sdb-set-collapsed(sd, 1)
+u41 = sdb-collapsed(sd) == 1
+sdb-set-collapsed(sd, 0)
+u42 = sdb-collapsed(sd) == 0
+
+; ============================================================================
+; 5. 清空（先清条目再清组，两个都复位）
+; ============================================================================
+sdb-clear-items(sd)
+u43 = sdb-item-count(sd) == 0
+u44 = sdb-group-count(sd) == 3
+x0 = sdb-add-item(sd, 0, 'again')
+u45 = x0 == 0
+u46 = sdb-item(sd, 0) == 'again'
+
+sdb-clear-groups(sd)
+u47 = sdb-group-count(sd) == 0
+u48 = sdb-item-count(sd) == 1
+y0 = sdb-add-group(sd, 'solo')
+u49 = y0 == 0
+u50 = sdb-group(sd, 0) == 'solo'
+
+sdb-clear(sd)
+u51 = sdb-group-count(sd) == 0
+u52 = sdb-item-count(sd) == 0
+
+; ============================================================================
+; 6. 多句柄隔离
+; ============================================================================
+s2 = cmp-sidebar()
+s3 = cmp-sidebar()
+sdb-add-group(s2, 'p')
+sdb-add-group(s3, 'q')
+sdb-add-item(s2, 0, 'a')
+sdb-add-item(s3, 0, 'b')
+sdb-add-item(s3, 0, 'c')
+sdb-set-collapsed(s3, 1)
+
+u53 = sdb-group-count(s2) == 1
+u54 = sdb-group-count(s3) == 1
+u55 = sdb-item-count(s2) == 1
+u56 = sdb-item-count(s3) == 2
+u57 = sdb-item(s3, 1) == 'c'
+u58 = sdb-collapsed(s2) == 0
+u59 = sdb-collapsed(s3) == 1
+
+; ============================================================================
+; 7. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(s3, F-DISABLED)
+sdb-add-group(s3, 'no')
+sdb-set-group(s3, 0, 'no')
+sdb-add-item(s3, 0, 'no')
+sdb-set-item(s3, 0, 'no')
+sdb-set-collapsed(s3, 0)
+sdb-clear(s3)
+u60 = sdb-group-count(s3) == 1
+u61 = sdb-group(s3, 0) == 'q'
+u62 = sdb-item-count(s3) == 2
+u63 = sdb-item(s3, 0) == 'b'
+u64 = sdb-collapsed(s3) == 1
+cmp-flag-clear(s3, F-DISABLED)
+
+; ============================================================================
+; 8. 测算 intrinsic
+;    空：宽 = 2*1200 = 2400 夹 6400；高 = 2400 夹 CS-BTN_H(4000)
+;    高 = 2*1200 + Σ_g(组头 2400 + 展开时该组条目数*2400) + (N-1)*800
+;    宽 = 2*1200 + max(组头宽, 展开时条目宽+缩进 1600)
+; ============================================================================
+m1 = cmp-sidebar()
+v1w, v1h = cs-measure(m1)
+u65 = v1w == 6400
+u66 = v1h == 4000
+
+; 一组 + 一条 'one'(2400)：高 = 2400 + 2400 + 2400 = 7200
+; 宽 = 2400 + max('g1'=1600, 2400+1600=4000) = 6400
+m2 = cmp-sidebar()
+sdb-add-group(m2, 'g1')
+sdb-add-item(m2, 0, 'one')
+v2w, v2h = cs-measure(m2)
+u67 = v2w == 6400
+u68 = v2h == 7200
+
+; 折叠后只画组头：高 = 2400 + 2400 = 4800
+sdb-set-collapsed(m2, 1)
+v3w, v3h = cs-measure(m2)
+u69 = v3h == 4800
+u70 = v3w == 6400
+sdb-set-collapsed(m2, 0)
+
+; 长条目 'abcdefghij'(8000)：宽 = 2400 + 8000+1600 = 12000
+m3 = cmp-sidebar()
+sdb-add-group(m3, 'g')
+sdb-add-item(m3, 0, 'abcdefghij')
+v4w, v4h = cs-measure(m3)
+u71 = v4w == 12000
+u72 = v4h == 7200
+
+; 两组：高 = 2400 + (2400+2*2400) + 800 + (2400+2400) = 15200
+m4 = cmp-sidebar()
+sdb-add-group(m4, 'alpha')
+sdb-add-item(m4, 0, 'one')
+sdb-add-item(m4, 0, 'two')
+sdb-add-group(m4, 'beta')
+sdb-add-item(m4, 1, 'three')
+v5w, v5h = cs-measure(m4)
+u73 = v5h == 15200
+u74 = v5w == 8000
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m4, 20000)
+cmp-set-sh(m4, 9000)
+v6w, v6h = cs-measure(m4)
+u75 = v6w == 20000
+u76 = v6h == 9000
+cmp-set-sw(m4, 0)
+cmp-set-sh(m4, 0)
+
+; ============================================================================
+; 9. 渲染（m4：两组三条，未折叠）
+;    外层 18000 → 内容宽 15600（intrinsic 更小，叶子横向被拉伸到父内容宽）
+;    面板 (1200,1200,15600,15200) FIELD
+;    组头 @ (bx+1200, ...) MUTED；条目 @ (bx+1200+1600, ...) FG
+;    alpha y=by+1200；one y=+2400；two y=+4800；beta y=+8000；three y=+2400
+;    文本指令共 5 条
+; ============================================================================
+cs-clear()
+r = cmp-sidebar()
+sdb-add-group(r, 'alpha')
+sdb-add-item(r, 0, 'one')
+sdb-add-item(r, 0, 'two')
+sdb-add-group(r, 'beta')
+sdb-add-item(r, 1, 'three')
+rt = cmp-root()
+cmp-add-child(rt, r)
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+
+p0 = 1200
+lh = 2400
+ind = 1600
+gap = 800
+
+bx, by, bw, bh = cs-rect(r)
+gx = cs-add(bx, p0)
+ix = cs-add(gx, ind)
+ay = cs-add(by, p0)
+oy = cs-add(ay, lh)
+ty = cs-add(oy, lh)
+byy = cs-add(cs-add(ty, lh), gap)
+thy = cs-add(byy, lh)
+
+u77 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u78 = cs-text-color-at('alpha', gx, ay) == cs-theme(CS-TH-MUTED)
+u79 = cs-text-color-at('one', ix, oy) == cs-theme(CS-TH-FG)
+u80 = cs-text-color-at('two', ix, ty) == cs-theme(CS-TH-FG)
+u81 = cs-text-color-at('beta', gx, byy) == cs-theme(CS-TH-MUTED)
+u82 = cs-text-color-at('three', ix, thy) == cs-theme(CS-TH-FG)
+u83 = cs-text-count() == 5
+u84 = bw == 15600
+u85 = bh == 15200
+
+; 折叠：条目全不画，面板变矮
+sdb-set-collapsed(r, 1)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw, bh = cs-rect(r)
+u86 = bh == 8000
+u87 = cs-text-count() == 2
+u88 = cs-text-color-at('one', ix, oy) == -1
+
+; 展开回来：几何复原
+sdb-set-collapsed(r, 0)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw, bh = cs-rect(r)
+u89 = bh == 15200
+u90 = cs-text-color-at('three', ix, thy) == cs-theme(CS-TH-FG)
+
+; 改组标题 / 条目文案
+sdb-set-group(r, 0, 'ALPHA')
+sdb-set-item(r, 1, 'TWO')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u91 = cs-text-color-at('ALPHA', gx, ay) == cs-theme(CS-TH-MUTED)
+u92 = cs-text-color-at('TWO', ix, ty) == cs-theme(CS-TH-FG)
+
+; 清空：只剩 FIELD 底，一条文本都不发
+sdb-clear(r)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw, bh = cs-rect(r)
+u93 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u94 = cs-text-count() == 0
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11
+ok = ok & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21
+ok = ok & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31
+ok = ok & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41
+ok = ok & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60 & u61
+ok = ok & u62 & u63 & u64 & u65 & u66 & u67 & u68 & u69 & u70 & u71
+ok = ok & u72 & u73 & u74 & u75 & u76 & u77 & u78 & u79 & u80 & u81
+ok = ok & u82 & u83 & u84 & u85 & u86 & u87 & u88 & u89 & u90 & u91
+ok = ok & u92 & u93 & u94
+
+(ok == 1) -> {
+    print('ALL SIDEBAR TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME SIDEBAR TESTS FAILED')
+}

@@ -235,6 +235,8 @@ no build glossary                        # 產物：glossary/dist/glossary
 
 輸出可切 `--format=text|md|json`。接入與資料格式說明見 [`glossary/README.md`](glossary/README.md)。
 
+也可在 nohub 線上檢視 glossary 套件：[glossary on nohub](https://lizongying.github.io/nohub/?package=glossary:latest@github.com/lizongying/nolang)
+
 ---
 
 ## 相關項目
@@ -242,6 +244,8 @@ no build glossary                        # 產物：glossary/dist/glossary
 - [nohub — Nolang 生態的社群包清單搜尋](https://lizongying.github.io/nohub/)
 
   按包名、關鍵詞、分類檢索收錄的社群包，查看包資訊、版本快照與原始碼入口；索引由 `web/build.mjs` 從 `packages/` 快照產生。
+
+- [noui — 用 Nolang 重寫 GPUI 精神內核的 UI 工具箱（nohub 包）](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
 - [Benchmarks Game — Nolang vs C vs Rust 性能對比報告](https://github.com/lizongying/no-benchmarks/results/report.md)
 

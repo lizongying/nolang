@@ -1,0 +1,240 @@
+; 阶段55：C-DESCRIPTION-LIST（描述列表）无窗口断言
+; 纯逻辑：构造默认 / 行池（扁平只增 + 基址）/ 读写 / 多句柄隔离 / disabled 空操作 /
+;         测算 intrinsic / 渲染几何（FIELD 底、左标签 MUTED、右值 FG 右对齐、
+;         行间 TRACK 分隔线）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    空行 / 越界读空串 / 未被 disabled
+; ============================================================================
+dl = cmp-description-list()
+
+t1 = cmp-kind(dl) == C-DESCRIPTION-LIST
+t2 = dl-count(dl) == 0
+t3 = dl-label(dl, 0) == ''
+t4 = dl-value(dl, 0) == ''
+t5 = cmp-has(dl, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 行池：追加 / 读取
+;    'name'→'noui'、'version'→'v0.4'、'released'→'2026-11-22'
+; ============================================================================
+dl-add(dl, 'name', 'noui')
+t6 = dl-count(dl) == 1
+t7 = dl-label(dl, 0) == 'name'
+t8 = dl-value(dl, 0) == 'noui'
+
+dl-add(dl, 'version', 'v0.4')
+t9 = dl-count(dl) == 2
+
+dl-add(dl, 'released', '2026-11-22')
+t10 = dl-count(dl) == 3
+t11 = dl-label(dl, 1) == 'version'
+t12 = dl-value(dl, 1) == 'v0.4'
+t13 = dl-label(dl, 2) == 'released'
+t14 = dl-value(dl, 2) == '2026-11-22'
+t15 = dl-label(dl, 3) == ''
+t16 = dl-value(dl, 3) == ''
+t17 = dl-label(dl, -1) == ''
+t18 = dl-value(dl, -1) == ''
+t19 = dl-label(dl, 0) == 'name'
+
+; ============================================================================
+; 3. 改写既有行（越界写不影响）
+; ============================================================================
+dl-set-label(dl, 0, 'title')
+t20 = dl-label(dl, 0) == 'title'
+dl-set-value(dl, 0, 'noui ui')
+t21 = dl-value(dl, 0) == 'noui ui'
+dl-set-label(dl, 9, 'x')
+t22 = dl-label(dl, 2) == 'released'
+dl-set-value(dl, -1, 'x')
+t23 = dl-value(dl, 1) == 'v0.4'
+
+; ============================================================================
+; 4. 清空后再加（基址重新落到池尾）
+; ============================================================================
+dl-clear(dl)
+t24 = dl-count(dl) == 0
+t25 = dl-label(dl, 0) == ''
+dl-add(dl, 'again', 'x')
+t26 = dl-count(dl) == 1
+t27 = dl-label(dl, 0) == 'again'
+
+; ============================================================================
+; 5. 多句柄隔离（扁平池 + 每句柄基址）
+; ============================================================================
+d2 = cmp-description-list()
+d3 = cmp-description-list()
+dl-add(d2, 'alpha', '1')
+dl-add(d2, 'beta', '2')
+dl-add(d3, 'gamma', '3')
+
+t28 = dl-count(d2) == 2
+t29 = dl-count(d3) == 1
+t30 = dl-label(d2, 0) == 'alpha'
+t31 = dl-value(d2, 1) == '2'
+t32 = dl-label(d3, 0) == 'gamma'
+t33 = dl-label(d3, 1) == ''
+
+dl-clear(d2)
+t34 = dl-count(d2) == 0
+t35 = dl-count(d3) == 1
+t36 = dl-label(d3, 0) == 'gamma'
+
+; ============================================================================
+; 6. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(d3, F-DISABLED)
+dl-add(d3, 'nope', '9')
+dl-clear(d3)
+dl-set-label(d3, 0, 'z')
+dl-set-value(d3, 0, 'z')
+t37 = dl-count(d3) == 1
+t38 = dl-label(d3, 0) == 'gamma'
+t39 = dl-value(d3, 0) == '3'
+cmp-flag-clear(d3, F-DISABLED)
+t40 = cmp-has(d3, F-DISABLED) == 0
+
+; ============================================================================
+; 7. 测算 intrinsic
+;    宽 = 2*CS-PAD + 标签列 12000 + 列间隙 800 + 值列（最长值，下限 6400）
+;    高 = 2*CS-PAD + N*CS-LINE-H + (N-1)*CS-SEP-H，夹到 CS-BTN-H
+;    3 行（最长值 '2026-11-22' 10 字 = 8000）→ 2400 + 12000 + 800 + 8000 = 23200
+;    高 2400 + 7200 + 200 = 9800
+; ============================================================================
+m = cmp-description-list()
+dl-add(m, 'name', 'noui')
+dl-add(m, 'version', 'v0.4')
+dl-add(m, 'released', '2026-11-22')
+m1w, m1h = cs-measure(m)
+t41 = m1w == 23200
+t42 = m1h == 9800
+
+e1 = cmp-description-list()
+m2w, m2h = cs-measure(e1)
+t43 = m2w == 21600
+t44 = m2h == 4000
+
+e2 = cmp-description-list()
+dl-add(e2, 'k', 'x')
+m3w, m3h = cs-measure(e2)
+t45 = m3w == 21600
+t46 = m3h == 4800
+
+; 把唯一一行值改成 16 字（12800）→ 宽 28000
+dl-set-value(e2, 0, 'abcdefghijklmnop')
+m4w, m4h = cs-measure(e2)
+t47 = m4w == 28000
+t48 = m4h == 4800
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m, 30000)
+cmp-set-sh(m, 5000)
+m5w, m5h = cs-measure(m)
+t49 = m5w == 30000
+t50 = m5h == 5000
+cmp-set-sw(m, 0)
+cmp-set-sh(m, 0)
+
+; ============================================================================
+; 8. 渲染
+;     外层 25600 → 内容宽 23200（正好等于 intrinsic，值列 = 23200-2400-12800 = 8000）
+;     面板 (1200,1200,23200,9800) FIELD
+;     行 0 ry=2400：标签 (2400,2400) MUTED；值右对齐 → tx = 15200+8000-tw
+;       'noui' 4 字 tw=3200 → 20000
+;     分隔线 (1200,4800,23200,100) TRACK
+;     行 1 ry=4900：'version' (2400,4900)；'v0.4' tw=3200 → 20000
+;     分隔线 (1200,7300,23200,100)
+;     行 2 ry=7400：'released' (2400,7400)；'2026-11-22' tw=8000 → 15200
+; ============================================================================
+cs-clear()
+r1 = cmp-root()
+cmp-add-child(r1, m)
+cs-layout(r1, 0, 0, 25600, 40000)
+cs-paint(r1)
+
+t51 = cs-rect-color-at(1200, 1200, 23200, 9800) == cs-theme(CS-TH-FIELD)
+t52 = cs-text-color-at('name', 2400, 2400) == cs-theme(CS-TH-MUTED)
+t53 = cs-text-color-at('noui', 20000, 2400) == cs-theme(CS-TH-FG)
+t54 = cs-rect-color-at(1200, 4800, 23200, 100) == cs-theme(CS-TH-TRACK)
+t55 = cs-text-color-at('version', 2400, 4900) == cs-theme(CS-TH-MUTED)
+t56 = cs-text-color-at('v0.4', 20000, 4900) == cs-theme(CS-TH-FG)
+t57 = cs-rect-color-at(1200, 7300, 23200, 100) == cs-theme(CS-TH-TRACK)
+t58 = cs-text-color-at('released', 2400, 7400) == cs-theme(CS-TH-MUTED)
+t59 = cs-text-color-at('2026-11-22', 15200, 7400) == cs-theme(CS-TH-FG)
+t60 = cs-text-color-at('name', 2400, 2500) == -1
+t61 = cs-rect-color-at(1200, 1200, 23200, 9800) != cs-theme(CS-TH-TRACK)
+t64 = cs-text-count() == 6
+
+; 空行：只有底色，没有任何文本
+cs-clear()
+e3 = cmp-description-list()
+r2 = cmp-root()
+cmp-add-child(r2, e3)
+cs-layout(r2, 0, 0, 20800, 40000)
+cs-paint(r2)
+t62 = cs-text-count() == 0
+t63 = cs-rect-color-at(1200, 1200, 18400, 4000) == cs-theme(CS-TH-FIELD)
+
+; ============================================================================
+; 9. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5
+ok = ok & t6 & t7 & t8 & t9 & t10 & t11 & t12 & t13 & t14 & t15 & t16 & t17 & t18 & t19
+ok = ok & t20 & t21 & t22 & t23 & t24 & t25 & t26 & t27
+ok = ok & t28 & t29 & t30 & t31 & t32 & t33 & t34 & t35 & t36
+ok = ok & t37 & t38 & t39 & t40
+ok = ok & t41 & t42 & t43 & t44 & t45 & t46 & t47 & t48 & t49 & t50
+ok = ok & t51 & t52 & t53 & t54 & t55 & t56 & t57 & t58 & t59 & t60 & t61 & t62 & t63 & t64
+
+(ok == 1) -> {
+    print('ALL DESCRIPTION-LIST TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME DESCRIPTION-LIST TESTS FAILED')
+}

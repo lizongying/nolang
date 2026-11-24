@@ -56,6 +56,16 @@ TY-F64 = 5
 ;   型别码取 6（TY-F64=5 之后、TY-STRUCT-BASE=100 之前的空档）。
 TY-VECSTR = 6
 
+; TY-VECSTRUCT（s162）：元素为【结构体】的切片（[]tk / []nd …）。LLVM 层同样与 TY-VEC/TY-VECSTR
+;   **同一型别 %vec、同一命名空间 %vc**——vec 描述符 {i32 len, i32 cap, i64 data} 与元素型别无关，
+;   故「读描述符」（.STRUCT-GET 取栏位、.OP-VECLEN 数长度）逐字正确。
+;   ⚠️ 但【元素级】操作（索引读 OP-VECGET、push、contains…）在自举子集【没有】对应助手
+;      （现存 @vec_get_i64／@vec_push_i64 是单型 helper，误用于结构体元素会静默错码），
+;      故本型别码【只】放行 .len()；其余元素级臂继续按 == TY-VEC / == TY-VECSTR 精确匹配而落门禁。
+;   ⚠️ 与 TY-VECSTR 同理：cg-ty-name/cg-val-prefix 必须显式映射 → %vec/%vc。
+;   型别码取 7（TY-VECSTR=6 之后、TY-STRUCT-BASE=100 之前的空档）。
+TY-VECSTRUCT = 7
+
 ; 结构体型别（M4-c 续件 s31）：**型别码 = TY-STRUCT-BASE + 结构体 id**，值住 %st<id>（第七个
 ;   命名空间之外的「值」空间，与 %sv/%vc/%op 并列）。结构体 id 0..N 由语义层登记
 ;   （`cg-runtime-struct-decls(sfc)`：sfc[id] = 字段数，0 = 未使用）。
@@ -638,3 +648,81 @@ OP-STRCPLEN = 103
 ;   ⚠️ 結果是 rc=1 自擁有堆緩衝 ⇒ h2m 側須 h2m-rel-add 登記 scope-exit 釋放（同 OP-STRCAT）。
 ; ⚠ op 碼接在既有最大碼 OP-STRCPLEN=103 之後（取 104），不重排既有碼。
 OP-ITOSTR = 104
+
+; s158：str 子串【值方法】四件套（ startIndexsWith / endsWith / contains / index ）。
+;   语义逐字鏡像 src/std/str.no：
+;     str.starts-with(target)（:460）—— 逐位元比對前綴，target 較長即 false；
+;     str.ends-with(target)（:481）—— 逐位元比對後綴（off = len(s)-len(target)）；
+;     str.contains(target)（:450）—— 等價 index(target) >= 0；
+;     str.index(target)（:420）—— 回「首次出現的【碼點】位置」，未找到 -1；
+;       內核 = find-byte-from(target, 0) 的首次位元命中，再 .cp-index(b) 數首字節個數。
+;   ⚠️ 四個方法都是【棄用／純計算】方法：不回堆緩衝、無 RC、結果恒 i64（bool 走 i64 0/1，
+;      與 s90 的 true/false ⇒ OP-CONST(TY-I64,0/1) 同口徑）。
+;   ⚠️ 與 Go 的差異：Go 後端把 starts-with/ends-with/contains/index 編成
+;      src/builtin 的函式呼叫（內嵌 loop），noc 側無對應 MIR 原語 ⇒ 走 cg-runtime helper。
+; OP-STRPREF：dst = i64 值 id（0/1，落 %v）；x = 接收者 str 值 id（TY-STR，落 %sv）；
+;   y = 目標 str 值 id（TY-STR，落 %sv）。發 call i1 @str_starts_with 後 zext i1→i64。
+; ⚠ op 碼接在既有最大碼 OP-ITOSTR=104 之後（取 105），不重排既有碼。
+OP-STRPREF = 105
+
+; OP-STRSUFF：dst = i64 值 id（0/1，落 %v）；x = 接收者 str 值 id；y = 目標 str 值 id。
+;   發 call i1 @str_ends_with 後 zext i1→i64。
+; ⚠ op 碼接在既有最大碼 OP-STRPREF=105 之後（取 106），不重排既有碼。
+OP-STRSUFF = 106
+
+; OP-STRCTNS：dst = i64 值 id（0/1，落 %v）；x = 接收者 str 值 id；y = 目標 str 值 id。
+;   發 call i1 @str_contains 後 zext i1→i64。
+; ⚠ op 碼接在既有最大碼 OP-STRSUFF=106 之後（取 107），不重排既有碼。
+OP-STRCTNS = 107
+
+; OP-STRIDX：dst = i64 值 id（碼點位置或 -1，落 %v）；x = 接收者 str 值 id；y = 目標 str 值 id。
+;   發 call i64 @str_index。
+; ⚠ op 碼接在既有最大碼 OP-STRCTNS=107 之後（取 108），不重排既有碼。
+OP-STRIDX = 108
+
+; s159：str.to-bytes() —— O(N) 複製成【新配置】的 []byte（與 s121 的零拷貝視圖 OP-STRBYTES 相對）。
+;   語義逐字鏡像 src/std/str.no:694：n = len-bytes()；with-cap-len(n, n) 後逐元 val[i] = byte(i)。
+;   ⚠️ 關鍵差異（也是本 op 存在的理由）：結果**擁有**自己的堆緩衝 ⇒ rc=1、cap=n>0，
+;      必須由 h2m-rel-add 登記、作用域結束發 OP-VEC-FREE 歸還；這與 bytes() 的 cap==0
+;      【借用標記】相反（見 cg-runtime-str-index 所在區塊的 B 段註解同源限制）。
+;   ⚠️ []byte 元素在 noc 運行期是 **i64 寬槽**（stride 8）——s136 的口徑合併：
+;      Go 側 MIR 把 "i64","i8","i1","byte" 同列（src/mir/codegen.go:1587），
+;      故本 helper 必須寫出 n 個 8 位元組槽，每槽存 0..255 的元值，
+;      方能被 @vec_get_i64（stride 8，見 cg-runtime-vec-get）正確讀回。
+;   ⚠️ 與 Go 的差異：Go 後端無「to-bytes」原語——它是 std 函式（src/std/str.no:694），
+;      編譯為 with-cap-len + 下標寫入；noc 側無 OP-VECSET，故收斂成單一 helper。
+; OP-STRTOBYTES：dst = vec 值 id（TY-VEC，落 %vc）；x = 接收者 str 值 id（TY-STR，落 %sv）；y 不用（0）。
+;   發 call %vec @str_to_bytes(%str-long %sv<x>)。
+; ⚠ op 碼接在既有最大碼 OP-STRIDX=108 之後（取 109），不重排既有碼。
+OP-STRTOBYTES = 109
+
+; s160：str.slice-bytes(start, end) —— 按【字節偏移】截取子串 [start,end)，回【新配置】的 str。
+;   語義逐字鏡像 src/std/str.no:642：r-start<0 ⇒ 0；r-end>len-bytes() ⇒ len-bytes()；
+;   r-start>=r-end ⇒ 空；否則 n=r-end-r-start，把 [r-start,r-end) 逐元複製進新緩衝。
+;   ⚠️ 本 op 【分配】（與 s158 四法的純計算相反）⇒ rc=1，h2m 側必須 h2m-rel-add(TY-STR)
+;      登記、作用域結束發 OP-RELEASE ⇒ @nolang_rc_release；緩衝走 @nolang_rc_alloc
+;      （同 OP-STRCAT／OP-ITOSTR 的口徑，非 s159 @str_to_bytes 的裸 @malloc）。
+;   ⚠️ 三個運算元（接收者 + 2 引數）超出 h2m-emit 的 (a,b) 雙槽 ⇒ 走【側池】慣例（同 OP-CALL）：
+;      xa[k]=池基址下標、bs[k]=3；args[base+0]=接收者 str、[+1]=start i64、[+2]=end i64。
+;      與 OP-CALL 一致：cg 按 vty[q] 逐個取名（%sv / %v），故型別由值 id 反查而非寫死。
+; OP-STRSLICEB：dst = str 值 id（TY-STR，落 %sv）；x = 側池基址下標、y = 3（池內依序 接收者/start/end）。
+;   發 call %str-long @str_slice_bytes(<接收者>, i64 <start>, i64 <end>)。
+; helper @str_slice_bytes 由 cg-runtime-prelude-full 每模組發一次（見 cg-runtime-str-slice-bytes）。
+; ⚠ op 碼接在既有最大碼 OP-STRTOBYTES=109 之後（取 110），不重排既有碼。
+OP-STRSLICEB = 110
+
+; vec 跨基本塊槽（s163；補齊 §11 B8 里 vec 值跨塊的 alloca 通路，與 str/option/struct 槽同族）
+; ...
+; s122 起 mem 模式的 []i64／[]str 局部量【不鋪槽】——cg 沒有 alloca %vec 的 op，值 id 由名稱綁定傳遞；
+;   等價於「跨塊讀靠 SSA 支配」，一旦賦值點落在循環／臂塊內就無解（值 id 不支配後繼）⇒ push 整條落門禁。
+;   s163 補上 vec 槽三件套（第八九個命名空間 %vs<id>，型別 %vec*），使 vec 局部量／形參在 mem 模式與
+;   i64／str／option 同樣「entry 鋪槽、各塊 store、彙聚塊 load」，push 因而可以在任何塊寫回。
+; OP-VECALLOC：dst = vec 槽 id（本 op 無值操作數）。發 `%vs<id> = alloca %vec`。
+; OP-VECSTORE：xa[k] = vec 值 id；bs[k] = 槽 id。發 store，無結果（與 SSTORE/STSTORE 同形）。
+; OP-VECLOAD ：dst = vec 值 id；xa[k] = 槽 id。發 load（與 SLOAD/STLOAD 同形：槽在 a、結果在 dst）。
+; ⚠️ %vec 與 %str-long 不同：無 RC 頭、釋放走破壞性 @vec_free（§11 B5），故槽只是「住處」，
+;    不涉及 retain/release；所有權仍由 h2m 的 rel-list 按值追踪。
+; ⚠ op 碼接在既有最大碼 OP-STRSLICEB=110 之後（取 111/112/113），不重排既有碼。
+OP-VECALLOC = 111
+OP-VECSTORE = 112
+OP-VECLOAD = 113

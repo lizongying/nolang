@@ -42,7 +42,9 @@
 # /compiler/src/ck
 # /compiler/src/ck-sig
 
-ll = drv.pkg-ll('compiler/tests/pkg-ll-entry.no', false)
+; s153 層 1：drv.pkg-ll 新增第三參 strict（true ⇒ unsup>0 回 ''）；本測試要的是
+;   「整包 body 串接」的 IR 結構，剔除型缺口不影響入口串接 ⇒ 仍傳 false（保留原行為）。
+ll = drv.pkg-ll('compiler/tests/pkg-ll-entry.no', false, false)
 print('pkg-ll: produced ' - ll.len-bytes().to-str() - ' bytes of IR')
 
 ; 切片 4 驗收（⑭ ⑪ ④，as-built）

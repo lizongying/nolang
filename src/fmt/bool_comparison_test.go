@@ -94,18 +94,19 @@ var boolCmpUnknownCases = []boolCmpCase{
 	{"shorthand_normalised_only", "f == !!", "f == true"},
 	{"shorthand_bang_normalised_only", "f == !", "f == false"},
 	{
-		// fs.write-str 回 ?bool；fmt 看不到 std 簽名 ⇒ 未知，必須保留比較。
+		// fs.write-str 回 ?bool；fmt 看不到外部簽名 ⇒ 未知，必須保留比較。
 		// 這是 v0.3.3 option-as-i1 crash 的實際觸發形狀，同時也是 CLI 的
 		// fixRedundantTypeSource 移除 `ok ?bool = ...` 的冗餘標註後，
 		// formatter 實際看到的輸入形狀（標註該刪，比較仍要留）。
+		// 用非 std 路徑作 fixture：無別名 std 導入會被 no fmt 移除。
 		name: "cross_module_std_option_result",
-		input: `# std/fs
+		input: `# aaa/fs
 f = () {
     ok = fs.write-str('/tmp/x', 'y')
     ok == true -> return
     ok == false -> return
 }`,
-		want: `# std/fs
+		want: `# aaa/fs
 
 f = () {
     ok = fs.write-str('/tmp/x', 'y')
@@ -195,17 +196,17 @@ var boolCmpOptionCases = []boolCmpCase{
 	},
 	{
 		// 標註留在原始檔（例如直接呼叫 FormatFile、或 CLI 未判定為冗餘）：
-		// `no fmt` 看不到 std 簽名，但 `?bool` 標註本身就是 option 硬證據，
+		// `no fmt` 看不到外部簽名，但 `?bool` 標註本身就是 option 硬證據，
 		// 比較必須保留。這條與 unknown 組的 cross_module_std_option_result
 		// 是一對：標註在 / 標註被移除，兩種輸入都不得化簡。
 		name: "annotated_option_cross_module_call",
-		input: `# std/fs
+		input: `# aaa/fs
 f = () {
     ok ?bool = fs.write-str('/tmp/x', 'y')
     ok == true -> return
     ok == false -> return
 }`,
-		want: `# std/fs
+		want: `# aaa/fs
 
 f = () {
     ok ?bool = fs.write-str('/tmp/x', 'y')

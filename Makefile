@@ -65,7 +65,7 @@ TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unre
 #   make force          # alias for the above
 #   make -B no          # built-in equivalent (--always-make)
 #
-# FORCE=1 makes the baked std signature tables (stdsig_gen.go + std_ast.bin)
+# FORCE=1 makes the baked std signature tables (stdsig_gen.go + std-ast.bin)
 # and bin/no unconditionally out of date, so both are regenerated from the
 # CURRENT sources. This replaces the old "rm the artifacts / make clean, then
 # rebuild" ritual: nothing is deleted, and the default incremental `make no`
@@ -100,7 +100,7 @@ STDSIG_GEN = src/checker/stdsig_gen.go
 # Tier-0 std AST blob pulled in by //go:embed (src/checker/stdastembed/embed.go).
 # Both are gitignored, so a clean checkout has neither. See the $(STD_AST_BIN)
 # rule below for why the blob must also be an explicit wasm prerequisite.
-STD_AST_BIN = src/checker/stdastembed/std_ast.bin
+STD_AST_BIN = src/checker/stdastembed/std-ast.bin
 # The tables are collected by walking HIR, so the generator output depends on
 # the hir/parser/lexer packages just as much as on the checker itself: a change
 # to how a definition is lowered (e.g. dropping the implicit `self` result from
@@ -111,7 +111,7 @@ STD_AST_BIN = src/checker/stdastembed/std_ast.bin
 # into its StdKey; validateStdASTBlob then refuses to start unless the two are
 # equal. So any directory whose changes can move the key must also re-bake the
 # blob — otherwise editing (say) src/mir/*.go changes STD_SIG_KEY while leaving
-# std_ast.bin stale, and EVERY `no build` / `no run` / `no test` dies at
+# std-ast.bin stale, and EVERY `no build` / `no run` / `no test` dies at
 # startup with "內嵌 std AST blob 與本二進位不一致" after an otherwise green
 # `make no`. Observed exactly that on 2026-11-08: the key moved
 # d3354b63… → b3592ce3… while the blob kept the old one, because mir/ was not
@@ -143,7 +143,7 @@ $(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/hash.noml src/go.mod src/go.
 	@touch $@
 
 # Listing the blob explicitly on the two wasm binaries closes a real gap: if
-# std_ast.bin is deleted (or the generator is interrupted after writing the
+# std-ast.bin is deleted (or the generator is interrupted after writing the
 # .go file) while stdsig_gen.go is still newer than all of its inputs, make
 # skips `gen` and the wasm build embeds a missing/stale blob. The resulting
 # no.wasm then hard-fails at RUNTIME in checker.validateStdASTBlob with a

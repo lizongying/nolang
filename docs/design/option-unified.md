@@ -413,7 +413,7 @@ z = z-opt: {
 | `src/std` | **0** | 59（全 `arm-should`） | 389 |
 
 - **无 warning 回退**：59 与 §11.2 的 59 持平（此前一度出现的 1247 warning 是上述第 2 条内联写法造出的假象，已消除）。
-- `std_ast.bin` 已随本次 std 改动重烤（`go run ./checker/genstdsig`）；`stdsig_gen.go` 未变（无签名改动）。
+- `std-ast.bin` 已随本次 std 改动重烤（`go run ./checker/genstdsig`）；`stdsig_gen.go` 未变（无签名改动）。
 - `go test ./checker/ ./parser/ ./mir/ ./fmt/ ./lexer/` 全绿；`hir TestKindCoverageAcrossBothCorpora`
   为**既有**失败（`[type-arm type-match]`），与本次改动无关。
 - `notools` 侧（`~/IdeaProjects/notools`）沿用同一修法，见其 `docs/design/option-unified.md`。

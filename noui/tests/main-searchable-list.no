@@ -1,0 +1,329 @@
+; ============================================================================
+; noui 窗口 demo：可搜索列表（阶段 66）—— C-SEARCHABLE-LIST
+;
+; 流水线：app-init -> cmp-searchable-list -> sl-add / sl-set-item /
+;          sl-set-query / sl-select / sl-select-next / sl-select-prev /
+;          sl-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-SEARCHABLE-LIST 分支 +
+;      cs-paint-searchable-list）：FIELD 底 + 顶部查询行 FG + TRACK 分隔线
+;      + N 行匹配条目（高亮行先铺一条 TRACK 整行底）
+;   -> 键盘：a=追加条目；f=轮换查询串（过滤）；n/p=下/上一行高亮；
+;            c=清空条目；r=重建默认；d=切换 disabled；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-searchable-list.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选条目（a 轮取）----
+sl-cand-item = (i i64) (s str) {
+    s = 'alpha'
+    (i == 1) -> { s = 'beta' }
+    (i == 2) -> { s = 'gamma longer' }
+    (i == 3) -> { s = 'delta' }
+    (i == 4) -> { s = 'epsilon' }
+    (i == 0) -> { s = 'zeta' }
+    s = s
+}
+
+; ---- 候选查询串（f 轮取）----
+sl-cand-query = (i i64) (s str) {
+    s = ''
+    (i == 1) -> { s = 'a' }
+    (i == 2) -> { s = 'AL' }
+    (i == 3) -> { s = 'gamma' }
+    (i == 4) -> { s = 'xyz' }
+    (i == 0) -> { s = '' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+sl-build-default = (h i64) () {
+    sl-clear(h)
+    sl-add(h, 'alpha')
+    sl-add(h, 'BETA')
+    sl-add(h, 'gamma longer')
+    sl-add(h, 'delta')
+    sl-set-query(h, 'a')
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui searchable-list')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段66: searchable-list')
+hint = cmp-label('a=add f=query n=next p=prev c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+sl = cmp-searchable-list()
+sl-build-default(sl)
+
+cmp-add-child(root, title)
+cmp-add-child(root, sl)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一条（轮取候选）
+        (k == 97) -> {
+            n = sl-count(sl)
+            j = ct-rem(n, 5)
+            sl-add(sl, sl-cand-item(j))
+        }
+        ; f：轮换查询串（过滤表跟着重建）
+        (k == 102) -> {
+            qn = rt-keys
+            j = ct-rem(qn, 5)
+            sl-set-query(sl, sl-cand-query(j))
+            rt-keys = cs-inc(rt-keys)
+        }
+        ; n / p：下 / 上一行高亮
+        (k == 110) -> { sl-select-next(sl) }
+        (k == 112) -> { sl-select-prev(sl) }
+        ; c：清空条目
+        (k == 99) -> { sl-clear(sl) }
+        ; r：重建默认
+        (k == 114) -> { sl-build-default(sl) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(sl, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(sl, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(sl, F-DISABLED) }
+        }
+        (k != 102) -> { rt-keys = cs-inc(rt-keys) }
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = sl-count(sl)
+    mn = sl-match-count(sl)
+    hl = sl-highlight(sl)
+    sel = sl-selected(sl)
+    dis = cmp-has(sl, F-DISABLED)
+    qq = sl-query(sl)
+    cmp-set-text(stat, 'items={cn} match={mn} hl={hl} sel={sel} disabled={dis}')
+    (mn > 0) -> {
+        si = sl-selected(sl)
+        cmp-set-text(stat2, 'query={qq} picked={si}')
+    }
+    (mn <= 0) -> { cmp-set-text(stat2, 'query={qq} no match') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（四条 + 查询 'a'），按 cs-rect(sl) 推导坐标
+;   内边距 1200 / 行高 2400 / 分隔线 100
+;   查询 @ (bx+1200, by+1200)；分隔线 (bx, 查询y+2400, bw, 100)
+;   第 i 行 y = 分隔线y+100+i*2400；高亮行另铺一条 TRACK 整行底
+;   场景里还有 title / hint / stat / stat2 四条标签文本
+; ============================================================================
+cmp-flag-clear(sl, F-DISABLED)
+sl-build-default(sl)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+qp = 1200
+lh = 2400
+sep = 100
+
+bx, by, bw, bh = cs-rect(sl)
+tx = cs-add(bx, qp)
+qy = cs-add(by, qp)
+sy = cs-add(qy, lh)
+ry0 = cs-add(sy, sep)
+ry1 = cs-add(ry0, lh)
+ry2 = cs-add(ry1, lh)
+ry3 = cs-add(ry2, lh)
+
+c1 = sl-count(sl) == 4
+c2 = sl-match-count(sl) == 4
+c3 = sl-query(sl) == 'a'
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = find-text('a', tx, qy) == 1
+c6 = find-text-color('a', tx, qy) == cs-theme(CS-TH-FG)
+c7 = find-rect-color(bx, sy, bw, sep) == cs-theme(CS-TH-TRACK)
+c8 = find-rect-color(bx, ry0, bw, lh) == cs-theme(CS-TH-TRACK)
+c9 = find-text('alpha', tx, ry0) == 1
+c10 = find-text-color('alpha', tx, ry0) == cs-theme(CS-TH-FG)
+c11 = find-text('BETA', tx, ry1) == 1
+c12 = find-text('gamma longer', tx, ry2) == 1
+c13 = find-text('delta', tx, ry3) == 1
+c14 = cs-text-count() == 9
+
+; 高亮切到第 2 行：高亮底跟着走
+sl-select(sl, 2)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c15 = find-rect-color(bx, ry0, bw, lh) == -1
+c16 = find-rect-color(bx, ry2, bw, lh) == cs-theme(CS-TH-TRACK)
+c17 = sl-selected(sl) == 2
+
+; 查询过滤成空：分隔线消失，只剩查询文本
+sl-set-query(sl, 'xyz')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c18 = find-rect-color(bx, sy, bw, sep) == -1
+c19 = cs-text-count() == 5
+c20 = sl-highlight(sl) == -1
+
+; 查询清空：四条全部回来
+sl-set-query(sl, '')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c21 = sl-match-count(sl) == 4
+c22 = find-rect-color(bx, sy, bw, sep) == cs-theme(CS-TH-TRACK)
+
+; 追加第 5 条：匹配变 5、面板变高
+bh0 = bh
+sl-add(sl, 'zeta')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx2, by2, bw2, bh2 = cs-rect(sl)
+c23 = sl-count(sl) == 5
+c24 = sl-match-count(sl) == 5
+c25 = cs-text-count() == 10
+c26 = bh2 > bh0
+c27 = find-text('zeta', tx, cs-add(ry3, lh)) == 1
+
+; disabled：写操作全部空操作
+cmp-flag-set(sl, F-DISABLED)
+sl-add(sl, 'no')
+sl-set-item(sl, 0, 'no')
+sl-set-query(sl, 'zz')
+sl-select(sl, 1)
+sl-clear(sl)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c28 = sl-count(sl) == 5
+c29 = sl-item(sl, 0) == 'alpha'
+c30 = sl-query(sl) == ''
+cmp-flag-clear(sl, F-DISABLED)
+
+; 清空条目：文本只剩四条标签
+sl-clear(sl)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c31 = sl-count(sl) == 0
+c32 = find-text('delta', tx, ry3) == 0
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+cn2 = sl-count(sl)
+mn2 = sl-match-count(sl)
+print('bye frames={fr} keys={kk} clicks={ck} items={cn2} match={mn2} w={bw2} h={bh2}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29 & c30 & c31 & c32) -> {
+    print('searchable-list render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29 & c30 & c31 & c32)) -> {
+    print('FAIL: searchable-list render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

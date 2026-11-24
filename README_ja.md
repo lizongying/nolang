@@ -237,6 +237,8 @@ no build glossary                        # 成果物: glossary/dist/glossary
 
 出力は `--format=text|md|json` で切り替えられます。連携方法とデータ形式の説明は [`glossary/README.md`](glossary/README.md) を参照してください。
 
+nohub で glossary パッケージを閲覧することもできます: [glossary on nohub](https://lizongying.github.io/nohub/?package=glossary:latest@github.com/lizongying/nolang)
+
 ---
 
 ## 関連プロジェクト
@@ -244,6 +246,8 @@ no build glossary                        # 成果物: glossary/dist/glossary
 - [nohub — Nolang エコシステムのコミュニティパッケージ一覧検索](https://lizongying.github.io/nohub/)
 
   パッケージ名・キーワード・カテゴリで収録済みのコミュニティパッケージを検索し、パッケージ情報、バージョンスナップショット、ソースへの入口を確認できます。インデックスは `web/build.mjs` が `packages/` のスナップショットから生成します。
+
+- [noui — GPUI の精神を Nolang で書き直した UI ツールキット（nohub パッケージ）](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
 - [Benchmarks Game — Nolang vs C vs Rust 性能比較レポート](https://github.com/lizongying/no-benchmarks/results/report.md)
 

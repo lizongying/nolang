@@ -1,0 +1,208 @@
+; 阶段59：C-GROUP-BOX（标题容器）无窗口断言
+; 纯逻辑：构造默认 / 标题读写（走 CMP-TEXT）/ 子节点是视觉节点（白名单保留）/
+;         disabled 空操作 / 测算（标题行 + 内容区，纵向 / 横向 / 无子节点 /
+;         长标题 / 固定尺寸覆盖）/ 渲染几何（面板、标题、TRACK 分隔线、内容区子节点）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+cs-text-n = (t str) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    标题 'group' / 是真容器（白名单保留）/ 无子节点 / 未被 disabled
+; ============================================================================
+g = cmp-group-box('group')
+
+t1 = cmp-kind(g) == C-GROUP-BOX
+t2 = gb-title(g) == 'group'
+t3 = cmp-text(g) == 'group'
+t4 = cs-is-container(C-GROUP-BOX) == 1
+t5 = cs-child-count(g) == 0
+t6 = cmp-has(g, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 标题读写（复用 CMP-TEXT）
+; ============================================================================
+gb-set-title(g, 'profile')
+t7 = gb-title(g) == 'profile'
+t8 = cmp-text(g) == 'profile'
+gb-set-title(g, 'group')
+t9 = gb-title(g) == 'group'
+
+; ============================================================================
+; 3. 子节点是视觉节点
+; ============================================================================
+l1 = cmp-label('alpha')
+l2 = cmp-label('bravo')
+cmp-add-child(g, l1)
+cmp-add-child(g, l2)
+t10 = cs-child-count(g) == 2
+t11 = cmp-child(g, 0) == l1
+t12 = cmp-child(g, 1) == l2
+
+; ============================================================================
+; 4. disabled：标题写空操作
+; ============================================================================
+cmp-flag-set(g, F-DISABLED)
+gb-set-title(g, 'no')
+t13 = gb-title(g) == 'group'
+cmp-flag-clear(g, F-DISABLED)
+t14 = cmp-has(g, F-DISABLED) == 0
+
+; ============================================================================
+; 5. 测算 intrinsic
+;    标题 'group' 5 字 = 4000；标签 'alpha' 5 字 = 5*800 + 2*1200 = 6400，
+;    高 2400。
+;    纵向（默认）：内容宽 = max(4000, 6400) = 6400
+;                  内容高 = 2400 + 800 + 2400 - 800 = 5600
+;                  宽 = 2*1200 + 6400 = 8800
+;                  高 = 2*1200 + 4000 + (5600 + 800) = 12800
+; ============================================================================
+m1w, m1h = cs-measure(g)
+t15 = m1w == 8800
+t16 = m1h == 12800
+
+; 无子节点：只有标题行。宽 = 2*1200 + 4000 = 6400，高 = 2*1200 + 4000 = 6400
+e1 = cmp-group-box('group')
+m2w, m2h = cs-measure(e1)
+t17 = m2w == 6400
+t18 = m2h == 6400
+
+; 横向：内容宽 = 6400 + 800 + 6400 = 13600，内容高 = max(2400, 2400) = 2400
+; 宽 = 2400 + 13600 = 16000；高 = 2400 + 4000 + (2400 + 800) = 9600
+h1 = cmp-group-box('group')
+h1a = cmp-label('alpha')
+h1b = cmp-label('bravo')
+cmp-add-child(h1, h1a)
+cmp-add-child(h1, h1b)
+cmp-set-lay(h1, L-H)
+m3w, m3h = cs-measure(h1)
+t19 = m3w == 16000
+t20 = m3h == 9600
+
+; 长标题 'very long title' 15 字 = 12000，无子节点：宽 2400 + 12000 = 14400
+e2 = cmp-group-box('very long title')
+m4w, m4h = cs-measure(e2)
+t21 = m4w == 14400
+t22 = m4h == 6400
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(g, 20000)
+cmp-set-sh(g, 9000)
+m5w, m5h = cs-measure(g)
+t23 = m5w == 20000
+t24 = m5h == 9000
+cmp-set-sw(g, 0)
+cmp-set-sh(g, 0)
+
+; ============================================================================
+; 6. 渲染
+;    root 0,0,17600,20000 → 内容区 1200,1200,15200,17600
+;    group-box 纵向非 grow → rect (1200,1200,15200,12800)
+;    内容区起点 = y + pad + 标题行 + gap = 1200+1200+4000+800 = 7200
+;    标题文字垂直居中：ty = (1200+1200) + (4000-2400)/2 = 3200
+;    分隔线 = (x, y+pad+标题行) = (1200, 6400, 15200, 100)
+;    子节点宽被拉到内容宽 12800：label1 (2400,7200) / label2 (2400,10400)
+; ============================================================================
+cs-clear()
+r = cmp-root()
+cmp-add-child(r, g)
+cs-layout(r, 0, 0, 17600, 20000)
+cs-paint(r)
+
+rx, ry, rw, rh = cs-rect(g)
+t25 = rx == 1200 && ry == 1200 && rw == 15200 && rh == 12800
+lx, ly, lw, lh = cs-rect(l1)
+t26 = lx == 2400 && ly == 7200 && lw == 12800 && lh == 2400
+lx2, ly2, lw2, lh2 = cs-rect(l2)
+t27 = lx2 == 2400 && ly2 == 10400 && lw2 == 12800 && lh2 == 2400
+
+t28 = cs-rect-color-at(1200, 1200, 15200, 12800) == 0x2A2A3AFF
+t29 = cs-text-color-at('group', 2400, 3200) == cs-theme(CS-TH-FG)
+t30 = cs-rect-color-at(1200, 6400, 15200, 100) == cs-theme(CS-TH-TRACK)
+t31 = cs-text-color-at('alpha', 2400, 7200) == 0xE8E8F0FF
+t32 = cs-text-color-at('bravo', 2400, 10400) == 0xE8E8F0FF
+t33 = cs-text-n('group') == 1
+t34 = cs-text-count() == 3
+
+; 无子节点：标题行仍然有底板 + 分隔线
+cs-clear()
+e3 = cmp-group-box('solo')
+r2 = cmp-root()
+cmp-add-child(r2, e3)
+cs-layout(r2, 0, 0, 17600, 20000)
+cs-paint(r2)
+t35 = cs-rect-color-at(1200, 1200, 15200, 6400) == 0x2A2A3AFF
+t36 = cs-text-color-at('solo', 2400, 3200) == cs-theme(CS-TH-FG)
+t37 = cs-rect-color-at(1200, 6400, 15200, 100) == cs-theme(CS-TH-TRACK)
+t38 = cs-text-count() == 1
+
+; ============================================================================
+; 7. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5 & t6
+ok = ok & t7 & t8 & t9
+ok = ok & t10 & t11 & t12
+ok = ok & t13 & t14
+ok = ok & t15 & t16 & t17 & t18 & t19 & t20 & t21 & t22 & t23 & t24
+ok = ok & t25 & t26 & t27 & t28 & t29 & t30 & t31 & t32 & t33 & t34
+ok = ok & t35 & t36 & t37 & t38
+
+(ok == 1) -> {
+    print('ALL GROUP-BOX TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME GROUP-BOX TESTS FAILED')
+}

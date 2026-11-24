@@ -110,6 +110,68 @@ void noui_clip_clear(void) {
     SDL_SetRenderClipRect(g_renderer, NULL);
 }
 
+/* ==========================================================================
+ * 阶段52：窗口选项（C-WINDOW-EXT 直接驱动真窗口）
+ * 全部标量进出；查询类把宽 / 高打包进一个 i64（w << 32 | h），flags 原样返回。
+ * 未建窗口时一律空操作（组件逻辑测试会在没有窗口的情况下跑）。
+ * ========================================================================== */
+void noui_window_set_title(const char *title) {
+    if (g_window && title) SDL_SetWindowTitle(g_window, title);
+}
+
+void noui_window_set_resizable(int yes) {
+    if (g_window) SDL_SetWindowResizable(g_window, yes ? true : false);
+}
+
+void noui_window_set_min_size(int w, int h) {
+    if (g_window) SDL_SetWindowMinimumSize(g_window, w, h);
+}
+
+void noui_window_set_max_size(int w, int h) {
+    if (g_window) SDL_SetWindowMaximumSize(g_window, w, h);
+}
+
+void noui_window_set_fullscreen(int yes) {
+    if (g_window) SDL_SetWindowFullscreen(g_window, yes ? true : false);
+}
+
+void noui_window_set_always_on_top(int yes) {
+    if (g_window) SDL_SetWindowAlwaysOnTop(g_window, yes ? true : false);
+}
+
+void noui_window_set_bordered(int yes) {
+    if (g_window) SDL_SetWindowBordered(g_window, yes ? true : false);
+}
+
+void noui_window_set_opacity(double o) {
+    if (!g_window) return;
+    if (o < 0.0) o = 0.0;
+    if (o > 1.0) o = 1.0;
+    SDL_SetWindowOpacity(g_window, (float)o);
+}
+
+void noui_window_set_size(int w, int h) {
+    if (g_window) SDL_SetWindowSize(g_window, w, h);
+}
+
+long long noui_window_get_size(void) {
+    if (!g_window) return 0;
+    int w = 0, h = 0;
+    SDL_GetWindowSize(g_window, &w, &h);
+    return ((long long)w << 32) | (unsigned int)h;
+}
+
+long long noui_window_get_flags(void) {
+    if (!g_window) return 0;
+    return (long long)SDL_GetWindowFlags(g_window);
+}
+
+const char *noui_window_get_title(void) {
+    if (!g_window) return "";
+    const char *t = SDL_GetWindowTitle(g_window);
+    return t ? t : "";
+}
+
 /* 事件摊平：编码进一个 i64 返回。
  * 返回 0=无事件；否则低 8 位=事件类型，中 24 位=x 坐标(int)，高 24 位=y 坐标(int)。
  * 按键事件把 key code 放 x 槽。滚轮额外用 bit56..63 带符号增量（见下）。

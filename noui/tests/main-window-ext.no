@@ -1,0 +1,210 @@
+; ============================================================================
+; noui 窗口 demo：窗口选项（阶段 52）—— C-WINDOW-EXT
+;
+; 流水线：app-init -> cmp-window-ext -> we-* 写入
+;   -> app-frame() 每帧调 app-window-apply-all()，把 on 的面板推给真窗口
+;   -> 读回：app-window-title() / app-window-size() / app-window-flags()
+;   -> 键盘：t=换标题；r=可缩放；f=全屏；a=置顶；b=边框；
+;            o=不透明度 100/75/50/25；= / -=窗口尺寸；m=总开关；q / Esc 退出
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-WINDOW-EXT 分支 +
+;      cs-paint-window-ext），面板是 8 行状态（on/title/resizable/fullscreen/
+;      always on top/bordered/opacity/size）
+;
+; 这个 demo 是阶段52 的现场：组件里只存状态，真窗口调用集中在 app.no ——
+; 因为 components.no 不能 import app.no（app -> cmp-scene -> components 成环）。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-window-ext.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-applied = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui window ext')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段52: window ext')
+hint = cmp-label('t=title r=resizable f=fullscreen a=top b=border o=opacity =/-=size m=on/off q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+stat3 = cmp-label('')
+
+wext = cmp-window-ext()
+we-set-title(wext, 'noui window options')
+we-set-size(wext, 720, 520)
+we-set-min-size(wext, 320, 240)
+we-set-max-size(wext, 1600, 1200)
+
+cmp-add-child(root, title)
+cmp-add-child(root, wext)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, stat3)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; t：换标题
+        (k == 116) -> {
+            n = rt-keys
+            n = ct-rem(n, 3)
+            (n == 0) -> { we-set-title(wext, 'noui window options') }
+            (n == 1) -> { we-set-title(wext, 'window ext B') }
+            (n == 2) -> { we-set-title(wext, 'window ext C') }
+        }
+        ; r：可缩放
+        (k == 114) -> {
+            v = we-resizable(wext)
+            (v != 0) -> { we-set-resizable(wext, 0) }
+            (v == 0) -> { we-set-resizable(wext, 1) }
+        }
+        ; f：全屏
+        (k == 102) -> {
+            v = we-fullscreen(wext)
+            (v != 0) -> { we-set-fullscreen(wext, 0) }
+            (v == 0) -> { we-set-fullscreen(wext, 1) }
+        }
+        ; a：置顶
+        (k == 97) -> {
+            v = we-always-on-top(wext)
+            (v != 0) -> { we-set-always-on-top(wext, 0) }
+            (v == 0) -> { we-set-always-on-top(wext, 1) }
+        }
+        ; b：边框
+        (k == 98) -> {
+            v = we-bordered(wext)
+            (v != 0) -> { we-set-bordered(wext, 0) }
+            (v == 0) -> { we-set-bordered(wext, 1) }
+        }
+        ; o：不透明度 100/75/50/25
+        (k == 111) -> {
+            v = we-opacity(wext)
+            (v == 100) -> { we-set-opacity(wext, 75) }
+            (v == 75) -> { we-set-opacity(wext, 50) }
+            (v == 50) -> { we-set-opacity(wext, 25) }
+            (v == 25) -> { we-set-opacity(wext, 100) }
+        }
+        ; = / -：窗口尺寸
+        (k == 61) -> {
+            w0 = we-w(wext)
+            h0 = we-h(wext)
+            (w0 < 1600) -> { w0 = cs-add(w0, 80) }
+            (h0 < 1200) -> { h0 = cs-add(h0, 60) }
+            we-set-size(wext, w0, h0)
+        }
+        (k == 45) -> {
+            w0 = we-w(wext)
+            h0 = we-h(wext)
+            (w0 > 320) -> { w0 = cs-sub(w0, 80) }
+            (h0 > 240) -> { h0 = cs-sub(h0, 60) }
+            we-set-size(wext, w0, h0)
+        }
+        ; m：总开关（关掉后面板不再接管真窗口）
+        (k == 109) -> {
+            v = we-on(wext)
+            (v != 0) -> { we-set-on(wext, 0) }
+            (v == 0) -> { we-set-on(wext, 1) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 布局 -> 摊平 -> 上屏（app-frame 内部先 apply-all）----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    ; ---- 读回真窗口状态（apply 之后）----
+    lt = app-window-title()
+    lw, lh = app-window-size()
+    lf = app-window-flags()
+    lres = 0
+    ((lf & APP-WF-RESIZABLE) != 0) -> { lres = 1 }
+    lfs = 0
+    ((lf & APP-WF-FULLSCREEN) != 0) -> { lfs = 1 }
+    ltop = 0
+    ((lf & APP-WF-ALWAYS-ON-TOP) != 0) -> { ltop = 1 }
+    lbrd = 1
+    ((lf & APP-WF-BORDERLESS) != 0) -> { lbrd = 0 }
+
+    wv = we-on(wext)
+    (wv != 0) -> { rt-applied = cs-inc(rt-applied) }
+    pv = we-opacity(wext)
+    pt = we-title(wext)
+    pw = we-w(wext)
+    ph = we-h(wext)
+
+    cmp-set-text(stat, 'live title={lt} size={lw}x{lh}')
+    cmp-set-text(stat2, 'live flags resizable={lres} fullscreen={lfs} top={ltop} bordered={lbrd}')
+    cmp-set-text(stat3, 'panel on={wv} opacity={pv} title={pt} size={pw}x{ph}')
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：on=1 时真窗口状态必须与面板一致（必须在 app-shutdown 之前，
+; 否则 SDL 窗口已销毁，读回无意义）
+; ============================================================================
+we-set-on(wext, 1)
+we-set-title(wext, 'final check')
+we-set-resizable(wext, 0)
+we-set-opacity(wext, 75)
+we-set-size(wext, 800, 600)
+app-window-apply(wext)
+
+ft = app-window-title()
+fw, fh = app-window-size()
+ff = app-window-flags()
+
+c1 = ft == 'final check'
+c2 = fw == 800
+c3 = fh == 600
+c4 = (ff & APP-WF-RESIZABLE) == 0
+c5 = we-title(wext) == 'final check'
+c6 = we-w(wext) == 800
+c7 = we-h(wext) == 600
+c8 = we-opacity(wext) == 75
+
+fr = rt-frames
+kk = rt-keys
+ap = rt-applied
+print('bye frames={fr} keys={kk} applied={ap} live={ft} {fw}x{fh} res={c4}')
+(ok == 0) -> { print('win-ext render OK') }
+(ok != 0) -> { print('app-init failed: {ok}') }
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8) -> { print('win-ext live OK') }
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8)) -> { print('FAIL: live mismatch') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

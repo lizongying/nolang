@@ -343,6 +343,13 @@ cs-leaf-size = (kind i64, tlen i64) (w i64, ht i64) {
             (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
             ht = cs-add(CS-LINE-H, cs-mul(CS-PAD, 2))
         }
+        ; 阶段46：剪贴板字段 —— 文本 + 左右内边距 + 间隙 + 右端复制方块（24px）
+        kind == C-CLIPBOARD -> {
+            w = cs-add(cs-mul(tlen, CS-CHAR-W), cs-mul(CS-PAD, 2))
+            w = cs-add(w, cs-add(CS-GAP, 2400))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+        }
         -> { }
     }
     (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
@@ -368,34 +375,47 @@ cs-is-container = (kind i64) (yes i64) {
         kind == C-ROOT -> { yes = 1 }
         kind == C-GRID -> { yes = 1 }
         kind == C-FORM -> { yes = 1 }
-        kind == C-QUESTIONNAIRE -> { yes = 1 }
+        ; 阶段65：C-QUESTIONNAIRE 同样拿掉 —— 题是 QA-PROMPT / QA-ANS /
+        ; QA-REQ 数据，不是视觉子节点。带 children 的是 C-FORM / C-GROUP-BOX。
         kind == C-GROUP-BOX -> { yes = 1 }
-        kind == C-COLLAPSIBLE -> { yes = 1 }
-        kind == C-DESCRIPTION-LIST -> { yes = 1 }
-        kind == C-TOOLBAR -> { yes = 1 }
-        kind == C-TITLE-BAR -> { yes = 1 }
-        kind == C-STATUS-BAR -> { yes = 1 }
-        kind == C-SIDEBAR -> { yes = 1 }
+        ; 阶段58：C-COLLAPSIBLE 拿掉 —— 目录把它标成「open, title」（正文走
+        ; CL-LINE 数据池），不是视觉子节点；留在白名单里会在「没挂子节点」时
+        ; 画成 0×0 的 FIELD 矩形。带 children 的是 C-GROUP-BOX。
+        ; 阶段68：C-TOOLBAR 同样拿掉 —— 条目是 TLB-ITEM 数据，不是视觉子节点。
+        ; kind == C-TOOLBAR -> { yes = 1 }
+        ; 阶段67：C-TITLE-BAR 同样拿掉 —— 标题走 CMP-TEXT、按钮是 TTB-BTN
+        ; 数据，不是视觉子节点。
+        ; kind == C-TITLE-BAR -> { yes = 1 }
+        ; 阶段63：C-STATUS-BAR 同样拿掉 —— 段是 SB-SEG 数据，不是视觉子节点。
+        ; 阶段69：C-SIDEBAR 同样拿掉 —— 组 / 条目是 SDB-* 数据，不是视觉子节点。
+        ; kind == C-SIDEBAR -> { yes = 1 }
         kind == C-MENU -> { yes = 1 }
         kind == C-BREADCRUMB -> { yes = 1 }
-        kind == C-HISTORY -> { yes = 1 }
         kind == C-COMMAND -> { yes = 1 }
         kind == C-LIST -> { yes = 1 }
         kind == C-VIRTUAL-LIST -> { yes = 1 }
-        kind == C-SEARCHABLE-LIST -> { yes = 1 }
+        ; 阶段66：C-SEARCHABLE-LIST 同样拿掉 -- 条目是 SL-ITEM / SL-MATCH
+        ; 数据，不是视觉子节点（同 combobox 的匹配表）。
         kind == C-TREE -> { yes = 1 }
-        kind == C-ACCORDION -> { yes = 1 }
-        kind == C-CAROUSEL -> { yes = 1 }
+        ; 阶段56：C-ACCORDION 拿掉 —— 组（AC-TITLE / AC-BODY / AC-EXP）是数据，
+        ; 不是视觉子节点；留在白名单里会在「没挂子节点」时画成 0×0 的 FIELD 矩形。
+        ; 阶段57：C-CAROUSEL 同样拿掉 —— 幻灯片是 CR-SLIDE 数据，不是视觉子节点。
+        ; 阶段60：C-HISTORY 同样拿掉 —— 条目是 HST-ENTRY 数据，不是视觉子节点。
         kind == C-TABLE -> { yes = 1 }
         kind == C-SCROLL -> { yes = 1 }
-        kind == C-MESSAGE-SCROLLER -> { yes = 1 }
+        ; 阶段62：C-MESSAGE-SCROLLER 同样拿掉 —— 消息是 MS-MSG / MS-AUTH 数据，
+        ; 不是视觉子节点。
         kind == C-RESIZABLE -> { yes = 1 }
         kind == C-DOCK -> { yes = 1 }
         kind == C-DIALOG -> { yes = 1 }
-        kind == C-POPOVER -> { yes = 1 }
+        ; 阶段64：C-POPOVER 同样拿掉 —— 正文行是 PV-LINE 数据，不是视觉子节点。
         kind == C-HOVER-CARD -> { yes = 1 }
-        kind == C-SHEET -> { yes = 1 }
-        kind == C-INSPECTOR -> { yes = 1 }
+        ; 阶段70：C-SHEET 同样拿掉 —— 展开位 / 停靠边是 SHT-OPEN / SHT-SIDE 数据，
+        ; 不是视觉子节点。
+        ; kind == C-SHEET -> { yes = 1 }
+        ; 阶段61：C-INSPECTOR 同样拿掉 —— 字段是 IN-LAB / IN-VAL 数据，
+        ; 不是视觉子节点。
+        ; 阶段62：C-MESSAGE-SCROLLER 同样拿掉 —— 消息是 MS-MSG / MS-AUTH 数据。
         kind == C-WINDOW-BORDER -> { yes = 1 }
         kind == C-SIZING -> { yes = 1 }
         kind == C-STYLED -> { yes = 1 }
@@ -405,6 +425,8 @@ cs-is-container = (kind i64) (yes i64) {
 ; 阶段43：C-PAGINATION 从白名单里拿掉了 —— 它的页码按钮是**数据**不是视觉子节点
 ; （同 C-SELECT / C-COMBOBOX / C-TAB 一路），画 / 点 / 量都读 VALUE / VALUE2，
 ; 混进白名单会让「给分页挂真子节点」和「虚拟页码」两套语义打架。
+; 阶段55：C-DESCRIPTION-LIST 同样拿掉 —— 它的行是 DL-LAB / DL-VAL 数据，
+; 不是视觉子节点；留在白名单里会在「没挂子节点」时画成 0×0 的 FIELD 矩形。
 
 ; 叠加层判定：dv-overlay 打在节点上的标记（F-OVERLAY）。
 ; 叠加层不参与父级的流布局与测量，改为在父矩形内居中；命中时先于其它子节点（模态）。
@@ -453,6 +475,42 @@ cs-find-key = (k i64) (h i64) {
     }
 }
 
+; 内容区尺寸（不含内边距）：横向宽求和 / 高取最大，纵向宽取最大 / 高求和。
+; 抽出来给 group-box 复用，避免把两段循环抄两遍。
+cs-measure-flow = (h i64) (cw i64, ch i64) {
+    gap = cs-gap-of(h)
+    (cs-is-h(h) == 1) -> {
+        ; 横向：宽求和，高取最大
+        cw = 0
+        ch = 0
+        i = 0
+        !! {
+            c = cs-child-flow(h, i)
+            (c < 0) -> { ** }
+            cwi, chi = cs-measure(c)
+            cw = cs-add(cw, cs-add(cwi, gap))
+            (chi > ch) -> { ch = chi }
+            i = cs-inc(i)
+        }
+        cw = cs-sub(cw, gap)
+    }
+    (cs-is-h(h) == 0) -> {
+        ; 纵向：宽取最大，高求和
+        cw = 0
+        ch = 0
+        i = 0
+        !! {
+            c = cs-child-flow(h, i)
+            (c < 0) -> { ** }
+            cwi, chi = cs-measure(c)
+            (cwi > cw) -> { cw = cwi }
+            ch = cs-add(ch, cs-add(chi, gap))
+            i = cs-inc(i)
+        }
+        ch = cs-sub(ch, gap)
+    }
+}
+
 cs-measure = (h i64) (w i64, ht i64) {
     kind = cmp-kind(h)
     n = cs-child-count(h)
@@ -474,41 +532,33 @@ cs-measure = (h i64) (w i64, ht i64) {
         ht = cs-sub(ht, CS-GAP)
         w = cs-add(w, cs-mul(CS-PAD, 2))
     }
-    ((cont == 1) && (n > 0)) -> {
-        gap = cs-gap-of(h)
+    ; group-box：标题占顶部一行，内容区在其下 —— 标题走 CMP-TEXT，
+    ; 子节点是视觉节点（真容器，白名单保留），宽度取「标题 / 内容」的较大者。
+    ; 必须排在通用容器分支**之前**：本块是「有 else 的匹配链」（末臂是兜底
+    ; `-> { cs-leaf-size }`），先命中先赢，排在后面永远轮不到。
+    ((kind == C-GROUP-BOX)) -> {
         pad = cs-pad-of(h)
-        (cs-is-h(h) == 1) -> {
-            ; 横向：宽求和，高取最大
-            w = cs-mul(pad, 2)
-            ht = 0
-            i = 0
-            !! {
-                c = cs-child-flow(h, i)
-                (c < 0) -> { ** }
-                cw, ch = cs-measure(c)
-                w = cs-add(w, cs-add(cw, gap))
-                (ch > ht) -> { ht = ch }
-                i = cs-inc(i)
-            }
-            w = cs-sub(w, gap)
-            ht = cs-add(ht, cs-mul(pad, 2))
+        gap = cs-gap-of(h)
+        th = gb-title-h()
+        tw = cs-text-w(cmp-text(h))
+        inner = tw
+        hh = 0
+        (n > 0) -> {
+            cw, ch = cs-measure-flow(h)
+            (cw > inner) -> { inner = cw }
+            hh = ch
         }
-        (cs-is-h(h) == 0) -> {
-            ; 纵向：宽取最大，高求和
-            w = 0
-            ht = cs-mul(pad, 2)
-            i = 0
-            !! {
-                c = cs-child-flow(h, i)
-                (c < 0) -> { ** }
-                cw, ch = cs-measure(c)
-                (cw > w) -> { w = cw }
-                ht = cs-add(ht, cs-add(ch, gap))
-                i = cs-inc(i)
-            }
-            ht = cs-sub(ht, gap)
-            w = cs-add(w, cs-mul(pad, 2))
-        }
+        w = cs-add(cs-mul(pad, 2), inner)
+        (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+        ht = cs-add(cs-mul(pad, 2), th)
+        (n > 0) -> { ht = cs-add(ht, cs-add(hh, gap)) }
+        (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+    }
+    ((cont == 1) && (n > 0)) -> {
+        pad = cs-pad-of(h)
+        cw, ch = cs-measure-flow(h)
+        w = cs-add(cs-mul(pad, 2), cw)
+        ht = cs-add(cs-mul(pad, 2), ch)
     }
     ((cont == 0) && (kind == C-TAB) && (n > 0)) -> {
         ; tab 条：标题横向求和
@@ -626,6 +676,584 @@ cs-measure = (h i64) (w i64, ht i64) {
                 ht = cs-add(ht, CS-LINE-H)
             }
         }
+        ; 阶段46：附件 —— 这里才有句柄 h，才读得到 att-size-text。
+        ; 宽 = 左右内边距 + 图标方块(32px) + 间隙 + 文件名 + 间隙 + 尺寸文案。
+        (kind == C-ATTACHMENT) -> {
+            w = cs-mul(CS-PAD, 2)
+            w = cs-add(w, att-icon())
+            w = cs-add(w, att-gap())
+            w = cs-add(w, cs-mul(t.len(), CS-CHAR-W))
+            w = cs-add(w, att-gap())
+            w = cs-add(w, cs-text-w(att-size-text(h)))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+        }
+        ; 阶段46：路径段 —— 宽 = 左右内边距 + 各段宽 + (段数-1) * 分隔符宽
+        (kind == C-INDEX-PATH) -> {
+            n = ip-count(h)
+            w = cs-mul(CS-PAD, 2)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                w = cs-add(w, cs-text-w(ip-seg(h, i)))
+                (i < cs-sub(n, 1)) -> { w = cs-add(w, cs-text-w(ip-sep())) }
+                i = cs-inc(i)
+            }
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+        }
+        ; 阶段53：面包屑 —— 与 index-path 同形，但分隔符取每句柄的 bc-sep
+        (kind == C-BREADCRUMB) -> {
+            n = bc-count(h)
+            sep = bc-sep(h)
+            w = cs-mul(CS-PAD, 2)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                w = cs-add(w, cs-text-w(bc-item(h, i)))
+                (i < cs-sub(n, 1)) -> { w = cs-add(w, cs-text-w(sep)) }
+                i = cs-inc(i)
+            }
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+        }
+        ; 阶段54：骨架屏 —— 宽 = 左右内边距 + 占位条轨道（12000）；
+        ; 高 = 上下内边距 + N 行 + (N-1) 行距，下限 CS-BTN-H。
+        (kind == C-SKELETON) -> {
+            n = sk-lines(h)
+            gap = sk-gap(h)
+            w = cs-add(cs-mul(CS-PAD, 2), 12000)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-mul(CS-PAD, 2)
+            ht = cs-add(ht, cs-mul(n, CS-LINE-H))
+            (n > 1) -> { ht = cs-add(ht, cs-mul(cs-sub(n, 1), gap)) }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段47：取色器 —— 色板(32px) + 间隙 + 「#RRGGBB」+ 间隙 + hue 数字。
+        ; 文案都由句柄算（cp-hex / cp-hue），所以跟 C-ATTACHMENT 一样落兜底分支。
+        (kind == C-COLOR-PICKER) -> {
+            hex = cp-hex(h)
+            hu = cp-hue(h)
+            hs = hu.to-str()
+            w = cs-mul(CS-PAD, 2)
+            w = cs-add(w, cp-swatch())
+            w = cs-add(w, cp-gap())
+            w = cs-add(w, cs-mul(hex.len(), CS-CHAR-W))
+            w = cs-add(w, cp-gap())
+            w = cs-add(w, cs-mul(hs.len(), CS-CHAR-W))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+        }
+        ; 阶段47：日期 —— 「YYYY-MM-DD」固定 10 字 + 左右内边距
+        (kind == C-DATE-PICKER) -> {
+            s = dp-label(h)
+            w = cs-add(cs-mul(s.len(), CS-CHAR-W), cs-mul(CS-PAD, 2))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+        }
+        ; 阶段48：代码块 —— 宽 = 左右内边距 + 行号槽 + 最长行（tab 折算），
+        ; 高 = 上下内边距 + 行数 * 行高。同 C-ATTACHMENT 的理由：这里才有句柄 h，
+        ; 才读得到 hl-max-len / hl-lines。
+        (kind == C-HIGHLIGHTER) -> {
+            n = hl-lines(h)
+            lg = hl-lang(h)
+            w = cs-mul(hl-pad(), 2)
+            w = cs-add(w, hl-gutter())
+            w = cs-add(w, cs-mul(hl-max-len(h), CS-CHAR-W))
+            (lg.len() > 0) -> {
+                w = cs-add(w, hl-gap())
+                w = cs-add(w, cs-text-w(lg))
+            }
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(hl-pad(), 2), cs-mul(n, CS-LINE-H))
+        }
+        ; 阶段48：主题卡 —— 宽 = 左右内边距 + 4 块色板 + 3 个间隙，
+        ; 高 = 上下内边距 + 标题行 + 间隙 + 色板 + 间隙 + 标签行
+        (kind == C-THEME) -> {
+            sw = th-swatch(h)
+            w = cs-mul(th-pad(), 2)
+            w = cs-add(w, cs-mul(4, sw))
+            w = cs-add(w, cs-mul(3, th-gap()))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-mul(th-pad(), 2)
+            ht = cs-add(ht, CS-LINE-H)
+            ht = cs-add(ht, th-gap())
+            ht = cs-add(ht, sw)
+            ht = cs-add(ht, th-gap())
+            ht = cs-add(ht, th-label-h())
+        }
+        ; 阶段49：diff —— 宽 = 左右内边距 + 行号槽 + 最长行；
+        ; 高 = 上下内边距 + 行数 * 行高。同 C-HIGHLIGHTER 的理由：这里才有句柄 h，
+        ; 才读得到 df-rows / df-max-len。
+        (kind == C-DIFF) -> {
+            n = df-rows(h)
+            w = cs-mul(df-pad(), 2)
+            w = cs-add(w, df-gutter())
+            w = cs-add(w, cs-mul(df-max-len(h), CS-CHAR-W))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(df-pad(), 2), cs-mul(n, CS-LINE-H))
+        }
+        ; 阶段50：图表 —— 宽 = 左右内边距 + 点数 * 点槽宽；
+        ; 高 = 上下内边距 + 标题行（有标题时）+ 绘图区 + x 轴标签行。
+        ; 同 C-HIGHLIGHTER 的理由：这里才有句柄 h，才读得到 ch-points。
+        (kind == C-CHART) -> {
+            pn = ch-points(h)
+            w = cs-add(cs-mul(ch-pad(), 2), cs-mul(pn, ch-slot()))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-mul(ch-pad(), 2)
+            (t.len() > 0) -> { ht = cs-add(ht, ch-title-h()) }
+            ht = cs-add(ht, ch-plot-h())
+            ht = cs-add(ht, CS-LINE-H)
+        }
+        ; 阶段50：绘图 —— 宽 = 左右内边距 + 点数 * 点槽宽；
+        ; 高 = 上下内边距 + 标题行（有标题时）+ 绘图区。
+        (kind == C-PLOT) -> {
+            n = pl-count(h)
+            w = cs-add(cs-mul(ch-pad(), 2), cs-mul(n, pl-slot()))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-mul(ch-pad(), 2)
+            (t.len() > 0) -> { ht = cs-add(ht, ch-title-h()) }
+            ht = cs-add(ht, ch-plot-h())
+        }
+        ; 阶段51：自绘下拉菜单 —— 宽 = 按钮文案与各项文案的最大宽
+        ; + 左右内边距 + 箭头槽；高 = 按钮高，展开时再加间隙 + 项数 * 行高。
+        (kind == C-NATIVE-MENU) -> {
+            mw = cs-text-w(t)
+            n = nm-count(h)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                lw = cs-text-w(nm-label(h, i))
+                (lw > mw) -> { mw = lw }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(CS-PAD, 2), mw)
+            w = cs-add(w, 2400)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+            (cmp-has(h, F-OPEN)) -> {
+                ht = cs-add(ht, CS-GAP)
+                ht = cs-add(ht, cs-mul(n, CS-LINE-H))
+            }
+        }
+        ; 阶段52：窗口选项面板 —— 宽 = 左右内边距 + 标签列 + 间隙 + 数值列；
+        ; 高 = 上下内边距 + 标题行 + 8 行状态（WE-ROWS）。
+        ; 同 C-HIGHLIGHTER 的理由：这里才有句柄 h，才读得到 we-* 状态。
+        (kind == C-WINDOW-EXT) -> {
+            w = cs-add(cs-mul(ch-pad(), 2), 16000)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(ch-pad(), 2), ch-title-h())
+            ht = cs-add(ht, cs-mul(WE-ROWS, CS-LINE-H))
+        }
+        ; 阶段55：描述列表 —— 宽 = 左右内边距 + 标签列 + 列间隙 + 值列
+        ; （值列取最长值，下限 6400）；高 = 上下内边距 + N 行 + (N-1) 分隔线，
+        ; 下限 CS-BTN-H。同 C-WINDOW-EXT：这里才有句柄 h，才读得到 dl-* 状态。
+        (kind == C-DESCRIPTION-LIST) -> {
+            n = dl-count(h)
+            lw = dl-lab-w()
+            gw = dl-gap()
+            vw = dl-val-min()
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                vw2 = cs-text-w(dl-value(h, i))
+                (vw2 > vw) -> { vw = vw2 }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(CS-PAD, 2), cs-add(lw, cs-add(gw, vw)))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-mul(CS-PAD, 2)
+            ht = cs-add(ht, cs-mul(n, CS-LINE-H))
+            (n > 1) -> { ht = cs-add(ht, cs-mul(cs-sub(n, 1), CS-SEP-H)) }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段56：手风琴 —— 宽 = 左右内边距 + 展开符宽 + 符后间隙 + 内容列
+        ; （内容列取「最长组标题」与「展开组里最长正文行」的较大者，下限
+        ; CS-MIN-LEAF-W）；高 = 上下内边距 + Σ(组头 4000 + 展开组正文行数*行高)
+        ; + (N-1) 分隔线，下限 CS-BTN-H。
+        (kind == C-ACCORDION) -> {
+            n = ac-count(h)
+            gw = ac-glyph-w()
+            gg = ac-gap()
+            tw = 0
+            bw = 0
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                v = cs-text-w(ac-title(h, i))
+                (v > tw) -> { tw = v }
+                (ac-expanded(h, i) != 0) -> {
+                    j = 0
+                    m = ac-body-count(h, i)
+                    !! {
+                        (j >= m) -> { ** }
+                        v2 = cs-text-w(ac-body-line(h, i, j))
+                        (v2 > bw) -> { bw = v2 }
+                        j = cs-inc(j)
+                    }
+                }
+                i = cs-inc(i)
+            }
+            (bw > tw) -> { tw = bw }
+            w = cs-add(cs-mul(CS-PAD, 2), cs-add(gw, cs-add(gg, tw)))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-mul(CS-PAD, 2)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                ht = cs-add(ht, ac-head-h())
+                (ac-expanded(h, i) != 0) -> {
+                    ht = cs-add(ht, cs-mul(ac-body-count(h, i), CS-LINE-H))
+                }
+                (i < cs-sub(n, 1)) -> { ht = cs-add(ht, CS-SEP-H) }
+                i = cs-inc(i)
+            }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段57：carousel —— 上带「< 当前幻灯片 >」高 CS-BTN-H，
+        ; 下带一行圆点高 CS-LINE-H，中间 CS-SEP-H 分隔。
+        ; 宽 = 2*PAD + 2*箭头 + 2*间隙 + 最长幻灯片文案。
+        (kind == C-CAROUSEL) -> {
+            n = cr-count(h)
+            aw = cr-arrow-w()
+            gg = cr-gap()
+            tw = 0
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                v = cs-text-w(cr-slide(h, i))
+                (v > tw) -> { tw = v }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(CS-PAD, 2), cs-add(cs-mul(aw, 2), cs-add(cs-mul(gg, 2), tw)))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(CS-PAD, 2), cs-add(CS-BTN-H, cs-add(CS-SEP-H, CS-LINE-H)))
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段60：history —— N 行条目，每行 CS-LINE-H，行间 CS-SEP-H 分隔。
+        ; 宽 = 2*CS-PAD + 标记条 800 + 间隙 800 + 最长条目文案，下限 6400。
+        (kind == C-HISTORY) -> {
+            n = hst-count(h)
+            mw = hst-marker-w()
+            gg = hst-gap()
+            tw = 0
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                v = cs-text-w(hst-entry(h, i))
+                (v > tw) -> { tw = v }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(CS-PAD, 2), cs-add(mw, cs-add(gg, tw)))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-mul(CS-PAD, 2)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                ht = cs-add(ht, CS-LINE-H)
+                (i < cs-sub(n, 1)) -> { ht = cs-add(ht, CS-SEP-H) }
+                i = cs-inc(i)
+            }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段61：inspector —— 顶部一行目标名（前带 ACCENT 标记条），下面 N 行
+        ; 「标签（MUTED）+ 间隙 + 值（FG）」。
+        ; 宽 = 2*CS-PAD + 标记条 800 + 间隙 800
+        ;      + max(目标名宽, 最长标签 + 间隙 + 最长值)，下限 6400。
+        ; 高 = 上下内边距 + 目标行 CS-LINE-H + N*CS-LINE-H + (N-1)*分隔线，
+        ; 下限 CS-BTN-H。
+        (kind == C-INSPECTOR) -> {
+            n = in-count(h)
+            mw = in-marker-w()
+            gg = in-gap()
+            tw = cs-text-w(in-target(h))
+            lw = 0
+            vw = 0
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                a = cs-text-w(in-label(h, i))
+                b = cs-text-w(in-value(h, i))
+                (a > lw) -> { lw = a }
+                (b > vw) -> { vw = b }
+                i = cs-inc(i)
+            }
+            cw = cs-add(lw, cs-add(gg, vw))
+            (tw > cw) -> { cw = tw }
+            w = cs-add(cs-mul(CS-PAD, 2), cs-add(mw, cs-add(gg, cw)))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(CS-PAD, 2), CS-LINE-H)
+            ht = cs-add(ht, cs-mul(n, CS-LINE-H))
+            (n > 1) -> { ht = cs-add(ht, cs-mul(cs-sub(n, 1), CS-SEP-H)) }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段62：message-scroller —— N 条消息，每条两行（作者 MUTED + 正文 FG），
+        ; 行高各 CS-LINE-H，条间一条 CS-SEP-H 分隔线；「输入中」再补一行。
+        ; 宽 = 2*CS-PAD + max(最长作者, 最长正文)，下限 CS-MIN-LEAF-W。
+        ; 高 = 2*CS-PAD + N*2*CS-LINE-H + (N-1)*CS-SEP-H
+        ;      + （输入中 ? CS-SEP-H + CS-LINE-H : 0），下限 CS-BTN-H。
+        (kind == C-MESSAGE-SCROLLER) -> {
+            n = ms-count(h)
+            mw = 0
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                a = cs-text-w(ms-author(h, i))
+                b = cs-text-w(ms-text(h, i))
+                (a > mw) -> { mw = a }
+                (b > mw) -> { mw = b }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(CS-PAD, 2), mw)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(CS-PAD, 2), cs-mul(cs-mul(n, 2), CS-LINE-H))
+            (n > 1) -> { ht = cs-add(ht, cs-mul(cs-sub(n, 1), CS-SEP-H)) }
+            (ms-typing(h) != 0) -> { ht = cs-add(ht, cs-add(CS-SEP-H, CS-LINE-H)) }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段63：status-bar —— 一条横带，N 段文案 + 段间 1px 分隔条。
+        ; 高固定 CS-BTN-H（细条），文字垂直居中（_emit-text-left 内部算）。
+        ; 宽 = 2*CS-PAD + Σ 段宽 + (N-1)*CS-SEP-H，下限 CS-MIN-LEAF-W。
+        (kind == C-STATUS-BAR) -> {
+            n = sb-count(h)
+            dw = sb-div-w()
+            w = cs-mul(CS-PAD, 2)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                w = cs-add(w, cs-text-w(sb-seg(h, i)))
+                (i < cs-sub(n, 1)) -> { w = cs-add(w, dw) }
+                i = cs-inc(i)
+            }
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-BTN-H
+        }
+        ; 阶段64：popover —— 锚在某个组件上的小弹层。关闭时塌成最小叶片尺寸
+        ; （且 cs-paint-popover 一笔画不出）；展开时宽 = 2*CS-PAD + 箭头 800 +
+        ; 间隙 800 + max(标题, 最长正文行)，高 = 2*CS-PAD + 标题行 +
+        ; （有标题且有正文 ? CS-SEP-H : 0）+ N*CS-LINE-H。
+        (kind == C-POPOVER) -> {
+            (pv-open(h) == 0) -> {
+                w = CS-MIN-LEAF-W
+                ht = CS-BTN-H
+            }
+            (pv-open(h) != 0) -> {
+                aw = pv-arrow-w()
+                gg = pv-gap()
+                tl = pv-title(h)
+                mw = cs-text-w(tl)
+                n = pv-count(h)
+                i = 0
+                !! {
+                    (i >= n) -> { ** }
+                    v = cs-text-w(pv-line(h, i))
+                    (v > mw) -> { mw = v }
+                    i = cs-inc(i)
+                }
+                w = cs-add(cs-mul(CS-PAD, 2), cs-add(aw, cs-add(gg, mw)))
+                (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+                hh = 0
+                (tl.len() > 0) -> {
+                    hh = cs-add(hh, CS-LINE-H)
+                    (n > 0) -> { hh = cs-add(hh, CS-SEP-H) }
+                }
+                hh = cs-add(hh, cs-mul(n, CS-LINE-H))
+                ht = cs-add(cs-mul(CS-PAD, 2), hh)
+                (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+            }
+        }
+        ; 阶段65：questionnaire —— 每题两行（题干 FG + 答案 ACCENT），
+        ; 题间距 qa-gap。宽 = 2*CS-PAD + max(题干, 答案)，下限 CS-MIN-LEAF-W；
+        ; 高 = 2*CS-PAD + N*CS-LINE-H + (N-1)*qa-gap，下限 CS-BTN-H。
+        (kind == C-QUESTIONNAIRE) -> {
+            n = qa-count(h)
+            gg = qa-gap()
+            i = 0
+            mw = 0
+            !! {
+                (i >= n) -> { ** }
+                v = cs-text-w(qa-prompt(h, i))
+                (v > mw) -> { mw = v }
+                v = cs-text-w(qa-answer(h, i))
+                (v > mw) -> { mw = v }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(CS-PAD, 2), mw)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            hh = cs-mul(cs-mul(n, 2), CS-LINE-H)
+            (n > 0) -> { hh = cs-add(hh, cs-mul(cs-sub(n, 1), gg)) }
+            ht = cs-add(cs-mul(CS-PAD, 2), hh)
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段58：collapsible —— 头部一行（展开符 + 标题）高 CS-BTN-H；
+        ; 展开时下面接 N 行正文（每行 CS-LINE-H）。
+        ; 宽 = 2*CS-PAD + max(头部内容, 最长正文行)，下限 CS-MIN-LEAF-W。
+        ; 阶段66：searchable-list —— 顶部一行查询（MUTED）+ 一条 TRACK 分隔线
+        ; + N 行匹配条目（高亮行加 TRACK 底）。宽 = 2*CS-PAD +
+        ; max(查询串宽, 最长匹配条目标签)，下限 CS-MIN-LEAF-W；高 =
+        ; 2*CS-PAD + CS-LINE-H + (有匹配 ? CS-SEP-H + N*CS-LINE-H : 0)，
+        ; 下限 CS-BTN-H。
+        (kind == C-SEARCHABLE-LIST) -> {
+            p = sl-pad()
+            mn = sl-match-count(h)
+            mw = cs-text-w(cmp-text(h))
+            j = 0
+            !! {
+                (j >= mn) -> { ** }
+                ii = sl-match(h, j)
+                (ii >= 0) -> {
+                    v = cs-text-w(sl-item(h, ii))
+                    (v > mw) -> { mw = v }
+                }
+                j = cs-inc(j)
+            }
+            w = cs-add(cs-mul(p, 2), mw)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            hh = CS-LINE-H
+            (mn > 0) -> { hh = cs-add(hh, cs-add(CS-SEP-H, cs-mul(mn, CS-LINE-H))) }
+            ht = cs-add(cs-mul(p, 2), hh)
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段67：title-bar —— 左标题 + 右端一排按钮。
+        ; 按钮盒宽 = 文案宽 + 2*tb-btn-pad，按钮间距 tb-gap；
+        ; 宽 = 2*tb-pad + 标题宽 + (有按钮 ? tb-gap + Σ按钮盒宽 : 0)，
+        ; 下限 CS-MIN-LEAF-W；高 = 2*tb-pad + tb-head-h，下限 CS-BTN-H。
+        (kind == C-TITLE-BAR) -> {
+            p = tb-pad()
+            gg = tb-gap()
+            q = tb-btn-pad()
+            mw = cs-text-w(cmp-text(h))
+            n = tb-count(h)
+            tbw = 0
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                tbw = cs-add(tbw, cs-add(cs-text-w(tb-button(h, i)), cs-mul(q, 2)))
+                (i < cs-sub(n, 1)) -> { tbw = cs-add(tbw, gg) }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(p, 2), mw)
+            (n > 0) -> { w = cs-add(w, cs-add(gg, tbw)) }
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(p, 2), tb-head-h())
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段68：toolbar —— 一条横排 chip，宽 = 2*tlb-pad +
+        ; Σ(文案宽 + 2*tlb-chip-pad) + (N-1)*tlb-gap，下限 CS-MIN-LEAF-W；
+        ; 高 = 2*tlb-pad + tlb-bar-h，下限 CS-BTN-H。
+        (kind == C-TOOLBAR) -> {
+            p = tlb-pad()
+            gg = tlb-gap()
+            q = tlb-chip-pad()
+            n = tlb-count(h)
+            tlw = 0
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                tlw = cs-add(tlw, cs-add(cs-text-w(tlb-item(h, i)), cs-mul(q, 2)))
+                (i < cs-sub(n, 1)) -> { tlw = cs-add(tlw, gg) }
+                i = cs-inc(i)
+            }
+            w = cs-add(cs-mul(p, 2), tlw)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(p, 2), tlb-bar-h())
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段69：sidebar —— 组头 FG? 不：组头 MUTED、条目 FG（缩进）。
+        ; 折叠时只画组头。宽 = 2*sdb-pad + max(组头宽, 展开时条目宽+缩进)；
+        ; 高 = 2*sdb-pad + Σ_g(组头 2400 + 展开时该组条目数*2400) + 组间距。
+        (kind == C-SIDEBAR) -> {
+            p = sdb-pad()
+            gg = sdb-gap()
+            lh = sdb-line-h()
+            ind = sdb-indent()
+            ng = sdb-group-count(h)
+            mw = 0
+            ht = cs-mul(p, 2)
+            g = 0
+            !! {
+                (g >= ng) -> { ** }
+                vgw = cs-text-w(sdb-group(h, g))
+                (vgw > mw) -> { mw = vgw }
+                ht = cs-add(ht, lh)
+                (sdb-collapsed(h) == 0) -> {
+                    cnt = sdb-group-size(h, g)
+                    ht = cs-add(ht, cs-mul(cnt, lh))
+                }
+                (g < cs-sub(ng, 1)) -> { ht = cs-add(ht, gg) }
+                g = cs-inc(g)
+            }
+            (sdb-collapsed(h) == 0) -> {
+                m = sdb-item-count(h)
+                i = 0
+                !! {
+                    (i >= m) -> { ** }
+                    ig = sdb-item-group(h, i)
+                    (ig >= 0) -> {
+                        viw = cs-add(cs-text-w(sdb-item(h, i)), ind)
+                        (viw > mw) -> { mw = viw }
+                    }
+                    i = cs-inc(i)
+                }
+            }
+            w = cs-add(cs-mul(p, 2), mw)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段70：sheet —— 收起时是一条带标题的把手（高 2*pad + CS-LINE_H），
+        ; 展开时多出 sht-body-h() 正文区；宽 = 2*pad + max(标题宽, sht-min-w)。
+        (kind == C-SHEET) -> {
+            p = sht-pad()
+            inner = sht-min-w()
+            tw = cs-text-w(cmp-text(h))
+            (tw > inner) -> { inner = tw }
+            w = cs-add(cs-mul(p, 2), inner)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(p, 2), CS-LINE-H)
+            (sht-open(h) != 0) -> { ht = cs-add(ht, sht-body-h()) }
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
+        ; 阶段71：text-node —— 有片段就按片段宽度求和，没有则退回标题宽。
+        ; 与补全前一致（cs-text-w = len*CS-CHAR-W），不会动到 dv / smoke。
+        (kind == C-TEXT) -> {
+            rn = txn-count(h)
+            tw = 0
+            i = 0
+            !! {
+                (i >= rn) -> { ** }
+                tw = cs-add(tw, cs-text-w(txn-run-text(h, i)))
+                i = cs-inc(i)
+            }
+            (rn <= 0) -> { tw = cs-text-w(cmp-text(h)) }
+            w = cs-add(tw, cs-mul(CS-PAD, 2))
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = CS-LINE-H
+        }
+        (kind == C-COLLAPSIBLE) -> {
+            p = cl-pad()
+            gw = cl-glyph-w()
+            gg = cl-gap()
+            tw = cs-text-w(cl-title(h))
+            inner = cs-add(gw, cs-add(gg, tw))
+            hh = cl-head-h()
+            (cl-open(h) != 0) -> {
+                n = cl-count(h)
+                bw = 0
+                i = 0
+                !! {
+                    (i >= n) -> { ** }
+                    v = cs-text-w(cl-body-line(h, i))
+                    (v > bw) -> { bw = v }
+                    i = cs-inc(i)
+                }
+                (bw > inner) -> { inner = bw }
+                hh = cs-add(hh, cs-mul(n, CS-LINE-H))
+            }
+            w = cs-add(cs-mul(p, 2), inner)
+            (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+            ht = cs-add(cs-mul(p, 2), hh)
+            (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+        }
     }
     }
     ; 固定尺寸覆盖：0 = 自动，非 0 直接采用（容器也认 —— 定宽侧栏 / 定高工具条）
@@ -646,6 +1274,132 @@ cs-h-of = (h i64) (ht i64) {
 ; ============================================================================
 ; 布局：自顶向下递归，容器纵向堆叠（C-GRID / L-H 横向）
 ; ============================================================================
+; 流布局：把参与流布局的子节点按横向 / 纵向提示排进给定矩形（不含叠加层）。
+; 抽出来给 group-box 复用 —— 它只要把「内容区」当矩形传进来即可。
+cs-layout-flow = (h i64, x i64, y i64, w i64, ht i64) {
+    pad = cs-pad-of(h)
+    gap = cs-gap-of(h)
+    cx = cs-add(x, pad)
+    cy = cs-add(y, pad)
+    cw = cs-sub(w, cs-mul(pad, 2))
+    ch = cs-sub(ht, cs-mul(pad, 2))
+    (cs-is-h(h) == 1) -> {
+        ; 横向：主轴 = X。grow 子节点分掉剩余宽，交叉轴（Y）可按提示对齐
+        fix = 0
+        ngrow = 0
+        i = 0
+        !! {
+            c = cs-child-flow(h, i)
+            (c < 0) -> { ** }
+            cwi, _ = cs-measure(c)
+            (cs-grow(c) == 1) -> { ngrow = cs-inc(ngrow) }
+            (cs-grow(c) == 0) -> { fix = cs-add(fix, cs-add(cwi, gap)) }
+            i = cs-inc(i)
+        }
+        gw = 0
+        (ngrow > 0) -> {
+            avail = cs-sub(cs-sub(w, cs-mul(pad, 2)), fix)
+            gw = cs-div(avail, ngrow)
+        }
+        i = 0
+        !! {
+            c = cs-child-flow(h, i)
+            (c < 0) -> { ** }
+            cwi, _ = cs-measure(c)
+            (cs-grow(c) == 1) -> { cwi = gw }
+            ; 默认：保持 intrinsic 高、顶对齐（与提示出现前的行为一致）
+            ay = cy
+            ah = cs-h-of(c)
+            (ah > ch) -> { ah = ch }
+            (cs-aend(c) == 1) -> { ay = cs-sub(cs-add(cy, ch), ah) }
+            (cs-acenter(c) == 1) -> { ay = cs-add(cy, cs-div(cs-sub(ch, ah), 2)) }
+            cs-layout(c, cx, ay, cwi, ah)
+            cx = cs-add(cx, cs-add(cwi, gap))
+            i = cs-inc(i)
+        }
+    }
+    (cs-is-h(h) == 0) -> {
+        ; 纵向：主轴 = Y。grow 子节点分掉剩余高，交叉轴（X）可按提示对齐
+        fix = 0
+        ngrow = 0
+        i = 0
+        !! {
+            c = cs-child-flow(h, i)
+            (c < 0) -> { ** }
+            _, chi = cs-measure(c)
+            (cs-grow(c) == 1) -> { ngrow = cs-inc(ngrow) }
+            (cs-grow(c) == 0) -> { fix = cs-add(fix, cs-add(chi, gap)) }
+            i = cs-inc(i)
+        }
+        gh = 0
+        (ngrow > 0) -> {
+            avail = cs-sub(cs-sub(ht, cs-mul(pad, 2)), fix)
+            gh = cs-div(avail, ngrow)
+        }
+        i = 0
+        !! {
+            c = cs-child-flow(h, i)
+            (c < 0) -> { ** }
+            _, chi = cs-measure(c)
+            (cs-grow(c) == 1) -> { chi = gh }
+            ax = cx
+            aw = cw
+            iw = cs-w-of(c)
+            (iw > cw) -> { iw = cw }
+            (cs-aend(c) == 1) -> {
+                aw = iw
+                ax = cs-sub(cs-add(cx, cw), aw)
+            }
+            (cs-acenter(c) == 1) -> {
+                aw = iw
+                ax = cs-add(cx, cs-div(cs-sub(cw, aw), 2))
+            }
+            cs-layout(c, ax, cy, aw, chi)
+            cy = cs-add(cy, cs-add(chi, gap))
+            i = cs-inc(i)
+        }
+    }
+}
+
+; 叠加层布局：不参与流布局。默认在父矩形内居中（模态弹层）；
+; 挂了锚点（CMP-ANCHOR >= 0）则锚定：放在锚点矩形下方，下方放不下就翻到上方，
+; 最后夹紧在父矩形内（左右同理）。锚点找不到 -> 保持上面的居中结果。
+cs-layout-overlay = (h i64, x i64, y i64, w i64, ht i64) {
+    i = 0
+    !! {
+        c = cmp-child(h, i)
+        (c < 0) -> { ** }
+        (cmp-has(c, F-OVERLAY)) -> {
+            cw, ch = cs-measure(c)
+            (cw > w) -> { cw = w }
+            (ch > ht) -> { ch = ht }
+            ax = cs-add(x, cs-div(cs-sub(w, cw), 2))
+            ay = cs-add(y, cs-div(cs-sub(ht, ch), 2))
+            ak = cmp-anchor(c)
+            (ak >= 0) -> {
+                a = cs-find-key(ak)
+                (a >= 0) -> {
+                    arx, ary, aw, ah = cs-rect(a)
+                    ax = arx
+                    ay = cs-add(ary, cs-add(ah, CS-GAP))
+                    ; 下方超出父矩形 -> 翻到锚点上方
+                    (cs-add(ay, ch) > cs-add(y, ht)) -> {
+                        ay = cs-sub(ary, cs-add(ch, CS-GAP))
+                    }
+                    ; 夹紧（上下）：先顶到父顶，再底到父底
+                    (ay < y) -> { ay = y }
+                    (cs-add(ay, ch) > cs-add(y, ht)) -> { ay = cs-sub(cs-add(y, ht), ch) }
+                    ; 夹紧（左右）
+                    (ax < x) -> { ax = x }
+                    (cs-add(ax, cw) > cs-add(x, w)) -> { ax = cs-sub(cs-add(x, w), cw) }
+                }
+            }
+            cs-layout(c, ax, ay, cw, ch)
+        }
+        i = cs-inc(i)
+    }
+}
+
 cs-layout = (h i64, x i64, y i64, w i64, ht i64) {
     ; 固定尺寸优先于父级给出的提议（声明式 dv-size 的落点）
     fw = cmp-sw(h)
@@ -746,128 +1500,16 @@ cs-layout = (h i64, x i64, y i64, w i64, ht i64) {
     ; 所以通用分支必须显式排除 C-SCROLL，否则偏移被当成 0 重新排一次（dialog 保持
     ; 原有的「通用分支覆盖」行为，不在本阶段改动）。
     ((cont == 1) && (n > 0) && (kind != C-SCROLL)) -> {
-        (cs-is-h(h) == 1) -> {
-            ; 横向：主轴 = X。grow 子节点分掉剩余宽，交叉轴（Y）可按提示对齐
-            pad = cs-pad-of(h)
-            gap = cs-gap-of(h)
-            cx = cs-add(x, pad)
-            cy = cs-add(y, pad)
-            ch = cs-sub(ht, cs-mul(pad, 2))
-            fix = 0
-            ngrow = 0
-            i = 0
-            !! {
-                c = cs-child-flow(h, i)
-                (c < 0) -> { ** }
-                cw, _ = cs-measure(c)
-                (cs-grow(c) == 1) -> { ngrow = cs-inc(ngrow) }
-                (cs-grow(c) == 0) -> { fix = cs-add(fix, cs-add(cw, gap)) }
-                i = cs-inc(i)
-            }
-            gw = 0
-            (ngrow > 0) -> {
-                avail = cs-sub(cs-sub(w, cs-mul(pad, 2)), fix)
-                gw = cs-div(avail, ngrow)
-            }
-            i = 0
-            !! {
-                c = cs-child-flow(h, i)
-                (c < 0) -> { ** }
-                cw, _ = cs-measure(c)
-                (cs-grow(c) == 1) -> { cw = gw }
-                ; 默认：保持 intrinsic 高、顶对齐（与提示出现前的行为一致）
-                ay = cy
-                ah = cs-h-of(c)
-                (ah > ch) -> { ah = ch }
-                (cs-aend(c) == 1) -> { ay = cs-sub(cs-add(cy, ch), ah) }
-                (cs-acenter(c) == 1) -> { ay = cs-add(cy, cs-div(cs-sub(ch, ah), 2)) }
-                cs-layout(c, cx, ay, cw, ah)
-                cx = cs-add(cx, cs-add(cw, gap))
-                i = cs-inc(i)
-            }
-        }
-        (cs-is-h(h) == 0) -> {
-            ; 纵向：主轴 = Y。grow 子节点分掉剩余高，交叉轴（X）可按提示对齐
-            pad = cs-pad-of(h)
-            gap = cs-gap-of(h)
-            cx = cs-add(x, pad)
-            cy = cs-add(y, pad)
-            cw = cs-sub(w, cs-mul(pad, 2))
-            fix = 0
-            ngrow = 0
-            i = 0
-            !! {
-                c = cs-child-flow(h, i)
-                (c < 0) -> { ** }
-                _, ch = cs-measure(c)
-                (cs-grow(c) == 1) -> { ngrow = cs-inc(ngrow) }
-                (cs-grow(c) == 0) -> { fix = cs-add(fix, cs-add(ch, gap)) }
-                i = cs-inc(i)
-            }
-            gh = 0
-            (ngrow > 0) -> {
-                avail = cs-sub(cs-sub(ht, cs-mul(pad, 2)), fix)
-                gh = cs-div(avail, ngrow)
-            }
-            i = 0
-            !! {
-                c = cs-child-flow(h, i)
-                (c < 0) -> { ** }
-                _, ch = cs-measure(c)
-                (cs-grow(c) == 1) -> { ch = gh }
-                ax = cx
-                aw = cw
-                iw = cs-w-of(c)
-                (iw > cw) -> { iw = cw }
-                (cs-aend(c) == 1) -> {
-                    aw = iw
-                    ax = cs-sub(cs-add(cx, cw), aw)
-                }
-                (cs-acenter(c) == 1) -> {
-                    aw = iw
-                    ax = cs-add(cx, cs-div(cs-sub(cw, aw), 2))
-                }
-                cs-layout(c, ax, cy, aw, ch)
-                cy = cs-add(cy, cs-add(ch, gap))
-                i = cs-inc(i)
-            }
-        }
-        ; 叠加层：不参与上面的流布局。默认在父矩形内居中（模态弹层）；
-        ; 挂了锚点（CMP-ANCHOR >= 0）则锚定：放在锚点矩形下方，下方放不下就翻到上方，
-        ; 最后夹紧在父矩形内（左右同理）。锚点找不到 -> 保持上面的居中结果。
-        i = 0
-        !! {
-            c = cmp-child(h, i)
-            (c < 0) -> { ** }
-            (cmp-has(c, F-OVERLAY)) -> {
-                cw, ch = cs-measure(c)
-                (cw > w) -> { cw = w }
-                (ch > ht) -> { ch = ht }
-                ax = cs-add(x, cs-div(cs-sub(w, cw), 2))
-                ay = cs-add(y, cs-div(cs-sub(ht, ch), 2))
-                ak = cmp-anchor(c)
-                (ak >= 0) -> {
-                    a = cs-find-key(ak)
-                    (a >= 0) -> {
-                        arx, ary, aw, ah = cs-rect(a)
-                        ax = arx
-                        ay = cs-add(ary, cs-add(ah, CS-GAP))
-                        ; 下方超出父矩形 -> 翻到锚点上方
-                        (cs-add(ay, ch) > cs-add(y, ht)) -> {
-                            ay = cs-sub(ary, cs-add(ch, CS-GAP))
-                        }
-                        ; 夹紧（上下）：先顶到父顶，再底到父底
-                        (ay < y) -> { ay = y }
-                        (cs-add(ay, ch) > cs-add(y, ht)) -> { ay = cs-sub(cs-add(y, ht), ch) }
-                        ; 夹紧（左右）
-                        (ax < x) -> { ax = x }
-                        (cs-add(ax, cw) > cs-add(x, w)) -> { ax = cs-sub(cs-add(x, w), cw) }
-                    }
-                }
-                cs-layout(c, ax, ay, cw, ch)
-            }
-            i = cs-inc(i)
-        }
+        cs-layout-flow(h, x, y, w, ht)
+        cs-layout-overlay(h, x, y, w, ht)
+    }
+    ; group-box：标题占顶部一行，内容区从标题下方起排。通用分支先按整块矩形
+    ; 排了一遍，这里把「内容区」当矩形重排一次（后跑的赢，同 scroll 的套路）。
+    ((cont == 1) && (n > 0) && (kind == C-GROUP-BOX)) -> {
+        th = gb-title-h()
+        gap = cs-gap-of(h)
+        cs-layout-flow(h, x, cs-add(y, cs-add(th, gap)), w, cs-sub(ht, cs-add(th, gap)))
+        cs-layout-overlay(h, x, y, w, ht)
     }
     ; tab 条：标题横向排列
     ((cont == 0) && (kind == C-TAB) && (n > 0)) -> {
@@ -1181,6 +1823,1006 @@ cs-paint-speech = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
     }
 }
 
+; 阶段46：附件 —— 左图标方块（组件色）+ 文件名 + 右端尺寸文案（muted）
+cs-paint-attachment = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = att-pad()
+    iw = att-icon()
+    iy = cs-add(y, cs-div(cs-sub(ht, iw), 2))
+    cs-emit-rect(cs-add(x, p), iy, iw, iw, color)
+    ty = cs-add(y, cs-div(cs-sub(ht, CS-LINE-H), 2))
+    nx = cs-add(cs-add(x, p), cs-add(iw, att-gap()))
+    (t.len() > 0) -> { cs-emit-text(nx, ty, cs-theme(CS-TH-FG), t) }
+    st = att-size-text(h)
+    sw = cs-text-w(st)
+    (sw > 0) -> {
+        sx = cs-sub(cs-sub(cs-add(x, w), p), sw)
+        cs-emit-text(sx, ty, cs-theme(CS-TH-MUTED), st)
+    }
+}
+
+; 阶段46：剪贴板 —— 字段底（CS-TH-FG 文本）+ 右端复制方块（组件色）
+cs-paint-clipboard = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    p = clip-pad()
+    cw = clip-copy-w()
+    bx = cs-sub(cs-sub(cs-add(x, w), p), cw)
+    by = cs-add(y, cs-div(cs-sub(ht, cw), 2))
+    cs-emit-rect(bx, by, cw, cw, color)
+    ty = cs-add(y, cs-div(cs-sub(ht, CS-LINE-H), 2))
+    (t.len() > 0) -> { cs-emit-text(cs-add(x, p), ty, cs-theme(CS-TH-FG), t) }
+}
+
+; 阶段46：路径段 —— 各段 + 「 / 」分隔符（muted）
+cs-paint-index-path = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = 1200
+    sep = ip-sep()
+    sw = cs-text-w(sep)
+    cx = cs-add(x, p)
+    ty = cs-add(y, cs-div(cs-sub(ht, CS-LINE-H), 2))
+    n = ip-count(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        s = ip-seg(h, i)
+        (s.len() > 0) -> { cs-emit-text(cx, ty, cs-theme(CS-TH-FG), s) }
+        cx = cs-add(cx, cs-text-w(s))
+        (i < cs-sub(n, 1)) -> {
+            cs-emit-text(cx, ty, cs-theme(CS-TH-MUTED), sep)
+            cx = cs-add(cx, sw)
+        }
+        i = cs-inc(i)
+    }
+}
+
+; 阶段53：面包屑 —— 祖先 muted、当前页前景色、分隔符 TRACK
+cs-paint-breadcrumb = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = 1200
+    sep = bc-sep(h)
+    sw = cs-text-w(sep)
+    cx = cs-add(x, p)
+    ty = cs-add(y, cs-div(cs-sub(ht, CS-LINE-H), 2))
+    n = bc-count(h)
+    last = cs-sub(n, 1)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        s = bc-item(h, i)
+        (i == last) -> { cs-emit-text(cx, ty, cs-theme(CS-TH-FG), s) }
+        (i != last) -> { cs-emit-text(cx, ty, cs-theme(CS-TH-MUTED), s) }
+        cx = cs-add(cx, cs-text-w(s))
+        (i < last) -> {
+            cs-emit-text(cx, ty, cs-theme(CS-TH-TRACK), sep)
+            cx = cs-add(cx, sw)
+        }
+        i = cs-inc(i)
+    }
+}
+
+; 阶段54：骨架屏 —— TRACK 底 + N 条 MUTED 占位条；相位 > 0 时叠一条
+; 从左扫到右的 FG 高光（带宽 = 轨道宽 / 3，位置由相位 0..100 决定）。
+cs-paint-skeleton = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-TRACK))
+    n = sk-lines(h)
+    (n > 0) -> {
+        p = CS-PAD
+        gap = sk-gap(h)
+        bx = cs-add(x, p)
+        bw = cs-sub(w, cs-mul(p, 2))
+        lh = CS-LINE-H
+        iy = cs-add(y, p)
+        ph = sk-phase(h)
+        band = cs-div(bw, 3)
+        i = 0
+        !! {
+            (i >= n) -> { ** }
+            ly = cs-add(iy, cs-mul(i, cs-add(lh, gap)))
+            cs-emit-rect(bx, ly, bw, lh, cs-theme(CS-TH-MUTED))
+            (ph > 0) -> {
+                span = cs-sub(bw, band)
+                off = cs-mul(ph, cs-div(span, 100))
+                cs-emit-rect(cs-add(bx, off), ly, band, lh, cs-theme(CS-TH-FG))
+            }
+            i = cs-inc(i)
+        }
+    }
+}
+
+; 阶段47：取色器 —— 左色板（当前色）+ 「#RRGGBB」+ 间隙 + hue 数字（muted）
+cs-paint-color-picker = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = cp-pad()
+    sw = cp-swatch()
+    sy = cs-add(y, cs-div(cs-sub(ht, sw), 2))
+    cs-emit-rect(cs-add(x, p), sy, sw, sw, cp-color(h))
+    ty = cs-add(y, cs-div(cs-sub(ht, CS-LINE-H), 2))
+    tx = cs-add(cs-add(x, p), cs-add(sw, cp-gap()))
+    hex = cp-hex(h)
+    cs-emit-text(tx, ty, cs-theme(CS-TH-FG), hex)
+    tx = cs-add(tx, cs-mul(hex.len(), CS-CHAR-W))
+    tx = cs-add(tx, cp-gap())
+    hu = cp-hue(h)
+    cs-emit-text(tx, ty, cs-theme(CS-TH-MUTED), hu.to-str())
+}
+
+; 阶段47：日期 —— 字段底（CS-TH-FIELD）+ 「YYYY-MM-DD」
+cs-paint-date-picker = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    ty = cs-add(y, cs-div(cs-sub(ht, CS-LINE-H), 2))
+    cs-emit-text(cs-add(x, 1200), ty, cs-theme(CS-TH-FG), dp-label(h))
+}
+
+; 阶段48：代码块 —— 字段底 + 行号槽（右对齐）+ 逐 token 着色（复用 ed-lex-line）
+; + 右端语言列。行几何与测算都走 components.no 的 hl-* 函数。
+cs-paint-highlighter = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    p = hl-pad()
+    n = hl-lines(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ln = hl-line(h, i)
+        ty = cs-add(cs-add(y, p), cs-mul(i, CS-LINE-H))
+        num = cs-add(1, i)
+        ns = num.to-str()
+        nw = cs-mul(ns.len(), CS-CHAR-W)
+        gx = cs-sub(cs-add(cs-add(x, p), hl-gutter()), nw)
+        cs-emit-text(gx, ty, cs-theme(CS-TH-MUTED), ns)
+        ts []str = with-len(0)
+        tc []i64 = with-len(0)
+        nt = ed-lex-line(ln, ts, tc, cs-theme(CS-TH-ACCENT), cs-theme(CS-TH-OK), cs-theme(CS-TH-MUTED), cs-theme(CS-TH-FG))
+        tx = cs-add(cs-add(x, p), hl-gutter())
+        j = 0
+        !! {
+            (j >= nt) -> { ** }
+            tk = ed-arr-get-s(ts, j)
+            c = ct-get(tc, j)
+            cs-emit-text(tx, ty, c, tk)
+            tx = cs-add(tx, cs-text-w(tk))
+            j = cs-inc(j)
+        }
+        i = cs-inc(i)
+    }
+    lg = hl-lang(h)
+    (lg.len() > 0) -> {
+        lx = cs-add(cs-add(x, p), hl-gutter())
+        lx = cs-add(lx, cs-mul(hl-max-len(h), CS-CHAR-W))
+        lx = cs-add(lx, hl-gap())
+        cs-emit-text(lx, cs-add(y, p), cs-theme(CS-TH-ACCENT), lg)
+    }
+}
+
+; 阶段48：主题卡 —— 字段底 + 名字（左）/ 模式（右）+ 四块色板 + 标签
+cs-paint-theme = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    p = th-pad()
+    cs-emit-text(cs-add(x, p), cs-add(y, p), cs-theme(CS-TH-FG), th-name(h))
+    mn = th-mode-name(h)
+    mw = cs-text-w(mn)
+    cs-emit-text(cs-sub(cs-sub(cs-add(x, w), p), mw), cs-add(y, p), cs-theme(CS-TH-MUTED), mn)
+    sw = th-swatch(h)
+    sy = cs-add(cs-add(cs-add(y, p), CS-LINE-H), th-gap())
+    i = 0
+    !! {
+        (i >= 4) -> { ** }
+        sx = cs-add(cs-add(x, p), cs-mul(i, cs-add(sw, th-gap())))
+        cs-emit-rect(sx, sy, sw, sw, th-swatch-color(h, i))
+        lb = th-swatch-label(i)
+        cs-emit-text(sx, cs-add(sy, cs-add(sw, th-gap())), cs-theme(CS-TH-MUTED), lb)
+        i = cs-inc(i)
+    }
+}
+
+; 阶段49：diff —— 字段底 + 行号槽（旧号 / 新号，muted）+ 行级 glyph + 文本。
+; 颜色按行级别：上下文 FG / 新增 OK / 删除 DANGER。
+cs-paint-diff = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    p = df-pad()
+    n = df-rows(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        op = df-row-op(h, i)
+        s = df-row-text(h, i)
+        ty = cs-add(cs-add(y, p), cs-mul(i, CS-LINE-H))
+        oc = cs-theme(CS-TH-FG)
+        glyph = ' '
+        (op == 1) -> { oc = cs-theme(CS-TH-OK), glyph = '+' }
+        (op == 2) -> { oc = cs-theme(CS-TH-DANGER), glyph = '-' }
+        on = df-row-old-no(h, i)
+        nn = df-row-new-no(h, i)
+        os = ''
+        ns = ''
+        (on > 0) -> { os = on.to-str() }
+        (nn > 0) -> { ns = nn.to-str() }
+        ; 行号槽右缘 = x + pad + gutter；新号右对齐到该缘，旧号右对齐到
+        ; 该缘再往左一个字符（两列各占一格，多位数时向左溢出）。
+        colr = cs-add(cs-add(x, p), df-gutter())
+        oc2 = cs-sub(colr, CS-CHAR-W)
+        gw = cs-text-w(os)
+        nw = cs-text-w(ns)
+        (os.len() > 0) -> { cs-emit-text(cs-sub(oc2, gw), ty, cs-theme(CS-TH-MUTED), os) }
+        (nw > 0) -> { cs-emit-text(cs-sub(colr, nw), ty, cs-theme(CS-TH-MUTED), ns) }
+        gx2 = colr
+        cs-emit-text(gx2, ty, oc, glyph)
+        cs-emit-text(cs-add(gx2, CS-CHAR-W), ty, oc, s)
+        i = cs-inc(i)
+    }
+}
+
+; 阶段50：图表 —— 字段底 + 标题行（左标题 / 右图例，从右缘往左排）+ 左轴 / 底轴
+; + 值轴上限 + 分组柱（每点一组，组内每序列一根，颜色 ACCENT / OK / DANGER）
+; + x 轴刻度文案。
+cs-paint-chart = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    p = ch-pad()
+    ty = cs-add(y, p)
+    (t.len() > 0) -> { cs-emit-text(cs-add(x, p), ty, cs-theme(CS-TH-FG), t) }
+    sn = ch-series(h)
+    lx = cs-sub(cs-add(x, w), p)
+    s = cs-sub(sn, 1)
+    !! {
+        (s < 0) -> { ** }
+        leg = ch-name(h, s)
+        (leg.len() > 0) -> {
+            lx = cs-sub(lx, cs-text-w(leg))
+            cs-emit-text(lx, ty, cs-theme(CS-TH-MUTED), leg)
+            lx = cs-sub(lx, CS-GAP)
+        }
+        s = cs-sub(s, 1)
+    }
+    px = cs-add(x, p)
+    py = ty
+    (t.len() > 0) -> { py = cs-add(py, ch-title-h()) }
+    pw = cs-sub(w, cs-mul(p, 2))
+    ph = ch-plot-h()
+    cs-emit-rect(px, py, CS-SEP-H, ph, cs-theme(CS-TH-MUTED))
+    cs-emit-rect(px, cs-add(py, ph), pw, CS-SEP-H, cs-theme(CS-TH-MUTED))
+    m = ch-max(h)
+    ms = m.to-str()
+    cs-emit-text(cs-add(px, cs-add(CS-SEP-H, CS-GAP)), py, cs-theme(CS-TH-MUTED), ms)
+    ly = cs-add(cs-add(py, ph), CS-SEP-H)
+    pn = ch-points(h)
+    slot = cs-div(pw, pn)
+    bw = cs-sub(slot, ch-bar-gap())
+    (bw < CS-SEP-H) -> { bw = CS-SEP-H }
+    i = 0
+    !! {
+        (i >= pn) -> { ** }
+        lab = i.to-str()
+        lw = cs-text-w(lab)
+        cs-emit-text(cs-sub(cs-add(px, cs-mul(i, slot)), cs-div(lw, 2)), ly, cs-theme(CS-TH-MUTED), lab)
+        s = 0
+        !! {
+            (s >= sn) -> { ** }
+            v = ch-value(h, s, i)
+            bh = cs-div(cs-mul(v, ph), m)
+            bx = cs-add(cs-add(px, cs-mul(i, slot)), cs-mul(s, bw))
+            by = cs-sub(cs-add(py, ph), bh)
+            bc = cs-theme(CS-TH-ACCENT)
+            (s == 1) -> { bc = cs-theme(CS-TH-OK) }
+            (s == 2) -> { bc = cs-theme(CS-TH-DANGER) }
+            cs-emit-rect(bx, by, bw, bh, bc)
+            s = cs-inc(s)
+        }
+        i = cs-inc(i)
+    }
+}
+
+; 阶段50：绘图 —— 字段底 + 标题行 + 过原点的两轴 + 刻度文案 + 数据点（方块）
+; + 相邻点之间的 L 形连线（先水平后垂直，用细矩形拼，没有线图元）。
+cs-paint-plot = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    p = ch-pad()
+    ty = cs-add(y, p)
+    (t.len() > 0) -> { cs-emit-text(cs-add(x, p), ty, cs-theme(CS-TH-FG), t) }
+    px = cs-add(x, p)
+    py = ty
+    (t.len() > 0) -> { py = cs-add(py, ch-title-h()) }
+    pw = cs-sub(w, cs-mul(p, 2))
+    ph = ch-plot-h()
+    sc = pl-scale(h)
+    cx = cs-add(px, cs-div(pw, 2))
+    cy = cs-add(py, cs-div(ph, 2))
+    cs-emit-rect(cs-sub(cx, cs-div(CS-SEP-H, 2)), py, CS-SEP-H, ph, cs-theme(CS-TH-MUTED))
+    cs-emit-rect(px, cs-sub(cy, cs-div(CS-SEP-H, 2)), pw, CS-SEP-H, cs-theme(CS-TH-MUTED))
+    ss = sc.to-str()
+    cs-emit-text(cs-add(cx, CS-GAP), py, cs-theme(CS-TH-MUTED), ss)
+    ns = cs-neg-str(sc)
+    cs-emit-text(cs-add(cx, CS-GAP), cs-sub(cs-add(py, ph), CS-LINE-H), cs-theme(CS-TH-MUTED), ns)
+    n = pl-count(h)
+    d = pl-dot()
+    lw = pl-line()
+    pvx = 0
+    pvy = 0
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        vx = pl-x(h, i)
+        vy = pl-y(h, i)
+        dx = cs-add(cx, cs-div(cs-mul(vx, cs-div(pw, 2)), sc))
+        dy = cs-sub(cy, cs-div(cs-mul(vy, cs-div(ph, 2)), sc))
+        (i > 0) -> {
+            hx = pvx
+            hw = cs-sub(dx, pvx)
+            (hw < 0) -> {
+                hx = dx
+                hw = cs-sub(pvx, dx)
+            }
+            cs-emit-rect(hx, cs-sub(pvy, cs-div(lw, 2)), hw, lw, cs-theme(CS-TH-ACCENT))
+            vy2 = pvy
+            vh = cs-sub(dy, pvy)
+            (vh < 0) -> {
+                vy2 = dy
+                vh = cs-sub(pvy, dy)
+            }
+            cs-emit-rect(cs-sub(dx, cs-div(lw, 2)), vy2, lw, vh, cs-theme(CS-TH-ACCENT))
+        }
+        cs-emit-rect(cs-sub(dx, cs-div(d, 2)), cs-sub(dy, cs-div(d, 2)), d, d, cs-theme(CS-TH-OK))
+        pvx = dx
+        pvy = dy
+        i = cs-inc(i)
+    }
+}
+
+; 阶段51：自绘下拉菜单 —— 按钮（文案 + 箭头）+ 展开时下方弹层列表。
+; 弹层项高 CS-LINE-H，选中项铺强调色底；禁用项画成 MUTED 且不计入命中。
+cs-paint-menu = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    cs-emit-rect(x, y, w, CS-BTN-H, cs-theme(CS-TH-FIELD))
+    (cmp-has(h, F-FOCUSED)) -> {
+        cs-emit-rect(x, y, w, CS-SEP-H, cs-theme(CS-TH-ACCENT))
+        cs-emit-rect(x, cs-sub(cs-add(y, CS-BTN-H), CS-SEP-H), w, CS-SEP-H, cs-theme(CS-TH-ACCENT))
+        cs-emit-rect(x, y, CS-SEP-H, CS-BTN-H, cs-theme(CS-TH-ACCENT))
+        cs-emit-rect(cs-sub(cs-add(x, w), CS-SEP-H), y, CS-SEP-H, CS-BTN-H, cs-theme(CS-TH-ACCENT))
+    }
+    cs-emit-text-left(cs-add(x, CS-PAD), y, cs-sub(w, 2400), CS-BTN-H, t, cs-theme(CS-TH-FG))
+    ax = cs-sub(cs-add(x, w), cs-add(CS-PAD, 800))
+    ay = cs-add(y, cs-div(cs-sub(CS-BTN-H, 1200), 2))
+    (cmp-has(h, F-OPEN)) -> {
+        cs-emit-text-left(ax, ay, 1600, 1200, '^', cs-theme(CS-TH-MUTED))
+    }
+    (!cmp-has(h, F-OPEN)) -> {
+        cs-emit-text-left(ax, ay, 1600, 1200, 'v', cs-theme(CS-TH-MUTED))
+    }
+    (cmp-has(h, F-OPEN)) -> {
+        n = nm-count(h)
+        sel = nm-index(h)
+        py = cs-add(cs-add(y, CS-BTN-H), CS-GAP)
+        ph = cs-mul(n, CS-LINE-H)
+        cs-emit-rect(x, py, w, ph, cs-theme(CS-TH-FIELD))
+        i = 0
+        !! {
+            (i >= n) -> { ** }
+            iy = cs-add(py, cs-mul(i, CS-LINE-H))
+            bc = cs-theme(CS-TH-FIELD)
+            (i == sel) -> { bc = cs-theme(CS-TH-ACCENT) }
+            (nm-item-off(h, i) != 0) -> { bc = cs-theme(CS-TH-TRACK) }
+            cs-emit-rect(x, iy, w, CS-LINE-H, bc)
+            lab = nm-label(h, i)
+            lc = cs-theme(CS-TH-FG)
+            (nm-item-off(h, i) != 0) -> { lc = cs-theme(CS-TH-MUTED) }
+            cs-emit-text-left(cs-add(x, CS-PAD), iy, cs-sub(w, cs-mul(CS-PAD, 2)), CS-LINE-H, lab, lc)
+            i = cs-inc(i)
+        }
+    }
+}
+
+; 弹层命中：返回点 (px,py) 落在第几项；没展开 / 没命中 / 落在禁用项返回 -1。
+; 组件模块拿不到 cs-rect，所以命中测试放在渲染层（同 cs-dock-* 的分工）。
+cs-menu-hit = (h i64, px i64, py i64) (idx i64) {
+    idx = -1
+    (cmp-has(h, F-OPEN)) -> {
+        rx, ry, rw, rh = cs-rect(h)
+        n = nm-count(h)
+        top = cs-add(cs-add(ry, CS-BTN-H), CS-GAP)
+        bh = cs-mul(n, CS-LINE-H)
+        ((px >= rx) && (px < cs-add(rx, rw)) && (py >= top) && (py < cs-add(top, bh))) -> {
+            idx = cs-div(cs-sub(py, top), CS-LINE-H)
+            (idx >= n) -> { idx = -1 }
+        }
+        ((idx >= 0) && (nm-item-off(h, idx) != 0)) -> { idx = -1 }
+    }
+    idx = idx
+}
+
+; 阶段52：窗口选项面板。8 行状态（WE-ROWS）：
+;   on / title / resizable / fullscreen / always on top / bordered / opacity / size
+; 面板只反映 components.no 里的 we-* 状态；真正推给 SDL 是 app.no 的
+; app-window-apply（components.no 不能 import app.no，会成环）。
+cs-paint-window-ext = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = ch-pad()
+    lw = 12000
+    gw = 1600
+    vx = cs-add(cs-add(x, p), cs-add(lw, gw))
+    vw = cs-sub(w, cs-add(cs-mul(p, 2), cs-add(lw, gw)))
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    (cmp-has(h, F-FOCUSED)) -> {
+        cs-emit-rect(x, y, w, CS-SEP-H, cs-theme(CS-TH-ACCENT))
+        cs-emit-rect(x, cs-sub(cs-add(y, ht), CS-SEP-H), w, CS-SEP-H, cs-theme(CS-TH-ACCENT))
+        cs-emit-rect(x, y, CS-SEP-H, ht, cs-theme(CS-TH-ACCENT))
+        cs-emit-rect(cs-sub(cs-add(x, w), CS-SEP-H), y, CS-SEP-H, ht, cs-theme(CS-TH-ACCENT))
+    }
+    cs-emit-text(cs-add(x, p), cs-add(y, p), cs-theme(CS-TH-FG), we-title(h))
+    ly = cs-add(cs-add(y, p), ch-title-h())
+    cs-emit-rect(x, ly, w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+    i = 0
+    !! {
+        (i >= WE-ROWS) -> { ** }
+        ry = cs-add(ly, cs-mul(i, CS-LINE-H))
+        lab = ''
+        val = ''
+        (i == 0) -> {
+            lab = 'on'
+            val = 'off'
+            (we-on(h) != 0) -> { val = 'on' }
+        }
+        (i == 1) -> {
+            lab = 'title'
+            val = we-title(h)
+        }
+        (i == 2) -> {
+            lab = 'resizable'
+            val = we-resizable(h).to-str()
+        }
+        (i == 3) -> {
+            lab = 'fullscreen'
+            val = we-fullscreen(h).to-str()
+        }
+        (i == 4) -> {
+            lab = 'always on top'
+            val = we-always-on-top(h).to-str()
+        }
+        (i == 5) -> {
+            lab = 'bordered'
+            val = we-bordered(h).to-str()
+        }
+        (i == 6) -> {
+            lab = 'opacity'
+            val = we-opacity(h).to-str()
+        }
+        (i == 7) -> {
+            lab = 'size'
+            val = 'auto'
+            (we-w(h) > 0) -> {
+                (we-h(h) > 0) -> {
+                    val = ''
+                    val.push-str(we-w(h).to-str())
+                    val.push-str('x')
+                    val.push-str(we-h(h).to-str())
+                }
+            }
+        }
+        cs-emit-text-left(cs-add(x, p), ry, lw, CS-LINE-H, lab, cs-theme(CS-TH-MUTED))
+        cs-emit-text-align(vx, ry, vw, CS-LINE-H, val, cs-theme(CS-TH-FG), A-RIGHT)
+        i = cs-inc(i)
+    }
+}
+
+; 阶段55：描述列表 —— FIELD 底 + N 行「左标签（MUTED）/ 右值（FG 右对齐）」+
+; 行间 TRACK 分隔线。标签列固定 dl-lab-w()，值列右对齐到面板右缘内边距。
+cs-paint-description-list = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = dl-pad()
+    lw = dl-lab-w()
+    gw = dl-gap()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    vx = cs-add(cs-add(x, p), cs-add(lw, gw))
+    vw = cs-sub(w, cs-add(cs-mul(p, 2), cs-add(lw, gw)))
+    n = dl-count(h)
+    iy = cs-add(y, p)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ry = cs-add(iy, cs-mul(i, cs-add(CS-LINE-H, CS-SEP-H)))
+        cs-emit-text-left(cs-add(x, p), ry, lw, CS-LINE-H, dl-label(h, i), cs-theme(CS-TH-MUTED))
+        cs-emit-text-align(vx, ry, vw, CS-LINE-H, dl-value(h, i), cs-theme(CS-TH-FG), A-RIGHT)
+        (i < cs-sub(n, 1)) -> {
+            cs-emit-rect(x, cs-add(ry, CS-LINE-H), w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+        }
+        i = cs-inc(i)
+    }
+}
+
+; 阶段56：手风琴 —— FIELD 底 + 每组「展开符（ACCENT）+ 组标题（FG）」，
+; 展开组在组头下方画正文行（MUTED，与标题同缩进）；组间 TRACK 分隔线。
+; 收起组只画组头，高度就是 ac-head-h()。
+cs-paint-accordion = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = ac-pad()
+    gw = ac-glyph-w()
+    gg = ac-gap()
+    hh = ac-head-h()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    gx = cs-add(x, p)
+    tx = cs-add(gx, cs-add(gw, gg))
+    n = ac-count(h)
+    ty = cs-add(y, p)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (ac-expanded(h, i) != 0) -> {
+            cs-emit-text-left(gx, ty, gw, hh, '-', cs-theme(CS-TH-ACCENT))
+        }
+        (ac-expanded(h, i) == 0) -> {
+            cs-emit-text-left(gx, ty, gw, hh, '>', cs-theme(CS-TH-ACCENT))
+        }
+        cs-emit-text-left(tx, ty, cs-sub(w, cs-sub(tx, x)), hh, ac-title(h, i), cs-theme(CS-TH-FG))
+        ty = cs-add(ty, hh)
+        (ac-expanded(h, i) != 0) -> {
+            j = 0
+            m = ac-body-count(h, i)
+            !! {
+                (j >= m) -> { ** }
+                cs-emit-text-left(tx, cs-add(ty, cs-mul(j, CS-LINE-H)), cs-sub(w, cs-sub(tx, x)), CS-LINE-H, ac-body-line(h, i, j), cs-theme(CS-TH-MUTED))
+                j = cs-inc(j)
+            }
+            ty = cs-add(ty, cs-mul(m, CS-LINE-H))
+        }
+        (i < cs-sub(n, 1)) -> {
+            cs-emit-rect(x, ty, w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+            ty = cs-add(ty, CS-SEP-H)
+        }
+        i = cs-inc(i)
+    }
+}
+
+; 阶段57：carousel —— FIELD 底 + 上带「< 当前幻灯片 >」（箭头到头转 MUTED）
+; + CS-SEP-H 分隔线 + 下带一行圆点（当前点 ACCENT，其余 TRACK）。
+cs-paint-carousel = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = cr-pad()
+    aw = cr-arrow-w()
+    gg = cr-gap()
+    n = cr-count(h)
+    cur = cr-current(h)
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    by = cs-add(y, p)
+    bh = CS-BTN-H
+    ac = cs-theme(CS-TH-ACCENT)
+    (cur <= 0) -> { ac = cs-theme(CS-TH-MUTED) }
+    bc = cs-theme(CS-TH-ACCENT)
+    (cur >= cs-sub(n, 1)) -> { bc = cs-theme(CS-TH-MUTED) }
+    (n > 0) -> {
+        cs-emit-text-center(cs-add(x, p), by, aw, bh, '<', ac)
+        cs-emit-text-center(cs-sub(cs-add(x, w), cs-add(p, aw)), by, aw, bh, '>', bc)
+    }
+    tx = cs-add(cs-add(x, p), cs-add(aw, gg))
+    tw = cs-sub(w, cs-add(cs-mul(p, 2), cs-add(cs-mul(aw, 2), cs-mul(gg, 2))))
+    ((n > 0) && (tw > 0)) -> {
+        cs-emit-text-center(tx, by, tw, bh, cr-slide(h, cur), cs-theme(CS-TH-FG))
+    }
+    cs-emit-rect(x, cs-add(by, bh), w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+    dy = cs-add(cs-add(by, bh), CS-SEP-H)
+    dw = cr-dot-w()
+    dg = cr-dot-gap()
+    tot = cs-mul(n, dw)
+    (n > 1) -> { tot = cs-add(tot, cs-mul(cs-sub(n, 1), dg)) }
+    dx = cs-add(x, cs-div(cs-sub(w, tot), 2))
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        c = cs-theme(CS-TH-TRACK)
+        (i == cur) -> { c = cs-theme(CS-TH-ACCENT) }
+        cs-emit-rect(dx, cs-add(dy, cs-div(cs-sub(CS-LINE-H, dw), 2)), dw, dw, c)
+        dx = cs-add(dx, cs-add(dw, dg))
+        i = cs-inc(i)
+    }
+}
+
+; 阶段60：history —— FIELD 底 + N 行条目：当前行左侧 ACCENT 标记条 + FG 文本，
+; 其余行 TRACK 标记条 + MUTED 文本，行间一条 TRACK 分隔线。
+cs-paint-history = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = hst-pad()
+    mw = hst-marker-w()
+    gg = hst-gap()
+    n = hst-count(h)
+    cur = hst-index(h)
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    ry = cs-add(y, p)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        mc = cs-theme(CS-TH-TRACK)
+        tc = cs-theme(CS-TH-MUTED)
+        (i == cur) -> {
+            mc = cs-theme(CS-TH-ACCENT)
+            tc = cs-theme(CS-TH-FG)
+        }
+        cs-emit-rect(cs-add(x, p), ry, mw, CS-LINE-H, mc)
+        cs-emit-text-left(cs-add(cs-add(x, p), cs-add(mw, gg)), ry,
+                          cs-sub(w, cs-add(cs-mul(p, 2), cs-add(mw, gg))),
+                          CS-LINE-H, hst-entry(h, i), tc)
+        (i < cs-sub(n, 1)) -> {
+            cs-emit-rect(x, cs-add(ry, CS-LINE-H), w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+        }
+        ry = cs-add(ry, cs-add(CS-LINE-H, CS-SEP-H))
+        i = cs-inc(i)
+    }
+}
+
+; 阶段61：inspector —— FIELD 底 + 目标行「ACCENT 标记条 + 目标名（FG）」+
+; N 行字段「标签（MUTED）+ 间隙 + 值（FG）」，行间一条 TRACK 分隔线。
+; 目标行与字段共用同一个左缩进（标记条 + 间隙）。
+cs-paint-inspector = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = in-pad()
+    mw = in-marker-w()
+    gg = in-gap()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    cx = cs-add(cs-add(x, p), cs-add(mw, gg))
+    cw = cs-sub(w, cs-sub(cx, x))
+    n = in-count(h)
+    lw = 0
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        a = cs-text-w(in-label(h, i))
+        (a > lw) -> { lw = a }
+        i = cs-inc(i)
+    }
+    ; 目标行
+    cs-emit-rect(cs-add(x, p), cs-add(y, p), mw, CS-LINE-H, cs-theme(CS-TH-ACCENT))
+    cs-emit-text-left(cx, cs-add(y, p), cw, CS-LINE-H, in-target(h), cs-theme(CS-TH-FG))
+    ; 字段行
+    ry = cs-add(cs-add(y, p), CS-LINE-H)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        cs-emit-text-left(cx, ry, lw, CS-LINE-H, in-label(h, i), cs-theme(CS-TH-MUTED))
+        cs-emit-text-left(cs-add(cx, cs-add(lw, gg)), ry,
+                          cs-sub(cw, cs-add(lw, gg)), CS-LINE-H,
+                          in-value(h, i), cs-theme(CS-TH-FG))
+        (i < cs-sub(n, 1)) -> {
+            cs-emit-rect(x, cs-add(ry, CS-LINE-H), w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+        }
+        ry = cs-add(ry, cs-add(CS-LINE-H, CS-SEP-H))
+        i = cs-inc(i)
+    }
+}
+
+; 阶段62：message-scroller —— FIELD 底 + N 条消息（作者 MUTED + 正文 FG），
+; 条间一条 TRACK 分隔线；「输入中」时末尾再补一条分隔线 + 一行
+; 「typing...」（ACCENT）。作者为空串时仍占一行（渲染层只画非空文本）。
+cs-paint-message-scroller = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = ms-pad()
+    gg = ms-gap()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    cw = cs-sub(w, cs-mul(p, 2))
+    ry = cs-add(y, p)
+    n = ms-count(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        cs-emit-text-left(cs-add(x, p), ry, cw, CS-LINE-H,
+                          ms-author(h, i), cs-theme(CS-TH-MUTED))
+        cs-emit-text-left(cs-add(x, p), cs-add(ry, CS-LINE-H), cw, CS-LINE-H,
+                          ms-text(h, i), cs-theme(CS-TH-FG))
+        ((i < cs-sub(n, 1)) || (ms-typing(h) != 0)) -> {
+            cs-emit-rect(x, cs-add(ry, cs-mul(CS-LINE-H, 2)), w, gg, cs-theme(CS-TH-TRACK))
+        }
+        ry = cs-add(ry, cs-add(cs-mul(CS-LINE-H, 2), gg))
+        i = cs-inc(i)
+    }
+    (ms-typing(h) != 0) -> {
+        cs-emit-text-left(cs-add(x, p), ry, cw, CS-LINE-H,
+                          'typing...', cs-theme(CS-TH-ACCENT))
+    }
+}
+
+; 阶段63：status-bar —— FIELD 底 + N 段文案（FG）+ 段间一条 TRACK 竖分隔条。
+; 高度是细条 CS-BTN-H，文字由 _emit-text-left 垂直居中。
+cs-paint-status-bar = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = sb-pad()
+    dw = sb-div-w()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    cx = cs-add(x, p)
+    n = sb-count(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        tw = cs-text-w(sb-seg(h, i))
+        cs-emit-text-left(cx, y, tw, ht, sb-seg(h, i), cs-theme(CS-TH-FG))
+        cx = cs-add(cx, tw)
+        (i < cs-sub(n, 1)) -> {
+            cs-emit-rect(cx, y, dw, ht, cs-theme(CS-TH-TRACK))
+            cx = cs-add(cx, dw)
+        }
+        i = cs-inc(i)
+    }
+}
+
+; 阶段64：popover —— 关闭时一笔画不出；展开时 FIELD 底 + 锚定边箭头（ACCENT）+
+; 标题行 FG（有标题且有正文时下面补一条 TRACK 分隔线）+ N 行正文 MUTED。
+cs-paint-popover = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    (pv-open(h) == 0) -> return
+    p = pv-pad()
+    aw = pv-arrow-w()
+    tl = pv-title(h)
+    n = pv-count(h)
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    side = pv-side(h)
+    (side == 0) -> { cs-emit-rect(cs-add(x, 1600), y, aw, aw, cs-theme(CS-TH-ACCENT)) }
+    (side == 1) -> { cs-emit-rect(cs-add(x, 1600), cs-sub(cs-add(y, ht), aw), aw, aw, cs-theme(CS-TH-ACCENT)) }
+    (side == 2) -> { cs-emit-rect(x, cs-add(y, 1600), aw, aw, cs-theme(CS-TH-ACCENT)) }
+    (side == 3) -> { cs-emit-rect(cs-sub(cs-add(x, w), aw), cs-add(y, 1600), aw, aw, cs-theme(CS-TH-ACCENT)) }
+    ry = cs-add(y, p)
+    (tl.len() > 0) -> {
+        cs-emit-text-left(cs-add(x, p), ry, cs-text-w(tl), CS-LINE-H, tl, cs-theme(CS-TH-FG))
+        ry = cs-add(ry, CS-LINE-H)
+        (n > 0) -> {
+            cs-emit-rect(x, ry, w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+            ry = cs-add(ry, CS-SEP-H)
+        }
+    }
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        cs-emit-text-left(cs-add(x, p), ry, cs-text-w(pv-line(h, i)), CS-LINE-H, pv-line(h, i), cs-theme(CS-TH-MUTED))
+        ry = cs-add(ry, CS-LINE-H)
+        i = cs-inc(i)
+    }
+}
+
+; 阶段65：questionnaire —— FIELD 底 + 每题「题干 FG + 答案 ACCENT」两行，
+; 题间距 qa-gap。必答题的题干前面加一个 TRACK 小方块当标记。
+cs-paint-questionnaire = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = qa-pad()
+    gg = qa-gap()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    ry = cs-add(y, p)
+    n = qa-count(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        tx = cs-add(x, p)
+        ; 必答标记：题干左侧一个 TRACK 小方块（8×8），题干右移让位
+        (qa-required(h, i) != 0) -> {
+            cs-emit-rect(tx, cs-add(ry, cs-sub(CS-LINE-H, 800) / 2), 800, 800, cs-theme(CS-TH-TRACK))
+            tx = cs-add(tx, 1600)
+        }
+        cs-emit-text-left(tx, ry, cs-text-w(qa-prompt(h, i)), CS-LINE-H, qa-prompt(h, i), cs-theme(CS-TH-FG))
+        ry = cs-add(ry, CS-LINE-H)
+        cs-emit-text-left(cs-add(x, p), ry, cs-text-w(qa-answer(h, i)), CS-LINE-H, qa-answer(h, i), cs-theme(CS-TH-ACCENT))
+        ry = cs-add(ry, CS-LINE-H)
+        (i < cs-sub(n, 1)) -> { ry = cs-add(ry, gg) }
+        i = cs-inc(i)
+    }
+}
+
+; 阶段58：collapsible —— FIELD 底 + 头部「展开符（`v` / `>`）+ 标题」+
+; 展开时一条 TRACK 分隔线 + N 行正文（MUTED）。
+; 阶段66：searchable-list -- FIELD 底 + 顶部查询行（FG）+ TRACK 分隔线 +
+; N 行匹配条目；高亮行先铺一条 TRACK 整行底，标签用 FG，其余 MUTED。
+cs-paint-searchable-list = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = sl-pad()
+    mn = sl-match-count(h)
+    cur = sl-highlight(h)
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    qy = cs-add(y, p)
+    cs-emit-text-left(cs-add(x, p), qy, cs-text-w(cmp-text(h)), CS-LINE-H, cmp-text(h), cs-theme(CS-TH-FG))
+    (mn > 0) -> {
+        sy = cs-add(qy, CS-LINE-H)
+        cs-emit-rect(x, sy, w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+        ry = cs-add(sy, CS-SEP-H)
+        j = 0
+        !! {
+            (j >= mn) -> { ** }
+            ii = sl-match(h, j)
+            (ii >= 0) -> {
+                (j == cur) -> {
+                    cs-emit-rect(x, ry, w, CS-LINE-H, cs-theme(CS-TH-TRACK))
+                }
+                cs-emit-text-left(cs-add(x, p), ry, cs-text-w(sl-item(h, ii)), CS-LINE-H, sl-item(h, ii), cs-theme(CS-TH-FG))
+            }
+            ry = cs-add(ry, CS-LINE-H)
+            j = cs-inc(j)
+        }
+    }
+}
+
+; 阶段67：title-bar —— FIELD 底 + 左标题 FG（垂直居中）+ 右端一排按钮
+; （TRACK 盒 + FG 文案，盒宽 = 文案宽 + 2*tb-btn-pad，间距 tb-gap）。
+cs-paint-title-bar = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = tb-pad()
+    gg = tb-gap()
+    q = tb-btn-pad()
+    hh = tb-head-h()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    tl = cmp-text(h)
+    cs-emit-text-left(cs-add(x, p), cs-add(y, p), cs-text-w(tl), hh, tl, cs-theme(CS-TH-FG))
+    n = tb-count(h)
+    (n > 0) -> {
+        ; 先算整排宽度，再从右端（x+w-p）往前推出首钮左缘
+        tbw = 0
+        i = 0
+        !! {
+            (i >= n) -> { ** }
+            tbw = cs-add(tbw, cs-add(cs-text-w(tb-button(h, i)), cs-mul(q, 2)))
+            (i < cs-sub(n, 1)) -> { tbw = cs-add(tbw, gg) }
+            i = cs-inc(i)
+        }
+        bx = cs-sub(cs-sub(cs-add(x, w), p), tbw)
+        by = cs-add(y, p)
+        j = 0
+        !! {
+            (j >= n) -> { ** }
+            lab = tb-button(h, j)
+            bwid = cs-add(cs-text-w(lab), cs-mul(q, 2))
+            cs-emit-rect(bx, by, bwid, hh, cs-theme(CS-TH-TRACK))
+            cs-emit-text-left(cs-add(bx, q), by, cs-text-w(lab), hh, lab, cs-theme(CS-TH-FG))
+            bx = cs-add(bx, cs-add(bwid, gg))
+            j = cs-inc(j)
+        }
+    }
+}
+
+; 阶段68：toolbar —— FIELD 底 + 一条横排 chip：未选中 TRACK 盒、
+; 当前项 ACCENT 盒，文案一律 FG（垂直居中）。
+cs-paint-toolbar = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = tlb-pad()
+    gg = tlb-gap()
+    q = tlb-chip-pad()
+    hh = tlb-bar-h()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    n = tlb-count(h)
+    cur = tlb-selected(h)
+    cx = cs-add(x, p)
+    sy = cs-add(y, p)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        lab = tlb-item(h, i)
+        cwid = cs-add(cs-text-w(lab), cs-mul(q, 2))
+        (i == cur) -> {
+            cs-emit-rect(cx, sy, cwid, hh, cs-theme(CS-TH-ACCENT))
+        }
+        (i != cur) -> {
+            cs-emit-rect(cx, sy, cwid, hh, cs-theme(CS-TH-TRACK))
+        }
+        cs-emit-text-left(cs-add(cx, q), sy, cs-text-w(lab), hh, lab, cs-theme(CS-TH-FG))
+        cx = cs-add(cx, cs-add(cwid, gg))
+        i = cs-inc(i)
+    }
+}
+
+; 阶段69：sidebar —— FIELD 底 + 组头 MUTED + 展开时该组的条目 FG（缩进）。
+; 折叠时只画组头。组头 / 条目行高都是 CS-LINE-H，所以文本顶就是槽顶。
+cs-paint-sidebar = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = sdb-pad()
+    gg = sdb-gap()
+    ind = sdb-indent()
+    lh = sdb-line-h()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    ry = cs-add(y, p)
+    ng = sdb-group-count(h)
+    coll = sdb-collapsed(h)
+    g = 0
+    !! {
+        (g >= ng) -> { ** }
+        gl = sdb-group(h, g)
+        cs-emit-text-left(cs-add(x, p), ry, cs-text-w(gl), lh, gl, cs-theme(CS-TH-MUTED))
+        ry = cs-add(ry, lh)
+        (coll == 0) -> {
+            m = sdb-item-count(h)
+            i = 0
+            !! {
+                (i >= m) -> { ** }
+                ig = sdb-item-group(h, i)
+                (ig == g) -> {
+                    lab = sdb-item(h, i)
+                    cs-emit-text-left(cs-add(cs-add(x, p), ind), ry, cs-text-w(lab), lh, lab, cs-theme(CS-TH-FG))
+                    ry = cs-add(ry, lh)
+                }
+                i = cs-inc(i)
+            }
+        }
+        (g < cs-sub(ng, 1)) -> { ry = cs-add(ry, gg) }
+        g = cs-inc(g)
+    }
+}
+
+cs-paint-sheet = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = sht-pad()
+    bw = sht-bar-w()
+    sd = sht-side(h)
+    op = sht-open(h)
+    tl = cmp-text(h)
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    ; 停靠边那条 ACCENT 抓杆（左 / 右 / 上 / 下）
+    (sd == 0) -> {
+        cs-emit-rect(x, y, bw, ht, cs-theme(CS-TH-ACCENT))
+    }
+    (sd == 1) -> {
+        rbx = cs-sub(cs-add(x, w), bw)
+        cs-emit-rect(rbx, y, bw, ht, cs-theme(CS-TH-ACCENT))
+    }
+    (sd == 2) -> {
+        cs-emit-rect(x, y, w, bw, cs-theme(CS-TH-ACCENT))
+    }
+    (sd == 3) -> {
+        rby = cs-sub(cs-add(y, ht), bw)
+        cs-emit-rect(x, rby, w, bw, cs-theme(CS-TH-ACCENT))
+    }
+    ; 标题：展开 FG、收起 MUTED；停靠在左侧时给抓杆让位
+    tx = cs-add(x, p)
+    (sd == 0) -> { tx = cs-add(tx, bw) }
+    ty = cs-add(y, p)
+    tc = cs-theme(CS-TH-FG)
+    (op == 0) -> { tc = cs-theme(CS-TH-MUTED) }
+    cs-emit-text-left(tx, ty, cs-text-w(tl), CS-LINE-H, tl, tc)
+}
+
+cs-paint-collapsible = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
+    p = cl-pad()
+    gw = cl-glyph-w()
+    gg = cl-gap()
+    hh = cl-head-h()
+    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    gx = cs-add(x, p)
+    tx = cs-add(gx, cs-add(gw, gg))
+    ty = cs-add(y, p)
+    open = cl-open(h)
+    (open != 0) -> {
+        cs-emit-text-left(gx, ty, gw, hh, 'v', cs-theme(CS-TH-ACCENT))
+    }
+    (open == 0) -> {
+        cs-emit-text-left(gx, ty, gw, hh, '>', cs-theme(CS-TH-ACCENT))
+    }
+    cs-emit-text-left(tx, ty, cs-sub(w, cs-sub(tx, x)), hh, cl-title(h), cs-theme(CS-TH-FG))
+    (open != 0) -> {
+        n = cl-count(h)
+        (n > 0) -> {
+            cs-emit-rect(x, cs-add(ty, hh), w, CS-SEP-H, cs-theme(CS-TH-TRACK))
+            by = cs-add(cs-add(ty, hh), CS-SEP-H)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                cs-emit-text-left(tx, cs-add(by, cs-mul(i, CS-LINE-H)), cs-sub(w, cs-sub(tx, x)), CS-LINE-H, cl-body-line(h, i), cs-theme(CS-TH-MUTED))
+                i = cs-inc(i)
+            }
+        }
+    }
+}
+
+; 负数文案（绘图下轴刻度用；组件模块不能 import 渲染层，抄一份最小实现）
+cs-neg-str = (v i64) (s str) {
+    s = ''
+    (v <= 0) -> {
+        s.push-str(v.to-str())
+    }
+    (v > 0) -> {
+        s.push-str('-')
+        s.push-str(v.to-str())
+    }
+    s = s
+}
+
+; 阶段71：text-node 单行多段样式文本。没有片段时与补全前完全一致（标题走
+; CMP-TEXT、颜色走 CMP-COLOR）；有片段时按对齐方式排布，片段色 -1 = 继承。
+cs-paint-text-node = (h i64, x i64, y i64, w i64, ht i64, color i64, al i64) {
+    rn = txn-count(h)
+    (rn <= 0) -> {
+        cs-emit-text-align(x, y, w, ht, cmp-text(h), color, al)
+    }
+    (rn > 0) -> {
+        tw = 0
+        i = 0
+        !! {
+            (i >= rn) -> { ** }
+            tw = cs-add(tw, cs-text-w(txn-run-text(h, i)))
+            i = cs-inc(i)
+        }
+        tx = x
+        (al == A-CENTER) -> { tx = cs-add(x, cs-div(cs-sub(w, tw), 2)) }
+        (al == A-RIGHT) -> { tx = cs-sub(cs-add(x, w), tw) }
+        ty = cs-add(y, cs-div(cs-sub(ht, CS-LINE-H), 2))
+        i = 0
+        !! {
+            (i >= rn) -> { ** }
+            s = txn-run-text(h, i)
+            c = txn-run-color(h, i)
+            (c < 0) -> { c = color }
+            cs-emit-text(tx, ty, c, s)
+            tx = cs-add(tx, cs-text-w(s))
+            i = cs-inc(i)
+        }
+    }
+}
+
 ; ============================================================================
 ; 绘制：组件树 → Scene
 ; ============================================================================
@@ -1194,7 +2836,7 @@ cs-paint-leaf = (h i64, kind i64, x i64, y i64, w i64, ht i64, color i64, t str)
             cs-emit-text-align(x, y, w, ht, t, cs-theme(CS-TH-FG), al)
         }
         kind == C-LABEL -> cs-emit-text-align(x, y, w, ht, t, color, al)
-        kind == C-TEXT -> cs-emit-text-align(x, y, w, ht, t, color, al)
+        kind == C-TEXT -> cs-paint-text-node(h, x, y, w, ht, color, al)
         kind == C-LINK -> {
             cs-emit-text-align(x, y, w, ht, t, color, al)
             tx = cs-text-origin-x(x, w, t, al)
@@ -1286,6 +2928,34 @@ cs-paint-leaf = (h i64, kind i64, x i64, y i64, w i64, ht i64, color i64, t str)
         kind == C-NOTIFICATION -> cs-paint-notification(h, x, y, w, ht, color, t)
         kind == C-BUBBLE -> cs-paint-bubble(h, x, y, w, ht, color, t)
         kind == C-SPEECH -> cs-paint-speech(h, x, y, w, ht, color, t)
+        kind == C-ATTACHMENT -> cs-paint-attachment(h, x, y, w, ht, color, t)
+        kind == C-CLIPBOARD -> cs-paint-clipboard(h, x, y, w, ht, color, t)
+        kind == C-INDEX-PATH -> cs-paint-index-path(h, x, y, w, ht, color, t)
+        kind == C-BREADCRUMB -> cs-paint-breadcrumb(h, x, y, w, ht, color, t)
+        kind == C-COLOR-PICKER -> cs-paint-color-picker(h, x, y, w, ht, color, t)
+        kind == C-DATE-PICKER -> cs-paint-date-picker(h, x, y, w, ht, color, t)
+        kind == C-HIGHLIGHTER -> cs-paint-highlighter(h, x, y, w, ht, color, t)
+        kind == C-THEME -> cs-paint-theme(h, x, y, w, ht, color, t)
+        kind == C-DIFF -> cs-paint-diff(h, x, y, w, ht, color, t)
+        kind == C-CHART -> cs-paint-chart(h, x, y, w, ht, color, t)
+        kind == C-PLOT -> cs-paint-plot(h, x, y, w, ht, color, t)
+        kind == C-NATIVE-MENU -> cs-paint-menu(h, x, y, w, ht, color, t)
+        kind == C-WINDOW-EXT -> cs-paint-window-ext(h, x, y, w, ht, color, t)
+        kind == C-DESCRIPTION-LIST -> cs-paint-description-list(h, x, y, w, ht, color, t)
+        kind == C-ACCORDION -> cs-paint-accordion(h, x, y, w, ht, color, t)
+        kind == C-CAROUSEL -> cs-paint-carousel(h, x, y, w, ht, color, t)
+        kind == C-HISTORY -> cs-paint-history(h, x, y, w, ht, color, t)
+        kind == C-INSPECTOR -> cs-paint-inspector(h, x, y, w, ht, color, t)
+        kind == C-MESSAGE-SCROLLER -> cs-paint-message-scroller(h, x, y, w, ht, color, t)
+        kind == C-STATUS-BAR -> cs-paint-status-bar(h, x, y, w, ht, color, t)
+        kind == C-POPOVER -> cs-paint-popover(h, x, y, w, ht, color, t)
+        kind == C-QUESTIONNAIRE -> cs-paint-questionnaire(h, x, y, w, ht, color, t)
+        kind == C-SEARCHABLE-LIST -> cs-paint-searchable-list(h, x, y, w, ht, color, t)
+        kind == C-TITLE-BAR -> cs-paint-title-bar(h, x, y, w, ht, color, t)
+        kind == C-TOOLBAR -> cs-paint-toolbar(h, x, y, w, ht, color, t)
+        kind == C-SIDEBAR -> cs-paint-sidebar(h, x, y, w, ht, color, t)
+        kind == C-SHEET -> cs-paint-sheet(h, x, y, w, ht, color, t)
+        kind == C-COLLAPSIBLE -> cs-paint-collapsible(h, x, y, w, ht, color, t)
         kind == C-SELECT -> cs-paint-select(h, x, y, w, ht, color, t)
         kind == C-TAB -> cs-paint-tab(h, x, y, w, ht)
         kind == C-TOOLTIP -> {
@@ -1294,7 +2964,7 @@ cs-paint-leaf = (h i64, kind i64, x i64, y i64, w i64, ht i64, color i64, t str)
                 cs-emit-text-center(x, y, w, ht, t, cs-theme(CS-TH-FG))
             }
         }
-        kind == C-SKELETON -> cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-TRACK))
+        kind == C-SKELETON -> cs-paint-skeleton(h, x, y, w, ht, color, t)
         kind == C-SHIMMER -> {
             cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-TRACK))
             ph = cmp-value(h)
@@ -1765,7 +3435,8 @@ cs-paint = (h i64) {
     }
     (kind != C-DIALOG) -> {
         {
-            ((cont == 1) && (n > 0)) -> {
+            ; group-box 即使没挂子节点也要画面板（否则标题行没有底）
+            ((cont == 1) && ((n > 0) || (kind == C-GROUP-BOX))) -> {
                 cs-emit-rect(x, y, w, ht, color)
                 ; 先画参与流布局的子节点
                 i = 0
@@ -1788,6 +3459,11 @@ cs-paint = (h i64) {
                 t = cmp-text(h)
                 cs-paint-leaf(h, kind, x, y, w, ht, color, t)
             }
+        }
+        ; group-box：标题行走 CMP-TEXT，下面一条 TRACK 分隔线（无论有没有子节点都画）
+        (kind == C-GROUP-BOX) -> {
+            cs-emit-text-left(cs-add(x, CS-PAD), cs-add(y, CS-PAD), cs-sub(w, cs-mul(CS-PAD, 2)), gb-title-h(), cmp-text(h), cs-theme(CS-TH-FG))
+            cs-emit-rect(x, cs-add(cs-add(y, CS-PAD), gb-title-h()), w, CS-SEP-H, cs-theme(CS-TH-TRACK))
         }
     }
 }

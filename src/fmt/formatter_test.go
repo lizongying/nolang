@@ -1907,18 +1907,18 @@ func TestFormatProgram(t *testing.T) {
 	}{
 		{
 			name:     "import then function adds blank line",
-			input:    "# aaa/bigint\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
-			expected: "# aaa/bigint\n\nmod = (a bigint, b bigint, r bigint) {\n    q, r = div-mod(a, b)\n}",
+			input:    "# aaa/bigint\nmod = (a bigint, b bigint, r bigint) {\n    bigint.go()\n    q, r = div-mod(a, b)\n}",
+			expected: "# aaa/bigint\n\nmod = (a bigint, b bigint, r bigint) {\n    bigint.go()\n    q, r = div-mod(a, b)\n}",
 		},
 		{
 			name:     "multiple imports no blanks between",
-			input:    "# aaa/md5\n# bbb/sha1\n# ccc/fmt\ntest-fn = () {\n    fmt.println('ok')\n}",
-			expected: "# aaa/md5\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			input:    "# aaa/md5\n# bbb/sha1\n# ccc/fmt\ntest-fn = () {\n    md5.go()\n    sha1.go()\n    fmt.println('ok')\n}",
+			expected: "# aaa/md5\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    md5.go()\n    sha1.go()\n    fmt.println('ok')\n}",
 		},
 		{
 			name:     "import blanks compressed",
-			input:    "# aaa/md5\n\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
-			expected: "# aaa/md5\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    fmt.println('ok')\n}",
+			input:    "# aaa/md5\n\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    md5.go()\n    sha1.go()\n    fmt.println('ok')\n}",
+			expected: "# aaa/md5\n# bbb/sha1\n# ccc/fmt\n\ntest-fn = () {\n    md5.go()\n    sha1.go()\n    fmt.println('ok')\n}",
 		},
 	}
 

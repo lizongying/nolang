@@ -1,0 +1,283 @@
+; 阶段60：C-HISTORY（历史条目）无窗口断言
+; 纯逻辑：构造默认 / 条目池（扁平只增 + 基址）/ 当前下标读写（夹紧不环绕）/
+;          多句柄隔离 / disabled 空操作 / 测算 intrinsic / 渲染几何
+;          （FIELD 底、当前行 ACCENT 标记条 + FG 文本、其余 TRACK + MUTED、
+;           行间 TRACK 分隔线）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+cs-text-n = (t str) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    空池 / 越界读空串 / 当前下标 0 / 未被 disabled / 不是视觉容器
+; ============================================================================
+hs = cmp-history()
+
+t1 = cmp-kind(hs) == C-HISTORY
+t2 = hst-count(hs) == 0
+t3 = hst-entry(hs, 0) == ''
+t4 = hst-index(hs) == 0
+t5 = cmp-has(hs, F-DISABLED) == 0
+t6 = cs-is-container(cmp-kind(hs)) == 0
+
+; ============================================================================
+; 2. 条目池：追加 + 当前下标
+;    e0 'one' / e1 'two' / e2 'three'
+; ============================================================================
+i0 = hst-add(hs, 'one')
+t7 = i0 == 0
+t8 = hst-count(hs) == 1
+t9 = hst-entry(hs, 0) == 'one'
+t10 = hst-index(hs) == 0
+
+i1 = hst-add(hs, 'two')
+t11 = i1 == 1
+i2 = hst-add(hs, 'three')
+t12 = i2 == 2
+t13 = hst-count(hs) == 3
+t14 = hst-entry(hs, 1) == 'two'
+t15 = hst-entry(hs, 2) == 'three'
+
+; 越界读：空串
+t16 = hst-entry(hs, 3) == ''
+t17 = hst-entry(hs, -1) == ''
+
+; ============================================================================
+; 3. 改写 / 当前下标读写（夹紧在 [0, n-1]，不环绕）
+; ============================================================================
+hst-set-entry(hs, 0, 'ONE')
+t18 = hst-entry(hs, 0) == 'ONE'
+hst-set-index(hs, 2)
+t19 = hst-index(hs) == 2
+hst-jump(hs, 1)
+t20 = hst-index(hs) == 1
+hst-back(hs)
+t21 = hst-index(hs) == 0
+hst-back(hs)
+t22 = hst-index(hs) == 0
+hst-forward(hs)
+t23 = hst-index(hs) == 1
+hst-forward(hs)
+t24 = hst-index(hs) == 2
+hst-forward(hs)
+t25 = hst-index(hs) == 2
+
+; 越界写不影响
+hst-set-entry(hs, 9, 'x')
+t26 = hst-entry(hs, 2) == 'three'
+hst-set-index(hs, 9)
+t27 = hst-index(hs) == 2
+hst-set-index(hs, -1)
+t28 = hst-index(hs) == 2
+
+; ============================================================================
+; 4. 多句柄隔离（扁平池 + 每句柄基址）
+; ============================================================================
+h2 = cmp-history()
+h3 = cmp-history()
+hst-add(h2, 'aa')
+hst-add(h2, 'bb')
+hst-add(h3, 'cc')
+hst-set-index(h3, 0)
+
+t29 = hst-count(h2) == 2
+t30 = hst-count(h3) == 1
+t31 = hst-entry(h2, 1) == 'bb'
+t32 = hst-entry(h3, 0) == 'cc'
+t33 = hst-index(h3) == 0
+
+hst-clear(h2)
+t34 = hst-count(h2) == 0
+t35 = hst-count(h3) == 1
+t36 = hst-entry(h3, 0) == 'cc'
+t37 = hst-index(h3) == 0
+hst-add(h2, 'again')
+t38 = hst-count(h2) == 1
+t39 = hst-entry(h2, 0) == 'again'
+t40 = hst-index(h2) == 0
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(h3, F-DISABLED)
+r1 = hst-add(h3, 'no')
+hst-set-entry(h3, 0, 'no')
+hst-set-index(h3, 0)
+hst-back(h3)
+hst-forward(h3)
+hst-clear(h3)
+t41 = r1 == -1
+t42 = hst-count(h3) == 1
+t43 = hst-entry(h3, 0) == 'cc'
+t44 = hst-index(h3) == 0
+cmp-flag-clear(h3, F-DISABLED)
+t45 = cmp-has(h3, F-DISABLED) == 0
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    宽 = 2*CS-PAD + 标记条 800 + 间隙 800 + 最长条目文案，下限 CS-MIN-LEAF-W
+;    高 = 2*CS-PAD + N*CS-LINE-H + (N-1)*CS-SEP-H，下限 CS-BTN-H
+;    m：3 条，文案 2400/2400/4000 → 宽 2400+1600+4000 = 8000
+;                          高 2400+7200+200 = 9800
+; ============================================================================
+m = cmp-history()
+hst-add(m, 'one')
+hst-add(m, 'two')
+hst-add(m, 'three')
+m1w, m1h = cs-measure(m)
+t46 = m1w == 8000
+t47 = m1h == 9800
+
+; 空：宽 2400+1600+0 = 4000 → 夹 6400；高 2400 → 夹 4000
+e1 = cmp-history()
+m2w, m2h = cs-measure(e1)
+t48 = m2w == 6400
+t49 = m2h == 4000
+
+; 单条 'x'（800）：宽 2400+1600+800 = 4800 → 夹 6400；高 2400+2400 = 4800
+e2 = cmp-history()
+hst-add(e2, 'x')
+m3w, m3h = cs-measure(e2)
+t50 = m3w == 6400
+t51 = m3h == 4800
+
+; 长文案 'abcdefghij'（10 字 = 8000）：宽 2400+1600+8000 = 12000；高 4800
+e3 = cmp-history()
+hst-add(e3, 'abcdefghij')
+m4w, m4h = cs-measure(e3)
+t52 = m4w == 12000
+t53 = m4h == 4800
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m, 20000)
+cmp-set-sh(m, 9000)
+m5w, m5h = cs-measure(m)
+t54 = m5w == 20000
+t55 = m5h == 9000
+cmp-set-sw(m, 0)
+cmp-set-sh(m, 0)
+
+; ============================================================================
+; 7. 渲染
+;     外层 12000 → 内容宽 9600（intrinsic 8000，叶子横向被拉伸到父内容宽）
+;     面板 (1200,1200,9600,9800) FIELD
+;     行高 2400、行间距 2500（行高 + CS-SEP-H）
+;     行 0：标记条 (2400,2400,800,2400) ACCENT、'ONE' @4000,2400 FG
+;     分隔线 (1200,4800,9600,100)
+;     行 1：标记条 (2400,4900,800,2400) TRACK、'two' @4000,4900 MUTED
+;     分隔线 (1200,7300,9600,100)
+;     行 2：标记条 (2400,7400,800,2400) TRACK、'three' @4000,7400 MUTED
+; ============================================================================
+cs-clear()
+r = cmp-history()
+hst-add(r, 'one')
+hst-add(r, 'two')
+hst-add(r, 'three')
+hst-set-entry(r, 0, 'ONE')
+r1 = cmp-root()
+cmp-add-child(r1, r)
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+
+t56 = cs-rect-color-at(1200, 1200, 9600, 9800) == cs-theme(CS-TH-FIELD)
+t57 = cs-rect-color-at(2400, 2400, 800, 2400) == cs-theme(CS-TH-ACCENT)
+t58 = cs-text-color-at('ONE', 4000, 2400) == cs-theme(CS-TH-FG)
+t59 = cs-rect-color-at(1200, 4800, 9600, 100) == cs-theme(CS-TH-TRACK)
+t60 = cs-rect-color-at(2400, 4900, 800, 2400) == cs-theme(CS-TH-TRACK)
+t61 = cs-text-color-at('two', 4000, 4900) == cs-theme(CS-TH-MUTED)
+t62 = cs-rect-color-at(1200, 7300, 9600, 100) == cs-theme(CS-TH-TRACK)
+t63 = cs-rect-color-at(2400, 7400, 800, 2400) == cs-theme(CS-TH-TRACK)
+t64 = cs-text-color-at('three', 4000, 7400) == cs-theme(CS-TH-MUTED)
+t65 = cs-text-n('ONE') == 1
+t66 = cs-text-count() == 3
+
+; 翻到末条：末行 ACCENT + FG，首行转 TRACK + MUTED
+hst-set-index(r, 2)
+cs-clear()
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+t67 = cs-rect-color-at(2400, 7400, 800, 2400) == cs-theme(CS-TH-ACCENT)
+t68 = cs-text-color-at('three', 4000, 7400) == cs-theme(CS-TH-FG)
+t69 = cs-rect-color-at(2400, 2400, 800, 2400) == cs-theme(CS-TH-TRACK)
+t70 = cs-text-color-at('ONE', 4000, 2400) == cs-theme(CS-TH-MUTED)
+
+; 空池：只有底色，没有任何文本 / 标记条
+cs-clear()
+e4 = cmp-history()
+r2 = cmp-root()
+cmp-add-child(r2, e4)
+cs-layout(r2, 0, 0, 8800, 40000)
+cs-paint(r2)
+t71 = cs-text-count() == 0
+t72 = cs-rect-color-at(1200, 1200, 6400, 4000) == cs-theme(CS-TH-FIELD)
+
+; ============================================================================
+; 8. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5 & t6
+ok = ok & t7 & t8 & t9 & t10 & t11 & t12 & t13 & t14 & t15 & t16 & t17
+ok = ok & t18 & t19 & t20 & t21 & t22 & t23 & t24 & t25 & t26 & t27 & t28
+ok = ok & t29 & t30 & t31 & t32 & t33 & t34 & t35 & t36 & t37 & t38 & t39 & t40
+ok = ok & t41 & t42 & t43 & t44 & t45
+ok = ok & t46 & t47 & t48 & t49 & t50 & t51 & t52 & t53 & t54 & t55
+ok = ok & t56 & t57 & t58 & t59 & t60 & t61 & t62 & t63 & t64 & t65 & t66
+ok = ok & t67 & t68 & t69 & t70 & t71 & t72
+(ok == 1) -> {
+    print('ALL HISTORY TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME HISTORY TESTS FAILED')
+}

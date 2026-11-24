@@ -549,3 +549,48 @@ func nodeSemFingerprint(prog *parser.Program) []string {
 	}
 	return out
 }
+
+// TestStdBlobModsCarryPathAnnotations 釘住 std-ast.bin 的 Mods [][]byte：
+// 每個载荷自己帶 embed 路徑（SourcePath）與模組路徑（ModulePath），
+// loadStdAST 不需外層 Path 欄位就能建索引、StdASTFor 仍能取出。
+func TestStdBlobModsCarryPathAnnotations(t *testing.T) {
+	zr, err := gzip.NewReader(bytes.NewReader(stdastembed.Blob))
+	if err != nil {
+		t.Fatalf("gunzip baked blob: %v", err)
+	}
+	defer zr.Close()
+	var blob StdASTBlob
+	if err := gob.NewDecoder(zr).Decode(&blob); err != nil {
+		t.Fatalf("decode baked blob: %v", err)
+	}
+	if len(blob.Mods) == 0 {
+		t.Fatal("baked blob carries no modules")
+	}
+	for i, raw := range blob.Mods {
+		var cp parser.CachedProgram
+		if err := gob.NewDecoder(bytes.NewReader(raw)).Decode(&cp); err != nil {
+			t.Fatalf("decode mod %d: %v", i, err)
+		}
+		if cp.Prog == nil {
+			t.Fatalf("mod %d carries no program", i)
+		}
+		if !strings.HasPrefix(cp.Prog.SourcePath, "std/") || !strings.HasSuffix(cp.Prog.SourcePath, ".no") {
+			t.Fatalf("mod %d has bad SourcePath %q", i, cp.Prog.SourcePath)
+		}
+		if cp.Prog.ModulePath != cp.Prog.SourcePath {
+			t.Fatalf("mod %d: ModulePath %q != SourcePath %q for std", i, cp.Prog.ModulePath, cp.Prog.SourcePath)
+		}
+	}
+	// 索引由载荷路徑重建，第一個模組必須能取出。checker 測試不會自動安裝
+	// embed blob（見本檔案其他 StdASTFor 用例），得先 SetStdASTBlob。
+	SetStdASTBlob(stdastembed.Blob)
+	var first parser.CachedProgram
+	if err := gob.NewDecoder(bytes.NewReader(blob.Mods[0])).Decode(&first); err != nil {
+		t.Fatal(err)
+	}
+	prog, ok := StdASTFor(first.Prog.SourcePath)
+	if !ok || prog == nil {
+		t.Fatalf("StdASTFor(%q) missed after path annotations moved into payload", first.Prog.SourcePath)
+	}
+	t.Logf("%d std modules carry SourcePath/ModulePath inside gob payload", len(blob.Mods))
+}

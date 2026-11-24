@@ -43,7 +43,9 @@
 # /compiler/src/ck
 # /compiler/src/ck-sig
 
-ll = drv.pkg-ll('compiler/tests/t5/call-entry.no', false)
+; s153 層 1：drv.pkg-ll 新增第三參 strict；本測試要的是【點號呼叫查表】的 IR 結構，
+;   剔除型缺口不影響 ⇒ 仍傳 false（保留原行為）。
+ll = drv.pkg-ll('compiler/tests/t5/call-entry.no', false, false)
 print('pkg-ll-call: produced ' - ll.len-bytes().to-str() - ' bytes of IR')
 
 ; 先落到磁碟，再交 opt 驗證（避免 opt 讀不到檔、讀到陳舊檔）

@@ -1,0 +1,242 @@
+; ============================================================================
+; noui 窗口 demo：历史条目（阶段 60）—— C-HISTORY
+;
+; 流水线：app-init -> cmp-history -> hst-add / hst-set-entry / hst-set-index /
+;          hst-jump / hst-back / hst-forward 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-HISTORY 分支 +
+;      cs-paint-history）：FIELD 底 + N 行条目（当前行 ACCENT 标记条 + FG 文本，
+;      其余 TRACK 标记条 + MUTED 文本）+ 行间 TRACK 分隔线
+;   -> 键盘：a=追加条目；b=后退；f=前进；j=跳到第 0 条；
+;            r=重建默认三条；d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-history.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选条目文案（a 轮取）----
+hs-cand = (i i64) (s str) {
+    s = 'alpha'
+    (i == 1) -> { s = 'bravo' }
+    (i == 2) -> { s = 'charlie' }
+    (i == 3) -> { s = 'delta' }
+    (i == 4) -> { s = 'echo' }
+    (i == 5) -> { s = 'foxtrot' }
+    (i == 0) -> { s = 'golf' }
+    s = s
+}
+
+; ---- 重建默认三条（收尾自检也用它）----
+hs-build-default = (h i64) () {
+    hst-clear(h)
+    hst-add(h, 'alpha')
+    hst-add(h, 'bravo')
+    hst-add(h, 'charlie')
+    hst-set-index(h, 0)
+}
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui history')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段60: history')
+hint = cmp-label('a=add b=back f=forward j=jump0 r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+hs = cmp-history()
+hs-build-default(hs)
+
+cmp-add-child(root, title)
+cmp-add-child(root, hs)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：历史是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一条
+        (k == 97) -> {
+            n = hst-count(hs)
+            hst-add(hs, hs-cand(ct-rem(n, 7)))
+        }
+        ; b：后退（夹紧在 0）
+        (k == 98) -> { hst-back(hs) }
+        ; f：前进（夹紧在 n-1）
+        (k == 102) -> { hst-forward(hs) }
+        ; j：跳到第 0 条
+        (k == 106) -> { hst-jump(hs, 0) }
+        ; r：重建默认三条
+        (k == 114) -> { hs-build-default(hs) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(hs, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(hs, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(hs, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = hst-count(hs)
+    idx = hst-index(hs)
+    dis = cmp-has(hs, F-DISABLED)
+    cmp-set-text(stat, 'n={cn} index={idx} disabled={dis}')
+    cmp-set-text(stat2, 'entry[{idx}]={hst-entry(hs, idx)}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认三条，按面板实测矩形推导坐标逐项核对
+;   内边距 1200 / 标记条宽 800 / 标记与文本间隙 800 / 行高 2400 / 行间距 2500
+;   （行高 + 分隔线 100）/ 分隔线 (bx, by+3600+i*2500, bw, 100)
+;   文字垂直居中：行内文字 y = 行顶（行高 == CS-LINE-H）
+; ============================================================================
+cmp-flag-clear(hs, F-DISABLED)
+hs-build-default(hs)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+mw0 = 800
+gg0 = 800
+lh0 = 2400
+sep0 = 100
+rowstep = 2500
+
+bx, by, bw, bh = cs-rect(hs)
+mx0 = cs-add(bx, p0)
+tx0 = cs-add(cs-add(cs-add(bx, p0), mw0), gg0)
+ry0 = cs-add(by, p0)
+ry1 = cs-add(ry0, rowstep)
+ry2 = cs-add(ry1, rowstep)
+sy0 = cs-add(ry0, lh0)
+sy1 = cs-add(ry1, lh0)
+
+c1 = hst-count(hs) == 3
+c2 = hst-entry(hs, 0) == 'alpha'
+c3 = hst-index(hs) == 0
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = find-rect-color(mx0, ry0, mw0, lh0) == cs-theme(CS-TH-ACCENT)
+c6 = find-text('alpha', tx0, ry0) == 1
+c7 = find-text-color('alpha', tx0, ry0) == cs-theme(CS-TH-FG)
+c8 = find-rect-color(bx, sy0, bw, sep0) == cs-theme(CS-TH-TRACK)
+c9 = find-rect-color(mx0, ry1, mw0, lh0) == cs-theme(CS-TH-TRACK)
+c10 = find-text('bravo', tx0, ry1) == 1
+c11 = find-text-color('bravo', tx0, ry1) == cs-theme(CS-TH-MUTED)
+c12 = find-rect-color(bx, sy1, bw, sep0) == cs-theme(CS-TH-TRACK)
+c13 = find-rect-color(mx0, ry2, mw0, lh0) == cs-theme(CS-TH-TRACK)
+c14 = find-text('charlie', tx0, ry2) == 1
+c15 = find-text-color('charlie', tx0, ry2) == cs-theme(CS-TH-MUTED)
+
+; 翻到末条：末行 ACCENT + FG，首行转 TRACK + MUTED
+hst-set-index(hs, 2)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c16 = find-rect-color(mx0, ry2, mw0, lh0) == cs-theme(CS-TH-ACCENT)
+c17 = find-text-color('charlie', tx0, ry2) == cs-theme(CS-TH-FG)
+c18 = find-rect-color(mx0, ry0, mw0, lh0) == cs-theme(CS-TH-TRACK)
+c19 = find-text-color('alpha', tx0, ry0) == cs-theme(CS-TH-MUTED)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n0 = hst-count(hs)
+idx0 = hst-index(hs)
+print('bye frames={fr} keys={kk} clicks={ck} entries={n0} index={idx0} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19) -> {
+    print('history render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19)) -> {
+    print('FAIL: history render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

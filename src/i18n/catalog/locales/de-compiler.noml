@@ -124,7 +124,7 @@ Globale Optionen:
   Quellen: ~/no/sources.noml  ($NOHUB_SOURCES überschreibt; -source <name> wählt)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
-                    Abhängigkeit hinzufügen (vorgebautes AST: <tool>.ast.zip)
+                    Abhängigkeit hinzufügen (vorgebautes AST: <tool>-ast.zip)
                     Ohne Version = neuestes Release; der in package.noml
                     geschriebene Schlüssel ist <tool>@<host>/<owner>/<repo>.
     Beispiele:
@@ -152,11 +152,11 @@ Globale Optionen:
       no uninstall nogit
   no sync              Abhängigkeiten synchronisieren/herunterladen
   no pack [-o <file>] [<dir|file.no>]
-                    Das AST eines Moduls als <tool>.ast.zip packen (gob + zip).
+                    Das AST eines Moduls als <tool>-ast.zip packen (gob + zip).
                     Nur Lexer+Parser — keine LLVM-Toolchain nötig, CI-geeignet.
     Beispiele:
-      no pack                     aktuelles Paket packen -> dist/<name>.ast.zip
-      no pack -o nogit.ast.zip    expliziter Ausgabepfad (CI-freundlich)
+      no pack                     aktuelles Paket packen -> dist/<name>-ast.zip
+      no pack -o nogit-ast.zip    expliziter Ausgabepfad (CI-freundlich)
       no pack nogit.no            eine einzelne Quelldatei packen
   no pub [-o <file>]  Packen (wie no pack) und veröffentlichen; Registry-Upload
                     ist noch nicht implementiert, daher wird derzeit nur gepackt

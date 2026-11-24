@@ -28,7 +28,7 @@ sudo mv nolang /usr/local/bin/no
 | `no version`                                                 | 버전 정보 출력            |
 | `no init`                                                    | 작업 영역 정의(workspace.noml 생성, package.noml은 생성하지 않음) |
 | `no new <name>`                                              | 작업 영역 내에 새 패키지 생성(하위 디렉터리 + package.noml, workspace.noml에 등록) |
-| `no fmt [-w] [-d] <file\|dir>`                               | 소스 코드 포맷(가져오기 중복 제거/정렬 포함, `# std/fmt` 자동 제거); `.noml` 설정 파일은 레이아웃을 보존하는 형식 규칙 적용(들여쓰기/공백/빈 줄은 유지, 주석과 키 순서는 변경하지 않음) |
+| `no fmt [-w] [-d] <file\|dir>`                               | 소스 코드 포맷(가져오기 중복 제거/정렬 포함, 별칭 없는 std 모듈 가져오기 자동 제거); `.noml` 설정 파일은 레이아웃을 보존하는 형식 규칙 적용(들여쓰기/공백/빈 줄은 유지, 주석과 키 순서는 변경하지 않음) |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | 빌드(executable 출력) |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 빌드 후 실행(패키지명/디렉터리/파일) |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | 테스트 실행                |
@@ -40,7 +40,7 @@ sudo mv nolang /usr/local/bin/no
 | `no sync`                                                    | 의존성 동기화                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | binary 설치             |
 | `no uninstall <name>`                                        | binary 제거             |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | AST 패키징(`<tool>.ast.zip`)|
+| `no pack [-o <file>] [<dir\|file.no>]`                       | AST 패키징(`<tool>-ast.zip`)|
 | `no pub [-o <file>]`                                         | `no pack`과 동일(registry 업로드는 미구현)|
 | `no cache <stat\|clear>`                                     | AST 캐시 확인 / 삭제(정상적인 경우 삭제할 필요 없음)|
 
@@ -298,7 +298,7 @@ sha256( ASTVersion ‖ 解析期 salt ‖ 源文件內容 )
 | 변수 | 역할 |
 | --- | --- |
 | `NOLANG_AST_CACHE_OFF=1` | 캐시 끄기(컴파일러 A/B 비교, "고친 오류가 다시 나타나는" 문제 조사 시 사용 가능) |
-| `NOLANG_AST_CACHE_DIR` | 캐시 디렉터리 사용자 지정. **동시에** 사전 컴파일 AST 의존성의 `.ast.zip` 캐시에도 적용됨(해당 캐시 기본 위치는 `~/no/cache/ast`, 아래 "사전 컴파일 AST 의존성" 참조) |
+| `NOLANG_AST_CACHE_DIR` | 캐시 디렉터리 사용자 지정. **동시에** 사전 컴파일 AST 의존성의 `-ast.zip` 캐시에도 적용됨(해당 캐시 기본 위치는 `~/no/cache/ast`, 아래 "사전 컴파일 AST 의존성" 참조) |
 | `NOLANG_AST_CACHE_MAX` | 캐시 항목 수 상한(기본값 4096) |
 
 > 오래된 항목은 단지 더 이상 hit되지 않을 뿐이며, 새 항목이 기록될 때 상한에 따라 제거되므로 `~/.cache/nolang/ast`를 **삭제할 필요가 없습니다**.
@@ -425,21 +425,24 @@ no sync
 ### 사전 컴파일 AST 의존성
 
 `no add <tool>@<host>/<owner>/<repo>` 형태의 의존성은 **AST만 있고 소스는 없습니다**. 컴파일 시 release에서
-`<tool>.ast.zip`(MetaMessage + zip)을 가져와 디코딩한 뒤 곧바로 컴파일 파이프라인에 주입합니다. 사용법:
+`<tool>-ast.zip`(zip: one .gob entry per module)을 가져와 디코딩한 뒤 곧바로 컴파일 파이프라인에 주입합니다. 사용법:
 
 ```nolang
-# nogit; 或 use <host>/<owner>/<repo>/nogit
+# nogit                      # 패키지 별칭; 모듈은 nogit.<module> 로 참조
+# nogit/remote                  # 모듈 remote 를 직접 import (nogit.remote 도 가능)
+# nogit.fn                      # nogit 은 패키지 이름일 뿐; fn 을 정의한 모듈을 찾음
+# <host>/<owner>/<repo>/nogit/remote
 ```
 
-하나의 zip이 곧 하나의 모듈이며, `use <repo>/<submod>`처럼 더 깊은 경로는 지원하지 않습니다. 버전은 구체적인 값이어야 합니다
+하나의 zip은 하나의 패키지이며 여러 모듈을 포함할 수 있습니다(각 모듈은 `<modulePath>.gob` 항목). 진입 모듈은 없습니다: `# nogit`은 패키지 별칭만 만들며 모듈은 `nogit.<module>`로 참조합니다(예: `nogit.remote.greet(...)`). `# nogit/remote`는 모듈을 직접 import하고, `# nogit.fn`은 함수로 모듈을 찾습니다. `no fmt`는 사용하지 않는 `# nogit` / `# nogit/remote`를 정리합니다. 버전은 구체적인 값이어야 합니다
 (`no sync` / 컴파일 시 `""` 또는 `"*"`를 만나면 오류가 발생합니다). zip은 `~/no/cache/ast/`에 캐시되며
 `$NOLANG_AST_CACHE_DIR`로 덮어쓸 수 있습니다.
 
 산출물은 `no pack`으로 만듭니다(lexer + parser만 필요하고 LLVM 도구 모음은 불필요하여 CI에 적합):
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # 單個源文件
-no pack -o nogit.ast.zip ./nogit       # 一個包目錄
+no pack -o nogit-ast.zip nogit.no      # 單個源文件
+no pack -o nogit-ast.zip ./nogit       # 一個包目錄
 ```
 
 ### 의존성 유형과 버전 번호 규칙

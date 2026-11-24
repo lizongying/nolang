@@ -28,13 +28,13 @@ L'implémentation se trouve dans `src/fmt/formatter.go` :
 - `FormatFile(code)` formate un fichier complet et appelle `ensureTrailingNewline`, qui supprime tous les `\r` / `\n` finaux (compatible CRLF et lignes vides multiples), puis ajoute un seul `\n`. Une entrée vide ou non analysable est retournée telle quelle, afin d'éviter d'endommager un fichier que le formateur ne comprend pas.
 - `Format(code)` est la fonction de formatage de fragments pure (sans retour à la ligne final), utilisée principalement par les tests unitaires ; pour écrire un vrai fichier source, préférez `FormatFile`.
 
-## Nettoyage des instructions d'import (déduplication / suppression de `# std/fmt` / tri)
+## Nettoyage des instructions d'import (déduplication / suppression des imports std sans alias / tri)
 
 `no fmt` (et le formatage à la sauvegarde du LSP) normalise automatiquement le **bloc d'imports contigu en haut d'un fichier** (`# path[.fn] [alias]`) ; l'implémentation se trouve dans `src/fmt/imports.go` :
 
 1. **Déduplication** : les imports strictement identiques (même chemin, même nom de fonction, même alias) ne conservent que la première occurrence.
-2. **Suppression automatique de `# std/fmt`** : `print` / `eprint` / `format` / `sprintf` sont des fonctions intégrées au compilateur, et les modules de la bibliothèque standard sont de toute façon chargeables implicitement (voir [Préfixes d'appel inter-modules](./module)) — `# std/fmt` n'est donc jamais nécessaire et le formateur le supprime. Deux exceptions le conservent :
-   - un **alias** ou un **import de fonction** a été écrit (par ex. `# std/fmt.sprintf fm`) — c'est une liaison de nom délibérée ;
+2. **Suppression automatique de tout import de module std pur sans alias** : les modules de la bibliothèque standard sont chargeables implicitement (voir [Préfixes d'appel inter-modules](./module)) — un import `# std/<module>` sans alias ni `.fonction` (par ex. `# std/noml`, `# std/math`, `# std/database/sql`) ne lie aucun nom et est redondant ; le formateur le supprime. Trois exceptions le conservent :
+   - un **alias** (`# std/noml n`) ou un **import de fonction** (`# std/fmt.sprintf fm`) a été écrit — c'est une liaison de nom délibérée ;
    - la ligne d'import porte un **commentaire** ou une annotation `#{...}` attachée — le contenu écrit par l'utilisateur n'est jamais supprimé silencieusement.
 3. **Tri automatique** : les imports sont triés lexicographiquement et de façon stable selon chemin → nom de fonction → alias.
 
@@ -45,10 +45,12 @@ Les blocs d'imports qui apparaissent ailleurs qu'en haut du fichier (après du c
 ```no
 #{fmt-skip}
 ; avant                             ; après
-# std/vec                           # std/io
-# std/fmt                           # std/vec
-# std/io
-# std/fmt        ;→  print、format sont intégrés, # std/fmt supprimé ; le reste trié par ordre lexicographique
+# std/vec                           # aaa/lib
+# std/noml                          # std/io
+# std/io                            # std/vec
+# std/noml n
+# aaa/lib        ;→  les imports std sans alias (# std/noml, # std/vec, # std/io) sont supprimés ;
+                    ;   # std/noml n avec alias est conservé ; le reste trié par ordre lexicographique
 ```
 
 ## Marqueurs de commentaire

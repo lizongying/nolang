@@ -6,7 +6,7 @@ sidebar_position: 6
 
 Nolang impose une convention de namespace de modules obligatoire : lorsqu'on appelle, depuis un fichier `.no`, des fonctions ou constantes définies dans **d'autres modules** (d'autres fichiers `.no`), il faut utiliser le préfixe `ShortName.`. Cela évite les conflits de noms entre modules.
 
-Les modules de la bibliothèque standard sont chargés automatiquement par le compilateur — **aucun import explicite n'est nécessaire** (pas besoin d'annotation `# std/...`) ; il suffit d'utiliser le préfixe `ShortName.` pour les appeler. `# std/fmt` est particulièrement superflu — `print` / `eprint` / `format` sont des intégrés du compilateur, et `no fmt` supprime automatiquement un `# std/fmt` sans alias (voir [Style de code · Nettoyage des instructions d'import](./code-style#導入語句自動整理去重--移除-stdfmt--排序)).
+Les modules de la bibliothèque standard sont chargés automatiquement par le compilateur — **aucun import explicite n'est nécessaire** (pas besoin d'annotation `# std/...`) ; il suffit d'utiliser le préfixe `ShortName.` pour les appeler. `no fmt` supprime automatiquement tout import de module std pur sans alias (par ex. `# std/noml`, `# std/math`, `# std/fmt`) ; un alias (`# std/noml n`) ou un import de fonction (`# std/math.sqrt`) est conservé (voir [Style de code · Nettoyage des instructions d'import](./code-style#nettoyage-des-instructions-dimport-déduplication--suppression-des-imports-std-sans-alias--tri)).
 
 > **Dépendances et résolution des chemins** : la clé de dépendance d'un paquet local peut être mappée, via `workspace.noml`, vers un nom court ou une URL complète. Voir [Types de dépendances et règles de numérotation des versions](../usage#依賴類型與版本號規則).
 

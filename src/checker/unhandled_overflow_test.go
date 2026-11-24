@@ -52,7 +52,7 @@ func TestUnhandledOverflowDetectsLeaks(t *testing.T) {
 			// 仍是沉默泄漏，必須照報。
 			name: "int_arithmetic_inside_str_loop_still_leaks",
 			src: `f = (s str) () {
-    for ch <- s {
+    ch <- s: {
         v i64 = 5
         u = v + 2
         io.outln(u)
@@ -162,7 +162,7 @@ io.outln(z)`,
 			// 同上，迭代源是 str 型別的識別字時亦然。
 			name: "char_arithmetic_in_str_loop_var",
 			src: `f = (s str) () {
-    for ch <- s {
+    ch <- s: {
         u = ch - 32
         io.outln(u)
     }

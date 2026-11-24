@@ -103,11 +103,12 @@ func main() {
 	}
 
 	// ---- AST blob (Tier 0) ----
-	// Bake every std module's serialized Program (gob of parser.CachedProgram;
-	// the whole map is gzipped once here) so `no build` deserializes the std
-	// AST instead of lexing+parsing src/std on every invocation.
-	// map[embedPath][]byte is gob's natural form; the binary is gzipped to keep
-	// the embedded size down.
+	// Bake every std module's serialized Program (gob of parser.CachedProgram)
+	// so `no build` deserializes the std AST instead of lexing+parsing src/std
+	// on every invocation. StdASTBlob.Mods is [][]byte: each payload carries
+	// its own embed/import path on Program.SourcePath / ModulePath, so there is
+	// no outer path → payload key. The whole blob is gzipped once to keep the
+	// embedded size down.
 	astBlob, err := checker.SerializeStdAST(fsys)
 	if err != nil {
 		fatal(fmt.Sprintf("genstdsig: std AST serialize failed: %v", err))
@@ -120,7 +121,7 @@ func main() {
 	if err := azw.Close(); err != nil {
 		fatal(fmt.Sprintf("genstdsig: std AST gzip failed: %v", err))
 	}
-	astBinPath := filepath.Join(srcDir, "checker", "stdastembed", "std_ast.bin")
+	astBinPath := filepath.Join(srcDir, "checker", "stdastembed", "std-ast.bin")
 	if err := os.MkdirAll(filepath.Dir(astBinPath), 0o755); err != nil {
 		fatal(fmt.Sprintf("genstdsig: mkdir %s: %v", filepath.Dir(astBinPath), err))
 	}

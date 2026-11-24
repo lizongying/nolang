@@ -153,7 +153,7 @@ func (f *formatter) newline() {
 
 func (f *formatter) formatProgram(p *parser.Program) {
 	// 導入位置歸一化：非頂部的導入（代碼之後、塊/函式體內）先搬到頂部區段
-	// （import_hoist.go），再做區段規範化：去重、移除無別名的 `# std/fmt`、
+	// （import_hoist.go），再做區段規範化：去重、移除無別名的純 std 模組導入、
 	// 按字典序排序（imports.go）。
 	hoistImports(p)
 	normalizeImportRun(p)

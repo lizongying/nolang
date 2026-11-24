@@ -28,7 +28,7 @@ Installieren Sie die Nolang-Erweiterung aus dem [VS Code Marketplace](https://ma
 | `no version`                                                 | Gibt Versionsinformationen aus            |
 | `no init`                                                    | Definiert den Workspace (erzeugt workspace.noml, ohne package.noml) |
 | `no new <name>`                                              | Erstellt ein neues Paket im Workspace (Unterverzeichnis + package.noml, in workspace.noml registriert) |
-| `no fmt [-w] [-d] <file\|dir>`                               | Formatiert Quellcode (inkl. Dedup/Sortierung der Importe, entfernt `# std/fmt` automatisch); `.noml`-Konfigurationsdateien folgen einer layout-erhaltenden Formatierungsregel (Einrückung/Leerzeichen/Leerzeilen, Kommentare und Schlüsselreihenfolge bleiben unangetastet) |
+| `no fmt [-w] [-d] <file\|dir>`                               | Formatiert Quellcode (inkl. Dedup/Sortierung der Importe, entfernt std-Modulimports ohne Alias automatisch); `.noml`-Konfigurationsdateien folgen einer layout-erhaltenden Formatierungsregel (Einrückung/Leerzeichen/Leerzeilen, Kommentare und Schlüsselreihenfolge bleiben unangetastet) |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | Baut das Projekt (Ausgabe: ausführbare Datei) |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | Baut und führt aus (Paketname/Verzeichnis/Datei) |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | Führt Tests aus                |
@@ -40,7 +40,7 @@ Installieren Sie die Nolang-Erweiterung aus dem [VS Code Marketplace](https://ma
 | `no sync`                                                    | Synchronisiert Abhängigkeiten                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | Installiert ein Binary             |
 | `no uninstall <name>`                                        | Entfernt ein Binary             |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | Packt ein AST (`<tool>.ast.zip`)|
+| `no pack [-o <file>] [<dir\|file.no>]`                       | Packt ein AST (`<tool>-ast.zip`)|
 | `no pub [-o <file>]`                                         | Wie `no pack` (Upload zur Registry nicht implementiert)|
 | `no cache <stat\|clear>`                                     | Zeigt / leert den AST-Cache (unter normalen Umständen ist ein Leeren nicht nötig)|
 
@@ -298,7 +298,7 @@ Umgebungsvariablen:
 | Variable | Wirkung |
 | --- | --- |
 | `NOLANG_AST_CACHE_OFF=1` | Deaktiviert den Cache (nützlich für A/B-Vergleiche von Compilern und zur Fehlersuche, wenn „bereits behobene Fehler wieder auftauchen") |
-| `NOLANG_AST_CACHE_DIR` | Eigener Cache-Pfad. Wirkt **gleichzeitig** auf den `.ast.zip`-Cache vorkompilierter AST-Abhängigkeiten (dieser liegt standardmäßig unter `~/no/cache/ast`, siehe unten „Vorkompilierte AST-Abhängigkeiten") |
+| `NOLANG_AST_CACHE_DIR` | Eigener Cache-Pfad. Wirkt **gleichzeitig** auf den `-ast.zip`-Cache vorkompilierter AST-Abhängigkeiten (dieser liegt standardmäßig unter `~/no/cache/ast`, siehe unten „Vorkompilierte AST-Abhängigkeiten") |
 | `NOLANG_AST_CACHE_MAX` | Obergrenze für die Anzahl der Cache-Einträge (Standard 4096) |
 
 > Alte Einträge werden einfach nicht mehr getroffen und beim Schreiben neuer Einträge gemäß der Obergrenze ausgeschieden, daher **muss** `~/.cache/nolang/ast` **nicht** gelöscht werden.
@@ -425,21 +425,24 @@ no sync
 ### Vorkompilierte AST-Abhängigkeiten
 
 `no add <tool>@<host>/<owner>/<repo>`-Abhängigkeiten dieser Art **enthalten nur AST, keinen Quellcode**: Zur Kompilierzeit
-wird `<tool>.ast.zip` (MetaMessage + zip) aus dem Release geholt, dekodiert und direkt in die Compiler-Pipeline injiziert. Verwendung:
+wird `<tool>-ast.zip` (zip with one .gob entry per module) aus dem Release geholt, dekodiert und direkt in die Compiler-Pipeline injiziert. Verwendung:
 
 ```nolang
-# nogit; 或 use <host>/<owner>/<repo>/nogit
+# nogit                      # Paket-Alias; Module sind nogit.<module>
+# nogit/remote                  # Modul remote direkt importieren (auch nogit.remote)
+# nogit.fn                      # nogit ist nur der Paketname; Modul mit fn suchen
+# <host>/<owner>/<repo>/nogit/remote
 ```
 
-Ein zip entspricht genau einem Modul; tiefere Pfade wie `use <repo>/<submod>` werden nicht unterstützt. Die Version muss ein
+Ein zip entspricht einem Paket, das mehrere Module enthält — jedes als `<modulePath>.gob`-Eintrag. Es gibt kein Eingangsmodul: `# nogit` erzeugt nur einen Paket-Alias (Module unter `nogit.<module>`, z. B. `nogit.remote.greet(...)`); `# nogit/remote` importiert ein Modul direkt; `# nogit.fn` findet ein Modul über eine Funktion. `no fmt` entfernt unbenutzte `# nogit` / `# nogit/remote`. Die Version muss ein
 konkreter Wert sein (`no sync` / der Compiler meldet bei `""` oder `"*"` einen Fehler). Das zip wird unter `~/no/cache/ast/`
 zwischengespeichert und kann über `$NOLANG_AST_CACHE_DIR` überschrieben werden.
 
 Um das Asset zu erzeugen, verwenden Sie `no pack` (nur Lexer + Parser nötig, keine LLVM-Toolchain — gut geeignet für CI):
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # 單個源文件
-no pack -o nogit.ast.zip ./nogit       # 一個包目錄
+no pack -o nogit-ast.zip nogit.no      # 單個源文件
+no pack -o nogit-ast.zip ./nogit       # 一個包目錄
 ```
 
 ### Abhängigkeitstypen und Versionsregeln

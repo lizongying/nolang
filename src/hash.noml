@@ -16,7 +16,7 @@
   ]
   exclude: [
     '*_test.go'
-    'checker/stdastembed/std_ast.bin'
+    'checker/stdastembed/std-ast.bin'
     'checker/stdsig_gen.go'
   ]
 }

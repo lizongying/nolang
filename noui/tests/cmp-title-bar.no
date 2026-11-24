@@ -1,0 +1,274 @@
+; 阶段67：C-TITLE-BAR（标题 + 右端一排按钮）无窗口断言
+; 纯逻辑：默认 / 标题读写 / 按钮池读写 / 多句柄隔离 /
+;           disabled 空操作 / 测算 intrinsic / 渲染几何（右对齐）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：0 个按钮、越界读空串、标题取构造参数、未 disabled、不是视觉容器
+; ============================================================================
+tb = cmp-title-bar('hello')
+
+u1 = cmp-kind(tb) == C-TITLE-BAR
+u2 = tb-count(tb) == 0
+u3 = tb-button(tb, 0) == ''
+u4 = tb-button(tb, -1) == ''
+u5 = tb-title(tb) == 'hello'
+u6 = cmp-has(tb, F-DISABLED) == 0
+u7 = cs-is-container(cmp-kind(tb)) == 0
+
+; ============================================================================
+; 2. 标题读写（走 CMP-TEXT）
+; ============================================================================
+tb-set-title(tb, 'renamed')
+u8 = tb-title(tb) == 'renamed'
+u9 = cmp-text(tb) == 'renamed'
+tb-set-title(tb, '')
+u10 = tb-title(tb) == ''
+tb-set-title(tb, 'hello')
+
+; ============================================================================
+; 3. 按钮池读写
+; ============================================================================
+b0 = tb-add(tb, 'ok')
+b1 = tb-add(tb, 'no')
+b2 = tb-add(tb, 'maybe')
+u11 = b0 == 0
+u12 = b1 == 1
+u13 = b2 == 2
+u14 = tb-count(tb) == 3
+u15 = tb-button(tb, 0) == 'ok'
+u16 = tb-button(tb, 1) == 'no'
+u17 = tb-button(tb, 2) == 'maybe'
+u18 = tb-button(tb, 3) == ''
+
+tb-set-button(tb, 1, 'yes')
+u19 = tb-button(tb, 1) == 'yes'
+tb-set-button(tb, 9, 'x')
+tb-set-button(tb, -1, 'x')
+u20 = tb-count(tb) == 3
+u21 = tb-button(tb, 2) == 'maybe'
+
+; 清空后可从头复用同一段扁平池
+tb-clear(tb)
+u22 = tb-count(tb) == 0
+u23 = tb-button(tb, 0) == ''
+b3 = tb-add(tb, 'again')
+u24 = b3 == 0
+u25 = tb-button(tb, 0) == 'again'
+
+; ============================================================================
+; 4. 多句柄隔离
+; ============================================================================
+t2 = cmp-title-bar('second')
+t3 = cmp-title-bar('')
+tb-add(t2, 'aa')
+tb-add(t3, 'bb')
+tb-add(t3, 'cc')
+u26 = tb-count(t2) == 1
+u27 = tb-count(t3) == 2
+u28 = tb-button(t2, 0) == 'aa'
+u29 = tb-button(t3, 1) == 'cc'
+u30 = tb-title(t2) == 'second'
+u31 = tb-title(t3) == ''
+
+tb-clear(t2)
+u32 = tb-count(t2) == 0
+u33 = tb-count(t3) == 2
+tb-add(t2, 'new')
+u34 = tb-button(t2, 0) == 'new'
+u35 = tb-button(t3, 0) == 'bb'
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(t3, F-DISABLED)
+tb-add(t3, 'no')
+tb-set-button(t3, 0, 'no')
+tb-set-title(t3, 'no')
+tb-clear(t3)
+u36 = tb-count(t3) == 2
+u37 = tb-button(t3, 0) == 'bb'
+u38 = tb-title(t3) == ''
+cmp-flag-clear(t3, F-DISABLED)
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    空标题无按钮：宽 = 2*1200 = 2400 夹到 6400；高 = 2*1200 + 4000 = 6400
+;    宽 = 2*tb-pad + 标题宽 + (有按钮 ? tb-gap + Σ(按钮文案宽+2*800) + (N-1)*tb-gap : 0)
+; ============================================================================
+m1 = cmp-title-bar('')
+v1w, v1h = cs-measure(m1)
+u39 = v1w == 6400
+u40 = v1h == 6400
+
+; 标题 'abc'(2400)：宽 2400+2400=4800 夹 6400；高不变
+m2 = cmp-title-bar('abc')
+v2w, v2h = cs-measure(m2)
+u41 = v2w == 6400
+u42 = v2h == 6400
+
+; 长标题 'abcdefghij'(8000)：宽 2400+8000=10400
+m3 = cmp-title-bar('abcdefghij')
+v3w, v3h = cs-measure(m3)
+u43 = v3w == 10400
+u44 = v3h == 6400
+
+; 空标题 + 一个按钮 'ok'(1600)：按钮盒 1600+1600=3200
+;   宽 = 2400 + 0 + 800 + 3200 = 6400（刚好）
+m4 = cmp-title-bar('')
+tb-add(m4, 'ok')
+v4w, v4h = cs-measure(m4)
+u45 = v4w == 6400
+u46 = v4h == 6400
+
+; 空标题 + 两个按钮 'ok'/'no'：Σ盒 6400 + 间距 800 = 7200
+;   宽 = 2400 + 0 + 800 + 7200 = 10400
+m5 = cmp-title-bar('')
+tb-add(m5, 'ok')
+tb-add(m5, 'no')
+v5w, v5h = cs-measure(m5)
+u47 = v5w == 10400
+u48 = v5h == 6400
+
+; 标题 'ab'(1600) + 一个按钮 'ok'：2400+1600+800+3200 = 8000
+m6 = cmp-title-bar('ab')
+tb-add(m6, 'ok')
+v6w, v6h = cs-measure(m6)
+u49 = v6w == 8000
+u50 = v6h == 6400
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m6, 20000)
+cmp-set-sh(m6, 9000)
+v7w, v7h = cs-measure(m6)
+u51 = v7w == 20000
+u52 = v7h == 9000
+cmp-set-sw(m6, 0)
+cmp-set-sh(m6, 0)
+
+; ============================================================================
+; 7. 渲染
+;    外层 18000 → 内容宽 15600（intrinsic 更小，叶子横向被拉伸到父内容宽）
+;    面板 (1200,1200,15600,6400) FIELD
+;    标题 'title bar' @ (bx+1200, by+1200) FG
+;    按钮排在右端：总宽 3200+800+3200=7200，首钮左缘 = bx+bw-1200-7200
+;      'ok' 盒 (bx+7200, by+1200, 3200, 4000) TRACK，文案 @ (盒左+800, by+1200)
+;      'no'  盒 (bx+11200, by+1200, 3200, 4000) TRACK，文案 @ (盒左+800, by+1200)
+;    文本指令共 3 条（标题 + 两个按钮）
+; ============================================================================
+cs-clear()
+r = cmp-title-bar('title bar')
+tb-add(r, 'ok')
+tb-add(r, 'no')
+rt = cmp-root()
+cmp-add-child(rt, r)
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+
+p0 = 1200
+hh = 4000
+
+bx, by, bw, bh = cs-rect(r)
+tx = cs-add(bx, p0)
+; cs-emit-text-left 垂直居中：文本顶 = 槽顶 + (4000-2400)/2 = 槽顶 + 800
+sy = cs-add(by, p0)
+ty = cs-add(sy, 800)
+b0x = cs-add(bx, 7200)
+b1x = cs-add(bx, 11200)
+
+u53 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u54 = cs-text-color-at('title bar', tx, ty) == cs-theme(CS-TH-FG)
+u55 = cs-rect-color-at(b0x, sy, 3200, hh) == cs-theme(CS-TH-TRACK)
+u56 = cs-text-color-at('ok', cs-add(b0x, 800), ty) == cs-theme(CS-TH-FG)
+u57 = cs-rect-color-at(b1x, sy, 3200, hh) == cs-theme(CS-TH-TRACK)
+u58 = cs-text-color-at('no', cs-add(b1x, 800), ty) == cs-theme(CS-TH-FG)
+u59 = cs-text-count() == 3
+u60 = bw == 15600
+u61 = bh == 6400
+
+; 追加第三个按钮 'extra'(4000 → 盒 5600)：整排 3200+800+3200+800+5600=13600，
+; 仍贴右端 → 首钮左缘 = bx+15600-1200-13600 = bx+800（比两钮时左移 6400）
+tb-add(r, 'extra')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw, bh = cs-rect(r)
+n0x = cs-add(bx, 800)
+n1x = cs-add(bx, 4800)
+n2x = cs-add(bx, 8800)
+u62 = cs-rect-color-at(n0x, sy, 3200, hh) == cs-theme(CS-TH-TRACK)
+u69 = cs-rect-color-at(n1x, sy, 3200, hh) == cs-theme(CS-TH-TRACK)
+u63 = cs-text-color-at('extra', cs-add(n2x, 800), ty) == cs-theme(CS-TH-FG)
+u64 = cs-text-count() == 4
+u65 = cs-rect-color-at(cs-add(bx, 7200), sy, 3200, hh) == -1
+
+; 清空按钮 + 清空标题：FIELD 底还在，只发一条（空串）文本指令
+tb-clear(r)
+tb-set-title(r, '')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw, bh = cs-rect(r)
+u66 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u67 = cs-text-count() == 1
+u68 = cs-rect-color-at(cs-add(bx, 7200), sy, 3200, hh) == -1
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11
+ok = ok & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21
+ok = ok & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31
+ok = ok & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41
+ok = ok & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60 & u61
+ok = ok & u62 & u63 & u64 & u65 & u66 & u67 & u68 & u69
+
+(ok == 1) -> {
+    print('ALL TITLE-BAR TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME TITLE-BAR TESTS FAILED')
+}

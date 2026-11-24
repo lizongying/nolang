@@ -1,0 +1,248 @@
+; ============================================================================
+; noui 窗口 demo：折叠面板（阶段 58）—— C-COLLAPSIBLE
+;
+; 流水线：app-init -> cmp-collapsible(title) -> cl-add-body / cl-set-open /
+;          cl-toggle 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-COLLAPSIBLE 分支 +
+;      cs-paint-collapsible）：FIELD 底 + 头部「展开符（v / >）+ 标题」+
+;      展开时 TRACK 分隔线 + N 行正文（MUTED）
+;   -> 键盘：e=展开；c=收起；t=切换；a=加一行正文；r=重建默认；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-collapsible.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选正文行（a 轮取）----
+cl-cand = (i i64) (s str) {
+    s = 'alpha'
+    (i == 1) -> { s = 'beta body' }
+    (i == 2) -> { s = 'gamma line' }
+    (i == 3) -> { s = 'delta text' }
+    (i == 4) -> { s = 'epsilon' }
+    (i == 5) -> { s = 'zeta body' }
+    (i == 0) -> { s = 'eta line' }
+    s = s
+}
+
+; ---- 重建默认（标题 'settings' + 两行正文，收起）----
+cl-build-default = (h i64) () {
+    cl-clear(h)
+    cl-set-title(h, 'settings')
+    cl-collapse(h)
+    cl-add-body(h, 'line one')
+    cl-add-body(h, 'line two')
+}
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui collapsible')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段58: collapsible')
+hint = cmp-label('e=expand c=collapse t=toggle a=add-line r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+cl = cmp-collapsible('settings')
+cl-build-default(cl)
+
+cmp-add-child(root, title)
+cmp-add-child(root, cl)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：折叠面板只计数（点击头部可切换由声明式 action 负责）----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; e：展开
+        (k == 101) -> { cl-expand(cl) }
+        ; c：收起
+        (k == 99) -> { cl-collapse(cl) }
+        ; t：切换
+        (k == 116) -> { cl-toggle(cl) }
+        ; a：加一行正文
+        (k == 97) -> {
+            n = cl-count(cl)
+            cl-add-body(cl, cl-cand(ct-rem(n, 7)))
+        }
+        ; r：重建默认
+        (k == 114) -> { cl-build-default(cl) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(cl, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(cl, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(cl, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = cl-count(cl)
+    op = cl-open(cl)
+    dis = cmp-has(cl, F-DISABLED)
+    cmp-set-text(stat, 'title={cl-title(cl)} lines={cn} open={op} disabled={dis}')
+    cmp-set-text(stat2, 'body[0]={cl-body-line(cl, 0)}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（收起 + 两行），按面板实测矩形推导坐标逐项核对
+;   内边距 1200 / 展开符宽 800 / 符与标题间隙 800 / 头部高 4000 /
+;   分隔线 100 / 正文行高 2400
+;   头部文字垂直居中：y = 面板顶 + 1200 + 800
+; ============================================================================
+cmp-flag-clear(cl, F-DISABLED)
+cl-build-default(cl)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+gw0 = 800
+gg0 = 800
+hh0 = 4000
+sep0 = 100
+lh0 = 2400
+
+bx, by, bw, bh = cs-rect(cl)
+hty = cs-add(by, cs-add(p0, 800))
+gx = cs-add(bx, p0)
+tx = cs-add(cs-add(cs-add(bx, p0), gw0), gg0)
+sepy = cs-add(by, cs-add(p0, hh0))
+by0 = cs-add(cs-add(sepy, sep0), 0)
+by1 = cs-add(by0, lh0)
+
+c1 = cl-count(cl) == 2
+c2 = cl-title(cl) == 'settings'
+c3 = cl-open(cl) == 0
+c4 = find-text('>', gx, hty) == 1
+c5 = find-text('settings', tx, hty) == 1
+c6 = find-text-color('>', gx, hty) == cs-theme(CS-TH-ACCENT)
+c7 = find-text-color('settings', tx, hty) == cs-theme(CS-TH-FG)
+c8 = find-rect-color(bx, by, bw, cs-add(cs-mul(p0, 2), hh0)) == cs-theme(CS-TH-FIELD)
+c9 = find-rect-color(bx, sepy, bw, sep0) == -1
+c10 = find-text('line one', tx, by0) == 0
+
+; 展开：头部展开符变 'v'、出现分隔线与两行正文
+cl-expand(cl)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c11 = find-text('v', gx, hty) == 1
+c12 = find-text-color('v', gx, hty) == cs-theme(CS-TH-ACCENT)
+c13 = find-rect-color(bx, sepy, bw, sep0) == cs-theme(CS-TH-TRACK)
+c14 = find-text('line one', tx, by0) == 1
+c15 = find-text('line two', tx, by1) == 1
+c16 = find-text-color('line one', tx, by0) == cs-theme(CS-TH-MUTED)
+c17 = find-rect-color(bx, by, bw, cs-add(cs-mul(p0, 2), cs-add(hh0, cs-mul(cl-count(cl), lh0)))) == cs-theme(CS-TH-FIELD)
+
+; 再收起：正文与分隔线消失
+cl-collapse(cl)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c18 = find-text('>', gx, hty) == 1
+c19 = find-rect-color(bx, sepy, bw, sep0) == -1
+c20 = find-text('line one', tx, by0) == 0
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n0 = cl-count(cl)
+op0 = cl-open(cl)
+print('bye frames={fr} keys={kk} clicks={ck} lines={n0} open={op0} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20) -> {
+    print('collapsible render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20)) -> {
+    print('FAIL: collapsible render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

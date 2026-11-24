@@ -1,0 +1,272 @@
+; 阶段71：C-TEXT（text-node，单行多段样式文本）无窗口断言
+; 纯逻辑：默认（无片段退化成标题 + 组件色）/ 片段池读写 / 越界 /
+;          多句柄隔离 / disabled / 对齐 / 测算 / 渲染几何与配色
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-any = (t str) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：0 个片段、越界读空串 / -1、标题取构造参数
+; ============================================================================
+tx = cmp-text-node('styled')
+
+u1 = cmp-kind(tx) == C-TEXT
+u2 = txn-count(tx) == 0
+u3 = txn-run-text(tx, 0) == ''
+u4 = txn-run-text(tx, -1) == ''
+u5 = txn-run-color(tx, 0) == -1
+u6 = cmp-text(tx) == 'styled'
+u7 = cmp-has(tx, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 片段池读写
+; ============================================================================
+r0 = txn-add(tx, 'a', 0xFF0000FF)
+r1 = txn-add(tx, 'bb', -1)
+r2 = txn-add(tx, 'ccc', 0x00FF00FF)
+u8 = r0 == 0
+u9 = r1 == 1
+u10 = r2 == 2
+u11 = txn-count(tx) == 3
+u12 = txn-run-text(tx, 0) == 'a'
+u13 = txn-run-text(tx, 2) == 'ccc'
+u14 = txn-run-text(tx, 3) == ''
+u15 = txn-run-color(tx, 0) == 0xFF0000FF
+u16 = txn-run-color(tx, 1) == -1
+u17 = txn-run-color(tx, 2) == 0x00FF00FF
+u18 = txn-run-color(tx, 9) == -1
+
+txn-set-run(tx, 1, 'BBBB', 0x123456FF)
+u19 = txn-run-text(tx, 1) == 'BBBB'
+u20 = txn-run-color(tx, 1) == 0x123456FF
+txn-set-run(tx, 9, 'x', 0)
+txn-set-run(tx, -1, 'x', 0)
+u21 = txn-count(tx) == 3
+u22 = txn-run-text(tx, 0) == 'a'
+
+txn-clear(tx)
+u23 = txn-count(tx) == 0
+u24 = txn-run-text(tx, 0) == ''
+
+; ============================================================================
+; 3. 多句柄隔离
+; ============================================================================
+s2 = cmp-text-node('one')
+s3 = cmp-text-node('two')
+txn-add(s2, 'aa', 1)
+txn-add(s3, 'bb', 2)
+txn-add(s3, 'cc', 3)
+u25 = txn-count(s2) == 1
+u26 = txn-count(s3) == 2
+u27 = txn-run-text(s3, 1) == 'cc'
+u28 = cmp-text(s2) == 'one'
+txn-clear(s2)
+u29 = txn-count(s2) == 0
+u30 = txn-count(s3) == 2
+
+; ============================================================================
+; 4. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(s3, F-DISABLED)
+txn-add(s3, 'no', 9)
+txn-set-run(s3, 0, 'no', 9)
+txn-clear(s3)
+u31 = txn-count(s3) == 2
+u32 = txn-run-text(s3, 0) == 'bb'
+u33 = txn-run-color(s3, 0) == 2
+cmp-flag-clear(s3, F-DISABLED)
+
+; ============================================================================
+; 5. 测算 intrinsic
+;    无片段：宽 = len(标题)*800 + 2*CS-PAD(2400)，下限 6400；高 = CS-LINE-H
+;    有片段：宽 = Σ 片段宽 + 2*CS-PAD，下限 6400；高 = CS-LINE-H
+; ============================================================================
+m1 = cmp-text-node('')
+v1w, v1h = cs-measure(m1)
+u34 = v1w == 6400
+u35 = v1h == 2400
+
+m2 = cmp-text-node('ab')
+v2w, v2h = cs-measure(m2)
+u36 = v2w == 4000
+u37 = v2h == 2400
+; 1600+2400=4000 < 6400 → 夹到 6400
+u38 = v2w == 6400
+
+m3 = cmp-text-node('abcdefghij')
+v3w, v3h = cs-measure(m3)
+u39 = v3w == 10400
+
+m4 = cmp-text-node('x')
+txn-add(m4, 'aa', 1)
+txn-add(m4, 'bbb', 2)
+v4w, v4h = cs-measure(m4)
+; (2+3)*800 + 2400 = 4000+2400 = 6400
+u40 = v4w == 6400
+
+txn-clear(m4)
+v5w, v5h = cs-measure(m4)
+u41 = v5w == 6400
+u42 = v5h == 2400
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m4, 20000)
+cmp-set-sh(m4, 9000)
+v6w, v6h = cs-measure(m4)
+u43 = v6w == 20000
+u44 = v6h == 9000
+cmp-set-sw(m4, 0)
+cmp-set-sh(m4, 0)
+
+; ============================================================================
+; 6. 渲染：无片段 —— 退化路径，一条文本指令，用组件色 CMP-COLOR[h]
+;    root 18000 → 内容宽 15600；叶子高 = CS-LINE-H(2400)
+;    文本顶 = 槽顶 + (2400-2400)/2 = 槽顶
+; ============================================================================
+cs-clear()
+r = cmp-text-node('styled')
+rt = cmp-root()
+cmp-add-child(rt, r)
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+
+bx, by, bw, bh = cs-rect(r)
+lh = 2400
+u45 = cs-text-color-at('styled', bx, by) == cmp-color(r)
+u46 = cs-text-count() == 1
+u47 = bh == lh
+u48 = bw == 15600
+
+; 换颜色：文本跟着换
+cmp-set-color(r, 0x112233FF)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u49 = cs-text-color-at('styled', bx, by) == 0x112233FF
+
+; 居中对齐：整块居中
+cmp-set-align(r, 2)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+tw = cs-mul(6, 800)
+u50 = cs-text-color-at('styled', cs-add(bx, cs-div(cs-sub(bw, tw), 2)), by) == 0x112233FF
+
+; 右对齐
+cmp-set-align(r, 3)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u51 = cs-text-color-at('styled', cs-sub(cs-add(bx, bw), tw), by) == 0x112233FF
+cmp-set-align(r, 0)
+
+; ============================================================================
+; 7. 渲染：三段（'a' 红 / 'bb' 继承 / 'ccc' 绿）
+;    从左往右排：x = bx, bx+800, bx+2400
+; ============================================================================
+txn-add(r, 'a', 0xFF0000FF)
+txn-add(r, 'bb', -1)
+txn-add(r, 'ccc', 0x00FF00FF)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u52 = cs-text-count() == 3
+u53 = cs-text-color-at('a', bx, by) == 0xFF0000FF
+u54 = cs-text-color-at('bb', cs-add(bx, 800), by) == 0x112233FF
+u55 = cs-text-color-at('ccc', cs-add(bx, 2400), by) == 0x00FF00FF
+
+; 改片段文案 / 颜色
+txn-set-run(r, 1, 'ZZZ', 0xABCDEF00)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u56 = cs-text-color-at('ZZZ', cs-add(bx, 800), by) == 0xABCDEF00
+u57 = cs-text-color-at('bb', cs-add(bx, 800), by) == -1
+
+; 清空片段：退回标题 + 组件色
+txn-clear(r)
+cmp-set-align(r, 0)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u58 = cs-text-count() == 1
+u59 = cs-text-color-at('styled', bx, by) == 0x112233FF
+
+; disabled：写片段无效，渲染不变
+cmp-flag-set(r, F-DISABLED)
+txn-add(r, 'no', 7)
+txn-clear(r)
+u60 = txn-count(r) == 0
+u61 = cs-text-count() == 1
+cmp-flag-clear(r, F-DISABLED)
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11
+ok = ok & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21
+ok = ok & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31
+ok = ok & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41
+ok = ok & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60 & u61
+
+(ok == 1) -> {
+    print('ALL TEXT-NODE TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME TEXT-NODE TESTS FAILED')
+}
+

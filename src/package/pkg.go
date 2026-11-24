@@ -774,7 +774,7 @@ func (p *Package) resolveFromScratch(graph *DependencyGraph, maxDepth int) (*Dep
 		if isStdDependency(key) {
 			continue
 		}
-		// 跳過預編 AST 依賴（nogit@host/owner/repo）：發布產物是 <tool>.ast.zip，
+		// 跳過預編 AST 依賴（nogit@host/owner/repo）：發布產物是 <tool>-ast.zip，
 		// 沒有原始碼套件可下載，由 transpiler 在遇到 use 時按需抓取（見 mmast.EnsureModuleAST）。
 		if IsASTDependencyKey(key) {
 			continue

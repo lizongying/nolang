@@ -1,0 +1,306 @@
+; 阶段51：C-NATIVE-MENU（自绘下拉菜单）无窗口断言
+; 纯逻辑：构造默认 / 写入与夹紧 / 选中语义 / disabled 空操作 /
+;         单项禁用 / 测算 intrinsic / 渲染几何（按钮、箭头、弹层、项）/ 命中测试
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 1. 构造默认
+; ============================================================================
+M = cmp-native-menu()
+
+t1 = cmp-kind(M) == C-NATIVE-MENU
+t2 = nm-count(M) == 0
+t3 = cmp-value(M) == 0
+t4 = nm-index(M) == -1
+t5 = nm-label(M, 0) == ''
+t6 = nm-item-off(M, 0) == 0
+t7 = cmp-has(M, F-OPEN) == 0
+t8 = cmp-has(M, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 写入 + 夹紧
+; ============================================================================
+cmp-set-text(M, 'menu')
+nm-set-count(M, 3)
+t9 = nm-count(M) == 3
+t10 = cmp-value(M) == 3
+
+nm-set-label(M, 0, 'aa')
+nm-set-label(M, 1, 'bb')
+nm-set-label(M, 2, 'cccc')
+nm-set-label(M, 9, 'zz')
+t11 = nm-label(M, 0) == 'aa'
+t12 = nm-label(M, 1) == 'bb'
+t13 = nm-label(M, 2) == 'cccc'
+t14 = nm-label(M, 3) == ''
+t15 = nm-label(M, 9) == ''
+
+nm-set-count(M, 99)
+t16 = nm-count(M) == NM-MAX
+t17 = cmp-value(M) == NM-MAX
+nm-set-count(M, -5)
+t18 = nm-count(M) == 0
+t19 = cmp-value(M) == 0
+
+; 缩到 0 项时选中项被清掉
+nm-set-count(M, 3)
+nm-set-index(M, 2)
+t20 = nm-index(M) == 2
+nm-set-count(M, 1)
+t21 = nm-index(M) == -1
+nm-set-count(M, 3)
+
+; 文案槽位就是按钮文案
+t22 = cmp-text(M) == 'menu'
+
+; ============================================================================
+; 3. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(M, F-DISABLED)
+nm-set-count(M, 2)
+nm-set-label(M, 0, 'xx')
+nm-set-index(M, 1)
+nm-set-item-off(M, 0, 1)
+t23 = nm-count(M) == 3
+t24 = cmp-value(M) == 3
+t25 = nm-label(M, 0) == 'aa'
+t26 = nm-index(M) == -1
+t27 = nm-item-off(M, 0) == 0
+cmp-flag-clear(M, F-DISABLED)
+
+; ============================================================================
+; 4. 选中语义 + 开关
+; ============================================================================
+nm-set-index(M, 99)
+t28 = nm-index(M) == 2
+nm-set-index(M, -99)
+t29 = nm-index(M) == -1
+nm-set-index(M, 1)
+t30 = nm-index(M) == 1
+t31 = cmp-value2(M) == 2
+
+nm-toggle(M)
+t32 = cmp-has(M, F-OPEN) == 1
+nm-toggle(M)
+t33 = cmp-has(M, F-OPEN) == 0
+nm-open(M)
+t34 = cmp-has(M, F-OPEN) == 1
+nm-close(M)
+t35 = cmp-has(M, F-OPEN) == 0
+
+; 空菜单选不中
+E = cmp-native-menu()
+nm-set-index(E, 0)
+t36 = nm-index(E) == -1
+
+; ============================================================================
+; 5. 单项禁用
+; ============================================================================
+nm-set-item-off(M, 2, 1)
+t37 = nm-item-off(M, 2) == 1
+t38 = nm-item-off(M, 0) == 0
+nm-set-item-off(M, 9, 1)
+t39 = nm-item-off(M, 9) == 0
+nm-set-item-off(M, -1, 1)
+t40 = nm-item-off(M, 0) == 0
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    宽 = 左右内边距(2400) + max(文案宽) + 箭头槽(2400)
+;    'menu' / 'cccc' 都是 4 字 = 3200 → 8000
+;    高 = 按钮 4000；展开再加间隙 800 + 项数 * 2400
+; ============================================================================
+mw, mh = cs-measure(M)
+t41 = mw == 8000
+t42 = mh == 4000
+
+nm-open(M)
+mw2, mh2 = cs-measure(M)
+t43 = mw2 == 8000
+t44 = mh2 == 12000
+nm-close(M)
+
+; 空菜单 + 空文案 → 宽被夹到 CS-MIN-LEAF-W
+E2 = cmp-native-menu()
+mw3, mh3 = cs-measure(E2)
+t45 = mw3 == CS-MIN-LEAF-W
+t46 = mh3 == CS-BTN-H
+
+; ============================================================================
+; 7. 渲染：收起
+;     外层 10400 → 根内容宽 8000 = intrinsic，rect (1200,1200,8000,4000)
+;     箭头 ax = 1200+8000-2000 = 7200，ay = 1200+1400 = 2600
+; ============================================================================
+cs-clear()
+M2 = cmp-native-menu()
+cmp-set-text(M2, 'menu')
+nm-set-count(M2, 3)
+nm-set-label(M2, 0, 'aa')
+nm-set-label(M2, 1, 'bb')
+nm-set-label(M2, 2, 'cccc')
+nm-set-index(M2, 1)
+nm-set-item-off(M2, 2, 1)
+R1 = cmp-root()
+cmp-add-child(R1, M2)
+cs-layout(R1, 0, 0, 10400, 30000)
+cs-paint(R1)
+
+t47 = cs-rect-color-at(1200, 1200, 8000, 4000) == cs-theme(CS-TH-FIELD)
+t48 = cs-text-color-at('menu', 2400, 2000) == cs-theme(CS-TH-FG)
+t49 = cs-text-color-at('v', 7200, 2000) == cs-theme(CS-TH-MUTED)
+
+; ============================================================================
+; 8. 渲染：展开
+;     rect (1200,1200,8000,12000)；弹层 py=6000 ph=7200
+;     项 0 (1200,6000,8000,2400) FIELD；项 1 (1200,8400,...) ACCENT；
+;     项 2 (1200,10800,...) TRACK（禁用）
+; ============================================================================
+cs-clear()
+nm-open(M2)
+cs-paint(R1)
+
+t50 = cs-rect-color-at(1200, 1200, 8000, 4000) == cs-theme(CS-TH-FIELD)
+t51 = cs-text-color-at('^', 7200, 2000) == cs-theme(CS-TH-MUTED)
+t52 = cs-rect-color-at(1200, 6000, 8000, 7200) == cs-theme(CS-TH-FIELD)
+t53 = cs-rect-color-at(1200, 6000, 8000, 2400) == cs-theme(CS-TH-FIELD)
+t54 = cs-rect-color-at(1200, 8400, 8000, 2400) == cs-theme(CS-TH-ACCENT)
+t55 = cs-rect-color-at(1200, 10800, 8000, 2400) == cs-theme(CS-TH-TRACK)
+t56 = cs-text-color-at('aa', 2400, 6000) == cs-theme(CS-TH-FG)
+t57 = cs-text-color-at('bb', 2400, 8400) == cs-theme(CS-TH-FG)
+t58 = cs-text-color-at('cccc', 2400, 10800) == cs-theme(CS-TH-MUTED)
+
+; ============================================================================
+; 9. 命中（弹层内 top=6000，每项 2400 高）
+; ============================================================================
+t59 = cs-menu-hit(M2, 1300, 6100) == 0
+t60 = cs-menu-hit(M2, 1300, 8500) == 1
+t61 = cs-menu-hit(M2, 1300, 10900) == -1
+t62 = cs-menu-hit(M2, 1300, 13199) == -1
+t63 = cs-menu-hit(M2, 1199, 6100) == -1
+t64 = cs-menu-hit(M2, 1300, 5999) == -1
+t65 = cs-menu-hit(M2, 1300, 2600) == -1
+
+; 禁用项不响应命中
+t66 = cs-menu-hit(M2, 1300, 10900) == -1
+
+; 收起后一律不命中
+nm-close(M2)
+t67 = cs-menu-hit(M2, 1300, 6100) == -1
+
+; 空菜单展开也不命中
+E3 = cmp-native-menu()
+R3 = cmp-root()
+cmp-add-child(R3, E3)
+cs-layout(R3, 0, 0, 10400, 30000)
+nm-open(E3)
+t68 = cs-menu-hit(E3, 1300, 6100) == -1
+
+; ============================================================================
+; 10. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1
+ok = ok & t2
+ok = ok & t3
+ok = ok & t4
+ok = ok & t5
+ok = ok & t6
+ok = ok & t7
+ok = ok & t8
+ok = ok & t9
+ok = ok & t10
+ok = ok & t11
+ok = ok & t12
+ok = ok & t13
+ok = ok & t14
+ok = ok & t15
+ok = ok & t16
+ok = ok & t17
+ok = ok & t18
+ok = ok & t19
+ok = ok & t20
+ok = ok & t21
+ok = ok & t22
+ok = ok & t23
+ok = ok & t24
+ok = ok & t25
+ok = ok & t26
+ok = ok & t27
+ok = ok & t28
+ok = ok & t29
+ok = ok & t30
+ok = ok & t31
+ok = ok & t32
+ok = ok & t33
+ok = ok & t34
+ok = ok & t35
+ok = ok & t36
+ok = ok & t37
+ok = ok & t38
+ok = ok & t39
+ok = ok & t40
+ok = ok & t41
+ok = ok & t42
+ok = ok & t43
+ok = ok & t44
+ok = ok & t45
+ok = ok & t46
+ok = ok & t47
+ok = ok & t48
+ok = ok & t49
+ok = ok & t50
+ok = ok & t51
+ok = ok & t52
+ok = ok & t53
+ok = ok & t54
+ok = ok & t55
+ok = ok & t56
+ok = ok & t57
+ok = ok & t58
+ok = ok & t59
+ok = ok & t60
+ok = ok & t61
+ok = ok & t62
+ok = ok & t63
+ok = ok & t64
+ok = ok & t65
+ok = ok & t66
+ok = ok & t67
+ok = ok & t68
+
+(ok == 1) -> {
+    print('ALL MENU TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME TESTS FAILED')
+}

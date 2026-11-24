@@ -6,7 +6,7 @@ sidebar_position: 6
 
 Nolang schreibt eine verbindliche Modul-Namensraumkonvention vor: Wenn man in einer `.no`-Datei Funktionen oder Konstanten aus **anderen Modulen** (anderen `.no`-Dateien) aufruft, muss das Präfix `ShortName.` verwendet werden. Dadurch werden Namenskonflikte zwischen Modulen vermieden.
 
-Standardbibliotheksmodule werden vom Compiler automatisch geladen, **eine explizite Importanweisung ist nicht nötig** (keine `# std/...`-Annotation erforderlich). Einfach das Präfix `ShortName.` verwenden. `# std/fmt` ist besonders überflüssig — `print` / `eprint` / `format` sind Compiler-Builtins, und `no fmt` entfernt ein `# std/fmt` ohne Alias automatisch (siehe [Codierrichtlinien · Automatische Bereinigung von Importanweisungen](./code-style#導入語句自動整理去重--移除-stdfmt--排序)).
+Standardbibliotheksmodule werden vom Compiler automatisch geladen, **eine explizite Importanweisung ist nicht nötig** (keine `# std/...`-Annotation erforderlich). Einfach das Präfix `ShortName.` verwenden. `no fmt` entfernt automatisch alle reinen std-Modulimports ohne Alias (z. B. `# std/noml`, `# std/math`, `# std/fmt`); ein Alias (`# std/noml n`) oder ein Funktionsimport (`# std/math.sqrt`) bleibt erhalten (siehe [Codierrichtlinien · Automatische Bereinigung von Importanweisungen](./code-style#automatische-bereinigung-von-importanweisungen-dedup--std-imports-ohne-alias-entfernen--sortieren)).
 
 > **Abhängigkeiten und Pfadauflösung**: Der Abhängigkeitsschlüssel lokaler Pakete kann über `workspace.noml` auf einen Kurznamen oder eine vollständige URL abgebildet werden. Siehe [Abhängigkeitstypen und Versionsregeln](../usage#依賴類型與版本號規則).
 

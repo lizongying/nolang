@@ -237,6 +237,8 @@ no build glossary                        # 산출물: glossary/dist/glossary
 
 출력은 `--format=text|md|json`으로 전환할 수 있습니다. 연동 및 데이터 형식 설명은 [`glossary/README.md`](glossary/README.md)를 참조하세요.
 
+nohub에서 glossary 패키지를 볼 수도 있습니다: [glossary on nohub](https://lizongying.github.io/nohub/?package=glossary:latest@github.com/lizongying/nolang)
+
 ---
 
 ## 관련 프로젝트
@@ -244,6 +246,8 @@ no build glossary                        # 산출물: glossary/dist/glossary
 - [nohub — Nolang 생태계의 커뮤니티 패키지 목록 검색](https://lizongying.github.io/nohub/)
 
   패키지 이름・키워드・카테고리로 수록된 커뮤니티 패키지를 검색하고, 패키지 정보・버전 스냅샷・소스 진입점을 확인할 수 있습니다. 색인은 `web/build.mjs` 가 `packages/` 스냅샷에서 생성합니다.
+
+- [noui — GPUI의 정신을 Nolang로 다시 구현한 UI 툴킷(nohub 패키지)](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
 - [Benchmarks Game — Nolang vs C vs Rust 성능 비교 보고서](https://github.com/lizongying/no-benchmarks/results/report.md)
 

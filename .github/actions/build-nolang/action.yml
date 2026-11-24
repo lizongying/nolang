@@ -2,10 +2,12 @@ name: Build Nolang
 description: >-
   Download a nolang release and cross-compile a Nolang project for one or more
   target platforms using `no build -cc zig -target <triple>`. Produces one binary
-  per target into the output directory. Self-contained — does not depend on a
-  local setup-nolang action, so it works when called cross-repo. Uses the
-  self-contained `no-llvm_*` release asset (LLVM embedded, all backends), so no
-  separate LLVM / opt / llc installation is required.
+  per target into the output directory, and optionally a platform-independent
+  precompiled AST package (`<name>-ast.zip`) via `no pack` for `no add` consumers.
+  Self-contained — does not depend on a local setup-nolang action, so it works
+  when called cross-repo. Uses the self-contained `no-llvm_*` release asset
+  (LLVM embedded, all backends), so no separate LLVM / opt / llc installation
+  is required.
 
 branding:
   icon: package
@@ -85,6 +87,23 @@ inputs:
       (-ld-RELEASE) is equivalent to -ld-RELEASE=true.
     required: false
     default: ""
+  pack:
+    description: >-
+      When "true", also run `no pack` and write a platform-independent AST
+      package to `<output-dir>/<name>-ast.zip`. The asset is what
+      `no add <name>@<host>/<owner>/<repo>` downloads from a GitHub release.
+      Only lexing/parsing is needed, so this works without LLVM or Zig.
+      Requires a nolang version whose `no pack` emits per-module `<path>.gob`
+      entries (v0.4.32+); older releases emit the obsolete `ast.gob` container.
+    required: false
+    default: "false"
+  pack-entry:
+    description: >-
+      Target for `no pack`: a package directory containing package.noml
+      (recommended — packs every .no module, honouring `ignore`), or a single
+      .no file. Defaults to `entry` when empty.
+    required: false
+    default: ""
 
 outputs:
   output-dir:
@@ -95,6 +114,9 @@ outputs:
     description: Newline-separated list of target tokens that failed to build.
   nolang-version:
     description: Resolved nolang version without the leading "v" (e.g. "1.2.3").
+  ast-zip:
+    description: >-
+      Path to the generated `<name>-ast.zip`, empty when pack is not enabled.
 
 runs:
   using: composite
@@ -254,6 +276,36 @@ runs:
         } >> "$GITHUB_ENV"
         echo "NOLANG_STD_SRC=$STD_SRC"
         "$CACHE_DIR/bin/no" version
+
+    # ── 1e. Optional precompiled AST package ───────────────────────────────
+    # `no pack` only needs the lexer/parser, so this runs before (and
+    # independently of) the Zig/LLVM cross-compilation below. The output name
+    # must match pkg.ReleaseASTAssetName: <tool>-ast.zip, no os/arch suffix.
+    - name: Pack AST package
+      id: pack
+      shell: bash
+      env:
+        PACK: ${{ inputs.pack }}
+        PACK_ENTRY: ${{ inputs.pack-entry }}
+        ENTRY: ${{ inputs.entry }}
+        NAME: ${{ inputs.name }}
+        OUTDIR: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        if [ "$PACK" != "true" ]; then
+          echo "ast-zip=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        TARGET="${PACK_ENTRY:-$ENTRY}"
+        mkdir -p "$OUTDIR"
+        OUT="$OUTDIR/$NAME-ast.zip"
+        echo "Packing AST from $TARGET -> $OUT"
+        no pack -o "$OUT" "$TARGET"
+        if [ ! -s "$OUT" ]; then
+          echo "::error::no pack produced no AST zip at $OUT" >&2
+          exit 1
+        fi
+        echo "ast-zip=$OUT" >> "$GITHUB_OUTPUT"
 
     # ── 2. Determine toolchain requirements ─────────────────────────────────
     # Only Zig is ever installed: the embedded-LLVM `no` performs optimization +

@@ -52,4 +52,5 @@ docs/.docusaurus
 __pycache__
 
 src/checker/stdastembed/std_ast.bin
+src/checker/stdastembed/std-ast.bin
 src/checker/stdsig_gen.go

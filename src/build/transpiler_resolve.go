@@ -93,7 +93,15 @@ func resolveModuleFile(modPath, workspaceRoot string) string {
 }
 
 // resolveASTDependency 嘗試把已匹配的依賴鍵當成「預編 AST 依賴」處理：
-// 鍵形如 nogit@github.com/lizongying/notools，發布產物是 <tool>.ast.zip。
+// 鍵形如 nogit@github.com/lizongying/notools，發布產物是 <tool>-ast.zip。
+//
+// 一個 zip = 一個包，包內可含多模組；**沒有入口模組**（不存在 `# nogit/main`）。
+// # 的語義由 fn（`# path.fn` 的 fn）決定：
+//   - `# nogit/remote` / `# nogit/remote.fn` → 直接引入模組 "remote"
+//   - `# nogit.fn`                          → nogit 只是包名，在包內按 fn 定位模組
+//   - `# nogit`                             → nogit 是包別名，模組以 nogit.<module> 取用
+//     （不導入 main，也不是一次性全部裸名導入）
+//   - repo 前綴形式（`# <host/owner/repo>/nogit[/mod]`）同上
 //
 // 這類依賴沒有原始碼可下載（zip 裡就是 AST），所以不能走
 // ResolveDependencyModule → DownloadPackage 那條路；命中時直接回傳
@@ -101,30 +109,60 @@ func resolveModuleFile(modPath, workspaceRoot string) string {
 //
 // 回傳 (prog, true, err) 表示這是 AST 依賴（成功或失敗都由它定奪）；
 // (nil, false, nil) 表示不是 AST 依賴，呼叫方續走原本的磁碟/下載解析。
-func (t *Transpiler) resolveASTDependency(key, version, importPath string) (*parser.Program, bool, error) {
+// astPackageModulePath 是 resolveASTDependency 回傳的「包別名佔位 Program」的身份標記。
+// 它不是 zip 裡的真實模組，只讓下游合併階段認出 `# nogit` 並展開成
+// nogit.<module>.<symbol>；真正的模組 AST 仍由 mmast.EnsurePackageAST 取回。
+const astPackageModulePath = "<ast-package>"
+
+func (t *Transpiler) resolveASTDependency(key, version, importPath, fn string) (*parser.Program, bool, error) {
 	if !pkg.IsASTDependencyKey(key) {
 		return nil, false, nil
 	}
-	// 一個 zip = 一個模組。只接受 `use nogit`（工具名）與
-	// `use <host/owner/repo>/nogit`（倉庫路徑 + 工具名）兩種寫法；
-	// 指向更深的模組路徑時明確報錯，不靜默回退成「找不到檔案」。
 	at := strings.Index(key, "@")
 	tool, repo := key[:at], key[at+1:]
+
+	// 正規化 importPath → 模組路徑。"" 表示只给了包名（沒有子模組）。
+	//   tool 前綴：`nogit` → ""，`nogit/remote` → "remote"
+	//   repo 前綴：`repo/nogit` → ""，`repo/nogit/remote` → "remote"
+	var module string
 	rest, hit := subPathAfter(importPath, tool)
-	if !hit {
+	if hit {
+		module = rest
+	} else {
 		rest, hit = subPathAfter(importPath, repo)
 		if !hit {
 			return nil, true, i18n.Errorf("ts6fes3j",
 				"import %q does not match AST dependency %s (use %q or %q)",
 				importPath, key, tool, repo+"/"+tool)
 		}
+		// repo 前綴後還要再去掉工具名本身。
+		rest, hit = subPathAfter(rest, tool)
+		if !hit {
+			return nil, true, i18n.Errorf("ts6fes3j",
+				"import %q does not match AST dependency %s (use %q or %q)",
+				importPath, key, tool, repo+"/"+tool)
+		}
+		module = rest
 	}
-	if rest != "" && rest != tool {
-		return nil, true, i18n.Errorf("ugoucnr9",
-			"dependency %s ships a single prebuilt module %q; cannot import subpath %q",
-			key, tool, importPath)
+
+	if module == "" {
+		if fn == "" {
+			// 包名是包別名，不是導入單位本身：下游以 tool.<module> 取用包內模組。
+			// 這裡只回傳佔位 Program；真正展開在 mergeASTPackageModules 完成，
+			// 讓其他 resolveUse 呼叫端也能安全地拿到非錯誤結果。
+			return &parser.Program{
+				ModulePath: astPackageModulePath,
+				SourcePath: tool,
+			}, true, nil
+		}
+		prog, err := mmast.EnsureModuleASTForFunction(key, version, fn)
+		if err != nil {
+			return nil, true, err
+		}
+		return prog, true, nil
 	}
-	prog, err := mmast.EnsureModuleAST(key, version)
+
+	prog, err := mmast.EnsureModuleAST(key, version, module)
 	if err != nil {
 		return nil, true, err
 	}
@@ -156,8 +194,8 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
 			if key, ver, matched := t.pkg.MatchDependency(path); matched {
 				// 預編 AST 依賴（nogit@host/owner/repo）不落原始碼，直接從
-				// <tool>.ast.zip 取回解碼後的 AST。
-				if prog, ok, err := t.resolveASTDependency(key, ver, path); ok {
+				// <tool>-ast.zip 取回解碼後的 AST。
+				if prog, ok, err := t.resolveASTDependency(key, ver, path, use.Function); ok {
 					return prog, err
 				}
 				modPath, err := t.pkg.ResolveDependencyModule(path)
@@ -286,8 +324,8 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	isURLStyle := strings.Contains(first, ".")
 	if t.pkg != nil && len(t.pkg.Dependencies) > 0 {
 		if key, ver, matched := t.pkg.MatchDependency(path); matched {
-			// 同上：預編 AST 依賴走 .ast.zip，不下載原始碼。
-			if prog, ok, err := t.resolveASTDependency(key, ver, path); ok {
+			// 同上：預編 AST 依賴走 -ast.zip，不下載原始碼。
+			if prog, ok, err := t.resolveASTDependency(key, ver, path, use.Function); ok {
 				return prog, err
 			}
 			modPath, err := t.pkg.ResolveDependencyModule(path)

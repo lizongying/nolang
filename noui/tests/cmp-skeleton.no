@@ -1,0 +1,201 @@
+; 阶段54：C-SKELETON（骨架屏）无窗口断言
+; 纯逻辑：构造默认 / 行数·行距·相位夹紧 / disabled 空操作 /
+;         测算 intrinsic（N 行 + (N-1) 行距，下限 CS-BTN-H）/
+;         渲染几何（TRACK 底 + N 条 MUTED 占位条 + 相位扫光 FG 带）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-rect-count = (x i64, y i64, w i64, ht i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+; ============================================================================
+sk = cmp-skeleton()
+
+t1 = cmp-kind(sk) == C-SKELETON
+t2 = sk-lines(sk) == 0
+t3 = sk-gap(sk) == 800
+t4 = sk-phase(sk) == 0
+t5 = cmp-has(sk, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 写入 + 夹紧
+;    行数 0..8、行距下限 800、相位 0..100
+; ============================================================================
+sk-set-lines(sk, 3)
+t6 = sk-lines(sk) == 3
+sk-set-gap(sk, 1600)
+t7 = sk-gap(sk) == 1600
+sk-set-phase(sk, 50)
+t8 = sk-phase(sk) == 50
+
+sk-set-lines(sk, 99)
+t9 = sk-lines(sk) == 8
+sk-set-lines(sk, -5)
+t10 = sk-lines(sk) == 0
+sk-set-gap(sk, 100)
+t11 = sk-gap(sk) == 800
+sk-set-phase(sk, 150)
+t12 = sk-phase(sk) == 100
+sk-set-phase(sk, -7)
+t13 = sk-phase(sk) == 0
+
+; ============================================================================
+; 3. disabled：写操作一律空操作
+; ============================================================================
+sk-set-lines(sk, 4)
+sk-set-gap(sk, 2000)
+sk-set-phase(sk, 60)
+cmp-flag-set(sk, F-DISABLED)
+sk-set-lines(sk, 1)
+sk-set-gap(sk, 999)
+sk-set-phase(sk, 99)
+t14 = sk-lines(sk) == 4
+t15 = sk-gap(sk) == 2000
+t16 = sk-phase(sk) == 60
+cmp-flag-clear(sk, F-DISABLED)
+
+; ============================================================================
+; 4. 测算 intrinsic
+;    w = 2*CS-PAD + 12000 = 14400
+;    ht = 2*CS-PAD + N*CS-LINE-H + (N-1)*gap，下限 CS-BTN-H = 4000
+; ============================================================================
+sk-set-lines(sk, 0)
+sk-set-gap(sk, 800)
+m0w, m0h = cs-measure(sk)
+t17 = m0w == 14400
+t18 = m0h == 4000
+
+sk-set-lines(sk, 1)
+m1w, m1h = cs-measure(sk)
+t19 = m1w == 14400
+t20 = m1h == 4800
+
+sk-set-lines(sk, 3)
+m3w, m3h = cs-measure(sk)
+t21 = m3w == 14400
+t22 = m3h == 11200
+
+sk-set-gap(sk, 1600)
+m4w, m4h = cs-measure(sk)
+t23 = m4w == 14400
+t24 = m4h == 12800
+
+; 行距被夹到 800 后测算跟着回落
+sk-set-gap(sk, 100)
+m5w, m5h = cs-measure(sk)
+t25 = m5w == 14400
+t26 = m5h == 11200
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(sk, 30000)
+cmp-set-sh(sk, 5000)
+m6w, m6h = cs-measure(sk)
+t27 = m6w == 30000
+t28 = m6h == 5000
+cmp-set-sw(sk, 0)
+cmp-set-sh(sk, 0)
+
+; ============================================================================
+; 5. 渲染
+;    外层 20800 → 内容宽 18400；叶子取 intrinsic 宽 14400
+;    叶子横向被拉到父内容宽：矩形 (1200,1200,18400,11200)；
+;    轨道 x=2400 宽 16000，行高 2400，iy = 2400；行距 800 → ly = 2400 + i*3200
+; ============================================================================
+sk-set-lines(sk, 3)
+sk-set-gap(sk, 800)
+sk-set-phase(sk, 0)
+
+cs-clear()
+r1 = cmp-root()
+cmp-add-child(r1, sk)
+cs-layout(r1, 0, 0, 20800, 40000)
+cs-paint(r1)
+
+; 期望几何按同一套除法现算，避免把截断值写死
+bw2 = cs-sub(18400, 2400)
+band2 = cs-div(bw2, 3)
+span2 = cs-sub(bw2, band2)
+off50 = cs-mul(50, cs-div(span2, 100))
+bx50 = cs-add(2400, off50)
+off100 = cs-mul(100, cs-div(span2, 100))
+bx100 = cs-add(2400, off100)
+
+t29 = cs-rect-color-at(1200, 1200, 18400, 11200) == cs-theme(CS-TH-TRACK)
+t30 = cs-rect-color-at(2400, 2400, 16000, 2400) == cs-theme(CS-TH-MUTED)
+t31 = cs-rect-color-at(2400, 5600, 16000, 2400) == cs-theme(CS-TH-MUTED)
+t32 = cs-rect-color-at(2400, 8800, 16000, 2400) == cs-theme(CS-TH-MUTED)
+t33 = cs-rect-color-at(2400, 3600, 16000, 2400) == -1
+; 相位 0 → 一条 FG 扫光带都不该有
+t34 = cs-rect-color-at(bx50, 2400, band2, 2400) == -1
+
+; 相位 50：叠一条 FG 扫光带
+sk-set-phase(sk, 50)
+cs-clear()
+cs-paint(r1)
+t35 = cs-rect-color-at(bx50, 2400, band2, 2400) == cs-theme(CS-TH-FG)
+t36 = cs-rect-color-at(bx50, 5600, band2, 2400) == cs-theme(CS-TH-FG)
+t37 = cs-rect-color-at(bx50, 8800, band2, 2400) == cs-theme(CS-TH-FG)
+; 每条占位条仍完整画出来（扫光带叠在上面，不是替换）
+t38 = cs-rect-count(2400, 2400, 16000, 2400) == 1
+t39 = cs-rect-color-at(2400, 2400, 16000, 2400) == cs-theme(CS-TH-MUTED)
+
+; 相位 100：贴右缘
+sk-set-phase(sk, 100)
+cs-clear()
+cs-paint(r1)
+t40 = cs-rect-color-at(bx100, 2400, band2, 2400) == cs-theme(CS-TH-FG)
+t41 = cs-rect-color-at(bx50, 2400, band2, 2400) == -1
+
+; 行数 0：只有底色，没有任何占位条
+sk-set-lines(sk, 0)
+sk-set-phase(sk, 0)
+cs-layout(r1, 0, 0, 20800, 40000)
+cs-clear()
+cs-paint(r1)
+t42 = cs-rect-color-at(1200, 1200, 18400, 4000) == cs-theme(CS-TH-TRACK)
+t43 = cs-rect-color-at(2400, 2400, 16000, 2400) == -1
+
+; ============================================================================
+; 6. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5
+ok = ok & t6 & t7 & t8 & t9 & t10 & t11 & t12 & t13
+ok = ok & t14 & t15 & t16
+ok = ok & t17 & t18 & t19 & t20 & t21 & t22 & t23 & t24 & t25 & t26 & t27 & t28
+ok = ok & t29 & t30 & t31 & t32 & t33 & t34 & t35 & t36 & t37 & t38 & t39
+ok = ok & t40 & t41 & t42 & t43
+
+(ok == 1) -> {
+    print('ALL SKELETON TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME SKELETON TESTS FAILED')
+}

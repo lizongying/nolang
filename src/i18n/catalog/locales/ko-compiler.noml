@@ -124,7 +124,7 @@ Nolang 프로그래밍 언어 (버전 %s)
   소스: ~/no/sources.noml  ($NOHUB_SOURCES 재정의, -source <name> 선택)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
-                    의존성 추가 (미리 빌드된 AST: <tool>.ast.zip)
+                    의존성 추가 (미리 빌드된 AST: <tool>-ast.zip)
                     버전을 생략하면 최신 릴리스, package.noml에 기록되는
                     키는 <tool>@<host>/<owner>/<repo>입니다.
     예:
@@ -152,11 +152,11 @@ Nolang 프로그래밍 언어 (버전 %s)
       no uninstall nogit
   no sync              의존성 동기화/다운로드
   no pack [-o <file>] [<dir|file.no>]
-                    모듈의 AST를 <tool>.ast.zip(gob + zip)으로 패키징합니다.
+                    모듈의 AST를 <tool>-ast.zip(gob + zip)으로 패키징합니다.
                     어휘 분석+파싱만 수행——LLVM 툴체인 불필요, CI에 적합.
     예:
-      no pack                     현재 패키지를 패키징 -> dist/<name>.ast.zip
-      no pack -o nogit.ast.zip    출력 경로 명시 (CI에 적합)
+      no pack                     현재 패키지를 패키징 -> dist/<name>-ast.zip
+      no pack -o nogit-ast.zip    출력 경로 명시 (CI에 적합)
       no pack nogit.no            단일 소스 파일 패키징
   no pub [-o <file>]  패키징(no pack과 동일) 후 게시, registry 업로드는
                     아직 구현되지 않아 현재는 패키징만 수행

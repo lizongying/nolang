@@ -28,7 +28,7 @@ sudo mv nolang /usr/local/bin/no
 | `no version`                                                 | 打印版本信息            |
 | `no init`                                                    | 定义工作区（生成 workspace.noml，不含 package.noml） |
 | `no new <name>`                                              | 在工作区内新建包（子目录 + package.noml，并注册到 workspace.noml） |
-| `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代码（含导入去重/排序，自动移除 `# std/fmt`）；`.noml` 配置档走保留布局的排版规范（缩进/空白/空行，注释与键序不动） |
+| `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代码（含导入去重/排序，自动移除无别名 std 模组导入）；`.noml` 配置档走保留布局的排版规范（缩进/空白/空行，注释与键序不动） |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | 构建（输出 executable） |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 构建并执行（包名/目录/文件） |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | 执行测试                |
@@ -40,7 +40,7 @@ sudo mv nolang /usr/local/bin/no
 | `no sync`                                                    | 同步依赖                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | 安装 binary             |
 | `no uninstall <name>`                                        | 移除 binary             |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | 打包 AST（`<tool>.ast.zip`）|
+| `no pack [-o <file>] [<dir\|file.no>]`                       | 打包 AST（`<tool>-ast.zip`）|
 | `no pub [-o <file>]`                                         | 同 `no pack`（registry 上传未实现）|
 | `no cache <stat\|clear>`                                     | 检视 / 清空 AST 快取（正常情况下不需要清）|
 
@@ -298,7 +298,7 @@ sha256( ASTVersion ‖ 解析期 salt ‖ 源文件内容 )
 | 变量 | 作用 |
 | --- | --- |
 | `NOLANG_AST_CACHE_OFF=1` | 关闭快取（做编译器 A/B 对比、排查「修好的错误又出现」时可用） |
-| `NOLANG_AST_CACHE_DIR` | 自订快取目录。**同时**作用于预编 AST 依赖的 `.ast.zip` 快取（该快取预设在 `~/no/cache/ast`，见下文「预编 AST 依赖」） |
+| `NOLANG_AST_CACHE_DIR` | 自订快取目录。**同时**作用于预编 AST 依赖的 `-ast.zip` 快取（该快取预设在 `~/no/cache/ast`，见下文「预编 AST 依赖」） |
 | `NOLANG_AST_CACHE_MAX` | 快取条目数上限（预设 4096） |
 
 > 旧条目只是不再被命中，会随新条目写入按上限淘汰，因此**不必**删 `~/.cache/nolang/ast`。
@@ -425,21 +425,24 @@ no sync
 ### 预编 AST 依赖
 
 `no add <tool>@<host>/<owner>/<repo>` 这类依赖**只有 AST、没有源码**：编译时从 release 抓
-`<tool>.ast.zip`（MetaMessage + zip），解码后直接注入编译管线。用法：
+`<tool>-ast.zip`（zip，每个模组一个 .gob 条目），解码后直接注入编译管线。用法：
 
 ```nolang
-# nogit; 或 use <host>/<owner>/<repo>/nogit
+# nogit                         ; 包别名，模组以 nogit.<module> 取用
+# nogit/remote                  ; 直接引入模组 remote（也可用 nogit.remote）
+# nogit.fn                      ; nogit 只是包名，按 fn 在包内定位模组
+# <host>/<owner>/<repo>/nogit/remote
 ```
 
-一个 zip 就是一个模组，不支持 `use <repo>/<submod>` 这种更深的路径。版本必须是具体值
+一个 zip 就是一个包，包内可含多个模组，每个模组是一个 `<modulePath>.gob` 条目；没有入口模组：`# nogit` 只建立包别名，模组以 `nogit.<module>` 取用（如 `nogit.remote.greet(...)`）；`# nogit/remote` 直接取模组，`# nogit.fn` 按函式定位模组。`no fmt` 会清理正文未使用的 `# nogit` / `# nogit/remote`。版本必须是具体值
 （`no sync` / 编译时遇到 `""` 或 `"*"` 会报错）。zip 会快取到 `~/no/cache/ast/`，
 可用 `$NOLANG_AST_CACHE_DIR` 覆写。
 
 产出资产用 `no pack`（只需 lexer + parser，不需要 LLVM 工具链，适合 CI）：
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # 单个源文件
-no pack -o nogit.ast.zip ./nogit       # 一个包目录
+no pack -o nogit-ast.zip nogit.no      # 单个源文件
+no pack -o nogit-ast.zip ./nogit       # 一个包目录
 ```
 
 ### 依赖类型与版本号规则

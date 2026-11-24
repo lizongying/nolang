@@ -139,10 +139,14 @@ func ReleaseAssetURL(t ToolSpec, version, goos, goarch string) string {
 	return fmt.Sprintf("%s/releases/download/%s/%s", t.RepoURL(), version, ReleaseAssetName(t.Name, goos, goarch))
 }
 
-// ReleaseASTZipURL 回傳預編 AST 包的下載網址：
-// https://<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip
-//
+// ReleaseASTAssetName 回傳預編 AST 包的資產檔名：<tool>-ast.zip。
 // 與二進位資產（<tool>-<os>-<arch>）不同，AST 包與平台無關，所以檔名不帶 os/arch。
+func ReleaseASTAssetName(name string) string {
+	return name + "-ast.zip"
+}
+
+// ReleaseASTZipURL 回傳預編 AST 包的下載網址：
+// https://<host>/<owner>/<repo>/releases/download/<version>/<tool>-ast.zip
 func ReleaseASTZipURL(t ToolSpec, version string) string {
 	// 本機回環（測試／本地 registry）沒有 TLS，改用 http——只對明確的 localhost /
 	// 127.0.0.1 生效，真實倉庫一律 https。
@@ -150,8 +154,8 @@ func ReleaseASTZipURL(t ToolSpec, version string) string {
 	if strings.HasPrefix(t.Host, "127.0.0.1") || strings.HasPrefix(t.Host, "localhost") {
 		scheme = "http"
 	}
-	return fmt.Sprintf("%s://%s/%s/%s/releases/download/%s/%s.ast.zip",
-		scheme, t.Host, t.Owner, t.Repo, version, t.Name)
+	return fmt.Sprintf("%s://%s/%s/%s/releases/download/%s/%s",
+		scheme, t.Host, t.Owner, t.Repo, version, ReleaseASTAssetName(t.Name))
 }
 
 // githubToken 讀取可用的 GitHub API token（避免匿名限流）。

@@ -124,7 +124,7 @@ Nolang — язык программирования (версия %s)
   Источники: ~/no/sources.noml  ($NOHUB_SOURCES переопределяет; -source <name> выбирает)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
-                    Добавить зависимость (предсобранный AST: <tool>.ast.zip)
+                    Добавить зависимость (предсобранный AST: <tool>-ast.zip)
                     Версия опущена = последний релиз; ключ, записываемый в
                     package.noml, — <tool>@<host>/<owner>/<repo>.
     Примеры:
@@ -152,11 +152,11 @@ Nolang — язык программирования (версия %s)
       no uninstall nogit
   no sync              Синхронизировать/загрузить зависимости
   no pack [-o <file>] [<dir|file.no>]
-                    Упаковать AST модуля в <tool>.ast.zip (gob + zip).
+                    Упаковать AST модуля в <tool>-ast.zip (gob + zip).
                     Только лексер+парсер — без цепочки LLVM, подходит для CI.
     Примеры:
-      no pack                     упаковать текущий пакет -> dist/<name>.ast.zip
-      no pack -o nogit.ast.zip    явный путь вывода (удобно для CI)
+      no pack                     упаковать текущий пакет -> dist/<name>-ast.zip
+      no pack -o nogit-ast.zip    явный путь вывода (удобно для CI)
       no pack nogit.no            упаковать один исходный файл
   no pub [-o <file>]  Упаковать (как no pack) и опубликовать; загрузка в registry
                     ещё не реализована, поэтому сейчас только упаковка

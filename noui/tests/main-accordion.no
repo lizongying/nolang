@@ -1,0 +1,239 @@
+; ============================================================================
+; noui 窗口 demo：手风琴（阶段 56）—— C-ACCORDION
+;
+; 流水线：app-init -> cmp-accordion -> ac-add / ac-add-open / ac-add-body /
+;          ac-set-title / ac-set-expanded 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-ACCORDION 分支 +
+;      cs-paint-accordion）：FIELD 底 + 展开符（ACCENT）+ 组标题（FG）+
+;      展开组正文行（MUTED）+ 组间 TRACK 分隔线
+;   -> 键盘：a=追加收起组；o=追开展开组；b=给末组加正文行；
+;            t=切换第 0 组；n=切换下一组；r=重建默认三组；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-accordion.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选组标题（a / o 轮取）----
+ac-cand = (i i64) (s str) {
+    s = 'alpha'
+    (i == 1) -> { s = 'beta' }
+    (i == 2) -> { s = 'gamma' }
+    (i == 3) -> { s = 'delta' }
+    (i == 4) -> { s = 'epsilon' }
+    (i == 5) -> { s = 'zeta' }
+    (i == 0) -> { s = 'eta' }
+    s = s
+}
+
+; ---- 重建默认三组（收尾自检也用它）----
+ac-build-default = (h i64) () {
+    ac-clear(h)
+    ac-add(h, 'alpha')
+    ac-add-open(h, 'beta')
+    ac-add-body(h, 1, 'beta line one')
+    ac-add(h, 'gamma')
+    ac-add-body(h, 2, 'gamma hidden')
+}
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui accordion')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段56: accordion')
+hint = cmp-label('a=add o=add-open b=body t=toggle0 n=toggle-next r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+ac = cmp-accordion()
+ac-build-default(ac)
+
+cmp-add-child(root, title)
+cmp-add-child(root, ac)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：手风琴是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一个收起组
+        (k == 97) -> {
+            n = ac-count(ac)
+            ac-add(ac, ac-cand(ct-rem(n, 7)))
+        }
+        ; o：追加一个展开组
+        (k == 111) -> {
+            n = ac-count(ac)
+            ac-add-open(ac, ac-cand(ct-rem(cs-add(n, 3), 7)))
+        }
+        ; b：给末组加一行正文
+        (k == 98) -> {
+            n = ac-count(ac)
+            (n > 0) -> { ac-add-body(ac, cs-sub(n, 1), 'extra line') }
+        }
+        ; t：切换第 0 组
+        (k == 116) -> {
+            (ac-count(ac) > 0) -> { ac-toggle(ac, 0) }
+        }
+        ; n：切换下一组（在组数内轮转）
+        (k == 110) -> {
+            n = ac-count(ac)
+            (n > 0) -> {
+                i = ct-rem(rt-keys, n)
+                ac-toggle(ac, i)
+            }
+        }
+        ; r：重建默认三组
+        (k == 114) -> { ac-build-default(ac) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(ac, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(ac, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(ac, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = ac-count(ac)
+    op = ac-open-count(ac)
+    dis = cmp-has(ac, F-DISABLED)
+    cmp-set-text(stat, 'n={cn} open={op} disabled={dis}')
+    cmp-set-text(stat2, 'title[0]={ac-title(ac, 0)} expanded[0]={ac-expanded(ac, 0)} body0={ac-body-count(ac, 0)}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认三组，按面板实测矩形推导坐标逐组核对
+;   内边距 1200 / 展开符宽 800 / 符后间隙 800 / 组头高 4000 / 行高 2400 /
+;   分隔线 100；文字垂直居中（组头文字 y = 组头顶 + 800）
+; ============================================================================
+cmp-flag-clear(ac, F-DISABLED)
+ac-build-default(ac)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+gw0 = 800
+gg0 = 800
+hh0 = 4000
+lh0 = 2400
+sp0 = 100
+
+bx, by, bw, bh = cs-rect(ac)
+gx = cs-add(bx, p0)
+tx = cs-add(cs-add(bx, p0), cs-add(gw0, gg0))
+top0 = cs-add(by, p0)
+top1 = cs-add(cs-add(top0, hh0), sp0)
+top2 = cs-add(cs-add(cs-add(top1, hh0), lh0), sp0)
+hy0 = cs-add(top0, 800)
+hy1 = cs-add(top1, 800)
+hy2 = cs-add(top2, 800)
+byy1 = cs-add(top1, hh0)
+
+c1 = ac-count(ac) == 3
+c2 = ac-title(ac, 0) == 'alpha'
+c3 = ac-expanded(ac, 1) == 1
+c4 = ac-body-line(ac, 1, 0) == 'beta line one'
+c5 = ac-body-line(ac, 2, 0) == 'gamma hidden'
+c6 = find-text('>', gx, hy0) == 1
+c7 = find-text('alpha', tx, hy0) == 1
+c8 = find-text('-', gx, hy1) == 1
+c9 = find-text('beta', tx, hy1) == 1
+c10 = find-text('beta line one', tx, byy1) == 1
+c11 = find-text('>', gx, hy2) == 1
+c12 = find-text('gamma', tx, hy2) == 1
+c13 = find-text-color('>', gx, hy0) == cs-theme(CS-TH-ACCENT)
+c14 = find-text-color('alpha', tx, hy0) == cs-theme(CS-TH-FG)
+c15 = find-text-color('beta line one', tx, byy1) == cs-theme(CS-TH-MUTED)
+c16 = find-text-color('gamma', tx, hy2) == cs-theme(CS-TH-FG)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n0 = ac-count(ac)
+op0 = ac-open-count(ac)
+print('bye frames={fr} keys={kk} clicks={ck} sections={n0} open={op0} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16) -> {
+    print('accordion render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16)) -> {
+    print('FAIL: accordion render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

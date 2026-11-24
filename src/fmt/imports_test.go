@@ -6,8 +6,9 @@ import (
 
 // 導入區段規範化（imports.go）：`no fmt` 對文件頂部連續導入做三件事——
 //  1. 完全重複的導入自動去重；
-//  2. 無別名的 `# std/fmt` 自動移除（print/format 等為編譯器內建）；函數導入
-//     或寫了別名（`# std/fmt.sprintf fm`）視為刻意綁定名稱，保留；
+//  2. 無別名的純 std 模組導入（`# std/noml`、`# std/math` 等）自動移除——
+//     標準庫由編譯器隱式載入，這類導入不綁定任何名稱；函數導入或寫了別名
+//     （`# std/noml n`、`# std/fmt.sprintf fm`）視為刻意綁定名稱，保留；
 //  3. 導入按 Path→Function→Alias 字典序自動排序。
 // 任一導入帶註釋或 `#{...}` 附着註解時保守不動（排序會拆散註釋配對、
 // `#{bind=ffi}` 等策略承載語義）。別名拼寫的正規化（`as` → 裸別名，
@@ -34,43 +35,54 @@ func fmtCheck(t *testing.T, name, input, expected string) {
 
 func TestFormatDedupsIdenticalImports(t *testing.T) {
 	fmtCheck(t, "identical imports collapse to one",
-		"# std/hash/md5\n# std/hash/md5\n# std/hash/sha1",
-		"# std/hash/md5\n# std/hash/sha1")
+		"# aaa/md5\n# aaa/md5\n# bbb/sha1\n\nmain = () {\n    md5.go()\n    sha1.go()\n}",
+		"# aaa/md5\n# bbb/sha1\n\nmain = () {\n    md5.go()\n    sha1.go()\n}")
 	fmtCheck(t, "distinct function aliases of the same path kept",
 		"# std/math.sqrt s1\n# std/math.abs a1\n# std/math.sqrt s2",
 		"# std/math.abs a1\n# std/math.sqrt s1\n# std/math.sqrt s2")
 	fmtCheck(t, "fn import and module import are distinct",
-		"# std/fmt.sprintf\n# std/io",
-		"# std/fmt.sprintf\n# std/io")
+		"# std/fmt.sprintf\n# npm/lodash",
+		"# npm/lodash\n# std/fmt.sprintf")
 }
 
-func TestFormatRemovesStdFmtImport(t *testing.T) {
+func TestFormatRemovesUnaliasedStdImports(t *testing.T) {
 	fmtCheck(t, "bare # std/fmt is removed",
 		"# std/fmt\nmain = () {\n    print('hi')\n}",
 		"main = () {\n    print('hi')\n}")
-	fmtCheck(t, "duplicate # std/fmt removed with them",
-		"# std/fmt\n# std/fmt\n# std/io",
-		"# std/io")
+	fmtCheck(t, "bare # std/noml is removed",
+		"# std/noml\nmain = () {\n    print('hi')\n}",
+		"main = () {\n    print('hi')\n}")
+	fmtCheck(t, "bare nested std paths are removed",
+		"# std/database/sql\n# std/crypto/sha3\nmain = () {\n    print('hi')\n}",
+		"main = () {\n    print('hi')\n}")
+	fmtCheck(t, "duplicates and unaliased std imports removed together",
+		"# std/number\n# std/number\n# std/os\n# aaa/lib\n\nmain = () {\n    print('hi')\n}",
+		"main = () {\n    print('hi')\n}")
+	// 別名視為刻意綁定名稱，保留（含 `as` 寫法，輸出正規化為裸別名）。
+	fmtCheck(t, "aliased std import kept",
+		"# std/noml n\n# aaa/lib",
+		"# std/noml n")
 	// 函數導入承載裸名綁定（# std/fmt.sprintf → 裸 sprintf），不移除。
 	fmtCheck(t, "function import from fmt kept",
-		"# std/fmt.sprintf sp\n# std/io",
-		"# std/fmt.sprintf sp\n# std/io")
-	// std/fmt 是唯一被自動移除的模組；其它 std 導入只排序/去重。
-	fmtCheck(t, "other std imports untouched by removal",
-		"# std/str\n# std/math",
-		"# std/math\n# std/str")
+		"# std/fmt.sprintf sp\n# aaa/lib",
+		"# std/fmt.sprintf sp")
+	// 非 std 導入：正文有用到的話照常排序/去重，不因來自外部包就另設規則。
+	fmtCheck(t, "used non-std imports kept and sorted",
+		"# zzz/fmt\n# aaa/lib\n\nmain = () {\n    fmt.go()\n    lib.go()\n}",
+		"# aaa/lib\n# zzz/fmt\n\nmain = () {\n    fmt.go()\n    lib.go()\n}")
 }
 
 func TestFormatSortsImports(t *testing.T) {
+	// 純 std 導入會先被移除，排序測試改用非 std 路徑 + std 函數導入墊住四個層級。
 	fmtCheck(t, "imports sorted by path then function then alias",
-		"# std/vec\n# std/user/prefs\n# std/io\n# std/math.sqrt\n# std/math.abs",
-		"# std/io\n# std/math.abs\n# std/math.sqrt\n# std/user/prefs\n# std/vec")
+		"# zzz/vec\n# npm/prefs\n# aaa/lib\n# std/math.sqrt\n# std/math.abs\n\nmain = () {\n    vec.go()\n    lib.go()\n}",
+		"# aaa/lib\n# npm/prefs\n# std/math.abs\n# std/math.sqrt\n# zzz/vec\n\nmain = () {\n    vec.go()\n    lib.go()\n}")
 	fmtCheck(t, "same path+fn sorted by alias",
 		"# std/math.sqrt s2\n# std/math.sqrt s1",
 		"# std/math.sqrt s1\n# std/math.sqrt s2")
 	fmtCheck(t, "existing sorted order unchanged",
-		"# std/hash/md5\n# std/hash/sha1\n# std/io",
-		"# std/hash/md5\n# std/hash/sha1\n# std/io")
+		"# aaa/md5\n# aaa/sha1\n# zzz/io\n\nmain = () {\n    md5.go()\n    sha1.go()\n    io.go()\n}",
+		"# aaa/md5\n# aaa/sha1\n# zzz/io\n\nmain = () {\n    md5.go()\n    sha1.go()\n    io.go()\n}")
 }
 
 func TestFormatImportsConservativeGate(t *testing.T) {
@@ -96,11 +108,14 @@ func TestFormatImportsConservativeGate(t *testing.T) {
 func TestFormatImportsBlankLineAroundSurvives(t *testing.T) {
 	// 導入與其他語句之間固定一個空行的既有規則不受區段改寫影響。
 	fmtCheck(t, "blank after import block",
-		"# std/vec\n# std/fmt\n\nmain = () {\n    print('hi')\n}",
-		"# std/vec\n\nmain = () {\n    print('hi')\n}")
-	// 只有 # std/fmt 一條導入、被移除後文件以代碼開頭。
-	fmtCheck(t, "lone std/fmt removed, code starts clean",
+		"# aaa/vec\n# zzz/fmt\n\nmain = () {\n    vec.go()\n    fmt.go()\n}",
+		"# aaa/vec\n# zzz/fmt\n\nmain = () {\n    vec.go()\n    fmt.go()\n}")
+	// 只有一條無別名 std 導入、被移除後文件以代碼開頭。
+	fmtCheck(t, "lone std import removed, code starts clean",
 		"# std/fmt\n\nmain = () {\n    print('hi')\n}",
+		"main = () {\n    print('hi')\n}")
+	fmtCheck(t, "lone # std/noml removed, code starts clean",
+		"# std/noml\n\nmain = () {\n    print('hi')\n}",
 		"main = () {\n    print('hi')\n}")
 }
 
@@ -118,10 +133,10 @@ func TestFormatImportsBareAliasKeptOnSameLine(t *testing.T) {
 	fmtCheck(t, "fn import bare alias stays on the line",
 		"# std/err.new e\n\nmain = () {\n    print('hi')\n}",
 		"# std/err.new e\n\nmain = () {\n    print('hi')\n}")
-	// 多條裸別名導入：各自同行、整體仍按 path 排序。
+	// 多條裸別名導入：各自同行、整體仍按 path 排序（無別名 std 導入會被移除）。
 	fmtCheck(t, "multiple bare aliases each on their line",
-		"# std/str s\n# std/err error\n# std/io",
-		"# std/err error\n# std/io\n# std/str s")
+		"# std/str s\n# std/err error\n# aaa/lib\n\nmain = () {\n    lib.go()\n}",
+		"# aaa/lib\n# std/err error\n# std/str s\n\nmain = () {\n    lib.go()\n}")
 }
 
 func TestFormatUseAliasKeywordNormalized(t *testing.T) {
@@ -141,24 +156,43 @@ func TestFormatHoistsMidFileImports(t *testing.T) {
 	// 導入只允許出現在文件頂部：代碼之後的導入被搬到頂部區段（保持源碼
 	// 相對順序），搬完照常參與排序/去重，原位只留下代碼。
 	fmtCheck(t, "mid-file import run is hoisted to the top",
-		"x = 1\n# zzz/b\n# aaa/a\n",
-		"# aaa/a\n# zzz/b\n\nx = 1")
-	// 塊內（函式體、for 體、臂體）的導入同樣搬出。
+		"main = () {\n    a.go()\n    b.go()\n}\n# zzz/b\n# aaa/a\n",
+		"# aaa/a\n# zzz/b\n\nmain = () {\n    a.go()\n    b.go()\n}")
+	// 塊內（函式體、for 體、臂體）的導入同樣搬出；正文需真的用到，
+	// 否則會被「未使用則清理」規則拿掉。
 	fmtCheck(t, "import inside a function body is hoisted",
-		"main = () {\n    # std/io\n    print('hi')\n}",
-		"# std/io\n\nmain = () {\n    print('hi')\n}")
+		"main = () {\n    # aaa/lib\n    lib.go()\n}",
+		"# aaa/lib\n\nmain = () {\n    lib.go()\n}")
 	fmtCheck(t, "import inside a for body is hoisted",
-		"f = () {\n    3 * {\n        # std/io\n        print('hi')\n    }\n}",
-		"# std/io\n\nf = () {\n    3 * {\n        print('hi')\n    }\n}")
+		"f = () {\n    3 * {\n        # aaa/lib\n        lib.go()\n    }\n}",
+		"# aaa/lib\n\nf = () {\n    3 * {\n        lib.go()\n    }\n}")
 	fmtCheck(t, "import inside a match arm is hoisted",
-		"f = (x i64) {\n    x: {\n        0 -> {\n            # std/io\n            print('zero')\n        }\n\n        -> print('other')\n    }\n}",
-		"# std/io\n\nf = (x i64) {\n    x: {\n        0 -> {\n            print('zero')\n        }\n\n        -> print('other')\n    }\n}")
+		"f = (x i64) {\n    x: {\n        0 -> {\n            # aaa/lib\n            lib.go()\n        }\n\n        -> print('other')\n    }\n}",
+		"# aaa/lib\n\nf = (x i64) {\n    x: {\n        0 -> {\n            lib.go()\n        }\n\n        -> print('other')\n    }\n}")
 	// 搬來的導入與原有頂部區段合併、一起去重排序。
 	fmtCheck(t, "hoisted imports merge into the existing top run",
-		"# std/vec\n\nx = 1\n# std/io\n",
-		"# std/io\n# std/vec\n\nx = 1")
+		"# zzz/vec\n\nmain = () {\n    vec.go()\n    io.go()\n}\n# aaa/io\n",
+		"# aaa/io\n# zzz/vec\n\nmain = () {\n    vec.go()\n    io.go()\n}")
 	// 註釋隨導入一起搬；搬到頂部後它成為文件頭說明段，與導入之間空一行。
 	fmtCheck(t, "hoisted import carries its doc comment",
-		"x = 1\n\n; io\n# std/io\n",
-		"; io\n\n# std/io\n\nx = 1")
+		"x = 1\n\n; lib\n# aaa/lib\n",
+		"; lib\n\n# aaa/lib\n\nx = 1")
+}
+
+func TestFormatRemovesUnusedPackageImports(t *testing.T) {
+	fmtCheck(t, "unused bare package import removed",
+		"# nogit\n\nmain = () {\n    print('hi')\n}",
+		"main = () {\n    print('hi')\n}")
+	fmtCheck(t, "bare package used as nogit.<module> kept",
+		"# nogit\n\nmain = () {\n    nogit.remote.greet('bob')\n}",
+		"# nogit\n\nmain = () {\n    nogit.remote.greet('bob')\n}")
+	fmtCheck(t, "unused package submodule import removed",
+		"# nogit/remote\n\nmain = () {\n    print('hi')\n}",
+		"main = () {\n    print('hi')\n}")
+	fmtCheck(t, "package submodule used via its short name kept",
+		"# nogit/remote\n\nmain = () {\n    remote.greet('bob')\n}",
+		"# nogit/remote\n\nmain = () {\n    remote.greet('bob')\n}")
+	fmtCheck(t, "nogit.remote property keeps the submodule import",
+		"# nogit\n# nogit/remote\n\nmain = () {\n    nogit.remote.greet('bob')\n}",
+		"# nogit\n# nogit/remote\n\nmain = () {\n    nogit.remote.greet('bob')\n}")
 }

@@ -28,13 +28,13 @@ sidebar_position: 4
 - `FormatFile(code)` 格式化整个档案，并呼叫 `ensureTrailingNewline`：去掉末尾所有 `\r` / `\n`（相容 CRLF 与多个末尾空行），再补上一个 `\n`。空档案或无法解析的内容会原样返回，避免破坏档案。
 - `Format(code)` 是纯片段格式化函式（不加末尾换行），主要供单元测试使用；写入真实原始档时请改用 `FormatFile`。
 
-## 导入语句自动整理（去重 / 移除 `# std/fmt` / 排序）
+## 导入语句自动整理（去重 / 移除无别名 std 导入 / 排序）
 
 `no fmt`（及 LSP 存档格式化）会对**档案顶部连续的导入区段**（`# path[.fn] [alias]`）自动整理，实作位于 `src/fmt/imports.go`：
 
 1. **去重**：完全相同（路径、函数名、别名逐字相同）的导入只保留第一条。
-2. **自动移除 `# std/fmt`**：`print` / `eprint` / `format` / `sprintf` 是编译器内建函数，标准库模组又隐式可载入（见 [跨模组调用前缀](./module)），`# std/fmt` 从不必需，写了也会被 formatter 移除。两个例外会保留：
-   - 写了**别名**或**函数导入**（如 `# std/fmt.sprintf fm`）——这是刻意的名称绑定；
+2. **自动移除所有无别名的 std 模组导入**：标准库模组由编译器隐式可载入（见 [跨模组调用前缀](./module)），`# std/noml`、`# std/math`、`# std/database/sql` 这类「无别名、无 `.函数`」的纯模组导入不绑定任何名称，写了也会被 formatter 移除。三个例外会保留：
+   - 写了**别名**（`# std/noml n`）或**函数导入**（`# std/fmt.sprintf fm`）——这是刻意的名称绑定；
    - 导入行带**注释**或 `#{...}` 附着注解——用户写下的内容不可静默丢弃。
 3. **自动排序**：按 路径 → 函数名 → 别名 字典序稳定排序。
 
@@ -45,10 +45,12 @@ sidebar_position: 4
 ```no
 #{fmt-skip}
 ; 格式化前                          ; 格式化后
-# std/vec                           # std/io
-# std/fmt                           # std/vec
-# std/io
-# std/fmt        ;→  print、format 为内建，# std/fmt 移除；其余按字典序排序
+# std/vec                           # aaa/lib
+# std/noml                          # std/io
+# std/io                            # std/vec
+# std/noml n
+# aaa/lib        ;→  无别名 std 导入（# std/noml、# std/vec、# std/io）移除；
+                    ;   带别名的 # std/noml n 保留；其余按字典序排序
 ```
 
 ## 注释标记（Comment Markers）

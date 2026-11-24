@@ -1,0 +1,166 @@
+; ============================================================================
+; noui 窗口 demo：diff（阶段 49）—— C-DIFF
+;
+; 流水线：app-init -> cmp-diff -> df-set-old / df-set-new
+;   -> 鼠标：点 diff 块循环三组样例（替换 / 多处编辑 / 空 -> 全新增）
+;   -> 键盘：0 / 1 / 2 = 选样例；r = 新旧互换；q / Esc 退出
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-DIFF 兜底分支 + cs-paint-diff）
+;   -> app-frame
+;
+; 这个 demo 是阶段49 的现场：字段底 + 双列行号槽（旧号 / 新号，muted）+
+; 行级 glyph（上下文空格 / 新增 '+' / 删除 '-'）+ 按行级别着色
+; （上下文 FG / 新增 OK / 删除 DANGER）；宽度按「行号槽 + 最长行」测算。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-diff.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+rt-sample = 0
+
+g-df-x = 0
+g-df-y = 0
+g-df-w = 0
+g-df-h = 0
+
+; ---- 三组样例（模块级：循环里按名字调用）----
+df-load = (d i64, i i64) () {
+    (i == 0) -> {
+        df-set-old(d, 'alpha\nbeta\ngamma')
+        df-set-new(d, 'alpha\nBETA\ngamma')
+    }
+    (i == 1) -> {
+        df-set-old(d, 'one\ntwo\nthree\nfour')
+        df-set-new(d, 'one\n2\nthree\n4')
+    }
+    (i == 2) -> {
+        df-set-old(d, '')
+        df-set-new(d, 'hello\nworld')
+    }
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui diff')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段49: diff')
+hint = cmp-label('click diff=sample cycle; 0/1/2=select; r=swap; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+df = cmp-diff()
+
+df-load(df, 0)
+
+cmp-add-child(root, title)
+cmp-add-child(root, df)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == df) -> {
+            ns = ct-rem(cs-inc(rt-sample), 3)
+            rt-sample = ns
+            df-load(df, rt-sample)
+        }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; 0 / 1 / 2：选样例
+        (k == 48) -> {
+            rt-sample = 0
+            df-load(df, 0)
+        }
+        (k == 49) -> {
+            rt-sample = 1
+            df-load(df, 1)
+        }
+        (k == 50) -> {
+            rt-sample = 2
+            df-load(df, 2)
+        }
+        ; r：新旧互换
+        (k == 114) -> {
+            oo = df-old(df)
+            nn = df-new(df)
+            df-set-old(df, nn)
+            df-set-new(df, oo)
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件 ----
+    nr = df-rows(df)
+    nh = df-hunks(df)
+    sm = df-summary(df)
+    ml = df-max-len(df)
+    cmp-set-text(stat, 'diff rows={nr} hunks={nh} {sm} max={ml}')
+    ob = df-old(df)
+    nb = df-new(df)
+    ol = ob.len-bytes()
+    nl = nb.len-bytes()
+    cmp-set-text(stat2, 'sample={rt-sample} old-bytes={ol} new-bytes={nl}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    g-df-x, g-df-y, g-df-w, g-df-h = cs-rect(df)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+nr = df-rows(df)
+nh = df-hunks(df)
+sm = df-summary(df)
+print('bye frames={fr} keys={kk} clicks={ck} rows={nr} hunks={nh} {sm}')
+(sc > 0) -> { print('diff render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

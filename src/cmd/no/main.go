@@ -206,7 +206,7 @@ func main() {
 		if len(os.Args) < 3 {
 			fmt.Println(i18n.P("mmcrtoio", "Usage: no add <tool>[:<version>]@<host>/<owner>/<repo>"))
 			fmt.Println("")
-			fmt.Println(i18n.P("rpazw1l7", "Add a dependency (prebuilt AST package: <tool>.ast.zip)."))
+			fmt.Println(i18n.P("rpazw1l7", "Add a dependency (prebuilt AST package: <tool>-ast.zip)."))
 			fmt.Println("")
 			fmt.Println(i18n.P("7tcn8wox", "Examples:"))
 			fmt.Println(i18n.P("5ci3l7h9", "  no add nogit:v0.1.33@github.com/lizongying/notools"))
@@ -394,7 +394,7 @@ func printUsage() {
 	fmt.Println("  Sources: ~/no/sources.noml  ($NOHUB_SOURCES overrides; -source <name> selects)")
 	fmt.Println("")
 	fmt.Println("  no add <tool>[:<version>]@<host>/<owner>/<repo>")
-	fmt.Println("                    Add a dependency (prebuilt AST: <tool>.ast.zip)")
+	fmt.Println("                    Add a dependency (prebuilt AST: <tool>-ast.zip)")
 	fmt.Println("                    Version omitted = latest release; key written to")
 	fmt.Println("                    package.noml is <tool>@<host>/<owner>/<repo>.")
 	fmt.Println("    Examples:")
@@ -422,11 +422,11 @@ func printUsage() {
 	fmt.Println("      no uninstall nogit")
 	fmt.Println("  no sync              Sync/download dependencies")
 	fmt.Println("  no pack [-o <file>] [<dir|file.no>]")
-	fmt.Println("                    Pack a module's AST as <tool>.ast.zip (gob + zip).")
+	fmt.Println("                    Pack a module's AST as <tool>-ast.zip (gob + zip).")
 	fmt.Println("                    Lexer+parser only — no LLVM toolchain, safe for CI.")
 	fmt.Println("    Examples:")
-	fmt.Println("      no pack                     pack current package -> dist/<name>.ast.zip")
-	fmt.Println("      no pack -o nogit.ast.zip    explicit output path (CI friendly)")
+	fmt.Println("      no pack                     pack current package -> dist/<name>-ast.zip")
+	fmt.Println("      no pack -o nogit-ast.zip    explicit output path (CI friendly)")
 	fmt.Println("      no pack nogit.no            pack a single source file")
 	fmt.Println("  no pub [-o <file>]  Pack (same as no pack) and publish; registry upload")
 	fmt.Println("                    is not implemented yet, so it only packs today")
@@ -1263,21 +1263,28 @@ func syncDependencies() {
 	count := len(graph.Resolved())
 
 	// 預編 AST 依賴不進依賴圖（沒有原始碼套件可下載），在這裡單獨預取
-	// <tool>.ast.zip 並快取到 ~/no/cache/ast/，讓後續編譯離線可用。
+	// <tool>-ast.zip 並快取到 ~/no/cache/ast/，讓後續編譯離線可用。
+	// 一個包可含多模組：一次抓整包並註冊全部模組，不逐模組重複下載。
 	astCount := 0
 	for key, ver := range p.Dependencies {
 		if !pkg.IsASTDependencyKey(key) {
 			continue
 		}
-		prog, err := mmast.EnsureModuleAST(key, ver)
+		spec, err := pkg.ParseToolSpec(key)
 		if err != nil {
 			fmt.Printf(i18n.P("dupns7pb", "Error syncing AST dependency %s: %v\n"), key, err)
 			return
 		}
-		if prog == nil {
+		set, err := mmast.FetchModuleSet(spec, ver)
+		if err != nil {
+			fmt.Printf(i18n.P("dupns7pb", "Error syncing AST dependency %s: %v\n"), key, err)
+			return
+		}
+		if len(set.Modules) == 0 {
 			fmt.Printf(i18n.P("zz69r7h9", "Error syncing AST dependency %s: empty module\n"), key)
 			return
 		}
+		mmast.RegisterModuleAST(key, set)
 		astCount++
 		fmt.Printf(i18n.P("xev7d0na", "  ast  %s %s\n"), key, ver)
 	}
@@ -3328,6 +3335,12 @@ func runCommand(args []string) {
 	if len(fs.Args()) > 0 {
 		runArg = fs.Args()[0]
 	}
+	// fs.Args()[0] 是執行目標（檔 / 目錄 / 包名），其餘才是要轉交給編譯產物的
+	// 程式參數。`no run`（無參數）時 Args 為空，直接切片 [1:] 會越界 panic。
+	runProgramArgs := fs.Args()
+	if len(runProgramArgs) > 0 {
+		runProgramArgs = runProgramArgs[1:]
+	}
 	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線（見 ValidateSourcePathName）。
 	if runArg != "" && runArg != "." {
 		if verr := pkg.ValidateSourcePathName(runArg); verr != nil {
@@ -3503,7 +3516,7 @@ func runCommand(args []string) {
 			os.Exit(1)
 		}
 		runArgs := append(append([]string{}, rtArgs...), outPath)
-		runArgs = append(runArgs, fs.Args()[1:]...)
+		runArgs = append(runArgs, runProgramArgs...)
 		cmd := exec.Command(rtExe, runArgs...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -3520,7 +3533,7 @@ func runCommand(args []string) {
 			fmt.Fprintln(os.Stderr, "Error: wasmtime not in PATH; run manually: wasmtime run "+outPath)
 			os.Exit(1)
 		}
-		cmd := exec.Command("wasmtime", append([]string{"run", outPath}, fs.Args()[1:]...)...)
+		cmd := exec.Command("wasmtime", append([]string{"run", outPath}, runProgramArgs...)...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -3535,7 +3548,7 @@ func runCommand(args []string) {
 			fmt.Fprintln(os.Stderr, "Error: running compiled binary not supported in browser playground")
 			os.Exit(1)
 		}
-		runCmd := exec.Command(outPath, fs.Args()[1:]...)
+		runCmd := exec.Command(outPath, runProgramArgs...)
 		runCmd.Stdin = os.Stdin
 		runCmd.Stdout = os.Stdout
 		runCmd.Stderr = os.Stderr
@@ -4255,58 +4268,106 @@ func asBuildDiagnostic(err error) (*nbuild.DiagnosticError, bool) {
 	return nil, false
 }
 
-// packAST 把一個包（或單個 .no 檔）打包成預編 AST 包 <tool>.ast.zip。
+// packAST 把一個包（或單個 .no 檔）打包成預編 AST 包 <tool>-ast.zip。
 //
 // target 可以是：
-//   - 目錄（預設 "."）：讀 package.noml，入口取 main 欄位（預設 main.no），
-//     模組名取 name 欄位；
-//   - 單一 .no 檔：模組名取檔名（去掉副檔名）——CI 常這樣用，不必有 package.noml。
+//   - 目錄（預設 "."）：讀 package.noml 取 name/入口（main 欄位，預設 main.no），
+//     並遞迴打包目錄下所有 .no 作為模組；模組路徑 = 相對包根的路徑（去 .no，
+//     "/" 分隔），入口模組的 key 固定為 ""。尊重 package.noml 的 ignore；
+//     遇到巢狀 package.noml 的子目錄視為獨立包，跳過（不吞進父包）。
+//   - 單一 .no 檔：只打包該檔為入口模組——CI 常這樣用，不必有 package.noml。
 //
-// out 為空時輸出到 dist/<tool>.ast.zip。回傳實際寫出的 zip 路徑與統計。
-// 這是 `no pack` 與未來 `no pub`（打包 + 上傳）共用的唯一打包入口。
+// out 為空時輸出到 dist/<tool>-ast.zip。回傳實際寫出的 zip 路徑與統計。
+// 這是 `no pack` 與 `no pub`（打包 + 上傳）共用的唯一打包入口。
 func packAST(target, out string) (string, *mmast.ZipStats, error) {
-	var name, src string
+	// parseOne 與 build 管線一致的解析入口（見 build/builder.go BuildDirectWasm）：
+	// 只需要 lexer+parser，不需要 LLVM 工具鏈，因此可以直接在 CI 裡跑。
+	parseOne := func(src string) (*parser.Program, error) {
+		raw, err := os.ReadFile(src)
+		if err != nil {
+			return nil, i18n.Errorf("k1h5kums", "reading %s: %w", src, err)
+		}
+		pp := parser.New(lexer.NewCached(src, string(raw)))
+		pp.Filename = filepath.Base(src)
+		prog := pp.ParseProgram()
+		if prog == nil {
+			return nil, i18n.Errorf("umcsmsz6", "%s: parser returned nil program", src)
+		}
+		if errs := pp.Errors(); len(errs) > 0 {
+			return nil, fmt.Errorf("%s: %v", src, errs[0])
+		}
+		return prog, nil
+	}
+
+	mods := map[string]*parser.Program{}
+	var name string
 	var pkgNoml []byte
+
 	if strings.HasSuffix(target, ".no") {
-		src = target
+		// 單檔：模組名就是檔名（不含 .no），沒有「入口模組」這個概念。
 		name = strings.TrimSuffix(filepath.Base(target), ".no")
+		prog, err := parseOne(target)
+		if err != nil {
+			return "", nil, err
+		}
+		prog.SourcePath = filepath.Base(target)
+		mods[name] = prog
 	} else {
 		p, err := nbuild.LoadPackage(target)
 		if err != nil || p == nil {
 			return "", nil, i18n.Errorf("dk195kbk", "package.noml not found in %s", target)
 		}
 		name = p.Name
-		src = p.Main
-		if src == "" {
-			src = "main.no"
-		}
-		src = filepath.Join(target, src)
+
 		// 隨包分發原始清單：消費端 no add 不解仓库就能拿到 name/version/dependencies。
 		// 讀失敗不致命（AST 本身已完整），缺了條目只是少帶清單。
 		if raw, err := os.ReadFile(filepath.Join(p.RootDir, pkg.PackageManifestName)); err == nil {
 			pkgNoml = raw
 		}
-	}
 
-	raw, err := os.ReadFile(src)
-	if err != nil {
-		return "", nil, i18n.Errorf("k1h5kums", "reading %s: %w", src, err)
-	}
-	// 與 build 管線一致的解析入口（見 build/builder.go BuildDirectWasm）：
-	// 只需要 lexer+parser，不需要 LLVM 工具鏈，因此可以直接在 CI 裡跑。
-	pp := parser.New(lexer.NewCached(src, string(raw)))
-	pp.Filename = filepath.Base(src)
-	prog := pp.ParseProgram()
-	if prog == nil {
-		return "", nil, i18n.Errorf("umcsmsz6", "%s: parser returned nil program", src)
-	}
-	if errs := pp.Errors(); len(errs) > 0 {
-		return "", nil, fmt.Errorf("%s: %v", src, errs[0])
+		// 遞迴掃描包根下所有 .no。巢狀 package.noml 子目錄視為獨立包跳過。
+		err = filepath.WalkDir(target, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel, err := filepath.Rel(target, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			if d.IsDir() {
+				if rel != "." {
+					// 巢狀包：跳過整個子樹。
+					if _, e := os.Stat(filepath.Join(path, pkg.PackageManifestName)); e == nil {
+						return filepath.SkipDir
+					}
+				}
+				return nil
+			}
+			if !strings.HasSuffix(rel, ".no") {
+				return nil
+			}
+			if p.IsIgnored(path) {
+				return nil
+			}
+			prog, err := parseOne(path)
+			if err != nil {
+				return err
+			}
+			// 隱式註解：實際檔案路徑（包內相對）+ 模組路徑（由 stampModulePaths 補）。
+			prog.SourcePath = rel
+			module := strings.TrimSuffix(rel, ".no")
+			mods[module] = prog
+			return nil
+		})
+		if err != nil {
+			return "", nil, err
+		}
 	}
 
 	dst := out
 	if dst == "" {
-		dst = filepath.Join("dist", name+".ast.zip")
+		dst = filepath.Join("dist", name+"-ast.zip")
 	}
 	if dir := filepath.Dir(dst); dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -4317,7 +4378,7 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	st, err := mmast.WriteASTZip(f, prog, pkgNoml)
+	st, err := mmast.WriteModuleASTZip(f, mods, pkgNoml)
 	if cerr := f.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
@@ -4329,21 +4390,21 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 
 func packCommand(args []string) {
 	fs := flag.NewFlagSet("pack", flag.ExitOnError)
-	out := fs.String("o", "", i18n.P("uf368nh9", "Output zip path (default: dist/<tool>.ast.zip)"))
+	out := fs.String("o", "", i18n.P("uf368nh9", "Output zip path (default: dist/<tool>-ast.zip)"))
 	fs.Usage = func() {
 		fmt.Println(i18n.P("e9ab330i", "Usage: no pack [-o <file>] [<dir|file.no>]"))
 		fmt.Println("")
-		fmt.Println(i18n.P("wfua2ax8", "Pack a module's AST as gob + zip (<tool>.ast.zip)."))
+		fmt.Println(i18n.P("wfua2ax8", "Pack a module's AST as gob + zip (<tool>-ast.zip)."))
 		fmt.Println(i18n.P("izc6aklk", "Only lexing/parsing is needed — no LLVM toolchain — so this runs"))
 		fmt.Println(i18n.P("zpeqou62", "in CI to produce the asset `no add` downloads:"))
-		fmt.Println(i18n.P("phqmamrn", "  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip"))
+		fmt.Println(i18n.P("phqmamrn", "  <host>/<owner>/<repo>/releases/download/<version>/<tool>-ast.zip"))
 		fmt.Println("")
 		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
-		fmt.Println(i18n.P("ufmw3i5q", "  no pack                          pack current package -> dist/<name>.ast.zip"))
-		fmt.Println(i18n.P("9smrnsbd", "  no pack -o nogit.ast.zip         explicit output (CI friendly)"))
+		fmt.Println(i18n.P("ufmw3i5q", "  no pack                          pack current package -> dist/<name>-ast.zip"))
+		fmt.Println(i18n.P("9smrnsbd", "  no pack -o nogit-ast.zip         explicit output (CI friendly)"))
 		fmt.Println(i18n.P("nx1476j3", "  no pack nogit.no                 pack a single source file"))
 		fmt.Println(i18n.P("9novjn6s", "  no pack ./nogit                  pack a package directory"))
 	}
@@ -4362,7 +4423,7 @@ func packCommand(args []string) {
 	fmt.Printf(i18n.P("gmlatduc", "  bytes:  %d\n  nodes:  %d\n"), st.Bytes, st.Nodes)
 }
 
-// pubCommand 把當前包打包成預編 AST 包 <name>.ast.zip（gob + zip）。
+// pubCommand 把當前包打包成預編 AST 包 <name>-ast.zip（gob + zip）。
 // 這是 `no add <tool>@<host>/<owner>/<repo>` 會去 GitHub Releases 抓的產物
 // （見 docs/design/nolang-mm-ast.md）。上傳 registry 尚未實作：給了
 // --registry/--token 也只會提示，不會靜默假裝成功。
@@ -4370,20 +4431,20 @@ func pubCommand(args []string) {
 	fs := flag.NewFlagSet("pub", flag.ExitOnError)
 	token := fs.String("token", "", i18n.P("mbnaky32", "Registry authentication token (unused: upload not implemented)"))
 	registry := fs.String("registry", "", i18n.P("vas3pyce", "Package registry URL (unused: upload not implemented)"))
-	out := fs.String("o", "", i18n.P("1wsc2hed", "Output zip path (default: dist/<name>.ast.zip)"))
+	out := fs.String("o", "", i18n.P("1wsc2hed", "Output zip path (default: dist/<name>-ast.zip)"))
 	fs.Usage = func() {
 		fmt.Println(i18n.P("dqrzfvyt", "Usage: no pub [-o <file>]"))
 		fmt.Println("")
 		fmt.Println(i18n.P("fxc0tilj", "Package the current package's AST as gob + zip."))
 		fmt.Println(i18n.P("n08bzk5j", "The result is what `no add <tool>@<host>/<owner>/<repo>` downloads:"))
-		fmt.Println(i18n.P("4en75r71", "<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip"))
+		fmt.Println(i18n.P("4en75r71", "<host>/<owner>/<repo>/releases/download/<version>/<tool>-ast.zip"))
 		fmt.Println("")
 		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
 		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
-		fmt.Println(i18n.P("tbfsq7ph", "  no pub                       write dist/<name>.ast.zip"))
-		fmt.Println(i18n.P("q06zlcbx", "  no pub -o nogit.ast.zip      write an explicit path"))
+		fmt.Println(i18n.P("tbfsq7ph", "  no pub                       write dist/<name>-ast.zip"))
+		fmt.Println(i18n.P("q06zlcbx", "  no pub -o nogit-ast.zip      write an explicit path"))
 	}
 	_ = fs.Parse(args)
 

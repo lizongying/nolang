@@ -1,0 +1,221 @@
+; ============================================================================
+; noui 窗口 demo：native menu（阶段 51）—— C-NATIVE-MENU
+;
+; 流水线：app-init -> cmp-native-menu -> nm-* 写入
+;   -> 鼠标：点菜单按钮开 / 关；点弹层项 = 选中并收起；点别处 = 收起
+;   -> 键盘：m = 开关菜单1；n / p = 选中下 / 上一项；d = 切换当前项禁用；
+;            o = 开关菜单2；x = 项数 2..6 循环；q / Esc 退出
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-NATIVE-MENU 分支 +
+;      cs-paint-menu），弹层命中走 cs-menu-hit
+;
+; 这个 demo 是阶段51 的现场：菜单 = 字段底按钮（文案 + 'v' / '^' 箭头）+
+; 展开时下方弹层列表（选中项铺强调色、禁用项画成 TRACK + MUTED）。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-menu.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+rt-sel = -1
+rt-open = 0
+
+; ---- 点击某个菜单：命中项就选中并收起，否则按当前状态开关 ----
+menu-click = (h i64, px i64, py i64) (acted i64) {
+    acted = 0
+    was = cmp-has(h, F-OPEN)
+    idx = cs-menu-hit(h, px, py)
+    (idx >= 0) -> {
+        nm-set-index(h, idx)
+        nm-close(h)
+        acted = 1
+    }
+    (idx < 0) -> {
+        (was) -> { nm-close(h) }
+        (!was) -> { nm-open(h) }
+        acted = 1
+    }
+    acted = acted
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui menu')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段51: native menu')
+hint = cmp-label('click=open/pick; m=toggle; n/p=sel; d=disable; o=toggle2; x=count; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+m1 = cmp-native-menu()
+cmp-set-text(m1, 'file')
+nm-set-count(m1, 4)
+nm-set-label(m1, 0, 'new')
+nm-set-label(m1, 1, 'open')
+nm-set-label(m1, 2, 'save')
+nm-set-label(m1, 3, 'exit')
+nm-set-item-off(m1, 3, 1)
+
+m2 = cmp-native-menu()
+cmp-set-text(m2, 'view')
+nm-set-count(m2, 3)
+nm-set-label(m2, 0, 'zoom in')
+nm-set-label(m2, 1, 'zoom out')
+nm-set-label(m2, 2, 'reset')
+
+cmp-add-child(root, title)
+cmp-add-child(root, m1)
+cmp-add-child(root, m2)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == m1) -> {
+            a = menu-click(m1, px, py)
+            (a != 0) -> { rt-clicks = cs-inc(rt-clicks) }
+            rt-sel = nm-index(m1)
+        }
+        (hit == m2) -> {
+            a = menu-click(m2, px, py)
+            (a != 0) -> { rt-clicks = cs-inc(rt-clicks) }
+        }
+        ((hit != m1) && (hit != m2)) -> {
+            nm-close(m1)
+            nm-close(m2)
+        }
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; m：开关菜单1
+        (k == 109) -> { nm-toggle(m1) }
+        ; o：开关菜单2
+        (k == 111) -> { nm-toggle(m2) }
+        ; n / p：选中下 / 上一项
+        (k == 110) -> {
+            n = nm-count(m1)
+            (n > 0) -> {
+                s = nm-index(m1)
+                s = ct-rem(cs-inc(s), n)
+                nm-set-index(m1, s)
+                rt-sel = s
+            }
+        }
+        (k == 112) -> {
+            n = nm-count(m1)
+            (n > 0) -> {
+                s = nm-index(m1)
+                (s < 0) -> { s = 0 }
+                s = ct-rem(cs-sub(s, 1), n)
+                nm-set-index(m1, s)
+                rt-sel = s
+            }
+        }
+        ; d：切换当前项禁用
+        (k == 100) -> {
+            s = nm-index(m1)
+            (s >= 0) -> {
+                cur = nm-item-off(m1, s)
+                (cur != 0) -> { nm-set-item-off(m1, s, 0) }
+                (cur == 0) -> { nm-set-item-off(m1, s, 1) }
+            }
+        }
+        ; x：项数 2..6 循环
+        (k == 120) -> {
+            n = nm-count(m1)
+            n = ct-rem(cs-inc(n), 5)
+            (n < 2) -> { n = 2 }
+            nm-set-count(m1, n)
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                lb = 'item '
+                lb.push-str(i.to-str())
+                nm-set-label(m1, i, lb)
+                i = cs-inc(i)
+            }
+            rt-sel = nm-index(m1)
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件 ----
+    n1 = nm-count(m1)
+    s1 = nm-index(m1)
+    o1 = 0
+    (cmp-has(m1, F-OPEN)) -> { o1 = 1 }
+    d1 = 0
+    (s1 >= 0) -> { d1 = nm-item-off(m1, s1) }
+    l1 = nm-label(m1, s1)
+    (s1 < 0) -> { l1 = '-' }
+    cmp-set-text(stat, 'menu1 n={n1} sel={s1} label={l1} disabled={d1} open={o1}')
+
+    n2 = nm-count(m2)
+    s2 = nm-index(m2)
+    o2 = 0
+    (cmp-has(m2, F-OPEN)) -> { o2 = 1 }
+    l2 = nm-label(m2, s2)
+    (s2 < 0) -> { l2 = '-' }
+    cmp-set-text(stat2, 'menu2 n={n2} sel={s2} label={l2} open={o2}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    g-m1-x, g-m1-y, g-m1-w, g-m1-h = cs-rect(m1)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n1 = nm-count(m1)
+s1 = nm-index(m1)
+l1 = nm-label(m1, s1)
+n2 = nm-count(m2)
+print('bye frames={fr} keys={kk} clicks={ck} m1=n{n1} sel{s1} label={l1} m2=n{n2}')
+(sc > 0) -> { print('menu render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

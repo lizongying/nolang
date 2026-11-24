@@ -521,8 +521,8 @@ oracle 覆蓋：0 行 <unknown>（71/71 節點型別全覆蓋）
 （option 機制本身正常）⇒ 失敗點是 `src/std/fs.no:607` `file.read-bytes()` 的
 `size == 0`（:615）／`total == 0`（:639）分支 ⇒ `fstat-size` 或 `read` 在 WIP 的 MIR 後端下取不到值
 **✅ 已判定為 WIP 新引入的回歸**（補做正確對照：HEAD 全棧 `BRANCH=ok` vs WIP `BRANCH=nil`）
-上一輪寫的對照不成立是**實驗缺陷**——複製 WIP 的 `std_ast.bin` 去配 HEAD 的 `src/std` 導致
-`unknown callee`；正確做法是在 worktree 內就地 `go run ./checker/genstdsig` 生成該版自己的 `std_ast.bin`
+上一輪寫的對照不成立是**實驗缺陷**——複製 WIP 的 `std-ast.bin` 去配 HEAD 的 `src/std` 導致
+`unknown callee`；正確做法是在 worktree 內就地 `go run ./checker/genstdsig` 生成該版自己的 `std-ast.bin`
 **下鑽結果**：`open` → ok`fstat-size` → ok 且 `SIZE=NONZERO` ⇒ 排除 `size == 0`（fs.no:615），
 命中 `read(.fd, buf[total..], …)` 回 ≤0（fs.no:631）⇒ `total == 0` ⇒ nil
 `src/builtin/os.go` 未被 WIP 改動 ⇒ 問題在 MIR 側對該 CLibCall 的發射路徑（`src/mir/codegen.go` +221）

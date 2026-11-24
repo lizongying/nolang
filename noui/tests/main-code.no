@@ -1,0 +1,166 @@
+; ============================================================================
+; noui 窗口 demo：代码 / 主题（阶段 48）—— highlighter / theme
+;
+; 流水线：app-init -> cmp-highlighter / cmp-theme
+;   -> 鼠标：点代码块循环缩进（4 -> 2 -> 8 -> 4）；点主题卡切亮 / 暗模式
+;   -> 键盘：c = 缩进循环；m = 切模式；d = 密度循环（0 -> 1 -> 2 -> 0）；
+;     q / Esc 退出
+;   -> cs-layout / cs-paint（分别走 cs-paint-highlighter / cs-paint-theme；
+;     cs-measure 的兜底分支给两者 intrinsic 尺寸）
+;   -> app-frame
+;
+; 这个 demo 是阶段48 的现场：代码块字段底 + 右对齐行号 + 逐 token 着色
+; （关键字 accent / 字符串 OK / 注释 muted / 数字琥珀，全部来自 ed-lex-line）
+; + 右端语言列；主题卡字段底 + 名字 / 模式 + 四块色板（底 / 前景 / 强调 / 次要）。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-code.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+g-hc-x = 0
+g-hc-y = 0
+g-hc-w = 0
+g-hc-h = 0
+g-th-x = 0
+g-th-y = 0
+g-th-w = 0
+g-th-h = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui code')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段48: highlighter / theme')
+hint = cmp-label('click code=tab cycle, theme=mode; c/m/d keys; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+hc = cmp-highlighter('let x = 1\nfn add(a i64) (r i64) {\n\tr = a + x ; add\n}')
+hl-set-lang(hc, 'nolang')
+th = cmp-theme()
+th-set-name(th, 'midnight')
+
+cmp-add-child(root, title)
+cmp-add-child(root, hc)
+cmp-add-child(root, th)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == hc) -> {
+            tb = hl-tab(hc)
+            (tb == 4) -> { hl-set-tab(hc, 2) }
+            (tb == 2) -> { hl-set-tab(hc, 8) }
+            (tb == 8) -> { hl-set-tab(hc, 4) }
+        }
+        (hit == th) -> {
+            m = th-mode(th)
+            (m == 0) -> { th-set-mode(th, 1) }
+            (m == 1) -> { th-set-mode(th, 0) }
+        }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; c：缩进循环
+        (k == 99) -> {
+            tb = hl-tab(hc)
+            (tb == 4) -> { hl-set-tab(hc, 2) }
+            (tb == 2) -> { hl-set-tab(hc, 8) }
+            (tb == 8) -> { hl-set-tab(hc, 4) }
+        }
+        ; m：切亮 / 暗
+        (k == 109) -> {
+            m = th-mode(th)
+            (m == 0) -> { th-set-mode(th, 1) }
+            (m == 1) -> { th-set-mode(th, 0) }
+        }
+        ; d：密度循环
+        (k == 100) -> {
+            dn = th-density(th)
+            (dn == 0) -> { th-set-density(th, 1) }
+            (dn == 1) -> { th-set-density(th, 2) }
+            (dn == 2) -> { th-set-density(th, 0) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件 ----
+    nl = hl-lines(hc)
+    ml = hl-max-len(hc)
+    tb = hl-tab(hc)
+    lg = hl-lang(hc)
+    nm = th-name(th)
+    mm = th-mode-name(th)
+    dn = th-density(th)
+    sw = th-swatch(th)
+    cmp-set-text(stat, 'code lines={nl} max={ml} tab={tb} lang="{lg}"')
+    cmp-set-text(stat2, 'theme "{nm}" mode={mm} density={dn} sw={sw}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    g-hc-x, g-hc-y, g-hc-w, g-hc-h = cs-rect(hc)
+    g-th-x, g-th-y, g-th-w, g-th-h = cs-rect(th)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+nl = hl-lines(hc)
+ml = hl-max-len(hc)
+tb = hl-tab(hc)
+nm = th-name(th)
+mm = th-mode-name(th)
+dn = th-density(th)
+print('bye frames={fr} keys={kk} clicks={ck} lines={nl} max={ml} tab={tb} theme="{nm}" mode={mm} den={dn}')
+(sc > 0) -> { print('code render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

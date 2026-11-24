@@ -1,0 +1,217 @@
+; ============================================================================
+; noui 元数据族测试（阶段 46）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录第 58 行给 C-ATTACHMENT 承诺「name, size」、第 73 行给 C-CLIPBOARD
+; 承诺「content」、第 86 行给 C-INDEX-PATH 承诺「path segments」，但命令式侧三者
+; 都只有一个构造函数 —— name / size / content / 段池都没有 API，渲染还落在通用
+; `rect + text` 兜底里。
+; 阶段 46 补：
+;   - attachment：CMP-TEXT = 文件名，CMP-VALUE = 字节数；
+;     att-name / att-set-name / att-size / att-set-size / att-size-text
+;     + cs-paint-attachment（图标方块 + 文件名 + 右端尺寸文案）。
+;   - clipboard：CMP-TEXT = 内容；clip-content / clip-set-content / clip-len
+;     + cs-paint-clipboard（字段底 + 内容 + 右端复制方块）。
+;   - index-path：段池 IP-SEG + 每句柄基址 / 段数；
+;     ip-count / ip-seg / ip-add-seg / ip-clear / ip-sep
+;     + cs-paint-index-path（各段 + 「 / 」分隔符）。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-meta tests/cmp-meta.no
+;       ./dist/cmp-meta
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 1. attachment：name / size 读写
+; ============================================================================
+a = cmp-attachment('a.txt')
+t1 = cmp-kind(a) == C-ATTACHMENT
+t2 = att-name(a) == 'a.txt'
+t3 = att-size(a) == 0
+att-set-size(a, 2048)
+t4 = att-size(a) == 2048
+att-set-size(a, -5)
+t5 = att-size(a) == 0
+att-set-name(a, 'b.txt')
+t6 = att-name(a) == 'b.txt'
+cmp-flag-set(a, F-DISABLED)
+att-set-size(a, 4096)
+att-set-name(a, 'c.txt')
+t7 = att-size(a) == 0 && att-name(a) == 'b.txt'
+cmp-flag-clear(a, F-DISABLED)
+t8 = att-icon() == 3200 && att-pad() == 1200 && att-gap() == 800
+
+; ============================================================================
+; 2. attachment：尺寸文案（1024 进位）
+; ============================================================================
+att-set-size(a, 12)
+t9 = att-size-text(a) == '12 B'
+att-set-size(a, 1023)
+t10 = att-size-text(a) == '1023 B'
+att-set-size(a, 1024)
+t11 = att-size-text(a) == '1 KB'
+att-set-size(a, 1048576)
+t12 = att-size-text(a) == '1 MB'
+att-set-size(a, 2048)
+t13 = att-size-text(a) == '2 KB'
+
+; ============================================================================
+; 3. attachment 测算：内边距*2 + 图标 32 + 间隙 + 名 + 间隙 + 尺寸文案
+; ============================================================================
+att-set-name(a, 'a.txt')
+aw1, ah1 = cs-measure(a)
+t14 = aw1 == 14400 && ah1 == 4000
+att-set-size(a, 12)
+aw2, ah2 = cs-measure(a)
+t15 = aw2 == 14400 && ah2 == 4000
+att-set-name(a, 'x')
+att-set-size(a, 2048)
+aw3, ah3 = cs-measure(a)
+t16 = aw3 == 11200 && ah3 == 4000
+
+; ============================================================================
+; 4. attachment 渲染
+; ============================================================================
+att-set-name(a, 'a.txt')
+att-set-size(a, 2048)
+root = cmp-root()
+cmp-add-child(root, a)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+ax, ay, aw, ah = cs-rect(a)
+t17 = cs-rect-color-at(cs-add(ax, 1200), cs-add(ay, 400), 3200, 3200) == 0x9AA0B4FF
+t18 = cs-text-color-at('a.txt', cs-add(ax, 5200), cs-add(ay, 800)) == cs-theme(CS-TH-FG)
+t19 = cs-text-color-at('2 KB', cs-sub(cs-sub(cs-add(ax, aw), 1200), 3200), cs-add(ay, 800)) == cs-theme(CS-TH-MUTED)
+
+; ============================================================================
+; 5. clipboard：content 读写
+; ============================================================================
+cl = cmp-clipboard()
+t20 = cmp-kind(cl) == C-CLIPBOARD
+t21 = clip-content(cl) == ''
+t22 = clip-len(cl) == 0
+clip-set-content(cl, 'hello')
+t23 = clip-content(cl) == 'hello'
+t24 = clip-len(cl) == 5
+cmp-flag-set(cl, F-DISABLED)
+clip-set-content(cl, 'nope')
+t25 = clip-content(cl) == 'hello'
+cmp-flag-clear(cl, F-DISABLED)
+t26 = clip-pad() == 1200 && clip-gap() == 800 && clip-copy-w() == 2400
+
+; ============================================================================
+; 6. clipboard 测算 / 渲染
+; ============================================================================
+cw1, ch1 = cs-measure(cl)
+t27 = cw1 == 9600 && ch1 == 4000
+cmp-add-child(root, cl)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+cx, cy, cw, ch = cs-rect(cl)
+t28 = cs-rect-color-at(cx, cy, cw, ch) == cs-theme(CS-TH-FIELD)
+t29 = cs-rect-color-at(cs-sub(cs-sub(cs-add(cx, cw), 1200), 2400), cs-add(cy, 800), 2400, 2400) == 0x9AA0B4FF
+t30 = cs-text-color-at('hello', cs-add(cx, 1200), cs-add(cy, 800)) == cs-theme(CS-TH-FG)
+
+; ============================================================================
+; 7. index-path：段池
+; ============================================================================
+p = cmp-index-path()
+t31 = cmp-kind(p) == C-INDEX-PATH
+t32 = ip-count(p) == 0
+t33 = ip-seg(p, 0) == ''
+ip-add-seg(p, 'a')
+ip-add-seg(p, 'bb')
+ip-add-seg(p, 'ccc')
+t34 = ip-count(p) == 3
+t35 = ip-seg(p, 0) == 'a' && ip-seg(p, 1) == 'bb' && ip-seg(p, 2) == 'ccc'
+t36 = ip-seg(p, 3) == '' && ip-seg(p, -1) == ''
+t37 = ip-sep() == ' / '
+cmp-flag-set(p, F-DISABLED)
+ip-add-seg(p, 'zz')
+ip-clear(p)
+t38 = ip-count(p) == 3
+cmp-flag-clear(p, F-DISABLED)
+ip-clear(p)
+t39 = ip-count(p) == 0
+ip-add-seg(p, 'x')
+t40 = ip-count(p) == 1 && ip-seg(p, 0) == 'x'
+
+; ============================================================================
+; 8. index-path 测算 / 渲染
+; ============================================================================
+ip-clear(p)
+ip-add-seg(p, 'a')
+ip-add-seg(p, 'bb')
+ip-add-seg(p, 'ccc')
+pw1, ph1 = cs-measure(p)
+t41 = pw1 == 12000 && ph1 == 4000
+cmp-add-child(root, p)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+px, py, pw, ph = cs-rect(p)
+t42 = cs-text-color-at('a', cs-add(px, 1200), cs-add(py, 800)) == cs-theme(CS-TH-FG)
+t43 = cs-text-color-at(' / ', cs-add(px, 2000), cs-add(py, 800)) == cs-theme(CS-TH-MUTED)
+t44 = cs-text-color-at('bb', cs-add(px, 4400), cs-add(py, 800)) == cs-theme(CS-TH-FG)
+t45 = cs-text-color-at('ccc', cs-add(px, 8400), cs-add(py, 800)) == cs-theme(CS-TH-FG)
+t46 = cs-has-text(' / ') == true
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all-ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10
+all-ok = all-ok && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19
+all-ok = all-ok && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30
+all-ok = all-ok && t31 && t32 && t33 && t34 && t35 && t36 && t37 && t38 && t39 && t40
+all-ok = all-ok && t41 && t42 && t43 && t44 && t45 && t46
+
+print(t1) print(t2) print(t3) print(t4) print(t5) print(t6) print(t7) print(t8) print(t9) print(t10)
+print(t11) print(t12) print(t13) print(t14) print(t15) print(t16) print(t17) print(t18) print(t19) print(t20)
+print(t21) print(t22) print(t23) print(t24) print(t25) print(t26) print(t27) print(t28) print(t29) print(t30)
+print(t31) print(t32) print(t33) print(t34) print(t35) print(t36) print(t37) print(t38) print(t39) print(t40)
+print(t41) print(t42) print(t43) print(t44) print(t45) print(t46)
+print(all-ok)
+(all-ok) -> { print('ALL META TESTS PASSED') }
+(!all-ok) -> { print('SOME TESTS FAILED') exit(1) }

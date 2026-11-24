@@ -1,0 +1,288 @@
+; 阶段61：C-INSPECTOR（对象检查器）无窗口断言
+; 纯逻辑：构造默认 / 目标名读写 / 字段池（扁平只增 + 基址）/ 多句柄隔离 /
+;          disabled 空操作 / 测算 intrinsic / 渲染几何
+;          （FIELD 底、目标行 ACCENT 标记条 + FG 目标名、字段行 MUTED 标签 +
+;           FG 值、行间 TRACK 分隔线）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+cs-text-n = (t str) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    空目标 / 0 字段 / 越界读空串 / 未被 disabled / 不是视觉容器
+; ============================================================================
+ins = cmp-inspector()
+
+t1 = cmp-kind(ins) == C-INSPECTOR
+t2 = in-target(ins) == ''
+t3 = in-count(ins) == 0
+t4 = in-label(ins, 0) == ''
+t5 = in-value(ins, 0) == ''
+t6 = cmp-has(ins, F-DISABLED) == 0
+t7 = cs-is-container(cmp-kind(ins)) == 0
+
+; ============================================================================
+; 2. 目标名读写
+; ============================================================================
+in-set-target(ins, 'widget')
+t8 = in-target(ins) == 'widget'
+in-set-target(ins, '')
+t9 = in-target(ins) == ''
+in-set-target(ins, 'widget')
+
+; ============================================================================
+; 3. 字段池：追加
+;    f0 name=alpha / f1 kind=button / f2 size=120x40
+; ============================================================================
+in-add(ins, 'name', 'alpha')
+t10 = in-count(ins) == 1
+t11 = in-label(ins, 0) == 'name'
+t12 = in-value(ins, 0) == 'alpha'
+in-add(ins, 'kind', 'button')
+in-add(ins, 'size', '120x40')
+t13 = in-count(ins) == 3
+t14 = in-label(ins, 1) == 'kind'
+t15 = in-value(ins, 1) == 'button'
+t16 = in-label(ins, 2) == 'size'
+t17 = in-value(ins, 2) == '120x40'
+
+; 越界读：空串
+t18 = in-label(ins, 3) == ''
+t19 = in-value(ins, -1) == ''
+
+; ============================================================================
+; 4. 改写
+; ============================================================================
+in-set-label(ins, 0, 'NAME')
+in-set-value(ins, 0, 'ALPHA')
+t20 = in-label(ins, 0) == 'NAME'
+t21 = in-value(ins, 0) == 'ALPHA'
+; 越界写不影响
+in-set-label(ins, 9, 'x')
+in-set-value(ins, 9, 'y')
+t22 = in-label(ins, 2) == 'size'
+t23 = in-value(ins, 2) == '120x40'
+
+; ============================================================================
+; 5. 多句柄隔离（扁平池 + 每句柄基址）
+; ============================================================================
+i2 = cmp-inspector()
+i3 = cmp-inspector()
+in-add(i2, 'aa', '11')
+in-add(i2, 'bb', '22')
+in-add(i3, 'cc', '33')
+in-set-target(i3, 'other')
+
+t24 = in-count(i2) == 2
+t25 = in-count(i3) == 1
+t26 = in-label(i2, 1) == 'bb'
+t27 = in-value(i3, 0) == '33'
+t28 = in-target(i3) == 'other'
+
+in-clear(i2)
+t29 = in-count(i2) == 0
+t30 = in-count(i3) == 1
+t31 = in-value(i3, 0) == '33'
+in-add(i2, 'again', '99')
+t32 = in-count(i2) == 1
+t33 = in-label(i2, 0) == 'again'
+t34 = in-value(i2, 0) == '99'
+
+; ============================================================================
+; 6. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(i3, F-DISABLED)
+in-add(i3, 'no', 'no')
+in-set-label(i3, 0, 'no')
+in-set-value(i3, 0, 'no')
+in-set-target(i3, 'no')
+in-clear(i3)
+t35 = in-count(i3) == 1
+t36 = in-label(i3, 0) == 'cc'
+t37 = in-value(i3, 0) == '33'
+t38 = in-target(i3) == 'other'
+cmp-flag-clear(i3, F-DISABLED)
+t39 = cmp-has(i3, F-DISABLED) == 0
+
+; ============================================================================
+; 7. 测算 intrinsic
+;    宽 = 2*CS-PAD + 标记条 800 + 间隙 800
+;         + max(目标名宽, 最长标签 + 间隙 + 最长值)，下限 CS-MIN-LEAF-W
+;    高 = 2*CS-PAD + 目标行 CS-LINE-H + N*CS-LINE-H + (N-1)*CS-SEP-H，
+;         下限 CS-BTN-H
+;    m：目标 'widget'(4800)，字段标签 3200×3、值 4000/4800/4800
+;       → 内容 = max(4800, 3200+800+4800=8800) = 8800
+;       → 宽 2400+1600+8800 = 12800；高 2400+2400+7200+200 = 12200
+; ============================================================================
+m = cmp-inspector()
+in-set-target(m, 'widget')
+in-add(m, 'name', 'alpha')
+in-add(m, 'kind', 'button')
+in-add(m, 'size', '120x40')
+m1w, m1h = cs-measure(m)
+t40 = m1w == 12800
+t41 = m1h == 12200
+
+; 空：目标 0、无字段 → 内容 max(0, 800) = 800 → 宽 4800 夹 6400；高 4800
+e1 = cmp-inspector()
+m2w, m2h = cs-measure(e1)
+t42 = m2w == 6400
+t43 = m2h == 4800
+
+; 单条 'x'='y'：标签 800、值 800 → 内容 max(0, 2400) = 2400
+;   → 宽 2400+1600+2400 = 6400；高 2400+2400+2400 = 7200
+e2 = cmp-inspector()
+in-add(e2, 'x', 'y')
+m3w, m3h = cs-measure(e2)
+t44 = m3w == 6400
+t45 = m3h == 7200
+
+; 长目标 'abcdefghij'(8000)，无字段 → 内容 max(8000, 800) = 8000
+;   → 宽 2400+1600+8000 = 12000；高 4800
+e3 = cmp-inspector()
+in-set-target(e3, 'abcdefghij')
+m4w, m4h = cs-measure(e3)
+t46 = m4w == 12000
+t47 = m4h == 4800
+
+; 长值：目标 ''，字段 'k'='abcdefghij'(8000)
+;   → 内容 max(0, 800+800+8000=9600) = 9600 → 宽 2400+1600+9600 = 13600
+e4 = cmp-inspector()
+in-add(e4, 'k', 'abcdefghij')
+m5w, m5h = cs-measure(e4)
+t48 = m5w == 13600
+t49 = m5h == 7200
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m, 20000)
+cmp-set-sh(m, 9000)
+m6w, m6h = cs-measure(m)
+t50 = m6w == 20000
+t51 = m6h == 9000
+cmp-set-sw(m, 0)
+cmp-set-sh(m, 0)
+
+; ============================================================================
+; 8. 渲染
+;     外层 12000 → 内容宽 9600（intrinsic 12800，叶子横向被夹到父内容宽）
+;     面板 (1200,1200,9600,12200) FIELD
+;     目标行：标记条 (2400,2400,800,2400) ACCENT、'widget' @4000,2400 FG
+;     字段行（行高 2400、行间距 2500）：
+;       行 0 ry=4800：'name' @4000 MUTED、'alpha' @8000 FG
+;       分隔线 (1200,7200,9600,100)
+;       行 1 ry=7300：'kind' @4000 MUTED、'button' @8000 FG
+;       分隔线 (1200,9700,9600,100)
+;       行 2 ry=9800：'size' @4000 MUTED、'120x40' @8000 FG
+;     文本指令共 7 条（1 目标 + 3 标签 + 3 值）
+; ============================================================================
+cs-clear()
+r = cmp-inspector()
+in-set-target(r, 'widget')
+in-add(r, 'name', 'alpha')
+in-add(r, 'kind', 'button')
+in-add(r, 'size', '120x40')
+r1 = cmp-root()
+cmp-add-child(r1, r)
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+
+t52 = cs-rect-color-at(1200, 1200, 9600, 12200) == cs-theme(CS-TH-FIELD)
+t53 = cs-rect-color-at(2400, 2400, 800, 2400) == cs-theme(CS-TH-ACCENT)
+t54 = cs-text-color-at('widget', 4000, 2400) == cs-theme(CS-TH-FG)
+t55 = cs-text-color-at('name', 4000, 4800) == cs-theme(CS-TH-MUTED)
+t56 = cs-text-color-at('alpha', 8000, 4800) == cs-theme(CS-TH-FG)
+t57 = cs-rect-color-at(1200, 7200, 9600, 100) == cs-theme(CS-TH-TRACK)
+t58 = cs-text-color-at('kind', 4000, 7300) == cs-theme(CS-TH-MUTED)
+t59 = cs-text-color-at('button', 8000, 7300) == cs-theme(CS-TH-FG)
+t60 = cs-rect-color-at(1200, 9700, 9600, 100) == cs-theme(CS-TH-TRACK)
+t61 = cs-text-color-at('size', 4000, 9800) == cs-theme(CS-TH-MUTED)
+t62 = cs-text-color-at('120x40', 8000, 9800) == cs-theme(CS-TH-FG)
+t63 = cs-text-n('widget') == 1
+t64 = cs-text-count() == 7
+
+; 换目标名：宽度按新目标重算（'abcdefghij' 更长，内容取 8000 但仍小于字段列）
+in-set-target(r, 'abcdefghij')
+cs-clear()
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+t65 = cs-text-color-at('abcdefghij', 4000, 2400) == cs-theme(CS-TH-FG)
+
+; 清空字段：只剩目标行，没有标签 / 值 / 分隔线
+in-clear(r)
+cs-clear()
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+t66 = cs-text-count() == 1
+t67 = cs-rect-color-at(2400, 2400, 800, 2400) == cs-theme(CS-TH-ACCENT)
+
+; ============================================================================
+; 9. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5 & t6 & t7
+ok = ok & t8 & t9
+ok = ok & t10 & t11 & t12 & t13 & t14 & t15 & t16 & t17 & t18 & t19
+ok = ok & t20 & t21 & t22 & t23
+ok = ok & t24 & t25 & t26 & t27 & t28 & t29 & t30 & t31 & t32 & t33 & t34
+ok = ok & t35 & t36 & t37 & t38 & t39
+ok = ok & t40 & t41 & t42 & t43 & t44 & t45 & t46 & t47 & t48 & t49 & t50 & t51
+ok = ok & t52 & t53 & t54 & t55 & t56 & t57 & t58 & t59 & t60 & t61 & t62 & t63 & t64
+ok = ok & t65 & t66 & t67
+(ok == 1) -> {
+    print('ALL INSPECTOR TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME INSPECTOR TESTS FAILED')
+}

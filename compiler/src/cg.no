@@ -39,9 +39,21 @@
 ;   str 容量欄（s50）：OP-STRCAP——extractvalue %str-long field 1（与 OP-STRLEN 的 field 0 成对，Go 原以 fieldIdx 分派）；单块降级、无 helper；忠实 Go emitLenCap 的 OpCap/KindStr 分支。B28：讀出後 zext i32→i64
 ;   i64/u64 → str（s143）：OP-ITOSTR——發 call %str-long @str_from_i64(i64)，helper 見 cg-runtime-str-from-i64；
 ;     結果 rc=1 自擁有 ⇒ h2m 側 h2m-rel-add 登記释放。
-;   str 碼點數（s135）：OP-STRCPLEN——**非**栏位读取（無計數原語可組），發 call i64 @str_cp_len(%str-long)；
+;   str 碼點數（s135）：OP-STRCPLEN——**非**栏位讀取（無計數原語可組），發 call i64 @str_cp_len(%str-long)；
 ;     單塊降級、helper 走 cg-runtime prelude（含 phi 循環，與 @digits/@str_concat 同級）。語義 = std str.len = cp-index(len-bytes())，
 ;     即「b<0x80 或 (b&0xc0)==0xc0」的字節數（與 s[i] 的碼點索引語義一致）
+;   str 子串四件套（s158）：OP-STRPREF / OP-STRSUFF / OP-STRCTNS / OP-STRIDX——
+;     發 call i1 @str_starts_with / @str_ends_with / @str_contains（zext i1→i64）與
+;     call i64 @str_index；helper 走 cg-runtime prelude（@str_find_byte 內核 + cp-index 計數）。
+;     語義逐字鏡像 src/std/str.no 的 starts-with(:460)/ends-with(:481)/contains(:450)/index(:420)
+;   str.to-bytes()（s159）：OP-STRTOBYTES——發 call %vec @str_to_bytes(%str-long)；helper 走 cg-runtime
+;     prelude。O(N) 複製到【新配置】的 i64 寬槽緩衝（stride 8），rc=1 ⇒ h2m 側 h2m-rel-add 登記释放。
+;     與 s121 bytes() 的 cap==0 零拷貝視圖相反；語義逐字鏡像 src/std/str.no:694。
+;   str.slice-bytes(start,end)（s160）：OP-STRSLICEB——發 call %str-long @str_slice_bytes(...)；
+;     helper 走 cg-runtime prelude（鉗制 + rc_alloc + 逐元 1:1 複製）。三運算元（接收者 + 2 引數）
+;     超出 (a,b) 雙槽 ⇒ 走側池（同 OP-CALL）：xa[k]=池基址、bs[k]=3，依序為接收者/start/end。
+;     結果 rc=1 自擁有 ⇒ h2m 側 h2m-rel-add(TY-STR) 登記，作用域結束發 OP-RELEASE。
+;     語意逐字鏡像 src/std/str.no:642。
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
@@ -137,6 +149,9 @@ cg-val-prefix = (t i64) (s str) {
 
     ; 切片 B：[]str 与 []i64 共用 %vec 命名空间（值都是 vec 描述符）
     t == TY-VECSTR -> s = '%vc'
+
+    ; s162：[]结构体 与 []i64／[]str 共用 %vec 命名空间（描述符与元素型别无关）
+    t == TY-VECSTRUCT -> s = '%vc'
     t == TY-OPT -> s = '%op'
     t == TY-F64 -> s = '%fd'
     t >= TY-STRUCT-BASE -> s = '%st'
@@ -340,7 +355,13 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         bk = blks[k]
         bk != cur -> {
             b.push(cg-label(bk) - ':\n')
-            cur = bk
+            {
+                cur-opt = bk
+                cur-opt: {
+                    ok -> cur = it
+                    ->
+                }
+            }
         }
         op = ops[k]
         d = dsts[k]
@@ -2057,6 +2078,117 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(x.to-str())
             b.push(')\n')
         }
+        op == OP-STRPREF -> {
+
+            ; s158：str.starts-with(target) —— 逐元前綴比對（std str.starts-with:460）。
+            ;   走 helper @str_starts_with（cg-runtime-str-startswith，每模块 prelude 发一次）；
+            ;   i1 結果 zext 成 i64 0/1（與 s90 的 bool=i64 0/1 同口徑）。
+            b.push('\t%sp')
+            b.push(k.to-str())
+            b.push(' = call i1 @str_starts_with(%str-long %sv')
+            b.push(x.to-str())
+            b.push(', %str-long %sv')
+            b.push(y.to-str())
+            b.push(')\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %sp')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-STRSUFF -> {
+
+            ; s158：str.ends-with(target) —— 逐元後綴比對（std str.ends-with:481）。同 OP-STRPREF 口徑。
+            b.push('\t%ss')
+            b.push(k.to-str())
+            b.push(' = call i1 @str_ends_with(%str-long %sv')
+            b.push(x.to-str())
+            b.push(', %str-long %sv')
+            b.push(y.to-str())
+            b.push(')\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %ss')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-STRCTNS -> {
+
+            ; s158：str.contains(target) —— 等價 index(target) >= 0（std str.contains:450）。
+            ;   同 OP-STRPREF 口徑。
+            b.push('\t%sc')
+            b.push(k.to-str())
+            b.push(' = call i1 @str_contains(%str-long %sv')
+            b.push(x.to-str())
+            b.push(', %str-long %sv')
+            b.push(y.to-str())
+            b.push(')\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %sc')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-STRIDX -> {
+
+            ; s158：str.index(target) —— 回「首次出現的【碼點】位置」，未找到 -1
+            ;   （std str.index:420：find-byte-from 命中後 .cp-index）。走 helper @str_index。
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @str_index(%str-long %sv')
+            b.push(x.to-str())
+            b.push(', %str-long %sv')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-STRTOBYTES -> {
+
+            ; s159：str.to-bytes() —— O(N) 複製成【新配置】的 []byte（std str.no:694）。
+            ;   走 helper @str_to_bytes（cg-runtime-str-to-bytes，每模組 prelude 發一次）：
+            ;   n = len-bytes；malloc n*8；逐元把 u8 zext 成 i64 寫進 8 位元槽；len=cap=n。
+            ;   ⚠️ 結果 rc=1、自有緩衝 ⇒ h2m 側已 h2m-rel-add 登記，作用域結束發 OP-VEC-FREE
+            ;      （與 s121 bytes() 的 cap==0 借用視圖相反，勿混）。
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @str_to_bytes(%str-long %sv')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-STRSLICEB -> {
+
+            ; s160：str.slice-bytes(start,end) —— 三運算元（接收者 + 2 引數）走【側池】，
+            ;   與 OP-CALL 同一慣例：xa[k]=池基址、bs[k]=3，依序為 接收者 str / start i64 / end i64。
+            ;   ⚠️ 型別與命名空間一律按值 id 反查 vty[]（不寫死），逐個取名。
+            ;   ⚠️ 結果 rc=1 自擁有 ⇒ h2m 側已 h2m-rel-add(TY-STR) 登記，作用域結束發 OP-RELEASE。
+            b.push('\t%sv')
+            b.push(d.to-str())
+            b.push(' = call %str-long @str_slice_bytes(')
+
+            q0 = args[x]: {
+                ok -> it
+
+                -> _
+            }
+            t0 = vty[q0]
+            b.push(cg-ty-name(t0))
+            b.push(' ')
+            b.push(cg-val-prefix(t0))
+            b.push(q0.to-str())
+
+            q1 = args[x + 1]: {
+                ok -> it
+
+                -> _
+            }
+            b.push(', i64 %v')
+            b.push(q1.to-str())
+
+            q2 = args[x + 2]: {
+                ok -> it
+
+                -> _
+            }
+            b.push(', i64 %v')
+            b.push(q2.to-str())
+            b.push(')\n')
+        }
         op == OP-SALLOC -> {
             b.push('\t%ss')
             b.push(d.to-str())
@@ -2073,6 +2205,27 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push('\t%sv')
             b.push(d.to-str())
             b.push(' = load %str-long, %str-long* %ss')
+            b.push(x.to-str())
+            b.push('\n')
+        }
+        ; s163：vec 槽三件套（%vs<id> 命名空間，型別 %vec*）。语义见 mir.no 的 OP-VECALLOC/STORE/LOAD 注。
+        ;   ⚠️ 只發「存取」指令，不做釋放——%vec 無 RC 頭，所有權由 h2m rel-list 按值追踪（同 §11 B5）。
+        op == OP-VECALLOC -> {
+            b.push('\t%vs')
+            b.push(d.to-str())
+            b.push(' = alloca %vec\n')
+        }
+        op == OP-VECSTORE -> {
+            b.push('\tstore %vec %vc')
+            b.push(x.to-str())
+            b.push(', %vec* %vs')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-VECLOAD -> {
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = load %vec, %vec* %vs')
             b.push(x.to-str())
             b.push('\n')
         }

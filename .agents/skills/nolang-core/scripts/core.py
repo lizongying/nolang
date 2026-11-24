@@ -138,7 +138,7 @@ def render(cfg: dict) -> str:
     lines = [
         "| 模块 | 默认 | 触发（任一命中即载） | 依赖 / 约束 | 篇幅 |",
         "|---|---|---|---|---|",
-        f"| `redlines` | inline | — 无条件内联 | 权威全文见 `.agents/rules/nolang-red-lines.md` | {_size('modules/m00-redlines.md')} |",
+        f"| `redlines` | inline | — 无条件内联 | 权威入口见 `.agents/rules/nolang-red-lines.md`（按任务路由到编译器 / 应用两份） | {_size('modules/m00-redlines.md')} |",
     ]
     for name in order:
         m = mods[name]

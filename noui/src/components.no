@@ -220,6 +220,188 @@ CB-MBASE []i64 = with-len(0)
 CB-MN []i64 = with-len(0)
 CB-MCUR []i64 = with-len(0)
 CB-MLIST []i64 = with-len(0)
+; 阶段46：index-path 的路径段池（扁平只增，同 INP-SG / CB-MLIST 段池思路）
+;   IP-SEG   段文本（扁平）
+;   IP-SBASE 每句柄段基址（下标 = 句柄）
+;   IP-SN    每句柄段数
+IP-SEG []str = with-len(0)
+IP-SBASE []i64 = with-len(0)
+IP-SN []i64 = with-len(0)
+; 阶段53：breadcrumb 的条目池（扁平只增）+ 每句柄基址 / 条目数 / 分隔符
+;   BC-ITEM  条目文本（扁平）
+;   BC-SBASE 每句柄条目基址（下标 = 句柄）
+;   BC-N     每句柄条目数
+;   BC-SEP   每句柄分隔符（空 = 默认「 / 」）
+BC-ITEM []str = with-len(0)
+BC-SBASE []i64 = with-len(0)
+BC-N []i64 = with-len(0)
+BC-SEP []str = with-len(0)
+; 阶段55：description-list 的行池（扁平只增）+ 每句柄基址 / 行数
+;   DL-LAB   标签文本（扁平）
+;   DL-VAL   值文本（扁平，与 DL-LAB 同下标）
+;   DL-SBASE 每句柄行基址（下标 = 句柄）
+;   DL-N     每句柄行数
+DL-LAB []str = with-len(0)
+DL-VAL []str = with-len(0)
+DL-SBASE []i64 = with-len(0)
+DL-N []i64 = with-len(0)
+; 阶段56：accordion 的分组池（扁平只增）+ 每句柄基址 / 组数
+;   AC-TITLE  组标题（扁平）
+;   AC-BODY   组内正文行（扁平，跨组连续）
+;   AC-EXP    组展开标志（与 AC-TITLE 同下标，1 展开 / 0 收起）
+;   AC-BBASE  每组正文基址（下标 = 组号）
+;   AC-BN     每组正文行数
+;   AC-SBASE  每句柄组基址（下标 = 句柄）
+;   AC-N      每句柄组数
+AC-TITLE []str = with-len(0)
+AC-BODY []str = with-len(0)
+AC-EXP []i64 = with-len(0)
+AC-BBASE []i64 = with-len(0)
+AC-BN []i64 = with-len(0)
+AC-SBASE []i64 = with-len(0)
+AC-N []i64 = with-len(0)
+
+; 阶段57：carousel 的幻灯片池（扁平只增）+ 每句柄基址 / 张数
+;   CR-SLIDE  幻灯片文案（扁平）
+;   CR-SBASE  每句柄幻灯片基址（下标 = 句柄）
+;   CR-N      每句柄幻灯片张数
+; 当前张走 CMP-VALUE（默认 0，越界时读回落 0）。
+CR-SLIDE []str = with-len(0)
+CR-SBASE []i64 = with-len(0)
+CR-N []i64 = with-len(0)
+
+; 阶段58：collapsible 的正文行池（扁平只增）+ 每句柄基址 / 行数
+;   CL-LINE  展开后显示的正文行（扁平）
+;   CL-SBASE 每句柄正文基址（下标 = 句柄）
+;   CL-N     每句柄正文行数
+; 标题走 CMP-TEXT，展开态走 F-OPEN（声明式 dv-on-open 已经这么编码）。
+CL-LINE []str = with-len(0)
+CL-SBASE []i64 = with-len(0)
+CL-N []i64 = with-len(0)
+
+; 阶段60：history 的条目池（扁平只增）+ 每句柄基址 / 条数
+;   HST-ENTRY  历史条目文案（扁平）
+;   HST-SBASE  每句柄条目基址（下标 = 句柄）
+;   HST-N      每句柄条目条数
+; 当前下标走 CMP-VALUE（默认 0，越界时读回落 0）。
+HST-ENTRY []str = with-len(0)
+HST-SBASE []i64 = with-len(0)
+HST-N []i64 = with-len(0)
+
+; 阶段61：inspector 的字段池（扁平只增）
+;   目标名走 CMP-TEXT（同 group-box 的标题）
+;   IN-LAB    字段标签（扁平）
+;   IN-VAL    字段值（扁平，与 IN-LAB 同下标）
+;   IN-SBASE  每句柄字段基址（下标 = 句柄）
+;   IN-N      每句柄字段数
+IN-LAB []str = with-len(0)
+IN-VAL []str = with-len(0)
+IN-SBASE []i64 = with-len(0)
+IN-N []i64 = with-len(0)
+
+; 阶段62：message-scroller 的消息池（扁平只增）
+;   MS-MSG    消息正文（扁平）
+;   MS-AUTH   消息作者（扁平，空串 = 不画作者行）
+;   MS-SBASE  每句柄消息基址（下标 = 句柄）
+;   MS-N      每句柄消息条数
+; 「输入中」走 CMP-VALUE（0 / 1），渲染层据此在末尾补一行
+MS-MSG []str = with-len(0)
+MS-AUTH []str = with-len(0)
+MS-SBASE []i64 = with-len(0)
+MS-N []i64 = with-len(0)
+
+; 阶段63：status-bar 的分段池（扁平只增）
+;   SB-SEG    段文案（扁平）
+;   SB-SBASE  每句柄段基址（下标 = 句柄）
+;   SB-N      每句柄段数
+SB-SEG []str = with-len(0)
+SB-SBASE []i64 = with-len(0)
+SB-N []i64 = with-len(0)
+
+; 阶段64：popover 的正文行池（扁平只增）+ 每句柄基址 / 行数
+;   PV-LINE   正文行文案（扁平）
+;   PV-SBASE  每句柄行基址（下标 = 句柄）
+;   PV-N      每句柄行数
+PV-LINE []str = with-len(0)
+PV-SBASE []i64 = with-len(0)
+PV-N []i64 = with-len(0)
+
+; 阶段65：questionnaire 的题池（扁平只增）+ 每句柄基址 / 题数
+;   QA-PROMPT 题干文案（扁平，每题一条）
+;   QA-ANS    答案文案（扁平，每题一条；空串 = 未作答）
+;   QA-REQ    必答标记（扁平，0 / 1）
+;   QA-SBASE  每句柄题基址（下标 = 句柄）
+;   QA-N      每句柄题数
+QA-PROMPT []str = with-len(0)
+QA-ANS []str = with-len(0)
+QA-REQ []i64 = with-len(0)
+QA-SBASE []i64 = with-len(0)
+QA-N []i64 = with-len(0)
+
+; 阶段66：searchable-list 的条目池 + 匹配表（都是扁平只增）+ 每句柄基址 / 计数
+;   SL-ITEM   条目标签（扁平，每次 sl-add 一条）
+;   SL-SBASE  每句柄条目基址（下标 = 句柄）
+;   SL-N      每句柄条目数
+;   SL-MATCH  匹配到的条目下标（扁平，每次 refresh 重建该句柄那一段）
+;   SL-MBASE  每句柄匹配段基址
+;   SL-MN     每句柄匹配数
+;   SL-CUR    每句柄高亮行（-1 = 没有）
+SL-ITEM []str = with-len(0)
+SL-SBASE []i64 = with-len(0)
+SL-N []i64 = with-len(0)
+SL-MATCH []i64 = with-len(0)
+SL-MBASE []i64 = with-len(0)
+SL-MN []i64 = with-len(0)
+SL-CUR []i64 = with-len(0)
+
+; 阶段67：title-bar 的按钮池（扁平只增）+ 每句柄基址 / 计数
+;   TTB-BTN   按钮标签（扁平，每次 tb-add 一条）
+;   TTB-SBASE 每句柄按钮基址（下标 = 句柄）
+;   TTB-N     每句柄按钮数
+;   标题本身走 CMP-TEXT[h]（构造函数已经把 title 存进去）。
+TTB-BTN []str = with-len(0)
+TTB-SBASE []i64 = with-len(0)
+TTB-N []i64 = with-len(0)
+
+; 阶段68：toolbar 的条目池（扁平只增）+ 每句柄基址 / 计数 / 当前选中
+;   TLB-ITEM   条目标签（扁平，每次 tlb-add 一条）
+;   TLB-SBASE  每句柄条目基址（下标 = 句柄）
+;   TLB-N      每句柄条目数
+;   TLB-CUR    每句柄当前选中（-1 = 无）
+TLB-ITEM []str = with-len(0)
+TLB-SBASE []i64 = with-len(0)
+TLB-N []i64 = with-len(0)
+TLB-CUR []i64 = with-len(0)
+
+; 阶段69：sidebar 的分组 / 条目池（都是扁平只增）+ 每句柄基址与计数 + 折叠位
+;   SDB-GROUP   组标题（扁平，每次 sdb-add-group 一条）
+;   SDB-GSBASE  每句柄组基址
+;   SDB-GNC     每句柄组数
+;   SDB-ITEM    条目标签（扁平，每次 sdb-add-item 一条）
+;   SDB-ITOG    每条条目属于哪个组（与 SDB-ITEM 平行）
+;   SDB-ISBASE  每句柄条目基址
+;   SDB-IN      每句柄条目数
+;   SDB-COLL    每句柄折叠位（0 展开 / 1 折叠）
+SDB-GROUP []str = with-len(0)
+SDB-GSBASE []i64 = with-len(0)
+SDB-GNC []i64 = with-len(0)
+SDB-ITEM []str = with-len(0)
+SDB-ITOG []i64 = with-len(0)
+SDB-ISBASE []i64 = with-len(0)
+SDB-IN []i64 = with-len(0)
+SDB-COLL []i64 = with-len(0)
+
+; 阶段70：sheet 的展开位 / 停靠边（每句柄）
+;   side: 0=左 1=右 2=上 3=下
+SHT-OPEN []i64 = with-len(0)
+SHT-SIDE []i64 = with-len(0)
+
+; 阶段71：text-node 的样式片段池（扁平只增）+ 每句柄基址 / 片段数
+;   片段颜色 -1 = 继承组件自身 CMP-COLOR[h]
+TXN-RUN []str = with-len(0)
+TXN-COL []i64 = with-len(0)
+TXN-SBASE []i64 = with-len(0)
+TXN-N []i64 = with-len(0)
 INP-C-KW = 0x4A90E2FF              ; 关键字 / 标识符强调
 INP-C-STR = 0x50C878FF             ; 字符串
 INP-C-COM = 0x9AA0B4FF             ; 注释（nolang 的 `;` 到行尾）
@@ -304,6 +486,68 @@ cmp-alloc = (kind i64, text str, text2 str, color i64, value i64) (h i64) {
     CB-MBASE.push(0)
     CB-MN.push(0)
     CB-MCUR.push(-1)
+    ; 阶段46：index-path 段池随每个组件槽一起长
+    IP-SBASE.push(0)
+    IP-SN.push(0)
+    ; 阶段53：breadcrumb 条目池随每个组件槽一起长（分隔符默认「 / 」）
+    BC-SBASE.push(0)
+    BC-N.push(0)
+    BC-SEP.push(' / ')
+    ; 阶段55：description-list 行池随每个组件槽一起长
+    DL-SBASE.push(0)
+    DL-N.push(0)
+    ; 阶段56：accordion 组池随每个组件槽一起长
+    AC-SBASE.push(0)
+    AC-N.push(0)
+    ; 阶段57：carousel 幻灯片池随每个组件槽一起长
+    CR-SBASE.push(0)
+    CR-N.push(0)
+    ; 阶段58：collapsible 正文行池随每个组件槽一起长
+    CL-SBASE.push(0)
+    CL-N.push(0)
+    ; 阶段60：history 条目池随每个组件槽一起长（条目池本身只增）
+    HST-SBASE.push(0)
+    HST-N.push(0)
+    ; 阶段61：inspector 字段池随每个组件槽一起长（字段池本身只增）
+    IN-SBASE.push(0)
+    IN-N.push(0)
+    ; 阶段62：message-scroller 消息池随每个组件槽一起长（消息池本身只增）
+    MS-SBASE.push(0)
+    MS-N.push(0)
+    ; 阶段63：status-bar 分段池随每个组件槽一起长（分段池本身只增）
+    SB-SBASE.push(0)
+    SB-N.push(0)
+    ; 阶段64：popover 正文行池随每个组件槽一起长（行池本身只增）
+    PV-SBASE.push(0)
+    PV-N.push(0)
+    ; 阶段65：questionnaire 题池随每个组件槽一起长（题池本身只增）
+    QA-SBASE.push(0)
+    QA-N.push(0)
+    ; 阶段66：searchable-list 的条目池 / 匹配表随每个组件槽一起长（池本身只增）
+    SL-SBASE.push(0)
+    SL-N.push(0)
+    SL-MBASE.push(0)
+    SL-MN.push(0)
+    SL-CUR.push(-1)
+    ; 阶段67：title-bar 按钮池随每个组件槽一起长（池本身只增）
+    TTB-SBASE.push(0)
+    TTB-N.push(0)
+    ; 阶段68：toolbar 条目池随每个组件槽一起长（池本身只增）
+    TLB-SBASE.push(0)
+    TLB-N.push(0)
+    TLB-CUR.push(-1)
+    ; 阶段69：sidebar 分组 / 条目池随每个组件槽一起长（池本身只增）
+    SDB-GSBASE.push(0)
+    SDB-GNC.push(0)
+    SDB-ISBASE.push(0)
+    SDB-IN.push(0)
+    SDB-COLL.push(0)
+    ; 阶段70：sheet 展开位 / 停靠边随每个组件槽一起长
+    SHT-OPEN.push(0)
+    SHT-SIDE.push(0)
+    ; 阶段71：text-node 片段池随每个组件槽一起长（池本身只增）
+    TXN-SBASE.push(0)
+    TXN-N.push(0)
     h = CMP-KIND.len() - 1
 }
 
@@ -817,9 +1061,13 @@ cmp-stepper = () (h i64) {
 }
 cmp-color-picker = () (h i64) {
     h = cmp-alloc(C-COLOR-PICKER, '', '', 0x4A90E2FF, 0)
+    ; hue 是派生量：构造时就按初始色算好（0x4A90E2FF → 213）
+    CMP-VALUE[h] = 213
 }
 cmp-date-picker = () (h i64) {
-    h = cmp-alloc(C-DATE-PICKER, '', '', 0xE8E8F0FF, 0)
+    h = cmp-alloc(C-DATE-PICKER, '', '', 0xE8E8F0FF, 2026)
+    CMP-VALUE2[h] = 1
+    CMP-VALUE3[h] = 1
 }
 cmp-form = () (h i64) {
     h = cmp-alloc(C-FORM, '', '', 0x1E1E28FF, 0)
@@ -834,6 +1082,7 @@ cmp-tab = () (h i64) {
 }
 cmp-breadcrumb = () (h i64) {
     h = cmp-alloc(C-BREADCRUMB, '', '', 0x9AA0B4FF, 0)
+    ; 条目池随 cmp-alloc 一起长（BC-SBASE / BC-N / BC-SEP）
 }
 cmp-sidebar = () (h i64) {
     h = cmp-alloc(C-SIDEBAR, '', '', 0x2A2A3AFF, 0)
@@ -944,6 +1193,7 @@ cmp-editor = () (h i64) {
 }
 cmp-accordion = () (h i64) {
     h = cmp-alloc(C-ACCORDION, '', '', 0x2A2A3AFF, 0)
+    ; 组池随 cmp-alloc 一起长（AC-SBASE / AC-N），组用 ac-add 加
 }
 cmp-carousel = () (h i64) {
     h = cmp-alloc(C-CAROUSEL, '', '', 0x2A2A3AFF, 0)
@@ -960,6 +1210,7 @@ cmp-rating = (max i64) (h i64) {
 }
 cmp-description-list = () (h i64) {
     h = cmp-alloc(C-DESCRIPTION-LIST, '', '', 0x2A2A3AFF, 0)
+    ; 行池随 cmp-alloc 一起长（DL-SBASE / DL-N），行用 dl-add 加
 }
 cmp-group-box = (title str) (h i64) {
     h = cmp-alloc(C-GROUP-BOX, title, '', 0x2A2A3AFF, 0)
@@ -970,8 +1221,9 @@ cmp-collapsible = (title str) (h i64) {
 cmp-diff = () (h i64) {
     h = cmp-alloc(C-DIFF, '', '', 0x2A2A3AFF, 0)
 }
+; 阶段48：VALUE = 缩进（每级空格数，默认 4），TEXT2 = 语言（默认空）
 cmp-highlighter = (code str) (h i64) {
-    h = cmp-alloc(C-HIGHLIGHTER, code, '', 0x1E1E28FF, 0)
+    h = cmp-alloc(C-HIGHLIGHTER, code, '', 0x1E1E28FF, 4)
 }
 cmp-clipboard = () (h i64) {
     h = cmp-alloc(C-CLIPBOARD, '', '', 0x9AA0B4FF, 0)
@@ -994,8 +1246,10 @@ cmp-grid = (cols i64, rows i64) (h i64) {
 cmp-text-node = (text str) (h i64) {
     h = cmp-alloc(C-TEXT, text, '', 0xE8E8F0FF, 0)
 }
+; 阶段48：TEXT = 名字，VALUE = 模式（0 亮），VALUE2 = 密度（1 标准），COLOR = 强调色
 cmp-theme = () (h i64) {
-    h = cmp-alloc(C-THEME, '', '', 0x4A90E2FF, 0)
+    h = cmp-alloc(C-THEME, 'noui', '', 0x4A90E2FF, 0)
+    CMP-VALUE2[h] = 1
 }
 cmp-sizing = () (h i64) {
     h = cmp-alloc(C-SIZING, '', '', 0x2A2A3AFF, 0)
@@ -1008,6 +1262,10 @@ cmp-root = () (h i64) {
 }
 cmp-window-ext = () (h i64) {
     h = cmp-alloc(C-WINDOW-EXT, '', '', 0x1E1E28FF, 0)
+    we-ensure(h)
+    CMP-VALUE[h] = ct-or(WE-F-RES, WE-F-BRD)
+    CMP-VALUE2[h] = 1
+    h = h
 }
 
 ; G 其他
@@ -1983,6 +2241,17 @@ ct-div = (a i64, b i64) (v i64) {
     }
     v = v
 }
+; 非负余数（阶段47 color-picker / date-picker 用）：a 可以是负数，
+; 结果恒在 [0, b)；b <= 0 给 0。除法向零截断，所以负数要先补一个 b。
+ct-rem = (a i64, b i64) (r i64) {
+    r = 0
+    (b > 0) -> {
+        q = ct-div(a, b)
+        r = ct-sub(a, ct-mul(q, b))
+        (r < 0) -> { r = ct-add(r, b) }
+    }
+    r = r
+}
 ; 夹紧（阶段36 可拆面板用；语义与声明式 dv-clamp 一致：hi <= 0 = 不夹上限）
 ct-clamp = (v i64, lo i64, hi i64) (r i64) {
     r = v
@@ -1991,6 +2260,17 @@ ct-clamp = (v i64, lo i64, hi i64) (r i64) {
         (v > hi) -> { r = hi }
     }
     r = r
+}
+; 位运算（阶段52 C-WINDOW-EXT 的 flags 池用）：`|` / `&` 直接作用于 i64，
+; 取反用 `ct-not`（`~x == -1 - x`，避开会产生 ?i64 的 `-`）。
+ct-or = (a i64, b i64) (v i64) {
+    v = a | b
+}
+ct-and = (a i64, b i64) (v i64) {
+    v = a & b
+}
+ct-not = (a i64) (v i64) {
+    v = ct-sub(-1, a)
 }
 
 ; ============================================================================
@@ -2303,6 +2583,1649 @@ speech-set-lang = (h i64, l str) () {
     disabled = CMP-FLAGS[h] & F-DISABLED
     (disabled != 0) -> return
     CMP-TEXT2[h] = l
+}
+
+; ============================================================================
+; 阶段46：元数据族 attachment / clipboard / index-path
+; ============================================================================
+; 目录第 58 行承诺 attachment「name, size」、第 73 行承诺 clipboard「content」、
+; 第 86 行承诺 index-path「path segments」，但命令式侧三者都只有一个构造函数。
+; 槽位沿用既有约定：
+;   attachment：CMP-TEXT = 文件名，CMP-VALUE = 字节数（>= 0）。
+;   clipboard ：CMP-TEXT = 内容。
+;   index-path：段池 IP-SEG（扁平只增）+ 每句柄基址 / 段数。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-BTN-H=4000、CS-LINE-H=2400。
+
+; ---- attachment：图标方块 32px、内边距 12px、间隙 8px ----
+att-icon = () (w i64) { w = 3200 }
+att-pad = () (p i64) { p = 1200 }
+att-gap = () (g i64) { g = 800 }
+
+att-name = (h i64) (s str) {
+    s = CMP-TEXT[h]: {
+        ok -> it
+
+        -> ''
+    }
+}
+att-set-name = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+}
+att-size = (h i64) (n i64) {
+    n = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+att-set-size = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (n < 0) -> { n = 0 }
+    CMP-VALUE[h] = n
+}
+; 字节数 → 「12 B」/「3 KB」/「2 MB」（1024 进位，整数部分）
+att-size-text = (h i64) (s str) {
+    n = att-size(h)
+    s = ''
+    (n < 1024) -> {
+        s.push-str(n.to-str())
+        s.push-str(' B')
+    }
+    (n >= 1024) -> {
+        (n < 1048576) -> {
+            s.push-str(ct-div(n, 1024).to-str())
+            s.push-str(' KB')
+        }
+        (n >= 1048576) -> {
+            s.push-str(ct-div(n, 1048576).to-str())
+            s.push-str(' MB')
+        }
+    }
+    s = s
+}
+
+; ---- clipboard：字段 + 右端复制方块（24px）----
+clip-pad = () (p i64) { p = 1200 }
+clip-gap = () (g i64) { g = 800 }
+clip-copy-w = () (w i64) { w = 2400 }
+
+clip-content = (h i64) (s str) {
+    s = CMP-TEXT[h]: {
+        ok -> it
+
+        -> ''
+    }
+}
+clip-set-content = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+}
+clip-len = (h i64) (n i64) {
+    n = clip-content(h).len()
+}
+
+; ---- index-path：段池（扁平只增）+ 每句柄基址 / 段数 ----
+ip-count = (h i64) (n i64) {
+    n = ct-get(IP-SN, h)
+}
+ip-seg = (h i64, i i64) (s str) {
+    s = ''
+    n = ip-count(h)
+    ((i >= 0) && (i < n)) -> {
+        b = ct-get(IP-SBASE, h)
+        s = IP-SEG[ct-add(b, i)]: {
+            ok -> it
+
+            -> ''
+        }
+    }
+    s = s
+}
+ip-add-seg = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(IP-SBASE, h)
+    n = ct-get(IP-SN, h)
+    (n == 0) -> { b = IP-SEG.len() }
+    IP-SEG.push(s)
+    ct-set(IP-SBASE, h, b)
+    ct-set(IP-SN, h, ct-inc(n))
+}
+ip-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(IP-SBASE, h, 0)
+    ct-set(IP-SN, h, 0)
+}
+; 分隔符文案与宽度（渲染层也抄一份字面量）
+ip-sep = () (s str) { s = ' / ' }
+
+; ---- breadcrumb：条目池（扁平只增）+ 每句柄基址 / 条目数 / 分隔符 ----
+; 语义与 index-path 同源，但区分「祖先 / 当前页」：除最后一项外的条目是
+; 可回退的祖先（muted），最后一项是当前页（前景色）。分隔符每句柄可改。
+bc-count = (h i64) (n i64) {
+    n = ct-get(BC-N, h)
+}
+bc-item = (h i64, i i64) (s str) {
+    s = ''
+    n = bc-count(h)
+    ((i >= 0) && (i < n)) -> {
+        b = ct-get(BC-SBASE, h)
+        s = ed-arr-get-s(BC-ITEM, ct-add(b, i))
+    }
+    s = s
+}
+; 追加一项；扁平池只增，基址只在空的时候记一次
+bc-add-item = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(BC-SBASE, h)
+    n = ct-get(BC-N, h)
+    (n == 0) -> { b = BC-ITEM.len() }
+    BC-ITEM.push(s)
+    ct-set(BC-SBASE, h, b)
+    ct-set(BC-N, h, ct-inc(n))
+}
+bc-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(BC-SBASE, h, 0)
+    ct-set(BC-N, h, 0)
+}
+bc-sep = (h i64) (s str) {
+    s = ed-arr-get-s(BC-SEP, h)
+    (s.len() == 0) -> { s = ' / ' }
+    s = s
+}
+bc-set-sep = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ed-arr-set-s(BC-SEP, h, s)
+}
+; 最后一项的下标（空 = -1）
+bc-last = (h i64) (i i64) {
+    n = bc-count(h)
+    i = -1
+    (n > 0) -> { i = ct-sub(n, 1) }
+}
+; 整条路径文案（「a / b / c」）
+bc-join = (h i64) (s str) {
+    s = ''
+    n = bc-count(h)
+    sep = bc-sep(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (i > 0) -> { s.push-str(sep) }
+        it = bc-item(h, i)
+        s.push-str(it)
+        i = ct-inc(i)
+    }
+    s = s
+}
+
+; ---- skeleton：占位条行数 / 行距 / 扫光相位 ----
+; 目录第 51 行承诺 skeleton「lines, animated」。槽位：
+;   CMP-VALUE  = 扫光相位 0..100（0 = 不扫）
+;   CMP-VALUE2 = 占位条行数（夹 0..8）
+;   CMP-VALUE3 = 行距（下限 800，与场景的 CS-GAP 同源，这里抄字面量）
+sk-lines = (h i64) (n i64) {
+    n = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+    (n < 0) -> { n = 0 }
+}
+sk-set-lines = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-clamp(n, 0, 8)
+    CMP-VALUE2[h] = n
+}
+sk-gap = (h i64) (g i64) {
+    g = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 800
+    }
+    (g < 800) -> { g = 800 }
+}
+sk-set-gap = (h i64, g i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (g < 800) -> { g = 800 }
+    CMP-VALUE3[h] = g
+}
+sk-phase = (h i64) (p i64) {
+    p = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    (p < 0) -> { p = 0 }
+    (p > 100) -> { p = 100 }
+}
+sk-set-phase = (h i64, p i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    p = ct-clamp(p, 0, 100)
+    CMP-VALUE[h] = p
+}
+
+; ============================================================================
+; 输入族 color-picker / date-picker（阶段47）
+; ============================================================================
+; 目录第 25 行承诺 color-picker「rgba, hue」、第 26 行承诺 date-picker
+; 「year, month, day」，但命令式侧两者都只有一个构造函数。槽位沿用既有约定：
+;   color-picker：CMP-COLOR = 0xRRGGBBAA，CMP-VALUE = hue 0..360。
+;   date-picker ：CMP-VALUE = 年，VALUE2 = 月（1..12），VALUE3 = 日。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-BTN-H=4000、CS-LINE-H=2400。
+; 打包色拆通道只用移位 + 掩码；合成色用**加法**（位段不重叠，不会进位），
+; 不用按位或 —— 与既有 ct-* 助手保持同一套写法。
+
+; ---- color-picker：色板 32px、内边距 12px、间隙 8px ----
+cp-swatch = () (w i64) { w = 3200 }
+cp-pad = () (p i64) { p = 1200 }
+cp-gap = () (g i64) { g = 800 }
+
+cp-color = (h i64) (c i64) {
+    c = CMP-COLOR[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+cp-red = (h i64) (n i64) { n = (cp-color(h) >> 24) & 0xFF }
+cp-green = (h i64) (n i64) { n = (cp-color(h) >> 16) & 0xFF }
+cp-blue = (h i64) (n i64) { n = (cp-color(h) >> 8) & 0xFF }
+cp-alpha = (h i64) (n i64) { n = cp-color(h) & 0xFF }
+
+; 写单通道：清掉对应字节再或上新值（用加法，位段不重叠）
+cp-set-red = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-clamp(n, 0, 255)
+    c = ct-add((cp-color(h) & 0x00FFFFFF), (n << 24))
+    CMP-COLOR[h] = c
+    CMP-VALUE[h] = cp-hue-of(cp-red(h), cp-green(h), cp-blue(h))
+}
+cp-set-green = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-clamp(n, 0, 255)
+    c = ct-add((cp-color(h) & 0xFF00FFFF), (n << 16))
+    CMP-COLOR[h] = c
+    CMP-VALUE[h] = cp-hue-of(cp-red(h), cp-green(h), cp-blue(h))
+}
+cp-set-blue = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-clamp(n, 0, 255)
+    c = ct-add((cp-color(h) & 0xFFFF00FF), (n << 8))
+    CMP-COLOR[h] = c
+    CMP-VALUE[h] = cp-hue-of(cp-red(h), cp-green(h), cp-blue(h))
+}
+cp-set-alpha = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-clamp(n, 0, 255)
+    c = ct-add((cp-color(h) & 0xFFFFFF00), n)
+    CMP-COLOR[h] = c
+}
+; 整色写入：顺手把 hue 重算出来（hue 是派生量，真源是 RGBA）
+cp-set-color = (h i64, c i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-COLOR[h] = c
+    r = (c >> 24) & 0xFF
+    g = (c >> 16) & 0xFF
+    b = (c >> 8) & 0xFF
+    CMP-VALUE[h] = cp-hue-of(r, g, b)
+}
+cp-hue = (h i64) (n i64) {
+    n = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+; 由 RGB 反算 hue（0..359）。max == min 时给 0。
+; 整数算法避开负数截断：负的差值走「基数 - 量」那一支。
+cp-hue-of = (r i64, g i64, b i64) (hu i64) {
+    mx = r
+    (g > mx) -> { mx = g }
+    (b > mx) -> { mx = b }
+    mn = r
+    (g < mn) -> { mn = g }
+    (b < mn) -> { mn = b }
+    d = ct-sub(mx, mn)
+    hu = 0
+    (d > 0) -> {
+        {
+            (mx == r) -> {
+                q = ct-sub(g, b)
+                (q < 0) -> { hu = ct-sub(360, ct-div(ct-mul(ct-sub(0, q), 60), d)) }
+                (q >= 0) -> { hu = ct-div(ct-mul(q, 60), d) }
+            }
+            (mx == g) -> {
+                q = ct-sub(b, r)
+                (q < 0) -> { hu = ct-sub(120, ct-div(ct-mul(ct-sub(0, q), 60), d)) }
+                (q >= 0) -> { hu = ct-add(120, ct-div(ct-mul(q, 60), d)) }
+            }
+            -> {
+                q = ct-sub(r, g)
+                (q < 0) -> { hu = ct-sub(240, ct-div(ct-mul(ct-sub(0, q), 60), d)) }
+                (q >= 0) -> { hu = ct-add(240, ct-div(ct-mul(q, 60), d)) }
+            }
+        }
+    }
+    hu = hu
+}
+; 由 hue 正算 RGB：固定 S = 191/255、V = 235/255（饱和度 / 明度是控件的外观
+; 选择，不额外占槽位）。返回 0..255 的三个通道。
+cp-hsv = (hh i64) (r i64, g i64, b i64) {
+    s = 191
+    v = 235
+    c = ct-div(ct-mul(v, s), 255)
+    f = ct-rem(hh, 60)
+    t = ct-sub(ct-mul(f, 2), 60)
+    (t < 0) -> { t = ct-sub(0, t) }
+    x = ct-div(ct-mul(c, ct-sub(60, t)), 60)
+    m = ct-sub(v, c)
+    seg = ct-div(hh, 60)
+    r = m
+    g = m
+    b = m
+    {
+        (seg == 0) -> {
+            r = ct-add(c, m)
+            g = ct-add(x, m)
+        }
+        (seg == 1) -> {
+            r = ct-add(x, m)
+            g = ct-add(c, m)
+        }
+        (seg == 2) -> {
+            g = ct-add(c, m)
+            b = ct-add(x, m)
+        }
+        (seg == 3) -> {
+            g = ct-add(x, m)
+            b = ct-add(c, m)
+        }
+        (seg == 4) -> {
+            r = ct-add(x, m)
+            b = ct-add(c, m)
+        }
+        -> {
+            r = ct-add(c, m)
+            b = ct-add(x, m)
+        }
+    }
+}
+cp-set-hue = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-clamp(n, 0, 360)
+    CMP-VALUE[h] = n
+    r, g, b = cp-hsv(n)
+    a = cp-alpha(h)
+    CMP-COLOR[h] = ct-add(ct-add((r << 24), (g << 16)), ct-add((b << 8), a))
+}
+; 十六进制文案「#RRGGBB」
+CP-HEX-DIGITS = '0123456789ABCDEF'
+cp-hex2 = (n i64) (s str) {
+    s = ''
+    s.push(CP-HEX-DIGITS[ct-div(n, 16)])
+    s.push(CP-HEX-DIGITS[ct-rem(n, 16)])
+    s = s
+}
+cp-hex = (h i64) (s str) {
+    c = cp-color(h)
+    r = (c >> 24) & 0xFF
+    g = (c >> 16) & 0xFF
+    b = (c >> 8) & 0xFF
+    s = '#'
+    s.push-str(cp-hex2(r))
+    s.push-str(cp-hex2(g))
+    s.push-str(cp-hex2(b))
+    s = s
+}
+
+; ---- date-picker：VALUE = 年，VALUE2 = 月（1..12），VALUE3 = 日 ----
+dp-year = (h i64) (n i64) {
+    n = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+dp-month = (h i64) (n i64) {
+    n = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+dp-day = (h i64) (n i64) {
+    n = CMP-VALUE3[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+; 闰年：是 = 1，否 = 0
+dp-leap = (y i64) (n i64) {
+    n = 0
+    (ct-rem(y, 4) == 0) -> {
+        (ct-rem(y, 100) == 0) -> {
+            (ct-rem(y, 400) == 0) -> { n = 1 }
+        }
+        (ct-rem(y, 100) != 0) -> { n = 1 }
+    }
+    n = n
+}
+dp-days = (h i64) (n i64) {
+    m = dp-month(h)
+    y = dp-year(h)
+    n = 30
+    {
+        (m == 1) -> { n = 31 }
+        (m == 2) -> {
+            n = 28
+            (dp-leap(y) == 1) -> { n = 29 }
+        }
+        (m == 3) -> { n = 31 }
+        (m == 4) -> { n = 30 }
+        (m == 5) -> { n = 31 }
+        (m == 6) -> { n = 30 }
+        (m == 7) -> { n = 31 }
+        (m == 8) -> { n = 31 }
+        (m == 9) -> { n = 30 }
+        (m == 10) -> { n = 31 }
+        (m == 11) -> { n = 30 }
+        -> { n = 31 }
+    }
+    n = n
+}
+; 内部：把日夹到当月天数内（改年 / 月之后调用）
+dp-fix-day = (h i64) () {
+    n = dp-days(h)
+    d = dp-day(h)
+    (d > n) -> { CMP-VALUE3[h] = n }
+    (d < 1) -> { CMP-VALUE3[h] = 1 }
+}
+dp-set-year = (h i64, y i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (y < 1) -> { y = 1 }
+    CMP-VALUE[h] = y
+    dp-fix-day(h)
+}
+dp-set-month = (h i64, m i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    m = ct-clamp(m, 1, 12)
+    CMP-VALUE2[h] = m
+    dp-fix-day(h)
+}
+dp-set-day = (h i64, d i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = dp-days(h)
+    CMP-VALUE3[h] = ct-clamp(d, 1, n)
+}
+dp-set-date = (h i64, y i64, m i64, d i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (y < 1) -> { y = 1 }
+    m = ct-clamp(m, 1, 12)
+    CMP-VALUE[h] = y
+    CMP-VALUE2[h] = m
+    n = dp-days(h)
+    CMP-VALUE3[h] = ct-clamp(d, 1, n)
+}
+; 翻下一个月（12 月回绕到 1 月）；走 dp-set-month，所以同样受 F-DISABLED 约束
+dp-next-month = (h i64) () {
+    m = dp-month(h)
+    (m >= 12) -> { dp-set-month(h, 1) }
+    (m < 12) -> { dp-set-month(h, ct-add(m, 1)) }
+}
+; 两位补零
+dp-pad2 = (n i64) (s str) {
+    s = ''
+    (n < 10) -> { s.push-str('0') }
+    s.push-str(n.to-str())
+    s = s
+}
+; 「YYYY-MM-DD」
+dp-label = (h i64) (s str) {
+    s = ''
+    s.push-str(dp-year(h).to-str())
+    s.push-str('-')
+    s.push-str(dp-pad2(dp-month(h)))
+    s.push-str('-')
+    s.push-str(dp-pad2(dp-day(h)))
+    s = s
+}
+
+; ---- highlighter：TEXT = 代码，TEXT2 = 语言，VALUE = 缩进（每级空格数）----
+; 着色直接复用编辑器的 ed-lex-line（阶段38 起就是它给输入框 / 编辑器上色），
+; 行几何复用 textarea 的「'\n' 分行」算法（阶段39），这里只加缩进折算。
+hl-pad = () (p i64) { p = 1200 }
+hl-gutter = () (g i64) { g = 4000 }
+hl-gap = () (g i64) { g = 800 }
+
+hl-code = (h i64) (s str) { s = cmp-text(h) }
+hl-set-code = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cmp-set-text(h, s)
+}
+hl-lang = (h i64) (s str) { s = cmp-text2(h) }
+hl-set-lang = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cmp-set-text2(h, s)
+}
+hl-tab = (h i64) (n i64) { n = CMP-VALUE[h]: { ok -> it
+
+-> 0 } }
+hl-set-tab = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-clamp(n, 0, 8)
+    CMP-VALUE[h] = n
+}
+; 行数：'\n' 个数 + 1（空文本算 1 行）
+hl-lines = (h i64) (n i64) {
+    t = hl-code(h)
+    nb = t.len-bytes()
+    n = 1
+    i = 0
+    !! {
+        (i >= nb) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+; 第 l 行（0 基）起始字节下标
+hl-line-start = (h i64, l i64) (b i64) {
+    t = hl-code(h)
+    nb = t.len-bytes()
+    b = 0
+    i = 0
+    seen = 0
+    !! {
+        (seen >= l) -> { ** }
+        (i >= nb) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> {
+            seen = ct-inc(seen)
+            b = ct-inc(i)
+        }
+        i = ct-inc(i)
+    }
+    b = b
+}
+; 第 l 行的字节长度（不含 '\n'）
+hl-line-len-b = (h i64, l i64) (n i64) {
+    t = hl-code(h)
+    nb = t.len-bytes()
+    n = 0
+    i = hl-line-start(h, l)
+    !! {
+        (i >= nb) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> { ** }
+        n = ct-inc(n)
+        i = ct-inc(i)
+    }
+    n = n
+}
+hl-line = (h i64, l i64) (s str) {
+    t = hl-code(h)
+    b = hl-line-start(h, l)
+    s = t.slice-bytes(b, ct-add(b, hl-line-len-b(h, l)))
+}
+; 展开长度：tab 折算成 hl-tab 个空格（其余字符按 1 计）
+hl-expand-len = (h i64, l i64) (n i64) {
+    t = hl-code(h)
+    nb = t.len-bytes()
+    n = 0
+    i = hl-line-start(h, l)
+    !! {
+        (i >= nb) -> { ** }
+        ch = t.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> { ** }
+        (ch == '\t') -> { n = ct-add(n, hl-tab(h)) }
+        (ch != '\t') -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+hl-max-len = (h i64) (m i64) {
+    n = hl-lines(h)
+    m = 0
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        el = hl-expand-len(h, i)
+        (el > m) -> { m = el }
+        i = ct-inc(i)
+    }
+    m = m
+}
+
+; ---- theme：TEXT = 名字，VALUE = 模式（0 亮 / 1 暗），VALUE2 = 密度（0/1/2），COLOR = 强调色 ----
+th-pad = () (p i64) { p = 1200 }
+th-gap = () (g i64) { g = 800 }
+th-label-h = () (n i64) { n = 1600 }
+
+th-name = (h i64) (s str) { s = cmp-text(h) }
+th-set-name = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cmp-set-text(h, s)
+}
+th-mode = (h i64) (n i64) { n = CMP-VALUE[h]: { ok -> it
+
+-> 0 } }
+th-set-mode = (h i64, m i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-VALUE[h] = ct-clamp(m, 0, 1)
+}
+th-density = (h i64) (n i64) { n = CMP-VALUE2[h]: { ok -> it
+
+-> 1 } }
+th-set-density = (h i64, d i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-VALUE2[h] = ct-clamp(d, 0, 2)
+}
+th-accent = (h i64) (c i64) { c = CMP-COLOR[h]: { ok -> it
+
+-> 0 } }
+th-set-accent = (h i64, c i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-COLOR[h] = c
+}
+; 密度 -> 色板边长（紧凑 / 标准 / 宽松）
+th-swatch = (h i64) (n i64) {
+    n = 4800
+    (th-density(h) == 0) -> { n = 3600 }
+    (th-density(h) == 2) -> { n = 6000 }
+    n = n
+}
+th-mode-name = (h i64) (s str) {
+    s = 'light'
+    (th-mode(h) == 1) -> { s = 'dark' }
+    s = s
+}
+th-bg = (h i64) (c i64) {
+    c = 0xFFFFFFFF
+    (th-mode(h) == 1) -> { c = 0x1E1E28FF }
+    c = c
+}
+th-fg = (h i64) (c i64) {
+    c = 0x22222AFF
+    (th-mode(h) == 1) -> { c = 0xE8E8F0FF }
+    c = c
+}
+th-muted = (h i64) (c i64) {
+    c = 0x666670FF
+    (th-mode(h) == 1) -> { c = 0x9AA0B4FF }
+    c = c
+}
+; 四个色板：0 = 底，1 = 前景，2 = 强调，3 = 次要
+th-swatch-color = (h i64, i i64) (c i64) {
+    c = th-bg(h)
+    (i == 1) -> { c = th-fg(h) }
+    (i == 2) -> { c = th-accent(h) }
+    (i == 3) -> { c = th-muted(h) }
+    c = c
+}
+th-swatch-label = (i i64) (s str) {
+    s = 'BG'
+    (i == 1) -> { s = 'FG' }
+    (i == 2) -> { s = 'ACCENT' }
+    (i == 3) -> { s = 'MUTED' }
+    s = s
+}
+
+; ============================================================================
+; 阶段49：diff —— CMP-TEXT = old，CMP-TEXT2 = new。
+; 目录第 71 行承诺「old, new, hunks」，此前只有一个 cmp-diff() 构造函数。
+; 这里补：行切分（照抄阶段39 的 '\n' 算法）+ LCS 动态规划 + 回溯成行。
+; 行级别：0 上下文 / 1 新增 / 2 删除；hunk = 连续非上下文行段。
+; 缓存：模块级 DF-* 只存「最近一次」的那份 diff，df-build 发现 old/new 变了就重算
+; （单次调用内 paint 会连续读 rows / row-op / row-text，只有第一次真算）。
+; ============================================================================
+DF-CACHE-H = -1
+DF-CACHE-OLD = ''
+DF-CACHE-NEW = ''
+DF-CACHE-ROWS = 0
+DF-CACHE-HUNKS = 0
+DF-OP []i64 = with-len(0)
+DF-TXT []str = with-len(0)
+DF-ONO []i64 = with-len(0)
+DF-NNO []i64 = with-len(0)
+DF-HSTART []i64 = with-len(0)
+
+df-pad = () (p i64) { p = 1200 }
+df-gutter = () (g i64) { g = 4800 }
+
+df-old = (h i64) (s str) { s = cmp-text(h) }
+df-set-old = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cmp-set-text(h, s)
+}
+df-new = (h i64) (s str) { s = cmp-text2(h) }
+df-set-new = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cmp-set-text2(h, s)
+}
+
+; 行切分：照抄阶段39 的「'\n' 分行」算法（保留末尾空行）
+df-split = (s str) (out []str) {
+    out = with-len(0)
+    nb = s.len-bytes()
+    start = 0
+    i = 0
+    !! {
+        (i >= nb) -> {
+            out.push(s.slice-bytes(start, nb))
+            **
+        }
+        ch = s.slice-bytes(i, ct-add(i, 1))
+        (ch == '\n') -> {
+            out.push(s.slice-bytes(start, i))
+            start = ct-inc(i)
+        }
+        i = ct-inc(i)
+    }
+    out = out
+}
+
+df-rev-i = (a []i64) (b []i64) {
+    b = with-len(0)
+    i = ct-sub(a.len(), 1)
+    !! {
+        (i < 0) -> { ** }
+        b.push(ct-get(a, i))
+        i = ct-sub(i, 1)
+    }
+    b = b
+}
+
+; LCS 长度表：dp[i][j] = LCS(a[0..i), b[0..j))，i/j 从 0 起，宽 = m+1
+df-lcs = (a []str, b []str) (dp []i64) {
+    n = a.len()
+    m = b.len()
+    w = ct-inc(m)
+    dp = with-len(ct-mul(ct-inc(n), w))
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        j = 0
+        !! {
+            (j >= m) -> { ** }
+            ai = ed-arr-get-s(a, i)
+            bj = ed-arr-get-s(b, j)
+            idx = ct-add(ct-mul(ct-inc(i), w), ct-inc(j))
+            (ai == bj) -> {
+                v = ct-add(ct-get(dp, ct-add(ct-mul(i, w), j)), 1)
+                ct-set(dp, idx, v)
+            }
+            (ai != bj) -> {
+                x = ct-get(dp, ct-add(ct-mul(ct-inc(i), w), j))
+                y = ct-get(dp, ct-add(ct-mul(i, w), ct-inc(j)))
+                (x >= y) -> { ct-set(dp, idx, x) }
+                (x < y) -> { ct-set(dp, idx, y) }
+            }
+            j = ct-inc(j)
+        }
+        i = ct-inc(i)
+    }
+    dp = dp
+}
+
+; 回溯：从 (n, m) 倒着走，产出反序 ops，最后翻转
+df-backtrack = (a []str, b []str, dp []i64) (ops []i64) {
+    n = a.len()
+    m = b.len()
+    w = ct-inc(m)
+    ops = with-len(0)
+    i = n
+    j = m
+    k = 0
+    tot = ct-add(n, m)
+    !! {
+        (k >= tot) -> { ** }
+        {
+            (i > 0 && j > 0) -> {
+                ai = ed-arr-get-s(a, ct-sub(i, 1))
+                bj = ed-arr-get-s(b, ct-sub(j, 1))
+                (ai == bj) -> {
+                    ops.push(0)
+                    i = ct-sub(i, 1)
+                    j = ct-sub(j, 1)
+                }
+                (ai != bj) -> {
+                    x = ct-get(dp, ct-add(ct-mul(i, w), ct-sub(j, 1)))
+                    y = ct-get(dp, ct-add(ct-mul(ct-sub(i, 1), w), j))
+                    (x >= y) -> {
+                        ops.push(1)
+                        j = ct-sub(j, 1)
+                    }
+                    (x < y) -> {
+                        ops.push(2)
+                        i = ct-sub(i, 1)
+                    }
+                }
+            }
+            (i > 0 && j <= 0) -> {
+                ops.push(2)
+                i = ct-sub(i, 1)
+            }
+            (i <= 0 && j > 0) -> {
+                ops.push(1)
+                j = ct-sub(j, 1)
+            }
+        }
+        k = ct-inc(k)
+    }
+    ops = df-rev-i(ops)
+}
+
+; 重算：切行 -> LCS -> 回溯 -> 生成行 + hunk 起点
+df-build = (h i64) () {
+    fresh = (DF-CACHE-H == h) && (DF-CACHE-OLD == cmp-text(h)) && (DF-CACHE-NEW == cmp-text2(h))
+    (!fresh) -> {
+        a = df-split(cmp-text(h))
+        b = df-split(cmp-text2(h))
+        dp = df-lcs(a, b)
+        ops = df-backtrack(a, b, dp)
+        DF-OP.truncate(0)
+        DF-TXT.truncate(0)
+        DF-ONO.truncate(0)
+        DF-NNO.truncate(0)
+        DF-HSTART.truncate(0)
+        n = ops.len()
+        ono = 1
+        nno = 1
+        rows = 0
+        hunks = 0
+        i = 0
+        !! {
+            (i >= n) -> { ** }
+            op = ct-get(ops, i)
+            DF-OP.push(op)
+            (op == 0) -> {
+                DF-TXT.push(ed-arr-get-s(a, ct-sub(ono, 1)))
+                DF-ONO.push(ono)
+                DF-NNO.push(nno)
+                ono = ct-inc(ono)
+                nno = ct-inc(nno)
+            }
+            (op == 1) -> {
+                DF-TXT.push(ed-arr-get-s(b, ct-sub(nno, 1)))
+                DF-ONO.push(0)
+                DF-NNO.push(nno)
+                nno = ct-inc(nno)
+            }
+            (op == 2) -> {
+                DF-TXT.push(ed-arr-get-s(a, ct-sub(ono, 1)))
+                DF-ONO.push(ono)
+                DF-NNO.push(0)
+                ono = ct-inc(ono)
+            }
+            (op != 0) -> {
+                prev = 0
+                (i > 0) -> { prev = ct-get(ops, ct-sub(i, 1)) }
+                (prev == 0) -> {
+                    DF-HSTART.push(i)
+                    hunks = ct-inc(hunks)
+                }
+            }
+            rows = ct-inc(rows)
+            i = ct-inc(i)
+        }
+        DF-CACHE-H = h
+        DF-CACHE-OLD = cmp-text(h)
+        DF-CACHE-NEW = cmp-text2(h)
+        DF-CACHE-ROWS = rows
+        DF-CACHE-HUNKS = hunks
+    }
+}
+
+df-rows = (h i64) (n i64) {
+    df-build(h)
+    n = DF-CACHE-ROWS
+}
+df-row-op = (h i64, i i64) (v i64) {
+    df-build(h)
+    v = ct-get(DF-OP, i)
+}
+df-row-text = (h i64, i i64) (s str) {
+    df-build(h)
+    s = ed-arr-get-s(DF-TXT, i)
+}
+df-row-old-no = (h i64, i i64) (v i64) {
+    df-build(h)
+    v = ct-get(DF-ONO, i)
+}
+df-row-new-no = (h i64, i i64) (v i64) {
+    df-build(h)
+    v = ct-get(DF-NNO, i)
+}
+df-hunks = (h i64) (n i64) {
+    df-build(h)
+    n = DF-CACHE-HUNKS
+}
+df-hunk-start = (h i64, k i64) (v i64) {
+    df-build(h)
+    v = ct-get(DF-HSTART, k)
+}
+
+df-count-add = (h i64) (n i64) {
+    df-build(h)
+    n = 0
+    i = 0
+    !! {
+        (i >= DF-CACHE-ROWS) -> { ** }
+        (ct-get(DF-OP, i) == 1) -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+df-count-del = (h i64) (n i64) {
+    df-build(h)
+    n = 0
+    i = 0
+    !! {
+        (i >= DF-CACHE-ROWS) -> { ** }
+        (ct-get(DF-OP, i) == 2) -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+df-max-len = (h i64) (m i64) {
+    df-build(h)
+    m = 0
+    i = 0
+    !! {
+        (i >= DF-CACHE-ROWS) -> { ** }
+        s = ed-arr-get-s(DF-TXT, i)
+        (s.len() > m) -> { m = s.len() }
+        i = ct-inc(i)
+    }
+    m = m
+}
+df-summary = (h i64) (s str) {
+    df-build(h)
+    a = df-count-add(h)
+    d = df-count-del(h)
+    s = '+'
+    s.push-str(a.to-str())
+    s.push-str(' ')
+    s.push-str('-')
+    s.push-str(d.to-str())
+    s = s
+}
+
+; ============================================================================
+; 图表 / 绘图（阶段50）
+; ============================================================================
+; 目录第 65 行承诺 chart「series, axes」、第 66 行承诺 plot「points, scale」，
+; 但命令式侧两者都只有一个构造函数。槽位沿用既有约定：
+;   chart：CMP-TEXT = 图表标题；值轴上限 CMP-VALUE2；序列名 / 值走池子。
+;   plot ：CMP-TEXT = 图表标题；坐标范围 CMP-VALUE2；点坐标走池子。
+; 数据池按句柄扁平索引（同阶段46 的 IP-* / 阶段38 的 INP-SG 段池思路）：
+;   CH-NAME 每句柄 CH-SERIES-MAX 格（序列名）
+;   CH-VAL  每句柄 CH-STRIDE 格（序列 * 点数 → 值）
+;   CH-SN / CH-PN 每句柄 1 格（序列数 / 每条序列点数）
+;   PL-X / PL-Y 每句柄 PL-PTS-MAX 格（点坐标）
+;   PL-CN / PL-SC 每句柄 1 格（点数 / 坐标范围）
+; 池子**懒增长**（ch-ensure / pl-ensure）：句柄只增，首次访问某句柄时把池子补到
+; 该句柄所需长度，cmp-alloc 不动。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-CHAR-W=800、CS-LINE-H=2400、CS-MIN-LEAF-W=6400。
+
+CH-SERIES-MAX = 3
+CH-PTS-MAX = 8
+CH-STRIDE = 24
+PL-PTS-MAX = 16
+CH-NAME []str = with-len(0)
+CH-VAL []i64 = with-len(0)
+CH-SN []i64 = with-len(0)
+CH-PN []i64 = with-len(0)
+PL-X []i64 = with-len(0)
+PL-Y []i64 = with-len(0)
+PL-CN []i64 = with-len(0)
+PL-SC []i64 = with-len(0)
+
+ch-ensure = (h i64) () {
+    need = ct-mul(ct-inc(h), CH-STRIDE)
+    !! {
+        (CH-VAL.len() >= need) -> { ** }
+        CH-VAL.push(0)
+    }
+    need = ct-mul(ct-inc(h), CH-SERIES-MAX)
+    !! {
+        (CH-NAME.len() >= need) -> { ** }
+        CH-NAME.push('')
+    }
+    need = ct-inc(h)
+    !! {
+        (CH-SN.len() >= need) -> { ** }
+        CH-SN.push(0)
+    }
+    !! {
+        (CH-PN.len() >= need) -> { ** }
+        CH-PN.push(0)
+    }
+}
+
+pl-ensure = (h i64) () {
+    need = ct-mul(ct-inc(h), PL-PTS-MAX)
+    !! {
+        (PL-X.len() >= need) -> { ** }
+        PL-X.push(0)
+    }
+    !! {
+        (PL-Y.len() >= need) -> { ** }
+        PL-Y.push(0)
+    }
+    need = ct-inc(h)
+    !! {
+        (PL-CN.len() >= need) -> { ** }
+        PL-CN.push(0)
+    }
+    !! {
+        (PL-SC.len() >= need) -> { ** }
+        PL-SC.push(100)
+    }
+}
+
+; ---- 池内下标 ----
+ch-nidx = (h i64, s i64) (v i64) { v = ct-add(ct-mul(h, CH-SERIES-MAX), s) }
+ch-vidx = (h i64, s i64, i i64) (v i64) {
+    v = ct-add(ct-mul(h, CH-STRIDE), ct-add(ct-mul(s, CH-PTS-MAX), i))
+}
+pl-idx = (h i64, i i64) (v i64) { v = ct-add(ct-mul(h, PL-PTS-MAX), i) }
+
+; ---- chart：序列数 / 点数 ----
+ch-series = (h i64) (n i64) {
+    ch-ensure(h)
+    n = ct-get(CH-SN, h)
+}
+ch-set-series = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ch-ensure(h)
+    (n < 0) -> { n = 0 }
+    (n > CH-SERIES-MAX) -> { n = CH-SERIES-MAX }
+    ct-set(CH-SN, h, n)
+}
+ch-points = (h i64) (n i64) {
+    ch-ensure(h)
+    n = ct-get(CH-PN, h)
+}
+ch-set-points = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ch-ensure(h)
+    (n < 0) -> { n = 0 }
+    (n > CH-PTS-MAX) -> { n = CH-PTS-MAX }
+    ct-set(CH-PN, h, n)
+}
+
+; ---- chart：序列名 ----
+ch-name = (h i64, s i64) (t str) {
+    ch-ensure(h)
+    t = ''
+    ((s >= 0) && (s < ct-get(CH-SN, h))) -> {
+        t = ed-arr-get-s(CH-NAME, ch-nidx(h, s))
+    }
+    t = t
+}
+ch-set-name = (h i64, s i64, v str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ch-ensure(h)
+    ((s >= 0) && (s < ct-get(CH-SN, h))) -> {
+        ed-arr-set-s(CH-NAME, ch-nidx(h, s), v)
+    }
+}
+
+; ---- chart：值轴上限（CMP-VALUE2）----
+ch-max = (h i64) (m i64) {
+    raw = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+    ; 0 = 没设过（构造函数给的就是 0）→ 默认 100
+    (raw <= 0) -> { raw = 100 }
+    (raw < 1) -> { raw = 1 }
+    m = raw
+}
+ch-set-max = (h i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (v < 1) -> { v = 1 }
+    CMP-VALUE2[h] = v
+}
+
+; ---- chart：值 ----
+ch-value = (h i64, s i64, i i64) (v i64) {
+    ch-ensure(h)
+    v = 0
+    ((s >= 0) && (s < ct-get(CH-SN, h)) && (i >= 0) && (i < ct-get(CH-PN, h))) -> {
+        v = ct-get(CH-VAL, ch-vidx(h, s, i))
+    }
+    v = v
+}
+ch-set-value = (h i64, s i64, i i64, val i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ch-ensure(h)
+    ((s >= 0) && (s < ct-get(CH-SN, h)) && (i >= 0) && (i < ct-get(CH-PN, h))) -> {
+        m = ch-max(h)
+        (val < 0) -> { val = 0 }
+        (val > m) -> { val = m }
+        ct-set(CH-VAL, ch-vidx(h, s, i), val)
+    }
+}
+ch-total = (h i64, s i64) (v i64) {
+    ch-ensure(h)
+    v = 0
+    pn = ct-get(CH-PN, h)
+    ((s >= 0) && (s < ct-get(CH-SN, h))) -> {
+        i = 0
+        !! {
+            (i >= pn) -> { ** }
+            v = ct-add(v, ct-get(CH-VAL, ch-vidx(h, s, i)))
+            i = ct-inc(i)
+        }
+    }
+    v = v
+}
+ch-peak = (h i64) (v i64) {
+    ch-ensure(h)
+    v = 0
+    sn = ct-get(CH-SN, h)
+    pn = ct-get(CH-PN, h)
+    s = 0
+    !! {
+        (s >= sn) -> { ** }
+        i = 0
+        !! {
+            (i >= pn) -> { ** }
+            x = ct-get(CH-VAL, ch-vidx(h, s, i))
+            (x > v) -> { v = x }
+            i = ct-inc(i)
+        }
+        s = ct-inc(s)
+    }
+    v = v
+}
+
+; ---- plot：点数 / 坐标范围（CMP-VALUE2）----
+pl-count = (h i64) (n i64) {
+    pl-ensure(h)
+    n = ct-get(PL-CN, h)
+}
+pl-set-count = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    pl-ensure(h)
+    (n < 0) -> { n = 0 }
+    (n > PL-PTS-MAX) -> { n = PL-PTS-MAX }
+    ct-set(PL-CN, h, n)
+}
+pl-scale = (h i64) (v i64) {
+    pl-ensure(h)
+    v = ct-get(PL-SC, h)
+    (v < 1) -> { v = 1 }
+    v = v
+}
+pl-set-scale = (h i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    pl-ensure(h)
+    (v < 1) -> { v = 1 }
+    ct-set(PL-SC, h, v)
+}
+
+; ---- plot：点坐标 ----
+pl-x = (h i64, i i64) (v i64) {
+    pl-ensure(h)
+    v = 0
+    ((i >= 0) && (i < ct-get(PL-CN, h))) -> {
+        v = ct-get(PL-X, pl-idx(h, i))
+    }
+    v = v
+}
+pl-y = (h i64, i i64) (v i64) {
+    pl-ensure(h)
+    v = 0
+    ((i >= 0) && (i < ct-get(PL-CN, h))) -> {
+        v = ct-get(PL-Y, pl-idx(h, i))
+    }
+    v = v
+}
+pl-set-x = (h i64, i i64, val i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    pl-ensure(h)
+    ((i >= 0) && (i < ct-get(PL-CN, h))) -> {
+        m = pl-scale(h)
+        (val < cs-neg(m)) -> { val = cs-neg(m) }
+        (val > m) -> { val = m }
+        ct-set(PL-X, pl-idx(h, i), val)
+    }
+}
+pl-set-y = (h i64, i i64, val i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    pl-ensure(h)
+    ((i >= 0) && (i < ct-get(PL-CN, h))) -> {
+        m = pl-scale(h)
+        (val < cs-neg(m)) -> { val = cs-neg(m) }
+        (val > m) -> { val = m }
+        ct-set(PL-Y, pl-idx(h, i), val)
+    }
+}
+cs-neg = (a i64) (v i64) {
+    x = 0 - a: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+
+; ---- plot：数据包围盒 ----
+pl-min-x = (h i64) (v i64) {
+    pl-ensure(h)
+    n = ct-get(PL-CN, h)
+    v = 0
+    (n > 0) -> {
+        v = ct-get(PL-X, pl-idx(h, 0))
+        i = 1
+        !! {
+            (i >= n) -> { ** }
+            x = ct-get(PL-X, pl-idx(h, i))
+            (x < v) -> { v = x }
+            i = ct-inc(i)
+        }
+    }
+    v = v
+}
+pl-max-x = (h i64) (v i64) {
+    pl-ensure(h)
+    n = ct-get(PL-CN, h)
+    v = 0
+    (n > 0) -> {
+        v = ct-get(PL-X, pl-idx(h, 0))
+        i = 1
+        !! {
+            (i >= n) -> { ** }
+            x = ct-get(PL-X, pl-idx(h, i))
+            (x > v) -> { v = x }
+            i = ct-inc(i)
+        }
+    }
+    v = v
+}
+pl-min-y = (h i64) (v i64) {
+    pl-ensure(h)
+    n = ct-get(PL-CN, h)
+    v = 0
+    (n > 0) -> {
+        v = ct-get(PL-Y, pl-idx(h, 0))
+        i = 1
+        !! {
+            (i >= n) -> { ** }
+            x = ct-get(PL-Y, pl-idx(h, i))
+            (x < v) -> { v = x }
+            i = ct-inc(i)
+        }
+    }
+    v = v
+}
+pl-max-y = (h i64) (v i64) {
+    pl-ensure(h)
+    n = ct-get(PL-CN, h)
+    v = 0
+    (n > 0) -> {
+        v = ct-get(PL-Y, pl-idx(h, 0))
+        i = 1
+        !! {
+            (i >= n) -> { ** }
+            x = ct-get(PL-Y, pl-idx(h, i))
+            (x > v) -> { v = x }
+            i = ct-inc(i)
+        }
+    }
+    v = v
+}
+
+; ---- 几何常量（渲染层抄同一份字面量）----
+ch-pad = () (p i64) { p = 1200 }
+ch-title-h = () (v i64) { v = 2400 }
+ch-plot-h = () (v i64) { v = 32000 }
+ch-slot = () (v i64) { v = 7200 }
+ch-bar-gap = () (v i64) { v = 200 }
+pl-slot = () (v i64) { v = 4800 }
+pl-dot = () (v i64) { v = 500 }
+pl-line = () (v i64) { v = 200 }
+
+; ==========================================================================
+; 阶段51：C-NATIVE-MENU —— 自绘下拉菜单（按钮 + 弹层列表）
+;   槽位：TEXT = 按钮文案；VALUE = 项数；VALUE2 = 选中项 + 1（0 = 未选）；
+;         COLOR = 强调色。弹层展开用 F-OPEN。
+;   数据池按句柄定步长：NM-LABEL 步长 NM-MAX，NM-CN / NM-SEL 各一格。
+;   「原生」在这里是自绘的：框架没有平台菜单图元，按钮 / 弹层都用
+;   rect + text 画（同 C-CHART / C-PLOT 的做法），命中测试走 cs-menu-hit。
+; ==========================================================================
+NM-MAX = 8
+NM-LABEL []str = with-len(0)
+NM-CN []i64 = with-len(0)
+NM-SEL []i64 = with-len(0)
+
+nm-ensure = (h i64) () {
+    need = ct-mul(ct-inc(h), NM-MAX)
+    !! {
+        (NM-LABEL.len() >= need) -> { ** }
+        NM-LABEL.push('')
+    }
+    need = ct-inc(h)
+    !! {
+        (NM-CN.len() >= need) -> { ** }
+        NM-CN.push(0)
+    }
+    need = ct-mul(ct-inc(h), NM-MAX)
+    !! {
+        (NM-SEL.len() >= need) -> { ** }
+        NM-SEL.push(0)
+    }
+}
+
+nm-count = (h i64) (v i64) {
+    nm-ensure(h)
+    v = ct-get(NM-CN, h)
+}
+nm-set-count = (h i64, n i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    nm-ensure(h)
+    (n < 0) -> { n = 0 }
+    (n > NM-MAX) -> { n = NM-MAX }
+    ct-set(NM-CN, h, n)
+    CMP-VALUE[h] = n
+    raw = nm-raw-sel(h)
+    (raw > n) -> { CMP-VALUE2[h] = 0 }
+}
+nm-raw-sel = (h i64) (v i64) {
+    v = ct-get(CMP-VALUE2, h)
+}
+nm-label = (h i64, i i64) (v str) {
+    v = ''
+    nm-ensure(h)
+    ((i >= 0) && (i < ct-get(NM-CN, h))) -> {
+        v = ed-arr-get-s(NM-LABEL, ct-add(ct-mul(h, NM-MAX), i))
+    }
+    v = v
+}
+nm-set-label = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    nm-ensure(h)
+    ((i >= 0) && (i < ct-get(NM-CN, h))) -> {
+        ed-arr-set-s(NM-LABEL, ct-add(ct-mul(h, NM-MAX), i), s)
+    }
+}
+nm-index = (h i64) (v i64) {
+    v = ct-sub(nm-raw-sel(h), 1)
+    (v < -1) -> { v = -1 }
+    v = v
+}
+nm-set-index = (h i64, i i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = nm-count(h)
+    (i < -1) -> { i = -1 }
+    (i >= n) -> { i = ct-sub(n, 1) }
+    (i < 0) -> { CMP-VALUE2[h] = 0 }
+    (i >= 0) -> { CMP-VALUE2[h] = ct-inc(i) }
+}
+nm-item-off = (h i64, i i64) (v i64) {
+    v = 0
+    ((i >= 0) && (i < ct-get(NM-CN, h))) -> {
+        v = ct-get(NM-SEL, ct-add(ct-mul(h, NM-MAX), i))
+    }
+    v = v
+}
+nm-set-item-off = (h i64, i i64, b i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    nm-ensure(h)
+    ((i >= 0) && (i < ct-get(NM-CN, h))) -> {
+        ct-set(NM-SEL, ct-add(ct-mul(h, NM-MAX), i), b)
+    }
+}
+nm-open = (h i64) () {
+    cmp-flag-set(h, F-OPEN)
+}
+nm-close = (h i64) () {
+    cmp-flag-clear(h, F-OPEN)
+}
+nm-toggle = (h i64) () {
+    ; `->` 链不互斥：先取到局部 was，再分支（否则关掉后第二条又开回来）
+    was = cmp-has(h, F-OPEN)
+    (was) -> { nm-close(h) }
+    (!was) -> { nm-open(h) }
+}
+
+; ==========================================================================
+; 阶段52：C-WINDOW-EXT —— 窗口选项
+;   槽位：TEXT = 标题；VALUE = flags（1 可缩放 / 2 全屏 / 4 置顶 / 8 边框）；
+;         VALUE2 = 总开关（1 = 接管，0 = 只存状态不动窗口）；COLOR = 强调色。
+;   数据池每句柄一格（WE-MIN / WE-MAX / WE-SIZE 每句柄两格），we-ensure 按需补格。
+;   真源在组件里；「推到真窗口」那一步在装配层（app.no 的 app-window-apply），
+;   因为组件层看不到 app 层 —— 同 cs-dock-* 的分工。
+; ==========================================================================
+WE-TITLE []str = with-len(0)
+WE-FLAGS []i64 = with-len(0)
+WE-OP []i64 = with-len(0)
+WE-MIN []i64 = with-len(0)
+WE-MAX []i64 = with-len(0)
+WE-SIZE []i64 = with-len(0)
+WE-ROWS = 8
+
+WE-F-RES = 1
+WE-F-FS = 2
+WE-F-TOP = 4
+WE-F-BRD = 8
+
+we-ensure = (h i64) () {
+    need = ct-inc(h)
+    !! {
+        (WE-TITLE.len() >= need) -> { ** }
+        WE-TITLE.push('')
+    }
+    !! {
+        (WE-FLAGS.len() >= need) -> { ** }
+        WE-FLAGS.push(ct-or(WE-F-RES, WE-F-BRD))
+    }
+    !! {
+        (WE-OP.len() >= need) -> { ** }
+        WE-OP.push(100)
+    }
+    need = ct-mul(need, 2)
+    !! {
+        (WE-MIN.len() >= need) -> { ** }
+        WE-MIN.push(0)
+    }
+    !! {
+        (WE-MAX.len() >= need) -> { ** }
+        WE-MAX.push(0)
+    }
+    !! {
+        (WE-SIZE.len() >= need) -> { ** }
+        WE-SIZE.push(0)
+    }
+}
+
+we-title = (h i64) (v str) {
+    we-ensure(h)
+    v = ed-arr-get-s(WE-TITLE, h)
+}
+we-set-title = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    we-ensure(h)
+    ed-arr-set-s(WE-TITLE, h, s)
+    CMP-TEXT[h] = s
+}
+we-flags = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-FLAGS, h)
+}
+we-set-flags = (h i64, f i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    we-ensure(h)
+    ct-set(WE-FLAGS, h, f)
+    CMP-VALUE[h] = f
+}
+we-resizable = (h i64) (v i64) {
+    v = 0
+    ((ct-get(WE-FLAGS, h) & WE-F-RES) != 0) -> { v = 1 }
+}
+we-set-resizable = (h i64, yes i64) () {
+    f = we-flags(h)
+    (yes != 0) -> { f = ct-or(f, WE-F-RES) }
+    (yes == 0) -> { f = ct-and(f, ct-not(WE-F-RES)) }
+    we-set-flags(h, f)
+}
+we-fullscreen = (h i64) (v i64) {
+    v = 0
+    ((ct-get(WE-FLAGS, h) & WE-F-FS) != 0) -> { v = 1 }
+}
+we-set-fullscreen = (h i64, yes i64) () {
+    f = we-flags(h)
+    (yes != 0) -> { f = ct-or(f, WE-F-FS) }
+    (yes == 0) -> { f = ct-and(f, ct-not(WE-F-FS)) }
+    we-set-flags(h, f)
+}
+we-always-on-top = (h i64) (v i64) {
+    v = 0
+    ((ct-get(WE-FLAGS, h) & WE-F-TOP) != 0) -> { v = 1 }
+}
+we-set-always-on-top = (h i64, yes i64) () {
+    f = we-flags(h)
+    (yes != 0) -> { f = ct-or(f, WE-F-TOP) }
+    (yes == 0) -> { f = ct-and(f, ct-not(WE-F-TOP)) }
+    we-set-flags(h, f)
+}
+we-bordered = (h i64) (v i64) {
+    v = 0
+    ((ct-get(WE-FLAGS, h) & WE-F-BRD) != 0) -> { v = 1 }
+}
+we-set-bordered = (h i64, yes i64) () {
+    f = we-flags(h)
+    (yes != 0) -> { f = ct-or(f, WE-F-BRD) }
+    (yes == 0) -> { f = ct-and(f, ct-not(WE-F-BRD)) }
+    we-set-flags(h, f)
+}
+we-opacity = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-OP, h)
+}
+we-set-opacity = (h i64, p i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    we-ensure(h)
+    (p < 0) -> { p = 0 }
+    (p > 100) -> { p = 100 }
+    ct-set(WE-OP, h, p)
+}
+we-min-x = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-MIN, ct-mul(h, 2))
+}
+we-min-y = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-MIN, ct-add(ct-mul(h, 2), 1))
+}
+we-set-min-size = (h i64, w i64, ht i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    we-ensure(h)
+    (w < 0) -> { w = 0 }
+    (ht < 0) -> { ht = 0 }
+    ct-set(WE-MIN, ct-mul(h, 2), w)
+    ct-set(WE-MIN, ct-add(ct-mul(h, 2), 1), ht)
+}
+we-max-x = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-MAX, ct-mul(h, 2))
+}
+we-max-y = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-MAX, ct-add(ct-mul(h, 2), 1))
+}
+we-set-max-size = (h i64, w i64, ht i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    we-ensure(h)
+    (w < 0) -> { w = 0 }
+    (ht < 0) -> { ht = 0 }
+    ct-set(WE-MAX, ct-mul(h, 2), w)
+    ct-set(WE-MAX, ct-add(ct-mul(h, 2), 1), ht)
+}
+we-w = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-SIZE, ct-mul(h, 2))
+}
+we-h = (h i64) (v i64) {
+    we-ensure(h)
+    v = ct-get(WE-SIZE, ct-add(ct-mul(h, 2), 1))
+}
+we-set-size = (h i64, w i64, ht i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    we-ensure(h)
+    (w < 0) -> { w = 0 }
+    (ht < 0) -> { ht = 0 }
+    ct-set(WE-SIZE, ct-mul(h, 2), w)
+    ct-set(WE-SIZE, ct-add(ct-mul(h, 2), 1), ht)
+}
+we-on = (h i64) (v i64) {
+    v = ct-get(CMP-VALUE2, h)
+}
+we-set-on = (h i64, yes i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (yes != 0) -> { CMP-VALUE2[h] = 1 }
+    (yes == 0) -> { CMP-VALUE2[h] = 0 }
 }
 
 ; 追加节点（parent < 0 = 挂在根），返回节点句柄
@@ -4286,3 +6209,1626 @@ cmp-command-row-of = (h i64, c i64) (row i64) {
     row = row
 }
 cmp-command-row-src = (row i64) (src i64) { src = ct-get(CP-ROW-SRC, row) }
+
+; ============================================================================
+; description-list：label / value 行族（阶段55）
+; ============================================================================
+; 目录第 68 行承诺 description-list「pairs」，但命令式侧只有一个构造函数，
+; 而且它原本在 cs-is-container 白名单里 —— 没有子节点时走通用兜底，画成一个
+; 0×0 的 FIELD 矩形（同阶段 54 的 skeleton）。行是**数据**不是视觉子节点
+; （同 C-PAGINATION / C-SELECT / C-TAB 一路），所以本阶段把它从白名单里拿掉，
+; 画 / 量都读 DL-* 池。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、CS-SEP-H=100、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、标签列 120px、列间隙 8px、值列下限 64px ----
+dl-pad = () (p i64) { p = 1200 }
+dl-lab-w = () (w i64) { w = 12000 }
+dl-gap = () (g i64) { g = 800 }
+dl-val-min = () (w i64) { w = 6400 }
+
+dl-count = (h i64) (n i64) { n = ct-get(DL-N, h) }
+dl-label = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(DL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        b = ct-get(DL-SBASE, h)
+        s = ed-arr-get-s(DL-LAB, ct-add(b, i))
+    }
+    s = s
+}
+dl-value = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(DL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        b = ct-get(DL-SBASE, h)
+        s = ed-arr-get-s(DL-VAL, ct-add(b, i))
+    }
+    s = s
+}
+dl-add = (h i64, lab str, val str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(DL-SBASE, h)
+    n = ct-get(DL-N, h)
+    (n == 0) -> { b = DL-LAB.len() }
+    DL-LAB.push(lab)
+    DL-VAL.push(val)
+    ct-set(DL-SBASE, h, b)
+    ct-set(DL-N, h, ct-inc(n))
+}
+dl-set-label = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(DL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        b = ct-get(DL-SBASE, h)
+        ed-arr-set-s(DL-LAB, ct-add(b, i), s)
+    }
+}
+dl-set-value = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(DL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        b = ct-get(DL-SBASE, h)
+        ed-arr-set-s(DL-VAL, ct-add(b, i), s)
+    }
+}
+dl-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(DL-SBASE, h, 0)
+    ct-set(DL-N, h, 0)
+}
+
+; ============================================================================
+; accordion：组（section）族（阶段56）
+; ============================================================================
+; 目录第 63 行承诺 accordion「sections, expanded」，但命令式侧只有一个构造函数，
+; 而且它原本在 cs-is-container 白名单里 —— 没有子节点时走通用兜底，画成一个
+; 0×0 的 FIELD 矩形（同阶段 54 的 skeleton / 阶段 55 的 description-list）。
+; 组是**数据**不是视觉子节点（同 C-PAGINATION / C-SELECT / C-TAB / C-DESCRIPTION-LIST
+; 一路），所以本阶段把它从白名单里拿掉，画 / 量都读 AC-* 池。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、CS-SEP-H=100、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、组头高 40px、展开符宽 8px、符后间隙 8px ----
+ac-pad = () (p i64) { p = 1200 }
+ac-head-h = () (v i64) { v = 4000 }
+ac-glyph-w = () (v i64) { v = 800 }
+ac-gap = () (v i64) { v = 800 }
+
+ac-count = (h i64) (n i64) { n = ct-get(AC-N, h) }
+
+ac-title = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(AC-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(AC-TITLE, ct-add(ct-get(AC-SBASE, h), i))
+    }
+    s = s
+}
+
+ac-body-count = (h i64, i i64) (n i64) {
+    n = 0
+    nn = ct-get(AC-N, h)
+    ((i >= 0) && (i < nn)) -> {
+        n = ct-get(AC-BN, ct-add(ct-get(AC-SBASE, h), i))
+    }
+    n = n
+}
+
+ac-body-line = (h i64, i i64, j i64) (s str) {
+    s = ''
+    nn = ct-get(AC-N, h)
+    ((i >= 0) && (i < nn)) -> {
+        si = ct-add(ct-get(AC-SBASE, h), i)
+        cnt = ct-get(AC-BN, si)
+        ((j >= 0) && (j < cnt)) -> {
+            s = ed-arr-get-s(AC-BODY, ct-add(ct-get(AC-BBASE, si), j))
+        }
+    }
+    s = s
+}
+
+ac-expanded = (h i64, i i64) (v i64) {
+    v = 0
+    n = ct-get(AC-N, h)
+    ((i >= 0) && (i < n)) -> { v = ct-get(AC-EXP, ct-add(ct-get(AC-SBASE, h), i)) }
+    v = v
+}
+
+; 展开中的组数
+ac-open-count = (h i64) (n i64) {
+    n = 0
+    cnt = ct-get(AC-N, h)
+    b = ct-get(AC-SBASE, h)
+    i = 0
+    !! {
+        (i >= cnt) -> { ** }
+        (ct-get(AC-EXP, ct-add(b, i)) != 0) -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+
+; 追加一个**收起**的组（基址补种到组池尾，同 dl-add）
+ac-add = (h i64, title str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(AC-SBASE, h)
+    n = ct-get(AC-N, h)
+    (n == 0) -> { b = AC-TITLE.len() }
+    AC-TITLE.push(title)
+    AC-BBASE.push(AC-BODY.len())
+    AC-BN.push(0)
+    AC-EXP.push(0)
+    ct-set(AC-SBASE, h, b)
+    ct-set(AC-N, h, ct-inc(n))
+}
+
+; 追加一个**展开**的组
+ac-add-open = (h i64, title str) () {
+    ac-add(h, title)
+    n = ct-get(AC-N, h)
+    (n > 0) -> {
+        ct-set(AC-EXP, ct-add(ct-get(AC-SBASE, h), ct-sub(n, 1)), 1)
+    }
+}
+
+; 给第 i 组追加一行正文
+ac-add-body = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(AC-N, h)
+    ((i >= 0) && (i < n)) -> {
+        si = ct-add(ct-get(AC-SBASE, h), i)
+        AC-BODY.push(s)
+        ct-set(AC-BN, si, ct-inc(ct-get(AC-BN, si)))
+    }
+}
+
+ac-set-title = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(AC-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(AC-TITLE, ct-add(ct-get(AC-SBASE, h), i), s)
+    }
+}
+
+ac-set-expanded = (h i64, i i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (v != 0) -> { v = 1 }
+    n = ct-get(AC-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ct-set(AC-EXP, ct-add(ct-get(AC-SBASE, h), i), v)
+    }
+}
+
+ac-expand = (h i64, i i64) () { ac-set-expanded(h, i, 1) }
+ac-collapse = (h i64, i i64) () { ac-set-expanded(h, i, 0) }
+ac-toggle = (h i64, i i64) () {
+    v = ac-expanded(h, i)
+    (v != 0) -> { ac-collapse(h, i) }
+    (v == 0) -> { ac-expand(h, i) }
+}
+
+ac-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(AC-SBASE, h, 0)
+    ct-set(AC-N, h, 0)
+}
+
+; ============================================================================
+; carousel：幻灯片（slide）族（阶段57）
+; ============================================================================
+; 目录第 64 行承诺 carousel「slides, current」，但命令式侧只有一个构造函数，
+; 而且它原本在 cs-is-container 白名单里 —— 没有子节点时走通用兜底，画成一个
+; 0×0 的 FIELD 矩形（同阶段 54 的 skeleton / 阶段 55 的 description-list /
+; 阶段 56 的 accordion）。幻灯片是**数据**不是视觉子节点
+; （同 C-PAGINATION / C-SELECT / C-TAB / C-DESCRIPTION-LIST / C-ACCORDION
+; 一路），所以本阶段把它从白名单里拿掉，画 / 量都读 CR-* 池。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、CS-SEP-H=100、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、左右箭头宽 8px、箭头与正文间隙 8px、圆点 8px / 点距 8px ----
+cr-pad = () (p i64) { p = 1200 }
+cr-arrow-w = () (w i64) { w = 800 }
+cr-gap = () (g i64) { g = 800 }
+cr-dot-w = () (w i64) { w = 800 }
+cr-dot-gap = () (g i64) { g = 800 }
+
+cr-count = (h i64) (n i64) { n = ct-get(CR-N, h) }
+
+cr-slide = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(CR-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(CR-SLIDE, ct-add(ct-get(CR-SBASE, h), i))
+    }
+    s = s
+}
+
+; 追加一张，返回新下标（disabled 时返回 -1）
+cr-add = (h i64, s str) (idx i64) {
+    idx = -1
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(CR-SBASE, h)
+    n = ct-get(CR-N, h)
+    (n == 0) -> { b = CR-SLIDE.len() }
+    CR-SLIDE.push(s)
+    ct-set(CR-SBASE, h, b)
+    ct-set(CR-N, h, ct-inc(n))
+    idx = ct-sub(ct-get(CR-N, h), 1)
+}
+
+cr-set-slide = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(CR-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(CR-SLIDE, ct-add(ct-get(CR-SBASE, h), i), s)
+    }
+}
+
+; 当前张（越界回落 0）
+cr-current = (h i64) (idx i64) {
+    idx = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    n = ct-get(CR-N, h)
+    ((idx < 0) || (idx >= n)) -> { idx = 0 }
+    idx = idx
+}
+
+cr-set-current = (h i64, i i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(CR-N, h)
+    ((i < 0) || (i >= n)) -> return
+    CMP-VALUE[h] = i
+}
+
+cr-select = (h i64, i i64) () { cr-set-current(h, i) }
+
+cr-next = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(CR-N, h)
+    (n <= 0) -> return
+    i = ct-inc(cr-current(h))
+    (i >= n) -> { i = 0 }
+    CMP-VALUE[h] = i
+}
+
+cr-prev = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(CR-N, h)
+    (n <= 0) -> return
+    i = ct-sub(cr-current(h), 1)
+    (i < 0) -> { i = ct-sub(n, 1) }
+    CMP-VALUE[h] = i
+}
+
+cr-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(CR-SBASE, h, 0)
+    ct-set(CR-N, h, 0)
+    CMP-VALUE[h] = 0
+}
+
+; ============================================================================
+; collapsible：折叠面板族（阶段58）
+; ============================================================================
+; 目录第 70 行承诺 collapsible「open, title」，但命令式侧只有一个构造函数，
+; 而且它原本在 cs-is-container 白名单里 —— 没有子节点时走通用兜底，画成一个
+; 0×0 的 FIELD 矩形（同阶段 54 的 skeleton / 阶段 55 的 description-list /
+; 阶段 56 的 accordion / 阶段 57 的 carousel）。目录把 group_box 标成
+; 「title, children」而 collapsible 只标「open, title」，所以正文走数据池
+; （CL-LINE），不占视觉子节点。展开态复用既有 F-OPEN 位（声明式
+; dv-on-open 已经这么编码）。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、CS-SEP-H=100、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、展开符宽 8px、符与标题间隙 8px ----
+cl-pad = () (p i64) { p = 1200 }
+cl-head-h = () (v i64) { v = 4000 }
+cl-glyph-w = () (v i64) { v = 800 }
+cl-gap = () (v i64) { v = 800 }
+
+cl-title = (h i64) (s str) { s = cmp-text(h) }
+
+cl-set-title = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+}
+
+; 展开态读 F-OPEN 位（与 select / combobox / 声明式一致）
+cl-open = (h i64) (v i64) {
+    v = 0
+    (cmp-has(h, F-OPEN)) -> { v = 1 }
+}
+
+cl-set-open = (h i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (v != 0) -> {
+        CMP-FLAGS[h] = CMP-FLAGS[h] | F-OPEN
+    }
+    (v == 0) -> {
+        CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ F-OPEN)
+    }
+}
+
+cl-expand = (h i64) () { cl-set-open(h, 1) }
+cl-collapse = (h i64) () { cl-set-open(h, 0) }
+cl-toggle = (h i64) () {
+    ; 先取一次快照：-> 链不是互斥的，直接读两次会「翻过去又翻回来」
+    v = cl-open(h)
+    (v != 0) -> { cl-collapse(h) }
+    (v == 0) -> { cl-expand(h) }
+}
+
+cl-count = (h i64) (n i64) { n = ct-get(CL-N, h) }
+
+cl-body-line = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(CL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(CL-LINE, ct-add(ct-get(CL-SBASE, h), i))
+    }
+    s = s
+}
+
+cl-add-body = (h i64, s str) (idx i64) {
+    idx = -1
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(CL-SBASE, h)
+    n = ct-get(CL-N, h)
+    (n == 0) -> { b = CL-LINE.len() }
+    CL-LINE.push(s)
+    ct-set(CL-SBASE, h, b)
+    ct-set(CL-N, h, ct-inc(n))
+    idx = ct-sub(ct-get(CL-N, h), 1)
+}
+
+cl-set-body-line = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(CL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(CL-LINE, ct-add(ct-get(CL-SBASE, h), i), s)
+    }
+}
+
+cl-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(CL-SBASE, h, 0)
+    ct-set(CL-N, h, 0)
+}
+
+; ============================================================================
+; group-box：标题容器族（阶段59）
+; ============================================================================
+; 目录第 70 行承诺 group_box「title, children」—— 和 collapsible 的
+; 「open, title」不同，它是真容器：标题走 CMP-TEXT，子节点是视觉节点，
+; 走通用容器布局（cs-is-container 白名单保留）。所以本阶段只补标题读写，
+; 不新增数据池。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-SEP-H=100、CS-BTN-H=4000。
+
+; ---- 标题行高 40px（与 CS-BTN-H 同高，作头部行）----
+gb-title-h = () (v i64) { v = 4000 }
+
+gb-title = (h i64) (s str) { s = cmp-text(h) }
+
+gb-set-title = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+}
+
+; ============================================================================
+; history：历史条目族（阶段60）
+; ============================================================================
+; 目录第 38 行承诺 history「entries, index」—— 和 carousel 的「slides,
+; current」同型：条目是 HST-ENTRY 数据、不是视觉子节点，所以从
+; cs-is-container 白名单里拿掉，补 measure / paint。当前下标走 CMP-VALUE。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、CS-SEP-H=100、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、当前行左侧标记条宽 8px、标记与文本间隙 8px ----
+hst-pad = () (p i64) { p = 1200 }
+hst-marker-w = () (w i64) { w = 800 }
+hst-gap = () (g i64) { g = 800 }
+
+hst-count = (h i64) (n i64) { n = ct-get(HST-N, h) }
+
+hst-entry = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(HST-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(HST-ENTRY, ct-add(ct-get(HST-SBASE, h), i))
+    }
+    s = s
+}
+
+; 追加一条，返回新下标（disabled 时返回 -1）
+hst-add = (h i64, s str) (idx i64) {
+    idx = -1
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(HST-SBASE, h)
+    n = ct-get(HST-N, h)
+    (n == 0) -> { b = HST-ENTRY.len() }
+    HST-ENTRY.push(s)
+    ct-set(HST-SBASE, h, b)
+    ct-set(HST-N, h, ct-inc(n))
+    idx = ct-sub(ct-get(HST-N, h), 1)
+}
+
+hst-set-entry = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(HST-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(HST-ENTRY, ct-add(ct-get(HST-SBASE, h), i), s)
+    }
+}
+
+; 当前下标（越界回落 0；空池也是 0）
+hst-index = (h i64) (idx i64) {
+    idx = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    n = ct-get(HST-N, h)
+    ((idx < 0) || (idx >= n)) -> { idx = 0 }
+    idx = idx
+}
+
+hst-set-index = (h i64, i i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(HST-N, h)
+    ((i < 0) || (i >= n)) -> return
+    CMP-VALUE[h] = i
+}
+
+hst-jump = (h i64, i i64) () { hst-set-index(h, i) }
+
+; 相对后退 / 前进：夹紧在 [0, n-1]，不环绕（历史不是循环的）
+hst-back = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(HST-N, h)
+    (n <= 0) -> return
+    i = ct-sub(hst-index(h), 1)
+    (i < 0) -> { i = 0 }
+    CMP-VALUE[h] = i
+}
+
+hst-forward = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(HST-N, h)
+    (n <= 0) -> return
+    i = ct-inc(hst-index(h))
+    (i >= n) -> { i = ct-sub(n, 1) }
+    CMP-VALUE[h] = i
+}
+
+hst-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(HST-SBASE, h, 0)
+    ct-set(HST-N, h, 0)
+    CMP-VALUE[h] = 0
+}
+
+; ============================================================================
+; inspector：目标 + 字段族（阶段61）
+; ============================================================================
+; 目录第 55 行承诺 inspector「target, fields」，但命令式侧只有一个构造函数，
+; 而且它原本在 cs-is-container 白名单里 —— 没有子节点时走通用兜底，画成一个
+; 0×0 的 FIELD 矩形（同阶段 55 的 description-list / 阶段 60 的 history）。
+; 字段是**数据**不是视觉子节点（同 C-PAGINATION / C-SELECT / C-TAB /
+; C-DESCRIPTION-LIST / C-ACCORDION / C-CAROUSEL / C-HISTORY 一路），所以本阶段
+; 把它从白名单里拿掉，画 / 量都读 IN-* 池。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、CS-SEP-H=100、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、目标前标记条 8px、标记与文字间隙 8px ----
+in-pad = () (p i64) { p = 1200 }
+in-marker-w = () (w i64) { w = 800 }
+in-gap = () (g i64) { g = 800 }
+
+in-target = (h i64) (s str) { s = cmp-text(h) }
+
+in-set-target = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+}
+
+in-count = (h i64) (n i64) { n = ct-get(IN-N, h) }
+
+in-label = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(IN-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(IN-LAB, ct-add(ct-get(IN-SBASE, h), i))
+    }
+    s = s
+}
+
+in-value = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(IN-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(IN-VAL, ct-add(ct-get(IN-SBASE, h), i))
+    }
+    s = s
+}
+
+in-add = (h i64, lab str, val str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(IN-SBASE, h)
+    n = ct-get(IN-N, h)
+    (n == 0) -> { b = IN-LAB.len() }
+    IN-LAB.push(lab)
+    IN-VAL.push(val)
+    ct-set(IN-SBASE, h, b)
+    ct-set(IN-N, h, ct-inc(n))
+}
+
+in-set-label = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(IN-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(IN-LAB, ct-add(ct-get(IN-SBASE, h), i), s)
+    }
+}
+
+in-set-value = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(IN-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(IN-VAL, ct-add(ct-get(IN-SBASE, h), i), s)
+    }
+}
+
+in-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(IN-SBASE, h, 0)
+    ct-set(IN-N, h, 0)
+}
+
+; ============================================================================
+; message-scroller：消息 + 输入中（阶段62）
+; ============================================================================
+; 目录第 60 行承诺 message-scroller「messages, typing」，但命令式侧只有一个构造
+; 函数，而且它原本在 cs-is-container 白名单里 —— 没有子节点时走通用兜底，画成
+; 一个 0×0 的 FIELD 矩形（同阶段 60 的 history / 阶段 61 的 inspector）。
+; 消息是**数据**不是视觉子节点（同 C-PAGINATION / C-SELECT / C-TAB /
+; C-DESCRIPTION-LIST / C-ACCORDION / C-CAROUSEL / C-HISTORY / C-INSPECTOR
+; 一路），所以本阶段把它从白名单里拿掉，画 / 量都读 MS-* 池。
+; 「输入中」走 CMP-VALUE（0 / 1），渲染层据此在末尾补一行「typing...」。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-CHAR-W=800、CS-LINE-H=2400、CS-SEP-H=100、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、消息行间距 1px ----
+ms-pad = () (p i64) { p = 1200 }
+ms-gap = () (g i64) { g = 100 }
+
+ms-count = (h i64) (n i64) { n = ct-get(MS-N, h) }
+
+ms-text = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(MS-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(MS-MSG, ct-add(ct-get(MS-SBASE, h), i))
+    }
+    s = s
+}
+
+ms-author = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(MS-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(MS-AUTH, ct-add(ct-get(MS-SBASE, h), i))
+    }
+    s = s
+}
+
+ms-add = (h i64, auth str, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(MS-SBASE, h)
+    n = ct-get(MS-N, h)
+    (n == 0) -> { b = MS-MSG.len() }
+    MS-MSG.push(s)
+    MS-AUTH.push(auth)
+    ct-set(MS-SBASE, h, b)
+    ct-set(MS-N, h, ct-inc(n))
+}
+
+ms-set-text = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(MS-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(MS-MSG, ct-add(ct-get(MS-SBASE, h), i), s)
+    }
+}
+
+ms-set-author = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(MS-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(MS-AUTH, ct-add(ct-get(MS-SBASE, h), i), s)
+    }
+}
+
+ms-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(MS-SBASE, h, 0)
+    ct-set(MS-N, h, 0)
+    CMP-VALUE[h] = 0
+}
+
+; ---- 「输入中」标记（夹 0 / 1，负数归 0）----
+ms-typing = (h i64) (v i64) {
+    v = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    (v != 0) -> { v = 1 }
+    v = v
+}
+
+ms-set-typing = (h i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (v > 0) -> { v = 1 }
+    (v <= 0) -> { v = 0 }
+    CMP-VALUE[h] = v
+}
+
+; ============================================================================
+; status-bar：分段条（阶段63）
+; ============================================================================
+; 目录第 65 行承诺 status-bar「segments」，但命令式侧只有一个构造函数，而且它
+; 原本在 cs-is-container 白名单里 —— 没有子节点时走通用兜底，画成一个 0×0 的
+; FIELD 矩形（同阶段 60 的 history / 阶段 61 的 inspector / 阶段 62 的
+; message-scroller）。段是**数据**不是视觉子节点（同 C-PAGINATION / C-SELECT /
+; C-TAB / C-DESCRIPTION-LIST / C-ACCORDION / C-CAROUSEL / C-HISTORY /
+; C-INSPECTOR / C-MESSAGE-SCROLLER 一路），所以本阶段把它从白名单里拿掉，
+; 画 / 量都读 SB-* 池。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-SEP-H=100、CS-CHAR-W=800、CS-LINE-H=2400、
+;   CS-BTN-H=4000、CS-MIN-LEAF-W=6400。
+
+; ---- 内边距 12px、段间分隔条 1px ----
+sb-pad = () (p i64) { p = 1200 }
+sb-div-w = () (w i64) { w = 100 }
+
+sb-count = (h i64) (n i64) { n = ct-get(SB-N, h) }
+
+sb-seg = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(SB-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(SB-SEG, ct-add(ct-get(SB-SBASE, h), i))
+    }
+    s = s
+}
+
+sb-add = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(SB-SBASE, h)
+    n = ct-get(SB-N, h)
+    (n == 0) -> { b = SB-SEG.len() }
+    SB-SEG.push(s)
+    ct-set(SB-SBASE, h, b)
+    ct-set(SB-N, h, ct-inc(n))
+}
+
+sb-set-seg = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(SB-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(SB-SEG, ct-add(ct-get(SB-SBASE, h), i), s)
+    }
+}
+
+sb-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SB-SBASE, h, 0)
+    ct-set(SB-N, h, 0)
+}
+
+; ============================================================================
+; popover（阶段64）—— 锚在某个组件上的小弹层
+;   标题走 CMP-TEXT；展开态走 CMP-VALUE（0 / 1，负数归 0）；
+;   锚定边走 CMP-VALUE2（0 下 / 1 上 / 2 左 / 3 右，夹紧 0..3）；
+;   正文行走扁平池 PV-LINE + 每句柄基址 / 行数。
+;   关闭时不画任何东西（measure 只给最小的叶片尺寸）。
+; ============================================================================
+
+; ---- 内边距 12px、箭头方块 8px、间隙 8px ----
+pv-pad = () (p i64) { p = 1200 }
+pv-arrow-w = () (w i64) { w = 800 }
+pv-gap = () (g i64) { g = 800 }
+
+pv-open = (h i64) (v i64) {
+    v = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    (v != 0) -> { v = 1 }
+    v = v
+}
+
+pv-set-open = (h i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (v > 0) -> { v = 1 }
+    (v <= 0) -> { v = 0 }
+    CMP-VALUE[h] = v
+}
+
+pv-side = (h i64) (s i64) {
+    s = CMP-VALUE2[h]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+pv-set-side = (h i64, s i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (s < 0) -> { s = 0 }
+    (s > 3) -> { s = 3 }
+    CMP-VALUE2[h] = s
+}
+
+pv-title = (h i64) (s str) { s = cmp-text(h) }
+
+pv-set-title = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+}
+
+pv-count = (h i64) (n i64) { n = ct-get(PV-N, h) }
+
+pv-line = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(PV-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(PV-LINE, ct-add(ct-get(PV-SBASE, h), i))
+    }
+    s = s
+}
+
+pv-add = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(PV-SBASE, h)
+    n = ct-get(PV-N, h)
+    (n == 0) -> { b = PV-LINE.len() }
+    PV-LINE.push(s)
+    ct-set(PV-SBASE, h, b)
+    ct-set(PV-N, h, ct-inc(n))
+}
+
+pv-set-line = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(PV-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(PV-LINE, ct-add(ct-get(PV-SBASE, h), i), s)
+    }
+}
+
+pv-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(PV-SBASE, h, 0)
+    ct-set(PV-N, h, 0)
+}
+
+; ============================================================================
+; 阶段65：questionnaire（C-QUESTIONNAIRE）—— 题池 + 每题「题干 FG + 答案 ACCENT」
+;
+; 组件目录第 28 行写着「questions container」，但命令式侧只有 cmp-questionnaire()
+; 一个构造函数，而且它还在 cs-is-container 白名单里（没有子节点时走通用兜底画成
+; 一个 0×0 的 FIELD 矩形）。题是**数据**不是视觉子节点，所以本阶段把它从白名单
+; 拿掉，量 / 画都读 QA-* 池。
+; 几何常量与 cmp-scene.no 同源（组件模块不能 import 渲染层，抄字面量）：
+;   CS-PAD=1200、CS-GAP=800、CS-LINE-H=2400、CS-MIN-LEAF-W=6400、CS-BTN-H=4000。
+
+; ---- 内边距 12px、题间距 8px、最小宽 64px ----
+qa-pad = () (p i64) { p = 1200 }
+qa-gap = () (g i64) { g = 800 }
+qa-min-w = () (w i64) { w = 6400 }
+
+qa-count = (h i64) (n i64) { n = ct-get(QA-N, h) }
+
+qa-prompt = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(QA-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(QA-PROMPT, ct-add(ct-get(QA-SBASE, h), i))
+    }
+    s = s
+}
+
+qa-answer = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(QA-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(QA-ANS, ct-add(ct-get(QA-SBASE, h), i))
+    }
+    s = s
+}
+
+qa-required = (h i64, i i64) (v i64) {
+    v = 0
+    n = ct-get(QA-N, h)
+    ((i >= 0) && (i < n)) -> { v = ct-get(QA-REQ, ct-add(ct-get(QA-SBASE, h), i)) }
+    v = v
+}
+
+; 已作答题数（答案非空）
+qa-answered = (h i64) (n i64) {
+    n = 0
+    cnt = ct-get(QA-N, h)
+    b = ct-get(QA-SBASE, h)
+    i = 0
+    !! {
+        (i >= cnt) -> { ** }
+        (ed-arr-get-s(QA-ANS, ct-add(b, i)).len() > 0) -> {
+            nn = n + 1: {
+                ok -> it
+
+                -> n
+            }
+            n = nn
+        }
+        ni = i + 1: {
+            ok -> it
+
+            -> i
+        }
+        i = ni
+    }
+    n = n
+}
+
+; 进度百分比 0..100（无题时 0）
+qa-progress = (h i64) (p i64) {
+    cnt = ct-get(QA-N, h)
+    (cnt <= 0) -> { p = 0 }
+    (cnt > 0) -> {
+        a = qa-answered(h)
+        t1 = a * 100: {
+            ok -> it
+
+            -> 0
+        }
+        t2 = t1 / cnt: {
+            ok -> it
+
+            -> 0
+        }
+        p = t2
+    }
+    p = p
+}
+
+; 必答题是否都已作答（无题或无必答题都算过）
+qa-complete = (h i64) (v i64) {
+    v = 1
+    cnt = ct-get(QA-N, h)
+    b = ct-get(QA-SBASE, h)
+    i = 0
+    !! {
+        (i >= cnt) -> { ** }
+        (ct-get(QA-REQ, ct-add(b, i)) != 0) -> {
+            (ed-arr-get-s(QA-ANS, ct-add(b, i)).len() == 0) -> { v = 0 }
+        }
+        ni = i + 1: {
+            ok -> it
+
+            -> i
+        }
+        i = ni
+    }
+    v = v
+}
+
+qa-add = (h i64, prompt str, answer str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(QA-N, h)
+    ; 三个池始终同步增长（每次 qa-add 各 push 一条），所以基址只记一个就够
+    b = QA-PROMPT.len()
+    (n != 0) -> { b = ct-get(QA-SBASE, h) }
+    QA-PROMPT.push(prompt)
+    QA-ANS.push(answer)
+    QA-REQ.push(0)
+    ct-set(QA-SBASE, h, b)
+    ct-set(QA-N, h, ct-inc(n))
+}
+
+qa-set-prompt = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(QA-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(QA-PROMPT, ct-add(ct-get(QA-SBASE, h), i), s)
+    }
+}
+
+qa-set-answer = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(QA-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(QA-ANS, ct-add(ct-get(QA-SBASE, h), i), s)
+    }
+}
+
+qa-set-required = (h i64, i i64, v i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(QA-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ct-set(QA-REQ, ct-add(ct-get(QA-SBASE, h), i), v)
+    }
+}
+
+qa-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(QA-SBASE, h, 0)
+    ct-set(QA-N, h, 0)
+}
+
+; ============================================================================
+; 阶段66：searchable-list（可搜索列表）—— 目录第 85 行写着「query, items,
+; filtered」，实际只有一个构造函数。条目是**数据**不是视觉子节点，所以从
+; cs-is-container 白名单里拿掉，测量 / 绘制 / 命中都读池子。
+; 结构仿 combobox：条目标签走扁平池 SL-ITEM，查询串就是 CMP-TEXT[h]，
+; 过滤结果走另一张扁平池 SL-MATCH（存的是条目下标），高亮存 SL-CUR。
+; 匹配规则：查询空 = 全选；否则条目标签 to-lower 后 contains 查询 to-lower。
+; ============================================================================
+
+sl-pad = () (p i64) { p = 1200 }
+sl-gap = () (g i64) { g = 800 }
+sl-min-w = () (w i64) { w = 6400 }
+
+sl-count = (h i64) (n i64) {
+    n = ct-get(SL-N, h)
+}
+
+sl-item = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(SL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(SL-ITEM, ct-add(ct-get(SL-SBASE, h), i))
+    }
+    s = s
+}
+
+sl-add = (h i64, label str) (idx i64) {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(SL-N, h)
+    b = SL-ITEM.len()
+    (n != 0) -> { b = ct-get(SL-SBASE, h) }
+    SL-ITEM.push(label)
+    ct-set(SL-SBASE, h, b)
+    ct-set(SL-N, h, ct-inc(n))
+    idx = n
+    sl-refresh(h)
+}
+
+sl-set-item = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(SL-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(SL-ITEM, ct-add(ct-get(SL-SBASE, h), i), s)
+    }
+    sl-refresh(h)
+}
+
+sl-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SL-SBASE, h, 0)
+    ct-set(SL-N, h, 0)
+    ct-set(SL-MBASE, h, 0)
+    ct-set(SL-MN, h, 0)
+    ct-set(SL-CUR, h, -1)
+}
+
+; 查询串：直接读写 CMP-TEXT（同 combobox）
+sl-query = (h i64) (s str) {
+    s = cmp-text(h)
+}
+
+sl-set-query = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    CMP-TEXT[h] = s
+    sl-refresh(h)
+}
+
+; 按当前查询重建匹配段（追加到扁平池尾部，只增）
+sl-refresh = (h i64) () {
+    q = cmp-text(h).to-lower()
+    n = ct-get(SL-N, h)
+    base = SL-MATCH.len()
+    ct-set(SL-MBASE, h, base)
+    ct-set(SL-MN, h, 0)
+    b = ct-get(SL-SBASE, h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        lab = ed-arr-get-s(SL-ITEM, ct-add(b, i)).to-lower()
+        ok = (q.len() == 0) || lab.contains(q)
+        (ok) -> {
+            SL-MATCH.push(i)
+            ct-set(SL-MN, h, ct-inc(ct-get(SL-MN, h)))
+        }
+        ni = i + 1: {
+            ok -> it
+
+            -> i
+        }
+        i = ni
+    }
+    ; 高亮夹紧：没匹配 = -1；越界收回末尾
+    mn = ct-get(SL-MN, h)
+    cur = ct-get(SL-CUR, h)
+    (mn <= 0) -> { ct-set(SL-CUR, h, -1) }
+    ((mn > 0) && (cur < 0)) -> { ct-set(SL-CUR, h, 0) }
+    ((mn > 0) && (cur >= mn)) -> { ct-set(SL-CUR, h, ct-sub(mn, 1)) }
+}
+
+sl-match-count = (h i64) (n i64) {
+    n = ct-get(SL-MN, h)
+}
+
+; 第 j 个匹配对应的条目下标（越界给 -1）
+sl-match = (h i64, j i64) (i i64) {
+    i = -1
+    mn = ct-get(SL-MN, h)
+    ((j >= 0) && (j < mn)) -> {
+        v = SL-MATCH[ct-add(ct-get(SL-MBASE, h), j)]: {
+            ok -> it
+
+            -> -1
+        }
+        i = v
+    }
+    i = i
+}
+
+; 高亮行的条目下标（-1 = 没有）
+sl-selected = (h i64) (i i64) {
+    i = -1
+    cur = ct-get(SL-CUR, h)
+    (cur >= 0) -> { i = sl-match(h, cur) }
+    i = i
+}
+
+; 高亮行号（匹配表里的第几行；-1 = 没有）
+sl-highlight = (h i64) (j i64) {
+    j = ct-get(SL-CUR, h)
+}
+
+sl-select = (h i64, j i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    mn = ct-get(SL-MN, h)
+    (j < 0) -> { ct-set(SL-CUR, h, -1) }
+    ((j >= 0) && (j < mn)) -> { ct-set(SL-CUR, h, j) }
+}
+
+sl-select-next = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    mn = ct-get(SL-MN, h)
+    (mn <= 0) -> { ct-set(SL-CUR, h, -1) }
+    (mn > 0) -> {
+        cur = ct-get(SL-CUR, h)
+        (cur < 0) -> { ct-set(SL-CUR, h, 0) }
+        (cur >= 0) -> {
+            nc = cur + 1: {
+                ok -> it
+
+                -> cur
+            }
+            (nc >= mn) -> { nc = ct-sub(mn, 1) }
+            ct-set(SL-CUR, h, nc)
+        }
+    }
+}
+
+sl-select-prev = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    mn = ct-get(SL-MN, h)
+    (mn <= 0) -> { ct-set(SL-CUR, h, -1) }
+    (mn > 0) -> {
+        cur = ct-get(SL-CUR, h)
+        (cur < 0) -> { ct-set(SL-CUR, h, ct-sub(mn, 1)) }
+        (cur >= 0) -> {
+            pc = cur - 1: {
+                ok -> it
+
+                -> cur
+            }
+            (pc < 0) -> { pc = 0 }
+            ct-set(SL-CUR, h, pc)
+        }
+    }
+}
+
+; ============================================================================
+; title-bar（阶段67）—— 目录第 73 行写着「title, buttons」。
+;   标题走 CMP-TEXT[h]（构造函数已经把 title 存进去，读写用 cmp-text /
+;   cmp-set-text）；按钮是扁平只增的 TTB-BTN 数据池 + 每句柄基址 / 计数。
+;   几何（渲染层算）：左标题 FG + 右端一排按钮，按钮盒宽 = 文案宽 + 2*800。
+; ============================================================================
+
+tb-pad = () (p i64) { p = 1200 }
+tb-gap = () (g i64) { g = 800 }
+tb-btn-pad = () (q i64) { q = 800 }
+tb-head-h = () (hh i64) { hh = 4000 }
+
+tb-count = (h i64) (n i64) { n = ct-get(TTB-N, h) }
+
+tb-title = (h i64) (s str) {
+    s = cmp-text(h)
+    s = s
+}
+
+tb-set-title = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cmp-set-text(h, s)
+}
+
+tb-button = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(TTB-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(TTB-BTN, ct-add(ct-get(TTB-SBASE, h), i))
+    }
+    s = s
+}
+
+tb-add = (h i64, label str) (idx i64) {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(TTB-SBASE, h)
+    n = ct-get(TTB-N, h)
+    (n == 0) -> { b = TTB-BTN.len() }
+    TTB-BTN.push(label)
+    ct-set(TTB-SBASE, h, b)
+    ct-set(TTB-N, h, ct-inc(n))
+    idx = n
+}
+
+tb-set-button = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(TTB-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(TTB-BTN, ct-add(ct-get(TTB-SBASE, h), i), s)
+    }
+}
+
+tb-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(TTB-SBASE, h, 0)
+    ct-set(TTB-N, h, 0)
+}
+
+; ============================================================================
+; toolbar（阶段68）—— 目录第 72 行写着「items」。
+;   一条横排条目（chip），其中一个高亮为当前项。条目是扁平只增的 TLB-ITEM
+;   数据池 + 每句柄基址 / 计数 / 当前选中，不是视觉子节点。
+;   几何（渲染层算）：每个 chip 盒宽 = 文案宽 + 2*800，间距 800。
+; ============================================================================
+
+tlb-pad = () (p i64) { p = 1200 }
+tlb-gap = () (g i64) { g = 800 }
+tlb-chip-pad = () (q i64) { q = 800 }
+tlb-bar-h = () (hh i64) { hh = 4000 }
+
+tlb-count = (h i64) (n i64) { n = ct-get(TLB-N, h) }
+
+tlb-item = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(TLB-N, h)
+    ((i >= 0) && (i < n)) -> {
+        s = ed-arr-get-s(TLB-ITEM, ct-add(ct-get(TLB-SBASE, h), i))
+    }
+    s = s
+}
+
+tlb-add = (h i64, label str) (idx i64) {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(TLB-SBASE, h)
+    n = ct-get(TLB-N, h)
+    (n == 0) -> { b = TLB-ITEM.len() }
+    TLB-ITEM.push(label)
+    ct-set(TLB-SBASE, h, b)
+    ct-set(TLB-N, h, ct-inc(n))
+    ; 首次有条目时自动高亮第 0 项
+    ((n == 0) & (ct-get(TLB-CUR, h) < 0)) -> { ct-set(TLB-CUR, h, 0) }
+    idx = n
+}
+
+tlb-set-item = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(TLB-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(TLB-ITEM, ct-add(ct-get(TLB-SBASE, h), i), s)
+    }
+}
+
+tlb-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(TLB-SBASE, h, 0)
+    ct-set(TLB-N, h, 0)
+    ct-set(TLB-CUR, h, -1)
+}
+
+tlb-selected = (h i64) (i i64) { i = ct-get(TLB-CUR, h) }
+
+tlb-select = (h i64, i i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(TLB-N, h)
+    (n <= 0) -> { ct-set(TLB-CUR, h, -1) }
+    ((i >= 0) && (i < n)) -> { ct-set(TLB-CUR, h, i) }
+    ((i < 0) || (i >= n)) -> {
+        ; 越界：夹紧到最近一端
+        (i < 0) -> { ct-set(TLB-CUR, h, 0) }
+        (i >= n) -> { ct-set(TLB-CUR, h, ct-sub(n, 1)) }
+    }
+}
+
+tlb-select-next = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(TLB-N, h)
+    (n <= 0) -> return
+    cur = ct-get(TLB-CUR, h)
+    (cur < 0) -> { ct-set(TLB-CUR, h, 0) }
+    (cur >= 0) -> {
+        nc = ct-inc(cur)
+        (nc >= n) -> { nc = 0 }
+        ct-set(TLB-CUR, h, nc)
+    }
+}
+
+tlb-select-prev = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(TLB-N, h)
+    (n <= 0) -> return
+    cur = ct-get(TLB-CUR, h)
+    (cur < 0) -> { ct-set(TLB-CUR, h, ct-sub(n, 1)) }
+    (cur >= 0) -> {
+        pc = cur - 1: {
+            ok -> it
+
+            -> cur
+        }
+        (pc < 0) -> { pc = ct-sub(n, 1) }
+        ct-set(TLB-CUR, h, pc)
+    }
+}
+
+; ============================================================================
+; sidebar（阶段69）—— 目录第 69 行写着「groups, collapsed」。
+;   分组标题走扁平池 SDB-GROUP + 每句柄基址 / 组数；条目走扁平池 SDB-ITEM
+;   并配一条平行的「属于哪个组」SDB-ITOG（这样往任意组追加条目都不用搬移数组）。
+;   折叠位走每句柄 SDB-COLL。几何（渲染层算）：组头 2400、条目行 2400、
+;   条目比组头多缩进 1600。
+; ============================================================================
+
+sdb-pad = () (p i64) { p = 1200 }
+sdb-gap = () (g i64) { g = 800 }
+sdb-indent = () (d i64) { d = 1600 }
+sdb-line-h = () (lh i64) { lh = 2400 }
+
+sdb-group-count = (h i64) (n i64) { n = ct-get(SDB-GNC, h) }
+
+sdb-group = (h i64, g i64) (s str) {
+    s = ''
+    n = ct-get(SDB-GNC, h)
+    ((g >= 0) & (g < n)) -> {
+        s = ed-arr-get-s(SDB-GROUP, ct-add(ct-get(SDB-GSBASE, h), g))
+    }
+    s = s
+}
+
+sdb-add-group = (h i64, title str) (idx i64) {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(SDB-GSBASE, h)
+    n = ct-get(SDB-GNC, h)
+    (n == 0) -> { b = SDB-GROUP.len() }
+    SDB-GROUP.push(title)
+    ct-set(SDB-GSBASE, h, b)
+    ct-set(SDB-GNC, h, ct-inc(n))
+    idx = n
+}
+
+sdb-set-group = (h i64, g i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(SDB-GNC, h)
+    ((g >= 0) & (g < n)) -> {
+        ed-arr-set-s(SDB-GROUP, ct-add(ct-get(SDB-GSBASE, h), g), s)
+    }
+}
+
+sdb-clear-groups = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SDB-GSBASE, h, 0)
+    ct-set(SDB-GNC, h, 0)
+}
+
+sdb-item-count = (h i64) (n i64) { n = ct-get(SDB-IN, h) }
+
+sdb-item = (h i64, i i64) (s str) {
+    s = ''
+    n = ct-get(SDB-IN, h)
+    ((i >= 0) & (i < n)) -> {
+        s = ed-arr-get-s(SDB-ITEM, ct-add(ct-get(SDB-ISBASE, h), i))
+    }
+    s = s
+}
+
+sdb-item-group = (h i64, i i64) (g i64) {
+    g = -1
+    n = ct-get(SDB-IN, h)
+    ((i >= 0) & (i < n)) -> {
+        g = ct-get(SDB-ITOG, ct-add(ct-get(SDB-ISBASE, h), i))
+    }
+    g = g
+}
+
+sdb-add-item = (h i64, g i64, label str) (idx i64) {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ng = ct-get(SDB-GNC, h)
+    ((g < 0) | (g >= ng)) -> {
+        ; 组号越界：当作写空操作，直接返回
+        idx = -1
+        return
+    }
+    b = ct-get(SDB-ISBASE, h)
+    n = ct-get(SDB-IN, h)
+    (n == 0) -> {
+        b = SDB-ITEM.len()
+        ct-set(SDB-ISBASE, h, b)
+    }
+    SDB-ITEM.push(label)
+    SDB-ITOG.push(g)
+    ct-set(SDB-IN, h, ct-inc(n))
+    idx = n
+}
+
+sdb-set-item = (h i64, i i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    n = ct-get(SDB-IN, h)
+    ((i >= 0) & (i < n)) -> {
+        ed-arr-set-s(SDB-ITEM, ct-add(ct-get(SDB-ISBASE, h), i), s)
+    }
+}
+
+sdb-clear-items = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SDB-ISBASE, h, 0)
+    ct-set(SDB-IN, h, 0)
+}
+
+sdb-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    sdb-clear-groups(h)
+    sdb-clear-items(h)
+}
+
+sdb-collapsed = (h i64) (v i64) { v = ct-get(SDB-COLL, h) }
+
+sdb-set-collapsed = (h i64, on i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SDB-COLL, h, on)
+}
+
+; 某组的条目数（用于测算 / 渲染按组聚合）
+sdb-group-size = (h i64, g i64) (n i64) {
+    n = 0
+    m = ct-get(SDB-IN, h)
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ig = sdb-item-group(h, i)
+        (ig == g) -> { n = ct-inc(n) }
+        i = ct-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 阶段70：命令式 sheet（C-SHEET）—— 可停靠四边的抽屉 / 面板
+;   标题走 CMP-TEXT[h]（构造函数已经把 title 存进去）；展开位与停靠边各一个
+;   per-handle 池。side: 0=左 1=右 2=上 3=下。
+; ============================================================================
+sht-pad = () (p i64) { p = 1200 }
+sht-gap = () (g i64) { g = 800 }
+sht-bar-w = () (bw i64) { bw = 1200 }      ; 停靠边那条 ACCENT 抓杆宽
+sht-min-w = () (mw i64) { mw = 2400 }      ; 内容区最小宽
+sht-body-h = () (bh i64) { bh = 8000 }     ; 展开时正文区高
+
+sht-open = (h i64) (v i64) {
+    v = ct-get(SHT-OPEN, h)
+}
+
+sht-set-open = (h i64, on i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SHT-OPEN, h, on)
+}
+
+sht-show = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SHT-OPEN, h, 1)
+}
+
+sht-hide = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SHT-OPEN, h, 0)
+}
+
+sht-toggle = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    v = ct-get(SHT-OPEN, h)
+    (v != 0) -> { ct-set(SHT-OPEN, h, 0) }
+    (v == 0) -> { ct-set(SHT-OPEN, h, 1) }
+}
+
+sht-side = (h i64) (v i64) {
+    v = ct-get(SHT-SIDE, h)
+}
+
+; 标题读写（sheet 专属，写操作看 F-DISABLED；底层仍是 CMP-TEXT[h]）
+sht-title = (h i64) (s str) { s = cmp-text(h) }
+
+sht-set-title = (h i64, s str) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    cmp-set-text(h, s)
+}
+
+; 越界值夹到 [0,3]
+sht-set-side = (h i64, s i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ((s >= 0) && (s <= 3)) -> { ct-set(SHT-SIDE, h, s) }
+    (s < 0) -> { ct-set(SHT-SIDE, h, 0) }
+    (s > 3) -> { ct-set(SHT-SIDE, h, 3) }
+}
+
+; ============================================================================
+; 阶段71：命令式 text-node（C-TEXT）—— 单行多段样式文本
+;   没有片段时退化成「组件标题走 CMP-TEXT[h]、颜色走 CMP-COLOR[h]」的一条
+;   文本，和补全前行为完全一致。片段池扁平只增：TXN-RUN 存文案、TXN-COL
+;   存颜色（-1 = 继承组件自身 CMP-COLOR[h]）。
+; ============================================================================
+txn-count = (h i64) (n i64) {
+    n = ct-get(TXN-N, h)
+}
+
+txn-run-text = (h i64, i i64) (s str) {
+    s = ''
+    b = ct-get(TXN-SBASE, h)
+    n = ct-get(TXN-N, h)
+    ((i >= 0) && (i < n)) -> { s = ed-arr-get-s(TXN-RUN, ct-add(b, i)) }
+    s = s
+}
+
+txn-run-color = (h i64, i i64) (c i64) {
+    c = -1
+    b = ct-get(TXN-SBASE, h)
+    n = ct-get(TXN-N, h)
+    ((i >= 0) && (i < n)) -> { c = ct-get(TXN-COL, ct-add(b, i)) }
+    c = c
+}
+
+txn-add = (h i64, s str, c i64) (idx i64) {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(TXN-SBASE, h)
+    n = ct-get(TXN-N, h)
+    (n == 0) -> { b = TXN-RUN.len() }
+    TXN-RUN.push(s)
+    TXN-COL.push(c)
+    ct-set(TXN-SBASE, h, b)
+    ct-set(TXN-N, h, ct-inc(n))
+    idx = n
+}
+
+txn-set-run = (h i64, i i64, s str, c i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-get(TXN-SBASE, h)
+    n = ct-get(TXN-N, h)
+    ((i >= 0) && (i < n)) -> {
+        ed-arr-set-s(TXN-RUN, ct-add(b, i), s)
+        ct-set(TXN-COL, ct-add(b, i), c)
+    }
+}
+
+txn-clear = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(TXN-SBASE, h, 0)
+    ct-set(TXN-N, h, 0)
+}

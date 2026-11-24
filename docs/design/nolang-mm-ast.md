@@ -8,8 +8,8 @@
 
 已落地：
 - `src/parser/astmm.go`：AST ↔ 节点表（含三張 node-keyed 表 `anns` / `typeFacts` / `nodeFacts`，按节点索引存储；Stage 7 前的 `nodeSem` 已刪）。
-- `src/mmast/mmast.go`：节点表 → mm 分片（每片 ≤64KB）→ `<tool>.ast.zip`；反向解回 AST。
-- `no pub`：产出 `<name>.ast.zip`；`no add`：写 `tool@host/owner/repo = <version>`。
+- `src/mmast/mmast.go`：节点表 → mm 分片（每片 ≤64KB）→ `<tool>-ast.zip`；反向解回 AST。
+- `no pub`：产出 `<name>-ast.zip`；`no add`：写 `tool@host/owner/repo = <version>`。
 - 验证：std 全量 118 个模块节点表往返 dump 文本逐字节一致（含注解）；
   `net/tls.no` 53500 节点 → 234 分片 → 926KB zip → 解回一致。
 
@@ -17,7 +17,7 @@
 
 - `no add nogit:v0.1.33@github.com/lizongying/notools` —— 依赖 spec 与 `no install` 同形。
 - 依赖产物从「源码 tarball」改成「预编 AST」：
-  `https://github.com/lizongying/notools/releases/download/v0.1.33/nogit.ast.zip`
+  `https://github.com/lizongying/notools/releases/download/v0.1.33/nogit-ast.zip`
 - package.jsonc 依赖键：`"<tool>@<host>/<owner>/<repo>"`，值为版本（`nogit@github.com/lizongying/notools: v0.1.33`）。
 - 编译器侧：AST → mm（发布）、mm → AST（消费）。
 
@@ -55,7 +55,7 @@
 - **D3 分片**：单块编码后逼近 C3 上限即切块（自适应：先试编，超过阈值/报错就回退半量）。
   超过 60KB 的单个字符串切成 `big:<field>` 分片。
   zip 条目：`manifest.mm` + `chunk-0000.mm`…（每片一个独立 mm 文档，互不拼接）。
-- **D4 打包**：`nogit.ast.zip`（用户指定）。zip 的 deflate 负责压缩，mm 只管结构化。
+- **D4 打包**：`nogit-ast.zip`（用户指定）。zip 的 deflate 负责压缩，mm 只管结构化。
 - **D5 版本与失效**：manifest 带 `wire_ver`（codec 版本）、`ast_ver`（`parser.ASTVersion`）、
   `sig`（`parser.ExternSignatureFingerprint`）、`src_sha256`。任一不匹配即拒绝加载（硬错，不静默回退），
   与 incremental 的 hard-error 口径一致。
@@ -89,11 +89,11 @@ C2 非 bool 加 `allow_empty`、C3 原生容器、C4 值路径、C5 两端一致
 
 发布侧（`no pub`，当前是 stub）：
 ```
-package 目录 → 逐 .no 解析 → AST → 节点表 → 分片 → mm → <tool>.ast.zip
+package 目录 → 逐 .no 解析 → AST → 节点表 → 分片 → mm → <tool>-ast.zip
 ```
 消费侧（`no add` → `no sync` → 编译）：
 ```
-<tool>.ast.zip → 校验 manifest → 逐片 mm → 节点表 → AST → 交给编译管线
+<tool>-ast.zip → 校验 manifest → 逐片 mm → 节点表 → AST → 交给编译管线
 ```
 
 ### 4.1 消费侧接线（已实现）
@@ -104,11 +104,38 @@ package 目录 → 逐 .no 解析 → AST → 节点表 → 分片 → mm → <t
 |---|---|---|
 | 键识别 | `pkg.IsASTDependencyKey`（`src/package/pkg.go`） | `@` 之后至少两段路径 ⇒ 预编 AST 依赖 |
 | 键匹配 | `pkg.MatchDependency` → `dependencyPrefixes` | 把 `tool@host/owner/repo` 展开成 `tool` 与 `host/owner/repo` 两个可比前缀，`use mymod` 与 `use host/owner/repo/mymod` 都能命中 |
-| 取 AST | `build.Transpiler.resolveASTDependency`（`src/build/transpiler.go`） | 在 `resolveUse` 的两处 `MatchDependency` 之后短路：调 `mmast.EnsureModuleAST`，**不走** `ResolveDependencyModule → DownloadPackage`（没有源码可下载） |
-| 注册表 | `mmast.RegisterModuleAST` / `EnsureModuleAST`（`src/mmast/registry.go`） | 进程内 `sync.Map` 缓存；未命中才 `FetchASTZip`（含磁盘缓存） |
+| 取 AST | `build.Transpiler.resolveASTDependency`（`src/build/transpiler_resolve.go`） | 在 `resolveUse` 的两处 `MatchDependency` 之后短路：从 import path 提取模块路径，并接 `use.Function` 决定语义（见下），**不走** `ResolveDependencyModule → DownloadPackage`（没有源码可下载） |
+| 注册表 | `mmast.RegisterModuleAST` / `EnsurePackageAST` / `EnsureModuleAST` / `EnsureModuleASTForFunction`（`src/mmast/registry.go`） | 进程内 `sync.Map` 缓存一个包的全部模块；未命中才 `FetchModuleSet`（含磁盘缓存），一次下载注册整包 |
 
 `EnsureModuleAST` 要求版本是具体值——`""` / `"*"` 直接报错，不做「猜最新版」。
-一个 zip = 一个模块：`use host/owner/repo/deep` 会明确报 `single prebuilt module`，不静默退化成「文件找不到」。
+一个 zip = 一个**包**，包内可含多**模块**；**没有入口模块**，包名本身不是模块：
+
+| 写法 | 语义 |
+|---|---|
+| `# mymod/remote`、`# mymod/remote.fn` | 直接引入模块 `remote`（`fn` 由合并阶段按别名规则过滤） |
+| `# mymod.fn` | `mymod` 只是包名；在包内按顶层函数/常量 `fn` 定位定义它的模块 |
+| `# mymod` | 建立包别名，模块以 `mymod.<module>` 取用（不导入 `main`、也不是全部裸名导入） |
+| `# <host>/<owner>/<repo>/mymod[/mod]` | 同上，只是用完整仓库路径命中依赖键 |
+
+`no fmt` 会把正文未使用的 `# mymod` / `# mymod/remote` 一并清掉；`mymod.remote(...)`
+既是 `# mymod` 的使用，也算 `# mymod/remote` 的使用（点号属性 `remote` 参与判定）。
+
+深层模块路径（如 `deep/util.gob`）在调用侧一律取路径最后一段短名：`# mymod` 下写
+`mymod.util.fn(...)`，直接 `# mymod/deep/util` 下写 `util.fn(...)`。HIR 的点号调用只解析
+`<module>.<symbol>` 两段，四段全名会在 codegen 阶段变成 `unknown callee`。
+
+模块路径不存在、函数名找不到、或多个模块都定义同名符号时都明确报错并列出可用模块，
+不静默退化成「文件找不到」。
+
+**容器：一个模块一个条目**（2026-11-24.3）：zip 内是 `<modulePath>.gob`（如 `main.gob`、
+`remote.gob`、`deep/util.gob`）+ 可选 `package.noml`；**不再有 `ast.gob` / `mods.gob`**。
+每个条目是 `gob(parser.CachedProgram)`，模块身份同时挂在 `Program` 上的两个隐式注解：
+`SourcePath`（实际文件/embed 路径，如 `remote.no` / `std/math.no`）与 `ModulePath`
+（模块导入路径，如 `main` / `remote` / `std/math.no`）。
+两者进 `detProgram` 影子，随 `CachedProgram` 的 gob 一起落地；读端交叉校验条目名与载荷注解。
+`std-ast.bin` 的 `StdASTBlob.Mods` 也是 `[][]byte`、载荷同样自带这两个注解（见下节）——
+两条分发通道共用「载荷自带路径」的约定，容器只装字节。旧容器由 `ZipVer` 路径键控天然失效，
+读端明确拒绝。
 
 `no sync` 额外预取：AST 依赖不进依赖图（`Package.resolveFromScratch` 跳过 `IsASTDependencyKey`），
 由 `syncDependencies` 单独抓并快取到 `~/no/cache/ast/`，让后续编译离线可用。
@@ -117,13 +144,13 @@ package 目录 → 逐 .no 解析 → AST → 节点表 → 分片 → mm → <t
 端到端实测（本地 httptest / `python3 -m http.server` 冒充 GitHub Releases）：
 
 ```
-no pack -o mymod.ast.zip mymod.no                 # 生产侧：1786 B / 30 nodes / 1 chunk
-<serve> /o/r/releases/download/v1.0.0/mymod.ast.zip
+no pack -o mymod-ast.zip ./mymod                  # 生产侧：按模块数生成多个 .gob 条目
+<serve> /o/r/releases/download/v1.0.0/mymod-ast.zip
 no sync                                           # → ast  mymod@127.0.0.1:8123/o/r v1.0.0
-no run main.no                                    # use mymod.greet → 输出 hi bob
+no run main.no                                    # # mymod.greet → 输出 hi bob
 ```
 
-版本不对时 `.../releases/download/v9.9.9/mymod.ast.zip (status 404)`——HTTP 状态错误不重试，
+版本不对时 `.../releases/download/v9.9.9/mymod-ast.zip (status 404)`——HTTP 状态错误不重试，
 传输层错误（EOF / connection refused）才重试 3 次。
 
 ## 5. `no pack`（CI 工具）与 `no pub`（未来）
@@ -131,26 +158,26 @@ no run main.no                                    # use mymod.greet → 输出 h
 两者共用同一个入口 `packAST(dir|file.no, out)`（`src/cmd/no/main.go`），pub 只多一步上传：
 
 ```bash
-# 打包当前包（读 package.jsonc 的 name / main）→ dist/<name>.ast.zip
+# 打包当前包（读 package.jsonc 的 name / main）→ dist/<name>-ast.zip
 no pack
 
 # CI 常用：显式输出路径，之后上传为 release 资产
-no pack -o nogit.ast.zip nogit.no
+no pack -o nogit-ast.zip nogit.no
 
 # 打包某个包目录
-no pack -o nogit.ast.zip ./nogit
+no pack -o nogit-ast.zip ./nogit
 ```
 
 CI 示例（GitHub Actions）：
 
 ```yaml
-- run: no pack -o nogit.ast.zip nogit.no
-- run: gh release upload "$TAG" nogit.ast.zip
+- run: no pack -o nogit-ast.zip nogit.no
+- run: gh release upload "$TAG" nogit-ast.zip
 ```
 
 `no pack` 只需要 lexer + parser（与 `build/builder.go` 的解析入口一致：`lexer.NewCached` +
 `p.Filename`），**不需要 LLVM 工具链**，所以能在任意 runner 上产出资产。
-打包会打印 `bytes / nodes / chunks` 便于 CI 日志核对。
+打包会打印 `bytes / nodes / modules` 便于 CI 日志核对。
 
 `no pub` 目前只做打包（registry 上传未实现），行为与 `no pack` 相同并复用同一代码路径。
 
@@ -158,7 +185,10 @@ CI 示例（GitHub Actions）：
 
 - 大字符串（>64KB 字面量）分片后的拼接与校验。
 - `no pub` 的 registry 上传尚未设计（当前只产出本地 zip）。
-- 真实 `.ast.zip` 资产尚未发布：notools 的 release 里还没有 `nogit.ast.zip`，
+- 真实 `-ast.zip` 资产尚未发布：notools 的 release 里还没有 `nogit-ast.zip`，
   消费侧目前只有本地/单测级别的验证，没有跑过真实 GitHub 下载。
-- 一个 zip 只装一个模块：仓库里多个工具（nogit / noimg / …）要各自打包。
-  目前不支持「一个 zip 装多个模块 + `use repo/submod`」。
+- （已解决 2026-11-24）一个 zip = 一个包，包内可含多个模块：`no pack <包目录>` 递归打包
+  所有 `.no`（尊重 `ignore`、跳过嵌套 `package.noml` 子包），`# <tool>/<submod>` 直接取子模块，
+  `# <tool>.<fn>` 按函数名在包内定位模块。资产名 `<tool>-ast.zip`，zip 内每个模块一个
+  `<modulePath>.gob` 条目（`gob(parser.CachedProgram)`，路径由载荷内的 `SourcePath` /
+  `ModulePath` 携带）+ 可选 `package.noml`。没有入口模块，`ast.gob` / `mods.gob` 已移除。

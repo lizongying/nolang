@@ -1,0 +1,289 @@
+; ============================================================================
+; noui 窗口 demo：标题容器（阶段 59）—— C-GROUP-BOX
+;
+; 流水线：app-init -> cmp-group-box(title) -> gb-set-title / cmp-add-child
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-GROUP-BOX 分支 + cs-layout 的
+;      「标题行 + 内容区」偏移 + cs-paint 的标题行）：面板底 + 标题（FG）+
+;      TRACK 分隔线 + 内容区里的视觉子节点
+;   -> 键盘：t=换标题；a=加一行；r=重建默认；h=横/纵向切换；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; ⚠ CHILD-IDX 是全局扁平数组，父的子链必须连续：GB 的子节点只能在「挂到 root
+;   之前」或「先 cmp-detach 清空再挂」时增删。所以本 demo 的 a / r 都走
+;   gb-clear-kids（逐个 cmp-detach）再重挂，绝不直接往已挂载的父后面追加。
+;
+; 退出：ESC / q / 帧数上限（GB-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-group-box.no
+; ============================================================================
+# /noui/src/app
+
+GB-MAX-FRAMES = 900
+GB-N = 3
+
+gb-frames = 0
+gb-keys = 0
+gb-clicks = 0
+
+GB = 0
+GB-CAND-I = 0
+
+; ---- 候选标题（t 轮取）----
+; 注意：standalone `->` 是「全真全执行、后跑的赢」，所以 (i == 0) 必须排在最前，
+; 否则 i=0 时它最后执行会把默认值盖掉。
+gb-cand = (i i64) (s str) {
+    s = 'settings'
+    (i == 0) -> { s = 'workspace' }
+    (i == 1) -> { s = 'profile' }
+    (i == 2) -> { s = 'account' }
+    (i == 3) -> { s = 'preferences' }
+    (i == 4) -> { s = 'window' }
+    (i == 5) -> { s = 'sidebar' }
+    s = s
+}
+
+; ---- 候选子节点文本（a 轮取）----
+gb-kid-name = (i i64) (s str) {
+    s = 'alpha'
+    (i == 0) -> { s = 'alpha' }
+    (i == 1) -> { s = 'bravo' }
+    (i == 2) -> { s = 'charlie' }
+    (i == 3) -> { s = 'delta' }
+    (i == 4) -> { s = 'echo' }
+    (i == 5) -> { s = 'foxtrot' }
+    s = s
+}
+
+; ---- 挂 n 个子节点 ----
+gb-add-kids = (h i64, n i64) () {
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        k = cmp-label(gb-kid-name(i))
+        cmp-add-child(h, k)
+        i = cs-inc(i)
+    }
+}
+
+; ---- 摘掉所有子节点（CHILD-IDX 扁平数组要求先清空再重挂，见文件头注释）----
+gb-clear-kids = (h i64) () {
+    n = cs-child-count(h)
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        c = cmp-child(h, 0)
+        cmp-detach(h, c)
+        i = cs-inc(i)
+    }
+}
+
+; ---- 重建默认（标题 'settings' + 三行子节点，纵向）----
+gb-build-default = (h i64) () {
+    gb-clear-kids(h)
+    gb-set-title(h, 'settings')
+    cmp-set-lay(h, 0)
+    gb-add-kids(h, GB-N)
+}
+
+; ---- 场景文本 / 矩形查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化（GB 的子节点先挂好，再把 GB 挂到 root —— 见文件头 CHILD-IDX 注释）
+; ============================================================================
+ok = app-init('noui group-box')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段59: group-box')
+hint = cmp-label('t=title a=add-line r=rebuild h=horiz d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+GB = cmp-group-box('settings')
+gb-build-default(GB)
+
+cmp-add-child(root, title)
+cmp-add-child(root, GB)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：只计数 ----
+    (t == 2) -> { gb-clicks = cs-inc(gb-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; t：换标题
+        (k == 116) -> {
+            GB-CAND-I = ct-rem(GB-CAND-I, 7)
+            gb-set-title(GB, gb-cand(GB-CAND-I))
+            GB-CAND-I = cs-inc(GB-CAND-I)
+        }
+        ; a：加一行子节点（清空重挂，见文件头）
+        (k == 97) -> {
+            n = cs-child-count(GB)
+            gb-clear-kids(GB)
+            gb-add-kids(GB, n + 1)
+        }
+        ; r：重建默认
+        (k == 114) -> { gb-build-default(GB) }
+        ; h：横向 / 纵向切换
+        (k == 104) -> {
+            ly = cmp-lay(GB)
+            b = ly & L-H
+            (b != 0) -> { cmp-set-lay(GB, 0) }
+            (b == 0) -> { cmp-set-lay(GB, L-H) }
+        }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(GB, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(GB, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(GB, F-DISABLED) }
+        }
+        gb-keys = cs-inc(gb-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = cs-child-count(GB)
+    ly = cmp-lay(GB)
+    b = ly & L-H
+    dis = cmp-has(GB, F-DISABLED)
+    t0 = gb-title(GB)
+    c0 = cmp-text(cmp-child(GB, 0))
+    cmp-set-text(stat, 'title={t0} kids={cn} horiz={b} disabled={dis}')
+    cmp-set-text(stat2, 'child0={c0}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    gb-frames = cs-inc(gb-frames)
+    (GB-MAX-FRAMES > 0) -> {
+        (gb-frames >= GB-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：先钉住横向（子节点应同一行、间距 = gap），再重建默认（纵向三行），
+; 按面板实测矩形推导坐标逐项核对：
+;   内边距 1200 / 标题行高 4000 / 标题与内容间隙 800 / 分隔线 100 /
+;   行高 2400 / 行距 800
+;   标题文字垂直居中：y = 面板顶 + 1200 + (4000-2400)/2 = 面板顶 + 2000
+;   内容区起点：y = 面板顶 + 1200 + 4000 + 800 = 面板顶 + 6000（flow 自己再加内边距）
+; ============================================================================
+cmp-flag-clear(GB, F-DISABLED)
+
+; ---- 横向：两个子节点同一行，第二个在第一个右侧一个 gap ----
+cmp-set-lay(GB, L-H)
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+k0 = cmp-child(GB, 0)
+k1 = cmp-child(GB, 1)
+ax, ay, aw, ah = cs-rect(k0)
+bx, by, bw, bh = cs-rect(k1)
+c1 = ay == by
+c2 = bx == cs-add(cs-add(ax, aw), 800)
+
+; ---- 重建默认（纵向三行）----
+gb-build-default(GB)
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+gbx, gby, gbw, gbh = cs-rect(GB)
+tx = cs-add(gbx, 1200)
+ty = cs-add(gby, 2000)
+sepy = cs-add(gby, 5200)
+cx = cs-add(gbx, 1200)
+cy = cs-add(gby, 6000)
+cw = cs-sub(gbw, 2400)
+
+c3 = gb-title(GB) == 'settings'
+c4 = cs-child-count(GB) == 3
+c5 = find-text('settings', tx, ty) == 1
+c6 = find-text-color('settings', tx, ty) == cs-theme(CS-TH-FG)
+c7 = find-rect-color(gbx, sepy, gbw, 100) == cs-theme(CS-TH-TRACK)
+c8 = find-rect-color(gbx, gby, gbw, gbh) == 0x2A2A3AFF
+c9 = find-text('alpha', cx, cy) == 1
+c10 = find-text('bravo', cx, cs-add(cy, 3200)) == 1
+c11 = find-text('charlie', cx, cs-add(cy, 6400)) == 1
+
+; 重建换过子节点句柄，必须重取（旧句柄的 CS-L* 还是横向那次的）
+k0 = cmp-child(GB, 0)
+kx, ky, kw, kh = cs-rect(k0)
+c12 = kx == cx && ky == cy && kw == cw && kh == 2400
+
+fr = gb-frames
+kk = gb-keys
+ck = gb-clicks
+nf = cs-child-count(GB)
+print('bye frames={fr} keys={kk} clicks={ck} kids={nf} w={gbw} h={gbh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12) -> {
+    print('group-box render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12)) -> {
+    print('FAIL: group-box render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

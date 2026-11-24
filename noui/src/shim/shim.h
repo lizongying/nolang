@@ -23,4 +23,19 @@ int noui_should_quit(void);
 void noui_delay(int ms);
 const char *noui_version(void);
 
+/* 阶段52：窗口选项（C-WINDOW-EXT 直接驱动真窗口）。
+ * 全部标量进出；查询类把宽 / 高打包进一个 i64（w << 32 | h），flags 原样返回。 */
+void noui_window_set_title(const char *title);
+void noui_window_set_resizable(int yes);
+void noui_window_set_min_size(int w, int h);
+void noui_window_set_max_size(int w, int h);
+void noui_window_set_fullscreen(int yes);
+void noui_window_set_always_on_top(int yes);
+void noui_window_set_bordered(int yes);
+void noui_window_set_opacity(double o);
+void noui_window_set_size(int w, int h);
+long long noui_window_get_size(void);
+long long noui_window_get_flags(void);
+const char *noui_window_get_title(void);
+
 #endif

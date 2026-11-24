@@ -1,0 +1,199 @@
+; ============================================================================
+; noui 窗口 demo：面包屑（阶段 53）—— C-BREADCRUMB
+;
+; 流水线：app-init -> cmp-breadcrumb -> bc-* 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-BREADCRUMB 分支 +
+;      cs-paint-breadcrumb）：祖先 muted、当前页前景色、分隔符 TRACK
+;   -> 键盘：a=追加一段；c=清空；b=重建默认路径；s=换分隔符；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-breadcrumb.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui breadcrumb')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段53: breadcrumb')
+hint = cmp-label('a=append c=clear b=rebuild s=separator d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+bc = cmp-breadcrumb()
+bc-add-item(bc, 'home')
+bc-add-item(bc, 'docs')
+bc-add-item(bc, 'noui')
+
+cmp-add-child(root, title)
+cmp-add-child(root, bc)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：点面包屑不算事件，只计数（面包屑是展示件）----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一段（六个候选轮取）
+        (k == 97) -> {
+            n = bc-count(bc)
+            r = ct-rem(n, 6)
+            seg = 'settings'
+            (r == 1) -> { seg = 'profile' }
+            (r == 2) -> { seg = 'security' }
+            (r == 3) -> { seg = 'session' }
+            (r == 4) -> { seg = 'keys' }
+            (r == 5) -> { seg = 'tokens' }
+            bc-add-item(bc, seg)
+        }
+        ; c：清空
+        (k == 99) -> { bc-clear(bc) }
+        ; b：重建默认三段
+        (k == 98) -> {
+            bc-clear(bc)
+            bc-add-item(bc, 'home')
+            bc-add-item(bc, 'docs')
+            bc-add-item(bc, 'noui')
+        }
+        ; s：换分隔符
+        (k == 115) -> {
+            i = ct-rem(rt-keys, 3)
+            (i == 0) -> { bc-set-sep(bc, ' / ') }
+            (i == 1) -> { bc-set-sep(bc, ' :: ') }
+            (i == 2) -> { bc-set-sep(bc, ' > ') }
+        }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(bc, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(bc, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(bc, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = bc-count(bc)
+    cj = bc-join(bc)
+    cs = bc-sep(bc)
+    cl = bc-last(bc)
+    dis = cmp-has(bc, F-DISABLED)
+    cmp-set-text(stat, 'n={cn} last={cl} sep={cs} disabled={dis}')
+    cmp-set-text(stat2, 'path={cj}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建已知路径，逐段核对渲染坐标与配色
+; ============================================================================
+bc-clear(bc)
+bc-set-sep(bc, ' / ')
+bc-add-item(bc, 'home')
+bc-add-item(bc, 'docs')
+bc-add-item(bc, 'noui')
+cmp-flag-clear(bc, F-DISABLED)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+bx, by, bw, bh = cs-rect(bc)
+ty = by + cs-div(cs-sub(bh, 2400), 2)
+ex = bx + 1200
+
+c1 = bc-count(bc) == 3
+c2 = bc-last(bc) == 2
+c3 = bc-join(bc) == 'home / docs / noui'
+c4 = find-text('home', ex, ty) == 1
+c5 = find-text('docs', cs-add(ex, 5600), ty) == 1
+c6 = find-text('noui', cs-add(ex, 11200), ty) == 1
+c7 = find-text(' / ', cs-add(ex, 3200), ty) == 1
+c8 = find-text(' / ', cs-add(ex, 8800), ty) == 1
+c9 = find-text-color('home', ex, ty) == cs-theme(CS-TH-MUTED)
+c10 = find-text-color('noui', cs-add(ex, 11200), ty) == cs-theme(CS-TH-FG)
+c11 = find-text-color(' / ', cs-add(ex, 3200), ty) == cs-theme(CS-TH-TRACK)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+fj = bc-join(bc)
+print('bye frames={fr} keys={kk} clicks={ck} path={fj} w={bw}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11) -> {
+    print('breadcrumb render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11)) -> {
+    print('FAIL: breadcrumb render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

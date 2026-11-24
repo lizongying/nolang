@@ -28,13 +28,13 @@ sidebar_position: 4
 - `FormatFile(code)` 格式化整個檔案，並呼叫 `ensureTrailingNewline`：去掉末尾所有 `\r` / `\n`（相容 CRLF 與多個末尾空行），再補上一個 `\n`。空檔案或無法解析的內容會原樣返回，避免破壞檔案。
 - `Format(code)` 是純片段格式化函式（不加末尾換行），主要供單元測試使用；寫入真實原始檔時請改用 `FormatFile`。
 
-## 導入語句自動整理（去重 / 移除 `# std/fmt` / 排序）
+## 導入語句自動整理（去重 / 移除無別名 std 導入 / 排序）
 
 `no fmt`（及 LSP 存檔格式化）會對**檔案頂部連續的導入區段**（`# path[.fn] [alias]`）自動整理，實作位於 `src/fmt/imports.go`：
 
 1. **去重**：完全相同（路徑、函數名、別名逐字相同）的導入只保留第一條。
-2. **自動移除 `# std/fmt`**：`print` / `eprint` / `format` / `sprintf` 是編譯器內建函數，標準庫模組又隱式可載入（見 [跨模組調用前綴](./module)），`# std/fmt` 從不必需，寫了也會被 formatter 移除。兩個例外會保留：
-   - 寫了**別名**或**函數導入**（如 `# std/fmt.sprintf fm`）——這是刻意的名稱綁定；
+2. **自動移除所有無別名的 std 模組導入**：標準庫模組由編譯器隱式可載入（見 [跨模組調用前綴](./module)），`# std/noml`、`# std/math`、`# std/database/sql` 這類「無別名、無 `.函數`」的純模組導入不綁定任何名稱，寫了也会被 formatter 移除。三個例外會保留：
+   - 寫了**別名**（`# std/noml n`）或**函數導入**（`# std/fmt.sprintf fm`）——這是刻意的名稱綁定；
    - 導入行帶**註釋**或 `#{...}` 附着註解——用戶寫下的內容不可靜默丟棄。
 3. **自動排序**：按 路徑 → 函數名 → 別名 字典序穩定排序。
 
@@ -45,10 +45,12 @@ sidebar_position: 4
 ```no
 #{fmt-skip}
 ; 格式化前                          ; 格式化後
-# std/vec                           # std/io
-# std/fmt                           # std/vec
-# std/io
-# std/fmt        ;→  print、format 為內建，# std/fmt 移除；其餘按字典序排序
+# std/vec                           # aaa/lib
+# std/noml                          # std/io
+# std/io                            # std/vec
+# std/noml n
+# aaa/lib        ;→  無別名 std 導入（# std/noml、# std/vec、# std/io）移除；
+                    ;   帶別名的 # std/noml n 保留；其餘按字典序排序
 ```
 
 ## 註釋標記（Comment Markers）

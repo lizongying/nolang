@@ -1,0 +1,213 @@
+; ============================================================================
+; noui 窗口 demo：描述列表（阶段 55）—— C-DESCRIPTION-LIST
+;
+; 流水线：app-init -> cmp-description-list -> dl-add / dl-set-* 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-DESCRIPTION-LIST 分支 +
+;      cs-paint-description-list）：FIELD 底 + 左标签 MUTED + 右值 FG 右对齐 +
+;      行间 TRACK 分隔线
+;   -> 键盘：a=追加一行；c=清空；r=重建默认三行；v=改写首行；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-description-list.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui description-list')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段55: description-list')
+hint = cmp-label('a=add c=clear r=rebuild v=rewrite d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+dl = cmp-description-list()
+dl-add(dl, 'name', 'noui')
+dl-add(dl, 'version', 'v0.4')
+dl-add(dl, 'released', '2026-11-22')
+
+cmp-add-child(root, title)
+cmp-add-child(root, dl)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：描述列表是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一行（候选标签 / 值轮取）
+        (k == 97) -> {
+            n = dl-count(dl)
+            r = ct-rem(n, 6)
+            lb = 'alpha'
+            vv = 'one'
+            (r == 1) -> { lb = 'beta' }
+            (r == 1) -> { vv = 'two' }
+            (r == 2) -> { lb = 'gamma' }
+            (r == 2) -> { vv = 'three' }
+            (r == 3) -> { lb = 'delta' }
+            (r == 3) -> { vv = 'four' }
+            (r == 4) -> { lb = 'epsilon' }
+            (r == 4) -> { vv = 'five' }
+            (r == 5) -> { lb = 'zeta' }
+            (r == 5) -> { vv = 'six' }
+            dl-add(dl, lb, vv)
+        }
+        ; c：清空
+        (k == 99) -> { dl-clear(dl) }
+        ; r：重建默认三行
+        (k == 114) -> {
+            dl-clear(dl)
+            dl-add(dl, 'name', 'noui')
+            dl-add(dl, 'version', 'v0.4')
+            dl-add(dl, 'released', '2026-11-22')
+        }
+        ; v：改写首行（标签改标题、值改长串）
+        (k == 118) -> {
+            dl-set-label(dl, 0, 'title')
+            dl-set-value(dl, 0, 'a fairly long value')
+        }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(dl, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(dl, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(dl, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = dl-count(dl)
+    dis = cmp-has(dl, F-DISABLED)
+    cmp-set-text(stat, 'n={cn} disabled={dis}')
+    cmp-set-text(stat2, 'label[0]={dl-label(dl, 0)} value[0]={dl-value(dl, 0)}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建已知三行，按面板实测矩形推导坐标逐行核对
+;   面板内边距 1200 / 标签列 12000 / 列间隙 800 / 行高 2400 / 行间距 100
+;   标签 x = bx+1200（MUTED）
+;   值列 x = bx+1200+12000+800 = bx+14000，宽 = bw-15200，右对齐
+;   行 i 的 y = by+1200+i*2500
+; ============================================================================
+dl-clear(dl)
+dl-add(dl, 'name', 'noui')
+dl-add(dl, 'version', 'v0.4')
+dl-add(dl, 'released', '2026-11-22')
+cmp-flag-clear(dl, F-DISABLED)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+bx, by, bw, bh = cs-rect(dl)
+lx = cs-add(bx, 1200)
+vx = cs-add(bx, 14000)
+vw = cs-sub(bw, 15200)
+ry0 = cs-add(by, 1200)
+ry1 = cs-add(ry0, 2500)
+ry2 = cs-add(ry1, 2500)
+nx0 = cs-add(vx, cs-sub(vw, 3200))
+nx1 = cs-add(vx, cs-sub(vw, 3200))
+nx2 = cs-add(vx, cs-sub(vw, 8000))
+
+c1 = dl-count(dl) == 3
+c2 = dl-label(dl, 0) == 'name'
+c3 = dl-value(dl, 2) == '2026-11-22'
+c4 = find-text('name', lx, ry0) == 1
+c5 = find-text('noui', nx0, ry0) == 1
+c6 = find-text('version', lx, ry1) == 1
+c7 = find-text('v0.4', nx1, ry1) == 1
+c8 = find-text('released', lx, ry2) == 1
+c9 = find-text('2026-11-22', nx2, ry2) == 1
+c10 = find-text-color('name', lx, ry0) == cs-theme(CS-TH-MUTED)
+c11 = find-text-color('noui', nx0, ry0) == cs-theme(CS-TH-FG)
+c12 = find-text-color('released', lx, ry2) == cs-theme(CS-TH-MUTED)
+c13 = find-text-color('2026-11-22', nx2, ry2) == cs-theme(CS-TH-FG)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n0 = dl-count(dl)
+print('bye frames={fr} keys={kk} clicks={ck} rows={n0} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13) -> {
+    print('description-list render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13)) -> {
+    print('FAIL: description-list render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

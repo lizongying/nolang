@@ -1,0 +1,235 @@
+; ============================================================================
+; noui 输入族测试（阶段 47）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录第 25 行给 C-COLOR-PICKER 承诺「rgba, hue」、第 26 行给
+; C-DATE-PICKER 承诺「year, month, day」，但命令式侧两者都只有一个构造函数 ——
+; 通道 / hue / 年月日都没有 API，渲染还落在通用 `rect + text` 兜底里。
+; 阶段 47 补：
+;   - color-picker：CMP-COLOR = 0xRRGGBBAA，CMP-VALUE = hue（0..360）；
+;     cp-color / cp-red / cp-green / cp-blue / cp-alpha + 四个 cp-set-*
+;     + cp-hue / cp-set-hue（HSV 正算，S=191/255、V=235/255）
+;     + cp-hue-of（RGB 反算）+ cp-hex（「#RRGGBB」）
+;     + cs-paint-color-picker（色板 + hex + hue 数字）。
+;   - date-picker：CMP-VALUE = 年，VALUE2 = 月（1..12），VALUE3 = 日；
+;     dp-year / dp-month / dp-day + 四个 dp-set-* + dp-set-date
+;     + dp-leap / dp-days（夹日）+ dp-label（「YYYY-MM-DD」）
+;     + cs-paint-date-picker（字段底 + 日期文案）。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-picker tests/cmp-picker.no
+;       ./dist/cmp-picker
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 1. color-picker：构造默认（0x4A90E2FF / hue 213）
+; ============================================================================
+CP = cmp-color-picker()
+t1 = cmp-kind(CP) == C-COLOR-PICKER
+t2 = cp-color(CP) == 0x4A90E2FF
+t3 = cp-red(CP) == 74 && cp-green(CP) == 144 && cp-blue(CP) == 226 && cp-alpha(CP) == 255
+t4 = cp-hue(CP) == 213
+t5 = cp-hex(CP) == '#4A90E2'
+
+; ============================================================================
+; 2. color-picker：hue 正算 RGB（固定 S / V）
+; ============================================================================
+cp-set-hue(CP, 0)
+t6 = cp-color(CP) == 0xEB3B3BFF && cp-hue(CP) == 0 && cp-hex(CP) == '#EB3B3B'
+cp-set-hue(CP, 120)
+t7 = cp-color(CP) == 0x3BEB3BFF && cp-hue(CP) == 120 && cp-hex(CP) == '#3BEB3B'
+cp-set-hue(CP, 240)
+t8 = cp-color(CP) == 0x3B3BEBFF && cp-hue(CP) == 240 && cp-hex(CP) == '#3B3BEB'
+cp-set-hue(CP, 360)
+t9 = cp-hue(CP) == 360 && cp-color(CP) == 0xEB3B3BFF
+cp-set-hue(CP, 999)
+t10 = cp-hue(CP) == 360
+cp-set-hue(CP, -5)
+t11 = cp-hue(CP) == 0
+
+; ============================================================================
+; 3. color-picker：整色写入 → 反算 hue
+; ============================================================================
+cp-set-color(CP, 0xFF0000FF)
+t12 = cp-hue(CP) == 0 && cp-red(CP) == 255 && cp-green(CP) == 0
+cp-set-color(CP, 0x00FF00FF)
+t13 = cp-hue(CP) == 120
+cp-set-color(CP, 0x0000FFFF)
+t14 = cp-hue(CP) == 240
+cp-set-color(CP, 0x808080FF)
+t15 = cp-hue(CP) == 0 && cp-red(CP) == 128
+cp-set-color(CP, 0xFFFF00FF)
+t16 = cp-hue(CP) == 60
+cp-set-color(CP, 0x00FFFFFF)
+t17 = cp-hue(CP) == 180
+cp-set-color(CP, 0xFF00FFFF)
+t18 = cp-hue(CP) == 300
+
+; ============================================================================
+; 4. color-picker：单通道写入（重算 hue）
+; ============================================================================
+cp-set-color(CP, 0x4A90E2FF)
+cp-set-red(CP, 10)
+t19 = cp-color(CP) == 0x0A90E2FF && cp-hue(CP) == 203
+cp-set-color(CP, 0x4A90E2FF)
+cp-set-green(CP, 10)
+t20 = cp-color(CP) == 0x4A0AE2FF && cp-hue(CP) == 257
+cp-set-color(CP, 0x4A90E2FF)
+cp-set-blue(CP, 10)
+t21 = cp-color(CP) == 0x4A900AFF && cp-hue(CP) == 92
+cp-set-alpha(CP, 128)
+t22 = cp-color(CP) == 0x4A900A80 && cp-alpha(CP) == 128
+cp-set-red(CP, 999)
+t23 = cp-red(CP) == 255
+cp-set-green(CP, -1)
+t24 = cp-green(CP) == 0
+
+; ============================================================================
+; 5. color-picker：disabled 写无效 + 几何常量
+; ============================================================================
+cp-set-color(CP, 0x4A90E2FF)
+cmp-flag-set(CP, F-DISABLED)
+cp-set-hue(CP, 0)
+cp-set-color(CP, 0xFF0000FF)
+cp-set-red(CP, 1)
+cp-set-green(CP, 2)
+cp-set-blue(CP, 3)
+cp-set-alpha(CP, 4)
+t25 = cp-hue(CP) == 213 && cp-color(CP) == 0x4A90E2FF
+cmp-flag-clear(CP, F-DISABLED)
+t26 = cp-swatch() == 3200 && cp-pad() == 1200 && cp-gap() == 800
+
+; ============================================================================
+; 6. color-picker 测算：内边距*2 + 色板 + 间隙 + 「#RRGGBB」+ 间隙 + hue 数字
+; ============================================================================
+cp-set-color(CP, 0x4A90E2FF)
+cp-set-hue(CP, 213)
+cw1, ch1 = cs-measure(CP)
+t27 = cw1 == 15200 && ch1 == 4000
+cp-set-hue(CP, 1000)
+t28 = cp-hue(CP) == 360
+cp-set-color(CP, 0x4A90E2FF)
+
+; ============================================================================
+; 7. color-picker 渲染
+; ============================================================================
+root = cmp-root()
+cmp-add-child(root, CP)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+cx, cy, cw, ch = cs-rect(CP)
+t29 = cs-rect-color-at(cs-add(cx, 1200), cs-add(cy, 400), 3200, 3200) == 0x4A90E2FF
+t30 = cs-text-color-at('#4A90E2', cs-add(cx, 5200), cs-add(cy, 800)) == cs-theme(CS-TH-FG)
+t31 = cs-text-color-at('213', cs-add(cx, 11600), cs-add(cy, 800)) == cs-theme(CS-TH-MUTED)
+
+; ============================================================================
+; 8. date-picker：构造默认 2026-01-01
+; ============================================================================
+d = cmp-date-picker()
+t32 = cmp-kind(d) == C-DATE-PICKER
+t33 = dp-year(d) == 2026 && dp-month(d) == 1 && dp-day(d) == 1
+t34 = dp-label(d) == '2026-01-01'
+
+; ============================================================================
+; 9. date-picker：闰年 / 当月天数
+; ============================================================================
+t35 = dp-leap(2000) == 1 && dp-leap(1900) == 0 && dp-leap(2024) == 1 && dp-leap(2023) == 0
+dp-set-date(d, 2026, 4, 1)
+t36 = dp-days(d) == 30
+dp-set-month(d, 2)
+t37 = dp-days(d) == 28
+dp-set-year(d, 2024)
+t38 = dp-days(d) == 29
+dp-set-year(d, 2026)
+t39 = dp-days(d) == 28
+
+; ============================================================================
+; 10. date-picker：写入夹紧
+; ============================================================================
+dp-set-date(d, 2026, 1, 31)
+dp-set-month(d, 2)
+t40 = dp-label(d) == '2026-02-28'
+dp-set-date(d, 2024, 2, 31)
+t41 = dp-label(d) == '2024-02-29'
+dp-set-date(d, 2026, 13, 1)
+t42 = dp-month(d) == 12
+dp-set-month(d, 0)
+t43 = dp-month(d) == 1
+dp-set-year(d, 0)
+t44 = dp-year(d) == 1
+dp-set-day(d, 999)
+t45 = dp-day(d) == 31
+dp-set-date(d, 2026, 11, 21)
+t46 = dp-label(d) == '2026-11-21'
+
+; ============================================================================
+; 11. date-picker：disabled 写无效
+; ============================================================================
+cmp-flag-set(d, F-DISABLED)
+dp-set-date(d, 1999, 5, 5)
+dp-set-year(d, 1999)
+dp-set-month(d, 5)
+dp-set-day(d, 5)
+t47 = dp-label(d) == '2026-11-21'
+cmp-flag-clear(d, F-DISABLED)
+
+; ============================================================================
+; 12. date-picker 测算 / 渲染
+; ============================================================================
+dw1, dh1 = cs-measure(d)
+t48 = dw1 == 10400 && dh1 == 4000
+cmp-add-child(root, d)
+cs-clear()
+cs-layout(root, 0, 0, 40000, 20000)
+cs-paint(root)
+dx, dy, dw, dh = cs-rect(d)
+t49 = cs-rect-color-at(dx, dy, dw, dh) == cs-theme(CS-TH-FIELD)
+t50 = cs-text-color-at('2026-11-21', cs-add(dx, 1200), cs-add(dy, 800)) == cs-theme(CS-TH-FG)
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30 && t31 && t32 && t33 && t34 && t35 && t36 && t37 && t38 && t39 && t40 && t41 && t42 && t43 && t44 && t45 && t46 && t47 && t48 && t49 && t50
+(ok) -> { print('ALL PICKER TESTS PASSED') }
+(!ok) -> { print('SOME TESTS FAILED') }

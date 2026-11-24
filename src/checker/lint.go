@@ -434,7 +434,7 @@ func runLintInterfaceMerge(program *parser.Program, opts LintOptions) []LintResu
 
 // interfaceUsesLeadingList 報告接口是否採用了舊的「前置列表」寫法。
 //
-// AST 不記錄合併項的位置——複用 Implements 正是為了不改 gob / `std_ast.bin`
+// AST 不記錄合併項的位置——複用 Implements 正是為了不改 gob / `std-ast.bin`
 // 格式——因此在這裡回讀來源檔的那幾行：前置列表必然寫在「接口名」與 `{`
 // 之間（`db enter, leave {`），而體內形的 `{` 緊跟接口名。
 // 讀不到檔案時靜默跳過：這只是收斂寫法的建議，不值得為它引入新的 AST 狀態。

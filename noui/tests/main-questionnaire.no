@@ -1,0 +1,309 @@
+; ============================================================================
+; noui 窗口 demo：题池 / 问卷（阶段 65）—— C-QUESTIONNAIRE
+;
+; 流水线：app-init -> cmp-questionnaire -> qa-add / qa-set-prompt /
+;          qa-set-answer / qa-set-required / qa-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-QUESTIONNAIRE 分支 +
+;      cs-paint-questionnaire）：FIELD 底 + 每题「题干 FG + 答案 ACCENT」两行，
+;      必答题题干左侧一个 TRACK 小方块当标记，题间留 qa-gap
+;   -> 键盘：a=追加题；t=改第 0 题题干；w=写第 0 题答案；m=切换第 0 题必答；
+;            c=清空；r=重建默认；d=切换 disabled；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-questionnaire.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选题干 / 答案（a 轮取）----
+qn-cand-prompt = (i i64) (s str) {
+    s = 'city?'
+    (i == 1) -> { s = 'age?' }
+    (i == 2) -> { s = 'note?' }
+    (i == 3) -> { s = 'mail?' }
+    (i == 0) -> { s = 'lang?' }
+    s = s
+}
+
+qn-cand-answer = (i i64) (s str) {
+    s = 'xi an'
+    (i == 1) -> { s = '30' }
+    (i == 2) -> { s = 'ok' }
+    (i == 3) -> { s = 'a@b.c' }
+    (i == 0) -> { s = 'go' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+qn-build-default = (h i64) () {
+    qa-clear(h)
+    qa-add(h, 'name?', 'ada')
+    qa-add(h, 'quest?', 'lin')
+    qa-set-required(h, 0, 1)
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui questionnaire')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段65: questionnaire')
+hint = cmp-label('a=add t=prompt w=answer m=required c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+qa = cmp-questionnaire()
+qn-build-default(qa)
+
+cmp-add-child(root, title)
+cmp-add-child(root, qa)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一题
+        (k == 97) -> {
+            n = qa-count(qa)
+            j = ct-rem(n, 4)
+            qa-add(qa, qn-cand-prompt(j), qn-cand-answer(j))
+        }
+        ; t：改第 0 题题干
+        (k == 116) -> {
+            pp = qa-prompt(qa, 0)
+            (pp == 'name?') -> { qa-set-prompt(qa, 0, 'who?') }
+            (pp != 'name?') -> { qa-set-prompt(qa, 0, 'name?') }
+        }
+        ; w：写 / 清第 0 题答案
+        (k == 119) -> {
+            a0 = qa-answer(qa, 0)
+            (a0.len() > 0) -> { qa-set-answer(qa, 0, '') }
+            (a0.len() <= 0) -> { qa-set-answer(qa, 0, 'grace') }
+        }
+        ; m：切换第 0 题必答
+        (k == 109) -> {
+            v = qa-required(qa, 0)
+            (v != 0) -> { qa-set-required(qa, 0, 0) }
+            (v == 0) -> { qa-set-required(qa, 0, 1) }
+        }
+        ; c：清空
+        (k == 99) -> { qa-clear(qa) }
+        ; r：重建默认
+        (k == 114) -> { qn-build-default(qa) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(qa, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(qa, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(qa, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = qa-count(qa)
+    pg = qa-progress(qa)
+    cp = qa-complete(qa)
+    dis = cmp-has(qa, F-DISABLED)
+    cmp-set-text(stat, 'count={cn} progress={pg} complete={cp} disabled={dis}')
+    (cn > 0) -> {
+        li = cs-sub(cn, 1)
+        cmp-set-text(stat2, 'last={qa-prompt(qa, li)} -> {qa-answer(qa, li)}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no questions') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认两题（第 0 题必答），按 cs-rect(qa) 推导坐标
+;   内边距 1200 / 行高 2400 / 题间距 800
+;   题干 i y = by+1200 + i*(2*2400+800)；答案 i y = 题干 i y + 2400
+;   必答标记方块 = (bx+1200, 题干 y+800, 800, 800) TRACK
+;   场景里还有 title / hint / stat / stat2 四条标签文本
+; ============================================================================
+cmp-flag-clear(qa, F-DISABLED)
+qn-build-default(qa)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+qpad = 1200
+lh = 2400
+gap = 800
+
+bx, by, bw, bh = cs-rect(qa)
+tx = cs-add(bx, qpad)
+qy0 = cs-add(by, qpad)
+ay0 = cs-add(qy0, lh)
+qy1 = cs-add(cs-add(ay0, lh), gap)
+ay1 = cs-add(qy1, lh)
+
+c1 = qa-count(qa) == 2
+c2 = qa-prompt(qa, 0) == 'name?'
+c3 = qa-answer(qa, 0) == 'ada'
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = find-rect-color(tx, cs-add(qy0, 800), 800, 800) == cs-theme(CS-TH-TRACK)
+c6 = find-text('name?', cs-add(tx, 1600), qy0) == 1
+c7 = find-text-color('name?', cs-add(tx, 1600), qy0) == cs-theme(CS-TH-FG)
+c8 = find-text('ada', tx, ay0) == 1
+c9 = find-text-color('ada', tx, ay0) == cs-theme(CS-TH-ACCENT)
+c10 = find-text('quest?', tx, qy1) == 1
+c11 = find-text-color('quest?', tx, qy1) == cs-theme(CS-TH-FG)
+c12 = find-text('lin', tx, ay1) == 1
+c13 = find-text-color('lin', tx, ay1) == cs-theme(CS-TH-ACCENT)
+c14 = cs-text-count() == 8
+
+; 取消必答：标记方块消失
+qa-set-required(qa, 0, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c15 = find-rect-color(tx, cs-add(qy0, 800), 800, 800) == -1
+
+; 追加一题：题数 / 进度变化，面板变高
+qa-set-required(qa, 0, 1)
+qa-add(qa, 'city?', 'xi an')
+cn2 = qa-count(qa)
+pg2 = qa-progress(qa)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx2, by2, bw2, bh2 = cs-rect(qa)
+c16 = cn2 == 3
+c17 = pg2 == 100
+c18 = cs-text-count() == 10
+c19 = bh2 > bh
+
+; 清空第 0 题答案：已作答数下降、必答未完成
+qa-set-answer(qa, 0, '')
+an3 = qa-answered(qa)
+cp3 = qa-complete(qa)
+c20 = an3 == 2
+c21 = cp3 == 0
+
+; 清空全部：文本只剩四条标签
+qa-clear(qa)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c22 = cs-text-count() == 4
+
+; disabled：写操作全部空操作
+cmp-flag-set(qa, F-DISABLED)
+qa-add(qa, 'no', 'no')
+qa-set-prompt(qa, 0, 'no')
+qa-set-answer(qa, 0, 'no')
+qa-set-required(qa, 0, 1)
+qa-clear(qa)
+c23 = qa-count(qa) == 0
+cmp-flag-clear(qa, F-DISABLED)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+cn4 = qa-count(qa)
+print('bye frames={fr} keys={kk} clicks={ck} count={cn4} w={bw2} h={bh2}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23) -> {
+    print('questionnaire render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23)) -> {
+    print('FAIL: questionnaire render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

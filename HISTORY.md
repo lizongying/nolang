@@ -1,5 +1,18 @@
 # 更新日誌
 
+## v0.4.32
+
+- feat(mmast): publish one AST zip per package with per-module gob entries and implicit source/module path annotations
+- feat(imports): treat a bare `# pkg` as a package alias and resolve `pkg.module.symbol` calls alongside direct `# pkg/module` imports
+- feat(cli): add `no pack` for package directories and rename distribution assets to `<tool>-ast.zip` and `std-ast.bin`
+- fix(checker): resolve dotted module call signatures before merged module ASTs are available
+- fix(fmt): remove unused bare package and module imports while keeping annotated and aliased imports
+- feat(compiler): extend self-hosted MIR lowering with struct slices, multi-assign aggregates and string value-method runtime helpers
+- feat(noui): add imperative APIs and renderers for attachment, clipboard, index-path, picker and other missing catalog components
+- docs(usage): sync module-import, AST package and localization catalogs across languages
+- test(build): pin AST package decoding, package-alias signature preloading and formatter import cleanup regressions
+- ci(actions): let build-nolang emit an AST zip alongside cross-compiled binaries
+
 ## v0.4.31
 
 - fix(checker): resolve implicit-let shadowing of top-level bindings via scope-frame BoundHere so same-name locals no longer raise false 15w45dqk errors

@@ -1,0 +1,328 @@
+; ============================================================================
+; noui 窗口 demo：锚定小弹层（阶段 64）—— C-POPOVER
+;
+; 流水线：app-init -> cmp-popover -> pv-set-open / pv-set-side /
+;          pv-set-title / pv-add / pv-set-line / pv-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-POPOVER 分支 +
+;      cs-paint-popover）：FIELD 底 + 箭头方块（按 pv-side 贴边）+
+;      标题 FG + 「有标题且有正文」时一条 TRACK 分隔线 + N 行正文 MUTED；
+;      关闭时一笔画不出
+;   -> 键盘：o=开合；s=轮换锚定边；a=追加正文行；t=改标题；
+;            l=改第 0 行；c=清空正文；r=重建默认；d=切换 disabled；
+;            q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-popover.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选正文行（a 轮取）----
+pv-cand-line = (i i64) (s str) {
+    s = 'alpha'
+    (i == 1) -> { s = 'beta' }
+    (i == 2) -> { s = 'gamma longer' }
+    (i == 3) -> { s = 'delta' }
+    (i == 0) -> { s = 'epsilon' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+pv-build-default = (h i64) () {
+    pv-clear(h)
+    pv-set-title(h, 'popover')
+    pv-set-open(h, 1)
+    pv-set-side(h, 0)
+    pv-add(h, 'line one')
+    pv-add(h, 'second')
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui popover')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段64: popover')
+hint = cmp-label('o=open s=side a=add t=title l=line0 c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+pv = cmp-popover()
+pv-build-default(pv)
+
+cmp-add-child(root, title)
+cmp-add-child(root, pv)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; o：开合
+        (k == 111) -> {
+            v = pv-open(pv)
+            (v != 0) -> { pv-set-open(pv, 0) }
+            (v == 0) -> { pv-set-open(pv, 1) }
+        }
+        ; s：轮换锚定边 0..3
+        (k == 115) -> {
+            s = pv-side(pv)
+            s = cs-inc(s)
+            (s > 3) -> { s = 0 }
+            pv-set-side(pv, s)
+        }
+        ; a：追加一行正文
+        (k == 97) -> {
+            n = pv-count(pv)
+            j = ct-rem(n, 4)
+            pv-add(pv, pv-cand-line(j))
+        }
+        ; t：改标题
+        (k == 116) -> {
+            tl = pv-title(pv)
+            (tl == 'popover') -> { pv-set-title(pv, 'renamed title') }
+            (tl != 'popover') -> { pv-set-title(pv, 'popover') }
+        }
+        ; l：改第 0 行
+        (k == 108) -> {
+            n = pv-count(pv)
+            (n > 0) -> { pv-set-line(pv, 0, 'renamed') }
+            (n <= 0) -> { pv-add(pv, 'renamed') }
+        }
+        ; c：清空正文（保留标题）
+        (k == 99) -> { pv-clear(pv) }
+        ; r：重建默认
+        (k == 114) -> { pv-build-default(pv) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(pv, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(pv, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(pv, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    op = pv-open(pv)
+    sd = pv-side(pv)
+    cn = pv-count(pv)
+    dis = cmp-has(pv, F-DISABLED)
+    cmp-set-text(stat, 'open={op} side={sd} lines={cn} disabled={dis}')
+    (cn > 0) -> {
+        li = cs-sub(cn, 1)
+        cmp-set-text(stat2, 'last={pv-line(pv, li)}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no body lines') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（open + 标题 + 两行 + side 0），按 cs-rect(pv) 推导坐标
+;   内边距 1200 / 箭头 800 / 行高 2400 / 分隔线 100
+;   标题 y = by+1200；分隔线 y = 标题 y+2400；正文 i y = 分隔线 y+100+i*2400
+;   箭头：side 0 -> (bx+1600, by)；side 1 -> (bx+1600, by+bh-800)
+;         side 2 -> (bx, by+1600)；side 3 -> (bx+bw-800, by+1600)
+;   场景里还有 title / hint / stat / stat2 四条标签文本
+; ============================================================================
+cmp-flag-clear(pv, F-DISABLED)
+pv-build-default(pv)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+aw = 800
+lh = 2400
+sep = 100
+
+bx, by, bw, bh = cs-rect(pv)
+tx = cs-add(bx, p0)
+ty = cs-add(by, p0)
+sy = cs-add(ty, lh)
+l0y = cs-add(sy, sep)
+l1y = cs-add(l0y, lh)
+a0x = cs-add(bx, 1600)
+
+c1 = pv-count(pv) == 2
+c2 = pv-title(pv) == 'popover'
+c3 = pv-open(pv) == 1
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = find-rect-color(a0x, by, aw, aw) == cs-theme(CS-TH-ACCENT)
+c6 = find-text('popover', tx, ty) == 1
+c7 = find-text-color('popover', tx, ty) == cs-theme(CS-TH-FG)
+c8 = find-rect-color(bx, sy, bw, sep) == cs-theme(CS-TH-TRACK)
+c9 = find-text('line one', tx, l0y) == 1
+c10 = find-text-color('line one', tx, l0y) == cs-theme(CS-TH-MUTED)
+c11 = find-text('second', tx, l1y) == 1
+c12 = find-text-color('second', tx, l1y) == cs-theme(CS-TH-MUTED)
+c13 = cs-text-count() == 7
+
+; side 1（上）-> 箭头贴底边
+pv-set-side(pv, 1)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c14 = find-rect-color(a0x, cs-add(cs-sub(cs-add(by, bh), aw), 0), aw, aw) == cs-theme(CS-TH-ACCENT)
+
+; side 2（左）
+pv-set-side(pv, 2)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c15 = find-rect-color(bx, cs-add(by, 1600), aw, aw) == cs-theme(CS-TH-ACCENT)
+
+; side 3（右）
+pv-set-side(pv, 3)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c16 = find-rect-color(cs-sub(cs-add(bx, bw), aw), cs-add(by, 1600), aw, aw) == cs-theme(CS-TH-ACCENT)
+
+; 改第 0 行文案
+pv-set-line(pv, 0, 'renamed')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c17 = find-text('renamed', tx, l0y) == 1
+
+; 清空正文：只剩标题 + 面板，没有分隔线
+pv-clear(pv)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c18 = cs-text-count() == 5
+c19 = find-rect-color(bx, sy, bw, sep) == -1
+
+; disabled：写操作全部空操作
+cmp-flag-set(pv, F-DISABLED)
+pv-add(pv, 'no')
+pv-set-title(pv, 'no')
+pv-set-open(pv, 0)
+pv-set-side(pv, 2)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c20 = pv-open(pv) == 1
+c21 = pv-title(pv) == 'popover'
+c22 = pv-count(pv) == 0
+c23 = pv-side(pv) == 3
+cmp-flag-clear(pv, F-DISABLED)
+
+; 关闭：弹层自身不画，文本只剩四条标签
+pv-set-open(pv, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c24 = cs-text-count() == 4
+c25 = find-rect-color(bx, by, bw, bh) == -1
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+op2 = pv-open(pv)
+sd2 = pv-side(pv)
+print('bye frames={fr} keys={kk} clicks={ck} open={op2} side={sd2} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23 && c24 && c25) -> {
+    print('popover render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23 && c24 && c25)) -> {
+    print('FAIL: popover render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

@@ -1,0 +1,251 @@
+; ============================================================================
+; noui 窗口 demo：走马灯（阶段 57）—— C-CAROUSEL
+;
+; 流水线：app-init -> cmp-carousel -> cr-add / cr-set-slide / cr-set-current /
+;          cr-next / cr-prev 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-CAROUSEL 分支 +
+;      cs-paint-carousel）：FIELD 底 + 上带「< 当前幻灯片 >」+ TRACK 分隔线 +
+;      下带一行圆点（当前点 ACCENT）
+;   -> 键盘：a=追加幻灯片；n=下一张；p=上一张；s=回到第 0 张；
+;            r=重建默认三张；d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-carousel.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选幻灯片文案（a 轮取）----
+cr-cand = (i i64) (s str) {
+    s = 'alpha'
+    (i == 1) -> { s = 'beta' }
+    (i == 2) -> { s = 'gamma' }
+    (i == 3) -> { s = 'delta' }
+    (i == 4) -> { s = 'epsilon' }
+    (i == 5) -> { s = 'zeta' }
+    (i == 0) -> { s = 'eta' }
+    s = s
+}
+
+; ---- 重建默认三张（收尾自检也用它）----
+cr-build-default = (h i64) () {
+    cr-clear(h)
+    cr-add(h, 'alpha')
+    cr-add(h, 'beta')
+    cr-add(h, 'gamma')
+    cr-set-current(h, 0)
+}
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui carousel')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段57: carousel')
+hint = cmp-label('a=add n=next p=prev s=select0 r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+cr = cmp-carousel()
+cr-build-default(cr)
+
+cmp-add-child(root, title)
+cmp-add-child(root, cr)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：走马灯是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一张
+        (k == 97) -> {
+            n = cr-count(cr)
+            cr-add(cr, cr-cand(ct-rem(n, 7)))
+        }
+        ; n：下一张
+        (k == 110) -> { cr-next(cr) }
+        ; p：上一张
+        (k == 112) -> { cr-prev(cr) }
+        ; s：回到第 0 张
+        (k == 115) -> { cr-set-current(cr, 0) }
+        ; r：重建默认三张
+        (k == 114) -> { cr-build-default(cr) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(cr, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(cr, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(cr, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = cr-count(cr)
+    cur = cr-current(cr)
+    dis = cmp-has(cr, F-DISABLED)
+    cmp-set-text(stat, 'n={cn} current={cur} disabled={dis}')
+    cmp-set-text(stat2, 'slide[{cur}]={cr-slide(cr, cur)}')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认三张，按面板实测矩形推导坐标逐项核对
+;   内边距 1200 / 箭头宽 800 / 间隙 800 / 上带高 4000 / 分隔线 100 /
+;   圆点行高 2400 / 圆点 800 / 点距 800
+;   文字垂直居中：上带文字 y = 上带顶 + 800；圆点垂直居中 y = 圆点行顶 + 800
+; ============================================================================
+cmp-flag-clear(cr, F-DISABLED)
+cr-build-default(cr)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+aw0 = 800
+gg0 = 800
+band0 = 4000
+sep0 = 100
+lh0 = 2400
+dw0 = 800
+dg0 = 800
+
+bx, by, bw, bh = cs-rect(cr)
+bandy = cs-add(by, p0)
+ty = cs-add(bandy, 800)
+lx = cs-add(bx, p0)
+rx = cs-sub(cs-sub(cs-add(bx, bw), p0), aw0)
+tx0 = cs-add(cs-add(cs-add(bx, p0), aw0), gg0)
+tw = cs-sub(bw, cs-add(cs-mul(p0, 2), cs-add(cs-mul(aw0, 2), cs-mul(gg0, 2))))
+; 'alpha' 5 字 = 4000，居中
+stx = cs-add(tx0, cs-div(cs-sub(tw, 4000), 2))
+sepy = cs-add(bandy, band0)
+doty = cs-add(cs-add(sepy, sep0), 800)
+tot = cs-add(cs-mul(cr-count(cr), dw0), cs-mul(cs-sub(cr-count(cr), 1), dg0))
+dx0 = cs-add(bx, cs-div(cs-sub(bw, tot), 2))
+dx1 = cs-add(dx0, cs-add(dw0, dg0))
+dx2 = cs-add(dx1, cs-add(dw0, dg0))
+
+c1 = cr-count(cr) == 3
+c2 = cr-slide(cr, 0) == 'alpha'
+c3 = cr-current(cr) == 0
+c4 = find-text('<', lx, ty) == 1
+c5 = find-text('>', rx, ty) == 1
+c6 = find-text('alpha', stx, ty) == 1
+c7 = find-text-color('<', lx, ty) == cs-theme(CS-TH-MUTED)
+c8 = find-text-color('>', rx, ty) == cs-theme(CS-TH-ACCENT)
+c9 = find-text-color('alpha', stx, ty) == cs-theme(CS-TH-FG)
+c10 = find-rect-color(bx, sepy, bw, sep0) == cs-theme(CS-TH-TRACK)
+c11 = find-rect-color(dx0, doty, dw0, dw0) == cs-theme(CS-TH-ACCENT)
+c12 = find-rect-color(dx1, doty, dw0, dw0) == cs-theme(CS-TH-TRACK)
+c13 = find-rect-color(dx2, doty, dw0, dw0) == cs-theme(CS-TH-TRACK)
+
+; 翻到末张：右箭头转 MUTED、文案 'gamma'、dot2 ACCENT
+cr-set-current(cr, 2)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c14 = find-text-color('>', rx, ty) == cs-theme(CS-TH-MUTED)
+c15 = find-text-color('<', lx, ty) == cs-theme(CS-TH-ACCENT)
+gtx = cs-add(tx0, cs-div(cs-sub(tw, 4000), 2))
+c16 = find-text('gamma', gtx, ty) == 1
+c17 = find-rect-color(dx2, doty, dw0, dw0) == cs-theme(CS-TH-ACCENT)
+c18 = find-rect-color(dx0, doty, dw0, dw0) == cs-theme(CS-TH-TRACK)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n0 = cr-count(cr)
+cur0 = cr-current(cr)
+print('bye frames={fr} keys={kk} clicks={ck} slides={n0} current={cur0} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18) -> {
+    print('carousel render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18)) -> {
+    print('FAIL: carousel render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

@@ -1,0 +1,280 @@
+; 阶段57：C-CAROUSEL（走马灯）无窗口断言
+; 纯逻辑：构造默认 / 幻灯片池（扁平只增 + 基址）/ 当前张读写 / 多句柄隔离 /
+;          disabled 空操作 / 测算 intrinsic / 渲染几何（FIELD 底、左右箭头、
+;          当前幻灯片文案、TRACK 分隔线、圆点行）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+cs-text-n = (t str) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    空池 / 越界读空串 / 当前张 0 / 未被 disabled
+; ============================================================================
+cr = cmp-carousel()
+
+t1 = cmp-kind(cr) == C-CAROUSEL
+t2 = cr-count(cr) == 0
+t3 = cr-slide(cr, 0) == ''
+t4 = cr-current(cr) == 0
+t5 = cmp-has(cr, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 幻灯片池：追加 + 当前张
+;    s0 'one' / s1 'two' / s2 'three'
+; ============================================================================
+i0 = cr-add(cr, 'one')
+t6 = i0 == 0
+t7 = cr-count(cr) == 1
+t8 = cr-slide(cr, 0) == 'one'
+t9 = cr-current(cr) == 0
+
+i1 = cr-add(cr, 'two')
+t10 = i1 == 1
+i2 = cr-add(cr, 'three')
+t11 = i2 == 2
+t12 = cr-count(cr) == 3
+t13 = cr-slide(cr, 1) == 'two'
+t14 = cr-slide(cr, 2) == 'three'
+
+; 越界读：空串
+t15 = cr-slide(cr, 3) == ''
+t16 = cr-slide(cr, -1) == ''
+
+; ============================================================================
+; 3. 改写 / 当前张读写
+; ============================================================================
+cr-set-slide(cr, 0, 'ONE')
+t17 = cr-slide(cr, 0) == 'ONE'
+cr-set-current(cr, 2)
+t18 = cr-current(cr) == 2
+cr-select(cr, 1)
+t19 = cr-current(cr) == 1
+cr-next(cr)
+t20 = cr-current(cr) == 2
+cr-next(cr)
+t21 = cr-current(cr) == 0
+cr-prev(cr)
+t22 = cr-current(cr) == 2
+cr-prev(cr)
+t23 = cr-current(cr) == 1
+
+; 越界写不影响
+cr-set-slide(cr, 9, 'x')
+t24 = cr-slide(cr, 2) == 'three'
+cr-set-current(cr, 9)
+t25 = cr-current(cr) == 1
+cr-set-current(cr, -1)
+t26 = cr-current(cr) == 1
+
+; ============================================================================
+; 4. 多句柄隔离（扁平池 + 每句柄基址）
+; ============================================================================
+c2 = cmp-carousel()
+c3 = cmp-carousel()
+cr-add(c2, 'aa')
+cr-add(c2, 'bb')
+cr-add(c3, 'cc')
+cr-set-current(c3, 0)
+
+t27 = cr-count(c2) == 2
+t28 = cr-count(c3) == 1
+t29 = cr-slide(c2, 1) == 'bb'
+t30 = cr-slide(c3, 0) == 'cc'
+t31 = cr-current(c3) == 0
+
+cr-clear(c2)
+t32 = cr-count(c2) == 0
+t33 = cr-count(c3) == 1
+t34 = cr-slide(c3, 0) == 'cc'
+t35 = cr-current(c3) == 0
+cr-add(c2, 'again')
+t36 = cr-count(c2) == 1
+t37 = cr-slide(c2, 0) == 'again'
+t38 = cr-current(c2) == 0
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(c3, F-DISABLED)
+r1 = cr-add(c3, 'no')
+cr-set-slide(c3, 0, 'no')
+cr-set-current(c3, 0)
+cr-next(c3)
+cr-prev(c3)
+cr-clear(c3)
+t39 = r1 == -1
+t40 = cr-count(c3) == 1
+t41 = cr-slide(c3, 0) == 'cc'
+t42 = cr-current(c3) == 0
+cmp-flag-clear(c3, F-DISABLED)
+t43 = cmp-has(c3, F-DISABLED) == 0
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    宽 = 2*CS-PAD + 2*箭头 800 + 2*间隙 800 + 最长幻灯片文案，
+;        下限 CS-MIN-LEAF-W
+;    高 = 2*CS-PAD + CS-BTN-H + CS-SEP-H + CS-LINE-H = 2400+4000+100+2400 = 8900
+;    m：3 张，文案 2400/2400/4000 → 宽 2400+1600+1600+4000 = 9600
+; ============================================================================
+m = cmp-carousel()
+cr-add(m, 'one')
+cr-add(m, 'two')
+cr-add(m, 'three')
+m1w, m1h = cs-measure(m)
+t44 = m1w == 9600
+t45 = m1h == 8900
+
+; 空：宽 2400+1600+1600+0 = 5600 → 夹 6400；高 8900
+e1 = cmp-carousel()
+m2w, m2h = cs-measure(e1)
+t46 = m2w == 6400
+t47 = m2h == 8900
+
+; 单张 'x'（800）：宽 2400+1600+1600+800 = 6400
+e2 = cmp-carousel()
+cr-add(e2, 'x')
+m3w, m3h = cs-measure(e2)
+t48 = m3w == 6400
+t49 = m3h == 8900
+
+; 长文案 'abcdefghij'（10 字 = 8000）：宽 2400+1600+1600+8000 = 13600
+e3 = cmp-carousel()
+cr-add(e3, 'abcdefghij')
+m4w, m4h = cs-measure(e3)
+t50 = m4w == 13600
+t51 = m4h == 8900
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m, 20000)
+cmp-set-sh(m, 9000)
+m5w, m5h = cs-measure(m)
+t52 = m5w == 20000
+t53 = m5h == 9000
+cmp-set-sw(m, 0)
+cmp-set-sh(m, 0)
+
+; ============================================================================
+; 7. 渲染
+;     外层 12000 → 内容宽 9600（正好等于 intrinsic）
+;     面板 (1200,1200,9600,8900) FIELD
+;     上带顶 2400、高 4000，文字垂直居中（ty = 2400+800 = 3200）
+;     左箭头 (2400,3200)（cur=0 → MUTED）、右箭头 (8800,3200) ACCENT
+;     当前文案 'ONE'（2400）居中在 (4000,2400,4000,4000) → (4800,3200) FG
+;     分隔线 (1200,6400,9600,100)
+;     圆点行顶 6500，点高 800 垂直居中 → y=7300；三点总宽 4000，起始 x=4000
+;       dot0 (4000,7300,800,800) ACCENT / dot1 (5600,7300) / dot2 (7200,7300)
+; ============================================================================
+cs-clear()
+r = cmp-carousel()
+cr-add(r, 'one')
+cr-add(r, 'two')
+cr-add(r, 'three')
+cr-set-slide(r, 0, 'ONE')
+r1 = cmp-root()
+cmp-add-child(r1, r)
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+
+t54 = cs-rect-color-at(1200, 1200, 9600, 8900) == cs-theme(CS-TH-FIELD)
+t55 = cs-text-color-at('<', 2400, 3200) == cs-theme(CS-TH-MUTED)
+t56 = cs-text-color-at('>', 8800, 3200) == cs-theme(CS-TH-ACCENT)
+t57 = cs-text-color-at('ONE', 4800, 3200) == cs-theme(CS-TH-FG)
+t58 = cs-rect-color-at(1200, 6400, 9600, 100) == cs-theme(CS-TH-TRACK)
+t59 = cs-rect-color-at(4000, 7300, 800, 800) == cs-theme(CS-TH-ACCENT)
+t60 = cs-rect-color-at(5600, 7300, 800, 800) == cs-theme(CS-TH-TRACK)
+t61 = cs-rect-color-at(7200, 7300, 800, 800) == cs-theme(CS-TH-TRACK)
+t62 = cs-text-n('ONE') == 1
+t63 = cs-text-count() == 3
+
+; 翻到末张：右箭头转 MUTED、左箭头 ACCENT、文案 'three'、dot2 ACCENT
+cr-set-current(r, 2)
+cs-clear()
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+t64 = cs-text-color-at('<', 2400, 3200) == cs-theme(CS-TH-ACCENT)
+t65 = cs-text-color-at('>', 8800, 3200) == cs-theme(CS-TH-MUTED)
+t66 = cs-text-color-at('three', 4000, 3200) == cs-theme(CS-TH-FG)
+t67 = cs-rect-color-at(4000, 7300, 800, 800) == cs-theme(CS-TH-TRACK)
+t68 = cs-rect-color-at(7200, 7300, 800, 800) == cs-theme(CS-TH-ACCENT)
+
+; 空池：只有底色，没有任何文本 / 圆点
+cs-clear()
+e4 = cmp-carousel()
+r2 = cmp-root()
+cmp-add-child(r2, e4)
+cs-layout(r2, 0, 0, 8800, 40000)
+cs-paint(r2)
+t69 = cs-text-count() == 0
+t70 = cs-rect-color-at(1200, 1200, 6400, 8900) == cs-theme(CS-TH-FIELD)
+
+; ============================================================================
+; 8. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5
+ok = ok & t6 & t7 & t8 & t9 & t10 & t11 & t12 & t13 & t14 & t15 & t16
+ok = ok & t17 & t18 & t19 & t20 & t21 & t22 & t23 & t24 & t25 & t26
+ok = ok & t27 & t28 & t29 & t30 & t31 & t32 & t33 & t34 & t35 & t36 & t37 & t38
+ok = ok & t39 & t40 & t41 & t42 & t43
+ok = ok & t44 & t45 & t46 & t47 & t48 & t49 & t50 & t51 & t52 & t53
+ok = ok & t54 & t55 & t56 & t57 & t58 & t59 & t60 & t61 & t62 & t63
+ok = ok & t64 & t65 & t66 & t67 & t68 & t69 & t70
+
+(ok == 1) -> {
+    print('ALL CAROUSEL TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME CAROUSEL TESTS FAILED')
+}

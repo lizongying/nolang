@@ -1,0 +1,176 @@
+; ============================================================================
+; noui 窗口 demo：元数据族（阶段 46）—— attachment / clipboard / index-path
+;
+; 流水线：app-init -> cmp-attachment / cmp-clipboard / cmp-index-path
+;   -> 鼠标：点附件循环尺寸文案（12 B / 2 KB / 1 MB）；点剪贴板开关内容；
+;     点路径条加一段 / 清空
+;   -> 键盘：a = 附件尺寸循环；c = 剪贴板内容开关；i = 路径加一段；
+;     x = 路径清空；q / Esc 退出
+;   -> cs-layout / cs-paint（分别走 cs-paint-attachment / cs-paint-clipboard /
+;     cs-paint-index-path；cs-measure 给后两者 intrinsic 尺寸）
+;   -> app-frame
+;
+; 这个 demo 是阶段46 的现场：附件左图标方块 + 文件名 + 右端尺寸文案；
+; 剪贴板字段底 + 内容 + 右端复制方块；路径条各段 + 「 / 」分隔符。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-meta.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+g-at-x = 0
+g-at-y = 0
+g-at-w = 0
+g-at-h = 0
+g-cl-x = 0
+g-cl-y = 0
+g-cl-w = 0
+g-cl-h = 0
+g-ip-x = 0
+g-ip-y = 0
+g-ip-w = 0
+g-ip-h = 0
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui meta')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段46: attachment / clipboard / index-path')
+hint = cmp-label('click attachment=size, clipboard=content, index-path=add/clear; a/c/i/x; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+at = cmp-attachment('report.pdf')
+att-set-size(at, 2048)
+cl = cmp-clipboard()
+clip-set-content(cl, 'hello from clipboard')
+ip = cmp-index-path()
+ip-add-seg(ip, 'home')
+ip-add-seg(ip, 'user')
+ip-add-seg(ip, 'docs')
+
+cmp-add-child(root, title)
+cmp-add-child(root, at)
+cmp-add-child(root, cl)
+cmp-add-child(root, ip)
+cmp-add-child(root, stat)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == at) -> {
+            n = att-size(at)
+            (n == 12) -> { att-set-size(at, 2048) }
+            (n == 2048) -> { att-set-size(at, 1048576) }
+            (n == 1048576) -> { att-set-size(at, 12) }
+        }
+        (hit == cl) -> {
+            s = clip-content(cl)
+            (s.len() > 0) -> { clip-set-content(cl, '') }
+            (s.len() == 0) -> { clip-set-content(cl, 'hello from clipboard') }
+        }
+        (hit == ip) -> {
+            n = ip-count(ip)
+            (n >= 5) -> { ip-clear(ip) }
+            (n < 5) -> { ip-add-seg(ip, 'seg{n}') }
+        }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：附件尺寸循环
+        (k == 97) -> {
+            n = att-size(at)
+            (n == 12) -> { att-set-size(at, 2048) }
+            (n == 2048) -> { att-set-size(at, 1048576) }
+            (n == 1048576) -> { att-set-size(at, 12) }
+        }
+        ; c：剪贴板内容开关
+        (k == 99) -> {
+            s = clip-content(cl)
+            (s.len() > 0) -> { clip-set-content(cl, '') }
+            (s.len() == 0) -> { clip-set-content(cl, 'hello from clipboard') }
+        }
+        ; i：路径加一段
+        (k == 105) -> {
+            n = ip-count(ip)
+            (n < 5) -> { ip-add-seg(ip, 'seg{n}') }
+        }
+        ; x：路径清空
+        (k == 120) -> { ip-clear(ip) }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件 ----
+    asz = att-size(at)
+    aname = att-name(at)
+    cs2 = clip-content(cl)
+    cln2 = clip-len(cl)
+    nseg = ip-count(ip)
+    last = ip-seg(ip, cs-sub(nseg, 1))
+    cmp-set-text(stat, 'attachment "{aname}" size={asz} ({asz}-bytes)')
+    cmp-set-text(stat2, 'clipboard len={cln2}  index-path segs={nseg} last="{last}"')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    g-at-x, g-at-y, g-at-w, g-at-h = cs-rect(at)
+    g-cl-x, g-cl-y, g-cl-w, g-cl-h = cs-rect(cl)
+    g-ip-x, g-ip-y, g-ip-w, g-ip-h = cs-rect(ip)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+asz = att-size(at)
+cln = clip-len(cl)
+nseg = ip-count(ip)
+print('bye frames={fr} keys={kk} clicks={ck} att-size={asz} clip-len={cln} ip-segs={nseg}')
+(sc > 0) -> { print('meta render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

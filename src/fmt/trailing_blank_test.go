@@ -49,13 +49,14 @@ func TestFormatTrailingCommentBlankPreserved(t *testing.T) {
 	}
 }
 
-// REGRESSION GUARD: consecutive `# std/...` imports must each be emitted on their
-// own line (previously the `prevIsUse && currIsUse` branch emitted nothing, so a
-// run of imports was glued into a single `# a# b# c` line), and there must be a
+// REGRESSION GUARD: consecutive imports must each be emitted on their own line
+// (previously the `prevIsUse && currIsUse` branch emitted nothing, so a run of
+// imports was glued into a single `# a# b# c` line), and there must be a
 // separating blank line between the import block and the following statement.
+// Use non-std paths so the unaliased-std removal rule doesn't eat the fixture.
 func TestFormatImportSeparationAndBlank(t *testing.T) {
-	in := "# std/a\n# std/b\nf = () (out i64) {\n    out = 1\n}\n"
-	want := "# std/a\n# std/b\n\nf = () (out i64) {\n    out = 1\n}\n"
+	in := "# aaa/a\n# bbb/b\nf = () (out i64) {\n    a.go()\n    b.go()\n    out = 1\n}\n"
+	want := "# aaa/a\n# bbb/b\n\nf = () (out i64) {\n    a.go()\n    b.go()\n    out = 1\n}\n"
 	out, errs := FormatFileWithErrors(in)
 	if len(errs) > 0 {
 		t.Fatalf("format errors: %v", errs)

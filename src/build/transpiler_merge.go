@@ -5,6 +5,8 @@ import (
 
 	"github.com/lizongying/nolang/build/js"
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/mmast"
+	pkgspec "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 
 	"github.com/lizongying/nolang/i18n"
@@ -290,16 +292,87 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	if err != nil {
 		return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
 	}
+	// `# nogit` 回傳的是包別名佔位：展開成 nogit.<module>.<symbol> 需要
+	// 逐模組取 AST，不能在 resolveUse 的單一 Program 回傳值裡完成。
+	if modProg != nil && modProg.ModulePath == astPackageModulePath {
+		return a.mergeASTPackageModules(use, modProg.SourcePath)
+	}
 	// 解析模組的源碼檔案路徑，供 vet lint 歸因使用。
 	// std/ 模組 → GetStdSourceFile；用戶模組 → workspace 根目錄解析。
 	modFile := resolveModuleFile(use.Path, t.workspaceRoot())
+	useModShort := checker.ModuleShortName(use.Path)
+	if moduleAlias != "" {
+		useModShort = moduleAlias
+	}
+	return a.mergeLoadedModule(use, modProg, useModShort, modFile, false)
+}
+
+// moduleShortSegment 回傳模組路徑的最後一段（deep/util → util）。
+// 與直接 `# pkg/deep/util` 導入的模組短名一致，也是點號呼叫能解析的最大段數。
+func moduleShortSegment(modPath string) string {
+	if i := strings.LastIndex(modPath, "/"); i >= 0 {
+		return modPath[i+1:]
+	}
+	return modPath
+}
+
+// mergeASTPackageModules 展開 `# nogit` 這種包別名導入：包內每個模組 m 的
+// 符號都以 <alias>.<m>.<symbol> 合併（如 nogit.remote.remote_greet）。
+// 不做「導入全部裸名」——那會和 `# nogit.fn` 的按函式定位語義打架。
+func (a *compileAssembly) mergeASTPackageModules(use *parser.UseStatement, tool string) error {
+	pkgObj := a.t.pkg
+	if pkgObj == nil {
+		return i18n.Errorf("p7mn4vta", "loading module %s: no package.noml dependencies", use.Path)
+	}
+	key, version, matched := pkgObj.MatchDependency(use.Path)
+	if !matched || !pkgspec.IsASTDependencyKey(key) {
+		return i18n.Errorf("q3wz8hkb", "loading module %s: not an AST package dependency", use.Path)
+	}
+	set, err := mmast.EnsurePackageAST(key, version)
+	if err != nil {
+		return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
+	}
+	alias := tool
+	if use.Alias != "" {
+		alias = use.Alias
+	}
+	for _, modPath := range set.ModulePaths() {
+		modProg := set.Modules[modPath]
+		if modProg == nil {
+			continue
+		}
+		// 前綴只用模組路徑的最後一段（與直接 `# pkg/path` 導入的短名一致）：
+		// HIR 的點號呼叫解析只識別 <module>.<symbol> 兩段；完整路徑會
+		// 變成四段（nogit.deep.util.fn）而在 codegen 端 unknown callee。
+		prefix := alias
+		if short := moduleShortSegment(modPath); short != "" {
+			prefix += "." + short
+		}
+		importPath := use.Path
+		if modPath != "" {
+			importPath += "/" + modPath
+		}
+		modFile := resolveModuleFile(importPath, a.t.workspaceRoot())
+		if err := a.mergeLoadedModule(use, modProg, prefix, modFile, true); err != nil {
+			return err
+		}
+	}
+	if use.Alias == "" {
+		a.loadedUserModules[use.Path] = true
+	}
+	return nil
+}
+
+// mergeLoadedModule 把單一模組的 AST 合併進 a.merged；useModShort 是最終符號前綴
+// （普通模組為模組短名 / 別名，包別名導入為 <pkg>.<module>）。
+func (a *compileAssembly) mergeLoadedModule(use *parser.UseStatement, modProg *parser.Program, useModShort, modFile string, forcePrefix bool) error {
+	t := a.t
 	// S5 stage 6：模組解析輸出同樣不可變——取工作副本後綴續（原樹留在
 	// fileCache / audit root 中保持乾淨）。
 	modProg = parser.CloneProgram(modProg)
 	// 在模組 AST 剛解析、Sem 註解側表仍完整的時刻補跑型別檢查。合併後對
 	// merged 補跑不可行：FilterByExports 等步驟會丟棄模組 Sem，
 	// `#{overflow=wrap}` 查不到，合法的 `i = i + 1` 會被誤報成 15w45dqk。
-	// 必須在 Merge / prefixModuleStatements 之前、且只用剛 clone 的工作副本。
 	t.checkImportedModuleHardErrors(modProg, modFile, use.Path)
 	a.merged.Sem.Merge(modProg.Sem)
 	a.merged.FmtTrivia.Merge(modProg.FmtTrivia)
@@ -309,16 +382,35 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
 		a.explicitStdModules[use.Path] = true
 	}
-	// 為導入模組的型別定義加上模組前綴（如 result → sql.result）
-	useModShort := checker.ModuleShortName(use.Path)
-	if moduleAlias != "" {
-		// 模組別名導入：前綴用別名，`error.err` / `error.new` 才能解析。
-		useModShort = moduleAlias
-	}
 	prefixModuleStatements(modProg.Statements, useModShort, a.typeOwner)
-	// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
+	// 包別名導入（`# nogit`）的符號必須無條件帶 <pkg>.<module> 前綴：
+	// 普通模組只在同名衝突時才由 prefixCollidingFunctions 加前綴，但
+	// `nogit.remote.fn(...)` 是使用者明確給出的限定呼叫，定義側也必須
+	// 同名，否則 codegen 報 unknown callee（checker 已從 preload 的簽名
+	// 表看過這個名字，所以錯誤直到 MIR 階段才曝露出來）。
+	if forcePrefix && useModShort != "" {
+		rename := make(map[string]string)
+		for _, ms := range modProg.Statements {
+			switch s := ms.(type) {
+			case *parser.FunctionDefinition:
+				if !s.IsMethodDef && !strings.Contains(s.Name, ".") {
+					rename[s.Name] = useModShort + "." + s.Name
+					s.Name = rename[s.Name]
+				}
+			case *parser.LetStatement:
+				if s.Name != nil && !strings.Contains(s.Name.Value, ".") {
+					if _, isFn := s.Value.(*parser.FunctionLiteral); isFn {
+						rename[s.Name.Value] = useModShort + "." + s.Name.Value
+						s.Name.Value = rename[s.Name.Value]
+					}
+				}
+			}
+		}
+		for _, ms := range modProg.Statements {
+			renameBareFnRefsInStmt(ms, rename)
+		}
+	}
 	for _, ms := range modProg.Statements {
-		// Collect transitive UseStatements for recursive processing
 		if nestedUse, ok := ms.(*parser.UseStatement); ok {
 			if nestedUse.Alias == "" && a.loadedUserModules[nestedUse.Path] {
 				continue
@@ -327,21 +419,7 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 			continue
 		}
 		if fd, ok := ms.(*parser.FunctionDefinition); ok {
-			// 🔴 內建樁函式（#{buildin=...}）必須在此跳過，與 stripBuiltinStubs 及
-			// std 自動載入路徑（loadStdModuleBodyForce）保持一致。
-			//
-			// 這條 `# std/xxx` 顯式導入路徑原本漏了這個檢查，後果不是「多一個沒用的
-			// 函式」而是**靜默錯誤答案**：空體樁（`f64.sqrt = () (res f64) {}`）被
-			// 當成普通函式 codegen 成一個讀未初始化 alloca 的 `define void @f64_sqrt`，
-			// 而呼叫點改走這個真實符號，不再走 Go 內建表：
-			//
-			//   # std/os  →  os.get-env('HOME') 回傳 ''，os.get-pid() 回傳 0
-			//   # std/number → f64.sqrt() 回傳堆疊垃圾（連帶 f64.asin/acos/cbrt 全錯）
-			//
-			// 沒有顯式導入時 std 走自動載入路徑，所以這些程式「看起來」是好的；
-			// 全語料只有 8 個檔案寫了 `# std/...`，且沒有一個導入了帶樁的模組，
-			// 因此 golden sweep 也照不到。src/std 共有 153 個 #{buildin} 樁，
-			// 散在 os/fs/process/net/math/number/vec/fmt/global/time/async/… 15 個模組。
+			// 🔴 內建樁函式（#{buildin=...}）必須跳過（理由見原 processUseAndMerge）。
 			if fd.BuiltinStub {
 				if a.merged.BuiltinFuncNames == nil {
 					a.merged.BuiltinFuncNames = make(map[string]bool)
@@ -349,20 +427,12 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 				a.merged.BuiltinFuncNames[fd.Name] = true
 				continue
 			}
-			// 來源檔必須 Deep 標記（與 std 自動載入路徑一致）：只標頂層語句時，
-			// 函式體內的語句 SourceFile 留空，lint 端拿不到來源檔就回退成主檔路徑，
-			// 而 Line/Column 取自節點本身（模組座標）——報出 `main.no:1098` 這種
-			// 主檔根本沒有的行號（實報 tests/ffi-mysql.no:1098:5，該檔僅 126 行，
-			// 1098 行在 example/mysql-driver/src/mysql.no）。
-			// If alias is specified, only import the specific function under the alias name
 			if use.Function != "" && use.Alias != "" {
-				if use.Function != "" && fd.Name == use.Function {
+				if fd.Name == use.Function {
 					fd.Name = use.Alias
 					a.merged.Statements = append(a.merged.Statements, fd)
 					a.merged.Sem.SetSourceFileDeep(fd, modFile)
-					// alias 導入按用戶指定名，不參與衝突前綴
 				}
-				// Skip other functions when alias is used
 			} else {
 				a.merged.Statements = append(a.merged.Statements, fd)
 				a.merged.Sem.SetModuleOwnerOf(fd, useModShort)
@@ -370,9 +440,8 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 			}
 		}
 		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
-			// If alias is specified, only import the specific function under the alias name
 			if use.Function != "" && use.Alias != "" {
-				if use.Function != "" && ls.Name.Value == use.Function {
+				if ls.Name.Value == use.Function {
 					if _, ok := ls.Value.(*parser.FunctionLiteral); ok {
 						ls.Name.Value = use.Alias
 					}
@@ -384,41 +453,25 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 						}
 					}
 				}
-				// Skip other lets when alias is used
-			} else {
-				// 如果主程序已有同名變量，跳過以避免衝突
-				if !a.mainVarNames[ls.Name.Value] {
-					isConst := checker.IsConstantExpr(ls.Value)
-					// 跨模組同名常量去重（與自動載入路徑同理）
-					// 例外：帶平台註解的常量不參與去重，由 FilterByPlatform 選取。
-					platformKeys := modProg.Sem.PlatformKeysOf(ls)
-					hasPlatformAnnotation := len(platformKeys) > 0
-					if isConst && a.mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
-						continue
-					}
-					if isConst && !hasPlatformAnnotation {
-						a.mergedGlobalConsts[ls.Name.Value] = true
-					}
-					a.merged.Statements = append(a.merged.Statements, ls)
-					a.merged.Sem.SetModuleOwnerOf(ls, useModShort)
-					a.merged.Sem.SetSourceFileDeep(ls, modFile)
-					if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
-						a.merged.Sem.SetModuleConstOf(ls, true)
-					}
+			} else if !a.mainVarNames[ls.Name.Value] {
+				isConst := checker.IsConstantExpr(ls.Value)
+				platformKeys := modProg.Sem.PlatformKeysOf(ls)
+				hasPlatformAnnotation := len(platformKeys) > 0
+				if isConst && a.mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
+					continue
+				}
+				if isConst && !hasPlatformAnnotation {
+					a.mergedGlobalConsts[ls.Name.Value] = true
+				}
+				a.merged.Statements = append(a.merged.Statements, ls)
+				a.merged.Sem.SetModuleOwnerOf(ls, useModShort)
+				a.merged.Sem.SetSourceFileDeep(ls, modFile)
+				if isConst && checker.MatchesTargetPlatform(platformKeys, t.targetGoos, t.targetGoarch) {
+					a.merged.Sem.SetModuleConstOf(ls, true)
 				}
 			}
 		}
-		// 型別/常量聲明隨「整個模組導入」一起合併——含模組別名導入
-		// （`# std/err error`：別名只換前綴，不改變「導入整個模組」的語義）。
-		// 只有單函數導入（`# path.fn as alias`）才跳過。
-		//
-		// 成員式 struct/interface/enum/typealias 匯入（`# path.Type`，use.Function
-		// 填成該型別名，如 `# /compiler/src/util/sb.sb` ⇒ use.Function="sb"）也在此
-		// 放行——只合併名稱對應的型別定義。漏掉這支會讓成員式 struct 匯入下
-		// KStructDef 不進 merged，codegen setfield 報 "field ... not found on sb.sb"
-		// （見 compiler/src/util/sb.no）。
-		// ⚠️ prefixModuleStatements 已把型別名改寫成 "module.name"（sb → sb.sb），
-		// 故成員式比對要用改名後的 useModShort+"."+use.Function，而非裸名。
+		// 型別 / extern 隨整模組導入合併；成員式匯入只合併對應型別定義。
 		if use.Function == "" || getTypeDefName(ms) == useModShort+"."+use.Function {
 			if sd, ok := ms.(*parser.StructDefinition); ok {
 				a.merged.Statements = append(a.merged.Statements, sd)
@@ -440,9 +493,6 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 				a.merged.Statements = append(a.merged.Statements, ted)
 				a.merged.Sem.SetSourceFileOf(ted, modFile)
 			}
-			// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
-			// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
-			// 僅整模組匯入時合併（成員式匯入不帶 extern）。
 			if use.Function == "" {
 				if es, ok := ms.(*parser.ExternStatement); ok {
 					a.merged.Statements = append(a.merged.Statements, es)

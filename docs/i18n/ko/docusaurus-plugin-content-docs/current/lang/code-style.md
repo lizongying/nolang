@@ -28,13 +28,13 @@ sidebar_position: 4
 - `FormatFile(code)` 은 전체 파일을 포맷하고 `ensureTrailingNewline` 을 호출합니다. 끝의 모든 `\r` / `\n` 을 제거하고(CRLF 및 여러 개의 끝 빈 줄 호환) `\n` 을 하나 추가합니다. 빈 파일이나 파싱할 수 없는 내용은 원본 그대로 반환하여 파일이 손상되지 않도록 합니다.
 - `Format(code)` 은 순수 조각 포맷 함수이며(끝 줄바꿈을 추가하지 않음) 주로 단위 테스트에 사용됩니다. 실제 원본 파일에 기록할 때는 `FormatFile` 을 사용하세요.
 
-## 가져오기 문장 자동 정리(중복 제거 / `# std/fmt` 제거 / 정렬)
+## 가져오기 문장 자동 정리(중복 제거 / 별칭 없는 std 가져오기 제거 / 정렬)
 
 `no fmt` (및 LSP 저장 시 포맷)은 파일 맨 위의 연속된 가져오기 구간 (`# path[.fn] [alias]`) 을 자동으로 정리하며, 구현은 `src/fmt/imports.go` 에 있습니다.
 
 1. **중복 제거**: 완전히 동일한(경로, 함수 이름, 별칭이 글자까지 동일한) 가져오기는 첫 번째 항목만 남깁니다.
-2. **`# std/fmt` 자동 제거**: `print` / `eprint` / `format` / `sprintf` 는 컴파일러 내장 함수이고 표준 라이브러리 모듈은 암시적으로 로드할 수 있으므로([모듈 간 호출 접두사](./module) 참조) `# std/fmt` 는 결코 필요하지 않으며, 작성해도 formatter 가 제거합니다. 다음 두 가지 예외는 유지됩니다.
-   - **별칭**이나 **함수 가져오기**를 쓴 경우(예: `# std/fmt.sprintf fm`) — 의도적인 이름 바인딩입니다.
+2. **별칭 없는 순수 std 모듈 가져오기 자동 제거**: 표준 라이브러리 모듈은 암시적으로 로드할 수 있으므로([모듈 간 호출 접두사](./module) 참조) `# std/noml` / `# std/math` / `# std/database/sql` 처럼 별칭과 `.함수` 가 없는 순수 모듈 가져오기는 이름을 바인딩하지 않아 불필요하며, formatter 가 제거합니다. 다음 세 가지 예외는 유지됩니다.
+   - **별칭**(`# std/noml n`)이나 **함수 가져오기**(`# std/fmt.sprintf fm`)를 쓴 경우 — 의도적인 이름 바인딩입니다.
    - 가져오기 줄에 **주석**이나 붙어 있는 **`#{...}` 애노테이션**이 있는 경우 — 사용자가 작성한 내용을 조용히 버릴 수 없습니다.
 3. **자동 정렬**: 경로 → 함수 이름 → 별칭 순으로 사전순 안정 정렬을 수행합니다.
 
@@ -44,11 +44,13 @@ sidebar_position: 4
 
 ```no
 #{fmt-skip}
-; 格式化前                          ; 格式化後
-# std/vec                           # std/io
-# std/fmt                           # std/vec
-# std/io
-# std/fmt        ;→  print、format 為內建，# std/fmt 移除；其餘按字典序排序
+; 포맷 전                            ; 포맷 후
+# std/vec                           # aaa/lib
+# std/noml                          # std/io
+# std/io                            # std/vec
+# std/noml n
+# aaa/lib        ;→  별칭 없는 std 가져오기(# std/noml, # std/vec, # std/io) 제거;
+                    ;   별칭 있는 # std/noml n 은 유지; 나머지는 사전순 정렬
 ```
 
 ## 주석 표기(Comment Markers)

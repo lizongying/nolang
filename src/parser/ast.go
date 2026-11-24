@@ -531,6 +531,25 @@ func (cn *CommentedNode) SetDoc(d *CommentGroup)    { cn.Doc = d }
 
 type Program struct {
 	Statements []Statement
+
+	// SourcePath / ModulePath 是掛在模組上的兩個**隱式註解**（身份中繼資料）：
+	// 打包端注入，不是使用者寫在 .no 裡的 #{...} 註解，也不是編譯器對原始碼
+	// 的推導結論——因此不違反 CachedProgram「只含語法」的約束（它仍只有 Prog
+	// 一個欄位，這兩個欄位屬於 Program 自己）。
+	//
+	//   - SourcePath：這棵 AST 的實際來源路徑。std 是 embed 路徑 "std/math.no"；
+	//     -ast.zip 是包內相對檔名 "remote.no" / "deep/util.no"。
+	//   - ModulePath：這棵 AST 的模組路徑。std 為 "std/math.no"；-ast.zip 為
+	//     包內模組路徑 ""（入口）、"remote"、"deep/util"。
+	//
+	// 兩者隨 CachedProgram 的 gob 一起序列化，讓分發容器（std-ast.bin 的
+	// Mods [][]byte、-ast.zip 的 mods.gob）不必再各自帶一層 path → payload 的
+	// key：路徑跟著 AST 走，容器只裝 []byte。
+	//
+	// 不進 Sem（Sem 不入 gob）；不影響 walkProgramNodes（它只從 Statements 起走）。
+	SourcePath string
+	ModulePath string
+
 	// Doc 是**模組層**文檔註解：檔案開頭那段以「無點 doc 錨點」收尾的 `;` 註解
 	// （如 `; [arr](#arr)`），整段（含錨點那一行）掛在這裡，**不**併進首個宣告的
 	// Doc。錨點是「模組名」而非「模組名.成員」——後者屬於成員（函式/方法）的 Doc，
@@ -1925,9 +1944,9 @@ func (cs *ContinueStatement) EndPos() lexer.Position { return posFromToken(cs.To
 // type: a channel-typed LHS makes `<-` a send, anything else keeps the
 // for-range meaning. See parseStatement.
 type ChanSendStatement struct {
-	Token lexer.Token  // the `<-` token
-	Chan  Expression   // channel-typed left operand
-	Value Expression   // payload
+	Token lexer.Token // the `<-` token
+	Chan  Expression  // channel-typed left operand
+	Value Expression  // payload
 	CommentedNode
 }
 

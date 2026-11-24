@@ -1,0 +1,293 @@
+; 阶段68：C-TOOLBAR（一条横排条目，其中一项高亮）无窗口断言
+; 纯逻辑：默认 / 条目池读写 / 自动高亮 / 选中夹紧与回绕 /
+;          多句柄隔离 / disabled 空操作 / 测算 intrinsic / 渲染几何
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：0 项、越界读空串、无选中、未 disabled、不是视觉容器
+; ============================================================================
+tl = cmp-toolbar()
+
+u1 = cmp-kind(tl) == C-TOOLBAR
+u2 = tlb-count(tl) == 0
+u3 = tlb-item(tl, 0) == ''
+u4 = tlb-item(tl, -1) == ''
+u5 = tlb-selected(tl) == -1
+u6 = cmp-has(tl, F-DISABLED) == 0
+u7 = cs-is-container(cmp-kind(tl)) == 0
+
+; ============================================================================
+; 2. 条目池读写 + 首次有条目时自动高亮第 0 项
+; ============================================================================
+a0 = tlb-add(tl, 'aa')
+a1 = tlb-add(tl, 'bb')
+a2 = tlb-add(tl, 'cc')
+u8 = a0 == 0
+u9 = a1 == 1
+u10 = a2 == 2
+u11 = tlb-count(tl) == 3
+u12 = tlb-selected(tl) == 0
+u13 = tlb-item(tl, 0) == 'aa'
+u14 = tlb-item(tl, 2) == 'cc'
+u15 = tlb-item(tl, 3) == ''
+
+tlb-set-item(tl, 1, 'bx')
+u16 = tlb-item(tl, 1) == 'bx'
+tlb-set-item(tl, 9, 'x')
+tlb-set-item(tl, -1, 'x')
+u17 = tlb-count(tl) == 3
+u18 = tlb-item(tl, 2) == 'cc'
+
+tlb-clear(tl)
+u19 = tlb-count(tl) == 0
+u20 = tlb-selected(tl) == -1
+u21 = tlb-item(tl, 0) == ''
+a3 = tlb-add(tl, 'again')
+u22 = a3 == 0
+u23 = tlb-item(tl, 0) == 'again'
+u24 = tlb-selected(tl) == 0
+
+; ============================================================================
+; 3. 选中：指定 / 越界夹紧 / next / prev 回绕
+; ============================================================================
+tlb-clear(tl)
+tlb-add(tl, 'aa')
+tlb-add(tl, 'bb')
+tlb-add(tl, 'cc')
+
+tlb-select(tl, 1)
+u25 = tlb-selected(tl) == 1
+tlb-select(tl, 99)
+u26 = tlb-selected(tl) == 2
+tlb-select(tl, -99)
+u27 = tlb-selected(tl) == 0
+
+tlb-select(tl, 2)
+tlb-select-next(tl)
+u28 = tlb-selected(tl) == 0
+tlb-select-prev(tl)
+u29 = tlb-selected(tl) == 2
+tlb-select-prev(tl)
+u30 = tlb-selected(tl) == 1
+
+; 空集合选不中
+e1 = cmp-toolbar()
+tlb-select(e1, 0)
+u31 = tlb-selected(e1) == -1
+tlb-select-next(e1)
+u32 = tlb-selected(e1) == -1
+tlb-select-prev(e1)
+u33 = tlb-selected(e1) == -1
+
+; ============================================================================
+; 4. 多句柄隔离
+; ============================================================================
+t2 = cmp-toolbar()
+t3 = cmp-toolbar()
+tlb-add(t2, 'x')
+tlb-add(t3, 'y')
+tlb-add(t3, 'z')
+tlb-select(t3, 1)
+
+u34 = tlb-count(t2) == 1
+u35 = tlb-count(t3) == 2
+u36 = tlb-selected(t2) == 0
+u37 = tlb-selected(t3) == 1
+u38 = tlb-item(t3, 1) == 'z'
+
+tlb-clear(t2)
+u39 = tlb-count(t2) == 0
+u40 = tlb-selected(t2) == -1
+u41 = tlb-count(t3) == 2
+u42 = tlb-selected(t3) == 1
+tlb-add(t2, 'w')
+u43 = tlb-item(t2, 0) == 'w'
+u44 = tlb-item(t3, 0) == 'y'
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(t3, F-DISABLED)
+tlb-add(t3, 'no')
+tlb-set-item(t3, 0, 'no')
+tlb-select(t3, 0)
+tlb-select-next(t3)
+tlb-select-prev(t3)
+tlb-clear(t3)
+u45 = tlb-count(t3) == 2
+u46 = tlb-item(t3, 0) == 'y'
+u47 = tlb-selected(t3) == 1
+cmp-flag-clear(t3, F-DISABLED)
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    空：宽 = 2*1200 = 2400 夹 6400；高 = 2*1200 + 4000 = 6400
+;    宽 = 2*tlb-pad + Σ(文案宽+2*800) + (N-1)*tlb-gap
+; ============================================================================
+m1 = cmp-toolbar()
+v1w, v1h = cs-measure(m1)
+u48 = v1w == 6400
+u49 = v1h == 6400
+
+; 一项 'aa'(1600 → chip 3200)：2400+3200 = 5600 夹 6400
+m2 = cmp-toolbar()
+tlb-add(m2, 'aa')
+v2w, v2h = cs-measure(m2)
+u50 = v2w == 6400
+u51 = v2h == 6400
+
+; 三项 'aa'/'bb'/'cc'：Σchip 9600 + 间距 1600 = 11200；2400+11200 = 13600
+m3 = cmp-toolbar()
+tlb-add(m3, 'aa')
+tlb-add(m3, 'bb')
+tlb-add(m3, 'cc')
+v3w, v3h = cs-measure(m3)
+u52 = v3w == 13600
+u53 = v3h == 6400
+
+; 长条目 'abcdefghij'(8000 → chip 9600)：2400+9600 = 12000
+m4 = cmp-toolbar()
+tlb-add(m4, 'abcdefghij')
+v4w, v4h = cs-measure(m4)
+u54 = v4w == 12000
+u55 = v4h == 6400
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m4, 20000)
+cmp-set-sh(m4, 9000)
+v5w, v5h = cs-measure(m4)
+u56 = v5w == 20000
+u57 = v5h == 9000
+cmp-set-sw(m4, 0)
+cmp-set-sh(m4, 0)
+
+; ============================================================================
+; 7. 渲染
+;    外层 18000 → 内容宽 15600（intrinsic 更小，叶子横向被拉伸到父内容宽）
+;    面板 (1200,1200,15600,6400) FIELD
+;    chip i 左缘 = bx+1200 + i*(3200+800)；槽顶 sy = by+1200；
+;    文本垂直居中 → 文本顶 ty = sy + (4000-2400)/2 = sy+800
+;    当前项（默认第 0 项）ACCENT 盒，其余 TRACK 盒
+; ============================================================================
+cs-clear()
+r = cmp-toolbar()
+tlb-add(r, 'aa')
+tlb-add(r, 'bb')
+tlb-add(r, 'cc')
+rt = cmp-root()
+cmp-add-child(rt, r)
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+
+p0 = 1200
+hh = 4000
+cpad = 800
+gap = 800
+cw = 3200
+
+bx, by, bw, bh = cs-rect(r)
+sy = cs-add(by, p0)
+ty = cs-add(sy, 800)
+c0 = cs-add(bx, p0)
+c1 = cs-add(c0, cw + gap)
+c2 = cs-add(c1, cw + gap)
+
+u58 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u59 = cs-rect-color-at(c0, sy, cw, hh) == cs-theme(CS-TH-ACCENT)
+u60 = cs-rect-color-at(c1, sy, cw, hh) == cs-theme(CS-TH-TRACK)
+u61 = cs-rect-color-at(c2, sy, cw, hh) == cs-theme(CS-TH-TRACK)
+u62 = cs-text-color-at('aa', cs-add(c0, cpad), ty) == cs-theme(CS-TH-FG)
+u63 = cs-text-color-at('bb', cs-add(c1, cpad), ty) == cs-theme(CS-TH-FG)
+u64 = cs-text-color-at('cc', cs-add(c2, cpad), ty) == cs-theme(CS-TH-FG)
+u65 = cs-text-count() == 3
+u66 = bw == 15600
+u67 = bh == 6400
+
+; 把当前项切到第 2 项：ACCENT 跟着走
+tlb-select(r, 2)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u68 = cs-rect-color-at(c0, sy, cw, hh) == cs-theme(CS-TH-TRACK)
+u69 = cs-rect-color-at(c2, sy, cw, hh) == cs-theme(CS-TH-ACCENT)
+
+; 清空：只剩 FIELD 底，一条文本指令都不发
+tlb-clear(r)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw, bh = cs-rect(r)
+u70 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u71 = cs-text-count() == 0
+u72 = cs-rect-color-at(c0, sy, cw, hh) == -1
+
+; 重新加一项：自动高亮第 0 项
+tlb-add(r, 'solo')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw, bh = cs-rect(r)
+u73 = tlb-selected(r) == 0
+sw = cs-add(cs-text-w('solo'), cs-mul(cpad, 2))
+u74 = cs-rect-color-at(cs-add(bx, p0), cs-add(by, p0), sw, hh) == cs-theme(CS-TH-ACCENT)
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11
+ok = ok & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21
+ok = ok & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31
+ok = ok & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41
+ok = ok & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60 & u61
+ok = ok & u62 & u63 & u64 & u65 & u66 & u67 & u68 & u69 & u70 & u71
+ok = ok & u72 & u73 & u74
+
+(ok == 1) -> {
+    print('ALL TOOLBAR TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME TOOLBAR TESTS FAILED')
+}

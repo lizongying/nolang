@@ -25,6 +25,9 @@ cg-runtime-ty-name = (t i64) (s str) {
 
     ; 切片 B：[]str 与 []i64 在 LLVM 层同为 %vec（元素 stride 由助手决定）
     t == TY-VECSTR -> s = '%vec'
+
+    ; s162：[]结构体 与 []i64／[]str 在 LLVM 层同为 %vec（描述符与元素型别无关）
+    t == TY-VECSTRUCT -> s = '%vec'
     t == TY-OPT -> s = '%option'
     t == TY-F64 -> s = 'double'
     t >= TY-STRUCT-BASE -> s = '%struct.s' - (t - TY-STRUCT-BASE).to-str()
@@ -220,6 +223,289 @@ cg-runtime-str-cp-len = () (r str) {
     b.push('  br label %loop\n')
     b.push('done:\n')
     b.push('  ret i64 %n\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; s158：str 子串四件套的執行期助手（OP-STRPREF / OP-STRSUFF / OP-STRCTNS / OP-STRIDX）。
+;   语义逐字鏡像 src/std/str.no 的 str.starts-with(:460) / str.ends-with(:481) /
+;   str.contains(:450) / str.index(:420)——全部【純計算、不分配、無 RC】。
+;   ⚠️ 共用內核 @str_find_byte：scan i ∈ [0, n-m]，逐元比對 target；空 target 回 0
+;      （鏡像 find-byte-from 的 `target.len-bytes() == 0 → r-from <= n → pos = r-from`，
+;       r-from 恒 0 ⇒ 回 0；非空則等價首次命中，與 Sunday 算法結果相同）。
+;   ⚠️ B28：len 欄 u32 ⇒ 讀出後 zext i32→i64 才做 icmp / gep 偏移。
+; r: 結果字串
+cg-runtime-str-find-byte = () (r str) {
+    b = sb.init(1536)
+    b.push('define i64 @str_find_byte(%str-long %a, %str-long %b) {\n')
+    b.push('entry:\n')
+    b.push('  %la.i32 = extractvalue %str-long %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %lb.i32 = extractvalue %str-long %b, 0\n')
+    b.push('  %lb = zext i32 %lb.i32 to i64\n')
+    b.push('  %da = extractvalue %str-long %a, 2\n')
+    b.push('  %db = extractvalue %str-long %b, 2\n')
+    b.push('  %m0 = icmp eq i64 %lb, 0\n')
+    b.push('  br i1 %m0, label %empty, label %chk\n')
+    b.push('empty:\n')
+    b.push('  ret i64 0\n')
+    b.push('chk:\n')
+    b.push('  %nge = icmp sge i64 %la, %lb\n')
+    b.push('  br i1 %nge, label %loop, label %nofind\n')
+    b.push('nofind:\n')
+    b.push('  ret i64 -1\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %chk ], [ %inext, %next ]\n')
+    b.push('  %limit = sub i64 %la, %lb\n')
+    b.push('  %go = icmp sle i64 %i, %limit\n')
+    b.push('  br i1 %go, label %body, label %nofind\n')
+    b.push('body:\n')
+    b.push('  %j = phi i64 [ 0, %loop ], [ %jnext, %bmatch ]\n')
+    b.push('  %mgo = icmp slt i64 %j, %lb\n')
+    b.push('  br i1 %mgo, label %cmp, label %found\n')
+    b.push('cmp:\n')
+    b.push('  %idx = add i64 %i, %j\n')
+    b.push('  %pa = getelementptr i8, i8* %da, i64 %idx\n')
+    b.push('  %ba = load i8, i8* %pa\n')
+    b.push('  %pb = getelementptr i8, i8* %db, i64 %j\n')
+    b.push('  %bb = load i8, i8* %pb\n')
+    b.push('  %eq = icmp eq i8 %ba, %bb\n')
+    b.push('  br i1 %eq, label %bmatch, label %next\n')
+    b.push('bmatch:\n')
+    b.push('  %jnext = add i64 %j, 1\n')
+    b.push('  br label %body\n')
+    b.push('found:\n')
+    b.push('  ret i64 %i\n')
+    b.push('next:\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; str-startswith：@str_starts_with —— 逐元前綴比對（std str.starts-with:460 逐字）。
+;   target 較長 ⇒ false；否則比對前 lb 個位元。r: 結果字串
+cg-runtime-str-startswith = () (r str) {
+    b = sb.init(1024)
+    b.push('define i1 @str_starts_with(%str-long %a, %str-long %b) {\n')
+    b.push('entry:\n')
+    b.push('  %la.i32 = extractvalue %str-long %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %lb.i32 = extractvalue %str-long %b, 0\n')
+    b.push('  %lb = zext i32 %lb.i32 to i64\n')
+    b.push('  %da = extractvalue %str-long %a, 2\n')
+    b.push('  %db = extractvalue %str-long %b, 2\n')
+    b.push('  %le = icmp sle i64 %lb, %la\n')
+    b.push('  br i1 %le, label %loop, label %no\n')
+    b.push('no:\n')
+    b.push('  ret i1 false\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %entry ], [ %inext, %same ]\n')
+    b.push('  %go = icmp slt i64 %i, %lb\n')
+    b.push('  br i1 %go, label %body, label %yes\n')
+    b.push('body:\n')
+    b.push('  %pa = getelementptr i8, i8* %da, i64 %i\n')
+    b.push('  %ba = load i8, i8* %pa\n')
+    b.push('  %pb = getelementptr i8, i8* %db, i64 %i\n')
+    b.push('  %bb = load i8, i8* %pb\n')
+    b.push('  %eq = icmp eq i8 %ba, %bb\n')
+    b.push('  br i1 %eq, label %same, label %no\n')
+    b.push('same:\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('yes:\n')
+    b.push('  ret i1 true\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; str-endswith：@str_ends_with —— 逐元後綴比對（std str.ends-with:481 逐字）。
+;   target 較長 ⇒ false；off = la - lb（#{overflow=wrap} 在源側，此處 la >= lb 已保證）。
+; r: 結果字串
+cg-runtime-str-endswith = () (r str) {
+    b = sb.init(1024)
+    b.push('define i1 @str_ends_with(%str-long %a, %str-long %b) {\n')
+    b.push('entry:\n')
+    b.push('  %la.i32 = extractvalue %str-long %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %lb.i32 = extractvalue %str-long %b, 0\n')
+    b.push('  %lb = zext i32 %lb.i32 to i64\n')
+    b.push('  %da = extractvalue %str-long %a, 2\n')
+    b.push('  %db = extractvalue %str-long %b, 2\n')
+    b.push('  %le = icmp sle i64 %lb, %la\n')
+    b.push('  br i1 %le, label %entry2, label %no\n')
+    b.push('no:\n')
+    b.push('  ret i1 false\n')
+    b.push('entry2:\n')
+    b.push('  %off = sub i64 %la, %lb\n')
+    b.push('  br label %loop\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %entry2 ], [ %inext, %same ]\n')
+    b.push('  %go = icmp slt i64 %i, %lb\n')
+    b.push('  br i1 %go, label %body, label %yes\n')
+    b.push('body:\n')
+    b.push('  %idx = add i64 %off, %i\n')
+    b.push('  %pa = getelementptr i8, i8* %da, i64 %idx\n')
+    b.push('  %ba = load i8, i8* %pa\n')
+    b.push('  %pb = getelementptr i8, i8* %db, i64 %i\n')
+    b.push('  %bb = load i8, i8* %pb\n')
+    b.push('  %eq = icmp eq i8 %ba, %bb\n')
+    b.push('  br i1 %eq, label %same, label %no\n')
+    b.push('same:\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('yes:\n')
+    b.push('  ret i1 true\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; str-contains：@str_contains —— 等價 index(target) >= 0（std str.contains:450 逐字）。
+; r: 結果字串
+cg-runtime-str-contains = () (r str) {
+    b = sb.init(256)
+    b.push('define i1 @str_contains(%str-long %a, %str-long %b) {\n')
+    b.push('entry:\n')
+    b.push('  %p = call i64 @str_find_byte(%str-long %a, %str-long %b)\n')
+    b.push('  %r = icmp sge i64 %p, 0\n')
+    b.push('  ret i1 %r\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; str-index：@str_index —— 回「首次出現的【碼點】位置」，未找到 -1（std str.index:420 逐字）。
+;   = find-byte-from(target, 0) 命中後 .cp-index(b)：數 a[0..b) 裡的首字節（b<0x80 或 (b&0xc0)==0xc0）個數。
+;   ⚠️ 與 @str_cp_len 同口徑（見 cg-runtime-str-cp-len），只在 [0, p) 區間數。
+; r: 結果字串
+cg-runtime-str-index = () (r str) {
+    b = sb.init(1536)
+    b.push('define i64 @str_index(%str-long %a, %str-long %b) {\n')
+    b.push('entry:\n')
+    b.push('  %p = call i64 @str_find_byte(%str-long %a, %str-long %b)\n')
+    b.push('  %ok = icmp sge i64 %p, 0\n')
+    b.push('  br i1 %ok, label %count, label %neg\n')
+    b.push('neg:\n')
+    b.push('  ret i64 -1\n')
+    b.push('count:\n')
+    b.push('  %data = extractvalue %str-long %a, 2\n')
+    b.push('  br label %loop\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %count ], [ %inext, %body ]\n')
+    b.push('  %n = phi i64 [ 0, %count ], [ %nnext, %body ]\n')
+    b.push('  %go = icmp slt i64 %i, %p\n')
+    b.push('  br i1 %go, label %body, label %done\n')
+    b.push('body:\n')
+    b.push('  %ptr = getelementptr i8, i8* %data, i64 %i\n')
+    b.push('  %byt = load i8, i8* %ptr\n')
+    b.push('  %bw = zext i8 %byt to i64\n')
+    b.push('  %lo = icmp slt i64 %bw, 128\n')
+    b.push('  %and = and i64 %bw, 192\n')
+    b.push('  %hi = icmp eq i64 %and, 192\n')
+    b.push('  %inc = or i1 %lo, %hi\n')
+    b.push('  %nadd = add i64 %n, 1\n')
+    b.push('  %nnext = select i1 %inc, i64 %nadd, i64 %n\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('done:\n')
+    b.push('  ret i64 %n\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; str-to-bytes：@str_to_bytes —— s159。語義逐字鏡像 src/std/str.no:694 的 str.to-bytes()：
+;   n = .len-bytes()；with-cap-len(n, n) 後逐元 val[i] = .byte(i)。
+;   ⚠️ 結果**擁有**新緩衝（rc=1、cap=n>0）⇒ 呼叫端必須 rel-add，離開作用域發 OP-VEC-FREE；
+;      這與 s121 bytes() 的 cap==0【借用視圖】相反，勿混。
+;   ⚠️ []byte 元素在 noc 運行期是 i64 寬槽（stride 8，s136 口徑合併）⇒ 每元寫一個 8 位元組槽，
+;      把該元 u8 值 zext 成 i64 存進去，@vec_get_i64（stride 8）才能讀回 0..255。
+;   ⚠️ B28：%str-long 的 len 欄是 u32 ⇒ 讀出即 zext i32→i64。
+;   ⚠️ 空串走 empty 短路：回 {0,0,0}，@vec_free 對 dat==0 短路（同 vec_new_cap_i64）。
+; r: 結果字串
+cg-runtime-str-to-bytes = () (r str) {
+    b = sb.init(1792)
+    b.push('define %vec @str_to_bytes(%str-long %a) {\n')
+    b.push('entry:\n')
+    b.push('  %la.i32 = extractvalue %str-long %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %da = extractvalue %str-long %a, 2\n')
+    b.push('  %z = icmp eq i64 %la, 0\n')
+    b.push('  br i1 %z, label %empty, label %alloc\n')
+    b.push('empty:\n')
+    b.push('  ret %vec { i32 0, i32 0, i64 0 }\n')
+    b.push('alloc:\n')
+    b.push('  %nb = mul i64 %la, 8\n')
+    b.push('  %p = call i8* @malloc(i64 %nb)\n')
+    b.push('  br label %loop\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %alloc ], [ %inext, %body ]\n')
+    b.push('  %go = icmp slt i64 %i, %la\n')
+    b.push('  br i1 %go, label %body, label %done\n')
+    b.push('body:\n')
+    b.push('  %sp = getelementptr i8, i8* %da, i64 %i\n')
+    b.push('  %bi = load i8, i8* %sp\n')
+    b.push('  %bw = zext i8 %bi to i64\n')
+    b.push('  %off = mul i64 %i, 8\n')
+    b.push('  %dp = getelementptr i8, i8* %p, i64 %off\n')
+    b.push('  %dpp = bitcast i8* %dp to i64*\n')
+    b.push('  store i64 %bw, i64* %dpp\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('done:\n')
+    b.push('  %c32 = trunc i64 %la to i32\n')
+    b.push('  %pd = ptrtoint i8* %p to i64\n')
+    b.push('  %v0 = insertvalue %vec zeroinitializer, i32 %c32, 0\n')
+    b.push('  %v1 = insertvalue %vec %v0, i32 %c32, 1\n')
+    b.push('  %v2 = insertvalue %vec %v1, i64 %pd, 2\n')
+    b.push('  ret %vec %v2\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; s160：@str_slice_bytes —— str.slice-bytes(start,end) 的【新配置】子串副本助手。
+;   語義逐字鏡像 src/std/str.no:642：start<0 ⇒ 0；end>len-bytes() ⇒ len-bytes()；
+;   start>=end ⇒ 空；否則把 [start,end) 逐元（1:1 位元組，不做 UTF-8 重編碼）複製進新緩衝。
+;   ⚠️ 緩衝走 @nolang_rc_alloc（非裸 @malloc）⇒ rc=1，由 h2m-rel-add(TY-STR) 登記、
+;      作用域結束發 OP-RELEASE ⇒ @nolang_rc_release 歸還（同 OP-STRCAT／OP-ITOSTR）。
+;      s159 的 @str_to_bytes 用裸 @malloc + OP-VEC-FREE，兩者【所有權路徑不同】，勿混。
+;   ⚠️ B28：%str-long 的 len 欄是 u32 ⇒ 讀出即 zext i32→i64 才做 icmp / gep 偏移。
+;   ⚠️ 以「n<0 ⇒ 0」的 select 收斂 start>=end，不另開 empty 分支：
+;      rc_alloc(0) 仍回非空指標（alloc n+16），故空結果的 data 永不為 null。
+;   ⚠️ 同一函式內區域值名不得與形參同名（§78 ⑥ 教訓）：杜絕 %a = ／ %b = ／ %s = ／ %e =。
+; r: 結果字串
+cg-runtime-str-slice-bytes = () (r str) {
+    b = sb.init(1792)
+    b.push('define %str-long @str_slice_bytes(%str-long %a, i64 %s, i64 %e) {\n')
+    b.push('entry:\n')
+    b.push('  %la.i32 = extractvalue %str-long %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %da = extractvalue %str-long %a, 2\n')
+    b.push('  %sneg = icmp slt i64 %s, 0\n')
+    b.push('  %s0 = select i1 %sneg, i64 0, i64 %s\n')
+    b.push('  %egt = icmp sgt i64 %e, %la\n')
+    b.push('  %e0 = select i1 %egt, i64 %la, i64 %e\n')
+    b.push('  %nraw = sub i64 %e0, %s0\n')
+    b.push('  %nneg = icmp slt i64 %nraw, 0\n')
+    b.push('  %n = select i1 %nneg, i64 0, i64 %nraw\n')
+    b.push('  %buf = call i8* @nolang_rc_alloc(i64 %n)\n')
+    b.push('  br label %loop\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %entry ], [ %inext, %body ]\n')
+    b.push('  %go = icmp slt i64 %i, %n\n')
+    b.push('  br i1 %go, label %body, label %done\n')
+    b.push('body:\n')
+    b.push('  %src = add i64 %s0, %i\n')
+    b.push('  %sp = getelementptr i8, i8* %da, i64 %src\n')
+    b.push('  %by = load i8, i8* %sp\n')
+    b.push('  %dp = getelementptr i8, i8* %buf, i64 %i\n')
+    b.push('  store i8 %by, i8* %dp\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('done:\n')
+    b.push('  %l0.i32 = trunc i64 %n to i32\n')
+    b.push('  %r0 = insertvalue %str-long zeroinitializer, i32 %l0.i32, 0\n')
+    b.push('  %r1 = insertvalue %str-long %r0, i32 %l0.i32, 1\n')
+    b.push('  %r2 = insertvalue %str-long %r1, i8* %buf, 2\n')
+    b.push('  ret %str-long %r2\n')
     b.push('}\n')
     r = b.str()
 }
@@ -774,6 +1060,15 @@ cg-runtime-prelude-full = () (r str) {
     b.push('\n')
     b.push(cg-runtime-str-concat())
     b.push(cg-runtime-str-cp-len())
+    b.push(cg-runtime-str-find-byte())
+    b.push(cg-runtime-str-startswith())
+    b.push(cg-runtime-str-endswith())
+    b.push(cg-runtime-str-contains())
+    b.push(cg-runtime-str-index())
+    ; s159：@str_to_bytes —— str.to-bytes() 的 O(N) 複製助手（i64 寬槽，自有緩衝）。
+    b.push(cg-runtime-str-to-bytes())
+    ; s160：@str_slice_bytes —— str.slice-bytes(start,end) 的新配置子串副本（走 rc_alloc/OP-RELEASE）。
+    b.push(cg-runtime-str-slice-bytes())
     b.push(cg-runtime-vec-new())
     b.push(cg-runtime-vec-len())
     b.push(cg-runtime-vec-get())

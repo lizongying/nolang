@@ -431,7 +431,9 @@ import (
 // 2026-11-18.2：通道接收迴圈合成的 match 不再繼承外層的 CTX_EXPR
 // （parseChanRecvSugar / parseChanLoopBody 都先 filterOut 掉）。舊 blob 若在值語境
 // 裡帶過 `<- ch: { ok -> r = it }`，會記成解析失敗後被丟掉的空 block，故必 bump。
-const ASTVersion = "2026-11-18.2"
+// 2026-11-24.1：Program 新增 SourcePath / ModulePath 兩個隱式註解，detProgram
+// 影子同步攜帶；gob 往返的樹比舊版多兩個欄位，舊 blob 不解碼新欄位，故必 bump。
+const ASTVersion = "2026-11-24.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

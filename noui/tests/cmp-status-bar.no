@@ -1,0 +1,241 @@
+; 阶段63：C-STATUS-BAR（状态分段条）无窗口断言
+; 纯逻辑：构造默认 / 分段池（扁平只增 + 基址）/ 改写 / 多句柄隔离 /
+;          disabled 空操作 / 测算 intrinsic / 渲染几何
+;          （FIELD 底、段文案 FG、段间 TRACK 竖分隔条、细条高度 CS-BTN-H、
+;           文字垂直居中）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+cs-text-n = (t str) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    0 段 / 越界读空串 / 未被 disabled / 不是视觉容器
+; ============================================================================
+sb = cmp-status-bar()
+
+t1 = cmp-kind(sb) == C-STATUS-BAR
+t2 = sb-count(sb) == 0
+t3 = sb-seg(sb, 0) == ''
+t4 = cmp-has(sb, F-DISABLED) == 0
+t5 = cs-is-container(cmp-kind(sb)) == 0
+
+; ============================================================================
+; 2. 分段池：追加
+;    s0 ready / s1 utf-8 / s2 ln 12
+; ============================================================================
+sb-add(sb, 'ready')
+t6 = sb-count(sb) == 1
+t7 = sb-seg(sb, 0) == 'ready'
+sb-add(sb, 'utf-8')
+sb-add(sb, 'ln 12')
+t8 = sb-count(sb) == 3
+t9 = sb-seg(sb, 1) == 'utf-8'
+t10 = sb-seg(sb, 2) == 'ln 12'
+
+; 越界读：空串
+t11 = sb-seg(sb, 3) == ''
+t12 = sb-seg(sb, -1) == ''
+
+; ============================================================================
+; 3. 改写
+; ============================================================================
+sb-set-seg(sb, 0, 'READY')
+t13 = sb-seg(sb, 0) == 'READY'
+; 越界写不影响
+sb-set-seg(sb, 9, 'x')
+t14 = sb-seg(sb, 2) == 'ln 12'
+
+; ============================================================================
+; 4. 多句柄隔离（扁平池 + 每句柄基址）
+; ============================================================================
+b2 = cmp-status-bar()
+b3 = cmp-status-bar()
+sb-add(b2, 'aa')
+sb-add(b2, 'bb')
+sb-add(b3, 'cc')
+
+t15 = sb-count(b2) == 2
+t16 = sb-count(b3) == 1
+t17 = sb-seg(b2, 1) == 'bb'
+t18 = sb-seg(b3, 0) == 'cc'
+
+sb-clear(b2)
+t19 = sb-count(b2) == 0
+t20 = sb-count(b3) == 1
+t21 = sb-seg(b3, 0) == 'cc'
+sb-add(b2, 'again')
+t22 = sb-count(b2) == 1
+t23 = sb-seg(b2, 0) == 'again'
+
+; ============================================================================
+; 5. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(b3, F-DISABLED)
+sb-add(b3, 'no')
+sb-set-seg(b3, 0, 'no')
+sb-clear(b3)
+t24 = sb-count(b3) == 1
+t25 = sb-seg(b3, 0) == 'cc'
+cmp-flag-clear(b3, F-DISABLED)
+t26 = cmp-has(b3, F-DISABLED) == 0
+
+; ============================================================================
+; 6. 测算 intrinsic
+;    宽 = 2*CS-PAD + Σ 段宽 + (N-1)*CS-SEP-H，下限 CS-MIN-LEAF-W
+;    高 = CS-BTN-H（细条，固定）
+;    m：三段各 4000 → 2400 + 12000 + 200 = 14600；高 4000
+; ============================================================================
+m = cmp-status-bar()
+sb-add(m, 'ready')
+sb-add(m, 'utf-8')
+sb-add(m, 'ln 12')
+m1w, m1h = cs-measure(m)
+t27 = m1w == 14600
+t28 = m1h == 4000
+
+; 空：宽 2400 夹 6400；高 4000
+e1 = cmp-status-bar()
+m2w, m2h = cs-measure(e1)
+t29 = m2w == 6400
+t30 = m2h == 4000
+
+; 单段 'ok'(1600)：宽 2400+1600 = 4000 夹 6400；高 4000
+e2 = cmp-status-bar()
+sb-add(e2, 'ok')
+m3w, m3h = cs-measure(e2)
+t31 = m3w == 6400
+t32 = m3h == 4000
+
+; 单段长文案 'abcdefghij'(8000)：宽 2400+8000 = 10400；高 4000
+e3 = cmp-status-bar()
+sb-add(e3, 'abcdefghij')
+m4w, m4h = cs-measure(e3)
+t33 = m4w == 10400
+t34 = m4h == 4000
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m, 20000)
+cmp-set-sh(m, 9000)
+m5w, m5h = cs-measure(m)
+t35 = m5w == 20000
+t36 = m5h == 9000
+cmp-set-sw(m, 0)
+cmp-set-sh(m, 0)
+
+; ============================================================================
+; 7. 渲染
+;     外层 18000 → 内容宽 15600（intrinsic 14600，叶子横向被拉伸到父内容宽）
+;     面板 (1200,1200,15600,4000) FIELD
+;     细条高 4000，文字垂直居中：文字 y = 1200 + (4000-2400)/2 = 2000
+;     段 0 'ready' @2400,2000 FG
+;     分隔条 (6400,1200,100,4000)
+;     段 1 'utf-8' @6500,2000 FG
+;     分隔条 (10500,1200,100,4000)
+;     段 2 'ln 12' @10600,2000 FG
+;     文本指令共 3 条
+; ============================================================================
+cs-clear()
+r = cmp-status-bar()
+sb-add(r, 'ready')
+sb-add(r, 'utf-8')
+sb-add(r, 'ln 12')
+r1 = cmp-root()
+cmp-add-child(r1, r)
+cs-layout(r1, 0, 0, 18000, 20000)
+cs-paint(r1)
+
+t37 = cs-rect-color-at(1200, 1200, 15600, 4000) == cs-theme(CS-TH-FIELD)
+t38 = cs-text-color-at('ready', 2400, 2000) == cs-theme(CS-TH-FG)
+t39 = cs-rect-color-at(6400, 1200, 100, 4000) == cs-theme(CS-TH-TRACK)
+t40 = cs-text-color-at('utf-8', 6500, 2000) == cs-theme(CS-TH-FG)
+t41 = cs-rect-color-at(10500, 1200, 100, 4000) == cs-theme(CS-TH-TRACK)
+t42 = cs-text-color-at('ln 12', 10600, 2000) == cs-theme(CS-TH-FG)
+t43 = cs-text-n('ready') == 1
+t44 = cs-text-count() == 3
+
+; 改段文案：分隔条位置跟着移动（'READY' 与 'ready' 同宽，换更长的 'longer'）
+sb-set-seg(r, 0, 'longer')
+cs-clear()
+cs-layout(r1, 0, 0, 18000, 20000)
+cs-paint(r1)
+t45 = cs-text-color-at('longer', 2400, 2000) == cs-theme(CS-TH-FG)
+t46 = cs-rect-color-at(7200, 1200, 100, 4000) == cs-theme(CS-TH-TRACK)
+
+; 清空：只剩底色，没有任何文本 / 分隔条
+sb-clear(r)
+cs-clear()
+cs-layout(r1, 0, 0, 18000, 20000)
+cs-paint(r1)
+t47 = cs-text-count() == 0
+t48 = cs-rect-color-at(1200, 1200, 15600, 4000) == cs-theme(CS-TH-FIELD)
+
+; ============================================================================
+; 8. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5
+ok = ok & t6 & t7 & t8 & t9 & t10 & t11 & t12
+ok = ok & t13 & t14
+ok = ok & t15 & t16 & t17 & t18 & t19 & t20 & t21 & t22 & t23
+ok = ok & t24 & t25 & t26
+ok = ok & t27 & t28 & t29 & t30 & t31 & t32 & t33 & t34 & t35 & t36
+ok = ok & t37 & t38 & t39 & t40 & t41 & t42 & t43 & t44
+ok = ok & t45 & t46 & t47 & t48
+(ok == 1) -> {
+    print('ALL STATUS-BAR TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME STATUS-BAR TESTS FAILED')
+}

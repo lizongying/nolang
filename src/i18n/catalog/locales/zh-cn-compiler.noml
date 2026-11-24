@@ -124,7 +124,7 @@ Nolang 编程语言（版本 %s）
   源列表: ~/no/sources.noml  ($NOHUB_SOURCES 覆盖；-source <name> 选择)
 
   no add <tool>[:<version>]@<host>/<owner>/<repo>
-                    添加依赖（预构建 AST：<tool>.ast.zip）
+                    添加依赖（预构建 AST：<tool>-ast.zip）
                     省略版本即最新发布；写入 package.noml 的键为
                     <tool>@<host>/<owner>/<repo>。
     示例:
@@ -152,11 +152,11 @@ Nolang 编程语言（版本 %s）
       no uninstall nogit
   no sync              同步/下载依赖
   no pack [-o <file>] [<dir|file.no>]
-                    将模块的 AST 打包为 <tool>.ast.zip（gob + zip）。
+                    将模块的 AST 打包为 <tool>-ast.zip（gob + zip）。
                     仅词法分析+解析——无需 LLVM 工具链，适合 CI。
     示例:
-      no pack                     打包当前包 -> dist/<name>.ast.zip
-      no pack -o nogit.ast.zip    显式指定输出路径（对 CI 友好）
+      no pack                     打包当前包 -> dist/<name>-ast.zip
+      no pack -o nogit-ast.zip    显式指定输出路径（对 CI 友好）
       no pack nogit.no            打包单个源文件
   no pub [-o <file>]  打包（同 no pack）并发布；registry 上传
                     尚未实现，目前仅执行打包

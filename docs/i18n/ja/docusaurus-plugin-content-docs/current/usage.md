@@ -28,7 +28,7 @@ sudo mv nolang /usr/local/bin/no
 | `no version`                                                 | バージョン情報を出力            |
 | `no init`                                                    | ワークスペースを定義（workspace.noml を生成、package.noml は含まない） |
 | `no new <name>`                                              | ワークスペース内に新しいパッケージを作成（サブディレクトリ + package.noml、workspace.noml に登録） |
-| `no fmt [-w] [-d] <file\|dir>`                               | ソースコードを整形（インポートの重複排除/並べ替えを含み、`# std/fmt` を自動削除）；`.noml` 設定ファイルはレイアウトを保持する整形ルールに従う（インデント/空白/空行、コメントとキーの順序は変更しない） |
+| `no fmt [-w] [-d] <file\|dir>`                               | ソースコードを整形（インポートの重複排除/並べ替えを含み、別名なし std モジュールインポートを自動削除）；`.noml` 設定ファイルはレイアウトを保持する整形ルールに従う（インデント/空白/空行、コメントとキーの順序は変更しない） |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | ビルド（executable を出力） |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | ビルドして実行（パッケージ名/ディレクトリ/ファイル） |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | テストを実行                |
@@ -40,7 +40,7 @@ sudo mv nolang /usr/local/bin/no
 | `no sync`                                                    | 依存関係を同期                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | binary をインストール             |
 | `no uninstall <name>`                                        | binary を削除             |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | AST をパッケージング（`<tool>.ast.zip`）|
+| `no pack [-o <file>] [<dir\|file.no>]`                       | AST をパッケージング（`<tool>-ast.zip`）|
 | `no pub [-o <file>]`                                         | `no pack` と同じ（registry へのアップロードは未実装）|
 | `no cache <stat\|clear>`                                     | AST キャッシュの表示 / クリア（通常はクリア不要）|
 
@@ -298,7 +298,7 @@ salt の 1 つが `checker.StdSigKey` です——これは `src/hash.noml` に�
 | 変数 | 作用 |
 | --- | --- |
 | `NOLANG_AST_CACHE_OFF=1` | キャッシュをオフにする（コンパイラの A/B 比較や「修正したはずのエラーが再び出る」問題の調査に使用） |
-| `NOLANG_AST_CACHE_DIR` | キャッシュディレクトリをカスタマイズ。**同時に**事前コンパイル済み AST 依存の `.ast.zip` キャッシュにも作用します（このキャッシュはデフォルトで `~/no/cache/ast` にあり、下記「事前コンパイル済み AST 依存」を参照） |
+| `NOLANG_AST_CACHE_DIR` | キャッシュディレクトリをカスタマイズ。**同時に**事前コンパイル済み AST 依存の `-ast.zip` キャッシュにも作用します（このキャッシュはデフォルトで `~/no/cache/ast` にあり、下記「事前コンパイル済み AST 依存」を参照） |
 | `NOLANG_AST_CACHE_MAX` | キャッシュエントリ数の上限（デフォルト 4096） |
 
 > 古いエントリは単にヒットしなくなるだけで、新しいエントリの書き込みに伴って上限で淘汰されるため、`~/.cache/nolang/ast` を**削除する必要はありません**。
@@ -425,21 +425,24 @@ no sync
 ### 事前コンパイル済み AST 依存
 
 `no add <tool>@<host>/<owner>/<repo>` のような依存関係は**AST のみでソースコードはありません**：コンパイル時に release から
-`<tool>.ast.zip`（MetaMessage + zip）を取得し、デコードして直接コンパイルパイプラインに注入します。使い方：
+`<tool>-ast.zip`（zip，每个模组一个 .gob 条目）を取得し、デコードして直接コンパイルパイプラインに注入します。使い方：
 
 ```nolang
-# nogit; 或 use <host>/<owner>/<repo>/nogit
+# nogit                      # パッケージ別名; モジュールは nogit.<module>
+# nogit/remote                  # モジュール remote を直接import (nogit.remote も可)
+# nogit.fn                      # nogit はパッケージ名のみ；fn を定義するモジュールを探索
+# <host>/<owner>/<repo>/nogit/remote
 ```
 
-1 つの zip が 1 つのモジュールで、`use <repo>/<submod>` のような深いパスはサポートされません。バージョンは具体的な値である必要があり
+1 つの zip は 1 つのパッケージで、複数のモジュールを含められます（各モジュールは `<modulePath>.gob` エントリ）。入口モジュールはありません：`# nogit` はパッケージ別名を作るだけで、モジュールは `nogit.<module>` で参照します（例：`nogit.remote.greet(...)`）。`# nogit/remote` はモジュールを直接 import し、`# nogit.fn` は関数からモジュールを探します。`no fmt` は未使用の `# nogit` / `# nogit/remote` を削除します。バージョンは具体的な値である必要があり
 （`no sync` / コンパイル時に `""` や `"*"` に遭遇するとエラーになります）。zip は `~/no/cache/ast/` にキャッシュされ、
 `$NOLANG_AST_CACHE_DIR` で上書きできます。
 
 成果物アセットの生成には `no pack` を使用します（字句解析器 + 構文解析器のみで、LLVM ツールチェーンは不要、CI に適しています）：
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # 單個源文件
-no pack -o nogit.ast.zip ./nogit       # 一個包目錄
+no pack -o nogit-ast.zip nogit.no      # 單個源文件
+no pack -o nogit-ast.zip ./nogit       # 一個包目錄
 ```
 
 ### 依存関係の種類とバージョン番号ルール

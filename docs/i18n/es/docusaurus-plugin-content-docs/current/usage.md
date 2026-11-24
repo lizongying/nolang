@@ -28,7 +28,7 @@ Instale la extensión de Nolang desde [VS Code Marketplace](https://marketplace.
 | `no version`                                                 | Imprimir información de versión |
 | `no init`                                                    | Definir el espacio de trabajo (genera workspace.noml, sin package.noml) |
 | `no new <name>`                                              | Crear un paquete nuevo dentro del espacio de trabajo (subdirectorio + package.noml, registrado en workspace.noml) |
-| `no fmt [-w] [-d] <file\|dir>`                               | Dar formato al código fuente (dedup/ordena las importaciones, elimina automáticamente `# std/fmt`); los archivos de configuración `.noml` siguen la norma de maquetación que preserva el diseño (indentación/espacios/líneas en blanco, sin tocar los comentarios ni el orden de las claves) |
+| `no fmt [-w] [-d] <file\|dir>`                               | Dar formato al código fuente (dedup/ordena las importaciones, elimina automáticamente las importaciones de módulo std sin alias); los archivos de configuración `.noml` siguen la norma de maquetación que preserva el diseño (indentación/espacios/líneas en blanco, sin tocar los comentarios ni el orden de las claves) |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | Compilar (genera un ejecutable) |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | Compilar y ejecutar (nombre de paquete/directorio/archivo) |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | Ejecutar pruebas                |
@@ -40,7 +40,7 @@ Instale la extensión de Nolang desde [VS Code Marketplace](https://marketplace.
 | `no sync`                                                    | Sincronizar dependencias                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | Instalar un binario             |
 | `no uninstall <name>`                                        | Eliminar un binario             |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | Empaquetar el AST (`<tool>.ast.zip`) |
+| `no pack [-o <file>] [<dir\|file.no>]`                       | Empaquetar el AST (`<tool>-ast.zip`) |
 | `no pub [-o <file>]`                                         | Igual que `no pack` (carga al registro no implementada) |
 | `no cache <stat\|clear>`                                     | Ver / vaciar la caché de AST (normalmente no hace falta vaciarla) |
 
@@ -296,7 +296,7 @@ Variables de entorno:
 | Variable | Función |
 | --- | --- |
 | `NOLANG_AST_CACHE_OFF=1` | Desactiva la caché (útil para comparaciones A/B del compilador o para investigar un «error corregido que reaparece») |
-| `NOLANG_AST_CACHE_DIR` | Directorio de caché personalizado. **También** afecta a la caché de `.ast.zip` de las dependencias AST precompiladas (esa caché está predeterminadamente en `~/no/cache/ast`, véase «Dependencias AST precompiladas» más abajo) |
+| `NOLANG_AST_CACHE_DIR` | Directorio de caché personalizado. **También** afecta a la caché de `-ast.zip` de las dependencias AST precompiladas (esa caché está predeterminadamente en `~/no/cache/ast`, véase «Dependencias AST precompiladas» más abajo) |
 | `NOLANG_AST_CACHE_MAX` | Límite de entradas de la caché (predeterminado 4096) |
 
 > Las entradas antiguas simplemente dejan de acertar y se van descartando, por límite, a medida que se escriben entradas nuevas; por eso **no hace falta** borrar `~/.cache/nolang/ast`.
@@ -416,19 +416,22 @@ no sync
 
 ### Dependencias AST precompiladas
 
-Las dependencias de la forma `no add <tool>@<host>/<owner>/<repo>` **solo tienen AST, no código fuente**: durante la compilación se descarga `<tool>.ast.zip` del release (MetaMessage + zip) y, una vez decodificado, se inyecta directamente en la tubería de compilación. Uso:
+Las dependencias de la forma `no add <tool>@<host>/<owner>/<repo>` **solo tienen AST, no código fuente**: durante la compilación se descarga `<tool>-ast.zip` del release (zip with one .gob entry per module) y, una vez decodificado, se inyecta directamente en la tubería de compilación. Uso:
 
 ```nolang
-# nogit; 或 use <host>/<owner>/<repo>/nogit
+# nogit                      # alias del paquete; los módulos son nogit.<module>
+# nogit/remote                  # importar directamente el módulo remote (también nogit.remote)
+# nogit.fn                      # nogit es solo el nombre del paquete; localizar el módulo que define fn
+# <host>/<owner>/<repo>/nogit/remote
 ```
 
-Un zip equivale a un módulo; no se admiten rutas más profundas como `use <repo>/<submod>`. La versión debe ser un valor concreto (`no sync` / la compilación dan error si encuentran `""` o `"*"`). El zip se guarda en caché en `~/no/cache/ast/` y se puede sobrescribir con `$NOLANG_AST_CACHE_DIR`.
+Un zip equivale a un paquete, que puede contener varios módulos, cada uno como entrada `<modulePath>.gob`. No hay módulo de entrada: `# nogit` solo crea un alias del paquete (los módulos se acceden como `nogit.<module>`, p. ej. `nogit.remote.greet(...)`); `# nogit/remote` importa un módulo directamente; `# nogit.fn` localiza un módulo por función. `no fmt` elimina los imports `# nogit` / `# nogit/remote` sin usar. La versión debe ser un valor concreto (`no sync` / la compilación dan error si encuentran `""` o `"*"`). El zip se guarda en caché en `~/no/cache/ast/` y se puede sobrescribir con `$NOLANG_AST_CACHE_DIR`.
 
 El recurso de salida se produce con `no pack` (solo necesita lexer + parser, sin cadena de herramientas LLVM; ideal para CI):
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # 單個源文件
-no pack -o nogit.ast.zip ./nogit       # 一個包目錄
+no pack -o nogit-ast.zip nogit.no      # 單個源文件
+no pack -o nogit-ast.zip ./nogit       # 一個包目錄
 ```
 
 ### Tipos de dependencia y reglas de número de versión

@@ -1,0 +1,253 @@
+; ============================================================================
+; noui 代码 / 主题测试（阶段 48）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录第 72 行给 C-HIGHLIGHTER 承诺「code, language」、第 80 行给
+; C-THEME 承诺「palette, size, mode」，但命令式侧两者都只有一个构造函数 ——
+; 代码 / 语言 / 缩进、主题名 / 模式 / 密度 / 强调色都没有 API，渲染还落在通用
+; `rect + text` 兜底里。阶段 48 补：
+;   - highlighter：TEXT = 代码，TEXT2 = 语言，VALUE = 缩进（每级空格数）；
+;     hl-code / hl-set-code / hl-lang / hl-set-lang / hl-tab / hl-set-tab
+;     + hl-lines / hl-line-start / hl-line-len-b / hl-line / hl-expand-len
+;     / hl-max-len + cs-paint-highlighter（字段底 + 行号槽 + 逐 token 着色，
+;     着色直接复用编辑器的 ed-lex-line）。
+;   - theme：TEXT = 名字，VALUE = 模式（0 亮 / 1 暗），VALUE2 = 密度（0/1/2），
+;     COLOR = 强调色；th-name / th-set-name / th-mode / th-set-mode
+;     / th-density / th-set-density / th-accent / th-set-accent / th-swatch
+;     / th-mode-name / th-bg / th-fg / th-muted / th-swatch-color
+;     / th-swatch-label + cs-paint-theme（字段底 + 名字 / 模式 + 四块色板）。
+;
+; 行几何复用 textarea 的「'\n' 分行」算法（阶段39），着色复用编辑器的
+; ed-lex-line（阶段38）—— 不重造轮子。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-code tests/cmp-code.no
+;       ./dist/cmp-code
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 1. highlighter：构造默认
+; ============================================================================
+HC = cmp-highlighter('let x = 1')
+t1 = cmp-kind(HC) == C-HIGHLIGHTER
+t2 = hl-code(HC) == 'let x = 1'
+t3 = hl-lang(HC) == ''
+t4 = hl-tab(HC) == 4
+t5 = hl-lines(HC) == 1
+t6 = hl-line(HC, 0) == 'let x = 1'
+; 越界行号夹到最后一行（同 textarea 的 ta-line-start 语义）
+t7 = hl-line(HC, 7) == 'let x = 1'
+
+; ============================================================================
+; 2. highlighter：多行切分
+; ============================================================================
+hl-set-code(HC, 'let a = 1\nlet b = 2')
+t8 = hl-lines(HC) == 2
+t9 = hl-line(HC, 0) == 'let a = 1'
+t10 = hl-line(HC, 1) == 'let b = 2'
+hl-set-code(HC, '')
+t11 = hl-lines(HC) == 1
+t12 = hl-line(HC, 0) == ''
+hl-set-code(HC, 'a\n')
+t13 = hl-lines(HC) == 2
+
+; ============================================================================
+; 3. highlighter：缩进折算（tab -> hl-tab 个空格）
+; ============================================================================
+hl-set-code(HC, '\tlet')
+t14 = hl-expand-len(HC, 0) == 7
+hl-set-tab(HC, 2)
+t15 = hl-expand-len(HC, 0) == 5
+t16 = hl-max-len(HC) == 5
+hl-set-tab(HC, 8)
+t17 = hl-expand-len(HC, 0) == 11
+hl-set-tab(HC, 99)
+t18 = hl-tab(HC) == 8
+hl-set-tab(HC, -1)
+t19 = hl-tab(HC) == 0
+hl-set-tab(HC, 4)
+
+; ============================================================================
+; 4. highlighter：语言 + disabled 写无效
+; ============================================================================
+hl-set-lang(HC, 'nolang')
+t20 = hl-lang(HC) == 'nolang'
+cmp-flag-set(HC, F-DISABLED)
+hl-set-code(HC, 'zzz')
+t21 = hl-code(HC) == '\tlet'
+hl-set-lang(HC, 'x')
+t22 = hl-lang(HC) == 'nolang'
+hl-set-tab(HC, 1)
+t23 = hl-tab(HC) == 4
+cmp-flag-clear(HC, F-DISABLED)
+
+; ============================================================================
+; 5. highlighter：测算（宽 = 左右内边距 + 行号槽 + 最长行；高 = 内边距 + 行数*行高）
+; ============================================================================
+hl-set-code(HC, 'let x = 1')
+hl-set-lang(HC, '')
+aw, ah = cs-measure(HC)
+t24 = aw == 13600 && ah == 4800
+hl-set-lang(HC, 'nolang')
+bw, bh = cs-measure(HC)
+t25 = bw == 19200 && bh == 4800
+hl-set-lang(HC, '')
+t26 = hl-pad() == 1200 && hl-gutter() == 4000 && hl-gap() == 800
+
+; ============================================================================
+; 6. highlighter：渲染
+; ============================================================================
+root = cmp-root()
+cmp-add-child(root, HC)
+cs-clear()
+cs-layout(root, 0, 0, 90000, 40000)
+cs-paint(root)
+hx, hy, hw, hh = cs-rect(HC)
+t27 = cs-rect-color-at(hx, hy, hw, hh) == cs-theme(CS-TH-FIELD)
+; 行号右对齐进行号槽：hx + 1200 + 4000 - 800
+t28 = cs-text-color-at('1', cs-add(hx, 4400), cs-add(hy, 1200)) == cs-theme(CS-TH-MUTED)
+; token：'let' 是关键字（accent），' x = ' 是默认色，'1' 是数字色
+t29 = cs-text-color-at('let', cs-add(hx, 5200), cs-add(hy, 1200)) == cs-theme(CS-TH-ACCENT)
+t30 = cs-text-color-at(' x = ', cs-add(hx, 7600), cs-add(hy, 1200)) == cs-theme(CS-TH-FG)
+t31 = cs-text-color-at('1', cs-add(hx, 11600), cs-add(hy, 1200)) == 0xF2C14EFF
+; 语言列：measure 留了 800 + 6*800
+hl-set-lang(HC, 'nolang')
+cs-clear()
+cs-layout(root, 0, 0, 90000, 40000)
+cs-paint(root)
+hx, hy, hw, hh = cs-rect(HC)
+t32 = cs-text-color-at('nolang', cs-add(hx, 13200), cs-add(hy, 1200)) == cs-theme(CS-TH-ACCENT)
+
+; ============================================================================
+; 7. theme：构造默认 + API
+; ============================================================================
+TH = cmp-theme()
+t33 = cmp-kind(TH) == C-THEME
+t34 = th-name(TH) == 'noui'
+t35 = th-mode(TH) == 0
+t36 = th-density(TH) == 1
+t37 = th-accent(TH) == 0x4A90E2FF
+t38 = th-swatch(TH) == 4800
+t39 = th-mode-name(TH) == 'light'
+t40 = th-bg(TH) == 0xFFFFFFFF
+t41 = th-fg(TH) == 0x22222AFF
+t42 = th-muted(TH) == 0x666670FF
+t43 = th-swatch-color(TH, 0) == 0xFFFFFFFF && th-swatch-color(TH, 1) == 0x22222AFF
+t44 = th-swatch-color(TH, 2) == 0x4A90E2FF && th-swatch-color(TH, 3) == 0x666670FF
+t45 = th-swatch-label(0) == 'BG' && th-swatch-label(1) == 'FG'
+t46 = th-swatch-label(2) == 'ACCENT' && th-swatch-label(3) == 'MUTED'
+
+; ============================================================================
+; 8. theme：写 + 夹紧 + disabled
+; ============================================================================
+th-set-mode(TH, 1)
+t47 = th-mode(TH) == 1 && th-mode-name(TH) == 'dark'
+t48 = th-bg(TH) == 0x1E1E28FF && th-fg(TH) == 0xE8E8F0FF && th-muted(TH) == 0x9AA0B4FF
+th-set-mode(TH, 5)
+t49 = th-mode(TH) == 1
+th-set-mode(TH, -1)
+t50 = th-mode(TH) == 0
+th-set-density(TH, 0)
+t51 = th-swatch(TH) == 3600
+th-set-density(TH, 2)
+t52 = th-swatch(TH) == 6000
+th-set-density(TH, 9)
+t53 = th-swatch(TH) == 6000
+th-set-density(TH, -4)
+t54 = th-swatch(TH) == 3600
+th-set-accent(TH, 0x50C878FF)
+t55 = th-accent(TH) == 0x50C878FF && th-swatch-color(TH, 2) == 0x50C878FF
+th-set-name(TH, 'midnight')
+t56 = th-name(TH) == 'midnight'
+cmp-flag-set(TH, F-DISABLED)
+th-set-mode(TH, 1)
+t57 = th-mode(TH) == 0
+th-set-density(TH, 2)
+t58 = th-swatch(TH) == 3600
+th-set-accent(TH, 0xFF)
+t59 = th-accent(TH) == 0x50C878FF
+th-set-name(TH, 'x')
+t60 = th-name(TH) == 'midnight'
+cmp-flag-clear(TH, F-DISABLED)
+
+; ============================================================================
+; 9. theme：测算（宽 = 内边距*2 + 4 板 + 3 间隙；高 = 内边距*2 + 标题 + 间隙 + 板 + 间隙 + 标签）
+; ============================================================================
+th-set-mode(TH, 0)
+th-set-density(TH, 1)
+cw, ch = cs-measure(TH)
+t61 = cw == 24000 && ch == 12800
+th-set-density(TH, 2)
+dw, dh = cs-measure(TH)
+t62 = dw == 28800 && dh == 14000
+th-set-density(TH, 0)
+ew, eh = cs-measure(TH)
+t63 = ew == 19200 && eh == 11600
+th-set-density(TH, 1)
+
+; ============================================================================
+; 10. theme：渲染
+; ============================================================================
+root2 = cmp-root()
+cmp-add-child(root2, TH)
+cs-clear()
+cs-layout(root2, 0, 0, 90000, 40000)
+cs-paint(root2)
+tx, ty, tw, thh = cs-rect(TH)
+t64 = cs-rect-color-at(tx, ty, tw, thh) == cs-theme(CS-TH-FIELD)
+t65 = cs-text-color-at('midnight', cs-add(tx, 1200), cs-add(ty, 1200)) == cs-theme(CS-TH-FG)
+t66 = cs-text-color-at('light', cs-sub(cs-sub(cs-add(tx, tw), 1200), 4000), cs-add(ty, 1200)) == cs-theme(CS-TH-MUTED)
+; 四块色板：x = tx + 1200 + i*(4800+800)，y = ty + 1200 + 2400 + 800
+t67 = cs-rect-color-at(cs-add(tx, 1200), cs-add(ty, 4400), 4800, 4800) == 0xFFFFFFFF
+t68 = cs-rect-color-at(cs-add(tx, 6800), cs-add(ty, 4400), 4800, 4800) == 0x22222AFF
+t69 = cs-rect-color-at(cs-add(tx, 12400), cs-add(ty, 4400), 4800, 4800) == 0x50C878FF
+t70 = cs-rect-color-at(cs-add(tx, 18000), cs-add(ty, 4400), 4800, 4800) == 0x666670FF
+t71 = cs-text-color-at('BG', cs-add(tx, 1200), cs-add(ty, 10000)) == cs-theme(CS-TH-MUTED)
+t72 = cs-text-color-at('ACCENT', cs-add(tx, 12400), cs-add(ty, 10000)) == cs-theme(CS-TH-MUTED)
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30 && t31 && t32 && t33 && t34 && t35 && t36 && t37 && t38 && t39 && t40 && t41 && t42 && t43 && t44 && t45 && t46 && t47 && t48 && t49 && t50 && t51 && t52 && t53 && t54 && t55 && t56 && t57 && t58 && t59 && t60 && t61 && t62 && t63 && t64 && t65 && t66 && t67 && t68 && t69 && t70 && t71 && t72
+(ok) -> { print('ALL CODE TESTS PASSED') }
+(!ok) -> { print('SOME TESTS FAILED') }

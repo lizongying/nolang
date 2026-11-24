@@ -1,0 +1,283 @@
+; ============================================================================
+; noui 窗口 demo：状态分段条（阶段 63）—— C-STATUS-BAR
+;
+; 流水线：app-init -> cmp-status-bar -> sb-add / sb-set-seg / sb-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-STATUS-BAR 分支 +
+;      cs-paint-status-bar）：FIELD 底 + N 段 FG 文案 + 段间 TRACK 竖分隔条
+;   -> 键盘：a=追加段；t=改某段；c=清空；r=重建默认；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-status-bar.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选段文案（a 轮取）----
+sb-cand = (i i64) (s str) {
+    s = 'ready'
+    (i == 1) -> { s = 'utf-8' }
+    (i == 2) -> { s = 'ln 12' }
+    (i == 3) -> { s = 'ok' }
+    (i == 4) -> { s = 'done' }
+    (i == 5) -> { s = 'stage 63' }
+    (i == 6) -> { s = 'error' }
+    (i == 0) -> { s = 'idle' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+sb-build-default = (h i64) () {
+    sb-clear(h)
+    sb-add(h, 'ready')
+    sb-add(h, 'utf-8')
+    sb-add(h, 'ln 12')
+}
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui status-bar')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段63: status-bar')
+hint = cmp-label('a=add t=change c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+sb = cmp-status-bar()
+sb-build-default(sb)
+
+cmp-add-child(root, title)
+cmp-add-child(root, sb)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：状态条是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一段
+        (k == 97) -> {
+            n = sb-count(sb)
+            j = ct-rem(n, 8)
+            sb-add(sb, sb-cand(j))
+        }
+        ; t：改第 0 段文案（宽度变化会带动后面所有段位移）
+        (k == 116) -> {
+            n = sb-count(sb)
+            (n > 0) -> { sb-set-seg(sb, 0, sb-cand(ct-rem(n, 8))) }
+        }
+        ; c：清空
+        (k == 99) -> { sb-clear(sb) }
+        ; r：重建默认
+        (k == 114) -> { sb-build-default(sb) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(sb, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(sb, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(sb, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = sb-count(sb)
+    dis = cmp-has(sb, F-DISABLED)
+    cmp-set-text(stat, 'n={cn} disabled={dis}')
+    (cn > 0) -> {
+        li = cs-sub(cn, 1)
+        cmp-set-text(stat2, 'last={sb-seg(sb, li)}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no segments') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认三段，按实测矩形推导坐标逐项核对
+;   内边距 1200 / 段间距竖条宽 100 / 细条高 CS-BTN-H = 4000
+;   文字垂直居中：文字 y = by + (4000-2400)/2 = by + 800
+;   段 0 'ready'(4000) @bx+1200；竖条 (bx+5200,by,100,4000)
+;   段 1 'utf-8'(4000) @bx+5300；竖条 (bx+9300,by,100,4000)
+;   段 2 'ln 12'(4000) @bx+9400
+;   场景里还有 title / hint / stat / stat2 四条标签文本
+; ============================================================================
+cmp-flag-clear(sb, F-DISABLED)
+sb-build-default(sb)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+dw = 100
+ty0 = 800
+
+bx, by, bw, bh = cs-rect(sb)
+y0 = cs-add(by, ty0)
+x0 = cs-add(bx, p0)          ; 段 0 起点
+d0 = cs-add(x0, 4000)        ; 竖条 0
+x1 = cs-add(d0, dw)          ; 段 1 起点
+d1 = cs-add(x1, 4000)        ; 竖条 1
+x2 = cs-add(d1, dw)          ; 段 2 起点
+
+c1 = sb-count(sb) == 3
+c2 = sb-seg(sb, 0) == 'ready'
+c3 = sb-seg(sb, 1) == 'utf-8'
+c4 = sb-seg(sb, 2) == 'ln 12'
+c5 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c6 = find-text('ready', x0, y0) == 1
+c7 = find-text-color('ready', x0, y0) == cs-theme(CS-TH-FG)
+c8 = find-rect-color(d0, by, dw, bh) == cs-theme(CS-TH-TRACK)
+c9 = find-text('utf-8', x1, y0) == 1
+c10 = find-text-color('utf-8', x1, y0) == cs-theme(CS-TH-FG)
+c11 = find-rect-color(d1, by, dw, bh) == cs-theme(CS-TH-TRACK)
+c12 = find-text('ln 12', x2, y0) == 1
+c13 = find-text-color('ln 12', x2, y0) == cs-theme(CS-TH-FG)
+c14 = cs-text-count() == 7
+
+; 改第 0 段为 'longer'(4800)：其后所有段与竖条整体右移 800
+sb-set-seg(sb, 0, 'longer')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+g0 = cs-add(bx, p0)          ; 段 0 起点（不变）
+gd0 = cs-add(g0, 4800)       ; 竖条 0（右移 800）
+g1 = cs-add(gd0, dw)         ; 段 1 起点（右移 800）
+c15 = find-text('longer', g0, y0) == 1
+c16 = find-rect-color(gd0, by, dw, bh) == cs-theme(CS-TH-TRACK)
+c17 = find-text('utf-8', g1, y0) == 1
+
+; 追加一段 'ok'(1600)：接在段 2（4000）+ 竖条之后
+sb-add(sb, 'ok')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+g2 = cs-add(cs-add(g1, 4000), dw)   ; 段 2 起点
+g3 = cs-add(cs-add(g2, 4000), dw)   ; 新段 'ok' 起点
+c18 = sb-count(sb) == 4
+c19 = find-text('ok', g3, y0) == 1
+
+; disabled：写操作空操作
+cmp-flag-set(sb, F-DISABLED)
+sb-add(sb, 'no')
+sb-set-seg(sb, 0, 'no')
+sb-clear(sb)
+c20 = sb-count(sb) == 4
+c21 = sb-seg(sb, 0) == 'longer'
+
+; 清空：只剩四条标签文本
+cmp-flag-clear(sb, F-DISABLED)
+sb-clear(sb)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c22 = sb-count(sb) == 0
+c23 = cs-text-count() == 4
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n0 = sb-count(sb)
+print('bye frames={fr} keys={kk} clicks={ck} segments={n0} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23) -> {
+    print('status-bar render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 && c20 && c21 && c22 && c23)) -> {
+    print('FAIL: status-bar render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

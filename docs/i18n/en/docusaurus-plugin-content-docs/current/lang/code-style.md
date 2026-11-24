@@ -28,13 +28,13 @@ Implementation lives in `src/fmt/formatter.go`:
 - `FormatFile(code)` formats a complete file and calls `ensureTrailingNewline`, which strips all trailing `\r` / `\n` (CRLF-safe, multi-blank-line-safe) and appends a single `\n`. Empty or unparseable input is returned unchanged so the formatter never mangles a file it cannot understand.
 - `Format(code)` is the pure fragment formatter (no trailing newline), used mainly by unit tests; prefer `FormatFile` whenever you write a real source file.
 
-## Import Statement Cleanup (Dedup / Remove `# std/fmt` / Sort)
+## Import Statement Cleanup (Dedup / Remove Unaliased std Imports / Sort)
 
 `no fmt` (and LSP format-on-save) automatically normalizes the **contiguous import block at the top of a file** (`# path[.fn] [alias]`); the implementation lives in `src/fmt/imports.go`:
 
 1. **Dedup**: imports that are byte-identical (same path, function name, and alias) are collapsed to the first occurrence.
-2. **Automatic removal of `# std/fmt`**: `print` / `eprint` / `format` / `sprintf` are compiler builtins, and standard library modules are implicitly loadable anyway (see [Cross-Module Call Prefixes](./module)) — so `# std/fmt` is never required and the formatter removes it. Two exceptions keep it:
-   - an **alias** or **function import** was written (e.g. `# std/fmt.sprintf fm`) — a deliberate name binding;
+2. **Automatic removal of every unaliased pure std module import**: standard library modules are implicitly loadable (see [Cross-Module Call Prefixes](./module)), so a bare `# std/<module>` with no alias and no `.function` (e.g. `# std/noml`, `# std/math`, `# std/database/sql`) binds nothing and is redundant — the formatter removes it. Three exceptions keep it:
+   - an **alias** (`# std/noml n`) or a **function import** (`# std/fmt.sprintf fm`) was written — a deliberate name binding;
    - the import line carries a **comment** or an attached `#{...}` annotation — user-written content is never silently dropped.
 3. **Automatic sorting**: imports are sorted lexicographically by path → function → alias (stable sort).
 
@@ -45,10 +45,12 @@ Import blocks that appear anywhere other than the top of the file (after code) a
 ```no
 #{fmt-skip}
 ; before                             ; after
-# std/vec                            # std/io
-# std/fmt                            # std/vec
-# std/io
-# std/fmt        →  print/format are builtins, # std/fmt removed; the rest sorted lexicographically
+# std/vec                            # aaa/lib
+# std/noml                           # std/io
+# std/io                             # std/vec
+# std/noml n
+# aaa/lib        →  unaliased std imports (# std/noml, # std/vec, # std/io) removed;
+                    ;  aliased # std/noml n kept; the rest sorted lexicographically
 ```
 
 ## Comment Markers

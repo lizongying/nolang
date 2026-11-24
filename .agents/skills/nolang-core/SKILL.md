@@ -8,7 +8,7 @@ description: Nolang 编译器与 .no 语言的统一入口（原 nolang-syntax /
 Nolang 是**无 GC、内存安全、语法极简**的系统语言：deferred move + 作用域退出自动销毁，禁止手动 `free`；
 编译器以 Go 实现，流水线 `lexer → parser → checker → hir → mir → transpiler(LLVM IR) → opt → llc → clang`。
 
-**权威顺序**：实测 > `AGENTS.md`（语法与编码权威）> `.agents/rules/nolang-red-lines.md`（红线全文）> 本 skill > 记忆笔记。
+**权威顺序**：实测 > `AGENTS.md`（语法与编码权威）> `.agents/rules/nolang-red-lines.md`（红线总入口，按任务路由到编译器 / 应用两份）> 本 skill > 记忆笔记。
 
 ## 加载协议
 
@@ -35,13 +35,13 @@ Nolang 是**无 GC、内存安全、语法极简**的系统语言：deferred mov
 <!-- BEGIN:switch-table (由 scripts/core.py gen 生成，勿手改) -->
 | 模块 | 默认 | 触发（任一命中即载） | 依赖 / 约束 | 篇幅 |
 |---|---|---|---|---|
-| `redlines` | inline | — 无条件内联 | 权威全文见 `.agents/rules/nolang-red-lines.md` | 51 行 |
+| `redlines` | inline | — 无条件内联 | 权威入口见 `.agents/rules/nolang-red-lines.md`（按任务路由到编译器 / 应用两份） | 51 行 |
 | `build` → [`m30-build.md`](modules/m30-build.md) | `true` 常驻 | `make`、`build`、`bin/no`、`stdsig`、`构建`、`编译` | — | 93 行 |
 | `verify` → [`m40-verify.md`](modules/m40-verify.md) | `true` 常驻 | `vet`、`验收`、`ERROR` | requires `build` | 146 行 |
 | `syntax` → [`m10-syntax.md`](modules/m10-syntax.md) | `auto` 按需 | `.no`、`语法`、`syntax`、`parser`、`fmt`、`类型` …（12 项） | — | 82 行 |
 | `std` → [`m20-std.md`](modules/m20-std.md) | `auto` 按需 | `std/`、`标准库`、`API`、`函数签名`、`模块` | — | 153 行 |
 | `cli` → [`m93-cli.md`](modules/m93-cli.md) | `false` 点名 | `no build`、`no run`、`no test`、`no install`、`workspace`、`package.noml` …（7 项） | requires `build` | 380 行 |
-| `debug` → [`m50-debug.md`](modules/m50-debug.md) | `false` 点名 | `bug`、`调试`、`debug`、`复现`、`诊断`、`LSP` …（7 项） | requires `build` + `verify` | 429 行 |
+| `debug` → [`m50-debug.md`](modules/m50-debug.md) | `false` 点名 | `bug`、`调试`、`debug`、`复现`、`诊断`、`LSP` …（7 项） | requires `build` + `verify` | 461 行 |
 | `builtin` → [`m70-builtin.md`](modules/m70-builtin.md) | `false` 点名 | `builtin`、`内建`、`src/builtin` | requires `std` | 312 行 |
 | `path-resolution` → [`m80-path-resolution.md`](modules/m80-path-resolution.md) | `false` 点名 | `path`、`embed`、`缓存键`、`tokenCache`、`stale` | — | 93 行 |
 | `selfhost-perf` → [`m90-selfhost-perf.md`](modules/m90-selfhost-perf.md) | `false` 点名 | `性能`、`perf`、`O(N²)`、`自举`、`compiler/src` | requires `syntax` | 126 行 |
@@ -59,7 +59,7 @@ Nolang 是**无 GC、内存安全、语法极简**的系统语言：deferred mov
 | [`40-structs-enums.md`](modules/syntax/40-structs-enums.md) | `struct`、`enum`、`接口`、`interface`、`泛型`、`slice`、`索引`、`方法` | 822 行 |
 | [`50-modules-imports.md`](modules/syntax/50-modules-imports.md) | `import`、`use`、`模块`、`package.noml`、`导出`、`export` | 510 行 |
 | [`60-annotations-ffi.md`](modules/syntax/60-annotations-ffi.md) | `#{`、`注解`、`FFI`、`#{c}`、`overflow`、`embed`、`运算符` | 461 行 |
-| [`70-runtime-async.md`](modules/syntax/70-runtime-async.md) | `async`、`co`、`协程`、`并发`、`JS`、`wasm`、`browser` | 237 行 |
+| [`70-runtime-async.md`](modules/syntax/70-runtime-async.md) | `async`、`co`、`协程`、`并发`、`JS`、`wasm`、`browser` | 164 行 |
 | [`10-base.md`](modules/std/10-base.md) | `types`、`option`、`布局` | 52 行 |
 | [`20-core.md`](modules/std/20-core.md) | `fmt`、`math`、`str`、`number`、`num`、`int`、`float`、`byte` | 336 行 |
 | [`30-os-io.md`](modules/std/30-os-io.md) | `os`、`fs`、`file`、`env`、`args`、`path`、`bufio`、`io` | 483 行 |
@@ -69,7 +69,7 @@ Nolang 是**无 GC、内存安全、语法极简**的系统语言：deferred mov
 | [`70-db-encode.md`](modules/std/70-db-encode.md) | `database`、`sql`、`hex`、`base64`、`csv`、`pem`、`tar`、`zip` | 232 行 |
 | [`80-crypto.md`](modules/std/80-crypto.md) | `crypto`、`aes`、`rsa`、`sha`、`md5`、`hmac`、`rand`、`hash` | 326 行 |
 | [`85-exchange.md`](modules/std/85-exchange.md) | `json`、`toml`、`yaml`、`dom`、`xml` | 358 行 |
-| [`90-misc.md`](modules/std/90-misc.md) | `unicode`、`uuid`、`bigint`、`err`、`async`、`magic` | 202 行 |
+| [`90-misc.md`](modules/std/90-misc.md) | `unicode`、`uuid`、`bigint`、`err`、`async`、`magic` | 201 行 |
 
 预算：单次加载正文上限 **1200 行**；超限时先只读路由，正文按需追加。
 <!-- END:switch-table -->

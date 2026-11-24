@@ -20,14 +20,12 @@ const astDepModuleSrc = "greet = (name str) (out str) {\n  out = 'hi ' + name\n}
 
 // TestResolveUseASTDependency 端到端驗證消費側閉環：
 //
-//	生產側  no pack  →  mymod.ast.zip
-//	消費側  use mymod →  package.noml 的 `mymod@host/owner/repo` 依賴鍵
-//	                  →  ReleaseASTZipURL → zip → gob → *parser.Program
+//	生產側  no pack  →  mymod-ast.zip
+//	消費側  # mymod.greet → package.noml 的 `mymod@host/owner/repo` 依賴鍵
+//	                     →  ReleaseASTZipURL → zip → gob → *parser.Program
 //
-// 編碼/解碼的正確性由 mmast 與 parser 各自的測試覆蓋；這裡只保證三件事：
-//  1. 帶 @ 的依賴鍵能被 MatchDependency 認出來（這是過去匹配不上的地方）；
-//  2. 下載 URL 拼對（host/owner/repo/releases/download/ver/<tool>.ast.zip）；
-//  3. resolveUse 直接返回 AST，而不是把它當原始碼套件送去下載。
+// `# mymod.greet` 中 mymod 只是包名；按函式名 greet 在包內定位模組。
+// 裸 `# mymod` 是包別名，不報錯：正文可用 `mymod.remote(...)` 取用包內模組。
 func TestResolveUseASTDependency(t *testing.T) {
 	// 快取落在臨時目錄，避免污染 ~/no/cache/ast，也避免跨 run 讀到陳舊 zip。
 	t.Setenv("NOLANG_AST_CACHE_DIR", t.TempDir())
@@ -52,7 +50,7 @@ func TestResolveUseASTDependency(t *testing.T) {
 	var gotPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPaths = append(gotPaths, r.URL.Path)
-		if !strings.HasSuffix(r.URL.Path, "/mymod.ast.zip") {
+		if !strings.HasSuffix(r.URL.Path, "/mymod-ast.zip") {
 			http.NotFound(w, r)
 			return
 		}
@@ -61,13 +59,13 @@ func TestResolveUseASTDependency(t *testing.T) {
 	defer srv.Close()
 	host := strings.TrimPrefix(srv.URL, "http://") // 形如 127.0.0.1:PORT
 
-	// ── 3. 消費側：resolveUse ──
+	// ── 3. 消費側：# mymod.greet ──
 	p := &pkg.Package{
 		Name:         "app",
 		Dependencies: map[string]string{"mymod@" + host + "/o/r": "v1.0.0"},
 	}
 	tr := NewTranspiler(p)
-	got, err := tr.resolveUse(&parser.UseStatement{Path: "mymod"})
+	got, err := tr.resolveUse(&parser.UseStatement{Path: "mymod", Function: "greet"})
 	if err != nil {
 		t.Fatalf("resolveUse: %v", err)
 	}
@@ -77,7 +75,7 @@ func TestResolveUseASTDependency(t *testing.T) {
 
 	// URL 必須是 GitHub Releases 的形狀；本地 httptest 讓 host 帶埠號，
 	// 所以 ReleaseASTZipURL 走 http 分支。
-	wantPath := "/o/r/releases/download/v1.0.0/mymod.ast.zip"
+	wantPath := "/o/r/releases/download/v1.0.0/mymod-ast.zip"
 	if len(gotPaths) != 1 || gotPaths[0] != wantPath {
 		t.Fatalf("request path = %v, want exactly [%s]", gotPaths, wantPath)
 	}
@@ -92,8 +90,8 @@ func TestResolveUseASTDependency(t *testing.T) {
 		t.Fatalf("decoded AST lost the greet function:\n%s", a[:min(len(a), 400)])
 	}
 
-	// ── 5. 第二種寫法：use <host/owner/repo>/<tool> ──
-	got2, err := tr.resolveUse(&parser.UseStatement{Path: host + "/o/r/mymod"})
+	// ── 5. 第二種寫法：# <host/owner/repo>/mymod.greet ──
+	got2, err := tr.resolveUse(&parser.UseStatement{Path: host + "/o/r/mymod", Function: "greet"})
 	if err != nil {
 		t.Fatalf("resolveUse (repo-qualified): %v", err)
 	}
@@ -103,24 +101,114 @@ func TestResolveUseASTDependency(t *testing.T) {
 	if len(gotPaths) != 1 {
 		t.Fatalf("second resolveUse should hit the in-process registry, but fetched again: %v", gotPaths)
 	}
+
+	// ── 6. 裸包名是包別名，不報錯也不導入 main ──
+	placeholder, err := tr.resolveUse(&parser.UseStatement{Path: "mymod"})
+	if err != nil {
+		t.Fatalf("bare # mymod should resolve to a package alias, got: %v", err)
+	}
+	if placeholder == nil || placeholder.ModulePath != astPackageModulePath || placeholder.SourcePath != "mymod" {
+		t.Fatalf("bare # mymod placeholder = %+v, want ast-package alias mymod", placeholder)
+	}
 }
 
-// TestResolveUseASTDependencySubpathRejected 一個 zip 就是一個模組：
-// 指向更深的模組路徑時要明確報錯，不能靜默退化成「檔案找不到」。
-func TestResolveUseASTDependencySubpathRejected(t *testing.T) {
+// astDepRemoteSrc 是子模組 "remote"：函式名與 main 不同，便於驗證取到的是正確模組。
+const astDepRemoteSrc = "remote_greet = (name str) (out str) {\n  out = 'remote ' + name\n}\n"
+
+// TestResolveUseASTDependencySubmodules 一個 zip = 一個包，包內可含多模組：
+//   - `# mymod/remote`        → 直接取子模組 remote
+//   - `# mymod/remote.fn`     → 同上，fn 由合併階段過濾
+//   - `# mymod.remote_greet`  → 包名 + 函式名，在包內定位到 remote
+//   - repo 前綴形式同理
+func TestResolveUseASTDependencySubmodules(t *testing.T) {
 	t.Setenv("NOLANG_AST_CACHE_DIR", t.TempDir())
 
+	// ── 1. 生產側：main + remote 子模組 ──
+	parse := func(name, src string) *parser.Program {
+		t.Helper()
+		pp := parser.New(lexer.NewCached(name, src))
+		pp.Filename = name
+		prog := pp.ParseProgram()
+		if prog == nil || len(pp.Errors()) > 0 {
+			t.Fatalf("parse %s: nil=%v errs=%v", name, prog == nil, pp.Errors())
+		}
+		return prog
+	}
+	main := parse("main.no", astDepModuleSrc)
+	remote := parse("remote.no", astDepRemoteSrc)
+	mods := map[string]*parser.Program{"main": main, "remote": remote}
+
+	var zipBuf bytes.Buffer
+	if _, err := mmast.WriteModuleASTZip(&zipBuf, mods, nil); err != nil {
+		t.Fatalf("WriteModuleASTZip: %v", err)
+	}
+	zipBytes := zipBuf.Bytes()
+
+	// ── 2. 假 GitHub Releases ──
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/mymod-ast.zip") {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(zipBytes)
+	}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	// ── 3. 消費側：# mymod/remote ──
 	p := &pkg.Package{
 		Name:         "app",
-		Dependencies: map[string]string{"mymod@127.0.0.1:1/o/r": "v1.0.0"},
+		Dependencies: map[string]string{"mymod@" + host + "/o/r": "v1.0.0"},
 	}
 	tr := NewTranspiler(p)
-	_, err := tr.resolveUse(&parser.UseStatement{Path: "127.0.0.1:1/o/r/deep/mod"})
-	if err == nil {
-		t.Fatal("expected an error for subpath import of a single-module AST dependency")
+	got, err := tr.resolveUse(&parser.UseStatement{Path: "mymod/remote"})
+	if err != nil {
+		t.Fatalf("resolveUse (submodule): %v", err)
 	}
-	if !strings.Contains(err.Error(), "single prebuilt module") {
-		t.Fatalf("error = %q, want it to mention \"single prebuilt module\"", err)
+	if got == nil {
+		t.Fatal("resolveUse (submodule) returned nil")
+	}
+	opts := dump.Options{Annotations: true}
+	if w, g := dump.DumpWithOptions(remote, opts), dump.DumpWithOptions(got, opts); w != g {
+		t.Fatalf("submodule AST mismatch:\n--- want ---\n%s\n--- got ---\n%s", w, g)
+	}
+	if w, g := dump.DumpWithOptions(main, opts), dump.DumpWithOptions(got, opts); w == g {
+		t.Fatal("submodule resolve returned the main module")
+	}
+
+	// ── 4. repo-qualified 子模組 ──
+	got2, err := tr.resolveUse(&parser.UseStatement{Path: host + "/o/r/mymod/remote"})
+	if err != nil {
+		t.Fatalf("resolveUse (repo-qualified submodule): %v", err)
+	}
+	if w, g := dump.DumpWithOptions(remote, opts), dump.DumpWithOptions(got2, opts); w != g {
+		t.Fatal("repo-qualified submodule AST mismatch")
+	}
+
+	// ── 5. 包名 + 函式名 → 在包內定位到 remote ──
+	got3, err := tr.resolveUse(&parser.UseStatement{Path: "mymod", Function: "remote_greet"})
+	if err != nil {
+		t.Fatalf("resolveUse (function lookup): %v", err)
+	}
+	if w, g := dump.DumpWithOptions(remote, opts), dump.DumpWithOptions(got3, opts); w != g {
+		t.Fatal("function lookup resolved wrong module")
+	}
+	got4, err := tr.resolveUse(&parser.UseStatement{Path: "mymod", Function: "greet"})
+	if err != nil {
+		t.Fatalf("resolveUse (function lookup main): %v", err)
+	}
+	if w, g := dump.DumpWithOptions(main, opts), dump.DumpWithOptions(got4, opts); w != g {
+		t.Fatal("function lookup resolved main module wrongly")
+	}
+
+	// ── 6. 不存在的子模組 / 函式：明確報錯 ──
+	if _, err := tr.resolveUse(&parser.UseStatement{Path: "mymod/missing"}); err == nil {
+		t.Fatal("expected error for missing submodule")
+	} else if !strings.Contains(err.Error(), "no module") {
+		t.Fatalf("error = %q, want it to mention \"no module\"", err)
+	}
+	if _, err := tr.resolveUse(&parser.UseStatement{Path: "mymod", Function: "nope"}); err == nil {
+		t.Fatal("expected error for unknown function")
 	}
 }
 

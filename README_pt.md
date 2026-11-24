@@ -233,6 +233,8 @@ no build glossary                        # saída: glossary/dist/glossary
 
 A saída pode ser alternada com `--format=text|md|json`. Veja [`glossary/README.md`](glossary/README.md) para instruções de integração e formato dos dados.
 
+Você também pode ver o pacote glossary no nohub: [glossary on nohub](https://lizongying.github.io/nohub/?package=glossary:latest@github.com/lizongying/nolang)
+
 ---
 
 ## Projetos relacionados
@@ -240,6 +242,8 @@ A saída pode ser alternada com `--format=text|md|json`. Veja [`glossary/README.
 - [nohub — busca do índice de pacotes da comunidade do ecossistema Nolang](https://lizongying.github.io/nohub/)
 
   Pesquise pacotes da comunidade por nome, palavra-chave ou categoria; veja informações do pacote, snapshots de versão e pontos de entrada para o código-fonte. O índice é gerado por `web/build.mjs` a partir dos snapshots de `packages/`.
+
+- [noui — um conjunto de ferramentas de interface que reescreve o espírito do GPUI em Nolang (pacote nohub)](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
 - [Benchmarks Game — relatório de comparação de desempenho Nolang vs C vs Rust](https://github.com/lizongying/no-benchmarks/results/report.md)
 

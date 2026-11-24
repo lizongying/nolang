@@ -26,7 +26,7 @@ func strOrderingMessages(t *testing.T, src string) []string {
 // TestStrOrderingAllowsCharComparable covers everything the rule must NOT
 // reject: one-character string literals (implicitly a char), chars, numbers,
 // string equality (which really is implemented, via @str_eq), the char
-// iteration variable of `for ch <- s`, and a char read out of a string.
+// iteration variable of `ch <- s`, and a char read out of a string.
 func TestStrOrderingAllowsCharComparable(t *testing.T) {
 	src := `
 main = () {
@@ -44,7 +44,7 @@ main = () {
     f f64 = 1.5
     print(f < 2.0)
     s str = 'hello'
-    for ch <- s {
+    ch <- s: {
         print(ch >= 'a' && ch <= 'z')
     }
     print(s[0] < 'm')

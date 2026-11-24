@@ -1,0 +1,373 @@
+; 阶段50：C-CHART（分组柱状图）+ C-PLOT（折线图）无窗口断言
+; 纯逻辑：构造默认 / 写入与夹紧 / 边界拒绝 / disabled 空操作 /
+;         测算 intrinsic / 渲染几何（字段、轴、柱、图例、点、连线）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 1. 构造默认
+; ============================================================================
+CH = cmp-chart()
+PL = cmp-plot()
+
+t1 = cmp-kind(CH) == C-CHART
+t2 = ch-series(CH) == 0
+t3 = ch-points(CH) == 0
+t4 = ch-max(CH) == 100
+t5 = ch-total(CH, 0) == 0
+t6 = ch-peak(CH) == 0
+t7 = cmp-kind(PL) == C-PLOT
+t8 = pl-count(PL) == 0
+t9 = pl-scale(PL) == 100
+t10 = pl-min-x(PL) == 0
+t11 = pl-max-x(PL) == 0
+t12 = pl-min-y(PL) == 0
+t13 = pl-max-y(PL) == 0
+
+; ============================================================================
+; 2. 写入 + 夹紧
+; ============================================================================
+ch-set-series(CH, 9)
+t14 = ch-series(CH) == CH-SERIES-MAX
+ch-set-series(CH, 2)
+t15 = ch-series(CH) == 2
+
+ch-set-points(CH, 9)
+t16 = ch-points(CH) == CH-PTS-MAX
+ch-set-points(CH, 3)
+t17 = ch-points(CH) == 3
+
+ch-set-name(CH, 0, 'aa')
+ch-set-name(CH, 1, 'bb')
+ch-set-name(CH, 9, 'zz')
+t18 = ch-name(CH, 0) == 'aa'
+t19 = ch-name(CH, 1) == 'bb'
+t20 = ch-name(CH, 2) == ''
+t21 = ch-name(CH, 9) == ''
+
+ch-set-max(CH, 0)
+t22 = ch-max(CH) == 1
+ch-set-max(CH, 100)
+t23 = ch-max(CH) == 100
+
+ch-set-value(CH, 0, 0, 25)
+ch-set-value(CH, 0, 1, 60)
+ch-set-value(CH, 0, 2, 100)
+ch-set-value(CH, 1, 0, 10)
+ch-set-value(CH, 1, 1, 60)
+ch-set-value(CH, 1, 2, 90)
+t24 = ch-value(CH, 0, 0) == 25
+t25 = ch-value(CH, 1, 2) == 90
+t26 = ch-value(CH, 9, 9) == 0
+t27 = ch-total(CH, 0) == 185
+t28 = ch-total(CH, 1) == 160
+t29 = ch-peak(CH) == 100
+
+; 超上限夹紧到 max
+ch-set-value(CH, 0, 0, 999)
+t30 = ch-value(CH, 0, 0) == 100
+ch-set-value(CH, 1, 1, -5)
+t31 = ch-value(CH, 1, 1) == 0
+ch-set-value(CH, 0, 0, 25)
+
+; 越界写入被拒
+ch-set-name(CH, 2, 'cc')
+t32 = ch-name(CH, 2) == ''
+ch-set-value(CH, 3, 0, 5)
+t33 = ch-value(CH, 3, 0) == 0
+ch-set-value(CH, 0, 3, 5)
+t34 = ch-value(CH, 0, 3) == 0
+
+; ============================================================================
+; 3. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(CH, F-DISABLED)
+ch-set-series(CH, 1)
+ch-set-points(CH, 1)
+ch-set-name(CH, 0, 'xx')
+ch-set-value(CH, 0, 0, 1)
+ch-set-max(CH, 7)
+t35 = ch-series(CH) == 2
+t36 = ch-points(CH) == 3
+t37 = ch-name(CH, 0) == 'aa'
+t38 = ch-value(CH, 0, 0) == 25
+t39 = ch-max(CH) == 100
+cmp-flag-clear(CH, F-DISABLED)
+
+; ============================================================================
+; 4. 绘图默认 + 写入
+; ============================================================================
+pl-set-count(PL, 99)
+t40 = pl-count(PL) == PL-PTS-MAX
+pl-set-count(PL, 3)
+t41 = pl-count(PL) == 3
+
+pl-set-scale(PL, 0)
+t42 = pl-scale(PL) == 1
+pl-set-scale(PL, 50)
+t43 = pl-scale(PL) == 50
+
+pl-set-x(PL, 0, -50)
+pl-set-y(PL, 0, 50)
+pl-set-x(PL, 1, 0)
+pl-set-y(PL, 1, 0)
+pl-set-x(PL, 2, 50)
+pl-set-y(PL, 2, -50)
+t44 = pl-x(PL, 0) == -50
+t45 = pl-y(PL, 0) == 50
+t46 = pl-min-x(PL) == -50
+t47 = pl-max-x(PL) == 50
+t48 = pl-min-y(PL) == -50
+t49 = pl-max-y(PL) == 50
+t50 = pl-x(PL, 9) == 0
+
+pl-set-x(PL, 0, 999)
+pl-set-y(PL, 0, -999)
+t51 = pl-x(PL, 0) == 50
+t52 = pl-y(PL, 0) == -50
+pl-set-x(PL, 0, -50)
+pl-set-y(PL, 0, 50)
+
+; 越界点写入被拒
+pl-set-x(PL, 3, 10)
+t53 = pl-x(PL, 3) == 0
+
+; disabled
+cmp-flag-set(PL, F-DISABLED)
+pl-set-count(PL, 1)
+pl-set-x(PL, 0, 10)
+pl-set-y(PL, 0, 10)
+pl-set-scale(PL, 9)
+t54 = pl-count(PL) == 3
+t55 = pl-x(PL, 0) == -50
+t56 = pl-y(PL, 0) == 50
+t57 = pl-scale(PL) == 50
+cmp-flag-clear(PL, F-DISABLED)
+
+; ============================================================================
+; 5. 测算 intrinsic
+; ============================================================================
+C1 = cmp-chart()
+cmp-set-text(C1, 'x')
+ch-set-points(C1, 4)
+mw, mh = cs-measure(C1)
+t58 = mw == 31200
+t59 = mh == 39200
+
+P1 = cmp-plot()
+cmp-set-text(P1, 'x')
+pl-set-count(P1, 4)
+mw2, mh2 = cs-measure(P1)
+t60 = mw2 == 21600
+t61 = mh2 == 36800
+
+; 无标题时少一行
+C2 = cmp-chart()
+ch-set-points(C2, 4)
+mw3, mh3 = cs-measure(C2)
+t62 = mw3 == 31200
+t63 = mh3 == 36800
+
+; ============================================================================
+; 6. 渲染：chart
+;     根内容宽 24000（外层 26400）→ 图表 rect (1200,1200,24000,47600)
+;     p=1200 px=2400 py=4800 pw=21600 ph=32000 基线 36800
+;     slot=7200 bw=7000
+; ============================================================================
+cs-clear()
+CH2 = cmp-chart()
+cmp-set-text(CH2, 'chart')
+ch-set-series(CH2, 2)
+ch-set-points(CH2, 3)
+ch-set-max(CH2, 100)
+ch-set-name(CH2, 0, 'aa')
+ch-set-name(CH2, 1, 'bb')
+ch-set-value(CH2, 0, 0, 25)
+ch-set-value(CH2, 0, 1, 60)
+ch-set-value(CH2, 0, 2, 100)
+ch-set-value(CH2, 1, 0, 10)
+ch-set-value(CH2, 1, 1, 60)
+ch-set-value(CH2, 1, 2, 90)
+R1 = cmp-root()
+cmp-add-child(R1, CH2)
+cs-layout(R1, 0, 0, 26400, 50000)
+cs-paint(R1)
+
+t64 = cs-rect-color-at(1200, 1200, 24000, 39200) == cs-theme(CS-TH-FIELD)
+t65 = cs-rect-color-at(2400, 4800, 100, 32000) == cs-theme(CS-TH-MUTED)
+t66 = cs-rect-color-at(2400, 36800, 21600, 100) == cs-theme(CS-TH-MUTED)
+t67 = cs-rect-color-at(2400, 28800, 7000, 8000) == cs-theme(CS-TH-ACCENT)
+t68 = cs-rect-color-at(16600, 17600, 7000, 19200) == cs-theme(CS-TH-OK)
+t69 = cs-rect-color-at(16800, 4800, 7000, 32000) == cs-theme(CS-TH-ACCENT)
+t70 = cs-text-color-at('chart', 2400, 2400) == cs-theme(CS-TH-FG)
+t71 = cs-text-color-at('100', 3300, 4800) == cs-theme(CS-TH-MUTED)
+t72 = cs-text-color-at('0', 2000, 36900) == cs-theme(CS-TH-MUTED)
+t73 = cs-text-color-at('1', 9200, 36900) == cs-theme(CS-TH-MUTED)
+t74 = cs-text-color-at('2', 16400, 36900) == cs-theme(CS-TH-MUTED)
+t75 = cs-text-color-at('aa', 20000, 2400) == cs-theme(CS-TH-MUTED)
+t76 = cs-text-color-at('bb', 22400, 2400) == cs-theme(CS-TH-MUTED)
+
+; ============================================================================
+; 7. 渲染：plot
+;     根内容宽 21600（外层 24000）→ 绘图 rect (1200,1200,21600,47600)
+;     p=1200 px=2400 py=4800 pw=19200 ph=32000 cx=12000 cy=20800
+; ============================================================================
+cs-clear()
+PL2 = cmp-plot()
+cmp-set-text(PL2, 'plot')
+pl-set-count(PL2, 3)
+pl-set-scale(PL2, 50)
+pl-set-x(PL2, 0, -50)
+pl-set-y(PL2, 0, 50)
+pl-set-x(PL2, 1, 0)
+pl-set-y(PL2, 1, 0)
+pl-set-x(PL2, 2, 50)
+pl-set-y(PL2, 2, -50)
+R2 = cmp-root()
+cmp-add-child(R2, PL2)
+cs-layout(R2, 0, 0, 24000, 50000)
+cs-paint(R2)
+
+t77 = cs-rect-color-at(1200, 1200, 21600, 36800) == cs-theme(CS-TH-FIELD)
+t78 = cs-rect-color-at(11950, 4800, 100, 32000) == cs-theme(CS-TH-MUTED)
+t79 = cs-rect-color-at(2400, 20750, 19200, 100) == cs-theme(CS-TH-MUTED)
+t80 = cs-rect-color-at(2150, 4550, 500, 500) == cs-theme(CS-TH-OK)
+t81 = cs-rect-color-at(11750, 20550, 500, 500) == cs-theme(CS-TH-OK)
+t82 = cs-rect-color-at(21350, 36550, 500, 500) == cs-theme(CS-TH-OK)
+t83 = cs-rect-color-at(2400, 4700, 9600, 200) == cs-theme(CS-TH-ACCENT)
+t84 = cs-rect-color-at(11900, 4800, 200, 16000) == cs-theme(CS-TH-ACCENT)
+t85 = cs-rect-color-at(12000, 20700, 9600, 200) == cs-theme(CS-TH-ACCENT)
+t86 = cs-rect-color-at(21500, 20800, 200, 16000) == cs-theme(CS-TH-ACCENT)
+t87 = cs-text-color-at('plot', 2400, 2400) == cs-theme(CS-TH-FG)
+t88 = cs-text-color-at('50', 12800, 4800) == cs-theme(CS-TH-MUTED)
+t89 = cs-text-color-at('-50', 12800, 34400) == cs-theme(CS-TH-MUTED)
+
+; ============================================================================
+; 8. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1
+ok = ok & t2
+ok = ok & t3
+ok = ok & t4
+ok = ok & t5
+ok = ok & t6
+ok = ok & t7
+ok = ok & t8
+ok = ok & t9
+ok = ok & t10
+ok = ok & t11
+ok = ok & t12
+ok = ok & t13
+ok = ok & t14
+ok = ok & t15
+ok = ok & t16
+ok = ok & t17
+ok = ok & t18
+ok = ok & t19
+ok = ok & t20
+ok = ok & t21
+ok = ok & t22
+ok = ok & t23
+ok = ok & t24
+ok = ok & t25
+ok = ok & t26
+ok = ok & t27
+ok = ok & t28
+ok = ok & t29
+ok = ok & t30
+ok = ok & t31
+ok = ok & t32
+ok = ok & t33
+ok = ok & t34
+ok = ok & t35
+ok = ok & t36
+ok = ok & t37
+ok = ok & t38
+ok = ok & t39
+ok = ok & t40
+ok = ok & t41
+ok = ok & t42
+ok = ok & t43
+ok = ok & t44
+ok = ok & t45
+ok = ok & t46
+ok = ok & t47
+ok = ok & t48
+ok = ok & t49
+ok = ok & t50
+ok = ok & t51
+ok = ok & t52
+ok = ok & t53
+ok = ok & t54
+ok = ok & t55
+ok = ok & t56
+ok = ok & t57
+ok = ok & t58
+ok = ok & t59
+ok = ok & t60
+ok = ok & t61
+ok = ok & t62
+ok = ok & t63
+ok = ok & t64
+ok = ok & t65
+ok = ok & t66
+ok = ok & t67
+ok = ok & t68
+ok = ok & t69
+ok = ok & t70
+ok = ok & t71
+ok = ok & t72
+ok = ok & t73
+ok = ok & t74
+ok = ok & t75
+ok = ok & t76
+ok = ok & t77
+ok = ok & t78
+ok = ok & t79
+ok = ok & t80
+ok = ok & t81
+ok = ok & t82
+ok = ok & t83
+ok = ok & t84
+ok = ok & t85
+ok = ok & t86
+ok = ok & t87
+ok = ok & t88
+ok = ok & t89
+
+(ok == 1) -> {
+    print('ALL CHART TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME TESTS FAILED')
+}

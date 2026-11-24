@@ -1,0 +1,288 @@
+; 阶段70：C-SHEET（可停靠四边的抽屉面板）无窗口断言
+; 纯逻辑：默认 / 标题读写 / 展开位 / 停靠边夹紧 /
+;          多句柄隔离 / disabled 空操作 / 测算 intrinsic / 渲染几何与配色
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认：未展开 / 停靠左 / 标题取构造参数 / 未 disabled / 不是视觉容器
+; ============================================================================
+sh = cmp-sheet('sheet')
+
+u1 = cmp-kind(sh) == C-SHEET
+u2 = sht-open(sh) == 0
+u3 = sht-side(sh) == 0
+u4 = cmp-text(sh) == 'sheet'
+u5 = cmp-has(sh, F-DISABLED) == 0
+u6 = cs-is-container(cmp-kind(sh)) == 0
+
+; ============================================================================
+; 2. 标题读写（走 CMP-TEXT）
+; ============================================================================
+sht-set-title(sh, 'detail panel')
+u7 = sht-title(sh) == 'detail panel'
+sht-set-title(sh, '')
+u8 = sht-title(sh) == ''
+sht-set-title(sh, 'sheet')
+
+; ============================================================================
+; 3. 展开位
+; ============================================================================
+sht-show(sh)
+u9 = sht-open(sh) == 1
+sht-hide(sh)
+u10 = sht-open(sh) == 0
+sht-toggle(sh)
+u11 = sht-open(sh) == 1
+sht-toggle(sh)
+u12 = sht-open(sh) == 0
+sht-set-open(sh, 1)
+u13 = sht-open(sh) == 1
+sht-set-open(sh, 0)
+u14 = sht-open(sh) == 0
+
+; ============================================================================
+; 4. 停靠边 + 夹紧
+; ============================================================================
+sht-set-side(sh, 1)
+u15 = sht-side(sh) == 1
+sht-set-side(sh, 2)
+u16 = sht-side(sh) == 2
+sht-set-side(sh, 3)
+u17 = sht-side(sh) == 3
+sht-set-side(sh, 0)
+u18 = sht-side(sh) == 0
+sht-set-side(sh, -5)
+u19 = sht-side(sh) == 0
+sht-set-side(sh, 9)
+u20 = sht-side(sh) == 3
+sht-set-side(sh, 7)
+u21 = sht-side(sh) == 3
+sht-set-side(sh, 0)
+
+; ============================================================================
+; 5. 多句柄隔离
+; ============================================================================
+s2 = cmp-sheet('one')
+s3 = cmp-sheet('two')
+sht-show(s2)
+sht-set-side(s3, 2)
+cmp-set-text(s3, 'other')
+u22 = sht-open(s2) == 1
+u23 = sht-open(s3) == 0
+u24 = sht-side(s2) == 0
+u25 = sht-side(s3) == 2
+u26 = cmp-text(s2) == 'one'
+u27 = cmp-text(s3) == 'other'
+
+; ============================================================================
+; 6. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(s3, F-DISABLED)
+sht-show(s3)
+sht-set-open(s3, 1)
+sht-toggle(s3)
+sht-set-side(s3, 1)
+sht-set-title(s3, 'nope')
+u28 = sht-open(s3) == 0
+u29 = sht-side(s3) == 2
+u30 = sht-title(s3) == 'other'
+cmp-flag-clear(s3, F-DISABLED)
+
+; ============================================================================
+; 7. 测算 intrinsic
+;    宽 = 2*sht-pad + max(标题宽, sht-min-w)，下限 CS-MIN-LEAF-W(6400)
+;    高 = 2*sht-pad + CS-LINE-H(4800)，展开再加 sht-body-h(8000) → 12800
+; ============================================================================
+m1 = cmp-sheet('')
+v1w, v1h = cs-measure(m1)
+u31 = v1w == 6400
+u32 = v1h == 4800
+
+m2 = cmp-sheet('sheet')
+v2w, v2h = cs-measure(m2)
+u33 = v2w == 6400
+u34 = v2h == 4800
+
+m3 = cmp-sheet('abcdefghij')
+v3w, v3h = cs-measure(m3)
+u35 = v3w == 10400
+u36 = v3h == 4800
+
+sht-show(m3)
+v4w, v4h = cs-measure(m3)
+u37 = v4w == 10400
+u38 = v4h == 12800
+
+; 停靠边不影响测算
+sht-set-side(m3, 3)
+v5w, v5h = cs-measure(m3)
+u39 = v5w == 10400
+u40 = v5h == 12800
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m3, 20000)
+cmp-set-sh(m3, 9000)
+v6w, v6h = cs-measure(m3)
+u41 = v6w == 20000
+u42 = v6h == 9000
+cmp-set-sw(m3, 0)
+cmp-set-sh(m3, 0)
+
+; ============================================================================
+; 8. 渲染：默认（收起、停靠左）
+;    root 18000 → 内容宽 15600；面板 (1200,1200,15600,4800) FIELD
+;    抓杆 (1200,1200,1200,4800) ACCENT；标题 @ (1200+1200+1200, 1200+1200) MUTED
+; ============================================================================
+cs-clear()
+r = cmp-sheet('sheet')
+rt = cmp-root()
+cmp-add-child(rt, r)
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+
+p0 = 1200
+bw = 1200
+lh = 2400
+
+bx, by, bw2, bh = cs-rect(r)
+u43 = cs-rect-color-at(bx, by, bw2, bh) == cs-theme(CS-TH-FIELD)
+u44 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-ACCENT)
+u45 = cs-text-color-at('sheet', cs-add(cs-add(bx, p0), bw), cs-add(by, p0)) == cs-theme(CS-TH-MUTED)
+u46 = cs-text-count() == 1
+u47 = bw2 == 15600
+u48 = bh == 4800
+
+; 展开：面板变高，抓杆跟着拉长，标题转 FG
+sht-show(r)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw2, bh = cs-rect(r)
+u49 = bh == 12800
+u50 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-ACCENT)
+u51 = cs-text-color-at('sheet', cs-add(cs-add(bx, p0), bw), cs-add(by, p0)) == cs-theme(CS-TH-FG)
+
+; 停靠右：抓杆贴右端，标题不再给抓杆让位
+sht-set-side(r, 1)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw2, bh = cs-rect(r)
+rbx = cs-sub(cs-add(bx, bw2), bw)
+u52 = cs-rect-color-at(rbx, by, bw, bh) == cs-theme(CS-TH-ACCENT)
+u53 = cs-rect-color-at(bx, by, bw, bh) == -1
+u54 = cs-text-color-at('sheet', cs-add(bx, p0), cs-add(by, p0)) == cs-theme(CS-TH-FG)
+
+; 停靠上：抓杆横在顶部
+sht-set-side(r, 2)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw2, bh = cs-rect(r)
+u55 = cs-rect-color-at(bx, by, bw2, bw) == cs-theme(CS-TH-ACCENT)
+u56 = cs-rect-color-at(bx, cs-sub(cs-add(by, bh), bw), bw2, bw) == -1
+
+; 停靠下：抓杆横在底部
+sht-set-side(r, 3)
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw2, bh = cs-rect(r)
+rby = cs-sub(cs-add(by, bh), bw)
+u57 = cs-rect-color-at(bx, rby, bw2, bw) == cs-theme(CS-TH-ACCENT)
+u58 = cs-rect-color-at(bx, by, bw2, bw) == -1
+
+; 改标题：文案跟着换
+sht-set-side(r, 0)
+sht-set-title(r, 'detail panel')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u59 = cs-text-color-at('detail panel', cs-add(cs-add(bx, p0), bw), cs-add(by, p0)) == cs-theme(CS-TH-FG)
+u60 = cs-text-color-at('sheet', cs-add(cs-add(bx, p0), bw), cs-add(by, p0)) == -1
+
+; 清空标题：只剩 FIELD 底 + 抓杆；空串也会发一条文本指令
+sht-set-title(r, '')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+u61 = cs-rect-color-at(bx, by, bw2, bh) == cs-theme(CS-TH-FIELD)
+u62 = cs-text-count() == 1
+
+; disabled 时渲染不变
+sht-set-side(r, 0)
+sht-set-title(r, 'sheet')
+sht-show(r)
+cmp-flag-set(r, F-DISABLED)
+sht-hide(r)
+sht-set-side(r, 3)
+sht-set-title(r, 'nope')
+cs-clear()
+cs-layout(rt, 0, 0, 18000, 20000)
+cs-paint(rt)
+bx, by, bw2, bh = cs-rect(r)
+u63 = sht-open(r) == 1
+u64 = sht-side(r) == 0
+u65 = cs-text-color-at('sheet', cs-add(cs-add(bx, p0), bw), cs-add(by, p0)) == cs-theme(CS-TH-FG)
+u66 = cs-text-color-at('nope', cs-add(cs-add(bx, p0), bw), cs-add(by, p0)) == -1
+cmp-flag-clear(r, F-DISABLED)
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11
+ok = ok & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21
+ok = ok & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31
+ok = ok & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41
+ok = ok & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60 & u61
+ok = ok & u62 & u63 & u64 & u65 & u66
+
+(ok == 1) -> {
+    print('ALL SHEET TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME SHEET TESTS FAILED')
+}

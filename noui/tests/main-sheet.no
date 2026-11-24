@@ -1,0 +1,293 @@
+; ============================================================================
+; noui 窗口 demo：可停靠四边的抽屉面板（阶段 70）—— C-SHEET
+;
+; 流水线：app-init -> cmp-sheet(title) -> sht-show / sht-hide / sht-toggle /
+;          sht-set-open / sht-set-side / sht-set-title 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-SHEET 分支 +
+;      cs-paint-sheet）：FIELD 底 + 停靠边一条 ACCENT 抓杆 + 标题
+;      （展开 FG、收起 MUTED；停靠左侧时给抓杆让位）
+;   -> 键盘：o=切换展开；s=轮换停靠边；t=改标题；d=切换 disabled；
+;            r=重置默认；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-sheet.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ---- 重置默认（收尾自检也用它）----
+sh-build-default = (h i64) () {
+    sht-set-title(h, 'detail panel')
+    sht-set-side(h, 2)
+    sht-show(h)
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui sheet')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段70: sheet')
+hint = cmp-label('o=open s=side t=title d=disable r=reset q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+sh = cmp-sheet('detail panel')
+sh-build-default(sh)
+
+cmp-add-child(root, title)
+cmp-add-child(root, sh)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; o：切换展开
+        (k == 111) -> { sht-toggle(sh) }
+        ; s：停靠边 0->1->2->3->0
+        (k == 115) -> {
+            v = sht-side(sh)
+            (v == 0) -> { sht-set-side(sh, 1) }
+            (v == 1) -> { sht-set-side(sh, 2) }
+            (v == 2) -> { sht-set-side(sh, 3) }
+            (v == 3) -> { sht-set-side(sh, 0) }
+        }
+        ; t：改标题
+        (k == 116) -> {
+            cur = sht-title(sh)
+            (cur == 'detail panel') -> { sht-set-title(sh, 'sheet') }
+            (cur != 'detail panel') -> { sht-set-title(sh, 'detail panel') }
+        }
+        ; r：重置默认
+        (k == 114) -> { sh-build-default(sh) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(sh, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(sh, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(sh, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    op = sht-open(sh)
+    sd = sht-side(sh)
+    dis = cmp-has(sh, F-DISABLED)
+    ttl = sht-title(sh)
+    cmp-set-text(stat, 'open={op} side={sd} disabled={dis}')
+    cmp-set-text(stat2, 'title=[{ttl}]')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重置默认（标题 'detail panel'、停靠上、展开），按 cs-rect(sh) 推导。
+;   内边距 1200 / 抓杆宽 1200 / 行高 2400 / 正文区 8000。
+;   展开高 = 2*1200 + 2400 + 8000 = 12800；叶子横向被拉伸到父内容宽 53600。
+;   顶部抓杆 = (bx, by, 53600, 1200) ACCENT；标题 @ (bx+1200, by+1200) FG。
+;   场景里还有 title / hint / stat / stat2 四条标签文本 + 面板标题 1 条 = 5 条。
+; ============================================================================
+cmp-flag-clear(sh, F-DISABLED)
+sh-build-default(sh)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+qpad = 1200
+barw = 1200
+
+bx, by, bw, bh = cs-rect(sh)
+tx = cs-add(bx, qpad)
+ty = cs-add(by, qpad)
+
+c1 = sht-open(sh) == 1
+c2 = sht-side(sh) == 2
+c3 = sht-title(sh) == 'detail panel'
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = bh == 12800
+c6 = bw == 53600
+c7 = find-rect-color(bx, by, bw, barw) == cs-theme(CS-TH-ACCENT)
+c8 = find-text-color('detail panel', tx, ty) == cs-theme(CS-TH-FG)
+c9 = cs-text-count() == 5
+
+; 停靠右：抓杆贴右端，标题不再让位
+sht-set-side(sh, 1)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+rbx = cs-sub(cs-add(bx, bw), barw)
+c10 = find-rect-color(rbx, by, barw, bh) == cs-theme(CS-TH-ACCENT)
+c11 = find-rect-color(bx, by, barw, bh) == -1
+c12 = find-text-color('detail panel', tx, ty) == cs-theme(CS-TH-FG)
+
+; 停靠下：抓杆横在底部
+sht-set-side(sh, 3)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+rby = cs-sub(cs-add(by, bh), barw)
+c13 = find-rect-color(bx, rby, bw, barw) == cs-theme(CS-TH-ACCENT)
+c14 = find-rect-color(bx, by, bw, barw) == -1
+
+; 停靠左：抓杆在左，标题右移一个抓杆宽
+sht-set-side(sh, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c15 = find-rect-color(bx, by, barw, bh) == cs-theme(CS-TH-ACCENT)
+c16 = find-text-color('detail panel', cs-add(tx, barw), ty) == cs-theme(CS-TH-FG)
+
+; 收起：面板变矮、抓杆跟着缩短、标题转 MUTED
+sht-hide(sh)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(sh)
+c17 = bh == 4800
+c18 = find-rect-color(bx, by, barw, bh) == cs-theme(CS-TH-ACCENT)
+c19 = find-text-color('detail panel', cs-add(tx, barw), ty) == cs-theme(CS-TH-MUTED)
+
+; 改标题
+sht-set-title(sh, 'sheet')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c20 = find-text-color('sheet', cs-add(tx, barw), ty) == cs-theme(CS-TH-MUTED)
+c21 = find-text-color('detail panel', cs-add(tx, barw), ty) == -1
+
+; 清空标题：空串也发一条文本指令
+sht-set-title(sh, '')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c22 = cs-text-count() == 5
+
+; disabled：写操作全部空操作
+sh-build-default(sh)
+cmp-flag-set(sh, F-DISABLED)
+sht-hide(sh)
+sht-set-side(sh, 3)
+sht-set-title(sh, 'nope')
+c23 = sht-open(sh) == 1
+c24 = sht-side(sh) == 2
+c25 = sht-title(sh) == 'detail panel'
+cmp-flag-clear(sh, F-DISABLED)
+
+; 重置默认：几何回到最初
+sh-build-default(sh)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(sh)
+c26 = find-text-color('detail panel', tx, ty) == cs-theme(CS-TH-FG)
+c27 = bh == 12800
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+op2 = sht-open(sh)
+print('bye frames={fr} keys={kk} clicks={ck} open={op2} w={bw} h={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27) -> {
+    print('sheet render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27)) -> {
+    print('FAIL: sheet render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

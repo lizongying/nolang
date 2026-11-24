@@ -234,6 +234,8 @@ no build glossary                        # результат: glossary/dist/glo
 
 Формат вывода можно переключить с помощью `--format=text|md|json`. Описание подключения и формата данных см. в [`glossary/README.md`](glossary/README.md).
 
+Также можно просмотреть пакет glossary на nohub: [glossary on nohub](https://lizongying.github.io/nohub/?package=glossary:latest@github.com/lizongying/nolang)
+
 ---
 
 ## Связанные проекты
@@ -241,6 +243,8 @@ no build glossary                        # результат: glossary/dist/glo
 - [nohub — поиск реестра пакетов сообщества экосистемы Nolang](https://lizongying.github.io/nohub/)
 
   Поиск пакетов сообщества по имени, ключевому слову или категории; просмотр информации о пакете, снимков версий и ссылок на исходный код. Индекс создаётся `web/build.mjs` из снимков `packages/`.
+
+- [noui — набор инструментов интерфейса, переписанный на Nolang в духе GPUI (пакет nohub)](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
 - [Benchmarks Game — отчёт о сравнении производительности Nolang, C и Rust](https://github.com/lizongying/no-benchmarks/results/report.md)
 

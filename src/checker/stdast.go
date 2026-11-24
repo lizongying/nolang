@@ -52,16 +52,12 @@ func SetStdASTBlob(blob []byte) {
 	stdASTMu.Unlock()
 }
 
-// StdASTEntry is one baked std module: its embed path and the (deterministic)
-// gob encoding of its parser.CachedProgram.
-type StdASTEntry struct {
-	Path string
-	Data []byte
-}
-
 // StdASTBlob is the Tier-0 payload: two stamps describing the inputs that
-// produced the AST, plus the module list. Mods is sorted by Path so the encoded
-// bytes are reproducible.
+// produced the AST, plus the module list. Each Mods entry is the gob of one
+// parser.CachedProgram — the module's path now lives INSIDE that gob, on
+// Program.SourcePath (embed path) / Program.ModulePath (import path), so no
+// outer path → payload key is needed. Mods is ordered by SourcePath at
+// generation time so the encoded bytes are reproducible.
 //
 // Config is the Tier-0 counterpart of build.astCacheSalt. Parsing is not
 // inference-free (lowering consults the injected cross-module tables), so a
@@ -82,7 +78,7 @@ type StdASTEntry struct {
 type StdASTBlob struct {
 	Config string
 	StdKey string
-	Mods   []StdASTEntry
+	Mods   [][]byte
 }
 
 // stdParseConfigFingerprint derives the expected Tier-0 configuration from the
@@ -169,9 +165,22 @@ func loadStdAST() {
 		fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make gen`（或 `make no`）重新產生 blob 與簽名表。")
 		os.Exit(1)
 	}
+	// 路徑已隨 AST 走（Program.SourcePath / ModulePath），容器本身只剩 []byte。
+	// 解一次 gob 取出 embed 路徑建索引；StdASTFor 仍每次重新解碼，保持
+	// 「每次載入都是新樹」的語意。
 	dec := make(map[string][]byte, len(blob.Mods))
-	for _, e := range blob.Mods {
-		dec[e.Path] = e.Data
+	for _, raw := range blob.Mods {
+		var cp parser.CachedProgram
+		if err := gob.NewDecoder(bytes.NewReader(raw)).Decode(&cp); err != nil || cp.Prog == nil {
+			continue
+		}
+		path := cp.Prog.SourcePath
+		if path == "" {
+			path = cp.Prog.ModulePath
+		}
+		if path != "" {
+			dec[path] = raw
+		}
 	}
 	stdASTMap = dec
 }
@@ -367,9 +376,11 @@ var (
 	bakedTables     stdParseTables
 )
 
-// SerializeStdAST parses every std module under fsys and returns a
-// map[embedPath][]byte of gob-encoded parser.CachedProgram blobs (the whole
-// map is gzipped once by genstdsig), for the generator to bake into the binary.
+// SerializeStdAST parses every std module under fsys and returns a StdASTBlob
+// whose Mods is [][]byte — one gob-encoded parser.CachedProgram per module,
+// each carrying its embed/import path on Program.SourcePath / ModulePath so the
+// container needs no path → payload key. Mods is sorted by SourcePath for
+// byte-reproducible output (the whole blob is gzipped once by genstdsig).
 // No per-module gzip: StdASTFor gob-decodes the inner bytes directly, so a
 // second gzip layer would be redundant — and it was a latent bug, because the
 // inner gzip was never undone on decode, so the baked blob always failed to
@@ -399,7 +410,14 @@ func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 	if err != nil {
 		return nil, i18n.Errorf("nh8jhhz7", "std AST: %w", err)
 	}
-	blob := &StdASTBlob{StdKey: stdKey, Mods: make([]StdASTEntry, 0, len(known))}
+	blob := &StdASTBlob{StdKey: stdKey, Mods: make([][]byte, 0, len(known))}
+	// 路徑隨 AST 走之後 Mods 不再有 Path 欄位；先攢 (path, bytes) 排好序再
+	// 只留下 bytes，才能維持 blob 的位元組可重現性。
+	type bakedMod struct {
+		path string
+		data []byte
+	}
+	baked := make([]bakedMod, 0, len(known))
 	for _, info := range known {
 		embedPath := "std/" + info.FullPath + ".no"
 		source, err := fs.ReadFile(fsys, embedPath)
@@ -421,15 +439,23 @@ func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 		if blob.Config == "" {
 			blob.Config = p.ExternSignatureFingerprint()
 		}
+		// 兩個隱式註解隨 AST 進 gob：實際 embed 路徑與模組導入路徑。std 兩者
+		// 相同（"std/math.no"）；第三方 -ast.zip 則分別是 "remote.no" 與
+		// "mypkg/remote"。消費端 loadStdAST 直接從载荷讀路徑建索引。
+		prog.SourcePath = embedPath
+		prog.ModulePath = embedPath
 		cp := &parser.CachedProgram{Prog: prog}
 		var raw bytes.Buffer
 		if err := gob.NewEncoder(&raw).Encode(cp); err != nil {
 			return nil, i18n.Errorf("50ztzqeo", "std AST: encode %s: %w", embedPath, err)
 		}
-		blob.Mods = append(blob.Mods, StdASTEntry{Path: embedPath, Data: raw.Bytes()})
+		baked = append(baked, bakedMod{path: embedPath, data: raw.Bytes()})
 	}
 	// Sorted by path so the encoded blob is byte-reproducible run to run.
-	sort.Slice(blob.Mods, func(i, j int) bool { return blob.Mods[i].Path < blob.Mods[j].Path })
+	sort.Slice(baked, func(i, j int) bool { return baked[i].path < baked[j].path })
+	for _, m := range baked {
+		blob.Mods = append(blob.Mods, m.data)
+	}
 	if blob.Config == "" {
 		blob.Config = parser.ExternSignatureFingerprint(nil, nil, nil, nil)
 	}

@@ -294,6 +294,139 @@ test-withcap-helpers = () {
     runner.eq(pf.contains('define %vec @vec_new_cap_str'), 1, 'full has cap_str')
 }
 
+; s158：str 子串【值方法】四件套的 IR 文本（starts-with / ends-with / contains / index）
+;   逐字鏡像 src/std/str.no：find-byte-from(:230) / starts-with(:460) / ends-with(:481) /
+;   contains(:450) / index(:420)。全部【純計算、不分配、無 RC】。
+;   ⚠️ B28：len 欄 u32 ⇒ 一律 zext i32→i64 後才做 icmp / gep 偏移。
+...
+test-str-substr-helpers = () {
+    fb = cg-runtime-str-find-byte()
+    runner.eq(fb.contains('define i64 @str_find_byte(%str-long %a, %str-long %b)'), 1, 'find_byte sig')
+    runner.eq(fb.contains('%m0 = icmp eq i64 %lb, 0'), 1, 'find_byte empty-target test')
+    runner.eq(fb.contains('ret i64 0'), 1, 'find_byte empty target returns 0')
+    runner.eq(fb.contains('%nge = icmp sge i64 %la, %lb'), 1, 'find_byte n<m guard')
+    runner.eq(fb.contains('ret i64 -1'), 1, 'find_byte no-match returns -1')
+    runner.eq(fb.contains('%limit = sub i64 %la, %lb'), 1, 'find_byte window = n-m')
+    runner.eq(fb.contains('%go = icmp sle i64 %i, %limit'), 1, 'find_byte scans [0, n-m]')
+    runner.eq(fb.contains('%eq = icmp eq i8 %ba, %bb'), 1, 'find_byte byte compare')
+
+    sw = cg-runtime-str-startswith()
+    runner.eq(sw.contains('define i1 @str_starts_with(%str-long %a, %str-long %b)'), 1, 'starts_with sig')
+    runner.eq(sw.contains('%le = icmp sle i64 %lb, %la'), 1, 'starts_with len guard')
+    runner.eq(sw.contains('ret i1 false'), 1, 'starts_with too-long false')
+    runner.eq(sw.contains('ret i1 true'), 1, 'starts_with all-match true')
+
+    ew = cg-runtime-str-endswith()
+    runner.eq(ew.contains('define i1 @str_ends_with(%str-long %a, %str-long %b)'), 1, 'ends_with sig')
+    runner.eq(ew.contains('%off = sub i64 %la, %lb'), 1, 'ends_with offset = la-lb')
+    runner.eq(ew.contains('%idx = add i64 %off, %i'), 1, 'ends_with index = off+i')
+    runner.eq(ew.contains('ret i1 true'), 1, 'ends_with all-match true')
+
+    ct = cg-runtime-str-contains()
+    runner.eq(ct.contains('define i1 @str_contains(%str-long %a, %str-long %b)'), 1, 'contains sig')
+    runner.eq(ct.contains('%p = call i64 @str_find_byte(%str-long %a, %str-long %b)'), 1, 'contains delegates to find_byte')
+    runner.eq(ct.contains('%r = icmp sge i64 %p, 0'), 1, 'contains = index >= 0')
+
+    ix = cg-runtime-str-index()
+    runner.eq(ix.contains('define i64 @str_index(%str-long %a, %str-long %b)'), 1, 'index sig')
+    runner.eq(ix.contains('%p = call i64 @str_find_byte(%str-long %a, %str-long %b)'), 1, 'index delegates to find_byte')
+    runner.eq(ix.contains('ret i64 -1'), 1, 'index miss returns -1')
+    runner.eq(ix.contains('%lo = icmp slt i64 %bw, 128'), 1, 'index lead-byte low test')
+    runner.eq(ix.contains('%hi = icmp eq i64 %and, 192'), 1, 'index lead-byte high test')
+    runner.eq(ix.contains('%nnext = select i1 %inc, i64 %nadd, i64 %n'), 1, 'index conditional count')
+
+    ; prelude-full 已含五助手；@str_find_byte 必須排在 @str_contains / @str_index 之前
+    pf = cg-runtime-prelude-full()
+    runner.eq(pf.contains('define i64 @str_find_byte'), 1, 'full has find_byte')
+    runner.eq(pf.contains('define i1 @str_starts_with'), 1, 'full has starts_with')
+    runner.eq(pf.contains('define i1 @str_ends_with'), 1, 'full has ends_with')
+    runner.eq(pf.contains('define i1 @str_contains'), 1, 'full has contains')
+    runner.eq(pf.contains('define i64 @str_index'), 1, 'full has index')
+    i1 = pf.index('define i64 @str_find_byte')
+    i2 = pf.index('define i1 @str_contains')
+    i3 = pf.index('define i64 @str_index')
+    runner.eq(i1 >= 0, 1, 'find_byte found')
+    runner.eq(i2 > i1, 1, 'find_byte before contains')
+    runner.eq(i3 > i1, 1, 'find_byte before index')
+}
+
+; s159：@str_to_bytes —— str.to-bytes() 的 O(N) 複製助手（i64 寬槽、自有緩衝）。
+;   語義逐字鏡像 src/std/str.no:694。⚠️ []byte 元素在 noc 運行期是 i64 寬槽（stride 8）。
+;   🔴 命名紀律：s158 收尾時 @str_index 曾因【形參 %b 與 load 暫存器 %b 同名】被 clang 拒收
+;      （模組驗證要求同一函式內區域值名唯一）⇒ 本測試釘住「不得再與形參同名」。
+...
+test-strtobytes-helper = () {
+    tb = cg-runtime-str-to-bytes()
+    runner.eq(tb.contains('define %vec @str_to_bytes(%str-long %a)'), 1, 'to_bytes sig')
+    runner.eq(tb.contains('%z = icmp eq i64 %la, 0'), 1, 'to_bytes empty test')
+    runner.eq(tb.contains('ret %vec { i32 0, i32 0, i64 0 }'), 1, 'to_bytes empty short-circuit')
+    runner.eq(tb.contains('%nb = mul i64 %la, 8'), 1, 'to_bytes alloc n*8 slots')
+    runner.eq(tb.contains('%off = mul i64 %i, 8'), 1, 'to_bytes stride 8 per element')
+    runner.eq(tb.contains('%bi = load i8, i8* %sp'), 1, 'to_bytes loads source byte')
+    runner.eq(tb.contains('%bw = zext i8 %bi to i64'), 1, 'to_bytes widens byte to i64 slot')
+    runner.eq(tb.contains('%dpp = bitcast i8* %dp to i64*'), 1, 'to_bytes casts slot ptr')
+    runner.eq(tb.contains('store i64 %bw, i64* %dpp'), 1, 'to_bytes stores into slot')
+    runner.eq(tb.contains('%c32 = trunc i64 %la to i32'), 1, 'to_bytes writes u32 len/cap')
+    runner.eq(tb.contains('%v1 = insertvalue %vec %v0, i32 %c32, 1'), 1, 'to_bytes cap = len')
+
+    ; 🔴 命名碰撞哨兵：除形參 %a 自身外，不得再定義同名區域值（%a／%b 皆然）。
+    ;    （s158 的教訓——文字斷言全綠但模組組不起來。）
+    runner.eq(tb.contains('%a = '), 0, 'to_bytes has no local %a collision')
+    runner.eq(tb.contains('%b = '), 0, 'to_bytes has no local %b collision')
+
+    pf = cg-runtime-prelude-full()
+    runner.eq(pf.contains('define %vec @str_to_bytes'), 1, 'full has to_bytes')
+    j1 = pf.index('define i64 @str_index')
+    j2 = pf.index('define %vec @str_to_bytes')
+    runner.eq(j1 >= 0, 1, 'index found')
+    runner.eq(j2 > j1, 1, 'to_bytes registered after index')
+}
+
+; s160：@str_slice_bytes —— str.slice-bytes(start,end) 的子串副本助手（新配置、走 rc_alloc）。
+;   語意逐字鏡像 src/std/str.no:642：鉗制後 n=end-start，逐元 1:1 複製。
+;   ⚠️ 与 s159 @str_to_bytes 的差別：本 helper 走 @nolang_rc_alloc（rc=1 自有），
+;      且回 %str-long（不是 %vec）⇒ h2m 側登記 OP-RELEASE 而非 OP-VEC-FREE。
+;   🔴 命名紀律：區域值名不得與形參 %a／%s／%e 同名（s158 教訓：clang 要求函式內唯一）。
+test-strsliceb-helper = () {
+    tb = cg-runtime-str-slice-bytes()
+    runner.eq(tb.contains('define %str-long @str_slice_bytes(%str-long %a, i64 %s, i64 %e)'), 1, 'slice_b sig')
+    runner.eq(tb.contains('%la.i32 = extractvalue %str-long %a, 0'), 1, 'slice_b reads u32 len field')
+    runner.eq(tb.contains('%la = zext i32 %la.i32 to i64'), 1, 'slice_b widens len to i64')
+    runner.eq(tb.contains('%da = extractvalue %str-long %a, 2'), 1, 'slice_b reads data ptr')
+    ; 鉗制：start<0 ⇒ 0；end>len ⇒ len（select，不寫分支）
+    runner.eq(tb.contains('%sneg = icmp slt i64 %s, 0'), 1, 'slice_b start<0 test')
+    runner.eq(tb.contains('%s0 = select i1 %sneg, i64 0, i64 %s'), 1, 'slice_b clamps start')
+    runner.eq(tb.contains('%egt = icmp sgt i64 %e, %la'), 1, 'slice_b end>len test')
+    runner.eq(tb.contains('%e0 = select i1 %egt, i64 %la, i64 %e'), 1, 'slice_b clamps end')
+    ; start>=end ⇒ 空：以 n<0 ⇒ 0 的 select 收斂（仍給 rc_alloc(0) 非空緩衝，無獨立空支路）
+    runner.eq(tb.contains('%nraw = sub i64 %e0, %s0'), 1, 'slice_b n = end - start')
+    runner.eq(tb.contains('%nneg = icmp slt i64 %nraw, 0'), 1, 'slice_b negative n test')
+    runner.eq(tb.contains('%n = select i1 %nneg, i64 0, i64 %nraw'), 1, 'slice_b n clamped to 0')
+    ; 自有緩衝：走 rc_alloc（非裸 malloc），故Result 要讓 h2m 發 OP-RELEASE
+    runner.eq(tb.contains('%buf = call i8* @nolang_rc_alloc(i64 %n)'), 1, 'slice_b allocates via rc_alloc')
+    ; 逐元 1:1 複製（不加寬：str 緩衝是 i8 元素）
+    runner.eq(tb.contains('%sp = getelementptr i8, i8* %da, i64 %src'), 1, 'slice_b src ptr at start+i')
+    runner.eq(tb.contains('%by = load i8, i8* %sp'), 1, 'slice_b loads one byte')
+    runner.eq(tb.contains('store i8 %by, i8* %dp'), 1, 'slice_b stores one byte 1:1')
+    runner.eq(tb.contains('%i = phi i64 [ 0, %entry ], [ %inext, %body ]'), 1, 'slice_b copy loop phi')
+    ; 結果：{len=n, cap=n, data=buf}
+    runner.eq(tb.contains('%l0.i32 = trunc i64 %n to i32'), 1, 'slice_b writes u32 len')
+    runner.eq(tb.contains('%r1 = insertvalue %str-long %r0, i32 %l0.i32, 1'), 1, 'slice_b cap = len')
+    runner.eq(tb.contains('%r2 = insertvalue %str-long %r1, i8* %buf, 2'), 1, 'slice_b data = buf')
+
+    ; 🔴 命名碰撞哨兵：不得與形參同名（%a／%s／%e 皆然）
+    runner.eq(tb.contains('%a = '), 0, 'slice_b has no local %a collision')
+    runner.eq(tb.contains('%s = '), 0, 'slice_b has no local %s collision')
+    runner.eq(tb.contains('%e = '), 0, 'slice_b has no local %e collision')
+
+    pf = cg-runtime-prelude-full()
+    runner.eq(pf.contains('define %str-long @str_slice_bytes'), 1, 'full has slice_b')
+    j1 = pf.index('define %vec @str_to_bytes')
+    j2 = pf.index('define %str-long @str_slice_bytes')
+    runner.eq(j1 >= 0, 1, 'to_bytes found')
+    runner.eq(j2 > j1, 1, 'slice_b registered after to_bytes')
+}
+
 test-runtime-types()
 test-rc-ir()
 test-balance-pass()
@@ -306,6 +439,9 @@ test-vec-eq-helper()
 test-vec-helpers()
 test-strvec-helpers()
 test-withcap-helpers()
+test-str-substr-helpers()
+test-strtobytes-helper()
+test-strsliceb-helper()
 
 runner.summary()
 f = runner.failed-count()

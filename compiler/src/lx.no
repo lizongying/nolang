@@ -260,17 +260,38 @@ lx-hex-val = (c i64) (v i64) {
     lx-in-range(c, B-DIG0, B-DIG9) -> {
 
         #{overflow=wrap}
-        v = c - B-DIG0
+        {
+            #{overflow=wrap}
+            v-opt = c - B-DIG0
+            v-opt: {
+                ok -> v = it
+                ->
+            }
+        }
     }
     lx-in-range(c, B-LO-A, 102) -> {
 
         #{overflow=wrap}
-        v = (c - B-LO-A) + 10
+        {
+            #{overflow=wrap}
+            v-opt2 = (c - B-LO-A) + 10
+            v-opt2: {
+                ok -> v = it
+                ->
+            }
+        }
     }
     lx-in-range(c, B-UP-A, 70) -> {
 
         #{overflow=wrap}
-        v = (c - B-UP-A) + 10
+        {
+            #{overflow=wrap}
+            v-opt3 = (c - B-UP-A) + 10
+            v-opt3: {
+                ok -> v = it
+                ->
+            }
+        }
     }
 }
 
@@ -324,7 +345,14 @@ lx-ch-str = (c i64) (r str) {
 lx-hex-digit = (v i64) (c i64) {
 
     #{overflow=wrap}
-    c = v + B-DIG0
+    {
+        #{overflow=wrap}
+        c-opt = v + B-DIG0
+        c-opt: {
+            ok -> c = it
+            ->
+        }
+    }
     v >= 10 -> {
 
         #{overflow=wrap}

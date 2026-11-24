@@ -28,13 +28,13 @@ Die Implementierung liegt in `src/fmt/formatter.go`:
 - `FormatFile(code)` formatiert die gesamte Datei und ruft `ensureTrailingNewline` auf, das alle abschließenden `\r` / `\n` entfernt (CRLF- und mehrfache Leerzeilen-kompatibel) und ein einzelnes `\n` anhängt. Leere oder nicht parsbare Inhalte werden unverändert zurückgegeben, um die Datei nicht zu beschädigen.
 - `Format(code)` ist die reine Fragment-Formatierungsfunktion (ohne abschließenden Zeilenumbruch), hauptsächlich für Unit-Tests; beim Schreiben echter Quelldateien ist `FormatFile` zu bevorzugen.
 
-## Automatische Bereinigung von Importanweisungen (Dedup / `# std/fmt` entfernen / Sortieren)
+## Automatische Bereinigung von Importanweisungen (Dedup / std-Imports ohne Alias entfernen / Sortieren)
 
 `no fmt` (und die LSP-Formatierung beim Speichern) normalisiert automatisch den **zusammenhängenden Importblock am Dateianfang** (`# path[.fn] [alias]`); die Implementierung liegt in `src/fmt/imports.go`:
 
 1. **Dedup**: Byte-identische Importe (gleicher Pfad, Funktionsname und Alias) werden auf das erste Vorkommen reduziert.
-2. **Automatisches Entfernen von `# std/fmt`**: `print` / `eprint` / `format` / `sprintf` sind Compiler-Builtins, und Standardbibliotheksmodule sind ohnehin implizit ladbar (siehe [Präfixe für modulübergreifende Aufrufe](./module)) — `# std/fmt` ist nie erforderlich und wird vom Formatter entfernt. Zwei Ausnahmen bewahren es:
-   - Es wurde ein **Alias** oder ein **Funktionsimport** geschrieben (z. B. `# std/fmt.sprintf fm`) — eine bewusste Namensbindung;
+2. **Automatisches Entfernen aller reinen std-Modulimports ohne Alias**: Standardbibliotheksmodule sind implizit ladbar (siehe [Präfixe für modulübergreifende Aufrufe](./module)) — ein `# std/<module>` ohne Alias und ohne `.Funktion` (z. B. `# std/noml`, `# std/math`, `# std/database/sql`) bindet keinen Namen und ist redundant; der Formatter entfernt es. Drei Ausnahmen bewahren es:
+   - Es wurde ein **Alias** (`# std/noml n`) oder ein **Funktionsimport** (`# std/fmt.sprintf fm`) geschrieben — eine bewusste Namensbindung;
    - Die Importzeile trägt einen **Kommentar** oder eine angehängte `#{...}`-Annotation — vom Benutzer geschriebener Inhalt wird nie still verworfen.
 3. **Automatisches Sortieren**: Importe werden stabil lexikografisch nach Pfad → Funktion → Alias sortiert.
 
@@ -44,11 +44,13 @@ Importblöcke, die an einer anderen Stelle als am Dateianfang auftauchen (nach C
 
 ```no
 #{fmt-skip}
-; 格式化前                          ; 格式化後
-# std/vec                           # std/io
-# std/fmt                           # std/vec
-# std/io
-# std/fmt        ;→  print、format 為內建，# std/fmt 移除；其餘按字典序排序
+; vorher                            ; nachher
+# std/vec                           # aaa/lib
+# std/noml                          # std/io
+# std/io                            # std/vec
+# std/noml n
+# aaa/lib        ;→  std-Imports ohne Alias (# std/noml, # std/vec, # std/io) entfernt;
+                    ;   # std/noml n mit Alias behalten; Rest lexikographisch sortiert
 ```
 
 ## Kommentarmarkierungen (Comment Markers)

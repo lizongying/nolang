@@ -76,7 +76,7 @@ no build glossary            # 构建词条库前端 -> glossary/dist/glossary
 **优先级**：工作区 skill（`.agents/skills/`）优先；同名 / 同功能时以工作区版为准。
 
 **权威顺序**（冲突时按此裁决）：实测 > `AGENTS.md`（语法与编码权威）>
-`.agents/rules/nolang-red-lines.md`（红线全文）> `nolang-core` skill > 记忆笔记。
+`.agents/rules/nolang-red-lines.md`（总入口 + 共用规则，按任务路由到编译器 / 应用两份）> `nolang-core` skill > 记忆笔记。
 
 | skill | 位置 | 何时用 |
 | --- | --- | --- |

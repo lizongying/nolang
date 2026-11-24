@@ -3,6 +3,10 @@
 本目录（仓库根 `noui/`）是「用 Nolang 重写 GPUI」的**可运行纵切面**交付物。
 2026-11-20 从 `tmp/noui/` 迁入仓库根目录，纳入版本管理。
 
+Nolang 词条库 glossary 也可在 nohub 线上查看：[glossary on nohub](https://lizongying.github.io/nohub/?package=glossary:latest@github.com/lizongying/nolang)
+
+noui 包在 nohub 上的页面：[noui on nohub](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
+
 ## 已交付
 
 - **两个可运行版本**：
@@ -519,6 +523,537 @@
   的 `t1`–`t8` 就是这条回归）。坑两条：`cs-emit-text-center` 存进 Scene 的是
   **居中后的落点**（`x + (w - tw)/2`）而不是矩形左上角，按矩形坐标去断言颜色会
   全落空；`rating-hit` 的右边界是 `x + max * cell`（星格总宽），不是控件矩形宽 `w`
+- **元数据族补全（阶段46）**：组件目录第 58 / 73 / 86 行分别写着 `C-ATTACHMENT`
+  「name, size」、`C-CLIPBOARD`「content」、`C-INDEX-PATH`「path segments」，但
+  命令式侧三者都只有一个构造函数——name / size / content / 段池都没有 API，渲染
+  还落在通用 `rect + text` 兜底里。阶段 46 补：attachment 的 `CMP-TEXT` = 文件名、
+  `CMP-VALUE` = 字节数（`att-name` / `att-set-name` / `att-size` / `att-set-size`
+  夹紧非负 / `att-size-text` 按 1024 进位出「12 B」/「2 KB」/「1 MB」）；clipboard
+  的 `CMP-TEXT` = 内容（`clip-content` / `clip-set-content` / `clip-len`）；
+  index-path 的段池 `IP-SEG`（扁平只增）+ 每句柄基址 / 段数（`ip-count` / `ip-seg` /
+  `ip-add-seg` / `ip-clear` / `ip-sep`）。渲染层新增 `cs-paint-attachment`（左图标
+  方块 + 文件名 + 右端尺寸文案 muted）、`cs-paint-clipboard`（字段底 + 内容 + 右端
+  复制方块）、`cs-paint-index-path`（各段 + 「 / 」分隔符 muted），`cs-leaf-size`
+  给 clipboard 加 intrinsic（宽 = 文本宽 + 左右内边距 + 间隙 + 复制方块），
+  attachment / index-path 因要读 `att-size-text` / 段池而在 `cs-measure` 的兜底
+  分支里算（同阶段44 的 `C-ALERT` 理由：`cs-leaf-size` 只收 `(kind, tlen)`，
+  没有句柄）。落点：`src/components.no` 的新段 + `src/cmp-scene.no` 的三个
+  `cs-paint-*` + `tests/cmp-meta.no`（46 项断言）+ `tests/main-meta.no` 窗口 demo
+  （点附件循环尺寸、点剪贴板开关内容、点路径条加段 / 清空，`a` `c` `i` `x` 同效、
+  `q` 退出，900 帧 `att-size=2048 clip-len=20 ip-segs=3` + `meta render OK`）
+- **输入族补全（阶段47）**：组件目录第 25 / 26 行分别写着 `C-COLOR-PICKER`
+  「hue, hex」、`C-DATE-PICKER`「year, month, day」，但命令式侧两者都只有一个
+  构造函数——hue / 十六进制 / 年月日都没有 API，渲染还落在通用 `rect + text`
+  兜底里。阶段 47 补：color-picker 的 `CMP-COLOR` = 打包色（0xRRGGBBAA）、
+  `CMP-VALUE` = hue（`cp-color` / `cp-red` / `cp-green` / `cp-blue` / `cp-alpha`
+  + 四个 `cp-set-*`（写任一通道都重算 hue）+ `cp-hue` / `cp-set-hue`（固定
+  S=191/255、V=235/255 正算 RGB）+ `cp-hue-of`（RGB 反算 hue）+ `cp-hex`
+  出「#RRGGBB」）；date-picker 的 `CMP-VALUE` / `VALUE2` / `VALUE3` = 年 / 月 /
+  日（`dp-year` / `dp-month` / `dp-day` + 四个 `dp-set-*` + `dp-set-date`
+  按当月天数重夹日、`dp-leap` / `dp-days` / `dp-next-month`、`dp-label`
+  出「YYYY-MM-DD」）。渲染层新增 `cs-paint-color-picker`（左色板方块 +
+  「#RRGGBB」+ hue 数字 muted）与 `cs-paint-date-picker`（字段底 +
+  「YYYY-MM-DD」），两者的 intrinsic 都在 `cs-measure` 的兜底分支里算（同阶段44
+  的 `C-ALERT` 理由：`cs-leaf-size` 只收 `(kind, tlen)`，没有句柄）。落点：
+  `src/components.no` 的新段 + `src/cmp-scene.no` 的两个 `cs-paint-*` +
+  `tests/cmp-picker.no`（50 项断言）+ `tests/main-picker.no` 窗口 demo
+  （点取色器循环 hue、点日期翻月，`o` / `d` / `y` 同效、`q` 退出，
+  900 帧 `hex=#3BD9EB hue=213 date=2026-11-21` + `picker render OK`）
+- **代码 / 主题补全（阶段48）**：组件目录第 72 行给 `C-HIGHLIGHTER` 承诺
+  「code, language」、第 80 行给 `C-THEME` 承诺「palette, size, mode」，但命令式侧
+  两者都只有一个构造函数——代码 / 语言 / 缩进、主题名 / 模式 / 密度 / 强调色都没有
+  API，渲染还落在通用 `rect + text` 兜底里。阶段 48 补：highlighter 的
+  `CMP-TEXT` = 代码、`TEXT2` = 语言、`VALUE` = 缩进（`hl-code` / `hl-set-code` /
+  `hl-lang` / `hl-set-lang` / `hl-tab` / `hl-set-tab` + `hl-lines` /
+  `hl-line-start` / `hl-line-len-b` / `hl-line` / `hl-expand-len` /
+  `hl-max-len`）；theme 的 `CMP-TEXT` = 名字、`VALUE` = 模式、`VALUE2` = 密度、
+  `CMP-COLOR` = 强调色（`th-name` / `th-set-name` / `th-mode` / `th-set-mode` /
+  `th-density` / `th-set-density` / `th-accent` / `th-set-accent` / `th-swatch` /
+  `th-mode-name` / `th-bg` / `th-fg` / `th-muted` / `th-swatch-color` /
+  `th-swatch-label`）。渲染层新增 `cs-paint-highlighter`（字段底 + 右对齐行号 +
+  逐 token 着色 + 右端语言列）与 `cs-paint-theme`（字段底 + 名字 / 模式 + 四块
+  色板 + 标签），两者的 intrinsic 都在 `cs-measure` 的兜底分支里算。**行几何与
+  着色都是复用**：行切分照抄阶段39 的 `ta-line-*`，着色直接调阶段38 的
+  `ed-lex-line`（关键字 accent / 字符串 OK / 注释 muted / 数字 `ED-C-NUM`）。
+  落点：`src/components.no` 的新段 + `src/cmp-scene.no` 的两个 `cs-paint-*` +
+  `tests/cmp-code.no`（72 项断言）+ `tests/main-code.no` 窗口 demo（点代码块
+  循环缩进、点主题卡切亮暗，`c` / `m` / `d` 同效、`q` 退出，900 帧
+  `lines=4 max=23 tab=4 theme="midnight" mode=light den=1` + `code render OK`）
+- **差异对照补全（阶段49）**：组件目录第 71 行写着 `C-DIFF`「old, new, hunks」，
+  但命令式侧只有一个 `cmp-diff()` 构造函数——old / new 都没有 API，hunks 无从
+  读出，渲染还落在通用 `rect + text` 兜底里。阶段 49 补：槽位沿用
+  `CMP-TEXT` = old、`CMP-TEXT2` = new（`df-old` / `df-set-old` / `df-new` /
+  `df-set-new`，写入口尊重 `F-DISABLED`），行级 `df-rows` / `df-row-op`
+  （0 上下文 / 1 新增 / 2 删除）/ `df-row-text` / `df-row-old-no` /
+  `df-row-new-no`，统计 `df-hunks` / `df-hunk-start` / `df-count-add` /
+  `df-count-del` / `df-max-len` / `df-summary`（`'+a -d'`）。算法是**真的
+  diff**：`df-split` 按 `'\n'` 切行、`df-lcs` 动态规划求最长公共子序列、
+  `df-backtrack` 回溯成行，结果缓存在 `DF-CACHE-*`（句柄 + old + new 三者
+  一致才复用）。渲染层新增 `cs-paint-diff`（字段底 + 双列行号槽（旧号右对齐到
+  `x+pad+gutter-char-w`、新号右对齐到 `x+pad+gutter`）+ 行级 glyph（上下文空格 /
+  `'+'` / `'-'`）+ 文本，颜色按行级别：上下文 FG / 新增 OK / 删除 DANGER），
+  intrinsic 在 `cs-measure` 的兜底分支里算（同 `C-HIGHLIGHTER` 理由：那里才有
+  句柄）。落点：`src/components.no` 的新 `df-*` 段 + `src/cmp-scene.no` 的
+  `cs-paint-diff` + `tests/cmp-diff.no`（67 项断言）+ `tests/main-diff.no`
+  窗口 demo（点 diff 块循环三组样例，`0` / `1` / `2` 选样例、`r` 新旧互换、
+  `q` 退出，900 帧 `rows=4 hunks=1 +1 -1` + `diff render OK`）
+- **图表 / 绘图补全（阶段50）**：组件目录第 65 / 66 行写着 `C-CHART`「series,
+  axes」、`C-PLOT`「points, scale」，但命令式侧两者都只有一个构造函数——序列 /
+  点数 / 序列名 / 值轴上限 / 数值 / 点数 / 量程 / 点坐标全都没有 API，渲染还落在
+  通用 `rect + text` 兜底里。阶段 50 补：chart 走**每句柄定步长的数据池**
+  （`CH-VAL` 步长 `CH-STRIDE = 3 序列 × CH-PTS-MAX = 8 点`、`CH-NAME` 步长 3、
+  `CH-SN` / `CH-PN` 各一格，`ch-ensure` 按需补格），公开 `ch-series` /
+  `ch-set-series`（夹 0..3）/ `ch-points` / `ch-set-points`（夹 0..8）/
+  `ch-name` / `ch-set-name` / `ch-max` / `ch-set-max`（`CMP-VALUE2`，构造给的是 0，
+  所以 `ch-max` 把 `<= 0` 映射成默认 100）/ `ch-value` / `ch-set-value`（夹 0..max）/
+  `ch-total` / `ch-peak`；plot 走 `PL-X` / `PL-Y`（每句柄 `PL-PTS-MAX = 16` 格）+
+  `PL-CN` / `PL-SC`，公开 `pl-count` / `pl-set-count`（夹 0..16）/ `pl-scale` /
+  `pl-set-scale`（≥1）/ `pl-x` / `pl-y` / `pl-set-x` / `pl-set-y`（夹 ±scale）/
+  `pl-min-x` / `pl-max-x` / `pl-min-y` / `pl-max-y`。写操作一律先查 `F-DISABLED`
+  并 `ch-ensure` / `pl-ensure` 补格（**这条是实测坑**：新建句柄上第一次写会因
+  池未长到该句柄而静默 no-op，读回来还是 0）。渲染层新增 `cs-paint-chart`
+  （字段底 + 左轴 / 下轴 + 值轴上限文案 + 分组柱，序列序映射 ACCENT / OK /
+  DANGER + x 轴刻度 + 右对齐图例）与 `cs-paint-plot`（字段底 + 过原点两轴 +
+  上 `+scale` / 下 `-scale` 文案 + 方块数据点 + 相邻点 L 形连线），intrinsic 在
+  `cs-measure` 的兜底分支里算（同 `C-HIGHLIGHTER` / `C-DIFF` 理由：那里才有句柄）。
+  **没有线 / 圆图元**，所以点用方块、连线用细矩形拼。落点：`src/components.no` 的
+  新 `ch-*` / `pl-*` 段 + `src/cmp-scene.no` 的两个 `cs-paint-*` +
+  `tests/cmp-chart.no`（89 项断言）+ `tests/main-chart.no` 窗口 demo（点图表
+  循环值轴上限、点绘图循环点数，`c` / `r` / `-` / `+` 同效、`q` 退出，900 帧
+  `series=3 points=6 max=100 peak=99 plot-n=5 scale=100` + `chart render OK`）
+- **下拉菜单补全（阶段51）**：组件目录第 57 行写着 `C-NATIVE-MENU`「items」，
+  命令式侧只有一个构造函数，项数 / 项文案 / 选中项都没有 API，渲染还落在通用
+  `rect + text` 兜底里。阶段 51 补：**自绘**下拉菜单（框架没有平台菜单图元，
+  按钮 / 弹层都用 rect + text 画，同 chart / plot 的做法）。槽位：`CMP-TEXT` =
+  按钮文案、`CMP-VALUE` = 项数、`CMP-VALUE2` = 选中项 + 1（`0` = 未选）、
+  `CMP-COLOR` = 强调色，展开态走 `F-OPEN`。数据池 `NM-LABEL` / `NM-SEL` 按
+  句柄 × `NM-MAX = 8` 定步长、`NM-CN` 每句柄一格，`nm-ensure` 按需补格。公开
+  `nm-count` / `nm-set-count`（夹 0..8，同步 `VALUE`，缩小时清掉越界选中项）/
+  `nm-label` / `nm-set-label` / `nm-index` / `nm-set-index`（夹 −1..count−1）/
+  `nm-item-off` / `nm-set-item-off` / `nm-open` / `nm-close` / `nm-toggle`。
+  写操作一律先查 `F-DISABLED` 并 `nm-ensure` 补格。渲染层 `cs-measure` 新增分支
+  （宽 = `2*CS-PAD + max(按钮文案, 各项文案) + 2400`，下限 `CS-MIN-LEAF-W`；
+  高 = `CS-BTN-H`，展开再加 `CS-GAP + count*CS-LINE-H`），`cs-paint-menu`
+  画字段底按钮 + 文案 + `'v'` / `'^'` 箭头 + 展开时下方弹层（选中项铺 `ACCENT`、
+  禁用项 `TRACK` 底 + `MUTED` 文案），`cs-menu-hit(h,px,py)` 返回弹层命中项
+  （未展开 / 越界 / 禁用项返回 −1）。落点：`src/components.no` 的新 `nm-*` 段 +
+  `src/cmp-scene.no` 的 `cs-measure` 分支 / `cs-paint-menu` / `cs-menu-hit` +
+  `tests/cmp-menu.no`（69 项断言）+ `tests/main-menu.no` 窗口 demo（点按钮开 /
+  关、点项选中并收起、点别处收起，`m` / `o` / `n` / `p` / `d` / `x` 同效、
+  `q` 退出，900 帧 `m1=n4 sel-1 m2=n3` + `menu render OK`）
+- **窗口选项补全（阶段52）**：组件目录第 84 行写着 `C-WINDOW-EXT`「window
+  options」，是命令式侧最后一个只有构造函数的叶子，也是唯一**真的改窗口本身**的
+  组件。阶段 52 补：槽位 `CMP-TEXT` = 标题、`CMP-VALUE` = flags（`1` 可缩放 /
+  `2` 全屏 / `4` 置顶 / `8` 边框）、`CMP-VALUE2` = 总开关（`1` = 接管真窗口，
+  `0` = 只存状态不动窗口）、`CMP-COLOR` = 强调色。数据池 `WE-TITLE` /
+  `WE-FLAGS` / `WE-OP` 每句柄一格、`WE-MIN` / `WE-MAX` / `WE-SIZE` 每句柄两格，
+  `we-ensure` 按需补格。公开 `we-title` / `we-set-title`（同步 `TEXT`）/
+  `we-flags` / `we-set-flags`（同步 `VALUE`）/ `we-resizable` / `we-set-resizable` /
+  `we-fullscreen` / `we-set-fullscreen` / `we-always-on-top` /
+  `we-set-always-on-top` / `we-bordered` / `we-set-bordered` / `we-opacity` /
+  `we-set-opacity`（夹 0..100）/ `we-min-x` / `we-min-y` / `we-set-min-size` /
+  `we-max-x` / `we-max-y` / `we-set-max-size` / `we-w` / `we-h` /
+  `we-set-size`（夹 ≥0，`0` = 不覆盖）/ `we-on` / `we-set-on`，写操作一律先查
+  `F-DISABLED`。**层依赖是这个阶段的真难点**：`components.no` 不能 `import app.no`
+  （`app.no -> cmp-scene -> components` 会成环），所以组件层只留纯状态，12 个 `#{c}`
+  FFI 与 `app-window-apply(h)` / `app-window-apply-all()` / `app-window-title()` /
+  `app-window-size()` / `app-window-flags()` 全放在 `app.no`，由每帧 `app-frame()`
+  统一扫已挂载的面板（谁 `on` 谁生效）。shim 侧新增 `noui_window_set_title` /
+  `set_resizable` / `set_min_size` / `set_max_size` / `set_fullscreen` /
+  `set_always_on_top` / `set_bordered` / `set_opacity` / `set_size` /
+  `get_size` / `get_flags` / `get_title`（SDL3 删了 `SDL_TRUE` / `SDL_FALSE`，
+  一律写 `true` / `false`）。渲染层 `cs-measure` 新增分支（宽 = `2*ch-pad() +
+  16000` = 18400；高 = `2*ch-pad() + ch-title-h() + 8*CS-LINE-H` = 24000），
+  `cs-paint-window-ext` 画字段底 + 标题 + 分隔线 + 8 行状态（标签列 `MUTED`
+  左对齐、数值列 `FG` 右对齐，`size` 行在 `0x0` 时显示 `auto`），聚焦时四边
+  `ACCENT` 描边。落点：`src/shim/shim.h` / `shim.c` + `src/app.no` +
+  `src/components.no` 的新 `we-*` 段 + `src/cmp-scene.no` 的 `cs-measure` 分支 /
+  `cs-paint-window-ext` + `tests/cmp-window-ext.no`（90 项断言）+
+  `tests/main-window-ext.no` 窗口 demo（`t` / `r` / `f` / `a` / `b` / `o` /
+  `=` / `-` / `m` 逐项改真窗口，面板与读回双显示，900 帧后断言真窗口标题 /
+  尺寸 / 可缩放位与面板一致 + `win-ext render OK` + `win-ext live OK`）
+- **面包屑补全（阶段53）**：组件目录第 30 行写着 `C-BREADCRUMB`「items,
+  separator」，命令式侧只有一个构造函数。阶段 53 补：数据池 `BC-ITEM`（扁平只增，
+  同 `INP-SG` / `IP-SEG` 的段池思路）+ `BC-SBASE` / `BC-N` / `BC-SEP` 每句柄一格
+  （`BC-SEP` 随 `cmp-alloc` 填默认「 / 」，省掉「空串 = 未设置」的二义）。公开
+  `bc-count` / `bc-item` / `bc-add-item` / `bc-clear` / `bc-sep` / `bc-set-sep` /
+  `bc-last` / `bc-join`，写操作一律先查 `F-DISABLED`。渲染层 `cs-measure` 新增分支
+  （宽 = `2*CS-PAD + Σ条目宽 + (n-1)*分隔符宽`，下限 `CS-MIN-LEAF-W`；高 =
+  `CS-BTN-H`），`cs-paint-breadcrumb` 按「祖先 / 当前页」两档配色：除最后一项外的
+  条目画 `MUTED`，最后一项画 `FG`，分隔符画 `TRACK`。落点：`src/components.no` 的
+  新 `bc-*` 段 + `src/cmp-scene.no` 的 `cs-measure` 分支 / `cs-paint-breadcrumb` +
+  `tests/cmp-breadcrumb.no`（60 项断言）+ `tests/main-breadcrumb.no` 窗口 demo
+  （`a` 追加 / `c` 清空 / `b` 重建 / `s` 换分隔符 / `d` 切换 disabled，收尾重建
+  已知三段并逐段核对坐标与配色 + `breadcrumb render OK`）
+- **折叠面板补全（阶段58）**：组件目录第 70 行写着 `C-COLLAPSIBLE`「open,
+  title」，但命令式侧只有一个 `cmp-collapsible(title)` 构造函数——标题 /
+  展开态 / 正文行全都没有 API，而且它原本在 `cs-is-container` 白名单里，没有
+  子节点时走通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton /
+  阶段 55 的 description-list / 阶段 56 的 accordion / 阶段 57 的
+  carousel）。目录把 `group_box` 标成「title, children」而 collapsible 只标
+  「open, title」，所以正文走数据池而不是视觉子节点。阶段 58 补：数据池
+  `CL-LINE`（`[]str`，扁平只增）+ 每句柄基址 `CL-SBASE` / 行数 `CL-N`
+  （随 `cmp-alloc` 长），标题走 `CMP-TEXT`，展开态复用既有 `F-OPEN` 位
+  （声明式 `dv-on-open` 已经这么编码）。公开 `cl-title` / `cl-set-title` /
+  `cl-open` / `cl-set-open` / `cl-expand` / `cl-collapse` / `cl-toggle` /
+  `cl-count` / `cl-body-line` / `cl-add-body` / `cl-set-body-line` /
+  `cl-clear`，写操作先查 `F-DISABLED`。渲染层把它从 `cs-is-container`
+  白名单里拿掉，`cs-measure` 新增分支（收起高 = `2*CS-PAD + CS-BTN-H`；
+  展开再加 `N*CS-LINE-H`；宽 = `2*CS-PAD + max(展开符 800 + 间隙 800 +
+  标题, 最长正文行)`，下限 6400），`cs-paint-collapsible` 画 FIELD 底 +
+  头部「展开符（`v` / `>`，ACCENT）+ 标题（FG）」+ 展开时 TRACK 分隔线 +
+  N 行正文（MUTED）。落点：`src/components.no` 的新 `cl-*` 段 +
+  `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 /
+  `cs-paint-collapsible` + `cs-paint-leaf` 一行路由 +
+  `tests/cmp-collapsible.no`（65 项断言）+ `tests/main-collapsible.no`
+  窗口 demo（`e` 展开 / `c` 收起 / `t` 切换 / `a` 加正文行 / `r` 重建 /
+  `d` 切换 disabled，收尾重建已知两行并按 `cs-rect(cl)` 反推头部 / 分隔线 /
+  正文坐标逐项核对 + `collapsible render OK`）
+- **标题容器补全（阶段59）**：组件目录第 69 行写着 `C-GROUP-BOX`「title,
+  children」，命令式侧只有 `cmp-group-box(title)` 构造函数——标题读写没有
+  API，而且它虽有 `children` 却走通用容器分支，标题被当成整块矩形里的居中
+  文字（同阶段 58 之前的 collapsible）。目录把 `collapsible` 标成「open,
+  title」而 `group_box` 标「title, children」，所以 group-box 是**真容器**：
+  标题走 `CMP-TEXT`，子节点是视觉节点，`cs-is-container` 白名单**保留**。
+  阶段 59 补：`gb-title` / `gb-set-title`（写先查 `F-DISABLED`）+
+  `gb-title-h()`（标题行高 4000，与 `CS-BTN-H` 同高）。渲染层抽三个辅助
+  函数复用通用容器逻辑——`cs-measure-flow`（内容区尺寸：横向宽求和 / 高取
+  最大，纵向宽取最大 / 高求和）、`cs-layout-flow`（把子节点排进给定矩形，
+  含 `cs-grow` 分剩余空间与 `cs-aend` / `cs-acenter` 交叉轴对齐）、
+  `cs-layout-overlay`（锚定浮层），通用容器分支改为调用它们，避免 120 行
+  重复。`cs-measure` 新增 group-box 分支（宽 = `2*CS-PAD + max(标题宽,
+  内容区宽)`，下限 `CS-MIN-LEAF-W`；高 = `2*CS-PAD + 标题行 4000`，有子
+  节点再加 `间隙 800 + 内容区高`，下限 `CS-BTN-H`），`cs-layout` 把
+  「内容区」当矩形重排一次（后跑的赢，同 scroll 的套路），`cs-paint` 的
+  容器守卫放开到「没子节点也画面板」并叠标题（FG）+ TRACK 分隔线——修掉了
+  「无子节点的 group-box 掉进 `cs-paint-leaf` 兜底，画成一个整块矩形 +
+  居中文本」的真实缺陷。落点：`src/components.no` 的新 `gb-*` 段 +
+  `src/cmp-scene.no` 的三个辅助函数 / 白名单保留 / `cs-measure` 分支 /
+  `cs-layout` 分支 / `cs-paint` 分支 + `tests/cmp-group-box.no`
+  （38 项断言）+ `tests/main-group-box.no` 窗口 demo（`t` 换标题 /
+  `a` 加子节点 / `r` 重建 / `h` 横纵向切换 / `d` 切换 disabled，收尾先
+  钉横向核对子节点同行与 gap，再重建默认按 `cs-rect(gb)` 反推标题 /
+  分隔线 / 子节点坐标逐项核对 + `group-box render OK`）
+- **历史条目补全（阶段60）**：组件目录第 38 行写着 `C-HISTORY`「entries,
+  index」，但命令式侧只有一个 `cmp-history()` 构造函数——条目 / 当前下标全都没
+  有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走通用兜底画成
+  一个 0×0 的 FIELD 矩形（同阶段 57 的 carousel）。条目是**数据**不是视觉子节
+  点，阶段 60 补：数据池 `HST-ENTRY`（`[]str`，扁平只增）+ 每句柄基址
+  `HST-SBASE` / 条数 `HST-N`（随 `cmp-alloc` 长），当前下标走 `CMP-VALUE`
+  （越界回落 0）。公开 `hst-count` / `hst-entry` / `hst-add` / `hst-set-entry` /
+  `hst-index` / `hst-set-index` / `hst-jump` / `hst-back` / `hst-forward` /
+  `hst-clear`，写操作先查 `F-DISABLED`；`hst-back` / `hst-forward` 夹紧在
+  `[0, n-1]`（历史不是循环的，与 carousel 的环绕语义不同）。渲染层把它从
+  `cs-is-container` 白名单里拿掉，`cs-measure` 新增分支（宽 = `2*CS-PAD +
+  标记条 800 + 间隙 800 + 最长条目文案`，下限 6400；高 = `2*CS-PAD +
+  N*CS-LINE-H + (N-1)*CS-SEP-H`，下限 `CS-BTN-H`），`cs-paint-history` 画
+  FIELD 底 + 当前行 ACCENT 标记条 + FG 文本、其余行 TRACK 标记条 + MUTED 文本、
+  行间 TRACK 分隔线。落点：`src/components.no` 的新 `hst-*` 段 +
+  `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 / `cs-paint-history` +
+  `cs-paint-leaf` 一行路由 + `tests/cmp-history.no`（72 项断言）+
+  `tests/main-history.no` 窗口 demo（`a` 追加 / `b` 后退 / `f` 前进 /
+  `j` 跳第 0 条 / `r` 重建 / `d` 切换 disabled，收尾重建默认三条并按
+  `cs-rect(hs)` 反推标记条 / 文本 / 分隔线坐标逐项核对 + `history render OK`）
+- **对象检查器补全（阶段61）**：组件目录第 55 行写着 `C-INSPECTOR`「target,
+  fields」，但命令式侧只有一个 `cmp-inspector()` 构造函数——目标名 / 字段全都没
+  有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走通用兜底画成
+  一个 0×0 的 FIELD 矩形（同阶段 55 的 description-list / 阶段 60 的 history）。
+  字段是**数据**不是视觉子节点，阶段 61 补：目标名走 `CMP-TEXT`（同 group-box
+  的标题），字段池 `IN-LAB` / `IN-VAL`（`[]str`，扁平只增）+ 每句柄基址
+  `IN-SBASE` / 字段数 `IN-N`（随 `cmp-alloc` 长）。公开 `in-target` /
+  `in-set-target` / `in-count` / `in-label` / `in-value` / `in-add` /
+  `in-set-label` / `in-set-value` / `in-clear`，写操作先查 `F-DISABLED`。
+  渲染层把它从 `cs-is-container` 白名单里拿掉，`cs-measure` 新增分支（宽 =
+  `2*CS-PAD + 标记条 800 + 间隙 800 + max(目标名宽, 最长标签 + 间隙 + 最长值)`，
+  下限 6400；高 = `2*CS-PAD + 目标行 CS-LINE-H + N*CS-LINE-H +
+  (N-1)*CS-SEP-H`，下限 `CS-BTN-H`），`cs-paint-inspector` 画 FIELD 底 +
+  目标行「ACCENT 标记条 + FG 目标名」+ 字段行「MUTED 标签 + FG 值」+ 行间
+  TRACK 分隔线。落点：`src/components.no` 的新 `in-*` 段 + `src/cmp-scene.no`
+  的白名单移除 / `cs-measure` 分支 / `cs-paint-inspector` / `cs-paint-leaf`
+  一行路由 + `tests/cmp-inspector.no`（67 项断言）+ `tests/main-inspector.no`
+  窗口 demo（`a` 追加字段 / `t` 换目标名 / `e` 清空字段 / `r` 重建 /
+  `d` 切换 disabled，收尾重建默认并按 `cs-rect(ins)` 反推标记条 / 目标 /
+  字段 / 分隔线坐标逐项核对 + `inspector render OK`）
+- **消息流补全（阶段62）**：组件目录第 48 行写着 `C-MESSAGE-SCROLLER`
+  「messages, scroll」，但命令式侧只有一个 `cmp-message-scroller()` 构造函数
+  ——消息 / 「输入中」全都没有 API，而且它原本在 `cs-is-container` 白名单里，
+  没有子节点时走通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 60 的 history /
+  阶段 61 的 inspector）。消息是**数据**不是视觉子节点，阶段 62 补：消息池
+  `MS-MSG` / `MS-AUTH`（`[]str`，扁平只增）+ 每句柄基址 `MS-SBASE` /
+  条数 `MS-N`（随 `cmp-alloc` 长），「输入中」走 `CMP-VALUE`（0 / 1，负数
+  归 0）。公开 `ms-count` / `ms-text` / `ms-author` / `ms-add` /
+  `ms-set-text` / `ms-set-author` / `ms-clear`（连输入中一起清）/
+  `ms-typing` / `ms-set-typing`，写操作先查 `F-DISABLED`。渲染层把它从
+  `cs-is-container` 白名单里拿掉，`cs-measure` 新增分支（宽 = `2*CS-PAD +
+  max(最长作者, 最长正文)`，下限 6400；高 = `2*CS-PAD + N*2*CS-LINE-H +
+  (N-1)*CS-SEP-H +（输入中 ? CS-SEP-H + CS-LINE-H : 0）`，下限 `CS-BTN-H`），
+  `cs-paint-message-scroller` 画 FIELD 底 + 作者 MUTED + 正文 FG + 条间
+  TRACK 分隔线，输入中时末尾再补一条分隔线 + 「typing...」ACCENT。落点：
+  `src/components.no` 的新 `ms-*` 段 + `src/cmp-scene.no` 的白名单移除 /
+  `cs-measure` 分支 / `cs-paint-message-scroller` / `cs-paint-leaf` 一行
+  路由 + `tests/cmp-message-scroller.no`（63 项断言）+
+  `tests/main-message-scroller.no` 窗口 demo（`a` 追加消息 / `t` 切换输入中 /
+  `c` 清空 / `r` 重建 / `d` 切换 disabled，收尾重建默认并按
+  `cs-rect(ms)` 反推作者行 / 正文行 / 分隔线坐标逐项核对 +
+  `message-scroller render OK`）
+- **状态条补全（阶段63）**：组件目录第 36 行写着 `C-STATUS-BAR`
+  「segments」，但命令式侧只有一个 `cmp-status-bar()` 构造函数——分段全都没
+  有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走通用兜底
+  画成一个 0×0 的 FIELD 矩形（同阶段 60 的 history / 阶段 61 的 inspector /
+  阶段 62 的 message-scroller）。分段是**数据**不是视觉子节点，阶段 63 补：
+  分段池 `SB-SEG`（`[]str`，扁平只增）+ 每句柄基址 `SB-SBASE` / 段数
+  `SB-N`（随 `cmp-alloc` 长）。公开 `sb-count` / `sb-seg` / `sb-add` /
+  `sb-set-seg` / `sb-clear`，写操作先查 `F-DISABLED`。渲染层把它从
+  `cs-is-container` 白名单里拿掉，`cs-measure` 新增分支（宽 = `2*CS-PAD +
+  Σ 段文案宽 + (N-1)*CS-SEP-H`，下限 6400；高固定 `CS-BTN-H`），
+  `cs-paint-status-bar` 画 FIELD 底 + 段 FG 文案 + 段间 TRACK 竖分隔条
+  （细条只有 `CS-BTN-H` 高，文字垂直居中）。落点：`src/components.no` 的
+  新 `sb-*` 段 + `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 /
+  `cs-paint-status-bar` / `cs-paint-leaf` 一行路由 +
+  `tests/cmp-status-bar.no`（48 项断言）+ `tests/main-status-bar.no`
+  窗口 demo（`a` 追加段 / `t` 改某段 / `c` 清空 / `r` 重建 /
+  `d` 切换 disabled，收尾重建默认并按 `cs-rect(sb)` 反推段 / 竖条坐标
+  逐项核对 + `status-bar render OK`）
+- **弹层补全（阶段64）**：组件目录第 42 行写着 `C-POPOVER`
+  「open, anchor, content」，但命令式侧只有一个 `cmp-popover()` 构造函数——
+  开合 / 锚定边 / 标题 / 正文全都没有 API，而且它原本在 `cs-is-container`
+  白名单里，没有子节点时走通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 61 的
+  inspector / 阶段 62 的 message-scroller / 阶段 63 的 status-bar）。正文行是
+  **数据**不是视觉子节点，阶段 64 补：正文行池 `PV-LINE`（`[]str`，扁平只增）
+  + 每句柄基址 `PV-SBASE` / 行数 `PV-N`（随 `cmp-alloc` 长）；开合走
+  `CMP-VALUE`（负数归 0），锚定边 0..3 走 `CMP-VALUE2`。公开 `pv-open` /
+  `pv-set-open` / `pv-side` / `pv-set-side` / `pv-title` / `pv-set-title` /
+  `pv-count` / `pv-line` / `pv-add` / `pv-set-line` / `pv-clear`，写操作先查
+  `F-DISABLED`。渲染层把它从 `cs-is-container` 白名单里拿掉，`cs-measure`
+  新增分支（关闭 → `CS-MIN-LEAF-W` × `CS-BTN-H`；展开 → 宽 = `2*CS-PAD +
+  箭头 800 + 间隙 800 + max(标题宽, 最长正文行)`，下限 6400，高 = `2*CS-PAD +
+  标题行 +（有标题且有正文 ? CS-SEP-H : 0）+ N*CS-LINE-H`，下限 `CS-BTN-H`），
+  `cs-paint-popover` 画 FIELD 底 + 按 `side` 贴边的 800×800 ACCENT 箭头方块 +
+  标题 FG + 条件 TRACK 分隔线 + N 行正文 MUTED（关闭时一笔画不出）。落点：
+  `src/components.no` 的新 `pv-*` 段 + `src/cmp-scene.no` 的白名单移除 /
+  `cs-measure` 分支 / `cs-paint-popover` / `cs-paint-leaf` 一行路由 +
+  `tests/cmp-popover.no`（62 项断言）+ `tests/main-popover.no`
+  窗口 demo（`o` 开合 / `s` 轮换锚定边 / `a` 追加正文行 / `t` 改标题 /
+  `l` 改首行 / `c` 清空 / `r` 重建 / `d` 切换 disabled，收尾重建默认并按
+  `cs-rect(pv)` 反推面板 / 箭头 / 标题 / 分隔线 / 正文坐标逐项核对 +
+  `popover render OK`）
+- **问卷补全（阶段65）**：组件目录第 62 行写着 `C-QUESTIONNAIRE`
+  「questions container」，但命令式侧只有一个 `cmp-questionnaire()`
+  构造函数——题池 / 必答 / 进度全都没有 API，而且它原本在 `cs-is-container`
+  白名单里，没有子节点时走通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 61 的
+  inspector / 阶段 62 的 message-scroller / 阶段 63 的 status-bar /
+  阶段 64 的 popover）。题目是**数据**不是视觉子节点，阶段 65 补：三个严格
+  同步增长的池 `QA-PROMPT []str` / `QA-ANS []str` / `QA-REQ []i64`（扁平只增，
+  所以基址只记一个）+ 每句柄基址 `QA-SBASE` / 题数 `QA-N`（随 `cmp-alloc`
+  长）。公开 `qa-count` / `qa-prompt` / `qa-answer` / `qa-required` /
+  `qa-answered`（答案非空的题数）/ `qa-progress`（百分比，无题 0）/
+  `qa-complete`（必答题是否都作答）+ `qa-add` / `qa-set-prompt` /
+  `qa-set-answer` / `qa-set-required` / `qa-clear`，写操作先查
+  `F-DISABLED`。渲染层把它从 `cs-is-container` 白名单里拿掉，`cs-measure`
+  新增分支（宽 = `2*CS-PAD + max(题干宽, 答案宽)`，下限 6400；高 =
+  `2*CS-PAD + N*2*CS-LINE-H + (N-1)*qa-gap`，下限 `CS-BTN-H`），
+  `cs-paint-questionnaire` 画 FIELD 底 + 每题「必答 TRACK 小方块标记 +
+  题干 FG」一行、「答案 ACCENT」一行，题间留 `qa-gap`。落点：
+  `src/components.no` 的新 `qa-*` 段 + `src/cmp-scene.no` 的白名单移除 /
+  `cs-measure` 分支 / `cs-paint-questionnaire` / `cs-paint-leaf` 一行路由 +
+  `tests/cmp-questionnaire.no`（63 项断言）+ `tests/main-questionnaire.no`
+  窗口 demo（`a` 追加题 / `t` 改第 0 题题干 / `w` 写清第 0 题答案 /
+  `m` 切换必答 / `c` 清空 / `r` 重建 / `d` 切换 disabled，收尾重建默认并按
+  `cs-rect(qa)` 反推面板 / 必答标记 / 题干 / 答案坐标逐项核对 +
+  `questionnaire render OK`）
+- **可搜索列表补全（阶段66）**：组件目录第 85 行写着 `C-SEARCHABLE-LIST`
+  「query, items, filtered」，但命令式侧只有一个 `cmp-searchable-list()`
+  构造函数——条目 / 查询 / 过滤 / 高亮全都没有 API，而且它原本在
+  `cs-is-container` 白名单里，没有子节点时走通用兜底画成 0×0 的 FIELD 矩形。
+  阶段 66 补：条目标签走扁平池 `SL-ITEM []str` + 每句柄基址 `SL-SBASE` /
+  条数 `SL-N`；过滤结果另开一张扁平池 `SL-MATCH []i64`（存条目下标）+
+  每句柄 `SL-MBASE` / `SL-MN`；高亮 `SL-CUR`（-1 = 没有）——六个 per-handle
+  池都随 `cmp-alloc` 长，`SL-CUR` 推 -1。查询串直接复用 `CMP-TEXT[h]`
+  （同 combobox）。公开 `sl-pad=1200` / `sl-gap=800` / `sl-min-w=6400` +
+  `sl-count` / `sl-item` / `sl-add` / `sl-set-item` / `sl-clear` /
+  `sl-query` / `sl-set-query` / `sl-refresh` / `sl-match-count` /
+  `sl-match` / `sl-highlight` / `sl-selected` / `sl-select` /
+  `sl-select-next` / `sl-select-prev`，写操作先查 `F-DISABLED`。
+  匹配规则：查询空 = 全选；否则标签 `to-lower().contains(查询 to-lower)`。
+  渲染层把它从 `cs-is-container` 白名单里拿掉，`cs-measure` 新增分支
+  （宽 = `2*CS-PAD + max(查询串宽, 最长匹配标签)`，下限 6400；高 =
+  `2*CS-PAD + CS-LINE-H + (有匹配 ? CS-SEP-H + N*CS-LINE-H : 0)`），
+  `cs-paint-searchable-list` 画 FIELD 底 + 查询行 FG + TRACK 分隔线 +
+  N 行标签 FG，高亮行先铺一条 TRACK 整行底。落点：`src/components.no`
+  的新 `sl-*` 段 + `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 /
+  `cs-paint-searchable-list` / `cs-paint-leaf` 一行路由 +
+  `tests/cmp-searchable-list.no`（84 项断言）+ `tests/main-searchable-list.no`
+  窗口 demo（`a` 追加条目 / `f` 轮换查询串 / `n`、`p` 上下移动高亮 /
+  `c` 清空 / `r` 重建 / `d` 切换 disabled，收尾按 `cs-rect(sl)` 反推
+  面板 / 查询行 / 分隔线 / 四行条目坐标逐项核对 + `searchable-list render OK`）
+- **标题栏补全（阶段67）**：组件目录第 73 行写着 `C-TITLE-BAR`
+  「title, buttons」，但命令式侧只有一个 `cmp-title-bar(title)` 构造函数——
+  按钮全都没有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走
+  通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 63 的 status-bar /
+  阶段 66 的 searchable-list）。标题本身复用 `CMP-TEXT[h]`，按钮是**数据**
+  不是视觉子节点，阶段 67 补：扁平只增的 `TTB-BTN []str` + 每句柄基址
+  `TTB-SBASE` / 按钮数 `TTB-N`（随 `cmp-alloc` 长）。公开 `tb-pad=1200` /
+  `tb-gap=800` / `tb-btn-pad=800` / `tb-head-h=4000` 四个几何常量 +
+  `tb-count` / `tb-title` / `tb-set-title` / `tb-button` / `tb-add`（返回插入
+  下标）/ `tb-set-button` / `tb-clear`，写操作先查 `F-DISABLED`。渲染层把它从
+  `cs-is-container` 白名单里拿掉，`cs-measure` 新增分支（宽 =
+  `2*tb-pad + 标题宽 + (有按钮 ? tb-gap + Σ(按钮文案宽+2*tb-btn-pad) +
+  (N-1)*tb-gap : 0)`，下限 6400；高 = `2*tb-pad + tb-head-h`，下限
+  `CS-BTN-H`），`cs-paint-title-bar` 画 FIELD 底 + 左标题 FG（垂直居中）+
+  右端一排 TRACK 按钮盒 + FG 文案。落点：`src/components.no` 的新 `tb-*` 段 +
+  `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 /
+  `cs-paint-title-bar` / `cs-paint-leaf` 一行路由 +
+  `tests/cmp-title-bar.no`（69 项断言）+ `tests/main-title-bar.no`
+  窗口 demo（`a` 追加按钮 / `b` 改第 0 个按钮 / `t` 改标题 / `c` 清空按钮 /
+  `r` 重建 / `d` 切换 disabled，收尾按 `cs-rect(tb)` 反推面板 / 槽顶 /
+  文本顶 / 整排按钮坐标逐项核对 + `title-bar render OK`）
+- **工具栏补全（阶段68）**：组件目录第 72 行写着 `C-TOOLBAR`
+  「items」，但命令式侧只有一个 `cmp-toolbar()` 构造函数——条目和当前项
+  全都没有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走
+  通用兜底画成一个 0×0 的 FIELD 矩形。条目是**数据**不是视觉子节点，
+  阶段 68 补：扁平只增的 `TLB-ITEM []str` + 每句柄基址 `TLB-SBASE` /
+  条目数 `TLB-N` / 当前选中 `TLB-CUR`（随 `cmp-alloc` 长，`TLB-CUR`
+  推 −1）。公开 `tlb-pad=1200` / `tlb-gap=800` / `tlb-chip-pad=800` /
+  `tlb-bar-h=4000` 四个几何常量 + `tlb-count` / `tlb-item` / `tlb-add`
+  （返回插入下标，且**首次有条目时自动高亮第 0 项**）/ `tlb-set-item` /
+  `tlb-clear`（同时把选中复位 −1）/ `tlb-selected` / `tlb-select`
+  （越界夹紧到最近一端）/ `tlb-select-next` / `tlb-select-prev`
+  （两端回绕），写操作先查 `F-DISABLED`。渲染层把它从 `cs-is-container`
+  白名单里拿掉，`cs-measure` 新增分支（宽 = `2*tlb-pad + Σ(文案宽 +
+  2*tlb-chip-pad) + (N-1)*tlb-gap`，下限 6400；高 = `2*tlb-pad +
+  tlb-bar-h`，下限 `CS-BTN-H`），`cs-paint-toolbar` 画 FIELD 底 +
+  一条横排 chip（未选中 TRACK 盒、当前项 ACCENT 盒，文案一律 FG
+  垂直居中）。落点：`src/components.no` 的新 `tlb-*` 段 +
+  `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 /
+  `cs-paint-toolbar` / `cs-paint-leaf` 一行路由 +
+  `tests/cmp-toolbar.no`（74 项断言）+ `tests/main-toolbar.no`
+  窗口 demo（`a` 追加条目 / `n` `p` 上下项 / `x` 改第 0 项 / `c` 清空 /
+  `r` 重建 / `d` 切换 disabled，收尾按 `cs-rect(tl)` 反推面板 / 槽顶 /
+  文本顶 / 每个 chip 盒左缘逐项核对 + `toolbar render OK`）
+- **侧栏补全（阶段69）**：组件目录第 69 行写着 `C-SIDEBAR`
+  「groups, collapsed」，但命令式侧只有一个 `cmp-sidebar()` 构造函数——
+  分组 / 条目 / 折叠位全都没有 API，而且它原本在 `cs-is-container` 白名单里，
+  没有子节点时走通用兜底画成一个 0×0 的 FIELD 矩形。分组和条目是**数据**
+  不是视觉子节点，阶段 69 补：组池 `SDB-GROUP []str`（扁平只增）+ 每句柄
+  基址 `SDB-GSBASE` / 组数 `SDB-GNC`；条目池 `SDB-ITEM []str`（扁平只增）
+  配一条平行的「所属组」`SDB-ITOG []i64` + 每句柄基址 `SDB-ISBASE` /
+  条目数 `SDB-IN`（往任意组追加条目都不用搬移数组）；折叠位每句柄
+  `SDB-COLL`（**五个 per-handle 池都随 `cmp-alloc` 长并 `.push(0)`**）。公开
+  `sdb-pad=1200` / `sdb-gap=800` / `sdb-indent=1600` / `sdb-line-h=2400`
+  四个几何常量 + `sdb-group-count` / `sdb-group` / `sdb-add-group`（返回插入
+  下标）/ `sdb-set-group` / `sdb-clear-groups` / `sdb-item-count` /
+  `sdb-item` / `sdb-item-group`（越界 −1）/ `sdb-add-item`（组号越界返回
+  −1 且不追加）/ `sdb-set-item` / `sdb-clear-items` / `sdb-clear` /
+  `sdb-collapsed` / `sdb-set-collapsed` / `sdb-group-size`，写操作先查
+  `F-DISABLED`。渲染层把它从 `cs-is-container` 白名单里拿掉，`cs-measure`
+  新增分支（宽 = `2*sdb-pad + max(组头宽, 未折叠时条目宽+sdb-indent)`，
+  下限 6400；高 = `2*sdb-pad + Σ_g(sdb-line-h + 展开时该组条目数*sdb-line-h)
+  + (N-1)*sdb-gap`，下限 `CS-BTN-H`），`cs-paint-sidebar` 画 FIELD 底 +
+  组头 MUTED + 展开时属于该组的条目 FG（缩进 `sdb-indent`），组间留
+  `sdb-gap`。落点：`src/components.no` 的新 `sdb-*` 段 + `src/cmp-scene.no`
+  的白名单移除 / `cs-measure` 分支 / `cs-paint-sidebar` /
+  `cs-paint-leaf` 一行路由 + `tests/cmp-sidebar.no`（94 项断言）+
+  `tests/main-sidebar.no` 窗口 demo（`a` 往最后一组追加条目 / `g` 新增一组 /
+  `i` 往第 0 组追加 / `t` 改第 0 组标题 / `f` 切换折叠 / `c` 清空 /
+  `r` 重建 / `d` 切换 disabled，收尾按 `cs-rect(sd)` 反推面板 / 组头 /
+  条目坐标逐项核对 + `sidebar render OK`）
+- **抽屉面板补全（阶段70）**：组件目录第 90 行写着 `C-SHEET`
+  「open, side, title」，但命令式侧只有一个 `cmp-sheet(title)` 构造函数——
+  展开位 / 停靠边 / 标题全都没有 API，而且它原本在 `cs-is-container`
+  白名单里，没有子节点时走通用兜底画成一个 0×0 的 FIELD 矩形。阶段 70 补：
+  每句柄展开位 `SHT-OPEN []i64` + 停靠边 `SHT-SIDE []i64`（side: 0=左
+  1=右 2=上 3=下），**两个池都随 `cmp-alloc` 长并 `.push(0)`**；标题仍走
+  `CMP-TEXT[h]`，另加看 `F-DISABLED` 的 `sht-title` / `sht-set-title`。
+  公开 `sht-pad=1200` / `sht-gap=800` / `sht-bar-w=1200` /
+  `sht-min-w=2400` / `sht-body-h=8000` + `sht-open` / `sht-set-open` /
+  `sht-show` / `sht-hide` / `sht-toggle` / `sht-side` / `sht-set-side`
+  （越界夹到 [0,3]）。渲染层把它从 `cs-is-container` 白名单里拿掉，
+  `cs-measure` 新增分支（宽 = `2*sht-pad + max(标题宽, sht-min-w)`，下限
+  6400；高 = `2*sht-pad + CS-LINE-H`，展开再加 `sht-body-h`，下限
+  `CS-BTN-H`），`cs-paint-sheet` 画 FIELD 底 + 停靠边一条 ACCENT 抓杆 +
+  标题（展开 FG、收起 MUTED，停靠左侧时给抓杆让位）。落点：
+  `src/components.no` 的新 `sht-*` 段 + `src/cmp-scene.no` 的白名单移除 /
+  `cs-measure` 分支 / `cs-paint-sheet` / `cs-paint-leaf` 一行路由 +
+  `tests/cmp-sheet.no`（66 项断言）+ `tests/main-sheet.no` 窗口 demo
+  （`o` 切换展开 / `s` 轮换停靠边 / `t` 改标题 / `d` 切换 disabled /
+  `r` 重置默认，收尾按 `cs-rect(sh)` 反推面板 / 抓杆 / 标题坐标逐项核对
+  + `sheet render OK`）
+- **走马灯补全（阶段57）**：组件目录第 64 行写着 `C-CAROUSEL`「slides,
+  current」，但命令式侧只有一个 `cmp-carousel()` 构造函数——幻灯片 / 当前张
+  全都没有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走通用
+  兜底画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton / 阶段 55 的
+  description-list / 阶段 56 的 accordion）。幻灯片是**数据**不是视觉子节点，
+  阶段 57 补：数据池 `CR-SLIDE`（`[]str`，扁平只增）+ 每句柄基址 `CR-SBASE` /
+  张数 `CR-N`（随 `cmp-alloc` 长），当前张走 `CMP-VALUE`（越界回落 0）。公开
+  `cr-count` / `cr-slide` / `cr-add` / `cr-set-slide` / `cr-current` /
+  `cr-set-current` / `cr-select` / `cr-next` / `cr-prev` / `cr-clear`，写操作
+  先查 `F-DISABLED`。渲染层把它从 `cs-is-container` 白名单里拿掉，`cs-measure`
+  新增分支（宽 = `2*CS-PAD + 2*箭头 800 + 2*间隙 800 + 最长幻灯片文案`，下限
+  6400；高 = `2*CS-PAD + CS-BTN-H + CS-SEP-H + CS-LINE-H` = 8900），
+  `cs-paint-carousel` 画 FIELD 底 + 上带「`<` 当前幻灯片 `>`」（箭头到头转
+  MUTED）+ TRACK 分隔线 + 下带一行圆点（当前点 ACCENT、其余 TRACK）。落点：
+  `src/components.no` 的新 `cr-*` 段 + `src/cmp-scene.no` 的白名单移除 /
+  `cs-measure` 分支 / `cs-paint-carousel` + `cs-paint-leaf` 一行路由 +
+  `tests/cmp-carousel.no`（70 项断言）+ `tests/main-carousel.no` 窗口 demo
+  （`a` 追加幻灯片 / `n` 下一张 / `p` 上一张 / `s` 回首张 / `r` 重建 /
+  `d` 切换 disabled，收尾重建已知三张并按 `cs-rect(cr)` 反推箭头 / 文案 /
+  分隔线 / 圆点坐标逐项核对 + `carousel render OK`）
+- **手风琴补全（阶段56）**：组件目录第 63 行写着 `C-ACCORDION`「sections,
+  expanded」，但命令式侧只有一个 `cmp-accordion()` 构造函数——组数 / 组标题 /
+  展开态 / 正文行全都没有 API，而且它原本在 `cs-is-container` 白名单里，没有子
+  节点时走通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton / 阶段 55 的
+  description-list）。组是**数据**不是视觉子节点（同 `C-PAGINATION` / `C-SELECT` /
+  `C-TAB` / `C-DESCRIPTION-LIST` 一路），阶段 56 补：数据池 `AC-TITLE` /
+  `AC-BODY`（`[]str`，扁平只增）+ `AC-EXP` / `AC-BBASE` / `AC-BN`（`[]i64`，与
+  `AC-TITLE` 同下标 / 同组号）+ 每句柄基址 `AC-SBASE` / 组数 `AC-N`（随
+  `cmp-alloc` 长）。公开 `ac-count` / `ac-title` / `ac-body-count` / `ac-body-line`
+  / `ac-expanded` / `ac-open-count` / `ac-add` / `ac-add-open` / `ac-add-body` /
+  `ac-set-title` / `ac-set-expanded` / `ac-expand` / `ac-collapse` / `ac-toggle` /
+  `ac-clear`，写操作先查 `F-DISABLED`。渲染层把它从 `cs-is-container` 白名单里
+  拿掉，`cs-measure` 新增分支（宽 = `2*CS-PAD + 展开符 800 + 间隙 800 + 标题列`，
+  标题列取最长「标题 / 展开组正文行」、下限 6400；高 = `2*CS-PAD + Σ组头 4000 +
+  展开组正文行*CS-LINE-H + 组间分隔线 CS-SEP-H`，下限 `CS-BTN-H`），
+  `cs-paint-accordion` 画 FIELD 底 + 每组「展开符（`'-'` / `'>'`，ACCENT）+ 标题
+  （FG）」+ 展开组的正文行（MUTED）+ 组间 TRACK 分隔线。落点：`src/components.no`
+  的新 `ac-*` 段 + `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 /
+  `cs-paint-accordion` + `cs-paint-leaf` 一行路由 +
+  `tests/cmp-accordion.no`（74 项断言）+ `tests/main-accordion.no` 窗口 demo
+  （`a` 追加收起组 / `o` 追加展开组 / `b` 末组加正文 / `t` 切换第 0 组 / `n`
+  轮转切换 / `r` 重建 / `d` 切换 disabled，收尾重建已知三组并逐组核对坐标与
+  配色 + `accordion render OK`）
+- **骨架屏补全（阶段54）**：组件目录第 51 行写着 `C-SKELETON`「lines, animated」，
+  但命令式侧只有一个 `cmp-skeleton()` 构造函数，而且连 `cs-measure` 分支都没有
+  ——`w` / `ht` 是函数局部、初值 0，落进 `cs-paint-leaf` 后画出一个 0×0 的
+  TRACK 矩形，等于完全不显示。阶段 54 补：槽位 `CMP-VALUE` = 扫光相位
+  0..100、`CMP-VALUE2` = 行数（夹 0..8）、`CMP-VALUE3` = 行距（下限 800），
+  公开 `sk-lines` / `sk-set-lines` / `sk-gap` / `sk-set-gap` / `sk-phase` /
+  `sk-set-phase`，写操作先查 `F-DISABLED`。渲染层 `cs-measure` 新增分支
+  （宽 = `2*CS-PAD + 12000`；高 = `2*CS-PAD + N*CS-LINE-H + (N-1)*gap`，
+  下限 `CS-BTN-H`），`cs-paint-skeleton` 按真实矩形画 TRACK 底 + N 条 MUTED
+  占位条 + 相位扫光 FG 带（带宽 = 轨道宽 / 3，位置由相位 0..100 决定，
+  相位 0 不扫）。落点：`src/components.no` 的新 `sk-*` 段 +
+  `src/cmp-scene.no` 的 `cs-measure` 分支 / `cs-paint-skeleton` +
+  `cs-paint-leaf` 一行路由 + `tests/cmp-skeleton.no`（43 项断言）+
+  `tests/main-skeleton.no` 窗口 demo（`l` / `L` 行数、`g` 行距、`p` 相位、
+  `a` 自动推进、`d` 切换 disabled，收尾固定 4 行 / 行距 800 / 相位 50 逐条核对
+  矩形与配色 + `skeleton render OK`）
+- **描述列表补全（阶段55）**：组件目录第 68 行写着 `C-DESCRIPTION-LIST`「pairs」，
+  但命令式侧只有一个构造函数，而且它原本在 `cs-is-container` 白名单里——没有子
+  节点时走通用兜底，画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton）。行是
+  **数据**不是视觉子节点（同 `C-PAGINATION` / `C-SELECT` / `C-TAB` 一路），阶段
+  55 补：数据池 `DL-LAB` / `DL-VAL`（`[]str`，扁平只增、同下标）+ 每句柄基址
+  `DL-SBASE` / 行数 `DL-N`（随 `cmp-alloc` 长）。公开 `dl-count` / `dl-label` /
+  `dl-value` / `dl-add` / `dl-set-label` / `dl-set-value` / `dl-clear`，写操作
+  先查 `F-DISABLED`。渲染层把它从 `cs-is-container` 白名单里拿掉，`cs-measure`
+  新增分支（宽 = `2*CS-PAD + 标签列 12000 + 列间隙 800 + 值列`，值列取最长值、
+  下限 6400；高 = `2*CS-PAD + N*CS-LINE-H + (N-1)*CS-SEP-H`，下限 `CS-BTN-H`），
+  `cs-paint-description-list` 画 FIELD 底 + N 行「左标签 MUTED / 右值 FG 右对齐」
+  + 行间 TRACK 分隔线。落点：`src/components.no` 的新 `dl-*` 段 +
+  `src/cmp-scene.no` 的白名单移除 / `cs-measure` 分支 / `cs-paint-description-list`
+  + `cs-paint-leaf` 一行路由 + `tests/cmp-description-list.no`（64 项断言）+
+  `tests/main-description-list.no` 窗口 demo（`a` 追加 / `c` 清空 / `r` 重建 /
+  `v` 改写首行 / `d` 切换 disabled，收尾重建已知三行并逐行核对坐标与配色 +
+  `description-list render OK`）
 - **会话族补全（阶段45）**：组件目录第 53 / 54 行分别写着 `C-BUBBLE`「text,
   position」、`C-SPEECH`「text, lang」，但命令式侧两者都只有一个构造函数——
   `position` / `lang` 都没有 API，渲染还落在通用 `rect + text` 兜底里。阶段 45
@@ -639,7 +1174,7 @@
 
 > 本轮是「全目录 API + 核心扎实」档：**核心交互组件的功能对等长期项已全部补齐**——
 > 注意这句只覆盖「有明确交互语义、此前只有 API + 最小状态」的那批；全目录 86 项里
-> 仍有约 40 个 kind 只有一个构造函数，其中 17 个叶子 kind 还落在通用 `rect + text`
+> 仍有约 35 个 kind 只有一个构造函数，其中 5 个叶子 kind 还落在通用 `rect + text`
 > 兜底绘制里（清单见 `src/components-catalog.md` 覆盖统计末尾）。
 > DataTable 虚拟滚动 / 代码编辑器 / 树 / Dock 四样的
 > 命令式侧已由阶段 35 / 34 / 33 / 36 补上（声明式超集分别是 阶段 28 `dv-table-list`、
@@ -675,6 +1210,20 @@
 > （`bubble-pos` / `bubble-set-pos` + `speech-lang` / `speech-set-lang` +
 > `cs-paint-bubble` / `-speech` + `cs-bubble-tail-x`，槽位沿用 `VALUE` / `TEXT` /
 > `TEXT2`；仍是叶子节点，不新增 kind）。
+> `C-ATTACHMENT` / `C-CLIPBOARD` / `C-INDEX-PATH` 的 name / size / content /
+> 段池读写与各自渲染由阶段 46 补上（`att-*` / `clip-*` / `ip-*` +
+> `cs-paint-attachment` / `-clipboard` / `-index-path`，槽位沿用 `TEXT` / `VALUE`
+> + 扁平段池 `IP-SEG`；仍是叶子节点，不新增 kind）。
+> `C-COLOR-PICKER` / `C-DATE-PICKER` 的 hue / hex / 年月日读写与各自渲染由阶段 47
+> 补上（`cp-*` / `dp-*` + `cs-paint-color-picker` / `-date-picker`，槽位沿用
+> `COLOR` / `VALUE` / `VALUE2` / `VALUE3`；仍是叶子节点，不新增 kind）。
+> `C-HIGHLIGHTER` / `C-THEME` 的代码 / 语言 / 缩进与主题名 / 模式 / 密度 / 强调色
+> 读写与各自渲染由阶段 48 补上（`hl-*` / `th-*` + `cs-paint-highlighter` /
+> `-theme`，槽位沿用 `TEXT` / `TEXT2` / `VALUE` / `VALUE2` / `COLOR`；仍是叶子
+> 节点，不新增 kind）。
+> `C-DIFF` 的 old / new 读写、行级 diff 结果与各自渲染由阶段 49 补上（`df-*` +
+> `cs-paint-diff`，槽位沿用 `TEXT`（old）/ `TEXT2`（new）；仍是叶子节点，不新增
+> kind）。
 > 实现中踩到的两个编译器坑记在 `ARCHITECTURE.md §5.2`；命令式复合组件的
 > 实测坑记在 `§5.27`–`§5.37`。
 
@@ -2215,6 +2764,56 @@ with-len 全局注册缺陷后，**分层内核已可落地**（`tests/main-laye
 | `tests/main-alert.no` | 阶段44 **窗口端到端提示族 demo**：`cmp-message`（info）+ `cmp-alert`（danger，可关闭）+ `cmp-notification`（warning，5s）+ 三条状态标签；点击 alert 右端 `'x'` 把 `closable` 关掉（文案同步改成 closed），键盘 `l` `t` `n` 循环三者 level、`c` 开关 closable、`,` 扣剩余时间、`.` 重置剩余时间、`r` 全部重置、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 msg-level=0 alert-level=3 closable=1 ntf-level=2 ntf-ratio=10000` + `alert render OK` |
 | `tests/main-bubble.no` | 阶段45 **窗口端到端会话族 demo**：`cmp-bubble('left bubble')`（pos 0）+ `cmp-bubble('right bubble')`（pos 1）+ `cmp-speech('speech with lang')`（`zh-CN`）+ `cmp-speech('speech no lang')`；点击左气泡翻面、点击带标签的语音泡开关标签行，键盘 `l` 翻 b1、`r` 翻 b2、`g` 开关 sp 标签、`h` 开关 sp2 标签、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 b1-pos=0 b2-pos=1 sp-lang=zh-CN sp2-lang=` + `bubble render OK` |
 | `tests/cmp-bubble.no` | 阶段45 会话族纯逻辑：bubble API（`C-BUBBLE`、默认 pos 0、`CMP-TEXT`、`bubble-pos` / `bubble-set-pos` 的夹紧 `-5->0` / `9->1`、disabled 写无效、`bb-pad` / `bb-tail` = 1200）/ 测算（`'hello'` 与 `'hi'` 都因 `CS-MIN-LEAF-W` 夹到 6400 × 4800，`'hello world'` = 11200 × 4800）/ 渲染（底色方块、pos 0 文本在 `+1200`、pos 1 文本在 `右缘-1200-文本宽`、尾巴方块 1200 × 1200 落在底边 `bh-600`、pos 1 尾巴在 `右缘-1200-1200`）/ speech API（`C-SPEECH`、`speech-lang` 默认 `''`、`speech-set-lang`、disabled 写无效）/ 测算（有标签多 `CS-SEP-H` + `CS-GAP` + 一行，`'hi'` + `'zh-Hans-CN'` 取更宽的标签 = 10400 × 8100）/ 渲染（文本在 `+1200`、分隔线 100 高、标签在 `分隔线 + 800`、无标签时没有分隔线也没有标签文本）（28 项断言） |
+| `tests/main-meta.no` | 阶段46 **窗口端到端元数据族 demo**：`cmp-attachment('report.pdf')`（size 2048）+ `cmp-clipboard()`（内容 `'hello from clipboard'`）+ `cmp-index-path()`（段 `home` / `user` / `docs`）；点击附件循环尺寸文案（12 B / 2 KB / 1 MB）、点击剪贴板开关内容、点击路径条加段 / 清空（满 5 段后清空），键盘 `a` / `c` / `i` / `x` 同效、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 att-size=2048 clip-len=20 ip-segs=3` + `meta render OK` |
+| `tests/cmp-meta.no` | 阶段46 元数据族纯逻辑：attachment API（`C-ATTACHMENT`、默认名 / 尺寸 0、`att-set-size` 负数夹到 0、`att-set-name`、disabled 写无效、`att-icon` / `att-pad` / `att-gap`）/ 尺寸文案（`12 B` / `1023 B` / `1 KB` / `1 MB` / `2 KB`）/ 测算（`'a.txt'` + `2 KB` = 14400 × 4000，`'x'` + `2 KB` = 11200 × 4000）/ 渲染（图标方块 3200 在 `+1200` / `+400`、文件名在 `+5200`、尺寸文案右对齐 muted）/ clipboard API（`C-CLIPBOARD`、默认空、`clip-set-content`、`clip-len`、disabled 写无效）/ 测算（`'hello'` = 9600 × 4000）/ 渲染（字段底 `CS-TH-FIELD`、复制方块 2400 在右端、内容文本）/ index-path 段池（`C-INDEX-PATH`、默认 0 段、`ip-add-seg` / `ip-seg` / 越界读空串、`ip-sep` = `' / '`、disabled 写无效、`ip-clear` 后可再加）/ 测算（`'a'` / `'bb'` / `'ccc'` = 12000 × 4000）/ 渲染（各段位置 `+1200` / `+4400` / `+8400`，分隔符 muted）（46 项断言） |
+| `tests/main-picker.no` | 阶段47 **窗口端到端输入族 demo**：`cmp-color-picker()`（hue 213）+ `cmp-date-picker()`（2026-11-21）+ 标题 / 提示 / 两行状态；点击取色器循环 hue（213→0→120→240→213）、点击日期翻下一个月（12 月回绕到 1 月），键盘 `o` / `d` 同效、`y` 在 2026↔2024 间切年、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 hex=#3BD9EB hue=213 date=2026-11-21` + `picker render OK` |
+| `tests/cmp-picker.no` | 阶段47 输入族纯逻辑：color-picker API（`C-COLOR-PICKER`、默认 `0x4A90E2FF`、四通道 74 / 144 / 226 / 255、`cp-hue` = 213、`cp-hex` = `'#4A90E2'`）/ hue→RGB 正算（0→`0xEB3B3BFF`、120→`0x3BEB3BFF`、240→`0x3B3BEBFF`、360 回绕、越界夹 0/360）/ RGB→hue 反算（红 0 / 绿 120 / 蓝 240 / 灰 0 / 黄 60 / 青 180 / 品红 300）/ 单通道写（`cp-set-red` / `-green` / `-blue` / `-alpha` 及夹紧、disabled 写无效）/ 测算（15200 × 4000）/ 渲染（色板方块 3200 在 `+1200` / `+400`、`'#4A90E2'` 在 `+5200`、`'213'` 在 `+11600` muted）/ date-picker API（`C-DATE-PICKER`、默认 2026-01-01、`dp-year` / `dp-month` / `dp-day`、闰年判定、当月天数、`dp-set-month` / `-year` / `-day` / `dp-set-date` 重夹日、`dp-next-month` 回绕、disabled 写无效）/ 测算（10400 × 4000）/ 渲染（字段底 `CS-TH-FIELD`、`'2026-11-21'` 在 `+1200`）（50 项断言） |
+| `tests/main-code.no` | 阶段48 **窗口端到端代码 / 主题 demo**：`cmp-highlighter`（4 行 nolang 片段 + 语言 `nolang`）+ `cmp-theme()`（名字 `midnight`）+ 标题 / 提示 / 两行状态；点击代码块循环缩进（4→2→8→4）、点击主题卡切亮 / 暗模式，键盘 `c` / `m` / `d`（密度循环）同效、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 lines=4 max=23 tab=4 theme="midnight" mode=light den=1` + `code render OK` |
+| `tests/cmp-code.no` | 阶段48 代码 / 主题纯逻辑：highlighter API（`C-HIGHLIGHTER`、默认代码 / 语言空 / 缩进 4、`hl-lines` / `hl-line`（越界夹最后一行）/ 多行切分 / 空文本算 1 行 / 尾换行多一行）/ 缩进折算（`hl-expand-len` / `hl-max-len`，tab → `hl-tab` 空格，夹 0..8）/ 语言写 + disabled 写无效 / 测算（无语言 13600 × 4800，有语言加 `hl-gap` + 语言宽 = 19200）/ 渲染（字段底 `CS-TH-FIELD`、行号右对齐进行号槽、`'let'` accent、`' x = '` FG、`'1'` 数字色 `0xF2C14EFF`、语言列位置）/ theme API（`C-THEME`、默认名 `noui` / 模式 0 / 密度 1 / 强调 `0x4A90E2FF`、`th-swatch` = 4800、`th-mode-name` / `th-bg` / `th-fg` / `th-muted` / `th-swatch-color` / `th-swatch-label`）/ 写 + 夹紧（模式 0..1、密度 0..2、`th-swatch` 3600 / 4800 / 6000）/ disabled 写无效 / 测算（24000 × 12800，密度 2 → 28800 × 14000，密度 0 → 19200 × 11600）/ 渲染（字段底、名字 FG、模式右对齐 muted、四块色板颜色与位置、标签 muted）（72 项断言） |
+| `tests/main-diff.no` | 阶段49 **窗口端到端 diff demo**：`cmp-diff()` + 三组样例（`alpha/beta/gamma` → `alpha/BETA/gamma`；`one..four` → `one/2/three/4`；空 → `hello/world`）+ 标题 / 提示 / 两行状态；点击 diff 块循环样例，键盘 `0` / `1` / `2` 选样例、`r` 新旧互换、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 rows=4 hunks=1 +1 -1` + `diff render OK` |
+| `tests/cmp-diff.no` | 阶段49 diff 纯逻辑：构造默认（`C-DIFF`、old / new 空、单行上下文、op 0、行号 1/1、无 hunk、`'+0 -0'`、max-len 0）/ 典型替换（`'a\nb\nc'` → `'a\nx\nc'`：4 行、ops `[0,2,1,0]`、旧号 `[1,2,0,3]`、新号 `[1,0,2,3]`、1 hunk 起于行 1、`'+1 -1'`）/ 纯新增 / 纯删除 / 全等 / 双 hunk（起于 1 与 4、`'+2 -2'`）/ 空 old 全新增 / disabled 写无效 / 测算（intrinsic 8000 × 12000；挂进根后 dx/dy = 根内边距 1200）/ 渲染（字段底、旧号右对齐到 `x+pad+gutter-char-w`、新号右对齐到 `x+pad+gutter`、glyph `'-'` DANGER / `'+'` OK / 文本按行级别着色）（67 项断言） |
+| `tests/main-chart.no` | 阶段50 **窗口端到端图表 / 绘图 demo**：`cmp-chart()`（标题 `weekly sales`、3 序列 × 6 点、序列名 `online` / `store` / `partner`）+ `cmp-plot()`（标题 `error trend`、5 点、量程 100）+ 标题 / 提示 / 两行状态；点击图表循环值轴上限（50→100→200），点击绘图循环点数（3→5→8），键盘 `c` 循环序列数 1..3、`r` 重填数据、`-` / `+` 调量程、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 series=3 points=6 max=100 peak=99 plot-n=5 scale=100` + `chart render OK` |
+| `tests/main-menu.no` | 阶段51 **窗口端到端下拉菜单 demo**：`cmp-native-menu()` × 2（`file`：4 项 `new` / `open` / `save` / `exit`，第 4 项禁用；`view`：3 项 `zoom in` / `zoom out` / `reset`）+ 标题 / 提示 / 两行状态；点击按钮开 / 关、点击弹层项选中并收起、点击别处收起，键盘 `m` / `o` 开关两个菜单、`n` / `p` 选中下 / 上一项、`d` 切换当前项禁用、`x` 项数 2..6 循环（同时重写项文案）、`q` / ESC 退出，900 帧 `bye frames=900 keys=0 clicks=0 m1=n4 sel-1 label= m2=n3` + `menu render OK` |
+| `tests/cmp-menu.no` | 阶段51 下拉菜单纯逻辑：默认（`C-NATIVE-MENU`、0 项 / `VALUE` 0 / 选中 −1 / 空文案 / 未禁用 / 未展开）/ 写入 + 夹紧（项数 3、99→8、−5→0、`VALUE` 同步；项文案 4 个 + 越界拒绝）/ 缩小项数清掉越界选中项 / disabled 全空操作 / 选中语义（99→2、−99→−1、空菜单选不中）/ 开关与 `nm-toggle` 往返 / 单项禁用（含越界索引）/ 测算（3 项 + `'menu'` / `'cccc'` → 8000 × 4000，展开 8000 × 12000，空菜单 6400 × 4000）/ 渲染收起（按钮字段底、`'menu'` 文案、`'v'` 箭头）/ 渲染展开（弹层面板、项 0 字段底、选中项 1 `ACCENT`、禁用项 2 `TRACK`、各项文案与 `MUTED` 禁用文案）/ 命中（项 0 / 1 / 禁用项 −1 / 越界 −1 / 按钮 −1 / 收起后 −1 / 空菜单 −1）（69 项断言） |
+| `tests/main-window-ext.no` | 阶段52 **窗口端到端窗口选项 demo**：`cmp-window-ext()`（标题 `noui window options`、尺寸 720×520、最小 320×240、最大 1600×1200）+ 标题 / 提示 / 三行状态；键盘 `t` 换标题、`r` 可缩放、`f` 全屏、`a` 置顶、`b` 边框、`o` 不透明度 100→75→50→25、`=` / `-` 窗口尺寸、`m` 总开关、`q` / ESC 退出；每帧 `app-frame()` 内部 `app-window-apply-all()` 把面板推给真窗口，随后读回 `app-window-title()` / `app-window-size()` / `app-window-flags()` 与面板状态双显示，900 帧 `bye frames=900 keys=0 applied=900 live=final check 800x600 res=true` + `win-ext render OK` + `win-ext live OK`（收尾断言真窗口标题 / 尺寸 / 可缩放位与面板一致） |
+| `tests/cmp-window-ext.no` | 阶段52 窗口选项纯逻辑：默认（`C-WINDOW-EXT`、flags 9 = 可缩放 + 边框、不透明度 100、总开关 1、尺寸 / 最小 / 最大全 0）/ 写入 + 夹紧（标题同步 `TEXT`、四个 flag 位各自开关并核对 `VALUE`、不透明度 250→100 / −5→0 / 40、最小 · 最大 · 尺寸夹 ≥0、`we-set-flags` 同步 `VALUE`、`we-on` 0/1）/ disabled 全空操作 / 测算（intrinsic 18400 × 24000，标题长短不影响、空面板同尺寸、`cmp-set-sw/sh` 覆盖 30000 × 10000）/ 渲染（字段底 18400 × 24000、标题 `(2400,2400)` FG、分隔线 `(1200,4800,18400,100)` TRACK、8 行标签列 `MUTED` 左对齐、数值列 `FG` 右对齐：`'on'` / `'off'` 在 16800 / 16000、`'win'` 16000、`'1'` / `'0'` 17600、`'100'` 16000、`'640x480'` 12800、`'auto'` 15200）/ 聚焦四边 `ACCENT` 描边（上 1200 / 下 25100 / 左 1200 / 右 19500）（90 项断言） |
+| `tests/cmp-chart.no` | 阶段50 图表 / 绘图纯逻辑：chart 默认（`C-CHART`、0 序列 / 0 点 / max 默认 100 / total 0 / peak 0）/ 写入 + 夹紧（序列 9→3、点 9→8、max 0→1、值 999→max / 负数→0）/ 越界拒绝（序列 3、点 3）/ 序列名 / disabled 全空操作 / plot 默认（`C-PLOT`、0 点 / 量程 100）/ 写入 + 夹紧（点 99→16、量程 0→1、坐标 ±scale、min-max）/ 越界点拒绝 / disabled 全空操作 / 测算（chart 4 点带标题 31200 × 39200、plot 4 点带标题 21600 × 36800、chart 无标题 31200 × 36800）/ 渲染 chart（字段底 39200 高、左右轴、值轴上限 `'100'`、三根柱 25/60/100 的几何与 ACCENT/OK 配色、x 刻度 `'0'` `'1'` `'2'`、图例 `'aa'` `'bb'` 右对齐）/ 渲染 plot（字段底 36800 高、过原点两轴、上 `'50'` 下 `'-50'`、三个方块点、两段 L 形连线的水平 / 垂直细矩形）（89 项断言） |
+| `tests/main-breadcrumb.no` | 阶段53 **窗口端到端面包屑 demo**：`cmp-breadcrumb()` 默认 `home / docs / noui` 三段 + 标题 / 提示 / 两行状态；键盘 `a` 从六个候选轮取追加一段、`c` 清空、`b` 重建默认三段、`s` 换分隔符（`' / '` → `' :: '` → `' > '`）、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建已知三段，按 `cs-rect(bc)` 反推基址逐段核对文本坐标与配色（祖先 `MUTED`、当前页 `FG`、分隔符 `TRACK`），`bye frames=900 keys=0 clicks=0 path=home / docs / noui w=53600` + `breadcrumb render OK` + `scene OK` |
+| `tests/cmp-breadcrumb.no` | 阶段53 面包屑纯逻辑：默认（`C-BREADCRUMB`、0 条 / 默认分隔符 `' / '` / 末项 −1 / 拼接空串）/ 条目池（追加 / 读取 / 越界返回空 / 拼接 / 清空后基址复用）/ 多句柄隔离（扁平池 + 每句柄基址）/ 分隔符可改 / disabled 全空操作 / 测算（3 条 4 字 + 默认分隔符 16800 × 4000、两条 + `'::'` 8800 × 4000、单条 5 字 6400 × 4000、换 4 字分隔符 10400、`cmp-set-sw/sh` 覆盖 30000 × 5000）/ 渲染（`'one'`@2400 `MUTED`、`':: '`@4800 `TRACK`、`'two'`@6400 `FG`；三段 `home / docs / noui` 的 `home`@2400 / `docs`@8000 `MUTED`、`noui`@13600 `FG`、两个分隔符 @5600 / @11200 `TRACK`；空条目不产生文本指令）（60 项断言） |
+| `tests/main-skeleton.no` | 阶段54 **窗口端到端骨架屏 demo**：`cmp-skeleton()` 默认 3 行 / 行距 800 / 相位 0 + 标题 / 提示 / 两行状态；键盘 `l` / `L` 行数 ∓/±（夹 0..8）、`g` 行距 800→1600→2400 循环（下限 800）、`p` 相位 +10、`a` 自动推进开关（每帧 +2，到 100 回绕）、`d` 切换 `F-DISABLED`、`q` / ESC 退出；收尾固定 4 行 / 行距 800 / 相位 50 并关掉自动推进，按 `cs-rect(sk)` 反推轨道宽与扫光带落点（相位 0 无扫光、50 居中、100 贴右缘），`bye frames=900 keys=0 clicks=0 lines=4 gap=800 phase=50 w=53600 h=14400` + `skeleton render OK` + `scene OK` |
+| `tests/cmp-skeleton.no` | 阶段54 骨架屏纯逻辑：默认（`C-SKELETON`、0 行 / 行距 800 / 相位 0）/ 写入 + 夹紧（行数 99→8、−5→0；行距 100→800；相位 150→100、−7→0）/ disabled 全空操作 / 测算（0 行 14400 × 4000、1 行 14400 × 4800、3 行行距 800 14400 × 11200、行距 1600 12800、行距夹回 800 11200、`cmp-set-sw/sh` 覆盖 30000 × 5000）/ 渲染（TRACK 底、N 条 MUTED 占位条的几何、相位 0 无 FG、相位 50 / 100 的 FG 扫光带落点、扫光带是叠在占位条上不是替换、行数 0 只剩底色）（43 项断言） |
+| `tests/cmp-group-box.no` | 阶段59 标题容器纯逻辑：默认（`C-GROUP-BOX` / 标题 'group' / 未被 disabled）/ 标题读写（`gb-title` / `gb-set-title`）/ 子节点是视觉节点（`cmp-add-child` 后 `cs-child-count` / `cmp-child` / `cs-is-container` 白名单保留）/ disabled 空操作 / 测算（纵向 2 标签 8800 × 12800、无子节点 6400 × 6400、横向 16000 × 9600、长标题 'very long title' 14400 × 6400、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（root 17600 × 20000：面板 `1200,1200,15200,12800` 色 `0x2A2A3A`、标题 'group' @`2400,3200` FG、TRACK 分隔线 @`1200,6400,15200,100`、标签 'alpha' @`2400,7200` / 'bravo' @`2400,10400` 色 `0xE8E8F0`、文本指令共 3 条；无子节点场景面板 `1200,1200,15200,6400`、标题 'solo' @`2400,3200`、分隔线仍在、文本 1 条）（38 项断言） |
+| `tests/main-group-box.no` | 阶段59 **窗口端到端标题容器 demo**：`cmp-group-box('settings')` + 三个标签子节点（`alpha` / `bravo` / `charlie`）+ 标题 / 提示 / 两行状态；键盘 `t` 从七组候选轮取换标题、`a` 加一行子节点、`r` 重建默认三行、`h` 横向 / 纵向切换、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；`a` / `r` 走 `gb-clear-kids`（逐个 `cmp-detach`）再重挂——`CHILD-IDX` 是全局扁平数组，父的子链必须连续，往已挂载的父后面直接追加会让 `cmp-child` 读到别的父的槽（实测：`cs-measure` 无限递归 → `EXC_BAD_ACCESS`）。收尾先钉横向核对两个子节点同一行且间距 = `CS-GAP`，再重建默认按 `cs-rect(gb)` 反推标题（`x+1200`, `y+2000`，FG）、TRACK 分隔线（`x`, `y+5200`, `w`, 100）、内容区起点（`y+6000`）与三个子节点矩形 / 文本逐项核对，`bye frames=900 keys=0 clicks=0 kids=3 w=53600 h=16000` + `group-box render OK` + `scene OK` |
+| `tests/cmp-history.no` | 阶段60 历史条目纯逻辑：默认（`C-HISTORY`、0 条 / 越界读空串 / 当前下标 0 / 未被 disabled / `cs-is-container` 白名单已移除）/ 条目池（`hst-add` 返回下标 / `hst-count` / `hst-entry` / 越界空串）/ 改写与下标（`hst-set-entry` / `hst-set-index` / `hst-jump` / `hst-back` / `hst-forward` 夹紧在 `[0, n-1]` 不环绕 / 越界写不影响）/ 多句柄隔离（扁平池 + 每句柄基址 + `hst-clear` 后基址复用）/ disabled 全空操作 / 测算（3 条 8000 × 9800、空 6400 × 4000、单条 'x' 6400 × 4800、长文案 12000 × 4800、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（root 12000 × 20000：面板 `1200,1200,9600,9800` FIELD（intrinsic 宽 8000 被拉伸到父内容宽）、行 0 标记条 `2400,2400,800,2400` ACCENT + 'ONE' @`4000,2400` FG、分隔线 `1200,4800,9600,100`、行 1 标记条 TRACK + 'two' @`4000,4900` MUTED、分隔线 `1200,7300,9600,100`、行 2 标记条 TRACK + 'three' @`4000,7400` MUTED、文本指令共 3 条；翻到末条后行 2 ACCENT + FG、行 0 TRACK + MUTED；空池只剩底色、无文本）（72 项断言） |
+| `tests/main-history.no` | 阶段60 **窗口端到端历史条目 demo**：`cmp-history()` + 默认三条（`alpha` / `bravo` / `charlie`，当前第 0 条）+ 标题 / 提示 / 两行状态；键盘 `a` 从七组候选轮取追加条目、`b` 后退、`f` 前进、`j` 跳第 0 条、`r` 重建默认三条、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认三条，按 `cs-rect(hs)` 反推标记条（`x+1200`, 行顶 `y+1200+i*2500`, 800 × 2400）、文本（`x+2800`, 行顶）、分隔线（`x`, `y+3600+i*2500`, `w`, 100）逐项核对，再翻到末条核对 ACCENT / FG 换位，`bye frames=900 keys=0 clicks=0 entries=3 index=2 w=53600 h=9800` + `history render OK` + `scene OK` |
+| `tests/cmp-inspector.no` | 阶段61 对象检查器纯逻辑：默认（`C-INSPECTOR`、空目标 / 0 字段 / 越界读空串 / 未被 disabled / `cs-is-container` 白名单已移除）/ 目标名读写（`in-target` / `in-set-target`）/ 字段池（`in-add` / `in-count` / `in-label` / `in-value` / 越界空串）/ 改写（`in-set-label` / `in-set-value` / 越界写不影响）/ 多句柄隔离（扁平池 + 每句柄基址 + `in-clear` 后基址复用）/ disabled 全空操作 / 测算（目标 'widget' + 3 字段 12800 × 12200、空 6400 × 4800、单条 'x'='y' 6400 × 7200、长目标 12000 × 4800、长值 13600 × 7200、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（root 12000 × 20000：面板 `1200,1200,9600,12200` FIELD（intrinsic 宽 12800 被夹到父内容宽 9600）、目标行标记条 `2400,2400,800,2400` ACCENT + 'widget' @`4000,2400` FG、字段行 0 `name` @`4000,4800` MUTED + `alpha` @`8000,4800` FG、分隔线 `1200,7200,9600,100`、字段行 1 `kind` / `button` @`4000,7300` / `8000,7300`、分隔线 `1200,9700,9600,100`、字段行 2 `size` / `120x40` @`4000,9800` / `8000,9800`、文本指令共 7 条；换目标名后目标行文本跟着换；清空字段后只剩目标行一条文本、标记条仍在）（67 项断言） |
+| `tests/main-inspector.no` | 阶段61 **窗口端到端对象检查器 demo**：`cmp-inspector()` + 默认目标 'widget' + 三个字段（`name=alpha` / `kind=button` / `size=120x40`）+ 标题 / 提示 / 两行状态；键盘 `a` 从七组候选轮取追加字段、`t` 换目标名、`e` 清空字段、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认，按 `cs-rect(ins)` 反推标记条（`x+1200`, `y+1200`, 800 × 2400）、目标（`x+2800`, `y+1200`）、字段标签（`x+2800`, `y+3600+i*2500`）、字段值（`x+6800`, 同行）、分隔线（`x`, `y+6000+i*2500`, `w`, 100）逐项核对（场景文本总数算上四条标签 = 11），再换目标名 / 清空字段各核对一次，`bye frames=900 keys=0 clicks=0 target=abcdefghij fields=0 w=53600 h=12200` + `inspector render OK` + `scene OK` |
+| `tests/cmp-message-scroller.no` | 阶段62 消息流纯逻辑：默认（`C-MESSAGE-SCROLLER`、0 条 / 越界读空串 / 未输入中 / 未被 disabled / `cs-is-container` 白名单已移除）/ 消息池（`ms-add` / `ms-count` / `ms-author` / `ms-text` / 越界空串）/ 改写（`ms-set-author` / `ms-set-text` / 越界写不影响）/ 输入中（`ms-set-typing` 夹 0 / 1、负数归 0、`ms-typing` 读）/ 多句柄隔离（扁平池 + 每句柄基址 + `ms-clear` 后基址复用且连输入中一起清）/ disabled 全空操作 / 测算（2 条 8800 × 12100、空 6400 × 4000、单条 + 输入中 6400 × 9700、单条长正文 10400 × 7200、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（root 12000 × 20000：面板 `1200,1200,9600,12100` FIELD（intrinsic 宽 8800 被拉伸到父内容宽）、消息 0 作者 'ME' @`2400,2400` MUTED + 'HELLO' @`2400,4800` FG、分隔线 `1200,7200,9600,100`、消息 1 作者 'noui' @`2400,7300` MUTED + 'hi there' @`2400,9700` FG、文本指令共 4 条；输入中时末尾补分隔线 `1200,12100,9600,100` + 'typing...' @`2400,12200` ACCENT、文本 5 条；清空后只剩底色、无文本）（63 项断言） |
+| `tests/main-message-scroller.no` | 阶段62 **窗口端到端消息流 demo**：`cmp-message-scroller()` + 默认两条（`me: hello` / `noui: hi there`）+ 标题 / 提示 / 两行状态；键盘 `a` 从七组候选轮取追加消息、`t` 切换「输入中」、`c` 清空、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认两条，按 `cs-rect(ms)` 反推作者行（`x+1200`, `y+1200+i*4900`）、正文行（同行 + 2400）、分隔线（`x`, 正文行 + 2400, `w`, 100）逐项核对（场景文本总数算上四条标签 = 8），再打开输入中核对末尾分隔线 + 'typing...'（= 9），清空后只剩四条标签（= 4），`bye frames=900 keys=0 clicks=0 messages=0 typing=0 w=53600 h=12100` + `message-scroller render OK` + `scene OK` |
+| `tests/cmp-status-bar.no` | 阶段63 状态分段条纯逻辑：默认（`C-STATUS-BAR`、0 段 / 越界读空串 / 未被 disabled / `cs-is-container` 白名单已移除）/ 分段池（`sb-add` / `sb-count` / `sb-seg` / 越界空串）/ 改写（`sb-set-seg` / 越界写不影响）/ 多句柄隔离（扁平池 + 每句柄基址 + `sb-clear` 后基址复用）/ disabled 全空操作 / 测算（3 段各 4000 → 14600 × 4000、空 6400 × 4000、单段 'ok' 6400 × 4000、单段 'abcdefghij' 10400 × 4000、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（root 18000 × 20000：面板 `1200,1200,15600,4000` FIELD（intrinsic 宽 14600 被拉伸到父内容宽）、段 0 'ready' @`2400,2000` FG、竖条 `6400,1200,100,4000` TRACK、段 1 'utf-8' @`6500,2000`、竖条 `10500,1200,100,4000`、段 2 'ln 12' @`10600,2000`、文本指令共 3 条；改段 0 为 'longer' 后竖条右移到 `7200,1200`；清空后只剩底色、无文本）（48 项断言） |
+| `tests/main-status-bar.no` | 阶段63 **窗口端到端状态分段条 demo**：`cmp-status-bar()` + 默认三段（`ready` / `utf-8` / `ln 12`）+ 标题 / 提示 / 两行状态；键盘 `a` 从八组候选轮取追加段、`t` 改第 0 段、`c` 清空、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认三段，按 `cs-rect(sb)` 反推段起点（`x+1200` / `x+5300` / `x+9400`）、竖条（`x+5200` / `x+9300`, `by`, 100 × 4000）、文字 y（`by+800`，细条内垂直居中）逐项核对（场景文本总数算上四条标签 = 7），再改段 0 为 'longer' 核对整体右移 800、追加 'ok' 核对接在段 2 之后、disabled 写空操作、清空后只剩四条标签（= 4），`bye frames=900 keys=0 clicks=0 segments=0 w=53600 h=4000` + `status-bar render OK` + `scene OK` |
+| `tests/cmp-popover.no` | 阶段64 锚定弹层纯逻辑：默认（`C-POPOVER`、关闭 / `side=0` / 空标题 / 0 行 / 越界读空串 / 未被 disabled / `cs-is-container` 白名单已移除）/ 开合与锚定边（`pv-set-open(-3)` 归 0、`pv-set-open(7)` 归 1；`pv-set-side` 夹到 0..3）/ 标题与正文行池（`pv-add` / `pv-count` / `pv-line` / 越界空串 / `pv-set-line` / 越界写不影响）/ 多句柄隔离（扁平池 + 每句柄基址 + `pv-clear` 后基址复用）/ disabled 全空操作 / 测算（关闭 6400 × 4000、展开空 6400 × 4000、仅标题 'x' 6400 × 4800、标题 'popover' + 两行 10400 × 9700、长正文 'abcdefghij' 12000 × 4800、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（root 18000 × 20000：面板 `1200,1200,15600,9700` FIELD（intrinsic 宽 10400 被拉伸到父内容宽）、箭头 side 0 `2800,1200,800,800` ACCENT、标题 @`2400,2400` FG、分隔线 `1200,4800,15600,100` TRACK、两行 @`2400,4900` / `2400,7300` MUTED、文本共 3 条；四个锚定边逐一核对箭头贴边位置；改第 0 行文案；清空后无分隔线；关闭后弹层自身一笔画不出，只剩 root 背景矩形）（62 项断言） |
+| `tests/cmp-searchable-list.no` | 阶段66 可搜索列表纯逻辑：默认（`C-SEARCHABLE-LIST` / 0 条 / 越界空串 / 空查询 / 匹配 0 / `sl-match(0)` -1 / 高亮 -1 / 选中 -1 / 未 disabled / `cs-is-container` 白名单已移除）/ 条目池读写（`sl-add` 返回下标、`sl-item` 往返、`sl-set-item`、越界写不影响）/ 查询与过滤（'' → 4、'a' → 4、'AL' → 1、'gamma' → 1、'xyz' → 0 且高亮 -1）/ 高亮与选择（自动高亮第 0 行、`sl-select` 指定与清除、next/prev 两端夹紧）/ 多句柄隔离（两张扁平池 + 每句柄基址 + `sl-clear` 后基址复用）/ disabled 全空操作 / 测算（空 6400 × 4800、单条 'abc' 6400 × 7300、长标签 'abcdefghij' 10400 × 7300、两条 6400 × 9700、只有宽查询 10400 × 4800、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（FIELD 底、查询 'a' @ `(bx+1200,by+1200)` FG、分隔线 `(bx,qy+2400,bw,100)` TRACK、高亮整行底、四条标签逐行核对、文本 5 条；切高亮后底跟着走；过滤成空时间隔线消失且只剩查询文本）（84 项断言） |
+| `tests/main-searchable-list.no` | 阶段66 **窗口端到端可搜索列表 demo**：`cmp-searchable-list()` + 默认四条（alpha / BETA / gamma longer / delta，查询 'a'）+ 标题 / 提示 / 两行状态；键盘 `a` 轮取候选追加、`f` 轮取查询串（'' / 'a' / 'AL' / 'gamma' / 'xyz'）重建过滤表、`n`/`p` 移动高亮、`c` 清空、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认，按 `cs-rect(sl)` 反推面板 / 查询行 / 分隔线 / 四行条目坐标逐项核对（场景文本含四条标签 = 9），再核对高亮底随 `sl-select` 移动、查询 'xyz' 时间隔线消失且文本 5、清空查询后匹配回 4、追加第 5 条后面板变高且文本 10、disabled 写空操作、`sl-clear` 后条目文本消失，实测 `bye frames=900 keys=0 clicks=0 items=0 match=0 w=53600 h=16900` + `searchable-list render OK` + `scene OK` |
+| `tests/cmp-toolbar.no` | 阶段68 工具栏纯逻辑：默认（`C-TOOLBAR` / 0 项 / 越界空串 / 无选中 −1 / 未 disabled / `cs-is-container` 白名单已移除）/ 条目池读写（`tlb-add` 返回下标、**首次有条目自动高亮第 0 项**、`tlb-item` 往返、`tlb-set-item`、越界写不影响、`tlb-clear` 后选中复位 −1 且基址复用）/ 选中语义（指定、`tlb-select(99)`→夹紧到 n−1、`tlb-select(-99)`→夹紧到 0、next/prev 两端回绕、空集合选不中）/ 多句柄隔离 / disabled 全空操作 / 测算（空 6400×6400、一项 'aa' 6400×6400、三项 13600×6400、长条目 'abcdefghij' 12000×6400、`cmp-set-sw/sh` 覆盖 20000×9000）/ 渲染（root 18000 → 内容宽 15600；FIELD 底、chip0 ACCENT、chip1/chip2 TRACK、三条文案 @`(chip 左缘+800, sy+800)` FG、文本 3 条；切到第 2 项后 ACCENT 跟着走；清空后一条文本都不发；重加一项自动高亮第 0 项）（74 项断言） |
+| `tests/main-toolbar.no` | 阶段68 **窗口端到端工具栏 demo**：`cmp-toolbar()` + 默认三个条目（'file' / 'edit' / 'view'，选中第 0 项）+ 标题 / 提示 / 两行状态；键盘 `a` 从五组候选轮取追加条目、`n`/`p` 上下项、`x` 改第 0 项（↔'renamed'）、`c` 清空、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认，按 `cs-rect(tl)` 反推面板 / 槽顶 / 文本垂直居中偏移 / 每个 chip 盒左缘与配色逐项核对（场景文本含四条标签 = 7），再核对切到第 2 项后 ACCENT 跟着走、清空后一条文本都不发、重加一项后自动高亮第 0 项、disabled 写空操作、重建后几何回到最初，实测 `bye frames=900 keys=0 clicks=0 count=3 w=53600 h=6400` + `toolbar render OK` + `scene OK` |
+| `tests/cmp-sheet.no` | 阶段70 抽屉面板纯逻辑：默认（`C-SHEET` / 未展开 / 停靠左 / 标题取构造参数 / 未 disabled / `cs-is-container` 白名单已移除）/ 标题读写（`sht-title` / `sht-set-title`，底层 `CMP-TEXT`）/ 展开位（`sht-show` / `sht-hide` / `sht-toggle` / `sht-set-open`）/ 停靠边（`sht-set-side` 正常写 + 负数夹 0、>3 夹 3）/ 多句柄隔离 / disabled 全空操作 / 测算（空标题 6400×4800、'sheet' 6400×4800、'abcdefghij' 10400×4800、展开 10400×12800、停靠边不影响测算、`cmp-set-sw/sh` 覆盖 20000×9000）/ 渲染（root 18000 → 内容宽 15600；FIELD 底、左侧抓杆 `(bx,by,1200,4800)` ACCENT、标题 @`(bx+2400,by+1200)` MUTED、文本 1 条；展开后面板 12800 且抓杆拉长、标题转 FG；停靠右抓杆贴右端且标题不再让位；停靠上 / 下抓杆横在顶 / 底；改文案生效；清空标题后空串仍发一条文本指令；disabled 时渲染不变）（66 项断言） |
+| `tests/main-sheet.no` | 阶段70 **窗口端到端抽屉面板 demo**：`cmp-sheet('detail panel')` + 默认（停靠上、展开）+ 标题 / 提示 / 两行状态；键盘 `o` 切换展开、`s` 轮换停靠边 0→1→2→3、`t` 改标题（↔'sheet'）、`d` 切换 `F-DISABLED`（写操作变空操作）、`r` 重置默认、`q` / ESC 退出；收尾重置默认，按 `cs-rect(sh)` 反推面板 / 抓杆 / 标题坐标与配色逐项核对（顶部抓杆 `(bx,by,53600,1200)` ACCENT、标题 @`(bx+1200,by+1200)` FG、场景文本含四条标签 + 面板标题 = 5），再核对停靠右 / 下 / 左三种抓杆位置、收起后面板变矮到 4800 且标题转 MUTED、改文案生效、清空标题后剩 5 条文本（空串也发指令）、disabled 写空操作、重置后几何回到最初，实测 `bye frames=900 keys=0 clicks=0 open=1 w=53600 h=12800` + `sheet render OK` + `scene OK` |
+| `tests/cmp-sidebar.no` | 阶段69 侧栏纯逻辑：默认（`C-SIDEBAR` / 0 组 / 0 条 / 越界空串 / 条目所属组 −1 / 未折叠 / 未 disabled / `cs-is-container` 白名单已移除）/ 组池读写（`sdb-add-group` 返回下标、`sdb-group` 往返、`sdb-set-group`、越界写不影响、`sdb-clear-groups` 后组数归零但条目池不动）/ 条目池（扁平 + 平行「所属组」、`sdb-item` / `sdb-item-group` 往返、`sdb-set-item`、组号越界 `sdb-add-item` 返回 −1 且不追加、`sdb-group-size`）/ 折叠位读写 / 清空（先清条目再清组，两个都复位）/ 多句柄隔离 / disabled 全空操作 / 测算（空 6400×4000、一组一条 'one' 6400×7200、折叠后 6400×4800、长条目 'abcdefghij' 12000×7200、两组三条 8000×15200、`cmp-set-sw/sh` 覆盖 20000×9000）/ 渲染（root 18000 → 内容宽 15600；FIELD 底、组头 @`(bx+1200,…)` MUTED、条目 @`(bx+1200+1600,…)` FG、文本 5 条、面板 15600×15200；折叠后 15600×8000、只剩两条组头；展开复原；改文案生效；清空后 FIELD 底还在、一条文本都不发）（94 项断言） |
+| `tests/main-sidebar.no` | 阶段69 **窗口端到端侧栏 demo**：`cmp-sidebar()` + 默认两组四条（'nav': home/inbox/starred；'system': settings）+ 标题 / 提示 / 两行状态；键盘 `a` 从四组候选轮取往最后一组追加条目、`g` 新增一组、`i` 往第 0 组追加、`t` 改第 0 组标题（↔'renamed'）、`f` 切换折叠、`c` 清空、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认，按 `cs-rect(sd)` 反推面板 / 组头 / 条目坐标与配色逐项核对（场景文本含四条标签 + 侧栏 6 条 = 10），再核对折叠后面板变矮且条目全不画、展开后几何复原、改文案生效、清空后只剩 FIELD 底、disabled 写空操作、重建后几何回到最初，实测 `bye frames=900 keys=0 clicks=0 groups=2 w=53600 h=17600` + `sidebar render OK` + `scene OK` |
+| `tests/cmp-title-bar.no` | 阶段67 标题栏纯逻辑：默认（`C-TITLE-BAR` / 0 个按钮 / 越界空串 / 标题取构造参数 / 未 disabled / `cs-is-container` 白名单已移除）/ 标题读写（走 `CMP-TEXT`）/ 按钮池读写（`tb-add` 返回下标、`tb-button` 往返、`tb-set-button`、越界写不影响、`tb-clear` 后基址复用）/ 多句柄隔离 / disabled 全空操作 / 测算（空 6400 × 6400、标题 'abc' 6400 × 6400、长标题 'abcdefghij' 10400 × 6400、一个按钮 'ok' 6400 × 6400、两个按钮 10400 × 6400、标题 'ab'+按钮 'ok' 8000 × 6400、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（root 18000 → 内容宽 15600；FIELD 底、标题 @`(bx+1200,by+1200+800)` FG、两个按钮盒右对齐在 `(bx+7200,by+1200)` / `(bx+11200,by+1200)` TRACK、文案各内缩 800、文本 3 条；追加第三个按钮后整排变宽且首钮左缘左移到 `bx+800`、文本 4 条；清空按钮 + 清空标题后 FIELD 底还在、只发一条空串文本指令）（69 项断言） |
+| `tests/main-title-bar.no` | 阶段67 **窗口端到端标题栏 demo**：`cmp-title-bar('title bar')` + 默认两个按钮（'ok' / 'no'）+ 标题 / 提示 / 两行状态；键盘 `a` 从四组候选轮取追加按钮、`b` 改第 0 个按钮（↔'renamed'）、`t` 改标题（↔'renamed'）、`c` 清空按钮、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认，按 `cs-rect(tb)` 反推面板 / 槽顶 / 文本垂直居中偏移 / 整排按钮总宽与首钮左缘逐项核对（场景文本含四条标签 = 7），再核对改文案后盒宽变化、追加第三个按钮后整排变宽且首钮左移、清空按钮后盒消失、清空标题后仍发一条空串文本、disabled 写空操作、重建后几何回到最初，实测 `bye frames=900 keys=0 clicks=0 count=2 w=53600 h=6400` + `title-bar render OK` + `scene OK` |
+| `tests/cmp-questionnaire.no` | 阶段65 问卷纯逻辑：默认（`C-QUESTIONNAIRE` / 题数 0 / 越界读空串 / 必答 0 / 未被 disabled / `cs-is-container` 白名单已移除 / 已作答 0 / 进度 0 / 完成 1）/ 题池读写（`qa-add` + `qa-prompt` / `qa-answer` / `qa-required` 往返、越界写不影响）/ 必答与进度（标必答 → 已作答 2 / 进度 100 / 完成 1；清空第 1 题答案 → 1 / 50 / 1；第 1 题也必答 → 完成 0；`qa-clear` → 题数 0 / 进度 0 / 完成 1）/ 多句柄隔离（扁平池 + 每句柄基址 + `qa-clear` 后基址复用）/ disabled 全空操作 / 测算（空 6400 × 4000、单题 'q','a' 6400 × 7200、长答案 'abcdefghij' 10400 × 7200、两题 'name?'/'ada'+'quest?'/'lin' 7200 × 12800、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（FIELD 底 `bx,by,bw,bh`、必答标记方块 `(tx,qy0+800,800,800)` TRACK、题干 0 @`tx+1600,qy0` FG、答案 0 @`tx,ay0` ACCENT、题干 1 @`tx,qy1` FG、答案 1 @`tx,ay1` ACCENT、文本共 4 条；取消必答标记消失；清空后文本 0）（63 项断言） |
+| `tests/main-questionnaire.no` | 阶段65 **窗口端到端问卷 demo**：`cmp-questionnaire()` + 默认两题（'name?'/'ada'、'quest?'/'lin'，第 0 题必答）+ 标题 / 提示 / 两行状态；键盘 `a` 从四组候选轮取追加题、`t` 改第 0 题题干（'name?'↔'who?'）、`w` 写 / 清第 0 题答案（↔'grace'）、`m` 切换第 0 题必答、`c` 清空、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认，按 `cs-rect(qa)` 反推面板 / 必答标记 / 题干 0 / 答案 0 / 题干 1 / 答案 1 坐标逐项核对（场景文本总数算上四条标签 = 8），再取消必答核对标记消失、追加第三题核对题数 / 进度 / 面板变高 / 文本 = 10、清空第 0 题答案核对已作答降为 2 且必答未完成、清空全部核对文本只剩四条标签（= 4）、disabled 写空操作，`bye frames=900 keys=0 clicks=0 count=0 w=53600 h=18400` + `questionnaire render OK` + `scene OK` |
+| `tests/main-popover.no` | 阶段64 **窗口端到端锚定弹层 demo**：`cmp-popover()` + 默认（open + 标题 'popover' + 两行）+ 标题 / 提示 / 两行状态；键盘 `o` 切换开合、`s` 轮换锚定边 0..3、`a` 从四组候选轮取追加正文行、`t` 改标题、`l` 改第 0 行、`c` 清空正文（保留标题）、`r` 重建默认、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建默认，按 `cs-rect(pv)` 反推面板 / 箭头 / 标题 y（`by+1200`）/ 分隔线 y（标题 y+2400）/ 正文 y（分隔线 y+100+i*2400）逐项核对（场景文本总数算上四条标签 = 7），再核对四个锚定边的箭头位置、改首行文案、清空后只剩标题 + 面板（无分隔线、文本 = 5）、disabled 写空操作、关闭后文本只剩四条标签（= 4）且面板不画，`bye frames=900 keys=0 clicks=0 open=0 side=3 w=53600 h=9700` + `popover render OK` + `scene OK` |
+| `tests/main-collapsible.no` | 阶段58 **窗口端到端折叠面板 demo**：`cmp-collapsible('settings')` 默认收起 + 两行正文（`line one` / `line two`）+ 标题 / 提示 / 两行状态；键盘 `e` 展开、`c` 收起、`t` 切换、`a` 从四组候选轮取追加正文行、`r` 重建默认两行、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建已知两行，按 `cs-rect(cl)` 反推展开符（`v` / `>`，ACCENT）、标题（FG）、TRACK 分隔线与两行正文（MUTED）坐标逐项核对，`bye frames=900 keys=0 clicks=0 lines=2 open=0 w=53600 h=6400` + `collapsible render OK` + `scene OK` |
+| `tests/cmp-collapsible.no` | 阶段58 折叠面板纯逻辑：默认（`C-COLLAPSIBLE`、收起 / 0 行 / 越界读空串 / 未被 disabled）/ 标题读写（`cl-title` / `cl-set-title` / 越界写不影响）/ 展开态读写（`cl-open` / `cl-set-open` 夹 0..1 / `cl-expand` / `cl-collapse` / `cl-toggle` / `cmp-flag-set` 置位）/ 正文池（`cl-add-body` 返回下标 / `cl-body-line` / 越界空串 / `cl-set-body-line`）/ 多句柄隔离（扁平池 + 每句柄基址 + `cl-clear` 后基址复用）/ disabled 全空操作 / 测算（收起 3 行 10400 × 6400、展开 3 行 15200 × 13600、空展开 10400 × 6400、展开 1 行 `x` 10400 × 8800、长标题收起 16000 × 6400、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（展开时 FIELD 底 1200,1200,15200,13600、`v` @2400,3200 ACCENT、`settings` @4000,3200 FG、TRACK 分隔线 @1200,6400、正文 `line one` @4000,6500 / `line two` @4000,8900 / `longer line here` @4000,11300 MUTED、文本指令共 5 条；收起后面板高 6400、`>` @2400,3200、无分隔线、文本 2 条）（65 项断言） |
+| `tests/main-carousel.no` | 阶段57 **窗口端到端走马灯 demo**：`cmp-carousel()` 默认三张（`alpha` / `beta` / `gamma`，当前第 0 张）+ 标题 / 提示 / 两行状态；键盘 `a` 从六组候选轮取追加幻灯片、`n` 下一张、`p` 上一张（到头/到尾回绕）、`s` 回到第 0 张、`r` 重建默认三张、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建已知三张，按 `cs-rect(cr)` 反推左/右箭头（到头 MUTED）、当前文案（FG 居中）、TRACK 分隔线与三个圆点（当前 ACCENT）坐标逐项核对，再翻到末张复核右箭头转 MUTED / `gamma` 文案 / `dot2` ACCENT，`bye frames=900 keys=0 clicks=0 slides=3 current=2 w=53600 h=8900` + `carousel render OK` + `scene OK` |
+| `tests/cmp-carousel.no` | 阶段57 走马灯纯逻辑：默认（`C-CAROUSEL`、0 张 / 越界读空串 / 当前张 0 / 未被 disabled）/ 幻灯片池（`cr-add` 返回下标 / `cr-slide` / 越界空串）/ 改写 + 当前张读写（`cr-set-slide` / `cr-set-current` / `cr-select` / `cr-next` 回绕 / `cr-prev` 回绕 / 越界写不影响）/ 多句柄隔离（扁平池 + 每句柄基址 + `cr-clear` 后基址复用）/ disabled 全空操作（`cr-add` 返回 -1）/ 测算（3 张 2400/2400/4000 → 9600 × 8900、空 6400 × 8900、单张 6400 × 8900、长文案 13600 × 8900、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（FIELD 底 1200,1200,9600,8900、`<` @2400,3200 MUTED 与 `>` @8800,3200 ACCENT、`ONE` @4800,3200 FG、TRACK 分隔线 @1200,6400、圆点 ACCENT/TRACK/TRACK @4000/5600/7200,7300、文本指令共 3 条；翻到末张后 `<` ACCENT / `>` MUTED / `three` @4000,3200 / `dot2` ACCENT；空池只剩底色且文本 0 条）（70 项断言） |
+| `tests/main-accordion.no` | 阶段56 **窗口端到端手风琴 demo**：`cmp-accordion()` 默认三组（`alpha` 收起 / `beta` 展开带一行正文 / `gamma` 收起带隐藏正文）+ 标题 / 提示 / 两行状态；键盘 `a` 从六组候选轮取追加收起组、`o` 追加展开组、`b` 给末组加一行正文、`t` 切换第 0 组、`n` 在组数内轮转切换、`r` 重建默认三组、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建已知三组，按 `cs-rect(ac)` 反推组头 / 正文 / 分隔线坐标逐组核对展开符（`'>'` / `'-'`，ACCENT）、标题（FG）、正文（MUTED）与 TRACK 分隔线，`bye frames=900 keys=0 clicks=0 sections=3 open=1 w=53600 h=17000` + `accordion render OK` + `scene OK` |
+| `tests/cmp-accordion.no` | 阶段56 手风琴纯逻辑：默认（`C-ACCORDION`、0 组 / 越界读空串 / 未被 disabled）/ 组池（`ac-add` / `ac-add-open` / `ac-add-body` / 读取 / 越界返回空 / `ac-set-title` / `ac-set-expanded` 夹 0..1 / `ac-toggle` / `ac-clear` 后基址复用）/ 多句柄隔离（扁平池 + 每句柄基址）/ disabled 全空操作 / 测算（3 组含一行正文 14400 × 17000、收起第 1 组 8000 × 14600、空 6400 × 4000、单展开组两行 7200 × 11200、`cmp-set-sw/sh` 覆盖 20000 × 9000）/ 渲染（FIELD 底 1200,1200,14400,17000、`'>'` @2400,3200 与 `alpha` @4000,3200、TRACK 分隔线 @1200,6400、`'-'` @2400,7300 / `beta` @4000,7300 / 正文 `beta line one` @4000,10500、TRACK 分隔线 @1200,12900、`'>'` @2400,13800 / `gamma` @4000,13800、收起组正文计数 0、文本指令共 7 条、空列表只剩底色）（74 项断言） |
+| `tests/main-description-list.no` | 阶段55 **窗口端到端描述列表 demo**：`cmp-description-list()` 默认三行 `name→noui` / `version→v0.4` / `released→2026-11-22` + 标题 / 提示 / 两行状态；键盘 `a` 从六组候选轮取追加一行、`c` 清空、`r` 重建默认三行、`v` 改写首行（标签改 `title`、值改 `a fairly long value`）、`d` 切换 `F-DISABLED`（写操作变空操作）、`q` / ESC 退出；收尾重建已知三行，按 `cs-rect(dl)` 反推标签列 / 值列宽逐行核对文本坐标与配色（标签 `MUTED`、值 `FG` 右对齐）+ 行间 TRACK 分隔线，`bye frames=900 keys=0 clicks=0 rows=3 w=53600 h=9800` + `description-list render OK` + `scene OK` |
+| `tests/cmp-description-list.no` | 阶段55 描述列表纯逻辑：默认（`C-DESCRIPTION-LIST`、0 行 / 越界读空串 / 未被 disabled）/ 行池（追加 / 读取 / 越界返回空 / 改写既有行 / 越界写不影响 / 清空后基址复用）/ 多句柄隔离（扁平池 + 每句柄基址）/ disabled 全空操作 / 测算（3 行最长值 10 字 23200 × 9800、空 21600 × 4000、单行短值 21600 × 4800、值改 16 字 28000、`cmp-set-sw/sh` 覆盖 30000 × 5000）/ 渲染（FIELD 底 1200,1200,23200,9800、三行标签 @2400 `MUTED`、三行值右对齐 @20000 / @20000 / @15200 `FG`、两条 TRACK 分隔线、空行只剩底色不产生文本指令）（64 项断言） |
 | `tests/core-v4.no` | 分层内核 v4（Entity → Element → Scene） |
 | `tests/app-layer.no` | 阶段3：Ctx / Action / 焦点系统 |
 | `tests/widget.no` | 阶段4：widget 构造器 + 主题 |
@@ -3197,6 +3796,1272 @@ append 语义 / `set-caret` 上下界夹紧 / 中段 insert / 退格（caret=0 �
 只有 `no fmt -d src/<file>.no` 能看到真正的 parse error；② 光标统一用**字节**下标
 （和 `slice-bytes` / `cs-text-w` 一致），别混字符下标；`ct-get` 越界返回 0 不是 -1，
 `input-set-caret` 自己夹紧。
+
+## 验收记录（阶段50：命令式图表 chart / 绘图 plot）
+
+立项理由：`src/components-catalog.md` 第 65 / 66 行给 `C-CHART` 承诺「series,
+axes」、给 `C-PLOT` 承诺「points, scale」，但命令式侧两者都只有一个构造函数——
+序列数 / 点数 / 序列名 / 值轴上限 / 数值 / 量程 / 点坐标全都没有 API，渲染还落在
+`cs-paint-leaf` 的通用 `rect + text` 兜底里。阶段50 补。
+
+组件层（`src/components.no`）：新增 `ch-*` / `pl-*` 段。chart 用**每句柄定步长的
+数据池**——`CH-VAL`（步长 `CH-STRIDE = CH-SERIES-MAX × CH-PTS-MAX = 3 × 8`）、
+`CH-NAME`（步长 `CH-SERIES-MAX`）、`CH-SN` / `CH-PN`（各一格），`ch-ensure(h)`
+按需补格；plot 用 `PL-X` / `PL-Y`（每句柄 `PL-PTS-MAX = 16` 格）+ `PL-CN` /
+`PL-SC`，`pl-ensure(h)` 补格。公开 API：`ch-series` / `ch-set-series`（夹 0..3）/
+`ch-points` / `ch-set-points`（夹 0..8）/ `ch-name` / `ch-set-name` /
+`ch-max` / `ch-set-max`（`CMP-VALUE2`；构造给的是 0，所以 `ch-max` 把 `<= 0`
+映射成默认 100，否则所有值都会被夹到 1）/ `ch-value` / `ch-set-value`（夹 0..max）/
+`ch-total` / `ch-peak`；`pl-count` / `pl-set-count`（夹 0..16）/ `pl-scale` /
+`pl-set-scale`（≥1）/ `pl-x` / `pl-y` / `pl-set-x` / `pl-set-y`（夹 ±scale）/
+`pl-min-x` / `pl-max-x` / `pl-min-y` / `pl-max-y`。所有写操作先查 `F-DISABLED`
+（disabled 一律空操作），再 `ch-ensure` / `pl-ensure`。
+
+渲染层（`src/cmp-scene.no`）：`cs-paint-chart`（字段底 `CS-TH-FIELD` + 左轴 /
+下轴 `CS-TH-MUTED` + 值轴上限文案 + 分组柱（序列序映射 `CS-TH-ACCENT` /
+`CS-TH-OK` / `CS-TH-DANGER`）+ x 轴刻度 + 右对齐图例）与 `cs-paint-plot`
+（字段底 + 过原点两轴 + 上 `'+scale'` / 下 `'-scale'` 文案 + 方块数据点 +
+相邻点 L 形连线）；`cs-measure` 的兜底分支给两者加 intrinsic（宽 = 左右内边距 +
+点数 × 点槽宽，夹到 `CS-MIN-LEAF-W`；chart 高 = 上下内边距 + 标题行（有标题时）+
+绘图区 + x 轴标签行，plot 高 = 上下内边距 + 标题行 + 绘图区——同 `C-HIGHLIGHTER` /
+`C-DIFF` 的理由：那里才有句柄 `h`）；`cs-paint-leaf` 加两行路由。**不新增节点
+种类**：两者都仍是叶子。**没有线 / 圆图元**，所以数据点画成方块、连线用细矩形拼
+（先水平后垂直的 L 形），`cs-neg-str` 是组件模块不能 import 渲染层，抄的一份最小
+负数文案实现。
+
+`tests/cmp-chart.no`（89 项断言全绿）：chart 默认 6 项 / 写入 + 夹紧 18 项 /
+越界拒绝 3 项 / disabled 5 项 / plot 默认 6 项 / 写入 + 夹紧 14 项 / 越界 + disabled
+5 项 / 测算 6 项 / 渲染 chart 13 项 / 渲染 plot 13 项。
+
+窗口 demo（`tests/main-chart.no`）：`cmp-chart()`（标题 `weekly sales`、3 序列 ×
+6 点、序列名 `online` / `store` / `partner`）+ `cmp-plot()`（标题 `error trend`、
+5 点、量程 100）；点击图表循环值轴上限（50→100→200），点击绘图循环点数
+（3→5→8），键盘 `c` 循环序列数、`r` 重填数据、`-` / `+` 调量程、`q` / ESC 退出；
+900 帧 `bye frames=900 keys=0 clicks=0 series=3 points=6 max=100 peak=99 plot-n=5
+scale=100` + `chart render OK`、exit 0。
+
+坑四条：① **新建句柄上第一次写会静默 no-op**——`ch-set-*` / `pl-set-*` 只
+`ct-set` 到池里，而池是 `ch-ensure` / `pl-ensure` 按需长的，新句柄的池还是空的，
+写进去读回来仍是 0（探针里 `pl-set-count(P, 5)` 后 `pl-count` 还是 0，第二次写才
+生效）。已在每个 setter 里先 `ch-ensure(h)` / `pl-ensure(h)`；② **`ch-max` 默认 1
+的陷阱**——`CMP-VALUE2` 构造给的是 0，而 `ch-set-value` 要按 `ch-max` 夹紧，
+若不把 0 映射成默认 100，所有值都被夹到 1；③ **`cs-layout` 不拉伸叶子高度**——
+挂进根以后叶子拿的是 intrinsic 高（chart 39200、plot 36800），不是根内容高
+47600，断言里别按内容高算；④ **顶层块里的变量名是全程序共享的**——
+`tests/main-table.no` 在顶层 `!!` 里写 `nm = NAMES[i]`（`NAMES` 是 `[]str`，所以
+那个 `nm` 是 `?str`），`src/cmp-scene.no` 里同名的局部 `nm` 就被 vet 判成 `?str`，
+`nm.len()` 报 `nolang-option`（换名 `leg` 即消）。顶层 `!!` / guard 里赋的值都是
+模块级变量，取名字要避开这种全局占用。
+
+## 验收记录（阶段51：命令式下拉菜单 native menu）
+
+立项理由：`src/components-catalog.md` 第 57 行写着 `C-NATIVE-MENU` 的能力是
+「items」，但命令式侧只有一个 `cmp-native-menu()` 构造函数——项数 / 项文案 /
+选中项 / 禁用项全都没有 API，渲染还落在 `cs-paint-leaf` 的通用 `rect + text`
+兜底里。阶段51 补。
+
+组件层（`src/components.no`）：新增 `nm-*` 段。**「原生」在这里是自绘的**——
+框架里没有平台菜单图元，菜单按钮 / 弹层都用 rect + text 画（同 `C-CHART` /
+`C-PLOT` 的做法）。槽位沿用 `CMP-TEXT` = 按钮文案、`CMP-VALUE` = 项数、
+`CMP-VALUE2` = 选中项 + 1（`0` = 未选）、`CMP-COLOR` = 强调色；展开态走
+`F-OPEN`。数据池 `NM-LABEL`（项文案）/ `NM-SEL`（项禁用标记）按句柄 ×
+`NM-MAX = 8` 定步长，`NM-CN`（项数）每句柄一格，`nm-ensure(h)` 按需补格。
+公开 API：`nm-count` / `nm-set-count`（夹 0..8，同步写 `CMP-VALUE`，缩小时把
+越界的选中项清成未选）/ `nm-label` / `nm-set-label` / `nm-index` /
+`nm-set-index`（夹 −1..count−1；空菜单选不中）/ `nm-item-off` /
+`nm-set-item-off` / `nm-open` / `nm-close` / `nm-toggle`。所有写操作先查
+`F-DISABLED`（disabled 一律空操作），再 `nm-ensure`。
+
+渲染层（`src/cmp-scene.no`）：`cs-measure` 兜底分支加 `C-NATIVE-MENU`——宽 =
+`2*CS-PAD + max(按钮文案宽, 各项文案宽) + 2400`（箭头槽），夹到
+`CS-MIN-LEAF-W`；高 = `CS-BTN-H`，展开时再加 `CS-GAP + count*CS-LINE-H`。
+`cs-paint-menu` 画字段底按钮（`CS-TH-FIELD`）+ 聚焦时四边 `CS-TH-ACCENT` 描边 +
+左对齐文案 + 右端 `'v'` / `'^'` 箭头（`CS-TH-MUTED`），展开时下方画弹层面板
+（项高 `CS-LINE-H`，选中项铺 `CS-TH-ACCENT`、禁用项铺 `CS-TH-TRACK` 且文案
+`CS-TH-MUTED`）；`cs-paint-leaf` 加一行路由。命中测试 `cs-menu-hit(h,px,py)`
+返回弹层命中项，未展开 / 越界 / 落在禁用项都返回 −1（组件模块拿不到 `cs-rect`，
+所以命中测试放渲染层，同 `cs-dock-*` 的分工）。**不新增节点种类**：它仍是叶子，
+不走 `cs-layout` 的子节点特殊分支。
+
+`tests/cmp-menu.no`（69 项断言全绿）：默认 8 项 / 写入 + 夹紧 14 项 / disabled
+5 项 / 选中语义 + 开关 9 项 / 单项禁用 4 项 / 测算 6 项 / 渲染收起 3 项 /
+渲染展开 9 项 / 命中 10 项。
+
+窗口 demo（`tests/main-menu.no`）：`cmp-native-menu()` × 2（`file`：4 项
+`new` / `open` / `save` / `exit`，第 4 项禁用；`view`：3 项 `zoom in` /
+`zoom out` / `reset`）；点击按钮开 / 关、点击弹层项选中并收起、点击别处收起，
+键盘 `m` / `o` 开关两个菜单、`n` / `p` 选中下 / 上一项、`d` 切换当前项禁用、
+`x` 项数 2..6 循环（同时重写项文案）、`q` / ESC 退出；900 帧
+`bye frames=900 keys=0 clicks=0 m1=n4 sel-1 label= m2=n3` + `menu render OK`、
+exit 0。
+
+坑三条：① **`ct-get` 返回的是 `i64` 不是 `?i64`**——我最初给 `nm-count` /
+`nm-raw-sel` / `nm-item-off` 套了 `x = ct-get(...): { ok -> it ; -> 0 }`，结果
+match 永远走 `-> 0` 兜底臂，`nm-count` 恒返回 0（`ct-get` 自己已经把越界映射成 0
+了，见 `ct-get` 定义）。改成直接 `v = ct-get(...)` 即消；② **`->` 链不互斥**——
+`nm-toggle` 一开始写成 `(cmp-has(h, F-OPEN)) -> { nm-close(h) }` 紧跟
+`(!cmp-has(h, F-OPEN)) -> { nm-open(h) }`，第一条把 `F-OPEN` 清掉后第二条的
+条件跟着变真，两次 toggle 之后还是开着的。先把状态取到局部 `was` 再分支；
+③ **`cs-emit-text-left` 的 y 是顶但会按行高垂直居中**——`ty = y + (ht -
+CS-LINE-H)/2`，所以按钮文案（`ht = CS-BTN-H = 4000`）落在 `y + 800`，不是
+`y`；断言按 `y` 找会一个都找不到（项行 `ht = CS-LINE-H`，居中后正好等于 `y`，
+所以项文案的断言是对的）。
+
+## 验收记录（阶段52：命令式窗口选项 window ext）
+
+立项理由：`src/components-catalog.md` 第 84 行写着 `C-WINDOW-EXT` 的能力是
+「window options」，是命令式侧最后一个只有构造函数的叶子。阶段 43–51 把通用兜底
+里的叶子 kind 一个一个补完，这是最后一个；也是唯一**真的改窗口本身**的一个
+（前面那些「原生」都是自绘的）。阶段52 补。
+
+组件层（`src/components.no`）：新增 `we-*` 段。槽位 `CMP-TEXT` = 标题、
+`CMP-VALUE` = flags（`WE-F-RES = 1` 可缩放 / `WE-F-FS = 2` 全屏 /
+`WE-F-TOP = 4` 置顶 / `WE-F-BRD = 8` 边框）、`CMP-VALUE2` = 总开关（`1` = 接管
+真窗口，`0` = 只存状态不动窗口）、`CMP-COLOR` = 强调色。数据池 `WE-TITLE` /
+`WE-FLAGS` / `WE-OP` 每句柄一格、`WE-MIN` / `WE-MAX` / `WE-SIZE` 每句柄两格，
+`we-ensure(h)` 按需补格（新格默认 flags = `WE-F-RES | WE-F-BRD`、不透明度 100、
+其余 0）。公开 API：`we-title` / `we-set-title`（同步 `TEXT`）/ `we-flags` /
+`we-set-flags`（同步 `VALUE`）/ `we-resizable` / `we-set-resizable` /
+`we-fullscreen` / `we-set-fullscreen` / `we-always-on-top` /
+`we-set-always-on-top` / `we-bordered` / `we-set-bordered` / `we-opacity` /
+`we-set-opacity`（夹 0..100）/ `we-min-x` / `we-min-y` / `we-set-min-size` /
+`we-max-x` / `we-max-y` / `we-set-max-size` / `we-w` / `we-h` /
+`we-set-size`（夹 ≥0，`0` = 不覆盖窗口尺寸）/ `we-on` / `we-set-on`。所有写操作
+先查 `F-DISABLED`。另加三个位运算 helper `ct-or` / `ct-and` / `ct-not`
+（`ct-not` 用 `ct-sub(-1, a)` 实现按位取反）。
+
+**层依赖是这个阶段的真难点**：`components.no` 不能 `import app.no`——
+`app.no` import `cmp-scene`，`cmp-scene` 又 import `components`，再让
+`components` import `app.no` 就成环了。所以组件层只留纯状态，把推窗口那一步
+整个放到 `app.no`：12 个 `#{c}` FFI（`noui_window_set_title` / `set_resizable` /
+`set_min_size` / `set_max_size` / `set_fullscreen` / `set_always_on_top` /
+`set_bordered` / `set_opacity` / `set_size` / `get_size` / `get_flags` /
+`get_title`）+ `app-window-apply(h)`（`h < 0` / 非 `C-WINDOW-EXT` /
+`we-on(h) == 0` 三种情况静默跳过）+ `app-window-apply-all()`（遍历
+`cmp-count()` 个句柄，挑 `C-WINDOW-EXT` 逐个 apply）+ 读回
+`app-window-title()` / `app-window-size()`（`get_size` 返回 `(w << 32) | h`
+打包值，拆开）/ `app-window-flags()`，另给 `APP-WF-FULLSCREEN` /
+`APP-WF-BORDERLESS` / `APP-WF-RESIZABLE` / `APP-WF-ALWAYS-ON-TOP` 四个 SDL
+标志位常量。每帧 `app-frame()` 开头调一次 `app-window-apply-all()`。shim 侧
+（`src/shim/shim.h` / `shim.c`）新增这 12 个函数，全部 `if (g_window ...)`
+保护；SDL3 删了 `SDL_TRUE` / `SDL_FALSE`，一律写 `true` / `false`。
+
+渲染层（`src/cmp-scene.no`）：`cs-measure` 加 `C-WINDOW-EXT` 分支——宽 =
+`2*ch-pad() + 16000` = 18400，高 = `2*ch-pad() + ch-title-h() +
+WE-ROWS*CS-LINE-H` = 2400 + 2400 + 19200 = 24000。`cs-paint-window-ext` 画
+字段底 + 标题（`ch-pad()` 处，`FG`）+ 标题下 `TRACK` 分隔线 + 8 行状态
+（`WE-ROWS = 8`：on / title / resizable / fullscreen / always on top /
+bordered / opacity / size），标签列宽 12000 用 `MUTED` 左对齐、数值列宽 2400
+用 `FG` 右对齐（`cs-emit-text-align(..., A-RIGHT)`），`size` 行在宽或高为 0
+时显示 `auto`；聚焦时四边 `CS-TH-ACCENT` 描边。`cs-paint-leaf` 加一行路由。
+**不新增节点种类**。
+
+`tests/cmp-window-ext.no`（90 项断言全绿）：默认 17 项 / 写入 + 夹紧 32 项 /
+disabled 7 项 / 测算 8 项 / 渲染 26 项。
+
+窗口 demo（`tests/main-window-ext.no`）：`cmp-window-ext()`（标题
+`noui window options`、尺寸 720×520、最小 320×240、最大 1600×1200）；键盘
+`t` 换标题、`r` 可缩放、`f` 全屏、`a` 置顶、`b` 边框、`o` 不透明度
+100→75→50→25、`=` / `-` 窗口尺寸（夹在最小 / 最大内）、`m` 总开关、
+`q` / ESC 退出；三行状态分别显示**真窗口读回**（标题 / 尺寸 / 四个 flag 位）
+与**面板状态**；900 帧 `bye frames=900 keys=0 applied=900 live=final check
+800x600 res=true` + `win-ext render OK` + `win-ext live OK`、exit 0。收尾在
+`app-shutdown()` 之前把面板设成 `final check` / 800×600 / 不可缩放 / 不透明度
+75，apply 后读回真窗口，断言标题、宽、高、可缩放位全部一致。
+
+坑三条：① **`we-title` 是 `[]str`，不能用 `ct-get`**——`ct-get` 是 `[]i64`
+专用的，`v = ct-get(WE-TITLE, h)` 直接报 `cannot assign i64 value to str
+variable 'v'`；`[]str` 要用 `ed-arr-get-s` / `ed-arr-set-s`；② **位运算 helper
+原本不存在**——`ct-or` / `ct-and` / `ct-not` 都得新加，「清掉某一位」要写
+`ct-and(f, ct-not(bit))`（不能写 `f & ~bit` 之外的东西，`~` 也不可用）；
+③ **`ch-title-h()` 是 2400 不是 3200**（`ch-plot-h()` 才是 32000）——我按
+3200 算了 intrinsic 高（24800），渲染断言整段漂移 800，面板实际是 24000 高。
+另外 `cs-text-w` 是 `len * CS-CHAR-W`，`'640x480'` 是 **7** 个字（不是 6），
+右对齐落点 12800 而不是 13600。
+
+## 验收记录（阶段53：命令式面包屑 breadcrumb）
+
+立项理由：`src/components-catalog.md` 第 30 行写着 `C-BREADCRUMB` 的能力是
+「items, separator」，但命令式侧只有一个 `cmp-breadcrumb()` 构造函数——条目和
+分隔符都没有 API，渲染还落在 `cs-paint-leaf` 的通用 `rect + text` 兜底里。
+阶段53 补。选型上它是阶段 46 `C-INDEX-PATH` 的孪生（同样的「条目池 + 每句柄基址」
+扁平只增结构），照抄结构、换配色语义即可。
+
+组件层（`src/components.no`）：新增 `bc-*` 段。数据池 `BC-ITEM`（`[]str`，扁平
+只增）+ `BC-SBASE` / `BC-N` / `BC-SEP` 每句柄一格，全部随 `cmp-alloc` 一起长
+（`BC-SEP` 新格直接填默认 `' / '`，省掉「空串 = 未设置」的二义）。公开 API：
+`bc-count` / `bc-item`（越界返回空串）/ `bc-add-item`（空池时记一次基址）/
+`bc-clear`（基址与计数归零，扁平池本身只增不复用）/ `bc-sep` / `bc-set-sep` /
+`bc-last`（末项下标，空 = −1）/ `bc-join`（整条路径文案）。所有写操作先查
+`F-DISABLED`。**不新增节点种类**。
+
+渲染层（`src/cmp-scene.no`）：`cs-measure` 加 `C-BREADCRUMB` 分支——宽 =
+`2*CS-PAD + Σ条目宽 + (n-1)*分隔符宽`，下限 `CS-MIN-LEAF-W`；高 = `CS-BTN-H`。
+`cs-paint-breadcrumb` 从 `x + CS-PAD` 起逐段画，垂直居中（`y + (ht - CS-LINE-H)/2`），
+**配色分两档**：除最后一项外的条目画 `CS-TH-MUTED`（可回退的祖先），最后一项画
+`CS-TH-FG`（当前页），段间分隔符画 `CS-TH-TRACK`。`cs-paint-leaf` 加一行路由。
+
+`tests/cmp-breadcrumb.no`（60 项断言全绿）：默认 7 项 / 条目池 16 项 / 多句柄隔离
+9 项 / 分隔符 4 项 / disabled 3 项 / 测算 10 项 / 渲染 11 项。
+
+窗口 demo（`tests/main-breadcrumb.no`）：`cmp-breadcrumb()` 默认 `home / docs /
+noui` 三段；键盘 `a` 从六个候选轮取追加、`c` 清空、`b` 重建默认三段、`s` 换
+分隔符（`' / '` → `' :: '` → `' > '`）、`d` 切换 `F-DISABLED`、`q` / ESC 退出；
+收尾重建已知三段，按 `cs-rect(bc)` 反推基址逐段核对文本坐标与配色，
+`bye frames=900 keys=0 clicks=0 path=home / docs / noui w=53600` +
+`breadcrumb render OK` + `scene OK`、exit 0。
+
+坑两条：① **`->` 链不是互斥的** —— `bc-last` 一开始写成「先 `i = count - 1`，
+再 `(i <= 0) -> { i = -1 }`」，第一条分支把 `i` 改成 0 之后第二条立刻又命中，
+末项下标恒为 −1（`count == 3` 时也返回 −1）；必须先把 `n = bc-count(h)` 存进
+局部，再从 −1 起只让一条分支写。② **`[]str` 不能走 `ct-get` / `ct-set`** ——
+`BC-ITEM` / `BC-SEP` 的读写都得用 `ed-arr-get-s` / `ed-arr-set-s`，否则报
+`cannot assign i64 value to str variable`。
+
+## 验收记录（阶段54：命令式骨架屏 skeleton）
+
+立项理由：`src/components-catalog.md` 第 51 行写着 `C-SKELETON` 的能力是「lines,
+animated」，但命令式侧只有一个 `cmp-skeleton()` 构造函数——行数 / 行距 / 扫光相位
+全都没有 API，而且渲染层连 `cs-measure` 分支都没有。`skeleton` 是叶子（不在
+`cs-is-container` 白名单里），`cs-measure` 里没有它的分支时 `w` / `ht` 是函数局部、
+初值 0，落进 `cs-paint-leaf` 后画出一个 0×0 的 TRACK 矩形，等于**完全不显示**。
+阶段 43–53 把通用兜底里的叶子 kind 一个一个补完，阶段 54 是最后一批里的第二个。
+
+组件层（`src/components.no`）：新增 `sk-*` 段。槽位 `CMP-VALUE` = 扫光相位
+0..100（0 = 不扫）、`CMP-VALUE2` = 占位条行数（夹 0..8）、`CMP-VALUE3` = 行距
+（下限 800，与场景的 `CS-GAP` 同源，这里直接抄字面量 800）。公开 API：
+`sk-lines` / `sk-set-lines` / `sk-gap` / `sk-set-gap` / `sk-phase` /
+`sk-set-phase`，所有写操作先查 `F-DISABLED`。读取用 `CMP-VALUE2[h]: { ok -> it
+-> 0 }` 的 option 写法（下标越界时回落默认值），不用 `ct-get`。
+
+渲染层（`src/cmp-scene.no`）：`cs-measure` 新增 `C-SKELETON` 分支——宽 =
+`2*CS-PAD + 12000` = 14400（下限 `CS-MIN-LEAF-W`），高 = `2*CS-PAD +
+N*CS-LINE-H + (N-1)*gap`，下限 `CS-BTN-H`（所以 0 行时是 4000 而不是 2400）。
+`cs-paint-skeleton` 按真实矩形画：整块 `TRACK` 底 → 内边距 `CS-PAD` 处起 N 条
+`MUTED` 占位条（宽 = 矩形宽 − 2×`CS-PAD`，行高 `CS-LINE-H`，行距 `gap`）→
+相位 > 0 时每条上叠一条 `FG` 高光带，带宽 = 轨道宽 / 3，位置 =
+`轨道左缘 + 相位 * (轨道宽 − 带宽) / 100`（相位 100 时正好贴右缘）。`cs-paint-leaf`
+加一行路由。**不新增节点种类**。
+
+`tests/cmp-skeleton.no`（43 项断言全绿）：默认 5 项 / 写入 + 夹紧 8 项 /
+disabled 3 项 / 测算 12 项 / 渲染 15 项。
+
+窗口 demo（`tests/main-skeleton.no`）：`cmp-skeleton()` 默认 3 行 / 行距 800 /
+相位 0；键盘 `l` / `L` 行数 ∓/±（夹 0..8）、`g` 行距 800→1600→2400 循环、
+`p` 相位 +10（到 100 回绕）、`a` 自动推进开关（每帧 +2）、`d` 切换
+`F-DISABLED`、`q` / ESC 退出；900 帧 `bye frames=900 keys=0 clicks=0 lines=4
+gap=800 phase=50 w=53600 h=14400` + `skeleton render OK` + `scene OK`、exit 0。
+收尾固定 4 行 / 行距 800 / 相位 50 并关掉自动推进，按 `cs-rect(sk)` 反推轨道宽
+与扫光带落点逐条核对。
+
+坑三条：① **改完属性必须重新 `cs-layout`** —— `cs-paint` 读的是布局阶段算好的
+`cs-rect`，`sk-set-lines(sk, 0)` 之后直接 `cs-paint` 还是旧几何，测试里「行数 0
+只剩底色」那条断言一开始就是因此挂的；② **叶子横向会被拉到父内容宽，只有高度
+是 intrinsic** —— 测算值 14400，实际画出来 18400（父内容宽），渲染断言整段按
+14400 写，全部漂移， dump `cs-rect` 才看出来；③ **`cs-mul` / `cs-div` 别换成裸
+算术** —— 相位落点用 `50 * ((bw - band) / 100)` 这类整数除法会截断，一律走
+`cs-mul` / `cs-div`，断言里也写成同样的表达式而不是硬编码截断后的数。
+
+## 验收记录（阶段58：命令式折叠面板 collapsible）
+
+立项理由：`src/components-catalog.md` 第 70 行写着 `C-COLLAPSIBLE` 的能力是
+「open, title」，但命令式侧只有一个 `cmp-collapsible(title)` 构造函数——展开态 /
+标题 / 正文行全都没有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时
+走通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton / 阶段 55 的
+description-list / 阶段 56 的 accordion / 阶段 57 的 carousel）。目录把
+`group_box` 标成「title, children」而 collapsible 只标「open, title」，正文是
+**数据**不是视觉子节点，阶段58 补。
+
+组件层（`src/components.no`）：新增 `cl-*` 段。扁平池 `CL-LINE []str`（正文行）
++ 每句柄 `CL-SBASE []i64` / `CL-N []i64`（随 `cmp-alloc` 长）；标题走既有
+`CMP-TEXT`；展开态复用既有 `F-OPEN` 位（声明式 `dv-on-open` 已经这么编码）。
+公开 `cl-pad` / `cl-head-h` / `cl-glyph-w` / `cl-gap` / `cl-title` /
+`cl-set-title` / `cl-open` / `cl-set-open` / `cl-expand` / `cl-collapse` /
+`cl-toggle` / `cl-count` / `cl-body-line` / `cl-add-body` / `cl-set-body-line` /
+`cl-clear`。写操作先查 `F-DISABLED`；越界下标一律空操作。几何常量与
+`cmp-scene.no` 同源（抄字面量）：`cl-pad()=1200`、`cl-head-h()=4000`、
+`cl-glyph-w()=800`、`cl-gap()=800`。
+
+渲染层（`src/cmp-scene.no`）：① **把 `C-COLLAPSIBLE` 从 `cs-is-container`
+白名单里拿掉**；② `cs-measure` 新增分支：宽 = `2*CS-PAD + max(展开符 800 +
+间隙 800 + 标题, 最长正文行)`（下限 `CS-MIN-LEAF-W`），高 = `2*CS-PAD + 头高
+4000`（收起即 6400），展开再加 `N*CS-LINE-H`；③ `cs-paint-collapsible` 画
+FIELD 底 + 头部「展开符（展开 `v` / 收起 `>`，均 ACCENT）+ 标题（FG）」+
+展开时在头下画 `CS-SEP-H` 的 TRACK 分隔线 + N 行正文（MUTED）；④
+`cs-paint-leaf` 一行路由。`cmp-set-sw/sh` 覆盖不受影响。
+
+验收：`tests/cmp-collapsible.no` 65 项断言全绿（默认 / 标题读写 / 展开态读写 /
+正文池 / 多句柄隔离 / disabled / 测算 / 渲染）；`tests/main-collapsible.no`
+窗口 demo 900 帧 `bye frames=900 keys=0 clicks=0 lines=2 open=0 w=53600 h=6400`
++ `collapsible render OK` + `scene OK`（`e` 展开 / `c` 收起 / `t` 切换 /
+`a` 加正文行 / `r` 重建 / `d` 切换 disabled，收尾重建已知两行并按 `cs-rect`
+反推坐标逐项核对）。
+
+坑三条：① **`cmp-has` 返回 bool 不能赋给 i64** —— `cl-open` 一开始写
+`v = cmp-has(h, F-OPEN)`，直接报 `cannot assign bool value to i64 variable 'v'`；
+改成 `v = 0` 后 `(cmp-has(h, F-OPEN)) -> { v = 1 }`。② **`->` 链不是互斥的**
+—— `cl-toggle` 一开始写 `(cl-open(h) != 0) -> { cl-collapse(h) }
+(cl-open(h) == 0) -> { cl-expand(h) }`，收起后第二支会重新求值并再展开一次，
+`t12` 挂；改成先 `v = cl-open(h)` 快照再判 `v` 才对。③ **`cs-paint` 不清场景**
+（同阶段 57）—— 翻状态重画前必须先 `cs_clear()`，否则第二次断言命中第一次的
+旧指令。
+
+回归（2026-11-23 实测）：非 main 66 个文件 → 65 通过 / 1 失败
+（`tests/dva-editor.no` rc=133，既有）；main 30/30；`tests/logic` ALL TESTS
+PASSED；`no vet` 17 错全在未触碰文件；`make test` 仅既有
+`TestS1RawCondFixturesAreExercised`；`dist/` 仅四个 shim 产物。
+
+
+## 验收记录（阶段59：命令式标题容器 group-box）
+
+立项理由：`src/components-catalog.md` 第 69 行写着 `C-GROUP-BOX` 的能力是
+「title, children」，但命令式侧只有一个 `cmp-group-box(title)` 构造函数——
+标题读写没有 API；而且它虽有 `children` 却走通用容器分支，标题被当成整块
+矩形里的居中文字。阶段 58 把 `collapsible` 从 `cs-is-container` 白名单里
+拿掉时明确了判据：目录标「open, title」的是数据池（不是视觉子节点），标
+「title, children」的才是真容器。`group_box` 属于后者，所以**白名单保留**，
+只补标题行与内容区的排版。
+
+组件层（`src/components.no`）：新增 `gb-*` 段。标题走既有 `CMP-TEXT`，
+公开 `gb-title` / `gb-set-title`（写先查 `F-DISABLED`）+ `gb-title-h()`
+（标题行高 4000，与 `CS-BTN-H` 同高）。**不新增数据池**——标题是文本不是
+行池，子节点是视觉节点。几何常量与 `cmp-scene.no` 同源（组件模块不能
+import 渲染层，抄字面量）：`CS-PAD=1200`、`CS-GAP=800`、`CS-CHAR-W=800`、
+`CS-SEP-H=100`、`CS-BTN-H=4000`。
+
+渲染层（`src/cmp-scene.no`）：先抽三个辅助函数复用通用容器逻辑——
+`cs-measure-flow`（内容区尺寸，横向宽求和 / 高取最大、纵向宽取最大 /
+高求和）、`cs-layout-flow`（把子节点排进给定矩形，含 `cs-grow` 分剩余
+空间与 `cs-aend` / `cs-acenter` 交叉轴对齐）、`cs-layout-overlay`（锚定
+浮层）——通用容器分支改为调用它们，避免 120 行重复。然后：①
+`cs-measure` 新增 group-box 分支（宽 = `2*CS-PAD + max(标题宽, 内容区宽)`，
+下限 `CS-MIN-LEAF-W`；高 = `2*CS-PAD + 标题行 4000`，有子节点再加
+`间隙 800 + 内容区高`，下限 `CS-BTN-H`）；② `cs-layout` 把「内容区」当
+矩形重排一次（后跑的赢，同 scroll 的套路）；③ `cs-paint` 的容器守卫放开到
+「没子节点也画面板」，并叠标题（FG）+ TRACK 分隔线——修掉了「无子节点的
+group-box 掉进 `cs-paint-leaf` 兜底，画成整块矩形 + 居中文本」的真实缺陷。
+
+验收：`tests/cmp-group-box.no` 38 项断言全绿（默认 / 标题读写 / 子节点是
+视觉节点 / disabled / 测算 / 渲染）；`tests/main-group-box.no` 窗口 demo
+900 帧 `bye frames=900 keys=0 clicks=0 kids=3 w=53600 h=16000` +
+`group-box render OK` + `scene OK`（`t` 换标题 / `a` 加子节点 / `r` 重建 /
+`h` 横纵向切换 / `d` 切换 disabled，收尾先钉横向核对子节点同行与 gap，
+再重建默认按 `cs-rect(gb)` 反推标题 / 分隔线 / 子节点坐标逐项核对）。
+
+坑三条：① **`{}` 块里有 wildcard 兜底臂就是 elif 链（先命中先赢）** ——
+`cs-measure` 的大块末臂是 `-> { cs-leaf-size(...) }`，所以
+`((cont == 1) && (n > 0))` 通用容器分支会先命中 group-box，新加的
+group-box 分支排在它后面**永远不执行**（实测：把 `gb-title-h()` 改成
+`12345` 测算值不变，分支里加 `print` 也无输出）。修法是把 group-box 分支
+移到通用容器分支**之前**。② **`print` 插值里不能调函数** ——
+`unresolved format field cs-child-count(GB)`，要先赋给临时变量再插值。
+③ **`CHILD-IDX` 是全局扁平数组，父的子链必须连续** —— 往「已经挂到
+root 的 GB」后面直接 `cmp-add-child` 追加子节点，会让 `cmp-child(GB, i)`
+读到 root 的那个槽（GB 自己），`cs-measure` 无限递归 → `EXC_BAD_ACCESS`
+（lldb 回溯：`cs_measure` ↔ `cs_measure_flow` 交替 20+ 层）。demo 的
+`a` / `r` 必须先 `cmp-detach` 清空再重挂；`cmp-detach` 会左移压实并修正
+落在被删槽之后的 head。
+
+回归（2026-11-23 实测）：非 main 67 个文件 → 67 通过 / 0 失败
+（`tests/dva-editor.no` 本轮也过了）；main 31 → 29 通过 / 2 失败
+（`tests/main-app.no` / `tests/main-layered.no`：打印 `bye` 后进程不退出，
+`_noui-quit()` 既有行为——只有这两个 demo 用它；已 `git stash` 回退
+`src/components.no` / `src/cmp-scene.no` 复现，确认与阶段 59 无关）；
+`tests/logic` ALL TESTS PASSED；`no vet src/` 11 错全在未触碰文件
+（`pm-lo` / `pm-up` / `pushmod-up` / `pushmod`），`src/components.no` +
+`src/cmp-scene.no` 0 错（6 条既有 overflow-ineffective warning），
+两个新测试 0 错；`make test` 仅既有
+`TestS1RawCondFixturesAreExercised`；`dist/` 仅四个 shim 产物。
+
+
+## 验收记录（阶段66：命令式可搜索列表 searchable-list）
+
+命令式部分（`src/components.no`）：条目标签走扁平池 `SL-ITEM []str`
+（只增，每次 `sl-add` push 一条）+ 每句柄基址 `SL-SBASE []i64` / 条数
+`SL-N []i64`；过滤结果另开一张扁平池 `SL-MATCH []i64`（**存的是条目下标，
+不是标签本身**）+ 每句柄 `SL-MBASE` / `SL-MN`；高亮 `SL-CUR []i64`
+（-1 = 没有）。这六个 per-handle 池都必须在 `cmp-alloc` 里 `.push(0)`
+（`SL-CUR` 推 -1），否则「第 2 个及以后的组件槽写不进、读回 0」
+（见 §5.55）。查询串直接复用 `CMP-TEXT[h]`（同 combobox / history），
+匹配规则 `lab.to-lower().contains(q.to-lower())`。公开 `sl-pad=1200` /
+`sl-gap=800` / `sl-min-w=6400` + `sl-count` / `sl-item` / `sl-add`
+（返回条目下标）/ `sl-set-item` / `sl-clear` / `sl-query` /
+`sl-set-query` / `sl-refresh` / `sl-match-count` / `sl-match` /
+`sl-highlight` / `sl-selected` / `sl-select` / `sl-select-next` /
+`sl-select-prev`，写操作先查 `F-DISABLED`。
+
+渲染部分（`src/cmp-scene.no`）：把它从 `cs-is-container` 白名单里拿掉，
+`cs-measure` 新增分支——宽 = `2*CS-PAD + max(查询串宽, 最长匹配标签)`，
+下限 `CS-MIN-LEAF-W`(6400)；高 = `2*CS-PAD + CS-LINE-H + (有匹配 ?
+CS-SEP-H + N*CS-LINE_H : 0)`（**空查询也要画查询行**，所以空列表的高度是
+`2*CS-PAD + CS-LINE-H` = 4800，不是 `CS-BTN_H` 4000）；
+`cs-paint-searchable-list` 画 FIELD 底 + 查询行 FG + TRACK 分隔线 +
+N 行标签 FG，**高亮行先铺一条 `(x, ry, w, CS-LINE-H)` 的 TRACK 整行底**
+再画标签；`cs-paint-leaf` 加一行路由。默认四条（alpha / BETA /
+gamma longer / delta，查询 'a'）实测：面板 `(1200,1200,15600,14500)`，
+查询 @`(2400,2400)` FG，分隔线 `(1200,4800,15600,100)` TRACK，
+高亮整行底 `(1200,4900,15600,2400)` TRACK，四行标签 y = 4900 /
+7300 / 9700 / 12100。
+
+测试：
+
+| 文件 | 内容 | 实测 |
+| --- | --- | --- |
+| `tests/cmp-searchable-list.no` | 默认 / 条目池读写 / 查询与过滤 / 高亮与选择 / 多句柄隔离 / disabled / 测算 / 渲染几何（84 项断言） | ALL SEARCHABLE-LIST TESTS PASSED |
+| `tests/main-searchable-list.no` | 窗口 demo：`a` 追加 / `f` 轮换查询串 / `n`、`p` 移动高亮 / `c` 清空 / `r` 重建 / `d` disabled | `bye frames=900 keys=0 clicks=0 items=0 match=0 w=53600 h=16900` + `searchable-list render OK` + `scene OK` |
+
+**回归（全量，本轮实测）**：`tests/*.no` 共 112 个——非 main 74 → **73 通过 /
+1 失败**（`dva-editor` rc=133，既有），main **38/38 通过**；`tests/logic`
+ALL TESTS PASSED；`no vet src/` 仍是那 11 个 error（全在 `pm-lo.no` /
+`pm-up.no` / `pushmod*.no`，未触碰），两个新测试 0 error；`make test` 失败包仍是那 6 个既有项（`build` /
+`build/js` / `checker` / `lsp` / `mir` / `parser/dump`，全是 Go 侧用例里
+`for` 容器迭代写法的解析报错，与 noui 无关），其中 `mir` 的
+`TestBorrowedEnumPayloadAliasIsCloned` / `TestNoReleaseWithoutARetain` /
+`TestLowerHIRControlFlow` 与 `parser/dump` 的
+`TestS1RawCondFixturesAreExercised` 是之前记录在案的；`dist/` 已清回仅四个
+shim 产物。
+
+**本轮踩的坑**：① `cs-measure` 的高别漏掉查询行——没匹配时高度是
+`2*CS-PAD + CS-LINE_H`（4800）而不是 `CS-BTN_H`（4000）；② **空字符串也会
+发文本指令**，收尾想断言「清空后只剩四条标签」时 `cs-text-count()` 仍是
+5（多一条空查询文本），改成断言某条目标签查不到更稳；③ `print` 插值不能
+调函数（老坑重现），调试版写 `'hl={sl-highlight(sl)}'` 直接报
+`unresolved format field`。
+## 验收记录（阶段70：命令式抽屉面板 sheet）
+
+### 新增 / 改动文件
+
+- 新增 `noui/tests/cmp-sheet.no`
+- 新增 `noui/tests/main-sheet.no`
+- `noui/src/components.no`：新 `sht-*` 段（`SHT-OPEN` / `SHT-SIDE` 两个池 +
+  五个几何常量 + 十二个 API），`cmp-alloc` 多推两个 per-handle 槽
+- `noui/src/cmp-scene.no`：白名单移除 `C-SHEET`、`cs-measure` 新分支、
+  新 `cs-paint-sheet`、`cs-paint-leaf` 一行路由
+- `noui/README.md` / `ARCHITECTURE.md`（§5.65 + §7 新条目）/
+  `src/components-catalog.md`（第 90 行展开 + 「仍未补的」降到 5 个 +
+  末尾统计加一句）
+
+### 纯逻辑（`tests/cmp-sheet.no`，66 项断言全绿）
+
+覆盖：默认（`C-SHEET` / 未展开 / 停靠左 / 标题取构造参数 / 未 disabled /
+**`cs-is-container` 白名单已移除**）、标题读写（`sht-title` / `sht-set-title`，
+底层仍是 `CMP-TEXT[h]`）、展开位（`sht-show` / `sht-hide` / `sht-toggle` /
+`sht-set-open`）、停靠边（`sht-set-side` 正常写，负数夹 0、>3 夹 3）、
+多句柄隔离、disabled 全空操作、测算 intrinsic（空标题 6400×4800、
+'sheet' 6400×4800、'abcdefghij' 10400×4800、展开 10400×12800、停靠边不
+影响测算、`cmp-set-sw/sh` 覆盖 20000×9000）、渲染（root 18000 → 内容宽
+15600；FIELD 底、左侧抓杆 `(bx,by,1200,4800)` ACCENT、标题
+@`(bx+2400,by+1200)` MUTED、文本 1 条；展开后面板 12800、抓杆拉长、
+标题转 FG；停靠右抓杆贴右端且标题不再让位；停靠上 / 下抓杆横在顶 / 底；
+改文案生效；清空标题后空串仍发一条文本指令；disabled 时渲染不变）。
+
+### 窗口端到端（`tests/main-sheet.no`）
+
+带 dummy driver 的 SDL3 窗口程序，实测跑完 900 帧自行退出：
+
+```text
+bye frames=900 keys=0 clicks=0 open=1 w=53600 h=12800
+sheet render OK
+scene OK
+```
+
+键盘：`o` 切换展开、`s` 轮换停靠边 0→1→2→3、`t` 改标题（↔'sheet'）、
+`d` 切换 `F-DISABLED`、`r` 重置默认、`q` / ESC 退出。收尾重置默认
+（'detail panel'、停靠上、展开），按 `cs-rect(sh)` 反推面板 / 抓杆 / 标题
+坐标与配色逐项核对（场景文本含四条标签 + 面板标题 = 5），再核对停靠右 /
+下 / 左三种抓杆位置、收起后面板变矮到 4800 且标题转 MUTED、改文案生效、
+清空标题后剩 5 条文本、disabled 写空操作、重置后几何回到最初，27 项断言
+打印 `sheet render OK`。
+
+### 回归 / vet
+
+- `tests/*.no` 现共 **120 个**（新增 2 个）
+- 非 main 直接跑门槛（构建 rc=0 且直接运行 rc=0）：78 个 → **77 通过 /
+  1 失败**（`tests/dva-editor.no` `rc=133`，一直是既有失败）
+- main 窗口 demo（45 s 看门狗）**42 / 42 通过**
+- `cd noui && ../bin/no test tests/logic` → `ALL TESTS PASSED`
+- `cd <仓库根> && ./bin/no vet noui/src/` 仍是 **11 个 error**，全部落在
+  未触碰的 `pm-lo.no` / `pm-up.no` / `pushmod*.no`；两个新测试文件
+  **0 error**
+- `make test`（`cd src && go test ./...`）仍是 Go 侧**既有**的失败：
+  `build` / `build/js` / `lsp` / `mir` / `parser/dump`（另有几轮并行跑时
+  `checker` / `fmt` / `i18n/catalog` 也会被资源竞争或既有的 i18n 消息 ID
+  撞号带挂），原因都是 `'for' 容器迭代写法解析报错 / 单字元比较报错 /
+  raw-cond fixture 分类`，与 noui 的 `.no` 改动无关
+- `noui/dist/` 已清回仅四个 C shim
+
+**本轮踩的坑**：① **全局 `cmp-set-text` 不看 `F-DISABLED`**——只有组件自己
+包一层的 setter（如 `tb-set-title` / `sht-set-title`）才会先查 flag，所以
+sheet 也得补 `sht-title` / `sht-set-title`，否则「disabled 时改标题」这条
+会静默写进去；② **空串也发文本指令**这个老坑又出现一次：清空标题后
+`cs-text-count()` 不是 0 而是 1（demo 里是 4 条标签 + 1 条空串 = 5）；
+③ `app-hover` 的纵坐标也要走 `fx(...)`，写成 `fy(my)` 直接编译报
+`'fy' is not defined`。
+
+## 验收记录（阶段69：命令式侧栏 sidebar）
+
+### 新增 / 改动文件
+
+- 新增 `noui/tests/cmp-sidebar.no`
+- 新增 `noui/tests/main-sidebar.no`
+- `noui/src/components.no`：新 `sdb-*` 段（`SDB-GROUP` / `SDB-GSBASE` /
+  `SDB-GNC` / `SDB-ITEM` / `SDB-ITOG` / `SDB-ISBASE` / `SDB-IN` /
+  `SDB-COLL` 八个池 + 四个几何常量 + 十五个 API），`cmp-alloc`
+  多推五个 per-handle 槽
+- `noui/src/cmp-scene.no`：白名单移除 `C-SIDEBAR`、`cs-measure` 新分支、
+  新 `cs-paint-sidebar`、`cs-paint-leaf` 一行路由
+- `noui/README.md` / `ARCHITECTURE.md`（§5.64 + §7 新条目）/
+  `src/components-catalog.md`（第 69 行展开 + 「仍未补的」降到 6 个 +
+  末尾统计加一句）
+
+### 纯逻辑（`tests/cmp-sidebar.no`，94 项断言全绿）
+
+覆盖：默认（`C-SIDEBAR` / 0 组 / 0 条 / 越界空串 / 条目所属组 −1 / 未折叠 /
+未 disabled / **`cs-is-container` 白名单已移除**）、组池读写（`sdb-add-group`
+返回插入下标、`sdb-group` 往返、`sdb-set-group`、越界写不影响、
+`sdb-clear-groups` 后组数归零但条目池不动）、条目池（扁平 + 平行的
+「所属组」、`sdb-item` / `sdb-item-group` 往返、`sdb-set-item`、组号越界
+时 `sdb-add-item` 返回 −1 且不追加、`sdb-group-size` 按组计数）、折叠位
+读写、清空（先清条目再清组，两个都复位）、多句柄隔离、disabled 全空操作、
+测算 intrinsic（空 6400×4000、一组一条 'one' 6400×7200、折叠后
+6400×4800、长条目 'abcdefghij' 12000×7200、两组三条 8000×15200、
+`cmp-set-sw/sh` 覆盖 20000×9000）、渲染（root 18000 → 内容宽 15600；
+FIELD 底、组头 @`(bx+1200,…)` MUTED、条目 @`(bx+1200+1600,…)` FG、
+文本 5 条、面板 15600×15200；折叠后 15600×8000、只剩两条组头；展开复原；
+改文案生效；清空后 FIELD 底还在、一条文本都不发）。
+
+### 窗口端到端（`tests/main-sidebar.no`）
+
+带 dummy driver 的 SDL3 窗口程序，实测跑完 900 帧自行退出：
+
+```text
+bye frames=900 keys=0 clicks=0 groups=2 w=53600 h=17600
+sidebar render OK
+scene OK
+```
+
+键盘：`a` 往最后一组追加条目、`g` 新增一组、`i` 往第 0 组追加、`t` 改第 0
+组标题（↔'renamed'）、`f` 切换折叠、`c` 清空、`r` 重建默认、`d` 切换
+`F-DISABLED`、`q` / ESC 退出。收尾重建默认（'nav': home/inbox/starred；
+'system': settings），按 `cs-rect(sd)` 反推面板 / 组头 / 条目坐标与配色逐项
+核对（场景文本含四条标签 + 侧栏 6 条 = 10），再核对折叠后面板变矮到
+8000 且条目全不画、展开后几何复原、改文案生效、清空后只剩 FIELD 底、
+disabled 写空操作、重建后几何回到最初，29 项断言打印 `sidebar render OK`。
+
+### 回归 / vet
+
+- `tests/*.no` 现共 **118 个**（新增 2 个）
+- 非 main 直接跑门槛（构建 rc=0 且直接运行 rc=0）：77 个 → **76 通过 /
+  1 失败**（`tests/dva-editor.no` `rc=133`，一直是既有失败）
+- main 窗口 demo（45 s 看门狗）**41 / 41 通过**
+- `cd noui && ../bin/no test tests/logic` → `ALL TESTS PASSED`
+- `cd <仓库根> && ./bin/no vet noui/src/` 仍是 **11 个 error**，全部落在
+  未触碰的 `pm-lo.no` / `pm-up.no` / `pushmod*.no`；两个新测试文件
+  **0 error**
+- `make test`（`cd src && go test ./...`）仍是 Go 侧**既有**的失败：本次实测
+  挂掉的是 `build` / `build/js` / `i18n/catalog` / `lsp` / `mir` /
+  `parser/dump`（另有几轮并行跑时 `checker` 与 `fmt` 也会被资源竞争带挂），
+  原因都是 `'for' 容器迭代写法解析报错 / 单字元比较报错 / i18n 消息 ID
+  撞号 / raw-cond fixture 分类`，与 noui 的 `.no` 改动无关
+- `noui/dist/` 已清回仅四个 C shim
+
+**本轮踩的坑**：① **折叠高度别心算漏一个组头**——两组折叠后是
+`2*pad + 2*line-h + gap = 2400+4800+800 = 8000`，一开始按 `7600` 断言挂了；
+② **收尾断言里的纵向坐标链要逐行推**——默认两组四条时依次是 `ay`、
+`ay+lh`、`ay+2*lh`、`ay+3*lh`、`ay+3*lh+lh+gap`、`ay+3*lh+lh+gap+lh`，
+漏掉中间一行会让后续所有断言一起挂；③ `components.no` 里误用了渲染层的
+`cs-inc`（`components.no` 不能反向依赖 `cmp-scene`），只有 `no vet`
+能抓到——测试文件同时 import 两边所以运行时看不出来，已改回 `ct-inc`。
+
+## 验收记录（阶段68：命令式工具栏 toolbar）
+
+### 新增 / 改动文件
+
+- 新增 `noui/tests/cmp-toolbar.no`
+- 新增 `noui/tests/main-toolbar.no`
+- `noui/src/components.no`：新 `tlb-*` 段（`TLB-ITEM` / `TLB-SBASE` /
+  `TLB-N` / `TLB-CUR` 四个池 + 四个几何常量 + 九个 API），`cmp-alloc`
+  多推三个 per-handle 槽（`TLB-CUR` 推 −1）
+- `noui/src/cmp-scene.no`：白名单移除 `C-TOOLBAR`、`cs-measure` 新分支、
+  新 `cs-paint-toolbar`、`cs-paint-leaf` 一行路由
+- `noui/README.md` / `ARCHITECTURE.md`（§5.63 + §7 新条目）/
+  `src/components-catalog.md`（第 72 行展开 + 「仍未补的」降到 7 个 +
+  末尾统计加一句）
+
+### 纯逻辑（`tests/cmp-toolbar.no`，74 项断言全绿）
+
+覆盖：默认（`C-TOOLBAR` / 0 项 / 越界空串 / 无选中 −1 / 未 disabled /
+**`cs-is-container` 白名单已移除**）、条目池读写（`tlb-add` 返回插入下标、
+**首次有条目时自动高亮第 0 项**、`tlb-item` 往返、`tlb-set-item`、越界写
+不影响、`tlb-clear` 后选中复位 −1 且基址复用同一段扁平池）、选中语义
+（指定、`tlb-select(99)` 夹紧到 n−1、`tlb-select(-99)` 夹紧到 0、
+next / prev 两端回绕、空集合怎么选都是 −1）、多句柄隔离、disabled 全空
+操作、测算 intrinsic（空 6400×6400、一项 'aa' 6400×6400、三项
+13600×6400、长条目 'abcdefghij' 12000×6400、`cmp-set-sw/sh` 覆盖
+20000×9000）、渲染（root 18000 → 内容宽 15600；FIELD 底、chip0 ACCENT、
+chip1/chip2 TRACK、三条文案 @`(chip 左缘+800, sy+800)` FG、文本 3 条；
+切到第 2 项后 ACCENT 跟着走；清空后一条文本指令都不发；重加一项后自动
+高亮第 0 项）。
+
+### 窗口端到端（`tests/main-toolbar.no`）
+
+带 dummy driver 的 SDL3 窗口程序，实测跑完 900 帧自行退出：
+
+```text
+bye frames=900 keys=0 clicks=0 count=3 w=53600 h=6400
+toolbar render OK
+scene OK
+```
+
+键盘：`a` 从五组候选（'file' / 'edit' / 'view' / 'help' / 'tools'）轮取追加
+条目、`n` / `p` 上下项、`x` 改第 0 项（↔'renamed'）、`c` 清空、`r` 重建
+默认、`d` 切换 `F-DISABLED`、`q` / ESC 退出。收尾按 `cs-rect(tl)` 反推
+面板 / 槽顶 / 文本垂直居中偏移 / 每个 chip 盒左缘与配色逐项核对（场景文本
+含四条标签 = 7 条），再核对切到第 2 项后 ACCENT 跟着走、清空后一条文本都
+不发、重加一项后自动高亮第 0 项、disabled 写空操作、重建后几何回到最初，
+28 项断言打印 `toolbar render OK`。
+
+### 回归 / vet
+
+- `tests/*.no` 现共 **116 个**（新增 2 个）
+- 非 main 直接跑门槛（构建 rc=0 且直接运行 rc=0）：76 个 → **75 通过 /
+  1 失败**（`tests/dva-editor.no` `rc=133`，一直是既有失败）
+- main 窗口 demo（45 s 看门狗）**40 / 40 通过**
+- `cd noui && ../bin/no test tests/logic` → `ALL TESTS PASSED`
+- `cd <仓库根> && ./bin/no vet noui/src/` 仍是 **11 个 error**，全部落在
+  未触碰的 `pm-lo.no` / `pm-up.no` / `pushmod*.no`；两个新测试文件 **0 error**
+- `make test` 仍是 Go 侧**既有**的 6 个失败包（`build` / `build/js` /
+  `checker` / `lsp` / `mir` / `parser/dump`），与 noui 改动无关
+- `noui/dist/` 已清回仅四个 C shim
+
+## 验收记录（阶段67：命令式标题栏 title-bar）
+
+### 新增 / 改动文件
+
+- 新增 `noui/tests/cmp-title-bar.no`
+- 新增 `noui/tests/main-title-bar.no`
+- `noui/src/components.no`：新 `tb-*` 段（`TTB-BTN` / `TTB-SBASE` /
+  `TTB-N` 三个池 + 四个几何常量 + 八个 API），`cmp-alloc` 多推两个
+  per-handle 槽
+- `noui/src/cmp-scene.no`：白名单移除 `C-TITLE-BAR`、`cs-measure` 新分支、
+  新 `cs-paint-title-bar`、`cs-paint-leaf` 一行路由
+- `noui/README.md` / `ARCHITECTURE.md`（§5.62 + §7 新条目）/
+  `src/components-catalog.md`（第 73 行展开 + 「仍未补的」降到 8 个 +
+  末尾统计加一句）
+
+### 纯逻辑（`tests/cmp-title-bar.no`，69 项断言全绿）
+
+覆盖：默认（`C-TITLE-BAR` / 0 个按钮 / 越界空串 / 标题取构造参数 /
+未 disabled / **`cs-is-container` 白名单已移除**）、标题读写（走
+`CMP-TEXT`，`tb-title` / `cmp-text` 一致）、按钮池读写（`tb-add` 返回插入
+下标、`tb-button` 往返、`tb-set-button`、越界写不影响、`tb-clear` 后基址
+复用同一段扁平池）、多句柄隔离（第二个句柄清空再添加，基址回到 0）、
+disabled 全空操作、测算 intrinsic（空 6400×6400、标题 'abc' 6400×6400、
+长标题 'abcdefghij' 10400×6400、一个按钮 'ok' 6400×6400、两个按钮
+10400×6400、标题 'ab'+按钮 'ok' 8000×6400、`cmp-set-sw/sh` 覆盖
+20000×9000）、渲染（root 18000 → 内容宽 15600；FIELD 底、标题
+@`(bx+1200, by+1200+800)` FG、两个按钮盒右对齐在 `(bx+7200,by+1200)` /
+`(bx+11200,by+1200)` TRACK、文案各内缩 800、文本 3 条；追加第三个按钮
+后整排变宽且首钮左缘左移到 `bx+800`、文本 4 条；清空按钮 + 清空标题后
+FIELD 底还在、只发一条空串文本指令）。
+
+### 窗口端到端（`tests/main-title-bar.no`）
+
+带 dummy driver 的 SDL3 窗口程序，实测跑完 900 帧自行退出：
+
+```text
+bye frames=900 keys=0 clicks=0 count=2 w=53600 h=6400
+title-bar render OK
+scene OK
+```
+
+键盘：`a` 从四组候选（'ok' / 'no' / 'maybe longer' / 'x'）轮取追加按钮、
+`b` 改第 0 个按钮（↔'renamed'）、`t` 改标题（↔'renamed'）、`c` 清空按钮、
+`r` 重建默认、`d` 切换 `F-DISABLED`、`q` / ESC 退出。收尾按 `cs-rect(tb)`
+反推面板 / 槽顶 / 文本垂直居中偏移 / 整排按钮总宽与首钮左缘逐项核对
+（场景文本含四条标签 = 7 条），再核对改文案后盒宽变化、追加第三个按钮后
+整排变宽且首钮左移、清空按钮后按钮盒消失、清空标题后仍发一条空串文本、
+disabled 写空操作、重建后几何回到最初，30 项断言打印
+`title-bar render OK`。
+
+### 回归 / vet（与本轮改动对照）
+
+- `tests/*.no` 现共 **114 个**（新增 2 个）
+- 非 main 直接跑门槛（构建 rc=0 且直接运行 rc=0）：75 个 → **74 通过 /
+  1 失败**（`tests/dva-editor.no` `rc=133`，一直是既有失败）
+- main 窗口 demo（45 s 看门狗）**39 / 39 通过**
+- `cd noui && ../bin/no test tests/logic` → `ALL TESTS PASSED`
+- `cd <仓库根> && ./bin/no vet noui/src/` 仍是 **11 个 error**，全部落在
+  未触碰的 `pm-lo.no` / `pm-up.no` / `pushmod*.no`；两个新测试文件 **0 error**
+- `make test` 仍是 Go 侧**既有**的 6 个失败包（`build` /
+  `build/js` / `checker` / `lsp` / `mir` / `parser/dump`，全是 `'for'
+  keyword is invalid for container iteration` 之类的解析器用例），
+  与 noui 改动无关
+- `noui/dist/` 已清回仅四个 C shim
+
+### 本轮抓到的一个真回归（值得记下来）
+
+第一版把按钮池命名为 `TB-BTN` / `TB-SBASE` / `TB-N`（跟着 kind 名
+title-bar 走）。编译能过，但 `tests/main-table.no` 第 64 行有一个**自己的
+模块级标量 `TB-N = 20`**（表格 demo 的行数），被库里的同名 `[]i64` 池顶掉
+——main-table 打印完 font init 就 `rc=133` 崩掉。改名 `TTB-*` 后立刻恢复
+`bye frames=900 keys=0 clicks=0 rows=11 sel=-1` + `table render OK`。
+教训已写进 `ARCHITECTURE.md` §5.62 坑三条：**库里加全局池 / 全局函数前，
+先 `grep -rn --include='*.no' '<名字>'` 确认全仓库唯一**——demo 文件里的
+顶层标量是自由命名的。
+
+## 验收记录（阶段65：命令式问卷 questionnaire）
+
+命令式部分（`src/components.no`）：新增三个严格同步增长的池 `QA-PROMPT []str`
+/ `QA-ANS []str` / `QA-REQ []i64`（扁平只增，每次 `qa-add` 三池各 push 一条，
+所以基址只记一个 `QA-SBASE []i64`）+ 每句柄题数 `QA-N []i64`；两者**必须在
+`cmp-alloc` 里 `.push(0)`**，否则「第 2 个及以后的组件槽写不进、读回 0」
+（见 §5.55）。公开 `qa-pad=1200` / `qa-gap=800` / `qa-min-w=6400` +
+`qa-count` / `qa-prompt` / `qa-answer` / `qa-required` / `qa-answered`
+（答案非空的题数）/ `qa-progress`（百分比，无题 0）/ `qa-complete`（必答题
+是否都作答）+ `qa-add` / `qa-set-prompt` / `qa-set-answer` /
+`qa-set-required` / `qa-clear`，写操作先查 `F-DISABLED`。
+
+渲染部分（`src/cmp-scene.no`）：把它从 `cs-is-container` 白名单里拿掉
+（题目是数据不是视觉子节点），`cs-measure` 新增分支——宽 =
+`2*CS-PAD + max(各题题干宽, 各题答案宽)`，下限 `CS-MIN-LEAF-W`(6400)；高 =
+`2*CS-PAD + N*2*CS-LINE_H + (N-1)*qa-gap()`，下限 `CS-BTN_H`(4000)
+（**每题两行**，只算 N 行会矮一半）；`cs-paint-questionnaire` 画 FIELD 底 +
+每题「必答 TRACK 小方块标记（800×800）+ 题干 FG」一行、「答案 ACCENT」
+一行，题间留 `qa-gap()`；`cs-paint-leaf` 加一行路由。默认两题
+（'name?'/'ada'、'quest?'/'lin'，第 0 题必答）实测渲染节点：FIELD 底
+`1200,1200,15600,12800`；标记 `2400,3200,800,800` TRACK；题干 0
+@`4000,2400` FG；答案 0 @`2400,4800` ACCENT；题干 1 @`2400,8000` FG；
+答案 1 @`2400,10400` ACCENT。
+
+测试：
+
+| 文件 | 内容 | 实测 |
+| --- | --- | --- |
+| `tests/cmp-questionnaire.no` | 默认 / 题池读写 / 必答与进度 / 多句柄隔离 / disabled / 测算 / 渲染几何（63 项断言） | ALL QUESTIONNAIRE TESTS PASSED |
+| `tests/main-questionnaire.no` | 窗口 demo：`a` 追加 / `t` 改题干 / `w` 写清答案 / `m` 切换必答 / `c` 清空 / `r` 重建 / `d` disabled | `bye frames=900 keys=0 clicks=0 count=0 w=53600 h=18400` + `questionnaire render OK` + `scene OK` |
+
+**回归（全量，本轮实测）**：`tests/*.no` 共 110 个——非 main 73 → **72 通过 /
+1 失败**（`dva-editor` rc=133，既有），main **37/37 通过**；`tests/logic`
+ALL TESTS PASSED；`no vet src/` 仍是那 11 个 error（全在 `pm-lo.no` /
+`pm-up.no` / `pushmod*.no`，未触碰），`components.no` / `cmp-scene.no` 与两个
+新测试 0 error；`make test` 失败包是那 6 个既有项（`build` / `build/js` /
+`checker` / `lsp` / `mir` / `parser/dump`，全是 Go 侧用例里 `for` 容器迭代
+写法的解析报错，与 noui 无关）；`dist/` 已清回仅四个 shim 产物。
+
+**本轮踩的坑**：① `components.no` 不能调 `cs-*`（反向依赖渲染层），改用普通
+算术；② nolang 的 `+` `*` `/` 返回 `?i64`，直接赋给 `i64` 变量会报
+`cannot assign ?i64 value to i64 variable`，按仓库既有写法改成单表达式内联
+匹配解包（`ni = i + 1: { ok -> it` 空行 `-> i }`，乘除两级解包）；
+③ **同名变量跨类型复用会粘住类型**——demo 里先 `p0 = qa-prompt(qa, 0)`
+（`str`）后 `p0 = 1200`（`i64`），语法能过但 codegen 报
+`argument 2 of '@cs_add': … aggregate type 'str'`（两处各一次），改名即可。
+
+## 验收记录（阶段64：命令式锚定弹层 popover）
+
+- 补齐内容：`src/components.no` 新增 `pv-*` 段——正文行池 `PV-LINE []str`
+  （扁平只增）+ 每句柄 `PV-SBASE []i64` / `PV-N []i64`（随 `cmp-alloc`
+  长）；开合走 `CMP-VALUE`（负数归 0），锚定边 0..3 走 `CMP-VALUE2`；
+  `pv-pad` / `pv-arrow-w` / `pv-gap` 三个几何常量 + `pv-open` /
+  `pv-set-open` / `pv-side` / `pv-set-side` / `pv-title` / `pv-set-title` /
+  `pv-count` / `pv-line` / `pv-add` / `pv-set-line` / `pv-clear`，写操作先查
+  `F-DISABLED`。`src/cmp-scene.no` 把它从 `cs-is-container` 白名单里拿掉
+  （正文行是数据不是视觉子节点），`cs-measure` 新增分支（关闭 →
+  `CS-MIN-LEAF-W` × `CS-BTN-H`；展开 → 宽 = `2*CS-PAD + 箭头 800 + 间隙 800 +
+  max(标题宽, 最长正文行)`，下限 6400；高 = `2*CS-PAD + 标题行 +（有标题且有
+  正文 ? CS-SEP-H : 0）+ N*CS-LINE-H`，下限 `CS-BTN-H`），
+  `cs-paint-popover` 画 FIELD 底 + 按 `side` 贴边的 800×800 ACCENT 箭头方块 +
+  标题 FG + 条件 TRACK 分隔线 + N 行正文 MUTED（关闭时一笔画不出），
+  `cs-paint-leaf` 加一行路由
+- 测试：`tests/cmp-popover.no` 纯逻辑 62 项断言全绿（默认 / 开合与锚定边 /
+  标题与行池 / 多句柄隔离 / disabled / 测算 / 渲染）；
+  `tests/main-popover.no` 窗口 demo（`o` 开合 / `s` 轮换锚定边 / `a` 追加行 /
+  `t` 改标题 / `l` 改首行 / `c` 清空 / `r` 重建 / `d` 切换 disabled），收尾
+  重建默认，按 `cs-rect(pv)` 反推面板 / 箭头 / 标题 / 分隔线 / 正文坐标逐项
+  核对，实测 `bye frames=900 keys=0 clicks=0 open=0 side=3 w=53600 h=9700`
+  + `popover render OK` + `scene OK`
+- 回归（2026-11-23 实测）：非 main 72 个文件 → 71 通过 / 1 失败
+  （`tests/dva-editor.no` rc=133，既有）；main 36/36（含新增
+  `tests/main-popover.no`）；`tests/logic` ALL TESTS PASSED；
+  `no vet src/` 11 错全在未触碰文件（`src/pm-lo.no` / `src/pm-up.no` /
+  `src/pushmod*.no`），`src/components.no` + `src/cmp-scene.no` 0 错
+  （6 条既有 overflow warning），两个新测试 0 错；`make test` 的失败全部来自
+  工作区里既有的、与本阶段无关的改动——`src/mir` 3 个
+  （`TestBorrowedEnumPayloadAliasIsCloned` / `TestNoReleaseWithoutARetain` /
+  `TestLowerHIRControlFlow`，自包含的内联源码用例）+ `parser/dump` 的
+  `TestS1RawCondFixturesAreExercised`（本阶段没有改任何 `.go` / `src/`）。
+  `dist/` 已清回仅四个 shim 产物。
+- 本轮记一个**读取可选值的坑**：`pv-open` 一开始写成「先 `k = CMP-VALUE[h]`
+  再 `v = k: { ok -> it … }`」两步解包，结果**写进去的值读不回来**（set 后
+  `ct-get(CMP-VALUE,h)` 已是 1，而 `pv-open` 恒返回 0）。仓库里既有的
+  `cmp-value` / `cmp-value2` 用的是**单表达式内联匹配**
+  `x = CMP-VALUE[h]: { ok -> it`（空行）`-> 0 }`，改成同款后立刻恢复。
+  详见 `ARCHITECTURE.md` §5.59。
+
+## 验收记录（阶段63：命令式状态条 status-bar）
+
+- 补齐内容：`src/components.no` 新增 `sb-*` 段——分段池 `SB-SEG []str`
+  （扁平只增）+ 每句柄 `SB-SBASE []i64` / `SB-N []i64`（随 `cmp-alloc`
+  长）；`sb-pad` / `sb-div-w` 两个几何常量 + `sb-count` / `sb-seg` /
+  `sb-add` / `sb-set-seg` / `sb-clear`，写操作先查 `F-DISABLED`。
+  `src/cmp-scene.no` 把它从 `cs-is-container` 白名单里拿掉（分段是数据
+  不是视觉子节点），`cs-measure` 新增分支（宽 = `2*CS-PAD + Σ 段文案宽 +
+  (N-1)*CS-SEP-H`，下限 `CS-MIN-LEAF-W`；高固定 `CS-BTN-H`），
+  `cs-paint-status-bar` 画 FIELD 底 + 段 FG 文案 + 段间 TRACK 竖分隔条
+  （细条只有 `CS-BTN-H` 高，文字在条内垂直居中），`cs-paint-leaf` 加一行
+  路由
+- 测试：`tests/cmp-status-bar.no` 纯逻辑 48 项断言全绿（默认 / 分段池 /
+  改写 / 多句柄隔离 / disabled / 测算 / 渲染）；
+  `tests/main-status-bar.no` 窗口 demo（`a` 追加段 / `t` 改第 0 段 /
+  `c` 清空 / `r` 重建 / `d` 切换 disabled），收尾重建默认三段，按
+  `cs-rect(sb)` 反推段起点 / 竖条 / 文字 y（`by+800`）逐项核对，实测
+  `bye frames=900 keys=0 clicks=0 segments=0 w=53600 h=4000`
+  + `status-bar render OK` + `scene OK`
+- 回归（2026-11-23 实测）：非 main 71 个文件 → 70 通过 / 1 失败
+  （`tests/dva-editor.no` rc=133，既有）；main 35/35（含新增
+  `tests/main-status-bar.no`）；`tests/logic` ALL TESTS PASSED；
+  `no vet src/` 11 错全在未触碰文件（`src/pm-lo.no` / `src/pm-up.no` /
+  `src/pushmod*.no`），`src/components.no` + `src/cmp-scene.no` 0 错
+  （6 条既有 overflow warning），两个新测试 0 错；`make test` 的失败全部
+  来自工作区里既有的、与本阶段无关的改动——`src/mir` 3 个
+  （`TestBorrowedEnumPayloadAliasIsCloned` / `TestNoReleaseWithoutARetain`
+  / `TestLowerHIRControlFlow`，自包含的内联源码用例）+ `parser/dump` 的
+  `TestS1RawCondFixturesAreExercised`（本阶段没有改任何 `.go` / `src/`）。
+  `dist/` 已清回仅四个 shim 产物。
+- 本轮记一个**几何常量坑**：状态条是细条（高固定 `CS-BTN-H = 4000`，
+  不是 `2*CS-PAD + ...`），文字走 `cs-emit-text-left` 的垂直居中，
+  所以文字 y = `y + (4000-2400)/2 = y + 800`，不是行顶。详见
+  `ARCHITECTURE.md` §5.58。
+
+## 验收记录（阶段62：命令式消息流 message-scroller）
+
+- 补齐内容：`src/components.no` 新增 `ms-*` 段——消息池 `MS-MSG []str` /
+  `MS-AUTH []str`（扁平只增）+ 每句柄 `MS-SBASE []i64` / `MS-N []i64`
+  （随 `cmp-alloc` 长），「输入中」走 `CMP-VALUE`（0 / 1，负数归 0）；
+  `ms-pad` / `ms-gap` 两个几何常量 + `ms-count` / `ms-text` / `ms-author` /
+  `ms-add` / `ms-set-text` / `ms-set-author` / `ms-clear`（连输入中一起清）/
+  `ms-typing` / `ms-set-typing`，写操作先查 `F-DISABLED`。
+  `src/cmp-scene.no` 把它从 `cs-is-container` 白名单里拿掉（消息是数据
+  不是视觉子节点），`cs-measure` 新增分支（宽 = `2*CS-PAD +
+  max(最长作者, 最长正文)`，下限 `CS-MIN-LEAF-W`；高 = `2*CS-PAD +
+  N*2*CS-LINE-H + (N-1)*CS-SEP-H +（输入中 ? CS-SEP-H + CS-LINE-H : 0）`，
+  下限 `CS-BTN-H`），`cs-paint-message-scroller` 画 FIELD 底 + 作者 MUTED +
+  正文 FG + 条间 TRACK 分隔线，输入中时末尾再补一条分隔线 + 「typing...」
+  ACCENT，`cs-paint-leaf` 加一行路由
+- 测试：`tests/cmp-message-scroller.no` 纯逻辑 63 项断言全绿（默认 /
+  消息池 / 改写 / 输入中 / 多句柄隔离 / disabled / 测算 / 渲染）；
+  `tests/main-message-scroller.no` 窗口 demo（`a` 追加消息 / `t` 切换输入中 /
+  `c` 清空 / `r` 重建 / `d` 切换 disabled），收尾重建默认两条，按
+  `cs-rect(ms)` 反推作者行 / 正文行 / 分隔线坐标逐项核对，实测
+  `bye frames=900 keys=0 clicks=0 messages=0 typing=0 w=53600 h=12100`
+  + `message-scroller render OK` + `scene OK`
+- 回归（2026-11-23 实测）：非 main 70 个文件 → 69 通过 / 1 失败
+  （`tests/dva-editor.no` rc=133，既有）；main 34/34（含新增
+  `tests/main-message-scroller.no`）；`tests/logic` ALL TESTS PASSED；
+  `no vet src/` 11 错全在未触碰文件（`src/pm-lo.no` / `src/pm-up.no` /
+  `src/pushmod*.no`），`src/components.no` + `src/cmp-scene.no` 0 错
+  （6 条既有 overflow warning），两个新测试 0 错；`make test` 仅既有
+  `TestS1RawCondFixturesAreExercised`。`dist/` 已清回仅四个 shim 产物。
+- 本轮补掉两个**状态一致性**坑：`ms-clear` 必须连「输入中」一起清
+  （否则清空后仍画一行 typing，高度也不回落）；`ms-set-typing` 的夹紧
+  要 `(v > 0) -> 1` / `(v <= 0) -> 0`，写成 `(v != 0) -> 1` 会把负数
+  当成打开。详见 `ARCHITECTURE.md` §5.57。
+
+## 验收记录（阶段61：命令式对象检查器 inspector）
+
+- 补齐内容：`src/components.no` 新增 `in-*` 段——目标名走 `CMP-TEXT`（同
+  group-box 的标题），字段池 `IN-LAB []str` / `IN-VAL []str`（扁平只增）+
+  每句柄 `IN-SBASE []i64` / `IN-N []i64`（随 `cmp-alloc` 长）；`in-pad` /
+  `in-marker-w` / `in-gap` 三个几何常量 + `in-target` / `in-set-target` /
+  `in-count` / `in-label` / `in-value` / `in-add` / `in-set-label` /
+  `in-set-value` / `in-clear`，写操作先查 `F-DISABLED`。
+  `src/cmp-scene.no` 把它从 `cs-is-container` 白名单里拿掉（字段是数据
+  不是视觉子节点），`cs-measure` 新增分支（宽 = `2*CS-PAD + 标记条 800 +
+  间隙 800 + max(目标名宽, 最长标签 + 间隙 + 最长值)`，下限
+  `CS-MIN-LEAF-W`；高 = `2*CS-PAD + 目标行 CS-LINE-H + N*CS-LINE-H +
+  (N-1)*CS-SEP-H`，下限 `CS-BTN-H`），`cs-paint-inspector` 画 FIELD 底 +
+  目标行「ACCENT 标记条 + FG 目标名」+ 字段行「MUTED 标签 + FG 值」+
+  行间 TRACK 分隔线，`cs-paint-leaf` 加一行路由
+- 测试：`tests/cmp-inspector.no` 纯逻辑 67 项断言全绿（默认 / 目标名 /
+  字段池 / 改写 / 多句柄隔离 / disabled / 测算 / 渲染）；
+  `tests/main-inspector.no` 窗口 demo（`a` 追加字段 / `t` 换目标名 /
+  `e` 清空字段 / `r` 重建 / `d` 切换 disabled），收尾重建默认，按
+  `cs-rect(ins)` 反推标记条 / 目标 / 字段 / 分隔线坐标逐项核对，实测
+  `bye frames=900 keys=0 clicks=0 target=abcdefghij fields=0 w=53600
+  h=12200` + `inspector render OK` + `scene OK`
+- 回归（2026-11-23 实测）：非 main 69 个文件 → 68 通过 / 1 失败
+  （`tests/dva-editor.no` rc=133，既有）；main 33/33（含新增
+  `tests/main-inspector.no`）；`tests/logic` ALL TESTS PASSED；
+  `no vet src/` 11 错全在未触碰文件（`src/pm-lo.no` / `src/pm-up.no` /
+  `src/pushmod*.no`），`src/components.no` + `src/cmp-scene.no` 0 错
+  （6 条既有 overflow warning），两个新测试 0 错；`make test` 仅既有
+  `TestS1RawCondFixturesAreExercised`。`dist/` 已清回仅四个 shim 产物。
+- 本轮补掉一个**测量口径**坑：`cs-text-count()` 数整棵场景树，窗口 demo
+  里除了检查器自己的文本还有 title / hint / stat / stat2 四条标签，
+  断言总数必须算上（11 / 5），不是 7 / 1。详见 `ARCHITECTURE.md` §5.56。
+
+## 验收记录（阶段60：命令式历史条目 history）
+
+- 补齐内容：`src/components.no` 新增 `hst-*` 段——扁平只增条目池
+  `HST-ENTRY []str` + 每句柄 `HST-SBASE []i64` / `HST-N []i64`（随
+  `cmp-alloc` 长），当前下标走 `CMP-VALUE`（`hst-index` 越界回落 0）；
+  `hst-pad` / `hst-marker-w` / `hst-gap` 三个几何常量 + `hst-count` /
+  `hst-entry` / `hst-add`（返回新下标，disabled 时 -1）/ `hst-set-entry` /
+  `hst-index` / `hst-set-index` / `hst-jump` / `hst-back` / `hst-forward` /
+  `hst-clear`，写操作先查 `F-DISABLED`；`hst-back` / `hst-forward`
+  夹紧在 `[0, n-1]` 不环绕（历史不是循环的，与 carousel 语义不同）。
+  `src/cmp-scene.no` 把它从 `cs-is-container` 白名单里拿掉（条目是数据
+  不是视觉子节点），`cs-measure` 新增分支（宽 = `2*CS-PAD + 标记条 800 +
+  间隙 800 + 最长条目文案`，下限 `CS-MIN-LEAF-W`；高 = `2*CS-PAD +
+  N*CS-LINE-H + (N-1)*CS-SEP-H`，下限 `CS-BTN-H`），`cs-paint-history`
+  画 FIELD 底 + 当前行 ACCENT 标记条 + FG 文本、其余行 TRACK 标记条 +
+  MUTED 文本、行间 TRACK 分隔线，`cs-paint-leaf` 加一行路由
+- 测试：`tests/cmp-history.no` 纯逻辑 72 项断言全绿（默认 / 条目池 /
+  改写与下标 / 多句柄隔离 / disabled / 测算 / 渲染）；
+  `tests/main-history.no` 窗口 demo（`a` 追加 / `b` 后退 / `f` 前进 /
+  `j` 跳第 0 条 / `r` 重建 / `d` 切换 disabled），收尾重建默认三条，
+  按 `cs-rect(hs)` 反推标记条 / 文本 / 分隔线坐标逐项核对，实测
+  `bye frames=900 keys=0 clicks=0 entries=3 index=2 w=53600 h=9800`
+  + `history render OK` + `scene OK`
+- 回归（2026-11-23 实测）：非 main 68 个文件 → 67 通过 / 1 失败
+  （`tests/dva-editor.no` rc=133，既有）；main 32/32（含新增
+  `tests/main-history.no`）；`tests/logic` ALL TESTS PASSED；
+  `no vet src/` 11 错全在未触碰文件（`src/pm-lo.no` / `src/pm-up.no` /
+  `src/pushmod*.no`），`src/components.no` + `src/cmp-scene.no` 0 错
+  （6 条既有 overflow warning），两个新测试 0 错；`make test` 仅既有
+  `TestS1RawCondFixturesAreExercised`。`dist/` 已清回仅四个 shim 产物。
+- 本轮补掉一个**静默失效**坑：`ct-set` 只写 `i < a.len()` 的槽，
+  `HST-SBASE` / `HST-N` 用 `with-len(0)` 声明后必须在 `cmp-alloc` 里
+  `.push(0)`，否则条数永远 0、`hst-add` 返回值也错（首轮 72 项里 40 项
+  因此挂掉）。详见 `ARCHITECTURE.md` §5.55。
+
+## 验收记录（阶段57：命令式走马灯 carousel）
+
+立项理由：`src/components-catalog.md` 第 64 行写着 `C-CAROUSEL` 的能力是
+「slides, current」，但命令式侧只有一个 `cmp-carousel()` 构造函数——幻灯片 /
+当前张全都没有 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走
+通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton / 阶段 55 的
+description-list / 阶段 56 的 accordion）。幻灯片是**数据**不是视觉子节点
+（同 `C-PAGINATION` / `C-SELECT` / `C-TAB` / `C-DESCRIPTION-LIST` /
+`C-ACCORDION` 一路），阶段57 补。
+
+组件层（`src/components.no`）：新增 `cr-*` 段。扁平池
+`CR-SLIDE []str`（幻灯片文案）+ 每句柄 `CR-SBASE []i64` / `CR-N []i64`
+（随 `cmp-alloc` 长）；当前张走 `CMP-VALUE`（`cr-current` 越界回落 0）。
+公开 `cr-pad` / `cr-arrow-w` / `cr-gap` / `cr-dot-w` / `cr-dot-gap` /
+`cr-count` / `cr-slide` / `cr-add`（返回新下标，disabled 时 -1）/
+`cr-set-slide` / `cr-current` / `cr-set-current` / `cr-select` / `cr-next` /
+`cr-prev` / `cr-clear`。写操作先查 `F-DISABLED`；越界下标一律空操作。
+几何常量与 `cmp-scene.no` 同源（抄字面量）：`cr-pad()=1200`、
+`cr-arrow-w()=800`、`cr-gap()=800`、`cr-dot-w()=800`、`cr-dot-gap()=800`。
+
+渲染层（`src/cmp-scene.no`）：① **把 `C-CAROUSEL` 从 `cs-is-container`
+白名单里拿掉**；② `cs-measure` 新增分支：宽 = `2*CS-PAD + 2*箭头 + 2*间隙 +
+最长幻灯片文案`（下限 `CS-MIN-LEAF-W`），高 = `2*CS-PAD + CS-BTN-H +
+CS-SEP-H + CS-LINE-H` = 8900；③ `cs-paint-carousel` 画 FIELD 底 + 上带
+「`<` 当前幻灯片 `>`」（无幻灯片时不画箭头；到头 / 到尾对应箭头转
+`CS-TH-MUTED`）+ `CS-SEP-H` 的 TRACK 分隔线 + 下带一行圆点（当前点
+ACCENT、其余 TRACK）；④ `cs-paint-leaf` 一行路由。`cmp-set-sw/sh` 覆盖不受
+影响。
+
+验收：`tests/cmp-carousel.no` 70 项断言全绿（默认 / 幻灯片池 / 改写 + 当前张
+读写 / 多句柄隔离 / disabled / 测算 / 渲染）；`tests/main-carousel.no` 窗口
+demo 900 帧 `bye frames=900 keys=0 clicks=0 slides=3 current=2 w=53600
+h=8900` + `carousel render OK` + `scene OK`（`a` 追加幻灯片 / `n` 下一张 /
+`p` 上一张 / `s` 回首张 / `r` 重建 / `d` 切换 disabled，收尾重建已知三张并
+按 `cs-rect` 反推坐标逐项核对，再翻到末张复核右箭头转 MUTED / `gamma` /
+`dot2`）。
+
+坑三条：① **`->` 链不是互斥的** —— `cr-prev` 一开始写成
+`(i <= 0) -> { i = n-1 }` 后接 `(i > 0) -> { i = i-1 }`，前一支改了 `i` 后
+后一支会重新求值并再改一次，`t22` / `t23` 直接挂；改成
+`i = cr-current(h) - 1` 再单独一支 `(i < 0) -> { i = n-1 }` 才对。②
+**`cs-paint` 不清场景** —— 同一棵树上连续 `cs-layout` + `cs-paint` 两次，
+场景是**累加**的，第二次断言会命中第一次的旧指令；测试里翻状态后必须先
+`cs-clear()`。③ **空池别画箭头** —— 初稿无条件画 `<` / `>`，空走马灯也有
+两条文本，`t69`（空池文本 0 条）挂；加 `(n > 0)` _guard 后空池只剩底色。
+
+回归（2026-11-23 实测）：非 main 65 个文件 → 64 通过 / 1 失败
+（`tests/dva-editor.no` rc=133，既有）；main 29/29；`tests/logic` ALL TESTS
+PASSED；`no vet` 17 错全在未触碰文件；`make test` 仅既有
+`TestS1RawCondFixturesAreExercised`；`dist/` 仅四个 shim 产物。
+
+
+
+立项理由：`src/components-catalog.md` 第 63 行写着 `C-ACCORDION` 的能力是
+「sections, expanded」，但命令式侧只有一个 `cmp-accordion()` 构造函数——组数 /
+组标题 / 展开态 / 正文行全都没有 API，而且它原本在 `cs-is-container` 白名单里，
+没有子节点时走通用兜底画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton /
+阶段 55 的 description-list）。组是**数据**不是视觉子节点（同 `C-PAGINATION` /
+`C-SELECT` / `C-TAB` / `C-DESCRIPTION-LIST` 一路），阶段56 补。
+
+组件层（`src/components.no`）：新增 `ac-*` 段。扁平池
+`AC-TITLE []str`（组标题）+ `AC-BODY []str`（组内正文行，跨组连续）+
+`AC-EXP []i64`（展开标志，与 `AC-TITLE` 同下标，1 展开 / 0 收起）+
+`AC-BBASE []i64` / `AC-BN []i64`（每组正文基址 / 行数）+ 每句柄
+`AC-SBASE []i64` / `AC-N []i64`（组基址 / 组数，随 `cmp-alloc` 长）。公开
+`ac-pad` / `ac-head-h` / `ac-glyph-w` / `ac-gap` / `ac-count` / `ac-title` /
+`ac-body-count` / `ac-body-line` / `ac-expanded` / `ac-open-count` / `ac-add` /
+`ac-add-open` / `ac-add-body` / `ac-set-title` / `ac-set-expanded` / `ac-expand` /
+`ac-collapse` / `ac-toggle` / `ac-clear`。写操作先查 `F-DISABLED`；越界下标一律
+空操作（读返回空串 / 0）。几何常量与 `cmp-scene.no` 同源（组件模块不能 import
+渲染层，抄字面量）：`ac-pad()=1200`、`ac-head-h()=4000`、`ac-glyph-w()=800`、
+`ac-gap()=800`。`ac-add` 沿用阶段55 的「先读后补种」：空句柄先把
+`AC-SBASE` 补种到 `AC-TITLE.len()`，再 push 组。
+
+渲染层（`src/cmp-scene.no`）：① **把 `C-ACCORDION` 从 `cs-is-container`
+白名单里拿掉**（同阶段55 理由）；② `cs-measure` 新增分支：宽 =
+`2*CS-PAD + 800 + 800 + 标题列`（标题列取最长「组标题 / 展开组正文行」，下限
+6400），高 = `2*CS-PAD + Σ组头 4000 + 展开组正文行*CS-LINE-H + 组间分隔线
+CS-SEP-H`，下限 `CS-BTN-H`；③ `cs-paint-accordion` 画 FIELD 底 + 每组「展开符
+（收起 `'>'` / 展开 `'-'`，ACCENT）+ 标题（FG）」+ 展开组的正文行（MUTED）+
+组间 TRACK 分隔线；④ `cs-paint-leaf` 一行路由。`cmp-set-sw/sh` 覆盖不受影响。
+
+验收：`tests/cmp-accordion.no` 74 项断言全绿（默认 / 组池 / 改写 + 切换 /
+多句柄隔离 / disabled / 测算 / 渲染）；`tests/main-accordion.no` 窗口 demo
+900 帧 `bye frames=900 keys=0 clicks=0 sections=3 open=1 w=53600 h=17000` +
+`accordion render OK` + `scene OK`（`a` 追加收起组 / `o` 追加展开组 / `b` 末组
+加正文 / `t` 切换第 0 组 / `n` 轮转切换 / `r` 重建 / `d` 切换 disabled，收尾
+重建已知三组并按 `cs-rect` 反推坐标逐组核对展开符 / 标题 / 正文 / 分隔线）。
+
+坑三条：① **演示里的辅助函数必须放模块级** —— `ac-build-default` 一开始写在
+`(ok == 0) -> { ... }` 块里，编译期直接报 `'ac-build-default' is not defined`
+（nolang 不允许块内定义函数）；把它提到模块级并把句柄改成入参
+`(h i64)` 后通过。② **构建失败时旧二进制会骗人** —— 那次构建 5 错，但
+`dist/_probe` 还是上一轮 `tests/cmp-accordion.no` 的产物，于是运行照样
+`rc=0` + `ALL ACCORDION TESTS PASSED`；判断 demo 是否真的通过必须先看
+`Build successful`，不能只看运行输出。③ **正文池扁平跨组连续** ——
+`AC-BODY` 是所有组共享的一条池，`AC-BBASE[i]` 记录第 i 组的起始下标，
+`AC-BN[i]` 记录行数；`ac-add-body` 只 push 文本并给当前组计数 +1，
+`ac-body-line` 用 `AC-BBASE[si] + j` 取行，跟 `dl-*` 的「同下标」模型不同，
+写测试断言时别按 `AC-TITLE` 的下标去索引正文。
+
+回归（2026-11-23 实测）：非 main 64 个文件 → 63 通过 / 1 失败
+（`tests/dva-editor.no` rc=133，既有）；main 28/28；`tests/logic` ALL TESTS
+PASSED；`no vet` 17 错全在未触碰文件；`make test` 仅既有
+`TestS1RawCondFixturesAreExercised`；`dist/` 仅四个 shim 产物。
+
+
+
+立项理由：`src/components-catalog.md` 第 68 行写着 `C-DESCRIPTION-LIST` 的
+能力是「pairs」，但命令式侧只有一个 `cmp-description-list()` 构造函数——没有
+任何行 API，而且它原本在 `cs-is-container` 白名单里，没有子节点时走通用兜底，
+画成一个 0×0 的 FIELD 矩形（同阶段 54 的 skeleton）。阶段55 补。
+
+组件层（`src/components.no`）：新增 `dl-*` 段。槽位是
+`DL-LAB []str`（标签，扁平只增）+ `DL-VAL []str`（值，与 `DL-LAB` 同下标）+
+`DL-SBASE []i64` / `DL-N []i64`（每句柄行基址 / 行数，随 `cmp-alloc` 长）。公开
+`dl-pad` / `dl-lab-w` / `dl-gap` / `dl-val-min` / `dl-count` / `dl-label` /
+`dl-value` / `dl-add` / `dl-set-label` / `dl-set-value` / `dl-clear`。写操作先
+查 `F-DISABLED`；越界下标一律空操作（读返回空串）。几何常量与 `cmp-scene.no`
+同源（组件模块不能 import 渲染层，抄字面量）：`dl-pad()=1200`、
+`dl-lab-w()=12000`、`dl-gap()=800`、`dl-val-min()=6400`。
+
+渲染层（`src/cmp-scene.no`）：① **把 `C-DESCRIPTION-LIST` 从
+`cs-is-container` 白名单里拿掉** —— 行是数据不是视觉子节点（同阶段 43 的
+`C-PAGINATION` / `C-SELECT` / `C-TAB` 一路），留在白名单里会让「给描述列表挂
+真子节点」和「虚拟行数据」两套语义打架，且没挂子节点时画成 0×0 矩形；②
+`cs-measure` 新增分支：宽 = `2*CS-PAD + 12000 + 800 + 值列`（值列取最长值、
+下限 6400），高 = `2*CS-PAD + N*CS-LINE-H + (N-1)*CS-SEP-H`，下限
+`CS-BTN-H`；③ `cs-paint-description-list` 画 FIELD 底 + N 行「左标签
+MUTED / 右值 FG 右对齐」+ 行间 TRACK 分隔线（标签列固定
+`dl-lab-w()`，值列右对齐到面板右缘内边距）；④ `cs-paint-leaf` 一行路由。
+`cmp-set-sw/sh` 覆盖不受影响（override 在链尾、链后检查）。
+
+验收：`tests/cmp-description-list.no` 64 项断言全绿（默认 / 行池 / 多句柄
+隔离 / disabled / 测算 / 渲染）；`tests/main-description-list.no` 窗口 demo
+900 帧 `bye frames=900 keys=0 clicks=0 rows=3 w=53600 h=9800` +
+`description-list render OK` + `scene OK`（`a` 追加 / `c` 清空 / `r` 重建 /
+`v` 改写首行 / `d` 切换 disabled，收尾重建已知三行并按 `cs-rect` 反推坐标
+逐行核对文本与配色）。
+
+回归（2026-11-23 实测）：非 main 63 个文件 → 62 通过 / 1 失败
+（`tests/dva-editor.no` rc=133，既有）；main 27/27；`tests/logic` ALL TESTS
+PASSED；`no vet` 17 错全在未触碰文件；`make test` 仅既有
+`TestS1RawCondFixturesAreExercised`；`dist/` 仅四个 shim 产物。
+
+坑两条：① **行基址必须「先读后补种」** —— `dl-add` 先读 `DL-SBASE`，再用
+`(n == 0) -> { b = DL-LAB.len() }` 把空句柄的基址补种到池尾；漏掉补种，
+新行会写进别的句柄的行区间（`dl-count` 看着对、`dl-label` 读出别的句柄的
+文本）。`dl-clear` 只把 `DL-SBASE` 归零、不清池，所以清空后再加必须重新
+补种。② **`[]str` 行池不能走 `ct-get` / `ct-set`** —— `DL-LAB` / `DL-VAL`
+必须用 `ed-arr-get-s` / `ed-arr-set-s`；`DL-SBASE` / `DL-N` 是 `[]i64`，才走
+`ct-get` / `ct-set`。混用会直接报 `cannot assign i64 value to str variable`。
+
+
+
+立项理由：`src/components-catalog.md` 第 71 行写着 `C-DIFF` 的能力是「old, new,
+hunks」，但命令式侧只有一个 `cmp-diff()` 构造函数——old / new 都没有 API，hunks
+无从读出，渲染还落在 `cs-paint-leaf` 的通用 `rect + text` 兜底里。阶段49 补。
+
+组件层（`src/components.no`）：新增 `df-*` 段。槽位沿用 `CMP-TEXT` = old、
+`CMP-TEXT2` = new；`df-old` / `df-set-old` / `df-new` / `df-set-new`（写操作先查
+`F-DISABLED`）。行级读取 `df-rows` / `df-row-op`（0 上下文 / 1 新增 / 2 删除）/
+`df-row-text` / `df-row-old-no` / `df-row-new-no`；统计 `df-hunks` /
+`df-hunk-start` / `df-count-add` / `df-count-del` / `df-max-len` / `df-summary`
+（形如 `'+1 -1'`）。算法是真的 diff：`df-split` 按 `'\n'` 切行、`df-lcs` 动态规划
+求最长公共子序列、`df-backtrack` 回溯成行；结果缓存在模块级 `DF-CACHE-*`
+（句柄 + old + new 三者一致才复用，否则重算）。
+
+渲染层（`src/cmp-scene.no`）：`cs-paint-diff`（字段底 `CS-TH-FIELD` + 双列行号槽
+（旧号右对齐到 `x+pad+gutter-char-w`、新号右对齐到 `x+pad+gutter`）+ 行级 glyph
+（上下文空格 / `'+'` / `'-'`）+ 文本，颜色按行级别：上下文 `CS-TH-FG` / 新增
+`CS-TH-OK` / 删除 `CS-TH-DANGER`）；`cs-measure` 的兜底分支给 intrinsic
+（宽 = 左右内边距 + 行号槽 + 最长行 × 字宽，夹到 `CS-MIN-LEAF-W`；高 = 上下内边距
++ 行数 × 行高——同 `C-HIGHLIGHTER` 的理由：那里才有句柄 `h`，才读得到
+`df-rows` / `df-max-len`）；`cs-paint-leaf` 加一行路由。**不新增节点种类**：
+`C-DIFF` 仍是叶子。
+
+`tests/cmp-diff.no`（67 项断言全绿）：构造默认 12 项 / 典型替换 18 项 / 纯新增 /
+纯删除 / 全等 / 双 hunk / 空 old 19 项 / disabled 4 项 / 测算 3 项 / 渲染 11 项。
+
+窗口 demo（`tests/main-diff.no`）：`cmp-diff()` + 三组样例（`alpha/beta/gamma`
+→ `alpha/BETA/gamma`；`one..four` → `one/2/three/4`；空 → `hello/world`）；点击
+diff 块循环样例，键盘 `0` / `1` / `2` 选样例、`r` 新旧互换、`q` / ESC 退出；
+900 帧 `bye frames=900 keys=0 clicks=0 rows=4 hunks=1 +1 -1` + `diff render OK`、
+exit 0。
+
+坑三条：① **`CMP-TEXT[h]` / `CMP-TEXT2[h]` 返回 `?str`**，不能直接赋给 `str`
+变量（`cannot assign ?str value to str variable`），要用 `cmp-text(h)` /
+`cmp-text2(h)`；② **逗号不是语句分隔符**——`df-build(h), n = DF-CACHE-ROWS`
+能编译但 `df-build` 根本没跑（`df-rows` 恒为 0），必须拆成两行；
+③ **局部 `str` 变量在 `!!` 里被 guard 反复改写后 `push` 进 `[]str` 会 SIGTRAP**
+（`out.push(cur)` 直接 rc=133）——改成不累积字符串、直接 `slice-bytes(start, end)`
+取切片push 就正常；同类的还有 `dp[idx] = v` 直写局部数组，要用 `ct-set`。
+
+## 验收记录（阶段48：命令式代码 / 主题 highlighter / theme）
+
+立项理由：`src/components-catalog.md` 第 72 行给 `C-HIGHLIGHTER` 承诺
+「code, language」、第 80 行给 `C-THEME` 承诺「palette, size, mode」，但命令式侧
+两者都只有一个构造函数——代码 / 语言 / 缩进、主题名 / 模式 / 密度 / 强调色都没有
+API，渲染还落在 `cs-paint-leaf` 的通用 `rect + text` 兜底里。阶段45 的
+`C-BUBBLE` / 阶段46 的 `C-ATTACHMENT` / 阶段47 的 `C-COLOR-PICKER` 用的是同一个
+理由（`cs-leaf-size` 只收 `(kind, tlen)`，没有句柄）。
+
+改动（`src/components.no`）：新增一段代码 / 主题。highlighter 用 `CMP-TEXT` =
+代码、`TEXT2` = 语言、`VALUE` = 缩进（每级空格数，构造默认 4），配
+`hl-code` / `hl-set-code` / `hl-lang` / `hl-set-lang` / `hl-tab` / `hl-set-tab`
+（夹 0..8）+ 行几何 `hl-lines` / `hl-line-start` / `hl-line-len-b` / `hl-line`
+（越界行号夹到最后一行）/ `hl-expand-len`（tab 折算成 `hl-tab` 个空格）/
+`hl-max-len`；theme 用 `CMP-TEXT` = 名字、`VALUE` = 模式（0 亮 / 1 暗）、
+`VALUE2` = 密度（0 紧凑 / 1 标准 / 2 宽松）、`CMP-COLOR` = 强调色，配
+`th-name` / `th-set-name` / `th-mode` / `th-set-mode`（夹 0..1）/
+`th-density` / `th-set-density`（夹 0..2）/ `th-accent` / `th-set-accent` /
+`th-swatch`（按密度 3600 / 4800 / 6000）/ `th-mode-name` / `th-bg` / `th-fg` /
+`th-muted` / `th-swatch-color` / `th-swatch-label`。写操作一律先查 `F-DISABLED`。
+
+渲染层（`src/cmp-scene.no`）：`cs-paint-highlighter`（字段底 `CS-TH-FIELD` +
+右对齐行号槽 + 逐 token 着色 + 右端语言列）、`cs-paint-theme`（字段底 + 名字 /
+右对齐模式 + 四块色板 + 标签）；`cs-measure` 的兜底分支给两者加 intrinsic
+（前者 = 左右内边距 + 行号槽 + 最长行（tab 折算）+ 可选语言列，高 = 上下内边距 +
+行数 × 行高；后者 = 左右内边距 + 4 块色板 + 3 个间隙，高 = 上下内边距 + 标题行 +
+间隙 + 色板 + 间隙 + 标签行，都夹到 `CS-MIN-LEAF-W`）；`cs-paint-leaf` 加两行
+路由。**不新增节点种类**：两者都仍是叶子。**行几何与着色都是复用**：行切分照抄
+阶段39 的 `ta-line-*` 算法（`slice-bytes` + `'\n'` 计数），着色直接调阶段38 的
+`ed-lex-line`（关键字 accent / 字符串 OK / 注释 muted / 数字 `ED-C-NUM`），
+没有新造 tokenizer。
+
+`tests/cmp-code.no`（72 项断言全绿）：highlighter 构造默认 7 项 / 多行切分 6 项 /
+缩进折算 6 项 / 语言 + disabled 4 项 / 测算 3 项 / 渲染 6 项；theme 默认 + API
+14 项 / 写 + 夹紧 + disabled 14 项 / 测算 3 项 / 渲染 9 项。
+
+窗口 demo（`tests/main-code.no`）：`cmp-highlighter('let x = 1\nfn add(a i64)
+(r i64) {\n\tr = a + x ; add\n}')` + `hl-set-lang(hc, 'nolang')` +
+`cmp-theme()`（名字 `midnight`）；点击代码块循环缩进（4→2→8→4）、点击主题卡切
+亮 / 暗模式，键盘 `c` / `m` / `d`（密度循环）同效、`q` / ESC 退出；900 帧
+`bye frames=900 keys=0 clicks=0 lines=4 max=23 tab=4 theme="midnight"
+mode=light den=1` + `code render OK`、exit 0。
+
+坑两条：① **`slice-bytes(start, end)` 的第二个参数是结束下标、不是长度**——
+`hl-line` 一开始写成 `slice-bytes(b, hl-line-len-b(h, l))`，会把行多切掉一截；
+按 `ta-line-text` 的用法改成 `slice-bytes(b, ct-add(b, hl-line-len-b(h, l)))`
+才对；② **插值里不能放函数调用**——探针里 `print('kind={cmp-kind(HC)}')` 直接
+报 `unsupported construct in MIR backend: interp: unresolved format field
+<call>`，必须先赋值给临时变量再插值。
+
+## 验收记录（阶段47：命令式输入族 color-picker / date-picker）
+
+立项理由：`src/components-catalog.md` 第 25 / 26 行分别写着 `C-COLOR-PICKER`
+的能力是「hue, hex」、`C-DATE-PICKER` 是「year, month, day」，但命令式侧两者都
+只有一个构造函数——hue / 十六进制 / 年月日都没有 API，渲染还落在 `cs-paint-leaf`
+的通用 `rect + text` 兜底里。阶段44 的 `C-ALERT` / 阶段45 的 `C-SPEECH` /
+阶段46 的 `C-ATTACHMENT` 用的是同一个理由（`cs-leaf-size` 只收 `(kind, tlen)`，
+没有句柄）。
+
+改动（`src/components.no`）：新增一段输入族。color-picker 用 `CMP-COLOR` =
+打包色（0xRRGGBBAA）、`CMP-VALUE` = hue，配 `cp-color` / `cp-red` / `cp-green` /
+`cp-blue` / `cp-alpha` + 四个 `cp-set-*`（写任一通道都按新 RGB 重算 hue）+
+`cp-hue` / `cp-set-hue`（固定 S=191/255、V=235/255 正算 RGB，hue 夹 0..360）+
+`cp-hue-of`（RGB 反算 hue，按 max 通道分三路，负差用 `base - 60*|q|/d` 避免
+`ct-sub` 的截断方向坑）+ `cp-hex`（出「#RRGGBB」）；date-picker 用
+`CMP-VALUE` / `VALUE2` / `VALUE3` = 年 / 月 / 日，配 `dp-year` / `dp-month` /
+`dp-day` + 四个 `dp-set-*` + `dp-set-date`（写月 / 年按当月天数重夹日）+
+`dp-leap` / `dp-days` / `dp-next-month`（12 月回绕到 1 月，走 `dp-set-month`
+所以同样受 `F-DISABLED` 约束）、`dp-label`（出「YYYY-MM-DD」）。写操作一律先查
+`F-DISABLED`。
+
+渲染层（`src/cmp-scene.no`）：`cs-paint-color-picker`（左色板方块 32px + 内边距
+12px + 间隙 8px + 「#RRGGBB」+ 间隙 + hue 数字 muted）、`cs-paint-date-picker`
+（字段底 `CS-TH-FIELD` + 「YYYY-MM-DD」）；`cs-measure` 的兜底分支给两者加
+intrinsic（前者 = 内边距*2 + 色板 + 间隙 + hex 宽 + 间隙 + hue 数字宽，后者 =
+文本宽 + 内边距*2，都夹到 `CS-MIN-LEAF-W`）；`cs-paint-leaf` 加两行路由。
+**不新增节点种类**：两者都仍是叶子。
+
+`tests/cmp-picker.no`（50 项断言全绿）：color-picker API 5 项 / hue→RGB 6 项 /
+RGB→hue 7 项 / 单通道写 6 项 / 几何常量 1 项 / 测算 1 项 / 渲染 3 项；
+date-picker API 3 项 / 闰年 1 项 / 当月天数 4 项 / 写夹紧 7 项 / disabled 1 项 /
+测算 1 项 / 渲染 2 项。
+
+窗口 demo（`tests/main-picker.no`）：`cmp-color-picker()`（hue 213）+
+`cmp-date-picker()`（2026-11-21）；点击取色器循环 hue（213→0→120→240→213）、
+点击日期翻下一个月，键盘 `o` / `d` 同效、`y` 切年 2026↔2024、`q` / ESC 退出；
+900 帧 `bye frames=900 keys=0 clicks=0 hex=#3BD9EB hue=213 date=2026-11-21`
++ `picker render OK`、exit 0。
+
+坑两条：① **`;` 是行注释不是语句分隔符**——`cp-hsv` 的六分支 if-group 一开始写成
+`-> { r = ct-add(c, m); g = ct-add(x, m) }`，闭合 `}` 被注释掉，后面所有定义都被
+解析成它的嵌套块，一次报 130 条 `<name> is not defined`；② **`str[i]` 读出来是
+`char`**，`s.push-str(CP-HEX-DIGITS[i])` 在 codegen 报
+`builtin str-push-bytes: bad source type i32`，要改 `s.push(...)`。
+
+## 验收记录（阶段46：命令式元数据族 attachment / clipboard / index-path）
+
+立项理由：`src/components-catalog.md` 第 58 / 73 / 86 行分别写着 `C-ATTACHMENT`
+的能力是「name, size」、`C-CLIPBOARD` 是「content」、`C-INDEX-PATH` 是
+「path segments」，但命令式侧三者都只有一个构造函数——name / size / content /
+段池都没有 API，渲染还落在 `cs-paint-leaf` 的通用 `rect + text` 兜底里。
+
+改动（`src/components.no`）：新增一段元数据族。attachment 用 `CMP-TEXT` = 文件名、
+`CMP-VALUE` = 字节数，配 `att-name` / `att-set-name` / `att-size` / `att-set-size`
+（负数夹到 0）/ `att-size-text`（1024 进位出「12 B」/「2 KB」/「1 MB」）；
+clipboard 用 `CMP-TEXT` = 内容，配 `clip-content` / `clip-set-content` /
+`clip-len`；index-path 新增扁平段池 `IP-SEG` + 每句柄基址 `IP-SBASE` / 段数
+`IP-SN`（同 `INP-SG` / `CB-MLIST` 段池思路，随 `cmp-alloc` 一起长），配
+`ip-count` / `ip-seg` / `ip-add-seg` / `ip-clear` / `ip-sep`。写操作一律先查
+`F-DISABLED`。
+
+渲染层（`src/cmp-scene.no`）：`cs-paint-attachment`（左图标方块 32px + 文件名 +
+右端尺寸文案 muted）、`cs-paint-clipboard`（字段底 `CS-TH-FIELD` + 内容 +
+右端 24px 复制方块）、`cs-paint-index-path`（各段 + 「 / 」分隔符 muted）；
+`cs-leaf-size` 给 `C-CLIPBOARD` 加 intrinsic（宽 = 文本宽 + 左右内边距 + 间隙 +
+复制方块），`cs-measure` 的兜底分支给 `C-ATTACHMENT` / `C-INDEX-PATH` 加
+（前者要读 `att-size-text`，后者要读段池——同 `C-ALERT` / `C-SPEECH` 的理由：
+`cs-leaf-size` 只收 `(kind, tlen)`，没有句柄）；`cs-paint-leaf` 加三行路由。
+**不新增节点种类**：三者都仍是叶子。
+
+`tests/cmp-meta.no`（46 项断言全绿）：attachment API 8 项 / 尺寸文案 5 项 /
+测算 3 项 / 渲染 3 项；clipboard API 7 项 / 测算 1 项 / 渲染 3 项；
+index-path 段池 10 项 / 测算 1 项 / 渲染 5 项。
+
+窗口 demo（`tests/main-meta.no`）：`cmp-attachment('report.pdf')` + `cmp-clipboard()`
++ `cmp-index-path()`（三段）；点击附件循环尺寸文案、点击剪贴板开关内容、点击路径条
+加段 / 清空，键盘 `a` / `c` / `i` / `x` 同效、`q` / ESC 退出；900 帧
+`bye frames=900 keys=0 clicks=0 att-size=2048 clip-len=20 ip-segs=3`
++ `meta render OK`、exit 0。
+
+坑一条：**模块级变量的类型按首次赋值定死**——`clen = clip-content(cl)` 之后再
+`clen = clen.len()` 不会变成整数，`print('...{clen}...')` 会打出 19 个 NUL 字节
+（长度值被当成字符串内容）。要么换个新名字，要么直接 `clip-len(cl)`。
 
 ## 验收记录（阶段45：命令式会话族 bubble / speech）
 

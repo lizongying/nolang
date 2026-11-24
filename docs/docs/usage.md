@@ -28,7 +28,7 @@ sudo mv nolang /usr/local/bin/no
 | `no version`                                                 | 打印版本信息            |
 | `no init`                                                    | 定義工作區（生成 workspace.noml，不含 package.noml） |
 | `no new <name>`                                              | 在工作區內新建包（子目錄 + package.noml，並註冊到 workspace.noml） |
-| `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼（含導入去重/排序，自動移除 `# std/fmt`）；`.noml` 配置檔走保留佈局的排版規範（縮進/空白/空行，註釋與鍵序不動） |
+| `no fmt [-w] [-d] <file\|dir>`                               | 格式化源代碼（含導入去重/排序，自動移除無別名 std 模組導入）；`.noml` 配置檔走保留佈局的排版規範（縮進/空白/空行，註釋與鍵序不動） |
 | `no build [-o <file>] [-cc <s>] [-target <s>] [-opt[=N]] [<file\|dir>]` | 構建（輸出 executable） |
 | `no run [-cc <s>] [-target <s>] [<package\|dir\|file>]`        | 構建並執行（包名/目錄/文件） |
 | `no test [-cc <s>] [-target <s>] [<file>]`                   | 執行測試                |
@@ -40,7 +40,7 @@ sudo mv nolang /usr/local/bin/no
 | `no sync`                                                    | 同步依賴                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | 安裝 binary             |
 | `no uninstall <name>`                                        | 移除 binary             |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | 打包 AST（`<tool>.ast.zip`）|
+| `no pack [-o <file>] [<dir\|file.no>]`                       | 打包 AST（`<tool>-ast.zip`）|
 | `no pub [-o <file>]`                                         | 同 `no pack`（registry 上傳未實現）|
 | `no cache <stat\|clear>`                                     | 檢視 / 清空 AST 快取（正常情況下不需要清）|
 
@@ -298,7 +298,7 @@ sha256( ASTVersion ‖ 解析期 salt ‖ 源文件內容 )
 | 變量 | 作用 |
 | --- | --- |
 | `NOLANG_AST_CACHE_OFF=1` | 關閉快取（做編譯器 A/B 對比、排查「修好的錯誤又出現」時可用） |
-| `NOLANG_AST_CACHE_DIR` | 自訂快取目錄。**同時**作用於預編 AST 依賴的 `.ast.zip` 快取（該快取預設在 `~/no/cache/ast`，見下文「預編 AST 依賴」） |
+| `NOLANG_AST_CACHE_DIR` | 自訂快取目錄。**同時**作用於預編 AST 依賴的 `-ast.zip` 快取（該快取預設在 `~/no/cache/ast`，見下文「預編 AST 依賴」） |
 | `NOLANG_AST_CACHE_MAX` | 快取條目數上限（預設 4096） |
 
 > 舊條目只是不再被命中，會隨新條目寫入按上限淘汰，因此**不必**刪 `~/.cache/nolang/ast`。
@@ -425,21 +425,32 @@ no sync
 ### 預編 AST 依賴
 
 `no add <tool>@<host>/<owner>/<repo>` 這類依賴**只有 AST、沒有源碼**：編譯時從 release 抓
-`<tool>.ast.zip`（MetaMessage + zip），解碼後直接注入編譯管線。用法：
+`<tool>-ast.zip`（zip 內每個模組一個 `<modulePath>.gob`，值是 gob 編碼的 AST），
+解碼後直接注入編譯管線。用法：
 
 ```nolang
-# nogit; 或 use <host>/<owner>/<repo>/nogit
+# nogit                         包別名；模組以 nogit.<module> 取用
+# nogit/remote                  直接引入模組 remote（也可用 nogit.remote）
+# nogit/remote.fn               同上，只取 fn
+# nogit.fn                      nogit 只是包名，在包內按 fn 定位定義它的模組
+# <host>/<owner>/<repo>/nogit/remote   以完整倉庫路徑指向模組
 ```
 
-一個 zip 就是一個模組，不支持 `use <repo>/<submod>` 這種更深的路徑。版本必須是具體值
+一個 zip = 一個**包**，包內可含多**模組**；**沒有入口模組**。`# nogit` 只建立包別名，
+不導入 `main`、也不是一次導入全部裸名；包內模組以 `nogit.<module>` 取用
+（如 `nogit.remote.greet(...)`）。`no fmt` 會清掉正文未使用的 `# nogit` / `# nogit/remote`。
+`no pack <包目錄>` 會遞迴打包目錄下所有 `.no`（模組路徑 = 相對包根、去掉 `.no`），
+`# nogit/deep/util` 這類深層路徑同樣可用；呼叫一律用路徑最後一段的模組短名
+（`# nogit` + `nogit.util.greet(...)`，或 `# nogit/deep/util` + `util.greet(...)`），
+因為 HIR 的點號解析只識別 `<module>.<symbol>` 兩段。版本必須是具體值
 （`no sync` / 編譯時遇到 `""` 或 `"*"` 會報錯）。zip 會快取到 `~/no/cache/ast/`，
 可用 `$NOLANG_AST_CACHE_DIR` 覆寫。
 
 產出資產用 `no pack`（只需 lexer + parser，不需要 LLVM 工具鏈，適合 CI）：
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # 單個源文件
-no pack -o nogit.ast.zip ./nogit       # 一個包目錄
+no pack -o nogit-ast.zip nogit.no      # 單個源文件（模組名 = 檔名）
+no pack -o nogit-ast.zip ./nogit       # 一個包目錄（含全部模組）
 ```
 
 ### 依賴類型與版本號規則

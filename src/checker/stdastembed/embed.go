@@ -1,9 +1,10 @@
 // Package stdastembed carries the baked std AST blob into the binaries that
 // consume the Tier-0 std AST cache.
 //
-// genstdsig writes std_ast.bin (the gzip+gob map[embedPath][]byte of every std
-// module's serialized Program) into this directory; //go:embed pulls the blob in
-// at compile time. cmd/no and cmd/lsp each read Blob and hand it to
+// genstdsig writes std-ast.bin (gzip+gob StdASTBlob whose Mods is [][]byte —
+// one gob(CachedProgram) per std module, each carrying its embed path on
+// Program.SourcePath / ModulePath) into this directory; //go:embed pulls the
+// blob in at compile time. cmd/no and cmd/lsp each read Blob and hand it to
 // checker.SetStdASTBlob before any build.
 //
 // Splitting the embed into its own package avoids a chicken-egg: genstdsig
@@ -19,5 +20,5 @@ package stdastembed
 
 import _ "embed"
 
-//go:embed std_ast.bin
+//go:embed std-ast.bin
 var Blob []byte

@@ -8172,8 +8172,8 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
             tt == tok.COMMENT -> ps-bump(p)
 
             tt == tok.IDENT -> {
-                it = ps-peek-token(p)
-                imps.push(it.lit)
+                tkv = ps-peek-token(p)
+                imps.push(tkv.lit)
                 ps-bump(p)
                 ps-peek(p) == tok.COMMA -> ps-bump(p)
             }

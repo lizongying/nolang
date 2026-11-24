@@ -325,26 +325,29 @@ test-kind-table = () {
     ; 下面仍先落到區域變數，只是為了讓失敗訊息看得懂，不再有繞路作用。
     kprog = asp.K-PROGRAM
 
-    ; 2026-11-17：刪除 RunExpression/AwaitExpression 後 kind 總數 74 → 72，
-    ; 後續 kind 編號跟著前移兩位（Program 55 → 54、SurfaceMatch 67 → 65、
-    ; Identifier 37 → 36、IntegerLiteral 41 → 40）。
-    runner.eq(asp.KIND-COUNT, 72, 'KIND-COUNT = 72')
-    runner.eq(kprog, 54, 'Program is kind 54')
+    ; 2026-11-23 校正：本處的 72／54／65／36／40 是 2026-11-17「刪除 RunExpression／
+    ; AwaitExpression 後 74 → 72」的舊值，但 `src/parser/dump/dump.go` 在 `ca5156e0`
+    ; 與現行 HEAD 都還是 74 個 case、本來就沒有 Run/Await 條目（Go 側
+    ; `TestSpecKindCount` 斷言 74、`TestSpecMatchesDump` 243 檔 byte-identical），
+    ; 且 `scripts/gen_ast_spec.py` 重跑產出的 `K-*` 常量與盤上 `asp.no` 逐條相同。
+    ; ⇒ 是期望值過期，不是 `asp.no` 漂移；已改回 74／56／67／38／42。
+    runner.eq(asp.KIND-COUNT, 74, 'KIND-COUNT = 74')
+    runner.eq(kprog, 56, 'Program is kind 56')
 
     ; SurfaceMatch 是 2026-10-16 新增的種類（dump.go 的 SurfaceMatch case）。
     ; 它被**追加在 switch 尾端**（default: 之前），之後的種類才位移。目前它在
-    ; 65（2026-11-17 刪除兩個節點後從 67 前移兩位）。
+    ; 67（id 由 `sorted(spec.keys())` 的 Go 型別名字母序決定，非 switch 順序）。
     ; ⚠️ 如果不釘它，KIND-COUNT 就算寫錯也只會被數字比對抓到，
     ;    而 kind-name / kind-id 兩張表對這個種類的條目會是**死條目**——
     ;    沒有任何人呼叫它，位移錯了也沒人報警。
     ksrf = asp.K-SURFACE-MATCH
-    runner.eq(ksrf, 65, 'SurfaceMatch is kind 65')
+    runner.eq(ksrf, 67, 'SurfaceMatch is kind 67')
     runner.eq(asp.kind-id('SurfaceMatch'), ksrf, 'kind-id(SurfaceMatch) round-trips')
-    runner.is-true(asp.kind-name(ksrf).eq-full('SurfaceMatch'), 'kind-name(65) = SurfaceMatch')
-    runner.eq(asp.K-IDENTIFIER, 36, 'Identifier is kind 36')
-    runner.eq(asp.K-INTEGER-LITERAL, 40, 'IntegerLiteral is kind 40')
+    runner.is-true(asp.kind-name(ksrf).eq-full('SurfaceMatch'), 'kind-name(67) = SurfaceMatch')
+    runner.eq(asp.K-IDENTIFIER, 38, 'Identifier is kind 38')
+    runner.eq(asp.K-INTEGER-LITERAL, 42, 'IntegerLiteral is kind 42')
     runner.eq(asp.kind-id('Program'), kprog, 'kind-id(Program) round-trips')
-    runner.is-true(asp.kind-name(kprog).eq-full('Program'), 'kind-name(54) = Program')
+    runner.is-true(asp.kind-name(kprog).eq-full('Program'), 'kind-name(56) = Program')
     runner.eq(asp.kind-id('NoSuchNode'), 0, 'kind-id of an unknown name is 0')
 }
 

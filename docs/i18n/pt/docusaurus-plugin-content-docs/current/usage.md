@@ -40,7 +40,7 @@ Instale a extensão Nolang a partir do [VS Code Marketplace](https://marketplace
 | `no sync`                                                    | Sincroniza as dependências                |
 | `no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]`  | Instala um binário             |
 | `no uninstall <name>`                                        | Remove um binário             |
-| `no pack [-o <file>] [<dir\|file.no>]`                       | Empacota o AST (`<tool>.ast.zip`)|
+| `no pack [-o <file>] [<dir\|file.no>]`                       | Empacota o AST (`<tool>-ast.zip`)|
 | `no pub [-o <file>]`                                         | Igual a `no pack` (envio para o registry ainda não implementado)|
 | `no cache <stat\|clear>`                                     | Consulta / limpa a cache de AST (normalmente não é necessário limpar)|
 
@@ -292,7 +292,7 @@ Variáveis de ambiente:
 | Variável | Função |
 | --- | --- |
 | `NOLANG_AST_CACHE_OFF=1` | Desliga a cache (útil para comparações A/B do compilador e para investigar «erros corrigidos que voltam a aparecer») |
-| `NOLANG_AST_CACHE_DIR` | Personaliza o diretório da cache. **Ao mesmo tempo**, afeta a cache dos ficheiros `.ast.zip` das dependências AST pré-compiladas (essa cache fica, por predefinição, em `~/no/cache/ast`, ver «Dependências AST pré-compiladas» abaixo) |
+| `NOLANG_AST_CACHE_DIR` | Personaliza o diretório da cache. **Ao mesmo tempo**, afeta a cache dos ficheiros `-ast.zip` das dependências AST pré-compiladas (essa cache fica, por predefinição, em `~/no/cache/ast`, ver «Dependências AST pré-compiladas» abaixo) |
 | `NOLANG_AST_CACHE_MAX` | Limite do número de entradas na cache (predefinição 4096) |
 
 > As entradas antigas simplesmente deixam de ser encontradas e são eliminadas à medida que novas entradas são escritas, de acordo com o limite — pelo que **não é preciso** apagar `~/.cache/nolang/ast`.
@@ -412,19 +412,22 @@ no sync
 
 ### Dependências AST pré-compiladas
 
-Dependências como `no add <tool>@<host>/<owner>/<repo>` **têm apenas AST, sem código-fonte**: em tempo de compilação obtêm `<tool>.ast.zip` (MetaMessage + zip) a partir do release e, após descodificação, são injetadas diretamente no pipeline de compilação. Uso:
+Dependências como `no add <tool>@<host>/<owner>/<repo>` **têm apenas AST, sem código-fonte**: em tempo de compilação obtêm `<tool>-ast.zip` (zip with one .gob entry per module) a partir do release e, após descodificação, são injetadas diretamente no pipeline de compilação. Uso:
 
 ```nolang
-# nogit; ou use <host>/<owner>/<repo>/nogit
+# nogit                      # alias do pacote; módulos são nogit.<module>
+# nogit/remote                  # importar diretamente o módulo remote (ou nogit.remote)
+# nogit.fn                      # nogit é apenas o nome do pacote; localizar o módulo que define fn
+# <host>/<owner>/<repo>/nogit/remote
 ```
 
-Cada zip é um módulo; não são suportados caminhos mais profundos como `use <repo>/<submod>`. A versão tem de ser um valor concreto (`no sync` / a compilação reportam erro perante `""` ou `"*"`). O zip é colocado em cache em `~/no/cache/ast/` e pode ser substituído com `$NOLANG_AST_CACHE_DIR`.
+Cada zip é um pacote, que pode conter vários módulos, cada um como entrada `<modulePath>.gob`. Não há módulo de entrada: `# nogit` cria apenas um alias do pacote (módulos em `nogit.<module>`, ex.: `nogit.remote.greet(...)`); `# nogit/remote` importa um módulo diretamente; `# nogit.fn` localiza um módulo por função. O `no fmt` remove imports `# nogit` / `# nogit/remote` não usados. A versão tem de ser um valor concreto (`no sync` / a compilação reportam erro perante `""` ou `"*"`). O zip é colocado em cache em `~/no/cache/ast/` e pode ser substituído com `$NOLANG_AST_CACHE_DIR`.
 
 Os recursos de saída são produzidos com `no pack` (basta o lexer e o parser, sem toolchain LLVM, ideal para CI):
 
 ```bash
-no pack -o nogit.ast.zip nogit.no      # um único ficheiro de origem
-no pack -o nogit.ast.zip ./nogit       # um diretório de pacote
+no pack -o nogit-ast.zip nogit.no      # um único ficheiro de origem
+no pack -o nogit-ast.zip ./nogit       # um diretório de pacote
 ```
 
 ### Tipos de dependência e regras de versão

@@ -760,7 +760,11 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
 ;      「全局回传 / 双返回 / 回读文件」，而由 drv.pkg-ll 在 emit-cov 参数为 true 时直接
 ;      print 到 stdout（可靠）并写 /tmp/h2m-cov.log。agg 仅含 unsup 计数与 unsf/unsk 逐条记录。
 ;   emit-cov: true ⇒ 末尾把逐条 (fn,kind) 日志 print 到 stdout + 写 /tmp/h2m-cov.log
-drv.pkg-ll = (path str, emit-cov bool) (r str) {
+;   strict: true ⇒ agg.unsup > 0 時回 ''（真實建置口徑：缺碼 IR 不得靜默匯出）；
+;      診斷量測（emit-cov）路徑須傳 false，否則缺碼包的覆蓋日誌將無從取得。
+;   ⚠️ s153 層 1：strict 為既有呼叫端（測試 / 量測）保留原行為（預設_false 語意），
+;      新接入的 drv.build-pkg-to 傳 true。
+drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
     r = ''
     agg h2m-ctx = h2m-new()
     pkg = drv.build-package(path)
@@ -864,6 +868,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
     k2 = 0
     (k2 < nfiles) {
         f = files[k2]
+        print('EMITM|' - f)
         src = drv.read-mod(f)
         t = ast.make()
         p = ps.new(src)
@@ -883,6 +888,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
                 nm, _, _, _ = h2m-func-sig(t, agg, kid)
                 key = ':' - nm - ':'
                 emitted.contains(key) == false -> {
+                    print('EMITF|' - nm)
                     one = h2m-lower-func(t, agg, sg, kid)
                     one != '' -> {
 
@@ -891,6 +897,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
                         parts.push(one)
                         pnames.push(nm)
                         emitted = emitted - key
+                        print('EMITD|' - nm)
                     }
                 }
             }
@@ -968,6 +975,10 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
     r = cg-runtime-prelude-full() - '\n' - body - '\n'
     agg.unsup > 0 -> {
         eprint(NOC-NAME - ': unsupported constructs: ' - agg.unsup.to-str() - ' (pkg-ll)')
+
+        ; s153 層 1：strict（真實建置）口徑——缺碼 IR 不得匯出，否則 clang 會鏈出
+        ;   殘缺執行檔（「不靜默產出錯碼」紀律，同 drv.build-ll 的 unsup 門禁）。
+        strict -> r = ''
     }
 
     ; 切片 6 ②：把逐条 (fn,kind) 拼成覆盖率日志串。
@@ -1017,7 +1028,7 @@ drv.pkg-ll = (path str, emit-cov bool) (r str) {
 ;   ⚠️ 不靠「全局回传 / 双返回 / 回读文件」：模块全局写入不可 codegen（setfield slot）、
 ;   双返回 + 重型函数体 segfault、fs.read-* 大文件回传脏数据；故走参数 + print 到 stdout。
 drv.pkg-ll-cov = (path str) (r str) {
-    r = drv.pkg-ll(path, true)
+    r = drv.pkg-ll(path, true, false)
 }
 
 ; 取 argv 第 i 項（越界／nil ⇒ ''）
@@ -1152,6 +1163,32 @@ drv.build-to = (path str, out str) (ok bool) {
     ok = link.compile(ll, out)
 }
 
+; s153 層 1：整包建置主體——入口路徑（目錄或 .no 檔）→ drv.build-package → drv.pkg-ll → link.compile。
+;   ⚠️ 目錄 ⇒ 入口 = <dir>/main.no（對齊 drv.bp-resolve 的「尾 / ⇒ main.no」口徑；
+;     入口檔本身已用 `# /…` 列出全套傳遞依賴，見 compiler/main.no 註解）。
+;   ⚠️ strict=true：agg.unsup > 0 ⇒ drv.pkg-ll 回 '' ⇒ 本件不匯出缺碼 IR
+;      （「不靜默產出錯碼」紀律；S2 續建就停在誠實的 unsup 診斷）。
+; path: 來源路徑（目錄或入口 .no 檔）
+; out: 目的可執行檔路徑
+; ok: 是否成功（false 時已 eprint 診斷）
+drv.build-pkg-to = (path str, out str) (ok bool) {
+    ok = false
+    entry = path
+    fs.is-dir(path) -> {
+        entry = path - '/main.no'
+    }
+    ! fs.is-file(entry) -> {
+        eprint(NOC-NAME - ': not a file: ' - entry)
+        return
+    }
+    ll = drv.pkg-ll(entry, false, true)
+    ll == '' -> {
+        eprint(NOC-NAME - ': no code generated')
+        return
+    }
+    ok = link.compile(ll, out)
+}
+
 ; build：自產 .ll → clang 組譯＋鏈接
 ; ⚠️ 檔案不存在與空檔的區分沿用 cmd-tokens 的三臂，但 `fs.read-bytes` 對不存在
 ;    回 err、對空檔回 nil；本件對 err 直接 eprint + rc=1（見 drv.build-to）
@@ -1170,7 +1207,10 @@ drv.cmd-build = () (code i64) {
         code = EXIT-USAGE
         return
     }
-    ok = drv.build-to(path, drv.build-out(path))
+    ; s153 層 1：目錄 ⇒ 整包路徑（drv.build-pkg-to：build-package → pkg-ll → link.compile）；
+    ;   否則仍是單檔路徑（drv.build-to）。舊行為「目錄直接 eprint 拒絕」由 build-pkg-to 承接。
+    fs.is-dir(path) -> ok = drv.build-pkg-to(path, drv.build-out(path))
+    ! fs.is-dir(path) -> ok = drv.build-to(path, drv.build-out(path))
     ! ok -> code = EXIT-FAIL
 }
 
@@ -1195,7 +1235,8 @@ drv.cmd-run = () (code i64) {
     }
     out = drv.out-arg()
     out == '' -> out = drv.run-temp()
-    ok = drv.build-to(path, out)
+    fs.is-dir(path) -> ok = drv.build-pkg-to(path, out)
+    ! fs.is-dir(path) -> ok = drv.build-to(path, out)
     ! ok -> {
         code = EXIT-FAIL
         return

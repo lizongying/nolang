@@ -1,0 +1,349 @@
+; ============================================================================
+; noui 窗口 demo：标题栏（阶段 67）—— C-TITLE-BAR
+;
+; 流水线：app-init -> cmp-title-bar(title) -> tb-set-title / tb-add /
+;          tb-set-button / tb-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-TITLE-BAR 分支 +
+;      cs-paint-title-bar）：FIELD 底 + 左标题 FG（垂直居中）+
+;      右端一排按钮（TRACK 盒 + FG 文案，盒宽 = 文案宽 + 2*800，间距 800）
+;   -> 键盘：a=追加按钮；b=改第 0 个按钮；t=改标题；c=清空按钮；
+;            r=重建默认；d=切换 disabled；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-title-bar.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选按钮标签（a 轮取）----
+tb-cand-label = (i i64) (s str) {
+    s = 'ok'
+    (i == 1) -> { s = 'no' }
+    (i == 2) -> { s = 'maybe longer' }
+    (i == 3) -> { s = 'x' }
+    (i == 0) -> { s = 'ok' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+tb-build-default = (h i64) () {
+    tb-clear(h)
+    tb-set-title(h, 'title bar')
+    tb-add(h, 'ok')
+    tb-add(h, 'no')
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui title-bar')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段67: title-bar')
+hint = cmp-label('a=add b=button0 t=title c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+tb = cmp-title-bar('title bar')
+tb-build-default(tb)
+
+cmp-add-child(root, title)
+cmp-add-child(root, tb)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一个按钮
+        (k == 97) -> {
+            n = tb-count(tb)
+            j = ct-rem(n, 4)
+            tb-add(tb, tb-cand-label(j))
+        }
+        ; b：改第 0 个按钮
+        (k == 98) -> {
+            n = tb-count(tb)
+            (n > 0) -> {
+                cur = tb-button(tb, 0)
+                (cur == 'renamed') -> { tb-set-button(tb, 0, 'ok') }
+                (cur != 'renamed') -> { tb-set-button(tb, 0, 'renamed') }
+            }
+        }
+        ; t：改标题
+        (k == 116) -> {
+            tt = tb-title(tb)
+            (tt == 'title bar') -> { tb-set-title(tb, 'renamed') }
+            (tt != 'title bar') -> { tb-set-title(tb, 'title bar') }
+        }
+        ; c：清空按钮（保留标题）
+        (k == 99) -> { tb-clear(tb) }
+        ; r：重建默认
+        (k == 114) -> { tb-build-default(tb) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(tb, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(tb, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(tb, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = tb-count(tb)
+    tl = tb-title(tb)
+    dis = cmp-has(tb, F-DISABLED)
+    cmp-set-text(stat, 'count={cn} title={tl} disabled={dis}')
+    (cn > 0) -> {
+        li = cs-sub(cn, 1)
+        cmp-set-text(stat2, 'last={tb-button(tb, li)}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no buttons') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（标题 'title bar' + 两个按钮 'ok' / 'no'），按 cs-rect(tb)
+;   推导坐标。内边距 1200 / 头高 4000 / 按钮内白 800 / 按钮间距 800。
+;   槽顶 sy = by+1200；文本垂直居中 → 文本顶 ty = sy + (4000-2400)/2 = sy+800。
+;   按钮整排右对齐：总宽 = Σ(文案宽+1600) + (N-1)*800，首钮左缘 = bx+bw-1200-总宽。
+;   场景里还有 title / hint / stat / stat2 四条标签文本。
+; ============================================================================
+cmp-flag-clear(tb, F-DISABLED)
+tb-build-default(tb)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+qpad = 1200
+hh = 4000
+bpad = 800
+bgap = 800
+toff = 800
+
+bx, by, bw, bh = cs-rect(tb)
+sy = cs-add(by, qpad)
+ty = cs-add(sy, toff)
+tx = cs-add(bx, qpad)
+
+tot = 0
+j = 0
+!! {
+    (j >= tb-count(tb)) -> { ** }
+    tot = cs-add(tot, cs-add(cs-text-w(tb-button(tb, j)), cs-mul(bpad, 2)))
+    (j < cs-sub(tb-count(tb), 1)) -> { tot = cs-add(tot, bgap) }
+    j = cs-inc(j)
+}
+fbx = cs-sub(cs-sub(cs-add(bx, bw), qpad), tot)
+b0w = cs-add(cs-text-w(tb-button(tb, 0)), cs-mul(bpad, 2))
+b1x = cs-add(fbx, cs-add(b0w, bgap))
+
+c1 = tb-count(tb) == 2
+c2 = tb-title(tb) == 'title bar'
+c3 = tb-button(tb, 0) == 'ok'
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = bh == 6400
+c6 = find-text('title bar', tx, ty) == 1
+c7 = find-text-color('title bar', tx, ty) == cs-theme(CS-TH-FG)
+c8 = find-rect-color(fbx, sy, b0w, hh) == cs-theme(CS-TH-TRACK)
+c9 = find-text('ok', cs-add(fbx, bpad), ty) == 1
+c10 = find-text-color('ok', cs-add(fbx, bpad), ty) == cs-theme(CS-TH-FG)
+c11 = find-rect-color(b1x, sy, b0w, hh) == cs-theme(CS-TH-TRACK)
+c12 = find-text('no', cs-add(b1x, bpad), ty) == 1
+c13 = find-text-color('no', cs-add(b1x, bpad), ty) == cs-theme(CS-TH-FG)
+c14 = cs-text-count() == 7
+
+; 改第 0 个按钮文案：盒宽跟着变，整排仍贴右端
+tb-set-button(tb, 0, 'renamed')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tb)
+tot2 = 0
+j = 0
+!! {
+    (j >= tb-count(tb)) -> { ** }
+    tot2 = cs-add(tot2, cs-add(cs-text-w(tb-button(tb, j)), cs-mul(bpad, 2)))
+    (j < cs-sub(tb-count(tb), 1)) -> { tot2 = cs-add(tot2, bgap) }
+    j = cs-inc(j)
+}
+fbx2 = cs-sub(cs-sub(cs-add(bx, bw), qpad), tot2)
+rbw = cs-add(cs-text-w('renamed'), cs-mul(bpad, 2))
+c15 = find-text('ok', cs-add(fbx2, bpad), ty) == 0
+c16 = find-rect-color(fbx2, sy, rbw, hh) == cs-theme(CS-TH-TRACK)
+c17 = find-text('renamed', cs-add(fbx2, bpad), ty) == 1
+
+; 追加第三个按钮：整排变宽，首钮左缘左移
+tb-add(tb, 'extra')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tb)
+tot3 = 0
+j = 0
+!! {
+    (j >= tb-count(tb)) -> { ** }
+    tot3 = cs-add(tot3, cs-add(cs-text-w(tb-button(tb, j)), cs-mul(bpad, 2)))
+    (j < cs-sub(tb-count(tb), 1)) -> { tot3 = cs-add(tot3, bgap) }
+    j = cs-inc(j)
+}
+fbx3 = cs-sub(cs-sub(cs-add(bx, bw), qpad), tot3)
+c18 = tb-count(tb) == 3
+c19 = fbx3 < fbx2
+c20 = find-rect-color(fbx3, sy, rbw, hh) == cs-theme(CS-TH-TRACK)
+c21 = cs-text-count() == 8
+
+; 清空按钮：FIELD 底还在，按钮盒全消失，文本回到 5 条（含空串? 不 -- 标题非空）
+tb-clear(tb)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tb)
+c22 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c23 = cs-text-count() == 5
+c24 = find-rect-color(fbx3, sy, rbw, hh) == -1
+
+; 清空标题：仍发一条空串文本指令
+tb-set-title(tb, '')
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c25 = cs-text-count() == 5
+c26 = find-text('title bar', tx, ty) == 0
+
+; disabled：写操作全部空操作
+cmp-flag-set(tb, F-DISABLED)
+tb-add(tb, 'no')
+tb-set-button(tb, 0, 'no')
+tb-set-title(tb, 'no')
+tb-clear(tb)
+c27 = tb-count(tb) == 0
+c28 = tb-title(tb) == ''
+cmp-flag-clear(tb, F-DISABLED)
+
+; 重建默认：几何回到最初
+tb-build-default(tb)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tb)
+tot4 = 0
+j = 0
+!! {
+    (j >= tb-count(tb)) -> { ** }
+    tot4 = cs-add(tot4, cs-add(cs-text-w(tb-button(tb, j)), cs-mul(bpad, 2)))
+    (j < cs-sub(tb-count(tb), 1)) -> { tot4 = cs-add(tot4, bgap) }
+    j = cs-inc(j)
+}
+fbx4 = cs-sub(cs-sub(cs-add(bx, bw), qpad), tot4)
+c29 = fbx4 == fbx
+c30 = find-text('no', cs-add(b1x, bpad), ty) == 1
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+cn5 = tb-count(tb)
+print('bye frames={fr} keys={kk} clicks={ck} count={cn5} w={bw} h={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29 & c30) -> {
+    print('title-bar render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29 & c30)) -> {
+    print('FAIL: title-bar render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

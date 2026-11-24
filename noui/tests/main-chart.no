@@ -1,0 +1,222 @@
+; ============================================================================
+; noui 窗口 demo：chart + plot（阶段 50）—— C-CHART / C-PLOT
+;
+; 流水线：app-init -> cmp-chart / cmp-plot -> ch-* / pl-* 写入
+;   -> 鼠标：点图表循环值轴上限（50 / 100 / 200）；点绘图循环点数（3 / 5 / 8）
+;   -> 键盘：c = 图表序列数 1..3；r = 重填数据；- / + = 绘图量程；
+;            q / Esc 退出
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-CHART / C-PLOT 兜底分支 +
+;      cs-paint-chart / cs-paint-plot）
+;   -> app-frame
+;
+; 这个 demo 是阶段50 的现场：图表 = 字段底 + 左/下轴 + 值轴上限文案 + 分组柱
+; （ACCENT / OK / DANGER 按序列序）+ x 轴刻度 + 右对齐图例；绘图 = 字段底 +
+; 过原点两轴 + 上下量程文案 + 方块数据点 + 相邻点 L 形连线（细矩形拼）。
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-chart.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+rt-cmax = 0
+rt-pn = 0
+rt-seed = 0
+
+g-ch-x = 0
+g-ch-y = 0
+g-ch-w = 0
+g-ch-h = 0
+
+; ---- 数据填充（模块级：循环里按名字调用）----
+ch-fill = (h i64, s i64, n i64, seed i64) () {
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        v = ct-rem(ct-add(ct-mul(ct-add(i, 1), 53), seed), 101)
+        ch-set-value(h, s, i, v)
+        i = ct-inc(i)
+    }
+}
+
+pl-fill = (h i64, n i64, seed i64) () {
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        x = ct-rem(ct-add(ct-mul(ct-add(i, 1), 31), seed), 201)
+        x = ct-sub(x, 100)
+        y = ct-rem(ct-add(ct-mul(ct-add(i, 1), 47), ct-mul(seed, 3)), 201)
+        y = ct-sub(y, 100)
+        pl-set-x(h, i, x)
+        pl-set-y(h, i, y)
+        i = ct-inc(i)
+    }
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui chart')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段50: chart + plot')
+hint = cmp-label('click chart=max cycle; click plot=points cycle; c=series; r=refill; -/+ scale; q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+ch = cmp-chart()
+cmp-set-text(ch, 'weekly sales')
+ch-set-series(ch, 3)
+ch-set-points(ch, 6)
+ch-set-max(ch, 100)
+ch-set-name(ch, 0, 'online')
+ch-set-name(ch, 1, 'store')
+ch-set-name(ch, 2, 'partner')
+
+pl = cmp-plot()
+cmp-set-text(pl, 'error trend')
+pl-set-count(pl, 5)
+pl-set-scale(pl, 100)
+
+ch-fill(ch, 0, 6, 7)
+ch-fill(ch, 1, 6, 19)
+ch-fill(ch, 2, 6, 41)
+pl-fill(pl, 5, 11)
+
+cmp-add-child(root, title)
+cmp-add-child(root, ch)
+cmp-add-child(root, pl)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键 ----
+    (t == 2) -> {
+        px = fx(mx)
+        py = fx(my)
+        hit = cs-hit(root, px, py)
+
+        (hit == ch) -> {
+            ns = ct-rem(cs-inc(rt-cmax), 3)
+            rt-cmax = ns
+            (ns == 0) -> { ch-set-max(ch, 50) }
+            (ns == 1) -> { ch-set-max(ch, 100) }
+            (ns == 2) -> { ch-set-max(ch, 200) }
+        }
+        (hit == pl) -> {
+            ns = ct-rem(cs-inc(rt-pn), 3)
+            rt-pn = ns
+            (ns == 0) -> { pl-set-count(pl, 3) }
+            (ns == 1) -> { pl-set-count(pl, 5) }
+            (ns == 2) -> { pl-set-count(pl, 8) }
+            pl-fill(pl, pl-count(pl), rt-seed)
+        }
+        rt-clicks = cs-inc(rt-clicks)
+    }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; c：图表序列数 1..3
+        (k == 99) -> {
+            ns = ct-rem(cs-inc(ch-series(ch)), CH-SERIES-MAX)
+            (ns == 0) -> { ns = 1 }
+            ch-set-series(ch, ns)
+            ch-fill(ch, ns, ch-points(ch), rt-seed)
+        }
+        ; r：重填数据
+        (k == 114) -> {
+            rt-seed = cs-inc(rt-seed)
+            sn = ch-series(ch)
+            s = 0
+            !! {
+                (s >= sn) -> { ** }
+                ch-fill(ch, s, ch-points(ch), ct-add(rt-seed, ct-mul(s, 13)))
+                s = cs-inc(s)
+            }
+            pl-fill(pl, pl-count(pl), rt-seed)
+        }
+        ; - / +：绘图量程
+        (k == 45) -> {
+            sc = pl-scale(pl)
+            (sc > 10) -> { sc = ct-sub(sc, 10) }
+            pl-set-scale(pl, sc)
+        }
+        (k == 43) -> {
+            sc = pl-scale(pl)
+            (sc < 1000) -> { sc = ct-add(sc, 10) }
+            pl-set-scale(pl, sc)
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 组件 ----
+    sn = ch-series(ch)
+    pn = ch-points(ch)
+    cm = ch-max(ch)
+    pk = ch-peak(ch)
+    t0 = ch-total(ch, 0)
+    cmp-set-text(stat, 'chart series={sn} points={pn} max={cm} peak={pk} total0={t0}')
+
+    pc = pl-count(pl)
+    psc = pl-scale(pl)
+    mnx = pl-min-x(pl)
+    mxx = pl-max-x(pl)
+    mny = pl-min-y(pl)
+    mxy = pl-max-y(pl)
+    cmp-set-text(stat2, 'plot n={pc} scale={psc} x[{mnx},{mxx}] y[{mny},{mxy}]')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    g-ch-x, g-ch-y, g-ch-w, g-ch-h = cs-rect(ch)
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+app-shutdown()
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+sn = ch-series(ch)
+pn = ch-points(ch)
+cm = ch-max(ch)
+pk = ch-peak(ch)
+pc = pl-count(pl)
+psc = pl-scale(pl)
+print('bye frames={fr} keys={kk} clicks={ck} series={sn} points={pn} max={cm} peak={pk} plot-n={pc} scale={psc}')
+(sc > 0) -> { print('chart render OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

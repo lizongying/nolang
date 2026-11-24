@@ -1,0 +1,199 @@
+; ============================================================================
+; noui diff 测试（阶段 49）—— src/components.no + src/cmp-scene.no
+;
+; 缺口：组件目录第 71 行给 C-DIFF 承诺「old, new, hunks」，但命令式侧只有一个
+; cmp-diff() 构造函数 —— old / new 都没有 API，渲染还落在通用 `rect + text`
+; 兜底里。阶段 49 补：
+;   - CMP-TEXT = old，CMP-TEXT2 = new；
+;   - df-old / df-set-old / df-new / df-set-new；
+;   - 行切分（复用阶段39 的 '\n' 算法）+ LCS 动态规划 + 回溯成行；
+;   - df-rows / df-row-op（0 上下文 / 1 新增 / 2 删除）/ df-row-text
+;     / df-row-old-no / df-row-new-no；
+;   - df-hunks / df-hunk-start / df-count-add / df-count-del / df-max-len
+;     / df-summary（「+a -d」）；
+;   - cs-paint-diff（字段底 + 行号槽 + 行级 glyph + 文本，颜色按行级别）。
+;
+; 运行：cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/cmp-diff tests/cmp-diff.no
+;       ./dist/cmp-diff
+; ============================================================================
+# /noui/src/cmp-scene
+
+cs-theme-init()
+
+cs-has-text = (t str) (yes bool) {
+    yes = false
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (yes) -> { ** }
+        (cs-scene-t(i) == t) -> { yes = true }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 1. 构造默认：kind / old 空 / new 空 / 单行上下文 / 无 hunk
+; ============================================================================
+DFD = cmp-diff()
+t1 = cmp-kind(DFD) == C-DIFF
+t2 = df-old(DFD) == ''
+t3 = df-new(DFD) == ''
+t4 = df-rows(DFD) == 1
+t5 = df-row-op(DFD, 0) == 0
+t6 = df-row-text(DFD, 0) == ''
+t7 = df-row-old-no(DFD, 0) == 1
+t8 = df-row-new-no(DFD, 0) == 1
+t9 = df-hunks(DFD) == 0
+t10 = df-count-add(DFD) == 0 && df-count-del(DFD) == 0
+t11 = df-summary(DFD) == '+0 -0'
+t12 = df-max-len(DFD) == 0
+
+; ============================================================================
+; 2. 一组典型替换：old 'a\nb\nc'，new 'a\nx\nc'
+;    回溯结果 = [上下文 a, 删除 b, 新增 x, 上下文 c]，1 个 hunk
+; ============================================================================
+df-set-old(DFD, 'a\nb\nc')
+df-set-new(DFD, 'a\nx\nc')
+t13 = df-old(DFD) == 'a\nb\nc'
+t14 = df-new(DFD) == 'a\nx\nc'
+t15 = df-rows(DFD) == 4
+t16 = df-row-op(DFD, 0) == 0
+t17 = df-row-op(DFD, 1) == 2
+t18 = df-row-op(DFD, 2) == 1
+t19 = df-row-op(DFD, 3) == 0
+t20 = df-row-text(DFD, 0) == 'a'
+t21 = df-row-text(DFD, 1) == 'b'
+t22 = df-row-text(DFD, 2) == 'x'
+t23 = df-row-text(DFD, 3) == 'c'
+t24 = df-row-old-no(DFD, 0) == 1 && df-row-old-no(DFD, 1) == 2 && df-row-old-no(DFD, 2) == 0 && df-row-old-no(DFD, 3) == 3
+t25 = df-row-new-no(DFD, 0) == 1 && df-row-new-no(DFD, 1) == 0 && df-row-new-no(DFD, 2) == 2 && df-row-new-no(DFD, 3) == 3
+t26 = df-hunks(DFD) == 1
+t27 = df-hunk-start(DFD, 0) == 1
+t28 = df-count-add(DFD) == 1 && df-count-del(DFD) == 1
+t29 = df-summary(DFD) == '+1 -1'
+t30 = df-max-len(DFD) == 1
+
+; ============================================================================
+; 3. 纯新增 / 纯删除 / 全等 / 两个 hunk
+; ============================================================================
+df-set-old(DFD, 'a\nb')
+df-set-new(DFD, 'a\nb\nc')
+t31 = df-rows(DFD) == 3
+t32 = df-row-op(DFD, 2) == 1
+t33 = df-hunks(DFD) == 1
+t34 = df-hunk-start(DFD, 0) == 2
+t35 = df-summary(DFD) == '+1 -0'
+
+df-set-old(DFD, 'a\nb\nc')
+df-set-new(DFD, 'a\nb')
+t36 = df-rows(DFD) == 3
+t37 = df-row-op(DFD, 2) == 2
+t38 = df-summary(DFD) == '+0 -1'
+
+df-set-old(DFD, 'a\nb\nc')
+df-set-new(DFD, 'a\nb\nc')
+t39 = df-rows(DFD) == 3
+t40 = df-hunks(DFD) == 0
+t41 = df-summary(DFD) == '+0 -0'
+
+df-set-old(DFD, 'a\nb\nc\nd')
+df-set-new(DFD, 'a\nX\nc\nY')
+t42 = df-rows(DFD) == 6
+t43 = df-hunks(DFD) == 2
+t44 = df-hunk-start(DFD, 0) == 1
+t45 = df-hunk-start(DFD, 1) == 4
+t46 = df-summary(DFD) == '+2 -2'
+t47 = df-row-text(DFD, 4) == 'd' && df-row-text(DFD, 5) == 'Y'
+
+; 空 old -> 全部新增
+df-set-old(DFD, '')
+df-set-new(DFD, 'x')
+t48 = df-rows(DFD) == 2
+t49 = df-summary(DFD) == '+1 -1'
+
+; ============================================================================
+; 4. disabled 写入是空操作
+; ============================================================================
+df-set-old(DFD, 'a\nb')
+df-set-new(DFD, 'a\nc')
+cmp-flag-set(DFD, F-DISABLED)
+df-set-old(DFD, 'z')
+df-set-new(DFD, 'z')
+t50 = df-old(DFD) == 'a\nb'
+t51 = df-new(DFD) == 'a\nc'
+t52 = df-rows(DFD) == 3
+cmp-flag-clear(DFD, F-DISABLED)
+t53 = df-old(DFD) == 'a\nb'
+
+; ============================================================================
+; 5. 测算：old 'a\nb\nc' / new 'a\nx\nc' —— 4 行，最长 1 字
+;    w = 2*1200 + 4800 + 1*800 = 8000；h = 2*1200 + 4*2400 = 12000
+; ============================================================================
+df-set-old(DFD, 'a\nb\nc')
+df-set-new(DFD, 'a\nx\nc')
+mw, mh = cs-measure(DFD)
+t54 = mw == 8000
+t55 = mh == 12000
+root = cmp-root()
+cmp-add-child(root, DFD)
+cs-layout(root, 0, 0, 90000, 40000)
+dx, dy, dw, dh = cs-rect(DFD)
+t56 = dx == 1200 && dy == 1200
+
+; ============================================================================
+; 6. 渲染：字段底 + 行号槽 + glyph + 文本
+;    文本 x = dx + 1200 + 4800 + 800 = dx + 6800
+;    glyph x = dx + 6000；行号槽右对齐到 dx + 6000
+; ============================================================================
+cs-clear()
+cs-paint(root)
+t57 = cs-rect-color-at(dx, dy, dw, dh) == cs-theme(CS-TH-FIELD)
+; 第 0 行（上下文 a）：行号 1 / 1（muted），glyph 空格，文本 a（FG）
+t58 = cs-text-color-at('1', cs-add(dx, 4400), cs-add(dy, 1200)) == cs-theme(CS-TH-MUTED)
+t59 = cs-text-color-at('1', cs-add(dx, 5200), cs-add(dy, 1200)) == cs-theme(CS-TH-MUTED)
+t60 = cs-text-color-at('a', cs-add(dx, 6800), cs-add(dy, 1200)) == cs-theme(CS-TH-FG)
+; 第 1 行（删除 b）：glyph '-' DANGER，文本 b DANGER，旧号 2，新号空
+t61 = cs-text-color-at('-', cs-add(dx, 6000), cs-add(dy, 3600)) == cs-theme(CS-TH-DANGER)
+t62 = cs-text-color-at('b', cs-add(dx, 6800), cs-add(dy, 3600)) == cs-theme(CS-TH-DANGER)
+t63 = cs-text-color-at('2', cs-add(dx, 4400), cs-add(dy, 3600)) == cs-theme(CS-TH-MUTED)
+; 第 2 行（新增 x）：glyph '+' OK，文本 x OK，旧号空，新号 2
+t64 = cs-text-color-at('+', cs-add(dx, 6000), cs-add(dy, 6000)) == cs-theme(CS-TH-OK)
+t65 = cs-text-color-at('x', cs-add(dx, 6800), cs-add(dy, 6000)) == cs-theme(CS-TH-OK)
+t66 = cs-text-color-at('2', cs-add(dx, 5200), cs-add(dy, 6000)) == cs-theme(CS-TH-MUTED)
+; 第 3 行（上下文 c）：文本 c FG
+t67 = cs-text-color-at('c', cs-add(dx, 6800), cs-add(dy, 8400)) == cs-theme(CS-TH-FG)
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9 && t10 && t11 && t12 && t13 && t14 && t15 && t16 && t17 && t18 && t19 && t20 && t21 && t22 && t23 && t24 && t25 && t26 && t27 && t28 && t29 && t30 && t31 && t32 && t33 && t34 && t35 && t36 && t37 && t38 && t39 && t40 && t41 && t42 && t43 && t44 && t45 && t46 && t47 && t48 && t49 && t50 && t51 && t52 && t53 && t54 && t55 && t56 && t57 && t58 && t59 && t60 && t61 && t62 && t63 && t64 && t65 && t66 && t67
+(ok) -> { print('ALL DIFF TESTS PASSED') }
+(!ok) -> { print('SOME TESTS FAILED') }

@@ -10,6 +10,8 @@ import (
 	"github.com/lizongying/nolang/cache"
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/mmast"
+	pkgspec "github.com/lizongying/nolang/package"
 	"github.com/lizongying/nolang/parser"
 
 	"github.com/lizongying/nolang/i18n"
@@ -287,7 +289,33 @@ func (t *Transpiler) preloadModuleSignatures(source string) (map[string][]string
 			if idx := strings.LastIndex(modShort, "."); idx > 0 {
 				modShort = modShort[:idx]
 			}
-			collectSignaturesFromProg(modProg, modShort)
+			if modProg.ModulePath == astPackageModulePath {
+				// `# nogit` 只回傳包別名佔位（無 Statements），checker 在模組
+				// 合併之前就要看到符號，否則 `nogit.remote.fn(...)` 會被報
+				// 「fn is not defined」。展開整包，以 <pkg>.<module> 前綴
+				// 註冊簽名；同時以模組裸名註冊，與 `# pkg/module` 的呼叫
+				// 習慣保持一致。
+				if t.pkg != nil {
+					if key, ver, matched := t.pkg.MatchDependency(matchedPath); matched && pkgspec.IsASTDependencyKey(key) {
+						if set, err := mmast.EnsurePackageAST(key, ver); err == nil {
+							for mp, p := range set.Modules {
+								short := moduleShortSegment(mp)
+								prefix := modShort
+								if short != "" {
+									prefix += "." + short
+								}
+								collectSignaturesFromProg(p, prefix)
+								// 模組裸名也註冊，與 `# pkg/module` 的呼叫習慣一致。
+								if short != "" {
+									collectSignaturesFromProg(p, short)
+								}
+							}
+						}
+					}
+				}
+			} else {
+				collectSignaturesFromProg(modProg, modShort)
+			}
 		}
 	}
 	// std 簽名已於步驟 0 合入（本地模組簽名在步驟 1 直接覆蓋同名鍵）。
@@ -405,25 +433,25 @@ func checkReservedMainName(program *parser.Program) error {
 			}
 			switch s := stmt.(type) {
 			case *parser.FunctionDefinition:
-			if s.Name == "main" || strings.HasSuffix(s.Name, ".main") {
-				// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
-				// （含 "line %d, column %d:" 前綴），指紋門禁零漂移。
-				mainErr = &DiagnosticError{
-					Lints: []checker.LintResult{{
-						Line:     s.Token.Line,
-						Column:   s.Token.Column,
-						Severity: checker.LintError,
-						Source:   "nolang-compile",
-						Message:  i18n.T("xgs17cqx", "line %d, column %d: 'main' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)", s.Token.Line, s.Token.Column),
-						TraceID:  "xgs17cqx",
-						Fixes: []parser.DiagnosticFix{{
-							Description: "rename the function (e.g. to 'main-fn'), or replace it with top-level statements; the entry point is synthesized automatically",
+				if s.Name == "main" || strings.HasSuffix(s.Name, ".main") {
+					// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
+					// （含 "line %d, column %d:" 前綴），指紋門禁零漂移。
+					mainErr = &DiagnosticError{
+						Lints: []checker.LintResult{{
+							Line:     s.Token.Line,
+							Column:   s.Token.Column,
+							Severity: checker.LintError,
+							Source:   "nolang-compile",
+							Message:  i18n.T("xgs17cqx", "line %d, column %d: 'main' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)", s.Token.Line, s.Token.Column),
+							TraceID:  "xgs17cqx",
+							Fixes: []parser.DiagnosticFix{{
+								Description: "rename the function (e.g. to 'main-fn'), or replace it with top-level statements; the entry point is synthesized automatically",
+							}},
 						}},
-					}},
-					Prefix: "validation errors",
+						Prefix: "validation errors",
+					}
+					return
 				}
-				return
-			}
 				if s.Body != nil {
 					walkForMain(s.Body.Statements)
 				}
@@ -475,23 +503,23 @@ func collectEntryProgramFacts(program *parser.Program, isUserCode bool) (varType
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok && isUserCode {
 			if fd.IsVariadic {
 				for _, p := range fd.Parameters {
-				if p.Type.String() == "[]any" {
-					// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
-					return nil, nil, nil, nil, &DiagnosticError{
-						Lints: []checker.LintResult{{
-							Line:     fd.Pos().Line,
-							Column:   fd.Pos().Column,
-							Severity: checker.LintError,
-							Source:   "nolang-compile",
-							Message:  i18n.T("2243l8if", "..any is only allowed in standard library, not in user code (function: %s)", fd.Name),
-							TraceID:  "2243l8if",
-							Fixes: []parser.DiagnosticFix{{
-								Description: "remove the ..any parameter/annotation, or move this declaration into the standard library",
+					if p.Type.String() == "[]any" {
+						// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
+						return nil, nil, nil, nil, &DiagnosticError{
+							Lints: []checker.LintResult{{
+								Line:     fd.Pos().Line,
+								Column:   fd.Pos().Column,
+								Severity: checker.LintError,
+								Source:   "nolang-compile",
+								Message:  i18n.T("2243l8if", "..any is only allowed in standard library, not in user code (function: %s)", fd.Name),
+								TraceID:  "2243l8if",
+								Fixes: []parser.DiagnosticFix{{
+									Description: "remove the ..any parameter/annotation, or move this declaration into the standard library",
+								}},
 							}},
-						}},
-						Prefix: "validation errors",
+							Prefix: "validation errors",
+						}
 					}
-				}
 				}
 			}
 		}

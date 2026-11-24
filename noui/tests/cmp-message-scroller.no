@@ -1,0 +1,272 @@
+; 阶段62：C-MESSAGE-SCROLLER（消息流）无窗口断言
+; 纯逻辑：构造默认 / 消息池（扁平只增 + 基址）/ 作者与正文读写 /
+;          输入中标记读写 / 多句柄隔离 / disabled 空操作 /
+;          测算 intrinsic / 渲染几何
+;          （FIELD 底、作者 MUTED + 正文 FG、条间 TRACK 分隔线、
+;           输入中时末尾再补一条分隔线 + 「typing...」ACCENT）
+; ============================================================================
+# /noui/src/cmp-scene
+
+; ============================================================================
+; 辅助：场景遍历
+; ============================================================================
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+cs-text-n = (t str) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 构造默认
+;    0 条 / 越界读空串 / 未输入中 / 未被 disabled / 不是视觉容器
+; ============================================================================
+ms = cmp-message-scroller()
+
+t1 = cmp-kind(ms) == C-MESSAGE-SCROLLER
+t2 = ms-count(ms) == 0
+t3 = ms-text(ms, 0) == ''
+t4 = ms-author(ms, 0) == ''
+t5 = ms-typing(ms) == 0
+t6 = cmp-has(ms, F-DISABLED) == 0
+t7 = cs-is-container(cmp-kind(ms)) == 0
+
+; ============================================================================
+; 2. 消息池：追加
+;    m0 me=hello / m1 noui=hi there
+; ============================================================================
+ms-add(ms, 'me', 'hello')
+t8 = ms-count(ms) == 1
+t9 = ms-author(ms, 0) == 'me'
+t10 = ms-text(ms, 0) == 'hello'
+ms-add(ms, 'noui', 'hi there')
+t11 = ms-count(ms) == 2
+t12 = ms-author(ms, 1) == 'noui'
+t13 = ms-text(ms, 1) == 'hi there'
+
+; 越界读：空串
+t14 = ms-text(ms, 2) == ''
+t15 = ms-author(ms, -1) == ''
+
+; ============================================================================
+; 3. 改写
+; ============================================================================
+ms-set-text(ms, 0, 'HELLO')
+ms-set-author(ms, 0, 'ME')
+t16 = ms-text(ms, 0) == 'HELLO'
+t17 = ms-author(ms, 0) == 'ME'
+; 越界写不影响
+ms-set-text(ms, 9, 'x')
+ms-set-author(ms, 9, 'y')
+t18 = ms-text(ms, 1) == 'hi there'
+t19 = ms-author(ms, 1) == 'noui'
+
+; ============================================================================
+; 4. 输入中标记（夹 0 / 1）
+; ============================================================================
+ms-set-typing(ms, 1)
+t20 = ms-typing(ms) == 1
+ms-set-typing(ms, 5)
+t21 = ms-typing(ms) == 1
+ms-set-typing(ms, 0)
+t22 = ms-typing(ms) == 0
+ms-set-typing(ms, -3)
+t23 = ms-typing(ms) == 0
+
+; ============================================================================
+; 5. 多句柄隔离（扁平池 + 每句柄基址）
+; ============================================================================
+s2 = cmp-message-scroller()
+s3 = cmp-message-scroller()
+ms-add(s2, 'a', '11')
+ms-add(s2, 'b', '22')
+ms-add(s3, 'c', '33')
+ms-set-typing(s3, 1)
+
+t24 = ms-count(s2) == 2
+t25 = ms-count(s3) == 1
+t26 = ms-author(s2, 1) == 'b'
+t27 = ms-text(s3, 0) == '33'
+t28 = ms-typing(s3) == 1
+
+ms-clear(s2)
+t29 = ms-count(s2) == 0
+t30 = ms-count(s3) == 1
+t31 = ms-text(s3, 0) == '33'
+t32 = ms-typing(s3) == 1
+ms-add(s2, 'again', '99')
+t33 = ms-count(s2) == 1
+t34 = ms-author(s2, 0) == 'again'
+t35 = ms-text(s2, 0) == '99'
+
+; ============================================================================
+; 6. disabled：写操作一律空操作
+; ============================================================================
+cmp-flag-set(s3, F-DISABLED)
+ms-add(s3, 'no', 'no')
+ms-set-text(s3, 0, 'no')
+ms-set-author(s3, 0, 'no')
+ms-set-typing(s3, 0)
+ms-clear(s3)
+t36 = ms-count(s3) == 1
+t37 = ms-author(s3, 0) == 'c'
+t38 = ms-text(s3, 0) == '33'
+t39 = ms-typing(s3) == 1
+cmp-flag-clear(s3, F-DISABLED)
+t40 = cmp-has(s3, F-DISABLED) == 0
+
+; ============================================================================
+; 7. 测算 intrinsic
+;    宽 = 2*CS-PAD + max(最长作者, 最长正文)，下限 CS-MIN-LEAF-W
+;    高 = 2*CS-PAD + N*2*CS-LINE-H + (N-1)*CS-SEP-H
+;         + （输入中 ? CS-SEP-H + CS-LINE-H : 0），下限 CS-BTN-H
+;    m：作者 1600/3200、正文 4000/6400 → 内容 6400
+;       → 宽 2400+6400 = 8800；高 2400+9600+100 = 12100
+; ============================================================================
+m = cmp-message-scroller()
+ms-add(m, 'me', 'hello')
+ms-add(m, 'noui', 'hi there')
+m1w, m1h = cs-measure(m)
+t41 = m1w == 8800
+t42 = m1h == 12100
+
+; 空：宽 2400 夹 6400；高 2400 夹 4000
+e1 = cmp-message-scroller()
+m2w, m2h = cs-measure(e1)
+t43 = m2w == 6400
+t44 = m2h == 4000
+
+; 单条 + 输入中：内容 max(1600,4000) = 4000 → 宽 6400
+;   高 2400+4800+100+2400 = 9700
+e2 = cmp-message-scroller()
+ms-add(e2, 'me', 'hello')
+ms-set-typing(e2, 1)
+m3w, m3h = cs-measure(e2)
+t45 = m3w == 6400
+t46 = m3h == 9700
+
+; 单条长正文 'abcdefghij'(8000)：内容 max(1600,8000) = 8000 → 宽 10400
+;   高 2400+4800 = 7200
+e3 = cmp-message-scroller()
+ms-add(e3, 'me', 'abcdefghij')
+m4w, m4h = cs-measure(e3)
+t47 = m4w == 10400
+t48 = m4h == 7200
+
+; 固定尺寸覆盖仍然生效
+cmp-set-sw(m, 20000)
+cmp-set-sh(m, 9000)
+m5w, m5h = cs-measure(m)
+t49 = m5w == 20000
+t50 = m5h == 9000
+cmp-set-sw(m, 0)
+cmp-set-sh(m, 0)
+
+; ============================================================================
+; 8. 渲染
+;     外层 12000 → 内容宽 9600（intrinsic 8800，叶子横向被拉伸到父内容宽）
+;     面板 (1200,1200,9600,12100) FIELD
+;     消息 0：作者 'ME' @2400,2400 MUTED、'HELLO' @2400,4800 FG
+;     分隔线 (1200,7200,9600,100)
+;     消息 1：作者 'noui' @2400,7300 MUTED、'hi there' @2400,9700 FG
+;     文本指令共 4 条
+; ============================================================================
+cs-clear()
+r = cmp-message-scroller()
+ms-add(r, 'me', 'hello')
+ms-add(r, 'noui', 'hi there')
+ms-set-text(r, 0, 'HELLO')
+ms-set-author(r, 0, 'ME')
+r1 = cmp-root()
+cmp-add-child(r1, r)
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+
+t51 = cs-rect-color-at(1200, 1200, 9600, 12100) == cs-theme(CS-TH-FIELD)
+t52 = cs-text-color-at('ME', 2400, 2400) == cs-theme(CS-TH-MUTED)
+t53 = cs-text-color-at('HELLO', 2400, 4800) == cs-theme(CS-TH-FG)
+t54 = cs-rect-color-at(1200, 7200, 9600, 100) == cs-theme(CS-TH-TRACK)
+t55 = cs-text-color-at('noui', 2400, 7300) == cs-theme(CS-TH-MUTED)
+t56 = cs-text-color-at('hi there', 2400, 9700) == cs-theme(CS-TH-FG)
+t57 = cs-text-n('HELLO') == 1
+t58 = cs-text-count() == 4
+
+; 打开「输入中」：末尾补一条分隔线 + 「typing...」ACCENT，文本 5 条
+ms-set-typing(r, 1)
+cs-clear()
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+t59 = cs-rect-color-at(1200, 12100, 9600, 100) == cs-theme(CS-TH-TRACK)
+t60 = cs-text-color-at('typing...', 2400, 12200) == cs-theme(CS-TH-ACCENT)
+t61 = cs-text-count() == 5
+
+; 清空：只剩底色，没有任何文本
+ms-clear(r)
+cs-clear()
+cs-layout(r1, 0, 0, 12000, 20000)
+cs-paint(r1)
+t62 = cs-text-count() == 0
+t63 = cs-rect-color-at(1200, 1200, 9600, 4000) == cs-theme(CS-TH-FIELD)
+
+; ============================================================================
+; 9. 汇总
+; ============================================================================
+ok = 1
+ok = ok & t1 & t2 & t3 & t4 & t5 & t6 & t7
+ok = ok & t8 & t9 & t10 & t11 & t12 & t13 & t14 & t15
+ok = ok & t16 & t17 & t18 & t19
+ok = ok & t20 & t21 & t22 & t23
+ok = ok & t24 & t25 & t26 & t27 & t28 & t29 & t30 & t31 & t32 & t33 & t34 & t35
+ok = ok & t36 & t37 & t38 & t39 & t40
+ok = ok & t41 & t42 & t43 & t44 & t45 & t46 & t47 & t48 & t49 & t50
+ok = ok & t51 & t52 & t53 & t54 & t55 & t56 & t57 & t58
+ok = ok & t59 & t60 & t61 & t62 & t63
+(ok == 1) -> {
+    print('ALL MESSAGE-SCROLLER TESTS PASSED')
+}
+(ok == 0) -> {
+    print('SOME MESSAGE-SCROLLER TESTS FAILED')
+}

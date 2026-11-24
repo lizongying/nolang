@@ -27,7 +27,7 @@ func TestRangeIndexLoopHint(t *testing.T) {
 func TestRangeIndexLoopNoHintForContainerIteration(t *testing.T) {
 	src := `f = (a []i64) (r i64) {
     sum = 0
-    for x <- a: {
+    x <- a: {
         sum = sum + x
     }
     r = sum

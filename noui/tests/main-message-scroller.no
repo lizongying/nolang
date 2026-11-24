@@ -1,0 +1,277 @@
+; ============================================================================
+; noui 窗口 demo：消息流（阶段 62）—— C-MESSAGE-SCROLLER
+;
+; 流水线：app-init -> cmp-message-scroller -> ms-add / ms-set-author /
+;          ms-set-text / ms-set-typing / ms-clear 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-MESSAGE-SCROLLER 分支 +
+;      cs-paint-message-scroller）：FIELD 底 + N 条消息（作者 MUTED + 正文 FG）
+;      + 条间 TRACK 分隔线 + 「输入中」时末尾再补一条分隔线 + 「typing...」
+;   -> 键盘：a=追加消息；t=切换输入中；c=清空；r=重建默认；
+;            d=切换 disabled（写空操作）；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-message-scroller.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 候选作者（a 轮取）----
+ms-cand-auth = (i i64) (s str) {
+    s = 'me'
+    (i == 1) -> { s = 'noui' }
+    (i == 2) -> { s = 'you' }
+    (i == 3) -> { s = 'system' }
+    (i == 4) -> { s = 'agent' }
+    (i == 5) -> { s = 'user' }
+    (i == 0) -> { s = 'bot' }
+    s = s
+}
+
+; ---- 候选正文（a 轮取）----
+ms-cand-text = (i i64) (s str) {
+    s = 'hello'
+    (i == 1) -> { s = 'hi there' }
+    (i == 2) -> { s = 'ok' }
+    (i == 3) -> { s = 'stage 62 landed' }
+    (i == 4) -> { s = 'ready' }
+    (i == 5) -> { s = 'noted' }
+    (i == 0) -> { s = 'ack' }
+    s = s
+}
+
+; ---- 重建默认（收尾自检也用它）----
+ms-build-default = (h i64) () {
+    ms-clear(h)
+    ms-add(h, 'me', 'hello')
+    ms-add(h, 'noui', 'hi there')
+}
+
+; ---- 场景文本查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui message-scroller')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段62: message-scroller')
+hint = cmp-label('a=add t=typing c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+ms = cmp-message-scroller()
+ms-build-default(ms)
+
+cmp-add-child(root, title)
+cmp-add-child(root, ms)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：消息流是展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一条消息
+        (k == 97) -> {
+            n = ms-count(ms)
+            j = ct-rem(n, 7)
+            ms-add(ms, ms-cand-auth(j), ms-cand-text(j))
+        }
+        ; t：切换「输入中」
+        (k == 116) -> {
+            v = ms-typing(ms)
+            (v != 0) -> { ms-set-typing(ms, 0) }
+            (v == 0) -> { ms-set-typing(ms, 1) }
+        }
+        ; c：清空
+        (k == 99) -> { ms-clear(ms) }
+        ; r：重建默认
+        (k == 114) -> { ms-build-default(ms) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(ms, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(ms, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(ms, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = ms-count(ms)
+    ty = ms-typing(ms)
+    dis = cmp-has(ms, F-DISABLED)
+    cmp-set-text(stat, 'n={cn} typing={ty} disabled={dis}')
+    (cn > 0) -> {
+        li = cs-sub(cn, 1)
+        cmp-set-text(stat2, 'last={ms-author(ms, li)}: {ms-text(ms, li)}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no messages') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认两条，按面板实测矩形推导坐标逐项核对
+;   内边距 1200 / 行高 2400 / 条间距 100 / 条步长 4900（两行 + 分隔线）
+;   作者行 i 顶 = by+1200+i*4900 / 正文行 i 顶 = 作者行 + 2400
+;   分隔线 i = 正文行 i + 2400
+;   文字垂直居中：行高 == CS-LINE-H，文字 y = 行顶
+;   场景里还有 title / hint / stat / stat2 四条标签文本
+; ============================================================================
+cmp-flag-clear(ms, F-DISABLED)
+ms-build-default(ms)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+p0 = 1200
+lh0 = 2400
+sep0 = 100
+rowstep = 4900
+
+bx, by, bw, bh = cs-rect(ms)
+ax = cs-add(bx, p0)
+ay0 = cs-add(by, p0)
+ty0 = cs-add(ay0, lh0)
+ay1 = cs-add(ay0, rowstep)
+ty1 = cs-add(ay1, lh0)
+sy0 = cs-add(ty0, lh0)
+
+c1 = ms-count(ms) == 2
+c2 = ms-author(ms, 0) == 'me'
+c3 = ms-text(ms, 0) == 'hello'
+c4 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c5 = find-text('me', ax, ay0) == 1
+c6 = find-text-color('me', ax, ay0) == cs-theme(CS-TH-MUTED)
+c7 = find-text('hello', ax, ty0) == 1
+c8 = find-text-color('hello', ax, ty0) == cs-theme(CS-TH-FG)
+c9 = find-rect-color(bx, sy0, bw, sep0) == cs-theme(CS-TH-TRACK)
+c10 = find-text('noui', ax, ay1) == 1
+c11 = find-text-color('noui', ax, ay1) == cs-theme(CS-TH-MUTED)
+c12 = find-text('hi there', ax, ty1) == 1
+c13 = find-text-color('hi there', ax, ty1) == cs-theme(CS-TH-FG)
+c14 = cs-text-count() == 8
+
+; 打开「输入中」：末尾补一条分隔线 + 「typing...」ACCENT
+ms-set-typing(ms, 1)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+sy1 = cs-add(ty1, lh0)
+c15 = find-rect-color(bx, sy1, bw, sep0) == cs-theme(CS-TH-TRACK)
+c16 = find-text('typing...', ax, cs-add(sy1, sep0)) == 1
+c17 = find-text-color('typing...', ax, cs-add(sy1, sep0)) == cs-theme(CS-TH-ACCENT)
+c18 = cs-text-count() == 9
+
+; 清空：只剩四条标签文本
+ms-clear(ms)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c19 = cs-text-count() == 4
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+n0 = ms-count(ms)
+ty2 = ms-typing(ms)
+print('bye frames={fr} keys={kk} clicks={ck} messages={n0} typing={ty2} w={bw} h={bh}')
+(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19) -> {
+    print('message-scroller render OK')
+}
+(!(c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9 && c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19)) -> {
+    print('FAIL: message-scroller render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

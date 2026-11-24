@@ -66,6 +66,11 @@ func CloneProgram(prog *Program) *Program {
 		}
 	}
 	out.Sem = c.remapSem(prog.Sem)
+	// 模組身份注解是 Program 級別的純資料，必須跟著工作副本走：匯入端靠
+	// ModulePath 判斷「這是包別名佔位」還是普通模組；漏拷會讓 clone 後的
+	// AST 悄悄失去身份。
+	out.SourcePath = prog.SourcePath
+	out.ModulePath = prog.ModulePath
 	// 排版 trivia 表：與三張語義表同款換鍵（鍵指向副本節點）。該表是 formatter
 	// 專用、且刻意不進 blob，但 clone 若漏拷就等於「深拷貝默默丟資料」，且
 	// 裝配期工作副本正是靠 CloneProgram 取得的——故必須一併複製。

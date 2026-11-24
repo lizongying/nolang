@@ -19,7 +19,7 @@ import (
 //	}
 //
 // AST 上它們落在 parser.InterfaceDefinition.Implements（複用既有欄位，不新增
-// 欄位，因此 `no ast` dump、HIR、模組前綴改寫、gob/`std_ast.bin` 全部零改動）。
+// 欄位，因此 `no ast` dump、HIR、模組前綴改寫、gob/`std-ast.bin` 全部零改動）。
 // 本檔案是唯一把 Implements 解釋成「方法集」的地方：checker 的簽名校驗、
 // CollectDefinedVars 的未定義抑制、build 的去虛擬化都從這裡取。
 //

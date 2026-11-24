@@ -1,10 +1,10 @@
 # Red lines — 违反了就静默出错或丢东西
 
-**权威顺序**：实测 > `AGENTS.md`（语法与编码权威） > `.agents/rules/nolang-red-lines.md`（红线全文） > 记忆笔记。
+**权威顺序**：实测 > `AGENTS.md`（语法与编码权威） > `.agents/rules/nolang-red-lines.md`（红线总入口） > 记忆笔记。
 
 本档只放**每次动手前必须扫一眼**的条目；完整论证、命令与环境见
-`.agents/rules/nolang-red-lines.md`（`alwaysApply`，宿主支持时无需点名加载）。
-两份如有出入，以该文件与实测为准。
+`.agents/rules/nolang-red-lines.md`（`alwaysApply`，宿主支持时无需点名加载；内含任务路由表指向编译器 / 应用两份完整红线）。
+两份如有出入，以对应子文件与实测为准。
 
 ## Git
 
