@@ -5400,7 +5400,7 @@ test-s110-dot-call-ty = () {
     ; 手填簽名表：mod.fn 回 TY-I64
     sg = h2m-sigs-new()
     noarg []i64 = []
-    h2m-sig-add(sg, 'mod.fn', 'mod.fn', TY-I64, noarg)
+    h2m-sig-add(sg, 'mod.fn', 'mod.fn', TY-I64, noarg, 0)
     loc = h2m-lst-new()
     agg = h2m-new()
 
@@ -7023,7 +7023,7 @@ test-s114-bare-call = () {
     sg = h2m-sigs-new()
     argt []i64 = []
     argt.push(TY-I64)
-    h2m-sig-add(sg, 'testmod.fn', 'testmod-fn', TY-I64, argt)
+    h2m-sig-add(sg, 'testmod.fn', 'testmod-fn', TY-I64, argt, 0)
 
     loc = h2m-lst-new()
     agg = h2m-new()
@@ -7049,8 +7049,8 @@ test-s114-bare-call = () {
 
     ; ③ 歧義：兩個模組同名函式 ⇒ femit 反查回 -1（絕不取第一個）
     sg2 = h2m-sigs-new()
-    h2m-sig-add(sg2, 'a.dup', 'dup-fn', TY-I64, argt)
-    h2m-sig-add(sg2, 'b.dup', 'dup-fn', TY-I64, argt)
+    h2m-sig-add(sg2, 'a.dup', 'dup-fn', TY-I64, argt, 0)
+    h2m-sig-add(sg2, 'b.dup', 'dup-fn', TY-I64, argt, 0)
     c2 = h2m-new()
     v2 = h2m-lower-expr(t, c2, sg2, call)
     runner.eq(c2.unsup > 0, 1, 's114 ambiguous femit still gated')

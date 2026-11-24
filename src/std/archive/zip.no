@@ -676,7 +676,12 @@ writer.write-local-file = (name str, content []byte, crc i64) {
 
     ; 檔名
     i <- [0..name-len): {
-        .put(name.byte(i))
+        c0 = name.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        .put(c0)
     }
 
     ; 檔案內容
@@ -773,7 +778,12 @@ writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64, cr
 
     ; 檔名
     i <- [0..name-len): {
-        .cd-put(name.byte(i))
+        c0 = name.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        .cd-put(c0)
     }
 }
 

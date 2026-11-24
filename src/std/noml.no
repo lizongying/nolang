@@ -192,10 +192,20 @@ is-ident-key = (k str) (yes bool) {
     yes = false
     n = k.len-bytes()
     n == 0 -> return
-    is-ident-start(k.byte(0)) == false -> return
+    c0 = k.byte(0): {
+        ok -> it
+
+        -> 0
+    }
+    is-ident-start(c0) == false -> return
     yes = true
     i <- [1..n): {
-        is-ident-char(k.byte(i)) == false -> {
+        c0 = k.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        is-ident-char(c0) == false -> {
             yes = false
             return
         }
@@ -1247,18 +1257,33 @@ pool.parse-key = (s str, pos i64) (key str, next i64, ok bool, quoted bool) {
         }
         return
     }
-    is-ident-start(s.byte(pos)) == false -> {
+    c0 = s.byte(pos): {
+        ok -> it
+
+        -> 0
+    }
+    is-ident-start(c0) == false -> {
         ok = .fail(s, pos, 'expected key (non-identifier keys must be single-quoted)')
         return
     }
     p = pos
-    (p < sn && is-ident-char(s.byte(p))) {
+    c0 = s.byte(p): {
+        ok -> it
+
+        -> 0
+    }
+    (p < sn && is-ident-char(c0)) {
         {
             p ?= p + 1
         }: {
             err -> _
 
             -> _
+        }
+        c0 = s.byte(p): {
+            ok -> it
+
+            -> 0
         }
     }
     key = s.slice-bytes(pos, p)
@@ -1420,7 +1445,12 @@ pool.hex4 = (s str, pos i64) (code i64) {
     pos + 4 > sn -> return
     v = 0
     i <- [pos..pos + 4): {
-        d = hex-digit(s.byte(i))
+        c0 = s.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        d = hex-digit(c0)
         d < 0 -> return
         {
             v ?= v * 16 + d
@@ -1778,7 +1808,12 @@ pool.match-kw = (s str, pos i64, kw str) (next i64) {
     pos + kn < sn -> {
 
         #{overflow=wrap}
-        is-ident-char(s.byte(pos + kn)) -> return
+        c0 = s.byte(pos + kn): {
+            ok -> it
+
+            -> 0
+        }
+        is-ident-char(c0) -> return
     }
 
     #{overflow=wrap}

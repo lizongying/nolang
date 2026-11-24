@@ -5733,28 +5733,57 @@ func optionResultOfCallTarget(value parser.Expression, varTypes map[string]strin
 	if !ok || call == nil {
 		return ""
 	}
-	dot, ok := call.Function.(*parser.DotExpression)
+	// 2026-11-24 收口：原本這裡自行分流「模組限定呼叫 → stdFuncOptionResult」
+	// 與「接收者方法 → stdMethodOptionResult」，現在兩條路與 builtin/本地函式
+	// 一起由 resolveCalleeSig 統一查表（sigs 傳 nil，故此處仍只認 std/builtin；
+	// 本地函式回傳型別由 inferExprType 的 funcTypes 路徑負責，行為不變）。
+	// 鍵規則、ambiguous 跳過、泛型結果拒絕全部集中在 callee_sig.go。
+	return resolveCalleeSig(call, nil, varTypes, nil, selfType).optionResult()
+}
+
+// inferFieldTargetTypeFromTables 在 inferExprType 對 `obj.field` / `.field`
+// 推不出型別時，從兩張已內嵌的 struct 欄位表補查。它只認**確定**的欄位宣告，
+// 查不到就回 ""（上層向寬鬆方向放行），與 D1 一貫的「寧可漏報、不可誤報」一致。
+//
+// 為什麼需要：單檔 `no vet` 下 funcTypes 為空、std 尚未合併，`f.buf = s.byte(i)`
+// 這類 std struct 欄位寫的目標型別過去永遠是 "" ⇒ 整條 15w45dqk 被跳過。
+// 索引目標刻意不在本函式範圍內（見 11476 的 IndexExpression 註釋）。
+func inferFieldTargetTypeFromTables(left parser.Expression, varTypes map[string]string, selfType string) string {
+	dot, ok := left.(*parser.DotExpression)
 	if !ok || dot == nil || dot.Property == "" {
 		return ""
 	}
-	// 模組限定呼叫（`os.arg(...)`）：接收者是**模組名**而不是變數，型別推斷不出來，
-	// 方法路徑（下方 stdMethodOptionResult）對不上。但 std 簽名表知道它的回傳
-	// 型別（`os.arg` → `?str`），所以在這裡分流出來。若不分流，這種「option 當
-	// 值傳遞」會被整條型別比對跳過（`inferredType != ""` 守衛）而**靜默拆包**：
-	// option 的 payload 被讀出來存進 plain 變數，nil/err 分支直接丟掉。
-	//
-	// 接收者是**本地變數**時（`os = ...` 遮蔽了模組名）必須走方法路徑，不可誤認
-	// 成模組限定呼叫。
-	if recv, ok := dot.Receiver.(*parser.Identifier); ok {
-		if _, isVar := varTypes[recv.Value]; !isVar {
-			return stdFuncOptionResult(recv.Value, dot.Property)
+	var ownerType string
+	switch recv := dot.Receiver.(type) {
+	case *parser.Identifier:
+		if isImplicitSelfIdent(recv) || recv.Value == "self" {
+			ownerType = selfType
+		} else {
+			ownerType = varTypes[recv.Value]
 		}
+	case *parser.DotExpression:
+		ownerType = inferExprType(recv, varTypes, nil, selfType)
 	}
-	recvType := inferExprType(dot.Receiver, varTypes, nil, selfType)
-	if recvType == "" {
+	if ownerType == "" {
 		return ""
 	}
-	return stdMethodOptionResult(recvType, dot.Property)
+	keys := []string{ownerType}
+	if base := baseTypeNameForMethod(ownerType); base != "" && base != ownerType {
+		keys = append(keys, base)
+	}
+	for _, fields := range []map[string]map[string]string{validationStructFields, embeddedStdStructFields} {
+		if fields == nil {
+			continue
+		}
+		for _, key := range keys {
+			if m, ok := fields[key]; ok {
+				if t, exists := m[dot.Property]; exists && t != "" {
+					return t
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // infixFlaggedByOvfLint 用與 ovf-int-default lint 走查（walkExprForIntOverflow）
@@ -11479,6 +11508,12 @@ func validateStmtTypesIn(stmt parser.Statement, funcNames map[string]bool, funcT
 				// nolang-index-write 管。把它一併拒絕會推翻既有語意。
 				if _, isField := assign.Left.(*parser.DotExpression); isField {
 					targetType := inferExprType(assign.Left, varTypes, funcTypes, selfType)
+					if targetType == "" {
+						// 單檔 vet 下 funcTypes 為空、std 尚未合併，struct 欄位
+						// 型別常常推不出來 ⇒ 過去整條 D1 被靜默跳過。補查兩張
+						// 內嵌欄位表（本 program + std），仍推不出才放行。
+						targetType = inferFieldTargetTypeFromTables(assign.Left, varTypes, selfType)
+					}
 					// 型別推不出、目標本來就是 ?T / 借用 ⇒ 向寬鬆方向放行，
 					// 不猜、不誤報（與 10116 的邊界同口徑）。
 					if targetType != "" && isConcreteType(targetType) &&
@@ -11486,8 +11521,10 @@ func validateStmtTypesIn(stmt parser.Statement, funcNames map[string]bool, funcT
 						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
 						// inferExprType 只看得見 T，看不到 overflow option 算術／
 						// option 呼叫合成的 tag；補上升格讓既有判定開火。
+						// 呼叫結果一律問單一 resolver（不再各自拼 std 鍵），
+						// 與 3604icnf 的實參判定同源。
 						if !ty.IsOptionRaw(valType) && !isPureLiteralArith(assign.Value) {
-							if optRHS := optionResultOfCallTarget(assign.Value, varTypes, selfType); optRHS != "" {
+							if optRHS := bareOptionArgType(assign.Value, nil, varTypes, nil, selfType, targetType); optRHS != "" {
 								valType = optRHS
 							} else if p := ovfOptionArithPayloadType(assign.Value, varTypes, selfType); p != "" {
 								valType = "?" + p

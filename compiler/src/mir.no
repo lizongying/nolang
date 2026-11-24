@@ -750,3 +750,30 @@ OP-VECCLEAR = 114
 ;   ⚠️ 元素槽是 i64 寬（s136 口徑）⇒ helper 逐元 load i64、trunc i8 後寫進 i8 緩衝。
 ; ⚠ op 碼接在既有最大碼 OP-VECCLEAR=114 之後（取 115），不重排既有碼。
 OP-VECBYTES2STR = 115
+
+; s166：vec.pop()（原生 []t.pop）——移除最後一期：新 %vec 的 len = max(len-1, 0)，
+;   cap/data 原封不動（鏡像 Go src/mir/builtin_call.go:2610 emitBuiltinVecPop：
+;   newLen = select (len==0) ? 0 : len-1；空 vec 的回傳值為元素零值且 len 恆 0）。
+;   ⚠️ 本 op 只負責【容器側】的新值；被彈出元素本身不回傳（定位為「陳述位 .pop()」——
+;       h2m-bk-pop / h2m-lower-for / h2m-lower-coll 等自舉呼叫點全數如此；
+;       「x = v.pop()」值用法仍落總門禁，決不靜默發半套語義）。
+; OP-VECPOP：dst = 新 %vec 值 id（TY-VEC，落 %vc）；x = 接收者 vec 值 id；y 不用（0）。
+;   發 call %vec @vec_pop(%vec <x>)。helper @vec_pop 由 cg-runtime-prelude-full 每模組發一次。
+;   ⚠ h2m 側必須把结果【寫回】接收者（字段走 OP-STRUCT-SET、標識符走重綁／%vs 槽），
+;      否則原地語義丢失（错码）——與 s165 clear 同一紀律。
+;   ⚠ 結果【不】入 rel-list（所有權仍屬接收者）：接收者值由 h2m-rel-drop 撤登記、新值接管。
+; ⚠ op 碼接在既有最大碼 OP-VECBYTES2STR=115 之後（取 116），不重排既有碼。
+OP-VECPOP = 116
+
+; s167：帶溢出檢測的【有符號 i64 算術】族——語義鏡像 Go inferOptionArith
+;   （src/parser/lowering.go:1186 起）：signed + - * / % 的結果型別恆為 ?T，
+;   失敗（溢出／除零／MIN/-1）⇒ 選項的 err 態（tag=2，非 nil 的 1），正常 ⇒ tag=0 + 載荷。
+;   ⚠️ 與 OP-ADD/SUB/MUL/DIV/MOD 的差別只在「失敗也產碼」（选项化），
+;      不做隐式截断、不靜默回繞；呼叫端（h2m-lower-surface）據此走 omode 三態臂。
+; dst = %option 值 id（TY-OPT，落 %op）；x/y = 兩個 i64 操作數值 id。
+; 發 call %option @chk_<op>(i64 <x>, i64 <y>)；helper 由 cg-runtime-prelude-full 每模組發一次。
+OP-CHKADD = 117
+OP-CHKSUB = 118
+OP-CHKMUL = 119
+OP-CHKDIV = 120
+OP-CHKMOD = 121

@@ -1,5 +1,17 @@
 # 更新日誌
 
+## v0.4.33
+
+- feat(checker): add resolveCalleeSig as the single callee signature source for argument and result lookup
+- fix(checker): reject bare option arguments at every call site and infer struct field targets from embedded tables
+- feat(compiler): lower vec.pop for identifier and field receivers and add vec.clear / vec_bytes_to_str codegen helpers
+- refactor(std): unwrap str.byte results explicitly across txt, str, noml, yaml and zip to avoid dropping option payloads
+- refactor(std/crypto): use named bigint arithmetic methods in poly1305 reduce instead of private operators
+- fix(ci): embed the version in pure-Go release asset names and align setup-nolang lookup with the build workflow
+- docs(readme): correct the Traditional Chinese language link label across localized READMEs
+- test(checker): pin callee signature resolution and bare-option-argument regressions
+- test(hkdf): restore explicit []byte annotation on the extracted PRK array literal so the suite compiles
+
 ## v0.4.32
 
 - feat(mmast): publish one AST zip per package with per-module gob entries and implicit source/module path annotations

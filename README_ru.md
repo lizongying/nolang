@@ -1,6 +1,6 @@
 # Nolang
 
-[繁體中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
+[傳統中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
 
 Nolang — это системный язык программирования, обеспечивающий безопасность работы с памятью, высокую производительность и минималистичный синтаксис.
 
@@ -20,7 +20,7 @@ Nolang — это системный язык программирования, 
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
 ```
 
-По умолчанию устанавливается сборка **со встроенным LLVM** (`no-llvm_*`, отдельно ставить LLVM / opt / llc не нужно). Для более компактной сборки на чистом Go используйте `NO_FLAVOR=plain` вместе с `no build -cc zig`:
+По умолчанию устанавливается сборка **со встроенным LLVM** (`no-llvm-*`, отдельно ставить LLVM / opt / llc не нужно). Для более компактной сборки на чистом Go используйте `NO_FLAVOR=plain` вместе с `no build -cc zig`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh

@@ -1,6 +1,6 @@
 # Nolang
 
-[繁體中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
+[傳統中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
 
 Nolang 是一种内存安全、性能强劲、语法极简的系统编程语言。
 
@@ -20,7 +20,7 @@ Nolang 是一种内存安全、性能强劲、语法极简的系统编程语言�
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
 ```
 
-默认装**内置 LLVM** 的版本（`no-llvm_*`，不必另装 LLVM / opt / llc）。若想要体积较小的纯 Go 版，用 `NO_FLAVOR=plain` 并搭配 `no build -cc zig`：
+默认装**内置 LLVM** 的版本（`no-llvm-*`，不必另装 LLVM / opt / llc）。若想要体积较小的纯 Go 版，用 `NO_FLAVOR=plain` 并搭配 `no build -cc zig`：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh

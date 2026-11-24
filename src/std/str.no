@@ -2326,10 +2326,20 @@ str.from-hex = () (out ?[]byte) {
     i <- [0..half): {
 
         #{overflow=wrap}
-        hi = str-hex-val(.byte(i * 2))
+        bv = .byte(i * 2): {
+            ok -> it
+
+            -> 0
+        }
+        hi = str-hex-val(bv)
 
         #{overflow=wrap}
-        lo = str-hex-val(.byte(i * 2 + 1))
+        bv = .byte(i * 2 + 1): {
+            ok -> it
+
+            -> 0
+        }
+        lo = str-hex-val(bv)
         hi < 0 || lo < 0 -> {
             out = err('invalid hex character')
             return
@@ -2478,7 +2488,12 @@ str.to-bigint = () (out ?bigint) {
     ;    實測整段回 0 或 abort trap）。標註後 `_add` 正確走 `_add-i64` 臂。
     started = 0
     (pos < n) {
-        d i64 = _str-dig-val(.byte(pos))
+        bv = .byte(pos): {
+            ok -> it
+
+            -> 0
+        }
+        d i64 = _str-dig-val(bv)
         d < 0 -> break
         d >= radix -> break
 

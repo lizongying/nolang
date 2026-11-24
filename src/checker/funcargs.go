@@ -2187,6 +2187,46 @@ func isIntegerTypeName(t string) bool {
 	return ok
 }
 
+// bareOptionArgType 報告 arg 是否為「未顯式解包的裸 option」（回傳 ?T，否則 ""）。
+//
+// 這是 D1 在**所有呼叫點**（本地函式、std 方法、builtin 方法）的單一判定入口，
+// 底層只問 resolveCalleeSig —— 不再由各呼叫點自行拼鍵查表。
+//
+// 為什麼不能只用 resolveExprType：它的 default 分支刻意傳 nil funcTypes，
+// 因此**任何呼叫結果當實參**（`s.push(s.byte(1))`、`p(q())`）都解析成 ""，
+// 3604icnf 與 6fgg3htw 雙雙 continue —— 2026-11-24 實測 `no vet` 0 error、
+// run 輸出 `abcb`（?byte 的 tag 被丟掉）。resolver 補上這個盲點。
+//
+// 刻意豁免：lowering 合成的 `__` 前綴臨時變數在自己的 ok 臂裡代表已解包載荷，
+// 名字在使用者原始碼中不可寫，豁免不會掩蓋使用者錯誤（與 3604icnf 既有
+// isLoweringTempArg 守門同口徑）。
+func bareOptionArgType(arg parser.Expression, sigs map[string]*funcSig, varTypes map[string]string, structFields map[string]map[string]string, selfType, expectedType string) string {
+	if arg == nil || isLoweringTempArg(arg) {
+		return ""
+	}
+	a := ungroupExpr(arg)
+	// 呼叫結果當實參：resolver 可靜態判定 option 結果，這是 D1 的主要目標，
+	// 不受 expectedType 同型限制（`s.push(s.byte(1))` 是 ?byte → char）。
+	if call, ok := a.(*parser.CallExpression); ok && call.Function != nil {
+		if opt := resolveCalleeSig(call, sigs, varTypes, structFields, selfType).optionResult(); opt != "" {
+			return opt
+		}
+	}
+	// 識別字實參：varTypes 在 surface AST 的 `ok ->` 臂裡仍保留 subject 的
+	// option 型別（實測 net.no 的 `c = dial-to(...); c: { ok -> e.init(c, key) }`
+	// 被誤報 ?conn → net.conn）。checker 沒有臂上下文，因此沿用 3604icnf
+	// 原本的「payload 與形參完全同型才報」守門，寧可漏報不可誤報。
+	if id, ok := a.(*parser.Identifier); ok && id.Value != "" {
+		t := varTypes[id.Value]
+		if t != "" && ty.IsOptionRaw(t) &&
+			(expectedType == "" || ty.StripOptionRaw(t) == expectedType) {
+			return t
+		}
+		return ""
+	}
+	return ""
+}
+
 // checkStdMethodCallArgs type-checks the arguments of `recv.method(args)`
 // against the std signature tables.
 //
@@ -2197,7 +2237,7 @@ func isIntegerTypeName(t string) bool {
 // Parameters that still mention the type variable are therefore skipped rather
 // than checked. Only fully concrete parameters — `[]byte.index` expecting
 // `str`, `[]str.join` expecting `str` — are verified.
-func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression, varTypes map[string]string, structFields map[string]map[string]string) []ValidateResult {
+func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression, varTypes map[string]string, structFields map[string]map[string]string, sigs map[string]*funcSig, selfType string, underUnwrap bool) []ValidateResult {
 	if dot == nil || len(e.Arguments) == 0 {
 		return nil
 	}
@@ -2275,9 +2315,6 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 		// 這種實參會掉到字面量那一側（右運算元 48 → i64），把 ?byte 藏起來。
 		arg = ungroupExpr(arg)
 		argType := resolveExprType(arg, varTypes, structFields)
-		if argType == "" {
-			continue // unknown argument type: nothing to assert
-		}
 		// Union-alias parameters dispatch per MEMBER at monomorphization time, and that
 		// pass matches by type NAME only (see build.inferExprMemberType). A merely
 		// "compatible" argument — `byte` into `bigint | i64` via integer widening —
@@ -2296,6 +2333,31 @@ func checkStdMethodCallArgs(e *parser.CallExpression, dot *parser.DotExpression,
 		if us := checkUnionMemberArg(arg, paramType, unionArgType, recvType+"."+dot.Property, i+1); len(us) > 0 {
 			results = append(results, us...)
 			continue
+		}
+		// D1：裸 option 實參不得隱式拆包。判定只問 bareOptionArgType →
+		// resolveCalleeSig，與本地函式 3604icnf 共用同一真源、同一 trace。
+		// resolveExprType 對「呼叫結果當實參」回 ""，過去這裡直接 continue，
+		// 於是 `s.push(s.byte(1))` 的 ?byte tag 被靜默丟掉（實測輸出 abcb）。
+		//
+		// 形參本身就是 ?T 時傳 option 是合法的；`?=` 的 RHS 由 underUnwrap
+		// 豁免（?= 本身就是顯式解包）。
+		if !underUnwrap && !ty.IsOptionRaw(paramType) {
+			if optArg := bareOptionArgType(arg, sigs, varTypes, structFields, selfType, paramType); optArg != "" {
+				line, col := e.Token.Line, e.Token.Column
+				if p := arg.Pos(); p.Line > 0 {
+					line, col = p.Line, p.Column
+				}
+				results = append(results, ValidateResult{
+					TraceID: "3604icnf",
+					Line:    line,
+					Column:  col,
+					Message: i18n.T("3604icnf", "argument %d of '%s': passing a bare option value of type '%s' where '%s' is expected requires explicit unwrap (match on the value and call inside the `-> it` arm); implicit unwrap of option arguments is not allowed", i+1, recvType+"."+dot.Property, optArg, paramType),
+				})
+				continue
+			}
+		}
+		if argType == "" {
+			continue // unknown argument type: nothing to assert
 		}
 		// `storage` types describe the builtin's STORAGE SHAPE, not a declared
 		// signature, and the codegen stores the value at the receiver's element
@@ -2497,6 +2559,22 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if variadicAt >= 0 && pi == variadicAt {
 							expectedType = strings.TrimPrefix(expectedType, "[]")
 						}
+						// D1 必須放在 `argType == "" continue` 之前：resolveExprType
+						// 刻意不帶 funcTypes，呼叫結果當實參時回 ""，過去整條
+						// 3604icnf 因此失效（`p(q())` 把 ?T 當 T 用的盲點）。
+						// bareOptionArgType 只問單一 resolver，補上後與 std/builtin
+						// 方法實參同口徑。
+						if !underUnwrap && expectedType != "" && !ty.IsOptionRaw(expectedType) {
+							if optArg := bareOptionArgType(arg, sigs, varTypes, structFields, varTypes["self"], expectedType); optArg != "" {
+								results = append(results, ValidateResult{
+									TraceID: "3604icnf",
+									Line:    e.Token.Line,
+									Column:  e.Token.Column,
+									Message: i18n.T("3604icnf", "argument %d of '%s': passing a bare option value of type '%s' where '%s' is expected requires explicit unwrap (match on the value and call inside the `-> it` arm); implicit unwrap of option arguments is not allowed", i+1, ident.Value, optArg, expectedType),
+								})
+								continue
+							}
+						}
 						if expectedType == "" || argType == "" {
 							continue
 						}
@@ -2549,15 +2627,8 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if isLoweringTempArg(arg) {
 							continue
 						}
-						if !underUnwrap && ty.IsOptionRaw(argType) && ty.StripOptionRaw(argType) == expectedType {
-							results = append(results, ValidateResult{
-								TraceID: "3604icnf",
-								Line:    e.Token.Line,
-								Column:  e.Token.Column,
-								Message: i18n.T("3604icnf", "argument %d of '%s': passing a bare option value of type '%s' where '%s' is expected requires explicit unwrap (match on the value and call inside the `-> it` arm); implicit unwrap of option arguments is not allowed", i+1, ident.Value, argType, expectedType),
-							})
-							continue
-						}
+						// 3604icnf 已統一提到上方（bareOptionArgType），這裡不再
+						// 重複判定 —— 否則同一個裸 option 實參會被報兩次。
 						if !isArgTypeCompatible(expectedType, argType, arg) {
 							// resolveArgExprType 讓「實參是呼叫」也能解析出型別，
 							// 於是 `?byte` 傳給 i64 參數這類既有寫法第一次被看見
@@ -2606,7 +2677,7 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 			// branch above does not handle, so method arguments used to go
 			// completely unchecked. The std signature tables now carry
 			// parameter types, so they can be checked here.
-			results = append(results, checkStdMethodCallArgs(e, dot, varTypes, structFields)...)
+			results = append(results, checkStdMethodCallArgs(e, dot, varTypes, structFields, sigs, varTypes["self"], underUnwrap)...)
 			// Compile-time privacy enforcement for underscore-prefixed str/txt
 			// builtin field accessors (see checkPrivateBuiltinMethodCall).
 			recvType := resolveExprType(dot.Receiver, varTypes, structFields)

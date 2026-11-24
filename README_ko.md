@@ -1,6 +1,6 @@
 # Nolang
 
-[繁體中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
+[傳統中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
 
 Nolang은 메모리 안전성, 강력한 성능, 극도로 간결한 문법을 갖춘 시스템 프로그래밍 언어입니다.
 
@@ -20,7 +20,7 @@ Nolang은 메모리 안전성, 강력한 성능, 극도로 간결한 문법을 �
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
 ```
 
-기본값은 **LLVM 내장** 빌드입니다（`no-llvm_*`, LLVM / opt / llc 를 따로 설치할 필요 없음）. 크기가 작은 순수 Go 빌드를 원한다면 `NO_FLAVOR=plain` 을 지정하고 `no build -cc zig` 와 함께 사용하세요:
+기본값은 **LLVM 내장** 빌드입니다（`no-llvm-*`, LLVM / opt / llc 를 따로 설치할 필요 없음）. 크기가 작은 순수 Go 빌드를 원한다면 `NO_FLAVOR=plain` 을 지정하고 `no build -cc zig` 와 함께 사용하세요:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh

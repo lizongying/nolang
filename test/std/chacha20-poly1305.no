@@ -385,14 +385,16 @@ t-keygen = () {
 ; Poly1305 約簡：把任意大整數折到 [0, 2^130-5)
 t-reduce = () {
     one = bigint.one()
-    p = bigint.shl(one, 130)._sub(bigint.from-i64(5))
+    p-base bigint.bigint = bigint.shl(one, 130)
+    p-five bigint.bigint = bigint.from-i64(5)
+    p bigint.bigint = p-base.sub-bigint(p-five)
 
     ; p 本身 → 0
     r0 = chacha20-poly1305.poly1305-reduce(p)
     runner.is-true(r0.is-zero(), 'reduce(2^130-5) = 0')
 
     ; p-1 已在範圍內，原樣保留
-    pm1 = p._sub(bigint.from-i64(1))
+    pm1 bigint.bigint = p.sub-bigint(bigint.from-i64(1))
     r1 = chacha20-poly1305.poly1305-reduce(pm1)
     runner.eq(r1.cmp(pm1), 0, 'reduce(p-1) = p-1')
 

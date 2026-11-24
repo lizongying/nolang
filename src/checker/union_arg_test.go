@@ -110,13 +110,13 @@ func TestUnionArgDesugaredOperatorChain(t *testing.T) {
 	dot := call.Function.(*parser.DotExpression)
 	varTypes := map[string]string{"m": "bigint", "c": "?byte"}
 
-	got := checkStdMethodCallArgs(call, dot, varTypes, nil)
+	got := checkStdMethodCallArgs(call, dot, varTypes, nil, nil, "", false)
 	if len(got) != 1 || got[0].TraceID != "unionarg" {
 		t.Fatalf("expected exactly 1 unionarg error for the desugared chain, got %d: %v", len(got), got)
 	}
 	// 對照組：同一條鏈但實參是成員（i64），不得被打斷。
 	ok := opCall(opCall(id("m"), "_mul", &parser.IntegerLiteral{Value: 10}), "_add", id("d"))
-	if got := checkStdMethodCallArgs(ok, ok.Function.(*parser.DotExpression), map[string]string{"m": "bigint", "d": "i64"}, nil); len(got) != 0 {
+	if got := checkStdMethodCallArgs(ok, ok.Function.(*parser.DotExpression), map[string]string{"m": "bigint", "d": "i64"}, nil, nil, "", false); len(got) != 0 {
 		t.Fatalf("expected no error for an i64 member argument, got: %v", got)
 	}
 }

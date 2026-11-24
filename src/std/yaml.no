@@ -1094,7 +1094,12 @@ unescape-double = (body str) (out ?str) {
                     k <- [0..2): {
 
                         #{overflow=wrap}
-                        d = hex-digit(body.byte(i + k))
+                        bv = body.byte(i + k): {
+                            ok -> it
+
+                            -> 0
+                        }
+                        d = hex-digit(bv)
                         d < 0 -> return
 
                         #{overflow=wrap}
@@ -1121,7 +1126,12 @@ unescape-double = (body str) (out ?str) {
                     k <- [0..4): {
 
                         #{overflow=wrap}
-                        d = hex-digit(body.byte(i + k))
+                        bv = body.byte(i + k): {
+                            ok -> it
+
+                            -> 0
+                        }
+                        d = hex-digit(bv)
                         d < 0 -> return
 
                         #{overflow=wrap}
@@ -1148,7 +1158,12 @@ unescape-double = (body str) (out ?str) {
                     k <- [0..8): {
 
                         #{overflow=wrap}
-                        d = hex-digit(body.byte(i + k))
+                        bv = body.byte(i + k): {
+                            ok -> it
+
+                            -> 0
+                        }
+                        d = hex-digit(bv)
                         d < 0 -> return
 
                         #{overflow=wrap}

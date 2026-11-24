@@ -3,7 +3,7 @@ description: >-
   Download a specific nolang release (the `no` compiler binary) for the current
   runner platform and the matching standard-library source, then put `no` on
   PATH and point NOLANG_STD_SRC / NOLANG_SRC at the downloaded std lib. Prefers
-  the self-contained `no-llvm_*` binary (LLVM embedded, all backends), so no
+  the self-contained `no-llvm-*` binary (LLVM embedded, all backends), so no
   separate LLVM / opt / llc installation is required.
 
 branding:
@@ -33,8 +33,8 @@ inputs:
   flavor:
     description: >-
       Which release binary to install. "auto" (default) prefers the
-      self-contained `no-llvm_*` asset and falls back to the pure-Go `no_*` one
-      with a warning. "embedded" requires `no-llvm_*` and fails if the release
+      self-contained `no-llvm-*` asset and falls back to the pure-Go `no_*` one
+      with a warning. "embedded" requires `no-llvm-*` and fails if the release
       does not publish it. "plain" forces the pure-Go `no_*` binary: smaller,
       but it shells out to `opt`/`llc`, which this action does NOT install, so
       you must put them on PATH yourself.
@@ -49,7 +49,7 @@ outputs:
   std-src:
     description: Absolute path to the downloaded standard-library source directory (src/std).
   flavor:
-    description: Which binary was actually installed — "embedded" (`no-llvm_*`) or "plain" (`no_*`).
+    description: Which binary was actually installed — "embedded" (`no-llvm-*`) or "plain" (`no_*`).
 
 runs:
   using: composite
@@ -109,24 +109,27 @@ runs:
         echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
         # ── 2. Pick the release asset for this runner ───────────────────────
+        # SUFFIX is the asset base (os_arch); EXT is the trailing file extension,
+        # kept separate so the version can be inserted BEFORE the .exe, matching
+        # exactly how the release workflow (build.yml) names its assets.
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
-          Linux-X64)   SUFFIX="linux_amd64" ;;
-          Linux-ARM64) SUFFIX="linux_arm64" ;;
-          macOS-X64)   SUFFIX="darwin_amd64" ;;
-          macOS-ARM64) SUFFIX="darwin_arm64" ;;
-          Windows-X64) SUFFIX="windows_amd64.exe" ;;
+          Linux-X64)   SUFFIX="linux_amd64";   EXT="" ;;
+          Linux-ARM64) SUFFIX="linux_arm64";   EXT="" ;;
+          macOS-X64)   SUFFIX="darwin_amd64";  EXT="" ;;
+          macOS-ARM64) SUFFIX="darwin_arm64";  EXT="" ;;
+          Windows-X64) SUFFIX="windows_amd64"; EXT=".exe" ;;
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
 
-        # Prefer the self-contained `no-llvm_*` asset. It links a static libLLVM
+        # Prefer the self-contained `no-llvm-*` asset. It links a static libLLVM
         # built with all backends (x86 + aarch64 + arm + wasm) and compiles
         # in-process via the LLVM C API, so opt/llc are never invoked — `-cc zig`
         # supplies the assembler/linker. Releases older than v0.4.0 do not
         # publish it; fall back to the pure-Go `no_*` asset, which *does* shell
         # out to opt/llc, so the caller must provide them (this action does not
         # install LLVM).
-        EMBEDDED="no-llvm_${VERSION_NO_V}_${SUFFIX}"
-        PLAIN="no_${VERSION_NO_V}_${SUFFIX}"
+        EMBEDDED="no-llvm-${SUFFIX}-${VERSION_NO_V}${EXT}"
+        PLAIN="no-${SUFFIX}-${VERSION_NO_V}${EXT}"
         ASSET_NAMES=$(printf '%s' "$REL_JSON" | jq -r '.assets[]?.name')
         has_asset() { printf '%s\n' "$ASSET_NAMES" | grep -qxF -- "$1"; }
 

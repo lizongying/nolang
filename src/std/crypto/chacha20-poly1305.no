@@ -389,13 +389,21 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     out = x
     hi = bigint.shr(out, 130)
     (! hi.is-zero()) {
-        lo bigint.bigint = out._sub(bigint.shl(hi, 130))
+        shift bigint.bigint = bigint.shl(hi, 130)
+        lo bigint.bigint = out.sub-bigint(shift)
 
-        out = lo + (hi * 5)
+        five bigint.bigint = bigint.from-i64(5)
+        h5 bigint.bigint = hi.mul-bigint(five)
+        out = lo.add-bigint(h5)
         hi = bigint.shr(out, 130)
     }
-    p = bigint.shl(bigint.one(), 130)._sub(bigint.from-i64(5))
-    out.cmp(p) >= 0 -> out = out._sub(p)
+    base130 bigint.bigint = bigint.shl(bigint.one(), 130)
+    five2 bigint.bigint = bigint.from-i64(5)
+    p bigint.bigint = base130.sub-bigint(five2)
+    out.cmp(p) >= 0 -> {
+        reduced bigint.bigint = out.sub-bigint(p)
+        out = reduced
+    }
 }
 
 ; 計算 Poly1305 MAC

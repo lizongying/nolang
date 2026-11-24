@@ -881,6 +881,143 @@ cg-runtime-vec-clear = () (r str) {
     r = b.str()
 }
 
+; vec_pop（s166）：移除最後一期——len = max(len-1, 0)，cap/data 原封不動。
+;   逐字鏡像 Go src/mir/builtin_call.go:2610 emitBuiltinVecPop 的 newLen 口徑
+;   （z = len==0；newLen = select z ? 0 : len-1），但【不】回傳被彈出元素：
+;   自舉呼叫點（h2m-bk-pop／h2m-lower-for／h2m-lower-coll 等）全為陳述位 .pop()。
+;   ⚠️ 與 vec_clear 一樣只改描述符、不碰緩衝 ⇒ dat==0（空 vec）安全。
+; r: 結果字串
+cg-runtime-vec-pop = () (r str) {
+    b = sb.init(512)
+    b.push('define %vec @vec_pop(%vec %v) {\n')
+    b.push('entry:\n')
+    b.push('\t%l32 = extractvalue %vec %v, 0\n')
+    b.push('\t%l = zext i32 %l32 to i64\n')
+    b.push('\t%z = icmp eq i64 %l, 0\n')
+    b.push('\t%lm1 = sub i64 %l, 1\n')
+    b.push('\t%nl = select i1 %z, i64 0, i64 %lm1\n')
+    b.push('\t%nl32 = trunc i64 %nl to i32\n')
+    b.push('\t%cp = extractvalue %vec %v, 1\n')
+    b.push('\t%dt = extractvalue %vec %v, 2\n')
+    b.push('\t%r0 = insertvalue %vec undef, i32 %nl32, 0\n')
+    b.push('\t%r1 = insertvalue %vec %r0, i32 %cp, 1\n')
+    b.push('\t%r2 = insertvalue %vec %r1, i64 %dt, 2\n')
+    b.push('\tret %vec %r2\n}\n')
+    r = b.str()
+}
+
+; chk_add（s167）：帶溢出檢測的有符號 i64 加法——語義鏡像 Go inferOptionArith。
+;   正常 ⇒ tag=0 + 載荷=和；溢出 ⇒ tag=2（err；S0 實測 o1/t2 走 err 臂，非 nil）+ 載荷 0 語義位。
+;   檢測用經典符號位公式：(a^r) & (b^r) 的符號位即溢出（無 intrinsic、無分支）。
+; r: 結果字串
+cg-runtime-chk-add = () (r str) {
+    b = sb.init(512)
+    b.push('define %option @chk_add(i64 %a, i64 %b) {\n')
+    b.push('entry:\n')
+    b.push('\t%r = add i64 %a, %b\n')
+    b.push('\t%x = xor i64 %a, %r\n')
+    b.push('\t%y = xor i64 %b, %r\n')
+    b.push('\t%s = and i64 %x, %y\n')
+    b.push('\t%ovf = icmp slt i64 %s, 0\n')
+    b.push('\t%bad = zext i1 %ovf to i64\n')
+    b.push('\t%tg = mul i64 %bad, 2\n')
+    b.push('\t%o0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 %tg, 0\n')
+    b.push('\t%o1 = insertvalue %option %o0, i64 %r, 1, 0\n')
+    b.push('\tret %option %o1\n}\n')
+    r = b.str()
+}
+
+; chk_sub（s167）：帶溢出檢測的有符號 i64 減法。溢出公式 (a^b) & (a^r) 的符號位。
+; r: 結果字串
+cg-runtime-chk-sub = () (r str) {
+    b = sb.init(512)
+    b.push('define %option @chk_sub(i64 %a, i64 %b) {\n')
+    b.push('entry:\n')
+    b.push('\t%r = sub i64 %a, %b\n')
+    b.push('\t%x = xor i64 %a, %b\n')
+    b.push('\t%y = xor i64 %a, %r\n')
+    b.push('\t%s = and i64 %x, %y\n')
+    b.push('\t%ovf = icmp slt i64 %s, 0\n')
+    b.push('\t%bad = zext i1 %ovf to i64\n')
+    b.push('\t%tg = mul i64 %bad, 2\n')
+    b.push('\t%o0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 %tg, 0\n')
+    b.push('\t%o1 = insertvalue %option %o0, i64 %r, 1, 0\n')
+    b.push('\tret %option %o1\n}\n')
+    r = b.str()
+}
+
+; chk_mul（s167）：帶溢出檢測的有符號 i64 乘法。i64×i64 溢出的完備判據是
+;   「i128 乘積轉回 i64 再符號擴展不回原值」（截斷判據，非启发式）⇒ sext 到 i128 相乘。
+; r: 結果字串
+cg-runtime-chk-mul = () (r str) {
+    b = sb.init(512)
+    b.push('define %option @chk_mul(i64 %a, i64 %b) {\n')
+    b.push('entry:\n')
+    b.push('\t%pa = sext i64 %a to i128\n')
+    b.push('\t%pb = sext i64 %b to i128\n')
+    b.push('\t%p = mul i128 %pa, %pb\n')
+    b.push('\t%lo = trunc i128 %p to i64\n')
+    b.push('\t%ext = sext i64 %lo to i128\n')
+    b.push('\t%ovf = icmp ne i128 %p, %ext\n')
+    b.push('\t%bad = zext i1 %ovf to i64\n')
+    b.push('\t%tg = mul i64 %bad, 2\n')
+    b.push('\t%o0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 %tg, 0\n')
+    b.push('\t%o1 = insertvalue %option %o0, i64 %lo, 1, 0\n')
+    b.push('\tret %option %o1\n}\n')
+    r = b.str()
+}
+
+; chk_div（s167）：帶溢出／除零檢測的有符號 i64 除法（向零截斷 sdiv，同 S0 o6 的 -7/2=-3）。
+;   失敗態：b==0 或 (a==MIN && b==-1)（S0 實測 o3/o4 皆走 err 臂）⇒ tag=2 + 載荷 0。
+;   ⚠️ 必須顯式分支護航：裸 sdiv 在這兩種情形是 poison/陷阱，不可直接發。
+; r: 結果字串
+cg-runtime-chk-div = () (r str) {
+    b = sb.init(640)
+    b.push('define %option @chk_div(i64 %a, i64 %b) {\n')
+    b.push('entry:\n')
+    b.push('\t%z = icmp eq i64 %b, 0\n')
+    b.push('\t%mna = icmp eq i64 %a, -9223372036854775808\n')
+    b.push('\t%mnb = icmp eq i64 %b, -1\n')
+    b.push('\t%mn = and i1 %mna, %mnb\n')
+    b.push('\t%bad0 = or i1 %z, %mn\n')
+    b.push('\tbr i1 %bad0, label %bad, label %good\n')
+    b.push('good:\n')
+    b.push('\t%q = sdiv i64 %a, %b\n')
+    b.push('\t%o0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 0, 0\n')
+    b.push('\t%o1 = insertvalue %option %o0, i64 %q, 1, 0\n')
+    b.push('\tret %option %o1\n')
+    b.push('bad:\n')
+    b.push('\t%e0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 2, 0\n')
+    b.push('\t%e1 = insertvalue %option %e0, i64 0, 1, 0\n')
+    b.push('\tret %option %e1\n}\n')
+    r = b.str()
+}
+
+; chk_mod（s167）：帶溢出／除零檢測的有符號 i64 取餘（srem）。
+;   失敗態同除法（b==0 或 MIN%-1；S0 實測 o5 走 err 臂）⇒ tag=2 + 載荷 0。
+; r: 結果字串
+cg-runtime-chk-mod = () (r str) {
+    b = sb.init(640)
+    b.push('define %option @chk_mod(i64 %a, i64 %b) {\n')
+    b.push('entry:\n')
+    b.push('\t%z = icmp eq i64 %b, 0\n')
+    b.push('\t%mna = icmp eq i64 %a, -9223372036854775808\n')
+    b.push('\t%mnb = icmp eq i64 %b, -1\n')
+    b.push('\t%mn = and i1 %mna, %mnb\n')
+    b.push('\t%bad0 = or i1 %z, %mn\n')
+    b.push('\tbr i1 %bad0, label %bad, label %good\n')
+    b.push('good:\n')
+    b.push('\t%q = srem i64 %a, %b\n')
+    b.push('\t%o0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 0, 0\n')
+    b.push('\t%o1 = insertvalue %option %o0, i64 %q, 1, 0\n')
+    b.push('\tret %option %o1\n')
+    b.push('bad:\n')
+    b.push('\t%e0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 2, 0\n')
+    b.push('\t%e1 = insertvalue %option %e0, i64 0, 1, 0\n')
+    b.push('\tret %option %e1\n}\n')
+    r = b.str()
+}
+
 ; vec_bytes_to_str（s165）：[]byte.to-bytes-str() 的【自有】1:1 逐字節複製助手。
 ;   語意逐字鏡像 src/std/byte.no:141（原始位元保留、不做 UTF-8 重編碼）與 Go builtin
 ;   src/dist/txtmin.ll 的 _LB__RB_byte.to-bytes-str（配置 n 位元組後逐元複製）。
@@ -1151,6 +1288,13 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-vec-new-cap-str())
     ; s165：@vec_clear（就地清 len，保留 cap/data）與 @vec_bytes_to_str（1:1 自有拷貝成 str）。
     b.push(cg-runtime-vec-clear())
+    b.push(cg-runtime-vec-pop())
+    ; s167：帶溢出檢測算術族 @chk_add/sub/mul/div/mod（表面匹配 i64 算術主體的 err 態語意）。
+    b.push(cg-runtime-chk-add())
+    b.push(cg-runtime-chk-sub())
+    b.push(cg-runtime-chk-mul())
+    b.push(cg-runtime-chk-div())
+    b.push(cg-runtime-chk-mod())
     b.push(cg-runtime-vec-bytes-to-str())
     b.push(cg-runtime-vec-eq())
     b.push(cg-runtime-print-helpers())

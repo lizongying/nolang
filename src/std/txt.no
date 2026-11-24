@@ -117,7 +117,12 @@ txt.eq = (b txt) (eq bool) {
 txt.copy = () (dst txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
-        dst._set-byte(i, .byte(i))
+        cv = .byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        dst._set-byte(i, cv)
     }
     dst.len = .len-bytes()
 }
@@ -201,7 +206,12 @@ txt.from-str = (s str) (out txt) {
     n = s.len-bytes()
     n > 255 -> n = 255
     i <- [0..n): {
-        out._set-byte(i, s.byte(i))
+        cv = s.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        out._set-byte(i, cv)
     }
     out.len = n
 }
@@ -317,8 +327,14 @@ txt.push = (c char) {
     en > room -> return
     i <- [0..en): {
 
+        cv = e.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+
         #{overflow=wrap}
-        ._set-byte(n + i, e.byte(i))
+        ._set-byte(n + i, cv)
     }
 
     ; `n + en` 的型別是 ?i64（D1），而 `.len` 是 u8 字段 ⇒ 必須先兩段式解包成
@@ -351,8 +367,14 @@ txt.push-str = (s str) {
     sn > remain -> sn = remain
     i <- [0..sn): {
 
+        cv = s.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+
         #{overflow=wrap}
-        ._set-byte(n + i, s.byte(i))
+        ._set-byte(n + i, cv)
     }
 
     ; 同 push：`n + sn` 是 ?i64，u8 字段要先解包（vet 的 15w45dqk 就是這條）。
@@ -382,8 +404,14 @@ txt.push-txt = (t txt) {
     tn > remain -> tn = remain
     i <- [0..tn): {
 
+        cv = t.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+
         #{overflow=wrap}
-        ._set-byte(n + i, t.byte(i))
+        ._set-byte(n + i, cv)
     }
 
     #{overflow=wrap}
@@ -453,7 +481,12 @@ txt.reverse = () (out txt) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        out._set-byte(i, .byte(n - 1 - i))
+        cv = .byte(n - 1 - i): {
+            ok -> it
+
+            -> 0
+        }
+        out._set-byte(i, cv)
     }
     out.len = n
 }
@@ -491,7 +524,12 @@ txt.slice = (start i64, end i64) (out txt) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        out._set-byte(i, .byte(r-start + i))
+        cv = .byte(r-start + i): {
+            ok -> it
+
+            -> 0
+        }
+        out._set-byte(i, cv)
     }
     out.len = n
 }
@@ -565,7 +603,11 @@ txt.decode-cp = (i i64) (cp i64, clen i64) {
 txt.to-upper = () (val txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
-        c = .byte(i)
+        c = .byte(i): {
+            ok -> it
+
+            -> 0
+        }
         {
             c >= 97 && c <= 122 -> {
 
@@ -588,7 +630,11 @@ txt.to-upper = () (val txt) {
 txt.to-lower = () (val txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
-        c = .byte(i)
+        c = .byte(i): {
+            ok -> it
+
+            -> 0
+        }
         {
             c >= 65 && c <= 90 -> {
 
@@ -681,7 +727,12 @@ txt.trim = () (val txt) {
     i <- [0..m): {
 
         #{overflow=wrap}
-        val._set-byte(i, .byte(start + i))
+        cv = .byte(start + i): {
+            ok -> it
+
+            -> 0
+        }
+        val._set-byte(i, cv)
     }
     val.len = m
 }
@@ -800,7 +851,12 @@ txt.trim-char = (ch char) (val txt) {
     j <- [0..m): {
 
         #{overflow=wrap}
-        val._set-byte(j, .byte(start + j))
+        cv = .byte(start + j): {
+            ok -> it
+
+            -> 0
+        }
+        val._set-byte(j, cv)
     }
     val.len = m
 }
@@ -820,7 +876,12 @@ txt.repeat = (times i64) (val txt) {
     i <- [0..times): {
         j <- [0..n): {
             pos < cap -> {
-                val._set-byte(pos, .byte(j))
+                cv = .byte(j): {
+                    ok -> it
+
+                    -> 0
+                }
+                val._set-byte(pos, cv)
 
                 {
 
@@ -1490,7 +1551,12 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                     pos < cap -> {
 
                         #{overflow=wrap}
-                        val._set-byte(pos, .byte(i + k))
+                        cv = .byte(i + k): {
+                            ok -> it
+
+                            -> 0
+                        }
+                        val._set-byte(pos, cv)
                         {
                             pos ?= pos + 1
                         }: {
@@ -1564,7 +1630,12 @@ txt.replace-str = (old txt, new txt) (val txt) {
             match -> {
                 k <- [0..new-len): {
                     pos < cap -> {
-                        val._set-byte(pos, new.byte(k))
+                        cv = new.byte(k): {
+                            ok -> it
+
+                            -> 0
+                        }
+                        val._set-byte(pos, cv)
                         {
                             pos ?= pos + 1
                         }: {
@@ -1581,7 +1652,12 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
             -> {
                 pos < cap -> {
-                    val._set-byte(pos, .byte(i))
+                    cv = .byte(i): {
+                        ok -> it
+
+                        -> 0
+                    }
+                    val._set-byte(pos, cv)
                     {
                         pos ?= pos + 1
                     }: {
@@ -1670,7 +1746,12 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             i > repl -> sep = old
             j <- [0..sep.len-bytes()): {
                 pos < cap -> {
-                    val._set-byte(pos, sep.byte(j))
+                    cv = sep.byte(j): {
+                        ok -> it
+
+                        -> 0
+                    }
+                    val._set-byte(pos, cv)
                     {
                         pos ?= pos + 1
                     }: {
@@ -1692,7 +1773,12 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
         }
         j <- [0..s.len-bytes()): {
             pos < cap -> {
-                val._set-byte(pos, s.byte(j))
+                cv = s.byte(j): {
+                    ok -> it
+
+                    -> 0
+                }
+                val._set-byte(pos, cv)
                 {
                     pos ?= pos + 1
                 }: {
@@ -1974,10 +2060,20 @@ txt.from-hex = () (out ?txt) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        hi = txt-hex-val(.byte(i * 2))
+        bv = .byte(i * 2): {
+            ok -> it
+
+            -> 0
+        }
+        hi = txt-hex-val(bv)
 
         #{overflow=wrap}
-        lo = txt-hex-val(.byte(i * 2 + 1))
+        bv = .byte(i * 2 + 1): {
+            ok -> it
+
+            -> 0
+        }
+        lo = txt-hex-val(bv)
         hi < 0 || lo < 0 -> {
             out = err('invalid hex character')
             return
@@ -2120,7 +2216,12 @@ txt.to-bigint = () (out ?bigint) {
     ;    實測整段回 0）。str.to-bigint 早已這樣修，txt 這份漏了（2026-11-11 補）。
     started = 0
     (pos < n) {
-        d i64 = _txt-dig-val(.byte(pos))
+        bv = .byte(pos): {
+            ok -> it
+
+            -> 0
+        }
+        d i64 = _txt-dig-val(bv)
         d < 0 -> break
         d >= radix -> break
 

@@ -2326,6 +2326,71 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(x.to-str())
             b.push(')\n')
         }
+        op == OP-VECPOP -> {
+
+            ; s166：vec.pop() —— dst = 新 %vec（len=max(len-1,0)，cap/data 原封）；x = 接收者 vec 值 id。
+            ;   只出容器側新值，被彈出元素不回傳（同 mir.no OP-VECPOP 註記）。
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @vec_pop(%vec %vc')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-CHKADD -> {
+
+            ; s167：帶溢出檢測加法——dst = %option（tag=0 + 載荷=和；溢出 tag=2）；x/y = i64 操作數。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = call %option @chk_add(i64 %v')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-CHKSUB -> {
+
+            ; s167：帶溢出檢測減法（公式 (a^b)&(a^r) 符號位）。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = call %option @chk_sub(i64 %v')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-CHKMUL -> {
+
+            ; s167：帶溢出檢測乘法（i128 截斷判據）。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = call %option @chk_mul(i64 %v')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-CHKDIV -> {
+
+            ; s167：帶除零／MIN,-1 護航的除法（失敗 tag=2 + 載荷 0）。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = call %option @chk_div(i64 %v')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-CHKMOD -> {
+
+            ; s167：帶除零／MIN,-1 護航的取餘（失敗 tag=2 + 載荷 0）。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = call %option @chk_mod(i64 %v')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
         op == OP-VECBYTES2STR -> {
 
             ; s165：[]byte.to-bytes-str() —— dst = str 值（rc=1 自有緩衝）；x = 接收者 vec 值 id。

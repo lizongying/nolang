@@ -1,6 +1,6 @@
 # Nolang
 
-[繁體中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
+[傳統中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
 
 Nolang es un lenguaje de programación de sistemas seguro en memoria, de alto rendimiento y con una sintaxis minimalista.
 
@@ -20,7 +20,7 @@ Instalación con un solo comando (macOS / Linux / Windows Git Bash): descarga au
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
 ```
 
-Por defecto se instala la versión **con LLVM integrado** (`no-llvm_*`, sin necesidad de instalar LLVM / opt / llc por separado). Para la versión pura en Go, más pequeña, use `NO_FLAVOR=plain` junto con `no build -cc zig`:
+Por defecto se instala la versión **con LLVM integrado** (`no-llvm-*`, sin necesidad de instalar LLVM / opt / llc por separado). Para la versión pura en Go, más pequeña, use `NO_FLAVOR=plain` junto con `no build -cc zig`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh

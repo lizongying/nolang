@@ -1,6 +1,6 @@
 # Nolang
 
-[繁體中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
+[傳統中文](README.md) · [简体中文](README_zh-CN.md) · [한국어](README_ko.md) · [日本語](README_ja.md) · [English](README_en.md) · [Русский](README_ru.md) · [Français](README_fr.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Português](README_pt.md)
 
 Nolang は、メモリセーフで高い性能、極めて簡潔な構文を備えたシステムプログラミング言語です。
 
@@ -20,7 +20,7 @@ Nolang は、メモリセーフで高い性能、極めて簡潔な構文を備�
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | sh
 ```
 
-デフォルトは**LLVM 内蔵**版（`no-llvm_*`、LLVM / opt / llc の別途インストール不要）です。サイズの小さい純 Go 版を使う場合は `NO_FLAVOR=plain` を指定し、`no build -cc zig` と組み合わせてください：
+デフォルトは**LLVM 内蔵**版（`no-llvm-*`、LLVM / opt / llc の別途インストール不要）です。サイズの小さい純 Go 版を使う場合は `NO_FLAVOR=plain` を指定し、`no build -cc zig` と組み合わせてください：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lizongying/nolang/main/install.sh | NO_FLAVOR=plain sh

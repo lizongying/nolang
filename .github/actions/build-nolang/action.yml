@@ -5,7 +5,7 @@ description: >-
   per target into the output directory, and optionally a platform-independent
   precompiled AST package (`<name>-ast.zip`) via `no pack` for `no add` consumers.
   Self-contained — does not depend on a local setup-nolang action, so it works
-  when called cross-repo. Uses the self-contained `no-llvm_*` release asset
+  when called cross-repo. Uses the self-contained `no-llvm-*` release asset
   (LLVM embedded, all backends), so no separate LLVM / opt / llc installation
   is required.
 
@@ -58,7 +58,7 @@ inputs:
     description: >-
       When "true", install Zig when required by the chosen cc. Set "false" if
       the runner already provides it. LLVM is NOT installed: the
-      self-contained `no-llvm_*` release asset embeds LLVM (all backends) and
+      self-contained `no-llvm-*` release asset embeds LLVM (all backends) and
       compiles in-process via the LLVM C API, so opt/llc are never invoked.
     required: false
     default: "true"
@@ -181,15 +181,15 @@ runs:
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
 
-        # Prefer the self-contained `no-llvm_*` asset. It links a static libLLVM
+        # Prefer the self-contained `no-llvm-*` asset. It links a static libLLVM
         # built with all backends (x86 + aarch64 + arm + wasm) and compiles
         # in-process via the LLVM C API, so opt/llc are never invoked — `-cc zig`
         # supplies the assembler/linker. Releases older than v0.4.0 do not
         # publish it; fall back to the pure-Go `no_*` asset, which *does* shell
         # out to opt/llc, so the caller must provide them (this action no longer
         # installs LLVM).
-        EMBEDDED="no-llvm_${SUFFIX}_${VERSION_NO_V}${EXT}"
-        PLAIN="no_${SUFFIX}${EXT}"
+        EMBEDDED="no-llvm-${SUFFIX}-${VERSION_NO_V}${EXT}"
+        PLAIN="no-${SUFFIX}-${VERSION_NO_V}${EXT}"
         ASSET_NAMES=$(printf '%s' "$REL_JSON" | jq -r '.assets[]?.name')
         has_asset() { printf '%s\n' "$ASSET_NAMES" | grep -qxF -- "$1"; }
 

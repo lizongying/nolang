@@ -115,7 +115,13 @@ cd'.to-bytes())
     buf []byte = with-len(2)
     n = r.read(buf, 2)
     runner.eq(n, 2, 'read returns 2')
-    se(buf.slice(0, 2).to-str(), 'ab', 'read bytes ab')
+    raw = buf.slice(0, 2).to-str()
+    s-ab = raw: {
+        ok -> it - ''
+
+        -> ''
+    }
+    se(s-ab, 'ab', 'read bytes ab')
 
     ; read-byte：換行符
     b-opt = r.read-byte()
@@ -159,7 +165,13 @@ cd'.to-bytes())
     buf4 []byte = with-len(4)
     total = r2.read-all(buf4, 4)
     runner.eq(total, 4, 'read-all returns 4')
-    se(buf4.slice(0, total).to-str(), 'ab
+    raw4 = buf4.slice(0, total).to-str()
+    s-all = raw4: {
+        ok -> it - ''
+
+        -> ''
+    }
+    se(s-all, 'ab
 c', 'read-all bytes')
     fs.close(f2)
 

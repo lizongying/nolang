@@ -1,4 +1,4 @@
-; Nolang locale: zh-tw（繁體中文）
+; Nolang locale: zh-tw（傳統中文）
 ; 只改譯文，不要改鍵；鍵由 `make i18n` 從原始碼生成。
 ; 格式動詞（%s / %d / %q / %v）必須與 en 完全一致，否則門禁會拒絕。
 {
