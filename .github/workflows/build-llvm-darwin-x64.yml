@@ -6,7 +6,7 @@ name: build-llvm-darwin-x64
 # 🔴 為什麼要預編：GitHub 已退役 Intel macOS runner，而 LLVM 22 起上游不再發行
 #   x86_64-apple-darwin 預編譯包（22.1.8 的 macOS 資產只剩 LLVM-<ver>-macOS-ARM64.tar.xz），
 #   brew 在 macos-latest（arm64）也只給 arm64 bottle。consumer（build.yml 的 darwin_amd64
-#   條目）要在 arm64 runner 上交叉鏈出 no-llvm_darwin_amd64，缺的就是 x86_64 的
+#   條目）要在 arm64 runner 上交叉鏈出 no-llvm-darwin-amd64，缺的就是 x86_64 的
 #   LLVM 靜態庫——在這裡用 zig cc/c++ -target x86_64-macos.11.0.0 + 通用 macOS SDK
 #   （SDK 的 .tbd stub 含 x86_64 slice，實測 zig 交叉鏈 Mach-O x86_64 可行）從源碼編好。
 #   注意 zig 0.17 只認自家 triple 寫法 x86_64-macos.11.0.0，不認 clang 式

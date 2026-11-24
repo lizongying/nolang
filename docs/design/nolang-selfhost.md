@@ -8235,3 +8235,61 @@ DB 通道（診斷標記）      20530         21213         20846
   （BlockStatement/IfExpression/SurfaceMatch 彌散分布），先在 block/LF/ID/DB 四通道上 recon
   具體構造。
 - **未提交任何改動**。
+
+### 86. s166 — `vec.pop()` 全加法竖切片、struct 字段右值 `with-cap` 特例，與表面匹配語義歧異的首次復現
+
+- **範圍／基線**：§85 收尾的 2255/67 基線在本輪開工前，已被前段（fmet 方法旗標、ix 模組命名空間函式、[]struct 推入）的全加法修補推到 **610 = LF 409 + dropped 201**（同一 census 口徑）。本輪只做兩件全加法修補——把原生 `vec.pop()` 與「struct 字段賦值右值是 `with-cap(<expr>)`」兩條路補齊——外加把一個長期懸而未決的行爲歧異**首次復現並定位到具體的條件極性**。無刪改既有臂、無重排 op 碼。
+- **MIR**：`OP-VECPOP = 116`（`compiler/src/mir.no:766`），接在 `OP-VECBYTES2STR=115` 後。語意只出【容器側】新值：len=max(len-1,0)、cap/data 原封；被彈出元素不回傳（所有自舉調用點都是「陳述位 `.pop()`」；「`x = v.pop()`」的值用法仍落總門禁，絕不靜默發半套語義）。
+- **runtime**：`cg-runtime-vec-pop`（`compiler/src/cg-runtime.no:890`）按 Go 權威 `src/mir/builtin_call.go:2610 emitBuiltinVecPop` 逐字鏡像——`newLen = select(len==0, 0, len-1)` 後 insertvalue 回填；由 prelude-full 注册（`:1179`）。
+- **cg**：`op == OP-VECPOP` 發射臂（`compiler/src/cg.no:2329`）發 `call %vec @vec_pop(%vec <x>)`，dst=%vc。
+- **h2m**：四個接受者形態臂——TY-VEC 標識符（`:4318`）與點號（`:4340`）、TY-VECSTR 標識符（`:4522`）與點號（`:4544`）。統一紀律：發 OP-VECPOP 得新值後【寫回】接收者（標識符走重綁／%vs 槽，點號走 `h2m-push-field-set` 字段通道）；新值【不】入 rel-list（所有權仍屬接收者），接收者由 `h2m-rel-drop` 撤登記；任一前提不滿足即 mark。
+- **字段右值 with-cap**（`compiler/src/h2m.no:5760-5782`）：字段賦值臂在降 RHS 前先看 `h2m-is-withcap(rhsn)` 且 `nkid > 1`；電容引數降級須為 TY-I64；依【欄位宣告型別 fty】選 OP-VECNEWCAP/TY-VEC 或 OP-VECNEWCAPSTR/TY-VECSTR；產物不入 rel-list（權利隨 OP-STRUCT-SET 一起進結構體，同 s164 字段路徑）；fty 非兩者或降級失敗則 rv=0 回落原 `h2m-lower-expr`，再失敗照舊落門禁。根治兩個 top 失分點：`ps.no:3109-3110`（`p.ht-k`/`p.ht-v`）與 `ast.no:493-494`（`t.str-k`/`t.str-v`）。
+- **計數**（canonical S0：`./tmp/s153/bin/no run tmp/s154/cov-main.no`）：
+
+| 輪次 | LF | dropped | unsup |
+| --- | --- | --- | --- |
+| 開工基線（前段修補後） | 409 | 201 | 610 |
+| ＋ vec.pop 豎切片 | 392 | 204 | 596 |
+| ＋ 字段 with-cap（本輪終） | 384 | 204 | 588 |
+
+dropped 201→204 為級聯修剪口徑（reachability 變好、更多下游呈報），方向與 §84/§85 一致；LF 淨減 25。L5 自舉 `./tmp/s166/noc-pop build -o tmp/s166/noc-s2 compiler` rc=1、unsupported 588、dropped 204，與 S0 逐項一致。
+- **端到端語義煙測**（皆 S0/S1 逐字 diff）：`tmp/s166/pop-probe/main.no`（len0/1/2/3、空 vec pop、str-len 七例）SAME；`tmp/s166/wcap-probe/main.no`（`Buf`/`Box` 字段賦值 with-cap 後随即 push、to-bytes-str、二次賦值換小 cap、str vec push/len）SAME（`s:ABC n:3 vn:2 s2:X n2:1`）。
+- **行爲歧異首次復現（誠實呈報，未修）**：
+  - `tmp/s166/ixdiv/`（包模式，`# /compiler/src/ix`，`x = ix.inc(41)`）：S0 `no run` 印 **42**；S1 `noc-pop build -o r.bin .` 執行印 **41**。
+  - `tmp/s166/surfdiv/main.no`（單檔）：`a+b:{ok->it;->0}` 與 `#{overflow=wrap} i+1:{ok->it;->i}` 兩例，S0 印 30/42，S1 印 0/41。
+  - **定位**：兩例同一根因——`h2m-lower-surface` 的 vmode 變體臂（`compiler/src/h2m.no:6969-6981`）對 i64 主體發 `CMPEQ(subject, 0)`，把「結果等於 0」當成成功臂；但 Go 權威的語意是「無溢位＝成功」，`i+1` 只有在環繞成 0 時才失敗。實測 IR 把 `v13=42` 與 0 比較得一假，遂走 fallback 回原值（41），極性正好相反。⚠️ 這不是單點 inversion 可以忠實閉合：正解須引入真正的溢出檢測（如 with-overflow intrinsic／旗標通道），屬新 MIR op 級改動；本輪**不**以草率翻轉條件收工（那會讓真正的環繞案例錯得更離譜），故照實錄為 DR-1① 的核心缺口。
+  - 調查中的次要發現（記錄以免重複踩）：`noc build file.no` 走 `drv.build-ll` 單檔路徑，**不展開 `#` 匯入**，因此 `ix.*` 探針在單檔模式下必然缺簽名而落門禁——這是模式的固有限制，不是回歸；查模組行爲必須用包模式（目錄輸入，`drv.build-pkg`→`drv.pkg-ll`）。
+- **門禁（本節終檢，全部新鮮執行）**：S1 重建 `./tmp/s153/bin/no build -o tmp/s166/noc-pop compiler` rc=0；A/B（A=`tmp/s166/noc-c`、B=`tmp/s166/noc-pop`，11 檔比 rc＋sha256）**11/11 SAME**；L0 `bash tmp/s153/run-gates-clean.sh` **18/18 件套、2513 assertions、0 failed**（含修好的 h2m-test）；L5 rc=1、588/204 與 S0 一致；兩支 smoke SAME。
+- **測試同步**：`compiler/tests/h2m-test.no` 四處 `h2m-sig-add` 調用補齊第 6 參 `met=0`（s166 簽名新增方法旗標後的遺留），h2m-test 恢復 1437/1437。
+- **工作樹**：本輪改動 `compiler/src/{mir,cg-runtime,cg,h2m}.no`（全加法，h2m 淨 +130）＋ `compiler/tests/h2m-test.no`（測試同步）；`drv.no` 等其餘源碼零改。scratch 只留證據用探針（pop-probe／wcap-probe／ixdiv／surfdiv）與日誌（l0-final.log／l5-final.log／canon-final.txt）。
+- **DR-1 狀態**：①行爲面不但未封裝，本輪更首次復現具體的 surface 歧異（見上），是下一輪的第一優先；②fixpoint 尾部 588>0 不可達；③L1–L4 全綠、L5 rc=1；④L5 已就緒。
+- **未提交任何改動**。
+
+### 87. s167 — 表面匹配的帶溢出檢測算術（`OP-CHKADD..CHKMOD` 豎切片）與「非支配釋放」的誠實處理
+
+- **範圍／基線**：接手 §86 終檢的 **588 = LF 384 + dropped 204**。本輪把 §86 首次復現的 surface 行爲歧異【真正的】閉合掉一級：為有符號 i64 算術主體引入帶溢出檢測的 `%option` 降級，使 `h2m-lower-surface` 既有 omode 三態臂（tag 比較 + `ok` 載荷 `OPTGET`）接管成敗分流；順帶修掉一個被此路徑首次激活的潛在 IR 合法性缺陷（非 entry 塊自擁有值在函數出口被引用）。全加法：無刪改既有語義臂、無重排既有 op 碼、無放寬任何門禁；不滿足形狀者一律回落舊路徑（錯碼與隱式截斷皆不容）。
+- **權威口徑覆核（S0 探針，先於實作）**：`tmp/s166/ovf/{o1..o6,t1..t3}.no`——有符號 `+ - * / %` 恆 `?T`（`s/checker/plain_target_option_arith_test.go` 與 `src/parser/lowering.go` inferOptionArith 亦證）；`o1`(max+1)/`o2`(wrap)→fallback -1，`o3`(10/0)→-2；**失敗態走 `err` 臂而非 `nil`**（t1 除零、t2 溢位皆印 `err`）⇒ helper 失敗 tag 必須是 2；`o4`(MIN/-1 除)與 `o5`(MIN%-1)皆 err；`o6`(-7/2)= **-3**（向零截斷 srem/sdiv）。这些數字是後續 helper 設計的逐條依據。
+- **MIR**：`OP-CHKADD=117 … OP-CHKMOD=121`（`compiler/src/mir.no:775-780`），接在 `OP-VECPOP=116` 後。語义：dst=%option 值 id（TY-OPT），x/y=i64 值 id；正常 tag=0 + 載荷=數學結果，失敗 tag=2 + 載荷 0；**失敗也產碼**（這是與 `OP-ADD/SUB/MUL/DIV/MOD` 的唯一差別，不做隐式截断、不靜默回繞）。
+- **runtime**：`cg-runtime-chk-{add,sub,mul,div,mod}`（`compiler/src/cg-runtime.no:913/932/952/974/999`），注册於 prelude-full（`:1293-1297`）。加法/減法用經典符號位公式（`(a^r)&(b^r)`、`(a^b)&(a^r)` 的符號位）——無 intrinsic、無分支；乘法用 **i128 截斷判據**（sext 相乘後 trunc 回 i64 再 sext，與乘積不等即溢出；杜絕「低 64 位撞形」假陰性）；除法/取餘必須分支護航 `b==0` 與 `(a==MIN && b==-1)`（裸 sdiv/srem 在这两種情形是 poison/陷阱），成功 sdiv/srem，失敗回 `{i64 2, zeroinitializer}`。
+- **cg**：五發射臂（`compiler/src/cg.no:2339/2350/2361/2372/2383`）統一發 `call %option @chk_<op>(i64 %vX, i64 %vY)`。
+- **h2m**：①新助手 `h2m-lower-checked-arith`（`compiler/src/h2m.no:6520`）——僅限 K-INFIX-EXPRESSION、運算符五其一、兩側經 `h2m-lower-expr` 後皆 TY-I64；發 OP-CHK* 並 `h2m-vpty-set(od, TY-I64)`；否則回 0。②`h2m-lower-surface` 非標識符主體臂改成三段：先【預掃臂群】僅當存在變體臂（ok/nil/err 任一形態）才嘗試算術降級（純字面量型樣配算術主體屬 checker 錯誤，不可順手改道，`:6640`）；成功則 sty=TY-OPT、subj-pty=TY-I64、omode=1（`:6663`）；失敗回落原 `h2m-lower-expr` 路徑（`:6673` 起，逐字保留舊極性臂行為）。標識符主體路完全不改。
+- **非支配釋放缺陷（本路徑首次激活，如實呈報並根治其 IR 面）**：探針 `tmp/s167/chk/main.no`（ok 臂內做 `'ok:' - it.to-str()` 等字串 temporaries）首次编译即被 clang 拒——`Instruction does not dominate all uses`：`%sv19/%sv20` 定義在 arm 塊 bb2，而 scope-exit 释放指令在 merge 塊引用它們。根因是 rel-list 只有 vid、沒有【定義塊】信息，對所有待釋放值一律在函數出口發 `OP-RELEASE`/`OP-VEC-FREE`。修法：ctx 增 `relb []i64`（每條登記當時 `c.blk`；`compiler/src/h2m.no:217/338/429`），`h2m-emit-releases` 對 `relb != 0` 的條目**誠實跳過**（`:752`）。⚠️ 權衡明確記錄：跳過＝泄漏該自擁有緩衝，但**優於**兩個替代——(a) 出口直引（clang 非法 IR，整函编译失敗）；(b) 在定義塊末端提前 release（值可能已被 STORE 進結果槽／外層槽而仍被使用 ⇒ use-after-free）。與既有三類残余泄漏同級（見 §82 殘餘泄漏清單），方向是鲁棒性優先、 Cheney 式回收留後。
+- **端到端語意煙測（全部 S0/S1 逐字 diff，皆 SAME）**：
+  - `tmp/s167/chk/main.no`（新）：15 項——加/減/乘/除/取餘各含正常與溢位/除零/MIN 邊界（42/-1/-10/-1/42/-1/-3/-2/-2/-1/-2/-2），外加三態标签探針（`err`/`err`/`ok:42`）。
+  - `tmp/s166/surfdiv`：30/42（§86 記錄 S1 為 0/41，本輪閉合）。
+  - `tmp/s166/ixdiv`（包模式）：42（§86 記錄 41）。
+  - `tmp/s166/ovf/{o1..o6,t1..t3}`：9 例全 SAME（含 t2 確認失败走 `err` 臂）。
+  - 回歸支：`pop-probe`、`wcap-probe` 仍 SAME；纯 vmode 字面量型樣 `tmp/s167/vmode` SAME（`two`）。
+- **計數**（同一 canonical 口徑 `./tmp/s153/bin/no run tmp/s154/cov-main.no`）：
+
+| 輪次 | LF | dropped | unsup_total |
+| --- | --- | --- | --- |
+| s166 終（§86） | 384 | 204 | 588 |
+| s167（本輪終） | 384 | 205 | 589 |
+
+LF 零變化（無新增失分構造）；dropped +1 **完全可歸因**：新函數 `h2m-lower-checked-arith` 本身在 corpus 度量中因調用未發射函數（如 `h2m-lower-expr`）而被發射閉包級聯剔除——與既有的 204 條同質，是「為 corpus 新增了一個函數」的如實記帳，不是回退。L5 自舉 `./tmp/s167/noc-s1 build -o tmp/s167/noc-s2 compiler` rc=1、unsupported 589、dropped 205，與 S0 census 逐項一致。
+- **門禁（全程新鲜執行）**：S1 重建 `./tmp/s153/bin/no build -o tmp/s167/noc-s1 compiler` rc=0；A/B（A=`tmp/s166/noc-pop`、B=`tmp/s167/noc-s1`，11 檔 rc＋sha256）**11/11 SAME**；L0 `bash tmp/s153/run-gates-clean.sh` **18/18 件套、2513 assertions passed / 0 failed**（h2m-test 1437/1437）；L5 rc=1、589/205 與 S0 一致；smoke 全 SAME。
+- **Residuals（誠實清單）**：①**嵌套算術只閉合一級**——`tmp/s167/nest`（`(max+1)*2`）S0 印 `8614065632`、S1 印 `-1`：內層 `a+b` 由 `h2m-lower-expr` 走裸 OP-ADD（會環繞），未遞歸選項化；要忠實需把 option 算術（`?T op T`／传播 nil/err）整體選項化，屬更大豎切片。②`ok v` 綁定載荷的指點用法（`v.to-str()`）在 **S0 權威下亦不可產碼**（`EmitLLVM: unknown callee v.to-str`），無 oracle 可對，故未納入 Behavior 封口；`ok -> it` 代用形已在 chk 探針全覆盖。③f64/u64/TY-OPT 運算元不在本豎切片，落回既有路径（照舊計量）。
+- **DR-1 狀態**：①**单级算術主體的行為缺口已閉合**（surfdiv/ixdiv 由歧異轉為 SAME，15 項煙測全同），殘餘為嵌套傳播等上游選項算術缺口；②fixpoint 尾部 589>0 不可達（新增一函數的如實 +1）；③L1–L4 全綠、L5 rc=1；④L5 已就緒。下一輪 top cluster 再按四通道 recon。
+- **工作樹／scratch**：改動 `compiler/src/{mir,cg-runtime,cg,h2m}.no`（全加法；無測試同步需求）；證據留 `tmp/s167/{chk,bind,nest,vmode,surfdiv.*,ab.sh,l0-final.log,l5-final.log,canon-final.txt}` 與 §86 的探針日誌。
+- **未提交任何改動**。

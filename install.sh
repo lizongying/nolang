@@ -64,14 +64,14 @@ say "→ 安裝 no ${VER} (${OS}/${ARCH}, ${FLAVOR})"
 
 # ── 組出 asset 網址 ─────────────────────────────────────────────────────
 # 實際 release asset 命名（2026-11 實測 v0.4.28）：
-#   內置 LLVM: no-llvm_<os>_<arch>_<version>[.exe]
-#   純 Go:     no_<os>_<arch>[.exe]            <- 注意沒有版本號
+#   內置 LLVM: no-llvm-<os>-<arch>-<version>[.exe]
+#   純 Go:     no-<os>-<arch>-<version>[.exe]            <- 注意沒有版本號
 asset_url() {
   case "$1" in
-    embedded) printf 'https://github.com/%s/releases/download/%s/no-llvm_%s_%s_%s%s' \
+    embedded) printf 'https://github.com/%s/releases/download/%s/no-llvm-%s-%s-%s%s' \
                 "$REPO" "$TAG" "$OS" "$ARCH" "$VER" "$EXE" ;;
-    plain)    printf 'https://github.com/%s/releases/download/%s/no_%s_%s%s' \
-                "$REPO" "$TAG" "$OS" "$ARCH" "$EXE" ;;
+    plain)    printf 'https://github.com/%s/releases/download/%s/no-%s-%s-%s%s' \
+                "$REPO" "$TAG" "$OS" "$ARCH" "$VER" "$EXE" ;;
   esac
 }
 

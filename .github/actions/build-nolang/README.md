@@ -14,12 +14,12 @@ available for workflows that only need the compiler without the build step.
 > **Requirements:** the job that uses this action must run on **`ubuntu-latest`**
 > (the Zig install step fetches the `x86_64-linux` tarball, and Zig
 > cross-compiles all targets from Linux). **No LLVM installation is needed** —
-> the action uses the self-contained `no-llvm_*` release asset, which embeds
+> the action uses the self-contained `no-llvm-*` release asset, which embeds
 > LLVM.
 
 ## How cross-compilation works
 
-- The action prefers the **self-contained `no-llvm_*`** release asset. It links
+- The action prefers the **self-contained `no-llvm-*`** release asset. It links
   a static libLLVM built with **all backends** (x86 + aarch64 + arm + wasm) and
   does optimization + codegen **in-process via the LLVM C API**, so `opt`/`llc`
   are never invoked and no LLVM has to be installed.
@@ -27,7 +27,7 @@ available for workflows that only need the compiler without the build step.
   Linux runner can target Linux, macOS, Windows and WASI. It also bundles
   `wasi-libc`, so the `wasm32-wasi` target needs no extra sysroot.
 - The JS backend (`--js`) emits JavaScript with no LLVM toolchain at all.
-- **Older releases** (before the `no-llvm_*` assets were published) fall back to
+- **Older releases** (before the `no-llvm-*` assets were published) fall back to
   the pure-Go `no_*` asset, which *does* shell out to `opt`/`llc`. The action
   emits a warning in that case and expects them to be on `PATH` — it will not
   install them.

@@ -7,13 +7,13 @@ the std lib so `no build` works.
 
 ## Which binary does it install?
 
-It prefers the **self-contained `no-llvm_*`** release asset. That binary links a
+It prefers the **self-contained `no-llvm-*`** release asset. That binary links a
 static libLLVM built with **all backends** (x86 + aarch64 + arm + wasm) and does
 optimization + codegen **in-process via the LLVM C API**, so `opt`/`llc` are
 never invoked and **no LLVM has to be installed**. Pair it with `cc: zig` (Zig
 bundles clang + lld + libc) and the toolchain is fully self-contained.
 
-Releases older than the one that introduced the `no-llvm_*` assets do not
+Releases older than the one that introduced the `no-llvm-*` assets do not
 publish it. In that case the action falls back to the pure-Go `no_*` binary and
 emits a `::warning::` — but note that binary *does* shell out to `opt`/`llc`,
 which this action does not install, so you would have to put them on `PATH`
@@ -34,7 +34,7 @@ and version-pinned.
 | `version`| `latest`            | `latest` or an explicit version like `1.2.3` (leading `v` optional). |
 | `repo`   | `lizongying/nolang` | Owner/name of the nolang release repo. |
 | `token`  | `${{ github.token }}` | Token for the releases API (private repos / rate limits). |
-| `flavor` | `auto`              | `auto` prefers `no-llvm_*` and falls back to `no_*` with a warning; `embedded` requires `no-llvm_*` (fails otherwise); `plain` forces the pure-Go `no_*` (smaller, but needs your own `opt`/`llc`). |
+| `flavor` | `auto`              | `auto` prefers `no-llvm-*` and falls back to `no_*` with a warning; `embedded` requires `no-llvm-*` (fails otherwise); `plain` forces the pure-Go `no_*` (smaller, but needs your own `opt`/`llc`). |
 
 ## Outputs
 

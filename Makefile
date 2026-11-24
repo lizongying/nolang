@@ -278,7 +278,7 @@ LLVM_CAPI_LDFLAGS := $(shell "$(LLVM_CONFIG)" --ldflags --libs --link-shared 2>/
 # backend，反之亦然）。設 FULLLLVM=1 則改為「鏈接完整 LLVM 並註冊全部後端」
 # （x86 + aarch64 + arm + wasm，見下方 LLVM_TARGET_DEFINES 的 FULLLLVM 分支），
 # 代價是產物大得多。
-# ⚠️ 發布的 no-llvm_* 資產一律用 FULLLLVM=1：`no build -target <非宿主架構>` 需要
+# ⚠️ 發布的 no-llvm-* 資產一律用 FULLLLVM=1：`no build -target <非宿主架構>` 需要
 # 對應後端，否則 llvmapi 會硬錯（LLVMGetTargetFromTriple 失敗，不回退 clang），
 # 而 `.github/actions/build-nolang` 要靠它「單一 Linux runner 交叉編譯全部目標」。
 # 見 .github/workflows/build.yml 的 build-llvm-variants。
