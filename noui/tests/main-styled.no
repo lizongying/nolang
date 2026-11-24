@@ -1,0 +1,296 @@
+; ============================================================================
+; noui 窗口 demo：基础样式容器（阶段 73）—— C-STYLED
+;
+; 流水线：app-init -> cmp-styled -> sty-set-bg / sty-set-border /
+;          sty-set-border-w / sty-reset 写入
+;   -> cs-layout / cs-paint（通用容器臂换底色 + 装饰位补四边框）：
+;      默认继承组件色、不画框；覆写后底色 / 边框随之改变
+;   -> 键盘：b=轮换底色 / c=轮换边框色 / w=轮换边框厚度 /
+;            d=切换 disabled / r=重建默认 / q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-styled.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 预设 ----
+STY-BG-A = 0x102030FF
+STY-BG-B = 0x3A2A4AFF
+STY-BC-A = 0xFFD100FF
+STY-BC-B = 0x00AAFFFF
+STY-COMPONENT = 0x2A2A3AFF
+
+; ---- 重建默认（收尾自检也用它）----
+sty-build-default = (h i64) () {
+    sty-reset(h)
+}
+
+; ---- 场景查找（收尾自检用）----
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui styled')
+(ok == 0) -> {
+
+root = app-root()
+
+box = cmp-styled()
+inner = cmp-label('inner panel')
+cmp-add-child(box, inner)
+cmp-add-child(root, box)
+
+title = cmp-label('noui 阶段73: styled')
+hint = cmp-label('b=bg c=border w=width d=disable r=rebuild q quit')
+stat = cmp-label('')
+stat2 = cmp-label('kind=styled inner=label')
+
+cmp-add-child(root, title)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; 空盒对照（独立的 root，不受主场景排版影响）
+root2 = cmp-root()
+empty = cmp-styled()
+cmp-add-child(root2, empty)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; b：底色 -1 -> A -> B -> -1
+        (k == 98) -> {
+            cur = sty-bg(box)
+            (cur == -1) -> { sty-set-bg(box, STY-BG-A) }
+            (cur == STY-BG-A) -> { sty-set-bg(box, STY-BG-B) }
+            (cur == STY-BG-B) -> { sty-set-bg(box, -1) }
+        }
+        ; c：边框色 -1 -> A -> B -> -1
+        (k == 99) -> {
+            cur = sty-border(box)
+            (cur == -1) -> { sty-set-border(box, STY-BC-A) }
+            (cur == STY-BC-A) -> { sty-set-border(box, STY-BC-B) }
+            (cur == STY-BC-B) -> { sty-set-border(box, -1) }
+        }
+        ; w：厚度 0 -> 100 -> 300 -> 0
+        (k == 119) -> {
+            cur = sty-border-w(box)
+            (cur == 0) -> { sty-set-border-w(box, 100) }
+            (cur == 100) -> { sty-set-border-w(box, 300) }
+            (cur == 300) -> { sty-set-border-w(box, 0) }
+        }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(box, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(box, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(box, F-DISABLED) }
+        }
+        ; r：重建默认
+        (k == 114) -> { sty-build-default(box) }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cw = sty-bg(box)
+    cb = sty-border(box)
+    cbd = sty-border-w(box)
+    dis = cmp-has(box, F-DISABLED)
+    cmp-set-text(stat, 'bg={cw} border={cb} bw={cbd} disabled={dis}')
+    cmp-set-text(stat2, 'component=0x2A2A3A')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    cs-paint(root2)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（无覆写），按 cs-rect(box) 推导坐标。
+;   默认：面板 = 组件色 0x2A2A3AFF，四边无边框；子标签在内容区左上
+;   (bx+1200, by+1200)。场景里另有 title / hint / stat / stat2 四条文本。
+; ============================================================================
+sty-build-default(box)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+cs-paint(root2)
+
+bx, by, bw, bh = cs-rect(box)
+c1 = find-rect-color(bx, by, bw, bh) == STY-COMPONENT
+c2 = find-rect-color(bx, by, bw, 100) == -1
+c3 = find-rect-color(bx, by, 100, bh) == -1
+c4 = find-text-color('inner panel', cs-add(bx, 1200), cs-add(by, 1200)) == 0xE8E8F0FF
+c5 = text-count() == 5
+
+; 覆写：底色 + 边框
+sty-set-bg(box, STY-BG-A)
+sty-set-border(box, STY-BC-A)
+sty-set-border-w(box, 100)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+cs-paint(root2)
+c6 = find-rect-color(bx, by, bw, bh) == STY-BG-A
+c7 = find-rect-color(bx, by, bw, 100) == STY-BC-A
+c8 = find-rect-color(bx, cs-sub(cs-add(by, bh), 100), bw, 100) == STY-BC-A
+c9 = find-rect-color(bx, by, 100, bh) == STY-BC-A
+c10 = find-rect-color(cs-sub(cs-add(bx, bw), 100), by, 100, bh) == STY-BC-A
+c11 = find-text-color('inner panel', cs-add(bx, 1200), cs-add(by, 1200)) == 0xE8E8F0FF
+
+; 只给厚度、把色撤回 -> 不画框
+sty-set-border(box, -1)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+cs-paint(root2)
+c12 = find-rect-color(bx, by, bw, 100) == -1
+c13 = find-rect-color(bx, by, bw, bh) == STY-BG-A
+; 只给色、厚度归零 -> 也不画框
+sty-set-border(box, STY-BC-A)
+sty-set-border-w(box, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+cs-paint(root2)
+c14 = find-rect-color(bx, by, bw, 100) == -1
+
+; 厚度负数夹到 0
+sty-set-border-w(box, -7)
+c15 = sty-border-w(box) == 0
+sty-set-border-w(box, 100)
+c16 = sty-border-w(box) == 100
+
+; disabled：写操作全部空操作（渲染不变）
+cmp-flag-set(box, F-DISABLED)
+sty-set-bg(box, 0x111111FF)
+sty-set-border(box, 0x222222FF)
+sty-reset(box)
+c17 = sty-bg(box) == STY-BG-A
+c18 = sty-border(box) == STY-BC-A
+c19 = sty-border-w(box) == 100
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+cs-paint(root2)
+c20 = find-rect-color(bx, by, bw, bh) == STY-BG-A
+c21 = find-rect-color(bx, by, bw, 100) == STY-BC-A
+cmp-flag-clear(box, F-DISABLED)
+
+; reset 后回到组件色 / 无边框
+sty-build-default(box)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+cs-paint(root2)
+c22 = find-rect-color(bx, by, bw, bh) == STY-COMPONENT
+c23 = find-rect-color(bx, by, bw, 100) == -1
+c24 = find-text-color('inner panel', cs-add(bx, 1200), cs-add(by, 1200)) == 0xE8E8F0FF
+
+; 空盒也要有底
+ex, ey, ew, eh = cs-rect(empty)
+c25 = find-rect-color(ex, ey, ew, eh) == STY-COMPONENT
+c26 = find-rect-color(ex, ey, ew, 100) == -1
+sty-set-bg(empty, STY-BG-B)
+sty-set-border(empty, STY-BC-B)
+sty-set-border-w(empty, 50)
+cs-clear()
+cs-layout(root2, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root2)
+ex, ey, ew, eh = cs-rect(empty)
+c27 = find-rect-color(ex, ey, ew, eh) == STY-BG-B
+c28 = find-rect-color(ex, ey, ew, 50) == STY-BC-B
+c29 = find-rect-color(ex, cs-sub(cs-add(ey, eh), 50), ew, 50) == STY-BC-B
+sty-reset(empty)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+print('bye frames={fr} keys={kk} clicks={ck} bw={bw} bh={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29) -> {
+    print('styled render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29)) -> {
+    print('FAIL: styled render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

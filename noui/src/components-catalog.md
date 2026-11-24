@@ -16,11 +16,9 @@
   `C-COMMAND`（阶段37）、`C-VIRTUAL-LIST`（`cmp-virtual-list = (len i64) (h i64)`）、
   `C-INPUT`（阶段38：光标 + 定点编辑 + 语法高亮）、`C-NUMBER-INPUT` / `C-STEPPER` / `C-SEARCH`（阶段40）、
   `C-OTP-INPUT`（阶段41）、`C-COMBOBOX`（阶段42）、`C-RATING` / `C-PAGINATION` / `C-EMPTY`（阶段43）。
-  **仍未补的**：5 个 kind 只有构造函数、
-  没有任何专属 API（shimmer /
-  sizing / styled / text-node / window-border，均为容器 / 面板类，
-  走通用容器绘制）。文末统计的是「仍在通用 `rect + text` 兜底里画的**叶子** kind」，
-  那一项已清零。
+  **仍未补的**：0 个 —— 目录里所有 kind 都已补上专属 API（window-border 是
+  最后一个，阶段 75 补齐）。文末统计的是「仍在通用 `rect + text` 兜底里画的
+  **叶子** kind」，那一项更早已清零。
 
 ## 模块 → 组件映射（86 项）
 
@@ -90,11 +88,11 @@
 | 49 | `sheet` | `C-SHEET` | `cmp-sheet(title)` | open, side, title（阶段70：展开位 `SHT-OPEN []i64` + 停靠边 `SHT-SIDE []i64`（**两个 per-handle 池都随 `cmp-alloc` 长并 `.push(0)`**，side: 0=左 1=右 2=上 3=下），标题走 `CMP-TEXT[h]`；`sht-pad=1200` / `sht-gap=800` / `sht-bar-w=1200` / `sht-min-w=2400` / `sht-body-h=8000` 五个几何常量 + `sht-title` / `sht-set-title` / `sht-open` / `sht-set-open` / `sht-show` / `sht-hide` / `sht-toggle` / `sht-side` / `sht-set-side`（越界夹到 [0,3]），写操作先查 `F-DISABLED`）+ 从 `cs-is-container` 白名单里拿掉 + `cs-measure` 分支（宽 = `2*sht-pad + max(标题宽, sht-min-w)`，下限 6400；高 = `2*sht-pad + CS-LINE-H`，展开再加 `sht-body-h`，下限 `CS-BTN-H`）+ `cs-paint-sheet`（FIELD 底 + 停靠边一条 ACCENT 抓杆 + 标题 FG/收起 MUTED，停靠左侧时给抓杆让位），**不新增节点种类**） |
 | 50 | `progress` | `C-PROGRESS` | `cmp-progress()` | value, max, indeterminate |
 | 51 | `skeleton` | `C-SKELETON` | `cmp-skeleton()` | lines, animated（阶段54：`CMP-VALUE` = 扫光相位 0..100、`CMP-VALUE2` = 行数（夹 0..8）、`CMP-VALUE3` = 行距（下限 800），`sk-lines` / `sk-set-lines` / `sk-gap` / `sk-set-gap` / `sk-phase` / `sk-set-phase` + `cs-measure` 分支（宽 = `2*CS-PAD + 12000`；高 = `2*CS-PAD + N*CS-LINE-H + (N-1)*gap`，下限 `CS-BTN-H`）+ `cs-paint-skeleton`（TRACK 底 + N 条 MUTED 占位条 + 相位扫光 FG 带），**不新增节点种类**） |
-| 52 | `shimmer` | `C-SHIMMER` | `cmp-shimmer()` | duration |
+| 52 | `shimmer` | `C-SHIMMER` | `cmp-shimmer()` | duration, band, color, phase（阶段74：扫光周期 `SHM-DUR []i64`（0 = 默认 1200）、高光带宽百分比 `SHM-BAND []i64`（夹 0..100，0 = 默认 30）、高光色 `SHM-COL []i64`（−1 = 回落主题 `CS-TH-MUTED`）——**三个 per-handle 池都随 `cmp-alloc` 长并 `.push(0)`（COL 推 −1）**；相位仍走 `CMP-VALUE[h]` 0..100（0 = 不扫，与旧渲染分支一致）。公开 `shm-duration` / `shm-set-duration`（负数归 0）/ `shm-band` / `shm-set-band` / `shm-color` / `shm-set-color` / `shm-phase` / `shm-set-phase` / `shm-advance(h, dt)`（步进 `dt*100/duration`，duration≤0 取 1200，累加到 ≥100 绕回；写操作先查 `F-DISABLED`）/ `shm-reset`；渲染层 `cs-paint-leaf` 的 `C-SHIMMER` 分支改为 TRACK 底 + 相位 > 0 时一条高亮带（`band = w*bpct/100`、`span = w - band`、`off = ph*span/100`，相位 100 恰好贴右缘），**不新增节点种类**） |
 | 53 | `bubble` | `C-BUBBLE` | `cmp-bubble(text)` | text, position（阶段45：`CMP-VALUE` 存 position `0` 左 / `1` 右、`CMP-COLOR` 存底色，`bubble-pos` / `bubble-set-pos`（夹紧 `0..1`）+ `cs-paint-bubble` 底色方块 + 按 position 对齐的文本 + 底边尾巴方块，**不新增节点种类**） |
 | 54 | `speech` | `C-SPEECH` | `cmp-speech(text)` | text, lang（阶段45：`CMP-TEXT2` 存语言标签（空 = 不画标签行），`speech-lang` / `speech-set-lang` + `cs-paint-speech` 文本行 + 有标签时的细分隔线 + 标签行，**不新增节点种类**） |
 | 55 | `inspector` | `C-INSPECTOR` | `cmp-inspector()` | target, fields（阶段61：目标名走 `CMP-TEXT`，字段池 `IN-LAB` / `IN-VAL`（扁平只增）+ 每句柄 `IN-SBASE` / `IN-N`（随 `cmp-alloc` 长），`in-pad` / `in-marker-w` / `in-gap` 三个几何常量 + `in-target` / `in-set-target` / `in-count` / `in-label` / `in-value` / `in-add` / `in-set-label` / `in-set-value` / `in-clear`（写操作先查 `F-DISABLED`）+ 从 `cs-is-container` 白名单里拿掉 + `cs-measure` 分支（宽 = `2*CS-PAD + 标记条 800 + 间隙 800 + max(目标名宽, 最长标签 + 间隙 + 最长值)`，下限 6400；高 = `2*CS-PAD + 目标行 CS-LINE-H + N*CS-LINE-H + (N-1)*CS-SEP-H`，下限 `CS-BTN-H`）+ `cs-paint-inspector`（FIELD 底 + 目标行 ACCENT 标记条 + FG 目标名，字段行 MUTED 标签 + FG 值，行间 TRACK 分隔线），**不新增节点种类**） |
-| 56 | `window_border` | `C-WINDOW-BORDER` | `cmp-window-border()` | radii, width |
+| 56 | `window_border` | `C-WINDOW-BORDER` | `cmp-window-border()` | radii, width（阶段75：窗口描边容器，两个 per-handle 池 `WB-RAD []i64`（四角统一圆角半径 px*100，0 = 直角）/ `WB-W []i64`（边框厚度 px*100，0 = 不画），**都随 `cmp-alloc` 长并 `.push(0)`**。公开 `wb-radius` / `wb-set-radius`（负数归 0）/ `wb-width` / `wb-set-width`（负数归 0）/ `wb-reset`（写操作先查 `F-DISABLED`）。渲染层 **不新增节点种类**：面板底固定主题 `CS-TH-FIELD`，空盒条件加 `|| kind == C-WINDOW-BORDER`，另加 `cs-measure` 分支让空盒也有 `CS-MIN-LEAF-W × CS-BTN-H` 的窗口尺寸；`cs-paint` 在四个边各发一条 `WB-W` 厚、组件色（`CMP-COLOR[h]`）的矩形条，角部各让出 `WB-RAD`（半径夹在 w/h 的一半以内）） |
 | 57 | `native_menu` | `C-NATIVE-MENU` | `cmp-native-menu()` | items（阶段51：`CMP-TEXT` = 按钮文案、`VALUE` = 项数、`VALUE2` = 选中项 + 1（0 = 未选）、`COLOR` = 强调色，展开用 `F-OPEN`；`nm-count` / `nm-set-count`（夹 0..8）/ `nm-label` / `nm-set-label` / `nm-index` / `nm-set-index`（夹 −1..count−1）/ `nm-item-off` / `nm-set-item-off` / `nm-open` / `nm-close` / `nm-toggle`；数据池 `NM-LABEL` / `NM-SEL` 按句柄 × `NM-MAX` 定步长、`NM-CN` 每句柄一格，均随 `nm-ensure` 按需长；`cs-measure` 给 intrinsic 宽（`2*CS-PAD + max(按钮文案, 各项文案) + 2400`，下限 `CS-MIN-LEAF-W`）/ 高（`CS-BTN-H`，展开再加 `CS-GAP + count*CS-LINE-H`），`cs-paint-menu` 画字段底按钮 + 文案 + `'v'` / `'^'` 箭头 + 展开时下方弹层（选中项铺 `ACCENT`、禁用项 `TRACK` 底 + `MUTED` 文案），`cs-menu-hit(h,px,py)` 返回弹层命中项（禁用项 / 未展开 / 越界返回 −1）；**不新增节点种类**） |
 | 58 | `attachment` | `C-ATTACHMENT` | `cmp-attachment(name)` | name, size（阶段46：`CMP-TEXT` = 文件名、`CMP-VALUE` = 字节数，`att-name` / `att-set-name` / `att-size` / `att-set-size`（负数夹 0）/ `att-size-text`（1024 进位）+ `cs-paint-attachment` 左图标方块 + 文件名 + 右端尺寸文案，**不新增节点种类**） |
 
@@ -125,10 +123,10 @@
 | 76 | `dock` | `C-DOCK` | `cmp-dock()` | panels, tabs, splits |
 | 77 | `grid_layout` | `C-GRID` | `cmp-grid(cols,rows)` | cells, gaps |
 | 78 | `form`（容器向）已计 B27 | — | — | — |
-| 79 | `text` | `C-TEXT` | `cmp-text-node(text)` | styled text runs |
+| 79 | `text` | `C-TEXT` | `cmp-text-node(text)` | styled text runs（阶段71：片段池 `TXN-RUN []str` / `TXN-COL []i64` 扁平只增 + 每句柄基址 `TXN-SBASE` / 段数 `TXN-N`（**四个 per-handle 池都随 `cmp-alloc` 长并 `.push(0)`**），片段色 `-1` = 继承组件自身 `CMP-COLOR[h]`，关键字强调色常量 `INP-C-KW = 0x4A90E2FF`；`txn-count` / `txn-run-text`（越界空串）/ `txn-run-color`（越界 −1）/ `txn-add`（返回插入下标）/ `txn-set-run`（越界写不影响）/ `txn-clear`（写操作先查 `F-DISABLED`）+ `cs-measure` 分支（宽 = `Σ cs-text-w(片段) + 2*CS-PAD`，无片段退回标题宽，下限 6400；高 = `CS-LINE-H`）+ `cs-paint-text-node`（无片段时一条 `cmp-text(h)` 走 `cs-emit-text-align`，与补全前完全一致；有片段按 `A-LEFT/A-CENTER/A-RIGHT` 求起点后逐段发文本指令，颜色 `-1` 回落到组件色，文字垂直居中），**不新增节点种类**） |
 | 80 | `theme` | `C-THEME` | `cmp-theme()` | palette, size, mode（阶段48：`CMP-TEXT` = 名字、`VALUE` = 模式（0 亮 / 1 暗）、`VALUE2` = 密度（0 紧凑 / 1 标准 / 2 宽松）、`CMP-COLOR` = 强调色，`th-name` / `th-set-name` / `th-mode` / `th-set-mode` / `th-density` / `th-set-density` / `th-accent` / `th-set-accent` / `th-swatch` / `th-mode-name` / `th-bg` / `th-fg` / `th-muted` / `th-swatch-color` / `th-swatch-label` + `cs-paint-theme` 字段底 + 名字 / 模式 + 四块色板（底 / 前景 / 强调 / 次要），**不新增节点种类**） |
-| 81 | `sizing` | `C-SIZING` | `cmp-sizing()` | width, height, min/max |
-| 82 | `styled` | `C-STYLED` | `cmp-styled()` | base style container |
+| 81 | `sizing` | `C-SIZING` | `cmp-sizing()` | width, height, min/max（阶段72：尺寸约束盒。六个 per-handle 池 `SZG-W` / `SZG-H`（目标，0 = 跟随内容）/ `SZG-MINW` / `SZG-MINH`（下限，0 = 无）/ `SZG-MAXW` / `SZG-MAXH`（上限，0 = 不限），**都随 `cmp-alloc` 长并 `.push(0)`**；`szg-w/-h/-minw/-minh/-maxw/-maxh` 六个 getter + `szg-set-size` / `szg-set-min` / `szg-set-max` / `szg-reset`（写操作先查 `F-DISABLED`）+ 纯夹紧函数 `szg-clamp`（**先上限后下限，冲突时下限优先**）；`cs-is-container` 白名单保留 + `cs-measure` 分支（先按通用容器算内容盒，再套目标 / 下限 / 上限，最后叶子下限兜底）+ `cs-layout` 同语义夹紧 + `cs-paint` 把 `C-SIZING` 折进通用容器臂（空盒也画面板）并补四边 `CS-SEP-H` 厚 TRACK 细框，**不新增节点种类**） |
+| 82 | `styled` | `C-STYLED` | `cmp-styled()` | base style container（阶段73：基础样式容器 —— 给子树提供一层可覆写的「底子」。三个 per-handle 池 `STY-BG`（底色，-1 = 继承组件自身 `CMP-COLOR[h]`）/ `STY-BC`（边框色，-1 = 不画）/ `STY-BW`（边框厚度，0 = 不画；负数夹到 0），**都随 `cmp-alloc` 长并 `.push(-1/-1/0)`**；`sty-bg` / `sty-border` / `sty-border-w` 三个 getter + `sty-set-bg` / `sty-set-border` / `sty-set-border-w` / `sty-reset`（写操作先查 `F-DISABLED`）；`cs-is-container` 白名单保留，布局仍走通用容器分支；渲染只在通用容器臂把面板色换成 `STY-BG`（-1 不动），并在装饰位补四条 `STY-BW` 厚 `STY-BC` 边框（色或厚任一为「不画」就整组跳过），空盒也画面板，**不新增节点种类**） |
 | 83 | `root` | `C-ROOT` | `cmp-root()` | root container |
 | 84 | `window_ext` | `C-WINDOW-EXT` | `cmp-window-ext()` | window options（阶段52：`CMP-TEXT` = 标题、`VALUE` = flags（1 可缩放 / 2 全屏 / 4 置顶 / 8 边框）、`VALUE2` = 总开关（1 = 接管真窗口，0 = 只存状态）、`COLOR` = 强调色；`we-title` / `we-set-title`（同步 `TEXT`）/ `we-flags` / `we-set-flags`（同步 `VALUE`）/ `we-resizable` / `we-set-resizable` / `we-fullscreen` / `we-set-fullscreen` / `we-always-on-top` / `we-set-always-on-top` / `we-bordered` / `we-set-bordered` / `we-opacity` / `we-set-opacity`（夹 0..100）/ `we-min-x` / `we-min-y` / `we-set-min-size`（夹 ≥0）/ `we-max-x` / `we-max-y` / `we-set-max-size`（夹 ≥0）/ `we-w` / `we-h` / `we-set-size`（夹 ≥0，0 = 不覆盖）/ `we-on` / `we-set-on`；数据池 `WE-TITLE` / `WE-FLAGS` / `WE-OP` 每句柄一格、`WE-MIN` / `WE-MAX` / `WE-SIZE` 每句柄两格，均随 `we-ensure` 按需长；真窗口调用不在组件层 —— `components.no` 不能 `import app.no`（`app -> cmp-scene -> components` 成环），改由 `app.no` 的 `app-window-apply(h)` / `app-window-apply-all()`（每帧 `app-frame()` 调）经 12 个 `#{c}` FFI 推给 SDL，读回走 `app-window-title()` / `app-window-size()` / `app-window-flags()`；`cs-measure` 给 intrinsic 宽（`2*ch-pad() + 16000`）/ 高（`2*ch-pad() + ch-title-h() + 8*CS-LINE-H` = 24000），`cs-paint-window-ext` 画字段底 + 标题 + 分隔线 + 8 行状态（标签列 `MUTED` 左对齐、数值列 `FG` 右对齐），聚焦时四边 `ACCENT` 描边，**不新增节点种类**） |
 
@@ -143,8 +141,8 @@
 - 唯一组件 kind：**约 84 个**（86 模块中 link/sidebar-group/form 各复用/归并 2 项）
 - 核心扎实 10：`C-BUTTON` `C-INPUT` `C-CHECKBOX` `C-SWITCH` `C-SELECT` `C-TAB` `C-DIALOG` `C-TOOLTIP` `C-PROGRESS` `C-SLIDER`
 - 功能对等长期项：**已全部补齐**（上一条所述的「核心交互组件」）。**注意别把这句读成全目录**：
-  下表 86 项里仍有约 35 个 kind 只有一个构造函数、没有任何属性 API；其中 4 个叶子 kind
-  至今仍落在 `cs-paint-leaf` 的通用 `rect + text` 兜底分支里，画不出该有的样子。
+  下表 86 项里仍有约 35 个 kind 只有一个构造函数、没有任何属性 API；其中落在通用
+  `cs-paint-leaf` 的 `rect + text` 兜底里的叶子 kind 已清零（见文末统计）。
   已补上命令式侧的：`C-TABLE`（阶段 35 `cmp-table-*`）、`C-TREE`（阶段 33 `cmp-tree-*`）、`C-SCROLL`（阶段 34 `cmp-editor-*`）、`C-DOCK`（阶段 36 `cmp-dock-*` + `cs-dock-*`，间隙即拖杆，位置真源 `DK-SPLIT-V`）、`C-COMMAND`（阶段 37 `cmp-command-*`，根就是 `C-COMMAND` 普通竖排容器，**不新增节点种类**）、`C-VIRTUAL-LIST`（`cmp-virtual-list = (len i64) (h i64)`，`value` = 条目数，命令式侧的窗口滚动由 `cmp-command-sync` / `cmp-table-sync` / `cmp-tree-sync` 复用）、`C-INPUT`（阶段 38：`INP-*` 光标池 + `input-insert` / `-delete` / `-syntax` / `-lex-*` + `cs-paint-input` 富文本渲染，**不新增节点种类**；着色复用阶段 34 的 `ed-lex-line`）、`C-TEXTAREA`（阶段 39：`TA-OFF` 视口池 + `ta-line-*` / `ta-caret-*` / `ta-move-*` / `ta-follow` + `cs-paint-textarea` 逐行渲染，编辑复用阶段 38 的三条原语，**不新增节点种类**）、`C-NUMBER-INPUT` / `C-STEPPER` / `C-SEARCH`（阶段 40：`CMP-VALUE4` 步长池 + `num-range` / `num-step-set` / `num-step` / `num-min` / `num-max` / `num-clamp` / `num-snap` / `num-value` / `num-set` / `num-bump` / `num-commit` + `search-query` / `search-clear` / `search-hit` / `stepper-hit` + `cs-paint-number-input` / `cs-paint-stepper` / `cs-paint-search`，值域槽位沿用 slider 的 `VALUE` / `VALUE3` / `VALUE2`，**不新增节点种类**）、`C-OTP-INPUT`（阶段 41：`OT-CODE` 定长码池 + `OT-CUR` 活动槽池 + `otp-slots` / `otp-cur(-set)` / `otp-code` / `otp-digit` / `otp-set-digit` / `otp-clear-slot` / `otp-clear` / `otp-filled` / `otp-digits` / `otp-value` / `otp-complete` / `otp-put` / `otp-backspace` / `otp-delete` / `otp-left` / `otp-right` / `otp-set` / `otp-slot-w` / `otp-slot-x` / `otp-hit` + `cs-paint-otp`，槽数沿用 `CMP-VALUE`，**不新增节点种类**）、`C-COMBOBOX`（阶段 42：`CB-MBASE` / `CB-MN` / `CB-MLIST` 匹配表 + `CB-MCUR` 高亮（均随 `cmp-alloc` 长）+ `combobox-refresh` / `-query` / `-set-query` / `-add-option` / `-option-count` / `-option` / `-selected` / `-choose` / `-match-count` / `-match` / `-match-label` / `-match-index` / `-match-index-of` / `-highlight` / `-highlight-set` / `-highlight-move` / `-choose-match` / `-apply` / `-insert` / `-backspace` / `-delete` / `-clear` + `cs-paint-combobox` + `cs-measure` / `cs-layout` / `cs-hit` 都走匹配表（`cs-hit-child`）；查询串沿用 `CMP-TEXT` + `INP-CAR` 光标池，选项与 select 同构存 `CHILD-IDX`，**不新增节点种类**）、`C-RATING` / `C-PAGINATION` / `C-EMPTY`（阶段 43：`rating-max` / `-value` / `-set`（夹紧 0..max、`F-DISABLED` 不动）/ `-cell` / `-hit`（命中第几颗星）+ `pagination-total` / `-page` / `-clamp` / `-set` / `-prev` / `-next` / `-btn-w` / `-label` / `-hit`（-1 / 0 上一页 / 1 标签 / 2 下一页）+ `slider-min` / `slider-max` + `cs-paint-rating` / `cs-paint-pagination` / `cs-paint-empty` + `cs-measure` 三条 intrinsic 分支；`C-PAGINATION` 从 `cs-is-container` 白名单拿掉 —— 页码按钮是**数据**不是视觉子节点；empty 的描述走 `CMP-TEXT2`，**不新增节点种类**）、`C-MESSAGE` / `C-ALERT` /
   `C-NOTIFICATION`（阶段 44：共用 `LV-*` + `lv-slot` + `msg-level` / `msg-set-level` +
   `alert-closable` / `-set-closable` / `alert-close-w` / `alert-close-x` / `alert-hit` +
@@ -327,7 +325,10 @@
   阶段 62 再补 `C-MESSAGE-SCROLLER`、阶段 63 再补 `C-STATUS-BAR`、
   阶段 64 再补 `C-POPOVER`、阶段 65 再补 `C-QUESTIONNAIRE`、
   阶段 66 再补 `C-SEARCHABLE-LIST`、阶段 67 再补 `C-TITLE-BAR`、
-  阶段 68 再补 `C-TOOLBAR`、阶段 69 再补 `C-SIDEBAR`、阶段 70 再补 `C-SHEET`）。
+  阶段 68 再补 `C-TOOLBAR`、阶段 69 再补 `C-SIDEBAR`、阶段 70 再补 `C-SHEET`、
+  阶段 71 再补 `C-TEXT`、阶段 72 再补 `C-SIZING`、阶段 73 再补 `C-STYLED`、
+  阶段 74 再补 `C-SHIMMER`、阶段 75 再补 `C-WINDOW-BORDER`）。至此组件目录里
+  「只有构造函数」的 kind 已清零。
   `C-NATIVE-MENU` 的「原生」是自绘的（框架没有平台菜单图元，按钮 / 弹层都用
   rect + text 画，命中走 `cs-menu-hit`）；`C-WINDOW-EXT` 真的改窗口本身
   （标题 / 可缩放 / 最小·最大尺寸 / 全屏 / 置顶 / 边框 / 不透明度 / 尺寸），

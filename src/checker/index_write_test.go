@@ -316,15 +316,18 @@ func TestIndexWriteWithLenReportedBytes(t *testing.T) {
 	}
 }
 
-// TestIndexWriteWithLenPlaceMatchNotReported 守門：with-len 基底改用 place-match
-// 後就必須放行（這正是使用者被要求改成的那種寫法）。若這裡誤報，使用者會被
-// 逼進「兩種寫法都報」的死角。
+// TestIndexWriteWithLenPlaceMatchNotReported 守門：with-len 的**非 str/txt**
+// 緩衝改用 place-match 後必須放行（這是 D9 推薦的正確寫法）。若這裡誤報，
+// 使用者會被逼進「兩種寫法都報」的死角。
+//
+// 2026-11-24：原 fixture 用的是 str 基底（val str = with-len(n)），但 str/txt
+// 的 place-match 寫已全域禁止（見 TestIndexWriteStrTxtPlaceMatchReported），
+// 故改用 []byte 基底，讓這條守門繼續只釘「with-len 不豁免 place-match」這一點。
 func TestIndexWriteWithLenPlaceMatchNotReported(t *testing.T) {
-	src := `copy2 = (self str, start i64, end i64) (val str) {
-    n = end - start
-    val str = with-len(n)
+	src := `copy2 = (n i64) () {
+    val []byte = with-len(n)
     val[0]: {
-        ok -> it = self.byte(start)
+        ok -> it = 90
 
         -> _
     }
@@ -612,6 +615,133 @@ b.n = 2`},
 		res := ValidateIndexWrite(prog, "src/app.no")
 		if len(res) != 0 {
 			t.Fatalf("%s: must stay silent, got %d: %+v", tc.name, len(res), res)
+		}
+	}
+}
+
+// ── str / txt 的 place-match 索引写全域禁止（2026-11-24）──────────────────
+//
+// D9 直写 `s[i] = v` 早已由 idxwrite 拦下，place-match `s[i]: { ok -> it = v }`
+// 是剩下的唯一写回路径。str 基底的 `it` 静态型别是 char，右值稍不留意就会被
+// 按位搬进 i8 槽（实测 `v str = 'b'` 写出 0x01）。用户决定彻底禁止 str / txt
+// 的任何索引修改：只允许整体赋值 `=`、push / push-str、fill 等方法。
+//
+// no vet 走 surface AST（不经过 parser lowering），所以 checker 必须在
+// SurfaceMatch 上做这个判断，否则 CLI 与 no build 口径不一致。故这些测试
+// 一律用 parseSurfaceProg（SkipLowering=true）保留 SurfaceMatch 节点。
+
+// TestIndexWriteStrTxtPlaceMatchReported 正例：str / txt 基底的 place-match
+// 写必须报 idxwrite。两个 case 一起钉，防止日后只留其中一种。
+func TestIndexWriteStrTxtPlaceMatchReported(t *testing.T) {
+	cases := map[string]string{
+		"str-in-function": `f = () () {
+    s str = 'abcd'
+    s[1]: {
+        ok -> it = "Z"
+        -> _
+    }
+}`,
+		"txt-in-function": `f = () () {
+    t txt = 'abcd'
+    t[1]: {
+        ok -> it = "Z"
+        -> _
+    }
+}`,
+		// with-cap / with-len 造出的 str 也不豁免：它们曾是直写豁免区，
+		// 但 str 全域禁索引写后，place-match 同样是后门，一并钉死。
+		"str-with-len": `f = (n i64) () {
+    val str = with-len(n)
+    val[0]: {
+        ok -> it = "Z"
+        -> _
+    }
+}`,
+	}
+	for name, src := range cases {
+		prog := parseSurfaceProg(t, src)
+		res := ValidateIndexWrite(prog, "src/app.no")
+		if len(res) != 1 {
+			t.Fatalf("%s: str/txt place-match write must be reported, got %d: %+v", name, len(res), res)
+		}
+		if res[0].TraceID != indexWriteTraceID {
+			t.Fatalf("%s: TraceID = %q, want %q", name, res[0].TraceID, indexWriteTraceID)
+		}
+	}
+}
+
+// TestIndexWriteNonStrTxtPlaceMatchNotReported 负例：非 str/txt 容器的
+// place-match 写仍然合法（[]byte / 固定数组）—— 本规则只针对 str / txt，
+// 不能误伤 D9 推荐的其它容器写法。
+func TestIndexWriteNonStrTxtPlaceMatchNotReported(t *testing.T) {
+	cases := map[string]string{
+		"byte-slice": `f = () () {
+    b []byte = with-len(4)
+    b[1]: {
+        ok -> it = 90
+        -> _
+    }
+}`,
+		"fixed-array": `f = () () {
+    a [3]i64 = [1, 2, 3]
+    a[1]: {
+        ok -> it = 9
+        -> _
+    }
+}`,
+	}
+	for name, src := range cases {
+		prog := parseSurfaceProg(t, src)
+		res := ValidateIndexWrite(prog, "src/app.no")
+		if len(res) != 0 {
+			t.Fatalf("%s: non-str/txt place-match write must stay silent, got %d: %+v", name, len(res), res)
+		}
+	}
+}
+
+// TestIndexWriteStrPlaceMatchReadNotReported 负例：str 的 place-match 纯读取
+// （ok 臂把 it 赋给别的变量，没有写回 it）仍然合法。守住「只禁写、不禁读」。
+func TestIndexWriteStrPlaceMatchReadNotReported(t *testing.T) {
+	src := `f = () (out char) {
+    out = " "
+    s str = 'abcd'
+    s[1]: {
+        ok -> out = it
+        -> _
+    }
+}`
+	prog := parseSurfaceProg(t, src)
+	res := ValidateIndexWrite(prog, "src/app.no")
+	if len(res) != 0 {
+		t.Fatalf("read-only place-match on str must stay silent, got %d: %+v", len(res), res)
+	}
+}
+
+// TestIndexWriteStrTxtUnwrapAssignReported 钉住 `s[i] ?= v` 这条写入路径。
+// no build 会把 `?=` 降糖成 place-match，由 parser 层拦下；但 no vet 走 surface
+// AST（保留 UnwrapAssignStatement），若 checker 不单独看 Target，这条路径就会漏。
+// 用户要求「全面禁止 str/txt 的索引修改」，?= 与 place-match 是同一条禁令。
+func TestIndexWriteStrTxtUnwrapAssignReported(t *testing.T) {
+	cases := map[string]string{
+		"str": `f = () (out ?char) {
+    out = nil
+    s str = 'abcd'
+    s[1] ?= "Z"
+}`,
+		"txt": `f = () (out ?char) {
+    out = nil
+    t txt = 'abcd'
+    t[1] ?= "Z"
+}`,
+	}
+	for name, src := range cases {
+		prog := parseSurfaceProg(t, src)
+		res := ValidateIndexWrite(prog, "src/app.no")
+		if len(res) != 1 {
+			t.Fatalf("%s: str/txt `?=` index write must be reported, got %d: %+v", name, len(res), res)
+		}
+		if res[0].TraceID != indexWriteTraceID {
+			t.Fatalf("%s: TraceID = %q, want %q", name, res[0].TraceID, indexWriteTraceID)
 		}
 	}
 }

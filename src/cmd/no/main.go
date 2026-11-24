@@ -1124,6 +1124,7 @@ func addDependency(specStr string) {
 	key := spec.DepKey()
 	config.Dependencies[key] = version
 	createConfigFile(*config)
+	refreshSumAfterChange(config.Dependencies)
 	fmt.Printf(i18n.P("20xgyqyu", "Added dependency: %s = %s\n"), key, version)
 	fmt.Printf(i18n.P("76fao0mm", "  asset: %s\n"), pkg.ReleaseASTZipURL(spec, version))
 }
@@ -1152,6 +1153,7 @@ func removeDependency(name string) {
 	}
 	delete(config.Dependencies, name)
 	createConfigFile(*config)
+	refreshSumAfterChange(config.Dependencies)
 	fmt.Printf(i18n.P("c6eld4s3", "Removed dependency: %s\n"), name)
 }
 
@@ -1192,6 +1194,7 @@ func updateDependency(key string) {
 	}
 	config.Dependencies[key] = newVer
 	createConfigFile(*config)
+	refreshSumAfterChange(config.Dependencies)
 	fmt.Printf(i18n.P("0lur3tbm", "Updated %s\n"), key)
 	fmt.Printf("  version: %s\n", newVer)
 }
@@ -1218,6 +1221,7 @@ func updateAllDependencies() {
 		fmt.Printf(i18n.P("7mckxr6e", "  Updated %s\n"), name)
 	}
 	createConfigFile(*config)
+	refreshSumAfterChange(config.Dependencies)
 	fmt.Println(i18n.P("61bm2pzr", "All dependencies updated to latest."))
 }
 

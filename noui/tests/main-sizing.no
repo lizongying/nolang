@@ -1,0 +1,278 @@
+; ============================================================================
+; noui 窗口 demo：尺寸约束盒（阶段 72）—— C-SIZING
+;
+; 流水线：app-init -> cmp-sizing -> szg-set-size / szg-set-min / szg-set-max /
+;          szg-reset / szg-clamp 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-SIZING 分支 + 四边 TRACK 细框）：
+;      盒子目标尺寸压过父级拉伸，min/max 夹紧，内容只是默认值
+;   -> 键盘：1/2=两套目标尺寸；a/z=加宽 / 缩窄；m/x=轮换下限 / 上限；
+;            d=切换 disabled；r=重建默认；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-sizing.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 预设 ----
+SZG-W-DEF = 12000
+SZG-H-DEF = 8000
+
+; ---- 重建默认（收尾自检也用它）----
+szg-build-default = (h i64) () {
+    szg-reset(h)
+    szg-set-size(h, SZG-W-DEF, SZG-H-DEF)
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui sizing')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段72: sizing')
+hint = cmp-label('1/2=size a/z=wide m=min x=max d=disable r=rebuild q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+box = cmp-sizing()
+inner = cmp-label('content area')
+cmp-add-child(box, inner)
+szg-build-default(box)
+
+cmp-add-child(root, title)
+cmp-add-child(root, stat)
+cmp-add-child(root, box)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; 1 / 2：两套目标尺寸
+        (k == 49) -> { szg-set-size(box, 12000, 8000) }
+        (k == 50) -> { szg-set-size(box, 9000, 5000) }
+        ; a / z：加宽 / 缩窄 2000
+        (k == 97) -> {
+            w = szg-w(box)
+            (w <= 0) -> { w = SZG-W-DEF }
+            szg-set-size(box, cs-add(w, 2000), szg-h(box))
+        }
+        (k == 122) -> {
+            w = szg-w(box)
+            (w <= 0) -> { w = SZG-W-DEF }
+            szg-set-size(box, cs-sub(w, 2000), szg-h(box))
+        }
+        ; m / x：轮换下限 / 上限
+        (k == 109) -> {
+            mw = szg-minw(box)
+            (mw == 0) -> { szg-set-min(box, 8000, 6000) }
+            (mw == 8000) -> { szg-set-min(box, 6400, 4000) }
+            (mw == 6400) -> { szg-set-min(box, 0, 0) }
+        }
+        (k == 120) -> {
+            mw = szg-maxw(box)
+            (mw == 0) -> { szg-set-max(box, 9000, 7000) }
+            (mw == 9000) -> { szg-set-max(box, 12000, 8000) }
+            (mw == 12000) -> { szg-set-max(box, 0, 0) }
+        }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(box, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(box, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(box, F-DISABLED) }
+        }
+        ; r：重建默认
+        (k == 114) -> { szg-build-default(box) }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cw = szg-w(box)
+    ch = szg-h(box)
+    mnw = szg-minw(box)
+    mnh = szg-minh(box)
+    mxw = szg-maxw(box)
+    dis = cmp-has(box, F-DISABLED)
+    cmp-set-text(stat, 'w={cw} h={ch} min={mnw}x{mnh} max={mxw} disabled={dis}')
+    cmp-set-text(stat2, 'kind=sizing inner=label')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（12000×8000），按 cs-rect(box) 推导坐标。
+;   盒子：FIELD 底（组件色 0x2A2A3AFF）+ 四边 TRACK 细框（厚 100）；
+;   内部标签在内容区左上 (bx+1200, by+1200)，文本高 2400。
+;   场景里还有 title / hint / stat / stat2 四条标签文本。
+; ============================================================================
+cmp-flag-clear(box, F-DISABLED)
+szg-build-default(box)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+bx, by, bw, bh = cs-rect(box)
+c1 = bw == SZG-W-DEF
+c2 = bh == SZG-H-DEF
+c3 = find-rect-color(bx, by, bw, bh) == 0x2A2A3AFF
+c4 = find-rect-color(bx, by, bw, 100) == cs-theme(CS-TH-TRACK)
+c5 = find-rect-color(bx, cs-sub(cs-add(by, bh), 100), bw, 100) == cs-theme(CS-TH-TRACK)
+c6 = find-rect-color(bx, by, 100, bh) == cs-theme(CS-TH-TRACK)
+c7 = find-rect-color(cs-sub(cs-add(bx, bw), 100), by, 100, bh) == cs-theme(CS-TH-TRACK)
+c8 = find-text('content area', cs-add(bx, 1200), cs-add(by, 1200)) == 1
+
+; 换目标尺寸：盒子跟着变
+szg-set-size(box, 9000, 5000)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(box)
+c9 = szg-w(box) == 9000
+c10 = szg-h(box) == 5000
+c11 = bw == 9000
+c12 = bh == 5000
+c13 = find-text-color('content area', cs-add(bx, 1200), cs-add(by, 1200)) == 0xE8E8F0FF
+
+; 上限把目标夹小
+szg-set-max(box, 7000, 4000)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(box)
+c14 = szg-maxw(box) == 7000
+c15 = bw == 7000
+c16 = bh == 4000
+
+; 下限把它抬回去（下限优先于上限）
+szg-set-min(box, 8000, 6000)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(box)
+c17 = bw == 8000
+c18 = bh == 6000
+
+; 清空下限 / 上限，回到目标尺寸
+szg-set-min(box, 0, 0)
+szg-set-max(box, 0, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(box)
+c19 = bw == 9000
+c20 = bh == 5000
+
+; disabled：写操作全部空操作
+cmp-flag-set(box, F-DISABLED)
+szg-set-size(box, 1, 1)
+szg-set-min(box, 1, 1)
+szg-set-max(box, 1, 1)
+szg-reset(box)
+c21 = szg-w(box) == 9000
+c22 = szg-h(box) == 5000
+cmp-flag-clear(box, F-DISABLED)
+
+; 重建默认：几何回到最初
+szg-build-default(box)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(box)
+c23 = bw == SZG-W-DEF
+c24 = bh == SZG-H-DEF
+c25 = find-rect-color(bx, by, bw, 100) == cs-theme(CS-TH-TRACK)
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+print('bye frames={fr} keys={kk} clicks={ck} w={bw} h={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25) -> {
+    print('sizing render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25)) -> {
+    print('FAIL: sizing render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

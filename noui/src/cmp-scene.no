@@ -554,6 +554,36 @@ cs-measure = (h i64) (w i64, ht i64) {
         (n > 0) -> { ht = cs-add(ht, cs-add(hh, gap)) }
         (ht < CS-BTN-H) -> { ht = CS-BTN-H }
     }
+    ; 阶段72：sizing —— 先按通用容器算内容盒，再用该句柄的目标 / 下限 /
+    ; 上限夹紧。目标是「盒子自己的尺寸」，内容只是没指定时的默认值。
+    ; 排在通用容器分支**之前**（匹配链先命中先赢）。
+    ((kind == C-SIZING) && (cont == 1)) -> {
+        pad = cs-pad-of(h)
+        fw, fh = cs-measure-flow(h)
+        w = cs-add(cs-mul(pad, 2), fw)
+        ht = cs-add(cs-mul(pad, 2), fh)
+        (n <= 0) -> { w = CS-MIN-LEAF-W }
+        (n <= 0) -> { ht = CS-BTN-H }
+        tw = szg-w(h)
+        tzh = szg-h(h)
+        (tw > 0) -> { w = tw }
+        (tzh > 0) -> { ht = tzh }
+        cw2, ch2 = szg-clamp(h, w, ht)
+        w = cw2
+        ht = ch2
+        (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+        (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+    }
+    ; 阶段75：window-border 是真容器，但空盒也要能量出一个「窗口」尺寸
+    ;（否则没挂子节点时退化成 2400×2400 的叶子盒）。排在通用容器分支之前。
+    ((kind == C-WINDOW-BORDER)) -> {
+        pad = cs-pad-of(h)
+        fw, fh = cs-measure-flow(h)
+        w = cs-add(cs-mul(pad, 2), fw)
+        ht = cs-add(cs-mul(pad, 2), fh)
+        (n <= 0) -> { w = CS-MIN-LEAF-W }
+        (n <= 0) -> { ht = CS-BTN-H }
+    }
     ((cont == 1) && (n > 0)) -> {
         pad = cs-pad-of(h)
         cw, ch = cs-measure-flow(h)
@@ -1401,7 +1431,20 @@ cs-layout-overlay = (h i64, x i64, y i64, w i64, ht i64) {
 }
 
 cs-layout = (h i64, x i64, y i64, w i64, ht i64) {
-    ; 固定尺寸优先于父级给出的提议（声明式 dv-size 的落点）
+    ; 阶段72：sizing 的目标尺寸覆盖提议（命令式压过声明式）
+    swz = szg-w(h)
+    (swz > 0) -> { w = swz }
+    shz = szg-h(h)
+    (shz > 0) -> { ht = shz }
+    ; 阶段72：sizing 夹紧与 cs-measure 同语义（先上限后下限、下限优先）
+    (cmp-kind(h) == C-SIZING) -> {
+        cw2, ch2 = szg-clamp(h, w, ht)
+        w = cw2
+        ht = ch2
+        (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
+        (ht < CS-BTN-H) -> { ht = CS-BTN-H }
+    }
+    ; cmp-sw/sh 是命令式显式固定尺寸，最后覆盖（cs-measure 末尾也是它最后压）
     fw = cmp-sw(h)
     (fw > 0) -> { w = fw }
     fh = cmp-sh(h)
@@ -2965,10 +3008,21 @@ cs-paint-leaf = (h i64, kind i64, x i64, y i64, w i64, ht i64, color i64, t str)
             }
         }
         kind == C-SKELETON -> cs-paint-skeleton(h, x, y, w, ht, color, t)
+        ; 阶段74：shimmer —— TRACK 底 + 随相位（CMP-VALUE 0..100）移动的高光带；
+        ;   带宽 SHM-BAND%（0 = 默认 30），高光色 SHM-COL（-1 = MUTED）。
         kind == C-SHIMMER -> {
             cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-TRACK))
-            ph = cmp-value(h)
-            (ph > 0) -> { cs-emit-fill(x, y, cs-div(w, 2), ht, cs-theme(CS-TH-MUTED)) }
+            ph = shm-phase(h)
+            (ph > 0) -> {
+                bpct = shm-band(h)
+                (bpct <= 0) -> { bpct = 30 }
+                band = cs-div(cs-mul(w, bpct), 100)
+                span = cs-sub(w, band)
+                off = cs-div(cs-mul(ph, span), 100)
+                hc = shm-color(h)
+                (hc < 0) -> { hc = cs-theme(CS-TH-MUTED) }
+                cs-emit-rect(cs-add(x, off), y, band, ht, hc)
+            }
         }
         kind == C-SPINNER -> {
             cs-emit-rect(x, y, w, ht, color)
@@ -3435,8 +3489,16 @@ cs-paint = (h i64) {
     }
     (kind != C-DIALOG) -> {
         {
-            ; group-box 即使没挂子节点也要画面板（否则标题行没有底）
-            ((cont == 1) && ((n > 0) || (kind == C-GROUP-BOX))) -> {
+            ; group-box 即使没挂子节点也要画面板（否则标题行没有底）；
+            ; 阶段72：C-SIZING 同理 —— 它始终是「盒子」，空盒也要有底。
+            ; 阶段73：C-STYLED 也是「底子」容器，空盒要有底才能看见样式。
+            ; 阶段75：C-WINDOW-BORDER 同理 —— 空窗口也要有面 + 框。
+            ((cont == 1) && ((n > 0) || (kind == C-GROUP-BOX) || (kind == C-SIZING) || (kind == C-STYLED) || (kind == C-WINDOW-BORDER))) -> {
+                ; 阶段73：styled 的底色覆写（-1 = 继承组件自身颜色）
+                sbg = sty-bg(h)
+                (sbg >= 0) -> { color = sbg }
+                ; 阶段75：window-border 的面板底固定 FIELD，组件色留给描边
+                (kind == C-WINDOW-BORDER) -> { color = cs-theme(CS-TH-FIELD) }
                 cs-emit-rect(x, y, w, ht, color)
                 ; 先画参与流布局的子节点
                 i = 0
@@ -3458,6 +3520,45 @@ cs-paint = (h i64) {
             -> {
                 t = cmp-text(h)
                 cs-paint-leaf(h, kind, x, y, w, ht, color, t)
+            }
+        }
+        ; 阶段72：sizing —— 四边 TRACK 细框，把「约束盒」的边界画出来
+        ;（面板本身由上面的通用容器分支画，这里只补边框，避免二次调用叶子兜底）
+        (kind == C-SIZING) -> {
+            bz = CS-SEP-H
+            cs-emit-rect(x, y, w, bz, cs-theme(CS-TH-TRACK))
+            cs-emit-rect(x, cs-sub(cs-add(y, ht), bz), w, bz, cs-theme(CS-TH-TRACK))
+            cs-emit-rect(x, y, bz, ht, cs-theme(CS-TH-TRACK))
+            cs-emit-rect(cs-sub(cs-add(x, w), bz), y, bz, ht, cs-theme(CS-TH-TRACK))
+        }
+        ; 阶段73：styled —— 四边框（色 STY-BC、厚 STY-BW，任一为「不画」就整组跳过）
+        (kind == C-STYLED) -> {
+            bc = sty-border(h)
+            bw = sty-border-w(h)
+            ((bc >= 0) && (bw > 0)) -> {
+                cs-emit-rect(x, y, w, bw, bc)
+                cs-emit-rect(x, cs-sub(cs-add(y, ht), bw), w, bw, bc)
+                cs-emit-rect(x, y, bw, ht, bc)
+                cs-emit-rect(cs-sub(cs-add(x, w), bw), y, bw, ht, bc)
+            }
+        }
+        ; 阶段75：window-border —— 圆角描边（WB-RAD 切角、WB-W 厚度，
+        ; 色 = 组件自身色；半径在 w/h 的一半以内夹紧）。四条边在角部各让出 rr。
+        (kind == C-WINDOW-BORDER) -> {
+            wbw = wb-width(h)
+            (wbw > 0) -> {
+                wbr = wb-radius(h)
+                whw = cs-div(w, 2)
+                whh = cs-div(ht, 2)
+                (wbr > whw) -> { wbr = whw }
+                (wbr > whh) -> { wbr = whh }
+                wbc = cmp-color(h)
+                winx = cs-sub(w, cs-mul(wbr, 2))
+                winy = cs-sub(ht, cs-mul(wbr, 2))
+                cs-emit-rect(cs-add(x, wbr), y, winx, wbw, wbc)
+                cs-emit-rect(cs-add(x, wbr), cs-sub(cs-add(y, ht), wbw), winx, wbw, wbc)
+                cs-emit-rect(x, cs-add(y, wbr), wbw, winy, wbc)
+                cs-emit-rect(cs-sub(cs-add(x, w), wbw), cs-add(y, wbr), wbw, winy, wbc)
             }
         }
         ; group-box：标题行走 CMP-TEXT，下面一条 TRACK 分隔线（无论有没有子节点都画）

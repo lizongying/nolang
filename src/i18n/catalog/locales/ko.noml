@@ -1252,4 +1252,5 @@ AST 의존성 %s 동기화 오류: 모듈이 비어 있음
 
 `
   'zzcfoc04': 'dist 디렉터리 생성: %w'
+  'stridxwr': 'cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-bytes-str()`'
 }

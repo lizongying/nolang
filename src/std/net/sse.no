@@ -169,10 +169,8 @@ client.next-event = () (ev ?event) {
                 remaining-start = sep-pos + sep-len
                 remaining = data.slice(remaining-start, data.len-bytes())
 
-                ; 將剩餘資料移到緩衝區開頭
-                i <- [0..remaining.len-bytes()): {
-                    .recv-buf[i] ?= remaining.byte(i)
-                }
+                ; 將剩餘資料移到緩衝區開頭（str 下標寫已禁用，整條指派）
+                .recv-buf = remaining
                 .recv-buf-len = remaining.len-bytes()
 
                 ; 解析事件區塊
@@ -293,10 +291,8 @@ client.next-event = () (ev ?event) {
                     return
                 }
 
-                ; 複製到緩衝區末尾
-                i <- [0..n): {
-                    .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
-                }
+                ; 複製到緩衝區末尾（str 下標寫已禁用，拼接後整條指派）
+                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
 
                 #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
@@ -420,7 +416,8 @@ client.reconnect = () (ok bool) {
     }
 
     ; 接收回應標頭（直到 \r\n\r\n）
-    raw str = with-len(SSE-BUF-SIZE)
+    ; str 下標寫已禁用；改為從 '' 起逐塊拼接（內容逐 byte 等價）
+    raw = ''
     tmp str = with-len(SSE-RECV-SIZE)
     total = 0
     n = 0
@@ -451,15 +448,7 @@ client.reconnect = () (ok bool) {
             .close()
             return
         }
-        i <- [0..n): {
-
-            #{overflow=wrap}
-            raw[total + i]: {
-                ok -> it = tmp.byte(i)
-
-                -> _
-            }
-        }
+        raw = raw - tmp.slice-bytes(0, n)
 
         {
 
@@ -520,12 +509,10 @@ client.reconnect = () (ok bool) {
     body-start = sep-pos + separator.len-bytes()
     remaining = raw.slice(body-start, total)
 
-    .recv-buf = with-len(SSE-BUF-SIZE)
+    ; str 下標寫已禁用；整條深拷貝（等價於逐 byte 複製 remaining）
+    .recv-buf = remaining
     .recv-buf-len = remaining.len-bytes()
     {
-        i <- [0..remaining.len-bytes()): {
-            .recv-buf[i] ?= remaining.byte(i)
-        }
         ok = true
     }: {
         err -> ok = false
@@ -689,7 +676,8 @@ sse-connect = (url str) (client ?client) {
     }
 
     ; ── 接收回應標頭（直到 \r\n\r\n）──
-    raw str = with-len(SSE-BUF-SIZE)
+    ; str 下標寫已禁用；改為從 '' 起逐塊拼接（內容逐 byte 等價）
+    raw = ''
     tmp str = with-len(SSE-RECV-SIZE)
     total = 0
     n = 0
@@ -725,15 +713,7 @@ sse-connect = (url str) (client ?client) {
             client = err('connection closed during handshake')
             return
         }
-        i <- [0..n): {
-
-            #{overflow=wrap}
-            raw[total + i]: {
-                ok -> it = tmp.byte(i)
-
-                -> _
-            }
-        }
+        raw = raw - tmp.slice-bytes(0, n)
 
         #{overflow=wrap}
         total ?= total + n
@@ -795,14 +775,8 @@ sse-connect = (url str) (client ?client) {
     body-start = sep-pos + separator.len-bytes()
     remaining = raw.slice(body-start, total)
 
-    rb str = with-len(SSE-BUF-SIZE)
-    i <- [0..remaining.len-bytes()): {
-        rb[i]: {
-            ok -> it = remaining.byte(i)
-
-            -> _
-        }
-    }
+    ; str 下標寫已禁用；整條深拷貝（剩餘資料即為 recv-buf 初值）
+    rb = remaining
     cli = client{
         fd: fd
         tls-c: tls-c
@@ -909,7 +883,8 @@ server-conn.handshake = () (ok bool) {
     separator = crlf - crlf
 
     ; 讀取 HTTP 請求（直到 \r\n\r\n）
-    raw str = with-len(SSE-BUF-SIZE)
+    ; str 下標寫已禁用；改為從 '' 起逐塊拼接（內容逐 byte 等價）
+    raw = ''
     total = 0
     sep-pos = -1
 
@@ -920,15 +895,7 @@ server-conn.handshake = () (ok bool) {
         tmp str = with-len(SSE-RECV-SIZE)
         n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> return
-        i <- [0..n): {
-
-            #{overflow=wrap}
-            raw[total + i]: {
-                ok -> it = tmp.byte(i)
-
-                -> _
-            }
-        }
+        raw = raw - tmp.slice-bytes(0, n)
 
         #{overflow=wrap}
         total = total + n

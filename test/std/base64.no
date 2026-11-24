@@ -185,6 +185,7 @@ failed = failed + f8
 
 ; 顯式字母表入口
 ...
+
 ; `encode` / `b64-val` 吃顯式字母表，`encode-std` / `encode-url` 只是兩個包裝；
 ; 直接測底層才能覆蓋自訂字母表與無效字元兩條分支。
 

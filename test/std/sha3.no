@@ -50,19 +50,19 @@ t-keccak-f = () {
     sha3.keccak-f1600(st)
 
     ; 裸下标回 ?T，必须显式消费（D11）
-    a0 u64 = st[0]: {
+    a0 = st[0]: {
         ok -> it
 
         -> 0
     }
     runner.str-eq(a0.to-str(), '17376452488221285863', 'keccak-f1600 zero state[0] == 0xf1258f7940e1dde7')
-    a1 u64 = st[1]: {
+    a1 = st[1]: {
         ok -> it
 
         -> 0
     }
     runner.str-eq(a1.to-str(), '9571781953733019530', 'keccak-f1600 zero state[1] == 0x84d5ccf933c0478a')
-    a24 u64 = st[24]: {
+    a24 = st[24]: {
         ok -> it
 
         -> 0

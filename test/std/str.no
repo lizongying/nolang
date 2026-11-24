@@ -22,6 +22,7 @@ failed = 0
 
 ; 取值助手
 ...
+
 ; 每個助手都是「傳 str 進來、在函數內自建 option、自 match」，**不把 `?T` 當實參
 ; 跨函數傳遞**。三個坑都是本輪實測撞出來的（見 test/README.md §5.2 #50）：
 ;   1) 已帶 err 的 `?T` 具名變數傳進另一個函數，程式結束時 trace/BPT trap 或
@@ -429,11 +430,9 @@ t-copy = () {
     d = s.copy()
     runner.eq(d.len(), 3, 'copy len')
     runner.is-true(d.eq(s, 3), 'copy content equal')
-    d[0]: {
-        ok -> it = 120
 
-        -> _
-    }
+    ; 下標寫已全域禁用；改以 fill 原地改副本，見證來源不受影響
+    d.fill(120)
     runner.eq(s[0], 97, 'copy is independent (source unchanged)')
 }
 
@@ -1156,6 +1155,7 @@ failed = failed + f41
 
 ; str.cap：容量（属性形态）／str.bytes：零拷贝视图
 ...
+
 ;
 ; ⚠️ `str.cap` 只有**属性**形态可用；方法形态在用户码里调不出来：
 ;     s.cap()    ⇒ EmitLLVM: unknown callee str.cap in func ... [4qhyyund]

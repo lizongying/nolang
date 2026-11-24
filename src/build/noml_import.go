@@ -80,10 +80,32 @@ func NomlImportSource(nomlPath string, data []byte) (string, error) {
 	}
 	stem := nomlStructName(doc, nomlPath)
 	g := &nomlStructGen{doc: doc, stem: stem, typeNames: make(map[string]string)}
+	var sb strings.Builder
+	if doc.RootIsMap() {
+		// 根是 map（全部鍵帶引號或空 {}）：不生成結構體，直接生成
+		// `<name> [str]T = { 'key': value }`。若使用者以 #{type} 標註了
+		// 根型別，以標註為準。
+		rootMap := pkg.NomlMap(doc.Root)
+		typ := doc.TypeOf("")
+		if typ == "" {
+			typ, err = g.fieldType("", rootMap)
+			if err != nil {
+				return "", err
+			}
+		}
+		for _, def := range g.defs {
+			sb.WriteString(def)
+		}
+		lit, err := g.valueLiteral("", rootMap, 0)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&sb, "%s %s = %s\n", stem, typ, lit)
+		return sb.String(), nil
+	}
 	if err := g.collect("", stem, doc.Root); err != nil {
 		return "", err
 	}
-	var sb strings.Builder
 	for _, def := range g.defs {
 		sb.WriteString(def)
 	}
@@ -109,6 +131,10 @@ type nomlStructGen struct {
 // collect 為 path 處的物件生成結構體定義。typeName 為該物件使用的型別名；
 // 巢狀物件先遞迴（後序輸出），保證定義順序不需要前向引用。
 func (g *nomlStructGen) collect(path, typeName string, obj map[string]any) error {
+	// 同一路徑可能被陣列元素 / map 值重複送到（同形容器），只生成一次定義。
+	if _, done := g.typeNames[path]; done {
+		return nil
+	}
 	g.typeNames[path] = typeName
 	keys := make([]string, 0, len(obj))
 	for k := range obj {
@@ -157,6 +183,32 @@ func (g *nomlStructGen) fieldType(path string, v any) (string, error) {
 			return "i64", nil
 		}
 		return "f64", nil
+	case pkg.NomlMap:
+		// 全引號鍵物件對應 Nolang map：鍵型別固定 str，值型別由首個值推斷。
+		if len(val) == 0 {
+			// 新文案不走 i18n.Errorf：一個 ID 只能對應一種文案。
+			return "", fmt.Errorf("member %q is an empty map: annotate it with #{type = '[str]<elem>'}", path)
+		}
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		elemPath := path + "[]"
+		elem, err := g.fieldType(elemPath, val[keys[0]])
+		if err != nil {
+			return "", err
+		}
+		for i := 1; i < len(keys); i++ {
+			other, err := g.fieldType(elemPath, val[keys[i]])
+			if err != nil {
+				return "", err
+			}
+			if other != elem {
+				return "", fmt.Errorf("member %q: map values have types %s and %s; a Nolang map needs one value type", path, elem, other)
+			}
+		}
+		return "[str]" + elem, nil
 	case map[string]any:
 		if len(val) == 0 {
 			return "", i18n.Errorf("n44lxvvk", "member %q is an empty object: annotate it with #{type = '<struct>'}", path)
@@ -174,12 +226,12 @@ func (g *nomlStructGen) fieldType(path string, v any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		// 陣列元素共用同一個元素型別：後續元素必須同形（物件需同一組鍵）。
-		first, isObj := val[0].(map[string]any)
-		if isObj {
+		// 陣列元素共用同一個元素型別：後續元素必須同形（obj / map 都要同一組鍵）。
+		first, isContainer := nomlImportContainer(val[0])
+		if isContainer {
 			want := objKeySet(first)
 			for i := 1; i < len(val); i++ {
-				cur, ok := val[i].(map[string]any)
+				cur, ok := nomlImportContainer(val[i])
 				if !ok {
 					return "", i18n.Errorf("pne07fog", "member %q[%d]: array mixes objects and scalars; annotate it with #{type = '[]<elem>'}", path, i)
 				}
@@ -218,6 +270,26 @@ func (g *nomlStructGen) valueLiteral(path string, v any, indent int) (string, er
 			return strconv.FormatInt(int64(val), 10), nil
 		}
 		return strconv.FormatFloat(val, 'g', -1, 64), nil
+	case pkg.NomlMap:
+		if len(val) == 0 {
+			return "{ }", nil // 型別由欄位 / 頂層 let 標註提供
+		}
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		elemPath := path + "[]"
+		parts := make([]string, 0, len(keys))
+		for _, k := range keys {
+			lit, err := g.valueLiteral(elemPath, val[k], indent+1)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, pkg.NomlQuote(k)+": "+lit)
+		}
+		pad := strings.Repeat("\t", indent)
+		return "{\n" + pad + "\t" + strings.Join(parts, ",\n"+pad+"\t") + ",\n" + pad + "}", nil
 	case map[string]any:
 		typeName := g.typeNames[path]
 		if typeName == "" {
@@ -345,6 +417,18 @@ func nomlImportPath(noPath string) string {
 		return ""
 	}
 	return findNomlImport(noPath)
+}
+
+// nomlImportContainer 把 obj / map 統一成純 map 以比較鍵集合。
+func nomlImportContainer(v any) (map[string]any, bool) {
+	switch m := v.(type) {
+	case map[string]any:
+		return m, true
+	case pkg.NomlMap:
+		return map[string]any(m), true
+	default:
+		return nil, false
+	}
 }
 
 // objKeySet 返回物件鍵的排序逗號串，用於比較陣列元素是否同形。

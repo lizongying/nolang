@@ -97,14 +97,10 @@ ck('bytes-mixed', e.len-bytes() == 5)
 ; 写入：增长（1 字节 → 3 字节，后移尾部）
 ...
 
-; 2026-11-12 起 `t[i] = v` 被 idxwrite 全域禁用（索引写会隐式改变长度）。
-; 就地改值的合法通道是 place-match：以「读」作闸门，只在该索引可读时写回。
+; 2026-11-12 起 `t[i] = v` 与 place-match 下标写都被禁用（索引写会隐式改变长度）。
+; 就地改值的合法通道是拼接后整体赋值。
 g txt = 'aX'
-g[0]: {
-    ok -> it = "中"
-
-    -> _
-}
+g = '中' - g[1..]
 ck('grow-cp0', g[0] == 20013)
 ck('grow-cp1', g[1] == 88)
 ck('grow-bytes', g.len-bytes() == 4)
@@ -113,11 +109,7 @@ ck('grow-count', g.count() == 2)
 ; 写入：收缩（3 字节 → 1 字节）
 ...
 s txt = '中X'
-s[0]: {
-    ok -> it = "a"
-
-    -> _
-}
+s = 'a' - s[1..]
 ck('shrink-cp0', s[0] == 97)
 ck('shrink-cp1', s[1] == 88)
 ck('shrink-bytes', s.len-bytes() == 2)
@@ -140,11 +132,9 @@ i <- [0..300): {
 }
 ck('cap-full-bytes', b.len-bytes() == 255)
 ck('cap-full-count', b.count() == 255)
-b[255]: {
-    ok -> it = "中"
 
-    -> _
-}
+; 越界索引写已全域禁用；满容量下的追加同样被丢弃，用它钉住 cap 上限不变。
+b.push("中")
 ck('cap-drop-bytes', b.len-bytes() == 255)
 ck('cap-tail-intact', b[254] == 97)
 
@@ -152,14 +142,10 @@ ck('cap-tail-intact', b[254] == 97)
 ...
 
 ; 原本用 `r.set-byte(0, 90)`；該內建已於 2026-11-11 私有化為 `_set-byte`，
-; 公開面 2026-11-11 曾由碼點直寫 `r[0] = <char>` 承擔；2026-11-12 起直寫也被
-; idxwrite 禁用，一律改用 place-match。
+; 公開面 2026-11-11 曾由碼點直寫 `r[0] = <char>` 承擔；2026-11-12 起直寫與
+; place-match 一併被禁用，改為拼接後整體赋值。
 r txt = 'abc'
-r[0]: {
-    ok -> it = "Z"
-
-    -> _
-}
+r = 'Z' - r[1..]
 ck('setbyte-raw', r.byte(0) == 90)
 ck('setbyte-cp', r[0] == 90)
 ck('setbyte-len', r.len-bytes() == 3)

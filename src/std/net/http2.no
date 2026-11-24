@@ -122,63 +122,68 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
 ; next-pos: 序列化完成後下一個可寫位移
 ; [serialize](#http2.frame.serialize)
 frame.serialize = (buf str, pos i64) (next-pos i64) {
-    buf[pos]: {
+
+    ; str 下標寫已全域禁用；bytes() 是底層緩衝區的零拷貝視圖，
+    ; 透過它按位元組寫入與呼叫端共享同一塊記憶體（位元組序/長度不變）
+    b = buf.bytes()
+
+    b[pos]: {
         ok -> it = (.length >> 16) & 255
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 1]: {
+    b[pos + 1]: {
         ok -> it = (.length >> 8) & 255
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 2]: {
+    b[pos + 2]: {
         ok -> it = .length & 255
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 3]: {
+    b[pos + 3]: {
         ok -> it = .frame-type & 255
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 4]: {
+    b[pos + 4]: {
         ok -> it = .flags & 255
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 5]: {
+    b[pos + 5]: {
         ok -> it = (.stream-id >> 24) & 127
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 6]: {
+    b[pos + 6]: {
         ok -> it = (.stream-id >> 16) & 255
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 7]: {
+    b[pos + 7]: {
         ok -> it = (.stream-id >> 8) & 255
 
         -> _
     }
 
     #{overflow=wrap}
-    buf[pos + 8]: {
+    b[pos + 8]: {
         ok -> it = .stream-id & 255
 
         -> _
@@ -267,6 +272,9 @@ conn.recv-frame = () (frame ?frame) {
 
     ; 讀取 9-byte 影格標頭
     hdr-buf str = with-len(HTTP2-FRAME-HEADER-SIZE)
+
+    ; str 下標寫已禁用；另外用從 '' 起的累加器承接（net-recv 仍寫入 hdr-buf）
+    hdr-acc = ''
     hdr-total = 0
     recv-n = 0
     !! {
@@ -286,23 +294,15 @@ conn.recv-frame = () (frame ?frame) {
         }
         recv-n <= 0 -> return
 
-        ; net-recv 覆寫 buf[0]，需要位移複製
-        i <- [0..recv-n): {
-
-            #{overflow=wrap}
-            hdr-buf[hdr-total + i]: {
-                ok -> it = hdr-buf.byte(i)
-
-                -> _
-            }
-        }
+        ; net-recv 覆寫 buf[0]；改為從 '' 起逐塊拼接（內容逐 byte 等價）
+        hdr-acc = hdr-acc - hdr-buf.slice-bytes(0, recv-n)
 
         #{overflow=wrap}
         hdr-total ?= hdr-total + recv-n
     }
 
     ; 解析標頭
-    np = f.parse(hdr-buf, 0)
+    np = f.parse(hdr-acc, 0)
     np: {
         nil -> return
 
@@ -318,6 +318,9 @@ conn.recv-frame = () (frame ?frame) {
     f.length > 0 -> {
         f.length > HTTP2-MAX-PAYLOAD -> return
         pl str = with-len(f.length)
+
+        ; str 下標寫已禁用；另外用從 '' 起的累加器承接
+        pl-acc str = ''
         payload-total = 0
         !! {
             payload-total >= f.length -> break
@@ -335,20 +338,12 @@ conn.recv-frame = () (frame ?frame) {
                 }
             }
             recv-n <= 0 -> return
-            i <- [0..recv-n): {
-
-                #{overflow=wrap}
-                pl[payload-total + i]: {
-                    ok -> it = pl.byte(i)
-
-                    -> _
-                }
-            }
+            pl-acc = pl-acc - pl.slice-bytes(0, recv-n)
 
             #{overflow=wrap}
             payload-total ?= payload-total + recv-n
         }
-        f.payload = pl
+        f.payload = pl-acc
     }
     frame = f
 }
@@ -383,7 +378,8 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     ok = false
 
     ; 用 HPACK 編碼標頭
-    block str = with-len(HTTP2-MAX-PAYLOAD)
+    ; str 下標寫已禁用；改為從 '' 起逐塊拼接（內容逐 byte 等價）
+    block = ''
     block-n = 0
     i <- [0..count): {
         {
@@ -400,16 +396,8 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
             hdr-out = ' '
             hdr-out = .hpack.encode-header(n, v)
 
-            ; 複製到 block
-            j <- [0..hdr-out.len-bytes()): {
-
-                #{overflow=wrap}
-                block[block-n + j]: {
-                    ok -> it = hdr-out.byte(j)
-
-                    -> _
-                }
-            }
+            ; 複製到 block（從 '' 起逐塊拼接，內容逐 byte 等價）
+            block = block - hdr-out
 
             #{overflow=wrap}
             block-n = block-n + hdr-out.len-bytes()
@@ -614,7 +602,9 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     ok = false
     header-count = 0
     resp-n = 0
-    resp-body str = with-len(HTTP2-MAX-PAYLOAD)
+
+    ; str 下標寫已禁用；改為從 '' 起逐塊拼接（內容逐 byte 等價）
+    resp-body = ''
     .fd < 0 -> return
     stream-id = .next-stream-id
 
@@ -787,16 +777,8 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
 
             f.frame-type == FRAME-DATA -> {
 
-                ; 複製到 resp-body
-                i <- [0..f.payload.len-bytes()): {
-
-                    #{overflow=wrap}
-                    resp-body[resp-n + i]: {
-                        ok -> it = f.payload.byte(i)
-
-                        -> _
-                    }
-                }
+                ; 複製到 resp-body（從 '' 起逐塊拼接，內容逐 byte 等價）
+                resp-body = resp-body - f.payload
 
                 #{overflow=wrap}
                 resp-n = resp-n + f.payload.len-bytes()

@@ -1460,7 +1460,9 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
                     v = h2m-alloc(c, st)
                     h2m-emit(c, OP-STLOAD, v, sid, 0, '', st)
                 }
-                st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-VECSTR && st != TY-F64 && st != TY-OPT && ! (st >= TY-STRUCT-BASE) -> h2m-mark(c)
+                st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-VECSTR && st != TY-F64 && st != TY-OPT && ! (st >= TY-STRUCT-BASE) -> {
+                    h2m-mark(c)
+                }
             }
         }
     }
@@ -1612,7 +1614,7 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
                 ownr > 0 -> h2m-ret-add(c, ownr)
             }
         }
-        ok-w == 0 -> h2m-mark(c)
+            ok-w == 0 -> h2m-mark(c)
     }
 }
 
@@ -1818,6 +1820,35 @@ h2m-struct-find = (c h2m-ctx, name str) (sid i64) {
     }
 }
 
+; s166：確保結構體表裡存在名字 name（缺席則登記一個【單 dummy i64 欄位】合成結構體）。
+;   供「模組命名空間函式」的接收者型別兜底（見 h2m-func-sig 的 is-m 段）：
+;   申請新的 struct-decl（nf>0 ⇒ 走既有宣告路徑）；該欄位從不被讀寫，值恆 0。
+; c: 上下文
+; t: 当前模組 AST（建 dummy 欄位型別節點）
+; name: 結構體名
+; sid: 既有或新登記的結構體 id；-1 = 空名（不登記）
+h2m-struct-ensure = (c h2m-ctx, t ast, name str) (sid i64) {
+    sid = h2m-struct-find(c, name)
+    sid < 0 && name != '' -> {
+        nid = c.stn.len()
+
+        ; dummy 欄位：真實建一顆 i64 NamedType 節點（stftn 反查／事後 resolve 重生用），
+        ;   該欄位從不被讀寫，值恆為 0（zero-struct-val 的 i64 分支）。
+        nt = ast.add(t, asp.K-NAMED-TYPE)
+        ast.set-slot(t, nt, 0, ast.put-str(t, 'i64'))
+        c.stn.push(name)
+        c.stid.push(nid)
+        c.stfc.push(1)
+        c.stftn.push(nt)
+        c.stfldn.push('__recv__')
+
+        ; ⚠️ stft 不在此就地壓入：由呼叫方既有的 resolve-range／resolve 統一填充
+        ;   （pkg-ll Pass 2 每模組跑一次 h2m-struct-resolve-range），
+        ;   提早 push 會造成重複條目 ⇒ 後續結構體偏移全錯。
+        sid = nid
+    }
+}
+
 ; 取结构体 sid 的字段数
 h2m-struct-fc = (c h2m-ctx, sid i64) (fc i64) {
     fc = c.stfc[sid]: {
@@ -1895,6 +1926,62 @@ h2m-struct-field-idx = (c h2m-ctx, sid i64, fname str) (fi i64) {
 
         j = h2m-inc(j)
     }
+}
+
+; s165：合成一個【零值結構體】SSA 值（类型前綴方法呼叫的接收者，镜 Go synthRecv）。
+;   逐欄位發零值（i64/u64 → CONST 0；f64 → CONST '0.0'；str → STRCONST ''；
+;   vec/vecstr/vecstruct → VECNEW），再 OP-STRUCT-MK 組裝。
+;   ⚠️ 只覆蓋純量／str／vec 欄位；巢狀結構體欄位回 0（呼叫方落閘門，絕不發錯碼）。
+;   ⚠️ 不用 OP-STALLOC：此值是傳給 callee 的暫時接收者，函式退出不釋放（callee 以值傳遞，
+;      方法內的 retain 自有配套）；ua 函數退出發 release 反而會雙重釋放。
+; c: 上下文；sid: 結構體 id
+; vid: 結構體值 id（0 = 失敗）
+h2m-zero-struct-val = (c h2m-ctx, sid i64) (vid i64) {
+    vid = 0
+    sid < 0 || sid >= c.stn.len() -> return
+    nf = h2m-struct-fc(c, sid)
+    fvs []i64 = []
+    i = 0
+    (i < nf) {
+        fty = h2m-struct-field-ty(c, sid, i)
+        zv = 0
+        fty == TY-I64 || fty == TY-U64 -> {
+            zv = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CONST, zv, 0, 0, '', TY-I64)
+        }
+        fty == TY-F64 -> {
+            zv = h2m-alloc(c, TY-F64)
+            h2m-emit(c, OP-CONST, zv, 0, 0, '0.0', TY-F64)
+        }
+        fty == TY-STR -> {
+            zv = h2m-alloc(c, TY-STR)
+            h2m-emit(c, OP-STRCONST, zv, 0, 0, '', TY-STR)
+        }
+        fty == TY-VEC || fty == TY-VECSTR || fty == TY-VECSTRUCT -> {
+            zv = h2m-alloc(c, fty)
+            h2m-emit(c, OP-VECNEW, zv, 0, 0, '', fty)
+        }
+        zv == 0 -> return
+        fvs.push(zv)
+
+        i = h2m-inc(i)
+    }
+    stcode = TY-STRUCT-BASE + sid
+    sv = h2m-alloc(c, stcode)
+    base = c.args.len()
+    m = 0
+    (m < fvs.len()) {
+        fv = fvs[m]: {
+            ok -> it
+
+            -> 0
+        }
+        c.args.push(fv)
+
+        m = h2m-inc(m)
+    }
+    h2m-emit(c, OP-STRUCT-MK, sv, base, nf, '', stcode)
+    vid = sv
 }
 
 ; s99：在前扫描里登记一个结构体定义（K-STRUCT-DEFINITION 节点 n）。
@@ -2470,6 +2557,13 @@ h2m-sigs {
     fbase []i64
     farg []i64
     femit []str
+    ; s166：方法旗標表（與 fname 同序；1 = 該函式定義為【方法】——AST slot2 == 'true'，
+    ;   見 ps-parse-method-func 對 'recv.method' 的合成標記）。
+    ;   用途：類型前綴點號呼叫（基底是結構體名）只對【真方法】前綴接收者（鏡 Go
+    ;   hir2mir.go 的 synthRecv：僅 FlagMethod 才合成零值接收者）；非方法的同名函式
+    ;   （構造器／模組函式，如 sb.init / ast.kid-add）絕不前置接收者，否則實參數
+    ;   必多 1 ⇒ 整批函式落閘門（s166 實測 ps-parse-* 1240 條 g-want-*-naX+1）。
+    fmet []i64
     ; s111：整包跨模組常量表（key = `mod.CONST`，值為 i64 字面量）。
     ;   由 drv 的整包前置 pass 從各模組根層 `CONST = <integer>` 收集；
     ;   h2m-lower-expr 的 K-DOT-EXPRESSION 與 h2m-ty-of 同步查此表。
@@ -2499,6 +2593,7 @@ h2m-sigs-new = () (s h2m-sigs) {
         fbase: []
         farg: []
         femit: []
+        fmet: []
         ckey: []
         cval: []
         csname: []
@@ -2515,13 +2610,15 @@ h2m-sigs-new = () (s h2m-sigs) {
 ;       与定义 `define @<emit>` 对齐；切片 6 统一 emit 名，根除「定义/呼叫名错位」未定义引用。
 ; ret: 返回型别码
 ; argt: 输入型别表（顺序即 LLVM 形参序）
-h2m-sig-add = (s h2m-sigs, name str, emit str, ret i64, argt []i64) {
+; met: s166 方法旗標（1 = 定義為方法；只影響「基底是結構體名」的類型前綴點號呼叫）
+h2m-sig-add = (s h2m-sigs, name str, emit str, ret i64, argt []i64, met i64) {
     b = s.farg.len()
     s.fname.push(name)
     s.femit.push(emit)
     s.fret.push(ret)
     s.fnarg.push(argt.len())
     s.fbase.push(b)
+    s.fmet.push(met)
     i = 0
     (i < argt.len()) {
         at = argt[i]: {
@@ -3116,6 +3213,35 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                         ;      ok-slot=0 ⇒ c 不登記 ⇒ 該名後續每次讀皆記 ID 失敗
                         ;      （ps-int-lit-value 的 6 條 ID:c，見 §81）。
                         mt == TY-I64 && mf == 'to-i64' -> code = TY-I64
+
+                        ; s165：結構體接收者的方法呼叫回值型別——與 lower-expr 的 s141 臂同口徑：
+                        ;   先按【結構體名 - '.' - 方法名】精確查表，落空再按源函式名（femit）反查；
+                        ;   另守衛「簽名首參型別 == 接收者型別」，避免把同名模組函式誤當方法。
+                        ;   🔴 缺這一支時 `r = .a()` 之類隱式 self 方法呼叫的 RHS 回 -1 ⇒ h2m-scan
+                        ;      不鋪 r 槽 ⇒ h2m-slot-decl 記一條 FunctionDefinition、隨後 var-write
+                        ;      查不到名字再記兩條 Identifier（實測 rr.k 三條 unsup，正是 diag.render
+                        ;      在 mem==1 下的最後殘留缺口）。
+                        mt >= TY-STRUCT-BASE -> {
+                            msid = mt - TY-STRUCT-BASE
+                            msn = ''
+                            msid >= 0 && msid < agg.stn.len() -> {
+                                mo = agg.stn[msid]
+                                mo: {
+                                    ok -> msn = it
+
+                                    ->
+                                }
+                            }
+                            mcni = h2m-sig-find(sg, msn - '.' - mf)
+                            mcni < 0 -> mcni = h2m-sig-find-emit(sg, msn - '.' - mf)
+                            mcni >= 0 && h2m-sig-arg(sg, mcni, 0) == mt -> {
+                                code = sg.fret[mcni]: {
+                                    ok -> it
+
+                                    -> -1
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3500,6 +3626,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
     h2m-set-cur-k(c, t, n)
     v = 0
     d = ast.nd-at(t, n)
+
 
     {
         d.kind == asp.K-INTEGER-LITERAL -> {
@@ -4040,6 +4167,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             si = -1
             argbase = d.kid0 + 1
 
+            ; s165：接收者前綴狀態——pass-recv=1 ⇒ 簽名的 argt[0] 是接收者，實參池第 0 位
+            ;   必須放接收者值（值方法 = rv；類型前綴方法 = 現合成的零值）。recv-v 快取該值。
+            ;   ns-sid >= 0 ⇒ 這是一次「基底為結構體名」的點號呼叫（Go 的 synthRecv 語義）。
+            pass-recv = 0
+            recv-v = 0
+            ns-sid = -1
+
             ; ⑥ 點號呼叫（跨模組）：callee 是單個 K-DOT-EXPRESSION（`mod.fn`），
             ;   name = base.fn，其中 base 是 dot 的子節點[0]（K-IDENTIFIER mod）、fn = dot.s0。
             ;   實參仍是 CALL 的直接子節點（child[1..]），與純量呼叫 f(x) 完全同構
@@ -4112,6 +4246,69 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                 v = cid
                                 ok-method = 1
                                 ok-call = 0
+                            }
+
+                            ; s165：[]byte.to-bytes-str() —— O(N)【自有】1:1 逐字節拷貝（發 OP-VECBYTES2STR）。
+                            ;   語意逐字鏡像 src/std/byte.no:141（原始位元保留、不做 UTF-8 重編碼）；
+                            ;   helper @vec_bytes_to_str 走 @nolang_rc_alloc ⇒ rc=1 自有緩衝，故
+                            ;   h2m-rel-add(TY-STR) 登記、作用域結束發 OP-RELEASE（同 OP-STRCAT／OP-STRSLICEB）。
+                            ;   ⚠️ 不可用 OP-STRFROMVEC 充數：那是零拷貝重interpret，與原 vec 共享緩衝，
+                            ;      接收者（如 sb.buf 字段）離開作用域即懸垂 ⇒ 语义错。
+                            ;   ⚠️ 只收【無參】形（na == 0）；帶參的 to-bytes-str(...) 落門禁（不猜）。
+                            mname == 'to-bytes-str' && ok-method == 0 && na == 0 -> {
+                                sv2 = h2m-alloc(c, TY-STR)
+                                h2m-emit(c, OP-VECBYTES2STR, sv2, rv, 0, '', TY-STR)
+                                h2m-rel-add(c, sv2, TY-STR, 0)
+                                v = sv2
+                                ok-method = 1
+                                ok-call = 0
+                            }
+
+                            ; s165：vec.clear() —— 就地清 len（發 OP-VECCLEAR）後把新值【寫回】接收者。
+                            ;   標識符接收者走重綁／%vs 槽（同 s163 push 口徑）；點號接收者走 OP-STRUCT-SET。
+                            ;   ⚠️ 所有權仍屬接收者：rel-drop(rv) 撤舊登記、新值接管（字段路徑不入 rel-list，
+                            ;      同 s146 push），否則 scope-exit 的 OP-VEC-FREE 會釋放字段別名緩衝 ⇒ UAF。
+                            mname == 'clear' && ok-method == 0 && recv-nd.kind == asp.K-IDENTIFIER -> {
+                                rvn2 = ast.str-at(t, recv-nd.s0)
+                                wb2 = 0
+                                ri3 = -1
+                                c.mem == 0 -> wb2 = 1
+                                c.mem == 1 -> {
+                                    ri3 = h2m-name-find(c, rvn2)
+                                    ri3 >= 0 && c.tys[ri3] == TY-VEC -> wb2 = 1
+                                }
+                                wb2 == 1 -> {
+                                    nv2 = h2m-alloc(c, TY-VEC)
+                                    h2m-emit(c, OP-VECCLEAR, nv2, rv, 0, '', TY-VEC)
+                                    c.mem == 0 -> h2m-var-bind(c, rvn2, nv2)
+                                    c.mem == 1 -> h2m-emit(c, OP-VECSTORE, 0, nv2, c.vids[ri3], '', 0)
+                                    h2m-rel-drop(c, rv)
+                                    c.mem == 0 -> h2m-rel-add(c, nv2, TY-VEC, 0)
+                                    c.mem == 1 -> h2m-vs-reg(c, c.vids[ri3], nv2, rvn2, 1)
+                                    v = nv2
+                                    ok-method = 1
+                                    ok-call = 0
+                                }
+                            }
+                            mname == 'clear' && ok-method == 0 && recv-nd.kind == asp.K-DOT-EXPRESSION -> {
+                                bid2 = ast.kid-at(t, recv-nd.kid0)
+                                bd2 = ast.nd-at(t, bid2)
+                                bd2.kind == asp.K-IDENTIFIER -> {
+                                    bnm2 = ast.str-at(t, bd2.s0)
+                                    h2m-name-find(c, bnm2) >= 0 -> {
+                                        nv3 = h2m-alloc(c, TY-VEC)
+                                        h2m-emit(c, OP-VECCLEAR, nv3, rv, 0, '', TY-VEC)
+                                        okf2 = h2m-push-field-set(c, t, recv-nd, bnm2, nv3)
+                                        okf2 == 0 -> {
+                                            h2m-mark(c)
+                                            h2m-rel-add(c, nv3, TY-VEC, 0)
+                                        }
+                                        h2m-rel-drop(c, rv)
+                                        v = nv3
+                                        ok-method = 1
+                                        ok-call = 0
+                                    }
+                                }
                             }
                             ; 切片 B 第三层：i64 vec 的 push(x) — 发 OP-VECPUSH（返回新 vec），
                             ;   重绑接收者变量名模拟原地修改；旧 vec 标记 reldrop 防 double-free。
@@ -4492,15 +4689,20 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                                 }
                                 cn2 = sn2 - '.' - mname
                                 si2 = h2m-sig-find(sg, cn2)
+
+                                ; s165：同模組結構體（結構體名 ≠ 模組名，如 main 模块的 pnt.getx）
+                                ;   的精確鍵必然落空 ⇒ 按源函式名 femit 唯一反查（同 s114 紀律：
+                                ;   歧義回 -1，絕不取第一個）。⚠️ 另守衛「簽名首參型別 == 接收者型別」，
+                                ;   避免把同名的模組函式誤當方法（錯碼比落閘門更壞）。
+                                si2 < 0 -> si2 = h2m-sig-find-emit(sg, cn2)
+                                si2 >= 0 && h2m-sig-arg(sg, si2, 0) != rty -> si2 = -1
                                 si2 >= 0 -> {
-                                    {
-                                        cn-opt = cn2
-                                        cn-opt: {
-                                            ok -> cn = it
-                                            ->
-                                        }
-                                    }
+                                    cn = cn2
                                     ok-method = 1
+
+                                    ; s165：值接收者前綴（镜 Go lowerCallArgs 的 recv prepend）
+                                    pass-recv = 1
+                                    recv-v = rv
                                 }
                             }
                         }
@@ -4570,6 +4772,14 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                     ; s154：記下源函式名供 FullName 回落（僅跨模組路徑會有值）
                     cfn = mname
+
+                    ; s165：基底是【結構體名】（如 sb.init(8) / tk.new()）⇒ Go 權威按
+                    ;   namespace 方法呼叫處理，會合成一個零值接收者前綴（hir2mir.go synthRecv）。
+                    ;   只在签名解析命中且首參型別吻合時才真正前綴（見下方 arg 段守衛），
+                    ;   否則維持模組函式語義（零回歸）。
+                    base-nd.kind == asp.K-IDENTIFIER -> {
+                        ns-sid = h2m-struct-find(c, ast.str-at(t, base-nd.s0))
+                    }
                 }
             }
             cd.kind != asp.K-DOT-EXPRESSION -> {
@@ -4613,10 +4823,25 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                         -> cn
                     }
+
+                    ; s165：類型前綴方法（基底是結構體名，ns-sid >= 0）——簽名首參必須確為該
+                    ;   結構體才前綴接收者（镜 Go synthRecv）；型別不符 ⇒ 清 ns-sid，維持模組
+                    ;   函式語義（零回歸）。其一在 SIG 通道已守衛，這裡是第二道。
+                    ; s166：再加一道【方法旗標】守衛（第三道）——Go 的 synthRecv 只在
+                    ;   callee 帶 FlagMethod 時合成零值接收者（hir2mir.go:13574）；
+                    ;   非方法的同名函式（構造器 sb.init / 模組函式 ast.kid-add，其首參正好
+                    ;   也是該結構體型別）絕不可前綴，否則實參必多 1 ⇒ 整批落閘門。
+                    ns-sid >= 0 -> {
+                        h2m-sig-arg(sg, si, 0) == TY-STRUCT-BASE + ns-sid && sg.fmet[si] == 1 -> pass-recv = 1
+                        (h2m-sig-arg(sg, si, 0) != TY-STRUCT-BASE + ns-sid || sg.fmet[si] != 1) -> ns-sid = -1
+                    }
                 }
             }
             ok-call == 1 -> {
                 want-n = sg.fnarg[si]
+
+                ; s165：接收者估據 argt[0] ⇒ 有效實參數 = AST 實參數 + 1
+                pass-recv == 1 -> na = h2m-inc(na)
 
                 ; 实参个数必须与形参相等：参数默认值已从语言移除，缺参不再回填，
                 ;   超供仍入门禁（输出绑定／方法 receiver 改写不在本路覆盖面）
@@ -4629,12 +4854,41 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 ;   降期自己会往 c.args 推池项，若边降边推，base..base+na-1 会被内层插入的
                 ;   孤儿项挤偏（s64 初版实测 c6 发成 @f(%v1,%v2)，应为 @f(%v2,%v3)）。
                 al []i64 = []
+
+                ; s165：接收者前綴——值方法用已降級的 recv-v；類型前綴方法現合成零值。
+                ;   ⚠️ 合成失敗（結構體含未覆蓋欄位型別）⇒ 落閘門，絕不發錯碼。
+                pass-recv == 1 -> {
+                    recv-v == 0 -> recv-v = h2m-zero-struct-val(c, ns-sid)
+                    recv-v == 0 -> ok-call = 0
+                    ok-call == 1 -> {
+                        h2m-vty-at(c, recv-v) != h2m-sig-arg(sg, si, 0) -> ok-call = 0
+                        ok-call == 1 -> al.push(recv-v)
+                    }
+                }
+
+                ; s165：AST 實參在簽名中的位偏移（接收者估第 0 位 ⇒ AST 實參從第 1 位起）
+                aoff = 0
+                pass-recv == 1 -> aoff = 1
+                jlim = want-n
+
+                #{overflow=wrap}
+                jlim = jlim - aoff
+                ; s165：AST 實參數必須恰好等於「簽名義參數（含接收者）− 接收者前綴」，
+                ;   否則多的實參會被靜默丟棄（错码）——這裡如實落閘門。
+                ; ⚠️ na 已在前段按 pass-recv 加過 1（接收者佔簽名池第 0 位），而 jlim 是
+                ;   【AST 實參】數上限 ⇒ 必須扣回 aoff 再比，否則恰好合身的呼叫恆被判超供
+                ;   （實測 .level-name() 整條 str 拼接鏈全數落閘門）。
+                #{overflow=wrap}
+                na - aoff > jlim -> ok-call = 0
                 j = 0
-                (j < want-n && ok-call == 1) {
+                (j < jlim && ok-call == 1) {
                     ak = 0
                     j < na -> {
 
                         ; 實參基址：純量呼叫 = call.kid0+1；⑥ 方法呼叫 = method.kid0（實參嵌在 method 子節點）
+                        ;   ⚠️ s165：aoff 是【簽名池】偏移（接收者佔第 0 位），不是 AST 子節點偏移——
+                        ;   AST 實參仍從 argbase 起連續排列，故 ap 只加 j，絕不可加 aoff
+                        ;   （加了會讀到別節點的 kid ⇒ 实测讀回 Call 自身 ⇒ 無限遞迴stack overflow）。
                         ap = argbase
 
                         #{overflow=wrap}
@@ -4651,7 +4905,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         av == 0 -> ok-call = 0
                         ok-call == 1 -> {
                             at = h2m-vty-at(c, av)
-                            want = h2m-sig-arg(sg, si, j)
+                            want = h2m-sig-arg(sg, si, j + aoff)
 
                             ; s144：option 實參 → plain 形參：取載荷再傳（镜 Go hir2mir.go:14399-14407）。
                             ;   缺這一支時 `cg-vty-at(vty, d)`（d = dsts[k] 為 ?i64）在呼叫側
@@ -4820,7 +5074,33 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                         ; 字面量 StructField：kid0 = Type 占位(0)，Value 是【第二个 kid】⇒ 走 fnode.kid0 + 1 位置取（nd 结构体无 kid1 字段，多 kid 连续存于 kid0 起）
                         vexpr = ast.kid-at(t, fnode.kid0 + 1)
-                        fv = h2m-lower-expr(t, c, sg, vexpr)
+
+                        ; s165：字段值是 with-cap(<cap>) ⇒ 依【欄位宣告型別】揀 OP-VECNEWCAP / OP-VECNEWCAPSTR。
+                        ;   與 let 路徑（:5236）同口徑，差別只在型別來源：此處無註解可查，取結構體定義裡
+                        ;   該欄位的型別碼（[]byte／[]i64 → TY-VEC；[]str → TY-VECSTR）。
+                        ;   ⚠️ 不發 rel-add：所有權隨 OP-STRUCT-MK 進入結構體（vec 緩衝無 RC 頭、
+                        ;      OP-STRUCT-RELEASE 只處理 str 掩碼）⇒ 同 s99n 對「自有 vec 放入欄位」的處置；
+                        ;      h2m-vec-own 因 rel-list 未命中而放行逃逸門禁，既不雙釋放也不悬垂。
+                        wc-ok = 0
+                        wcd = ast.nd-at(t, vexpr)
+                        h2m-is-withcap(t, vexpr) == 1 && wcd.nkid > 1 -> {
+                            wcfn = ast.str-at(t, fnode.s0)
+                            wcfi = h2m-struct-field-idx(c, sid, wcfn)
+                            wcfty = -1
+                            wcfi >= 0 -> wcfty = h2m-struct-field-ty(c, sid, wcfi)
+                            wcfty == TY-VEC || wcfty == TY-VECSTR -> {
+                                wck = ast.kid-at(t, wcd.kid0 + 1)
+                                wcv = h2m-lower-expr(t, c, sg, wck)
+                                wcv > 0 && h2m-vty-at(c, wcv) == TY-I64 -> {
+                                    wcnv = h2m-alloc(c, wcfty)
+                                    wcfty == TY-VEC -> h2m-emit(c, OP-VECNEWCAP, wcnv, wcv, 0, '', TY-VEC)
+                                    wcfty == TY-VECSTR -> h2m-emit(c, OP-VECNEWCAPSTR, wcnv, wcv, 0, '', TY-VECSTR)
+                                    fv = wcnv
+                                    wc-ok = 1
+                                }
+                            }
+                        }
+                        wc-ok == 0 && h2m-is-withcap(t, vexpr) == 0 -> fv = h2m-lower-expr(t, c, sg, vexpr)
                         fv == 0 -> h2m-mark(c)
                         fvs.push(fv)
 
@@ -6766,6 +7046,18 @@ h2m-param-ty = (t ast, agg h2m-ctx, p i64) (code i64, bad i64) {
     }
 }
 
+; s166：函数定义是否为【方法】——ps-parse-method-func 對 'recv.method' / '[]T.method'
+;   語法在輸出區[0]合成 self 參數，並把_slot2 標成 'true'（见 h2m-func-sig 的 is-m）。
+;   只讀旗標、不碰型別解析，故任何結構體表狀態下都安全。
+; t: AST arena
+; n: 函数定义节点 id
+; m: 1 = 方法；0 = 普通函式
+h2m-def-is-method = (t ast, n i64) (m i64) {
+    m = 0
+    d = ast.nd-at(t, n)
+    ast.str-at(t, d.s2) == 'true' -> m = 1
+}
+
 ; 读取函数定义节点的签名：名字 / 返回型别码 / 输入型别表 / 形状门禁
 ; kid 区序 = [泛型…][输入…][输出…][body]（实测：nkid == c3 + c4 + c5 + 1）
 ; bad = 1 表示不在本件覆盖面（泛型、多输出、非具名型别、未知型别名）；
@@ -6796,6 +7088,45 @@ h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, bad i
 
     d.c3 > 0 -> {
         bad = 1
+    }
+
+    ; s165：方法（is-m）的 self 是輸出區[0]。Go 權威（hir2mir.go paramRawTypesOfCallee
+    ;   「[0] is self」、lowerCallArgs 的 recv 前綴）把接收者算作【第一個形參】——舊自舉側
+    ;   完全不入签名表，致使方法體讀字段時 callee 內 `%st1` 未定義（§85 實測）。這裡把
+    ;   self 型別【前插】到 argt[0]，使 define 的 LLVM 形參與呼叫端實參序一致。
+    ;   ⚠️ 接收者型別解不出（bad!=0）⇒ 整函形狀門禁（bad=1），決不靜默發錯碼。
+    ; s166：例外——【模組命名空間函式】：點號定义的基底是模組名而非結構體（如 ix.inc /
+    ;   ix.at-i，見 compiler/src/ix.no），接收者型別『ix』當然查不到結構體。Go 權威對
+    ;   這類定義照常產碼（實測 S0 `ix.inc(41)` ⇒ 42），故本側確保一個【零欄位合成結構體】
+    ;   充當 self 型別：函式體從不讀 self ⇒ dummy 值無害；呼叫端由 s165 的類型前綴路徑
+    ;   （ns-sid≥0 且 fmet==1）合成同型零值前綴，形參序仍逐位對齊。
+    ;   ⚠️ 只對【NamedType 基底】生效（slice/array 接收器代_generic_模板仍照舊 bad=1）。
+    is-m -> {
+        sp0 = d.kid0
+
+        #{overflow=wrap}
+        sp0 = sp0 + d.c3
+
+        #{overflow=wrap}
+        sp0 = sp0 + d.c4
+        sk0 = ast.kid-at(t, sp0)
+        sc0, sb0 = h2m-param-ty(t, agg, sk0)
+        sb0 != 0 -> {
+            ; s166：sk0 是【節點索引】而非 kid 索引——必須先取 sk0 的 kid0（見 ast.add：
+            ;   kid0 = 該节点首个 kid 在 t.kids 的下標）。舊寫 ast.kid-at(t, sk0) 把節點
+            ;   下標當 kid 下標用，取到的是 body 深處節點（實測 kind=K-INFIX-EXPRESSION
+            ;   等）⇒ NamedType 臂永不成立 ⇒ ix.* 全部 bad=1。同 h2m-param-ty 的 pd.kid0。
+            spd0 = ast.nd-at(t, sk0)
+            nt0 = ast.kid-at(t, spd0.kid0)
+            nd0 = ast.nd-at(t, nt0)
+            nd0.kind == asp.K-NAMED-TYPE -> {
+                esid = h2m-struct-ensure(agg, t, ast.str-at(t, nd0.s0))
+                esid >= 0 -> argt.push(TY-STRUCT-BASE + esid)
+                esid < 0 -> bad = 1
+            }
+            nd0.kind != asp.K-NAMED-TYPE -> bad = 1
+        }
+        sb0 == 0 -> argt.push(sc0)
     }
     i = 0
     (i < d.c4 && bad == 0) {
@@ -6987,8 +7318,32 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         ;   并把名字绑上；型别同时进 vty（发射侧按它选 %v / %sv 命名空间）
         ;   loc 同步播种形参（前扫描要拿它推标识符型别，也要拿它当「哪些名字是 incoming」）
         loc = h2m-lst-new()
+
+        ; s165：方法的 self 是輸出區[0]，現已由 h2m-func-sig 前插進 fap[0]。必須【先】分配
+        ;   self（h2m-new 起 nid=1 ⇒ 恰為 LLVM 第一形參），再依次配置聲明形參，才能與
+        ;   cg define 的形參序（ptyps=fap）逐位對齊。舊 s149 綁的是無 incoming 實參的殼值，
+        ;   方法體讀字段會取用未定義的 %st —— 這裡改為真實綁定（mem==1 走 slot-init-arg 落槽）。
+        is-m == 1 -> {
+            sp = d.kid0
+
+            #{overflow=wrap}
+            sp = sp + d.c3
+
+            #{overflow=wrap}
+            sp = sp + d.c4
+            sk = ast.kid-at(t, sp)
+            sc, sb = h2m-param-ty(t, agg, sk)
+            sb == 0 -> {
+                svid = h2m-alloc(c, sc)
+                h2m-var-bind(c, 'self', svid)
+                h2m-lst-add(loc, 'self', sc)
+            }
+        }
+
         q = 0
-        (q < fap.len()) {
+        poff = 0
+        is-m == 1 -> poff = 1
+        (q < d.c4) {
             p = d.kid0
 
             #{overflow=wrap}
@@ -6999,7 +7354,9 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             pk = ast.kid-at(t, p)
             pd = ast.nd-at(t, pk)
             pnm = ast.str-at(t, pd.s0)
-            pt = fap[q]: {
+
+            ; s165：方法fap[0] 是接收者 ⇒ 聲明形參型別從 fap[q+poff] 取（非方法 poff=0，逐字等價）
+            pt = fap[q + poff]: {
                 ok -> it
 
                 -> _
@@ -7025,28 +7382,6 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             }
 
             q = h2m-inc(q)
-        }
-
-        ; s149：方法定义（s2=='true'）的 self 是输出区[0]，此前被 real-out 扣掉、既不入
-        ;   argt 也不绑名 ⇒ 方法体的裸点号 `.field`（AST 形如 self.field）读不到接收者，
-        ;   字段 push/读整条落闸门。s141 的方法调用走「不传 self 的静态转发」，故这里
-        ;   绑的是一个【仅供类型/字段路径推导】的壳值：按 self 具名型别解析出 TY-STRUCT，
-        ;   alloc 一个值 id 绑到 'self'，并 seed 进 loc。无真实运行时实参（静态转发语义不变）。
-        is-m == 1 -> {
-            sp = d.kid0
-
-            #{overflow=wrap}
-            sp = sp + d.c3
-
-            #{overflow=wrap}
-            sp = sp + d.c4
-            sk = ast.kid-at(t, sp)
-            sc, sb = h2m-param-ty(t, agg, sk)
-            sb == 0 -> {
-                svid = h2m-alloc(c, sc)
-                h2m-var-bind(c, 'self', svid)
-                h2m-lst-add(loc, 'self', sc)
-            }
         }
 
         ; body 是最后一个 kid
@@ -7404,7 +7739,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
             nm, rt, ap, bd = h2m-func-sig(t, agg, kid)
-            bd == 0 -> h2m-sig-add(sg, nm, nm, rt, ap)
+            bd == 0 -> h2m-sig-add(sg, nm, nm, rt, ap, h2m-def-is-method(t, kid))
 
             ; s107：签名不合格即「本函数不可能产码」——本遍就记一条（带函数名），
             ;   此前只有产码遍登记，日志里这些函数在「-N 条」里无任何记录、差分查不出是谁

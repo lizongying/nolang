@@ -5,33 +5,23 @@
 ;   （idxV+1 > cap 時 realloc 並拷貝）就是那次修補。
 ;
 ; 2026-11-11 起 `s[i] = v` 全域禁用（連 with-cap 基底也不再豁免 idxwrite 檢查），
-;   源碼只剩 place-match `s[i]: { ok -> it = v }` 一種下標寫形態。place-match 以
-;   「讀」作閘門：i >= len 時整條寫入靜默跳過 —— 既不寫、不改長度、也不越界。
-;   因此：
+;   源碼一度只剩 place-match `s[i]: { ok -> it = v }` 一種下標寫形態；2026-11-12
+;   起連 place-match 對 str/txt 也一併禁用（stridxwr）。place-match 以「讀」作
+;   閘門的語義本身仍然有效，只是載體改成 []byte：
+;     - 本檔案改為用 []byte 緩衝承接下標寫，再以 to-bytes-str() 轉回 str，
+;       驗證同樣的「範圍內寫入落盤、越界跳過、長度不變」語義。
 ;     - ensureStrLongBuffer 的增長分支不再是源碼可達路徑；其正確性改由 Go 單元
 ;       測試 src/mir/str_index_grow_test.go 直接對 codegen 輸出驗證，增長分支
 ;       保留為防禦性代碼（FFI 或未來 str.append 落地後仍可能被觸達）。
-;     - 本檔案改為驗證「現在真正可達」的語義。
 
-; ① 範圍內 place-match：with-cap-len(8,8)（len == cap 的滿長 owned 緩衝）
+; ① 範圍內寫入：with-cap-len(8,8)（len == cap 的滿長 owned 緩衝）
 ;    逐位元組寫入必須落盤；未寫位置保持零初始化值。
 test-str-place-in-range = () (ok bool) {
-    s str = with-cap-len(8, 8)
-    s[0]: {
-        ok -> it = "a"
-
-        -> _
-    }
-    s[3]: {
-        ok -> it = "d"
-
-        -> _
-    }
-    s[7]: {
-        ok -> it = "h"
-
-        -> _
-    }
+    ob []byte = with-cap-len(8, 8)
+    ob[0] = 97
+    ob[3] = 100
+    ob[7] = 104
+    s = ob.to-bytes-str()
 
     n = s.len-bytes()
     b0 = s.byte(0)
@@ -46,17 +36,23 @@ test-str-place-in-range = () (ok bool) {
     ok = ok && b1 == 0
 }
 
-; ② 範圍外 place-match：字串字面量 len=cap=3 動態遠越界（offset 100000 跨分頁）。
+; ② 範圍外寫入：位元組緩衝 len=3 動態遠越界（offset 100000 跨分頁）。
 ;    必須是安全 no-op —— 不寫、長度不變、不 SIGSEGV。
-;    讀回 s[i] 與整串比較，使該 store 存活（避免被 opt 當死代碼刪除）。
+;    讀回整串比較，使該 store 存活（避免被 opt 當死代碼刪除）。
 test-str-place-far-oob = () (ok bool) {
-    s = 'abc'; len=3, cap=3, 非 null 3 字節堆緩衝
+    ob = 'abc'.to-bytes(); len=3, cap=3, 非 null 3 字節堆緩衝
     i = 100000
-    s[i]: {
-        ok -> it = "X"; 遠越界 → place-match 閘門判定越界，寫入被跳過
 
-        -> _
+    ; []byte 的 place-match 越界會增長緩衝；先顯式做範圍閘門，
+    ; 保留原本 str place-match「越界跳過、長度不變」的語義。
+    i < ob.len() -> {
+        ob[i]: {
+            ok -> it = 88
+
+            -> _
+        }
     }
+    s = ob.to-bytes-str()
     n = s.len-bytes()
     same = s == 'abc'
     ok = n == 3

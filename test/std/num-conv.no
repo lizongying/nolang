@@ -49,6 +49,7 @@ t-float-int-sat = () {
 
 ; B2：f64→str 的 NaN/Inf/大值渲染
 ...
+
 ; 口径：f64.to-str 取「最短往返」表示並對齊 Go 的 %v（含 NaN/+Inf/-Inf 拼寫）。
 t-f64-str = () {
     za = 0.0
@@ -126,6 +127,7 @@ t-conv-matrix = () {
 
 ; B8：宣告型別 → 自動 `<src>.to-<dst>` 轉換
 ...
+
 ; 賦值目標的型別寫明時，MIR 會去找約定型別轉換方法 `<src>.to-<dst>`
 ; （src/mir/hir2mir.go intConvCallee）。有方法就呼叫它（允許窄化），
 ; 沒有就只能隱式加寬。以下確保兩條路徑的結果與 `no fmt` 摺疊後一致：
@@ -159,6 +161,7 @@ t-declared-conv = () {
 
 ; 編譯期用例（B4/B5/B7）：無法在 runtime 斷言，保留為文檔
 ...
+
 ; 以下寫法應被 checker/lexer 拒绝，用 `no run` 單獨驗證：
 ;   B7:  x f64 = 1e40           → lexer 報「scientific notation ... not supported」
 ;   B4:  c char = 1114112       → checker 報「out of Unicode code point range」

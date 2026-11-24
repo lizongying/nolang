@@ -16,8 +16,8 @@ bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
 
-    #{overflow=wrap}
-    hex str = with-len(n * 2)
+    ; str 下標寫已全域禁用；改為從 '' 順序拼接（右值是 ASCII ?char，逐位元組等價）
+    hex = ''
     i <- [0..n): {
         v = data[i]: {
             ok -> it
@@ -25,25 +25,8 @@ bhex = (data []byte) (hex str) {
             -> 0
         }
 
-        {
-
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(v >> 4) & 15]
-        }: {
-            err -> _
-
-            -> _
-        }
-
-        {
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[v & 15]
-        }: {
-            err -> _
-
-            -> _
-        }
+        hex = hex - hex-chars[(v >> 4) & 15]
+        hex = hex - hex-chars[v & 15]
     }
 }
 

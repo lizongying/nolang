@@ -56,8 +56,8 @@ TOTAL = 0
 ; 加入
 ; v: 要累加到全域 total 的整數（overflow 採 wrap）
 add = (v i64) {
-
     {
+
         #{overflow=wrap}
         TOTAL ?= TOTAL + v
     }: {

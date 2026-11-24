@@ -1252,4 +1252,5 @@ AST 依存 %s の同期エラー: モジュールが空です
 
 `
   'zzcfoc04': 'dist ディレクトリの作成: %w'
+  'stridxwr': 'cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-bytes-str()`'
 }

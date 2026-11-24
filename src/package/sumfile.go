@@ -3,12 +3,17 @@ package pkg
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/lizongying/nolang/i18n"
 )
 
 // SumFileVersion 是當前總和檔案格式版本
 const SumFileVersion = "1"
+
+// sumFileHeader 寫在 sum.noml 第一行，提醒這是工具生成檔。
+const sumFileHeader = "; auto-generated, do not edit manually\n"
 
 // SumFile 表示 sum.noml 的結構
 type SumFile struct {
@@ -28,7 +33,41 @@ func sumFilePath(dir string) string {
 	return filepath.Join(dir, SumFileName)
 }
 
-// LoadSumFile 載入 sum.noml
+// encodeSumPackage 把 (key, version) 編成 sum.noml 的 package 欄位。
+// AST 鍵 `<tool>@<host>/<owner>/<repo>` 寫成 `<tool>:<version>@<host>/<owner>/<repo>`，
+// 其餘鍵寫成 `<key>:<version>`；版本為空或 '*' 時省略版本段。
+func encodeSumPackage(key, version string) string {
+	if version == "" || version == defaultDependencySpec {
+		return key
+	}
+	if at := strings.Index(key, "@"); at > 0 && strings.Count(key[at+1:], "/") >= 2 {
+		return key[:at] + ":" + version + key[at:]
+	}
+	return key + ":" + version
+}
+
+// decodeSumPackage 把 sum.noml 的 package 欄位還原成 (key, version)。
+// 先用 ParseToolSpec 認 `<tool>:<version>@<host>/<owner>/<repo>`（對所有 tool 名通用），
+// 再退回 SplitDepSpec 處理普通 `<key>:<version>`。版本省略時補回 '*'。
+func decodeSumPackage(spec string) (string, string) {
+	if spec == "" {
+		return "", ""
+	}
+	if s, err := ParseToolSpec(spec); err == nil {
+		ver := s.Version
+		if ver == "" {
+			ver = defaultDependencySpec
+		}
+		return s.DepKey(), ver
+	}
+	key, ver := SplitDepSpec(spec)
+	if ver == "" {
+		ver = defaultDependencySpec
+	}
+	return key, ver
+}
+
+// LoadSumFile 載入 sum.noml（新陣列格式；舊 map 格式仍可向後相容讀取）
 func LoadSumFile(dir string) (*SumFile, error) {
 	path := sumFilePath(dir)
 	raw, err := os.ReadFile(path)
@@ -43,16 +82,90 @@ func LoadSumFile(dir string) (*SumFile, error) {
 	if err != nil {
 		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", path, err)
 	}
-	var sum SumFile
-	if err := DecodeInto(m, &sum); err != nil {
-		return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", path, err)
+
+	sum := &SumFile{Version: SumFileVersion, Packages: make(map[string]SumPkg)}
+	if v, ok := m["version"].(string); ok {
+		sum.Version = v
+	}
+
+	switch pkgs := m["packages"].(type) {
+	case []any:
+		// 新格式：每項 { package: '<spec>', sha256: '<hex>' }
+		for _, elem := range pkgs {
+			obj, ok := nomlAsPlainMap(elem)
+			if !ok {
+				continue
+			}
+			spec, _ := obj["package"].(string)
+			sha, _ := obj["sha256"].(string)
+			key, ver := decodeSumPackage(spec)
+			if key == "" {
+				continue
+			}
+			sum.Packages[key+"@"+ver] = SumPkg{Key: key, Version: ver, SHA256: sha}
+		}
+	default:
+		// 舊格式：<key@version> → { key, version, sha256 }
+		// 外層鍵帶引號時是 NomlMap，裸鍵時是 map[string]any，兩者都要認。
+		if plain, ok := nomlAsPlainMap(m["packages"]); ok {
+			for name, val := range plain {
+				obj, ok := nomlAsPlainMap(val)
+				if !ok {
+					continue
+				}
+				sp := SumPkg{}
+				sp.Key, _ = obj["key"].(string)
+				sp.Version, _ = obj["version"].(string)
+				sp.SHA256, _ = obj["sha256"].(string)
+				sum.Packages[name] = sp
+			}
+		}
 	}
 
 	if sum.Version != SumFileVersion {
 		return nil, i18n.Errorf("39o3yr8x", "unsupported sum file version %q (expected %s)", sum.Version, SumFileVersion)
 	}
 
-	return &sum, nil
+	return sum, nil
+}
+
+// SaveSumPackages 以新格式寫出 sum.noml：packages 是陣列，每項只有
+// package（含版本的完整 spec）與 sha256；首行附 auto-generated 註解。
+// 條目按 package 字串排序輸出，保證可重現。
+func SaveSumPackages(dir string, packages map[string]SumPkg) error {
+	sum := &SumFile{Version: SumFileVersion, Packages: packages}
+	type entry struct {
+		name string
+		sha  string
+	}
+	list := make([]entry, 0, len(packages))
+	for _, sp := range packages {
+		list = append(list, entry{name: encodeSumPackage(sp.Key, sp.Version), sha: sp.SHA256})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].name < list[j].name })
+
+	entries := make([]any, 0, len(list))
+	for _, e := range list {
+		entries = append(entries, map[string]any{
+			"package": e.name,
+			"sha256":  e.sha,
+		})
+	}
+	data, err := MarshalNoml(map[string]any{
+		"version":  sum.Version,
+		"packages": entries,
+	})
+	if err != nil {
+		return i18n.Errorf("pibk34ed", "marshaling sum file: %w", err)
+	}
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		data += "\n"
+	}
+	path := sumFilePath(dir)
+	if err := os.WriteFile(path, []byte(sumFileHeader+data), 0644); err != nil {
+		return i18n.Errorf("zae1l26t", "writing %s: %w", path, err)
+	}
+	return nil
 }
 
 // SaveSumFile 保存 sum.noml（SHA256 來自下載的壓縮包）
@@ -61,47 +174,19 @@ func SaveSumFile(dir string, graph *DependencyGraph) error {
 		return nil
 	}
 
-	sum := &SumFile{
-		Version:  SumFileVersion,
-		Packages: make(map[string]SumPkg),
-	}
-
+	packages := make(map[string]SumPkg, len(graph.resolved))
 	for key, node := range graph.resolved {
 		pkg := SumPkg{
 			Key:     node.Key,
 			Version: node.Version,
 		}
-
 		// 使用下載壓縮包的 SHA256（來自 DependencyNode.DownloadHash）
 		if node.DownloadHash != "" {
 			pkg.SHA256 = node.DownloadHash
 		}
-
-		sum.Packages[key] = pkg
+		packages[key] = pkg
 	}
-
-	pkgs := make(map[string]any, len(sum.Packages))
-	for name, sp := range sum.Packages {
-		pkgs[name] = map[string]any{
-			"key":     sp.Key,
-			"version": sp.Version,
-			"sha256":  sp.SHA256,
-		}
-	}
-	data, err := MarshalNoml(map[string]any{
-		"version":  sum.Version,
-		"packages": pkgs,
-	})
-	if err != nil {
-		return i18n.Errorf("pibk34ed", "marshaling sum file: %w", err)
-	}
-
-	path := sumFilePath(dir)
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		return i18n.Errorf("zae1l26t", "writing %s: %w", path, err)
-	}
-
-	return nil
+	return SaveSumPackages(dir, packages)
 }
 
 // VerifySumFile 驗證 sum.noml 中的 SHA256 是否與快取中的壓縮包匹配

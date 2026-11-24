@@ -432,7 +432,7 @@ print('done')
 ; 邊界值測試
 ...
 test-u8-100 = () {
-    nv ?u8 = '100'.to-u8()
+    nv = '100'.to-u8()
     {
         nv == nil -> print('nil')
 
@@ -447,7 +447,7 @@ test-u8-100 = () {
 
 ; 測試 u8-200
 test-u8-200 = () {
-    nv ?u8 = '200'.to-u8()
+    nv = '200'.to-u8()
     {
         nv == nil -> print('nil')
 
@@ -462,7 +462,7 @@ test-u8-200 = () {
 
 ; 測試 u8-255
 test-u8-255 = () {
-    nv ?u8 = '255'.to-u8()
+    nv = '255'.to-u8()
     {
         nv == nil -> print('nil')
 
@@ -477,7 +477,7 @@ test-u8-255 = () {
 
 ; 測試 u16-65535
 test-u16-65535 = () {
-    nv ?u16 = '65535'.to-u16()
+    nv = '65535'.to-u16()
     {
         nv == nil -> print('nil')
 
@@ -492,7 +492,7 @@ test-u16-65535 = () {
 
 ; 測試 u32-4b
 test-u32-4b = () {
-    nv ?u32 = '4294967295'.to-u32()
+    nv = '4294967295'.to-u32()
     {
         nv == nil -> print('nil')
 
@@ -507,7 +507,7 @@ test-u32-4b = () {
 
 ; 測試 u32-3b
 test-u32-3b = () {
-    nv ?u32 = '1000000000'.to-u32()
+    nv = '1000000000'.to-u32()
     {
         nv == nil -> print('nil')
 
@@ -522,7 +522,7 @@ test-u32-3b = () {
 
 ; 測試 i8-127
 test-i8-127 = () {
-    nv ?i8 = '127'.to-i8()
+    nv = '127'.to-i8()
     {
         nv == nil -> print('nil')
 
@@ -537,7 +537,7 @@ test-i8-127 = () {
 
 ; 測試 i8-128
 test-i8-128 = () {
-    nv ?i8 = '128'.to-i8()
+    nv = '128'.to-i8()
     {
         nv == nil -> print('nil')
 

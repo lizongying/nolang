@@ -3233,6 +3233,142 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
   不是 0 而是 1；demo 里还有四条标签 → 5
 - 坑三条：`app-hover` 的纵坐标也是 `fx(...)`，没有 `fy`
 
+### §5.66 阶段 71 命令式样式文本节点（C-TEXT）新坑（2026-11-23 实测）
+
+- 源码：`src/components.no` 新增 `txn-*` 段。片段池两条扁平只增：文案
+  `TXN-RUN []str` + 平行颜色 `TXN-COL []i64`（`-1` = 继承组件自身
+  `CMP-COLOR[h]`；另有关键字强调色常量 `INP-C-KW = 0x4A90E2FF`），每句柄
+  基址 `TXN-SBASE` / 段数 `TXN-N`（**四个 per-handle 池都随 `cmp-alloc`
+  长并 `.push(0)`**）。公开 `txn-count` / `txn-run-text`（越界空串）/
+  `txn-run-color`（越界 −1）/ `txn-add`（返回插入下标）/
+  `txn-set-run`（越界写不影响）/ `txn-clear`（写操作先查 `F-DISABLED`）
+- 渲染：`src/cmp-scene.no` 的 `cs-measure` 新增 C-TEXT 分支（宽 =
+  `Σ cs-text-w(片段) + 2*CS-PAD`，无片段退回标题宽，下限 `CS-MIN-LEAF-W`；
+  高 = `CS-LINE-H`）；新增 `cs-paint-text-node`（**无片段时一条
+  `cmp-text(h)` 走 `cs-emit-text-align`，与补全前行为完全一致**；有片段按
+  `A-LEFT/A-CENTER/A-RIGHT` 求起点后逐段发文本指令，片段色 `-1` 回落到
+  组件色，文字垂直居中）+ `cs-paint-leaf` 一行路由
+- 验收：`tests/cmp-text-node.no` 60 项断言全绿；`tests/main-text-node.no`
+  窗口 demo 900 帧（`bye frames=900 keys=0 clicks=0 runs=2 w=53600 h=2400`
+  + `text-node render OK` + `scene OK`）
+- 回归：见下方 §7 阶段 71 条目
+- 坑一条：**`cmp-set-align` 的对齐常量是 1/2/3，不是 0/1/2**——`0` 表示
+  「未指定」，由 `cs-align-of` 按 kind 兜底（C-TEXT 落到 `A-LEFT`）。demo
+  里写 `cmp-set-align(h, 1)` 以为居中，实际是左对齐，整排坐标全错
+- 坑二条：`cs-measure` 返回的是 **clamp 后**的宽，想验「公式算出来是
+  4000」是看不到的——只能验最终值 ≥ `CS-MIN-LEAF-W`
+- 坑三条：调试打印不能插值函数调用（老坑重现），`print('x={cs-scene-x(i)}')`
+  直接报 `unresolved format field`，得先把值存进局部变量
+
+### §5.67 阶段 72 命令式尺寸约束盒（C-SIZING）新坑（2026-11-23 实测）
+
+- 源码：`src/components.no` 新增 `szg-*` 段。六个 per-handle 池
+  `SZG-W` / `SZG-H`（目标，0 = 跟随内容）/ `SZG-MINW` / `SZG-MINH`
+  （下限，0 = 无）/ `SZG-MAXW` / `SZG-MAXH`（上限，0 = 不限），**都随
+  `cmp-alloc` 长并 `.push(0)`**。公开六个 getter + `szg-set-size` /
+  `szg-set-min` / `szg-set-max` / `szg-reset`（写操作先查 `F-DISABLED`）+
+  纯夹紧 `szg-clamp`（**先上限后下限，冲突时下限优先**）。`sizing` 是容器
+  （留在 `cs-is-container` 白名单里），内容只是没指定目标时的默认值
+- 渲染：`src/cmp-scene.no` 三处——`cs-measure` 新增 C-SIZING 分支（**必须排在
+  通用容器分支之前**，匹配链先命中先赢；先算内容盒再套目标 / min / max，最后
+  叶子下限兜底）；`cs-layout` 同步夹紧，并把 `cmp-sw/sh` 从最前挪到**最后**
+  覆盖（与 measure 末尾一致）；`cs-paint` 把 `C-SIZING` 折进通用容器臂
+  （`(n > 0) || kind == C-GROUP-BOX || kind == C-SIZING`，空盒也画面板）+
+  独立后置块补四边 `CS-SEP-H` 厚 TRACK 细框
+- 验收：`tests/cmp-sizing.no` 64 项断言全绿；`tests/main-sizing.no`
+  窗口 demo 900 帧（`bye frames=900 keys=0 clicks=0 w=12000 h=8000`
+  + `sizing render OK` + `scene OK`）
+- 回归：见下方 §7 阶段 72 条目
+- 坑一条：**`cs-measure` 的 C-SIZING 分支被通用容器分支抢先命中**——
+  一开始把新分支加在通用容器分支之后，目标 / min / max 全部不生效；
+  匹配链 `{ cond -> {...} -> {...} }` 先命中先赢，特殊 kind 必须排前面
+- 坑二条：**`cs-layout` 原本只覆盖目标、不夹紧**，且 `cmp-sw/sh` 写在目标
+  之前（目标反压 sw，与 measure 相反）；demo 收尾按 `cs-rect(box)` 核对时
+  上限 / 下限分支全错才暴露。修法是 layout 里也走 `szg-clamp` + 叶子下限，
+  再把 `cmp-sw/sh` 挪到最后
+- 坑三条：**顶层单开 `(kind == C-SIZING)` 绘制分支会造成二次绘制**
+  （面板矩形出现两遍 + 一条空白 FG 文本）；正解是末臂保持无条件、把
+  `C-SIZING` 折进通用容器臂的条件里，装饰画独立后置块
+
+### §5.68 阶段 73 基础样式容器（C-STYLED）新坑（2026-11-23 实测）
+
+- 源码：`src/components.no` 新增 `sty-*` 段。三个 per-handle 池
+  `STY-BG`（底色，-1 = 继承组件自身 `CMP-COLOR[h]`）/ `STY-BC`（边框色，
+  -1 = 不画）/ `STY-BW`（边框厚度，0 = 不画；负数夹到 0），**都随
+  `cmp-alloc` 长并 `.push(-1/-1/0)`**。公开 `sty-bg` / `sty-border` /
+  `sty-border-w` 三个 getter + `sty-set-bg` / `sty-set-border` /
+  `sty-set-border-w` / `sty-reset`（写操作先查 `F-DISABLED`）。它是**容器**
+  （`cs-is-container` 白名单保留），布局仍走通用容器分支
+- 渲染：`src/cmp-scene.no` 的 `cs-paint` **不加新节点种类**——通用容器臂把
+  面板色换成 `STY-BG`（-1 不动）、空盒条件加 `|| kind == C-STYLED`，装饰位
+  补四条 `STY-BW` 厚 `STY-BC` 边框（色或厚任一为「不画」就整组跳过）
+- 验收：`tests/cmp-styled.no` 51 项断言全绿；`tests/main-styled.no`
+  窗口 demo 900 帧（`bye frames=900 keys=0 clicks=0 bw=53600 bh=4800`
+  + `styled render OK` + `scene OK`）
+- 回归：见下方 §7 阶段 73 条目
+- 坑一条：**父节点的直接子节点必须在扁平 `CHILD-IDX` 数组里连续**——
+  正确顺序是先把某容器的子树建完、挂到父节点上，最后挂其余兄弟叶子；
+  一开始先挂 `r` 再建 `st` 的子树，root 的第 2 个子节点会指向 `inner`
+  （框架既有约束，测试写法问题，不是本阶段引入的回归）
+- 坑二条：`cs-is-container` 的参数是 **kind 常量**不是组件句柄，
+  测试里传 handle 会恒为 0
+- 坑三条：`print` 插值不能调函数（`'bg={sty-bg(st)}'` →
+  `unresolved format field`），先把值存局部变量
+
+### §5.69 阶段 74 扫光占位（C-SHIMMER）新坑（2026-11-23 实测）
+
+- 源码：`src/components.no` 新增 `shm-*` 段。三个 per-handle 池
+  `SHM-DUR`（周期 ms，0 = 默认 1200）/ `SHM-BAND`（高光带宽百分比，
+  夹 0..100，0 = 默认 30）/ `SHM-COL`（高光色，−1 = 回落主题
+  `CS-TH-MUTED`），**都随 `cmp-alloc` 长并 `.push(0/0/-1)`**；相位沿用既有
+  槽位 `CMP-VALUE[h]`（0..100，0 = 不扫）。公开 `shm-duration` /
+  `shm-set-duration`（负数归 0）/ `shm-band` / `shm-set-band` / `shm-color`
+  / `shm-set-color` / `shm-phase` / `shm-set-phase` / `shm-advance(h, dt)`
+  （步进 `dt*100/duration`，duration≤0 取 1200，累加到 ≥100 绕回；写操作
+  先查 `F-DISABLED`）/ `shm-reset`。它是**叶子**（非容器，`cs-is-container`
+  白名单不含它）
+- 渲染：`src/cmp-scene.no` 的 `cs-paint-leaf` 里把旧 `C-SHIMMER` 分支
+  （半宽 MUTED 块）换成 TRACK 底 + 相位 > 0 时一条高亮带：
+  `band = w*bpct/100`、`span = w - band`、`off = ph*span/100`
+  （相位 100 恰好贴右缘；相位 0 只画底）。**不新增节点种类**
+- 验收：`tests/cmp-shimmer.no` 51 项断言全绿；`tests/main-shimmer.no`
+  窗口 demo 900 帧（`bye frames=900 keys=0 clicks=0 bx=1200 by=1200
+  bw=53600 bh=2400` + `shimmer render OK` + `scene OK`）
+- 回归：见下方 §7 阶段 74 条目
+- 坑一条：**窗口 demo 不要硬编码内容宽**——dummy 驱动下实测 `bw=53600`
+  （不是 root 18000×20000 时的 15600），底 / 高光带坐标一律按
+  `cs-rect(shm)` 量出来的宽反推
+- 坑二条：匹配链里 `{ cond -> {...} -> {...} }` 的两臂必须成组包起来，
+  裸写第二臂报 "an else arm must live inside an if-group"
+- 坑三条：收尾断言的顺序会改状态——先跑 `advance` 把相位改成 10，后面
+  再按「相位 100 贴右缘」查带子就假失败；要么重设相位，要么改期望值
+
+### §5.70 阶段 75 窗口描边容器（C-WINDOW-BORDER）新坑（2026-11-23 实测）
+
+- 源码：`src/components.no` 新增 `wb-*` 段。两个 per-handle 池
+  `WB-RAD`（四角统一圆角半径 px*100，0 = 直角）/ `WB-W`（边框厚度 px*100，
+  0 = 不画框），**都随 `cmp-alloc` 长并 `.push(0)`**。公开 `wb-radius` /
+  `wb-set-radius`（负数归 0）/ `wb-width` / `wb-set-width`（负数归 0）/
+  `wb-reset`（写操作先查 `F-DISABLED`）。它是**真容器**（在
+  `cs-is-container` 白名单里），此前一直只有构造函数
+- 渲染：`src/cmp-scene.no` 三处——① `cs-measure` 加分支，让空盒也量出
+  `CS-MIN-LEAF-W × CS-BTN-H`（否则退化成 2400×2400 叶子盒）；② 通用容器臂
+  的空盒条件加 `|| kind == C-WINDOW-BORDER`，面板底固定主题 `CS-TH-FIELD`
+  （组件色留给描边）；③ 四边描边块：`WB-W` 厚、组件色（`CMP-COLOR[h]`），
+  每条边在角部各让出 `WB-RAD`（半径夹在 w/h 的一半以内），**不新增节点
+  种类**
+- 验收：`tests/cmp-window-border.no` 49 项断言全绿；
+  `tests/main-window-border.no` 窗口 demo 900 帧
+  （`bye frames=900 keys=0 clicks=0 bx=1200 by=1200 bw=53600 bh=4800`
+  + `window-border render OK` + `scene OK`）
+- 回归：见下方 §7 阶段 75 条目
+- 坑一条：**单测别照抄 `components-smoke.no` 的全目录断言**
+  （`cmp-count() == 56`）——那是「整份目录的组件总数」，放单测里必然假失败
+- 坑二条：**收尾自检的顺序会改状态**——demo 恢复内部标签后
+  `text-count()` 是 5（标题 / 提示 / 两行状态 + inner panel），不是 4
+- 坑三条：demo 辅助函数名别写成下划线版（`cs_rect` / `app_win_wf`），
+  编译器只认点号 / 连字符版（`cs-rect` / `app-win-wf`）
+
 ## 6. 后端（两套 shim，均已落地验证）
 
 **回退后端 `src/shim/shim.c` + `shim.h`**（SDL_Render，导出 `noui_*`）：
@@ -3451,6 +3587,113 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
       / `src/pushmod*.no` / `tests/interaction.no` / `tests/widget.no`）；
       `make test` 仅既有 `TestS1RawCondFixturesAreExercised`。`dist/` 已清回
       仅四个 shim 产物。
+- [x] 阶段 75：窗口描边容器（window-border）— **组件目录收官**。
+      `src/components.no` 新增 `wb-*` 段：每句柄两个池 `WB-RAD`（四角统一
+      圆角半径 px*100，0 = 直角）/ `WB-W`（边框厚度 px*100，0 = 不画框），
+      **都随 `cmp-alloc` 长并 `.push(0)`**；公开 `wb-radius` /
+      `wb-set-radius`（负数归 0）/ `wb-width` / `wb-set-width`（负数归 0）/
+      `wb-reset`（写操作先查 `F-DISABLED`）。渲染层三处、**不新增节点种类**：
+      `cs-measure` 空盒分支（`CS-MIN-LEAF-W × CS-BTN-H`）、通用容器臂空盒
+      条件加 `|| kind == C-WINDOW-BORDER` + 面板底固定 `CS-TH-FIELD`、四边
+      `WB-W` 厚组件色描边（角部各让出 `WB-RAD`，半径夹在 w/h 一半以内）。
+      测试 `tests/cmp-window-border.no`（49 项断言：默认 / 两组读写 /
+      多句柄隔离 / disabled / reset / 测算 / 渲染几何配色 / 空盒 root2）
+      全绿；窗口 demo `tests/main-window-border.no` 实测
+      `bye frames=900 keys=0 clicks=0 bx=1200 by=1200 bw=53600 bh=4800`
+      + `window-border render OK` + `scene OK`。回归：`tests/*.no` 130 个
+      （非 main 83 + main 47），非 main 82 通过 / 1 失败（dva-editor
+      rc=133，既有），main 47/47，logic `ALL TESTS PASSED`，
+      `no vet noui/src/` 11 error 全在未触碰文件，本轮两个新测试 0 error。
+      至此组件目录里「只有构造函数」的 kind 清零。本轮记的坑：单测别照抄
+      全目录断言（`cmp-count()==56`）；收尾顺序改状态（`text-count()` 是 5
+      不是 4）；辅助函数名必须用点号 / 连字符版。详见 §5.70。
+- [x] 阶段 74：扫光占位（shimmer）—
+      `src/components.no` 新增 `shm-*` 段：每句柄三个池 `SHM-DUR`（周期 ms，
+      0 = 默认 1200）/ `SHM-BAND`（高光带宽百分比，夹 0..100，0 = 默认 30）/
+      `SHM-COL`（高光色，−1 = 回落主题 `CS-TH-MUTED`），**都随 `cmp-alloc`
+      长并 `.push(0/0/-1)`**；相位沿用既有槽位 `CMP-VALUE[h]`（0..100，
+      0 = 不扫）。公开 `shm-duration` / `shm-set-duration`（负数归 0）/
+      `shm-band` / `shm-set-band` / `shm-color` / `shm-set-color` /
+      `shm-phase` / `shm-set-phase` / `shm-advance(h, dt)`（步进
+      `dt*100/duration`，duration≤0 取 1200，≥100 绕回；写操作先查
+      `F-DISABLED`）/ `shm-reset`。渲染层 `cs-paint-leaf` 的 `C-SHIMMER`
+      分支改为 TRACK 底 + 相位 > 0 时一条高亮带（`band = w*bpct/100`、
+      `span = w - band`、`off = ph*span/100`，相位 100 恰好贴右缘），
+      **不新增节点种类**。测试 `tests/cmp-shimmer.no`（51 项断言：默认 /
+      三组读写 / advance 算术 / 多句柄隔离 / disabled / reset / 渲染几何配色）
+      全绿；窗口 demo `tests/main-shimmer.no` 实测
+      `bye frames=900 keys=0 clicks=0 bx=1200 by=1200 bw=53600 bh=2400`
+      + `shimmer render OK` + `scene OK`。回归：`tests/*.no` 128 个
+      （非 main 82 + main 46），非 main 81 通过 / 1 失败（dva-editor
+      rc=133，既有），main 46/46，logic `ALL TESTS PASSED`，
+      `no vet noui/src/` 11 error 全在未触碰文件，本轮两个新测试 0 error。
+      本轮记的坑：demo 不要硬编码内容宽（dummy 驱动下 `bw=53600`）；
+      匹配链两臂要成组 `{ cond -> ... -> ... }`；收尾断言顺序会改状态。
+      详见 §5.69。
+- [x] 阶段 73：基础样式容器（styled）—
+      `src/components.no` 新增 `sty-*` 段：每句柄三个池 `STY-BG`（底色，
+      -1 = 继承组件自身 `CMP-COLOR[h]`）/ `STY-BC`（边框色，-1 = 不画）/
+      `STY-BW`（边框厚度，0 = 不画；负数夹到 0），**都随 `cmp-alloc` 长并
+      `.push(-1/-1/0)`**。公开三个 getter + `sty-set-bg` / `sty-set-border`
+      / `sty-set-border-w` / `sty-reset`（写操作先查 `F-DISABLED`）。
+      渲染层 `cs-paint` **不加新节点种类**：通用容器臂按 `STY-BG` 换面板色、
+      空盒条件加 `|| kind == C-STYLED`，装饰位补四条 `STY-BW` 厚 `STY-BC`
+      边框。测试 `tests/cmp-styled.no`（51 项断言：默认 / 三组读写 /
+      多句柄隔离 / disabled / reset / 渲染几何配色 / 只给一项不画框 / 空盒）
+      全绿；窗口 demo `tests/main-styled.no` 实测
+      `bye frames=900 keys=0 clicks=0 bw=53600 bh=4800` + `styled render OK`
+      + `scene OK`。回归：`tests/*.no` 126 个（非 main 81 + main 45），
+      非 main 80 通过 / 1 失败（dva-editor rc=133，既有），main 45/45，
+      logic `ALL TESTS PASSED`，`no vet noui/src/` 11 error 全在未触碰文件
+      （dv-app 7 + pm-lo / pm-up / pushmod* 4），本轮两个新测试 0 error。
+      本轮记的坑：`CHILD-IDX` 要求同一父节点的直接子节点在扁平数组里连续
+      （先建子树再挂父节点）；`cs-is-container` 参数是 kind 不是 handle；
+      `print` 插值不能调函数。详见 §5.68。
+- [x] 阶段 72：命令式尺寸约束盒（sizing）—
+      `src/components.no` 新增 `szg-*` 段：每句柄六个池
+      `SZG-W` / `SZG-H`（目标，0 = 跟随内容）/ `SZG-MINW` / `SZG-MINH`
+      （下限，0 = 无）/ `SZG-MAXW` / `SZG-MAXH`（上限，0 = 不限），**都随
+      `cmp-alloc` 长并 `.push(0)`**。公开 `szg-w/-h/-minw/-minh/-maxw/-maxh`
+      六个 getter + `szg-set-size` / `szg-set-min` / `szg-set-max` /
+      `szg-reset`（写操作先查 `F-DISABLED`）+ 纯夹紧 `szg-clamp`（**先上限
+      后下限，冲突时下限优先**）。渲染层 `cs-measure` 新增 C-SIZING 分支
+      （排在通用容器分支**之前**；先算内容盒再套目标 / min / max，最后叶子
+      下限兜底）+ `cs-layout` 同语义夹紧并把 `cmp-sw/sh` 挪到最后覆盖 +
+      `cs-paint` 把 `C-SIZING` 折进通用容器臂（空盒也画面板）并补四边
+      `CS-SEP-H` 厚 TRACK 细框。测试 `tests/cmp-sizing.no`（64 项断言：
+      默认 / 三组读写 / 多句柄隔离 / disabled / `szg-clamp` / reset /
+      测算 / 渲染几何配色）全绿；窗口 demo `tests/main-sizing.no` 实测
+      `bye frames=900 keys=0 clicks=0 w=12000 h=8000` + `sizing render OK`
+      + `scene OK`。回归：`tests/*.no` 124 个（非 main 80 + main 44），
+      非 main 79 通过 / 1 失败（dva-editor rc=133，既有），main 44/44，
+      logic `ALL TESTS PASSED`，`no vet noui/src/` 11 error 全在未触碰文件
+      （dv-app 7 + pm-lo / pm-up / pushmod* 4），本轮两个新测试 0 error。
+      本轮记的坑：`cs-measure` 新分支被通用容器分支抢先命中（特殊 kind 必须
+      排前面）；`cs-layout` 只覆盖目标不夹紧且 `cmp-sw/sh` 顺序与 measure
+      相反；顶层单开 C-SIZING 绘制分支会二次绘制。详见 §5.67。
+- [x] 阶段 71：命令式样式文本节点（text-node）—
+      `src/components.no` 新增 `txn-*` 段：片段文案池 `TXN-RUN []str`
+      （扁平只增）+ 平行颜色池 `TXN-COL []i64`（`-1` = 继承组件自身
+      `CMP-COLOR[h]`；关键字强调色常量 `INP-C-KW = 0x4A90E2FF`）+ 每句柄
+      基址 `TXN-SBASE []i64` / 段数 `TXN-N []i64`，**四个 per-handle 池都
+      随 `cmp-alloc` 长并 `.push(0)`**。公开 `txn-count` /
+      `txn-run-text`（越界空串）/ `txn-run-color`（越界 -1）/ `txn-add`
+      （返回插入下标）/ `txn-set-run`（越界写不影响）/ `txn-clear`
+      （写操作先查 `F-DISABLED`）。渲染层 `cs-measure` 新增分支（宽 =
+      `Σ cs-text-w(片段) + 2*CS-PAD`，无片段退回标题宽，下限 6400；高 =
+      `CS-LINE-H`）+ `cs-paint-text-node`（无片段时一条 `cmp-text(h)` 走
+      `cs-emit-text-align`，与补全前完全一致；有片段按对齐求起点后逐段发
+      文本指令，片段色 -1 回落组件色）+ `cs-paint-leaf` 路由一行。
+      测试 `tests/cmp-text-node.no`（60 项断言：默认 / 片段池读写 / 多句柄
+      隔离 / disabled / 测算 / 渲染几何配色）全绿；窗口 demo
+      `tests/main-text-node.no` 实测
+      `bye frames=900 keys=0 clicks=0 runs=2 w=53600 h=2400` +
+      `text-node render OK` + `scene OK`。回归：`tests/*.no` 122 个，
+      非 main 78 通过 / 1 失败（dva-editor rc=133，既有），main 43/43，
+      logic `ALL TESTS PASSED`，`no vet noui/src/` 仍是既有 11 error
+      （全在 pm-lo / pm-up / pushmod*）。本轮记的坑：`cmp-set-align` 的
+      对齐常量是 1/2/3 不是 0/1/2（0 = 未指定，由 `cs-align-of` 兜底）；
+      `cs-measure` 返回 clamp 后的值；调试打印不能插值函数调用。详见 §5.66。
 - [x] 阶段 70：命令式抽屉面板（sheet）—
       `src/components.no` 新增 `sht-*` 段：每句柄两个池 `SHT-OPEN []i64`
       （展开位）/ `SHT-SIDE []i64`（停靠边 0=左 1=右 2=上 3=下），**都随

@@ -8152,3 +8152,86 @@ DB 通道（診斷標記）      20530         21213         20846
   （cmd-build 17、cmd-run 14、cmd-test 11、cmd-fmt 7），先在 block/LF/ID/DB 四通道上
   recon 具體構造（預期仍是 with-cap／賦值型別沿用的同類變種，或是新的 element-op 缺口）。
 - **未提交任何改動**。
+
+## 85. s165 — vec 三內建（struct 字段 with-cap／`[]byte.to-bytes-str()`／`vec.clear()`）＋前端接收者布線
+
+- **範圍**：§84 收尾把殘餘指向 `util/sb.no` 的 `sb.init`／`sb.push`／`sb.str`／`sb.clear`
+  四條路，本輪把其中三條 vec 內建【全加法】補齊（不減任何既有語義），並補完前端「接收者」管線
+  （方法的接收者要進簽名池、也要由呼叫端傳入）。全部改動都是追加：無刪改既有臂、無重排 op 碼。
+- **MIR（`compiler/src/mir.no`）**：`OP-VECCLEAR = 114`（:740）、`OP-VECBYTES2STR = 115`（:752），
+  雙雙接在既有最大碼 `OP-VECLOAD = 113` 之後，不重排既有碼。語義逐字按 Go 權威口徑註在碼上：
+  `clear` 是【就地】把 len 歸零、cap/data 原封不動（鏡像 `src/mir/builtin_call.go:2481`
+  的 `insertvalue %vec %v, i32 0, 0`）；`to-bytes-str` 是 O(N)【自有】1:1 逐字節複製
+  （同 §79 `str.to-bytes` 的反向，非 s136 的零拷貝 reinterpret）。
+- **runtime（`cg-runtime.no`）**：新增 `@vec_clear`（:871，extractvalue cap/data 後 insertvalue
+  len=0 回填）與 `@vec_bytes_to_str`（:894，空 vec 短路回 `{0,0,null}`；否則 `nolang_rc_alloc`
+  + phi 迴圈逐元 `trunc i64→i8` 寫入，len/cap 皆取原始 i32）。兩者註冊於
+  `cg-runtime-prelude-full`（:1153-1154，排在 `vec_new_cap_str` 之後、`str_from_i64` 之前，
+  依賴 `nolang_rc_alloc` 已先發出）。
+- **發射（`cg.no`）**：兩個純文字臂 `:2319`（`call %vec @vec_clear`）、`:2329`
+  （`call %str-long @vec_bytes_to_str`），位置緊接 `OP-VECNEWCAPSTR` 之後。
+- **降級（`h2m.no`）**：①結構體字面量字段值是 `with-cap(<expr>)` 時，依【欄位宣告型別】發
+  `OP-VECNEWCAP`／`OP-VECNEWCAPSTR`（:5041-5061）；所有權隨 `OP-STRUCT-MK` 一起進結構體，
+  **不入 rel-list**（同 s99n/s146/s147 口徑，否则作用域結束會把字段指針釋放成懸垂）。
+  ②TY-VEC 方法分派新增三臂：`to-bytes-str`（:4219，收 str 結果並 `rel-add(TY-STR)`）、
+  `clear` 且收件者是標識符（:4232，就地清空後 mem==0 重綁之名／mem==1 發 `OP-VECSTORE` 寫槽）、
+  `clear` 且收件者是點號（:4254，經 `h2m-push-field-set` 把新 vec 寫回字段）。
+- **接收者管線**：`h2m-lower-func` 對方法把 `poff` 設 1（:7270，self 佔第 0 參）；呼叫端
+  `pass-recv` 就緒後 `na` 加 1（:4801）、签名池偏移 `aoff = 1`（:4828）、守衛改寫為
+  `na - aoff > jlim`（:4839）。⚠ 這裡修掉一個真錯：`na` 已含接收者而 `jlim` 是【AST 實參】
+  數上限，舊寫法 `na > jlim` 會把恰好合身的呼叫恆判超供（`aoff` 是簽名池偏移、不是 AST 子節點
+  偏移 ⇒ AST 實參仍自 `argbase` 連續排列，:4846-4847）。
+- **端到端語義煙測抓到一個真錯（誠實呈報）**：`tmp/s165/sem` 走 `xs.push(...)` +
+  `xs.to-bytes-str()` + `xs.clear()`，S1 產物首次编译即被 clang 拒：
+  `'%da' defined with type 'i64' but expected 'ptr'`——`%vec` 的 f2 是【整數】指針（i64），
+  不能直接當 `i8*` 用。修法是補 `%dap = inttoptr i64 %da to i8*`（cg-runtime.no:905），
+  與 `cg.no` 的 `OP-STRFROMVEC`「bitcast 不能指針⇄整數」同一口徑。此錯只有真正串到
+  LLVM 後端才會現形，單看降級通道是見不到的。
+- **探針**（`tmp/s165/probe-{ast1,dg,dg2,imm,rd,meth,ns,ns2,one}.no`）：九支全清——
+  純函数定義型（meth/ns/ns2/one）rc=0 且 stderr 無 `unsupported constructs`；
+  带執行體的（dg/dg2/ast1/imm/rd）stderr 0 bytes。三條新內建在源碼級歸零。
+- **端到端語義**：`tmp/s165/sem/main.no`（push／to-bytes-str／clear／清空後再 push／二次 clear）
+  與 `tmp/s165/sem2/main.no`（`Buf { b []byte }` + `Buf { b: with-cap(3) }` + push +
+  to-bytes-str + clear）各自以 S0（Go 權威）與 S1（本輪自舉産物）编译執行，
+  **輸出逐字相同**（`diff` 無差；含 `len-after-clear: 0`、`str2: A`、`n-after-clear: 0`）。
+- **計數**（§83/§84 同一 census 口徑，S0=`./tmp/s153/bin/no run tmp/s154/cov-main.no`）：
+
+  | 轮次 | block | dropped | unsup | DB | ID | LF |
+  |---|---|---|---|---|---|---|
+  | s164（§84 基線） | 463 | 209 | 672 | 20882 | 24 | 463 |
+  | s165c/d（本輪） | 2191 | 67 | 2255 | 19900 | 52 | 2188 |
+
+  top cluster 完全換手：s164 是 `drv.pkg-ll` 27／`drv.cmd-vet` 21／`compile` 18／
+  `drv.cmd-tokens` 17／`h2m-lower-expr` 16；本輪是 `ps-parse-expr-prec` 118／
+  `ps-parse-match` 109／`ps-parse-stmt` 103／`ps-parse-bare-match` 95／`h2m-lower-expr` 88。
+- **基線危機（重要，如实呈報）**：672/209 這個基線在任何可復原的快照上都【復現不出】。
+  同 harness 隔離測量（僅換 h2m、其餘源一致）：`s163` 代 h2m 備份 2227、
+  前端接收者布線前 2235、三內建前 2246、現行 2255——何者都落在 2227~2255 量級。
+  更具決定性的是：連`tmp/s157/pre`（s157 前的相干整樹快照，其 `ps.no`/`ast.no` 與現行
+  逐字相同）實測也是 2221（`ps-parse-stmt` 103，與現行同分布）；而由 `s163` 代 h2m 建出的
+  S1 跑 L5 亦得 2227，與 S0 直解同一份源的 2227 相符 ⇒  interpreter/compiled 兩條路一致，
+  差別全在編進二進制的 h2m 版本。反向佐證：`tmp/s163/noc-s1`（08:53 産品）在【現行源】上
+  報 683——正好落在 §84 的 672 量級，說明該基線來自一個【已不可復原的暫時樹狀態】
+  （當代日誌系列檔名為 `cov-dbg*`，屬調試插樁期），並非可比基線。
+  **不變量今日仍然成立**：S0 census 2255 ═ S1 自舉 L5 2255（逐項一致，含 dropped 67）。
+  建議以 **2255/67** 重新基線（歷史段落一字不改，僅此註記）。
+- **不是回退的旁證**：本輪新增的三條內建只帶來 +9 marks（2246→2255），前端接收者布線 +11
+  （2235→2246）；而 dropped 由 209 降到 67（-142），即更多函式現在走得夠深、能產碼。
+  mark 總量上升是「以前被提前擋下的函式現在走得更深」的如實呈現，方向與 §84 結語所料一致。
+- **門禁（全程 S0 Authority）**：S1 重建 `./tmp/s153/bin/no build -o tmp/s165/noc-s1 compiler`
+  rc=0（源的語法/型別在權威下成立）；A/B（`tmp/s165/ab.sh`，A=`tmp/s163/noc-s1`、
+  B=`tmp/s165/noc-s1`，11 檔 rc+sha256）**全 SAME**；L0（`bash tmp/s153/run-gates-clean.sh`）
+  **18/18** 件套、**2513 assertions passed / 0 failed**；L5
+  `./tmp/s165/noc-s1 build -o tmp/s165/noc-s2 compiler` rc=1、unsupported constructs
+  **2255**、dropped **67**（與 S0 census 逐項一致）；smoke（sem/sem2）S0/S1 輸出逐字相同。
+- **§84 末尾 cmd-* 數字更正**：§84 写「cmd-build 17、cmd-run 14、cmd-test 11、cmd-fmt 7」有誤。
+  以權威 `tmp/s163/cov-s164.log` 的 block 通道為準：`drv.cmd-ast` 16、`drv.cmd-build` **10**、
+  `drv.cmd-run` 14、`drv.cmd-tokens` **17**、`drv.cmd-vet` 21；`cmd-test`／`cmd-fmt` 在 block
+  通道根本不出現（0）。即 17 是 `cmd-tokens` 而非 `cmd-build`，另兩個函數不存在。
+  本輪（s165d）五者各剩 1，`cmd-version` 新增 1。
+- **DR-1 狀態**：①行為面尚不能封裝（2191 construct 待清）；②fixpoint 尾部 2255>0 不可達；
+  ③L1–L4 全綠、L5 rc=1；④L5 已就緒。下一輪 top cluster 為
+  `ps-parse-expr-prec`／`ps-parse-match`／`ps-parse-stmt`／`ps-parse-bare-match`
+  （BlockStatement/IfExpression/SurfaceMatch 彌散分布），先在 block/LF/ID/DB 四通道上 recon
+  具體構造。
+- **未提交任何改動**。

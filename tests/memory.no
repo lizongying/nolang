@@ -1,5 +1,3 @@
-# std/heap
-
 ; merged category 'memory' -- 2 source files
 ; sources: heap.no, malloc.no
 ; originals recoverable from git HEAD (ed7b5236)

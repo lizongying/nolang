@@ -723,7 +723,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
                     nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     key = mod - '.' - short
-                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap)
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, h2m-def-is-method(t, kid))
                 }
             }
 
@@ -841,7 +841,7 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
                     nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
                     key = mod - '.' - short
-                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap)
+                    h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, h2m-def-is-method(t, kid))
                 }
             }
 
@@ -868,7 +868,6 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
     k2 = 0
     (k2 < nfiles) {
         f = files[k2]
-        print('EMITM|' - f)
         src = drv.read-mod(f)
         t = ast.make()
         p = ps.new(src)
@@ -888,7 +887,6 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
                 nm, _, _, _ = h2m-func-sig(t, agg, kid)
                 key = ':' - nm - ':'
                 emitted.contains(key) == false -> {
-                    print('EMITF|' - nm)
                     one = h2m-lower-func(t, agg, sg, kid)
                     one != '' -> {
 
@@ -897,7 +895,6 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
                         parts.push(one)
                         pnames.push(nm)
                         emitted = emitted - key
-                        print('EMITD|' - nm)
                     }
                 }
             }

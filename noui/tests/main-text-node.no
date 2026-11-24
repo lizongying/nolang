@@ -1,0 +1,285 @@
+; ============================================================================
+; noui 窗口 demo：样式文本节点（阶段 71）—— C-TEXT
+;
+; 流水线：app-init -> cmp-text-node -> txn-add / txn-set-run / txn-clear /
+;          txn-count / txn-run-text / txn-run-color 写入
+;   -> cs-layout / cs-paint（走 cs-measure 的 C-TEXT 分支 +
+;      cs-paint-text-node）：按片段宽度求和定宽，逐段发文本指令，
+;      片段色 -1 时继承组件自身 CMP-COLOR[h]；无片段退回标题单条文本
+;   -> 键盘：a=追加片段；l=轮换对齐；x=改第 1 段；c=清空片段；
+;            r=重建默认；d=切换 disabled；q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-text-node.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+
+; ---- 片段配色 ----
+TN-C-RED = 0xFF0000FF
+TN-C-GREEN = 0x00FF00FF
+TN-C-BASE = 0x112233FF
+
+; ---- 重建默认（收尾自检也用它）----
+tn-build-default = (h i64) () {
+    txn-clear(h)
+    txn-add(h, 'alpha ', TN-C-RED)
+    txn-add(h, 'beta', TN-C-GREEN)
+    cmp-set-color(h, TN-C-BASE)
+    cmp-set-align(h, 2)
+}
+
+; ---- 场景查找（收尾自检用）----
+find-text = (t str, x i64, y i64) (yes i64) {
+    yes = 0
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { yes = 1 }
+        i = cs-inc(i)
+    }
+    yes = yes
+}
+
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui text-node')
+(ok == 0) -> {
+
+root = app-root()
+
+title = cmp-label('noui 阶段71: text-node')
+hint = cmp-label('a=add l=align x=edit1 c=clear r=rebuild d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('')
+
+tx = cmp-text-node('plain')
+tn-build-default(tx)
+
+cmp-add-child(root, title)
+cmp-add-child(root, tx)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：追加一个片段
+        (k == 97) -> {
+            n = txn-count(tx)
+            txn-add(tx, 'z', 0x4A90E2FF)
+        }
+        ; l：轮换对齐 0/1/2/3
+        (k == 108) -> {
+            a = cmp-align(tx)
+            a = ct-rem(cs-add(a, 1), 4)
+            cmp-set-align(tx, a)
+        }
+        ; x：改第 1 段
+        (k == 120) -> {
+            cur = txn-run-text(tx, 1)
+            (cur == 'BETA!') -> { txn-set-run(tx, 1, 'beta', TN-C-GREEN) }
+            (cur != 'BETA!') -> { txn-set-run(tx, 1, 'BETA!', TN-C-GREEN) }
+        }
+        ; c：清空片段（退回标题）
+        (k == 99) -> { txn-clear(tx) }
+        ; r：重建默认
+        (k == 114) -> { tn-build-default(tx) }
+        ; d：切换 disabled（写操作应变空操作）
+        (k == 100) -> {
+            v = cmp-has(tx, F-DISABLED)
+            (v != 0) -> { cmp-flag-clear(tx, F-DISABLED) }
+            (v == 0) -> { cmp-flag-set(tx, F-DISABLED) }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cn = txn-count(tx)
+    al = cmp-align(tx)
+    dis = cmp-has(tx, F-DISABLED)
+    cmp-set-text(stat, 'runs={cn} align={al} disabled={dis}')
+    (cn > 0) -> {
+        cmp-set-text(stat2, 'first={txn-run-text(tx, 0)} last={txn-run-text(tx, cs-sub(cn, 1))}')
+    }
+    (cn <= 0) -> { cmp-set-text(stat2, 'no runs') }
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（'alpha ' 红 + 'beta' 绿，组件色 0x112233FF，居中），
+;   按 cs-rect(tx) 推导坐标。叶子高 = CS-LINE-H(2400)，文本垂直居中 →
+;   文本顶 ty = by + (2400-2400)/2 = by。
+;   两段宽 4800 + 3200 = 8000；居中起点 x0 = bx + (bw-8000)/2。
+;   场景里还有 title / hint / stat / stat2 四条标签文本。
+; ============================================================================
+cmp-flag-clear(tx, F-DISABLED)
+tn-build-default(tx)
+
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-clear()
+cs-paint(root)
+
+lh = 2400
+
+bx, by, bw, bh = cs-rect(tx)
+tw = cs-add(cs-text-w('alpha '), cs-text-w('beta'))
+x0 = cs-add(bx, cs-div(cs-sub(bw, tw), 2))
+x1 = cs-add(x0, cs-text-w('alpha '))
+
+c1 = txn-count(tx) == 2
+c2 = txn-run-text(tx, 0) == 'alpha '
+c3 = txn-run-text(tx, 1) == 'beta'
+c4 = cmp-align(tx) == 2
+c5 = find-text-color('alpha ', x0, by) == TN-C-RED
+c6 = find-text-color('beta', x1, by) == TN-C-GREEN
+c7 = bh == lh
+c8 = cs-text-count() == 6
+
+; 改第 1 段：宽 3200 -> 4000，整体重新居中
+txn-set-run(tx, 1, 'BETA!', TN-C-GREEN)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tx)
+tw2 = cs-add(cs-text-w('alpha '), cs-text-w('BETA!'))
+y0 = cs-add(bx, cs-div(cs-sub(bw, tw2), 2))
+y1 = cs-add(y0, cs-text-w('alpha '))
+c9 = txn-run-text(tx, 1) == 'BETA!'
+c10 = find-text-color('BETA!', y1, by) == TN-C-GREEN
+c11 = find-text-color('beta', y1, by) == -1
+c12 = cs-text-count() == 6
+
+; 片段色 -1 继承组件色
+txn-set-run(tx, 0, 'alpha ', -1)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tx)
+tw3 = cs-add(cs-text-w('alpha '), cs-text-w('BETA!'))
+z0 = cs-add(bx, cs-div(cs-sub(bw, tw3), 2))
+c13 = txn-run-color(tx, 0) == -1
+c14 = find-text-color('alpha ', z0, by) == TN-C-BASE
+
+; 左对齐：起点回到 bx
+cmp-set-align(tx, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tx)
+c15 = cmp-align(tx) == 0
+c16 = find-text-color('alpha ', bx, by) == TN-C-BASE
+c17 = find-text-color('BETA!', cs-add(bx, cs-text-w('alpha ')), by) == TN-C-GREEN
+
+; 清空片段：退回标题单条文本，颜色走组件色
+txn-clear(tx)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tx)
+p0 = bx
+c18 = txn-count(tx) == 0
+c19 = find-text-color('plain', p0, by) == TN-C-BASE
+c20 = cs-text-count() == 5
+
+; disabled：写片段无效
+cmp-flag-set(tx, F-DISABLED)
+txn-add(tx, 'no', 7)
+txn-set-run(tx, 0, 'no', 7)
+txn-clear(tx)
+c21 = txn-count(tx) == 0
+cmp-flag-clear(tx, F-DISABLED)
+
+; 重建默认：几何回到最初
+tn-build-default(tx)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(tx)
+tw = cs-add(cs-text-w('alpha '), cs-text-w('beta'))
+x0 = cs-add(bx, cs-div(cs-sub(bw, tw), 2))
+x1 = cs-add(x0, cs-text-w('alpha '))
+c22 = find-text-color('alpha ', x0, by) == TN-C-RED
+c23 = find-text-color('beta', x1, by) == TN-C-GREEN
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+cn5 = txn-count(tx)
+print('bye frames={fr} keys={kk} clicks={ck} runs={cn5} w={bw} h={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23) -> {
+    print('text-node render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23)) -> {
+    print('FAIL: text-node render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

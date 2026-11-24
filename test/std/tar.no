@@ -27,6 +27,7 @@ mk-fill = (n i64, ch i64) (out []byte) {
 
 ; 1. write-octal 單元（前導零填充 + 尾端 NUL）
 ...
+
 ; 420 → "0000644\0"、0 → "00000000\0"、511 → "00000777\0"、11 → "00000000013\0"
 t-octal = () {
     b = builder{}
@@ -70,6 +71,7 @@ t-octal = () {
 
 ; 2. write-header 單元（欄位配置 vs ustar 規範）
 ...
+
 ; 情境：name='x.txt'、typeflag='0'、size=5、uid/gid/mtime 全 0
 t-header = () {
     b = builder{}
@@ -123,6 +125,7 @@ t-header = () {
 
 ; 3. chksum 正確性（規範金標）
 ...
+
 ; 情境：name='abc.txt'、typeflag='0'、size=3
 ; 規範總和 = 0o7064 = 3636；欄位內容應為 "007064\0 "
 t-checksum = () {
@@ -139,6 +142,7 @@ t-checksum = () {
 
 ; 4. builder round-trip：讀回自身產出的歸檔
 ...
+
 ; 條目：0 a.txt(5B) / 1 dir/（目錄） / 2 raw.bin(3B, add-bytes) / 3 empty(0B)
 t-roundtrip = () {
     b = builder{}
@@ -238,6 +242,7 @@ t-open-gz = () {
 
 ; 7. 讀取器容忍 BSD/GNU tar 的空格填數字欄
 ...
+
 ; macOS bsdtar 寫出的是 "000644 \0"（末位空格）與 "00000000243 "（無 NUL），
 ; 本模組的解析只取 48~57，故須照樣讀對。
 t-space-padded = () {

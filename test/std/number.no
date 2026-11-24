@@ -179,6 +179,7 @@ t-f64-method-to-str = () {
 
 ; 128 位範圍常數（i128/u128）
 ...
+
 ; 取值經 hir2mir 的 typeConstantText128 常數表（i128 lane 全精度十進位），
 ; 以 .to-str() 斷言精確位元組長度與內容。128 位算術已打通（見下方 sqrt/is-prime 測試）。
 t-int128-range-const = () {
@@ -199,6 +200,7 @@ t-int128-range-const = () {
 
 ; 128 位 sqrt / is-prime（i128/u128）
 ...
+
 ; 區區要點：運算元顯式標型、溢出註解獨立成行、多行 guard（單行 `;` 串接
 ; 會觸發 128 位 codegen 丟棄 main）。結果常超 i64 值域，以 .to-str() 斷言。
 t-int128-sqrt = () {
@@ -246,6 +248,7 @@ neg-f = (x f64) (out f64) {
 
 ; 浮點格式化
 ...
+
 ; 三個格式化入口都以 Go 的 strconv.FormatFloat 對應格式為契約：
 ;   to-str-fixed   ↔ 'f'（定點，小數點後 n 位）
 ;   to-str-sci     ↔ 'e'（科學記數，指數至少兩位、帶正負號）
@@ -338,6 +341,7 @@ t-fmt-general = () {
 
 ; 數值轉換
 ...
+
 ; f64 → 整數：向零截斷；無號目標對負值飽和為 0（llvm.fptoui.sat）。
 ; 註：u64 沒有 `.to-i64`（拓寬矩陣只到 to-u64），故 u64 結果一律以 .to-str() 斷言。
 t-conv-f64-int = () {
@@ -446,6 +450,7 @@ t-bits = () {
 
 ; f64 數學函式
 ...
+
 ; 全部為手寫級數／牛頓迭代實作，容差取 1e-6（實測最大誤差 ~2e-9）
 t-math-f64 = () {
     runner.f64-eq(2.0.sqrt(), 1.4142135623730951, 0.000001, 'sqrt(2)')

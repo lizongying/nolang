@@ -201,17 +201,14 @@ sha224-hex = (data []byte) (hex str) {
     hash = sha224(data)
 
     hex-chars = '0123456789abcdef'
-    hex str = with-len(56)
+    hex = ''
 
     i <- [0..28): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 

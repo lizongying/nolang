@@ -1,0 +1,7 @@
+# /noui/src/dv-app
+
+print('A')
+root-a = cmp-root()
+print('B')
+k = cmp-kind(root-a)
+print('C k={k}')

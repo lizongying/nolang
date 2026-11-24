@@ -250,17 +250,14 @@ sha384-hex = (data []byte) (hex str) {
     hash = sha384(data)
 
     hex-chars = '0123456789abcdef'
-    hex str = with-len(96)
+    hex = ''
 
     i <- [0..48): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 

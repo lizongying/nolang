@@ -1,0 +1,200 @@
+; ============================================================================
+; noui 纯逻辑：window-border（窗口描边容器，阶段 75）—— C-WINDOW-BORDER
+;
+;   # /noui/src/app          （组件目录 + cmp-scene 渲染层）
+;
+;   只 import app：`src/app.no` 聚合 components / cmp-scene，可直跑（无窗口）。
+;   构建运行：
+;     cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/_t tests/cmp-window-border.no
+;     DYLD_LIBRARY_PATH=... SDL_VIDEODRIVER=dummy ... ./dist/_t
+; ============================================================================
+# /noui/src/app
+
+root = cmp-root()
+wb = cmp-window-border()
+cmp-add-child(root, wb)
+inner = cmp-label('inner')
+cmp-add-child(wb, inner)
+r = cmp-label('r')
+cmp-add-child(root, r)
+
+; ---- 场景辅助 ----
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+cs-rect-count-color = (c i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-c(i) == c)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 默认状态
+; ============================================================================
+u1 = cmp-kind(wb) == C-WINDOW-BORDER
+u2 = wb-radius(wb) == 0
+u3 = wb-width(wb) == 0
+u4 = cmp-has(wb, F-DISABLED) == 0
+u5 = cs-is-container(cmp-kind(wb)) == 1
+u6 = cs-is-container(C-WINDOW-BORDER) == 1
+
+; ============================================================================
+; 2. 圆角 / 边框厚度读写（负数夹到 0）
+; ============================================================================
+wb-set-radius(wb, 800)
+u7 = wb-radius(wb) == 800
+wb-set-radius(wb, -3)
+u8 = wb-radius(wb) == 0
+wb-set-width(wb, 400)
+u9 = wb-width(wb) == 400
+wb-set-width(wb, -1)
+u10 = wb-width(wb) == 0
+
+; ============================================================================
+; 3. 多句柄隔离
+; ============================================================================
+wb2 = cmp-window-border()
+wb-set-radius(wb2, 500)
+wb-set-width(wb2, 200)
+u11 = wb-radius(wb) == 0
+u12 = wb-width(wb) == 0
+u13 = wb-radius(wb2) == 500
+u14 = wb-width(wb2) == 200
+
+; ============================================================================
+; 4. disabled：写操作全空操作
+; ============================================================================
+cmp-flag-set(wb2, F-DISABLED)
+wb-set-radius(wb2, 9)
+wb-set-width(wb2, 9)
+wb-reset(wb2)
+u15 = wb-radius(wb2) == 500
+u16 = wb-width(wb2) == 200
+cmp-flag-clear(wb2, F-DISABLED)
+
+; ============================================================================
+; 5. reset 归位
+; ============================================================================
+wb-set-radius(wb, 777)
+wb-set-width(wb, 55)
+wb-reset(wb)
+u17 = wb-radius(wb) == 0
+u18 = wb-width(wb) == 0
+
+; ============================================================================
+; 6. 测算：空盒也要有「窗口」尺寸；有子节点走内容盒
+; ============================================================================
+wbe = cmp-window-border()
+mw, mh = cs-measure(wbe)
+u19 = mw == CS-MIN-LEAF-W
+u20 = mh == CS-BTN-H
+cw, ch = cs-measure(wb)
+u21 = cw > CS-MIN-LEAF-W
+u22 = ch > CS-BTN-H
+
+; ============================================================================
+; 7. 渲染：直角描边（宽 400，色 = 组件默认 0x3A3A4AFF）
+;     root 内容宽 15600；面板高 = 2*CS-PAD + CS-LINE-H = 4800
+; ============================================================================
+wb-set-width(wb, 400)
+cs-layout(root, 0, 0, 18000, 20000)
+cs-clear()
+cs-paint(root)
+bx, by, bw, bh = cs-rect(wb)
+u23 = bx == 1200
+u24 = by == 1200
+u25 = bw == 15600
+u26 = bh == 4800
+u27 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u28 = cs-rect-count-color(0x3A3A4AFF) == 4
+u29 = cs-rect-color-at(1200, 1200, 15600, 400) == 0x3A3A4AFF
+u30 = cs-rect-color-at(1200, 5600, 15600, 400) == 0x3A3A4AFF
+u31 = cs-rect-color-at(1200, 1200, 400, 4800) == 0x3A3A4AFF
+u32 = cs-rect-color-at(16400, 1200, 400, 4800) == 0x3A3A4AFF
+u33 = cs-text-count() == 2
+
+; ============================================================================
+; 8. 渲染：圆角 800 —— 四边在角部各让出 800
+; ============================================================================
+wb-set-radius(wb, 800)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+u34 = cs-rect-count-color(0x3A3A4AFF) == 4
+u35 = cs-rect-color-at(2000, 1200, 14000, 400) == 0x3A3A4AFF
+u36 = cs-rect-color-at(2000, 5600, 14000, 400) == 0x3A3A4AFF
+u37 = cs-rect-color-at(1200, 2000, 400, 3200) == 0x3A3A4AFF
+u38 = cs-rect-color-at(16400, 2000, 400, 3200) == 0x3A3A4AFF
+
+; ============================================================================
+; 9. 渲染：半径超过半宽时夹紧，仍画出四条边
+; ============================================================================
+wb-set-radius(wb, 999999)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+u39 = cs-rect-count-color(0x3A3A4AFF) == 4
+wb-set-radius(wb, 0)
+
+; ============================================================================
+; 10. 渲染：宽度 0 = 不画框，只剩 FIELD 面板
+; ============================================================================
+wb-set-width(wb, 0)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+u40 = cs-rect-count-color(0x3A3A4AFF) == 0
+u41 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+u42 = cs-text-count() == 2
+
+; ============================================================================
+; 11. 空盒渲染：不挂子节点也有面 + 框（root2 对照）
+; ============================================================================
+root2 = cmp-root()
+wbe2 = cmp-window-border()
+cmp-add-child(root2, wbe2)
+wb-set-width(wbe2, 300)
+cs-clear()
+cs-layout(root2, 0, 0, 18000, 20000)
+cs-paint(root2)
+ex, ey, ew, eh = cs-rect(wbe2)
+u43 = ew == 15600
+u44 = eh == 4000
+u45 = cs-rect-color-at(ex, ey, ew, eh) == cs-theme(CS-TH-FIELD)
+u46 = cs-rect-count-color(0x3A3A4AFF) == 4
+u47 = cs-rect-color-at(ex, ey, ew, 300) == 0x3A3A4AFF
+u48 = cs-rect-color-at(cs-add(ex, cs-sub(ew, 300)), ey, 300, eh) == 0x3A3A4AFF
+u49 = cs-text-count() == 0
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11 & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21 & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31 & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41 & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49
+(all) -> { print('ALL WINDOW-BORDER TESTS PASSED') }
+(!(all)) -> { print('FAIL: window-border mismatch') }

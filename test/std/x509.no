@@ -22,8 +22,8 @@ HEX-CHARS = '0123456789abcdef'
 bhex = (data []byte) (hex str) {
     n = data.len()
 
-    #{overflow=wrap}
-    hex = with-len(n * 2)
+    ; str 下標寫已全域禁用；改為從 '' 順序拼接（右值是 ASCII ?char，逐位元組等價）
+    hex = ''
     i <- [0..n): {
         data-i = data[i]: {
             ok -> it
@@ -31,15 +31,7 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        {
-
-            #{overflow=wrap}
-            hex[i * 2] ?= HEX-CHARS[(data-i >> 4) & 15]
-        }: {
-            err -> _
-
-            -> _
-        }
+        hex = hex - HEX-CHARS[(data-i >> 4) & 15]
 
         data-i-2 = data[i]: {
             ok -> it
@@ -47,15 +39,7 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        {
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= HEX-CHARS[data-i-2 & 15]
-        }: {
-            err -> _
-
-            -> _
-        }
+        hex = hex - HEX-CHARS[data-i-2 & 15]
     }
 }
 
@@ -502,6 +486,66 @@ t-cert = () {
     runner.eq(end, 283, '自簽憑證 tbs end = 4 + 279（含 4 位元組長格式標頭）')
 }
 
+; ---- 憑證鏈驗証（x509-verify-chain / 簽章 / CA / hostname / 有效期）----
+; 向量：OpenSSL 產生之 RSA-2048 根 CA（basicConstraints CA:TRUE）+ 由它簽發的
+; leaf（CN=localhost，SAN=localhost/www.example.test），openssl verify 通過。
+CHAIN-CA-HEX = '3082032d30820215a00302010202144cc43533e69a1ca690dbe056fa4a864f98d4e719300d06092a864886f70d01010b0500301e311c301a06035504030c134e6f6c616e67205465737420526f6f74204341301e170d3236313132343037303632335a170d3436313131393037303632335a301e311c301a06035504030c134e6f6c616e67205465737420526f6f7420434130820122300d06092a864886f70d01010105000382010f003082010a0282010100c0a408f45d60f44bdae0b22dcfb3ee97be112984afe14de4dc3657bedb0f730d7779e075547389be8164560be4b164c59def0c50fdf86cde5cc80f27fd4734001a4576f53de12d16393a7e1d20ef3814363e44e268149aee8861a6acf8f044ccad4fda384b09baba028db5a4feafb37c00eb29bfdd98ac7f45e323d7ac7da8768a8cea0e5779f41d86309dcab86465dbc9b30d2d35c0c8f5cb7e48bf714ae57857d0fe604c993fa9d43ad61879b4527bfa535df25cac591748ebbf6ec55b0ca2206254229241fd95ed082abacaa5c0791cbb0f4d9d6e338f2226423167010f0d281d2979a60a87a1d3f098250493df29ca5659ae5435dd8dadeece13d668028b0203010001a3633061301d0603551d0e041604144b6d5b67afa3137f389bd7a8131a90454adeb202301f0603551d230418301680144b6d5b67afa3137f389bd7a8131a90454adeb202300f0603551d130101ff040530030101ff300e0603551d0f0101ff040403020106300d06092a864886f70d01010b05000382010100ab8a8b1aaceedb7e28f5fd7db1093c35837c14b32773871c0d2763b5da64200d4c03d4da74ccc2ff9ec47aa65d7cc915aced01c89d1adb9046f0212c91e9d86f60c60039fe4235c24589ea41bd06aa5f56132450360de8a39283237dbf4181fc1924e261901fe06356a3104e94259c30d89f78f1ce156fe9fda50d4770ec9e3e96d36979ee2e98b646554e12a3d68980cb0c742c9c0a291de31c95f902da36a3cee3a800603f4f187d9f07c63999a1884771d408d0e306bedb6a03ab3d14d5b955174fabe481dca8211831217e9238a4da11977dbbb0e40ca84837501bfa245018d7d54b7c7bf45ee669815610b7a984e0782922e2af0fac8c1145baa70d3a88'
+CHAIN-LEAF-HEX = '3082035930820241a00302010202144093aca2f91d10a6fb5502df89f6310271c9dfee300d06092a864886f70d01010b0500301e311c301a06035504030c134e6f6c616e67205465737420526f6f74204341301e170d3236313132343037303632335a170d3336313132313037303632335a30143112301006035504030c096c6f63616c686f737430820122300d06092a864886f70d01010105000382010f003082010a02820101009f92003028610e8f76d91d30c0eede88a2591dc1c03edbfbf1a4f37228ea7e4c2734fe8f2cab5f931efe1604587b89781676b71c047573ea0950ca96c616c72689f8f11c7dd65cfdf990be6f3680d95cc7fd78bf91cebbf9be8cfea78092e8d8623f1dd740ccbb26a6159fc54a9d987470427dd2af5e0bb321249fb27c360909e0baab8206118cfab72acc4acc20201ef5a003fa71d159928b0303f41956247bc9641fdba43a177e03a22566fcf668648ea3e3bd6b816520f99c79b6ababf16c0ef1d100d9d73c70652bea1493cc8041ae1439b4cfd2aa803ff60f59092d40716bec05fb9c40e340c56f6d465b9fc065fe7664c375cf2f4892689eeaba15c6430203010001a3819830819530260603551d11041f301d82096c6f63616c686f737482107777772e6578616d706c652e7465737430090603551d1304023000300b0603551d0f0404030205a030130603551d25040c300a06082b06010505070301301d0603551d0e041604147684f1d2316f8cf7e467c9768bd2f77bc42fc938301f0603551d230418301680144b6d5b67afa3137f389bd7a8131a90454adeb202300d06092a864886f70d01010b050003820101005a102dcaf5203625ee39e6c7717f50c9555434c1fd797af977e7fa3e94bedb7ae7d425bf56c86690b5c3c453eafe9dab5ac010671f91283755afa58898c5fa46ccbd81958a857f0247bf7b417b7c55b666b42d072c2b92d5e29eb86db76c87571d520d482ed1aeed474512e3c346f551e52923f10aa05f4818da373dd79fa2d7a58b534137ba9b881a78956e439f9619271609e59cdf40cb6481a5932845e9216a80c73272fc47c8097852ee2111e46237806c8086b32a35afd974be0cd0c795036d14ebfbe9b4b73e34d99b4cd2c5fea4d5dcd94dd9c4e42543347c984e41dd1e13945bf6f52d74140bdaa3b63f8375c26a4115ea2172eed85db9d8636826db'
+
+t-chain = () {
+    ca = mkb(CHAIN-CA-HEX)
+    leaf = mkb(CHAIN-LEAF-HEX)
+
+    ; 基本欄位
+    runner.is-true(x509.x509-cert-is-ca(ca), '根 CA basicConstraints cA=TRUE')
+    runner.is-true(x509.x509-cert-is-ca(leaf) == false, 'leaf 不是 CA')
+    runner.is-true(x509.x509-sig-alg-is-rsa-sha256(leaf), 'leaf 使用 sha256WithRSAEncryption')
+
+    ; 簽章驗签（与 openssl 交叉驗證過的 RSA 公鑰）
+    runner.is-true(x509.x509-verify-cert-signature(leaf, ca), 'leaf 由根 CA 簽發')
+    runner.is-true(x509.x509-verify-cert-signature(ca, ca), '根 CA 自簽驗签通過')
+
+    ; hostname / 有效期
+    runner.is-true(x509.x509-hostname-matches(leaf, 'localhost'), 'SAN 比對 localhost')
+    runner.is-true(x509.x509-hostname-matches(leaf, 'WWW.Example.Test'), 'SAN 大小寫不敏感')
+    runner.is-true(x509.x509-hostname-matches(leaf, 'a.localhost') == false, '萬用字元不跨多段')
+    runner.is-true(x509.x509-valid-at(leaf, time.now-s()), 'leaf 在有效期內')
+
+    ; 整鏈：bundle = [u24 len][DER]
+    chain = x509.x509-bundle-add(with-cap(0), leaf)
+    roots = x509.x509-bundle-add(with-cap(0), ca)
+    runner.eq(x509.x509-bundle-count(chain), 1, 'chain bundle 含 1 張憑證')
+    runner.eq(x509.x509-bundle-count(roots), 1, 'roots bundle 含 1 張錨點')
+    runner.is-true(x509.x509-verify-chain(chain, roots, 'localhost', time.now-s()), '完整鏈驗証通過')
+
+    ; fail-closed：錯誤 hostname / 無信任錨點 / 不可能的時間
+    runner.is-true(x509.x509-verify-chain(chain, roots, 'evil.example', time.now-s()) == false, 'hostname 不符拒絕')
+    runner.is-true(x509.x509-verify-chain(chain, with-cap(0), 'localhost', time.now-s()) == false, '無信任錨點拒絕')
+    runner.is-true(x509.x509-verify-chain(chain, roots, 'localhost', 0) == false, '有效期外拒絕')
+
+    ; DER 篡改：改動 TBS 一個位元組後簽章必須失敗
+    broken []byte = with-cap(leaf.len())
+    i <- [0..leaf.len()): {
+        v = leaf[i]: {
+            ok -> it
+
+            -> 0
+        }
+        broken.push(v)
+    }
+    old-byte = x509.x509-byte-or(broken, 100, 0)
+    new-byte = old-byte ^ 1
+    {
+        broken[100]: {
+            ok -> it = new-byte
+
+            -> _
+        }
+    }
+    broken-sig = x509.x509-verify-cert-signature(broken, ca)
+    runner.is-true(! broken-sig, 'TBS 被篡改後驗签失敗')
+}
+
 p1 = runner.test('x509.tbs-range', t-tbs-range)
 p2 = runner.test('x509.serial', t-serial)
 p3 = runner.test('x509.rsa-e', t-rsa-e)
@@ -516,6 +560,7 @@ p11 = runner.test('x509.buildparts', t-buildparts)
 p12 = runner.test('x509.compress', t-compress)
 p13 = runner.test('x509.sign', t-sign)
 p14 = runner.test('x509.cert', t-cert)
+p15 = runner.test('x509.chain', t-chain)
 total = runner.summary()
 f = runner.failed-count()
 {

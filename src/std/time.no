@@ -605,84 +605,82 @@ format-date = (d date) (out str) {
     }
     out-len = 19
     neg == 1 -> out-len = 20
-    out = with-len(out-len)
+
+    ; str 下標寫入已全域禁用；先用 []byte 緩衝逐位元組寫入，再一次轉回 str。
+    ob []byte = with-cap-len(out-len, out-len)
     pos = 0
     neg == 1 -> {
-        out[0]: {
-            ok -> it = 45
-
-            -> _
-        }
+        ob[0] = 45
         pos = 1
     }
 
-    ; 逐位寫入。每個下標讀取都是 ?byte（越界為 err），每個算術都是 ?i64
-    ; （#{overflow=wrap} 只改溢出時取的值，不改結果型別），所以 place-match 的
-    ; `it = <expr>` 會把算術那層 err 丟掉。用一個塊形態 match 把這些 ?= 併起來：
-    ; 任一處失敗就整體放棄這次格式化，不必為每個字元各寫一個 match。
+    ; 逐位寫入。每個算術都是 ?i64（#{overflow=wrap} 只改溢出時取的值，不改結果型別），
+    ; 用一個塊形態 match 把這些 ?= 併起來：任一處失敗就整體放棄這次格式化，
+    ; 不必為每個字元各寫一個 match。
     {
 
         #{overflow=wrap}
-        out[pos] ?= (yr / 1000) % 10 + 48
+        ob[pos] ?= (yr / 1000) % 10 + 48
 
         #{overflow=wrap}
-        out[pos + 1] ?= (yr / 100) % 10 + 48
+        ob[pos + 1] ?= (yr / 100) % 10 + 48
 
         #{overflow=wrap}
-        out[pos + 2] ?= (yr / 10) % 10 + 48
+        ob[pos + 2] ?= (yr / 10) % 10 + 48
 
         #{overflow=wrap}
-        out[pos + 3] ?= yr % 10 + 48
+        ob[pos + 3] ?= yr % 10 + 48
 
-        out[pos + 4] ?= 45
+        ob[pos + 4] ?= 45
 
         ; 月
         #{overflow=wrap}
-        out[pos + 5] ?= d.month / 10 + 48
+        ob[pos + 5] ?= d.month / 10 + 48
 
         #{overflow=wrap}
-        out[pos + 6] ?= d.month % 10 + 48
+        ob[pos + 6] ?= d.month % 10 + 48
 
-        out[pos + 7] ?= 45
+        ob[pos + 7] ?= 45
 
         ; 日
         #{overflow=wrap}
-        out[pos + 8] ?= d.day / 10 + 48
+        ob[pos + 8] ?= d.day / 10 + 48
 
         #{overflow=wrap}
-        out[pos + 9] ?= d.day % 10 + 48
+        ob[pos + 9] ?= d.day % 10 + 48
 
-        out[pos + 10] ?= 32
+        ob[pos + 10] ?= 32
 
         ; 時
         #{overflow=wrap}
-        out[pos + 11] ?= d.hour / 10 + 48
+        ob[pos + 11] ?= d.hour / 10 + 48
 
         #{overflow=wrap}
-        out[pos + 12] ?= d.hour % 10 + 48
+        ob[pos + 12] ?= d.hour % 10 + 48
 
-        out[pos + 13] ?= 58
+        ob[pos + 13] ?= 58
 
         ; 分
         #{overflow=wrap}
-        out[pos + 14] ?= d.min / 10 + 48
+        ob[pos + 14] ?= d.min / 10 + 48
 
         #{overflow=wrap}
-        out[pos + 15] ?= d.min % 10 + 48
+        ob[pos + 15] ?= d.min % 10 + 48
 
-        out[pos + 16] ?= 58
+        ob[pos + 16] ?= 58
 
         ; 秒
         #{overflow=wrap}
-        out[pos + 17] ?= d.sec / 10 + 48
+        ob[pos + 17] ?= d.sec / 10 + 48
 
         #{overflow=wrap}
-        out[pos + 18] ?= d.sec % 10 + 48
+        ob[pos + 18] ?= d.sec % 10 + 48
     }: {
         err -> _
 
         -> _
     }
+    out = ob.to-bytes-str()
 }
 
 ; 將 Unix 時間戳格式化為可讀字串

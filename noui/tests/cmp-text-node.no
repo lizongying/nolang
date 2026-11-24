@@ -141,10 +141,8 @@ u35 = v1h == 2400
 
 m2 = cmp-text-node('ab')
 v2w, v2h = cs-measure(m2)
-u36 = v2w == 4000
+u36 = v2w == 6400
 u37 = v2h == 2400
-; 1600+2400=4000 < 6400 → 夹到 6400
-u38 = v2w == 6400
 
 m3 = cmp-text-node('abcdefghij')
 v3w, v3h = cs-measure(m3)
@@ -259,7 +257,7 @@ cmp-flag-clear(r, F-DISABLED)
 ok = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11
 ok = ok & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21
 ok = ok & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31
-ok = ok & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41
+ok = ok & u32 & u33 & u34 & u35 & u36 & u37 & u39 & u40 & u41
 ok = ok & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
 ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60 & u61
 

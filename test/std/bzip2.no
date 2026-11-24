@@ -79,6 +79,7 @@ t-decompress-empty = () {
 
 ; 位元讀取器（MSB-first）
 ...
+
 ; bzip2 的位元流是高位在前的
 t-bit-reader = () {
     br = bz-bit-reader{}
@@ -105,6 +106,7 @@ t-bit-reader = () {
 
 ; Huffman 碼表建構 / 解碼
 ...
+
 ; 兩符號、長度各 1 → 規範碼 0 與 1
 t-huffman = () {
     lens = [1, 1]
@@ -141,6 +143,7 @@ t-huffman = () {
 
 ; 壓縮端：目前只產出合法 BZh 前綴
 ...
+
 ; 已知缺陷（test/README.md §5.2 #14）：區塊資料（BWT/MTF/Huffman）尚未實作，
 ; 產出僅 24 位元組且會讓本模組的解壓端卡住等資料；此處只驗魔數。
 t-compress-prefix = () {

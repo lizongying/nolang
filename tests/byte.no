@@ -69,7 +69,7 @@ c = 0
 j <- [0..bs.len()): {
     c = bs[j]: {
         ok -> it
-    
+
         -> 0
     }
     print('byte[{j}] = {c}')
@@ -231,12 +231,8 @@ b.s.fill(72)
 
 ; (3) 結構體 txt 欄位接收者（%txt 佈局：內聯緩衝，與 %str-long 不同）
 ; 2026-11-12 起 `b.t[0] = "J"` 被 idxwrite 全域禁用（連頂層 struct 字段基底一併收口，
-; 這正是本行原本漏報的洞）。place-match 同樣證明寫回落在欄位本身。
-b.t[0]: {
-    ok -> it = "J"
-
-    -> _
-}
+; 這正是本行原本漏報的洞）。改為整體重組後寫回欄位，同樣證明寫回落在欄位本身。
+b.t = 'J' - b.t[1..]
 {
     b.t == 'Ji' -> {
         print('ok 3: struct txt field receiver')

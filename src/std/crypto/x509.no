@@ -3460,6 +3460,7 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
 x509-ascii-at = (data []byte, pos i64, n i64) (s str) {
     s = ''
     i <- [0..n): {
+
         #{overflow=wrap}
         idx = pos + i
         c = data[idx]: {
@@ -3475,9 +3476,11 @@ x509-ascii-at = (data []byte, pos i64, n i64) (s str) {
 
 ; D1-safe: a + b, plain i64 in/out
 x509-add-plain = (a i64, b i64) (out i64) {
+
     #{overflow=wrap}
     v = a + b: {
         ok -> it
+
         -> 0
     }
     out = v
@@ -3485,9 +3488,11 @@ x509-add-plain = (a i64, b i64) (out i64) {
 
 ; D1-safe: a - b, plain i64 in/out
 x509-sub-plain = (a i64, b i64) (out i64) {
+
     #{overflow=wrap}
     v = a - b: {
         ok -> it
+
         -> 0
     }
     out = v
@@ -3499,26 +3504,41 @@ x509-host-pattern-match = (pattern str, host str) (matched bool) {
     p = pattern.to-lower()
     h = host.to-lower()
     p.starts-with('*.') -> {
+
         ; "*.example.com" 符合 "a.example.com" / "b.example.com"，但不符 "example.com"
         plen = p.len-bytes()
         hlen = h.len-bytes()
-        plen < 3 -> { return }
-        hlen <= plen -> { return }
+        plen < 3 -> {
+            return
+        }
+        hlen <= plen -> {
+            return
+        }
         suffix = p[2..plen)
+
         ; host 必須以 "." + suffix 結尾，且 "*" 只匹配一段（不含 "."）
         plenminus2 = x509-sub-plain(plen, 2)
         dotpos = x509-sub-plain(hlen, x509-add-plain(plenminus2, 1))
-        dotpos <= 0 -> { return }
+        dotpos <= 0 -> {
+            return
+        }
         h[dotpos] == 46 -> {
+
             ; 戳出的第一段不得含 "."
             seg = h[0..dotpos)
-            seg.contains('.') -> { return }
+            seg.contains('.') -> {
+                return
+            }
             dpos1 = x509-add-plain(dotpos, 1)
-            suffix == h[dpos1..hlen) -> { matched = true }
+            suffix == h[dpos1..hlen) -> {
+                matched = true
+            }
         }
         return
     }
-    p == h -> { matched = true }
+    p == h -> {
+        matched = true
+    }
 }
 
 ; 從憑證的 SAN 延伸或 CN 取出所有 hostname 比對 host
@@ -3526,15 +3546,22 @@ x509-host-pattern-match = (pattern str, host str) (matched bool) {
 x509-hostname-matches = (data []byte, host str) (matched bool) {
     matched = false
     ts, te = x509-tbs-range(data)
-    ts == 0 -> { return }
-    te <= ts -> { return }
+    ts == 0 -> {
+        return
+    }
+    te <= ts -> {
+        return
+    }
 
     #{overflow=wrap}
     p = ts + 1
     tl, tadv = der-len(data, p)
+
     #{overflow=wrap}
     q = p + tadv
-    q >= te -> { return }
+    q >= te -> {
+        return
+    }
 
     t = data[q]: {
         ok -> it
@@ -3543,23 +3570,38 @@ x509-hostname-matches = (data []byte, host str) (matched bool) {
     }
     t == 160 -> {
         q = der-skip(data, q)
-        q >= te -> { return }
+        q >= te -> {
+            return
+        }
     }
+
     ; q = serial, +3 => validity
     q = der-skip(data, q)
     q = der-skip(data, q)
     q = der-skip(data, q)
-    q >= te -> { return }
+    q >= te -> {
+        return
+    }
+
     ; q = validity
     q = der-skip(data, q)
-    q >= te -> { return }
+    q >= te -> {
+        return
+    }
+
     ; q = subject — 先記下，稍後由 CN 回退使用
     subject-pos = q
     q = der-skip(data, q)
-    q >= te -> { return }
+    q >= te -> {
+        return
+    }
+
     ; q = spki
     q = der-skip(data, q)
-    q >= te -> { return }
+    q >= te -> {
+        return
+    }
+
     ; q = extensions [3]（可選）
     etag = data[q]: {
         ok -> it
@@ -3567,14 +3609,18 @@ x509-hostname-matches = (data []byte, host str) (matched bool) {
         -> 0
     }
     etag != 163 -> {
+
         ; 無 extensions → 僅用 CN 回退
         cn = x509-cn-from-name(data, subject-pos)
-        cn.len-bytes() > 0 -> { matched = x509-host-pattern-match(cn, host) }
+        cn.len-bytes() > 0 -> {
+            matched = x509-host-pattern-match(cn, host)
+        }
         return
     }
 
     #{overflow=wrap}
     el, eadv = der-len(data, q + 1)
+
     #{overflow=wrap}
     ep = q + 1 + eadv
     etag2 = data[ep]: {
@@ -3584,21 +3630,30 @@ x509-hostname-matches = (data []byte, host str) (matched bool) {
     }
     etag2 != 48 -> {
         cn = x509-cn-from-name(data, subject-pos)
-        cn.len-bytes() > 0 -> { matched = x509-host-pattern-match(cn, host) }
+        cn.len-bytes() > 0 -> {
+            matched = x509-host-pattern-match(cn, host)
+        }
         return
     }
+
     #{overflow=wrap}
     sl, sadv = der-len(data, ep + 1)
+
     #{overflow=wrap}
     fp = ep + 1 + sadv
+
     #{overflow=wrap}
     fend = ep + 1 + sadv + sl
 
     cur = fp
     i <- [0..64): {
-        cur >= fend -> { break }
+        cur >= fend -> {
+            break
+        }
+
         #{overflow=wrap}
         clen, cadv = der-len(data, cur + 1)
+
         #{overflow=wrap}
         cbody = cur + 1 + cadv
         otag = data[cbody]: {
@@ -3607,14 +3662,16 @@ x509-hostname-matches = (data []byte, host str) (matched bool) {
             -> 0
         }
         otag != 6 -> {
-            #{overflow=wrap}
             cur = der-skip(data, cur)
             continue
         }
+
         #{overflow=wrap}
         oidl, oadv = der-len(data, cbody + 1)
+
         #{overflow=wrap}
         oval = cbody + 1 + oadv
+
         ; SAN OID = 2.5.29.17 = 55 1D 11
         ob0 = data[oval]: {
             ok -> it
@@ -3632,6 +3689,7 @@ x509-hostname-matches = (data []byte, host str) (matched bool) {
             -> 0
         }
         oidl == 3 && ob0 == 85 && ob1 == 29 && ob2 == 17 -> {
+
             ; extnValue (OCTET STRING) 在 OID 之後
             #{overflow=wrap}
             vb = oval + oidl
@@ -3641,10 +3699,13 @@ x509-hostname-matches = (data []byte, host str) (matched bool) {
                 -> 0
             }
             vtag == 4 -> {
+
                 #{overflow=wrap}
                 vlen, vadv = der-len(data, vb + 1)
+
                 #{overflow=wrap}
                 sanp = vb + 1 + vadv
+
                 ; SAN 內容是 SEQUENCE OF GeneralName
                 stag = data[sanp]: {
                     ok -> it
@@ -3652,45 +3713,55 @@ x509-hostname-matches = (data []byte, host str) (matched bool) {
                     -> 0
                 }
                 stag == 48 -> {
+
                     #{overflow=wrap}
                     stl, stadv = der-len(data, sanp + 1)
+
                     #{overflow=wrap}
                     gp = sanp + 1 + stadv
+
                     #{overflow=wrap}
                     gend = sanp + 1 + stadv + stl
                     j <- [0..64): {
-                        gp >= gend -> { break }
+                        gp >= gend -> {
+                            break
+                        }
                         gtag = data[gp]: {
                             ok -> it
 
                             -> 0
                         }
+
                         #{overflow=wrap}
                         glen, gadv = der-len(data, gp + 1)
+
                         #{overflow=wrap}
                         gval = gp + 1 + gadv
+
                         ; dNSName = context tag 2 (0x82)
                         gtag == 130 -> {
                             nm = x509-ascii-at(data, gval, glen)
-                            matched == false -> {
+                            ! matched -> {
                                 matched = x509-host-pattern-match(nm, host)
                             }
                         }
-                        #{overflow=wrap}
                         gp = der-skip(data, gp)
                     }
                 }
             }
-            matched -> { break }
+            matched -> {
+                break
+            }
         }
-        #{overflow=wrap}
         cur = der-skip(data, cur)
     }
 
     ; SAN 無符合 → 回退 CN
-    matched == false -> {
+    ! matched -> {
         cn = x509-cn-from-name(data, subject-pos)
-        cn.len-bytes() > 0 -> { matched = x509-host-pattern-match(cn, host) }
+        cn.len-bytes() > 0 -> {
+            matched = x509-host-pattern-match(cn, host)
+        }
     }
 }
 
@@ -3702,15 +3773,23 @@ x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
 
         -> 0
     }
-    tag != 48 -> { return }
+    tag != 48 -> {
+        return
+    }
+
     #{overflow=wrap}
     nl, nadv = der-len(data, name-pos + 1)
+
     #{overflow=wrap}
     rp = name-pos + 1 + nadv
+
     #{overflow=wrap}
     rend = name-pos + 1 + nadv + nl
     i <- [0..16): {
-        rp >= rend -> { break }
+        rp >= rend -> {
+            break
+        }
+
         ; RDN = SET (0x31)
         rtag = data[rp]: {
             ok -> it
@@ -3718,14 +3797,20 @@ x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
             -> 0
         }
         rtag == 49 -> {
+
             #{overflow=wrap}
             rl, radv = der-len(data, rp + 1)
+
             #{overflow=wrap}
             ap = rp + 1 + radv
+
             #{overflow=wrap}
             aend = rp + 1 + radv + rl
             j <- [0..8): {
-                ap >= aend -> { break }
+                ap >= aend -> {
+                    break
+                }
+
                 ; AttributeTypeAndValue = SEQUENCE
                 atag = data[ap]: {
                     ok -> it
@@ -3733,10 +3818,13 @@ x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
                     -> 0
                 }
                 atag == 48 -> {
+
                     #{overflow=wrap}
                     al, aadv = der-len(data, ap + 1)
+
                     #{overflow=wrap}
                     abody = ap + 1 + aadv
+
                     ; OID
                     otag = data[abody]: {
                         ok -> it
@@ -3744,10 +3832,13 @@ x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
                         -> 0
                     }
                     otag == 6 -> {
+
                         #{overflow=wrap}
                         oidl, oadv = der-len(data, abody + 1)
+
                         #{overflow=wrap}
                         oval = abody + 1 + oadv
+
                         ; CN OID = 2.5.4.3 = 55 04 03
                         ob0 = data[oval]: {
                             ok -> it
@@ -3765,6 +3856,7 @@ x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
                             -> 0
                         }
                         oidl == 3 && ob0 == 85 && ob1 == 4 && ob2 == 3 -> {
+
                             #{overflow=wrap}
                             vtagpos = oval + oidl
                             vt = data[vtagpos]: {
@@ -3772,8 +3864,10 @@ x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
 
                                 -> 0
                             }
+
                             ; UTF8String (0x0C) / PrintableString (0x13) / IA5String (0x16)
                             vt == 12 || vt == 19 || vt == 22 -> {
+
                                 #{overflow=wrap}
                                 vlen, vadv = der-len(data, vtagpos + 1)
                                 cn = x509-ascii-at(data, vtagpos + 1 + vadv, vlen)
@@ -3782,20 +3876,20 @@ x509-cn-from-name = (data []byte, name-pos i64) (cn str) {
                         }
                     }
                 }
-                #{overflow=wrap}
                 ap = der-skip(data, ap)
             }
         }
-        #{overflow=wrap}
         rp = der-skip(data, rp)
     }
 }
 
 ; D1-safe: acc*10 + digit, both plain i64 in/out
 x509-acc-digit = (acc i64, d i64) (out i64) {
+
     #{overflow=wrap}
     v = acc * 10 + d: {
         ok -> it
+
         -> 0
     }
     out = v
@@ -3804,31 +3898,40 @@ x509-acc-digit = (acc i64, d i64) (out i64) {
 ; UTCTime (YYMMDDHHMMSSZ) → Unix 秒。失敗回 0
 x509-utc-to-unix = (s str) (ts i64) {
     ts = 0
-    s.len-bytes() != 13 -> { return }
-    s[12] != 90 -> { return }
+    s.len-bytes() != 13 -> {
+        return
+    }
+    s[12] != 90 -> {
+        return
+    }
     yy = 0
     i <- [0..2): {
-        #{overflow=wrap}
         c = s[i]: {
             ok -> it
 
             -> "0"
         }
-        c < 48 || c > 57 -> { return }
+        c < 48 || c > 57 -> {
+            return
+        }
         digit = c - 48
         yy = x509-acc-digit(yy, digit)
     }
+
     ; X.509: YY >= 50 → 19YY, else 20YY
     year = 2000
-    yy >= 50 -> { year = 1900 }
+    yy >= 50 -> {
+        year = 1900
+    }
+
     #{overflow=wrap}
     year = year + yy: {
         ok -> it
+
         -> 2000
     }
     mo = 0
     i <- [2..4): {
-        #{overflow=wrap}
         c = s[i]: {
             ok -> it
 
@@ -3839,7 +3942,6 @@ x509-utc-to-unix = (s str) (ts i64) {
     }
     da = 0
     i <- [4..6): {
-        #{overflow=wrap}
         c = s[i]: {
             ok -> it
 
@@ -3850,7 +3952,6 @@ x509-utc-to-unix = (s str) (ts i64) {
     }
     hh = 0
     i <- [6..8): {
-        #{overflow=wrap}
         c = s[i]: {
             ok -> it
 
@@ -3861,7 +3962,6 @@ x509-utc-to-unix = (s str) (ts i64) {
     }
     mm = 0
     i <- [8..10): {
-        #{overflow=wrap}
         c = s[i]: {
             ok -> it
 
@@ -3872,7 +3972,6 @@ x509-utc-to-unix = (s str) (ts i64) {
     }
     ss = 0
     i <- [10..12): {
-        #{overflow=wrap}
         c = s[i]: {
             ok -> it
 
@@ -3881,9 +3980,15 @@ x509-utc-to-unix = (s str) (ts i64) {
         digit = c - 48
         ss = x509-acc-digit(ss, digit)
     }
-    mo < 1 || mo > 12 -> { return }
-    da < 1 || da > 31 -> { return }
-    hh > 23 || mm > 59 || ss > 59 -> { return }
+    mo < 1 || mo > 12 -> {
+        return
+    }
+    da < 1 || da > 31 -> {
+        return
+    }
+    hh > 23 || mm > 59 || ss > 59 -> {
+        return
+    }
     d date
     d.year = year
     d.month = mo
@@ -3900,13 +4005,19 @@ x509-utc-to-unix = (s str) (ts i64) {
 x509-valid-at = (data []byte, now-ts i64) (valid bool) {
     valid = false
     ts, te = x509-tbs-range(data)
-    ts == 0 -> { return }
+    ts == 0 -> {
+        return
+    }
+
     #{overflow=wrap}
     p = ts + 1
     tl, tadv = der-len(data, p)
+
     #{overflow=wrap}
     q = p + tadv
-    q >= te -> { return }
+    q >= te -> {
+        return
+    }
     t = data[q]: {
         ok -> it
 
@@ -3914,15 +4025,21 @@ x509-valid-at = (data []byte, now-ts i64) (valid bool) {
     }
     t == 160 -> {
         q = der-skip(data, q)
-        q >= te -> { return }
+        q >= te -> {
+            return
+        }
     }
     q = der-skip(data, q)
     q = der-skip(data, q)
     q = der-skip(data, q)
-    q >= te -> { return }
+    q >= te -> {
+        return
+    }
+
     ; q = validity SEQUENCE
     #{overflow=wrap}
     vl, vadv = der-len(data, q + 1)
+
     #{overflow=wrap}
     vp = q + 1 + vadv
     nbt = data[vp]: {
@@ -3930,8 +4047,10 @@ x509-valid-at = (data []byte, now-ts i64) (valid bool) {
 
         -> 0
     }
+
     #{overflow=wrap}
     nbl, nbadv = der-len(data, vp + 1)
+
     #{overflow=wrap}
     vap = vp + 1 + nbadv + nbl
     nat = data[vap]: {
@@ -3939,16 +4058,701 @@ x509-valid-at = (data []byte, now-ts i64) (valid bool) {
 
         -> 0
     }
+
     #{overflow=wrap}
     nal, naadv = der-len(data, vap + 1)
+
     ; 僅處理 UTCTime (0x17)；GeneralizedTime (0x18) 暫不支援 → fail-closed
-    nbt != 23 || nat != 23 -> { return }
+    nbt != 23 || nat != 23 -> {
+        return
+    }
     nbstr = x509-ascii-at(data, vp + 1 + nbadv, nbl)
     nastr = x509-ascii-at(data, vap + 1 + naadv, nal)
     nbts = x509-utc-to-unix(nbstr)
     nats = x509-utc-to-unix(nastr)
-    nbts == 0 || nats == 0 -> { return }
-    now-ts < nbts -> { return }
-    now-ts > nats -> { return }
+    nbts == 0 || nats == 0 -> {
+        return
+    }
+    now-ts < nbts -> {
+        return
+    }
+    now-ts > nats -> {
+        return
+    }
     valid = true
+}
+
+; ============================================================
+; X.509 憑證鏈驗証（RSA / SHA-256）
+;
+; 本節補上 v0.4.29 缺的「信任鏈」環節：issuer/subject 名稱串接、
+; 簽章驗签（RSA PKCS#1 v1.5 SHA-256）、BasicConstraints CA 旗標，
+; 以及以信任錨點（trust anchor）結尾的整鏈驗証。
+;
+; 只支援 sha256WithRSAEncryption 簽章，其餘演算法一律 fail-closed。
+; ============================================================
+
+; 安全讀取單一位元組：越界回 fallback（不拋 err）
+x509-byte-or = (data []byte, pos i64, fallback i64) (v i64) {
+    v = data[pos]: {
+        ok -> it
+
+        -> fallback
+    }
+}
+
+; 從 pos 讀取 3-byte big-endian 無符號整數（DER / TLS 憑證長度通用）
+x509-u24-at = (data []byte, pos i64) (v i64) {
+    v = 0
+    i <- [0..3): {
+
+        #{overflow=wrap}
+        at = pos + i
+        b = x509-byte-or(data, at, 0)
+        v = (v << 8) | b
+    }
+}
+
+; 逐位元組比較兩段 []byte（長度與內容都要相等）
+x509-bytes-equal = (a []byte, b []byte) (same bool) {
+    same = false
+    a.len() != b.len() -> {
+        return
+    }
+    same = true
+    i <- [0..a.len()): {
+        av = a[i]: {
+            ok -> it
+
+            -> -1
+        }
+        bv = b[i]: {
+            ok -> it
+
+            -> -2
+        }
+        av != bv -> {
+            same = false
+            return
+        }
+    }
+}
+
+; TBS 內欄位位置。field 編號：
+;   0=serialNumber 1=signature 2=issuer 3=validity 4=subject 5=spki 6=extensions
+; 回傳 start/end 為該欄位完整 DER TLV 的 [start, end)；解析失敗回 0,0
+x509-tbs-field = (data []byte, field i64) (start i64, end i64) {
+    start = 0
+    end = 0
+    ts, te = x509-tbs-range(data)
+    ts == 0 -> {
+        return
+    }
+
+    #{overflow=wrap}
+    p = ts + 1
+    tl, adv = der-len(data, p)
+
+    #{overflow=wrap}
+    p = p + adv
+
+    ; 可選 [0] EXPLICIT version
+    der-tag(data, p) == 160 -> {
+        p = der-skip(data, p)
+    }
+
+    idx <- [0..7): {
+        p >= te -> {
+            break
+        }
+        idx == field -> {
+            start = p
+            end = der-skip(data, p)
+            return
+        }
+        p = der-skip(data, p)
+    }
+}
+
+; 取出 TBSCertificate 完整 DER（簽章驗証的輸入）
+x509-tbs-der = (data []byte) (tbs []byte) {
+    ts, te = x509-tbs-range(data)
+    ts == 0 -> {
+        return
+    }
+    tbs = data[ts..te)
+}
+
+; 取出 Certificate.signatureValue：最外層第二個元素，BIT STRING 的內容位元組
+x509-sig-value = (data []byte) (sig []byte) {
+    ts, te = x509-tbs-range(data)
+    ts == 0 -> {
+        return
+    }
+
+    ; te 指向 signatureAlgorithm SEQUENCE
+    der-tag(data, te) != 48 -> {
+        return
+    }
+    p = der-skip(data, te)
+    der-tag(data, p) != 3 -> {
+        return
+    }
+
+    #{overflow=wrap}
+    bit-len, adv = der-len(data, p + 1)
+
+    #{overflow=wrap}
+    unused-pos = p + 1 + adv
+    unused = x509-byte-or(data, unused-pos, 1)
+    unused != 0 -> {
+        return
+    }
+
+    #{overflow=wrap}
+    sig-start = unused-pos + 1: {
+        ok -> it
+
+        -> 0
+    }
+
+    #{overflow=wrap}
+    sig-end = sig-start + bit-len - 1: {
+        ok -> it
+
+        -> 0
+    }
+    (sig-end <= sig-start || sig-end > data.len()) -> {
+        return
+    }
+    sig = data[sig-start..sig-end)
+}
+
+; SHA-256 的 DER DigestInfo：
+;   SEQUENCE { SEQUENCE { OID 2.16.840.1.101.3.4.2.1, NULL }, OCTET STRING hash }
+x509-digest-info-sha256 = (hash []byte) (di []byte) {
+    oid []byte = with-cap(9)
+    oid.push(0x60)
+    oid.push(0x86)
+    oid.push(0x48)
+    oid.push(0x01)
+    oid.push(0x65)
+    oid.push(0x03)
+    oid.push(0x04)
+    oid.push(0x02)
+    oid.push(0x01)
+    oid-tlv []byte
+    oid-tlv = der-enc-oid-raw(oid)
+    null-tlv []byte
+    null-tlv = der-enc-null()
+
+    #{overflow=wrap}
+    inner-len = oid-tlv.len() + null-tlv.len()
+    inner []byte = with-cap(inner-len)
+    i <- [0..oid-tlv.len()): {
+        v = oid-tlv[i]: {
+            ok -> it
+
+            -> 0
+        }
+        inner.push(v)
+    }
+    i <- [0..null-tlv.len()): {
+        v = null-tlv[i]: {
+            ok -> it
+
+            -> 0
+        }
+        inner.push(v)
+    }
+    inner-seq []byte
+    inner-seq = der-enc-sequence(inner)
+
+    hash-octet []byte
+    hash-octet = der-enc-octetstring(hash)
+
+    #{overflow=wrap}
+    di-len = inner-seq.len() + hash-octet.len()
+    di-body []byte = with-cap(di-len)
+    i <- [0..inner-seq.len()): {
+        v = inner-seq[i]: {
+            ok -> it
+
+            -> 0
+        }
+        di-body.push(v)
+    }
+    i <- [0..hash-octet.len()): {
+        v = hash-octet[i]: {
+            ok -> it
+
+            -> 0
+        }
+        di-body.push(v)
+    }
+    di = der-enc-sequence(di-body)
+}
+
+; PKCS#1 v1.5 編碼訊息 EM = 00 01 FF* 00 DigestInfo(SHA-256(data))
+; mod-len 為模數位元組長度；空間不足時回空切片（fail-closed）
+x509-pkcs1-em-sha256 = (data []byte, mod-len i64) (em []byte) {
+    em = with-cap(0)
+    h [32]byte
+    h = sha256.sha256(data)
+    hash = h[..32)
+    hash.truncate(32)
+    di []byte
+    di = x509-digest-info-sha256(hash)
+
+    #{overflow=wrap}
+    need = di.len() + 11
+    need > mod-len -> {
+        return
+    }
+
+    #{overflow=wrap}
+    pad-len = mod-len - di.len() - 3
+    em = with-cap(mod-len)
+    em.push(0)
+    em.push(1)
+    i <- [0..pad-len): {
+        em.push(255)
+    }
+    em.push(0)
+    i <- [0..di.len()): {
+        v = di[i]: {
+            ok -> it
+
+            -> 0
+        }
+        em.push(v)
+    }
+}
+
+; RSA PKCS#1 v1.5 SHA-256 驗签：m = sig^e mod n，檢查 EM(m) == EM(data)
+; data: 已簽資料（TBS DER）
+; sig: 簽章位元組（big-endian，長度須等於模數長度）
+; n: 模數（big-endian）, e: 公鑰指數（i64，X.509 通常 65537）
+x509-rsa-verify-sha256 = (data []byte, sig []byte, n []byte, e i64) (ok bool) {
+    ok = false
+    mod-len = n.len()
+    mod-len < 32 -> {
+        return
+    }
+    sig.len() != mod-len -> {
+        return
+    }
+    e <= 0 -> {
+        return
+    }
+
+    expected []byte
+    expected = x509-pkcs1-em-sha256(data, mod-len)
+    expected.len() != mod-len -> {
+        return
+    }
+
+    sig-bn []i64
+    sig-bn = x509-bytes-to-bn(sig)
+    exp-bn []i64 = with-cap(2)
+    exp-bn.push(e & 4294967295)
+    e-high = 0
+    e-high = e >> 32
+    (e-high > 0) -> {
+        exp-bn.push(e-high)
+    }
+    mod-bn []i64
+    mod-bn = x509-bytes-to-bn(n)
+
+    result []i64
+    rn = 0
+    result, rn = rsa.rsa-modpow(sig-bn, sig-bn.len(), exp-bn, exp-bn.len(), mod-bn, mod-bn.len())
+    rn <= 0 -> {
+        return
+    }
+
+    ; limb → 固定長度 big-endian
+    got []byte = with-cap(mod-len)
+    i <- [0..mod-len): {
+        got.push(0)
+    }
+    i <- [0..rn): {
+        {
+            limb = result[i]: {
+                ok -> it
+
+                -> 0
+            }
+            j <- [0..4): {
+                {
+
+                    #{overflow=wrap}
+                    out-pos ?= mod-len - 1 - i * 4 - j
+
+                    byte-value = (limb >> (j * 8)) & 255
+
+                    got[out-pos]: {
+                        ok -> it = byte-value
+
+                        -> _
+                    }
+                }: {
+                    err -> _
+
+                    -> _
+                }
+            }
+        }: {
+            err -> _
+
+            -> _
+        }
+    }
+    ok = x509-bytes-equal(expected, got)
+}
+
+; 檢查憑證的 signatureAlgorithm 是否為 sha256WithRSAEncryption
+x509-sig-alg-is-rsa-sha256 = (cert []byte) (ok bool) {
+    ok = false
+    ts, te = x509-tbs-range(cert)
+    ts == 0 -> {
+        return
+    }
+    der-tag(cert, te) != 48 -> {
+        return
+    }
+
+    #{overflow=wrap}
+    al, aadv = der-len(cert, te + 1)
+
+    #{overflow=wrap}
+    ap = te + 1 + aadv
+    der-tag(cert, ap) != 6 -> {
+        return
+    }
+
+    #{overflow=wrap}
+    ol, oadv = der-len(cert, ap + 1)
+
+    #{overflow=wrap}
+    oval = ap + 1 + oadv
+    ol != 9 -> {
+        return
+    }
+
+    ; OID 1.2.840.113549.1.1.11 = 2a 86 48 86 f7 0d 01 01 0b
+    want []i64 = [
+        0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01,
+        0x0b,
+    ]
+    i <- [0..9): {
+        b = x509-byte-or(cert, oval + i, -1)
+        wanted = want[i]
+        w = wanted: {
+            ok -> it
+
+            -> -1
+        }
+        b != w -> {
+            return
+        }
+    }
+    ok = true
+}
+
+; 驗証 cert 的簽章確實由 issuer 的 RSA 公鑰簽發
+x509-verify-cert-signature = (cert []byte, issuer []byte) (ok bool) {
+    ok = false
+    x509-sig-alg-is-rsa-sha256(cert) == false -> {
+        return
+    }
+    tbs []byte
+    tbs = x509-tbs-der(cert)
+    tbs.len() == 0 -> {
+        return
+    }
+    sig []byte
+    sig = x509-sig-value(cert)
+    sig.len() == 0 -> {
+        return
+    }
+    n = x509-rsa-n(issuer)
+    n.len() == 0 -> {
+        return
+    }
+    e = x509-rsa-e(issuer)
+    e <= 0 -> {
+        return
+    }
+    ok = x509-rsa-verify-sha256(tbs, sig, n, e)
+}
+
+; 比較 child.issuer 與 issuer.subject 的 DER 名稱（位元組全等）
+x509-name-equal = (child []byte, issuer []byte) (same bool) {
+    same = false
+    is, ie = x509-tbs-field(child, 2)
+    ss, se = x509-tbs-field(issuer, 4)
+    (is == 0 || ss == 0) -> {
+        return
+    }
+    child-name = child[is..ie)
+    issuer-name = issuer[ss..se)
+    same = x509-bytes-equal(child-name, issuer-name)
+}
+
+; 檢查憑證是否為 CA（BasicConstraints OID 2.5.29.19 且 cA=TRUE）
+; 找不到 extension 或 cA 為 false → fail-closed
+x509-cert-is-ca = (cert []byte) (ok bool) {
+    ok = false
+    xs, xe = x509-tbs-field(cert, 6)
+    xs == 0 -> {
+        return
+    }
+    der-tag(cert, xs) != 163 -> {
+        return
+    }
+
+    #{overflow=wrap}
+    xl, xadv = der-len(cert, xs + 1)
+
+    #{overflow=wrap}
+    xp = xs + 1 + xadv
+    der-tag(cert, xp) != 48 -> {
+        return
+    }
+
+    #{overflow=wrap}
+    sl, sadv = der-len(cert, xp + 1)
+
+    #{overflow=wrap}
+    fp = xp + 1 + sadv
+
+    #{overflow=wrap}
+    fend = fp + sl
+
+    cur = fp
+    i <- [0..16): {
+        cur >= fend -> {
+            break
+        }
+        der-tag(cert, cur) != 48 -> {
+            break
+        }
+
+        #{overflow=wrap}
+        cl, cadv = der-len(cert, cur + 1)
+
+        #{overflow=wrap}
+        bend = cur + 1 + cadv + cl
+        bend > fend -> {
+            break
+        }
+
+        #{overflow=wrap}
+        body = cur + 1 + cadv
+
+        der-tag(cert, body) != 6 -> {
+            cur = bend
+            continue
+        }
+
+        #{overflow=wrap}
+        ol, oadv = der-len(cert, body + 1)
+
+        #{overflow=wrap}
+        oval = body + 1 + oadv
+        (ol == 3 && x509-byte-or(cert, oval, -1) == 0x55 && x509-byte-or(cert, oval + 1, -1) == 0x1d && x509-byte-or(cert, oval + 2, -1) == 0x13) -> {
+
+            ; 找到 BasicConstraints。extnValue 是 OCTET STRING，內容為 SEQUENCE
+            v = oval + ol
+            (der-tag(cert, v) == 1) -> {
+                v = der-skip(cert, v)
+            }
+            der-tag(cert, v) == 4 -> {
+
+                #{overflow=wrap}
+                vl, vadv = der-len(cert, v + 1)
+
+                #{overflow=wrap}
+                vstart = v + 1 + vadv
+                der-tag(cert, vstart) == 48 -> {
+
+                    #{overflow=wrap}
+                    vl2, vadv2 = der-len(cert, vstart + 1)
+                    bp = vstart + 1 + vadv2
+                    der-tag(cert, bp) == 1 -> {
+
+                        #{overflow=wrap}
+                        bl, badv = der-len(cert, bp + 1)
+                        bv = x509-byte-or(cert, bp + 1 + badv, 0)
+                        (bl > 0 && bv != 0) -> {
+                            ok = true
+                        }
+                    }
+                }
+            }
+        }
+        cur = bend
+    }
+}
+
+; 憑證集合（bundle）格式：重複 [u24 長度][DER]，比 TLS Certificate list 少一層 total length
+; x509-bundle-next: 從 pos 取出一張憑證，回傳 der 與下一個位置；pos 已到末端時 der 為空
+x509-bundle-next = (bundle []byte, pos i64) (der []byte, next i64) {
+    der = with-cap(0)
+    next = pos
+    pos + 3 > bundle.len() -> {
+        next = bundle.len()
+        return
+    }
+    clen = x509-u24-at(bundle, pos)
+    clen <= 0 -> {
+        next = bundle.len()
+        return
+    }
+    start = x509-add-plain(pos, 3)
+    end = x509-add-plain(start, clen)
+    end > bundle.len() -> {
+        next = bundle.len()
+        return
+    }
+    der = bundle[start..end)
+    next = end
+}
+
+; 把一張 DER 憑證附加到 bundle 尾端：輸出 = bundle + [u24 len][der]
+x509-bundle-add = (bundle []byte, cert []byte) (out []byte) {
+
+    #{overflow=wrap}
+    cap = bundle.len() + cert.len() + 3
+    out = with-cap(cap)
+    i <- [0..bundle.len()): {
+        v = bundle[i]: {
+            ok -> it
+
+            -> 0
+        }
+        out.push(v)
+    }
+    b0 = (cert.len() >> 16) & 255
+    b1 = (cert.len() >> 8) & 255
+    b2 = cert.len() & 255
+    out.push(b0)
+    out.push(b1)
+    out.push(b2)
+    i <- [0..cert.len()): {
+        v = cert[i]: {
+            ok -> it
+
+            -> 0
+        }
+        out.push(v)
+    }
+}
+
+; 統計 bundle 中的憑證數（上限 16，避免惡意輸入無界迴圈）
+x509-bundle-count = (bundle []byte) (n i64) {
+    n = 0
+    pos = 0
+    i <- [0..16): {
+        pos >= bundle.len() -> {
+            break
+        }
+        der, next = x509-bundle-next(bundle, pos)
+        der.len() == 0 -> {
+            break
+        }
+
+        #{overflow=wrap}
+        n = n + 1: {
+            ok -> it
+
+            -> n
+        }
+        pos = next
+    }
+}
+
+; 檢查 cert 是否為 roots 中的信任錨點（DER 全等，或名稱+簽章+CA+有效期皆通過）
+x509-trust-anchor-matches = (roots []byte, cert []byte, now-ts i64) (ok bool) {
+    ok = false
+    pos = 0
+    i <- [0..16): {
+        pos >= roots.len() -> {
+            break
+        }
+        root, next = x509-bundle-next(roots, pos)
+        root.len() == 0 -> {
+            break
+        }
+        pos = next
+        x509-bytes-equal(root, cert) -> {
+            ok = true
+            return
+        }
+        x509-valid-at(root, now-ts) == false -> {
+            continue
+        }
+        x509-cert-is-ca(root) == false -> {
+            continue
+        }
+        x509-name-equal(cert, root) == false -> {
+            continue
+        }
+        x509-verify-cert-signature(cert, root) == false -> {
+            continue
+        }
+        ok = true
+        return
+    }
+}
+
+; 整鏈驗証
+; chain: [u24 len][DER]...（leaf 在前，中繼 CA 在後，可不含 root）
+; roots: 同上格式，信任錨點集合
+; host: 要比對的主機名；now-ts: 當前 Unix 秒
+; 任一環節失敗即回 false（fail-closed）。
+x509-verify-chain = (chain []byte, roots []byte, host str, now-ts i64) (ok bool) {
+    ok = false
+    leaf, pos = x509-bundle-next(chain, 0)
+    leaf.len() == 0 -> {
+        return
+    }
+
+    ; 1. leaf: hostname + 有效期
+    x509-hostname-matches(leaf, host) == false -> {
+        return
+    }
+    x509-valid-at(leaf, now-ts) == false -> {
+        return
+    }
+
+    ; 2. 逐層驗証 link：child.issuer == parent.subject、parent 簽章/CA/有效期
+    child []byte = leaf
+    i <- [0..16): {
+        pos >= chain.len() -> {
+            break
+        }
+        parent, next = x509-bundle-next(chain, pos)
+        parent.len() == 0 -> {
+            return
+        }
+        pos = next
+        x509-valid-at(parent, now-ts) == false -> {
+            return
+        }
+        x509-cert-is-ca(parent) == false -> {
+            return
+        }
+        x509-name-equal(child, parent) == false -> {
+            return
+        }
+        x509-verify-cert-signature(child, parent) == false -> {
+            return
+        }
+        child = parent
+    }
+
+    ; 3. 末端憑證必须由信任錨點簽發（或本身就是錨點）
+    ok = x509-trust-anchor-matches(roots, child, now-ts)
 }

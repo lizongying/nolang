@@ -45,7 +45,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
             -> _
         }
 
-        #{overflow=wrap}
         j = (j + (s-i) + (key-i-key-len)) % 256
 
         ; Swap s[i] and s[j]
@@ -92,8 +91,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
         }
 
         {
-
-            #{overflow=wrap}
             j ?= (j + s-at-i) % 256
         }: {
             err -> _

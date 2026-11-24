@@ -384,6 +384,7 @@ t-response = () {
 
 ; 連線入口（connect / send-request / get / post / http3-do）
 ...
+
 ;
 ; 要走完 happy path 需要一台真的 HTTP/3 伺服器。這裡契約化的是**失敗臂**，
 ; 也正是使用者最容易踩到的部分：URL 不合法或位址不可達時必須快速回 nil，

@@ -44,6 +44,7 @@ runner.eq(ub[2], 173, 'UTF-8 byte 2')
 
 ; from-chars：公開安全構造器（每 char 低 8 位寫 1 個位元組、新緩衝）
 ...
+
 ; 用 push 構造 []char：`["h","i"]` 字面量目前有既有 codegen bug
 ; （`@cs = global [3 x i64] [i32 ...]`，與本 builtin 無關）。
 cs []char
@@ -62,6 +63,7 @@ runner.eq(t2.len-bytes(), 1, 'from-chars 多字節 char 只寫 1 位元組')
 
 ; txt 側同族構造器：from-bytes / from-chars
 ...
+
 ; txt 是固定 256 位元組的內聯結構（data [255]byte; len byte），沒有外部緩衝可接管，
 ; 所以 txt._from-bytes 是「逐位元組拷貝」，與 str._from-bytes 的零拷貝語義不同（只名字對齊）。
 ; _from-bytes 是私有符號，用戶碼不可直呼（raqvyltn），故只測公開的 from-bytes。

@@ -2316,6 +2316,26 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(x.to-str())
             b.push(')\n')
         }
+        op == OP-VECCLEAR -> {
+
+            ; s165：vec.clear() —— dst = 新 %vec（len=0、cap/data 原封）；x = 接收者 vec 值 id。
+            ;   就地語義由 h2m 寫回接收者（字段 OP-STRUCT-SET／標識符重綁），此處只出值。
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @vec_clear(%vec %vc')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECBYTES2STR -> {
+
+            ; s165：[]byte.to-bytes-str() —— dst = str 值（rc=1 自有緩衝）；x = 接收者 vec 值 id。
+            ;   helper 走 @nolang_rc_alloc ⇒ h2m-rel-add(TY-STR) 登記、scope-exit OP-RELEASE。
+            b.push('\t%sv')
+            b.push(d.to-str())
+            b.push(' = call %str-long @vec_bytes_to_str(%vec %vc')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
         op == OP-PRINT -> {
 
             ; s100：语句位内建输出。dst 恒 0（无结果值）；y = kind 码；x = 值 id（kind 2/3/6/7 为 0）。

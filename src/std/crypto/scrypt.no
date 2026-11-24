@@ -436,7 +436,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
                 -> _
             }
 
-            #{overflow=wrap}
             j = (j * 256 + x-base-j-7-k) % n
         }
 

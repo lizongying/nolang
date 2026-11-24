@@ -1,0 +1,245 @@
+; ============================================================================
+; noui 纯逻辑：sizing（尺寸约束盒，阶段 72）—— C-SIZING
+;
+;   # /noui/src/app          （组件目录 + cmp-scene 渲染层）
+;
+;   只 import app：`src/app.no` 聚合 components / cmp-scene，可直跑（无窗口）。
+;   构建运行：
+;     cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/_t tests/cmp-sizing.no
+;     DYLD_LIBRARY_PATH=... SDL_VIDEODRIVER=dummy ... ./dist/_t
+; ============================================================================
+# /noui/src/app
+
+root = cmp-root()
+r = cmp-label('r')
+cmp-add-child(root, r)
+
+; ---- 场景辅助 ----
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 默认状态
+; ============================================================================
+sz = cmp-sizing()
+u1 = cmp-kind(sz) == C-SIZING
+u2 = szg-w(sz) == 0
+u3 = szg-h(sz) == 0
+u4 = szg-minw(sz) == 0
+u5 = szg-minh(sz) == 0
+u6 = szg-maxw(sz) == 0
+u7 = szg-maxh(sz) == 0
+u8 = cmp-has(sz, F-DISABLED) == 0
+
+; ============================================================================
+; 2. 目标尺寸读写
+; ============================================================================
+szg-set-size(sz, 12000, 8000)
+u9 = szg-w(sz) == 12000
+u10 = szg-h(sz) == 8000
+
+; ============================================================================
+; 3. 下限 / 上限读写
+; ============================================================================
+szg-set-min(sz, 8000, 7000)
+u11 = szg-minw(sz) == 8000
+u12 = szg-minh(sz) == 7000
+szg-set-max(sz, 9000, 5000)
+u13 = szg-maxw(sz) == 9000
+u14 = szg-maxh(sz) == 5000
+
+; ============================================================================
+; 4. 多句柄隔离
+; ============================================================================
+sz2 = cmp-sizing()
+szg-set-size(sz2, 111, 222)
+szg-set-min(sz2, 10, 20)
+szg-set-max(sz2, 300, 400)
+u15 = szg-w(sz) == 12000
+u16 = szg-h(sz) == 8000
+u17 = szg-w(sz2) == 111
+u18 = szg-h(sz2) == 222
+u19 = szg-minw(sz2) == 10
+u20 = szg-maxh(sz2) == 400
+
+; ============================================================================
+; 5. disabled：写操作全空操作
+; ============================================================================
+cmp-flag-set(sz2, F-DISABLED)
+szg-set-size(sz2, 9, 9)
+szg-set-min(sz2, 9, 9)
+szg-set-max(sz2, 9, 9)
+szg-reset(sz2)
+u21 = szg-w(sz2) == 111
+u22 = szg-minw(sz2) == 10
+u23 = szg-maxw(sz2) == 300
+cmp-flag-clear(sz2, F-DISABLED)
+
+; ============================================================================
+; 6. szg-clamp 语义（纯函数）
+;    先下限后上限；0 = 不限；上限比下限小时下限优先。
+; ============================================================================
+a1, a2 = szg-clamp(sz, 5000, 3000)         ; 下限 8000/7000 生效
+u24 = a1 == 8000
+u25 = a2 == 7000
+b1, b2 = szg-clamp(sz, 20000, 20000)       ; 上限 9000/5000 生效
+u26 = b1 == 9000
+u27 = b2 == 7000
+c1v, c2v = szg-clamp(sz2, 50, 50)          ; sz2 下限 10/20、上限 300/400
+u28 = c1v == 50
+u29 = c2v == 50
+d1, d2 = szg-clamp(sz2, 5000, 5000)
+u30 = d1 == 300
+u31 = d2 == 400
+e1, e2 = szg-clamp(sz2, 5, 5000)
+u32 = e1 == 10
+u33 = e2 == 400
+; 上限小于下限时下限优先
+szg-set-min(sz2, 5000, 5000)
+szg-set-max(sz2, 100, 100)
+f1, f2 = szg-clamp(sz2, 700, 700)
+u34 = f1 == 5000
+u35 = f2 == 5000
+szg-reset(sz2)
+u36 = szg-minw(sz2) == 0
+u37 = szg-maxh(sz2) == 0
+
+; ============================================================================
+; 7. 测算 intrinsic
+;    通用容器公式：pad*2 + 内容；空盒 = 叶子下限。
+; ============================================================================
+m0 = cmp-sizing()
+w0, h0 = cs-measure(m0)
+u38 = w0 == 6400
+u39 = h0 == 4000
+
+; 一个 'abcdef' 标签子节点：叶子自带 7200×2400（含自身 padding）→ 9600×4800
+m1 = cmp-sizing()
+lab1 = cmp-label('abcdef')
+cmp-add-child(m1, lab1)
+w1, h1 = cs-measure(m1)
+u40 = w1 == 9600
+u41 = h1 == 4800
+
+; 目标尺寸覆盖内容
+szg-set-size(m1, 10000, 6000)
+w2, h2 = cs-measure(m1)
+u42 = w2 == 10000
+u43 = h2 == 6000
+
+; 上限把它夹小
+szg-set-max(m1, 9000, 5000)
+w3, h3 = cs-measure(m1)
+u44 = w3 == 9000
+u45 = h3 == 5000
+
+; 下限把它抬大（清掉目标与上限）
+szg-reset(m1)
+szg-set-min(m1, 8000, 7000)
+w4, h4 = cs-measure(m1)
+u46 = w4 == 9600
+u47 = h4 == 7000
+
+; 上限比叶子下限时，叶子下限兜底
+szg-reset(m1)
+szg-set-max(m1, 1000, 1000)
+w5, h5 = cs-measure(m1)
+u48 = w5 == 6400
+u49 = h5 == 4000
+
+; cmp-set-sw/sh 在 cs-measure 末尾统一覆盖（与 sizing 的槽相互独立）
+szg-reset(m1)
+cmp-set-sw(m1, 20000)
+cmp-set-sh(m1, 9000)
+w6, h6 = cs-measure(m1)
+u50 = w6 == 20000
+u51 = h6 == 9000
+cmp-set-sw(m1, 0)
+cmp-set-sh(m1, 0)
+
+; ============================================================================
+; 8. 渲染：盒子尺寸 + 四边 TRACK 细框 + 子节点
+;    root 18000×20000 → 内容宽 15600；sizing 目标 12000×8000 覆盖拉伸。
+; ============================================================================
+m2 = cmp-sizing()
+lab2 = cmp-label('hello')
+cmp-add-child(m2, lab2)
+szg-set-size(m2, 12000, 8000)
+root2 = cmp-root()
+cmp-add-child(root2, m2)
+cs-layout(root2, 0, 0, 18000, 20000)
+cs-clear()
+cs-paint(root2)
+
+bx, by, bw, bh = cs-rect(m2)
+u52 = bw == 12000
+u53 = bh == 8000
+u54 = cs-rect-color-at(bx, by, bw, bh) == 0x2A2A3AFF
+u55 = cs-rect-color-at(bx, by, bw, 100) == cs-theme(CS-TH-TRACK)
+u56 = cs-rect-color-at(bx, cs-sub(cs-add(by, bh), 100), bw, 100) == cs-theme(CS-TH-TRACK)
+u57 = cs-rect-color-at(bx, by, 100, bh) == cs-theme(CS-TH-TRACK)
+u58 = cs-rect-color-at(cs-sub(cs-add(bx, bw), 100), by, 100, bh) == cs-theme(CS-TH-TRACK)
+; 子标签在内容区左上 (bx+1200, by+1200)，文本色是标签自己的 0xE8E8F0FF
+u59 = cs-text-color-at('hello', cs-add(bx, 1200), cs-add(by, 1200)) == 0xE8E8F0FF
+u60 = cs-text-count() == 1
+
+; 没挂子节点的空盒也画面板 + 四边框（不是 0×0 兜底）
+m3 = cmp-sizing()
+root3 = cmp-root()
+cmp-add-child(root3, m3)
+cs-layout(root3, 0, 0, 18000, 20000)
+cs-clear()
+cs-paint(root3)
+bx3, by3, bw3, bh3 = cs-rect(m3)
+u61 = bw3 == 15600
+u62 = bh3 == 4000
+u63 = cs-rect-color-at(bx3, by3, bw3, bh3) == 0x2A2A3AFF
+u64 = cs-text-count() == 0
+
+; ============================================================================
+; 汇总
+; ============================================================================
+ok = 1
+ok = ok & u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11 & u12
+ok = ok & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21 & u22 & u23
+ok = ok & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31 & u32 & u33
+ok = ok & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41 & u42 & u43
+ok = ok & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60
+ok = ok & u61 & u62 & u63 & u64
+
+(ok == 1) -> { print('ALL SIZING TESTS PASSED') }
+(ok == 0) -> { print('SOME SIZING TESTS FAILED') }

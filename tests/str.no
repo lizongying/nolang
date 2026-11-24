@@ -153,7 +153,7 @@ print(tmp-word)
 ; str.to-i64
 ...
 test-to-i64-ok = () {
-    nv ?i64 = '12345'.to-i64()
+    nv = '12345'.to-i64()
     {
         nv == nil -> print('nil')
 
@@ -168,7 +168,7 @@ test-to-i64-ok = () {
 
 ; 測試 to-i64-neg
 test-to-i64-neg = () {
-    nv ?i64 = '-42'.to-i64()
+    nv = '-42'.to-i64()
     {
         nv == nil -> print('nil')
 
@@ -183,7 +183,7 @@ test-to-i64-neg = () {
 
 ; 測試 to-i64-empty
 test-to-i64-empty = () {
-    nv ?i64 = ''.to-i64()
+    nv = ''.to-i64()
     {
         nv == nil -> print('nil')
 
@@ -198,7 +198,7 @@ test-to-i64-empty = () {
 
 ; 測試 to-i64-invalid
 test-to-i64-invalid = () {
-    nv ?i64 = 'abc'.to-i64()
+    nv = 'abc'.to-i64()
     {
         nv == nil -> print('nil')
 
@@ -214,7 +214,7 @@ test-to-i64-invalid = () {
 ; str.to-i8
 ...
 test-to-i8-ok = () {
-    nv ?i8 = '127'.to-i8()
+    nv = '127'.to-i8()
     {
         nv == nil -> print('nil')
 
@@ -229,7 +229,7 @@ test-to-i8-ok = () {
 
 ; 測試 to-i8-neg
 test-to-i8-neg = () {
-    nv ?i8 = '-128'.to-i8()
+    nv = '-128'.to-i8()
     {
         nv == nil -> print('nil')
 
@@ -244,7 +244,7 @@ test-to-i8-neg = () {
 
 ; 測試 to-i8-overflow
 test-to-i8-overflow = () {
-    nv ?i8 = '128'.to-i8()
+    nv = '128'.to-i8()
     {
         nv == nil -> print('nil')
 
@@ -259,7 +259,7 @@ test-to-i8-overflow = () {
 
 ; 測試 to-i8-invalid
 test-to-i8-invalid = () {
-    nv ?i8 = '12a'.to-i8()
+    nv = '12a'.to-i8()
     {
         nv == nil -> print('nil')
 
@@ -275,7 +275,7 @@ test-to-i8-invalid = () {
 ; str.to-i16
 ...
 test-to-i16-ok = () {
-    nv ?i16 = '32767'.to-i16()
+    nv = '32767'.to-i16()
     {
         nv == nil -> print('nil')
 
@@ -290,7 +290,7 @@ test-to-i16-ok = () {
 
 ; 測試 to-i16-overflow
 test-to-i16-overflow = () {
-    nv ?i16 = '32768'.to-i16()
+    nv = '32768'.to-i16()
     {
         nv == nil -> print('nil')
 
@@ -306,7 +306,7 @@ test-to-i16-overflow = () {
 ; str.to-i32
 ...
 test-to-i32-ok = () {
-    nv ?i32 = '2147483647'.to-i32()
+    nv = '2147483647'.to-i32()
     {
         nv == nil -> print('nil')
 
@@ -321,7 +321,7 @@ test-to-i32-ok = () {
 
 ; 測試 to-i32-overflow
 test-to-i32-overflow = () {
-    nv ?i32 = '2147483648'.to-i32()
+    nv = '2147483648'.to-i32()
     {
         nv == nil -> print('nil')
 
@@ -337,7 +337,7 @@ test-to-i32-overflow = () {
 ; str.to-u8
 ...
 test-to-u8-ok = () {
-    nv ?u8 = '255'.to-u8()
+    nv = '255'.to-u8()
     {
         nv == nil -> print('nil')
 
@@ -352,7 +352,7 @@ test-to-u8-ok = () {
 
 ; 測試 to-u8-overflow
 test-to-u8-overflow = () {
-    nv ?u8 = '256'.to-u8()
+    nv = '256'.to-u8()
     {
         nv == nil -> print('nil')
 
@@ -367,7 +367,7 @@ test-to-u8-overflow = () {
 
 ; 測試 to-u8-negative
 test-to-u8-negative = () {
-    nv ?u8 = '-1'.to-u8()
+    nv = '-1'.to-u8()
     {
         nv == nil -> print('nil')
 
@@ -383,7 +383,7 @@ test-to-u8-negative = () {
 ; str.to-u16
 ...
 test-to-u16-ok = () {
-    nv ?u16 = '65535'.to-u16()
+    nv = '65535'.to-u16()
     {
         nv == nil -> print('nil')
 
@@ -398,7 +398,7 @@ test-to-u16-ok = () {
 
 ; 測試 to-u16-overflow
 test-to-u16-overflow = () {
-    nv ?u16 = '65536'.to-u16()
+    nv = '65536'.to-u16()
     {
         nv == nil -> print('nil')
 
@@ -414,7 +414,7 @@ test-to-u16-overflow = () {
 ; str.to-u32
 ...
 test-to-u32-ok = () {
-    nv ?u32 = '4294967295'.to-u32()
+    nv = '4294967295'.to-u32()
     {
         nv == nil -> print('nil')
 
@@ -429,7 +429,7 @@ test-to-u32-ok = () {
 
 ; 測試 to-u32-overflow
 test-to-u32-overflow = () {
-    nv ?u32 = '4294967296'.to-u32()
+    nv = '4294967296'.to-u32()
     {
         nv == nil -> print('nil')
 
@@ -445,7 +445,7 @@ test-to-u32-overflow = () {
 ; str.to-u64
 ...
 test-to-u64-ok = () {
-    nv ?u64 = '99999'.to-u64()
+    nv = '99999'.to-u64()
     {
         nv == nil -> print('nil')
 
@@ -460,7 +460,7 @@ test-to-u64-ok = () {
 
 ; 測試 to-u64-negative
 test-to-u64-negative = () {
-    nv ?u64 = '-1'.to-u64()
+    nv = '-1'.to-u64()
     {
         nv == nil -> print('nil')
 

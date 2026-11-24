@@ -516,16 +516,13 @@ sha3-512 = (data []byte) (hash [64]byte) {
 sha3-224-hex = (data []byte) (hex str) {
     hash = sha3-224(data)
     hex-chars = '0123456789abcdef'
-    hex str = with-len(56)
+    hex = ''
     i <- [0..28): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 
@@ -541,16 +538,13 @@ sha3-224-hex = (data []byte) (hex str) {
 sha3-256-hex = (data []byte) (hex str) {
     hash = sha3-256(data)
     hex-chars = '0123456789abcdef'
-    hex str = with-len(64)
+    hex = ''
     i <- [0..32): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 
@@ -566,16 +560,13 @@ sha3-256-hex = (data []byte) (hex str) {
 sha3-384-hex = (data []byte) (hex str) {
     hash = sha3-384(data)
     hex-chars = '0123456789abcdef'
-    hex str = with-len(96)
+    hex = ''
     i <- [0..48): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 
@@ -591,16 +582,13 @@ sha3-384-hex = (data []byte) (hex str) {
 sha3-512-hex = (data []byte) (hex str) {
     hash = sha3-512(data)
     hex-chars = '0123456789abcdef'
-    hex str = with-len(128)
+    hex = ''
     i <- [0..64): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 

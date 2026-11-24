@@ -616,6 +616,7 @@ t-err-null = () {
 
 ; 白盒：模組級詞法輔助
 ...
+
 ;
 ; 這些函式只吃位元組，不碰節點池，直接從模組頂層呼叫。
 
@@ -753,6 +754,7 @@ t-noml-scan = () {
 
 ; 白盒：節點池骨架
 ...
+
 ;
 ; ⚠️ 白盒只能「呼叫方法」，**不能直接讀 `.nodes` / `.strs` 等欄位**：
 ; 從模組外按下標讀 std 結構體的 `[]str` 欄位會拿到 nil 或直接段錯誤
@@ -1042,7 +1044,7 @@ t-noml-parse-tree = () {
     o1, on1, ook1 = d.node-pool.parse-object('{}', 0)
     runner.is-true(ook1, 'parse-object empty ok')
     runner.eq(on1, 2, 'parse-object empty next')
-    runner.eq(d.node-pool.kind(o1), 5, 'parse-object empty kind')
+    runner.eq(d.node-pool.kind(o1), 6, 'parse-object empty kind is map')
     runner.eq(d.node-pool.len(o1), 0, 'parse-object empty len')
 
     o2, on2, ook2 = d.node-pool.parse-object('{\na: 1\nb: [1, 2]\n}', 0)
@@ -1657,6 +1659,170 @@ t-noml-doc-wb = () {
     }
 }
 
+; obj / map 判別：鍵是否有引號
+t-obj-map = () {
+
+    ; 全部裸鍵 ⇒ obj
+    r1 = noml.parse('{\nname: \'abc\'\nx-y-z: 123\n}\n')
+    ok1 = false
+    kind1 = -1
+    val1 = ''
+    s1 = ''
+    r1: {
+        ok -> {
+            d = it
+            kind1 = d.kind()
+            ok1 = d.is-obj()
+            v = d.get-str('name')
+            val1 = v: {
+                ok -> it
+
+                -> ''
+            }
+            s1 = d.stringify()
+        }
+
+        -> ok1 = false
+    }
+    runner.is-true(ok1, 'bare keys are obj')
+    runner.eq(kind1, 5, 'obj kind')
+    runner.str-eq(val1, 'abc', 'obj member readable')
+    runner.str-eq(s1, '{\n  name: \'abc\'\n  x-y-z: 123\n}', 'obj stringify keeps bare keys')
+
+    ; 全部單引號鍵 ⇒ map
+    r2 = noml.parse('{\n\'name\': \'abc\'\n\'x:y@z\': 123\n}\n')
+    ok2 = false
+    kind2 = -1
+    val2 = ''
+    s2 = ''
+    r2: {
+        ok -> {
+            d = it
+            kind2 = d.kind()
+            v = d.get-i64('x:y@z')
+            ok2 = v: {
+                ok -> true
+
+                -> false
+            }
+            sv = d.get-str('name')
+            val2 = sv: {
+                ok -> it
+
+                -> ''
+            }
+            s2 = d.stringify()
+        }
+
+        -> ok2 = false
+    }
+    runner.is-true(ok2, 'quoted keys are map')
+    runner.eq(kind2, 6, 'map kind')
+    runner.str-eq(val2, 'abc', 'map member readable')
+    runner.str-eq(s2, '{\n  \'name\': \'abc\'\n  \'x:y@z\': 123\n}', 'map stringify keeps quotes')
+
+    ; 空 {} ⇒ map（obj 不可能沒有欄位）
+    r3 = noml.parse('{}')
+    ok3 = r3: {
+        ok -> it.is-map()
+
+        -> false
+    }
+    runner.is-true(ok3, 'empty object is map')
+
+    ; 裸鍵與引號鍵混合 ⇒ 報錯
+    r4 = noml.parse('{\nname: \'abc\'\n\'x:y@z\': 123\n}\n')
+    bad4 = false
+    r4: {
+        ok -> bad4 = true
+
+        nil -> bad4 = true
+
+        err -> bad4 = false
+    }
+    runner.is-false(bad4, 'mixed key quoting rejected')
+
+    ; 巢狀：外層 obj、內層 map
+    r5 = noml.parse('{\nconfig: {\n  \'x:y\': 1\n}\n}\n')
+    ok5 = false
+    r5: {
+        ok -> {
+            d = it
+            c = d.get('config')
+            ok5 = c: {
+                ok -> d.node-pool.is-map(it)
+
+                -> false
+            }
+        }
+
+        -> ok5 = false
+    }
+    runner.is-true(ok5, 'nested map inside obj')
+
+    ; 建樹 API：new-map + put + stringify
+    d6 = noml.new()
+    m6 = d6.new-map()
+    runner.is-true(d6.node-pool.is-map(m6), 'new-map kind')
+    k6 = d6.new-str('v')
+    runner.is-true(d6.put(m6, 'k', k6), 'put into map')
+    d6.set-root(m6)
+    runner.str-eq(d6.stringify(), '{\n  \'k\': \'v\'\n}', 'new-map stringify')
+}
+
+; key 長度上限 255 bytes（0–255）
+t-noml-key-len = () {
+    k255 = 'a'.repeat(255)
+    k256 = 'a'.repeat(256)
+
+    r1 = noml.parse('{' - k255 - ': 1\n}')
+    ok1 = r1: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-true(ok1, 'bare key 255 accepted')
+
+    r2 = noml.parse('{' - k256 - ': 1\n}')
+    ok2 = r2: {
+        err -> true
+
+        -> false
+    }
+    runner.is-true(ok2, 'bare key 256 rejected')
+
+    r3 = noml.parse('{\'' - k255 - '\': 1\n}')
+    ok3 = r3: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-true(ok3, 'quoted key 255 accepted')
+
+    r4 = noml.parse('{\'' - k256 - '\': 1\n}')
+    ok4 = r4: {
+        err -> true
+
+        -> false
+    }
+    runner.is-true(ok4, 'quoted key 256 rejected')
+
+    r5 = noml.parse('{\'\': 1\n}')
+    ok5 = r5: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-true(ok5, 'empty key has length 0')
+
+    ; 建樹 API 同樣遵守 0–255
+    d = noml.new()
+    m = d.new-map()
+    v = d.new-str('v')
+    runner.is-true(d.put(m, k255, v), 'put accepts key 255')
+    runner.is-false(d.put(m, k256, v), 'put rejects key 256')
+}
+
 ; 執行
 ...
 
@@ -1691,6 +1857,8 @@ p25, f25 = runner.test('noml.wb-parse-tree', t-noml-parse-tree)
 p26, f26 = runner.test('noml.wb-emit', t-noml-emit)
 p27, f27 = runner.test('noml.wb-access', t-noml-access)
 p28, f28 = runner.test('noml.wb-doc', t-noml-doc-wb)
+p29, f29 = runner.test('noml.obj-map', t-obj-map)
+p30, f30 = runner.test('noml.key-len', t-noml-key-len)
 
 total = runner.summary()
 f = runner.failed-count()

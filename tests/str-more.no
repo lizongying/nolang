@@ -929,11 +929,14 @@ test-str-repeat-write = () {
     print('space created')
     buf = space.repeat(8)
     print('buf created')
-    buf[0]: {
-        ok -> it = 0x12
 
-        -> _
+    ; str 下標寫已全域禁用；先用 []byte 緩衝構造，再一次轉回 str。
+    buf-b []byte = with-cap-len(8, 8)
+    bi <- [0..8): {
+        buf-b[bi] = 32
     }
+    buf-b[0] = 0x12
+    buf = buf-b.to-bytes-str()
     print('buf[0] set')
     b0 = buf[0]
     b0 != 0x12 -> {

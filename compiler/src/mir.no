@@ -726,3 +726,27 @@ OP-STRSLICEB = 110
 OP-VECALLOC = 111
 OP-VECSTORE = 112
 OP-VECLOAD = 113
+
+; s165：vec.clear()（原生 []byte.clear／[]t.clear）——【就地】把 len 歸零、cap/data 原封不動
+;   （鏡像 Go src/mir/builtin_call.go:2481 emitBuiltinVecClear：insertvalue %vec %v, i32 0, 0），
+;   故緩衝保留可重用、不釋放（同 sb.clear「保留已配置容量」語義）。
+; OP-VECCLEAR：dst = 新 %vec 值 id（TY-VEC，落 %vc）；x = 接收者 vec 值 id；y 不用（0）。
+;   發 call %vec @vec_clear(%vec <x>)。helper @vec_clear 由 cg-runtime-prelude-full 每模組發一次。
+;   ⚠️ h2m 側必須把结果【寫回】接收者（字段走 OP-STRUCT-SET、標識符走重綁／%vs 槽），
+;      否則原地語義丢失（错码）——同 s146 push 的寫回紀律。
+;   ⚠️ 結果【不】入 rel-list（所有權仍屬接收者）：接收者值由 h2m-rel-drop 撤登記、新值接管，
+;      口徑與 s146 點號 push 完全一致。
+; ⚠ op 碼接在既有最大碼 OP-VECLOAD=113 之後（取 114），不重排既有碼。
+OP-VECCLEAR = 114
+
+; s165：[]byte.to-bytes-str() —— O(N)【自有】1:1 逐字節拷貝成 str（非 OP-STRFROMVEC 的零拷貝
+;   重interpret：后者與原 vec 共享緩衝，接收者离开作用域即懸垂，语义错）。
+;   語意逐字鏡像 src/std/byte.no:141（1:1 拷貝、保住原始位元）與 Go builtin
+;   src/dist/txtmin.ll 的 _LB__RB_byte.to-bytes-str（malloc(n)+memset+逐元複製）。
+; OP-VECBYTES2STR：dst = str 值 id（TY-STR，落 %sv）；x = vec 值 id（TY-VEC）；y 不用（0）。
+;   發 call %str-long @vec_bytes_to_str(%vec <x>)。
+;   ⚠️ helper 走 @nolang_rc_alloc（非裸 @malloc）⇒ rc=1，h2m 側必須 h2m-rel-add(TY-STR)
+;      登記、作用域結束發 OP-RELEASE ⇒ @nolang_rc_release（同 OP-STRCAT／OP-STRSLICEB）。
+;   ⚠️ 元素槽是 i64 寬（s136 口徑）⇒ helper 逐元 load i64、trunc i8 後寫進 i8 緩衝。
+; ⚠ op 碼接在既有最大碼 OP-VECCLEAR=114 之後（取 115），不重排既有碼。
+OP-VECBYTES2STR = 115

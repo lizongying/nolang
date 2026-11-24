@@ -198,15 +198,9 @@ server-conn.recv-more = () (n i64) {
     tmp str = with-len(HTTP-SRV-RECV-SIZE)
     n = net.net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
-        {
-            i <- [0..n): {
-                .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
-            }
-        }: {
-            err -> _
 
-            -> _
-        }
+        ; str 下標寫已全域禁用；拼接追加（等價於從 recv-buf-len 起逐位元組寫入）
+        .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
 
         #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {
@@ -926,15 +920,9 @@ https-server-conn.recv-more = () (n i64) {
     tmp str = with-len(HTTP-SRV-RECV-SIZE)
     n = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
-        {
-            i <- [0..n): {
-                .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
-            }
-        }: {
-            err -> _
 
-            -> _
-        }
+        ; str 下標寫已全域禁用；拼接追加（等價於從 recv-buf-len 起逐位元組寫入）
+        .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
 
         #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {

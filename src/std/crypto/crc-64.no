@@ -41,16 +41,8 @@ new = (data []byte) (crc u64) {
 hex = (data []byte) (hex str) {
     crc = new(data)
     hex-chars = '0123456789abcdef'
-    hex str = with-len(16)
+    hex = ''
     i <- [0..16): {
-        hex[i]: {
-            ok -> it = hex-chars[(crc >> (60 - i * 4)) & 15]: {
-                ok -> it
-
-                -> _
-            }
-
-            -> _
-        }
+        hex = hex - hex-chars[(crc >> (60 - i * 4)) & 15]
     }
 }

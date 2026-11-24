@@ -624,9 +624,9 @@ pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     est-cap = s.len-bytes() - pos
     est-cap < 1 -> est-cap = 1
 
-    ; 在本地 str 緩衝逐位元組建構，最後存入 strs[node-idx]
-    ; （避免對 vec 元素 str 做鏈式位元組寫入）
-    buf str = with-len(est-cap)
+    ; 在本地 []byte 緩衝逐位元組建構，最後存入 strs[node-idx]
+    ; （str 下標寫入已全域禁用；[]byte + to-bytes-str() 保留 1:1 位元組語義）
+    buf []byte = with-cap-len(est-cap, est-cap)
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> return
 
@@ -639,8 +639,8 @@ pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         {
             c == 34 -> {
 
-                ; str.truncate 尚未實作，改用 slice-bytes 截斷（est-cap 為預估容量）
-                sv = buf.slice-bytes(0, j)
+                ; 只取實際寫入的 j 個位元組（est-cap 為預估容量）
+                sv = buf.slice(0, j).to-bytes-str()
 
                 .strs[node-idx] ?= sv
 
@@ -675,11 +675,7 @@ pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 ; c == 34, 92, 47 保留原樣
             }
         }
-        buf[j]: {
-            ok -> it = c
-
-            -> _
-        }
+        buf[j] = c
 
         #{overflow=wrap}
         j ?= j + 1

@@ -997,6 +997,7 @@ Error writing workspace file: %v
   'ssddj3qk': 'checksum mismatch for %s: want %s, got %s (refusing to install)'
   'sstb7ij2': 'expected \'}\' to close annotation, got %s instead'
   'stbjgjqz': 'builtin %s fixed-array %s'
+  'stridxwr': 'cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-bytes-str()`'
   'su2q9at6': 'Usage: no test [<file>]'
   'suhqncsk': '  1. an existing .no file        -> run that file'
   'sv3fw1hp': `

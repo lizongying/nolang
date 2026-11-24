@@ -501,14 +501,12 @@ f64.to-str = () (out str) {
                 -> _
             }
         }
-        out = with-len(cap)
+
+        ; str 下標寫入已全域禁用；先用 []byte 緩衝逐位元組寫入，再一次轉回 str。
+        ob []byte = with-cap-len(cap, cap)
         pos = 0
         neg == 1 -> {
-            out[pos]: {
-                ok -> it = 45
-
-                -> _
-            }
+            ob[pos] = 45
             {
                 pos ?= pos + 1
             }: {
@@ -517,11 +515,7 @@ f64.to-str = () (out str) {
                 -> _
             }
         }
-        out[pos]: {
-            ok -> it = n-str[0]
-
-            -> _
-        }
+        ob[pos] = n-str[0]
         {
             pos ?= pos + 1
         }: {
@@ -530,11 +524,7 @@ f64.to-str = () (out str) {
             -> _
         }
         sk > 1 -> {
-            out[pos]: {
-                ok -> it = 46
-
-                -> _
-            }
+            ob[pos] = 46
             {
                 pos ?= pos + 1
             }: {
@@ -544,11 +534,7 @@ f64.to-str = () (out str) {
             }
             j = 1
             (j < sk) {
-                out[pos]: {
-                    ok -> it = n-str[j]
-
-                    -> _
-                }
+                ob[pos] = n-str[j]
                 {
                     pos ?= pos + 1
                 }: {
@@ -565,11 +551,7 @@ f64.to-str = () (out str) {
                 }
             }
         }
-        out[pos]: {
-            ok -> it = 101
-
-            -> _
-        }
+        ob[pos] = 101
         {
             pos ?= pos + 1
         }: {
@@ -578,11 +560,7 @@ f64.to-str = () (out str) {
             -> _
         }
         E >= 0 -> {
-            out[pos]: {
-                ok -> it = 43
-
-                -> _
-            }
+            ob[pos] = 43
             {
                 pos ?= pos + 1
             }: {
@@ -592,11 +570,7 @@ f64.to-str = () (out str) {
             }
         }
         E < 0 -> {
-            out[pos]: {
-                ok -> it = 45
-
-                -> _
-            }
+            ob[pos] = 45
             {
                 pos ?= pos + 1
             }: {
@@ -608,11 +582,7 @@ f64.to-str = () (out str) {
 
         ; 指數補零至 2 位
         elen > expstr.len-bytes() -> {
-            out[pos]: {
-                ok -> it = 48
-
-                -> _
-            }
+            ob[pos] = 48
             {
                 pos ?= pos + 1
             }: {
@@ -623,11 +593,7 @@ f64.to-str = () (out str) {
         }
         e = 0
         (e < expstr.len-bytes()) {
-            out[pos]: {
-                ok -> it = expstr[e]
-
-                -> _
-            }
+            ob[pos] = expstr[e]
             {
                 pos ?= pos + 1
             }: {
@@ -643,6 +609,7 @@ f64.to-str = () (out str) {
                 -> _
             }
         }
+        out = ob.to-bytes-str()
         return
     }
 
@@ -664,14 +631,12 @@ f64.to-str = () (out str) {
                 -> _
             }
         }
-        out = with-len(cap)
+
+        ; str 下標寫入已全域禁用；先用 []byte 緩衝逐位元組寫入，再一次轉回 str。
+        ob []byte = with-cap-len(cap, cap)
         pos = 0
         neg == 1 -> {
-            out[pos]: {
-                ok -> it = 45
-
-                -> _
-            }
+            ob[pos] = 45
             {
                 pos ?= pos + 1
             }: {
@@ -685,17 +650,9 @@ f64.to-str = () (out str) {
             {
 
                 ; best-k < 0 時 n-str 只有 k 位，整數部分剩下的位數是已削去的尾隨零。
-                i < k -> out[pos]: {
-                    ok -> it = n-str[i]
+                i < k -> ob[pos] = n-str[i]
 
-                    -> _
-                }
-
-                -> out[pos]: {
-                    ok -> it = 48
-
-                    -> _
-                }
+                -> ob[pos] = 48
             }
             {
                 pos ?= pos + 1
@@ -713,11 +670,7 @@ f64.to-str = () (out str) {
             }
         }
         best-k > 0 -> {
-            out[pos]: {
-                ok -> it = 46
-
-                -> _
-            }
+            ob[pos] = 46
             {
                 pos ?= pos + 1
             }: {
@@ -727,11 +680,7 @@ f64.to-str = () (out str) {
             }
             j = int-digits
             (j < k) {
-                out[pos]: {
-                    ok -> it = n-str[j]
-
-                    -> _
-                }
+                ob[pos] = n-str[j]
                 {
                     pos ?= pos + 1
                 }: {
@@ -748,6 +697,7 @@ f64.to-str = () (out str) {
                 }
             }
         }
+        out = ob.to-bytes-str()
         return
     }
 
@@ -766,14 +716,12 @@ f64.to-str = () (out str) {
             -> _
         }
     }
-    out = with-len(cap)
+
+    ; str 下標寫入已全域禁用；先用 []byte 緩衝逐位元組寫入，再一次轉回 str。
+    ob []byte = with-cap-len(cap, cap)
     pos = 0
     neg == 1 -> {
-        out[pos]: {
-            ok -> it = 45
-
-            -> _
-        }
+        ob[pos] = 45
         {
             pos ?= pos + 1
         }: {
@@ -782,11 +730,7 @@ f64.to-str = () (out str) {
             -> _
         }
     }
-    out[pos]: {
-        ok -> it = 48
-
-        -> _
-    }
+    ob[pos] = 48
     {
         pos ?= pos + 1
     }: {
@@ -794,11 +738,7 @@ f64.to-str = () (out str) {
 
         -> _
     }
-    out[pos]: {
-        ok -> it = 46
-
-        -> _
-    }
+    ob[pos] = 46
     {
         pos ?= pos + 1
     }: {
@@ -808,11 +748,7 @@ f64.to-str = () (out str) {
     }
     z = 0
     (z < zeros) {
-        out[pos]: {
-            ok -> it = 48
-
-            -> _
-        }
+        ob[pos] = 48
         {
             pos ?= pos + 1
         }: {
@@ -830,11 +766,7 @@ f64.to-str = () (out str) {
     }
     i = 0
     (i < k) {
-        out[pos]: {
-            ok -> it = n-str[i]
-
-            -> _
-        }
+        ob[pos] = n-str[i]
         {
             pos ?= pos + 1
         }: {
@@ -850,6 +782,7 @@ f64.to-str = () (out str) {
             -> _
         }
     }
+    out = ob.to-bytes-str()
     return
 }
 

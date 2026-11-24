@@ -671,16 +671,13 @@ b-256 = (data []byte) (hash [32]byte) {
 b-hex = (data []byte) (hex str) {
     hash = b(data)
     hex-chars = '0123456789abcdef'
-    hex = with-len(128)
+    hex = ''
     i <- [0..64): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 
@@ -696,16 +693,13 @@ b-hex = (data []byte) (hex str) {
 b-256-hex = (data []byte) (hex str) {
     hash = b-256(data)
     hex-chars = '0123456789abcdef'
-    hex = with-len(64)
+    hex = ''
     i <- [0..32): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 
@@ -1223,16 +1217,13 @@ s = (data []byte) (hash [32]byte) {
 s-hex = (data []byte) (hex str) {
     hash = s(data)
     hex-chars = '0123456789abcdef'
-    hex = with-len(64)
+    hex = ''
     i <- [0..32): {
         {
             word ?= hash[i]
 
-            #{overflow=wrap}
-            hex[i * 2] ?= hex-chars[(word >> 4) & 15]
-
-            #{overflow=wrap}
-            hex[i * 2 + 1] ?= hex-chars[word & 15]
+            hex = hex - hex-chars[(word >> 4) & 15]
+            hex = hex - hex-chars[word & 15]
         }: {
             err -> _
 

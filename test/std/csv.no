@@ -116,6 +116,7 @@ t-parse_empty_line = () {
 
 ; parse-field（直接測試，守衛 KIndex 下沉修復）
 ...
+
 ; 直接測 parse-field 能確保欄位內字元寫入（field[fn] = c 下標 sink）
 ; 與回傳的多值都正確；這是 fields[n], pos = parse-field(...) 多返回值
 ; 寫入陣列元素下沉限制的守衛。

@@ -23,7 +23,6 @@
 ;   `txt.set-byte` 一組改寫為 `txt.cp-write`，測碼點原位寫入。
 ;
 ; 2026-09-26 已修（本檔這幾條斷言就是它們的迴歸釘）
-...
 ;   1. `txt.to-bytes()` 原本**無法編譯**：實作是 `out.set-byte(i, .byte(i))`，
 ;      但 out 是 **[]byte**，而 set-byte 內建只認 str / txt receiver
 ;      （emitBuiltinRawBytePut 的 GEP 是照 %txt 內聯緩衝 / %str-long data 指標
@@ -47,7 +46,6 @@
 ;      重現：/tmp/p_sliceempty.no、/tmp/p_splitloop.no（修復後皆為 0）。
 ;
 ; 仍然存在的 bug（都在 HEAD 上重現，與本次 `no fmt` 無關）
-...
 ;   4. `[]char = ["a","b","c"]` 切片字面量降成元素型別不符的 global
 ;      （宣告 [N x i64]、元素 i32）→ opt-verify 失敗；在函式內區域變數則報
 ;      `unsupported builtin []t.set-byte`。改用 `.push("a")` 建構即可，
@@ -65,6 +63,7 @@
 ;      見 t-to-bool / t-to-unsigned / t-to-u64-byte。
 ;   7. `rindex-from` 的語意與 Python `rfind` 不同（見 t-search 註解），
 ;      但**與原始碼註解一致**，故視為設計選擇而非 bug —— 測試按文件語意寫。
+...
 
 # /test/runner
 
@@ -819,7 +818,8 @@ failed = failed + f15
 ; 取值恆為 false」而整族放棄，本輪實測該問題已不存在（`x: { ok(b) -> … }` 取得
 ; 真值），故全部補上。
 
-; 码点原位写入：`s[i] = <char>` 是 txt 目前**唯一**公开的原位写入形态。
+; 码点原位写入：原為 `s[i] = <char>`（txt 唯一的原位寫入形態）；下標寫已全域禁用，
+; 本組改以「重建整個值」等價表達，斷言與原本完全相同。
 ;
 ; 這裡原本測的是 `txt.set-byte(i, b)`（回 `?bool`、以實體容量 255 為界、
 ; 越界回 nil 並跳過寫入的可失敗寫入器）。該內建已於 2026-11-11 私有化為
@@ -831,34 +831,36 @@ t-cp-write = () {
     s txt = 'abc'
 
     ; ASCII 碼點原位覆蓋：X = 0x58 = 88。
-    ; 注意：函數內的 `s[i] = v` 直寫會被 idxwrite 拒絕（與 str 同規則；只有
-    ; 頂層語句放行），因此一律寫成 place-match —— 它同樣是「碼點原位寫」，
-    ; 只是以「讀」作閘門：i >= len 時整條寫入靜默跳過。
-    s[0]: {
-        ok -> it = "X"
-
-        -> _
-    }
+    ; str/txt 下標寫已全域禁用，改為「重建整個值」：先取尾巴，寫入新首位再接回，
+    ; 與原本 s[0] = "X" 逐碼點等價，長度不變。
+    tail = s.slice(1, s.len())
+    s = txt.from-str("X")
+    s.push-txt(tail)
     runner.str-eq(s.to-str(), 'Xbc', 'txt[0] = "X" ⇒ Xbc')
     runner.eq(s.len(), 3, '碼點原位寫入不改長度')
 
-    ; 尾端原位覆蓋（仍在 len 之內）
-    s[2]: {
-        ok -> it = "Z"
-
-        -> _
-    }
+    ; 尾端覆蓋（仍在 len 之內）：保留前 2 碼點，再接上新尾碼點。
+    s = s.slice(0, 2)
+    s.push("Z")
     runner.str-eq(s.to-str(), 'XbZ', 'txt[2] = "Z" ⇒ XbZ')
     runner.eq(s.len(), 3, '尾端覆蓋不改長度')
 
-    ; 超界：i >= len（此處 == 255 == 實體容量）的寫入被跳過，
-    ; 長度與尾端位元組都不變（不野寫、不越界）
+    ; 超界：i >= len（此處 == 255 == 實體容量）時 ok 臂不執行，值不變。
+    ; 仍以 place-match 讀取作閘門，等價於原本越界寫入被靜默跳過。
     big txt = ''
     k <- [0..255): {
         big.push("a")
     }
     big[255]: {
-        ok -> it = "Z"
+        ok -> {
+            head = big.slice(0, 255)
+            tail-2 = big.slice(256, big.len())
+            rebuilt = txt.from-str('')
+            rebuilt.push-txt(head)
+            rebuilt.push("Z")
+            rebuilt.push-txt(tail-2)
+            big = rebuilt
+        }
 
         -> _
     }

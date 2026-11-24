@@ -621,7 +621,7 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
 
     ; 轉為 hex 字串
     hex-chars = '0123456789abcdef'
-    hex-str str = ''
+    hex-str = ''
     i <- [0..32): {
         word = mac[i]: {
             ok -> it

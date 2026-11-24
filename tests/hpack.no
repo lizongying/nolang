@@ -55,12 +55,13 @@ test-encode-int-multi = () {
 ; 解碼小整數
 test-decode-int-small = () {
     space = ' '
-    data = space.repeat(HPACK-TEST-BUF)
-    data[0]: {
+    data-b = space.repeat(HPACK-TEST-BUF).to-bytes()
+    data-b[0]: {
         ok -> it = 10
 
         -> _
     }
+    data = data-b.to-bytes-str()
     val = 0
     next = 0
     hpack.decode-int(data, 0, 5)(val, next)
@@ -78,22 +79,23 @@ test-decode-int-small = () {
 ; 解碼多 byte 整數
 test-decode-int-multi = () {
     space = ' '
-    data = space.repeat(HPACK-TEST-BUF)
-    data[0]: {
+    data-b = space.repeat(HPACK-TEST-BUF).to-bytes()
+    data-b[0]: {
         ok -> it = 31
 
         -> _
     }
-    data[1]: {
+    data-b[1]: {
         ok -> it = 170
 
         -> _
     }
-    data[2]: {
+    data-b[2]: {
         ok -> it = 10
 
         -> _
     }
+    data = data-b.to-bytes-str()
     val = 0
     next = 0
     hpack.decode-int(data, 0, 5)(val, next)
@@ -132,27 +134,28 @@ test-encode-str = () {
 ; 解碼字串
 test-decode-str = () {
     space = ' '
-    data = space.repeat(HPACK-TEST-BUF)
-    data[0]: {
+    data-b = space.repeat(HPACK-TEST-BUF).to-bytes()
+    data-b[0]: {
         ok -> it = 3
 
         -> _
     }
-    data[1]: {
+    data-b[1]: {
         ok -> it = 97
 
         -> _
     }
-    data[2]: {
+    data-b[2]: {
         ok -> it = 98
 
         -> _
     }
-    data[3]: {
+    data-b[3]: {
         ok -> it = 99
 
         -> _
     }
+    data = data-b.to-bytes-str()
     out = ''
     next = 0
     hpack.decode-str(data, 0)(out, next)

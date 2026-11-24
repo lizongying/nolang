@@ -1,7 +1,8 @@
 {
-  test1: '/example/test1'
-  test2: '/example/test2'
-  test: '/test'
+  demo: './tmp/sumfmt-e2e/demo'
   glossary: '/glossary'
   noui: '/noui'
+  test: '/test'
+  test1: '/example/test1'
+  test2: '/example/test2'
 }

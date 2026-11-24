@@ -155,6 +155,7 @@ t-find-not-found = () {
 
 ; 內部編譯管線（逐層直調）
 ...
+
 ;
 ; 下面幾組直接驅動 regexp 的編譯流水線：emit → class bitmap → parse-* →
 ; emit-quantized → compile → match-at。目的不只是點亮符號，而是釘住每一層的

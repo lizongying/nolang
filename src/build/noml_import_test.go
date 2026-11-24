@@ -188,3 +188,87 @@ func TestNomlImportEmptyContainerNeedsType(t *testing.T) {
 		t.Fatalf("expected an annotation hint for the empty array, got %v", err)
 	}
 }
+
+// TestNomlImportMapSource 驗證全引號鍵物件生成 Nolang map 欄位與字面量，
+// 而非匿名結構體；空 map 由 #{type} 標註提供元素型別。
+func TestNomlImportMapSource(t *testing.T) {
+	noml := `{
+  name: 'cfg'
+  limits: {
+    'x:y': 1
+    'rate': 2
+  }
+  empty: {} #{type = '[str]i64'}
+}`
+	src, err := NomlImportSource("/ws/cfg/m.noml", []byte(noml))
+	if err != nil {
+		t.Fatalf("NomlImportSource: %v", err)
+	}
+	for _, want := range []string{
+		"limits [str]i64",
+		"'x:y': 1",
+		"'rate': 2",
+		"empty [str]i64",
+		"m = m {",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("generated source missing %q:\n%s", want, src)
+		}
+	}
+	if strings.Contains(src, "m-limits {") {
+		t.Errorf("map should not generate a struct type:\n%s", src)
+	}
+}
+
+// TestNomlImportMapRoot 根物件全部鍵帶引號時生成頂層 map 綁定，不生成結構體。
+func TestNomlImportMapRoot(t *testing.T) {
+	src, err := NomlImportSource("/ws/cfg/m.noml", []byte("{\n  'a': 1\n  'b': 2\n}\n"))
+	if err != nil {
+		t.Fatalf("NomlImportSource: %v", err)
+	}
+	if !strings.Contains(src, "m [str]i64 = {") {
+		t.Errorf("root map missing typed binding:\n%s", src)
+	}
+	if strings.Contains(src, "m {") {
+		t.Errorf("root map should not define a struct:\n%s", src)
+	}
+}
+
+func TestNomlImportRejectsMixedKeys(t *testing.T) {
+	_, err := NomlImportSource("/ws/cfg/m.noml", []byte("{\n  a: 1\n  'b': 2\n}\n"))
+	if err == nil {
+		t.Fatal("mixed bare/quoted keys must be rejected")
+	}
+}
+
+// TestNomlImportMapCompile 端到端：直接引入根為 map 的 .noml，呼叫端可用 .get。
+func TestNomlImportMapCompile(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "workspace.noml"),
+		[]byte(`{ test: '.' }`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "cfg.noml"),
+		[]byte("{\n  'a': 7\n  'b': 8\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mainSrc := "# /cfg as cfg\n" +
+		"v = cfg.get('a')\n" +
+		"v: {\n" +
+		"    ok -> print(it)\n" +
+		"\n" +
+		"    nil -> print('nil')\n" +
+		"\n" +
+		"    err -> print('err')\n" +
+		"}\n"
+	mainPath := filepath.Join(tmpDir, "main.no")
+	if err := os.WriteFile(mainPath, []byte(mainSrc), 0644); err != nil {
+		t.Fatal(err)
+	}
+	trans := NewTranspiler(nil)
+	trans.sourcePath = mainPath
+	ir, err := trans.Compile(mainSrc)
+	if err != nil {
+		t.Fatalf("compile error: %v\n--- IR ---\n%s", err, ir)
+	}
+}

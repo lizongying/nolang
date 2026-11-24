@@ -17,21 +17,13 @@ bag {
 ; (1) 結構體欄位：str 從零值增長到 3 後可寫可讀
 b = bag{}
 b.s.len = 3
-b.s[0]: {
-    ok -> it = 97
 
-    -> _
-}
-b.s[1]: {
-    ok -> it = 98
-
-    -> _
-}
-b.s[2]: {
-    ok -> it = 99
-
-    -> _
-}
+; str 下標寫已全域禁用；先用 []byte 緩衝逐位元組構造，再一次寫回欄位。
+s-b []byte = with-cap-len(3, 3)
+s-b[0] = 97
+s-b[1] = 98
+s-b[2] = 99
+b.s = s-b.to-bytes-str()
 {
     b.s.len() == 3 -> print('ok: str field grow from null')
 

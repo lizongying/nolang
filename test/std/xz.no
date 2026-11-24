@@ -40,6 +40,7 @@ t-range-init = () {
 
 ; 2. decode-bit / decode-direct-bits
 ...
+
 ; code=0 且 prob=0x400 時，bound = (0xFFFFFFFF >> 11) * 0x400 > 0，
 ; 故 code < bound 恆成立 → bit = 0（LZMA 規格）
 t-range-bits = () {
@@ -97,6 +98,7 @@ t-init-probs = () {
 
 ; 5. 狀態機（僅驗可呼叫、狀態維持在合法 12 態內）
 ...
+
 ; LZMA 狀態機有 12 個狀態；此處只保證不會跑出範圍（語意待 §5.2 #14 補完）
 t-state = () {
     d = lzma-decoder{}
@@ -177,6 +179,7 @@ t-roundtrip = () {
 
 ; 8. lzma-decoder.decode 主迴圈（形狀驗證；語意見 §5.2 #14）
 ...
+
 ; 樣本為真 LZMA1 位元流：Python `lzma.compress(b'hello lzma world',
 ; FORMAT_RAW, filters=[{LZMA1, lc=3, lp=0, pb=2, dict=4096}])` = 26 位元組。
 ; 目前主迴圈能跑完、能產出位元組，但內容不是原文（解碼器尚未完成，見 §5.2），

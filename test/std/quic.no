@@ -308,6 +308,7 @@ t-derive-initial-keys = () {
 
 ; header protection：XOR 對稱 + 只遮「封包第一位元組」的低 4/5 位
 ...
+
 ;
 ; 斷言只依賴「遮了哪幾個位」而不硬編碼 AES 輸出：測試端自己用同一個 hp
 ; 對同一個 16 位元組取樣再算一次 mask，期望值由 mask 現算。
@@ -415,6 +416,7 @@ t-header-protection = () {
 
 ; decode-packet-number（RFC 9000 §17.1 / 附錄 A.3）
 ...
+
 ;
 ; 佈局照真實 Long Header 擺：第一位元組 + version(4) + DCID len(1) + DCID(8)
 ; + SCID len(1) + … ⇒ **pn-offset = 10**，pn 欄位在 10..13。
@@ -591,6 +593,7 @@ t-dial = () {
 
 ; build-initial-packet（純計算；需先備妥 CIDs 與 client Initial 金鑰）
 ...
+
 ;
 ; 這個方法不只斷言「有東西出來」，而是把封包**反向解回明文**：
 ;   remove-header-protection → decode-packet-number → aes-gcm.open-128 → parse-frames
@@ -753,6 +756,7 @@ t-build-initial-packet = () {
 
 ; recv-raw / recv-initial（UDP 收包；無對端 ⇒ 走逾時／錯誤臂）
 ...
+
 ;
 ; 兩者都需要一個 fd。這裡開一個從未綁定、也收不到任何資料的 UDP socket，
 ; 並把接收逾時壓到 200ms，於是都走「收不到」的失敗臂 —— 正是呼叫方依賴

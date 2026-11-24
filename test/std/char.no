@@ -237,6 +237,7 @@ t-to-txt = () {
 
 ; []char 字面量（回歸）
 ...
+
 ; 歷史 bug：slice 字面量降級為全域 [N x i64] 卻發出 i32 元素，
 ;   觸發 opt-verify 失敗 / `unsupported builtin []t.set-byte`。
 ;   現已修復：長度、索引、元素賦值、固定長度 [N]char 陣列皆可用。

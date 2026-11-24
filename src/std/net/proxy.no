@@ -96,8 +96,8 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     ; 接收回應（雙緩衝區：buf 接收, raw 累積）
     buf str = with-len(PROXY-BUF-SIZE)
 
-    #{overflow=wrap}
-    raw str = with-len(PROXY-BUF-SIZE * 4)
+    ; str 的下標寫已全域禁用；改為從 '' 起逐塊拼接接收資料（內容逐 byte 等價）
+    raw = ''
     total = 0
 
     separator = crlf - crlf
@@ -117,15 +117,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
             fd = -1
             return
         }
-        i <- [0..n): {
-
-            #{overflow=wrap}
-            raw[total + i]: {
-                ok -> it = buf.byte(i)
-
-                -> _
-            }
-        }
+        raw = raw - buf.slice-bytes(0, n)
 
         #{overflow=wrap}
         total = total + n

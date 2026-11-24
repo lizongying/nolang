@@ -244,7 +244,7 @@ func CompilerLang(dir string) string {
 			if parseErr != nil {
 				return ""
 			}
-			comp, _ := m["compiler"].(map[string]any)
+			comp, _ := nomlAsPlainMap(m["compiler"])
 			lang, _ := comp["lang"].(string)
 			return strings.TrimSpace(lang)
 		}

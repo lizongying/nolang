@@ -39,7 +39,7 @@ encode = (data []byte) (out str) {
             -> _
         }
     }
-    out str = with-len(out-len)
+    out = ''
     out-pos = 0
 
     pos = 0
@@ -81,60 +81,14 @@ encode = (data []byte) (out str) {
             -> 0
         }
 
-        out[out-pos]: {
-            ok -> it = BASE32-ALPHABET[(b0 >> 3) & 31]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 1]: {
-            ok -> it = BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 2]: {
-            ok -> it = BASE32-ALPHABET[(b1 >> 1) & 31]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 3]: {
-            ok -> it = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 4]: {
-            ok -> it = BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 5]: {
-            ok -> it = BASE32-ALPHABET[(b3 >> 2) & 31]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 6]: {
-            ok -> it = BASE32-ALPHABET[((b3 & 3) << 3) | ((b4 >> 5) & 7)]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 7]: {
-            ok -> it = BASE32-ALPHABET[b4 & 31]
-
-            -> _
-        }
+        out = out - BASE32-ALPHABET[(b0 >> 3) & 31]
+        out = out - BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
+        out = out - BASE32-ALPHABET[(b1 >> 1) & 31]
+        out = out - BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
+        out = out - BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
+        out = out - BASE32-ALPHABET[(b3 >> 2) & 31]
+        out = out - BASE32-ALPHABET[((b3 & 3) << 3) | ((b4 >> 5) & 7)]
+        out = out - BASE32-ALPHABET[b4 & 31]
 
         {
 
@@ -202,199 +156,46 @@ encode = (data []byte) (out str) {
         }
 
         ; 根據剩餘位元組數決定輸出字元和填充
-        out[out-pos]: {
-            ok -> it = BASE32-ALPHABET[(b0 >> 3) & 31]
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[out-pos + 1]: {
-            ok -> it = BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
-
-            -> _
-        }
+        out = out - BASE32-ALPHABET[(b0 >> 3) & 31]
+        out = out - BASE32-ALPHABET[((b0 & 7) << 2) | ((b1 >> 6) & 3)]
 
         {
             remainder == 1 -> {
 
                 ; 1 byte → 2 chars + 6 padding
-                #{overflow=wrap}
-                out[out-pos + 2]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 3]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 4]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 5]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 6]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 7]: {
-                    ok -> it = "="
-
-                    -> _
-                }
+                out = out - "="
+                out = out - "="
+                out = out - "="
+                out = out - "="
+                out = out - "="
+                out = out - "="
             }
 
             remainder == 2 -> {
-
-                #{overflow=wrap}
-                out[out-pos + 2]: {
-                    ok -> it = BASE32-ALPHABET[(b1 >> 1) & 31]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 3]: {
-                    ok -> it = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 4]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 5]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 6]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 7]: {
-                    ok -> it = "="
-
-                    -> _
-                }
+                out = out - BASE32-ALPHABET[(b1 >> 1) & 31]
+                out = out - BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
+                out = out - "="
+                out = out - "="
+                out = out - "="
+                out = out - "="
             }
 
             remainder == 3 -> {
-
-                #{overflow=wrap}
-                out[out-pos + 2]: {
-                    ok -> it = BASE32-ALPHABET[(b1 >> 1) & 31]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 3]: {
-                    ok -> it = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 4]: {
-                    ok -> it = BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 5]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 6]: {
-                    ok -> it = "="
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 7]: {
-                    ok -> it = "="
-
-                    -> _
-                }
+                out = out - BASE32-ALPHABET[(b1 >> 1) & 31]
+                out = out - BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
+                out = out - BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
+                out = out - "="
+                out = out - "="
+                out = out - "="
             }
 
             remainder == 4 -> {
-
-                #{overflow=wrap}
-                out[out-pos + 2]: {
-                    ok -> it = BASE32-ALPHABET[(b1 >> 1) & 31]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 3]: {
-                    ok -> it = BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 4]: {
-                    ok -> it = BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 5]: {
-                    ok -> it = BASE32-ALPHABET[(b3 >> 2) & 31]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 6]: {
-                    ok -> it = BASE32-ALPHABET[((b3 & 3) << 3) | ((b4 >> 5) & 7)]
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                out[out-pos + 7]: {
-                    ok -> it = "="
-
-                    -> _
-                }
+                out = out - BASE32-ALPHABET[(b1 >> 1) & 31]
+                out = out - BASE32-ALPHABET[((b1 & 1) << 4) | ((b2 >> 4) & 15)]
+                out = out - BASE32-ALPHABET[((b2 & 15) << 1) | ((b3 >> 7) & 1)]
+                out = out - BASE32-ALPHABET[(b3 >> 2) & 31]
+                out = out - BASE32-ALPHABET[((b3 & 3) << 3) | ((b4 >> 5) & 7)]
+                out = out - "="
             }
         }
     }

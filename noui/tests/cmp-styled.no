@@ -1,0 +1,211 @@
+; ============================================================================
+; noui 纯逻辑：styled（基础样式容器，阶段 73）—— C-STYLED
+;
+;   # /noui/src/app          （组件目录 + cmp-scene 渲染层）
+;
+;   只 import app：`src/app.no` 聚合 components / cmp-scene，可直跑（无窗口）。
+;   构建运行：
+;     cd noui && ../bin/no build -cc ./ccwrap.sh -o dist/_t tests/cmp-styled.no
+;     DYLD_LIBRARY_PATH=... SDL_VIDEODRIVER=dummy ... ./dist/_t
+; ============================================================================
+# /noui/src/app
+
+; 注意挂载顺序：CHILD-IDX 要求同一父节点的直接子节点在扁平数组里**连续**，
+; 所以先把子树的子节点建完、再挂到父节点上，最后挂其余兄弟叶子。
+root = cmp-root()
+st = cmp-styled()
+inner = cmp-label('inner')
+cmp-add-child(st, inner)
+cmp-add-child(root, st)
+r = cmp-label('r')
+cmp-add-child(root, r)
+
+; ---- 场景辅助 ----
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+cs-text-color-at = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+cs-text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 默认状态
+; ============================================================================
+u1 = cmp-kind(st) == C-STYLED
+u2 = sty-bg(st) == -1
+u3 = sty-border(st) == -1
+u4 = sty-border-w(st) == 0
+u5 = cmp-has(st, F-DISABLED) == 0
+u6 = cs-is-container(cmp-kind(st)) == 1
+
+; ============================================================================
+; 2. 底色 / 边框读写
+; ============================================================================
+sty-set-bg(st, 0x102030FF)
+u7 = sty-bg(st) == 0x102030FF
+sty-set-border(st, 0xFFD100FF)
+u8 = sty-border(st) == 0xFFD100FF
+sty-set-border-w(st, 200)
+u9 = sty-border-w(st) == 200
+; 厚度负数夹到 0
+sty-set-border-w(st, -5)
+u10 = sty-border-w(st) == 0
+
+; ============================================================================
+; 3. 多句柄隔离
+; ============================================================================
+st2 = cmp-styled()
+sty-set-bg(st2, 0x223344FF)
+sty-set-border(st2, 0x00AAFFFF)
+sty-set-border-w(st2, 50)
+u11 = sty-bg(st) == 0x102030FF
+u12 = sty-border(st) == 0xFFD100FF
+u13 = sty-border-w(st) == 0
+u14 = sty-bg(st2) == 0x223344FF
+u15 = sty-border(st2) == 0x00AAFFFF
+u16 = sty-border-w(st2) == 50
+
+; ============================================================================
+; 4. disabled：写操作全空操作
+; ============================================================================
+cmp-flag-set(st2, F-DISABLED)
+sty-set-bg(st2, 9)
+sty-set-border(st2, 9)
+sty-set-border-w(st2, 9)
+sty-reset(st2)
+u17 = sty-bg(st2) == 0x223344FF
+u18 = sty-border(st2) == 0x00AAFFFF
+u19 = sty-border-w(st2) == 50
+cmp-flag-clear(st2, F-DISABLED)
+
+; ============================================================================
+; 5. reset 归位
+; ============================================================================
+sty-set-bg(st, 0x334455FF)
+sty-set-border(st, 0x556677FF)
+sty-set-border-w(st, 100)
+sty-reset(st)
+u20 = sty-bg(st) == -1
+u21 = sty-border(st) == -1
+u22 = sty-border-w(st) == 0
+
+; ============================================================================
+; 6. 渲染：默认 = 继承组件色、无边框
+; ============================================================================
+cs-layout(root, 0, 0, 18000, 20000)
+cs-clear()
+cs-paint(root)
+bx, by, bw, bh = cs-rect(st)
+u23 = bx == 1200
+u24 = by == 1200
+u25 = bw == 15600
+u26 = bh == 4800
+u27 = cs-rect-color-at(bx, by, bw, bh) == 0x2A2A3AFF
+u28 = cs-rect-color-at(bx, by, bw, 100) == -1
+u29 = cs-rect-color-at(bx, by, 100, bh) == -1
+u30 = cs-text-color-at('inner', 2400, 2400) == 0xE8E8F0FF
+u31 = cs-text-count() == 2
+
+; ============================================================================
+; 7. 渲染：底色 / 边框覆写
+; ============================================================================
+sty-set-bg(st, 0x102030FF)
+sty-set-border(st, 0xFFD100FF)
+sty-set-border-w(st, 100)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+bx, by, bw, bh = cs-rect(st)
+u32 = cs-rect-color-at(bx, by, bw, bh) == 0x102030FF
+u33 = cs-rect-color-at(bx, by, bw, 100) == 0xFFD100FF
+u34 = cs-rect-color-at(bx, cs-sub(cs-add(by, bh), 100), bw, 100) == 0xFFD100FF
+u35 = cs-rect-color-at(bx, by, 100, bh) == 0xFFD100FF
+u36 = cs-rect-color-at(cs-sub(cs-add(bx, bw), 100), by, 100, bh) == 0xFFD100FF
+u37 = cs-text-color-at('inner', 2400, 2400) == 0xE8E8F0FF
+
+; 只给色、不给厚度 = 不画框；只给厚度、不给色 = 也不画
+sty-set-border-w(st, 0)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+u38 = cs-rect-color-at(bx, by, bw, 100) == -1
+sty-set-border-w(st, 100)
+sty-set-border(st, -1)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+u39 = cs-rect-color-at(bx, by, bw, 100) == -1
+u40 = cs-rect-color-at(bx, by, bw, bh) == 0x102030FF
+
+; ============================================================================
+; 8. reset 后回到组件色 / 无边框
+; ============================================================================
+sty-reset(st)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+bx, by, bw, bh = cs-rect(st)
+u41 = cs-rect-color-at(bx, by, bw, bh) == 0x2A2A3AFF
+u42 = cs-rect-color-at(bx, by, bw, 100) == -1
+u43 = cs-rect-color-at(bx, by, 100, bh) == -1
+
+; ============================================================================
+; 9. 空盒子也要有底（无边框、无文本）
+; ============================================================================
+st3 = cmp-styled()
+cmp-add-child(root, st3)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+ex, ey, ew, eh = cs-rect(st3)
+u44 = ex == 1200
+u45 = ey == 10000
+u46 = ew == 15600
+u47 = eh == 2400
+u48 = cs-rect-color-at(ex, ey, ew, eh) == 0x2A2A3AFF
+u49 = cs-text-count() == 2
+sty-set-bg(st3, 0x0F1B2AFF)
+sty-set-border(st3, 0x00FF88FF)
+sty-set-border-w(st3, 50)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+ex, ey, ew, eh = cs-rect(st3)
+u50 = cs-rect-color-at(ex, ey, ew, eh) == 0x0F1B2AFF
+u51 = cs-rect-color-at(ex, ey, ew, 50) == 0x00FF88FF
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11 & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21 & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31 & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41 & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+(all) -> { print('ALL STYLED TESTS PASSED') }
+(!(all)) -> { print('FAIL: styled mismatch') }

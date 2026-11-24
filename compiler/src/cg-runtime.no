@@ -864,6 +864,76 @@ cg-runtime-vec-new-cap-str = () (r str) {
     r = b.str()
 }
 
+; vec_clear（s165）：就地清除——只把 len 欄歸零，cap/data 原封保留（緩衝可重用、不釋放）。
+;   逐字鏡像 Go src/mir/builtin_call.go:2481 emitBuiltinVecClear 的 insertvalue %vec %v, i32 0, 0。
+;   ⚠️ dat==0（空 vec）時也安全：insertvalue 只是拷字段，不碰緩衝。
+; r: 結果字串
+cg-runtime-vec-clear = () (r str) {
+    b = sb.init(512)
+    b.push('define %vec @vec_clear(%vec %v) {\n')
+    b.push('entry:\n')
+    b.push('\t%cp = extractvalue %vec %v, 1\n')
+    b.push('\t%dt = extractvalue %vec %v, 2\n')
+    b.push('\t%r0 = insertvalue %vec undef, i32 0, 0\n')
+    b.push('\t%r1 = insertvalue %vec %r0, i32 %cp, 1\n')
+    b.push('\t%r2 = insertvalue %vec %r1, i64 %dt, 2\n')
+    b.push('\tret %vec %r2\n}\n')
+    r = b.str()
+}
+
+; vec_bytes_to_str（s165）：[]byte.to-bytes-str() 的【自有】1:1 逐字節複製助手。
+;   語意逐字鏡像 src/std/byte.no:141（原始位元保留、不做 UTF-8 重編碼）與 Go builtin
+;   src/dist/txtmin.ll 的 _LB__RB_byte.to-bytes-str（配置 n 位元組後逐元複製）。
+;   ⚠️ 與 OP-STRFROMVEC（s49）的零拷貝重interpret【相反】：那里與原 vec 共享緩衝，
+;      接收者離開作用域即懸垂；此處必須複製，故走 @nolang_rc_alloc（rc=1），由 h2m-rel-add
+;      登記、作用域結束發 OP-RELEASE ⇒ @nolang_rc_release（同 OP-STRCAT／OP-STRSLICEB）。
+;   ⚠️ 元素槽是 i64 寬（s136 口徑）⇒ 逐元 load i64、trunc i8 寫進 i8 緩衝（低 8 位即元首元）。
+;   ⚠️ 空 vec ⇒ 直接回 {0,0,null}（無 rc 頭可釋放，避免 release 讀越界頭）；這與
+;      s160 @str_slice_bytes 的「rc_alloc(0) 恆非空」不同分支，前者是 vec 緩衝無 RC 的既有口徑。
+; r: 結果字串
+cg-runtime-vec-bytes-to-str = () (r str) {
+    b = sb.init(1792)
+    b.push('define %str-long @vec_bytes_to_str(%vec %a) {\n')
+    b.push('entry:\n')
+    b.push('  %la.i32 = extractvalue %vec %a, 0\n')
+    b.push('  %la = zext i32 %la.i32 to i64\n')
+    b.push('  %da = extractvalue %vec %a, 2\n')
+    ; s165 語義煙測（tmp/s165/sem）抓到的真錯：%vec 的 f2 是【整數】指針（i64），
+    ;   LLVM 不能把 i64 直接當 i8* 用 ⇒ 必須 inttoptr（同 cg.no OP-STRFROMVEC 的
+    ;   「bitcast 不能指針⇄整數」口徑）。缺這步 clang 報
+    ;   `'%da' defined with type 'i64' but expected 'ptr'`。
+    b.push('  %dap = inttoptr i64 %da to i8*\n')
+    b.push('  %z = icmp eq i64 %la, 0\n')
+    b.push('  br i1 %z, label %empty, label %alloc\n')
+    b.push('empty:\n')
+    b.push('  ret %str-long { i32 0, i32 0, i8* null }\n')
+    b.push('alloc:\n')
+    b.push('  %buf = call i8* @nolang_rc_alloc(i64 %la)\n')
+    b.push('  br label %loop\n')
+    b.push('loop:\n')
+    b.push('  %i = phi i64 [ 0, %alloc ], [ %inext, %body ]\n')
+    b.push('  %go = icmp slt i64 %i, %la\n')
+    b.push('  br i1 %go, label %body, label %done\n')
+    b.push('body:\n')
+    b.push('  %off = mul i64 %i, 8\n')
+    b.push('  %sp = getelementptr i8, i8* %dap, i64 %off\n')
+    b.push('  %spp = bitcast i8* %sp to i64*\n')
+    b.push('  %xw = load i64, i64* %spp\n')
+    b.push('  %xb = trunc i64 %xw to i8\n')
+    b.push('  %dp = getelementptr i8, i8* %buf, i64 %i\n')
+    b.push('  store i8 %xb, i8* %dp\n')
+    b.push('  %inext = add i64 %i, 1\n')
+    b.push('  br label %loop\n')
+    b.push('done:\n')
+    b.push('  %c32 = trunc i64 %la to i32\n')
+    b.push('  %r0 = insertvalue %str-long zeroinitializer, i32 %c32, 0\n')
+    b.push('  %r1 = insertvalue %str-long %r0, i32 %c32, 1\n')
+    b.push('  %r2 = insertvalue %str-long %r1, i8* %buf, 2\n')
+    b.push('  ret %str-long %r2\n')
+    b.push('}\n')
+    r = b.str()
+}
+
 ; str_from_i64：把 i64 渲染成【新分配】的 %str-long（十進制、帶符號）。
 ;   s143：OP-ITOSTR 的執行期助手。逐字鏡像 Go src/mir/codegen.go:4643 的 @str_from_i64
 ;   （相同於 @print_i64 的數字發射，但產物是 rc=1 堆緩衝而非直接 write）。
@@ -1079,6 +1149,9 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-vec-free-str())
     b.push(cg-runtime-vec-new-cap-i64())
     b.push(cg-runtime-vec-new-cap-str())
+    ; s165：@vec_clear（就地清 len，保留 cap/data）與 @vec_bytes_to_str（1:1 自有拷貝成 str）。
+    b.push(cg-runtime-vec-clear())
+    b.push(cg-runtime-vec-bytes-to-str())
     b.push(cg-runtime-vec-eq())
     b.push(cg-runtime-print-helpers())
     b.push(cg-runtime-str-from-i64())

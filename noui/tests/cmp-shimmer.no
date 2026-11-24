@@ -1,0 +1,195 @@
+; ============================================================================
+; noui 纯逻辑：shimmer（扫光占位，阶段 74）—— C-SHIMMER
+;
+;   # /noui/src/app          （组件目录 + cmp-scene 渲染层）
+;
+;   只 import app：`src/app.no` 聚合 components / cmp-scene，可直跑（无窗口）。
+; ============================================================================
+# /noui/src/app
+
+root = cmp-root()
+shm = cmp-shimmer()
+cmp-add-child(root, shm)
+r = cmp-label('r')
+cmp-add-child(root, r)
+
+; ---- 场景辅助 ----
+cs-rect-color-at = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+cs-rect-count-color = (c i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-c(i) == c)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 1. 默认状态
+; ============================================================================
+u1 = cmp-kind(shm) == C-SHIMMER
+u2 = shm-duration(shm) == 0
+u3 = shm-band(shm) == 0
+u4 = shm-color(shm) == -1
+u5 = shm-phase(shm) == 0
+u6 = cmp-has(shm, F-DISABLED) == 0
+u7 = cs-is-container(cmp-kind(shm)) == 0
+
+; ============================================================================
+; 2. 时长 / 带宽 / 颜色读写
+; ============================================================================
+shm-set-duration(shm, 800)
+u8 = shm-duration(shm) == 800
+shm-set-duration(shm, -1)
+u9 = shm-duration(shm) == 0
+shm-set-band(shm, 40)
+u10 = shm-band(shm) == 40
+shm-set-band(shm, -7)
+u11 = shm-band(shm) == 0
+shm-set-band(shm, 150)
+u12 = shm-band(shm) == 100
+shm-set-color(shm, 0x66CCFFFF)
+u13 = shm-color(shm) == 0x66CCFFFF
+
+; ============================================================================
+; 3. 相位读写与夹紧
+; ============================================================================
+shm-set-phase(shm, 55)
+u14 = shm-phase(shm) == 55
+shm-set-phase(shm, 150)
+u15 = shm-phase(shm) == 100
+shm-set-phase(shm, -5)
+u16 = shm-phase(shm) == 0
+u17 = cmp-value(shm) == 0
+
+; ============================================================================
+; 4. advance 的算术（时长驱动、绕回）
+; ============================================================================
+shm-reset(shm)
+shm-set-duration(shm, 1000)
+shm-set-phase(shm, 50)
+shm-advance(shm, 250)
+u18 = shm-phase(shm) == 75
+shm-advance(shm, 250)
+u19 = shm-phase(shm) == 0
+shm-set-phase(shm, 90)
+shm-advance(shm, 600)
+u20 = shm-phase(shm) == 50
+; duration = 0 → 默认 1200：dt 300 → 步进 25
+shm-set-duration(shm, 0)
+shm-set-phase(shm, 10)
+shm-advance(shm, 300)
+u21 = shm-phase(shm) == 35
+; dt 为 0 不动
+shm-advance(shm, 0)
+u22 = shm-phase(shm) == 35
+
+; ============================================================================
+; 5. 多句柄隔离
+; ============================================================================
+shm2 = cmp-shimmer()
+shm-set-duration(shm2, 600)
+shm-set-band(shm2, 20)
+shm-set-color(shm2, 0x112233FF)
+shm-set-phase(shm2, 40)
+u23 = shm-duration(shm) == 0
+u24 = shm-band(shm) == 0
+u25 = shm-color(shm) == -1
+u26 = shm-phase(shm) == 35
+u27 = shm-duration(shm2) == 600
+u28 = shm-band(shm2) == 20
+u29 = shm-color(shm2) == 0x112233FF
+u30 = shm-phase(shm2) == 40
+
+; ============================================================================
+; 6. disabled：写操作全空操作（含 advance）
+; ============================================================================
+cmp-flag-set(shm2, F-DISABLED)
+shm-set-duration(shm2, 999)
+shm-set-band(shm2, 99)
+shm-set-color(shm2, 0x999999FF)
+shm-set-phase(shm2, 99)
+shm-advance(shm2, 500)
+shm-reset(shm2)
+u31 = shm-duration(shm2) == 600
+u32 = shm-band(shm2) == 20
+u33 = shm-color(shm2) == 0x112233FF
+u34 = shm-phase(shm2) == 40
+cmp-flag-clear(shm2, F-DISABLED)
+
+; ============================================================================
+; 7. reset 归位
+; ============================================================================
+shm-set-duration(shm, 777)
+shm-set-band(shm, 55)
+shm-set-color(shm, 0x777777FF)
+shm-set-phase(shm, 66)
+shm-reset(shm)
+u35 = shm-duration(shm) == 0
+u36 = shm-band(shm) == 0
+u37 = shm-color(shm) == -1
+u38 = shm-phase(shm) == 0
+
+; ============================================================================
+; 8. 渲染：底 = TRACK；相位 0 = 只有底
+; ============================================================================
+cs-layout(root, 0, 0, 18000, 20000)
+cs-clear()
+cs-paint(root)
+bx, by, bw, bh = cs-rect(shm)
+u39 = bx == 1200
+u40 = by == 1200
+u41 = bw == 15600
+u42 = bh == 2400
+u43 = cs-rect-color-at(bx, by, bw, bh) == cs-theme(CS-TH-TRACK)
+u44 = cs-rect-count-color(cs-theme(CS-TH-MUTED)) == 0
+
+; ============================================================================
+; 9. 渲染：相位 50 / 默认带宽 30% → 一条 MUTED 高光带
+; ============================================================================
+shm-set-phase(shm, 50)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+band = cs-div(cs-mul(bw, 30), 100)
+span = cs-sub(bw, band)
+off = cs-div(cs-mul(50, span), 100)
+u45 = band == 4680
+u46 = off == 5460
+u47 = cs-rect-color-at(cs-add(bx, off), by, band, bh) == cs-theme(CS-TH-MUTED)
+u48 = cs-rect-count-color(cs-theme(CS-TH-MUTED)) == 1
+
+; ============================================================================
+; 10. 渲染：自定义带宽 / 颜色
+; ============================================================================
+shm-set-band(shm, 20)
+shm-set-color(shm, 0x66CCFFFF)
+shm-set-phase(shm, 100)
+cs-clear()
+cs-layout(root, 0, 0, 18000, 20000)
+cs-paint(root)
+band = cs-div(cs-mul(bw, 20), 100)
+u49 = band == 3120
+u50 = cs-rect-color-at(cs-add(bx, cs-sub(bw, band)), by, band, bh) == 0x66CCFFFF
+u51 = cs-rect-count-color(0x66CCFFFF) == 1
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all = u1 & u2 & u3 & u4 & u5 & u6 & u7 & u8 & u9 & u10 & u11 & u12 & u13 & u14 & u15 & u16 & u17 & u18 & u19 & u20 & u21 & u22 & u23 & u24 & u25 & u26 & u27 & u28 & u29 & u30 & u31 & u32 & u33 & u34 & u35 & u36 & u37 & u38 & u39 & u40 & u41 & u42 & u43 & u44 & u45 & u46 & u47 & u48 & u49 & u50 & u51
+(all) -> { print('ALL SHIMMER TESTS PASSED') }
+(!(all)) -> { print('FAIL: shimmer mismatch') }

@@ -19,6 +19,10 @@ import (
 //   - 鍵：預設裸識別符，規則同 nolang 變數名——下劃線開頭、或開頭為小寫
 //     字母／數字；中間可含小寫字母、數字、中劃線；不能以數字開頭
 //     （下劃線開頭除外）。不符合規則的鍵寫成單引號字串鍵。
+//   - 🔴 物件種類由鍵**是否帶引號**決定，與 Nolang 字面量同口徑：全部裸鍵
+//     是 obj（→ 結構體，回傳 map[string]any）；全部單引號鍵是 map
+//     （→ Nolang map，回傳 NomlMap）；空 {} 是 map（obj 不可能沒有欄位）；
+//     同一物件內裸鍵與引號鍵混合是語法錯誤。
 //   - 值：單引號字串（\ 轉義：\' \\ \n \t \r）、true/false（全小寫）、
 //     nil、裸數字（整數/小數/指數）、物件 {…}、陣列 […]。
 //     ⚠️ 空值是 `nil` 而**不是** `null`：noml 本質是 Nolang 的字面量，必須符合
@@ -130,14 +134,33 @@ type NomlAnnotation struct {
 	Line  int
 }
 
+// NomlMap 是 noml 中以單引號字串鍵寫成的物件，對應 Nolang 的 map 字面量
+// （`[str]T = { 'key': value }`）。裸鍵物件仍是普通的 map[string]any（obj），
+// 兩者用不同型別表示，讓 noml → Nolang 的重建能選對型別。
+//
+// 空 `{}` 也是 NomlMap：obj 不可能沒有欄位。
+type NomlMap map[string]any
+
 // NomlDoc 是帶註解的 noml 文件。Root 是物件值樹（頂層非物件時為 nil），
 // Annotations 以成員路徑（`compiler.version`、`dependencies`）為 key 保存
 // 該成員的註解條目。路徑段使用原始鍵名；陣列元素不携带獨立註解。
 // 空路徑 `""` 是文件級註解（寫在頂層值上方或同一行尾隨）。
+//
+// Root 一律是純 map[string]any（map 與 obj 都轉成此型別，方便既有 config
+// 解碼）；要分辨根節點種類請看 Value 的動態型別或呼叫 RootIsMap。
 type NomlDoc struct {
 	Root        map[string]any
 	Value       any
 	Annotations map[string][]NomlAnnotation
+}
+
+// RootIsMap 報告頂層物件是否為 map（全部鍵帶引號或空物件）。
+func (d *NomlDoc) RootIsMap() bool {
+	if d == nil {
+		return false
+	}
+	_, ok := d.Value.(NomlMap)
+	return ok
 }
 
 // TypeOf 回傳某成員 `#{type = '...'}` 標註的型別字串（未標註回傳 ""）。
@@ -238,23 +261,30 @@ func ParseNomlDoc(data []byte) (*NomlDoc, error) {
 		return nil, p.errf("unexpected character %q after value", p.data[p.pos])
 	}
 	doc := &NomlDoc{Value: v, Annotations: p.anns}
-	if m, ok := v.(map[string]any); ok {
+	switch m := v.(type) {
+	case map[string]any:
 		doc.Root = m
+	case NomlMap:
+		doc.Root = map[string]any(m)
 	}
 	return doc, nil
 }
 
-// ParseNomlMap 解析 noml 頂層物件。
+// ParseNomlMap 解析 noml 頂層物件。obj 與 map 都回傳純 map[string]any
+// （既有設定檔解碼不需要知道差異；要分辨請用 ParseNomlDoc.Value）。
 func ParseNomlMap(data []byte) (map[string]any, error) {
 	v, err := ParseNoml(data)
 	if err != nil {
 		return nil, err
 	}
-	m, ok := v.(map[string]any)
-	if !ok {
+	switch m := v.(type) {
+	case map[string]any:
+		return m, nil
+	case NomlMap:
+		return map[string]any(m), nil
+	default:
 		return nil, i18n.Errorf("97nc8yti", "noml: expected object, got %T", v)
 	}
-	return m, nil
 }
 
 // parseValue 解析一個值。path 是當前成員路徑（如 "compiler.version"），
@@ -300,10 +330,15 @@ func memberPath(prefix, key string) string {
 
 // parseObject 解析 { 成員... }，成員以換行分隔（無逗號）。成員上方或
 // 同一行尾隨的 `#{...}` 會收集到 p.anns[成員路徑]。
-func (p *nomlParser) parseObject(path string) (map[string]any, error) {
+//
+// 物件種類由鍵的書寫形式決定：全部裸鍵 → obj（map[string]any）；全部
+// 單引號鍵 → map（NomlMap）；空 {} → map；混合 → 語法錯誤。
+func (p *nomlParser) parseObject(path string) (any, error) {
 	p.advance() // skip {
 	result := make(map[string]any)
 	seen := make(map[string]bool)
+	isMap := false
+	first := true
 	for {
 		p.skipTrivia()
 		if p.pos >= len(p.data) {
@@ -311,6 +346,13 @@ func (p *nomlParser) parseObject(path string) (map[string]any, error) {
 		}
 		if p.data[p.pos] == '}' {
 			p.advance()
+			// obj 不可能沒有欄位：空物件一律是 map。
+			if first {
+				isMap = true
+			}
+			if isMap {
+				return NomlMap(result), nil
+			}
 			return result, nil
 		}
 		// 成員上方的 `#{...}`（獨立成行）。
@@ -324,9 +366,17 @@ func (p *nomlParser) parseObject(path string) (map[string]any, error) {
 				return nil, p.errf("annotation without a member to attach to")
 			}
 		}
-		key, err := p.parseKey()
+		key, quoted, err := p.parseKey()
 		if err != nil {
 			return nil, err
+		}
+		if first {
+			isMap = quoted
+			first = false
+		} else if quoted != isMap {
+			// 新錯誤文案不走 i18n.Errorf：一個 ID 只能對應一種文案，而
+			// p.errf 的 ID 已綁在固定格式上（見 m8blb8q2）。
+			return nil, fmt.Errorf("noml: line %d col %d: object mixes bare keys (obj) and single-quoted keys (map); all keys in one object must use the same form", p.line, p.col)
 		}
 		if seen[key] {
 			return nil, p.errf("duplicate key %q", key)
@@ -629,23 +679,49 @@ func (p *nomlParser) skipAnnotationSpace() {
 	}
 }
 
-// parseKey 解析裸識別符鍵或單引號字串鍵。
-func (p *nomlParser) parseKey() (string, error) {
+// nomlMaxKeyLen 是 noml 鍵的長度上限（位元組數，0–255）：
+// 標準庫以 1 byte 保存鍵長，超過 255 無法表示。
+const nomlMaxKeyLen = 255
+
+// parseKey 解析裸識別符鍵或單引號字串鍵。quoted 報告鍵是否帶單引號——
+// 這是 obj / map 的唯一判據（見 parseObject）。
+func (p *nomlParser) parseKey() (key string, quoted bool, err error) {
 	if p.pos >= len(p.data) {
-		return "", p.errf("unexpected end of input, expected key")
+		return "", false, p.errf("unexpected end of input, expected key")
 	}
 	if p.data[p.pos] == '\'' {
-		return p.parseString()
+		key, err = p.parseString()
+		if err != nil {
+			return "", true, err
+		}
+		return key, true, p.checkKeyLen(key)
 	}
 	start := p.pos
 	if !isNomlIdentStart(p.data[p.pos]) {
-		return "", p.errf("expected key, got %q (non-identifier keys must be single-quoted)", p.data[p.pos])
+		return "", false, p.errf("expected key, got %q (non-identifier keys must be single-quoted)", p.data[p.pos])
 	}
 	p.advance()
 	for p.pos < len(p.data) && isNomlIdentChar(p.data[p.pos]) {
 		p.advance()
 	}
-	return string(p.data[start:p.pos]), nil
+	key = string(p.data[start:p.pos])
+	return key, false, p.checkKeyLen(key)
+}
+
+// nomlCheckKeyLen 檢查鍵長度（位元組）是否落在 0–255；解析與序列化共用。
+func nomlCheckKeyLen(key string) error {
+	if len(key) > nomlMaxKeyLen {
+		return fmt.Errorf("key length %d exceeds %d bytes", len(key), nomlMaxKeyLen)
+	}
+	return nil
+}
+
+// checkKeyLen 為解析錯誤補上行號。
+func (p *nomlParser) checkKeyLen(key string) error {
+	if err := nomlCheckKeyLen(key); err != nil {
+		return fmt.Errorf("noml: line %d col %d: %w", p.line, p.col, err)
+	}
+	return nil
 }
 
 // parseString 解析單引號字串（含 \ 轉義）。
@@ -1138,6 +1214,16 @@ func nomlNormalize(v any) (any, error) {
 			out = append(out, s)
 		}
 		return out, nil
+	case NomlMap:
+		out := make(NomlMap, len(t))
+		for k, val := range t {
+			n, err := nomlNormalize(val)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = n
+		}
+		return out, nil
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
@@ -1226,37 +1312,10 @@ func nomlWriteAnnotated(sb *strings.Builder, v any, indent int, path string, ann
 		}
 	case float64:
 		sb.WriteString(nomlFormatNumber(t))
+	case NomlMap:
+		return nomlWriteObject(sb, map[string]any(t), indent, path, anns, true)
 	case map[string]any:
-		sb.WriteString("{\n")
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			mpath := memberPath(path, k)
-			if entries := anns[mpath]; len(entries) > 0 {
-				sb.WriteString(pad)
-				sb.WriteString("  ")
-				sb.WriteString("#{")
-				parts := make([]string, 0, len(entries))
-				for _, a := range entries {
-					parts = append(parts, FormatNomlAnnotation(a))
-				}
-				sb.WriteString(strings.Join(parts, ", "))
-				sb.WriteString("}\n")
-			}
-			sb.WriteString(pad)
-			sb.WriteString("  ")
-			sb.WriteString(nomlFormatKey(k))
-			sb.WriteString(": ")
-			if err := nomlWriteAnnotated(sb, t[k], indent+1, mpath, anns); err != nil {
-				return err
-			}
-			sb.WriteByte('\n')
-		}
-		sb.WriteString(pad)
-		sb.WriteString("}")
+		return nomlWriteObject(sb, t, indent, path, anns, false)
 	case []any:
 		if len(t) == 0 {
 			sb.WriteString("[]")
@@ -1276,6 +1335,51 @@ func nomlWriteAnnotated(sb *strings.Builder, v any, indent int, path string, ann
 	default:
 		return i18n.Errorf("8sf1ugcv", "noml: unsupported value type %T", v)
 	}
+	return nil
+}
+
+// nomlWriteObject 輸出物件 / map；quoteAll=true 時所有鍵都加單引號
+// （NomlMap 的定義就是「全部鍵帶引號」，即使鍵本身是合法識別符也要保留，
+// 否則 Parse 回來會變成 obj，往返失真）。
+func nomlWriteObject(sb *strings.Builder, m map[string]any, indent int, path string, anns map[string][]NomlAnnotation, quoteAll bool) error {
+	pad := strings.Repeat("  ", indent)
+	sb.WriteString("{\n")
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if err := nomlCheckKeyLen(k); err != nil {
+			return err
+		}
+		mpath := memberPath(path, k)
+		if entries := anns[mpath]; len(entries) > 0 {
+			sb.WriteString(pad)
+			sb.WriteString("  ")
+			sb.WriteString("#{")
+			parts := make([]string, 0, len(entries))
+			for _, a := range entries {
+				parts = append(parts, FormatNomlAnnotation(a))
+			}
+			sb.WriteString(strings.Join(parts, ", "))
+			sb.WriteString("}\n")
+		}
+		sb.WriteString(pad)
+		sb.WriteString("  ")
+		if quoteAll {
+			sb.WriteString(NomlQuote(k))
+		} else {
+			sb.WriteString(nomlFormatKey(k))
+		}
+		sb.WriteString(": ")
+		if err := nomlWriteAnnotated(sb, m[k], indent+1, mpath, anns); err != nil {
+			return err
+		}
+		sb.WriteByte('\n')
+	}
+	sb.WriteString(pad)
+	sb.WriteString("}")
 	return nil
 }
 
@@ -1350,6 +1454,19 @@ func DecodeInto(v any, dst any) error {
 	return nomlDecode(v, rv.Elem(), "")
 }
 
+// nomlAsPlainMap 把 obj / map 兩種容器統一成純 map——解碼到 Go struct
+// 或 map 欄位時兩者互通（差異只留在 NomlMap 型別本身，供產生器用）。
+func nomlAsPlainMap(v any) (map[string]any, bool) {
+	switch t := v.(type) {
+	case map[string]any:
+		return t, true
+	case NomlMap:
+		return map[string]any(t), true
+	default:
+		return nil, false
+	}
+}
+
 func nomlDecode(v any, dst reflect.Value, field string) error {
 	if v == nil {
 		return nil // nil 等同未設定
@@ -1409,7 +1526,7 @@ func nomlDecode(v any, dst reflect.Value, field string) error {
 		dst.Set(out)
 		return nil
 	case reflect.Map:
-		m, ok := v.(map[string]any)
+		m, ok := nomlAsPlainMap(v)
 		if !ok {
 			return i18n.Errorf("5eo1kvb9", "noml: field %s: expected object, got %T", field, v)
 		}
@@ -1425,7 +1542,7 @@ func nomlDecode(v any, dst reflect.Value, field string) error {
 		}
 		return nil
 	case reflect.Struct:
-		m, ok := v.(map[string]any)
+		m, ok := nomlAsPlainMap(v)
 		if !ok {
 			return i18n.Errorf("5eo1kvb9", "noml: field %s: expected object, got %T", field, v)
 		}

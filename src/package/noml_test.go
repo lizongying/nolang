@@ -36,8 +36,9 @@ func TestNomlParseBasicObject(t *testing.T) {
 }
 
 func TestNomlQuotedKeys(t *testing.T) {
+	// 全部鍵帶引號 ⇒ map（不是 obj），裸鍵與引號鍵混合不被允許。
 	src := `{
-  test1: '/example/test1'
+  'test1': '/example/test1'
   'github.com/lizongying/nolang/test2': '/example/test2'
   '@': './'
 }
@@ -54,6 +55,13 @@ func TestNomlQuotedKeys(t *testing.T) {
 	}
 	if m["@"] != "./" {
 		t.Errorf("@ key = %v", m["@"])
+	}
+	doc, err := ParseNomlDoc([]byte(src))
+	if err != nil {
+		t.Fatalf("ParseNomlDoc: %v", err)
+	}
+	if _, ok := doc.Value.(NomlMap); !ok || !doc.RootIsMap() {
+		t.Fatalf("all-quoted object should be NomlMap, got %T", doc.Value)
 	}
 }
 
@@ -764,5 +772,182 @@ func TestNomlBlockCommentInArray(t *testing.T) {
 	arr, ok := m["xs"].([]any)
 	if !ok || len(arr) != 2 || arr[0] != "a" || arr[1] != "b" {
 		t.Errorf("xs = %v", m["xs"])
+	}
+}
+
+// ─── obj / map 判別：鍵是否帶引號 ─────────────────────────────────────────
+
+func TestNomlObjVsMapByKeyQuoting(t *testing.T) {
+	cases := []struct {
+		name  string
+		src   string
+		isMap bool
+	}{
+		{
+			name:  "bare keys are obj",
+			src:   "{\nname: 'abc'\nx-y-z: 123\n}\n",
+			isMap: false,
+		},
+		{
+			name:  "all quoted keys are map",
+			src:   "{\n'name': 'abc'\n'x:y@z': 123\n}\n",
+			isMap: true,
+		},
+		{
+			// 即使鍵本身是合法識別符，只要帶引號也判定為 map。
+			name:  "quoted identifier key is still map",
+			src:   "{\n'name': 'abc'\n}\n",
+			isMap: true,
+		},
+		{
+			// obj 不可能沒有欄位，空 {} 一定是 map。
+			name:  "empty object is map",
+			src:   "{\n}\n",
+			isMap: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := ParseNomlDoc([]byte(tc.src))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			_, isPlain := doc.Value.(map[string]any)
+			_, isMap := doc.Value.(NomlMap)
+			if isMap == isPlain {
+				t.Fatalf("value kind ambiguous: %T", doc.Value)
+			}
+			if isMap != tc.isMap || doc.RootIsMap() != tc.isMap {
+				t.Errorf("isMap=%v RootIsMap=%v, want %v (value %T)", isMap, doc.RootIsMap(), tc.isMap, doc.Value)
+			}
+			// ParseNomlMap 對 obj / map 都回傳純 map，既有 config 解碼不受影響。
+			m, err := ParseNomlMap([]byte(tc.src))
+			if err != nil {
+				t.Fatalf("ParseNomlMap: %v", err)
+			}
+			if m == nil {
+				t.Fatal("ParseNomlMap returned nil")
+			}
+		})
+	}
+}
+
+func TestNomlRejectsMixedKeyQuoting(t *testing.T) {
+	cases := []string{
+		"{\nname: 'abc'\n'x:y@z': 123\n}\n",
+		"{\n'name': 'abc'\nx-y-z: 123\n}\n",
+	}
+	for _, src := range cases {
+		if _, err := ParseNoml([]byte(src)); err == nil {
+			t.Errorf("mixed bare/quoted keys must be rejected: %q", src)
+		} else if !strings.Contains(err.Error(), "mixes bare keys") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+}
+
+func TestNomlMapMarshalRoundTrip(t *testing.T) {
+	// NomlMap 的鍵即使合法也要加引號；否則可以繼續用裸鍵（obj）。
+	m := NomlMap{
+		"name":   "abc",
+		"x:y@z":  123,
+		"nested": NomlMap{"k": true},
+	}
+	text, err := MarshalNoml(m)
+	if err != nil {
+		t.Fatalf("MarshalNoml: %v", err)
+	}
+	for _, quoted := range []string{"'name':", "'x:y@z':", "'nested':", "'k':"} {
+		if !strings.Contains(text, quoted) {
+			t.Errorf("missing quoted key %s in:\n%s", quoted, text)
+		}
+	}
+	v, err := ParseNoml([]byte(text))
+	if err != nil {
+		t.Fatalf("parse back: %v\n%s", err, text)
+	}
+	back, ok := v.(NomlMap)
+	if !ok {
+		t.Fatalf("round trip lost NomlMap: %T", v)
+	}
+	if back["name"] != "abc" || back["x:y@z"] != float64(123) {
+		t.Errorf("back = %v", back)
+	}
+	if _, ok := back["nested"].(NomlMap); !ok {
+		t.Errorf("nested lost NomlMap: %T", back["nested"])
+	}
+
+	objText, err := MarshalNoml(map[string]any{"name": "abc", "x-y-z": 123})
+	if err != nil {
+		t.Fatalf("MarshalNoml obj: %v", err)
+	}
+	if !strings.Contains(objText, "name:") || !strings.Contains(objText, "x-y-z:") {
+		t.Errorf("obj keys should stay bare:\n%s", objText)
+	}
+	if v, err := ParseNoml([]byte(objText)); err != nil {
+		t.Fatalf("parse obj back: %v", err)
+	} else if _, ok := v.(map[string]any); !ok {
+		t.Fatalf("obj round trip lost obj: %T", v)
+	}
+}
+
+func TestNomlNestedObjAndMap(t *testing.T) {
+	// 外層 obj、內層 map：外層裸鍵，內層全引號鍵；兩者互不干擾。
+	src := `{
+config: {
+  'x:y': 1
+}
+}
+`
+	doc, err := ParseNomlDoc([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if doc.RootIsMap() {
+		t.Error("root should be obj")
+	}
+	if _, ok := doc.Root["config"].(NomlMap); !ok {
+		t.Errorf("nested map = %T", doc.Root["config"])
+	}
+}
+
+func TestNomlKeyLengthLimit(t *testing.T) {
+	key255 := strings.Repeat("a", 255)
+	key256 := strings.Repeat("a", 256)
+	cases := []struct {
+		name string
+		src  string
+		ok   bool
+	}{
+		{"bare 255 bytes", "{\n" + key255 + ": 1\n}\n", true},
+		{"bare 256 bytes", "{\n" + key256 + ": 1\n}\n", false},
+		{"quoted 255 bytes", "{\n'" + key255 + "': 1\n}\n", true},
+		{"quoted 256 bytes", "{\n'" + key256 + "': 1\n}\n", false},
+		// 轉義後的解碼長度才計入限制：255 個 `\n` = 255 bytes。
+		{"escaped 255 bytes", "{\n'" + strings.Repeat(`\n`, 255) + "': 1\n}\n", true},
+		{"escaped 256 bytes", "{\n'" + strings.Repeat(`\n`, 256) + "': 1\n}\n", false},
+		// 空鍵長度為 0，仍在 0–255 內。
+		{"empty quoted key", "{\n'': 1\n}\n", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseNoml([]byte(tc.src))
+			if tc.ok && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tc.ok {
+				if err == nil {
+					t.Fatal("key longer than 255 bytes must be rejected")
+				}
+				if !strings.Contains(err.Error(), "key length") {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+
+	// 序列化端也拒絕超長鍵，避免產生無法再解析的文件。
+	if _, err := MarshalNoml(map[string]any{key256: 1}); err == nil {
+		t.Error("MarshalNoml must reject key longer than 255 bytes")
 	}
 }

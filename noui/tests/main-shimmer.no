@@ -1,0 +1,267 @@
+; ============================================================================
+; noui 窗口 demo：扫光占位（阶段 74）—— C-SHIMMER
+;
+; 流水线：app-init -> cmp-shimmer -> shm-set-duration / shm-set-band /
+;          shm-set-color / shm-set-phase / shm-advance / shm-reset 写入
+;   -> cs-layout / cs-paint（TRACK 底 + 随相位移动的高光带）：
+;      带宽 SHM-BAND%（0=默认 30）、色 SHM-COL（-1=MUTED）、相位 CMP-VALUE 0..100
+;   -> 键盘：a=推进 100ms / s=自动走 / d=轮换时长 / b=轮换带宽 /
+;            c=轮换颜色 / r=重置 / q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-shimmer.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+rt-auto = 1
+
+; ---- 预设 ----
+SHM-DUR-A = 600
+SHM-DUR-B = 2400
+SHM-BAND-A = 30
+SHM-BAND-B = 60
+SHM-COL-A = 0x66CCFFFF
+SHM-COL-B = 0xFFD100FF
+
+; ---- 重建默认（收尾自检也用它）----
+shm-build-default = (h i64) () {
+    shm-reset(h)
+}
+
+; ---- 场景查找（收尾自检用）----
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+find-text-color = (t str, x i64, y i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-TEXT) && (cs-scene-t(i) == t) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui shimmer')
+(ok == 0) -> {
+
+root = app-root()
+
+shm = cmp-shimmer()
+cmp-add-child(root, shm)
+
+title = cmp-label('noui 阶段74: shimmer')
+hint = cmp-label('a=step100ms s=auto d=dur b=band c=color r=reset q quit')
+stat = cmp-label('')
+stat2 = cmp-label('kind=shimmer leaf')
+
+cmp-add-child(root, title)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; a：推进 100ms
+        (k == 97) -> { shm-advance(shm, 100) }
+        ; s：开关自动走（每帧 ~16ms）
+        (k == 115) -> {
+            {
+                (rt-auto != 0) -> { rt-auto = 0 }
+                -> { rt-auto = 1 }
+            }
+        }
+        ; d：时长 0(默认1200) -> 600 -> 2400 -> 0
+        (k == 100) -> {
+            cur = shm-duration(shm)
+            (cur == 0) -> { shm-set-duration(shm, SHM-DUR-A) }
+            (cur == SHM-DUR-A) -> { shm-set-duration(shm, SHM-DUR-B) }
+            (cur == SHM-DUR-B) -> { shm-set-duration(shm, 0) }
+        }
+        ; b：带宽 0(默认30) -> 30 -> 60 -> 0
+        (k == 98) -> {
+            cur = shm-band(shm)
+            (cur == 0) -> { shm-set-band(shm, SHM-BAND-A) }
+            (cur == SHM-BAND-A) -> { shm-set-band(shm, SHM-BAND-B) }
+            (cur == SHM-BAND-B) -> { shm-set-band(shm, 0) }
+        }
+        ; c：颜色 -1(MUTED) -> A -> B -> -1
+        (k == 99) -> {
+            cur = shm-color(shm)
+            (cur == -1) -> { shm-set-color(shm, SHM-COL-A) }
+            (cur == SHM-COL-A) -> { shm-set-color(shm, SHM-COL-B) }
+            (cur == SHM-COL-B) -> { shm-set-color(shm, -1) }
+        }
+        ; r：重建默认
+        (k == 114) -> { shm-build-default(shm) }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; 自动走：每帧按 ~16ms 推进（演示用，真实应用有自己的时钟）
+    ((rt-auto != 0) && (rt-frames > 60)) -> { shm-advance(shm, 16) }
+
+    ; ---- 状态 -> 标签 ----
+    cd = shm-duration(shm)
+    cb = shm-band(shm)
+    cc = shm-color(shm)
+    cp = shm-phase(shm)
+    au = rt-auto
+    cmp-set-text(stat, 'dur={cd} band={cb} color={cc} phase={cp}')
+    cmp-set-text(stat2, 'auto={au} kind=shimmer')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：重建默认（不扫光），按 cs-rect(shm) 推导坐标。
+;   底 = TRACK；相位 0 = 只有底。子节点无（叶子），另有四条标签文本。
+; ============================================================================
+rt-auto = 0
+shm-build-default(shm)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(shm)
+c1 = bx == 1200
+c2 = by == 1200
+c3 = bw > 0
+c4 = bh == 2400
+c5 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-TRACK)
+c6 = text-count() == 4
+
+; 相位 50 / 默认带宽 30% → MUTED 高光带
+shm-set-phase(shm, 50)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+band = cs-div(cs-mul(bw, 30), 100)
+span = cs-sub(bw, band)
+off = cs-div(cs-mul(50, span), 100)
+c7 = band > 0
+c8 = off > 0
+c9 = find-rect-color(cs-add(bx, off), by, band, bh) == cs-theme(CS-TH-MUTED)
+
+; 自定义带宽 20% / 颜色 A / 相位 100 → 贴右缘
+shm-set-band(shm, 20)
+shm-set-color(shm, SHM-COL-A)
+shm-set-phase(shm, 100)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+band2 = cs-div(cs-mul(bw, 20), 100)
+c10 = band2 > 0
+c11 = find-rect-color(cs-add(bx, cs-sub(bw, band2)), by, band2, bh) == SHM-COL-A
+
+; advance 的算术在渲染层不可见，但相位会被推进（这里核对一次绕回）
+shm-set-duration(shm, 1000)
+shm-set-phase(shm, 90)
+shm-advance(shm, 200)
+c12 = shm-phase(shm) == 10
+shm-advance(shm, 1000)
+c13 = shm-phase(shm) == 10
+
+; disabled：写操作全部空操作（含 advance）
+shm-set-phase(shm, 100)
+cmp-flag-set(shm, F-DISABLED)
+shm-set-duration(shm, 999)
+shm-set-band(shm, 99)
+shm-set-color(shm, 0x999999FF)
+shm-set-phase(shm, 99)
+shm-advance(shm, 500)
+shm-reset(shm)
+c14 = shm-duration(shm) == 1000
+c15 = shm-band(shm) == 20
+c16 = shm-color(shm) == SHM-COL-A
+c17 = shm-phase(shm) == 100
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c18 = find-rect-color(cs-add(bx, cs-sub(bw, band2)), by, band2, bh) == SHM-COL-A
+cmp-flag-clear(shm, F-DISABLED)
+
+; reset 后：回到默认（不扫光）
+shm-build-default(shm)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c19 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-TRACK)
+c20 = text-count() == 4
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+print('bye frames={fr} keys={kk} clicks={ck} bx={bx} by={by} bw={bw} bh={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20) -> {
+    print('shimmer render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20)) -> {
+    print('FAIL: shimmer render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

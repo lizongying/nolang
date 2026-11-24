@@ -79,6 +79,7 @@ read-req = (path str) (s str) {
 
 ; 子行程：HTTP 假代理
 ...
+
 ;
 ; accept 一次 → 讀走 CONNECT 請求（存檔）→ 回 `reply` → 結束。
 ; reply 為空字串時什麼都不送，用於測「對端立刻 EOF」。
@@ -95,6 +96,7 @@ http-child = (lf fd, reply str, path str) {
 
 ; 子行程：SOCKS5 假代理（無認證）
 ...
+
 ;
 ; 1. 讀方法協商 → 回 [5, 0]（選中「無認證」）
 ; 2. 讀 CONNECT 請求（存檔）→ 回 [5, 0, 0, 1, 0,0,0,0, 0,0]
@@ -129,6 +131,7 @@ s5-child = (lf fd, path str) {
 
 ; 子行程：SOCKS5 假代理（用戶名/密碼認證）
 ...
+
 ;
 ; 1. 讀方法協商 → 回 [5, 2]（選中「用戶名密碼」）
 ; 2. 讀認證請求（存檔）→ 回 [1, 0]
@@ -172,6 +175,7 @@ s5-child-auth = (lf fd, path str) {
 
 ; 子行程：SOCKS5 假代理（可設定「第一步回應」的錯誤）
 ...
+
 ;
 ; mode: 1=版本不符（回 4,0）2=方法不可接受（回 5,255）3=rep != 0（回 5,5,..）
 ;       4=回應不足 2 位元組（只回 1 位元組就 EOF）
@@ -239,6 +243,7 @@ s5-child-rep = (lf fd, path str) {
 
 ; 子行程：HTTP 假代理，回一大段沒有 \r\n\r\n 的垃圾
 ...
+
 ;
 ; 觸發 connect 的「累積緩衝超限 ⇒ 放棄」保護（total > 3 * PROXY-BUF-SIZE）。
 http-child-flood = (lf fd, path str) {

@@ -334,34 +334,17 @@ tables.dyn-add = (name str, value str) {
             ; 從尾部往前搬，dst = src + 1，故高位先寫、低位後寫不會互相覆蓋
             i <- [cnt - 1..0]: {
                 prev-name ?= .dyn-names[i]
-                prev-name-len = prev-name.len-bytes()
 
                 prev-val ?= .dyn-values[i]
-                prev-val-len = prev-val.len-bytes()
 
                 ; 逐 byte 複製 name（str-long 值需重建，不能只搬 handle）
-                dn-tmp str = ''.with-len(prev-name-len)
-                j <- [0..prev-name-len): {
-                    pn ?= .dyn-names[i]
-                    dn-tmp[j]: {
-                        ok -> it = pn[j]
-
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                dn-tmp str = prev-name
 
                 .dyn-names[i + 1] ?= dn-tmp
 
                 ; 逐 byte 複製 value
-                dv-tmp str = ''.with-len(prev-val-len)
-                j <- [0..prev-val-len): {
-                    pv ?= .dyn-values[i]
-                    dv-tmp[j]: {
-                        ok -> it = pv[j]
-
-                        -> _
-                    }
-                }
+                dv-tmp str = prev-val
 
                 .dyn-values[i + 1] ?= dv-tmp
             }
@@ -372,28 +355,10 @@ tables.dyn-add = (name str, value str) {
         }
     }
 
-    ; 新項放索引 0
+    ; 新項放索引 0（str 下標寫已全域禁用；`- ''` 強制深拷貝等價於逐位元組複製）
     {
-        dn0-tmp = ''.with-len(name.len-bytes())
-        j <- [0..name.len-bytes()): {
-            dn0-tmp[j]: {
-                ok -> it = name.byte(j)
-
-                -> _
-            }
-        }
-
-        .dyn-names[0] ?= dn0-tmp
-        dv0-tmp = ''.with-len(value.len-bytes())
-        j <- [0..value.len-bytes()): {
-            dv0-tmp[j]: {
-                ok -> it = value.byte(j)
-
-                -> _
-            }
-        }
-
-        .dyn-values[0] ?= dv0-tmp
+        .dyn-names[0] ?= name - ''
+        .dyn-values[0] ?= value - ''
     }: {
         err -> _
 
@@ -769,7 +734,6 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
             -> _
         }
 
-        #{overflow=wrap}
         val = val + ((b & 127) << m)
 
         {
@@ -1002,24 +966,13 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 ! found -> return
 
                 ; 複製到輸出
-                ln-tmp str = ''.with-len(lk-name.len-bytes())
-                j <- [0..lk-name.len-bytes()): {
-                    ln-tmp[j]: {
-                        ok -> it = lk-name.byte(j)
-
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                ln-tmp str = lk-name
 
                 names[count] = ln-tmp
-                lv-tmp str = ''.with-len(lk-val.len-bytes())
-                j <- [0..lk-val.len-bytes()): {
-                    lv-tmp[j]: {
-                        ok -> it = lk-val.byte(j)
 
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                lv-tmp str = lk-val
 
                 values[count] = lv-tmp
 
@@ -1065,24 +1018,13 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 pos < 0 -> return
 
                 ; 複製到輸出
-                nb-tmp str = ''.with-len(name.len-bytes())
-                j <- [0..name.len-bytes()): {
-                    nb-tmp[j]: {
-                        ok -> it = name.byte(j)
-
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                nb-tmp str = name
 
                 names[count] = nb-tmp
-                vb-tmp str = ''.with-len(value.len-bytes())
-                j <- [0..value.len-bytes()): {
-                    vb-tmp[j]: {
-                        ok -> it = value.byte(j)
 
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                vb-tmp str = value
 
                 values[count] = vb-tmp
 
@@ -1128,24 +1070,14 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 }
                 value, pos = decode-str(data, pos)
                 pos < 0 -> return
-                nb-tmp str = ''.with-len(name.len-bytes())
-                j <- [0..name.len-bytes()): {
-                    nb-tmp[j]: {
-                        ok -> it = name.byte(j)
 
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                nb-tmp str = name
 
                 names[count] = nb-tmp
-                vb-tmp str = ''.with-len(value.len-bytes())
-                j <- [0..value.len-bytes()): {
-                    vb-tmp[j]: {
-                        ok -> it = value.byte(j)
 
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                vb-tmp str = value
 
                 values[count] = vb-tmp
 
@@ -1188,24 +1120,14 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 }
                 value, pos = decode-str(data, pos)
                 pos < 0 -> return
-                nb-tmp str = ''.with-len(name.len-bytes())
-                j <- [0..name.len-bytes()): {
-                    nb-tmp[j]: {
-                        ok -> it = name.byte(j)
 
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                nb-tmp str = name
 
                 names[count] = nb-tmp
-                vb-tmp str = ''.with-len(value.len-bytes())
-                j <- [0..value.len-bytes()): {
-                    vb-tmp[j]: {
-                        ok -> it = value.byte(j)
 
-                        -> _
-                    }
-                }
+                ; str 下標寫已禁用；整條深拷貝與逐 byte 複製等價
+                vb-tmp str = value
 
                 values[count] = vb-tmp
 

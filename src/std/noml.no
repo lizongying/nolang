@@ -10,6 +10,9 @@
 ;   - 頂層通常是物件：`{` 與 `}` 各佔一行，成員一行一個，換行即分隔，不用逗號。
 ;   - 鍵：裸識別符（下劃線或小寫字母開頭，中間可含小寫字母、數字、中劃線），
 ;     不符合規則時寫成單引號字串。
+;   - 🔴 物件種類由鍵**是否帶引號**決定（與 Nolang 字面量同口徑）：全部裸鍵
+;     是 obj；全部單引號鍵是 map；空 `{}` 是 map（obj 不可能沒有欄位）；
+;     同一物件內裸鍵與引號鍵混合是語法錯誤。
 ;   - 值：單引號字串（`\'` `\\` `\/` `\n` `\r` `\t` `\0` `\uXXXX`）、反引號
 ;     原始串、true/false/nil、裸數字、物件、陣列（逗號分隔，允許尾隨逗號）。
 ;   - 註解：`;` 到行尾；多行註解放一對獨立成行的 `;;` 之間（與 Nolang
@@ -48,6 +51,7 @@ NOML-KIND-NUM = 2
 NOML-KIND-STR = 3
 NOML-KIND-ARR = 4
 NOML-KIND-OBJ = 5
+NOML-KIND-MAP = 6
 
 ; value: 節點（純標量欄位，可安全存放於堆 vec）
 ; kind/num-val/bool-val: 標量值
@@ -937,6 +941,8 @@ pool.parse-value = (s str, pos i64) (idx i64, next i64, ok bool) {
 }
 
 ; 解析物件 `{ 成員... }`（成員以換行分隔，無逗號）
+; 鍵是否帶引號決定 kind：第一個裸鍵把節點改為 obj，第一個引號鍵維持 map；
+; 其後出現不同形式的鍵立即報錯。空 {} 保持 map（obj 不可能沒有欄位）。
 ; s: 來源文字
 ; pos: `{` 所在位置
 ; idx: 物件節點索引；-1=失敗
@@ -945,7 +951,7 @@ pool.parse-value = (s str, pos i64) (idx i64, next i64, ok bool) {
 ; [parse-object](#noml.pool.parse-object)
 pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
     idx = .alloc()
-    .nodes[idx].kind = NOML-KIND-OBJ
+    .nodes[idx].kind = NOML-KIND-MAP
     next = pos
     ok = false
     sn = s.len-bytes()
@@ -997,8 +1003,20 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
             ok = .fail(s, p, 'annotation without a member to attach to')
             return
         }
-        key, knext, kok = .parse-key(s, p)
+        key, knext, kok, quoted = .parse-key(s, p)
         kok == false -> return
+        kk = .kind(idx)
+        kk == NOML-KIND-OBJ -> {
+            quoted -> {
+                ok = .fail(s, p, 'object mixes bare keys (obj) and single-quoted keys (map); all keys in one object must use the same form')
+                return
+            }
+        }
+        kk == NOML-KIND-MAP -> {
+            ! quoted -> {
+                .nodes[idx].kind = NOML-KIND-OBJ
+            }
+        }
         .has-key(idx, key) -> {
             ok = .fail(s, p, 'duplicate key \'' - key - '\'')
             return
@@ -1206,11 +1224,14 @@ pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
 ; key: 鍵名
 ; next: 鍵之後的位置
 ; ok: true=解析成功
+; quoted: true=鍵帶單引號（obj / map 的唯一判據）
+; 鍵長度上限 255 bytes（解碼後，0–255）；超出即失敗
 ; [parse-key](#noml.pool.parse-key)
-pool.parse-key = (s str, pos i64) (key str, next i64, ok bool) {
+pool.parse-key = (s str, pos i64) (key str, next i64, ok bool, quoted bool) {
     key = ''
     next = pos
     ok = false
+    quoted = false
     sn = s.len-bytes()
     pos >= sn -> {
         ok = .fail(s, pos, 'unexpected end of input, expected key')
@@ -1218,6 +1239,12 @@ pool.parse-key = (s str, pos i64) (key str, next i64, ok bool) {
     }
     s.byte(pos) == 39 -> {
         key, next, ok = .parse-str(s, pos)
+        quoted = true
+        ok == true -> {
+            key.len-bytes() > 255 -> {
+                ok = .fail(s, pos, 'key length exceeds 255 bytes')
+            }
+        }
         return
     }
     is-ident-start(s.byte(pos)) == false -> {
@@ -1236,6 +1263,10 @@ pool.parse-key = (s str, pos i64) (key str, next i64, ok bool) {
     }
     key = s.slice-bytes(pos, p)
     next = p
+    key.len-bytes() > 255 -> {
+        ok = .fail(s, pos, 'key length exceeds 255 bytes')
+        return
+    }
     ok = true
 }
 
@@ -1452,8 +1483,9 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
         }
     }
 
+    ; str 下標寫入已全域禁用；先用 []byte 緩衝逐位元組寫入，再一次轉回 str。
     #{overflow=wrap}
-    buf str = with-len(sn - p)
+    buf []byte = with-cap-len(sn - p, sn - p)
     k = 0
     (p < sn) {
         c = s.byte(p)
@@ -1484,14 +1516,10 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                         -> _
                     }
                     ok = true
-                    val = buf.slice-bytes(0, k)
+                    val = buf.slice(0, k).to-bytes-str()
                     return
                 }
-                buf[k]: {
-                    ok -> it = 10
-
-                    -> _
-                }
+                buf[k] = 10
                 {
                     k ?= k + 1
                 }: {
@@ -1520,11 +1548,7 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
             }
 
             -> {
-                buf[k]: {
-                    ok -> it = c
-
-                    -> _
-                }
+                buf[k] = c
                 {
                     k ?= k + 1
                 }: {
@@ -1956,14 +1980,11 @@ pool.raw-safe = (s str) (yes bool) {
 pool.quote = (s str) (out str) {
     n = s.len-bytes()
 
+    ; str 下標寫入已全域禁用；先用 []byte 緩衝逐位元組寫入，再一次轉回 str。
     #{overflow=wrap}
-    buf str = with-len(n * 6 + 2)
+    buf []byte = with-cap-len(n * 6 + 2, n * 6 + 2)
     k = 0
-    buf[k]: {
-        ok -> it = 39
-
-        -> _
-    }
+    buf[k] = 39
     {
         k ?= k + 1
     }: {
@@ -1975,18 +1996,10 @@ pool.quote = (s str) (out str) {
         c = s.byte(i)
         {
             c == 39 -> {
-                buf[k]: {
-                    ok -> it = 92
-
-                    -> _
-                }
+                buf[k] = 92
 
                 #{overflow=wrap}
-                buf[k + 1]: {
-                    ok -> it = 39
-
-                    -> _
-                }
+                buf[k + 1] = 39
                 {
                     k ?= k + 2
                 }: {
@@ -1997,18 +2010,10 @@ pool.quote = (s str) (out str) {
             }
 
             c == 92 -> {
-                buf[k]: {
-                    ok -> it = 92
-
-                    -> _
-                }
+                buf[k] = 92
 
                 #{overflow=wrap}
-                buf[k + 1]: {
-                    ok -> it = 92
-
-                    -> _
-                }
+                buf[k + 1] = 92
                 {
                     k ?= k + 2
                 }: {
@@ -2019,18 +2024,10 @@ pool.quote = (s str) (out str) {
             }
 
             c == 10 -> {
-                buf[k]: {
-                    ok -> it = 92
-
-                    -> _
-                }
+                buf[k] = 92
 
                 #{overflow=wrap}
-                buf[k + 1]: {
-                    ok -> it = 110
-
-                    -> _
-                }
+                buf[k + 1] = 110
                 {
                     k ?= k + 2
                 }: {
@@ -2041,18 +2038,10 @@ pool.quote = (s str) (out str) {
             }
 
             c == 13 -> {
-                buf[k]: {
-                    ok -> it = 92
-
-                    -> _
-                }
+                buf[k] = 92
 
                 #{overflow=wrap}
-                buf[k + 1]: {
-                    ok -> it = 114
-
-                    -> _
-                }
+                buf[k + 1] = 114
                 {
                     k ?= k + 2
                 }: {
@@ -2063,18 +2052,10 @@ pool.quote = (s str) (out str) {
             }
 
             c == 9 -> {
-                buf[k]: {
-                    ok -> it = 92
-
-                    -> _
-                }
+                buf[k] = 92
 
                 #{overflow=wrap}
-                buf[k + 1]: {
-                    ok -> it = 116
-
-                    -> _
-                }
+                buf[k + 1] = 116
                 {
                     k ?= k + 2
                 }: {
@@ -2091,46 +2072,22 @@ pool.quote = (s str) (out str) {
 
                     -> 0
                 }
-                buf[k]: {
-                    ok -> it = 92
-
-                    -> _
-                }
+                buf[k] = 92
 
                 #{overflow=wrap}
-                buf[k + 1]: {
-                    ok -> it = 117
-
-                    -> _
-                }
+                buf[k + 1] = 117
 
                 #{overflow=wrap}
-                buf[k + 2]: {
-                    ok -> it = 48
-
-                    -> _
-                }
+                buf[k + 2] = 48
 
                 #{overflow=wrap}
-                buf[k + 3]: {
-                    ok -> it = 48
-
-                    -> _
-                }
+                buf[k + 3] = 48
 
                 #{overflow=wrap}
-                buf[k + 4]: {
-                    ok -> it = hex-char(cvv >> 4)
-
-                    -> _
-                }
+                buf[k + 4] = hex-char(cvv >> 4)
 
                 #{overflow=wrap}
-                buf[k + 5]: {
-                    ok -> it = hex-char(cvv & 15)
-
-                    -> _
-                }
+                buf[k + 5] = hex-char(cvv & 15)
                 {
                     k ?= k + 6
                 }: {
@@ -2141,11 +2098,7 @@ pool.quote = (s str) (out str) {
             }
 
             -> {
-                buf[k]: {
-                    ok -> it = c
-
-                    -> _
-                }
+                buf[k] = c
                 {
                     k ?= k + 1
                 }: {
@@ -2156,11 +2109,7 @@ pool.quote = (s str) (out str) {
             }
         }
     }
-    buf[k]: {
-        ok -> it = 39
-
-        -> _
-    }
+    buf[k] = 39
     {
         k ?= k + 1
     }: {
@@ -2168,7 +2117,7 @@ pool.quote = (s str) (out str) {
 
         -> _
     }
-    out = buf.slice-bytes(0, k)
+    out = buf.slice(0, k).to-bytes-str()
 }
 
 ; 依內容挑選最簡形式產生字串面值
@@ -2253,6 +2202,8 @@ pool.stringify = (idx i64, indent i64) (out str) {
 
         k == NOML-KIND-OBJ -> out = .stringify-obj(idx, indent)
 
+        k == NOML-KIND-MAP -> out = .stringify-map(idx, indent)
+
         -> out = 'nil'
     }
 }
@@ -2299,6 +2250,58 @@ pool.stringify-obj = (idx i64, indent i64) (out str) {
 
         #{overflow=wrap}
         out = out - pad - .fmt-key(kk) - ': ' - .stringify(c, indent + 1) - '\n'
+        e = .en[e]: {
+            ok -> it
+
+            -> -1
+        }
+    }
+    out = out - '  '.repeat(indent) - '}'
+}
+
+; 序列化 map（與物件唯一的差別是鍵一律加單引號——即使鍵本身是合法識別符，
+; 也必須保留引號，否則 stringify → parse 會把 map 變成 obj）
+; idx: map 節點索引
+; indent: 縮排層級
+; out: NOML 文字
+; [stringify-map](#noml.pool.stringify-map)
+pool.stringify-map = (idx i64, indent i64) (out str) {
+    out = '{}'
+    nd value
+    e = -1
+    {
+        nd ?= .nodes[idx]
+        e = nd.first
+    }: {
+        err -> _
+
+        -> _
+    }
+    e < 0 -> return
+
+    #{overflow=wrap}
+    pad = '  '.repeat(indent + 1)
+    out = '{\n'
+    (e >= 0) {
+        c = .ec[e]: {
+            ok -> it
+
+            -> -1
+        }
+        a = .anns[c]: {
+            ok -> it
+
+            -> ''
+        }
+        a.len-bytes() > 0 -> out = out - pad - '#{' - a - '}\n'
+        kk = .ek[e]: {
+            ok -> it
+
+            -> ''
+        }
+
+        #{overflow=wrap}
+        out = out - pad - .quote(kk) - ': ' - .stringify(c, indent + 1) - '\n'
         e = .en[e]: {
             ok -> it
 
@@ -2378,12 +2381,20 @@ pool.is-nil = (idx i64) (yes bool) {
     yes = .kind(idx) == NOML-KIND-NIL
 }
 
-; 是否物件
+; 是否物件（全部裸鍵，非空）
 ; idx: 節點索引
 ; yes: true=值為物件
 ; [is-obj](#noml.pool.is-obj)
 pool.is-obj = (idx i64) (yes bool) {
     yes = .kind(idx) == NOML-KIND-OBJ
+}
+
+; 是否 map（全部鍵帶引號，或空 {}）
+; idx: 節點索引
+; yes: true=值為 map
+; [is-map](#noml.pool.is-map)
+pool.is-map = (idx i64) (yes bool) {
+    yes = .kind(idx) == NOML-KIND-MAP
 }
 
 ; 是否陣列
@@ -2454,7 +2465,7 @@ pool.get = (idx i64, key str) (child ?i64) {
 
         -> _
     }
-    nd.kind != NOML-KIND-OBJ -> return
+    (nd.kind != NOML-KIND-OBJ && nd.kind != NOML-KIND-MAP) -> return
     e = nd.first
     (e >= 0) {
         ekv = .ek[e]: {
@@ -2535,7 +2546,7 @@ pool.key = (idx i64, i i64) (key ?str) {
 
         -> _
     }
-    nd.kind != NOML-KIND-OBJ -> return
+    (nd.kind != NOML-KIND-OBJ && nd.kind != NOML-KIND-MAP) -> return
     e = nd.first
     k = 0
     (e >= 0) {
@@ -2995,6 +3006,13 @@ doc.is-obj = () (yes bool) {
     yes = .node-pool.is-obj(.root)
 }
 
+; 根是否 map（全部鍵帶引號，或空 {}）
+; yes: true=根為 map
+; [is-map](#noml.doc.is-map)
+doc.is-map = () (yes bool) {
+    yes = .node-pool.is-map(.root)
+}
+
 ; 根是否陣列
 ; yes: true=根為陣列
 ; [is-arr](#noml.doc.is-arr)
@@ -3187,6 +3205,14 @@ doc.new-obj = () (idx i64) {
     .node-pool.nodes[idx].kind = NOML-KIND-OBJ
 }
 
+; 建立空 map 節點（序列化時鍵一律帶引號）
+; idx: 新節點索引
+; [new-map](#noml.doc.new-map)
+doc.new-map = () (idx i64) {
+    idx = .node-pool.alloc()
+    .node-pool.nodes[idx].kind = NOML-KIND-MAP
+}
+
 ; 建立空陣列節點
 ; idx: 新節點索引
 ; [new-arr](#noml.doc.new-arr)
@@ -3246,6 +3272,7 @@ doc.new-nil = () (idx i64) {
 ; [put](#noml.doc.put)
 doc.put = (obj i64, key str, child i64) (ok bool) {
     ok = false
+    key.len-bytes() > 255 -> return
     obj < 0 -> return
     obj >= .node-pool.nodes.len() -> return
     nd value
@@ -3256,7 +3283,7 @@ doc.put = (obj i64, key str, child i64) (ok bool) {
 
         -> _
     }
-    nd.kind != NOML-KIND-OBJ -> return
+    (nd.kind != NOML-KIND-OBJ && nd.kind != NOML-KIND-MAP) -> return
     .node-pool.add-child(obj, child, key)
     ok = true
 }

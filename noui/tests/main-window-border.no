@@ -1,0 +1,284 @@
+; ============================================================================
+; noui 窗口 demo：窗口描边容器（阶段 75）—— C-WINDOW-BORDER
+;
+; 流水线：app-init -> cmp-window-border -> wb-set-radius / wb-set-width /
+;          cmp-set-color（组件色即边框色）/ wb-reset
+;   -> cs-layout / cs-paint（FIELD 面板 + WB-W 厚、WB-RAD 切角的描边）：
+;      四条边在角部各让出半径，色 = 组件自身 CMP-COLOR[h]
+;   -> 键盘：r=圆角 0/400/800 / w=厚度 0/200/400 / c=边框色轮换 /
+;            i=增删内部标签（空盒也要有面有框）/ d=disabled / q / Esc 退出
+;
+; 退出：ESC / q / 帧数上限（RT-MAX-FRAMES）。
+; 运行：../bin/no run -cc ./ccwrap.sh tests/main-window-border.no
+; ============================================================================
+# /noui/src/app
+
+RT-MAX-FRAMES = 900
+
+rt-frames = 0
+rt-keys = 0
+rt-clicks = 0
+rt-inner = 1
+
+; ---- 预设 ----
+WB-RAD-A = 400
+WB-RAD-B = 800
+WB-W-A = 200
+WB-W-B = 400
+WB-C-A = 0x4A90E2FF
+WB-C-B = 0xE05252FF
+WB-C-DEF = 0x3A3A4AFF
+
+; ---- 重建默认（收尾自检也用它）----
+wb-build-default = (h i64) () {
+    wb-reset(h)
+    cmp-set-color(h, WB-C-DEF)
+}
+
+; ---- 场景查找（收尾自检用）----
+find-rect-color = (x i64, y i64, w i64, ht i64) (c i64) {
+    c = -1
+    n = cs-scene-count()
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        (c >= 0) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-x(i) == x) && (cs-scene-y(i) == y) && (cs-scene-w(i) == w) && (cs-scene-h(i) == ht)) -> { c = cs-scene-c(i) }
+        i = cs-inc(i)
+    }
+    c = c
+}
+count-color = (c i64) (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        ((cs-scene-kind(i) == CS-RECT) && (cs-scene-c(i) == c)) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+text-count = () (n i64) {
+    n = 0
+    m = cs-scene-count()
+    i = 0
+    !! {
+        (i >= m) -> { ** }
+        (cs-scene-kind(i) == CS-TEXT) -> { n = cs-inc(n) }
+        i = cs-inc(i)
+    }
+    n = n
+}
+
+; ============================================================================
+; 初始化
+; ============================================================================
+ok = app-init('noui window-border')
+(ok == 0) -> {
+
+root = app-root()
+
+box = cmp-window-border()
+cmp-add-child(root, box)
+
+inner = cmp-label('inner panel')
+cmp-add-child(box, inner)
+
+title = cmp-label('noui 阶段75: window-border')
+hint = cmp-label('r=radius w=width c=color i=toggle inner d=disable q quit')
+stat = cmp-label('')
+stat2 = cmp-label('kind=window-border')
+
+cmp-add-child(root, title)
+cmp-add-child(root, stat)
+cmp-add-child(root, stat2)
+cmp-add-child(root, hint)
+
+; ============================================================================
+; 主循环
+; ============================================================================
+!! {
+    t, mx, my = app-poll()
+
+    (t == 3) -> { app-hover(root, fx(mx), fx(my)) }
+
+    ; ---- 左键：展示件，只计数 ----
+    (t == 2) -> { rt-clicks = cs-inc(rt-clicks) }
+
+    ; ---- 键盘 ----
+    (t == 4) -> {
+        k = mx.to-i64()
+
+        (k == 27) -> { APP-QUIT[0] = 1 }
+        (k == 113) -> { APP-QUIT[0] = 1 }
+
+        ; r：圆角 0 -> 400 -> 800 -> 0
+        (k == 114) -> {
+            cur = wb-radius(box)
+            (cur == 0) -> { wb-set-radius(box, WB-RAD-A) }
+            (cur == WB-RAD-A) -> { wb-set-radius(box, WB-RAD-B) }
+            (cur == WB-RAD-B) -> { wb-set-radius(box, 0) }
+        }
+        ; w：厚度 0 -> 200 -> 400 -> 0
+        (k == 119) -> {
+            cur = wb-width(box)
+            (cur == 0) -> { wb-set-width(box, WB-W-A) }
+            (cur == WB-W-A) -> { wb-set-width(box, WB-W-B) }
+            (cur == WB-W-B) -> { wb-set-width(box, 0) }
+        }
+        ; c：边框色 默认 -> A -> B -> 默认
+        (k == 99) -> {
+            cur = cmp-color(box)
+            (cur == WB-C-DEF) -> { cmp-set-color(box, WB-C-A) }
+            (cur == WB-C-A) -> { cmp-set-color(box, WB-C-B) }
+            (cur == WB-C-B) -> { cmp-set-color(box, WB-C-DEF) }
+        }
+        ; i：增删内部标签（空盒仍应有面 + 框）
+        (k == 105) -> {
+            {
+                (rt-inner != 0) -> {
+                    cmp-detach(box, inner)
+                    rt-inner = 0
+                }
+                -> {
+                    cmp-add-child(box, inner)
+                    rt-inner = 1
+                }
+            }
+        }
+        ; d：切换 disabled
+        (k == 100) -> {
+            {
+                (cmp-has(box, F-DISABLED)) -> { cmp-flag-clear(box, F-DISABLED) }
+                -> { cmp-flag-set(box, F-DISABLED) }
+            }
+        }
+        rt-keys = cs-inc(rt-keys)
+    }
+
+    (app-quit()) -> { ** }
+    (app-should-quit()) -> { ** }
+
+    ; ---- 状态 -> 标签 ----
+    cr = wb-radius(box)
+    cw = wb-width(box)
+    cc = cmp-color(box)
+    ci = rt-inner
+    dis = cmp-has(box, F-DISABLED)
+    cmp-set-text(stat, 'radius={cr} width={cw} color={cc}')
+    cmp-set-text(stat2, 'inner={ci} disabled={dis} kind=window-border')
+
+    ; ---- 布局 -> 摊平 -> 上屏 ----
+    cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+    cs-clear()
+    cs-paint(root)
+    sc = cs-scene-count()
+
+    app-frame()
+    app-delay(16)
+
+    rt-frames = cs-inc(rt-frames)
+    (RT-MAX-FRAMES > 0) -> {
+        (rt-frames >= RT-MAX-FRAMES) -> { ** }
+    }
+}
+
+; ============================================================================
+; 收尾自检：挂回内部标签并重建默认（圆角 0 / 厚度 400 / 默认色），
+;   按 cs-rect(box) 推导坐标：面板 FIELD，四条 400 厚描边。
+; ============================================================================
+(rt-inner == 0) -> { cmp-add-child(box, inner) }
+rt-inner = 1
+wb-build-default(box)
+wb-set-width(box, 400)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx, by, bw, bh = cs-rect(box)
+c1 = bx == 1200
+c2 = by == 1200
+c3 = bw > 0
+c4 = bh > 0
+c5 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+c6 = count-color(WB-C-DEF) == 4
+c7 = find-rect-color(bx, by, bw, 400) == WB-C-DEF
+c8 = find-rect-color(bx, cs-sub(cs-add(by, bh), 400), bw, 400) == WB-C-DEF
+c9 = find-rect-color(bx, by, 400, bh) == WB-C-DEF
+c10 = find-rect-color(cs-sub(cs-add(bx, bw), 400), by, 400, bh) == WB-C-DEF
+
+; 圆角 800：四边各让出 800
+wb-set-radius(box, 800)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+rx = cs-add(bx, 800)
+ry = cs-add(by, 800)
+rw = cs-sub(bw, 1600)
+rh = cs-sub(bh, 1600)
+c11 = count-color(WB-C-DEF) == 4
+c12 = find-rect-color(rx, by, rw, 400) == WB-C-DEF
+c13 = find-rect-color(rx, cs-sub(cs-add(by, bh), 400), rw, 400) == WB-C-DEF
+c14 = find-rect-color(bx, ry, 400, rh) == WB-C-DEF
+c15 = find-rect-color(cs-sub(cs-add(bx, bw), 400), ry, 400, rh) == WB-C-DEF
+
+; 边框色换成 A：四条边跟着变
+wb-set-radius(box, 0)
+cmp-set-color(box, WB-C-A)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c16 = count-color(WB-C-A) == 4
+c17 = count-color(WB-C-DEF) == 0
+
+; 厚度 0：只剩 FIELD 面板
+wb-set-width(box, 0)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+c18 = count-color(WB-C-A) == 0
+c19 = find-rect-color(bx, by, bw, bh) == cs-theme(CS-TH-FIELD)
+
+; 空盒：摘掉内部标签后面板仍在（高度变小），框不画（厚度已归 0）
+cmp-detach(box, inner)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+ex, ey, ew, eh = cs-rect(box)
+c20 = ex == bx
+c21 = ey == by
+c22 = ew == bw
+c23 = eh < bh
+c24 = find-rect-color(ex, ey, ew, eh) == cs-theme(CS-TH-FIELD)
+
+; 恢复：挂回标签、默认色 + 400 厚 + 圆角 0，核对回到最初
+cmp-add-child(box, inner)
+wb-build-default(box)
+wb-set-width(box, 400)
+cs-clear()
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+cs-paint(root)
+bx2, by2, bw2, bh2 = cs-rect(box)
+c25 = bx2 == bx
+c26 = by2 == by
+c27 = bw2 == bw
+c28 = bh2 == bh
+c29 = count-color(WB-C-DEF) == 4
+c30 = text-count() == 5
+
+fr = rt-frames
+kk = rt-keys
+ck = rt-clicks
+print('bye frames={fr} keys={kk} clicks={ck} bx={bx} by={by} bw={bw} bh={bh}')
+(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29 & c30) -> {
+    print('window-border render OK')
+}
+(!(c1 & c2 & c3 & c4 & c5 & c6 & c7 & c8 & c9 & c10 & c11 & c12 & c13 & c14 & c15 & c16 & c17 & c18 & c19 & c20 & c21 & c22 & c23 & c24 & c25 & c26 & c27 & c28 & c29 & c30)) -> {
+    print('FAIL: window-border render mismatch')
+}
+(sc > 0) -> { print('scene OK') }
+(sc <= 0) -> { print('FAIL: empty scene') }
+
+app-shutdown()
+}
+(ok != 0) -> { print('app-init failed: {ok}') }

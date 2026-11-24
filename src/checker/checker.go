@@ -7310,6 +7310,13 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		})
 	}
 
+	// strIdxWriteMsg 是 place-match / ?= 两条 str|txt 索引写路径共用的诊断文案。
+	// 两条路径互斥（no build 会把 ?= 降糖成 place-match；no vet 保留
+	// UnwrapAssignStatement），但共用同一条消息与 i18n key，口径一致。
+	strIdxWriteMsg := func() string {
+		return i18n.T("stridxwr", "cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-bytes-str()`")
+	}
+
 	// structFields 局部建表（理由同 ValidateUnhandledIndex）。
 	structFields := collectStructFields(program)
 	// baseTypeOf 取索引基底容器的型別字串：支援直接變數、`.field`（隱式 self）、
@@ -7481,6 +7488,37 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 			walkExpr(x.Left, curFunc, curFile, selfType)
 			walkExpr(x.Right, curFunc, curFile, selfType)
 		case *parser.SurfaceMatch:
+			// str / txt 不可索引修改：place-match `s[i]: { ok -> it = v }` 是
+			// D9 直寫被 idxwrite 禁止後剩下的唯一寫回路徑，但 str 基底的
+			// `it` 靜態型別是 char，右值稍不對就會被按位搬進 i8 槽（實測
+			// `v str = 'b'` 寫成 0x01）。checker 必須在 surface 形態就攔下，
+			// 讓 `no vet`（不走 lowering）也給出診斷。
+			// 只攔「ok 臂真的寫了 it」；純讀取 match 仍合法。
+			if idx, ok := x.Matched.(*parser.IndexExpression); ok {
+				base := indexBaseContainerType(sem, structFields, curFunc, selfType, idx)
+				if base == "str" || base == "txt" {
+					hasWrite := false
+					walkSurfaceMatchArmBodies(x, nil, func(stmts []parser.Statement) {
+						for _, st := range stmts {
+							switch n := st.(type) {
+							case *parser.LetStatement:
+								if n.Name != nil && n.Name.Value == "it" && n.Value != nil {
+									hasWrite = true
+								}
+							case *parser.ExpressionStatement:
+								if as, ok2 := n.Expression.(*parser.AssignExpression); ok2 && !as.IsSynthetic {
+									if id, ok2 := as.Left.(*parser.Identifier); ok2 && id.Value == "it" {
+										hasWrite = true
+									}
+								}
+							}
+						}
+					})
+					if hasWrite {
+						report(idx, resolveFile(program.Sem.SourceFileOf(x), curFile), strIdxWriteMsg(), x.EndPos().Column)
+					}
+				}
+			}
 			// S1：臂體內的直寫下標（`a[1] = 2`）也要看得到。少了這一支，
 			// 糖形態下整棵臂子樹對本規則不可見（診斷被靜默丟棄，而非報錯）。
 			// 見 sugar_walk.go。
@@ -7548,6 +7586,23 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 						msg := i18n.T("jwegl6bv", "multi-assignment target `%s` is written through an index without unwrapping: an index read returns an option (nil when out of range), so writing straight through it turns an out-of-range access into an unchecked out-of-range write. Split that target out into a place-match (`it` in the ok arm is the element position, readable and writable), or propagate with `?=` in a function that returns an option.",
 							tgt)
 						report(idx, resolveFile(program.Sem.SourceFileOf(s), curFile), msg, s.EndPos().Column)
+					}
+				}
+			}
+			if s.Value != nil {
+				walkExpr(s.Value, curFunc, curFile, selfType)
+			}
+		case *parser.UnwrapAssignStatement:
+			// `s[i] ?= v`：另一條 str|txt 索引寫路徑。no build 會把它降糖成
+			// place-match 而在 lowering 層攔下；但 no vet 走 surface AST，
+			// 保留 UnwrapAssignStatement（Target=IndexExpression），若不在這裡
+			// 檢查就會漏報。與 place-match 同禁令、同診斷。非 str|txt 容器
+			// 的 `?=` 是 D9 推薦寫法，必須放行。
+			if s.Target != nil {
+				if idx, ok := s.Target.(*parser.IndexExpression); ok {
+					base := indexBaseContainerType(sem, structFields, curFunc, selfType, idx)
+					if base == "str" || base == "txt" {
+						report(idx, resolveFile(program.Sem.SourceFileOf(s), curFile), strIdxWriteMsg(), s.EndPos().Column)
 					}
 				}
 			}

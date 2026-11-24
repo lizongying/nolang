@@ -303,7 +303,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
         -> 0
     }
-    name-len i64 = nb0.to-i64() & 63
+    name-len = nb0.to-i64() & 63
 
     #{overflow=wrap}
     r-pos = r-pos + 1: {
@@ -372,7 +372,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 
         -> 0
     }
-    value-len i64 = vb0.to-i64() & 63
+    value-len = vb0.to-i64() & 63
 
     #{overflow=wrap}
     r-pos = r-pos + 1: {
@@ -994,10 +994,8 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
             ft == 0x00 -> {
 
                 ; DATA 影格: 追加到 body
-
-                i <- [0..payload.len()): {
-                    r.body[r.body.len-bytes()] ?= payload[i]
-                }
+                ; str 的下標寫（含 ?= / place-match）已全域禁止；直接拼接 byte 字串
+                r.body = r.body - payload.to-bytes-str()
             }
         }
         ; 忽略其他影格類型

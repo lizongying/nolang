@@ -403,6 +403,39 @@ TXN-COL []i64 = with-len(0)
 TXN-SBASE []i64 = with-len(0)
 TXN-N []i64 = with-len(0)
 INP-C-KW = 0x4A90E2FF              ; 关键字 / 标识符强调
+
+; 阶段72：sizing（尺寸约束盒）的目标 / 下限 / 上限（每句柄）
+;   0 一律表示「未指定」：目标 0 = 跟随内容，下限 0 = 无下限，
+;   上限 0 = 无上限（下限 / 上限仍受通用叶子下限兜底）。
+SZG-W []i64 = with-len(0)
+SZG-H []i64 = with-len(0)
+SZG-MINW []i64 = with-len(0)
+SZG-MINH []i64 = with-len(0)
+SZG-MAXW []i64 = with-len(0)
+SZG-MAXH []i64 = with-len(0)
+
+; 阶段73：styled（基础样式容器）的底色 / 边框色 / 边框厚度（每句柄）
+;   STY-BG = -1 表示继承组件自身 CMP-COLOR[h]；
+;   STY-BC = -1 或 STY-BW = 0 表示不画框。
+STY-BG []i64 = with-len(0)
+STY-BC []i64 = with-len(0)
+STY-BW []i64 = with-len(0)
+
+; 阶段74：shimmer（扫光占位）的周期 / 高光带宽 / 高光色（每句柄）
+;   SHM-DUR  = 一次扫光时长（毫秒），0 = 默认 1200；
+;   SHM-BAND = 高光带宽（占宽度百分比 0..100），0 = 默认 30；
+;   SHM-COL  = 高光色，-1 = 用主题 MUTED（旧行为）。
+;   相位仍走 CMP-VALUE[h]（0..100，0 = 不扫），与既有渲染分支一致。
+SHM-DUR []i64 = with-len(0)
+SHM-BAND []i64 = with-len(0)
+SHM-COL []i64 = with-len(0)
+
+; 阶段75：window-border（窗口描边容器）的圆角半径 / 边框厚度（每句柄）
+;   WB-RAD = 四角统一圆角半径（px*100），0 = 直角；
+;   WB-W   = 边框厚度（px*100），0 = 不画框。
+;   边框色沿用组件自身 CMP-COLOR[h]，面板底固定用主题 FIELD。
+WB-RAD []i64 = with-len(0)
+WB-W []i64 = with-len(0)
 INP-C-STR = 0x50C878FF             ; 字符串
 INP-C-COM = 0x9AA0B4FF             ; 注释（nolang 的 `;` 到行尾）
 
@@ -548,6 +581,25 @@ cmp-alloc = (kind i64, text str, text2 str, color i64, value i64) (h i64) {
     ; 阶段71：text-node 片段池随每个组件槽一起长（池本身只增）
     TXN-SBASE.push(0)
     TXN-N.push(0)
+    ; 阶段72：sizing 的目标 / 下限 / 上限随每个组件槽一起长
+    SZG-W.push(0)
+    SZG-H.push(0)
+    SZG-MINW.push(0)
+    SZG-MINH.push(0)
+    SZG-MAXW.push(0)
+    SZG-MAXH.push(0)
+    ; 阶段73：styled 的底色 / 边框色 / 边框厚度随每个组件槽一起长
+    ;   （-1 / -1 / 0 = 「无覆写」的默认语义，与 sty-* getter 一致）
+    STY-BG.push(-1)
+    STY-BC.push(-1)
+    STY-BW.push(0)
+    ; 阶段74：shimmer 的周期 / 带宽 / 高光色随每个组件槽一起长
+    SHM-DUR.push(0)
+    SHM-BAND.push(0)
+    SHM-COL.push(-1)
+    ; 阶段75：window-border 的圆角半径 / 边框厚度随每个组件槽一起长
+    WB-RAD.push(0)
+    WB-W.push(0)
     h = CMP-KIND.len() - 1
 }
 
@@ -7831,4 +7883,207 @@ txn-clear = (h i64) () {
     (disabled != 0) -> return
     ct-set(TXN-SBASE, h, 0)
     ct-set(TXN-N, h, 0)
+}
+
+; ============================================================================
+; 阶段72：sizing —— 尺寸约束盒（C-SIZING）
+;   六条 per-handle 槽：目标宽高 SZG-W / SZG-H、下限 SZG-MINW / SZG-MINH、
+;   上限 SZG-MAXW / SZG-MAXH。0 一律「未指定」。
+;   `szg-clamp` 是纯函数：把任意宽高按该句柄的 min/max 夹紧，供渲染层测算
+;   与外部（布局器 / demo）复用同一套语义。
+; ============================================================================
+szg-w = (h i64) (v i64) { v = ct-get(SZG-W, h) }
+szg-h = (h i64) (v i64) { v = ct-get(SZG-H, h) }
+szg-minw = (h i64) (v i64) { v = ct-get(SZG-MINW, h) }
+szg-minh = (h i64) (v i64) { v = ct-get(SZG-MINH, h) }
+szg-maxw = (h i64) (v i64) { v = ct-get(SZG-MAXW, h) }
+szg-maxh = (h i64) (v i64) { v = ct-get(SZG-MAXH, h) }
+
+szg-set-size = (h i64, w i64, ht i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SZG-W, h, w)
+    ct-set(SZG-H, h, ht)
+}
+szg-set-min = (h i64, mw i64, mh i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SZG-MINW, h, mw)
+    ct-set(SZG-MINH, h, mh)
+}
+szg-set-max = (h i64, mw i64, mh i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SZG-MAXW, h, mw)
+    ct-set(SZG-MAXH, h, mh)
+}
+; 一键回到「全未指定」（跟随内容 / 父级）
+szg-reset = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SZG-W, h, 0)
+    ct-set(SZG-H, h, 0)
+    ct-set(SZG-MINW, h, 0)
+    ct-set(SZG-MINH, h, 0)
+    ct-set(SZG-MAXW, h, 0)
+    ct-set(SZG-MAXH, h, 0)
+}
+
+; 纯夹紧：先上限后下限（上限 0 = 不限；若上限比下限还小则**下限优先**）。
+szg-clamp = (h i64, w i64, ht i64) (cw i64, ch i64) {
+    cw = w
+    ch = ht
+    mw = ct-get(SZG-MINW, h)
+    mh = ct-get(SZG-MINH, h)
+    xw = ct-get(SZG-MAXW, h)
+    xh = ct-get(SZG-MAXH, h)
+    (xw > 0) -> { (cw > xw) -> { cw = xw } }
+    (xh > 0) -> { (ch > xh) -> { ch = xh } }
+    (mw > 0) -> { (cw < mw) -> { cw = mw } }
+    (mh > 0) -> { (ch < mh) -> { ch = mh } }
+    cw = cw
+    ch = ch
+}
+
+; ============================================================================
+; 阶段73：styled（C-STYLED）—— 基础样式容器
+;   「base style container」：给子树提供一层可覆写的底子（底色 / 边框）。
+;   三条 per-handle 槽：STY-BG（底色，-1 = 继承组件色）、STY-BC（边框色，
+;   -1 = 不画）、STY-BW（边框厚度，0 = 不画；负数夹到 0）。
+;   布局仍走通用容器分支（cs-is-container 白名单保留），渲染层只在通用
+;   容器臂上换底色、并在装饰位置补四条边框，**不新增节点种类**。
+; ============================================================================
+sty-bg = (h i64) (v i64) { v = ct-get(STY-BG, h) }
+sty-border = (h i64) (v i64) { v = ct-get(STY-BC, h) }
+sty-border-w = (h i64) (v i64) { v = ct-get(STY-BW, h) }
+
+sty-set-bg = (h i64, c i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(STY-BG, h, c)
+}
+sty-set-border = (h i64, c i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(STY-BC, h, c)
+}
+sty-set-border-w = (h i64, w i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (w < 0) -> { w = 0 }
+    ct-set(STY-BW, h, w)
+}
+; 一键回到「无覆写」（继承组件色 / 不画框）
+sty-reset = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(STY-BG, h, -1)
+    ct-set(STY-BC, h, -1)
+    ct-set(STY-BW, h, 0)
+}
+
+; ============================================================================
+; 阶段74：shimmer（C-SHIMMER）—— 扫光占位
+;   目录第 52 行承诺 shimmer「duration」。槽位沿用既有约定：
+;   CMP-VALUE[h] = 扫光相位 0..100（0 = 不扫，与旧渲染分支一致）；
+;   另加三个 per-handle 池 SHM-DUR（周期 ms，0 = 默认 1200）、
+;   SHM-BAND（高光带宽百分比 0..100，0 = 默认 30）、SHM-COL（-1 = MUTED）。
+;   相位本身没有时钟源，由应用按帧调 `shm-advance` 推进（时长在此生效）。
+; ============================================================================
+shm-duration = (h i64) (d i64) {
+    d = ct-get(SHM-DUR, h)
+}
+shm-set-duration = (h i64, d i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (d < 0) -> { d = 0 }
+    ct-set(SHM-DUR, h, d)
+}
+shm-band = (h i64) (b i64) {
+    b = ct-get(SHM-BAND, h)
+}
+shm-set-band = (h i64, b i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    b = ct-clamp(b, 0, 100)
+    ct-set(SHM-BAND, h, b)
+}
+shm-color = (h i64) (c i64) {
+    c = ct-get(SHM-COL, h)
+}
+shm-set-color = (h i64, c i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SHM-COL, h, c)
+}
+; 相位 0..100（getter 夹紧；0 = 不扫，与 sk-phase 同语义）
+shm-phase = (h i64) (p i64) {
+    p = CMP-VALUE[h]: {
+        ok -> it
+
+        -> 0
+    }
+    (p < 0) -> { p = 0 }
+    (p > 100) -> { p = 100 }
+}
+shm-set-phase = (h i64, p i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    p = ct-clamp(p, 0, 100)
+    CMP-VALUE[h] = p
+}
+; 按经过的毫秒数推进相位：步进 = dt * 100 / duration（duration 0 = 1200），
+; 走完一圈（>=100）绕回 0。写操作同样先查 F-DISABLED（禁用时不走）。
+shm-advance = (h i64, dt i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    d = shm-duration(h)
+    (d <= 0) -> { d = 1200 }
+    p = shm-phase(h)
+    step = ct-div(ct-mul(dt, 100), d)
+    np = ct-add(p, step)
+    (np >= 100) -> { np = ct-sub(np, 100) }
+    CMP-VALUE[h] = np
+}
+; 一键回到「不扫光」（时长 / 带宽 / 颜色同时归零）
+shm-reset = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(SHM-DUR, h, 0)
+    ct-set(SHM-BAND, h, 0)
+    ct-set(SHM-COL, h, -1)
+    CMP-VALUE[h] = 0
+}
+
+; ============================================================================
+; 阶段75：window-border（C-WINDOW-BORDER）—— 窗口描边容器
+;   目录第 56 行承诺 window_border「radii, width」。槽位：
+;   WB-RAD = 四角统一圆角半径（px*100），0 = 直角；
+;   WB-W   = 边框厚度（px*100），0 = 不画框。
+;   边框色沿用组件自身 CMP-COLOR[h]，面板底固定用主题 FIELD（渲染层处理）。
+; ============================================================================
+wb-radius = (h i64) (r i64) {
+    r = ct-get(WB-RAD, h)
+}
+wb-set-radius = (h i64, r i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (r < 0) -> { r = 0 }
+    ct-set(WB-RAD, h, r)
+}
+wb-width = (h i64) (w i64) {
+    w = ct-get(WB-W, h)
+}
+wb-set-width = (h i64, w i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    (w < 0) -> { w = 0 }
+    ct-set(WB-W, h, w)
+}
+; 一键回到「直角 + 不画框」
+wb-reset = (h i64) () {
+    disabled = CMP-FLAGS[h] & F-DISABLED
+    (disabled != 0) -> return
+    ct-set(WB-RAD, h, 0)
+    ct-set(WB-W, h, 0)
 }

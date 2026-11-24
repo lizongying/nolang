@@ -92,108 +92,102 @@ new-v4 = (state i64) (out uuid) {
 uuid.to-str = () (out str) {
 
     ; 8-4-4-4-12 格式
-    out = with-len(36)
+    ; str 下標寫入已全域禁用；先用 []byte 緩衝按位元組寫入，再一次轉成 str。
+    ob []byte = with-cap-len(36, 36)
     b byte = 0
     {
         b ?= .bytes[0]
-        hex-byte(b, 0, out)
+        hex-byte(b, 0, ob)
 
         b ?= .bytes[1]
-        hex-byte(b, 2, out)
+        hex-byte(b, 2, ob)
 
         b ?= .bytes[2]
-        hex-byte(b, 4, out)
+        hex-byte(b, 4, ob)
 
         b ?= .bytes[3]
-        hex-byte(b, 6, out)
+        hex-byte(b, 6, ob)
 
         ; 連字號
-        out[8]: {
-            ok -> it = 45
-
-            -> _
-        }
+        ob[8] = 45
 
         b ?= .bytes[4]
-        hex-byte(b, 9, out)
+        hex-byte(b, 9, ob)
 
         b ?= .bytes[5]
-        hex-byte(b, 11, out)
+        hex-byte(b, 11, ob)
 
         ; 連字號
-        out[13]: {
-            ok -> it = 45
-
-            -> _
-        }
+        ob[13] = 45
 
         b ?= .bytes[6]
-        hex-byte(b, 14, out)
+        hex-byte(b, 14, ob)
 
         b ?= .bytes[7]
-        hex-byte(b, 16, out)
+        hex-byte(b, 16, ob)
 
         ; 連字號
-        out[18]: {
-            ok -> it = 45
-
-            -> _
-        }
+        ob[18] = 45
 
         b ?= .bytes[8]
-        hex-byte(b, 19, out)
+        hex-byte(b, 19, ob)
 
         b ?= .bytes[9]
-        hex-byte(b, 21, out)
+        hex-byte(b, 21, ob)
 
         ; 連字號
-        out[23]: {
-            ok -> it = 45
-
-            -> _
-        }
+        ob[23] = 45
 
         b ?= .bytes[10]
-        hex-byte(b, 24, out)
+        hex-byte(b, 24, ob)
 
         b ?= .bytes[11]
-        hex-byte(b, 26, out)
+        hex-byte(b, 26, ob)
 
         b ?= .bytes[12]
-        hex-byte(b, 28, out)
+        hex-byte(b, 28, ob)
 
         b ?= .bytes[13]
-        hex-byte(b, 30, out)
+        hex-byte(b, 30, ob)
 
         b ?= .bytes[14]
-        hex-byte(b, 32, out)
+        hex-byte(b, 32, ob)
 
         b ?= .bytes[15]
-        hex-byte(b, 34, out)
+        hex-byte(b, 34, ob)
     }: {
         err -> _
 
         -> _
     }
+    out = ob.to-bytes-str()
 }
 
 ; 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
 ; b: 待編碼的位元組（高半字節先寫，低半字節後寫）
 ; pos: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
-; out: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
+; out: 目標 []byte 緩衝，原地寫入兩格（越界時該格寫入被安全索引略過）
+;      （str 下標寫入已全域禁用；呼叫端最後用 to-bytes-str() 轉回 str）
 ; [hex-byte](#uuid.hex-byte)
-hex-byte = (b byte, pos i64, out str) {
-    out[pos]: {
-        ok -> it = HEX[(b >> 4) & 15]
+hex-byte = (b byte, pos i64, out []byte) {
 
-        -> _
+    ; []byte 的下標寫會擴展長度（與舊 str 的「越界安全略過」不同），
+    ; 故顯式判長度 + place-match 寫，保留「越界該格不寫、長度不變」語義。
+    pos < out.len() -> {
+        out[pos]: {
+            ok -> it = HEX[(b >> 4) & 15]
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
-    out[pos + 1]: {
-        ok -> it = HEX[b & 15]
+    pos + 1 < out.len() -> {
+        out[pos + 1]: {
+            ok -> it = HEX[b & 15]
 
-        -> _
+            -> _
+        }
     }
 }
 
@@ -201,118 +195,108 @@ hex-byte = (b byte, pos i64, out str) {
 ; 返回 out: UUID 大寫字串
 ; [to-str-upper](#uuid.to-str-upper)
 uuid.to-str-upper = () (out str) {
-    out = with-len(36)
+
+    ; str 下標寫入已全域禁用；先用 []byte 緩衝按位元組寫入，再一次轉成 str。
+    ob []byte = with-cap-len(36, 36)
     hex-u = '0123456789ABCDEF'
     b byte = 0
     {
         b ?= .bytes[0]
-        hex-byte-upper(b, 0, out, hex-u)
+        hex-byte-upper(b, 0, ob, hex-u)
 
         b ?= .bytes[1]
-        hex-byte-upper(b, 2, out, hex-u)
+        hex-byte-upper(b, 2, ob, hex-u)
 
         b ?= .bytes[2]
-        hex-byte-upper(b, 4, out, hex-u)
+        hex-byte-upper(b, 4, ob, hex-u)
 
         b ?= .bytes[3]
-        hex-byte-upper(b, 6, out, hex-u)
+        hex-byte-upper(b, 6, ob, hex-u)
 
-        out[8]: {
-
-            ok -> it = 45
-
-            -> _
-        }
+        ob[8] = 45
 
         b ?= .bytes[4]
-        hex-byte-upper(b, 9, out, hex-u)
+        hex-byte-upper(b, 9, ob, hex-u)
 
         b ?= .bytes[5]
-        hex-byte-upper(b, 11, out, hex-u)
+        hex-byte-upper(b, 11, ob, hex-u)
 
-        out[13]: {
-
-            ok -> it = 45
-
-            -> _
-        }
+        ob[13] = 45
 
         b ?= .bytes[6]
-        hex-byte-upper(b, 14, out, hex-u)
+        hex-byte-upper(b, 14, ob, hex-u)
 
         b ?= .bytes[7]
-        hex-byte-upper(b, 16, out, hex-u)
+        hex-byte-upper(b, 16, ob, hex-u)
 
-        out[18]: {
-
-            ok -> it = 45
-
-            -> _
-        }
+        ob[18] = 45
 
         b ?= .bytes[8]
-        hex-byte-upper(b, 19, out, hex-u)
+        hex-byte-upper(b, 19, ob, hex-u)
 
         b ?= .bytes[9]
-        hex-byte-upper(b, 21, out, hex-u)
+        hex-byte-upper(b, 21, ob, hex-u)
 
-        out[23]: {
-
-            ok -> it = 45
-
-            -> _
-        }
+        ob[23] = 45
 
         b ?= .bytes[10]
-        hex-byte-upper(b, 24, out, hex-u)
+        hex-byte-upper(b, 24, ob, hex-u)
 
         b ?= .bytes[11]
-        hex-byte-upper(b, 26, out, hex-u)
+        hex-byte-upper(b, 26, ob, hex-u)
 
         b ?= .bytes[12]
-        hex-byte-upper(b, 28, out, hex-u)
+        hex-byte-upper(b, 28, ob, hex-u)
 
         b ?= .bytes[13]
-        hex-byte-upper(b, 30, out, hex-u)
+        hex-byte-upper(b, 30, ob, hex-u)
 
         b ?= .bytes[14]
-        hex-byte-upper(b, 32, out, hex-u)
+        hex-byte-upper(b, 32, ob, hex-u)
 
         b ?= .bytes[15]
-        hex-byte-upper(b, 34, out, hex-u)
+        hex-byte-upper(b, 34, ob, hex-u)
     }: {
         err -> _
 
         -> _
     }
+    out = ob.to-bytes-str()
 }
 
 ; 大寫 hex 位元組寫入
 ; b: 待轉為兩個大寫 hex 字符的字節
 ; pos: out 中寫入的起始字節位置
-; out: 输出參數，就地寫入兩個 hex 字符（越界寫入被安全索引忽略）
+; out: 輸出 []byte 緩衝，就地寫入兩個 hex 字符（越界寫入被安全索引忽略）
+;      （str 下標寫入已全域禁用；呼叫端最後用 to-bytes-str() 轉回 str）
 ; table: 大寫十六進制字符表（如 '0123...ABCDEF'）
 ; [hex-byte-upper](#uuid.hex-byte-upper)
-hex-byte-upper = (b byte, pos i64, out str, table str) {
-    out[pos]: {
-        ok -> it = table[(b >> 4) & 15]: {
-            ok -> it
+hex-byte-upper = (b byte, pos i64, out []byte, table str) {
+
+    ; 同 hex-byte：顯式判長度保留「越界不寫、長度不變」語義。
+    pos < out.len() -> {
+        out[pos]: {
+            ok -> it = table[(b >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
-
-        -> _
     }
 
     #{overflow=wrap}
-    out[pos + 1]: {
-        ok -> it = table[b & 15]: {
-            ok -> it
+    pos + 1 < out.len() -> {
+        out[pos + 1]: {
+            ok -> it = table[b & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
-
-        -> _
     }
 }
 
