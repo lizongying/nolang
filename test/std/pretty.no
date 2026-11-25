@@ -1,0 +1,145 @@
+; std-pretty.no — .pretty() 字面量風格測試
+;
+; 執行：no run test/std/pretty.no
+
+# /test/runner
+
+passed = 0
+failed = 0
+
+t-bytes = () {
+    b []byte = [0xc3, 0xa9]
+    runner.str-eq(b.pretty(), '[0xc3, 0xa9]', '[]byte.pretty')
+    empty []byte = []
+    runner.str-eq(empty.pretty(), '[]', 'empty []byte.pretty')
+}
+
+t-str = () {
+    expected = '\'' - 'a' - '\''
+    runner.str-eq('a'.pretty(), expected, 'str.pretty')
+}
+
+t-char = () {
+    c char = "a"
+    runner.str-eq(c.pretty(), '"a"', 'char.pretty')
+}
+
+t-int = () {
+    runner.str-eq(0.pretty(), '0', 'int.pretty zero')
+    runner.str-eq((-42).pretty(), '-42', 'int.pretty negative')
+}
+
+t-bool = () {
+    runner.str-eq(true.pretty(), 'true', 'bool.pretty true')
+    runner.str-eq(false.pretty(), 'false', 'bool.pretty false')
+}
+
+t-f64 = () {
+    runner.str-eq(1.5.pretty(), '1.5', 'f64.pretty')
+}
+
+t-array = () {
+    a [3]i64 = [1, 2, 3]
+    runner.str-eq(a.pretty(), '[1, 2, 3]', '[n]t.pretty')
+}
+
+t-slice = () {
+    xs []i64 = [1, 2, 3]
+    runner.str-eq(xs.pretty(), '[1, 2, 3]', '[]t.pretty')
+}
+
+t-option = () {
+    o ?i64 = 7
+    runner.str-eq(o.pretty(), 'some(7)', 'option.pretty ok')
+    n ?i64 = nil
+    runner.str-eq(n.pretty(), 'nil', 'option.pretty nil')
+}
+
+t-implicit-float = () {
+    x f64 = 1.5
+    runner.str-eq(format('{x}'), x.pretty(), 'bare format f64 uses pretty')
+    y f32 = 2.5
+    runner.str-eq(format('{y}'), y.pretty(), 'bare format f32 uses pretty')
+}
+
+t-element-pretty = () {
+    xs []str = ['a', 'b']
+    expected = '[' - '\'' - 'a' - '\'' - ', ' - '\'' - 'b' - '\'' - ']'
+    runner.str-eq(xs.pretty(), expected, '[]str.pretty uses element pretty')
+    a [2]str = ['a', 'b']
+    runner.str-eq(a.pretty(), expected, '[n]str.pretty uses element pretty')
+}
+
+p1, f1 = runner.test('pretty bytes', t-bytes)
+#{overflow=wrap}
+passed = passed + p1
+#{overflow=wrap}
+failed = failed + f1
+
+p2, f2 = runner.test('pretty str', t-str)
+#{overflow=wrap}
+passed = passed + p2
+#{overflow=wrap}
+failed = failed + f2
+
+p3, f3 = runner.test('pretty char', t-char)
+#{overflow=wrap}
+passed = passed + p3
+#{overflow=wrap}
+failed = failed + f3
+
+p4, f4 = runner.test('pretty int', t-int)
+#{overflow=wrap}
+passed = passed + p4
+#{overflow=wrap}
+failed = failed + f4
+
+p5, f5 = runner.test('pretty bool', t-bool)
+#{overflow=wrap}
+passed = passed + p5
+#{overflow=wrap}
+failed = failed + f5
+
+p6, f6 = runner.test('pretty f64', t-f64)
+#{overflow=wrap}
+passed = passed + p6
+#{overflow=wrap}
+failed = failed + f6
+
+p7, f7 = runner.test('pretty array', t-array)
+#{overflow=wrap}
+passed = passed + p7
+#{overflow=wrap}
+failed = failed + f7
+
+p8, f8 = runner.test('pretty slice', t-slice)
+#{overflow=wrap}
+passed = passed + p8
+#{overflow=wrap}
+failed = failed + f8
+
+p9, f9 = runner.test('pretty option', t-option)
+#{overflow=wrap}
+passed = passed + p9
+#{overflow=wrap}
+failed = failed + f9
+
+p10, f10 = runner.test('pretty implicit float', t-implicit-float)
+#{overflow=wrap}
+passed = passed + p10
+#{overflow=wrap}
+failed = failed + f10
+
+p11, f11 = runner.test('pretty element', t-element-pretty)
+#{overflow=wrap}
+passed = passed + p11
+#{overflow=wrap}
+failed = failed + f11
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}
