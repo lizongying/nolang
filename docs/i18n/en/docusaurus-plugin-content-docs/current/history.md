@@ -6,6 +6,21 @@ sidebar_position: 2
 
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
+## v0.4.34
+
+- feat(std): make []byte.to-str a 1:1 byte copy returning ?str and add pretty methods across byte, char, str, txt, bool, int and number types
+- feat(compiler): route print arguments and bare format interpolation through pretty while preserving spec-based fmt-* semantics
+- feat(mir): inline option pretty as some(v)/nil and add the p7prettymiss diagnostic with localized messages
+- refactor(std): remove to-bytes-str across std and downstream modules and add str.set-byte for safe byte-level mutation
+- fix(parser): remap CaptureBind.Expr in CaptureFacts.Clone so H0 and AST capture tracks emit identical IR
+- feat(checker): add structured codegen diagnostics with source spans and reject bare option arguments at call sites
+- fix(checker): reject struct option unwrapping to plain targets and resolve parenthesized match subjects consistently
+- fix(mir): fold plain struct value-match variants to bool constants and keep arm-scoped bindings out of module globals
+- feat(noui): add GPU/component sources and interaction tests with png shims and test runner scripts
+- docs(syntax): document pretty formatting and byte/text separation across localized language docs
+- fix(release): rename no-llvm and no asset URLs with dashes instead of underscores
+- test(std): pin 1:1 byte conversion and strict pretty behavior including bare interpolation and option payloads
+
 ## v0.4.33
 
 - feat(checker): add resolveCalleeSig as the single callee signature source for argument and result lookup
