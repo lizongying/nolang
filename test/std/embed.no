@@ -17,7 +17,7 @@
 rs = (o ?[]byte) (s str) {
     s = ''
     o: {
-        ok -> s = it.to-bytes-str()
+        ok -> s = it.to-str()
 
         -> _
     }

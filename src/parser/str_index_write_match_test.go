@@ -34,7 +34,7 @@ func TestPlaceMatchIndexWriteStrRejected(t *testing.T) {
 	for _, e := range p.Errors() {
 		if strings.Contains(e, "stridxwr") {
 			found = true
-			if !strings.Contains(e, "push") || !strings.Contains(e, "fill") || !strings.Contains(e, "to-bytes-str") {
+			if !strings.Contains(e, "push") || !strings.Contains(e, "fill") || !strings.Contains(e, "to-str") {
 				t.Fatalf("diagnostic must list allowed alternatives, got: %s", e)
 			}
 		}

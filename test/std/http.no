@@ -237,7 +237,7 @@ t-write-ok = () {
 
     back = fs.read-file(HT)
     runner.eq(back.len(), 3, 'http-write-ok: 落盤 3 位元組')
-    runner.str-eq(back.to-bytes-str(), 'abc', 'http-write-ok: 內容一致')
+    runner.str-eq(back.to-str(), 'abc', 'http-write-ok: 內容一致')
 
     fs.remove(HT)
 }
@@ -259,7 +259,7 @@ t-dechunk = () {
     b = body.to-bytes()
     o = http.http-dl-dechunk(b)
     runner.eq(o.len(), 9, 'dechunk: 兩塊共 9 位元組')
-    s = o.to-bytes-str()
+    s = o.to-str()
     runner.str-eq(s, 'wikipedia', 'dechunk: 內容還原')
 }
 

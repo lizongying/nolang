@@ -326,7 +326,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str(); 也可 b.to-bytes-str()（整段）
+s = b.slice(0, k).to-str(); 也可 b.to-str()（整段）
 
 ; ② 原位「覆写」既有内容：str.fill 把 len 个位元组全填成同一个值，长度不变
 s = 'hello'
@@ -422,7 +422,7 @@ s = with-cap-len(512, 64); str，len=64, cap=512
 > ⚠️ **`str` 的缓冲一律不允许下标直写**（2026-11-11 起，`with-cap` 基底也不再豁免）。
 > `idxwrite` 的 with-cap 豁免现在只服务 **`[]byte` / `[]T` / 固定阵列**：它们的 len=0
 > 缓冲仍靠 `buf[i] = b` 增长长度，没有等价替代写法。`str` 请改走 `[]byte` 缓冲 +
-> `to-bytes-str()`（见〈下标写入已禁用〉一节）。
+> `to-str()`（见〈下标写入已禁用〉一节）。
 > `with-len(n)` / `with-cap-len(cap, len)` 的 len 已就位，**写入须 place-match
 > `buf[i]: { ok -> it = v / -> _ }` 或 `buf[i] ?= v`**——与任何其他容器同罪，直写是
 > 编译错误 `idxwrite`。（2026-11-10 起 `with-len` 不再豁免。）

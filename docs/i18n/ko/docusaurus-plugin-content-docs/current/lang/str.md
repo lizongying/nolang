@@ -325,7 +325,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str(); 也可 b.to-bytes-str()（整段）
+s = b.slice(0, k).to-str(); 也可 b.to-str()（整段）
 
 ; ② 原位「覆寫」既有內容：str.fill 把 len 個位元組全填成同一個值，長度不變
 s = 'hello'
@@ -421,7 +421,7 @@ s = with-cap-len(512, 64); str，len=64, cap=512
 > ⚠️ **`str`의 버퍼에는 인덱스 직접 쓰기가 전혀 허용되지 않습니다**(2026-11-11부터 `with-cap` 기반도 더 이상 예외가 아님).
 > `idxwrite`의 with-cap 예외는 이제 **`[]byte` / `[]T` / 고정 배열**만 해당됩니다. 이들의 len=0
 > 버퍼는 여전히 `buf[i] = b`로 길이를 증가시키며, 이에 대체할 표현이 없습니다. `str`은 `[]byte` 버퍼 +
-> `to-bytes-str()`를 사용하세요(〈인덱스 쓰기 금지〉 절 참조).
+> `to-str()`를 사용하세요(〈인덱스 쓰기 금지〉 절 참조).
 > `with-len(n)` / `with-cap-len(cap, len)`의 len은 이미 제자리에 있습니다. **쓰기는 place-match
 > `buf[i]: { ok -> it = v / -> _ }` 또는 `buf[i] ?= v`를 사용해야 합니다**. 다른 모든 컨테이너와 마찬가지로 직접 쓰기는
 > 컴파일 오류 `idxwrite`입니다(2026-11-10부터 `with-len`도 예외가 아님).

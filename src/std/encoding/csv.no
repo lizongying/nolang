@@ -24,7 +24,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
     field-b []byte = with-cap-len(s.len-bytes(), s.len-bytes())
     r-pos >= s.len-bytes() -> {
         new-pos = r-pos
-        field = field-b.slice(0, fn).to-bytes-str()
+        tb0o = field-b.slice(0, fn).to-str()
+        tb0v = tb0o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        field = tb0v
         return
     }
 
@@ -42,7 +48,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                 -> _
             }
-            field = field-b.slice(0, fn).to-bytes-str()
+            tb1o = field-b.slice(0, fn).to-str()
+            tb1v = tb1o: {
+                ok -> it
+            
+                nil || err -> ''
+            }
+            field = tb1v
             return
         }
 
@@ -116,7 +128,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                         }
                     }
                     new-pos = r-pos
-                    field = field-b.slice(0, fn).to-bytes-str()
+                    tb2o = field-b.slice(0, fn).to-str()
+                    tb2v = tb2o: {
+                        ok -> it
+                    
+                        nil || err -> ''
+                    }
+                    field = tb2v
                     return
                 }
                 c == 10 || c == 13 -> {
@@ -169,7 +187,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                 }
             }
             new-pos = r-pos
-            field = field-b.slice(0, fn).to-bytes-str()
+            tb3o = field-b.slice(0, fn).to-str()
+            tb3v = tb3o: {
+                ok -> it
+            
+                nil || err -> ''
+            }
+            field = tb3v
             return
         }
     }
@@ -190,7 +214,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     -> _
                 }
                 new-pos = r-pos
-                field = field-b.slice(0, fn).to-bytes-str()
+                tb4o = field-b.slice(0, fn).to-str()
+                tb4v = tb4o: {
+                    ok -> it
+                
+                    nil || err -> ''
+                }
+                field = tb4v
                 return
             }
 
@@ -198,7 +228,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                 ; 換行結束欄位（不消耗換行）
                 new-pos = r-pos
-                field = field-b.slice(0, fn).to-bytes-str()
+                tb5o = field-b.slice(0, fn).to-str()
+                tb5v = tb5o: {
+                    ok -> it
+                
+                    nil || err -> ''
+                }
+                field = tb5v
                 return
             }
         }
@@ -226,7 +262,13 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         }
     }
     new-pos = r-pos
-    field = field-b.slice(0, fn).to-bytes-str()
+    tb6o = field-b.slice(0, fn).to-str()
+    tb6v = tb6o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    field = tb6v
 }
 
 ; 解析一行 CSV 文字
@@ -333,5 +375,11 @@ encode-field = (field str) (out str) {
     out-b[j] = 34
 
     ; 收尾的雙引號寫在 j 位置但不遞增 j，故長度是 j + 1
-    out = out-b.slice(0, j + 1).to-bytes-str()
+    tb7o = out-b.slice(0, j + 1).to-str()
+    tb7v = tb7o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb7v
 }

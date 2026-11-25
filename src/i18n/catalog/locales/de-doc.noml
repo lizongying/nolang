@@ -1230,8 +1230,8 @@ byte ist ein eigenständiger Typ statt eines Alias von u8, daher wird []byte.len
 []byte.slice: nimmt das Unter-Slice [start, end)
 Gibt ein neues Slice zurück
 `
-  'bytes.to-bytes-str': `
-[]byte.to-bytes-str: 1:1-Byte-für-Byte-Kopie (behält die ursprüngliche []byte.to-str-Semantik bei).
+  'bytes.to-str': `
+[]byte.to-str: 1:1-Byte-für-Byte-Kopie (behält die ursprüngliche []byte.to-str-Semantik bei).
 Für Szenarien, in denen buf bereits ein gültiger UTF-8-Byte-Strom ist (Dateilesen / Unterprozess-Ausgabe); kein erneutes Kodieren pro Codepunkt nötig.
 diese Funktion entspricht dem alten []byte.to-str.
 `
@@ -1246,14 +1246,6 @@ wenn du nur das finale byte→Codepunkt→UTF-8-String-Ergebnis brauchst, verwen
   'bytes.to-hex-lower': '[]byte.to-hex-lower: kodiert ein []byte als Kleinbuchstaben-Hexadezimalzeichenkette'
   'bytes.to-i64-be': '[]byte.to-i64-be: wandelt Big-Endian-Bytes in ein int64 um (1 bis 8 Bytes)'
   'bytes.to-i64-le': '[]byte.to-i64-le: wandelt Little-Endian-Bytes in ein int64 um (1 bis 8 Bytes)'
-  'bytes.to-str': `
-⚠️ Semantik-Änderung (2026-09-06, auf Verlangen des Antragstellers): zuvor war diese Methode eine "1:1-Byte-für-Byte-Kopie", was
-die Vertragsgrundlage war, von der buf.to-str() abhängt (Dateien / Unterprozess-Ausgabe lesen, buf ist bereits gültiges UTF-8).
-Nach dem Wechsel auf "byte→Codepunkt→UTF-8-Neukodierung" wird ein gültiger Mehrbyte-UTF-8-Byte-Strom doppelt kodiert und beschädigt
-(z. B. würde ein von der Platte gelesenes 0xC3 0xA9 als Codepunkte 0xC3 und 0xA9 behandelt und jeweils neu kodiert). Um gültige
-UTF-8-Byte-Ströme wörtlich zu kopieren (Datei / Unterprozess-Lese-Szenarien), wechsle zur Variante mit 1:1-Kopier-Semantik
-b.to-bytes-str() (siehe unten), oder verwende direkt das zugrunde liegende Slice.
-`
   'bytes.to-txt': `
 []byte.to-txt: wandelt []byte in txt um (auf 255 Bytes gekürzt)
 Rückgabe out: die feste 256-Byte-txt-Struktur
@@ -3068,7 +3060,7 @@ Meldet, ob der Wert NaN ist
 Erkannt über die IEEE-754-Eigenschaft «NaN ist ungleich sich selbst», sodass jedes NaN (einschließlich verschiedener Payloads) true ergibt.
 yes: true=der Empfänger ist NaN, false=endliche Zahl oder ±inf
 `
-  'fmt': 'fmt — formatierte Ein-/Ausgabe-Standardbibliothek\n\nprint/eprint/format/sprintf sind Compiler-Builtins (ForwardFunc).\n⚠️ printf/eprintf sind entfernt: die Namen bleiben in der Symboltabelle (Aufrufe werden weiterhin aufgelöst, LSP vervollständigt weiterhin),\naber jeder Aufruf ist ein harter Kompilierfehler [printf-depr], der zur Migration auf print/io.out und eprint/io.err anleitet.\nDiese Datei stellt in reinem Nolang implementierte Formatierungshilfsfunktionen bereit, die eine Untermenge der Python-format-Spec unterstützen:\nfmt-parse-spec  — die Spec-Zeichenkette parsen\nfmt-apply-spec  — Breite/Ausrichtung/Füllung anwenden\nfmt-uint-base   — eine vorzeichenlose Ganzzahl in einer vorgegebenen Basis in eine Zeichenkette umwandeln\nfmt-int         — Vorzeichenbehaftete Ganzzahlformatierung\nfmt-uint        — Vorzeichenlose Ganzzahlformatierung\nfmt-f64         — Gleitkommaformatierung\nfmt-str         — Zeichenkettenformatierung\nfmt-bool        — Boolesche Formatierung\n\nSpec-Zeichenkettensyntax (Python-format-Spec-Untermenge):\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(links) >(rechts) =(Füllung nach Vorzeichen) ^(zentriert)\nsign:   + -(Leerzeichen)\ngrouping: ,(Komma) _(Unterstrich)\ntype:   b o d x X p e E f F g G s t v\n\nImplementierungshinweise (Compiler-Einschränkungs-Umgehung):\n1. Das Zuweisen eines skalaren i64-Ausgabeparameters innerhalb eines bedingten Blocks hat keine Wirkung (Compiler-Bug),\ndaher rechnet fmt-parse-spec mit lokalen -v-Variablen und weist auf der obersten Ebene den Ausgabeparametern zu.\n2. with-cap() schließt ohne Typannotation standardmäßig vec statt str,\ndaher müssen lokale Puffer explizit typannotiert werden.\n3. Direkte str-Indexschreibzugriffe (`s[i] = v`) sind seit 2026-11-11 global deaktiviert (selbst die with-cap-Basis\nist nicht mehr ausgenommen); der byteweise Aufbau verwendet stets `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-bytes-str()`.'
+  'fmt': 'fmt — formatierte Ein-/Ausgabe-Standardbibliothek\n\nprint/eprint/format/sprintf sind Compiler-Builtins (ForwardFunc).\n⚠️ printf/eprintf sind entfernt: die Namen bleiben in der Symboltabelle (Aufrufe werden weiterhin aufgelöst, LSP vervollständigt weiterhin),\naber jeder Aufruf ist ein harter Kompilierfehler [printf-depr], der zur Migration auf print/io.out und eprint/io.err anleitet.\nDiese Datei stellt in reinem Nolang implementierte Formatierungshilfsfunktionen bereit, die eine Untermenge der Python-format-Spec unterstützen:\nfmt-parse-spec  — die Spec-Zeichenkette parsen\nfmt-apply-spec  — Breite/Ausrichtung/Füllung anwenden\nfmt-uint-base   — eine vorzeichenlose Ganzzahl in einer vorgegebenen Basis in eine Zeichenkette umwandeln\nfmt-int         — Vorzeichenbehaftete Ganzzahlformatierung\nfmt-uint        — Vorzeichenlose Ganzzahlformatierung\nfmt-f64         — Gleitkommaformatierung\nfmt-str         — Zeichenkettenformatierung\nfmt-bool        — Boolesche Formatierung\n\nSpec-Zeichenkettensyntax (Python-format-Spec-Untermenge):\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(links) >(rechts) =(Füllung nach Vorzeichen) ^(zentriert)\nsign:   + -(Leerzeichen)\ngrouping: ,(Komma) _(Unterstrich)\ntype:   b o d x X p e E f F g G s t v\n\nImplementierungshinweise (Compiler-Einschränkungs-Umgehung):\n1. Das Zuweisen eines skalaren i64-Ausgabeparameters innerhalb eines bedingten Blocks hat keine Wirkung (Compiler-Bug),\ndaher rechnet fmt-parse-spec mit lokalen -v-Variablen und weist auf der obersten Ebene den Ausgabeparametern zu.\n2. with-cap() schließt ohne Typannotation standardmäßig vec statt str,\ndaher müssen lokale Puffer explizit typannotiert werden.\n3. Direkte str-Indexschreibzugriffe (`s[i] = v`) sind seit 2026-11-11 global deaktiviert (selbst die with-cap-Basis\nist nicht mehr ausgenommen); der byteweise Aufbau verwendet stets `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-str()`.'
   'fmt.eprintf': `
 entfernt (der Name bleibt, damit das Parsieren weiterhin funktioniert) — der Aufruf ist ein Kompilierfehler; verwende stattdessen eprint (fügt einen Zeilenumbruch hinzu) oder io.err (kein Zeilenumbruch)
 s: Formatzeichenkette (diese Funktion wurde entfernt; der Aufruf ist ein Kompilierfehler)

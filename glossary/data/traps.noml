@@ -334,7 +334,7 @@ got = fs.read(fs.STDIN-FD, one, 1)
 IOB.eof = hit-eof && empty
 `
       example: `
-IOB.line = buf.to-bytes-str()
+IOB.line = buf.to-str()
 n = IOB.line.len-bytes()
 empty = n == 0
 IOB.eof = hit-eof && empty
@@ -373,10 +373,10 @@ part = chunk.slice(0, n)
       aliases: ['embed 目录', '内嵌目录']
       definition: `
 #{embed=...} 指向目录时，拿到的句柄 count 恒为 0，read 方法也不派发，
-连 to-str / to-bytes-str 都解析不出来（表现为 unknown callee）。
+连 to-str / to-str 都解析不出来（表现为 unknown callee）。
 
 可行做法：只能**文件级**嵌入 —— 每个文件写一条 #{embed=...}，
-绑定到 []byte 全局，需要时 to-bytes-str()。要嵌多个文件就逐个写。
+绑定到 []byte 全局，需要时 to-str()。要嵌多个文件就逐个写。
 `
       syntax: `
 #{embed='/pkg/data/a.noml'}
@@ -755,7 +755,7 @@ c = port-str[i]
 
 **str 完全不豁免**：同日 `s[i] = v` 被全域禁用，連 with-cap 基底也不再例外，理由是
 它同時是「越界寫入已配置緩衝之外」的唯一來源（見 str-index-write-banned）。str 的
-逐位元組構造改走 `x []byte = with-cap-len(n, n)`、`x[i] = b`、`x.slice(0, k).to-bytes-str()`
+逐位元組構造改走 `x []byte = with-cap-len(n, n)`、`x[i] = b`、`x.slice(0, k).to-str()`
 三件套，原位覆寫走 `s.fill(val byte)`，下標寫只剩 place-match。
 
 with-len(n) 與 with-cap-len(cap, len) 沒有豁免（2026-11-10 全量收口移除 with-len；
@@ -814,7 +814,7 @@ quic / http3 里三十多处 x[i] ?= v 都是对的，不要照语法形状批�
 
 历史处置：std 侧受影响面 12 站点 / 3 档（encoding/base64.encode 3、str.to-hex 2、
 fmt 7），当时靠「改回下标直写」修复。2026-11-11 禁用直写后，这批写法统一迁移成
-「`x []byte = with-cap-len(n, n)` + `x[i] = b` + `x.slice(0, k).to-bytes-str()`」三件套，
+「`x []byte = with-cap-len(n, n)` + `x[i] = b` + `x.slice(0, k).to-str()`」三件套，
 迁移后 fmt 35/35、base64 13/13、number 190/190 全绿（base64 原本 8/13，迁移顺带修好）。
 `
       syntax: `
@@ -828,7 +828,7 @@ s[i]: {
 ; 逐字节构造
 b []byte = with-cap-len(n, n)
 b[i] = x
-s = b.slice(0, k).to-bytes-str()
+s = b.slice(0, k).to-str()
 `
       example: `
 ; 历史对照（2026-11-11 之前；现在 a[0] = 65 / b[0] ?= 65 都直接报 idxwrite）
@@ -846,7 +846,7 @@ d[0] ?= 65                             ; []byte 一直正常，len 1
 c []byte = with-cap-len(8, 8)
 c[0] = 65
 c[1] = 66
-s = c.slice(0, 2).to-bytes-str()
+s = c.slice(0, 2).to-str()
 `
       related: ['with-len-write-not-exempt', 'idxbruse-both-sides', 'index-read-err-vs-nil']
       refs: ['src/std/str.no', 'src/std/fmt.no', 'src/std/encoding/base64.no', 'test/README.md']
@@ -855,7 +855,7 @@ s = c.slice(0, 2).to-bytes-str()
       title: 'str / txt 下标直写已全域禁用（str 2026-11-11，txt 2026-11-12；连 with-cap 基底也不豁免）'
       kind: 'trap'
       status: 'stable'
-      summary: 's[i] = v / t[i] = c 一律报 idxwrite；增长走 push 家族，逐字节构造走 []byte + to-bytes-str，原位覆写走 fill / place-match。'
+      summary: 's[i] = v / t[i] = c 一律报 idxwrite；增长走 push 家族，逐字节构造走 []byte + to-str，原位覆写走 fill / place-match。'
       aliases: ['str[i] = v', 'txt[i] = c', '下标直写禁用', 'idxwrite txt', 'with-cap str 死路', 'set-byte 私有化', 'push 取代 append']
       definition: `
 s[i] = v 曾是 str 唯一的「边写边增长」写法，靠 checker 对 with-cap 基底的豁免放行。
@@ -874,7 +874,7 @@ txt 没有堆、没有扩容，但「一次下标写偷偷改了长度」是同�
 少几个字节。txt 的变长入口是 t.push(c char) / t.push-str(s) / t.push-txt(u)。
 
 替代写法（str 与 txt 通用，除了 ① 是 []byte 专属）：
-  ① 逐字节构造：x []byte = with-cap-len(n, n) + x[i] = b + x.slice(0, k).to-bytes-str()
+  ① 逐字节构造：x []byte = with-cap-len(n, n) + x[i] = b + x.slice(0, k).to-str()
   ② 原位覆写：s.fill(val byte)（覆盖前 len 个字节，长度不变）
   ③ 下标写只剩 place-match：s[i]: { ok -> it = v / -> _ }（以「读」作闸门，
      i >= len 静默跳过 —— 它由 D9 降糖的合成节点承载，本规则本就跳过）
@@ -936,7 +936,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str()
+s = b.slice(0, k).to-str()
 
 ; ② 原位覆写
 s = 'hello'
@@ -961,7 +961,7 @@ s[0] = 65
 ; 正确
 b []byte = with-cap-len(4, 4)
 b[0] = 65
-s = b.to-bytes-str()
+s = b.to-str()
 
 ; slice 的口径差异：s.slice 是码点，s.slice-bytes 是字节；
 ; b.slice（[]byte 上）自然是字节。
@@ -2025,17 +2025,17 @@ sum-hex = (acc i64, digit i64) (v i64) {
       title: '[]byte.to-str() 按码点重新编码，不是逐字节拷贝'
       kind: 'trap'
       status: 'stable'
-      summary: '打包二进制协议必须用 to-bytes-str()；to-str() 会把 >= 0x80 的字节膨胀成 2 字节，边界与偏移全错。'
-      aliases: ['to-str 二次编码', '二进制打包错位', 'to-bytes-str', '字节向量转字符串', 'byte-vec-to-str']
+      summary: '打包二进制协议必须用 to-str()；to-str() 会把 >= 0x80 的字节膨胀成 2 字节，边界与偏移全错。'
+      aliases: ['to-str 二次编码', '二进制打包错位', 'to-str', '字节向量转字符串', 'byte-vec-to-str']
       definition: `
 []byte 上有两个「转成 str」的方法，语义完全不同：
 
   to-str()        —— 每个 byte 当作 0~255 的 Unicode 码点，再 UTF-8 编码成 1~4 字节。
                      等价于 b.to-chars().to-str()。0x80 以上的字节必然膨胀成 2 字节。
-  to-bytes-str()  —— 1:1 逐字节拷贝（旧版 to-str 的语义）。
+  to-str()  —— 1:1 逐字节拷贝（旧版 to-str 的语义）。
 
 因此凡是「把二进制缓冲区当字节流」的场景（协议封包、加解密、文件内容），都必须用
-to-bytes-str()。用错 to-str() 不会报错，只会静默改变长度：
+to-str()。用错 to-str() 不会报错，只会静默改变长度：
 
   packet []byte              ; 38 字节的封包
   s = packet.to-str()        ; 变长（>= 0x80 的字节各 +1）
@@ -2046,7 +2046,7 @@ to-bytes-str()。用错 to-str() 不会报错，只会静默改变长度：
 而 send 侧还返回 true（因为它只比较 net-send 的返回值与预期总长）。
 
 判据：写完之后 str 的 len-bytes() 应该等于原 []byte 的 len()。不等就是选错了方法。
-注意 to-str() 的返回型别是 ?str，to-bytes-str() 的返回型别是裸 str —— 这个差异本身
+注意 to-str() 的返回型别是 ?str，to-str() 的返回型别是裸 str —— 这个差异本身
 也是个提示：要 option 说明它可能「转换失败」，那正是重编码路径。
 `
       syntax: `
@@ -2054,16 +2054,16 @@ to-bytes-str()。用错 to-str() 不会报错，只会静默改变长度：
 s = packet.to-str()
 
 ; 对：1:1 逐字节
-s = packet.to-bytes-str()
+s = packet.to-str()
 `
       example: `
 ; 正确的收发形状
-packet-str = packet.to-bytes-str()
+packet-str = packet.to-str()
 written = net-send(fd, packet-str, packet.len())
 
 ; 接收侧同理：解出来的明文要原样取出
 opened = aes-gcm.open-256(key, iv, aad, sealed)
-data = opened.to-bytes-str()
+data = opened.to-str()
 `
       related: ['bstr']
       refs: ['src/std/byte.no', 'src/std/net/net.no', 'test/README.md']

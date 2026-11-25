@@ -185,7 +185,13 @@ pem.encode = (label str, data []byte) (out str) {
     }
 
     ; 收尾的換行寫在 pos 位置但不遞增 pos，故長度是 pos + 1
-    out = out-b.slice(0, pos + 1).to-bytes-str()
+    tb0o = out-b.slice(0, pos + 1).to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
 }
 
 ; 解碼
@@ -256,7 +262,13 @@ pem.decode = (pem-str str) (result ?block) {
             dst ?= dst + 1
         }
     }
-    b64-data = b64-buf.slice(0, dst).to-bytes-str()
+    tb1o = b64-buf.slice(0, dst).to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    b64-data = tb1v
 
     ; Base64 解碼
     decoded = base64.decode(b64-data, base64.BASE64-STD)

@@ -27,7 +27,7 @@
 
 ; 往檔案追加字串（讀回舊內容再整檔覆寫；檔案不存在時從空字串開始）
 log-add = (path str, s str) {
-    old = fs.read-file(path).to-bytes-str()
+    old = fs.read-file(path).to-str()
     fs.write-file(path, (old - s).to-bytes())
 }
 
@@ -52,10 +52,10 @@ t-leave-block-end = () {
         }
 
         ; 區塊內還沒離開作用域 ⇒ 日誌仍空
-        runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == '', 'leave: 區塊內尚未觸發')
+        runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-str() == '', 'leave: 區塊內尚未觸發')
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'La', 'leave: 區塊結束時觸發')
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-str() == 'La', 'leave: 區塊結束時觸發')
 }
 
 ; 2. 多個變數：宣告逆序
@@ -76,7 +76,7 @@ t-leave-reverse = () {
         }
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'L3L2L1', 'leave: 按宣告逆序觸發（L3 L2 L1）')
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-str() == 'L3L2L1', 'leave: 按宣告逆序觸發（L3 L2 L1）')
 }
 
 ; 3. return 之前觸發，且只一次
@@ -95,7 +95,7 @@ t-leave-before-return = () {
     ret-helper()
 
     ; 精確比對 'Lh' 而不是「包含 Lh」：塊尾若又補一次就成了 'LhLh'
-    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lh', 'leave: return 前觸發，且不重複')
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-str() == 'Lh', 'leave: return 前觸發，且不重複')
 }
 
 ; 4. 只實作 leave 的型別本身（回歸：注入器曾強插 enter）
@@ -113,7 +113,7 @@ t-leave-only = () {
         }
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lx', 'leave: 只實作 leave 的型別可編譯且生效')
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-str() == 'Lx', 'leave: 只實作 leave 的型別可編譯且生效')
 }
 
 ; 5. 不帶標註（推斷）的宣告同樣注入
@@ -131,7 +131,7 @@ t-leave-inferred = () {
         }
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lb', 'leave: 不帶標註的宣告也注入')
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-str() == 'Lb', 'leave: 不帶標註的宣告也注入')
 }
 
 ; 6. 巢狀區塊：內層先 leave，外層後 leave
@@ -152,7 +152,7 @@ t-leave-nested = () {
         }
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'LiLo', 'leave: 內層先於外層（Li Lo）')
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-str() == 'LiLo', 'leave: 內層先於外層（Li Lo）')
 }
 
 runner.test('leave at block end', t-leave-block-end)

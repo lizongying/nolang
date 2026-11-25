@@ -185,7 +185,7 @@ test-frame-parse = () {
 
         -> _
     }
-    data = data-b.to-bytes-str()
+    data = data-b.to-str()
     f http2.frame
     np = f.parse(data, 0)
     np == nil -> {

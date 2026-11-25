@@ -386,7 +386,7 @@ t-fd-io = () {
     runner.is-true(rfd >= 0, 'open-file O_RDONLY 回有效 fd')
     buf []byte = with-len(8)
     runner.eq(fs.read(rfd, buf, 5), 5, 'read 讀到 5 位元組')
-    runner.is-true(buf.slice(0, 5).to-bytes-str().eq-full('hello'), 'read 內容正確')
+    runner.is-true(buf.slice(0, 5).to-str().eq-full('hello'), 'read 內容正確')
     fs.close(rfd)
     fs.sync()
 
@@ -598,7 +598,7 @@ chk-read-stdin = () (code i64) {
                 code = 2
                 v []byte = it
                 v.len() == 7 -> {
-                    t = v.to-bytes-str()
+                    t = v.to-str()
                     code = 3
                     t.eq('abc\ndef', 7) -> code = 0
                 }

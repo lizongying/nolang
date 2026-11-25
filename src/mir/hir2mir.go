@@ -12336,6 +12336,14 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		// explicit here: without it `r.len()` on `r ?[]byte` reached
 		// emitBuiltinLen with a `%option___byte` receiver -> "unsupported receiver
 		// type %option___byte" (tests/fs-struct.no).
+		// `.pretty()` is the one option method that must NOT peel: it renders
+		// some(v)/nil. Route it to the std option.pretty method, whose body
+		// calls the generic option-pretty helper.
+		if method == "pretty" && ty.IsOptionRaw(recvTypeName) {
+			// Marker handled by lowerCall: emit the some(v)/nil shape inline
+			// against the ORIGINAL option receiver (no peeling, no std body).
+			return "$option.pretty", rv
+		}
 		if ty.IsOptionRaw(recvTypeName) {
 			if uv := l.unwrapOptionOperand(rv); uv != NoVal {
 				rv = uv
@@ -13082,6 +13090,21 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 		l.unsupported(l.curFuncName(), "interp", "unresolved format field "+f.Name)
 		return NoVal, false
 	}
+	// A bare field `{x}` (no `:spec`) renders through .pretty(), so str keeps
+	// its single quotes, char uses double quotes, and an option renders
+	// some(v)/nil instead of being silently peeled. A field WITH a spec keeps
+	// the fmt-* path below because numeric specs must see the raw value.
+	if f.Parsed == nil && l.prettyAvailable(v) {
+		if pv := l.valueToPretty(v); pv != NoVal {
+			return pv, true
+		}
+		return NoVal, false
+	}
+	// A bare field in an isolated lowering (Go unit tests, snippet tools) may
+	// have no `.pretty()` callee registered at all. Keep the historical fmt-*
+	// path there instead of turning the field into a hard failure — those
+	// tests are about format/concat/codegen mechanics, not about std pretty
+	// rendering, and the new semantics are covered by test/std/pretty.no.
 	// A format field whose value is an `?T` option must be PEELED before it
 	// reaches a fmt-* helper, because the helpers are typed on the payload
 	// (fmt-str takes a %str-long, fmt-int an i64) and never on the option.
@@ -13487,6 +13510,40 @@ func bareCalleeName(callee string) string {
 
 func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	callee, recvV := l.resolveCallee(n)
+	// The checker rewrites `o.pretty()` on ?T straight to the PAYLOAD's
+	// concrete method (`int.int.pretty__i64`), so the KDot marker above never
+	// fires. Detect that shape by the first argument still carrying the option
+	// type and route it through the inline some(v)/nil renderer.
+	if strings.Contains(callee, ".pretty") && !strings.HasPrefix(callee, "$") {
+		if args := l.slotArgs(n.Id, "arg"); len(args) > 0 {
+			if rv := l.lowerExpr(args[0]); rv != NoVal {
+				if rt := l.valueTypeOf(rv); rt != NoType {
+					if pt := l.mod.Type(rt); pt != nil && pt.Kind == KindOption && l.prettyAvailable(rv) {
+						if pv := l.lowerOptionPrettyInline(rv, rt); pv != NoVal {
+							return pv
+						}
+					}
+				}
+			}
+		}
+	}
+	if callee == "$option.pretty" && recvV != NoVal {
+		if l.prettyAvailable(recvV) {
+			if pv := l.lowerOptionPrettyInline(recvV, l.valueTypeOf(recvV)); pv != NoVal {
+				return pv
+			}
+			l.unsupported(l.curFuncName(), "pretty", "option.pretty lowering failed")
+			return NoVal
+		}
+		// No implicit pretty callee (isolated lowering, or float whose print
+		// path is kept capture-stable). An explicit option .pretty() still
+		// owes the caller some(v)/nil, so render it with the fmt-* payload
+		// fallback instead of silently returning the bare payload.
+		if pv := l.lowerOptionPrettyInline(recvV, l.valueTypeOf(recvV)); pv != NoVal {
+			return pv
+		}
+		return l.valueToStr(recvV)
+	}
 	// Implicit comptime folding of a multi-result (out-parameter) call. If the
 	// callee is a pure HIR function with MORE THAN ONE named result, evaluate
 	// it at compile time and move the constant results straight into the
@@ -14674,28 +14731,33 @@ func (l *lowerer) callerLocation(n *hir.Node) string {
 	return fmt.Sprintf("%s:%d:%d", file, n.Line, n.Col)
 }
 
-// receiver's `to-str` method, mirroring the legacy backend (which lowers
-// `print(v)` / `print(a[0..2])` to a `[]t.to-str` call).
+// printableValue renders a print-family argument through its receiver's
+// `.pretty()` method. This makes ordinary `print(a, b, c)` agree with the
+// bare fields of an implicit `format` template: every displayed value goes
+// through the same literal-style rendering, including scalars and str.
 //
-// Without it the argument reaches codegen as a raw `%vec` / fixed array and
-// print fails with "print unsupported arg type %vec"
-// (tests/slice-heavy.no). Scalar types (including `str`, whose Kind is
-// KindStr rather than KindSlice) are returned untouched.
-// printableValue renders a container-typed print-family argument through its
-// receiver's `to-str` method, mirroring the legacy backend (which lowers
-// `print(v)` / `print(a[0..2])` to a `[]t.to-str` call).
+// When no pretty callee is registered (isolated Go lowerings), fall back to
+// the legacy aggregate-only `to-str` rendering so existing mechanics tests
+// keep exercising what they were written for.
 //
-// Without it the argument reaches codegen as a raw `%vec` / fixed array and
-// print fails with "print unsupported arg type %vec"
-// (tests/slice-heavy.no). Scalar types (including `str`, whose Kind is
-// KindStr rather than KindSlice) are returned untouched.
-//
-// Structs and maps are now also supported: print(struct) / print(map) auto-
-// stringify through valueToStr — a user-defined `<Type>.to-str` when present,
-// otherwise the compiler default (a `{field: value, ...}` dump for structs,
-// a `{key: value, ...}` dump for str-maps). This is the `to-str` auto-execution
-// the language promises for arr / vec / map / struct.
+// Nested call arguments are protected by wrapPrintArgs being cleared while
+// their own arguments are lowered (see lowerCallArgs), so `print(b.to-str())`
+// does not gain a second wrapper.
 func (l *lowerer) printableValue(v ValueID) ValueID {
+	if v == NoVal {
+		return v
+	}
+	if l.prettyAvailable(v) {
+		if pv := l.valueToPretty(v); pv != NoVal {
+			return pv
+		}
+	}
+	return l.legacyPrintableValue(v)
+}
+
+// legacyPrintableValue is the pre-pretty print rendering: only containers,
+// maps and structs are auto-stringified; scalars reach codegen untouched.
+func (l *lowerer) legacyPrintableValue(v ValueID) ValueID {
 	if v == NoVal {
 		return v
 	}
@@ -15208,6 +15270,177 @@ func (l *lowerer) int128ToStr(v ValueID, raw string, strT TypeID) ValueID {
 		return d[0]
 	}
 	return v
+}
+
+// lowerOptionPrettyInline renders an option as `some(<payload pretty>)` or
+// `nil` without a std helper: global.no only declares option methods, so their
+// bodies never enter the merged HIR program. The shared sink slot mirrors the
+// no-phi convergence used by lowerNestedIndex.
+func (l *lowerer) lowerOptionPrettyInline(v ValueID, optT TypeID) ValueID {
+	strT := l.b.Type("str")
+	sink := l.b.EmitStr(OpConst, strT, "", "")
+	if sink == NoVal {
+		return NoVal
+	}
+	nilConst := l.b.EmitInt(OpConst, optT, 0, "")
+	boolT := l.b.Type("bool")
+	present := l.b.Emit(OpNe, boolT, []ValueID{v, nilConst}, "")
+	if present != NoVal {
+		l.b.Mod.Insts[len(l.b.Mod.Insts)-1].TagOnly = true
+	}
+	okBlk := l.b.NewBlock("optpretty.ok")
+	nilBlk := l.b.NewBlock("optpretty.nil")
+	mergeBlk := l.b.NewBlock("optpretty.merge")
+	l.b.Terminate(OpCondBr, []ValueID{present}, []BlockID{okBlk, nilBlk}, "")
+	l.b.SetBlock(okBlk)
+	if payload := l.unwrapOptionOperand(v); payload != NoVal {
+		ps := NoVal
+		if l.prettyAvailable(payload) {
+			ps = l.valueToPretty(payload)
+		}
+		if ps == NoVal {
+			// Floats (and isolated lowerings) skip implicit pretty so that
+			// print keeps the capture-stable builtin renderer. An explicit
+			// option .pretty() must still render some(v), so fall back to the
+			// fmt-* path for the payload here.
+			ps = l.scalarOrStrToStr(payload, l.mod.Type(l.valueTypeOf(payload)))
+		}
+		if ps != NoVal {
+			prefix := l.b.EmitStr(OpConst, strT, "some(", "")
+			suffix := l.b.EmitStr(OpConst, strT, ")", "")
+			if s1 := l.concatStr(prefix, ps); s1 != NoVal {
+				if s2 := l.concatStr(s1, suffix); s2 != NoVal {
+					l.b.EmitMoveInto(sink, s2)
+				}
+			}
+		}
+	}
+	if cur := l.b.CurrentBlock(); l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+	l.b.SetBlock(nilBlk)
+	if l.mod.Block(nilBlk).Term == nil {
+		if nv := l.b.EmitStr(OpConst, strT, "nil", ""); nv != NoVal {
+			l.b.EmitMoveInto(sink, nv)
+		}
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+	l.b.SetBlock(mergeBlk)
+	return sink
+}
+
+// prettyAvailable reports whether the current module has a callable
+// `.pretty()` for v. It is deliberately side-effect free: unlike
+// unwrapOptionOperand it inspects the option's Elem type instead of emitting
+// an extract, so callers can probe before committing to a lowering path.
+func (l *lowerer) prettyAvailable(v ValueID) bool {
+	if v == NoVal {
+		return false
+	}
+	t := l.valueTypeOf(v)
+	ty := l.mod.Type(t)
+	if ty == nil {
+		return false
+	}
+	if ty.Kind == KindOption {
+		if ty.Elem == NoType {
+			return false
+		}
+		payload := l.mod.Type(ty.Elem)
+		return payload != nil && l.prettyCalleeFor(payload) != ""
+	}
+	return l.prettyCalleeFor(ty) != ""
+}
+
+// valueToPretty renders a value as a source-literal-style `%str-long` by
+// calling its receiver's `.pretty()` method. It is the shared entry point for
+// bare format fields and for ordinary print-family arguments.
+//
+// Unlike valueToStr, an option is NOT peeled here: lowerOptionPrettyInline
+// renders `some(v)` / `nil`, so printing an option cannot silently turn into
+// its payload.
+func (l *lowerer) valueToPretty(v ValueID) ValueID {
+	if v == NoVal {
+		return v
+	}
+	t := l.valueTypeOf(v)
+	ty := l.mod.Type(t)
+	if ty == nil {
+		l.unsupported(l.curFuncName(), "pretty", "value has no type for .pretty()")
+		return NoVal
+	}
+	strT := l.b.Type("str")
+	if ty.Kind == KindOption {
+		// global.no only declares option methods; its bodies never reach the
+		// merged HIR program. Render inline instead: branch on the option tag,
+		// call the PAYLOAD's .pretty() only in the ok arm, and converge through
+		// a shared str slot (MIR has no phi; see lowerNestedIndex).
+		if pv := l.lowerOptionPrettyInline(v, t); pv != NoVal {
+			return pv
+		}
+		l.unsupported(l.curFuncName(), "pretty", "option.pretty lowering failed")
+		return NoVal
+	}
+	callee := l.prettyCalleeFor(ty)
+	if callee == "" {
+		// Isolated lowerings (Go unit tests, snippet tools) do not load the
+		// std prelude. Return NoVal so callers can fall back deliberately;
+		// feeding the raw scalar to $str_concat would produce broken IR.
+		return NoVal
+	}
+	l.enqueueCallee(callee)
+	if d := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{v}, callee); len(d) > 0 {
+		return d[0]
+	}
+	l.unsupported(l.curFuncName(), "pretty", "call to "+callee+" produced no result")
+	return NoVal
+}
+
+// prettyCalleeFor resolves the `.pretty()` callee for a MIR type. It mirrors
+// toStrCalleeFor's mangled-generic priority (a monomorphised `_xi64.pretty`
+// must beat the bare `[]t.pretty` template) and adds the scalar/option names
+// used by the new std pretty methods.
+func (l *lowerer) prettyCalleeFor(ty *Type) string {
+	if ty == nil {
+		return ""
+	}
+	elem := ""
+	if ty.Elem != NoType {
+		if et := l.mod.Type(ty.Elem); et != nil {
+			elem = et.Raw
+		}
+	}
+	raw := optionInnerRaw(ty)
+	var cands []string
+	if ty.Kind == KindOption {
+		cands = append(cands, "option.pretty", "global.option.pretty")
+	}
+	if elem != "" {
+		if closeB := strings.IndexByte(raw, ']'); closeB > 0 {
+			size := raw[1:closeB]
+			if size != "" {
+				cands = append(cands, "_"+size+"x"+elem+".pretty")
+			}
+		}
+		cands = append(cands, "_x"+elem+".pretty", "[]"+elem+".pretty")
+	}
+	if raw != "" {
+		cands = append(cands, raw+".pretty")
+	}
+	switch raw {
+	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128":
+		cands = append(cands, "int.pretty")
+	}
+	// Do NOT fall back to the bare `[]t.pretty` / `[n]t.pretty` templates:
+	// they are unmonomorphised, their bodies call `t.pretty`/`t.to-str`, and
+	// enqueueing one produces `unknown callee t.to-str` (decl_widen_test).
+	// Concrete containers must resolve to `_xElem.pretty` / `_NxElem.pretty`.
+	for _, c := range cands {
+		if _, ok := l.funcNames[c]; ok {
+			return c
+		}
+	}
+	return ""
 }
 
 // toStrCalleeFor returns the `to-str` callee registered for a slice/array

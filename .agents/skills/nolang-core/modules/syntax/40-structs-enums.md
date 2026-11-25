@@ -412,7 +412,7 @@ str.to-upper = () (out str) {
             -> b[i] = v
         }
     }
-    out = b.to-bytes-str()
+    out = b.to-str()
 }
 
 ; char method

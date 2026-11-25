@@ -1260,8 +1260,8 @@ byte est un type distinct et non un alias de u8, donc []byte.len n'est pas insta
 Renvoie une nouvelle tranche
 
 `
-  'bytes.to-bytes-str': `
-[]byte.to-bytes-str : copie octet à octet 1:1 (garde la sémantique du []byte.to-str d'origine).
+  'bytes.to-str': `
+[]byte.to-str : copie octet à octet 1:1 (garde la sémantique du []byte.to-str d'origine).
 Pour les cas où buf est déjà un flux UTF-8 légal (lecture de fichier / sortie de sous-processus) ; pas besoin de réencodage par point de code.
 Cette fonction équivaut à l'ancien []byte.to-str.
 `
@@ -1276,14 +1276,6 @@ Si seul le résultat final « octet→point de code→chaîne UTF-8 » intéress
   'bytes.to-hex-lower': '[]byte.to-hex-lower: encode un []byte en chaîne hexadécimale minuscule'
   'bytes.to-i64-be': '[]byte.to-i64-be: convertit des octets big-endian en int64 (de 1 à 8 octets)'
   'bytes.to-i64-le': '[]byte.to-i64-le: convertit des octets little-endian en int64 (de 1 à 8 octets)'
-  'bytes.to-str': `
-⚠️ Changement de sémantique (2026-09-06, à la demande du requérant) : auparavant cette méthode était une « copie 1:1 octet par octet », qui était
-le contrat dont dépend buf.to-str() (lit fichiers / sortie de sous-processus, buf est déjà un UTF-8 valide).
-Après passage à « octet→point de code→réencodage UTF-8 », un flux UTF-8 multioctet légal est réencodé deux fois et corrompu
-(p. ex. 0xC3 0xA9 lu sur disque serait traité comme les points de code 0xC3 et 0xA9 et chacun réencodé). Pour « copier tel quel »
-flux d'octets UTF-8 légaux (lecture fichier / sous-processus), utilisez à la place la variante qui préserve la sémantique de copie 1:1
-b.to-bytes-str() (voir plus bas), ou utiliser directement la tranche sous-jacente.
-`
   'bytes.to-txt': `
 []byte.to-txt : convertit []byte en txt (tronqué à 255 octets)
 Renvoie out: la structure txt fixe de 256 octets
@@ -3102,7 +3094,7 @@ indique si la valeur est NaN
 Décidé via la propriété IEEE-754 « NaN n'est pas égal à lui-même », donc tout NaN (payloads différents compris) donne true.
 yes: true=le récepteur est NaN, false=nombre fini ou ±inf
 `
-  'fmt': 'fmt — bibliothèque standard d\'entrée/sortie formatée\n\nprint/eprint/format/sprintf sont des fonctions intégrées au compilateur (ForwardFunc).\n⚠️ printf/eprintf sont supprimés : les noms restent dans la table des symboles (les appels se résolvent encore, le LSP complète encore),\nmais tout appel est une erreur de compilation stricte [printf-depr], guidant la migration vers print/io.out et eprint/io.err.\nCe fichier fournit des fonctions utilitaires de formatage implémentées en Nolang pur, prenant en charge un sous-ensemble de la spécification de format Python :\nfmt-parse-spec  — analyser la chaîne de spécification\nfmt-apply-spec  — appliquer largeur/alignement/remplissage\nfmt-uint-base   — convertir un entier non signé en chaîne dans la base donnée\nfmt-int         — formatage d\'entier signé\nfmt-uint        — formatage d\'entier non signé\nfmt-f64         — formatage à virgule flottante\nfmt-str         — formatage de chaîne\nfmt-bool        — formatage booléen\n\nSyntaxe de la chaîne de spécification (sous-ensemble de la spécification de format Python) :\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(gauche) >(droite) =(remplissage après le signe) ^(centré)\nsign:   + -(espace)\ngrouping: ,(virgule) _(souligné)\ntype:   b o d x X p e E f F g G s t v\n\nNotes d\'implémentation (contournement de la limitation du compilateur) :\n1. Assigner un paramètre de sortie scalaire i64 dans un bloc conditionnel n\'a aucun effet (bug du compilateur),\ndonc fmt-parse-spec calcule avec des variables locales -v et assigne aux paramètres de sortie au niveau supérieur.\n2. with-cap() infère vec plutôt que str par défaut en l\'absence d\'annotation de type,\ndonc les tampons locaux doivent être explicitement annotés avec leur type.\n3. Les écritures directes par indice sur str (`s[i] = v`) sont globalement désactivées depuis 2026-11-11 (même la base with-cap\nn\'est plus exemptée) ; la construction octet par octet utilise toujours `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-bytes-str()`.'
+  'fmt': 'fmt — bibliothèque standard d\'entrée/sortie formatée\n\nprint/eprint/format/sprintf sont des fonctions intégrées au compilateur (ForwardFunc).\n⚠️ printf/eprintf sont supprimés : les noms restent dans la table des symboles (les appels se résolvent encore, le LSP complète encore),\nmais tout appel est une erreur de compilation stricte [printf-depr], guidant la migration vers print/io.out et eprint/io.err.\nCe fichier fournit des fonctions utilitaires de formatage implémentées en Nolang pur, prenant en charge un sous-ensemble de la spécification de format Python :\nfmt-parse-spec  — analyser la chaîne de spécification\nfmt-apply-spec  — appliquer largeur/alignement/remplissage\nfmt-uint-base   — convertir un entier non signé en chaîne dans la base donnée\nfmt-int         — formatage d\'entier signé\nfmt-uint        — formatage d\'entier non signé\nfmt-f64         — formatage à virgule flottante\nfmt-str         — formatage de chaîne\nfmt-bool        — formatage booléen\n\nSyntaxe de la chaîne de spécification (sous-ensemble de la spécification de format Python) :\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(gauche) >(droite) =(remplissage après le signe) ^(centré)\nsign:   + -(espace)\ngrouping: ,(virgule) _(souligné)\ntype:   b o d x X p e E f F g G s t v\n\nNotes d\'implémentation (contournement de la limitation du compilateur) :\n1. Assigner un paramètre de sortie scalaire i64 dans un bloc conditionnel n\'a aucun effet (bug du compilateur),\ndonc fmt-parse-spec calcule avec des variables locales -v et assigne aux paramètres de sortie au niveau supérieur.\n2. with-cap() infère vec plutôt que str par défaut en l\'absence d\'annotation de type,\ndonc les tampons locaux doivent être explicitement annotés avec leur type.\n3. Les écritures directes par indice sur str (`s[i] = v`) sont globalement désactivées depuis 2026-11-11 (même la base with-cap\nn\'est plus exemptée) ; la construction octet par octet utilise toujours `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-str()`.'
   'fmt.eprintf': `
 supprimé (le nom est conservé pour que l'analyse syntaxique fonctionne toujours) — l'appeler est une erreur de compilation; utilisez eprint (ajoute un saut de ligne) ou io.err (sans saut) à la place
 s: chaîne de format (cette fonction a été supprimée ; l'appeler est une erreur de compilation)

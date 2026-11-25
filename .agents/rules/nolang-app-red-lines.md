@@ -60,7 +60,7 @@ enabled: true
 
 - 🔴 **索引写全域禁用**：`s[i] = v` / `t[i] = c`（str / txt）。变长用 `push` 家族
   （`str.push(c)` / `str.push-str(s)`；`txt.push` / `push-str` / `push-txt`），原位覆写用 `fill` 或
-  place-match，逐字节构造用 `[]byte` + `to-bytes-str`。
+  place-match，逐字节构造用 `[]byte` + `to-str`。
 - 🔴 **空 `str` 的 `data == NULL`**：`eq(x, n)` 在 `n > 0` 直接崩（含 `str.slice` 提前 return 的空视图）
   ⇒ 空串断言一律 `n = 0`。
 - 🔴 `t[i]` / `s[i]` **越界读是 `err` 不是 `-1`**：断言 tag，不要断言兜底值。

@@ -85,6 +85,11 @@ new-v4 = (state i64) (out uuid) {
 ; 格式化
 ...
 
+; uuid.pretty: 字面量風格的 UUID。
+uuid.pretty = () (out str) {
+    out = .to-str()
+}
+
 ; 將 UUID 格式化為標準字串
 ; 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小寫）
 ; 返回 out: UUID 字串
@@ -160,14 +165,20 @@ uuid.to-str = () (out str) {
 
         -> _
     }
-    out = ob.to-bytes-str()
+    tb0o = ob.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
 }
 
 ; 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
 ; b: 待編碼的位元組（高半字節先寫，低半字節後寫）
 ; pos: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
 ; out: 目標 []byte 緩衝，原地寫入兩格（越界時該格寫入被安全索引略過）
-;      （str 下標寫入已全域禁用；呼叫端最後用 to-bytes-str() 轉回 str）
+;      （str 下標寫入已全域禁用；呼叫端最後用 to-str() 轉回 str）
 ; [hex-byte](#uuid.hex-byte)
 hex-byte = (b byte, pos i64, out []byte) {
 
@@ -261,14 +272,20 @@ uuid.to-str-upper = () (out str) {
 
         -> _
     }
-    out = ob.to-bytes-str()
+    tb1o = ob.to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb1v
 }
 
 ; 大寫 hex 位元組寫入
 ; b: 待轉為兩個大寫 hex 字符的字節
 ; pos: out 中寫入的起始字節位置
 ; out: 輸出 []byte 緩衝，就地寫入兩個 hex 字符（越界寫入被安全索引忽略）
-;      （str 下標寫入已全域禁用；呼叫端最後用 to-bytes-str() 轉回 str）
+;      （str 下標寫入已全域禁用；呼叫端最後用 to-str() 轉回 str）
 ; table: 大寫十六進制字符表（如 '0123...ABCDEF'）
 ; [hex-byte-upper](#uuid.hex-byte-upper)
 hex-byte-upper = (b byte, pos i64, out []byte, table str) {

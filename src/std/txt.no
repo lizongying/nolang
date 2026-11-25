@@ -159,10 +159,22 @@ txt.empty = () (yes bool) {
 txt.to-str = () (out str) {
 
     ; 兩跳：txt → []byte（本模組內的逐位元組拷貝，用 txt._set-byte 合法）→ str
-    ; （[]byte.to-bytes-str 是公開的 1:1 拷貝）。舊寫法直接往 str 上 _set-byte，
+    ; （[]byte.to-str 是公開的 1:1 拷貝）。舊寫法直接往 str 上 _set-byte，
     ; 那是跨模組呼叫 str 的私有符號（8w3q93g2），2026-11-11 起一律拒絕。
     b = .to-bytes()
-    out = b.to-bytes-str()
+    tb0o = b.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
+}
+
+; txt.pretty: 字面量風格的固定字符串，如 'a'（單引號）。
+; [pretty](#txt.pretty)
+txt.pretty = () (out str) {
+    out = '\'' - .to-str() - '\''
 }
 
 ; 將 txt 轉換為 []byte

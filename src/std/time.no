@@ -680,7 +680,13 @@ format-date = (d date) (out str) {
 
         -> _
     }
-    out = ob.to-bytes-str()
+    tb0o = ob.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
 }
 
 ; 將 Unix 時間戳格式化為可讀字串

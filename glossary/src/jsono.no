@@ -57,7 +57,7 @@ jq = (s str) (out str) {
             err -> _
         }
     }
-    out = buf.to-bytes-str()
+    out = buf.to-str()
 }
 
 ; 带引号的 JSON 字符串字面量

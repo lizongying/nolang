@@ -83,7 +83,10 @@ func TestDirectWasmValidateParity(t *testing.T) {
 		wantErr string
 	}{
 		{"undefined-variable", "print(missing_name)\n", "is not defined"},
-		{"assignment-type-mismatch", "x i64 = 1\nx = 'hello'\nprint(x)\n", "cannot assign str value to i64 variable"},
+		// `x = expr` is a new binding in current Nolang, so a second `x = 'hello'`
+		// legally shadows the i64. Pin the narrowing error on an explicitly
+		// annotated declaration instead.
+		{"assignment-type-mismatch", "x i64 = 'hello'\nprint(x)\n", "cannot assign str value to i64 variable"},
 		{"argument-type-mismatch", "f = (a i64) { print(a) }\nf('not-an-int')\n", "expected 'i64', got 'str'"},
 		{"valid-control", "x i64 = 1\nprint('x={x}')\n", ""},
 		{"valid-option-control", "a []i64 = [1, 2, 3]\nx = a[0]\nprint('ok')\n", ""},

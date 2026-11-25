@@ -1246,8 +1246,8 @@ byte は u8 の別名ではなく独立した型なので、[]byte.len は []t.l
 新しいスライスを返す
 
 `
-  'bytes.to-bytes-str': `
-[]byte.to-bytes-str: 1:1 バイト単位コピー（元の []byte.to-str の意味を維持）。
+  'bytes.to-str': `
+[]byte.to-str: 1:1 バイト単位コピー（元の []byte.to-str の意味を維持）。
 buf がすでに合法な UTF-8 バイト列である場面（ファイル読み取り / 子プロセス出力）に使う。コードポイント毎の再エンコードは不要。
 本関数は旧版 []byte.to-str と等価。
 `
@@ -1262,14 +1262,6 @@ buf がすでに合法な UTF-8 バイト列である場面（ファイル読み
   'bytes.to-hex-lower': '[]byte.to-hex-lower: []byte を小文字の 16 進文字列にエンコードする'
   'bytes.to-i64-be': '[]byte.to-i64-be: ビッグエンディアンのバイト列を int64 に変換する（1〜8 バイト）'
   'bytes.to-i64-le': '[]byte.to-i64-le: リトルエンディアンのバイト列を int64 に変換する（1〜8 バイト）'
-  'bytes.to-str': `
-⚠️ 意味変更（2026-09-06、要求側の要望により）：以前本メソッドは「1:1 バイト毎コピー」で、それは
-buf.to-str()（ファイル / サブプロセス出力の読み取り、buf は既に妥当な UTF-8）が依存する契約。
-「byte→コードポイント→UTF-8 再エンコード」に改めた後、合法なマルチバイト UTF-8 バイト列は二重エンコードで破壊される
-（例えばディスクから読んだ 0xC3 0xA9 はコードポイント 0xC3、0xA9 として各自再エンコードされる）。「そのままコピー」が必要なら
-合法な UTF-8 バイト列（ファイル / 子プロセス読み取り場面）は、1:1 コピー意味を保つ版に切り替えること
-b.to-bytes-str()（下記参照）、または基のスライスを直接使用。
-`
   'bytes.to-txt': `
 []byte.to-txt: []byte を txt に変換（255 バイトに切り詰め）
 返す out: 固定 256 バイトの txt 構造
@@ -3088,7 +3080,7 @@ yes: true=受信者が +inf または -inf；NaN、±0.0、有限数はすべて
 IEEE-754 の「NaN は自分と等しくない」性質で判定するため、あらゆる NaN（異なる payload 含む）が true。
 yes: true=受信者が NaN, false=有限数または ±inf
 `
-  'fmt': 'fmt — フォーマット付き入出力の標準ライブラリ\n\nprint/eprint/format/sprintf はコンパイラ組み込み（ForwardFunc）です。\n⚠️ printf/eprintf は削除されました：名前はシンボルテーブルに残ります（呼び出しは解決され、LSP も補完します）、\nただしいかなる呼び出しもハードコンパイルエラー [printf-depr] となり、print/io.out と eprint/io.err への移行を促します。\nこのファイルは純粋な Nolang で実装されたフォーマット補助関数を提供し、Python の format spec の部分集合をサポートします：\nfmt-parse-spec  — 指定文字列を解析する\nfmt-apply-spec  — 幅/配置/埋め込みを適用する\nfmt-uint-base   — 符号なし整数を指定された基数の文字列に変換する\nfmt-int         — 符号付き整数のフォーマット\nfmt-uint        — 符号なし整数のフォーマット\nfmt-f64         — 浮動小数点のフォーマット\nfmt-str         — 文字列のフォーマット\nfmt-bool        — ブール値のフォーマット\n\n指定文字列の構文（Python format spec の部分集合）:\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(左) >(右) =(符号の後の埋め込み) ^(中央)\nsign:   + -(空白)\ngrouping: ,(カンマ) _(アンダースコア)\ntype:   b o d x X p e E f F g G s t v\n\n実装上の注意（コンパイラ制限の回避策）:\n1. 条件ブロック内でのスカラー i64 出力パラメータへの代入は無効です（コンパイラのバグ）、\nそのため fmt-parse-spec はローカル -v 変数で計算し、最上位レベルで出力パラメータに代入します。\n2. with-cap() は型注釈がない場合、デフォルトで str ではなく vec を推論するため、\nローカルバッファは明示的に型注釈する必要があります。\n3. str の直接の添字書き込み（`s[i] = v`）は 2026-11-11 以降グローバルに無効化されています（with-cap の基底でさえ\n免除されなくなりました）；バイト単位の構築は常に `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-bytes-str()` を使用します。'
+  'fmt': 'fmt — フォーマット付き入出力の標準ライブラリ\n\nprint/eprint/format/sprintf はコンパイラ組み込み（ForwardFunc）です。\n⚠️ printf/eprintf は削除されました：名前はシンボルテーブルに残ります（呼び出しは解決され、LSP も補完します）、\nただしいかなる呼び出しもハードコンパイルエラー [printf-depr] となり、print/io.out と eprint/io.err への移行を促します。\nこのファイルは純粋な Nolang で実装されたフォーマット補助関数を提供し、Python の format spec の部分集合をサポートします：\nfmt-parse-spec  — 指定文字列を解析する\nfmt-apply-spec  — 幅/配置/埋め込みを適用する\nfmt-uint-base   — 符号なし整数を指定された基数の文字列に変換する\nfmt-int         — 符号付き整数のフォーマット\nfmt-uint        — 符号なし整数のフォーマット\nfmt-f64         — 浮動小数点のフォーマット\nfmt-str         — 文字列のフォーマット\nfmt-bool        — ブール値のフォーマット\n\n指定文字列の構文（Python format spec の部分集合）:\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(左) >(右) =(符号の後の埋め込み) ^(中央)\nsign:   + -(空白)\ngrouping: ,(カンマ) _(アンダースコア)\ntype:   b o d x X p e E f F g G s t v\n\n実装上の注意（コンパイラ制限の回避策）:\n1. 条件ブロック内でのスカラー i64 出力パラメータへの代入は無効です（コンパイラのバグ）、\nそのため fmt-parse-spec はローカル -v 変数で計算し、最上位レベルで出力パラメータに代入します。\n2. with-cap() は型注釈がない場合、デフォルトで str ではなく vec を推論するため、\nローカルバッファは明示的に型注釈する必要があります。\n3. str の直接の添字書き込み（`s[i] = v`）は 2026-11-11 以降グローバルに無効化されています（with-cap の基底でさえ\n免除されなくなりました）；バイト単位の構築は常に `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-str()` を使用します。'
   'fmt.eprintf': `
 削除済み（パースが通るよう名前だけ残している）— 呼ぶとコンパイルエラー。代わりに eprint（改行付き）か io.err（改行なし）を使う
 s: 書式文字列（本関数は削除済み、呼ぶとコンパイルエラー）

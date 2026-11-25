@@ -186,6 +186,17 @@ option {
     err(e error.err),
 }
 
+; option.pretty: 字面量風格的選項，ok → some(v)，nil/err → nil。
+; 不對 ok 承載做靜默 peel：呼叫端明確得到 'some(...)' 或 'nil'。
+; [pretty](#option.pretty)
+option.pretty = () (out str) {
+    self: {
+        ok -> out = 'some(' - it.pretty() - ')'
+
+        nil || err -> out = 'nil'
+    }
+}
+
 ; err: 建立結構化錯誤（別名 → std/err.new）
 ;
 ; `@ <path>.<fn> <alias>` 宣告一個全域可用的第二名稱：下面這一行讓

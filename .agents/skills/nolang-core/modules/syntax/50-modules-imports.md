@@ -220,7 +220,7 @@ v []i64 = with-len(100); ✅ length 100 slice
 ; `x str = with-cap(n)` + s.push(...) / s.push-str(...): GROWS in place (doubling
 ;    realloc) since 2026-11-12. You still cannot index-write a str (idxwrite), and
 ;    place-match only overwrites IN RANGE. For byte-exact assembly use a []byte:
-;      s = b.slice(0, used).to-bytes-str()
+;      s = b.slice(0, used).to-str()
 
 ; Output/formatting (no prefix)
 print('hello {n}'); ✅ auto-newline

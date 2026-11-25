@@ -404,7 +404,7 @@ read-line = () {
         }
         buf.len() > MCP-MAX-LINE -> break
     }
-    IOB.line = buf.to-bytes-str()
+    IOB.line = buf.to-str()
 
     ; 只有「撞到 EOF」且「一个字节都没拿到」才是真的流结束；
     ; 末行没有尾随换行时这里 n > 0，必须先交出去，下一轮再收 EOF。

@@ -427,7 +427,7 @@ int.to-str = () (out str) {
     n = .
     ; ... conversion logic using `n` (not `.` directly after first use)
     ; Allocate a `[]byte` buffer up front (`b []byte = with-cap-len(k, k)`) and
-    ; fill it by index; convert once at the end with `b.slice(0, used).to-bytes-str()`.
+    ; fill it by index; convert once at the end with `b.slice(0, used).to-str()`.
     ; Do NOT use `out str = with-cap(...)` + `out[i] = v`: `s[i] = v` on a str is a
     ; compile error (`idxwrite`) since 2026-11-11, with-cap base or not.
     ; The str length is read-only: read it with `.len()` / `.len-bytes()`,

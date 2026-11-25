@@ -47,7 +47,7 @@ read-one = () {
         }
         buf.len() > MAX-LINE -> break
     }
-    IOB.line = buf.to-bytes-str()
+    IOB.line = buf.to-str()
 }
 
 read-one()

@@ -214,7 +214,7 @@ func TestIndexWriteWiredIntoLints(t *testing.T) {
 //     與直接下標寫完全等價。早期把它一起豁免是過寬，讓 `hex[i * 2 + 1] = b`
 //     這類直寫在整個語料裡長期不受保護；2026-11-10 已全量收口。
 //   - `str`：2026-11-11 起全域禁直寫（見 TestIndexWriteStrWithCapReported）。
-//     逐位元組構造改走 `[]byte` + `to-bytes-str()`，原位變更走 `str.fill`。
+//     逐位元組構造改走 `[]byte` + `to-str()`，原位變更走 `str.fill`。
 
 // TestIndexWriteWithCapExempt 負例：with-cap 建立的 []byte 緩衝逐位元組直寫不得報。
 // （2026-11-11 前這個 fixture 用的是 `str`；str 退出豁免後改用 []byte，

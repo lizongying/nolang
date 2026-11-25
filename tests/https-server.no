@@ -161,7 +161,7 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
                 #{overflow=wrap}
                 recv-total = recv-total + rn
 
-                recv-buf = recv-buf-b.to-bytes-str()
+                recv-buf = recv-buf-b.to-str()
                 pos = recv-buf.index-from('hello from nolang https', 0)
                 pos >= 0 -> found = true
             }
@@ -304,7 +304,7 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
                 #{overflow=wrap}
                 recv-total = recv-total + rn
 
-                recv-buf = recv-buf-b.to-bytes-str()
+                recv-buf = recv-buf-b.to-str()
                 pos = recv-buf.index-from('hello from nolang https 1.2', 0)
                 pos >= 0 -> found = true
             }

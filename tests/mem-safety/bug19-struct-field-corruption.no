@@ -95,7 +95,7 @@ test-raw-b[16] = 0; null
 k <- [17..37): {
     test-raw-b[k] = 0
 }
-test-raw = test-raw-b.to-bytes-str()
+test-raw = test-raw-b.to-str()
 
 ; Safe: directly use parameter
 good-result = pass-direct(test-raw)

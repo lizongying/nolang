@@ -80,7 +80,13 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     }
 
     #{overflow=wrap}
-    boundary = MULTIPART-BOUNDARY-PREFIX - suffix-b.to-bytes-str()
+    tb0o = suffix-b.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    boundary = MULTIPART-BOUNDARY-PREFIX - tb0v
 }
 
 ; multipart-writer 結構體
@@ -722,6 +728,12 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     }
 
     ; 明文是任意位元組（可能含 >= 0x80），必須 1:1 拷貝；to-str() 會把每個 byte
-    ; 當碼點重新 UTF-8 編碼而膨脹。見 test/README.md §5.2 #88。
-    plain = opened.to-bytes-str()
+    ; 現已由 to-str() 1:1 原樣拷貝，不再有按碼點重編碼的膨脹問題。
+    tb1o = opened.to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    plain = tb1v
 }

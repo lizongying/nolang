@@ -27,7 +27,7 @@
 
 ; 往檔案追加字串（讀回舊內容再整檔覆寫；檔案不存在時從空字串開始）
 log-add = (path str, s str) {
-    old = fs.read-file(path).to-bytes-str()
+    old = fs.read-file(path).to-str()
     fs.write-file(path, (old - s).to-bytes())
 }
 
@@ -52,11 +52,11 @@ t-enter-fires = () {
         }
 
         ; 走到這裡時，注入的 a.enter() 已經執行完
-        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Ea', 'enter: 宣告後立刻被呼叫')
+        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-str() == 'Ea', 'enter: 宣告後立刻被呼叫')
     }
 
     ; 區塊結束只會補 leave（本型別沒實作 leave，故日誌不變）
-    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Ea', 'enter: 不會被重複呼叫')
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-str() == 'Ea', 'enter: 不會被重複呼叫')
 }
 
 ; 2. 不帶標註（推斷）的宣告同樣注入
@@ -73,10 +73,10 @@ t-enter-inferred = () {
         b = life{
             tag: 'b'
         }
-        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Eb', 'enter: 不帶標註的宣告也注入')
+        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-str() == 'Eb', 'enter: 不帶標註的宣告也注入')
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Eb', 'enter: 不帶標註的宣告只注入一次')
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-str() == 'Eb', 'enter: 不帶標註的宣告只注入一次')
 }
 
 ; 3. 由呼叫結果推斷的宣告同樣注入
@@ -95,7 +95,7 @@ t-enter-from-call = () {
 
     {
         c = mk-life('c')
-        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Ec', 'enter: 呼叫推斷的宣告也注入')
+        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-str() == 'Ec', 'enter: 呼叫推斷的宣告也注入')
     }
 }
 
@@ -118,7 +118,7 @@ t-enter-order = () {
         }
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'E1E2E3', 'enter: 三個變數按宣告順序各注入一次')
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-str() == 'E1E2E3', 'enter: 三個變數按宣告順序各注入一次')
 }
 
 ; 5. 巢狀區塊：內層宣告同樣被注入
@@ -139,7 +139,7 @@ t-enter-nested = () {
         }
     }
 
-    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'EoEi', 'enter: 巢狀區塊的宣告也被注入')
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-str() == 'EoEi', 'enter: 巢狀區塊的宣告也被注入')
 }
 
 runner.test('enter fires after annotated decl', t-enter-fires)

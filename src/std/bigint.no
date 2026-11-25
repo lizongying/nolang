@@ -1340,6 +1340,11 @@ bigint.normalize = () {
     }
 }
 
+; bigint.pretty: 字面量風格的十進制整數。
+bigint.pretty = () (out str) {
+    out = .to-str()
+}
+
 ; 將 bigint 轉為十進制字串
 ; 返回 out: 十進制字串（負數以 '-' 開頭，零為 "0"）
 ; [to-str](#bigint.to-str)
@@ -1350,7 +1355,13 @@ bigint.to-str = () (out str) {
     z = .is-zero()
     z -> {
         ob[0] = 48
-        out = ob.slice(0, 1).to-bytes-str()
+        tb0o = ob.slice(0, 1).to-str()
+        tb0v = tb0o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        out = tb0v
         return
     }
     out-n = 0
@@ -1430,7 +1441,13 @@ bigint.to-str = () (out str) {
             -> _
         }
     }
-    out = ob.slice(0, out-n).to-bytes-str()
+    tb1o = ob.slice(0, out-n).to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb1v
 }
 
 ; c = self + v（小整數加法）
@@ -1515,7 +1532,13 @@ bigint.to-hex = () (out str) {
     z = .is-zero()
     z -> {
         ob[0] = 48
-        out = ob.slice(0, 1).to-bytes-str()
+        tb2o = ob.slice(0, 1).to-str()
+        tb2v = tb2o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        out = tb2v
         return
     }
     hex = '0123456789abcdef'
@@ -1566,5 +1589,11 @@ bigint.to-hex = () (out str) {
             }
         }
     }
-    out = ob.slice(0, out-n).to-bytes-str()
+    tb3o = ob.slice(0, out-n).to-str()
+    tb3v = tb3o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb3v
 }

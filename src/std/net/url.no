@@ -292,6 +292,11 @@ url-info.set-query = (key str, value str) {
     .query = new-query
 }
 
+; url-info.pretty: 字面量風格的 URL。
+url-info.pretty = () (out str) {
+    out = .to-str()
+}
+
 ; 將 URL 重新組裝為字串
 ; 返回 out: 組裝後的完整 URL
 ; [to-str](#url.url-info.to-str)
@@ -435,7 +440,13 @@ url-encode = (s str) (out str) {
             }
         }
     }
-    out = out-b.slice(0, on).to-bytes-str()
+    tb0o = out-b.slice(0, on).to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
 }
 
 ; URL 編碼（元件模式，也編碼 / 和 ?）
@@ -521,7 +532,13 @@ url-encode-component = (s str) (out str) {
             }
         }
     }
-    out = out-b.slice(0, on).to-bytes-str()
+    tb1o = out-b.slice(0, on).to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb1v
 }
 
 ; URL 解碼（百分號解碼）
@@ -698,7 +715,13 @@ url-decode = (s str) (out str) {
             -> _
         }
     }
-    out = out-b.slice(0, on).to-bytes-str()
+    tb2o = out-b.slice(0, on).to-str()
+    tb2v = tb2o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb2v
 }
 
 ; 查詢字串建構

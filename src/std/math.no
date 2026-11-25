@@ -398,7 +398,13 @@ char-to-str = (c char) (out str) {
             n = 4
         }
     }
-    out = ob.slice(0, n).to-bytes-str()
+    tb0o = ob.slice(0, n).to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
 }
 
 ; 浮點轉字串：f64-to-str 函數已移除，改由 std/number.no 的 f64.to-str 方法

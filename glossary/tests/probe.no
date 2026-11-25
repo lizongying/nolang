@@ -182,7 +182,7 @@ probe-embed = () {
     }
 
     ; 内嵌内容应能被 noml.parse 接受
-    txt = F_INDEX.to-bytes-str()
+    txt = F_INDEX.to-str()
     pr = noml.parse(txt)
     pr: {
         ok -> pass-note('内嵌 index.noml 可被 noml.parse 解析')

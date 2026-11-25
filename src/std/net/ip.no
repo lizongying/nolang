@@ -173,6 +173,11 @@ ip-addr.from-str = (s str) (addr ?ip-addr) {
 ; 直接拼接四個十進位片段。舊實作靠 `out[n]: { ok -> it = 46 }` 在 len 處追加字元，
 ; 但索引寫入是**邊界檢查寫**：n == len-bytes() 時 safe-index 判越界（nil），
 ; 點號從未寫入，結果只剩第一個 octet（`192.168.1.1` → `192`）。
+; ip-addr.pretty: 字面量風格的 IP 地址。
+ip-addr.pretty = () (out str) {
+    out = .to-str()
+}
+
 ; out: 四段十進位以 '.' 串接的地址字串（如 '192.168.1.1'）
 ; [to-str](#ip.ip-addr.to-str)
 ip-addr.to-str = () (out str) {

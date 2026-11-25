@@ -1065,8 +1065,8 @@ byte 是独立类型，非 u8 别名，因此 []byte.len 不会从 []t.len 自�
 []byte.slice: 截取子切片 [start, end)
 返回新切片
 `
-  'bytes.to-bytes-str': `
-[]byte.to-bytes-str: 1:1 逐字节拷贝（保留原 []byte.to-str 语义）。
+  'bytes.to-str': `
+[]byte.to-str: 1:1 逐字节拷贝（保留原 []byte.to-str 语义）。
 用于 buf 已经是合法 UTF-8 字节流的场景（读取文件 / 子进程输出），不需要按码点重编码。
 该函数等价于旧版 []byte.to-str。
 `
@@ -1081,14 +1081,6 @@ byte 是独立类型，非 u8 别名，因此 []byte.len 不会从 []t.len 自�
   'bytes.to-hex-lower': '[]byte.to-hex-lower: 将 []byte 编码为小写十六进制字符串'
   'bytes.to-i64-be': '[]byte.to-i64-be: 将大端序字节转为 int64（1~8 字节）'
   'bytes.to-i64-le': '[]byte.to-i64-le: 将小端序字节转为 int64（1~8 字节）'
-  'bytes.to-str': `
-⚠️ 语义变更（2026-09-06，应需求方要求）：此前本方法是「1:1 逐字节拷贝」，是
-buf.to-str()（读取文件 / 子进程输出，buf 已是合法 UTF-8 字节流）所依赖的契约。
-改为「byte→码点→UTF-8 重新编码」后，对合法的多字节 UTF-8 字节流会做二次编码而损坏
-（例如磁盘上读到的 0xC3 0xA9 会被当成码点 0xC3、0xA9 各自重编码）。若需「原样拷贝
-合法 UTF-8 字节流」（文件 / 子进程读取场景），请改用保留了 1:1 拷贝语义的
-b.to-bytes-str()（见下方），或直接使用底层切片。
-`
   'bytes.to-txt': `
 []byte.to-txt: 将 []byte 转换为 txt（截断至 255 字节）
 返回 out: 固定 256 字节的 txt 结构
@@ -2433,7 +2425,7 @@ int 联合类型见 std/int.no；num 联合类型见 std/num.no；
 加上非零条件后才是无穷的充要条件（有限非零数 x+x!=x；NaN 的比较恒 false）。
 `
   'float.is-nan': '判断是否为 NaN'
-  'fmt': 'fmt — 格式化输入输出标准库\n\nprint/eprint/format/sprintf 为编译器内建函数（ForwardFunc）。\n⚠️ printf/eprintf 已移除：名称仍保留于符号表（调用仍可解析、LSP 仍可补全），\n但任何调用均为硬性编译错误 [printf-depr]，引导迁移至 print/io.out 与 eprint/io.err。\n本文件提供纯 Nolang 实现的格式化辅助函数，支持 Python format spec 的子集：\nfmt-parse-spec  — 解析规格字符串\nfmt-apply-spec  — 套用宽度/对齐/填充\nfmt-uint-base   — 将无符号整数按指定进制转为字符串\nfmt-int         — 有符号整数格式化\nfmt-uint        — 无符号整数格式化\nfmt-f64         — 浮点数格式化\nfmt-str         — 字符串格式化\nfmt-bool        — 布尔值格式化\n\n规格字符串语法（Python format spec 的子集）：\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(左) >(右) =(符号后填充) ^(居中)\nsign:   + -(空格)\ngrouping: ,(逗号) _(下划线)\ntype:   b o d x X p e E f F g G s t v\n\n实现备注（编译器限制的变通方案）：\n1. 在条件块内对标量 i64 输出参数赋值无效（编译器 bug），\n故 fmt-parse-spec 使用本地 -v 变量计算，并在最外层赋值给输出参数。\n2. with-cap() 在无类型注解时默认推断为 vec 而非 str，\n故本地缓冲区必须显式标注类型。\n3. 直接对 str 下标写入（`s[i] = v`）自 2026-11-11 起全局禁用（即便 with-cap 基底\n也不再豁免）；逐字节构造一律使用 `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-bytes-str()`。'
+  'fmt': 'fmt — 格式化输入输出标准库\n\nprint/eprint/format/sprintf 为编译器内建函数（ForwardFunc）。\n⚠️ printf/eprintf 已移除：名称仍保留于符号表（调用仍可解析、LSP 仍可补全），\n但任何调用均为硬性编译错误 [printf-depr]，引导迁移至 print/io.out 与 eprint/io.err。\n本文件提供纯 Nolang 实现的格式化辅助函数，支持 Python format spec 的子集：\nfmt-parse-spec  — 解析规格字符串\nfmt-apply-spec  — 套用宽度/对齐/填充\nfmt-uint-base   — 将无符号整数按指定进制转为字符串\nfmt-int         — 有符号整数格式化\nfmt-uint        — 无符号整数格式化\nfmt-f64         — 浮点数格式化\nfmt-str         — 字符串格式化\nfmt-bool        — 布尔值格式化\n\n规格字符串语法（Python format spec 的子集）：\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(左) >(右) =(符号后填充) ^(居中)\nsign:   + -(空格)\ngrouping: ,(逗号) _(下划线)\ntype:   b o d x X p e E f F g G s t v\n\n实现备注（编译器限制的变通方案）：\n1. 在条件块内对标量 i64 输出参数赋值无效（编译器 bug），\n故 fmt-parse-spec 使用本地 -v 变量计算，并在最外层赋值给输出参数。\n2. with-cap() 在无类型注解时默认推断为 vec 而非 str，\n故本地缓冲区必须显式标注类型。\n3. 直接对 str 下标写入（`s[i] = v`）自 2026-11-11 起全局禁用（即便 with-cap 基底\n也不再豁免）；逐字节构造一律使用 `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-str()`。'
   'fmt.eprintf': '已移除（名称保留供解析）——调用即编译错误，请改用 eprint（自动换行）或 io.err（不换行）'
   'fmt.fmt-apply-spec': `
 套用宽度、对齐与填充字符

@@ -149,11 +149,11 @@ func (t *CaptureFacts) Merge(other *CaptureFacts) {
 // Clone 複製本表並把鍵經 remap 換到副本節點（CloneProgram 的 remapSem 用；
 // 與 typeFacts 等三表同口徑）。空表回 nil，讓呼叫方的 nil 檢查自然跳過。
 //
-// ⚠️ 條目值只做淺拷貝：CaptureFact.Binds[i].Expr 仍指向**原始** AST 節點
-// （語義副表以原始指針為鍵，副本節點查不到型別——見 CaptureFact.Binds 的
-// 註解）。當下唯一消費方（checker 的 optunuse/ovfhndld 護欄）只讀
-// Inner/WasDeclared，不碰 Binds，故淺拷貝足夠；H0 軌若要在 merged 路徑
-// 消費 Binds，須連同 Expr 一並換鍵（S3-c 切換時處理）。
+// 條目值本身淺拷貝，但 CaptureFact.Binds[i].Expr 是**節點鍵**，必須和 map key
+// 一起換到副本：H0 軌的 lowerCaptureToHIR 會用它非破壞性地替換捕獲表達式
+// （substCaptureExprs）。只換 key 不換 Binds.Expr 時，CloneProgram 後的合併
+// 程式查到 fact 卻替換不到 `p[i]` 之類的節點，捕獲鏈的 ok 臂仍保留原始索引，
+// 與 AST 軌（解析期已就地換成 __cap_N）產出不同的 IR（nested-safe-index 案）。
 func (t *CaptureFacts) Clone(remap func(Node) Node) *CaptureFacts {
 	if t == nil || len(t.entries) == 0 {
 		return nil
@@ -168,6 +168,17 @@ func (t *CaptureFacts) Clone(remap func(Node) Node) *CaptureFacts {
 		}
 		if f != nil {
 			cp := *f
+			if len(cp.Binds) > 0 {
+				cp.Binds = append([]CaptureBind(nil), cp.Binds...)
+				for i := range cp.Binds {
+					if cp.Binds[i].Expr == nil || remap == nil {
+						continue
+					}
+					if nn := remap(cp.Binds[i].Expr); nn != nil {
+						cp.Binds[i].Expr = nn
+					}
+				}
+			}
 			out.entries[key] = &cp
 		} else {
 			out.entries[key] = nil

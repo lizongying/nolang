@@ -92,6 +92,11 @@ INF = 1.0 / 0.0
 i64.to-str = () (out str) {
 }
 
+; 數值 pretty：字面量風格（十進位）。
+i64.pretty = () (out str) {
+    out = .to-str()
+}
+
 ; i32 轉字串（隱式拓寬至 i64 後複用 i64.to-str 原生路徑）
 ; out: 十進位表示（隱式拓寬至 i64 後複用原生路徑）
 ; [to-str](#number.i32.to-str)
@@ -126,7 +131,13 @@ u64.to-str = () (out str) {
         z []byte = with-cap-len(1, 1)
 
         z[0] = 48
-        out = z.to-bytes-str()
+        tb1o = z.to-str()
+        tb1v = tb1o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        out = tb1v
         return
     }
     tmp = ru
@@ -174,7 +185,13 @@ u64.to-str = () (out str) {
             -> _
         }
     }
-    out = ob.slice(0, digits).to-bytes-str()
+    tb2o = ob.slice(0, digits).to-str()
+    tb2v = tb2o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb2v
 }
 
 ; u32 轉字串（隱式拓寬至 u64 後複用 u64.to-str）
@@ -617,7 +634,13 @@ f64.to-str = () (out str) {
                 -> _
             }
         }
-        out = ob.to-bytes-str()
+        tb3o = ob.to-str()
+        tb3v = tb3o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        out = tb3v
         return
     }
 
@@ -705,7 +728,13 @@ f64.to-str = () (out str) {
                 }
             }
         }
-        out = ob.to-bytes-str()
+        tb4o = ob.to-str()
+        tb4v = tb4o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        out = tb4v
         return
     }
 
@@ -790,7 +819,13 @@ f64.to-str = () (out str) {
             -> _
         }
     }
-    out = ob.to-bytes-str()
+    tb5o = ob.to-str()
+    tb5v = tb5o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb5v
     return
 }
 
@@ -886,7 +921,13 @@ f64.to-str-fixed = (precision i64) (out str) {
                     }
                 }
             }
-            out = obz.slice(0, total).to-bytes-str()
+            tb5o = obz.slice(0, total).to-str()
+            tb5v = tb5o: {
+                ok -> it
+
+                nil || err -> ''
+            }
+            out = tb5v
             return
         }
 
@@ -1036,7 +1077,13 @@ f64.to-str-fixed = (precision i64) (out str) {
             }
         }
     }
-    out = obf.slice(0, total).to-bytes-str()
+    tb6o = obf.slice(0, total).to-str()
+    tb6v = tb6o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb6v
 }
 
 ; 科學記號格式
@@ -1196,7 +1243,13 @@ f64.to-str-sci = (precision i64) (out str) {
                 -> _
             }
             obs1[pos] = 48
-            out = obs1.slice(0, total).to-bytes-str()
+            tb7o = obs1.slice(0, total).to-str()
+            tb7v = tb7o: {
+                ok -> it
+            
+                nil || err -> ''
+            }
+            out = tb7v
             return
         }
 
@@ -1450,7 +1503,13 @@ f64.to-str-sci = (precision i64) (out str) {
             -> _
         }
     }
-    out = obs2.slice(0, total).to-bytes-str()
+    tb8o = obs2.slice(0, total).to-str()
+    tb8v = tb8o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb8v
 }
 
 ; 通用格式（自動選擇定點或科學記號）
@@ -1485,7 +1544,13 @@ f64.to-str-general = (precision i64) (out str) {
                 }
             }
             obs3[pos] = 48
-            out = obs3.slice(0, 1 + neg).to-bytes-str()
+            tb9o = obs3.slice(0, 1 + neg).to-str()
+            tb9v = tb9o: {
+                ok -> it
+            
+                nil || err -> ''
+            }
+            out = tb9v
             return
         }
 
@@ -1760,7 +1825,13 @@ f64.to-str-general = (precision i64) (out str) {
                 -> _
             }
         }
-        out = obs4.slice(0, total).to-bytes-str()
+        tb10o = obs4.slice(0, total).to-str()
+        tb10v = tb10o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        out = tb10v
         return
     }
 
@@ -1799,7 +1870,13 @@ f64.to-str-general = (precision i64) (out str) {
                 #{overflow=wrap}
                 s.byte(end - 1) == 46 -> end = end - 1
             }
-            out = s.slice-bytes(0, end).to-bytes-str()
+            tb11o = s.slice-bytes(0, end).to-str()
+            tb11v = tb11o: {
+                ok -> it
+            
+                nil || err -> ''
+            }
+            out = tb11v
             return
         }
         out = s
@@ -1901,7 +1978,13 @@ f64.to-str-general = (precision i64) (out str) {
             -> _
         }
     }
-    out = obs5.slice(0, total).to-bytes-str()
+    tb12o = obs5.slice(0, total).to-str()
+    tb12v = tb12o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb12v
 }
 
 ; 數值寬度轉換方法（已取代、刪除舊的 math 函數形式）
@@ -3711,4 +3794,12 @@ u128.is-prime = () (yes bool) {
         lim = n / d
     }
     yes = true
+}
+
+f64.pretty = () (out str) {
+    out = .to-str()
+}
+
+f32.pretty = () (out str) {
+    out = .to-str()
 }

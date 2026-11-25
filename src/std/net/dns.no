@@ -450,9 +450,15 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     }
 
     ; Convert buffer to string and trim to actual length.
-    ; buf 已是 DNS 名稱的原始 ASCII 位元組流，需 1:1 原樣拷貝，故用 to-bytes-str()
-    ; （回傳 str）而非 to-str()（回傳 ?str、且會把每個位元組當碼點重新 UTF-8 編碼）。
-    name = buf.to-bytes-str()
+    ; buf 已是 DNS 名稱的原始 ASCII 位元組流，需 1:1 原樣拷貝，故用 to-str()
+    ; （回傳 ?str，下面明確解包）；它不會把每個位元組當碼點重新 UTF-8 編碼。
+    tb0o = buf.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    name = tb0v
     name = name.slice(0, buf-pos)
     {
         jumped -> next-pos = end-pos
@@ -662,8 +668,14 @@ resolve-from = (server str, domain str) (ip ?str) {
 
     ; 發送查詢
     ; DNS 封包是二進位位元組流（transaction ID 可能 >= 0x80），必須 1:1 拷貝，
-    ; 不能用按碼點重編碼的 to-str()，否則送出長度與內容都錯。見 §5.2 #88。
-    query-str = query.to-bytes-str()
+    ; to-str() 現在是 1:1 原樣拷貝，可安全用於二進位封包。
+    tb1o = query.to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    query-str = tb1v
     written = net.net-udp-sendto(fd, query-str, qlen, server, DNS-PORT)
     written < 0 -> {
         fs.close(fd)
@@ -727,8 +739,14 @@ resolve-all = (domain str) (ip ?str) {
     net.net-set-recv-timeout(fd, DNS-TIMEOUT)
 
     ; DNS 封包是二進位位元組流（transaction ID 可能 >= 0x80），必須 1:1 拷貝，
-    ; 不能用按碼點重編碼的 to-str()，否則送出長度與內容都錯。見 §5.2 #88。
-    query-str = query.to-bytes-str()
+    ; to-str() 現在是 1:1 原樣拷貝，可安全用於二進位封包。
+    tb2o = query.to-str()
+    tb2v = tb2o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    query-str = tb2v
     written = net.net-udp-sendto(fd, query-str, qlen, DNS-DEFAULT-SERVER, DNS-PORT)
     written < 0 -> {
         fs.close(fd)

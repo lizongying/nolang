@@ -227,7 +227,19 @@ char.to-str = () (s str) {
             n = 4
         }
     }
-    s = ob.slice(0, n).to-bytes-str()
+    tb0o = ob.slice(0, n).to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    s = tb0v
+}
+
+; char.pretty: 字面量風格的字符，如 "a"（雙引號）。
+; [pretty](#char.pretty)
+char.pretty = () (out str) {
+    out = '"' - .to-str() - '"'
 }
 
 ; 轉為 UTF-8 編碼的 txt（固定 256 字節結構）
@@ -290,6 +302,12 @@ char.to-txt = () (out txt) {
 
     ; tmp 已按 UTF-8 逐位元組填好，直接 1:1 拷成 str 即可。
     ; 舊寫法是 with-len(m) + out._set-byte(j, …) 逐位元組搬 —— str._set-byte
-    ; 已私有（raqvyltn 擋跨模組），而 to-bytes-str 正是同一語意的公開構造器。
-    out = tmp.to-bytes-str()
+    ; 已私有（raqvyltn 擋跨模組），而 to-str 正是同一語意的公開構造器。
+    tb1o = tmp.to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb1v
 }

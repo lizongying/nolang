@@ -468,7 +468,30 @@ vec-clear = () {
             #{overflow=wrap}
             last = last - 1
             i <- [0..self.len()): {
-                out = out - .[i].to-str()
+                out = out - .[i].pretty()
+
+                i < last -> out = out - ', '
+            }
+
+            out = out - ']'
+        }
+    }
+}
+
+; []t.pretty: 字面量風格的切片，元素遞迴 .pretty()。
+; [pretty](#vec.pretty)
+[]t.pretty = () (out str) {
+    {
+        .len() == 0 -> out = '[]'
+
+        -> {
+            out = '['
+            last = .len()
+
+            #{overflow=wrap}
+            last = last - 1
+            i <- [0..self.len()): {
+                out = out - .[i].pretty()
 
                 i < last -> out = out - ', '
             }

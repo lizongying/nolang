@@ -315,7 +315,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str(); também se pode usar b.to-bytes-str() (bloco inteiro)
+s = b.slice(0, k).to-str(); também se pode usar b.to-str() (bloco inteiro)
 
 ; ② SOBRESCRITA in-place do conteúdo existente: str.fill preenche todos os len bytes com o mesmo valor, comprimento inalterado
 s = 'hello'
@@ -402,7 +402,7 @@ s = with-cap-len(512, 64); str, len=64, cap=512
 
 > ⚠️ **Um buffer `str` nunca permite escrita direta por índice** (desde 2026-11-11, as bases `with-cap` também deixaram de estar isentas).
 > A isenção with-cap de `idxwrite` agora serve apenas **`[]byte` / `[]T` / arrays fixos**: os seus buffers com len=0 ainda crescem com `buf[i] = b` e não têm grafia equivalente.
-> Para `str`, passa a um buffer `[]byte` + `to-bytes-str()` (ver a secção〈Escrita por índice desativada〉).
+> Para `str`, passa a um buffer `[]byte` + `to-str()` (ver a secção〈Escrita por índice desativada〉).
 > `with-len(n)` / `with-cap-len(cap, len)` já têm o comprimento no lugar, **e a escrita exige place-match `buf[i]: { ok -> it = v / -> _ }` ou `buf[i] ?= v`** — tal como qualquer outro contentor, a escrita direta é
 > o erro de compilação `idxwrite`. (`with-len` deixou de estar isento a 2026-11-10.)
 

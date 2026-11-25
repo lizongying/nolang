@@ -313,7 +313,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str(); ou b.to-bytes-str()（tampon entier）
+s = b.slice(0, k).to-str(); ou b.to-str()（tampon entier）
 
 ; ② ÉCRASURE sur place du contenu existant : str.fill remplit les len octets avec la même valeur, longueur inchangée
 s = 'hello'
@@ -401,7 +401,7 @@ s = with-cap-len(512, 64); str, len=64, cap=512
 
 > ⚠️ **Un tampon `str` n'autorise jamais d'écriture directe par index** (depuis le 2026-11-11, les bases `with-cap` ne sont plus exemptées non plus).
 > L'exemption with-cap de `idxwrite` ne sert désormais plus qu'aux **`[]byte` / `[]T` / tableaux de taille fixe** : leurs tampons de len=0 croissent encore leur longueur via `buf[i] = b`, sans écriture équivalente de remplacement. Pour `str`, passez par un tampon `[]byte` +
-> `to-bytes-str()` (voir la section〈Écriture par index interdite〉).
+> `to-str()` (voir la section〈Écriture par index interdite〉).
 > Pour `with-len(n)` / `with-cap-len(cap, len)`, la longueur est déjà en place : **les écritures doivent passer par le place-match `buf[i]: { ok -> it = v / -> _ }` ou `buf[i] ?= v`** — comme pour tout autre conteneur, une écriture directe est l'erreur de compilation `idxwrite`. (`with-len` a cessé d'être exempté le 2026-11-10.)
 
 > **Inférence de type** : le type de résultat des trois syntaxes intégrées est inféré depuis le côté gauche de l'affectation ; elles peuvent servir pour `str` ou pour des tranches `[]T`.

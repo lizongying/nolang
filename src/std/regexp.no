@@ -1191,7 +1191,13 @@ regexp.find = (text str) (result str) {
                 #{overflow=wrap}
                 rb[j] = text.byte(sp + j)
             }
-            result = rb.to-bytes-str()
+            tb0o = rb.to-str()
+            tb0v = tb0o: {
+                ok -> it
+            
+                nil || err -> ''
+            }
+            result = tb0v
             return
         }
 

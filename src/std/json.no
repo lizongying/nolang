@@ -625,7 +625,7 @@ pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     est-cap < 1 -> est-cap = 1
 
     ; 在本地 []byte 緩衝逐位元組建構，最後存入 strs[node-idx]
-    ; （str 下標寫入已全域禁用；[]byte + to-bytes-str() 保留 1:1 位元組語義）
+    ; （str 下標寫入已全域禁用；[]byte + to-str() 保留 1:1 位元組語義）
     buf []byte = with-cap-len(est-cap, est-cap)
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> return
@@ -640,7 +640,13 @@ pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
             c == 34 -> {
 
                 ; 只取實際寫入的 j 個位元組（est-cap 為預估容量）
-                sv = buf.slice(0, j).to-bytes-str()
+                tb0o = buf.slice(0, j).to-str()
+                tb0v = tb0o: {
+                    ok -> it
+                
+                    nil || err -> ''
+                }
+                sv = tb0v
 
                 .strs[node-idx] ?= sv
 

@@ -995,7 +995,13 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 
                 ; DATA 影格: 追加到 body
                 ; str 的下標寫（含 ?= / place-match）已全域禁止；直接拼接 byte 字串
-                r.body = r.body - payload.to-bytes-str()
+                tb0o = payload.to-str()
+                tb0v = tb0o: {
+                    ok -> it
+                
+                    nil || err -> ''
+                }
+                r.body = r.body - tb0v
             }
         }
         ; 忽略其他影格類型

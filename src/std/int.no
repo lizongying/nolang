@@ -9,6 +9,12 @@
 
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 
+; int.pretty: 字面量風格的整數（十進位）。
+; [pretty](#int.pretty)
+int.pretty = () (out str) {
+    out = .to-str()
+}
+
 ; 整數轉字串（聯合類型方法，涵蓋所有整數類型）
 ; transpiler 會將 i64.to-str() 等解析為 int.to-str()
 ; 直接使用算術運算，避免 int → u64 的類型轉換問題
@@ -21,7 +27,13 @@ int.to-str = () (out str) {
         z []byte = with-cap-len(1, 1)
 
         z[0] = 48
-        out = z.to-bytes-str()
+        tb0o = z.to-str()
+        tb0v = tb0o: {
+            ok -> it
+        
+            nil || err -> ''
+        }
+        out = tb0v
         return
     }
     neg = 0
@@ -92,7 +104,13 @@ int.to-str = () (out str) {
     neg == 1 -> {
         ob[0] = 45
     }
-    out = ob.slice(0, total).to-bytes-str()
+    tb1o = ob.slice(0, total).to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb1v
 }
 
 ; 整數除法，回傳商（a ÷ b）

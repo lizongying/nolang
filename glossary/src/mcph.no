@@ -261,7 +261,7 @@ read-req = (c conn) (ok bool) {
     }
     HR.head-end < 0 -> return
 
-    head = acc.slice(0, HR.head-end).to-bytes-str()
+    head = acc.slice(0, HR.head-end).to-str()
     first = first-line(head)
     HR.method = nth-field(first, 0)
     HR.path = nth-field(first, 1)
@@ -292,7 +292,7 @@ read-req = (c conn) (ok bool) {
     ready = have2 >= need
     ready: {
         true -> {
-            HR.body = acc.slice(HR.head-end, need).to-bytes-str()
+            HR.body = acc.slice(HR.head-end, need).to-str()
             ok = true
         }
 

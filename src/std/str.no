@@ -3118,3 +3118,19 @@ str.to-txt = () (out ?txt) {
     t = txt.from-str(s)
     out = t
 }
+
+str.pretty = () (out str) {
+    out = '\'' - . - '\''
+}
+
+str.set-byte = (i i64, b byte) (out str) {
+    bs []byte = .to-bytes()
+    one []byte = [b]
+    bs = bs.slice(0, i) - one - bs.slice(i + 1, bs.len())
+    so = bs.to-str()
+    out = so: {
+        ok -> it
+
+        nil || err -> ''
+    }
+}

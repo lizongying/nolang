@@ -140,7 +140,7 @@ k = 0
 k <- [0..wlen): {
     tmp-b[k] = word[k]
 }
-tmp-word = tmp-b.slice(0, wlen).to-bytes-str()
+tmp-word = tmp-b.slice(0, wlen).to-str()
 print('after assign')
 print(tmp-word)
 

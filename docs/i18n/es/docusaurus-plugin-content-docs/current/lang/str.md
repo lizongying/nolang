@@ -313,7 +313,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str(); también vale b.to-bytes-str()（todo el trozo）
+s = b.slice(0, k).to-str(); también vale b.to-str()（todo el trozo）
 
 ; ② «sobrescribir» contenido existente in situ: str.fill rellena los len bytes con el mismo valor, sin cambiar la longitud
 s = 'hello'
@@ -394,7 +394,7 @@ s = with-cap-len(512, 64); str, len=64, cap=512
 > Los parámetros y los valores devueltos por `s.cap()` / `s.len-bytes()` son **`i64`** (la API pública no cambia), pero el descriptor guarda internamente len / cap como **`u32`**. La parte llamadora sigue viendo valores de 64 bits; la conversión la hace el compilador en la frontera del descriptor; véase ⟨Layout interno y API pública⟩. Las escrituras de campo como `s.len = n` / `s.cap = n` pasan también por esta frontera, por lo que no sobrescriben campos contiguos del header.
 
 > ⚠️ **El búfer de `str` nunca permite escritura directa por subíndice** (desde 2026-11-11, las bases `with-cap` tampoco están exentas).
-> La exención de `idxwrite` para with-cap ahora solo sirve a **`[]byte` / `[]T` / arreglos fijos**: sus búferes con len=0 siguen creciendo mediante `buf[i] = b` y no tienen una forma equivalente de hacerlo. Para `str`, use un búfer `[]byte` + `to-bytes-str()` (véase la sección ⟨Escritura por subíndice deshabilitada⟩).
+> La exención de `idxwrite` para with-cap ahora solo sirve a **`[]byte` / `[]T` / arreglos fijos**: sus búferes con len=0 siguen creciendo mediante `buf[i] = b` y no tienen una forma equivalente de hacerlo. Para `str`, use un búfer `[]byte` + `to-str()` (véase la sección ⟨Escritura por subíndice deshabilitada⟩).
 > Con `with-len(n)` / `with-cap-len(cap, len)` el len ya está colocado; **la escritura debe hacerse con place-match `buf[i]: { ok -> it = v / -> _ }` o con `buf[i] ?= v`** — igual que cualquier otro contenedor, la escritura directa es error de compilación `idxwrite`. (Desde 2026-11-10 `with-len` ya no está exento.)
 
 > **Inferencia de tipo**: el tipo de resultado de los tres intrínsecos se infiere del lado izquierdo de la asignación y se puede usar con `str` o con rebanadas `[]T`.

@@ -288,6 +288,11 @@ str-map.for-each = () (k str, v str) {
     }
 }
 
+; str-map.pretty: 字面量風格的映射。
+str-map.pretty = () (out str) {
+    out = .to-str()
+}
+
 ; 字串表示
 ; 格式如 `{name: Alice, age: 18}`
 ; out: 以 {鍵: 值, ...} 形式串出的可讀字串

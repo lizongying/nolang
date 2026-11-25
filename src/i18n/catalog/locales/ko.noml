@@ -2,6 +2,7 @@
 ; 키는 변경하지 마세요. `make i18n`이 소스에서 생성합니다.
 ; 형식 지정자(%s / %d / %q / %v)는 en과 정확히 일치해야 합니다.
 {
+  '04mmq0us': 'lencap struct: struct %s에서는 함수 %d 안에서 len/cap을 사용할 수 없습니다'
   '04tb4mwj': 'eq-raw: i1을 %s에 저장할 수 없습니다'
   '060maaj0': `
 오류: %v
@@ -27,6 +28,7 @@
 `
   '0qnjitgt': 'builtin %s: C 호출 사양이 없습니다'
   '0tjeipjr': '\'for init; cond; update\'은(는) 사용 중단되었습니다. 대신 쉼표 \',\'를 사용하세요'
+  '0ts2eetl': 'builtin %s: 값이 없습니다'
   '0x41uhua': '\'for i in ...\'은(는) 사용 중단되었습니다. 대신 \'i <- ...\'을(를) 사용하세요'
   '0z120eni': 'net-recv-nb: 첫 번째 인수의 데이터 포인터를 가져올 수 없습니다'
   '11069k6b': '%s'
@@ -49,10 +51,12 @@
   repository: %s
 
 `
+  '1j6i9o1o': 'slice 연산 수신자 슬롯'
   '1k6cdcgx': '타입 뒤에 \'.\'을(를) 기대했지만 %s을(를) 받았습니다'
   '1lg2qpwf': 'syslog: 첫 번째 인수를 C 문자열로 변환할 수 없습니다'
   '1lssiwyr': '제네릭 매개변수 이름을 기대했지만 %s을(를) 받았습니다'
   '1m1ocf8t': '지원되지 않는 호스트 %q입니다(github.com만 지원됩니다)'
+  '1plv4fne': 'str-from-vec 대상 슬롯'
   '1qz0p808': '종속성 키 %s 뒤에 모듈 경로가 없습니다'
   '1rk772tt': `
 src 디렉터리 생성 오류: %v
@@ -72,6 +76,7 @@ src 디렉터리 생성 오류: %v
 의존성 추가됨: %s = %s
 
 `
+  '21irdw5o': '$str_concat: 인수 타입이 일치하지 않습니다'
   '2243l8if': '..any는 표준 라이브러리에서만 허용되며 사용자 코드에서는 사용할 수 없습니다(함수: %s)'
   '238u1xr7': 'embed: []byte / [N]byte / fs.embed 선언만 지원됩니다. 타입 없는 선언이 지정되었습니다'
   '23ki71z9': 'Direct WASM 백엔드 사용 (LLVM 툴체인 불필요, 브라우저 호환)'
@@ -87,6 +92,7 @@ src 디렉터리 생성 오류: %v
   '2fke76na': 'wasm: 함수/code 개수가 일치하지 않습니다: 함수 %d개, code %d개'
   '2g4xt4m5': 'net-listen: 결과 슬롯이 없습니다'
   '2ixluoth': '테스트를 실행합니다.'
+  '2kqboupo': '지원되지 않는 builtin %s입니다'
   '2ls7kxqp': '함수 이름 “%s”을(를) 재할당할 수 없습니다'
   '2lsu55tb': '네이티브 wasm 모듈 %q이(가) package.noml의 dependencies에 선언되지 않았습니다. dependencies: [\'%s:^latest\'](또는 dev-dependencies)를 추가하고 npm install을 실행하세요'
   '2lxm8j4k': '백엔드:'
@@ -108,12 +114,15 @@ LLVM 툴체인을 찾을 수 없습니다
   Windows: winget install LLVM.LLVM
 
 `
+  '2xqxrts5': 'builtin %s 결과: %s'
+  '2ylupu1o': '지원되지 않는 수신자 타입 %s입니다'
   '309fjp3b': '\'as\' 뒤에 타입을 기대했지만 %s을(를) 받았습니다'
   '30pb3dos': '열거형 값 이름을 기대했지만 %s을(를) 받았습니다'
   '33exppv5': 'noml: 필드 %s: 숫자를 기대했지만 %T을(를) 받았습니다'
   '3604icnf': '%d번째 인수(“%s”): “%s”을(를) 기대하는 자리에 “%s” 타입의 순수 option 값을 전달하려면 명시적 언랩이 필요합니다(값에 대해 match하고 `-> it` arm 안에서 호출하세요). option 인수의 암시적 언랩은 허용되지 않습니다'
   '379z4njd': '“%s”은(는) 이 스코프에서 이미 선언되었습니다'
   '39o3yr8x': '지원되지 않는 sum 파일 버전 %q입니다(기대: %s)'
+  '3aeomnek': 'setfield 슬롯'
   '3b9bxfnt': '배열 \'%s\'의 %s 요소에 %s 값을 할당할 수 없습니다'
   '3bl2ts85': 'JS 빌드 오류: %w'
   '3ei0a0o0': '표현식을 기대했지만 nil을 받았습니다'
@@ -130,6 +139,7 @@ LLVM 툴체인을 찾을 수 없습니다
 
 `
   '3lu6n4np': '\'#{buildin}\'은(는) 컴파일러 소유 레이아웃 타입(str / vec / txt / arr)에만 적용되며, \'%s\'에서는 아무 효과가 없습니다. 삭제하세요.'
+  '3nktiaae': 'setfield: %q에서 필드 %q을(를) 찾을 수 없습니다(struct 키 %q)'
   '3owkeirf': '%s/%s의 릴리스 정보를 구문 분석하는 중: %w'
   '3pry7fmd': '쉼표 또는 오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   '3r03yk09': '\')\'를 기대했습니다'
@@ -160,11 +170,15 @@ Markdown(.md/.mdx)은 -md 를 줄 때만 처리합니다: 서식을 적용하는
   '4ewgvnbn': '\'->\' 연쇄 조건(a -> b -> c)은(는) 권장되지 않습니다. 조건을 &&/||로 합치거나 \'{ }\' 블록을 사용해 미묘한 스코프 버그를 피하세요'
   '4eyd78yc': '파일/디렉터리를 지정하지 않았고 workspace.noml 이 있으면,'
   '4g7bz9oy': 'net-accept-nb: (listen-fd)가 필요합니다'
+  '4hmw6w3i': 'borrow 인수 개수'
   '4m2w3mkd': 'vec.push: 수신자 슬롯이 없습니다'
   '4o348fh8': '범위를 닫는 \']\' 또는 \')\'를 기대했지만 %s을(를) 받았습니다'
   '4oy26jat': 'builtin %s: 결과 0에 슬롯이 없습니다'
   '4pj8z50l': '  JS 백엔드의 모듈 해석이므로 `# npm/<pkg>` 같은 ESM 임포트와 네이티브'
+  '4ptt84li': '%s: 인수 타입이 일치하지 않습니다'
+  '4qhyyund': '함수 %s 안에 알 수 없는 호출 대상 %s이(가) 있습니다'
   '4r3ghy7k': 'git/환경에서 미리 채움:'
+  '4rsqarsx': 'eprint txt 슬롯'
   '4scfdhhp': 'utime: 결과 슬롯이 없습니다'
   '4uv9dunu': 'str.clear: 수신자가 필요합니다'
   '4y6hz2la': 'embed: []byte / [N]byte / fs.embed 선언만 지원됩니다. %s이(가) 지정되었습니다'
@@ -176,6 +190,7 @@ Markdown(.md/.mdx)은 -md 를 줄 때만 처리합니다: 서식을 적용하는
   '5bj5o9ci': 'str.clear: 수신자 슬롯이 없습니다'
   '5blqb26x': '\')\'를 기대했습니다'
   '5ci3l7h9': '  no add nogit:v0.1.33@github.com/lizongying/notools'
+  '5cid832p': '알 수 없는 비공개 필드 builtin %s입니다'
   '5ckkrp9f': 'noml: 필드 %s[%d]: 종속성 요소는 문자열이어야 하는데 %T을(를) 받았습니다'
   '5eo1kvb9': 'noml: 필드 %s: 객체를 기대했지만 %T을(를) 받았습니다'
   '5i2q1afu': '  hint: 건너뛴 블록은 그대로 둡니다. 의도적인 의사 코드는 \'```no skip\' 또는 블록 안의 \'; nolang-fmt:skip\' 줄로 표시하세요'
@@ -199,8 +214,11 @@ Markdown(.md/.mdx)은 -md 를 줄 때만 처리합니다: 서식을 적용하는
   '5o3x4h4d': '최고 성능을 위해 경계 검사 생략 (안전하지 않음)'
   '5qjs01mp': '오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   '5qpe9buw': 'win-write-pipe: (handle, data)가 필요합니다'
+  '5ve092z6': '함수 %s에서 지원되지 않는 매개변수 타입 %s입니다'
+  '5yjn9wrj': 'setfield: %q에서 필드 %q을(를) 찾을 수 없습니다(option %q)'
   '603y6hgq': '각 패키지는 package.noml 의 dependencies(또는'
   '61bm2pzr': '모든 의존성을 최신으로 업데이트했습니다.'
+  '62z2cnfe': 'option 벗기기 슬롯'
   '63lrmg48': '표준 입력이 파이프면 (예 echo \'x=1\' | no fmt) 표준 입력에서 읽습니다.'
   '64bt3a50': 'Nolang 소스를 실행 파일로 빌드합니다.'
   '64t1vgh6': 'vec.remove: 수신자와 인덱스가 필요합니다'
@@ -220,9 +238,11 @@ Parser ASTVersion: %s
 캐시 항목 %d개를 삭제했습니다.
 
 `
+  '6o12uzmx': 'waitpid: windows에서는 지원되지 않습니다'
   '6p2o4902': '자산 %s이(가) 크기 제한(%d바이트)을 초과했습니다'
   '6qca9xu4': 'embed: 명시적 값과 함께 사용할 수 없습니다'
   '6svrp0le': '사용법: no fmt [flags] <file|dir>'
+  '6umfb8yv': 'builtin %s: %s'
   '6xq3uson': 'getgrouplist: 결과 2개(gids, n)가 필요합니다'
   '6y4tyjln': 'noml: 필드 %s: 지원되지 않는 대상 종류 %s입니다'
   '73myjkcm': '  no test                     tests/ 디렉터리의 모든 .no 실행'
@@ -230,6 +250,7 @@ Parser ASTVersion: %s
   '74e32kaz': '--llvm-capi 로 프로세스 내에서 LLVM C API 를 통해 IR 을 컴파일합니다 (비디버그 빌드 전용, 기본 꺼짐).'
   '755ldw47': 'extern 선언에서 오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   '75f5l5xg': 'load-le-%s: 대상 슬롯이 없습니다'
+  '75pom499': 'txt 대상 슬롯'
   '75qapexc': '%d번째 인수를 %s에서 %s(으)로 변환할 수 없습니다'
   '75yiyise': 'union %q에 대한 타입 match에는 타입 패턴(예: %q ->) 또는 기본 arm(->)이 필요합니다'
   '76fao0mm': `
@@ -243,6 +264,7 @@ Parser ASTVersion: %s
 `
   '7clod0r1': 'elif 안에 왼쪽 중괄호를 기대했지만 %s을(를) 받았습니다'
   '7dl1fkwt': 'WASM 빌드에서는 LLVM 툴체인을 사용할 수 없습니다. --wasm-direct 플래그를 사용하세요'
+  '7f3qhn9l': 'txt 인덱스 수신자 슬롯'
   '7f6c9808': `
 tests 디렉터리 생성 오류: %v
 
@@ -263,6 +285,7 @@ tests 디렉터리 생성 오류: %v
   '7tcn8wox': '예시:'
   '7usot77o': '한 부류의 문제에 자동 수정을 적용합니다: \'overflow\'(주석 없는 정수 연산에 #{overflow=wrap} 추가), \'redundant\'(추론 타입과 같은 타입 주석 제거, 예 `x str = \'\'` -> `x = \'\'`), \'match\'(망라적이지 않은 option match 에 빠진 nil/err 분기 추가), \'unwrap\'(밖으로 전파도 언랩도 되지 않는 option 바인딩 소비: 함수가 ?T 를 반환하면 `x ?= expr`, 아니면 `x-opt = expr` 와 다음 줄의 문 match `x-opt: { ok -> x = it -> }`), \'main\'(최상위 `main = () { ... }` 래퍼를 생략하고 본문 문을 최상위로 올림; main 에 인자/반환값이나 직접 return 이 있으면 생략), \'index-out\'(#{index-out=DEF} 읽기를 명시적 match 로 확장)'
   '7zfvvuin': '문제를 찾을 수 없습니다.'
+  '802t452i': 'builtin %s: option 결과를 %s 대상으로'
   '81b2ea3o': 'extern 선언에서 \'(\'를 기대했지만 %s을(를) 받았습니다'
   '82csl5ay': 'str.to-bool: 수신자가 없습니다'
   '82hkddyo': `
@@ -278,6 +301,7 @@ tests 디렉터리 생성 오류: %v
 
 `
   '87zc5awf': '%s의 읽기 전용 필드 \'%s\'를 수정할 수 없습니다. 길이는 버퍼에서 파생됩니다 — 대신 truncate(n)을(를) 사용하세요'
+  '8870qbob': '%s 안의 간접 호출 대상이 잘못되었습니다'
   '894luer5': '이 주석은 어디에도 붙지 않았습니다. 독립 주석으로 남기려면 뒤에 `...`(자리 표시자 문)을 추가하고, 아니면 옮기거나 삭제하세요'
   '89pwo0vg': 'noml: map 키는 문자열이어야 합니다: %T'
   '8apmtyk6': '입력 파일 읽기: %w'
@@ -289,6 +313,7 @@ tests 디렉터리 생성 오류: %v
   '8haww14h': 'write-file: 경로와 데이터가 필요합니다'
   '8j6njczi': 'extern 선언에서 쉼표 또는 오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   '8jsgdrcw': 'JS 생성 오류: %w'
+  '8k0xmfmo': 'str 인덱스 대상 슬롯(dst=%d type=%s)'
   '8ndov8z0': 'net-dial: (host, port)가 필요합니다'
   '8o5wqxi2': '왼쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   '8r4nnper': '  no add nogit@lizongying/notools                   호스트 기본값은 github.com'
@@ -296,6 +321,7 @@ tests 디렉터리 생성 오류: %v
 빌드됨: %s
 
 `
+  '8rjhajw9': '$str_concat: 인수 개수가 잘못되었습니다'
   '8sf1ugcv': 'noml: 지원되지 않는 값 타입 %T입니다'
   '8t1jaj02': '정수 연산 `a OP b` 에 `#{overflow = ...}` 주석이 없어 `%s` 가 오버플로 동작이 선언되지 않은 `?T` 에 묶입니다. 이 식이 속한 문장에 주석을 달아 오버플로 시 취할 값을 지정하세요: `#{overflow = wrap}`(조용한 랩어라운드) / `clamp0`(언더플로 시 0) / `min` / `max` / `saturate`(포화 클램프), 또는 `#{overflow = u8-max}` 같은 타입 접두사 형식. 주석은 문장 단위로 적용되며 option 소비는 별개의 문제입니다.'
   '8ux5w599': '`noc ast` 와 바이트 단위로 비교하므로 이 형식이 곧 규격입니다.'
@@ -327,6 +353,7 @@ tests 디렉터리 생성 오류: %v
   '9c615d3t': '제네릭 인수에 \',\' 또는 \'>\'를 기대했지만 %s을(를) 받았습니다'
   '9e82usj6': '종속성 %q: package.noml에서는 상대 경로(./ ../)를 허용하지 않습니다. 워크스페이스 상대 경로에는 \'/\' 접두사를 사용하세요'
   '9edsvha2': '압축을 해제한 아카이브에서 패키지 %s을(를) 찾을 수 없습니다'
+  '9emnu2fu': 'extern str 인수'
   '9ljl8qke': '레이블 #%s 뒤에 루프 본문을 기대했지만 \'(cond) { }\'가 없는 \'(\'를 받았습니다'
   '9novjn6s': '  no pack ./nogit                  패키지 디렉터리 묶기'
   '9onc0638': 'readlink: 경로를 C 문자열로 변환할 수 없습니다'
@@ -336,14 +363,17 @@ tests 디렉터리 생성 오류: %v
   '9v43hxr2': '오류 %d개, 경고 %d개, 힌트 %d개'
   '9yjr7gj6': 'struct 정의 안에 필드 이름을 기대했지만 %s을(를) 받았습니다'
   '9yqaweku': '  no fmt -w main.no           파일을 제자리에서 포맷'
+  'a2hjr26f': 'str 인덱스 수신자 슬롯'
   'a3duuqtg': '매개변수 타입을 기대했지만 %s을(를) 받았습니다'
   'a3yrogp1': '문자열 연결: “+” 대신 “-”을(를) 사용하세요'
   'a5247dgy': 'LLVM C API: IR용 메모리 버퍼 생성에 실패했습니다'
   'a7ee394w': 'win-find-first-file: 경로 인수가 필요합니다'
+  'a7wjyiq9': 'pipe: windows에서는 지원되지 않습니다'
   'aazb9b1n': 'option(?T) 페이로드를 option 구조체에 인라인할 바이트 임계값 — option 구조체 전체 크기 기준 (기본 264 = 1바이트 태그 + 7바이트 패딩 + 256바이트 페이로드, 최소 16). 이를 넘는 페이로드는 힙에 박싱'
   'aih7e3j0': 'nil을 비-option 변수 “%s”에 할당할 수 없습니다'
   'al7nsvgl': 'vec.insert: 수신자, 인덱스, 요소가 필요합니다'
   'aljknpjz': 'builtin %s: 알 수 없는 비트 연산입니다'
+  'am0g79ly': '%s: 인수가 없습니다'
   'amiajbn5': 'net-icmp-open: 결과 슬롯이 없습니다'
   'amyp0ig8': `
 최신 릴리스 확인 오류: %v
@@ -356,6 +386,7 @@ tests 디렉터리 생성 오류: %v
   'axj3m1pb': '표현식 시작 부분에 예상치 못한 \'as\'가 있습니다'
   'axtpo500': 'win-find-first-file: 경로를 C 문자열로 변환할 수 없습니다'
   'ayjrpinp': 'noml: DecodeInto에는 nil이 아닌 포인터가 필요하지만 %T을(를) 받았습니다'
+  'aywuxg5w': 'builtin %s 수신자 %s: %s'
   'aze4pgle': 'Markdown 파일(.md/.mdx) 안의 Nolang 코드 블록도 함께 서식 적용'
   'b1narysr': '바이너리'
   'b360mu4g': '매개변수 이름을 기대했지만 %s을(를) 받았습니다'
@@ -370,6 +401,7 @@ tests 디렉터리 생성 오류: %v
   'bbv2nbtt': '%q 뒤에 필드 타입을 기대했지만 %s을(를) 받았습니다'
   'beppq99h': 'builtin %s: 결과 슬롯이 없습니다'
   'bikq8xen': '출력 형식: file:line:col: [SEVERITY] source: message'
+  'bjj14xsi': 'lencap 슬롯'
   'bp7m5374': 'arr.zero: 수신자 슬롯이 없습니다'
   'bsaaq6j7': 'utime: 경로를 C 문자열로 변환할 수 없습니다'
   'bsnjql1o': 'HTML 출력 %s 쓰기: %w'
@@ -402,12 +434,14 @@ tests 디렉터리 생성 오류: %v
   'chnrcvcl': '수신 루프 \'<- ch: { ... }\'의 채널 이름 뒤에 \':\'를 기대했지만 %s을(를) 받았습니다'
   'chnrcvdt': '\'.\' 뒤에 필드 이름을 기대했지만 %s을(를) 받았습니다'
   'chnrcvex': '\'<-\' 뒤에 채널 이름을 기대했지만 %s을(를) 받았습니다'
+  'chwlna99': '내장 %s(으)로는 채널을 초기화할 수 없습니다. with-cap(n)을 사용하세요'
   'ci3l2aku': '브라우저에서 열기 (--js 필요)'
   'cjih2jtt': '함수 타입 별칭에 \'=\'를 기대했지만 %s을(를) 받았습니다'
   'ckaj3355': '알 수 없는 함수 “%s.%s”: 모듈 “%s”에 최상위 함수 “%s”이(가) 없습니다'
   'cldvfmqx': 'waitpid: pid, options가 필요합니다'
   'cn2p79sm': '%s:%d: Nolang 코드 블록을 건너뜀: %s'
   'cnsb9bys': 'import %s: 타입 %q은(는) %s에서도 정의됩니다. 최상위 #{name = \'...\'} 주석으로 구분하세요'
+  'coronowl': 'OpRun: 슬롯이 없습니다'
   'cotvjhmy': 'exec-shell: 명령을 C 문자열로 변환할 수 없습니다'
   'cpefnxwk': 'str-truncate: 수신자에 슬롯이 없습니다'
   'cpyd2teh': '%s@%s 다운로드 중: %w'
@@ -419,6 +453,7 @@ tests 디렉터리 생성 오류: %v
 메인 파일 쓰기 오류: %v
 
 `
+  'czinamrs': 'process-exec: windows에서는 지원되지 않습니다'
   'd1xzecbk': 'builtin get-arch: 결과 슬롯이 없습니다'
   'd4faltsr': '기본값'
   'd8en6a9j': 'MIR IR의 LLVM 검증에 실패했습니다: %v: %s'
@@ -469,6 +504,7 @@ AST 의존성 %s 동기화 오류: %v
   'efflaapc': '\'case\' 또는 \'default\'를 기대했지만 %s을(를) 받았습니다'
   'ehsahzu5': '  no vet src/std/            src/std/ 의 모든 .no 검증'
   'eit5cjgr': 'tar.gz 아카이브 압축 해제: %w'
+  'ejbt38ik': 'slice 연산 대상 슬롯'
   'elep1kra': '  no build                  현재 디렉터리 또는 workspace.noml 프로젝트 빌드'
   'elps0exp': '`...`는 아무 동작도 하지 않는 자리표시자 문장이며 값이 없으므로 식 위치에 쓸 수 없습니다(%d행). 블록 안에서 별도 줄에 쓰세요(예: `-> {` 줄바꿈 `    ...` 줄바꿈 `}`)'
   'elps0ln0': '`...`는 반드시 한 줄을 차지해야 합니다: %d행에서 `...` 앞에 코드가 올 수 없습니다. 별도 줄에 두거나 삭제하세요'
@@ -503,6 +539,7 @@ AST 의존성 %s 동기화 오류: %v
 `
   'fh3ukes8': 'net-set-recv-timeout: 결과 슬롯이 없습니다'
   'fixlabel': 'fix:'
+  'fk1sb6ss': 'syslog: windows에서는 지원되지 않습니다'
   'flfh2ueu': '잘못된 설치 대상 %q입니다: 리포지토리는 <host>/<owner>/<repo> 또는 <owner>/<repo>여야 합니다'
   'fs4qotyl': 'zip 아카이브 압축 해제: %w'
   'fu1ow141': '테스트 파일을 찾을 수 없습니다: '
@@ -532,6 +569,7 @@ AST 의존성 %s 동기화 오류: %v
   'ghvjbe8q': '잘못된 토큰 %q입니다'
   'gir1e4fn': 'net-udp-sendto: 호스트를 C 문자열로 변환할 수 없습니다'
   'giw7e5rb': '주석을 닫는 \'}\'를 기대했지만 %s을(를) 받았습니다'
+  'giy30qq2': 'OpRun: 알 수 없는 async 호출 대상 %q입니다'
   'gjsrgyn8': '-annotations 를 주면 포함됩니다.'
   'gl4bahpp': `
 clang을 찾을 수 없습니다. LLVM 툴체인이 완전히 설치되었는지 확인하세요
@@ -580,7 +618,9 @@ workspace.noml 에 '%s' 을(를) 등록했습니다
   'hr4y7owq': 'getgrouplist: %v'
   'htdgzowm': '  no fmt                      현재 디렉터리 포맷 (포맷이 필요한 파일 나열)'
   'hun7qbmc': '  no ast src/std/vec.no             vec.no 의 AST 출력'
+  'hvk8qwyj': 'borrow 대상 슬롯'
   'hvuu1dxx': '  no build --js -o app.js main.no                    JS 백엔드로 출력 경로 지정'
+  'hxy8tpyp': 'slice 연산 수신자 타입'
   'hzkv5tvl': '열거형 값 주석을 닫는 \'}\'를 기대했지만 %s을(를) 받았습니다'
   'hzv4zwx4': 'LLVM C API: 트리플 %q의 대상 머신 생성에 실패했습니다'
   'i0q22lpt': '쉼표 또는 오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
@@ -608,9 +648,11 @@ AST 캐시 디렉터리: %s
   'iky4xsx4': '메서드 “%s.%s”은(는) %d개의 반환값을 가지지만 인터페이스는 %d개를 기대합니다'
   'ippfc6p4': 'utime: path, atime, mtime이 필요합니다'
   'iqszywlc': 'wasm32-wasi 타깃은 $WASI_SYSROOT 를 wasi-sysroot 경로로 설정해야 합니다.'
+  'iqtr8mht': 'option 래핑 대상'
   'irjygycv': 'val() 생성자는 사용 중단되었습니다. 명시적 구성에는 ok(x)를, 암시적 할당에는 `name = expr`을(를) 사용하세요'
   'irnz2m56': '루프 본문을 여는 \'{\'를 기대했지만 %s을(를) 받았습니다'
   'is8zuoph': '  - src/ (소스 디렉터리)'
+  'itcnc2oz': '%s 안의 간접 호출 대상 슬롯이 없습니다'
   'iubb5mnf': '  no test -target x86_64-linux-gnu'
   'iykbgab6': 'vec.sort: 수신자가 필요합니다'
   'iyn3rgtm': '“self” (.)은(는) 구조체 메서드 내에서만 사용할 수 있습니다. match 값을 의미했다면 “it”을(를) 사용하세요'
@@ -622,6 +664,7 @@ AST 캐시 디렉터리: %s
   'j1onng8y': '쉼표 또는 오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   'j2lwz7pe': 'LLVM C API: %s에 실패했습니다'
   'j2n5poza': 'native bind=ffi(import %q)에는 바인딩할 #{c} extern 선언이 최소 하나 필요합니다'
+  'j312ij2o': '인덱스 대상 슬롯(dst=%d type=%s)'
   'j3r9pdsp': 'switch 표현식 뒤에 \'{\'를 기대했지만 %s을(를) 받았습니다'
   'j3u5n35e': '설치 대상이 비어 있습니다'
   'j42y1qyx': 'std 시그니처 수집: %w'
@@ -634,6 +677,7 @@ AST 캐시 디렉터리: %s
   'jko9phaw': 'LLVM 어셈블리에 실패했습니다: %w'
   'jl86npdd': '최신 릴리스 해석: %w'
   'jlv0jw10': '해석 경로:'
+  'jmamxa8i': 'lencap 대상 슬롯'
   'jppwnc4n': 'struct 이름 뒤에 \'{\'를 기대했지만 %s을(를) 받았습니다'
   'jpy06p6d': '워크스페이스에서 빌드 대상을 찾을 수 없습니다'
   'juu3smx0': '#{...} 주석은 노드 필드가 아니라 의미론 부가 표에 있으므로,'
@@ -647,10 +691,13 @@ AST 캐시 디렉터리: %s
   'k3g4ofs4': '포맷 결과 대신 컬러 차이 출력'
   'k3r7mbqd': 'else 절(혼자 한 줄에 있는 \'->\')은 if-group 안에 있어야 합니다. \'cond ->\' 절과 이 \'->\'를 함께 { ... } 로 감싸 주세요(else 가 없는 단독 \'cond ->\'는 감싸지 않아도 됩니다)'
   'k3xq7vna': 'builtin %s: 수신자 또는 소스가 없습니다'
+  'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 결과 슬롯이 없습니다'
   'k7m2q9xa': '__join-push: 작업 핸들이 없습니다'
   'k8je3usi': '%s이(가) 이미 존재하고 ES 모듈이 아닙니다("type": "module" 없음). 대신 출력을 .mjs로 내보내세요(no build --js -o out.mjs)'
   'k9179drd': '“%s”은(는) 함수이므로 호출해야 합니다. %s(...)을(를) 의도하셨나요?'
+  'k9270vd6': 'getfield 필드'
+  'ke8i906b': 'MIR->LLVM 패닉(복구됨, 레거시로 폴백): %v'
   'kfxfk3n1': '파일/디렉터리를 지정하지 않았고 표준 입력이 터미널이면:'
   'kg4qzfdu': '  no add nogit@github.com/lizongying/notools        최신 릴리스'
   'ki6qzzsx': '  --json           구조화 JSON 진단 출력 (CI/도구용)'
@@ -666,8 +713,10 @@ AST 캐시 디렉터리: %s
   'kzomgjsg': '~match 문이 비어 있습니다'
   'kzsepkro': '모듈 %s 로드: %w'
   'p7mn4vta': '모듈 %s 로드: package.noml 의존성이 없습니다'
+  'p7prettymiss': 'print의 %d번째 인자(타입 \'%s\')에 .pretty() 메서드가 없습니다'
   'q3wz8hkb': '모듈 %s 로드: AST 패키지 의존성이 아닙니다'
   'l0ifbo16': 'zip 아카이브가 압축 해제 크기 제한(%d바이트)을 초과했습니다'
+  'l1ypawem': 'str-from-vec: 잘못된 타입 %s -> %s'
   'l332fwh9': `
 워크스페이스를 %s 에 초기화했습니다
 
@@ -692,6 +741,7 @@ AST 캐시 디렉터리: %s
 %s 에서 ESM 출력 제공 (Ctrl+C 로 중지)
 
 `
+  'lx7lbupc': 'indexstore 슬롯'
   'lzgs7cds': '  no fmt -fix=redundant main.no   중복 타입 주석 제거 미리보기'
   'm0nvgkbt': '인자는 다음 순서로 확인합니다:'
   'm13ljyfp': '\'no vet src/std\' 용으로 이미 파싱한 std Program AST 재사용 (실험적, 모듈별 재파싱 생략)'
@@ -721,11 +771,13 @@ utils.no 쓰기 오류: %v
   'm8blb8q2': 'noml: %d행 %d열: %s'
   'mbnaky32': '레지스트리 인증 토큰 (미사용: 업로드 미구현)'
   'meket0n4': 'vec.clear: 수신자 슬롯이 없습니다'
+  'mf29f4fh': 'clone 슬롯'
   'mgnh35fz': 'builtin %s: %s 결과를 %s 슬롯에 저장할 수 없습니다'
   'mh9jwcfu': '  no fmt -loop-style=suffix f.no  루프를 \'{ } (cond)\' / \'{ } * N\' 로 표기'
   'mhfvvp1u': '종속성 깊이 제한을 초과했습니다(%d): %s@%s'
   'mi13i3vc': '오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   'mimqybn2': 'vec.pop: 수신자가 필요합니다'
+  'mkpo3f8h': 'utf8-at 대상 슬롯'
   'mlm7xpcj': '`%s %s= %s`은(는) 사용 중단되었습니다. 바깥 함수에 option 결과가 있으므로 저장 시 `no fmt`가 `?=` 형식으로 다시 작성합니다(복합 할당의 우변은 이제 `?T`이며 `?=`를 거쳐 언랩 또는 전파됩니다)'
   'mlyz11mg': '--js-runtime <cmd> 로 `no run --js` 의 JS 런타임을 고릅니다 (node, bun, deno 등).'
   'mmcrtoio': '사용법: no add <tool>[:<version>]@<host>/<owner>/<repo>'
@@ -734,10 +786,12 @@ utils.no 쓰기 오류: %v
   'mv6ox1tw': 'uname: 결과 슬롯이 없습니다'
   'mw127e39': '배열 타입에 \']\'를 기대했지만 %s을(를) 받았습니다'
   'mwhgbhbp': '  패키지 임포트(#{bind = ffi|wasm})가 해석되므로 실패하지 않습니다 — LLVM 은'
+  'mz7tmynt': 'builtin %s: 수신자가 없습니다'
   'mzwb28br': '포맷 문자열의 정의되지 않은 변수 “%s”'
   'mzxtskah': 'eq-raw: (receiver, b, n)가 필요합니다'
   'n00utq2q': 'process-exec: 인수를 C 문자열로 변환할 수 없습니다'
   'n08bzk5j': '결과는 `no add <tool>@<host>/<owner>/<repo>` 가 내려받는 바로 그 파일입니다:'
+  'n0hl9vde': 'builtin %s의 %d번째 인수: %s'
   'n0mlfmt1': 'fmt: -fix applies to Nolang sources only; .noml files have no automatic fixes'
   'n0mlfmt2': 'cannot format %s: %d problem(s), file left unchanged'
   'n0mlfmt3': `
@@ -772,6 +826,7 @@ and left unchanged. -fix does not apply to them.
   'ne9gyl5c': '  no run --js main.no            JS 백엔드로 빌드 후 node 로 실행'
   'ne9kyew7': 'FFI 이름 뒤에 \'=\'를 기대했지만 %s을(를) 받았습니다'
   'nejhwtgd': '의존성이 없습니다.'
+  'ngj8b3uj': 'utime: windows에서는 지원되지 않습니다'
   'nh8jhhz7': 'std AST: %w'
   'nik0cll9': '\'for cond { }\'은(는) 사용 중단되었습니다. 대신 \'{ } (cond)\' 루프를 사용하세요'
   'njsutn36': '인터페이스에 메서드 이름을 기대했지만 %s을(를) 받았습니다'
@@ -809,6 +864,7 @@ and left unchanged. -fix does not apply to them.
   'ocsanpe6': '잘못된 설치 대상 %q입니다: 도구 이름에 경로 구분자를 포함할 수 없습니다'
   'oh0vy2qd': '멤버 %q: 객체 리터럴의 타입이 없습니다(#{type = \'<struct>\'}로 주석하세요)'
   'oi4vt42g': '순환 종속성을 감지했습니다: %s'
+  'ojuksusl': 'option 래핑 슬롯'
   'okt5tvxy': `
 Zig 컴파일러를 찾을 수 없습니다
   macOS: brew install zig
@@ -818,10 +874,12 @@ Zig 컴파일러를 찾을 수 없습니다
 `
   'ol0l3ova': '타입 “%s”을(를) 찾을 수 없습니다. “%s.%s”을(를) 의도하셨나요?'
   'ol21t36r': '  no run --js --js-runtime bun main.no     위와 같되 bun 사용 (node, bun, deno 등)'
+  'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '정수 나눗셈 또는 나머지 연산의 제수가 리터럴 상수 0입니다. 이는 LLVM에서 정의되지 않은 동작(0으로 나누는 sdiv/srem)이며 예측할 수 없는 결과를 낳습니다. 런타임 0 검사를 추가하거나, 함수가 실패를 option으로 반환하도록 하세요.'
   'oraub2m9': '`%s %s= %s`은(는) 지원되지 않습니다. 인덱스 읽기는 option(범위를 벗어나면 nil)을 반환하므로, 복합 할당은 인덱스를 두 번 평가하고 실패를 버리게 됩니다'
   'orjs902d': '\'switch/case/default\'은(는) 사용 중단되었습니다. 대신 \'x: { 1-> ... }\'을(를) 사용하세요'
   'os0j8ix4': '배열 \'%s\'의 %s 요소에 %s 값을 할당할 수 없습니다'
+  'osrb7a78': 'move 슬롯'
   'oswu0as1': '조건 표현식에 \':\'를 기대했지만 %s을(를) 받았습니다'
   'oxgtqeo0': 'write-file: 결과 슬롯이 없습니다'
   'oyfkw3qi': '(설정되지 않음)'
@@ -829,8 +887,10 @@ Zig 컴파일러를 찾을 수 없습니다
   'p1ujpxwi': 'vec.remove: 수신자 슬롯이 없습니다'
   'p215kqvl': 'cancelled: i1을 %s에 저장할 수 없습니다'
   'p2epl19k': 'option이 아닌 변수 \'%s\'에 nil을 할당할 수 없습니다'
+  'p2m0wxh1': 'exec-shell: windows에서는 지원되지 않습니다'
   'p56zjfhi': '\'%s\'의 타입을 추론할 수 없습니다: %s()에는 왼쪽의 명시적 타입 주석이 필요합니다(예: `name []byte = %s(n)`)'
   'p763k84p': '%s 생성: %w'
+  'p9dt2hwe': 'builtin %s 수신자 %s'
   'p9jv1dcz': 'workspace.noml이 비어 있습니다'
   'pa3bgtjn': '브라우저 ESM import map 의 CDN 베이스 (기본 https://esm.sh; package.noml 의 compiler.esm-cdn 으로도 설정 가능)'
   'paiorrdo': '--lang에는 값이 필요합니다(예: --lang=zh-cn)'
@@ -843,6 +903,7 @@ Zig 컴파일러를 찾을 수 없습니다
   'pibk34ed': 'sum 파일 마셜링: %w'
   'plsdygti': '타입 match의 arm 패턴 %q은(는) union %q의 멤버가 아닙니다'
   'pne07fog': '멤버 %q[%d]: 배열에 객체와 스칼라가 섞여 있습니다. #{type = \'[]<elem>\'}로 주석하세요'
+  'prohiujy': 'getgroups: windows에서는 지원되지 않습니다'
   'puql0oxg': 'getgrouplist: 결과 슬롯이 없습니다'
   'pxxxqtg6': '\'{\'를 기대했습니다'
   'pyo62z10': 'get-priority: which, who가 필요합니다'
@@ -887,6 +948,7 @@ lib.no 쓰기 오류: %v
   'r1wo1izg': '  # npm/lodash.get as get    이름 있는/내보낸 바인딩 하나'
   'r28q9t6z': '레이블 #%s 뒤에 루프 본문을 기대했지만 %s을(를) 받았습니다'
   'r315uabz': 'net-send: 첫 번째 인수의 데이터 포인터를 가져올 수 없습니다'
+  'r4mh5mrg': 'waitpid-nohang: windows에서는 지원되지 않습니다'
   'r4ng3f0r': '\'for\' 키워드는 컨테이너 반복에 사용할 수 없습니다. 대신 \'%s <- xs:\'를 사용하세요'
   'r5fkc5h1': '  no build --js --browser main.no                    브라우저용 JS + HTML 생성'
   'r60tokvf': '다중 변수 목록 뒤에 \'=\'를 기대했습니다'
@@ -901,6 +963,7 @@ lib.no 쓰기 오류: %v
   'rhajr9l9': '사용 중단: str.len 프로퍼티가 제거되었습니다. 바이트 길이는 s.len-bytes(), 코드 포인트 개수는 s.len()을(를) 사용하세요'
   'rkd2pw8p': '프로세스 내 LLVM C API 컴파일에 실패했습니다(%s=0으로 비활성화): %w'
   'rlfpckc0': '인터페이스 메서드 이름 뒤에 \'(\'를 기대했지만 %s을(를) 받았습니다'
+  'rn4mb8sc': 'builtin %s: 수신자에 슬롯이 없습니다'
   'rocoxbru': '~match 표현식 뒤에 \'{\'를 기대했지만 %s을(를) 받았습니다'
   'rolk5ods': '열거형 값 주석을 닫는 \'}\'를 기대했지만 %s을(를) 받았습니다'
   'roqeis8q': '왼쪽 중괄호를 기대했지만 %s을(를) 받았습니다'
@@ -912,11 +975,14 @@ lib.no 쓰기 오류: %v
   'ruwo1dvw': 'cancel: 작업 핸들이 없습니다'
   'rw998t51': 'win-wsa-startup: 결과 슬롯이 없습니다'
   's116sd0b': '빌드 오류: %w'
+  's28lrleh': 'MIR codegen이 %s을(를) 처리할 수 없습니다: %s'
   's8gh6opt': '컴파일 오류: %w'
   'sbiepwk2': '\'case\' 또는 \'default\'를 기대했지만 %s을(를) 받았습니다'
   'sciigwn4': '인터페이스 메서드에 결과 이름을 기대했지만 %s을(를) 받았습니다'
   'sckw2o8b': '계수 루프 본문을 여는 \'{\'를 기대했지만 %s을(를) 받았습니다'
   'sd13rw1l': '함수 타입 별칭의 \'=\' 뒤에 \'(\'를 기대했지만 %s을(를) 받았습니다'
+  'sehpprvy': 'builtin %s: 잘못된 값 타입 %s입니다'
+  'seta2gk3': 'builtin %s: 수신자 슬롯이 없습니다'
   'sgk4yra9': '해당 파일, 디렉터리 또는 패키지가 없습니다: %s'
   'sh7h3f59': `
 워크스페이스 파일 쓰기 오류: %v
@@ -928,11 +994,13 @@ lib.no 쓰기 오류: %v
   'sm0xomza': 'str.to-bool: 결과 슬롯이 없습니다'
   'sm7rjfcm': '변수 \'%s\'이(가) 중복되었습니다'
   'so08hhvh': 'embed: 디렉터리가 비어 있습니다: %s (해석 경로: %s)'
+  'soo3tmk2': 'borrow된 %s 매개변수의 move는 MIR 백엔드에서 지원되지 않습니다'
   'soq2h6t2': 'extern 선언에 매개변수 이름을 기대했지만 %s을(를) 받았습니다'
   'squ5w5co': '--js 와 함께 --browser 를 주면 브라우저용 JS 와 HTML 래퍼를 생성합니다.'
   'srpc0cgx': '--js --browser 로 브라우저용 JS + HTML 을 생성하고 기본 브라우저로 엽니다.'
   'ssddj3qk': '%s의 체크섬이 일치하지 않습니다: 기대 %s, 실제 %s(설치를 중단합니다)'
   'sstb7ij2': '주석을 닫는 \'}\'를 기대했지만 %s을(를) 받았습니다'
+  'stbjgjqz': 'builtin %s 고정 배열 %s'
   'su2q9at6': '사용법: no test [<file>]'
   'suhqncsk': '  1. 기존 .no 파일        -> 그 파일을 실행'
   'sv3fw1hp': `
@@ -948,6 +1016,8 @@ AST 묶음 완료: %s
 의존성 %s 을(를) 찾을 수 없습니다.
 
 `
+  't5qq2leo': 'lencap kind: %s(%s)에 대한 len/cap은 함수 %d에서 지원되지 않습니다'
+  't5rup04t': 'move 소스 슬롯 v%d -> v%d'
   't8440cno': '환경 변수: NOLANG_AST_CACHE_OFF=1 이면 캐시 비활성, NOLANG_AST_CACHE_DIR 이 디렉터리를 대체합니다.'
   'tb2zxq0f': '\'%s.%s []T\'은(는) 허용되지 않습니다: 필드 타입은 \'%s\'의 타입 정의에 속합니다. 필드에 저장하려면 \'%s.%s = ...\'로 작성하세요'
   'tbfsq7ph': '  no pub                       dist/<name>-ast.zip 쓰기'
@@ -974,6 +1044,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'tho8xc47': '생성된 파일:'
   'tjwokiw9': '배열 리터럴에서 쉼표 또는 오른쪽 대괄호를 기대했지만 %s을(를) 받았습니다'
   'tlwmf1le': 'Nolang 에서는 명시적 타입 캐스트 `expr %s` 를 허용하지 않습니다. 안전한 확장/동일 폭 변환에는 선언 형식 `name %s = expr` 을 사용하세요'
+  'tmiibvan': 'builtin %s: 대상 슬롯이 없습니다'
   'tmqnqq9x': '종속성을 찾을 수 없습니다: %q이(가) package.noml의 dependencies에 선언되지 않았습니다'
   'tnj4py6b': '동기화할 의존성이 없습니다.'
   'tosnl9r7': '횟수와 루프 본문 사이에 \'*\'를 기대했지만 %s을(를) 받았습니다'
@@ -986,6 +1057,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'ttdybn5d': 'fmt: -md 와 -fix 는 함께 쓸 수 없습니다(자동 수정은 .no 소스에만 적용)'
   'ttlxcrgt': '범위 표현식에 \'[\' 또는 \'(\' 또는 문자열을 기대했지만 %s을(를) 받았습니다'
   'u0g1w0d7': 'js 호환 모듈을 찾을 수 없습니다: %s'
+  'u3g4qexx': 'builtin %s: 잘못된 인수 타입 %s입니다'
   'u3if6wak': '  no fmt -fix=match -w src/       빠진 match 분기를 제자리에서 보충'
   'u4oybn9r': '%s이(가) 이미 설치되어 있습니다(%s). 재설치하거나 업데이트하려면 -u를 사용하세요'
   'u5qmp19f': 'option match는 모든 분기를 처리해야 합니다: err, nil, ok (누락: %s)'
@@ -1013,6 +1085,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'ux1lstn1': 'unix-listen: 결과 슬롯이 없습니다'
   'ux1lstn2': 'unix-listen: 경로를 C 문자열로 변환할 수 없습니다'
   'uzugz5vn': '디렉터리는 자동으로 재귀 처리됩니다.'
+  'uzzd8eqi': 'get-line: 결과가 없습니다'
   'v0avn8e4': '검증 통과'
   'v0thbcmv': '매개변수 이름을 기대했지만 %s을(를) 받았습니다'
   'v1a6rxna': '쉼표 또는 오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
@@ -1025,6 +1098,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'v7zs1nru': '포맷 지정자 \'s\'는 str/bool/정수 타입이 필요한데 \'%s\'을(를) 받았습니다(지정자: %q)'
   'v8tulbl4': '프로젝트:'
   'v9hnqn6w': 'import %q: ESM(npm) import는 JS 백엔드에서만 지원됩니다. `no build --js` 또는 `no run --js`로 다시 빌드하세요(지정자 %q은(는) 네이티브 바이너리에 링크할 수 없습니다)'
+  'v9milo3k': 'getgrouplist: windows에서는 지원되지 않습니다'
   'vas3pyce': '패키지 레지스트리 URL (미사용: 업로드 미구현)'
   've2dzkxe': '  no test -timeout 90 test/std   디렉터리 전체를 순차 실행; 파일마다 90초 상한'
   'vekjerf5': '내장 StdFS에서 std 모듈을 찾을 수 없습니다: %s'
@@ -1035,10 +1109,14 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'vffhhi55': '출력 파일 경로'
   'vgfb39et': 'std AST: %s 읽기: %w'
   'vgljm585': 'builtin %s: ?str 결과는 %%option 슬롯을 기대했지만 %s을(를) 받았습니다'
+  'vgxfhc6x': 'sysctl: windows에서는 지원되지 않습니다'
+  'vh7osqp5': '%s에 피호출자가 없습니다'
   'vhmg22wa': '의존성을 동기화하는 중...'
   'vhpiqfim': '부동 소수점 범위 경계는 지원되지 않습니다. 정수를 사용하세요'
+  'vhpl1qzt': 'slice 연산 인수 개수'
   'viuznngf': 'net-udp-recvfrom: 첫 번째 인수의 데이터 포인터를 가져올 수 없습니다'
   'vjj66evx': '인자가 없으면 현재 디렉터리의 main.no 를 실행합니다.'
+  'vjkycl6v': 'utf8-at 수신자 슬롯'
   'vkq3r0r2': '`# npm/lodash.get as get` 또는 `# npm/lodash.default as d`. 둘 다'
   'vm9uj5g4': 'builtin %s: raw str이 %s 슬롯에 저장되었습니다'
   'vmp8s7tq': 'value match(`subject: { arms }`)는 문장 수준의 구조이며, 대입의 오른쪽(괄호로 감싸는 것은 선택 사항)에만 나타날 수 있습니다. 연산자의 피연산자, 함수 인자, 비교, 반환값 또는 리터럴과 같은 식 내부에서는 사용할 수 없습니다. 먼저 결과를 변수에 바인딩한 다음 사용하세요: `v = subject: { ok -> it ... }`, 그다음 `v`를 사용하세요.'
@@ -1053,12 +1131,15 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
 
 `
   'w3k1bwpp': '제네릭 매개변수에서 \',\' 또는 \'>\'를 기대했지만 %s을(를) 받았습니다'
+  'w6av3lqe': 'builtin %s: 소스 타입이 잘못되었습니다 %s'
   'w6xtqb7k': 'net-listen: (host, port)가 필요합니다'
   'w6zt4h9c': '다중 변수 목록 뒤에 \'=\'를 기대했습니다'
   'w826wv42': '  no run foo                   패키지 \'foo\' 실행 (workspace.noml 기준)'
+  'w9ajg8ow': 'eprint는 str/i64/byte/char/bool 인수를 기대했지만 %s을(를) 받았습니다'
   'wbsevkfk': '  no fmt -d main.no           컬러 차이 표시'
   'wcbo6a01': '변형 주석을 닫는 \'}\'를 기대했지만 %s을(를) 받았습니다'
-  'wcoza64y': '  no build --option-payload-inline-threshold=16 main.no   16바이트보다 큰 ?T 페이로드를 모두 박싱'
+  'wcoza64y': '  no build --option-inline-threshold=16 main.no   8바이트보다 큰 ?T 페이로드를 모두 박싱'
+  'wd8mx0q7': '피호출자가 nil입니다'
   'wdk3k728': '결과 매개변수 \'%s\'(?T)이(가) 함수 본문에서 읽히지만 한 번도 할당되지 않았습니다 — 초기화되지 않은 nullable 결과 매개변수를 사용하게 됩니다'
   'wdpztov8': 'LLVM C API: 비어 있는 IR'
   'wekxh2lc': '인터페이스 “%s”: 알 수 없는 부모 인터페이스 “%s”'
@@ -1070,6 +1151,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'wk4p8399': 'getgroups: 결과가 2개(gids, n) 필요합니다'
   'wlbc2ct9': 'import %q: 소스 코드에서는 상대 경로(./ ../)를 허용하지 않습니다. 워크스페이스 별칭이나 원격 패키지 식별자를 사용하세요'
   'wlcp0pp6': '잘못된 ESM 패키지 지정자 %q입니다'
+  'wmq5sd19': 'builtin %s에 대해 제거된 LLVM 인트린식 %s'
   'wnskovpc': '계수 루프에서 \'*\' 앞에 정수 횟수를 기대했지만 %s을(를) 받았습니다'
   'wo778frg': 'bool.to-str: %%str-long을 %s(으)로 변환할 수 없습니다'
   'wo8qw0ac': '표준 라이브러리 소스:'
@@ -1079,11 +1161,14 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'wu70c4w0': 'workspace.noml 의 모든 프로젝트가 병렬로 빌드됩니다.'
   'ww5ngyyh': 'win-create-process: (cmdline, dir, stdin, stdout, stderr)가 필요합니다'
   'x51zwxlr': '#{%s} 지시문 뒤에 식별자를 기대했지만 %s을(를) 받았습니다'
+  'x57xvqny': '함수 %s에서 지원되지 않는 값 타입 %s입니다'
   'x649sxw4': 'embed: 디렉터리 %s 읽기에 실패했습니다: %w'
   'x6snirjy': '사용법: no ast [-annotations] <file>'
   'x6swm2kk': '“%s”은(는) 소문자와 하이픈만 사용해야 합니다'
   'x6tqaeqp': '인터페이스 메서드에 매개변수 이름을 기대했지만 %s을(를) 받았습니다'
+  'x8bk3eqw': 'getfield 슬롯'
   'xczzji7g': '왼쪽 중괄호를 기대했지만 %s을(를) 받았습니다'
+  'xe32iowe': 'term'
   'xev7d0na': `
   ast  %s %s
 
@@ -1102,13 +1187,17 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'xmicjezl': '정수 연산 `a OP b` 에 `#{overflow = ...}` 주석이 없어 오버플로 시 동작이 선언되지 않았습니다. 이 식이 속한 문장에 주석을 달아 오버플로 시 취할 값을 지정하세요: `#{overflow = wrap}`(조용한 랩어라운드) / `clamp0`(언더플로 시 0) / `min` / `max` / `saturate`(포화 클램프), 또는 `#{overflow = u8-max}` 같은 타입 접두사 형식. 주석은 문장 단위로 적용되므로 이웃 문장에 쓴 주석은 여기에 적용되지 않습니다.'
   'xo6e53hm': '배열 \'%s\'의 읽기 전용 필드 \'len\'을 수정할 수 없습니다'
   'xpp5i92s': 'option match는 모든 분기를 처리해야 합니다: err, nil, ok (누락: %s)'
+  'xqz68d5m': 'builtin %s 인수 개수'
   'xrmnmwf4': '\':\'를 기대했지만 %s을(를) 받았습니다'
   'xsstot9b': 'net-recv-nb: (fd, buf, n)가 필요합니다'
   'xtblgfzq': '숫자 리터럴에 %s을(를) 호출하는 것은 중복입니다. 대상 타입을 직접 쓰세요(예: %s)'
+  'y1t4g09v': 'lencap 타입'
   'y23ty9w4': 'release: 값이 필요합니다'
   'y2vkykls': 'eq-raw: 결과 슬롯이 없습니다'
   'y4yjmhz2': 'builtin %s: 알 수 없는 LLVMConv 종류 %d'
   'y4yxzacz': 'builtin %s: 스크래치 버퍼가 구체화되지 않았습니다'
+  'y5f921sg': 'txt 인덱스 대상 슬롯(dst=%d type=%s)'
+  'y8ieefsr': 'builtin %s: 잘못된 인수'
   'y9lj5a9g': '매개변수 이름 또는 타입을 기대했지만 %s을(를) 받았습니다'
   'yevhjra2': 'LLVM C API: %s에 실패했습니다: %s'
   'yf6kxdmz': '문은 단순한 리터럴 값일 수 없습니다. 함수를 호출하거나 변수에 할당하세요'
@@ -1120,6 +1209,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
 `
   'ygx2q6sp': 'builtin chars-new: 결과 슬롯이 없습니다'
   'yh8904fm': '할당 연산자를 기대했지만 %s을(를) 받았습니다'
+  'yhg5vw4v': 'borrow 소스 슬롯'
   'yhin5u09': 'native 정책: %w'
   'yj5ek705': '왼쪽 중괄호를 기대했지만 %s을(를) 받았습니다'
   'yjiapu40': 'builtin %s: 결과가 없습니다'
@@ -1137,8 +1227,10 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'z68vr2e2': 'builtin %s: %d번째 인수를 C 문자열로 마셜링할 수 없습니다'
   'z87sn8u5': '쉼표 또는 오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   'z8rfu6gf': 'WASM 출력 %s 쓰기: %w'
+  'z9tyfwf5': 'move에 대상이 없습니다'
   'zae1l26t': '%s 쓰기: %w'
   'zc1zfsat': '익명 함수 타입 문법 \'()\'은(는) 비활성화되어 있습니다. 이름 있는 함수 타입 별칭을 사용하거나 package.noml에서 \'anonymous-fn-type\'을(를) 활성화하세요'
+  'zcelvmmy': 'OpAwait: 슬롯이 없습니다'
   'zdbv29a2': `
 브라우저에서 열었습니다: %s
 
@@ -1147,6 +1239,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'zlotlakj': '  no fmt -d src/              src/ 의 모든 .no 차이 표시'
   'zm1ivicl': '루프 본문 문을 기대했지만 %s을(를) 받았습니다'
   'zm87x8w0': '디렉터리면 그 안의 모든 .no 를 검증합니다.'
+  'zodppsnm': 'MIR->LLVM: %s'
   'zpeqou62': 'CI 에서 `no add` 가 받아 갈 자산을 만듭니다:'
   'zpgykko6': '%s에서 main.no를 찾을 수 없습니다'
   'zql6tu9p': '워크스페이스 로컬 종속성 경로 %q을(를) 찾을 수 없습니다'
@@ -1160,5 +1253,5 @@ AST 의존성 %s 동기화 오류: 모듈이 비어 있음
 
 `
   'zzcfoc04': 'dist 디렉터리 생성: %w'
-  'stridxwr': 'cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-bytes-str()`'
+  'stridxwr': 'cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-str()`'
 }

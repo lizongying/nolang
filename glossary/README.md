@@ -276,7 +276,7 @@ k = 0
 }
 ```
 
-改成 `[]byte` + `buf.push(...)` + `to-bytes-str()` 复制即完全正确。修法建议：
+改成 `[]byte` + `buf.push(...)` + `to-str()` 复制即完全正确。修法建议：
 `std/noml` 的 `parse-raw` / `quote` 改用 `[]byte` 构造。在修好之前，
 `glossary check` 会把这类损坏报成 WARN（`--strict` 下直接失败），不至于静默出货。
 

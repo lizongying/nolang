@@ -187,7 +187,13 @@ path.join = (b str) (out str) {
 
     #{overflow=wrap}
     olen = off + bs
-    .p = o-b.slice(0, olen).to-bytes-str()
+    tb0o = o-b.slice(0, olen).to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    .p = tb0v
     out = .p
 }
 
@@ -218,7 +224,13 @@ path.base = () (out str) {
         #{overflow=wrap}
         ob[i] = .p.byte(start + i)
     }
-    out = ob.slice(0, out-n).to-bytes-str()
+    tb1o = ob.slice(0, out-n).to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb1v
 }
 
 ; 取出路徑的目錄部分
@@ -301,7 +313,13 @@ path.ext = () (out str) {
         #{overflow=wrap}
         ob[i] = .p.byte(start + i)
     }
-    out = ob.slice(0, out-n).to-bytes-str()
+    tb2o = ob.slice(0, out-n).to-str()
+    tb2v = tb2o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb2v
 }
 
 ; 路徑判斷
@@ -511,7 +529,13 @@ path.clean = () {
 
             ; ⚠ 必須按 on 重新取一次：緩衝的長度是配置上界 n，回退段之後實際內容
             ; 只到 on，整塊取用會把歷史尾巴一起帶出去（實測 'abc/../de' → 'dec'）。
-            .p = o-b.slice(0, on).to-bytes-str()
+            tb3o = o-b.slice(0, on).to-str()
+            tb3v = tb3o: {
+                ok -> it
+            
+                nil || err -> ''
+            }
+            .p = tb3v
         }
     }
 }
@@ -550,7 +574,13 @@ path.split = () (f str) {
         #{overflow=wrap}
         f-b[i] = .p.byte(start + i)
     }
-    f = f-b.to-bytes-str()
+    tb4o = f-b.to-str()
+    tb4v = tb4o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    f = tb4v
 
     ; 原地修改 .p 為目錄部分
     {

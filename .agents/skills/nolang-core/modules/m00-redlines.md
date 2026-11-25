@@ -21,7 +21,7 @@
 
 ## 语言（写 `.no` 前必读）
 
-- 🔴 **索引写全域禁用**：`s[i] = v` / `t[i] = c`。变长走 `push` 家族（`str.push` / `push-str`；`txt.push` / `push-str` / `push-txt`），原位覆写走 `fill` 或 place-match，逐字节构造走 `[]byte` + `to-bytes-str`。
+- 🔴 **索引写全域禁用**：`s[i] = v` / `t[i] = c`。变长走 `push` 家族（`str.push` / `push-str`；`txt.push` / `push-str` / `push-txt`），原位覆写走 `fill` 或 place-match，逐字节构造走 `[]byte` + `to-str`。
 - 🔴 空 `str` 的 `data == NULL`：`eq(x, n)` 在 `n > 0` 直接崩 ⇒ 空串断言一律 `n = 0`。
 - 🔴 `t[i]` / `s[i]` 越界读是 `err` 不是 `-1`：断言 tag，不要断言兜底值。
 - 🔴 不写 `free`（deferred move + 作用域退出自动销毁）；协程用 `co` 或协程组 `{}`，`go` **不是**关键字。

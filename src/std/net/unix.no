@@ -251,7 +251,13 @@ unix-conn.recv-all = () (content str, total i64) {
         #{overflow=wrap}
         total = total + chunk-n
     }
-    content = cb.to-bytes-str()
+    tb0o = cb.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    content = tb0v
 }
 
 ; 設定接收逾時

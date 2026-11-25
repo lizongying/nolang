@@ -23,7 +23,7 @@ s-b []byte = with-cap-len(3, 3)
 s-b[0] = 97
 s-b[1] = 98
 s-b[2] = 99
-b.s = s-b.to-bytes-str()
+b.s = s-b.to-str()
 {
     b.s.len() == 3 -> print('ok: str field grow from null')
 

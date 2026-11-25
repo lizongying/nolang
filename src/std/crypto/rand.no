@@ -49,5 +49,11 @@ rand-str = (state i64, n i64) (s str) {
             -> "A"
         }
     }
-    s = sb.to-bytes-str()
+    tb0o = sb.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    s = tb0v
 }

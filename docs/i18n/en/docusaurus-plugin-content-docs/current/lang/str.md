@@ -337,7 +337,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str(); or b.to-bytes-str() for the whole buffer
+s = b.slice(0, k).to-str(); or b.to-str() for the whole buffer
 
 ; (2) in-place OVERWRITE of existing content: str.fill writes one value into all
 ;     len bytes, length unchanged
@@ -441,7 +441,7 @@ s = with-cap-len(512, 64)       ; str, len=64, cap=512
 > `with-cap` bases are no longer exempt either). The `idxwrite` with-cap exemption
 > now only serves **`[]byte` / `[]T` / fixed arrays**: their len=0 buffers still
 > grow their length via `buf[i] = b`, and there is no equivalent spelling. For
-> `str`, switch to a `[]byte` buffer + `to-bytes-str()` (see the "Subscript Writes
+> `str`, switch to a `[]byte` buffer + `to-str()` (see the "Subscript Writes
 > Are Banned" section).
 > `with-len(n)` / `with-cap-len(cap, len)` already have their length in place, so
 > **stores require place-match `buf[i]: { ok -> it = v / -> _ }` or `buf[i] ?= v`**

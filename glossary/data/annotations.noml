@@ -225,7 +225,7 @@ F-INDEX []byte
 #{embed='/glossary/data/index.noml'}
 F-INDEX []byte
 
-src = F-INDEX.to-bytes-str()
+src = F-INDEX.to-str()
 `
       related: ['annotation', 'embed-dir-unusable']
       refs: ['glossary/tests/probe.no', 'src/std/embed.no']

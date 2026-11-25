@@ -7343,7 +7343,7 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 	// 两条路径互斥（no build 会把 ?= 降糖成 place-match；no vet 保留
 	// UnwrapAssignStatement），但共用同一条消息与 i18n key，口径一致。
 	strIdxWriteMsg := func() string {
-		return i18n.T("stridxwr", "cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-bytes-str()`")
+		return i18n.T("stridxwr", "cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-str()`")
 	}
 
 	// structFields 局部建表（理由同 ValidateUnhandledIndex）。
@@ -7418,7 +7418,7 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		// 就跨出配置區（見 codegen 的 ensureStrLongBuffer 增長護欄）。現在把這條
 		// 豁免整條撤掉：
 		//   - 逐位元組「構造」：一律 `x []byte = with-cap-len(n, n)` + `x[i] = b`
-		//     + `x.slice(0, k).to-bytes-str()`（或 `x.to-bytes-str()`）；
+		//     + `x.slice(0, k).to-str()`（或 `x.to-str()`）；
 		//   - 原位「變更」：`s.fill(val byte)` / place-match；
 		//   - 增長：`s.push(c char)` / `s.push-str(s str)`（str）、
 		//     `t.push(c char)` / `t.push-str(s)` / `t.push-txt(t)`（txt）。
@@ -9227,6 +9227,46 @@ func stdCallResultType(fn parser.Expression) string {
 	return ""
 }
 
+// prettyMissingTraceID marks a printed value whose type has no .pretty()
+// implementation. Checking here keeps the source line/column of the argument.
+const prettyMissingTraceID = "p7prettymiss"
+
+// hasStdPrettyType reports whether a source-level type name has a std .pretty()
+// method. Option payloads are accepted: MIR owns option rendering. Unknown
+// user-defined types must provide their own .pretty() method.
+// hasPrettyForType reports whether either a std implementation or a
+// user-defined `<Type>.pretty()` method exists. validationFuncTypes is
+// populated for the current ValidatePrintFormat pass, so this avoids
+// flagging a user struct that already implements its own literal rendering.
+func hasPrettyForType(t string) bool {
+	if hasStdPrettyType(t) {
+		return true
+	}
+	if t == "" {
+		return true
+	}
+	_, ok := validationFuncTypes[t+".pretty"]
+	return ok
+}
+
+func hasStdPrettyType(t string) bool {
+	if t == "" || strings.HasPrefix(t, "?") {
+		return true
+	}
+	switch t {
+	case "str", "txt", "char", "byte", "bool",
+		"i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
+		"int", "f32", "f64", "float", "double",
+		"bigint", "uuid", "ip-addr", "url-info", "str-map":
+		return true
+	}
+	if strings.HasPrefix(t, "[]") || strings.HasPrefix(t, "[") {
+		return true
+	}
+	return false
+}
+
 func isPrintFormatCall(fnName string) bool {
 	switch fnName {
 	case "print", "eprint", "format", "printf", "eprintf", "sprintf",
@@ -9362,6 +9402,19 @@ func checkPrintFormatInExpr(expr parser.Expression, varTypes map[string]string, 
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			if isPrintFormatCall(ident.Value) && len(e.Arguments) > 0 {
 				results = append(results, validatePrintFormatCall(e, varTypes, structFields)...)
+				for i, arg := range e.Arguments {
+					argType := inferExprType(arg, varTypes, validationFuncTypes, "")
+					if argType == "" || hasPrettyForType(argType) {
+						continue
+					}
+					pos := arg.Pos()
+					results = append(results, ValidateResult{
+						TraceID: prettyMissingTraceID,
+						Line:    pos.Line,
+						Column:  pos.Column,
+						Message: fmt.Sprintf("print argument %d of type '%s' has no .pretty() method", i+1, argType),
+					})
+				}
 			}
 			// print has an option-aware runtime helper; eprint does NOT — its
 			// backend path accepts only scalars/str/txt. Catch a bare option

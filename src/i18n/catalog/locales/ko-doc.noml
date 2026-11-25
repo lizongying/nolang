@@ -1238,8 +1238,8 @@ byte 는 u8 의 별칭이 아니라 별개의 타입이므로 []byte.len 은 []t
 새 슬라이스를 반환한다
 
 `
-  'bytes.to-bytes-str': `
-[]byte.to-bytes-str: 1:1 바이트 단위 복사（원래 []byte.to-str의 의미 유지）。
+  'bytes.to-str': `
+[]byte.to-str: 1:1 바이트 단위 복사（원래 []byte.to-str의 의미 유지）。
 buf가 이미 합법적 UTF-8 바이트 열인 상황(파일 읽기 / 자식 프로세스 출력)에 쓴다. 코드포인트별 재인코딩 불필요.
 본 함수는 구 []byte.to-str과 동등.
 `
@@ -1254,14 +1254,6 @@ buf가 이미 합법적 UTF-8 바이트 열인 상황(파일 읽기 / 자식 프
   'bytes.to-hex-lower': '[]byte.to-hex-lower: []byte 를 소문자 16 진 문자열로 인코드한다'
   'bytes.to-i64-be': '[]byte.to-i64-be: 빅엔디언 바이트를 int64 로 변환한다(1~8 바이트)'
   'bytes.to-i64-le': '[]byte.to-i64-le: 리틀엔디언 바이트를 int64 로 변환한다(1~8 바이트)'
-  'bytes.to-str': `
-⚠️ 의미 변경(2026-09-06, 요구 측 요청에 따라): 이전에 본 메서드는 '1:1 바이트별 복사'였는데, 이는
-buf.to-str()（파일 / 서브프로세스 출력 읽기, buf는 이미 유효한 UTF-8）이 의존하는 계약.
-'byte→코드포인트→UTF-8 재인코딩'으로 바꾼 뒤, 합법적 다중 바이트 UTF-8 바이트 흐름은 이중 인코딩으로 파괴됨
-(예컨대 디스크에서 읽은 0xC3 0xA9가 코드포인트 0xC3, 0xA9로 각각 재인코딩됨). '원본 그대로 복사'가 필요하면
-합법적 UTF-8 바이트 흐름(파일 / 자식 프로세스 읽기 상황)은 1:1 복사 의미를 보존한 쪽을 쓸 것
-b.to-bytes-str()（아래 참조）, 또는 기초 슬라이스를 직접 사용.
-`
   'bytes.to-txt': `
 []byte.to-txt: []byte를 txt로 변환（255바이트로 잘라냄）
 반환 out: 고정 256바이트 txt 구조
@@ -3080,7 +3072,7 @@ yes: true=수신자가 +inf 또는 -inf; NaN, ±0.0, 유한수는 모두 false
 IEEE-754의 'NaN은 자기와 같지 않다' 성질로 판정하므로, 어떤 NaN(다른 payload 포함)이든 true.
 yes: true=수신자가 NaN, false=유한수 또는 ±inf
 `
-  'fmt': 'fmt — 형식화된 입출력 표준 라이브러리\n\nprint/eprint/format/sprintf은 컴파일러 내장 함수(ForwardFunc)입니다.\n⚠️ printf/eprintf는 제거되었습니다: 이름은 심볼 테이블에 남아 있습니다(호출은 여전히 해석되고, LSP도 완성됨),\n그러나 모든 호출은 하드 컴파일 오류 [printf-depr]이며, print/io.out과 eprint/io.err로의 마이그레이션을 안내합니다.\n이 파일은 순수 Nolang로 구현된 형식화 보조 함수를 제공하며, Python format spec의 부분집합을 지원합니다:\nfmt-parse-spec  — 사양 문자열을 파싱\nfmt-apply-spec  — 너비/정렬/채움 적용\nfmt-uint-base   — 부호 없는 정수를 주어진 진법의 문자열로 변환\nfmt-int         — 부호 있는 정수 형식화\nfmt-uint        — 부호 없는 정수 형식화\nfmt-f64         — 부동소수점 형식화\nfmt-str         — 문자열 형식화\nfmt-bool        — 불리언 형식화\n\n사양 문자열 구문 (Python format spec 부분집합):\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(왼쪽) >(오른쪽) =(부호 뒤 채움) ^(가운데)\nsign:   + -(공백)\ngrouping: ,(쉼표) _(밑줄)\ntype:   b o d x X p e E f F g G s t v\n\n구현 참고 (컴파일러 제한 우회):\n1. 조건 블록 내에서 스칼라 i64 출력 매개변수에 대입하면 효과가 없습니다(컴파일러 버그),\n따라서 fmt-parse-spec은 로컬 -v 변수로 계산하고 최상위 수준에서 출력 매개변수에 대입합니다.\n2. with-cap()은 형식 주석이 없을 때 기본적으로 str 대신 vec를 추론하므로,\n로컬 버퍼는 명시적으로 형식 주석을 달아야 합니다.\n3. str의 직접 첨자 쓰기(`s[i] = v`)는 2026-11-11부터 전역적으로 비활성화되었습니다(with-cap 기저조차\n더 이상 예외가 아님); 바이트 단위 구성은 항상 `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-bytes-str()`를 사용합니다.'
+  'fmt': 'fmt — 형식화된 입출력 표준 라이브러리\n\nprint/eprint/format/sprintf은 컴파일러 내장 함수(ForwardFunc)입니다.\n⚠️ printf/eprintf는 제거되었습니다: 이름은 심볼 테이블에 남아 있습니다(호출은 여전히 해석되고, LSP도 완성됨),\n그러나 모든 호출은 하드 컴파일 오류 [printf-depr]이며, print/io.out과 eprint/io.err로의 마이그레이션을 안내합니다.\n이 파일은 순수 Nolang로 구현된 형식화 보조 함수를 제공하며, Python format spec의 부분집합을 지원합니다:\nfmt-parse-spec  — 사양 문자열을 파싱\nfmt-apply-spec  — 너비/정렬/채움 적용\nfmt-uint-base   — 부호 없는 정수를 주어진 진법의 문자열로 변환\nfmt-int         — 부호 있는 정수 형식화\nfmt-uint        — 부호 없는 정수 형식화\nfmt-f64         — 부동소수점 형식화\nfmt-str         — 문자열 형식화\nfmt-bool        — 불리언 형식화\n\n사양 문자열 구문 (Python format spec 부분집합):\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(왼쪽) >(오른쪽) =(부호 뒤 채움) ^(가운데)\nsign:   + -(공백)\ngrouping: ,(쉼표) _(밑줄)\ntype:   b o d x X p e E f F g G s t v\n\n구현 참고 (컴파일러 제한 우회):\n1. 조건 블록 내에서 스칼라 i64 출력 매개변수에 대입하면 효과가 없습니다(컴파일러 버그),\n따라서 fmt-parse-spec은 로컬 -v 변수로 계산하고 최상위 수준에서 출력 매개변수에 대입합니다.\n2. with-cap()은 형식 주석이 없을 때 기본적으로 str 대신 vec를 추론하므로,\n로컬 버퍼는 명시적으로 형식 주석을 달아야 합니다.\n3. str의 직접 첨자 쓰기(`s[i] = v`)는 2026-11-11부터 전역적으로 비활성화되었습니다(with-cap 기저조차\n더 이상 예외가 아님); 바이트 단위 구성은 항상 `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-str()`를 사용합니다.'
   'fmt.eprintf': `
 제거됨(파싱이 계속 동작하도록 이름만 남긴다) — 호출하면 컴파일 오류다; 대신 eprint(줄바꿈 추가) 또는 io.err(줄바꿈 없음)를 쓴다
 s: 서식 문자열(이 함수는 제거됨, 호출하면 컴파일 오류)

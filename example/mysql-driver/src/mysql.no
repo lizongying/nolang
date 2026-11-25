@@ -83,7 +83,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
             read-n <= 0 -> {
 
                 ; 中途失敗：回傳已收到的部分（對齊原本 with-cap 逐寫增長的語義）
-                data = data-b.slice(0, total).to-bytes-str()
+                data = data-b.slice(0, total).to-str()
                 return
             }
         }
@@ -111,7 +111,7 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
         #{overflow=wrap}
         total = total + read-n
     }
-    data = data-b.slice(0, total).to-bytes-str()
+    data = data-b.slice(0, total).to-str()
     ok = true
 }
 
@@ -157,7 +157,7 @@ mysql-pkt-send = (fd fd, seq i64, payload str, payload-len i64) (ok bool) {
     hdr-b[1] = (payload-len >> 8) & 255
     hdr-b[2] = (payload-len >> 16) & 255
     hdr-b[3] = seq & 255
-    hdr = hdr-b.to-bytes-str()
+    hdr = hdr-b.to-str()
 
     ; 發送標頭
     written = net.net-send(fd, hdr, 4)
@@ -1037,7 +1037,7 @@ open = (dsn str) (d db-mysql) {
     }
 
     ; 發送握手回應（把 []byte 緩衝按實際寫入量 wpos 轉成 str）
-    resp = resp-b.slice(0, wpos).to-bytes-str()
+    resp = resp-b.slice(0, wpos).to-str()
 
     #{overflow=wrap}
     send-ok = mysql-pkt-send(fd, hs-seq + 1, resp, wpos)
@@ -1090,7 +1090,7 @@ db-mysql.close = () (ok bool) {
             ; 發送 COM_QUIT 封包（str 下標直寫已全域禁用 ⇒ []byte 承接後整體轉 str）
             quit-b []byte = with-cap-len(1, 1)
             quit-b[0] = COM-QUIT
-            quit-payload = quit-b.to-bytes-str()
+            quit-payload = quit-b.to-str()
             send-ok = mysql-pkt-send(.fd, 0, quit-payload, 1)
             fs.close(.fd)
             .fd = -1
@@ -1134,7 +1134,7 @@ db-mysql.exec = (sql str) (r sql.result) {
 
     #{overflow=wrap}
     payload-len = 1 + sql.len-bytes()
-    payload = payload-b.slice(0, payload-len).to-bytes-str()
+    payload = payload-b.slice(0, payload-len).to-str()
 
     ; 發送（每個新命令 seq 從 0 開始）
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -1204,7 +1204,7 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
     #{overflow=wrap}
     payload-len = 1 + sql.len-bytes()
-    payload = payload-b.slice(0, payload-len).to-bytes-str()
+    payload = payload-b.slice(0, payload-len).to-str()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -1724,7 +1724,7 @@ stmt-mysql.exec = () (r sql.result) {
 
     #{overflow=wrap}
     payload-len = 1 + .bound.len-bytes()
-    payload = payload-b.slice(0, payload-len).to-bytes-str()
+    payload = payload-b.slice(0, payload-len).to-str()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)
@@ -1792,7 +1792,7 @@ stmt-mysql.query = () (rs rows-mysql) {
 
     #{overflow=wrap}
     payload-len = 1 + .bound.len-bytes()
-    payload = payload-b.slice(0, payload-len).to-bytes-str()
+    payload = payload-b.slice(0, payload-len).to-str()
 
     ; 發送
     send-ok = mysql-pkt-send(.fd, 0, payload, payload-len)

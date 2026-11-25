@@ -309,7 +309,13 @@ static-hashmap-str-tmpl.for-each = () (k str, v v) {
                 j <- [0..sl): {
                     kb[j] = src.byte(j)
                 }
-                k = kb.to-bytes-str()
+                tb0o = kb.to-str()
+                tb0v = tb0o: {
+                    ok -> it
+                
+                    nil || err -> ''
+                }
+                k = tb0v
 
                 v = .vals[i]
             }

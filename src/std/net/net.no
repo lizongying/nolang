@@ -769,11 +769,17 @@ enc-conn.send-encrypted = (data str) (ok bool) {
         }
     }
 
-    ; 🔴 必須用 to-bytes-str()（1:1 逐位元組拷貝），不能用 to-str()：後者把每個 byte
-    ; 當 0~255 的碼點重新做一次 UTF-8 編碼，>= 0x80 的位元組會膨脹成 2 位元組，
+    ; 🔴 必須用 to-str()（1:1 逐位元組拷貝），不能用 to-str()：後者把每個 byte
+    ; to-str() 現在是 1:1 原樣拷貝，>= 0x80 的位元組不會被重編碼，
     ; 於是 net-send 按 packet-total 截斷時整段錯位 —— IV 與密文全部搬錯位置，
     ; 對端解密必然失敗（實測 iv[11] 從 76 變成 80）。見 test/README.md §5.2 #88。
-    packet-str = packet.to-bytes-str()
+    tb0o = packet.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    packet-str = tb0v
 
     #{overflow=wrap}
     packet-total = 4 + payload-len
@@ -833,8 +839,14 @@ enc-conn.recv-encrypted = () (data ?str) {
         return
     }
 
-    ; 同上：明文的每個位元組都要原樣取出，不能走按碼點重編碼的 to-str()。
-    data = opened.to-bytes-str()
+    ; 同上：明文的每個位元組都要原樣取出，to-str() 已是 1:1 原樣拷貝。
+    tb1o = opened.to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    data = tb1v
 }
 
 ; 關閉加密連接（同時關閉底層 TCP 連接）
@@ -1335,7 +1347,13 @@ arp-info {
 ; [ifconfig-list](#net.ifconfig-list)
 #{linux-amd64, linux-arm64}
 ifconfig-list = () (ifs []if-info) {
-    content = fs.read-file('/proc/net/dev').to-bytes-str()
+    tb2o = fs.read-file('/proc/net/dev').to-str()
+    tb2v = tb2o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    content = tb2v
     content.len-bytes() == 0 -> return
 
     ; /proc/net/dev 格式（前兩行為標題，第三行起為資料）：
@@ -1432,7 +1450,13 @@ ifconfig-list = () (ifs []if-info) {
 ; [route-list](#net.route-list)
 #{linux-amd64, linux-arm64}
 route-list = () (routes []route-info) {
-    content = fs.read-file('/proc/net/route').to-bytes-str()
+    tb3o = fs.read-file('/proc/net/route').to-str()
+    tb3v = tb3o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    content = tb3v
     content.len-bytes() == 0 -> return
 
     ; /proc/net/route 格式（首行為標題）：
@@ -1507,7 +1531,13 @@ route-list = () (routes []route-info) {
 ; [arp-list](#net.arp-list)
 #{linux-amd64, linux-arm64}
 arp-list = () (arps []arp-info) {
-    content = fs.read-file('/proc/net/arp').to-bytes-str()
+    tb4o = fs.read-file('/proc/net/arp').to-str()
+    tb4v = tb4o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    content = tb4v
     content.len-bytes() == 0 -> return
 
     ; /proc/net/arp 格式（首行為標題）：

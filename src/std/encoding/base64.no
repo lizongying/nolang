@@ -175,7 +175,13 @@ encode = (data []byte, table str) (out str) {
             out-b[j + 3] = PAD
         }
     }
-    out = out-b.slice(0, out-cap).to-bytes-str()
+    tb0o = out-b.slice(0, out-cap).to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
 }
 
 ; 使用標準字母表（A-Za-z0-9+/）編碼

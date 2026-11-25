@@ -1258,8 +1258,8 @@ byte es un tipo distinto y no un alias de u8, así que []byte.len no se instanci
 Devuelve un slice nuevo
 
 `
-  'bytes.to-bytes-str': `
-[]byte.to-bytes-str: copia byte a byte 1:1 (mantiene la semántica del original []byte.to-str).
+  'bytes.to-str': `
+[]byte.to-str: copia byte a byte 1:1 (mantiene la semántica del original []byte.to-str).
 Para cuando buf ya es un flujo UTF-8 legal (lectura de archivo / salida de subproceso); no hace falta recodificar por punto de código.
 Esta función equivale al []byte.to-str de la versión anterior.
 `
@@ -1274,14 +1274,6 @@ Si solo hace falta el resultado final «byte→punto de código→cadena UTF-8»
   'bytes.to-hex-lower': '[]byte.to-hex-lower: codifica un []byte como cadena hexadecimal en minúsculas'
   'bytes.to-i64-be': '[]byte.to-i64-be: convierte bytes big-endian en un int64 (de 1 a 8 bytes)'
   'bytes.to-i64-le': '[]byte.to-i64-le: convierte bytes little-endian en un int64 (de 1 a 8 bytes)'
-  'bytes.to-str': `
-⚠️ Cambio de semántica (2026-09-06, a pedido de la solicitante): antes este método era "copia 1:1 byte a byte", lo cual era
-el contrato del que depende buf.to-str() (lee archivos / salida de subprocesos, buf ya es UTF-8 válido).
-Tras pasar a «byte→punto de código→recodificar UTF-8», un flujo UTF-8 multibyte legal se recodifica dos veces y se corrompe
-(p. ej. 0xC3 0xA9 leído del disco se trataría como puntos de código 0xC3 y 0xA9 y cada uno recodificado). Para «copiar tal cual»
-flujos de bytes UTF-8 legales (lectura de archivo / subproceso); use en su lugar la variante que conserva la semántica de copia 1:1
-b.to-bytes-str() (véase más abajo), o usar directamente la rebanada subyacente.
-`
   'bytes.to-txt': `
 []byte.to-txt: convierte []byte a txt (truncado a 255 bytes)
 Devuelve out: la estructura txt fija de 256 bytes
@@ -3100,7 +3092,7 @@ indica si el valor es NaN
 Se decide por la propiedad IEEE-754 de "NaN no es igual a sí mismo", así que cualquier NaN (incluso con payloads distintos) da true.
 yes: true=el receptor es NaN, false=número finito o ±inf
 `
-  'fmt': 'fmt — biblioteca estándar de entrada/salida formateada\n\nprint/eprint/format/sprintf son funciones integradas del compilador (ForwardFunc).\n⚠️ printf/eprintf se han eliminado: los nombres permanecen en la tabla de símbolos (las llamadas aún se resuelven, el LSP aún completa),\npero cualquier llamada es un error de compilación estricto [printf-depr], que guía la migración a print/io.out y eprint/io.err.\nEste archivo proporciona funciones auxiliares de formato implementadas en Nolang puro, que admiten un subconjunto de la especificación de formato de Python:\nfmt-parse-spec  — analizar la cadena de especificación\nfmt-apply-spec  — aplicar ancho/alineación/relleno\nfmt-uint-base   — convertir un entero sin signo a una cadena en la base dada\nfmt-int         — formato de entero con signo\nfmt-uint        — formato de entero sin signo\nfmt-f64         — formato de punto flotante\nfmt-str         — formato de cadena\nfmt-bool        — formato booleano\n\nSintaxis de la cadena de especificación (subconjunto de la especificación de formato de Python):\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(izquierda) >(derecha) =(relleno tras el signo) ^(centro)\nsign:   + -(espacio)\ngrouping: ,(coma) _(guion bajo)\ntype:   b o d x X p e E f F g G s t v\n\nNotas de implementación (solución para la limitación del compilador):\n1. Asignar un parámetro de salida escalar i64 dentro de un bloque condicional no tiene efecto (bug del compilador),\npor lo que fmt-parse-spec calcula con variables locales -v y asigna a los parámetros de salida en el nivel superior.\n2. with-cap() infiere vec en lugar de str por defecto cuando no hay anotación de tipo,\npor lo que los búferes locales deben anotarse explícitamente con su tipo.\n3. Las escrituras directas por subíndice en str (`s[i] = v`) se han desactivado globalmente desde 2026-11-11 (incluso la base with-cap\nya no está exenta); la construcción byte a byte siempre usa `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-bytes-str()`.'
+  'fmt': 'fmt — biblioteca estándar de entrada/salida formateada\n\nprint/eprint/format/sprintf son funciones integradas del compilador (ForwardFunc).\n⚠️ printf/eprintf se han eliminado: los nombres permanecen en la tabla de símbolos (las llamadas aún se resuelven, el LSP aún completa),\npero cualquier llamada es un error de compilación estricto [printf-depr], que guía la migración a print/io.out y eprint/io.err.\nEste archivo proporciona funciones auxiliares de formato implementadas en Nolang puro, que admiten un subconjunto de la especificación de formato de Python:\nfmt-parse-spec  — analizar la cadena de especificación\nfmt-apply-spec  — aplicar ancho/alineación/relleno\nfmt-uint-base   — convertir un entero sin signo a una cadena en la base dada\nfmt-int         — formato de entero con signo\nfmt-uint        — formato de entero sin signo\nfmt-f64         — formato de punto flotante\nfmt-str         — formato de cadena\nfmt-bool        — formato booleano\n\nSintaxis de la cadena de especificación (subconjunto de la especificación de formato de Python):\n[[fill]align][sign][#][0][width][grouping][.precision][type]\nalign:  <(izquierda) >(derecha) =(relleno tras el signo) ^(centro)\nsign:   + -(espacio)\ngrouping: ,(coma) _(guion bajo)\ntype:   b o d x X p e E f F g G s t v\n\nNotas de implementación (solución para la limitación del compilador):\n1. Asignar un parámetro de salida escalar i64 dentro de un bloque condicional no tiene efecto (bug del compilador),\npor lo que fmt-parse-spec calcula con variables locales -v y asigna a los parámetros de salida en el nivel superior.\n2. with-cap() infiere vec en lugar de str por defecto cuando no hay anotación de tipo,\npor lo que los búferes locales deben anotarse explícitamente con su tipo.\n3. Las escrituras directas por subíndice en str (`s[i] = v`) se han desactivado globalmente desde 2026-11-11 (incluso la base with-cap\nya no está exenta); la construcción byte a byte siempre usa `x []byte = with-cap-len(n, n)` +\n`x[i] = b` + `x.to-str()`.'
   'fmt.eprintf': `
 eliminado (el nombre se conserva para que el análisis sintáctico siga funcionando) — llamarlo es un error de compilación; usa eprint (añade salto de línea) o io.err (sin salto) en su lugar
 s: cadena de formato (esta función fue eliminada; llamarla es un error de compilación)

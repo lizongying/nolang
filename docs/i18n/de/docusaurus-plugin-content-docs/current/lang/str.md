@@ -314,7 +314,7 @@ b[i] = src.byte(i): {
 
     -> 0
 }
-s = b.slice(0, k).to-bytes-str(); 也可 b.to-bytes-str()（整段）
+s = b.slice(0, k).to-str(); 也可 b.to-str()（整段）
 
 ; ② 原位「覆寫」既有內容：str.fill 把 len 個位元組全填成同一個值，長度不變
 s = 'hello'
@@ -394,7 +394,7 @@ s = with-cap-len(512, 64); str，len=64, cap=512
 > siehe〈Internes Layout und öffentliche API〉. Auch Feldzuweisungen wie `s.len = n` / `s.cap = n` laufen über diese Grenze und überschreiben daher keine benachbarten Header-Felder.
 
 > ⚠️ **Ein `str`-Puffer erlaubt grundsätzlich keinen direkten Index-Store** (seit 2026-11-11, und `with-cap`-Basen sind ebenfalls nicht mehr ausgenommen).
-> Die `idxwrite`-Ausnahme für with-cap gilt jetzt nur noch für **`[]byte` / `[]T` / feste Arrays**: Deren len=0-Puffer wachsen weiterhin über `buf[i] = b`, es gibt keine gleichwertige Alternativschreibweise. Für `str` weiche auf einen `[]byte`-Puffer + `to-bytes-str()` aus (siehe Abschnitt „Schreiben per Index deaktiviert").
+> Die `idxwrite`-Ausnahme für with-cap gilt jetzt nur noch für **`[]byte` / `[]T` / feste Arrays**: Deren len=0-Puffer wachsen weiterhin über `buf[i] = b`, es gibt keine gleichwertige Alternativschreibweise. Für `str` weiche auf einen `[]byte`-Puffer + `to-str()` aus (siehe Abschnitt „Schreiben per Index deaktiviert").
 > Bei `with-len(n)` / `with-cap-len(cap, len)` ist die Länge bereits vorhanden; **Schreiben erfordert Place-Match `buf[i]: { ok -> it = v / -> _ }` oder `buf[i] ?= v`** — wie bei jedem anderen Container ist ein direkter Store der Kompilierfehler `idxwrite`. (Seit 2026-11-10 ist `with-len` nicht mehr ausgenommen.)
 
 > **Typinferenz**: Der Ergebnistyp der drei eingebauten Syntaxformen wird aus der linken Seite der Zuweisung inferiert; sie können für `str` oder `[]T`-Slices verwendet werden.

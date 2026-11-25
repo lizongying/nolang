@@ -1341,7 +1341,7 @@ cg-runtime-entry-main = () (r str) {
     r = b.str()
 }
 
-; vec_bytes_to_str（s165）：[]byte.to-bytes-str() 的【自有】1:1 逐字節複製助手。
+; vec_bytes_to_str（s165）：[]byte.to-str() 的【自有】1:1 逐字節複製助手。
 ;   語意逐字鏡像 src/std/byte.no:141（原始位元保留、不做 UTF-8 重編碼）與 Go builtin
 ;   src/dist/txtmin.ll 的 _LB__RB_byte.to-bytes-str（配置 n 位元組後逐元複製）。
 ;   ⚠️ 與 OP-STRFROMVEC（s49）的零拷貝重interpret【相反】：那里與原 vec 共享緩衝，

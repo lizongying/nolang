@@ -8,7 +8,7 @@
 ;   源碼一度只剩 place-match `s[i]: { ok -> it = v }` 一種下標寫形態；2026-11-12
 ;   起連 place-match 對 str/txt 也一併禁用（stridxwr）。place-match 以「讀」作
 ;   閘門的語義本身仍然有效，只是載體改成 []byte：
-;     - 本檔案改為用 []byte 緩衝承接下標寫，再以 to-bytes-str() 轉回 str，
+;     - 本檔案改為用 []byte 緩衝承接下標寫，再以 to-str() 轉回 str，
 ;       驗證同樣的「範圍內寫入落盤、越界跳過、長度不變」語義。
 ;     - ensureStrLongBuffer 的增長分支不再是源碼可達路徑；其正確性改由 Go 單元
 ;       測試 src/mir/str_index_grow_test.go 直接對 codegen 輸出驗證，增長分支
@@ -21,7 +21,7 @@ test-str-place-in-range = () (ok bool) {
     ob[0] = 97
     ob[3] = 100
     ob[7] = 104
-    s = ob.to-bytes-str()
+    s = ob.to-str()
 
     n = s.len-bytes()
     b0 = s.byte(0)
@@ -52,7 +52,7 @@ test-str-place-far-oob = () (ok bool) {
             -> _
         }
     }
-    s = ob.to-bytes-str()
+    s = ob.to-str()
     n = s.len-bytes()
     same = s == 'abc'
     ok = n == 3

@@ -61,7 +61,7 @@ test-decode-int-small = () {
 
         -> _
     }
-    data = data-b.to-bytes-str()
+    data = data-b.to-str()
     val = 0
     next = 0
     hpack.decode-int(data, 0, 5)(val, next)
@@ -95,7 +95,7 @@ test-decode-int-multi = () {
 
         -> _
     }
-    data = data-b.to-bytes-str()
+    data = data-b.to-str()
     val = 0
     next = 0
     hpack.decode-int(data, 0, 5)(val, next)
@@ -155,7 +155,7 @@ test-decode-str = () {
 
         -> _
     }
-    data = data-b.to-bytes-str()
+    data = data-b.to-str()
     out = ''
     next = 0
     hpack.decode-str(data, 0)(out, next)

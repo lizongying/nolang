@@ -4,7 +4,7 @@
 ; 覆蓋：[]byte.to-i64-be / []byte.to-i64-le /
 ;       []byte.to-hex / []byte.to-hex-lower /
 ;       []byte.index / []byte.index-from / []byte.slice /
-;       []byte.to-str / []byte.to-bytes-str
+;       []byte.to-str / []byte.to-str
 ; 未測：i64.to-bytes-be/le（[?]byte 返回類型 codegen 問題）
 ;
 ; 注（2026-11-03 更正）：本檔曾記「[]byte.to-str（與 str.eq 交互有問題，預存 bug）」，
@@ -119,24 +119,27 @@ t-to-str-ascii = () {
     runner.str-eq(s, 'AB', 'to-str ASCII content')
 }
 
-; 0x80 起走 2 位元組 UTF-8 分支：0x80 → C2 80、0xE9 → C3 A9（不是原樣拷貝）
+; 非 ASCII 位元組也原樣拷貝：0x80 0xE9 → 80 E9（不進行 UTF-8 重編碼）
 t-to-str-2byte = () {
     data []byte = [0x80, 0xe9]
     s = data.to-str()
-    runner.eq(s.len-bytes(), 4, 'to-str 2-byte bytes == 4')
-    runner.eq(s.len(), 2, 'to-str 2-byte cps == 2')
+    runner.eq(s.len-bytes(), 2, 'to-str 2-byte bytes == 2')
+    runner.eq(s.len(), 1, 'to-str 2-byte cps == 1')
     h = s.to-bytes().to-hex()
-    runner.str-eq(h, 'C280C3A9', 'to-str 2-byte hex')
+    runner.str-eq(h, '80E9', 'to-str 2-byte hex')
 }
 
-; ⚠️ 已文檔化的語義：合法 UTF-8 流會被二次編碼（C3 A9 → 碼點 C3/A9 → C3 83 C2 A9）
-; 需要 1:1 拷貝請用 to-bytes-str（讀文件 / 子進程輸出的正確選擇）
-t-to-str-double-encode = () {
+; []byte.to-str 現在是 1:1 逐字節拷貝：合法 UTF-8 流不會被二次編碼。
+t-to-str-one-to-one = () {
     data []byte = [0xc3, 0xa9]
-    h = data.to-str().to-bytes().to-hex()
-    runner.str-eq(h, 'C383C2A9', 'to-str re-encodes valid UTF-8')
-    h2 = data.to-bytes-str().to-bytes().to-hex()
-    runner.str-eq(h2, 'C3A9', 'to-bytes-str copies 1:1')
+    s-opt = data.to-str()
+    s = s-opt: {
+        ok -> it
+
+        nil || err -> ''
+    }
+    h = s.to-bytes().to-hex()
+    runner.str-eq(h, 'C3A9', 'to-str copies 1:1')
 }
 
 ; 空切片 → 空串（with-len(0) 起手，迴圈零次）
@@ -148,11 +151,11 @@ t-to-str-empty = () {
     runner.str-eq(s, '', 'to-str empty content')
 }
 
-; 切片視圖之後再轉換：只看視圖範圍（下標 2..4 的 E9 21 → C3A9 21）
+; 切片視圖之後再轉換：只看視圖範圍（下標 2..4 的 E9 21 原樣拷貝）
 t-to-str-slice = () {
     data []byte = [0x68, 0x69, 0xe9, 0x21]
     h = data.slice(2, 4).to-str().to-bytes().to-hex()
-    runner.str-eq(h, 'C3A921', 'to-str on slice view')
+    runner.str-eq(h, 'E921', 'to-str on slice view')
 }
 
 ; 執行
@@ -228,7 +231,7 @@ passed = passed + p10
 
 #{overflow=wrap}
 failed = failed + f10
-p11, f11 = runner.test('byte.to-str double-encode', t-to-str-double-encode)
+p11, f11 = runner.test('byte.to-str 1:1 copy', t-to-str-one-to-one)
 
 #{overflow=wrap}
 passed = passed + p11

@@ -48,8 +48,8 @@
 ; ⚠️ 編譯器限制：當前 legacy 與 MIR 後端對 []char（i32 元素）切片的支持均不完整
 ; （與 []byte / []i64 不同，[]char 的 len/cap/stride 在 codegen 中存在隱性錯誤，
 ; 構造成的 []char 運行期會越界損壞），故本方法暂不可用。
-; 若只需要「byte→碼點→UTF-8 字符串」的最終結果，直接用 b.to-str() 即可——
-; []byte.to-str 已內聯本語義（每個 byte 當 0~255 碼點重新 UTF-8 編碼），無需經過 []char。
+; 若只需要把 byte 序列原樣轉成 str，直接用 b.to-str() 即可——
+; []byte.to-str 是 1:1 byte 拷貝，不重新做 UTF-8 編碼，也無需經過 []char。
 ; [to-chars](#bytes.to-chars)
 []byte.to-chars = () (out []char) {
     n = .len()
@@ -60,91 +60,47 @@
     out = cs
 }
 
-; []byte.to-str: 將字節切片按「先 to-chars 再 to-str」語義轉成字符串。
-; 每個字節被當作一個 0~255 的 Unicode 碼點，再按 UTF-8 編碼成 1~4 字節。
-; 即本方法等價於 b.to-chars().to-str()：byte 0xC3 → 碼點 0xC3 → UTF-8 字節 0xC3 0x83。
+; []byte.to-str: 1:1 逐字節拷貝成 str。
+; 每個 byte 原樣成為 str 的一個字節，不按 Unicode 碼點重新編碼；因此對合法 UTF-8
+; 字節流（文件 / 子進程輸出 / 網絡 payload）結果保持原樣。若結果並非合法 UTF-8，
+; 本方法仍原樣返回，由呼叫方決定如何解讀。
 ;
-; 實現说明（2026-09-06）：legacy 後端對「返回字符串 out 做變量下標賦值 out[pos]=」不會
-; 维護字符串長度（會帶出尾部空字節），但對「字面下標 s[0]/s[1]/…」會正確维護長度（見
-; char.to-str：with-cap(4) + 字面下標，返回長度正確）。故本實現逐字節構造一個
-; with-cap(4) 的局部 seg（用字面下標寫入 UTF-8 字節），再用字符串拼接 out = out - seg
-; 累积（拼接模式與 vec.no 的 []t.to-str 一致，已驗證可靠）。不使用變量下標，規避長度 bug。
+; 返回 ?str 是歷史簽名：1:1 拷貝按構造不會失敗，但呼叫點仍須明確解包，避免
+; option 被靜默當作 plain str 使用。推薦寫法：
+;   s-opt = buf.to-str()
+;   s = s-opt: {
+;       ok -> it
 ;
-; ⚠️ 語義變更（2026-09-06，應需求方要求）：此前本方法是「1:1 逐字節拷貝」，是
-; buf.to-str()（讀取文件 / 子進程输出，buf 已是合法 UTF-8 字節流）所依赖的契約。
-; 改為「byte→碼點→UTF-8 重新編碼」後，對合法的多字節 UTF-8 字節流會做二次編碼而損壞
-; （例如磁盘上讀到的 0xC3 0xA9 會被當成碼點 0xC3、0xA9 各自重編碼）。若需「原樣拷貝
-; 合法 UTF-8 字節流」（文件 / 子進程讀取場景），請改用保留了 1:1 拷貝語義的
-; b.to-bytes-str()（見下方），或直接使用底層切片。
+;       nil || err -> ''
+;   }
+;
+; 實現走 str.from-chars：把每個字節當成 0~255 的碼點塞進 []char，再由內建
+; 一次建成 len=cap=n 的 str（每 char 只取低 8 位，正好是 1:1 位元組拷貝）。
+; str 的下標寫入已全域禁用，這是唯一不碰私有 _set-byte 的公開路徑。
 ; [to-str](#bytes.to-str)
 []byte.to-str = () (out ?str) {
-    n = .len()
-    r str = with-len(0)
-    i <- [0..n): {
-        cp = .[i] & 0xff
-
-        ; 位移後的串接段必須是「恰好 seg-n 個位元組」的 str。這裡用 []byte 緩衝 +
-        ; 下標寫入 + 最後按 seg-n 切片，而不是 `seg str = with-cap(4)` 後直接寫下標：
-        ; str 的下標寫入已在 2026-11-11 被禁用（見 checker 的 str 直寫規則），
-        ; 而 []byte 的 with-cap-len 版本長度是顯式的，不需要靠寫入去「長大」。
-        seg-b []byte = with-cap-len(4, 4)
-        seg-n = 1
-        {
-            cp < 0x80 -> {
-                seg-b[0] = cp
-            }
-
-            cp < 0x800 -> {
-                seg-b[0] = 0xc0 | ((cp >> 6) & 0x1f)
-
-                seg-b[1] = 0x80 | (cp & 0x3f)
-                seg-n = 2
-            }
-
-            cp < 0x10000 -> {
-                seg-b[0] = 0xe0 | ((cp >> 12) & 0x0f)
-
-                seg-b[1] = 0x80 | ((cp >> 6) & 0x3f)
-
-                seg-b[2] = 0x80 | (cp & 0x3f)
-                seg-n = 3
-            }
-
-            -> {
-                seg-b[0] = 0xf0 | ((cp >> 18) & 0x07)
-
-                seg-b[1] = 0x80 | ((cp >> 12) & 0x3f)
-
-                seg-b[2] = 0x80 | ((cp >> 6) & 0x3f)
-
-                seg-b[3] = 0x80 | (cp & 0x3f)
-                seg-n = 4
-            }
-        }
-
-        seg = seg-b.slice(0, seg-n).to-bytes-str()
-        r = r - seg
-    }
-    out = r
-}
-
-; []byte.to-bytes-str: 1:1 逐字節拷貝（保留原 []byte.to-str 語義）。
-; 用於 buf 已經是合法 UTF-8 字節流的場景（讀取文件 / 子進程输出），不需要按碼點重編碼。
-; 該函數等價於舊版 []byte.to-str。
-;
-; 實現：走 str.from-chars —— 把每個字節當成 0~255 的碼點塞進 []char，再由內建
-; 一次建成 len=cap=n 的 str（每 char 只取低 8 位，正好是 1:1 位元組拷貝）。
-
-; 2026-11-11 前這裡是 `out = with-len(n)` + `out[i] = .[i]`；str 的下標寫入被禁用後，
-; 這是唯一既能表達 1:1 拷貝、又不碰 `_set-byte`（私有）的公開路徑。
-; [to-bytes-str](#bytes.to-bytes-str)
-[]byte.to-bytes-str = () (out str) {
     n = .len()
     cs []char
     i <- [0..n): {
         cs.push(.[i] & 0xff)
     }
-    out = str.from-chars(cs)
+    r str = str.from-chars(cs)
+    out = r
+}
+
+; []byte.pretty: 字面量風格的位元組列表，如 [0xc3, 0xa9]。
+; 空切片輸出 []。small hex、0x 前綴、", " 分隔。
+; [pretty](#bytes.pretty)
+[]byte.pretty = () (out str) {
+    n = .len()
+    out = '['
+    i <- [0..n): {
+        i > 0 -> out = out - ', '
+        b = .[i]
+        one []byte = [b]
+        out = out - '0x' - one.to-hex-lower()
+    }
+    out = out - ']'
 }
 
 ; []byte.index: 在 []byte 中查找 target 子串
@@ -271,7 +227,13 @@ HEX-LOWER = '0123456789abcdef'
         #{overflow=wrap}
         buf[i * 2 + 1] = HEX-UPPER[b & 15]
     }
-    out = buf.to-bytes-str()
+    tb0o = buf.to-str()
+    tb0v = tb0o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb0v
 }
 
 ; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
@@ -291,7 +253,13 @@ HEX-LOWER = '0123456789abcdef'
         #{overflow=wrap}
         buf[i * 2 + 1] = HEX-LOWER[b & 15]
     }
-    out = buf.to-bytes-str()
+    tb1o = buf.to-str()
+    tb1v = tb1o: {
+        ok -> it
+    
+        nil || err -> ''
+    }
+    out = tb1v
 }
 
 ; byte.to-str: 將 byte 轉為字串（"65" → "65"）

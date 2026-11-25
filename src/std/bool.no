@@ -11,3 +11,9 @@
 #{buildin}
 bool.to-str = () (out str) {
 }
+
+; bool.pretty: 字面量風格的布爾值（true / false）。
+; [pretty](#bool.pretty)
+bool.pretty = () (out str) {
+    out = .to-str()
+}

@@ -348,7 +348,7 @@ t-read = () {
     ], '', '', false)
     buf []byte = with-len(16)
     rn = p.read(buf, 16)
-    got = buf.slice(0, rn).to-bytes-str()
+    got = buf.slice(0, rn).to-str()
     p.wait()
     p.close()
     runner.eq(rn, 3, 'read 讀到 3 位元組')
