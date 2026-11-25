@@ -2,7 +2,10 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+
+	pkg "github.com/lizongying/nolang/package"
 )
 
 // These tests exercise the noml CLI helpers in noml.go (which delegate to the
@@ -121,9 +124,6 @@ func TestNomlParseProjectConfig_WithComments(t *testing.T) {
 	if cfg.Name != "my-pkg" {
 		t.Errorf("name = %q, want %q", cfg.Name, "my-pkg")
 	}
-	if cfg.Version != "1.0.0" {
-		t.Errorf("version = %q, want %q", cfg.Version, "1.0.0")
-	}
 	if len(cfg.Keywords) != 2 || cfg.Keywords[0] != "test" || cfg.Keywords[1] != "demo" {
 		t.Errorf("keywords = %v, want [test demo]", cfg.Keywords)
 	}
@@ -146,12 +146,29 @@ func TestRenderPackageNoml_RoundTrips(t *testing.T) {
 		Author:      "Alice",
 		License:     "Apache-2.0",
 		Dependencies: map[string]string{
-			"nolang": "^0.1.0",
+			"fmt": "^0.1.0",
 		},
 		Compiler: CompilerConfig{Version: "v0.1.0"},
-		Output:   "/dist",
 	}
 	text := renderPackageNoml(config)
+	// 依賴必須是 vec，不能出現 {}。
+	if !strings.Contains(text, "  dependencies: [\n") {
+		t.Fatalf("dependencies must be rendered as vec:\n%s", text)
+	}
+	if strings.Contains(text, ": {}") {
+		t.Fatalf("rendered manifest contains an object where a vec is expected:\n%s", text)
+	}
+	// 可選欄位不寫進新清單，留下內建預設。
+	for _, unwanted := range []string{
+		"  dev-dependencies:", "  publish:", "  mirrors:", "  output:", "  ignore:",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Errorf("rendered manifest contains optional field %q:\n%s", unwanted, text)
+		}
+	}
+	if issues := pkg.CheckManifestFields([]byte(text)); !issues.Empty() {
+		t.Fatalf("rendered package.noml is not complete: %+v\n%s", issues, text)
+	}
 	cfg, err := nomlParseProjectConfig([]byte(text))
 	if err != nil {
 		t.Fatalf("rendered noml failed to parse: %v\n%s", err, text)
@@ -159,8 +176,8 @@ func TestRenderPackageNoml_RoundTrips(t *testing.T) {
 	if cfg.Name != "demo" {
 		t.Errorf("name = %q, want demo", cfg.Name)
 	}
-	if cfg.Dependencies["nolang"] != "^0.1.0" {
-		t.Errorf("dependencies[nolang] = %q, want ^0.1.0", cfg.Dependencies["nolang"])
+	if cfg.Dependencies["fmt"] != "^0.1.0" {
+		t.Errorf("dependencies[fmt] = %q, want ^0.1.0", cfg.Dependencies["fmt"])
 	}
 	if cfg.Compiler.Version != "v0.1.0" {
 		t.Errorf("compiler.version = %q, want v0.1.0", cfg.Compiler.Version)

@@ -15,7 +15,7 @@ import "testing"
 //
 // `p + 2` is a signed-integer arith node, so the parser's capture machinery
 // treats the statement as capturable and synthesises the statement type
-// `?<ret of slice-bytes>` = `?str` (parser/lowering.go synthesizeNullableType,
+// `?<ret of slice-bytes>` = `?[]byte` (parser/lowering.go synthesizeNullableType,
 // reached through maybeCaptureOptionAssign's `case *CallExpression` — the
 // capture sits in an ARGUMENT, yet the `?` lands on the target). Every other
 // consumer of such a value already uses the payload — `tgt.len()` prints the

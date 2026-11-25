@@ -1,7 +1,12 @@
-buf []i64
+BUF []i64
 add = (v i64) {
-  buf.push(v)
+  BUF.push(v)
 }
 get = (i i64) (v i64) {
-  v = buf[i]
+  k = BUF[i]
+  v = k: {
+    ok -> it
+
+    -> 0
+  }
 }

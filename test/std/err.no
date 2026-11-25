@@ -1,7 +1,7 @@
 ; std-err.no — err 模組測試
 ;
 ; 執行：no test test/std/err.no
-; 覆蓋：new / err.is / err.msg / err.format / new-at / from-errno / err.code
+; 覆蓋：new / err.is / err.msg / err.format / new-at / from-errno / err.code / err.with-context
 ; 未測：code.to-name —— 使用者碼不可達。`code.io.to-name()` 報
 ;       `unknown callee code.io.to-name`，先落到變數 `c code = code.io` 再
 ;       `c.to-name()` 報 `unknown callee i64.to-name`（枚舉方法在 MIR 端沒有
@@ -52,6 +52,9 @@ p4, f4 = runner.test('err.format', t-format)
 p5, f5 = runner.test('err.new-at', t-new-at)
 p6, f6 = runner.test('err.from-errno', t-from-errno)
 p7, f7 = runner.test('err.code', t-code)
+p8, f8 = runner.test('err.with-context', t-with-context)
+p9, f9 = runner.test('err.with-context chain', t-with-context-chain)
+p10, f10 = runner.test('err.with-context empty', t-with-context-empty)
 
 ; new-at：位置由呼叫方明確給定，format() 會串成 'code.<v>: <msg> at <file>:<l>:<c>'
 t-new-at = () {
@@ -81,6 +84,32 @@ t-code = () {
     ec = e.code()
     runner.is-true(e.is(ec), 'code() roundtrips through is()')
     runner.is-false(e.is(code.io), 'code.permission is not code.io')
+}
+
+; err.with-context：msg 附加 '<ctx>: ' 前綴，code 與原錯誤不受影響
+t-with-context = () {
+    e = err.new('disk full', code.io)
+    c = e.with-context('write-config')
+    runner.str-eq(c.msg(), 'write-config: disk full', 'with-context msg')
+    runner.is-true(c.is(code.io), 'with-context preserves code')
+    runner.str-eq(e.msg(), 'disk full', 'with-context leaves original intact')
+}
+
+; err.with-context：可鏈接多層，format 完整呈現鏈與位置
+t-with-context-chain = () {
+    e = err.new-at('no such file', code.not-found, 'a.no', 12, 5)
+    c1 = e.with-context('read-config')
+    c = c1.with-context('main')
+    runner.str-eq(c.msg(), 'main: read-config: no such file', 'context chain msg')
+    exp = 'code.not-found: main: read-config: no such file at a.no:12:5'
+    runner.str-eq(c.format(), exp, 'context chain format')
+}
+
+; err.with-context：空訊息只留下前綴
+t-with-context-empty = () {
+    e = err.new('', code.unknown)
+    c = e.with-context('stage')
+    runner.str-eq(c.msg(), 'stage: ', 'empty msg keeps prefix')
 }
 
 total = runner.summary()

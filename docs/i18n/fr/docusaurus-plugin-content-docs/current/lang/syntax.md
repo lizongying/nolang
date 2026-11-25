@@ -3088,7 +3088,7 @@ si bien que « même type de payload ⇒ même disposition » ; `?i32` / `?i64` 
   `?i64` fait 16 octets (8 + 8), `?str` 24 octets (8 + 16), `?txt` 264 octets (8 + 256).
 - Un payload au-delà du seuil passe en **boxing sur le tas** : `payload` ne stocke qu'un pointeur de 8 octets, et l'option entière fait 16 octets.
 
-Le seuil `option-inline-threshold` se compte en octets sur **toute la structure option** (par défaut **264** = 1 octet de tag +
+Le seuil `option-payload-inline-threshold` se compte en octets sur **toute la structure option** (par défaut **264** = 1 octet de tag +
 7 octets de remplissage + 256 octets de payload, minimum **16**) : la condition d'inlining du payload est
 `8 + roundUp8(sizeof(T)) <= seuil`. Par défaut, « payload ne dépassant pas 256 octets est inliné », et `?txt`
 (tampon inline de 256 octets) tombe exactement dans la limite.
@@ -3107,7 +3107,7 @@ Le seuil `option-inline-threshold` se compte en octets sur **toute la structure 
 
 > **Inlining et boxing ne changent que « où cela est stocké », pas la propriété** : les deux chemins créent, lors d'une **copie**, une copie distincte de la partie tas du payload de structure
 > (champs pointeurs copiés récursivement, buffers `str` / `[]T` possédés en inline clonés) ; la sémantique de valeur de `?T` est donc indépendante
-> de l'inlining — un même programme doit produire exactement le même résultat pour n'importe quel `option-inline-threshold`.
+> de l'inlining — un même programme doit produire exactement le même résultat pour n'importe quel `option-payload-inline-threshold`.
 > Un comportement qui change à un seuil près serait un défaut du compilateur, pas une fonctionnalité. (Une affectation en pur transfert ne clone pas : l'option reprend
 > le tas de la source.)
 
@@ -4404,7 +4404,6 @@ Le bloc `compiler` de `package.noml` contrôle le comportement du compilateur. L
 {
   compiler: {
     version: 'v0.1.0'
-    anonymous-fn-type: false
     emit: 'js'
   }
 }

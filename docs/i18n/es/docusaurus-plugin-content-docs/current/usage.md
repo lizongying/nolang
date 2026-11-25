@@ -159,12 +159,12 @@ La disposición en memoria de `?T` se define **según el tipo de la carga útil*
 `%option_<key> = { i8 tag, [K x i64] }` (una etiqueta de 1 byte, carga fija en el desplazamiento de byte 8,
 `K = roundUp8(sizeof(T))/8`). Si la carga no cabe en el umbral, se encapsula en el montón y la primera palabra de la zona de carga guarda el puntero.
 
-`--option-inline-threshold=N` especifica ese umbral (medido sobre **toda la estructura option**,
+`--option-payload-inline-threshold=N` especifica ese umbral (medido sobre **toda la estructura option**,
 es decir, `1 + 7 + sizeof(T)`):
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # 讓更大的載荷內聯
-no build --option-inline-threshold=16 main.no     # 最小可配置值
+no build --option-payload-inline-threshold=1032 main.no   # 讓更大的載荷內聯
+no build --option-payload-inline-threshold=16 main.no     # 最小可配置值
 ```
 
 | Valor | Efecto |
@@ -173,7 +173,7 @@ no build --option-inline-threshold=16 main.no     # 最小可配置值
 | mínimo **16** | solo las cargas del tamaño de `?i64` siguen en línea; `?str` (24 B) y superiores se encapsulan |
 | < 16 | error de compilación |
 
-Prioridad: línea de comandos > variable de entorno `NOLANG_OPTION_INLINE_THRESHOLD` > `compiler.option-inline-threshold` de `package.noml` > valor predeterminado. La única fuente de verdad del diseño es `src/mir/layout.go`; la semántica (qué valores cuentan como `ok` / `nil` / `err`) **no se ve afectada**: solo cambia el consumo de memoria y si la carga se encapsula o no.
+Prioridad: línea de comandos > variable de entorno `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `compiler.option-payload-inline-threshold` de `package.noml` > valor predeterminado. La única fuente de verdad del diseño es `src/mir/layout.go`; la semántica (qué valores cuentan como `ok` / `nil` / `err`) **no se ve afectada**: solo cambia el consumo de memoria y si la carga se encapsula o no.
 
 ### Optimizador integrado del compilador (MIR opt)
 
@@ -376,14 +376,12 @@ El archivo `package.noml` en la raíz del proyecto describe la información del 
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

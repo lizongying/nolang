@@ -280,4 +280,5 @@ ok = ok & t67 & t68 & t69 & t70 & t71 & t72
 }
 (ok == 0) -> {
     print('SOME HISTORY TESTS FAILED')
+    exit(1)
 }

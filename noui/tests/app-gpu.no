@@ -1,0 +1,48 @@
+; ============================================================================
+; noui GPU 后端测试（阶段79）
+;
+; SDL_GPU 后端是可选路径：默认仍是 SDL_Render，app-use-gpu(1) 之后
+; app-init 才会去建 GPU 设备 / GPU 窗口。
+; 分两层：
+;   1) 开关与状态查询（任何环境都可跑）；
+;   2) 真机冒烟：有 GPU 的机器上 init 应成功并至少跑两帧；dummy 视频驱动
+;      （CI）下 SDL_CreateGPUDevice 失败，此时只要求优雅返回 -1，不算失败。
+; _noui-gpu-* 的引用同时证明 gpu shim 已进链接。
+; ============================================================================
+# /noui/src/app
+
+print('=== app-gpu tests ===')
+
+r1 = app-gpu-mode() == 0
+r2 = app-gpu-active() == 0
+
+app-use-gpu(1)
+r3 = app-gpu-mode() == 1
+r4 = app-gpu-active() == 0
+
+app-use-gpu(0)
+r5 = app-gpu-mode() == 0
+
+; ---- 真机冒烟（可选） ----
+app-use-gpu(1)
+ok = app-init('gpu-live')
+r6 = true
+r7 = true
+(ok == 0) -> {
+    app-frame()
+    app-frame()
+    r6 = app-gpu-active() == 1
+    app-shutdown()
+    r7 = app-gpu-active() == 0
+    print('gpu live smoke: two frames ok')
+}
+(ok != 0) -> {
+    print('gpu device unavailable here (dummy driver?), graceful failure ok={ok}')
+    app-shutdown()
+}
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7
+print('default={r1} inactive={r2} on={r3}{r4} off={r5} live={r6}{r7}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-GPU TESTS PASSED') }
+(!all-ok) -> { print('SOME APP-GPU TESTS FAILED'); exit(1) }

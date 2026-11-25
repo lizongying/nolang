@@ -561,9 +561,9 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 
                 v-len = sv.len-bytes()
 
-                name = sn.slice-bytes(0, n-len)
+                name = sn.slice-bytes(0, n-len).to-bytes-str()
                 v-len > 0 -> {
-                    value = sv.slice-bytes(0, v-len)
+                    value = sv.slice-bytes(0, v-len).to-bytes-str()
                 }
                 ok = true
                 return
@@ -585,9 +585,9 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 
             v-len = dv.len-bytes()
 
-            name = dn.slice-bytes(0, n-len)
+            name = dn.slice-bytes(0, n-len).to-bytes-str()
             v-len > 0 -> {
-                value = dv.slice-bytes(0, v-len)
+                value = dv.slice-bytes(0, v-len).to-bytes-str()
             }
             ok = true
             return

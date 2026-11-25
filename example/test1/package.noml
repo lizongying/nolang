@@ -1,6 +1,5 @@
 {
   name: 'test1'
-  mirrors: []
   dependencies: [
     ; 线上包，指定版本
     ; 'test1:v0.1.0@github.com/lizongying/nolang',
@@ -15,7 +14,15 @@
   ]
   compiler: {
     version: 'v0.1.0'
-    link-libs: []
-    anonymous-fn-type: false
   }
+  description: ''
+  category: ''
+  keywords: []
+  author: ''
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
+  license: ''
+  ignore: []
 }

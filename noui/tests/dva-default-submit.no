@@ -1,0 +1,75 @@
+; ============================================================================
+; noui Enter / 默认按钮提交测试（阶段 81）—— src/dv-app.no
+;
+; 钉住 dva-default-submit 的语义：
+;   无焦点 -> 不动；焦点组件无 dv-act（输入框）-> 不动；
+;   焦点按钮带 dv-act -> 走与点击相同的 派发 -> 归约 -> 回调 路径。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-default-submit.no
+; ============================================================================
+# /noui/src/dv-app
+
+CLICKS []i64 = with-len(1)
+S []i64 = with-len(8)
+
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = S
+    _ = k
+    _ = act
+    _ = pay
+    CLICKS[0] = dv-inc(CLICKS[0])
+}
+
+print('=== dva-default-submit tests ===')
+
+root = cmp-root()
+dv-clear()
+pv = dv-form(1, -1)
+h-in = dv-node(C-INPUT, 1, '', '', 0, 0, 0, dv-on(), pv)
+h-btn = dv-node(C-BUTTON, 2, 'go', '', 0, 0, 0, dv-on(), pv)
+dv-act(h-btn, DV-A-SET, 3)
+ops = dv-render(root, pv)
+lin = dv-live-by-key(root, 1)
+lbtn = dv-live-by-key(root, 2)
+r0 = lin >= 0 && lbtn >= 0 && ops >= 0
+
+; 无焦点：Enter 什么都不做
+DVA-FOCUS[0] = -1
+CLICKS[0] = 0
+dva-default-submit(S, root)
+r1 = CLICKS[0] == 0
+
+; 输入框聚焦：它没有 dv-act，Enter 不触发点击
+DVA-FOCUS[0] = lin
+input-focus(lin, true)
+dva-default-submit(S, root)
+r2 = CLICKS[0] == 0
+
+; 按钮聚焦：Enter = 激活（点击回调 +1）
+DVA-FOCUS[0] = lbtn
+input-focus(lbtn, true)
+dva-default-submit(S, root)
+r3 = CLICKS[0] == 1
+
+; 连续 Enter：每次都激活
+dva-default-submit(S, root)
+dva-default-submit(S, root)
+r4 = CLICKS[0] == 3
+
+; 焦点撤掉后：不再触发
+input-focus(lbtn, false)
+DVA-FOCUS[0] = -1
+dva-default-submit(S, root)
+r5 = CLICKS[0] == 3
+
+all-ok = r1 && r2 && r3 && r4 && r5
+print('none={r1} input={r2} button={r3} repeat={r4} blur={r5}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DVA-DEFAULT-SUBMIT TESTS PASSED') }
+(!all-ok) -> { print('DVA-DEFAULT-SUBMIT TESTS FAILED'); exit(1) }

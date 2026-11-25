@@ -7,6 +7,9 @@ Nolang 词条库 glossary 也可在 nohub 线上查看：[glossary on nohub](htt
 
 noui 包在 nohub 上的页面：[noui on nohub](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
+> 进度与下一步看 [NEXT.md](NEXT.md)；验收明细见文末「验收记录」，架构决策见
+> [ARCHITECTURE.md](ARCHITECTURE.md)（§5.73 阶段79/80、§5.74 阶段81）。
+
 ## 已交付
 
 - **两个可运行版本**：
@@ -2916,7 +2919,7 @@ with-len 全局注册缺陷后，**分层内核已可落地**（`tests/main-laye
 | `tests/widget.no` | 阶段4：widget 构造器 + 主题 |
 | `tests/interaction.no` | 交互逻辑单元测试 |
 | `tests/logic/` | `no test` L1–L3 纯逻辑（独立 package，无 shim 依赖） |
-| `tests/kernel.no` `tests/kernel2.no` `tests/test-kernel.no` | 旧 470 行完整分层原型 / 大写修复版 / gen-test.sh 生成物；三份已统一为大写全局 + `->` guard（收尾轮，`test-kernel` 输出 `elements: 2`） |
+| `tests/kernel.no` `tests/kernel2.no` `tests/test-kernel.no` | 旧 470 行完整分层原型 / 大写修复版 / 早期拼接脚本产出；三份已统一为大写全局 + `->` guard（收尾轮，`test-kernel` 输出 `elements: 2`）。拼接脚本 `gen-test.sh` 已于阶段81 删除（仅 3 行 cat，产出静态保留） |
 | `tests/probe.no` `tests/test-l1.no` `tests/sv.no` `tests/t2.no` `tests/t3.no` | 早期探针；`test-l1`（L1 几何 + 实体注册表集成）/ `t2` / `t3` 已在收尾轮转绿 |
 
 仓库 `example/` 区：
@@ -6024,3 +6027,111 @@ Scene 里有没有那一行才会发现（本阶段的 `t31` 就是这么抓到�
 那份。已把 dv 侧改成 `TR-ARROW-OPEN` / `TR-ARROW-SHUT`（与 `TR-ARROW-W` 同族），
 `components.no` 的池名不动。`src/*.no` 单文件 `no vet` 现在除 `dv-app.no` 的
 7 个「装配层固有未定义」和 `pm-*.no` / `pushmod*.no` 这些内核草稿外全绿。
+
+## 验收记录（阶段76：平台能力——resize 回写 / 文本输入 / 剪贴板）
+
+审查里三类「非组件」缺口一次补齐，组件目录零改动：
+
+1. **窗口 resize 回写**：拖边框 / 全屏切换后，SDL 的真窗口尺寸变了而
+   `APP-WIN-W/H(WF/HF)` 还是旧值，布局按旧尺寸排到底（画面被裁切或留白）。
+   `src/app.no` 新增 `app-sync-window-size()`，`app-frame()` 每帧开头调用，
+   位置在 `app-window-apply-all()` 之前——显式声明尺寸的 `C-WINDOW-EXT`
+   每帧仍覆盖回去（显式优先）。测试 `tests/app-resize.no` 8 项断言全绿。
+2. **文本输入**：`SDL_EVENT_TEXT_INPUT` 带的是整段 UTF-8（IME 组字、死键、
+   非 ASCII），按键码拿不到。shim 用事件类型 7 + 内部缓冲
+   （`noui_text_take()` 读完即空）把它交给 `dv-app.no` 的 `dva-type(s)`，
+   按**码点**切片喂给三级焦点：命令面板 > 输入框 > 代码编辑器。
+3. **系统剪贴板**：`noui_clipboard_copy/-paste` + `app-clipboard-*`
+   FFI；`dv-clipboard-hit(h,px,py)` 按 `cs-paint-clipboard` 同款几何
+   （右内边距 1200、方块 2400、垂直居中）检测复制方块，命中即把
+   `clip-content` 写进系统剪贴板并跳过普通点击派发。
+
+测试 `tests/dva-input.no` 9 项断言全绿（无焦点 no-op；`'a0 中😀'` 逐码点
+进入输入框；复制方块中心命中外不命中；非剪贴板组件不命中；句柄 -1 不崩）。
+
+**测试运行器**：`./scripts/run-noui-tests.sh` 无头全量跑 `tests/*.no`
+（dummy 视频/音频驱动 + `NOUI_MAX_FRAMES` 帧闸 + 退出码判定 + 并行 +
+单测超时），2026-11-25 实测 **131/131 通过**。用法：
+
+```sh
+./scripts/run-noui-tests.sh                       # 全部
+JOBS=8 ./scripts/run-noui-tests.sh                # 调并行度
+./scripts/run-noui-tests.sh tests/app-resize.no   # 只跑指定文件
+```
+
+坑三条：`i = i + 1` 会得到 `?i64` 不能赋回 `i64`（用 `cs-inc`）；剪贴板
+组件几何要等 `cs-layout` 才有值；`str.slice` 是码点索引，正好用来切
+UTF-8 字符。
+
+## 验收记录（阶段77–80：焦点遍历 / 图片精灵 / GPU 接线 / 多窗口 / CI）
+
+审查里剩下的非组件缺口一次补齐：
+
+1. **键盘焦点遍历（阶段77）**：Tab / Shift-Tab 环形切换输入类焦点。shim 键码
+   拆槽解决 24 位截断（方向键曾失效），`dv-app.no` 的 `dva-focus-step(root,dir)`
+   按视图创建序取候选（跳过禁用），编辑器 / 命令面板聚焦时让位。
+   `tests/dva-focus-tab.no` 9 项全绿。
+2. **图片 / 精灵（阶段78）**：最小 PNG 解码器 `src/shim/img_png.c`（zlib，
+   RGBA8），`noui_img_load/size/draw_image` + Nolang 侧 `C-SPRITE` /
+   `CS-IMG` 全链路。`tests/cmp-sprite.no` 8 项全绿（夹具
+   `tests/fixtures/dot.png`）。
+3. **GPU 后端接入主循环（阶段79）**：`app-use-gpu(1)` 后 app-init / frame /
+   delay / shutdown 全部走 SDL_GPU；GPU 路径只画矩形（无纹理管线，文本 /
+   图片 / 裁剪跳过）。shim 顺带修掉归一化写死 200×150 与 float/double ABI
+   错位两个 bug。`tests/app-gpu.no` 在任何环境验证开关链路，有 GPU 的机器
+   自动连跑两帧；dummy 驱动下只要求优雅失败。
+4. **多窗口支持（阶段80）**：shim 窗口注册表 + attach 语义，既有绘制与窗口
+   API 逐窗复用；事件流新增 `app-event-window()` 区分来源窗口；`app-frame()`
+   把同一份 Scene 镜像到所有已开窗口（每窗尺寸自适应）。图片纹理由各窗口
+   惰性创建（texture 属于 renderer，不能跨窗）。`tests/app-windows.no` 14 项
+   全绿。限制：Scene 在帧首生成，副窗尺寸变化不重排坐标（详见
+   ARCHITECTURE §5.73）。
+5. **CI（阶段80）**：`.github/workflows/test.yml` 新增 `noui-test` job——
+   macos runner、brew 装 llvm/sdl3/sdl3_ttf/coreutils、`make no`、
+   `./build-shims.sh`、`./scripts/run-noui-tests.sh`（dummy 无头全量）。
+   运行器实测 **136/136 通过**（阶段 81 新增能力后为 **139/139**）。
+
+编译器侧同批修掉两个隐患：跨模块同名顶层可变绑定从「静默别名」改为硬错误
+（`dup-global-xmod`，报出两处声明位置）；match arm 体内手写 let 不再穿透
+全局槽位（臂局部阴影，arm 末还原）。两条的永久回归测试在 Go 套件里：
+`src/build/cross_module_dup_global_test.go`（含常量/std 边界放行）与
+`src/mir/arm_shadow_global_test.go`（MIR 层断言 arm 内对全域槽位 0 次写入，
+并以非 arm 的一般赋值做非空洞对照；预修复行为实测为 1 次，测试会红）。
+
+## 验收记录（阶段81：事件面与绘制原语补齐）
+
+审查 P2「平台能力缺口」里尚未落地的项一次补齐，并把 P3 的工程化收尾
+（NEXT.md、过时脚本）一并做掉：
+
+1. **事件面扩展（阶段81）**：`shim.c` 类型码 1..24——鼠标右 / 中键按下抬起
+   （8/9/10/11）、key-up（12）、触摸（13/14/15）、压感笔（16/17/18/23）、
+   文件 / 文本拖放（19/20/21/22/24）。修饰键从「Shift 挤在 y bit23」升级为
+   aux 字节的完整位图（Shift/Ctrl/Alt/Meta），触摸 / 笔的 aux 是压力量化
+   （0..255）；触摸归一化坐标按窗口像素换算，拖放内容走独立缓冲 +
+   `noui_drop_take()` 取件（读完即空，与文本输入同构）。`app.no` 新增纯函数
+   `app-event-decode(e)`，事件面可被合成 i64 单测覆盖。
+   `tests/app-event-decode.no` 8 项全绿。
+2. **绘制原语（阶段81）**：Scene 指令新增 `CS-ROUND`(5) / `CS-SHADOW`(6) /
+   `CS-IMGR`(7) 与附加参数池（半径 / 阴影偏移 / 旋转角 / 翻转位）。颜色
+   透明度打通：绘制出口不再硬编码 alpha=255，统一读 `col-a(c)`（矩形 / 填充 /
+   文本 / GPU 矩形），半透明主题色第一次真正生效；清屏底色仍固定不透明。
+   C 侧
+   `noui_draw_round_rect`（中央矩形 + 上下逐行 sqrt 收窄的圆角近似）、
+   `noui_draw_shadow`（多层外扩半透明叠加）、`noui_draw_image_rot`
+   （SDL_RenderTextureRotated + FlipMode）。GPU 无纹理 / 逐行管线，圆角降级
+   直角、阴影 / 旋转图片跳过（README 限制同阶段79 口径）。
+   `tests/cmp-scene-prims.no` 7 项全绿。
+3. **字体 fallback 与 DPI（阶段81）**：`app-init` 字号先乘窗口 DPI 缩放
+   （`noui_window_display_scale1000`），字体候选按 Arial → Helvetica →
+   PingFang → Library/Arial → Menlo 顺序逐个尝试，全部失败才回退 DebugText
+   （此前单一硬编码路径，换机器静默丢字体）。
+4. **默认按钮 / Enter 提交（阶段81）**：`dva-default-submit(S,root)`——有焦点
+   且带视图动作（dv-act）时，Enter 等价于点击它，走完全相同的
+   派发 → 归约 → 回调路径；输入框等无 dv-act 组件不受影响。主循环把
+   「无面板焦点」分支的 Enter 接到这里。`tests/dva-default-submit.no`
+   5 项全绿。
+5. **P3 收尾（阶段81）**：新增 `NEXT.md`（现状 + 下一步 + 约定）；删除早期
+   内核拼接脚本 `gen-test.sh`（产出 kernel.no / test-kernel.no 保留为历史
+   回归，README 已注明）。同批修掉 `tests/dv.no` 里唯一的「行首 `&&` 续行」
+   （nolang 解析器不支持，此前被编译缓存掩盖，cmp-scene 改动触发重编后暴露），
+   改为单行 `&&`。全量套件 **139/139**。

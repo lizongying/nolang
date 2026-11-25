@@ -78,7 +78,7 @@ Stack-Slot-Rebind wirkt nur auf die **Wertkopie**-Semantik von Stack-Typ-`b = a`
 | Struktur | Summe der Felder | jedes Feld | alloca (Stack) |
 
 **Die Größe von `?T` wird berechnet, nicht festgelegt**: `?i64` = 16 Bytes, `?str` = 24, `?txt` = 264; eine Nutzlast über
-`option-inline-threshold` (Standard 264 = 1 + 7 + 256, Minimum 16) wird als Heap-Box gespeichert, womit die gesamte Option
+`option-payload-inline-threshold` (Standard 264 = 1 + 7 + 256, Minimum 16) wird als Heap-Box gespeichert, womit die gesamte Option
 wieder 16 Bytes beträgt. Jeder Nutzlasttyp besitzt seinen eigenen `%option_<key>`-Typ (`src/mir/layout.go`), daher gilt
 „gleicher Typ ⇔ gleiches Layout". Die `err`-Nutzlast wird immer geboxt und belegt nie das Nutzlast-Budget. Siehe
 `docs/docs/lang/syntax.md`〈Nullable Typen (option) · Speicherlayout〉.
@@ -280,7 +280,7 @@ b[0] = 99
 > daher gilt auch hier die Dualität „Tiefen-Clone passt zu Tiefen-free".
 > ⚠️ Eine gewöhnliche (nicht `?str`/`?[]T`-) Option hat eine geliehene oder reine Wert-Nutzlast und **besitzt keinen**
 > Heap; clone und free lassen sie unangetastet.
-> Ist die Nutzlast größer als `option-inline-threshold`, speichert die Option stattdessen einen Heap-Zeiger; dann muss
+> Ist die Nutzlast größer als `option-payload-inline-threshold`, speichert die Option stattdessen einen Heap-Zeiger; dann muss
 > beim Freigaben auch die Box freigegeben werden (bestimmt durch `Boxed`, siehe `src/mir/layout.go`).
 
 ### Unterschied zu move

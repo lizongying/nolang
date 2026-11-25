@@ -159,12 +159,12 @@ no build -target aarch64-linux-gnu   # 需要交叉编译时才显式指定
 `%option_<key> = { i8 tag, [K x i64] }`（1 位元组标签、载荷固定在位元组偏移 8、
 `K = roundUp8(sizeof(T))/8`）。载荷放不进阈值就改成堆装箱、载荷区首字存指标。
 
-`--option-inline-threshold=N` 指定这个阈值（按**整个 option 结构**的位元组计，
+`--option-payload-inline-threshold=N` 指定这个阈值（按**整个 option 结构**的位元组计，
 即 `1 + 7 + sizeof(T)`）：
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # 让更大的载荷内联
-no build --option-inline-threshold=16 main.no     # 最小可配置值
+no build --option-payload-inline-threshold=1032 main.no   # 让更大的载荷内联
+no build --option-payload-inline-threshold=16 main.no     # 最小可配置值
 ```
 
 | 值 | 效果 |
@@ -173,8 +173,8 @@ no build --option-inline-threshold=16 main.no     # 最小可配置值
 | 最小 **16** | 只有 `?i64` 一类还内联；`?str`（24 B）起全部装箱 |
 | < 16 | 编译错误 |
 
-优先序：命令行 > 环境变量 `NOLANG_OPTION_INLINE_THRESHOLD` > `package.noml` 的
-`compiler.option-inline-threshold` > 预设值。布局的唯一来源是 `src/mir/layout.go`，
+优先序：命令行 > 环境变量 `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `package.noml` 的
+`compiler.option-payload-inline-threshold` > 预设值。布局的唯一来源是 `src/mir/layout.go`，
 语义层面（哪些值算 `ok`／`nil`／`err`）**不受影响**，只有记忆体占用与是否装箱会变。
 
 ### 编译器内置优化器（MIR opt）
@@ -383,14 +383,12 @@ Nolang 的所有配置档（`package.noml`、`workspace.noml`、`.workspace.noml
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

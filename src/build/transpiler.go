@@ -26,14 +26,14 @@ type Transpiler struct {
 	// 而 salt 要把上千条签名序列化成 JSON；原先每个文件解析都重算一遍。
 	// 失效点只有 preloadModuleSignatures 装载完签名表的那一刻。
 	saltCache string
-	// optionInlineThreshold 是 `?T` 載荷內聯的字節閾值（0 = 用 MIR 預設值 24）。
-	// 來源依序為 NOLANG_OPTION_INLINE_THRESHOLD 環境變數、package.noml 的
-	// compiler.option-inline-threshold。它決定 MIR 的
+	// optionPayloadInlineThreshold 是 `?T` 載荷內聯的字節閾值（0 = 用 MIR 預設值 24）。
+	// 來源依序為 NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD 環境變數、package.noml 的
+	// compiler.option-payload-inline-threshold。它決定 MIR 的
 	// `%option = { i64 tag, [N x i64] slot }` 裡 slot 的寬度：載荷 sizeof 不
 	// 大於它則內聯，大於它則堆裝箱、slot[0] 存指針。
-	optionInlineThreshold int
-	vetMode               bool // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
-	vetStrict             bool // vet 模式下是否將 warning/hint 升級為 error
+	optionPayloadInlineThreshold int
+	vetMode                      bool // vet 模式：只做語法+型別檢查，跳過 LLVM IR 生成
+	vetStrict                    bool // vet 模式下是否將 warning/hint 升級為 error
 	// jsBackend 標記本次前端組裝服務於 JS 後端（--js 或 package.noml 的
 	// compiler.emit = "js"）。LLVM 無法連結 JS 模組，故 `# npm/<spec>` 這類
 	// ESM 導入在 JS 後端下**不解析為 .no 原始碼**，而是與 js_backend.go 同口徑
@@ -184,14 +184,14 @@ func NewTranspiler(pkg *Package) *Transpiler {
 		switches: compilerSwitches(pkg),
 	}
 	if pkg != nil {
-		t.optionInlineThreshold = pkg.Compiler.OptionInlineThreshold
+		t.optionPayloadInlineThreshold = pkg.Compiler.OptionPayloadInlineThreshold
 	}
 	// 環境變數覆寫 package.noml，方便不改專案檔就能做 A/B。
-	if v := os.Getenv("NOLANG_OPTION_INLINE_THRESHOLD"); v != "" {
+	if v := os.Getenv("NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			t.optionInlineThreshold = n
+			t.optionPayloadInlineThreshold = n
 		} else {
-			fmt.Fprintf(os.Stderr, "warning: NOLANG_OPTION_INLINE_THRESHOLD=%q is not an integer, ignored\n", v)
+			fmt.Fprintf(os.Stderr, "warning: NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD=%q is not an integer, ignored\n", v)
 		}
 	}
 	return t
@@ -213,12 +213,12 @@ func (t *Transpiler) SetTargetPlatform(goos, goarch string) {
 
 // SetNoBoundsCheck configures whether bounds checks are skipped in generated code.
 // When true (unsafe mode), array/slice/string indexing does not emit bounds checks.
-// SetOptionInlineThreshold 以命令列 `--option-inline-threshold=N` 覆寫閾值。
-// 優先序：命令列 > NOLANG_OPTION_INLINE_THRESHOLD > package.noml；0 表示「未指定」，
+// SetOptionPayloadInlineThreshold 以命令列 `--option-payload-inline-threshold=N` 覆寫閾值。
+// 優先序：命令列 > NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD > package.noml；0 表示「未指定」，
 // 保留 NewTranspiler 已經解析好的值。
-func (t *Transpiler) SetOptionInlineThreshold(n int) {
+func (t *Transpiler) SetOptionPayloadInlineThreshold(n int) {
 	if n > 0 {
-		t.optionInlineThreshold = n
+		t.optionPayloadInlineThreshold = n
 	}
 }
 

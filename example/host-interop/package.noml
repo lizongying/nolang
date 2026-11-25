@@ -6,8 +6,12 @@
   keywords: []
   dependencies: []
   compiler: {
-    link-libs: []
+    version: ''
   }
-  output: '/dist'
   ignore: []
+  category: ''
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
 }

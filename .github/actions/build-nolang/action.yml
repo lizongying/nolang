@@ -188,8 +188,8 @@ runs:
         # publish it; fall back to the pure-Go `no_*` asset, which *does* shell
         # out to opt/llc, so the caller must provide them (this action no longer
         # installs LLVM).
-        EMBEDDED="no-llvm-${SUFFIX}-${VERSION_NO_V}${EXT}"
-        PLAIN="no-${SUFFIX}-${VERSION_NO_V}${EXT}"
+        EMBEDDED="no-llvm-${SUFFIX}_${VERSION_NO_V}${EXT}"
+        PLAIN="no-${SUFFIX}_${VERSION_NO_V}${EXT}"
         ASSET_NAMES=$(printf '%s' "$REL_JSON" | jq -r '.assets[]?.name')
         has_asset() { printf '%s\n' "$ASSET_NAMES" | grep -qxF -- "$1"; }
 

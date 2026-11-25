@@ -239,4 +239,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-SELECT TESTS FAILED')
+    exit(1)
 }

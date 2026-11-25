@@ -1,0 +1,62 @@
+; ============================================================================
+; noui 多窗口测试（阶段80）
+;
+; shim 维护窗口注册表：create 返回 1 基 id；attach 决定既有 setter/getter/
+; 绘制作用在哪个窗；event 返回最近一次事件所属窗口。所有窗口镜像同一份
+; Scene。dummy 视频驱动下每个窗口都是真 SDL 窗口，尺寸/开关都可验。
+; ============================================================================
+# /noui/src/app
+
+print('=== app-windows tests ===')
+
+r0 = app-init('win-test')
+r1 = r0 == 0
+r2 = app-window-count() == 1
+
+; 开一个副窗（320x240），id 应为 2
+eid = app-window-create-extra('extra', 320, 240)
+r3 = eid == 2
+r4 = app-window-count() == 2
+
+; 副窗尺寸独立：set-size 作用于当前 attach（副窗）
+_noui-window-set-size(320, 240)
+app-sync-window-size()
+r5 = app-win-w() == 320 && app-win-h() == 240
+
+; 切回主窗并恢复主尺寸
+r6 = app-window-attach(1) == 1
+_noui-window-set-size(560, 420)
+app-sync-window-size()
+r7 = app-win-w() == 560 && app-win-h() == 420
+
+; 两个窗口各跑一帧（dummy 驱动下应无崩溃）
+app-frame()
+app-frame()
+r8 = true
+
+; 事件窗口查询：还没 poll 过，值应在 [0, count] 内
+ew = app-event-window()
+r9 = ew >= 0 && ew <= app-window-count()
+
+; 关掉副窗
+r10 = app-window-close(2) == 1
+r11 = app-window-count() == 1
+
+; 无效 id 一律温和失败
+r12 = app-window-close(99) == 0
+r13 = app-window-attach(99) == 0
+
+; GPU 模式拒绝副窗（不真的建 GPU 设备，只验证模式判定；随后切回渲染后端）
+app-use-gpu(1)
+gid = app-window-create-extra('gpu-extra', 100, 100)
+r14 = gid == 0
+app-use-gpu(0)
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13 && r14
+print('init={r1}{r2} extra={r3}{r4} size={r5} attach={r6}{r7} frames={r8} event={r9}')
+print('close={r10}{r11} invalid={r12}{r13} gpu-refuse={r14}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-WINDOWS TESTS PASSED') }
+(!all-ok) -> { print('SOME APP-WINDOWS TESTS FAILED'); exit(1) }
+
+app-shutdown()

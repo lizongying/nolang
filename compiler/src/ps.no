@@ -249,7 +249,7 @@ ps-enum-row = (p psst, en str, v str) (r i64) {
             j = ix.dec(j)
         }
         d >= 0 -> {
-            tail = en.slice-bytes(d + 1, en.len-bytes())
+            tail = en.slice-bytes(d + 1, en.len-bytes()).to-bytes-str()
             k = 0
             (k < p.ev-n.len() && r < 0) {
                 ix.at-s(p.en-n, k).copy() == tail && ix.at-s(p.ev-n, k).copy() == v -> r = k
@@ -287,7 +287,7 @@ ps-enum-has = (p psst, en str) (r i64) {
             j = ix.dec(j)
         }
         d >= 0 -> {
-            tail = en.slice-bytes(d + 1, en.len-bytes())
+            tail = en.slice-bytes(d + 1, en.len-bytes()).to-bytes-str()
             k = 0
             (k < p.en-n.len() && r == 0) {
                 ix.at-s(p.en-n, k).copy() == tail -> r = 1
@@ -1240,7 +1240,7 @@ ps-is-op-overload-name = (nm str) (r i64) {
 
         j = ix.dec(j)
     }
-    d >= 0 -> base = nm.slice-bytes(d + 1, nm.len-bytes())
+    d >= 0 -> base = nm.slice-bytes(d + 1, nm.len-bytes()).to-bytes-str()
     r = 0
     (base == '_add' || base == '_sub' || base == '_mul' || base == '_div' || base == '_mod') -> r = 1
 }
@@ -3250,7 +3250,7 @@ ps-sig-find = (p psst, fname str) (pos i64) {
             nm = p.ms-n[i]
             nl = nm.len-bytes()
             nl > sl -> {
-                pre = nm.slice-bytes(nl - sl, nl)
+                pre = nm.slice-bytes(nl - sl, nl).to-bytes-str()
                 pre == suf -> {
                     pos = ix.at-i(p.ms-p, i)
                     i = p.ms-n.len()
@@ -3264,7 +3264,7 @@ ps-sig-find = (p psst, fname str) (pos i64) {
                 nm = p.sig-n[j]
                 nl = nm.len-bytes()
                 nl > sl -> {
-                    pre = nm.slice-bytes(nl - sl, nl)
+                    pre = nm.slice-bytes(nl - sl, nl).to-bytes-str()
                     pre == suf -> {
                         pos = ix.at-i(p.sig-p, j)
                         j = p.sig-n.len()
@@ -4019,7 +4019,7 @@ ps-lower-signed-int-name = (typ str) (r str) {
     typ.len-bytes() == 0 -> return
     typ.starts-with('?') -> return
     typ.starts-with('*') -> {
-        r = ps-lower-signed-int-name(typ.slice-bytes(1, typ.len-bytes()))
+        r = ps-lower-signed-int-name(typ.slice-bytes(1, typ.len-bytes()).to-bytes-str())
         return
     }
     typ == 'int' || typ.ends-with('.int') -> r = 'int'
@@ -4271,7 +4271,7 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             ; `?X` ⇒ NullableType{ elem: X }
                             exn = elem.len-bytes()
                             ex-inner = ast.add(t, asp.K-NAMED-TYPE)
-                            ast.set-slot(t, ex-inner, 0, ast.put-str(t, elem.slice-bytes(1, exn)))
+                            ast.set-slot(t, ex-inner, 0, ast.put-str(t, elem.slice-bytes(1, exn).to-bytes-str()))
                             typ = ast.add(t, asp.K-NULLABLE-TYPE)
                             ast.kid-add(t, typ, ex-inner)
                             exhd = 1
@@ -4281,7 +4281,7 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             ; `[]X` ⇒ SliceType{ inferred, elem: X }
                             exn = elem.len-bytes()
                             ex-inner = ast.add(t, asp.K-NAMED-TYPE)
-                            ast.set-slot(t, ex-inner, 0, ast.put-str(t, elem.slice-bytes(2, exn)))
+                            ast.set-slot(t, ex-inner, 0, ast.put-str(t, elem.slice-bytes(2, exn).to-bytes-str()))
                             typ = ast.add(t, asp.K-SLICE-TYPE)
                             ast.kid-add(t, typ, ex-inner)
                             exhd = 1
@@ -4349,7 +4349,7 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                 ivt != '' && name != '_' -> {
                     ivb = ivt
                     ivsh = ps-elem-shape(ivt)
-                    ivsh == 1 -> ivb = ivt.slice-bytes(1, ivt.len-bytes())
+                    ivsh == 1 -> ivb = ivt.slice-bytes(1, ivt.len-bytes()).to-bytes-str()
                     ivsig = 0
                     ivb == 'int' -> ivsig = 1
                     ivb == 'i8' -> ivsig = 1
@@ -5057,7 +5057,7 @@ ps-idx-elem-of = (ty str) (r str) {
         c1 == 93 -> {
 
             ; []X：X = ty[2..n]
-            r = ty.slice-bytes(2, n)
+            r = ty.slice-bytes(2, n).to-bytes-str()
         }
         c1 != 93 -> {
 
@@ -5074,7 +5074,7 @@ ps-idx-elem-of = (ty str) (r str) {
                     from = i
 
                     from = ix.inc(from)
-                    r = ty.slice-bytes(from, n)
+                    r = ty.slice-bytes(from, n).to-bytes-str()
                     go = false
                 }
 
@@ -5142,7 +5142,7 @@ ps-elem-arr-size = (e str) (r str) {
             -> 0
         }
         cb == 93 -> {
-            r = e.slice-bytes(1, i)
+            r = e.slice-bytes(1, i).to-bytes-str()
             go = false
         }
 
@@ -5168,7 +5168,7 @@ ps-elem-arr-elem = (e str) (r str) {
             rb = i
 
             rb = ix.inc(rb)
-            r = e.slice-bytes(rb, n)
+            r = e.slice-bytes(rb, n).to-bytes-str()
             go = false
         }
 
@@ -5684,7 +5684,7 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
     ;   函式簽名。實測 `hashmap-str-tmpl.put = (key str, val v)`：oracle 無 GenericParams，
     ;   SUT 多出 `GenericParams: v`（map.no / static-hashmap.no 各 8–9 行）。
     tl = recv-type.len-bytes()
-    tl >= 5 && recv-type.slice-bytes(tl - 5, tl) == '-tmpl' && gnames.len() > 0 -> {
+    tl >= 5 && recv-type.slice-bytes(tl - 5, tl).to-bytes-str() == '-tmpl' && gnames.len() > 0 -> {
         gnames = with-cap(0)
     }
     idx = ast.add(t, asp.K-FUNCTION-DEFINITION)
@@ -9226,7 +9226,7 @@ ps-tv-recv-elem = (ty str) (r str) {
         c0 == 63 -> {
 
             ; `?X` → 剝前綴後取元素
-            r = ps-idx-elem-d(ty.slice-bytes(1, n))
+            r = ps-idx-elem-d(ty.slice-bytes(1, n).to-bytes-str())
             return
         }
     }
@@ -9519,7 +9519,7 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             elem = ''
             st.starts-with('?') -> {
                 sopt = 1
-                elem = st.slice-bytes(1, st.len-bytes())
+                elem = st.slice-bytes(1, st.len-bytes()).to-bytes-str()
             }
             bt = ''
             dead = 0

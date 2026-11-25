@@ -612,8 +612,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			}
 			v := c.coerce(srcTy, srcVal, clibLLVMType(cl.TruncArgs[i]))
 			if v == "" {
-				c.fail("builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)
-				return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+				return c.failAbort(inst, codegenTraceID, "builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)
 			}
 			argStrs = append(argStrs, clibLLVMType(cl.TruncArgs[i])+" "+v)
 			continue
@@ -621,8 +620,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		if cl.StrDataArg != nil && cl.StrDataArg[i] {
 			p := c.dataPtrOf(av)
 			if p == "" {
-				c.fail("builtin %s: arg %d is not a byte container in func %s", inst.Sym, i, f.Name)
-				return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+				return c.failAbort(inst, codegenTraceID, "builtin %s: arg %d is not a byte container in func %s", inst.Sym, i, f.Name)
 			}
 			argStrs = append(argStrs, "i8* "+p)
 			continue
@@ -636,8 +634,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 				frees = append(frees, p)
 			}
 			if p == "" {
-				c.fail("builtin %s: cannot pass arg %d as i8* in func %s", inst.Sym, i, f.Name)
-				return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+				return c.failAbort(inst, codegenTraceID, "builtin %s: cannot pass arg %d as i8* in func %s", inst.Sym, i, f.Name)
 			}
 			argStrs = append(argStrs, "i8* "+p)
 			continue
@@ -650,8 +647,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		}
 		v := c.coerce(srcTy, srcVal, lt)
 		if v == "" {
-			c.fail("builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)
-			return i18n.Errorf("n0hl9vde", "builtin %s arg %d: %s", inst.Sym, i, strings.Join(c.errs, "; "))
+			return c.failAbort(inst, codegenTraceID, "builtin %s: cannot coerce arg %d from %s to %s in func %s", inst.Sym, i, srcTy, lt, f.Name)
 		}
 		argStrs = append(argStrs, lt+" "+v)
 	}
@@ -705,8 +701,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			// is safe — the nil arm's slot holds {0,0,null} and emitOptionDrop only
 			// frees it under tag 0.
 			if !c.optionPayloadInline("%str-long") {
-				c.fail("builtin %s: ?str option result needs an inline option slot (option-inline-threshold >= 24)", inst.Sym)
-				return i18n.Errorf("6umfb8yv", "builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
+				return c.failAbort(inst, codegenTraceID, "builtin %s: ?str option result needs an inline option slot (option-payload-inline-threshold >= 16)", inst.Sym)
 			}
 			isNil := c.treg("c2n")
 			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i8* %s, null\n", isNil, p))
@@ -728,8 +723,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		if dstLT != "" && dstSlot != "" {
 			v := c.coerce(cRet, r, dstLT)
 			if v == "" {
-				c.fail("builtin %s: cannot coerce result %s to %s in func %s", inst.Sym, cRet, dstLT, f.Name)
-				return i18n.Errorf("2xqxrts5", "builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
+				return c.failAbort(inst, codegenTraceID, "builtin %s: cannot coerce result %s to %s in func %s", inst.Sym, cRet, dstLT, f.Name)
 			}
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		}
@@ -742,8 +736,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			c.sb.WriteString(fmt.Sprintf("  %s = icmp eq %s %s, 0\n", cmp, cRet, r))
 			v := c.coerce("i1", cmp, dstLT)
 			if v == "" {
-				c.fail("builtin %s: cannot coerce bool result to %s in func %s", inst.Sym, dstLT, f.Name)
-				return i18n.Errorf("2xqxrts5", "builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
+				return c.failAbort(inst, codegenTraceID, "builtin %s: cannot coerce bool result to %s in func %s", inst.Sym, dstLT, f.Name)
 			}
 			c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		}
@@ -756,8 +749,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			if dstLT != "" && dstSlot != "" {
 				v := c.coerce(cRet, r, dstLT)
 				if v == "" {
-					c.fail("builtin %s: cannot coerce result %s to %s in func %s", inst.Sym, cRet, dstLT, f.Name)
-					return i18n.Errorf("2xqxrts5", "builtin %s result: %s", inst.Sym, strings.Join(c.errs, "; "))
+					return c.failAbort(inst, codegenTraceID, "builtin %s: cannot coerce result %s to %s in func %s", inst.Sym, cRet, dstLT, f.Name)
 				}
 				c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 			}
@@ -1202,11 +1194,9 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 	// provide the function. Report it here (nolang-level, with the builtin's
 	// name) instead of letting it become an `undefined symbol` at link time.
 	if why := forwardCSpecUnavailable(bm.ForwardFunc); why != "" {
-		c.fail("builtin %s: %s in func %s", inst.Sym, why, c.curFuncNameForFail())
-		return i18n.Errorf("6umfb8yv", "builtin %s: %s", inst.Sym, why)
+		return c.failAbort(inst, codegenTraceID, "builtin %s: %s in func %s", inst.Sym, why, c.curFuncNameForFail())
 	}
-	c.fail("unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
-	return i18n.Errorf("2kqboupo", "unsupported builtin %s", inst.Sym)
+	return c.failAbort(inst, codegenTraceID, "unsupported builtin %s (ForwardFunc=%q) in func %s", inst.Sym, bm.ForwardFunc, f.Name)
 }
 
 // emitBuiltinEqRaw lowers `a.eq(b, n)` (builtin `str.eq`, ForwardFunc
@@ -1378,8 +1368,7 @@ func (c *codegen) emitJoinPush(inst *Inst) error {
 		// mismatch between the HIR pass and the lowerer; fail loudly instead
 		// of emitting `call void @nolang_join_push(i64 <i32 value>)`, which
 		// LLVM would reject with an opaque diagnostic far from the cause.
-		c.fail("__join-push: unsupported handle type %s", lt)
-		return i18n.Errorf("x57xvqny", "unsupported value type %s in func %s", lt, "__join-push")
+		return c.failAbort(inst, codegenTraceID, "__join-push: unsupported handle type %s", lt)
 	}
 	c.sb.WriteString(fmt.Sprintf("  call void @nolang_join_push(i64 %s)\n", h64))
 	return nil
@@ -1442,8 +1431,8 @@ func (c *codegen) byteDataPtr(v ValueID) (string, error) {
 		c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", r, lt, slot))
 		return r, nil
 	default:
-		c.fail("load-le/store-le: unsupported receiver type %s", lt)
-		return "", i18n.Errorf("2ylupu1o", "unsupported receiver type %s", lt)
+		c.diag(nil, codegenTraceID, "load-le/store-le: unsupported receiver type %s", lt)
+		return "", errCodegenAbort
 	}
 }
 
@@ -1745,8 +1734,7 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 	}
 	ct, cv := c.loadVal(inst.Args[0])
 	if ct != "%vec" {
-		c.fail("builtin chars-new: expected []char slice, got %s", ct)
-		return i18n.Errorf("u3g4qexx", "builtin %s: bad arg type %s", "chars-new", ct)
+		return c.failAbort(inst, codegenTraceID, "builtin chars-new: expected []char slice, got %s", ct)
 	}
 	// n = vec field 0 (element count, u32 in storage); data = vec field 2
 	// (i64-held pointer).
@@ -1771,8 +1759,7 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lenPtr, dstSlot))
 		c.sb.WriteString(fmt.Sprintf("  call void @_mir_txt_from_chars(i8* %s, i8* %s, i8* %s, i64 %s)\n", dataPtr, lenPtr, cReg, nReg))
 	default:
-		c.fail("builtin chars-new: unsupported result type %s", dstLT)
-		return i18n.Errorf("ond8w2xr", "builtin chars-new: %s", dstLT)
+		return c.failAbort(inst, codegenTraceID, "builtin chars-new: unsupported result type %s", dstLT)
 	}
 	return nil
 }
@@ -1797,8 +1784,7 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 		// "unsupported receiver type [N x E]" (e.g. tests/1.no: `len(["a","b","c"])`).
 		n, ok := arraySizeOf(lt)
 		if !ok {
-			c.fail("builtin %s: cannot compute size of fixed-array receiver %s", ff, lt)
-			return i18n.Errorf("stbjgjqz", "builtin %s fixed-array %s", ff, lt)
+			return c.failAbort(inst, codegenTraceID, "builtin %s: cannot compute size of fixed-array receiver %s", ff, lt)
 		}
 		if inst.Dst <= NoVal {
 			return nil
@@ -1843,8 +1829,7 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 		return nil
 	}
 	if lt != "%str-long" && lt != "%vec" {
-		c.fail("builtin %s: unsupported receiver type %s", ff, lt)
-		return i18n.Errorf("aywuxg5w", "builtin %s receiver %s: %s", ff, lt, strings.Join(c.errs, "; "))
+		return c.failAbort(inst, codegenTraceID, "builtin %s: unsupported receiver type %s", ff, lt)
 	}
 	if inst.Dst <= NoVal {
 		return nil
@@ -2206,7 +2191,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 			// 實測 `signal: abort trap`（malloc 偵測到堆損壞）。舊行為下
 			// `no vet` 也是 0 error（內建方法引數不做型別檢查），所以這是
 			// 「vet 過、run 炸」的靜默記憶體錯誤。寧可在此明確拒絕。
-			c.fail("vec.push: cannot push a value of type '%s' into '%s': the element type is '%s' but the argument is '%s', and no conversion exists between them",
+			c.diag(inst, codegenTraceID, "vec.push: cannot push a value of type '%s' into '%s': the element type is '%s' but the argument is '%s', and no conversion exists between them",
 				c.rawTypeOfValue(elem), c.rawTypeOfValue(recv), elemLL, elemTy)
 			return nil
 		} else if isOptionType(elemTy) != isOptionType(elemLL) {
@@ -2220,7 +2205,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 			//
 			// 這種分岔只剩「checker 認為 T、MIR 認為 ?T」一條路（真·型別錯誤在
 			// checker 就被 5lycdtsz 擋掉了），所以在這裡明確拒絕，不要靜默寫垃圾。
-			c.fail("vec.push [in %s]: cannot push an option value of type '%s' into '%s' (element type '%s'): unwrap it first (`v ?= …`, a match arm, or `k = <expr>` then `k: { ok -> … }`)",
+			c.diag(inst, codegenTraceID, "vec.push [in %s]: cannot push an option value of type '%s' into '%s' (element type '%s'): unwrap it first (`v ?= …`, a match arm, or `k = <expr>` then `k: { ok -> … }`)",
 				c.fname[c.cf], elemTy, c.rawTypeOfValue(recv), elemLL)
 			return nil
 		} else {
@@ -4248,8 +4233,7 @@ func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
 // matching the legacy call_stdlib.go utime inliner.
 func (c *codegen) emitBuiltinUtime(inst *Inst) error {
 	if targetGOOS() == "windows" {
-		c.fail("utime: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("ngj8b3uj", "utime: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "utime: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Args) < 3 {
 		return i18n.Errorf("ippfc6p4", "utime: needs path, atime, mtime")
@@ -4590,8 +4574,7 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		// No getgroups(2); the builtin is only declared for POSIX platforms
 		// (see the platform guards in std/os.no).
-		c.fail("getgroups: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("prohiujy", "getgroups: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "getgroups: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Results) < 2 {
 		return i18n.Errorf("wk4p8399", "getgroups: needs 2 results (gids, n)")
@@ -4706,8 +4689,7 @@ func (c *codegen) emitBuiltinGetGrouplist(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		// No getgrouplist(3); the builtin is only declared for POSIX platforms
 		// (see the platform guards in std/os.no).
-		c.fail("getgrouplist: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("v9milo3k", "getgrouplist: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "getgrouplist: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Results) < 2 {
 		return i18n.Errorf("6xq3uson", "getgrouplist: needs 2 results (gids, n)")
@@ -4840,8 +4822,7 @@ func (c *codegen) emitBuiltinSyslog(inst *Inst) error {
 	if targetGOOS() == "windows" {
 		// No syslog(3) on Windows; the builtin is only declared for POSIX
 		// platforms (see the platform guards in std/os.no).
-		c.fail("syslog: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("fk1sb6ss", "syslog: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "syslog: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	prio, err := c.marshalScalar(inst, 0, "i32")
 	if err != nil {
@@ -4886,8 +4867,7 @@ func (c *codegen) curFuncNameForFail() string {
 func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 	if len(inst.Results) < 1 || inst.Results[0] <= NoVal {
 		if inst.Dst <= NoVal {
-			c.fail("get-line: no result slot")
-			return i18n.Errorf("uzzd8eqi", "get-line: no result")
+			return c.failAbort(inst, codegenTraceID, "get-line: no result slot")
 		}
 	}
 	// The stdin FILE* is picked from the COMPILATION TARGET (targetGOOS), not
@@ -4971,8 +4951,7 @@ func (c *codegen) emitBuiltinGetLine(inst *Inst) error {
 // matching call_stdlib.go's scLen2/scBufSize2 usage so the printed value agrees.
 func (c *codegen) emitBuiltinSysctl(inst *Inst) error {
 	if targetGOOS() == "windows" {
-		c.fail("sysctl: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("vgxfhc6x", "sysctl: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "sysctl: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Args) < 1 {
 		return i18n.Errorf("ceuorcf6", "sysctl: needs a name")
@@ -5173,8 +5152,7 @@ func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string)
 // libc waitpid into an out-parameter. Mirrors call_stdlib.go process-waitpid.
 func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
 	if targetGOOS() == "windows" {
-		c.fail("waitpid: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("6o12uzmx", "waitpid: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "waitpid: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Args) < 2 {
 		return i18n.Errorf("cldvfmqx", "waitpid: needs pid, options")
@@ -5214,8 +5192,7 @@ func (c *codegen) emitBuiltinWaitpid(inst *Inst) error {
 // `process.cmd` to its Win32 body.
 func (c *codegen) emitBuiltinPipe(inst *Inst) error {
 	if targetGOOS() == "windows" {
-		c.fail("pipe: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("a7wjyiq9", "pipe: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "pipe: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	c.decl("declare i32 @pipe(i32*)")
 	fds := c.treg("pp.fds")
@@ -5247,8 +5224,7 @@ func (c *codegen) emitBuiltinPipe(inst *Inst) error {
 // option so the poll never blocks.
 func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
 	if targetGOOS() == "windows" {
-		c.fail("waitpid-nohang: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("r4mh5mrg", "waitpid-nohang: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "waitpid-nohang: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Args) < 1 {
 		return i18n.Errorf("kjxtslvr", "waitpid-nohang: needs pid")
@@ -5287,8 +5263,7 @@ func (c *codegen) emitBuiltinWaitpidNohang(inst *Inst) error {
 // module constants.
 func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 	if targetGOOS() == "windows" {
-		c.fail("exec-shell: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("p2m0wxh1", "exec-shell: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "exec-shell: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Args) < 1 {
 		return i18n.Errorf("wigbiu9z", "exec-shell: needs a command")
@@ -5323,8 +5298,7 @@ func (c *codegen) emitBuiltinExecShell(inst *Inst) error {
 // for the failure path.
 func (c *codegen) emitBuiltinProcessExec(inst *Inst) error {
 	if targetGOOS() == "windows" {
-		c.fail("process-exec: unsupported on windows in func %s", c.curFuncNameForFail())
-		return i18n.Errorf("czinamrs", "process-exec: unsupported on windows")
+		return c.failAbort(inst, codegenTraceID, "process-exec: unsupported on windows in func %s", c.curFuncNameForFail())
 	}
 	if len(inst.Args) < 2 {
 		return i18n.Errorf("e7yptvje", "process-exec: needs (prog, arg)")

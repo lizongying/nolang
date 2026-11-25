@@ -45,7 +45,6 @@ func localizedVersionLabel() string {
 
 type ProjectConfig struct {
 	Name         string            `json:"name"`
-	Version      string            `json:"version"`
 	Description  string            `json:"description"`
 	Category     string            `json:"category"`
 	Keywords     []string          `json:"keywords"`
@@ -55,9 +54,9 @@ type ProjectConfig struct {
 	Repository   string            `json:"repository"`
 	Homepage     string            `json:"homepage"`
 	License      string            `json:"license"`
+	Publish      bool              `json:"publish"`
 	Mirrors      []string          `json:"mirrors"`
 	Dependencies map[string]string `json:"dependencies"`
-	Main         string            `json:"main"`
 	Compiler     CompilerConfig    `json:"compiler"`
 	Output       string            `json:"output"`
 	Ignore       []string          `json:"ignore"`
@@ -735,17 +734,15 @@ func newProject(name string) {
 
 	config := ProjectConfig{
 		Name:         name,
-		Version:      "v0.1.0",
+		Publish:      true,
 		Author:       gitInfo.Author,
 		Email:        gitInfo.Email,
 		Repository:   gitInfo.Repository,
 		Homepage:     gitInfo.Homepage,
 		Dependencies: map[string]string{},
-		Main:         "main.no",
 		Compiler: CompilerConfig{
 			Version: "v0.1.0",
 		},
-		Output: "/dist",
 	}
 
 	createConfigFile(config)
@@ -992,6 +989,9 @@ func resolveRunTarget(arg string) (string, error) {
 		if _, err := os.Stat(mainPath); err != nil {
 			return "", i18n.Errorf("zpgykko6", "main.no not found in %s", arg)
 		}
+		if p, _ := nbuild.LoadPackage(arg); p != nil && p.IsIgnored(mainPath) {
+			return "", fmt.Errorf("entry file %s is ignored by package.noml", mainPath)
+		}
 		return mainPath, nil
 	}
 
@@ -1010,6 +1010,9 @@ func resolveRunTarget(arg string) (string, error) {
 						mainPath := filepath.Join(dir, "main.no")
 						if _, serr := os.Stat(mainPath); serr != nil {
 							return "", i18n.Errorf("cccby88i", "main.no not found in package %q (%s)", arg, dir)
+						}
+						if p, _ := nbuild.LoadPackage(dir); p != nil && p.IsIgnored(mainPath) {
+							return "", fmt.Errorf("entry file %s is ignored by package.noml", mainPath)
 						}
 						return mainPath, nil
 					}
@@ -1605,6 +1608,26 @@ func validateFmtPath(path string) error {
 	return pkg.ValidateSourcePathName(path)
 }
 
+// formatNomlSource 是 `no fmt` 對 .noml 的唯一入口：package.noml 先補齊／移除
+// 欄位（保留鍵序、註解與 #{...}），再交給排版格式化器。其他 .noml 只做排版。
+// 第三個返回值是非致命警告（欄位差異），呼叫端寫 stderr，不影響退出碼。
+func formatNomlSource(filename, src string) (string, []nfmt.NomlProblem, []string) {
+	var warnings []string
+	if filepath.Base(filename) == pkg.PackageManifestName {
+		normalized, issues, err := pkg.NormalizeManifestFields(src)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s: warning: package.noml field check skipped: %v", filename, err))
+		} else {
+			if !issues.Empty() {
+				warnings = append(warnings, fmt.Sprintf("%s: warning: package.noml field set: %s (no fmt will fix)", filename, issues.Describe()))
+			}
+			src = normalized
+		}
+	}
+	result, probs := nfmt.FormatNomlFile(src)
+	return result, probs, warnings
+}
+
 // fmtProcessNomlFile 格式化一份 .noml 配置檔。
 //
 // 與 .no / Markdown 兩條路徑的關鍵差別：noml 的格式化器是「排版規範化」而非
@@ -1620,7 +1643,10 @@ func fmtProcessNomlFile(filename string, writeInPlace bool, diffMode bool) error
 		return err
 	}
 	original := string(data)
-	result, probs := nfmt.FormatNomlFile(original)
+	result, probs, warnings := formatNomlSource(filename, original)
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, w)
+	}
 	if len(probs) > 0 {
 		for _, p := range probs {
 			fmt.Fprint(os.Stderr, i18n.T("n0mlfmt4", "%s:%d: noml: %s\n", filename, p.Line, p.Reason))
@@ -1728,7 +1754,10 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			}
 			if isNoml {
 				// 檢查模式與 -w 共用同一個格式化入口，兩者不可能分歧。
-				nomlOut, probs := nfmt.FormatNomlFile(string(data))
+				nomlOut, probs, warnings := formatNomlSource(path, string(data))
+				for _, w := range warnings {
+					fmt.Fprintln(os.Stderr, w)
+				}
 				if len(probs) > 0 {
 					for _, p := range probs {
 						fmt.Fprint(os.Stderr, i18n.T("n0mlfmt4", "%s:%d: noml: %s\n", path, p.Line, p.Reason))
@@ -3122,13 +3151,14 @@ func buildCommand(args []string) {
 	cc := fs.String("cc", "clang", i18n.P("7k5x9q9a", "C compiler: clang (default), zig"))
 	target := fs.String("target", "", i18n.P("g2ex1gxt", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)"))
 	unsafe := fs.Bool("unsafe", false, i18n.P("5o3x4h4d", "Skip bounds checks for maximum performance (unsafe)"))
-	optInlineThreshold := fs.Int("option-inline-threshold", 0, i18n.P("aazb9b1n", "Byte threshold for inlining an option (?T) payload into the option struct, measured over the WHOLE struct (default 264 = 1-byte tag + 7 bytes padding + 256-byte payload; minimum 16); payloads above it are heap-boxed"))
+	optPayloadInlineThreshold := fs.Int("option-payload-inline-threshold", 0, i18n.P("aazb9b1n", "Byte threshold for inlining an option (?T) payload, measured over the PAYLOAD only (the 8-byte tag area is not counted). Default 256, minimum 8; larger payloads are heap-boxed"))
 	wasmDirect := fs.Bool("wasm-direct", false, i18n.P("23ki71z9", "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)"))
 	jsBackend := fs.Bool("js", false, i18n.P("2u63w9uc", "Use JS backend (emit JavaScript source, no LLVM toolchain required)"))
 	browserMode := fs.Bool("browser", false, i18n.P("2psk9dma", "Generate browser-targeted output (HTML + JS, requires --js)"))
 	esmCDN := fs.String("esm-cdn", "", i18n.P("pa3bgtjn", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)"))
 	shared := fs.Bool("shared", false, i18n.P("n1cabi10", "Build a shared library (.dylib/.so/.dll) exposing #{cabi} functions; also emits a C header"))
 	header := fs.String("header", "", i18n.P("n1cabi11", "Output path for the generated C ABI header (default: <output>.h)"))
+	checkOnly := fs.Bool("check", false, i18n.P("d8c4hm2k", "Run the full compile pipeline but write no output files (no binary, JS, WASM, header or IR)"))
 	fs.Usage = func() {
 		fmt.Println(i18n.P("let8mtmo", "Usage: no build [flags] <file|directory>"))
 		fmt.Println("")
@@ -3146,6 +3176,7 @@ func buildCommand(args []string) {
 		fmt.Println(i18n.P("18uic4sz", "Use -v to emit LLVM IR (.ll) files for analysis alongside the build."))
 		fmt.Println(i18n.P("74e32kaz", "Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default)."))
 		fmt.Println(i18n.P("n1cabi12", "Use --shared with #{cabi='symbol'} functions to build a shared library and its C header."))
+		fmt.Println(i18n.P("f3n0v6q1", "Use --check to validate a full build (including codegen) without writing any artifacts."))
 		fmt.Println("")
 		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
 		fmt.Println(i18n.P("elep1kra", "  no build                  build current directory or workspace.noml projects"))
@@ -3155,13 +3186,14 @@ func buildCommand(args []string) {
 		fmt.Println(i18n.P("rdl2c2x2", "  no build -target x86_64-linux-gnu main.no"))
 		fmt.Println(i18n.P("nmxsz1go", "  no build -target wasm32-wasi main.no"))
 		fmt.Println(i18n.P("eqsalj72", "  no build -unsafe main.no  build without bounds checks (max performance)"))
-		fmt.Println(i18n.P("wcoza64y", "  no build --option-inline-threshold=16 main.no   box every ?T payload bigger than 8 bytes"))
+		fmt.Println(i18n.P("wcoza64y", "  no build --option-payload-inline-threshold=16 main.no   box every ?T payload bigger than 16 bytes"))
 		fmt.Println(i18n.P("mt377i94", "  no build --wasm-direct -target wasm32-wasi main.no  emit WASM without LLVM toolchain"))
 		fmt.Println(i18n.P("emlptf1e", "  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output"))
 		fmt.Println(i18n.P("yoq1krwy", "  no build --js main.no                              emit JavaScript (type erasure)"))
 		fmt.Println(i18n.P("hvuu1dxx", "  no build --js -o app.js main.no                    JS backend with explicit output"))
 		fmt.Println(i18n.P("r5fkc5h1", "  no build --js --browser main.no                    emit browser JS + HTML wrapper"))
 		fmt.Println(i18n.P("n1cabi13", "  no build --shared -o dist/libdemo.dylib main.no    shared library + dist/libdemo.h"))
+		fmt.Println(i18n.P("q9f2s7wa", "  no build --check main.no                           validate the whole build, write nothing"))
 		fmt.Println("")
 		fmt.Println(i18n.P("shw0oc0z", "Third-party ESM imports (JS backend only): pull in npm packages with"))
 		fmt.Println(i18n.P("i9bcpk5g", "  # npm/lodash               the whole module object (use lodash.get(...))"))
@@ -3202,20 +3234,21 @@ func buildCommand(args []string) {
 	// （見下方 ResolveBackend 呼叫）。
 
 	opts := nbuild.BuildOptions{
-		CC:                    *cc,
-		Target:                targetStr,
-		Verbose:               verbose,
-		Output:                *outputFile,
-		NoBoundsCheck:         *unsafe,
-		OptionInlineThreshold: *optInlineThreshold,
-		UseDirectWasm:         *wasmDirect,
-		UseJS:                 *jsBackend,
-		BrowserMode:           *browserMode,
-		CompilerVersion:       version,
-		LDFlags:               ldFlags,
-		ESMCDN:                *esmCDN,
-		Shared:                *shared,
-		Header:                *header,
+		CC:                           *cc,
+		Target:                       targetStr,
+		Verbose:                      verbose,
+		Output:                       *outputFile,
+		NoBoundsCheck:                *unsafe,
+		OptionPayloadInlineThreshold: *optPayloadInlineThreshold,
+		UseDirectWasm:                *wasmDirect,
+		UseJS:                        *jsBackend,
+		BrowserMode:                  *browserMode,
+		CompilerVersion:              version,
+		LDFlags:                      ldFlags,
+		ESMCDN:                       *esmCDN,
+		Shared:                       *shared,
+		Header:                       *header,
+		CheckOnly:                    *checkOnly,
 	}
 
 	// 後端決策集中化：ResolveBackend 是唯一決策點（Direct-WASM > JS > LLVM），
@@ -3258,6 +3291,12 @@ func buildCommand(args []string) {
 		os.Exit(1)
 	}
 
+	// --check 沒有產物，印出檢查成功而非「Build successful: <path>」。
+	if *checkOnly {
+		fmt.Printf(i18n.P("t4y7k2m8", "Check successful: %s\n"), inputPath)
+		return
+	}
+
 	// Part B：始終顯示產物路徑（原僅 -v 才印 Build successful）。
 	// Browser 模式額外印 .js 與「Open in browser」提示（buildJSBackend 回傳 .html 路徑）。
 	if kind == nbuild.BackendJS && opts.BrowserMode {
@@ -3288,7 +3327,7 @@ func runCommand(args []string) {
 	cc := fs.String("cc", "clang", i18n.P("7k5x9q9a", "C compiler: clang (default), zig"))
 	target := fs.String("target", "", i18n.P("g2ex1gxt", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)"))
 	unsafe := fs.Bool("unsafe", false, i18n.P("5o3x4h4d", "Skip bounds checks for maximum performance (unsafe)"))
-	optInlineThreshold := fs.Int("option-inline-threshold", 0, i18n.P("aazb9b1n", "Byte threshold for inlining an option (?T) payload into the option struct, measured over the WHOLE struct (default 264 = 1-byte tag + 7 bytes padding + 256-byte payload; minimum 16); payloads above it are heap-boxed"))
+	optPayloadInlineThreshold := fs.Int("option-payload-inline-threshold", 0, i18n.P("aazb9b1n", "Byte threshold for inlining an option (?T) payload, measured over the PAYLOAD only (the 8-byte tag area is not counted). Default 256, minimum 8; larger payloads are heap-boxed"))
 	wasmDirect := fs.Bool("wasm-direct", false, i18n.P("23ki71z9", "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)"))
 	jsBackend := fs.Bool("js", false, i18n.P("dre61zsd", "Use JS backend (emit JavaScript, run with --js-runtime; default node)"))
 	browserMode := fs.Bool("browser", false, i18n.P("ci3l2aku", "Open in browser (requires --js)"))
@@ -3379,17 +3418,17 @@ func runCommand(args []string) {
 	// BuildBackend 是唯一分發點。命令層只做「依 kind 選擇執行方式」（node /
 	// 瀏覽器 / wasmtime / 原生二進位），不再複製三後端的判斷與寫盤邏輯。
 	opts := nbuild.BuildOptions{
-		CC:                    *cc,
-		Target:                targetStr,
-		Verbose:               verbose,
-		NoBoundsCheck:         *unsafe,
-		OptionInlineThreshold: *optInlineThreshold,
-		UseDirectWasm:         *wasmDirect,
-		UseJS:                 *jsBackend,
-		BrowserMode:           *browserMode,
-		CompilerVersion:       version,
-		LDFlags:               ldFlags,
-		ESMCDN:                *esmCDN,
+		CC:                           *cc,
+		Target:                       targetStr,
+		Verbose:                      verbose,
+		NoBoundsCheck:                *unsafe,
+		OptionPayloadInlineThreshold: *optPayloadInlineThreshold,
+		UseDirectWasm:                *wasmDirect,
+		UseJS:                        *jsBackend,
+		BrowserMode:                  *browserMode,
+		CompilerVersion:              version,
+		LDFlags:                      ldFlags,
+		ESMCDN:                       *esmCDN,
 	}
 
 	// 為 ResolveBackend 載入 package（emit=="js" 自動偵測與目錄→main.no 解析）。
@@ -3600,6 +3639,14 @@ func resolveJSRuntime(spec string, lookPath func(string) (string, error)) (exe s
 	return exe, extraArgs, false
 }
 
+// packageDirForInput 回報查找 package.noml 的起點：目錄輸入查自己，檔案輸入查上層。
+func packageDirForInput(inputPath string, isDir bool) string {
+	if isDir {
+		return inputPath
+	}
+	return filepath.Dir(inputPath)
+}
+
 func testCommand(args []string) {
 	nbuild.ClearCaches()
 	// Extract -ld-KEY=VALUE pairs before flag parsing
@@ -3657,8 +3704,9 @@ func testCommand(args []string) {
 		os.Exit(1)
 	}
 
-	// 載入 package 配置以套用 ignore 列表
-	testPkg, _ := nbuild.LoadPackage(filepath.Dir(inputPath))
+	// 載入 package 配置以套用 ignore 列表。目錄模式要從該目錄本身找
+	// package.noml；只有明確指定單一檔案時才回退到其上層目錄。
+	testPkg, _ := nbuild.LoadPackage(packageDirForInput(inputPath, info.IsDir()))
 
 	var testFiles []string
 	if info.IsDir() {
@@ -3667,9 +3715,12 @@ func testCommand(args []string) {
 			if err != nil {
 				return err
 			}
-			// 底線開頭的目錄（如 _drafts）整棵跳過，不編入測試。
+			// 底線開頭的目錄（如 _drafts）與 package.noml ignore 命中的目錄整棵跳過。
 			if d.IsDir() {
 				if pkg.IsIgnoredSourceDir(d.Name()) {
+					return filepath.SkipDir
+				}
+				if testPkg != nil && testPkg.IsIgnoredDir(path) {
 					return filepath.SkipDir
 				}
 				return nil
@@ -4126,10 +4177,50 @@ func firstFix(fixes []parser.DiagnosticFix) parser.DiagnosticFix {
 	return parser.DiagnosticFix{}
 }
 
+// canonicalVetPath 把診斷的源碼路徑歸一化為**唯一且穩定**的相對寫法，讓同一個
+// 源碼位置無論是從哪條 lint 鏈抵達都得到同一個字串。
+//
+// 背景：merged 程式裡同一份 std 檔可能同時帶兩種 SourceFile——內嵌 blob 的
+// 絕對路徑（/…/src/std/str.no）與工作區磁碟的相對路徑（src/std/str.no）。vet
+// 目錄模式又用 worker pool 並行驗證每個入口，誰先產生診斷誰的路徑寫法就被保留，
+// 於是同一位置在輸出中時而是絕對、時而是相對。「按包去重」因此不穩：去重鍵若用
+// filepath.Abs 還能合併，但輸出 File 仍是先到者的写法。
+//
+// 歸一規則：
+//   - cwd 內的絕對路徑 → 相對 cwd（ToSlash）；
+//   - 相對路徑 → Clean + ToSlash；
+//   - cwd 外的絕對路徑（如內嵌 blob 的編譯期路徑）→ 截取 src/std/ 或 std/ 尾巴，
+//     統一成 src/std/… 形式，與工作區磁碟路徑對齊。
+//
+// 這樣去重鍵與輸出 File 共用同一個值，同一源碼位置只有一種寫法。
+func canonicalVetPath(f string) string {
+	if f == "" {
+		return ""
+	}
+	slash := filepath.ToSlash(filepath.Clean(f))
+	if !filepath.IsAbs(f) {
+		return slash
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(cwd, f); err == nil &&
+			rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return filepath.ToSlash(rel)
+		}
+	}
+	// cwd 外：把 std 檔統一成 src/std/… 形式。
+	for _, marker := range []string{"/src/std/", "/std/"} {
+		if i := strings.LastIndex(slash, marker); i >= 0 {
+			return "src/std/" + slash[i+len(marker):]
+		}
+	}
+	return slash
+}
+
 // flattenLints 將文件級聚合結果拍平為單條診斷陣列，並做去重與嚴重性計數。
 // 去重邏輯與舊版文字輸出一致：vet 目錄模式下，每個檔案的 merged 程式都包含
 // 同一批導入模組，同一條診斷會隨依賴鏈重複產生；且主檔副本（相對路徑）與合併
-// 副本（絕對路徑）路徑寫法不同。按（正規化檔案, 行, 列, 嚴重性, 來源, 消息）去重。
+// 副本（絕對路徑）路徑寫法不同。所有路徑先經 canonicalVetPath 歸一，去重鍵與
+// 輸出 File 共用該值，故同一源碼位置跨界到達時既能合併、也只報告唯一寫法。
 // 返回順序為遍歷順序（不排序），呼叫方可自行決定輸出排序。
 func flattenLints(results []nbuild.LintResult) (diags []vetDiagnostic, errors, warnings, hints int) {
 	diags = make([]vetDiagnostic, 0)
@@ -4137,17 +4228,15 @@ func flattenLints(results []nbuild.LintResult) (diags []vetDiagnostic, errors, w
 	for _, fileResult := range results {
 		for _, l := range fileResult.Lints {
 			// 優先使用 lint 結果攜帶的 File（來自 merged 程式中語句的原始檔案路徑），
-			// 為空時回退到 fileResult.File（vet 命令遍歷的輸入檔案路徑）。
+			// 為空時回退到 fileResult.File（vet 命令遍歷的輸入檔案路徑），最後歸一化
+			// 成唯一相對寫法（見 canonicalVetPath）。
 			filePath := l.File
 			if filePath == "" {
 				filePath = fileResult.File
 			}
+			filePath = canonicalVetPath(filePath)
 			sev := strings.ToUpper(string(l.Severity))
-			dedupKey := filePath
-			if abs, err := filepath.Abs(filePath); err == nil {
-				dedupKey = abs
-			}
-			dedupKey = fmt.Sprintf("%s:%d:%d:%s:%s:%s", dedupKey, l.Line, l.Column, sev, l.Source, l.Message)
+			dedupKey := fmt.Sprintf("%s:%d:%d:%s:%s:%s", filePath, l.Line, l.Column, sev, l.Source, l.Message)
 			if seen[dedupKey] {
 				continue
 			}

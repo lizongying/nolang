@@ -274,4 +274,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-PALETTE TESTS FAILED')
+    exit(1)
 }

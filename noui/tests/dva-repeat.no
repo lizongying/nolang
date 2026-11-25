@@ -145,4 +145,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-REPEAT TESTS FAILED')
+    exit(1)
 }

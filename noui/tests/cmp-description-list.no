@@ -237,4 +237,5 @@ ok = ok & t51 & t52 & t53 & t54 & t55 & t56 & t57 & t58 & t59 & t60 & t61 & t62 
 }
 (ok == 0) -> {
     print('SOME DESCRIPTION-LIST TESTS FAILED')
+    exit(1)
 }

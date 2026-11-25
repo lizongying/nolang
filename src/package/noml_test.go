@@ -449,7 +449,7 @@ func TestNomlDocRoundTrip(t *testing.T) {
     #{type = 'bool'}
     anonymous-fn-type: false
     #{type = 'i64', doc = 'bytes'}
-    option-inline-threshold: 24
+    option-payload-inline-threshold: 24
   }
 }
 `
@@ -465,12 +465,12 @@ func TestNomlDocRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reparse:\n%s\nerr: %v", text, err)
 	}
-	for _, path := range []string{"name", "link-libs", "compiler.anonymous-fn-type", "compiler.option-inline-threshold"} {
+	for _, path := range []string{"name", "link-libs", "compiler.anonymous-fn-type", "compiler.option-payload-inline-threshold"} {
 		if doc.TypeOf(path) != back.TypeOf(path) {
 			t.Errorf("type(%s) = %q, want %q\n%s", path, back.TypeOf(path), doc.TypeOf(path), text)
 		}
 	}
-	if len(back.Annotations["compiler.option-inline-threshold"]) != 2 {
+	if len(back.Annotations["compiler.option-payload-inline-threshold"]) != 2 {
 		t.Errorf("annotation entries lost:\n%s", text)
 	}
 	if back.Root["name"] != "demo" {

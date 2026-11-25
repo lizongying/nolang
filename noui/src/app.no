@@ -16,7 +16,17 @@
 ;   app-win-wf() / app-win-hf()     窗口定点尺寸
 ;   app-draw-scene()                cs-paint 结果逐条送 SDL
 ;   app-frame()                     begin_frame + draw_scene + end_frame
-;   app-poll() (t, x, y)            取一个事件（t=0 无；1 退出 2 左键 3 移动 4 按键）
+;   app-poll() (t, x, y)            取一个事件（t=0 无；1 退出 2/8/10 左/右/中按下
+;                                   3 移动 4 按键 5 滚轮 6/9/11 左/右/中抬起 7 文本输入
+;                                   12 key-up 13..15 触摸 16..18/23 笔 19..22/24 拖放）
+;                                   t==4/12 时 x = 完整 SDL 键码，修饰键见 app-mods()
+;   app-event-decode(e) (t,x,y,aux)   纯解码（供合成事件单测，不碰平台）
+;   app-mods()/app-pressure()         最近事件的修饰键位图 / 触摸笔压力（0..255）
+;   app-drop() (s str)                取最近一次拖放的路径 / 文本（读完即空，配合 t==19/24）
+;   app-display-scale()/scale1000()   窗口 DPI 缩放
+;   app-draw-round-rect/-shadow/-image-rot  圆角矩形 / 投影 / 旋转翻转图片
+;   app-text() (s str)              取最近一次文本输入的 UTF-8（读完即空，配合 t==7）
+;   app-clipboard-copy(s) / app-clipboard-paste()  系统剪贴板写 / 读
 ;   app-quit() (yes bool)           退出事件标志（t==1 后置位）
 ;   app-should-quit() (yes bool)     ESC 请求退出
 ;   app-hover(root, px, py) (h)     命中测试 + hover 高亮切换
@@ -47,6 +57,53 @@ _noui-font-draw = (x f64, y f64, r i32, g i32, b i32, a i32, text str) ()
 _noui-end-frame = () ()
 #{c}
 _noui-poll = () (e i64)
+#{c}
+; 阶段76：文本输入（SDL_EVENT_TEXT_INPUT 的 UTF-8）与系统剪贴板
+_noui-text-take = () (s str)
+#{c}
+; 阶段81：拖放取件（读完即空）与窗口 DPI 缩放 x1000
+_noui-drop-take = () (s str)
+#{c}
+_noui-window-display-scale1000 = () (v i64)
+#{c}
+_noui-clipboard-copy = (s str) ()
+#{c}
+_noui-clipboard-paste = () (s str)
+#{c}
+; 阶段78：图片 / 精灵。load 从 PNG 建纹理返回 id（>0；0=失败），size 打包 w<<32|h，
+; draw-image 拉伸到像素矩形（x/y/w/h 都是 f64）
+_noui-img-load = (path str) (id i64)
+#{c}
+_noui-img-size = (id i64) (wh i64)
+#{c}
+_noui-draw-image = (x f64, y f64, w f64, h f64, id i64) ()
+#{c}
+_noui-draw-round-rect = (x f64, y f64, w f64, h f64, rad f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-shadow = (x f64, y f64, w f64, h f64, rad f64, dy f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-draw-image-rot = (x f64, y f64, w f64, h f64, id i64, angle f64, flip i32) ()
+#{c}
+; 阶段79：SDL_GPU 后端（可选）。默认走 SDL_Render；app-use-gpu(1) 后 app-init
+; 改用 GPU 设备 / GPU 窗口，矩形与底色走 noui_gpu_* 标量 FFI。
+; 事件仍用 _noui-poll（SDL_PollEvent 与渲染后端无关），所以 app-poll 不变。
+_noui-gpu-init = () (ok i32)
+#{c}
+_noui-gpu-active = () (yes i32)
+#{c}
+_noui-gpu-set-clear = (r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-gpu-window-create = (title str, w i32, h i32) (handle i64)
+#{c}
+_noui-gpu-window-get-size = () (wh i64)
+#{c}
+_noui-gpu-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-gpu-frame = () ()
+#{c}
+_noui-gpu-delay = (ms i32) ()
+#{c}
+_noui-gpu-quit = () ()
 #{c}
 _noui-should-quit = () (yes i32)
 #{c}
@@ -83,6 +140,17 @@ _noui-window-get-size = () (wh i64)
 _noui-window-get-flags = () (f i64)
 #{c}
 _noui-window-get-title = () (t str)
+#{c}
+; 阶段80：多窗口（id 一律 1 基槽位号；0=失败 / 无）。attach 决定既有窗口
+; setter/getter/绘制作用在哪个窗；event 返回最近一次事件所属窗口。
+_noui-window-attach = (id i64) (ok i32)
+#{c}
+_noui-window-count = () (n i64)
+#{c}
+_noui-window-close = (id i64) (ok i32)
+#{c}
+_noui-window-event = () (id i64)
+#{c}
 
 # /noui/src/cmp-scene
 
@@ -93,6 +161,88 @@ APP-ROOT []i64 = with-len(1)    ; 根组件句柄
 APP-QUIT []i64 = with-len(1)    ; 1=请求退出
 APP-HOVER []i64 = with-len(1)   ; 当前 hover 句柄（-1 无）
 APP-WHEEL []i64 = with-len(1)   ; 阶段23：最近一次滚轮增量（格子数，负=上滚）
+APP-SHIFT []i64 = with-len(1)   ; 阶段77：最近一次键盘事件是否带 Shift（兼容旧读法）
+APP-MODS []i64 = with-len(1)    ; 阶段81：最近事件的修饰键位图（Shift/Ctrl/Alt/Meta）
+APP-PRESS []i64 = with-len(1)   ; 阶段81：最近触摸/笔事件的压力量化（0..255）
+APP-GPU []i64 = with-len(1)     ; 阶段79：1=用 SDL_GPU 后端（需在 app-init 前置位）
+APP-WIN-ID []i64 = with-len(1)    ; 阶段80：当前 attach 的窗口（1 基）
+APP-EVENT-WIN []i64 = with-len(1) ; 阶段80：最近一次事件所属窗口（1 基；0=未知）
+
+; GPU 后端开关。**必须在 app-init 之前调用**：init 依此选择建窗路径。
+app-use-gpu = (on i64) {
+    APP-GPU[0] = on
+}
+app-gpu-mode = () (on i64) {
+    x = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    on = x
+}
+; GPU 设备是否已初始化（0=没有；用于测试与诊断）
+app-gpu-active = () (yes i64) {
+    yes = _noui-gpu-active()
+}
+
+; ============================================================================
+; 阶段80：多窗口
+;
+; 语义：shim 维护窗口注册表，全局 g_window/g_renderer 指向「当前 attach」的
+; 窗口。既有 setter/getter/绘制函数因此逐窗复用。所有窗口共享同一份 Scene
+; （镜像渲染），布局常量跟随各窗自己的尺寸。事件流用 app-event-window() 区分
+; 来源窗口。GPU 后端目前只有单窗，create-extra 在 GPU 模式返回 0。
+; ============================================================================
+app-window-count = () (n i64) {
+    n = _noui-window-count()
+}
+
+app-window-create-extra = (title str, w i32, h i32) (id i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> {
+        print('GPU backend is single-window; extra window refused')
+        id = 0
+        return
+    }
+    id = _noui-window-create(title, w, h)
+    (id > 0) -> { APP-WIN-ID[0] = id }
+}
+
+app-window-close = (id i64) (ok i64) {
+    ok = _noui-window-close(id)
+    (ok != 0) -> {
+        cur = APP-WIN-ID[0]: {
+            ok -> it
+
+            -> 1
+        }
+        (cur == id) -> {
+            n = _noui-window-count()
+            (n > 0) -> { APP-WIN-ID[0] = 1 }
+            (n == 0) -> { APP-WIN-ID[0] = 0 }
+        }
+    }
+}
+
+; 把后续窗口操作切到指定窗（1 基 id）。返回 1=成功。
+app-window-attach = (id i64) (ok i64) {
+    ok = _noui-window-attach(id)
+    (ok != 0) -> { APP-WIN-ID[0] = id }
+}
+
+; 最近一次事件所属窗口（1 基；0=未知 / 非窗口事件）
+app-event-window = () (id i64) {
+    x = APP-EVENT-WIN[0]: {
+        ok -> it
+
+        -> 0
+    }
+    id = x
+}
 
 APP-WIN-W = 560
 APP-WIN-H = 420
@@ -102,6 +252,10 @@ APP-WIN-HF = 42000
 ; ============================================================================
 ; 颜色与坐标工具
 ; ============================================================================
+col-a = (c i64) (v i32) {
+    v = (c >> 8) & 0xFF
+}
+
 col-r = (c i64) (v i32) {
     v = (c >> 24) & 0xFF
 }
@@ -183,33 +337,84 @@ app-init = (title str) (ok i64) {
     APP-QUIT[0] = 0
     APP-HOVER[0] = -1
     APP-WHEEL[0] = 0
+    APP-SHIFT[0] = 0
     v = _noui-version()
     print('noui on SDL {v}')
-    r = _noui-init()
-    (r == 0) -> {
-        print('SDL init failed')
-        ok = -1
-        return
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
     }
-    h = _noui-window-create(title, APP-WIN-W, APP-WIN-H)
-    (h == 0) -> {
-        print('window create failed')
-        _noui-quit()
-        ok = -1
-        return
+    (gpu != 0) -> {
+        ; 阶段79：SDL_GPU 后端。设备/窗口都走 GPU shim，失败要清理掉半初始化的设备
+        r = _noui-gpu-init()
+        (r == 0) -> {
+            print('GPU init failed')
+            ok = -1
+            return
+        }
+        h = _noui-gpu-window-create(title, APP-WIN-W, APP-WIN-H)
+        (h == 0) -> {
+            print('GPU window create failed')
+            _noui-gpu-quit()
+            ok = -1
+            return
+        }
+        print('GPU window handle: {h}')
+        print('GPU backend: rects only, text/image drawing skipped')
     }
-    print('window handle: {h}')
-    APP-FONT[0] = _noui-font-init('/System/Library/Fonts/Supplemental/Arial.ttf', 16.0)
-    (APP-FONT[0] == 0) -> { print('font init failed, fallback to debug text') }
+    (gpu == 0) -> {
+        r = _noui-init()
+        (r == 0) -> {
+            print('SDL init failed')
+            ok = -1
+            return
+        }
+        h = _noui-window-create(title, APP-WIN-W, APP-WIN-H)
+        (h == 0) -> {
+            print('window create failed')
+            _noui-quit()
+            ok = -1
+            return
+        }
+        print('window handle: {h}')
+        (h > 0) -> { APP-WIN-ID[0] = h }
+        ; 阶段81：字号跟随窗口 DPI 缩放；字体按候选列表逐个尝试，全失败才回退
+        ; DebugText（此前只有单一硬编码路径，换机器就静默丢字体）。
+        sz = _noui-window-display-scale1000()
+        sc = sz.to-f64() / 1000.0
+        (sc < 1.0) -> { sc = 1.0 }
+        fs = 16.0 * sc
+        fv = _noui-font-init('/System/Library/Fonts/Supplemental/Arial.ttf', fs)
+        (fv == 0) -> { fv = _noui-font-init('/System/Library/Fonts/Helvetica.ttc', fs) }
+        (fv == 0) -> { fv = _noui-font-init('/System/Library/Fonts/PingFang.ttc', fs) }
+        (fv == 0) -> { fv = _noui-font-init('/Library/Fonts/Arial.ttf', fs) }
+        (fv == 0) -> { fv = _noui-font-init('/System/Library/Fonts/Menlo.ttc', fs) }
+        APP-FONT[0] = fv
+        (APP-FONT[0] == 0) -> { print('font init failed, fallback to debug text') }
+    }
     APP-ROOT[0] = cmp-root()
     ok = 0
 }
 
 app-shutdown = () {
-    _noui-quit()
+    ; 只清自己那条路径：两个 quit 都会 SDL_Quit，双调没有意义
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { _noui-gpu-quit() }
+    (gpu == 0) -> { _noui-quit() }
 }
 app-delay = (ms i32) {
-    _noui-delay(ms)
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { _noui-gpu-delay(ms) }
+    (gpu == 0) -> { _noui-delay(ms) }
 }
 
 ; ============================================================================
@@ -221,21 +426,36 @@ app-poll = () (t i64, x f64, y f64) {
     y = 0.0
     e = _noui-poll()
     (e == 0) -> return
-    t = e & 0xFF
-    rx = (e >> 8) & 0xFFFFFF
-    ry = (e >> 32) & 0xFFFFFF
-    x = rx.to-f64()
-    y = ry.to-f64()
+    ; 阶段80：记录事件来自哪个窗口（0=未知 / 非窗口事件）
+    APP-EVENT-WIN[0] = _noui-window-event()
+    t, x, y, aux = app-event-decode(e)
     ; 阶段23：滚轮增量在 bit56..63（int8 补码），单独解一个槽给事件侧用
-    kw = (e >> 56) & 0xFF
-    dw = kw: {
-        ok -> it
-
-        -> 0
-    }
+    dw i64 = aux
     (dw >= 128) -> { dw = cs-sub(dw, 256) }
     APP-WHEEL[0] = dw
+    APP-MODS[0] = aux
+    APP-PRESS[0] = aux
+    APP-SHIFT[0] = 0
+    (t == 4) -> { sh i64 = aux & 1
+        APP-SHIFT[0] = sh }
     (t == 1) -> { APP-QUIT[0] = 1 }
+}
+
+; 阶段81：把打包的事件 i64 纯解码成类型 / 坐标 / aux。抽成函数是为了让事件面
+; 能被合成 i64 单测覆盖（不必真开窗口投递 SDL 事件）。
+app-event-decode = (e i64) (t i64, x f64, y f64, aux i64) {
+    t = e & 0xFF
+    rx i64 = (e >> 8) & 0xFFFFFF
+    ry i64 = (e >> 32) & 0xFFFFFF
+    x = rx.to-f64()
+    y = ry.to-f64()
+    aux = (e >> 56) & 0xFF
+    ; 阶段77/81：键码超过 24 位（方向键在 0x40000000 段），shim 拆成 x(低 24)
+    ; + y(高 8)；阶段81 起 y 的高位不再借给 Shift（修饰键走 aux）。
+    (t == 4 || t == 12) -> {
+        hx i64 = ry & 0xFF
+        x = rx.to-f64() + hx.to-f64() * 16777216.0
+    }
 }
 ; 最近一次滚轮事件的有符号增量（格子数，上滚为负）
 app-wheel = () (d i64) {
@@ -244,6 +464,113 @@ app-wheel = () (d i64) {
 
         -> 0
     }
+}
+
+; 最近一次键盘事件是否带 Shift（阶段77；仅 t==4/12 的同一轮里有效）
+app-shift = () (yes i64) {
+    yes = APP-SHIFT[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 最近一次事件的修饰键位图（bit0 Shift / bit1 Ctrl / bit2 Alt / bit3 Meta）。
+; 鼠标与键盘事件有效；仅同一轮里可读。
+app-mods = () (m i64) {
+    m = APP-MODS[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 最近一次触摸 / 笔事件的压力量化（0..255）；非压力事件为 0
+app-pressure = () (p i64) {
+    p = APP-PRESS[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 窗口 DPI 缩放（1.0 = 无缩放；查询失败回退 1.0）
+app-display-scale = () (sc f64) {
+    v = app-display-scale1000()
+    sc = v.to-f64() / 1000.0
+}
+
+app-display-scale1000 = () (v i64) {
+    v = _noui-window-display-scale1000()
+}
+
+; ============================================================================
+; 阶段81：文件 / 文本拖放
+;
+; 与文本输入同构：路径 / 文本不进 i64 事件码，poll 只发类型 19 / 24，内容由
+; app-drop() 取（读完即空，务必同一轮取）。
+; ============================================================================
+app-drop = () (s str) {
+    s = _noui-drop-take()
+}
+
+; 阶段81：新增绘制原语的 Nolang 包装（像素坐标、RGBA）。
+app-draw-round-rect = (x f64, y f64, w f64, h f64, rad f64, r i64, g i64, b i64, a i64) () {
+    _noui-draw-round-rect(x, y, w, h, rad, pxi(r), pxi(g), pxi(b), pxi(a))
+}
+
+app-draw-shadow = (x f64, y f64, w f64, h f64, rad f64, dy f64, r i64, g i64, b i64, a i64) () {
+    _noui-draw-shadow(x, y, w, h, rad, dy, pxi(r), pxi(g), pxi(b), pxi(a))
+}
+
+; 绕盒中心旋转 angle 度；flip 位 1=水平镜像、2=垂直镜像
+app-draw-image-rot = (x f64, y f64, w f64, h f64, id i64, angle f64, flip i64) () {
+    _noui-draw-image-rot(x, y, w, h, id, angle, pxi(flip))
+}
+
+; ============================================================================
+; 阶段76：文本输入与系统剪贴板
+;
+; 为什么单独一条事件：SDL_EVENT_TEXT_INPUT 带的是 UTF-8 字符串（含 IME 组字、
+; 非 ASCII），塞不进 i64 事件码。所以 poll 只发类型 7，文本由 app-text() 取。
+; ============================================================================
+; 最近一次文本输入的 UTF-8。**读完即空**：务必在 t==7 的同一轮里取，
+; 否则下一轮拿到空串。
+app-text = () (s str) {
+    s = _noui-text-take()
+}
+
+; 把字符串写进系统剪贴板（复制方块用）
+app-clipboard-copy = (s str) () {
+    _noui-clipboard-copy(s)
+}
+
+; 读系统剪贴板文本（粘贴用）；空剪贴板返回 ''
+app-clipboard-paste = () (s str) {
+    s = _noui-clipboard-paste()
+}
+
+; ============================================================================
+; 阶段78：图片 / 精灵
+;
+; shim 侧把 PNG 解成 SDL_Texture，注册表 id 从 1 起；nolang 侧只持标量 id。
+; C-SPRITE 组件在 cs-paint 时按 id 发 CS-IMG 指令，app-draw-scene 拉伸绘制。
+; ============================================================================
+; 加载 PNG 建纹理；成功返回 id（>0），失败（文件不存在 / 解码失败）返回 0
+app-img-load = (path str) (id i64) {
+    id = _noui-img-load(path)
+}
+
+; 图片像素宽（id 无效返回 0）
+app-img-w = (id i64) (w i64) {
+    wh = _noui-img-size(id)
+    w = wh >> 32
+}
+
+; 图片像素高（id 无效返回 0）
+app-img-h = (id i64) (h i64) {
+    wh = _noui-img-size(id)
+    h = wh & 0xFFFFFFFF
 }
 
 ; ============================================================================
@@ -264,6 +591,14 @@ app-window-apply = (h i64) () {
     (h < 0) -> return
     (cmp-kind(h) != C-WINDOW-EXT) -> return
     (we-on(h) == 0) -> return
+    ; 阶段79：GPU 后端的窗口在 gpu shim 里，shim.c 的 g_window 为 NULL，
+    ; 下面的 SDL_Render 侧 setter 全部空转 —— 直接跳过，避免误解为已生效。
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> return
     _noui-window-set-title(we-title(h))
     _noui-window-set-resizable(we-resizable(h))
     _noui-window-set-min-size(we-min-x(h), we-min-y(h))
@@ -334,6 +669,13 @@ app-hover = (root i64, px i64, py i64) (h i64) {
 ; ============================================================================
 app-draw-scene = () {
     n = cs-scene-count()
+    ; 阶段79：GPU 后端只画矩形（无纹理管线），文本/图片指令静默跳过；
+    ; 裁剪是 SDL_Render 的概念，GPU 路径同样跳过。
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
     i <- [0..n): {
         k = cs-scene-kind(i)
         x = cs-scene-x(i)
@@ -344,52 +686,183 @@ app-draw-scene = () {
         ; 阶段23：每条指令自带裁剪矩形（滚动视口），按指令逐个设置
         cf = cs-scene-cf(i)
         (cf == 1) -> {
-            _noui-clip(
-                pxi(cs-scene-cx(i)),
-                pxi(cs-scene-cy(i)),
-                pxi(cs-scene-cw(i)),
-                pxi(cs-scene-ch(i))
-            )
+            (gpu == 0) -> {
+                _noui-clip(
+                    pxi(cs-scene-cx(i)),
+                    pxi(cs-scene-cy(i)),
+                    pxi(cs-scene-cw(i)),
+                    pxi(cs-scene-ch(i))
+                )
+            }
         }
-        (cf == 0) -> { _noui-clip-clear() }
+        (cf == 0) -> { (gpu == 0) -> { _noui-clip-clear() } }
         (k == CS-TEXT) -> {
-            t = cs-scene-t(i)
-            fv = APP-FONT[0]: {
-                ok -> it
+            (gpu == 0) -> {
+                t = cs-scene-t(i)
+                fv = APP-FONT[0]: {
+                    ok -> it
 
-                -> 0
-            }
-            (fv == 1) -> {
-                _noui-font-draw(xf, yf, col-r(c), col-g(c), col-b(c), 255, t)
-            }
-            (fv == 0) -> {
-                _noui-set-color(col-r(c), col-g(c), col-b(c), 255)
-                _noui-draw-text(xf, yf, t)
+                    -> 0
+                }
+                (fv == 1) -> {
+                    _noui-font-draw(xf, yf, col-r(c), col-g(c), col-b(c), col-a(c), t)
+                }
+                (fv == 0) -> {
+                    _noui-set-color(col-r(c), col-g(c), col-b(c), col-a(c))
+                    _noui-draw-text(xf, yf, t)
+                }
             }
         }
         (k == CS-RECT) -> {
             w = cs-scene-w(i)
             ht = cs-scene-h(i)
-            _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), 255)
+            (gpu != 0) -> {
+                _noui-gpu-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), col-a(c))
+            }
+            (gpu == 0) -> {
+                _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), col-a(c))
+            }
         }
         (k == CS-FILL) -> {
             w = cs-scene-w(i)
             ht = cs-scene-h(i)
-            _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), 255)
+            (gpu != 0) -> {
+                _noui-gpu-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), col-a(c))
+            }
+            (gpu == 0) -> {
+                _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), col-a(c))
+            }
+        }
+        ; 阶段78：图片 / 精灵。id <= 0（未加载）时静默跳过，盒子即目标矩形。
+        ; GPU 后端没有纹理采样管线，跳过。
+        (k == CS-IMG) -> {
+            (gpu == 0) -> {
+                iid = cs-scene-si(i)
+                (iid > 0) -> {
+                    w = cs-scene-w(i)
+                    ht = cs-scene-h(i)
+                    _noui-draw-image(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, iid)
+                }
+            }
+        }
+        ; 阶段81：圆角矩形。GPU 后端无逐行绘制能力，降级为直角矩形（颜色不变）。
+        (k == CS-ROUND) -> {
+            w = cs-scene-w(i)
+            ht = cs-scene-h(i)
+            rad = cs-scene-sr(i)
+            rf = rad.to-f64() / 100.0
+            (gpu != 0) -> {
+                _noui-gpu-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), col-a(c))
+            }
+            (gpu == 0) -> {
+                (rf <= 0.0) -> {
+                    _noui-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), col-a(c))
+                }
+                (rf > 0.0) -> {
+                    _noui-draw-round-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, rf, col-r(c), col-g(c), col-b(c), col-a(c))
+                }
+            }
+        }
+        ; 阶段81：投影（仅软件渲染器；GPU 无多层半透明混合管线）
+        (k == CS-SHADOW) -> {
+            (gpu == 0) -> {
+                w = cs-scene-w(i)
+                ht = cs-scene-h(i)
+                rad = cs-scene-sr(i)
+                dy = cs-scene-sd(i)
+                _noui-draw-shadow(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
+                                  rad.to-f64() / 100.0, dy.to-f64() / 100.0,
+                                  col-r(c), col-g(c), col-b(c), col-a(c))
+            }
+        }
+        ; 阶段81：旋转 / 翻转图片（与 CS-IMG 一样受 GPU 纹理管线限制）
+        (k == CS-IMGR) -> {
+            (gpu == 0) -> {
+                iid = cs-scene-si(i)
+                (iid > 0) -> {
+                    w = cs-scene-w(i)
+                    ht = cs-scene-h(i)
+                    ang = cs-scene-sa(i)
+                    fl = cs-scene-sf(i)
+                    _noui-draw-image-rot(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
+                                         iid, ang.to-f64() / 100.0, pxi(fl))
+                }
+            }
+        }
+    }
+}
+
+; 真窗口尺寸 -> 布局常量。用户拖拽边框、系统改窗口（含全屏切换）后，SDL 的
+; 窗口尺寸变了而 APP-WIN-W/H 还是旧值，cs-layout 会按旧尺寸排到底 —— 画面被
+; 裁切或留白。每帧跟真窗口对齐一次，布局才跟着重排。
+; 放在 app-window-apply-all **之前**：显式声明了尺寸的 C-WINDOW-EXT 每帧仍会
+; 覆盖回去（显式优先），未声明的窗口则跟随真实尺寸。
+app-sync-window-size = () () {
+    ; 阶段79：GPU 后端的真窗口在 gpu shim 里，shim.c 的 g_window 是 NULL，
+    ; 取尺寸要走 _noui-gpu-window-get-size。
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    wh = 0
+    (gpu != 0) -> { wh = _noui-gpu-window-get-size() }
+    (gpu == 0) -> { wh = _noui-window-get-size() }
+    ww = wh >> 32
+    hh = wh & 0xFFFFFFFF
+    ((ww > 0) && (hh > 0)) -> {
+        ((ww != APP-WIN-W) || (hh != APP-WIN-H)) -> {
+            APP-WIN-W = ww
+            APP-WIN-H = hh
+            APP-WIN-WF = cs-mul(ww, 100)
+            APP-WIN-HF = cs-mul(hh, 100)
         }
     }
 }
 
 ; 一帧：应用窗口选项 -> 清屏底色 -> 绘制 Scene -> present
 app-frame = () {
-    ; 阶段52：先把挂载的 C-WINDOW-EXT 推到真窗口，再按新尺寸布局/绘制
+    ; 先回到主窗（创建副窗会把 attach 带走），再跟真窗口尺寸对齐，最后推 C-WINDOW-EXT
+    main0 = APP-WIN-ID[0]: {
+        ok -> it
+
+        -> 1
+    }
+    (main0 > 0) -> { _noui-window-attach(main0) }
+    app-sync-window-size()
+    ; 阶段52：把挂载的 C-WINDOW-EXT 推到真窗口，显式尺寸覆盖上面的对齐结果
     app-window-apply-all()
     c = APP-BGC[0]: {
         ok -> it
 
         -> 0x1E1E28FF
     }
-    _noui-begin-frame(col-r(c), col-g(c), col-b(c), 255)
-    app-draw-scene()
-    _noui-end-frame()
+    ; 阶段79：GPU 后端没有 SDL_Render，清屏/present 换成 set-clear + frame
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> {
+        _noui-gpu-set-clear(col-r(c), col-g(c), col-b(c), 255)
+        app-draw-scene()
+        _noui-gpu-frame()
+    }
+    ; 阶段80：SDL_Render 后端 —— 所有已开窗口镜像同一份 Scene。
+    ; 每窗先对齐自己的真实尺寸（布局常量跟随该窗），再逐窗绘制。
+    n = _noui-window-count()
+    i <- [0..n): {
+        _noui-window-attach(i + 1)
+        app-sync-window-size()
+        _noui-begin-frame(col-r(c), col-g(c), col-b(c), 255)
+        app-draw-scene()
+        _noui-end-frame()
+    }
+    ; 回主窗，保持「当前窗 = 主窗」的既有语义
+    main = APP-WIN-ID[0]: {
+        ok -> it
+
+        -> 1
+    }
+    (main > 0) -> { _noui-window-attach(main) }
 }

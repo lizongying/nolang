@@ -205,14 +205,12 @@ link-libs 用来链接外部库。
       syntax: `
 { name: 'glossary'
   version: 'v0.1.0'
-  output: './dist'
-  ignore: ['dist']
+  ignore: []
   compiler: { version: 'v0.4.19'  link-libs: []  anonymous-fn-type: false } }
 `
       example: `
 { name: 'mypkg'
-  version: 'v0.1.0'
-  output: './dist' }
+  version: 'v0.1.0' }
 `
       related: ['no-build', 'workspace-noml', 'noml-format']
       refs: ['glossary/package.noml', 'docs/docs/lang/module.md']

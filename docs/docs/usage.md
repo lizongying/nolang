@@ -159,22 +159,24 @@ no build -target aarch64-linux-gnu   # 需要交叉編譯時才顯式指定
 `%option_<key> = { i8 tag, [K x i64] }`（1 位元組標籤、載荷固定在位元組偏移 8、
 `K = roundUp8(sizeof(T))/8`）。載荷放不進閾值就改成堆裝箱、載荷區首字存指標。
 
-`--option-inline-threshold=N` 指定這個閾值（按**整個 option 結構**的位元組計，
-即 `1 + 7 + sizeof(T)`）：
+`--option-payload-inline-threshold=N` 指定這個閾值，只按**載荷**的位元組計（不含
+8 位元組的標籤區，即 `roundUp8(sizeof(T))`）：
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # 讓更大的載荷內聯
-no build --option-inline-threshold=16 main.no     # 最小可配置值
+no build --option-payload-inline-threshold=1032 main.no   # 讓更大的載荷內聯
+no build --option-payload-inline-threshold=8 main.no      # 最小可配置值
 ```
 
 | 值 | 效果 |
 | --- | --- |
-| 預設 **264**（= 1 + 7 + 256） | `?i64` 16 B、`?str` 24 B、`?txt`（256 B）264 B 內聯；更大的載荷裝箱 |
-| 最小 **16** | 只有 `?i64` 一類還內聯；`?str`（24 B）起全部裝箱 |
-| < 16 | 編譯錯誤 |
+| 預設 **256** | `?i64` 8 B、`?str` 16 B、`?txt`（256 B）內聯；更大的載荷裝箱（整個 option 為 8 + 載荷） |
+| 最小 **8** | 一個載荷字；`?str`（16 B）起全部裝箱 |
+| < 8 | 夹到 8 |
 
-優先序：命令行 > 環境變量 `NOLANG_OPTION_INLINE_THRESHOLD` > `package.noml` 的
-`compiler.option-inline-threshold` > 預設值。佈局的唯一來源是 `src/mir/layout.go`，
+`package.noml` 的 `compiler.option-payload-inline-threshold` 是可選欄位：不寫就用預設 256。
+
+優先序：命令行 > 環境變量 `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `package.noml` 的
+`compiler.option-payload-inline-threshold` > 預設值。佈局的唯一來源是 `src/mir/layout.go`，
 語義層面（哪些值算 `ok`／`nil`／`err`）**不受影響**，只有記憶體佔用與是否裝箱會變。
 
 ### 編譯器內置優化器（MIR opt）
@@ -374,8 +376,8 @@ Nolang 的所有配置檔（`package.noml`、`workspace.noml`、`.workspace.noml
 ```noml
 {
   name: 'my-project'
-  version: 'v0.1.0'
   description: 'A new Nolang project'
+  category: ''
   keywords: []
   author: ''
   email: ''
@@ -383,17 +385,28 @@ Nolang 的所有配置檔（`package.noml`、`workspace.noml`、`.workspace.noml
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
-  dependencies: [
-    'fmt',,
-  ]
+  dependencies: []
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
-  ignore: []
 }
 ```
+
+`package.noml` 頂層必須包含**全部必寫欄位**（上例即必寫清單；已廢棄的 `workspace` 與可選欄位除外）。缺少必寫欄位或出現未知欄位時，`no` 載入配置會打印 warning；`no fmt -w package.noml` 會自動補上缺少的必寫欄位並移除未知欄位，其餘鍵序、註解與 `#{...}` 標註保持原樣。補全時的預設值：字串 `''`、布林 `false`、陣列 `[]`、物件 `{}`、數字 `0`。
+
+`dev-dependencies`、`publish`、`mirrors`、`output` 與 `ignore` 都是可識別但不強制的頂層欄位：省略時走內建預設，`no fmt` 不會補空值或預設值行。`publish: false` 讓 nohub 收錄時跳過該包（預設 `true`）。`compiler` 區塊只有 `version` 必寫；其餘子欄位同理可選。
+
+`output` 一律以 workspace 根目錄為基準：省略時等於目前套件目錄下的 `dist`（例如 `tests/package.noml` → `'/tests/dist'`，根套件 → `'/dist'`）；顯式寫 `output: '/tests/dist'` 也從 workspace 根解析，不必再寫 `'./dist'`。
+
+`ignore` 也是可識別但不強制的欄位，可在上例中任意位置加入：
+
+```noml
+ignore: ['*_skip.no', 'gen_skip', 'dist/']
+```
+
+模式一律相對套件根目錄，支援精確檔名、`*` glob、相對路徑與目錄前綴／目錄 glob；命中的檔案或整棵目錄會在工作區構建（`no build`）與 `no test` 的目錄掃描中被跳過。明確指定的單一 `.no` 檔不受 `ignore` 限制。
+
+`main`、`alias`、`version` 已從編譯器移除：入口檔固定為 `main.no`，路徑一律相對套件根目錄，套件版本不再由 `package.noml` 提供。這三個鍵現在屬於未知欄位，`no fmt` 會移除它們。
 
 `compiler.lang` 把本專案的消息語言固定下來（`'zh-tw'`、`'ja'` 等，寫法同 `--lang`）：它優先於系統 locale，
 但低於 `--lang` 與 `NO_LANG`；不寫則跟隨系統。

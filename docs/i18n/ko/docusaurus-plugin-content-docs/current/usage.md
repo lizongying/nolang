@@ -159,12 +159,12 @@ no build -target aarch64-linux-gnu   # 需要交叉編譯時才顯式指定
 `%option_<key> = { i8 tag, [K x i64] }`가 하나씩 있습니다(1바이트 태그, 페이로드는 바이트 오프셋 8에 고정,
 `K = roundUp8(sizeof(T))/8`). 페이로드가 임계값에 맞지 않으면 힙 박싱으로 전환하고 페이로드 영역 첫 단어에 포인터를 저장합니다.
 
-`--option-inline-threshold=N`은 이 임계값을 지정합니다(**전체 option 구조**의 바이트 수로 계산,
+`--option-payload-inline-threshold=N`은 이 임계값을 지정합니다(**전체 option 구조**의 바이트 수로 계산,
 즉 `1 + 7 + sizeof(T)`):
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # 讓更大的載荷內聯
-no build --option-inline-threshold=16 main.no     # 最小可配置值
+no build --option-payload-inline-threshold=1032 main.no   # 讓更大的載荷內聯
+no build --option-payload-inline-threshold=16 main.no     # 最小可配置值
 ```
 
 | 값 | 효과 |
@@ -173,8 +173,8 @@ no build --option-inline-threshold=16 main.no     # 最小可配置值
 | 최소 **16** | `?i64` 종류만 인라인 유지; `?str`(24 B)부터 전부 박싱 |
 | < 16 | 컴파일 오류 |
 
-우선순위: 명령줄 > 환경 변수 `NOLANG_OPTION_INLINE_THRESHOLD` > `package.noml`의
-`compiler.option-inline-threshold` > 기본값. 레이아웃의 유일한 출처는 `src/mir/layout.go`이며,
+우선순위: 명령줄 > 환경 변수 `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `package.noml`의
+`compiler.option-payload-inline-threshold` > 기본값. 레이아웃의 유일한 출처는 `src/mir/layout.go`이며,
 의미론적 측면(어떤 값이 `ok`／`nil`／`err`로 간주되는지)은 **영향을 받지 않고**, 메모리 점유와 박싱 여부만 달라집니다.
 
 ### 컴파일러 내장 최적화기(MIR opt)
@@ -383,14 +383,12 @@ Nolang의 모든 설정 파일(`package.noml`, `workspace.noml`, `.workspace.nom
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

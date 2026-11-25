@@ -205,4 +205,5 @@ ok = ok & t35 & t36 & t37 & t38
 }
 (ok == 0) -> {
     print('SOME GROUP-BOX TESTS FAILED')
+    exit(1)
 }

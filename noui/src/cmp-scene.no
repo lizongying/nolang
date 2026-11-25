@@ -40,13 +40,21 @@ CS-LW []i64 = with-len(0)
 CS-LH []i64 = with-len(0)
 
 ; ---------- Scene 指令池 ----------
-CS-KIND []i64 = with-len(0)     ; 1=rect 2=text 3=fill
+CS-KIND []i64 = with-len(0)     ; 1=rect 2=text 3=fill 4=img 5=round 6=shadow 7=imgrot（阶段81）
 CS-SX []i64 = with-len(0)
 CS-SY []i64 = with-len(0)
 CS-SW []i64 = with-len(0)
 CS-SH []i64 = with-len(0)
 CS-SC []i64 = with-len(0)       ; 颜色 0xRRGGBBAA
 CS-ST []str = with-len(0)       ; 文本
+; 阶段78：图片指令的纹理 id（其余指令恒为 -1）
+CS-SI []i64 = with-len(0)
+; 阶段81：附加参数（不适用恒为 0）：SR=圆角半径（定点）、SD=阴影纵向偏移（定点）、
+; SA=旋转角度（定点，0..36000）、SF=翻转位（1 水平 / 2 垂直）
+CS-SR []i64 = with-len(0)
+CS-SD []i64 = with-len(0)
+CS-SA []i64 = with-len(0)
+CS-SF []i64 = with-len(0)
 ; 阶段23：每条指令的裁剪（滚动视口）。CF=0 表示不裁剪；否则 CX/CY/CW/CH 是定点矩形。
 CS-CF []i64 = with-len(0)
 CS-CX []i64 = with-len(0)
@@ -64,6 +72,10 @@ CS-CLIP[4] = 0
 CS-RECT = 1
 CS-TEXT = 2
 CS-FILL = 3
+CS-IMG = 4          ; 阶段78：纹理绘制（id 在 CS-SI）
+CS-ROUND = 5        ; 阶段81：圆角矩形（半径在 CS-SR）
+CS-SHADOW = 6       ; 阶段81：投影（半径 CS-SR，纵向偏移 CS-SD）
+CS-IMGR = 7         ; 阶段81：旋转 / 翻转纹理（角度 CS-SA，翻转 CS-SF）
 
 CS-HOVER = 0x5AA0F2FF
 CS-WHITE = 0xFFFFFFFF
@@ -409,6 +421,9 @@ cs-is-container = (kind i64) (yes i64) {
         kind == C-DOCK -> { yes = 1 }
         kind == C-DIALOG -> { yes = 1 }
         ; 阶段64：C-POPOVER 同样拿掉 —— 正文行是 PV-LINE 数据，不是视觉子节点。
+        ; 但浮层有双语义：纯数据浮层（无子节点）按叶子处理；声明式的
+        ; dv-toast / dv-overlay-anchor 会往 C-POPOVER 里挂真实视觉子节点，
+        ; 那种必须按容器走（见 cs-container-now）。
         kind == C-HOVER-CARD -> { yes = 1 }
         ; 阶段70：C-SHEET 同样拿掉 —— 展开位 / 停靠边是 SHT-OPEN / SHT-SIDE 数据，
         ; 不是视觉子节点。
@@ -421,6 +436,14 @@ cs-is-container = (kind i64) (yes i64) {
         kind == C-STYLED -> { yes = 1 }
         -> { }
     }
+}
+; C-POPOVER 双语义判定：静态白名单说它不是容器（正文是 PV-LINE 数据），
+; 但只要挂了真实视觉子节点，measure / layout / paint / 命中都必须按容器走，
+; 否则声明式浮层（dv-toast、dv-overlay-anchor）的条目既不排版也不绘制。
+cs-container-now = (h i64) (yes i64) {
+    kind = cmp-kind(h)
+    yes = cs-is-container(kind)
+    ((kind == C-POPOVER) && (cs-child-count(h) > 0)) -> { yes = 1 }
 }
 ; 阶段43：C-PAGINATION 从白名单里拿掉了 —— 它的页码按钮是**数据**不是视觉子节点
 ; （同 C-SELECT / C-COMBOBOX / C-TAB 一路），画 / 点 / 量都读 VALUE / VALUE2，
@@ -514,7 +537,7 @@ cs-measure-flow = (h i64) (cw i64, ch i64) {
 cs-measure = (h i64) (w i64, ht i64) {
     kind = cmp-kind(h)
     n = cs-child-count(h)
-    cont = cs-is-container(kind)
+    cont = cs-container-now(h)
     {
         ((cont == 1) && (n > 0) && (kind == C-DIALOG)) -> {
         ; 标题占顶部一行：内容高度另算
@@ -1058,11 +1081,9 @@ cs-measure = (h i64) (w i64, ht i64) {
             (w < CS-MIN-LEAF-W) -> { w = CS-MIN-LEAF-W }
             ht = CS-BTN-H
         }
-        ; 阶段64：popover —— 锚在某个组件上的小弹层。关闭时塌成最小叶片尺寸
-        ; （且 cs-paint-popover 一笔画不出）；展开时宽 = 2*CS-PAD + 箭头 800 +
-        ; 间隙 800 + max(标题, 最长正文行)，高 = 2*CS-PAD + 标题行 +
-        ; （有标题且有正文 ? CS-SEP-H : 0）+ N*CS-LINE-H。
-        (kind == C-POPOVER) -> {
+        ; 阶段64：popover —— 锚在某个组件上的小弹层。纯数据浮层（n == 0）走 PV-LINE
+        ; 语义；挂了真实视觉子节点时由通用容器分支按子节点测量（cs-container-now）。
+        (kind == C-POPOVER) && (n == 0) -> {
             (pv-open(h) == 0) -> {
                 w = CS-MIN-LEAF-W
                 ht = CS-BTN-H
@@ -1452,7 +1473,7 @@ cs-layout = (h i64, x i64, y i64, w i64, ht i64) {
     cs-set-layout(h, x, y, w, ht)
     kind = cmp-kind(h)
     n = cs-child-count(h)
-    cont = cs-is-container(kind)
+    cont = cs-container-now(h)
     ; dialog：标题占顶部一行，内容从标题下方起排
     ((cont == 1) && (n > 0) && (kind == C-DIALOG)) -> {
         cx = cs-add(x, CS-PAD)
@@ -1611,6 +1632,11 @@ cs-emit-rect = (x i64, y i64, w i64, ht i64, color i64) {
     CS-SH.push(ht)
     CS-SC.push(color)
     CS-ST.push('')
+    CS-SI.push(-1)
+    CS-SR.push(0)
+    CS-SD.push(0)
+    CS-SA.push(0)
+    CS-SF.push(0)
     cs-emit-clip()
 }
 
@@ -1622,6 +1648,11 @@ cs-emit-fill = (x i64, y i64, w i64, ht i64, color i64) {
     CS-SH.push(ht)
     CS-SC.push(color)
     CS-ST.push('')
+    CS-SI.push(-1)
+    CS-SR.push(0)
+    CS-SD.push(0)
+    CS-SA.push(0)
+    CS-SF.push(0)
     cs-emit-clip()
 }
 
@@ -1642,6 +1673,79 @@ cs-emit-text = (x i64, y i64, color i64, t str) {
     CS-SH.push(0)
     CS-SC.push(color)
     CS-ST.push(t)
+    CS-SI.push(-1)
+    CS-SR.push(0)
+    CS-SD.push(0)
+    CS-SA.push(0)
+    CS-SF.push(0)
+    cs-emit-clip()
+}
+
+; 阶段78：图片指令。wf/hf 是目标盒（定点），id <= 0 时调用方应跳过
+cs-emit-img = (x i64, y i64, w i64, ht i64, id i64) {
+    CS-KIND.push(CS-IMG)
+    CS-SX.push(x)
+    CS-SY.push(y)
+    CS-SW.push(w)
+    CS-SH.push(ht)
+    CS-SC.push(0)
+    CS-ST.push('')
+    CS-SI.push(id)
+    CS-SR.push(0)
+    CS-SD.push(0)
+    CS-SA.push(0)
+    CS-SF.push(0)
+    cs-emit-clip()
+}
+
+; 阶段81：圆角矩形（radius 定点；<=0 退化为普通矩形）
+cs-emit-round = (x i64, y i64, w i64, ht i64, radius i64, color i64) {
+    CS-KIND.push(CS-ROUND)
+    CS-SX.push(x)
+    CS-SY.push(y)
+    CS-SW.push(w)
+    CS-SH.push(ht)
+    CS-SC.push(color)
+    CS-ST.push('')
+    CS-SI.push(-1)
+    CS-SR.push(radius)
+    CS-SD.push(0)
+    CS-SA.push(0)
+    CS-SF.push(0)
+    cs-emit-clip()
+}
+
+; 阶段81：投影（dy 定点，向下为正）
+cs-emit-shadow = (x i64, y i64, w i64, ht i64, radius i64, dy i64, color i64) {
+    CS-KIND.push(CS-SHADOW)
+    CS-SX.push(x)
+    CS-SY.push(y)
+    CS-SW.push(w)
+    CS-SH.push(ht)
+    CS-SC.push(color)
+    CS-ST.push('')
+    CS-SI.push(-1)
+    CS-SR.push(radius)
+    CS-SD.push(dy)
+    CS-SA.push(0)
+    CS-SF.push(0)
+    cs-emit-clip()
+}
+
+; 阶段81：旋转 / 翻转图片。angle 定点（0..36000 度），flip 位 1 水平 / 2 垂直
+cs-emit-img-rot = (x i64, y i64, w i64, ht i64, id i64, angle i64, flip i64) {
+    CS-KIND.push(CS-IMGR)
+    CS-SX.push(x)
+    CS-SY.push(y)
+    CS-SW.push(w)
+    CS-SH.push(ht)
+    CS-SC.push(0)
+    CS-ST.push('')
+    CS-SI.push(id)
+    CS-SR.push(0)
+    CS-SD.push(0)
+    CS-SA.push(angle)
+    CS-SF.push(flip)
     cs-emit-clip()
 }
 
@@ -2571,12 +2675,18 @@ cs-paint-status-bar = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
 ; 阶段64：popover —— 关闭时一笔画不出；展开时 FIELD 底 + 锚定边箭头（ACCENT）+
 ; 标题行 FG（有标题且有正文时下面补一条 TRACK 分隔线）+ N 行正文 MUTED。
 cs-paint-popover = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
-    (pv-open(h) == 0) -> return
+    ; 纯数据浮层：关闭时整棵不画。声明式浮层（挂了真实子节点）不看 pv-open——
+    ; 「要不要显示」由视图层的存活逻辑决定（dv-toast 死了根本不建节点）。
+    nc = cs-child-count(h)
+    ((pv-open(h) == 0) && (nc == 0)) -> return
     p = pv-pad()
     aw = pv-arrow-w()
     tl = pv-title(h)
     n = pv-count(h)
-    cs-emit-rect(x, y, w, ht, cs-theme(CS-TH-FIELD))
+    ; 面板色：组件自设色优先，否则 FIELD
+    bc = cmp-color(h)
+    (bc == 0) -> { bc = cs-theme(CS-TH-FIELD) }
+    cs-emit-rect(x, y, w, ht, bc)
     side = pv-side(h)
     (side == 0) -> { cs-emit-rect(cs-add(x, 1600), y, aw, aw, cs-theme(CS-TH-ACCENT)) }
     (side == 1) -> { cs-emit-rect(cs-add(x, 1600), cs-sub(cs-add(y, ht), aw), aw, aw, cs-theme(CS-TH-ACCENT)) }
@@ -2597,6 +2707,24 @@ cs-paint-popover = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
         cs-emit-text-left(cs-add(x, p), ry, cs-text-w(pv-line(h, i)), CS-LINE-H, pv-line(h, i), cs-theme(CS-TH-MUTED))
         ry = cs-add(ry, CS-LINE-H)
         i = cs-inc(i)
+    }
+    ; 声明式浮层：挂了真实视觉子节点时递归绘制（流序 + 叠加层序）。
+    ; 面板 / 箭头 / PV 正文已在上面画完，这里只补子树。
+    (nc > 0) -> {
+        i = 0
+        !! {
+            c = cmp-child(h, i)
+            (c < 0) -> { ** }
+            (cmp-has(c, F-OVERLAY) == 0) -> { cs-paint(c) }
+            i = cs-inc(i)
+        }
+        i = 0
+        !! {
+            c = cmp-child(h, i)
+            (c < 0) -> { ** }
+            (cmp-has(c, F-OVERLAY)) -> { cs-paint(c) }
+            i = cs-inc(i)
+        }
     }
 }
 
@@ -3076,7 +3204,7 @@ cs-paint-number-input = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
         cs-emit-text-align(x, y, w, ht, t, color, A-RIGHT)
         (cmp-has(h, F-FOCUSED)) -> {
             car = input-caret(h)
-            suf = t.slice-bytes(car, t.len-bytes())
+            suf = t.slice-bytes(car, t.len-bytes()).to-bytes-str()
             cx = cs-sub(cs-sub(cs-add(x, w), CS-PAD), cs-text-w(suf))
             (cx < cs-add(x, CS-PAD)) -> { cx = cs-add(x, CS-PAD) }
             cs-emit-fill(cx, cs-add(y, 600), 200, cs-sub(ht, 1200), cs-theme(CS-TH-FG))
@@ -3134,7 +3262,7 @@ cs-paint-search = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
         cs-emit-text-left(cs-add(x, CS-PAD), y, tw, ht, t, color)
         (cmp-has(h, F-FOCUSED)) -> {
             car = input-caret(h)
-            cx = cs-add(cs-add(x, CS-PAD), cs-text-w(t.slice-bytes(0, car)))
+            cx = cs-add(cs-add(x, CS-PAD), cs-text-w(t.slice-bytes(0, car).to-bytes-str()))
             (cx > cs-sub(cs-add(x, tw), CS-PAD)) -> { cx = cs-sub(cs-add(x, tw), CS-PAD) }
             cs-emit-fill(cx, cs-add(y, 600), 200, cs-sub(ht, 1200), cs-theme(CS-TH-FG))
         }
@@ -3165,7 +3293,7 @@ cs-paint-otp = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
         sx = otp-slot-x(h, i, x, w, ht)
         sw = otp-slot-w(h, w, ht)
         cs-emit-rect(sx, y, sw, ht, cs-theme(CS-TH-TRACK))
-        ch = c.slice-bytes(i, cs-add(i, 1))
+        ch = c.slice-bytes(i, cs-add(i, 1)).to-bytes-str()
         (ch != ' ') -> {
             cs-emit-text-center(sx, y, sw, ht, ch, color)
         }
@@ -3206,7 +3334,7 @@ cs-paint-input = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
             -> {
                 cs-emit-text-left(cs-add(x, CS-PAD), y, w, ht, t, color)
                 (cmp-has(h, F-FOCUSED)) -> {
-                    cx = cs-add(cs-add(x, CS-PAD), cs-text-w(t.slice-bytes(0, input-caret(h))))
+                    cx = cs-add(cs-add(x, CS-PAD), cs-text-w(t.slice-bytes(0, input-caret(h)).to-bytes-str()))
                     (cx > cs-sub(cs-add(x, w), CS-PAD)) -> { cx = cs-sub(cs-add(x, w), CS-PAD) }
                     cs-emit-fill(cx, cs-add(y, 600), 200, cs-sub(ht, 1200), cs-theme(CS-TH-FG))
                 }
@@ -3237,8 +3365,8 @@ cs-paint-input-lex = (h i64, x i64, y i64, w i64, ht i64) () {
         tl = tok.len-bytes()
         {
             ((focused) && (car >= acc) && (car <= cs-add(acc, tl))) -> {
-                pre = tok.slice-bytes(0, cs-sub(car, acc))
-                suf = tok.slice-bytes(cs-sub(car, acc), tl)
+                pre = tok.slice-bytes(0, cs-sub(car, acc)).to-bytes-str()
+                suf = tok.slice-bytes(cs-sub(car, acc), tl).to-bytes-str()
                 (pre.len() > 0) -> {
                     cs-emit-text-left(cx, y, w, ht, pre, c)
                     cx = cs-add(cx, cs-text-w(pre))
@@ -3310,7 +3438,7 @@ cs-paint-textarea = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
             s = ta-line-text(h, l)
             cs-emit-text-left(cs-add(x, CS-PAD), ly, w, CS-LINE-H, s, color)
             ((cmp-has(h, F-FOCUSED)) && (l == cl)) -> {
-                cx = cs-add(cs-add(x, CS-PAD), cs-text-w(s.slice-bytes(0, cc)))
+                cx = cs-add(cs-add(x, CS-PAD), cs-text-w(s.slice-bytes(0, cc).to-bytes-str()))
                 (cx > cs-sub(cs-add(x, w), CS-PAD)) -> { cx = cs-sub(cs-add(x, w), CS-PAD) }
                 cs-emit-fill(cx, cs-add(ly, 600), 200, cs-sub(CS-LINE-H, 1200), cs-theme(CS-TH-FG))
             }
@@ -3382,7 +3510,7 @@ cs-paint-combobox = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
     (cmp-has(h, F-FOCUSED)) -> {
         car = input-caret(h)
         (car > t.len-bytes()) -> { car = t.len-bytes() }
-        pre = t.slice-bytes(0, car)
+        pre = t.slice-bytes(0, car).to-bytes-str()
         cx = cs-add(cs-add(x, CS-PAD), cs-text-w(pre))
         (cx > cs-sub(cs-add(x, w), cs-add(CS-PAD, 2400))) -> {
             cx = cs-sub(cs-add(x, w), cs-add(CS-PAD, 2400))
@@ -3437,7 +3565,7 @@ cs-paint = (h i64) {
     vc = cs-var-color(h, kind)
     (vc != 0) -> { color = vc }
     n = cs-child-count(h)
-    cont = cs-is-container(kind)
+    cont = cs-container-now(h)
     ; dialog：关闭时整棵不画；开启时画面板 + 标题 + 内容
     (kind == C-DIALOG) -> {
         (cmp-has(h, F-OPEN)) -> {
@@ -3493,7 +3621,9 @@ cs-paint = (h i64) {
             ; 阶段72：C-SIZING 同理 —— 它始终是「盒子」，空盒也要有底。
             ; 阶段73：C-STYLED 也是「底子」容器，空盒要有底才能看见样式。
             ; 阶段75：C-WINDOW-BORDER 同理 —— 空窗口也要有面 + 框。
-            ((cont == 1) && ((n > 0) || (kind == C-GROUP-BOX) || (kind == C-SIZING) || (kind == C-STYLED) || (kind == C-WINDOW-BORDER))) -> {
+            ; C-POPOVER 排除：它的面板 / 箭头 / PV 正文由 cs-paint-popover 画，
+            ; 子节点也在那里递归（双语义）。
+            ((cont == 1) && (kind != C-POPOVER) && ((n > 0) || (kind == C-GROUP-BOX) || (kind == C-SIZING) || (kind == C-STYLED) || (kind == C-WINDOW-BORDER))) -> {
                 ; 阶段73：styled 的底色覆写（-1 = 继承组件自身颜色）
                 sbg = sty-bg(h)
                 (sbg >= 0) -> { color = sbg }
@@ -3518,9 +3648,19 @@ cs-paint = (h i64) {
                 }
             }
             -> {
-                t = cmp-text(h)
-                cs-paint-leaf(h, kind, x, y, w, ht, color, t)
+                ; 阶段78：sprite 不走叶子兜底（否则会先在图片底下垫一个默认方块，
+                ; 半透明像素会透出杂色）；它的绘制在下面的 C-SPRITE 分支单独处理。
+                (kind != C-SPRITE) -> {
+                    t = cmp-text(h)
+                    cs-paint-leaf(h, kind, x, y, w, ht, color, t)
+                }
             }
+        }
+        ; 阶段78：sprite —— 有纹理就发一条图片指令（盒子即目标矩形，SDL 拉伸）。
+        ; 没有纹理时什么都不画（空白占位）。
+        (kind == C-SPRITE) -> {
+            iid = cmp-img-of(h)
+            (iid > 0) -> { cs-emit-img(x, y, w, ht, iid) }
         }
         ; 阶段72：sizing —— 四边 TRACK 细框，把「约束盒」的边界画出来
         ;（面板本身由上面的通用容器分支画，这里只补边框，避免二次调用叶子兜底）
@@ -3668,6 +3808,11 @@ cs-clear = () {
     CS-SH.clear()
     CS-SC.clear()
     CS-ST.clear()
+    CS-SI.clear()
+    CS-SR.clear()
+    CS-SD.clear()
+    CS-SA.clear()
+    CS-SF.clear()
     CS-CF.clear()
     CS-CX.clear()
     CS-CY.clear()
@@ -3731,6 +3876,48 @@ cs-scene-t = (i i64) (v str) {
         ok -> it
 
         -> ''
+    }
+    v = x
+}
+; 阶段78：图片指令的纹理 id（非图片指令为 -1）
+cs-scene-si = (i i64) (v i64) {
+    x = CS-SI[i]: {
+        ok -> it
+
+        -> -1
+    }
+    v = x
+}
+; 阶段81：附加参数 getter（不适用范围返回 0）
+cs-scene-sr = (i i64) (v i64) {
+    x = CS-SR[i]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cs-scene-sd = (i i64) (v i64) {
+    x = CS-SD[i]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cs-scene-sa = (i i64) (v i64) {
+    x = CS-SA[i]: {
+        ok -> it
+
+        -> 0
+    }
+    v = x
+}
+cs-scene-sf = (i i64) (v i64) {
+    x = CS-SF[i]: {
+        ok -> it
+
+        -> 0
     }
     v = x
 }

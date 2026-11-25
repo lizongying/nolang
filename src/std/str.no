@@ -637,9 +637,9 @@ str.slice = (start i64, end i64) (val str) {
 ; 與 s.byte(i) 語義一致；標準庫 split/replace 等內部按字節切片時使用
 ; start: 起始位元組偏移（含）
 ; end: 結束位元組偏移（不含）
-; val: 按位元組範圍 [start,end) 截取的子串副本
+; val: 按位元組範圍 [start,end) 截取的位元組副本；範圍無效時 nil
 ; [slice-bytes](#str.slice-bytes)
-str.slice-bytes = (start i64, end i64) (val str) {
+str.slice-bytes = (start i64, end i64) (val ?[]byte) {
     r-start = start
     r-end = end
 
@@ -655,7 +655,7 @@ str.slice-bytes = (start i64, end i64) (val str) {
         #{overflow=wrap}
         buf[i] = .byte(r-start + i)
     }
-    val = buf.to-bytes-str()
+    val = buf
 }
 
 ; 類型轉換
@@ -2528,20 +2528,20 @@ str.to-bigint = () (out ?bigint) {
 str.split = (sep str) (out []str) {
     result []str
     sep.len-bytes() == 0 -> {
-        result.push(.slice-bytes(0, .len-bytes()))
+        result.push(.slice-bytes(0, .len-bytes()).to-bytes-str())
         out = result
         return
     }
     start = 0
     pos = .find-byte-from(sep, start)
     (pos >= 0) {
-        result.push(.slice-bytes(start, pos))
+        result.push(.slice-bytes(start, pos).to-bytes-str())
 
         #{overflow=wrap}
         start = pos + sep.len-bytes()
         pos = .find-byte-from(sep, start)
     }
-    result.push(.slice-bytes(start, .len-bytes()))
+    result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
     out = result
 }
 
@@ -2594,7 +2594,7 @@ str.split = (sep str) (out []str) {
 ; [replace-str](#str.replace-str)
 str.replace-str = (old str, new str) (val str) {
     old.len-bytes() == 0 -> {
-        val = .slice-bytes(0, .len-bytes())
+        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
         return
     }
 
@@ -2769,7 +2769,7 @@ str.fields = () (out []str) {
             }
 
             start >= 0 -> {
-                result.push(.slice-bytes(start, i))
+                result.push(.slice-bytes(start, i).to-bytes-str())
                 start = -1
             }
 
@@ -2778,7 +2778,7 @@ str.fields = () (out []str) {
     }
 
     ; 處理最後一個欄位
-    start >= 0 -> result.push(.slice-bytes(start, n))
+    start >= 0 -> result.push(.slice-bytes(start, n).to-bytes-str())
     out = result
 }
 
@@ -2851,17 +2851,17 @@ str.rindex-from = (target str, from i64) (pos i64) {
 ; [replace-n](#str.replace-n)
 str.replace-n = (old str, new str, n i64) (val str) {
     n <= 0 -> {
-        val = .slice-bytes(0, .len-bytes())
+        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
         return
     }
     old.len-bytes() == 0 -> {
-        val = .slice-bytes(0, .len-bytes())
+        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
         return
     }
     parts = .split(old)
     np = parts.len()
     np <= 1 -> {
-        val = .slice-bytes(0, .len-bytes())
+        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
         return
     }
 
@@ -2943,7 +2943,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
 str.split-n = (sep str, maxsplit i64) (out []str) {
     result []str
     sep.len-bytes() == 0 -> {
-        result.push(.slice-bytes(0, .len-bytes()))
+        result.push(.slice-bytes(0, .len-bytes()).to-bytes-str())
         out = result
         return
     }
@@ -2956,11 +2956,11 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
     count = 0
     (pos >= 0) {
         count >= maxsplit -> {
-            result.push(.slice-bytes(start, .len-bytes()))
+            result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
             out = result
             return
         }
-        result.push(.slice-bytes(start, pos))
+        result.push(.slice-bytes(start, pos).to-bytes-str())
 
         #{overflow=wrap}
         start = pos + sep.len-bytes()
@@ -2976,7 +2976,7 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
         }
         pos = .find-byte-from(sep, start)
     }
-    result.push(.slice-bytes(start, .len-bytes()))
+    result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
     out = result
 }
 
@@ -3011,7 +3011,7 @@ str.lines = () (out []str) {
                     }
                 }
             }
-            result.push(.slice-bytes(start, end))
+            result.push(.slice-bytes(start, end).to-bytes-str())
             {
                 start ?= i + 1
             }: {
@@ -3031,7 +3031,7 @@ str.lines = () (out []str) {
             -> _
         }
     }
-    start < .len-bytes() -> result.push(.slice-bytes(start, .len-bytes()))
+    start < .len-bytes() -> result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
     out = result
 }
 

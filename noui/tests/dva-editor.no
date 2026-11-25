@@ -34,7 +34,7 @@ ED-TEXT = 4        ; 文本槽（DV-BIND-T[4]）
 ED-OFF = 5         ; 滚动偏移状态槽（ST[5]）
 ED-KEY = 900       ; 编辑器根（C-SCROLL）的 key
 ED-KEY0 = 1000     ; 行 key 基数
-ED-ROW = 2400      ; 行高 24px
+XE-ROW = 2400      ; 行高 24px
 ED-VIEWH = 14400   ; 视口高 144px（4 行 + 3 间隙 + 2 内边距）
 ED-GUTTER = 5600   ; 行号槽宽 56px
 ED-STEP = 3200     ; 滚轮每格 32px
@@ -53,7 +53,7 @@ ed-reset = (s str) () {
 mk-page = () (p i64) {
     dv-clear()
     t = dv-form(1, -1)
-    e = dv-code-editor(ST, ED-KEY, ED-TEXT, ED-OFF, ED-STEP, ED-VIEWH, ED-ROW, ED-GUTTER, ED-KEY0, t)
+    e = dv-code-editor(ST, ED-KEY, ED-TEXT, ED-OFF, ED-STEP, ED-VIEWH, XE-ROW, ED-GUTTER, ED-KEY0, t)
     dv-size(e, 0, ED-VIEWH)
     p = t
 }
@@ -140,11 +140,11 @@ r37 = dv-bound(ED-TEXT) == '' && dv-edit-col-of(ED-TEXT) == 0
 ; 场景 W：窗口 —— dv-win-range
 ; ============================================================================
 WR []i64 = with-len(2)
-dv-win-range(0, ED-VIEWH, ED-ROW, 10, WR)
+dv-win-range(0, ED-VIEWH, XE-ROW, 10, WR)
 r38 = dv-arr-get(WR, 0) == 0 && dv-arr-get(WR, 1) == 5
-dv-win-range(0, ED-VIEWH, ED-ROW, 0, WR)
+dv-win-range(0, ED-VIEWH, XE-ROW, 0, WR)
 r39 = dv-arr-get(WR, 0) == 0 && dv-arr-get(WR, 1) == 0
-dv-win-range(100000, ED-VIEWH, ED-ROW, 10, WR)
+dv-win-range(100000, ED-VIEWH, XE-ROW, 10, WR)
 r40 = dv-arr-get(WR, 0) == 9 && dv-arr-get(WR, 1) == 10
 
 ; ============================================================================
@@ -153,15 +153,15 @@ r40 = dv-arr-get(WR, 0) == 9 && dv-arr-get(WR, 1) == 10
 ST[ED-OFF] = 0
 dv-arr-set(DV-EDIT-L, ED-TEXT, 0)
 dv-arr-set(DV-ED-SEEN, ED-TEXT, 0)
-o1 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, ED-ROW)
+o1 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, XE-ROW)
 r41 = o1 == 0 && ST[ED-OFF] == 0
 dv-arr-set(DV-EDIT-L, ED-TEXT, 8)
-o2 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, ED-ROW)
+o2 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, XE-ROW)
 r42 = o2 == 15600 && ST[ED-OFF] == 15600
-o3 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, ED-ROW)
+o3 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, XE-ROW)
 r43 = o3 == 15600
 ST[ED-OFF] = 0
-o4 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, ED-ROW)
+o4 = dv-edit-follow(ST, ED-TEXT, ED-OFF, 10, ED-VIEWH, XE-ROW)
 r44 = o4 == 0
 
 ; ============================================================================

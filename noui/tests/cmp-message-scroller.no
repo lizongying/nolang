@@ -269,4 +269,5 @@ ok = ok & t59 & t60 & t61 & t62 & t63
 }
 (ok == 0) -> {
     print('SOME MESSAGE-SCROLLER TESTS FAILED')
+    exit(1)
 }

@@ -340,4 +340,5 @@ ok = ok & u92 & u93 & u94
 }
 (ok == 0) -> {
     print('SOME SIDEBAR TESTS FAILED')
+    exit(1)
 }

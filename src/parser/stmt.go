@@ -13,6 +13,17 @@ import (
 )
 
 func (p *Parser) parseStatement() Statement {
+	// A reserved keyword immediately followed by an assignment operator is an
+	// attempted declaration, not keyword syntax. Report it at the keyword so
+	// the diagnostic does not drift to a later, unrelated token.
+	// `match` is deliberately excluded: it doubles as a plain identifier in
+	// this grammar (`match = true`), so warning here would be a false positive.
+	if p.currentToken.Type != lexer.MATCH &&
+		isReservedWordToken(p.currentToken.Type) &&
+		(p.peekToken.Type == lexer.ASSIGN || p.peekToken.Type == lexer.QUESTION_ASSIGN) {
+		p.warnReservedWordAsIdentifier(p.currentToken)
+	}
+
 	switch p.currentToken.Type {
 	case lexer.NEWLINE:
 		return nil
@@ -1088,6 +1099,7 @@ func (p *Parser) flushCompoundAssigns(def *FunctionDefinition) {
 func (p *Parser) parseUnwrapAssignStatement() Statement {
 	// currentToken = IDENT (variable name), peekToken = QUESTION_ASSIGN (?=)
 	nameTok := p.currentToken
+	p.warnReservedWordAsIdentifier(nameTok)
 	p.nextToken() // skip IDENT → current = ?=
 	tok := p.currentToken
 	p.nextToken() // skip ?= → current = start of expr
@@ -1121,6 +1133,8 @@ func (p *Parser) parseLetStatement() Statement {
 		// 普通情况，使用当前令牌作为变量名
 		nameToken = p.currentToken
 	}
+
+	p.warnReservedWordAsIdentifier(nameToken)
 
 	stmt := &LetStatement{Token: nameToken}
 

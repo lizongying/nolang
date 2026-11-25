@@ -25,7 +25,7 @@ package parser
 
 // CompilerSwitches 是 package.noml 的 compiler 区块中**会改变解析结果**的开关。
 //
-// 只收解析相关项：option-inline-threshold 这类影响 MIR / codegen 的字段不在此，
+// 只收解析相关项：option-payload-inline-threshold 这类影响 MIR / codegen 的字段不在此，
 // 它们不改变 AST，混进来会让「解析配置」这个概念失去边界。
 type CompilerSwitches struct {
 	// AnonymousFnType 对应 compiler.anonymous-fn-type，决定 `(cb () ())` 这类

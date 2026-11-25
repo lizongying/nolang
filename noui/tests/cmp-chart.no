@@ -370,4 +370,5 @@ ok = ok & t89
 }
 (ok == 0) -> {
     print('SOME TESTS FAILED')
+    exit(1)
 }

@@ -3369,10 +3369,169 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
 - 坑三条：demo 辅助函数名别写成下划线版（`cs_rect` / `app_win_wf`），
   编译器只认点号 / 连字符版（`cs-rect` / `app-win-wf`）
 
+### §5.71 阶段 76 平台能力：窗口 resize 回写 + 文本输入 + 系统剪贴板（2026-11-25 实测）
+
+审查（P0–P3）里三类「非组件」缺口一次补齐，组件目录零改动：
+
+- **窗口 resize 回写**：`src/app.no` 新增 `app-sync-window-size()`——读
+  `_noui-window-get-size`，只有宽高都 >0 才写 `APP-WIN-W/H/WF/HF`。
+  `app-frame()` 每帧开头调用，位置在 `app-window-apply-all()` **之前**：
+  拖边框 / 全屏切换后布局常量跟着真窗口走；显式声明尺寸的
+  `C-WINDOW-EXT` 每帧仍覆盖回去（显式优先），未声明的窗口跟随真实尺寸。
+- **文本输入**：shim 侧 `noui_poll` 接 `SDL_EVENT_TEXT_INPUT`（事件类型
+  **7**），UTF-8 串存内部 256B 缓冲，`noui_text_take()` 读完即空；`app.no`
+  加 FFI `_noui-text-take` 与 `app-text()`。`dv-app.no` 的 `dva-type(s)` 按
+  **码点**切片（`str.slice` 是码点索引，中文 / emoji 不会被切成半个字节）
+  喂给三级焦点：命令面板 `DVA-PAL-FOCUS`（`dv-pal-type`）> 输入框
+  `DVA-FOCUS`（`input-append`）> 代码编辑器 `DVA-EDIT-FOCUS`
+  （`dv-node-by-key` → `dv-edit-of` → `dv-edit-insert`）。主循环
+  `(t == 7)` 分支放在按键 / 点击派发之前。
+- **系统剪贴板**：shim `noui_clipboard_copy` / `noui_clipboard_paste`
+  （SDL clipboard，paste 有 4096B 上限）；`app.no` 暴露
+  `app-clipboard-copy/-paste`。`dv-app.no` 的
+  `dva-clipboard-hit(h, px, py)` 按 `cs-paint-clipboard` **同款几何**
+  （右内边距 1200、方块 2400、垂直居中）检测复制方块，命中就把
+  `clip-content(h)` 写进系统剪贴板并返回 1，调用方据此跳过普通点击派发。
+- 验收：`tests/app-resize.no` 8 项断言全绿（560×420 → resize 700×500 →
+  四个常量跟随、亚像素 = 100×、同尺寸再同步幂等、拖回原尺寸恢复）；
+  `tests/dva-input.no` 9 项断言全绿（无焦点 no-op、`'a0 中😀'` 逐码点
+  进入输入框、复制方块中心命中外不命中、非剪贴板组件不命中、句柄 -1
+  不崩）。`no vet src/` 回到 7 error（全是下方 §5.5 记载的 by-design
+  host-callback 未定义）/ 0 warning。
+- 测试运行器：`scripts/run-noui-tests.sh` 无头全量跑 `tests/*.no`——
+  dummy 视频/音频驱动 + `NOUI_MAX_FRAMES` 帧闸 + 退出码判定 + 并行 +
+  单测超时；2026-11-25 实测 **131/131 通过**（其后阶段 77–80 扩到 136，
+  见 §5.73）。noui 现已接入 CI：`.github/workflows/test.yml` 的
+  `noui-test` job（macos runner，无头全量），详见 §5.73。
+- 坑三条：① `i = i + 1` 在 nolang 里得到 `?i64`，不能赋回 `i64`
+  变量（继续用 `cs-inc`）；② 剪贴板组件的 `CMP-X/Y/W/H` 要等
+  `cs-layout` 才有值，单测别在 `dv-render` 后立刻读几何；③
+  `str.slice` 是**码点**索引，正是切 UTF-8 字符想要的语义。
+
+### §5.72 阶段 77 键盘焦点遍历 + 阶段 78 图片 / 精灵（2026-11-25 实测）
+
+- **阶段 77 焦点遍历**：`src/shim/shim.c` 的键码打包此前只有 24 位 x 槽，
+  方向键（`0x40000000` 段）被截断成 `0x50` 而失效。现在键码拆 `x(低24) +
+  y(高8)`，Shift 标记占 y 的 bit23；`app.no` 的 `app-poll()` 合回完整键码放
+  `x`、标记放 `APP-SHIFT[0]`（FFI 声明处显式标注 `i64`——掩码表达式会被推成
+  `byte`，而 `byte` 没有 `.to-f64()`）。`src/dv-app.no` 新增
+  `dva-focus-step(root, dir)`：候选 = 视图创建序中「输入类 + 已挂载 + 未禁用」
+  的节点，环形步进（正向无焦点取第一个、反向取最后一个），交接只点亮新焦点
+  （复用 `F-FOCUSED`）；编辑器 / 命令面板聚焦时遍历让位，保持既有语义。
+  验收：`tests/dva-focus-tab.no` 9 项断言全绿（含禁用节点跳过、环形回绕、
+  反向回绕、让位规则）。
+- **阶段 78 图片 / 精灵**：新增最小 PNG 解码器 `src/shim/img_png.c`
+  （zlib `uncompress` + 反滤波 + Paeth + 调色板；ct 0/2/3/4/6、bit depth 8、
+  非隔行，输出 RGBA8），`shim.c` 注册表把解码结果存为 **SDL_Surface**
+  （纹理由各窗口按需创建，见 §5.73）；`noui_img_load/-size/-draw_image`
+  导出标量 FFI。Nolang 侧 `C-SPRITE = 101` 组件 + `CMP-IMG` 池
+  （`components.no`），`cs-paint` 发 `CS-IMG` 指令（`cmp-scene.no`），
+  `app-draw-scene` 拉伸绘制。验收：`tests/cmp-sprite.no` 8 项断言全绿
+  （加载 / 尺寸 / 坏路径返回 0 / CS-IMG 指令 / 几何=布局盒 / 无纹理不发指令 /
+  端到端冒烟），夹具 `tests/fixtures/dot.png`（8×6 RGBA）。
+- 语言坑（实测）：`print('... {f()}')` 的格式串里**不能内嵌函数调用**，
+  会报 `unresolved format field`；先赋值给变量再插值。
+
+### §5.73 阶段 79 GPU 后端接入主循环 + 阶段 80 多窗口（2026-11-25 实测）
+
+- **阶段 79 GPU 接线**：`gpu_shim.c` 此前是孤立 demo。现在
+  `package.noml` 的 `link-libs` 增加 `noui-gpu-shim`，`app.no` 加开关
+  `app-use-gpu(on)` / `app-gpu-mode()` / `app-gpu-active()` 与一组
+  `_noui-gpu-*` FFI。`app-init` 在 GPU 模式走 `_noui-gpu-init` +
+  `_noui-gpu-window-create`（失败清理半初始化设备并返回 -1）；`app-frame`
+  改用 `_noui-gpu-set-clear` + 绘制 + `_noui-gpu-frame`；`app-delay` /
+  `app-shutdown` 同步分流。**GPU 路径只画矩形**：裁剪是 SDL_Render 概念，
+  文本 / 图片指令静默跳过（无纹理采样管线），`C-WINDOW-EXT` 在 GPU 模式
+  空转。shim 侧同时修掉两个真 bug：`noui_gpu_draw_rect` 归一化写死
+  200×150（改为按真实窗口尺寸），形参 `float` 改 `double`（与 nolang `f64`
+  实参 ABI 对齐，见 §6 FFI 陷阱）。验收：`tests/app-gpu.no`——开关 / 状态
+  查询任何环境可跑；有 GPU 的机器上 init 应成功并连跑两帧，dummy 驱动下
+  只要求优雅返回 -1（本机即后者）。
+- **阶段 80 多窗口**：单窗口假设全链路拆除。shim 增窗口注册表
+  （`NOUI_WIN_MAX 8`），全局 `g_window/g_renderer` 改为指向「当前 attach」
+  的槽位——既有 setter/getter/绘制函数因此**逐窗复用、签名不变**。新 API：
+  `noui_window_create` 返回 1 基 id（新窗自动成为当前窗）、
+  `noui_window_attach/count/close`、`noui_window_event`（最近一次事件所属
+  窗口，供 `app-event-window()`）。事件编码布局不变（i64 槽位已满），
+  窗口 id 走独立标量查询。图片注册表改为 surface + **每窗口纹理缓存**
+  （SDL_Texture 属于创建它的 renderer，跨窗复用会坏），关窗 / 退出按槽位
+  清理。`app-frame()` 逐窗「attach → 对齐该窗真实尺寸 → 清屏 → 绘制 →
+  present」，最后回到主窗：所有窗口**镜像同一份 Scene**（每窗尺寸自适应，
+  见下方限制）。GPU 后端目前单窗，`app-window-create-extra` 在 GPU 模式
+  返回 0。验收：`tests/app-windows.no` 14 项断言全绿（开副窗 id=2、副窗
+  尺寸独立、切回主窗恢复、双窗各跑两帧、无效 id 温和失败、GPU 拒绝副窗）。
+- **限制（如实记录）**：镜像窗口按各自真实尺寸重排布局常量，但 Scene 指令
+  由调用方在帧首生成，因此非主窗尺寸下坐标不重新排版（小窗裁切、大窗留白）；
+  每窗独立 UI 需要 Scene 按窗过滤，属后续架构演进。`NOUI_MAX_FRAMES` 帧闸
+  按 present 次数计数，多窗时会提前触发（测试语义，不是错误）。
+- **CI**：`.github/workflows/test.yml` 的 `noui-test` job 已落地——
+  macos runner + `brew install llvm sdl3 sdl3_ttf coreutils` + `make no` +
+  `./build-shims.sh` + `./scripts/run-noui-tests.sh`（dummy 驱动无头全量）。
+  运行器实测 136/136 通过（含新增 app-gpu / app-windows）。注意 job 未显式
+  装 zlib：macOS SDK 自带 libz，`-lz` 可直接链接。
+- **同批修掉两个编译器隐患**（都在 `src/`，非 noui 自身）：跨模块同名顶层
+  可变绑定从「静默别名」（MIR globals 以裸名为键，导入顺序决定谁赢）改为
+  合并后硬错误 `dup-global-xmod`；match arm 体内手写 let 不再穿透全局槽位
+  （hir2mir 写回闸门加 `matchDepth == 0`，arm 内建臂局部阴影、arm 末还原）。
+  永久回归测试：`src/build/cross_module_dup_global_test.go`（含大写常量与
+  std 内部先赢的放行边界）、`src/mir/arm_shadow_global_test.go`（MIR 层断言
+  arm 内对全域槽位 0 次写入 + 非 arm 赋值仍写回的非空洞对照）。Go 套件
+  `./...` 全绿（手动注入 StdSigKey 时 `TestStdASTBlobCarriesParseConfig`
+  需使用 blob 内嵌 key，属构建方式差异；`i18n/catalog` 的
+  `TestEnCatalogFresh` 红是既有问题，与本批无关）。
+
+### §5.74 阶段 81：事件面与绘制原语补齐（2026-11-25 实测）
+
+审查 P2「平台能力缺口」里尚未落地的项一次补齐；P3 工程化收尾同步完成。
+
+- **事件码表（shim.c 顶部常量，i64 打包不变）**：1 QUIT、2/8/10 左/右/中按下、
+  3 MOVE、4 KEYDOWN、5 WHEEL、6/9/11 左/右/中抬起、7 TEXT、12 KEYUP、
+  13/14/15 FINGER_DOWN/UP/MOTION、16/17/18 PEN_DOWN/UP/MOTION、
+  19 DROP_FILE、20 DROP_POS、21 DROP_BEGIN、22 DROP_COMPLETE、
+  23 PEN_AXIS、24 DROP_TEXT。打包仍走 `type | x<<8 | y<<32 | aux<<56`
+  （x/y 各 24 位），辅助函数 `ev_pack` 统一夹紧。
+- **aux 语义分流**：鼠标与键盘事件的 aux 字节是**修饰键位图**
+  （bit0 Shift / bit1 Ctrl / bit2 Alt / bit3 Meta，`mods_byte()` 读
+  `SDL_GetModState`）；触摸 / 笔事件的 aux 是**压力量化**（`quant_unit()`
+  把 0..1 映射到 0..255）。阶段77 起 Shift 不再挤占键码的 y bit23，
+  key-up 因此可以复用同一键码拆分（低 24 + 高 8）。
+- **坐标换算**：触摸是归一化坐标，按 attach 窗口像素尺寸换算（越界窗口退回
+  1.0 防止除零）；笔坐标本就是像素。拖放内容不进 i64，走独立静态缓冲 +
+  `noui_drop_take()`（读完即空，与 `noui_text_take()` 同构，务必同一轮取）。
+- **Nolang 侧解码**：`app-event-decode(e)` 纯函数（不碰平台），app-poll 调它；
+  合成 i64 即可单测整个事件面。新增 `app-mods()/app-pressure()/app-drop()/
+  app-display-scale()`。
+- **绘制原语**：Scene 指令 `CS-ROUND`(5) / `CS-SHADOW`(6) / `CS-IMGR`(7)，
+  附加参数池 `CS-SR`（半径）/ `CS-SD`（阴影偏移）/ `CS-SA`（角度）/
+  `CS-SF`（翻转位）。C 侧：`noui_draw_round_rect`——SDL_Renderer 无圆角 API，
+  用「中央矩形 + 上下逐行 sqrt 收窄」近似（半径夹到 min(w,h)/2）；
+  `noui_draw_shadow`——6 层外扩半透明圆角矩形叠加；`noui_draw_image_rot`——
+  `SDL_RenderTextureRotated` + `SDL_FlipMode`（图片纹理惰性创建抽成
+  `win_img_tex()` 供普通/旋转两条路径共用）。GPU 后端无逐行/纹理管线：
+  圆角降级为直角矩形，阴影与旋转图片跳过（同阶段79 口径，已如实记录）。
+- **透明度打通**：`app-draw-scene` 所有绘制出口的 alpha 从硬编码 255 改为
+  `col-a(c)`（矩形 / 填充 / 文本 / GPU 矩形）；窗口清屏底色仍固定 255（窗口
+  自身不应半透明）。
+- **字体 fallback / DPI**：`app-init` 字号乘 `noui_window_display_scale1000`
+  缩放；候选路径 Arial → Helvetica → PingFang → Library/Arial → Menlo 逐个
+  尝试，全失败才回退 DebugText（此前单一硬编码路径，换机器静默丢字体）。
+- **默认按钮 / Enter 提交**：`dva-default-submit(S,root)`——焦点组件带
+  dv-act 时 Enter 等价点击，走同一 派发 → 归约 → 回调 路径；输入框等
+  无 dv-act 组件不受影响；主循环「无面板焦点」分支接入。
+- **P3 收尾**：新增 `NEXT.md`（现状 / 下一步 / 约定）；删除早期拼接脚本
+  `gen-test.sh`（产出 kernel.no / test-kernel.no 保留为历史回归）。
+  另修掉 `tests/dv.no` 的行首 `&&` 续行——该写法当前解析器不支持
+  （报 `m0db1nfx`），此前一直靠编译缓存命中旧产物；cmp-scene 变更强制重编后
+  暴露，已改单行。全量套件 **139/139**（新增 app-event-decode /
+  cmp-scene-prims / dva-default-submit 三份）。CI job 同路复跑。
+
 ## 6. 后端（两套 shim，均已落地验证）
 
 **回退后端 `src/shim/shim.c` + `shim.h`**（SDL_Render，导出 `noui_*`）：
 - 窗口/事件：`noui_init`、`noui_window_create`、`noui_quit`、`noui_poll`、`noui_delay`、`noui_version`
+- 多窗口（阶段80）：`noui_window_attach/count/close/event`——注册表 + attach 语义，既有绘制/setter 逐窗复用；事件 i64 编码不变，窗口 id 走独立查询
+- 图片（阶段78）：`noui_img_load/size/draw_image`——PNG 解码成 surface，纹理由各窗口惰性创建并缓存
+- 事件面（阶段81）：类型码 1..24（右/中键、key-up、触摸、压感笔、拖放）；aux = 修饰键位图或压力；`noui_drop_take()`、`noui_window_display_scale1000()`；`noui_draw_round_rect/_shadow/_image_rot`
 - 帧：`noui_begin_frame`（清屏）、`noui_set_color`、`noui_draw_rect`、`noui_end_frame`（present）
 - 文字（阶段6升级）：`noui_font_init(path, ptsize)`、`noui_font_draw(x,y,r,g,b,a,text)` 用 **SDL_ttf 3.x（内部 HarfBuzz shaping）** 渲染到 surface→texture；未加载字体时 `noui_draw_text` 回退 DebugText。
 - 实测：app 打印 `font shaping: 1`，窗口句柄有效，ESC/超时正常退出。
@@ -3382,6 +3541,7 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
 - 顶点格式 `{vec2 pos, vec4 color}`（24B）；MSL vertex/fragment shader 以源码交 `SDL_CreateGPUShader`。
 - `noui_gpu_draw_rect` 追加 6 顶点（2 三角形），`noui_gpu_frame` 经 transfer buffer 上传 + render pass + `SDL_DrawGPUPrimitives` 一次绘制。
 - 演示：`example/noui-gpu-demo/`（`../../bin/no build -cc ../../noui/ccwrap.sh -o gpu-demo .`），编译链接通过、窗口创建成功、Metal 驱动启用。
+- 阶段79 起接入主循环：`package.noml` 的 `link-libs` 含 `noui-gpu-shim`，`app.no` 用 `app-use-gpu(1)` 切换；GPU 路径只画矩形（文本/图片/裁剪跳过），清屏色可配（`noui_gpu_set_clear`）。
 
 **FFI 参数陷阱（阶段6实测）**：Nolang `f64` 实参传给 C `float` 形参，与 `str` 混合时值会变成 0（`ptsize=0.0` 导致字体加载失败）。规避：shim 侧浮点形参一律声明为 `double`（对应 Nolang `f64`），内部再转 float。
 
@@ -3587,6 +3747,45 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
       / `src/pushmod*.no` / `tests/interaction.no` / `tests/widget.no`）；
       `make test` 仅既有 `TestS1RawCondFixturesAreExercised`。`dist/` 已清回
       仅四个 shim 产物。
+- [x] 阶段 76：平台能力（窗口 resize 回写 / 文本输入 / 系统剪贴板）——
+      审查驱动的补齐，不是组件。`src/app.no` 新增
+      `app-sync-window-size()`（`app-frame` 每帧开头调用，在
+      `app-window-apply-all` 之前；显式 `C-WINDOW-EXT` 尺寸仍优先）；
+      shim 接 `SDL_EVENT_TEXT_INPUT`（type 7）+ `noui_text_take()` /
+      `noui_clipboard_copy` / `noui_clipboard_paste`；`dv-app.no` 新增
+      `dva-type(s)`（按码点切片喂三级焦点：命令面板 > 输入框 > 编辑器）
+      与 `dva-clipboard-hit(h,px,py)`（复制方块几何与
+      `cs-paint-clipboard` 对齐，命中即写系统剪贴板）。测试
+      `tests/app-resize.no`（8 项）+ `tests/dva-input.no`（9 项）全绿；
+      新测试运行器 `scripts/run-noui-tests.sh` 实测 131/131 通过
+      （dummy 驱动 + `NOUI_MAX_FRAMES` 帧闸 + 退出码判定 + 并行）。
+      现已接入 CI（见阶段 80 条目）。详见 §5.71。
+- [x] 阶段 77：键盘焦点遍历（Tab / Shift-Tab）——shim 键码拆槽（x 低 24 +
+  y 高 8 + Shift bit），`app-poll()` 合回完整键码与 `APP-SHIFT`；
+      `dv-app.no` 新增 `dva-focus-step(root, dir)`（视图创建序候选、环形步进、
+      编辑器/命令面板让位）。`tests/dva-focus-tab.no` 9 项全绿。详见 §5.72。
+- [x] 阶段 78：图片 / 精灵——`src/shim/img_png.c` 最小 PNG 解码（zlib，RGBA8），
+      `shim.c` surface 注册表 + `noui_img_load/size/draw_image`；Nolang 侧
+      `C-SPRITE`（components.no）+ `CS-IMG` 指令（cmp-scene.no）+
+      `app-draw-scene` 拉伸绘制。`tests/cmp-sprite.no` 8 项全绿。详见 §5.72。
+- [x] 阶段 79：GPU 后端接入主循环——`link-libs` 增 `noui-gpu-shim`，
+      `app-use-gpu/app-gpu-mode/app-gpu-active` + `_noui-gpu-*` FFI；
+      `app-init/-frame/-delay/-shutdown` 分流（GPU 只画矩形，文本/图片/裁剪跳过）；
+      shim 修归一化（真实窗口尺寸）与 `double` 形参。`tests/app-gpu.no`
+      （真机冒烟 + dummy 优雅降级）。详见 §5.73。
+- [x] 阶段 80：多窗口支持——shim 窗口注册表（`NOUI_WIN_MAX 8`）+ attach 语义
+      （既有 setter/getter/绘制逐窗复用）；`noui_window_attach/count/close/event`；
+      `app-frame()` 逐窗镜像同一 Scene；图片改 surface + 每窗纹理缓存；
+      `app-window-create-extra/-close/-attach/-count/-event-window`。
+      `tests/app-windows.no` 14 项全绿；CI `noui-test` job 落地
+      （`.github/workflows/test.yml`，macos + brew sdl3）。详见 §5.73。
+- [x] 阶段 81：事件面与绘制原语——shim 类型码 1..24（右/中键、key-up、触摸、
+      压感笔、文件/文本拖放）+ aux 修饰键位图/压力 + `noui_drop_take()` +
+      DPI 查询；Scene `CS-ROUND/SHADOW/IMGR` + 圆角/阴影/旋转图片 C 实现；
+      `app-event-decode()` 纯解码；字体候选 fallback + DPI 字号；
+      `dva-default-submit()` Enter=激活焦点按钮；新增 `NEXT.md`、删除
+      `gen-test.sh`。测试 app-event-decode / cmp-scene-prims /
+      dva-default-submit 全绿，全量 139/139。详见 §5.74。
 - [x] 阶段 75：窗口描边容器（window-border）— **组件目录收官**。
       `src/components.no` 新增 `wb-*` 段：每句柄两个池 `WB-RAD`（四角统一
       圆角半径 px*100，0 = 直角）/ `WB-W`（边框厚度 px*100，0 = 不画框），

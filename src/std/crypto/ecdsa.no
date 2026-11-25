@@ -490,7 +490,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         -> borrow = 0
                     }
                     work[idx]: {
-                        ok -> it = val
+                        ok -> it = val: {
+                            ok(x) -> x
+
+                            -> 0
+                        }
 
                         -> _
                     }
@@ -579,7 +583,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         -> borrow = 0
                     }
                     work[idx]: {
-                        ok -> it = val
+                        ok -> it = val: {
+                            ok(x) -> x
+
+                            -> 0
+                        }
 
                         -> _
                     }
@@ -625,7 +633,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             -> borrow = 0
                         }
                         work[idx]: {
-                            ok -> it = val
+                            ok -> it = val: {
+                                ok(x) -> x
+
+                                -> 0
+                            }
 
                             -> _
                         }
@@ -816,7 +828,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         }
 
                         acc[idx]: {
-                            ok -> it = val
+                            ok -> it = val: {
+                                ok(x) -> x
+
+                                -> 0
+                            }
 
                             -> _
                         }
@@ -857,7 +873,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             }
 
                             acc[idx]: {
-                                ok -> it = val
+                                ok -> it = val: {
+                                    ok(x) -> x
+
+                                    -> 0
+                                }
 
                                 -> _
                             }
@@ -908,7 +928,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         -> borrow = 0
                     }
                     acc[idx]: {
-                        ok -> it = val
+                        ok -> it = val: {
+                            ok(x) -> x
+
+                            -> 0
+                        }
 
                         -> _
                     }

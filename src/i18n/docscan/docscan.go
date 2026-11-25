@@ -57,7 +57,7 @@ func Scan(root string) ([]Entry, error) {
 		if d.IsDir() {
 			name := d.Name()
 			if path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") ||
-				name == "bin" || name == "dist" || name == "node_modules") {
+				name == "bin" || name == "dist" || name == "node_modules" || name == "tmp") {
 				return fs.SkipDir
 			}
 			return nil

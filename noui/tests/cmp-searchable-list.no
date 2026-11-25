@@ -304,4 +304,5 @@ ok = ok & u79 & u80 & u81 & u82 & u83 & u84
 }
 (ok == 0) -> {
     print('SOME SEARCHABLE-LIST TESTS FAILED')
+    exit(1)
 }

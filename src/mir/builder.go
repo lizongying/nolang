@@ -12,6 +12,25 @@ type Builder struct {
 	Mod      *Module
 	CurFunc  FuncID
 	CurBlock BlockID
+	// spanLine/spanCol/spanFile are the source location of the HIR node
+	// currently being lowered. SetSourcePos is called by the lowerer around
+	// lowerStmt/lowerExpr; every emitted instruction inherits it so backend
+	// diagnostics can report file:line:col.
+	spanLine int32
+	spanCol  int32
+	spanFile int32
+}
+
+// SetSourcePos sets the source span stamped onto subsequently emitted
+// instructions. The lowerer restores it after finishing a node so nested
+// expressions keep their own location.
+func (b *Builder) SetSourcePos(line, col, fileID int32) {
+	b.spanLine, b.spanCol, b.spanFile = line, col, fileID
+}
+
+// stamp copies the current source span onto an instruction.
+func (b *Builder) stamp(inst *Inst) {
+	inst.Line, inst.Col, inst.FileID = b.spanLine, b.spanCol, b.spanFile
 }
 
 // NewBuilder returns a builder bound to an empty module.
@@ -186,6 +205,7 @@ func (b *Builder) Emit(op Op, typ TypeID, args []ValueID, sym string) ValueID {
 	inst.Type = typ
 	inst.Block = b.CurBlock
 	inst.Sym = sym
+	b.stamp(inst)
 	if f := b.Mod.Func(b.CurFunc); f != nil {
 		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
 	}
@@ -218,6 +238,7 @@ func (b *Builder) EmitVoid(op Op, args []ValueID, sym string) InstID {
 	inst.Args = args
 	inst.Sym = sym
 	inst.Block = b.CurBlock
+	b.stamp(inst)
 	if f := b.Mod.Func(b.CurFunc); f != nil {
 		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
 	}
@@ -254,6 +275,7 @@ func (b *Builder) EmitCallMulti(resTypes []TypeID, args []ValueID, sym string) [
 	inst.Type = resTypes[0]
 	inst.Block = b.CurBlock
 	inst.Sym = sym
+	b.stamp(inst)
 	if f := b.Mod.Func(b.CurFunc); f != nil {
 		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
 	}
@@ -287,6 +309,7 @@ func (b *Builder) EmitOptionWrap(optType TypeID, tag int64, payload ValueID) Val
 	inst.Int = tag
 	inst.Type = optType
 	inst.Block = b.CurBlock
+	b.stamp(inst)
 	if f := b.Mod.Func(b.CurFunc); f != nil {
 		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
 	}
@@ -317,6 +340,7 @@ func (b *Builder) EmitChanRecv(optType, statusType TypeID, ch ValueID) (opt, sta
 	inst.Args = []ValueID{ch}
 	inst.Type = optType
 	inst.Block = b.CurBlock
+	b.stamp(inst)
 	if f := b.Mod.Func(b.CurFunc); f != nil {
 		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
 	}
@@ -343,6 +367,7 @@ func (b *Builder) EmitMoveInto(dst ValueID, src ValueID) InstID {
 	inst.Dst = NoVal
 	inst.Args = []ValueID{src, dst}
 	inst.Block = b.CurBlock
+	b.stamp(inst)
 	if f := b.Mod.Func(b.CurFunc); f != nil {
 		b.Mod.Blocks[b.CurBlock].Insts = append(b.Mod.Blocks[b.CurBlock].Insts, iid)
 	}

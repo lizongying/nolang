@@ -1,10 +1,17 @@
 {
   name: 'compiler'
-  mirrors: []
   dependencies: []
   compiler: {
     version: 'dev'
-    link-libs: []
-    anonymous-fn-type: false
   }
+  description: ''
+  category: ''
+  keywords: []
+  author: ''
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
+  license: ''
+  ignore: []
 }

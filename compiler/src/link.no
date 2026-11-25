@@ -18,7 +18,7 @@
 ;    `unknown callee link.compile ... [4qhyyund]`——含點自由函式只在**同模組內**
 ;    可解析（drv.no 自己的 drv.* 即如此），跨模組必須裸名＋模組前綴。
 ; ⚠️ SHS S6：本檔 out-param 至多 1 個（ok）。
-; ll: 完整 LLVM IR 模組文字（prelude + 函式 + define i64 @main()）
+; ll: 完整 LLVM IR 模組文字（prelude + 函式 + define i64 @__nolang_main()）
 ; out: 目的可執行檔路徑；IR 會另存成 out + '.ll'
 ; ok: clang 是否正常結束（code == 0）
 compile = (ll str, out str) (ok bool) {

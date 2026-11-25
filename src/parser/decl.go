@@ -278,6 +278,7 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 				continue
 			}
 			if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
+				p.warnReservedWordAsIdentifier(p.currentToken)
 				p.saveErrorf("b360mu4g", "line %d, column %d: expected parameter name, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				return nil
@@ -406,6 +407,7 @@ func (p *Parser) parseArrayTypeMethodDefinition() Statement {
 					continue
 				}
 				if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
+					p.warnReservedWordAsIdentifier(p.currentToken)
 					p.saveErrorf("h0rvt6eu", "line %d, column %d: expected parameter name, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					return nil
@@ -971,6 +973,7 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			}
 
 			if p.currentToken.Type != lexer.IDENT {
+				p.warnReservedWordAsIdentifier(p.currentToken)
 				p.saveErrorf("x6tqaeqp", "line %d, column %d: expected parameter name in interface method, got %s",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				return nil
@@ -1070,6 +1073,7 @@ func (p *Parser) parseInterfaceDefinition() Statement {
 			p.nextToken() // skip (
 			for p.currentToken.Type != lexer.RPAREN && p.currentToken.Type != lexer.EOF {
 				if p.currentToken.Type != lexer.IDENT {
+					p.warnReservedWordAsIdentifier(p.currentToken)
 					p.saveErrorf("sciigwn4", "line %d, column %d: expected result name in interface method, got %s",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					return nil
@@ -1401,6 +1405,7 @@ func (p *Parser) parseStructDefinition() Statement {
 		}
 
 		if p.currentToken.Type != lexer.IDENT {
+			p.warnReservedWordAsIdentifier(p.currentToken)
 			p.saveErrorf("9yjr7gj6", "line %d, column %d: expected field name in struct definition, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			return nil
@@ -1589,6 +1594,7 @@ func (p *Parser) parseStructDefinition() Statement {
 }
 
 func (p *Parser) parseFunctionDefinition() Statement {
+	p.warnReservedWordAsIdentifier(p.currentToken)
 	def := &FunctionDefinition{
 		Token: p.currentToken,
 		Name:  p.currentToken.Literal,
@@ -1691,6 +1697,7 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 				continue
 			}
 			if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
+				p.warnReservedWordAsIdentifier(p.currentToken)
 				p.saveErrorf("v0thbcmv", "line %d, column %d: expected parameter name, got %s instead",
 					p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 				return
@@ -1779,6 +1786,7 @@ func (p *Parser) parseFunctionBody(def *FunctionDefinition) {
 					continue
 				}
 				if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.IN {
+					p.warnReservedWordAsIdentifier(p.currentToken)
 					p.saveErrorf("8gnvlvf4", "line %d, column %d: expected parameter name, got %s instead",
 						p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 					return
@@ -1982,6 +1990,7 @@ func (p *Parser) parseExternParamList() ([]*Parameter, bool) {
 
 		// 參數名稱
 		if p.currentToken.Type != lexer.IDENT {
+			p.warnReservedWordAsIdentifier(p.currentToken)
 			p.saveErrorf("soq2h6t2", "line %d, column %d: expected parameter name in extern declaration, got %s instead",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			return nil, false

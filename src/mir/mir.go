@@ -476,7 +476,7 @@ func (m *Module) typeOwnsHeap(ty *Type) bool {
 //     question ClassifyOwnership already answers for a plain value.
 //
 //   - the payload is heap-BOXED, i.e. it does not fit the inline payload slot
-//     (§4.1: anything above `option-inline-threshold` bytes, default 24). The
+//     (§4.1: anything above `option-payload-inline-threshold` bytes, default 256). The
 //     BOX is a malloc the codegen made for this option, so it is the option's
 //     to free — even when the payload is a POD struct that owns nothing itself
 //     (`big { pad [32]i64 }`).
@@ -1393,6 +1393,31 @@ func (m *Module) SetValueOrigin(v ValueID, raw string) {
 	m.Values[v].Origin = id
 }
 
+// InternSourceFile maps a source file name to the 1-based id stored on MIR
+// instructions. Empty names share id 0 ("unknown") so callers can skip the
+// lookup for HIR nodes without a file attribution.
+func (m *Module) InternSourceFile(file string) int32 {
+	if file == "" {
+		return 0
+	}
+	for i, f := range m.SourceFiles {
+		if f == file {
+			return int32(i + 1)
+		}
+	}
+	m.SourceFiles = append(m.SourceFiles, file)
+	return int32(len(m.SourceFiles))
+}
+
+// SourceFile returns the file name for a 1-based id from InternSourceFile,
+// or "" for an unknown/out-of-range id.
+func (m *Module) SourceFile(id int32) string {
+	if id <= 0 || int(id) > len(m.SourceFiles) {
+		return ""
+	}
+	return m.SourceFiles[id-1]
+}
+
 // ValueOrigin returns the pre-promotion type of v, or nil when v was not
 // promoted (in which case its own Type is authoritative).
 func (m *Module) ValueOrigin(v ValueID) *Type {
@@ -1433,6 +1458,10 @@ type Inst struct {
 	Callee ValueID
 	Line   int32
 	Col    int32
+	// FileID indexes Module.SourceFiles (1-based; 0 = unknown). Filled by
+	// HIR->MIR lowering so backend diagnostics can point at the source line
+	// instead of only naming an internal MIR function/value.
+	FileID int32
 	// MovesArg marks an OpSetField whose value argument (Args[1]) is CONSUMED:
 	// the codegen stores the value's OWN buffer into the field, so the value's
 	// temporary heap must not be dropped separately (the field owns it now). The
@@ -1634,16 +1663,16 @@ const errPayloadRawStd = "err.err"
 
 type Module struct {
 	Name string
-	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值：`8 + roundUp8(sizeof(T))`
-	// 小于等于它则载荷内联进 option 自己那 8+pad 的载荷区，大于它则堆装箱、
-	// 载荷区首字存指针。默认 264（= 1 + 7 + 256：1 字节 tag + 补到 8 的 padding
-	// + 256 字节载荷）；可配置更大，最小 16；小于 16 是编译错误。
+	// OptionPayloadInlineThreshold 是 `?T` 载荷内联的字节阈值，只按载荷计（不含
+	// 8 字节标签区）：`roundUp8(sizeof(T))` 小于等于它则内联进 option 的载荷区，
+	// 大于它则堆装箱、载荷区首字存指针。默认 256（整个 option 即 8+256=264），
+	// 最小 16；低于 16 会被夹到 16。
 	//
 	// 布局（含 K = roundUp8(sizeof(T))/8、tag 恒 1 字节）的唯一来源是
 	// src/mir/layout.go；这里只存配置。由 build 从 package.noml 的
-	// compiler.option-inline-threshold（或 NOLANG_OPTION_INLINE_THRESHOLD）
+	// compiler.option-payload-inline-threshold（或 NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD）
 	// 填入，0 表示取默认值。
-	OptionInlineThreshold int
+	OptionPayloadInlineThreshold int
 
 	// OptionErrRaw 是内建 option 的 err 变体载荷的原始型别名。
 	//
@@ -1663,7 +1692,7 @@ type Module struct {
 	OptionErrRaw string
 
 	// optBoxed memoizes OptionPayloadBoxed per element raw type. The answer is
-	// a pure function of (element type, OptionInlineThreshold), but computing
+	// a pure function of (element type, OptionPayloadInlineThreshold), but computing
 	// it stands up a throwaway codegen, so it is cached. Not part of the
 	// module's identity — purely a query cache.
 	optBoxed map[string]bool
@@ -1687,6 +1716,10 @@ type Module struct {
 	Externs    []ExternDecl
 	Globals    []GlobalDecl
 	FuncByName map[string]FuncID
+	// SourceFiles interns the source file names carried by HIR call nodes so
+	// MIR instructions can carry a compact FileID instead of a string each.
+	// IDs are 1-based; 0 means "unknown source file".
+	SourceFiles []string
 
 	// CABIExports is the ordered list of functions marked with #{cabi[='sym']}.
 	// LowerHIR fills it from the merged HIR package and uses it as EXTRA

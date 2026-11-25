@@ -129,4 +129,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-BIND TESTS FAILED')
+    exit(1)
 }

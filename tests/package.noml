@@ -1,6 +1,5 @@
 {
   name: 'my-project'
-  version: 'v1.0.0'
   description: 'A Nolang project'
   keywords: ['nolang']
   author: 'lizongying'
@@ -10,6 +9,9 @@
   homepage: ''
   license: 'Apache-2.0'
   dependencies: []
-  dev-dependencies: ['nolang:^0.1.0']
-  ignore: ['dist']
+  ignore: []
+  category: ''
+  compiler: {
+    version: ''
+  }
 }

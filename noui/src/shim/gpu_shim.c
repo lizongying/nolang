@@ -20,6 +20,8 @@ static Vertex *g_verts = NULL;
 static int g_vcount = 0;
 static int g_vcap = 0;
 static int g_quit = 0;
+/* 清屏色（由 noui_gpu_set_clear 设置，默认深灰蓝） */
+static float g_clear_r = 0.12f, g_clear_g = 0.12f, g_clear_b = 0.16f, g_clear_a = 1.0f;
 
 /* MSL：顶点直接把裁剪空间坐标与颜色传给 fragment */
 static const char *VERT_MSL =
@@ -53,6 +55,17 @@ int noui_gpu_init(void) {
     if (!SDL_Init(SDL_INIT_VIDEO)) return 0;
     g_dev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_MSL, true, NULL);
     return g_dev ? 1 : 0;
+}
+
+/* GPU 后端是否已初始化（app-shutdown 依此选择清理路径）。 */
+int noui_gpu_active(void) { return g_dev != NULL; }
+
+/* 设置清屏色（0..255），下一帧 frame() 生效。 */
+void noui_gpu_set_clear(int r, int g, int b, int a) {
+    g_clear_r = r / 255.0f;
+    g_clear_g = g / 255.0f;
+    g_clear_b = b / 255.0f;
+    g_clear_a = a / 255.0f;
 }
 
 long long noui_gpu_window_create(const char *title, int w, int h) {
@@ -93,7 +106,19 @@ long long noui_gpu_window_create(const char *title, int w, int h) {
     return g_pipe ? (long long)(void *)g_win : 0;
 }
 
-void noui_gpu_draw_rect(float x, float y, float w, float h, int r, int g, int b, int a) {
+long long noui_gpu_window_get_size(void) {
+    if (!g_win) return 0;
+    int w = 0, h = 0;
+    SDL_GetWindowSize(g_win, &w, &h);
+    return ((long long)w << 32) | (unsigned int)h;
+}
+
+void noui_gpu_draw_rect(double x, double y, double w, double h, int r, int g, int b, int a) {
+    /* 用真实窗口尺寸归一化：窗口 resize / 全屏后布局尺寸会变，写死 200x150
+     * 会让矩形挤在左上角。 */
+    int vw = 0, vh = 0;
+    if (g_win) SDL_GetWindowSize(g_win, &vw, &vh);
+    if (vw <= 0 || vh <= 0) { vw = 200; vh = 150; }
     if (g_vcount + 6 > g_vcap) {
         int cap = g_vcap ? g_vcap * 2 : 256;
         while (cap < g_vcount + 6) cap *= 2;
@@ -101,10 +126,10 @@ void noui_gpu_draw_rect(float x, float y, float w, float h, int r, int g, int b,
         if (!nv) return;
         g_verts = nv; g_vcap = cap;
     }
-    float nx = x / 200.0f - 1.0f;
-    float ny = 1.0f - y / 150.0f;
-    float nw = w / 200.0f;
-    float nh = h / 150.0f;
+    float nx = (float)(x / vw * 2.0 - 1.0);
+    float ny = (float)(1.0 - y / vh * 2.0);
+    float nw = (float)(w / vw * 2.0);
+    float nh = (float)(h / vh * 2.0);
     float cr = r / 255.0f, cg = g / 255.0f, cb = b / 255.0f, ca = a / 255.0f;
     Vertex v[6] = {
         { nx,      ny,      cr,cg,cb,ca },
@@ -156,7 +181,7 @@ void noui_gpu_frame(void) {
     ct.texture = swap;
     ct.load_op = SDL_GPU_LOADOP_CLEAR;
     ct.store_op = SDL_GPU_STOREOP_STORE;
-    ct.clear_color = (SDL_FColor){ 0.12f, 0.12f, 0.16f, 1.0f };
+    ct.clear_color = (SDL_FColor){ g_clear_r, g_clear_g, g_clear_b, g_clear_a };
     SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cb, &ct, 1, NULL);
     if (g_vcount > 0 && vbuf) {
         SDL_BindGPUGraphicsPipeline(pass, g_pipe);

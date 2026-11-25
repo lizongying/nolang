@@ -159,12 +159,12 @@ no build -target aarch64-linux-gnu   # 需要交叉編譯時才顯式指定
 `%option_<key> = { i8 tag, [K x i64] }` を持ち（1 バイトのタグ、ペイロードはバイトオフセット 8 に固定、
 `K = roundUp8(sizeof(T))/8`）。ペイロードが閾値に収まらない場合はヒープボックスに切り替わり、ペイロード領域の先頭語にポインタを格納します。
 
-`--option-inline-threshold=N` はこの閾値を指定します（**option 構造全体**のバイト数で計算、
+`--option-payload-inline-threshold=N` はこの閾値を指定します（**option 構造全体**のバイト数で計算、
 つまり `1 + 7 + sizeof(T)`）：
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # 讓更大的載荷內聯
-no build --option-inline-threshold=16 main.no     # 最小可配置值
+no build --option-payload-inline-threshold=1032 main.no   # 讓更大的載荷內聯
+no build --option-payload-inline-threshold=16 main.no     # 最小可配置值
 ```
 
 | 値 | 効果 |
@@ -173,8 +173,8 @@ no build --option-inline-threshold=16 main.no     # 最小可配置值
 | 最小 **16** | `?i64` のみインラインのまま；`?str`（24 B）以降はすべてボックス化 |
 | < 16 | コンパイルエラー |
 
-優先順位：コマンドライン > 環境変数 `NOLANG_OPTION_INLINE_THRESHOLD` > `package.noml` の
-`compiler.option-inline-threshold` > デフォルト値。レイアウトの唯一の情報源は `src/mir/layout.go` で、
+優先順位：コマンドライン > 環境変数 `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `package.noml` の
+`compiler.option-payload-inline-threshold` > デフォルト値。レイアウトの唯一の情報源は `src/mir/layout.go` で、
 セマンティクス層（どの値が `ok`／`nil`／`err` とみなされるか）は**影響を受けず**、メモリ使用量とボックス化するかどうかだけが変わります。
 
 ### コンパイラ内蔵オプティマイザ（MIR opt）
@@ -383,14 +383,12 @@ Nolang のすべての設定ファイル（`package.noml`、`workspace.noml`、`
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

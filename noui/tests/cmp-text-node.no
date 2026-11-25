@@ -266,5 +266,6 @@ ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60 & u61
 }
 (ok == 0) -> {
     print('SOME TEXT-NODE TESTS FAILED')
+    exit(1)
 }
 

@@ -4,5 +4,15 @@
   license: 'Apache-2.0'
   compiler: {
     link-libs: ['noui-gpu-shim', 'SDL3']
+    version: ''
   }
+  category: ''
+  keywords: []
+  author: ''
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
+  dependencies: []
+  ignore: []
 }

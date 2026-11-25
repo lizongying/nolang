@@ -172,3 +172,31 @@ jobs:
         run: ./bin/no vet src/std
       - name: vet tests
         run: ./bin/no vet tests
+
+  # ── noui（GPUI 风格 UI 框架）无头全量测试 ─────────────────────────────
+  # noui 是 macOS 优先的 C/SDL3 shim，build-shims.sh 默认走 /opt/homebrew，
+  # 所以用 macos runner；测试本身在无头 dummy 驱动下跑，不需要真实窗口。
+  # 运行器脚本：noui/scripts/run-noui-tests.sh（帧闸 + 退出码判定 + 并行）。
+  noui-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
+
+      - name: Install LLVM + SDL3 + TTF (brew)
+        run: |
+          brew install llvm sdl3 sdl3_ttf || brew install llvm sdl3 sdl3_ttf
+          # 单测墙钟上限用 gtimeout；没有就退化为不封顶（测试自身会退出）
+          brew install coreutils || true
+
+      - name: Build no binary
+        run: make no
+
+      - name: Build noui shims + headless suite
+        run: |
+          cd noui
+          ./build-shims.sh
+          ./scripts/run-noui-tests.sh

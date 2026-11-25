@@ -109,6 +109,36 @@ func exprSubjectRHS(t *testing.T, src string) *SurfaceMatch {
 	return sm
 }
 
+// 括號包住的主語：`v = (a % b): { … }`。括號是純語法（H0 對
+// GroupedExpression 一律透傳），必須與不加括號的 `a % b: { … }` 完全同義。
+// 舊實作在 resolveSubjectMatch 直接對 sm.Matched 做 *InfixExpression 斷言，
+// 多一層 GroupedExpression 就漏掉歸一化 ⇒ ok 臂沒有 `let it` ⇒ MIR 零填
+// ⇒ 觀測值恆為 fallback（實測 `v = (3 + 4): { ok -> it \n -> 0 }` 得 0，
+// 不加括號得 7）。
+const valueMatchExprSubjectGroupedSrc = `f = (a i64, b i64) (out i64) {
+    out = (a % b): {
+        ok -> it
+
+        -> 0
+    }
+}
+`
+
+// TestValueMatchExprSubjectGroupedNormalised 釘住括號主語必須被剝掉後再走
+// option 算術歸一化，與裸 InfixExpression 主語逐字節同義。
+// 判別力：把 resolveSubjectMatch 入口的 unwrapLowerExpr(matched) 拿掉，本
+// 測試立刻失敗（HIR 沒有 __match_subj_、ok 臂沒有帶型別的 it）。
+func TestValueMatchExprSubjectGroupedNormalised(t *testing.T) {
+	dump := dumpHIR(t, valueMatchExprSubjectGroupedSrc)
+	if !strings.Contains(dump, "let s=__match_subj_") {
+		t.Fatalf("parenthesised option-arithmetic subject must be normalised into a "+
+			"`__match_subj_*` temp, same as the bare expression.\n--- HIR ---\n%s", dump)
+	}
+	if !strings.Contains(dump, "let s=it t=i64") {
+		t.Fatalf("ok arm `it` binding has no i64 type; MIR will zero-fill it.\n--- HIR ---\n%s", dump)
+	}
+}
+
 // TestValueMatchExprSubjectIsAssignmentRHS 是主形狀門禁。
 func TestValueMatchExprSubjectIsAssignmentRHS(t *testing.T) {
 	exprSubjectRHS(t, valueMatchExprSubjectSrc)

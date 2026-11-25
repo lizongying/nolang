@@ -453,16 +453,21 @@ func (a *compileAssembly) mergeLoadedModule(use *parser.UseStatement, modProg *p
 						}
 					}
 				}
-			} else if !a.mainVarNames[ls.Name.Value] {
-				isConst := checker.IsConstantExpr(ls.Value)
-				platformKeys := modProg.Sem.PlatformKeysOf(ls)
-				hasPlatformAnnotation := len(platformKeys) > 0
-				if isConst && a.mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
-					continue
-				}
-				if isConst && !hasPlatformAnnotation {
-					a.mergedGlobalConsts[ls.Name.Value] = true
-				}
+		} else if !a.mainVarNames[ls.Name.Value] {
+			isConst := checker.IsConstantExpr(ls.Value)
+			// 先贏去重只適用於「大寫常量」：std 內部確實有跨模組同名常量
+			// （FNV-OFFSET 等），而小寫頂層 let 是可變綁定，MIR 以裸名為槽位鍵，
+			// 兩個模組各自宣告同名小寫值會讓一方被靜默改綁。不再去重，讓兩條
+			// 都進 merged，由 validateCrossModuleDuplicateGlobals 統一攔成硬錯誤。
+			isNamedConst := checker.IsConstantName(ls.Name.Value)
+			platformKeys := modProg.Sem.PlatformKeysOf(ls)
+			hasPlatformAnnotation := len(platformKeys) > 0
+			if isNamedConst && a.mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
+				continue
+			}
+			if isNamedConst && !hasPlatformAnnotation {
+				a.mergedGlobalConsts[ls.Name.Value] = true
+			}
 				a.merged.Statements = append(a.merged.Statements, ls)
 				a.merged.Sem.SetModuleOwnerOf(ls, useModShort)
 				a.merged.Sem.SetSourceFileDeep(ls, modFile)

@@ -271,4 +271,5 @@ ok = ok & u62 & u63 & u64 & u65 & u66 & u67 & u68 & u69
 }
 (ok == 0) -> {
     print('SOME TITLE-BAR TESTS FAILED')
+    exit(1)
 }

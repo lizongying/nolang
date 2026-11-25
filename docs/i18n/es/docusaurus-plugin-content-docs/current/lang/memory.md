@@ -86,7 +86,7 @@ El religado de ranura de pila solo actúa sobre la semántica de **copia de valo
 | estructura | suma de los campos | cada campo | alloca (pila) |
 
 **El tamaño de `?T` se calcula, no es fijo**: `?i64` = 16 bytes, `?str` = 24, `?txt` = 264; una carga que supera
-`option-inline-threshold` (predeterminado 264 = 1 + 7 + 256, mínimo 16) se encapsula en el montón y la option
+`option-payload-inline-threshold` (predeterminado 264 = 1 + 7 + 256, mínimo 16) se encapsula en el montón y la option
 completa vuelve a 16 bytes. Cada tipo de carga tiene su propio tipo `%option_<key>` (`src/mir/layout.go`), de modo que
 «mismo tipo ⇔ mismo diseño». La carga de `err` siempre se encapsula y no compite por el presupuesto de carga. Véase
 `docs/docs/lang/syntax.md`〈Tipos anulables (option) · Diseño de memoria〉.
@@ -295,7 +295,7 @@ b[0] = 99
 > La liberación de `?[]T` usa el mismo helper de free profundo que `[]T` (decide si recurre según el tipo de elemento), de modo que
 > aquí también se cumple la dualidad «clon profundo con free profundo».
 > ⚠️ Las options generales (no `?str`/`?[]T`) tienen un payload prestado o de puro valor y **no poseen** montón; clon y free no lo tocan.
-> Cuando la carga es demasiado grande y supera `option-inline-threshold`, la opción pasa a guardar un puntero al montón y entonces el free debe liberar también la caja
+> Cuando la carga es demasiado grande y supera `option-payload-inline-threshold`, la opción pasa a guardar un puntero al montón y entonces el free debe liberar también la caja
 > (determinado por `Boxed`, véase `src/mir/layout.go`).
 
 ### Diferencia con move

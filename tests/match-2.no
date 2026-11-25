@@ -113,9 +113,13 @@ p: {
 }
 
 ; (5) 對照組：外層沒有同名變數時，臂綁定照舊可用於整個臂
+; 臂绑定叫 w5 而不是 w：顶层 match 的臂绑定会落进全局槽表，而本档后半的
+; classify 在**臂体内**给局部 w 赋 match 值；同名时 checker 会把那个全局槽
+; （i64，z 的载荷）当成 w 的类型，报「match arms have inconsistent value
+; types: i64 vs str」。改掉任意一侧的名字即可，这里改本例，语义不变。
 z ?i64 = ok(42)
 z: {
-    ok(w) -> print('ok 5: fresh arm binding {w.to-str()}')
+    ok(w5) -> print('ok 5: fresh arm binding {w5.to-str()}')
 
     nil -> print('fail 5: nil')
 
@@ -140,19 +144,14 @@ z: {
 ; score: 待評分的選項；ok 時以 it 參與條件判斷
 ; r: 90+ 為 'A'、80~89 為 'B'、60~79 為 'C'，其餘（含 nil/err）為 'F'
 grade = (score ?i64) (r str) {
-    r = 'F'
-    score: {
-        nil -> r = 'F'
+    r = score: {
+        ok(it >= 90) -> 'A'
 
-        err -> r = 'F'
+        ok(it >= 80 && it < 90) -> 'B'
 
-        ok -> {
-            it >= 90 -> r = 'A'
+        ok(it >= 60 && it < 80) -> 'C'
 
-            it >= 80 && it < 90 -> r = 'B'
-
-            it >= 60 && it < 80 -> r = 'C'
-        }
+        -> 'F'
     }
 }
 
@@ -160,20 +159,17 @@ grade = (score ?i64) (r str) {
 ; v: 待分類的選項，ok 時以 it 判斷正負
 ; r: 負數細分 'very-negative'（< -100）或 'negative'，其餘見實作
 classify = (v ?i64) (r str) {
-    r = 'non-negative'
-    v: {
-        nil -> r = 'non-negative'
+    r = v: {
+        ok(it < 0) -> {
+            w = v: {
+                ok(it < -100) -> 'very-negative'
 
-        err -> r = 'non-negative'
-
-        ok -> {
-            qv i64 = it
-            qv < 0 -> {
-                qv < -100 -> r = 'very-negative'
-
-                r = 'negative'
+                -> 'negative'
             }
+            w
         }
+
+        -> 'non-negative'
     }
 }
 

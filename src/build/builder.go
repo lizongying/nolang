@@ -211,12 +211,12 @@ type BuildOptions struct {
 	UseDirectWasm bool   // use Direct WASM backend (no LLVM toolchain required)
 	UseJS         bool   // use JS backend (emit JavaScript source, no LLVM toolchain)
 	BrowserMode   bool   // when true with UseJS, generate browser-targeted JS + HTML wrapper
-	// OptionInlineThreshold 覆寫 `?T` 載荷內聯的字節閾值（0 = 沿用 package.noml
-	// / NOLANG_OPTION_INLINE_THRESHOLD 的解析結果）。見 transpiler.SetOptionInlineThreshold。
-	OptionInlineThreshold int
-	CompilerVersion       string            // current compiler version (for package.noml compatibility check)
-	Strict                bool              // vet mode: treat all lint warnings/hints as errors
-	LDFlags               map[string]string // -ld-KEY=VALUE pairs injected as compile-time global constants
+	// OptionPayloadInlineThreshold 覆寫 `?T` 載荷內聯的字節閾值（0 = 沿用 package.noml
+	// / NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD 的解析結果）。見 transpiler.SetOptionPayloadInlineThreshold。
+	OptionPayloadInlineThreshold int
+	CompilerVersion              string            // current compiler version (for package.noml compatibility check)
+	Strict                       bool              // vet mode: treat all lint warnings/hints as errors
+	LDFlags                      map[string]string // -ld-KEY=VALUE pairs injected as compile-time global constants
 	// ESMCDN overrides the import-map CDN base for browser ESM output
 	// ("" = package.noml compiler.esm-cdn, else the built-in default).
 	ESMCDN string
@@ -227,6 +227,12 @@ type BuildOptions struct {
 	// Header overrides the generated C header path for a Shared build.
 	// Empty = <output path without extension>.h.
 	Header string
+	// CheckOnly runs the full compile pipeline (lex → parse → check → codegen)
+	// but writes no build artifact: no output directory, no binary/.js/.wasm,
+	// no C header and no LLVM IR/assembly files. All diagnostics still fire, so
+	// `no build --check` is a CI-friendly gate that leaves the tree untouched.
+	// Cache writes (Tier 0/1 AST) are not build artifacts and still happen.
+	CheckOnly bool
 }
 
 // versionCompatible 檢查 package.noml 中聲明的編譯器版本是否與當前編譯器版本兼容。
@@ -356,9 +362,11 @@ func parseTargetPlatform(target string) (goos, goarch string) {
 
 // BuildFile compiles a .no source file and produces the output binary/file.
 func BuildFile(inputPath string, opts BuildOptions) (string, error) {
-	// 工具鏈檢查
-	if err := CheckToolchain(opts.CC); err != nil {
-		return "", err
+	// 工具鏈檢查：--check 只跑前端到 LLVM IR，不呼叫 clang/opt/llc，故不需要工具鏈。
+	if !opts.CheckOnly {
+		if err := CheckToolchain(opts.CC); err != nil {
+			return "", err
+		}
 	}
 
 	// 若指定的是目錄，先找目錄內的 package.noml
@@ -372,11 +380,10 @@ func BuildFile(inputPath string, opts BuildOptions) (string, error) {
 			if _, err := pkg.EnsureDependencies(10); err != nil {
 				return "", i18n.Errorf("ebzb8tx2", "dependency resolution failed: %w", err)
 			}
-			mainFile := pkg.Main
-			if mainFile == "" {
-				mainFile = "main.no"
+			inputPath = pkg.ResolvePath("main.no")
+			if pkg.IsIgnored(inputPath) {
+				return "", fmt.Errorf("entry file %s is ignored by package.noml", inputPath)
 			}
-			inputPath = pkg.ResolvePath(mainFile)
 		}
 	}
 
@@ -435,6 +442,9 @@ func ResolveBackend(opts BuildOptions, pkg *Package) BackendKind {
 // 供 run/test 執行、或供 build 提示使用者產物位置（見下方「預設輸出路徑不直觀」修正）。
 // 函式本身不打印任何訊息——路徑的提示由呼叫方統一處理，避免 run/test 被多餘輸出干擾。
 func BuildBackend(kind BackendKind, inputPath string, opts BuildOptions) (outPath string, err error) {
+	if err := checkIgnoredDirEntry(inputPath); err != nil {
+		return "", err
+	}
 	switch kind {
 	case BackendWASMDirect:
 		return buildWasmDirect(inputPath, opts)
@@ -443,6 +453,24 @@ func BuildBackend(kind BackendKind, inputPath string, opts BuildOptions) (outPat
 	default: // BackendLLVM
 		return BuildFile(inputPath, opts)
 	}
+}
+
+// checkIgnoredDirEntry 在「目錄當作構建輸入」時擋下被 package.noml ignore 命中的
+// main.no。明確指定的單一檔案不受此限制，避免 ignore 讓使用者無法明確構建。
+func checkIgnoredDirEntry(inputPath string) error {
+	info, err := os.Stat(inputPath)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+	p, _ := LoadPackage(inputPath)
+	if p == nil {
+		return nil
+	}
+	entry := p.ResolvePath("main.no")
+	if p.IsIgnored(entry) {
+		return fmt.Errorf("entry file %s is ignored by package.noml", entry)
+	}
+	return nil
 }
 
 // buildWasmDirect 對應原 main.go 的 --wasm-direct 分支：繞過 LLVM 工具鏈，直接
@@ -461,6 +489,9 @@ func buildWasmDirect(inputPath string, opts BuildOptions) (string, error) {
 	wasmBytes, err := BuildDirectWasm(inputPath, opts)
 	if err != nil {
 		return "", i18n.Errorf("vf6bc21u", "WASM build error: %w", err)
+	}
+	if opts.CheckOnly {
+		return "", nil
 	}
 	if err := os.WriteFile(out, wasmBytes, 0755); err != nil {
 		return "", i18n.Errorf("z8rfu6gf", "writing WASM output %s: %w", out, err)
@@ -496,11 +527,7 @@ func VetFileWithLints(inputPath string, opts BuildOptions) ([]checker.LintResult
 		if _, err := pkg.EnsureDependencies(10); err != nil {
 			return nil, i18n.Errorf("ebzb8tx2", "dependency resolution failed: %w", err)
 		}
-		mainFile := pkg.Main
-		if mainFile == "" {
-			mainFile = "main.no"
-		}
-		inputPath = pkg.ResolvePath(mainFile)
+		inputPath = pkg.ResolvePath("main.no")
 	}
 
 	// 如果仍然是指向目錄（無 package config 的情況），預設使用 main.no
@@ -704,9 +731,6 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	fileName := baseName
 	if pkg != nil && pkg.Name != "" {
 		mainBase := "main"
-		if pkg.Main != "" {
-			mainBase = strings.TrimSuffix(filepath.Base(pkg.Main), ".no")
-		}
 		if baseName == mainBase {
 			fileName = pkg.Name
 		} else if baseName == "lib" {
@@ -718,17 +742,17 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	if opts.Output != "" {
 		outPath = opts.Output
 	} else {
-		rootDir := "."
-		outDir := "dist" // 預設輸出目錄
+		// package.noml 的 output 省略時由套件自己算出 workspace 相對的 dist；
+		// 沒有套件時退回目前目錄下的 dist。
+		distDir := "dist"
 		if pkg != nil {
-			rootDir = pkg.RootDir
-			if pkg.Output != "" {
-				outDir = strings.TrimPrefix(pkg.Output, "./")
-			}
+			distDir = pkg.ResolveOutputDir()
 		}
-		distDir := filepath.Join(rootDir, outDir)
-		if err = os.MkdirAll(distDir, 0755); err != nil {
-			return "", i18n.Errorf("zzcfoc04", "creating dist directory: %w", err)
+		// --check 不建立輸出目錄，也不碰磁碟。
+		if !opts.CheckOnly {
+			if err = os.MkdirAll(distDir, 0755); err != nil {
+				return "", i18n.Errorf("zzcfoc04", "creating dist directory: %w", err)
+			}
 		}
 		outPath = filepath.Join(distDir, fileName)
 	}
@@ -772,11 +796,15 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	// Drive the IR prelude's `target triple` from clang's own canonical
 	// spelling so -Woverride-module stays silent (mir's Go table already
 	// covers linux / windows / wasi; this probe adds the darwin SDK version).
-	mir.SetEmitTargetTriple(queryEmitTargetTriple(opts.CC, opts.Target))
+	// --check 不發出 LLVM IR 檔，跳過會 spawn clang 的 triple probe，
+	// 讓 check 在沒有工具鏈的 CI 上也能跑。
+	if !opts.CheckOnly {
+		mir.SetEmitTargetTriple(queryEmitTargetTriple(opts.CC, opts.Target))
+	}
 	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
 	compiler.SetVerbose(opts.Verbose)
 	compiler.SetShared(opts.Shared)
-	compiler.SetOptionInlineThreshold(opts.OptionInlineThreshold)
+	compiler.SetOptionPayloadInlineThreshold(opts.OptionPayloadInlineThreshold)
 	compiler.SetLDFlags(opts.LDFlags)
 	code, err := compiler.Compile(string(source))
 
@@ -839,6 +867,16 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		if headerPath == "" {
 			headerPath = strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".h"
 		}
+	}
+
+	// --check 已在這裡跑完 lexer → parser → checker → HIR → MIR → LLVM IR 全流程：
+	// 上面的 compiler.Compile 失敗會回報所有診斷，CABI header 的驗證也已完成。
+	// 到此直接返回，不進 buildLLVMInternal（那裡才會寫 .ll/.s/執行檔）。
+	if opts.CheckOnly {
+		if sink != nil && sink.Len() > 0 {
+			fmt.Fprint(os.Stderr, sink.String())
+		}
+		return "", nil
 	}
 
 	if err := buildLLVMInternal(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, opts.Shared, linkLibs, sink); err != nil {
@@ -1361,9 +1399,11 @@ func LoadWorkspaceFile(dir string) (map[string]string, error) {
 // The -o (Output) option is ignored in workspace mode; each target outputs to
 // its own dist/ directory.
 func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
-	// Toolchain check once for all projects
-	if err := CheckToolchain(opts.CC); err != nil {
-		return err
+	// Toolchain check once for all projects (--check never invokes the toolchain).
+	if !opts.CheckOnly {
+		if err := CheckToolchain(opts.CC); err != nil {
+			return err
+		}
 	}
 
 	ws, err := LoadWorkspaceFile(workspaceDir)
@@ -1394,18 +1434,15 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 		projectDir := filepath.Join(workspaceDir, relPath)
 
 		// Load package once per project (cache workspace map, resolve deps)
-		pkg, _ := LoadPackage(projectDir)
-		if pkg != nil {
-			if _, err := pkg.EnsureDependencies(10); err != nil {
+		projectPkg, _ := LoadPackage(projectDir)
+		if projectPkg != nil {
+			if _, err := projectPkg.EnsureDependencies(10); err != nil {
 				fmt.Fprintf(os.Stderr, "SKIP: %s: dependency resolution failed: %v\n", name, err)
 				continue
 			}
 		}
 
 		mainFile := "main.no"
-		if pkg != nil && pkg.Main != "" {
-			mainFile = pkg.Main
-		}
 
 		mainPath := filepath.Join(projectDir, mainFile)
 		libPath := filepath.Join(projectDir, "lib.no")
@@ -1416,8 +1453,8 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 
 		// Check main.no
 		if _, err := os.Stat(mainPath); err == nil {
-			if pkg == nil || !pkg.IsIgnored(mainPath) {
-				targets = append(targets, buildTarget{projectName: name, filePath: mainPath, pkg: pkg})
+			if projectPkg == nil || !projectPkg.IsIgnored(mainPath) {
+				targets = append(targets, buildTarget{projectName: name, filePath: mainPath, pkg: projectPkg})
 				hasMain = true
 			} else {
 				fmt.Fprintf(os.Stderr, "SKIP (ignored): %s: %s\n", name, mainPath)
@@ -1427,8 +1464,8 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 
 		// Check lib.no
 		if _, err := os.Stat(libPath); err == nil {
-			if pkg == nil || !pkg.IsIgnored(libPath) {
-				targets = append(targets, buildTarget{projectName: name, filePath: libPath, pkg: pkg})
+			if projectPkg == nil || !projectPkg.IsIgnored(libPath) {
+				targets = append(targets, buildTarget{projectName: name, filePath: libPath, pkg: projectPkg})
 				hasLib = true
 			} else {
 				fmt.Fprintf(os.Stderr, "SKIP (ignored): %s: %s\n", name, libPath)
@@ -1445,7 +1482,17 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 		// Scan tests/ directory for .no files (excluding main.no and lib.no)
 		if info, err := os.Stat(testDir); err == nil && info.IsDir() {
 			_ = filepath.WalkDir(testDir, func(path string, d os.DirEntry, err error) error {
-				if err != nil || d.IsDir() {
+				if err != nil {
+					return nil
+				}
+				if d.IsDir() {
+					// 被 ignore 命中的目錄（含 *_skip 這類 glob）整棵跳過。
+					if projectPkg != nil && projectPkg.IsIgnoredDir(path) {
+						return filepath.SkipDir
+					}
+					if pkg.IsIgnoredSourceDir(d.Name()) {
+						return filepath.SkipDir
+					}
 					return nil
 				}
 				fname := d.Name()
@@ -1456,10 +1503,10 @@ func BuildWorkspace(workspaceDir string, opts BuildOptions) error {
 					return nil
 				}
 				// 跳過 ignore 列表中匹配的檔案
-				if pkg != nil && pkg.IsIgnored(path) {
+				if projectPkg != nil && projectPkg.IsIgnored(path) {
 					return nil
 				}
-				targets = append(targets, buildTarget{projectName: name, filePath: path, pkg: pkg})
+				targets = append(targets, buildTarget{projectName: name, filePath: path, pkg: projectPkg})
 				return nil
 			})
 		}

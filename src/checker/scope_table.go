@@ -89,6 +89,14 @@ func (s *scopeTable) BoundHere(name string) bool {
 	return s.frames[len(s.frames)-1].had[name]
 }
 
+// AtTopFrame 回報目前是否只在頂層幀（尚未 Push 任何函式幀）。
+// 頂層沒有「外層」可言：只要 flat 裡有同名，就是再指派，必須照常檢查型別；
+// 否則每條頂層語句各建一份 scopeTable 的改寫會讓頂層
+// `x i64 = 1` 之後的 `x = 'hello'` 悄悄逃過 15w45dqk。
+func (s *scopeTable) AtTopFrame() bool {
+	return len(s.frames) <= 1
+}
+
 // Resolve 由 flat 查最近可見綁定（flat 已由 Bind/Pop  maintains 遮蔽關係）。
 func (s *scopeTable) Resolve(name string) (string, bool) {
 	v, ok := s.flat[name]

@@ -1,6 +1,7 @@
 package build
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -668,6 +669,75 @@ func validateDuplicates(program *parser.Program) error {
 		}
 	}
 	return nil
+}
+
+// dupGlobalDecl 記錄一個頂層可變綁定的首次出現位置，供跨模塊重名診斷定位。
+type dupGlobalDecl struct {
+	file string
+	line int
+}
+
+// validateCrossModuleDuplicateGlobals 攔截「跨模組同名頂層可變綁定」。
+//
+// mergeModules 只對常量做裸名先贏去重；非常量的頂層 let 即使重名也會全部併入
+// merged（入口文件已有的名字才跳過）。MIR 的 globals 以裸名為鍵，於是後一個
+// 宣告靜默綁到先聲明的槽位：另一模組對該名字的讀寫都拿到先導入模組的值，且
+// 結果隨導入順序改變（真案例：兩個模組各自 `shared i64 = ...`，兩邊各自
+// `get = () shared` 都回傳先導入的那個值）。這裡在合併後驗證階段報硬錯誤，
+// 並給出兩個宣告的位置。
+//
+// 邊界（刻意不查，避免誤傷既有語義）：
+//   - 大寫常量：既有的「裸名先贏」去重是明文設計；
+//   - 函數字面量：走重載/mangling 體系（finalizeMonomorphization），不是本檢查對象；
+//   - 同一檔案內重複：不在本函數範圍（那是 Entry 的重複變數檢查與模組自身問題）。
+func validateCrossModuleDuplicateGlobals(merged *parser.Program) []checker.ValidateResult {
+	// 同一名字的所有宣告位置。merge 的常量先贏去重與 MIR 裸名槽位都只看名字，
+	// 所以只要兩個不同檔案各自宣告同名值綁定，就必然有一方被靜默改綁。
+	decls := make(map[string][]dupGlobalDecl)
+	var results []checker.ValidateResult
+	for _, stmt := range merged.Statements {
+		ls, ok := stmt.(*parser.LetStatement)
+		if !ok || ls.Name == nil || ls.IsSynthetic {
+			continue
+		}
+		name := ls.Name.Value
+		// 大寫常量按命名慣例是「共享常量」，merge 的先贏去重是既有明文語義
+		// （std 內部如 FNV-OFFSET 確實跨模組重名共存），不在此攔。
+		if checker.IsConstantName(name) {
+			continue
+		}
+		// 函數字面量走重載/mangling 體系（finalizeMonomorphization），不是本檢查對象。
+		if _, isFunc := ls.Value.(*parser.FunctionLiteral); isFunc {
+			continue
+		}
+		file := merged.Sem.SourceFileOf(ls)
+		if file == "" {
+			continue
+		}
+		line := 1
+		if ls.Name.Token.Line > 0 {
+			line = ls.Name.Token.Line
+		}
+		for _, prev := range decls[name] {
+			if prev.file == file {
+				continue
+			}
+			// 兩個都在 std：沿用既有先贏去重（lib 內部约定，禁止改動）。
+			if checker.IsStdPath(prev.file) && checker.IsStdPath(file) {
+				continue
+			}
+			results = append(results, checker.ValidateResult{
+				Line:    line,
+				Column:  ls.Name.Token.Column,
+				File:    file,
+				Message: fmt.Sprintf("cross-module duplicate global '%s': also declared in %s:%d; the bindings silently alias each other (import order decides which one wins). Rename one of them, or import with an alias.", name, prev.file, prev.line),
+				TraceID: "dup-global-xmod",
+			})
+			break
+		}
+		decls[name] = append(decls[name], dupGlobalDecl{file: file, line: line})
+	}
+	return results
 }
 
 func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, seen map[string]bool) error {
@@ -1765,6 +1835,15 @@ func validateMergedProgram(merged *parser.Program) error {
 			lints = append(lints, validateResultToLint(e))
 		}
 		return &DiagnosticError{Lints: lints}
+	}
+	// 跨模組同名頂層可變綁定：合并後兩條 let 都在，MIR 裸名槽位先贏，
+	// 必須在 codegen 之前攔成硬錯誤（否則靜默拿到別模組的值）。
+	if dupGlobalErrs := validateCrossModuleDuplicateGlobals(merged); len(dupGlobalErrs) > 0 {
+		var lints []checker.LintResult
+		for _, e := range dupGlobalErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+		return &DiagnosticError{Lints: lints, Prefix: "duplicate globals"}
 	}
 	// `#` 導入的模組硬錯誤檢查見 (*Transpiler).checkImportedModuleHardErrors：
 	// 它在模組 AST 剛解析時執行，不能放在合併後，也不能放在本函式裡提前回傳，

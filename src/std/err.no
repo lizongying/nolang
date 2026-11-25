@@ -7,6 +7,8 @@
 ;   e = err.new('disk full', code.io)
 ;   yes = e.is(err.code.io)
 ;   s = e.format()     ; => 'code.io: disk full'（含錯誤碼與位置）
+;   c = e.with-context('write-config')
+;   t = c.msg()        ; => 'write-config: disk full'（上下文鏈）
 ; [err](#err)
 
 ; 錯誤碼枚舉
@@ -181,16 +183,51 @@ err.code = () (ec code) {
     ec = .code
 }
 
+; 上下文
+...
+
+; 為錯誤附加一層上下文
+; ctx: 要附加的上下文（函式名、操作名，或 'file:line:col' 形式的呼叫點）
+; e: 新的錯誤實例；msg 為 '<ctx>: <原 msg>'，code / file / line / col 原樣保留。
+;    原 msg 為空時只留下前綴。可連續呼叫形成 'outer: inner: msg' 的鏈。
+;
+; 刻意不改 err 的欄位配置：編譯器合成的 err.err（算術 / 溢位 / 越界）由 MIR
+; 直接寫前五個欄位，新增欄位會讓那些錯誤讀到未初始化記憶體。上下文因此以
+; msg 前綴承載，msg() 回傳的就是完整鏈。
+;
+; 用法：
+;   e = err.new('disk full', code.io)
+;   e2 = e.with-context('write-config')
+;   t = e2.msg()      ; => 'write-config: disk full'
+;   s = e2.format()   ; => 'code.io: write-config: disk full'
+; [with-context](#err.with-context)
+err.with-context = (ctx str) (e err) {
+    c = .code
+    m = .msg
+    f = .file
+    l = .line
+    k = .col
+    e = err{
+        code: c
+        msg: ctx - ': ' - m
+        file: f
+        line: l
+        col: k
+    }
+}
+
 ; 格式化
 ...
 
 ; 格式化錯誤為完整資訊字串
 ; 返回 s: 'code.<變體名>: <msg>'，有位置資訊時附加 ' at <file>:<line>:<col>'
+; msg 若經 with-context 附加過上下文，會完整呈現 'outer: inner: msg' 的鏈。
 ; 用法：
 ;   s = err.new('disk full', code.io).format()   ; => 'code.io: disk full'
 ;   e = err('no such file', code.not-found)      ; 位置由編譯器注入
 ;   t = e.format()                               ; => 'code.not-found: no such file at main.no:12:3'
-; 純訊息請用 err.msg()，只要錯誤碼請用 err.code()
+;   u = e.with-context('read-config').format()   ; => 'code.not-found: read-config: no such file at main.no:12:3'
+; 純訊息（含上下文鏈）請用 err.msg()，只要錯誤碼請用 err.code()
 ; [format](#err.format)
 err.format = () (s str) {
     cn = .code.to-name()

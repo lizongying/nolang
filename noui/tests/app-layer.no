@@ -200,4 +200,4 @@ all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10
 print('keymap={r1}{r2}{r3}{r4}{r5} focus={r6} ctx-action={r7} hit={r8}{r9}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL APP-LAYER TESTS PASSED') }
-(!all-ok) -> { print('SOME TESTS FAILED') }
+(!all-ok) -> { print('SOME TESTS FAILED'); exit(1) }

@@ -200,4 +200,4 @@ print('order={s31}{s32}{s33} stable={s34}{s35}{s36}{s37} desc={s38}{s39}{s40}')
 print('empty={s41}{s42}{s43} redef={s44}{s45}{s46}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL TABLE TESTS PASSED') }
-(all-ok == 0) -> { print('TABLE TESTS FAILED') }
+(all-ok == 0) -> { print('TABLE TESTS FAILED'); exit(1) }

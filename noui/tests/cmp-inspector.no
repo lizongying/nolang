@@ -285,4 +285,5 @@ ok = ok & t65 & t66 & t67
 }
 (ok == 0) -> {
     print('SOME INSPECTOR TESTS FAILED')
+    exit(1)
 }

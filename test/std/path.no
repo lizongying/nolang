@@ -190,8 +190,8 @@ t-join-long = () {
     p = mk('/tmp/aaa')
     j = p.join(long)
     runner.eq(j.len-bytes(), 610, 'join 長後綴總長 == 9 + 601')
-    se(j.slice-bytes(0, 9), '/tmp/aaa/', 'join 長後綴前綴正確')
-    se(j.slice-bytes(9, 610), long, 'join 長後綴內容完整')
+    se(j.slice-bytes(0, 9).to-bytes-str(), '/tmp/aaa/', 'join 長後綴前綴正確')
+    se(j.slice-bytes(9, 610).to-bytes-str(), long, 'join 長後綴內容完整')
 }
 
 ; dir

@@ -45,10 +45,15 @@ func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
 			outJs = opts.Output
 			outHtml = strings.TrimSuffix(opts.Output, filepath.Ext(opts.Output)) + ".html"
 		}
-		os.MkdirAll("dist", 0755)
+		if !opts.CheckOnly {
+			os.MkdirAll("dist", 0755)
+		}
 		jsCode, htmlCode, esmImports, err := BuildJSBrowser(inputPath, BuildOptions{Verbose: opts.Verbose, UseJS: true, BrowserMode: true}, baseName+".js", esmCDNBase(inputPath, opts))
 		if err != nil {
 			return "", i18n.Errorf("3bl2ts85", "JS build error: %w", err)
+		}
+		if opts.CheckOnly {
+			return "", nil
 		}
 		if err := os.WriteFile(outJs, []byte(jsCode), 0644); err != nil {
 			return "", i18n.Errorf("v1j0odm2", "writing JS output %s: %w", outJs, err)
@@ -67,6 +72,9 @@ func buildJSBackend(inputPath string, opts BuildOptions) (string, error) {
 	res, err := BuildJSEx(inputPath, opts)
 	if err != nil {
 		return "", i18n.Errorf("3bl2ts85", "JS build error: %w", err)
+	}
+	if opts.CheckOnly {
+		return "", nil
 	}
 	out := opts.Output
 	if out == "" {
@@ -149,6 +157,10 @@ func buildJSPkg(source []byte, inputPath string, pkg *Package, opts BuildOptions
 	jsCode, err := g.Generate(program)
 	if err != nil {
 		return i18n.Errorf("8jsgdrcw", "JS generation error: %w", err)
+	}
+	// --check：codegen 已通過，不建立目錄、不寫 .js、不寫 sidecar。
+	if opts.CheckOnly {
+		return nil
 	}
 
 	// 確保輸出目錄存在

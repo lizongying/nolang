@@ -3081,7 +3081,7 @@ pelo que «tipo de payload igual ⇒ layout igual», e `?i32` / `?i64` / `?bool`
   `?i64` tem 16 bytes (8 + 8), `?str` tem 24 bytes (8 + 16) e `?txt` tem 264 bytes (8 + 256).
 - Payloads acima do limiar passam a ser **empacotados no heap**: o `payload` guarda apenas um ponteiro de 8 bytes e a opção inteira tem 16 bytes.
 
-O limiar `option-inline-threshold` conta os bytes de **toda a estrutura da opção** (predefinição **264** = 1 byte de tag +
+O limiar `option-payload-inline-threshold` conta os bytes de **toda a estrutura da opção** (predefinição **264** = 1 byte de tag +
 7 bytes de preenchimento + 256 bytes de payload, mínimo **16**): a condição para o payload ser inline é
 `8 + roundUp8(sizeof(T)) <= limiar`. Assim, por predefinição «payloads até 256 bytes são inline», e `?txt`
 (buffer inline de 256 bytes) cai exatamente no limite.
@@ -3101,7 +3101,7 @@ O limiar `option-inline-threshold` conta os bytes de **toda a estrutura da opç�
 
 > **Inline e empacotamento só mudam «onde é colocado», não a propriedade**: ambas as vias dão, **quando ocorre uma cópia**, uma nova cópia da
 > parte de heap do payload da struct (campos ponteiro recursivamente, buffers `str` / `[]T` possuídos inline clonados), pelo que a semântica de valor de `?T`
-> é independente de ser inline ou não — o mesmo programa tem de produzir exatamente o mesmo resultado para qualquer `option-inline-threshold`.
+> é independente de ser inline ou não — o mesmo programa tem de produzir exatamente o mesmo resultado para qualquer `option-payload-inline-threshold`.
 > Mudar um limiar e mudar de comportamento é um defeito do compilador, não uma funcionalidade. (Atribuições de puro movimento não clonam; a opção herda
 > o heap da origem.)
 
@@ -4401,7 +4401,6 @@ O bloco `compiler` em `package.noml` controla o comportamento do compilador. O v
 {
   compiler: {
     version: 'v0.1.0'
-    anonymous-fn-type: false
     emit: 'js'
   }
 }

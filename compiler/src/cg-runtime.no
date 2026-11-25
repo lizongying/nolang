@@ -27,7 +27,9 @@ cg-runtime-ty-name = (t i64) (s str) {
     t == TY-VECSTR -> s = '%vec'
 
     ; s162：[]结构体 与 []i64／[]str 在 LLVM 层同为 %vec（描述符与元素型别无关）
+    ; s175：TY-SVEC-BASE + sid —— 同樣是 %vec 描述符（元素型別編在型別碼裡）
     t == TY-VECSTRUCT -> s = '%vec'
+    t >= TY-SVEC-BASE && t < TY-STRUCT-BASE -> s = '%vec'
     t == TY-OPT -> s = '%option'
     t == TY-F64 -> s = 'double'
     t >= TY-STRUCT-BASE -> s = '%struct.s' - (t - TY-STRUCT-BASE).to-str()
@@ -56,7 +58,7 @@ cg-runtime-str-type = () (r str) {
 ; decls：libc 外部声明。
 ; r: 結果字串
 cg-runtime-decls = () (r str) {
-    r = 'declare i8* @malloc(i64)\ndeclare void @free(i8*)\ndeclare i64 @write(i32, i8*, i64)\n'
+    r = 'declare i8* @malloc(i64)\ndeclare void @free(i8*)\ndeclare i64 @write(i32, i8*, i64)\ndeclare i64 @strlen(i8*)\ndeclare i32 @stat(i8*, i8*)\ndeclare i32 @getpid()\n'
 }
 
 ; memcpy-decl：llvm.memcpy 声明（Go codegen.go:2987 同形）。
@@ -535,6 +537,52 @@ cg-runtime-option-type = () (r str) {
 ; nf: 字段数（0 ⇒ 该结构体未被使用，由 struct-decls 跳过）
 ; ft: 容器 —— 该结构体的字段型别码（长度 == nf）
 ; r: 結果字串
+; s175：[]結構體索引讀的【借用指標】助手（逐結構體一條，名 @vec_get_st_ptr_<sid>）。
+;   stride 不手算：讓 LLVM 自己算——getelementptr %struct.s<sid>, %struct.s<sid>* null, i64 1
+;   的位址即 sizeof（含對齊填充），ptrtoint 得位元數。這正是 clang 求 sizeof 的辦法，
+;   避免了用 nolang 重算 LLVM 版面（混合寬度字段會有 padding，手算必錯）。
+; sid: 結構體 id
+; r: 結果字串
+cg-runtime-vec-get-st-ptr = (sid i64) (r str) {
+    b = sb.init(512)
+    b.push('define i8* @vec_get_st_ptr_')
+    b.push(sid.to-str())
+    b.push('(%vec %v, i64 %i) {\nentry:\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%p1 = getelementptr %struct.s')
+    b.push(sid.to-str())
+    b.push(', %struct.s')
+    b.push(sid.to-str())
+    b.push('* null, i64 1\n')
+    b.push('\t%sz = ptrtoint %struct.s')
+    b.push(sid.to-str())
+    b.push('* %p1 to i64\n')
+    b.push('\t%off = mul i64 %i, %sz\n')
+    b.push('\t%base = inttoptr i64 %dat to i8*\n')
+    b.push('\t%slot = getelementptr i8, i8* %base, i64 %off\n')
+    b.push('\tret i8* %slot\n}\n')
+    r = b.str()
+}
+
+; s175：逐結構體發一條 @vec_get_st_ptr_<sid>（sfc[id] > 0 才發）。
+; sfc: 各結構體的欄位數（0 = 未使用）
+; r: 結果字串
+cg-runtime-vec-get-st-ptrs = (sfc []i64) (r str) {
+    b = sb.init(1024)
+    n = sfc.len()
+    i = 0
+    (i < n) {
+        fc = sfc[i]
+        fc > 0 -> {
+            b.push(cg-runtime-vec-get-st-ptr(i))
+            b.push('\n')
+        }
+
+        i = ix.inc(i)
+    }
+    r = b.str()
+}
+
 cg-runtime-struct-decl = (id i64, nf i64, ft []i64) (r str) {
     b = sb.init(256)
     b.push('%struct.s')
@@ -1018,6 +1066,281 @@ cg-runtime-chk-mod = () (r str) {
     r = b.str()
 }
 
+; args-list（s168）：@args_list —— os.args() 的【自有】[]str 拷貝。
+;   語意逐字鏡像 Go src/mir/builtin_call.go:4379 emitBuiltinArgsList：讀
+;   @__nolang_argc（i64）與 @__nolang_argv（i8**），逐元把 argv[i] 的字串內容
+;   1:1 複製成新 %str-long（元素 stride 16）。
+;   ⚠️ 元素緩衝走 @nolang_rc_alloc（rc=1）⇒ 與 @vec_free_str 的逐元素
+;      @nolang_rc_release 口令一致；data 緩衝走裸 @malloc（同 @vec_new_cap_str，
+;      @vec_free_str 收尾 @free）。argv[i]==null（不該發生）映射到空字串全局。
+;   ⚠️ argc 由入口包裝以 i32 捕獲（見 cg-runtime-entry-main）。
+; r: 結果字串
+cg-runtime-args-list = () (r str) {
+    b = sb.init(1792)
+    b.push('define %vec @args_list() {\n')
+    b.push('entry:\n')
+    b.push('\t%ac = load i64, i64* @__nolang_argc\n')
+    b.push('\t%av = load i8**, i8*** @__nolang_argv\n')
+    b.push('\t%nis = icmp eq i8** %av, null\n')
+    b.push('\t%n0 = select i1 %nis, i64 0, i64 %ac\n')
+    b.push('\t%nb = mul i64 %n0, 16\n')
+    b.push('\t%heap = call i8* @malloc(i64 %nb)\n')
+    b.push('\tbr label %loop\n')
+    b.push('loop:\n')
+    b.push('\t%i = phi i64 [ 0, %entry ], [ %inext, %body ]\n')
+    b.push('\t%more = icmp ult i64 %i, %n0\n')
+    b.push('\tbr i1 %more, label %body, label %done\n')
+    b.push('body:\n')
+    b.push('\t%sp = getelementptr i8*, i8** %av, i64 %i\n')
+    b.push('\t%p = load i8*, i8** %sp\n')
+    b.push('\t%nz = icmp ne i8* %p, null\n')
+    b.push('\t%emp = getelementptr [1 x i8], [1 x i8]* @__nolang_empty_cstr, i64 0, i64 0\n')
+    b.push('\t%safe = select i1 %nz, i8* %p, i8* %emp\n')
+    b.push('\t%len = call i64 @strlen(i8* %safe)\n')
+    b.push('\t%buf = call i8* @nolang_rc_alloc(i64 %len)\n')
+    b.push('\tcall void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %safe, i64 %len, i1 false)\n')
+    b.push('\t%l32a = trunc i64 %len to i32\n')
+    b.push('\t%s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %l32a, 0\n')
+    b.push('\t%s1 = insertvalue %str-long %s0, i32 %l32a, 1\n')
+    b.push('\t%s2 = insertvalue %str-long %s1, i8* %buf, 2\n')
+    b.push('\t%off = mul i64 %i, 16\n')
+    b.push('\t%ep = getelementptr i8, i8* %heap, i64 %off\n')
+    b.push('\t%esp = bitcast i8* %ep to %str-long*\n')
+    b.push('\tstore %str-long %s2, %str-long* %esp\n')
+    b.push('\t%inext = add i64 %i, 1\n')
+    b.push('\tbr label %loop\n')
+    b.push('done:\n')
+    b.push('\t%dp = ptrtoint i8* %heap to i64\n')
+    b.push('\t%nl32 = trunc i64 %n0 to i32\n')
+    b.push('\t%nc32 = trunc i64 %n0 to i32\n')
+    b.push('\t%v0 = insertvalue %vec undef, i32 %nl32, 0\n')
+    b.push('\t%v1 = insertvalue %vec %v0, i32 %nc32, 1\n')
+    b.push('\t%v2 = insertvalue %vec %v1, i64 %dp, 2\n')
+    b.push('\tret %vec %v2\n}\n')
+    r = b.str()
+}
+
+; vec-get-str-opt（s168）：@vec_get_str_opt —— []str.get(i) 的 option 化讀取。
+;   語意逐字鏡像 Go emitBuiltinArgsGet：0 <= i < len ⇒ tag=0 + 載荷為元素的
+;   【自有】拷貝（rc=1）；越界（含負數）⇒ tag=1（nil）、載荷零值。
+;   ⚠️ 越界時讀取下標鉗到 0（恆在緩衝內），但載荷仍拷一份合法空/首元——
+;      與 Go 相同（Go 亦 unsafe 讀 clamp 後的指標，只是 tag 標 nil）；
+;      本實作鉗到 0 後照常複製元素 0，語意上只影響不帶出的載荷值，無副作用。
+;   ⚠️ 失敗態是 nil（tag=1）【不是】err（tag=2）——與 s167 chk_* 族區别。
+; r: 結果字串
+cg-runtime-vec-get-str-opt = () (r str) {
+    b = sb.init(1536)
+    b.push('define %option @vec_get_str_opt(%vec %v, i64 %ix) {\n')
+    b.push('entry:\n')
+    b.push('\t%l32 = extractvalue %vec %v, 0\n')
+    b.push('\t%ln = zext i32 %l32 to i64\n')
+    b.push('\t%ge = icmp sge i64 %ix, 0\n')
+    b.push('\t%lt = icmp slt i64 %ix, %ln\n')
+    b.push('\t%inr = and i1 %ge, %lt\n')
+    b.push('\t%ci = select i1 %inr, i64 %ix, i64 0\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%dp = inttoptr i64 %dat to i8*\n')
+    b.push('\t%off = mul i64 %ci, 16\n')
+    b.push('\t%ep = getelementptr i8, i8* %dp, i64 %off\n')
+    b.push('\t%esp = bitcast i8* %ep to %str-long*\n')
+    b.push('\t%ev = load %str-long, %str-long* %esp\n')
+    b.push('\t%en = extractvalue %str-long %ev, 0\n')
+    b.push('\t%el = zext i32 %en to i64\n')
+    b.push('\t%ed = extractvalue %str-long %ev, 2\n')
+    b.push('\t%buf = call i8* @nolang_rc_alloc(i64 %el)\n')
+    b.push('\tcall void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %ed, i64 %el, i1 false)\n')
+    b.push('\t%nl32 = trunc i64 %el to i32\n')
+    b.push('\t%s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %nl32, 0\n')
+    b.push('\t%s1 = insertvalue %str-long %s0, i32 %nl32, 1\n')
+    b.push('\t%s2 = insertvalue %str-long %s1, i8* %buf, 2\n')
+    b.push('\t%o0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 0, 0\n')
+    b.push('\t%o1 = insertvalue %option %o0, i64 %el, 1, 0\n')
+    b.push('\t%o2 = insertvalue %option %o1, i64 %el, 1, 1\n')
+    b.push('\t%dpb = ptrtoint i8* %buf to i64\n')
+    b.push('\t%o3 = insertvalue %option %o2, i64 %dpb, 1, 2\n')
+    b.push('\t%tg = select i1 %inr, i64 0, i64 1\n')
+    b.push('\t%r0 = insertvalue %option %o3, i64 %tg, 0\n')
+    b.push('\tret %option %r0\n}\n')
+    r = b.str()
+}
+
+; str-to-i64（s169）：@str_to_i64 —— str.to-i64() 的解析助手。
+;   語意逐字鏡像 src/std/str.no:715：空字串 ⇒ nil（tag=1）；非數字字元／孤立 +/- ⇒ err（tag=2）；
+;   溢出 ⇒ err；成功 ⇒ ok（tag=0，載荷 i64）。⚠️ i64.MIN（-9223372036854775808）特例：
+;   n == 922337203685477580 且 neg 且末位 d == 8 ⇒ 經由【環繞】算術得出正確量值。
+;   ⚠️ 與 Go 的差異：err 載荷在語言側是 str（錯誤訊息），本助手只帶 tag、載荷零值——
+;      自舉語料（h2m/ps/asp/drv 的 to-i64 呼叫點）皆只取 ok 臂或 nil 臂，不讀 err 載荷。
+; r: 結果字串
+cg-runtime-str-to-i64 = () (r str) {
+    b = sb.init(4096)
+    b.push('define %option @str_to_i64(%str-long %s) {\n')
+    b.push('entry:\n')
+    b.push('\t%l32 = extractvalue %str-long %s, 0\n')
+    b.push('\t%ln = zext i32 %l32 to i64\n')
+    b.push('\t%empty = icmp eq i64 %ln, 0\n')
+    b.push('\tbr i1 %empty, label %nil, label %sign\n')
+    b.push('sign:\n')
+    b.push('\t%dp0 = extractvalue %str-long %s, 2\n')
+    b.push('\t%b0v = load i8, i8* %dp0\n')
+    b.push('\t%b0 = zext i8 %b0v to i64\n')
+    b.push('\t%minus = icmp eq i64 %b0, 45\n')
+    b.push('\t%plus = icmp eq i64 %b0, 43\n')
+    b.push('\t%has = or i1 %minus, %plus\n')
+    b.push('\t%one = icmp eq i64 %ln, 1\n')
+    b.push('\t%lone = and i1 %has, %one\n')
+    b.push('\tbr i1 %lone, label %err, label %start\n')
+    b.push('start:\n')
+    b.push('\t%st = select i1 %has, i64 1, i64 0\n')
+    b.push('\t%neg0 = select i1 %minus, i64 1, i64 0\n')
+    b.push('\tbr label %loop\n')
+    b.push('loop:\n')
+    b.push('\t%i = phi i64 [ %st, %start ], [ %inext, %inc ]\n')
+    b.push('\t%n = phi i64 [ 0, %start ], [ %nnext, %inc ]\n')
+    b.push('\t%neg = phi i64 [ %neg0, %start ], [ %neg, %inc ]\n')
+    b.push('\t%ge = icmp sge i64 %i, 0\n')
+    b.push('\t%lt = icmp slt i64 %i, %ln\n')
+    b.push('\t%inr = and i1 %ge, %lt\n')
+    b.push('\tbr i1 %inr, label %body, label %done\n')
+    b.push('body:\n')
+    b.push('\t%dp = extractvalue %str-long %s, 2\n')
+    b.push('\t%ep = getelementptr i8, i8* %dp, i64 %i\n')
+    b.push('\t%cv8 = load i8, i8* %ep\n')
+    b.push('\t%c = zext i8 %cv8 to i64\n')
+    b.push('\t%clt = icmp slt i64 %c, 48\n')
+    b.push('\t%cgt = icmp sgt i64 %c, 57\n')
+    b.push('\t%badc = or i1 %clt, %cgt\n')
+    b.push('\tbr i1 %badc, label %err, label %range\n')
+    b.push('range:\n')
+    b.push('\t%d = sub i64 %c, 48\n')
+    b.push('\t%lim = icmp sgt i64 %n, 922337203685477580\n')
+    b.push('\tbr i1 %lim, label %err, label %atlim\n')
+    b.push('atlim:\n')
+    b.push('\t%iseq = icmp eq i64 %n, 922337203685477580\n')
+    b.push('\tbr i1 %iseq, label %edge, label %acc\n')
+    b.push('edge:\n')
+    b.push('\t%negb = icmp ne i64 %neg, 0\n')
+    b.push('\tbr i1 %negb, label %edge-neg, label %edge-pos\n')
+    b.push('edge-neg:\n')
+    b.push('\t%dgt8 = icmp sgt i64 %d, 8\n')
+    b.push('\tbr i1 %dgt8, label %err, label %edge-neg-8\n')
+    b.push('edge-neg-8:\n')
+    b.push('\t%deq8 = icmp eq i64 %d, 8\n')
+    b.push('\tbr i1 %deq8, label %edge-min, label %acc\n')
+    b.push('edge-min:\n')
+    b.push('\t%lm1 = sub i64 %ln, 1\n')
+    b.push('\t%last = icmp eq i64 %i, %lm1\n')
+    b.push('\tbr i1 %last, label %minval, label %err\n')
+    b.push('minval:\n')
+    b.push('\t%mt = mul i64 %n, 10\n')
+    b.push('\t%nmin = add i64 %mt, 8\n')
+    b.push('\tbr label %inc\n')
+    b.push('edge-pos:\n')
+    b.push('\t%dgt7 = icmp sgt i64 %d, 7\n')
+    b.push('\tbr i1 %dgt7, label %err, label %acc\n')
+    b.push('acc:\n')
+    b.push('\t%mt2 = mul i64 %n, 10\n')
+    b.push('\t%nacc = add i64 %mt2, %d\n')
+    b.push('\tbr label %inc\n')
+    b.push('inc:\n')
+    b.push('\t%nnext = phi i64 [ %nacc, %acc ], [ %nmin, %minval ]\n')
+    b.push('\t%inext = add i64 %i, 1\n')
+    b.push('\tbr label %loop\n')
+    b.push('done:\n')
+    b.push('\t%nd = phi i64 [ %n, %loop ]\n')
+    b.push('\t%negd = phi i64 [ %neg, %loop ]\n')
+    b.push('\t%isneg = icmp ne i64 %negd, 0\n')
+    b.push('\t%val0 = sub i64 0, %nd\n')
+    b.push('\t%val = select i1 %isneg, i64 %val0, i64 %nd\n')
+    b.push('\t%o0 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 0, 0\n')
+    b.push('\t%o1 = insertvalue %option %o0, i64 %val, 1, 0\n')
+    b.push('\tret %option %o1\n')
+    b.push('nil:\n')
+    b.push('\t%p0 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 0, 0\n')
+    b.push('\t%p1 = insertvalue %option %p0, i64 0, 1, 0\n')
+    b.push('\tret %option %p1\n')
+    b.push('err:\n')
+    b.push('\t%e0 = insertvalue %option { i64 2, [3 x i64] zeroinitializer }, i64 2, 0\n')
+    b.push('\t%e1 = insertvalue %option %e0, i64 0, 1, 0\n')
+    b.push('\tret %option %e1\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; stat-kind（s170）：@nolang_stat_isfile / @nolang_stat_isdir —— fs.is-file(p) / fs.is-dir(p)
+;   的 C interop 助手。語意逐字鏡像 Go emitBuiltinStatFile（src/mir/forward_call.go:511-512）：
+;   rc = stat(nul 終止路徑, buf)；rc == 0 且 (st_mode & mask) != 0 ⇒ 1，否則 0。
+;   ⚠️ st_mode 讀取按 Go 口徑用【i32 載荷】（forward_call.go:787 起：i16 讀在此後端會
+;      誤編成 0），偏移 4、緩衝 144B = 本機 darwin/arm64 的 struct stat 佈局
+;      （實測 sizeof=144、offsetof(st_mode)=4；跨平台_layout 差異為已知粗略邊，如阻力再參數化）。
+;   ⚠️ 路徑複製：%str-long 資料未必 NUL 終止 ⇒ 動态 alloca(len+1) + memcpy + 補 0。
+; mk: 0 → is-file（mask 32768=S_IFREG）；1 → is-dir（mask 16384=S_IFDIR）
+; r: 結果字串
+cg-runtime-stat-kind = (mk i64) (r str) {
+    fn = 'nolang_stat_isfile'
+    msk = '32768'
+    mk == 1 -> {
+        fn = 'nolang_stat_isdir'
+        msk = '16384'
+    }
+    b = sb.init(2048)
+    b.push('define i64 @')
+    b.push(fn)
+    b.push('(%str-long %sp) {\n')
+    b.push('entry:\n')
+    b.push('\t%l32 = extractvalue %str-long %sp, 0\n')
+    b.push('\t%ln = zext i32 %l32 to i64\n')
+    b.push('\t%dp = extractvalue %str-long %sp, 2\n')
+    b.push('\t%l1 = add i64 %ln, 1\n')
+    b.push('\t%buf = alloca i8, i64 %l1\n')
+    b.push('\tcall void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %dp, i64 %ln, i1 false)\n')
+    b.push('\t%zp = getelementptr i8, i8* %buf, i64 %ln\n')
+    b.push('\tstore i8 0, i8* %zp\n')
+    b.push('\t%sb = alloca [144 x i8]\n')
+    b.push('\t%sbb = bitcast [144 x i8]* %sb to i8*\n')
+    b.push('\t%rc = call i32 @stat(i8* %buf, i8* %sbb)\n')
+    b.push('\t%okc = icmp eq i32 %rc, 0\n')
+    b.push('\t%mp = getelementptr i8, i8* %sbb, i64 4\n')
+    b.push('\t%m32p = bitcast i8* %mp to i32*\n')
+    b.push('\t%mode = load i32, i32* %m32p\n')
+    b.push('\t%mand = and i32 %mode, ')
+    b.push(msk)
+    b.push('\n')
+    b.push('\t%mne = icmp ne i32 %mand, 0\n')
+    b.push('\t%both = and i1 %okc, %mne\n')
+    b.push('\t%res = zext i1 %both to i64\n')
+    b.push('\tret i64 %res\n')
+    b.push('}\n')
+    r = b.str()
+}
+
+; getpid（s170）：@nolang_getpid —— os.get-pid() 的 C interop 助手
+;   （Go CLibCall getpid，RetExt i64Type ⇒ sext）。無參數、無 RC。
+; r: 結果字串
+cg-runtime-getpid = () (r str) {
+    r = 'define i64 @nolang_getpid() {\nentry:\n\t%r = call i32 @getpid()\n\t%e = sext i32 %r to i64\n\tret i64 %e\n}\n'
+}
+
+; entry-main（s168）：C 入口包装 —— 捕獲 argc/argv 到 @__nolang_argc/@__nolang_argv，
+;   再轉調降級側合成入口 @__nolang_main（原 `@main` 更名，見 h2m-synth-main）。
+;   ⚠️ 每模組僅一次（drv.pkg-ll／link.compile 皆只前插一份 prelude）。
+;   ⚠️ @__nolang_empty_cstr 供 @args_list／@vec_get_str_opt 的 null 護航取用。
+; r: 結果字串
+cg-runtime-entry-main = () (r str) {
+    b = sb.init(512)
+    b.push('@__nolang_argc = global i64 0\n')
+    b.push('@__nolang_argv = global i8** null\n')
+    b.push('@__nolang_empty_cstr = private constant [1 x i8] zeroinitializer\n')
+    b.push('define i32 @main(i32 %argc, i8** %argv) {\n')
+    b.push('entry:\n')
+    b.push('\t%ac = sext i32 %argc to i64\n')
+    b.push('\tstore i64 %ac, i64* @__nolang_argc\n')
+    b.push('\tstore i8** %argv, i8*** @__nolang_argv\n')
+    b.push('\t%rv = call i64 @__nolang_main()\n')
+    b.push('\t%ri = trunc i64 %rv to i32\n')
+    b.push('\tret i32 %ri\n}\n')
+    r = b.str()
+}
+
 ; vec_bytes_to_str（s165）：[]byte.to-bytes-str() 的【自有】1:1 逐字節複製助手。
 ;   語意逐字鏡像 src/std/byte.no:141（原始位元保留、不做 UTF-8 重編碼）與 Go builtin
 ;   src/dist/txtmin.ll 的 _LB__RB_byte.to-bytes-str（配置 n 位元組後逐元複製）。
@@ -1295,6 +1618,18 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-chk-mul())
     b.push(cg-runtime-chk-div())
     b.push(cg-runtime-chk-mod())
+    ; s168：args 全域——C 入口包裝（捕獲 argc/argv，轉調 @__nolang_main）、
+    ;   @args_list（os.args() 自有拷貝）與 @vec_get_str_opt（args.get 的 option 化讀取）。
+    b.push(cg-runtime-entry-main())
+    b.push(cg-runtime-args-list())
+    b.push(cg-runtime-vec-get-str-opt())
+    ; s169：@str_to_i64 —— str.to-i64() 的解析助手（空⇒nil、非數字／孤立符號／溢出⇒err）。
+    b.push(cg-runtime-str-to-i64())
+    ; s170：宿主全域 builtin —— @nolang_stat_isfile/@nolang_stat_isdir（fs.is-file/is-dir，
+    ;   stat + S_IFREG/S_IFDIR 遮罩）與 @nolang_getpid（os.get-pid，getpid + sext）。
+    b.push(cg-runtime-stat-kind(0))
+    b.push(cg-runtime-stat-kind(1))
+    b.push(cg-runtime-getpid())
     b.push(cg-runtime-vec-bytes-to-str())
     b.push(cg-runtime-vec-eq())
     b.push(cg-runtime-print-helpers())

@@ -337,7 +337,11 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
                     -> ''
                 }
 
-                v = old-vals[i]
+                v = old-vals[i]: {
+                    ok(x) -> x
+
+                    -> _
+                }
                 idx = .hash(k)
 
                 ; 找到第一個空槽插入
@@ -649,9 +653,17 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
     {
         i <- [0..old-cap): {
             old-occ[i] == 1 -> {
-                k = old-keys[i]
+                k = old-keys[i]: {
+                    ok(x) -> x
 
-                v = old-vals[i]
+                    -> _
+                }
+
+                v = old-vals[i]: {
+                    ok(x) -> x
+
+                    -> _
+                }
                 idx = .hash(k)
 
                 ; 找到第一個空槽插入

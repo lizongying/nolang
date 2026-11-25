@@ -983,10 +983,10 @@ tag-name = (tag str) (name str) {
         n = name.len-bytes()
 
         #{overflow=wrap}
-        n >= 3 -> name = name.slice-bytes(2, n - 1)
+        n >= 3 -> name = name.slice-bytes(2, n - 1).to-bytes-str()
     }
-    name.starts-with('!!') -> name = name.slice-bytes(2, name.len-bytes())
-    name.starts-with('tag:yaml.org,2002:') -> name = name.slice-bytes(18, name.len-bytes())
+    name.starts-with('!!') -> name = name.slice-bytes(2, name.len-bytes()).to-bytes-str()
+    name.starts-with('tag:yaml.org,2002:') -> name = name.slice-bytes(18, name.len-bytes()).to-bytes-str()
 }
 
 ; 按顯式標簽决定節點類型
@@ -1240,7 +1240,7 @@ parser.read-token = () (out str) {
         c == 44 || c == 91 || c == 93 || c == 123 || c == 125 -> break
         .advance()
     }
-    out = .src.slice-bytes(start, .pos)
+    out = .src.slice-bytes(start, .pos).to-bytes-str()
 }
 
 ; 讀取一個標簽（!!name / !name / !<verbatim> / !）
@@ -1260,7 +1260,7 @@ parser.read-tag = () (out str) {
             }
             .advance()
         }
-        out = .src.slice-bytes(start, .pos)
+        out = .src.slice-bytes(start, .pos).to-bytes-str()
         return
     }
     .advance()
@@ -1270,7 +1270,7 @@ parser.read-tag = () (out str) {
         c == 44 || c == 91 || c == 93 || c == 123 || c == 125 -> break
         .advance()
     }
-    out = .src.slice-bytes(start, .pos)
+    out = .src.slice-bytes(start, .pos).to-bytes-str()
 }
 
 ; 解析節點前綴的锚點與標簽（順序任意）
@@ -1560,7 +1560,7 @@ parser.read-line-content = () (out str) {
         }
         .advance()
     }
-    out = .src.slice-bytes(start, .pos).trim()
+    out = .src.slice-bytes(start, .pos).to-bytes-str().trim()
     .skip-to-eol()
 }
 
@@ -1607,7 +1607,7 @@ parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
         }
         .advance()
     }
-    text = .src.slice-bytes(start, .pos).trim()
+    text = .src.slice-bytes(start, .pos).to-bytes-str().trim()
 
     key-mode || flow -> {
         idx = .push-scalar(text, YAML-STYLE-PLAIN, '', '')
@@ -1909,7 +1909,7 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
 
         #{overflow=wrap}
         from = ls + content-ind
-        lines.push(.src.slice-bytes(from, le))
+        lines.push(.src.slice-bytes(from, le).to-bytes-str())
         .pos = le
         .newline()
     }
@@ -1945,7 +1945,7 @@ parser.parse-block-scalar = (cont-min i64) (idx i64) {
         content.len-bytes() > 0 -> {
 
             #{overflow=wrap}
-            content = content.slice-bytes(0, content.len-bytes() - 1)
+            content = content.slice-bytes(0, content.len-bytes() - 1).to-bytes-str()
         }
     }
     style == YAML-STYLE-FOLDED -> {
@@ -2807,7 +2807,7 @@ yaml.strip-bom = (s str) (out str) {
         b0 = s.byte(0)
         b1 = s.byte(1)
         b2 = s.byte(2)
-        b0 == 239 && b1 == 187 && b2 == 191 -> out = s.slice-bytes(3, s.len-bytes())
+        b0 == 239 && b1 == 187 && b2 == 191 -> out = s.slice-bytes(3, s.len-bytes()).to-bytes-str()
     }
 }
 
@@ -3924,7 +3924,7 @@ emit = (npool pool, idx i64, indent i64, depth i64) (out str) {
                             }
                             inner = emit(npool, k, cut, d)
                             inner.len-bytes() > 0 -> {
-                                rest = inner.slice-bytes(cut, inner.len-bytes())
+                                rest = inner.slice-bytes(cut, inner.len-bytes()).to-bytes-str()
                                 out = out - ' ' - rest
                             }
                             inner.len-bytes() == 0 -> {

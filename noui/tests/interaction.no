@@ -54,4 +54,4 @@ print('decode-type={r5} decode-x={r6} decode-y={r7}')
 print('count-seq={count} r8={r8} r9={r9} r10={r10}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL INTERACTION TESTS PASSED') }
-(!all-ok) -> { print('SOME TESTS FAILED') }
+(!all-ok) -> { print('SOME TESTS FAILED'); exit(1) }

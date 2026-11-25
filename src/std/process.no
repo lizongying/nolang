@@ -795,7 +795,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     slash = program.last-index('/')
 
     #{overflow=wrap}
-    slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes())
+    slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes()).to-bytes-str()
     args.len() >= 2 -> {
         first-arg = args[0]: {
             ok -> it

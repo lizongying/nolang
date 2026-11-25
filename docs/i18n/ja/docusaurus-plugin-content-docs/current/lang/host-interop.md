@@ -147,9 +147,8 @@ nl-sum3 = (a i64, b i64, c i64) (r i64) {
   keywords: []
   dependencies: []
   compiler: {
-    link-libs: []
+    version: 'v0.1.0'
   }
-  output: '/dist'
   ignore: []
 }
 ```

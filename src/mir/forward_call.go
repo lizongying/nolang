@@ -996,8 +996,7 @@ func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
 // silently producing a wrong layout (matches the RetCStrToStr ?str path).
 func (c *codegen) storeOptionFromPairStr(inst *Inst, strLongReg, okFlag string) error {
 	if !c.optionPayloadInline("%str-long") {
-		c.fail("builtin %s: ?str option result needs an inline option slot (option-inline-threshold >= 24)", inst.Sym)
-		return i18n.Errorf("6umfb8yv", "builtin %s: %s", inst.Sym, strings.Join(c.errs, "; "))
+		return c.failAbort(inst, codegenTraceID, "builtin %s: ?str option result needs an inline option slot (option-payload-inline-threshold >= 16)", inst.Sym)
 	}
 	slot := c.valSlot[inst.Results[0]]
 	if slot == "" {

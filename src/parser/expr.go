@@ -427,6 +427,16 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		return nil
 
 	default:
+		// 中綴運算符不可能出現在運算式開頭。舊版在這裡靜默跳過，等於把
+		// `%0` 這種輸入解析成「一條 nil 表達式語句 + 一條 0 語句」且零診斷；
+		// fmt 會把那條幽靈語句印成空行、下一遍再吞掉，形成不冪等。
+		// 在運算子位置直接報錯，讓呼叫端在格式化／編譯前就拒絕這份 AST。
+		// 終止符（`;`、`}`、EOF、`->` …）仍走原本靜默路徑：缺 operand 的診斷
+		// 由外層建構負責，不能在此一律報錯。
+		if isBinaryOp(p.currentToken.Type) {
+			p.errorf(p.currentToken, "m0db1nfx", "E_GENERAL",
+				"unexpected '%s' at start of expression", p.currentToken.Literal)
+		}
 		p.nextToken()
 		return nil
 	}

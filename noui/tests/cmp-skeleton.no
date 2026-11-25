@@ -198,4 +198,5 @@ ok = ok & t40 & t41 & t42 & t43
 }
 (ok == 0) -> {
     print('SOME SKELETON TESTS FAILED')
+    exit(1)
 }

@@ -146,8 +146,13 @@ func Scan(root string) (*Result, error) {
 			return err
 		}
 		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "vendor", "node_modules", "testdata":
+			name := d.Name()
+			// 與 docscan 對齊：點/底線開頭、產出與依賴目錄都不掃。tmp/ 是
+			// scratch（內含整份倉庫的舊副本），走進去不只慢，裡面過時的 .go
+			// 還會讓 parser.ParseFile 直接失敗（如 tmp/spike/src/parser/expr.go）。
+			if path != root && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") ||
+				name == "bin" || name == "dist" || name == "node_modules" ||
+				name == "testdata" || name == "tmp" || name == "vendor") {
 				return fs.SkipDir
 			}
 			return nil

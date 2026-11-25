@@ -256,7 +256,7 @@ main = () {
 //
 // This is exactly what tests/tagged-enum-two-match.no caught when the "source
 // dead ⇒ move" rule first shipped BELOW the borrow test: the second match's
-// `for x <- items` iterated the freed payload and printed nothing at all.
+// `x <- items` iterated the freed payload and printed nothing at all.
 func TestBorrowedEnumPayloadAliasIsCloned(t *testing.T) {
 	mod := lowerForTest(t, `
 list-res {
@@ -268,7 +268,7 @@ main = () {
     q list-res = ok(l)
     q: {
         ok(items) -> {
-            for x <- items: {
+            x <- items: {
                 print('a: ' - x)
             }
         }
@@ -277,7 +277,7 @@ main = () {
     }
     q: {
         ok(items) -> {
-            for x <- items: {
+            x <- items: {
                 print('b: ' - x)
             }
         }

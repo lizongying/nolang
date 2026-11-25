@@ -2,5 +2,16 @@
   name: 'noui-logic-tests'
   description: 'noui L1-L3 纯逻辑测试（无 FFI / 无 shim 依赖）'
   license: 'Apache-2.0'
-  compiler: { }
+  compiler: {
+    version: ''
+  }
+  category: ''
+  keywords: []
+  author: ''
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
+  dependencies: []
+  ignore: []
 }

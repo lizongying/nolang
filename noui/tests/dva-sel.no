@@ -307,4 +307,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-SEL TESTS FAILED')
+    exit(1)
 }

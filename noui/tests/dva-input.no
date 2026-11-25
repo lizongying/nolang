@@ -1,0 +1,102 @@
+; ============================================================================
+; noui 文本输入与剪贴板测试（阶段 57）—— src/dv-app.no
+;
+; SDL_EVENT_TEXT_INPUT 带的是整段 UTF-8（IME 组字结果、死键、非 ASCII），
+; 没有键位信息，所以 shim 用事件类型 7 + 内部缓冲把它交给 dva-type()；
+; 这里钉住三件事：
+;   1. 无焦点时是 no-op（不崩、不改任何组件）；
+;   2. 输入框焦点下按**码点**切片灌入 —— 中文 / emoji 不会被切成半个字节；
+;   3. 剪贴板组件右端的「复制方块」命中即复制、几何之外不命中。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-input.no
+; ============================================================================
+# /noui/src/dv-app
+
+; ---- 回调契约 dummy（真现在 main-dv）----
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-input tests ===')
+
+; 三条焦点通道全部置空，保证走「输入框」分支
+DVA-PAL-FOCUS[0] = -1
+DVA-EDIT-FOCUS[0] = -1
+DVA-FOCUS[0] = -1
+
+; ============================================================================
+; 场景 Y：无焦点时 dva-type 是 no-op
+; ============================================================================
+dva-type('abc')
+r1 = DVA-FOCUS[0] == -1 && DVA-PAL-FOCUS[0] == -1 && DVA-EDIT-FOCUS[0] == -1
+
+; ============================================================================
+; 场景 Z：输入框焦点 + 逐码点灌入（含中文 / emoji）
+; ============================================================================
+root = cmp-root()
+dv-clear()
+pv = dv-form(1, -1)
+dv-node(C-INPUT, 1, '', '', 0, 0, 0, dv-on(), pv)
+dv-node(C-CLIPBOARD, 2, 'clip-me', '', 0, 0, 0, dv-on(), pv)
+ops-z = dv-render(root, pv)
+lin = dv-live-by-key(root, 1)
+lcb = dv-live-by-key(root, 2)
+
+dva-focus(lin)
+dva-type('a0 ')
+r2 = input-value(lin) == 'a0 '
+; 中文：一个码点，整体进入
+dva-type('中')
+r3 = input-value(lin) == 'a0 中'
+; emoji：多字节但单码点，也不应被切碎
+dva-type('😀')
+r4 = input-value(lin) == 'a0 中😀'
+; 空串 no-op
+dva-type('')
+r5 = input-value(lin) == 'a0 中😀'
+
+; ============================================================================
+; 场景 AA：剪贴板复制方块的命中几何（与 cs-paint-clipboard 对齐）
+; ============================================================================
+; 几何要等布局 pass 才写进 CMP-X/Y/W/H（与真实主循环一致）
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+x = CMP-X[lcb]: { ok -> it
+
+    -> -1 }
+y = CMP-Y[lcb]: { ok -> it
+
+    -> -1 }
+w = CMP-W[lcb]: { ok -> it
+
+    -> -1 }
+ht = CMP-H[lcb]: { ok -> it
+
+    -> -1 }
+cw = 2400
+bx = cs-sub(cs-sub(cs-add(x, w), 1200), cw)
+by = cs-add(y, cs-div(cs-sub(ht, cw), 2))
+
+; 方块中心：命中且回报 1
+u1 = dva-clipboard-hit(lcb, cs-add(bx, 1200), cs-add(by, 1200)) == 1
+; 组件左上角（远离方块）：不命中
+u2 = dva-clipboard-hit(lcb, cs-add(x, 10), cs-add(y, 10)) == 0
+; 非剪贴板组件：永远不命中
+u3 = dva-clipboard-hit(lin, cs-add(bx, 1200), cs-add(by, 1200)) == 0
+; 无效句柄：不崩、不命中
+u4 = dva-clipboard-hit(-1, 0, 0) == 0
+
+; ============================================================================
+; 汇总
+; ============================================================================
+all-ok = r1 && r2 && r3 && r4 && r5 && u1 && u2 && u3 && u4
+print('no-focus={r1} type={r2}{r3}{r4}{r5}')
+print('clipboard in={u1} out={u2} non-cb={u3} bad-h={u4}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DVA-INPUT TESTS PASSED') }
+(!all-ok) -> { print('DVA-INPUT TESTS FAILED'); exit(1) }

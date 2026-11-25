@@ -277,4 +277,5 @@ ok = ok & t64 & t65 & t66 & t67 & t68 & t69 & t70
 }
 (ok == 0) -> {
     print('SOME CAROUSEL TESTS FAILED')
+    exit(1)
 }

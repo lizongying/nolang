@@ -198,7 +198,19 @@ type bareMatchArm struct {
 // "\n"，所以 match 的臂永遠隔一行輸出，與源碼是否留白無關。
 func (f *formatter) formatSurfaceMatch(sm *parser.SurfaceMatch) {
 	if sm.Matched != nil {
-		f.formatExpression(sm.Matched)
+		// 主語最外層的括號是純語法、無語意（H0 透傳、resolveSubjectMatch 也
+		// 剝掉）；移除後 `v = (expr): { … }` 與 `v = expr: { … }` 輸出一致。
+		// 只剝「包裹整個主語」的括號鏈（`((expr))` 全多餘）；expr 內部自身的
+		// 括號（如 `a + (b * c)`）仍有優先順序語意，formatExpression 會照印。
+		subject := sm.Matched
+		for {
+			g, ok := subject.(*parser.GroupedExpression)
+			if !ok || g.Expression == nil {
+				break
+			}
+			subject = g.Expression
+		}
+		f.formatExpression(subject)
 		f.write(": {")
 	} else {
 		f.write("{")

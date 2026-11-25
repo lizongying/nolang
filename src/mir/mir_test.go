@@ -172,7 +172,7 @@ func TestLowerHIRControlFlow(t *testing.T) {
 	src := `main = () () {
   sum = 0
   nums = [1, 2, 3]
-  for i in nums {
+  i <- nums: {
     sum = sum + i
   }
   x = 10

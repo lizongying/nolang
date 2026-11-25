@@ -225,7 +225,7 @@ func TestVetFile_StrOrderingSingleCharAllowed(t *testing.T) {
 	ok := filepath.Join(tmpDir, "ok.no")
 	okSrc := `main = () {
 	s = 'hello'
-	for ch <- s: {
+	ch <- s: {
 		{
 			ch >= 'a' && ch <= 'z' -> print('lower')
 		}

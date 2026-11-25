@@ -263,14 +263,12 @@ The `package.noml` file in the project root directory describes project informat
   homepage: ''
   license: 'MIT'
   workspace: ''
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```
@@ -377,4 +375,4 @@ The `compiler` block in `package.noml` controls compiler behavior:
 - `emit` (string): Output target backend. `"js"` = use JS backend (type erasure, no LLVM toolchain). Default empty = LLVM native backend. Command-line `--js` flag takes precedence.
 - `anonymous-fn-type` (bool): Whether anonymous function type syntax is permitted. Default false.
 - `link-libs` ([]string): C libraries to link.
-- `option-inline-threshold` (int): Byte threshold for inlining a `?T` payload into the option struct, measured over the WHOLE struct (tag + padding + payload). Default **264** (= 1-byte tag + 7 bytes padding + 256-byte payload), minimum **16** (below 16 is a compile error; 16..23 keeps compiling but breaks `?str`-returning builtins). Command-line `--option-inline-threshold=N` and env `NOLANG_OPTION_INLINE_THRESHOLD=N` take precedence over this file. See the dedicated section below.
+- `option-payload-inline-threshold` (int): Byte threshold for inlining a `?T` payload, measured over the PAYLOAD only (the 8-byte tag area is not counted). Default **256**, minimum **8**; a payload of 16 bytes (`?str`) needs a threshold of at least **16**. Optional in `package.noml`: omit it to use the default. Command-line `--option-payload-inline-threshold=N` and env `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD=N` take precedence over this file. See the dedicated section below.

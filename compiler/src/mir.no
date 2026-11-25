@@ -66,6 +66,14 @@ TY-VECSTR = 6
 ;   型别码取 7（TY-VECSTR=6 之后、TY-STRUCT-BASE=100 之前的空档）。
 TY-VECSTRUCT = 7
 
+; s175：元素為【具名結構體】的切片型別碼 = TY-SVEC-BASE + sid，取代 s162 的純 TY-VECSTRUCT。
+;   動機：元素級操作（索引讀）必須知道元素是哪一個結構體——LLVM 載入要指名
+;   %struct.s<sid>，且元素 stride 由該結構體版面決定。把 id 編進型別碼（與 TY-STRUCT-BASE+sid
+;   同構）⇒ 從【一個整數】即可推出元素型別與 sid，零 API 變更。
+;   ⚠️ 上下界：TY-SVEC-BASE(8) <= code <= TY-STRUCT-BASE-1(99) ⇒ sid <= 91；当前语料 10 個結構體。
+;   LLVM 層與 TY-VEC/TY-VECSTR 同為 %vec／%vc（描述符與元素型別無關）。
+TY-SVEC-BASE = 8
+
 ; 结构体型别（M4-c 续件 s31）：**型别码 = TY-STRUCT-BASE + 结构体 id**，值住 %st<id>（第七个
 ;   命名空间之外的「值」空间，与 %sv/%vc/%op 并列）。结构体 id 0..N 由语义层登记
 ;   （`cg-runtime-struct-decls(sfc)`：sfc[id] = 字段数，0 = 未使用）。
@@ -777,3 +785,57 @@ OP-CHKSUB = 118
 OP-CHKMUL = 119
 OP-CHKDIV = 120
 OP-CHKMOD = 121
+
+; s168：全域命令列 args —— `args`（os.args() 的全域別名）直讀取值。
+;   語意逐字鏡像 Go src/mir/builtin_call.go:4379 emitBuiltinArgsList：
+;   回傳【自有】[]str（%vec {len,cap,data}），元素為 argv[i] 的 1:1 拷貝
+;   （含程式名稱 argv[0]）；每個元素走 @nolang_rc_alloc ⇒ rc=1，故 vec_free_str
+;   的逐元素 release 合法；data 緩衝走裸 @malloc（同 vec_new_cap_str）。
+;   ⚠️ 本 op 是【純讀】——不改寫 argv 本身；每次降級產生新的自有拷贝，
+;      由 h2m-rel-add(TY-VECSTR) 登記、作用域結束發 OP-VEC-FREE-STR。
+; dst = %vec 值 id（TY-VECSTR，落 %vc）；x/y 不用（0）。
+; 發 call %vec @args_list()；helper 由 cg-runtime-prelude-full 每模組發一次。
+; ⚠️ 需與 cg-runtime-entry-main（@__nolang_argc/@__nolang_argv + C 入口包裝）配套。
+OP-ARGSLIST = 122
+
+; s168：`args.get(i)` —— []str 元素讀取的 option 化口令（Go emitBuiltinArgsGet 口徑）：
+;   0 <= i < argc ⇒ tag=0、載荷 = argv[i] 的【自有】%str-long 拷貝（rc=1）；
+;   否則 tag=1（nil）、載荷為零值。⚠️ 失敗態是 nil【不是】err（與 s167 chk_* 的 err 區别）。
+; dst = %option 值 id（TY-OPT，落 %op，載荷型別 TY-STR）；
+; x = 接收者 vec 值 id（%vec）；y = 下標 i64 值 id（%v）。
+; 發 call %option @vec_get_str_opt(%vec <x>, i64 <y>)；helper 由 prelude 每模組發一次。
+OP-VECGETSTROPT = 123
+
+; s169：`str.to-i64()` —— 把 str 解析為 ?i64（src/std/str.no:715 口徑）：
+;   空字串 ⇒ tag=1（nil）；含非數字字元／孤立 +/- ⇒ tag=2（err）；
+;   溢出（含 i64.MIN 特例）⇒ tag=2；成功 ⇒ tag=0、載荷為解析出的 i64。
+; dst = %option 值 id（TY-OPT，落 %op，載荷型別 TY-I64）；
+; x = 接收者 str 值 id（TY-STR，落 %sv）；y 不用（0）。
+; 發 call %option @str_to_i64(%str-long <x>)；helper 由 prelude 每模組發一次。
+; ⚠️ 本 op 是【純讀】——不比對目標型別之外的任何狀態，無需 RC/rel-list 登記。
+OP-STRTOI64 = 124
+
+; s170：宿主全域 builtin —— `os.get-pid()` 取进程 id（Go ReceiverGlobal + CLibCall getpid，
+;   src/builtin/os.go:67：回 i64）。dst = i64 值 id；無運算元。
+;   發 call i64 @nolang_getpid()；helper 由 prelude 每模組發一次。
+OP-GETPID = 125
+
+; s170：宿主全域 builtin —— `fs.is-file(p)`（Go ForwardFunc stat-file，ModeMask=32768=S_IFREG）：
+;   stat 成功且 (st_mode & mask) != 0 ⇒ 1（true），否則 0。dst = i64 值 id（布林以 i64 承載）；
+;   x = 路徑 str 值 id（TY-STR，落 %sv）。發 call i64 @nolang_stat_isfile(%str-long <x>)。
+OP-FSISFILE = 126
+
+; s170：宿主全域 builtin —— `fs.is-dir(p)`（stat-dir，ModeMask=16384=S_IFDIR）：同 OP-FSISFILE 形狀。
+;   發 call i64 @nolang_stat_isdir(%str-long <x>)。
+OP-FSISDIR = 127
+
+; s175：[]結構體索引讀——取元素的【借用位元指標】（不為元素做 RC；語料慣例為淺別名，
+;   見 ps.no 檔頭「t = p.toks[i] 不會釋放仍住在 toks 向量裡的字串緩衝」）。
+;   dst = i64 值 id（ptrtoint 後的元素位址）；x = vec 值 id（%vc）；y = 下標 i64。
+;   sym = 結構體 id 的十進位字串（cg 用以命名 per-sid helper @vec_get_st_ptr_<sid>）。
+;   發 call i8* @vec_get_st_ptr_<sid>(%vec <x>, i64 <y>) 再 ptrtoint 落 i64。
+OP-VECGETSTP = 128
+
+; s175：option 載荷是【結構體借用指標】時的取獲——dst = 結構體值（%st<d>，vty = TY-STRUCT-BASE+sid）；
+;   x = option 值 id。從 slot[0] 取指標 → inttoptr → bitcast %struct.s<sid>* → load（淺別名，無 RC）。
+OP-OPTGETST = 129

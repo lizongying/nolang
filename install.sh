@@ -68,9 +68,9 @@ say "→ 安裝 no ${VER} (${OS}/${ARCH}, ${FLAVOR})"
 #   純 Go:     no-<os>-<arch>-<version>[.exe]            <- 注意沒有版本號
 asset_url() {
   case "$1" in
-    embedded) printf 'https://github.com/%s/releases/download/%s/no-llvm-%s-%s-%s%s' \
+    embedded) printf 'https://github.com/%s/releases/download/%s/no-llvm-%s-%s_%s%s' \
                 "$REPO" "$TAG" "$OS" "$ARCH" "$VER" "$EXE" ;;
-    plain)    printf 'https://github.com/%s/releases/download/%s/no-%s-%s-%s%s' \
+    plain)    printf 'https://github.com/%s/releases/download/%s/no-%s-%s_%s%s' \
                 "$REPO" "$TAG" "$OS" "$ARCH" "$VER" "$EXE" ;;
   esac
 }

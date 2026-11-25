@@ -170,7 +170,7 @@ set-dir = (dir str) {
         true -> {
             n0 = d.len-bytes()
             cut0 = sub-of(n0, 1)
-            d = d.slice-bytes(0, cut0)
+            d = d.slice-bytes(0, cut0).to-bytes-str()
         }
 
         false -> _
@@ -183,7 +183,7 @@ set-dir = (dir str) {
         true -> {
             n = d.len-bytes()
             cut = sub-of(n, 13)
-            RES.root = d.slice-bytes(0, cut)
+            RES.root = d.slice-bytes(0, cut).to-bytes-str()
         }
 
         false -> _

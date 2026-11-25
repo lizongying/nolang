@@ -1,0 +1,87 @@
+; ============================================================================
+; noui Tab / Shift-Tab 焦点遍历测试（阶段 77）—— src/dv-app.no
+;
+; 钉住：候选顺序 = 视图创建序；只收输入类 + 已挂载 + 未禁用；环形步进；
+; 无焦点时正向取第一个、反向取最后一个；交接只点亮新焦点（F-FOCUSED）；
+; 编辑器聚焦 / 命令面板聚焦时遍历让位（保持既有语义）。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-focus-tab.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    page = dv-form(1, -1)
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+print('=== dva-focus-tab tests ===')
+
+root = cmp-root()
+dv-clear()
+pv = dv-form(1, -1)
+dv-node(C-INPUT, 1, '', '', 0, 0, 0, dv-on(), pv)
+dv-node(C-INPUT, 2, '', '', 0, 0, 0, dv-on(), pv)
+dv-node(C-INPUT, 3, '', '', 0, 0, 0, dv-disabled(), pv)
+dv-node(C-BUTTON, 4, 'ok', '', 0, 0, 0, dv-on(), pv)
+ops = dv-render(root, pv)
+
+h1 = dv-live-by-key(root, 1)
+h2 = dv-live-by-key(root, 2)
+h3 = dv-live-by-key(root, 3)
+
+; 初始：无焦点
+DVA-PAL-FOCUS[0] = -1
+DVA-EDIT-FOCUS[0] = -1
+DVA-FOCUS[0] = -1
+
+; 正向：无焦点 -> 第一个输入
+dva-focus-step(root, 1)
+r1 = DVA-FOCUS[0] == h1 && cmp-has(h1, F-FOCUSED) == 1
+; 继续正向 -> 第二个输入；旧的失焦
+dva-focus-step(root, 1)
+r2 = DVA-FOCUS[0] == h2 && cmp-has(h1, F-FOCUSED) == 0 && cmp-has(h2, F-FOCUSED) == 1
+; 环形回绕：跳过禁用的 3，回到 1
+dva-focus-step(root, 1)
+r3 = DVA-FOCUS[0] == h1 && DVA-FOCUS[0] != h3
+; 反向：回到 2（禁用的 3 仍然被跳过）
+dva-focus-step(root, -1)
+r4 = DVA-FOCUS[0] == h2
+; 反向再走：回到 1
+dva-focus-step(root, -1)
+r5 = DVA-FOCUS[0] == h1
+; 反向回绕：从 1 反向应该到 2（最后一名候选）
+dva-focus-step(root, -1)
+r6 = DVA-FOCUS[0] == h2
+
+; 编辑器聚焦：遍历让位（保持 Tab 缩进），焦点不动
+DVA-EDIT-FOCUS[0] = 99
+fh-before = DVA-FOCUS[0]
+dva-focus-step(root, 1)
+r7 = DVA-FOCUS[0] == fh-before
+DVA-EDIT-FOCUS[0] = -1
+
+; 命令面板聚焦：遍历让位（面板自己收键盘）
+DVA-PAL-FOCUS[0] = 77
+fh-before = DVA-FOCUS[0]
+dva-focus-step(root, -1)
+r8 = DVA-FOCUS[0] == fh-before
+DVA-PAL-FOCUS[0] = -1
+
+; 空页面：没有候选时不崩、焦点不变
+dv-clear()
+empty-pv = dv-form(2, -1)
+ops2 = dv-render(root, empty-pv)
+DVA-FOCUS[0] = -1
+dva-focus-step(root, 1)
+r9 = DVA-FOCUS[0] == -1
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9
+print('step={r1}{r2}{r3} back={r4}{r5}{r6} editor={r7} pal={r8} empty={r9}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DVA-FOCUS-TAB TESTS PASSED') }
+(!all-ok) -> { print('DVA-FOCUS-TAB TESTS FAILED'); exit(1) }

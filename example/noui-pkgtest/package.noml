@@ -1,5 +1,17 @@
 {
-  name: "pkgtest"
-  compiler: { }
-  output: "/dist"
+  name: 'pkgtest'
+  compiler: {
+    version: ''
+  }
+  description: ''
+  category: ''
+  keywords: []
+  author: ''
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
+  license: ''
+  dependencies: []
+  ignore: []
 }

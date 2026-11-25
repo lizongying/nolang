@@ -3,11 +3,17 @@ package pkg
 import (
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/lizongying/nolang/i18n"
 )
+
+// manifestWarned 讓同一份 package.noml 的欄位集警告在單一 no 進程裡只印一次：
+// LoadPackage 會被簽名表 / LSP / builder 反覆呼叫，重複警告只會淹沒使用者。
+var manifestWarned sync.Map
 
 // CompilerOptions 表示 package.noml 的 compiler 區塊選項
 type CompilerOptions struct {
@@ -17,14 +23,13 @@ type CompilerOptions struct {
 	// 空字串（預設）表示使用 LLVM 後端生成原生可執行檔。
 	Emit     string   `json:"emit,omitempty"`
 	LinkLibs []string `json:"link-libs,omitempty"`
-	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值，按**整个** option
-	// 结构计（见 src/mir/layout.go：`%option_<key> = { i8 tag, [K x i64] }`）。
-	// 默认 264 = 1 字节标签 + 7 字节填充 + 256 字节载荷，也就是“载荷不超过
-	// 256 字节就内联”；`?txt`（256 字节内联缓冲）正好落在默认边界内，`?str`
-	// （16 字节描述符）与 `?vec`（16 字节）更不在话下。调小（最低 16，即
-	// 8 字节标签区 + 一个载荷字）会让描述符类载荷也走堆指针；小于 16 是
-	// 编译错误。err 载荷恒装箱，不参与这个预算。
-	OptionInlineThreshold int `json:"option-inline-threshold,omitempty"`
+	// OptionPayloadInlineThreshold 是 `?T` 载荷内联的字节阈值，只按**载荷**计，
+	// 不含 8 字节标签区（见 src/mir/layout.go：`%option_<key> = { i8 tag, [K x i64] }`）。
+	// 默认 256：载荷不超过 256 字节就内联，`?txt`（256 字节缓冲）正好在边界内；
+	// `?str`（16 字节描述符）与 `?vec`（16 字节）更不在话下。最低 8（一个载荷
+	// 字），低于 8 会被夹到 8；要内联 16 字节的 ?str 需阈值 >= 16。err 载荷恒装箱。
+	// 这是可选字段：未配置时直接用默认值，package.noml 不需要写出来。
+	OptionPayloadInlineThreshold int `json:"option-payload-inline-threshold,omitempty"`
 	// ESMCDN 是 browser 模式下第三方 ESM 導入（# npm/…）的 import map CDN
 	// 前綴；空字串表示使用內建預設 https://esm.sh。
 	ESMCDN string `json:"esm-cdn,omitempty"`
@@ -36,22 +41,21 @@ type CompilerOptions struct {
 
 // Package 表示 package.noml 定義的專案套件
 type Package struct {
-	Name            string            `json:"name"`
-	Version         string            `json:"version,omitempty"`
-	Description     string            `json:"description,omitempty"`
-	Category        string            `json:"category,omitempty"`
-	Keywords        []string          `json:"keywords,omitempty"`
-	Author          string            `json:"author,omitempty"`
-	Email           string            `json:"email,omitempty"`
-	Organization    string            `json:"organization,omitempty"`
-	Repository      string            `json:"repository,omitempty"`
-	Homepage        string            `json:"homepage,omitempty"`
-	License         string            `json:"license,omitempty"`
-	Main            string            `json:"main,omitempty"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description,omitempty"`
+	Category     string   `json:"category,omitempty"`
+	Keywords     []string `json:"keywords,omitempty"`
+	Author       string   `json:"author,omitempty"`
+	Email        string   `json:"email,omitempty"`
+	Organization string   `json:"organization,omitempty"`
+	Repository   string   `json:"repository,omitempty"`
+	Homepage     string   `json:"homepage,omitempty"`
+	License      string   `json:"license,omitempty"`
+	// Publish 控制 nohub 收录时是否公开此包；缺省 true（与 nohub 索引一致）。
+	Publish         bool              `json:"publish"`
 	Dependencies    map[string]string `json:"dependencies,omitempty"`
 	DevDependencies map[string]string `json:"dev-dependencies,omitempty"`
 	Ignore          []string          `json:"ignore,omitempty"`
-	Alias           map[string]string `json:"alias,omitempty"`
 	Workspace       string            `json:"workspace,omitempty"` // 已廢棄：workspace 根目錄現由 workspace.noml 自動偵測
 	Mirrors         []string          `json:"mirrors,omitempty"`   // 下載鏡像清單（依序嘗試）
 	Compiler        CompilerOptions   `json:"compiler,omitempty"`
@@ -67,81 +71,103 @@ type Package struct {
 
 // StripJSONC 已移除：配置檔格式硬切 noml（見 noml.go）。
 
-// IsIgnored 判斷給定的檔案路徑是否匹配 ignore 列表中的任一模式。
+// IsIgnored 判斷給定的**檔案**路徑是否匹配 ignore 列表中的任一模式。
 //
-// 支援以下模式格式：
+// 支援以下模式格式（一律相對套件根目錄、以 / 分隔）：
 //   - 檔名精確匹配：如 "main.no" 匹配任意目錄下的 main.no
-//   - Glob 萬用字元：如 "*.no"、"*_test.no" 匹配檔名
+//   - Glob 萬用字元：如 "*.no"、"*_skip.no" 匹配檔名
 //   - 相對路徑匹配：如 "src/utils.no" 匹配套件根目錄下的相應路徑
-//   - 目錄前綴匹配：如 "tests/" 匹配該目錄下所有檔案
-//   - 路徑 Glob：如 "src/*.no"、"tests/*" 匹配相對路徑模式
+//   - 目錄前綴匹配：如 "tests/" 或 "tests" 匹配該目錄下所有檔案
+//   - 路徑／目錄 Glob：如 "src/*.no"、"*_skip"、"src/*_skip" 匹配相對路徑或任一上層目錄
 //
-// filePath 可以是絕對路徑或相對路徑。若是絕對路徑，會先轉換為
-// 相對於套件根目錄（RootDir）的路徑再進行匹配。
+// filePath 可以是絕對路徑或相對路徑；相對於 RootDir 的路徑直接匹配，絕對路徑
+// 會先轉成相對於套件根目錄的路徑。
 func (p *Package) IsIgnored(filePath string) bool {
+	return p.isIgnored(filePath, false)
+}
+
+// IsIgnoredDir 與 IsIgnored 相同，差別只在於 path 本身是目錄：以 / 結尾的模式
+// （如 "dist/"）會把該目錄本身也視為命中，方便 WalkDir 直接 SkipDir。
+func (p *Package) IsIgnoredDir(dirPath string) bool {
+	return p.isIgnored(dirPath, true)
+}
+
+// IsIgnoredSourceDir 在持有 Package 的走訪點（如 builder 掃 tests/）沿用同一條
+// 「底線開頭目錄 = 忽略」慣例，免得呼叫端為了取用上層套件函式而把 pkg 匯入
+// 名稱別名化。語意同 IsIgnoredSourceDir。
+func (p *Package) IsIgnoredSourceDir(name string) bool {
+	return IsIgnoredSourceDir(name)
+}
+
+func (p *Package) isIgnored(filePath string, isDir bool) bool {
 	if p == nil || len(p.Ignore) == 0 {
 		return false
 	}
 
-	// 取得檔名
-	fileName := filepath.Base(filePath)
-
-	// 計算相對於套件根目錄的路徑
-	relPath := filePath
-	if p.RootDir != "" {
-		if abs, err := filepath.Abs(filePath); err == nil {
-			if rel, err := filepath.Rel(p.RootDir, abs); err == nil {
+	relPath := filepath.ToSlash(filepath.Clean(filePath))
+	if filepath.IsAbs(filePath) {
+		if p.RootDir != "" {
+			if rel, err := filepath.Rel(p.RootDir, filePath); err == nil {
 				relPath = filepath.ToSlash(rel)
 			}
+		} else {
+			relPath = strings.TrimPrefix(relPath, "/")
 		}
 	}
-	// 統一路徑分隔符為 /
-	relPath = filepath.ToSlash(relPath)
-	fileName = filepath.ToSlash(fileName)
+	relPath = strings.TrimPrefix(relPath, "./")
+	if relPath == "." {
+		relPath = ""
+	}
+	base := pathpkg.Base(relPath)
 
-	for _, pattern := range p.Ignore {
-		pattern = strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-		pattern = filepath.ToSlash(pattern)
-
-		// 1. 檔名精確匹配
-		if fileName == pattern {
-			return true
-		}
-
-		// 2. 相對路徑精確匹配
-		if relPath == pattern {
-			return true
-		}
-
-		// 3. 目錄前綴匹配（以 / 結尾表示目錄）
-		if strings.HasSuffix(pattern, "/") {
-			dir := strings.TrimSuffix(pattern, "/")
-			if relPath == dir || strings.HasPrefix(relPath, dir+"/") {
-				return true
-			}
-			continue
-		}
-
-		// 4. Glob 萬用字元匹配——先嘗試匹配檔名
-		if matched, err := filepath.Match(pattern, fileName); err == nil && matched {
-			return true
-		}
-
-		// 5. Glob 萬用字元匹配——再嘗試匹配相對路徑
-		if matched, err := filepath.Match(pattern, relPath); err == nil && matched {
-			return true
-		}
-
-		// 6. 目錄前綴匹配（不以 / 結尾但也匹配目錄結構）
-		// 例如 pattern="tests" 時，匹配 tests 目錄下所有檔案
-		if relPath == pattern || strings.HasPrefix(relPath, pattern+"/") {
+	for _, raw := range p.Ignore {
+		if p.matchIgnorePattern(raw, relPath, base, isDir) {
 			return true
 		}
 	}
+	return false
+}
 
+func (p *Package) matchIgnorePattern(raw, relPath, base string, isDir bool) bool {
+	pattern := filepath.ToSlash(strings.TrimSpace(raw))
+	pattern = strings.TrimPrefix(pattern, "./")
+	if pattern == "" {
+		return false
+	}
+	dirOnly := strings.HasSuffix(pattern, "/")
+	pattern = strings.TrimSuffix(pattern, "/")
+	pattern = strings.TrimPrefix(pattern, "./")
+	if pattern == "" {
+		return false
+	}
+
+	match := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		ok, err := pathpkg.Match(pattern, s)
+		return err == nil && ok
+	}
+
+	// 精確／Glob 命中檔案或目錄本身。以 / 結尾的模式不命中同名檔案。
+	if (match(base) && (!dirOnly || isDir)) || (match(relPath) && (!dirOnly || isDir)) {
+		return true
+	}
+	if (!dirOnly || isDir) && relPath == pattern {
+		return true
+	}
+
+	// 前綴命中整棵子樹：tests/ 或 tests 都覆蓋 tests/a.no。
+	if strings.HasPrefix(relPath, pattern+"/") {
+		return true
+	}
+
+	// 任一上層目錄命中（含萬用目錄，如 *_skip / src/*_skip）。
+	for dir := pathpkg.Dir(relPath); dir != "." && dir != "/" && dir != ""; dir = pathpkg.Dir(dir) {
+		if match(dir) || match(pathpkg.Base(dir)) || dir == pattern || strings.HasPrefix(dir, pattern+"/") {
+			return true
+		}
+	}
 	return false
 }
 
@@ -161,11 +187,13 @@ func LoadPackage(dir string) (*Package, error) {
 			if err != nil {
 				return nil, i18n.Errorf("k1h5kums", "reading %s: %w", candidate, err)
 			}
+			warnManifestFieldIssues(candidate, CheckManifestFields(raw))
 			m, err := ParseNomlMap(raw)
 			if err != nil {
 				return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", candidate, err)
 			}
-			var pkg Package
+			// publish 缺省 true（與 nohub 索引一致）；DecodeInto 只會在鍵存在時覆寫。
+			pkg := Package{Publish: true}
 			if err := DecodeInto(m, &pkg); err != nil {
 				return nil, i18n.Errorf("o9bv21zu", "parsing %s: %w", candidate, err)
 			}
@@ -193,14 +221,6 @@ func LoadPackage(dir string) (*Package, error) {
 			// 警告依賴版本約束不當（本地包應用 *，線上包應用版本號）
 			pkg.warnWorkspaceDepVersion()
 
-			// 補上預設 alias
-			if pkg.Alias == nil {
-				pkg.Alias = make(map[string]string)
-			}
-			if _, ok := pkg.Alias["@"]; !ok {
-				pkg.Alias["@"] = "./"
-			}
-
 			// 載入鎖檔案（可選）
 			pkg.lockFile, _ = LoadLockFile(root)
 
@@ -218,6 +238,19 @@ func LoadPackage(dir string) (*Package, error) {
 	}
 
 	return nil, nil // 沒有找到套件
+}
+
+// warnManifestFieldIssues 在載入期回報 package.noml 的缺欄位／多欄位。
+// 非致命：舊專案仍可 build，但會被提醒跑 no fmt -w 讓欄位集對齊。
+func warnManifestFieldIssues(path string, issues ManifestFieldIssues) {
+	if issues.Empty() {
+		return
+	}
+	if _, seen := manifestWarned.LoadOrStore(path, true); seen {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Warning: %s: package.noml field set: %s; run 'no fmt -w %s' to fix\n",
+		path, issues.Describe(), filepath.Dir(path))
 }
 
 // CompilerLang returns the `compiler.lang` declared by the nearest package.noml
@@ -265,24 +298,55 @@ func (p *Package) WorkspaceRoot() string {
 	return p.workspaceRoot
 }
 
-// ResolvePath 根據 alias 解析路徑
+// ResolvePath 把套件內的相對路徑解析到套件根目錄。
+// package.noml 不再提供 alias，路徑一律相對 RootDir。
 func (p *Package) ResolvePath(inputPath string) string {
 	if p == nil {
 		return inputPath
 	}
+	return filepath.Clean(filepath.Join(p.RootDir, inputPath))
+}
 
-	// 嘗試所有 alias 前綴
-	for prefix, alias := range p.Alias {
-		prefixStr := prefix
-		if strings.HasPrefix(inputPath, prefixStr) {
-			rel := strings.TrimPrefix(inputPath, prefixStr)
-			aliasPath := filepath.Join(p.RootDir, alias, rel)
-			return filepath.Clean(aliasPath)
-		}
+// ResolveOutputDir 回傳套件的輸出目錄（絕對或相對目前工作目錄）。
+//
+// output 是可選欄位，且一律以 workspace 根目錄為基準：`/tests/dist` 與
+// `./dist` 的前綴都会去掉再接到 workspace 根。省略时默认当前包目录下的
+// dist（例如 tests/package.noml → <workspace>/tests/dist，根包 →
+// <workspace>/dist）。找不到 workspace.noml 时退回套件根目录。
+func (p *Package) ResolveOutputDir() string {
+	if p == nil {
+		return "dist"
 	}
 
-	// 沒有匹配 alias，相對於套件根目錄
-	return filepath.Clean(filepath.Join(p.RootDir, inputPath))
+	output := strings.TrimSpace(p.Output)
+	if output == "" {
+		rel := "dist"
+		if p.workspaceRoot != "" && p.RootDir != "" {
+			if r, err := filepath.Rel(p.workspaceRoot, p.RootDir); err == nil && r != "." &&
+				r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+				rel = filepath.Join(r, "dist")
+			}
+		}
+		if p.workspaceRoot == "" && p.RootDir != "" {
+			return filepath.Clean(filepath.Join(p.RootDir, rel))
+		}
+		if p.workspaceRoot == "" {
+			return filepath.Clean(rel)
+		}
+		return filepath.Clean(filepath.Join(p.workspaceRoot, rel))
+	}
+
+	// 显式 output 也相对 workspace：前导 / 或 ./ 只是写法差异。
+	output = strings.TrimPrefix(output, "./")
+	output = strings.TrimPrefix(output, "/")
+	output = filepath.FromSlash(output)
+	if output == "" {
+		output = "dist"
+	}
+	if p.workspaceRoot == "" && p.RootDir != "" {
+		return filepath.Clean(filepath.Join(p.RootDir, output))
+	}
+	return filepath.Clean(filepath.Join(p.workspaceRoot, output))
 }
 
 // WorkspaceMap 表示 workspace.noml 解析結果

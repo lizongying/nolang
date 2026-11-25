@@ -1,0 +1,44 @@
+; ============================================================================
+; noui 窗口 resize -> 布局常量回写测试（阶段76）
+;
+; app-sync-window-size() 把真实窗口尺寸同步进 APP-WIN-W/H 与 APP-WIN-WF/HF；
+; app-frame() 每帧开头都会调用它，好让拖边框之后布局重新排版。
+; dummy 视频驱动下同样可跑：_noui-window-set-size 直接改 SDL 窗口大小。
+; ============================================================================
+# /noui/src/app
+
+print('=== app-resize tests ===')
+
+app-init('resize-test')
+
+r1 = app-win-w() == 560 && app-win-h() == 420
+r2 = app-win-wf() == 56000 && app-win-hf() == 42000
+
+; 模拟用户把窗口拖到 700x500
+_noui-window-set-size(700, 500)
+app-sync-window-size()
+r3 = app-win-w() == 700 && app-win-h() == 500
+r4 = app-win-wf() == 70000 && app-win-hf() == 50000
+
+; 亚像素字段始终是整数尺寸的 100 倍（cmp-layout 依赖这个换算）
+r5 = app-win-wf() == app-win-w() * 100 && app-win-hf() == app-win-h() * 100
+
+; 幂等：同尺寸再同步一次不应改变任何值
+w1 = app-win-wf()
+h1 = app-win-hf()
+app-sync-window-size()
+r6 = app-win-wf() == w1 && app-win-hf() == h1
+
+; 拖回原尺寸也要跟上
+_noui-window-set-size(560, 420)
+app-sync-window-size()
+r7 = app-win-w() == 560 && app-win-h() == 420
+r8 = app-win-wf() == 56000 && app-win-hf() == 42000
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8
+print('init={r1}{r2} resize={r3}{r4} scale={r5} idem={r6} restore={r7}{r8}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-RESIZE TESTS PASSED') }
+(!all-ok) -> { print('SOME APP-RESIZE TESTS FAILED'); exit(1) }
+
+app-shutdown()

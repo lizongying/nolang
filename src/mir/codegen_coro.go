@@ -3,8 +3,6 @@ package mir
 import (
 	"fmt"
 	"strings"
-
-	"github.com/lizongying/nolang/i18n"
 )
 
 // Coroutine codegen.
@@ -246,8 +244,7 @@ func (c *codegen) emitCoroAwaitRead(f *Function, inst *Inst) error {
 	resLT, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
 	if slot == "" {
-		c.fail("OpAwait: no slot for destination")
-		return i18n.Errorf("zcelvmmy", "OpAwait: no slot")
+		return c.failAbort(inst, codegenTraceID, "OpAwait: no slot for destination")
 	}
 	if len(inst.Args) == 0 {
 		fmt.Fprintf(c.sb, "  store %s zeroinitializer, %s* %s\n", resLT, resLT, slot)
@@ -502,8 +499,7 @@ func (c *codegen) emitCoroRun(f *Function, inst *Inst, cid FuncID, cf *Function)
 		plt := argTypes[i]
 		alt, areg, owned := c.coerceAsyncArg(av, plt)
 		if alt == "void" {
-			c.fail("OpRun: argument %d of %s lowered to void in func %s", i, calleeName, f.Name)
-			return i18n.Errorf("x57xvqny", "unsupported value type %s in func %s", alt, f.Name)
+			return c.failAbort(inst, codegenTraceID, "OpRun: argument %d of %s lowered to void in func %s", i, calleeName, f.Name)
 		}
 		kind := ""
 		if i < len(argKinds) {
@@ -571,7 +567,7 @@ func (c *codegen) emitCoroRun(f *Function, inst *Inst, cid FuncID, cf *Function)
 	handleI64 := fmt.Sprintf("%%cr.handle.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", handleI64, taskI8)
 	if slot == "" {
-		return i18n.Errorf("coronowl", "OpRun: no slot")
+		return c.failAbort(inst, codegenTraceID, "OpRun: no slot for destination in func %s", f.Name)
 	}
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", handleI64, slot)
 	return nil

@@ -157,11 +157,11 @@ Le paramètre `-cc` spécifie le backend du compilateur C :
 
 La disposition en mémoire de `?T` est **déterminée par le type de la charge utile** : chaque type de charge `T` dispose de son propre `%option_<key> = { i8 tag, [K x i64] }` (étiquette d'un octet, charge à l'offset d'octet 8, `K = roundUp8(sizeof(T))/8`). Si la charge ne tient pas dans le seuil, elle est placée dans une boîte sur le tas et le premier mot de la zone de charge contient le pointeur.
 
-`--option-inline-threshold=N` définit ce seuil (mesuré en octets sur **toute la structure option**, soit `1 + 7 + sizeof(T)`) :
+`--option-payload-inline-threshold=N` définit ce seuil (mesuré en octets sur **toute la structure option**, soit `1 + 7 + sizeof(T)`) :
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # 讓更大的載荷內聯
-no build --option-inline-threshold=16 main.no     # 最小可配置值
+no build --option-payload-inline-threshold=1032 main.no   # 讓更大的載荷內聯
+no build --option-payload-inline-threshold=16 main.no     # 最小可配置值
 ```
 
 | Valeur | Effet |
@@ -170,7 +170,7 @@ no build --option-inline-threshold=16 main.no     # 最小可配置值
 | minimum **16** | seules les charges de la taille de `?i64` restent en ligne ; à partir de `?str` (24 o), tout est placé dans une boîte |
 | < 16 | erreur de compilation |
 
-Ordre de priorité : ligne de commande > variable d'environnement `NOLANG_OPTION_INLINE_THRESHOLD` > `compiler.option-inline-threshold` de `package.noml` > valeur par défaut. La source unique de la disposition est `src/mir/layout.go` ; la sémantique (quelles valeurs comptent comme `ok` / `nil` / `err`) **n'est pas affectée** — seules l'occupation mémoire et la mise en boîte changent.
+Ordre de priorité : ligne de commande > variable d'environnement `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `compiler.option-payload-inline-threshold` de `package.noml` > valeur par défaut. La source unique de la disposition est `src/mir/layout.go` ; la sémantique (quelles valeurs comptent comme `ok` / `nil` / `err`) **n'est pas affectée** — seules l'occupation mémoire et la mise en boîte changent.
 
 ### Optimiseur intégré du compilateur (MIR opt)
 
@@ -366,14 +366,12 @@ Le fichier `package.noml` à la racine du projet décrit les informations du pro
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

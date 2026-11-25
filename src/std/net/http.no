@@ -1253,7 +1253,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = ''
-    rest = url.slice-bytes(scheme-len, url.len-bytes())
+    rest = url.slice-bytes(scheme-len, url.len-bytes()).to-bytes-str()
     host = ''
     path = '/'
     slash-pos = rest.index('/')
@@ -1261,8 +1261,8 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         slash-pos < 0 -> host = rest
 
         -> {
-            host = rest.slice-bytes(0, slash-pos)
-            path = rest.slice-bytes(slash-pos, rest.len-bytes())
+            host = rest.slice-bytes(0, slash-pos).to-bytes-str()
+            path = rest.slice-bytes(slash-pos, rest.len-bytes()).to-bytes-str()
         }
     }
     host-only = ''
@@ -1270,10 +1270,10 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     colon-pos = host.index(':')
 
     colon-pos >= 0 -> {
-        host-only = host.slice-bytes(0, colon-pos)
+        host-only = host.slice-bytes(0, colon-pos).to-bytes-str()
 
         #{overflow=wrap}
-        port-str = host.slice-bytes(colon-pos + 1, host.len-bytes())
+        port-str = host.slice-bytes(colon-pos + 1, host.len-bytes()).to-bytes-str()
         p = 0
         pi <- [0..port-str.len-bytes()): {
             c = port-str[pi]
@@ -1443,12 +1443,12 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     ; 狀態碼（狀態行 "HTTP/1.1 200 OK"）
     first-line = head-str
     nl = head-str.index(crlf)
-    nl >= 0 -> first-line = head-str.slice-bytes(0, nl)
+    nl >= 0 -> first-line = head-str.slice-bytes(0, nl).to-bytes-str()
     sp1 = first-line.index(' ')
     sp1 < 0 -> return
 
     #{overflow=wrap}
-    code-str = first-line.slice-bytes(sp1 + 1, sp1 + 4)
+    code-str = first-line.slice-bytes(sp1 + 1, sp1 + 4).to-bytes-str()
     code = 0
     ci <- [0..code-str.len-bytes()): {
         c = code-str[ci]: {
@@ -1529,7 +1529,7 @@ http-dl-location = (head-str str) (loc ?str) {
     line <- lines: {
         trimmed = line.trim()
         trimmed.to-lower().starts-with('location:') -> {
-            loc = trimmed.slice-bytes(9, trimmed.len-bytes()).trim()
+            loc = trimmed.slice-bytes(9, trimmed.len-bytes()).to-bytes-str().trim()
             return
         }
     }

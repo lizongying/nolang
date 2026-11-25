@@ -4346,6 +4346,16 @@ func optionArithOperandInt(e Expression, lookup arithTypeLookup) (string, bool) 
 func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	prep := &subjectMatchPrep{}
 	tok, matched, arms := sm.Token, sm.Matched, sm.Arms
+	// 括號是純語法、無語意（H0 對 GroupedExpression 一律透傳，見 tohir.go
+	// 的 case *GroupedExpression）。主語正規化下方的三個分支直接對
+	// *IndexExpression / *CallExpression / *InfixExpression 做型別斷言；若主語
+	// 被 `(...)` 包住，三個分支全不命中 ⇒ 不合成 `__match_subj` ⇒ ok 臂沒有
+	// `let it` ⇒ MIR 零填，觀測值恆為 fallback。此處先剝括號，讓
+	// `(a + b): { … }` 與 `a + b: { … }` 逐字節同義（optionSubjectElemType
+	// 與 checker 早已走 unwrapLowerExpr，兩側口徑一致）。
+	if unwrapped := unwrapLowerExpr(matched); unwrapped != matched {
+		matched = unwrapped
+	}
 	// NOTE: prep.matched is deliberately NOT captured here. When the subject is a
 	// safe-index expression in an option match (e.g. `a[i]: { ok -> ... }`), the
 	// block below normalises `matched` to a synthetic `__match_subj` option

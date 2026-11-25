@@ -634,7 +634,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
         }
 
         ; '&' 命中：先把前導字面片段入結果
-        acc = acc - s.slice-bytes(seg, i)
+        acc = acc - s.slice-bytes(seg, i).to-bytes-str()
 
         ; 掃描實體名（字母/數字/#，最長 32，止於 ';' 或越界）
         k = i + 1
@@ -697,7 +697,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
                 }
 
                 -> {
-                    nm = s.slice-bytes(name-start, k)
+                    nm = s.slice-bytes(name-start, k).to-bytes-str()
                     cpv = find-entity(nm)
                 }
             }
@@ -706,7 +706,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
 
                 ; HTML：未知實體原文保留（含分號）
                 #{overflow=wrap}
-                acc = acc - s.slice-bytes(i, k + 1)
+                acc = acc - s.slice-bytes(i, k + 1).to-bytes-str()
 
                 #{overflow=wrap}
                 seg ?= k + 1
@@ -720,7 +720,7 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
             i = seg
         }
     }
-    acc = acc - s.slice-bytes(seg, to)
+    acc = acc - s.slice-bytes(seg, to).to-bytes-str()
     out = acc
 }
 
@@ -944,7 +944,7 @@ dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np ?i64) {
     (j + 3 <= n) {
 
         #{overflow=wrap}
-        ct str = s.slice-bytes(j, j + 3)
+        ct str = s.slice-bytes(j, j + 3).to-bytes-str()
         ct.eq-full('-->') -> {
             found = true
             break
@@ -955,7 +955,7 @@ dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np ?i64) {
     }
     ! found -> return
     idx = .alloc(DOM-KIND-COMMENT)
-    .vals[idx] ?= s.slice-bytes(p + 4, j)
+    .vals[idx] ?= s.slice-bytes(p + 4, j).to-bytes-str()
     .append(parent, idx)
     np = j + 3
 }
@@ -973,7 +973,7 @@ dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
     (j + 3 <= n) {
 
         #{overflow=wrap}
-        ct str = s.slice-bytes(j, j + 3)
+        ct str = s.slice-bytes(j, j + 3).to-bytes-str()
         ct.eq-full(']]>') -> {
             found = true
             break
@@ -984,7 +984,7 @@ dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
     }
     ! found -> return
     idx = .alloc(DOM-KIND-CDATA)
-    .vals[idx] ?= s.slice-bytes(p + 9, j)
+    .vals[idx] ?= s.slice-bytes(p + 9, j).to-bytes-str()
     .append(parent, idx)
     np = j + 3
 }
@@ -1007,13 +1007,13 @@ dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
     }
 
     #{overflow=wrap}
-    tgt = s.slice-bytes(p + 2, ne)
+    tgt = s.slice-bytes(p + 2, ne).to-bytes-str()
     j = ne
     found = false
     (j + 1 < n) {
 
         #{overflow=wrap}
-        q str = s.slice-bytes(j, j + 2)
+        q str = s.slice-bytes(j, j + 2).to-bytes-str()
         q.eq-full('?>') -> {
             found = true
             break
@@ -1029,7 +1029,7 @@ dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
     ; 值從目標名後的首個非空白起算，序列化時不致產生雙空格
     vs = xml-skip-ws(s, ne)
     vs > j -> vs = j
-    .vals[idx] ?= s.slice-bytes(vs, j)
+    .vals[idx] ?= s.slice-bytes(vs, j).to-bytes-str()
     .append(parent, idx)
     np = j + 2
 }
@@ -1086,7 +1086,7 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
     }
     ! found -> return
     idx = .alloc(DOM-KIND-DOCTYPE)
-    .vals[idx] ?= s.slice-bytes(p + 2, j)
+    .vals[idx] ?= s.slice-bytes(p + 2, j).to-bytes-str()
 
     ; names 存放文檔元素名（跳過 'DOCTYPE' 關鍵字後的第二個名字）
     kwopt-start = p + 2
@@ -1098,7 +1098,7 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
             nopt = xml-read-name(s, ns)
             nopt: {
                 ok(nv) -> {
-                    .names[idx] ?= s.slice-bytes(ns, nv)
+                    .names[idx] ?= s.slice-bytes(ns, nv).to-bytes-str()
                 }
 
                 -> _
@@ -1128,7 +1128,7 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
 
         -> return
     }
-    nm = s.slice-bytes(p, ne)
+    nm = s.slice-bytes(p, ne).to-bytes-str()
     cpos = xml-skip-ws(s, ne)
     cpos >= n -> return
     c = s.byte(cpos)
@@ -1221,7 +1221,7 @@ dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
     }
 
     #{overflow=wrap}
-    cnm = s.slice-bytes(p + 2, ne)
+    cnm = s.slice-bytes(p + 2, ne).to-bytes-str()
     cn ?= .names[node]
     cn.eq-full(cnm) == false -> return
     cpos = xml-skip-ws(s, ne)
@@ -1256,7 +1256,7 @@ dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
         -> return
     }
     idx = .alloc(DOM-KIND-ELEMENT)
-    .names[idx] ?= s.slice-bytes(p + 1, ne)
+    .names[idx] ?= s.slice-bytes(p + 1, ne).to-bytes-str()
     .append(parent, idx)
     cpos = ne
 
@@ -1324,14 +1324,14 @@ dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
                 cpos + 1 >= n -> return
 
                 #{overflow=wrap}
-                h2 str = s.slice-bytes(cpos, cpos + 2)
+                h2 str = s.slice-bytes(cpos, cpos + 2).to-bytes-str()
                 is-cd = false
 
                 #{overflow=wrap}
                 cpos + 8 < n -> {
 
                     #{overflow=wrap}
-                    c9 str = s.slice-bytes(cpos, cpos + 9)
+                    c9 str = s.slice-bytes(cpos, cpos + 9).to-bytes-str()
                     c9.eq-full('<![CDATA[') -> is-cd = true
                 }
                 is-cm = false
@@ -1438,7 +1438,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
         }
 
         #{overflow=wrap}
-        h2 str = s.slice-bytes(p, p + 2)
+        h2 str = s.slice-bytes(p, p + 2).to-bytes-str()
         {
             h2.eq-full('<?') -> {
                 piopt = .xml-parse-pi(root, s, p)
@@ -1476,7 +1476,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                 p + 8 < n -> {
 
                     #{overflow=wrap}
-                    d9 str = s.slice-bytes(p, p + 9)
+                    d9 str = s.slice-bytes(p, p + 9).to-bytes-str()
                     d9.eq-full('<!DOCTYPE') -> is-dt = true
                 }
                 ! is-dt -> {
@@ -1598,7 +1598,7 @@ html-peek-name = (s str, p i64) (nm str) {
 
         -> return
     }
-    nm = s.slice-bytes(p + 1, e).to-lower()
+    nm = s.slice-bytes(p + 1, e).to-bytes-str().to-lower()
 }
 
 ; 把 s[from..to) 按 HTML 實體規則解碼為文字節點附加到 parent
@@ -1643,7 +1643,7 @@ dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
         j + 3 <= n -> {
 
             #{overflow=wrap}
-            ct str = s.slice-bytes(j, j + 3)
+            ct str = s.slice-bytes(j, j + 3).to-bytes-str()
             ct.eq-full('-->') -> {
                 found = true
                 break
@@ -1666,7 +1666,7 @@ dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
     }
     idx = .alloc(DOM-KIND-COMMENT)
     {
-        .vals[idx] ?= s.slice-bytes(p + 4, cend)
+        .vals[idx] ?= s.slice-bytes(p + 4, cend).to-bytes-str()
     }: {
         err -> _
 
@@ -1709,7 +1709,7 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
     }
     idx = .alloc(DOM-KIND-COMMENT)
     {
-        .vals[idx] ?= s.slice-bytes(p + 2, q)
+        .vals[idx] ?= s.slice-bytes(p + 2, q).to-bytes-str()
     }: {
         err -> _
 
@@ -1749,7 +1749,7 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
     }
 
     #{overflow=wrap}
-    tgt = s.slice-bytes(p + 2, ne)
+    tgt = s.slice-bytes(p + 2, ne).to-bytes-str()
     j = ne
     found = false
     (j < n) {
@@ -1795,7 +1795,7 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
     vs > dend -> vs = dend
     dend > vs -> {
         {
-            .vals[idx] ?= s.slice-bytes(vs, dend)
+            .vals[idx] ?= s.slice-bytes(vs, dend).to-bytes-str()
         }: {
             err -> _
 
@@ -1830,7 +1830,7 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
 
         -> return
     }
-    nm = s.slice-bytes(p, ne)
+    nm = s.slice-bytes(p, ne).to-bytes-str()
     nm = nm.to-lower()
     cpos = xml-skip-ws(s, ne)
     cpos < n && s.byte(cpos) == 61 -> {
@@ -1905,7 +1905,7 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
         val = decode-entities(s, vs, ve, true): {
             ok -> it
 
-            -> s.slice-bytes(vs, ve)
+            -> s.slice-bytes(vs, ve).to-bytes-str()
         }
         .html-set-attr-once(node, nm, val)
         np = cpos
@@ -2089,7 +2089,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
                 val = decode-entities(s, np, cend, true): {
                     ok -> it
 
-                    -> s.slice-bytes(np, cend)
+                    -> s.slice-bytes(np, cend).to-bytes-str()
                 }
                 {
                     .vals[tidx] ?= val
@@ -2102,7 +2102,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
             -> {
                 {
-                    .vals[tidx] ?= s.slice-bytes(np, cend)
+                    .vals[tidx] ?= s.slice-bytes(np, cend).to-bytes-str()
                 }: {
                     err -> _
 
@@ -2191,7 +2191,7 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
             return
         }
     }
-    nm = s.slice-bytes(p + 2, ne).to-lower()
+    nm = s.slice-bytes(p + 2, ne).to-bytes-str().to-lower()
     ok = true
     np = ne
     (np < n) {
@@ -2300,7 +2300,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             p + 8 < n -> {
 
                 #{overflow=wrap}
-                d9 str = s.slice-bytes(p, p + 9)
+                d9 str = s.slice-bytes(p, p + 9).to-bytes-str()
                 d9.to-lower().eq-full('<!doctype') -> is-dt = true
             }
             is-dt -> {
@@ -2457,7 +2457,7 @@ esc-text = (s str) (out str) {
         b = s.byte(i)
         {
             b == 38 -> {
-                out = out - s.slice-bytes(seg, i) - '&amp;'
+                out = out - s.slice-bytes(seg, i).to-bytes-str() - '&amp;'
 
                 {
 
@@ -2471,7 +2471,7 @@ esc-text = (s str) (out str) {
             }
 
             b == 60 -> {
-                out = out - s.slice-bytes(seg, i) - '&lt;'
+                out = out - s.slice-bytes(seg, i).to-bytes-str() - '&lt;'
 
                 {
 
@@ -2485,7 +2485,7 @@ esc-text = (s str) (out str) {
             }
 
             b == 62 -> {
-                out = out - s.slice-bytes(seg, i) - '&gt;'
+                out = out - s.slice-bytes(seg, i).to-bytes-str() - '&gt;'
 
                 {
 
@@ -2509,7 +2509,7 @@ esc-text = (s str) (out str) {
             -> _
         }
     }
-    out = out - s.slice-bytes(seg, n)
+    out = out - s.slice-bytes(seg, n).to-bytes-str()
 }
 
 ; 轉義屬性值中的 & < > "
@@ -2525,7 +2525,7 @@ esc-attr = (s str) (out str) {
         b = s.byte(i)
         {
             b == 38 -> {
-                out = out - s.slice-bytes(seg, i) - '&amp;'
+                out = out - s.slice-bytes(seg, i).to-bytes-str() - '&amp;'
 
                 {
 
@@ -2539,7 +2539,7 @@ esc-attr = (s str) (out str) {
             }
 
             b == 60 -> {
-                out = out - s.slice-bytes(seg, i) - '&lt;'
+                out = out - s.slice-bytes(seg, i).to-bytes-str() - '&lt;'
 
                 {
 
@@ -2553,7 +2553,7 @@ esc-attr = (s str) (out str) {
             }
 
             b == 62 -> {
-                out = out - s.slice-bytes(seg, i) - '&gt;'
+                out = out - s.slice-bytes(seg, i).to-bytes-str() - '&gt;'
 
                 {
 
@@ -2567,7 +2567,7 @@ esc-attr = (s str) (out str) {
             }
 
             b == 34 -> {
-                out = out - s.slice-bytes(seg, i) - '&quot;'
+                out = out - s.slice-bytes(seg, i).to-bytes-str() - '&quot;'
 
                 {
 
@@ -2591,7 +2591,7 @@ esc-attr = (s str) (out str) {
             -> _
         }
     }
-    out = out - s.slice-bytes(seg, n)
+    out = out - s.slice-bytes(seg, n).to-bytes-str()
 }
 
 ; 序列化 idx 的全部子節點
@@ -2982,7 +2982,7 @@ class-has = (val str, cls str) (yes bool) {
     (i < n) {
         b = val.byte(i)
         b == 32 || b == 9 || b == 10 || b == 13 -> {
-            tk = val.slice-bytes(seg, i)
+            tk = val.slice-bytes(seg, i).to-bytes-str()
             tk.eq-full(cls) -> yes = true
 
             {
@@ -3006,7 +3006,7 @@ class-has = (val str, cls str) (yes bool) {
             -> _
         }
     }
-    tail = val.slice-bytes(seg, n)
+    tail = val.slice-bytes(seg, n).to-bytes-str()
     tail.eq-full(cls) -> yes = true
 }
 

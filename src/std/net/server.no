@@ -200,7 +200,7 @@ server-conn.recv-more = () (n i64) {
     n > 0 -> {
 
         ; str 下標寫已全域禁用；拼接追加（等價於從 recv-buf-len 起逐位元組寫入）
-        .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+        .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
         #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {
@@ -922,7 +922,7 @@ https-server-conn.recv-more = () (n i64) {
     n > 0 -> {
 
         ; str 下標寫已全域禁用；拼接追加（等價於從 recv-buf-len 起逐位元組寫入）
-        .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+        .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
         #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {

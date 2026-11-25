@@ -159,12 +159,12 @@ no build -target aarch64-linux-gnu   # явно указывать только 
 `%option_<key> = { i8 tag, [K x i64] }` (1-байтовая метка,нагрузка зафиксирована по смещению 8 байт,
 `K = roundUp8(sizeof(T))/8`). Еслинагрузка не помещается в порог, используется heap-боксинг, а в первом слове областинагрузка хранится указатель.
 
-`--option-inline-threshold=N` задаёт этот порог (в байтах **всей структуры option**,
+`--option-payload-inline-threshold=N` задаёт этот порог (в байтах **всей структуры option**,
 то есть `1 + 7 + sizeof(T)`):
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # разрешить инлайнинг большихнагрузка
-no build --option-inline-threshold=16 main.no     # минимальное настраиваемое значение
+no build --option-payload-inline-threshold=1032 main.no   # разрешить инлайнинг большихнагрузка
+no build --option-payload-inline-threshold=16 main.no     # минимальное настраиваемое значение
 ```
 
 | Значение | Эффект |
@@ -173,8 +173,8 @@ no build --option-inline-threshold=16 main.no     # минимальное на�
 | Минимум **16** | инлайнится только `?i64`; начиная с `?str` (24 B) всё боксируется |
 | < 16 | ошибка компиляции |
 
-Приоритет: аргументы командной строки > переменная окружения `NOLANG_OPTION_INLINE_THRESHOLD` >
-`compiler.option-inline-threshold` из `package.noml` > значение по умолчанию. Единственный источник раскладки — `src/mir/layout.go`,
+Приоритет: аргументы командной строки > переменная окружения `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` >
+`compiler.option-payload-inline-threshold` из `package.noml` > значение по умолчанию. Единственный источник раскладки — `src/mir/layout.go`,
 на уровне семантики (какие значения считаются `ok`／`nil`／`err`) **ничего не меняется**, меняется только потребление памяти и факт боксинга.
 
 ### Встроенный оптимизатор компилятора (MIR opt)
@@ -383,14 +383,12 @@ no uninstall pkg-name
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

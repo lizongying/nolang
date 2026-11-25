@@ -365,7 +365,11 @@ f64.to-str = () (out str) {
             }
             valid == 1 -> {
                 found = 1
-                best-n = n-big
+                best-n = n-big: {
+                    ok -> it
+
+                    -> one
+                }
                 best-k = k-ten
             }
             found == 0 -> {
@@ -414,7 +418,11 @@ f64.to-str = () (out str) {
             }
         }
         valid == 1 -> {
-            best-n = n-big
+            best-n = n-big: {
+                ok -> it
+
+                -> one
+            }
 
             {
 
@@ -1791,7 +1799,7 @@ f64.to-str-general = (precision i64) (out str) {
                 #{overflow=wrap}
                 s.byte(end - 1) == 46 -> end = end - 1
             }
-            out = s.slice-bytes(0, end)
+            out = s.slice-bytes(0, end).to-bytes-str()
             return
         }
         out = s

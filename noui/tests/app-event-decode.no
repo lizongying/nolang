@@ -1,0 +1,67 @@
+; ============================================================================
+; noui 事件打包 / 解码测试（阶段 81）—— src/app.no
+;
+; 钉住 shim 与 app-event-decode 的契约：
+;   e = type | x<<8 | y<<32 | aux<<56（x / y 各 24 位，aux 8 位）；
+;   鼠标 / 键盘 aux = 修饰键位图；触摸 / 笔 aux = 压力（0..255）；
+;   t==4 / t==12 时 x = 完整 SDL 键码（shim 拆低 24 + 高 8 再合回）。
+; 这些断言不依赖真窗口，纯函数即可覆盖事件面。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/app-event-decode.no
+; ============================================================================
+# /noui/src/app
+
+B256 = 256
+B32 = 4294967296
+B56 = 72057594037927936
+
+print('=== app-event-decode tests ===')
+
+; 右键按下：type=8, x=100, y=50, aux=Shift|Ctrl=3
+e1 = 8 + 100 * B256 + 50 * B32 + 3 * B56
+t1, x1, y1, a1 = app-event-decode(e1)
+r1 = t1 == 8 && x1 == 100.0 && y1 == 50.0 && a1 == 3
+
+; 中键抬起：type=11, aux=Alt=4
+e2 = 11 + 7 * B256 + 9 * B32 + 4 * B56
+t2, x2, y2, a2 = app-event-decode(e2)
+r2 = t2 == 11 && x2 == 7.0 && y2 == 9.0 && a2 == 4
+
+; key-down：键码 0x40000052（>24 位），aux=Meta=8
+kc = 1073741906          ; 0x40000052
+lo = kc & 0xFFFFFF       ; 0x52
+hi = (kc >> 24) & 0xFF   ; 0x40
+e3 = 4 + lo * B256 + hi * B32 + 8 * B56
+t3, x3, y3, a3 = app-event-decode(e3)
+r3 = t3 == 4 && x3 == kc.to-f64() && y3 == 0.0 && a3 == 8
+
+; key-up：同一键码必须能原样合回（修复前 key-up 根本不存在）
+e4 = 12 + lo * B256 + hi * B32 + 8 * B56
+t4, x4, y4, a4 = app-event-decode(e4)
+r4 = t4 == 12 && x4 == kc.to-f64()
+
+; 触摸按下：type=13，压力量化进 aux
+e5 = 13 + 320 * B256 + 200 * B32 + 200 * B56
+t5, x5, y5, a5 = app-event-decode(e5)
+r5 = t5 == 13 && x5 == 320.0 && y5 == 200.0 && a5 == 200
+
+; 压感笔轴：type=23
+e6 = 23 + 5 * B256 + 6 * B32 + 128 * B56
+t6, x6, y6, a6 = app-event-decode(e6)
+r6 = t6 == 23 && a6 == 128
+
+; 文件拖放：type=19（内容走 app-drop，不进 i64）
+e7 = 19 + 640 * B256 + 300 * B32
+t7, x7, y7, a7 = app-event-decode(e7)
+r7 = t7 == 19 && x7 == 640.0 && y7 == 300.0
+
+; 文本拖放：type=24
+e8 = 24 + 641 * B256 + 301 * B32
+t8, x8, y8, a8 = app-event-decode(e8)
+r8 = t8 == 24 && x8 == 641.0 && y8 == 301.0
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8
+print('rdown={r1} mup={r2} keydown={r3} keyup={r4} finger={r5} penaxis={r6} dropf={r7} dropt={r8}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-EVENT-DECODE TESTS PASSED') }
+(!all-ok) -> { print('APP-EVENT-DECODE TESTS FAILED'); exit(1) }

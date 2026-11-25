@@ -379,21 +379,24 @@ func (t *Transpiler) loadStdModuleBodyForce(sp string, merged *parser.Program, t
 		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 			// 如果主程序已有同名變量，跳過以避免衝突
 			if !mainVarNames[ls.Name.Value] {
-				isConst := checker.IsConstantExpr(ls.Value)
-				// 跨模組同名常量去重：多個 std 模組可能定義相同常量
-				// （如 FNV-OFFSET 在 map.no 和 static-hashmap.no 中都有定義）。
-				// 僅保留第一個，後續重複的跳過，避免 ValidateDuplicateVars 報錯。
-				// 例外：帶平台註解的常量（如 #{mac-arm64} O-CREAT = 512）
-				// 不參與去重，因為不同平台變體需要共存，由 FilterByPlatform
-				// 在 codegen 階段選取匹配平台的定義。
-				platformKeys := modProg.Sem.PlatformKeysOf(ls)
-				hasPlatformAnnotation := len(platformKeys) > 0
-				if isConst && mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
-					continue
-				}
-				if isConst && !hasPlatformAnnotation {
-					mergedGlobalConsts[ls.Name.Value] = true
-				}
+			isConst := checker.IsConstantExpr(ls.Value)
+			// 跨模組同名「大寫常量」去重：多個 std 模組可能定義相同常量
+			// （如 FNV-OFFSET 在 map.no 和 static-hashmap.no 中都有定義）。
+			// 僅保留第一個，後續重複的跳過，避免 ValidateDuplicateVars 報錯。
+			// 例外：帶平台註解的常量（如 #{mac-arm64} O-CREAT = 512）
+			// 不參與去重，因為不同平台變體需要共存，由 FilterByPlatform
+			// 在 codegen 階段選取匹配平台的定義。
+			// 小寫頂層 let 不去重：它是可變綁定，MIR 裸名槽位先贏會把後一個
+			// 靜默改綁到先一個，統一交給合併後驗證攔截。
+			isNamedConst := checker.IsConstantName(ls.Name.Value)
+			platformKeys := modProg.Sem.PlatformKeysOf(ls)
+			hasPlatformAnnotation := len(platformKeys) > 0
+			if isNamedConst && mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
+				continue
+			}
+			if isNamedConst && !hasPlatformAnnotation {
+				mergedGlobalConsts[ls.Name.Value] = true
+			}
 				merged.Statements = append(merged.Statements, ls)
 				merged.Sem.SetModuleOwnerOf(ls, short)
 				merged.Sem.SetSourceFileDeep(ls, modFile)

@@ -238,4 +238,5 @@ ok = ok & t45 & t46 & t47 & t48
 }
 (ok == 0) -> {
     print('SOME STATUS-BAR TESTS FAILED')
+    exit(1)
 }

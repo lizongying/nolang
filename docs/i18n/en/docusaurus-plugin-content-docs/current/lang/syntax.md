@@ -2912,7 +2912,7 @@ payload type through an injective mapping, so "same payload type ⇒ same layout
 - A payload above the threshold is **heap-boxed** instead: the payload field holds a single 8-byte
   pointer and the whole option is 16 bytes.
 
-The `option-inline-threshold` counts the **whole option struct** in bytes (default **264** = 1-byte
+The `option-payload-inline-threshold` counts the **whole option struct** in bytes (default **264** = 1-byte
 tag + 7 bytes padding + 256-byte payload, minimum **16**): a payload is inline iff
 `8 + roundUp8(sizeof(T)) <= threshold`. So by default "a payload of at most 256 bytes stays inline",
 and `?txt` (a 256-byte inline buffer) lands exactly on that boundary.
@@ -2934,7 +2934,7 @@ and `?txt` (a 256-byte inline buffer) lands exactly on that boundary.
 > **Inlining and boxing change WHERE the payload lives, never its ownership.** Both paths give a
 > struct payload its own heap whenever a **copy** is made (pointer fields recurse, inline-owned
 > `str` / `[]T` buffers are cloned), so `?T` keeps value semantics regardless of the layout: the same
-> program must produce identical output under any `option-inline-threshold`. A difference across
+> program must produce identical output under any `option-payload-inline-threshold`. A difference across
 > thresholds is a compiler bug, not a feature. (A pure transfer does not clone — the option takes
 > over the source's heap.)
 
@@ -4241,7 +4241,6 @@ The `compiler` block in `package.noml` controls compiler behavior. The `version`
 {
   compiler: {
     version: 'v0.1.0'
-    anonymous-fn-type: false
     emit: 'js'
   }
 }

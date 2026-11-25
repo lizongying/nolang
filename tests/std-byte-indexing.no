@@ -249,7 +249,7 @@ padded2.len-bytes() == 12 -> print('PASS: 6b fmt-apply-spec left-align keeps byt
 
 ; 填充後原字串必須完整保留（不能在中間被碼點讀取破壞）
 ; padded2 為左對齊（原字串在前，尾隨 3 個空白），故前 9 位元組就是原字串。
-padded2.slice-bytes(0, 9) == '日本語' -> print('PASS: 6c fmt padding preserved original bytes')
+padded2.slice-bytes(0, 9).to-bytes-str() == '日本語' -> print('PASS: 6c fmt padding preserved original bytes')
 
 -> print('FAIL: 6c fmt padding corrupted original, hex=' - padded2.to-bytes().to-hex())
 

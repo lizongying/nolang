@@ -8,12 +8,10 @@
   repository: ''
   homepage: ''
   license: 'Apache-2.0'
-  mirrors: []
   dependencies: []
   compiler: {
     version: 'v0.1.0'
-    link-libs: []
   }
-  output: '/dist'
   ignore: []
+  category: ''
 }

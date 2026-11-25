@@ -117,7 +117,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
             fd = -1
             return
         }
-        raw = raw - buf.slice-bytes(0, n)
+        raw = raw - buf.slice-bytes(0, n).to-bytes-str()
 
         #{overflow=wrap}
         total = total + n

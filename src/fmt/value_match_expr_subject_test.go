@@ -63,3 +63,43 @@ func TestFormatValueMatchExprSubjectIdempotent(t *testing.T) {
 		t.Fatalf("formatted output no longer parses: %v\noutput:\n%s", p.Errors(), out)
 	}
 }
+
+// TestFormatValueMatchExprSubjectDropsParens：主語外的括號是純語法，
+// no fmt 應移除，輸出與裸表達式主語逐字相同（checker 的 msubjparen HINT
+// 建議人工移除，fmt 則自動移除）。
+func TestFormatValueMatchExprSubjectDropsParens(t *testing.T) {
+	src := `f = (seconds i64) (out i64) {
+    out = (seconds % 60): {
+        ok -> it
+
+        -> 0
+    }
+}
+`
+	out, ok, errs := formatProgram(src)
+	if !ok {
+		t.Fatalf("format failed: %v", errs)
+	}
+	if strings.Contains(out, "(") && strings.Contains(out, "seconds % 60") {
+		// 精確斷言：主語那一列不得再帶括號。
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "seconds % 60") && strings.Contains(line, "(") {
+				t.Fatalf("fmt did not remove redundant subject parentheses:\n%s", out)
+			}
+		}
+	}
+	if !strings.Contains(out, "out = seconds % 60: {") {
+		t.Fatalf("formatted output lost the bare subject form:\n%s", out)
+	}
+	// 二次 format 冪等，且結果可重新 parse。
+	out2, ok, errs := formatProgram(out)
+	if !ok || out2 != out {
+		t.Fatalf("format not idempotent (ok=%v):\n--- 1 ---\n%s\n--- 2 ---\n%s", ok, out, out2)
+	}
+	p := parser.New(lexer.New(out))
+	p.SkipLowering = true
+	p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("formatted output no longer parses: %v\n%s", p.Errors(), out)
+	}
+}

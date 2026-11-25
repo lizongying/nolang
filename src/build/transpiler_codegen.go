@@ -2,6 +2,7 @@ package build
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -115,7 +116,7 @@ func verifyMIRIRViaOpt(ll string) error {
 // The deferred recover() is retained (panics during lowering are still bugs, not
 // user errors) but now always propagates: it catches panics that neither
 // EmitLLVM's own recovery nor opt verification would.
-func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
+func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, err error) {
 	debug := os.Getenv("NOLANG_MIR_DEBUG") != ""
 	defer func() {
 		if r := recover(); r != nil {
@@ -123,16 +124,16 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 				fmt.Fprintf(os.Stderr, "[MIR] recovered panic: %v\n", r)
 			}
 			out = "" // propagate empty; caller rejects the build
-			reason = fmt.Sprintf("panic: %v", r)
+			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
 	mod, rep, diags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
-	t.applyOptionInlineThreshold(mod)
+	t.applyOptionPayloadInlineThreshold(mod)
 	if os.Getenv("NOLANG_MIR_DUMP_HIR") != "" {
 		fmt.Fprintf(os.Stderr, "[HIR-DUMP]\n%s\n", hirPkg.Dump())
 	}
 	if mod == nil {
-		return "", "lowering produced nil module"
+		return "", errors.New("lowering produced nil module")
 	}
 	// Lowering gaps that would produce WRONG-but-exit-0 output (a shape the v1 MIR
 	// backend cannot lower and would emit unsubstituted) are hard errors.
@@ -152,9 +153,9 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 		// answer, so print it. C ABI export violations are user-facing source
 		// errors, not backend gaps, so they get their own wording.
 		if d.Kind == "cabi" {
-			return "", "C ABI export error: " + d.Msg
+			return "", fmt.Errorf("C ABI export error: %s", d.Msg)
 		}
-		return "", "unsupported construct in MIR backend: " + d.Kind + ": " + d.Msg
+		return "", fmt.Errorf("unsupported construct in MIR backend: %s: %s", d.Kind, d.Msg)
 	}
 	if os.Getenv("NOLANG_MIR_DUMP_MIR") != "" {
 		fmt.Fprintf(os.Stderr, "[MIR-DUMP]\n%s\n", mod.DumpAnnotated())
@@ -170,17 +171,24 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 		if debug {
 			fmt.Fprintf(os.Stderr, "[MIR] memory analysis found unsafe constructs: %v\n", rep.Error())
 		}
-		return "", rep.Error()
+		return "", errors.New(rep.Error())
 	}
 	// A dynamic library must not export the synthesized C `main`. The argc/argv
 	// globals are still emitted by codegen (emitEntryGlobals) for os.args.
 	mod.NoMainEntry = t.sharedLib
-	ll, err := mod.EmitLLVM()
-	if err != nil {
+	ll, codegenDiags := mod.EmitLLVMDiagnostics()
+	if len(codegenDiags) > 0 {
 		if debug {
-			fmt.Fprintf(os.Stderr, "[MIR] EmitLLVM failed: %v\n", err)
+			for _, d := range codegenDiags {
+				fmt.Fprintf(os.Stderr, "[MIR] EmitLLVM failed: %v\n", d)
+			}
 		}
-		return "", fmt.Sprintf("EmitLLVM: %v", err)
+		// Structured lints reach the CLI's file:line:col printer instead of
+		// being flattened into one "EmitLLVM: ..." string.
+		return "", &DiagnosticError{
+			Lints:  codegenDiagsToLints(codegenDiags),
+			Prefix: "MIR codegen errors",
+		}
 	}
 	// The header is derived from the SAME resolved signatures as the wrappers
 	// (Module.CABIHeader uses cabiSignature), so it cannot drift from the IR.
@@ -188,7 +196,7 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 	// compiler bug, not a source error.
 	hdr, herr := mod.CABIHeader()
 	if herr != nil {
-		return "", fmt.Sprintf("C ABI header: %v", herr)
+		return "", fmt.Errorf("C ABI header: %v", herr)
 	}
 	t.cabiHeader = hdr
 	if os.Getenv("NOLANG_MIR_DUMP_LL") != "" {
@@ -207,19 +215,19 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 			if debug {
 				fmt.Fprintf(os.Stderr, "[MIR] opt verification failed: %v\n", verr)
 			}
-			return "", fmt.Sprintf("opt-verify: %v", verr)
+			return "", fmt.Errorf("opt-verify: %v", verr)
 		}
 	}
-	return ll, ""
+	return ll, nil
 }
 
-// applyOptionInlineThreshold 把配置的 `?T` 載荷內聯閾值交給 MIR。0（未配置）
+// applyOptionPayloadInlineThreshold 把配置的 `?T` 載荷內聯閾值交給 MIR。0（未配置）
 // 交給 MIR 自己取預設值 24，讓 MIR 單獨使用時也有正確行為。
-func (t *Transpiler) applyOptionInlineThreshold(mod *mir.Module) {
-	if mod == nil || t.optionInlineThreshold == 0 {
+func (t *Transpiler) applyOptionPayloadInlineThreshold(mod *mir.Module) {
+	if mod == nil || t.optionPayloadInlineThreshold == 0 {
 		return
 	}
-	mod.OptionInlineThreshold = t.optionInlineThreshold
+	mod.OptionPayloadInlineThreshold = t.optionPayloadInlineThreshold
 }
 
 // firstFatalLowerDiag returns the first diagnostic that represents a construct
@@ -344,7 +352,7 @@ func (t *Transpiler) lowerToIR(merged *parser.Program) (string, error) {
 			func() {
 				defer func() { recover() }()
 				mod, rep, ldiags := mir.LowerHIR(hirPkg, checker.CollectStdEnumVariants())
-				t.applyOptionInlineThreshold(mod)
+				t.applyOptionPayloadInlineThreshold(mod)
 				if mod != nil {
 					if f, err := os.CreateTemp("", "nolang-mir-*.txt"); err == nil {
 						fmt.Fprintf(f, "=== NOLANG_MIR verification for %s ===\n", t.sourcePath)
@@ -362,9 +370,12 @@ func (t *Transpiler) lowerToIR(merged *parser.Program) (string, error) {
 				}
 			}()
 		}
-		mout, mreason := t.emitMIR(hirPkg)
+		mout, merr := t.emitMIR(hirPkg)
 		if mout == "" {
-			return "", i18n.Errorf("s28lrleh", "MIR codegen could not handle %s: %s", t.sourcePath, mreason)
+			if merr == nil {
+				merr = errors.New("MIR codegen produced no output")
+			}
+			return "", merr
 		}
 		ir = mout
 	}

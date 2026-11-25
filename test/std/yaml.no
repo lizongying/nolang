@@ -1220,7 +1220,7 @@ t-p-tokens = () {
     tg, an = pr.parse-props()
     eq-str(an, 'a1', 'parse-props 读到锚点')
     eq-str(tg, '!!str', 'parse-props 读到标签')
-    eq-str(pr.src.slice-bytes(pr.pos, pr.n), 'rest', 'parse-props 停在值前')
+    eq-str(pr.src.slice-bytes(pr.pos, pr.n).to-bytes-str(), 'rest', 'parse-props 停在值前')
 
     pr2 = mk-p('!!str &a2 rest')
     tg2, an2 = pr2.parse-props()

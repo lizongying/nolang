@@ -304,4 +304,4 @@ print('vert={ver1}{ver2}{ver3}{ver4}{ver5}{ver6}{ver7}')
 print('iso={iso1}{iso2} plain={pln1}{pln2}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL DOCK TESTS PASSED') }
-(all-ok == 0) -> { print('DOCK TESTS FAILED') }
+(all-ok == 0) -> { print('DOCK TESTS FAILED'); exit(1) }

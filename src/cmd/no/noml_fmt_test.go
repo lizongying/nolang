@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	pkg "github.com/lizongying/nolang/package"
 )
 
 // `no fmt` 的 noml 接線測試。
@@ -34,7 +36,7 @@ func TestValidateFmtPathAllowsNomlName(t *testing.T) {
 // 端到端：-w 把縮進與冒號空白規範化，註釋與鍵序原樣。
 func TestFmtProcessNomlFileWritesInPlace(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, "package.noml")
+	p := filepath.Join(dir, "x.noml")
 	src := "; 說明\n{\n     name:   'x'\n  ; 中間註解\n  compiler: {\n        version: 'v1'\n  }\n}\n"
 	if err := os.WriteFile(p, []byte(src), 0644); err != nil {
 		t.Fatal(err)
@@ -57,6 +59,76 @@ func TestFmtProcessNomlFileWritesInPlace(t *testing.T) {
 	}
 	again, _ := os.ReadFile(p)
 	if string(again) != want {
+		t.Fatalf("second pass changed the file:\n%s", again)
+	}
+}
+
+// package.noml 走欄位集規範化：補齊所有可識別欄位、移除未知欄位，
+// 其餘（鍵序、註解、#{...}）保持原樣，且二次執行冪等。
+func TestFmtProcessNomlFileNormalizesPackageFields(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "package.noml")
+	src := "#{name = 'package-manifest'}\n{\n  name: 'probe'\n  bogus: 'x'\n  version: 'v1.0.0'\n  compiler: { }\n}\n"
+	if err := os.WriteFile(p, []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fmtProcessNomlFile(p, true, false); err != nil {
+		t.Fatalf("fmtProcessNomlFile: %v", err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(got)
+	for _, want := range []string{
+		"#{name = 'package-manifest'}",
+		"  name: 'probe'",
+		"  dependencies: []",
+		"  compiler: {",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("formatted manifest missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "bogus") {
+		t.Errorf("unknown field survived:\n%s", out)
+	}
+	// 可選欄位一律不補：publish / dev-dependencies / mirrors / output 留給內建預設。
+	for _, unwanted := range []string{"  publish:", "  dev-dependencies:", "  mirrors:", "  output:"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("optional field was auto-added: %q\n%s", unwanted, out)
+		}
+	}
+	// 可選的 threshold 不補、不寫進新清單。
+	if strings.Contains(out, "option-payload-inline-threshold") {
+		t.Errorf("optional threshold was auto-added:\n%s", out)
+	}
+	// ignore 也是可識別但不強制的欄位：缺席時不補。
+	if strings.Contains(out, "ignore:") {
+		t.Errorf("optional ignore was auto-added:\n%s", out)
+	}
+	// compiler 只有 version 是必寫：其他可選欄位的空值不補。
+	for _, unwanted := range []string{"anonymous-fn-type:", "emit:", "link-libs:", "esm-cdn:", "lang:"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("optional compiler field was auto-added: %q\n%s", unwanted, out)
+		}
+	}
+	// 編譯器已移除的欄位連同真實值一起被當成未知欄位清掉。
+	for _, unwanted := range []string{"\n  main:", "\n  alias:", "\n  version:"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("removed field survived: %q\n%s", unwanted, out)
+		}
+	}
+	if issues := pkg.CheckManifestFields(got); !issues.Empty() {
+		t.Errorf("formatted manifest still has field issues: %+v", issues)
+	}
+
+	// 第二次執行不變。
+	if err := fmtProcessNomlFile(p, true, false); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	again, _ := os.ReadFile(p)
+	if string(again) != out {
 		t.Fatalf("second pass changed the file:\n%s", again)
 	}
 }

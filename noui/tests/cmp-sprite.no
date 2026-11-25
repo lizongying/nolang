@@ -1,0 +1,69 @@
+; ============================================================================
+; noui 图片 / 精灵管线测试（阶段78）—— src/app.no + components.no + cmp-scene.no
+;
+; 钉住：PNG fixture 能解码出正确像素尺寸（app-img-load/w/h）；
+; 坏路径返回 0 且尺寸为 0；C-SPRITE 在 cs-paint 时按纹理 id 发 CS-IMG 指令，
+; 几何 = 布局盒；无纹理的精灵什么都不画；app-draw-scene 的 FFI 绘制路径不崩。
+;
+; 需要在 noui 目录下跑（fixture 用相对路径 tests/fixtures/dot.png）：
+;   ../bin/no run -cc ./ccwrap.sh tests/cmp-sprite.no
+; ============================================================================
+# /noui/src/app
+
+print('=== cmp-sprite tests ===')
+
+app-init('sprite-test')
+
+; ---- 1) PNG 解码 + 尺寸 ----
+id = app-img-load('tests/fixtures/dot.png')
+r1 = id > 0
+r2 = app-img-w(id) == 8 && app-img-h(id) == 6
+
+; ---- 2) 坏路径：加载失败返回 0，尺寸查询为 0 ----
+bad = app-img-load('tests/fixtures/__nope__.png')
+r3 = bad == 0 && app-img-w(bad) == 0 && app-img-h(bad) == 0
+
+; ---- 3) 有纹理的精灵：发 CS-IMG，几何 = 布局盒 ----
+root = cmp-root()
+spr = cmp-sprite(id)
+cmp-add-child(root, spr)
+lab = cmp-label('cap')
+cmp-add-child(root, lab)
+cs-layout(root, 0, 0, app-win-wf(), app-win-hf())
+sx, sy, sw, sh = cs-rect(spr)
+
+cs-clear()
+cs-paint(root)
+found = -1
+i <- [0..cs-scene-count()): {
+    (cs-scene-kind(i) == CS-IMG) -> { found = i }
+}
+r4 = found >= 0
+r5 = found >= 0 && cs-scene-si(found) == id
+r6 = found >= 0 && cs-scene-x(found) == sx && cs-scene-y(found) == sy &&
+     cs-scene-w(found) == sw && cs-scene-h(found) == sh
+
+; ---- 4) 无纹理的精灵：不发图片指令（空白占位） ----
+root2 = cmp-root()
+spr2 = cmp-sprite(-1)
+cmp-add-child(root2, spr2)
+cs-layout(root2, 0, 0, 40000, 30000)
+cs-clear()
+cs-paint(root2)
+has-img = 0
+i <- [0..cs-scene-count()): {
+    (cs-scene-kind(i) == CS-IMG) -> { has-img = 1 }
+}
+r7 = has-img == 0
+
+; ---- 5) 绘制冒烟：app-draw-scene 走 FFI（dummy renderer），不应崩 ----
+cs-clear()
+cs-paint(root)
+app-draw-scene()
+r8 = 1
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8
+print('load={r1}{r2} badpath={r3} emit={r4} id={r5} geom={r6} noimg={r7} draw={r8}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL CMP-SPRITE TESTS PASSED') }
+(!all-ok) -> { print('CMP-SPRITE TESTS FAILED'); exit(1) }

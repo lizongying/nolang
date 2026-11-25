@@ -89,7 +89,7 @@ func layoutCodegen(t *testing.T) *codegen {
 func TestLayoutOptionSizes(t *testing.T) {
 	mod := lowerForTest(t, layoutSrc)
 	c := newLayoutCodegen(mod)
-	c.optInlineLimit = optionInlineLimitDefault
+	c.optPayloadInlineLimit = optionPayloadInlineLimitDefault
 	// Size/K are keyed by the PAYLOAD LLVM TYPE, not the element spelling:
 	// `?i32`, `?bool` and `?i64` all lower their payload to i64 (MIR has one
 	// integer register width), so they are genuinely the same ABI type and

@@ -2,7 +2,6 @@
 ; 只改譯文，不要改鍵；鍵由 `make i18n` 從原始碼生成。
 ; 格式動詞（%s / %d / %q / %v）必須與 en 完全一致，否則門禁會拒絕。
 {
-  '04mmq0us': 'lencap struct: 不支援對結構體 %s 取 len/cap（函數 %d）'
   '04tb4mwj': 'eq-raw: 無法將 i1 存入 %s'
   '060maaj0': `
 錯誤：%v
@@ -28,7 +27,6 @@
 `
   '0qnjitgt': 'builtin %s: 缺少 C 呼叫宣告'
   '0tjeipjr': '\'for 初始化; 條件; 更新\' 已廢棄，請改用逗號 \',\' 分隔'
-  '0ts2eetl': 'builtin %s: 缺少值'
   '0x41uhua': '\'for i in ...\' 已廢棄，請改用 \'i <- ...\''
   '0z120eni': 'net-recv-nb: 無法取得第 1 個參數的資料指標'
   '11069k6b': '%s'
@@ -51,12 +49,10 @@
   repository: %s
 
 `
-  '1j6i9o1o': 'slice op 接收者槽位'
   '1k6cdcgx': '型別後應為 \'.\'，實際得到 %s'
   '1lg2qpwf': 'syslog: 無法將第 1 個參數編組為 C 字串'
   '1lssiwyr': '預期泛型參數名稱，實際得到 %s'
   '1m1ocf8t': '不支援的主機 %q（僅支援 github.com）'
-  '1plv4fne': 'str-from-vec 目標槽位'
   '1qz0p808': '依賴鍵 %s 之後缺少模組路徑'
   '1rk772tt': `
 建立 src 目錄出錯：%v
@@ -76,7 +72,6 @@
 已新增依賴：%s = %s
 
 `
-  '21irdw5o': '$str_concat: 參數型別不符'
   '2243l8if': '..any 只允許在標準函式庫中使用，使用者程式碼中不可用（函式: %s）'
   '238u1xr7': 'embed: 僅支援 []byte / [N]byte / fs.embed 宣告，得到的是無型別宣告'
   '23ki71z9': '使用 Direct WASM 後端（不需 LLVM 工具鏈，相容瀏覽器）'
@@ -92,7 +87,6 @@
   '2fke76na': 'wasm: 函數數量與程式碼段數量不一致: %d 個函數對 %d 個程式碼段'
   '2g4xt4m5': 'net-listen: 沒有結果槽位'
   '2ixluoth': '執行測試。'
-  '2kqboupo': '不支援的內建 %s'
   '2ls7kxqp': '不能重新賦值函式名稱 “%s”'
   '2lsu55tb': '原生 wasm 模組 %q 未在 package.noml 的 dependencies 中宣告；請加入 dependencies: [\'%s:^latest\']（或 dev-dependencies）並執行 npm install'
   '2lxm8j4k': '後端：'
@@ -113,15 +107,12 @@
   Ubuntu: sudo apt install llvm-dev clang
   Windows: winget install LLVM.LLVM
 `
-  '2xqxrts5': 'builtin %s 結果: %s'
-  '2ylupu1o': '不支援的接收者型別 %s'
   '309fjp3b': '\'as\' 後應為型別，實際得到 %s'
   '30pb3dos': '預期列舉值名稱，實際得到 %s'
   '33exppv5': 'noml: 欄位 %s: 預期數字，得到 %T'
   '3604icnf': '第 %d 個參數（“%s”）: 傳入了型別為 “%s” 的裸 option 值，而此處需要 “%s”；需要顯式解包（對值做 match 並在 `-> it` 分支內呼叫）；不允許隱式解包 option 參數'
   '379z4njd': '“%s” 已在此作用域宣告'
   '39o3yr8x': '不支援的校驗和檔版本 %q（預期 %s）'
-  '3aeomnek': 'setfield 槽位'
   '3b9bxfnt': '不能將 %s 值賦給陣列 “%s” 的 %s 元素'
   '3bl2ts85': 'JS 建置錯誤: %w'
   '3ei0a0o0': '預期表達式，實際得到 nil'
@@ -137,7 +128,6 @@
   2) 錯誤上拋（要求所在函式有 option 結果參數）：`%s ?= %s`
 `
   '3lu6n4np': '\'#{buildin}\' 只適用於編譯器內建的佈局型別（str / vec / txt / arr），寫在 \'%s\' 上沒有任何作用。請刪除。'
-  '3nktiaae': 'setfield: 在 %q 上找不到欄位 %q（結構體鍵 %q）'
   '3owkeirf': '解析 %s/%s 的發行版資訊失敗: %w'
   '3pry7fmd': '預期逗號或右括號，實際得到 %s'
   '3r03yk09': '預期 \')\''
@@ -169,15 +159,11 @@ Markdown（.md/.mdx），僅在 -md 下處理：只格式化 ```no / ```nolang �
   '4ewgvnbn': '不建議鏈式使用 \'->\' 條件（a -> b -> c）；請用 &&/|| 合併條件，或改用 \'{ }\' 區塊，以免出現隱蔽的作用域問題'
   '4eyd78yc': '若未指定檔案／目錄且存在 workspace.noml，'
   '4g7bz9oy': 'net-accept-nb: 需要 (listen-fd)'
-  '4hmw6w3i': 'borrow 參數個數'
   '4m2w3mkd': 'vec.push: 沒有接收者槽位'
   '4o348fh8': '預期以 \']\' 或 \')\' 結束區間，實際得到 %s'
   '4oy26jat': 'builtin %s: 結果 0 沒有槽位'
   '4pj8z50l': '  JS 後端的模組解析，因此 `# npm/<pkg>` 這類 ESM 匯入與原生'
-  '4ptt84li': '%s: 參數型別不符'
-  '4qhyyund': '函數 %s 中出現未知的被呼叫者 %s'
   '4r3ghy7k': '從 git／環境預填：'
-  '4rsqarsx': 'eprint txt 槽位'
   '4scfdhhp': 'utime: 沒有結果槽位'
   '4uv9dunu': 'str.clear: 需要接收者'
   '4y6hz2la': 'embed: 僅支援 []byte / [N]byte / fs.embed 宣告，得到的是 %s'
@@ -189,7 +175,6 @@ Markdown（.md/.mdx），僅在 -md 下處理：只格式化 ```no / ```nolang �
   '5bj5o9ci': 'str.clear: 沒有接收者槽位'
   '5blqb26x': '預期 \')\''
   '5ci3l7h9': '  no add nogit:v0.1.33@github.com/lizongying/notools'
-  '5cid832p': '未知的私有欄位內建 %s'
   '5ckkrp9f': 'noml: 欄位 %s[%d]: 依賴元素必須是字串，得到 %T'
   '5eo1kvb9': 'noml: 欄位 %s: 預期物件，得到 %T'
   '5i2q1afu': '  hint: 跳過的程式碼區塊保持原樣；確為虛擬碼或錯誤用法範例，請在區塊首行寫 \'#{fmt-skip}\''
@@ -212,11 +197,8 @@ Markdown（.md/.mdx），僅在 -md 下處理：只格式化 ```no / ```nolang �
   '5o3x4h4d': '為最高效能跳過越界檢查（不安全）'
   '5qjs01mp': '預期右括號，實際得到 %s'
   '5qpe9buw': 'win-write-pipe: 需要 (handle, data)'
-  '5ve092z6': '函數 %s 中不支援的參數型別 %s'
-  '5yjn9wrj': 'setfield: 在 %q 上找不到欄位 %q（option %q）'
   '603y6hgq': '每個套件都必須在 package.noml 的 dependencies（或'
   '61bm2pzr': '所有依賴已更新到最新。'
-  '62z2cnfe': 'option 剝離槽位'
   '63lrmg48': '當標準輸入是管線（如 echo \'x=1\' | no fmt）時，從標準輸入讀取。'
   '64bt3a50': '把 Nolang 原始碼建置為執行檔。'
   '64t1vgh6': 'vec.remove: 需要 receiver、index'
@@ -236,11 +218,9 @@ Parser ASTVersion: %s
 已刪除 %d 筆快取項目。
 
 `
-  '6o12uzmx': 'waitpid: 在 windows 上不受支援'
   '6p2o4902': '資源 %s 超出大小限制（%d 位元組）'
   '6qca9xu4': 'embed: 不能與顯式值組合使用'
   '6svrp0le': '用法：no fmt [flags] <file|dir>'
-  '6umfb8yv': 'builtin %s: %s'
   '6xq3uson': 'getgrouplist: 需要 2 個結果（gids, n）'
   '6y4tyjln': 'noml: 欄位 %s: 不支援的目標種類 %s'
   '73myjkcm': '  no test                     執行 tests/ 目錄下所有 .no 檔'
@@ -248,7 +228,6 @@ Parser ASTVersion: %s
   '74e32kaz': '用 --llvm-capi 在行程內透過 LLVM C API 編譯 IR（僅非除錯建置；預設關閉）。'
   '755ldw47': 'extern 宣告中預期右括號，實際得到 %s'
   '75f5l5xg': 'load-le-%s: 沒有目標槽位'
-  '75pom499': 'txt 目標槽位'
   '75qapexc': '無法將第 %d 個參數從 %s 轉換為 %s'
   '75yiyise': '對聯合 %q 做型別 match 需要型別模式（例如 %q ->）或預設臂（->）'
   '76fao0mm': `
@@ -262,7 +241,6 @@ Parser ASTVersion: %s
 `
   '7clod0r1': 'elif 中預期左花括號，實際得到 %s'
   '7dl1fkwt': 'WASM 建置中無法使用 LLVM 工具鏈；請使用 --wasm-direct 選項'
-  '7f3qhn9l': 'txt 索引接收者槽位'
   '7f6c9808': `
 建立 tests 目錄出錯：%v
 
@@ -283,7 +261,6 @@ Parser ASTVersion: %s
   '7tcn8wox': '範例：'
   '7usot77o': '對某一類問題套用自動修復：\'overflow\'（給未標註的整數運算加上 #{overflow=wrap}）、\'redundant\'（刪除與推斷型別相同的型別標註，如 `x str = \'\'` -> `x = \'\'`）、\'match\'（為非窮盡的 option match 補上缺少的 nil/err 分支），或 \'unwrap\'（消費那些從不向外傳播、也從不解包的 option 繫結：函式已有 ?T 回傳型別時寫 `x ?= expr`，否則寫 `x-opt = expr` 並在後續行加陳述級 match `x-opt: { ok -> x = it -> }`），或 \'main\'（省略頂層 `main = () { ... }` 包裝，把其陳述提升到頂層；當 main 有參數／回傳值或直接 return 時跳過），或 \'index-out\'（把 #{index-out=DEF} 索引讀取展開成顯式 match）'
   '7zfvvuin': '未發現問題。'
-  '802t452i': 'builtin %s: option 結果寫入 %s 目標'
   '81b2ea3o': 'extern 宣告中預期 \'(\'，實際得到 %s'
   '82csl5ay': 'str.to-bool: 缺少接收者'
   '82hkddyo': `
@@ -298,7 +275,6 @@ Parser ASTVersion: %s
   合規範例：tmp/zz-stridx/r-index.no
 `
   '87zc5awf': '唯讀欄位 “%s”（屬於 %s）不能被修改；長度由緩衝區派生 —— 請改用 truncate(n)'
-  '8870qbob': '%s 中的間接被呼叫者無效'
   '894luer5': '此註解無處附著；若要保留為獨立註解，請在其後加 `...`（佔位陳述），否則請移走或刪除'
   '89pwo0vg': 'noml: 映射鍵必須是字串: %T'
   '8apmtyk6': '讀取輸入檔案失敗: %w'
@@ -310,7 +286,6 @@ Parser ASTVersion: %s
   '8haww14h': 'write-file: 需要 path 和 data'
   '8j6njczi': 'extern 宣告中預期逗號或右括號，實際得到 %s'
   '8jsgdrcw': 'JS 產生錯誤: %w'
-  '8k0xmfmo': 'str 索引目標槽位（dst=%d type=%s）'
   '8ndov8z0': 'net-dial: 需要 (host, port)'
   '8o5wqxi2': '預期左括號，實際得到 %s'
   '8r4nnper': '  no add nogit@lizongying/notools                   主機預設為 github.com'
@@ -318,7 +293,6 @@ Parser ASTVersion: %s
 已建置：%s
 
 `
-  '8rjhajw9': '$str_concat: 參數個數錯誤'
   '8sf1ugcv': 'noml: 不支援的值型別 %T'
   '8t1jaj02': '整數運算 `a OP b` 沒有 `#{overflow = ...}` 註解，因此 `%s` 被綁定到溢出行為尚未宣告的 `?T`。給擁有它的那條陳述加註解，指定溢位時的取值：`#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位），或型別前綴形式如 `#{overflow = u8-max}`。註解逐語句生效；option 的消費是另一回事。'
   '8ux5w599': '與 `noc ast` 逐位元組比對，因此該格式即規格。'
@@ -350,7 +324,6 @@ Parser ASTVersion: %s
   '9c615d3t': '泛型實參中應為 \',\' 或 \'>\'，實際得到 %s'
   '9e82usj6': '依賴 %q: package.noml 中不允許相對路徑（./ ../）；工作區相對路徑請用 `/` 前綴'
   '9edsvha2': '解壓縮後的封存中找不到套件 %s'
-  '9emnu2fu': 'extern str 參數'
   '9ljl8qke': '標籤 #%s 後應為迴圈體，實際得到 \'(\'（缺少 \'(cond) { }\'）'
   '9novjn6s': '  no pack ./nogit                  打包一個套件目錄'
   '9onc0638': 'readlink: 無法將 path 編組為 C 字串'
@@ -360,17 +333,14 @@ Parser ASTVersion: %s
   '9v43hxr2': '%d 個錯誤，%d 個警告，%d 個提示'
   '9yjr7gj6': '結構體定義中預期欄位名稱，實際得到 %s'
   '9yqaweku': '  no fmt -w main.no           原地格式化檔案'
-  'a2hjr26f': 'str 索引接收者槽位'
   'a3duuqtg': '預期參數型別，實際得到 %s'
   'a3yrogp1': '字串拼接: 用 “-” 代替 “+”'
   'a5247dgy': 'LLVM C API: 為 IR 建立記憶體緩衝區失敗'
   'a7ee394w': 'win-find-first-file: 需要 path 參數'
-  'a7wjyiq9': 'pipe: 在 windows 上不受支援'
   'aazb9b1n': '把 option（?T）酬載內聯進 option 結構的位元組門檻，按整個 option 結構計（預設 264 = 1 位元組標籤 + 7 位元組填充 + 256 位元組酬載；最小 16）；超過門檻的酬載改為堆積裝箱'
   'aih7e3j0': '不能將 nil 賦給非 option 變數 “%s”'
   'al7nsvgl': 'vec.insert: 需要 receiver、index、element'
   'aljknpjz': 'builtin %s: 未知的位元運算操作'
-  'am0g79ly': '%s: 缺少參數'
   'amiajbn5': 'net-icmp-open: 沒有結果槽位'
   'amyp0ig8': `
 解析最新發行版出錯：%v
@@ -383,7 +353,6 @@ Parser ASTVersion: %s
   'axj3m1pb': '表達式起始位置出現意外的 \'as\''
   'axtpo500': 'win-find-first-file: 無法將 path 編組為 C 字串'
   'ayjrpinp': 'noml: DecodeInto 需要非 nil 指標，得到 %T'
-  'aywuxg5w': 'builtin %s 接收者 %s: %s'
   'aze4pgle': '同時格式化 Markdown 檔案（.md/.mdx）裡的 Nolang 程式碼區塊'
   'b1narysr': '二進位檔'
   'b360mu4g': '預期參數名稱，實際得到 %s'
@@ -398,7 +367,6 @@ Parser ASTVersion: %s
   'bbv2nbtt': '%q 後應為欄位型別，實際得到 %s'
   'beppq99h': 'builtin %s: 沒有結果槽位'
   'bikq8xen': '輸出格式：file:line:col: [SEVERITY] source: message'
-  'bjj14xsi': 'lencap 槽位'
   'bp7m5374': 'arr.zero: 沒有接收者槽位'
   'bsaaq6j7': 'utime: 無法將 path 編組為 C 字串'
   'bsnjql1o': '寫入 HTML 輸出 %s 失敗: %w'
@@ -431,14 +399,12 @@ Parser ASTVersion: %s
   'chnrcvcl': '接收迴圈 \'<- ch: { ... }\' 中通道名後應為 \':\'，實際得到 %s'
   'chnrcvdt': '\'.\' 後應為欄位名，實際得到 %s'
   'chnrcvex': '\'<-\' 後應為通道名，實際得到 %s'
-  'chwlna99': '內建函式 %s 不能用來初始化通道；請用 with-cap(n)'
   'ci3l2aku': '在瀏覽器開啟（需 --js）'
   'cjih2jtt': '函數型別別名中應為 \'=\'，實際得到 %s'
   'ckaj3355': '未知函式 “%s.%s”: 模組 “%s” 沒有頂層函式 “%s”'
   'cldvfmqx': 'waitpid: 需要 pid、options'
   'cn2p79sm': '%s:%d: 跳過 Nolang 程式碼區塊: %s'
   'cnsb9bys': '匯入 %s: 型別 %q 也被 %s 定義；請用頂層 #{name = \'...\'} 註解把它們區分開'
-  'coronowl': 'OpRun: 沒有槽位'
   'cotvjhmy': 'exec-shell: 無法將 command 編組為 C 字串'
   'cpefnxwk': 'str-truncate: 接收者沒有槽位'
   'cpyd2teh': '下載 %s@%s 失敗: %w'
@@ -450,7 +416,6 @@ Parser ASTVersion: %s
 寫入主檔出錯：%v
 
 `
-  'czinamrs': 'process-exec: 在 windows 上不受支援'
   'd1xzecbk': 'builtin get-arch: 沒有結果槽位'
   'd4faltsr': '預設路徑'
   'd8en6a9j': 'MIR IR 未通過 LLVM 驗證: %v: %s'
@@ -501,7 +466,6 @@ Parser ASTVersion: %s
   'efflaapc': '預期 \'case\' 或 \'default\'，實際得到 %s'
   'ehsahzu5': '  no vet src/std/            檢查 src/std/ 下所有 .no 檔'
   'eit5cjgr': '解壓縮 tar.gz 封存失敗: %w'
-  'ejbt38ik': 'slice op 目標槽位'
   'elep1kra': '  no build                  建置目前目錄或 workspace.noml 中的專案'
   'elps0exp': '`...` 是無作用的佔位陳述，沒有值，因此不能用在運算式位置（第 %d 行）；請把它單獨寫在區塊內的一行，例如 `-> {` 換行 `    ...` 換行 `}`'
   'elps0ln0': '`...` 必須獨佔一行：第 %d 行 `...` 前面不能有程式碼；請把它單獨放一行，或刪除'
@@ -536,7 +500,6 @@ Parser ASTVersion: %s
 `
   'fh3ukes8': 'net-set-recv-timeout: 沒有結果槽位'
   'fixlabel': 'fix:'
-  'fk1sb6ss': 'syslog: 在 windows 上不受支援'
   'flfh2ueu': '不合法的安裝目標 %q: 儲存庫必須是 <host>/<owner>/<repo> 或 <owner>/<repo>'
   'fs4qotyl': '解壓縮 zip 封存失敗: %w'
   'fu1ow141': '找不到測試檔，目錄 '
@@ -566,7 +529,6 @@ Parser ASTVersion: %s
   'ghvjbe8q': '非法 token %q'
   'gir1e4fn': 'net-udp-sendto: 無法將 host 編組為 C 字串'
   'giw7e5rb': '預期以 \'}\' 結束註解，實際得到 %s'
-  'giy30qq2': 'OpRun: 未知的非同步被呼叫者 %q'
   'gjsrgyn8': '-annotations 可一併包含。'
   'gl4bahpp': `
 未偵測到 clang，請確認 LLVM 工具鏈已完整安裝
@@ -614,9 +576,7 @@ Parser ASTVersion: %s
   'hr4y7owq': 'getgrouplist: %v'
   'htdgzowm': '  no fmt                      格式化目前目錄（列出需要格式化的檔案）'
   'hun7qbmc': '  no ast src/std/vec.no             印出 vec.no 的 AST'
-  'hvk8qwyj': 'borrow 目標槽位'
   'hvuu1dxx': '  no build --js -o app.js main.no                    JS 後端並指定輸出'
-  'hxy8tpyp': 'slice op 接收者型別'
   'hzkv5tvl': '預期以 \'}\' 結束列舉值註解，實際得到 %s'
   'hzv4zwx4': 'LLVM C API: 為三元組 %q 建立目標機器失敗'
   'i0q22lpt': '預期逗號或右括號，實際得到 %s'
@@ -644,11 +604,9 @@ AST 快取目錄: %s
   'iky4xsx4': '方法 “%s.%s” 有 %d 個返回值，介面期望 %d 個'
   'ippfc6p4': 'utime: 需要 path、atime、mtime'
   'iqszywlc': 'wasm32-wasi 目標需把 $WASI_SYSROOT 設為你的 wasi-sysroot 路徑。'
-  'iqtr8mht': 'option-wrap 目標'
   'irjygycv': 'val() 建構子已棄用；顯式建構請用 ok(x)，隱式賦值請用 `name = expr`'
   'irnz2m56': '預期以 \'{\' 開始迴圈體，實際得到 %s'
   'is8zuoph': '  - src/（原始碼目錄）'
-  'itcnc2oz': '%s 中沒有間接被呼叫者的槽位'
   'iubb5mnf': '  no test -target x86_64-linux-gnu'
   'iykbgab6': 'vec.sort: 需要 receiver'
   'iyn3rgtm': '“self” (.) 只能在結構體方法內使用；若你指的是 match 值，請用 “it”'
@@ -660,7 +618,6 @@ AST 快取目錄: %s
   'j1onng8y': '預期逗號或右括號，實際得到 %s'
   'j2lwz7pe': 'LLVM C API: %s 失敗'
   'j2n5poza': '原生 bind=ffi（import %q）至少需要一個 #{c} extern 宣告才能綁定'
-  'j312ij2o': 'index 目標槽位（dst=%d type=%s）'
   'j3r9pdsp': 'switch 表達式後應為 \'{\'，實際得到 %s'
   'j3u5n35e': '安裝目標為空'
   'j42y1qyx': '收集 std 簽名失敗: %w'
@@ -673,7 +630,6 @@ AST 快取目錄: %s
   'jko9phaw': 'LLVM 組譯失敗: %w'
   'jl86npdd': '解析最新發行版失敗: %w'
   'jlv0jw10': '來源：'
-  'jmamxa8i': 'lencap 目標槽位'
   'jppwnc4n': '結構體名稱後應為 \'{\'，實際得到 %s'
   'jpy06p6d': '工作區中沒有任何建置目標'
   'juu3smx0': '#{...} 註解系統存放在語意側表裡，而'
@@ -687,13 +643,10 @@ AST 快取目錄: %s
   'k3g4ofs4': '輸出彩色差異而非格式化結果'
   'k3r7mbqd': 'else 分支（『->』獨佔一行）必須寫在 if-group 裡；把『cond ->』分支與這個『->』一起包進 { ... }（沒有 else 的單獨『cond ->』可以不包）'
   'k3xq7vna': 'builtin %s: 缺少接收者或來源'
-  'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 沒有結果槽位'
   'k7m2q9xa': '__join-push: 缺少工作句柄'
   'k8je3usi': '%s 已存在且不是 ES 模組（沒有 "type": "module"）；請改為輸出 .mjs（no build --js -o out.mjs）'
   'k9179drd': '“%s” 是函式，必須呼叫；是否想寫 %s(...)?'
-  'k9270vd6': 'getfield 欄位'
-  'ke8i906b': 'MIR->LLVM 發生 panic（已復原，回退到舊後端）: %v'
   'kfxfk3n1': '未指定檔案／目錄且標準輸入是終端機時：'
   'kg4qzfdu': '  no add nogit@github.com/lizongying/notools        最新發行版'
   'ki6qzzsx': '  --json           輸出結構化 JSON 診斷（便於 CI／工具處理）'
@@ -711,7 +664,6 @@ AST 快取目錄: %s
   'p7mn4vta': '載入模組 %s 失敗：找不到 package.noml 依賴'
   'q3wz8hkb': '載入模組 %s 失敗：不是預編 AST 包依賴'
   'l0ifbo16': 'zip 封存檔超出解壓大小限制（%d 位元組）'
-  'l1ypawem': 'str-from-vec: 型別不符 %s -> %s'
   'l332fwh9': `
 工作區已在 %s 初始化
 
@@ -736,7 +688,6 @@ AST 快取目錄: %s
 在 %s 提供 ESM 輸出（Ctrl+C 停止）
 
 `
-  'lx7lbupc': 'indexstore 槽位'
   'lzgs7cds': '  no fmt -fix=redundant main.no   預覽多餘型別標註的移除'
   'm0nvgkbt': '參數依以下順序解析：'
   'm13ljyfp': '為 \'no vet src/std\' 重複使用已解析的 std Program AST（實驗性，跳過逐模組重解析）'
@@ -766,13 +717,11 @@ range-index 迴圈: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標存取；若�
   'm8blb8q2': 'noml: 第 %d 行第 %d 列: %s'
   'mbnaky32': '登錄檔驗證權杖（未使用：上傳尚未實作）'
   'meket0n4': 'vec.clear: 沒有接收者槽位'
-  'mf29f4fh': 'clone 槽位'
   'mgnh35fz': 'builtin %s: 無法將 %s 結果存入 %s 槽位'
   'mh9jwcfu': '  no fmt -loop-style=suffix f.no  迴圈寫成 \'{ } (cond)\' / \'{ } * N\''
   'mhfvvp1u': '依賴層級超過上限（%d）: %s@%s'
   'mi13i3vc': '預期右括號，實際得到 %s'
   'mimqybn2': 'vec.pop: 需要 receiver'
-  'mkpo3f8h': 'utf8-at 目標槽位'
   'mlm7xpcj': '`%s %s= %s` 已廢棄；所在函式結果是 option，儲存時 `no fmt` 會自動改寫成 `?=` 形式（複合賦值的右式現在是 `?T`，透過 `?=` 解包或上拋）'
   'mlyz11mg': '用 --js-runtime <cmd> 選擇 `no run --js` 的 JS 執行環境（node、bun、deno……）。'
   'mmcrtoio': '用法：no add <tool>[:<version>]@<host>/<owner>/<repo>'
@@ -781,12 +730,10 @@ range-index 迴圈: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標存取；若�
   'mv6ox1tw': 'uname: 沒有結果槽位'
   'mw127e39': '陣列型別中應為 \']\'，實際得到 %s'
   'mwhgbhbp': '  套件匯入（#{bind = ffi|wasm}）得以解析而不報錯 —— LLVM 無法'
-  'mz7tmynt': 'builtin %s: 沒有接收者'
   'mzwb28br': '格式字串中未定義的變數 “%s”'
   'mzxtskah': 'eq-raw: 需要 (receiver, b, n)'
   'n00utq2q': 'process-exec: 無法將 arg 編組為 C 字串'
   'n08bzk5j': '結果正是 `no add <tool>@<host>/<owner>/<repo>` 會下載的東西：'
-  'n0hl9vde': 'builtin %s 參數 %d: %s'
   'n0mlfmt1': 'fmt: -fix applies to Nolang sources only; .noml files have no automatic fixes'
   'n0mlfmt2': 'cannot format %s: %d problem(s), file left unchanged'
   'n0mlfmt3': `
@@ -821,7 +768,6 @@ and left unchanged. -fix does not apply to them.
   'ne9gyl5c': '  no run --js main.no            經 JS 後端建置後用 node 執行'
   'ne9kyew7': 'FFI 名稱後應為 \'=\'，實際得到 %s'
   'nejhwtgd': '找不到依賴。'
-  'ngj8b3uj': 'utime: 在 windows 上不受支援'
   'nh8jhhz7': 'std AST: %w'
   'nik0cll9': '\'for 條件 { }\' 已廢棄，請改用 \'{ } (條件)\' 迴圈'
   'njsutn36': '介面中預期方法名稱，實際得到 %s'
@@ -859,7 +805,6 @@ and left unchanged. -fix does not apply to them.
   'ocsanpe6': '不合法的安裝目標 %q: 工具名稱不能包含路徑分隔符'
   'oh0vy2qd': '成員 %q: 物件字面量缺少型別（請用 #{type = \'<struct>\'} 標註它）'
   'oi4vt42g': '偵測到循環依賴: %s'
-  'ojuksusl': 'option-wrap 槽位'
   'okt5tvxy': `
 未偵測到 Zig 編譯器
   macOS: brew install zig
@@ -868,12 +813,10 @@ and left unchanged. -fix does not apply to them.
 `
   'ol0l3ova': '找不到型別 “%s”；是否想寫 “%s.%s”?'
   'ol21t36r': '  no run --js --js-runtime bun main.no     同上，改用 bun（node、bun、deno……）'
-  'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '整數除法 / 取模的除數是字面常數 0，會觸發 LLVM 未定義行為（sdiv/srem 除以零），產生不可預測的結果。請改以執行時期零檢查，或讓函式以 option 回傳錯誤。'
   'oraub2m9': '`%s %s= %s` 不支援：下標讀取回傳 option（越界為 nil），複合賦值會重複求值下標並丟棄失敗'
   'orjs902d': '\'switch/case/default\' 已廢棄，請改用 \'x: { 1-> ... }\''
   'os0j8ix4': '不能將 %s 值賦給陣列 “%s” 的 %s 元素'
-  'osrb7a78': 'move 槽位'
   'oswu0as1': '條件表達式中預期冒號，實際得到 %s'
   'oxgtqeo0': 'write-file: 沒有結果槽位'
   'oyfkw3qi': '（未設定）'
@@ -881,10 +824,8 @@ and left unchanged. -fix does not apply to them.
   'p1ujpxwi': 'vec.remove: 沒有接收者槽位'
   'p215kqvl': 'cancelled: 無法將 i1 存入 %s'
   'p2epl19k': '不能將 nil 賦給非 option 變數 “%s”'
-  'p2m0wxh1': 'exec-shell: 在 windows 上不受支援'
   'p56zjfhi': '無法推斷 “%s” 的型別: %s() 要求左側有顯式型別標註（例如 `name []byte = %s(n)`）'
   'p763k84p': '建立 %s 失敗: %w'
-  'p9dt2hwe': 'builtin %s 的接收者 %s'
   'p9jv1dcz': 'workspace.noml 為空'
   'pa3bgtjn': '瀏覽器 ESM import map 的 CDN 基底（預設 https://esm.sh；也可在 package.noml 的 compiler.esm-cdn 設定）'
   'paiorrdo': '--lang 需要一個值（例如 --lang=zh-cn）'
@@ -897,7 +838,6 @@ and left unchanged. -fix does not apply to them.
   'pibk34ed': '序列化校驗和檔失敗: %w'
   'plsdygti': '型別 match 臂的模式 %q 不是聯合 %q 的成員'
   'pne07fog': '成員 %q[%d]: 陣列混用了物件和純量；請用 #{type = \'[]<elem>\'} 標註它'
-  'prohiujy': 'getgroups: 在 windows 上不受支援'
   'puql0oxg': 'getgrouplist: 缺少結果槽位'
   'pxxxqtg6': '預期 \'{\''
   'pyo62z10': 'get-priority: 需要 which、who'
@@ -942,7 +882,6 @@ and left unchanged. -fix does not apply to them.
   'r1wo1izg': '  # npm/lodash.get as get    單一具名／匯出繫結'
   'r28q9t6z': '標籤 #%s 後應為迴圈體，實際得到 %s'
   'r315uabz': 'net-send: 無法取得第 1 個參數的資料指標'
-  'r4mh5mrg': 'waitpid-nohang: 在 windows 上不受支援'
   'r4ng3f0r': '\'for\' 關鍵字不能用於容器遍歷；請改用 \'%s <- xs:\''
   'r5fkc5h1': '  no build --js --browser main.no                    產生瀏覽器 JS + HTML 包裝'
   'r60tokvf': '多變數列表後應為 \'=\''
@@ -957,7 +896,6 @@ and left unchanged. -fix does not apply to them.
   'rhajr9l9': '已廢棄: str.len 屬性已移除；位元組長度請使用 s.len-bytes()，碼點數量請使用 s.len()'
   'rkd2pw8p': '行程內 LLVM C API 編譯失敗（可用 %s=0 關閉）: %w'
   'rlfpckc0': '介面方法名稱後應為 \'(\'，實際得到 %s'
-  'rn4mb8sc': 'builtin %s: 接收者沒有槽位'
   'rocoxbru': '~match 表達式後應為 \'{\'，實際得到 %s'
   'rolk5ods': '預期以 \'}\' 結束列舉值註解，實際得到 %s'
   'roqeis8q': '預期左花括號，實際得到 %s'
@@ -969,14 +907,11 @@ and left unchanged. -fix does not apply to them.
   'ruwo1dvw': 'cancel: 缺少任務控制代碼'
   'rw998t51': 'win-wsa-startup: 沒有結果槽位'
   's116sd0b': '建置錯誤: %w'
-  's28lrleh': 'MIR 程式碼產生無法處理 %s: %s'
   's8gh6opt': '編譯錯誤: %w'
   'sbiepwk2': '預期 \'case\' 或 \'default\'，實際得到 %s'
   'sciigwn4': '介面方法中預期結果名稱，實際得到 %s'
   'sckw2o8b': '計數迴圈體應以 \'{\' 開始，實際得到 %s'
   'sd13rw1l': '函數型別別名中 \'=\' 後應為 \'(\'，實際得到 %s'
-  'sehpprvy': 'builtin %s: 值型別 %s 無效'
-  'seta2gk3': 'builtin %s: 沒有接收者槽位'
   'sgk4yra9': '沒有該檔案、目錄或套件: %s'
   'sh7h3f59': `
 寫入工作區檔出錯：%v
@@ -988,13 +923,11 @@ and left unchanged. -fix does not apply to them.
   'sm0xomza': 'str.to-bool: 沒有結果槽位'
   'sm7rjfcm': '重複的變數 \'%s\''
   'so08hhvh': 'embed: 目錄為空: %s（解析為: %s）'
-  'soo3tmk2': 'MIR 後端不支援借用參數 %s 的 move'
   'soq2h6t2': 'extern 宣告中預期參數名稱，實際得到 %s'
   'squ5w5co': '配合 --js 使用 --browser 可產生面向瀏覽器的 JS 與 HTML 包裝。'
   'srpc0cgx': '用 --js --browser 產生瀏覽器 JS + HTML 並在預設瀏覽器開啟。'
   'ssddj3qk': '%s 的校驗和不符: 預期 %s，實際得到 %s（拒絕安裝）'
   'sstb7ij2': '預期以 \'}\' 結束註解，實際得到 %s'
-  'stbjgjqz': 'builtin %s 定長陣列 %s'
   'su2q9at6': '用法：no test [<file>]'
   'suhqncsk': '  1. 已存在的 .no 檔        -> 執行該檔'
   'sv3fw1hp': `
@@ -1010,8 +943,6 @@ and left unchanged. -fix does not apply to them.
 找不到依賴 %s。
 
 `
-  't5qq2leo': 'lencap kind: 不支援對 %s（%s）取 len/cap（函數 %d）'
-  't5rup04t': 'move 來源槽位 v%d -> v%d'
   't8440cno': '環境變數: NOLANG_AST_CACHE_OFF=1 關閉快取；NOLANG_AST_CACHE_DIR 覆寫目錄。'
   'tb2zxq0f': '不允許 \'%s.%s []T\'：欄位型別應寫在 \'%s\' 的型別定義中。要寫入該欄位請寫 \'%s.%s = ...\''
   'tbfsq7ph': '  no pub                       寫入 dist/<name>-ast.zip'
@@ -1037,7 +968,6 @@ and left unchanged. -fix does not apply to them.
   'tho8xc47': '已建立的檔案：'
   'tjwokiw9': '陣列字面量中預期逗號或右方括號，實際得到 %s'
   'tlwmf1le': 'Nolang 不允許顯式型別轉換 `expr %s`；請改用宣告形式 `name %s = expr` 做安全的加寬／等寬轉換'
-  'tmiibvan': 'builtin %s: 沒有目標槽位'
   'tmqnqq9x': '找不到依賴: %q 未在 package.noml 的 dependencies 中宣告'
   'tnj4py6b': '沒有需要同步的依賴。'
   'tosnl9r7': '計數與迴圈體之間應為 \'*\'，實際得到 %s'
@@ -1050,7 +980,6 @@ and left unchanged. -fix does not apply to them.
   'ttdybn5d': 'fmt: -md 不能與 -fix 同時使用（自動修復只適用於 .no 原始碼）'
   'ttlxcrgt': '區間表達式中應為 \'[\'、\'(\' 或字串，實際得到 %s'
   'u0g1w0d7': '找不到 js 相容模組: %s'
-  'u3g4qexx': 'builtin %s: 參數型別 %s 無效'
   'u3if6wak': '  no fmt -fix=match -w src/       原地補齊缺少的 match 分支'
   'u4oybn9r': '%s 已安裝（%s）；請使用 -u 重新安裝或更新'
   'u5qmp19f': 'option match 必須處理所有分支: err、nil、ok（缺少: %s）'
@@ -1078,7 +1007,6 @@ and left unchanged. -fix does not apply to them.
   'ux1lstn1': 'unix-listen: 沒有結果槽位'
   'ux1lstn2': 'unix-listen: 無法將 path 編組為 C 字串'
   'uzugz5vn': '目錄會自動遞迴處理。'
-  'uzzd8eqi': 'get-line: 沒有結果'
   'v0avn8e4': '檢查通過'
   'v0thbcmv': '預期參數名稱，實際得到 %s'
   'v1a6rxna': '預期逗號或右括號，實際得到 %s'
@@ -1091,7 +1019,6 @@ and left unchanged. -fix does not apply to them.
   'v7zs1nru': '格式符 \'s\' 要求 str/bool/整數型別，實際得到 \'%s\'（格式: %q）'
   'v8tulbl4': '專案：'
   'v9hnqn6w': 'import %q: ESM（npm）匯入僅由 JS 後端支援；請用 `no build --js` 或 `no run --js` 重新建置（說明符 %q 無法連結進原生二進位檔）'
-  'v9milo3k': 'getgrouplist: 在 windows 上不受支援'
   'vas3pyce': '套件登錄檔 URL（未使用：上傳尚未實作）'
   've2dzkxe': '  no test -timeout 90 test/std   循序跑整個目錄；每個檔上限 90 秒'
   'vekjerf5': '內嵌 StdFS 中找不到 std 模組: %s'
@@ -1102,14 +1029,10 @@ and left unchanged. -fix does not apply to them.
   'vffhhi55': '輸出檔路徑'
   'vgfb39et': 'std AST: 讀取 %s 失敗: %w'
   'vgljm585': 'builtin %s: ?str 結果需要 %%option 槽位，實際得到 %s'
-  'vgxfhc6x': 'sysctl: 在 windows 上不受支援'
-  'vh7osqp5': '%s 中沒有被呼叫者'
   'vhmg22wa': '正在同步依賴……'
   'vhpiqfim': '不支援浮點區間邊界，請使用整數'
-  'vhpl1qzt': 'slice op 參數個數'
   'viuznngf': 'net-udp-recvfrom: 無法取得第 1 個參數的資料指標'
   'vjj66evx': '無參數時，執行目前目錄的 main.no。'
-  'vjkycl6v': 'utf8-at 接收者槽位'
   'vkq3r0r2': '`# npm/lodash.get as get` 或 `# npm/lodash.default as d`。它們都要在'
   'vm9uj5g4': 'builtin %s: 原始 str 被存入 %s 槽位'
   'vmp8s7tq': 'value match（`subject: { arms }`）是語句級建構，只能出現在指派右側（可選擇加上括號）。它不能用在運算式內部，例如運算元、函式引數、比較、回傳值或字面值。請先把結果綁定到變數：`v = subject: { ok -> it ... }`，然後再使用 `v`。'
@@ -1123,15 +1046,12 @@ and left unchanged. -fix does not apply to them.
 %s
 `
   'w3k1bwpp': '泛型參數中應為 \',\' 或 \'>\'，實際得到 %s'
-  'w6av3lqe': 'builtin %s: 來源類型不正確 %s'
   'w6xtqb7k': 'net-listen: 需要 (host, port)'
   'w6zt4h9c': '多變數列表後應為 \'=\''
   'w826wv42': '  no run foo                   執行套件 \'foo\'（來自 workspace.noml）'
-  'w9ajg8ow': 'eprint 需要 str/i64/byte/char/bool 參數，實際得到 %s'
   'wbsevkfk': '  no fmt -d main.no           顯示彩色差異'
   'wcbo6a01': '預期以 \'}\' 結束變體註解，實際得到 %s'
-  'wcoza64y': '  no build --option-inline-threshold=16 main.no   把大於 8 位元組的 ?T 酬載全部裝箱'
-  'wd8mx0q7': '被呼叫者為 nil'
+  'wcoza64y': '  no build --option-payload-inline-threshold=16 main.no   把大於 16 位元組的 ?T 酬載全部裝箱'
   'wdk3k728': '輸出參數 “%s” (?T) 被讀取但在函式體中從未賦值 —— 使用了未初始化的可空輸出參數'
   'wdpztov8': 'LLVM C API: IR 為空'
   'wekxh2lc': '介面 “%s”: 未知的父介面 “%s”'
@@ -1143,7 +1063,6 @@ and left unchanged. -fix does not apply to them.
   'wk4p8399': 'getgroups: 需要 2 個結果（gids, n）'
   'wlbc2ct9': 'import %q: 原始碼中不允許相對路徑（./ ../）；請改用工作區別名或遠端套件識別符'
   'wlcp0pp6': '非法的 ESM 套件說明符 %q'
-  'wmq5sd19': '已移除 builtin %s 使用的 LLVM intrinsic %s'
   'wnskovpc': '計數迴圈中 \'*\' 前應為整數，實際得到 %s'
   'wo778frg': 'bool.to-str: 無法將 %%str-long 轉換為 %s'
   'wo8qw0ac': '標準庫原始碼：'
@@ -1153,14 +1072,11 @@ and left unchanged. -fix does not apply to them.
   'wu70c4w0': 'workspace.noml 中的所有專案會平行建置。'
   'ww5ngyyh': 'win-create-process: 需要 (cmdline, dir, stdin, stdout, stderr)'
   'x51zwxlr': '#{%s} 指令後應為識別符，實際得到 %s'
-  'x57xvqny': '函數 %s 中不支援的值型別 %s'
   'x649sxw4': 'embed: 讀取目錄 %s 失敗: %w'
   'x6snirjy': '用法：no ast [-annotations] <file>'
   'x6swm2kk': '“%s” 只能使用小寫字母和連字號'
   'x6tqaeqp': '介面方法中預期參數名稱，實際得到 %s'
-  'x8bk3eqw': 'getfield 槽位'
   'xczzji7g': '預期左花括號，實際得到 %s'
-  'xe32iowe': 'term'
   'xev7d0na': `
   ast  %s %s
 
@@ -1179,17 +1095,13 @@ and left unchanged. -fix does not apply to them.
   'xmicjezl': '整數運算 `a OP b` 沒有 `#{overflow = ...}` 註解，溢出行為尚未宣告。給擁有它的那條陳述加註解，指定溢位時的取值：`#{overflow = wrap}`（無聲回繞）/`clamp0`（下溢歸零）/`min`/`max`/`saturate`（飽和箝位），或型別前綴形式如 `#{overflow = u8-max}`。註解逐語句生效，寫在相鄰陳述上管不到這一條。'
   'xo6e53hm': '不能修改陣列 \'%s\' 的唯讀欄位 \'len\''
   'xpp5i92s': 'option match 必須處理所有分支: err、nil、ok（缺少: %s）'
-  'xqz68d5m': 'builtin %s 參數個數'
   'xrmnmwf4': '預期 \':\'，實際得到 %s'
   'xsstot9b': 'net-recv-nb: 需要 (fd, buf, n)'
   'xtblgfzq': '對數字字面量呼叫 %s 是多此一舉；直接寫目標型別（如 %s）'
-  'y1t4g09v': 'lencap 型別'
   'y23ty9w4': 'release: 需要一個值'
   'y2vkykls': 'eq-raw: 沒有結果槽位'
   'y4yjmhz2': 'builtin %s: 未知的 LLVMConv 型別 %d'
   'y4yxzacz': 'builtin %s: scratch 緩衝區未實體化'
-  'y5f921sg': 'txt 索引目標槽位（dst=%d type=%s）'
-  'y8ieefsr': 'builtin %s: 參數無效'
   'y9lj5a9g': '預期參數名稱或型別，實際得到 %s'
   'yevhjra2': 'LLVM C API: %s 失敗: %s'
   'yf6kxdmz': '陳述不能只是一個字面量；請呼叫函式或將其賦給變數'
@@ -1201,7 +1113,6 @@ and left unchanged. -fix does not apply to them.
 `
   'ygx2q6sp': 'builtin chars-new: 沒有結果槽位'
   'yh8904fm': '預期賦值運算子，實際得到 %s'
-  'yhg5vw4v': 'borrow 來源槽位'
   'yhin5u09': '原生策略: %w'
   'yj5ek705': '預期左花括號，實際得到 %s'
   'yjiapu40': 'builtin %s: 沒有結果'
@@ -1219,10 +1130,8 @@ and left unchanged. -fix does not apply to them.
   'z68vr2e2': 'builtin %s: 無法將第 %d 個參數編組為 C 字串'
   'z87sn8u5': '預期逗號或右括號，實際得到 %s'
   'z8rfu6gf': '寫入 WASM 輸出 %s 失敗: %w'
-  'z9tyfwf5': 'move 沒有目標'
   'zae1l26t': '寫入 %s 失敗: %w'
   'zc1zfsat': '匿名函數型別語法 \'()\' 已停用；請使用具名函數型別別名，或在 package.noml 中啟用 \'anonymous-fn-type\''
-  'zcelvmmy': 'OpAwait: 沒有槽位'
   'zdbv29a2': `
 已在瀏覽器開啟：%s
 
@@ -1231,7 +1140,6 @@ and left unchanged. -fix does not apply to them.
   'zlotlakj': '  no fmt -d src/              顯示 src/ 下所有 .no 檔的差異'
   'zm1ivicl': '預期迴圈體語句，實際得到 %s'
   'zm87x8w0': '若為目錄，則檢查該目錄下所有 .no 檔。'
-  'zodppsnm': 'MIR->LLVM: %s'
   'zpeqou62': '在 CI 中產生 `no add` 所需的資產：'
   'zpgykko6': '在 %s 中找不到 main.no'
   'zql6tu9p': '找不到工作區本地依賴路徑 %q'

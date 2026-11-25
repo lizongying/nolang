@@ -141,4 +141,4 @@ print('elements={kc} root-children={rcc} card-children={ccc}')
 print('theme: btn-color={r4} label-color={r6} tree={r2}{r3} txt={r5}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL WIDGET TESTS PASSED') }
-(!all-ok) -> { print('SOME TESTS FAILED') }
+(!all-ok) -> { print('SOME TESTS FAILED'); exit(1) }

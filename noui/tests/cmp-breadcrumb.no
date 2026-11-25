@@ -236,4 +236,5 @@ ok = ok & t50 & t51 & t52 & t53 & t54 & t55 & t56 & t57 & t58 & t59 & t60
 }
 (ok == 0) -> {
     print('SOME BREADCRUMB TESTS FAILED')
+    exit(1)
 }

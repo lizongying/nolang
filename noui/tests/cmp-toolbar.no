@@ -290,4 +290,5 @@ ok = ok & u72 & u73 & u74
 }
 (ok == 0) -> {
     print('SOME TOOLBAR TESTS FAILED')
+    exit(1)
 }

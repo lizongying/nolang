@@ -77,7 +77,7 @@ La réaffectation de slot de pile n'agit que sur la sémantique de **copie de va
 | énumération taguée | `{ iN tag, [K x i64] }` | largeur du tag selon le nombre de variantes (à partir de `i8`), la charge est l'union de la variante la plus large | alloca (pile) |
 | structure | somme des champs | chaque champ | alloca (pile) |
 
-**La taille de `?T` est calculée, non fixe** : `?i64` = 16 octets, `?str` = 24, `?txt` = 264, et une charge dépassant `option-inline-threshold` (par défaut 264 = 1 + 7 + 256, minimum 16) est placée dans une boîte sur le tas, ramenant tout l'option à 16 octets. Chaque type de charge possède son propre type `%option_<key>` (`src/mir/layout.go`) ; par conséquent « type identique ⇔ disposition identique ». La charge de `err` est toujours boîtée et ne consomme pas le budget de charge. Voir `docs/docs/lang/syntax.md`〈Types nullables (option) · Disposition mémoire〉.
+**La taille de `?T` est calculée, non fixe** : `?i64` = 16 octets, `?str` = 24, `?txt` = 264, et une charge dépassant `option-payload-inline-threshold` (par défaut 264 = 1 + 7 + 256, minimum 16) est placée dans une boîte sur le tas, ramenant tout l'option à 16 octets. Chaque type de charge possède son propre type `%option_<key>` (`src/mir/layout.go`) ; par conséquent « type identique ⇔ disposition identique ». La charge de `err` est toujours boîtée et ne consomme pas le budget de charge. Voir `docs/docs/lang/syntax.md`〈Types nullables (option) · Disposition mémoire〉.
 
 La largeur du tag d'une **énumération taguée** varie selon le nombre de variantes (`<=256` → `i8`, `<=65536` → `i16`, `<2^32` → `i32`, sinon `i64`) ; la largeur de l'union de charge est « la variante la plus large », et non la somme de toutes, les champs étant disposés selon l'alignement naturel et adressés par **décalage d'octet**. Lorsque toutes les variantes sont sans charge, la disposition dégénère en `{ iN }` (à partir d'un octet).
 
@@ -249,7 +249,7 @@ b[0] = 99
 
 > **`?str` / `?[]T` ont une charge en ligne, mais possèdent le tas.** Leur charge réside directement dans le propre `%option_<key>` de l'option (`?str` a la structure `{ i8 tag, [2 x i64] }`, la charge de 16 octets contenant `{ u32 len, u32 cap, i8* data }`), mais les données `str` / le stockage de backing de la tranche qu'elle contient sont alloués sur le tas ⇒ **le clone doit copier en profondeur la charge avec le reste, et le free doit la libérer avec le reste**, les deux côtés doivent rester appariés. La libération de `?[]T` passe par le même helper de free profond que `[]T` (la récursion dépend du type d'élément), donc la dualité « clone profond apparié au free profond » tient ici aussi.
 > ⚠️ Pour un option ordinaire (non `?str`/`?[]T`), la charge est un emprunt ou une valeur simple et **ne possède pas** le tas ; clone et free ne la touchent pas.
-> Lorsque la charge dépasse `option-inline-threshold`, l'option stocke un pointeur sur le tas ; le free doit alors libérer aussi la boîte (déterminé par `Boxed`, voir `src/mir/layout.go`).
+> Lorsque la charge dépasse `option-payload-inline-threshold`, l'option stocke un pointeur sur le tas ; le free doit alors libérer aussi la boîte (déterminé par `Boxed`, voir `src/mir/layout.go`).
 
 ### Différence avec move
 - **Clone profond** : la source et la cible possèdent chacune leurs données indépendamment, chacune libérée en fin de fonction

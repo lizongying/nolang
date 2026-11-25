@@ -19,7 +19,6 @@ package mir
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/lizongying/nolang/i18n"
 )
@@ -38,8 +37,7 @@ func (c *codegen) emitBuiltinStrBytes(inst *Inst) error {
 	}
 	rt, _ := c.ptype(inst.Args[0])
 	if rt != "%str-long" {
-		c.fail("builtin %s: unsupported receiver type %s", ff, rt)
-		return i18n.Errorf("aywuxg5w", "builtin %s receiver %s: %s", ff, rt, strings.Join(c.errs, "; "))
+		return c.failAbort(inst, codegenTraceID, "builtin %s: unsupported receiver type %s", ff, rt)
 	}
 	dstLT, _ := c.ptype(inst.Dst)
 	dstSlot := c.valSlot[inst.Dst]
@@ -47,8 +45,7 @@ func (c *codegen) emitBuiltinStrBytes(inst *Inst) error {
 		return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 	}
 	if dstLT != "%vec" {
-		c.fail("builtin %s: []byte view into %s destination", ff, dstLT)
-		return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
+		return c.failAbort(inst, codegenTraceID, "builtin %s: []byte view into %s destination", ff, dstLT)
 	}
 
 	// sv is a loaded %str-long value; strLenI64 owns the u32/i64 header
@@ -89,13 +86,11 @@ func (c *codegen) emitBuiltinStrFromBytes(inst *Inst) error {
 		return i18n.Errorf("beppq99h", "builtin %s: no result slot", ff)
 	}
 	if dstLT != "%str-long" {
-		c.fail("builtin %s: result must be str, got %s", ff, dstLT)
-		return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
+		return c.failAbort(inst, codegenTraceID, "builtin %s: result must be str, got %s", ff, dstLT)
 	}
 	vt, vv := c.loadVal(inst.Args[0])
 	if vt != "%vec" {
-		c.fail("builtin %s: expected []byte argument, got %s", ff, vt)
-		return i18n.Errorf("u3g4qexx", "builtin %s: bad arg type %s", ff, vt)
+		return c.failAbort(inst, codegenTraceID, "builtin %s: expected []byte argument, got %s", ff, vt)
 	}
 	// %vec = { u32 len, u32 cap, i64 data }; data is a ptrtoint-encoded pointer.
 	// vecLenI64 owns the u32/i64 header widening boundary.

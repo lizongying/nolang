@@ -188,7 +188,7 @@ func TestJSGeneratorRangeFor(t *testing.T) {
 // Test 6: Iterator for-loop over a slice identifier.
 func TestJSGeneratorIteratorFor(t *testing.T) {
 	src := "nums = [10, 20, 30]\n" +
-		"for n in nums {\n" +
+		"n <- nums: {\n" +
 		"    print('elem:', n)\n" +
 		"}\n"
 	out := generateJS(t, src)

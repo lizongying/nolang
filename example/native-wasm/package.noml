@@ -5,6 +5,14 @@
   author: 'lizongying'
   compiler: {
     emit: 'js'
+    version: ''
   }
-  output: '/dist'
+  category: ''
+  keywords: []
+  email: ''
+  organization: ''
+  repository: ''
+  homepage: ''
+  dependencies: []
+  ignore: []
 }

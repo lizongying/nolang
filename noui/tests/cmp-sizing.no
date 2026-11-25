@@ -242,4 +242,4 @@ ok = ok & u52 & u53 & u54 & u55 & u56 & u57 & u58 & u59 & u60
 ok = ok & u61 & u62 & u63 & u64
 
 (ok == 1) -> { print('ALL SIZING TESTS PASSED') }
-(ok == 0) -> { print('SOME SIZING TESTS FAILED') }
+(ok == 0) -> { print('SOME SIZING TESTS FAILED'); exit(1) }

@@ -5,47 +5,58 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// ValueMatchExprTraceID 是「value-match 出现在非法表达式位置」诊断码。
-// build 路径（build/transpiler_validate.go）据此 TraceID 汇入硬错误，vet 则由
-// lint 步骤汇入；两者共用同一码，故必须在源码里给出稳定可读的字面值。
+// ValueMatchExprTraceID 是「value-match 出現在非法表達式位置」診斷碼。
+// build 路徑（build/transpiler_validate.go）據此 TraceID 匯入硬錯誤，vet 則由
+// lint 步驟匯入；兩者共用同一碼，故必須在原始碼裡給出穩定可讀的字面值。
 const ValueMatchExprTraceID = "matchexpr"
 
-// ValidateValueMatchPosition 报告出现在「赋值右值顶层」之外的 value-match。
+// ValidateValueMatchPosition 報告出現在「賦值右值頂層」之外的 value-match。
 //
-// 背景：matched value match（`subject: { arms }`，AST 为 *SurfaceMatch）是
-// 语句级构造。MIR 只在带目标名的赋值语句右值上用 exprCapture 捕获各臂的
-// 最终值（见 mir/hir2mir.go lowerStmtInner 的 `cn.Kind == hir.KIf &&
-// name != ""` 分支）；括号包裹的赋值右值合法，因为 HIR 会剥掉
-// GroupedExpression，孩子仍是 KIf。任何其它位置——运算符操作数、函数实参、
-// 比较、return 值、字面量元素等——lowerExpr 拒绝控制流、直接返回 NoVal，
-// 最终在 codegen 报 `consumer reads value 0 (NoVal) [zodppsnm]`。
+// 背景：matched value match（`subject: { arms }`，AST 為 *SurfaceMatch）是
+// 語句級構造。MIR 只在帶目標名的賦值語句右值上用 exprCapture 捕獲各臂的
+// 最終值（見 mir/hir2mir.go lowerStmtInner 的 `cn.Kind == hir.KIf &&
+// name != ""` 分支）；括號包裹的賦值右值合法，因為 HIR 會剝掉
+// GroupedExpression，孩子仍是 KIf。任何其它位置——運算子操作數、函式實參、
+// 比較、return 值、字面量元素等——lowerExpr 拒絕控制流、直接返回 NoVal，
+// 最終在 codegen 報 `consumer reads value 0 (NoVal) [zodppsnm]`。
 //
-// 与其让坏 MIR 流到 codegen，checker 在这些位置直接给出硬错误，并提示把
-// match 提取到赋值右值、先存进局部变量再用。
+// 與其讓壞 MIR 流到 codegen，checker 在這些位置直接給出硬錯誤，並提示把
+// match 提取到賦值右值、先存進區域變數再用。
 //
-// 合法位置（isAssignRHS=true 传下去）：
+// 合法位置（isAssignRHS=true 傳下去）：
 //   - LetStatement.Value
 //   - AssignExpression.Value
 //   - MultiAssignStatement.Value
 //   - UnwrapAssignStatement.Value
 //
-// 以及它们值表达式外任意层 GroupedExpression（括号透明）。
+// 以及它們值表達式外任意層 GroupedExpression（括號透明）。
+//
+// 檔名歸因：SetSourceFileDeep 只標語句節點，嵌在 InfixExpression 等操作數
+// 裡的 SurfaceMatch 本身沒有 SourceFile/ModuleOwner。walker 因此在遍历语句
+// 时把该语句的溯源当作 file 上下文往下传，report 优先用节点自身归因、缺时
+// 回退到上下文， merged 模式下才不会把模块行号贴到入口文件上。
 func ValidateValueMatchPosition(program *parser.Program) []ValidateResult {
 	var results []ValidateResult
 	if program == nil {
 		return results
 	}
 
-	report := func(sm *parser.SurfaceMatch) {
+	// sourceFileOf 返回节点的一手溯源，缺时返回空串。
+	sourceFileOf := func(n parser.Node) string {
+		if program.Sem == nil || n == nil {
+			return ""
+		}
+		if f := program.Sem.SourceFileOf(n); f != "" {
+			return f
+		}
+		return program.Sem.ModuleOwnerOf(n)
+	}
+
+	report := func(sm *parser.SurfaceMatch, stmtFile string) {
 		pos := sm.Pos()
-		file := ""
-		if program.Sem != nil {
-			file = program.Sem.SourceFileOf(sm)
-			// 合併後的 program 沒有逐節點 SourceFile 映射，退回模組短名，
-			// 至少能定位是哪個 import 模組引入的非法寫法。
-			if file == "" {
-				file = program.Sem.ModuleOwnerOf(sm)
-			}
+		file := sourceFileOf(sm)
+		if file == "" {
+			file = stmtFile
 		}
 		results = append(results, ValidateResult{
 			Line:   pos.Line,
@@ -57,8 +68,8 @@ func ValidateValueMatchPosition(program *parser.Program) []ValidateResult {
 		})
 	}
 
-	// stripParens 剥掉括号包裹，返回内层表达式与剥掉的层数。match 值外的括号
-	// 是透明的（HIR 会剥掉），故赋值右值经任意层括号包裹仍算合法位置。
+	// stripParens 剝掉括號包裹，返回內層表達式與剝掉的層數。match 值外的括號
+	// 是透明的（HIR 會剝掉），故賦值右值經任意層括號包裹仍算合法位置。
 	stripParens := func(e parser.Expression) parser.Expression {
 		for {
 			g, ok := e.(*parser.GroupedExpression)
@@ -69,37 +80,38 @@ func ValidateValueMatchPosition(program *parser.Program) []ValidateResult {
 		}
 	}
 
-	var walkExpr func(e parser.Expression, isAssignRHS bool)
-	var walkStmts func(stmts []parser.Statement)
+	var walkExpr func(e parser.Expression, isAssignRHS bool, file string)
+	var walkStmts func(stmts []parser.Statement, fallback string)
 
-	// walkExpr 遍历表达式。isAssignRHS 表示当前表达式是某赋值语句的直接右值
-	// （可能隔着括号）——只有在这种上下文里 SurfaceMatch 才合法。
-	walkExpr = func(e parser.Expression, isAssignRHS bool) {
+	// walkExpr 遍歷表達式。isAssignRHS 表示當前表達式是某賦值語句的直接右值
+	// （可能隔著括號）——只有在這種上下文裡 SurfaceMatch 才合法。
+	// file 是外層語句的溯源，供深層表達式節點缺少自身歸因時回退。
+	walkExpr = func(e parser.Expression, isAssignRHS bool, file string) {
 		if e == nil {
 			return
 		}
-		// 先剥括号判定 match：括号不改变「是否赋值右值顶层」。
+		// 先剝括號判定 match：括號不改變「是否賦值右值頂層」。
 		inner := stripParens(e)
 		if sm, ok := inner.(*parser.SurfaceMatch); ok {
 			if !isAssignRHS {
-				report(sm)
+				report(sm, file)
 			}
-			// match 的主语与臂条件/臂体都是普通表达式/语句上下文：即使本 match
-			// 合法，其内部的嵌套 match 仍要按各自位置判定（内部一律非 RHS 顶层，
-			// 除臂体内自己的赋值语句外——由 walkStmts 处理）。
+			// match 的主語與臂條件/臂體都是普通表達式/語句上下文：即使本 match
+			// 合法，其內部的巢狀 match 仍要按各自位置判定（內部一律非 RHS 頂層，
+			// 除臂體內自己的賦值語句外——由 walkStmts 處理）。
 			if sm.Matched != nil {
-				walkExpr(sm.Matched, false)
+				walkExpr(sm.Matched, false, file)
 			}
 			for i := range sm.Arms {
 				arm := &sm.Arms[i]
 				if arm.Condition != nil {
-					walkExpr(arm.Condition, false)
+					walkExpr(arm.Condition, false, file)
 				}
 				for _, mv := range arm.MultiValuePatterns {
-					walkExpr(mv, false)
+					walkExpr(mv, false, file)
 				}
 				if arm.Body != nil {
-					walkStmts(arm.Body.Statements)
+					walkStmts(arm.Body.Statements, file)
 				}
 			}
 			return
@@ -107,134 +119,140 @@ func ValidateValueMatchPosition(program *parser.Program) []ValidateResult {
 
 		switch x := e.(type) {
 		case *parser.GroupedExpression:
-			// 括号透明：把 isAssignRHS 原样传下去。
-			walkExpr(x.Expression, isAssignRHS)
+			// 括號透明：把 isAssignRHS 原樣傳下去。
+			walkExpr(x.Expression, isAssignRHS, file)
 		case *parser.CallExpression:
-			// 函数本身与实参都是普通表达式位置——match 作实参非法。
-			walkExpr(x.Function, false)
+			// 函式本身與實參都是普通表達式位置——match 作實參非法。
+			walkExpr(x.Function, false, file)
 			for _, a := range x.Arguments {
-				walkExpr(a, false)
+				walkExpr(a, false, file)
 			}
 			for _, g := range x.GenericArgs {
-				walkExpr(g, false)
+				walkExpr(g, false, file)
 			}
 		case *parser.InfixExpression:
-			walkExpr(x.Left, false)
-			walkExpr(x.Right, false)
+			walkExpr(x.Left, false, file)
+			walkExpr(x.Right, false, file)
 		case *parser.PrefixExpression:
-			walkExpr(x.Right, false)
+			walkExpr(x.Right, false, file)
 		case *parser.IndexExpression:
-			walkExpr(x.Left, false)
-			walkExpr(x.Index, false)
+			walkExpr(x.Left, false, file)
+			walkExpr(x.Index, false, file)
 		case *parser.SliceExpression:
-			walkExpr(x.Left, false)
+			walkExpr(x.Left, false, file)
 			if x.Range != nil {
-				walkExpr(x.Range.Start, false)
-				walkExpr(x.Range.End, false)
+				walkExpr(x.Range.Start, false, file)
+				walkExpr(x.Range.End, false, file)
 			}
 		case *parser.DotExpression:
-			walkExpr(x.Receiver, false)
+			walkExpr(x.Receiver, false, file)
 		case *parser.ConditionalExpression:
-			walkExpr(x.Condition, false)
-			walkExpr(x.Consequence, false)
-			walkExpr(x.Alternative, false)
+			walkExpr(x.Condition, false, file)
+			walkExpr(x.Consequence, false, file)
+			walkExpr(x.Alternative, false, file)
 		case *parser.IfExpression:
-			walkExpr(x.Condition, false)
+			walkExpr(x.Condition, false, file)
 			if x.Consequence != nil {
-				walkStmts(x.Consequence.Statements)
+				walkStmts(x.Consequence.Statements, file)
 			}
 			if x.Alternative != nil {
-				walkStmts(x.Alternative.Statements)
+				walkStmts(x.Alternative.Statements, file)
 			}
 		case *parser.AssignExpression:
-			// 赋值表达式自身的右值是合法的 match 位置（字段/下标赋值）。
-			walkExpr(x.Left, false)
-			walkExpr(x.Value, true)
+			// 賦值表達式自身的右值是合法的 match 位置（欄位/下標賦值）。
+			walkExpr(x.Left, false, file)
+			walkExpr(x.Value, true, file)
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
-				walkExpr(el, false)
+				walkExpr(el, false, file)
 			}
 		case *parser.SliceLiteral:
 			for _, el := range x.Elements {
-				walkExpr(el, false)
+				walkExpr(el, false, file)
 			}
 		case *parser.StructLiteral:
 			for _, f := range x.Fields {
-				walkExpr(f.Value, false)
+				walkExpr(f.Value, false, file)
 			}
 		case *parser.MapLiteral:
 			for _, p := range x.Pairs {
-				walkExpr(p.Key, false)
-				walkExpr(p.Value, false)
+				walkExpr(p.Key, false, file)
+				walkExpr(p.Value, false, file)
 			}
 		case *parser.CastExpression:
-			walkExpr(x.Expr, false)
+			walkExpr(x.Expr, false, file)
 		case *parser.BlockMatchStatement:
-			// 块 match `{ body }: { arms }` 是语句，其内部语句照常遍历。
+			// 塊 match `{ body }: { arms }` 是語句，其内部語句照常遍歷。
 			for _, s := range blockMatchChildStatements(x) {
-				walkStmts([]parser.Statement{s})
+				walkStmts([]parser.Statement{s}, file)
 			}
 		}
-		// 字面量 / Identifier / FunctionLiteral（独立作用域）无需深入。
+		// 字面量 / Identifier / FunctionLiteral（獨立作用域）無需深入。
 	}
 
-	walkStmts = func(stmts []parser.Statement) {
+	walkStmts = func(stmts []parser.Statement, fallback string) {
 		for _, s := range stmts {
 			if s == nil {
 				continue
 			}
+			// 語句自身通常已被 SetSourceFileDeep 標記；深層表達式沒有，
+			// 所以用語句溯源當作整棵子樹的 file 上下文。
+			file := sourceFileOf(s)
+			if file == "" {
+				file = fallback
+			}
 			switch x := s.(type) {
 			case *parser.FunctionDefinition:
 				if x.Body != nil {
-					walkStmts(x.Body.Statements)
+					walkStmts(x.Body.Statements, file)
 				}
 			case *parser.LetStatement:
-				walkExpr(x.Value, true)
+				walkExpr(x.Value, true, file)
 			case *parser.MultiAssignStatement:
-				walkExpr(x.Value, true)
+				walkExpr(x.Value, true, file)
 				for _, t := range x.Targets {
-					walkExpr(t, false)
+					walkExpr(t, false, file)
 				}
 			case *parser.UnwrapAssignStatement:
-				walkExpr(x.Value, true)
+				walkExpr(x.Value, true, file)
 				if x.Target != nil {
-					walkExpr(x.Target, false)
+					walkExpr(x.Target, false, file)
 				}
 			case *parser.ExpressionStatement:
-				// 独立成句的 match（值被丢弃）是语句级 match 的正常用法，合法；
-				// 但若语句是 print(match) 这类调用，match 在实参位置（walkExpr
-				// 进 CallExpression 后降为 false）仍会被判非法。
-				walkExpr(x.Expression, true)
+				// 獨立成句的 match（值被丟棄）是語句級 match 的正常用法，合法；
+				// 但若語句是 print(match) 這類呼叫，match 在實參位置（walkExpr
+				// 進 CallExpression 後降為 false）仍會被判非法。
+				walkExpr(x.Expression, true, file)
 			case *parser.ReturnStatement:
-				walkExpr(x.ReturnValue, false)
+				walkExpr(x.ReturnValue, false, file)
 			case *parser.BlockStatement:
-				walkStmts(x.Statements)
+				walkStmts(x.Statements, file)
 			case *parser.BlockMatchStatement:
 				for _, inner := range blockMatchChildStatements(x) {
-					walkStmts([]parser.Statement{inner})
+					walkStmts([]parser.Statement{inner}, file)
 				}
 			case *parser.ForStatement:
 				if x.Init != nil {
-					walkStmts([]parser.Statement{x.Init})
+					walkStmts([]parser.Statement{x.Init}, file)
 				}
-				walkExpr(x.Condition, false)
+				walkExpr(x.Condition, false, file)
 				if x.Update != nil {
-					walkStmts([]parser.Statement{x.Update})
+					walkStmts([]parser.Statement{x.Update}, file)
 				}
 				if x.IterRange != nil {
-					walkExpr(x.IterRange.RangeExpr, false)
+					walkExpr(x.IterRange.RangeExpr, false, file)
 					if x.IterRange.Range != nil {
-						walkExpr(x.IterRange.Range.Start, false)
-						walkExpr(x.IterRange.Range.End, false)
+						walkExpr(x.IterRange.Range.Start, false, file)
+						walkExpr(x.IterRange.Range.End, false, file)
 					}
 				}
 				if x.Body != nil {
-					walkStmts(x.Body.Statements)
+					walkStmts(x.Body.Statements, file)
 				}
 			}
 		}
 	}
 
-	walkStmts(program.Statements)
+	walkStmts(program.Statements, "")
 	return results
 }

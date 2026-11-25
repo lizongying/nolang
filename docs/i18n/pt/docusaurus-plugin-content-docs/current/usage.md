@@ -157,11 +157,11 @@ O parâmetro `-cc` especifica o backend do compilador C:
 
 O layout de memória de `?T` é **dimensionado conforme o payload**: cada tipo de payload `T` tem o seu próprio `%option_<key> = { i8 tag, [K x i64] }` (1 byte de tag, payload fixo no deslocamento de bytes 8, `K = roundUp8(sizeof(T))/8`). Se o payload não couber no limite, passa a ser empacotado no heap e a primeira word da área de payload armazena um ponteiro.
 
-`--option-inline-threshold=N` especifica esse limite (contado em bytes por **toda a estrutura da opção**, ou seja `1 + 7 + sizeof(T)`):
+`--option-payload-inline-threshold=N` especifica esse limite (contado em bytes por **toda a estrutura da opção**, ou seja `1 + 7 + sizeof(T)`):
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # permite inline de payloads maiores
-no build --option-inline-threshold=16 main.no     # valor mínimo configurável
+no build --option-payload-inline-threshold=1032 main.no   # permite inline de payloads maiores
+no build --option-payload-inline-threshold=16 main.no     # valor mínimo configurável
 ```
 
 | Valor | Efeito |
@@ -170,7 +170,7 @@ no build --option-inline-threshold=16 main.no     # valor mínimo configurável
 | Mínimo **16** | Só `?i64` continua inline; a partir de `?str` (24 B), tudo é empacotado |
 | < 16 | Erro de compilação |
 
-Ordem de precedência: linha de comando > variável de ambiente `NOLANG_OPTION_INLINE_THRESHOLD` > `compiler.option-inline-threshold` de `package.noml` > valor predefinido. A única fonte do layout é `src/mir/layout.go`; ao nível semântico (quais os valores considerados `ok`／`nil`／`err`) **nada é afetado**, apenas a ocupação de memória e a existência ou não de empacotamento mudam.
+Ordem de precedência: linha de comando > variável de ambiente `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `compiler.option-payload-inline-threshold` de `package.noml` > valor predefinido. A única fonte do layout é `src/mir/layout.go`; ao nível semântico (quais os valores considerados `ok`／`nil`／`err`) **nada é afetado**, apenas a ocupação de memória e a existência ou não de empacotamento mudam.
 
 ### Otimizador embutido do compilador (MIR opt)
 
@@ -372,14 +372,12 @@ O ficheiro `package.noml` na raiz do projeto descreve a informação do projeto:
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

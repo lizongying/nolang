@@ -180,4 +180,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-DISABLED TESTS FAILED')
+    exit(1)
 }

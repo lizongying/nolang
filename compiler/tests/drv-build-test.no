@@ -130,7 +130,7 @@ occ = (hay str, needle str) (n i64) {
     ln = hay.len-bytes()
     step = needle.len-bytes()
     i <- [0..ln): {
-        i + step <= ln && hay.slice-bytes(i, i + step) == needle -> hits.push(i)
+        i + step <= ln && hay.slice-bytes(i, i + step).to-bytes-str() == needle -> hits.push(i)
     }
     n = hits.len()
 }
@@ -145,8 +145,12 @@ test-prelude-and-main = () {
     runner.eq(ll.contains('%vec = type {'), 1, 'prelude: vec type present')
     runner.eq(ll.contains('%option = type { i64, [3 x i64] }'), 1, 'prelude: 24B option slot')
     runner.eq(ll.contains('define i64 @f(i64 %v1)'), 1, 'user function f lowered')
-    runner.eq(ll.contains('define i64 @main()'), 1, 'synthesized i64 @main')
-    runner.eq(ll.contains('define i32 @main()'), 0, 'no C-style i32 @main')
+    ; s168：降級側入口更名 @__nolang_main，符號 main 讓給 C 入口包裝
+    ;   （捕获 argc/argv，供 args / args.get 讀取）。
+    runner.eq(ll.contains('define i64 @__nolang_main()'), 1, 'synthesized i64 @__nolang_main')
+    runner.eq(ll.contains('define i32 @main(i32 %argc, i8** %argv)'), 1, 'C entry wrapper present')
+    runner.eq(ll.contains('@__nolang_argc = global i64 0'), 1, 'args argc global present')
+    runner.eq(ll.contains('call i64 @__nolang_main()'), 1, 'wrapper calls synthesized entry')
 }
 
 test-exit-value = () {
@@ -154,14 +158,14 @@ test-exit-value = () {
     runner.eq(ll.contains('%v1 = add i64 0, 42'), 1, 'exit argument 42 materialized')
     runner.eq(ll.contains('%v2 = call i64 @f(i64 %v1)'), 1, 'exit calls f(42)')
     runner.eq(ll.contains('ret i64 %v2'), 1, 'main returns f(42)')
-    a = ll.index('define i64 @main()')
+    a = ll.index('define i64 @__nolang_main()')
     b = ll.index('%v1 = add i64 0, 42')
     runner.eq(a >= 0 && b > a, 1, 'main body follows main signature')
 }
 
 test-no-exit-default = () {
     ll = drv.build-ll(S-PLAIN.to-bytes())
-    runner.eq(ll.contains('define i64 @main()'), 1, 'default main still synthesized')
+    runner.eq(ll.contains('define i64 @__nolang_main()'), 1, 'default main still synthesized')
     runner.eq(ll.contains('%v1 = add i64 0, 0'), 1, 'synthetic literal 0')
     runner.eq(ll.contains('ret i64 %v1'), 1, 'default main returns 0')
     runner.eq(ll.contains('call i64 @f('), 0, 'no spurious call in default main')
@@ -171,7 +175,7 @@ test-unsupported-honest = () {
     ll = drv.build-ll(S-BAD.to-bytes())
     runner.eq(ll.len-bytes(), 0, 'format-spec interp => empty ll (honest failure)')
     e = drv.build-ll('exit(7)\n'.to-bytes())
-    runner.eq(e.contains('define i64 @main()'), 1, 'literal exit without user functions')
+    runner.eq(e.contains('define i64 @__nolang_main()'), 1, 'literal exit without user functions')
 }
 
 ; s102：字面量插值降级（§11 後 ⑩）。权威 = Go lowerNamedFormatStream：

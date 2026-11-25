@@ -151,7 +151,9 @@ cg-val-prefix = (t i64) (s str) {
     t == TY-VECSTR -> s = '%vc'
 
     ; s162：[]结构体 与 []i64／[]str 共用 %vec 命名空间（描述符与元素型别无关）
+    ; s175：TY-SVEC-BASE + sid —— 同樣走 %vc
     t == TY-VECSTRUCT -> s = '%vc'
+    t >= TY-SVEC-BASE && t < TY-STRUCT-BASE -> s = '%vc'
     t == TY-OPT -> s = '%op'
     t == TY-F64 -> s = '%fd'
     t >= TY-STRUCT-BASE -> s = '%st'
@@ -2390,6 +2392,105 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', i64 %v')
             b.push(y.to-str())
             b.push(')\n')
+        }
+        op == OP-ARGSLIST -> {
+
+            ; s168：args —— dst = 【自有】[]str 值（%vec）；無運算元。
+            ;   helper @args_list 讀 @__nolang_argc/@__nolang_argv ⇒ h2m-rel-add(TY-VECSTR)。
+            b.push('\t%vc')
+            b.push(d.to-str())
+            b.push(' = call %vec @args_list()\n')
+        }
+        op == OP-VECGETSTROPT -> {
+
+            ; s168：args.get(i) —— dst = ?str（tag=0 + 自有載荷；越界 tag=1）；
+            ;   x = 接收者 vec 值 id；y = 下標 i64 值 id。h2m 側已標 vpty=TY-STR。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = call %option @vec_get_str_opt(%vec %vc')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n')
+        }
+        op == OP-STRTOI64 -> {
+
+            ; s169：str.to-i64() —— dst = ?i64（tag=0 ok + i64 載荷；空串 tag=1；
+            ;   非數字／孤立符號／溢出 tag=2）；x = 接收者 str 值 id。h2m 側已標 vpty=TY-I64。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = call %option @str_to_i64(%str-long %sv')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-GETPID -> {
+
+            ; s170：os.get-pid() —— dst = i64；無運算元。helper @nolang_getpid 內做
+            ;   declare i32 @getpid() + sext（鏡像 Go CLibCall 的 RetExt i64Type）。
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @nolang_getpid()\n')
+        }
+        op == OP-FSISFILE -> {
+
+            ; s170：fs.is-file(p) —— dst = i64 布林；x = 路徑 str 值 id。
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @nolang_stat_isfile(%str-long %sv')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-FSISDIR -> {
+
+            ; s170：fs.is-dir(p) —— dst = i64 布林；x = 路徑 str 值 id。
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = call i64 @nolang_stat_isdir(%str-long %sv')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
+        op == OP-VECGETSTP -> {
+
+            ; s175：[]結構體索引讀（借用指針）——dst = i64；x = vec；y = 下標；sym = sid。
+            ;   helper 逐結構體各一條（@vec_get_st_ptr_<sid>），內部用 GEP-null 求 sizeof。
+            b.push('\t%vgp')
+            b.push(k.to-str())
+            b.push(' = call i8* @vec_get_st_ptr_')
+            b.push(ix.at-s(syms, k))
+            b.push('(%vec %vc')
+            b.push(x.to-str())
+            b.push(', i64 %v')
+            b.push(y.to-str())
+            b.push(')\n\t%v')
+            b.push(d.to-str())
+            b.push(' = ptrtoint i8* %vgp')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-OPTGETST -> {
+
+            ; s175：從 option 的 slot[0] 取【結構體借用指標】→ inttoptr → bitcast → load。
+            ;   結構體 id 取 vty[d] - TY-STRUCT-BASE（與 STRUCT-GET 同口徑）。
+            tn = cg-ty-name(ix.at-i(vty, d))
+            b.push('\t%ogx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%ogs')
+            b.push(k.to-str())
+            b.push(' = inttoptr i64 %ogx')
+            b.push(k.to-str())
+            b.push(' to ')
+            b.push(tn)
+            b.push('*\n\t%st')
+            b.push(d.to-str())
+            b.push(' = load ')
+            b.push(tn)
+            b.push(', ')
+            b.push(tn)
+            b.push('* %ogs')
+            b.push(k.to-str())
+            b.push('\n')
         }
         op == OP-VECBYTES2STR -> {
 

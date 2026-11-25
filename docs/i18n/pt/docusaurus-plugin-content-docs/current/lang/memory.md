@@ -77,7 +77,7 @@ O rebind de slot de pilha atua apenas sobre a semântica de **cópia de valor** 
 | Enum com tag | `{ iN tag, [K x i64] }` | A largura da tag varia com o número de variantes (começa em `i8`); o payload é a união da variante mais larga | alloca (pilha) |
 | Estrutura | Soma de todos os campos | Cada campo | alloca (pilha) |
 
-**O tamanho de `?T` é calculado, não fixo**: `?i64` = 16 bytes, `?str` = 24, `?txt` = 264; um payload que exceda `option-inline-threshold` (predefinição 264 = 1 + 7 + 256, mínimo 16) passa a ser empacotado no heap e a opção inteira volta a 16 bytes. Cada tipo de payload tem o seu próprio tipo `%option_<key>` (`src/mir/layout.go`), pelo que «tipo igual ⇔ layout igual». O payload de `err` é sempre empacotado e não conta para o orçamento de payload. Ver `docs/docs/lang/syntax.md` «Tipos anuláveis (option) · Layout de memória».
+**O tamanho de `?T` é calculado, não fixo**: `?i64` = 16 bytes, `?str` = 24, `?txt` = 264; um payload que exceda `option-payload-inline-threshold` (predefinição 264 = 1 + 7 + 256, mínimo 16) passa a ser empacotado no heap e a opção inteira volta a 16 bytes. Cada tipo de payload tem o seu próprio tipo `%option_<key>` (`src/mir/layout.go`), pelo que «tipo igual ⇔ layout igual». O payload de `err` é sempre empacotado e não conta para o orçamento de payload. Ver `docs/docs/lang/syntax.md` «Tipos anuláveis (option) · Layout de memória».
 
 A largura da tag de um **enum com tag** varia com o número de variantes (`<=256` → `i8`, `<=65536` → `i16`, `<2^32` → `i32`, caso contrário `i64`); a largura da união de payload é «a variante mais larga» e não a soma de todas, os campos são dispostos segundo o alinhamento natural e endereçados por **deslocação em bytes**. Quando todas as variantes não têm payload, o layout degrada para `{ iN }` (a partir de 1 byte).
 
@@ -252,7 +252,7 @@ b[0] = 99
 > ⇒ **no clone é preciso copiar profundamente também o payload e no free é preciso libertar também o payload**, os dois lados têm de andar em par.
 > A libertação de `?[]T` usa o mesmo helper de free profundo de `[]T` (decide se é recursivo conforme o tipo de elemento), pelo que a dualidade «clone profundo com free profundo» também se verifica aqui.
 > ⚠️ Nas opções normais (não `?str`/`?[]T`), o payload é um empréstimo ou um valor puro e **não possui** heap; nem o clone nem o free lhe tocam.
-> Quando o payload é grande ao ponto de exceder `option-inline-threshold`, a opção passa a armazenar um ponteiro para o heap e o free tem de libertar também a caixa
+> Quando o payload é grande ao ponto de exceder `option-payload-inline-threshold`, a opção passa a armazenar um ponteiro para o heap e o free tem de libertar também a caixa
 > (determinado por `Boxed`, ver `src/mir/layout.go`).
 
 ### Diferença em relação ao move

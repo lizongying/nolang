@@ -253,4 +253,5 @@ ok = ok & t55 & t56 & t57 & t58 & t59 & t60 & t61 & t62 & t63
 }
 (ok == 0) -> {
     print('SOME QUESTIONNAIRE TESTS FAILED')
+    exit(1)
 }

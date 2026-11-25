@@ -9195,6 +9195,38 @@ func ValidatePrintFormat(program *parser.Program) []ValidateResult {
 	}
 	return results
 }
+
+// eprintOptionArgTraceID marks an option-typed argument passed to eprint.
+// eprint has no runtime printer for a tagged option; without this checker
+// rule vet is green and the failure only appears in MIR codegen as an
+// internal type name, which is exactly the "checker green hides backend
+// red" class of bug this diagnostic exists to close.
+const eprintOptionArgTraceID = "p7optarg"
+
+// stdCallResultType returns the single result type of a std call from the
+// baked signature table. Used by source-level guards that need a type even
+// when no merged program's funcTypes map is available (standalone `no vet`).
+func stdCallResultType(fn parser.Expression) string {
+	var key string
+	switch f := fn.(type) {
+	case *parser.Identifier:
+		key = f.Value
+	case *parser.DotExpression:
+		if recv, ok := f.Receiver.(*parser.Identifier); ok {
+			key = recv.Value + "." + f.Property
+		}
+	}
+	if key == "" {
+		return ""
+	}
+	for _, table := range []map[string]StdSigEntry{stdSigsCache, embeddedStdFuncSigs} {
+		if entry, ok := table[key]; ok && len(entry.Results) == 1 {
+			return entry.Results[0]
+		}
+	}
+	return ""
+}
+
 func isPrintFormatCall(fnName string) bool {
 	switch fnName {
 	case "print", "eprint", "format", "printf", "eprintf", "sprintf",
@@ -9330,6 +9362,37 @@ func checkPrintFormatInExpr(expr parser.Expression, varTypes map[string]string, 
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			if isPrintFormatCall(ident.Value) && len(e.Arguments) > 0 {
 				results = append(results, validatePrintFormatCall(e, varTypes, structFields)...)
+			}
+			// print has an option-aware runtime helper; eprint does NOT — its
+			// backend path accepts only scalars/str/txt. Catch a bare option
+			// here so vet/CI fail at the argument, not later inside codegen.
+			if ident.Value == "eprint" {
+				for i, arg := range e.Arguments {
+					argType := inferExprType(arg, varTypes, validationFuncTypes, "")
+					if argType == "" {
+						// A direct std call (e.g. os.arg(1)) has no entry in
+						// validationFuncTypes during a standalone vet run;
+						// consult the baked std signature table instead.
+						if call, ok := arg.(*parser.CallExpression); ok {
+							argType = stdCallResultType(call.Function)
+						}
+					}
+					// 型別是結構（src/ty），不是字串：走 Kind 判定，別再掃
+					// 前綴「?」—— 那正是 verify-ty 門禁要清掉的寫法。
+					// 與 declaredIsOption 同義：别名（`blk ?i64`）也要靠
+					// Canonical 才問得出 Option。
+					argTy := thirPool.Parse(argType)
+					if argTy == nil || (argTy.Kind != ty.Option && argTy.Canonical().Kind != ty.Option) {
+						continue
+					}
+					pos := arg.Pos()
+					results = append(results, ValidateResult{
+						TraceID: eprintOptionArgTraceID,
+						Line:    pos.Line,
+						Column:  pos.Column,
+						Message: fmt.Sprintf("eprint argument %d has option type '%s'; unwrap it before printing", i+1, argType),
+					})
+				}
 			}
 		}
 		// 遞迴檢查引數中的巢狀呼叫
@@ -10667,6 +10730,30 @@ func valuePromotesToOption(dst, src string) bool {
 	return ok1 && ok2
 }
 
+// optionUnwrapRejectedBeyondConcrete 補上 15w45dqk 對「自訂 struct 等非 concrete
+// 型別」的覆蓋。`isConcreteType` 只認內建標量、別名與註冊 struct 欄位，自訂 struct
+// 名（如 `node`、`big`）回 false，讓 `?node → node` 這類明確解包被整條判定跳過。
+// 本函式只在 option 來源**不是運算符重載呼叫**時放行該判定：
+// `a._add(b)` 的簽名雖是 `?T`，但語言約定運算符重載把 `?` 剝掉、結果是 plain T，
+// 這條豁免原本由 isConcreteType 的 false 意外提供，收緊時必須保留（見
+// operator_overload_test.go）。
+func optionUnwrapRejectedBeyondConcrete(targetType, valueType string, value parser.Expression) bool {
+	if !optionImplicitUnwrapRejected(targetType, valueType) {
+		return false
+	}
+	if call, ok := value.(*parser.CallExpression); ok && call != nil {
+		if dot, ok := call.Function.(*parser.DotExpression); ok && dot != nil &&
+			parser.IsOperatorOverloadName(dot.Property) {
+			return false
+		}
+		if id, ok := call.Function.(*parser.Identifier); ok && id != nil &&
+			parser.IsOperatorOverloadName(id.Value) {
+			return false
+		}
+	}
+	return true
+}
+
 // optionImplicitUnwrapRejected 報告 `target = value` 是否是一次**非法的隱式解包**
 // —— 目標是 plain `T`，值卻是 `?T`。
 //
@@ -11104,10 +11191,12 @@ func validateStmtTypesIn(stmt parser.Statement, funcNames map[string]bool, funcT
 				}
 			}
 			if inferredType != "" {
-				// 「已宣告」只看目前幀：外層（頂層）同名不算，函式內 let 可遮蔽。
+				// 「已宣告」看目前幀：外層（頂層）同名不算，函式內 let 可遮蔽。
 				// 用 Flat 的 exists 會把頂層 `b = g[..]` 當成函式內 `b = a` 的
 				// 再指派，誤報 15w45dqk；與顯式註解的 BoundHere 判定一致。
-				if existingType, exists := varTypes[s.Name.Value]; exists && st.BoundHere(s.Name.Value) {
+				// 但頂層本身沒有外層（AtTopFrame），那裡的同名就是再指派，
+				// 必須照常開火，否則頂層重新賦值完全逃過檢查。
+				if existingType, exists := varTypes[s.Name.Value]; exists && (st.BoundHere(s.Name.Value) || st.AtTopFrame()) {
 					// 變數已有型別，檢查是否相容
 					// 集合字面量 (ArrayLiteral/SliceLiteral) 可初始化陣列變數，跳過型別不匹配檢查
 					_, isSlice := s.Value.(*parser.SliceLiteral)
@@ -11184,7 +11273,13 @@ func validateStmtTypesIn(stmt parser.Statement, funcNames map[string]bool, funcT
 							}
 						}
 					}
-					if inferredType != "" && !typeNamesEquivalent(inferredType, existingType) && isConcreteType(existingType) && !isArrayAssign && !isOptionCtor &&
+					// 自訂 struct 名（如 `node`）不在 isConcreteType 的內建/別名表裡，
+					// 但 `?node → node` 仍是明確的隱式解包，必須同樣被 15w45dqk 拒絕。
+					// optionImplicitUnwrapRejected 自身已精確判定「值是 option、目標
+					// 是 plain」，可獨立作為放行條件，不必等 isConcreteType 認得該型別。
+					if inferredType != "" && !typeNamesEquivalent(inferredType, existingType) &&
+						(isConcreteType(existingType) || optionUnwrapRejectedBeyondConcrete(existingType, inferredType, s.Value)) &&
+						!isArrayAssign && !isOptionCtor &&
 						// 隱式解包禁令：isArgTypeCompatible 的 `?T → T` 豁免會把這類賦值
 						// 放行，故此處把它強制翻回「不相容」（見 optionImplicitUnwrapRejected）。
 						(!isArgTypeCompatible(existingType, inferredType, s.Value) || optionImplicitUnwrapRejected(existingType, inferredType)) &&

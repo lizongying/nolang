@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	nbuild "github.com/lizongying/nolang/build"
@@ -81,6 +83,55 @@ func TestFlattenLintsDedup(t *testing.T) {
 	diags, _, _, _ := flattenLints(all)
 	if len(diags) != 1 {
 		t.Fatalf("expected dedup to 1, got %d", len(diags))
+	}
+}
+
+// TestFlattenLintsUniqueSourceLocation 釘住「按包去重 + 報告唯一源碼位置」：
+// 同一源碼位置經不同 lint 鏈到達時可能帶絕對路徑（內嵌 blob）或相對路徑（磁碟），
+// 二者必須合併為一條診斷，且輸出 File 只能是唯一的相對寫法。
+func TestFlattenLintsUniqueSourceLocation(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	absStd := filepath.Join(cwd, "src", "std", "str.no")
+	relStd := filepath.Join("src", "std", "str.no")
+	all := []nbuild.LintResult{
+		{File: "main.no", Lints: []checker.LintResult{
+			{Line: 42, Column: 9, Severity: checker.LintHint, Source: "nolang-overflow",
+				Message: "same issue", File: absStd},
+		}},
+		{File: "main.no", Lints: []checker.LintResult{
+			{Line: 42, Column: 9, Severity: checker.LintHint, Source: "nolang-overflow",
+				Message: "same issue", File: relStd},
+		}},
+	}
+	diags, _, _, hints := flattenLints(all)
+	if len(diags) != 1 {
+		t.Fatalf("expected 1 deduped diagnostic, got %d: %+v", len(diags), diags)
+	}
+	if hints != 1 {
+		t.Fatalf("expected hints=1, got %d", hints)
+	}
+	want := filepath.ToSlash(relStd)
+	if diags[0].File != want {
+		t.Fatalf("unique source location: got %q, want %q", diags[0].File, want)
+	}
+}
+
+// TestCanonicalVetPathBlobOutsideCwd 釘住 cwd 外(abs) 的內嵌 std blob 路徑被
+// 歸一到 src/std/… 形式，與工作區磁碟的相對寫法一致。
+func TestCanonicalVetPathBlobOutsideCwd(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"/tmp/old-build/src/std/str.no", "src/std/str.no"},
+		{"/home/runner/work/nolang/std/net/http.no", "src/std/net/http.no"},
+		{"", ""},
+		{"src/std/number.no", "src/std/number.no"},
+	}
+	for _, c := range cases {
+		if got := canonicalVetPath(c.in); got != c.want {
+			t.Errorf("canonicalVetPath(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 

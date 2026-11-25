@@ -60,13 +60,11 @@ func (c *codegen) emitBuiltinStrPushBytes(inst *Inst) error {
 	// ---- 1. receiver storage ------------------------------------------------
 	rt, _ := c.ptype(recv)
 	if rt != "%str-long" {
-		c.fail("builtin %s: unsupported receiver type %s", ff, rt)
-		return i18n.Errorf("p9dt2hwe", "builtin %s receiver %s", ff, rt)
+		return c.failAbort(inst, codegenTraceID, "builtin %s: unsupported receiver type %s", ff, rt)
 	}
 	slot, _ := c.resolveReceiverSlot(recv)
 	if slot == "" {
-		c.fail("builtin %s: receiver has no slot", ff)
-		return i18n.Errorf("rn4mb8sc", "builtin %s: receiver has no slot", ff)
+		return c.failAbort(inst, codegenTraceID, "builtin %s: receiver has no slot", ff)
 	}
 	// Projection write-back: `p.s.push-str(...)` / `arr[0].push-str(...)` hand
 	// out a COPY of the header, so the mutation must reach the real field /
@@ -83,8 +81,7 @@ func (c *codegen) emitBuiltinStrPushBytes(inst *Inst) error {
 	// ---- 2. load + retain the source ---------------------------------------
 	st, sv := c.loadVal(src)
 	if st != "%str-long" {
-		c.fail("builtin %s: source is %s, not str", ff, st)
-		return i18n.Errorf("w6av3lqe", "builtin %s: bad source type %s", ff, st)
+		return c.failAbort(inst, codegenTraceID, "builtin %s: source is %s, not str", ff, st)
 	}
 	// Paired with the @str_free in the done block. Both are UNCONDITIONAL:
 	// static aliasing between receiver and source cannot be decided here, and

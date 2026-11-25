@@ -228,4 +228,4 @@ print('tab={r28}{r29}{r30} dialog={r31}{r32}{r33}')
 print('tooltip={r34}{r35} input={r36}{r37} slider={r38}{r39}{r40}')
 print('scene-count={n} all-ok={all-ok}')
 (all-ok) -> { print('ALL CMP-SCENE TESTS PASSED') }
-(!all-ok) -> { print('SOME CMP-SCENE TESTS FAILED') }
+(!all-ok) -> { print('SOME CMP-SCENE TESTS FAILED'); exit(1) }

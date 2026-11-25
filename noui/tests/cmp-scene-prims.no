@@ -1,0 +1,42 @@
+; ============================================================================
+; noui Scene 新绘制指令测试（阶段 81）—— src/cmp-scene.no
+;
+; 钉住：CS-ROUND / CS-SHADOW / CS-IMGR 的发射与 getter 契约；旧指令在新增
+; 附加池（SR/SD/SA/SF）后仍对齐（附加参数恒为 0）；cs-clear 清空所有池。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/cmp-scene-prims.no
+; ============================================================================
+# /noui/src/cmp-scene
+
+print('=== cmp-scene-prims tests ===')
+
+cs-clear()
+cs-emit-round(100, 200, 300, 400, 500, 0xFF0000FF)
+cs-emit-shadow(100, 200, 300, 400, 600, 800, 0x00000080)
+cs-emit-img-rot(100, 200, 300, 400, 7, 4500, 3)
+; 旧指令混排：附加参数必须恒为 0，且顺序不被破坏
+cs-emit-rect(10, 20, 30, 40, 0xFFFFFFFF)
+cs-emit-text(10, 20, 0xFFFFFFFF, 'hi')
+
+n = cs-scene-count()
+r1 = n == 5
+
+k0 = cs-scene-kind(0)
+k1 = cs-scene-kind(1)
+k2 = cs-scene-kind(2)
+r2 = k0 == CS-ROUND && k1 == CS-SHADOW && k2 == CS-IMGR
+
+r3 = cs-scene-sr(0) == 500 && cs-scene-x(0) == 100 && cs-scene-y(0) == 200
+r4 = cs-scene-sr(1) == 600 && cs-scene-sd(1) == 800
+r5 = cs-scene-sa(2) == 4500 && cs-scene-sf(2) == 3 && cs-scene-si(2) == 7
+
+r6 = cs-scene-sr(3) == 0 && cs-scene-sd(3) == 0 && cs-scene-sa(3) == 0 && cs-scene-sf(3) == 0
+
+cs-clear()
+r8 = cs-scene-count() == 0 && cs-scene-sr(0) == 0
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r8
+print('count={r1} kinds={r2} round={r3} shadow={r4} imgrot={r5} legacy={r6} clear={r8}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL CMP-SCENE-PRIMS TESTS PASSED') }
+(!all-ok) -> { print('CMP-SCENE-PRIMS TESTS FAILED'); exit(1) }

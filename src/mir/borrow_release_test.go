@@ -122,7 +122,7 @@ main = () {
     q4 list-res = ok(l4)
     q4: {
         ok(items) -> {
-            for x <- items: {
+            x <- items: {
                 print('4a: ' - x)
             }
         }
@@ -131,7 +131,7 @@ main = () {
     }
     q4: {
         ok(items) -> {
-            for x <- items: {
+            x <- items: {
                 print('4b: ' - x)
             }
         }

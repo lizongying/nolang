@@ -3835,7 +3835,7 @@ d db-sqlite = db-sqlite{handle: h}      →      d = db-sqlite{handle: h}
 
 **改動**：`?T` 不再共用單一 `%option`，改為按載荷定型的 `%option_<key> = { i8 tag, [K x i64] }`
 （標籤 1 位元組、載荷固定在**位元組偏移 8**、`K = roundUp8(sizeof(T))/8`；超過
-`option-inline-threshold`（預設 **264** = 1 + 7 + 256，最小 16）改存堆指標；`err` 的載荷
+`option-payload-inline-threshold`（預設 **256** 位元組載荷、不含標籤區，最小 8）改存堆指標；`err` 的載荷
 **恆裝箱**）。標籤列舉同時改為 `%tenum_X = { iN tag, [K x i64] }`：`iN` 隨變體個數
 （`<=256` → `i8`）、`K` 取**最寬變體**（不是所有變體相加）、欄位按自然對齊以**位元組偏移**
 尋址、全變體無載荷時退化成 `{ iN }`。唯一來源 `src/mir/layout.go`；`hir2mir.fillEnumLayout`

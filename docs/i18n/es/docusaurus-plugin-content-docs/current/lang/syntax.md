@@ -2924,7 +2924,7 @@ El payload de la variante `err` **no es `str`**, sino la estructura `err` de `st
 - El tamaño del payload `K` lo determina el tamaño real de `T` y se redondea hacia arriba a múltiplo de 8, **no es una ranura fija**: `?i64` ocupa 16 bytes (8 + 8), `?str` 24 bytes (8 + 16) y `?txt` 264 bytes (8 + 256).
 - Un payload que supera el umbral pasa a **empaquetarse en el montón**: `payload` guarda solo un puntero de 8 bytes y toda la opción ocupa 16 bytes.
 
-El umbral `option-inline-threshold` se mide en bytes de **toda la estructura option** (por defecto **264** = 1 byte de tag + 7 bytes de relleno + 256 bytes de payload; mínimo **16**): la condición para in-linear el payload es `8 + roundUp8(sizeof(T)) <= umbral`. Por eso, por defecto, «se in-linea si el payload no supera los 256 bytes», y `?txt` (búfer inline de 256 bytes) cae justo dentro del límite.
+El umbral `option-payload-inline-threshold` se mide en bytes de **toda la estructura option** (por defecto **264** = 1 byte de tag + 7 bytes de relleno + 256 bytes de payload; mínimo **16**): la condición para in-linear el payload es `8 + roundUp8(sizeof(T)) <= umbral`. Por eso, por defecto, «se in-linea si el payload no supera los 256 bytes», y `?txt` (búfer inline de 256 bytes) cae justo dentro del límite.
 
 | `T` de `?T` | ¿In-lineado? | Tamaño de `%option_<key>` |
 | --- | --- | --- |
@@ -2936,7 +2936,7 @@ El umbral `option-inline-threshold` se mide en bytes de **toda la estructura opt
 
 > **El payload de `err` siempre se empaqueta**: la variante `err` almacena un puntero a la estructura `err` de `std/err` y no ocupa el presupuesto de payload de arriba. Por eso `?str` ocupa 24 bytes con una cadena in-lineada en `ok`, y también la misma estructura de 24 bytes en `err`: solo que la palabra de `payload` guarda un puntero al objeto de error. Esta regla evita que «un mismo tipo `?T`, dos variantes y dos payloads» necesiten espacio adicional.
 
-> **In-linear y empaquetado solo cambian «dónde se guarda», no la propiedad**: en ambas rutas, cuando ocurre una **copia** se crea una copia nueva de la parte en el montón del payload estructurado (los campos puntero se recursan, los búferes `str` / `[]T` propiedad in-lineada se clonan), así que la semántica de valor de `?T` no depende de si está in-lineada: el mismo programa debe producir exactamente la misma salida con cualquier `option-inline-threshold`. Cambiar de comportamiento por un byte de diferencia en el umbral sería un defecto del compilador, no una característica. (Las asignaciones de movimiento puro no clonan; la opción toma el montón de la fuente.)
+> **In-linear y empaquetado solo cambian «dónde se guarda», no la propiedad**: en ambas rutas, cuando ocurre una **copia** se crea una copia nueva de la parte en el montón del payload estructurado (los campos puntero se recursan, los búferes `str` / `[]T` propiedad in-lineada se clonan), así que la semántica de valor de `?T` no depende de si está in-lineada: el mismo programa debe producir exactamente la misma salida con cualquier `option-payload-inline-threshold`. Cambiar de comportamiento por un byte de diferencia en el umbral sería un defecto del compilador, no una característica. (Las asignaciones de movimiento puro no clonan; la opción toma el montón de la fuente.)
 
 > La única fuente de la disposición es `src/mir/layout.go`: `optLayoutOfPayload` determina `K` y si se empaqueta, y `optionPayloadOffset` (8) es el desplazamiento fijo en bytes del payload. Tanto `hir2mir` al plegar constantes `?T` de nivel de módulo como codegen al emitir lecturas y escrituras consultan la misma función.
 
@@ -4189,7 +4189,6 @@ El bloque `compiler` de `package.noml` controla el comportamiento del compilador
 {
   compiler: {
     version: 'v0.1.0'
-    anonymous-fn-type: false
     emit: 'js'
   }
 }

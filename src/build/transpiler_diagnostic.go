@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/mir"
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -37,7 +38,14 @@ func (e *DiagnosticError) Error() string {
 	}
 	parts := make([]string, 0, len(e.Lints))
 	for _, l := range e.Lints {
-		parts = append(parts, fmt.Sprintf("line %d, column %d: %s%s", l.Line, l.Column, l.Message, checker.TraceSuffix(l.TraceID)))
+		// File 非空时带 "<file>: " 前缀，使 parseCompileErrorToLints 反解析
+		// 取回同一 File，保持结构化 LintResult 与 reparse 逐字段相等。
+		// File 为空时逐字沿用旧格式（vet 指纹门禁零漂移）。
+		if l.File != "" {
+			parts = append(parts, fmt.Sprintf("%s: line %d, column %d: %s%s", l.File, l.Line, l.Column, l.Message, checker.TraceSuffix(l.TraceID)))
+		} else {
+			parts = append(parts, fmt.Sprintf("line %d, column %d: %s%s", l.Line, l.Column, l.Message, checker.TraceSuffix(l.TraceID)))
+		}
 	}
 	return prefix + ": " + strings.Join(parts, "; ")
 }
@@ -50,9 +58,11 @@ func (e *DiagnosticError) Error() string {
 // 逐欄位全等——保證 no vet 的指紋門禁（VetFileWithLints 回傳 lint 的規範化
 // sha256）在 #6 前後零漂移。
 //
-// 註：checker.ValidateResult 在合併模式下本帶 File / EndColumn 一手歸因資訊，
-// 此處主動丟棄以匹配現有行為；未來若要讓合併模組的驗證錯誤帶正確 File 歸因，
-// 需同步調整 reparse 前綴並重新基線化指紋（獨立 follow-up）。
+// File 只在 ValidateResult 带了一手归因时透传（合併模式下的 import 模組節點
+// 有自己的 SourceFile/ModuleOwner）；空值维持旧行为，让 vet 指紋门禁零漂移。
+// DiagnosticError.Error() 同步在 File 非空时输出 "<file>: " 前缀，reparse 可
+// 取回同一 File，故结构化 LintResult 与 parseCompileErrorToLints 仍逐字段相等。
+// EndColumn 仍主动留 0 以匹配 reparse 路径（見上方註釋）。
 func validateResultToLint(e checker.ValidateResult) checker.LintResult {
 	return checker.LintResult{
 		Line:     e.Line,
@@ -61,8 +71,27 @@ func validateResultToLint(e checker.ValidateResult) checker.LintResult {
 		Source:   "nolang-compile",
 		Message:  e.Message,
 		TraceID:  e.TraceID,
+		File:     e.File,
 		Fixes:    e.Fixes,
 	}
+}
+
+// codegenDiagsToLints 將 MIR 後端診斷轉為 CLI/LSP 共用的 LintResult。
+// File 保留 HIR 帶下來的源檔名，列尾的 [id] 由 TraceID 統一渲染。
+func codegenDiagsToLints(diags []mir.CodegenDiag) []checker.LintResult {
+	out := make([]checker.LintResult, 0, len(diags))
+	for _, d := range diags {
+		out = append(out, checker.LintResult{
+			File:     d.File,
+			Line:     int(d.Line),
+			Column:   int(d.Col),
+			Severity: checker.LintError,
+			Source:   "nolang-codegen",
+			Message:  d.Message,
+			TraceID:  d.ID,
+		})
+	}
+	return out
 }
 
 // parserDiagnosticsToLints 將 parser 診斷轉為結構化 checker.LintResult，

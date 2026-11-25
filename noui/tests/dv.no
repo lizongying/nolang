@@ -524,17 +524,8 @@ ops-j1 = dv-render(root-j, rj)
 r56 = ops-j1 == 57 && cmp-children(root-j) == 57
 
 ; 抽查：首尾 kind、VALUE / VALUE2 语义（otp 格数 / 表格列行 / 分页总数 / 评分满分）
-r57 = cmp-kind(cmp-child(root-j, 0)) == C-ICON
-    && cmp-value(cmp-child(root-j, 5)) == 6
-    && cmp-kind(cmp-child(root-j, 16)) == C-PAGINATION
-    && cmp-value2(cmp-child(root-j, 16)) == 42
-    && cmp-kind(cmp-child(root-j, 35)) == C-TABLE
-    && cmp-value(cmp-child(root-j, 35)) == 3
-    && cmp-value2(cmp-child(root-j, 35)) == 4
-    && cmp-kind(cmp-child(root-j, 42)) == C-RATING
-    && cmp-value2(cmp-child(root-j, 42)) == 5
-    && cmp-text(cmp-child(root-j, 50)) == 'raw'
-    && cmp-kind(cmp-child(root-j, 56)) == C-INDEX-PATH
+; 单行 &&：nolang 不支持「行首 &&」续行（parse 会在 && 处报 m0db1nfx）
+r57 = cmp-kind(cmp-child(root-j, 0)) == C-ICON && cmp-value(cmp-child(root-j, 5)) == 6 && cmp-kind(cmp-child(root-j, 16)) == C-PAGINATION && cmp-value2(cmp-child(root-j, 16)) == 42 && cmp-kind(cmp-child(root-j, 35)) == C-TABLE && cmp-value(cmp-child(root-j, 35)) == 3 && cmp-value2(cmp-child(root-j, 35)) == 4 && cmp-kind(cmp-child(root-j, 42)) == C-RATING && cmp-value2(cmp-child(root-j, 42)) == 5 && cmp-text(cmp-child(root-j, 50)) == 'raw' && cmp-kind(cmp-child(root-j, 56)) == C-INDEX-PATH
 
 ; flags 组合子（函数内位或，数值稳定）
 r58 = dv-on-sel() == 11 && dv-on-act() == 19 && dv-on-open() == 35
@@ -643,4 +634,4 @@ print('ops A={ops-a1},{ops-a2},{ops-a3},{ops-a4},{ops-a5} B={ops-b1},{ops-b2},{o
 print('ops F={ops-f1},{ops-f2} G={ops-g1},{ops-g2},{ops-g3},{ops-g4},{ops-g5},{ops-g6},{ops-g7} H={ops-h1},{ops-h2},{ops-h3}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL DV TESTS PASSED') }
-(!all-ok) -> { print('SOME DV TESTS FAILED') }
+(!all-ok) -> { print('SOME DV TESTS FAILED'); exit(1) }

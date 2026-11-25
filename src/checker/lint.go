@@ -348,6 +348,7 @@ var lintSteps = []lintStep{
 	{"range-self-ellipsis", true, runLintRangeSelfEllipsis},
 	{"index-write", false, runLintIndexWrite},
 	{"value-match-position", true, runLintValueMatchPosition},
+	{"match-subject-parens", true, runLintMatchSubjectParens},
 	{"parser-warnings", true, runLintParserWarnings},
 	{"trailing-comments", true, runLintTrailingComments},
 }
@@ -716,6 +717,25 @@ func runLintValueMatchPosition(program *parser.Program, opts LintOptions) []Lint
 	return results
 }
 
+// runLintMatchSubjectParens — value-match 主語外側多餘括號 → HINT `msubjparen`。
+// 括號不改變語意（H0 透傳、resolveSubjectMatch 剝括號），no fmt 會自動移除。
+func runLintMatchSubjectParens(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, r := range ValidateMatchSubjectParens(program, opts.SourcePath) {
+		file := r.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: r.Line, Column: r.Column,
+			Severity: LintHint, Source: "nolang-value-match",
+			File:    file,
+			Message: r.Message, TraceID: r.TraceID,
+		})
+	}
+	return results
+}
+
 // ── Surface 軌（surface=true）──────────────────────────────────────────────────
 
 // runLintNaming — 2. 命名規範
@@ -993,8 +1013,15 @@ func runLintNonExhaustiveMatch(program *parser.Program, opts LintOptions) []Lint
 func runLintPrintFormat(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, u := range ValidatePrintFormat(program) {
+		file := u.File
+		if u.TraceID == eprintOptionArgTraceID && file == "" {
+			// Merged multi-file programs drop lints with no File attribution
+			// (see finalizeLintResults); the eprint guard is emitted from the
+			// compilation target's own AST, so attribute it to SourcePath.
+			file = opts.SourcePath
+		}
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: file,
 			Severity: LintError, Source: "nolang-format-checker",
 			Message: u.Message, TraceID: u.TraceID,
 		})
@@ -1367,7 +1394,11 @@ func isStdPath(p string) bool {
 	return strings.Contains(p, "/std/")
 }
 
-// stdRelPath 把 std 路徑正規化為可比較的相对形式「std/<rest>」，讓絕對路徑
+// IsStdPath 暴露 isStdPath 給 build 層：跨模組診斷（如同名全域綁定）需要把
+// 「兩個都在 std、按既有先贏去重共存的宣告」與「用戶側真實衝突」分開。
+func IsStdPath(p string) bool { return isStdPath(p) }
+
+// stdRelPath 把 std 路徑正規化為可比較的相對形式「std/<rest>」，讓絕對路徑
 // （/…/src/std/net/http.no）、相對路徑（src/std/net/http.no）與邏輯模組形式
 // （std/net/http.no）指向同一檔時比對相等。非 std 路徑原樣返回。
 func stdRelPath(p string) string {

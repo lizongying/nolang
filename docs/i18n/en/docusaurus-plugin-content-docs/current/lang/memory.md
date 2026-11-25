@@ -78,7 +78,7 @@ Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a
 | struct | sum of fields | each field | alloca (stack) |
 
 **`?T`'s size is computed, not fixed**: `?i64` = 16 bytes, `?str` = 24, `?txt` = 264, and a payload
-above `option-inline-threshold` (default 264 = 1 + 7 + 256, minimum 16) is heap-boxed, taking the
+above `option-payload-inline-threshold` (default 264 = 1 + 7 + 256, minimum 16) is heap-boxed, taking the
 whole option back to 16 bytes. Each payload type gets its own `%option_<key>` type
 (`src/mir/layout.go`), so "same type ⇔ same layout". The `err` payload is always boxed and never
 competes for the payload budget. See `docs/docs/lang/syntax.md` "Nullable Types (option) · Memory

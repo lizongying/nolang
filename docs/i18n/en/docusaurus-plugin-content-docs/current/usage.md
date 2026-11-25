@@ -159,12 +159,12 @@ A `?T` is laid out **per payload type**: each payload type `T` gets its own
 `K = roundUp8(sizeof(T))/8`). A payload that does not fit the threshold is
 heap-boxed and word 0 of the payload area holds the pointer.
 
-`--option-inline-threshold=N` sets that threshold, measured over the **whole
+`--option-payload-inline-threshold=N` sets that threshold, measured over the **whole
 option struct** (`1 + 7 + sizeof(T)`):
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # inline larger payloads
-no build --option-inline-threshold=16 main.no     # smallest configurable value
+no build --option-payload-inline-threshold=1032 main.no   # inline larger payloads
+no build --option-payload-inline-threshold=16 main.no     # smallest configurable value
 ```
 
 | Value | Effect |
@@ -173,8 +173,8 @@ no build --option-inline-threshold=16 main.no     # smallest configurable value
 | minimum **16** | only `?i64`-sized payloads stay inline; `?str` (24 B) and up are boxed |
 | < 16 | compile error |
 
-Precedence: command line > `NOLANG_OPTION_INLINE_THRESHOLD` > `package.noml`'s
-`compiler.option-inline-threshold` > the default. The layout's single source of
+Precedence: command line > `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `package.noml`'s
+`compiler.option-payload-inline-threshold` > the default. The layout's single source of
 truth is `src/mir/layout.go`; semantics (which values count as `ok` / `nil` /
 `err`) never change — only size and whether the payload is boxed.
 
@@ -290,14 +290,12 @@ The `package.noml` file in the project root directory describes project informat
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

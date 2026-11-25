@@ -159,12 +159,12 @@ Die Speicherlayouts von `?T` **richten sich nach dem Payload-Typ**: Für jeden P
 `%option_<key> = { i8 tag, [K x i64] }` (1-Byte-Tag, Payload fest bei Byte-Offset 8,
 `K = roundUp8(sizeof(T))/8`). Passt die Payload nicht in den Schwellenwert, wird sie auf dem Heap geboxt und das erste Wort des Payload-Bereichs speichert einen Zeiger.
 
-`--option-inline-threshold=N` legt diesen Schwellenwert fest (gezählt in Bytes der **gesamten Option-Struktur**,
+`--option-payload-inline-threshold=N` legt diesen Schwellenwert fest (gezählt in Bytes der **gesamten Option-Struktur**,
 also `1 + 7 + sizeof(T)`):
 
 ```bash
-no build --option-inline-threshold=1032 main.no   # 讓更大的載荷內聯
-no build --option-inline-threshold=16 main.no     # 最小可配置值
+no build --option-payload-inline-threshold=1032 main.no   # 讓更大的載荷內聯
+no build --option-payload-inline-threshold=16 main.no     # 最小可配置值
 ```
 
 | Wert | Wirkung |
@@ -173,7 +173,7 @@ no build --option-inline-threshold=16 main.no     # 最小可配置值
 | Minimum **16** | Nur Typen wie `?i64` bleiben inline; ab `?str` (24 B) wird alles geboxt |
 | < 16 | Kompilierungsfehler |
 
-Priorität: Kommandozeile > Umgebungsvariable `NOLANG_OPTION_INLINE_THRESHOLD` > `compiler.option-inline-threshold` in
+Priorität: Kommandozeile > Umgebungsvariable `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD` > `compiler.option-payload-inline-threshold` in
 `package.noml` > Standardwert. Die einzige Quelle des Layouts ist `src/mir/layout.go`,
 auf semantischer Ebene (welche Werte als `ok`／`nil`／`err` gelten) **ändert sich nichts**; nur der Speicherverbrauch und die Box-Entscheidung können variieren.
 
@@ -383,14 +383,12 @@ Die Datei `package.noml` im Projektstammverzeichnis beschreibt die Projektinform
   repository: ''
   homepage: ''
   license: 'MIT'
-  mirrors: []
   dependencies: [
     'fmt',,
   ]
   compiler: {
     version: 'v0.1.0'
   }
-  output: './dist'
   ignore: []
 }
 ```

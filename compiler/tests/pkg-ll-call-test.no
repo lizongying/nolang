@@ -87,7 +87,7 @@ oo, oe, ocode, oerr = process.cmd('opt', optargs, '', '', [], 0, false)
 syntax-bad = oe.contains('expected ') || oe.contains('redefinition of') || oe.contains('type mismatch') || oe.contains('undefined value') || oe.contains('use of undefined')
 runner.is-true(! syntax-bad, 'slice6: opt -passes=verify clean (caller + callee linked, no undefined value)')
 print('pkg-ll-call opt rc=' - ocode.to-str() - (ocode == 0 && ! syntax-bad ? ' (clean: caller + callee linked)' : ' (FAILED)'))
-oe.len-bytes() > 0 -> print('pkg-ll-call opt stderr (first 240 chars): ' - oe.slice-bytes(0, 240))
+oe.len-bytes() > 0 -> print('pkg-ll-call opt stderr (first 240 chars): ' - oe.slice-bytes(0, 240).to-bytes-str())
 
 runner.summary()
 f = runner.failed-count()

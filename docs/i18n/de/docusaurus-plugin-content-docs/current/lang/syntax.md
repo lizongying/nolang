@@ -3101,7 +3101,7 @@ daher gilt „gleicher Payload-Typ ⇒ gleiches Layout“, `?i32` / `?i64` / `?b
   `?i64` ist 16 Bytes (8 + 8), `?str` ist 24 Bytes (8 + 16), `?txt` ist 264 Bytes (8 + 256).
 - Payloads über dem Schwellwert werden auf den **Heap geboxt**: `payload` speichert nur einen 8-Byte-Zeiger, das ganze option ist 16 Bytes.
 
-Der Schwellwert `option-inline-threshold` zählt in Bytes über die **gesamte option-Struktur** (Standard **264** = 1 Byte Tag +
+Der Schwellwert `option-payload-inline-threshold` zählt in Bytes über die **gesamte option-Struktur** (Standard **264** = 1 Byte Tag +
 7 Bytes Padding + 256 Bytes Payload, Minimum **16**): Die Bedingung für Inline-Payload lautet
 `8 + roundUp8(sizeof(T)) <= Schwellwert`. Standardmäßig gilt also „Payload bis 256 Bytes wird inline“, `?txt`
 (256 Bytes Inline-Puffer) liegt genau innerhalb der Grenze.
@@ -3121,7 +3121,7 @@ Der Schwellwert `option-inline-threshold` zählt in Bytes über die **gesamte op
 
 > **Inline vs. Boxing ändert nur „wo es liegt“, nicht die Ownership**: Beide Pfade legen bei einer **Kopie** eine eigene Kopie des Heap-Anteils der Struktur-Payload an
 > (Zeigerfelder rekursiv, inline gehaltene `str` / `[]T`-Puffer geklont), daher ist die Wertesemantik von `?T`
-> unabhängig davon, ob inline oder nicht — dasselbe Programm muss bei jedem `option-inline-threshold` identische Ausgaben liefern.
+> unabhängig davon, ob inline oder nicht — dasselbe Programm muss bei jedem `option-payload-inline-threshold` identische Ausgaben liefern.
 > Ein anderes Verhalten nur wegen eines anderen Schwellwerts wäre ein Compilerfehler, kein Feature. (Reine Move-Zuweisungen klonen nicht, der option übernimmt
 > den Heap der Quelle.)
 
@@ -4421,7 +4421,6 @@ Der `compiler`-Block in `package.noml` steuert das Compilerverhalten. Der `versi
 {
   compiler: {
     version: 'v0.1.0'
-    anonymous-fn-type: false
     emit: 'js'
   }
 }

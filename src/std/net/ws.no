@@ -510,7 +510,7 @@ server-conn.handshake = () {
         tmp str = with-len(WS-RECV-SIZE)
         n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
         n <= 0 -> return
-        raw = raw - tmp.slice-bytes(0, n)
+        raw = raw - tmp.slice-bytes(0, n).to-bytes-str()
 
         #{overflow=wrap}
         total = total + n
@@ -726,7 +726,7 @@ server-conn.recv = () (msg ?message) {
             }
 
             ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
             #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
@@ -776,7 +776,7 @@ server-conn.recv = () (msg ?message) {
             }
 
             ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp2.slice-bytes(0, n)
+            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp2.slice-bytes(0, n).to-bytes-str()
 
             #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
@@ -813,7 +813,7 @@ server-conn.recv = () (msg ?message) {
             }
 
             ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp3.slice-bytes(0, n)
+            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp3.slice-bytes(0, n).to-bytes-str()
 
             #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
@@ -825,7 +825,12 @@ server-conn.recv = () (msg ?message) {
 
         ; str 下標寫已禁用；用 slice-bytes 逐 byte 等價複製 4-byte mask key
         #{overflow=wrap}
-        mask-key = .recv-buf.slice-bytes(mask-start, mask-start + 4)
+        mk-opt = .recv-buf.slice-bytes(mask-start, mask-start + 4)
+        mask-key = mk-opt: {
+            ok -> it.to-bytes-str()
+
+            -> ''
+        }
         payload-start = mask-start
 
         #{overflow=wrap}
@@ -861,7 +866,7 @@ server-conn.recv = () (msg ?message) {
         remaining-len = .recv-buf-len - remaining-start
 
         ; str 下標寫已禁用；直接切片搬移（內容逐 byte 等價）
-        .recv-buf = .recv-buf.slice-bytes(remaining-start, .recv-buf-len)
+        .recv-buf = .recv-buf.slice-bytes(remaining-start, .recv-buf-len).to-bytes-str()
         .recv-buf-len = remaining-len
 
         ; 處理控制訊框（close/ping/pong）
@@ -962,7 +967,7 @@ server-conn.recv-nb = () (msg ?message) {
             n > 0 -> {
 
                 ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
                 #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n
@@ -1037,7 +1042,12 @@ server-conn.recv-nb = () (msg ?message) {
 
         ; str 下標寫已禁用；用 slice-bytes 逐 byte 等價複製 4-byte mask key
         #{overflow=wrap}
-        mask-key = .recv-buf.slice-bytes(mask-start, mask-start + 4)
+        mk-opt = .recv-buf.slice-bytes(mask-start, mask-start + 4)
+        mask-key = mk-opt: {
+            ok -> it.to-bytes-str()
+
+            -> ''
+        }
     }
     payload-start = mask-start
 
@@ -1074,7 +1084,7 @@ server-conn.recv-nb = () (msg ?message) {
     remaining-len = .recv-buf-len - remaining-start
 
     ; str 下標寫已禁用；直接切片搬移（內容逐 byte 等價）
-    .recv-buf = .recv-buf.slice-bytes(remaining-start, .recv-buf-len)
+    .recv-buf = .recv-buf.slice-bytes(remaining-start, .recv-buf-len).to-bytes-str()
     .recv-buf-len = remaining-len
 
     ; 控制訊框與資料訊框
@@ -1262,7 +1272,7 @@ client.recv = () (msg ?message) {
             }
 
             ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+            .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
             #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n: {
@@ -1330,7 +1340,7 @@ client.recv = () (msg ?message) {
                 }
 
                 ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
                 #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
@@ -1374,7 +1384,7 @@ client.recv = () (msg ?message) {
                 }
 
                 ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
                 #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
@@ -1418,7 +1428,7 @@ client.recv = () (msg ?message) {
                 }
 
                 ; str 下標寫已禁用；從既有內容拼接新區塊（內容逐 byte 等價）
-                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len) - tmp.slice-bytes(0, n)
+                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
 
                 #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
@@ -1442,7 +1452,12 @@ client.recv = () (msg ?message) {
 
             ; str 下標寫已禁用；用 slice-bytes 逐 byte 等價複製 4-byte mask key
             #{overflow=wrap}
-            mask-key = .recv-buf.slice-bytes(mask-start, mask-start + 4)
+            mk-opt = .recv-buf.slice-bytes(mask-start, mask-start + 4)
+            mask-key = mk-opt: {
+                ok -> it.to-bytes-str()
+
+                -> ''
+            }
         }
 
         #{overflow=wrap}
@@ -1470,7 +1485,7 @@ client.recv = () (msg ?message) {
         remaining-len = .recv-buf-len - remaining-start
 
         ; str 下標寫已禁用；直接切片搬移（內容逐 byte 等價）
-        .recv-buf = .recv-buf.slice-bytes(remaining-start, .recv-buf-len)
+        .recv-buf = .recv-buf.slice-bytes(remaining-start, .recv-buf-len).to-bytes-str()
         .recv-buf-len = remaining-len
         opcode == WS-OP-CLOSE -> {
             .connected = false
@@ -1750,7 +1765,7 @@ connect = (url str) (c ?client) {
             c = err('connection closed during handshake')
             return
         }
-        raw = raw - tmp.slice-bytes(0, n)
+        raw = raw - tmp.slice-bytes(0, n).to-bytes-str()
 
         #{overflow=wrap}
         ntotal = total + n: {

@@ -21,8 +21,8 @@
 > ⛔ **佈局已改（2026-11-12）：`?T` 逐載荷定型**。本文件下文凡提到「共用單一 `%option`」「32 位元組
 > 固定槽」「24 位元組內聯載荷」的敘述均為**歷史記錄**。現行佈局是每個載荷型別各自一個
 > `%option_<key> = { i8 tag, [K x i64] }`：1 位元組標籤、載荷固定在**位元組偏移 8**、
-> `K = roundUp8(sizeof(T))/8`；`1 + 7 + sizeof(T)` 超過 `option-inline-threshold`（預設 **264**、
-> 最小 16）的載荷改存堆指標，**err 載荷恆裝箱**。唯一來源 `src/mir/layout.go`；敘述見
+> `K = roundUp8(sizeof(T))/8`；`roundUp8(sizeof(T))` 超過 `option-payload-inline-threshold`（預設 **256**、
+> 最小 8，均只計載荷、不含 8 位元組標籤區）的載荷改存堆指標，**err 載荷恆裝箱**。唯一來源 `src/mir/layout.go`；敘述見
 > `docs/docs/lang/syntax.md`〈可空類型(option)・內存佈局〉與 `memory.md`。下方 D1–D10 的
 > **語義決策全部繼續有效**——佈局變動不改變任何 match / `?=` / 診斷行為。
 

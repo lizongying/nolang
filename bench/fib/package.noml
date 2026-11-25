@@ -12,6 +12,6 @@
   compiler: {
     version: 'v0.1.0'
   }
-  output: '/dist'
   ignore: []
+  category: ''
 }

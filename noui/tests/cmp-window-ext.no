@@ -252,4 +252,5 @@ ok = ok & t76 & t77 & t78 & t79 & t80 & t81 & t82 & t83 & t84 & t85 & t86 & t87 
 }
 (ok == 0) -> {
     print('SOME WINDOW-EXT TESTS FAILED')
+    exit(1)
 }

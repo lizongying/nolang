@@ -294,22 +294,22 @@ drv.cmd-vet = () (code i64) {
         ln-part = ''
         rest = ''
         p1 > 0 -> {
-            ln-part = raw.slice-bytes(0, p1)
-            rest = raw.slice-bytes(p1 + 1, raw.len-bytes())
+            ln-part = raw.slice-bytes(0, p1).to-bytes-str()
+            rest = raw.slice-bytes(p1 + 1, raw.len-bytes()).to-bytes-str()
         }
         p2 = rest.index('|')
         cl-part = ''
         rest2 = ''
         p2 > 0 -> {
-            cl-part = rest.slice-bytes(0, p2)
-            rest2 = rest.slice-bytes(p2 + 1, rest.len-bytes())
+            cl-part = rest.slice-bytes(0, p2).to-bytes-str()
+            rest2 = rest.slice-bytes(p2 + 1, rest.len-bytes()).to-bytes-str()
         }
         p3 = rest2.index('|')
         code-part = rest2
         msg-part = ''
         p3 > 0 -> {
-            code-part = rest2.slice-bytes(0, p3)
-            msg-part = rest2.slice-bytes(p3 + 1, rest2.len-bytes())
+            code-part = rest2.slice-bytes(0, p3).to-bytes-str()
+            msg-part = rest2.slice-bytes(p3 + 1, rest2.len-bytes()).to-bytes-str()
         }
 
         d = diag{
@@ -516,10 +516,10 @@ drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
 ; `# <imp>` 的 imp 路徑 → 實體 .no 檔路徑（④）
 drv.bp-resolve = (imp str) (file str) {
     file = imp
-    imp.starts-with('/') -> file = imp.slice-bytes(1, imp.len-bytes())
+    imp.starts-with('/') -> file = imp.slice-bytes(1, imp.len-bytes()).to-bytes-str()
     file.ends-with('.no') -> return
     file.ends-with('.sb') -> {
-        file = file.slice-bytes(0, file.len-bytes() - 3) + '.no'
+        file = file.slice-bytes(0, file.len-bytes() - 3).to-bytes-str() + '.no'
         return
     }
     file.ends-with('/') -> {
@@ -582,18 +582,18 @@ drv.mod-name = (f str) (r str) {
     last = -1
     k = 0
     (k < n) {
-        c = f.slice-bytes(k, k + 1)
+        c = f.slice-bytes(k, k + 1).to-bytes-str()
         c == '/' -> last = k
 
         k = ix.inc(k)
     }
-    base = f.slice-bytes(last + 1, n)
+    base = f.slice-bytes(last + 1, n).to-bytes-str()
     bn = base.len-bytes()
     r = base
     bn >= 3 -> {
-        suf = base.slice-bytes(bn - 3, bn)
-        suf == '.no' -> r = base.slice-bytes(0, bn - 3)
-        suf == '.sb' -> r = base.slice-bytes(0, bn - 3)
+        suf = base.slice-bytes(bn - 3, bn).to-bytes-str()
+        suf == '.no' -> r = base.slice-bytes(0, bn - 3).to-bytes-str()
+        suf == '.sb' -> r = base.slice-bytes(0, bn - 3).to-bytes-str()
     }
 }
 
@@ -604,9 +604,9 @@ drv.pkg-split = (s str) (r []str) {
     start = 0
     i = 0
     (i < n) {
-        c = s.slice-bytes(i, i + 1)
+        c = s.slice-bytes(i, i + 1).to-bytes-str()
         c == ':' -> {
-            seg = s.slice-bytes(start, i)
+            seg = s.slice-bytes(start, i).to-bytes-str()
             seg.len-bytes() > 0 -> r.push(seg)
             start = i + 1: {
                 ok -> it
@@ -617,7 +617,7 @@ drv.pkg-split = (s str) (r []str) {
 
         i = ix.inc(i)
     }
-    last = s.slice-bytes(start, n)
+    last = s.slice-bytes(start, n).to-bytes-str()
     last.len-bytes() > 0 -> r.push(last)
 }
 
@@ -670,7 +670,7 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
     sg = h2m-sigs-new()
     agg = h2m-new()
     pkg = drv.build-package(path)
-    body = pkg.slice-bytes(1, pkg.len-bytes())
+    body = pkg.slice-bytes(1, pkg.len-bytes()).to-bytes-str()
     files = drv.pkg-split(body)
 
     ; pass 1：全部模組 struct 名→sid 登記進共享 agg（跨模組結構體表統一）
@@ -720,8 +720,8 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
                     short = nm
                     pre-dot = mod - '.'
                     pre-hyp = mod - '-'
-                    nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
-                    nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
+                    nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-bytes-str()
+                    nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-bytes-str()
                     key = mod - '.' - short
                     h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, h2m-def-is-method(t, kid))
                 }
@@ -768,7 +768,7 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
     r = ''
     agg h2m-ctx = h2m-new()
     pkg = drv.build-package(path)
-    body0 = pkg.slice-bytes(1, pkg.len-bytes())
+    body0 = pkg.slice-bytes(1, pkg.len-bytes()).to-bytes-str()
     files = drv.pkg-split(body0)
     nfiles = files.len()
 
@@ -838,8 +838,8 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
                     short = nm
                     pre-dot = mod - '.'
                     pre-hyp = mod - '-'
-                    nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
-                    nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes())
+                    nm.starts-with(pre-dot) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-bytes-str()
+                    nm.starts-with(pre-hyp) == true -> short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-bytes-str()
                     key = mod - '.' - short
                     h2m-sig-find(sg, key) < 0 -> h2m-sig-add(sg, key, nm, rt, ap, h2m-def-is-method(t, kid))
                 }
@@ -862,6 +862,10 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
     ; 全域結構體宣告一次（§11 B10 唯一裝配點，多模組不可分散 emit 否則 redefinition）；
     ;   ⚠️ 必須排在上列 sg 前置 pass 之後——合成聚合結構體是在該 pass 內才登記的。
     decls = h2m-struct-decls(agg)
+
+    ; s175：[]結構體索引讀的 per-sid 助手（必須排在高域結構體宣告之後——helper 內部
+    ;   引用 %struct.s<sid> 作 getelementptr 的型別）。
+    decls = decls - cg-runtime-vec-get-st-ptrs(agg.stfc)
     body = body - decls
 
     ; 逐模組 emit 各函式（入口額外合成 main），body 串接，用全域 sg 解析跨模組呼叫

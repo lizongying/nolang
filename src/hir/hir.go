@@ -354,9 +354,16 @@ type Ann struct {
 // Node.Type (declared) and Inferred (inferred), never re-derived from shape.
 // Formatter trivia (RTFlags, OpeningBraceComment) must NOT live here.
 type Package struct {
-	Name    string
-	Nodes   []Node
-	Strings []string
+	Name  string
+	Nodes []Node
+	// NodeFiles is parallel to Nodes: for each HIR node, the interned string
+	// id of the base name of the source file it came from (NoID when
+	// unknown). The compact 48-byte Node has no room for a per-node file
+	// field — S2 only carries it on KCall — so MIR diagnostics on non-call
+	// instructions read their file from here instead of rendering as
+	// ":line:col:". Use NodeFile(id) to look it up.
+	NodeFiles []int32
+	Strings   []string
 	// Types is the STRUCTURED view of the id space Node.Type points into.
 	// Node.Type (and every InternType id) indexes Strings; Types[id] holds the
 	// parsed *ty.Type for that spelling once someone asked for it (SetTypeRef /
@@ -423,6 +430,18 @@ func (p *Package) Node(id int32) *Node {
 		return nil
 	}
 	return &p.Nodes[id]
+}
+
+// FileOf returns the interned string id of the source file a node came from,
+// or NoID when unknown (also for out-of-range ids). Package.Str(id) turns it
+// into the base name. Newly built packages carry this for every node; older
+// hand-built ones may have an empty table, in which case callers fall back to
+// the KCall S2 convention.
+func (p *Package) FileOf(id int32) int32 {
+	if id <= NoID || int(id) >= len(p.NodeFiles) {
+		return NoID
+	}
+	return p.NodeFiles[id]
 }
 
 // Str resolves an interned string id. NoID and out-of-range ids return "".
@@ -799,6 +818,7 @@ func (p *Package) dumpNode(sb *strings.Builder, id int32, depth int) {
 // concurrent use; build each package on its own Builder.
 type Builder struct {
 	nodes     []Node
+	nodeFiles []int32 // parallel to nodes; interned source-file name id
 	strings   []string
 	strIdx    map[string]int32
 	top       []int32
@@ -808,6 +828,11 @@ type Builder struct {
 	embedSeen map[int32]bool // dedup for AddEmbed; discarded when Package is built
 	name      string
 	types     map[int32]*ty.Type // structured view of the InternType ids
+	// CurFile is the interned string id of the source file that nodes added
+	// from now on came from. hirConv.stmt sets it from the statement's
+	// SourceFile; synthetic nodes appended while lowering that statement
+	// inherit it. NoID means unknown.
+	CurFile int32
 }
 
 // NewBuilder returns an empty Builder sized for a typical module.
@@ -816,10 +841,11 @@ type Builder struct {
 // can be 0; see the comment on NoID for why that matters.
 func NewBuilder(name string) *Builder {
 	b := &Builder{
-		nodes:   make([]Node, 1, 1024),
-		strings: make([]string, 1, 128),
-		strIdx:  make(map[string]int32, 256),
-		name:    name,
+		nodes:     make([]Node, 1, 1024),
+		nodeFiles: make([]int32, 1, 1024),
+		strings:   make([]string, 1, 128),
+		strIdx:    make(map[string]int32, 256),
+		name:      name,
 	}
 	b.strIdx[""] = NoID
 	return b
@@ -858,6 +884,7 @@ func (b *Builder) Add(n Node) int32 {
 	id := int32(len(b.nodes))
 	n.Id = id
 	b.nodes = append(b.nodes, n)
+	b.nodeFiles = append(b.nodeFiles, b.CurFile)
 	return id
 }
 
@@ -948,12 +975,13 @@ func (b *Builder) Package() *Package {
 		}
 	}
 	return &Package{
-		Name:    b.name,
-		Nodes:   b.nodes,
-		Strings: b.strings,
-		Types:   types,
-		Top:     b.top,
-		Anns:    b.anns,
-		Embeds:  b.embeds,
+		Name:      b.name,
+		Nodes:     b.nodes,
+		NodeFiles: b.nodeFiles,
+		Strings:   b.strings,
+		Types:     types,
+		Top:       b.top,
+		Anns:      b.anns,
+		Embeds:    b.embeds,
 	}
 }

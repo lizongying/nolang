@@ -163,4 +163,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-OVERLAY TESTS FAILED')
+    exit(1)
 }

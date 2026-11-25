@@ -262,4 +262,5 @@ ok = ok & t60 & t61 & t62 & t63 & t64 & t65
 }
 (ok == 0) -> {
     print('SOME COLLAPSIBLE TESTS FAILED')
+    exit(1)
 }

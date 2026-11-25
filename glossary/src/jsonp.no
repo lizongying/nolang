@@ -54,7 +54,7 @@ bslice = (s str, a i64, b i64) (v str) {
     n = s.len-bytes()
     b > n -> return
     a >= b -> return
-    v = s.slice-bytes(a, b)
+    v = s.slice-bytes(a, b).to-bytes-str()
 }
 
 ; 取第 i 个字节值

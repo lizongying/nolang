@@ -2,7 +2,6 @@
 ; No modifique las claves: `make i18n` las genera desde el código fuente.
 ; Los verbos de formato (%s / %d / %q / %v) deben coincidir exactamente con en.
 {
-  '04mmq0us': 'lencap struct: len/cap no se admite en el struct %s dentro de la función %d'
   '04tb4mwj': 'eq-raw: no se puede almacenar i1 en %s'
   '060maaj0': `
 Error: %v
@@ -28,7 +27,6 @@ Actualizado %s
 `
   '0qnjitgt': 'builtin %s: falta la especificación de llamada C'
   '0tjeipjr': '\'for init; cond; update\' está obsoleto, usa comas \',\' en su lugar'
-  '0ts2eetl': 'builtin %s: falta el valor'
   '0x41uhua': '\'for i in ...\' está obsoleto, usa \'i <- ...\' en su lugar'
   '0z120eni': 'net-recv-nb: no se puede obtener el puntero de datos del argumento 1'
   '11069k6b': '%s'
@@ -51,12 +49,10 @@ Actualizado %s
   repository: %s
 
 `
-  '1j6i9o1o': 'ranura del receptor de la operación slice'
   '1k6cdcgx': 'se esperaba \'.\' después del tipo, se obtuvo %s'
   '1lg2qpwf': 'syslog: no se puede convertir el argumento 1 a una cadena C'
   '1lssiwyr': 'se esperaba el nombre del parámetro genérico, se obtuvo %s'
   '1m1ocf8t': 'host no admitido %q (solo se admite github.com)'
-  '1plv4fne': 'ranura de destino de str-from-vec'
   '1qz0p808': 'falta la ruta del módulo después de la clave de dependencia %s'
   '1rk772tt': `
 Error al crear el directorio src: %v
@@ -76,7 +72,6 @@ Error al escribir el archivo de prueba: %v
 Dependencia añadida: %s = %s
 
 `
-  '21irdw5o': '$str_concat: los tipos de los argumentos no coinciden'
   '2243l8if': '..any solo se permite en la biblioteca estándar, no en código de usuario (función: %s)'
   '238u1xr7': 'embed: solo se admiten declaraciones []byte / [N]byte / fs.embed, se obtuvo una declaración sin tipo'
   '23ki71z9': 'Usar el backend Direct WASM (sin cadena LLVM, compatible con navegador)'
@@ -92,7 +87,6 @@ Dependencia añadida: %s = %s
   '2fke76na': 'wasm: el recuento de funciones/códigos no coincide: %d funciones frente a %d códigos'
   '2g4xt4m5': 'net-listen: no hay ranura para el resultado'
   '2ixluoth': 'Ejecutar las pruebas.'
-  '2kqboupo': 'builtin no admitido %s'
   '2ls7kxqp': 'no se puede reasignar el nombre de función “%s”'
   '2lsu55tb': 'el módulo wasm nativo %q no está declarado en las dependencias de package.noml; añade dependencies: [\'%s:^latest\'] (o dev-dependencies) y ejecuta npm install'
   '2lxm8j4k': 'Backend:'
@@ -113,15 +107,12 @@ no se detectó la cadena de herramientas LLVM
   Ubuntu: sudo apt install llvm-dev clang
   Windows: winget install LLVM.LLVM
 `
-  '2xqxrts5': 'resultado de builtin %s: %s'
-  '2ylupu1o': 'tipo de receptor no admitido %s'
   '309fjp3b': 'se esperaba un tipo después de \'as\', se obtuvo %s'
   '30pb3dos': 'se esperaba el nombre del valor de enum, se obtuvo %s'
   '33exppv5': 'noml: campo %s: se esperaba un número, se obtuvo %T'
   '3604icnf': 'argumento %d de \'%s\': pasar un valor option desnudo de tipo \'%s\' donde se espera \'%s\' requiere desempaquetado explícito (haz match sobre el valor y llama dentro de la rama `-> it`); no se permite el desempaquetado implícito de argumentos option'
   '379z4njd': '“%s” ya está declarado en este ámbito'
   '39o3yr8x': 'versión de archivo de sumas no admitida %q (se esperaba %s)'
-  '3aeomnek': 'ranura de setfield'
   '3b9bxfnt': 'no se puede asignar un valor %s al elemento %s del array \'%s\''
   '3bl2ts85': 'error de compilación JS: %w'
   '3ei0a0o0': 'se esperaba una expresión, se obtuvo nil'
@@ -137,7 +128,6 @@ no se puede asignar directamente a través de un índice: `%s = %s`. Una lectura
   2) propaga el error (la función contenedora necesita un parámetro de resultado option): `%s ?= %s`
 `
   '3lu6n4np': '\'#{buildin}\' solo se aplica a los tipos de diseño del compilador (str / vec / txt / arr); en \'%s\' no hace nada. Elimínelo.'
-  '3nktiaae': 'setfield: campo %q no encontrado en %q (clave de struct %q)'
   '3owkeirf': 'analizando la información de la release de %s/%s: %w'
   '3pry7fmd': 'se esperaba una coma o un paréntesis derecho, se obtuvo %s'
   '3r03yk09': 'se esperaba \')\''
@@ -169,15 +159,11 @@ Para silenciar un ejemplo de pseudocódigo deliberado usa ```no skip o una líne
   '4ewgvnbn': 'no se recomiendan las condiciones encadenadas con \'->\' (a -> b -> c); combina las condiciones con &&/|| o usa bloques \'{ }\' para evitar errores sutiles de alcance'
   '4eyd78yc': 'Si no se indica archivo/directorio y existe workspace.noml,'
   '4g7bz9oy': 'net-accept-nb: necesita (listen-fd)'
-  '4hmw6w3i': 'aridad del borrow'
   '4m2w3mkd': 'vec.push: no hay ranura para el receptor'
   '4o348fh8': 'se esperaba \']\' o \')\' para cerrar el rango, se obtuvo %s'
   '4oy26jat': 'builtin %s: el resultado 0 no tiene ranura'
   '4pj8z50l': '  la resolución de módulos del backend JS, así que los imports ESM `# npm/<pkg>` y los'
-  '4ptt84li': '%s: los tipos de los argumentos no coinciden'
-  '4qhyyund': 'llamado desconocido %s en la función %s'
   '4r3ghy7k': 'Precargado desde git/el entorno:'
-  '4rsqarsx': 'ranura txt de eprint'
   '4scfdhhp': 'utime: no hay ranura para el resultado'
   '4uv9dunu': 'str.clear: necesita el receptor'
   '4y6hz2la': 'embed: solo se admiten declaraciones []byte / [N]byte / fs.embed, se obtuvo %s'
@@ -189,7 +175,6 @@ Para silenciar un ejemplo de pseudocódigo deliberado usa ```no skip o una líne
   '5bj5o9ci': 'str.clear: no hay ranura para el receptor'
   '5blqb26x': 'se esperaba \')\''
   '5ci3l7h9': '  no add nogit:v0.1.33@github.com/lizongying/notools'
-  '5cid832p': 'builtin de campo privado desconocido %s'
   '5ckkrp9f': 'noml: campo %s[%d]: el elemento de la dependencia debe ser una cadena, se obtuvo %T'
   '5eo1kvb9': 'noml: campo %s: se esperaba un objeto, se obtuvo %T'
   '5i2q1afu': '  hint: los bloques omitidos quedan como están; marca el pseudocódigo deliberado con \'```no skip\' o una línea \'; nolang-fmt:skip\''
@@ -212,11 +197,8 @@ no se detectó un enlazador C utilizable (clang/cc/gcc)
   '5o3x4h4d': 'Omitir las comprobaciones de límites para máximo rendimiento (inseguro)'
   '5qjs01mp': 'se esperaba un paréntesis derecho, se obtuvo %s'
   '5qpe9buw': 'win-write-pipe: necesita (handle, data)'
-  '5ve092z6': 'tipo de parámetro no admitido %s en la función %s'
-  '5yjn9wrj': 'setfield: campo %q no encontrado en %q (option %q)'
   '603y6hgq': 'Cada paquete debe declararse en dependencies (o'
   '61bm2pzr': 'Todas las dependencias actualizadas a la última versión.'
-  '62z2cnfe': 'ranura option peel'
   '63lrmg48': 'Si stdin es una tubería (p. ej. echo \'x=1\' | no fmt), se lee de stdin.'
   '64bt3a50': 'Compilar fuentes Nolang a un ejecutable.'
   '64t1vgh6': 'vec.remove: necesita receptor, índice'
@@ -236,11 +218,9 @@ Parser ASTVersion: %s
 Se eliminaron %d entradas de caché.
 
 `
-  '6o12uzmx': 'waitpid: no admitido en windows'
   '6p2o4902': 'el recurso %s supera el límite de tamaño (%d bytes)'
   '6qca9xu4': 'embed: no se puede combinar con un valor explícito'
   '6svrp0le': 'Uso: no fmt [flags] <file|dir>'
-  '6umfb8yv': 'builtin %s: %s'
   '6xq3uson': 'getgrouplist: necesita 2 resultados (gids, n)'
   '6y4tyjln': 'noml: campo %s: tipo de destino no admitido %s'
   '73myjkcm': '  no test                     ejecutar todos los .no del directorio tests/'
@@ -248,7 +228,6 @@ Se eliminaron %d entradas de caché.
   '74e32kaz': 'Con --llvm-capi, compilar el IR en el propio proceso mediante la API C de LLVM (solo builds no debug; desactivado por defecto).'
   '755ldw47': 'se esperaba un paréntesis derecho en la declaración extern, se obtuvo %s'
   '75f5l5xg': 'load-le-%s: no hay ranura de destino'
-  '75pom499': 'ranura de destino txt'
   '75qapexc': 'no se puede convertir el argumento %d de %s a %s'
   '75yiyise': 'la coincidencia de tipo sobre la unión %q requiere patrones de tipo (p. ej. %q ->) o una rama por defecto (->)'
   '76fao0mm': `
@@ -262,7 +241,6 @@ Se eliminaron %d entradas de caché.
 `
   '7clod0r1': 'se esperaba una llave izquierda en elif, se obtuvo %s'
   '7dl1fkwt': 'la cadena de herramientas LLVM no está disponible en la compilación WASM; usa la opción --wasm-direct'
-  '7f3qhn9l': 'ranura del receptor del índice txt'
   '7f6c9808': `
 Error al crear el directorio tests: %v
 
@@ -283,7 +261,6 @@ Error al crear el directorio tests: %v
   '7tcn8wox': 'Ejemplos:'
   '7usot77o': 'aplicar correcciones automáticas a una clase de problema: \'overflow\' (añade #{overflow=wrap} a la aritmética entera sin anotar), \'redundant\' (elimina anotaciones de tipo iguales al tipo inferido, p. ej. `x str = \'\'` -> `x = \'\'`), \'match\' (añade las ramas nil/err que faltan a los match de option no exhaustivos), o \'unwrap\' (consume las ligaduras option que nunca se propagan ni se desempaquetan: `x ?= expr` si la función ya tiene resultado ?T, si no `x-opt = expr` más un match de sentencia `x-opt: { ok -> x = it -> }` en las líneas siguientes), o \'main\' (omite el envoltorio de nivel superior `main = () { ... }` elevando sus sentencias al nivel superior; se omite si main tiene parámetros/resultados o un return directo), o \'index-out\' (expande las lecturas #{index-out=DEF} a matches explícitos)'
   '7zfvvuin': 'No se encontraron problemas.'
-  '802t452i': 'builtin %s: resultado option en el destino %s'
   '81b2ea3o': 'se esperaba \'(\' en la declaración extern, se obtuvo %s'
   '82csl5ay': 'str.to-bool: falta el receptor'
   '82hkddyo': `
@@ -299,7 +276,6 @@ la ruta del archivo fuente no es un nombre válido: %s
 
 `
   '87zc5awf': 'no se puede modificar el campo de solo lectura \'%s\' de %s; la longitud se deriva del búfer — usa truncate(n) en su lugar'
-  '8870qbob': 'llamado indirecto incorrecto en %s'
   '894luer5': 'Este comentario no está adjunto a nada; añade `...` (sentencia de relleno) después para conservarlo como comentario independiente, o muévelo/elimínalo'
   '89pwo0vg': 'noml: la clave del map debe ser string: %T'
   '8apmtyk6': 'leyendo el archivo de entrada: %w'
@@ -311,7 +287,6 @@ la ruta del archivo fuente no es un nombre válido: %s
   '8haww14h': 'write-file: necesita la ruta y los datos'
   '8j6njczi': 'se esperaba una coma o un paréntesis derecho en la declaración extern, se obtuvo %s'
   '8jsgdrcw': 'error de generación JS: %w'
-  '8k0xmfmo': 'ranura de destino del índice str (dst=%d type=%s)'
   '8ndov8z0': 'net-dial: necesita (host, port)'
   '8o5wqxi2': 'se esperaba un paréntesis izquierdo, se obtuvo %s'
   '8r4nnper': '  no add nogit@lizongying/notools                   el host es github.com por defecto'
@@ -319,7 +294,6 @@ la ruta del archivo fuente no es un nombre válido: %s
 Compilado: %s
 
 `
-  '8rjhajw9': '$str_concat: aridad incorrecta'
   '8sf1ugcv': 'noml: tipo de valor no admitido %T'
   '8t1jaj02': 'La operación entera `a OP b` no tiene anotación `#{overflow = ...}`, por lo que `%s` queda ligado a un `?T` con comportamiento ante el desbordamiento sin declarar. Anote la sentencia a la que pertenece para indicar el valor tomado al desbordarse: `#{overflow = wrap}` (retorno silencioso) / `clamp0` (desbordamiento negativo a cero) / `min` / `max` / `saturate` (limitación saturante), o una forma con prefijo de tipo como `#{overflow = u8-max}`. La anotación se aplica por sentencia; consumir la option es otra cuestión.'
   '8ux5w599': 'comparada byte a byte con `noc ast`, así que el formato es una especificación.'
@@ -351,7 +325,6 @@ Error al sincronizar las dependencias: %v
   '9c615d3t': 'se esperaba \',\' o \'>\' en los argumentos genéricos, se obtuvo %s'
   '9e82usj6': 'dependencia %q: las rutas relativas (./ ../) no están permitidas en package.noml; usa el prefijo `/` para rutas relativas al workspace'
   '9edsvha2': 'paquete %s no encontrado en el archivo extraído'
-  '9emnu2fu': 'argumento str de extern'
   '9ljl8qke': 'se esperaba el cuerpo del bucle después de la etiqueta #%s, se obtuvo \'(\' sin \'(cond) { }\''
   '9novjn6s': '  no pack ./nogit                  empaquetar un directorio de paquete'
   '9onc0638': 'readlink: no se puede convertir la ruta a una cadena C'
@@ -361,17 +334,14 @@ Error al sincronizar las dependencias: %v
   '9v43hxr2': '%d error(es), %d advertencia(s), %d sugerencia(s)'
   '9yjr7gj6': 'se esperaba el nombre del campo en la definición del struct, se obtuvo %s'
   '9yqaweku': '  no fmt -w main.no           formatear el archivo in situ'
-  'a2hjr26f': 'ranura del receptor del índice str'
   'a3duuqtg': 'se esperaba el tipo del parámetro, se obtuvo %s'
   'a3yrogp1': 'concatenación de cadenas: use “-” en lugar de “+”'
   'a5247dgy': 'LLVM C API: falló la creación del búfer de memoria para el IR'
   'a7ee394w': 'win-find-first-file: necesita un argumento de ruta'
-  'a7wjyiq9': 'pipe: no admitido en windows'
   'aazb9b1n': 'Umbral en bytes para incrustar una carga option (?T) en la estructura option, medido sobre la estructura completa (por defecto 264 = 1 byte de etiqueta + 7 de relleno + 256 de carga; mínimo 16); las cargas mayores se empaquetan en el heap'
   'aih7e3j0': 'no se puede asignar nil a la variable no-option “%s”'
   'al7nsvgl': 'vec.insert: necesita receptor, índice, elemento'
   'aljknpjz': 'builtin %s: operación de bits desconocida'
-  'am0g79ly': '%s: falta el argumento'
   'amiajbn5': 'net-icmp-open: no hay ranura para el resultado'
   'amyp0ig8': `
 Error al resolver la última versión: %v
@@ -384,7 +354,6 @@ Error al resolver la última versión: %v
   'axj3m1pb': '\'as\' inesperado al inicio de la expresión'
   'axtpo500': 'win-find-first-file: no se puede convertir la ruta a una cadena C'
   'ayjrpinp': 'noml: DecodeInto requiere un puntero no nulo, se obtuvo %T'
-  'aywuxg5w': 'builtin %s receptor %s: %s'
   'aze4pgle': 'formatear también los bloques Nolang dentro de archivos Markdown (.md/.mdx)'
   'b1narysr': 'binario'
   'b360mu4g': 'se esperaba el nombre del parámetro, se obtuvo %s'
@@ -399,7 +368,6 @@ Error al resolver la última versión: %v
   'bbv2nbtt': 'se esperaba el tipo del campo después de %q, se obtuvo %s'
   'beppq99h': 'builtin %s: no hay ranura para el resultado'
   'bikq8xen': 'Formato de salida: file:line:col: [SEVERITY] source: message'
-  'bjj14xsi': 'ranura de lencap'
   'bp7m5374': 'arr.zero: no hay ranura para el receptor'
   'bsaaq6j7': 'utime: no se puede convertir la ruta a una cadena C'
   'bsnjql1o': 'escribiendo la salida HTML %s: %w'
@@ -432,14 +400,12 @@ Dependencia eliminada: %s
   'chnrcvcl': 'se esperaba \':\' después del canal en el bucle de recepción \'<- ch: { ... }\', se obtuvo %s'
   'chnrcvdt': 'se esperaba un nombre de campo después de \'.\', se obtuvo %s'
   'chnrcvex': 'se esperaba el nombre del canal después de \'<-\', se obtuvo %s'
-  'chwlna99': 'el builtin %s no puede inicializar un canal; use with-cap(n)'
   'ci3l2aku': 'Abrir en el navegador (requiere --js)'
   'cjih2jtt': 'se esperaba \'=\' en el alias de tipo de función, se obtuvo %s'
   'ckaj3355': 'función desconocida “%s.%s”: el módulo “%s” no tiene función de nivel superior “%s”'
   'cldvfmqx': 'waitpid: necesita pid, options'
   'cn2p79sm': '%s:%d: bloque Nolang omitido: %s'
   'cnsb9bys': 'import %s: el tipo %q también está definido por %s; distínguelos con una anotación `#{name = \'...\'}` de nivel superior'
-  'coronowl': 'OpRun: no hay ranura'
   'cotvjhmy': 'exec-shell: no se puede convertir el comando a una cadena C'
   'cpefnxwk': 'str-truncate: el receptor no tiene ranura'
   'cpyd2teh': 'descargando %s@%s: %w'
@@ -451,7 +417,6 @@ Dependencia eliminada: %s
 Error al escribir el archivo principal: %v
 
 `
-  'czinamrs': 'process-exec: no admitido en windows'
   'd1xzecbk': 'builtin get-arch: no hay ranura para el resultado'
   'd4faltsr': 'ruta predeterminada'
   'd8en6a9j': 'el IR de MIR no pasó la verificación LLVM: %v: %s'
@@ -502,7 +467,6 @@ Error al sincronizar la dependencia AST %s: %v
   'efflaapc': 'se esperaba \'case\' o \'default\', se obtuvo %s'
   'ehsahzu5': '  no vet src/std/            validar todos los .no de src/std/'
   'eit5cjgr': 'extrayendo el archivo tar.gz: %w'
-  'ejbt38ik': 'ranura de destino de la operación slice'
   'elep1kra': '  no build                  compilar el directorio actual o los proyectos de workspace.noml'
   'elps0exp': '`...` es una sentencia de relleno sin efecto y sin valor, así que no puede usarse en posición de expresión (línea %d); escríbelo en su propia línea dentro de un bloque, p. ej. `-> {` salto de línea `    ...` salto de línea `}`'
   'elps0ln0': '`...` debe ir en su propia línea: en la línea %d no puede haber código antes; ponlo en una línea propia o elimínalo'
@@ -537,7 +501,6 @@ no se pudo limpiar: %v
 `
   'fh3ukes8': 'net-set-recv-timeout: no hay ranura para el resultado'
   'fixlabel': 'fix:'
-  'fk1sb6ss': 'syslog: no admitido en windows'
   'flfh2ueu': 'objetivo de instalación no válido %q: el repositorio debe ser <host>/<owner>/<repo> o <owner>/<repo>'
   'fs4qotyl': 'extrayendo el archivo zip: %w'
   'fu1ow141': 'No se encontraron archivos de prueba en '
@@ -567,7 +530,6 @@ no se pudo limpiar: %v
   'ghvjbe8q': 'token ilegal %q'
   'gir1e4fn': 'net-udp-sendto: no se puede convertir el host a una cadena C'
   'giw7e5rb': 'se esperaba \'}\' para cerrar la anotación, se obtuvo %s'
-  'giy30qq2': 'OpRun: callee async desconocido %q'
   'gjsrgyn8': '-annotations para incluirlas.'
   'gl4bahpp': `
 clang no detectado; comprueba que la cadena de herramientas LLVM esté completamente instalada
@@ -616,9 +578,7 @@ Error al cambiar de directorio: %v
   'hr4y7owq': 'getgrouplist: %v'
   'htdgzowm': '  no fmt                      formatear el directorio actual (lista los archivos a formatear)'
   'hun7qbmc': '  no ast src/std/vec.no             mostrar el AST de vec.no'
-  'hvk8qwyj': 'ranura de destino de borrow'
   'hvuu1dxx': '  no build --js -o app.js main.no                    backend JS con salida explícita'
-  'hxy8tpyp': 'tipo de receptor de la operación slice'
   'hzkv5tvl': 'se esperaba \'}\' para cerrar la anotación del valor de enum, se obtuvo %s'
   'hzv4zwx4': 'LLVM C API: falló la creación de la máquina de destino para el triple %q'
   'i0q22lpt': 'se esperaba una coma o un paréntesis derecho, se obtuvo %s'
@@ -646,11 +606,9 @@ Directorio de caché de AST: %s
   'iky4xsx4': 'el método “%s.%s” tiene %d resultado(s), la interfaz espera %d'
   'ippfc6p4': 'utime: necesita path, atime, mtime'
   'iqszywlc': 'Para el objetivo wasm32-wasi, define $WASI_SYSROOT con la ruta de wasi-sysroot.'
-  'iqtr8mht': 'destino de option-wrap'
   'irjygycv': 'el constructor val() está obsoleto; usa ok(x) para la construcción explícita o `name = expr` para la asignación implícita'
   'irnz2m56': 'se esperaba \'{\' para abrir el cuerpo del bucle, se obtuvo %s'
   'is8zuoph': '  - src/ (directorio de fuentes)'
-  'itcnc2oz': 'no hay ranura para el callee indirecto en %s'
   'iubb5mnf': '  no test -target x86_64-linux-gnu'
   'iykbgab6': 'vec.sort: necesita el receptor'
   'iyn3rgtm': '“self” (.) solo puede usarse dentro de métodos de estructura; si quiso decir el valor de match, use “it”'
@@ -662,7 +620,6 @@ Directorio de caché de AST: %s
   'j1onng8y': 'se esperaba una coma o un paréntesis derecho, se obtuvo %s'
   'j2lwz7pe': 'LLVM C API: %s falló'
   'j2n5poza': 'native bind=ffi (import %q) requiere al menos una declaración extern #{c} para enlazar'
-  'j312ij2o': 'ranura de destino del índice (dst=%d type=%s)'
   'j3r9pdsp': 'se esperaba \'{\' después de la expresión switch, se obtuvo %s'
   'j3u5n35e': 'objetivo de instalación vacío'
   'j42y1qyx': 'recopilando las firmas de std: %w'
@@ -675,7 +632,6 @@ Directorio de caché de AST: %s
   'jko9phaw': 'el ensamblado LLVM falló: %w'
   'jl86npdd': 'resolviendo la última release: %w'
   'jlv0jw10': 'resuelto:'
-  'jmamxa8i': 'ranura de destino de lencap'
   'jppwnc4n': 'se esperaba \'{\' después del nombre del struct, se obtuvo %s'
   'jpy06p6d': 'no se encontraron objetivos de compilación en el workspace'
   'juu3smx0': 'El sistema de anotaciones #{...} vive en una tabla semántica lateral en vez de'
@@ -689,13 +645,10 @@ Directorio de caché de AST: %s
   'k3g4ofs4': 'emitir un diff coloreado en vez del resultado formateado'
   'k3r7mbqd': 'una rama else (un \'->\' en su propia línea) debe estar dentro de un grupo if; envuelve la rama \'cond ->\' y este \'->\' entre { ... } (un \'cond ->\' suelto sin else puede quedarse fuera)'
   'k3xq7vna': 'builtin %s: falta el receptor o el origen'
-  'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: no hay ranura para el resultado'
   'k7m2q9xa': '__join-push: falta el identificador de tarea'
   'k8je3usi': '%s ya existe y no es un módulo ES (no tiene "type": "module"); emite la salida como .mjs en su lugar (no build --js -o out.mjs)'
   'k9179drd': '“%s” es una función y debe llamarse; ¿quiso decir %s(...)?'
-  'k9270vd6': 'campo de getfield'
-  'ke8i906b': 'MIR->LLVM entró en pánico (recuperado, volviendo al backend heredado): %v'
   'kfxfk3n1': 'Si no se indica archivo/directorio y stdin es un terminal:'
   'kg4qzfdu': '  no add nogit@github.com/lizongying/notools        última versión'
   'ki6qzzsx': '  --json           emitir diagnósticos JSON estructurados (CI/herramientas)'
@@ -713,7 +666,6 @@ Directorio de caché de AST: %s
   'p7mn4vta': 'cargando el módulo %s: no hay dependencias de package.noml'
   'q3wz8hkb': 'cargando el módulo %s: no es una dependencia de paquete AST'
   'l0ifbo16': 'el archivo zip supera el límite de tamaño de extracción (%d bytes)'
-  'l1ypawem': 'str-from-vec: tipos incorrectos %s -> %s'
   'l332fwh9': `
 Espacio de trabajo inicializado en %s
 
@@ -738,7 +690,6 @@ Espacio de trabajo inicializado en %s
 Sirviendo la salida ESM en %s (Ctrl+C para parar)
 
 `
-  'lx7lbupc': 'ranura de indexstore'
   'lzgs7cds': '  no fmt -fix=redundant main.no   previsualizar la eliminación de anotaciones redundantes'
   'm0nvgkbt': 'El argumento se resuelve en este orden:'
   'm13ljyfp': 'para \'no vet src/std\', reutilizar el AST del programa std ya analizado (experimental, evita reanalizar cada módulo std)'
@@ -768,13 +719,11 @@ Error al escribir utils.no: %v
   'm8blb8q2': 'noml: línea %d columna %d: %s'
   'mbnaky32': 'Token de autenticación del registro (sin usar: subida no implementada)'
   'meket0n4': 'vec.clear: no hay ranura para el receptor'
-  'mf29f4fh': 'ranura de clone'
   'mgnh35fz': 'builtin %s: no se puede almacenar el resultado %s en la ranura %s'
   'mh9jwcfu': '  no fmt -loop-style=suffix f.no  escribir los bucles como \'{ } (cond)\' / \'{ } * N\''
   'mhfvvp1u': 'límite de profundidad de dependencias superado (%d): %s@%s'
   'mi13i3vc': 'se esperaba un paréntesis derecho, se obtuvo %s'
   'mimqybn2': 'vec.pop: necesita el receptor'
-  'mkpo3f8h': 'ranura de destino utf8-at'
   'mlm7xpcj': '`%s %s= %s` está obsoleto; la función contenedora tiene un resultado option, así que `no fmt` lo reescribe a la forma `?=` al guardar (el lado derecho de una asignación compuesta ahora es `?T` y pasa por `?=` para desempaquetarlo o propagarlo)'
   'mlyz11mg': 'Con --js-runtime <cmd>, elegir el runtime JS de `no run --js` (node, bun, deno, ...).'
   'mmcrtoio': 'Uso: no add <tool>[:<version>]@<host>/<owner>/<repo>'
@@ -783,12 +732,10 @@ Error al escribir utils.no: %v
   'mv6ox1tw': 'uname: no hay ranura para el resultado'
   'mw127e39': 'se esperaba \']\' en el tipo de array, se obtuvo %s'
   'mwhgbhbp': '  los imports de paquete (#{bind = ffi|wasm}) se resuelven en vez de fallar — LLVM no puede'
-  'mz7tmynt': 'builtin %s: falta el receptor'
   'mzwb28br': 'variable “%s” no definida en la cadena de formato'
   'mzxtskah': 'eq-raw: necesita (receiver, b, n)'
   'n00utq2q': 'process-exec: no se puede convertir el argumento a una cadena C'
   'n08bzk5j': 'El resultado es exactamente lo que descarga `no add <tool>@<host>/<owner>/<repo>`:'
-  'n0hl9vde': 'builtin %s argumento %d: %s'
   'n0mlfmt1': 'fmt: -fix applies to Nolang sources only; .noml files have no automatic fixes'
   'n0mlfmt2': 'cannot format %s: %d problem(s), file left unchanged'
   'n0mlfmt3': `
@@ -823,7 +770,6 @@ and left unchanged. -fix does not apply to them.
   'ne9gyl5c': '  no run --js main.no            compilar con el backend JS y ejecutar con node'
   'ne9kyew7': 'se esperaba \'=\' después del nombre FFI, se obtuvo %s'
   'nejhwtgd': 'No se encontraron dependencias.'
-  'ngj8b3uj': 'utime: no admitido en windows'
   'nh8jhhz7': 'std AST: %w'
   'nik0cll9': '\'for cond { }\' está obsoleto, usa el bucle \'{ } (cond)\' en su lugar'
   'njsutn36': 'se esperaba el nombre del método en la interfaz, se obtuvo %s'
@@ -861,7 +807,6 @@ No se encontró la dependencia %q.
   'ocsanpe6': 'objetivo de instalación no válido %q: el nombre de la herramienta no debe contener un separador de ruta'
   'oh0vy2qd': 'miembro %q: falta el tipo para el literal de objeto (anótalo con #{type = \'<struct>\'})'
   'oi4vt42g': 'dependencia circular detectada: %s'
-  'ojuksusl': 'ranura de option-wrap'
   'okt5tvxy': `
 compilador Zig no detectado
   macOS: brew install zig
@@ -871,12 +816,10 @@ compilador Zig no detectado
 `
   'ol0l3ova': 'tipo “%s” no encontrado; ¿quiso decir “%s.%s”?'
   'ol21t36r': '  no run --js --js-runtime bun main.no     igual pero con bun (node, bun, deno, ...)'
-  'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'el divisor de una división entera o módulo es la constante literal 0, lo cual es comportamiento indefinido en LLVM (sdiv/srem por cero) y produce resultados impredecibles. Añade una comprobación de cero en tiempo de ejecución, o haz que la función devuelva el fallo como option.'
   'oraub2m9': '`%s %s= %s` no está soportado: una lectura de índice devuelve una option (nil si está fuera de rango), así que una asignación compuesta evaluaría el índice dos veces y descartaría el fallo'
   'orjs902d': '\'switch/case/default\' está obsoleto, usa \'x: { 1-> ... }\' en su lugar'
   'os0j8ix4': 'no se puede asignar un valor %s al elemento %s del array \'%s\''
-  'osrb7a78': 'ranura de move'
   'oswu0as1': 'se esperaba \':\' en la expresión condicional, se obtuvo %s'
   'oxgtqeo0': 'write-file: no hay ranura para el resultado'
   'oyfkw3qi': '(sin definir)'
@@ -884,10 +827,8 @@ compilador Zig no detectado
   'p1ujpxwi': 'vec.remove: no hay ranura para el receptor'
   'p215kqvl': 'cancelled: no se puede almacenar i1 en %s'
   'p2epl19k': 'no se puede asignar nil a la variable no option \'%s\''
-  'p2m0wxh1': 'exec-shell: no admitido en windows'
   'p56zjfhi': 'no se puede inferir el tipo de \'%s\': %s() requiere una anotación de tipo explícita en el lado izquierdo (p. ej. `name []byte = %s(n)`)'
   'p763k84p': 'creando %s: %w'
-  'p9dt2hwe': 'builtin %s receptor %s'
   'p9jv1dcz': 'workspace.noml está vacío'
   'pa3bgtjn': 'Base CDN de los import maps ESM del navegador (por defecto https://esm.sh; también configurable con compiler.esm-cdn en package.noml)'
   'paiorrdo': '--lang requiere un valor (p. ej. --lang=zh-cn)'
@@ -900,7 +841,6 @@ compilador Zig no detectado
   'pibk34ed': 'serializando el archivo de sumas: %w'
   'plsdygti': 'el patrón de la rama de match de tipo %q no es miembro de la unión %q'
   'pne07fog': 'miembro %q[%d]: el array mezcla objetos y escalares; anótalo con #{type = \'[]<elem>\'}'
-  'prohiujy': 'getgroups: no admitido en windows'
   'puql0oxg': 'getgrouplist: falta la ranura del resultado'
   'pxxxqtg6': 'se esperaba \'{\''
   'pyo62z10': 'get-priority: necesita which, who'
@@ -945,7 +885,6 @@ Error al escribir lib.no: %v
   'r1wo1izg': '  # npm/lodash.get as get    un binding con nombre/exportado'
   'r28q9t6z': 'se esperaba el cuerpo del bucle después de la etiqueta #%s, se obtuvo %s'
   'r315uabz': 'net-send: no se puede obtener el puntero de datos del argumento 1'
-  'r4mh5mrg': 'waitpid-nohang: no admitido en windows'
   'r4ng3f0r': 'la palabra clave \'for\' no es válida para la iteración de contenedores; usa \'%s <- xs:\' en su lugar'
   'r5fkc5h1': '  no build --js --browser main.no                    generar JS de navegador + envoltorio HTML'
   'r60tokvf': 'se esperaba \'=\' después de la lista de variables múltiples'
@@ -960,7 +899,6 @@ Error al escribir lib.no: %v
   'rhajr9l9': 'obsoleto: la propiedad str.len se ha eliminado; usa s.len-bytes() para la longitud en bytes o s.len() para el recuento de puntos de código'
   'rkd2pw8p': 'falló la compilación en proceso con la API C de LLVM (desactívala con %s=0): %w'
   'rlfpckc0': 'se esperaba \'(\' después del nombre del método de la interfaz, se obtuvo %s'
-  'rn4mb8sc': 'builtin %s: el receptor no tiene ranura'
   'rocoxbru': 'se esperaba \'{\' después de la expresión ~match, se obtuvo %s'
   'rolk5ods': 'se esperaba \'}\' para cerrar la anotación del valor de enum, se obtuvo %s'
   'roqeis8q': 'se esperaba una llave izquierda, se obtuvo %s'
@@ -972,14 +910,11 @@ Error al escribir lib.no: %v
   'ruwo1dvw': 'cancel: falta el handle de la tarea'
   'rw998t51': 'win-wsa-startup: no hay ranura para el resultado'
   's116sd0b': 'error de compilación: %w'
-  's28lrleh': 'la generación de código MIR no pudo manejar %s: %s'
   's8gh6opt': 'error de compilación: %w'
   'sbiepwk2': 'se esperaba \'case\' o \'default\', se obtuvo %s'
   'sciigwn4': 'se esperaba el nombre del resultado en el método de la interfaz, se obtuvo %s'
   'sckw2o8b': 'se esperaba \'{\' para abrir el cuerpo del bucle contado, se obtuvo %s'
   'sd13rw1l': 'se esperaba \'(\' después de \'=\' en el alias de tipo de función, se obtuvo %s'
-  'sehpprvy': 'builtin %s: tipo de valor incorrecto %s'
-  'seta2gk3': 'builtin %s: no hay ranura para el receptor'
   'sgk4yra9': 'no existe tal archivo, directorio o paquete: %s'
   'sh7h3f59': `
 Error al escribir el archivo de espacio de trabajo: %v
@@ -991,13 +926,11 @@ Error al escribir el archivo de espacio de trabajo: %v
   'sm0xomza': 'str.to-bool: no hay ranura para el resultado'
   'sm7rjfcm': 'variable duplicada \'%s\''
   'so08hhvh': 'embed: el directorio está vacío: %s (resuelto: %s)'
-  'soo3tmk2': 'el move de un parámetro %s prestado no está admitido en el backend MIR'
   'soq2h6t2': 'se esperaba el nombre del parámetro en la declaración extern, se obtuvo %s'
   'squ5w5co': 'Con --js, --browser genera el JS orientado al navegador y un envoltorio HTML.'
   'srpc0cgx': 'Con --js --browser, generar el JS de navegador + HTML y abrirlo en el navegador por defecto.'
   'ssddj3qk': 'la suma de comprobación de %s no coincide: se esperaba %s, se obtuvo %s (se rechaza la instalación)'
   'sstb7ij2': 'se esperaba \'}\' para cerrar la anotación, se obtuvo %s'
-  'stbjgjqz': 'builtin %s array fijo %s'
   'su2q9at6': 'Uso: no test [<file>]'
   'suhqncsk': '  1. un archivo .no existente   -> ejecutar ese archivo'
   'sv3fw1hp': `
@@ -1013,8 +946,6 @@ AST empaquetado: %s
 No se encontró la dependencia %s.
 
 `
-  't5qq2leo': 'tipo lencap: len/cap no admitido en %s (%s) en la función %d'
-  't5rup04t': 'ranura de origen del move v%d -> v%d'
   't8440cno': 'Entorno: NOLANG_AST_CACHE_OFF=1 desactiva la caché; NOLANG_AST_CACHE_DIR cambia el directorio.'
   'tb2zxq0f': '\'%s.%s []T\' no está permitido: el tipo del campo pertenece a la definición de tipo de \'%s\'. Para almacenar en el campo escribe \'%s.%s = ...\''
   'tbfsq7ph': '  no pub                       escribir dist/<name>-ast.zip'
@@ -1041,7 +972,6 @@ WASI sysroot no encontrado. Define $WASI_SYSROOT para apuntar a tu wasi-sysroot.
   'tho8xc47': 'Archivos creados:'
   'tjwokiw9': 'se esperaba una coma o un corchete derecho en el literal de array, se obtuvo %s'
   'tlwmf1le': 'no se permite la conversión de tipo explícita `expr %s` en Nolang; usa la forma declarativa `name %s = expr` para una conversión segura de ampliación o de igual anchura'
-  'tmiibvan': 'builtin %s: no hay ranura de destino'
   'tmqnqq9x': 'dependencia no encontrada: %q no está declarado en las dependencies de package.noml'
   'tnj4py6b': 'No hay dependencias que sincronizar.'
   'tosnl9r7': 'se esperaba \'*\' entre el recuento y el cuerpo del bucle, se obtuvo %s'
@@ -1054,7 +984,6 @@ WASI sysroot no encontrado. Define $WASI_SYSROOT para apuntar a tu wasi-sysroot.
   'ttdybn5d': 'fmt: -md no se puede combinar con -fix (las correcciones automáticas solo aplican a fuentes .no)'
   'ttlxcrgt': 'se esperaba \'[\' o \'(\' o una cadena en la expresión de rango, se obtuvo %s'
   'u0g1w0d7': 'módulo de compatibilidad js no encontrado: %s'
-  'u3g4qexx': 'builtin %s: tipo de argumento incorrecto %s'
   'u3if6wak': '  no fmt -fix=match -w src/       añadir in situ las ramas match que faltan'
   'u4oybn9r': '%s ya está instalado (%s); usa -u para reinstalar o actualizar'
   'u5qmp19f': 'el match de option debe manejar todas las ramas: err, nil, ok (falta: %s)'
@@ -1082,7 +1011,6 @@ Tamaño total: %d bytes
   'ux1lstn1': 'unix-listen: no hay ranura para el resultado'
   'ux1lstn2': 'unix-listen: no se puede convertir la ruta a una cadena C'
   'uzugz5vn': 'Los directorios se procesan recursivamente de forma automática.'
-  'uzzd8eqi': 'get-line: sin resultado'
   'v0avn8e4': 'Validación correcta'
   'v0thbcmv': 'se esperaba el nombre del parámetro, se obtuvo %s'
   'v1a6rxna': 'se esperaba una coma o un paréntesis derecho, se obtuvo %s'
@@ -1095,7 +1023,6 @@ Error al escribir el archivo de configuración: %v
   'v7zs1nru': 'el especificador de formato \'s\' requiere tipo str/bool/entero, se obtuvo \'%s\' (spec: %q)'
   'v8tulbl4': 'Proyecto:'
   'v9hnqn6w': 'import %q: las importaciones ESM (npm) solo las admite el backend JS; recompila con `no build --js` o `no run --js` (el especificador %q no se puede enlazar en un binario nativo)'
-  'v9milo3k': 'getgrouplist: no admitido en windows'
   'vas3pyce': 'URL del registro de paquetes (sin usar: subida no implementada)'
   've2dzkxe': '  no test -timeout 90 test/std   ejecutar todo un directorio en secuencia; 90 s máx por archivo'
   'vekjerf5': 'módulo std no encontrado en el StdFS embebido: %s'
@@ -1106,14 +1033,10 @@ Error al escribir el archivo de configuración: %v
   'vffhhi55': 'Ruta del archivo de salida'
   'vgfb39et': 'std AST: leyendo %s: %w'
   'vgljm585': 'builtin %s: el resultado ?str esperaba una ranura %%option, se obtuvo %s'
-  'vgxfhc6x': 'sysctl: no admitido en windows'
-  'vh7osqp5': 'no hay callee en %s'
   'vhmg22wa': 'Sincronizando dependencias...'
   'vhpiqfim': 'no se admiten límites de rango en coma flotante, usa enteros'
-  'vhpl1qzt': 'aridad de la operación slice'
   'viuznngf': 'net-udp-recvfrom: no se puede obtener el puntero de datos del argumento 1'
   'vjj66evx': 'Sin argumentos, ejecuta el main.no del directorio actual.'
-  'vjkycl6v': 'ranura de receptor utf8-at'
   'vkq3r0r2': '`# npm/lodash.get as get` o `# npm/lodash.default as d`. Deben'
   'vm9uj5g4': 'builtin %s: str sin procesar almacenado en la ranura %s'
   'vmp8s7tq': 'Un value match (`subject: { arms }`) es una construcción de nivel de sentencia y solo puede aparecer como el lado derecho de una asignación (opcionalmente entre paréntesis). No se puede usar dentro de una expresión, como un operando, argumento de función, comparación, valor de retorno o literal. Primero vincula su resultado a una variable: `v = subject: { ok -> it ... }`, y luego usa `v`.'
@@ -1128,15 +1051,12 @@ Error al escribir el archivo de configuración: %v
 
 `
   'w3k1bwpp': 'se esperaba \',\' o \'>\' en los parámetros genéricos, se obtuvo %s'
-  'w6av3lqe': 'builtin %s: tipo de origen no válido %s'
   'w6xtqb7k': 'net-listen: necesita (host, port)'
   'w6zt4h9c': 'se esperaba \'=\' después de la lista de variables múltiples'
   'w826wv42': '  no run foo                   ejecutar el paquete \'foo\' (desde workspace.noml)'
-  'w9ajg8ow': 'eprint espera un argumento str/i64/byte/char/bool, se obtuvo %s'
   'wbsevkfk': '  no fmt -d main.no           mostrar el diff coloreado'
   'wcbo6a01': 'se esperaba \'}\' para cerrar la anotación de variante, se obtuvo %s'
-  'wcoza64y': '  no build --option-inline-threshold=16 main.no   empaquetar toda carga ?T de más de 8 bytes'
-  'wd8mx0q7': 'callee nil'
+  'wcoza64y': '  no build --option-payload-inline-threshold=16 main.no   empaquetar toda carga ?T de más de 16 bytes'
   'wdk3k728': 'el parámetro de salida \'%s\' (?T) se lee pero nunca se asigna en el cuerpo de la función — uso sin inicializar de un parámetro de salida anulable'
   'wdpztov8': 'LLVM C API: IR vacío'
   'wekxh2lc': 'interfaz “%s”: interfaz padre desconocida “%s”'
@@ -1148,7 +1068,6 @@ Error al escribir el archivo de configuración: %v
   'wk4p8399': 'getgroups: necesita 2 resultados (gids, n)'
   'wlbc2ct9': 'import %q: las rutas relativas (./ ../) no están permitidas en el código fuente; usa un alias del workspace o un identificador de paquete remoto'
   'wlcp0pp6': 'especificador de paquete ESM no válido %q'
-  'wmq5sd19': 'se eliminó el intrinsic LLVM %s del builtin %s'
   'wnskovpc': 'se esperaba un recuento entero antes de \'*\' en el bucle contado, se obtuvo %s'
   'wo778frg': 'bool.to-str: no se puede convertir %%str-long a %s'
   'wo8qw0ac': 'Fuentes std:'
@@ -1158,14 +1077,11 @@ Error al escribir el archivo de configuración: %v
   'wu70c4w0': 'todos los proyectos de workspace.noml se compilan en paralelo.'
   'ww5ngyyh': 'win-create-process: necesita (cmdline, dir, stdin, stdout, stderr)'
   'x51zwxlr': 'se esperaba un identificador después de la directiva #{%s}, se obtuvo %s'
-  'x57xvqny': 'tipo de valor no admitido %s en la función %s'
   'x649sxw4': 'embed: no se pudo leer el directorio %s: %w'
   'x6snirjy': 'Uso: no ast [-annotations] <file>'
   'x6swm2kk': '“%s” solo debe usar letras minúsculas y guiones'
   'x6tqaeqp': 'se esperaba el nombre del parámetro en el método de la interfaz, se obtuvo %s'
-  'x8bk3eqw': 'ranura de getfield'
   'xczzji7g': 'se esperaba una llave izquierda, se obtuvo %s'
-  'xe32iowe': 'term'
   'xev7d0na': `
   ast  %s %s
 
@@ -1184,17 +1100,13 @@ Error al escribir el archivo de configuración: %v
   'xmicjezl': 'La operación entera `a OP b` no tiene anotación `#{overflow = ...}`, por lo que su comportamiento ante el desbordamiento no está declarado. Anote la sentencia a la que pertenece para indicar el valor tomado al desbordarse: `#{overflow = wrap}` (retorno silencioso) / `clamp0` (desbordamiento negativo a cero) / `min` / `max` / `saturate` (limitación saturante), o una forma con prefijo de tipo como `#{overflow = u8-max}`. La anotación se aplica por sentencia: una escrita en una sentencia vecina no cubre esta.'
   'xo6e53hm': 'no se puede modificar el campo de solo lectura \'len\' del array \'%s\''
   'xpp5i92s': 'el match de option debe manejar todas las ramas: err, nil, ok (falta: %s)'
-  'xqz68d5m': 'aridad de builtin %s'
   'xrmnmwf4': 'se esperaba \':\', se obtuvo %s'
   'xsstot9b': 'net-recv-nb: necesita (fd, buf, n)'
   'xtblgfzq': 'llamar a %s sobre un literal numérico es redundante; escribe el tipo de destino directamente (p. ej. %s)'
-  'y1t4g09v': 'tipo lencap'
   'y23ty9w4': 'release: necesita un valor'
   'y2vkykls': 'eq-raw: no hay ranura para el resultado'
   'y4yjmhz2': 'builtin %s: tipo LLVMConv desconocido %d'
   'y4yxzacz': 'builtin %s: el búfer scratch no se materializó'
-  'y5f921sg': 'ranura de destino del índice txt (dst=%d type=%s)'
-  'y8ieefsr': 'builtin %s: argumentos incorrectos'
   'y9lj5a9g': 'se esperaba el nombre o el tipo del parámetro, se obtuvo %s'
   'yevhjra2': 'LLVM C API: %s falló: %s'
   'yf6kxdmz': 'una sentencia no puede ser solo un valor literal; llame a una función o asígnelo a una variable'
@@ -1206,7 +1118,6 @@ Error al escribir el archivo de configuración: %v
 `
   'ygx2q6sp': 'builtin chars-new: no hay ranura para el resultado'
   'yh8904fm': 'se esperaba un operador de asignación, se obtuvo %s'
-  'yhg5vw4v': 'ranura de origen de borrow'
   'yhin5u09': 'política nativa: %w'
   'yj5ek705': 'se esperaba una llave izquierda, se obtuvo %s'
   'yjiapu40': 'builtin %s: sin resultado'
@@ -1224,10 +1135,8 @@ Error al escribir el archivo de configuración: %v
   'z68vr2e2': 'builtin %s: no se puede convertir el argumento %d a una cadena C'
   'z87sn8u5': 'se esperaba una coma o un paréntesis derecho, se obtuvo %s'
   'z8rfu6gf': 'escribiendo la salida WASM %s: %w'
-  'z9tyfwf5': 'move sin destino'
   'zae1l26t': 'escribiendo %s: %w'
   'zc1zfsat': 'la sintaxis de tipo de función anónima \'()\' está deshabilitada; usa un alias de tipo de función con nombre o habilita \'anonymous-fn-type\' en package.noml'
-  'zcelvmmy': 'OpAwait: no hay ranura'
   'zdbv29a2': `
 Abierto en el navegador: %s
 
@@ -1236,7 +1145,6 @@ Abierto en el navegador: %s
   'zlotlakj': '  no fmt -d src/              mostrar el diff de todos los .no de src/'
   'zm1ivicl': 'se esperaba una sentencia del cuerpo del bucle, se obtuvo %s'
   'zm87x8w0': 'Si es un directorio, valida todos los .no que contiene.'
-  'zodppsnm': 'MIR->LLVM: %s'
   'zpeqou62': 'en CI para producir el recurso que descarga `no add`:'
   'zpgykko6': 'main.no no encontrado en %s'
   'zql6tu9p': 'no se encontró la ruta de dependencia local del workspace %q'

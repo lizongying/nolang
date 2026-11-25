@@ -215,6 +215,111 @@ dva-focus-raw = (hit i64) () {
     }
 }
 
+; ---------------------------------------------------------------------------
+; 阶段77：Tab / Shift-Tab 焦点遍历
+;
+; 顺序 = 视图节点创建序（dv-node-count 扫描），只收「输入类 + 已挂载 + 未禁用」。
+; 编辑器聚焦时 Tab 保持既有缩进语义（dv.no 的 kk==9），不参与遍历；命令面板
+; 开着时整段键盘归面板。交接复用现成机制（input-focus + DVA-FOCUS）。
+; ---------------------------------------------------------------------------
+dva-focus-cand = (root i64, v i64) (h i64) {
+    h = -1
+    kd = dv-kind(v)
+    (dva-is-input-kind(kd) == 1) -> {
+        hh = dv-live-deep(root, dv-key(v))
+        (hh >= 0) -> {
+            (cmp-has(hh, F-DISABLED) == 0) -> { h = hh }
+        }
+    }
+    h
+}
+
+; dir=1 正向（Tab）、-1 反向（Shift-Tab）。无焦点时正向取第一个、反向取最后一个。
+; 阶段81：默认按钮 / Enter 提交。语义与命令面板的回车一致 —— 有焦点组件且
+; 它带视图动作（dv-act）时，Enter 等价于鼠标点击它，走**完全相同**的
+; 派发 -> 归约 -> 事件回调路径。输入框 / 编辑器等无 dv-act 的组件不受影响
+; （Enter 不误触发布局外的东西）。无焦点时什么都不做。
+dva-default-submit = (S []i64, root i64) () {
+    fh = DVA-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (fh < 0) -> return
+    k = cmp-key(fh)
+    act, pay = dv-dispatch(k)
+    (act == 0) -> return
+    nw = dv-app-reduce(S, k)
+    (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+    dv-app-click(S, k, act, pay, nw)
+}
+
+dva-focus-step = (root i64, dir i64) () {
+    pk = DVA-PAL-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (pk >= 0) -> return
+    ek = DVA-EDIT-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (ek >= 0) -> return
+    fh = DVA-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    n = dv-node-count()
+    ; 当前焦点在候选序列里的序号（找不到 = -1）
+    cur = -1
+    cnt = 0
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        h = dva-focus-cand(root, i)
+        (h >= 0) -> {
+            (h == fh) -> { cur = cnt }
+            cnt = dv-inc(cnt)
+        }
+        i = cs-inc(i)
+    }
+    (cnt <= 0) -> return
+    ; 环形走一步；用有界 guard 兜底（delta 只有 ±1，正常两轮内收敛）
+    pos = cs-add(cur, dir)
+    guard = 0
+    !! {
+        ((pos >= 0) && (pos < cnt)) -> { ** }
+        (guard > 8) -> { ** }
+        (pos < 0) -> { pos = cs-add(pos, cnt) }
+        (pos >= cnt) -> { pos = cs-sub(pos, cnt) }
+        guard = dv-inc(guard)
+    }
+    ; 定位第 pos 个候选并交接
+    nh = -1
+    j = 0
+    i = 0
+    !! {
+        (i >= n) -> { ** }
+        h = dva-focus-cand(root, i)
+        (h >= 0) -> {
+            (j == pos) -> {
+                nh = h
+                **
+            }
+            j = dv-inc(j)
+        }
+        i = cs-inc(i)
+    }
+    (nh >= 0) -> {
+        (fh >= 0 && fh != nh) -> { input-focus(fh, false) }
+        DVA-FOCUS[0] = nh
+        input-focus(nh, true)
+    }
+}
+
 ; 键盘喂给当前焦点输入框：退格 / 空格 / 数字 / 小写字母
 dva-keyboard = (kk i64) () {
     fh = DVA-FOCUS[0]: {
@@ -294,6 +399,105 @@ dva-edit-keyboard = (kk i64) () {
             (slot >= 0) -> { dv-edit-key(slot, kk) }
         }
     }
+}
+
+; ============================================================================
+; 阶段76：文本输入事件（t==7）—— 把 SDL 给的整段 UTF-8 拆成码点喂给焦点
+;
+; 为什么不用按键码：SDL_EVENT_KEY_DOWN 只有键位，没有字符 —— 死键、输入法组字、
+; 非 ASCII 全都拿不到。这里按**码点**切片（str.slice 是码点索引），所以中文 /
+; emoji 不会被切成半个字节。优先级与按键一致：命令面板 > 输入框 > 编辑器。
+; ============================================================================
+dva-type = (s str) () {
+    n = s.len()
+    (n == 0) -> return
+    pk = DVA-PAL-FOCUS[0]: {
+        ok -> it
+
+        -> -1
+    }
+    (pk >= 0) -> {
+        i = 0
+        !! {
+            (i >= n) -> { ** }
+            dv-pal-type(pk, s.slice(i, cs-inc(i)))
+            i = cs-inc(i)
+        }
+    }
+    (pk < 0) -> {
+        fh = DVA-FOCUS[0]: {
+            ok -> it
+
+            -> -1
+        }
+        (fh >= 0) -> {
+            i = 0
+            !! {
+                (i >= n) -> { ** }
+                input-append(fh, s.slice(i, cs-inc(i)))
+                i = cs-inc(i)
+            }
+        }
+        (fh < 0) -> {
+            ek = DVA-EDIT-FOCUS[0]: {
+                ok -> it
+
+                -> -1
+            }
+            (ek >= 0) -> {
+                v = dv-node-by-key(ek)
+                (v >= 0) -> {
+                    slot = dv-edit-of(v)
+                    (slot >= 0) -> {
+                        i = 0
+                        !! {
+                            (i >= n) -> { ** }
+                            dv-edit-insert(slot, s.slice(i, cs-inc(i)))
+                            i = cs-inc(i)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+; 阶段76：剪贴板组件右端的「复制方块」命中检测 + 复制。
+; 几何与 cs-paint-clipboard 逐字对齐（内边距 1200、方块 2400），命中就把该
+; 组件的文本写进系统剪贴板并回报 1（调用方据此跳过普通派发）。
+dva-clipboard-hit = (h i64, px i64, py i64) (used i64) {
+    used = 0
+    (h < 0) -> return
+    (cmp-kind(h) != C-CLIPBOARD) -> return
+    x = CMP-X[h]: {
+        ok -> it
+
+        -> -1
+    }
+    y = CMP-Y[h]: {
+        ok -> it
+
+        -> -1
+    }
+    w = CMP-W[h]: {
+        ok -> it
+
+        -> -1
+    }
+    ht = CMP-H[h]: {
+        ok -> it
+
+        -> -1
+    }
+    ((x < 0) || (y < 0) || (w <= 0) || (ht <= 0)) -> return
+    cw = 2400
+    bx = cs-sub(cs-sub(cs-add(x, w), 1200), cw)
+    by = cs-add(y, cs-div(cs-sub(ht, cw), 2))
+    ((px >= bx) && (py >= by) && (px < cs-add(bx, cw)) && (py < cs-add(by, cw))) -> {
+        app-clipboard-copy(clip-content(h))
+        used = 1
+    }
+    used = used
 }
 
 ; ============================================================================
@@ -568,10 +772,15 @@ dva-run = (S []i64, title str, max-frames i64) () {
                 hit = cs-hit(root, px, py)
                 k = cmp-key(hit)
                 dva-focus(hit)
-                act, pay = dv-dispatch(k)
-                nw = dv-app-reduce(S, k)
-                (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
-                dv-app-click(S, k, act, pay, nw)
+                ; 剪贴板组件（阶段76）：点右端复制方块 = 内容进系统剪贴板，
+                ; 该组件没有 dv-act，命中后就不再往下派发。
+                clip = dva-clipboard-hit(hit, px, py)
+                (clip == 0) -> {
+                    act, pay = dv-dispatch(k)
+                    nw = dv-app-reduce(S, k)
+                    (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+                    dv-app-click(S, k, act, pay, nw)
+                }
             }
         }
 
@@ -597,6 +806,12 @@ dva-run = (S []i64, title str, max-frames i64) () {
             dva-wheel(S, root)
         }
 
+        ; ---- 文本输入（阶段76）：IME / Unicode。整段 UTF-8 交给焦点侧拆码点 ----
+        (t == 7) -> {
+            s = app-text()
+            dva-type(s)
+        }
+
         ; ---- 键盘：有面板焦点 -> 喂面板；有输入焦点 -> 喂输入框；有编辑器焦点 ->
         ;      喂编辑器；都没有 -> q 退出 + 全局快捷键 ----
         ; 快捷键语义：正在敲字时按键不触发全局动作（否则打不出 'r'）。阶段30：
@@ -611,27 +826,47 @@ dva-run = (S []i64, title str, max-frames i64) () {
             }
             (pk >= 0) -> { dva-pal-keyboard(S, kk) }
             (pk < 0) -> {
-                fh = DVA-FOCUS[0]: {
-                    ok -> it
-
-                    -> -1
-                }
-                (fh >= 0) -> { dva-keyboard(kk) }
-                (fh < 0) -> {
-                    ek = DVA-EDIT-FOCUS[0]: {
+                ; 阶段77：Tab / Shift-Tab 焦点遍历。编辑器聚焦时保留 Tab 缩进语义，
+                ; 所以只在「非编辑器」时拦截；Shift 标记来自 app-shift()。
+                (kk == 9) -> {
+                    ek0 = DVA-EDIT-FOCUS[0]: {
                         ok -> it
 
                         -> -1
                     }
-                    (ek >= 0) -> { dva-edit-keyboard(kk) }
-                    (ek < 0) -> {
-                        (kk == 113) -> { APP-QUIT[0] = 1 }
-                        ha, hp, hk = dv-hot-dispatch(kk)
-                        (ha != 0) -> {
-                            nw2 = dv-app-reduce(S, hk)
-                            (nw2 > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
-                            dv-app-click(S, hk, ha, hp, nw2)
+                    (ek0 < 0) -> {
+                        dir = 1
+                        (app-shift() == 1) -> { dir = -1 }
+                        dva-focus-step(root, dir)
+                    }
+                }
+                (kk != 9) -> {
+                    ; 阶段81：Enter = 激活当前焦点的默认按钮（提交），优先于喂字符
+                    (kk == 13) -> { dva-default-submit(S, root) }
+                    (kk != 13) -> {
+                    fh = DVA-FOCUS[0]: {
+                        ok -> it
+
+                        -> -1
+                    }
+                    (fh >= 0) -> { dva-keyboard(kk) }
+                    (fh < 0) -> {
+                        ek = DVA-EDIT-FOCUS[0]: {
+                            ok -> it
+
+                            -> -1
                         }
+                        (ek >= 0) -> { dva-edit-keyboard(kk) }
+                        (ek < 0) -> {
+                            (kk == 113) -> { APP-QUIT[0] = 1 }
+                            ha, hp, hk = dv-hot-dispatch(kk)
+                            (ha != 0) -> {
+                                nw2 = dv-app-reduce(S, hk)
+                                (nw2 > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+                                dv-app-click(S, hk, ha, hp, nw2)
+                            }
+                        }
+                    }
                     }
                 }
             }

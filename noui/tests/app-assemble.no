@@ -129,4 +129,4 @@ print('hover={r19}{r20}{r21} slider={r24}{r25}{r26}')
 print('scene root={c-root} dlg-closed={c-closed} dlg-open={c-open} -> {r27}{r28}{r29}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL APP-ASSEMBLE TESTS PASSED') }
-(!all-ok) -> { print('SOME APP-ASSEMBLE TESTS FAILED') }
+(!all-ok) -> { print('SOME APP-ASSEMBLE TESTS FAILED'); exit(1) }

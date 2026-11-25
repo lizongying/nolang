@@ -55,15 +55,17 @@ func lasMax(a, b int64) int64 {
 	return b
 }
 
-// optionInlineLimitDefault is the default `option-inline-threshold` in BYTES of
-// the whole option struct: 264 = 1 tag + 7 padding + 256 payload. A payload is
-// stored inline iff `8 + roundUp8(sizeof(T)) <= limit`, i.e. iff
-// sizeof(T) <= 256 at the default.
-const optionInlineLimitDefault = 264
+// optionPayloadInlineLimitDefault is the default `option-payload-inline-threshold`:
+// 256 BYTES OF PAYLOAD, excluding the 8-byte tag area. A payload is stored inline
+// iff `roundUp8(sizeof(T)) <= limit`; the whole option is then 8 + that payload.
+// This matches the former whole-struct default of 264 exactly.
+const optionPayloadInlineLimitDefault = 256
 
-// optionInlineLimitMin is the smallest meaningful limit: the 8-byte tag area
-// plus one 8-byte payload word. Anything smaller could not even hold an i64.
-const optionInlineLimitMin = 16
+// optionPayloadInlineLimitMin is the smallest meaningful payload limit: one
+// 8-byte word (the old whole-struct minimum of 16 minus the 8-byte tag area).
+// A 16-byte %str-long only fits at 16 or above; below that builtins returning
+// ?str need a boxed slot.
+const optionPayloadInlineLimitMin = 8
 
 // optionTagOffset / optionPayloadOffset are the fixed byte offsets inside
 // every option struct. The payload always starts at 8: the struct is
@@ -73,14 +75,14 @@ const (
 	optionPayloadOffset = 8
 )
 
-// optionInlineLimit resolves the configured threshold, clamping/reporting.
-func optionInlineLimit(threshold int) int64 {
+// optionPayloadInlineLimit resolves the configured threshold, clamping/reporting.
+func optionPayloadInlineLimit(threshold int) int64 {
 	t := int64(threshold)
 	if t <= 0 {
-		return optionInlineLimitDefault
+		return optionPayloadInlineLimitDefault
 	}
-	if t < optionInlineLimitMin {
-		return optionInlineLimitMin
+	if t < optionPayloadInlineLimitMin {
+		return optionPayloadInlineLimitMin
 	}
 	return t
 }
@@ -185,14 +187,15 @@ func (c *codegen) optLayoutOfPayload(payloadLT string) *OptionLayout {
 		// type — `?str` stays a 24-byte inline option even though a tag-2
 		// `?str` keeps its message in a box.
 		if sa, ok := c.llvmSizeAlign(payloadLT, map[string]bool{}); ok && sa.Align <= 8 && !lay.Recursive {
-			limit := c.optInlineLimit
+			limit := c.optPayloadInlineLimit
 			if limit <= 0 {
-				limit = optionInlineLimitDefault
+				limit = optionPayloadInlineLimitDefault
 			}
 			// The payload occupies at least one word (an empty struct still
 			// needs an address), and the slot is a whole number of i64s.
 			need := lasRoundUp(lasMax(sa.Size, 8), 8)
-			if optionPayloadOffset+need <= limit {
+			// The threshold is payload-only: the 8-byte tag area is NOT counted.
+			if need <= limit {
 				lay.Boxed = false
 				lay.K = need / 8
 				lay.SlotLT = fmt.Sprintf("[%d x i64]", lay.K)
@@ -232,11 +235,11 @@ func (c *codegen) optionPayloadInline(payloadLT string) bool {
 // optLayoutOfElem, which keeps a late-discovered option (one that only appears
 // inside a function body) declared.
 func (c *codegen) collectOptionLayouts() {
-	limit := optionInlineLimit(c.mod.OptionInlineThreshold)
-	if t := int64(c.mod.OptionInlineThreshold); t != 0 && t < optionInlineLimitMin {
-		c.fail("option-inline-threshold %d is below the minimum %d (tag + one 8-byte payload word)", t, optionInlineLimitMin)
+	limit := optionPayloadInlineLimit(c.mod.OptionPayloadInlineThreshold)
+	if t := int64(c.mod.OptionPayloadInlineThreshold); t != 0 && t < optionPayloadInlineLimitMin {
+		c.diag(nil, codegenTraceID, "option-payload-inline-threshold %d is below the minimum %d payload bytes", t, optionPayloadInlineLimitMin)
 	}
-	c.optInlineLimit = limit
+	c.optPayloadInlineLimit = limit
 	if c.optLayouts == nil {
 		c.optLayouts = map[string]*OptionLayout{}
 		c.optByLLVM = map[string]*OptionLayout{}
@@ -342,16 +345,16 @@ func injectMissingOptionTypeDecls(ir string, preludeEnd int, layouts []*OptionLa
 // module-level `?T` constants and enum payload slots, and re-deriving them
 // there is exactly the kind of drift this file exists to prevent.
 //
-// The threshold must be resolved HERE too: `c.optInlineLimit == 0` means "unset",
+// The threshold must be resolved HERE too: `c.optPayloadInlineLimit == 0` means "unset",
 // and optLayoutOfPayload would then fall back to the DEFAULT rather than to the
 // module's configured value. Analysis and emitter would then disagree about what
 // is boxed, which is a double free, not a leak.
 func newLayoutCodegen(mod *Module) *codegen {
 	return &codegen{
-		mod:            mod,
-		optLayouts:     map[string]*OptionLayout{},
-		optByLLVM:      map[string]*OptionLayout{},
-		optInlineLimit: optionInlineLimit(mod.OptionInlineThreshold),
+		mod:                   mod,
+		optLayouts:            map[string]*OptionLayout{},
+		optByLLVM:             map[string]*OptionLayout{},
+		optPayloadInlineLimit: optionPayloadInlineLimit(mod.OptionPayloadInlineThreshold),
 	}
 }
 

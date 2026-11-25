@@ -57,7 +57,8 @@ func nomlParseProjectConfig(data []byte) (*ProjectConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	var cfg ProjectConfig
+	// 舊清單沒有 publish 時沿用 nohub 的缺省 true；DecodeInto 只會在鍵存在時覆寫。
+	cfg := ProjectConfig{Publish: true}
 	if err := pkg.DecodeInto(m, &cfg); err != nil {
 		return nil, err
 	}
@@ -97,41 +98,63 @@ const packageCategoryComment = `; category (optional, lowercase), one of:
 `
 
 // renderPackageNoml renders a package.noml document from ProjectConfig.
+// 只寫 pkg.RequiredManifestFields()：可選欄位留給內建預設，所以新生成的清單
+// 一出生就不會被 no fmt / LoadPackage 警告缺欄位。
 // dependencies 以 'key:version' 字串陣列落地（排序後輸出求確定性）。
 func renderPackageNoml(config ProjectConfig) string {
 	var sb strings.Builder
 	sb.WriteString(packageCategoryComment)
 	sb.WriteString("{\n")
-	writePair := func(key, value string) {
-		sb.WriteString("  ")
-		sb.WriteString(nomlFormatKeyLocal(key))
-		sb.WriteString(": ")
-		sb.WriteString(pkg.NomlQuote(value))
-		sb.WriteString("\n")
+
+	quoted := func(v string) string { return pkg.NomlQuote(v) }
+	strArray := func(items []string) string {
+		if len(items) == 0 {
+			return "[]"
+		}
+		var b strings.Builder
+		b.WriteString("[")
+		for i, item := range items {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(quoted(item))
+		}
+		b.WriteString("]")
+		return b.String()
 	}
-	writePair("name", config.Name)
-	writePair("description", config.Description)
-	writePair("category", config.Category)
-	sb.WriteString("  keywords: []\n")
-	writePair("author", config.Author)
-	writePair("email", config.Email)
-	writePair("organization", config.Organization)
-	writePair("repository", config.Repository)
-	writePair("homepage", config.Homepage)
-	writePair("license", config.License)
-	sb.WriteString("  mirrors: []\n")
-	sb.WriteString(formatDependencies(config.Dependencies))
-	sb.WriteString("  compiler: {\n")
-	sb.WriteString("    version: ")
-	sb.WriteString(pkg.NomlQuote(config.Compiler.Version))
-	sb.WriteString("\n")
-	sb.WriteString("    link-libs: []\n")
-	// lang 是 `no` 的訊息語言，等價於萬用 --lang。留成註解而不是寫死值：
-	// 它取決於專案自己用什麼語言寫訊息，沒有合理的預設值可以替它猜。
-	sb.WriteString("    ; lang: 'zh-tw'   pin the message language (omit: follow the system locale)\n")
-	sb.WriteString("  }\n")
-	writePair("output", config.Output)
-	sb.WriteString("  ignore: []\n")
+	values := map[string]string{
+		"name":         quoted(config.Name),
+		"description":  quoted(config.Description),
+		"category":     quoted(config.Category),
+		"keywords":     strArray(config.Keywords),
+		"author":       quoted(config.Author),
+		"email":        quoted(config.Email),
+		"organization": quoted(config.Organization),
+		"repository":   quoted(config.Repository),
+		"homepage":     quoted(config.Homepage),
+		"license":      quoted(config.License),
+	}
+
+	for _, f := range pkg.RequiredManifestFields() {
+		switch f.Key {
+		case "compiler":
+			sb.WriteString("  compiler: {\n")
+			for _, sub := range pkg.CompilerManifestFields() {
+				// 可選欄位不寫進新清單，讓 compiler 自己用內建預設。
+				if pkg.IsNonRequiredManifestField("compiler." + sub.Key) {
+					continue
+				}
+				if sub.Key == "version" {
+					sb.WriteString("    version: " + quoted(config.Compiler.Version) + "\n")
+				}
+			}
+			sb.WriteString("  }\n")
+		case "dependencies":
+			sb.WriteString(formatDependencies(config.Dependencies))
+		default:
+			sb.WriteString("  " + nomlFormatKeyLocal(f.Key) + ": " + values[f.Key] + "\n")
+		}
+	}
 	sb.WriteString("}\n")
 	return sb.String()
 }

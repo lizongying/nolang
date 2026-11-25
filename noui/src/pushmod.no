@@ -1,7 +1,12 @@
-g []i64 = with-len(0)
+G []i64 = with-len(0)
 add = (v i64) {
-  g.push(v)
+  G.push(v)
 }
 get = (i i64) (v i64) {
-  v = g[i]
+  k = G[i]
+  v = k: {
+    ok -> it
+
+    -> 0
+  }
 }

@@ -520,6 +520,10 @@ func (c *hirConv) stmt(s Statement) int32 {
 	// the enclosing statement's file instead of losing it.
 	if sf := c.sem.SourceFileOf(s); sf != "" {
 		c.curFile = filepath.Base(sf)
+		// Stamp every node lowered under this statement with the file, so
+		// MIR diagnostics on non-call instructions (setfield, index-store,
+		// move, …) carry a file name too — not just KCall's S2 convention.
+		c.b.CurFile = c.b.Intern(c.curFile)
 	}
 	id := c.stmtNode(s)
 	// S3-b：H0 捕獲軌的來源陳述刻意不 annotate / remember —— 見 captureOrigin

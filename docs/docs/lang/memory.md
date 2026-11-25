@@ -78,7 +78,7 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 | 結構體 | 各欄位總和 | 各欄位 | alloca（棧） |
 
 **`?T` 的大小是算出來的，不是固定的**：`?i64` = 16 字節、`?str` = 24、`?txt` = 264，超過
-`option-inline-threshold`（預設 264 = 1 + 7 + 256，最小 16）的載荷改為堆裝箱、整個 option
+`option-payload-inline-threshold`（預設 256 位元組載荷，不含標籤區；最小 8）的載荷改為堆裝箱、整個 option
 回到 16 字節。每個載荷型別各有自己的 `%option_<key>` 型別（`src/mir/layout.go`），因此
 「型別相同 ⇔ 佈局相同」。`err` 的載荷恆裝箱，不佔用載荷預算。詳見
 `docs/docs/lang/syntax.md`〈可空類型(option)・內存佈局〉。
@@ -278,7 +278,7 @@ b[0] = 99
 > `?[]T` 的釋放走與 `[]T` 相同的深層 free helper（依元素型別決定是否遞迴），所以
 > 「深層 clone 配深層 free」這條對偶在這裡同樣成立。
 > ⚠️ 一般（非 `?str`/`?[]T`）的 option，payload 是借用或純值，**不擁有**堆，clone／free 都不碰它。
-> 載荷大到超過 `option-inline-threshold` 時 option 改存堆指標，那時 free 要連箱子一起釋放
+> 載荷大到超過 `option-payload-inline-threshold` 時 option 改存堆指標，那時 free 要連箱子一起釋放
 > （由 `Boxed` 決定，見 `src/mir/layout.go`）。
 
 ### 與 move 的區別

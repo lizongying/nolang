@@ -18,10 +18,8 @@ func TestLoadPackageTestDir(t *testing.T) {
 	if pkg.Name != "my-project" {
 		t.Errorf("Name = %q, want %q", pkg.Name, "my-project")
 	}
-	// package.noml 的 version 約定帶前導 v（見 commit 3f88ca23 與 docs/docs/usage.md），
-	// 編譯器僅在比較時對前綴不敏感，解析結果原樣保留前導 v。
-	if pkg.Version != "v1.0.0" {
-		t.Errorf("Version = %q, want %q", pkg.Version, "v1.0.0")
+	if !pkg.Publish {
+		t.Error("Publish = false, want true (LoadPackage defaults publish to true)")
 	}
 	if len(pkg.Keywords) != 1 || pkg.Keywords[0] != "nolang" {
 		t.Errorf("Keywords = %v, want [nolang]", pkg.Keywords)
@@ -35,13 +33,72 @@ func TestLoadPackageTestDir(t *testing.T) {
 	if pkg.License != "Apache-2.0" {
 		t.Errorf("License = %q, want %q", pkg.License, "Apache-2.0")
 	}
-	if pkg.DevDependencies == nil {
-		t.Error("DevDependencies is nil")
-	} else if pkg.DevDependencies["nolang"] != "^0.1.0" {
-		t.Errorf("DevDependencies[nolang] = %q, want %q", pkg.DevDependencies["nolang"], "^0.1.0")
+	// nolang 本身不是依賴；dev-dependencies 省略時就是空。
+	if len(pkg.DevDependencies) != 0 {
+		t.Errorf("DevDependencies = %v, want empty", pkg.DevDependencies)
 	}
-	if len(pkg.Ignore) != 1 || pkg.Ignore[0] != "dist" {
-		t.Errorf("Ignore = %v, want [dist]", pkg.Ignore)
+	// tests/package.noml 的 ignore 是空 vec（見該檔）；模式語意由
+	// TestPackageIsIgnoredPatterns 覆蓋。
+	if len(pkg.Ignore) != 0 {
+		t.Errorf("Ignore = %v, want empty", pkg.Ignore)
+	}
+}
+
+// output 省略时默认为当前包目录下的 dist，显式值一律以 workspace 根为准。
+func TestResolveOutputDir(t *testing.T) {
+	ws := t.TempDir()
+	pkgRoot := filepath.Join(ws, "tests")
+
+	cases := []struct {
+		name string
+		pkg  *Package
+		want string
+	}{
+		{"default under package", &Package{RootDir: pkgRoot, workspaceRoot: ws}, filepath.Join(pkgRoot, "dist")},
+		{"workspace absolute", &Package{RootDir: pkgRoot, workspaceRoot: ws, Output: "/tests/dist"}, filepath.Join(ws, "tests", "dist")},
+		{"workspace relative", &Package{RootDir: pkgRoot, workspaceRoot: ws, Output: "./dist"}, filepath.Join(ws, "dist")},
+		{"root package", &Package{RootDir: ws, workspaceRoot: ws}, filepath.Join(ws, "dist")},
+		{"no workspace", &Package{RootDir: filepath.Join(ws, "solo")}, filepath.Join(ws, "solo", "dist")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.pkg.ResolveOutputDir(); got != tc.want {
+				t.Errorf("ResolveOutputDir() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// ignore 模式既匹配檔案，也匹配整棵被忽略的目錄；相对路径直接以 RootDir 為基準。
+func TestPackageIsIgnoredPatterns(t *testing.T) {
+	p := &Package{
+		RootDir: "/proj",
+		Ignore:  []string{"*_skip.no", "build-cache", "src/*_skip", "dist/"},
+	}
+	cases := []struct {
+		path  string
+		isDir bool
+		want  bool
+	}{
+		{"foo_skip.no", false, true},
+		{"src/foo_skip.no", false, true},
+		{"foo.no", false, false},
+		{"build-cache/a.no", false, true},
+		{"/proj/build-cache/a.no", false, true},
+		{"src/gen_skip/a.no", false, true},
+		{"dist/a.no", false, true},
+		{"dist", false, false}, // 以 / 結尾的模式不命中同名檔案
+		{"dist", true, true},
+		{"other/a.no", false, false},
+	}
+	for _, tc := range cases {
+		got := p.IsIgnored(tc.path)
+		if tc.isDir {
+			got = p.IsIgnoredDir(tc.path)
+		}
+		if got != tc.want {
+			t.Errorf("IsIgnored(%q, dir=%v) = %v, want %v", tc.path, tc.isDir, got, tc.want)
+		}
 	}
 }
 

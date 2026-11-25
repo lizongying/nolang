@@ -328,6 +328,16 @@ type lowerer struct {
 	// through the normal constructor path, so `a == ok(1)` compares payloads.
 	bareVariant map[ValueID]bool
 
+	// plainVariantPattern marks a bare option-variant keyword (`ok` / `err` /
+	// `nil` / `some`) lowered in a NON-option context — i.e. the subject of the
+	// match is a plain value, not a `?T`. Such a plain value can never match any
+	// option variant arm (verified: `i: { ok -> …; -> default }` on a plain i64
+	// always takes `default`), so an `==` against this pattern is a constant
+	// false. The value itself is a zero constant of the subject's type, which
+	// for an aggregate (struct / slice) cannot be compared with LLVM `icmp`
+	// (`icmp eq %node`) — short-circuiting here avoids emitting illegal IR.
+	plainVariantPattern map[ValueID]bool
+
 	// funcOvfAnnotated records whether the current function carries a
 	// function-level `#{overflow = ...}` annotation (KFuncDef flags). It is the
 	// BASE mode for every arithmetic instruction lowered inside the function.
@@ -493,14 +503,48 @@ type lowerer struct {
 	// (measured rc=139 on the pre-fix binary). Populated unconditionally in
 	// lowerCall's OpRun branch and propagated through every copy site.
 	asyncHandles map[ValueID]bool
+
+	// srcLine/srcCol/srcFile are the source span of the HIR node currently
+	// being lowered. lowerStmt/lowerExpr save and restore them around each
+	// node so every instruction emitted for that node inherits its location.
+	srcLine int32
+	srcCol  int32
+	srcFile int32
+}
+
+// useNodeSpan points the MIR builder at an HIR node's source location and
+// returns a restore closure. File names now live on every node via
+// Package.FileOf (filled while lowering the AST); the old KCall-S2 convention
+// stays as a fallback for hand-built packages that predate the parallel
+// table. Defer the returned closure at the node's entry.
+func (l *lowerer) useNodeSpan(id int32) func() {
+	line, col, fileID := l.srcLine, l.srcCol, l.srcFile
+	if n := l.pkg.Node(id); n != nil {
+		l.srcLine, l.srcCol = n.Line, n.Col
+		if fid := l.pkg.FileOf(id); fid != hir.NoID {
+			fileID = l.mod.InternSourceFile(l.pkg.Str(fid))
+		} else if n.Kind == hir.KCall && n.S2 != hir.NoID {
+			fileID = l.mod.InternSourceFile(l.pkg.Str(n.S2))
+		}
+		l.srcFile = fileID
+		l.b.SetSourcePos(l.srcLine, l.srcCol, fileID)
+	}
+	return func() {
+		l.srcLine, l.srcCol, l.srcFile = line, col, fileID
+		l.b.SetSourcePos(line, col, fileID)
+	}
 }
 
 // armScopedBind is one `locals` entry that a match arm's synthetic binding
 // shadowed. lowerIf restores it when the arm body ends, so a nested match's
 // binding of the same field name cannot leak past its arm.
+//
+// absent 表示該名字在 arm 之前沒有本地綁定（陰影的是模組可見全域）：
+// restoreArmScoped 要_delete_ 而不是回填，讓 arm 之後重新解析到全域。
 type armScopedBind struct {
-	name  string
-	saved ValueID
+	name   string
+	saved  ValueID
+	absent bool
 }
 
 // copiedEnumVariants returns a private copy of the enum-variant table so the
@@ -1471,13 +1515,14 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		// (checker.stdEnumVariantsCache), and collectLocalEnumVariants adds the
 		// program's own enum definitions to it. Writing into the shared map
 		// would leak one program's enums into every later compilation.
-		enumVariants:     copiedEnumVariants(enumVariants),
-		asyncResTypes:    map[ValueID]TypeID{},
-		asyncHandles:     map[ValueID]bool{},
-		bareVariant:      map[ValueID]bool{},
-		constCache:       map[int32]*comptimeVal{},
-		constLocals:      map[string]comptimeVal{},
-		constLocalWrites: map[string]int{},
+		enumVariants:        copiedEnumVariants(enumVariants),
+		asyncResTypes:       map[ValueID]TypeID{},
+		asyncHandles:        map[ValueID]bool{},
+		bareVariant:         map[ValueID]bool{},
+		plainVariantPattern: map[ValueID]bool{},
+		constCache:          map[int32]*comptimeVal{},
+		constLocals:         map[string]comptimeVal{},
+		constLocalWrites:    map[string]int{},
 	}
 	l.b = NewBuilder("hir")
 	l.mod = l.b.Module()
@@ -2830,6 +2875,15 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	l.stmtOvfAnnotated = false
 	l.stmtOvfMode = ""
 	n := l.pkg.Node(hirID)
+	if n != nil {
+		// Give parameter/prologue instructions a location even before any
+		// statement or expression sets a more precise span.
+		fid := l.pkg.FileOf(hirID)
+		if fid != hir.NoID {
+			l.srcFile = l.mod.InternSourceFile(l.pkg.Str(fid))
+		}
+		l.b.SetSourcePos(n.Line, n.Col, l.srcFile)
+	}
 	if n != nil && n.Flags&ovfFlagMask != 0 {
 		l.funcOvfAnnotated = true
 	}
@@ -3341,6 +3395,7 @@ func (l *lowerer) tryUnsignedLitFold(nodeID int32, raw string) (ValueID, bool) {
 // the annotation asks for on overflow; without it codegen would still emit a
 // bare add and every mode would degrade to wrap.
 func (l *lowerer) lowerStmt(id int32) {
+	defer l.useNodeSpan(id)()
 	saved := l.stmtOvfAnnotated
 	savedMode := l.stmtOvfMode
 	if n := l.pkg.Node(id); n != nil && n.Flags&ovfFlagMask != 0 {
@@ -4146,9 +4201,18 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// freshly built %vec into @BUF once, here, is safe. Restrict to
 			// synthesized main + call initializer + visible global so no owned
 			// function-local rebind is affected.
-			ownedGlobalInit := l.curFuncName() == "main" && l.letValueIsCall(n) &&
-				name != "" && l.globalVisible(name)
-			if l.globalVisible(name) && !armScoped {
+		ownedGlobalInit := l.curFuncName() == "main" && l.letValueIsCall(n) &&
+			name != "" && l.globalVisible(name)
+		// 危綁 b：match arm 體內「手寫」的 let（非合成、無 FlagArmBinding）若與
+		// 可見模組全域同名，上游仍是這裡的寫回分支——把值逕直寫進全域槽位，
+		// arm 內外看到的是不同語義（外面以為自己改了本地，實則改了全域）。
+		// arm 體是一個獨立作用域：這裡沒有已有 local 可改時，為名字建立臂局部
+		// 繫結（shadow），並在 arm 結束時由 restoreArmScoped 刪除，使 arm 之後
+		// 仍解析到全域。合成臂綁定（armBinding）走既有路徑，不受影響。
+		if !armScoped && !hasExisting && name != "" && l.matchDepth > 0 && l.globalVisible(name) {
+			l.armScoped = append(l.armScoped, armScopedBind{name: name, absent: true})
+		}
+		if l.globalVisible(name) && !armScoped && l.matchDepth == 0 {
 				if gv := l.lowerGlobalRef(name); gv != NoVal && (ownedGlobalInit || !l.isOwnedLocal(gv)) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
 						// 目標型別已寫明（全域宣告處）⇒ 先按 `<src>.to-<目標>`
@@ -4527,6 +4591,10 @@ func (l *lowerer) blockStartsWithIt(blockID int32) bool {
 // entries, so the stack unwinds in reverse and an inner arm restores first.
 func (l *lowerer) restoreArmScoped(base int) {
 	for i := len(l.armScoped) - 1; i >= base; i-- {
+		if l.armScoped[i].absent {
+			delete(l.locals, l.armScoped[i].name)
+			continue
+		}
 		l.locals[l.armScoped[i].name] = l.armScoped[i].saved
 	}
 	l.armScoped = l.armScoped[:base]
@@ -9612,6 +9680,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 	if n == nil {
 		return NoVal
 	}
+	defer l.useNodeSpan(id)()
 	// Implicit comptime: if the whole expression is a pure compile-time
 	// constant (literals + operators + const lets + pure fn calls), evaluate
 	// it now and emit the constant directly (OpConst). Runtime behaviour is
@@ -9900,12 +9969,22 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			// is well-defined (false → no match → fall through) instead of
 			// poisoning. Legacy's output for such a program (it prints the `err`
 			// arm) is itself a quirk and is deliberately NOT replicated.
+			var plainPattern ValueID
 			if ht := l.typeHint; ht != NoType && ht != l.voidType {
 				if tt := l.mod.Type(ht); tt != nil && tt.Kind != KindOption {
-					return l.b.EmitInt(OpConst, ht, 0, "")
+					plainPattern = l.b.EmitInt(OpConst, ht, 0, "")
 				}
 			}
-			return l.b.EmitInt(OpConst, l.b.Type("i64"), 0, "")
+			if plainPattern == NoVal {
+				plainPattern = l.b.EmitInt(OpConst, l.b.Type("i64"), 0, "")
+			}
+			// Mark this zero as a "plain-value variant pattern": the enclosing
+			// `==` / `!=` must fold to a constant instead of comparing against
+			// it. For aggregate subject types the comparison would be an
+			// illegal `icmp eq %struct`; for scalars it happened to work but
+			// still represented a meaningless test.
+			l.plainVariantPattern[plainPattern] = true
+			return plainPattern
 		}
 		if p, ok := l.placeOf(name); ok {
 			// `x <- a` / a match arm's `let it = x`: the name IS a[__i], so a
@@ -10672,6 +10751,21 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			case OpGe:
 				op = OpUGe
 			}
+		}
+		// A bare option-variant keyword matched against a PLAIN (non-option)
+		// subject never matches — verified by `i: { ok -> …; err -> …; nil -> …;
+		// -> default }` on a plain i64/str, which always takes `default`. The
+		// keyword lowers to a zero constant of the SUBJECT's type (see the
+		// plainVariantPattern marking at the bare-variant lowering site); for
+		// an aggregate subject that constant is a struct, so emitting the
+		// comparison would produce illegal `icmp eq %struct` IR. Fold to a bool
+		// constant instead: `==` is false, `!=` is true.
+		if (op == OpEq || op == OpNe) && (l.plainVariantPattern[lv] || l.plainVariantPattern[rv]) {
+			fold := int64(0)
+			if op == OpNe {
+				fold = 1
+			}
+			return l.b.EmitInt(OpConst, l.b.Type("bool"), fold, "")
 		}
 		v := l.b.Emit(op, resTyp, []ValueID{lv, rv}, "")
 		// A `==` / `!=` against a BARE option-variant keyword is a variant TEST,

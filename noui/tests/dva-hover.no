@@ -249,4 +249,5 @@ print('all-ok={all-ok}')
 }
 (!all-ok) -> {
     print('DVA-HOVER TESTS FAILED')
+    exit(1)
 }

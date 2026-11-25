@@ -1377,7 +1377,7 @@ func (m *Module) optionCopySharesHeap(f *Function, inst *Inst) bool {
 // `?str` / `?[]T` are the cases this exists for: ClassifyOwnership(elem) is
 // true, so the option owns its payload and emitOptionDrop's "str" / "vec"
 // branches free it — while OptionPayloadBoxed is FALSE for them (a 16-byte
-// payload fits the default 264-byte option), which is why the copy used to be
+// payload fits the default 256-byte payload limit), which is why the copy used to be
 // exempted from the liveness rule and silently aliased.
 func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	if elemRaw == "" {

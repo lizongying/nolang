@@ -722,7 +722,7 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 > h u32 = d              ; ✗ top-level is Identifier, not bitwise
 > h u32 = d + 1          ; ✗ top-level is +, not bitwise
 > ```
-## Option Payload Inline Threshold (`--option-inline-threshold`)
+## Option Payload Inline Threshold (`--option-payload-inline-threshold`)
 
 `?T` (Option/Result) stores its payload either **inline** in the option struct or **behind a heap pointer**. Which one it is depends on one global compiler setting: the payload-inline threshold.
 
@@ -731,16 +731,16 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 no build main.no
 
 # raise it: a 1 KiB struct payload stays inline, no box per value
-no build --option-inline-threshold=1032 main.no
+no build --option-payload-inline-threshold=1032 main.no
 
-# tiny-stack / embedded: every option is 16 bytes, almost everything is boxed
-no build --option-inline-threshold=16 main.no
+# tiny-stack / embedded: only 8-byte payloads stay inline, almost everything is boxed
+no build --option-payload-inline-threshold=8 main.no
 ```
 
 | | Scope | Controls |
 | --- | --- | --- |
 | struct field `#{inline=false}` | one struct field | that **struct's own** layout (field by value vs. heap pointer) |
-| `--option-inline-threshold=N` | every `?T` in the compilation unit | how the **Option container** carries its payload |
+| `--option-payload-inline-threshold=N` | every `?T` in the compilation unit | how the **Option container** carries its payload |
 
 The two are independent and do not conflict: the annotation shapes a struct, the flag shapes Option/Result return values.
 
@@ -752,21 +752,21 @@ The two are independent and do not conflict: the annotation shapes a struct, the
 ```
 
 The tag is always **one byte** (an option has three variants) and the payload always starts at
-**byte offset 8** — the 1-byte tag plus 7 bytes of padding. So the threshold counts the **whole
-struct**, not just the payload: inline iff `8 + roundUp8(sizeof(T)) <= threshold`.
+**byte offset 8** — the 1-byte tag plus 7 bytes of padding. The threshold counts the **payload
+only**, not the tag area: inline iff `roundUp8(sizeof(T)) <= threshold`.
 
 **Configuration precedence (highest first)**
 
-1. command line `--option-inline-threshold=N` (`no build` and `no run`)
-2. environment `NOLANG_OPTION_INLINE_THRESHOLD=N`
-3. `package.noml` → `compiler.option-inline-threshold`
+1. command line `--option-payload-inline-threshold=N` (`no build` and `no run`)
+2. environment `NOLANG_OPTION_PAYLOAD_INLINE_THRESHOLD=N`
+3. `package.noml` → `compiler.option-payload-inline-threshold`
 
 **Rules**
 
-- Default **264** = 1-byte tag + 7 bytes padding + 256-byte payload, i.e. "a payload of at most 256 bytes stays inline". `?txt` (a 256-byte inline buffer) lands exactly on that boundary and is the largest thing that inlines by default; `?i64` is 16 bytes and `?str` / `?[]T` / `?vec` are 24 bytes (16-byte descriptor).
+- Default **256** payload bytes (the whole option is then 264 bytes), i.e. "a payload of at most 256 bytes stays inline". `?txt` (a 256-byte inline buffer) lands exactly on that boundary and is the largest thing that inlines by default; `?i64` is 16 bytes and `?str` / `?[]T` / `?vec` are 24 bytes (16-byte descriptor).
 - The **err** payload is heap-boxed at **every** threshold: it is a pointer to std's structured `err.err`, so it never competes for the inline area. `?str` therefore stays a 24-byte inline value even at its `err` state.
-- Minimum **16** = the 8-byte tag area plus one payload word; anything smaller could not even hold an `i64`. Values below 16 are a **compile error**.
-- **16..23** compiles but breaks builtins that return `?str`: their `%str-long` payload (16 bytes → 24-byte option) no longer fits, so they hard-fail with `?str option result needs an inline option slot (option-inline-threshold >= 24)`.
+- Minimum **8** = one payload word; anything smaller could not even hold an `i64`. Values below 8 are clamped to 8.
+- A threshold below **16** breaks builtins that return `?str`: their `%str-long` payload (16 bytes → 24-byte option) no longer fits, so they hard-fail with `?str option result needs an inline option slot (option-payload-inline-threshold >= 16)`.
 - `K` is rounded up to whole `i64` words, so an inline option is `8 + 8*K` bytes and a boxed one is 16.
 - **Two options of different payload types are different types.** `?=`'s propagation seed copies the
   option at the ROOT of the right-hand chain into the result slot, and those payloads can differ

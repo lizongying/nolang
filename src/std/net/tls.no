@@ -8535,7 +8535,7 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
                 tmp str = with-len(4096)
                 rn = c.recv(tmp, 4096)
                 rn <= 0 -> break
-                recv-buf = recv-buf - tmp.slice-bytes(0, rn)
+                recv-buf = recv-buf - tmp.slice-bytes(0, rn).to-bytes-str()
 
                 {
 

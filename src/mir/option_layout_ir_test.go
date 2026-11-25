@@ -50,7 +50,7 @@ func declareOptions(t *testing.T, src string, threshold int) (string, map[string
 		t.Fatalf("unexpected lowering diagnostics: %v", diags)
 	}
 	if threshold != 0 {
-		mod.OptionInlineThreshold = threshold
+		mod.OptionPayloadInlineThreshold = threshold
 	}
 	ll, err := mod.EmitLLVM()
 	if err != nil {
@@ -204,15 +204,15 @@ res = touch-str(s)
 	if got := decls["%option__x25str_x2dlong"]; got != "i8, [2 x i64]" {
 		t.Fatalf("default threshold: ?str = type { %s }, want type { i8, [2 x i64] }", got)
 	}
-	// 16 = tag area (8) + one word: a 16-byte payload no longer fits.
-	_, decls = declareOptions(t, src, 16)
+	// 8 = one payload word: a 16-byte %str-long no longer fits.
+	_, decls = declareOptions(t, src, 8)
 	if got := decls["%option__x25str_x2dlong"]; got != "i8, [1 x i64]" {
-		t.Errorf("threshold 16: ?str = type { %s }, want type { i8, [1 x i64] } (boxed)", got)
+		t.Errorf("threshold 8: ?str = type { %s }, want type { i8, [1 x i64] } (boxed)", got)
 	}
-	// 24 = tag + two words: exactly enough for %str-long again.
-	_, decls = declareOptions(t, src, 24)
+	// 16 = exactly the %str-long payload size, tag not counted.
+	_, decls = declareOptions(t, src, 16)
 	if got := decls["%option__x25str_x2dlong"]; got != "i8, [2 x i64]" {
-		t.Errorf("threshold 24: ?str = type { %s }, want type { i8, [2 x i64] } (inline)", got)
+		t.Errorf("threshold 16: ?str = type { %s }, want type { i8, [2 x i64] } (inline)", got)
 	}
 }
 

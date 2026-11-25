@@ -2693,15 +2693,18 @@ test-it-nested = () {
     runner.eq(ir.contains('icmp eq i64 %v'), 1, 'it-nested cmp')
 }
 
-; 门禁：写 `it` / 裸链臂里读 `it` / match 外读 `it` ⇒ 计 unsup 且整函数不产码
+; 门禁：裸链臂里读 `it` / match 外读 `it` ⇒ 计 unsup 且整函数不产码。
+; s172：臂內【寫】`it` 從「門禁」改為【重綁棧頂】——Go 側 l.locals["it"] 是普通局部槽，寫入走
+;   正常赋値路徑（hir2mir.go:15954），並非不支持構造；noc 側等價動作 = 換掉 c.itv 棧頂。
+;   src-w 由「計 unsup／無碼」改判為「0 unsup 且有碼」，語义另由 smoke u5 端到端同源驗證。
 test-it-gate = () {
     src-w = 'i5w = (n i64) (r i64) {\n    n: {\n        1 -> {\n            it = 5\n            r = it\n        }\n        -> r = 0\n    }\n}\n'
     t1 = ast.make()
     r1 = ps.parse(t1, ps.new(src-w.to-bytes()))
     agg1 = h2m-new()
     ir1 = h2m-lower-program(t1, agg1, r1)
-    runner.eq(agg1.unsup > 0, 1, 'it-gate-write counted')
-    runner.eq(ir1.contains('define'), 0, 'it-gate-write no code')
+    runner.eq(agg1.unsup, 0, 'it-gate-write now supported')
+    runner.eq(ir1.contains('define'), 1, 'it-gate-write emits code')
 
     src-b = 'i5b = (n i64) (r i64) {\n    r = 0\n    {\n        n == 1 -> r = it\n        -> r = 0\n    }\n}\n'
     t2 = ast.make()

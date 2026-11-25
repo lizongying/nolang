@@ -55,7 +55,6 @@ func inTempProject(t *testing.T) {
 	t.Setenv("NOLANG_AST_CACHE_DIR", filepath.Join(dir, "astcache"))
 	createConfigFile(ProjectConfig{
 		Name:         "sumsync",
-		Version:      "0.1.0",
 		Dependencies: map[string]string{},
 	})
 }

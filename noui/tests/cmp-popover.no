@@ -290,4 +290,5 @@ ok = ok & t56 & t57 & t58 & t59 & t60 & t61 & t62
 }
 (ok == 0) -> {
     print('SOME POPOVER TESTS FAILED')
+    exit(1)
 }
