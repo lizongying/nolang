@@ -20,25 +20,29 @@ rect {
 color-rgba = (r i64, g i64, b i64, a i64) (c i64) {
     c = (r << 24) | (g << 16) | (b << 8) | a
 }
+
 color-r = (c i64) (v i64) {
     v = (c >> 24) & 255
 }
+
 color-g = (c i64) (v i64) {
     v = (c >> 16) & 255
 }
+
 color-b = (c i64) (v i64) {
     v = (c >> 8) & 255
 }
+
 color-a = (c i64) (v i64) {
     v = c & 255
 }
 
-COLOR-WHITE = 0xFFFFFFFF
-COLOR-BLACK = 0x000000FF
-COLOR-BG = 0x1E1E1EFF
-COLOR-ACCENT = 0x4A90E2FF
-COLOR-ACCENT-HOVER = 0x5AA0F2FF
-COLOR-TEXT = 0xF2F2F2FF
+COLOR-WHITE = 0xffffffff
+COLOR-BLACK = 0x000000ff
+COLOR-BG = 0x1e1e1eff
+COLOR-ACCENT = 0x4a90e2ff
+COLOR-ACCENT-HOVER = 0x5aa0f2ff
+COLOR-TEXT = 0xf2f2f2ff
 
 ; 点是否命中矩形（含边界）
 rect-hit = (r rect, px f64, py f64) (hit bool) {
@@ -155,7 +159,7 @@ E-FLEX []i64 = with-len(0)
 E-GROW []f64 = with-len(0)
 E-TEXT []str = with-len(0)
 E-ENTITY []i64 = with-len(0)
-E-HIT []i64 = with-len(0)       ; 是否参与命中测试（按钮=1）
+E-HIT []i64 = with-len(0); 是否参与命中测试（按钮=1）
 E-CHILDREN-HEAD []i64 = with-len(0)
 E-CHILDREN-COUNT []i64 = with-len(0)
 
@@ -246,6 +250,7 @@ el-add = (parent i64, child i64) {
         E-CHILDREN-HEAD[parent] = CHILD-IDX.len()
     }
     CHILD-IDX.push(child)
+
     #{overflow=wrap}
     E-CHILDREN-COUNT[parent] = E-CHILDREN-COUNT[parent] + 1
 }
@@ -296,6 +301,7 @@ layout-node = (idx i64, avail rect) {
         layout-row(idx, avail)
     }
     (E-KIND[idx] != EL-CONTAINER) -> {
+
         ; 非容器：grow>0 撑满可用空间，否则按可用尺寸
         E-X[idx] = avail.x
         E-Y[idx] = avail.y
@@ -329,11 +335,15 @@ layout-column = (idx i64, avail rect) {
     }
 
     inner-h = avail.h - pad * 2.0 - gap * (n - 1)
-    (inner-h < 0.0) -> { inner-h = 0.0 }
+    (inner-h < 0.0) -> {
+        inner-h = 0.0
+    }
     cx = avail.x + pad
     cy = avail.y + pad
     inner-w = avail.w - pad * 2.0
-    (inner-w < 0.0) -> { inner-w = 0.0 }
+    (inner-w < 0.0) -> {
+        inner-w = 0.0
+    }
 
     i <- [0..n): {
         c = el-child(idx, i)
@@ -372,11 +382,15 @@ layout-row = (idx i64, avail rect) {
     }
 
     inner-w = avail.w - pad * 2.0 - gap * (n - 1)
-    (inner-w < 0.0) -> { inner-w = 0.0 }
+    (inner-w < 0.0) -> {
+        inner-w = 0.0
+    }
     cx = avail.x + pad
     cy = avail.y + pad
     inner-h = avail.h - pad * 2.0
-    (inner-h < 0.0) -> { inner-h = 0.0 }
+    (inner-h < 0.0) -> {
+        inner-h = 0.0
+    }
 
     i <- [0..n): {
         c = el-child(idx, i)
@@ -484,6 +498,7 @@ render-frame = (root i64, width f64, height f64, pointer-x f64, pointer-y f64, c
     ; 阶段 3：paint
     paint-node(root)
 }
+
 ; 测试1：仅构造元素树
 root = el-container(FLEX-COL, 1.0, 10.0, 20.0)
 title = el-text('hi', COLOR-TEXT)

@@ -1377,6 +1377,13 @@ json.stringify = () (out str) {
     out = .pool.stringify(.root)
 }
 
+; json.pretty: literal-style JSON text.
+; out: same JSON text as stringify (empty when root is invalid)
+; [pretty](#json.pretty)
+json.pretty = () (out str) {
+    out = .stringify()
+}
+
 ; 最近一次操作是否因池容量耗盡而失敗
 ; 供 set / arr-push 等回傳 bool 的方法在返回 false 後區分「溢出」與「其他失敗」
 ; 用法：

@@ -15,4 +15,15 @@
 @ /example/nosql/src/error.make-result
 @ /example/nosql/src/error.base-code
 @ /example/nosql/src/error.lookup-code
+@ /example/nosql/src/codec.varint-result
+@ /example/nosql/src/codec.serial-value-result
+@ /example/nosql/src/codec.record-encode-result
+@ /example/nosql/src/codec.record-decode-result
+@ /example/nosql/src/codec.varint-size
+@ /example/nosql/src/codec.encode-varint
+@ /example/nosql/src/codec.decode-varint
+@ /example/nosql/src/codec.serial-type-size
+@ /example/nosql/src/codec.serial-of-value
+@ /example/nosql/src/codec.encode-record
+@ /example/nosql/src/codec.decode-record
 @ /example/nosql/src/test-support.new make-test-context

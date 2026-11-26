@@ -20,12 +20,20 @@
 ;                                   3 移动 4 按键 5 滚轮 6/9/11 左/右/中抬起 7 文本输入
 ;                                   12 key-up 13..15 触摸 16..18/23 笔 19..22/24 拖放）
 ;                                   t==4/12 时 x = 完整 SDL 键码，修饰键见 app-mods()
+;                                   aux：鼠标 / 键盘事件是修饰键位图；触摸 / 笔是压力量化（0..255）
 ;   app-event-decode(e) (t,x,y,aux)   纯解码（供合成事件单测，不碰平台）
+;   app-is-mods(t)/app-is-contact(t)   aux 含义分类：修饰键 / 接触压力（纯函数）
+;   app-event-push(e i64)             注入打包事件到轮询队列（测试 / demo，阶段83）
 ;   app-mods()/app-pressure()         最近事件的修饰键位图 / 触摸笔压力（0..255）
 ;   app-drop() (s str)                取最近一次拖放的路径 / 文本（读完即空，配合 t==19/24）
 ;   app-display-scale()/scale1000()   窗口 DPI 缩放
 ;   app-draw-round-rect/-shadow/-image-rot  圆角矩形 / 投影 / 旋转翻转图片
 ;   app-font-open(path,size) / app-font-ready()  字体初始化（后端无关）/ 是否可用
+;   阶段85：app-font-add/clear-cands/cand/cand-count  候选清单（空则内置默认；
+;           状态存在 C shim，Nolang 只按序尝试）
+;           app-font-try-all(fs) / app-font-defaults-count/default-at
+;           app-font-path() / app-font-size()
+;           app-font-reopen()  DPI 变化后用同一路径重开新字号
 ;   app-scale1000()                    窗口 DPI 缩放 x1000（后端无关）
 ;   app-text() (s str)              取最近一次文本输入的 UTF-8（读完即空，配合 t==7）
 ;   app-clipboard-copy(s) / app-clipboard-paste()  系统剪贴板写 / 读
@@ -53,6 +61,24 @@ _noui-set-color = (r i32, g i32, b i32, a i32) ()
 _noui-draw-text = (x f64, y f64, text str) ()
 #{c}
 _noui-font-init = (path str, size f64) (ok i32)
+#{c}
+_noui-font-path = () (p str)
+#{c}
+_noui-font-size = () (s f64)
+#{c}
+_noui-font-reopen = (scale1000 f64) (ok i32)
+#{c}
+_noui-font-cands-clear = () ()
+#{c}
+_noui-font-cands-add = (path str) (ok i32)
+#{c}
+_noui-font-cands-count = () (n i64)
+#{c}
+_noui-font-cands-at = (i i64) (p str)
+#{c}
+_noui-font-defaults-count = () (n i64)
+#{c}
+_noui-font-defaults-at = (i i64) (p str)
 #{c}
 _noui-font-draw = (x f64, y f64, r i32, g i32, b i32, a i32, text str) ()
 #{c}
@@ -113,6 +139,24 @@ _noui-gpu-delay = (ms i32) ()
 ; 阶段82：GPU 纹理管线。图片与文字统一走纹理注册表（id 从 1 起）；
 ; 文字渲染成白底 alpha 蒙版纹理，绘制时用顶点色染色。
 _noui-gpu-font-init = (path str, size f64) (ok i32)
+#{c}
+_noui-gpu-font-path = () (p str)
+#{c}
+_noui-gpu-font-size = () (s f64)
+#{c}
+_noui-gpu-font-reopen = (scale1000 f64) (ok i32)
+#{c}
+_noui-gpu-font-cands-clear = () ()
+#{c}
+_noui-gpu-font-cands-add = (path str) (ok i32)
+#{c}
+_noui-gpu-font-cands-count = () (n i64)
+#{c}
+_noui-gpu-font-cands-at = (i i64) (p str)
+#{c}
+_noui-gpu-font-defaults-count = () (n i64)
+#{c}
+_noui-gpu-font-defaults-at = (i i64) (p str)
 #{c}
 _noui-gpu-font-active = () (yes i32)
 #{c}
@@ -215,11 +259,82 @@ app-gpu-active = () (yes i64) {
 }
 
 ; ============================================================================
-; 阶段82：字体与 DPI 的后端无关封装
+; 阶段82/85：字体与 DPI 的后端无关封装
 ;
 ; 两个后端的字体 / 窗口 API 名字不同（shim.c vs gpu_shim.c），但字号策略一致：
 ; 先乘窗口 DPI 缩放，再按候选清单逐个尝试。
+;
+; 阶段85 把「候选清单」从 app-init 的硬编码 5 条变成可声明状态：
+;   app-font-add(path)(ok) / clear-cands/cand-count/cand(i)  维护候选清单
+;           （C 侧动态增长，无条数上限；空清单时 try-all 走内置默认）
+;   app-font-cand(i) / app-font-cand-count()       查询
+;   app-font-try-all(fs)                           按序尝试，成功即停并记路径
+;   app-font-path()                                最近一次成功的路径（''=没有）
+;   app-font-reopen()                              DPI 变化后用同一路径重开新字号
 ; ============================================================================
+; 语言约束：Nolang 存不了多字符串状态（模块级 str 数组不能下标写，普通
+; str 全局在函数内赋值不持久），所以候选清单 / 内置默认 / 最近成功路径与
+; 字号都放在 C shim（两个后端各一份），Nolang 只做「按序尝试」的循环与分发。
+;   *_font_cands_add/clear/count/at
+;   *_font_defaults_count/at
+;   *_font_path / *_font_size / *_font_reopen
+; 声明一条候选，返回 1 = 收下（清单 C 侧动态增长，没有条数上限；
+; 空串被拒、只在 C 侧扩容失败时返回 0）。
+app-font-add = (path str) (ok i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { ok = _noui-gpu-font-cands-add(path) }
+    (gpu == 0) -> { ok = _noui-font-cands-add(path) }
+}
+app-font-clear-cands = () () {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { _noui-gpu-font-cands-clear() }
+    (gpu == 0) -> { _noui-font-cands-clear() }
+}
+app-font-cand-count = () (n i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { n = _noui-gpu-font-cands-count() }
+    (gpu == 0) -> { n = _noui-font-cands-count() }
+}
+app-font-cand = (i i64) (p str) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { p = _noui-gpu-font-cands-at(i) }
+    (gpu == 0) -> { p = _noui-font-cands-at(i) }
+}
+app-font-defaults-count = () (n i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { n = _noui-gpu-font-defaults-count() }
+    (gpu == 0) -> { n = _noui-font-defaults-count() }
+}
+app-font-default-at = (i i64) (p str) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { p = _noui-gpu-font-defaults-at(i) }
+    (gpu == 0) -> { p = _noui-font-defaults-at(i) }
+}
+
 app-font-open = (path str, size f64) (ok i64) {
     gpu = APP-GPU[0]: {
         ok -> it
@@ -228,6 +343,67 @@ app-font-open = (path str, size f64) (ok i64) {
     }
     (gpu != 0) -> { ok = _noui-gpu-font-init(path, size) }
     (gpu == 0) -> { ok = _noui-font-init(path, size) }
+}
+
+; 按候选清单逐个尝试，成功即停。清单为空时用内置平台默认。
+; 路径 / 字号由 C 在 font_init 成功时记录（Nolang 存不住字符串状态）。
+app-font-try-all = (fs f64) (ok i64) {
+    ok = 0
+    ncand = app-font-cand-count()
+    (ncand > 0) -> {
+        i <- [0..ncand): {
+            (ok == 0) -> {
+                p = app-font-cand(i)
+                v = app-font-open(p, fs)
+                (v != 0) -> { ok = v }
+            }
+        }
+    }
+    (ncand == 0) -> {
+        ndef = app-font-defaults-count()
+        i <- [0..ndef): {
+            (ok == 0) -> {
+                p = app-font-default-at(i)
+                v = app-font-open(p, fs)
+                (v != 0) -> { ok = v }
+            }
+        }
+    }
+    ok
+}
+
+; 最近一次成功的字体路径（'' = 还没成功过）与字号
+app-font-path = () (p str) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { p = _noui-gpu-font-path() }
+    (gpu == 0) -> { p = _noui-font-path() }
+}
+app-font-size = () (s f64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { s = _noui-gpu-font-size() }
+    (gpu == 0) -> { s = _noui-font-size() }
+}
+
+; DPI 变化后重开：同一路径、新字号（窗口换了显示器 / 缩放改了）。
+; scale1000 原样传给 C（C 内部保证 >= 1）；没有已知路径时返回 0，调用方保持现状。
+; GPU 后端重开会顺带清掉文字纹理缓存（字号变了，旧纹理不能复用）。
+app-font-reopen = () (ok i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    sz = app-scale1000().to-f64()
+    (gpu != 0) -> { ok = _noui-gpu-font-reopen(sz) }
+    (gpu == 0) -> { ok = _noui-font-reopen(sz) }
 }
 
 app-scale1000 = () (v i64) {
@@ -450,11 +626,8 @@ app-init = (title str) (ok i64) {
     sc = sz.to-f64() / 1000.0
     (sc < 1.0) -> { sc = 1.0 }
     fs = 16.0 * sc
-    fv = app-font-open('/System/Library/Fonts/Supplemental/Arial.ttf', fs)
-    (fv == 0) -> { fv = app-font-open('/System/Library/Fonts/Helvetica.ttc', fs) }
-    (fv == 0) -> { fv = app-font-open('/System/Library/Fonts/PingFang.ttc', fs) }
-    (fv == 0) -> { fv = app-font-open('/Library/Fonts/Arial.ttf', fs) }
-    (fv == 0) -> { fv = app-font-open('/System/Library/Fonts/Menlo.ttc', fs) }
+    ; 阶段85：候选清单（应用可 app-font-add 声明）→ 内置默认，逐个尝试。
+    fv = app-font-try-all(fs)
     APP-FONT[0] = fv
     (APP-FONT[0] == 0) -> { print('font init failed, fallback to debug text') }
     APP-ROOT[0] = cmp-root()

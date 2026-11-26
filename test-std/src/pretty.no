@@ -15,13 +15,12 @@ t-bytes = () {
 }
 
 t-str = () {
-    expected = '\'' - 'a' - '\''
-    runner.str-eq('a'.pretty(), expected, 'str.pretty')
+    runner.str-eq('a'.pretty(), 'a', 'str.pretty')
 }
 
 t-char = () {
     c char = "a"
-    runner.str-eq(c.pretty(), '"a"', 'char.pretty')
+    runner.str-eq(c.pretty(), 'a', 'char.pretty')
 }
 
 t-int = () {
@@ -64,10 +63,62 @@ t-implicit-float = () {
 
 t-element-pretty = () {
     xs []str = ['a', 'b']
-    expected = '[' - '\'' - 'a' - '\'' - ', ' - '\'' - 'b' - '\'' - ']'
+    expected = '[a, b]'
     runner.str-eq(xs.pretty(), expected, '[]str.pretty uses element pretty')
     a [2]str = ['a', 'b']
     runner.str-eq(a.pretty(), expected, '[n]str.pretty uses element pretty')
+}
+
+t-json-pretty = () {
+    parsed = json.parse('{"name":"Alice","active":true}')
+    parsed: {
+        ok -> {
+            expected = '{"name":"Alice","active":true}'
+            runner.str-eq(it.pretty(), expected, 'json.pretty')
+            runner.str-eq(it.pretty(), it.stringify(), 'json.pretty matches stringify')
+            runner.str-eq(format('{it}'), expected, 'json bare format uses pretty')
+        }
+
+        nil -> runner.is-true(false, 'json.pretty parse ok')
+
+        err -> runner.is-true(false, 'json.pretty parse ok')
+    }
+    empty = json.new()
+    runner.str-eq(empty.pretty(), '', 'json.pretty invalid root is empty')
+}
+
+t-yaml-pretty = () {
+    parsed = yaml.parse('{name: Alice, tags: [a, b]}')
+    parsed: {
+        ok -> {
+            expected = 'name: Alice
+tags:
+  - a
+  - b'
+            runner.str-eq(it.pretty(), expected, 'yaml.pretty block output')
+            runner.str-eq(it.pretty(), it.to-yaml(), 'yaml.pretty matches to-yaml')
+            runner.str-eq(format('{it}'), expected, 'yaml bare format uses pretty')
+        }
+
+        nil -> runner.is-true(false, 'yaml.pretty parse ok')
+
+        err -> runner.is-true(false, 'yaml.pretty parse ok')
+    }
+}
+
+t-toml-pretty = () {
+    doc = toml.new()
+    runner.is-true(doc.put('title', '"hello"'), 'toml.pretty put title')
+    runner.is-true(doc.put('server.port', '8080'), 'toml.pretty put port')
+    runner.is-true(doc.put('enabled', 'true'), 'toml.pretty put enabled')
+    expected = 'title = "hello"
+server.port = 8080
+enabled = true'
+    runner.str-eq(doc.pretty(), expected, 'toml.pretty')
+    runner.str-eq(doc.pretty(), toml.stringify(doc), 'toml.pretty matches stringify')
+    runner.str-eq(format('{doc}'), expected, 'toml bare format uses pretty')
+    empty = toml.new()
+    runner.str-eq(empty.pretty(), '', 'toml.pretty empty document')
 }
 
 p1, f1 = runner.test('pretty bytes', t-bytes)
@@ -135,6 +186,24 @@ p11, f11 = runner.test('pretty element', t-element-pretty)
 passed = passed + p11
 #{overflow=wrap}
 failed = failed + f11
+
+p12, f12 = runner.test('pretty json', t-json-pretty)
+#{overflow=wrap}
+passed = passed + p12
+#{overflow=wrap}
+failed = failed + f12
+
+p13, f13 = runner.test('pretty yaml', t-yaml-pretty)
+#{overflow=wrap}
+passed = passed + p13
+#{overflow=wrap}
+failed = failed + f13
+
+p14, f14 = runner.test('pretty toml', t-toml-pretty)
+#{overflow=wrap}
+passed = passed + p14
+#{overflow=wrap}
+failed = failed + f14
 
 total = runner.summary()
 f = runner.failed-count()

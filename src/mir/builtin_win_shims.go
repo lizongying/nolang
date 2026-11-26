@@ -56,7 +56,7 @@ func windowsShimsIR() string {
 		nprocOff = "20"
 	}
 	out = strings.ReplaceAll(out, "@NPROCOFF@", nprocOff)
-	return out
+	return out + rawWindowsShimsIR
 }
 
 // itoa keeps the import surface at "strings" for a one-line integer render.

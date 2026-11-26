@@ -29,7 +29,7 @@
 # /compiler/src/cg-rc _
 # /compiler/src/h2m _
 # /compiler/src/link _
-# /compiler/src/util/sb.sb _
+# /compiler/src/util/sb.sb
 # /compiler/src/diag _
 # /compiler/src/ck _
 # /compiler/src/ck-sig _

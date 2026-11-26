@@ -1756,6 +1756,17 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 		}
 		return "i64"
 	}
+	// Tagged enums are aggregate payloads just like user structs. Resolve
+	// through internType so imported enums use their canonical qualified name;
+	// falling through to i64 made an option wrap discard the discriminant and
+	// every payload field when the raw-byte copy could not size the enum.
+	if c.mod != nil {
+		if t := c.mod.internType(elemRaw); t != NoType {
+			if et := c.mod.Type(t); et != nil && et.Kind == KindEnum {
+				return c.llvmTypeOf(et)
+			}
+		}
+	}
 	// user struct
 	if lt := c.structLLVMType(elemRaw); lt != "" {
 		return lt
@@ -2441,6 +2452,14 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 			c.emitStructCloneHelper(elemLT, k)
 		}
 	}
+	// Tagged enums use a pointer-ABI, tag-switched cloner. The value-ABI
+	// ownedLeafCloneFuncAtDepth path cannot express it, so traverse the freshly
+	// copied elements explicitly and clone each live variant's owned fields.
+	enumClone := ""
+	if depth < vecCloneMaxDepth && t.Kind == KindEnum && c.mod.enumPayloadCloneable(t) {
+		c.emitEnumCloneHelper(c.mod.TaggedEnums[t.Raw], elemLT)
+		enumClone = enumCloneName(elemLT)
+	}
 
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define %%vec @%s(%%vec %%v) {\n", fn)
@@ -2462,7 +2481,19 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	b.WriteString("  %oldp = inttoptr i64 %data to i8*\n")
 	b.WriteString("  %newp = call i8* @nolang_rc_alloc(i64 %bytes)\n")
 	b.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %newp, ptr %oldp, i64 %bytes, i1 false)\n")
-	if structKey != "" {
+	if enumClone != "" {
+		b.WriteString("  br label %lp\n")
+		b.WriteString("lp:\n")
+		b.WriteString("  %i = phi i64 [ 0, %cp ], [ %inext, %body ]\n")
+		b.WriteString("  %more = icmp ult i64 %i, %len\n")
+		b.WriteString("  br i1 %more, label %body, label %fin\n")
+		b.WriteString("body:\n")
+		fmt.Fprintf(b, "  %%nep = getelementptr inbounds %s, ptr %%newp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%oep = getelementptr inbounds %s, ptr %%oldp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  call void @%s(%s* %%nep, %s* %%oep)\n", enumClone, elemLT, elemLT)
+		b.WriteString("  %inext = add i64 %i, 1\n")
+		b.WriteString("  br label %lp\n")
+	} else if structKey != "" {
 		b.WriteString("  br label %lp\n")
 		b.WriteString("lp:\n")
 		b.WriteString("  %i = phi i64 [ 0, %cp ], [ %inext, %body ]\n")
@@ -2628,6 +2659,11 @@ func (c *codegen) vecBufClone(elemType TypeID, depth int) string {
 	if depth < vecCloneMaxDepth {
 		perElem = c.ownedLeafCloneFuncAtDepth(t, depth+1)
 	}
+	enumClone := ""
+	if depth < vecCloneMaxDepth && t.Kind == KindEnum && c.mod.enumPayloadCloneable(t) {
+		c.emitEnumCloneHelper(c.mod.TaggedEnums[t.Raw], elemLT)
+		enumClone = enumCloneName(elemLT)
+	}
 
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define %%vec @%s(%%vec %%v) {\n", fn)
@@ -2657,7 +2693,19 @@ func (c *codegen) vecBufClone(elemType TypeID, depth int) string {
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	b.WriteString("  call void @llvm.memset.p0i8.i64(i8* %newp, i8 0, i64 %bytes, i1 false)\n")
 	b.WriteString("  call void @llvm.memcpy.p0.p0.i64(ptr %newp, ptr %oldp, i64 %copy, i1 false)\n")
-	if perElem == "" {
+	if enumClone != "" {
+		b.WriteString("  br label %lp\n")
+		b.WriteString("lp:\n")
+		b.WriteString("  %i = phi i64 [ 0, %cp ], [ %inext, %body ]\n")
+		b.WriteString("  %more = icmp ult i64 %i, %len\n")
+		b.WriteString("  br i1 %more, label %body, label %fin\n")
+		b.WriteString("body:\n")
+		fmt.Fprintf(b, "  %%ep = getelementptr inbounds %s, ptr %%newp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%op = getelementptr inbounds %s, ptr %%oldp, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  call void @%s(%s* %%ep, %s* %%op)\n", enumClone, elemLT, elemLT)
+		b.WriteString("  %inext = add i64 %i, 1\n")
+		b.WriteString("  br label %lp\n")
+	} else if perElem == "" {
 		b.WriteString("  br label %fin\n")
 	} else {
 		b.WriteString("  br label %lp\n")
@@ -2699,6 +2747,9 @@ func (c *codegen) vecBufClone(elemType TypeID, depth int) string {
 // without a matching clone double-frees.
 func (c *codegen) vecElemNeedsDeepFree(elemType TypeID) bool {
 	t := c.mod.Type(elemType)
+	if t != nil && t.Kind == KindEnum {
+		return c.mod.enumPayloadFreeable(t)
+	}
 	return c.ownedLeafFreeFunc(t) != ""
 }
 
@@ -2744,6 +2795,11 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 	if depth < vecCloneMaxDepth {
 		perElem = c.ownedLeafFreeFuncAtDepth(t, depth+1)
 	}
+	enumDrop := ""
+	if depth < vecCloneMaxDepth && t.Kind == KindEnum && c.mod.enumPayloadFreeable(t) {
+		c.emitEnumDropHelper(c.mod.TaggedEnums[t.Raw], elemLT)
+		enumDrop = enumDropName(elemLT)
+	}
 
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define void @%s(%%vec %%v) {\n", fn)
@@ -2758,7 +2814,7 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 	b.WriteString("  %null = icmp eq ptr %ptr, null\n")
 	b.WriteString("  br i1 %null, label %done, label %freeit\n")
 	b.WriteString("freeit:\n")
-	if perElem == "" {
+	if enumDrop == "" && perElem == "" {
 		b.WriteString("  call void @nolang_free(ptr %ptr)\n")
 		b.WriteString("  br label %done\n")
 	} else {
@@ -2809,8 +2865,12 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 		b.WriteString("  br i1 %more, label %body, label %fin\n")
 		b.WriteString("body:\n")
 		fmt.Fprintf(b, "  %%ep = getelementptr inbounds %s, ptr %%ptr, i64 %%i\n", elemLT)
-		fmt.Fprintf(b, "  %%ev = load %s, ptr %%ep\n", elemLT)
-		fmt.Fprintf(b, "  call void %s(%s %%ev)\n", perElem, elemLT)
+		if enumDrop != "" {
+			fmt.Fprintf(b, "  call void @%s(%s* %%ep)\n", enumDrop, elemLT)
+		} else {
+			fmt.Fprintf(b, "  %%ev = load %s, ptr %%ep\n", elemLT)
+			fmt.Fprintf(b, "  call void %s(%s %%ev)\n", perElem, elemLT)
+		}
 		b.WriteString("  %inext = add i64 %i, 1\n")
 		b.WriteString("  br label %lp\n")
 		b.WriteString("fin:\n")
@@ -3040,6 +3100,44 @@ func (c *codegen) optStoreBoxedPayload(optSlot, declLT string, tag int64, payloa
 	p0 := fmt.Sprintf("%%obo.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to i64*\n", p0, c.optPayloadI8(optSlot, declLT))
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", pi, p0)
+}
+
+// cloneEnumOptionWrapPayload gives a clone-promoted (or borrowed-parameter)
+// tagged-enum wrap an independent payload. Normal dead-source wraps are genuine
+// transfers and must stay shallow; safe-index reads already emit an explicit
+// enum clone before their transfer wrap. Keeping the decision here avoids
+// changing optStoreBoxedPayload, which is shared with err and option-move paths.
+func (c *codegen) cloneEnumOptionWrapPayload(optSlot, payloadLT string, src ValueID, srcLT, srcVal string, boxed bool) {
+	et := c.taggedEnumTypeByLLVM(payloadLT)
+	if et == nil || !c.mod.enumPayloadCloneable(et) {
+		return
+	}
+	srcAddr := c.addrOfValue(src, srcLT, srcVal)
+	if srcAddr == "" {
+		return
+	}
+	var dstAddr string
+	if boxed {
+		c.loadSeq++
+		p0 := fmt.Sprintf("%%oecp.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to i64*\n", p0, c.optPayloadI8(optSlot, payloadLT))
+		c.loadSeq++
+		raw := fmt.Sprintf("%%oecr.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", raw, p0)
+		c.loadSeq++
+		dstAddr = fmt.Sprintf("%%oecdp.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", dstAddr, raw)
+	} else {
+		dstAddr = c.optPayloadI8(optSlot, payloadLT)
+	}
+	c.loadSeq++
+	sp := fmt.Sprintf("%%oecs.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", sp, srcAddr, payloadLT)
+	c.loadSeq++
+	dp := fmt.Sprintf("%%oecdp.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", dp, dstAddr, payloadLT)
+	c.emitEnumCloneHelper(c.taggedEnumByLLVM(payloadLT), payloadLT)
+	fmt.Fprintf(c.sb, "  call void @%s(%s* %s, %s* %s)\n", enumCloneName(payloadLT), payloadLT, dp, payloadLT, sp)
 }
 
 // addrOfValue returns an i8* register pointing at the storage of MIR value v,
@@ -3324,6 +3422,12 @@ func (c *codegen) emitOptionReboxBody(b *strings.Builder, payloadLT string) {
 			c.emitStructCloneHelper(payloadLT, key)
 			fmt.Fprintf(b, "  call void @%s(%s* %%bkp, %s* %%bks)\n", structCloneName(payloadLT), payloadLT, payloadLT)
 		}
+	}
+	if et := c.taggedEnumTypeByLLVM(payloadLT); et != nil && c.mod.enumPayloadCloneable(et) {
+		fmt.Fprintf(b, "  %%bekp = bitcast i8* %%m to %s*\n", payloadLT)
+		fmt.Fprintf(b, "  %%beks = bitcast i8* %%oldp to %s*\n", payloadLT)
+		c.emitEnumCloneHelper(c.taggedEnumByLLVM(payloadLT), payloadLT)
+		fmt.Fprintf(b, "  call void @%s(%s* %%bekp, %s* %%beks)\n", enumCloneName(payloadLT), payloadLT, payloadLT)
 	}
 	if payloadLT == "%str-long" {
 		b.WriteString("  %bkp = bitcast i8* %m to %str-long*\n")
@@ -6681,6 +6785,9 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 		c.optStoreTag(slot, payloadLT, tag)
 		c.optStoreInlinePayload(slot, payloadLT, payloadLT, sv)
 		c.optCloneInlinePayloadInto(slot, payloadLT)
+		if inst.Op == OpClone || c.mod.isParamValue(c.mod.Func(c.cf), src) {
+			c.cloneEnumOptionWrapPayload(slot, payloadLT, src, svType, sv, false)
+		}
 		return nil
 	}
 	// Payload too big for the slot (or of unprovable size): heap-box it and
@@ -6693,6 +6800,9 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 		return nil
 	}
 	c.optStoreBoxedPayload(slot, payloadLT, tag, payloadLT, srcAddr)
+	if inst.Op == OpClone || c.mod.isParamValue(c.mod.Func(c.cf), src) {
+		c.cloneEnumOptionWrapPayload(slot, payloadLT, src, svType, sv, true)
+	}
 	return nil
 }
 
@@ -8325,6 +8435,14 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		}
 		fmt.Fprintf(c.sb, "  call void @vec_free(%%vec %s)\n", pv)
 	default:
+		// A tagged enum owns heap through its live variant. Its destructor is
+		// tag-switched, so route the inline payload through the same guarded option
+		// helper used for a boxed enum rather than treating it as a POD aggregate.
+		if et := c.taggedEnumTypeByLLVM(payloadLT); et != nil && c.mod.enumPayloadFreeable(et) {
+			fn := c.emitOptionDropHelper(elemRaw, payloadLT)
+			fmt.Fprintf(c.sb, "  call void %s(%s* %s)\n", fn, c.optLayoutOfPayload(payloadLT).LLVM, slot)
+			return
+		}
 		// INLINE payload that still owns heap: a small struct whose owned `str`
 		// leaves live inside the payload slot (e.g. `?person` with
 		// `person { name str }`, 16 bytes) or whose POINTEES do (e.g. `?json`,
@@ -8371,6 +8489,9 @@ func (c *codegen) optionPayloadOwnsNothing(elemRaw, payloadLT string) bool {
 	switch payloadLT {
 	case "%str-long", "%vec":
 		return false
+	}
+	if et := c.taggedEnumTypeByLLVM(payloadLT); et != nil {
+		return !c.mod.enumPayloadFreeable(et)
 	}
 	if key := c.structKeyOf(elemRaw); key != "" {
 		return !(c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key))
@@ -8550,6 +8671,7 @@ func (c *codegen) emitOptionDropHelper(elemRaw, payloadLT string) string {
 // does NOT free the struct itself (the caller owns that storage) — which is why
 // the box is freed separately by emitOptionDropHelper.
 func (c *codegen) emitOptionPayloadContentFree(b *strings.Builder, elemRaw, payloadLT, key string) {
+	enumT := c.taggedEnumTypeByLLVM(payloadLT)
 	switch {
 	case payloadLT == "%str-long":
 		b.WriteString("  %cv = load %str-long, %str-long* %op\n")
@@ -8570,6 +8692,9 @@ func (c *codegen) emitOptionPayloadContentFree(b *strings.Builder, elemRaw, payl
 		// emitOptionDrop: an inline `?[]T` may hold a RETAINED BORROW, and
 		// @vec_free is the release half of @vec_retain.
 		b.WriteString("  call void @vec_free(%vec %cv)\n")
+	case enumT != nil && c.mod.enumPayloadFreeable(enumT):
+		c.emitEnumDropHelper(c.taggedEnumByLLVM(payloadLT), payloadLT)
+		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%op)\n", enumDropName(payloadLT), payloadLT))
 	case key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)):
 		c.emitStructDropHelper(payloadLT, key)
 		b.WriteString(fmt.Sprintf("  call void @%s(%s* %%op)\n", structDropName(payloadLT), payloadLT))
@@ -8834,6 +8959,7 @@ func (c *codegen) optPropagateState(dstPayloadLT, srcPayloadLT string) string {
 // a diff.
 func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, payloadLT, key, srcOpt string) {
 	lay := c.optLayoutOfPayload(payloadLT)
+	enumT := c.taggedEnumTypeByLLVM(payloadLT)
 	switch {
 	case payloadLT == "%str-long":
 		b.WriteString("  %cv = load %str-long, %str-long* %op\n")
@@ -8867,6 +8993,12 @@ func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, pay
 		b.WriteString("  %cv = load %vec, %vec* %op\n")
 		b.WriteString(fmt.Sprintf("  %%cc = call %%vec %s(%%vec %%cv)\n", fn))
 		b.WriteString("  store %vec %cc, %vec* %op\n")
+	case enumT != nil && c.mod.enumPayloadCloneable(enumT):
+		c.emitEnumCloneHelper(c.taggedEnumByLLVM(payloadLT), payloadLT)
+		fmt.Fprintf(b, "  %%esb = bitcast %s* %s to i8*\n", lay.LLVM, srcOpt)
+		fmt.Fprintf(b, "  %%esp = getelementptr inbounds i8, i8* %%esb, i64 %d\n", optionPayloadOffset)
+		fmt.Fprintf(b, "  %%eop = bitcast i8* %%esp to %s*\n", payloadLT)
+		fmt.Fprintf(b, "  call void @%s(%s* %%op, %s* %%eop)\n", enumCloneName(payloadLT), payloadLT, payloadLT)
 	case key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)):
 		// INLINE struct payload that owns heap — `?json` (pointee to a pool),
 		// `?person` (owned `str` leaf). The bitwise option copy at the top of
@@ -9939,16 +10071,22 @@ func (c *codegen) emitClone(inst *Inst) error {
 	// destination's Kind and would otherwise not be reached — and an enum
 	// destination is never an option anyway.
 	if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindEnum {
-		if ei := c.mod.TaggedEnums[st.Raw]; ei != nil {
-			dstVal := moveDst(inst)
-			dstSlot := c.valSlot[dstVal]
-			srcSlot := c.valSlot[inst.Args[0]]
-			if dstSlot != "" && srcSlot != "" {
-				if lt := c.llvmTypeOf(st); lt != "" && lt != "void" {
-					c.emitEnumCloneHelper(ei, lt)
-					fmt.Fprintf(c.sb, "  call void @%s(%s* %s, %s* %s)\n",
-						enumCloneName(lt), lt, dstSlot, lt, srcSlot)
-					return nil
+		// An enum source can also be a clone-promoted WRAP into an option. That
+		// destination needs emitOptionWrap so the tag and payload layout are
+		// initialized; calling the enum helper directly would overwrite the option
+		// bytes with a bare enum and bypass its destructor contract.
+		if dt := c.mod.Type(c.localTypeOf(moveDst(inst))); dt != nil && dt.Kind == KindEnum {
+			if ei := c.mod.TaggedEnums[st.Raw]; ei != nil {
+				dstVal := moveDst(inst)
+				dstSlot := c.valSlot[dstVal]
+				srcSlot := c.valSlot[inst.Args[0]]
+				if dstSlot != "" && srcSlot != "" {
+					if lt := c.llvmTypeOf(st); lt != "" && lt != "void" {
+						c.emitEnumCloneHelper(ei, lt)
+						fmt.Fprintf(c.sb, "  call void @%s(%s* %s, %s* %s)\n",
+							enumCloneName(lt), lt, dstSlot, lt, srcSlot)
+						return nil
+					}
 				}
 			}
 		}
@@ -11187,6 +11325,19 @@ func (c *codegen) emitIndex(inst *Inst) error {
 		return c.failAbort(inst, codegenTraceID, "index result has no slot in func %s (dst=%d type=%s) arrT=%s elemT=%s", c.fname[c.cf], inst.Dst, dt, arrT, elemT)
 	}
 	ep := c.elemAddr(inst.Args[0], arrSlot, idxV, arrT, elemT)
+	// A tagged enum is stored inline, but a live variant may own a str or vec.
+	// Safe indexing wraps the loaded enum in an owning ?T; a shallow load would
+	// make the option destructor free payload storage still owned by the
+	// container. Clone the live variant directly into the result slot, just as
+	// vecDeepClone does for a copied vector of enums.
+	if dstT == elemT {
+		if ei := c.taggedEnumByLLVM(elemT); ei != nil && c.mod.enumPayloadCloneable(c.taggedEnumTypeByLLVM(elemT)) {
+			c.emitEnumCloneHelper(ei, elemT)
+			fmt.Fprintf(c.sb, "  call void @%s(%s* %s, %s* %s)\n",
+				enumCloneName(elemT), elemT, dstSlot, elemT, ep)
+			return nil
+		}
+	}
 	c.loadSeq++
 	lv := fmt.Sprintf("%%lx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, elemT, elemT, ep)
@@ -11331,10 +11482,8 @@ func (c *codegen) emitTxtCpPut(arrSlot, idxV, valT, valV string) error {
 }
 
 // emitIndexStore lowers `a[i] = v`: compute the element address via GEP and store
-// v there. For owned element types the previous element is dropped first (memory
-// safety: the overwritten buffer must be freed exactly once, and the new value is
-// moved in — not cloned — so it is exempt from the array's own (non-existent)
-// drop).
+// v there. For owned element types the previous element is dropped first, then
+// the incoming value is deep-cloned so the source retains independent ownership.
 func (c *codegen) emitIndexStore(inst *Inst) error {
 	arrT, _ := c.ptype(inst.Args[0])
 	// The element type is the receiver's declared element (i8 for []byte), NOT the
@@ -11418,9 +11567,11 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// so storing into it must NOT emit @str_free on an i8 as if it were a
 	// %str-long — that previously both freed an i8 and fed a %str-long value
 	// straight into a `store i8` (opt rejected it: "defined with type
-	// '%str-long' but expected 'i8'"). Only owned element types (string/vec/
-	// option sub-elements) get a drop of the previous content.
-	elemOwned := elemT == "%str-long" || elemT == "%vec" || isOptionType(elemT)
+	// '%str-long' but expected 'i8'"). Strings, vectors, options, and tagged
+	// enums with heap-owning variants get a drop of the previous content.
+	elemEnumType := c.taggedEnumTypeByLLVM(elemT)
+	elemEnumOwned := elemEnumType != nil && c.mod.enumPayloadFreeable(elemEnumType)
+	elemOwned := elemT == "%str-long" || elemT == "%vec" || isOptionType(elemT) || elemEnumOwned
 	arrSlot := c.valSlot[inst.Args[0]]
 	if arrSlot == "" {
 		return c.failAbort(inst, codegenTraceID, "index-store of value with no slot in func %d", c.cf)
@@ -11489,6 +11640,11 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 				fmt.Fprintf(c.sb, "  call void %s(%s* %s)\n",
 					c.emitOptionDropHelper(optElemRaw, lay.PayloadLT), lay.LLVM, c.optSpill(old, lay.PayloadLT))
 			}
+		} else if elemEnumOwned {
+			// A tagged enum's live variant may own a str, vec, or nested value.
+			// Drop through the same tag-switched helper used by scope cleanup.
+			c.emitEnumDropHelper(c.taggedEnumByLLVM(elemT), elemT)
+			fmt.Fprintf(c.sb, "  call void @%s(%s* %s)\n", enumDropName(elemT), elemT, ep)
 		} else {
 			fmt.Fprintf(c.sb, "  call void @str_free(%s %s)\n", elemT, old)
 		}
@@ -11586,6 +11742,20 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// SIGSEGV'd on it). Give the element its own heap with the option's clone
 	// helper — the exact inverse of the drop helper used above.
 	stored := false
+	if elemEnumType != nil && valT == elemT && c.mod.enumPayloadCloneable(elemEnumType) {
+		// Vector literals and explicit element writes both reach this sink.
+		// A shallow aggregate store would make the source temporary and the
+		// container free the same live-variant payload. Clone into the slot.
+		c.emitEnumCloneHelper(c.taggedEnumByLLVM(elemT), elemT)
+		if srcAddr := c.addrOfValue(inst.Args[2], valT, valV); srcAddr != "" {
+			c.loadSeq++
+			src := fmt.Sprintf("%%ics.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", src, srcAddr, elemT)
+			fmt.Fprintf(c.sb, "  call void @%s(%s* %s, %s* %s)\n",
+				enumCloneName(elemT), elemT, ep, elemT, src)
+			stored = true
+		}
+	}
 	if isOptionType(elemT) && optElemRaw != "" && isOptionType(valT) {
 		if lay := c.optLayoutOfElem(optElemRaw); lay.PayloadLT != "" {
 			// The source slot: a value with its own slot is used directly,
@@ -13670,6 +13840,23 @@ func (c *codegen) emitStructTypes() {
 		}
 		fmt.Fprintf(c.sb, "%s = type { %s }\n", lt, strings.Join(parts, ", "))
 	}
+	// Tagged enums: %tenum_<name> = type { iN, [K x i64] } (or `{ iN }` when
+	// every variant is payload-less). The tag is as wide as the variant count
+	// needs and K is the widest VARIANT, not the sum of all of them — see
+	// layout.go's header comment. Sorted for the same reason as structKeys
+	// above: TaggedEnums is a map and its iteration order is randomized per run.
+	// Declare these before option helpers: a ?tagged-enum re-box helper emits a
+	// zero-filled global of the enum type, and LLVM requires that type to be
+	// defined before the global that names it.
+	enumKeys := make([]string, 0, len(c.mod.TaggedEnums))
+	for raw := range c.mod.TaggedEnums {
+		enumKeys = append(enumKeys, raw)
+	}
+	sort.Strings(enumKeys)
+	for _, raw := range enumKeys {
+		ei := c.mod.TaggedEnums[raw]
+		fmt.Fprintf(c.sb, "%%tenum_%s = type %s\n", sanitize(raw), c.enumStructBody(ei))
+	}
 	// The err message is a %str-long and can be read out of ANY option, whatever
 	// its declared element is, so its zero stand-in must exist even in a module
 	// that never mentions `?str` — and it must be declared before the helpers
@@ -13721,20 +13908,6 @@ func (c *codegen) emitStructTypes() {
 		// Non-printable payloads (%vec / user-struct / fixed-array) are
 		// skipped; emitCall c.diag(nil, codegenTraceID, )s.
 		c.emitOptionPrintHelper(payloadLT, false)
-	}
-	// Tagged enums: %tenum_<name> = type { iN, [K x i64] } (or `{ iN }` when
-	// every variant is payload-less). The tag is as wide as the variant count
-	// needs and K is the widest VARIANT, not the sum of all of them — see
-	// layout.go's header comment. Sorted for the same reason as structKeys
-	// above: TaggedEnums is a map and its iteration order is randomized per run.
-	enumKeys := make([]string, 0, len(c.mod.TaggedEnums))
-	for raw := range c.mod.TaggedEnums {
-		enumKeys = append(enumKeys, raw)
-	}
-	sort.Strings(enumKeys)
-	for _, raw := range enumKeys {
-		ei := c.mod.TaggedEnums[raw]
-		fmt.Fprintf(c.sb, "%%tenum_%s = type %s\n", sanitize(raw), c.enumStructBody(ei))
 	}
 }
 
@@ -13928,30 +14101,23 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gp)
 	// OWNING ENUM: the enum frees this payload itself, so the extraction must
 	// not hand out a second reference to the same buffer. Clone owned `str`
-	// payloads exactly as emitGetField does for an owned struct field: the read
-	// then owns a PRIVATE buffer, which is why isBorrowRead's OpEnumField branch
-	// (mirroring this very condition) lets insertDrops free it. Non-str owned
-	// payloads (%vec, inline struct) have no clone helper, so they stay a
-	// borrow and the enum's destructor is their single free site.
+	// payloads exactly as emitGetField does for an owned struct field. Owned
+	// slices use vecDeepClone whenever their element type resolves; this is not
+	// limited to the struct-owned-leaf allowlist ([]byte is the common counter
+	// example). isBorrowRead's OpEnumField branch mirrors these conditions so
+	// the cloned read is dropped rather than retained as a borrow.
 	if c.mod.enumOwnsPayload[inst.Args[0]] && fieldOwned && fieldLT == "%str-long" {
 		c.loadSeq++
 		cl := fmt.Sprintf("%%ef.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, lv)
 		lv = cl
 	} else if c.mod.enumOwnsPayload[inst.Args[0]] && fieldOwned && fieldLT == "%vec" {
-		// OWNING ENUM with a %vec payload: clone it exactly as the %str-long
-		// branch does (mirrors isBorrowRead's OpEnumField). Gated on the same
-		// allowlist as the struct path so it only fires once a container enum is
-		// opted in; the enum's own drop frees the payload, and the cloned read
-		// temp is freed by insertDrops via vecDeepFree.
-		if dv := c.mod.Value(inst.Dst); dv != nil {
-			if dt := c.mod.Type(dv.Type); dt != nil && dt.Elem != NoType && c.mod.ownedVecLeafAllowed(dt.Raw) {
-				if fn := c.vecDeepClone(dt.Elem, 0); fn != "" {
-					c.loadSeq++
-					cl := fmt.Sprintf("%%ef.%d", c.loadSeq)
-					fmt.Fprintf(c.sb, "  %s = call %s %s(%s %s)\n", cl, fieldLT, fn, fieldLT, lv)
-					lv = cl
-				}
+		if dt := c.mirTypeOfValue(inst.Dst); dt != nil && dt.Elem != NoType {
+			if fn := c.vecDeepClone(dt.Elem, 0); fn != "" {
+				c.loadSeq++
+				cl := fmt.Sprintf("%%ef.%d", c.loadSeq)
+				fmt.Fprintf(c.sb, "  %s = call %s %s(%s %s)\n", cl, fieldLT, fn, fieldLT, lv)
+				lv = cl
 			}
 		}
 	}
@@ -14038,7 +14204,7 @@ func (c *codegen) emitEnumDropHelper(ei *TaggedEnumInfo, lt string) {
 				continue
 			}
 			ptr := c.enumPayloadFieldPtr(&b, lt, "%p", c.enumFieldOffset(v, fi), fieldLT)
-			c.emitEnumPayloadFieldFree(&b, fieldLT, ptr, vi, fi)
+			c.emitEnumPayloadFieldFree(&b, ft, fieldLT, ptr, vi, fi)
 		}
 		b.WriteString("  br label %done\n")
 		if !last {
@@ -14058,7 +14224,7 @@ func (c *codegen) emitEnumDropHelper(ei *TaggedEnumInfo, lt string) {
 // SSA names carry a variant/field suffix because every variant's branch lives
 // in the SAME function and LLVM requires local value names to be unique per
 // function (unlike the option helper, which frees a single payload).
-func (c *codegen) emitEnumPayloadFieldFree(b *strings.Builder, fieldLT, ptr string, vi, fi int) {
+func (c *codegen) emitEnumPayloadFieldFree(b *strings.Builder, ft *Type, fieldLT, ptr string, vi, fi int) {
 	sfx := fmt.Sprintf("%d_%d", vi, fi)
 	switch {
 	case fieldLT == "%str-long":
@@ -14068,9 +14234,13 @@ func (c *codegen) emitEnumPayloadFieldFree(b *strings.Builder, fieldLT, ptr stri
 		b.WriteString(fmt.Sprintf("  call void @str_free(%s %%ev%s)\n", fieldLT, sfx))
 	case fieldLT == "%vec":
 		b.WriteString(fmt.Sprintf("  %%ev%s = load %s, %s* %s\n", sfx, fieldLT, fieldLT, ptr))
-		b.WriteString(fmt.Sprintf("  %%ed%s = extractvalue %s %%ev%s, 2\n", sfx, fieldLT, sfx))
-		b.WriteString(fmt.Sprintf("  %%ep%s = inttoptr i64 %%ed%s to i8*\n", sfx, sfx))
-		b.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %%ep%s)\n", sfx))
+		if ft != nil && ft.Elem != NoType && c.vecElemNeedsDeepFree(ft.Elem) {
+			if fn := c.vecDeepFree(ft.Elem, 0); fn != "" {
+				b.WriteString(fmt.Sprintf("  call void %s(%%vec %%ev%s)\n", fn, sfx))
+				break
+			}
+		}
+		b.WriteString(fmt.Sprintf("  call void @vec_free(%%vec %%ev%s)\n", sfx))
 	default:
 		// Inline struct with pointees and/or owned leaves: recurse into the
 		// same destructor a plain struct local gets. Anything else owns nothing
@@ -18703,9 +18873,28 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	} else {
 		szStr = c.allocBytesOperand(capV, c.elemTypeOfReceiver(inst.Dst))
 	}
-	mp := fmt.Sprintf("%%ba.%d", c.loadSeq)
+	// A zero-sized allocation must keep the canonical empty descriptor
+	// {len=0, cap=0, data=null}. nolang_rc_alloc(0) returns a non-null 16-byte
+	// allocator header; pairing that pointer with cap=0 violates the runtime
+	// invariant that non-null cap=0 vectors are borrowed views. ensureVecBuffer
+	// then refuses to grow them, and the first typed element access runs past the
+	// header. The same descriptor also avoids an unreleasable empty-string leak.
 	c.loadSeq++
-	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", mp, szStr)
+	isEmpty := fmt.Sprintf("%%baz.%d", c.loadSeq)
+	c.loadSeq++
+	lAlloc := fmt.Sprintf("baA.%d", c.loadSeq)
+	c.loadSeq++
+	lEmpty := fmt.Sprintf("baE.%d", c.loadSeq)
+	c.loadSeq++
+	lDone := fmt.Sprintf("baD.%d", c.loadSeq)
+	c.loadSeq++
+	buf := fmt.Sprintf("%%bab.%d", c.loadSeq)
+	c.loadSeq++
+	mp := fmt.Sprintf("%%ba.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = icmp eq i64 %s, 0\n", isEmpty, szStr)
+	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", isEmpty, lEmpty, lAlloc)
+	fmt.Fprintf(c.sb, "%s:\n", lAlloc)
+	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, szStr)
 	// Zero the fresh buffer. A malloc'd block is UNINITIALIZED, and for owned
 	// element types (%str-long / nested %vec / %option) the slice's element slots
 	// must read back as a defined empty value: `a[i] = v` drops the PREVIOUS
@@ -18715,7 +18904,13 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	// deletes the whole fn"); MIR must match. For a %str-long the element slots are
 	// 1 byte, so this also makes with-len(n) a zero-filled string like legacy.
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
-	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", mp, szStr)
+	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, szStr)
+	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
+	fmt.Fprintf(c.sb, "%s:\n", lEmpty)
+	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
+	fmt.Fprintf(c.sb, "%s:\n", lDone)
+	fmt.Fprintf(c.sb, "  %s = phi i8* [ null, %%%s ], [ %s, %%%s ]\n", mp, lEmpty, buf, lAlloc)
+	c.loadSeq++
 	if lt == "%vec" {
 		dp := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++

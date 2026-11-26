@@ -1,0 +1,325 @@
+# /example/nosql/src/codec
+# /example/nosql/src/value
+# /example/nosql/src/test-support test-support
+
+CTX = test-support.new()
+
+bytes-eq = (a []byte, b []byte) (same bool) {
+    a.len() != b.len() -> return
+    i <- [0..a.len()): {
+        av = a[i]: {
+            ok(a-byte) -> a-byte
+
+            -> 0
+        }
+        bv = b[i]: {
+            ok(b-byte) -> b-byte
+
+            -> 0
+        }
+        av != bv -> return
+    }
+    same = true
+}
+
+check-varint = (number i64, expected []byte) {
+    encoded = codec.encode-varint(number)
+    CTX.check(bytes-eq(encoded, expected), 'varint bytes for ' - number.to-str())
+    CTX.check(codec.varint-size(number) == expected.len(), 'varint size for ' - number.to-str())
+    decoded = codec.decode-varint(encoded, 0)
+    decoded: {
+        valid(decoded-number, next) -> {
+            CTX.check(decoded-number == number, 'varint round trip for ' - number.to-str())
+            CTX.check(next == expected.len(), 'varint next offset for ' - number.to-str())
+        }
+
+        -> CTX.check(false, 'valid varint must decode')
+    }
+}
+
+check-integer-value = (v sql-value, expected i64) {
+    decoded = v.to-integer()
+    decoded: {
+        ok(number) -> CTX.check(number == expected, 'integer payload ' - expected.to-str())
+
+        -> CTX.check(false, 'integer payload must be present')
+    }
+}
+
+check-varint(0, [0x00])
+check-varint(1, [0x01])
+check-varint(127, [0x7f])
+check-varint(128, [0x80, 0x01])
+check-varint(16383, [0xff, 0x7f])
+check-varint(16384, [0x80, 0x80, 0x01])
+check-varint(72057594037927935, [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f])
+check-varint(72057594037927936, [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01])
+check-varint(-1, [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
+check-varint(-9223372036854775808, [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80])
+check-varint(9223372036854775807, [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f])
+
+invalid-varint = codec.decode-varint([0x80], -1)
+CTX.check(invalid-varint.is-invalid-offset(), 'negative varint offset is invalid')
+
+truncated-varint = codec.decode-varint([0x80], 0)
+CTX.check(truncated-varint.is-truncated(), 'truncated varint is rejected')
+
+empty-varint = codec.decode-varint([], 0)
+CTX.check(empty-varint.is-truncated(), 'empty varint input is truncated')
+
+CTX.check(codec.serial-type-size(0) == 0, 'NULL serial size')
+CTX.check(codec.serial-type-size(1) == 1, '1-byte integer serial size')
+CTX.check(codec.serial-type-size(2) == 2, '2-byte integer serial size')
+CTX.check(codec.serial-type-size(3) == 3, '3-byte integer serial size')
+CTX.check(codec.serial-type-size(4) == 4, '4-byte integer serial size')
+CTX.check(codec.serial-type-size(5) == 6, '6-byte integer serial size')
+CTX.check(codec.serial-type-size(6) == 8, '8-byte integer serial size')
+CTX.check(codec.serial-type-size(7) == 8, 'REAL serial size')
+CTX.check(codec.serial-type-size(8) == 0, 'integer zero serial size')
+CTX.check(codec.serial-type-size(9) == 0, 'integer one serial size')
+CTX.check(codec.serial-type-size(10) == -1, 'reserved serial 10')
+CTX.check(codec.serial-type-size(11) == -1, 'reserved serial 11')
+CTX.check(codec.serial-type-size(12) == 0, 'empty BLOB serial size')
+CTX.check(codec.serial-type-size(13) == 0, 'empty TEXT serial size')
+CTX.check(codec.serial-type-size(14) == 1, '1-byte BLOB serial size')
+CTX.check(codec.serial-type-size(15) == 1, '1-byte TEXT serial size')
+CTX.check(codec.serial-type-size(16) == 2, '2-byte BLOB serial size')
+CTX.check(codec.serial-type-size(17) == 2, '2-byte TEXT serial size')
+
+integer-cases []i64 = [0, 1, -128, 127, -129, 128, -32768, 32767, -32769, 32768, -8388608, 8388607, -8388609, 8388608, -2147483648, 2147483647, -2147483649, 2147483648, -140737488355328, 140737488355327, -140737488355329, 140737488355328]
+expected-serials []i64 = [8, 9, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6]
+i <- [0..integer-cases.len()): {
+    number = integer-cases[i]: {
+        ok(case-number) -> case-number
+
+        -> 0
+    }
+    expected = expected-serials[i]: {
+        ok(case-serial) -> case-serial
+
+        -> 0
+    }
+    serial-option = codec.serial-of-value(value.integer-value(number))
+    serial-option: {
+        ok(serial-number) -> CTX.check(serial-number == expected, 'minimal integer serial for ' - number.to-str())
+
+        -> CTX.check(false, 'integer serial must be available')
+    }
+}
+
+null-serial = codec.serial-of-value(value.null-value())
+null-serial: {
+    ok(serial-number) -> CTX.check(serial-number == 0, 'NULL serial type')
+
+    -> CTX.check(false, 'NULL serial must be available')
+}
+
+real-serial = codec.serial-of-value(value.real-value(1.5))
+real-serial: {
+    ok(serial-number) -> CTX.check(serial-number == 7, 'REAL serial type')
+
+    -> CTX.check(false, 'REAL serial must be available')
+}
+
+text-serial = codec.serial-of-value(value.text-value('中'))
+text-serial: {
+    ok(serial-number) -> CTX.check(serial-number == 19, 'UTF-8 TEXT serial type uses byte length')
+
+    -> CTX.check(false, 'TEXT serial must be available')
+}
+
+blob-serial = codec.serial-of-value(value.blob-value([0x00, 0xff]))
+blob-serial: {
+    ok(serial-number) -> CTX.check(serial-number == 16, 'BLOB serial type uses byte length')
+
+    -> CTX.check(false, 'BLOB serial must be available')
+}
+
+row []sql-value = [value.integer-value(1), value.text-value('A'), value.null-value(), value.blob-value([0xff])]
+encoded-row = codec.encode-record(row)
+encoded-row: {
+    valid(mixed-encoded) -> {
+        CTX.check(bytes-eq(mixed-encoded, [0x05, 0x09, 0x0f, 0x00, 0x0e, 0x41, 0xff]), 'canonical mixed record bytes')
+        decoded-row = codec.decode-record(mixed-encoded, 0)
+        decoded-row: {
+            valid(mixed-values, mixed-next) -> {
+                CTX.check(mixed-next == 7, 'mixed record next offset')
+                CTX.check(mixed-values.len() == 4, 'mixed record column count')
+                mixed-first = mixed-values[0]: {
+                    ok(mixed-column) -> mixed-column
+
+                    -> value.null-value()
+                }
+                check-integer-value(mixed-first, 1)
+                mixed-second = mixed-values[1]: {
+                    ok(mixed-column) -> mixed-column
+
+                    -> value.null-value()
+                }
+                mixed-second-text = mixed-second.to-text()
+                mixed-second-text: {
+                    ok(mixed-text-value) -> CTX.check(mixed-text-value == 'A', 'TEXT record payload')
+
+                    -> CTX.check(false, 'TEXT record payload must be present')
+                }
+                mixed-third = mixed-values[2]: {
+                    ok(mixed-column) -> mixed-column
+
+                    -> value.integer-value(0)
+                }
+                CTX.check(mixed-third.is-null(), 'NULL record payload')
+                mixed-fourth = mixed-values[3]: {
+                    ok(mixed-column) -> mixed-column
+
+                    -> value.null-value()
+                }
+                mixed-fourth-blob = mixed-fourth.to-blob()
+                mixed-fourth-blob: {
+                    ok(mixed-blob-value) -> CTX.check(bytes-eq(mixed-blob-value, [0xff]), 'BLOB record payload')
+
+                    -> CTX.check(false, 'BLOB record payload must be present')
+                }
+            }
+
+            -> CTX.check(false, 'canonical record must decode')
+        }
+    }
+
+    -> CTX.check(false, 'record encoding must succeed')
+}
+
+row2 []sql-value = [value.integer-value(-2), value.real-value(1.5), value.text-value('中')]
+encoded-row2 = codec.encode-record(row2)
+encoded-row2: {
+    valid(real-encoded) -> {
+        CTX.check(bytes-eq(real-encoded, [0x04, 0x01, 0x07, 0x13, 0xfe, 0x3f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe4, 0xb8, 0xad]), 'integer REAL UTF-8 record bytes')
+        decoded-row2 = codec.decode-record(real-encoded, 0)
+        decoded-row2: {
+            valid(real-values, real-next) -> {
+                CTX.check(real-next == 16, 'second record next offset')
+                real-first = real-values[0]: {
+                    ok(real-column) -> real-column
+
+                    -> value.null-value()
+                }
+                check-integer-value(real-first, -2)
+                real-second = real-values[1]: {
+                    ok(real-column) -> real-column
+
+                    -> value.null-value()
+                }
+                real-second-option = real-second.to-real()
+                real-second-option: {
+                    ok(real-number) -> CTX.check(real-number.to-bits() == 1.5.to-bits(), 'REAL record bit pattern')
+
+                    -> CTX.check(false, 'REAL record payload must be present')
+                }
+                real-third = real-values[2]: {
+                    ok(real-column) -> real-column
+
+                    -> value.null-value()
+                }
+                real-third-text = real-third.to-text()
+                real-third-text: {
+                    ok(real-text-value) -> CTX.check(real-text-value == '中', 'UTF-8 record payload')
+
+                    -> CTX.check(false, 'UTF-8 record payload must be present')
+                }
+            }
+
+            -> CTX.check(false, 'second record must decode')
+        }
+    }
+
+    -> CTX.check(false, 'second record encoding must succeed')
+}
+
+empty-row []sql-value = []
+encoded-empty = codec.encode-record(empty-row)
+encoded-empty: {
+    valid(empty-encoded) -> {
+        CTX.check(bytes-eq(empty-encoded, [0x01]), 'empty record header')
+        decoded-empty = codec.decode-record(empty-encoded, 0)
+        decoded-empty: {
+            valid(empty-values, empty-next) -> {
+                CTX.check(empty-values.len() == 0, 'empty record has no columns')
+                CTX.check(empty-next == 1, 'empty record next offset')
+            }
+
+            -> CTX.check(false, 'empty record must decode')
+        }
+    }
+
+    -> CTX.check(false, 'empty record encoding must succeed')
+}
+
+prefixed []byte = [0xee, 0x05, 0x09, 0x0f, 0x00, 0x0e, 0x41, 0xff]
+prefixed-record = codec.decode-record(prefixed, 1)
+prefixed-record: {
+    valid(offset-values, offset-next) -> {
+        CTX.check(offset-values.len() == 4, 'offset record column count')
+        CTX.check(offset-next == 8, 'offset record next offset')
+    }
+
+    -> CTX.check(false, 'record at nonzero offset must decode')
+}
+
+reserved-record = codec.decode-record([0x02, 0x0a], 0)
+CTX.check(reserved-record.is-reserved(), 'reserved serial type is rejected')
+
+short-header = codec.decode-record([0x81, 0x00], 0)
+CTX.check(short-header.is-malformed(), 'header smaller than its size varint is malformed')
+
+crossing-serial = codec.decode-record([0x02, 0x80, 0x00], 0)
+CTX.check(crossing-serial.is-malformed(), 'serial varint crossing header boundary is malformed')
+
+long-header = codec.decode-record([0x05, 0x00], 0)
+CTX.check(long-header.is-truncated(), 'header beyond input is truncated')
+
+short-body = codec.decode-record([0x02, 0x01], 0)
+CTX.check(short-body.is-truncated(), 'record body beyond input is truncated')
+
+negative-record-offset = codec.decode-record([0x01], -1)
+CTX.check(negative-record-offset.is-invalid-offset(), 'negative record offset is invalid')
+
+integer-boundaries []i64 = [-9223372036854775808, -140737488355329, -2147483649, -8388609, -32769, -129, -128, 127, 128, 32767, 32768, 8388607, 8388608, 2147483647, 2147483648, 140737488355327, 140737488355328, 9223372036854775807]
+boundary-row []sql-value
+i <- [0..integer-boundaries.len()): {
+    number = integer-boundaries[i]: {
+        ok(boundary-number) -> boundary-number
+
+        -> 0
+    }
+    boundary-row.push(value.integer-value(number))
+}
+encoded-boundaries = codec.encode-record(boundary-row)
+encoded-boundaries: {
+    valid(boundary-encoded) -> {
+        decoded-boundaries = codec.decode-record(boundary-encoded, 0)
+        decoded-boundaries: {
+            valid(boundary-values, boundary-next) -> {
+                CTX.check(boundary-next == boundary-encoded.len(), 'boundary record consumes all bytes')
+                CTX.check(boundary-values.len() == integer-boundaries.len(), 'boundary record column count')
+                i <- [0..integer-boundaries.len()): {
+                    boundary-expected = integer-boundaries[i]: {
+                        ok(boundary-number) -> boundary-number
+
+                        -> 0
+                    }
+                    boundary-actual = boundary-values[i]: {
+                        ok(boundary-column) -> boundary-column
+
+                        -> value.null-value()
+                    }
+                    check-integer-value(boundary-actual, boundary-expected)
+                }
+            }
+
+            -> CTX.check(false, 'boundary record must decode')
+        }
+    }
+
+    -> CTX.check(false, 'boundary record encoding must succeed')
+}
+
+CTX.done()

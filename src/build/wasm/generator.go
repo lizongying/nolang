@@ -139,8 +139,13 @@ type Generator struct {
 
 	// needsMalloc 標記是否需要 runtime malloc/free 函數與 heapPtr global。
 	needsMalloc bool
+	// mallocIdx / freeIdx 由 declareMallocFree 記錄，避免新增 host imports 後索引漂移。
+	mallocIdx uint32
+	freeIdx   uint32
+	// rawImports 記錄本模組實際用到的 nolang_raw host imports。
+	rawImports map[string]uint32
 
-	// localKindMap 記錄當前函數中變數的 ValKind（純量/str/vec/arr/struct）。
+	// localKindMap 記錄當前函數中變數的 ValKind（純量/str/vec/arr/struct/raw option）。
 	localKindMap map[string]map[string]ValKind
 
 	// localElemTypeMap 記錄當前函數中 vec/arr 變數的元素 ValType。
@@ -199,8 +204,8 @@ func (g *Generator) SetTargetPlatform(goos, goarch string) {
 // Generate 從給定的 Nolang 程式產生完整的 WebAssembly 二進制。
 //
 // 流程：
-//  1. 重置狀態、加入 WASI imports（fd_write、proc_exit）與匯出的 memory。
-//  2. 宣告 _start（function index 2）與所有用戶函數（index 3+）。
+//  1. 重置狀態、加入 WASI imports（fd_write、proc_exit）、按需加入 raw VFS imports 與匯出的 memory。
+//  2. 宣告 _start 與所有用戶函數；function index 隨實際 import 數量計算。
 //  3. 發射 _start 主體（頂層語句 + proc_exit(0)）與各用戶函數主體。
 //     字串常數在 codegen 過程中自動加入字串池。
 //  4. serialize() 將字串池寫入 data section 並組裝所有 section。
@@ -209,6 +214,9 @@ func (g *Generator) SetTargetPlatform(goos, goarch string) {
 func (g *Generator) Generate(program *parser.Program) ([]byte, error) {
 	g.reset()
 	g.setupWASIImports()
+	if program != nil {
+		g.setupRawVFSImports(program)
+	}
 	g.emitDefaultMemory()
 
 	if program != nil {
@@ -242,12 +250,12 @@ func (g *Generator) emitProgram(program *parser.Program) error {
 	g.funcResults["_start"] = nil
 	g.funcResultNames["_start"] = nil
 
-	// 2. 宣告 runtime malloc/free（function index 3, 4）。
-	//    固定發射以簡化索引管理；實際程式碼主體稍後發射以保持 codes 順序一致。
+	// 2. 宣告 runtime malloc/free。實際 index 取決於 host imports 數量；
+	//    實際程式碼主體稍後發射以保持 codes 順序一致。
 	g.needsMalloc = true
 	g.declareMallocFree()
 
-	// 3. 宣告所有用戶函數（function index 5, 6, ...）。
+	// 3. 宣告所有用戶函數（接在 malloc/free 之後）。
 	for _, stmt := range program.Statements {
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
 			g.declareFunction(fd)
@@ -500,6 +508,9 @@ func ValTypeFromName(t parser.Type) ValType {
 		return F32
 	case "f64":
 		return F64
+	case "fs.fd":
+		// fs.fd 是原生 i64 newtype；不可套用一般 NamedType 的 i32 指標規則。
+		return I64
 	case "str":
 		// str 變數持有描述符指標（i32）
 		return I32
@@ -553,6 +564,9 @@ func (g *Generator) reset() {
 	g.strDescriptorPool = make(map[string]uint32)
 	g.staticDataSegments = nil
 	g.needsMalloc = false
+	g.mallocIdx = 0
+	g.freeIdx = 0
+	g.rawImports = make(map[string]uint32)
 	g.localKindMap = make(map[string]map[string]ValKind)
 	g.localElemTypeMap = make(map[string]map[string]ValType)
 	g.localStructTypeMap = make(map[string]map[string]string)

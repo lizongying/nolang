@@ -234,6 +234,48 @@ export interface WasiInstantiation {
 }
 
 /**
+ * Host surface for Direct-WASM raw VFS calls. The playground default below is
+ * deliberately unsupported: it reports capability 0 and NOTSUP rather than
+ * pretending that volatile MemFS provides durable database storage. A durable
+ * OPFS/IndexedDB host can be injected without changing generated modules.
+ */
+export interface RawVfsHost {
+  raw_open(pathPtr: number, pathLen: number, flags: bigint, mode: bigint): bigint;
+  raw_close(fd: bigint): bigint;
+  raw_seek(fd: bigint, offset: bigint, whence: bigint): bigint;
+  raw_pread(fd: bigint, bufPtr: number, bufLen: number, count: bigint, offset: bigint): bigint;
+  raw_pwrite(fd: bigint, dataPtr: number, dataLen: number, count: bigint, offset: bigint): bigint;
+  raw_ftruncate(fd: bigint, length: bigint): bigint;
+  raw_fstat_size(fd: bigint): bigint;
+  raw_fsync(fd: bigint): bigint;
+  raw_fdatasync(fd: bigint): bigint;
+  raw_sync_dir(pathPtr: number, pathLen: number): bigint;
+  raw_lock_range(fd: bigint, start: bigint, length: bigint, mode: bigint, nonblocking: number): bigint;
+  raw_unlock_range(fd: bigint, start: bigint, length: bigint): bigint;
+  raw_capabilities(): bigint;
+}
+
+const RAW_NOTSUP = -58n;
+
+export function unsupportedRawVfsHost(): RawVfsHost {
+  return {
+    raw_open: () => RAW_NOTSUP,
+    raw_close: () => RAW_NOTSUP,
+    raw_seek: () => RAW_NOTSUP,
+    raw_pread: () => RAW_NOTSUP,
+    raw_pwrite: () => RAW_NOTSUP,
+    raw_ftruncate: () => RAW_NOTSUP,
+    raw_fstat_size: () => RAW_NOTSUP,
+    raw_fsync: () => RAW_NOTSUP,
+    raw_fdatasync: () => RAW_NOTSUP,
+    raw_sync_dir: () => RAW_NOTSUP,
+    raw_lock_range: () => RAW_NOTSUP,
+    raw_unlock_range: () => RAW_NOTSUP,
+    raw_capabilities: () => 0n,
+  };
+}
+
+/**
  * Collect the `wasi_snapshot_preview1` functions this module needs but the
  * glue does not implement, as `() => errno` stubs.
  *
@@ -403,7 +445,11 @@ export function makePollOneoff(getMemory: () => WebAssembly.Memory | null): (
  * function import is missing (memory/table/global imports come from the same
  * object and must not be papered over).
  */
-export function instantiateWasi(wasi: WASI, module: WebAssembly.Module): WasiInstantiation {
+export function instantiateWasi(
+  wasi: WASI,
+  module: WebAssembly.Module,
+  rawHost: RawVfsHost = unsupportedRawVfsHost(),
+): WasiInstantiation {
   const {overrides, stubbed} = wasiImportOverrides(wasi, module);
   const shimmed: string[] = [];
 
@@ -430,7 +476,17 @@ export function instantiateWasi(wasi: WASI, module: WebAssembly.Module): WasiIns
     shimmed.push('poll_oneoff');
   }
 
-  const instance = new WebAssembly.Instance(module, {...glue, [WASI_NAMESPACE]: wasiNamespace});
+  const imports: Record<string, Record<string, WebAssembly.ImportValue>> = {
+    ...glue,
+    [WASI_NAMESPACE]: wasiNamespace,
+  };
+  if (WebAssembly.Module.imports(module).some(
+    (imp) => imp.module === 'nolang_raw' && imp.kind === 'function',
+  )) {
+    imports.nolang_raw = rawHost as unknown as Record<string, WebAssembly.ImportValue>;
+  }
+
+  const instance = new WebAssembly.Instance(module, imports);
   const exported = instance.exports.memory;
   lastMemory = exported instanceof WebAssembly.Memory ? exported : null;
   return {instance, stubbed, shimmed};

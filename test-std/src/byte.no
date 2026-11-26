@@ -4,7 +4,7 @@
 ; 覆蓋：[]byte.to-i64-be / []byte.to-i64-le /
 ;       []byte.to-hex / []byte.to-hex-lower /
 ;       []byte.index / []byte.index-from / []byte.slice /
-;       []byte.to-str / []byte.to-str
+;       []byte.to-str / []byte.pretty / byte.pretty
 ; 未測：i64.to-bytes-be/le（[?]byte 返回類型 codegen 問題）
 ;
 ; 注（2026-11-03 更正）：本檔曾記「[]byte.to-str（與 str.eq 交互有問題，預存 bug）」，
@@ -59,6 +59,23 @@ t-to-hex-lower = () {
     s = data.to-hex-lower()
     runner.eq(s.len(), 6, 'to-hex-lower len == 6')
     runner.str-eq(s, 'ff000a', 'to-hex-lower content')
+}
+
+; byte.pretty 使用小寫十六進制、0x 前綴與固定兩位數字
+t-byte-pretty = () {
+    zero byte = 0x00
+    runner.str-eq(zero.pretty(), '0x00', 'byte.pretty zero')
+    newline byte = 0x0a
+    runner.str-eq(newline.pretty(), '0x0a', 'byte.pretty lowercase padded')
+    high byte = 0xff
+    runner.str-eq(high.pretty(), '0xff', 'byte.pretty high bit')
+    runner.str-eq(format('{newline}'), '0x0a', 'bare byte format uses pretty')
+    values [1]byte = [0xc3]
+    runner.str-eq(values.pretty(), '[0xc3]', '[n]byte.pretty uses byte.pretty')
+    value ?byte = 0x0a
+    runner.str-eq(value.pretty(), 'some(0x0a)', '?byte.pretty uses byte.pretty')
+    data []byte = [0x00, 0x0a, 0xc3, 0xff]
+    runner.str-eq(data.pretty(), '[0x00, 0x0a, 0xc3, 0xff]', '[]byte.pretty byte literals')
 }
 
 ; 查找與切片
@@ -252,6 +269,14 @@ passed = passed + p13
 
 #{overflow=wrap}
 failed = failed + f13
+
+p14, f14 = runner.test('byte.pretty', t-byte-pretty)
+
+#{overflow=wrap}
+passed = passed + p14
+
+#{overflow=wrap}
+failed = failed + f14
 
 total = runner.summary()
 f = runner.failed-count()

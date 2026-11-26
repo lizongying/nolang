@@ -78,6 +78,9 @@ func (g *Generator) inferKind(expr parser.Expression) ValKind {
 	case *parser.IndexExpression:
 		return KindScalar
 	case *parser.CallExpression:
+		if spec, ok := g.rawCallSpec(e); ok && spec.option {
+			return KindRawOption
+		}
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			switch ident.Value {
 			case "with-cap", "with-len", "with-cap-len":
@@ -173,7 +176,12 @@ func (g *Generator) isBoolExpr(expr parser.Expression) bool {
 // 用於 emitLetStmt 在 addLocal 之後呼叫。
 func (g *Generator) setLocalKind(name string, ls *parser.LetStatement) {
 	kind := KindScalar
-	if ls.Type != nil {
+	if ls.Value != nil && g.inferKind(ls.Value) == KindRawOption {
+		// Raw option provenance comes from the producing call/assignment, not
+		// from NullableType syntax alone (legacy option arithmetic still uses
+		// the success-only scalar model in this backend).
+		kind = KindRawOption
+	} else if ls.Type != nil {
 		kind = kindFromType(ls.Type)
 	} else if ls.Value != nil {
 		kind = g.inferKind(ls.Value)
@@ -532,6 +540,11 @@ func (g *Generator) emitMethodCall(sb *bytes.Buffer, de *parser.DotExpression, a
 // playground 的 rand demo 在執行期踩到 OpUnreachable。
 func (g *Generator) emitModuleCall(sb *bytes.Buffer, module, name string, args []parser.Expression) ValType {
 	switch module {
+	case "raw":
+		if spec, ok := rawVFSSpecByName(name); ok {
+			ce := &parser.CallExpression{Function: &parser.DotExpression{Receiver: &parser.Identifier{Value: module}, Property: name}, Arguments: args}
+			return g.emitRawVFSCall(sb, ce, spec)
+		}
 	case "math", "number":
 		switch name {
 		case "max", "min":

@@ -514,6 +514,12 @@ func (m *Module) OptionOwnsHeap(raw string) bool {
 	if m.ErrPayloadOwnsHeap() {
 		return true
 	}
+	// A tagged enum stores its payload inline, but that payload can own heap
+	// (for example `sql-value.text(str)`). The enum destructor is tag-switched,
+	// so the option must use it exactly as it uses a struct destructor.
+	if et := m.Type(m.internType(elem)); et != nil && et.Kind == KindEnum && m.enumPayloadFreeable(et) {
+		return true
+	}
 	return m.inlineStructPayloadOwnsHeap(elem)
 }
 
@@ -1992,6 +1998,27 @@ func (m *Module) uniqueQualifiedStruct(raw string) string {
 	return found
 }
 
+// uniqueQualifiedTaggedEnum resolves a bare enum type spelling left by imported
+// payload/index lowering to its single module-qualified registration. Ambiguous
+// names are left unresolved rather than selecting an arbitrary module's enum.
+func (m *Module) uniqueQualifiedTaggedEnum(raw string) string {
+	if raw == "" || strings.Contains(raw, ".") {
+		return ""
+	}
+	suffix := "." + raw
+	found := ""
+	for k := range m.TaggedEnums {
+		if !strings.HasSuffix(k, suffix) {
+			continue
+		}
+		if found != "" && found != k {
+			return ""
+		}
+		found = k
+	}
+	return found
+}
+
 func (m *Module) internType(raw string) TypeID {
 	if id, ok := m.TypeMap[raw]; ok {
 		return id
@@ -2016,6 +2043,11 @@ func (m *Module) internType(raw string) TypeID {
 	// variant constructors resolved to nothing ("unknown callee full").
 	if _, isEnum := m.TaggedEnums[raw]; isEnum {
 		kind = KindEnum
+	} else if q := m.uniqueQualifiedTaggedEnum(raw); q != "" {
+		// Imported payload projection and safe-index unwrapping can retain the
+		// enum's bare spelling after module merging qualified its definition.
+		// Canonicalize before the scalar-newtype fallback below.
+		return m.internType(q)
 	}
 	if kind == KindStruct && m.OwnedStructs[raw] {
 		owned = true

@@ -35,6 +35,14 @@ person {
     age i64
 }
 
+wide-person {
+    name str
+    age i64
+    a i64
+    b i64
+    c i64
+}
+
 ; 測試 1：結構體元素，push 一次（cap=1）後 insert —— 修復前 segfault
 ; ok: 插入後長度 2 且兩個元素都是 {A, 1} 才為 true
 test-struct-insert-after-push = () (ok bool) {
@@ -146,6 +154,29 @@ test-insert-middle-keeps-elements = () (ok bool) {
     }
 }
 
+; 測試 5：with-cap(0) 必須保持未分配狀態，insert 時才配置真正的緩衝區
+; ok: 插入後長度 1，來源重新賦值後仍讀到原本的結構體才為 true
+test-insert-into-zero-capacity = () (ok bool) {
+    values []wide-person = with-cap(0)
+    source wide-person
+    source.name = 'zero'
+    source.age = 5
+    values.insert(0, source)
+    source.name = 'replaced'
+    source.age = 9
+
+    values.len() == 1 -> ok = true
+    {
+        stored ?= values[0]
+        stored.name == 'zero' -> ok = true
+        stored.age == 5 -> ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
+}
+
 ok1 = test-struct-insert-after-push()
 print('test-struct-insert-after-push: {ok1}')
 
@@ -157,5 +188,8 @@ print('test-i64-insert-after-push: {ok3}')
 
 ok4 = test-insert-middle-keeps-elements()
 print('test-insert-middle-keeps-elements: {ok4}')
+
+ok5 = test-insert-into-zero-capacity()
+print('test-insert-into-zero-capacity: {ok5}')
 
 print('all done')

@@ -985,6 +985,9 @@ func llvmLTOfParam(t parser.Type) string {
 // names report a gap (the caller's strangler-fig then falls back to legacy),
 // which keeps MIR honest: it never emits a guess.
 func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.BuiltinMethod) error {
+	if isRawVFSBuiltin(bm.ForwardFunc) {
+		return c.emitBuiltinRawVFS(inst, bm.ForwardFunc)
+	}
 	switch bm.ForwardFunc {
 	case "with-cap", "with-len", "with-cap-len":
 		return c.emitBuiltinAlloc(inst, bm.ForwardFunc)
@@ -2359,6 +2362,25 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	// frees the container's element buffer (`first=firs`: the freed block had
 	// been reused by the format string). Give the element its own heap with the
 	// option clone helper, exactly as emitIndexStore now does.
+	// A tagged enum is also stored by value. Its payload is a union of inline
+	// fields, so a plain aggregate store would leave heap-owning variants
+	// (`str`, `[]byte`, nested containers) shared with the source value. Give
+	// the vector an independent, tag-guarded copy just like vecDeepClone does.
+	enumStored := false
+	if et := c.mirTypeOfValue(elem); et != nil && et.Kind == KindEnum && c.mod.enumPayloadCloneable(et) {
+		if ei := c.mod.TaggedEnums[et.Raw]; ei != nil {
+			c.emitEnumCloneHelper(ei, elemTy)
+			srcAddr := c.addrOfValue(elem, elemTy, elemV)
+			if srcAddr != "" {
+				c.loadSeq++
+				src := fmt.Sprintf("%%vpes.%d", c.loadSeq)
+				fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", src, srcAddr, elemTy)
+				fmt.Fprintf(c.sb, "  call void @%s(%s* %s, %s* %s)\n",
+					enumCloneName(elemTy), elemTy, eptr, elemTy, src)
+				enumStored = true
+			}
+		}
+	}
 	optStored := false
 	if isOptionType(elemTy) {
 		if raw := c.optionElemRawOfContainer(recv); raw != "" {
@@ -2375,7 +2397,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 			}
 		}
 	}
-	if !optStored {
+	if !optStored && !enumStored {
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemTy, elemV, elemTy, eptr))
 	}
 	// A struct element is stored by value, so its inline owned `str` leaves
@@ -2399,42 +2421,16 @@ func (c *codegen) label(prefix string) string {
 	return fmt.Sprintf("%s.%d", prefix, c.loadSeq)
 }
 
-// elemInfoOfVec returns the LLVM element type and byte stride for a %vec
-// receiver, derived from its nolang element type. Used by the in-place slice
-// mutators (reverse/insert/remove/sort) to index individual elements.
-func (c *codegen) elemInfoOfVec(recv ValueID) (elemLL string, stride int64) {
-	raw := c.rawTypeOf(recv)
-	elem := strings.TrimPrefix(raw, "[]")
-	elem = ty.StripOptionRaw(elem)
-	switch {
-	case elem == "i8", elem == "u8", elem == "byte", elem == "bool":
-		return "i8", 1
-	case elem == "i16", elem == "u16":
-		return "i16", 2
-	case elem == "i32", elem == "u32":
-		return "i32", 4
-	case elem == "i64", elem == "u64":
-		return "i64", 8
-	case elem == "i128", elem == "u128":
-		return "i128", 16
-	case elem == "f32":
-		return "float", 4
-	case elem == "f64":
-		return "double", 8
-	case elem == "str":
-		return "%str-long", 16
-	// A nested-slice element: `outer [][]i64`'s element is `[]i64`, which
-	// lowers to `%vec` (24 bytes), NOT i64. Without this case the in-place
-	// slice mutators (insert/reverse/remove/sort) used an 8-byte stride and an
-	// `i64` element type for nested slices — corrupting the backing store — and
-	// emitBuiltinVecInsert's `if elemLL == "%vec"` clone guard (the third and
-	// last of the three by-value element writes that must deep-clone a nested
-	// %vec) could never fire.
-	case strings.HasPrefix(elem, "[]"):
-		return "%vec", 16
-	default:
-		return "i64", 8
+// elemInfoOfVec returns the LLVM element type and an i64 operand for its byte
+// stride. Both come from the receiver's declared MIR type through the same
+// resolver used by indexed reads and vec.push, so aggregate elements (tagged
+// enums, structs, options, nested slices) cannot fall back to scalar i64.
+func (c *codegen) elemInfoOfVec(recv ValueID) (elemLL, stride string) {
+	elemLL = c.elemTypeOfReceiver(recv)
+	if elemLL == "" {
+		elemLL = "i8"
 	}
+	return elemLL, c.typeSizeOperand(elemLL)
 }
 
 // emitLessThan emits `a < b` for two values of element LLVM type elemLL and
@@ -2536,7 +2532,7 @@ func (c *codegen) emitBuiltinArrZero(inst *Inst) error {
 		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dp, dv))
 		c.loadSeq++
 		tb := fmt.Sprintf("%%aztb.%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", tb, lv, stride))
+		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", tb, lv, stride))
 		c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", dp, tb))
 		return nil
 	}
@@ -2721,7 +2717,7 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	if r := c.coerce(idxT, idxV, "i64"); r != "" {
 		idx = r
 	}
-	_, elemV := c.loadVal(inst.Args[2])
+	elemT, elemV := c.loadVal(inst.Args[2])
 	vv := c.treg("ivv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
 	lenG := c.hdrFieldI64("%vec", vv, 0)
@@ -2753,13 +2749,13 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", idxClamp2, idxHi, lenG, idxClamp))
 	// 头段 [0..idx) 与尾段 [idx..len) 的位元组数；尾段要整体右移一个步长。
 	headBytes := c.treg("ivhb")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", headBytes, idxClamp2, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", headBytes, idxClamp2, stride))
 	restCount := c.treg("ivrc")
 	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", restCount, lenG, idxClamp2))
 	restBytes := c.treg("ivrb")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", restBytes, restCount, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", restBytes, restCount, stride))
 	dstRestOff := c.treg("ivdr")
-	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, %d\n", dstRestOff, headBytes, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, %s\n", dstRestOff, headBytes, stride))
 	// 元素的深拷贝（%str-long → str_clone，%vec → vecDeepClone）与缓冲无关，
 	// 在分支前做一次，两条路径共用克隆后的 elemV。
 	// Owned-string element: clone before storing into the vec (same reasoning
@@ -2803,6 +2799,31 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 			}
 		}
 	}
+	// A tagged enum is stored by value, so its live variant must be cloned
+	// before either insert branch stores it. Clone once into compiler-owned
+	// staging storage; the subsequent aggregate loads transfer that private
+	// payload into the vector without another destructor for the staging slot.
+	if elemT == elemLL && c.taggedEnumTypeByLLVM(elemLL) != nil {
+		if et := c.taggedEnumTypeByLLVM(elemLL); et != nil && c.mod.enumPayloadCloneable(et) {
+			if ei := c.mod.TaggedEnums[et.Raw]; ei != nil {
+				c.emitEnumCloneHelper(ei, elemLL)
+				if srcAddr := c.addrOfValue(inst.Args[2], elemLL, elemV); srcAddr != "" {
+					c.loadSeq++
+					tmp := fmt.Sprintf("%%ivct.%d", c.loadSeq)
+					fmt.Fprintf(c.sb, "  %s = alloca %s\n", tmp, elemLL)
+					c.loadSeq++
+					src := fmt.Sprintf("%%ivcs.%d", c.loadSeq)
+					fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", src, srcAddr, elemLL)
+					fmt.Fprintf(c.sb, "  call void @%s(%s* %s, %s* %s)\n",
+						enumCloneName(elemLL), elemLL, tmp, elemLL, src)
+					c.loadSeq++
+					cloned := fmt.Sprintf("%%ivcv.%d", c.loadSeq)
+					fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", cloned, elemLL, elemLL, tmp)
+					elemV = cloned
+				}
+			}
+		}
+	}
 	//
 	// ⚠️ O(N) → 摊还 O(1) 修正（2026-10-21）：重分配（alloc + memcpy + release）
 	// **只能**在 len==cap 时发生，与 emitBuiltinVecPush 的不变量对齐。
@@ -2828,7 +2849,7 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	// ── grow 路径：满 → 新缓冲 cap*2（空则 1）、搬旧内容、release 旧缓冲 ──
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lGrow))
 	growSz := c.treg("ivgsz")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", growSz, growCap, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", growSz, growCap, stride))
 	newBufG := c.treg("ivnbg")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBufG, growSz))
 	// 头段 [0..idx)
@@ -2932,7 +2953,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	srcPtr := c.treg("rmsp")
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", srcPtr, dataG))
 	sz := c.treg("rmsz")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", sz, newLen, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", sz, newLen, stride))
 	newBuf := c.treg("rmnb")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", newBuf, sz))
 	idxLo := c.treg("rmil")
@@ -2944,7 +2965,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	idxClamp2 := c.treg("rmic2")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", idxClamp2, idxHi, lenG, idxClamp))
 	bytes1 := c.treg("rmb1")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", bytes1, idxClamp2, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", bytes1, idxClamp2, stride))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes1))
 	restCount := c.treg("rmrc")
 	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s, 1\n", restCount, lenG, idxClamp2))
@@ -2953,15 +2974,15 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	restCountC := c.treg("rmrcc")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", restCountC, restNeg, restCount))
 	restBytes := c.treg("rmrb")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", restBytes, restCountC, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", restBytes, restCountC, stride))
 	srcRestIdx := c.treg("rmsri")
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", srcRestIdx, idxClamp2))
 	srcRestOff := c.treg("rmsr")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", srcRestOff, srcRestIdx, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", srcRestOff, srcRestIdx, stride))
 	srcRest := c.treg("rmsr2")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", srcRest, srcPtr, srcRestOff))
 	dstRestOff := c.treg("rmdr")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", dstRestOff, idxClamp2, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", dstRestOff, idxClamp2, stride))
 	dstRest := c.treg("rmdr2")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", dstRest, newBuf, dstRestOff))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dstRest, srcRest, restBytes))
@@ -2999,7 +3020,7 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 	base := c.treg("stb")
 	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", base, dataG))
 	tmp := c.treg("stt")
-	c.sb.WriteString(fmt.Sprintf("  %s = alloca i8, i64 %d\n", tmp, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = alloca i8, i64 %s\n", tmp, stride))
 	nMinus1 := c.treg("stn1")
 	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, 1\n", nMinus1, lenG))
 	small := c.treg("sts")
@@ -3044,9 +3065,9 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 	tbase := c.treg("sttb")
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", tbase, base, elemLL))
 	jOff := c.treg("stof")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", jOff, jPhi, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", jOff, jPhi, stride))
 	j1Off := c.treg("stof1")
-	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, %d\n", j1Off, jOff, stride))
+	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, %s\n", j1Off, jOff, stride))
 	addrJ := c.treg("staj")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %s\n", addrJ, base, jOff))
 	addrJ1 := c.treg("staj1")
@@ -3069,9 +3090,9 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 	}
 	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", cond, lInnerSwap, lInnerTail))
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lInnerSwap))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", tmp, addrJ, stride))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", addrJ, addrJ1, stride))
-	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %d, i1 false)\n", addrJ1, tmp, stride))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", tmp, addrJ, stride))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", addrJ, addrJ1, stride))
+	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", addrJ1, tmp, stride))
 	c.sb.WriteString(fmt.Sprintf("  br label %%%s\n", lInnerTail))
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lInnerTail))
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", jInc, jPhi))

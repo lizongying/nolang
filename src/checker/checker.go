@@ -2072,6 +2072,25 @@ func CollectDefinedVars(program *parser.Program) map[string]bool {
 	}
 	return definedVars
 }
+
+// collectEnumVariantNames registers bare enum variant constructors as defined
+// values. Imported modules need the same treatment as the entry program because
+// undefined-variable validation runs before module merging.
+func collectEnumVariantNames(statements []parser.Statement, definedVars map[string]bool) {
+	for _, stmt := range statements {
+		if ed, ok := stmt.(*parser.EnumDefinition); ok {
+			for _, v := range ed.Values {
+				definedVars[v.Name] = true
+			}
+		}
+		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
+			for _, v := range ted.Variants {
+				definedVars[v.Name] = true
+			}
+		}
+	}
+}
+
 func ValidateUndefinedVars(program *parser.Program, rootDir string, entryFile ...string) []ValidateResult {
 	validationMu.Lock()
 	defer validationMu.Unlock()
@@ -2149,8 +2168,8 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string, entryFile ..
 	}
 
 	// 3b. Collect symbols from local module imports (paths starting with /)
-	//     These include FFI declarations (#c), functions, and constants from
-	//     imported files like `# /sqlite-driver/sqlite`.
+	//     These include FFI declarations (#c), functions, constants, and enum
+	//     variants from imported files like `# /sqlite-driver/sqlite`.
 	//
 	//     Transitive imports are handled via a worklist: when a module is
 	//     loaded, its own UseStatements are added to the worklist so that
@@ -2182,6 +2201,7 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string, entryFile ..
 					definedVars[ls.Name.Value] = true
 				}
 			}
+			collectEnumVariantNames(modProg.Statements, definedVars)
 		}
 
 		// collectRawModuleSymbols parses the raw module file directly
@@ -2210,6 +2230,7 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string, entryFile ..
 					definedVars[ls.Name.Value] = true
 				}
 			}
+			collectEnumVariantNames(rawProg.Statements, definedVars)
 		}
 
 		// Build initial worklist from the entry program's UseStatements.
@@ -2259,19 +2280,8 @@ func ValidateUndefinedVars(program *parser.Program, rootDir string, entryFile ..
 		}
 	}
 
-	// Collect enum variant names from EnumDefinition and TaggedEnumDefinition
-	for _, stmt := range program.Statements {
-		if ed, ok := stmt.(*parser.EnumDefinition); ok {
-			for _, v := range ed.Values {
-				definedVars[v.Name] = true
-			}
-		}
-		if ted, ok := stmt.(*parser.TaggedEnumDefinition); ok {
-			for _, v := range ted.Variants {
-				definedVars[v.Name] = true
-			}
-		}
-	}
+	// Collect enum variant names from EnumDefinition and TaggedEnumDefinition.
+	collectEnumVariantNames(program.Statements, definedVars)
 
 	// Collect struct type names so we can distinguish struct type names
 	// (e.g. `s` in `s { x i64 }`) from struct instances (e.g. `s0 = s {}`).
@@ -9356,7 +9366,8 @@ func hasStdPrettyType(t string) bool {
 		"i8", "i16", "i32", "i64", "i128",
 		"u8", "u16", "u32", "u64", "u128",
 		"int", "f32", "f64", "float", "double",
-		"bigint", "uuid", "ip-addr", "url-info", "str-map":
+		"bigint", "uuid", "ip-addr", "url-info", "str-map",
+		"json", "yaml", "toml":
 		return true
 	}
 	if strings.HasPrefix(t, "[]") || strings.HasPrefix(t, "[") {

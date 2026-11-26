@@ -1,5 +1,19 @@
 # 更新日誌
 
+## v0.4.38
+
+- feat(mir): add tagged enum aggregate layout and tag-switched clone/drop helpers with option, vector and index ownership fixes
+- fix(mir): preserve populated enum layouts across synthetic main and bind every field of multi-field enum patterns
+- fix(build): resolve qualified methods and payload bindings on imported tagged enums with bare receivers
+- feat(std): add byte/char/txt literal pretty and json/yaml/toml pretty, drop str.set-byte
+- feat(builtin): add raw VFS builtins for posix and windows with portable flags and option results
+- feat(wasm): add raw VFS host imports with raw option records and dynamic function indices
+- fix(fmt): keep one blank line above FFI declarations carrying c annotations
+- feat(noui): add pointer/contact semantics, drag-drop zones and configurable font candidate lists with reopen
+- feat(nosql): add varint and record codec with result options and round-trip coverage
+- docs: relocate noui stage notes and implementation history and document pretty, selfhost and syntax updates
+- test: add enum layout, imported enum, raw VFS, pretty and fmt regression coverage
+
 ## v0.4.37
 
 - feat(import): add `# path _` discard alias for intentionally unused side-effect imports with an unimpuse hint

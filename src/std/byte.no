@@ -88,6 +88,14 @@
     out = r
 }
 
+; byte.pretty: 字面量風格的位元組，如 0x0a（小寫十六進制，固定兩位）。
+; [pretty](#byte.pretty)
+byte.pretty = () (out str) {
+    b byte = .
+    one []byte = [b]
+    out = '0x' - one.to-hex-lower()
+}
+
 ; []byte.pretty: 字面量風格的位元組列表，如 [0xc3, 0xa9]。
 ; 空切片輸出 []。small hex、0x 前綴、", " 分隔。
 ; [pretty](#bytes.pretty)

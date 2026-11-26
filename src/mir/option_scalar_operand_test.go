@@ -85,3 +85,74 @@ print(g(2).len())
 	}
 	assertOperandIsNotOptionLoad(t, ll, "call i8* @nolang_rc_alloc(i64 ")
 }
+
+// TestBuiltinAllocZeroCapacityUsesNullBuffer pins the empty-container descriptor
+// invariant. nolang_rc_alloc(0) returns a non-null allocator-header block, but a
+// cap==0 descriptor denotes a borrowed view or an unallocated container. Giving
+// that block to a fresh with-cap(0) vector makes ensureVecBuffer skip allocation
+// and the first typed element load/write runs past the 16-byte header.
+func TestBuiltinAllocZeroCapacityUsesNullBuffer(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		fn   string
+	}{
+		{
+			name: "vec-literal",
+			fn:   "_nolang_main",
+			src: `main = () {
+    values []i64 = with-cap(0)
+}
+`,
+		},
+		{
+			name: "vec-dynamic",
+			fn:   "make_values",
+			src: `make-values = (n i64) (values []i64) {
+    values []i64 = with-cap(n)
+}
+make-values(0)
+`,
+		},
+		{
+			name: "str-literal",
+			fn:   "_nolang_main",
+			src: `main = () {
+    value str = with-cap(0)
+}
+`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ll, err := lowerSourceForTest(t, tc.src).EmitLLVM()
+			if err != nil {
+				t.Fatalf("EmitLLVM failed: %v", err)
+			}
+			body := irFunc(ll, tc.fn)
+			if body == "" {
+				t.Fatalf("function %q not found in IR", tc.fn)
+			}
+			if !strings.Contains(body, "phi i8* [ null, %") {
+				t.Fatalf("zero-capacity allocation must select a null buffer; IR was:\n%s", body)
+			}
+			if !strings.Contains(body, "icmp eq i64") || !strings.Contains(body, ", 0\n") {
+				t.Fatalf("zero-capacity allocation lost its empty-size guard; IR was:\n%s", body)
+			}
+			if strings.Contains(body, "@nolang_rc_alloc(i64 0)") {
+				t.Fatalf("zero-capacity allocation still calls nolang_rc_alloc(0); IR was:\n%s", body)
+			}
+			seen := make(map[string]bool)
+			for _, line := range strings.Split(body, "\n") {
+				fields := strings.Fields(line)
+				if len(fields) < 3 || !strings.HasPrefix(fields[0], "%ba.") || fields[1] != "=" {
+					continue
+				}
+				if seen[fields[0]] {
+					t.Fatalf("duplicate allocation register %s; IR was:\n%s", fields[0], body)
+				}
+				seen[fields[0]] = true
+			}
+		})
+	}
+}

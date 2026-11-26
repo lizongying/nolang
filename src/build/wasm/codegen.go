@@ -191,7 +191,17 @@ func (g *Generator) emitLetStmt(sb *bytes.Buffer, ls *parser.LetStatement) {
 	// 決定目標型別：總是從右值或顯式型別推斷，不復用舊 local 型別。
 	// 這正確處理同名變數重宣告（shadow）的型別變更場景。
 	targetType := I64
-	if ls.Type != nil {
+	rawOptionValue := false
+	if ls.Value != nil {
+		if spec, ok := g.rawCallSpec(ls.Value); ok && spec.option {
+			rawOptionValue = true
+		}
+	}
+	if rawOptionValue {
+		// Raw options are pointer records even when the source annotation is
+		// ?fs.fd / ?i64 / ?bool. Legacy NullableType values remain scalar.
+		targetType = I32
+	} else if ls.Type != nil {
 		targetType = ValTypeFromName(ls.Type)
 	} else if ls.Value != nil {
 		// Task 8：str/vec/struct 推斷為 I32（描述符指標）
@@ -244,6 +254,16 @@ func (g *Generator) emitLetStmt(sb *bytes.Buffer, ls *parser.LetStatement) {
 
 	if ls.Value == nil {
 		// 僅宣告（如 `x i64`），不發射賦值。
+		return
+	}
+
+	if ls.IsArmBinding && ls.Value != nil && g.inferKind(ls.Value) == KindRawOption {
+		// Option match lowering writes `it = matched`. For a raw option the
+		// binding is the payload, not the record pointer; nil/err arms never
+		// execute this load because their tag comparison is false.
+		g.emitRawOptionPayload(sb, ls.Value, targetType)
+		sb.WriteByte(OpLocalSet)
+		writeU32LEB(sb, uint32(idx))
 		return
 	}
 
@@ -655,6 +675,9 @@ func (g *Generator) emitExpr(sb *bytes.Buffer, expr parser.Expression) ValType {
 // 得 0，而編譯器與 wasm 驗證全程無聲。已綁定的同名 local（用戶自己的 `err`
 // 變數）不算關鍵字。
 func (g *Generator) optionTagLiteral(e parser.Expression) (string, bool) {
+	if _, ok := e.(*parser.NilLiteral); ok {
+		return "nil", true
+	}
 	id, ok := e.(*parser.Identifier)
 	if !ok {
 		return "", false
@@ -716,6 +739,12 @@ func (g *Generator) emitInfix(sb *bytes.Buffer, ie *parser.InfixExpression) ValT
 		return I64
 	case "<", ">", "<=", ">=", "==", "!=":
 		if tag, ok := g.optionTagLiteral(ie.Right); ok && (op == "==" || op == "!=") {
+			if g.inferKind(ie.Left) == KindRawOption {
+				// Raw options carry a real tag. Keep the legacy constant-folding
+				// path below for option arithmetic, but observe raw failures.
+				g.emitRawOptionTagCompare(sb, ie.Left, tag, op == "!=")
+				return I32
+			}
 			// match 的 tag 探測（`__match_subj == ok` / `== nil` / `== err`）。
 			// 見 optionTagLiteral 的註解：此後端沒有 option 表示，只有成功路徑，
 			// 必須常量折疊，否則 `x == ok` 會退化成 `x == 0` 而永遠走兜底臂。
@@ -882,6 +911,11 @@ func (g *Generator) emitCallExpr(sb *bytes.Buffer, ce *parser.CallExpression) Va
 
 // emitDotOrField 處理 DotExpression：struct 欄位存取 或 vec/str 的 .len / .cap。
 func (g *Generator) emitDotOrField(sb *bytes.Buffer, de *parser.DotExpression) ValType {
+	if value, ok := g.rawConstantExpr(de); ok {
+		sb.WriteByte(OpI64Const)
+		writeSLEB(sb, value)
+		return I64
+	}
 	// 判斷是否為 vec/str 的 .len / .cap
 	if ident, ok := de.Receiver.(*parser.Identifier); ok {
 		kind := g.localKind(ident.Value)
@@ -1369,6 +1403,12 @@ func (g *Generator) inferType(expr parser.Expression) ValType {
 		}
 		return g.inferType(e.Right)
 	case *parser.CallExpression:
+		if spec, ok := g.rawCallSpec(e); ok {
+			if spec.option {
+				return I32
+			}
+			return spec.result
+		}
 		if ident, ok := e.Function.(*parser.Identifier); ok {
 			if results, ok := g.funcResults[ident.Value]; ok && len(results) > 0 {
 				return results[0]
@@ -1410,6 +1450,9 @@ func (g *Generator) inferType(expr parser.Expression) ValType {
 	case *parser.GroupedExpression:
 		return g.inferType(e.Expression)
 	case *parser.DotExpression:
+		if _, ok := g.rawConstantExpr(e); ok {
+			return I64
+		}
 		// 與 emitDotOrField 保持一致：先判斷 vec/str .len/.cap，再查 struct 欄位。
 		// 若缺少此分支，struct 的 str/vec/struct 欄位會被誤推為 I64，
 		// 導致 `n = u.name` 後 `print(n)` 時 local.tee 期望 I32 卻收到 I64

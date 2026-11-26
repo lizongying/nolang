@@ -998,8 +998,36 @@ func (m *Module) enumEscapeSinks(f *Function) map[ValueID]bool {
 					continue
 				}
 				switch inst.Op {
-				case OpSetField, OpIndexStore, OpOptionWrap, OpEnumNew:
+				case OpSetField, OpEnumNew:
 					for _, a := range inst.Args {
+						if a > NoVal && !escaped[a] {
+							escaped[a] = true
+							changed = true
+						}
+					}
+				case OpOptionWrap:
+					// A cloneable enum is either transferred to a dead option or
+					// deep-copied into a live one. In neither case does the option
+					// retain an alias to the source's payload.
+					if len(inst.Args) > 0 {
+						a := inst.Args[0]
+						if t := m.valueTypeOf(f, a); t != nil && t.Kind == KindEnum && m.enumPayloadCloneable(t) {
+							continue
+						}
+						if a > NoVal && !escaped[a] {
+							escaped[a] = true
+							changed = true
+						}
+					}
+				case OpIndexStore:
+					// Args[2] is the stored value. Container stores clone enum
+					// payloads, while the receiver and index remain conservative.
+					for i, a := range inst.Args {
+						if i == 2 {
+							if t := m.valueTypeOf(f, a); t != nil && t.Kind == KindEnum && m.enumPayloadCloneable(t) {
+								continue
+							}
+						}
 						if a > NoVal && !escaped[a] {
 							escaped[a] = true
 							changed = true
@@ -1033,6 +1061,11 @@ func (m *Module) enumEscapeSinks(f *Function) map[ValueID]bool {
 					if inst.Op == OpCall && inst.Callee == NoVal {
 						if _, _, ok := lookupBuiltin(inst.Sym); !ok {
 							continue
+						}
+						if inst.Sym == "vec.push" && len(inst.Args) > 1 && inst.Args[1] > NoVal {
+							if ty := m.valueTypeOf(f, inst.Args[1]); ty != nil && ty.Kind == KindEnum && m.enumPayloadCloneable(ty) {
+								continue
+							}
 						}
 					}
 					// Everything else is opaque storage. `l.push(q)` is the
@@ -1395,7 +1428,13 @@ func (m *Module) optionCopySharesHeap(f *Function, inst *Inst) bool {
 			return false
 		}
 		src := m.valueTypeOf(f, inst.Args[0])
-		if src == nil || src.Kind != KindStruct {
+		if src == nil {
+			return false
+		}
+		if src.Kind == KindEnum {
+			return m.enumPayloadCloneable(src)
+		}
+		if src.Kind != KindStruct {
 			return false
 		}
 		key := m.StructKeyOf(src.Raw)
@@ -1485,6 +1524,11 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	// a predicate, and the two must stay in step.
 	if payloadLT == "%str-long" || payloadLT == "%vec" {
 		return true
+	}
+	// A tagged enum has the same inline-payload ownership as a struct, but
+	// its clone/drop dispatch is tag-switched rather than field-linear.
+	if et := m.Type(m.internType(elemRaw)); et != nil && et.Kind == KindEnum {
+		return m.enumPayloadCloneable(et)
 	}
 	// An INLINE struct payload that owns heap: emitOptionPayloadContentClone's
 	// struct arm duplicates its pointees and leaves through the generated
@@ -1721,9 +1765,10 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 	//     frees the payload itself, so an extraction must NOT free it too.
 	//     - owned `str` -> emitEnumField calls @str_clone, so the result owns a
 	//       PRIVATE buffer and must be dropped (false).
-	//     - every other owned field (`%vec`, inline struct) -> not cloned (there
-	//       is no @vec_clone), so the result aliases the enum's storage and is a
-	//       genuine borrow (dropOwnsHeap).
+	//     - owned slice with a resolvable element type -> emitEnumField calls
+	//       vecDeepClone, so the result is likewise private and must be dropped.
+	//     - any other owned field -> not cloned, so the result aliases the enum's
+	//       storage and is a genuine borrow (dropOwnsHeap).
 	if inst.Op == OpEnumField {
 		if !m.enumOwnsPayload[inst.Args[0]] {
 			return false
@@ -1732,12 +1777,11 @@ func (m *Module) isBorrowRead(f *Function, inst *Inst) bool {
 			return false
 		}
 		if ty := m.valueTypeOf(f, inst.Dst); ty != nil && ty.Owned && ty.Kind == KindSlice {
-			// Mirror emitEnumField's clone condition: only a %vec payload the
-			// allowlist has opted in is cloned on read, so it must be dropped.
-			if dv := m.Value(inst.Dst); dv != nil {
-				if dt := m.Type(dv.Type); dt != nil && m.ownedVecLeafAllowed(dt.Raw) {
-					return false
-				}
+			// Mirror emitEnumField's vecDeepClone condition. The element TypeID
+			// resolving is the analysis-side proxy for vecDeepClone returning a
+			// helper, exactly as in optionSlicePeelClones.
+			if ty.Elem != NoType && m.Type(ty.Elem) != nil {
+				return false
 			}
 		}
 		return m.dropOwnsHeap(f, inst.Dst)
@@ -1908,6 +1952,30 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	// liveness/drop computation, which has to see the final instruction stream.
 	m.lowerDeadSourceCopiesToMoves(f)
 
+	// An enum peeled out of an option is a shallow temporary: the option still
+	// owns the payload. A later copy of that temporary may become an independent
+	// owner, but promoting it to OpClone must never make the shallow source a
+	// second owner. Record these destinations before the loop below rewrites any
+	// moves; lowerDeadSourceCopiesToMoves only handles owned-slice clones and does
+	// not alter enum option peels.
+	optionPeelEnums := map[ValueID]bool{}
+	for _, bid := range f.Blocks {
+		blk := m.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if !m.isOptionPeelMove(f, inst) {
+				continue
+			}
+			dst := moveDst(inst)
+			if ty := m.valueTypeOf(f, dst); ty != nil && ty.Kind == KindEnum {
+				optionPeelEnums[dst] = true
+			}
+		}
+	}
+
 	// Liveness is needed to decide whether a constructor store CONSUMES its
 	// value (only when the value is dead after the store — a still-live value
 	// keeps its own drop at its last use).
@@ -2020,7 +2088,9 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 				dst := moveDst(inst)
 				if dst > NoVal && (liveOut[bid][dst] || m.readNonDropAfterInBlock(bid, iid, dst)) {
 					inst.Op = OpClone
-					m.enumOwnsPayload[inst.Args[0]] = true
+					if !optionPeelEnums[inst.Args[0]] {
+						m.enumOwnsPayload[inst.Args[0]] = true
+					}
 					m.enumOwnsPayload[dst] = true
 				}
 			}

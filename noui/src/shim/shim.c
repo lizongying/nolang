@@ -241,10 +241,87 @@ void noui_draw_text(float x, float y, const char *text) {
     SDL_RenderDebugText(g_renderer, x, y, text);
 }
 
-int noui_font_init(const char *path, double ptsize) {
+/* 阶段85：字体候选清单（C 侧持有，逐条 malloc，无长度上限）。
+ * 为什么在 C：Nolang 的模块级 str 既不能数组下标写、也不能整体重赋值，
+ * 字符串状态只能走 FFI。清单同时服务「按序回退」与「DPI 变化后重开」。
+ * 为什么不设上限：主题声明的回退链长度不可预期，定长表只能静默截断；
+ * 这里条目数组按需翻倍扩容（初始 8 条），每条路径单独 strdup——既不限制
+ * 条数也不限制单条长度，add 失败只在 malloc 失败时返回 0。 */
+/* 只用于「最近一次打开成功」的路径缓冲（能打开说明它没超文件系统上限）；
+ * 候选清单本身无长度限制。 */
+#define NOUI_FPATH_MAX 512
+static char **g_fcands = NULL;
+static int g_nfcands = 0;
+static int g_fcap = 0;
+static char g_font_path[NOUI_FPATH_MAX] = "";
+static double g_font_pts = 0.0;
+
+static const char *FONT_DEFAULTS[5] = {
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Menlo.ttc"
+};
+
+/* 成功才记录路径；失败保持上一个可用字体不变（DPI 重开失败不该崩现状） */
+static int font_open_one(const char *path, double ptsize) {
     if (g_font) { TTF_CloseFont(g_font); g_font = NULL; }
-    g_font = TTF_OpenFont(path, (float)ptsize);
-    return g_font ? 1 : 0;
+    TTF_Font *f = TTF_OpenFont(path, (float)ptsize);
+    if (!f) return 0;
+    g_font = f;
+    snprintf(g_font_path, sizeof(g_font_path), "%s", path ? path : "");
+    g_font_pts = ptsize;
+    return 1;
+}
+
+double noui_font_size(void) { return g_font_pts; }
+
+int noui_font_init(const char *path, double ptsize) {
+    return font_open_one(path, ptsize);
+}
+
+void noui_font_cands_clear(void) {
+    int k;
+    for (k = 0; k < g_nfcands; k++) free(g_fcands[k]);
+    g_nfcands = 0;
+}
+int noui_font_cands_add(const char *path) {
+    char *dup;
+    if (!path || !path[0]) return 0;
+    if (g_nfcands >= g_fcap) {
+        int nc = g_fcap ? g_fcap * 2 : 8;
+        char **buf = (char **)realloc(g_fcands, (size_t)nc * sizeof(char *));
+        if (!buf) return 0;
+        g_fcands = buf;
+        g_fcap = nc;
+    }
+    dup = strdup(path);
+    if (!dup) return 0;
+    g_fcands[g_nfcands++] = dup;
+    return 1;
+}
+long long noui_font_cands_count(void) { return g_nfcands; }
+const char *noui_font_cands_at(long long i) {
+    if (i < 0 || i >= g_nfcands || !g_fcands[i]) return "";
+    return g_fcands[i];
+}
+long long noui_font_defaults_count(void) {
+    return (long long)(sizeof(FONT_DEFAULTS) / sizeof(FONT_DEFAULTS[0]));
+}
+const char *noui_font_defaults_at(long long i) {
+    long long n = noui_font_defaults_count();
+    if (i < 0 || i >= n) return "";
+    return FONT_DEFAULTS[i];
+}
+const char *noui_font_path(void) { return g_font_path; }
+
+/* DPI 变化重开：同一路径、字号 = 16pt × scale（调用方已保证 scale≥1） */
+int noui_font_reopen(double scale1000) {
+    if (!g_font_path[0]) return 0;
+    double sc = scale1000 / 1000.0;
+    if (sc < 1.0) sc = 1.0;
+    return font_open_one(g_font_path, 16.0 * sc);
 }
 
 void noui_font_close(void) {

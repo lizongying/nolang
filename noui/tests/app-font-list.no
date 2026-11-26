@@ -1,0 +1,92 @@
+; ============================================================================
+; noui 字体候选清单测试（阶段 85）—— src/app.no
+;
+; 钉住：
+;   1) 内置默认候选存在且非空；
+;   2) 应用可声明候选（add / count / at / clear）；
+;   3) try-all 按序尝试：坏路径失败后继续，成功记路径；全失败返回 0；
+;   4) reopen 在没有已知路径时安全返回 0；
+;   5) 候选清单没有条数上限（原阶段85 定长 8，改动态增长后一次收下 32 条），
+;      空串被拒、add 返回 1 表示收下；
+;   6) 与 app-init 集成后路径 / 可用性一致，DPI 重开保持可用。
+;
+; 字体文件是否存在取决于平台，所以「打开成功」相关的断言都写成
+; 「要么不可用、要么一致」的双分支，不在 CI 里绑死某个 macOS 路径。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/app-font-list.no
+; ============================================================================
+# /noui/src/app
+
+ZERO = 0
+ONE = 1
+
+print('=== app-font-list tests ===')
+
+; ---- 1) 内置默认候选 ----
+r1 = app-font-defaults-count() == 5
+e0 = app-font-default-at(0) == '/System/Library/Fonts/Supplemental/Arial.ttf'
+e1 = app-font-default-at(1) == '/System/Library/Fonts/Helvetica.ttc'
+e2 = app-font-default-at(2) == '/System/Library/Fonts/PingFang.ttc'
+e3 = app-font-default-at(3) == '/Library/Fonts/Arial.ttf'
+e4 = app-font-default-at(4) == '/System/Library/Fonts/Menlo.ttc'
+r1 = r1 && e0 && e1 && e2 && e3 && e4
+
+; ---- 2) 声明候选：增 / 查 / 清 ----
+app-font-clear-cands()
+r2a = app-font-cand-count() == ZERO
+app-font-add('/tmp/__noui_no_such_font__.ttf')
+p1 = app-font-cand(0)
+r2b = app-font-cand-count() == ONE && p1 == '/tmp/__noui_no_such_font__.ttf'
+app-font-clear-cands()
+r2 = r2a && r2b && app-font-cand-count() == ZERO
+
+; ---- 3) try-all：只有坏候选 -> 返回 0，不记路径 ----
+app-font-clear-cands()
+app-font-add('/tmp/__noui_no_such_font__.ttf')
+ok3 = app-font-try-all(16.0)
+pp3 = app-font-path()
+r3 = ok3 == ZERO && pp3 == ''
+
+; ---- 4) 没有已知路径时 reopen 安全返回 0 ----
+r4 = app-font-reopen() == ZERO
+
+; ---- 5) 扩容：无条数上限，一次声明 32 条全部收下且可回读 ----
+app-font-clear-cands()
+big = '/tmp/__noui_bulk_font__.ttf'
+add-ok = 0
+i <- [0..32): {
+    v = app-font-add(big)
+    add-ok = add-ok + v
+}
+cn = app-font-cand-count()
+r5x = add-ok == 32 && cn == 32 &&
+      app-font-cand(0) == big && app-font-cand(31) == big
+r5y = app-font-add('') == ZERO
+
+; ---- 5c) 单条长度无上限：1200+ 字符的路径照收（旧定长表会静默截断）----
+; 追加在第 5 项的 32 条之后，应变成 33；读完立即清空，不影响集成测试。
+lp = '/tmp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.ttf'
+n-long = 0
+v = app-font-add(lp)
+n-long = app-font-cand-count()
+app-font-clear-cands()
+r5z = v == ONE && n-long == 33 && app-font-cand-count() == ZERO
+
+; ---- 6) 集成：app-init 用默认候选；路径 / 可用性一致；reopen 保持可用 ----
+app-init('font-list')
+rdy = app-font-ready()
+pp = app-font-path()
+r5a = (pp != '') == (rdy != ZERO)
+sz = app-font-size()
+r5b = (sz > 0.0) || (rdy == ZERO)
+rok = app-font-reopen()
+r5c = (rdy == ZERO) || (rok != ZERO)
+r5d = app-font-ready() == rdy
+r5 = r5a && r5b && r5c && r5d
+app-shutdown()
+
+all-ok = r1 && r2 && r3 && r4 && r5x && r5y && r5z && r5
+print('defaults={r1} declare={r2} bogus={r3} noreopen={r4} bulk={r5x}{r5y} longpath={r5z} init={r5}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-FONT-LIST TESTS PASSED') }
+(!all-ok) -> { print('APP-FONT-LIST TESTS FAILED'); exit(1) }

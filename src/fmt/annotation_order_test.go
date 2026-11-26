@@ -253,3 +253,83 @@ func TestFormatTrailingAnnotationAfterMultilineStatement(t *testing.T) {
 		})
 	}
 }
+
+// REGRESSION GUARD (FFI `#{c}` annotation gets the same node spacing as other
+// annotations).
+//
+// `#{c}` is parsed into an ExternStatement (the annotation line is folded into
+// the node), so it never appears in the attached-annotations side-table and
+// there is no standalone AnnotationStatement either. The formatter must still
+// treat `#{c}\nname = ...` as a node head: ONE blank line above the whole node
+// (comment → annotation → declaration), NONE between the comment and the
+// annotation. This is the same rule TestFormatAnnotationBlankLine pins for
+// platform/generic annotations, applied to FFI declarations.
+func TestFormatFFIAnnotationBlankLine(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "consecutive FFI declarations get one blank line between them",
+			input: "#{c}\n" +
+				"_noui-init = () (ok i32)\n" +
+				"#{c}\n" +
+				"_noui-window-create = (title str, w i32, h i32)\n",
+			expected: "#{c}\n" +
+				"_noui-init = () (ok i32)\n" +
+				"\n" +
+				"#{c}\n" +
+				"_noui-window-create = (title str, w i32, h i32)\n",
+		},
+		{
+			name: "comment and annotation stay together as one node, blank above",
+			input: "x = 1\n" +
+				"; FFI 宣告\n" +
+				"#{c}\n" +
+				"_f = () (ok i32)\n" +
+				"#{c}\n" +
+				"_g = ()\n",
+			expected: "x = 1\n" +
+				"\n" +
+				"; FFI 宣告\n" +
+				"#{c}\n" +
+				"_f = () (ok i32)\n" +
+				"\n" +
+				"#{c}\n" +
+				"_g = ()\n",
+		},
+		{
+			name:     "first statement is not preceded by a blank line",
+			input:    "#{c}\n_f = ()\n",
+			expected: "#{c}\n_f = ()\n",
+		},
+		{
+			name: "source blank line is kept as-is, not doubled",
+			input: "#{c}\n_f = ()\n" +
+				"\n" +
+				"#{c}\n_g = ()\n",
+			expected: "#{c}\n_f = ()\n" +
+				"\n" +
+				"#{c}\n_g = ()\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, errs := FormatFileWithErrors(tt.input)
+			if len(errs) > 0 {
+				t.Fatalf("format errors: %v", errs)
+			}
+			if out != tt.expected {
+				t.Errorf("FormatFileWithErrors\n--- got ---\n%s\n--- want ---\n%s", out, tt.expected)
+			}
+			out2, errs2 := FormatFileWithErrors(out)
+			if len(errs2) > 0 {
+				t.Fatalf("reformat errors: %v", errs2)
+			}
+			if out2 != out {
+				t.Errorf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", out, out2)
+			}
+		})
+	}
+}

@@ -9,42 +9,55 @@
 ; ---- 平台 FFI（C shim） ----
 #{c}
 _noui-init = () (ok i32)
+
 #{c}
 _noui-window-create = (title str, w i32, h i32) (handle i64)
+
 #{c}
-_noui-quit = () ()
+_noui-quit = ()
+
 #{c}
-_noui-begin-frame = (r i32, g i32, b i32, a i32) ()
+_noui-begin-frame = (r i32, g i32, b i32, a i32)
+
 #{c}
-_noui-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) ()
+_noui-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32)
+
 #{c}
-_noui-set-color = (r i32, g i32, b i32, a i32) ()
+_noui-set-color = (r i32, g i32, b i32, a i32)
+
 #{c}
-_noui-draw-text = (x f64, y f64, text str) ()
+_noui-draw-text = (x f64, y f64, text str)
+
 #{c}
 _noui-font-init = (path str, size f64) (ok i32)
+
 #{c}
-_noui-font-draw = (x f64, y f64, r i32, g i32, b i32, a i32, text str) ()
+_noui-font-draw = (x f64, y f64, r i32, g i32, b i32, a i32, text str)
+
 #{c}
-_noui-end-frame = () ()
+_noui-end-frame = ()
+
 ; 事件编码：低8位=类型(0无 1退出 2左键 3移动 4按键)，24位=x，24位=y
 #{c}
 _noui-poll = () (e i64)
+
 #{c}
 _noui-should-quit = () (yes i32)
+
 #{c}
-_noui-delay = (ms i32) ()
+_noui-delay = (ms i32)
+
 #{c}
 _noui-version = () (v str)
 
 ; ---- 颜色常量（0xRRGGBBAA） ----
-C-BG = 0x1E1E28FF
-C-PANEL = 0x2A2A3AFF
-C-BTN = 0x4A90E2FF
-C-BTN-HOVER = 0x6AA5F5FF
-C-BTN-TEXT = 0xFFFFFFFF
-C-TEXT = 0xE8E8F0FF
-C-ACCENT = 0x50C878FF
+C-BG = 0x1e1e28ff
+C-PANEL = 0x2a2a3aff
+C-BTN = 0x4a90e2ff
+C-BTN-HOVER = 0x6aa5f5ff
+C-BTN-TEXT = 0xffffffff
+C-TEXT = 0xe8e8f0ff
+C-ACCENT = 0x50c878ff
 
 ; 组件 id
 BTN-MINUS = 1
@@ -55,12 +68,15 @@ BTN-NONE = 0
 col-r = (c i64) (v i32) {
     v = (c >> 24) & 255
 }
+
 col-g = (c i64) (v i32) {
     v = (c >> 16) & 255
 }
+
 col-b = (c i64) (v i32) {
     v = (c >> 8) & 255
 }
+
 col-a = (c i64) (v i32) {
     v = c & 255
 }
@@ -74,12 +90,14 @@ point-in-rect = (px f64, py f64, x f64, y f64, w f64, h f64) (hit bool) {
 evt-type = (e i64) (t i64) {
     t = e & 255
 }
+
 evt-x = (e i64) (x f64) {
-    xi = (e >> 8) & 0xFFFFFF
+    xi = (e >> 8) & 0xffffff
     x = xi.to-f64()
 }
+
 evt-y = (e i64) (y f64) {
-    yi = (e >> 32) & 0xFFFFFF
+    yi = (e >> 32) & 0xffffff
     y = yi.to-f64()
 }
 
@@ -129,10 +147,13 @@ print('window handle: {handle}')
 ; 主循环（顶层语句 + 循环体，符合 MIR 全局访问约束）
 ; ============================================================================
 !! {
+
     ; ---- 事件阶段（poll 直到无事件） ----
     !! {
         e = _noui-poll()
-        (e == 0) -> { ** }
+        (e == 0) -> {
+            break
+        }
 
         t = evt-type(e)
 
@@ -157,6 +178,7 @@ print('window handle: {handle}')
                 nc = count - 1
                 nc: {
                     ok -> count = it
+
                     err -> _
                 }
             }
@@ -164,13 +186,16 @@ print('window handle: {handle}')
                 nc = count + 1
                 nc: {
                     ok -> count = it
+
                     err -> _
                 }
             }
         }
     }
 
-    (1 == _noui-should-quit()) -> { ** }
+    (1 == _noui-should-quit()) -> {
+        break
+    }
 
     ; ---- 渲染阶段 ----
     _noui-begin-frame(col-r(C-BG), col-g(C-BG), col-b(C-BG), 255)
@@ -187,14 +212,18 @@ print('window handle: {handle}')
 
     ; 减号按钮（hover 高亮）
     b1 = C-BTN
-    (hover == BTN-MINUS) -> { b1 = C-BTN-HOVER }
+    (hover == BTN-MINUS) -> {
+        b1 = C-BTN-HOVER
+    }
     _noui-draw-rect(BTN1-X, BTN1-Y, BTN-W, BTN-H, col-r(b1), col-g(b1), col-b(b1), 255)
     _noui-set-color(col-r(C-BTN-TEXT), col-g(C-BTN-TEXT), col-b(C-BTN-TEXT), 255)
     _noui-draw-text(BTN1-X + 70.0, BTN1-Y + 24.0, '-')
 
     ; 加号按钮（hover 高亮）
     b2 = C-BTN
-    (hover == BTN-PLUS) -> { b2 = C-BTN-HOVER }
+    (hover == BTN-PLUS) -> {
+        b2 = C-BTN-HOVER
+    }
     _noui-draw-rect(BTN2-X, BTN2-Y, BTN-W, BTN-H, col-r(b2), col-g(b2), col-b(b2), 255)
     _noui-set-color(col-r(C-BTN-TEXT), col-g(C-BTN-TEXT), col-b(C-BTN-TEXT), 255)
     _noui-draw-text(BTN2-X + 70.0, BTN2-Y + 24.0, '+')

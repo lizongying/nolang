@@ -13,6 +13,17 @@
 ; 计数器（模块全局，dva-run 结束后应用可打印）：
 ;   dva-frames() / dva-ops() / dva-clicks()
 ;
+; 主指针语义（阶段83）：dva-press(S, root, px, py) 是「按下」的唯一入口，
+; 鼠标左键 / 手指 / 压感笔共用；接触方式用 dva-touch()（1 = 手指或笔按着）
+; 与 app-pressure() 暴露给组件。
+;
+; 拖放（阶段84）：放置区用 cmp-drop-zone(h, 1) 标记（F-DROP）。
+;   dva-drop-active()  是否处于拖放会话（DROP_BEGIN..COMPLETE）
+;   dva-drop-target()  当前落点 key（-1 = 悬空在放置区外）
+;   dva-drop-hits()    POS 命中放置区的次数；dva-drops() 完成派发次数
+; 放下时走 dv-app-click(S, k, DV-A-DROP, 0, nw)：视图据 act 区分点击与拖放，
+; 文件 / 文本用 app-drop() 取（读完即空）。
+;
 ; 受控输入（阶段13）：视图用 dv-bind(node, slot, max) 把输入类组件的文本绑到
 ; dv 侧的字符串状态池 DV-BIND-T[slot]（应用用 dv-bound / dv-bound-set 读写）；
 ; 装配层每帧双向同步（dva-sync-binds），签名与阶段 11 完全一致。
@@ -44,6 +55,13 @@ DVA-PAL-FOCUS []i64 = [-1]
 ; 阶段83：手指 / 压感笔是否正处于接触状态（1 = 按着，0 = 没有）。触摸与笔走
 ; 和鼠标左键完全相同的「命中 -> 归约」路径，这个标记只区分接触方式本身。
 DVA-TOUCH []i64 = [0]
+; 阶段84：拖放会话与落点。POS 事件把「当前悬停的放置区 key」记在
+; DVA-DROP-TARGET；COMPLETE 时用它派发，随后清会话。DVA-DROP-HITS 统计
+; 「POS 命中放置区」的次数（视图可据此做高亮反馈）。
+DVA-DROP-ACTIVE []i64 = [0]
+DVA-DROP-TARGET []i64 = [-1]
+DVA-DROP-HITS []i64 = [0]
+DVA-DROPS []i64 = [0]
 
 DVA-AZ = 'abcdefghijklmnopqrstuvwxyz'
 DVA-DIG = '0123456789'
@@ -77,6 +95,35 @@ dva-root = () (h i64) {
 ; 与 dva-press 配对使用：按下置位、抬起清零。
 dva-touch = () (yes i64) {
     yes = DVA-TOUCH[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+; ---- 阶段84：拖放状态只读 getter（视图渲染时可直接查）----
+dva-drop-active = () (yes i64) {
+    yes = DVA-DROP-ACTIVE[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+dva-drop-target = () (k i64) {
+    k = DVA-DROP-TARGET[0]: {
+        ok -> it
+
+        -> -1
+    }
+}
+dva-drop-hits = () (n i64) {
+    n = DVA-DROP-HITS[0]: {
+        ok -> it
+
+        -> 0
+    }
+}
+dva-drops = () (n i64) {
+    n = DVA-DROPS[0]: {
         ok -> it
 
         -> 0
@@ -841,6 +888,41 @@ dva-run = (S []i64, title str, max-frames i64) () {
             DVA-PY[0] = py
             DVA-MOUSE[0] = 1
             app-hover(root, px, py)
+        }
+
+        ; ---- 拖放（阶段84）：BEGIN 开会话；POS 记落点；COMPLETE 派发 ----
+        ; 放置区 = 带 F-DROP flag 的组件（cmp-drop-zone）。语义走同一条
+        ; dv-app-click 出口，动作码 DV-A-DROP，载荷槽 = 落点 key；被拖的
+        ; 文件 / 文本由视图在回调里用 app-drop() 取。
+        (t == 21) -> {
+            DVA-DROP-ACTIVE[0] = 1
+            DVA-DROP-TARGET[0] = -1
+        }
+        (t == 20) -> {
+            px = fx(mx)
+            py = fx(my)
+            DVA-PX[0] = px
+            DVA-PY[0] = py
+            app-hover(root, px, py)
+            hit = cs-hit(root, px, py)
+            z = cmp-is-drop(hit)
+            k = cmp-key(hit)
+            (z) -> {
+                DVA-DROP-TARGET[0] = k
+                (k >= 0) -> { DVA-DROP-HITS[0] = dv-inc(DVA-DROP-HITS[0]) }
+            }
+            (!z) -> { DVA-DROP-TARGET[0] = -1 }
+        }
+        (t == 22) -> {
+            k = DVA-DROP-TARGET[0]
+            DVA-DROP-ACTIVE[0] = 0
+            DVA-DROP-TARGET[0] = -1
+            (k >= 0) -> {
+                s = app-drop()
+                nw = dv-app-reduce(S, k)
+                DVA-DROPS[0] = dv-inc(DVA-DROPS[0])
+                dv-app-click(S, k, DV-A-DROP, 0, nw)
+            }
         }
 
         ; ---- 滚轮（阶段23）：命中 -> 顺着父链找滚动容器 -> 偏移进状态池 ----

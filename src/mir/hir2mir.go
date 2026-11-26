@@ -619,6 +619,15 @@ func (l *lowerer) collectTaggedEnums() {
 	}
 }
 
+// fillTaggedEnumLayouts runs only after every enum and struct definition is
+// registered. Layout interns field types, so computing it during the metadata
+// pass would let an earlier variant cache a later enum as an unknown struct.
+func (l *lowerer) fillTaggedEnumLayouts() {
+	for _, info := range l.mod.TaggedEnums {
+		l.fillEnumLayout(info)
+	}
+}
+
 // collectTaggedEnum records one tagged-enum definition. The discriminant of a
 // variant is its declaration order within the enum body, which is what the
 // match desugar and the constructor both agree on.
@@ -662,7 +671,6 @@ func (l *lowerer) collectTaggedEnum(pkg *hir.Package, id int32) {
 		}
 		info.Variants = append(info.Variants, v)
 	}
-	l.fillEnumLayout(info)
 	l.mod.TaggedEnums[name] = info
 }
 
@@ -1264,14 +1272,9 @@ func (l *lowerer) synthesizeMainForTopLevel(pkg *hir.Package) {
 		if !nodeMatchesPlatform(pkg, id) {
 			continue
 		}
-		// A tagged-enum definition carries the variant table that later
-		// lowering needs: it is not a statement, but it must be collected
-		// before any function body that constructs or matches an enum is
-		// lowered. (Previously it fell into the `continue` below and MIR knew
-		// nothing about enums, so `full(7)` resolved to nothing at all.)
-		if n.Kind == hir.KTaggedEnumDef {
-			l.collectTaggedEnum(pkg, id)
-		}
+		// Tagged-enum definitions were collected and laid out before synthetic
+		// main construction. Re-collecting them here would replace the populated
+		// metadata with fresh zero-layout entries.
 		switch n.Kind {
 		case hir.KStructDef, hir.KFuncDef, hir.KExtern, hir.KEnumDef,
 			hir.KTypeAlias, hir.KTaggedEnumDef, hir.KInterfaceDef,
@@ -1561,7 +1564,11 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		{Name: "data", TypeRaw: "byte", Tag: FieldTagInline},
 		{Name: "len", TypeRaw: "byte", Tag: FieldTagInline},
 	}
+	// Register tagged-enum metadata before struct fields are interned: either kind
+	// of definition may contain the other, and internType caches its first answer.
+	l.collectTaggedEnums()
 	l.collectStructFields()
+	l.fillTaggedEnumLayouts()
 	// The builtin option's err-variant payload (see Module.OptionErrRaw). std's
 	// structured error is used whenever the std err module is part of the
 	// compilation — which is every compilation, since global.no declares
@@ -1572,7 +1579,6 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	} else {
 		l.mod.OptionErrRaw = "str"
 	}
-	l.collectTaggedEnums()
 	l.collectLocalEnumVariants()
 	l.collectValueTypeAliases()
 
@@ -2517,6 +2523,47 @@ func (l *lowerer) enumArmFieldValue(name string) (ValueID, bool) {
 	// matches in a function), so it may still carry the first arm's type.
 	// The arm's own variant table is authoritative — it was resolved from the
 	// subject in the arm's condition.
+	if subj == NoVal {
+		return NoVal, false
+	}
+	ft := l.b.Type(l.armVariant.Fields[fi])
+	if ft == NoType || ft == l.voidType {
+		return NoVal, false
+	}
+	fv := l.b.Emit(OpEnumField, ft, []ValueID{subj}, "")
+	l.mod.Insts[len(l.mod.Insts)-1].Int = l.layoutCg().enumFieldOffset(l.armVariant, fi)
+	return fv, true
+}
+
+// enumArmPositionalExtract lowers the synthetic `it.fN` initializer emitted for
+// a multi-field tagged-enum pattern. It deliberately accepts only the compiler's
+// positional form; ordinary source-level enum field reads remain unsupported.
+func (l *lowerer) enumArmPositionalExtract(n *hir.Node) (ValueID, bool) {
+	if n == nil || n.Kind != hir.KDot || l.armVariant == nil || l.armEnum == nil {
+		return NoVal, false
+	}
+	prop := l.pkg.Str(n.S)
+	if len(prop) < 2 || prop[0] != 'f' {
+		return NoVal, false
+	}
+	fi, err := strconv.Atoi(prop[1:])
+	if err != nil || fi < 0 || fi >= len(l.armVariant.Fields) {
+		return NoVal, false
+	}
+	children := l.pkg.Children(n.Id)
+	if len(children) != 1 {
+		return NoVal, false
+	}
+	recv := l.pkg.Node(children[0])
+	if recv == nil || recv.Kind != hir.KIdent || l.pkg.Str(recv.S) != "it" {
+		return NoVal, false
+	}
+	subj := l.itSrc
+	if subj == NoVal {
+		if v, ok := l.locals["it"]; ok {
+			subj = v
+		}
+	}
 	if subj == NoVal {
 		return NoVal, false
 	}
@@ -3665,6 +3712,20 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			if l.typeHint != NoType && l.typeHint != l.voidType {
 				if ty := l.mod.Type(l.typeHint); ty != nil && ty.Raw != "" {
 					l.noteAnonymousStructLit(c, optionInnerRaw(ty))
+				}
+			}
+			// Multi-field enum patterns are represented by synthetic positional
+			// extracts (`let values = it.f0`). A normal dot read has no tagged-enum
+			// payload layout, so project directly from the arm's matched subject and
+			// make the extracted field the arm binding's sole owner.
+			if n.Flags&hir.FlagArmBinding != 0 && cn != nil && cn.Kind == hir.KDot {
+				if fv, ok := l.enumArmPositionalExtract(cn); ok {
+					val = fv
+					if l.armBoundNames == nil {
+						l.armBoundNames = map[string]bool{}
+					}
+					l.armBoundNames[name] = true
+					break
 				}
 			}
 			// 整數字面量指派給無號型別的綁定：常數轉換（`b byte = -1` 存 255 而非 -1）。
@@ -14449,7 +14510,12 @@ func (l *lowerer) lowerEnumCtor(n *hir.Node, ei *TaggedEnumInfo, vi *VariantInfo
 	if enumT == l.voidType || enumT == NoType {
 		return NoVal
 	}
-	argv := l.lowerCallArgs(n, NoVal, "")
+	// Constructor arguments have the same contextual typing needs as callee
+	// parameters. In particular, a slice literal takes its element type from the
+	// expected type; without the variant field it defaults to []i64 even when the
+	// field is []byte, and codegen then stores the type-erased descriptor under
+	// the wrong element stride.
+	argv := l.lowerCallArgsWithHints(n, NoVal, "", nil, vi.Fields)
 	if len(argv) > len(vi.Fields) {
 		// A unit variant written in call position (`green()`) carries no
 		// payload; drop any stray (e.g. out-param) trailing arguments rather
@@ -14499,6 +14565,14 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 // (lowerNamedFormatMulti), which consumes a literal template as SOURCE TEXT and
 // hands over the str value its {fields} were substituted into.
 func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, pre func(nodeID int32) (ValueID, bool)) []ValueID {
+	return l.lowerCallArgsWithHints(n, recvV, callee, pre, nil)
+}
+
+// lowerCallArgsWithHints additionally accepts declared argument types from a
+// synthetic callee, such as a tagged-enum variant. A non-nil hint list replaces
+// callee/builtin parameter lookup while retaining the normal per-argument hint
+// save/restore, anonymous-struct seeding, and left-to-right evaluation.
+func (l *lowerer) lowerCallArgsWithHints(n *hir.Node, recvV ValueID, callee string, pre func(nodeID int32) (ValueID, bool), hintRaws []string) []ValueID {
 	args := l.slotArgs(n.Id, "arg")
 	// For a VARIADIC callee in arg-form (`f(..., r)`), drop the trailing
 	// out-parameter arguments: the result is returned via the out-pointer, not
@@ -14575,6 +14649,9 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 	// parameter types before lowering, so lowerStructLit can emit a typed
 	// structlit (see structLitTypes).
 	paramRaws := l.paramRawTypesOfCallee(callee)
+	if hintRaws != nil {
+		paramRaws = hintRaws
+	}
 	// A PURE builtin (`#{buildin}` — `os.arg`, `os.args`, …) has no HIR body,
 	// so it is not in funcNames and paramRawTypesOfCallee finds nothing for
 	// it. Its declared parameter types live in the builtin registry, which is
@@ -14585,7 +14662,7 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 	// handed the `?str` hint to the `i + 1` argument, the infix lowered as a
 	// string concatenation, and codegen emitted `add %str-long <i64>, <i64>`,
 	// which LLVM rejects. See builtinParamTypes.
-	if len(paramRaws) == 0 {
+	if hintRaws == nil && len(paramRaws) == 0 {
 		paramRaws = builtinParamTypes(callee)
 	}
 	// Real (non-receiver) KParam node IDs, in declaration order. Used to fill

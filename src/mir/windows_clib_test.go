@@ -196,19 +196,23 @@ var windowsVerifiedExports = map[string]bool{
 	"LockFileEx":              true,
 	"UnlockFileEx":            true,
 	"GetEnvironmentVariableA": true,
+	"FlushFileBuffers":        true,
+	"GetFileSizeEx":           true,
+	"CreateEventA":            true,
+	"GetOverlappedResult":     true,
 	// kernel32 — error handling
 	"GetLastError": true,
 	// kernel32 — subprocess pipeline + system info (win_create_pipe / *_pipe /
 	// std-handle / wait / exit-code / create-process shims, and win_sysconf).
 	// These declares predate this list; re-added so the gate is green again.
-	"CreatePipe":           true,
-	"ReadFile":             true,
-	"WriteFile":            true,
-	"GetStdHandle":         true,
-	"WaitForSingleObject":  true,
-	"GetExitCodeProcess":   true,
-	"CreateProcessA":       true,
-	"GetSystemInfo":        true,
+	"CreatePipe":          true,
+	"ReadFile":            true,
+	"WriteFile":           true,
+	"GetStdHandle":        true,
+	"WaitForSingleObject": true,
+	"GetExitCodeProcess":  true,
+	"CreateProcessA":      true,
+	"GetSystemInfo":       true,
 }
 
 // TestWindowsShimDeclaresAreRealExports is the class-level guard: it parses the
@@ -278,7 +282,7 @@ var windowsCLibCRT = map[string]bool{
 	"_getcwd": true, "_getpid": true, "_mkdir": true, "_open": true,
 	"_putenv_s": true, "_read": true, "_rmdir": true, "_unlink": true,
 	"_write": true,
-	"exit": true, "getenv": true, "gethostname": true, "rename": true,
+	"exit":   true, "getenv": true, "gethostname": true, "rename": true,
 	"signal": true, "system": true,
 }
 

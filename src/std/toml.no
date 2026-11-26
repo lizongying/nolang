@@ -1126,6 +1126,14 @@ stringify = (doc toml) (out str) {
     }
 }
 
+; toml.pretty: literal-style TOML text.
+; out: same TOML text as stringify
+; [pretty](#toml.pretty)
+toml.pretty = () (out str) {
+    doc = .
+    out = stringify(doc)
+}
+
 ; 設定原始 TOML 字面值。
 ; value 可為陣列、日期時間等 TOML 語法，模組不會替它加引號。
 ; key: 鍵（鍵無法標準化時失敗）

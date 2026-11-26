@@ -41,13 +41,6 @@ const (
 	DescriptorFieldData uint32 = 8
 )
 
-// mallocIdx / freeIdx 為 runtime malloc/free 的 function index。
-// 佈局：fd_write=0, proc_exit=1, _start=2, malloc=3, free=4, 用戶函數=5+
-const (
-	mallocIdx uint32 = 3
-	freeIdx   uint32 = 4
-)
-
 // heapPtrGlobalIdx 為 heapPtr global 的 index。
 // heapPtr 是 mutable i32 global，初始值 = g.heapOffset（所有編譯期靜態配置之後）。
 const heapPtrGlobalIdx uint32 = 0
@@ -56,11 +49,12 @@ const heapPtrGlobalIdx uint32 = 0
 type ValKind int
 
 const (
-	KindScalar ValKind = iota // 純量（i32/i64/f32/f64）
-	KindStr                   // str 描述符指標
-	KindVec                   // vec 描述符指標
-	KindArr                   // arr 描述符指標
-	KindStruct                // struct 指標
+	KindScalar    ValKind = iota // 純量（i32/i64/f32/f64）
+	KindStr                      // str 描述符指標
+	KindVec                      // vec 描述符指標
+	KindArr                      // arr 描述符指標
+	KindStruct                   // struct 指標
+	KindRawOption                // raw VFS option record pointer (tag + i64 payload)
 )
 
 // StructFieldLayout 描述單一 struct 欄位的記憶體佈局。
@@ -187,12 +181,12 @@ func (g *Generator) addStrDescriptor(s string) uint32 {
 // 實際程式碼主體由 emitMallocFreeCode 於所有宣告完成後發射，
 // 確保 functions 與 codes 順序一致（function index = import_count + position）。
 //
-// 函數 index 固定為 mallocIdx=3、freeIdx=4，在 _start 之後、用戶函數之前。
+// function index 由實際 import 數量決定，在 _start 之後、用戶函數之前。
 func (g *Generator) declareMallocFree() {
 	// malloc(i32 size) -> i32 ptr
 	mallocType := g.internType([]ValType{I32}, []ValType{I32})
-	g.addFunction(mallocType) // index 3
-	g.funcTable["malloc"] = mallocIdx
+	g.mallocIdx = g.addFunction(mallocType)
+	g.funcTable["malloc"] = g.mallocIdx
 	g.funcParams["malloc"] = []ValType{I32}
 	g.funcParamNames["malloc"] = []string{"size"}
 	g.funcResults["malloc"] = []ValType{I32}
@@ -200,8 +194,8 @@ func (g *Generator) declareMallocFree() {
 
 	// free(i32 ptr) -> ()
 	freeType := g.internType([]ValType{I32}, nil)
-	g.addFunction(freeType) // index 4
-	g.funcTable["free"] = freeIdx
+	g.freeIdx = g.addFunction(freeType)
+	g.funcTable["free"] = g.freeIdx
 	g.funcParams["free"] = []ValType{I32}
 	g.funcParamNames["free"] = []string{"ptr"}
 	g.funcResults["free"] = nil
@@ -251,13 +245,13 @@ func (g *Generator) emitMallocFreeCode() {
 // emitMallocCall 發射 call malloc。堆疊需求：[size: i32]。結果：[ptr: i32]。
 func (g *Generator) emitMallocCall(sb *bytes.Buffer) {
 	sb.WriteByte(OpCall)
-	writeU32LEB(sb, mallocIdx)
+	writeU32LEB(sb, g.mallocIdx)
 }
 
 // emitFreeCall 發射 call free。堆疊需求：[ptr: i32]。結果：無。
 func (g *Generator) emitFreeCall(sb *bytes.Buffer) {
 	sb.WriteByte(OpCall)
-	writeU32LEB(sb, freeIdx)
+	writeU32LEB(sb, g.freeIdx)
 }
 
 // ---- 記憶體 load/store 輔助（i32/i64） ----

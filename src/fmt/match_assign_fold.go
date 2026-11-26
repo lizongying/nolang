@@ -46,6 +46,11 @@ package fmt
 //     （docs/design/nolang-parser-lowering-invariants.md §21.7 #5）。
 //  8. 任一臂的值是 option 構造（`ok(x)` / `err(x)` / `nil`）則放棄：賦值點的隱式
 //     包裝語義會在折疊後消失，混合裸值與包裝值會讓 match 產出型別自相矛盾。
+//  9. 任一臂的值是 struct 字面量（`X{}` / `X{ a: 1 }`）則放棄：折疊後它落在 match
+//     臂的 statement 位置，parser 會把 `X{}` 當成空介面定義（InterfaceDefinition），
+//     值語境驗證遂報 9q9raufb「match arm in expression context must end with an
+//     expression」。原始形態 `-> node = X{}` 中 struct 字面量在賦值右值位置，解析
+//     正常；只有折疊後才踩到這個歧義，故保守跳過（見 isStructLiteralValue）。
 
 import (
 	"github.com/lizongying/nolang/parser"
@@ -98,8 +103,8 @@ func (f *formatter) foldableMatchAssign(sm *parser.SurfaceMatch) (string, map[*p
 		if !ok {
 			return "", nil, false // (2)(5)
 		}
-		if isOptionCtorValue(val) {
-			return "", nil, false // (8)
+		if isOptionCtorValue(val) || isStructLiteralValue(val) {
+			return "", nil, false // (8)(9)
 		}
 		if name == "" {
 			name = armName
@@ -112,6 +117,18 @@ func (f *formatter) foldableMatchAssign(sm *parser.SurfaceMatch) (string, map[*p
 		return "", nil, false
 	}
 	return name, values, true
+}
+
+// isStructLiteralValue 報告臂的產出值是否為 struct 字面量（`X{}` / `X{ a: 1 }`）。
+//
+// 判據 (9)：struct 字面量在賦值右值位置（`node = X{}`）解析正常，但折疊後
+// `-> X{}` 讓它落在 match 臂的 statement 位置，那裡 `Ident{...}` 被 parser
+// 當成介面定義（InterfaceDefinition），值語境驗證因最後一條語句不是
+// ExpressionStatement 而報 9q9raufb。formatter 無型別資訊，但「臂值為 struct
+// 字面量」正是觸發這條路徑的充分條件，整組放棄折疊即可保留原始合法形态。
+func isStructLiteralValue(e parser.Expression) bool {
+	_, ok := e.(*parser.StructLiteral)
+	return ok
 }
 
 // foldArmAssign 從臂內的唯一陳述取出「目標名 + 產出值」。接受兩種拼寫：

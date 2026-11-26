@@ -130,6 +130,10 @@ EMPTY_SHA=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 # 直接照抄 scripts/mir_golden.sh 的實作（perl 只殺直接子行程是不夠的：
 # clang / 被編出來的程式 / no run 的孫行程都會活下來）。
 # 逾時回 142，這裡正規化成 124。
+# ⚠️ 所有語料執行一律附上 </dev/null：corpus 內的程式可能讀 stdin
+#   （例：tests/loop-test.no 走 fs.get-line()），那會讓指紋不可重現，
+#   且共用同一個 fd 時會把外層 `while read ... done < files.txt` 的剩餘行吃光。
+#   與 mir_golden.sh 的 `< /dev/null` 口徑一致。
 run_to() {
   perl -MPOSIX -e '
     my $t = shift;
@@ -201,9 +205,9 @@ fp() {
   local o="$WORKDIR/o.$tag" e="$WORKDIR/e.$tag"
   local rc
   if [ "$sub" = "-" ]; then
-    run_to "$TMO" "$bin" "$f" >"$o" 2>"$e"
+    run_to "$TMO" "$bin" "$f" </dev/null >"$o" 2>"$e"
   else
-    run_to "$TMO" "$bin" "$sub" "$f" >"$o" 2>"$e"
+    run_to "$TMO" "$bin" "$sub" "$f" </dev/null >"$o" 2>"$e"
   fi
   rc=$?
   [ "$rc" = "142" ] && rc=124
@@ -362,12 +366,12 @@ echo
 #    實測（2026-10-10）：`./bin/no compiler/tests/tok-test.no` 的 stdout 雜湊
 #    = febadc57…（usage），三個測試檔完全一樣；改成 `run` 後才有真訊號。
 if echo ",$LEVELS," | grep -q ',L0,'; then
-  echo "--- L0 單元測試（compiler/tests/*_test.no）---"
+  echo "--- L0 單元測試（compiler/tests/*-test.no）---"
   SAVED_CORPUS="$CORPUS"; SAVED_GLOB="$GLOB"
-  CORPUS="compiler/tests"; GLOB='*_test.no'
+  CORPUS="compiler/tests"; GLOB='*-test.no'
   n=$(collect_corpus)
   if [ "$n" = "0" ]; then
-    echo "  （沒有 *_test.no，UNAVAILABLE）"
+    echo "  （沒有 *-test.no，UNAVAILABLE）"
     echo "UNAVAILABLE" > "$WORKDIR/L0.status"
   else
     run_diff_level L0 run
@@ -476,8 +480,8 @@ if echo ",$LEVELS," | grep -q ',L3,'; then
     for f in $probe; do
       nprobe=$((nprobe + 1))
       tag=$(echo "stab.$f" | tr '/ ' '__')
-      run_to "$TMO" "$CTL" vet "$f" >"$WORKDIR/o.$tag.1" 2>/dev/null
-      run_to "$TMO" "$CTL" vet "$f" >"$WORKDIR/o.$tag.2" 2>/dev/null
+      run_to "$TMO" "$CTL" vet "$f" </dev/null >"$WORKDIR/o.$tag.1" 2>/dev/null
+      run_to "$TMO" "$CTL" vet "$f" </dev/null >"$WORKDIR/o.$tag.2" 2>/dev/null
       h1=$(norm_diag "$WORKDIR/o.$tag.1" | shasum -a 256 | awk '{print $1}')
       h2=$(norm_diag "$WORKDIR/o.$tag.2" | shasum -a 256 | awk '{print $1}')
       if [ "$h1" != "$h2" ]; then
@@ -498,9 +502,9 @@ if echo ",$LEVELS," | grep -q ',L3,'; then
       errdiff=0
       while IFS= read -r f; do
         tag=$(echo "L3.$f" | tr '/ ' '__')
-        run_to "$TMO" "$CTL" vet "$f" >"$WORKDIR/o.$tag" 2>/dev/null
+        run_to "$TMO" "$CTL" vet "$f" </dev/null >"$WORKDIR/o.$tag" 2>/dev/null
         norm_diag "$WORKDIR/o.$tag" | sort > "$WORKDIR/n.ctl"
-        run_to "$TMO" "$SUT" vet "$f" >"$WORKDIR/o.s.$tag" 2>/dev/null
+        run_to "$TMO" "$SUT" vet "$f" </dev/null >"$WORKDIR/o.s.$tag" 2>/dev/null
         norm_diag "$WORKDIR/o.s.$tag" | sort > "$WORKDIR/n.sut"
         if ! cmp -s "$WORKDIR/n.ctl" "$WORKDIR/n.sut"; then
           l3diff=$((l3diff + 1))
@@ -545,7 +549,7 @@ if echo ",$LEVELS," | grep -q ',L4,'; then
       for f in $(awk '{print $3}' "$L4_GOLDEN" | head -n "$L4_SELFCHECK"); do
         [ -f "$f" ] || continue
         tag=$(echo "L4sc.$f" | tr '/ ' '__')
-        run_to "$TMO" "$CTL" run "$f" >"$WORKDIR/o.$tag" 2>/dev/null
+        run_to "$TMO" "$CTL" run "$f" </dev/null >"$WORKDIR/o.$tag" 2>/dev/null
         rc=$?; [ "$rc" = "142" ] && rc=124
         h=$(sha_of "$WORKDIR/o.$tag"); [ -z "$h" ] && h="$EMPTY_SHA"
         grc=$(awk -v p="$f" '$3==p {print $1; exit}' "$L4_GOLDEN")
@@ -570,7 +574,7 @@ if echo ",$LEVELS," | grep -q ',L4,'; then
         grc=$(awk -v p="$f" '$3==p {print $1; exit}' "$L4_GOLDEN")
         [ -z "$grc" ] && continue
         tag=$(echo "L4.$f" | tr '/ ' '__')
-        run_to "$TMO" "$SUT" run "$f" >"$WORKDIR/o.$tag" 2>/dev/null
+        run_to "$TMO" "$SUT" run "$f" </dev/null >"$WORKDIR/o.$tag" 2>/dev/null
         rc=$?; [ "$rc" = "142" ] && rc=124
         h=$(sha_of "$WORKDIR/o.$tag"); [ -z "$h" ] && h="$EMPTY_SHA"
         echo "$grc $gh $rc $h $f" >> "$WORKDIR/L4.tsv"

@@ -256,16 +256,99 @@ long long noui_gpu_display_scale1000(void) {
 /* ============================================================================
  * 字体与纹理
  * ============================================================================ */
+
+/* 阶段85：最近一次成功的字体路径（DPI 重开时复用同一路径、新字号） */
+static char g_font_path[1024] = "";
+static double g_font_pts = 0.0;
+
+/* 纹理来源：0 = 图片（img-load），1 = 文字（text-load，随字号作废）。 */
+static Uint8 g_tex_src[NOUI_GPU_TEX_MAX];
+
+static void drop_texture_at(int i);   /* 前向声明：定义在纹理区之后 */
+
 int noui_gpu_font_init(const char *path, double ptsize) {
-    if (g_font) { TTF_CloseFont(g_font); g_font = NULL; }
-    g_font = TTF_OpenFont(path, (float)ptsize);
-    return g_font ? 1 : 0;
+    if (g_font) {
+        /* 重开（DPI 变化）：字号变了，文字纹理缓存全部作废；图片不受影响。 */
+        for (int i = 0; i < NOUI_GPU_TEX_MAX; i++) {
+            if (g_tex_src[i]) drop_texture_at(i);
+        }
+        TTF_CloseFont(g_font);
+        g_font = NULL;
+    }
+    TTF_Font *f = TTF_OpenFont(path, (float)ptsize);
+    if (!f) return 0;
+    g_font = f;
+    snprintf(g_font_path, sizeof(g_font_path), "%s", path);
+    g_font_pts = ptsize;
+    return 1;
 }
+
+const char *noui_gpu_font_path(void) { return g_font_path; }
+
+double noui_gpu_font_size(void) { return g_font_pts; }
 
 int noui_gpu_font_active(void) { return g_font ? 1 : 0; }
 
 void noui_gpu_font_close(void) {
     if (g_font) { TTF_CloseFont(g_font); g_font = NULL; }
+}
+
+/* 阶段85：GPU 后端的候选清单（与软件后端同语义，逐条 malloc、无长度上限）。
+ * Nolang 侧存不了多字符串，所以 add/count/at/defaults 都下沉到 C；Nolang
+ * 只做「按序尝试」的循环。扩容与存储策略与软件后端一致。 */
+/* g_font_path 仍是有界缓冲（只记「最近一次打开成功」的路径，能打开说明它
+ * 没超过文件系统上限）；候选清单本身无长度限制。 */
+static char **g_gfcands = NULL;
+static int g_ngfcands = 0;
+static int g_gfcap = 0;
+
+static const char *GPU_FONT_DEFAULTS[5] = {
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Menlo.ttc"
+};
+
+void noui_gpu_font_cands_clear(void) {
+    int k;
+    for (k = 0; k < g_ngfcands; k++) free(g_gfcands[k]);
+    g_ngfcands = 0;
+}
+int noui_gpu_font_cands_add(const char *path) {
+    char *dup;
+    if (!path || !path[0]) return 0;
+    if (g_ngfcands >= g_gfcap) {
+        int nc = g_gfcap ? g_gfcap * 2 : 8;
+        char **buf = (char **)realloc(g_gfcands, (size_t)nc * sizeof(char *));
+        if (!buf) return 0;
+        g_gfcands = buf;
+        g_gfcap = nc;
+    }
+    dup = strdup(path);
+    if (!dup) return 0;
+    g_gfcands[g_ngfcands++] = dup;
+    return 1;
+}
+long long noui_gpu_font_cands_count(void) { return g_ngfcands; }
+const char *noui_gpu_font_cands_at(long long i) {
+    if (i < 0 || i >= g_ngfcands || !g_gfcands[i]) return "";
+    return g_gfcands[i];
+}
+long long noui_gpu_font_defaults_count(void) {
+    return (long long)(sizeof(GPU_FONT_DEFAULTS) / sizeof(GPU_FONT_DEFAULTS[0]));
+}
+const char *noui_gpu_font_defaults_at(long long i) {
+    long long n = noui_gpu_font_defaults_count();
+    if (i < 0 || i >= n) return "";
+    return GPU_FONT_DEFAULTS[i];
+}
+
+int noui_gpu_font_reopen(double scale1000) {
+    if (!g_font_path[0]) return 0;
+    double sc = scale1000 / 1000.0;
+    if (sc < 1.0) sc = 1.0;
+    return noui_gpu_font_init(g_font_path, 16.0 * sc);
 }
 
 static SDL_GPUTexture *create_texture(const unsigned char *rgba, int w, int h) {
@@ -314,8 +397,9 @@ static SDL_GPUTexture *create_texture(const unsigned char *rgba, int w, int h) {
     return tex;
 }
 
-/* 注册表：id = 下标 + 1（0 = 无效）。满了返回 0。 */
-static long long reg_texture(SDL_GPUTexture *tex, int w, int h) {
+/* 注册表：id = 下标 + 1（0 = 无效）。is_text=1 标记文字纹理（字号变了要作废）。
+ * 满了返回 0。 */
+static long long reg_texture(SDL_GPUTexture *tex, int w, int h, int is_text) {
     int i;
     if (!tex) return 0;
     for (i = 0; i < NOUI_GPU_TEX_MAX; i++) {
@@ -323,6 +407,7 @@ static long long reg_texture(SDL_GPUTexture *tex, int w, int h) {
             g_tex[i] = tex;
             g_tex_w[i] = (Uint32)w;
             g_tex_h[i] = (Uint32)h;
+            g_tex_src[i] = is_text ? 1 : 0;
             return (long long)i + 1;
         }
     }
@@ -335,6 +420,7 @@ static void drop_texture_at(int i) {
     g_tex[i] = NULL;
     g_tex_w[i] = 0;
     g_tex_h[i] = 0;
+    g_tex_src[i] = 0;
 }
 
 static unsigned char *read_file_all(const char *path, long *out_len) {
@@ -365,7 +451,7 @@ long long noui_gpu_img_load(const char *path) {
     int w = im.w, h = im.h;
     noui_img_free(&im);
     if (!tex) return 0;
-    long long id = reg_texture(tex, w, h);
+    long long id = reg_texture(tex, w, h, 0);
     if (!id) { SDL_ReleaseGPUTexture(g_dev, tex); return 0; }
     return id;
 }
@@ -417,7 +503,7 @@ long long noui_gpu_text_load(const char *text) {
     int w = rgba->w, h = rgba->h;
     SDL_DestroySurface(rgba);
     if (!tex) return 0;
-    long long id = reg_texture(tex, w, h);
+    long long id = reg_texture(tex, w, h, 1);
     if (!id) { SDL_ReleaseGPUTexture(g_dev, tex); return 0; }
     text_cache_put(text, id);
     return id;

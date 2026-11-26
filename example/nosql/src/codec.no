@@ -1,0 +1,710 @@
+; SQLite variable-length integers, serial types, and record encoding.
+
+# /example/nosql/src/value
+
+varint-result {
+    valid(value i64, next i64),
+    invalid-offset,
+    truncated,
+}
+
+serial-value-result {
+    valid(value sql-value, next i64),
+    invalid-offset,
+    truncated,
+    reserved,
+    malformed,
+}
+
+record-encode-result {
+    valid(data []byte),
+    too-big,
+}
+
+record-decode-result {
+    valid(values []sql-value, next i64),
+    invalid-offset,
+    truncated,
+    reserved,
+    malformed,
+}
+
+varint-result.is-valid = () (yes bool) {
+    current = .
+    current: {
+        valid -> yes = true
+
+        -> yes = false
+    }
+}
+
+varint-result.is-invalid-offset = () (yes bool) {
+    current = .
+    current: {
+        invalid-offset -> yes = true
+
+        -> yes = false
+    }
+}
+
+varint-result.is-truncated = () (yes bool) {
+    current = .
+    current: {
+        truncated -> yes = true
+
+        -> yes = false
+    }
+}
+
+record-encode-result.is-valid = () (yes bool) {
+    current = .
+    current: {
+        valid -> yes = true
+
+        -> yes = false
+    }
+}
+
+record-encode-result.is-too-big = () (yes bool) {
+    current = .
+    current: {
+        too-big -> yes = true
+
+        -> yes = false
+    }
+}
+
+record-decode-result.is-valid = () (yes bool) {
+    current = .
+    current: {
+        valid -> yes = true
+
+        -> yes = false
+    }
+}
+
+record-decode-result.is-invalid-offset = () (yes bool) {
+    current = .
+    current: {
+        invalid-offset -> yes = true
+
+        -> yes = false
+    }
+}
+
+record-decode-result.is-truncated = () (yes bool) {
+    current = .
+    current: {
+        truncated -> yes = true
+
+        -> yes = false
+    }
+}
+
+record-decode-result.is-reserved = () (yes bool) {
+    current = .
+    current: {
+        reserved -> yes = true
+
+        -> yes = false
+    }
+}
+
+record-decode-result.is-malformed = () (yes bool) {
+    current = .
+    current: {
+        malformed -> yes = true
+
+        -> yes = false
+    }
+}
+
+; Number of bytes in SQLite's canonical varint representation.
+varint-size = (value i64) (size i64) {
+    size = 1
+    remaining u64 = value
+    i <- [0..8): {
+        remaining <= 127 -> return
+        remaining = remaining >> 7
+        size = i + 2: {
+            ok -> it
+
+            -> size
+        }
+    }
+}
+
+encode-varint = (value i64) (out []byte) {
+    size = varint-size(value)
+    out = with-len(size)
+    remaining u64 = value
+    last = size - 1: {
+        ok -> it
+
+        -> 0
+    }
+    i <- [0..size): {
+        {
+            size == 9 && i < 8 -> {
+                out[i]: {
+                    ok -> it = (remaining & 127) | 128
+
+                    -> _
+                }
+                remaining = remaining >> 7
+            }
+
+            size == 9 -> {
+                out[i]: {
+                    ok -> it = remaining & 255
+
+                    -> _
+                }
+            }
+
+            -> {
+                {
+                    i < last -> {
+                        out[i]: {
+                            ok -> it = (remaining & 127) | 128
+
+                            -> _
+                        }
+                    }
+
+                    -> {
+                        out[i]: {
+                            ok -> it = remaining & 127
+
+                            -> _
+                        }
+                    }
+                }
+                remaining = remaining >> 7
+            }
+        }
+    }
+}
+
+decode-varint = (data []byte, offset i64) (out varint-result) {
+    offset < 0 -> {
+        out = invalid-offset
+        return
+    }
+    offset >= data.len() -> {
+        out = truncated
+        return
+    }
+
+    #{overflow=wrap}
+    available = data.len() - offset: {
+        ok -> it
+
+        -> 0
+    }
+    limit = 9
+    available < limit -> limit = available
+    decoded = 0
+    i <- [0..limit): {
+        pos = offset + i: {
+            ok -> it
+
+            -> 0
+        }
+        raw = data[pos]: {
+            ok(byte-value) -> byte-value
+
+            -> 0
+        }
+        i == 8 -> {
+            decoded = decoded | (raw << 56)
+            next = pos + 1: {
+                ok -> it
+
+                -> 0
+            }
+            out = valid(decoded, next)
+            return
+        }
+
+        #{overflow=wrap}
+        decoded = decoded | ((raw & 127) << (i * 7))
+        raw < 128 -> {
+            next = pos + 1: {
+                ok -> it
+
+                -> 0
+            }
+            out = valid(decoded, next)
+            return
+        }
+    }
+
+    out = truncated
+}
+
+; Payload byte count, or -1 for negative/reserved serial types.
+serial-type-size = (serial i64) (size i64) {
+    size = -1
+    serial < 0 -> return
+    {
+        serial == 0 -> size = 0
+
+        serial >= 1 && serial <= 6 -> {
+            serial == 5 -> {
+                size = 6
+                return
+            }
+            serial == 6 -> {
+                size = 8
+                return
+            }
+            size = serial
+        }
+
+        serial == 7 -> size = 8
+
+        serial == 8 || serial == 9 -> size = 0
+
+        serial == 10 || serial == 11 -> return
+
+        -> {
+            {
+                serial & 1 == 0 -> {
+                    size = (serial - 12) / 2: {
+                        ok -> it
+
+                        -> 0
+                    }
+                }
+
+                -> {
+                    size = (serial - 13) / 2: {
+                        ok -> it
+
+                        -> 0
+                    }
+                }
+            }
+        }
+    }
+}
+
+integer-serial = (value i64) (serial i64) {
+    {
+        value == 0 -> serial = 8
+
+        value == 1 -> serial = 9
+
+        value >= -128 && value <= 127 -> serial = 1
+
+        value >= -32768 && value <= 32767 -> serial = 2
+
+        value >= -8388608 && value <= 8388607 -> serial = 3
+
+        value >= -2147483648 && value <= 2147483647 -> serial = 4
+
+        value >= -140737488355328 && value <= 140737488355327 -> serial = 5
+
+        -> serial = 6
+    }
+}
+
+serial-of-value = (v sql-value) (out ?i64) {
+    v: {
+        sql-null -> out = ok(0)
+
+        integer(number) -> out = ok(integer-serial(number))
+
+        real -> out = ok(7)
+
+        text(text-value) -> out = 13 + text-value.len-bytes() * 2
+
+        blob(blob-value) -> out = 12 + blob-value.len() * 2
+    }
+}
+
+encode-value-body = (v sql-value) (out []byte) {
+    v: {
+        sql-null -> return
+
+        integer(integer-number) -> {
+            serial = integer-serial(integer-number)
+            width = serial-type-size(serial)
+            encoded = integer-number.to-bytes-be()
+            start = 8 - width: {
+                ok -> it
+
+                -> 0
+            }
+            out = encoded.slice(start, 8)
+        }
+
+        real(real-number) -> {
+            bits u64 = real-number.to-bits()
+            raw i64 = bits
+            out = raw.to-bytes-be()
+        }
+
+        text(text-value) -> out = text-value.to-bytes()
+
+        blob(blob-value) -> out = blob-value.slice(0, blob-value.len())
+    }
+}
+
+encode-record = (values []sql-value) (out record-encode-result) {
+    count = values.len()
+    serials []i64
+    body-size = 0
+    i <- [0..count): {
+        item = values[i]: {
+            ok(stored-value) -> stored-value
+
+            -> value.null-value()
+        }
+        serial-option ?i64 = serial-of-value(item)
+        serial-option: {
+            ok(serial-number) -> {
+                serials.push(serial-number)
+                width = serial-type-size(serial-number)
+                body-size = body-size + width: {
+                    ok -> it
+
+                    -> body-size
+                }
+            }
+
+            err -> {
+                out = too-big
+                return
+            }
+
+            -> {
+                out = too-big
+                return
+            }
+        }
+    }
+
+    header-size = 1
+    i <- [0..9): {
+        candidate = 1
+        j <- [0..serials.len()): {
+            serial-number = serials[j]: {
+                ok(stored-serial) -> stored-serial
+
+                -> 0
+            }
+            candidate = candidate + varint-size(serial-number): {
+                ok -> it
+
+                -> candidate
+            }
+        }
+        candidate == header-size -> break
+        header-size = candidate
+    }
+
+    total = header-size + body-size: {
+        ok -> it
+
+        -> 0
+    }
+    encoded []byte = with-len(total)
+    pos = 0
+    header = encode-varint(header-size)
+    i <- [0..header.len()): {
+        header-byte = header[i]: {
+            ok(stored-byte) -> stored-byte
+
+            -> 0
+        }
+        encoded[pos]: {
+            ok -> it = header-byte
+
+            -> _
+        }
+        pos = pos + 1: {
+            ok -> it
+
+            -> pos
+        }
+    }
+    i <- [0..serials.len()): {
+        serial-number = serials[i]: {
+            ok(stored-serial) -> stored-serial
+
+            -> 0
+        }
+        serial-bytes = encode-varint(serial-number)
+        j <- [0..serial-bytes.len()): {
+            serial-byte = serial-bytes[j]: {
+                ok(stored-byte) -> stored-byte
+
+                -> 0
+            }
+            encoded[pos]: {
+                ok -> it = serial-byte
+
+                -> _
+            }
+            #{overflow=wrap}
+            pos = pos + 1: {
+                ok -> it
+
+                -> pos
+            }
+        }
+    }
+
+    i <- [0..count): {
+        item = values[i]: {
+            ok(stored-value) -> stored-value
+
+            -> value.null-value()
+        }
+        body = encode-value-body(item)
+        j <- [0..body.len()): {
+            body-byte = body[j]: {
+                ok(stored-byte) -> stored-byte
+
+                -> 0
+            }
+            encoded[pos]: {
+                ok -> it = body-byte
+
+                -> _
+            }
+            #{overflow=wrap}
+            pos = pos + 1: {
+                ok -> it
+
+                -> pos
+            }
+        }
+    }
+
+    out = valid(encoded)
+}
+
+decode-signed-be = (data []byte, offset i64, width i64) (out i64) {
+    #{overflow=wrap}
+    end = offset + width: {
+        ok -> it
+
+        -> 0
+    }
+    bytes = data.slice(offset, end)
+    raw = bytes.to-i64-be()
+    width == 8 -> {
+        out = raw
+        return
+    }
+
+    #{overflow=wrap}
+    bits = width * 8: {
+        ok -> it
+
+        -> 0
+    }
+    #{overflow=wrap}
+    sign-bit = bits - 1: {
+        ok -> it
+
+        -> 0
+    }
+    sign = 1 << sign-bit
+    raw & sign != 0 -> {
+        modulus = 1 << bits
+        #{overflow=wrap}
+        out = raw - modulus: {
+            ok -> it
+
+            -> 0
+        }
+        return
+    }
+    out = raw
+}
+
+decode-serial-value = (data []byte, offset i64, serial i64) (out serial-value-result) {
+    offset < 0 -> {
+        out = invalid-offset
+        return
+    }
+    offset > data.len() -> {
+        out = truncated
+        return
+    }
+    serial < 0 -> {
+        out = malformed
+        return
+    }
+    size = serial-type-size(serial)
+    size < 0 -> {
+        out = reserved
+        return
+    }
+    #{overflow=wrap}
+    available = data.len() - offset: {
+        ok -> it
+
+        -> 0
+    }
+    size > available -> {
+        out = truncated
+        return
+    }
+    #{overflow=wrap}
+    next = offset + size: {
+        ok -> it
+
+        -> 0
+    }
+
+    {
+        serial == 0 -> out = valid(value.null-value(), next)
+
+        serial >= 1 && serial <= 6 -> {
+            integer-number = decode-signed-be(data, offset, size)
+            out = valid(value.integer-value(integer-number), next)
+        }
+
+        serial == 7 -> {
+            raw = data.slice(offset, next).to-i64-be()
+            bits u64 = raw
+            real-number = bits.from-bits()
+            out = valid(value.real-value(real-number), next)
+        }
+
+        serial == 8 -> out = valid(value.integer-value(0), next)
+
+        serial == 9 -> out = valid(value.integer-value(1), next)
+
+        -> {
+            bytes = data.slice(offset, next)
+            {
+                serial & 1 == 0 -> out = valid(value.blob-value(bytes), next)
+
+                -> {
+                    text-option ?str = bytes.to-str()
+                    text-option: {
+                        ok(text-value) -> out = valid(value.text-value(text-value), next)
+
+                        -> out = malformed
+                    }
+                }
+            }
+        }
+    }
+}
+
+decode-record = (data []byte, offset i64) (out record-decode-result) {
+    header-varint = decode-varint(data, offset)
+    header-varint: {
+        valid(header-size, after-size) -> {
+            header-size < 0 -> {
+                out = malformed
+                return
+            }
+            #{overflow=wrap}
+            available = data.len() - offset: {
+                ok -> it
+
+                -> 0
+            }
+            header-size > available -> {
+                out = truncated
+                return
+            }
+            #{overflow=wrap}
+            varint-bytes = after-size - offset: {
+                ok -> it
+
+                -> 0
+            }
+            header-size < varint-bytes -> {
+                out = malformed
+                return
+            }
+            #{overflow=wrap}
+            header-end = offset + header-size: {
+                ok -> it
+
+                -> 0
+            }
+            serials []i64
+            cursor = after-size
+            (cursor < header-end) {
+                serial-varint = decode-varint(data, cursor)
+                serial-varint: {
+                    valid(serial-number, after-serial) -> {
+                        after-serial > header-end -> {
+                            out = malformed
+                            return
+                        }
+                        serial-number < 0 -> {
+                            out = malformed
+                            return
+                        }
+                        serials.push(serial-number)
+                        cursor = after-serial
+                    }
+
+                    invalid-offset -> {
+                        out = invalid-offset
+                        return
+                    }
+
+                    -> {
+                        out = truncated
+                        return
+                    }
+                }
+            }
+
+            values []sql-value
+            cursor = header-end
+            i <- [0..serials.len()): {
+                serial-number = serials[i]: {
+                    ok(stored-serial) -> stored-serial
+
+                    -> 0
+                }
+                decoded = decode-serial-value(data, cursor, serial-number)
+                decoded: {
+                    valid(decoded-value, after-value) -> {
+                        values.push(decoded-value)
+                        cursor = after-value
+                    }
+
+                    invalid-offset -> {
+                        out = invalid-offset
+                        return
+                    }
+
+                    truncated -> {
+                        out = truncated
+                        return
+                    }
+
+                    reserved -> {
+                        out = reserved
+                        return
+                    }
+
+                    -> {
+                        out = malformed
+                        return
+                    }
+                }
+            }
+
+            out = valid(values, cursor)
+        }
+
+        invalid-offset -> out = invalid-offset
+
+        -> out = truncated
+    }
+}

@@ -5,16 +5,16 @@
 ; ============================================================================
 
 ; ---------- 主题（Tailwind 风格调色板 + 尺寸） ----------
-C-BG = 0x1E1E28FF
-C-SURFACE = 0x2A2A3AFF
-C-PRIMARY = 0x4A90E2FF
-C-PRIMARY-HOVER = 0x6AA5F5FF
-C-TEXT = 0xE8E8F0FF
-C-MUTED = 0x9AA0B4FF
-C-SUCCESS = 0x50C878FF
-C-DANGER = 0xE2575AFF
+C-BG = 0x1e1e28ff
+C-SURFACE = 0x2a2a3aff
+C-PRIMARY = 0x4a90e2ff
+C-PRIMARY-HOVER = 0x6aa5f5ff
+C-TEXT = 0xe8e8f0ff
+C-MUTED = 0x9aa0b4ff
+C-SUCCESS = 0x50c878ff
+C-DANGER = 0xe2575aff
 
-SP-1 = 400      ; 4px（定点 *100）
+SP-1 = 400; 4px（定点 *100）
 SP-2 = 800
 SP-3 = 1200
 SP-4 = 1600
@@ -55,6 +55,7 @@ el-attach = (parent i64, child i64) {
     CHILD.push(child)
     nc = cnt + 1: {
         ok -> it
+
         err -> cnt
     }
     EL-COUNT[parent] = nc
@@ -140,5 +141,9 @@ all-ok = r1 && r2 && r3 && r4 && r5 && r6
 print('elements={kc} root-children={rcc} card-children={ccc}')
 print('theme: btn-color={r4} label-color={r6} tree={r2}{r3} txt={r5}')
 print('all-ok={all-ok}')
-(all-ok) -> { print('ALL WIDGET TESTS PASSED') }
-(!all-ok) -> { print('SOME TESTS FAILED'); exit(1) }
+(all-ok) -> {
+    print('ALL WIDGET TESTS PASSED')
+}
+(! all-ok) -> {
+    print('SOME TESTS FAILED'); exit(1) }
+}

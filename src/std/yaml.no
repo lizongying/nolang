@@ -4103,6 +4103,13 @@ yaml.stringify = () (out str) {
     out = .to-yaml()
 }
 
+; yaml.pretty: literal-style YAML text.
+; out: same block-style YAML text as to-yaml
+; [pretty](#yaml.pretty)
+yaml.pretty = () (out str) {
+    out = .to-yaml()
+}
+
 ; 原始输入文本
 ; out: 解析時的原始输入文本
 ; [source-of](#yaml.source-of)

@@ -249,15 +249,13 @@ main = () {
 	assertEveryOperandDefined(t, mod, "main")
 }
 
-// TestBorrowedEnumPayloadAliasIsCloned: the payload peeled out of a tagged enum
-// by OpEnumField is a BORROW — the enum owns the buffer and frees it. A copy of
-// that peel must therefore stay a COPY: turning it into a move would hand the
-// destination a buffer the enum still frees (a double free, not a leak).
-//
-// This is exactly what tests/tagged-enum-two-match.no caught when the "source
-// dead ⇒ move" rule first shipped BELOW the borrow test: the second match's
-// `x <- items` iterated the freed payload and printed nothing at all.
-func TestBorrowedEnumPayloadAliasIsCloned(t *testing.T) {
+// TestOwnedEnumSliceExtractionAliasMovesPrivateClone covers the ownership chain
+// for a repeatedly matched enum slice payload. Each OpEnumField now deep-clones
+// the enum's slice, so the following dead-source move transfers that PRIVATE copy
+// to the loop variable instead of aliasing a buffer the enum still owns. The MIR
+// cannot show the extraction clone (it is emitted inside emitEnumField), so pin
+// both the analysis/drop chain and the exact LLVM load->clone sequence.
+func TestOwnedEnumSliceExtractionAliasMovesPrivateClone(t *testing.T) {
 	mod := lowerForTest(t, `
 list-res {
     ok(items []str),
@@ -286,11 +284,94 @@ main = () {
     }
 }
 `)
-	clones, _, dump := aliasCounts(t, mod, "main")
-	if clones == 0 {
-		t.Errorf("a borrow-sourced copy was turned into a move: clones=0, want >=1\n%s", dump)
+	fid, ok := mod.FuncByName["main"]
+	if !ok {
+		t.Fatal("main not found in lowered module")
+	}
+	f := mod.Func(fid)
+	if f == nil {
+		t.Fatal("main is not resolvable")
+	}
+	extractions := 0
+	moveDsts := map[ValueID]int{}
+	drops := map[ValueID]int{}
+	enumDrops := 0
+	for _, bid := range f.Blocks {
+		blk := mod.Block(bid)
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := mod.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			switch inst.Op {
+			case OpEnumField:
+				extractions++
+				if len(inst.Args) == 0 || !mod.enumOwnsPayload[inst.Args[0]] {
+					t.Errorf("enum extraction source is not marked owning: %s", inst.Op)
+				}
+				if mod.isBorrowRead(f, inst) || !mod.dropOwnsHeap(f, inst.Dst) {
+					t.Errorf("enum slice extraction is not an owned private clone: %s", inst.Op)
+				}
+			case OpMove:
+				if src, dst := moveSrc(inst), moveDst(inst); src > NoVal && dst > NoVal {
+					moveDsts[dst]++
+				}
+			case OpDrop:
+				if len(inst.Args) > 0 && inst.Args[0] > NoVal {
+					drops[inst.Args[0]]++
+					if ty := mod.valueTypeOf(f, inst.Args[0]); ty != nil && ty.Kind == KindEnum {
+						enumDrops++
+					}
+				}
+			}
+		}
+	}
+	if extractions != 2 {
+		t.Errorf("got %d enum slice extractions, want 2\n%s", extractions, mod.DumpAnnotated())
+	}
+	if enumDrops == 0 {
+		t.Errorf("the owning enum has no destructor drop\n%s", mod.DumpAnnotated())
+	}
+	for dst, moves := range moveDsts {
+		ty := mod.valueTypeOf(f, dst)
+		if ty == nil || ty.Kind != KindSlice {
+			continue
+		}
+		if moves != 1 || drops[dst] != 1 {
+			t.Errorf("private slice destination %d has %d moves and %d drops, want 1 each\n%s",
+				dst, moves, drops[dst], mod.DumpAnnotated())
+		}
 	}
 	assertEveryOperandDefined(t, mod, "main")
+
+	ir, err := mod.EmitLLVM()
+	if err != nil {
+		t.Fatalf("EmitLLVM failed: %v\n%s", err, mod.String())
+	}
+	body := definedBody(t, ir, "_nolang_main")
+	lines := strings.Split(body, "\n")
+	clonedExtractions := 0
+	for i, line := range lines {
+		if !strings.Contains(line, "= load %vec, %vec* %ep.") {
+			continue
+		}
+		if i+1 >= len(lines) || !strings.Contains(lines[i+1], "= call %vec @__nolang_vec_clone_") {
+			t.Errorf("owning enum slice extraction is shallow; load must be immediately cloned\n%s", body)
+		}
+		clonedExtractions++
+	}
+	if clonedExtractions != 2 {
+		t.Errorf("got %d cloned enum slice extractions, want 2\n%s", clonedExtractions, body)
+	}
+	if strings.Contains(body, "call void @vec_retain(") {
+		t.Errorf("private enum slice extraction is still retained as a borrow\n%s", body)
+	}
+	if !strings.Contains(body, "@__nolang_enum_drop_tenum_list_res") {
+		t.Errorf("owning enum destructor is missing\n%s", body)
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

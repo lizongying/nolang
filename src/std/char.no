@@ -239,7 +239,7 @@ char.to-str = () (s str) {
 ; char.pretty: 字面量風格的字符，如 "a"（雙引號）。
 ; [pretty](#char.pretty)
 char.pretty = () (out str) {
-    out = '"' - .to-str() - '"'
+    out = .to-str()
 }
 
 ; 轉為 UTF-8 編碼的 txt（固定 256 字節結構）

@@ -123,6 +123,8 @@ F-ACTIVE = 256
 F-OVERLAY = 512 ; 叠加层：不参与父级流布局，改为在父矩形内居中，命中时先于兄弟（模态）
 F-PASS = 1024    ; 非模态叠加层（tooltip / hover-card / 通知）：仍最后画、仍可命中，
                  ; 但不设模态屏障 —— 没命中就继续找下面的兄弟（点得穿）
+F-DROP = 2048    ; 阶段84：拖放放置区。DROP_POSITION 悬停时 dv-app 记为落点并回调
+                 ; dv-app-drop-hover；DROP_COMPLETE 命中后回调 dv-app-drop。
 
 ; ---------- 布局提示位（CMP-LAY 用位或组合；声明式视图层同步过来）----------
 ; 让「怎么排」也变成数据：容器方向 / 子节点拉伸 / 交叉轴对齐。
@@ -885,6 +887,16 @@ cmp-flag-set = (h i64, bit i64) {
 }
 cmp-flag-clear = (h i64, bit i64) {
     (h >= 0 && h < CMP-KIND.len()) -> { CMP-FLAGS[h] = CMP-FLAGS[h] & (0xFFFFFFFF ^ bit) }
+}
+
+; 阶段84：把一个组件标记为拖放放置区（F-DROP）。语义在 dv-app：拖拽悬停时
+; 记为落点并回调 dv-app-drop-hover，放下时回调 dv-app-drop。
+cmp-drop-zone = (h i64, on i64) () {
+    (on) -> { cmp-flag-set(h, F-DROP) }
+    (!on) -> { cmp-flag-clear(h, F-DROP) }
+}
+cmp-is-drop = (h i64) (yes bool) {
+    yes = cmp-has(h, F-DROP)
 }
 
 ; 父子挂载（用于容器类组件）

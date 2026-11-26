@@ -165,6 +165,33 @@ func TestFoldMatchAssign(t *testing.T) {
 			want: []string{"flags = m: {"},
 		},
 		{
+			// 臂值為 struct 字面量：折疊後 `-> X{}` 在 match 臂的 statement 位置
+			// 會被 parser 當成空介面定義，值語境驗證報 9q9raufb（輸出不可重解析）。
+			// 原始形態 `-> v = X{}` 合法，故保守跳過折疊。
+			// 對應 corpus: tests/option.no、tests/vec-struct-writeback-field.no。
+			name: "struct_literal_value_kept",
+			src: "f = (m mode) (v person) {\n" +
+				"    m: {\n" +
+				"        read -> v = person{}\n\n" +
+				"        -> v = person{}\n" +
+				"    }\n" +
+				"}\n",
+			want:    []string{"m: {", "read -> v = person{}", "-> v = person{}"},
+			notWant: []string{"v = m: {"},
+		},
+		{
+			// 同一邊界：struct 字面量帶欄位初始化也必須跳過。
+			name: "struct_literal_with_fields_kept",
+			src: "f = (m mode) (v person) {\n" +
+				"    m: {\n" +
+				"        read -> v = person{ age: 1 }\n\n" +
+				"        -> v = person{ age: 0 }\n" +
+				"    }\n" +
+				"}\n",
+			want:    []string{"m: {", "read -> v = person{", "age: 1", "age: 0", "-> v = person{"},
+			notWant: []string{"v = m: {"},
+		},
+		{
 			// 值語境的 match（本身是賦值右值）不受影響。
 			name: "value_context_kept",
 			src: "f = (m mode) (flags i64) {\n" +

@@ -4969,6 +4969,13 @@ func (p *Parser) rewriteSubjectArm(prep *subjectMatchPrep, arm *MatchArm) {
 			}
 		}
 		if armIt := p.buildItBindingForArm(armTok, matched, armType, elemType, matchedVarType, isEnumType, bindName); armIt != nil {
+			// A multi-field pattern projects positional payloads from the whole
+			// tagged enum. Keep the complete enum type on the synthetic source
+			// binding; the variant payload type only describes one field and has
+			// no layout for the other `it.fN` projections.
+			if len(arm.BindingNames) > 0 {
+				armIt.Type = buildType(matchedVarType, armTok)
+			}
 			// Set the synthetic end position to cover the arm body
 			bodyEnd := arm.Body.EndPos()
 			if bodyEnd.Line == 0 && bodyEnd.Column == 0 && len(arm.Body.Statements) > 0 {
@@ -4995,6 +5002,7 @@ func (p *Parser) rewriteSubjectArm(prep *subjectMatchPrep, arm *MatchArm) {
 					extract := &LetStatement{
 						Token: tok,
 						Name:  &Identifier{Token: tok, Value: fname},
+						Type:  buildType(ftype, tok),
 						Value: &DotExpression{
 							Token:    tok,
 							Receiver: &Identifier{Token: tok, Value: bindName},

@@ -174,7 +174,7 @@ txt.to-str = () (out str) {
 ; txt.pretty: 字面量風格的固定字符串，如 'a'（單引號）。
 ; [pretty](#txt.pretty)
 txt.pretty = () (out str) {
-    out = '\'' - .to-str() - '\''
+    out = .to-str()
 }
 
 ; 將 txt 轉換為 []byte

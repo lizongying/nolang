@@ -316,6 +316,17 @@ func (f *formatter) annotationNodeWillEmit(stmt parser.Statement) bool {
 	if as, ok := stmt.(*parser.AnnotationStatement); ok {
 		return f.annotationStatementEmits(as)
 	}
+	if _, ok := stmt.(*parser.ExternStatement); ok {
+		// FFI 宣告的 `#{c}` 被 parser 直接摺進 ExternStatement（見
+		// parseAnnotationFFIDeclaration），不再保留獨立 AnnotationStatement，
+		// 也不在 attachedAnnotations 的白名單：formatExternStatement 自行寫出
+		// `#{...}`，完全不經 side-table。若這裡不認它，nodeHeadWillEmit 對 FFI
+		// 宣告恆為 false，連續 `#{c}` 宣告之間永遠不會自動補空行 —— 與平台/泛型
+		// 註解（#{mac-arm64} 等）的行為不一致，正是 noui/main.no 那種 FFI 區塊
+		// 排版混亂的根源。註解/註解組「與上方程式碼空一行、彼此之間不空行」的
+		// 規則對 FFI 註解同樣適用。
+		return true
+	}
 	return f.attachedAnnotationsWillEmit(stmt)
 }
 

@@ -1,0 +1,293 @@
+; fs-raw.no — positional I/O, durability, range locks, and capabilities
+;
+; Every temporary path is created below the repository-root tmp directory.
+
+# test/runner
+# std/fs
+# std/fs/raw
+# std/os
+# std/process
+
+fd-of = (o ?fs.fd) (v fs.fd) {
+    v fs.fd = -1
+    o: {
+        ok -> v = it
+
+        -> _
+    }
+}
+
+num-of = (o ?i64) (v i64) {
+    v = -999
+    v = o: {
+        ok -> it
+
+        -> -999
+    }
+}
+
+yes-of = (o ?bool) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+str-of = (o ?str) (v str) {
+    v = '<nil>'
+    v = o: {
+        ok -> it
+
+        -> '<nil>'
+    }
+}
+
+raw-lock-child = (path str, conflicting bool) {
+    fd = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE, 0))
+    fd < 0 -> exit(2)
+
+    start = 0
+    ! conflicting -> start = 4
+    locked = yes-of(raw.raw-lock-range(fd, start, 4, raw.RAW-LOCK-SHARED, true))
+    closed = yes-of(raw.raw-close(fd))
+    closed != 1 -> exit(3)
+    {
+        conflicting -> {
+            locked == 0 -> exit(0)
+
+            -> exit(1)
+        }
+
+        -> {
+            locked == 1 -> exit(0)
+
+            -> exit(1)
+        }
+    }
+}
+
+run-lock-child = (program str, path str, mode str) (out str, code i64, err str) {
+    args []str = [
+        mode,
+        path,
+    ]
+    out, stderr, code, err = process.cmd(program, args, '', '', [], 5000, true)
+}
+
+t-capabilities = () {
+    caps = raw.raw-capabilities()
+    runner.is-true(caps == 255 || caps == 239, 'native target reports its exact capability mask')
+    runner.eq(caps & raw.RAW-CAP-POSITIONAL-IO, raw.RAW-CAP-POSITIONAL-IO, 'positional I/O capability')
+    runner.eq(caps & raw.RAW-CAP-TRUNCATE, raw.RAW-CAP-TRUNCATE, 'truncate capability')
+    runner.eq(caps & raw.RAW-CAP-FILE-SYNC, raw.RAW-CAP-FILE-SYNC, 'file sync capability')
+    runner.eq(caps & raw.RAW-CAP-DATA-SYNC, raw.RAW-CAP-DATA-SYNC, 'data sync capability')
+    runner.eq(caps & raw.RAW-CAP-RANGE-LOCK, raw.RAW-CAP-RANGE-LOCK, 'range lock capability')
+    runner.eq(caps & raw.RAW-CAP-SHARED-LOCK, raw.RAW-CAP-SHARED-LOCK, 'shared lock capability')
+    runner.eq(caps & raw.RAW-CAP-NONBLOCKING-LOCK, raw.RAW-CAP-NONBLOCKING-LOCK, 'nonblocking lock capability')
+}
+
+t-open-flags = () {
+    made = fs.mkdtemp('tmp/nolang_raw_vfs_open_XXXXXX')
+    dir = str-of(made)
+    runner.is-true(dir.eq-full('<nil>') == false, 'mkdtemp creates repository-local directory')
+    dir.eq-full('<nil>') -> return
+
+    path = dir - '/flags.db'
+    runner.eq(fd-of(raw.raw-open(path, 0, 420)), -1, 'open rejects missing access mode')
+    runner.eq(fd-of(raw.raw-open(path, 32, 420)), -1, 'open rejects unknown flags')
+    runner.eq(fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-CREATE, 420)), -1, 'create requires write access')
+    runner.eq(fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-EXCLUSIVE, 420)), -1, 'exclusive requires create')
+    runner.eq(fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-TRUNCATE, 420)), -1, 'truncate requires write access')
+    runner.eq(fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-CREATE, 4096)), -1, 'open rejects invalid mode bits')
+
+    fd = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-CREATE | raw.RAW-EXCLUSIVE, 420))
+    runner.is-true(fd >= 0, 'create-exclusive open succeeds')
+    fd >= 0 -> {
+        runner.eq(num-of(raw.raw-pwrite(fd, 'new'.to-bytes(), 3, 0)), 3, 'new file accepts positional write')
+        runner.eq(yes-of(raw.raw-close(fd)), 1, 'created file closes')
+    }
+    runner.eq(fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-CREATE | raw.RAW-EXCLUSIVE, 420)), -1, 'second create-exclusive open fails')
+    runner.eq(fd-of(raw.raw-open(dir - '/missing.db', raw.RAW-READ, 0)), -1, 'read-only open of missing file fails')
+
+    fd = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-CREATE | raw.RAW-TRUNCATE, 420))
+    runner.is-true(fd >= 0, 'create-truncate open returns a live descriptor')
+    fd >= 0 -> {
+        runner.eq(num-of(raw.raw-fstat-size(fd)), 0, 'open truncate clears existing contents')
+        runner.eq(num-of(raw.raw-pwrite(fd, 'abc'.to-bytes(), 3, 0)), 3, 'truncated descriptor accepts writes')
+        runner.eq(yes-of(raw.raw-close(fd)), 1, 'truncated file closes')
+    }
+
+    caps = raw.raw-capabilities()
+    dir-synced = raw.raw-sync-dir(dir)
+    {
+        caps & raw.RAW-CAP-DIR-SYNC != 0 -> runner.eq(yes-of(dir-synced), 1, 'directory sync succeeds when reported')
+
+        -> runner.eq(yes-of(dir-synced), 0, 'directory sync reports unsupported when absent')
+    }
+    runner.is-true(fs.remove(path), 'cleanup removes test file')
+    runner.is-true(fs.rmdir(dir), 'cleanup removes test directory')
+}
+
+t-positional-io = () {
+    made = fs.mkdtemp('tmp/nolang_raw_vfs_io_XXXXXX')
+    dir = str-of(made)
+    runner.is-true(dir.eq-full('<nil>') == false, 'positional test creates repository-local directory')
+    dir.eq-full('<nil>') -> return
+
+    path = dir - '/pages.db'
+    fd = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-CREATE | raw.RAW-TRUNCATE, 420))
+    runner.is-true(fd >= 0, 'positional test opens read-write file')
+    fd < 0 -> {
+        fs.rmdir(dir)
+        return
+    }
+
+    page []byte = [0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x03, 0x00]
+    runner.eq(num-of(raw.raw-pwrite(fd, page, 8, 0)), 8, 'positional write returns byte count')
+    runner.eq(num-of(raw.raw-seek(fd, 3, raw.RAW-SEEK-SET)), 3, 'seek set returns absolute position')
+
+    buf []byte = [0, 0, 0, 0, 0, 0, 0, 0]
+    runner.eq(num-of(raw.raw-pread(fd, buf, 8, 0)), 8, 'positional read returns byte count')
+    runner.str-eq(str-of(buf.slice(0, 8).to-str()), 'SQLite\x03\x00', 'positional read preserves page bytes')
+    runner.eq(num-of(raw.raw-seek(fd, 0, raw.RAW-SEEK-CUR)), 3, 'positional read preserves current position')
+    runner.eq(num-of(raw.raw-seek(fd, 2, raw.RAW-SEEK-CUR)), 5, 'seek current applies relative offset')
+    runner.eq(num-of(raw.raw-seek(fd, -3, raw.RAW-SEEK-END)), 5, 'seek end applies signed offset')
+    runner.eq(num-of(raw.raw-seek(fd, 0, raw.RAW-SEEK-CUR)), 5, 'positional write setup preserves position')
+
+    patch []byte = [0x49, 0x74]
+    runner.eq(num-of(raw.raw-pwrite(fd, patch, 2, 4)), 2, 'overwrite returns byte count')
+    runner.eq(num-of(raw.raw-pread(fd, buf, 8, 0)), 8, 'reread returns byte count')
+    runner.str-eq(str-of(buf.slice(0, 8).to-str()), 'SQLiIt\x03\x00', 'positional overwrite changes only selected bytes')
+    runner.eq(num-of(raw.raw-seek(fd, 0, raw.RAW-SEEK-CUR)), 5, 'positional write preserves current position')
+    runner.eq(num-of(raw.raw-pread(fd, buf, 8, 8)), 0, 'read at EOF returns zero bytes')
+    runner.eq(num-of(raw.raw-pread(fd, buf, 8, -1)), -999, 'negative read offset fails')
+    runner.eq(num-of(raw.raw-pread(fd, buf, 9, 0)), -999, 'read count beyond buffer fails')
+    runner.eq(num-of(raw.raw-pwrite(fd, patch, 3, 0)), -999, 'write count beyond buffer fails')
+    runner.eq(num-of(raw.raw-seek(fd, 0, 99)), -999, 'invalid seek whence fails')
+    runner.eq(num-of(raw.raw-fstat-size(fd)), 8, 'fstat reports current file size')
+
+    runner.eq(yes-of(raw.raw-ftruncate(fd, 12)), 1, 'truncate extends file')
+    runner.eq(num-of(raw.raw-fstat-size(fd)), 12, 'extended size is visible immediately')
+    runner.eq(num-of(raw.raw-pread(fd, buf, 4, 8)), 4, 'extended region can be read')
+    runner.str-eq(str-of(buf.slice(0, 4).to-str()), '\x00\x00\x00\x00', 'extended region is zero-filled')
+    runner.eq(yes-of(raw.raw-ftruncate(fd, 5)), 1, 'truncate shrinks file')
+    runner.eq(num-of(raw.raw-fstat-size(fd)), 5, 'shrunk size is visible immediately')
+    runner.eq(num-of(raw.raw-pread(fd, buf, 5, 0)), 5, 'shrunk file can be read')
+    runner.str-eq(str-of(buf.slice(0, 5).to-str()), 'SQLiI', 'shrink preserves selected prefix')
+    runner.eq(yes-of(raw.raw-ftruncate(fd, -1)), 0, 'negative truncate length fails')
+    runner.eq(yes-of(raw.raw-fsync(fd)), 1, 'fsync succeeds')
+    runner.eq(yes-of(raw.raw-fdatasync(fd)), 1, 'fdatasync succeeds')
+    runner.eq(yes-of(raw.raw-close(fd)), 1, 'read-write descriptor closes')
+
+    fd = fd-of(raw.raw-open(path, raw.RAW-READ, 0))
+    runner.is-true(fd >= 0, 'file reopens read-only')
+    fd >= 0 -> {
+        runner.eq(num-of(raw.raw-fstat-size(fd)), 5, 'reopened descriptor reports persisted size')
+        runner.eq(num-of(raw.raw-pread(fd, buf, 5, 0)), 5, 'reopened descriptor reads persisted bytes')
+        runner.str-eq(str-of(buf.slice(0, 5).to-str()), 'SQLiI', 'persisted bytes match')
+        runner.eq(num-of(raw.raw-pwrite(fd, patch, 2, 0)), -999, 'read-only descriptor rejects writes')
+        runner.eq(yes-of(raw.raw-close(fd)), 1, 'read-only descriptor closes')
+    }
+    runner.is-true(fs.remove(path), 'positional cleanup removes file')
+    runner.is-true(fs.rmdir(dir), 'positional cleanup removes directory')
+}
+
+t-range-locks = () {
+    made = fs.mkdtemp('tmp/nolang_raw_vfs_lock_XXXXXX')
+    dir = str-of(made)
+    runner.is-true(dir.eq-full('<nil>') == false, 'lock test creates repository-local directory')
+    dir.eq-full('<nil>') -> return
+
+    path = dir - '/lock.db'
+    first = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-CREATE | raw.RAW-TRUNCATE, 420))
+    second = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE, 0))
+    runner.is-true(first >= 0 && second >= 0, 'two independent descriptors open')
+    first >= 0 && second >= 0 -> {
+        runner.eq(yes-of(raw.raw-lock-range(first, 0, 4, raw.RAW-LOCK-SHARED, false)), 1, 'shared range lock succeeds')
+        runner.eq(yes-of(raw.raw-lock-range(second, 0, 4, raw.RAW-LOCK-SHARED, false)), 1, 'second shared range lock succeeds')
+        runner.eq(yes-of(raw.raw-unlock-range(first, 0, 4)), 1, 'shared range unlock succeeds')
+        runner.eq(yes-of(raw.raw-unlock-range(second, 0, 4)), 1, 'second shared range unlock succeeds')
+        runner.eq(yes-of(raw.raw-lock-range(first, 0, 0, raw.RAW-LOCK-EXCLUSIVE, true)), 1, 'exclusive through-EOF lock succeeds')
+        runner.eq(yes-of(raw.raw-unlock-range(first, 0, 0)), 1, 'through-EOF unlock succeeds')
+        runner.eq(yes-of(raw.raw-lock-range(second, 4, 8, raw.RAW-LOCK-SHARED, true)), 1, 'nonblocking shared lock succeeds when free')
+        runner.eq(yes-of(raw.raw-unlock-range(second, 4, 8)), 1, 'nonblocking lock range unlocks')
+        runner.eq(yes-of(raw.raw-lock-range(first, 0, 4, 3, true)), 0, 'invalid lock mode fails')
+        runner.eq(yes-of(raw.raw-lock-range(first, -1, 4, raw.RAW-LOCK-SHARED, true)), 0, 'negative lock start fails')
+        runner.eq(yes-of(raw.raw-lock-range(first, 0, -1, raw.RAW-LOCK-SHARED, true)), 0, 'negative lock length fails')
+        runner.eq(yes-of(raw.raw-unlock-range(first, -1, 4)), 0, 'negative unlock start fails')
+        runner.eq(yes-of(raw.raw-unlock-range(first, 0, -1)), 0, 'negative unlock length fails')
+        runner.eq(yes-of(raw.raw-close(first)), 1, 'first lock descriptor closes')
+        runner.eq(yes-of(raw.raw-close(second)), 1, 'second lock descriptor closes')
+    }
+    runner.is-true(fs.remove(path), 'lock cleanup removes file')
+    runner.is-true(fs.rmdir(dir), 'lock cleanup removes directory')
+}
+
+t-cross-process-locks = () {
+    made = fs.mkdtemp('tmp/nolang_raw_vfs_xproc_XXXXXX')
+    dir = str-of(made)
+    runner.is-true(dir.eq-full('<nil>') == false, 'cross-process test creates repository-local directory')
+    dir.eq-full('<nil>') -> return
+
+    path = dir - '/lock.db'
+    fd = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE | raw.RAW-CREATE | raw.RAW-TRUNCATE, 420))
+    runner.is-true(fd >= 0, 'cross-process test opens read-write file')
+    fd < 0 -> {
+        fs.rmdir(dir)
+        return
+    }
+
+    program = str-of(os.arg(0))
+    runner.is-true(program.eq-full('<nil>') == false, 'current executable path is available')
+    caps = raw.raw-capabilities()
+    caps == 239 -> program = '"' - program - '"'
+
+    runner.eq(yes-of(raw.raw-lock-range(fd, 0, 4, raw.RAW-LOCK-EXCLUSIVE, true)), 1, 'parent acquires exclusive range lock')
+    out, code, err = run-lock-child(program, path, '--raw-lock-child-conflict')
+    runner.eq(code, 0, 'child cannot acquire a conflicting lock in another process')
+    runner.eq(err.len(), 0, 'conflicting child exits normally')
+    runner.eq(out.len(), 0, 'conflicting child emits no unexpected output')
+
+    out, code, err = run-lock-child(program, path, '--raw-lock-child-allowed')
+    runner.eq(code, 0, 'child can acquire a non-overlapping range in another process')
+    runner.eq(err.len(), 0, 'non-overlapping child exits normally')
+    runner.eq(out.len(), 0, 'non-overlapping child emits no unexpected output')
+
+    runner.eq(yes-of(raw.raw-unlock-range(fd, 0, 4)), 1, 'parent releases exclusive range lock')
+    out, code, err = run-lock-child(program, path, '--raw-lock-child-conflict')
+    runner.eq(code, 1, 'child acquires the formerly conflicting range after parent unlock')
+    runner.eq(err.len(), 0, 'post-unlock child exits normally')
+    runner.eq(out.len(), 0, 'post-unlock child emits no unexpected output')
+
+    runner.eq(yes-of(raw.raw-close(fd)), 1, 'cross-process parent descriptor closes')
+    runner.is-true(fs.remove(path), 'cross-process cleanup removes file')
+    runner.is-true(fs.rmdir(dir), 'cross-process cleanup removes directory')
+}
+
+mode = str-of(os.arg(1))
+mode == '--raw-lock-child-conflict' -> {
+    path = str-of(os.arg(2))
+    raw-lock-child(path, true)
+    return
+}
+mode == '--raw-lock-child-allowed' -> {
+    path = str-of(os.arg(2))
+    raw-lock-child(path, false)
+    return
+}
+
+p1, f1 = runner.test('fs.raw-capabilities', t-capabilities)
+p2, f2 = runner.test('fs.raw-open-flags', t-open-flags)
+p3, f3 = runner.test('fs.raw-positional-io', t-positional-io)
+p4, f4 = runner.test('fs.raw-range-locks', t-range-locks)
+p5, f5 = runner.test('fs.raw-cross-process-locks', t-cross-process-locks)
+
+runner.summary()
+failed = runner.failed-count()
+{
+    failed > 0 -> exit(1)
+
+    -> exit(0)
+}

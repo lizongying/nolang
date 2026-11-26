@@ -1,0 +1,136 @@
+; raw — positional file I/O, durability, range locking, and capability probes
+;
+; This module is intentionally independent from fs.open and fs.sync. It exposes
+; portable flags and reports unsupported operations instead of silently using
+; sequential I/O, process-local locks, or volatile storage.
+
+RAW-READ = 1
+RAW-WRITE = 2
+RAW-CREATE = 4
+RAW-EXCLUSIVE = 8
+RAW-TRUNCATE = 16
+
+RAW-SEEK-SET = 0
+RAW-SEEK-CUR = 1
+RAW-SEEK-END = 2
+
+RAW-LOCK-SHARED = 1
+RAW-LOCK-EXCLUSIVE = 2
+
+RAW-CAP-POSITIONAL-IO = 1
+RAW-CAP-TRUNCATE = 2
+RAW-CAP-FILE-SYNC = 4
+RAW-CAP-DATA-SYNC = 8
+RAW-CAP-DIR-SYNC = 16
+RAW-CAP-RANGE-LOCK = 32
+RAW-CAP-SHARED-LOCK = 64
+RAW-CAP-NONBLOCKING-LOCK = 128
+
+; Open a file with portable flags. Exactly one of read, write, or read-write
+; must be selected. The returned descriptor uses the fs.fd newtype.
+; path: filesystem path
+; flags: combination of RAW-READ, RAW-WRITE, RAW-CREATE, RAW-EXCLUSIVE, and RAW-TRUNCATE
+; mode: creation permission bits
+; returns fd: opened descriptor, or nil on failure
+#{buildin}
+raw-open = (path str, flags i64, mode i64) (fd ?fs.fd) {
+}
+
+; Close a raw descriptor.
+; fd: descriptor returned by raw-open
+; returns ok: true on success
+#{buildin}
+raw-close = (fd fs.fd) (ok ?bool) {
+}
+
+; Set or query the descriptor's current file position without affecting later
+; positional reads and writes.
+; fd: open descriptor
+; offset: signed byte offset
+; whence: RAW-SEEK-SET, RAW-SEEK-CUR, or RAW-SEEK-END
+; returns position: absolute position, or nil on failure
+#{buildin}
+raw-seek = (fd fs.fd, offset i64, whence i64) (position ?i64) {
+}
+
+; Read exactly count bytes at offset without changing the current position.
+; fd: open descriptor
+; buf: destination byte buffer
+; count: requested byte count, no greater than the buffer length
+; offset: nonnegative absolute byte offset
+; returns n: bytes read, or nil on failure
+#{buildin}
+raw-pread = (fd fs.fd, buf []byte, count i64, offset i64) (n ?i64) {
+}
+
+; Write count bytes at offset without changing the current position.
+; fd: open descriptor
+; data: source byte buffer
+; count: requested byte count, no greater than the buffer length
+; offset: nonnegative absolute byte offset
+; returns n: bytes written, or nil on failure
+#{buildin}
+raw-pwrite = (fd fs.fd, data []byte, count i64, offset i64) (n ?i64) {
+}
+
+; Truncate or extend a file to length bytes. Extension is zero-filled.
+; fd: open descriptor
+; length: nonnegative target size
+; returns ok: true on success
+#{buildin}
+raw-ftruncate = (fd fs.fd, length i64) (ok ?bool) {
+}
+
+; Return the current file size.
+; fd: open descriptor
+; returns size: file size in bytes, or nil on failure
+#{buildin}
+raw-fstat-size = (fd fs.fd) (size ?i64) {
+}
+
+; Flush file contents and required metadata to durable storage.
+; fd: open descriptor
+; returns ok: true on success
+#{buildin}
+raw-fsync = (fd fs.fd) (ok ?bool) {
+}
+
+; Flush file contents and the metadata required to retrieve them.
+; fd: open descriptor
+; returns ok: true on success
+#{buildin}
+raw-fdatasync = (fd fs.fd) (ok ?bool) {
+}
+
+; Sync a directory after creating, deleting, or renaming directory entries.
+; path: directory path
+; returns ok: true on success, nil when directory durability is unsupported
+#{buildin}
+raw-sync-dir = (path str) (ok ?bool) {
+}
+
+; Acquire a byte-range lock. A zero length locks through EOF.
+; fd: open descriptor
+; start: nonnegative starting byte offset
+; length: nonnegative range length
+; mode: RAW-LOCK-SHARED or RAW-LOCK-EXCLUSIVE
+; nonblocking: return nil immediately when the range is busy
+; returns ok: true when the lock is acquired
+#{buildin}
+raw-lock-range = (fd fs.fd, start i64, length i64, mode i64, nonblocking bool) (ok ?bool) {
+}
+
+; Release a byte-range lock.
+; fd: open descriptor
+; start: nonnegative starting byte offset
+; length: nonnegative range length
+; returns ok: true on success
+#{buildin}
+raw-unlock-range = (fd fs.fd, start i64, length i64) (ok ?bool) {
+}
+
+; Return the actual capability bitmask for the compilation target.
+; returns capabilities: RAW-CAP-* bits supported by the native backend
+#{buildin}
+raw-capabilities = () (capabilities i64) {
+}

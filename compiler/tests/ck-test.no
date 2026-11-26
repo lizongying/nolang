@@ -148,7 +148,6 @@ test-order = () {
     w1 = at(d, 1)
     p1 = w1.index('|')
     p-opt = w1.slice-bytes(0, p1).to-str()
-    p str = ''
     p-opt: {
         ok -> p = it
 

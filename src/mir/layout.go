@@ -490,6 +490,17 @@ func (c *codegen) taggedEnumByLLVM(lt string) *TaggedEnumInfo {
 	return nil
 }
 
+// taggedEnumTypeByLLVM resolves the MIR type for an emitted tagged-enum LLVM
+// name. Ownership predicates live on Module and need the MIR type, not merely
+// the variant table returned by taggedEnumByLLVM.
+func (c *codegen) taggedEnumTypeByLLVM(lt string) *Type {
+	ei := c.taggedEnumByLLVM(lt)
+	if ei == nil {
+		return nil
+	}
+	return c.mod.Type(c.mod.internType(ei.Name))
+}
+
 // structKeyByLLVM finds the StructFields key whose emitted name equals lt.
 func (c *codegen) structKeyByLLVM(lt string) string {
 	for k := range c.mod.StructFields {
