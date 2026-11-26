@@ -41,6 +41,9 @@ DVA-EDIT-FOCUS []i64 = [-1]
 ; 与编辑器同一个理由 —— 活句柄每帧随调和变，key 不变；而且面板要跨帧记住
 ; 「游标在第几行」，那些状态本来就存在 dv 侧的 DV-PAL-* 池里。
 DVA-PAL-FOCUS []i64 = [-1]
+; 阶段83：手指 / 压感笔是否正处于接触状态（1 = 按着，0 = 没有）。触摸与笔走
+; 和鼠标左键完全相同的「命中 -> 归约」路径，这个标记只区分接触方式本身。
+DVA-TOUCH []i64 = [0]
 
 DVA-AZ = 'abcdefghijklmnopqrstuvwxyz'
 DVA-DIG = '0123456789'
@@ -69,6 +72,15 @@ dva-clicks = () (n i64) {
 ; 事件回调里要拿活组件树根（配合 dv-live-deep）
 dva-root = () (h i64) {
     h = app-root()
+}
+; 阶段83：当前接触方式是不是手指 / 笔（1 = 是，0 = 普通指针或没按）。
+; 与 dva-press 配对使用：按下置位、抬起清零。
+dva-touch = () (yes i64) {
+    yes = DVA-TOUCH[0]: {
+        ok -> it
+
+        -> 0
+    }
 }
 ; 最近一次点击 / 移动的定点坐标（事件回调里做几何换算用）
 dva-px = () (x i64) {
@@ -732,6 +744,35 @@ dva-drag-of = () (h i64) {
 }
 
 ; ============================================================================
+; 阶段83：主指针按下 —— 鼠标左键 / 手指 / 压感笔共用这一条路径。
+;
+; 「按下去意味着什么」仍然由视图的 dv-act 决定，这里只做几何与派发：
+; 拖分栏优先（间隙命中不算点击），否则命中 -> 焦点 -> 视图动作 -> 归约。
+; 接触方式（压力、触摸标记）不改变语义，只通过 dva-touch / app-pressure()
+; 让组件有机会区分「手写笔在画」和「鼠标在点」。
+; ============================================================================
+dva-press = (S []i64, root i64, px i64, py i64) () {
+    DVA-PX[0] = px
+    DVA-PY[0] = py
+    DVA-MOUSE[0] = 1
+    grab = dva-drag-down(S, root, px, py)
+    (grab == 0) -> {
+        hit = cs-hit(root, px, py)
+        k = cmp-key(hit)
+        dva-focus(hit)
+        ; 剪贴板组件（阶段76）：点右端复制方块 = 内容进系统剪贴板，
+        ; 该组件没有 dv-act，命中后就不再往下派发。
+        clip = dva-clipboard-hit(hit, px, py)
+        (clip == 0) -> {
+            act, pay = dv-dispatch(k)
+            nw = dv-app-reduce(S, k)
+            (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
+            dv-app-click(S, k, act, pay, nw)
+        }
+    }
+}
+
+; ============================================================================
 ; 声明式主循环
 ; ============================================================================
 dva-run = (S []i64, title str, max-frames i64) () {
@@ -758,40 +799,48 @@ dva-run = (S []i64, title str, max-frames i64) () {
             dva-drag-move(S, px, py)
         }
 
-        ; ---- 左键：命中 -> key -> 视图动作 -> 归约进状态池 ----
-        ; 「点击意味着什么」由视图节点的 dv-act 数据决定，循环里没有 key 的 if-else 链。
+        ; ---- 主指针按下：鼠标左键 / 手指 / 压感笔共用一条路径（阶段83）----
+        ; 「点击意味着什么」由视图节点的 dv-act 数据决定，循环里没有 key 的
+        ; if-else 链；接触方式只通过 DVA-TOUCH / app-pressure() 暴露给组件。
         (t == 2) -> {
-            px = fx(mx)
-            py = fx(my)
-            DVA-PX[0] = px
-            DVA-PY[0] = py
-            DVA-MOUSE[0] = 1
-            ; 拖杆优先：落在可拆面板的间隙里就是拖分栏，不是点击
-            grab = dva-drag-down(S, root, px, py)
-            (grab == 0) -> {
-                hit = cs-hit(root, px, py)
-                k = cmp-key(hit)
-                dva-focus(hit)
-                ; 剪贴板组件（阶段76）：点右端复制方块 = 内容进系统剪贴板，
-                ; 该组件没有 dv-act，命中后就不再往下派发。
-                clip = dva-clipboard-hit(hit, px, py)
-                (clip == 0) -> {
-                    act, pay = dv-dispatch(k)
-                    nw = dv-app-reduce(S, k)
-                    (nw > 0) -> { DVA-CLICKS[0] = dv-add(DVA-CLICKS[0], 1) }
-                    dv-app-click(S, k, act, pay, nw)
-                }
-            }
+            dva-press(S, root, fx(mx), fx(my))
+        }
+        (t == 13 || t == 16) -> {
+            DVA-TOUCH[0] = 1
+            dva-press(S, root, fx(mx), fx(my))
         }
 
-        ; ---- 左键抬起（阶段29）：松开放手 ----
-        (t == 6) -> {
+        ; ---- 主指针抬起：松开拖拽 + 清触摸标记 ----
+        (t == 6 || t == 14 || t == 17) -> {
             px = fx(mx)
             py = fx(my)
             DVA-PX[0] = px
             DVA-PY[0] = py
             DVA-MOUSE[0] = 1
             dva-drag-up()
+            DVA-TOUCH[0] = 0
+        }
+
+        ; ---- 手指 / 笔移动：与鼠标移动同语义（hover + 拖分栏）----
+        (t == 15 || t == 18) -> {
+            px = fx(mx)
+            py = fx(my)
+            DVA-PX[0] = px
+            DVA-PY[0] = py
+            DVA-MOUSE[0] = 1
+            app-hover(root, px, py)
+            dva-drag-move(S, px, py)
+        }
+
+        ; ---- 笔轴（阶段83）：压力 / 角度变化。只更新悬停位置与压力读数，
+        ;      不产生点击语义 —— 手写笔在板上移动时笔尖未必接触。 ----
+        (t == 23) -> {
+            px = fx(mx)
+            py = fx(my)
+            DVA-PX[0] = px
+            DVA-PY[0] = py
+            DVA-MOUSE[0] = 1
+            app-hover(root, px, py)
         }
 
         ; ---- 滚轮（阶段23）：命中 -> 顺着父链找滚动容器 -> 偏移进状态池 ----

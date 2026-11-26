@@ -1,0 +1,43 @@
+; ============================================================================
+; noui 场景图元绘制冒烟（阶段81/82）—— src/app.no + src/cmp-scene.no
+;
+; 钉住：CS-ROUND / CS-SHADOW / CS-TEXT / CS-IMG / CS-IMGR 都能走完
+; app-draw-scene 的 FFI 分流而不崩；旋转 / 翻转图片的 flip 位按原值传给
+; shim（阶段82 回归：曾经过 pxi() 被归零，两个后端都画不出翻转）。
+;
+; 默认走 SDL_Render 软件后端，dummy 视频驱动下也可跑：
+;   ../bin/no run -cc ./ccwrap.sh tests/app-draw-prims.no
+; ============================================================================
+# /noui/src/app
+
+print('=== app-draw-prims tests ===')
+
+ok = app-init('draw-prims')
+r0 = ok == 0
+
+id = app-img-load('tests/fixtures/dot.png')
+r1 = id > 0 && app-img-w(id) == 8 && app-img-h(id) == 6
+
+; 全部新图元混排一帧：圆角 / 投影 / 矩形 / 文字 / 图片 / 旋转翻转图片
+cs-clear()
+cs-emit-fill(0, 0, 56000, 42000, 0x2A2A38FF)
+cs-emit-shadow(3000, 1700, 20000, 11000, 800, 500, 0x00000090)
+cs-emit-round(3000, 1700, 20000, 11000, 800, 0x50C878FF)
+cs-emit-rect(2600, 3200, 9000, 5000, 0x9AA0B4FF)
+cs-emit-text(400, 400, 0xFFFFFFFF, 'ABCD')
+cs-emit-img(2600, 3000, 800, 600, id)
+cs-emit-img-rot(4400, 3000, 800, 600, id, 4500, 3)
+app-draw-scene()
+r2 = 1
+
+; 各指令的附加池在发射后仍可读（flip=3 必须原样保留）
+r3 = cs-scene-kind(6) == CS-IMGR && cs-scene-sf(6) == 3 && cs-scene-sa(6) == 4500
+r4 = cs-scene-kind(1) == CS-SHADOW && cs-scene-sd(1) == 500
+
+app-shutdown()
+
+all-ok = r0 && r1 && r2 && r3 && r4
+print('init={r0} img={r1} draw={r2} imgr-getters={r3} shadow-getters={r4}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL APP-DRAW-PRIMS TESTS PASSED') }
+(!all-ok) -> { print('APP-DRAW-PRIMS TESTS FAILED'); exit(1) }

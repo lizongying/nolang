@@ -1,4 +1,4 @@
-; test/std/des.no — crypto/des 模組測試
+; test-std/src/des.no — crypto/des 模組測試
 ;
 ; 執行：no test test-std/src/des.no
 ; 覆蓋：des.des-enc / des-dec（單區塊）

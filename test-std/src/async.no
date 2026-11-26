@@ -1,4 +1,4 @@
-; test/std/async.no — async 模組測試（cancel / cancelled 原語）
+; test-std/src/async.no — async 模組測試（cancel / cancelled 原語）
 ;
 ; 執行：no test test-std/src/async.no
 ; 覆蓋：cancelled / 協程組內過程 spawn 的結果回傳

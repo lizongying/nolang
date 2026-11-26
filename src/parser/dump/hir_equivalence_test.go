@@ -54,12 +54,12 @@ import (
 
 // equivalenceCorpusRoots is every corpus this gate walks.
 //
-// tests/ is the historical corpus. test/std/ was added with slice S-b (§5.2.7):
+// tests/ is the historical corpus. test-std/src/ was added with slice S-b (§5.2.7):
 // the std test programs are the densest bare-match ({ cond -> body }) sources in
 // the repo — 82 bare matches over 87 programs — and bare matches got their own
 // HIR emitter, so leaving that tree out would have left the emitter covered only
 // incidentally. Cost of the extra walk is ~0.8s (measured).
-var equivalenceCorpusRoots = []string{corpusRoot, "../../../test/std"}
+var equivalenceCorpusRoots = []string{corpusRoot, "../../../test-std/src"}
 
 // hirEquivalenceMinCompared guards against a vacuous run: if the corpus walk
 // yields too few programs, "0 divergences" means nothing.
@@ -199,8 +199,8 @@ func TestH0MatchDesugarMatchesParserLowering(t *testing.T) {
 // every bare match parse as something else, that gate would report "0 exercised"
 // over 0 bare matches and the S-b emitter would go untested.
 //
-// Measured 2026-10-19: 436 bare matches across tests/ + test/std/ (354 in tests/,
-// 82 in test/std/), so the floor below sits well under the real count — it is a
+// Measured 2026-10-19: 436 bare matches across tests/ + test-std/src/ (354 in tests/,
+// 82 in test-std/src/), so the floor below sits well under the real count — it is a
 // smoke alarm, not a cap.
 func TestBareMatchEquivalenceIsExercised(t *testing.T) {
 	if _, err := os.Stat(corpusRoot); err != nil {

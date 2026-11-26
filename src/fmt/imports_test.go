@@ -152,6 +152,26 @@ func TestFormatUseAliasKeywordNormalized(t *testing.T) {
 		"# std/err error\n# std/err.new e")
 }
 
+// TestFormatPreservesUnderscoreImportAlias pins the `# path _` spelling: `_`
+// is the "deliberately unused / side-effect only" marker (same convention as
+// `_`-prefixed unused variables). `no fmt` must never strip or rewrite it —
+// these imports are load-bearing for the entry-file-direct-import workaround
+// (bug #85), and the checker emits the `unimpuse` hint when it is missing.
+func TestFormatPreservesUnderscoreImportAlias(t *testing.T) {
+	fmtCheck(t, "underscore alias on workspace path is kept",
+		"# /glossary/src/nav _\n\nprint('hi')",
+		"# /glossary/src/nav _\n\nprint('hi')")
+	fmtCheck(t, "underscore alias on package path is kept",
+		"# nogit _\n\nprint('hi')",
+		"# nogit _\n\nprint('hi')")
+	fmtCheck(t, "as-underscore normalizes to bare underscore",
+		"# /glossary/src/nav as _\n\nprint('hi')",
+		"# /glossary/src/nav _\n\nprint('hi')")
+	fmtCheck(t, "underscore aliases participate in sorting",
+		"# /glossary/src/drv\n# /glossary/src/nav _\n# /glossary/src/db _\n\nprint('hi')",
+		"# /glossary/src/db _\n# /glossary/src/drv\n# /glossary/src/nav _\n\nprint('hi')")
+}
+
 func TestFormatHoistsMidFileImports(t *testing.T) {
 	// 導入只允許出現在文件頂部：代碼之後的導入被搬到頂部區段（保持源碼
 	// 相對順序），搬完照常參與排序/去重，原位只留下代碼。

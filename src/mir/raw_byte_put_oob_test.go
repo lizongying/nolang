@@ -11,7 +11,7 @@ import (
 //
 // Why this test exists at all: the runtime suite used to cover the writer's
 // fallible contract from tests/byte.no ("setbyte-fallible") and
-// test/std/txt.no (`txt.set-byte`). Privatising the builtin took both away —
+// test-std/src/txt.no (`txt.set-byte`). Privatising the builtin took both away —
 // user code cannot call `_set-byte` any more, so the only remaining caller is
 // std internals (str.fill / txt._from-bytes), which never index out of range.
 // The invariant still matters (a wild write is a heap overflow), so it is

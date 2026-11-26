@@ -6275,7 +6275,7 @@ out: 等价的 i64
 整数幂 base^n（n >= 0，i64）—— 供 number.pow 调用（模块前缀）。
 与 math.no 的 f64 pow 同名但不同模块，构建期加 number. 前缀；
 与 math.pow-int（int 泛型快速幂）同义，但明确 i64 签名以符合
-test/std/number.no 的 number.pow(2, 10) 等断言。
+test-std/src/number.no 的 number.pow(2, 10) 等断言。
 `
   'number.u128.is-prime': `
 是否为质数

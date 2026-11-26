@@ -3094,7 +3094,7 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 // how many fields the caller reads back. Allocating only the five exposed
 // fields (325 bytes) is a 65-byte stack overflow: silent on linux/arm64, but on
 // x86_64 (CI's ubuntu-latest) it clobbers neighbouring locals / the return
-// address, which is the SIGSEGV in test/std/unix.no — its `u = os.uname()`
+// address, which is the SIGSEGV in test-std/src/unix.no — its `u = os.uname()`
 // guard shares the frame with the socket path used by fs.remove() afterwards.
 //
 // macOS has exactly five 256-byte fields, and the Windows shim writes the same

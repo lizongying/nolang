@@ -445,7 +445,7 @@ de compilación), 25 archivos tuvieron menos diagnósticos y 19 más — y cada 
 cobertura, que es el resultado esperado del paso 1 de §8, no un defecto nuevo. Otras 9 advertencias
 `nolang-overflow-ineffective` son el comportamiento preexistente de la herramienta de «rellenar el
 hueco» cayendo sobre operadores sobrecargados de bigint / cadena, sin relación con el empujado
-hacia abajo. Tras la ronda 2, una repetición completa de `bin/no run test/std/*.no` (zstd / tls /
+hacia abajo. Tras la ronda 2, una repetición completa de `bin/no run test-std/src/*.no` (zstd / tls /
 str / json / set / base32 …) dio **todo PASSED**.
 
 Criterios de repetición de la ronda 3: las 3 pruebas `parser` en rojo
@@ -456,7 +456,7 @@ flexibilización no introdujo ningún fallo de análisis nuevo; son el estado en
 refactorización concurrente de parser/anotaciones. La salida de `no fmt -d src/std` fue **idéntica
 byte a byte** antes y después de la flexibilización, es decir, el formateador imprime las
 anotaciones sobre `.` en su sitio original, sin deriva de formato. El heap / zstd / tls / json /
-set / map / regexp de `test/std` estaban todos en verde.
+set / map / regexp de `test-std/src` estaban todos en verde.
 
 **76 anotaciones de cabecera de brazo restantes** (`#{overflow=wrap}` justo encima de
 `cond -> {`): **no son** líneas muertas — el parser copia las anotaciones de nivel de brazo a cada

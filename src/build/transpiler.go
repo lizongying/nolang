@@ -464,6 +464,10 @@ func (t *Transpiler) CompileTarget(source string, _ Target) (string, error) {
 			MainFileVarNames: mainVarNames,
 			SkipTypeChecks:   true,
 		})...)
+		// RunAllLints sees the merged program, where UseStatements have been
+		// consumed by module merging. Run the unused-import hint on the
+		// original entry program so `# path` / `# path _` are visible.
+		t.vetLints = append(t.vetLints, checker.UnusedImportLints(program)...)
 		// 補上 `#` 導入模組的函數體型別錯誤。必須 append 而非提前回傳，
 		// 否則 RunAllLints 的 overflow / 未用變數等診斷會被截斷。
 		// optunuse 跳過：RunAllLints 的 unhandled-overflow 已對 merged 報告，

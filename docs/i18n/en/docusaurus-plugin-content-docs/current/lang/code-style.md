@@ -38,6 +38,11 @@ Implementation lives in `src/fmt/formatter.go`:
    - the import line carries a **comment** or an attached `#{...}` annotation — user-written content is never silently dropped.
 3. **Automatic sorting**: imports are sorted lexicographically by path → function → alias (stable sort).
 
+A `_` alias (`# path _`) marks an import as deliberately unused / side-effect-only:
+`no fmt` keeps it verbatim (it is not treated as an unaliased import) and `no vet`
+does not emit the `unimpuse` hint. It is the same convention as `_`-prefixed unused
+variables. See [Export · Deliberately unused imports](./export#deliberately-unused-imports-the-_-alias).
+
 Conservative boundary: if any import in the block carries a comment (own line above or trailing on the same line) or an attached `#{...}` annotation (e.g. the `#{bind=ffi}` native-binding policy), the whole block **keeps its source order and nothing is removed** — sorting would break the comment/statement pairing and removal would take the comment with it. Exact duplicates with no attached content are still deduplicated in that case.
 
 Import blocks that appear anywhere other than the top of the file (after code) are left untouched.

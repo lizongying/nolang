@@ -483,7 +483,7 @@ fewer diagnostics and 19 had more — and every increase is an `ovfhndld` "bound
 value declared" exposed after removing the shielding, which is the expected outcome of step 1 in §8,
 not a new defect. Another 9 `nolang-overflow-ineffective` warnings are the tool's pre-existing
 "fill the gap" behaviour landing on bigint / string overloaded operators, unrelated to down-pushing.
-After round 2 a full re-run of `bin/no run test/std/*.no` (zstd / tls / str / json / set / base32 …)
+After round 2 a full re-run of `bin/no run test-std/src/*.no` (zstd / tls / str / json / set / base32 …)
 **all PASSED**.
 
 Round 3's re-run criteria: the 3 red `parser` tests (`TestAnnotationsLiveOnAST` /
@@ -492,7 +492,7 @@ before and after the relaxation** — `only 288 files parsed cleanly` in both ru
 relaxation introduced no new parse failures; they are the in-flight state of the concurrent
 parser/annotation refactor. The output of `no fmt -d src/std` was **byte-identical** before and after
 the relaxation, i.e. the formatter prints annotations on `.` back in place with no format drift.
-`test/std`'s heap / zstd / tls / json / set / map / regexp were all green.
+`test-std/src`'s heap / zstd / tls / json / set / map / regexp were all green.
 
 **76 remaining arm-head annotations** (`#{overflow=wrap}` immediately above `cond -> {`): these are
 **not** dead lines — the parser copies arm-level annotations onto every statement in the arm body, so

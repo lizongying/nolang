@@ -1715,7 +1715,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 				//     helper then resolved the name to a void `const`, and
 				//     every builtin that marshals it as a C string failed with
 				//     "builtin fs.is-file: cannot marshal arg 0 as C string"
-				//     (test/std/fs.no). lowerGlobalRef materializes a KStrLit
+				//     (test-std/src/fs.no). lowerGlobalRef materializes a KStrLit
 				//     global properly (backing array + %str-long initializer),
 				//     so registering it here is enough.
 				constStr := false
@@ -6724,7 +6724,7 @@ func (l *lowerer) mangledSuffixMatches(id int32, suffix string) bool {
 // receiver as `%vec { len, cap, data }`, so it interpreted the array's first
 // three ELEMENTS as len/cap/data and dereferenced element 2 as a pointer —
 // `v = [5,3,8]; v.asc()` read len=5, cap=3, data=8 and segfaulted on the
-// first store (test/std/sort.no, tests reaching sort/push on a literal).
+// first store (test-std/src/sort.no, tests reaching sort/push on a literal).
 // A slice therefore gets a real heap-backed %vec: `with-len(N)` allocates and
 // zero-fills the buffer and sets len=cap=N, then each element is stored through
 // OpIndexStore exactly like `[n]t.to-vec` does, so owned element types (str,
@@ -6737,7 +6737,7 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 		// argument (`process.cmd('echo', args, '', '', [], 0, false)`), where
 		// NoVal reached the call as operand 0 and codegen rejected the whole
 		// function (bug #85's "consumer reads value 0 (NoVal)" diagnostic,
-		// test/std/process.no). Yield a zero-initialized %vec of the type the
+		// test-std/src/process.no). Yield a zero-initialized %vec of the type the
 		// site expects (len=cap=0, data=null — the same shape `v []i64 = []`
 		// gets from its declared type), so `push` can extend it later.
 		// A fixed-array literal has no length to infer, so it stays NoVal.
@@ -6926,7 +6926,7 @@ func (l *lowerer) fixedArrayConstGlobalType(n *hir.Node, raw string) string {
 	// it per BYTE. Only element 0 survived: `data[0]` read the low byte of the
 	// first i64 (correct by accident), and `data[1]` read that i64's high zero
 	// byte. A 121-byte golden bzip2 stream therefore looked like
-	// `66, 0, 0, 0, 0, 0, 0, 0, 90, ...` to the decompressor (test/std/bzip2.no,
+	// `66, 0, 0, 0, 0, 0, 0, 0, 90, ...` to the decompressor (test-std/src/bzip2.no,
 	// which had to hand-copy the global into a local slice as a workaround).
 	elem := strings.TrimPrefix(raw, "[]")
 	if elem == "" {
@@ -9310,7 +9310,7 @@ func (l *lowerer) evalConstBody(blockID int32, env map[string]comptimeVal, stack
 				//	leap = true                ; ran anyway -> folded to true
 				//
 				// is-leap(1900) and is-leap(2023) therefore answered true, which
-				// test/std/time.no caught ("1900 not leap" / "2023 not leap") while
+				// test-std/src/time.no caught ("1900 not leap" / "2023 not leap") while
 				// the same binary with NOLANG_COMPTIME=0 passed 41/41.
 				if v, bound := env[resultName]; bound {
 					return v, true
@@ -9424,7 +9424,7 @@ func (l *lowerer) evalConstBody(blockID int32, env map[string]comptimeVal, stack
 //	{ y % 4 != 0 -> return }   ; taken for 2023
 //	leap = true                ; ran anyway -> is-leap(2023) folded to true
 //
-// test/std/time.no caught exactly that ("1900 not leap" / "2023 not leap") while
+// test-std/src/time.no caught exactly that ("1900 not leap" / "2023 not leap") while
 // the same binary with NOLANG_COMPTIME=0 passed 41/41. The wrapper is now
 // INTERPRETED (it always runs its then-block, so the evaluator descends into it
 // and an `return` inside it propagates out as `returned`); any `if` whose
@@ -12057,7 +12057,7 @@ func (l *lowerer) dotExprAsString(id int32) string {
 // `f64.cbrt` into `self.log(ax)`: curRecv was prepended as the receiver and the
 // real receiver `ax` slid into parameter position. `f64.log` then logged the
 // ENCLOSING receiver, so `(-8.0).cbrt()` computed log(-8) = nan and the
-// negative branch returned 0 instead of -2 (test/std/math.no asserts
+// negative branch returned 0 instead of -2 (test-std/src/math.no asserts
 // `(-8.0).cbrt() == -2`).
 //
 // Deliberately conservative: the rewrite is refused ONLY when the call
@@ -12114,7 +12114,7 @@ func (l *lowerer) resolveCallee(n *hir.Node) (callee string, recvV ValueID) {
 		//   - a local of that name shadows it (it is a value, not a function);
 		//   - hir.FlagQualifiedCall: the callee was written `io.err(...)` and
 		//     flattened to the bare name by checker.ResolveModuleCalls. Without
-		//     this veto `n = io.err('E')` became err.new('E') and test/std/io.no
+		//     this veto `n = io.err('E')` became err.new('E') and test-std/src/io.no
 		//     stopped compiling ('%lv126' is '%err_err', expected 'i64').
 		if _, bound := l.locals[name]; !bound && !n.Has(hir.FlagQualifiedCall) {
 			if target, ok := l.resolveAlias(name); ok {
@@ -13174,7 +13174,7 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 	// have no `.pretty()` callee registered at all. Keep the historical fmt-*
 	// path there instead of turning the field into a hard failure — those
 	// tests are about format/concat/codegen mechanics, not about std pretty
-	// rendering, and the new semantics are covered by test/std/pretty.no.
+	// rendering, and the new semantics are covered by test-std/src/pretty.no.
 	// A format field whose value is an `?T` option must be PEELED before it
 	// reaches a fmt-* helper, because the helpers are typed on the payload
 	// (fmt-str takes a %str-long, fmt-int an i64) and never on the option.

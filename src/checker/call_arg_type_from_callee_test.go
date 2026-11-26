@@ -12,8 +12,8 @@ import "testing"
 // 後果不只是漏報：`?f64` 傳給 `?str` 參數時兩者的 LLVM 佈局不同
 // （`{ i8, [1 x i64] }` vs `{ i8, [2 x i64] }`），檢查期靜默通過，到 codegen 才由
 // LLVM 驗證器擋下，訊息是 "different aggregate layouts cannot be passed by
-// pointer"，完全看不出是哪一行原始碼寫錯（實例：test/std/json.no 的
-// `i64-of(it.obj-key(3))`、test/std/yaml.no 的 `s-of(yaml.to-f64('abc'))`）。
+// pointer"，完全看不出是哪一行原始碼寫錯（實例：test-std/src/json.no 的
+// `i64-of(it.obj-key(3))`、test-std/src/yaml.no 的 `s-of(yaml.to-f64('abc'))`）。
 //
 // 修法：`resolveArgExprType` 在 resolveExprType 回空時，再從 `sigs`（本 program
 // 的簽名表）與 std 簽名表查被呼叫者的第一回傳型別；查不到或有歧義仍回空字串

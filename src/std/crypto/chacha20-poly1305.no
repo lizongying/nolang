@@ -159,7 +159,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     ; 初始化狀態（16 個 32-bit 字）
     ; 先以 with-len 填出 16 個元素：下方 `state[i]: { ok -> it = … }` 是「索引在
     ; 界內才寫」的 option 語義，空 vec 時 ok 恆不成立、寫入被靜默跳過（state 不會
-    ; 因索引寫自動 grow），會令金鑰流全為 0、seal 原樣回傳明文（見 test/std/ccpoly）。
+    ; 因索引寫自動 grow），會令金鑰流全為 0、seal 原樣回傳明文（見 test-std/src/ccpoly）。
     state []u32
     state = with-len(16)
 

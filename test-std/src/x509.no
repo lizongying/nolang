@@ -1,4 +1,4 @@
-; test/std/x509.no — crypto/x509 模組測試
+; test-std/src/x509.no — crypto/x509 模組測試
 ;
 ; 執行：no test test-std/src/x509.no
 ; 覆蓋：憑證解析（x509-tbs-range / x509-serial / x509-rsa-e / x509-rsa-n /

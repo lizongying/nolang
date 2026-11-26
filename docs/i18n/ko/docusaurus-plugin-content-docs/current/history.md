@@ -212,7 +212,7 @@ sidebar_position: 2
 - fix(build): union match 암에 대해 암별 타입 디스패치를 적용하여 제네릭 호출 재작성 전에 암 로컬 바인딩이 해석되도록 함 (union 연산에서 조용히 0이 나오는 문제 수정)
 - fix(compiler): 호출 반환 타입 추론을 해결하고 병합된 std 진단을 자체 소스 파일에 귀속
 - perf(parser): 리플렉티브 AST 순회를 위해 내보낸 필드 인덱스를 캐시하고 vec push/insert 코드젠 및 셀프 호스팅 렉서/파서의 O(N^2) 제거
-- fix(mir,std,ci): test/std 실패 수정 (shl err-option drop 충돌, i8 저장 너비, dns/err/chacha) 및 blake2 골든 벡터 테스트 추가
+- fix(mir,std,ci): test-std/src 실패 수정 (shl err-option drop 충돌, i8 저장 너비, dns/err/chacha) 및 blake2 골든 벡터 테스트 추가
 - fix(package,cmd/no): 릴리스 다운로드 경로 강화
 - build: Go 툴체인을 1.27.3으로 업그레이드하고 Windows 릴리스 빌드를 수정하기 위해 Setpgid/syscall.Kill을 빌드 태그 뒤에 배치
 - feat(compiler): 비활성 셀프 호스트 MIR/codegen 스켈레톤 (mir, cg, cg-rc, cg-runtime) 추가 및 셀프 호스트 설계 문서 확장

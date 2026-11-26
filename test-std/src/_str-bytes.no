@@ -14,7 +14,7 @@
 
 ; std-str-bytes.no — 字串族 bytes/chars 構造器測試（str + txt）
 ;
-; 執行：no run test/std/str-bytes.no
+; 執行：no run test-std/src/str-bytes.no
 ; 覆蓋：str.bytes()（零拷貝視圖、共享緩衝、空串、UTF-8）、
 ;       str.from-chars（新緩衝、每 char 寫 1 個原始位元組）、
 ;       txt.from-bytes / txt.from-chars（內聯拷貝、255 位元組硬上限）

@@ -57,7 +57,7 @@ embed.read = (path str) (data ?[]byte) {
         ; 不匹配」，後面還有別的檔案。原本寫 break（跳出整個迴圈），導致只要清單裡
         ; 前面存在一筆長度不同的檔案，後面的檔案就永遠查不到 —— 而 embed 清單按
         ; 目錄走訪順序排列，長度幾乎不會相同，實務上等於只有第 0 筆可讀。
-        ; 測試見 test/std/embed.no 的 'later entries'。
+        ; 測試見 test-std/src/embed.no 的 'later entries'。
         p-len != path-len -> continue
 
         ; 逐字節比較

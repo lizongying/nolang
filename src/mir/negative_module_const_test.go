@@ -16,7 +16,7 @@ package mir
 // `-7` 是可折叠的（foldConstText 有 KPrefix 分支），于是两条路径都不认领它，
 // 每个读它的函数拿到一个 void 值：`EmitLLVM: move src slot v20 -> v18`。
 // 在 pristine HEAD 上，lit.no / p3.no / tests/mem-safety/map-key-leak.no /
-// test/std/str-map.no **全部**因此编译失败，而 `no vet` 全绿。
+// test-std/src/str-map.no **全部**因此编译失败，而 `no vet` 全绿。
 //
 // 修法只是让 raw-type 查询学会 foldConstText 已经知道的事：前缀运算不改变
 // 绑定的类型（`-7` 是 i64、`~b` 是 b、`!f` 是 bool）。

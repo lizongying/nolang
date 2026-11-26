@@ -1,4 +1,4 @@
-; test/std/http2.no — net/http2 模組測試
+; test-std/src/http2.no — net/http2 模組測試
 ;
 ; 執行：no test test-std/src/http2.no
 ;

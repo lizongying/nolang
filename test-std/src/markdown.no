@@ -1,4 +1,4 @@
-; test/std/markdown.no — markdown 模組測試（CommonMark 風格渲染器）
+; test-std/src/markdown.no — markdown 模組測試（CommonMark 風格渲染器）
 ;
 ; 執行：no test test-std/src/markdown.no
 ; 覆蓋：escape-html / prefix-count / heading / setext-level / thematic-break /

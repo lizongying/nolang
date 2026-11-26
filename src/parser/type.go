@@ -360,7 +360,7 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 			// 接收者無關的回傳型別：
 			//   lopt = doc.get('a')      ; doc 是 yaml 值，doc.get 是 yaml.get(?yaml)
 			//   ⇒ lopt 被判為 ?i64 ⇒ ok 臂的 it 成 i64 ⇒ `it.kind()` = "unknown
-			//     callee i64.kind"（test/std/yaml.no t-seq）。
+			//     callee i64.kind"（test-std/src/yaml.no t-seq）。
 			if p.sem.IsFuncDeclared(p.curFuncName, ident.Value) {
 				return ""
 			}

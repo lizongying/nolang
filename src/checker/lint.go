@@ -309,6 +309,7 @@ var lintSteps = []lintStep{
 	{"naming", true, runLintNaming},
 	{"async-naming", true, runLintAsyncNaming},
 	{"unused-vars", true, runLintUnusedVars},
+	{"unused-imports", true, runLintUnusedImports},
 	{"undefined-vars", true, runLintUndefinedVars},
 	{"uninit-output-params", true, runLintUninitOutputParams},
 	{"multi-option-results", true, runLintMultiOptionResults},
@@ -778,6 +779,31 @@ func runLintUnusedVars(program *parser.Program, opts LintOptions) []LintResult {
 			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
 			Severity: LintHint, Source: "nolang-lint",
 			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// UnusedImportLints is the standalone entry point for the unused-import hint.
+// The vet pipeline merges modules before running RunAllLints, and merging
+// removes UseStatements, so it calls this on the original entry program instead.
+func UnusedImportLints(program *parser.Program) []LintResult {
+	return runLintUnusedImports(program, LintOptions{})
+}
+
+// runLintUnusedImports — 未使用的模組導入（`# path` 綁定名从未出現在正文）。
+// `# path _` 是等價於未使用變數 `_` 前綴的逃逸口：保留導入、不報 hint。
+func runLintUnusedImports(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateUnusedImports(program) {
+		endCol := u.EndColumn
+		if endCol <= 0 {
+			endCol = u.Column
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, EndColumn: endCol, File: u.File,
+			Severity: LintHint, Source: "nolang-lint",
+			Message: u.Message, TraceID: u.TraceID, Fixes: u.Fixes,
 		})
 	}
 	return results

@@ -1,6 +1,6 @@
 ; std-str-to-f64.no — str.to-f64 精確 strtod 測試（bigint rewrite 回歸）
 ;
-; 執行：no run test/std/str-to-f64.no
+; 執行：no run test-std/src/str-to-f64.no
 ; 覆蓋：基本解析 / 17 位精度 / 捨入至偶 / 次正規 / ±inf / -0.0 符號 /
 ;       to-str 往返 / option 語義
 ; 判定基準：to-f64(字串) 的 f64.to-bits() 必須與 IEEE-754 正確捨入

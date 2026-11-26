@@ -1,4 +1,4 @@
-; test/std/hpack.no — net/hpack 模組測試（RFC 7541 變長整數／字串編解碼）
+; test-std/src/hpack.no — net/hpack 模組測試（RFC 7541 變長整數／字串編解碼）
 ;
 ; 執行：no test test-std/src/hpack.no
 ; 覆蓋：encode-int / decode-int（前綴內單 byte、val==max-prefix 邊界、多 byte

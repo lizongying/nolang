@@ -8,7 +8,7 @@ Nolang 词条库 glossary 也可在 nohub 线上查看：[glossary on nohub](htt
 noui 包在 nohub 上的页面：[noui on nohub](https://lizongying.github.io/nohub/?package=noui:latest@github.com/lizongying/nolang)
 
 > 进度与下一步看 [NEXT.md](NEXT.md)；验收明细见文末「验收记录」，架构决策见
-> [ARCHITECTURE.md](ARCHITECTURE.md)（§5.73 阶段79/80、§5.74 阶段81）。
+> [ARCHITECTURE.md](ARCHITECTURE.md)（§5.73 阶段79/80、§5.74 阶段81、§5.75 阶段82）。
 
 ## 已交付
 
@@ -6135,3 +6135,26 @@ UTF-8 字符。
    回归，README 已注明）。同批修掉 `tests/dv.no` 里唯一的「行首 `&&` 续行」
    （nolang 解析器不支持，此前被编译缓存掩盖，cmp-scene 改动触发重编后暴露），
    改为单行 `&&`。全量套件 **139/139**。
+
+## 验收记录（阶段82：GPU 后端的纹理管线）
+
+阶段79 起 GPU 路径只画矩形，文本 / 图片 / 圆角 / 阴影 / 旋转图静默降级或跳过。
+本阶段补齐完整纹理管线并接入 `app-draw-scene`：
+
+1. **两条 MSL 管线**：纯色 `{vec2 pos, vec4 color}`；纹理顶点额外带
+   `uv` + 角点/半径字段，片段着色器 `texture.sample(smp, uv)` 乘顶点色。
+   旋转在 CPU 端算四角（绕中心转 angle），flip 位翻 UV——不翻几何。
+2. **纹理注册表**：PNG（SDL_image 解码）与文字（TTF 白底 alpha 蒙版，按字符串
+   缓存复用）统一 id（从 1 起）。**坑**：SDL `RGBA8888` 内存序是 A,B,G,R
+   （小端），Metal `R8G8B8A8_UNORM` 期望 R,G,B,A，文字纹理必须转
+   `ABGR8888`，否则整幅变青。另：`num_samplers` 未声明会让 Metal 校验层报
+   `missing Sampler binding at index 0`。
+3. **合并绘制**：连续纯色 quad 合并成单次 draw；纹理逐条 draw；帧末 submit
+   后释放 buffer、清零队列。dummy 驱动下 GPU init 失败仍优雅返回 -1。
+4. **app.no 分流**：CS-TEXT/IMG/IMGR/ROUND/SHADOW 各有 GPU 出口；字体经
+   `_noui-gpu-font-init`。**坑**：flip 是枚举起量，不能过 `pxi`（除 100 归零）。
+5. **测试**：`tests/app-gpu.no` 扩到 13 项（开关 / 颜色通道 / 真机与 dummy
+   两分支）；新增 `tests/app-draw-prims.no` 软件后端混排断言。dummy 与真机
+   Metal 两路均 `ALL APP-GPU TESTS PASSED` + `ALL APP-DRAW-PRIMS TESTS PASSED`。
+   像素级截帧回归（临时脚本已删）确认背景 0x2A2A38、文字纯白、plain /
+   45° 旋转 / flip 几何全部正确。详见 `ARCHITECTURE.md` §5.75。

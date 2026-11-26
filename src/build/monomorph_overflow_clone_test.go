@@ -13,7 +13,7 @@ import (
 
 // TestMonomorphPreservesOverflowAnnotation 是单态化克隆丢失 #{overflow} 行注解的回归测试。
 //
-// 复现场景：test/std/arr.no 里 `a = [1,2,3]; a.sum()` 会单态化出 vec.no `[]t.sum` 的具体
+// 复现场景：test-std/src/arr.no 里 `a = [1,2,3]; a.sum()` 会单态化出 vec.no `[]t.sum` 的具体
 // 实例；sum 体内 `acc = acc + .[i]` 上方带有 `#{overflow=wrap}` 行注解（解析期写入
 // 语句节点的 OverflowMode 字段）。substituteStmt 克隆函数体时新建语句节点却未复制
 // OverflowMode，导致 merged program 中的克隆体被 ovfhndld / ovf-int-default 误报
@@ -21,7 +21,7 @@ import (
 //
 // 回归保障：substituteStmt 必须把 OverflowMode 携带到单态化克隆体。
 func TestMonomorphPreservesOverflowAnnotation(t *testing.T) {
-	// 測試陣列已從 test/std/arr.no 遷到 test-std/src/arr.no（獨立 std 測試包）。
+	// 測試陣列已從 test-std/src/arr.no 遷到 test-std/src/arr.no（獨立 std 測試包）。
 	// 兩條路徑都接受，避免遷移過渡期因 fixture 移動而假紅。
 	path := filepath.Join("..", "..", "test-std", "src", "arr.no")
 	if _, err := os.Stat(path); err != nil {

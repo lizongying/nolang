@@ -1,4 +1,4 @@
-; test/std/rsa.no — crypto/rsa 模組測試
+; test-std/src/rsa.no — crypto/rsa 模組測試
 ;
 ; 執行：no test test-std/src/rsa.no
 ; 覆蓋：rsa.rsa-encrypt-bytes / rsa.rsa-decrypt-bytes（大端無符號 bytes ↔ base 2^32 little-endian limbs 模冪）

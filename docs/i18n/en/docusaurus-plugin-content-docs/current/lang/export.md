@@ -103,6 +103,25 @@ External packages can only access exported items declared in `lib.no` when impor
 # package-name.utils.greet
 ```
 
+### Deliberately unused imports: the `_` alias
+
+Some modules must be imported **directly** by the entry file for their top-level
+bindings (constants / globals / struct definitions) to be generated; reading them
+through an indirect dependency silently yields 0 or fails to compile (bug #85).
+Such imports have no symbol used in the file, so `no vet` emits an `unimpuse`
+hint. Add a `_` alias to mark the import as intentionally kept for its side
+effects: the import still takes effect, the hint disappears, and the module's
+prefix stays its usual ShortName (`_` is **not** a module alias).
+
+```no
+# /glossary/src/nav _    ; keep the import to generate top-level bindings
+# /glossary/src/drv      ; actually used here, keep the bare import
+code = drv.dispatch()
+```
+
+This only applies to **module imports** (`# path _`). A function import
+`# path.fn _` is the existing spelling for discarding that function binding.
+
 ## LSP Support
 
 - **Go-to-definition**: Click on an exported function name or alias in `lib.no` to jump to its definition in the corresponding module file

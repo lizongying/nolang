@@ -236,7 +236,7 @@ func injectEnterLeave(program *parser.Program) {
 					// 的型別會被插入一個不存在的 enter() 呼叫，整個檔案在 codegen
 					// 階段直接失敗（EmitLLVM: unknown callee T.enter）——
 					// 而 `src/std/leave.no` 的說明正是「提供 T.leave 即可」。
-					// 2026-11-12 修；迴歸：test/std/leave.no 的 'leave only type'。
+					// 2026-11-12 修；迴歸：test-std/src/leave.no 的 'leave only type'。
 					if hasEnter[typeName] {
 						newStmts = append(newStmts, makeMethodCall(varName, "enter"))
 					}
@@ -252,7 +252,7 @@ func injectEnterLeave(program *parser.Program) {
 				//   巢狀區塊裡 return      ⇒ LiLoLiLo（全部兩遍）
 				//   迴圈體內 return        ⇒ LiLoLi
 				// 對 `fs.close()` 這類 leave 來說，重複關閉就是真 bug。
-				// 2026-11-12 移除；迴歸：test/std/leave.no 的 'leave before return'。
+				// 2026-11-12 移除；迴歸：test-std/src/leave.no 的 'leave before return'。
 			case *parser.ForStatement:
 				if s.Body != nil {
 					walkBlock(funcName, s.Body, scopeVars, scopeTypes)
@@ -263,7 +263,7 @@ func injectEnterLeave(program *parser.Program) {
 				// 漏掉這一支時，塊內的宣告完全不會被注入 enter/leave，
 				// 也就是說「用 `{ }` 圈起來的資源不會自動關閉」——
 				// 症狀完全靜默（編譯通過、行為錯誤），2026-11-12 修。
-				// 迴歸：test/std/enter.no 的 'enter nested blocks'。
+				// 迴歸：test-std/src/enter.no 的 'enter nested blocks'。
 				walkBlock(funcName, s, scopeVars, scopeTypes)
 			case *parser.BlockMatchStatement:
 				// `{ body }: { arms }` 的 body 同樣是一個作用域。

@@ -1,0 +1,83 @@
+; ============================================================================
+; noui 触摸 / 压感笔事件侧语义测试（阶段 83）—— src/app.no + src/dv-app.no
+;
+; 钉住三件事：
+;   1) aux 含义按事件类型分流：修饰键只对鼠标 / 键盘有效，压力只对触摸 /
+;      笔有效（混用会把滚轮增量当 Shift、把笔压当修饰键）；
+;   2) dva-press 是「主指针按下」的唯一入口：鼠标左键 / 手指 / 压感笔共用
+;      同一条命中 -> 归约路径；
+;   3) 主循环真的消费手指 / 笔事件：注入打包事件后端到端命中按钮、置位
+;      DVA-TOUCH，抬起清零，笔轴只更新悬停 / 压力。
+;
+; 注入走 _noui-event-push（shim 的 FIFO），dummy 驱动不产生真实触摸事件。
+; 按钮用 L-GROW 撑满表单，所以窗口中心一定命中（几何与布局默认值解耦）。
+;
+; 运行：../bin/no run -cc ./ccwrap.sh tests/dva-touch.no
+; ============================================================================
+# /noui/src/dv-app
+
+dv-app-view = () (page i64) {
+    p = dv-form(1, -1)
+    b = dv-node(C-BUTTON, 7, 'go', '', 0, 0, 0, dv-on(), p)
+    dv-act(b, DV-A-TOGGLE, 3)
+    dv-lay(b, dv-lay-grow(), 0, 0)
+    page = p
+}
+dv-app-reduce = (S []i64, k i64) (nw i64) {
+    nw = dv-apply(S, k)
+}
+dv-app-click = (S []i64, k i64, act i64, pay i64, nw i64) () {
+    _ = nw
+}
+
+B256 = 256
+B32 = 4294967296
+B56 = 72057594037927936
+; 语言陷阱：数组元素直接和字面量比较会被推断成 bool 而恒假，先落到命名常量。
+ONE = 1
+ZERO = 0
+
+print('=== dva-touch tests ===')
+
+; ---- 1) aux 分流（纯函数，不碰平台）----
+r1 = app-is-contact(13) == 1 && app-is-contact(14) == 1 &&
+     app-is-contact(15) == 1 && app-is-contact(16) == 1 &&
+     app-is-contact(17) == 1 && app-is-contact(18) == 1 &&
+     app-is-contact(23) == 1
+r2 = app-is-contact(2) == 0 && app-is-contact(5) == 0 &&
+     app-is-contact(7) == 0 && app-is-contact(19) == 0
+r3 = app-is-mods(2) == 1 && app-is-mods(6) == 1 &&
+     app-is-mods(10) == 1 && app-is-mods(4) == 1 && app-is-mods(12) == 1
+r4 = app-is-mods(5) == 0 && app-is-mods(13) == 0 && app-is-mods(24) == 0
+r5 = dva-touch() == 0
+
+; ---- 2) 手指按下：注入 -> 主循环命中 -> 归约 + 置接触标记 ----
+; 第 1 帧还没有组件树（poll 在建视图之前），所以用一条无害的移动事件占位，
+; 真正的按下在第 2 帧才被消费。
+S1 []i64 = [0, 0, 0, 0]
+c0 = dva-clicks()
+app-event-push(15 + 280 * B256 + 210 * B32 + 200 * B56)   ; finger motion（占位）
+app-event-push(13 + 280 * B256 + 210 * B32 + 200 * B56)   ; finger down
+dva-run(S1, 'touch-finger', 4)
+r6 = S1[3] == ONE
+r7 = dva-clicks() == c0 + 1
+r8 = dva-touch() == 1
+
+; ---- 3) 压感笔：按下命中 -> 笔移动 -> 笔轴 -> 抬起清零 ----
+S2 []i64 = [0, 0, 0, 0]
+c1 = dva-clicks()
+app-event-push(15 + 280 * B256 + 210 * B32 + 255 * B56)   ; finger motion（占位）
+app-event-push(16 + 280 * B256 + 210 * B32 + 255 * B56)   ; pen down
+app-event-push(18 + 260 * B256 + 200 * B32 + 180 * B56)   ; pen motion
+app-event-push(23 + 260 * B256 + 200 * B32 + 90 * B56)    ; pen axis
+app-event-push(17 + 260 * B256 + 200 * B32)               ; pen up
+dva-run(S2, 'touch-pen', 7)
+r9 = S2[3] == ONE
+r10 = dva-clicks() == c1 + 1
+r11 = dva-touch() == 0
+
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11
+print('aux-contact={r1}{r2} aux-mods={r3}{r4} touch0={r5} finger={r6}{r7}{r8} pen={r9}{r10}{r11}')
+print('all-ok={all-ok}')
+(all-ok) -> { print('ALL DVA-TOUCH TESTS PASSED') }
+(!all-ok) -> { print('DVA-TOUCH TESTS FAILED'); exit(1) }

@@ -14,22 +14,25 @@
 ;   在套件模式下解析不到（s153 層 1 實測：setfield field "r" not found on "drv.bpctx"）。
 ;   noc 現在讀 asp.K_*（ps.parse）、lx.*（ps.new）、ast.*（ps.parse）、tok.*（ps.*），
 ;   所以入口檔必須把它們**全部**直接列出——即使 main 本身從不使用。
-# /compiler/src/asp
-# /compiler/src/ast
+;   未使用的導入一律加 `_` 別名（`# path _`）：既標明刻意保留導入，
+;   也抑制 checker 的 unimpuse hint；`drv` 本檔確有使用，保持裸導入。
+
+# /compiler/src/asp _
+# /compiler/src/ast _
 # /compiler/src/drv
-# /compiler/src/lx
-# /compiler/src/ps
-# /compiler/src/tok
-# /compiler/src/mir
-# /compiler/src/cg
-# /compiler/src/cg-runtime
-# /compiler/src/cg-rc
-# /compiler/src/h2m
-# /compiler/src/link
-# /compiler/src/util/sb.sb
-# /compiler/src/diag
-# /compiler/src/ck
-# /compiler/src/ck-sig
+# /compiler/src/lx _
+# /compiler/src/ps _
+# /compiler/src/tok _
+# /compiler/src/mir _
+# /compiler/src/cg _
+# /compiler/src/cg-runtime _
+# /compiler/src/cg-rc _
+# /compiler/src/h2m _
+# /compiler/src/link _
+# /compiler/src/util/sb.sb _
+# /compiler/src/diag _
+# /compiler/src/ck _
+# /compiler/src/ck-sig _
 
 code = drv.dispatch()
 exit(code)

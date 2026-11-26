@@ -7775,7 +7775,7 @@ out: 十進表現（i64 へ拡張後整形）
 整数べき base^n（n >= 0, i64）— number.pow として呼ぶ（モジュール接頭辞）。
 math.no の f64 pow と同名だが別モジュールなので、ビルドが number. 接頭辞を付ける;
 math.pow-int（int 汎用の高速べき乗）と同義だが、明示的な i64 シグネチャにして
-test/std/number.no の number.pow(2, 10) のようなアサーションが成り立つようにしている。
+test-std/src/number.no の number.pow(2, 10) のようなアサーションが成り立つようにしている。
 base: 底
 n: 指数（n ≥ 0、負数は結果未定義）
 res: base の n 乗（高速べき乗、オーバーフローはラップ）

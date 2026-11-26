@@ -36,7 +36,7 @@ func findLetByName(prog *parser.Program, funcName, varName string) *parser.LetSt
 // 失效（三臂全不執行、兩臂恆落 catch-all）。
 //
 // 外顯症狀：int.to-str（union 方法）對 i64 以外的整數型別輸出空字串——
-// 位數靠 `digits-opt = digits + 1` 累加，clone 內恆為 0。test/std/number.no
+// 位數靠 `digits-opt = digits + 1` 累加，clone 內恆為 0。test-std/src/number.no
 // 的 "u64-to-str 255 len/content" 兩條失敗即此。
 func TestUnionCloneCarriesInferredType(t *testing.T) {
 	src := `myu = u8 | u64

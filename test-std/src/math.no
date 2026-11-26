@@ -12,7 +12,7 @@
 ;       degrees / radians —— 已改為 f64 方法形式（x.degrees()）
 ;       ceil / floor / round / trunc —— 已改為 f64 方法形式（x.ceil()）
 ; 不測：max / min —— 為 math 模組的 num 泛型 .no 函數（變參泛型
-;       math.max / math.min，見 test/std/number.no 的 t-max-min），
+;       math.max / math.min，見 test-std/src/number.no 的 t-max-min），
 ;       math 不再提供 f64 內建同名樁；abs 已改為 num 模組方法（num.abs）。
 ; 不測：swap —— 簽名 `() (a t, b t)` 兩個都是結果參數，泛型 t 無從推斷，沒有任何
 ;       可工作的調用形式（`math.swap()` 能編過但不交換；`math.swap(a, b)` 報

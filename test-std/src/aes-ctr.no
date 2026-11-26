@@ -1,4 +1,4 @@
-; test/std/aes-ctr.no — crypto/aes-ctr 模組測試
+; test-std/src/aes-ctr.no — crypto/aes-ctr 模組測試
 ;
 ; 執行：no test test-std/src/aes-ctr.no
 ; 覆蓋：aes-ctr.crypt-128（counter 模式為對稱 XOR）

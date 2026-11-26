@@ -1231,7 +1231,7 @@ func (l *lowerer) inferOptionArith(s *LetStatement) bool {
 		// 缺這條時 `pos-opt14 = pos + label-len` 不發 ?i64 ⇒ 主語無型別 ⇒
 		// `pos-opt14: { ok -> pos = it  -> }` 的 ok 臂退化成 `slot == 0`、
 		// 永不命中 ⇒ pos 不前進，src/std/net/dns.no 的 parse-name 只解出
-		// 第一個標籤並以 next-pos=-1 結束（test/std/dns.no 的 parse-name 三條）。
+		// 第一個標籤並以 next-pos=-1 結束（test-std/src/dns.no 的 parse-name 三條）。
 		if okLT && l.unsignedNarrowIntOperand(inf.Right) {
 			rt, okRT = lt, true
 		} else if okRT && l.unsignedNarrowIntOperand(inf.Left) {
@@ -1326,7 +1326,7 @@ func (l *lowerer) optionAwareOperandType(e Expression) (string, bool) {
 //
 // src/std/net/dns.no 的 parse-name 正是這樣：`label-len = len-byte`（len-byte 是
 // `data[pos]` 解出的 byte）之後 pos 永不前進，只解出第一個標籤並以 next-pos=-1
-// 結束（test/std/dns.no 的 parse-name 三條断言）。
+// 結束（test-std/src/dns.no 的 parse-name 三條断言）。
 //
 // 只處理別名形態（RHS 為識別字／欄位／呼叫），且不登記 option 型別：
 // option 別名會把 nil 傳播語意攪進來，那是 captureTargetAllowsOption 的職責。
@@ -3199,12 +3199,12 @@ func iterVarType(ie *IterationExpr, types map[string]string) string {
 // `y = d.year` / `m = d.month` / `d.day` / `d.hour` 全是欄位讀取，缺這一步
 // 時 y、m2 無型別 ⇒ `y-opt = y - 1`、`m2-opt = m2 - 3` 推不出 ?i64 ⇒
 // ok 臂不賦值 ⇒ 1970-01-01 的年沒減成 1969、月份沒對齊到「3 月為年初」，
-// 換算出的 Unix 秒全錯（test/std/time.no 的 date-to-unix/parse-date 五條）。
+// 換算出的 Unix 秒全錯（test-std/src/time.no 的 date-to-unix/parse-date 五條）。
 //
 // 欄位表一律走 structFieldsOf（parse 期由 decl.go 登記、blob 載入後由
 // mergeLocalStructFields 補回）。**不要**改用「在 p.prog 裡按名字找
 // StructDefinition」：`p.prog` 在多檔編譯下可能同時看到多個模組的同名結構體，
-// 按名字取會撞錯（實測 test/std/ 目錄模式下 dom.no 的實體解碼因此回歸）。
+// 按名字取會撞錯（實測 test-std/src/ 目錄模式下 dom.no 的實體解碼因此回歸）。
 // structFieldsOf 是模組感知的，同名跨模組時直接拒答。
 //
 // 只認「接收者是識別符或另一層欄位」的形態；其餘（指標成員、泛型實例、
@@ -5665,7 +5665,7 @@ func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStateme
 	// 識別符、索引與欄位讀取（如 `parts[i]`、`rec.i`）都可作為 option-match 主體：
 	// 索引／欄位主體回傳的選項 rvalue 需綁定到 `it`，後續臂體 `s = it` 才能取到
 	// payload。缺 DotExpression 這格時 `v = box.i: { ok -> it  -> -1 }` 的 ok 臂
-	// 拿不到綁定，MIR 把 `it` 零填 ⇒ 恆得 0（test/std/index-out.no 的
+	// 拿不到綁定，MIR 把 `it` 零填 ⇒ 恆得 0（test-std/src/index-out.no 的
 	// `option 欄位直接指派值 → ok(42)`）。
 	switch matched.(type) {
 	case *Identifier, *IndexExpression, *DotExpression:

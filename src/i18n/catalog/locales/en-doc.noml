@@ -7772,7 +7772,7 @@ out: decimal representation (formatted after widening to i64)
 integer power base^n (n >= 0, i64) — called as number.pow (module prefix).
 Same name as math.no's f64 pow but a different module, so the build adds a number. prefix;
 synonymous with math.pow-int (the int generic fast power), but with an explicit i64 signature so that
-assertions such as number.pow(2, 10) in test/std/number.no hold.
+assertions such as number.pow(2, 10) in test-std/src/number.no hold.
 base: the base
 n: exponent (n ≥ 0; results are undefined for negatives)
 res: base raised to the power n (fast exponentiation, overflow wraps)

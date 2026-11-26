@@ -1,4 +1,4 @@
-; test/std/hkdf.no — crypto/hkdf 模組測試
+; test-std/src/hkdf.no — crypto/hkdf 模組測試
 ;
 ; 執行：no test test-std/src/hkdf.no
 ; 覆蓋：hkdf-extract、hkdf-expand、hkdf-expand-hmac、hkdf-expand-label、

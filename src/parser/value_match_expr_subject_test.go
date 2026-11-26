@@ -68,7 +68,7 @@ const valueMatchExprSubjectChainSrc = `two = (a i64, b i64) (out i64) {
 // 接收者型別、語義副表也沒有 e 的條目。少了 `e i64 = …` 的標註，
 // `precision - 1 - e: { … }` 就不會歸一化成 `__match_subj ?i64`，ok 臂
 // 沒有 `let it` ⇒ MIR 零填 ⇒ dec-places 恆為 0 ⇒ fmt.fmt-f64(2.5, ”)
-// 從 '2.5' 退化成 '3'（test/std/fmt.no 的 fmt-f64 default）。
+// 從 '2.5' 退化成 '3'（test-std/src/fmt.no 的 fmt-f64 default）。
 const valueMatchExprSubjectASTAnnotatedSrc = `f = (precision i64) (out i64) {
     e i64 = flr.to-i64()
     dec-places i64 = precision - 1 - e: {

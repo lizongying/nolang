@@ -353,19 +353,19 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     ; token = stage1 XOR stage3
     i = 0
     (i < 20) {
-        ixout339c26 = stage1[i]: {
+        s1-byte = stage1[i]: {
             ok -> it
 
             -> _
         }
 
-        ixout339c38 = stage3[i]: {
+        s3-byte = stage3[i]: {
             ok -> it
 
             -> _
         }
 
-        token[i] = ixout339c26 ^ ixout339c38
+        token[i] = s1-byte ^ s3-byte
 
         #{overflow=wrap}
         {

@@ -10,7 +10,7 @@ import (
 
 // TestFormatPreservesUnderscorePlaceholder guards that `no fmt` keeps the `_`
 // no-op placeholder the corpus writes in match arms (`-> _`, 2800+ sites in
-// src/std + test/std + tests) and as a bare statement in a block.
+// src/std + test-std/src + tests) and as a bare statement in a block.
 //
 // `_` parses to an ExpressionStatement whose Expression is nil — the same shape
 // as the `;`-separator and synthetic placeholders the formatter filters out —

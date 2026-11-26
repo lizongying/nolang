@@ -232,7 +232,7 @@ REGRESS 12 / PASS 340
 63895e59  (2026-09-22 冻结)
 `
       related: ['make-test', 'no-test']
-      refs: ['test/std', 'Makefile']
+      refs: ['test-std/src', 'Makefile']
     }
     'i18n': {
       title: 'i18n（诊断多语言）'

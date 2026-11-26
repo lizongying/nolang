@@ -1,4 +1,4 @@
-; test/std/chacha20-poly1305.no — crypto/chacha20-poly1305 模組測試
+; test-std/src/chacha20-poly1305.no — crypto/chacha20-poly1305 模組測試
 ;
 ; 執行：no test test-std/src/chacha20-poly1305.no
 ; 覆蓋：chacha20-poly1305-seal / -open，以及內部構成 rotl32 / qr /

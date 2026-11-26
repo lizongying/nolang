@@ -6516,7 +6516,7 @@ out: 等值的 i64
 整數冪 base^n（n >= 0，i64）—— 供 number.pow 呼叫（模組前綴）。
 與 math.no 的 f64 pow 同名但不同模組，建置期加 number. 前綴；
 與 math.pow-int（int 泛型快速冪）同義，但明確 i64 簽名以符合
-test/std/number.no 的 number.pow(2, 10) 等斷言。
+test-std/src/number.no 的 number.pow(2, 10) 等斷言。
 
 `
   'number.u128.is-prime': `

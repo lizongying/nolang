@@ -1,6 +1,6 @@
 ; std-str.no — str 模組測試
 ;
-; 執行：no run test/std/str.no
+; 執行：no run test-std/src/str.no
 ; 覆蓋：len / index / index-from / contains / starts-with / ends-with /
 ;       to-upper / to-lower / trim / repeat / slice / to-bytes / to-i64 /
 ;       eq / copy / fill

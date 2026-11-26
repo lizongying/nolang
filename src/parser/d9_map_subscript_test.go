@@ -5,7 +5,7 @@ package parser
 // D9 要求 `a[i] = v` 显式解包，理由是「位置可能越界，写入无落地处」。map 的下标
 // 是**键**：读缺席 → nil，写 = put（任何键恒有定义），没有越界写，也就没有可解包
 // 的东西 —— 所以 `m[k] = v` 直接写（见 hir2mir 的 map 下标降糖与
-// test/std/map-index.no）。
+// test-std/src/map-index.no）。
 //
 // `m[k] ?= v` 则不同：它不是「多余」而是**降糖出来就是错的**。
 //   - `?=` 的 ok 臂是「读出 a[i]，再写回元素**位置**」；map 读出的 ?V 只是 get 的

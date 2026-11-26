@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""std_test_coverage.py — 盘点 src/std 的 API 面与 test/std 的实际覆盖。
+"""std_test_coverage.py — 盘点 src/std 的 API 面与 test-std/src 的实际覆盖。
 
 API 面（inventory）来源是 `src/std/**/*.no` 的**顶层声明**：
   - `name = (...)`            → 模块函数，调用形式 `<alias>.<name>(...)`
   - `type.method = (...)`     → 方法，调用形式 `<recv>.<method>(...)`
 
 覆盖判定（保守口径，宁可漏报也不虚报）：
-  - 模块函数：**任意** `test/std/*.no` 出现 `<alias>.<name>` 即算覆盖，
+  - 模块函数：**任意** `test-std/src/*.no` 出现 `<alias>.<name>` 即算覆盖，
     右侧要求不是标识符字符（Nolang 标识符含 `-`，所以边界是 `[^A-Za-z0-9_-]`），
     否则 `sha256.sha256-hex` 会被 `sha256.sha256` 假命中。
-  - 方法：**该模块自己的** `test/std/<alias>.no` 出现 `.<method>(` 即算覆盖。
+  - 方法：**该模块自己的** `test-std/src/<alias>.no` 出现 `.<method>(` 即算覆盖。
     不在别模块的测试里找，避免 `.len(` / `.init(` 这种通用名把上千个方法一起点亮。
     这是近似：同一模块内有多个结构体共用同名方法时可能高估（`--verbose` 会标 `~`）。
   - **例外：全局内建模块**（见 UNQUALIFIED_CALL_MODULES）。`global` 里的
@@ -156,7 +156,7 @@ UNREACHABLE = {
     # math.arr-zero：`#{buildin}` 的 ForwardFunc，只以**接收者形式**存在
     # （`[N]num.zero()` / `[]num.zero()`），签名 `() {}` 没有任何形参，
     # 因此不存在 `math.arr-zero(...)` 这种全限定调用。实测 `arr.zero()` /
-    # `sl.zero()` 正常（test/std/math.no 的 t-arr-zero 盖的就是它），
+    # `sl.zero()` 正常（test-std/src/math.no 的 t-arr-zero 盖的就是它），
     # 覆盖率工具按「函数名 + 别名」匹配，看不见方法形式 ⇒ 与 str.eq-raw 同类。
     ('math', 'arr-zero'),
     # math.swap：签名 `() (a t, b t)`——两个都是**结果参数**，泛型 t 只能由
@@ -171,7 +171,7 @@ UNREACHABLE = {
     #                        for stdout with a newline, or io.out(...) ... [oflgmsef]
     #   fmt.eprintf('x')  ⇒ [ERROR] deprecated: eprintf() is removed; use eprint(...)
     #                        for stderr with a newline, or io.err(...) ... [oflgmsef]
-    # （fmt.sprintf 是例外：它真的还能用，已在 test/std/fmt.no 覆盖。）
+    # （fmt.sprintf 是例外：它真的还能用，已在 test-std/src/fmt.no 覆盖。）
     ('fmt', 'printf'),
     ('fmt', 'eprintf'),
     # vec.vec-push / vec.vec-clear：`#{buildin}` 声明，是 `[]t.push` / `[]t.clear`
@@ -180,7 +180,7 @@ UNREACHABLE = {
     #                         top-level function 'vec-push' [trdj5rp8]
     #   vec.vec-clear()     ⇒ unknown function 'vec.vec-clear': module 'vec' has no
     #                         top-level function 'vec-clear' [trdj5rp8]
-    # 对应的用户形态 `.push(` / `.clear(` 已在 test/std/vec.no 覆盖。
+    # 对应的用户形态 `.push(` / `.clear(` 已在 test-std/src/vec.no 覆盖。
     ('vec', 'vec-push'),
     ('vec', 'vec-clear'),
     # err.code.to-name：枚举 `code` 上的方法，用户码取不到。
@@ -220,7 +220,7 @@ UNREACHABLE = {
     #   u str = with-cap(16); u.cap()     ⇒ EmitLLVM: unknown callee str.cap
     #                                       in func main [4qhyyund]
     #   u str = with-cap(16); str.cap(u)  ⇒ 同上，一字不差
-    # 用户形态 `s.cap`（属性）已在 test/std/str.no 的 t-cap 覆盖。
+    # 用户形态 `s.cap`（属性）已在 test-std/src/str.no 的 t-cap 覆盖。
     ('str', 'cap'),
 }
 
@@ -349,7 +349,8 @@ def load_tests():
         return out
     for fn in sorted(os.listdir(TEST)):
         if fn.endswith('.no'):
-            lines = [strip_comment(ln) for ln in read(os.path.join(TEST, fn)).splitlines()]
+            lines = [strip_comment(ln) for ln in read(
+                os.path.join(TEST, fn)).splitlines()]
             out[fn[:-3]] = '\n'.join(lines)
     return out
 
@@ -359,7 +360,8 @@ def func_covered(tests, alias, symbol):
     hits = [name for name, text in tests.items() if pat.search(text)]
     if not hits and alias in UNQUALIFIED_CALL_MODULES:
         # 全局内建只能裸调用（带前缀编不过），按裸调用文本判定
-        bare = re.compile(r'(?<![A-Za-z0-9_.\-])' + re.escape(symbol) + r'\s*\(')
+        bare = re.compile(r'(?<![A-Za-z0-9_.\-])' +
+                          re.escape(symbol) + r'\s*\(')
         hits = [name for name, text in tests.items() if bare.search(text)]
         hits = [h + '(bare)' for h in hits[:1]]
     return hits
@@ -456,10 +458,12 @@ def main():
     if args.missing:
         for r in rows:
             if r['missing']:
-                print('[%s] (%s) %d missing:' % (r['module'], r['alias'], len(r['missing'])))
+                print('[%s] (%s) %d missing:' %
+                      (r['module'], r['alias'], len(r['missing'])))
                 for name in r['missing']:
                     print('    ' + name)
-        na = [(r['module'], r['alias'], r['na_names']) for r in rows if r['na']]
+        na = [(r['module'], r['alias'], r['na_names'])
+              for r in rows if r['na']]
         if na:
             print()
             print('platform N/A（宿主 %s，标签无交集，本机编不出来，不计入分母）共 %d 个：' %
@@ -468,13 +472,15 @@ def main():
                 print('[%s] (%s) %d platform-N/A:' % (mod, alias, len(names)))
                 for name in names:
                     print('    ' + name)
-        priv = [(r['module'], r['alias'], r['priv_missing']) for r in rows if r['priv_missing']]
+        priv = [(r['module'], r['alias'], r['priv_missing'])
+                for r in rows if r['priv_missing']]
         if priv:
             print()
             print('private / unreachable（`_` 前缀或 UNREACHABLE，用户码不可调用，不计入分母）共 %d 个：' %
                   sum(len(p[2]) for p in priv))
             for mod, alias, names in priv:
-                print('[%s] (%s) %d private/unreachable:' % (mod, alias, len(names)))
+                print('[%s] (%s) %d private/unreachable:' %
+                      (mod, alias, len(names)))
                 for name in names:
                     print('    ' + name)
         return 1 if (args.strict and tot != cov) else 0
@@ -491,7 +497,8 @@ def main():
             sum(r['methods'] for r in rows), sum(r['methods_cov'] for r in rows)))
         return 0
 
-    print('std 文件 %d / 模块别名 %d / 测试档 %d' % (len(modules), len(set(modules.values())), len(tests)))
+    print('std 文件 %d / 模块别名 %d / 测试档 %d' %
+          (len(modules), len(set(modules.values())), len(tests)))
     print('API 面 %d（函数 %d，方法 %d），已覆盖 %d（%.1f%%）' % (
         tot, sum(r['funcs'] for r in rows), sum(r['methods'] for r in rows),
         cov, 100.0 * cov / tot if tot else 0.0))
@@ -518,8 +525,10 @@ def main():
             if not r['missing']:
                 continue
             head = r['missing'][:8]
-            more = '' if len(r['missing']) <= 8 else ' …(+%d)' % (len(r['missing']) - 8)
-            print('  %-30s %3d  %s%s' % (r['module'], len(r['missing']), ' '.join(head), more))
+            more = '' if len(
+                r['missing']) <= 8 else ' …(+%d)' % (len(r['missing']) - 8)
+            print('  %-30s %3d  %s%s' %
+                  (r['module'], len(r['missing']), ' '.join(head), more))
     return 1 if (args.strict and tot != cov) else 0
 
 

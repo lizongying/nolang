@@ -229,7 +229,7 @@ NOLANG_MIR_OPT=2 NOLANG_MIR_OPT_STATS=1 no build -o out main.no
 
 **前导能不能整个移除？不能。** 前导区间里不只有函式，还有**程式自己的字串字面值**（`@.mir.str.N`，就是 `"hi"` 本身）、`%str-long`／`%option`／`%task` 等型别、`@malloc`／`@write`／`@llvm.memcpy` 等外部宣告——这些资料面占模组约 30%，砍掉连 `llc` 都过不了（`error: use of undefined value '@.mir.str.1'`）。能删的只有**函式**那一半：把 48 个 `define` 换成同名 `declare` 后，连结器报出的未定义符号恰好是 `print_nl`、`print_str`、`str_free`、`str_from_const` 四个。所以正确的问法是「能不能按需发射」，而不是「能不能移除」。
 
-这笔浪费是一笔**与程式大小无关的固定税**：前导的程式码与注解逐模组相同（48 个定义、程式码 36,043 ＋ 注解 17,516 bytes），语料抽样 40 档的保留量是 **0–19 个、中位数 9**。`tests/dup.no`／`tests/q.no`／`tests/u128-types.no` 保留 **0 个**——整段前导对它们全是死的。因此节省比例完全由模组大小决定：一行程式 −76.5%，3.0 MB 的 `test/std/pbkdf2.no` 只有 −4.1%。
+这笔浪费是一笔**与程式大小无关的固定税**：前导的程式码与注解逐模组相同（48 个定义、程式码 36,043 ＋ 注解 17,516 bytes），语料抽样 40 档的保留量是 **0–19 个、中位数 9**。`tests/dup.no`／`tests/q.no`／`tests/u128-types.no` 保留 **0 个**——整段前导对它们全是死的。因此节省比例完全由模组大小决定：一行程式 −76.5%，3.0 MB 的 `test-std/src/pbkdf2.no` 只有 −4.1%。
 
 前导能不能整个移除？不能——区间里还有程式自己的字串字面值（`@.mir.str.N`）、型别与外部宣告（1,151 bytes），砍掉连 `llc` 都过不了。而且 `codegen.go:75-83` 的 `extraFuncs`／`extraFuncsBody` 本来就是一个按需发射器（option／struct／enum／ptr 的 helper 都走它），前导是唯一没被转换的部分；但把它改成按需，能多拿的几乎全是注解，程式码面已经没有东西可拿。
 

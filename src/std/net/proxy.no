@@ -522,7 +522,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; `[]byte` 的 `len` 在寫入索引 i 之後就是 i+1（實測：寫 0..2 ⇒ len = 3），
     ; 所以這裡**不能**再 `+ 1`：舊寫法 `req.len() + 1` 會多送一個 0x00
     ; （無認證時送 4 位元組、認證時送 5 位元組），對端若嚴格按 RFC1928 讀
-    ; 第 3 / 4 位元組就會讀到垃圾。test/std/proxy.no 的 §9 §10 釘住這條。
+    ; 第 3 / 4 位元組就會讀到垃圾。test-std/src/proxy.no 的 §9 §10 釘住這條。
     req-str-opt = req.to-str()
     req-str str = ''
     req-str-opt: {

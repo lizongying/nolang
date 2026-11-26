@@ -1,4 +1,4 @@
-; test/std/x25519.no — crypto/x25519 模組測試
+; test-std/src/x25519.no — crypto/x25519 模組測試
 ;
 ; 執行：no test test-std/src/x25519.no
 ; 覆蓋：整個 x25519 模組 —— 域元素運算（fe-*，含 -v 回值版本）、位元組轉換、

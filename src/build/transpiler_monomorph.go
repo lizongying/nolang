@@ -1094,7 +1094,7 @@ func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType strin
 		//
 		// 外顯症狀：int.to-str（union 方法）對 i64 以外的整數型別輸出空字串
 		// ——位數靠 digits-opt 累加，clone 內恆為 0，with-cap(0) 後逐位寫入
-		// 越界，結果是 len=0 或內容全 0。test/std/number.no 的
+		// 越界，結果是 len=0 或內容全 0。test-std/src/number.no 的
 		// "u64-to-str 255 len/content" 即此。
 		if inf := sem.InferredType(s); inf != "" {
 			sem.SetInferredType(&ls, inf)

@@ -218,7 +218,7 @@ t-db-leave = () {
         runner.eq(d.closed, 0, 'db: 區塊內 leave 還沒跑')
     }
 
-    ; 離開作用域後的 d 已不可見，leaving 行為已在 test/std/leave.no 全面驗證；
+    ; 離開作用域後的 d 已不可見，leaving 行為已在 test-std/src/leave.no 全面驗證；
     ; 這裡只確認「這種合併了 enter/leave 的型別」能被正常宣告與使用。
     runner.is-true(true, 'db: 合併 enter/leave 的型別可宣告')
 }

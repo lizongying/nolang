@@ -2262,12 +2262,12 @@ at = argt[i]: {
 s.farg.push(at)
 
 ; ❌ no introducir un temporal de un solo uso para algo que se usa una vez
-ixout1 = argt[i]: { ok -> it  -> _ }
-at = ixout1
+arg-at = argt[i]: { ok -> it  -> _ }
+at = arg-at
 s.farg.push(at)
 ```
 
-«Elevar el match de valor a un temporal con nombre fuera del brazo y luego hacer `it = ixout1` dentro» **no es equivalente a la forma directa** y no es una opción de formato libremente intercambiable: el momento de evaluación es distinto (una vez elevado fuera, los brazos `nil` / `err` / catch-all externos también leen una vez); `it` solo vale dentro del brazo y apunta a la posición del elemento, así que la copia debe quedarse dentro; el temporal con nombre es una vinculación nueva, con su propio move／propiedad y destrucción al salir del ámbito; y en caso de anidamiento el nivel interno debe usar la vinculación con nombre `ok(it1) -> it1`, no copiar el `ok -> it` externo. Solo eleve cuando realmente vaya a reutilizar el mismo valor en varios puntos, y use un nombre con significado; no deje nombres de marcador generados por herramientas de migración como `ixout…`.
+«Elevar el match de valor a un temporal con nombre fuera del brazo y luego hacer `it = arg-at` dentro» **no es equivalente a la forma directa** y no es una opción de formato libremente intercambiable: el momento de evaluación es distinto (una vez elevado fuera, los brazos `nil` / `err` / catch-all externos también leen una vez); `it` solo vale dentro del brazo y apunta a la posición del elemento, así que la copia debe quedarse dentro; el temporal con nombre es una vinculación nueva, con su propio move／propiedad y destrucción al salir del ámbito; y en caso de anidamiento el nivel interno debe usar la vinculación con nombre `ok(it1) -> it1`, no copiar el `ok -> it` externo. Solo eleve cuando realmente vaya a reutilizar el mismo valor en varios puntos, y use un nombre con significado que diga qué valor guarda.
 
 #### Recoger los temporales de un solo uso restantes con `?=` y match de bloque
 
@@ -2301,11 +2301,11 @@ handle = (x i64) {
 
 ⚠️ **La diferencia semántica hay que dejarla clara** (medido en la práctica, no por intuición): cuando `?=` falla, **el destino se escribe con el valor cero de todos modos**: `i64` obtiene `0`, `str` obtiene `''`, `out[1]` obtiene `0`. Pero el brazo de respaldo `-> _` del match de valor **no escribe en el destino**: cuando el destino es una **declaración nueva** ya está inicializado a cero, así que parece igual; cuando el destino **ya tiene un valor**, ambos divergen (`?=` lo pone a cero, `-> _` conserva el valor original; para ponerlo a cero hay que escribir `-> 0`). Otra diferencia es el flujo de control: `?=` **omite las sentencias posteriores a él en el cuerpo del bloque** (en una función `?T` es un `return` anticipado, en un match de bloque es un salto directo al brazo).
 
-Así que: **cuando el cuerpo del bloque solo contiene esta sentencia y el valor anterior al fallo no tiene significado**, escribir el brazo de respaldo como `-> 0` es totalmente equivalente (y este es justamente el patrón de la reescritura por lotes en este repositorio, donde los temporales `ixout…` suelen ser declaraciones nuevas); pero cuando después de `?=` hay otras sentencias en el cuerpo (contadores de bucle, asignaciones posteriores), o el valor anterior del destino es significativo, hay divergencia y esos sitios no se pueden reemplazar de forma mecánica. La tabla completa de compensaciones está en «Compensaciones entre match de bloque y match de valor».
+Así que: **cuando el cuerpo del bloque solo contiene esta sentencia y el valor anterior al fallo no tiene significado**, escribir el brazo de respaldo como `-> 0` es totalmente equivalente (y este es justamente el patrón de la reescritura por lotes en este repositorio, donde los temporales suelen ser declaraciones nuevas); pero cuando después de `?=` hay otras sentencias en el cuerpo (contadores de bucle, asignaciones posteriores), o el valor anterior del destino es significativo, hay divergencia y esos sitios no se pueden reemplazar de forma mecánica. La tabla completa de compensaciones está en «Compensaciones entre match de bloque y match de valor».
 
 Otro punto fácil de pasar por alto: **el brazo también se ejecuta una vez en caso de éxito**, el catch-all recibe el valor correcto (`-> print('x')` imprime). Por eso en el brazo solo se debe poner descarte o procesamiento puro; las formas `err -> _` / `-> _` no tienen efectos secundarios.
 
-De aquí se obtiene el orden para limpiar los temporales de un solo uso `ixout…`:
+De aquí se obtiene el orden para limpiar los temporales de un solo uso:
 
 1. El valor se usa una sola vez en un mismo lugar → vincularlo directamente al nombre del destino final (véase arriba).
 2. La función tiene un parámetro de resultado `?T` → `TARGET ?= EXPR`, sin necesidad de temporal.

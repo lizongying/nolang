@@ -1,4 +1,4 @@
-; test/std/http3.no — net/http3 模組測試（QPACK 簡化編解碼／影格／URL 解析）
+; test-std/src/http3.no — net/http3 模組測試（QPACK 簡化編解碼／影格／URL 解析）
 ;
 ; 執行：no test test-std/src/http3.no
 ; 覆蓋：encode-header / decode-header（往返、非字面前綴、越界、長名稱/長值

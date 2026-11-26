@@ -148,8 +148,17 @@ jobs:
       - name: Build no binary
         run: make no
 
+      - name: Install canonical SQLite 3.54.0
+        run: |
+          mkdir -p "$RUNNER_TEMP/sqlite-3.54.0"
+          curl -fsSL https://www.sqlite.org/2026/sqlite-tools-linux-x64-3540000.zip \
+            -o "$RUNNER_TEMP/sqlite-3.54.0.zip"
+          unzip -q "$RUNNER_TEMP/sqlite-3.54.0.zip" -d "$RUNNER_TEMP/sqlite-3.54.0"
+          test "$("$RUNNER_TEMP/sqlite-3.54.0/sqlite3" --version)" \
+            = "3.54.0 2026-04-09 12:25:13 8fa8248e303219400c646a885e36dfc52eae33d83f4412e3f369b2be5373aapl (64-bit)"
+
       - name: Run nosql package gates
-        run: make test-nosql
+        run: make test-nosql SQLITE="$RUNNER_TEMP/sqlite-3.54.0/sqlite3"
 
   # ── std library regression tests ──────────────────────────────────────
   std-test:
@@ -183,12 +192,12 @@ jobs:
 
       - name: Run std tests
         run: |
-          # Run the whole test/std directory in one `no test` invocation: it
+          # Run the whole test-std/src directory in one `no test` invocation: it
           # walks every .no file sequentially (compile + run) and exits 1 if any
           # file fails. -timeout guards against a single hang blocking CI; each
           # file is capped at 120s and gets killed cleanly with its process
           # group. Never drop a file from the gate silently.
-          ./bin/no test -timeout 120 test/std
+          ./bin/no test -timeout 120 test-std/src
 
   # ── Static check gate: std + tests must vet with 0 errors ──────────────
   vet-gate:

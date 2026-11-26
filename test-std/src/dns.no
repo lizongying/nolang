@@ -1,4 +1,4 @@
-; test/std/dns.no — net/dns 模組測試（封包構建／名稱解析／回應解析）
+; test-std/src/dns.no — net/dns 模組測試（封包構建／名稱解析／回應解析）
 ;
 ; 執行：no test test-std/src/dns.no
 ; 覆蓋：build-query（A/AAAA/尾點域名）、parse-name（普通標籤／壓縮指標／

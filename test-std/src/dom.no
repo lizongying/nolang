@@ -1,4 +1,4 @@
-; test/std/dom.no — std/dom 模組測試
+; test-std/src/dom.no — std/dom 模組測試
 ;
 ; 執行：no test test-std/src/dom.no
 ; 覆蓋：parse-xml / parse-html / 節點導航 / 屬性 / 查詢 / 變異 / 序列化 / 實體；

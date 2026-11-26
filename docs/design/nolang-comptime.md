@@ -112,7 +112,7 @@ char 在 MIR/codegen 里是 **i32**（码点整数），而所有下游使用都
 Option 是 `{tag, payload}` 对，`comptimeVal` 既没有 tag 也没有 nil/err 态。折叠一个
 返回 `?i64` 的调用会发出**裸标量**，调用方的 match 随即读到垃圾 tag —— 实测
 `mk-ok()`（结果 `?i64`）被折叠成 11 后，`p: { ok(v) -> … }` 落到了 `nil` 臂
-（`test/std/option.no` 捕获）。故结果类型为 Option 时一律放弃折叠。
+（`test-std/src/option.no` 捕获）。故结果类型为 Option 时一律放弃折叠。
 
 任务（task）不能被常量替换：
 
@@ -180,7 +180,7 @@ lowering 是**顺序**的：进入循环体后，先 lower `start < 0` 这个**�
   时本测试确 fail（0 个 `OpLt`），证明钉到位了。
 - `TestComptimeFoldsSingleAssignmentLocal`：对照——单赋值常量仍应折出 8，防止误伤正常折叠。
 
-端到端门禁：`test/std/txt.no` 的 `txt.fields` 用例，comptime 开/关两态输出必须完全一致
+端到端门禁：`test-std/src/txt.no` 的 `txt.fields` 用例，comptime 开/关两态输出必须完全一致
 （`f0=[one] f1=[two] f2=[three]`）。
 
 ### 2.5 其它守卫
@@ -248,7 +248,7 @@ lowering 是**顺序**的：进入循环体后，先 lower `start < 0` 这个**�
 顺带修掉一处真实 latent bug：`src/std/bigint.no` 的 `bigint.shl1` 曾用
 `.limbs[.len] = carry` 在**恰好 `.len` 个元素**的切片上越界追加（`copy`/`one` 都用
 `with-len` 分配），没有扩容；`bigint.shl` 依赖它，故 `shl` 一并修好
-（`test/std/bigint.no` 的 `t-shl` 用例此前因「預存 codegen bug」被注释停用，从未验证过）。
+（`test-std/src/bigint.no` 的 `t-shl` 用例此前因「預存 codegen bug」被注释停用，从未验证过）。
 
 另：`f64.to-str` 原先全程使用坏的缓冲区写入惯用法 `out[pos]: { ok -> it = X ; -> _ }`
 （实测不写入缓冲区），已统一改为 `out[pos] = X` + `Nstr.byte(i)`，与其他 `to-str-*`
@@ -294,7 +294,7 @@ lowering 是**顺序**的：进入循环体后，先 lower `start < 0` 这个**�
 - **裸调用 `-async` 后缀函数**同样产出 `OpRun`，按名拒绝。
 
 - **Option 结果被折叠 ⇒ 丢失 tag。** 折叠 `?i64` 返回值的调用会发出裸标量，match
-  读到垃圾 tag 走错臂（`test/std/option.no` 实测捕获，见 §2.3.3）。
+  读到垃圾 tag 走错臂（`test-std/src/option.no` 实测捕获，见 §2.3.3）。
 
 另有一批既有单测的探针函数「恰好是纯函数 + 字面量实参」，折叠后不再发出，
 导致 IR 形状断言因「找不到函数」而失败（非不变量被破坏）；已在这些测试内显式关闭
@@ -400,7 +400,7 @@ leap = false
 r = true                   ; 照跑 -> 折成 true
 ```
 
-后果是 `is-leap(1900)` / `is-leap(2023)` 都返回 true，`test/std/time.no` 报
+后果是 `is-leap(1900)` / `is-leap(2023)` 都返回 true，`test-std/src/time.no` 报
 「1900 not leap」/「2023 not leap」（同一二进制 `NOLANG_COMPTIME=0` 时 41/41 全过）。
 这是**静默错答案**，比「不折叠」危险得多——`time` 模块是日历/闰年计算，错一个闰年
 就是生产级 bug。
@@ -413,7 +413,7 @@ r = true                   ; 照跑 -> 折成 true
 
 - `TestComptimeDoesNotFoldAcrossCondChainReturn`：钉住「折叠器不能跨过条件链里的提前
   `return`」——该调用必须留下来。若将来折叠器能正确解释这个合成 `if`（折成 `false`），
-  本断言需改成「折出来的值必须是 false」；取值的端到端门禁是 `test/std/time.no`。
+  本断言需改成「折出来的值必须是 false」；取值的端到端门禁是 `test-std/src/time.no`。
 - `TestComptimeCondChainWithNoReturnStillFolds`：对照——同样的花括号条件链，但链里
   **没有** `return`（纯赋值），必须仍可折叠。否则上一条会因「任何条件链都不折叠」而
   空洞通过。

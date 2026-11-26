@@ -616,8 +616,8 @@ print(sep)
       title: '模块导入（# /path）'
       kind: 'concept'
       status: 'stable'
-      summary: '井号加绝对路径导入模块；入口文件必须直接导入每个用到的子模块。'
-      aliases: ['import', '导入', '#']
+      summary: '井号加绝对路径导入模块；入口文件必须直接导入每个用到的子模块，未使用的用下划线别名标记。'
+      aliases: ['import', '导入', '#', 'unimpuse', 'discard-alias']
       definition: `
 导入写法是一行 # /模块路径，例如 # /glossary/src/db。
 路径以 / 开头（相对工作区根），不带扩展名。
@@ -631,25 +631,31 @@ checker lint tgutu5g0 会对 as 写法报 HINT；no fmt 自 2026-11-10 起直接
 别名正规化成裸别名（src/fmt/stmt.go 的 formatUseStatement），所以跑一次
 no fmt -w 就能消除该 HINT。两种拼法的解析结果只差 AsKeyword flag，语义相同；
 下划线占位别名、带连字号的别名也都是合法 path-ident，正规化后仍可解析。
+
+刻意未使用的导入写「# 路径 _」：「_」是「保留导入、只为副作用」的标记，与未使用
+变量的「_」前缀同一惯例。它**不是**模块别名——模块前缀仍是原本的 ShortName
+（写「# /glossary/src/nav _」之后仍写 nav.xxx(...)）。没有这个标记时，no vet
+会报 unimpuse HINT（src/checker/lint.go 的 unused-imports 步骤；vet 在模组合并
+前对原始入口程序跑这一步，因为合并会消费 UseStatement）。no fmt 原样保留
+「_」别名，不会把它当无别名导入清理。函数导入的「# path.fn _」是既有写法
+（丢弃函数绑定），不要与模块导入的「_」标记混淆。
 `
       syntax: `
 # /glossary/src/db
-# /glossary/src/render
-
-main = () {
-    print(db.count())
-}
+# /glossary/src/render _
+code = db.count()
 `
       example: `
-# /glossary/src/nav
-# /glossary/src/db
-# /glossary/src/jsono
-# /glossary/src/jsonp
-# /glossary/src/render
-# /glossary/src/schema
-# /glossary/src/mcp
-# /glossary/src/mcph
+# /glossary/src/nav _
+# /glossary/src/db _
+# /glossary/src/jsono _
+# /glossary/src/jsonp _
+# /glossary/src/render _
+# /glossary/src/schema _
+# /glossary/src/mcp _
+# /glossary/src/mcph _
 # /glossary/src/drv
+code = drv.dispatch()
 `
       related: ['module-global-shadow', 'module-system', 'symbol-overloading']
       refs: ['glossary/main.no', 'docs/docs/lang/module.md']

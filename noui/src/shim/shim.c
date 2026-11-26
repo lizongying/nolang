@@ -33,6 +33,13 @@ static long long g_max_frames = 0;  /* NOUI_MAX_FRAMES，0 = 不限 */
 static char g_text_buf[256];        /* 最近一次 SDL_EVENT_TEXT_INPUT 的 UTF-8 */
 static char g_drop_buf[1024];       /* 阶段81：最近一次 DROP_FILE / DROP_TEXT */
 
+/* 阶段83：事件注入队列（打包 i64，与 noui_poll 同格式）。给测试与 demo 用：
+ * dummy 驱动不产生真实触摸 / 笔事件，没有注入就没法端到端验证主循环的
+ * 手指 / 笔分支。容量 16，满了就丢弃新的（只影响测试构造）。 */
+#define NOUI_INJ_MAX 16
+static long long g_inj[NOUI_INJ_MAX];
+static int g_inj_head = 0, g_inj_tail = 0;
+
 /* 阶段81：事件类型码（低 8 位），与 src/app.no 头部注释一致。 */
 #define NOUI_EV_QUIT            1
 #define NOUI_EV_LDOWN           2
@@ -396,8 +403,22 @@ static Uint32 ev_window_id(const SDL_Event *e) {
     }
 }
 
+/* 阶段83：事件注入队列。刻意**不**在 noui_init 里清零：测试通常先 push
+ * 再 app-init / dva-run（它们会重新 init），清零会把待发事件冲掉。 */
+void noui_event_push(long long e) {
+    int nx = (g_inj_tail + 1) % NOUI_INJ_MAX;
+    if (nx == g_inj_head) return;      /* 满 */
+    g_inj[g_inj_tail] = e;
+    g_inj_tail = nx;
+}
+
 long long noui_poll(void) {
     SDL_Event e;
+    if (g_inj_head != g_inj_tail) {
+        long long v = g_inj[g_inj_head];
+        g_inj_head = (g_inj_head + 1) % NOUI_INJ_MAX;
+        return v;
+    }
     if (!SDL_PollEvent(&e)) return 0;
     /* 阶段80：记录事件来自哪个窗口（未知窗口保持上次值） */
     Uint32 wid = ev_window_id(&e);
@@ -469,8 +490,12 @@ long long noui_poll(void) {
         case SDL_EVENT_FINGER_DOWN:
         case SDL_EVENT_FINGER_UP:
         case SDL_EVENT_FINGER_MOTION: {
+            /* 阶段83：手指坐标是归一化的，要按**事件所属窗口**的尺寸换算——
+             * 多窗口时用当前 attach 的窗口会算错。找不到窗口就退回主窗。 */
+            int ws = win_slot_of(wid);
+            SDL_Window *fw = (ws >= 0) ? g_windows[ws] : g_window;
             int vw = 0, vh = 0;
-            if (g_window) SDL_GetWindowSize(g_window, &vw, &vh);
+            if (fw) SDL_GetWindowSize(fw, &vw, &vh);
             float sx = (vw > 0) ? (float)vw : 1.0f;
             float sy = (vh > 0) ? (float)vh : 1.0f;
             if (e.type == SDL_EVENT_FINGER_DOWN)          type = NOUI_EV_FINGER_DOWN;

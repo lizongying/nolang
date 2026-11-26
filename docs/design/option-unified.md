@@ -605,7 +605,7 @@ walkStmt/walkExpr + report + seen 去重 + canonPath 归属，`checker/checker.g
 
 规模实测（2026-10-15）：约 **330 个 `.no` 文件**命中 `X[...] = v` 模式（含注释误报），主体
 `src/std`（str.no 87、tls.no 294、x25519 282、hpack 163、argon2 96…）、`tests/`、
-`test/std/`、`compiler/`、`example/`、`bench/`。
+`test-std/src/`、`compiler/`、`example/`、`bench/`。
 
 ### 12.8 开放问题
 
@@ -624,7 +624,7 @@ walkStmt/walkExpr + report + seen 去重 + canonPath 归属，`checker/checker.g
   只判 `KindMap` 会漏掉字面量；
   ② 读侧 `?V` 的 V 取自**被调函数自己的结果参数**（`resultTypesOfCallee`），因为模板里的
   `v` 只在特化签名上被替换过，从结构体名反推 `[]str`→`slice_str` 是不可逆的。
-  门禁：`mir/d9_map_index_test.go`（缺席断言 + 数组正向对照）、`test/std/map-index.no`
+  门禁：`mir/d9_map_index_test.go`（缺席断言 + 数组正向对照）、`test-std/src/map-index.no`
   （端到端：插入/覆写/读回/缺席/多赋值目标）。
   遗留（与 D9 无关的既有缺口，已在基线复现）：map 作为**返回值**（`r = { ... }` 于
   `?[K]V` 结果）与嵌套 map `[str][str]i64` 仍不可用。

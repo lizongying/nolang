@@ -1,6 +1,6 @@
 ; std-base64.no — encoding/base64 模組測試
 ;
-; 執行：no run test/std/base64.no
+; 執行：no run test-std/src/base64.no
 ; 覆蓋：encode-std / encode-url / decode
 
 # test/runner

@@ -2332,17 +2332,16 @@ at = argt[i]: {
 s.farg.push(at)
 
 ; ❌ Não introduza um temporário descartável para uso único
-ixout1 = argt[i]: { ok -> it  -> _ }
-at = ixout1
+arg-at = argt[i]: { ok -> it  -> _ }
+at = arg-at
 s.farg.push(at)
 ```
 
-«Elevar o match de valor para um temporário nomeado fora do braço e depois fazer `it = ixout1` dentro dele» **não é equivalente à forma direta**, não sendo uma
+«Elevar o match de valor para um temporário nomeado fora do braço e depois fazer `it = arg-at` dentro dele» **não é equivalente à forma direta**, não sendo uma
 escolha de formatação livremente intercambiável: os momentos de avaliação diferem (após elevar para fora do braço, o `nil` / `err` / catch-all externo também lê uma vez primeiro);
 `it` só é válido dentro do braço e aponta para a posição do elemento, pelo que a cópia de volta tem de ficar no braço; o temporário nomeado é uma nova vinculação, com o seu próprio
 move／propriedade e destruição ao sair do âmbito; e, quando aninhado, o interior tem de usar a vinculação nomeada `ok(it1) -> it1`, não podendo copiar o
-`ok -> it` de fora do braço. Só eleve quando for realmente reutilizar o mesmo valor em vários locais, e use um nome de variável com significado, não deixando nomes de marcador de posição
-gerados por ferramentas de migração como `ixout…`.
+`ok -> it` de fora do braço. Só eleve quando for realmente reutilizar o mesmo valor em vários locais, e use um nome de variável com significado que diga o que o valor representa.
 
 #### Usar `?=` e match de bloco para eliminar os temporários descartáveis restantes
 
@@ -2388,14 +2387,14 @@ preservou o valor original; para zerar é preciso escrever `-> 0`). Outra difere
 (numa função `?T` é um `return` antecipado, num match de bloco é um salto direto para os braços).
 
 Por isso: **quando o corpo do bloco tem apenas esta instrução e o valor antigo antes da falha não tem significado**, escrever o braço de fallback como `-> 0` é
-totalmente equivalente (é precisamente a forma da reescrita em lote neste repositório, em que os temporários `ixout…` são maioritariamente novas declarações); mas quando o corpo tem
+totalmente equivalente (é precisamente a forma da reescrita em lote neste repositório, em que os temporários são maioritariamente novas declarações); mas quando o corpo tem
 outras instruções depois do `?=` (contagem de loop, atribuições seguintes) ou o valor antigo do destino é significativo, há divergência e esses sites não podem ser substituídos mecanicamente. A tabela completa de
 escolha está em〈Escolher entre match de bloco e match de valor único〉.
 
 Outro ponto fácil de pisar: **o braço também executa uma vez em caso de sucesso**, e o catch-all recebe o valor de sucesso (`-> print('x')` imprime).
 Por isso o braço só deve conter descarte ou processamento puro; formas como `err -> _` / `-> _` não têm efeito colateral.
 
-Daqui resulta a ordem para limpar os temporários descartáveis `ixout…`:
+Daqui resulta a ordem para limpar os temporários descartáveis:
 
 1. O valor é usado uma única vez no mesmo local → vincule diretamente ao nome final do destino (ver acima).
 2. A função tem parâmetro de resultado `?T` → `DESTINO ?= EXPR`, sem temporário.

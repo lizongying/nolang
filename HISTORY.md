@@ -1,5 +1,19 @@
 # 更新日誌
 
+## v0.4.37
+
+- feat(import): add `# path _` discard alias for intentionally unused side-effect imports with an unimpuse hint
+- fix(build): preserve the default module prefix for discard-alias imports across LLVM and JS backends
+- fix(checker): run the unused-import lint on the pre-merge entry program so vet keeps the hint
+- refactor(compiler): rename generated placeholder variables and inline one-shot value matches in selfhost sources
+- refactor(test): finish relocating std test fixtures and references to the standalone test-std package
+- fix(ci): pin canonical SQLite 3.54.0 for the nosql fixture gate and run std tests from test-std/src
+- feat(noui): add touch/pen contact state, event injection and GPU/touch regression coverage
+- fix(noui): pass RGBA and flip values to draw primitives without pixel scaling
+- docs(syntax): document the discard-alias import form and replace placeholder variable examples across all locales
+- docs(glossary): record the discard-alias import convention and refresh related terminology entries
+- test: add unused-import, module-alias and drawing regression coverage
+
 ## v0.4.36
 
 - feat(import): support workspace-relative, package-direct and lib.no export-alias module imports with multi-segment aliases
@@ -310,7 +324,7 @@
 - fix(build): per-arm type dispatch for union match arms so arm-local bindings resolve before generic-call rewriting (fixes silent 0 results from union arithmetic)
 - fix(compiler): resolve call-return type inference and attribute merged std diagnostics to their own source file
 - perf(parser): cache exported field indices for reflective AST walks; eliminate O(N^2) in vec push/insert codegen and self-hosted lexer/parser
-- fix(mir,std,ci): fix test/std failures (shl err-option drop crash, i8 store width, dns/err/chacha) and add blake2 golden-vector tests
+- fix(mir,std,ci): fix test-std/src failures (shl err-option drop crash, i8 store width, dns/err/chacha) and add blake2 golden-vector tests
 - fix(package,cmd/no): harden the release download path
 - build: upgrade the Go toolchain to 1.27.3; gate Setpgid/syscall.Kill behind build tags to fix the Windows release build
 - feat(compiler): add an inert self-host MIR/codegen skeleton (mir, cg, cg-rc, cg-runtime) and expand the self-host design doc

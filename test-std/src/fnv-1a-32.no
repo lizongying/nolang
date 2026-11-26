@@ -10,7 +10,7 @@
 ;       EmitLLVM: unknown callee fnv-1a-32 in func <name>
 ;   该函数名与本模块别名 `fnv-1a-32` 完全相同，函数体里模块前缀被跳过。
 ;   顶层（main 合成体）调用正常，故本档全部断言写在顶层。
-;   同一 bug 也影响 `fnv.fnv-1a-32`，见 test/std/fnv.no 的档头。
+;   同一 bug 也影响 `fnv.fnv-1a-32`，见 test-std/src/fnv.no 的档头。
 
 # test/runner
 

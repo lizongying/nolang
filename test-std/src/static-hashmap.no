@@ -11,7 +11,7 @@
 ;   ⇒ EmitLLVM: unknown callee static-hashmap-str-tmpl.init in func t1
 ;
 ; 真正被 `map[k]v` 使用的是 collection/map.no（hashmap-{str,int,bool}-tmpl），
-; 已由 test/std/map.no 完整覆蓋。本模組與它是「同邏輯、固定容量、無 rehash」的
+; 已由 test-std/src/map.no 完整覆蓋。本模組與它是「同邏輯、固定容量、無 rehash」的
 ; 平行版本，只在編譯器簽名白名單（compiler/src/ck-sig.no）裡出現。
 ;
 ; 既然如此，本檔能測的就是模組裡**真正可達**的部分：五個常量。其中 FNV 的兩個

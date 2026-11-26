@@ -12,7 +12,7 @@ package mir
 //	{ y % 4 != 0 -> return }   ; 2023 命中
 //	leap = true                ; 照跑 -> 折成 true
 //
-// 后果是 `is-leap(1900)` / `is-leap(2023)` 都返回 true，`test/std/time.no` 报
+// 后果是 `is-leap(1900)` / `is-leap(2023)` 都返回 true，`test-std/src/time.no` 报
 // "1900 not leap" / "2023 not leap"（同一二进制 NOLANG_COMPTIME=0 时 41/41 全过）。
 //
 // 修法（第一阶段，2026-10-28）：`evalConstIfBranch` 改成三态（val, returned, ok）——解释不了的 if 必须让
@@ -22,7 +22,7 @@ package mir
 // 「按顺序跑这些语句」，且没有 else 槽），于是直接下钻：臂里的 `return` 会以 returned
 // 传出，扫描不会跨过它去执行后面的 `r = true`。因此本测试的断言按上一条注释预留的方向
 // 改成「折出来的值必须是 false」——既钉住不许折错，也钉住这个形态真的被折了（否则该断言
-// 会因为「根本不折」而空洞通过）。**取值的端到端门禁仍是 `test/std/time.no`**。
+// 会因为「根本不折」而空洞通过）。**取值的端到端门禁仍是 `test-std/src/time.no`**。
 
 import (
 	"strings"
@@ -86,7 +86,7 @@ func TestComptimeFoldsCondChainReturnToFalse(t *testing.T) {
 	main := mainBlock(on)
 	if strings.Contains(main, "const bool 1") || !strings.Contains(main, "const bool 0") {
 		t.Errorf("folded leap(2023) is not `false` — the scan ran past the chain's early `return` "+
-			"and executed `r = true`, which is the silent wrong answer test/std/time.no reports as \"2023 not leap\";\nmain block:\n%s", main)
+			"and executed `r = true`, which is the silent wrong answer test-std/src/time.no reports as \"2023 not leap\";\nmain block:\n%s", main)
 	}
 }
 

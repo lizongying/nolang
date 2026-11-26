@@ -7770,7 +7770,7 @@ out: 십진 표현(i64로 확장 후 포맷)
   'number.pow': `
 정수 거듭제곱 base^n (n >= 0, i64) — number.pow 라는 모듈 접두사로 호출한다.
 math.no 의 f64 pow 와 같은 이름이지만 다른 모듈이라 빌드가 number. 접두사를 붙인다;
-math.pow-int(int 제네릭 빠른 거듭제곱)와 같은 뜻이지만, test/std/number.no 의 number.pow(2, 10) 같은
+math.pow-int(int 제네릭 빠른 거듭제곱)와 같은 뜻이지만, test-std/src/number.no 의 number.pow(2, 10) 같은
 단언이 성립하도록 i64 시그니처를 명시한다.
 base: 밑수
 n: 지수(n ≥ 0, 음수는 결과 미정의)

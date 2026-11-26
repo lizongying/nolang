@@ -88,6 +88,24 @@ Externe Pakete können beim Import über `#` nur auf die in `lib.no` deklarierte
 # package-name.utils.greet
 ```
 
+### Bewusst ungenutzte Importe: `_`-Alias
+
+Manche Module müssen von der Einstecksdatei **direkt** importiert werden, damit ihre
+Top-Level-Bindungen erzeugt werden; bei nur indirekter Abhängigkeit werden Werte
+still 0 oder der Build schlägt fehl (bug #85). Solche Importe lösen einen
+`unimpuse`-Hinweis aus. Ein `_`-Alias markiert sie als bewusst für Nebenwirkungen
+behalten: der Import bleibt wirksam, der Hinweis verschwindet und das Modulpräfix
+bleibt der übliche ShortName (`_` ist **kein** Modulalias).
+
+```no
+# /glossary/src/nav _    ; Import für die Top-Level-Bindungen behalten
+# /glossary/src/drv      ; hier tatsächlich verwendet, ohne Alias
+code = drv.dispatch()
+```
+
+Gilt nur für **Modulimporte** (`# path _`). `# path.fn _` ist die bestehende
+Schreibweise, um eine Funktionsbindung zu verwerfen.
+
 ## LSP-Unterstützung
 
 - **Zur Definition springen**: Klicke in `lib.no` auf einen exportierten Funktionsnamen oder Alias, um zur Definition in der entsprechenden Moduldatei zu springen

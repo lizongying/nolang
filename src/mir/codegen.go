@@ -4820,7 +4820,7 @@ emit:
 ; [32,72)"). It only triggers for i128 values in [-2^127, -10^38], i.e. 39-digit
 ; negatives such as i128.MIN, and whether the stray byte survived depended on
 ; the toolchain/stack layout -- i128.MIN.to-str() intermittently rendered
-; without its leading '-' (test/std/number.no "str-eq - i128.MIN"). One extra
+; without its leading '-' (test-std/src/number.no "str-eq - i128.MIN"). One extra
 ; byte keeps the sign at &buf[0] and every access in bounds.
 define %str-long @str_from_i128(i128 %v) {
 entry:
@@ -8395,7 +8395,7 @@ func (c *codegen) optionPayloadOwnsNothing(elemRaw, payloadLT string) bool {
 // call on every drop, and the compiler-generated index-out machinery emits
 // three of them per byte store.
 //
-// Measured on `test/std/ecdsa.no` (6588 drop/clone sites):
+// Measured on `test-std/src/ecdsa.no` (6588 drop/clone sites):
 //
 //	variant                     build    binary   ecdsa run
 //	before                      96.5s    882 KB   5.7s
@@ -13634,7 +13634,7 @@ func (c *codegen) emitStructTypes() {
 	// DETERMINISTIC DECLARATION ORDER. StructFields is a Go map, so ranging it
 	// directly emitted the `%name = type { ... }` lines in a per-run random
 	// order: two compiles of the SAME source produced byte-different modules
-	// whose line SETS were identical (measured on test/std/aes-ctr.no: 3
+	// whose line SETS were identical (measured on test-std/src/aes-ctr.no: 3
 	// compiles, 3 hashes, `%err_error`/`%txt`/`%fs_file_opts` permuted). That
 	// breaks reproducible builds and every golden-IR comparison. Sort the keys
 	// — the same hazard is already documented and handled at sanitizedStructKey

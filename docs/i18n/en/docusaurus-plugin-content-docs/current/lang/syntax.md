@@ -2113,12 +2113,12 @@ at = argt[i]: {
 s.farg.push(at)
 
 ; Avoid: a one-shot temporary used exactly once
-ixout1 = argt[i]: { ok -> it  -> _ }
-at = ixout1
+arg-at = argt[i]: { ok -> it  -> _ }
+at = arg-at
 s.farg.push(at)
 ```
 
-Hoisting the value match into your own named temporary and then writing `it = ixout1` inside the
+Hoisting the value match into your own named temporary and then writing `it = arg-at` inside the
 arm is **not equivalent** to the direct form, and must not be treated as an interchangeable
 formatting choice:
 
@@ -2131,7 +2131,7 @@ formatting choice:
   statement-level `ok -> it` cannot be moved back into a nested position unchanged.
 
 Only hoist when the same value is genuinely reused in several places, and give it a meaningful
-name — do not leave `ixout…`-style placeholder names produced by the migration tool. For a single
+name that reflects what the value is. For a single
 use, bind directly.
 
 #### Clearing the remaining one-shot temporaries with `?=` and block match
@@ -2188,7 +2188,7 @@ One more trap: **the arms also run once on success**, with the catch-all receivi
 value (`-> print('x')` does print). Keep arms to discards or pure handling; the `err -> _` / `-> _`
 shape has no side effects.
 
-This gives the order of work for clearing `ixout…` one-shot temporaries:
+This gives the order of work for clearing one-shot temporaries:
 
 1. Value used exactly once → bind it straight to the final target name (see above).
 2. Function has a `?T` result param → `TARGET ?= EXPR`, no temporary.

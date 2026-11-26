@@ -1,4 +1,4 @@
-; test/std/rc4.no — crypto/rc4 模組測試
+; test-std/src/rc4.no — crypto/rc4 模組測試
 ;
 ; 執行：no test test-std/src/rc4.no
 ; 覆蓋：rc4.rc4（對稱 XOR keystream）

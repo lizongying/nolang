@@ -2343,15 +2343,15 @@ at = argt[i]: {
 s.farg.push(at)
 
 ; ❌ N'introduisez pas de temporaire à usage unique pour un emploi isolé
-ixout1 = argt[i]: { ok -> it  -> _ }
-at = ixout1
+arg-at = argt[i]: { ok -> it  -> _ }
+at = arg-at
 s.farg.push(at)
 ```
 
-« Élever le match valeur en temporaire nommé hors de l'arm, puis faire `it = ixout1` dans l'arm » **n'est pas équivalent à l'écriture directe**, et ce n'est pas un simple choix de mise en forme librement interchangeable : le moment de l'évaluation diffère (une fois élevé hors de l'arm, le `nil` / `err` / catch-all externe lit aussi une fois) ;
+« Élever le match valeur en temporaire nommé hors de l'arm, puis faire `it = arg-at` dans l'arm » **n'est pas équivalent à l'écriture directe**, et ce n'est pas un simple choix de mise en forme librement interchangeable : le moment de l'évaluation diffère (une fois élevé hors de l'arm, le `nil` / `err` / catch-all externe lit aussi une fois) ;
 `it` n'est valable que dans l'arm et désigne la position de l'élément, la recopie doit donc rester dans l'arm ; le temporaire nommé est une nouvelle liaison, avec son propre move /
 propriété et destruction à la sortie de portée ; et en cas d'imbrication, le niveau interne doit utiliser une liaison nommée `ok(it1) -> it1`, pas recopier le `ok -> it` externe.
-N'élevez que si vous devez réellement réutiliser la même valeur à plusieurs endroits, et donnez un nom significatif — ne laissez pas de noms factices générés par un outil de migration comme `ixout…`.
+N'élevez que si vous devez réellement réutiliser la même valeur à plusieurs endroits, et donnez un nom significatif qui dise ce que la valeur représente.
 
 #### Éliminer les temporaires à usage unique restants avec `?=` et le match de bloc
 
@@ -2397,14 +2397,14 @@ conserve la valeur d'origine ; pour remettre à zéro, écrivez `-> 0`). L'autre
 (dans une fonction `?T`, c'est un `return` anticipé ; dans un match de bloc, un saut direct vers les arms).
 
 Ainsi : **lorsque le corps du bloc ne contient que cette seule instruction et que l'ancienne valeur avant échec n'a pas de sémantique**, écrire l'arm de repli `-> 0` suffit à rendre
-les deux parfaitement équivalents (c'est précisément la forme des réécritures en lot de ce dépôt, où les temporaires `ixout…` sont le plus souvent de nouvelles déclarations) ; mais dès que le corps contient
+les deux parfaitement équivalents (c'est précisément la forme des réécritures en lot de ce dépôt, où les temporaires sont le plus souvent de nouvelles déclarations) ; mais dès que le corps contient
 d'autres instructions après le `?=` (compteur de boucle, affectations suivantes), ou que l'ancienne valeur de la cible a un sens, les deux divergent et ces sites ne peuvent pas être remplacés mécaniquement. Le tableau complet
 des choix figure dans « Choisir entre block match et value-position match ».
 
 Un autre piège fréquent : **l'arm de succès s'exécute lui aussi une fois**, le catch-all recevant la valeur réussie (`-> print('x')` affichera quelque chose).
 Les arms ne doivent donc contenir qu'une suppression ou un traitement pur ; les formes `err -> _` / `-> _` n'ont pas d'effet de bord.
 
-Il en résulte l'ordre de nettoyage des temporaires jetables `ixout…` :
+Il en résulte l'ordre de nettoyage des temporaires jetables :
 
 1. La valeur n'est utilisée qu'une seule fois au même endroit → liez-la directement au nom final (voir plus haut).
 2. La fonction a un paramètre de résultat `?T` → `TARGET ?= EXPR`, sans temporaire.

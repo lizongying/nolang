@@ -1,4 +1,4 @@
-; test/std/link.no — collection/link 模組測試（泛型雙向鏈結串列）
+; test-std/src/link.no — collection/link 模組測試（泛型雙向鏈結串列）
 ;
 ; 執行：no test test-std/src/link.no
 ; 覆蓋：link 結構體上的非泛型狀態方法 size / empty / full

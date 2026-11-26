@@ -95,6 +95,24 @@ Les paquets externes ne peuvent accéder qu'aux éléments exportés déclarés 
 # package-name.utils.greet
 ```
 
+### Importations volontairement inutilisées : alias `_`
+
+Certains modules doivent être importés **directement** par le fichier d'entrée pour que
+leurs liaisons de niveau supérieur soient générées ; par dépendance indirecte, les
+valeurs deviennent silencieusement 0 ou la compilation échoue (bug #85). Un tel import
+déclenche l'indice `unimpuse`. L'alias `_` le marque explicitement comme conservé pour
+ses effets de bord : l'import reste actif, l'indice disparaît et le préfixe du module
+reste son ShortName habituel (`_` n'est **pas** un alias de module).
+
+```no
+# /glossary/src/nav _    ; conservé pour générer les liaisons de niveau supérieur
+# /glossary/src/drv      ; réellement utilisé ici, sans alias
+code = drv.dispatch()
+```
+
+Cela ne concerne que les **importations de module** (`# path _`). `# path.fn _` est la
+forme existante pour écarter la liaison de la fonction.
+
 ## Prise en charge LSP
 
 - **Aller à la définition** : cliquez sur un nom de fonction exportée ou un alias dans `lib.no` pour sauter à sa définition dans le fichier de module correspondant

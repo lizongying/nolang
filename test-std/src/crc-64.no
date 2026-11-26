@@ -1,4 +1,4 @@
-; test/std/crc-64.no — crypto/crc-64 模組測試
+; test-std/src/crc-64.no — crypto/crc-64 模組測試
 ;
 ; 執行：no test test-std/src/crc-64.no
 ; 覆蓋：crc-64.new / crc-64.hex（CRC-64/ECMA-182 反射：poly 0xC96C5795D7870F42, init 0, 無最終異或）

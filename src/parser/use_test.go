@@ -42,6 +42,10 @@ func TestUseSyntax(t *testing.T) {
 		// `error` 下（`error.new(...)`、型別 `error.err`）。這一行原本會被
 		// 拆成「`# std/err` + 獨立陳述 `error`」，`no fmt` 於是把它印成兩行。
 		{"# std/err error", "std/err", "", "error", false},
+		// `_` 別名（無函數名）：`# path _` = 「刻意不使用的導入」，保留導入
+		// 但抑制 checker 的 unimpuse hint。as 寫法等價，只差 AsKeyword flag。
+		{"# /glossary/src/nav _", "/glossary/src/nav", "", "_", false},
+		{"# /glossary/src/nav as _", "/glossary/src/nav", "", "_", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

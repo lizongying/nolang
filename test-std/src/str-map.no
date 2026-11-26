@@ -1,4 +1,4 @@
-; test/std/str-map.no — collection/str-map 模組測試
+; test-std/src/str-map.no — collection/str-map 模組測試
 ;
 ; 執行：no test test-std/src/str-map.no
 ; 覆蓋：init / put / get / contains / remove / len / is-empty / clear / to-str /

@@ -790,7 +790,7 @@ buf[i * 2 + 1]: {
 buf[i * 2 + 1] ?= ch
 `
       related: ['idxbruse-both-sides', 'arithmetic-option-assign']
-      refs: ['src/checker/checker.go', 'test/std/scrypt.no', 'src/std/str.no']
+      refs: ['src/checker/checker.go', 'test-std/src/scrypt.no', 'src/std/str.no']
     }
     'with-cap-str-unwrap-write-dropped': {
       title: 'str 的 with-cap 缓冲上写下标会静默丢写（[]byte 不会）—— 现已由编译错误堵住'
@@ -884,7 +884,7 @@ txt 没有堆、没有扩容，但「一次下标写偷偷改了长度」是同�
 hex 查表：uuid.to-str、time.format-date 就是这种）。逐字节（>= 0x80、或任何可能
 非 ASCII 的源串）必须走 ①。实测：f = with-len(8) 后用 place-match 依次写
 224..231，只有前 4 格落盘，其余被闸门静默跳过；std 的 path.split 迁到 place-match
-后「非 ASCII 檔名」当场被截断（test/std/path.no 的 split 非 ASCII 檔名断言），
+后「非 ASCII 檔名」当场被截断（test-std/src/path.no 的 split 非 ASCII 檔名断言），
 改回 []byte 才恢复。同一坑的另一半：[]byte 的元素存值在「#overflow=wrap + 复合
 算术右值」下会存进错值（b[0] = (yr/1000)%10+48 得 56 而非 50，str 侧无此问题），
 所以 time.format-date 最终用 str + place-match、path.split 用 []byte、uuid 用
@@ -1019,7 +1019,7 @@ runner.str-eq(e, '', 0, 'empty')
 tail = s.slice(4, 6);  'ef'（start < end，真的拿得到内容）
 `
       related: ['index-read-err-vs-nil', 'str-index-write-banned']
-      refs: ['src/mir/builtin_call.go', 'src/std/str.no', 'test/std/str.no', 'test/README.md']
+      refs: ['src/mir/builtin_call.go', 'src/std/str.no', 'test-std/src/str.no', 'test/README.md']
     }
     'builtin-read-does-not-grow-len': {
       title: '内建读写不更新 len：with-cap 缓冲接 fs.read 后 slice 恒为空'
@@ -1060,7 +1060,7 @@ n2 = fs.read(fd, ok, 4096)           ; n2 = 2
 ok.slice(0, n2).to-str()             ; 'cd'
 `
       related: ['with-len-write-not-exempt', 'with-cap-str-unwrap-write-dropped']
-      refs: ['src/std/io.no', 'test/std/io.no', 'test/README.md']
+      refs: ['src/std/io.no', 'test-std/src/io.no', 'test/README.md']
     }
     'value-match-var-subject-dropped': {
       title: '值位 match 的主语是「已存的 ?T 变量」时臂内写入被静默丢弃'
@@ -1226,7 +1226,7 @@ p yaml.parser = yaml.parser {
 }
 `
       related: ['named-type-annotation-for-method', 'multi-arg-call-not-receiver']
-      refs: ['docs/docs/lang/syntax.md', 'test/README.md', 'test/std/yaml.no']
+      refs: ['docs/docs/lang/syntax.md', 'test/README.md', 'test-std/src/yaml.no']
     }
     'named-type-annotation-for-method': {
       title: '字面量赋值不写型别标注就调不动方法；std 结构体名还要全限定'
@@ -1283,7 +1283,7 @@ p yaml.parser = yaml.parser { src: 'ab' }
 print(p.cur())
 `
       related: ['struct-literal-colon', 'multi-arg-call-not-receiver']
-      refs: ['src/checker/checker.go', 'test/README.md', 'test/std/yaml.no']
+      refs: ['src/checker/checker.go', 'test/README.md', 'test-std/src/yaml.no']
     }
     'multi-arg-call-not-receiver': {
       title: '多实参 std 函数的回传不能直接当方法接收者'
@@ -1324,7 +1324,7 @@ s = base64.encode(e, base64.BASE64-STD)
 print(s.len-bytes())
 `
       related: ['named-type-annotation-for-method', 'struct-literal-colon']
-      refs: ['test/README.md', 'test/std/base64.no']
+      refs: ['test/README.md', 'test-std/src/base64.no']
     }
     'skip-to-eol-only-comment': {
       title: '跳行助手只认注释符，遇到别的标记就行内死循环'
@@ -1381,7 +1381,7 @@ a: 1')
 ; 修复后：正常解析
 `
       related: ['struct-literal-colon', 'named-type-annotation-for-method']
-      refs: ['src/std/yaml.no', 'test/README.md', 'test/std/yaml.no']
+      refs: ['src/std/yaml.no', 'test/README.md', 'test-std/src/yaml.no']
     }
     'std-field-vec-read-breaks': {
       title: '从模块外按下标读 std 结构体的 []str 字段会静默给 nil，甚至段错误'
@@ -1466,7 +1466,7 @@ no test test-std/src/noml.no 346 条断言全绿。
    真函数」直接发 memset 到接收者，因此任意 struct / 切片都能 .zero()。
 
 放行后真实二进制对语料 no vet 全量普查 0 命中。纯 AST 普查（不经真实管线）会
-在 test/std/zip.no 误报 writer 的 data / cd-data —— 那是「模块名未知」时同名
+在 test-std/src/zip.no 误报 writer 的 data / cd-data —— 那是「模块名未知」时同名
 结构体（io.writer 与 zip.writer）歧义的老问题，真实管线带上模块名后不出现。
 
 结论要再改一次：**白盒测试只呼方法、不读字段**这条建议仍然可用，但它已经不
@@ -1495,7 +1495,7 @@ e = d.pool.strs[2]
 v = d.pool.val-str(2)
 `
       related: ['std-method-value-match-it-unbound', 'named-type-annotation-for-method']
-      refs: ['src/std/noml.no', 'test/std/noml.no', 'test/README.md']
+      refs: ['src/std/noml.no', 'test-std/src/noml.no', 'test/README.md']
     }
     'std-method-value-match-it-unbound': {
       title: 'std 结构体方法回 ?T 时，调用直接接值位 match 拿不到载荷'
@@ -1565,7 +1565,7 @@ op: {
 }
 `
       related: ['std-field-vec-read-breaks', 'value-match-var-subject-dropped', 'it-to-i64-toplevel']
-      refs: ['src/std/noml.no', 'test/std/noml.no', 'test/README.md']
+      refs: ['src/std/noml.no', 'test-std/src/noml.no', 'test/README.md']
     }
     'noml-metadata-escaped-quote-crash': {
       title: '词条的元数据字符串里写转义单引号会让 glossary 崩 SIGBUS'
@@ -1666,7 +1666,7 @@ r, c = fill()
       summary: 'collection/ 的 for-each 不是「无调用语法」：k, v = m.for-each() 完全可用，返回时停在最后一条迭代。'
       aliases: ['for-each 调用', '容器遍历', 'k v = m.for-each()', '生成器形态']
       definition: `
-曾经流传一个错误结论（还写进了 test/std/map.no 的档头并推广到 collection/ 全体）：
+曾经流传一个错误结论（还写进了 test-std/src/map.no 的档头并推广到 collection/ 全体）：
 「for-each 是生成器形态，没有用户态可写的调用语法，m.for-each(k, v) { ... } 与
 k, v = m.for-each() 都不行」。
 
@@ -1695,7 +1695,7 @@ k, v = m.for-each()
 ; k == 'only'、v == 'solo'
 `
       related: ['array-str-result-param-uninit', 'std-field-vec-read-breaks']
-      refs: ['test/std/map.no', 'test/std/hash-set.no', 'src/std/collection/str-map.no']
+      refs: ['test-std/src/map.no', 'test-std/src/hash-set.no', 'src/std/collection/str-map.no']
     }
     'embed-methods-shadowed-by-builtin': {
       title: 'embed 的 read / exists 被同名全局内建顶掉，模块实际不可用'
@@ -1857,7 +1857,7 @@ name-opt: {
 }
 `
       related: ['std-method-value-match-it-unbound', 'bitwise-option-tag-unreliable']
-      refs: ['src/std/net/http3.no', 'test/std/http3.no', 'src/parser/type.go', 'test/README.md']
+      refs: ['src/std/net/http3.no', 'test-std/src/http3.no', 'src/parser/type.go', 'test/README.md']
     }
     'bitwise-option-tag-unreliable': {
       title: '位运算的 option 选择子不可信：值对但 match 恒走 err 臂'
@@ -1966,7 +1966,7 @@ arr[i]: {
 ok = true
 `
       related: ['with-cap-str-unwrap-write-dropped', 'array-str-result-param-uninit', 'loop-accumulator-value-match-dropped']
-      refs: ['src/std/net/http.no', 'test/std/http.no', 'test/README.md']
+      refs: ['src/std/net/http.no', 'test-std/src/http.no', 'test/README.md']
     }
     'loop-accumulator-value-match-dropped': {
       title: '循环里的累加器写成值位 match，第二次进同一块时写回被静默丢弃'
@@ -2143,7 +2143,7 @@ chk-plain = (d ?str) (r i64) {
 }
 `
       related: ['loop-accumulator-value-match-dropped', 'byte-vec-to-str-reencodes-utf8']
-      refs: ['test/std/net.no', 'test/README.md']
+      refs: ['test-std/src/net.no', 'test/README.md']
     }
     'paren-cond-loop-misused-as-if': {
       title: '把 (cond) { } 当条件块用会无限循环'

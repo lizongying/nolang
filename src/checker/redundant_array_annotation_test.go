@@ -11,7 +11,7 @@ import (
 // 一旦把標註刪掉重新解析，同一行就變成 `v = [...]`，型別是堆上可增長的
 // `[]char`，語意隨之改變（實測 `[3]char` 的 `.push()` 後 `.len()` 仍為 3，
 // `[]char` 則變成 4）。`no fmt` 預設的「先去冗餘型別標註再格式化」因此會
-// 悄悄把 test/std/char.no 的 `fixed [3]char = ["x", "y", "z"]` 降級為切片。
+// 悄悄把 test-std/src/char.no 的 `fixed [3]char = ["x", "y", "z"]` 降級為切片。
 // 本測試釘住：固定長度陣列（含 `[?]T`、省略元素型別的 `[N]`）一律不報冗餘。
 func TestRedundantTypeAnnotationKeepsFixedArray(t *testing.T) {
 	tests := []struct {

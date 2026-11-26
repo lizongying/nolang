@@ -1,4 +1,4 @@
-; test/std/scrypt.no — crypto/scrypt 模組測試
+; test-std/src/scrypt.no — crypto/scrypt 模組測試
 ;
 ; 執行：no test test-std/src/scrypt.no
 ; 覆蓋：scrypt（入口）、rotl32 / salsa20-8-core / scrypt-blockmix / scrypt-romix（內部核心直測）

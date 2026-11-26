@@ -1,18 +1,24 @@
 ; ============================================================================
-; noui GPU 后端测试（阶段79）
+; noui GPU 后端测试（阶段79 开关 / 阶段82 纹理管线）
 ;
 ; SDL_GPU 后端是可选路径：默认仍是 SDL_Render，app-use-gpu(1) 之后
 ; app-init 才会去建 GPU 设备 / GPU 窗口。
-; 分两层：
+; 分三层：
 ;   1) 开关与状态查询（任何环境都可跑）；
-;   2) 真机冒烟：有 GPU 的机器上 init 应成功并至少跑两帧；dummy 视频驱动
-;      （CI）下 SDL_CreateGPUDevice 失败，此时只要求优雅返回 -1，不算失败。
+;   2) 颜色通道拆解（纯逻辑，回归 col-a 曾误取蓝通道的 bug）；
+;   3) 真机冒烟：有 GPU 的机器上 init 成功，纹理注册表 / 文字缓存 / 全图元
+;      绘制都要跑通；dummy 视频驱动（CI）下 SDL_CreateGPUDevice 失败，此时
+;      只要求纹理 FFI 优雅返回「空」，不算失败。
 ; _noui-gpu-* 的引用同时证明 gpu shim 已进链接。
+;
+; 需要在 noui 目录下跑（fixture 用相对路径 tests/fixtures/dot.png）：
+;   ../bin/no run -cc ./ccwrap.sh tests/app-gpu.no
 ; ============================================================================
 # /noui/src/app
 
 print('=== app-gpu tests ===')
 
+; ---- 1) 开关与状态 ----
 r1 = app-gpu-mode() == 0
 r2 = app-gpu-active() == 0
 
@@ -23,26 +29,70 @@ r4 = app-gpu-active() == 0
 app-use-gpu(0)
 r5 = app-gpu-mode() == 0
 
-; ---- 真机冒烟（可选） ----
+; ---- 2) 颜色通道拆解：0xRRGGBBAA，alpha 是最低字节 ----
+c = 0x2A2A38FF
+r6 = col-r(c) == 0x2A && col-g(c) == 0x2A && col-b(c) == 0x38 && col-a(c) == 0xFF
+d = 0x11223344
+r7 = col-r(d) == 0x11 && col-g(d) == 0x22 && col-b(d) == 0x33 && col-a(d) == 0x44
+
+; ---- 3) 真机冒烟（可选） ----
 app-use-gpu(1)
-ok = app-init('gpu-live')
-r6 = true
-r7 = true
+ok = app-init('gpu-tex')
+r8 = true
+r9 = true
+r10 = true
+r11 = true
+r12 = true
+r13 = true
 (ok == 0) -> {
     app-frame()
-    app-frame()
-    r6 = app-gpu-active() == 1
+    r8 = app-gpu-active() == 1
+
+    ; 字体由 app-init 打开（GPU 后端走 _noui-gpu-font-init）
+    r9 = _noui-gpu-font-active() == 1
+
+    ; PNG -> 纹理注册表：尺寸打包在高/低 32 位
+    iid = _noui-gpu-img-load('tests/fixtures/dot.png')
+    wh = _noui-gpu-tex-size(iid)
+    r10 = iid > 0 && (wh >> 32) == 8 && (wh & 0xFFFFFFFF) == 6
+
+    ; 文字 -> 白底 alpha 蒙版纹理，按串 LRU 缓存
+    t1 = _noui-gpu-text-load('ABCD')
+    t2 = _noui-gpu-text-load('ABCD')
+    t3 = _noui-gpu-text-load('ABCE')
+    r11 = t1 > 0 && t1 == t2 && t3 > 0 && t3 != t1
+
+    ; 全图元绘制冒烟：圆角 / 投影 / 文字 / 图片 / 旋转翻转图片
+    cs-clear()
+    cs-emit-fill(0, 0, 56000, 42000, 0x2A2A38FF)
+    cs-emit-shadow(3000, 1700, 20000, 11000, 800, 500, 0x00000090)
+    cs-emit-round(3000, 1700, 20000, 11000, 800, 0x50C878FF)
+    cs-emit-rect(2600, 3200, 9000, 5000, 0x9AA0B4FF)
+    cs-emit-text(400, 400, 0xFFFFFFFF, 'GPU texture')
+    cs-emit-img(2600, 3000, 800, 600, iid)
+    cs-emit-img-rot(4400, 3000, 800, 600, iid, 4500, 3)
+    app-draw-scene()
+    r12 = true
+
     app-shutdown()
-    r7 = app-gpu-active() == 0
-    print('gpu live smoke: two frames ok')
+    r13 = app-gpu-active() == 0
+    print('gpu live smoke: textures + all prims ok')
 }
 (ok != 0) -> {
-    print('gpu device unavailable here (dummy driver?), graceful failure ok={ok}')
+    ; 无 GPU（dummy 驱动）：设备没建成，纹理 FFI 必须安静返回「空」且不崩
+    r8 = _noui-gpu-font-active() == 0
+    r9 = _noui-gpu-img-load('tests/fixtures/dot.png') == 0
+    r10 = _noui-gpu-text-load('ABCD') == 0
+    r11 = _noui-gpu-tex-size(1) == 0
+    _noui-gpu-draw-tex(0.0, 0.0, 1.0, 1.0, 1, 255, 255, 255, 255)
+    _noui-gpu-draw-tex-rot(0.0, 0.0, 1.0, 1.0, 1, 0.0, 3)
+    r12 = true
     app-shutdown()
+    print('gpu device unavailable here (dummy driver?), graceful failure ok={ok}')
 }
 
-all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7
-print('default={r1} inactive={r2} on={r3}{r4} off={r5} live={r6}{r7}')
+all-ok = r1 && r2 && r3 && r4 && r5 && r6 && r7 && r8 && r9 && r10 && r11 && r12 && r13
+print('switch={r1}{r2}{r3}{r4}{r5} channels={r6}{r7} live={r8}{r9}{r10}{r11}{r12}{r13}')
 print('all-ok={all-ok}')
 (all-ok) -> { print('ALL APP-GPU TESTS PASSED') }
 (!all-ok) -> { print('SOME APP-GPU TESTS FAILED'); exit(1) }

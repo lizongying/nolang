@@ -1,4 +1,4 @@
-; test/std/blake2.no — crypto/blake2 模組測試
+; test-std/src/blake2.no — crypto/blake2 模組測試
 ;
 ; 執行：no test test-std/src/blake2.no
 ; 覆蓋：blake2.b（BLAKE2b-512）、blake2.b-256（BLAKE2b-256）、blake2.s（BLAKE2s-256）

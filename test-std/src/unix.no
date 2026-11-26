@@ -1,4 +1,4 @@
-; test/std/unix.no — net/unix 模組測試
+; test-std/src/unix.no — net/unix 模組測試
 ;
 ; 執行：no test test-std/src/unix.no
 ;

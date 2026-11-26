@@ -364,7 +364,7 @@ func TestSetTargetPlatformEmptyFallsBackToHost(t *testing.T) {
 //	windows: nolang.win_uname shim writes 5 x 256 = 1280 bytes
 //
 // The pre-fix 5*65 = 325-byte slot was a 65-byte stack overflow: it took down
-// test/std/unix.no with SIGSEGV on ubuntu-latest (x86_64) while staying
+// test-std/src/unix.no with SIGSEGV on ubuntu-latest (x86_64) while staying
 // invisible on darwin and linux/arm64. A `.no` assertion cannot pin this —
 // whether the stray bytes are fatal depends on the frame layout — so assert
 // the geometric invariant directly.
@@ -408,7 +408,7 @@ func TestUnameBufferCoversCStruct(t *testing.T) {
 // SIGSEGV fix. emitUnixSockaddr emits its memcpy BEFORE the caller branches on
 // tooLong, so the copy length must be a select that zeroes it for an over-long
 // path. Using raw strlen wrote 130 bytes at addrp+2 into the 112-byte sockaddr
-// stack slot — test/std/unix.no deliberately exercises that path.
+// stack slot — test-std/src/unix.no deliberately exercises that path.
 func TestUnixSockaddrCopyIsGatedByTooLong(t *testing.T) {
 	selRe := regexp.MustCompile(`(%\S+) = select i1 (%\S+), i64 0, i64 (%\S+)`)
 	cpRe := regexp.MustCompile(`call void @llvm\.memcpy\.[^(]*\(i8\* %\S+, i8\* %\S+, i64 (%\S+), i1 0\)`)

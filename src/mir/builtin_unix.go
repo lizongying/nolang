@@ -73,7 +73,7 @@ func (c *codegen) emitUnixSockaddr(pathPtr string) (addrp, addrLen, tooLong stri
 
 	// sun_path starts at offset 2 on both platforms. The copy length MUST be
 	// gated on tooLong: memcpy runs BEFORE the caller branches on it, and an
-	// over-long path (test/std/unix.no deliberately passes 130 bytes) would
+	// over-long path (test-std/src/unix.no deliberately passes 130 bytes) would
 	// write 130 bytes at addrp+2 into the 112-byte stack slot — a 20-byte
 	// stack overflow that only shows up where the frame layout is unforgiving.
 	// When tooLong is true the caller skips unlink/bind entirely, so copying

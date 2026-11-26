@@ -425,14 +425,14 @@ Critério de aceitação (árvore isolada A/B, mesma fonte e mesmo compilador, s
 **todos com 0 error** (sem quebra de compilação); 25 ficheiros passaram a ter menos diagnósticos e 19 mais — os que aumentaram são todos `ovfhndld`
 "vinculado a `?T` sem declarar captação de transbordo" expostos após retirar as anotações que faziam sombra, resultado esperado do passo 1 de §8, não um novo defeito.
 Há ainda 9 avisos `nolang-overflow-ineffective` que são um problema antigo do comportamento "preencher lacuna" da ferramenta incidir sobre operadores sobrecarregados de bigint /
-strings, sem relação com a descida. Após a segunda ronda, a repetição integral de `bin/no run test/std/*.no`
+strings, sem relação com a descida. Após a segunda ronda, a repetição integral de `bin/no run test-std/src/*.no`
 (zstd / tls / str / json / set / base32 …) **deu tudo PASSED**.
 
 Critério da terceira ronda: os 3 testes vermelhos de `parser` (`TestAnnotationsLiveOnAST` /
 `TestCachedASTLowersToIdenticalHIR` / `TestBuildSemViewsMatchesFreshParse`) **são idênticos palavra por palavra antes e depois do alargamento** —
 `only 288 files parsed cleanly` é o mesmo nas duas vezes, indicando que o alargamento não trouxe nenhuma nova falha de análise;
 são o estado em voo da refatoração parser/annotation em trabalho paralelo. A saída de `no fmt -d src/std` é
-**byte a byte idêntica** antes e depois do alargamento, ou seja, o formatador imprime as anotações sobre `.` exatamente no seu lugar, sem deriva de formatação. `test/std`
+**byte a byte idêntica** antes e depois do alargamento, ou seja, o formatador imprime as anotações sobre `.` exatamente no seu lugar, sem deriva de formatação. `test-std/src`
 está tudo verde para heap / zstd / tls / json / set / map / regexp.
 
 **Restam 76 anotações em cabeça de braço** (`#{overflow=wrap}` imediatamente acima de `cond -> {`): **não são linhas mortas** —

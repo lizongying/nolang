@@ -21,7 +21,7 @@ package mir
 // 正向证据有两条：要么发射了 `hashmap-<K>-<V>.put/get` 调用（std 在场时），
 // 要么抛出 kind="map-index" 的 lowering 诊断（std 不在场时）。二者任一都证明
 // **map 分支被进入**；本包的单测不加载 std（见 lowerSrc），故走诊断那条。
-// 运行期行为由 test/std/map-index.no 端到端锁住（真的插入、覆写、读回）。
+// 运行期行为由 test-std/src/map-index.no 端到端锁住（真的插入、覆写、读回）。
 
 import (
 	"strings"

@@ -2479,7 +2479,7 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
         ;     `GroupedExpression{IndexExpression{Identifier{in}, Identifier{i}}}`。
         ; ⚠️ MATCH 同屬此類（Go expr.go:96 同臂、stmt.go:2122 isStatementBoundary），
         ;   原注释稱「語料無 match 作識別字用法」⇒ 只補 IN；但批次十六後發現 src/std/str.no、
-        ;   src/std/txt.no、test/std/base64.no、test/std/pem.no 均有 `match = …` 變數賦值
+        ;   src/std/txt.no、test-std/src/base64.no、test-std/src/pem.no 均有 `match = …` 變數賦值
         ;   （被 SUT 當 match 語句吞掉、殘留 ExpressionStatement{…}）⇒ 現補 MATCH（s8i）。
         ;   語料無裸 `match {` 語句（Go stmt.go 亦不把 MATCH 當語句關鍵字），故安全。
         tk.typ == tok.IDENT || tk.typ == tok.IN || tk.typ == tok.MATCH -> {
@@ -7286,9 +7286,7 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
     wc = 0
     z = 0
     (z < wild-a.len()) {
-        ixout7158c9 = ix.at-i(wild-a, z)
-
-        ixout7158c9 == 1 -> {
+        ix.at-i(wild-a, z) == 1 -> {
             wc = ix.inc(wc)
         }
 
@@ -7417,40 +7415,34 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
             ast.aux-add(t, 0); typePattern
             ast.aux-add(t, 0); typeBinding
 
-            ixout7293c13 = ix.at-i(wild-a, i)
-
-            ixout7293c13 == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            ix.at-i(wild-a, i) == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
             ix.at-i(wild-a, i) == 0 -> ast.aux-add(t, 0); wildcard
 
-            ixout7297c13 = ix.at-i(dot-a, i)
-
-            ixout7297c13 == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            ix.at-i(dot-a, i) == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
             ix.at-i(dot-a, i) == 0 -> ast.aux-add(t, 0); dot-val
             ast.aux-add(t, 0); rawCond（ok(<expr>) 形不落裸 match 路）
 
-            ixout7302c13 = ix.at-i(bb-s-a, i)
-
-            ixout7302c13 == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
+            ix.at-i(bb-s-a, i) == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
             ix.at-i(bb-s-a, i) == 0 -> ast.aux-add(t, 0); blockBody
             ast.aux-add(t, 0); typeArm
             mv == 1 -> ast.aux-add(t, ast.put-str(t, 'true'))
             mv == 0 -> ast.aux-add(t, 0); valueCtx（入函快照，見 A1 註解）
 
-            ixout7309c28 = cond-a[i]: {
+            cond-node = cond-a[i]: {
                 ok -> it
 
                 -> _
             }
 
-            ast.aux-add(t, ixout7309c28); Condition（_/bare-> 臂=0；ok-> 臂=Identifier{ok}）
+            ast.aux-add(t, cond-node); Condition（_/bare-> 臂=0；ok-> 臂=Identifier{ok}）
 
-            ixout7312c28 = body-a[i]: {
+            body-node = body-a[i]: {
                 ok -> it
 
                 -> _
             }
 
-            ast.aux-add(t, ixout7312c28); Body
+            ast.aux-add(t, body-node); Body
 
             i = ix.inc(i)
         }
@@ -8797,21 +8789,21 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 ast.helper-begin(t, v, fns.len())
                 j = 0
                 (j < fns.len()) {
-                    ixout8741c51 = fns[j]: {
+                    fn-name = fns[j]: {
                         ok -> it
 
                         -> _
                     }
 
-                    ast.aux-add(t, ast.put-str(t, ixout8741c51))
+                    ast.aux-add(t, ast.put-str(t, fn-name))
 
-                    ixout8744c36 = fty[j]: {
+                    field-ty = fty[j]: {
                         ok -> it
 
                         -> _
                     }
 
-                    ast.aux-add(t, ixout8744c36)
+                    ast.aux-add(t, field-ty)
 
                     j = ix.inc(j)
                 }
@@ -8835,13 +8827,13 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 p.ev-n.push(vname)
                 pay = ''
                 fns.len() == 1 -> {
-                    ixout8772c46 = fty[0]: {
+                    pay-ty = fty[0]: {
                         ok -> it
 
                         -> _
                     }
 
-                    pay = ast.type-string(t, ixout8772c46)
+                    pay = ast.type-string(t, pay-ty)
                 }
                 fns.len() > 1 -> pay = name + '.' + vname
                 p.ev-p.push(pay)
@@ -8850,19 +8842,13 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 (g < fty.len()) {
                     fts = ''
 
-                    ixout8782c21 = fty[g]: {
+                    ft-node = fty[g]: {
                         ok -> it
 
                         -> _
                     }
 
-                    ixout8782c60 = fty[g]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    ixout8782c21 > 0 -> fts = ast.type-string(t, ixout8782c60)
+                    ft-node > 0 -> fts = ast.type-string(t, ft-node)
                     p.ef-e.push(name)
                     p.ef-v.push(vname)
                     p.ef-t.push(fts)
@@ -8893,13 +8879,13 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
     ast.set-count(t, idx, 0, mems.len())
     m2 = 0
     (m2 < mems.len()) {
-        ixout8816c29 = mems[m2]: {
+        mem = mems[m2]: {
             ok -> it
 
             -> _
         }
 
-        ast.kid-add(t, idx, ixout8816c29)
+        ast.kid-add(t, idx, mem)
 
         m2 = ix.inc(m2)
     }
@@ -9703,38 +9689,26 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                     hit2 = 0
                     q2 = 0
                     (q2 < c-n.len() && hit2 == 0) {
-                        ixout10099c25 = c-n[q2]: {
+                        case-nm = c-n[q2]: {
                             ok -> it
 
                             -> _
                         }
 
-                        ixout10099c43 = evs[i2]: {
+                        variant-nm = evs[i2]: {
                             ok -> it
 
                             -> _
                         }
 
-                        ixout10100c2 = c-a[q2]: {
+                        case-ncols = c-a[q2]: {
                             ok -> it
 
                             -> _
                         }
 
-                        ixout10100c19 = c-a[q2]: {
-                            ok -> it
-
-                            -> _
-                        }
-
-                        ixout10100c52 = evs[i2]: {
-                            ok -> it
-
-                            -> _
-                        }
-
-                        ixout10099c25.copy() == ixout10099c43 &&
-(ixout10100c2 == -1 || ixout10100c19 == ps-enum-ncols(p, st0, ixout10100c52)) -> hit2 = 1
+                        case-nm.copy() == variant-nm &&
+(case-ncols == -1 || case-ncols == ps-enum-ncols(p, st0, variant-nm)) -> hit2 = 1
 
                         q2 = ix.inc(q2)
                     }
@@ -9788,13 +9762,11 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             bmulti == 1 && hd5 == 1 -> {
                 q3 = 0
                 (q3 < bns2.len()) {
-                    ixout10158c27 = bns2[q3]: {
+                    nm3 = bns2[q3]: {
                         ok -> it
 
                         -> _
                     }
-
-                    nm3 = ixout10158c27.copy()
                     fxv.push(nm3)
                     fxo.push(ps-var-type(p, nm3))
                     ft3 = ps-enum-ftype(p, st0, kvar-e, q3)
@@ -9804,13 +9776,13 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                 }
                 q4 = 0
                 (q4 < bns2.len()) {
-                    ixout10171c48 = bns2[q4]: {
+                    bind-nm = bns2[q4]: {
                         ok -> it
 
                         -> _
                     }
 
-                    kids.push(ps-mk-ext-let(t, ixout10171c48, bn, q4))
+                    kids.push(ps-mk-ext-let(t, bind-nm, bn, q4))
 
                     q4 = ix.inc(q4)
                 }
@@ -9948,13 +9920,13 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                     j = ix.inc(j)
                 }
                 arm-doc != 0 && sl.len() > 0 -> {
-                    ixout10313c36 = sl[0]: {
+                    first-stmt = sl[0]: {
                         ok -> it
 
                         -> _
                     }
 
-                    ast.set-doc(t, ixout10313c36, arm-doc); IsInline 體 ⇒ arm-doc 覆寫首陳述 Doc
+                    ast.set-doc(t, first-stmt, arm-doc); IsInline 體 ⇒ arm-doc 覆寫首陳述 Doc
                 }
             }
             hd2 == 0 && body-done == 0 -> {
@@ -10029,19 +10001,19 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             reg != '' -> ps-set-var-type(p, bname, oldb)
             q5 = 0
             (q5 < fxv.len()) {
-                ixout10393c36 = fxv[q5]: {
+                field-nm = fxv[q5]: {
                     ok -> it
 
                     -> _
                 }
 
-                ixout10393c45 = fxo[q5]: {
+                field-ty = fxo[q5]: {
                     ok -> it
 
                     -> _
                 }
 
-                ps-set-var-type(p, ixout10393c36, ixout10393c45)
+                ps-set-var-type(p, field-nm, field-ty)
 
                 q5 = ix.inc(q5)
             }
@@ -10123,19 +10095,11 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             hd3 = 1
         }
         hd3 == 0 -> {
-            ixout10468c13 = raw-a[i]: {
+            ix.at-i(raw-a, i) == 1 -> cond = pat-a[i]: {
                 ok -> it
 
                 -> _
-            }
-
-            ixout10468c37 = pat-a[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            ixout10468c13 == 1 -> cond = ixout10468c37; s66d：raw-cond 臂直接用條件式（不包 subj ==）
+            }; s66d：raw-cond 臂直接用條件式（不包 subj ==）
             ix.at-i(raw-a, i) == 0 -> cond = ps-mk-eq(t, subj-node, ix.at-i(pat-a, i))
 
             ; 決定 alternative

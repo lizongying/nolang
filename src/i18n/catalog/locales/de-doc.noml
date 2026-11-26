@@ -7778,7 +7778,7 @@ out: Dezimaldarstellung (nach Verbreiterung zu i64 formatiert)
 Ganzzahl-Potenz base^n (n >= 0, i64) — aufgerufen als number.pow (Modulpräfix).
 Gleicher Name wie f64 pow aus math.no, aber anderes Modul, daher fügt der build ein number.-Präfix hinzu;
 synonym zu math.pow-int (das int-generische schnelle Potenzieren), aber mit expliziter i64-Signatur, sodass
-Assertions wie number.pow(2, 10) in test/std/number.no gelten.
+Assertions wie number.pow(2, 10) in test-std/src/number.no gelten.
 base: die Basis
 n: Exponent (n ≥ 0; Ergebnisse sind für Negative undefiniert)
 res: base hoch n (schnelles Potenzieren, Überlauf wrapt)

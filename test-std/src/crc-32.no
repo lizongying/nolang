@@ -1,4 +1,4 @@
-; test/std/crc-32.no — crypto/crc-32 模組測試
+; test-std/src/crc-32.no — crypto/crc-32 模組測試
 ;
 ; 執行：no test test-std/src/crc-32.no
 ; 覆蓋：crc-32.new（IEEE 802.3，poly 0xEDB88320，init/final-xor 0xFFFFFFFF）

@@ -177,7 +177,7 @@ test: $(STDSIG_GEN) verify-ty
 # Package-local nosql gates; keep the compiler and engine test surfaces separate.
 .PHONY: test-nosql
 test-nosql:
-	$(MAKE) -C example/nosql test-nosql NO=$(abspath $(NO_BIN))
+	$(MAKE) -C example/nosql test-nosql NO=$(abspath $(NO_BIN)) SQLITE=$(if $(SQLITE),$(abspath $(SQLITE)),/usr/bin/sqlite3)
 
 # ── TYPE-SYSTEM GATE ──────────────────────────────
 # A type is a structure (src/ty), not a string. This gate fails when a package

@@ -2455,7 +2455,7 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 	// order is directly the emitted instruction order: two compiles of one
 	// source produced modules with identical line SETS but permuted
 	// `call void @str_free` / `call void @__nolang_drop_*` runs (measured on
-	// test/std/aes-ctr.no). Sort both axes — it is order-only, every value
+	// test-std/src/aes-ctr.no). Sort both axes — it is order-only, every value
 	// still gets exactly one drop at exactly the same place.
 	//
 	// `order` is already the ascending block list built for the redundancy pass

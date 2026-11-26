@@ -21,7 +21,7 @@
 ; 「已發生 / 未發生 / 順序」的方式。
 ;
 ; 覆蓋：enter 介面宣告 + 注入器對 enter 的所有觸發路徑。
-; leave 那一半見 test/std/leave.no。
+; leave 那一半見 test-std/src/leave.no。
 
 # test/runner
 

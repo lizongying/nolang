@@ -1239,13 +1239,13 @@ shs-sort-strs = (arr []str) (r []str) {
             -> 0
         }
 
-        ixout1286c18 = arr[pos]: {
+        val = arr[pos]: {
             ok -> it
 
             -> _
         }
 
-        out.push(ixout1286c18)
+        out.push(val)
     }
     r = out
 }

@@ -51,10 +51,10 @@ no run path/to/file.no
       title: 'no test'
       kind: 'keyword'
       status: 'stable'
-      summary: '跑 nolang 写的测试（test/std 等语料目录）。'
+      summary: '跑 nolang 写的测试（test-std/src 等语料目录）。'
       aliases: ['test', '测试']
       definition: `
-执行用 nolang 写的测试文件。项目里 test/std/ 下有成套语料；
+执行用 nolang 写的测试文件。项目里 test-std/src/ 下有成套语料；
 这些测试是自举链路的实跑验证，和 Go 侧单测互补。
 `
       syntax: `
@@ -64,7 +64,7 @@ no test test-std/src/
 ./bin/no test test-std/src/
 `
       related: ['make-test', 'no-build']
-      refs: ['test/std', 'Makefile']
+      refs: ['test-std/src', 'Makefile']
     }
     'no-fmt': {
       title: 'no fmt'

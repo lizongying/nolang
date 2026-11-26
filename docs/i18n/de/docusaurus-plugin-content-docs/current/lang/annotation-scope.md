@@ -435,14 +435,14 @@ Abnahmekriterium (isolierte Bäume A/B, gleicher Quellstand und Compiler, Unters
 **alle 0 Fehler** (kein Kompilierungsbruch), 25 Dateien mit weniger Diagnosen, 19 mit mehr — die Zunahmen sind ausschließlich nach dem Entfernen der Überschattung freigelegte
 `ovfhndld`-Meldungen („an `?T` gebunden, aber keine Überlauf-Entnahme deklariert"), wie in Schritt 1 von §8 erwartet, keine neuen Defekte.
 Weitere 9 Warnungen vom Typ `nolang-overflow-ineffective` sind ein altes Problem des werkzeugseitigen „Lückenfüllens" bei bigint-/
-String-Überladungsoperationen, ohne Zusammenhang mit der Herabsetzung. Nach Runde 2 wurde der vollständige Lauf `bin/no run test/std/*.no` wiederholt
+String-Überladungsoperationen, ohne Zusammenhang mit der Herabsetzung. Nach Runde 2 wurde der vollständige Lauf `bin/no run test-std/src/*.no` wiederholt
 (zstd / tls / str / json / set / base32 …) **alle PASSED**.
 
 Wiederholungsprüfung für Runde 3: Die 3 roten `parser`-Tests (`TestAnnotationsLiveOnAST` /
 TestCachedASTLowersToIdenticalHIR / `TestBuildSemViewsMatchesFreshParse`) sind **vor und nach der Lockerung
 wortgleich** — `only 288 files parsed cleanly` lautete beide Male dasselbe, die Lockerung brachte also keine neuen Parse-Fehler;
 sie befinden sich im Flugzustand der parallelen Parser-/Annotations-Umstrukturierung. Die Ausgabe von `no fmt -d src/std` war vor und nach der Lockerung
-**bytegleich**, d. h. der Formatter gibt Annotationen an `.` unverändert an ihrer Position aus, ohne Formatierungsdrift. `test/std`
+**bytegleich**, d. h. der Formatter gibt Annotationen an `.` unverändert an ihrer Position aus, ohne Formatierungsdrift. `test-std/src`
 mit heap / zstd / tls / json / set / map / regexp ist vollständig grün.
 
 **76 verbleibende Armkopf-Annotationen** (`#{overflow=wrap}` direkt über `cond -> {`): Sie sind **keine toten Zeilen** —

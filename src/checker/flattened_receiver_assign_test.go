@@ -241,7 +241,7 @@ func TestStaticMethodCallRewriteRecordsCalleeMethod(t *testing.T) {
 // `self` with a zero constant.
 //
 // Measured: the call read a freshly-allocated empty pool, `get-str` answered
-// nil, and the []str walk it eventually reached segfaulted (test/std/noml.no
+// nil, and the []str walk it eventually reached segfaulted (test-std/src/noml.no
 // t-parse-obj). Renaming the local to anything else made all 346 assertions
 // pass, which is what isolated this pass rather than codegen.
 func TestLocalBindingShadowsTypeNameKeepsReceiver(t *testing.T) {

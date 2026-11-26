@@ -1,4 +1,4 @@
-; test/std/yaml.no — yaml 模組測試（YAML 1.2 解析與生成）
+; test-std/src/yaml.no — yaml 模組測試（YAML 1.2 解析與生成）
 ;
 ; 執行：no test test-std/src/yaml.no
 ; 覆蓋：parse、kind、find-str/i64/f64/bool、get、at、len、key、text、str、

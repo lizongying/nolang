@@ -45,7 +45,7 @@ TLS-CT-APP-DATA = 23
 ; static-RSA 握手（客戶端要等伺服器算完 premaster 才回 CCS/Finished）
 ; 一定超時，表現為 read-change-cipher-spec / read-finished 回 false。
 ; 20000 = 10 秒留足餘量；只有對端真的死掉時才會多等這段時間。
-; 迴歸：test/std/tls.no 的 'handshake fork 1.2'。
+; 迴歸：test-std/src/tls.no 的 'handshake fork 1.2'。
 RECV-WAIT-TRIES = 20000
 
 ; Handshake message types
@@ -5285,7 +5285,7 @@ conn.connect = (host str, port i64) (ok bool) {
     ; dns.dial 回的是**普通 `fd`**（非 `?fd`），普通值不會匹配 `ok` 臂
     ; （實測 `f: { ok -> … }` 對 fd 恆走 `->` 臂），所以 `.fd` 一直是 -1，
     ; 之後所有 send/recv 都打在 -1 上 ⇒ connect() 對任何真實對端都失敗。
-    ; 迴歸：test/std/tls.no 的 'handshake fork 1.3'。
+    ; 迴歸：test-std/src/tls.no 的 'handshake fork 1.3'。
     .fd = tcpfd
     .connected = true
 
@@ -5842,7 +5842,7 @@ server-conn.read-client-hello = () (ok bool) {
                 ; （不報 4bek3xc6，只在 LLVM 端出現 `add void undef`），
                 ; 於是下面兩個 `ext-type == …` 永遠不成立：伺服器從不解析
                 ; supported_versions / key_share，is-tls13 恆為 false，
-                ; 之後的 1.3 記錄必然解密失敗。迴歸 test/std/tls.no。
+                ; 之後的 1.3 記錄必然解密失敗。迴歸 test-std/src/tls.no。
                 ext-type = get-u16(buf, pos)
 
                 #{overflow=wrap}

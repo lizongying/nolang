@@ -649,6 +649,26 @@ func (us *UseStatement) statementNode()         {}
 func (us *UseStatement) Pos() lexer.Position    { return posFromToken(us.Token) }
 func (us *UseStatement) EndPos() lexer.Position { return posFromToken(us.Token) }
 
+// ModuleAlias returns the effective alias for a module import (`# path alias`).
+// `_` is not a real binding: it marks the import as deliberately unused (the
+// side-effect / bug #85 entry-file-direct-import idiom) and must keep the
+// module's default short name as its symbol prefix. Function imports
+// (`# path.fn _`) are deliberately excluded — there `_` really does discard
+// the function binding.
+func (us *UseStatement) ModuleAlias() string {
+	if us == nil || us.Function != "" || us.Alias == "_" {
+		return ""
+	}
+	return us.Alias
+}
+
+// HasDiscardAlias reports whether the import was written with the explicit `_`
+// "intentionally unused" marker. Only module imports count; a function import's
+// `_` alias discards the function binding and is a different feature.
+func (us *UseStatement) HasDiscardAlias() bool {
+	return us != nil && us.Function == "" && us.Alias == "_"
+}
+
 // @ path.fn 或 @ path.fn alias
 type ExportStatement struct {
 	Token     lexer.Token

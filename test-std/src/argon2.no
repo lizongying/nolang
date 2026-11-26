@@ -1,4 +1,4 @@
-; test/std/argon2.no — crypto/argon2 模組測試
+; test-std/src/argon2.no — crypto/argon2 模組測試
 ;
 ; 執行：no test test-std/src/argon2.no
 ; 覆蓋：argon2.id（Argon2id）、rotr / blake-g / h-prime / compress（內部核心直測）

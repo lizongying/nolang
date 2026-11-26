@@ -1,4 +1,4 @@
-; test/std/map-index.no — map 下标读写（D9 map 豁免）
+; test-std/src/map-index.no — map 下标读写（D9 map 豁免）
 ;
 ; 執行：no test test-std/src/map-index.no
 ; 覆蓋：m[k] = v 插入 / 覆寫、m[k] 讀取（在場 / 缺席）、與 put/get 的等價性、

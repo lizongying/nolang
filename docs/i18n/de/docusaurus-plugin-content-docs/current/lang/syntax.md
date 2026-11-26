@@ -2352,17 +2352,16 @@ at = argt[i]: {
 s.farg.push(at)
 
 ; ❌ für eine einmalige Verwendung kein Einweg-Temporär einführen
-ixout1 = argt[i]: { ok -> it  -> _ }
-at = ixout1
+arg-at = argt[i]: { ok -> it  -> _ }
+at = arg-at
 s.farg.push(at)
 ```
 
-„Den Wert-match in ein benanntes Temporär außerhalb des Arms zu ziehen und im Arm dann `it = ixout1` zu schreiben“ ist **nicht äquivalent** zur direkten Schreibweise,
+„Den Wert-match in ein benanntes Temporär außerhalb des Arms zu ziehen und im Arm dann `it = arg-at` zu schreiben“ ist **nicht äquivalent** zur direkten Schreibweise,
 keine frei austauschbare Formatierungsfrage: Der Auswertungszeitpunkt unterscheidet sich (nach dem Herausziehen liest auch der äußere `nil` / `err` / catch-all einmal);
 `it` ist nur im Arm gültig und zeigt auf die Elementposition, das Zurückkopieren muss im Arm bleiben; das benannte Temporär ist eine neue Bindung mit eigener move-/
 Eigentümergeschichte und Zerstörung beim Verlassen des Gültigkeitsbereichs; und bei Verschachtelung muss innen zwingend `ok(it1) -> it1` benannt werden, nicht das
-`ok -> it` vom äußeren Arm kopiert werden. Nur wenn derselbe Wert wirklich an mehreren Stellen wiederverwendet wird, heraufziehen — und dann mit einem aussagekräftigen Variablennamen, keine Platzhalternamen wie `ixout…`
-aus Migrationswerkzeugen stehen lassen.
+`ok -> it` vom äußeren Arm kopiert werden. Nur wenn derselbe Wert wirklich an mehreren Stellen wiederverwendet wird, heraufziehen — und dann mit einem aussagekräftigen Variablennamen, sondern einen Namen, der sagt, was der Wert ist.
 
 #### `?=` und Block-match für die restlichen Einweg-Temporäre
 
@@ -2407,13 +2406,13 @@ bei einem Ziel **mit bereits vorhandenem Wert** weichen die beiden ab (`?=` null
 (in `?T`-Funktionen ein vorzeitiges `return`, in einem Block-match direkter Sprung zum Arm).
 Also: **Wenn der Blockkörper nur diese eine Anweisung enthält und der alte Wert vor dem Fehlschlag keine Bedeutung hat**, ist der Auffang-Arm als `-> 0` vollständig
 
-äquivalent (genau die Form, in der dieser Repo-Batch umgeschrieben wurde, die `ixout…`-Temporäre sind meist neue Deklarationen); stehen im Körper nach dem `?=` aber noch
+äquivalent (genau die Form, in der dieser Repo-Batch umgeschrieben wurde, die Temporäre sind meist neue Deklarationen); stehen im Körper nach dem `?=` aber noch
 andere Anweisungen (Schleifenzähler, nachfolgende Zuweisungen) oder hat der alte Wert eine Bedeutung, weicht es ab — solche Stellen lassen sich nicht mechanisch ersetzen. Die vollständige
 Abwägungstabelle steht in〈Abwägung: Block-match vs. Wert-Position-match〉.
 Ein weiterer häufiger Stolperpunkt: **Der Erfolgs-Arm läuft ebenfalls einmal**, der catch-all erhält den Erfolgswert (`-> print('x')` gibt aus).
 
 Daher sollte im Arm nur verworfen oder rein verarbeitet werden; Formen wie `err -> _` / `-> _` haben keine Seiteneffekte.
-Daraus ergibt sich diese Reihenfolge zum Aufräumen der `ixout…`-Einweg-Temporäre:
+Daraus ergibt sich diese Reihenfolge zum Aufräumen der Einweg-Temporäre:
 
 1. Wert wird nur an einer Stelle einmal verwendet → direkt an den finalen Zielnamen binden (siehe oben).
 

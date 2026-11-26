@@ -600,11 +600,11 @@ H0→HIR 路径上；且翻转后 H0 侧合成的 `IfExpression` 是临时节点
 - **等价门禁即 S-b 的差分门禁**：`TestH0MatchDesugarMatchesParserLowering` 的  
   Route B（`DesugarSurfaceMatches` → `IfExpression` → `case *IfExpression`）**正是  
   「S-b 关」的行为**，Route A 是直出。
-- **门禁语料扩到两份**：原门禁只走 `tests/`（535 程序），而 `test/std/` 是**裸 match 最密集**  
+- **门禁语料扩到两份**：原门禁只走 `tests/`（535 程序），而 `test-std/src/` 是**裸 match 最密集**  
   的语料（82 个 / 87 程序）却完全没被覆盖。新增 `equivalenceCorpusRoots` 同时走两份，  
   实测 **622 程序 / 0 分歧 / 257 真正走到 H0 降糖**（额外成本仅 ~0.8s）。
 - **新增反空洞门禁** `TestBareMatchEquivalenceIsExercised`（`parser/dump/hir_equivalence_test.go`）：  
-  两份语料合计 **436 个裸 match**（tests/ 354 + test/std/ 82），低于 50 即 FAIL——  
+  两份语料合计 **436 个裸 match**（tests/ 354 + test-std/src/ 82），低于 50 即 FAIL——  
   否则「0 分歧」可能是 0 == 0。`countBareMatches` 落在 `h0_sugar_gap_test.go`。
 - `make test` 16 包 0 FAIL；`./cmd/no/` `-count=1` 通过；`./parser/` + `./parser/dump/` 全过。
 - 靶向 `no run` A/B 7/7 SAME（裸 match 密集文件，均有真实输出）。
@@ -703,7 +703,7 @@ checker 与 H0 的先后关系**，否则等价门禁可能给出「HIR 相同�
 
 **S-c1 验证结果（2026-10-19）**：
 
-- G-equivalence 扩到 `tests/` + `test/std/` 两份语料：**622 比对 / 0 分歧 / 257 真正走到 H0 降糖**  
+- G-equivalence 扩到 `tests/` + `test-std/src/` 两份语料：**622 比对 / 0 分歧 / 257 真正走到 H0 降糖**  
   （含 S-a/S-b/S-c1 三路直出）。
 - **新增反空洞门禁 `TestSubjectMatchDirectHIRIsExercised`**：经 parser 侧  
   `SubjectMatchDirectEmits` 计数器（原子量，emitSubjectMatchHIR 成功发射时 +1）实测  
@@ -778,7 +778,7 @@ S1 的终极目标——**H0 直接消费 `SurfaceMatch`（S2 的 LLVM 形态）
   并加两道非空洞断言：① Route A 必须真的带 `SurfaceMatch` 进 H0（否则不计入）；  
   ② Route B 展开后 `SurfaceMatch` 必须归零（否则说明它不是「已降糖树」）。  
   **破坏实验已验证**：临时让路线塌陷 ⇒ 门禁正确 FAIL 并点名 168 个文件，  
-  而非像修复前那样静默 PASS。修复后实测（语料已扩到 `tests/` + `test/std/`）：  
+  而非像修复前那样静默 PASS。修复后实测（语料已扩到 `tests/` + `test-std/src/`）：  
   **622 比对 / 0 分歧 / 257 真正走到 H0 降糖**，S-c1 额外由 `TestSubjectMatchDirectHIRIsExercised`  
   （518 次直出）钉住覆盖。
 - **G-corpus**：532 语料 `no fmt` round-trip 冪等 + LSP lint/index 冒煙（沿用 §4.3 steps 1-4 留下的糖形态单形态冒煙测试）。

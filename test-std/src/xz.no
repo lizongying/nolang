@@ -1,4 +1,4 @@
-; test/std/xz.no — archive/xz（XZ / LZMA2）模組測試
+; test-std/src/xz.no — archive/xz（XZ / LZMA2）模組測試
 ;
 ; 執行：no test test-std/src/xz.no
 ; 覆蓋：compress / decompress / lzma-decompress / lzma2-decompress-stream、

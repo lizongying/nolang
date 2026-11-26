@@ -3525,6 +3525,44 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
   暴露，已改单行。全量套件 **139/139**（新增 app-event-decode /
   cmp-scene-prims / dva-default-submit 三份）。CI job 同路复跑。
 
+### §5.75 阶段 82：GPU 后端的纹理管线（2026-11-26 实测）
+
+阶段79 起 GPU 路径只画矩形，文本 / 图片 / 圆角 / 阴影 / 旋转图静默降级或跳过。
+本阶段把 `gpu_shim.c` 补成完整纹理管线，`app-draw-scene` 按 Scene 指令分流；
+dummy 驱动下 GPU init 失败仍优雅返回 -1（不算失败）。
+
+- **两条 MSL 管线**：纯色管线顶点 `{vec2 pos, vec4 color}`（24B）；纹理管线顶点
+  `{vec2 pos, vec4 color, vec2 uv, vec2 cxy, float rad}`（`QVert`），片段着色器
+  `texture.sample(smp, uv)` 乘顶点色（`TVert` 无角点/半径字段）。旋转在 CPU
+  端算好四角：先平移 `(x,y)`/`(x+w,y+h)` 减中心再绕中心转 `angle`；flip 位
+  （bit0 水平 / bit1 垂直）翻转 UV 而非几何。
+- **纹理注册表**：`tex_push` 统一入口，`id` 从 1 起；PNG 走 SDL_image 解码后
+  转 surface→GPU 纹理，文字走 TTF 渲染成白底 alpha 蒙版（缓存按字符串复用）。
+  文字纹理**必须转 `SDL_PIXELFORMAT_ABGR8888`**——SDL 的 RGBA8888 内存序是
+  A,B,G,R（小端），而 Metal 的 R8G8B8A8_UNORM 期望 R,G,B,A，直接用会让文字
+  变青。
+- **sampler 绑定**：`SDL_GPUShaderCreateInfo.num_samplers` 必须由调用方声明
+  （纹理管线传 1），否则 Metal 校验层报 `missing Sampler binding at index 0`。
+- **合并绘制**：连续 `OP_QUAD` 合并成一次 `SDL_DrawGPUPrimitives`（6 顶点 /
+  批）；`OP_TEX` 逐条 draw。帧末上传 transfer buffer、跑 render pass、
+  submit 后释放 buffer 并清零 op 队列。
+- **app.no 分流**：CS-TEXT → `_noui-gpu-text-load` + `_noui-gpu-draw-tex`
+  （顶点色染色蒙版）；CS-IMG → `_noui-gpu-img-load` + `_noui-gpu-draw-tex`；
+  CS-IMGR → `_noui-gpu-draw-tex-rot`（flip 直接传 i32，**不要过 pxi**，
+  flip 是枚举起量，除以 100 会归零导致永远不翻转）；CS-ROUND / CS-SHADOW →
+  `_noui-gpu-draw-round/_draw-shadow`（圆角走平滑边界着色器近似）。
+  字体初始化：`app-font-open` 成功后调 `_noui-gpu-font-init(path, size)`，
+  GPU 模式用独立字体句柄。
+- **测试**：`tests/app-gpu.no` 扩到 13 项（开关状态 + 颜色通道 + 真机 /
+  dummy 分支；live 分支断言 img-load 打包尺寸 8×6、文字缓存命中、混排冒烟、
+  shutdown 后 inactive；无 GPU 分支断言各 FFI 返回 0 且 draw 不崩）；
+  `tests/app-draw-prims.no` 软件后端混排断言 CS-IMGR/CS-SHADOW getter。
+  两路均绿：dummy → `ALL APP-GPU TESTS PASSED`、`ALL APP-DRAW-PRIMS TESTS
+  PASSED`；真机 Metal → 同输出 + `Metal API Validation Enabled`。
+- **像素级回归**（临时脚本已删）：BMP 截帧 + Python 解析确认背景精确
+  0x2A2A38、文字纯白、plain bbox (20,20)-(59,59)、45° 旋转菱形顶点符合
+  预期、flip=1 后 half.png 左绿右红。
+
 ## 6. 后端（两套 shim，均已落地验证）
 
 **回退后端 `src/shim/shim.c` + `shim.h`**（SDL_Render，导出 `noui_*`）：
@@ -3541,7 +3579,8 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
 - 顶点格式 `{vec2 pos, vec4 color}`（24B）；MSL vertex/fragment shader 以源码交 `SDL_CreateGPUShader`。
 - `noui_gpu_draw_rect` 追加 6 顶点（2 三角形），`noui_gpu_frame` 经 transfer buffer 上传 + render pass + `SDL_DrawGPUPrimitives` 一次绘制。
 - 演示：`example/noui-gpu-demo/`（`../../bin/no build -cc ../../noui/ccwrap.sh -o gpu-demo .`），编译链接通过、窗口创建成功、Metal 驱动启用。
-- 阶段79 起接入主循环：`package.noml` 的 `link-libs` 含 `noui-gpu-shim`，`app.no` 用 `app-use-gpu(1)` 切换；GPU 路径只画矩形（文本/图片/裁剪跳过），清屏色可配（`noui_gpu_set_clear`）。
+- 阶段79 起接入主循环：`package.noml` 的 `link-libs` 含 `noui-gpu-shim`，`app.no` 用 `app-use-gpu(1)` 切换；清屏色可配（`noui_gpu_set_clear`）。
+- 纹理管线（阶段82）：纯色 / 纹理两条 MSL 管线；PNG 与文字统一走纹理注册表（`_noui-gpu-img-load/_text-load/_tex-size/_draw-tex/_draw-tex-rot`），旋转 + flip 在 CPU 端算角点、flip 翻 UV；圆角 / 阴影走专用 FFI；连续纯色 quad 合并成单次 draw。dummy 驱动下 init 失败返回 -1，不崩（详见 §5.75）。
 
 **FFI 参数陷阱（阶段6实测）**：Nolang `f64` 实参传给 C `float` 形参，与 `str` 混合时值会变成 0（`ptsize=0.0` 导致字体加载失败）。规避：shim 侧浮点形参一律声明为 `double`（对应 Nolang `f64`），内部再转 float。
 
@@ -3786,6 +3825,13 @@ options」，是命令式侧最后一个只有构造函数的叶子——阶段 
       `dva-default-submit()` Enter=激活焦点按钮；新增 `NEXT.md`、删除
       `gen-test.sh`。测试 app-event-decode / cmp-scene-prims /
       dva-default-submit 全绿，全量 139/139。详见 §5.74。
+- [x] 阶段 82：GPU 纹理管线——`gpu_shim.c` 纯色/纹理两条 MSL 管线；PNG 与文字
+      统一纹理注册表（id 从 1 起），文字蒙版转 ABGR8888（SDL RGBA8888 内存序
+      是 A,B,G,R，Metal 期望 R,G,B,A）；旋转 CPU 端算四角、flip 翻 UV；
+      `num_samplers` 显式声明；连续 quad 合并 draw；`app-draw-scene` 分流
+      CS-TEXT/IMG/IMGR/ROUND/SHADOW，flip 直传 i32 不过 pxi。
+      `tests/app-gpu.no` 扩到 13 项 + 新增 `tests/app-draw-prims.no`，
+      dummy 与真机 Metal 两路全绿。详见 §5.75。
 - [x] 阶段 75：窗口描边容器（window-border）— **组件目录收官**。
       `src/components.no` 新增 `wb-*` 段：每句柄两个池 `WB-RAD`（四角统一
       圆角半径 px*100，0 = 直角）/ `WB-W`（边框厚度 px*100，0 = 不画框），

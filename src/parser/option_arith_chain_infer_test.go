@@ -12,7 +12,7 @@ import (
 // 而失敗是**靜默**的——觀測到的只是「ok 臂裡的賦值沒發生」。
 //
 // 歷史事故：aes.dec-block 的輪次計數器（`nr = ek.len() / 16 - 1` → `round` →
-// `round-opt`）整條鏈無型別 ⇒ 迴圈不遞減 ⇒ `test/std/aes.no` 掛死；
+// `round-opt`）整條鏈無型別 ⇒ 迴圈不遞減 ⇒ `test-std/src/aes.no` 掛死；
 // number.i64.sqrt 的二分迴圈（`n = .` → `hi = n / 2` → `mid`）同理。
 
 // TestOptionArithChainCallRHS：`n = data.len() / 16` 要推出 ?i64。

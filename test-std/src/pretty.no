@@ -1,6 +1,6 @@
 ; std-pretty.no — .pretty() 字面量風格測試
 ;
-; 執行：no run test/std/pretty.no
+; 執行：no run test-std/src/pretty.no
 
 # test/runner
 

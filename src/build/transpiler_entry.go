@@ -562,8 +562,8 @@ func collectEntryProgramFacts(program *parser.Program, isUserCode bool) (varType
 			// （`hx.h-fn`），所以別名本身也要登記成可解析的模組名，否則
 			// resolveModuleCalls 不會把 `hx.h-fn` 攤平成 `h-fn`，JS 後端
 			// （不做模組前綴改寫）會留下一個不存在的 `hx.h-fn` 呼叫。
-			if use.Alias != "" && use.Function == "" {
-				importedModules = append(importedModules, use.Alias)
+			if moduleAlias := use.ModuleAlias(); moduleAlias != "" {
+				importedModules = append(importedModules, moduleAlias)
 			}
 		}
 	}

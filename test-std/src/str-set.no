@@ -1,4 +1,4 @@
-; test/std/str-set.no — collection/str-set 模組測試
+; test-std/src/str-set.no — collection/str-set 模組測試
 ;
 ; 執行：no test test-std/src/str-set.no
 ; 覆蓋：init / add / contains / remove / len / is-empty / clear /

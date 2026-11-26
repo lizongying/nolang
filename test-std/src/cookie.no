@@ -1,4 +1,4 @@
-; test/std/cookie.no — net/cookie 模組測試（Set-Cookie 解析／簽名／Jar）
+; test-std/src/cookie.no — net/cookie 模組測試（Set-Cookie 解析／簽名／Jar）
 ;
 ; 執行：no test test-std/src/cookie.no
 ; 覆蓋：parse-set（完整屬性/最小/非法/trim）、build-set、sign/verify

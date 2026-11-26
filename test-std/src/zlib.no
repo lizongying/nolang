@@ -1,4 +1,4 @@
-; test/std/zlib.no — archive/zlib 模組測試
+; test-std/src/zlib.no — archive/zlib 模組測試
 ;
 ; 執行：no test test-std/src/zlib.no
 ; 覆蓋：zlib.adler-32 / zlib.compress / zlib.decompress /

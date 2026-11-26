@@ -7,6 +7,7 @@ test-nosql:
 	$(NO) build --check lib.no
 	$(NO) vet .
 	$(NO) test -timeout 120 tests
+	$(MAKE) fixture-check SQLITE="$(SQLITE)"
 
 vet:
 	$(NO) vet .

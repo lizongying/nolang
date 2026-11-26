@@ -888,4 +888,4 @@ Regression: `tests/async-ownership.no`, `src/mir/async_boundary_ownership_test.g
 
 **注意**：`vecDeepClone`（值列表 clone）會把 cap 鉗到 len 且對 len==0 返回 `{0,0,0}` — 對預分配 buffer（`with-cap(64)`）是致命的，任何把 slice 當「緩衝區」轉移的場景都該走 BufClone 路徑。
 
-回歸：`test/std/bufio.no`、`test/std/set.no`、`tests/mem-safety/`。
+回歸：`test-std/src/bufio.no`、`test-std/src/set.no`、`tests/mem-safety/`。

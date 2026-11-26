@@ -3677,7 +3677,7 @@ func testCommand(args []string) {
 		fmt.Println(i18n.P("iubb5mnf", "  no test -target x86_64-linux-gnu"))
 		fmt.Println(i18n.P("ibl465o8", "  no test -target wasm32-wasi"))
 		fmt.Println(i18n.P("f5gbhit6", "  no test --wasm-direct       run tests via Direct WASM backend with wasmtime"))
-		fmt.Println(i18n.P("ve2dzkxe", "  no test -timeout 90 test/std   run a whole dir sequentially; each file capped at 90s"))
+		fmt.Println(i18n.P("ve2dzkxe", "  no test -timeout 90 test-std/src   run a whole dir sequentially; each file capped at 90s"))
 	}
 	_ = fs.Parse(args)
 
@@ -3790,7 +3790,7 @@ func testCommand(args []string) {
 	// 順序執行（不再並行構建）：每個測試文件依序「編譯 + 執行」。
 	// 這避免了並行共享全域 token/AST 緩存造成的資源衝突（「防止衝突」）。
 	// 單一文件若超過 -timeout（run 階段）會被連同其 process group 一併乾淨殺掉，
-	// 因此整個目錄（如 test/std/）可以安全 gate，不會被單一 hang 卡死。
+	// 因此整個目錄（如 test-std/src/）可以安全 gate，不會被單一 hang 卡死。
 	reportBuildErr := func(tf string, berr error) {
 		if de, ok := asBuildDiagnostic(berr); ok {
 			// 結構化診斷：與 no vet 同格式（見 #6 follow-up）。

@@ -23,7 +23,7 @@ import (
 // read that i64's high zero bytes — so a 121-byte golden bzip2 stream looked
 // like `66, 0, 0, 0, 0, 0, 0, 0, 90, ...` to the decompressor.
 //
-// test/std/bzip2.no carried a workaround (copy the global into a fresh local
+// test-std/src/bzip2.no carried a workaround (copy the global into a fresh local
 // slice) that existed only because of this.
 const byteSliceGlobalSrc = `G []byte = [66, 90, 104, 57]
 
@@ -92,7 +92,7 @@ func TestByteSliceGlobalFoldsToByteArray(t *testing.T) {
 // lookup is unsound here anyway: FuncVarTypeRef / IsFuncDeclared fall back to
 // the GLOBAL VarTypes / DeclaredVars maps, which are shared across modules, so
 // short names like `a`, `b`, `f0` match some unrelated binding and the probe
-// reads a slot that was never created (test/std/dns.no's parse-response dropped
+// reads a slot that was never created (test-std/src/dns.no's parse-response dropped
 // from 51/51 to 49/51 that way).
 //
 // THE ASSERTION IS ON INSTRUCTION ORDER, NOT ON STDOUT: the read is the same

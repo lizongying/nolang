@@ -456,7 +456,7 @@ main = () {
 // TestComptimeLeavesOptionResultAlone: an Option is a {tag, payload} pair, and
 // comptimeVal models neither. Folding `mk-ok()` (result `?i64`) to 11 emitted a
 // bare i64 where the caller expected an option, so `p: { ok(v) -> … }` fell into
-// the nil arm (caught by test/std/option.no). Option results keep their call.
+// the nil arm (caught by test-std/src/option.no). Option results keep their call.
 func TestComptimeLeavesOptionResultAlone(t *testing.T) {
 	t.Setenv("NOLANG_COMPTIME", "1")
 	on := lowerSrc(t, `mk-ok = () (v ?i64) {

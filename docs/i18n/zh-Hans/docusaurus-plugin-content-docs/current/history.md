@@ -212,7 +212,7 @@ sidebar_position: 2
 - fix(build): per-arm type dispatch for union match arms so arm-local bindings resolve before generic-call rewriting (fixes silent 0 results from union arithmetic)
 - fix(compiler): resolve call-return type inference and attribute merged std diagnostics to their own source file
 - perf(parser): cache exported field indices for reflective AST walks; eliminate O(N^2) in vec push/insert codegen and self-hosted lexer/parser
-- fix(mir,std,ci): fix test/std failures (shl err-option drop crash, i8 store width, dns/err/chacha) and add blake2 golden-vector tests
+- fix(mir,std,ci): fix test-std/src failures (shl err-option drop crash, i8 store width, dns/err/chacha) and add blake2 golden-vector tests
 - fix(package,cmd/no): harden the release download path
 - build: upgrade the Go toolchain to 1.27.3; gate Setpgid/syscall.Kill behind build tags to fix the Windows release build
 - feat(compiler): add an inert self-host MIR/codegen skeleton (mir, cg, cg-rc, cg-runtime) and expand the self-host design doc

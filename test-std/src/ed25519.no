@@ -1,4 +1,4 @@
-; test/std/ed25519.no — crypto/ed25519 模組測試（RFC 8032 §7.1 金標向量）
+; test-std/src/ed25519.no — crypto/ed25519 模組測試（RFC 8032 §7.1 金標向量）
 ;
 ; 執行：no test test-std/src/ed25519.no
 ; 覆蓋：ed25519-publickey / ed25519-sign / ed25519-verify

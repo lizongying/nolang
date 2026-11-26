@@ -435,14 +435,14 @@ side-table 记录与 `OverflowMode`），`parser.ASTVersion` bump 到 `2026-11-1
 **全部 0 error**（无编译破坏），25 档的诊断变少、19 档变多——变多的全是摘掉遮蔽后暴露
 的 `ovfhndld`「绑到 `?T` 但没宣告溢出取值」，属 §8 第 1 步的预期结果，不是新缺陷。
 另有 9 条 `nolang-overflow-ineffective` 警告是工具原有的「补缺口」行为落在 bigint /
-字串重载运算上的老问题，与下推无关。第二轮之后重跑 `bin/no run test/std/*.no` 全量
+字串重载运算上的老问题，与下推无关。第二轮之后重跑 `bin/no run test-std/src/*.no` 全量
 （zstd / tls / str / json / set / base32 …）**全部 PASSED**。
 
 第三轮的重跑口径：`parser` 测试的 3 条红（`TestAnnotationsLiveOnAST` /
 `TestCachedASTLowersToIdenticalHIR` / `TestBuildSemViewsMatchesFreshParse`）**在放宽前后
 逐字相同**——`only 288 files parsed cleanly` 两次都一样，说明放宽没带来任何新的解析失败；
 它们是并行工作中 parser/annotation 重构的在飞状态。`no fmt -d src/std` 的输出在放宽前后
-**逐字节相同**，即 formatter 会把 `.` 上的注解原样打印回原位，没有格式漂移。`test/std`
+**逐字节相同**，即 formatter 会把 `.` 上的注解原样打印回原位，没有格式漂移。`test-std/src`
 的 heap / zstd / tls / json / set / map / regexp 全绿。
 
 **残留 76 处臂头注解**（`#{overflow=wrap}` 紧接在 `cond -> {` 上方）：它们**不是死行**——

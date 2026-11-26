@@ -1,4 +1,4 @@
-; test/std/hmac.no — crypto/hmac 模組測試
+; test-std/src/hmac.no — crypto/hmac 模組測試
 ;
 ; 執行：no test test-std/src/hmac.no
 ; 覆蓋：hmac-sha1-vec、hmac-sha256-vec、hmac-sha512-vec

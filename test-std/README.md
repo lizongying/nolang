@@ -202,7 +202,7 @@ make test
 CI configuration is not fully synchronized yet: the PR verification job in
 [`build.yml`](../.github/workflows/build.yml) uses `test-std/src/`, while the
 `std-test` job in [`test.yml`](../.github/workflows/test.yml) still names
-`test/std`. Treat a green result from the stale path as inconclusive.
+`test-std/src`. Treat a green result from the stale path as inconclusive.
 
 ## Known Limitations
 

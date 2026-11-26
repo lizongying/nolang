@@ -1,4 +1,4 @@
-; test/std/url.no — net/url 模組測試（URL 解析／建構／編碼）
+; test-std/src/url.no — net/url 模組測試（URL 解析／建構／編碼）
 ;
 ; 執行：no test test-std/src/url.no
 ; 覆蓋：url-parse（完整／相對路徑／預設埠／空字串）、get-query / set-query、

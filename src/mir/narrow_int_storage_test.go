@@ -26,7 +26,7 @@ import (
 //	in i16  = -100   -> printed 65436
 //	in u16  = 65535  -> printed -1
 //	u16 65535.sqrt() -> mid took a garbage value and the binary search never
-//	                    terminated (test/std/math.no hung until -timeout)
+//	                    terminated (test-std/src/math.no hung until -timeout)
 //
 // The invariant that prevents the whole class: the emitted type must equal what
 // llvmTypeOf gives for the declared type — i8 for byte/u8/i8, i64 otherwise.

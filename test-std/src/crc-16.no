@@ -1,4 +1,4 @@
-; test/std/crc-16.no — crypto/crc-16 模組測試
+; test-std/src/crc-16.no — crypto/crc-16 模組測試
 ;
 ; 執行：no test test-std/src/crc-16.no
 ; 覆蓋：crc-16.new / crc-16.hex（CRC-16/CCITT-FALSE：poly 0x1021, init 0xFFFF, msb-first, 無最終異或）

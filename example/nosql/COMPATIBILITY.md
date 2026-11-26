@@ -34,8 +34,9 @@ evidence exists. The package does not currently claim full SQLite compatibility.
 | Strict tests | Counted assertions and nonzero process exit on failure | `src/test-support.no`, `tests/harness.no` |
 
 The result-code lookup accepts names as written in `sqlite3.h` after removing the
-`SQLITE_` prefix and replacing `_` with `-`. Unknown, empty, and incorrectly
-cased names return `SQLITE_ERROR`. Extended primary codes use `code & 255`;
+`SQLITE_` prefix and retaining underscores, such as `CONSTRAINT_CHECK` and
+`IOERR_CORRUPTFS`. Unknown, empty, and incorrectly cased names return
+`SQLITE_ERROR`. Extended primary codes use `code & 255`;
 `SQLITE_OK_LOAD_PERMANENTLY` remains successful.
 
 ## Not yet implemented
@@ -87,10 +88,10 @@ Run from the repository root:
 make test-nosql
 ```
 
-This checks the public package build, vets the package, and runs every
-package-local test with a 120-second per-test timeout. A failed assertion must
-terminate the test process nonzero; printing a failure without exiting nonzero
-is not a passing gate.
+This checks the public package build, vets the package, runs every package-local
+test with a 120-second per-test timeout, and verifies the canonical fixture with
+SQLite 3.54.0. A failed assertion must terminate the test process nonzero;
+printing a failure without exiting nonzero is not a passing gate.
 
 Stage 1 is complete only when these gates pass and the canonical fixture record
 matches SQLite 3.54.0. Later stages add raw VFS, codecs/SQL, pager/B-tree,

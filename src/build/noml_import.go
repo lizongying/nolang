@@ -494,14 +494,14 @@ func (a *compileAssembly) mergeNomlModule(use *parser.UseStatement, nomlPath str
 	modProg = parser.CloneProgram(modProg)
 	a.merged.Sem.Merge(modProg.Sem)
 	a.merged.FmtTrivia.Merge(modProg.FmtTrivia)
-	if use.Alias == "" {
+	if use.ModuleAlias() == "" {
 		a.loadedUserModules[use.Path] = true
 	}
 	// 生成物的值名可能是檔名、也可能是頂部註解指定的名字，直接從解析結果取。
 	binding := nomlBindingName(modProg)
 	alias := ""
-	if use.Alias != "" {
-		alias = nomlValueName(use.Alias)
+	if moduleAlias := use.ModuleAlias(); moduleAlias != "" {
+		alias = nomlValueName(moduleAlias)
 	}
 	for _, ms := range modProg.Statements {
 		if _, ok := ms.(*parser.UseStatement); ok {

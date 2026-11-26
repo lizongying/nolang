@@ -1,4 +1,4 @@
-; test/std/multipart.no — net/multipart 模組測試（表單編碼／解析／加密欄位）
+; test-std/src/multipart.no — net/multipart 模組測試（表單編碼／解析／加密欄位）
 ;
 ; 執行：no test test-std/src/multipart.no
 ; 覆蓋：multipart-gen-boundary（前綴/長度/種子確定性）、

@@ -751,8 +751,8 @@ func ValidateDeprecatedLen(program *parser.Program) []ValidateResult {
 		// field. str.no's `str.len-bytes` reads it for byte length; vec.no /
 		// byte.no's `[...].len` / `[]byte.len` read it for element count.
 		// Match by full path under src/std, NOT just basename — otherwise test
-		// files that reuse the impl names (e.g. test/std/str.no,
-		// test/std/vec.no) would be wrongly exempted and left un-migrated.
+		// files that reuse the impl names (e.g. test-std/src/str.no,
+		// test-std/src/vec.no) would be wrongly exempted and left un-migrated.
 		srcFile := program.Sem.SourceFileOf(stmt)
 		if strings.Contains(srcFile, "src/std/") {
 			base := srcFile
@@ -3217,6 +3217,104 @@ func ValidateUseAlias(program *parser.Program) []ValidateResult {
 	}
 	return results
 }
+
+// ValidateUnusedImports reports module imports (`# /path`, `# pkg/mod`) whose
+// binding is never referenced in the program. It is the checker-side counterpart
+// of `no fmt`'s unused-import cleanup (src/fmt/imports.go rule 3).
+//
+// `# /path _` is the explicit escape hatch: `_` is the same "deliberately
+// unused" marker used by unused variables (`_x` / `_` binding). It keeps the
+// import alive for its side effects — notably the entry-file-direct-import
+// workaround for cross-module constants (bug #85) — without raising a hint.
+//
+// Conservative boundaries (mirror fmt/imports.go): std/js/npm/URL-style paths,
+// function imports (which carry a real bare-name binding), imports carrying a
+// doc/comment, and any alias starting with `_` are left alone.
+func ValidateUnusedImports(program *parser.Program) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+
+	// Collect identifiers and dot-property names from every statement except
+	// import/export directives. Dot properties are included because
+	// `# a/b` binds `b`, which is most often spelled `a.b(...)`.
+	used := map[string]bool{}
+	body := make([]parser.Statement, 0, len(program.Statements))
+	for _, stmt := range program.Statements {
+		switch stmt.(type) {
+		case *parser.UseStatement, *parser.ExportStatement:
+			continue
+		}
+		body = append(body, stmt)
+	}
+	parser.WalkProgramNodes(&parser.Program{Statements: body}, func(n parser.Node) {
+		switch v := n.(type) {
+		case *parser.Identifier:
+			used[v.Value] = true
+		case *parser.DotExpression:
+			used[v.Property] = true
+		}
+	})
+
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		u, ok := stmt.(*parser.UseStatement)
+		if !ok {
+			continue
+		}
+		// Function imports carry a real bare-name binding; leave them to the
+		// existing unused-variable machinery.
+		if u.Function != "" {
+			continue
+		}
+		// The whole point of the `_` alias: keep the import, silence the hint.
+		if u.Alias == "_" || strings.HasPrefix(u.Alias, "_") {
+			continue
+		}
+		if u.GetDoc() != nil && len(u.GetDoc().List) > 0 {
+			continue
+		}
+		if u.GetComment() != nil && len(u.GetComment().List) > 0 {
+			continue
+		}
+		path := u.Path
+		if path == "" {
+			continue
+		}
+		first := path
+		if i := strings.IndexByte(strings.TrimPrefix(first, "/"), '/'); i >= 0 {
+			first = strings.TrimPrefix(first, "/")[:i]
+		} else {
+			first = strings.TrimPrefix(first, "/")
+		}
+		if first == "std" || first == "js" || first == "npm" || strings.Contains(first, ".") {
+			continue
+		}
+		binding := u.Alias
+		if binding == "" {
+			binding = path
+			if i := strings.LastIndexByte(binding, '/'); i >= 0 {
+				binding = binding[i+1:]
+			}
+		}
+		if binding == "" || used[binding] {
+			continue
+		}
+		results = append(results, ValidateResult{
+			TraceID:   "unimpuse",
+			File:      program.Sem.SourceFileOf(u),
+			Line:      u.Token.Line,
+			Column:    u.Token.Column,
+			EndColumn: u.Token.Column + len(u.Path) - 1,
+			Message:   i18n.T("unimpuse", "import '%s' is never used; add a `_` alias (`# %s _`) to keep it as an intentional side-effect import, or remove the import", u.Path, u.Path),
+			Fixes: []parser.DiagnosticFix{{
+				Description: "add a `_` alias to silence this hint, or remove the import if it is not needed",
+			}},
+		})
+	}
+	return results
+}
+
 func ValidateRedundantTypeAnnotation(program *parser.Program) []ValidateResult {
 	return ValidateRedundantTypeAnnotationWithExtern(program, ExternSigTables{})
 }
@@ -12595,7 +12693,7 @@ func ValidateCrossModuleTypeRefs(program *parser.Program) []ValidateResult {
 	// （`err.err`、`io.reader`、`bigint.bigint`），而同一檔內的函式簽名仍寫
 	// 裸名（`new = (…) (e err)`）。若只看全域裸名集合，「err」不在其中，於是
 	// std/err.no 自己噴「type 'err' not found; did you mean 'err.err'?」——實測
-	// `no vet test/std/err.no` 必現 3 條假 ERROR，且 File 指向 src/std/err.no。
+	// `no vet test-std/src/err.no` 必現 3 條假 ERROR，且 File 指向 src/std/err.no。
 	// 故按「定義所屬模組」分組：只有同模組的定義才算本地型別（跨模組引用才報）。
 	localByModule := make(map[string]map[string]bool)
 	moduleKey := func(file string) string {
@@ -12984,7 +13082,7 @@ func resolveModuleCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 						// 筆記錄能區分兩者。全域可呼叫別名
 						// （std/global.no 的 `@ std/err.new err`）只認裸名，
 						// 沒有這筆記錄時 `n = io.err('E')` 會被降級成別名
-						// 目標，test/std/io.no 因型別不符而編不過。
+						// 目標，test-std/src/io.no 因型別不符而編不過。
 						if sem != nil {
 							sem.SetCallee(e, parser.CalleeModuleFn)
 						}
@@ -13180,7 +13278,7 @@ var dbgShadowSkip = os.Getenv("NOLANG_DBG_SHADOW") != ""
 // 「接收者由呼叫方自己寫在實參首位」，於是接收者被整條丟掉，MIR 只能依
 // synthRecv 的既有語意給缺失的 `self` 補一個零值常量：這次呼叫讀到一份剛配置
 // 的空 pool，`get-str` 靜默回 nil，而走到 `strs []str` 的取值路徑就是 SIGSEGV
-// （test/std/noml.no t-parse-obj 的原始病徵；一度被誤判為 []str 的 codegen 缺陷）。
+// （test-std/src/noml.no t-parse-obj 的原始病徵；一度被誤判為 []str 的 codegen 缺陷）。
 // 把該處的局部變數改名後 346 條斷言全綠，才把責任定位到這裡而不是 MIR。
 //
 // 詞法作用域優先於型別名：局部綁定存在時，接收者是值，不是型別引用。
@@ -13369,7 +13467,7 @@ func resolveMethodCallsInExpr(expr parser.Expression, sem *parser.SemanticContex
 					// 普通方法呼叫：接收者必須留在 AST 上（DotExpression）交給 MIR
 					// 當 self。這裡若照靜態形態改寫，接收者會被整條丟掉（該形態要求
 					// 呼叫方自己把它寫在實參首位），MIR 只好給缺失的 self 補零值
-					// 常量。詳見 localScope 的註釋與 test/std/noml.no t-parse-obj。
+					// 常量。詳見 localScope 的註釋與 test-std/src/noml.no t-parse-obj。
 					if isStatic && sc.bound(typeName) && dbgShadowSkip {
 						fmt.Fprintf(os.Stderr, "[shadow-skip] %s.%s (would flatten to %s)\n",
 							typeName, dot.Property, fullName)

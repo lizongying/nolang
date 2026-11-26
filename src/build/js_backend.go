@@ -361,15 +361,15 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		// 改寫成 `h-fn(41)`，否則產出物會留下 `hx.hFn(...)` → ReferenceError。
 		// 別名（`# /util/helper hx`）在此也算一個可解析的模組名。
 		jsImportedModules = append(jsImportedModules, checker.ModuleShortName(use.Path))
-		if use.Alias != "" && use.Function == "" {
-			jsImportedModules = append(jsImportedModules, use.Alias)
+		if moduleAlias := use.ModuleAlias(); moduleAlias != "" {
+			jsImportedModules = append(jsImportedModules, moduleAlias)
 		}
 
 		modulePath := resolveModulePath(use.Path)
 		isNoml := strings.HasSuffix(modulePath, ".noml")
 		// 與 LLVM 端同口徑：無別名的導入去重。.noml 的 `as` 別名導入只是在同一份
 		// 型別上多一個值綁定，需要再走一次合併（型別定義由 nomlTypeFiles 去重）。
-		if loadedModules[modulePath] && !(isNoml && use.Alias != "") {
+		if loadedModules[modulePath] && !(isNoml && use.ModuleAlias() != "") {
 			return nil
 		}
 		loadedModules[modulePath] = true
@@ -380,8 +380,8 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		// 處理，不再拒絕。單函數導入（`# path.fn as alias`）仍走下面只導入
 		// 指名函數的分支。
 		jsOwner := checker.ModuleShortName(use.Path)
-		if use.Alias != "" && use.Function == "" && !isNoml {
-			jsOwner = use.Alias
+		if moduleAlias := use.ModuleAlias(); moduleAlias != "" && !isNoml {
+			jsOwner = moduleAlias
 		}
 
 		modProg, err := parseModuleFile(modulePath)
@@ -430,9 +430,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 				}
 				continue
 			}
-			if isNoml && use.Alias != "" {
+			if moduleAlias := use.ModuleAlias(); isNoml && moduleAlias != "" {
 				if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil && ls.Name.Value == nomlBinding {
-					ls.Name.Value = nomlValueName(use.Alias)
+					ls.Name.Value = nomlValueName(moduleAlias)
 				}
 			}
 			// 同一份 .noml 再次導入（帶 `as` 別名）時，型別定義不重複輸出。

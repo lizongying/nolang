@@ -63,10 +63,6 @@ static int g_quit = 0;
 /* 清屏色（由 noui_gpu_set_clear 设置，默认深灰蓝） */
 static float g_clear_r = 0.12f, g_clear_g = 0.12f, g_clear_b = 0.16f, g_clear_a = 1.0f;
 
-/* TEMP(阶段82 验证用)：NOUI_GPU_SHOT=path.bmp [NOUI_GPU_SHOT_FRAME=N] 截取第 N 帧 */
-static int g_shot_taken = 0;
-static int g_frame_no = 0;
-
 /* ============================================================================
  * MSL 着色器
  * ============================================================================ */
@@ -411,7 +407,9 @@ long long noui_gpu_text_load(const char *text) {
     SDL_Color fg = { 255, 255, 255, 255 };
     SDL_Surface *surf = TTF_RenderText_Blended(g_font, text, 0, fg);
     if (!surf) return 0;
-    SDL_Surface *rgba = SDL_ConvertSurface(surf, SDL_PIXELFORMAT_RGBA8888);
+    /* SDL 的 RGBA8888 在内存里是 A,B,G,R（小端），而 GPU R8G8B8A8_UNORM 期望
+     * 字节序 R,G,B,A；SDL_PIXELFORMAT_ABGR8888 在小端机上正是 R,G,B,A。 */
+    SDL_Surface *rgba = SDL_ConvertSurface(surf, SDL_PIXELFORMAT_ABGR8888);
     SDL_DestroySurface(surf);
     if (!rgba) return 0;
     SDL_GPUTexture *tex = create_texture((const unsigned char *)rgba->pixels,
@@ -497,7 +495,7 @@ static void tex_push(long long id, double x, double y, double w, double h,
     double rad = angle * 3.14159265358979323846 / 180.0;
     double cs = cos(rad), sn = sin(rad);
     double dx[4] = { x - cx, x + w - cx, x - cx, x + w - cx };
-    double dy[4] = { y - cy, y - cy, y + h - cy, y + cy };
+    double dy[4] = { y - cy, y - cy, y + h - cy, y + h - cy };
     double px[6], py[6];
     static const int MAP[6] = { 0, 1, 2, 1, 3, 2 };
     for (int k = 0; k < 6; k++) {
@@ -593,40 +591,6 @@ static SDL_GPUBuffer *upload_vertex_buffer(const void *data, size_t bytes,
     return buf;
 }
 
-/* TEMP(阶段82 验证用)：交换链是 BGRA，落盘 BMP 时做 R/B 交换 */
-static void write_bmp_bgra(const char *path, const Uint8 *px, int w, int h) {
-    int row = (w * 3 + 3) & ~3;
-    long data = (long)row * h;
-    FILE *f = fopen(path, "wb");
-    if (!f) return;
-    unsigned char hdr[54];
-    memset(hdr, 0, sizeof(hdr));
-    hdr[0] = 'B'; hdr[1] = 'M';
-    long sz = 54 + data;
-    hdr[2] = (unsigned char)(sz & 0xFF);
-    hdr[3] = (unsigned char)((sz >> 8) & 0xFF);
-    hdr[4] = (unsigned char)((sz >> 16) & 0xFF);
-    hdr[5] = (unsigned char)((sz >> 24) & 0xFF);
-    hdr[10] = 54; hdr[14] = 40;
-    hdr[18] = (unsigned char)(w & 0xFF); hdr[19] = (unsigned char)((w >> 8) & 0xFF);
-    hdr[20] = (unsigned char)((w >> 16) & 0xFF); hdr[21] = (unsigned char)((w >> 24) & 0xFF);
-    hdr[22] = (unsigned char)(h & 0xFF); hdr[23] = (unsigned char)((h >> 8) & 0xFF);
-    hdr[24] = (unsigned char)((h >> 16) & 0xFF); hdr[25] = (unsigned char)((h >> 24) & 0xFF);
-    hdr[26] = 1; hdr[28] = 24;
-    fwrite(hdr, 1, 54, f);
-    int x, y;
-    for (y = h - 1; y >= 0; y--) {
-        for (x = 0; x < w; x++) {
-            const Uint8 *p = px + ((size_t)y * w + x) * 4;
-            unsigned char bgr[3] = { p[0], p[1], p[2] };
-            fwrite(bgr, 1, 3, f);
-        }
-        int pad = row - w * 3;
-        while (pad-- > 0) fputc(0, f);
-    }
-    fclose(f);
-}
-
 void noui_gpu_frame(void) {
     if (!g_dev || !g_win) return;
     SDL_GPUCommandBuffer *cb = SDL_AcquireGPUCommandBuffer(g_dev);
@@ -682,45 +646,7 @@ void noui_gpu_frame(void) {
 
     SDL_EndGPURenderPass(pass);
 
-    /* TEMP(阶段82 验证用)：把交换链回读成 BMP */
-    g_frame_no++;
-    const char *shot_path = getenv("NOUI_GPU_SHOT");
-    int want_shot = (shot_path && !g_shot_taken);
-    if (want_shot) {
-        int target = 1;
-        const char *fr = getenv("NOUI_GPU_SHOT_FRAME");
-        if (fr) target = atoi(fr);
-        if (g_frame_no != target) want_shot = 0;
-    }
-    SDL_GPUTransferBuffer *dlbuf = NULL;
-    if (want_shot) {
-        SDL_GPUTransferBufferCreateInfo tci;
-        SDL_zero(tci);
-        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
-        tci.size = sw * sh * 4;
-        dlbuf = SDL_CreateGPUTransferBuffer(g_dev, &tci);
-        if (dlbuf) {
-            SDL_GPUTextureRegion rr = { swap, 0, 0, 0, 0, 0, sw, sh, 1 };
-            SDL_GPUTextureTransferInfo di = { dlbuf, 0, sw, sh };
-            SDL_GPUCopyPass *cp2 = SDL_BeginGPUCopyPass(cb);
-            SDL_DownloadFromGPUTexture(cp2, &rr, &di);
-            SDL_EndGPUCopyPass(cp2);
-        }
-    }
-
     SDL_SubmitGPUCommandBuffer(cb);
-    if (want_shot && dlbuf) {
-        Uint8 *px = NULL;
-        if (SDL_WaitForGPUIdle(g_dev)) {
-            px = (Uint8 *)SDL_MapGPUTransferBuffer(g_dev, dlbuf, false);
-            if (px) {
-                write_bmp_bgra(shot_path, px, (int)sw, (int)sh);
-                SDL_UnmapGPUTransferBuffer(g_dev, dlbuf);
-            }
-        }
-        SDL_ReleaseGPUTransferBuffer(g_dev, dlbuf);
-        g_shot_taken = 1;
-    }
     if (qbuf) SDL_ReleaseGPUBuffer(g_dev, qbuf);
     if (tbuf) SDL_ReleaseGPUBuffer(g_dev, tbuf);
     g_qn = 0; g_tn = 0; g_on = 0;

@@ -18,7 +18,7 @@ package parser
 //
 // 端到端的「打印 20 / 值是 ok(…)、仍可三态 match」由 fmt 包
 // TestFormatUnwrapAssignValueMatchAfterTHIRView（CLI 等价路径）与
-// test/std/unwrap-value-match.no 把守。
+// test-std/src/unwrap-value-match.no 把守。
 
 import (
 	"testing"

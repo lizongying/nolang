@@ -270,7 +270,7 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 			return nil
 		}
 	}
-	if use.Alias == "" && a.loadedUserModules[use.Path] {
+	if use.ModuleAlias() == "" && a.loadedUserModules[use.Path] {
 		return nil
 	}
 	// `.noml` 直接引入：結構體名就是文件名，不參與模組前綴（見 noml_import.go
@@ -284,10 +284,7 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	// 這是 parser 允許的寫法之一（路徑同行緊跟的 path-ident 即別名），先前合併
 	// 階段一律當成錯誤（別名只對 `.noml` 或 `# path.fn as alias` 有意義），
 	// 導致 src/std/global.no 的 `# std/err error` 無法通過 `no vet src/std`。
-	moduleAlias := ""
-	if use.Alias != "" && use.Function == "" {
-		moduleAlias = use.Alias
-	}
+	moduleAlias := use.ModuleAlias()
 	modProg, err := t.resolveUse(use)
 	if err != nil {
 		return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
@@ -333,8 +330,8 @@ func (a *compileAssembly) mergeASTPackageModules(use *parser.UseStatement, tool 
 		return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
 	}
 	alias := tool
-	if use.Alias != "" {
-		alias = use.Alias
+	if moduleAlias := use.ModuleAlias(); moduleAlias != "" {
+		alias = moduleAlias
 	}
 	for _, modPath := range set.ModulePaths() {
 		modProg := set.Modules[modPath]
@@ -357,7 +354,7 @@ func (a *compileAssembly) mergeASTPackageModules(use *parser.UseStatement, tool 
 			return err
 		}
 	}
-	if use.Alias == "" {
+	if use.ModuleAlias() == "" {
 		a.loadedUserModules[use.Path] = true
 	}
 	return nil
@@ -376,7 +373,7 @@ func (a *compileAssembly) mergeLoadedModule(use *parser.UseStatement, modProg *p
 	t.checkImportedModuleHardErrors(modProg, modFile, use.Path)
 	a.merged.Sem.Merge(modProg.Sem)
 	a.merged.FmtTrivia.Merge(modProg.FmtTrivia)
-	if use.Alias == "" {
+	if use.ModuleAlias() == "" {
 		a.loadedUserModules[use.Path] = true
 	}
 	if strings.HasPrefix(use.Path, "std/") || use.Path == "std" {
@@ -412,7 +409,7 @@ func (a *compileAssembly) mergeLoadedModule(use *parser.UseStatement, modProg *p
 	}
 	for _, ms := range modProg.Statements {
 		if nestedUse, ok := ms.(*parser.UseStatement); ok {
-			if nestedUse.Alias == "" && a.loadedUserModules[nestedUse.Path] {
+			if nestedUse.ModuleAlias() == "" && a.loadedUserModules[nestedUse.Path] {
 				continue
 			}
 			a.pendingUses = append(a.pendingUses, nestedUse)
@@ -453,21 +450,21 @@ func (a *compileAssembly) mergeLoadedModule(use *parser.UseStatement, modProg *p
 						}
 					}
 				}
-		} else if !a.mainVarNames[ls.Name.Value] {
-			isConst := checker.IsConstantExpr(ls.Value)
-			// 先贏去重只適用於「大寫常量」：std 內部確實有跨模組同名常量
-			// （FNV-OFFSET 等），而小寫頂層 let 是可變綁定，MIR 以裸名為槽位鍵，
-			// 兩個模組各自宣告同名小寫值會讓一方被靜默改綁。不再去重，讓兩條
-			// 都進 merged，由 validateCrossModuleDuplicateGlobals 統一攔成硬錯誤。
-			isNamedConst := checker.IsConstantName(ls.Name.Value)
-			platformKeys := modProg.Sem.PlatformKeysOf(ls)
-			hasPlatformAnnotation := len(platformKeys) > 0
-			if isNamedConst && a.mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
-				continue
-			}
-			if isNamedConst && !hasPlatformAnnotation {
-				a.mergedGlobalConsts[ls.Name.Value] = true
-			}
+			} else if !a.mainVarNames[ls.Name.Value] {
+				isConst := checker.IsConstantExpr(ls.Value)
+				// 先贏去重只適用於「大寫常量」：std 內部確實有跨模組同名常量
+				// （FNV-OFFSET 等），而小寫頂層 let 是可變綁定，MIR 以裸名為槽位鍵，
+				// 兩個模組各自宣告同名小寫值會讓一方被靜默改綁。不再去重，讓兩條
+				// 都進 merged，由 validateCrossModuleDuplicateGlobals 統一攔成硬錯誤。
+				isNamedConst := checker.IsConstantName(ls.Name.Value)
+				platformKeys := modProg.Sem.PlatformKeysOf(ls)
+				hasPlatformAnnotation := len(platformKeys) > 0
+				if isNamedConst && a.mergedGlobalConsts[ls.Name.Value] && !hasPlatformAnnotation {
+					continue
+				}
+				if isNamedConst && !hasPlatformAnnotation {
+					a.mergedGlobalConsts[ls.Name.Value] = true
+				}
 				a.merged.Statements = append(a.merged.Statements, ls)
 				a.merged.Sem.SetModuleOwnerOf(ls, useModShort)
 				a.merged.Sem.SetSourceFileDeep(ls, modFile)

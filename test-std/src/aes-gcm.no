@@ -1,4 +1,4 @@
-; test/std/aes-gcm.no — crypto/aes-gcm 模組測試
+; test-std/src/aes-gcm.no — crypto/aes-gcm 模組測試
 ;
 ; 執行：no test test-std/src/aes-gcm.no
 ; 覆蓋：seal-128 / open-128 / seal-256 / open-256，以及內部構成

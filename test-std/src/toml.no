@@ -1,4 +1,4 @@
-; test/std/toml.no — toml 模組測試（TOML 解析與產生）
+; test-std/src/toml.no — toml 模組測試（TOML 解析與產生）
 ;
 ; 執行：no test test-std/src/toml.no
 ; 覆蓋：parse（scalar/table/註解/負數/布林/錯誤）、get（原始字面）、get-str /

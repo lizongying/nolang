@@ -12,7 +12,7 @@
 ; （識別字已改為 kebab-case / 已修掉診斷）。改向量時請兩份一起對照。
 ; ============================================================
 
-; test/std/sse.no — net/sse 模組測試
+; test-std/src/sse.no — net/sse 模組測試
 ;
 ; 執行：no test test-std/src/sse.no
 ;

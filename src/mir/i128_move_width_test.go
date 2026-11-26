@@ -7,7 +7,7 @@ import (
 )
 
 // TestI128MoveWidensInsteadOfTypePunning pins the two 128-bit lane rules that
-// together made i128.MIN.sqrt return garbage at -O0 (test/std/number.no):
+// together made i128.MIN.sqrt return garbage at -O0 (test-std/src/number.no):
 //
 //	(a) emitMove must WIDEN a narrow source into a 128-bit slot, never type-pun
 //	    the slot. MIR flattens every integer narrower than 128 bits to i64, so

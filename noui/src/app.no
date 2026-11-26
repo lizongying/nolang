@@ -63,6 +63,11 @@ _noui-poll = () (e i64)
 ; 阶段76：文本输入（SDL_EVENT_TEXT_INPUT 的 UTF-8）与系统剪贴板
 _noui-text-take = () (s str)
 #{c}
+; 阶段83：事件注入（测试 / demo）。把打包好的 i64 事件塞进轮询队列，下一轮
+; app-poll 就会取到——dummy 驱动不产生触摸 / 笔事件，没有它主循环的分支
+; 没法端到端验证。
+_noui-event-push = (e i64) ()
+#{c}
 ; 阶段81：拖放取件（读完即空）与窗口 DPI 缩放 x1000
 _noui-drop-take = () (s str)
 #{c}
@@ -312,7 +317,7 @@ APP-WIN-HF = 42000
 ; 颜色与坐标工具
 ; ============================================================================
 col-a = (c i64) (v i32) {
-    v = (c >> 8) & 0xFF
+    v = c & 0xFF
 }
 
 col-r = (c i64) (v i32) {
@@ -492,8 +497,12 @@ app-poll = () (t i64, x f64, y f64) {
     dw i64 = aux
     (dw >= 128) -> { dw = cs-sub(dw, 256) }
     APP-WHEEL[0] = dw
-    APP-MODS[0] = aux
-    APP-PRESS[0] = aux
+    ; 阶段83：aux 的含义按事件类型区分——修饰键只对鼠标 / 键盘有效，
+    ; 压力只对触摸 / 笔有效。混用会让滚轮增量被当成 Shift、笔压被当成修饰键。
+    APP-MODS[0] = 0
+    (app-is-mods(t) == 1) -> { APP-MODS[0] = aux }
+    APP-PRESS[0] = 0
+    (app-is-contact(t) == 1) -> { APP-PRESS[0] = aux }
     APP-SHIFT[0] = 0
     (t == 4) -> { sh i64 = aux & 1
         APP-SHIFT[0] = sh }
@@ -516,6 +525,23 @@ app-event-decode = (e i64) (t i64, x f64, y f64, aux i64) {
         x = rx.to-f64() + hx.to-f64() * 16777216.0
     }
 }
+
+; 阶段83：aux 是不是修饰键位图。只有鼠标按键与键盘事件在打包时写了 mods。
+app-is-mods = (t i64) (yes i64) {
+    yes = 0
+    ((t >= 2) && (t <= 4)) -> { yes = 1 }
+    ((t >= 6) && (t <= 12)) -> { yes = 1 }
+    yes
+}
+
+; 阶段83：aux 是不是压力量化（手指 / 笔的按下、抬起、移动与笔轴）。
+app-is-contact = (t i64) (yes i64) {
+    yes = 0
+    ((t >= 13) && (t <= 18)) -> { yes = 1 }
+    (t == 23) -> { yes = 1 }
+    yes
+}
+
 ; 最近一次滚轮事件的有符号增量（格子数，上滚为负）
 app-wheel = () (d i64) {
     d = APP-WHEEL[0]: {
@@ -573,18 +599,26 @@ app-drop = () (s str) {
     s = _noui-drop-take()
 }
 
+; 阶段83：把打包好的事件 i64 注入轮询队列（测试 / demo 用）。下一轮 app-poll
+; 就会取到，格式与 app-event-decode 互逆。
+app-event-push = (e i64) () {
+    _noui-event-push(e)
+}
+
 ; 阶段81：新增绘制原语的 Nolang 包装（像素坐标、RGBA）。
+; 阶段83：颜色 / flip 原样传给 C（r/g/b/a 本来就是 0..255，flip 是枚举起量，
+; 再过 pxi 会把它们除以 100 —— 圆角变全黑、翻转永远为 0）。
 app-draw-round-rect = (x f64, y f64, w f64, h f64, rad f64, r i64, g i64, b i64, a i64) () {
-    _noui-draw-round-rect(x, y, w, h, rad, pxi(r), pxi(g), pxi(b), pxi(a))
+    _noui-draw-round-rect(x, y, w, h, rad, r, g, b, a)
 }
 
 app-draw-shadow = (x f64, y f64, w f64, h f64, rad f64, dy f64, r i64, g i64, b i64, a i64) () {
-    _noui-draw-shadow(x, y, w, h, rad, dy, pxi(r), pxi(g), pxi(b), pxi(a))
+    _noui-draw-shadow(x, y, w, h, rad, dy, r, g, b, a)
 }
 
 ; 绕盒中心旋转 angle 度；flip 位 1=水平镜像、2=垂直镜像
 app-draw-image-rot = (x f64, y f64, w f64, h f64, id i64, angle f64, flip i64) () {
-    _noui-draw-image-rot(x, y, w, h, id, angle, pxi(flip))
+    _noui-draw-image-rot(x, y, w, h, id, angle, flip)
 }
 
 ; ============================================================================
@@ -891,7 +925,7 @@ app-draw-scene = () {
                     ang = cs-scene-sa(i)
                     fl = cs-scene-sf(i)
                     _noui-gpu-draw-tex-rot(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
-                                           iid, ang.to-f64() / 100.0, pxi(fl))
+                                           iid, ang.to-f64() / 100.0, fl)
                 }
             }
             (gpu == 0) -> {
@@ -902,7 +936,7 @@ app-draw-scene = () {
                     ang = cs-scene-sa(i)
                     fl = cs-scene-sf(i)
                     _noui-draw-image-rot(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
-                                         iid, ang.to-f64() / 100.0, pxi(fl))
+                                         iid, ang.to-f64() / 100.0, fl)
                 }
             }
         }

@@ -1,4 +1,4 @@
-; test/std/aes-cbc.no — crypto/aes-cbc 模組測試
+; test-std/src/aes-cbc.no — crypto/aes-cbc 模組測試
 ;
 ; 執行：no test test-std/src/aes-cbc.no
 ; 覆蓋：enc-128 / dec-128 / enc-256 / dec-256，以及核心 cbc-enc / cbc-dec、

@@ -393,7 +393,7 @@ var (
 // `txt.replace-n` was baked with `parts[i]` left as a bare element read, so
 // `s = it` bound a `txt` where an option payload was expected and
 // `u.replace-n('one', '1', 1)` returned "1one" instead of "1 two one"
-// (test/std/txt.no: `replace-n limit 1` / `limit 2`).
+// (test-std/src/txt.no: `replace-n limit 1` / `limit 2`).
 func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 	known := ListStdModules(fsys)
 	tables, err := stdParseTablesFor(fsys)

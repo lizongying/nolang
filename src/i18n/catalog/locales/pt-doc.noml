@@ -7778,7 +7778,7 @@ out: representação decimal (formatado após alargar para i64)
 potência inteira base^n (n >= 0, i64) — chamado como number.pow (prefixo de módulo).
 Mesmo nome que o pow f64 de math.no mas um módulo diferente, então a build acrescenta o prefixo number.;
 sinônimo de math.pow-int (a potência rápida genérica int), mas com uma assinatura i64 explícita para que
-asserções como number.pow(2, 10) em test/std/number.no valham.
+asserções como number.pow(2, 10) em test-std/src/number.no valham.
 base: a base
 n: expoente (n ≥ 0; resultados são indefinidos para negativos)
 res: base elevada à potência n (exponenciação rápida, transbordamento dá a volta)

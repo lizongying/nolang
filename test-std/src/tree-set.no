@@ -1,4 +1,4 @@
-; test/std/tree-set.no — collection/tree-set 模組測試（AVL 有序集合）
+; test-std/src/tree-set.no — collection/tree-set 模組測試（AVL 有序集合）
 ;
 ; 執行：no test test-std/src/tree-set.no
 ; 覆蓋：init / add / contains / remove(葉・單子・雙子) / first / last /

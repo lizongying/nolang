@@ -34,7 +34,7 @@ import (
 // was stored one byte BEFORE the alloca and the emit `memcpy` / `write` then
 // read one byte from before it. ASan on the extracted helper reports
 // "stack-buffer-underflow ... 'buf' [32,72)", and i128.MIN.to-str() rendered
-// without its leading '-' (test/std/number.no "str-eq - i128.MIN").
+// without its leading '-' (test-std/src/number.no "str-eq - i128.MIN").
 //
 // The unsigned helpers have no sign branch, so their bound is E >= 39 (39
 // digits, NUL at E); they are checked too so a later buffer shrink cannot

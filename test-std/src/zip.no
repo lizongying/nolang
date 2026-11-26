@@ -1,4 +1,4 @@
-; test/std/zip.no — archive/zip 模組測試
+; test-std/src/zip.no — archive/zip 模組測試
 ;
 ; 執行：no test test-std/src/zip.no
 ; 覆蓋：u16le / u32le、zip 唯讀視圖（find-eocd/get-cd-off/get-total/entry-off/
