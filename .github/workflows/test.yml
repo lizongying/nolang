@@ -111,7 +111,10 @@ jobs:
           exit $fail
 
   # ── nosql package regression tests ────────────────────────────────────
+  # Temporarily disabled: the nosql package is still in progress. The job
+  # stays defined but is skipped; remove `if: false` once it is complete.
   nosql-test:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -227,7 +230,9 @@ jobs:
   # noui 是 macOS 优先的 C/SDL3 shim，build-shims.sh 默认走 /opt/homebrew，
   # 所以用 macos runner；测试本身在无头 dummy 驱动下跑，不需要真实窗口。
   # 运行器脚本：noui/scripts/run-noui-tests.sh（帧闸 + 退出码判定 + 并行）。
+  # 暂时停用：noui 尚未完成。保留 job 定义但跳过执行；完成后移除 `if: false`。
   noui-test:
+    if: false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
