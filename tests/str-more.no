@@ -936,7 +936,13 @@ test-str-repeat-write = () {
         buf-b[bi] = 32
     }
     buf-b[0] = 0x12
-    buf = buf-b.to-str()
+    buf-opt = buf-b.to-str()
+    buf = ''
+    buf-opt: {
+        ok -> buf = it
+
+        -> _
+    }
     print('buf[0] set')
     b0 = buf[0]
     b0 != 0x12 -> {

@@ -194,7 +194,7 @@ io.out(ok)
 print('')
 
 ; 4b) ?= 範圍內取值正確（解箱後印字元碼）
-v = safe-get(A, 2)
+v ?i64 = safe-get(A, 2)
 v
 nil -> io.out('safe-get in-bounds: none')
 

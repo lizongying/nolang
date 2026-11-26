@@ -22,12 +22,26 @@ t-hex-byte = () {
     buf []byte = with-cap-len(4, 4)
     uuid.hex-byte(171, 0, buf)
     uuid.hex-byte(15, 2, buf)
-    se(buf.to-str(), 'ab0f', 'hex-byte -> ab0f')
+    p-opt = buf.to-str()
+    p str = ''
+    p-opt: {
+        ok -> p = it
+
+        -> _
+    }
+    se(p, 'ab0f', 'hex-byte -> ab0f')
 
     ; 只有 1 格時第二個字元寫不進去（pos+1 越界），第一個仍正常
     one []byte = with-cap-len(1, 1)
     uuid.hex-byte(171, 0, one)
-    se(one.to-str(), 'a', 'hex-byte 1-slot -> a')
+    po = one.to-str()
+    p = ''
+    po: {
+        ok -> p = it
+
+        -> _
+    }
+    se(p, 'a', 'hex-byte 1-slot -> a')
 
     ; 完全越界的 pos：長度不變
     small []byte = with-cap-len(2, 2)
@@ -55,13 +69,27 @@ t-hex-byte-upper = () {
     table = '0123456789ABCDEF'
     uuid.hex-byte-upper(171, 0, buf, table)
     uuid.hex-byte-upper(15, 2, buf, table)
-    se(buf.to-str(), 'AB0F', 'hex-byte-upper -> AB0F')
+    p-opt = buf.to-str()
+    p str = ''
+    p-opt: {
+        ok -> p = it
+
+        -> _
+    }
+    se(p, 'AB0F', 'hex-byte-upper -> AB0F')
 
     ; 自訂字母表：b=3 的高半字節 0 取 table[0]='a'，低半字節 3 取 table[3]='d'
     alt = 'abcdefghijklmnop'
     b2 []byte = with-cap-len(2, 2)
     uuid.hex-byte-upper(3, 0, b2, alt)
-    se(b2.to-str(), 'ad', 'hex-byte-upper alt table 3 -> ad')
+    po = b2.to-str()
+    p = ''
+    po: {
+        ok -> p = it
+
+        -> _
+    }
+    se(p, 'ad', 'hex-byte-upper alt table 3 -> ad')
 }
 
 ; 驗證 uuid.parse-with-dashes：36 字元帶連字號格式；字元非法或連字號位置錯都回 false，

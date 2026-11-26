@@ -1171,7 +1171,11 @@ h2m-var-find = (c h2m-ctx, name str) (id i64) {
     (i < c.names.len() && id == 0) {
         nm = c.names[i]
         nm == name -> {
-            vid = c.vids[i]
+            vid = c.vids[i]: {
+                ok -> it
+
+                -> 0
+            }
             id = vid
         }
 
@@ -2765,7 +2769,11 @@ h2m-sig-const-add = (s h2m-sigs, name str, val i64) {
     p = name.index('.')
     p >= 0 -> {
         p = h2m-inc(p)
-        short = name.slice-bytes(p, name.len-bytes()).to-bytes-str()
+        short = name.slice-bytes(p, name.len-bytes()).to-str(): {
+            ok -> it
+
+            -> ''
+        }
     }
     s.csname.push(short)
 }
@@ -2807,7 +2815,11 @@ h2m-sig-strconst-add = (s h2m-sigs, name str, val str) {
     p = name.index('.')
     p >= 0 -> {
         p = h2m-inc(p)
-        short = name.slice-bytes(p, name.len-bytes()).to-bytes-str()
+        short = name.slice-bytes(p, name.len-bytes()).to-str(): {
+            ok -> it
+
+            -> ''
+        }
     }
     s.stname.push(short)
 }
@@ -7133,7 +7145,11 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
                 si = h2m-name-find(c, sname)
                 si < 0 -> bad = 1
                 si >= 0 -> {
-                    sty = c.tys[si]
+                    sty = c.tys[si]: {
+                        ok -> it
+
+                        -> 0
+                    }
                     subjty = sty
                     sty == TY-I64 -> vmode = 1
                     sty == TY-STR -> vmode = 1
@@ -8816,7 +8832,14 @@ h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
             e >= 0 -> {
 
                 ; 先把 '{' 之前的字面段写出
-                i > seg -> h2m-print-lit(c, s.slice-bytes(seg, i).to-bytes-str(), base)
+                i > seg -> {
+                    part = s.slice-bytes(seg, i).to-str(): {
+                        ok -> it
+
+                        -> ''
+                    }
+                    h2m-print-lit(c, part, base)
+                }
                 col = h2m-fmt-colon(s, h2m-inc(i), e)
                 ne = e
                 col >= 0 -> ne = col
@@ -8824,7 +8847,11 @@ h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
                 ; spec 存在 ⇒ 宽度/对齐/进制/千分位无法复现 ⇒ 计 unsup（先判再发）
                 col >= 0 -> r = 0
                 r == 1 -> {
-                    nm = s.slice-bytes(h2m-inc(i), ne).to-bytes-str()
+                    nm = s.slice-bytes(h2m-inc(i), ne).to-str(): {
+                        ok -> it
+
+                        -> ''
+                    }
                     r = h2m-print-field(c, nm, base)
                 }
                 i = h2m-inc(e)
@@ -8833,7 +8860,14 @@ h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
         }
         b != 123 -> i = h2m-inc(i)
     }
-    r == 1 && seg < n -> h2m-print-lit(c, s.slice-bytes(seg, n).to-bytes-str(), base)
+    r == 1 && seg < n -> {
+        part = s.slice-bytes(seg, n).to-str(): {
+            ok -> it
+
+            -> ''
+        }
+        h2m-print-lit(c, part, base)
+    }
 }
 
 ; s100：print / eprint 内建降级（自举无 builtin 签名表 ⇒ 在 h2m 单点认领）。

@@ -185,7 +185,13 @@ mk-a = (n i64) (out str) {
     j <- [0..n): {
         ob[j] = 97
     }
-    out = ob.to-str()
+    out-opt = ob.to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; emit 逐欄位落盤，n 遞增

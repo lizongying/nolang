@@ -1432,8 +1432,20 @@ input-insert = (h i64, ch str) {
     n = txt.len-bytes()
     (car < 0) -> { car = 0 }
     (car > n) -> { car = n }
-    pre = txt.slice-bytes(0, car).to-bytes-str()
-    suf = txt.slice-bytes(car, n).to-bytes-str()
+    pre-o = txt.slice-bytes(0, car).to-str()
+    pre str = ''
+    pre-o: {
+        ok -> pre = it
+
+        -> _
+    }
+    suf-o = txt.slice-bytes(car, n).to-str()
+    suf str = ''
+    suf-o: {
+        ok -> suf = it
+
+        -> _
+    }
     pre.push-str(ch)
     pre.push-str(suf)
     CMP-TEXT[h] = pre
@@ -1456,8 +1468,20 @@ input-backspace = (h i64) {
         }
         n = txt.len-bytes()
         (car <= n) -> {
-            pre = txt.slice-bytes(0, ct-sub(car, 1)).to-bytes-str()
-            suf = txt.slice-bytes(car, n).to-bytes-str()
+            pre-o = txt.slice-bytes(0, ct-sub(car, 1)).to-str()
+            pre str = ''
+            pre-o: {
+                ok -> pre = it
+
+                -> _
+            }
+            suf-o = txt.slice-bytes(car, n).to-str()
+            suf str = ''
+            suf-o: {
+                ok -> suf = it
+
+                -> _
+            }
             pre.push-str(suf)
             CMP-TEXT[h] = pre
             ct-set(INP-CAR, h, ct-sub(car, 1))
@@ -1476,8 +1500,20 @@ input-delete = (h i64) {
     }
     n = txt.len-bytes()
     (car < n) -> {
-        pre = txt.slice-bytes(0, car).to-bytes-str()
-        suf = txt.slice-bytes(ct-add(car, 1), n).to-bytes-str()
+        pre-o = txt.slice-bytes(0, car).to-str()
+        pre str = ''
+        pre-o: {
+            ok -> pre = it
+
+            -> _
+        }
+        suf-o = txt.slice-bytes(ct-add(car, 1), n).to-str()
+        suf str = ''
+        suf-o: {
+            ok -> suf = it
+
+            -> _
+        }
         pre.push-str(suf)
         CMP-TEXT[h] = pre
     }
@@ -1529,7 +1565,13 @@ ta-line-count = (h i64) (n i64) {
     i = 0
     !! {
         (i >= nb) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> { n = ct-inc(n) }
         i = ct-inc(i)
     }
@@ -1545,7 +1587,13 @@ ta-line-start = (h i64, l i64) (b i64) {
     !! {
         (seen >= l) -> { ** }
         (i >= nb) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> {
             seen = ct-inc(seen)
             b = ct-inc(i)
@@ -1562,7 +1610,13 @@ ta-line-len = (h i64, l i64) (n i64) {
     i = ta-line-start(h, l)
     !! {
         (i >= nb) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> { ** }
         n = ct-inc(n)
         i = ct-inc(i)
@@ -1573,7 +1627,13 @@ ta-line-len = (h i64, l i64) (n i64) {
 ta-line-text = (h i64, l i64) (s str) {
     t = input-value(h)
     b = ta-line-start(h, l)
-    s = t.slice-bytes(b, ct-add(b, ta-line-len(h, l))).to-bytes-str()
+    s-o = t.slice-bytes(b, ct-add(b, ta-line-len(h, l))).to-str()
+    s str = ''
+    s-o: {
+        ok -> s = it
+
+        -> _
+    }
 }
 ta-caret-line = (h i64) (l i64) {
     t = input-value(h)
@@ -1582,7 +1642,13 @@ ta-caret-line = (h i64) (l i64) {
     i = 0
     !! {
         (i >= car) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> { l = ct-inc(l) }
         i = ct-inc(i)
     }
@@ -1766,7 +1832,15 @@ otp-code = (h i64) (s str) {
         s.push-str(' ')
         nb = ct-inc(nb)
     }
-    (nb > n) -> { s = s.slice-bytes(0, n).to-bytes-str() }
+    (nb > n) -> {
+        s-o = s.slice-bytes(0, n).to-str()
+        s str = ''
+        s-o: {
+            ok -> s = it
+
+            -> _
+        }
+    }
     s = s
 }
 ; 单个字符 -> 数字；不是数字返回 -1
@@ -1790,7 +1864,13 @@ otp-digit = (h i64, i i64) (d i64) {
     ((i < 0) || (i >= n)) -> { d = -1 }
     ((i >= 0) && (i < n)) -> {
         c = otp-code(h)
-        ch = c.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = c.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         d = otp-char-digit(ch)
     }
     d = d
@@ -1804,9 +1884,22 @@ otp-set-digit = (h i64, i i64, d i64) () {
     c = otp-code(h)
     ch = ' '
     ((d >= 0) && (d <= 9)) -> { ch = d.to-str() }
-    pre = c.slice-bytes(0, i).to-bytes-str()
+    pre-op = c.slice-bytes(0, i).to-str()
+    pre str = ''
+    pre-op: {
+        ok -> pre = it
+
+        -> _
+    }
     pre.push-str(ch)
-    pre.push-str(c.slice-bytes(ct-add(i, 1), c.len-bytes()).to-bytes-str())
+    suf-o = c.slice-bytes(ct-add(i, 1), c.len-bytes()).to-str()
+    suf str = ''
+    suf-o: {
+        ok -> suf = it
+
+        -> _
+    }
+    pre.push-str(suf)
     OT-CODE[h] = pre
     ct-set(OT-CUR, h, i)
 }
@@ -1816,9 +1909,22 @@ otp-clear-slot = (h i64, i i64) () {
     n = otp-slots(h)
     ((i < 0) || (i >= n)) -> return
     c = otp-code(h)
-    pre = c.slice-bytes(0, i).to-bytes-str()
+    pre-o = c.slice-bytes(0, i).to-str()
+    pre str = ''
+    pre-o: {
+        ok -> pre = it
+
+        -> _
+    }
     pre.push-str(' ')
-    pre.push-str(c.slice-bytes(ct-add(i, 1), c.len-bytes()).to-bytes-str())
+    suf-o = c.slice-bytes(ct-add(i, 1), c.len-bytes()).to-str()
+    suf str = ''
+    suf-o: {
+        ok -> suf = it
+
+        -> _
+    }
+    pre.push-str(suf)
     OT-CODE[h] = pre
 }
 otp-clear = (h i64) () {
@@ -1843,7 +1949,13 @@ otp-filled = (h i64) (n i64) {
     i = 0
     !! {
         (i >= nb) -> { ** }
-        ch = c.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = c.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch != ' ') -> { n = ct-inc(n) }
         i = ct-inc(i)
     }
@@ -1857,7 +1969,13 @@ otp-digits = (h i64) (s str) {
     i = 0
     !! {
         (i >= nb) -> { ** }
-        ch = c.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = c.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch != ' ') -> { s.push-str(ch) }
         i = ct-inc(i)
     }
@@ -1884,7 +2002,13 @@ otp-put = (h i64, d i64) () {
     i = 0
     !! {
         (i >= n) -> { ** }
-        ch = c.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = c.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         ((ch == ' ') && (nx < 0)) -> { nx = i }
         i = ct-inc(i)
     }
@@ -1937,7 +2061,13 @@ otp-set = (h i64, s str) () {
     !! {
         (i >= nb) -> { ** }
         (k >= n) -> { ** }
-        ch = s.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = s.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         d = otp-char-digit(ch)
         (d >= 0) -> {
             otp-set-digit(h, k, d)
@@ -3220,7 +3350,13 @@ hl-lines = (h i64) (n i64) {
     i = 0
     !! {
         (i >= nb) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> { n = ct-inc(n) }
         i = ct-inc(i)
     }
@@ -3236,7 +3372,13 @@ hl-line-start = (h i64, l i64) (b i64) {
     !! {
         (seen >= l) -> { ** }
         (i >= nb) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> {
             seen = ct-inc(seen)
             b = ct-inc(i)
@@ -3253,7 +3395,13 @@ hl-line-len-b = (h i64, l i64) (n i64) {
     i = hl-line-start(h, l)
     !! {
         (i >= nb) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> { ** }
         n = ct-inc(n)
         i = ct-inc(i)
@@ -3263,7 +3411,13 @@ hl-line-len-b = (h i64, l i64) (n i64) {
 hl-line = (h i64, l i64) (s str) {
     t = hl-code(h)
     b = hl-line-start(h, l)
-    s = t.slice-bytes(b, ct-add(b, hl-line-len-b(h, l))).to-bytes-str()
+    s-o = t.slice-bytes(b, ct-add(b, hl-line-len-b(h, l))).to-str()
+    s str = ''
+    s-o: {
+        ok -> s = it
+
+        -> _
+    }
 }
 ; 展开长度：tab 折算成 hl-tab 个空格（其余字符按 1 计）
 hl-expand-len = (h i64, l i64) (n i64) {
@@ -3273,7 +3427,13 @@ hl-expand-len = (h i64, l i64) (n i64) {
     i = hl-line-start(h, l)
     !! {
         (i >= nb) -> { ** }
-        ch = t.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = t.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> { ** }
         (ch == '\t') -> { n = ct-add(n, hl-tab(h)) }
         (ch != '\t') -> { n = ct-inc(n) }
@@ -3415,12 +3575,32 @@ df-split = (s str) (out []str) {
     i = 0
     !! {
         (i >= nb) -> {
-            out.push(s.slice-bytes(start, nb).to-bytes-str())
+            tail-o = s.slice-bytes(start, nb).to-str()
+            tail str = ''
+            tail-o: {
+                ok -> tail = it
+
+                -> _
+            }
+            out.push(tail)
             **
         }
-        ch = s.slice-bytes(i, ct-add(i, 1)).to-bytes-str()
+        ch-o = s.slice-bytes(i, ct-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch == '\n') -> {
-            out.push(s.slice-bytes(start, i).to-bytes-str())
+            line-o = s.slice-bytes(start, i).to-str()
+            line str = ''
+            line-o: {
+                ok -> line = it
+
+                -> _
+            }
+            out.push(line)
             start = ct-inc(i)
         }
         i = ct-inc(i)
@@ -4713,13 +4893,27 @@ ed-lex-line = (line str, ts []str, tc []i64, kwc i64, strc i64, comc i64, defc i
             {
                 ; 注释：; 到行尾
                 (b == 59) -> {
-                    ed-run-push(ts, tc, line.slice-bytes(i, len).to-bytes-str(), comc)
+                    tok-o = line.slice-bytes(i, len).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    ed-run-push(ts, tc, tok, comc)
                     i = len
                 }
                 ; 字符串
                 ((b == 34) || (b == 39)) -> {
                     j = ed-lex-quote(line, i, b)
-                    ed-run-push(ts, tc, line.slice-bytes(i, j).to-bytes-str(), strc)
+                    tok-o = line.slice-bytes(i, j).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    ed-run-push(ts, tc, tok, strc)
                     i = j
                 }
                 ; 数字
@@ -4731,7 +4925,14 @@ ed-lex-line = (line str, ts []str, tc []i64, kwc i64, strc i64, comc i64, defc i
                         (ed-byte-at(line, j) > 57) -> { ** }
                         j = ct-inc(j)
                     }
-                    ed-run-push(ts, tc, line.slice-bytes(i, j).to-bytes-str(), ED-C-NUM)
+                    tok-o = line.slice-bytes(i, j).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    ed-run-push(ts, tc, tok, ED-C-NUM)
                     i = j
                 }
                 ; 标识符 / 关键字
@@ -4742,7 +4943,13 @@ ed-lex-line = (line str, ts []str, tc []i64, kwc i64, strc i64, comc i64, defc i
                         (ed-word-byte(ed-byte-at(line, j)) == 0) -> { ** }
                         j = ct-inc(j)
                     }
-                    w = line.slice-bytes(i, j).to-bytes-str()
+                    w-o = line.slice-bytes(i, j).to-str()
+                    w str = ''
+                    w-o: {
+                        ok -> w = it
+
+                        -> _
+                    }
                     c = defc
                     (ed-is-kw(w) == 1) -> { c = kwc }
                     ed-run-push(ts, tc, w, c)
@@ -4756,12 +4963,26 @@ ed-lex-line = (line str, ts []str, tc []i64, kwc i64, strc i64, comc i64, defc i
                         (ed-byte-at(line, j) != 32) -> { ** }
                         j = ct-inc(j)
                     }
-                    ed-run-push(ts, tc, line.slice-bytes(i, j).to-bytes-str(), defc)
+                    tok-o = line.slice-bytes(i, j).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    ed-run-push(ts, tc, tok, defc)
                     i = j
                 }
                 ; 其余：单字符（标点 / 运算符）
                 -> {
-                    ed-run-push(ts, tc, line.slice-bytes(i, ct-inc(i)).to-bytes-str(), defc)
+                    tok-o = line.slice-bytes(i, ct-inc(i)).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    ed-run-push(ts, tc, tok, defc)
                     i = ct-inc(i)
                 }
             }
@@ -4828,7 +5049,14 @@ cmp-editor-set-text = (h i64, t str) (n i64) {
             cur = ''
         }
         (b != 10) -> {
-            cur.push-str(t.slice-bytes(i, ct-inc(i)).to-bytes-str())
+            ch-o = t.slice-bytes(i, ct-inc(i)).to-str()
+            ch str = ''
+            ch-o: {
+                ok -> ch = it
+
+                -> _
+            }
+            cur.push-str(ch)
         }
         i = ct-inc(i)
     }
@@ -4945,8 +5173,20 @@ cmp-editor-insert = (h i64, ch str) () {
             }
             (c < 0) -> { c = 0 }
             (c > a.len-bytes()) -> { c = a.len-bytes() }
-            pre = a.slice-bytes(0, c).to-bytes-str()
-            suf = a.slice-bytes(c, a.len-bytes()).to-bytes-str()
+            pre-o = a.slice-bytes(0, c).to-str()
+            pre str = ''
+            pre-o: {
+                ok -> pre = it
+
+                -> _
+            }
+            suf-o = a.slice-bytes(c, a.len-bytes()).to-str()
+            suf str = ''
+            suf-o: {
+                ok -> suf = it
+
+                -> _
+            }
             pre.push-str(ch)
             pre.push-str(suf)
             ed-arr-set-s(ED-LINES, l, pre)
@@ -4970,8 +5210,20 @@ cmp-editor-backspace = (h i64) () {
                 -> ''
             }
             (c > 0) -> {
-                pre = a.slice-bytes(0, ct-sub(c, 1)).to-bytes-str()
-                suf = a.slice-bytes(c, a.len-bytes()).to-bytes-str()
+                pre-o = a.slice-bytes(0, ct-sub(c, 1)).to-str()
+                pre str = ''
+                pre-o: {
+                    ok -> pre = it
+
+                    -> _
+                }
+                suf-o = a.slice-bytes(c, a.len-bytes()).to-str()
+                suf str = ''
+                suf-o: {
+                    ok -> suf = it
+
+                    -> _
+                }
                 pre.push-str(suf)
                 ed-arr-set-s(ED-LINES, l, pre)
                 ct-set(ED-C, h, ct-sub(c, 1))
@@ -5010,8 +5262,20 @@ cmp-editor-enter = (h i64) () {
             }
             (c < 0) -> { c = 0 }
             (c > a.len-bytes()) -> { c = a.len-bytes() }
-            pre = a.slice-bytes(0, c).to-bytes-str()
-            suf = a.slice-bytes(c, a.len-bytes()).to-bytes-str()
+            pre-o = a.slice-bytes(0, c).to-str()
+            pre str = ''
+            pre-o: {
+                ok -> pre = it
+
+                -> _
+            }
+            suf-o = a.slice-bytes(c, a.len-bytes()).to-str()
+            suf str = ''
+            suf-o: {
+                ok -> suf = it
+
+                -> _
+            }
             ed-arr-set-s(ED-LINES, l, pre)
             cmp-editor-ins-line(ct-inc(l), suf)
             ct-set(ED-L, h, ct-inc(l))
@@ -5211,8 +5475,20 @@ cmp-editor-row-body = (h i64, row i64, i i64, gutter i64, rowh i64, fg i64, mute
         tl = t.len-bytes()
         ((cur != 0) && (j == cj)) -> {
             (tl > 0) -> {
-                pre = t.slice-bytes(0, cin).to-bytes-str()
-                suf = t.slice-bytes(cin, tl).to-bytes-str()
+                pre-o = t.slice-bytes(0, cin).to-str()
+                pre str = ''
+                pre-o: {
+                    ok -> pre = it
+
+                    -> _
+                }
+                suf-o = t.slice-bytes(cin, tl).to-str()
+                suf str = ''
+                suf-o: {
+                    ok -> suf = it
+
+                    -> _
+                }
                 (pre.len-bytes() > 0) -> {
                     lb = cmp-alloc(C-LABEL, pre, '', c, 0)
                     ct-set(CMP-FLAGS, lb, f)
@@ -6075,7 +6351,16 @@ cmp-command-type = (h i64, ch str) () {
 cmp-command-backspace = (h i64) () {
     s = ed-arr-get-s(CP-Q, h)
     n = s.len-bytes()
-    (n > 0) -> { ed-arr-set-s(CP-Q, h, s.slice-bytes(0, ct-sub(n, 1)).to-bytes-str()) }
+    (n > 0) -> {
+        q-o = s.slice-bytes(0, ct-sub(n, 1)).to-str()
+        q str = ''
+        q-o: {
+            ok -> q = it
+
+            -> _
+        }
+        ed-arr-set-s(CP-Q, h, q)
+    }
 }
 
 ; ---- 滚动 ----

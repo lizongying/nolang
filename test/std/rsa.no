@@ -121,7 +121,13 @@ bhex = (data []byte) (hex str) {
         #{overflow=wrap}
         hex-b[i * 2 + 1] = lo
     }
-    hex = hex-b.to-str()
+    hex-opt = hex-b.to-str()
+    hex str = ''
+    hex-opt: {
+        ok -> hex = it
+
+        -> _
+    }
 }
 
 ; hex → []byte（失敗時回空 vec，讓後續斷言以長度先失敗）

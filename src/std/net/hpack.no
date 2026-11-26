@@ -561,9 +561,26 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 
                 v-len = sv.len-bytes()
 
-                name = sn.slice-bytes(0, n-len).to-bytes-str()
+                name-opt = sn.slice-bytes(0, n-len).to-str()
+
+                name str = ''
+
+                name-opt: {
+
+                    ok -> name = it
+
+
+                    -> _
+
+                }
                 v-len > 0 -> {
-                    value = sv.slice-bytes(0, v-len).to-bytes-str()
+                    value-opt = sv.slice-bytes(0, v-len).to-str()
+                    value str = ''
+                    value-opt: {
+                        ok -> value = it
+
+                        -> _
+                    }
                 }
                 ok = true
                 return
@@ -585,9 +602,26 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 
             v-len = dv.len-bytes()
 
-            name = dn.slice-bytes(0, n-len).to-bytes-str()
+            name-opt = dn.slice-bytes(0, n-len).to-str()
+
+            name str = ''
+
+            name-opt: {
+
+                ok -> name = it
+
+
+                -> _
+
+            }
             v-len > 0 -> {
-                value = dv.slice-bytes(0, v-len).to-bytes-str()
+                value-opt = dv.slice-bytes(0, v-len).to-str()
+                value str = ''
+                value-opt: {
+                    ok -> value = it
+
+                    -> _
+                }
             }
             ok = true
             return
@@ -616,7 +650,13 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     val < max-prefix -> {
         ob []byte = with-cap-len(1, 1)
         ob[0] = prefix-byte | val
-        out = ob.to-bytes-str()
+        out-opt = ob.to-str()
+        out str = ''
+        out-opt: {
+            ok -> out = it
+
+            -> _
+        }
         return
     }
 
@@ -642,7 +682,7 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     }
 
     ; 2026-11-11：str 下標直寫已全域禁用 ⇒ []byte 緩衝承接（位元組保真），
-    ; 收尾整體 to-bytes-str()。這裡不能用 place-match：它對 str 是「碼點」閘門，
+    ; 收尾整體 to-str() 並明確解包。這裡不能用 place-match：它對 str 是「碼點」閘門，
     ; 這些是 >= 0x80 的延續位元組，會被靜默跳過。
     ob []byte = with-cap-len(n, n)
 
@@ -674,7 +714,13 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
         r-val = r-val >> 7
     }
     ob[i] = r-val
-    out = ob.to-bytes-str()
+    out-opt = ob.to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 從 data 的 pos 位置解碼變長整數
@@ -782,7 +828,13 @@ encode-str = (s str) (out str) {
         #{overflow=wrap}
         ob[out-n + i] = s.byte(i)
     }
-    out = ob.to-bytes-str()
+    out-opt = ob.to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 從 data 的 pos 位置解碼字串
@@ -832,7 +884,13 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
 
         -> _
     }
-    out = out-b.slice(0, len).to-bytes-str()
+    out-opt = out-b.slice(0, len).to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 標頭編解碼
@@ -887,7 +945,13 @@ tables.encode-header = (name str, value str) (out str) {
 
         ; 加入動態表
         .dyn-add(name, value)
-        out = out-b.slice(0, out-n + val-out.len-bytes()).to-bytes-str()
+        out-opt = out-b.slice(0, out-n + val-out.len-bytes()).to-str()
+        out str = ''
+        out-opt: {
+            ok -> out = it
+
+            -> _
+        }
         return
     }
 
@@ -919,7 +983,13 @@ tables.encode-header = (name str, value str) (out str) {
 
     ; 加入動態表
     .dyn-add(name, value)
-    out = out-b.slice(0, out-n + val-out.len-bytes()).to-bytes-str()
+    out-opt = out-b.slice(0, out-n + val-out.len-bytes()).to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 解碼標頭塊

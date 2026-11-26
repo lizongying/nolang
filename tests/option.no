@@ -646,7 +646,12 @@ i <- [0..2000): {
     p ospd-person
     p.name = i.to-str()
     ip ?ospd-person = p
-    q ospd-person = ip
+    q ospd-person
+    ip: {
+        ok -> q = it
+
+        -> q = ospd-person{}
+    }
     ospd-last = q.name
 }
 print(ospd-last)

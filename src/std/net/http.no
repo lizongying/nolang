@@ -1253,7 +1253,13 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         url.starts-with('http://') == false && url.starts-with('https://') == false -> return
     }
     rest = ''
-    rest = url.slice-bytes(scheme-len, url.len-bytes()).to-bytes-str()
+    rest-opt = url.slice-bytes(scheme-len, url.len-bytes()).to-str()
+    rest = ''
+    rest-opt: {
+        ok -> rest = it
+
+        -> _
+    }
     host = ''
     path = '/'
     slash-pos = rest.index('/')
@@ -1261,8 +1267,20 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         slash-pos < 0 -> host = rest
 
         -> {
-            host = rest.slice-bytes(0, slash-pos).to-bytes-str()
-            path = rest.slice-bytes(slash-pos, rest.len-bytes()).to-bytes-str()
+            host-opt = rest.slice-bytes(0, slash-pos).to-str()
+            host str = ''
+            host-opt: {
+                ok -> host = it
+
+                -> _
+            }
+            path-opt = rest.slice-bytes(slash-pos, rest.len-bytes()).to-str()
+            path str = ''
+            path-opt: {
+                ok -> path = it
+
+                -> _
+            }
         }
     }
     host-only = ''
@@ -1270,13 +1288,31 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     colon-pos = host.index(':')
 
     colon-pos >= 0 -> {
-        host-only = host.slice-bytes(0, colon-pos).to-bytes-str()
+        host-only-opt = host.slice-bytes(0, colon-pos).to-str()
+        host-only str = ''
+        host-only-opt: {
+            ok -> host-only = it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        port-str = host.slice-bytes(colon-pos + 1, host.len-bytes()).to-bytes-str()
+        port-str-opt = host.slice-bytes(colon-pos + 1, host.len-bytes()).to-str()
+        port-str str = ''
+        port-str-opt: {
+            ok -> port-str = it
+
+            -> _
+        }
         p = 0
         pi <- [0..port-str.len-bytes()): {
-            c = port-str[pi]
+            cb = port-str.byte(pi)
+            c byte = 0
+            cb: {
+                ok -> c = it
+
+                -> _
+            }
             c < 48 || c > 57 -> return
 
             #{overflow=wrap}
@@ -1438,20 +1474,40 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
 
         hdr.push(acc-hi)
     }
-    head-str = hdr.to-bytes-str()
+    head-str-opt = hdr.to-str()
+    head-str str = ''
+    head-str-opt: {
+        ok -> head-str = it
+
+        -> _
+    }
 
     ; 狀態碼（狀態行 "HTTP/1.1 200 OK"）
     first-line = head-str
     nl = head-str.index(crlf)
-    nl >= 0 -> first-line = head-str.slice-bytes(0, nl).to-bytes-str()
+    nl >= 0 -> {
+        first-line-opt = head-str.slice-bytes(0, nl).to-str()
+        first-line str = ''
+        first-line-opt: {
+            ok -> first-line = it
+
+            -> _
+        }
+    }
     sp1 = first-line.index(' ')
     sp1 < 0 -> return
 
     #{overflow=wrap}
-    code-str = first-line.slice-bytes(sp1 + 1, sp1 + 4).to-bytes-str()
+    code-str-opt = first-line.slice-bytes(sp1 + 1, sp1 + 4).to-str()
+    code-str str = ''
+    code-str-opt: {
+        ok -> code-str = it
+
+        -> _
+    }
     code = 0
     ci <- [0..code-str.len-bytes()): {
-        c = code-str[ci]: {
+        c = code-str.byte(ci): {
             ok -> it
 
             -> 0
@@ -1529,7 +1585,14 @@ http-dl-location = (head-str str) (loc ?str) {
     line <- lines: {
         trimmed = line.trim()
         trimmed.to-lower().starts-with('location:') -> {
-            loc = trimmed.slice-bytes(9, trimmed.len-bytes()).to-bytes-str().trim()
+            raw-loc-opt = trimmed.slice-bytes(9, trimmed.len-bytes()).to-str()
+            raw-loc str = ''
+            raw-loc-opt: {
+                ok -> raw-loc = it
+
+                -> _
+            }
+            loc = raw-loc.trim()
             return
         }
     }

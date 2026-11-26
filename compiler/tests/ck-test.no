@@ -137,10 +137,24 @@ test-order = () {
     runner.eq(d.len(), 2, 'two unknowns')
     w0 = at(d, 0)
     p0 = w0.index('|')
-    runner.str-eq(w0.slice-bytes(0, p0).to-bytes-str(), '1', 'first at line 1')
+    p-opt = w0.slice-bytes(0, p0).to-str()
+    p str = ''
+    p-opt: {
+        ok -> p = it
+
+        -> _
+    }
+    runner.str-eq(p, '1', 'first at line 1')
     w1 = at(d, 1)
     p1 = w1.index('|')
-    runner.str-eq(w1.slice-bytes(0, p1).to-bytes-str(), '2', 'second at line 2')
+    p-opt = w1.slice-bytes(0, p1).to-str()
+    p str = ''
+    p-opt: {
+        ok -> p = it
+
+        -> _
+    }
+    runner.str-eq(p, '2', 'second at line 2')
 }
 
 test-silent()

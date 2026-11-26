@@ -159,7 +159,15 @@ path-of = (s str) (out str) {
     p = s.index(':')
     hit = p >= 0
     hit: {
-        true -> out = s.slice-bytes(0, p).to-bytes-str()
+        true -> {
+            out-opt = s.slice-bytes(0, p).to-str()
+            out str = ''
+            out-opt: {
+                ok -> out = it
+
+                -> _
+            }
+        }
 
         false -> _
     }

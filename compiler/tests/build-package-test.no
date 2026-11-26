@@ -40,7 +40,14 @@ test-build-package = () {
     print('build-package: ' - pkg)
 
     ; 前置 cycle 旗標應為 '0'（compiler 套件無循環）
-    runner.is-true(pkg.slice-bytes(0, 1).to-bytes-str() == '0', 'compiler/main.no import graph has no cycle')
+    head-opt = pkg.slice-bytes(0, 1).to-str()
+    head str = ''
+    head-opt: {
+        ok -> head = it
+
+        -> _
+    }
+    runner.is-true(head == '0', 'compiler/main.no import graph has no cycle')
 
     ; 至少含入口模組
     runner.is-true(drv.pkg-contains(pkg, 'compiler/main.no'), 'contains compiler/main.no')

@@ -523,7 +523,13 @@ str.to-upper = () (val str) {
             }
         }
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 將字串轉為小寫
@@ -547,7 +553,13 @@ str.to-lower = () (val str) {
             }
         }
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 去除字串首尾空白字符
@@ -579,7 +591,13 @@ str.trim = () (val str) {
         #{overflow=wrap}
         buf[i] = .byte(start + i)
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 重複與切片
@@ -602,7 +620,13 @@ str.repeat = (times i64) (val str) {
             buf[i * .len-bytes() + j] = .byte(j)
         }
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 截取子串 [start, end)，下標為「字符（碼點）位置」
@@ -630,7 +654,13 @@ str.slice = (start i64, end i64) (val str) {
         #{overflow=wrap}
         buf[i] = .byte(sb + i)
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 按「字節偏移」截取子串 [start, end)（內部位元組級使用）
@@ -1716,7 +1746,13 @@ str.reverse = () (val str) {
         j = n - 1 - i
         buf[i] = .byte(j)
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 字典序比較兩個字串
@@ -2059,7 +2095,13 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             -> _
         }
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 裁剪（指定字符）
@@ -2180,7 +2222,13 @@ str.trim-char = (ch char) (val str) {
         #{overflow=wrap}
         buf[j] = .byte(start + j)
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 判空
@@ -2528,20 +2576,41 @@ str.to-bigint = () (out ?bigint) {
 str.split = (sep str) (out []str) {
     result []str
     sep.len-bytes() == 0 -> {
-        result.push(.slice-bytes(0, .len-bytes()).to-bytes-str())
+        part-opt = .slice-bytes(0, .len-bytes()).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        result.push(part)
         out = result
         return
     }
     start = 0
     pos = .find-byte-from(sep, start)
     (pos >= 0) {
-        result.push(.slice-bytes(start, pos).to-bytes-str())
+        part-opt = .slice-bytes(start, pos).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        result.push(part)
 
         #{overflow=wrap}
         start = pos + sep.len-bytes()
         pos = .find-byte-from(sep, start)
     }
-    result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
+    part-opt = .slice-bytes(start, .len-bytes()).to-str()
+    part = ''
+    part-opt: {
+        ok -> part = it
+
+        -> _
+    }
+    result.push(part)
     out = result
 }
 
@@ -2580,7 +2649,13 @@ str.split = (sep str) (out []str) {
             pos = pos + 1
         }
     }
-    out = buf.to-bytes-str()
+    out-opt = buf.to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 子串替換
@@ -2594,7 +2669,13 @@ str.split = (sep str) (out []str) {
 ; [replace-str](#str.replace-str)
 str.replace-str = (old str, new str) (val str) {
     old.len-bytes() == 0 -> {
-        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
+        val-opt = .slice-bytes(0, .len-bytes()).to-str()
+        val str = ''
+        val-opt: {
+            ok -> val = it
+
+            -> _
+        }
         return
     }
 
@@ -2745,7 +2826,13 @@ str.replace-str = (old str, new str) (val str) {
             }
         }
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 按空白分割
@@ -2769,7 +2856,14 @@ str.fields = () (out []str) {
             }
 
             start >= 0 -> {
-                result.push(.slice-bytes(start, i).to-bytes-str())
+                part-opt = .slice-bytes(start, i).to-str()
+                part str = ''
+                part-opt: {
+                    ok -> part = it
+
+                    -> _
+                }
+                result.push(part)
                 start = -1
             }
 
@@ -2778,7 +2872,16 @@ str.fields = () (out []str) {
     }
 
     ; 處理最後一個欄位
-    start >= 0 -> result.push(.slice-bytes(start, n).to-bytes-str())
+    start >= 0 -> {
+        part-opt = .slice-bytes(start, n).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        result.push(part)
+    }
     out = result
 }
 
@@ -2851,17 +2954,35 @@ str.rindex-from = (target str, from i64) (pos i64) {
 ; [replace-n](#str.replace-n)
 str.replace-n = (old str, new str, n i64) (val str) {
     n <= 0 -> {
-        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
+        val-opt = .slice-bytes(0, .len-bytes()).to-str()
+        val str = ''
+        val-opt: {
+            ok -> val = it
+
+            -> _
+        }
         return
     }
     old.len-bytes() == 0 -> {
-        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
+        val-opt = .slice-bytes(0, .len-bytes()).to-str()
+        val str = ''
+        val-opt: {
+            ok -> val = it
+
+            -> _
+        }
         return
     }
     parts = .split(old)
     np = parts.len()
     np <= 1 -> {
-        val = .slice-bytes(0, .len-bytes()).to-bytes-str()
+        val-opt = .slice-bytes(0, .len-bytes()).to-str()
+        val str = ''
+        val-opt: {
+            ok -> val = it
+
+            -> _
+        }
         return
     }
 
@@ -2929,7 +3050,13 @@ str.replace-n = (old str, new str, n i64) (val str) {
             }
         }
     }
-    val = buf.to-bytes-str()
+    val-opt = buf.to-str()
+    val str = ''
+    val-opt: {
+        ok -> val = it
+
+        -> _
+    }
 }
 
 ; 限定次數分割
@@ -2943,7 +3070,14 @@ str.replace-n = (old str, new str, n i64) (val str) {
 str.split-n = (sep str, maxsplit i64) (out []str) {
     result []str
     sep.len-bytes() == 0 -> {
-        result.push(.slice-bytes(0, .len-bytes()).to-bytes-str())
+        part-opt = .slice-bytes(0, .len-bytes()).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        result.push(part)
         out = result
         return
     }
@@ -2956,11 +3090,25 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
     count = 0
     (pos >= 0) {
         count >= maxsplit -> {
-            result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
+            part-opt = .slice-bytes(start, .len-bytes()).to-str()
+            part str = ''
+            part-opt: {
+                ok -> part = it
+
+                -> _
+            }
+            result.push(part)
             out = result
             return
         }
-        result.push(.slice-bytes(start, pos).to-bytes-str())
+        part-opt = .slice-bytes(start, pos).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        result.push(part)
 
         #{overflow=wrap}
         start = pos + sep.len-bytes()
@@ -2976,7 +3124,14 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
         }
         pos = .find-byte-from(sep, start)
     }
-    result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
+    part-opt = .slice-bytes(start, .len-bytes()).to-str()
+    part = ''
+    part-opt: {
+        ok -> part = it
+
+        -> _
+    }
+    result.push(part)
     out = result
 }
 
@@ -3011,7 +3166,14 @@ str.lines = () (out []str) {
                     }
                 }
             }
-            result.push(.slice-bytes(start, end).to-bytes-str())
+            part-o = .slice-bytes(start, end).to-str()
+            part str = ''
+            part-o: {
+                ok -> part = it
+
+                -> _
+            }
+            result.push(part)
             {
                 start ?= i + 1
             }: {
@@ -3031,7 +3193,16 @@ str.lines = () (out []str) {
             -> _
         }
     }
-    start < .len-bytes() -> result.push(.slice-bytes(start, .len-bytes()).to-bytes-str())
+    start < .len-bytes() -> {
+        part-o = .slice-bytes(start, .len-bytes()).to-str()
+        part str = ''
+        part-o: {
+            ok -> part = it
+
+            -> _
+        }
+        result.push(part)
+    }
     out = result
 }
 
@@ -3067,7 +3238,13 @@ str.to-hex = () (out str) {
             -> _
         }
     }
-    out = buf.to-bytes-str()
+    out-opt = buf.to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 安全索引

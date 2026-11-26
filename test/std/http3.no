@@ -210,10 +210,12 @@ t-frames = () {
     runner.eq(ft, 0, 'data frame type 0')
     runner.eq(payload.len(), 5, 'data frame payload len')
     runner.eq(nx, 7, 'data frame next-pos')
-    txt = payload.to-str(): {
-        ok -> it
+    txt-opt = payload.to-str()
+    txt str = 'ERR'
+    txt-opt: {
+        ok -> txt = it
 
-        -> 'ERR'
+        -> _
     }
     eq-str(txt, 'hello', 'data frame payload roundtrip')
 

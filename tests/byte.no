@@ -115,7 +115,13 @@ src []byte = with-len(256)
 i1 <- [0..256): {
     src[i1] = i1
 }
-s = src.to-str()
+s-opt = src.to-str()
+s str = ''
+s-opt: {
+    ok -> s = it
+
+    -> _
+}
 
 bad1 = false
 i2 <- [0..256): {

@@ -19,7 +19,13 @@ k = 0
 k <- [0..wlen): {
     tmp-b[k] = word[k]
 }
-tmp-word = tmp-b.slice(0, wlen).to-str()
+tmp-word-opt = tmp-b.slice(0, wlen).to-str()
+tmp-word = ''
+tmp-word-opt: {
+    ok -> tmp-word = it
+
+    -> _
+}
 words.push(tmp-word)
 counts.push(1)
 n = 1
@@ -36,7 +42,13 @@ tmp-b2 []byte = with-cap-len(64, 64)
 k <- [0..wlen): {
     tmp-b2[k] = word[k]
 }
-tmp-word = tmp-b2.slice(0, wlen).to-str()
+tmp-word-opt = tmp-b2.slice(0, wlen).to-str()
+tmp-word = ''
+tmp-word-opt: {
+    ok -> tmp-word = it
+
+    -> _
+}
 
 ; 線性搜尋
 found = 0

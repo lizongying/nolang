@@ -618,7 +618,15 @@ process.read-line = () (line ?str) {
     .stdout-fd < 0 -> return
     buf []byte = with-len(4096)
     n = fs.read(.stdout-fd, buf, 4096)
-    n > 0 -> line = buf.slice(0, n).to-bytes-str()
+    n > 0 -> {
+        line-opt = buf.slice(0, n).to-str()
+        line str = ''
+        line-opt: {
+            ok -> line = it
+
+            -> _
+        }
+    }
 }
 
 ; 讀取子進程的所有 stdout 輸出
@@ -634,7 +642,19 @@ process.read-all = () (content str, n i64) {
         chunk-n = fs.read(.stdout-fd, buf, 4096)
         chunk-n <= 0 -> break
 
-        content = content - buf.slice(0, chunk-n).to-bytes-str()
+        part-opt = buf.slice(0, chunk-n).to-str()
+
+        part str = ''
+
+        part-opt: {
+
+            ok -> part = it
+
+
+            -> _
+
+        }
+    content = content - part
 
         #{overflow=wrap}
         n = n + chunk-n
@@ -795,7 +815,15 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     slash = program.last-index('/')
 
     #{overflow=wrap}
-    slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes()).to-bytes-str()
+    slash >= 0 -> {
+        base-opt = program.slice-bytes(slash + 1, program.len-bytes()).to-str()
+        base str = ''
+        base-opt: {
+            ok -> base = it
+
+            -> _
+        }
+    }
     args.len() >= 2 -> {
         first-arg = args[0]: {
             ok -> it
@@ -1007,7 +1035,19 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         n = fs.read(out-read, buf, 4096)
         n <= 0 -> break
 
-        out = out - buf.slice(0, n).to-bytes-str()
+        part-opt = buf.slice(0, n).to-str()
+
+        part str = ''
+
+        part-opt: {
+
+            ok -> part = it
+
+
+            -> _
+
+        }
+    out = out - part
     }
 
     fs.close(out-read)
@@ -1081,7 +1121,14 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 !! {
                     n = fs.read(err-read, buf, 4096)
                     n <= 0 -> break
-                    stderr = stderr - buf.slice(0, n).to-bytes-str()
+                    part-opt = buf.slice(0, n).to-str()
+                    part str = ''
+                    part-opt: {
+                        ok -> part = it
+
+                        -> _
+                    }
+    stderr = stderr - part
                 }
                 fs.close(err-read)
             }

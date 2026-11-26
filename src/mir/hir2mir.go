@@ -2390,22 +2390,49 @@ func (l *lowerer) isInlineableLetType(raw string) bool {
 	return false
 }
 
-// isEnumTypeName reports whether raw is an enum type name. It accepts both the
-// bare name ("code") and a namespaced form ("err.code") by checking the last
-// dot-separated segment, so `code` and `err.code`-annotated values both match.
-func (l *lowerer) isEnumTypeName(raw string) bool {
+// enumTypeKey resolves an enum type spelling to its metadata key. Imported
+// enums may be referenced through a module-qualified name while their metadata
+// retains the bare key, or referenced bare inside their defining module while
+// the merged metadata key is qualified. Bare names prefer the current module;
+// otherwise they must identify exactly one qualified enum.
+func (l *lowerer) enumTypeKey(raw string) (string, bool) {
 	if raw == "" || len(l.enumVariants) == 0 {
-		return false
+		return "", false
 	}
 	if _, ok := l.enumVariants[raw]; ok {
-		return true
+		return raw, true
 	}
 	if i := strings.LastIndex(raw, "."); i >= 0 {
-		if _, ok := l.enumVariants[raw[i+1:]]; ok {
-			return true
+		bare := raw[i+1:]
+		if _, ok := l.enumVariants[bare]; ok {
+			return bare, true
+		}
+		return "", false
+	}
+	if l.curMod != "" {
+		qualified := l.curMod + "." + raw
+		if _, ok := l.enumVariants[qualified]; ok {
+			return qualified, true
 		}
 	}
-	return false
+	match := ""
+	for key := range l.enumVariants {
+		i := strings.LastIndexByte(key, '.')
+		if i < 0 || key[i+1:] != raw {
+			continue
+		}
+		if match != "" {
+			return "", false
+		}
+		match = key
+	}
+	return match, match != ""
+}
+
+// isEnumTypeName reports whether raw resolves to a known enum metadata key.
+func (l *lowerer) isEnumTypeName(raw string) bool {
+	_, ok := l.enumTypeKey(raw)
+	return ok
 }
 
 // enumVariantValue resolves an enum variant reference ("code.io") to its
@@ -2429,29 +2456,18 @@ func (l *lowerer) enumVariantValue(key string) (int64, bool) {
 }
 
 // enumVariantValueOf resolves the bare variant name `variant` against the enum
-// type `enumRaw` (which may be module-qualified, e.g. "fs.file-mode" for the
-// table key "file-mode"), returning its zero-based discriminant.
-//
-// `enumVariantValue` above only accepts an exact "enum.variant" key; this
-// variant mirrors `isEnumTypeName`'s leniency so a module-qualified *type* name
-// still finds the bare table key.
+// type `enumRaw`, returning its zero-based discriminant. enumTypeKey handles
+// both module-qualified references to bare metadata and bare references inside
+// a module whose merged metadata key is qualified.
 func (l *lowerer) enumVariantValueOf(enumRaw, variant string) (int64, bool) {
 	if enumRaw == "" || variant == "" || l.enumVariants == nil {
 		return 0, false
 	}
-	lookup := func(key string) ([]string, bool) {
-		v, ok := l.enumVariants[key]
-		return v, ok
-	}
-	variants, ok := lookup(enumRaw)
-	if !ok {
-		if i := strings.LastIndex(enumRaw, "."); i >= 0 {
-			variants, ok = lookup(enumRaw[i+1:])
-		}
-	}
+	key, ok := l.enumTypeKey(enumRaw)
 	if !ok {
 		return 0, false
 	}
+	variants := l.enumVariants[key]
 	for idx, v := range variants {
 		if v == variant {
 			return int64(idx), true
@@ -2527,6 +2543,32 @@ func (l *lowerer) plainEnumVariantValue(name string) (int64, bool) {
 	}
 	if raw := l.armEnumPrefer; raw != "" {
 		if val, ok := l.enumVariantValueOf(raw, name); ok {
+			return val, true
+		}
+	}
+	// A plain enum value lowers to i64, so its declared enum type is usually
+	// absent from the MIR type hint. Inside an imported module, prefer a unique
+	// variant declared by that module before considering global ambiguity. For
+	// example, value.truth.unknown must win over the unrelated err.code.unknown.
+	if l.curMod != "" {
+		prefix := l.curMod + "."
+		var val int64
+		found := false
+		for en, vs := range l.enumVariants {
+			if !strings.HasPrefix(en, prefix) {
+				continue
+			}
+			for i, vn := range vs {
+				if vn != name {
+					continue
+				}
+				if found {
+					return 0, false // ambiguous within the current module
+				}
+				val, found = int64(i), true
+			}
+		}
+		if found {
 			return val, true
 		}
 	}
@@ -4201,18 +4243,18 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// freshly built %vec into @BUF once, here, is safe. Restrict to
 			// synthesized main + call initializer + visible global so no owned
 			// function-local rebind is affected.
-		ownedGlobalInit := l.curFuncName() == "main" && l.letValueIsCall(n) &&
-			name != "" && l.globalVisible(name)
-		// 危綁 b：match arm 體內「手寫」的 let（非合成、無 FlagArmBinding）若與
-		// 可見模組全域同名，上游仍是這裡的寫回分支——把值逕直寫進全域槽位，
-		// arm 內外看到的是不同語義（外面以為自己改了本地，實則改了全域）。
-		// arm 體是一個獨立作用域：這裡沒有已有 local 可改時，為名字建立臂局部
-		// 繫結（shadow），並在 arm 結束時由 restoreArmScoped 刪除，使 arm 之後
-		// 仍解析到全域。合成臂綁定（armBinding）走既有路徑，不受影響。
-		if !armScoped && !hasExisting && name != "" && l.matchDepth > 0 && l.globalVisible(name) {
-			l.armScoped = append(l.armScoped, armScopedBind{name: name, absent: true})
-		}
-		if l.globalVisible(name) && !armScoped && l.matchDepth == 0 {
+			ownedGlobalInit := l.curFuncName() == "main" && l.letValueIsCall(n) &&
+				name != "" && l.globalVisible(name)
+			// 危綁 b：match arm 體內「手寫」的 let（非合成、無 FlagArmBinding）若與
+			// 可見模組全域同名，上游仍是這裡的寫回分支——把值逕直寫進全域槽位，
+			// arm 內外看到的是不同語義（外面以為自己改了本地，實則改了全域）。
+			// arm 體是一個獨立作用域：這裡沒有已有 local 可改時，為名字建立臂局部
+			// 繫結（shadow），並在 arm 結束時由 restoreArmScoped 刪除，使 arm 之後
+			// 仍解析到全域。合成臂綁定（armBinding）走既有路徑，不受影響。
+			if !armScoped && !hasExisting && name != "" && l.matchDepth > 0 && l.globalVisible(name) {
+				l.armScoped = append(l.armScoped, armScopedBind{name: name, absent: true})
+			}
+			if l.globalVisible(name) && !armScoped && l.matchDepth == 0 {
 				if gv := l.lowerGlobalRef(name); gv != NoVal && (ownedGlobalInit || !l.isOwnedLocal(gv)) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
 						// 目標型別已寫明（全域宣告處）⇒ 先按 `<src>.to-<目標>`
@@ -4617,6 +4659,14 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	thenIsArm := l.blockStartsWithIt(thenID)
 	elseIsArm := l.blockStartsWithIt(elseID)
 
+	// A nested match runs while the enclosing arm's variant and subject are
+	// still active. Preserve that state across this if-chain: each arm may
+	// install its own variant, but it must not erase the enclosing pattern or
+	// leave the last arm's subject active in a later function.
+	savedArmVariant, savedArmEnum := l.armVariant, l.armEnum
+	savedItSrc := l.itSrc
+	l.armSubjectID = hir.NoID
+
 	// Enclosing continuation: the merge block of the nearest enclosing
 	// control-flow construct (pushed by the caller's lowerIf/lowerFor). When
 	// THIS if's merge block ends up empty (the if is the last statement in its
@@ -4643,7 +4693,6 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		// position so lowerEnumCtor can record WHICH variant the arm is for;
 		// the arm body's bindings (`r`) are then projected onto that variant's
 		// payload instead of receiving the whole enum.
-		l.inArmCond = true
 		// Disambiguate the arm's variant name by the SUBJECT's type: an
 		// equality test `p == fail` does not say which enum `fail` belongs to
 		// on its own, and both `a-res` and `b-res` declare one. Read the
@@ -4667,6 +4716,17 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 				break // first child is the subject
 			}
 		}
+		// Capture the subject before lowering the constructor pattern activates
+		// armVariant. Re-reading it in the arm body would make a subject named
+		// like a payload field (for example `v` over `text(v str)`) look like a
+		// field projection. Only identifiers reach here, so this extra read has
+		// no side effects and mirrors the condition's own subject read.
+		if l.armSubjectID != hir.NoID {
+			if sv := l.lowerExpr(l.armSubjectID); sv != NoVal {
+				l.itSrc = sv
+			}
+		}
+		l.inArmCond = true
 		c := l.lowerExpr(condID)
 		l.inArmCond = false
 		l.armEnumPrefer = ""
@@ -4681,14 +4741,6 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 
 	l.b.SetBlock(thenBlk)
 	if thenID != hir.NoID {
-		// Re-read the subject HERE rather than trusting `it`: after the first
-		// arm, `it` is re-assigned into a shared slot, and a later arm's
-		// projection could still see the earlier subject.
-		if l.armVariant != nil && l.armSubjectID != hir.NoID {
-			if sv := l.lowerExpr(l.armSubjectID); sv != NoVal {
-				l.itSrc = sv
-			}
-		}
 		l.armSubjectID = hir.NoID
 		// A NESTED match arm (matchDepth > 0 before the increment) rebinds the
 		// function-global `it` slot to its own subject — that rebinding is
@@ -4715,7 +4767,6 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		if thenIsArm {
 			l.matchDepth++
 		}
-		savedItSrc := l.itSrc
 		// Arm-scoped bindings (see lowerer.armScoped): restore the enclosing
 		// `locals` entries this arm's synthetic bindings shadowed as soon as
 		// the arm body ends, so a nested match cannot leak its payload out.
@@ -4732,9 +4783,9 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		l.armBoundNames = savedArmBound
 		l.restoreArmScoped(armScopedBase)
 		l.restoreArmPlaces(armPlaceBase)
-		// The variant pattern only applies to THIS arm's body.
-		l.armVariant = nil
-		l.armEnum = nil
+		// The variant pattern only applies to THIS arm's body. Restore the
+		// enclosing pattern (if any) before lowering the else-chain.
+		l.armVariant, l.armEnum = savedArmVariant, savedArmEnum
 		l.itSrc = savedItSrc
 		if thenIsArm {
 			l.matchDepth--
@@ -4784,6 +4835,8 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		l.armBoundNames = savedArmBound
 		l.restoreArmScoped(armScopedBase)
 		l.restoreArmPlaces(armPlaceBase)
+		l.armVariant, l.armEnum = savedArmVariant, savedArmEnum
+		l.itSrc = savedItSrc
 		if elseIsArm {
 			l.matchDepth--
 		}
@@ -4810,6 +4863,10 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	if l.mod.Block(elseBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
+	// Also cover an empty then/else shape: no arm body may leak its pattern or
+	// subject into code lowered after this if-chain.
+	l.armVariant, l.armEnum = savedArmVariant, savedArmEnum
+	l.itSrc = savedItSrc
 
 	// Seed the capture slot in the block that DOMINATES both arms.
 	//
@@ -4980,17 +5037,24 @@ func (l *lowerer) captureArmValue(v ValueID) {
 	if v == NoVal || !l.exprCapture {
 		return
 	}
+	// A void/unknown arm value (e.g. an empty-str literal or `_`, which lowers
+	// to void) must NOT define the shared sink's type. Otherwise the FIRST
+	// captured arm being such a value pins the slot to i64, and a later
+	// owned/str arm gets cloned into that i64 slot — codegen then sees the
+	// match result as i64 and reports "unsupported receiver type i64" for a
+	// subsequent str method call. Skip void arms; the first typed arm creates
+	// the sink with the correct type.
+	typ := l.valueTypeOf(v)
+	if typ == NoType || typ == l.voidType {
+		return
+	}
 	if l.exprSink == NoVal {
-		typ := l.valueTypeOf(v)
-		if typ == NoType || typ == l.voidType {
-			typ = l.b.Type("i64")
-		}
 		l.exprSink = l.b.EmitInt(OpConst, typ, 0, "")
 	}
 	if v == l.exprSink {
 		return
 	}
-	typ := l.valueTypeOf(l.exprSink)
+	typ = l.valueTypeOf(l.exprSink)
 	stored := v
 	if l.isOwnedLocal(v) {
 		stored = l.b.Emit(OpClone, typ, []ValueID{v}, "")
@@ -9836,15 +9900,6 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		return l.lowerArrayElems(elems, true)
 	case hir.KIdent:
 		name := l.pkg.Str(n.S)
-		// Tagged-enum arm destructuring, checked BEFORE any local binding.
-		// A variant pattern's field name (`ok(v) -> print(v)`) belongs to the
-		// arm, and an earlier arm that bound the same name must not shadow it:
-		// `b-res` follows `a-res` in the same function and both arms call their
-		// payload `v`, so a locals-first lookup made the second arm print the
-		// first arm's value.
-		if fv, ok := l.enumArmFieldValue(name); ok {
-			return fv
-		}
 		// Option variant bare references (`err`, `ok`, `some`, `nil`): lower to
 		// the option discriminant constant so comparisons / match patterns
 		// resolve to the RIGHT tag. `nil` is the "none" discriminant (tag 1);
@@ -10014,6 +10069,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// module and silently share its storage.
 		if l.globalVisible(name) {
 			return l.lowerGlobalRef(name)
+		}
+		// A tagged-enum pattern field is implicit only when no lexical binding
+		// owns the name. Destructured payloads and ordinary locals/parameters
+		// have already returned above. In particular, the match subject itself
+		// may be named `v` while the current variant declares `v str`; that
+		// subject read must remain the whole enum, not a payload projection.
+		if fv, ok := l.enumArmFieldValue(name); ok {
+			return fv
 		}
 		// A function name used as a value (not called): `run-suite(my-setup,
 		// my-teardown)` passes the function's address as a callable argument.
@@ -10801,12 +10864,19 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			break
 		}
 		if recvID != hir.NoID {
-			rn := l.pkg.Node(recvID)
-			if rn != nil && rn.Kind == hir.KIdent {
-				recvName := l.pkg.Str(rn.S)
-				if l.isEnumTypeName(recvName) {
+			// Imported enum types may be module-qualified after merging
+			// (`value.affinity`), while enumVariants retains the bare type
+			// key (`affinity`). Resolve the whole dotted receiver rather than
+			// requiring a direct identifier. A lexical binding still shadows
+			// the type namespace, so `obj.affinity.x` remains a field chain
+			// when `obj` is a real local or global.
+			recvName := l.dotExprAsString(recvID)
+			if recvName != "" && l.isEnumTypeName(recvName) {
+				baseName := strings.SplitN(recvName, ".", 2)[0]
+				_, localBound := l.locals[baseName]
+				if !localBound && !l.globalVisible(baseName) {
 					fieldName := l.pkg.Str(n.S)
-					if v, ok := l.enumVariantValue(recvName + "." + fieldName); ok {
+					if v, ok := l.enumVariantValueOf(recvName, fieldName); ok {
 						return l.b.EmitInt(OpConst, l.b.Type("i64"), v, "")
 					}
 				}

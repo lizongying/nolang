@@ -96,7 +96,14 @@ markdown.heading = (line str) (out heading) {
     n = markdown.prefix-count(s, 35)
     n > 0 && n <= 6 && n < s.len-bytes() && s.byte(n) == 32 -> {
         level-v = n
-        title-v = s.slice-bytes(n + 1, s.len-bytes()).to-bytes-str().trim()
+        raw-opt = s.slice-bytes(n + 1, s.len-bytes()).to-str()
+        raw str = ''
+        raw-opt: {
+            ok -> raw = it
+
+            -> _
+        }
+        title-v = raw.trim()
 
         ; ATX 標题允許尾部的空格加 #，但不能把正文中的 # 誤刪。
         title-v.ends-with(' #') -> {
@@ -109,7 +116,14 @@ markdown.heading = (line str) (out heading) {
                 #{overflow=wrap}
                 end = end - 1
             }
-            title-v = title-v.slice-bytes(0, end).to-bytes-str().trim()
+            raw-opt = title-v.slice-bytes(0, end).to-str()
+            raw str = ''
+            raw-opt: {
+                ok -> raw = it
+
+                -> _
+            }
+            title-v = raw.trim()
         }
     }
     out = heading{
@@ -224,7 +238,13 @@ markdown.list-item = (line str) (out list) {
         c = s.byte(0)
         (c == 45 || c == 42 || c == 43) && s.byte(1) == 32 -> {
             kind-v = 1
-            content-v = s.slice-bytes(2, n).to-bytes-str()
+            content-v-opt = s.slice-bytes(2, n).to-str()
+            content-v str = ''
+            content-v-opt: {
+                ok -> content-v = it
+
+                -> _
+            }
         }
     }
     kind-v == 0 && n >= 3 -> {
@@ -246,7 +266,13 @@ markdown.list-item = (line str) (out list) {
         #{overflow=wrap}
         i > 0 && i + 1 < n && s.byte(i) == 46 && s.byte(i + 1) == 32 -> {
             kind-v = 2
-            digits = s.slice-bytes(0, i).to-bytes-str()
+            digits-opt = s.slice-bytes(0, i).to-str()
+            digits str = ''
+            digits-opt: {
+                ok -> digits = it
+
+                -> _
+            }
             index-v = 0
             d = 0
             (d < digits.len-bytes()) {
@@ -267,7 +293,13 @@ markdown.list-item = (line str) (out list) {
             }
 
             #{overflow=wrap}
-            content-v = s.slice-bytes(i + 2, n).to-bytes-str()
+            content-v-opt = s.slice-bytes(i + 2, n).to-str()
+            content-v str = ''
+            content-v-opt: {
+                ok -> content-v = it
+
+                -> _
+            }
         }
     }
     out = list{
@@ -284,11 +316,25 @@ markdown.list-item = (line str) (out list) {
 markdown.list-content = (content str) (out str) {
     s = content.trim()
     s.starts-with('[ ] ') -> {
-        out = '<input type="checkbox" disabled> ' - markdown.inline(s.slice-bytes(4, s.len-bytes()).to-bytes-str())
+        part-opt = s.slice-bytes(4, s.len-bytes()).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        out = '<input type="checkbox" disabled> ' - markdown.inline(part)
         return
     }
     s.starts-with('[x] ') || s.starts-with('[X] ') -> {
-        out = '<input type="checkbox" checked disabled> ' - markdown.inline(s.slice-bytes(4, s.len-bytes()).to-bytes-str())
+        part-opt = s.slice-bytes(4, s.len-bytes()).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        out = '<input type="checkbox" checked disabled> ' - markdown.inline(part)
         return
     }
     out = markdown.inline(s)
@@ -307,8 +353,24 @@ markdown.blockquote = (line str) (out quote) {
     n >= 1 && s.byte(0) == 62 -> {
         found = true
         n == 1 -> content-v = ''
-        n > 1 && s.byte(1) == 32 -> content-v = s.slice-bytes(2, n).to-bytes-str()
-        n > 1 && s.byte(1) != 32 -> content-v = s.slice-bytes(1, n).to-bytes-str()
+        n > 1 && s.byte(1) == 32 -> {
+            content-v-opt = s.slice-bytes(2, n).to-str()
+            content-v str = ''
+            content-v-opt: {
+                ok -> content-v = it
+
+                -> _
+            }
+        }
+        n > 1 && s.byte(1) != 32 -> {
+            content-v-opt = s.slice-bytes(1, n).to-str()
+            content-v str = ''
+            content-v-opt: {
+                ok -> content-v = it
+
+                -> _
+            }
+        }
     }
     out = quote{
         yes: found
@@ -340,7 +402,16 @@ markdown.fence = (line str) (out fence) {
                 yes-v = true
                 marker-v = c
                 width-v = count
-                count < n -> info-v = s.slice-bytes(count, n).to-bytes-str().trim()
+                count < n -> {
+                    raw-opt = s.slice-bytes(count, n).to-str()
+                    raw str = ''
+                    raw-opt: {
+                        ok -> raw = it
+
+                        -> _
+                    }
+                    info-v = raw.trim()
+                }
             }
         }
     }
@@ -397,10 +468,26 @@ markdown.table-separator = (line str) (yes bool) {
 ; [table-row](#markdown.table-row)
 markdown.table-row = (line str, tag str) (out str) {
     s = line.trim()
-    s.starts-with('|') -> s = s.slice-bytes(1, s.len-bytes()).to-bytes-str()
+    s.starts-with('|') -> {
+        s-opt = s.slice-bytes(1, s.len-bytes()).to-str()
+        s str = ''
+        s-opt: {
+            ok -> s = it
+
+            -> _
+        }
+    }
 
     #{overflow=wrap}
-    s.ends-with('|') -> s = s.slice-bytes(0, s.len-bytes() - 1).to-bytes-str()
+    s.ends-with('|') -> {
+        s-opt = s.slice-bytes(0, s.len-bytes() - 1).to-str()
+        s str = ''
+        s-opt: {
+            ok -> s = it
+
+            -> _
+        }
+    }
     cells = s.split('|')
     out = '<tr>\n'
     c <- cells: {
@@ -437,7 +524,14 @@ markdown.inline = (s str) (out str) {
         c == 92 && i + 1 < n -> {
 
             #{overflow=wrap}
-            result = result - markdown.escape-html(s.slice-bytes(i + 1, i + 2).to-bytes-str())
+            part-opt = s.slice-bytes(i + 1, i + 2).to-str()
+            part str = ''
+            part-opt: {
+                ok -> part = it
+
+                -> _
+            }
+            result = result - markdown.escape-html(part)
 
             {
 
@@ -457,7 +551,14 @@ markdown.inline = (s str) (out str) {
             #{overflow=wrap}
             close = s.find-byte-from('`', i + 1)
             close > i -> {
-                code-text = s.slice-bytes(i + 1, close).to-bytes-str().trim()
+                raw-opt = s.slice-bytes(i + 1, close).to-str()
+                raw str = ''
+                raw-opt: {
+                    ok -> raw = it
+
+                    -> _
+                }
+                code-text = raw.trim()
 
                 result = result - '<code>' - markdown.escape-html(code-text) - '</code>'
 
@@ -493,7 +594,13 @@ markdown.inline = (s str) (out str) {
 
                         -> 0
                     }
-                    alt = s.slice-bytes(alt-start, close).to-bytes-str()
+                    alt-opt = s.slice-bytes(alt-start, close).to-str()
+                    alt str = ''
+                    alt-opt: {
+                        ok -> alt = it
+
+                        -> _
+                    }
 
                     #{overflow=wrap}
                     img-url-start = close + 2: {
@@ -501,7 +608,13 @@ markdown.inline = (s str) (out str) {
 
                         -> 0
                     }
-                    url = s.slice-bytes(img-url-start, end).to-bytes-str()
+                    url-opt = s.slice-bytes(img-url-start, end).to-str()
+                    url str = ''
+                    url-opt: {
+                        ok -> url = it
+
+                        -> _
+                    }
                     result = result - '<img src="' - markdown.escape-html(url) - '" alt="' - markdown.escape-html(alt) - '">'
 
                     #{overflow=wrap}
@@ -534,7 +647,13 @@ markdown.inline = (s str) (out str) {
 
                         -> 0
                     }
-                    label = s.slice-bytes(label-start, close).to-bytes-str()
+                    label-opt = s.slice-bytes(label-start, close).to-str()
+                    label str = ''
+                    label-opt: {
+                        ok -> label = it
+
+                        -> _
+                    }
 
                     #{overflow=wrap}
                     url-start = close + 2: {
@@ -542,7 +661,13 @@ markdown.inline = (s str) (out str) {
 
                         -> 0
                     }
-                    url = s.slice-bytes(url-start, end).to-bytes-str()
+                    url-opt = s.slice-bytes(url-start, end).to-str()
+                    url str = ''
+                    url-opt: {
+                        ok -> url = it
+
+                        -> _
+                    }
                     result = result - '<a href="' - markdown.escape-html(url) - '">' - markdown.inline(label) - '</a>'
 
                     #{overflow=wrap}
@@ -569,7 +694,13 @@ markdown.inline = (s str) (out str) {
 
                     -> 0
                 }
-                target = s.slice-bytes(target-start, close).to-bytes-str()
+                target-opt = s.slice-bytes(target-start, close).to-str()
+                target str = ''
+                target-opt: {
+                    ok -> target = it
+
+                    -> _
+                }
                 target.starts-with('http://') || target.starts-with('https://') || target.starts-with('mailto:') -> {
                     result = result - '<a href="' - markdown.escape-html(target) - '">' - markdown.escape-html(target) - '</a>'
 
@@ -719,7 +850,14 @@ markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
     clean = line.trim()
     separator = '\n'
     hard-break -> {
-        clean = line.slice-bytes(0, line.len-bytes() - 2).to-bytes-str().trim()
+        raw-opt = line.slice-bytes(0, line.len-bytes() - 2).to-str()
+        raw str = ''
+        raw-opt: {
+            ok -> raw = it
+
+            -> _
+        }
+        clean = raw.trim()
         separator = '<br>\n'
     }
 
@@ -770,7 +908,13 @@ markdown.read-line = (source str, pos i64) (out line) {
                 -> _
             }
         }
-        line-v = source.slice-bytes(pos, end-v).to-bytes-str()
+        line-v-opt = source.slice-bytes(pos, end-v).to-str()
+        line-v str = ''
+        line-v-opt: {
+            ok -> line-v = it
+
+            -> _
+        }
         {
             end-v < n -> {
                 {
@@ -1049,7 +1193,13 @@ markdown.to-html = (source str) (out str) {
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }
-            code-line = line.slice-bytes(4, line.len-bytes()).to-bytes-str()
+            code-line-opt = line.slice-bytes(4, line.len-bytes()).to-str()
+            code-line str = ''
+            code-line-opt: {
+                ok -> code-line = it
+
+                -> _
+            }
 
             result = result - '<pre><code>' - markdown.escape-html(code-line) - '\n</code></pre>\n'
             continue
@@ -1057,7 +1207,16 @@ markdown.to-html = (source str) (out str) {
 
         hard-break = hard-break-v
         clean-line = trimmed
-        hard-break -> clean-line = line.slice-bytes(0, line.len-bytes() - 2).to-bytes-str().trim()
+        hard-break -> {
+            raw-opt = line.slice-bytes(0, line.len-bytes() - 2).to-str()
+            raw str = ''
+            raw-opt: {
+                ok -> raw = it
+
+                -> _
+            }
+            clean-line = raw.trim()
+        }
         {
             paragraph.len-bytes() > 0 -> paragraph = markdown.join-paragraph(paragraph, line, hard-break)
 

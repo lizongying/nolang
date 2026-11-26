@@ -54,7 +54,13 @@ bslice = (s str, a i64, b i64) (v str) {
     n = s.len-bytes()
     b > n -> return
     a >= b -> return
-    v = s.slice-bytes(a, b).to-bytes-str()
+    v-opt = s.slice-bytes(a, b).to-str()
+    v str = ''
+    v-opt: {
+        ok -> v = it
+
+        -> _
+    }
 }
 
 ; 取第 i 个字节值
@@ -458,7 +464,13 @@ unescape = (s str) (out str) {
             }
         }
     }
-    out = buf.to-bytes-str()
+    out-opt = buf.to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 十六进制串转整数

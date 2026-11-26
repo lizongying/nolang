@@ -182,7 +182,8 @@ t-format-float = () {
 ; 字串欄位：.N 截到 N 個位元組以內，< / > 在指定寬度內補空白，空字串不報錯
 t-format-str = () {
     h = 'hello'
-    runner.str-eq(format('{h}'), 'hello', 'plain str')
+    ; bare 插值走 pretty（字面量風格，見 986314cf），帶 spec 的 {h:s} 仍維持原始 str 語義
+    runner.str-eq(format('{h}'), h.pretty(), 'plain str')
     runner.str-eq(format('{h:s}'), 'hello', ':s')
     runner.str-eq(format('{h:.3}'), 'hel', ':.3 truncates')
     runner.str-eq(format('{h:.3s}'), 'hel', ':.3s truncates')
@@ -191,7 +192,7 @@ t-format-str = () {
 
     ; 空字串
     e = ''
-    runner.str-eq(format('{e}'), '', 'empty str')
+    runner.str-eq(format('{e}'), e.pretty(), 'empty str')
     runner.str-eq(format('{e:.3}'), '', 'empty str :.3')
 }
 

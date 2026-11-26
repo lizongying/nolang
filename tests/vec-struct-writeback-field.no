@@ -48,7 +48,12 @@ seed = () {
 ; i: 要處理的節點下標（本測試為 0）
 ; drop: 要剔除的鍵值，例如 2
 del-via-copy = (i i64, drop i64) {
-    node jv-value = P.nodes[i]
+    node jv-value
+    P.nodes[i]: {
+        ok -> node = it
+
+        -> node = jv-value{}
+    }
     nk []i64 = with-len(0)
     k = 0
     (k < node.keys.len()) {
@@ -102,7 +107,12 @@ io.outln('T3 len=' - t3len.to-str())
 
 ; 對照組 b：拷贝後 push（共享緩衝）
 seed()
-node jv-value = P.nodes[0]
+node jv-value
+P.nodes[0]: {
+    ok -> node = it
+
+    -> node = jv-value{}
+}
 node.keys.push(99)
 P.nodes[0] = node
 t4len i64 = P.nodes[0].keys.len()

@@ -3204,7 +3204,13 @@ cs-paint-number-input = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
         cs-emit-text-align(x, y, w, ht, t, color, A-RIGHT)
         (cmp-has(h, F-FOCUSED)) -> {
             car = input-caret(h)
-            suf = t.slice-bytes(car, t.len-bytes()).to-bytes-str()
+            suf-o = t.slice-bytes(car, t.len-bytes()).to-str()
+            suf str = ''
+            suf-o: {
+                ok -> suf = it
+
+                -> _
+            }
             cx = cs-sub(cs-sub(cs-add(x, w), CS-PAD), cs-text-w(suf))
             (cx < cs-add(x, CS-PAD)) -> { cx = cs-add(x, CS-PAD) }
             cs-emit-fill(cx, cs-add(y, 600), 200, cs-sub(ht, 1200), cs-theme(CS-TH-FG))
@@ -3262,7 +3268,14 @@ cs-paint-search = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
         cs-emit-text-left(cs-add(x, CS-PAD), y, tw, ht, t, color)
         (cmp-has(h, F-FOCUSED)) -> {
             car = input-caret(h)
-            cx = cs-add(cs-add(x, CS-PAD), cs-text-w(t.slice-bytes(0, car).to-bytes-str()))
+            pre-o = t.slice-bytes(0, car).to-str()
+            pre str = ''
+            pre-o: {
+                ok -> pre = it
+
+                -> _
+            }
+            cx = cs-add(cs-add(x, CS-PAD), cs-text-w(pre))
             (cx > cs-sub(cs-add(x, tw), CS-PAD)) -> { cx = cs-sub(cs-add(x, tw), CS-PAD) }
             cs-emit-fill(cx, cs-add(y, 600), 200, cs-sub(ht, 1200), cs-theme(CS-TH-FG))
         }
@@ -3293,7 +3306,13 @@ cs-paint-otp = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
         sx = otp-slot-x(h, i, x, w, ht)
         sw = otp-slot-w(h, w, ht)
         cs-emit-rect(sx, y, sw, ht, cs-theme(CS-TH-TRACK))
-        ch = c.slice-bytes(i, cs-add(i, 1)).to-bytes-str()
+        ch-o = c.slice-bytes(i, cs-add(i, 1)).to-str()
+        ch str = ''
+        ch-o: {
+            ok -> ch = it
+
+            -> _
+        }
         (ch != ' ') -> {
             cs-emit-text-center(sx, y, sw, ht, ch, color)
         }
@@ -3334,7 +3353,14 @@ cs-paint-input = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
             -> {
                 cs-emit-text-left(cs-add(x, CS-PAD), y, w, ht, t, color)
                 (cmp-has(h, F-FOCUSED)) -> {
-                    cx = cs-add(cs-add(x, CS-PAD), cs-text-w(t.slice-bytes(0, input-caret(h)).to-bytes-str()))
+                    pre-o = t.slice-bytes(0, input-caret(h)).to-str()
+                    pre str = ''
+                    pre-o: {
+                        ok -> pre = it
+
+                        -> _
+                    }
+                    cx = cs-add(cs-add(x, CS-PAD), cs-text-w(pre))
                     (cx > cs-sub(cs-add(x, w), CS-PAD)) -> { cx = cs-sub(cs-add(x, w), CS-PAD) }
                     cs-emit-fill(cx, cs-add(y, 600), 200, cs-sub(ht, 1200), cs-theme(CS-TH-FG))
                 }
@@ -3365,8 +3391,20 @@ cs-paint-input-lex = (h i64, x i64, y i64, w i64, ht i64) () {
         tl = tok.len-bytes()
         {
             ((focused) && (car >= acc) && (car <= cs-add(acc, tl))) -> {
-                pre = tok.slice-bytes(0, cs-sub(car, acc)).to-bytes-str()
-                suf = tok.slice-bytes(cs-sub(car, acc), tl).to-bytes-str()
+                pre-o = tok.slice-bytes(0, cs-sub(car, acc)).to-str()
+                pre str = ''
+                pre-o: {
+                    ok -> pre = it
+
+                    -> _
+                }
+                suf-o = tok.slice-bytes(cs-sub(car, acc), tl).to-str()
+                suf str = ''
+                suf-o: {
+                    ok -> suf = it
+
+                    -> _
+                }
                 (pre.len() > 0) -> {
                     cs-emit-text-left(cx, y, w, ht, pre, c)
                     cx = cs-add(cx, cs-text-w(pre))
@@ -3438,7 +3476,14 @@ cs-paint-textarea = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
             s = ta-line-text(h, l)
             cs-emit-text-left(cs-add(x, CS-PAD), ly, w, CS-LINE-H, s, color)
             ((cmp-has(h, F-FOCUSED)) && (l == cl)) -> {
-                cx = cs-add(cs-add(x, CS-PAD), cs-text-w(s.slice-bytes(0, cc).to-bytes-str()))
+                pre-o = s.slice-bytes(0, cc).to-str()
+                pre str = ''
+                pre-o: {
+                    ok -> pre = it
+
+                    -> _
+                }
+                cx = cs-add(cs-add(x, CS-PAD), cs-text-w(pre))
                 (cx > cs-sub(cs-add(x, w), CS-PAD)) -> { cx = cs-sub(cs-add(x, w), CS-PAD) }
                 cs-emit-fill(cx, cs-add(ly, 600), 200, cs-sub(CS-LINE-H, 1200), cs-theme(CS-TH-FG))
             }
@@ -3510,7 +3555,13 @@ cs-paint-combobox = (h i64, x i64, y i64, w i64, ht i64, color i64, t str) {
     (cmp-has(h, F-FOCUSED)) -> {
         car = input-caret(h)
         (car > t.len-bytes()) -> { car = t.len-bytes() }
-        pre = t.slice-bytes(0, car).to-bytes-str()
+        pre-o = t.slice-bytes(0, car).to-str()
+        pre str = ''
+        pre-o: {
+            ok -> pre = it
+
+            -> _
+        }
         cx = cs-add(cs-add(x, CS-PAD), cs-text-w(pre))
         (cx > cs-sub(cs-add(x, w), cs-add(CS-PAD, 2400))) -> {
             cx = cs-sub(cs-add(x, w), cs-add(CS-PAD, 2400))

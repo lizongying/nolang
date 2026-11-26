@@ -2839,13 +2839,27 @@ dv-lex-line = (line str) (n i64) {
             {
                 ; 注释：; 到行尾
                 (b == 59) -> {
-                    dv-run-push(line.slice-bytes(i, len).to-bytes-str(), dv-c-com())
+                    tok-o = line.slice-bytes(i, len).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    dv-run-push(tok, dv-c-com())
                     i = len
                 }
                 ; 字符串
                 ((b == 34) || (b == 39)) -> {
                     j = dv-lex-quote(line, i, b)
-                    dv-run-push(line.slice-bytes(i, j).to-bytes-str(), dv-c-str())
+                    tok-o = line.slice-bytes(i, j).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    dv-run-push(tok, dv-c-str())
                     i = j
                 }
                 ; 数字
@@ -2857,7 +2871,14 @@ dv-lex-line = (line str) (n i64) {
                         (dv-byte-at(line, j) > 57) -> { ** }
                         j = dv-inc(j)
                     }
-                    dv-run-push(line.slice-bytes(i, j).to-bytes-str(), dv-c-num())
+                    tok-o = line.slice-bytes(i, j).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    dv-run-push(tok, dv-c-num())
                     i = j
                 }
                 ; 标识符 / 关键字
@@ -2868,7 +2889,13 @@ dv-lex-line = (line str) (n i64) {
                         (dv-word-byte(dv-byte-at(line, j)) == 0) -> { ** }
                         j = dv-inc(j)
                     }
-                    w = line.slice-bytes(i, j).to-bytes-str()
+                    w-o = line.slice-bytes(i, j).to-str()
+                    w str = ''
+                    w-o: {
+                        ok -> w = it
+
+                        -> _
+                    }
                     c = dv-c-def()
                     (dv-is-kw(w) == 1) -> { c = dv-c-kw() }
                     dv-run-push(w, c)
@@ -2882,12 +2909,26 @@ dv-lex-line = (line str) (n i64) {
                         (dv-byte-at(line, j) != 32) -> { ** }
                         j = dv-inc(j)
                     }
-                    dv-run-push(line.slice-bytes(i, j).to-bytes-str(), dv-c-def())
+                    tok-o = line.slice-bytes(i, j).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    dv-run-push(tok, dv-c-def())
                     i = j
                 }
                 ; 其余：单字符（标点 / 运算符）
                 -> {
-                    dv-run-push(line.slice-bytes(i, dv-inc(i)).to-bytes-str(), dv-c-def())
+                    tok-o = line.slice-bytes(i, dv-inc(i)).to-str()
+                    tok str = ''
+                    tok-o: {
+                        ok -> tok = it
+
+                        -> _
+                    }
+                    dv-run-push(tok, dv-c-def())
                     i = dv-inc(i)
                 }
             }
@@ -2912,7 +2953,14 @@ dv-edit-split = (t str) (n i64) {
             cur = ''
         }
         (b != 10) -> {
-            cur.push-str(t.slice-bytes(i, dv-inc(i)).to-bytes-str())
+            ch-o = t.slice-bytes(i, dv-inc(i)).to-str()
+            ch str = ''
+            ch-o: {
+                ok -> ch = it
+
+                -> _
+            }
+            cur.push-str(ch)
         }
         i = dv-inc(i)
     }
@@ -3040,8 +3088,20 @@ dv-edit-insert = (slot i64, ch str) () {
             }
             (c < 0) -> { c = 0 }
             (c > a.len-bytes()) -> { c = a.len-bytes() }
-            pre = a.slice-bytes(0, c).to-bytes-str()
-            suf = a.slice-bytes(c, a.len-bytes()).to-bytes-str()
+            pre-o = a.slice-bytes(0, c).to-str()
+            pre str = ''
+            pre-o: {
+                ok -> pre = it
+
+                -> _
+            }
+            suf-o = a.slice-bytes(c, a.len-bytes()).to-str()
+            suf str = ''
+            suf-o: {
+                ok -> suf = it
+
+                -> _
+            }
             pre.push-str(ch)
             pre.push-str(suf)
             dv-arr-set-s(DV-ED-LINES, l, pre)
@@ -3067,8 +3127,20 @@ dv-edit-backspace = (slot i64) () {
                 -> ''
             }
             (c > 0) -> {
-                pre = a.slice-bytes(0, cs-sub(c, 1)).to-bytes-str()
-                suf = a.slice-bytes(c, a.len-bytes()).to-bytes-str()
+                pre-o = a.slice-bytes(0, cs-sub(c, 1)).to-str()
+                pre str = ''
+                pre-o: {
+                    ok -> pre = it
+
+                    -> _
+                }
+                suf-o = a.slice-bytes(c, a.len-bytes()).to-str()
+                suf str = ''
+                suf-o: {
+                    ok -> suf = it
+
+                    -> _
+                }
                 pre.push-str(suf)
                 dv-arr-set-s(DV-ED-LINES, l, pre)
                 dv-arr-set(DV-EDIT-C, slot, cs-sub(c, 1))
@@ -3109,8 +3181,20 @@ dv-edit-enter = (slot i64) () {
             }
             (c < 0) -> { c = 0 }
             (c > a.len-bytes()) -> { c = a.len-bytes() }
-            pre = a.slice-bytes(0, c).to-bytes-str()
-            suf = a.slice-bytes(c, a.len-bytes()).to-bytes-str()
+            pre-o = a.slice-bytes(0, c).to-str()
+            pre str = ''
+            pre-o: {
+                ok -> pre = it
+
+                -> _
+            }
+            suf-o = a.slice-bytes(c, a.len-bytes()).to-str()
+            suf str = ''
+            suf-o: {
+                ok -> suf = it
+
+                -> _
+            }
             dv-arr-set-s(DV-ED-LINES, l, pre)
             dv-edit-ins-line(dv-inc(l), suf)
             dv-arr-set(DV-EDIT-L, slot, dv-inc(l))
@@ -3281,8 +3365,20 @@ dv-edit-line = (body i64, key0 i64, i i64, line str, cur i64, col i64, gutter i6
         tl = t.len-bytes()
         ((cur != 0) && (j == cj)) -> {
             (tl > 0) -> {
-                pre = t.slice-bytes(0, cin).to-bytes-str()
-                suf = t.slice-bytes(cin, tl).to-bytes-str()
+                pre-o = t.slice-bytes(0, cin).to-str()
+                pre str = ''
+                pre-o: {
+                    ok -> pre = it
+
+                    -> _
+                }
+                suf-o = t.slice-bytes(cin, tl).to-str()
+                suf str = ''
+                suf-o: {
+                    ok -> suf = it
+
+                    -> _
+                }
                 (pre.len-bytes() > 0) -> {
                     dv-node(C-LABEL, dv-add(rk, cs-add(2, j)), pre, '', c, 0, 0, f, row)
                 }
@@ -3642,7 +3738,14 @@ dv-pal-backspace = (pk i64) () {
     s = dv-bound(q)
     n = s.len-bytes()
     (n > 0) -> {
-        dv-bound-set(q, s.slice-bytes(0, cs-sub(n, 1)).to-bytes-str())
+        q2-o = s.slice-bytes(0, cs-sub(n, 1)).to-str()
+        q2 str = ''
+        q2-o: {
+            ok -> q2 = it
+
+            -> _
+        }
+        dv-bound-set(q, q2)
     }
 }
 

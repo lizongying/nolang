@@ -130,7 +130,16 @@ occ = (hay str, needle str) (n i64) {
     ln = hay.len-bytes()
     step = needle.len-bytes()
     i <- [0..ln): {
-        i + step <= ln && hay.slice-bytes(i, i + step).to-bytes-str() == needle -> hits.push(i)
+        i + step <= ln -> {
+            part-opt = hay.slice-bytes(i, i + step).to-str()
+            part str = ''
+            part-opt: {
+                ok -> part = it
+
+                -> _
+            }
+            part == needle -> hits.push(i)
+        }
     }
     n = hits.len()
 }

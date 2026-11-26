@@ -350,13 +350,13 @@ read-stdin-str = () (content ?str) {
         nil -> return
 
         -> {
-            tb0o = it.to-str()
-            tb0v = tb0o: {
-                ok -> it
-            
-                nil || err -> ''
+            s-opt = it.to-str()
+            s str = ''
+            s-opt: {
+                ok -> s = it
+
+                -> _
             }
-            s = tb0v
             content = s
         }
     }
@@ -663,11 +663,12 @@ file.read-line = () (line ?str) {
     .fd < 0 -> return
     buf []byte = with-len(4096)
     n = read(.fd, buf, 4096)
-    tb1o = buf.slice(0, n).to-str()
-    tb1v = tb1o: {
-        ok -> it
-    
-        nil || err -> ''
+    tb1v-opt = buf.slice(0, n).to-str()
+    tb1v str = ''
+    tb1v-opt: {
+        ok -> tb1v = it
+
+        -> _
     }
     n > 0 -> line = tb1v
 }
@@ -733,14 +734,7 @@ file.read-str = () (content ?str) {
 
         nil -> return
 
-        buf []byte = it
-        tb2o = buf.to-str()
-        tb2v = tb2o: {
-            ok -> it
-        
-            nil || err -> ''
-        }
-        -> content = tb2v
+        ok(buf) -> content ?= buf.to-str()
     }
 }
 

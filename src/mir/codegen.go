@@ -8861,6 +8861,10 @@ func (c *codegen) emitOptionPayloadContentClone(b *strings.Builder, elemRaw, pay
 			c.diag(nil, codegenTraceID, "cannot deep-clone the elements of %s for an option copy", elemRaw)
 			return
 		}
+		// The vec clone helper reads the (already bitwise-copied) payload through
+		// %op, exactly like the %str-long case above and the free side below.
+		// Without this load, LLVM sees `%cv` undefined in the emitted clone call.
+		b.WriteString("  %cv = load %vec, %vec* %op\n")
 		b.WriteString(fmt.Sprintf("  %%cc = call %%vec %s(%%vec %%cv)\n", fn))
 		b.WriteString("  store %vec %cc, %vec* %op\n")
 	case key != "" && (c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key)):

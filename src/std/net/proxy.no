@@ -117,7 +117,14 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
             fd = -1
             return
         }
-        raw = raw - buf.slice-bytes(0, n).to-bytes-str()
+        part-opt = buf.slice-bytes(0, n).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        raw = raw - part
 
         #{overflow=wrap}
         total = total + n
@@ -516,7 +523,13 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; 所以這裡**不能**再 `+ 1`：舊寫法 `req.len() + 1` 會多送一個 0x00
     ; （無認證時送 4 位元組、認證時送 5 位元組），對端若嚴格按 RFC1928 讀
     ; 第 3 / 4 位元組就會讀到垃圾。test/std/proxy.no 的 §9 §10 釘住這條。
-    req-str = req.to-bytes-str()
+    req-str-opt = req.to-str()
+    req-str str = ''
+    req-str-opt: {
+        ok -> req-str = it
+
+        -> _
+    }
 
     written = net.net-send(fd, req-str, req.len())
     written < 0 -> {
@@ -614,7 +627,13 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
                 -> _
             }
         }
-        auth-str = auth-req.to-bytes-str()
+        auth-str-opt = auth-req.to-str()
+        auth-str str = ''
+        auth-str-opt: {
+            ok -> auth-str = it
+
+            -> _
+        }
         written = net.net-send(fd, auth-str, pos)
         written < 0 -> {
             fs.close(fd)
@@ -770,7 +789,13 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
         -> _
     }
-    conn-str = conn-req.to-bytes-str()
+    conn-str-opt = conn-req.to-str()
+    conn-str str = ''
+    conn-str-opt: {
+        ok -> conn-str = it
+
+        -> _
+    }
     written = net.net-send(fd, conn-str, pos)
     written < 0 -> {
         fs.close(fd)

@@ -82,7 +82,16 @@ oo, oe, ocode, oerr = process.cmd('opt', optargs, '', '', [], 0, false)
 syntax-bad = oe.contains('expected ') || oe.contains('redefinition of') || oe.contains('type mismatch')
 runner.is-true(! syntax-bad, 'pkg-ll opt: no SYNTAX errors (only undefined-value allowed)')
 print('pkg-ll opt rc=' - ocode.to-str() - ' (undefined-value refs = h2m capability gap, deferred to slice 5+)')
-oe.len-bytes() > 0 -> print('pkg-ll opt stderr (first 240 chars): ' - oe.slice-bytes(0, 240).to-bytes-str())
+oe.len-bytes() > 0 -> {
+    part-opt = oe.slice-bytes(0, 240).to-str()
+    part str = ''
+    part-opt: {
+        ok -> part = it
+
+        -> _
+    }
+    print('pkg-ll opt stderr (first 240 chars): ' - part)
+}
 
 ; 落到磁碟供外部 opt / clang 檢視
 w = fs.write-bytes('/tmp/m5d.ll', ll.to-bytes())

@@ -298,7 +298,13 @@ hashmap-str-tmpl.for-each = () (k str, v v) {
                 j <- [0..sl): {
                     kb[j] = src.byte(j)
                 }
-                k = kb.to-bytes-str()
+                k-opt = kb.to-str()
+                k str = ''
+                k-opt: {
+                    ok -> k = it
+
+                    -> _
+                }
 
                 v = .vals[i]
             }

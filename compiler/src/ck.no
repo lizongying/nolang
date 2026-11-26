@@ -211,7 +211,13 @@ check = (t ast, path str) (out []str) {
     cur-module = ''
     pos = path.rindex('/std/')
     pos >= 0 -> {
-        rel = path.slice-bytes(pos + 5, path.len-bytes()).to-bytes-str()
+        rel-op = path.slice-bytes(pos + 5, path.len-bytes()).to-str()
+        rel str = ''
+        rel-op: {
+            ok -> rel = it
+
+            -> _
+        }
         f = rel.split('/')
         f0 = ''
         f.len() > 0 -> {
@@ -219,7 +225,11 @@ check = (t ast, path str) (out []str) {
         }
         dot = f0.index('.no')
         dot > 0 -> {
-            f0 = f0.slice-bytes(0, dot).to-bytes-str()
+            f0 = f0.slice-bytes(0, dot).to-str(): {
+                ok -> it
+
+                -> ''
+            }
         }
         ck-sig-bsearch(sig.mok, f0) >= 0 -> {
             cur-module = f0
@@ -269,8 +279,16 @@ check = (t ast, path str) (out []str) {
                     own = ''
                     v != '@' -> {
                         amp = v.index('&')
-                        own = v.slice-bytes(0, amp).to-bytes-str()
-                        bo = v.slice-bytes(amp + 1, v.len-bytes()).to-bytes-str()
+                        own = v.slice-bytes(0, amp).to-str(): {
+                            ok -> it
+
+                            -> ''
+                        }
+                        bo = v.slice-bytes(amp + 1, v.len-bytes()).to-str(): {
+                            ok -> it
+
+                            -> ''
+                        }
 
                         ; 自模块裸调放行（正主 arm⑦ checker.go:8270：owner==curModule 整臂 return）
                         bo != '' && bo == cur-module -> {

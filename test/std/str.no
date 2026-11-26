@@ -542,8 +542,22 @@ t-rindex = () {
 ; 驗證 slice-bytes 取位元組區間、to-str 保留完整內容
 t-slice-bytes-to-str = () {
     s = 'hello world'
-    runner.str-eq(s.slice-bytes(0, 5).to-bytes-str(), 'hello', 'slice-bytes 0..5')
-    runner.str-eq(s.slice-bytes(6, 11).to-bytes-str(), 'world', 'slice-bytes 6..11')
+    p0-opt = s.slice-bytes(0, 5).to-str()
+    p0 str = ''
+    p0-opt: {
+        ok -> p0 = it
+
+        -> _
+    }
+    runner.str-eq(p0, 'hello', 'slice-bytes 0..5')
+    p1-opt = s.slice-bytes(6, 11).to-str()
+    p1 str = ''
+    p1-opt: {
+        ok -> p1 = it
+
+        -> _
+    }
+    runner.str-eq(p1, 'world', 'slice-bytes 6..11')
     runner.str-eq(s.to-str(), 'hello world', 'to-str keeps content')
 }
 

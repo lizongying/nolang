@@ -108,7 +108,7 @@ get-option = (key str) (val ?str) {
                 ; 取 '=' 後的內容作為 val
                 #{overflow=wrap}
                 start = keyn + 1
-                val = arg.slice-bytes(start, arg.len-bytes()).to-bytes-str()
+                val ?= arg.slice-bytes(start, arg.len-bytes()).to-str()
                 return
             }
         }

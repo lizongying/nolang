@@ -1,5 +1,16 @@
 # 更新日誌
 
+## v0.4.35
+
+- fix(std): remove the []byte.to-bytes-str compatibility alias and migrate all call sites to []byte.to-str with explicit unwrap or ?= propagation
+- fix(std): bind file.read-str payload via ok(buf) and use :s specs in err.format to preserve output contract
+- fix(mir): skip void/unknown match arms when inferring the value-match result sink so str results keep their type
+- fix(mir): emit the missing %cv load in option payload vec clone before calling the clone helper
+- refactor(std/noui): use two-step statement matches for byte-to-str results so the str payload type survives lowering
+- refactor(noui/compiler): migrate byte-to-str conversions in editor and selfhost sources to explicit unwrap
+- test(corpus): unwrap ?str and option struct results explicitly across affected suites
+- test(std): align bare format interpolation assertions with the new pretty semantics
+
 ## v0.4.34
 
 - feat(std): make []byte.to-str a 1:1 byte copy returning ?str and add pretty methods across byte, char, str, txt, bool, int and number types

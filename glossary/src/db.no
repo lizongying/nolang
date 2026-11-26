@@ -194,7 +194,7 @@ intern-unique = (s str) (idx i64) {
 ; 载入
 ...
 
-; 读文件为字符串（逐字节无损：read-bytes + to-bytes-str，不用 fs.read-str）
+; 读文件为字符串（逐字节无损：read-bytes + to-str，不用 fs.read-str）
 ; path: 文件路径
 ; txt: 文件内容；读失败为空串
 ; [read-text](#db.read-text)
@@ -202,7 +202,16 @@ read-text = (path str) (txt str) {
     txt = ''
     c = fs.read-bytes(path)
     c: {
-        ok -> txt = it.to-bytes-str()
+        ok -> {
+            so = it.to-str()
+            tmp str = ''
+            so: {
+                ok -> tmp = it
+
+                -> _
+            }
+            txt = tmp
+        }
 
         nil -> _
 
@@ -217,7 +226,15 @@ read-text = (path str) (txt str) {
 stem-of = (file str) (stem str) {
     stem = file
     p = file.index('.noml')
-    p >= 0 -> stem = file.slice-bytes(0, p).to-bytes-str()
+    p >= 0 -> {
+        stem-opt = file.slice-bytes(0, p).to-str()
+        stem str = ''
+        stem-opt: {
+            ok -> stem = it
+
+            -> _
+        }
+    }
 }
 
 ; 把一条词条追加进 arena

@@ -292,7 +292,21 @@ client.next-event = () (ev ?event) {
                 }
 
                 ; 複製到緩衝區末尾（str 下標寫已禁用，拼接後整條指派）
-                .recv-buf = .recv-buf.slice-bytes(0, .recv-buf-len).to-bytes-str() - tmp.slice-bytes(0, n).to-bytes-str()
+                part-opt = .recv-buf.slice-bytes(0, .recv-buf-len).to-str()
+                part str = ''
+                part-opt: {
+                    ok -> part = it
+
+                    -> _
+                }
+                chunk-opt = tmp.slice-bytes(0, n).to-str()
+                chunk str = ''
+                chunk-opt: {
+                    ok -> chunk = it
+
+                    -> _
+                }
+                .recv-buf = part - chunk
 
                 #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
@@ -448,7 +462,14 @@ client.reconnect = () (ok bool) {
             .close()
             return
         }
-        raw = raw - tmp.slice-bytes(0, n).to-bytes-str()
+        part-opt = tmp.slice-bytes(0, n).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        raw = raw - part
 
         {
 
@@ -713,7 +734,14 @@ sse-connect = (url str) (client ?client) {
             client = err('connection closed during handshake')
             return
         }
-        raw = raw - tmp.slice-bytes(0, n).to-bytes-str()
+        part-opt = tmp.slice-bytes(0, n).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        raw = raw - part
 
         #{overflow=wrap}
         total ?= total + n
@@ -895,7 +923,14 @@ server-conn.handshake = () (ok bool) {
         tmp str = with-len(SSE-RECV-SIZE)
         n = net.net-recv(.fd, tmp, SSE-RECV-SIZE)
         n <= 0 -> return
-        raw = raw - tmp.slice-bytes(0, n).to-bytes-str()
+        part-opt = tmp.slice-bytes(0, n).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        raw = raw - part
 
         #{overflow=wrap}
         total = total + n

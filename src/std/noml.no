@@ -843,7 +843,14 @@ pool.parse = (s str) (idx i64, ok bool) {
         }
 
         #{overflow=wrap}
-        ann = .join-ann(ann, s.slice-bytes(p + 2, an - 1).to-bytes-str())
+        part-opt = s.slice-bytes(p + 2, an - 1).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        ann = .join-ann(ann, part)
         lq = .skip-blanks(s, an)
         lq < sn && s.byte(lq) != 10 -> {
             ok = .fail(s, lq, '`#{...}` must not share its line with the value')
@@ -876,7 +883,14 @@ pool.parse = (s str) (idx i64, ok bool) {
         }
         {
             av ?= .anns[idx]
-            .anns[idx] ?= .join-ann(av, s.slice-bytes(q + 2, np2 - 1).to-bytes-str())
+            part-opt = s.slice-bytes(q + 2, np2 - 1).to-str()
+            part str = ''
+            part-opt: {
+                ok -> part = it
+
+                -> _
+            }
+            .anns[idx] ?= .join-ann(av, part)
         }: {
             err -> _
 
@@ -944,7 +958,13 @@ pool.parse-value = (s str, pos i64) (idx i64, next i64, ok bool) {
         -> {
 
             #{overflow=wrap}
-            ch = s.slice-bytes(p, p + 1).to-bytes-str()
+            ch-opt = s.slice-bytes(p, p + 1).to-str()
+            ch str = ''
+            ch-opt: {
+                ok -> ch = it
+
+                -> _
+            }
             ok = .fail(s, p, 'unexpected character \'' - ch - '\' in value')
         }
     }
@@ -1001,7 +1021,14 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
             }
 
             #{overflow=wrap}
-            ann = .join-ann(ann, s.slice-bytes(p + 2, np - 1).to-bytes-str())
+            part-opt = s.slice-bytes(p + 2, np - 1).to-str()
+            part = ''
+            part-opt: {
+                ok -> part = it
+
+                -> _
+            }
+            ann = .join-ann(ann, part)
             q = .skip-blanks(s, np)
             q < sn && s.byte(q) != 10 -> {
                 ok = .fail(s, q, '`#{...}` must not share its line with the member')
@@ -1054,7 +1081,14 @@ pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
             }
 
             #{overflow=wrap}
-            ann = .join-ann(ann, s.slice-bytes(p + 2, np - 1).to-bytes-str())
+            part-opt = s.slice-bytes(p + 2, np - 1).to-str()
+            part = ''
+            part-opt: {
+                ok -> part = it
+
+                -> _
+            }
+            ann = .join-ann(ann, part)
             p = .skip-blanks(s, np)
         }
         ann.len-bytes() > 0 -> .anns[child]: {
@@ -1286,7 +1320,13 @@ pool.parse-key = (s str, pos i64) (key str, next i64, ok bool, quoted bool) {
             -> 0
         }
     }
-    key = s.slice-bytes(pos, p).to-bytes-str()
+    key-opt = s.slice-bytes(pos, p).to-str()
+    key = ''
+    key-opt: {
+        ok -> key = it
+
+        -> _
+    }
     next = p
     key.len-bytes() > 255 -> {
         ok = .fail(s, pos, 'key length exceeds 255 bytes')
@@ -1320,7 +1360,14 @@ pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
         c = s.byte(p)
         {
             c == 39 -> {
-                val = val - s.slice-bytes(seg, p).to-bytes-str()
+                part-opt = s.slice-bytes(seg, p).to-str()
+                part str = ''
+                part-opt: {
+                    ok -> part = it
+
+                    -> _
+                }
+                val = val - part
                 {
                     next ?= p + 1
                 }: {
@@ -1343,7 +1390,14 @@ pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
                     ok = false
                     return
                 }
-                val = val - s.slice-bytes(seg, p).to-bytes-str() - dec
+                part-opt = s.slice-bytes(seg, p).to-str()
+                part str = ''
+                part-opt: {
+                    ok -> part = it
+
+                    -> _
+                }
+                val = val - part - dec
                 p = np
                 seg = p
             }
@@ -1546,7 +1600,13 @@ pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                         -> _
                     }
                     ok = true
-                    val = buf.slice(0, k).to-bytes-str()
+                    val-opt = buf.slice(0, k).to-str()
+                    val str = ''
+                    val-opt: {
+                        ok -> val = it
+
+                        -> _
+                    }
                     return
                 }
                 buf[k] = 10
@@ -1802,7 +1862,14 @@ pool.match-kw = (s str, pos i64, kw str) (next i64) {
 
     #{overflow=wrap}
     pos + kn > sn -> return
-    s.slice-bytes(pos, pos + kn).to-bytes-str().eq-full(kw) == false -> return
+    part-opt = s.slice-bytes(pos, pos + kn).to-str()
+    part str = ''
+    part-opt: {
+        ok -> part = it
+
+        -> _
+    }
+    part.eq-full(kw) == false -> return
 
     #{overflow=wrap}
     pos + kn < sn -> {
@@ -2152,7 +2219,13 @@ pool.quote = (s str) (out str) {
 
         -> _
     }
-    out = buf.slice(0, k).to-bytes-str()
+    out-opt = buf.slice(0, k).to-str()
+    out str = ''
+    out-opt: {
+        ok -> out = it
+
+        -> _
+    }
 }
 
 ; 依內容挑選最簡形式產生字串面值
@@ -2824,7 +2897,14 @@ pool.ann-value = (idx i64, key str) (v ?str) {
                 kend = j
                 k = .skip-blanks(body, kend)
                 has-eq = k < n && body.byte(k) == 61
-                same = (kend - i) == kn && body.slice-bytes(i, kend).to-bytes-str().eq-full(key)
+                part-opt = body.slice-bytes(i, kend).to-str()
+                part str = ''
+                part-opt: {
+                    ok -> part = it
+
+                    -> _
+                }
+                same = (kend - i) == kn && part.eq-full(key)
                 same && has-eq -> {
                     k ?= k + 1
                     k = .skip-blanks(body, k)
@@ -2859,7 +2939,13 @@ pool.ann-literal = (body str, pos i64) (v ?str) {
         (cc == 44 || cc == 93) -> break
         e ?= e + 1
     }
-    t = body.slice-bytes(pos, e).to-bytes-str()
+    t-opt = body.slice-bytes(pos, e).to-str()
+    t str = ''
+    t-opt: {
+        ok -> t = it
+
+        -> _
+    }
     t = t.trim()
     t.len-bytes() > 0 -> v = t
 }

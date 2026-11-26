@@ -186,12 +186,32 @@ t-join-long = () {
     i <- [0..601): {
         long-b[i] = 97
     }
-    long = long-b.to-bytes-str()
+    long-opt = long-b.to-str()
+    long str = ''
+    long-opt: {
+        ok -> long = it
+
+        -> _
+    }
     p = mk('/tmp/aaa')
     j = p.join(long)
     runner.eq(j.len-bytes(), 610, 'join 長後綴總長 == 9 + 601')
-    se(j.slice-bytes(0, 9).to-bytes-str(), '/tmp/aaa/', 'join 長後綴前綴正確')
-    se(j.slice-bytes(9, 610).to-bytes-str(), long, 'join 長後綴內容完整')
+    p0-opt = j.slice-bytes(0, 9).to-str()
+    p0 str = ''
+    p0-opt: {
+        ok -> p0 = it
+
+        -> _
+    }
+    se(p0, '/tmp/aaa/', 'join 長後綴前綴正確')
+    p1-opt = j.slice-bytes(9, 610).to-str()
+    p1 str = ''
+    p1-opt: {
+        ok -> p1 = it
+
+        -> _
+    }
+    se(p1, long, 'join 長後綴內容完整')
 }
 
 ; dir

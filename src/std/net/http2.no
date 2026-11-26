@@ -295,7 +295,14 @@ conn.recv-frame = () (frame ?frame) {
         recv-n <= 0 -> return
 
         ; net-recv 覆寫 buf[0]；改為從 '' 起逐塊拼接（內容逐 byte 等價）
-        hdr-acc = hdr-acc - hdr-buf.slice-bytes(0, recv-n).to-bytes-str()
+        part-opt = hdr-buf.slice-bytes(0, recv-n).to-str()
+        part str = ''
+        part-opt: {
+            ok -> part = it
+
+            -> _
+        }
+        hdr-acc = hdr-acc - part
 
         #{overflow=wrap}
         hdr-total ?= hdr-total + recv-n
@@ -338,7 +345,14 @@ conn.recv-frame = () (frame ?frame) {
                 }
             }
             recv-n <= 0 -> return
-            pl-acc = pl-acc - pl.slice-bytes(0, recv-n).to-bytes-str()
+            part-opt = pl.slice-bytes(0, recv-n).to-str()
+            part str = ''
+            part-opt: {
+                ok -> part = it
+
+                -> _
+            }
+            pl-acc = pl-acc - part
 
             #{overflow=wrap}
             payload-total ?= payload-total + recv-n

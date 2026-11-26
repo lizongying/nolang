@@ -94,7 +94,13 @@ entry-key = (e entry) (s str) {
             -> 0
         }
     }
-    s = sb.to-bytes-str()
+    s-opt = sb.to-str()
+    s str = ''
+    s-opt: {
+        ok -> s = it
+
+        -> _
+    }
 }
 
 ; 讀取原始 TOML value。
@@ -113,7 +119,13 @@ entry-value = (e entry) (s str) {
             -> 0
         }
     }
-    s = sb.to-bytes-str()
+    s-opt = sb.to-str()
+    s str = ''
+    s-opt: {
+        ok -> s = it
+
+        -> _
+    }
 }
 
 ; 比較 entry key 與字串。
@@ -169,7 +181,13 @@ table-name = (t table) (s str) {
             -> 0
         }
     }
-    s = sb.to-bytes-str()
+    s-opt = sb.to-str()
+    s str = ''
+    s-opt: {
+        ok -> s = it
+
+        -> _
+    }
 }
 
 ; 讀取 array-of-tables 名稱。
@@ -188,7 +206,13 @@ array-name = (t array-table) (s str) {
             -> 0
         }
     }
-    s = sb.to-bytes-str()
+    s-opt = sb.to-str()
+    s str = ''
+    s-opt: {
+        ok -> s = it
+
+        -> _
+    }
 }
 
 ; 比較固定緩衝區中的表格名稱。
@@ -390,7 +414,14 @@ strip-comment = (s str) (out str) {
             -> _
         }
     }
-    out = s.slice-bytes(0, end).to-bytes-str().trim()
+    raw-opt = s.slice-bytes(0, end).to-str()
+    raw str = ''
+    raw-opt: {
+        ok -> raw = it
+
+        -> _
+    }
+    out = raw.trim()
 }
 
 ; 解析 bare / quoted / dotted key，輸出 canonical dotted key。
@@ -439,7 +470,13 @@ unquote = (raw str) (value ?str) {
     q == 39 -> {
 
         #{overflow=wrap}
-        value = s.slice-bytes(1, n - 1).to-bytes-str()
+        value-opt = s.slice-bytes(1, n - 1).to-str()
+        value str = ''
+        value-opt: {
+            ok -> value = it
+
+            -> _
+        }
         return
     }
 
@@ -486,7 +523,13 @@ unquote = (raw str) (value ?str) {
         #{overflow=wrap}
         i ?= i + 1
     }
-    value = v-b.slice(0, j).to-bytes-str()
+    value-opt = v-b.slice(0, j).to-str()
+    value str = ''
+    value-opt: {
+        ok -> value = it
+
+        -> _
+    }
 }
 
 ; 判斷值是否已閉合；用於多行陣列、inline table、multiline string。
@@ -726,7 +769,13 @@ resolve-section = (doc toml, name str) (resolved str) {
                 blen = base.len-bytes()
                 name.len-bytes() > blen -> {
                     name.byte(blen) == 46 -> {
-                        suffix = name.slice-bytes(blen, name.len-bytes()).to-bytes-str()
+                        suffix-opt = name.slice-bytes(blen, name.len-bytes()).to-str()
+                        suffix str = ''
+                        suffix-opt: {
+                            ok -> suffix = it
+
+                            -> _
+                        }
 
                         resolved = base - '[' - a.index.to-str() - ']' - suffix
                         return
@@ -836,7 +885,14 @@ toml.parse = (s str) (result ?toml) {
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
-            raw-section = line.slice-bytes(start-pos, end-pos).to-bytes-str().trim()
+            raw-opt = line.slice-bytes(start-pos, end-pos).to-str()
+            raw str = ''
+            raw-opt: {
+                ok -> raw = it
+
+                -> _
+            }
+            raw-section = raw.trim()
 
             ; ⚠️ err 臂要 return，只能用语句 match：`?=` 块的臂是独立帧，
             ; 臂内的 return 不会退出所在函数（见 test/README.md §5.2o）。
@@ -887,7 +943,14 @@ toml.parse = (s str) (result ?toml) {
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
-        raw-key = line.slice-bytes(0, eq).to-bytes-str().trim()
+        raw-opt = line.slice-bytes(0, eq).to-str()
+        raw str = ''
+        raw-opt: {
+            ok -> raw = it
+
+            -> _
+        }
+        raw-key = raw.trim()
         normalized-key = normalize-key(raw-key)
         key = ''
         normalized-key: {
@@ -900,7 +963,14 @@ toml.parse = (s str) (result ?toml) {
         }
 
         section.len-bytes() > 0 -> key = section - '.' - key
-        raw-value = line.slice-bytes(eq + 1, line.len-bytes()).to-bytes-str().trim()
+        raw-opt = line.slice-bytes(eq + 1, line.len-bytes()).to-str()
+        raw = ''
+        raw-opt: {
+            ok -> raw = it
+
+            -> _
+        }
+        raw-value = raw.trim()
         raw-value.len-bytes() == 0 -> {
             result = err('toml parse error at line ' - line-no.to-str())
             return
@@ -1004,10 +1074,22 @@ stringify = (doc toml) (out str) {
             lb >= 0 -> {
                 rb = key.index(']')
                 rb > lb -> {
-                    prefix = key.slice-bytes(0, lb).to-bytes-str()
+                    prefix-opt = key.slice-bytes(0, lb).to-str()
+                    prefix str = ''
+                    prefix-opt: {
+                        ok -> prefix = it
+
+                        -> _
+                    }
 
                     #{overflow=wrap}
-                    array-id = key.slice-bytes(0, rb + 1).to-bytes-str()
+                    array-id-opt = key.slice-bytes(0, rb + 1).to-str()
+                    array-id str = ''
+                    array-id-opt: {
+                        ok -> array-id = it
+
+                        -> _
+                    }
                     array-id.eq-full(last-array) == false -> {
                         out.len-bytes() > 0 -> out = out - '\n'
 
@@ -1020,7 +1102,13 @@ stringify = (doc toml) (out str) {
                     local-start < key.len-bytes() -> {
 
                         #{overflow=wrap}
-                        local-key = key.slice-bytes(local-start + 1, key.len-bytes()).to-bytes-str()
+                        local-key-opt = key.slice-bytes(local-start + 1, key.len-bytes()).to-str()
+                        local-key str = ''
+                        local-key-opt: {
+                            ok -> local-key = it
+
+                            -> _
+                        }
 
                         out = out - local-key - ' = ' - value
                     }

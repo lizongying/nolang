@@ -241,7 +241,9 @@ err.format = () (s str) {
     mt = .msg
     loc = ''
     .file != '' -> {
-        loc = format(' at {fn}:{ln}:{cl}')
+        ; 用 :s spec 走原本的 str 語義，避免 bare 插值走 pretty 時把欄位加上引號，
+        ; 破壞 'code.<名>: <訊息> at <檔>:<行>:<列>' 的既有格式契約。
+        loc = format(' at {fn:s}:{ln}:{cl}')
     }
-    s = format('code.{cn}: {mt}{loc}')
+    s = format('code.{cn:s}: {mt:s}{loc:s}')
 }
