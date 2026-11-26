@@ -1260,7 +1260,49 @@ func processCallExpression(ce *parser.CallExpression, genericFns map[string]*par
 	}
 	// Method call: receiver.method(args)
 	if dot, ok := ce.Function.(*parser.DotExpression); ok {
-		resolveMethodCall(dot, ce, genericFns, varTypes, newStmts, program, typeOwner)
+		// 跨模組泛型函式（`assert.eq(...)`）在 AST 裡也是 DotExpression，
+		// 上面的 Identifier 分支看不到它；而 resolveMethodCall 只認
+		// varTypes 裡的接收者型別，模組名不在其中，於是直接放棄單態化，
+		// codegen 最終報 `unknown callee assert.eq`。
+		// 若 receiver.property 拼出的名字正好是泛型函式定義，就按普通
+		// 泛型函式單態化；其餘情形才交給方法分派。
+		handled := false
+		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+			// 合併後的泛型定義可能是裸名（`eq`）而非限定名（`assert.eq`）：
+			// 兩個候選都要試。receiver 若出現在 varTypes 中就是真正的變數／
+			// 型別接收者，只能走方法分派，不得誤當模組名。
+			candidates := []string{recv.Value + "." + dot.Property}
+			if _, isVar := varTypes[recv.Value]; !isVar {
+				candidates = append(candidates, dot.Property)
+			}
+			for _, name := range candidates {
+				fd, exists := genericFns[name]
+				if !exists {
+					continue
+				}
+				genericArgs := ce.GenericArgs
+				if len(genericArgs) == 0 {
+					genericArgs = inferGenericArgs(fd, ce, program)
+				}
+				if len(genericArgs) == 0 {
+					continue
+				}
+				concrete := cloneAndSubstitute(program, fd, genericArgs)
+				if program.Sem != nil {
+					if ents := program.Sem.AnnotationsOf(fd); len(ents) > 0 {
+						program.Sem.SetRawAnnotations(concrete, ents)
+					}
+				}
+				*newStmts = append(*newStmts, concrete)
+				ce.Function = &parser.Identifier{Value: concrete.Name}
+				ce.GenericArgs = nil
+				handled = true
+				break
+			}
+		}
+		if !handled {
+			resolveMethodCall(dot, ce, genericFns, varTypes, newStmts, program, typeOwner)
+		}
 	}
 	// Recurse into arguments
 	for _, arg := range ce.Arguments {

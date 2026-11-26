@@ -138,7 +138,7 @@ Nolang プログラミング言語（バージョン %s）
   no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
                     バイナリをインストール（~/no/bin/ に保存、/usr/local/bin/ にシンボリックリンク）
                     実行中のプラットフォーム向けの事前ビルド済み GitHub release を取得します
-                    （<tool>-<os>-<arch>、例: nogit-darwin-arm64）。
+                    （<tool>-<os>-<arch>-<version>、例: nogit-darwin-arm64-v0.1.33）。
                     引数なしの場合: 現在のパッケージをビルドしてインストール。
                     -u    強制的に再取得して再インストール
     例:

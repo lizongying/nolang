@@ -24,7 +24,7 @@
 ; 這種裸 if 組一樣報 15w45dqk。斷言因此都寫成「每輪就地比對」或
 ; 「元素形態裡對變數求和」（`s = s + i` 合法）。
 
-# /test/runner
+# test/runner
 
 passed = 0
 failed = 0

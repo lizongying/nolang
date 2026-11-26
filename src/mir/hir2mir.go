@@ -2847,7 +2847,7 @@ func (l *lowerer) intLitNeeds128(n *hir.Node) string {
 // hint therefore erased the unsignedness of every narrow intermediate: inside
 // `u16.sqrt`, `mid = (lo + hi) / 2` computed 1+32767 = 32768, truncated it to
 // i16 and SIGN-extended to -32768, so the binary search never terminated
-// (`no test test/std/math.no` spun forever printing "division by zero")
+// (`no test test-std/src/math.no` spun forever printing "division by zero")
 // while u16.MAX/2 and friends silently returned wrong values.
 func (l *lowerer) intLitTypeFromHint() string {
 	if l.typeHint == NoType || l.typeHint == l.voidType {
@@ -7645,7 +7645,7 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		// 以及 by-ref 傳參 `i64* @g`）仍按 i64 存取 —— opaque pointer 下
 		// LLVM 不報錯，靜默讀走相鄰 6 位元組記憶體。實測 `i16 = -100`
 		// 印成 65436、`u16 65535` 印成 -1、`u16 65535.sqrt()` 取到垃圾
-		// mid 而無限迴圈（`no test test/std/math.no` 直接卡死），
+		// mid 而無限迴圈（`no test test-std/src/math.no` 直接卡死），
 		// std/crypto/blake2 的 `BLAKE2S-MASK u32` 遮罩失配使 BLAKE2s
 		// 全部向量錯誤。
 		if gtype == "byte" || gtype == "u8" {

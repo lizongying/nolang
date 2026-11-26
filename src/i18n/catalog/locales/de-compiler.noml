@@ -138,7 +138,7 @@ Globale Optionen:
   no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
                     Ein Binary installieren (Ablage in ~/no/bin/, Symlink in /usr/local/bin/)
                     Lädt ein vorgebautes GitHub-Release-Asset für die Plattform herunter,
-                    auf der `no` läuft (<tool>-<os>-<arch>, z. B. nogit-darwin-arm64).
+                    auf der `no` läuft (<tool>-<os>-<arch>-<version>, z. B. nogit-darwin-arm64-v0.1.33).
                     Ohne Argument: das aktuelle Paket bauen und installieren.
                     -u    erneutes Herunterladen und Installieren erzwingen
     Beispiele:

@@ -3,7 +3,7 @@
 ; join stack the second resume pops the FIRST task's frame and double-retires a
 ; handle. Per-task frames (task.join_top) keep the two leaves independent.
 
-# /test/runner
+# test/runner
 
 wake-a chan[i64] = with-cap(1)
 wake-b chan[i64] = with-cap(1)

@@ -299,10 +299,12 @@ drv.cmd-vet = () (code i64) {
 
                 -> ''
             }
-            rest = raw.slice-bytes(p1 + 1, raw.len-bytes()).to-str(): {
-                ok -> it
-
-                -> ''
+            v_rest = raw.slice-bytes(p1 + 1, raw.len-bytes()).to-str()
+            rest = ''
+            v_rest: {
+                ok -> rest = it
+                err -> rest = ''
+                nil -> rest = ''
             }
         }
         p2 = rest.index('|')
@@ -314,10 +316,12 @@ drv.cmd-vet = () (code i64) {
 
                 -> ''
             }
-            rest2 = rest.slice-bytes(p2 + 1, rest.len-bytes()).to-str(): {
-                ok -> it
-
-                -> ''
+            v_rest2 = rest.slice-bytes(p2 + 1, rest.len-bytes()).to-str()
+            rest2 = ''
+            v_rest2: {
+                ok -> rest2 = it
+                err -> rest2 = ''
+                nil -> rest2 = ''
             }
         }
         p3 = rest2.index('|')
@@ -541,18 +545,22 @@ drv.bp-walk = (path str, ctx bpctx, pathchain str) (r bpctx) {
 drv.bp-resolve = (imp str) (file str) {
     file = imp
     imp.starts-with('/') -> {
-        file = imp.slice-bytes(1, imp.len-bytes()).to-str(): {
-            ok -> it
-
-            -> ''
+        v_file = imp.slice-bytes(1, imp.len-bytes()).to-str()
+        file = ''
+        v_file: {
+            ok -> file = it
+            err -> file = ''
+            nil -> file = ''
         }
     }
     file.ends-with('.no') -> return
     file.ends-with('.sb') -> {
-        part = file.slice-bytes(0, file.len-bytes() - 3).to-str(): {
-            ok -> it
-
-            -> ''
+        v_part = file.slice-bytes(0, file.len-bytes() - 3).to-str()
+        part = ''
+        v_part: {
+            ok -> part = it
+            err -> part = ''
+            nil -> part = ''
         }
         file = part + '.no'
         return
@@ -617,32 +625,40 @@ drv.mod-name = (f str) (r str) {
     last = -1
     k = 0
     (k < n) {
-        c = f.slice-bytes(k, k + 1).to-str(): {
-            ok -> it
-
-            -> ''
+        v_c = f.slice-bytes(k, k + 1).to-str()
+        c = ''
+        v_c: {
+            ok -> c = it
+            err -> c = ''
+            nil -> c = ''
         }
         c == '/' -> last = k
 
         k = ix.inc(k)
     }
-    base = f.slice-bytes(last + 1, n).to-str(): {
-        ok -> it
-
-        -> ''
+    v_base = f.slice-bytes(last + 1, n).to-str()
+    base = ''
+    v_base: {
+        ok -> base = it
+        err -> base = ''
+        nil -> base = ''
     }
     bn = base.len-bytes()
     r = base
     bn >= 3 -> {
-        suf = base.slice-bytes(bn - 3, bn).to-str(): {
-            ok -> it
-
-            -> ''
+        v_suf = base.slice-bytes(bn - 3, bn).to-str()
+        suf = ''
+        v_suf: {
+            ok -> suf = it
+            err -> suf = ''
+            nil -> suf = ''
         }
-        part = base.slice-bytes(0, bn - 3).to-str(): {
-            ok -> it
-
-            -> ''
+        v_part = base.slice-bytes(0, bn - 3).to-str()
+        part = ''
+        v_part: {
+            ok -> part = it
+            err -> part = ''
+            nil -> part = ''
         }
         suf == '.no' -> r = part
         suf == '.sb' -> r = part
@@ -656,16 +672,20 @@ drv.pkg-split = (s str) (r []str) {
     start = 0
     i = 0
     (i < n) {
-        c = s.slice-bytes(i, i + 1).to-str(): {
-            ok -> it
-
-            -> ''
+        v_c = s.slice-bytes(i, i + 1).to-str()
+        c = ''
+        v_c: {
+            ok -> c = it
+            err -> c = ''
+            nil -> c = ''
         }
         c == ':' -> {
-            seg = s.slice-bytes(start, i).to-str(): {
-                ok -> it
-
-                -> ''
+            v_seg = s.slice-bytes(start, i).to-str()
+            seg = ''
+            v_seg: {
+                ok -> seg = it
+                err -> seg = ''
+                nil -> seg = ''
             }
             seg.len-bytes() > 0 -> r.push(seg)
             start = i + 1: {
@@ -736,10 +756,12 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
     sg = h2m-sigs-new()
     agg = h2m-new()
     pkg = drv.build-package(path)
-    body = pkg.slice-bytes(1, pkg.len-bytes()).to-str(): {
-        ok -> it
-
-        -> ''
+    v_body = pkg.slice-bytes(1, pkg.len-bytes()).to-str()
+    body = ''
+    v_body: {
+        ok -> body = it
+        err -> body = ''
+        nil -> body = ''
     }
     files = drv.pkg-split(body)
 
@@ -791,17 +813,21 @@ drv.pkg-sigs = (path str) (sg h2m-sigs) {
                     pre-dot = mod - '.'
                     pre-hyp = mod - '-'
                     nm.starts-with(pre-dot) == true -> {
-                        short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str(): {
-                            ok -> it
-
-                            -> ''
+                        v_short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str()
+                        short = ''
+                        v_short: {
+                            ok -> short = it
+                            err -> short = ''
+                            nil -> short = ''
                         }
                     }
                     nm.starts-with(pre-hyp) == true -> {
-                        short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str(): {
-                            ok -> it
-
-                            -> ''
+                        v_short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str()
+                        short = ''
+                        v_short: {
+                            ok -> short = it
+                            err -> short = ''
+                            nil -> short = ''
                         }
                     }
                     key = mod - '.' - short
@@ -850,10 +876,12 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
     r = ''
     agg h2m-ctx = h2m-new()
     pkg = drv.build-package(path)
-    body0 = pkg.slice-bytes(1, pkg.len-bytes()).to-str(): {
-        ok -> it
-
-        -> ''
+    v_body0 = pkg.slice-bytes(1, pkg.len-bytes()).to-str()
+    body0 = ''
+    v_body0: {
+        ok -> body0 = it
+        err -> body0 = ''
+        nil -> body0 = ''
     }
     files = drv.pkg-split(body0)
     nfiles = files.len()
@@ -925,17 +953,21 @@ drv.pkg-ll = (path str, emit-cov bool, strict bool) (r str) {
                     pre-dot = mod - '.'
                     pre-hyp = mod - '-'
                     nm.starts-with(pre-dot) == true -> {
-                        short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str(): {
-                            ok -> it
-
-                            -> ''
+                        v_short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str()
+                        short = ''
+                        v_short: {
+                            ok -> short = it
+                            err -> short = ''
+                            nil -> short = ''
                         }
                     }
                     nm.starts-with(pre-hyp) == true -> {
-                        short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str(): {
-                            ok -> it
-
-                            -> ''
+                        v_short = nm.slice-bytes(mod.len-bytes() + 1, nm.len-bytes()).to-str()
+                        short = ''
+                        v_short: {
+                            ok -> short = it
+                            err -> short = ''
+                            nil -> short = ''
                         }
                     }
                     key = mod - '.' - short

@@ -6,10 +6,10 @@
 ;   * KIDS 的 count 槽對錯 → 這裡就會紅；
 ;   * 未接線的 opcode 被靜默略過 → ast.unsupported 的斷言會紅。
 
-# /test/runner.eq
-# /test/runner.is-true
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.is-true
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/util/sb.sb

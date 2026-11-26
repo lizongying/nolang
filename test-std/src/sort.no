@@ -1,0 +1,303 @@
+; std-sort.no — sort 模組測試
+;
+; 執行：no test test-std/src/sort.no
+; 覆蓋：[]i64.sort-asc / []i64.sort-desc /
+;       [n]i64.sort-asc / [n]i64.sort-desc /
+;       i64.gt / str.gt
+
+# test/runner
+
+; sort 模組的 i64.gt / str.gt 是 std 裡的一般函式（不是內建），
+; 必須顯式導入才會被 MIR 拉進來，否則 codegen 報 unknown callee。
+# std/sort
+
+; 切片排序
+...
+
+; 動態切片升冪：asc() 原地重排，亂序 7 個元素應得到 1,2,3,5,7,8,9
+t-slice-sort-asc = () {
+    v = [5, 3, 8, 1, 9, 2, 7]
+    v.asc()
+    v-0 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-0, 1, 'sort-asc [0] == 1')
+    v-1 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-1, 2, 'sort-asc [1] == 2')
+    v-2 = v[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-2, 3, 'sort-asc [2] == 3')
+    v-3 = v[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-3, 5, 'sort-asc [3] == 5')
+    v-4 = v[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-4, 7, 'sort-asc [4] == 7')
+    v-5 = v[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-5, 8, 'sort-asc [5] == 8')
+    v-6 = v[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-6, 9, 'sort-asc [6] == 9')
+}
+
+; 動態切片降冪：desc() 原地重排，同一組元素應得到 9,8,7,5,3,2,1
+t-slice-sort-desc = () {
+    v = [5, 3, 8, 1, 9, 2, 7]
+    v.desc()
+    v-0 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-0, 9, 'sort-desc [0] == 9')
+    v-1 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-1, 8, 'sort-desc [1] == 8')
+    v-2 = v[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-2, 7, 'sort-desc [2] == 7')
+    v-3 = v[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-3, 5, 'sort-desc [3] == 5')
+    v-6 = v[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-6, 1, 'sort-desc [6] == 1')
+}
+
+; 兩個元素的邊界案例：只需一次比較即可交換成升冪
+t-slice-sort-two = () {
+    v = [2, 1]
+    v.asc()
+    v-0 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-0, 1, 'sort-asc two [0] == 1')
+    v-1 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-1, 2, 'sort-asc two [1] == 2')
+}
+
+; 單元素切片：沒有任何可比較物件，元素必須原樣保留
+t-slice-sort-single = () {
+    v = [42]
+    v.asc()
+    v-0 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-0, 42, 'sort-asc single == 42')
+}
+
+; 重複元素：相等值不參與交換，結果為 1,1,3,3,3（排序需容忍重複）
+t-slice-sort-duplicates = () {
+    v = [3, 1, 3, 1, 3]
+    v.asc()
+    v-0 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-0, 1, 'sort-asc dup [0] == 1')
+    v-1 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-1, 1, 'sort-asc dup [1] == 1')
+    v-2 = v[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-2, 3, 'sort-asc dup [2] == 3')
+    v-3 = v[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-3, 3, 'sort-asc dup [3] == 3')
+    v-4 = v[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(v-4, 3, 'sort-asc dup [4] == 3')
+}
+
+; 固定陣列排序
+...
+
+; 固定陣列升冪：長度 8 的 [8]i64 同樣支援原地 asc()，結果 1,2,3,4,5,7,8,9
+t-array-sort-asc = () {
+    a = [5, 3, 8, 1, 9, 2, 7, 4]
+    a.asc()
+    a-0 = a[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-0, 1, 'array sort-asc [0] == 1')
+    a-1 = a[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-1, 2, 'array sort-asc [1] == 2')
+    a-2 = a[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-2, 3, 'array sort-asc [2] == 3')
+    a-3 = a[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-3, 4, 'array sort-asc [3] == 4')
+    a-4 = a[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-4, 5, 'array sort-asc [4] == 5')
+    a-5 = a[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-5, 7, 'array sort-asc [5] == 7')
+    a-6 = a[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-6, 8, 'array sort-asc [6] == 8')
+    a-7 = a[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-7, 9, 'array sort-asc [7] == 9')
+}
+
+; 固定陣列降冪：desc() 後首元素為最大值 9、末元素為最小值 1
+t-array-sort-desc = () {
+    a = [5, 3, 8, 1, 9, 2, 7, 4]
+    a.desc()
+    a-0 = a[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-0, 9, 'array sort-desc [0] == 9')
+    a-7 = a[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(a-7, 1, 'array sort-desc [7] == 1')
+}
+
+; i64.gt 比較
+...
+
+; i64.gt 是嚴格大於：5.gt(3) 真、3.gt(5) 假、5.gt(5) 假（相等不算大於）
+t-i64-gt = () {
+    yes1 bool = (5).gt(3)
+    runner.is-true(yes1, '5.gt(3) == true')
+    yes2 bool = (3).gt(5)
+    runner.is-false(yes2, '3.gt(5) == false')
+    yes3 bool = (5).gt(5)
+    runner.is-false(yes3, '5.gt(5) == false')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('sort.slice-asc', t-slice-sort-asc)
+p2, f2 = runner.test('sort.slice-desc', t-slice-sort-desc)
+p3, f3 = runner.test('sort.slice-two', t-slice-sort-two)
+p4, f4 = runner.test('sort.slice-single', t-slice-sort-single)
+p5, f5 = runner.test('sort.slice-duplicates', t-slice-sort-duplicates)
+p6, f6 = runner.test('sort.array-asc', t-array-sort-asc)
+p7, f7 = runner.test('sort.array-desc', t-array-sort-desc)
+p8, f8 = runner.test('sort.i64-gt', t-i64-gt)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

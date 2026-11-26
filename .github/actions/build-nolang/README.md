@@ -27,10 +27,11 @@ available for workflows that only need the compiler without the build step.
   Linux runner can target Linux, macOS, Windows and WASI. It also bundles
   `wasi-libc`, so the `wasm32-wasi` target needs no extra sysroot.
 - The JS backend (`--js`) emits JavaScript with no LLVM toolchain at all.
-- **Older releases** (before the `no-llvm-*` assets were published) fall back to
-  the pure-Go `no_*` asset, which *does* shell out to `opt`/`llc`. The action
+- If a release does not publish the `no-llvm-*` asset, the action falls back to
+  the pure-Go `no-*` asset, which *does* shell out to `opt`/`llc`. The action
   emits a warning in that case and expects them to be on `PATH` — it will not
-  install them.
+  install them. Assets are named `no-<os>-<arch>-<tag>[.exe]` and
+  `no-llvm-<os>-<arch>-<tag>[.exe]` (e.g. `no-darwin-amd64-v0.4.35`).
 
 ### Target tokens → triples
 

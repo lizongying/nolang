@@ -407,7 +407,7 @@ func printUsage() {
 	fmt.Println("  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]")
 	fmt.Println("                    Install a binary (store in ~/no/bin/, symlink in /usr/local/bin/)")
 	fmt.Println("                    Downloads a prebuilt GitHub release asset for the platform")
-	fmt.Println("                    that `no` runs on (<tool>-<os>-<arch>, e.g. nogit-darwin-arm64).")
+	fmt.Println("                    that `no` runs on (<tool>-<os>-<arch>-<version>, e.g. nogit-darwin-arm64-v0.1.33).")
 	fmt.Println("                    With no argument: build and install the current package.")
 	fmt.Println("                    -u    force re-download and re-install")
 	fmt.Println("    Examples:")

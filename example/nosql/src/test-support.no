@@ -1,0 +1,43 @@
+; Strict assertion helper for package-local tests. Every test must call done().
+
+test-context {
+    checks i64
+    failures i64
+}
+
+new = () (ctx test-context) {
+    ctx = test-context{
+        checks: 0
+        failures: 0
+    }
+}
+
+test-context.check = (condition bool, message str) {
+    next-check ?i64 = .checks + 1
+    next-check: {
+        ok -> .checks = it
+
+        ->
+    }
+
+    ! condition -> {
+        next-failure ?i64 = .failures + 1
+        next-failure: {
+            ok -> .failures = it
+
+            ->
+        }
+
+        eprint('FAIL: ' - message)
+    }
+}
+
+test-context.check-code = (actual i64, expected i64, primary i64) {
+    .check(actual == expected, 'result code ' - actual.to-str() - ' expected ' - expected.to-str())
+    .check(actual & 255 == primary, 'primary result code ' - actual.to-str())
+}
+
+test-context.done = () {
+    .failures > 0 -> exit(1)
+    exit(0)
+}

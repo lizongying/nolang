@@ -249,10 +249,12 @@ ps-enum-row = (p psst, en str, v str) (r i64) {
             j = ix.dec(j)
         }
         d >= 0 -> {
-            tail = en.slice-bytes(d + 1, en.len-bytes()).to-str(): {
-                ok -> it
-
-                -> ''
+            v_tail = en.slice-bytes(d + 1, en.len-bytes()).to-str()
+            tail = ''
+            v_tail: {
+                ok -> tail = it
+                err -> tail = ''
+                nil -> tail = ''
             }
             k = 0
             (k < p.ev-n.len() && r < 0) {
@@ -291,10 +293,12 @@ ps-enum-has = (p psst, en str) (r i64) {
             j = ix.dec(j)
         }
         d >= 0 -> {
-            tail = en.slice-bytes(d + 1, en.len-bytes()).to-str(): {
-                ok -> it
-
-                -> ''
+            v_tail = en.slice-bytes(d + 1, en.len-bytes()).to-str()
+            tail = ''
+            v_tail: {
+                ok -> tail = it
+                err -> tail = ''
+                nil -> tail = ''
             }
             k = 0
             (k < p.en-n.len() && r == 0) {
@@ -1249,10 +1253,12 @@ ps-is-op-overload-name = (nm str) (r i64) {
         j = ix.dec(j)
     }
     d >= 0 -> {
-        base = nm.slice-bytes(d + 1, nm.len-bytes()).to-str(): {
-            ok -> it
-
-            -> ''
+        v_base = nm.slice-bytes(d + 1, nm.len-bytes()).to-str()
+        base = ''
+        v_base: {
+            ok -> base = it
+            err -> base = ''
+            nil -> base = ''
         }
     }
     r = 0
@@ -3278,10 +3284,12 @@ ps-sig-find = (p psst, fname str) (pos i64) {
             nm = p.ms-n[i]
             nl = nm.len-bytes()
             nl > sl -> {
-                pre = nm.slice-bytes(nl - sl, nl).to-str(): {
-                    ok -> it
-
-                    -> ''
+                v_pre = nm.slice-bytes(nl - sl, nl).to-str()
+                pre = ''
+                v_pre: {
+                    ok -> pre = it
+                    err -> pre = ''
+                    nil -> pre = ''
                 }
                 pre == suf -> {
                     pos = ix.at-i(p.ms-p, i)
@@ -3296,10 +3304,12 @@ ps-sig-find = (p psst, fname str) (pos i64) {
                 nm = p.sig-n[j]
                 nl = nm.len-bytes()
                 nl > sl -> {
-                    pre = nm.slice-bytes(nl - sl, nl).to-str(): {
-                    ok -> it
-
-                    -> ''
+                    v_pre = nm.slice-bytes(nl - sl, nl).to-str()
+                pre = ''
+                v_pre: {
+                    ok -> pre = it
+                    err -> pre = ''
+                    nil -> pre = ''
                 }
                     pre == suf -> {
                         pos = ix.at-i(p.sig-p, j)
@@ -4055,10 +4065,12 @@ ps-lower-signed-int-name = (typ str) (r str) {
     typ.len-bytes() == 0 -> return
     typ.starts-with('?') -> return
     typ.starts-with('*') -> {
-        part = typ.slice-bytes(1, typ.len-bytes()).to-str(): {
-            ok -> it
-
-            -> ''
+        v_part = typ.slice-bytes(1, typ.len-bytes()).to-str()
+        part = ''
+        v_part: {
+            ok -> part = it
+            err -> part = ''
+            nil -> part = ''
         }
         r = ps-lower-signed-int-name(part)
         return
@@ -4312,10 +4324,12 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             ; `?X` ⇒ NullableType{ elem: X }
                             exn = elem.len-bytes()
                             ex-inner = ast.add(t, asp.K-NAMED-TYPE)
-                            part = elem.slice-bytes(1, exn).to-str(): {
-                                ok -> it
-
-                                -> ''
+                            v_part = elem.slice-bytes(1, exn).to-str()
+                            part = ''
+                            v_part: {
+                                ok -> part = it
+                                err -> part = ''
+                                nil -> part = ''
                             }
                             ast.set-slot(t, ex-inner, 0, ast.put-str(t, part))
                             typ = ast.add(t, asp.K-NULLABLE-TYPE)
@@ -4327,10 +4341,12 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             ; `[]X` ⇒ SliceType{ inferred, elem: X }
                             exn = elem.len-bytes()
                             ex-inner = ast.add(t, asp.K-NAMED-TYPE)
-                            part = elem.slice-bytes(2, exn).to-str(): {
-                                ok -> it
-
-                                -> ''
+                            v_part = elem.slice-bytes(2, exn).to-str()
+                            part = ''
+                            v_part: {
+                                ok -> part = it
+                                err -> part = ''
+                                nil -> part = ''
                             }
                             ast.set-slot(t, ex-inner, 0, ast.put-str(t, part))
                             typ = ast.add(t, asp.K-SLICE-TYPE)
@@ -4401,10 +4417,12 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                     ivb = ivt
                     ivsh = ps-elem-shape(ivt)
                     ivsh == 1 -> {
-                        ivb = ivt.slice-bytes(1, ivt.len-bytes()).to-str(): {
-                            ok -> it
-
-                            -> ''
+                        v_ivb = ivt.slice-bytes(1, ivt.len-bytes()).to-str()
+                        ivb = ''
+                        v_ivb: {
+                            ok -> ivb = it
+                            err -> ivb = ''
+                            nil -> ivb = ''
                         }
                     }
                     ivsig = 0
@@ -5114,10 +5132,12 @@ ps-idx-elem-of = (ty str) (r str) {
         c1 == 93 -> {
 
             ; []X：X = ty[2..n]
-            r = ty.slice-bytes(2, n).to-str(): {
-                ok -> it
-
-                -> ''
+            v_r = ty.slice-bytes(2, n).to-str()
+            r = ''
+            v_r: {
+                ok -> r = it
+                err -> r = ''
+                nil -> r = ''
             }
         }
         c1 != 93 -> {
@@ -5135,10 +5155,12 @@ ps-idx-elem-of = (ty str) (r str) {
                     from = i
 
                     from = ix.inc(from)
-                    r = ty.slice-bytes(from, n).to-str(): {
-                        ok -> it
-
-                        -> ''
+                    v_r = ty.slice-bytes(from, n).to-str()
+                    r = ''
+                    v_r: {
+                        ok -> r = it
+                        err -> r = ''
+                        nil -> r = ''
                     }
                     go = false
                 }
@@ -5207,10 +5229,12 @@ ps-elem-arr-size = (e str) (r str) {
             -> 0
         }
         cb == 93 -> {
-            r = e.slice-bytes(1, i).to-str(): {
-                ok -> it
-
-                -> ''
+            v_r = e.slice-bytes(1, i).to-str()
+            r = ''
+            v_r: {
+                ok -> r = it
+                err -> r = ''
+                nil -> r = ''
             }
             go = false
         }
@@ -5237,10 +5261,12 @@ ps-elem-arr-elem = (e str) (r str) {
             rb = i
 
             rb = ix.inc(rb)
-            r = e.slice-bytes(rb, n).to-str(): {
-                ok -> it
-
-                -> ''
+            v_r = e.slice-bytes(rb, n).to-str()
+            r = ''
+            v_r: {
+                ok -> r = it
+                err -> r = ''
+                nil -> r = ''
             }
             go = false
         }
@@ -5757,10 +5783,12 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
     ;   函式簽名。實測 `hashmap-str-tmpl.put = (key str, val v)`：oracle 無 GenericParams，
     ;   SUT 多出 `GenericParams: v`（map.no / static-hashmap.no 各 8–9 行）。
     tl = recv-type.len-bytes()
-    suffix = recv-type.slice-bytes(tl - 5, tl).to-str(): {
-        ok -> it
-
-        -> ''
+    v_suffix = recv-type.slice-bytes(tl - 5, tl).to-str()
+    suffix = ''
+    v_suffix: {
+        ok -> suffix = it
+        err -> suffix = ''
+        nil -> suffix = ''
     }
     tl >= 5 && suffix == '-tmpl' && gnames.len() > 0 -> {
         gnames = with-cap(0)
@@ -9304,10 +9332,12 @@ ps-tv-recv-elem = (ty str) (r str) {
         c0 == 63 -> {
 
             ; `?X` → 剝前綴後取元素
-            part = ty.slice-bytes(1, n).to-str(): {
-                ok -> it
-
-                -> ''
+            v_part = ty.slice-bytes(1, n).to-str()
+            part = ''
+            v_part: {
+                ok -> part = it
+                err -> part = ''
+                nil -> part = ''
             }
             r = ps-idx-elem-d(part)
             return
@@ -9602,10 +9632,12 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             elem = ''
             st.starts-with('?') -> {
                 sopt = 1
-                elem = st.slice-bytes(1, st.len-bytes()).to-str(): {
-                    ok -> it
-
-                    -> ''
+                v_elem = st.slice-bytes(1, st.len-bytes()).to-str()
+                elem = ''
+                v_elem: {
+                    ok -> elem = it
+                    err -> elem = ''
+                    nil -> elem = ''
                 }
             }
             bt = ''

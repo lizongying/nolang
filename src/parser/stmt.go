@@ -840,35 +840,36 @@ func (p *Parser) parseExportStatement() Statement {
 		}
 	}
 
-	// 沒有函數名的情況（如 `@ /cfg/server as cfg` 或 `@ std/err err`）。
-	// 裸別名：路徑同行緊跟的 path-ident 即別名（陳述以換行結尾，不會是下一條陳述）。
+	// 沒有函數名的情況（如 `@ /cfg/server as cfg`、`@ std/err err`、
+	// `@ /test/src/assert`、`@ /test/src/assert test/assert`）。
+	//
+	// 裸別名：路徑同行緊跟的 path-ident 即別名（陳述以換行結尾，不會是下一條
+	// 陳述）。別名容許多段模組名——`@ /test/src/assert test/assert` 把模組以
+	// `test/assert` 的名字導出，供 `# test/assert` 引入。
 	if p.currentToken.Type == lexer.AS {
 		stmt.AsKeyword = true
 		p.nextToken()
-		if isPathIdent(p.currentToken.Type) {
-			stmt.Alias = p.currentToken.Literal
+	}
+	if isPathIdent(p.currentToken.Type) {
+		aliasParts := []string{p.currentToken.Literal}
+		p.nextToken()
+		// `/` + path-ident 是別名的後續段，直到換行 / EOF 為止。
+		for p.currentToken.Type == lexer.QUO && isPathIdent(p.peekToken.Type) {
+			aliasParts = append(aliasParts, "/")
+			p.nextToken()
+			aliasParts = append(aliasParts, p.currentToken.Literal)
 			p.nextToken()
 		}
-	} else if isPathIdent(p.currentToken.Type) {
-		stmt.Alias = p.currentToken.Literal
-		p.nextToken()
+		stmt.Alias = joinPathParts(aliasParts)
 	}
 
 	stmt.Path = joinPathParts(parts)
 
-	// `@ path` 既無符號也無別名：什麼都沒宣告。
-	//
-	// 所有消費方（hir 的 registerAliasSigs、mir 的 collectAliases、checker 的
-	// ValidateExportSymbols / filterByExports）都以「有符號名」為前提，這種寫法
-	// 過去既不改行為也不報錯 —— 作者會以為「把型別綁到模組」成功了（
-	// `@ std/txt` 就屬此列）。與 annotation-scope.md「非法與無意義都必須報錯」
-	// 一致：直接報錯。`@ path as alias`（有別名、無符號）不在此列。
-	if stmt.Function == "" && stmt.Alias == "" {
-		p.saveErrorf("lgxbfk9a", "line %d, column %d: export needs a symbol: '@ %s' alone declares nothing (write '@ %s.<symbol>')",
-			stmt.Token.Line, stmt.Token.Column, stmt.Path, stmt.Path)
-		return nil
-	}
-
+	// `@ path` 既無符號也無別名：這是「整包導出」，默認別名為路徑最後一段。
+	// 例如 `test/lib.no` 的 `@ /test/src/assert` 等價於
+	// `@ /test/src/assert assert`，讓 `# test/assert` 可以導入該模組。
+	// 過去此寫法被解析期錯誤 lgxbfk9a 拒絕；全局放寬後由 checker / build 的
+	// lib.no 解析鏈負責賦予語義（模組級導出，不註冊 callable alias）。
 	return stmt
 }
 

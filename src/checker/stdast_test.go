@@ -424,7 +424,7 @@ func TestStdASTBlobMatchesFreshParse(t *testing.T) {
 }
 
 // TestStdASTBlobHasSafeIndexNormalisation pins the regression that made
-// `no test test/std/txt.no` report
+// `no test test-std/src/txt.no` report
 //
 //	FAIL: str-eq - replace-n limit 1
 //	FAIL: str-eq - replace-n limit 2

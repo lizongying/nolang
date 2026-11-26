@@ -1,0 +1,359 @@
+; SQLite storage classes, affinity, truth values, and comparison ordering.
+
+sql-value {
+    sql-null,
+    integer(v i64),
+    real(v f64),
+    text(v str),
+    blob(v []byte),
+}
+
+affinity {
+    integer-affinity,
+    real-affinity,
+    numeric-affinity,
+    text-affinity,
+    blob-affinity,
+}
+
+truth {
+    sql-false,
+    sql-true,
+    unknown,
+}
+
+integer-to-real = (v i64) (out f64) {
+    out = v.to-f64()
+}
+
+integer-to-text = (v i64) (out str) {
+    out = v.to-str()
+}
+
+real-to-text = (v f64) (out str) {
+    out = v.to-str()
+}
+
+null-value = () (v sql-value) {
+    v = sql-null
+}
+
+integer-value = (v i64) (out sql-value) {
+    out = integer(v)
+}
+
+real-value = (v f64) (out sql-value) {
+    out = real(v)
+}
+
+text-value = (v str) (out sql-value) {
+    out = text(v)
+}
+
+blob-value = (v []byte) (out sql-value) {
+    out = blob(v)
+}
+
+sql-value.is-null = () (yes bool) {
+    current = .
+    current: {
+        sql-null -> yes = true
+
+        -> yes = false
+    }
+}
+
+sql-value.kind-name = () (name str) {
+    current = .
+    current: {
+        sql-null -> name = 'null'
+
+        integer -> name = 'integer'
+
+        real -> name = 'real'
+
+        text -> name = 'text'
+
+        blob -> name = 'blob'
+    }
+}
+
+sql-value.to-integer = () (out ?i64) {
+    current = .
+    current: {
+        integer(v) -> out = ok(v)
+
+        -> out = nil
+    }
+}
+
+sql-value.to-real = () (out ?f64) {
+    current = .
+    current: {
+        integer(v) -> out = ok(integer-to-real(v))
+
+        real(v) -> out = ok(v)
+
+        -> out = nil
+    }
+}
+
+sql-value.to-text = () (out ?str) {
+    current = .
+    current: {
+        text(v) -> out = ok(v)
+
+        -> out = nil
+    }
+}
+
+sql-value.to-blob = () (out ?[]byte) {
+    current = .
+    current: {
+        blob(v) -> out = ok(v)
+
+        -> out = nil
+    }
+}
+
+sql-value.to-truth = () (out truth) {
+    out = unknown
+    current = .
+    current: {
+        sql-null -> {
+        }
+
+        integer(v) -> {
+            {
+                v == 0 -> out = sql-false
+
+                -> out = sql-true
+            }
+        }
+
+        real(v) -> {
+            {
+                v == 0.0 -> out = sql-false
+
+                -> out = sql-true
+            }
+        }
+
+        text(v) -> {
+            n = v.to-f64()
+            n: {
+                ok(number) -> {
+                    {
+                        number == 0.0 -> out = sql-false
+
+                        -> out = sql-true
+                    }
+                }
+
+                -> out = sql-false
+            }
+        }
+
+        blob -> out = sql-false
+    }
+}
+
+affinity-of-declared = (declared str) (out affinity) {
+    upper = declared.to-upper()
+    {
+        upper.contains('INT') -> out = affinity.integer-affinity
+
+        upper.contains('CHAR') || upper.contains('CLOB') || upper.contains('TEXT') -> out = affinity.text-affinity
+
+        upper.contains('BLOB') || upper.len-bytes() == 0 -> out = affinity.blob-affinity
+
+        upper.contains('REAL') || upper.contains('FLOA') || upper.contains('DOUB') -> out = affinity.real-affinity
+
+        -> out = affinity.numeric-affinity
+    }
+}
+
+apply-numeric-affinity = (v sql-value) (out sql-value) {
+    v: {
+        text(s) -> {
+            parsed = s.to-i64()
+            parsed: {
+                ok(n) -> out = integer(n)
+
+                -> {
+                    real-parsed = s.to-f64()
+                    real-parsed: {
+                        ok(n) -> out = real(n)
+
+                        -> out = v
+                    }
+                }
+            }
+        }
+
+        -> out = v
+    }
+}
+
+apply-affinity = (v sql-value, a affinity) (out sql-value) {
+    a: {
+        text-affinity -> {
+            v: {
+                integer(n) -> out = text(integer-to-text(n))
+
+                real(n) -> out = text(real-to-text(n))
+
+                -> out = v
+            }
+        }
+
+        integer-affinity -> out = apply-numeric-affinity(v)
+
+        numeric-affinity -> out = apply-numeric-affinity(v)
+
+        real-affinity -> {
+            v: {
+                integer(n) -> out = real(integer-to-real(n))
+
+                text -> out = apply-numeric-affinity(v)
+
+                -> out = v
+            }
+        }
+
+        blob-affinity -> out = v
+    }
+}
+
+compare-text = (a str, b str) (order i64) {
+    order = a.compare(b)
+}
+
+compare-blob = (a []byte, b []byte) (order i64) {
+    an = a.len()
+    bn = b.len()
+    limit = an
+    bn < limit -> limit = bn
+    i <- [0..limit): {
+        av = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        bv = b[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        {
+            av < bv -> {
+                order = -1
+                return
+            }
+
+            av > bv -> {
+                order = 1
+                return
+            }
+        }
+    }
+
+    {
+        an < bn -> order = -1
+
+        an > bn -> order = 1
+
+        -> order = 0
+    }
+}
+
+; Compare follows SQLite storage-class ordering. NULL compares equal only to NULL.
+compare = (a sql-value, b sql-value) (order i64) {
+    a: {
+        sql-null -> {
+            b: {
+                sql-null -> order = 0
+
+                -> order = -1
+            }
+        }
+
+        integer(av) -> {
+            b: {
+                sql-null -> order = 1
+
+                integer(bv) -> {
+                    {
+                        av < bv -> order = -1
+
+                        av > bv -> order = 1
+
+                        -> order = 0
+                    }
+                }
+
+                real(bv) -> {
+                    af = integer-to-real(av)
+                    {
+                        af < bv -> order = -1
+
+                        af > bv -> order = 1
+
+                        -> order = 0
+                    }
+                }
+
+                -> order = -1
+            }
+        }
+
+        real(av) -> {
+            b: {
+                sql-null -> order = 1
+
+                integer(bv) -> {
+                    bf = integer-to-real(bv)
+                    {
+                        av < bf -> order = -1
+
+                        av > bf -> order = 1
+
+                        -> order = 0
+                    }
+                }
+
+                real(bv) -> {
+                    {
+                        av < bv -> order = -1
+
+                        av > bv -> order = 1
+
+                        -> order = 0
+                    }
+                }
+
+                -> order = -1
+            }
+        }
+
+        text(av) -> {
+            b: {
+                text(bv) -> order = compare-text(av, bv)
+
+                sql-null || integer || real -> order = 1
+
+                blob -> order = -1
+            }
+        }
+
+        blob(av) -> {
+            b: {
+                blob(bv) -> order = compare-blob(av, bv)
+
+                -> order = 1
+            }
+        }
+    }
+}

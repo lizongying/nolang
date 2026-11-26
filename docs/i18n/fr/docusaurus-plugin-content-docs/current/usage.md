@@ -308,7 +308,7 @@ no install nogit@lizongying/notools                       # 省略 host，默認
 no install -u nogit@github.com/lizongying/notools         # 強制重新下載
 ```
 
-L'installation distante récupère un **binaire précompilé**, pas le code source : le nom de l'actif est `<tool>-<os>-<arch>` (avec `.exe` sous Windows), où `<os>-<arch>` provient de la plateforme sur laquelle `no` s'exécute lui-même (p. ex. `darwin-arm64`, `linux-amd64`). Aucune chaîne d'outils LLVM locale n'est nécessaire, et l'outil installé n'a pas besoin d'être écrit en Nolang. Si la version est omise, `releases/latest` est consulté ; définir `$GITHUB_TOKEN` (ou `$GH_TOKEN`) évite la limitation de débit de l'API GitHub.
+L'installation distante récupère un **binaire précompilé**, pas le code source : le nom de l'actif est `<tool>-<os>-<arch>-<version>` (avec `.exe` sous Windows), où `<os>-<arch>` provient de la plateforme sur laquelle `no` s'exécute lui-même (p. ex. `darwin-arm64`, `linux-amd64`). Aucune chaîne d'outils LLVM locale n'est nécessaire, et l'outil installé n'a pas besoin d'être écrit en Nolang. Si la version est omise, `releases/latest` est consulté ; définir `$GITHUB_TOKEN` (ou `$GH_TOKEN`) évite la limitation de débit de l'API GitHub.
 
 Procédure d'installation :
 

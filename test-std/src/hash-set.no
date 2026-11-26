@@ -1,0 +1,116 @@
+; std-hash-set.no — collection/hash-set 模組測試
+;
+; 執行：no test test-std/src/hash-set.no
+; 覆蓋：init / add / contains / remove / size / is-empty / hash / len / clear / for-each
+; 註：`hash-set.len()` 早期懷疑有跨模組解析問題，實測正常（t-len-clear 直接斷言）。
+
+# test/runner
+
+; 初始化：size 為 0 且 is-empty 為 true
+t-init = () {
+    s = hash-set{}
+    s.init()
+    runner.eq(s.size, 0, 'init size == 0')
+    yes = s.is-empty()
+    runner.is-true(yes, 'init is-empty == true')
+}
+
+; add / contains：前兩次加入為新元素（回 true），重複加入回 false；size 只計唯一鍵
+t-add-contains = () {
+    s = hash-set{}
+    s.init()
+    is-new1 = s.add(42)
+    runner.is-true(is-new1, 'add 42 is-new')
+    is-new2 = s.add(7)
+    runner.is-true(is-new2, 'add 7 is-new')
+    is-new3 = s.add(42)
+    runner.is-false(is-new3, 'add 42 again not new')
+
+    runner.eq(s.size, 2, 'after 2 unique, size == 2')
+
+    yes1 = s.contains(42)
+    runner.is-true(yes1, 'contains 42')
+    yes2 = s.contains(7)
+    runner.is-true(yes2, 'contains 7')
+    no = s.contains(99)
+    runner.is-false(no, 'not contains 99')
+}
+
+; remove：刪除存在元素回 true 且 size 減一，再查為 false；刪除不存在元素回 false
+t-remove = () {
+    s = hash-set{}
+    s.init()
+    s.add(10)
+    s.add(20)
+    s.add(30)
+
+    removed = s.remove(20)
+    runner.is-true(removed, 'remove 20 ok')
+    runner.eq(s.size, 2, 'after remove, size == 2')
+
+    no = s.contains(20)
+    runner.is-false(no, 'removed 20 not found')
+    yes = s.contains(10)
+    runner.is-true(yes, 'still contains 10')
+
+    not-removed = s.remove(999)
+    runner.is-false(not-removed, 'remove non-existent returns false')
+}
+
+; hash：槽位 = key & (cap-1)，cap 固定 64，因此 64 的倍數全落到 0
+t-hash = () {
+    s = hash-set{}
+    s.init()
+    runner.eq(s.hash(0), 0, 'hash 0 -> slot 0')
+    runner.eq(s.hash(42), 42, 'hash 42 -> slot 42')
+    runner.eq(s.hash(63), 63, 'hash 63 -> slot 63')
+    runner.eq(s.hash(64), 0, 'hash 64 wraps to slot 0')
+    runner.eq(s.hash(65), 1, 'hash 65 -> slot 1')
+}
+
+; len / clear：len 鏡射 size；clear 把 occ 全部歸零且 size 復位
+t-len-clear = () {
+    s = hash-set{}
+    s.init()
+    s.add(1)
+    s.add(2)
+    runner.eq(s.len(), 2, 'len == 2')
+    s.clear()
+    runner.eq(s.len(), 0, 'len == 0 after clear')
+    runner.is-true(s.is-empty(), 'is-empty after clear')
+    runner.is-false(s.contains(1), 'cleared element gone')
+    is-new = s.add(1)
+    runner.is-true(is-new, 're-add after clear is new')
+}
+
+; for-each：本語言無回呼，方法只回傳「槽位下標最大的已佔用元素」
+t-for-each = () {
+    s = hash-set{}
+    s.init()
+    s.add(7)
+    s.add(42)
+    runner.eq(s.for-each(), 42, 'last occupied slot (42) wins')
+
+    s2 = hash-set{}
+    s2.init()
+    s2.add(3)
+    runner.eq(s2.for-each(), 3, 'single element returned as-is')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('hash-set.init', t-init)
+p2, f2 = runner.test('hash-set.add/contains', t-add-contains)
+p3, f3 = runner.test('hash-set.remove', t-remove)
+p4, f4 = runner.test('hash-set.hash', t-hash)
+p5, f5 = runner.test('hash-set.len/clear', t-len-clear)
+p6, f6 = runner.test('hash-set.for-each', t-for-each)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

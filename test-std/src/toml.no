@@ -1,0 +1,537 @@
+; test/std/toml.no — toml 模組測試（TOML 解析與產生）
+;
+; 執行：no test test-std/src/toml.no
+; 覆蓋：parse（scalar/table/註解/負數/布林/錯誤）、get（原始字面）、get-str /
+;       get-i64 / get-f64 / get-bool、has、unquote、strip-comment、
+;       parse-i64（十六進位/底線分隔）、new+put+stringify 回環；
+;       entry/table/array 緩衝區助手、find-eq、normalize-key、value-complete、
+;       valid-value、register-table / next-array-table / resolve-section、
+;       parse-f64 / parse-bool
+; 註：文件容量上限極小（4 entries / 2 tables），測試用例據此控制規模。
+
+# test/runner
+
+; 斷言兩個字串等長且等內容（TOML 往返產生多行字串，長度不符時容易誤判成內容差異）
+; got: 實際字串
+; want: 期望字串（長度與內容都以它為準）
+; msg: 斷言描述，長度不符時自動加 ' [len]' 後綴
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, msg)
+}
+
+; 純量解析：字串 / 整數 / 布林 / 浮點四種型別都要能由 get-* 正確解出，
+; has 對存在鍵回 true、對缺失鍵回 false
+t-parse-scalars = () {
+    r = toml.parse('name = "nolang"
+port = 8080
+enabled = true
+ratio = 1.5')
+    r: {
+        ok -> {
+            doc = it
+            s str = ''
+            so = false
+            sn = toml.get-str(doc, 'name')
+            sn: {
+                ok -> {
+                    so = true
+                    s = it
+                }
+
+                -> so = false
+            }
+            runner.is-true(so, 'name decode ok')
+            runner.str-eq(s, 'nolang', 'get-str name')
+            p i64 = 0
+            po = false
+            pn = toml.get-i64(doc, 'port')
+            pn: {
+                ok -> {
+                    po = true
+                    p = it
+                }
+
+                -> po = false
+            }
+            runner.is-true(po, 'port decode ok')
+            runner.eq(p, 8080, 'get-i64 port')
+            b bool = false
+            bo = false
+            bn = toml.get-bool(doc, 'enabled')
+            bn: {
+                ok -> {
+                    bo = true
+                    b = it
+                }
+
+                -> bo = false
+            }
+            runner.is-true(bo, 'enabled decode ok')
+            runner.is-true(b, 'enabled true')
+            fr f64 = 0.0
+            fo = false
+            fn = toml.get-f64(doc, 'ratio')
+            fn: {
+                ok -> {
+                    fo = true
+                    fr = it
+                }
+
+                -> fo = false
+            }
+            runner.is-true(fo, 'ratio decode ok')
+            runner.f64-eq(fr, 1.5, 0.0001, 'get-f64 ratio')
+            runner.is-true(toml.has(doc, 'name'), 'has name')
+            yes bool = toml.has(doc, 'zzz')
+            runner.is-false(yes, 'has missing false')
+        }
+
+        nil -> runner.is-true(false, 'parse scalars should succeed (nil)')
+
+        err -> runner.is-true(false, 'parse scalars should succeed (err)')
+    }
+}
+
+; 負號與 false：get-i64 需保留 -42 的符號，get-bool 需把 off = false 解成 false（非預設值）
+t-parse-neg-bool = () {
+    r = toml.parse('neg = -42
+off = false')
+    r: {
+        ok -> {
+            doc = it
+            p i64 = 0
+            po = false
+            pn = toml.get-i64(doc, 'neg')
+            pn: {
+                ok -> {
+                    po = true
+                    p = it
+                }
+
+                -> po = false
+            }
+            runner.is-true(po, 'neg decode ok')
+            runner.eq(p, -42, 'get-i64 negative')
+            b bool = true
+            bo = false
+            bn = toml.get-bool(doc, 'off')
+            bn: {
+                ok -> {
+                    bo = true
+                    b = it
+                }
+
+                -> bo = false
+            }
+            runner.is-true(bo, 'off decode ok')
+            runner.is-false(b, 'get-bool false')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 表頭與註解：[server] 後面的鍵可改用點號路徑（server.host）查詢；
+; 頂部註解不產生條目，行尾註解不得污染數值（server.port 仍是 8080）
+t-parse-table = () {
+    r = toml.parse('# top comment
+[server]
+host = "localhost"
+port = 8080 # inline comment')
+    r: {
+        ok -> {
+            doc = it
+            runner.eq(doc.count, 2, 'table doc entry count')
+            runner.eq(doc.table-count, 1, 'table doc table count')
+            h str = ''
+            ho = false
+            hn = toml.get-str(doc, 'server.host')
+            hn: {
+                ok -> {
+                    ho = true
+                    h = it
+                }
+
+                -> ho = false
+            }
+            runner.is-true(ho, 'server.host ok')
+            runner.str-eq(h, 'localhost', 'get-str dotted key')
+            p i64 = 0
+            pn = toml.get-i64(doc, 'server.port')
+            pn: {
+                ok -> p = it
+
+                -> _
+            }
+            runner.eq(p, 8080, 'inline comment stripped from value')
+        }
+
+        nil -> runner.is-true(false, 'table parse should succeed')
+
+        err -> runner.is-true(false, 'table parse should succeed')
+    }
+}
+
+; get 拿原始字面而不做類型轉換：[1, 2, 3] 原樣保留，缺失鍵回 nil 而非空字串
+t-raw-literal = () {
+    r = toml.parse('arr = [1, 2, 3]')
+    r: {
+        ok -> {
+            doc = it
+            raw = toml.get(doc, 'arr')
+            raw: {
+                ok -> eq-str(it, '[1, 2, 3]', 'raw array literal preserved')
+
+                nil -> runner.is-true(false, 'raw get should hit')
+
+                err -> runner.is-true(false, 'raw get should hit')
+            }
+            miss = toml.get(doc, 'nope')
+            miss: {
+                ok -> runner.is-true(false, 'missing raw should be nil')
+
+                nil -> runner.is-true(true, 'missing raw => nil')
+
+                err -> runner.is-true(false, 'missing raw should be nil')
+            }
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 畸形輸入必須以 err 報錯，不能默默回 ok 或 nil
+t-parse-error = () {
+    bad = toml.parse('this is not toml =')
+    bad: {
+        ok -> runner.is-true(false, 'malformed must not parse ok')
+
+        nil -> runner.is-true(false, 'malformed should be err')
+
+        err -> runner.is-true(true, 'malformed => err')
+    }
+}
+
+; 單項輔助函式：unquote 去引號、strip-comment 去行尾註解、
+; parse-i64 支援十六進位（0xFF=255）、底線分隔（1_000=1000）與負數
+t-helpers = () {
+    u = ''
+    uo = false
+    un = toml.unquote('"hi"')
+    un: {
+        ok -> {
+            uo = true
+            u = it
+        }
+
+        -> uo = false
+    }
+    runner.is-true(uo, 'unquote ok')
+    runner.str-eq(u, 'hi', 'unquote basic string')
+
+    sc = toml.strip-comment('a = 1 # note')
+    eq-str(sc, 'a = 1', 'strip inline comment')
+
+    hv = 0
+    ho = false
+    hi = toml.parse-i64('0xFF')
+    hi: {
+        ok -> {
+            ho = true
+            hv = it
+        }
+
+        -> ho = false
+    }
+    runner.is-true(ho, 'hex parse ok')
+    runner.eq(hv, 255, 'hex 0xFF == 255')
+    uv = 0
+    uo2 = false
+    ui = toml.parse-i64('1_000')
+    ui: {
+        ok -> {
+            uo2 = true
+            uv = it
+        }
+
+        -> uo2 = false
+    }
+    runner.is-true(uo2, 'underscore parse ok')
+    runner.eq(uv, 1000, 'underscore 1_000 == 1000')
+    dv = 0
+    di = toml.parse-i64('-123')
+    di: {
+        ok -> dv = it
+
+        -> _
+    }
+    runner.eq(dv, -123, 'decimal -123')
+}
+
+; 建構回環：new + put 組出文件後，get-str 能解出 hello，stringify 輸出與原輸入逐字相等
+t-build-roundtrip = () {
+    doc = toml.new()
+    o1 = doc.put('title', '"hello"')
+    o2 = doc.put('n', '42')
+    runner.is-true(o1, 'put title ok')
+    runner.is-true(o2, 'put n ok')
+    runner.eq(doc.count, 2, 'built doc count 2')
+    s = ''
+    sn = toml.get-str(doc, 'title')
+    sn: {
+        ok -> s = it
+
+        -> _
+    }
+    runner.str-eq(s, 'hello', 'roundtrip get-str')
+    st = toml.stringify(doc)
+    eq-str(st, 'title = "hello"
+n = 42', 'stringify roundtrip')
+}
+
+; ---- 內部助手直測（entry / table / key / value 判定 / array-of-tables） ----
+
+; 由 make-entry 造一條目，驗 key/value 讀回、key 比較的長度與內容兩路徑
+t-entry = () {
+    e = toml.make-entry('k', 'value text')
+    eq-str(toml.entry-key(e), 'k', 'entry-key')
+    eq-str(toml.entry-value(e), 'value text', 'entry-value')
+    runner.is-true(toml.entry-key-eq(e, 'k'), 'entry-key-eq 相同鍵')
+    runner.is-false(toml.entry-key-eq(e, 'kk'), 'entry-key-eq 長度不符')
+    runner.is-false(toml.entry-key-eq(e, 'j'), 'entry-key-eq 內容不符')
+}
+
+; table-name / array-name 從固定緩衝區還原名稱；table-eq 比較緩衝區
+t-table-names = () {
+    t table
+    t.name-len = 3
+    t.name[0]: {
+        ok -> it = 97
+
+        -> _
+    }
+    t.name[1]: {
+        ok -> it = 98
+
+        -> _
+    }
+    t.name[2]: {
+        ok -> it = 99
+
+        -> _
+    }
+    eq-str(toml.table-name(t), 'abc', 'table-name')
+
+    runner.is-true(toml.table-eq(t.name, 3, 'abc'), 'table-eq 相同')
+    runner.is-false(toml.table-eq(t.name, 3, 'abd'), 'table-eq 內容不符')
+    runner.is-false(toml.table-eq(t.name, 3, 'ab'), 'table-eq 長度不符')
+
+    a array-table
+    a.name-len = 2
+    a.index = 0
+    a.name[0]: {
+        ok -> it = 120
+
+        -> _
+    }
+    a.name[1]: {
+        ok -> it = 121
+
+        -> _
+    }
+    eq-str(toml.array-name(a), 'xy', 'array-name')
+}
+
+; find-eq 只認引號外的等號
+t-find-eq = () {
+    runner.eq(toml.find-eq('a = b'), 2, 'find-eq bare')
+    runner.eq(toml.find-eq('a="x=y"'), 1, 'find-eq 引號內等號不算')
+    runner.eq(toml.find-eq('noeq'), -1, 'find-eq 找不到回 -1')
+    runner.eq(toml.find-eq(''), -1, 'find-eq 空字串回 -1')
+}
+
+; normalize-key：合法鍵原樣返回，非法字元與空鍵回 nil
+t-normalize-key = () {
+    ok1 = false
+    v1 = ''
+    k1 = toml.normalize-key('  a.b  ')
+    k1: {
+        ok -> {
+            ok1 = true
+            v1 = it
+        }
+
+        -> ok1 = false
+    }
+    runner.is-true(ok1, 'normalize-key 接受 dotted key')
+    eq-str(v1, 'a.b', 'normalize-key 去空白後為 a.b')
+
+    ok2 = false
+    k2 = toml.normalize-key('a$b')
+    ok2 = k2: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(ok2, 'normalize-key 拒絕 $ 字元')
+
+    ok3 = false
+    k3 = toml.normalize-key('')
+    ok3 = k3: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(ok3, 'normalize-key 拒絕空鍵')
+
+    ; 引號先被剝除，因此帶引號的鍵會以去引號形式回傳
+    ok4 = false
+    v4 = ''
+    k4 = toml.normalize-key('"a b"')
+    k4: {
+        ok -> {
+            ok4 = true
+            v4 = it
+        }
+
+        -> ok4 = false
+    }
+    runner.is-true(ok4, 'normalize-key 接受引號鍵')
+    eq-str(v4, 'a b', 'normalize-key 剝除引號')
+}
+
+; value-complete / valid-value：多行值閉合判定與字面值合法性
+t-value-rules = () {
+    runner.is-true(toml.value-complete('"abc"'), 'complete 已閉合字串')
+    runner.is-false(toml.value-complete('"abc'), 'complete 未閉合字串')
+    runner.is-true(toml.value-complete('[1, 2]'), 'complete 已閉合陣列')
+    runner.is-false(toml.value-complete('[1, 2'), 'complete 未閉合陣列')
+    runner.is-false(toml.value-complete(''), 'complete 空值不完整')
+
+    runner.is-true(toml.valid-value('true'), 'valid-value 布林')
+    runner.is-true(toml.valid-value('"x"'), 'valid-value 字串')
+    runner.is-true(toml.valid-value('[1, 2]'), 'valid-value 陣列')
+    runner.is-true(toml.valid-value('1.5'), 'valid-value 浮點')
+    runner.is-true(toml.valid-value('1979-05-27T07:32:00Z'), 'valid-value 日期時間')
+    runner.is-false(toml.valid-value('@'), 'valid-value 拒絕 @')
+    runner.is-false(toml.valid-value(''), 'valid-value 拒絕空值')
+    runner.is-false(toml.valid-value('[1, 2'), 'valid-value 拒絕未閉合陣列')
+}
+
+; register-table / next-array-table / resolve-section：
+; 表格去重、array-of-tables 索引自增、子表名改寫為 base[索引].後綴
+t-doc-model = () {
+    doc = toml.new()
+    runner.is-true(toml.register-table(doc, 'a.b'), 'register-table 首次成功')
+    runner.is-false(toml.register-table(doc, 'a.b'), 'register-table 重複失敗')
+    runner.eq(doc.table-count, 1, 'register-table 只登記一次')
+
+    i0 = toml.next-array-table(doc, 'p')
+    i0: {
+        ok -> runner.eq(it, 0, 'next-array-table 首次索引 0')
+
+        -> runner.is-false(true, 'next-array-table 首次意外 nil')
+    }
+    i1 = toml.next-array-table(doc, 'p')
+    i1: {
+        ok -> runner.eq(it, 1, 'next-array-table 第二次索引 1')
+
+        -> runner.is-false(true, 'next-array-table 第二次意外 nil')
+    }
+    runner.eq(doc.array-count, 1, 'array-of-tables 只登記一次')
+
+    eq-str(toml.resolve-section(doc, 'p.x'), 'p[1].x', 'resolve-section 改寫子表名')
+    eq-str(toml.resolve-section(doc, 'p'), 'p', 'resolve-section 純表名不改寫')
+    eq-str(toml.resolve-section(doc, 'other.y'), 'other.y', 'resolve-section 無關名不改寫')
+}
+
+; parse-f64 / parse-bool：型別轉換與失敗回 nil
+t-parse-num-bool = () {
+    fo = false
+    fv = 0.0
+    fp = toml.parse-f64('2.5')
+    fp: {
+        ok -> {
+            fo = true
+            fv = it
+        }
+
+        -> fo = false
+    }
+    runner.is-true(fo, 'parse-f64 解析 2.5')
+    runner.is-true(fv == 2.5, 'parse-f64 值為 2.5')
+
+    fo2 = false
+    fv2 = 0.0
+    fp2 = toml.parse-f64('1_000.5')
+    fp2: {
+        ok -> {
+            fo2 = true
+            fv2 = it
+        }
+
+        -> fo2 = false
+    }
+    runner.is-true(fo2, 'parse-f64 接受底線分隔')
+    runner.is-true(fv2 == 1000.5, 'parse-f64 底線被剝除')
+
+    fo3 = false
+    fp3 = toml.parse-f64('abc')
+    fo3 = fp3: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(fo3, 'parse-f64 拒絕 abc')
+
+    bo = false
+    bv = false
+    bp = toml.parse-bool('true')
+    bp: {
+        ok -> {
+            bo = true
+            bv = it
+        }
+
+        -> bo = false
+    }
+    runner.is-true(bo, 'parse-bool 解析 true')
+    runner.is-true(bv, 'parse-bool 值為真')
+
+    bo2 = false
+    bp2 = toml.parse-bool('yes')
+    bo2 = bp2: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(bo2, 'parse-bool 拒絕 yes')
+}
+
+p1 = runner.test('toml.parse-scalars', t-parse-scalars)
+p2 = runner.test('toml.parse-neg-bool', t-parse-neg-bool)
+p3 = runner.test('toml.parse-table', t-parse-table)
+p4 = runner.test('toml.raw-literal', t-raw-literal)
+p5 = runner.test('toml.parse-error', t-parse-error)
+p6 = runner.test('toml.helpers', t-helpers)
+p7 = runner.test('toml.build-roundtrip', t-build-roundtrip)
+p8 = runner.test('toml.entry', t-entry)
+p9 = runner.test('toml.table-names', t-table-names)
+p10 = runner.test('toml.find-eq', t-find-eq)
+p11 = runner.test('toml.normalize-key', t-normalize-key)
+p12 = runner.test('toml.value-rules', t-value-rules)
+p13 = runner.test('toml.doc-model', t-doc-model)
+p14 = runner.test('toml.parse-num-bool', t-parse-num-bool)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

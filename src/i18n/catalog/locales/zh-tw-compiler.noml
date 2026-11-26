@@ -138,7 +138,7 @@ Nolang 程式語言（版本 %s）
   no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
                     安裝二進位檔（存放於 ~/no/bin/，並在 /usr/local/bin/ 建立符號連結）
                     下載對應平台的預先建置 GitHub release 資源
-                    亦即 `no` 所執行的平台（<tool>-<os>-<arch>，例如 nogit-darwin-arm64）。
+                    亦即 `no` 所執行的平台（<tool>-<os>-<arch>-<version>，例如 nogit-darwin-arm64-v0.1.33）。
                     不帶參數時：建置並安裝目前的套件。
                     -u    強制重新下載並安裝
     範例:

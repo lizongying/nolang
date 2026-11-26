@@ -1,0 +1,204 @@
+; test/std/async.no — async 模組測試（cancel / cancelled 原語）
+;
+; 執行：no test test-std/src/async.no
+; 覆蓋：cancelled / 協程組內過程 spawn 的結果回傳
+;
+; 註：兩個符號都是 `#{buildin}`，文件規定的呼叫形態是**帶模組前綴**的
+;     `async.cancel(h)` / `async.cancelled()`；不帶前綴的 `cancelled()` 會被
+;     checker 直接拒絕：`'cancelled' is not defined; call it as 'async.cancelled'
+;     (cross-module calls must be module-qualified) [4bek3xc6]`。
+;
+; ⚠️ 舊的手寫句柄 cancel 測試已移除：新語法只有 `co f(...)`（過程 spawn），
+;     不暴露可傳給 async.cancel 的 task 句柄。此檔保留 cancelled 原語與
+;     協程組內**過程** spawn 的結果回傳覆蓋。
+;
+; ⚠️ `co` 只啟動過程：被呼叫者不得有宣告回傳值（方法的隱式 self 不算），
+;     所以本檔所有結果都經通道回傳——一個生產者一條通道，它在寫完值後 close，
+;     呼叫方用 take1 讀回。
+
+# test/runner
+
+; worker：未取消時回 n*2；被取消則由 async_wrapper 跳過執行體、返回零值
+ac-worker = (n i64) (r i64) {
+
+    #{overflow=wrap}
+    {
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+
+            ->
+        }
+    }
+}
+
+; 過程版 worker：結果寫進通道再關閉（`co` 的目標只能是過程）
+; out: 結果通道（呼叫方建，容量 1）
+; n: 來源數值
+ac-worker-into = (out chan[i64], n i64) {
+    out <- ac-worker(n)
+    out.close()
+}
+
+; 從單值通道取一筆（生產者已 close，一輪 ok 之後落到 nil 收尾）
+; ch: 已關閉的結果通道
+; r: 取到的值；一筆都沒有時回 0
+take1 = (ch chan[i64]) (r i64) {
+    r = 0
+    <- ch: {
+        ok -> r = it
+    }
+}
+
+; cancelled：事件循環之外（普通函式/測試函式）呼叫恆為 false
+t-cancelled = () {
+    c = async.cancelled()
+    runner.is-false(c, 'cancelled false outside a task')
+    c2 = async.cancelled()
+    runner.is-false(c2, 'cancelled is stable across calls')
+}
+
+; 對照組：協程組內的 co 任務正常返回 n*2（經通道回傳）
+t-no-cancel = () {
+    ch chan[i64] = with-cap(1)
+    awy {
+        co ac-worker-into(ch, 21)
+    }
+    r = take1(ch)
+    runner.eq(r, 42, 'group coroutine returns n*2')
+}
+
+; 缺陷 #108：組內嵌套塊裡的 co
+...
+
+;
+; 這些 `co` 不是組的直接陳述（組的排程只認直接陳述，其餘一律是屏障），
+; 因此沒有任何 KAwait 會消費它的句柄。修前它們被靜默丟棄：任務從不執行。
+; 修後降級為「spawn 後立即 join」，每輪串行、結果正確、不留孤兒任務。
+; 新語義下 spawn 不回傳值，所以每輪自建一條通道、由過程寫入並 close，
+; 迴圈體再用 take1 讀回——這同時把「任務真的跑了」寫進斷言（讀不到就是 0）。
+;
+; 註：這裡的加法都走 add()——整數算術在 Nolang 一律回傳 ?i64（溢出是錯誤），
+;     直接 `x = x + 1` 會報 15w45dqk，必須顯式解包。測試值都很小，失敗分支取 0。
+add = (a i64, b i64) (r i64) {
+    s = a + b
+    r = s: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+nested-add = (n i64, k i64) (r i64) {
+    r = add(n, k)
+}
+
+; 過程版 nested-add：把 add(n, k) 寫進通道再關閉
+; out: 結果通道（呼叫方建，容量 1）
+; n: 左加數
+; k: 右加數
+nested-add-into = (out chan[i64], n i64, k i64) {
+    out <- nested-add(n, k)
+    out.close()
+}
+
+; (a)+(b) 迴圈體內的 co：副作用真的發生，且 r 是真值
+t-nested-in-loop = () {
+    acc = 0
+    k = 10
+    awy {
+        i <- [0..3): {
+            ch chan[i64] = with-cap(1)
+            co nested-add-into(ch, i, k)
+            r = take1(ch)
+            acc = add(acc, r)
+        }
+    }
+    runner.eq(acc, 33, 'loop-body co runs once per iteration with a real result')
+}
+
+; (b) 條件迴圈體內的 co
+t-nested-in-cond-loop = () {
+    acc = 0
+    n = 0
+    one = 1
+    k = 10
+    awy {
+        (n < 2) {
+            ch chan[i64] = with-cap(1)
+            co nested-add-into(ch, n, k)
+            r = take1(ch)
+            acc = add(acc, r)
+            n = add(n, one)
+        }
+    }
+    runner.eq(acc, 21, 'cond-loop-body co runs per iteration')
+}
+
+; (c) match 臂內的 co
+t-nested-in-match-arm = () {
+    v = 2
+    k = 10
+    out = 0
+    ch chan[i64] = with-cap(1)
+    awy {
+        v: {
+            2 -> {
+                co nested-add-into(ch, v, k)
+                out = take1(ch)
+            }
+
+            -> out = 0
+        }
+    }
+    runner.eq(out, 12, 'co in a match arm inside the group runs')
+}
+
+; (d) 用戶原始 pipeline 形狀：通道 + 迴圈內 co
+t-nested-pipeline = () {
+    c chan[i64] = with-cap(8)
+    acc = 0
+    k = 10
+    awy {
+        i <- [0..3): {
+            c <- i
+        }
+
+        ; 接收端的空讀是「等值」而不是「錯誤」：不關閉通道，排空三輪後
+        ; 第四輪就會掛起等一個永遠不來的值（非協程路徑則判定死鎖）。
+        c.close()
+        i <- c: {
+            i: {
+                ok -> {
+                    ch chan[i64] = with-cap(1)
+                    co nested-add-into(ch, it, k)
+                    r = take1(ch)
+                    acc = add(acc, r)
+                }
+
+                nil -> k = k
+
+                err -> k = k
+            }
+        }
+    }
+    runner.eq(acc, 33, 'channel drain loop with a co in its body')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('async.cancelled', t-cancelled)
+p2, f2 = runner.test('async coroutine group', t-no-cancel)
+p3, f3 = runner.test('async nested co in loop', t-nested-in-loop)
+p4, f4 = runner.test('async nested co in cond loop', t-nested-in-cond-loop)
+p5, f5 = runner.test('async nested co in match arm', t-nested-in-match-arm)
+p6, f6 = runner.test('async nested co in channel pipeline', t-nested-pipeline)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

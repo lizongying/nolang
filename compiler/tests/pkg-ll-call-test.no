@@ -23,9 +23,9 @@
 ;   全域 sg key 構造剝 `mod-` 前綴得 short 再重組 `mod.fn`，故 testmod-bar 的 key = testmod.bar，
 ;   與呼叫方點號呼叫 `testmod.bar(x)` 拼出的 cn 完全對齊（切片 5 ⑥ 命名接線）。
 
-# /test/runner.is-true
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.is-true
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/drv
 # /compiler/src/asp
 # /compiler/src/ast

@@ -321,7 +321,7 @@ no install nogit@lizongying/notools                       # 省略 host，默認
 no install -u nogit@github.com/lizongying/notools         # 強制重新下載
 ```
 
-リモートインストールで取得するのは**事前コンパイル済みバイナリ**で、ソースコードではありません：アセット名は `<tool>-<os>-<arch>`（Windows では
+リモートインストールで取得するのは**事前コンパイル済みバイナリ**で、ソースコードではありません：アセット名は `<tool>-<os>-<arch>-<version>`（Windows では
 `.exe` 付き）で、`<os>-<arch>` は `no` 自身が動作するプラットフォーム（例：`darwin-arm64`、
 `linux-amd64`）から取得されます。そのためローカルの LLVM ツールチェーンは不要で、インストールされるツールが Nolang で書かれている必要もありません。
 バージョンを省略すると `releases/latest` を参照します。`$GITHUB_TOKEN`（または `$GH_TOKEN`）を設定すると GitHub

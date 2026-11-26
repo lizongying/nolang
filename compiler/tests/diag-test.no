@@ -5,10 +5,10 @@
 ; 檔案級行形（line==0，無位置）的 authority 是 Go printLintResults
 ; （src/cmd/no/main.go）：Line > 0 才印 `:line:col:`，否則只有 `file: `。
 
-# /test/runner.eq
-# /test/runner.str-eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.str-eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/diag
 
 ; diag-test.no — compiler/src/diag.no 的單元測試

@@ -1,0 +1,290 @@
+; runner — 測試執行器
+;
+; 提供測試計數與結果彙總，簡化測試檔案結構。
+;
+; 使用全局計數器記錄斷言結果。跨模組全局變量共享已修復，
+; 因此全局計數器可正常工作。
+;
+; 用法（全局計數器模式）：
+;   # test/runner
+;
+;   runner.eq(1, 1, 'test 1')
+;   p, f = runner.test('name', t-func); p, f 為本案例通過／失敗的斷言數
+;   runner.summary()
+;   f-count = runner.failed-count()
+;   f-count > 0 -> exit(1)
+;   exit(0)
+;
+; 用法（顯式參數模式）：
+;   runner.summary(passed, failed)
+
+; 全局計數器
+...
+
+COUNT-PASSED = 0
+COUNT-FAILED = 0
+
+; i64 斷言
+...
+
+; i64 相等斷言 a == b
+; a: 實際值（i64）
+; b: 期望值（與 a 相等才通過）
+; msg: 斷言失敗時列印的說明
+eq = (a i64, b i64, msg str) {
+    {
+        a != b -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: eq -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; i64 不等斷言 a != b
+; a: 第一運算值（i64）
+; b: 第二運算值（與 a 不等才通過）
+; msg: 斷言失敗時列印的說明
+ne = (a i64, b i64, msg str) {
+    {
+        a == b -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: ne -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; 大於斷言 a > b
+; a: 比較左值（i64）
+; b: 比較右值（a 大於 b 才通過）
+; msg: 斷言失敗時列印的說明
+gt = (a i64, b i64, msg str) {
+    {
+        a <= b -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: gt -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; 小於斷言 a < b
+; a: 比較左值（i64）
+; b: 比較右值（a 小於 b 才通過）
+; msg: 斷言失敗時列印的說明
+lt = (a i64, b i64, msg str) {
+    {
+        a >= b -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: lt -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; 布林斷言
+...
+
+; 布林值為 true
+; val: 被斷言的布林值（為 true 才通過）
+; msg: 斷言失敗時列印的說明
+is-true = (val bool, msg str) {
+    {
+        ! val -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: is-true -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; 布林值為 false
+; val: 被斷言的布林值（為 false 才通過）
+; msg: 斷言失敗時列印的說明
+is-false = (val bool, msg str) {
+    {
+        val -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: is-false -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; 字串斷言
+...
+
+; 字串相等（全串比較）
+; a: 實際字串
+; b: 期望字串
+; msg: 斷言失敗時列印的說明
+;
+; 先比長度，再用 `str.eq` 比較全串：`str.eq(b, n)` 是 memcmp，不檢查長度，
+; n 大于任一字串實際長度時會讀到邊界外（SIGSEGV）。故不再由呼叫端傳 n，
+; 改成內部取 `a.len-bytes()` 並先確認兩串等長。
+; 詳見 `test/README.md §5.2 #84`。
+str-eq = (a str, b str, msg str) {
+    n = a.len-bytes()
+    {
+        n != b.len-bytes() -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: str-eq -', msg)
+        }
+
+        a.eq(b, n) == false -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: str-eq -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; 浮點斷言
+...
+
+; 浮點近似相等 |a - b| < eps
+; a: 第一個浮點值
+; b: 第二個浮點值
+; eps: 容差（絕對差值小於此即視為相等）
+; msg: 斷言失敗時列印的說明
+f64-eq = (a f64, b f64, eps f64, msg str) {
+    diff = a - b
+    diff < 0.0 -> diff = 0.0 - diff
+    {
+        diff >= eps -> {
+            COUNT-FAILED = fail(COUNT-FAILED)
+            print('FAIL: f64-eq -', msg)
+        }
+
+        -> {
+            COUNT-PASSED = pass(COUNT-PASSED)
+        }
+    }
+}
+
+; 計數與彙總
+...
+
+; 返回失敗計數
+; n: 迄今累計的全域失敗計數
+failed-count = () (n i64) {
+    n = COUNT-FAILED
+}
+
+; 輸出測試結果彙總
+; 不帶參數時使用全局計數器，帶參數時使用傳入的值
+; total: 通過與失敗計數之和（取自全域計數器）
+summary = () (total i64) {
+    print('--- Test Summary ---')
+    print('passed:', COUNT-PASSED)
+    print('failed:', COUNT-FAILED)
+
+    ; 整數加法一律回 ?i64（`#{overflow=wrap}` 只決定溢位時取什麼值，型別仍是 ?i64），
+    ; 直接寫 `total = a + b` 會讓 summary 的回傳型別退化成 ?i64，
+    ; 呼叫端 `total = runner.summary()` 便會撞上 optunuse。故先收成 option 再顯式解包。
+    #{overflow=wrap}
+    total-opt = COUNT-PASSED + COUNT-FAILED
+    total = total-opt: {
+        ok -> it
+
+        -> 0
+    }
+    print('total:', total)
+    {
+        COUNT-FAILED == 0 -> print('ALL TESTS PASSED')
+
+        -> print('SOME TESTS FAILED')
+    }
+}
+
+; 具名回呼測試
+...
+
+; 具名函式型別（無參無返回）
+callback = ()
+
+; 執行一個無參數回呼函式並計數
+; name: 測試案例名稱（執行前列印）
+; cb: 待執行的無參回呼函式（其內部斷言累加至全域計數）
+; passed: 本案例通過的斷言數（cb 執行前後全域通過計數的差值）
+; failed: 本案例失敗的斷言數（cb 執行前後全域失敗計數的差值）
+test = (name str, cb callback) (passed i64, failed i64) {
+    print('TEST:', name)
+    passed-before = COUNT-PASSED
+    failed-before = COUNT-FAILED
+    cb()
+
+    ; 整數減法回 ?i64（overflow 策略隻影響溢位時的取值，型別仍是 option），
+    ; 故用值位 match 顯式解包，讓回傳型別保持 i64。
+    #{overflow=wrap}
+    passed = COUNT-PASSED - passed-before: {
+        ok -> it
+
+        -> 0
+    }
+
+    #{overflow=wrap}
+    failed = COUNT-FAILED - failed-before: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 記錄一筆測試通過（兼容舊用法）
+; passed: 傳入的當前通過計數
+; new-passed: 其值加一後的結果（舊用法相容助手）
+pass = (passed i64) (new-passed i64) {
+
+    #{overflow=wrap}
+    {
+
+        #{overflow=wrap}
+        new-passed-opt = passed + 1
+        new-passed-opt: {
+            ok -> new-passed = it
+
+            ->
+        }
+    }
+}
+
+; 記錄一筆測試失敗（兼容舊用法）
+; failed: 傳入的當前失敗計數
+; new-failed: 其值加一後的結果（舊用法相容助手）
+fail = (failed i64) (new-failed i64) {
+
+    #{overflow=wrap}
+    {
+
+        #{overflow=wrap}
+        new-failed-opt = failed + 1
+        new-failed-opt: {
+            ok -> new-failed = it
+
+            ->
+        }
+    }
+}

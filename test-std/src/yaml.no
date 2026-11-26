@@ -1,0 +1,1681 @@
+; test/std/yaml.no — yaml 模組測試（YAML 1.2 解析與生成）
+;
+; 執行：no test test-std/src/yaml.no
+; 覆蓋：parse、kind、find-str/i64/f64/bool、get、at、len、key、text、str、
+;       is-null、to-json、stringify；型別推斷（負數/十六進位/底線/null/bool/float）；
+;       流式集合 [..]/{..}、巢狀、雙引號轉義、錨點/別名；
+;       回歸：未閉合流式集合不再無限迴圈卡死（skip-flow-ws EOF 修復）。
+
+# test/runner
+
+; 比較是否相等 str
+; got: 實際產生的輸出字串
+; want: 期望相符的完整字串
+; msg: 斷言失敗時的標識訊息（長度與內容兩條斷言共用）
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, msg)
+}
+
+; 取 ?i64 的值，非 ok 回哨兵 -999
+num-of = (o ?i64) (v i64) {
+    v = -999
+    o: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 ?str 的值，非 ok 回哨兵 <nil>
+s-of = (o ?str) (v str) {
+    v = '<nil>'
+    o: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 ?f64 的值，非 ok 回哨兵 -12345
+f-of = (o ?f64) (v f64) {
+    v = -12345.0
+    o: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 ?bool 的三態：1=ok(true) 2=ok(false) 0=非 ok
+tri-of = (o ?bool) (v i64) {
+    v = 0
+    o: {
+        ok -> {
+            v = 2
+
+            it -> v = 1
+        }
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的節點種類（找不到回 -1）
+kind-of = (d yaml, k str) (v i64) {
+    v = -1
+    o = d.find(k)
+    o: {
+        ok -> v = it.kind()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的節點風格（找不到回 -1）
+style-of = (d yaml, k str) (v i64) {
+    v = -1
+    o = d.find(k)
+    o: {
+        ok -> v = it.style()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的錨點名（找不到回 -）
+anchor-of = (d yaml, k str) (v str) {
+    v = '-'
+    o = d.find(k)
+    o: {
+        ok -> v = it.anchor()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的顯式標簽（找不到回 -）
+tag-of = (d yaml, k str) (v str) {
+    v = '-'
+    o = d.find(k)
+    o: {
+        ok -> v = it.tag()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的起始行（找不到回 -1）
+line-of = (d yaml, k str) (v i64) {
+    v = -1
+    o = d.find(k)
+    o: {
+        ok -> v = it.line-of()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 是否為指定型別：1=bool 2=int 3=float 4=nan 5=num 6=str 7=seq 8=map 9=null
+is-of = (d yaml, k str, what i64) (v bool) {
+    v = false
+    o = d.find(k)
+    o: {
+        ok -> {
+            nd = it
+            what == 1 -> v = nd.is-bool()
+            what == 2 -> v = nd.is-int()
+            what == 3 -> v = nd.is-float()
+            what == 4 -> v = nd.is-nan()
+            what == 5 -> v = nd.is-num()
+            what == 6 -> v = nd.is-str()
+            what == 7 -> v = nd.is-seq()
+            what == 8 -> v = nd.is-map()
+            what == 9 -> v = nd.is-null()
+        }
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 yaml 句柄，失敗即斷言失敗並回 nil（讓呼叫端提早 return）
+
+; 驗證 yaml.parse 標量取值：巢狀 map 根節點 kind 正確，find-str/i64/f64/bool 各按型別取到值
+t-scalars = () {
+    r = yaml.parse('name: nolang
+port: 8080
+enabled: true
+ratio: 1.5
+server:
+  host: localhost
+  port: 9090')
+    r: {
+        ok -> {
+            doc = it
+            runner.eq(doc.kind(), 6, 'root is map')
+            sopt = doc.find-str('name')
+            sopt: {
+                ok -> runner.str-eq(it, 'nolang', 'find-str name')
+
+                -> runner.is-true(false, 'find name ok')
+            }
+            popt = doc.find-i64('port')
+            popt: {
+                ok -> runner.eq(it, 8080, 'find-i64 port')
+
+                -> runner.is-true(false, 'find port ok')
+            }
+            bopt = doc.find-bool('enabled')
+            bopt: {
+                ok -> runner.is-true(it, 'find-bool enabled')
+
+                -> runner.is-true(false, 'find enabled ok')
+            }
+            fopt = doc.find-f64('ratio')
+            fopt: {
+                ok -> runner.f64-eq(it, 1.5, 0.0001, 'find-f64 ratio')
+
+                -> runner.is-true(false, 'find ratio ok')
+            }
+            hopt = doc.find-str('server.host')
+            hopt: {
+                ok -> runner.str-eq(it, 'localhost', 'find-str server.host')
+
+                -> runner.is-true(false, 'nested path ok')
+            }
+            spo = doc.find-i64('server.port')
+            spo: {
+                ok -> runner.eq(it, 9090, 'find-i64 server.port')
+
+                -> runner.is-true(false, 'find server.port ok')
+            }
+            moo = doc.find-str('missing')
+            moo: {
+                ok -> runner.is-true(false, 'missing => ok false')
+
+                -> _
+            }
+        }
+
+        nil -> runner.is-true(false, 'parse should succeed')
+
+        err -> runner.is-true(false, 'parse should succeed')
+    }
+}
+
+; 驗證區塊序列解析：get 出的 list 為 seq、長度與 at(i) 索引取值、元素 text()/str() 皆正確
+t-seq = () {
+    r = yaml.parse('list:
+  - a
+  - b
+  - c')
+    r: {
+        ok -> {
+            doc = it
+            lopt = doc.get('list')
+            lopt: {
+                ok -> {
+                    ls = it
+                    runner.eq(ls.kind(), 5, 'list is seq')
+                    runner.eq(ls.len(), 3, 'list len 3')
+                    e0opt = ls.at(0)
+                    e0opt: {
+                        ok -> eq-str(it.text(), 'a', 'list[0] text')
+
+                        -> runner.is-true(false, 'at 0 ok')
+                    }
+                    e1opt = ls.at(1)
+                    e1opt: {
+                        ok -> {
+                            e1 = it
+                            svopt = e1.str()
+                            svopt: {
+                                ok -> runner.str-eq(it, 'b', 'list[1] str')
+
+                                -> runner.is-true(false, 'e1 str ok')
+                            }
+                        }
+
+                        -> runner.is-true(false, 'at 1 ok')
+                    }
+                    oobopt = ls.at(99)
+                    oobopt: {
+                        ok -> runner.is-true(false, 'list[99] out-of-range => false')
+
+                        -> _
+                    }
+                }
+
+                -> runner.is-true(false, 'get list ok')
+            }
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 驗證標量型別推斷：負數、false、浮點、off、十六進位 0x1F、底線 1_000、null 各落入正確型別
+t-type-inference = () {
+    r = yaml.parse('a: -5
+b: false
+c: 3.14
+d: off
+h: 0x1F
+u: 1_000
+nul: null')
+    r: {
+        ok -> {
+            doc = it
+            aopt = doc.find-i64('a')
+            aopt: {
+                ok -> runner.eq(it, -5, 'negative int')
+
+                -> runner.is-true(false, 'find a ok')
+            }
+            bopt = doc.find-bool('b')
+            bopt: {
+                ok -> runner.is-false(it, 'bool false')
+
+                -> runner.is-true(false, 'find b ok')
+            }
+            cvopt = doc.find-f64('c')
+            cvopt: {
+                ok -> runner.f64-eq(it, 3.14, 0.0001, 'float')
+
+                -> runner.is-true(false, 'find c ok')
+            }
+            dsopt = doc.find-str('d')
+            dsopt: {
+                ok -> runner.str-eq(it, 'off', 'off stays string')
+
+                -> runner.is-true(false, 'find d ok')
+            }
+            hopt = doc.find-i64('h')
+            hopt: {
+                ok -> runner.eq(it, 31, 'hex 0x1F == 31')
+
+                -> runner.is-true(false, 'find h ok')
+            }
+            uopt = doc.find-i64('u')
+            uopt: {
+                ok -> runner.eq(it, 1000, 'underscore 1_000 == 1000')
+
+                -> runner.is-true(false, 'find u ok')
+            }
+            nopt = doc.get('nul')
+            nopt: {
+                ok -> runner.is-true(it.is-null(), 'null is-null')
+
+                -> runner.is-true(false, 'get nul ok')
+            }
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 驗證 to-json：文件轉為緊湊 JSON，數值/布林直出、off 保留為字串
+t-to-json = () {
+    r = yaml.parse('a: -5
+b: false
+c: 3.14
+d: off')
+    r: {
+        ok -> {
+            doc = it
+            jj = doc.to-json()
+            eq-str(jj, '{"a":-5,"b":false,"c":3.14,"d":"off"}', 'to-json compact')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 驗證流式集合：[1, 2, 3] 解析為 seq、{a: 1, b: two} 解析為 map，元素型別推斷正確
+t-flow = () {
+    r = yaml.parse('top: [1, 2, 3]
+fm: {a: 1, b: two}')
+    r: {
+        ok -> {
+            doc = it
+            topt = doc.get('top')
+            topt: {
+                ok -> {
+                    tp = it
+                    runner.eq(tp.kind(), 5, 'flow seq kind')
+                    runner.eq(tp.len(), 3, 'flow seq len')
+                    e2opt = tp.at(2)
+                    e2opt: {
+                        ok -> {
+                            e2 = it
+                            ivopt = e2.i64()
+                            ivopt: {
+                                ok -> runner.eq(it, 3, 'flow seq[2] i64')
+
+                                -> runner.is-true(false, 'e2 i64 ok')
+                            }
+                        }
+
+                        -> runner.is-true(false, 'at 2 ok')
+                    }
+                }
+
+                -> runner.is-true(false, 'get top ok')
+            }
+            fokopt = doc.get('fm')
+            fokopt: {
+                ok -> {
+                    fmk = it
+                    runner.eq(fmk.kind(), 6, 'flow map kind')
+                    runner.eq(fmk.len(), 2, 'flow map len')
+                    k0opt = fmk.key(0)
+                    k0opt: {
+                        ok -> runner.str-eq(it, 'a', 'flow map key0')
+
+                        -> runner.is-true(false, 'key 0 ok')
+                    }
+                    aopt = fmk.find-i64('a')
+                    aopt: {
+                        ok -> runner.eq(it, 1, 'flow map a==1')
+
+                        -> runner.is-true(false, 'find a ok')
+                    }
+                }
+
+                -> runner.is-true(false, 'get fm ok')
+            }
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 驗證雙引號轉義與錨點：\n 還原為真實換行（長 11），別名 *b 解析為錨點 &b 的原值
+t-quoted-anchor = () {
+    r = yaml.parse('dq: "line1\nline2"
+base: &b hello
+alias: *b')
+    r: {
+        ok -> {
+            doc = it
+            dqopt = doc.find-str('dq')
+            dqopt: {
+                ok -> runner.eq(it.len-bytes(), 11, 'dq escape processed (len 11)')
+
+                -> runner.is-true(false, 'dq ok')
+            }
+            alop = doc.find-str('alias')
+            alop: {
+                ok -> runner.str-eq(it, 'hello', 'alias == anchor value')
+
+                -> runner.is-true(false, 'alias resolved')
+            }
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 驗證 stringify：解析後重新序列化與原文完全一致（縮排與序列破折號保留）
+t-stringify = () {
+    r = yaml.parse('list:
+  - a
+  - b
+  - c
+m: 1')
+    r: {
+        ok -> {
+            doc = it
+            st = doc.stringify()
+            eq-str(st, 'list:
+  - a
+  - b
+  - c
+m: 1', 'stringify roundtrip')
+        }
+
+        nil -> runner.is-true(false, 'should parse')
+
+        err -> runner.is-true(false, 'should parse')
+    }
+}
+
+; 驗證 valid-of 與錯誤回歸：未閉合 [/{ 不再無限迴圈卡死，未閉合雙引號字串如實報 err
+t-error-and-nohang = () {
+
+    ; valid-of: 良好輸入 true
+    g = yaml.valid-of('a: 1')
+    runner.is-true(g, 'valid-of good')
+
+    ; 回歸：未閉合流式集合不得無限迴圈卡死（skip-flow-ws EOF 修復）
+    r1 = yaml.parse('x: [1, 2')
+    r1: {
+        ok -> runner.is-true(true, 'unterminated seq terminated (no hang)')
+
+        nil -> runner.is-true(true, 'unterminated seq terminated (no hang)')
+
+        err -> runner.is-true(true, 'unterminated seq terminated (no hang)')
+    }
+    r2 = yaml.parse('y: {a: 1')
+    r2: {
+        ok -> runner.is-true(true, 'unterminated map terminated (no hang)')
+
+        nil -> runner.is-true(true, 'unterminated map terminated (no hang)')
+
+        err -> runner.is-true(true, 'unterminated map terminated (no hang)')
+    }
+
+    ; 未閉合雙引號字串應報 err
+    r3 = yaml.parse('z: "abc')
+    r3: {
+        ok -> runner.is-true(false, 'unterminated dq should be err')
+
+        nil -> runner.is-true(true, 'unterminated dq not ok')
+
+        err -> runner.is-true(true, 'unterminated dq => err')
+    }
+}
+
+; 多文檔：parse-all / doc-count / doc(i) / node-count / to-json-all / source-of / valid / error
+t-multidoc = () {
+    src = 'a: 1
+---
+b: 2'
+    r = yaml.parse-all(src)
+    r: {
+        ok -> {
+            d = it
+            runner.eq(d.doc-count(), 2, 'doc-count')
+            runner.is-true(d.valid(), 'valid')
+            eq-str(d.error(), '', 'error empty')
+            runner.eq(d.source-of().len-bytes(), src.len-bytes(), 'source-of len')
+            runner.is-true(d.node-count() >= 6, 'node-count at least 6')
+            eq-str(d.to-json-all(), '[{"a":1},{"b":2}]', 'to-json-all')
+            d0 = d.doc(0)
+            d0: {
+                ok -> {
+                    runner.eq(it.kind(), 6, 'doc0 map')
+                    runner.eq(num-of(it.find-i64('a')), 1, 'doc0 a')
+                }
+
+                nil -> runner.is-true(false, 'doc0 ok')
+
+                err -> runner.is-true(false, 'doc0 ok')
+            }
+            d1 = d.doc(1)
+            d1: {
+                ok -> runner.eq(num-of(it.find-i64('b')), 2, 'doc1 b')
+
+                nil -> runner.is-true(false, 'doc1 ok')
+
+                err -> runner.is-true(false, 'doc1 ok')
+            }
+            d9 = d.doc(9)
+            d9: {
+                ok -> runner.is-true(false, 'doc out of range')
+
+                nil -> runner.is-true(true, 'doc out of range nil')
+
+                err -> runner.is-true(false, 'doc out of range nil')
+            }
+        }
+
+        nil -> runner.is-true(false, 'parse-all ok')
+
+        err -> runner.is-true(false, 'parse-all ok')
+    }
+}
+
+; 型別判定與風格/標簽/錨點/行號：is-*、kind、style、tag、anchor、line-of、len
+t-flags = () {
+    r = yaml.parse('flag: true
+num: 42
+fl: 2.5
+nanv: .nan
+s: hello
+sq: [1, 2]
+mp: {k: v}
+anch: &an v1')
+    r: {
+        ok -> {
+            d = it
+            runner.eq(d.kind(), 6, 'root map')
+            runner.eq(d.style(), 6, 'root block style')
+            runner.eq(kind-of(d, 'flag'), 1, 'flag bool')
+            runner.eq(kind-of(d, 'num'), 2, 'num int')
+            runner.eq(kind-of(d, 'fl'), 3, 'fl float')
+            runner.eq(kind-of(d, 'nanv'), 3, 'nanv float')
+            runner.eq(kind-of(d, 's'), 4, 's str')
+            runner.eq(kind-of(d, 'sq'), 5, 'sq seq')
+            runner.eq(kind-of(d, 'mp'), 6, 'mp map')
+            runner.is-true(is-of(d, 'flag', 1), 'is-bool flag')
+            runner.is-false(is-of(d, 'flag', 5), 'flag not num')
+            runner.is-true(is-of(d, 'num', 2), 'is-int num')
+            runner.is-true(is-of(d, 'num', 5), 'num is-num')
+            runner.is-true(is-of(d, 'fl', 3), 'is-float fl')
+            runner.is-true(is-of(d, 'fl', 5), 'fl is-num')
+            runner.is-true(is-of(d, 'nanv', 4), 'is-nan nanv')
+            runner.is-true(is-of(d, 's', 6), 'is-str s')
+            runner.is-true(is-of(d, 'sq', 7), 'is-seq sq')
+            runner.is-true(is-of(d, 'mp', 8), 'is-map mp')
+            runner.is-false(is-of(d, 'num', 6), 'num not str')
+            runner.eq(style-of(d, 's'), 0, 's plain style')
+            runner.eq(style-of(d, 'sq'), 7, 'sq flow style')
+            runner.eq(style-of(d, 'mp'), 7, 'mp flow style')
+            eq-str(anchor-of(d, 'anch'), 'an', 'anchor name')
+            eq-str(anchor-of(d, 's'), '', 'no anchor')
+            eq-str(tag-of(d, 's'), '', 'no tag')
+            runner.eq(line-of(d, 's'), 6, 'block scalar line is scan end')
+        }
+
+        nil -> runner.is-true(false, 'flags parse ok')
+
+        err -> runner.is-true(false, 'flags parse ok')
+    }
+
+    ; 流式文檔不消耗行尾換行，起始行與實際行一致
+    r2 = yaml.parse('{a: 1}')
+    r2: {
+        ok -> runner.eq(it.line-of(), 1, 'flow doc line 1')
+
+        nil -> runner.is-true(false, 'flow parse ok')
+
+        err -> runner.is-true(false, 'flow parse ok')
+    }
+}
+
+; 存取器：get-* / key / key-node / value / at / scalar-text / str / i64 / f64 / bool / len / text
+t-accessors = () {
+    r = yaml.parse('a: 1
+b: hello
+c: true
+d: 2.5
+e: [1]
+n: null')
+    r: {
+        ok -> {
+            d = it
+            eq-str(s-of(d.get-str('b')), 'hello', 'get-str b')
+            eq-str(s-of(d.get-str('a')), '1', 'get-str of int returns text')
+            eq-str(s-of(d.get-str('missing')), '<nil>', 'get-str missing')
+            runner.eq(num-of(d.get-i64('a')), 1, 'get-i64 a')
+            runner.eq(num-of(d.get-i64('b')), -999, 'get-i64 of str nil')
+            runner.eq(num-of(d.get-i64('d')), 2, 'get-i64 truncates float')
+            runner.f64-eq(f-of(d.get-f64('d')), 2.5, 0.0001, 'get-f64 d')
+            runner.f64-eq(f-of(d.get-f64('a')), 1.0, 0.0001, 'get-f64 of int')
+            runner.eq(tri-of(d.get-bool('c')), 1, 'get-bool c true')
+            runner.eq(tri-of(d.get-bool('a')), 0, 'get-bool of int nil')
+            eq-str(s-of(d.key(0)), 'a', 'key 0')
+            eq-str(s-of(d.key(99)), '<nil>', 'key out of range')
+            runner.eq(num-of(d.value(0).i64()), 1, 'value 0 i64')
+            runner.eq(num-of(d.at(0).i64()), 1, 'at 0 i64')
+            d.at(-1): {
+                ok -> runner.is-true(false, 'at -1 nil')
+
+                nil -> runner.is-true(true, 'at -1 nil')
+
+                err -> runner.is-true(false, 'at -1 nil')
+            }
+            kn = d.key-node(0)
+            kn: {
+                ok -> {
+                    runner.eq(it.kind(), 4, 'key-node 0 is str')
+                    eq-str(s-of(it.scalar-text()), 'a', 'key-node scalar-text')
+                }
+
+                nil -> runner.is-true(false, 'key-node 0 ok')
+
+                err -> runner.is-true(false, 'key-node 0 ok')
+            }
+            a-node = d.find('a')
+            a-node: {
+                ok -> {
+                    eq-str(s-of(it.scalar-text()), '1', 'scalar-text of int')
+                    eq-str(s-of(it.str()), '1', 'str of int')
+                }
+
+                nil -> runner.is-true(false, 'find a ok')
+
+                err -> runner.is-true(false, 'find a ok')
+            }
+            e-node = d.find('e')
+            e-node: {
+                ok -> {
+                    eq-str(s-of(it.scalar-text()), '<nil>', 'scalar-text of seq nil')
+                    eq-str(s-of(it.str()), '<nil>', 'str of seq nil')
+                    runner.eq(it.len(), 1, 'seq len 1')
+                }
+
+                nil -> runner.is-true(false, 'find e ok')
+
+                err -> runner.is-true(false, 'find e ok')
+            }
+            n-node = d.get('n')
+            n-node: {
+                ok -> {
+                    runner.is-true(it.is-null(), 'n is-null')
+                    eq-str(s-of(it.str()), '<nil>', 'str of null nil')
+                    runner.eq(num-of(it.i64()), -999, 'i64 of null nil')
+                    runner.f64-eq(f-of(it.f64()), -12345.0, 0.0001, 'f64 of null nil')
+                    runner.eq(tri-of(it.bool()), 0, 'bool of null nil')
+                    eq-str(it.text(), 'null', 'null text')
+                }
+
+                nil -> runner.is-true(false, 'get n ok')
+
+                err -> runner.is-true(false, 'get n ok')
+            }
+        }
+
+        nil -> runner.is-true(false, 'accessors parse ok')
+
+        err -> runner.is-true(false, 'accessors parse ok')
+    }
+}
+
+; 顯式標簽：!!str / !!int / !!bool / !!float / !!null 必須改寫節點類型
+; 回歸：節點先按 core schema 推斷、標簽後補，舊實作只存標簽原文而不改 kind，
+;       導致 `!!str 123` 仍被當成 int、`!!int "42"` 仍被當成 str。
+t-tags = () {
+    r = yaml.parse('a: !!str 123
+b: !!int "42"
+c: !!bool "true"
+d: !!float "1.5"
+e: !!null "x"
+f: !!str true')
+    r: {
+        ok -> {
+            d = it
+            runner.is-true(is-of(d, 'a', 6), 'tag str on int')
+            runner.eq(num-of(d.get-i64('a')), -999, 'tag str not int')
+            eq-str(s-of(d.get-str('a')), '123', 'tag str text kept')
+            runner.is-true(is-of(d, 'b', 2), 'tag int on quoted')
+            runner.eq(num-of(d.get-i64('b')), 42, 'tag int value')
+            runner.is-true(is-of(d, 'c', 1), 'tag bool on quoted')
+            runner.eq(tri-of(d.get-bool('c')), 1, 'tag bool value')
+            runner.is-true(is-of(d, 'd', 3), 'tag float on quoted')
+            runner.f64-eq(f-of(d.get-f64('d')), 1.5, 0.0001, 'tag float value')
+            runner.is-true(is-of(d, 'e', 9), 'tag null on text')
+            runner.is-true(is-of(d, 'f', 6), 'tag str on bool text')
+            eq-str(tag-of(d, 'a'), '!!str', 'tag original text kept')
+            eq-str(d.to-json(), '{"a":"123","b":42,"c":true,"d":1.5,"e":null,"f":"true"}', 'tagged to-json')
+        }
+
+        nil -> runner.is-true(false, 'tags parse ok')
+
+        err -> runner.is-true(false, 'tags parse ok')
+    }
+}
+
+; 錯誤與 BOM：valid-of / error-of / parse 失敗回 nil / strip-bom
+t-errors = () {
+    runner.is-true(yaml.valid-of('a: 1'), 'valid-of good')
+    runner.is-false(yaml.valid-of('a: "x'), 'valid-of bad')
+    eq-str(yaml.error-of('a: 1'), '', 'error-of good empty')
+    emsg = yaml.error-of('a: "x')
+    runner.is-true(emsg.len-bytes() > 0, 'error-of bad non-empty')
+    runner.is-true(emsg.contains('unterminated'), 'error-of bad mentions unterminated')
+    bad = yaml.parse('a: "x')
+    bad: {
+        ok -> runner.is-true(false, 'bad doc must not parse')
+
+        nil -> runner.is-true(true, 'bad doc rejected')
+
+        err -> runner.is-true(true, 'bad doc rejected')
+    }
+
+    ; BOM 前綴必須剝掉（3 位元組 EF BB BF）
+    bom char = 65279
+    bs = bom.to-str() - 'a: 1'
+    r = yaml.parse('x: 1')
+    r: {
+        ok -> {
+            d = it
+            runner.eq(d.strip-bom(bs).len-bytes(), 4, 'strip-bom removes BOM')
+            runner.eq(d.strip-bom('a: 1').len-bytes(), 4, 'strip-bom keeps plain')
+        }
+
+        nil -> runner.is-true(false, 'bom parse ok')
+
+        err -> runner.is-true(false, 'bom parse ok')
+    }
+}
+
+; 內部輔助函式直測：索引/十六進制/數字掃描/型別推斷/轉義/引號
+t-helper-prims = () {
+    eq-str(yaml.str-at([
+        'a',
+        'bb',
+    ], 1), 'bb', 'str-at 1')
+    eq-str(yaml.str-at([
+        'a',
+    ], 5), '', 'str-at oob')
+    runner.eq(yaml.hex-digit(48), 0, 'hex-digit 0')
+    runner.eq(yaml.hex-digit(70), 15, 'hex-digit F')
+    runner.eq(yaml.hex-digit(97), 10, 'hex-digit a')
+    runner.eq(yaml.hex-digit(122), -1, 'hex-digit not hex')
+    eq-str(yaml.hex-char(0), '0', 'hex-char 0')
+    eq-str(yaml.hex-char(10), 'a', 'hex-char 10')
+    eq-str(yaml.hex-char(15), 'f', 'hex-char 15')
+    runner.eq(yaml.spaces(3).len-bytes(), 3, 'spaces 3')
+    eq-str(yaml.spaces(3), '   ', 'spaces content')
+    runner.eq(yaml.to-i64('123'), 123, 'to-i64 123')
+    runner.eq(yaml.to-i64('x'), -1, 'to-i64 bad')
+    runner.eq(yaml.to-i64(''), -1, 'to-i64 empty')
+    runner.f64-eq(f-of(yaml.to-f64('1.5')), 1.5, 0.0001, 'to-f64 ok')
+
+    ; to-f64 回的是 ?f64 ⇒ 用 f-of（?f64 哨兵 -12345）斷言 nil，
+    ; 不能拿 s-of（?str）去接：兩者的 option 佈局不同（見 test/README §5.2n）
+    runner.f64-eq(f-of(yaml.to-f64('abc')), -12345.0, 0.0001, 'to-f64 bad nil')
+    ue = yaml.unescape-double('a\\nb')
+    ue: {
+        ok -> runner.eq(it.len-bytes(), 3, 'unescape doubles nl')
+
+        nil -> runner.is-true(false, 'unescape ok')
+
+        err -> runner.is-true(false, 'unescape ok')
+    }
+    eq-str(yaml.json-escape('ab'), '"ab"', 'json-escape plain')
+    runner.eq(yaml.json-escape('a"b').len-bytes(), 6, 'json-escape quote len')
+    runner.eq(yaml.json-escape('a\nb').len-bytes(), 6, 'json-escape nl len')
+    eq-str(yaml.quote('ab'), '"ab"', 'quote plain')
+    runner.eq(yaml.quote('a\nb').len-bytes(), 6, 'quote nl len')
+    runner.is-true(yaml.plain-safe('abc'), 'plain-safe word')
+    runner.is-false(yaml.plain-safe('42'), 'plain-safe number')
+    runner.is-false(yaml.plain-safe('-x'), 'plain-safe dash')
+    runner.is-false(yaml.plain-safe(' a'), 'plain-safe leading space')
+    runner.is-false(yaml.plain-safe(''), 'plain-safe empty')
+    runner.is-true(yaml.f-is-nan(yaml.nan()), 'f-is-nan nan')
+    runner.is-false(yaml.f-is-nan(1.0), 'f-is-nan 1.0')
+    runner.is-true(yaml.f-is-inf(yaml.inf()), 'f-is-inf inf')
+    runner.is-false(yaml.f-is-inf(1.0), 'f-is-inf 1.0')
+    runner.is-false(yaml.f-is-inf(0.0), 'f-is-inf 0')
+    runner.is-true(yaml.f-is-inf(yaml.inf() * 0.5), 'inf halved stays inf')
+    sk, si, sf = yaml.scan-number('-3')
+    runner.eq(sk, 2, 'scan -3 kind int')
+    runner.eq(si, -3, 'scan -3 value')
+    sk2, si2, sf2 = yaml.scan-number('1.5')
+    runner.eq(sk2, 3, 'scan 1.5 kind float')
+    runner.f64-eq(sf2, 1.5, 0.0001, 'scan 1.5 value')
+    sk3, si3, sf3 = yaml.scan-number('abc')
+    runner.eq(sk3, 4, 'scan abc kind str')
+    rk, ri, rf, rb = yaml.resolve-plain('null')
+    runner.eq(rk, 0, 'resolve null kind')
+    rk2, ri2, rf2, rb2 = yaml.resolve-plain('true')
+    runner.eq(rk2, 1, 'resolve true kind')
+    runner.is-true(rb2, 'resolve true bval')
+    rk3, ri3, rf3, rb3 = yaml.resolve-plain('42')
+    runner.eq(rk3, 2, 'resolve 42 kind')
+    runner.eq(ri3, 42, 'resolve 42 value')
+    rk4, ri4, rf4, rb4 = yaml.resolve-plain('xyz')
+    runner.eq(rk4, 4, 'resolve xyz kind str')
+    eq-str(yaml.tag-name('!!str'), 'str', 'tag-name shorthand')
+    eq-str(yaml.tag-name('tag:yaml.org,2002:int'), 'int', 'tag-name uri')
+    eq-str(yaml.tag-name('!<tag:yaml.org,2002:bool>'), 'bool', 'tag-name verbatim')
+    runner.eq(yaml.apply-tag('!!str', 2), 4, 'apply-tag str')
+    runner.eq(yaml.apply-tag('!!int', 4), 2, 'apply-tag int')
+    runner.eq(yaml.apply-tag('!!bogus', 4), 4, 'apply-tag unknown keeps kind')
+    pk, pv = yaml.parse-radix('ff', 0, 16)
+    runner.eq(pk, 2, 'radix ff kind')
+    runner.eq(pv, 255, 'radix ff value')
+    pk2, pv2 = yaml.parse-radix('777', 0, 8)
+    runner.eq(pv2, 511, 'radix 777 octal')
+    pk3, pv3 = yaml.parse-radix('0x1f', 2, 16)
+    runner.eq(pv3, 31, 'radix with prefix offset')
+    pk4, pv4 = yaml.parse-radix('zz', 0, 16)
+    runner.eq(pk4, 4, 'radix bad stays str')
+}
+
+; 生成側：to-yaml / stringify / json-of / emit 走同一節點池，輸出必須一致
+t-emit = () {
+    src = 'a: 1
+list:
+  - x
+  - y'
+    r = yaml.parse(src)
+    r: {
+        ok -> {
+            d = it
+            eq-str(d.to-yaml(), src, 'to-yaml roundtrip')
+            eq-str(d.stringify(), src, 'stringify roundtrip')
+            pl = d.node-pool
+            eq-str(yaml.json-of(pl, d.root, 0), '{"a":1,"list":["x","y"]}', 'json-of root')
+            emit = yaml.emit(pl, d.root, 0, 0)
+            runner.eq(emit.len-bytes(), d.to-yaml().len-bytes(), 'emit == to-yaml')
+            runner.eq(yaml.emit(pl, -1, 0, 0).len-bytes(), 0, 'emit idx -1 empty')
+            eq-str(d.to-json(), '{"a":1,"list":["x","y"]}', 'to-json nested')
+        }
+
+        nil -> runner.is-true(false, 'emit parse ok')
+
+        err -> runner.is-true(false, 'emit parse ok')
+    }
+}
+
+; 解析器內部（parser，白盒）
+...
+
+;
+; parser 是 std 的公開結構體（`yaml.parser`），用戶碼可以直接造出一個
+; 解析器並逐個方法驅動它，因此這 47 個方法屬於**可測 API 面**，而不是只能靠
+; `yaml.parse` 間接執行的實作細節。實測有兩個必須遵守的坑：
+;
+;   1) 變數必須寫型別標註：`p yaml.parser = yaml.parser{…}`。
+;      寫成 `p = yaml.parser{…}` 時推斷出的不是名義型別，調方法會在 MIR
+;      報 `unknown callee yaml.parser.cur [4qhyyund]`，而 `no vet` 不報。
+;   2) 結構體字面量的欄位分隔符是**冒號**：`src: 'x'`。寫成 `=` 時 checker
+;      照收，MIR 卻對使用者結構體崩 `NoVal`、對 std 結構體靜默給零值。
+
+; 造一個已裝載 src 的解析器（pos=0 / line=1）
+mk-p = (src str) (p yaml.parser) {
+    p = yaml.parser{
+        src: src
+        n: src.len-bytes()
+        pos: 0
+        line: 1
+        nodes: []
+        anchor-names: []
+        anchor-ids: []
+        err: ''
+        failed: false
+    }
+}
+
+; 取 []i64 的第 i 個元素（越界回 -1）
+i-at = (a []i64, i i64) (v i64) {
+    v = a[i]: {
+        ok -> it
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 用給定的 kind/keys/kids 造一個節點並追加進池，返回池索引
+mk-node = (p yaml.parser, kind i64, keys []i64, kids []i64) (idx i64) {
+    nd = yaml.node{
+        kind: kind
+        style: 6
+        tag: ''
+        anchor: ''
+        text: ''
+        ival: 0
+        fval: 0.0
+        bval: false
+        keys: keys
+        kids: kids
+        line: 1
+        col: 0
+    }
+    idx = p.push-node(nd)
+}
+
+; 池中第 i 個節點的 kind（越界回 -1）
+ndk = (p yaml.parser, i i64) (k i64) {
+    k = p.nodes[i]: {
+        ok -> it.kind
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的標量文本（越界回 '<oob>'）
+ndt = (p yaml.parser, i i64) (t str) {
+    t = p.nodes[i]: {
+        ok -> it.text
+
+        nil -> '<oob>'
+
+        err -> '<oob>'
+    }
+}
+
+; 池中第 i 個節點的 style（越界回 -1）
+nds = (p yaml.parser, i i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> it.style
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 ival（越界回 -1）
+ndi = (p yaml.parser, i i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> it.ival
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 bval 三態（1=true / 0=false / -1=越界）
+ndb = (p yaml.parser, i i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> {
+            it.bval -> 1
+
+            -> 0
+        }
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 kids 長度（越界回 -1）
+ndkn = (p yaml.parser, i i64) (n i64) {
+    n = p.nodes[i]: {
+        ok -> it.kids.len()
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 keys 長度（越界回 -1）
+ndkm = (p yaml.parser, i i64) (n i64) {
+    n = p.nodes[i]: {
+        ok -> it.keys.len()
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的第 j 個 kids 索引（越界回 -1）
+ndkid = (p yaml.parser, i i64, j i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> {
+            sub = it.kids[j]: {
+                ok -> it
+
+                nil -> -1
+
+                err -> -1
+            }
+            sub
+        }
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 字符級原語：byte-at / cur / at / eof / advance / newline / at-eol /
+;             skip-spaces / skip-to-eol / line-end-of / line-start-of / indent-at
+t-p-char = () {
+
+    ; 'ab  cd\n  ef'：0a 1b 2sp 3sp 4c 5d 6\n 7sp 8sp 9e 10f（n=11）
+    p = mk-p('ab  cd
+  ef')
+    runner.eq(p.byte-at(0), 97, 'byte-at 0')
+    runner.eq(p.byte-at(1), 98, 'byte-at 1')
+    runner.eq(p.byte-at(-1), 0, 'byte-at 负数越界')
+    runner.eq(p.byte-at(11), 0, 'byte-at 尾部越界')
+    runner.eq(p.cur(), 97, 'cur 在 a')
+    runner.eq(p.at(1), 98, 'at 1 是 b')
+    runner.eq(p.at(2), 32, 'at 2 是空格')
+    runner.eq(p.at(-1), 0, 'at 负偏移越界')
+    runner.is-false(p.eof(), '未到 eof')
+    p.advance()
+    runner.eq(p.pos, 1, 'advance 前进一字节')
+    runner.eq(p.cur(), 98, 'advance 后 cur 是 b')
+    runner.is-false(p.at-eol(), 'b 不在行尾')
+
+    ; skip-spaces 只从当前位置往后吃空格：b 不是空格时原地不动
+    p.skip-spaces()
+    runner.eq(p.pos, 1, 'skip-spaces 在非空格处不动')
+    p.pos = 2
+    p.skip-spaces()
+    runner.eq(p.pos, 4, 'skip-spaces 停在 c')
+    runner.eq(p.cur(), 99, 'skip-spaces 后 cur 是 c')
+    runner.eq(p.line-end-of(0), 6, 'line-end-of 0 指向换行')
+    runner.eq(p.line-start-of(9), 7, 'line-start-of 9 指向第二行首')
+    runner.eq(p.line-start-of(0), 0, 'line-start-of 0 仍是 0')
+    runner.eq(p.line, 1, '尚未换行时 line=1')
+    p.pos = 6
+    runner.is-true(p.at-eol(), '\\n 处 at-eol')
+    yes = p.newline()
+    runner.is-true(yes, 'newline 消费了 \\n')
+    runner.eq(p.pos, 7, 'newline 后 pos=7')
+    runner.eq(p.line, 2, 'newline 后 line=2')
+    runner.is-false(p.newline(), '行首不是换行')
+    runner.eq(p.pos, 7, '未消费换行时 pos 不变')
+    runner.eq(p.indent-at(), 2, 'indent-at 第二行缩进 2')
+    runner.eq(p.pos, 9, 'indent-at 停在行首非空字节')
+    p.pos = 11
+    runner.is-true(p.eof(), 'pos==n 即 eof')
+    runner.is-true(p.at-eol(), 'eof 也算行尾')
+
+    ; \r\n 也要吃两个字节，单独一个 \r 也算一次换行
+    cr = mk-p('a\r
+b')
+    cr.pos = 1
+    runner.is-true(cr.newline(), 'CRLF newline 成立')
+    runner.eq(cr.pos, 3, 'CRLF 吃掉两个字节')
+    runner.eq(cr.line, 2, 'CRLF 后 line=2')
+
+    ; skip-to-eol：跳过行尾空格并吞掉整段 # 注释
+    c = mk-p('ab # c
+x')
+    c.pos = 2
+    c.skip-to-eol()
+    runner.eq(c.pos, 6, 'skip-to-eol 停在换行前')
+    runner.eq(c.cur(), 10, 'skip-to-eol 停在 \\n')
+
+    ; 非注释行：skip-to-eol 只跳空格
+    d = mk-p('ab   
+x')
+    d.pos = 2
+    d.skip-to-eol()
+    runner.eq(d.pos, 5, '无注释时只吃空格')
+}
+
+; 失败记录：fail / fail-at
+t-p-fail = () {
+    p = mk-p('abc')
+    runner.is-false(p.failed, '初始未失败')
+    p.fail('boom')
+    runner.is-true(p.failed, 'fail 置位')
+    eq-str(p.err, 'boom', 'fail 记录消息')
+    p.fail('again')
+    eq-str(p.err, 'boom', 'fail 只保留第一条')
+
+    q = mk-p('ab
+ cd')
+    q.pos = 4
+    q.line = 2
+    q.fail-at('bad')
+    eq-str(q.err, 'line 2, column 2: bad', 'fail-at 附加行列')
+    runner.is-true(q.failed, 'fail-at 置位')
+}
+
+; 节点池：push-node / push-null / push-scalar / set-props / apply-tag-at /
+;         register-anchor / anchor-id
+t-p-nodes = () {
+    p = mk-p('')
+    i0 = p.push-null()
+    runner.eq(i0, 0, 'push-null 返回 0')
+    runner.eq(p.nodes.len(), 1, 'push-null 追加一个节点')
+    runner.eq(ndk(p, 0), 0, 'push-null 的 kind 是 NULL')
+
+    i1 = p.push-scalar('42', 0, '', '')
+    runner.eq(i1, 1, 'push-scalar 返回 1')
+    runner.eq(ndk(p, 1), 2, 'plain 42 推断为 INT')
+    runner.eq(ndi(p, 1), 42, 'plain 42 的 ival=42')
+
+    i2 = p.push-scalar('true', 0, '', '')
+    runner.eq(ndk(p, 2), 1, 'plain true 推断为 BOOL')
+    runner.eq(ndb(p, 2), 1, 'plain true 的 bval=true')
+
+    i3 = p.push-scalar('hi', 1, '', '')
+    runner.eq(ndk(p, 3), 4, '单引号标量恒为 STR')
+    runner.eq(nds(p, 3), 1, 'style=SINGLE')
+
+    ; 显式标签优先于 core schema 推断：'123' 加 !!str 后必须变成 STR 且 ival 归零
+    i4 = p.push-scalar('123', 0, '!!str', '')
+    runner.eq(ndk(p, 4), 4, '!!str 123 改判为 STR')
+    runner.eq(ndi(p, 4), 0, '!!str 123 的 ival 归零')
+
+    ks []i64 = with-len(0)
+    vs []i64 = with-len(0)
+    nd = yaml.node{
+        kind: 4
+        style: 0
+        tag: ''
+        anchor: ''
+        text: 'zz'
+        ival: 0
+        fval: 0.0
+        bval: false
+        keys: ks
+        kids: vs
+        line: 2
+        col: 0
+    }
+    i5 = p.push-node(nd)
+    runner.eq(i5, 5, 'push-node 返回 5')
+    eq-str(ndt(p, 5), 'zz', 'push-node 保留文本')
+
+    ; set-props：写 tag/anchor、登记锚点，并把标签作用到 kind 上
+    p.set-props(i1, '!!str', 'anc')
+    eq-str(ndt(p, 1), '42', 'set-props 不改文本')
+    runner.eq(ndk(p, 1), 4, 'set-props 的 !!str 生效')
+    runner.eq(p.anchor-id('anc'), 1, 'set-props 登记了锚点')
+    runner.eq(p.anchor-names.len(), 1, '锚点表长度 1')
+
+    p.register-anchor('b', 7)
+    runner.eq(p.anchor-id('b'), 7, 'register-anchor 直接登记')
+    runner.eq(p.anchor-id('nope'), -1, '未登记锚点回 -1')
+
+    ; apply-tag-at 越界不崩、不增节点
+    before = p.nodes.len()
+    p.apply-tag-at(999)
+    runner.eq(p.nodes.len(), before, 'apply-tag-at 越界无副作用')
+}
+
+; 裸 token / 标签 / 属性前缀 / 结构探测 / 空行与行内容
+t-p-tokens = () {
+    t1 = mk-p('bold rest')
+    eq-str(t1.read-token(), 'bold', 'read-token 停在空格')
+    runner.eq(t1.pos, 4, 'read-token 消费到空格')
+
+    t2 = mk-p(',x')
+    eq-str(t2.read-token(), '', '以指示符开头读到空串')
+
+    t3 = mk-p('a]b')
+    eq-str(t3.read-token(), 'a', 'read-token 停在 ]')
+
+    g1 = mk-p('!!str x')
+    eq-str(g1.read-tag(), '!!str', 'read-tag 读 !!str')
+
+    g2 = mk-p('! x')
+    eq-str(g2.read-tag(), '!', 'read-tag 裸 !')
+
+    g3 = mk-p('!<tag:yaml.org,2002:int> 7')
+    eq-str(g3.read-tag(), '!<tag:yaml.org,2002:int>', 'read-tag verbatim')
+
+    pr = mk-p('&a1 !!str rest')
+    tg, an = pr.parse-props()
+    eq-str(an, 'a1', 'parse-props 读到锚点')
+    eq-str(tg, '!!str', 'parse-props 读到标签')
+    p-opt = pr.src.slice-bytes(pr.pos, pr.n).to-str()
+    p str = ''
+    p-opt: {
+        ok -> p = it
+
+        -> _
+    }
+    eq-str(p, 'rest', 'parse-props 停在值前')
+
+    pr2 = mk-p('!!str &a2 rest')
+    tg2, an2 = pr2.parse-props()
+    eq-str(tg2, '!!str', 'parse-props 顺序无关（标签在前）')
+    eq-str(an2, 'a2', 'parse-props 顺序无关（锚点在后）')
+
+    d1 = mk-p('- x')
+    runner.is-true(d1.is-seq-dash(), '- 加空格是序列项')
+    d2 = mk-p('-')
+    runner.is-true(d2.is-seq-dash(), '行尾孤 - 也是序列项')
+    d3 = mk-p('-x')
+    runner.is-false(d3.is-seq-dash(), '-x 不是序列项')
+    d4 = mk-p('x')
+    runner.is-false(d4.is-seq-dash(), '普通字符不是序列项')
+
+    m1 = mk-p('a: b')
+    runner.is-true(m1.looks-like-map-entry(), 'a: b 是映射条目')
+    m2 = mk-p('a:b')
+    runner.is-false(m2.looks-like-map-entry(), 'a:b 不是映射条目')
+    m3 = mk-p('? k')
+    runner.is-true(m3.looks-like-map-entry(), '显式键 ? 是映射条目')
+    m4 = mk-p('abc')
+    runner.is-false(m4.looks-like-map-entry(), '纯标量不是映射条目')
+
+    ; '\n\n  # c\nx'：跳过两个空行与一整行注释，停在 x
+    s1 = mk-p('
+
+  # c
+x')
+
+    s1.skip-blank-lines()
+    runner.eq(s1.pos, 8, 'skip-blank-lines 停在 x')
+    runner.eq(s1.line, 4, 'skip-blank-lines 推进到第 4 行')
+
+    ; 'abc  # c\nx'：行内容去尾空白与注释，并跳到行尾
+    r1 = mk-p('abc  # c
+x')
+    eq-str(r1.read-line-content(), 'abc', 'read-line-content 去注释')
+    runner.eq(r1.pos, 8, 'read-line-content 停在换行')
+
+    r2 = mk-p('  pad  ')
+    eq-str(r2.read-line-content(), 'pad', 'read-line-content 双向 trim')
+}
+
+; 标量解析：parse-plain / parse-single / parse-double / parse-alias / parse-block-scalar
+t-p-scalars = () {
+    p = mk-p('hello world')
+    i = p.parse-plain(0, false, false)
+    eq-str(ndt(p, i), 'hello world', 'plain 整行')
+    runner.eq(ndk(p, i), 4, 'plain 文本推断为 STR')
+    runner.eq(p.pos, 11, 'plain 消费到行尾')
+
+    k = mk-p('k: v')
+    ik = k.parse-plain(0, true, false)
+    eq-str(ndt(k, ik), 'k', 'key-mode 在 : 处终止')
+    runner.eq(k.pos, 1, 'key-mode 停在冒号')
+
+    f = mk-p('abc,def')
+    iff = f.parse-plain(0, false, true)
+    eq-str(ndt(f, iff), 'abc', 'flow 上下文在 , 处终止')
+
+    s = mk-p('\'a\'\'b\'')
+    is = s.parse-single()
+    eq-str(ndt(s, is), 'a\'b', '单引号内的两个引号解成一个')
+    runner.eq(nds(s, is), 1, '单引号节点 style=SINGLE')
+    runner.eq(ndk(s, is), 4, '单引号节点恒为 STR')
+
+    su = mk-p('\'abc')
+    iu = su.parse-single()
+    runner.is-true(su.failed, '未闭合单引号报错')
+    eq-str(ndt(su, iu), 'abc', '未闭合时仍保留已读内容')
+
+    ; 双引号里直接换行会被折成一个空格（YAML 折叠规则）
+    d = mk-p('"a
+b"')
+    id = d.parse-double()
+    eq-str(ndt(d, id), 'a b', '双引号内的裸换行折成空格')
+    runner.eq(nds(d, id), 2, '双引号节点 style=DOUBLE')
+
+    ; 转义 \\n 才产出真正的换行
+    de2 = mk-p('"a\\nb"')
+    ide2 = de2.parse-double()
+    eq-str(ndt(de2, ide2), 'a
+b', '转义 \\n 解成换行')
+
+    du = mk-p('"abc')
+    idu = d.push-null()
+    du.parse-double()
+    runner.is-true(du.failed, '未闭合双引号报错')
+
+    de = mk-p('"a\\qb"')
+    de.parse-double()
+    runner.is-true(de.failed, '非法转义报错')
+
+    ; 别名：*name 复制锚点节点的内容，style 标成 ALIAS
+    a = mk-p('*a1')
+    ai = a.push-scalar('42', 0, '', '')
+    a.register-anchor('a1', ai)
+    aj = a.parse-alias()
+    runner.eq(aj, 1, 'parse-alias 追加新节点')
+    eq-str(ndt(a, aj), '42', '别名复制原文本')
+    runner.eq(nds(a, aj), 5, '别名节点 style=ALIAS')
+    runner.eq(ndk(a, aj), 2, '别名复制 kind')
+
+    au = mk-p('*zz')
+    aug = au.parse-alias()
+    runner.is-true(au.failed, '未知锚点报错')
+    runner.eq(ndk(au, aug), 0, '未知锚点产出 null 节点')
+
+    ; 块标量 | 与 >：clip 保留单个尾换行
+    b = mk-p('|
+  l1
+  l2
+')
+    ib = b.parse-block-scalar(0)
+    eq-str(ndt(b, ib), 'l1
+l2
+', 'literal 保留换行')
+    runner.eq(nds(b, ib), 3, 'literal style=LITERAL')
+
+    bf = mk-p('>
+  l1
+  l2
+')
+    ibf = bf.parse-block-scalar(0)
+    eq-str(ndt(bf, ibf), 'l1 l2
+', 'folded 把换行折成空格')
+    runner.eq(nds(bf, ibf), 4, 'folded style=FOLDED')
+
+    bs = mk-p('|-
+  l1
+')
+    ibs = bs.parse-block-scalar(0)
+    eq-str(ndt(bs, ibs), 'l1', '|- strip 去掉尾换行')
+}
+
+; 流式集合：skip-flow-ws / parse-flow-node / parse-flow-seq / parse-flow-map
+t-p-flow = () {
+    w = mk-p('
+  # c
+  1')
+    w.skip-flow-ws()
+    runner.eq(w.cur(), 49, 'skip-flow-ws 跳过换行与注释')
+
+    n = mk-p('42')
+    inn = n.parse-flow-node(0, false, true)
+    runner.eq(ndk(n, inn), 2, 'flow-node 解析整数')
+
+    s = mk-p('[1, two, [3]]')
+    is = s.parse-flow-seq()
+    runner.eq(ndk(s, is), 5, 'flow-seq kind=SEQ')
+    runner.eq(ndkn(s, is), 3, 'flow-seq 有 3 个元素')
+    eq-str(ndt(s, ndkid(s, is, 1)), 'two', 'flow-seq 第 2 个元素是 two')
+    runner.eq(ndk(s, ndkid(s, is, 2)), 5, 'flow-seq 第 3 个元素是嵌套 SEQ')
+    runner.is-false(s.failed, 'flow-seq 无错误')
+
+    m = mk-p('{a: 1, b: [2]}')
+    im = m.parse-flow-map()
+    runner.eq(ndk(m, im), 6, 'flow-map kind=MAP')
+    runner.eq(ndkm(m, im), 2, 'flow-map 有 2 个键')
+    runner.eq(ndk(m, ndkid(m, im, 1)), 5, 'flow-map 值可为集合节点')
+
+    e = mk-p('[]')
+    ie = e.parse-flow-seq()
+    runner.eq(ndkn(e, ie), 0, '空流式序列 0 元素')
+
+    em = mk-p('{}')
+    iem = em.parse-flow-map()
+    runner.eq(ndkm(em, iem), 0, '空流式映射 0 键')
+}
+
+; 块结构：parse-block-indented / parse-block-seq / parse-block-map / parse-block
+;         merge-one / merge-into
+t-p-block = () {
+    s = mk-p('- a
+- b
+')
+    is = s.parse-block-seq(0)
+    runner.eq(ndk(s, is), 5, 'block-seq kind=SEQ')
+    runner.eq(ndkn(s, is), 2, 'block-seq 两个元素')
+    eq-str(ndt(s, ndkid(s, is, 0)), 'a', 'block-seq 第 1 项')
+    eq-str(ndt(s, ndkid(s, is, 1)), 'b', 'block-seq 第 2 项')
+
+    m = mk-p('a: 1
+b: 2
+')
+    im = m.parse-block-map(0)
+    runner.eq(ndk(m, im), 6, 'block-map kind=MAP')
+    runner.eq(ndkm(m, im), 2, 'block-map 两个键')
+
+    b = mk-p('a: 1')
+    ib = b.parse-block(0, 0)
+    runner.eq(ndk(b, ib), 6, 'parse-block 识别映射')
+
+    b2 = mk-p('- x')
+    ib2 = b2.parse-block(0, 0)
+    runner.eq(ndk(b2, ib2), 5, 'parse-block 识别序列')
+
+    b3 = mk-p('plain')
+    ib3 = b3.parse-block(0, 0)
+    eq-str(ndt(b3, ib3), 'plain', 'parse-block 识别标量')
+
+    ; parse-block-indented：缩进更深才当值，否则产 null
+    i1 = mk-p('  deep: 1
+')
+    ii1 = i1.parse-block-indented(0)
+    runner.eq(ndk(i1, ii1), 6, '缩进更深时解析为映射')
+
+    i2 = mk-p('flat: 1
+')
+    ii2 = i2.parse-block-indented(4)
+    runner.eq(ndk(i2, ii2), 0, '缩进不够时产 null')
+
+    i3 = mk-p('')
+    ii3 = i3.parse-block-indented(0)
+    runner.eq(ndk(i3, ii3), 0, '空输入产 null')
+
+    i4 = mk-p('---
+x')
+    ii4 = i4.parse-block-indented(0)
+    runner.eq(ndk(i4, ii4), 0, '文档标记处产 null')
+
+    ; merge-one：把源映射的非重复键并进目标
+    p = mk-p('')
+    ka = p.push-scalar('a', yaml.YAML-STYLE-PLAIN, '', '')
+    va = p.push-scalar('1', yaml.YAML-STYLE-PLAIN, '', '')
+    kb = p.push-scalar('b', yaml.YAML-STYLE-PLAIN, '', '')
+    vb = p.push-scalar('2', yaml.YAML-STYLE-PLAIN, '', '')
+    sk []i64 = with-len(0)
+    sv []i64 = with-len(0)
+    sk.push(kb)
+    sv.push(vb)
+    smap = mk-node(p, 6, sk, sv)
+    runner.eq(ndk(p, smap), 6, 'mk-node 造出映射节点')
+
+    tk []i64 = with-len(0)
+    tv []i64 = with-len(0)
+    tk.push(ka)
+    tv.push(va)
+    ok1, ov1 = p.merge-one(tk, tv, smap)
+    runner.eq(ok1.len(), 2, 'merge-one 合并后 2 键')
+    runner.eq(i-at(ok1, 0), ka, 'merge-one 保留目标原有键')
+    runner.eq(i-at(ok1, 1), kb, 'merge-one 追加源侧键')
+    runner.eq(i-at(ov1, 1), vb, 'merge-one 追加源侧值')
+
+    ; 源里出现同名键时不覆盖目标已有值
+    sk2 []i64 = with-len(0)
+    sv2 []i64 = with-len(0)
+    ka2 = p.push-scalar('a', yaml.YAML-STYLE-PLAIN, '', '')
+    va2 = p.push-scalar('9', yaml.YAML-STYLE-PLAIN, '', '')
+    sk2.push(ka2)
+    sv2.push(va2)
+    smap2 = mk-node(p, 6, sk2, sv2)
+    ok2, ov2 = p.merge-one(tk, tv, smap2)
+    runner.eq(ok2.len(), 1, '重复键不追加')
+    runner.eq(i-at(ov2, 0), va, '已有键优先')
+
+    ; src 不是映射时原样返回（只做拷贝）
+    ok3, ov3 = p.merge-one(tk, tv, va2)
+    runner.eq(ok3.len(), 1, '非映射 src 不合并')
+    runner.eq(ov3.len(), 1, '非映射 src 值仍拷贝')
+
+    ; merge-into：src 是映射序列时逐个合并
+    sq []i64 = with-len(0)
+    sq.push(smap)
+    ek []i64 = with-len(0)
+    sseq = mk-node(p, 5, ek, sq)
+    ok4, ov4 = p.merge-into(tk, tv, sseq)
+    runner.eq(ok4.len(), 2, 'merge-into 合并序列里的映射')
+    runner.eq(i-at(ok4, 1), kb, 'merge-into 追加序列侧键')
+
+    ; src 直接是映射时等价于 merge-one
+    ok5, ov5 = p.merge-into(tk, tv, smap)
+    runner.eq(ok5.len(), 2, 'merge-into 接受单个映射')
+}
+
+; 文檔級：skip-doc-preamble / at-doc-marker / skip-to-doc-boundary /
+;         parse-document / parse-docs
+t-p-docs = () {
+    m1 = mk-p('---')
+    runner.eq(m1.at-doc-marker(), 1, '--- 識別為 1')
+    m2 = mk-p('...')
+    runner.eq(m2.at-doc-marker(), 2, '... 識別為 2')
+    m3 = mk-p('abc')
+    runner.eq(m3.at-doc-marker(), 0, '普通內容不是文檔標記')
+
+    pre = mk-p('%YAML 1.2
+# c
+---
+a: 1')
+    pre.skip-doc-preamble()
+    runner.eq(pre.at-doc-marker(), 1, 'skip-doc-preamble 停在 ---')
+
+    ; 调用前提：当前位置已在文档内容里（句柄停在第一个换行处）
+    bd = mk-p('a: 1
+---
+b: 2')
+    bd.pos = 4
+    bd.skip-to-doc-boundary()
+    runner.eq(bd.at-doc-marker(), 1, 'skip-to-doc-boundary 停在下一个 ---')
+    runner.eq(bd.pos, 5, 'skip-to-doc-boundary 停在 --- 起点')
+
+    ; 文档尾出现无法归属的内容时记录错误而不是继续抠
+    bad = mk-p('a: 1
+b: 2')
+    bad.pos = 4
+    bad.skip-to-doc-boundary()
+    runner.is-true(bad.failed, '文档后多余内容报错')
+
+    d = mk-p('a: 1')
+    i1 = d.parse-document()
+    runner.eq(ndk(d, i1), 6, 'parse-document 返回映射根')
+
+    ds = mk-p('---
+a: 1
+---
+b: 2')
+    roots = ds.parse-docs()
+    runner.eq(roots.len(), 2, 'parse-docs 兩份文檔')
+    runner.eq(ndk(ds, i-at(roots, 0)), 6, '第一份文檔是映射')
+    runner.eq(ndk(ds, i-at(roots, 1)), 6, '第二份文檔是映射')
+
+    ; 空輸入：parse-block 會造一個 null 根節點（doc 寫的 -1 實際不會出現）
+    de = mk-p('')
+    ie = de.parse-document()
+    runner.eq(ndk(de, ie), 0, '空輸入得到 null 根節點')
+}
+
+p1 = runner.test('yaml.scalars', t-scalars)
+p2 = runner.test('yaml.seq', t-seq)
+p3 = runner.test('yaml.type-inference', t-type-inference)
+p4 = runner.test('yaml.flow', t-flow)
+p5 = runner.test('yaml.quoted-anchor', t-quoted-anchor)
+p6 = runner.test('yaml.stringify', t-stringify)
+p7 = runner.test('yaml.error-and-nohang', t-error-and-nohang)
+p8 = runner.test('yaml.to-json', t-to-json)
+p9 = runner.test('yaml.multidoc', t-multidoc)
+p10 = runner.test('yaml.flags', t-flags)
+p11 = runner.test('yaml.accessors', t-accessors)
+p12 = runner.test('yaml.tags', t-tags)
+p13 = runner.test('yaml.errors', t-errors)
+p14 = runner.test('yaml.helper-prims', t-helper-prims)
+p15 = runner.test('yaml.emit', t-emit)
+p16 = runner.test('yaml.p-char', t-p-char)
+p17 = runner.test('yaml.p-fail', t-p-fail)
+p18 = runner.test('yaml.p-nodes', t-p-nodes)
+p19 = runner.test('yaml.p-tokens', t-p-tokens)
+p20 = runner.test('yaml.p-scalars', t-p-scalars)
+p21 = runner.test('yaml.p-flow', t-p-flow)
+p22 = runner.test('yaml.p-block', t-p-block)
+p23 = runner.test('yaml.p-docs', t-p-docs)
+p24 = runner.test('yaml.node-helpers', t-node-helpers)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}
+
+; 節點級輔助函式：scalar-repr / node-is-nan / key-text-eq / key-eq
+;
+; 這四個函式吃 `node`（不可命名的型別），但節點可以從公開欄位
+; `doc.node-pool.nodes[i]` 取到，因此仍然可測；全限定呼叫形如
+; `yaml.scalar-repr(pl.nodes[i])`。
+t-node-helpers = () {
+    src = 'i: 42
+f: 1.5
+x: .nan
+pi: .inf
+ni: -.inf
+b: true
+n: ~
+s: plain
+q: "x: y"
+k1: 7'
+    r = yaml.parse(src)
+    r: {
+        ok -> {
+            d = it
+            pl = d.node-pool
+            nn = pl.nodes.len()
+            i-int = -1
+            i-flt = -1
+            i-nan = -1
+            i-inf = -1
+            i-ninf = -1
+            i-bool = -1
+            i-null = -1
+            i-str = -1
+            i-quoted = -1
+            i-key = -1
+            i <- [0..nn): {
+                nd = pl.nodes[i]
+                {
+                    nd.text == '42' -> i-int = i
+
+                    nd.text == '1.5' -> i-flt = i
+
+                    nd.text == '.nan' -> i-nan = i
+
+                    nd.text == '.inf' -> i-inf = i
+
+                    nd.text == '-.inf' -> i-ninf = i
+
+                    nd.text == 'true' -> i-bool = i
+
+                    nd.text == '~' -> i-null = i
+
+                    nd.text == 'plain' -> i-str = i
+
+                    nd.text == 'x: y' -> i-quoted = i
+
+                    nd.text == 'k1' -> i-key = i
+
+                    -> _
+                }
+            }
+            runner.eq(i-int >= 0, true, '找到整數節點')
+            runner.eq(i-key >= 0, true, '找到 k1 鍵節點')
+
+            ; 標量表示：按種類選擇，字符串按需加引號
+            eq-str(yaml.scalar-repr(pl.nodes[i-int]), '42', 'repr int')
+            eq-str(yaml.scalar-repr(pl.nodes[i-flt]), '1.5', 'repr float')
+            eq-str(yaml.scalar-repr(pl.nodes[i-nan]), '.nan', 'repr nan')
+            eq-str(yaml.scalar-repr(pl.nodes[i-inf]), '.inf', 'repr inf')
+            eq-str(yaml.scalar-repr(pl.nodes[i-ninf]), '-.inf', 'repr -inf')
+            eq-str(yaml.scalar-repr(pl.nodes[i-bool]), 'true', 'repr bool')
+            eq-str(yaml.scalar-repr(pl.nodes[i-null]), 'null', 'repr null')
+            eq-str(yaml.scalar-repr(pl.nodes[i-str]), 'plain', 'repr 安全 plain')
+            eq-str(yaml.scalar-repr(pl.nodes[i-quoted]), '"x: y"', 'repr 需加引號')
+
+            ; NaN 判定：只有 FLOAT 且值/原文命中才為真
+            runner.is-true(yaml.node-is-nan(pl.nodes[i-nan]), 'is-nan .nan')
+            runner.is-false(yaml.node-is-nan(pl.nodes[i-flt]), 'is-nan 1.5 為假')
+            runner.is-false(yaml.node-is-nan(pl.nodes[i-null]), 'is-nan 對 null 為假')
+
+            ; 鍵比較：集合節點一律不相等
+            runner.is-true(yaml.key-text-eq(pl.nodes[i-key], 'k1'), 'key-text-eq 命中')
+            runner.is-false(yaml.key-text-eq(pl.nodes[i-key], 'zz'), 'key-text-eq 不命中')
+            runner.is-false(yaml.key-text-eq(pl.nodes[d.root], 'k1'), 'map 節點不參與鍵比較')
+            runner.is-true(yaml.key-eq(pl.nodes[i-key], pl.nodes[i-key]), 'key-eq 自反')
+            runner.is-false(yaml.key-eq(pl.nodes[i-key], pl.nodes[i-str]), 'key-eq 不同文本')
+            runner.is-false(yaml.key-eq(pl.nodes[d.root], pl.nodes[i-key]), 'key-eq 集合側為假')
+        }
+
+        nil -> runner.is-true(false, 'node-helpers 解析成功')
+
+        err -> runner.is-true(false, 'node-helpers 解析成功')
+    }
+}

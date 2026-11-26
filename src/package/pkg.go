@@ -743,6 +743,24 @@ func resolveWorkspaceChain(key, workspaceRoot string, ws WorkspaceMap, visitStac
 	return localDir, true, nil
 }
 
+// ResolveWorkspaceAlias 把 workspace.noml 中註冊的短名（或完整鍵）解析成
+// 本地套件目錄。與 Package.MatchDependency 不同，此處不要求該名字也出現在
+// package.noml 的 dependencies 裡 —— workspace.noml 本身就是本地包的權威映射，
+// 這正是 `# test/assert` 中 `test` 能被解析到 `/test` 的依據。
+//
+// 解析沿用 resolveWorkspaceChain，因此支援多層 workspace.noml 映射鏈與循環
+// 偵測；找不到映射時回報 ("", false)。
+func ResolveWorkspaceAlias(alias, workspaceRoot string) (string, bool) {
+	if alias == "" || workspaceRoot == "" {
+		return "", false
+	}
+	dir, found, err := resolveWorkspaceChain(alias, workspaceRoot, nil, nil)
+	if err != nil || !found {
+		return "", false
+	}
+	return dir, true
+}
+
 // ResolveDependencyModule 解析依賴中的模組完整路徑
 // 返回模組 .no 檔案的絕對路徑
 func (p *Package) ResolveDependencyModule(importPath string) (string, error) {

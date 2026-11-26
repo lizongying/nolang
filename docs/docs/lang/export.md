@@ -11,24 +11,26 @@ Nolang 使用 `@` 關鍵字在包的根目錄 `lib.no` 文件中聲明導出項�
 ## 語法
 
 ```no
-@ path.func
+@ path[.func]
 [alias]
 ```
 
-- `path` — 模塊路徑（相對於包根目錄，以 `/` 開頭，不帶 `.no` 副檔名）
-- `func` — 要導出的函數/常量/枚舉名
-- `alias` — 可選別名，外部導入時使用的名稱
+- `path` — 模塊路徑（相對於包根目錄或工作區根目錄，不帶 `.no` 副檔名）
+- `func` — 可選。要導出的函數/常量/枚舉名；省略時表示導出整個模塊
+- `alias` — 可選別名，外部導入時使用的名稱；可含多段（如 `test/assert`）
 
 ## 規則
 
 - 導出語句**只能**寫在包根目錄的 `lib.no` 文件中（唯一例外見下節「全域可呼叫別名」）
 - 一行一個導出項
-- 導出項只能是函數、常量、枚舉等最終符號
-- **必須給出符號名**：`@ std/txt`（只有路徑，既無 `func` 也無 `alias`）是錯誤（`lgxbfk9a`）。
-  這種寫法什麼都不宣告 —— 所有消費方都以「有符號名」為前提 —— 所以不再靜默忽略。
-  它也不能用來「把一個型別綁到某個模組」：型別沒有全域名這一層，`@` 的別名只對可呼叫符號有意義
+- **符號導出** `@ path.func [alias]`：導出模塊中的函數、常量、枚舉等最終符號
+- **模組導出** `@ path [alias]`：導出整個模組。別名可省略，默認取 `path` 最後一段；
+  所以 `@ /test/src/assert` 等價於 `@ /test/src/assert assert`。
+  別名也可以是多段模組名（`@ /test/src/assert test/assert`），外部以 `# test/assert` 導入
+- 模組導出只註冊模組名，不註冊 callable alias；不能用它「把一個型別綁到某個模組」——
+  型別沒有全域名這一層
 - 被導出函數引用的結構體、枚舉等類型會**自動導出**，無需手動聲明
-- 如果導出的函數在模塊中不存在，LSP 會提示錯誤
+- 如果導出的符號在模塊中不存在，LSP 會提示錯誤
 
 ## 範例
 
@@ -94,6 +96,16 @@ m = e.msg(); 'disk full'
 # package-name.utils.greet a
 ; 或者直接使用函數名
 # package-name.utils.greet
+```
+
+若 `test/lib.no` 宣告了 `@ /test/src/assert`，且 `workspace.noml` 把 `test` 映射到 `/test`，
+則同一個模組有三種等價寫法：
+
+```no
+# /test/src/assert       ; 工作區相對路徑
+# test/src/assert        ; 工作區套件映射
+# test/assert            ; 包內 lib.no 模組別名
+ok = assert.is-nil(0, 'msg')
 ```
 
 ## LSP 支持

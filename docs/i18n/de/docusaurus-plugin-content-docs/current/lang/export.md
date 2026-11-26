@@ -11,22 +11,21 @@ Nolang verwendet das Schlüsselwort `@` in der `lib.no`-Datei im Paket-Stammverz
 ## Syntax
 
 ```no
-@ path.func
+@ path[.func]
 [alias]
 ```
 
-- `path` — Modulpfad (relativ zum Paket-Stammverzeichnis, beginnt mit `/`, ohne `.no`-Endung)
-- `func` — Name der zu exportierenden Funktion/Konstante/Enumeration
-- `alias` — Optionaler Aliasname, der beim externen Import verwendet wird
+- `path` — Modulpfad (relativ zum Paket- oder Workspace-Stammverzeichnis, ohne `.no`-Endung)
+- `func` — Optional. Zu exportierende Funktion/Konstante/Enumeration; ohne Angabe wird das ganze Modul exportiert
+- `alias` — Optionaler Aliasname beim externen Import; darf `/` enthalten (z. B. `test/assert`)
 
 ## Regeln
 
 - Exportanweisungen dürfen **nur** in der `lib.no`-Datei im Paket-Stammverzeichnis stehen (die einzige Ausnahme siehe nächsten Abschnitt „Globale aufrufbare Aliase")
 - Ein Exporteintrag pro Zeile
-- Exporteinträge dürfen nur finale Symbole wie Funktionen, Konstanten, Enumerationen sein
-- **Der Symbolname muss angegeben werden**: `@ std/txt` (nur ein Pfad, weder `func` noch `alias`) ist ein Fehler (`lgxbfk9a`).
-  Eine solche Schreibweise deklariert nichts — alle Verwender setzen einen Symbolnamen voraus —, sie wird daher nicht mehr still ignoriert.
-  Sie kann auch nicht dazu dienen, „einen Typ an ein Modul zu binden": Typen haben keine Ebene globaler Namen, der Alias von `@` ist nur für aufrufbare Symbole sinnvoll
+- **Symbol-Export** `@ path.func [alias]`: exportiert ein Finalsymbol wie Funktion, Konstante oder Enumeration
+- **Modul-Export** `@ path [alias]`: exportiert das ganze Modul. Der Alias ist optional und ist standardmäßig das letzte Segment von `path`; `@ /test/src/assert` entspricht also `@ /test/src/assert assert`. Ein mehrteiliger Alias wie `@ /test/src/assert test/assert` macht das Modul als `# test/assert` importierbar
+- Ein Modul-Export registriert nur einen Modulnamen, keinen aufrufbaren Alias; er kann keinen Typ an ein Modul binden (Typen haben keine Ebene globaler Namen)
 - Von exportierten Funktionen referenzierte Strukturen, Enumerationen und andere Typen werden **automatisch exportiert**, ohne manuelle Deklaration
 - Wenn eine exportierte Funktion im Modul nicht existiert, meldet der LSP einen Fehler
 

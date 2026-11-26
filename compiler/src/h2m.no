@@ -2769,10 +2769,12 @@ h2m-sig-const-add = (s h2m-sigs, name str, val i64) {
     p = name.index('.')
     p >= 0 -> {
         p = h2m-inc(p)
-        short = name.slice-bytes(p, name.len-bytes()).to-str(): {
-            ok -> it
-
-            -> ''
+        v_short = name.slice-bytes(p, name.len-bytes()).to-str()
+        short = ''
+        v_short: {
+            ok -> short = it
+            err -> short = ''
+            nil -> short = ''
         }
     }
     s.csname.push(short)
@@ -2815,10 +2817,12 @@ h2m-sig-strconst-add = (s h2m-sigs, name str, val str) {
     p = name.index('.')
     p >= 0 -> {
         p = h2m-inc(p)
-        short = name.slice-bytes(p, name.len-bytes()).to-str(): {
-            ok -> it
-
-            -> ''
+        v_short = name.slice-bytes(p, name.len-bytes()).to-str()
+        short = ''
+        v_short: {
+            ok -> short = it
+            err -> short = ''
+            nil -> short = ''
         }
     }
     s.stname.push(short)
@@ -8833,10 +8837,12 @@ h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
 
                 ; 先把 '{' 之前的字面段写出
                 i > seg -> {
-                    part = s.slice-bytes(seg, i).to-str(): {
-                        ok -> it
-
-                        -> ''
+                    v_part = s.slice-bytes(seg, i).to-str()
+                    part = ''
+                    v_part: {
+                        ok -> part = it
+                        err -> part = ''
+                        nil -> part = ''
                     }
                     h2m-print-lit(c, part, base)
                 }
@@ -8847,10 +8853,12 @@ h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
                 ; spec 存在 ⇒ 宽度/对齐/进制/千分位无法复现 ⇒ 计 unsup（先判再发）
                 col >= 0 -> r = 0
                 r == 1 -> {
-                    nm = s.slice-bytes(h2m-inc(i), ne).to-str(): {
-                        ok -> it
-
-                        -> ''
+                    v_nm = s.slice-bytes(h2m-inc(i), ne).to-str()
+                    nm = ''
+                    v_nm: {
+                        ok -> nm = it
+                        err -> nm = ''
+                        nil -> nm = ''
                     }
                     r = h2m-print-field(c, nm, base)
                 }
@@ -8861,10 +8869,12 @@ h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
         b != 123 -> i = h2m-inc(i)
     }
     r == 1 && seg < n -> {
-        part = s.slice-bytes(seg, n).to-str(): {
-            ok -> it
-
-            -> ''
+        v_part = s.slice-bytes(seg, n).to-str()
+        part = ''
+        v_part: {
+            ok -> part = it
+            err -> part = ''
+            nil -> part = ''
         }
         h2m-print-lit(c, part, base)
     }

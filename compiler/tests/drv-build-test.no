@@ -11,9 +11,9 @@
 ; ⚠️ 直接導入所有傳遞依賴：模組頂層常量只有在入口檔直接 import 時才會生成（bug #85）。
 ; ⚠️ `drv.build-ll` 是含點自由函式 ⇒ 導入寫完整符號路徑 `# /compiler/src/drv.build-ll`。
 
-# /test/runner.eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/drv.build-ll
 # /compiler/src/asp
 # /compiler/src/ast

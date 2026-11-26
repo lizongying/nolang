@@ -1,7 +1,7 @@
 {
   name: 'test'
-  description: 'A new Nolang project'
-  keywords: ['nolang']
+  description: 'Lightweight assertions and a test runner for Nolang projects'
+  keywords: ['nolang', 'testing', 'assertions', 'test-runner', 'unit-testing']
   author: 'lizongying'
   email: 'lizongying@msn.com'
   organization: 'nolang'
@@ -10,8 +10,8 @@
   license: 'Apache-2.0'
   dependencies: []
   compiler: {
-    version: 'v0.1.0'
+    version: 'latest'
   }
   ignore: []
-  category: ''
+  category: 'developer tools'
 }

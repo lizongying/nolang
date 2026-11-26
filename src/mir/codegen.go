@@ -3674,7 +3674,7 @@ func (c *codegen) emitAnnotatedOverflowValue(mode string, op Op, resLT, elemRaw,
 //     compares the driver triple against whatever the IR already declared.
 //     Mismatch (or an IR with no triple at all — clang counts empty as a
 //     mismatch against a non-empty driver value) fires one warning per .no
-//     file, i.e. ~90× per `no test test/std` on CI.
+//     file, i.e. ~90× per `no test test-std/src` on CI.
 //   - For linux / windows / wasi the canonical spelling has no OS version
 //     component, so emitTargetTripleValue's Go table matches clang's output
 //     byte-for-byte.

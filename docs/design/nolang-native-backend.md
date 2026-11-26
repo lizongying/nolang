@@ -712,7 +712,7 @@ type Target struct {
 在 `.github/workflows/build.yml` 补一条 job：
 
 ```
-go test ./...  →  no test test/std/  →  语料 build 冒烟  →  双路差分  →  no vet src/std
+go test ./...  →  no test test-std/src/  →  语料 build 冒烟  →  双路差分  →  no vet src/std
 ```
 
 并把 `-native=link` 的差分列为**独立 job**（跨平台 matrix：macOS arm64 / ubuntu x64 / windows x64）。

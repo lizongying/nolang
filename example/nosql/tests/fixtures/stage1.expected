@@ -1,0 +1,8 @@
+oracle|3.54.0
+rows|3
+storage|integer|real|text|blob|null
+null|1
+blob|0001FEFF|4
+integer|9223372036854775807
+ordering|1,2,3
+affinity|integer|text|integer|text

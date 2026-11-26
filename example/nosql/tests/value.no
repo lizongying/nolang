@@ -1,0 +1,63 @@
+# /example/nosql/src/value
+# /example/nosql/src/test-support test-support
+
+ctx = test-support.new()
+
+n = value.null-value()
+ctx.check(n.is-null(), 'NULL constructor')
+ctx.check(n.kind-name() == 'null', 'NULL storage class')
+
+i = value.integer-value(-42)
+iv = i.to-integer()
+iv: {
+    ok(v) -> ctx.check(v == -42, 'INTEGER payload')
+
+    -> ctx.check(false, 'INTEGER payload must be present')
+}
+
+r = value.real-value(3.5)
+rv = r.to-real()
+rv: {
+    ok(v) -> ctx.check(v == 3.5, 'REAL payload')
+
+    -> ctx.check(false, 'REAL payload must be present')
+}
+
+t = value.text-value('hello')
+tv = t.to-text()
+tv: {
+    ok(v) -> ctx.check(v == 'hello', 'TEXT payload')
+
+    -> ctx.check(false, 'TEXT payload must be present')
+}
+
+b = value.blob-value([1, 2, 3])
+ctx.check(b.kind-name() == 'blob', 'BLOB storage class')
+ctx.check(value.compare(n, i) < 0, 'NULL sorts before INTEGER')
+ctx.check(value.compare(i, r) < 0, 'INTEGER sorts before REAL')
+ctx.check(value.compare(r, t) < 0, 'REAL sorts before TEXT')
+ctx.check(value.compare(t, b) < 0, 'TEXT sorts before BLOB')
+ctx.check(value.compare(value.integer-value(7), value.integer-value(7)) == 0, 'equal INTEGER values')
+ctx.check(value.compare(value.text-value('abc'), value.text-value('abd')) < 0, 'BINARY text ordering')
+ctx.check(value.compare(value.blob-value([1, 2]), value.blob-value([1, 3])) < 0, 'BLOB ordering')
+
+ctx.check(value.affinity-of-declared('BIGINT') == value.affinity.integer-affinity, 'INTEGER affinity')
+ctx.check(value.affinity-of-declared('VARCHAR(20)') == value.affinity.text-affinity, 'TEXT affinity')
+ctx.check(value.affinity-of-declared('DOUBLE PRECISION') == value.affinity.real-affinity, 'REAL affinity')
+ctx.check(value.affinity-of-declared('DECIMAL(10,2)') == value.affinity.numeric-affinity, 'NUMERIC affinity')
+ctx.check(value.affinity-of-declared('') == value.affinity.blob-affinity, 'BLOB affinity')
+
+converted = value.apply-affinity(value.text-value('123'), value.affinity.integer-affinity)
+converted-int = converted.to-integer()
+converted-int: {
+    ok(v) -> ctx.check(v == 123, 'INTEGER affinity conversion')
+
+    -> ctx.check(false, 'INTEGER affinity must produce INTEGER')
+}
+
+ctx.check(value.integer-value(0).to-truth() == value.truth.sql-false, 'zero is false')
+ctx.check(value.integer-value(1).to-truth() == value.truth.sql-true, 'nonzero is true')
+ctx.check(n.to-truth() == value.truth.unknown, 'NULL truth is unknown')
+ctx.check(value.text-value('0').to-truth() == value.truth.sql-false, 'numeric text truth')
+
+ctx.done()

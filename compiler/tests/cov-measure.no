@@ -10,8 +10,8 @@
 ;   这些 self-host 函数的顶层常量只有在入口档直接 import 时才会生成（bug #85）。
 ; ⚠️ 讯息一律用单引号字符串；nolang 的 "..." 是 char 字面量，不是字符串。
 
-# /test/runner.is-true
-# /test/runner.summary
+# test/runner.is-true
+# test/runner.summary
 # /compiler/src/drv
 # /compiler/src/asp
 # /compiler/src/ast

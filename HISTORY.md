@@ -1,5 +1,18 @@
 # 更新日誌
 
+## v0.4.36
+
+- feat(import): support workspace-relative, package-direct and lib.no export-alias module imports with multi-segment aliases
+- feat(build): resolve package export aliases through workspace.noml and lib.no module-level exports
+- fix(generic): monomorphize generic functions called through module-qualified dot expressions
+- fix(checker): skip unbound generic type variables when checking function call arguments
+- fix(parser): align the str index-write diagnostic with the current byte to-str API
+- refactor(package): relocate the std test suite into a standalone test-std package and export test helpers via lib.no
+- build(release): rename downloadable assets to tool-os-arch-version with a leading v tag
+- ci: align build and setup actions with the versioned asset naming scheme
+- refactor(enums): resolve qualified enum constructors and methods across imported modules
+- test: add cross-module generic, enum and relocated-fixture coverage
+
 ## v0.4.35
 
 - fix(std): remove the []byte.to-bytes-str compatibility alias and migrate all call sites to []byte.to-str with explicit unwrap or ?= propagation

@@ -20,7 +20,7 @@
 # std/math
 # std/os
 # std/vec
-# /test/runner
+# test/runner
 
 ; # std/number：f64.sqrt（唯一仍為 LLVM 硬件內建的 f64 方法）
 ...

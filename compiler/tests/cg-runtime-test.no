@@ -8,9 +8,9 @@
 ; 断言取自 Go authority（src/mir/codegen.go emitPrelude / 14712-14818）的实测形状，
 ; 不是手写猜的。改动 prelude 文本后本档会红——这是刻意的盘点气闩。
 
-# /test/runner.eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/cg-runtime
 # /compiler/src/cg-rc
 

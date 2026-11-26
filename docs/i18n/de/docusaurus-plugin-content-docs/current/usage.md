@@ -322,7 +322,7 @@ no install -u nogit@github.com/lizongying/notools         # 強制重新下載
 ```
 
 Bei der Remote-Installation wird ein **vorkompiliertes Binary** heruntergeladen, kein Quellcode: Der Asset-Name lautet
-`<tool>-<os>-<arch>` (unter Windows mit `.exe`), wobei `<os>-<arch>` der Plattform entspricht, auf der `no` selbst läuft
+`<tool>-<os>-<arch>-<version>` (unter Windows mit `.exe`), wobei `<os>-<arch>` der Plattform entspricht, auf der `no` selbst läuft
 (z. B. `darwin-arm64`, `linux-amd64`). Daher ist keine lokale LLVM-Toolchain nötig und das installierte Tool muss nicht in
 Nolang geschrieben sein. Wird die Version weggelassen, wird `releases/latest` abgefragt; das Setzen von `$GITHUB_TOKEN`
 (oder `$GH_TOKEN`) verhindert die GitHub-API-Ratenbegrenzung.

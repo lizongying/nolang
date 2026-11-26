@@ -321,7 +321,7 @@ no install nogit@lizongying/notools                       # 省略 host，默认
 no install -u nogit@github.com/lizongying/notools         # 强制重新下载
 ```
 
-远端安装抓的是**预编二进位**，不是源码：资产名为 `<tool>-<os>-<arch>`（Windows 带
+远端安装抓的是**预编二进位**，不是源码：资产名为 `<tool>-<os>-<arch>-<version>`（Windows 带
 `.exe`），其中 `<os>-<arch>` 取自 `no` 自身运行的平台（如 `darwin-arm64`、
 `linux-amd64`），因此不需要本地 LLVM 工具链，被安装的工具也不必是 Nolang 写的。
 版本省略时查 `releases/latest`；设 `$GITHUB_TOKEN`（或 `$GH_TOKEN`）可避免 GitHub

@@ -5,9 +5,9 @@
 ;
 ; 断言取自 Go authority（src/mir/codegen.go emitMIR）的最小闭包形状。
 
-# /test/runner.eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/cg
 # /compiler/src/mir
 # /compiler/src/cg-rc

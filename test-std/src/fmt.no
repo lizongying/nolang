@@ -1,0 +1,164 @@
+; std-fmt.no — fmt 模組測試
+;
+; 執行：no test test-std/src/fmt.no
+; 覆蓋：fmt-parse-spec / fmt-apply-spec / fmt-int / fmt-uint /
+;       fmt-uint-base / fmt-f64 / fmt-str / fmt-bool / sprintf / fmt-group-digits
+; 未測：printf / eprintf —— 已移除，呼叫即編譯錯誤 [oflgmsef]，登記在 UNREACHABLE
+
+# test/runner
+
+; 注意：fmt-parse-spec 已正確解析 fill/align/sign/zero/width/precision/typ。
+t-parse-spec = () {
+    fill, align, sign, alt, zero, width, grouping, precision, typ = fmt.fmt-parse-spec('<5')
+    runner.eq(fill, 32, 'parse-spec fill default space')
+    runner.eq(align, 60, 'parse-spec align <')
+    runner.eq(width, 5, 'parse-spec width 5')
+
+    fill2, align2, sign2, alt2, zero2, width2, grouping2, precision2, typ2 = fmt.fmt-parse-spec('05')
+    runner.eq(width2, 5, 'parse-spec zero-leading width 5')
+
+    fill3, align3, sign3, alt3, zero3, width3, grouping3, precision3, typ3 = fmt.fmt-parse-spec('')
+    runner.eq(width3, 0, 'parse-spec empty width 0')
+    runner.eq(precision3, -1, 'parse-spec empty precision -1')
+}
+
+; 對齊與寬度：右（預設）/ 左 / 置中填充；寬度小於內容時原樣輸出
+t-apply-spec = () {
+
+    ; 右對齊（預設）：'   42'
+    r = fmt.fmt-apply-spec('42', 32, 0, 5)
+    runner.str-eq(r, '   42', 'apply-spec right align')
+
+    ; 左對齊：'42   '
+    l = fmt.fmt-apply-spec('42', 32, 60, 5)
+    runner.str-eq(l, '42   ', 'apply-spec left align')
+
+    ; 置中：pad=3 → left=1, right=2 → ' 42  '
+    c = fmt.fmt-apply-spec('42', 32, 94, 5)
+    runner.str-eq(c, ' 42  ', 'apply-spec center align')
+
+    ; 寬度小於內容：原樣
+    n = fmt.fmt-apply-spec('42', 32, 0, 1)
+    runner.str-eq(n, '42', 'apply-spec width < len unchanged')
+}
+
+; 有號整數：寬度、左對齊、零填充（'05'）、負數與零
+t-int = () {
+    a = fmt.fmt-int(42, '')
+    runner.str-eq(a, '42', 'fmt-int plain')
+    b = fmt.fmt-int(42, '5')
+    runner.str-eq(b, '   42', 'fmt-int width 5 right')
+    c = fmt.fmt-int(42, '<5')
+    runner.str-eq(c, '42   ', 'fmt-int left align')
+
+    ; zero 旗標現在被正確解析，'05' 產生零填充
+    d = fmt.fmt-int(42, '05')
+    runner.str-eq(d, '00042', 'fmt-int zero-leading width')
+    e = fmt.fmt-int(-42, '5')
+    runner.str-eq(e, '  -42', 'fmt-int negative width')
+    g = fmt.fmt-int(0, '')
+    runner.str-eq(g, '0', 'fmt-int zero')
+}
+
+; 無號整數：基本輸出與寬度右對齊
+t-uint = () {
+    a = fmt.fmt-uint(42, '')
+    runner.str-eq(a, '42', 'fmt-uint plain')
+    b = fmt.fmt-uint(7, '3')
+    runner.str-eq(b, '  7', 'fmt-uint width 3')
+}
+
+; 進位制與高位 u64：hex 大小寫、二進位、十進位、八進位，含 ≥2^63 與 u64 最大值
+t-uint-base = () {
+    a = fmt.fmt-uint-base(255, 16, false)
+    runner.str-eq(a, 'ff', 'uint-base hex lower')
+    b = fmt.fmt-uint-base(255, 16, true)
+    runner.str-eq(b, 'FF', 'uint-base hex upper')
+    c = fmt.fmt-uint-base(255, 2, false)
+    runner.str-eq(c, '11111111', 'uint-base binary')
+    d = fmt.fmt-uint-base(255, 10, false)
+    runner.str-eq(d, '255', 'uint-base decimal')
+    e = fmt.fmt-uint-base(255, 8, false)
+    runner.str-eq(e, '377', 'uint-base octal')
+
+    ; u64 高位（>= 2^63）：位模式在 i64 語意下為負數。舊實作以 `ru > 0`
+    ; 為迴圈條件，負數時一次都不執行 -> 空字串（再被 `016x` 補成全 0），
+    ; 使 sha512 每個高位字組都印成 0000000000000000。現改移位+掩碼取位。
+    f = fmt.fmt-uint-base(9223372036854775808, 16, false)
+    runner.str-eq(f, '8000000000000000', 'uint-base hex 2^63')
+    g = fmt.fmt-uint-base(18446744073709551615, 16, false)
+    runner.str-eq(g, 'ffffffffffffffff', 'uint-base hex u64 max')
+    h = fmt.fmt-uint-base(18446744073709551615, 16, true)
+    runner.str-eq(h, 'FFFFFFFFFFFFFFFF', 'uint-base hex u64 max upper')
+    i2 = fmt.fmt-uint-base(18446744073709551615, 2, false)
+    runner.str-eq(i2, '1111111111111111111111111111111111111111111111111111111111111111', 'uint-base binary u64 max')
+    j2 = fmt.fmt-uint-base(9223372036854775808, 8, false)
+    runner.str-eq(j2, '1000000000000000000000', 'uint-base octal 2^63')
+}
+
+; 浮點：指定精度（如 %.2f）與預設精度
+t-f64 = () {
+    a = fmt.fmt-f64(3.14159, '.2f')
+    runner.str-eq(a, '3.14', 'fmt-f64 precision 2')
+    b = fmt.fmt-f64(2.5, '')
+    runner.str-eq(b, '2.5', 'fmt-f64 default')
+}
+
+; 字串：寬度左對齊與精度截斷
+t-str = () {
+    a = fmt.fmt-str('hi', '')
+    runner.str-eq(a, 'hi', 'fmt-str plain')
+    b = fmt.fmt-str('hi', '<5')
+    runner.str-eq(b, 'hi   ', 'fmt-str left align width 5')
+    c = fmt.fmt-str('hello', '.2')
+    runner.str-eq(c, 'he', 'fmt-str precision truncate')
+}
+
+; 布林：輸出 true / false 字面
+t-bool = () {
+    a = fmt.fmt-bool(true, '')
+    runner.str-eq(a, 'true', 'fmt-bool true')
+    b = fmt.fmt-bool(false, '')
+    runner.str-eq(b, 'false', 'fmt-bool false')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('fmt.fmt-parse-spec', t-parse-spec)
+p2, f2 = runner.test('fmt.fmt-apply-spec', t-apply-spec)
+p3, f3 = runner.test('fmt.fmt-int', t-int)
+p4, f4 = runner.test('fmt.fmt-uint', t-uint)
+p5, f5 = runner.test('fmt.fmt-uint-base', t-uint-base)
+p6, f6 = runner.test('fmt.fmt-f64', t-f64)
+p7, f7 = runner.test('fmt.fmt-str', t-str)
+p8, f8 = runner.test('fmt.fmt-bool', t-bool)
+p9, f9 = runner.test('fmt.sprintf', t-sprintf)
+p10, f10 = runner.test('fmt.fmt-group-digits', t-group-digits)
+
+; sprintf：已廢棄但仍可用 —— 單一格式串，{name} 從呼叫點作用域取值
+t-sprintf = () {
+    x = 41
+    o = fmt.sprintf('{x}')
+    runner.str-eq(o, '41', 'sprintf interpolates named field')
+}
+
+; fmt-group-digits：每 3 位插一個分隔符；不足 4 位原樣返回
+t-group-digits = () {
+    g = fmt.fmt-group-digits('123456789', 44)
+    runner.str-eq(g, '123,456,789', 'comma grouping')
+    g2 = fmt.fmt-group-digits('1234', 95)
+    runner.str-eq(g2, '1_234', 'underscore grouping')
+    g3 = fmt.fmt-group-digits('123', 44)
+    runner.str-eq(g3, '123', 'exactly 3 digits unchanged')
+    g4 = fmt.fmt-group-digits('12', 44)
+    runner.str-eq(g4, '12', 'short input unchanged')
+}
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

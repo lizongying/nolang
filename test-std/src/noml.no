@@ -1,0 +1,1869 @@
+; std-noml.no — noml 模組測試
+;
+; 執行：no test test-std/src/noml.no
+; 覆蓋：parse（標量/物件/陣列/註解/註解標記）、存取器（get/get-str/get-i64/
+;       get-f64/get-bool/has/is-*/kind/len/at/key）、stringify 往返、構建 API
+;       （new/new-obj/new-str/new-num/new-bool/new-nil/put/push/set-root）、
+;       註解讀寫（ann/set-ann/ann-value）、錯誤路徑（重複鍵、未閉合字串、
+;       錯位 #{...}、尾隨內容、null 被拒）。
+;
+; NOML 是合法的 Nolang 字面量語法：值為物件/陣列/單引號字串/裸數字/布林
+; true|false，以及 Nolang 的 nil（**沒有 null**）。
+
+# test/runner
+
+; 解析標量
+...
+
+; 頂層 nil 解析
+t-parse-nil = () {
+    r = noml.parse('nil')
+    ok = false
+    ni = false
+    r: {
+        ok -> {
+            ok = true
+            ni = it.is-nil()
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse nil ok')
+    runner.is-true(ni, 'nil is-nil')
+}
+
+; 字串解析
+t-parse-str = () {
+    r = noml.parse('\'hello\'')
+    ok = false
+    v = ''
+    found = false
+    r: {
+        ok -> {
+            ok = it.is-str()
+            s = it.str()
+            s: {
+                ok -> {
+                    found = true
+                    v = it
+                }
+
+                nil -> found = false
+
+                err -> found = false
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse str ok')
+    runner.is-true(found, 'str value found')
+    runner.str-eq(v, 'hello', 'str value')
+}
+
+; 數字解析
+t-parse-num = () {
+    r = noml.parse('42')
+    ok = false
+    v = 0
+    found = false
+    r: {
+        ok -> {
+            ok = it.is-num()
+            n = it.i64()
+            n: {
+                ok -> {
+                    found = true
+                    v = it
+                }
+
+                nil -> found = false
+
+                err -> found = false
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse num ok')
+    runner.is-true(found, 'num value found')
+    runner.eq(v, 42, 'num value')
+}
+
+; 布林解析
+t-parse-bool = () {
+    r = noml.parse('true')
+    ok = false
+    r: {
+        ok -> ok = it.is-bool()
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse bool true ok')
+}
+
+; 解析物件 / 陣列
+...
+
+; 物件解析與成員取值
+t-parse-obj = () {
+    r = noml.parse('{\n  a: 1\n  b: \'x\'\n  c: true\n}\n')
+    ok = false
+    ai = false
+    bfound = false
+    bv = ''
+    cfound = false
+    cv = false
+    r: {
+        ok -> {
+            doc = it
+            p pool = doc.node-pool
+            ok = doc.is-obj()
+            ca = doc.get('a')
+            ca: {
+                ok -> ai = p.is-num(it)
+
+                nil -> ai = false
+
+                err -> ai = false
+            }
+            cb = doc.get-str('b')
+            cb: {
+                ok -> {
+                    bfound = true
+                    bv = it
+                }
+
+                nil -> bfound = false
+
+                err -> bfound = false
+            }
+            cc = doc.get-bool('c')
+            cc: {
+                ok -> {
+                    cfound = true
+                    cv = it
+                }
+
+                nil -> cfound = false
+
+                err -> cfound = false
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse obj ok')
+    runner.is-true(ai, 'obj a is num')
+    runner.is-true(bfound, 'obj b found')
+    runner.str-eq(bv, 'x', 'obj b value')
+    runner.is-true(cfound, 'obj c found')
+    runner.is-true(cv, 'obj c value')
+}
+
+; 陣列解析與下標取值
+t-parse-arr = () {
+    r = noml.parse('[\n  1,\n  2,\n  3\n]\n')
+    ok = false
+    n = -1
+    v0 = -1
+    r: {
+        ok -> {
+            doc = it
+            ok = doc.is-arr()
+            n = doc.len()
+            e0 = doc.at(0)
+            e0: {
+                ok -> {
+                    a0 = doc.node-pool.val-i64(it)
+                    a0: {
+                        ok -> v0 = it
+
+                        nil -> v0 = -1
+
+                        err -> v0 = -1
+                    }
+                }
+
+                nil -> v0 = -1
+
+                err -> v0 = -1
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse arr ok')
+    runner.eq(n, 3, 'arr len')
+    runner.eq(v0, 1, 'arr[0]')
+}
+
+; 巢狀子物件 / 陣列
+t-parse-nested = () {
+    r = noml.parse('{\n  m: {\n    k: \'v\'\n  }\n  a: [1, 2]\n}\n')
+    ok = false
+    ok2 = false
+    r: {
+        ok -> {
+            ok = it.is-obj()
+            s = it.stringify()
+            r2 = noml.parse(s)
+            r2: {
+                ok -> ok2 = true
+
+                nil -> ok2 = false
+
+                err -> ok2 = false
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse nested ok')
+    runner.is-true(ok2, 'nested reparse ok')
+}
+
+; 註解 / 註解標記
+...
+
+; 行尾註解（`;`）
+t-comment = () {
+    r = noml.parse('{\n  a: 1 ; 這是註解\n  b: 2\n}\n')
+    ok = false
+    n = -1
+    r: {
+        ok -> {
+            ok = it.is-obj()
+            n = it.len()
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse comment ok')
+    runner.eq(n, 2, 'comment keeps 2 members')
+}
+
+; 多行註解 `;;` … `;;`（與 Nolang 原始碼同語法）
+t-block-comment = () {
+    src = '{\n  ;;\n  整段被註解\n  a: 999\n  ;;\n  a: \'x\'\n  b: 1\n}\n'
+    r = noml.parse(src)
+    ok = false
+    n = -1
+    av = ''
+    r: {
+        ok -> {
+            ok = true
+            doc = it
+            n = doc.len()
+            v = doc.get-str('a')
+            v: {
+                ok -> av = it
+
+                nil -> av = ''
+
+                err -> av = ''
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'block comment parse ok')
+    runner.eq(n, 2, 'block comment keeps 2 members')
+    runner.is-true(av.eq-full('x'), 'block comment body is ignored')
+
+    ; `;; 有內容` 同一行有非空白 ⇒ 仍然只是行註解
+    r2 = noml.parse('{\n  ;; 行註解\n  a: 1\n}\n')
+    n2 = -1
+    r2: {
+        ok -> n2 = it.len()
+
+        nil -> n2 = -1
+
+        err -> n2 = -1
+    }
+    runner.eq(n2, 1, 'semicolons with content stay a line comment')
+}
+
+; 註解標記 `#{...}`（文件級 + 成員級）
+t-annotation = () {
+    src = '#{type = \'server\'}\n{\n  #{c}\n  host: \'localhost\'\n}\n'
+    r = noml.parse(src)
+    ok = false
+    fa = ''
+    ffound = false
+    mfound = false
+    r: {
+        ok -> {
+            ok = true
+            doc = it
+            a = doc.ann()
+            a: {
+                ok -> {
+                    ffound = true
+                    fa = it
+                }
+
+                nil -> ffound = false
+
+                err -> ffound = false
+            }
+
+            ; 成員級註解
+            ch = doc.get('host')
+            ch: {
+                ok -> {
+                    ma = doc.node-pool.ann(it)
+                    ma: {
+                        ok -> mfound = it.eq-full('c')
+
+                        nil -> mfound = false
+
+                        err -> mfound = false
+                    }
+                }
+
+                nil -> mfound = false
+
+                err -> mfound = false
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse annotation ok')
+    runner.is-true(ffound, 'file ann found')
+    runner.str-eq(fa, 'type = \'server\'', 'file ann text')
+    runner.is-true(mfound, 'member ann text')
+}
+
+; stringify 往返
+...
+
+; 解析→序列化→再解析應冪等
+t-roundtrip = () {
+    src = '{\n  a: 1\n  b: \'x\'\n  c: [1, 2, 3]\n  d: nil\n}\n'
+    r = noml.parse(src)
+    ok1 = false
+    s1 = ''
+    r: {
+        ok -> {
+            ok1 = true
+            s1 = it.stringify()
+        }
+
+        nil -> ok1 = false
+
+        err -> ok1 = false
+    }
+    runner.is-true(ok1, 'roundtrip parse ok')
+    r2 = noml.parse(s1)
+    ok2 = false
+    s2 = ''
+    r2: {
+        ok -> {
+            ok2 = true
+            s2 = it.stringify()
+        }
+
+        nil -> ok2 = false
+
+        err -> ok2 = false
+    }
+    runner.is-true(ok2, 'roundtrip reparse ok')
+    runner.str-eq(s1, s2, 'roundtrip idempotent')
+}
+
+; 構建 API
+...
+
+; 用構建器建立物件並序列化往返
+t-builder = () {
+    d = noml.new()
+    o = d.new-obj()
+    d.put(o, 'name', d.new-str('nolang'))
+    d.put(o, 'ver', d.new-num(1.0))
+    d.put(o, 'active', d.new-bool(true))
+    d.put(o, 'note', d.new-nil())
+    d.set-root(o)
+    runner.is-true(d.is-obj(), 'builder root is obj')
+    nm = d.get-str('name')
+    found = false
+    v = ''
+    nm: {
+        ok -> {
+            found = true
+            v = it
+        }
+
+        nil -> found = false
+
+        err -> found = false
+    }
+    runner.is-true(found, 'builder name found')
+    runner.str-eq(v, 'nolang', 'builder name value')
+
+    ; nil 成員
+    nn = d.get('note')
+    isn = false
+    nn: {
+        ok -> isn = d.node-pool.is-nil(it)
+
+        nil -> isn = false
+
+        err -> isn = false
+    }
+    runner.is-true(isn, 'builder nil member')
+
+    ; 序列化後再解析
+    s = d.stringify()
+    r = noml.parse(s)
+    ok3 = false
+    r: {
+        ok -> {
+            ok3 = true
+            p pool = it.node-pool
+            cn = it.get('note')
+            cnil = false
+            cn: {
+                ok -> cnil = p.is-nil(it)
+
+                nil -> cnil = false
+
+                err -> cnil = false
+            }
+            runner.is-true(cnil, 'reparsed nil member')
+        }
+
+        nil -> ok3 = false
+
+        err -> ok3 = false
+    }
+    runner.is-true(ok3, 'builder stringify reparse ok')
+}
+
+; 陣列構建器（push）
+t-builder-arr = () {
+    d = noml.new()
+    a = d.new-arr()
+    d.push(a, d.new-num(10.0))
+    d.push(a, d.new-num(20.0))
+    d.set-root(a)
+    runner.is-true(d.is-arr(), 'builder arr is arr')
+    runner.eq(d.len(), 2, 'builder arr len')
+}
+
+; 註解寫入
+t-ann-write = () {
+    d = noml.new()
+    o = d.new-obj()
+    d.put(o, 'host', d.new-str('localhost'))
+    d.set-root(o)
+    d.set-ann('type = \'server\'')
+    s = d.stringify()
+    r = noml.parse(s)
+    ok = false
+    fa = ''
+    ff = false
+    avv = ''
+    avf = false
+    r: {
+        ok -> {
+            ok = true
+            doc = it
+            a = doc.ann()
+            a: {
+                ok -> {
+                    ff = true
+                    fa = it
+                }
+
+                nil -> ff = false
+
+                err -> ff = false
+            }
+
+            ; ann-value 取出鍵值
+            av = doc.ann-value('type')
+            av: {
+                ok -> {
+                    avf = true
+                    avv = it
+                }
+
+                nil -> avf = false
+
+                err -> avf = false
+            }
+        }
+
+        nil -> ok = false
+
+        err -> ok = false
+    }
+    runner.is-true(ok, 'ann-write reparse ok')
+    runner.is-true(ff, 'ann-write file ann found')
+    runner.str-eq(fa, 'type = \'server\'', 'ann-write file ann text')
+    runner.is-true(avf, 'ann-value found')
+    runner.str-eq(avv, 'server', 'ann-value text')
+}
+
+; 錯誤路徑
+...
+
+; 空輸入
+t-err-empty = () {
+    r = noml.parse('')
+    bad = false
+    r: {
+        ok -> bad = true
+
+        nil -> bad = true
+
+        err -> bad = false
+    }
+    runner.is-false(bad, 'empty input errors')
+}
+
+; 重複鍵
+t-err-dup = () {
+    r = noml.parse('{\n  a: 1\n  a: 2\n}\n')
+    bad = false
+    r: {
+        ok -> bad = true
+
+        nil -> bad = true
+
+        err -> bad = false
+    }
+    runner.is-false(bad, 'duplicate key errors')
+}
+
+; 未閉合字串
+t-err-unterm = () {
+    r = noml.parse('\'hello')
+    bad = false
+    r: {
+        ok -> bad = true
+
+        nil -> bad = true
+
+        err -> bad = false
+    }
+    runner.is-false(bad, 'unterminated string errors')
+}
+
+; 錯位 #{...}（寫在成員值前方同一行）
+t-err-ann-pos = () {
+    r = noml.parse('{\n  #{c} host: \'x\'\n}\n')
+    bad = false
+    r: {
+        ok -> bad = true
+
+        nil -> bad = true
+
+        err -> bad = false
+    }
+    runner.is-false(bad, 'misplaced annotation errors')
+}
+
+; 尾隨內容
+t-err-trailing = () {
+    r = noml.parse('{\n  a: 1\n}\nX')
+    bad = false
+    r: {
+        ok -> bad = true
+
+        nil -> bad = true
+
+        err -> bad = false
+    }
+    runner.is-false(bad, 'trailing content errors')
+}
+
+; null 不是合法字面量（NOML 用 nil）
+t-err-null = () {
+    r = noml.parse('{\n  a: null\n}\n')
+    bad = false
+    r: {
+        ok -> bad = true
+
+        nil -> bad = true
+
+        err -> bad = false
+    }
+    runner.is-false(bad, 'null rejected')
+}
+
+; 白盒：模組級詞法輔助
+...
+
+;
+; 這些函式只吃位元組，不碰節點池，直接從模組頂層呼叫。
+
+; is-ident-start / is-ident-char / hex-digit / hex-char / is-ident-key
+t-noml-lex = () {
+
+    ; is-ident-start：'_' 與小寫字母，數字/大寫/符號都不行
+    runner.is-true(noml.is-ident-start(95), 'ident-start underscore')
+    runner.is-true(noml.is-ident-start(97), 'ident-start a')
+    runner.is-true(noml.is-ident-start(122), 'ident-start z')
+    runner.is-false(noml.is-ident-start(65), 'ident-start A')
+    runner.is-false(noml.is-ident-start(48), 'ident-start 0')
+    runner.is-false(noml.is-ident-start(45), 'ident-start dash')
+
+    ; is-ident-char：再加上數字與 '-'
+    runner.is-true(noml.is-ident-char(95), 'ident-char underscore')
+    runner.is-true(noml.is-ident-char(45), 'ident-char dash')
+    runner.is-true(noml.is-ident-char(57), 'ident-char 9')
+    runner.is-true(noml.is-ident-char(97), 'ident-char a')
+    runner.is-false(noml.is-ident-char(65), 'ident-char A')
+    runner.is-false(noml.is-ident-char(32), 'ident-char space')
+    runner.is-false(noml.is-ident-char(46), 'ident-char dot')
+
+    ; hex-digit：0-9 / a-f / A-F 三區間，其餘 -1
+    runner.eq(noml.hex-digit(48), 0, 'hex-digit 0')
+    runner.eq(noml.hex-digit(57), 9, 'hex-digit 9')
+    runner.eq(noml.hex-digit(97), 10, 'hex-digit a')
+    runner.eq(noml.hex-digit(102), 15, 'hex-digit f')
+    runner.eq(noml.hex-digit(65), 10, 'hex-digit A')
+    runner.eq(noml.hex-digit(70), 15, 'hex-digit F')
+    runner.eq(noml.hex-digit(103), -1, 'hex-digit g')
+    runner.eq(noml.hex-digit(47), -1, 'hex-digit slash')
+
+    ; hex-char：hex-digit 的反向
+    runner.eq(noml.hex-char(0), 48, 'hex-char 0')
+    runner.eq(noml.hex-char(9), 57, 'hex-char 9')
+    runner.eq(noml.hex-char(10), 97, 'hex-char 10')
+    runner.eq(noml.hex-char(15), 102, 'hex-char 15')
+
+    ; is-ident-key
+    runner.is-true(noml.is-ident-key('abc'), 'ident-key abc')
+    runner.is-true(noml.is-ident-key('a-b_c1'), 'ident-key mixed')
+    runner.is-true(noml.is-ident-key('_x'), 'ident-key underscore')
+    runner.is-false(noml.is-ident-key(''), 'ident-key empty')
+    runner.is-false(noml.is-ident-key('1a'), 'ident-key digit first')
+    runner.is-false(noml.is-ident-key('Abc'), 'ident-key upper')
+    runner.is-false(noml.is-ident-key('a.b'), 'ident-key dot')
+}
+
+; 白盒：游標與錯誤
+...
+
+; skip-trivia / skip-blanks / at-line-start / line-of / fail
+t-noml-cursor = () {
+    d = noml.new()
+
+    ; skip-trivia 連 `;` 行註解一起跳過
+    runner.eq(d.node-pool.skip-trivia('  \n; c\n x', 0), 8, 'skip-trivia comment')
+    runner.eq(d.node-pool.skip-trivia('  \n; c\n x', 9), 9, 'skip-trivia at end')
+    runner.eq(d.node-pool.skip-trivia('', 0), 0, 'skip-trivia empty')
+
+    ; 多行註解 `;;` … `;;`：定界符要求 `;;` 後到行尾只有空白
+    runner.is-true(d.node-pool.block-delim-at(';;\n', 0), 'block-delim start')
+    runner.is-true(d.node-pool.block-delim-at(';;  \r\n', 0), 'block-delim trailing blanks')
+    runner.is-true(d.node-pool.block-delim-at(';;', 0), 'block-delim at EOF')
+    runner.is-false(d.node-pool.block-delim-at(';; x\n', 0), 'block-delim with content is a line comment')
+    runner.is-false(d.node-pool.block-delim-at('; x\n', 0), 'block-delim needs two semicolons')
+
+    ; skip-block-comment 停在結束定界符之後（不吞那一行的換行）
+    runner.eq(d.node-pool.skip-block-comment(';;\nabc\n;;\nx', 0), 9, 'skip-block-comment end')
+    runner.eq(d.node-pool.skip-block-comment(';;\n;;\nx', 0), 5, 'skip-block-comment empty body')
+    runner.eq(d.node-pool.skip-block-comment(';;\nabc', 0), 6, 'skip-block-comment unterminated eats EOF')
+
+    ; skip-trivia 兩種註解混排
+    runner.eq(d.node-pool.skip-trivia(';;\nabc\n;;\nx', 0), 10, 'skip-trivia block comment')
+    runner.eq(d.node-pool.skip-trivia(';; x\n a', 0), 6, 'skip-trivia block-delim needs empty tail')
+
+    ; skip-blanks 只吃空格與 TAB，不跨換行
+    runner.eq(d.node-pool.skip-blanks(' \t x', 0), 3, 'skip-blanks blanks')
+    runner.eq(d.node-pool.skip-blanks('  \nx', 0), 2, 'skip-blanks stops at LF')
+    runner.eq(d.node-pool.skip-blanks('x', 0), 0, 'skip-blanks noop')
+
+    ; at-line-start
+    runner.is-true(d.node-pool.at-line-start('a\n  b', 0), 'line-start at 0')
+    runner.is-false(d.node-pool.at-line-start('a\n  b', 1), 'line-start after a')
+    runner.is-true(d.node-pool.at-line-start('a\n  b', 4), 'line-start after indent')
+    runner.is-false(d.node-pool.at-line-start('a b', 2), 'line-start mid line')
+
+    ; line-of 從 1 起算，越界自動 clamp
+    s2 = 'a\nb\nc'
+    runner.eq(d.node-pool.line-of(s2, 0), 1, 'line-of 0')
+    runner.eq(d.node-pool.line-of(s2, 2), 2, 'line-of 2')
+    runner.eq(d.node-pool.line-of(s2, 4), 3, 'line-of 4')
+    runner.eq(d.node-pool.line-of(s2, -5), 1, 'line-of negative clamps')
+    runner.eq(d.node-pool.line-of(s2, 99), 3, 'line-of past end clamps')
+
+    ; fail 記錄帶行號的訊息並回 false
+    ok = d.node-pool.fail(s2, 4, 'boom')
+    runner.is-false(ok, 'fail returns false')
+    runner.str-eq(d.node-pool.err, 'noml: line 3: boom', 'fail message')
+}
+
+; 白盒：掃描器
+...
+
+; scan-quote / scan-raw / scan-ann / join-ann
+t-noml-scan = () {
+    d = noml.new()
+
+    ; scan-quote：回傳閉引號之後的位置；LF 或字串尾都算未閉合
+    runner.eq(d.node-pool.scan-quote('\'abc\'', 0), 5, 'scan-quote simple')
+    runner.eq(d.node-pool.scan-quote('\'a\\\'b\'', 0), 6, 'scan-quote escaped')
+    runner.eq(d.node-pool.scan-quote('\'ab', 0), -1, 'scan-quote unterminated')
+    runner.eq(d.node-pool.scan-quote('\'a\nb\'', 0), -1, 'scan-quote LF stops')
+
+    ; scan-raw：開頭必須緊跟換行，結尾反引號可縮排
+    runner.eq(d.node-pool.scan-raw('`\nab\n`', 0), 6, 'scan-raw simple')
+    runner.eq(d.node-pool.scan-raw('`\nab\n  `', 0), 8, 'scan-raw indented close')
+    runner.eq(d.node-pool.scan-raw('`abc`', 0), -1, 'scan-raw needs LF after open')
+    runner.eq(d.node-pool.scan-raw('`\nab', 0), -1, 'scan-raw unterminated')
+
+    ; scan-ann：只校驗結構，不解析條目
+    runner.eq(d.node-pool.scan-ann('#{a = 1}', 0), 8, 'scan-ann simple')
+    runner.eq(d.node-pool.scan-ann('', 0), -1, 'scan-ann empty')
+    runner.eq(d.node-pool.scan-ann('#a', 0), -1, 'scan-ann not annotation')
+    runner.eq(d.node-pool.scan-ann('#{a', 0), -1, 'scan-ann unterminated')
+    runner.eq(d.node-pool.scan-ann('#{}', 0), 3, 'scan-ann empty body')
+    runner.eq(d.node-pool.scan-ann('#{a = \'}\'}', 0), 10, 'scan-ann quote inside')
+    runner.eq(d.node-pool.scan-ann('#{a = [1, 2]}', 0), 13, 'scan-ann nested array')
+
+    ; join-ann 以 ', ' 連接
+    runner.str-eq(d.node-pool.join-ann('', 'x = 1'), 'x = 1', 'join-ann first')
+    runner.str-eq(d.node-pool.join-ann('a = 1', 'b = 2'), 'a = 1, b = 2', 'join-ann merge')
+}
+
+; 白盒：節點池骨架
+...
+
+;
+; ⚠️ 白盒只能「呼叫方法」，**不能直接讀 `.nodes` / `.strs` 等欄位**：
+; 從模組外按下標讀 std 結構體的 `[]str` 欄位會拿到 nil 或直接段錯誤
+; （test/README §5.2 #73）。所有節點內容一律用 kind/len/key/val-* 取得。
+
+; init / alloc / add-child / has-key / kind / len
+t-noml-pool-core = () {
+    d = noml.new()
+
+    ; 空池的第一次 alloc 拿到 0，節點預設為 NIL
+    z = d.node-pool.alloc()
+    runner.eq(z, 0, 'alloc first index')
+    runner.eq(d.node-pool.kind(z), 0, 'alloc kind is nil')
+
+    ; 同一個池接著解析，索引從 1 開始
+    o, nxt, ok = d.node-pool.parse-object('{\na: 1\n}', 0)
+    runner.is-true(ok, 'pool-core parse-object ok')
+    runner.eq(o, 1, 'pool-core object index')
+    runner.eq(nxt, 8, 'pool-core object next')
+    runner.eq(d.node-pool.kind(o), 5, 'pool-core object kind')
+    runner.eq(d.node-pool.len(o), 1, 'pool-core object len')
+
+    ; has-key 走邊表
+    runner.is-true(d.node-pool.has-key(o, 'a'), 'has-key hit')
+    runner.is-false(d.node-pool.has-key(o, 'b'), 'has-key miss')
+    runner.is-false(d.node-pool.has-key(z, 'a'), 'has-key on non object')
+
+    ; key 依檔案順序
+    kn = d.node-pool.key(o, 0)
+    kn: {
+        ok -> runner.str-eq(it, 'a', 'key 0')
+
+        nil -> runner.is-true(false, 'key 0 should exist')
+
+        err -> runner.is-true(false, 'key 0 err')
+    }
+    kn2 = d.node-pool.key(o, 7)
+    kn2: {
+        ok -> runner.is-true(false, 'key out of range should be nil')
+
+        nil -> runner.is-true(true, 'key out of range nil')
+
+        err -> runner.is-true(false, 'key out of range err')
+    }
+
+    ; at 對物件回 nil
+    at0 = d.node-pool.at(o, 0)
+    at0: {
+        ok -> runner.is-true(false, 'at on object should be nil')
+
+        nil -> runner.is-true(true, 'at on object nil')
+
+        err -> runner.is-true(false, 'at on object err')
+    }
+
+    ; add-child 追加第二個成員（重複鍵檢查只在 parse-object 做）
+    extra = d.node-pool.alloc()
+    d.node-pool.add-child(o, extra, 'extra')
+    runner.eq(d.node-pool.len(o), 2, 'add-child bumps count')
+    runner.is-true(d.node-pool.has-key(o, 'extra'), 'add-child registers key')
+    eo = d.node-pool.get(o, 'extra')
+    eo: {
+        ok -> runner.eq(it, extra, 'add-child child index')
+
+        nil -> runner.is-true(false, 'add-child child missing')
+
+        err -> runner.is-true(false, 'add-child child err')
+    }
+
+    ; 越界索引一律安全回預設值
+    runner.eq(d.node-pool.kind(-1), 0, 'kind negative')
+    runner.eq(d.node-pool.kind(99), 0, 'kind out of range')
+    runner.eq(d.node-pool.len(-1), 0, 'len negative')
+    runner.eq(d.node-pool.len(99), 0, 'len out of range')
+
+    ; init 清空整個池
+    d.node-pool.init()
+    runner.eq(d.node-pool.alloc(), 0, 'init resets pool')
+}
+
+; 白盒：純量解析
+...
+
+; parse-str / decode-escape / hex4 / parse-raw / parse-num / parse-bool /
+; match-kw / parse-{str,raw,bool,nil,num}-node
+t-noml-parse-scalars = () {
+    d = noml.new()
+
+    ; parse-str：單引號字串（含轉義）
+    v1, n1, ok1 = d.node-pool.parse-str('\'abc\'', 0)
+    runner.is-true(ok1, 'parse-str ok')
+    runner.eq(n1, 5, 'parse-str next')
+    runner.str-eq(v1, 'abc', 'parse-str value')
+
+    v2, n2, ok2 = d.node-pool.parse-str('\'a\\\'b\'', 0)
+    runner.is-true(ok2, 'parse-str escaped quote ok')
+    runner.eq(n2, 6, 'parse-str escaped quote next')
+    runner.str-eq(v2, 'a\'b', 'parse-str escaped quote value')
+
+    v3, n3, ok3 = d.node-pool.parse-str('\'a\\nb\'', 0)
+    runner.is-true(ok3, 'parse-str escape LF ok')
+    runner.eq(v3.len-bytes(), 3, 'parse-str escape LF len')
+
+    v4, n4, ok4 = d.node-pool.parse-str('\'\\u0041\'', 0)
+    runner.is-true(ok4, 'parse-str unicode ok')
+    runner.str-eq(v4, 'A', 'parse-str unicode value')
+
+    v5, n5, ok5 = d.node-pool.parse-str('\'\\q\'', 0)
+    runner.is-false(ok5, 'parse-str bad escape')
+
+    v6, n6, ok6 = d.node-pool.parse-str('\'ab', 0)
+    runner.is-false(ok6, 'parse-str unterminated')
+
+    v7, n7, ok7 = d.node-pool.parse-str('abc', 0)
+    runner.is-false(ok7, 'parse-str not a quote')
+
+    v8, n8, ok8 = d.node-pool.parse-str('\'a\nb\'', 0)
+    runner.is-false(ok8, 'parse-str rejects raw LF')
+
+    ; decode-escape
+    dv1, dn1, dok1 = d.node-pool.decode-escape('\\n', 0)
+    runner.is-true(dok1, 'decode-escape ok')
+    runner.eq(dn1, 2, 'decode-escape next')
+    runner.eq(dv1.len-bytes(), 1, 'decode-escape len')
+
+    dv2, dn2, dok2 = d.node-pool.decode-escape('\\', 0)
+    runner.is-false(dok2, 'decode-escape truncated')
+
+    dv3, dn3, dok3 = d.node-pool.decode-escape('\\uZZZZ', 0)
+    runner.is-false(dok3, 'decode-escape bad hex4')
+
+    dv4, dn4, dok4 = d.node-pool.decode-escape('\\/', 0)
+    runner.is-true(dok4, 'decode-escape slash ok')
+    runner.str-eq(dv4, '/', 'decode-escape slash value')
+
+    ; hex4
+    runner.eq(d.node-pool.hex4('0041', 0), 65, 'hex4 A')
+    runner.eq(d.node-pool.hex4('004', 0), -1, 'hex4 too short')
+    runner.eq(d.node-pool.hex4('zzzz', 0), -1, 'hex4 non hex')
+    runner.eq(d.node-pool.hex4('0041', -1), -1, 'hex4 negative pos')
+
+    ; parse-raw：反引號原始串，CRLF 正規化成 LF
+    rv1, rn1, rok1 = d.node-pool.parse-raw('`\nab\n`', 0)
+    runner.is-true(rok1, 'parse-raw ok')
+    runner.eq(rn1, 6, 'parse-raw next')
+    runner.str-eq(rv1, 'ab', 'parse-raw value')
+
+    rv2, rn2, rok2 = d.node-pool.parse-raw('`\r\nab\n`', 0)
+    runner.is-true(rok2, 'parse-raw crlf ok')
+    runner.str-eq(rv2, 'ab', 'parse-raw crlf value')
+
+    rv3, rn3, rok3 = d.node-pool.parse-raw('`abc`', 0)
+    runner.is-false(rok3, 'parse-raw needs newline after open')
+
+    rv4, rn4, rok4 = d.node-pool.parse-raw('`\nab', 0)
+    runner.is-false(rok4, 'parse-raw unterminated')
+
+    ; parse-num
+    nv1, nn1, nok1 = d.node-pool.parse-num('42', 0)
+    runner.is-true(nok1, 'parse-num int ok')
+    runner.eq(nn1, 2, 'parse-num int next')
+    runner.eq(nv1.to-i64(), 42, 'parse-num int value')
+
+    nv2, nn2, nok2 = d.node-pool.parse-num('-3.5', 0)
+    runner.is-true(nok2, 'parse-num frac ok')
+    runner.eq(nn2, 4, 'parse-num frac next')
+    runner.eq((nv2 * 10.0).to-i64(), -35, 'parse-num frac value')
+
+    nv3, nn3, nok3 = d.node-pool.parse-num('1e3', 0)
+    runner.is-true(nok3, 'parse-num exponent ok')
+    runner.eq(nn3, 3, 'parse-num exponent next')
+    runner.eq(nv3.to-i64(), 1000, 'parse-num exponent value')
+
+    nv4, nn4, nok4 = d.node-pool.parse-num('12abc', 0)
+    runner.is-true(nok4, 'parse-num stops at non digit')
+    runner.eq(nn4, 2, 'parse-num stops next')
+
+    nv5, nn5, nok5 = d.node-pool.parse-num('abc', 0)
+    runner.is-false(nok5, 'parse-num no digits')
+
+    nv6, nn6, nok6 = d.node-pool.parse-num('1.', 0)
+    runner.is-false(nok6, 'parse-num dot without digits')
+
+    nv7, nn7, nok7 = d.node-pool.parse-num('1e', 0)
+    runner.is-false(nok7, 'parse-num exponent without digits')
+
+    ; parse-bool
+    bv1, bn1, bok1 = d.node-pool.parse-bool('true', 0)
+    runner.is-true(bok1, 'parse-bool true ok')
+    runner.eq(bn1, 4, 'parse-bool true next')
+    runner.is-true(bv1, 'parse-bool true value')
+
+    bv2, bn2, bok2 = d.node-pool.parse-bool('false', 0)
+    runner.is-true(bok2, 'parse-bool false ok')
+    runner.is-false(bv2, 'parse-bool false value')
+
+    bv3, bn3, bok3 = d.node-pool.parse-bool('tru', 0)
+    runner.is-false(bok3, 'parse-bool truncated')
+
+    ; match-kw：關鍵字後不得緊接識別符字元
+    runner.eq(d.node-pool.match-kw('nil', 0, 'nil'), 3, 'match-kw exact')
+    runner.eq(d.node-pool.match-kw('nilx', 0, 'nil'), -1, 'match-kw ident follows')
+    runner.eq(d.node-pool.match-kw('nil-', 0, 'nil'), -1, 'match-kw dash follows')
+    runner.eq(d.node-pool.match-kw('ni', 0, 'nil'), -1, 'match-kw too short')
+    runner.eq(d.node-pool.match-kw('anil', 1, 'nil'), 4, 'match-kw offset')
+
+    ; 純量節點包裝：種類與值都要落地
+    si, sn1, sok = d.node-pool.parse-str-node('\'hi\'', 0)
+    runner.is-true(sok, 'parse-str-node ok')
+    runner.eq(d.node-pool.kind(si), 3, 'parse-str-node kind')
+    sv = d.node-pool.val-str(si)
+    sv: {
+        ok -> runner.str-eq(it, 'hi', 'parse-str-node value')
+
+        nil -> runner.is-true(false, 'parse-str-node value missing')
+
+        err -> runner.is-true(false, 'parse-str-node value err')
+    }
+
+    ri, rn1b, rok = d.node-pool.parse-raw-node('`\nzz\n`', 0)
+    runner.is-true(rok, 'parse-raw-node ok')
+    runner.eq(d.node-pool.kind(ri), 3, 'parse-raw-node kind')
+    rsv = d.node-pool.val-str(ri)
+    rsv: {
+        ok -> runner.str-eq(it, 'zz', 'parse-raw-node value')
+
+        nil -> runner.is-true(false, 'parse-raw-node value missing')
+
+        err -> runner.is-true(false, 'parse-raw-node value err')
+    }
+
+    bi, bn1b, bok = d.node-pool.parse-bool-node('true', 0)
+    runner.is-true(bok, 'parse-bool-node ok')
+    runner.eq(d.node-pool.kind(bi), 1, 'parse-bool-node kind')
+    bvv = d.node-pool.val-bool(bi)
+    bvv: {
+        ok -> runner.is-true(it, 'parse-bool-node value')
+
+        nil -> runner.is-true(false, 'parse-bool-node value missing')
+
+        err -> runner.is-true(false, 'parse-bool-node value err')
+    }
+
+    li, ln1, lok = d.node-pool.parse-nil-node('nil', 0)
+    runner.is-true(lok, 'parse-nil-node ok')
+    runner.eq(d.node-pool.kind(li), 0, 'parse-nil-node kind')
+
+    li2, ln2, lok2 = d.node-pool.parse-nil-node('nix', 0)
+    runner.is-false(lok2, 'parse-nil-node bad literal')
+
+    mi, mn1, mok = d.node-pool.parse-num-node('7', 0)
+    runner.is-true(mok, 'parse-num-node ok')
+    runner.eq(d.node-pool.kind(mi), 2, 'parse-num-node kind')
+    mvv = d.node-pool.val-num(mi)
+    mvv: {
+        ok -> runner.eq(it.to-i64(), 7, 'parse-num-node value')
+
+        nil -> runner.is-true(false, 'parse-num-node value missing')
+
+        err -> runner.is-true(false, 'parse-num-node value err')
+    }
+}
+
+; 白盒：樹解析
+...
+
+; parse-value / parse-object / parse-array / require-end / parse-key / parse
+t-noml-parse-tree = () {
+    d = noml.new()
+
+    ; parse-value 依首字元分派
+    vi1, vn1, vok1 = d.node-pool.parse-value('42', 0)
+    runner.is-true(vok1, 'parse-value num ok')
+    runner.eq(d.node-pool.kind(vi1), 2, 'parse-value num kind')
+    runner.eq(vn1, 2, 'parse-value num next')
+
+    vi2, vn2, vok2 = d.node-pool.parse-value('', 0)
+    runner.is-false(vok2, 'parse-value empty')
+
+    vi3, vn3, vok3 = d.node-pool.parse-value('  x', 0)
+    runner.is-false(vok3, 'parse-value bad character')
+
+    vi4, vn4, vok4 = d.node-pool.parse-value('#{}', 0)
+    runner.is-false(vok4, 'parse-value stray annotation')
+
+    ; parse-object
+    o1, on1, ook1 = d.node-pool.parse-object('{}', 0)
+    runner.is-true(ook1, 'parse-object empty ok')
+    runner.eq(on1, 2, 'parse-object empty next')
+    runner.eq(d.node-pool.kind(o1), 6, 'parse-object empty kind is map')
+    runner.eq(d.node-pool.len(o1), 0, 'parse-object empty len')
+
+    o2, on2, ook2 = d.node-pool.parse-object('{\na: 1\nb: [1, 2]\n}', 0)
+    runner.is-true(ook2, 'parse-object nested ok')
+    runner.eq(d.node-pool.len(o2), 2, 'parse-object nested len')
+    ok2 = d.node-pool.key(o2, 1)
+    ok2: {
+        ok -> runner.str-eq(it, 'b', 'parse-object second key')
+
+        -> runner.is-true(false, 'parse-object second key missing')
+    }
+
+    ; 單行物件也合法（成員之間靠 `}` 收尾）
+    o3, on3, ook3 = d.node-pool.parse-object('{a: 1}', 0)
+    runner.is-true(ook3, 'parse-object single line ok')
+    runner.eq(on3, 6, 'parse-object single line next')
+
+    ; 缺冒號 / 重複鍵 / 未閉合
+    o4, on4, ook4 = d.node-pool.parse-object('{\na 1\n}', 0)
+    runner.is-false(ook4, 'parse-object missing colon')
+
+    o5, on5, ook5 = d.node-pool.parse-object('{\na: 1\na: 2\n}', 0)
+    runner.is-false(ook5, 'parse-object duplicate key')
+
+    o6, on6, ook6 = d.node-pool.parse-object('{\na: 1\n', 0)
+    runner.is-false(ook6, 'parse-object unterminated')
+
+    ; parse-array：逗號分隔，允許尾隨逗號
+    a1, an1, aok1 = d.node-pool.parse-array('[]', 0)
+    runner.is-true(aok1, 'parse-array empty ok')
+    runner.eq(an1, 2, 'parse-array empty next')
+    runner.eq(d.node-pool.kind(a1), 4, 'parse-array empty kind')
+    runner.eq(d.node-pool.len(a1), 0, 'parse-array empty len')
+
+    a2, an2, aok2 = d.node-pool.parse-array('[1, 2,]', 0)
+    runner.is-true(aok2, 'parse-array trailing comma ok')
+    runner.eq(an2, 7, 'parse-array trailing comma next')
+    runner.eq(d.node-pool.len(a2), 2, 'parse-array len')
+    ae = d.node-pool.at(a2, 1)
+    ae: {
+        ok -> runner.eq(d.node-pool.kind(it), 2, 'parse-array elem kind')
+
+        nil -> runner.is-true(false, 'parse-array elem missing')
+
+        err -> runner.is-true(false, 'parse-array elem err')
+    }
+    ae2 = d.node-pool.at(a2, 5)
+    ae2: {
+        ok -> runner.is-true(false, 'parse-array out of range should be nil')
+
+        nil -> runner.is-true(true, 'parse-array out of range nil')
+
+        err -> runner.is-true(false, 'parse-array out of range err')
+    }
+
+    a3, an3, aok3 = d.node-pool.parse-array('[1 2]', 0)
+    runner.is-false(aok3, 'parse-array missing comma')
+
+    a4, an4, aok4 = d.node-pool.parse-array('[1, 2', 0)
+    runner.is-false(aok4, 'parse-array unterminated')
+
+    ; require-end：行內空白 / 換行 / `;` 註解 / 容器閉合
+    e1, eok1 = d.node-pool.require-end('  \n', 0, 'k')
+    runner.is-true(eok1, 'require-end blanks then LF ok')
+    runner.eq(e1, 3, 'require-end next after LF')
+
+    e2, eok2 = d.node-pool.require-end('}', 0, 'k')
+    runner.is-true(eok2, 'require-end close brace ok')
+    runner.eq(e2, 0, 'require-end keeps brace position')
+
+    e3, eok3 = d.node-pool.require-end(' x', 0, 'k')
+    runner.is-false(eok3, 'require-end rejects content')
+
+    e4, eok4 = d.node-pool.require-end('; c\n', 0, 'k')
+    runner.is-true(eok4, 'require-end comment ok')
+    runner.eq(e4, 4, 'require-end comment next')
+
+    ; parse-key：裸識別符或單引號字串
+    pk1, pn1, pok1 = d.node-pool.parse-key('abc: 1', 0)
+    runner.is-true(pok1, 'parse-key bare ok')
+    runner.str-eq(pk1, 'abc', 'parse-key bare value')
+    runner.eq(pn1, 3, 'parse-key bare next')
+
+    pk2, pn2, pok2 = d.node-pool.parse-key('\'a.b\': 1', 0)
+    runner.is-true(pok2, 'parse-key quoted ok')
+    runner.str-eq(pk2, 'a.b', 'parse-key quoted value')
+
+    pk3, pn3, pok3 = d.node-pool.parse-key('.x', 0)
+    runner.is-false(pok3, 'parse-key bad start')
+
+    pk4, pn4, pok4 = d.node-pool.parse-key('', 0)
+    runner.is-false(pok4, 'parse-key empty')
+
+    ; pool.parse 整份文件（含檔案級與尾隨註解）
+    pi1, pok5 = d.node-pool.parse('{\na: 1\n}')
+    runner.is-true(pok5, 'pool.parse object ok')
+    runner.eq(d.node-pool.kind(pi1), 5, 'pool.parse object kind')
+
+    pi2, pok6 = d.node-pool.parse('')
+    runner.is-false(pok6, 'pool.parse empty')
+
+    pi3, pok7 = d.node-pool.parse('#{t = 1}\n7')
+    runner.is-true(pok7, 'pool.parse leading annotation ok')
+    pa3 = d.node-pool.ann(pi3)
+    pa3: {
+        ok -> runner.str-eq(it, 't = 1', 'pool.parse leading annotation text')
+
+        -> runner.is-true(false, 'pool.parse leading annotation missing')
+    }
+
+    pi4, pok8 = d.node-pool.parse('7 #{x = 1}')
+    runner.is-true(pok8, 'pool.parse trailing annotation ok')
+    pa4 = d.node-pool.ann(pi4)
+    pa4: {
+        ok -> runner.str-eq(it, 'x = 1', 'pool.parse trailing annotation text')
+
+        -> runner.is-true(false, 'pool.parse trailing annotation missing')
+    }
+
+    pi5, pok9 = d.node-pool.parse('#{t = 1}')
+    runner.is-false(pok9, 'pool.parse annotation without value')
+
+    pi6, pok10 = d.node-pool.parse('{a: 1} x')
+    runner.is-false(pok10, 'pool.parse trailing content')
+}
+
+; 白盒：序列化
+...
+
+; has-byte / raw-safe / quote / quote-value / fmt-num / fmt-key /
+; stringify / stringify-obj / stringify-arr
+t-noml-emit = () {
+    d = noml.new()
+
+    ; has-byte 逐位元組比對
+    runner.is-true(d.node-pool.has-byte('abc', 98), 'has-byte hit')
+    runner.is-false(d.node-pool.has-byte('abc', 122), 'has-byte miss')
+    runner.is-false(d.node-pool.has-byte('', 97), 'has-byte empty')
+
+    ; raw-safe
+    runner.is-true(d.node-pool.raw-safe('ab'), 'raw-safe plain')
+    runner.is-true(d.node-pool.raw-safe('a\nb'), 'raw-safe multiline')
+    runner.is-false(d.node-pool.raw-safe(''), 'raw-safe empty')
+    runner.is-false(d.node-pool.raw-safe('\nab'), 'raw-safe leading LF')
+    runner.is-false(d.node-pool.raw-safe('ab\n'), 'raw-safe trailing LF')
+    runner.is-false(d.node-pool.raw-safe('a\rb'), 'raw-safe CR')
+
+    ; quote：單引號轉義形式
+    runner.str-eq(d.node-pool.quote('a'), '\'a\'', 'quote plain')
+    runner.str-eq(d.node-pool.quote('a\'b'), '\'a\\\'b\'', 'quote escaped quote')
+    runner.str-eq(d.node-pool.quote('a' - '\n' - 'b'), '\'a\\nb\'', 'quote LF')
+
+    ; quote-value：含 LF 且可安全放進原始串時改用反引號
+    runner.str-eq(d.node-pool.quote-value('a'), '\'a\'', 'quote-value plain')
+    qv = d.node-pool.quote-value('a' - '\n' - 'b')
+    runner.str-eq(qv, '`\na\nb\n`', 'quote-value multiline raw')
+
+    ; fmt-num：整值不帶小數點
+    runner.str-eq(d.node-pool.fmt-num(42.0), '42', 'fmt-num int')
+    runner.str-eq(d.node-pool.fmt-num(-7.0), '-7', 'fmt-num negative int')
+    runner.str-eq(d.node-pool.fmt-num(3.5), '3.5', 'fmt-num frac')
+
+    ; fmt-key：不合裸鍵規則時加引號
+    runner.str-eq(d.node-pool.fmt-key('abc'), 'abc', 'fmt-key bare')
+    runner.str-eq(d.node-pool.fmt-key('a.b'), '\'a.b\'', 'fmt-key quoted')
+    runner.str-eq(d.node-pool.fmt-key(''), '\'\'', 'fmt-key empty quoted')
+
+    ; stringify 逐型別
+    root, sok = d.node-pool.parse('{\na: nil\nb: true\nc: 3.5\nd: \'hi\'\ne: [1]\nf: {}\n}')
+    runner.is-true(sok, 'emit build ok')
+
+    ea = d.node-pool.get(root, 'a')
+    ea: {
+        ok -> runner.str-eq(d.node-pool.stringify(it, 0), 'nil', 'stringify nil')
+
+        -> runner.is-true(false, 'stringify nil missing')
+    }
+    eb = d.node-pool.get(root, 'b')
+    eb: {
+        ok -> runner.str-eq(d.node-pool.stringify(it, 0), 'true', 'stringify bool')
+
+        -> runner.is-true(false, 'stringify bool missing')
+    }
+    ec = d.node-pool.get(root, 'c')
+    ec: {
+        ok -> runner.str-eq(d.node-pool.stringify(it, 0), '3.5', 'stringify num')
+
+        -> runner.is-true(false, 'stringify num missing')
+    }
+    ed = d.node-pool.get(root, 'd')
+    ed: {
+        ok -> runner.str-eq(d.node-pool.stringify(it, 0), '\'hi\'', 'stringify str')
+
+        -> runner.is-true(false, 'stringify str missing')
+    }
+    ee = d.node-pool.get(root, 'e')
+    ee: {
+        ok -> {
+            arr = d.node-pool.stringify-arr(it, 0)
+            runner.str-eq(arr, '[\n  1,\n]', 'stringify-arr')
+        }
+
+        -> runner.is-true(false, 'stringify-arr missing')
+    }
+    ef = d.node-pool.get(root, 'f')
+    ef: {
+        ok -> {
+            obj = d.node-pool.stringify-obj(it, 0)
+            runner.str-eq(obj, '{}', 'stringify-obj empty')
+        }
+
+        -> runner.is-true(false, 'stringify-obj missing')
+    }
+
+    ; 索引無效時回空字串
+    runner.str-eq(d.node-pool.stringify(-1, 0), '', 'stringify invalid index')
+}
+
+; 白盒：節點取值與註解
+...
+
+; val-str / val-num / val-bool / get-f64 / get-i64 / has /
+; ann / set-ann / ann-value / ann-literal / skip-ann-value
+t-noml-access = () {
+    d = noml.new()
+    root, ok = d.node-pool.parse('{\ns: \'hi\'\nn: 2.5\nb: true\na: [1]\n}')
+    runner.is-true(ok, 'access build ok')
+    runner.eq(d.node-pool.kind(root), 5, 'access root kind')
+
+    ; ⚠️ 不能寫成 `si = d.node-pool.get(root, 's'): { ok -> it ... }`：
+    ; 方法呼叫後面直接接值位 match 時 `it` 不會綁定（恆得 0），必須先落變數
+    ; 再寫語句位 match（test/README §5.2 #74）。
+    si-op = d.node-pool.get(root, 's')
+    si = -1
+    si-op: {
+        ok -> si = it
+
+        nil -> si = -1
+
+        err -> si = -1
+    }
+    ni-op = d.node-pool.get(root, 'n')
+    ni = -1
+    ni-op: {
+        ok -> ni = it
+
+        nil -> ni = -1
+
+        err -> ni = -1
+    }
+    bi-op = d.node-pool.get(root, 'b')
+    bi = -1
+    bi-op: {
+        ok -> bi = it
+
+        nil -> bi = -1
+
+        err -> bi = -1
+    }
+
+    ; 型別相符才回值
+    av = d.node-pool.val-str(si)
+    av: {
+        ok -> runner.str-eq(it, 'hi', 'val-str value')
+
+        nil -> runner.is-true(false, 'val-str missing')
+
+        err -> runner.is-true(false, 'val-str err')
+    }
+
+    an = d.node-pool.val-num(ni)
+    an: {
+        ok -> runner.eq((it * 10.0).to-i64(), 25, 'val-num value')
+
+        nil -> runner.is-true(false, 'val-num missing')
+
+        err -> runner.is-true(false, 'val-num err')
+    }
+
+    ab = d.node-pool.val-bool(bi)
+    ab: {
+        ok -> runner.is-true(it, 'val-bool value')
+
+        nil -> runner.is-true(false, 'val-bool missing')
+
+        err -> runner.is-true(false, 'val-bool err')
+    }
+
+    ; 型別不符一律 nil
+    w1 = d.node-pool.val-str(ni)
+    w1: {
+        ok -> runner.is-true(false, 'val-str on num should be nil')
+
+        nil -> runner.is-true(true, 'val-str on num nil')
+
+        err -> runner.is-true(false, 'val-str on num err')
+    }
+    w2 = d.node-pool.val-num(si)
+    w2: {
+        ok -> runner.is-true(false, 'val-num on str should be nil')
+
+        nil -> runner.is-true(true, 'val-num on str nil')
+
+        err -> runner.is-true(false, 'val-num on str err')
+    }
+    w3 = d.node-pool.val-bool(si)
+    w3: {
+        ok -> runner.is-true(false, 'val-bool on str should be nil')
+
+        nil -> runner.is-true(true, 'val-bool on str nil')
+
+        err -> runner.is-true(false, 'val-bool on str err')
+    }
+
+    ; 索引越界
+    w4 = d.node-pool.val-str(-1)
+    w4: {
+        ok -> runner.is-true(false, 'val-str negative should be nil')
+
+        nil -> runner.is-true(true, 'val-str negative nil')
+
+        err -> runner.is-true(false, 'val-str negative err')
+    }
+    w5 = d.node-pool.val-num(99)
+    w5: {
+        ok -> runner.is-true(false, 'val-num out of range should be nil')
+
+        nil -> runner.is-true(true, 'val-num out of range nil')
+
+        err -> runner.is-true(false, 'val-num out of range err')
+    }
+
+    ; get-f64 / get-i64
+    gf = d.node-pool.get-f64(root, 'n')
+    gf: {
+        ok -> runner.eq((it * 10.0).to-i64(), 25, 'get-f64 value')
+
+        nil -> runner.is-true(false, 'get-f64 missing')
+
+        err -> runner.is-true(false, 'get-f64 err')
+    }
+    gi = d.node-pool.get-i64(root, 'n')
+    gi: {
+        ok -> runner.eq(it, 2, 'get-i64 truncates')
+
+        nil -> runner.is-true(false, 'get-i64 missing')
+
+        err -> runner.is-true(false, 'get-i64 err')
+    }
+    gi2 = d.node-pool.get-i64(root, 's')
+    gi2: {
+        ok -> runner.is-true(false, 'get-i64 on str should be nil')
+
+        nil -> runner.is-true(true, 'get-i64 on str nil')
+
+        err -> runner.is-true(false, 'get-i64 on str err')
+    }
+    gf2 = d.node-pool.get-f64(root, 'zz')
+    gf2: {
+        ok -> runner.is-true(false, 'get-f64 missing key should be nil')
+
+        nil -> runner.is-true(true, 'get-f64 missing key nil')
+
+        err -> runner.is-true(false, 'get-f64 missing key err')
+    }
+
+    ; has
+    runner.is-true(d.node-pool.has(root, 's'), 'has hit')
+    runner.is-false(d.node-pool.has(root, 'zz'), 'has miss')
+    runner.is-false(d.node-pool.has(-1, 's'), 'has invalid index')
+    runner.is-false(d.node-pool.has(si, 's'), 'has on non object')
+
+    ; 無註解的節點 ann 回 nil
+    missing-ann = d.node-pool.ann(ni)
+    missing-ann: {
+        ok -> runner.is-true(false, 'ann should be nil')
+
+        nil -> runner.is-true(true, 'ann nil for plain node')
+
+        err -> runner.is-true(false, 'ann err')
+    }
+
+    ; set-ann 寫入後 ann / ann-value 讀回
+    sok = d.node-pool.set-ann(si, 'type = \'str\', extra = 7')
+    runner.is-true(sok, 'set-ann ok')
+    annt = d.node-pool.ann(si)
+    annt: {
+        ok -> runner.str-eq(it, 'type = \'str\', extra = 7', 'ann text')
+
+        nil -> runner.is-true(false, 'ann missing after set-ann')
+
+        err -> runner.is-true(false, 'ann err after set-ann')
+    }
+    atv = d.node-pool.ann-value(si, 'type')
+    atv: {
+        ok -> runner.str-eq(it, 'str', 'ann-value quoted')
+
+        nil -> runner.is-true(false, 'ann-value quoted missing')
+
+        err -> runner.is-true(false, 'ann-value quoted err')
+    }
+    atv2 = d.node-pool.ann-value(si, 'extra')
+    atv2: {
+        ok -> runner.str-eq(it, '7', 'ann-value bare')
+
+        nil -> runner.is-true(false, 'ann-value bare missing')
+
+        err -> runner.is-true(false, 'ann-value bare err')
+    }
+    atv3 = d.node-pool.ann-value(si, 'nope')
+    atv3: {
+        ok -> runner.is-true(false, 'ann-value unknown key should be nil')
+
+        nil -> runner.is-true(true, 'ann-value unknown key nil')
+
+        err -> runner.is-true(false, 'ann-value unknown key err')
+    }
+    atv4 = d.node-pool.ann-value(si, '')
+    atv4: {
+        ok -> runner.is-true(false, 'ann-value empty key should be nil')
+
+        nil -> runner.is-true(true, 'ann-value empty key nil')
+
+        err -> runner.is-true(false, 'ann-value empty key err')
+    }
+
+    ; set-ann 越界
+    runner.is-false(d.node-pool.set-ann(-1, 'x'), 'set-ann negative index')
+    runner.is-false(d.node-pool.set-ann(99, 'x'), 'set-ann out of range')
+
+    ; ann-literal：單引號串去引號，其餘回傳 trim 後原文
+    lv1 = d.node-pool.ann-literal('\'x\'', 0)
+    lv1: {
+        ok -> runner.str-eq(it, 'x', 'ann-literal quoted')
+
+        nil -> runner.is-true(false, 'ann-literal quoted missing')
+
+        err -> runner.is-true(false, 'ann-literal quoted err')
+    }
+    lv2 = d.node-pool.ann-literal('42', 0)
+    lv2: {
+        ok -> runner.str-eq(it, '42', 'ann-literal bare')
+
+        nil -> runner.is-true(false, 'ann-literal bare missing')
+
+        err -> runner.is-true(false, 'ann-literal bare err')
+    }
+    lv3 = d.node-pool.ann-literal(' 42 , b = 1', 0)
+    lv3: {
+        ok -> runner.str-eq(it, '42', 'ann-literal trims')
+
+        nil -> runner.is-true(false, 'ann-literal trims missing')
+
+        err -> runner.is-true(false, 'ann-literal trims err')
+    }
+    lv4 = d.node-pool.ann-literal('', 0)
+    lv4: {
+        ok -> runner.is-true(false, 'ann-literal empty should be nil')
+
+        nil -> runner.is-true(true, 'ann-literal empty nil')
+
+        err -> runner.is-true(false, 'ann-literal empty err')
+    }
+    lv5 = d.node-pool.ann-literal('   ', 0)
+    lv5: {
+        ok -> runner.is-true(false, 'ann-literal blanks should be nil')
+
+        nil -> runner.is-true(true, 'ann-literal blanks nil')
+
+        err -> runner.is-true(false, 'ann-literal blanks err')
+    }
+    lv6 = d.node-pool.ann-literal('\'abc', 0)
+    lv6: {
+        ok -> runner.is-true(false, 'ann-literal unterminated should be nil')
+
+        nil -> runner.is-true(true, 'ann-literal unterminated nil')
+
+        err -> runner.is-true(false, 'ann-literal unterminated err')
+    }
+
+    ; skip-ann-value：回傳下一個條目的起點
+    runner.eq(d.node-pool.skip-ann-value('\'a\', b = 1', 0), 3, 'skip-ann-value quoted')
+    runner.eq(d.node-pool.skip-ann-value('[1, 2], b = 1', 0), 7, 'skip-ann-value array')
+    runner.eq(d.node-pool.skip-ann-value('{a: 1}, b = 1', 0), 7, 'skip-ann-value object')
+    runner.eq(d.node-pool.skip-ann-value('42, b = 1', 0), 3, 'skip-ann-value bare')
+    runner.eq(d.node-pool.skip-ann-value('', 0), -1, 'skip-ann-value empty')
+    runner.eq(d.node-pool.skip-ann-value('\'ab', 0), -1, 'skip-ann-value unterminated')
+}
+
+; 白盒：noml-doc 根節點級 API
+...
+
+; root-index / kind / key / num / bool / get-f64 / get-i64 / has / stringify-node
+t-noml-doc-wb = () {
+    d = noml.new()
+    runner.eq(d.root-index(), -1, 'doc root starts at -1')
+    runner.eq(d.kind(), 0, 'doc kind of empty root')
+
+    o = d.new-obj()
+    sv = d.new-str('hi')
+    nv = d.new-num(2.5)
+    bv = d.new-bool(true)
+    d.put(o, 'name', sv)
+    d.put(o, 'n', nv)
+    d.put(o, 'b', bv)
+    d.set-root(o)
+
+    runner.eq(d.root-index(), o, 'doc root index set')
+    runner.eq(d.kind(), 5, 'doc root kind obj')
+
+    ; key 依插入順序
+    dk0 = d.key(0)
+    dk0: {
+        ok -> runner.str-eq(it, 'name', 'doc key 0')
+
+        nil -> runner.is-true(false, 'doc key 0 missing')
+
+        err -> runner.is-true(false, 'doc key 0 err')
+    }
+    dk2 = d.key(2)
+    dk2: {
+        ok -> runner.str-eq(it, 'b', 'doc key 2')
+
+        nil -> runner.is-true(false, 'doc key 2 missing')
+
+        err -> runner.is-true(false, 'doc key 2 err')
+    }
+    dk9 = d.key(9)
+    dk9: {
+        ok -> runner.is-true(false, 'doc key out of range should be nil')
+
+        nil -> runner.is-true(true, 'doc key out of range nil')
+
+        err -> runner.is-true(false, 'doc key out of range err')
+    }
+
+    ; 根是物件時 num / bool 回 nil
+    dn = d.num()
+    dn: {
+        ok -> runner.is-true(false, 'doc num on obj should be nil')
+
+        nil -> runner.is-true(true, 'doc num on obj nil')
+
+        err -> runner.is-true(false, 'doc num on obj err')
+    }
+    db = d.bool()
+    db: {
+        ok -> runner.is-true(false, 'doc bool on obj should be nil')
+
+        nil -> runner.is-true(true, 'doc bool on obj nil')
+
+        err -> runner.is-true(false, 'doc bool on obj err')
+    }
+
+    ; has / get-f64 / get-i64
+    runner.is-true(d.has('name'), 'doc has name')
+    runner.is-false(d.has('zz'), 'doc has zz')
+    df = d.get-f64('n')
+    df: {
+        ok -> runner.eq((it * 10.0).to-i64(), 25, 'doc get-f64 value')
+
+        nil -> runner.is-true(false, 'doc get-f64 missing')
+
+        err -> runner.is-true(false, 'doc get-f64 err')
+    }
+    di = d.get-i64('n')
+    di: {
+        ok -> runner.eq(it, 2, 'doc get-i64 value')
+
+        nil -> runner.is-true(false, 'doc get-i64 missing')
+
+        err -> runner.is-true(false, 'doc get-i64 err')
+    }
+    di2 = d.get-i64('name')
+    di2: {
+        ok -> runner.is-true(false, 'doc get-i64 on str should be nil')
+
+        nil -> runner.is-true(true, 'doc get-i64 on str nil')
+
+        err -> runner.is-true(false, 'doc get-i64 on str err')
+    }
+
+    ; stringify-node：任意子樹
+    runner.str-eq(d.stringify-node(sv), '\'hi\'', 'doc stringify-node str')
+    runner.str-eq(d.stringify-node(-1), '', 'doc stringify-node invalid')
+
+    ; 標量根節點
+    d2 = noml.new()
+    r2 = d2.new-num(7.0)
+    d2.set-root(r2)
+    runner.eq(d2.kind(), 2, 'doc num root kind')
+    v2 = d2.num()
+    v2: {
+        ok -> runner.eq(it.to-i64(), 7, 'doc num root value')
+
+        nil -> runner.is-true(false, 'doc num root missing')
+
+        err -> runner.is-true(false, 'doc num root err')
+    }
+
+    d3 = noml.new()
+    r3 = d3.new-bool(false)
+    d3.set-root(r3)
+    runner.eq(d3.kind(), 1, 'doc bool root kind')
+    v3 = d3.bool()
+    v3: {
+        ok -> runner.is-false(it, 'doc bool root value')
+
+        nil -> runner.is-true(false, 'doc bool root missing')
+
+        err -> runner.is-true(false, 'doc bool root err')
+    }
+}
+
+; obj / map 判別：鍵是否有引號
+t-obj-map = () {
+
+    ; 全部裸鍵 ⇒ obj
+    r1 = noml.parse('{\nname: \'abc\'\nx-y-z: 123\n}\n')
+    ok1 = false
+    kind1 = -1
+    val1 = ''
+    s1 = ''
+    r1: {
+        ok -> {
+            d = it
+            kind1 = d.kind()
+            ok1 = d.is-obj()
+            v = d.get-str('name')
+            val1 = v: {
+                ok -> it
+
+                -> ''
+            }
+            s1 = d.stringify()
+        }
+
+        -> ok1 = false
+    }
+    runner.is-true(ok1, 'bare keys are obj')
+    runner.eq(kind1, 5, 'obj kind')
+    runner.str-eq(val1, 'abc', 'obj member readable')
+    runner.str-eq(s1, '{\n  name: \'abc\'\n  x-y-z: 123\n}', 'obj stringify keeps bare keys')
+
+    ; 全部單引號鍵 ⇒ map
+    r2 = noml.parse('{\n\'name\': \'abc\'\n\'x:y@z\': 123\n}\n')
+    ok2 = false
+    kind2 = -1
+    val2 = ''
+    s2 = ''
+    r2: {
+        ok -> {
+            d = it
+            kind2 = d.kind()
+            v = d.get-i64('x:y@z')
+            ok2 = v: {
+                ok -> true
+
+                -> false
+            }
+            sv = d.get-str('name')
+            val2 = sv: {
+                ok -> it
+
+                -> ''
+            }
+            s2 = d.stringify()
+        }
+
+        -> ok2 = false
+    }
+    runner.is-true(ok2, 'quoted keys are map')
+    runner.eq(kind2, 6, 'map kind')
+    runner.str-eq(val2, 'abc', 'map member readable')
+    runner.str-eq(s2, '{\n  \'name\': \'abc\'\n  \'x:y@z\': 123\n}', 'map stringify keeps quotes')
+
+    ; 空 {} ⇒ map（obj 不可能沒有欄位）
+    r3 = noml.parse('{}')
+    ok3 = r3: {
+        ok -> it.is-map()
+
+        -> false
+    }
+    runner.is-true(ok3, 'empty object is map')
+
+    ; 裸鍵與引號鍵混合 ⇒ 報錯
+    r4 = noml.parse('{\nname: \'abc\'\n\'x:y@z\': 123\n}\n')
+    bad4 = false
+    r4: {
+        ok -> bad4 = true
+
+        nil -> bad4 = true
+
+        err -> bad4 = false
+    }
+    runner.is-false(bad4, 'mixed key quoting rejected')
+
+    ; 巢狀：外層 obj、內層 map
+    r5 = noml.parse('{\nconfig: {\n  \'x:y\': 1\n}\n}\n')
+    ok5 = false
+    r5: {
+        ok -> {
+            d = it
+            c = d.get('config')
+            ok5 = c: {
+                ok -> d.node-pool.is-map(it)
+
+                -> false
+            }
+        }
+
+        -> ok5 = false
+    }
+    runner.is-true(ok5, 'nested map inside obj')
+
+    ; 建樹 API：new-map + put + stringify
+    d6 = noml.new()
+    m6 = d6.new-map()
+    runner.is-true(d6.node-pool.is-map(m6), 'new-map kind')
+    k6 = d6.new-str('v')
+    runner.is-true(d6.put(m6, 'k', k6), 'put into map')
+    d6.set-root(m6)
+    runner.str-eq(d6.stringify(), '{\n  \'k\': \'v\'\n}', 'new-map stringify')
+}
+
+; key 長度上限 255 bytes（0–255）
+t-noml-key-len = () {
+    k255 = 'a'.repeat(255)
+    k256 = 'a'.repeat(256)
+
+    r1 = noml.parse('{' - k255 - ': 1\n}')
+    ok1 = r1: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-true(ok1, 'bare key 255 accepted')
+
+    r2 = noml.parse('{' - k256 - ': 1\n}')
+    ok2 = r2: {
+        err -> true
+
+        -> false
+    }
+    runner.is-true(ok2, 'bare key 256 rejected')
+
+    r3 = noml.parse('{\'' - k255 - '\': 1\n}')
+    ok3 = r3: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-true(ok3, 'quoted key 255 accepted')
+
+    r4 = noml.parse('{\'' - k256 - '\': 1\n}')
+    ok4 = r4: {
+        err -> true
+
+        -> false
+    }
+    runner.is-true(ok4, 'quoted key 256 rejected')
+
+    r5 = noml.parse('{\'\': 1\n}')
+    ok5 = r5: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-true(ok5, 'empty key has length 0')
+
+    ; 建樹 API 同樣遵守 0–255
+    d = noml.new()
+    m = d.new-map()
+    v = d.new-str('v')
+    runner.is-true(d.put(m, k255, v), 'put accepts key 255')
+    runner.is-false(d.put(m, k256, v), 'put rejects key 256')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('noml.parse-nil', t-parse-nil)
+p2, f2 = runner.test('noml.parse-str', t-parse-str)
+p3, f3 = runner.test('noml.parse-num', t-parse-num)
+p4, f4 = runner.test('noml.parse-bool', t-parse-bool)
+p5, f5 = runner.test('noml.parse-obj', t-parse-obj)
+p6, f6 = runner.test('noml.parse-arr', t-parse-arr)
+p7, f7 = runner.test('noml.parse-nested', t-parse-nested)
+p8, f8 = runner.test('noml.comment', t-comment)
+p8b, f8b = runner.test('noml.block-comment', t-block-comment)
+p9, f9 = runner.test('noml.annotation', t-annotation)
+p10, f10 = runner.test('noml.roundtrip', t-roundtrip)
+
+p11, f11 = runner.test('noml.builder', t-builder)
+p12, f12 = runner.test('noml.builder-arr', t-builder-arr)
+p13, f13 = runner.test('noml.ann-write', t-ann-write)
+p14, f14 = runner.test('noml.err-empty', t-err-empty)
+p15, f15 = runner.test('noml.err-dup', t-err-dup)
+p16, f16 = runner.test('noml.err-unterm', t-err-unterm)
+p17, f17 = runner.test('noml.err-ann-pos', t-err-ann-pos)
+p18, f18 = runner.test('noml.err-trailing', t-err-trailing)
+p19, f19 = runner.test('noml.err-null', t-err-null)
+
+p20, f20 = runner.test('noml.wb-lex', t-noml-lex)
+p21, f21 = runner.test('noml.wb-cursor', t-noml-cursor)
+p22, f22 = runner.test('noml.wb-scan', t-noml-scan)
+p23, f23 = runner.test('noml.wb-pool-core', t-noml-pool-core)
+p24, f24 = runner.test('noml.wb-scalars', t-noml-parse-scalars)
+p25, f25 = runner.test('noml.wb-parse-tree', t-noml-parse-tree)
+p26, f26 = runner.test('noml.wb-emit', t-noml-emit)
+p27, f27 = runner.test('noml.wb-access', t-noml-access)
+p28, f28 = runner.test('noml.wb-doc', t-noml-doc-wb)
+p29, f29 = runner.test('noml.obj-map', t-obj-map)
+p30, f30 = runner.test('noml.key-len', t-noml-key-len)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

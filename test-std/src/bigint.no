@@ -1,0 +1,510 @@
+; std-bigint.no — bigint 模組測試
+;
+; 執行：no test test-std/src/bigint.no
+; 覆蓋：from-i64 / from-u64 / zero / one / copy /
+;       bigint.cmp / bigint.abs-cmp / bigint.eq /
+;       bigint.is-zero / bigint.is-neg / bigint.is-pos /
+;       bigint.add-bigint / bigint.sub-bigint / bigint.abs-add / bigint.abs-sub /
+;       add / sub / mul / _mul-i64 /
+;       div / mod / div-mod / _div-i64 / _mod-i64 /
+;       pow / mod-pow / gcd / lcm /
+;       bigint.shl1 / bigint.shr1 / shl / shr / bigint.normalize /
+;       bigint.to-str / bigint.to-i64 / bigint.to-hex
+;       混合運算數運算符重載（bigint ⊕ i64：+ - * / %）
+;
+; 曾因 bus error / BPT trap 整檔停用；2026-11-11 实测 to-str / to-hex / shl / shr
+; 全部可用，守衛已全部恢復。本輪另修好 to-hex（死迴圈）與 mod-pow（不取模），
+; 詳見 test/README.md §5.1g。
+
+# test/runner
+
+; 斷言字串相等（自動取 want 的長度，省去手數）
+; got: 實際字串
+; want: 期望字串
+; msg: 斷言描述
+eq-str = (got str, want str, msg str) {
+    runner.str-eq(got, want, msg)
+}
+
+; 建構
+...
+
+; 驗證 from-i64 構造 bigint 後 to-str 對正/負/零皆正確往返
+t-from-i64 = () {
+    a = bigint.from-i64(42)
+    s = a.to-str()
+    runner.str-eq(s, '42', 'from-i64(42) to-str')
+    b = bigint.from-i64(-99)
+    s2 = b.to-str()
+    runner.str-eq(s2, '-99', 'from-i64(-99) to-str')
+    c = bigint.from-i64(0)
+    s3 = c.to-str()
+    runner.str-eq(s3, '0', 'from-i64(0) to-str')
+}
+
+; 驗證 zero() / one() 兩個構造子分別產出字串 0 與 1
+t-zero-one = () {
+    z = bigint.zero()
+    zs = z.to-str()
+    runner.str-eq(zs, '0', 'zero to-str')
+    o = bigint.one()
+    os = o.to-str()
+    runner.str-eq(os, '1', 'one to-str')
+}
+
+; 比較
+...
+
+; 驗證 cmp 比較兩值：小於回 -1、相等回 0、大於回 1
+t-cmp = () {
+    a = bigint.from-i64(10)
+    b = bigint.from-i64(20)
+    r = a.cmp(b)
+    runner.eq(r, -1, 'cmp(10, 20) == -1')
+    r2 = b.cmp(a)
+    runner.eq(r2, 1, 'cmp(20, 10) == 1')
+    r3 = a.cmp(a)
+    runner.eq(r3, 0, 'cmp(10, 10) == 0')
+}
+
+; 驗證 eq 判定兩個 bigint 是否相等
+t-eq = () {
+    a = bigint.from-i64(42)
+    b = bigint.from-i64(42)
+    c = bigint.from-i64(43)
+    yes1 = a.eq(b)
+    runner.is-true(yes1, 'eq(42, 42) == true')
+    yes2 = a.eq(c)
+    runner.is-false(yes2, 'eq(42, 43) == false')
+}
+
+; 驗證 is-zero 判定是否為零值
+t-is-zero = () {
+    z = bigint.zero()
+    yes1 = z.is-zero()
+    runner.is-true(yes1, 'zero is-zero == true')
+    n = bigint.from-i64(5)
+    yes2 = n.is-zero()
+    runner.is-false(yes2, '5 is-zero == false')
+}
+
+; 驗證 is-neg 判定是否為負數
+t-is-neg = () {
+    n = bigint.from-i64(-42)
+    yes1 = n.is-neg()
+    runner.is-true(yes1, '-42 is-neg == true')
+    p = bigint.from-i64(42)
+    yes2 = p.is-neg()
+    runner.is-false(yes2, '42 is-neg == false')
+}
+
+; 加減法
+...
+
+; 驗證 + 運算子相加兩個 bigint（含正負混合）
+t-add = () {
+    a = bigint.from-i64(10)
+    b = bigint.from-i64(20)
+    c = a + b
+    s = c.to-str()
+    runner.str-eq(s, '30', 'add(10, 20) == 30')
+    d = bigint.from-i64(-5)
+    e = bigint.from-i64(8)
+    f = d + e
+    s2 = f.to-str()
+    runner.str-eq(s2, '3', 'add(-5, 8) == 3')
+}
+
+; 驗證 - 運算子相減兩個 bigint，小減大得負值
+t-sub = () {
+    a = bigint.from-i64(20)
+    b = bigint.from-i64(10)
+    c = a - b
+    s = c.to-str()
+    runner.str-eq(s, '10', 'sub(20, 10) == 10')
+    d = bigint.from-i64(5)
+    e = bigint.from-i64(8)
+    f = d - e
+    s2 = f.to-str()
+    runner.str-eq(s2, '-3', 'sub(5, 8) == -3')
+}
+
+; 乘法
+...
+
+; 驗證 * 運算子相乘兩個 bigint（負因式保留符號）
+t-mul = () {
+    a = bigint.from-i64(6)
+    b = bigint.from-i64(7)
+    c = a * b
+    s = c.to-str()
+    runner.str-eq(s, '42', 'mul(6, 7) == 42')
+    d = bigint.from-i64(-3)
+    e = bigint.from-i64(4)
+    f = d * e
+    s2 = f.to-str()
+    runner.str-eq(s2, '-12', 'mul(-3, 4) == -12')
+}
+
+; 除法
+...
+
+; 驗證 div-mod 同時回傳商與餘數（100 除以 7 得 14 餘 2）
+t-div-mod = () {
+    a = bigint.from-i64(100)
+    b = bigint.from-i64(7)
+    q, r = a.div-mod(b)
+    qs = q.to-str()
+    runner.str-eq(qs, '14', 'div-mod(100, 7) q == 14')
+    rs = r.to-str()
+    runner.str-eq(rs, '2', 'div-mod(100, 7) r == 2')
+}
+
+; 多 limb（Knuth D）除法：除數 >= 2^32 時走正的長除法路徑。
+; 這條路徑過去完全沒覆蓋（上面只測了 100/7 的單 limb 快速路徑），
+; 而它曾整體回傳 0（商與餘數的 limb 寫入沒落地）。此處用 q*b+r == a 與 r < b 兩條不變式驗。
+t-div-mod-multi = () {
+    a0 = bigint.from-i64(18014398509481984)
+    b0 = bigint.from-i64(4503599627370496)
+    q0, r0 = a0.div-mod(b0)
+    runner.str-eq(q0.to-str(), '4', 'div-mod(2^54, 2^52) q == 4')
+    runner.str-eq(r0.to-str(), '0', 'div-mod(2^54, 2^52) r == 0')
+
+    a1 = bigint.from-i64(9007199254740993)
+    b1 = bigint.from-i64(4294967297)
+    q1, r1 = a1.div-mod(b1)
+    runner.str-eq(q1.to-str(), '2097151', 'div-mod(2^53+1, 2^32+1) q')
+    runner.str-eq(r1.to-str(), '4292870146', 'div-mod(2^53+1, 2^32+1) r')
+
+    ; 不變式：q*b + r == a 且 r < b
+    back = (q1 * b1) + r1
+    same = back.eq(a1)
+    runner.is-true(same, '多 limb 除法 q*b+r == a')
+    lt = r1.cmp(b1) < 0
+    runner.is-true(lt, '多 limb 除法 r < b')
+}
+
+; `%` 的公開契約：i64 右元委派 _mod-i64，除零依 div-mod 一貫回傳零（見 bigint._mod
+; 的註釋）。私有快速路徑不在這裡測 —— 外部模組呼叫它會被 privstd 直接擋成 ERROR。
+t-mod-public = () {
+    a = bigint.from-i64(100)
+
+    m = a % 7
+    runner.str-eq(m.to-str(), '2', '100 % 7 == 2')
+
+    z = a % 0
+    runner.str-eq(z.to-str(), '0', '100 % 0 == 0（除零回傳零，對齊 div-mod）')
+}
+
+; to-i64：把值域受限的 bigint 取回 i64 的公開出口。測的是「不靜默截斷」這個契約。
+t-to-i64 = () {
+    a = bigint.from-i64(4503599627370496)
+    av = a.to-i64()
+    rv = av: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(rv, 4503599627370496, 'to-i64 round-trips 2^52')
+
+    neg = bigint.from-i64(-123)
+    nv = neg.to-i64()
+    nrv = nv: {
+        ok -> it
+
+        -> 0
+    }
+    runner.eq(nrv, -123, 'to-i64 keeps the sign')
+
+    ; 2^63（正）出界：必須 err，不能截斷成低位
+    p63 = bigint.shl(bigint.one(), 63)
+    o63 = p63.to-i64()
+    ok63 = o63: {
+        ok -> 1
+
+        -> 0
+    }
+    runner.eq(ok63, 0, 'to-i64(2^63) is err, not a truncated value')
+
+    ; 3 個 limb（2^64）由長度守衛直接擋掉
+    p64 = bigint.shl(bigint.one(), 64)
+    o64 = p64.to-i64()
+    ok64 = o64: {
+        ok -> 1
+
+        -> 0
+    }
+    runner.eq(ok64, 0, 'to-i64(2^64) is err')
+
+    ; -2^63 恰是 i64 下限：必須 ok，且往回建 bigint 後值相等
+    m63 = bigint.shl(bigint.one(), 63)
+    m63.sign = -1
+    mv63 = m63.to-i64()
+    okm = mv63: {
+        ok -> it
+
+        -> 0
+    }
+    back = bigint.from-i64(okm)
+    runner.eq(back.cmp(m63), 0, 'to-i64(-2^63) round-trips the i64 lower bound')
+}
+
+; 冪運算
+...
+
+; 驗證 pow 求整數冪（含零次冪恆為 1）
+t-pow = () {
+    a = bigint.from-i64(2)
+    c = a.pow(10)
+    s = c.to-str()
+    runner.str-eq(s, '1024', 'pow(2, 10) == 1024')
+    b = bigint.from-i64(3)
+    d = b.pow(0)
+    s2 = d.to-str()
+    runner.str-eq(s2, '1', 'pow(3, 0) == 1')
+}
+
+; GCD/LCM
+...
+
+; 驗證 gcd 求兩數最大公因數
+t-gcd = () {
+    a = bigint.from-i64(12)
+    b = bigint.from-i64(8)
+    g = a.gcd(b)
+    s = g.to-str()
+    runner.str-eq(s, '4', 'gcd(12, 8) == 4')
+}
+
+; 驗證 lcm 求兩數最小公倍數
+t-lcm = () {
+    a = bigint.from-i64(4)
+    b = bigint.from-i64(6)
+    l = a.lcm(b)
+    s = l.to-str()
+    runner.str-eq(s, '12', 'lcm(4, 6) == 12')
+}
+
+; 混合運算數運算符重載（bigint ⊕ i64）
+...
+
+; 路線 C：運算符重載採聯合形參 `(b big)`（big = bigint | i64）＋型別解構 match。
+; 編譯器按實參具體型別單態化派發（零執行期 tag）：bigint 臂委派 add/sub/mul-bigint，
+; i64 臂委派 _add/_mul/_div/_mod-i64，同型 bigint ⊕ bigint 亦自然命中 bigint 臂。
+; 覆蓋五個運算符的 `bigint op i64`、`bigint op bigint`，並含負運算數（守衛符號回寫）。
+t-operator-mixed = () {
+    a = bigint.from-i64(100)
+    s1 = (a + 1).to-str()
+    runner.str-eq(s1, '101', 'a(100) + 1 == 101')
+    s2 = (a - 1).to-str()
+    runner.str-eq(s2, '99', 'a(100) - 1 == 99')
+    s3 = (a * 256).to-str()
+    runner.str-eq(s3, '25600', 'a(100) * 256 == 25600')
+    s4 = (a / 2).to-str()
+    runner.str-eq(s4, '50', 'a(100) / 2 == 50')
+    s5 = (a % 9).to-str()
+    runner.str-eq(s5, '1', 'a(100) % 9 == 1')
+
+    ; i64 區域變數實參同樣命中 i64 臂（非僅字面量）
+    n = 5
+    s6 = (a + n).to-str()
+    runner.str-eq(s6, '105', 'a(100) + n(5) == 105')
+
+    ; 同型 bigint ⊕ bigint 命中 bigint 臂
+    b = bigint.from-i64(7)
+    s7 = (a + b).to-str()
+    runner.str-eq(s7, '107', 'a(100) + b(7) == 107')
+    s8 = (a * b).to-str()
+    runner.str-eq(s8, '700', 'a(100) * b(7) == 700')
+
+    ; 負運算數：守衛型別臂內命名輸出形參的符號回寫（曾誤為正號）
+    na = bigint.from-i64(-100)
+    s9 = (na + 3).to-str()
+    runner.str-eq(s9, '-97', 'na(-100) + 3 == -97')
+    s10 = (na - 3).to-str()
+    runner.str-eq(s10, '-103', 'na(-100) - 3 == -103')
+    s11 = (na + b).to-str()
+    runner.str-eq(s11, '-93', 'na(-100) + b(7) == -93')
+    s12 = (na - b).to-str()
+    runner.str-eq(s12, '-107', 'na(-100) - b(7) == -107')
+    s13 = (na * b).to-str()
+    runner.str-eq(s13, '-700', 'na(-100) * b(7) == -700')
+    s14 = (na / b).to-str()
+    runner.str-eq(s14, '-14', 'na(-100) / b(7) == -14')
+    s15 = (na % b).to-str()
+    runner.str-eq(s15, '-2', 'na(-100) % b(7) == -2')
+}
+
+; 內部核心：絕對值加減、同型加減
+...
+
+t-copy = () {
+    a = bigint.from-i64(1234)
+    b = a.copy()
+    b.limbs[0] = 7
+    eq-str(b.to-str(), '7', 'copy 後改 limb 生效')
+    eq-str(a.to-str(), '1234', 'copy 不影響原值')
+
+    ; 直接賦值只複製描述符、共用 limbs 緩衝（doc 明示，copy 存在的理由）
+    c = bigint.from-i64(88)
+    d = c
+    d.limbs[0] = 9
+    eq-str(c.to-str(), '9', '賦值與 copy 不同：共用 limbs')
+}
+
+t-cmp-helpers = () {
+    p5 = bigint.from-i64(5)
+    n5 = bigint.from-i64(-5)
+    runner.eq(p5.abs-cmp(bigint.from-i64(3)), 1, 'abs-cmp(5,3) == 1')
+    runner.eq(p5.abs-cmp(bigint.from-i64(5)), 0, 'abs-cmp(5,5) == 0')
+    runner.eq(bigint.from-i64(3).abs-cmp(p5), -1, 'abs-cmp(3,5) == -1')
+    runner.eq(n5.abs-cmp(p5), 0, 'abs-cmp 忽略符號')
+    runner.is-true(p5.is-pos(), 'is-pos(5)')
+    runner.is-false(n5.is-pos(), 'is-pos(-5)')
+    runner.is-false(bigint.zero().is-pos(), 'is-pos(0)')
+    eq-str(bigint.from-u64(0).to-str(), '0', 'from-u64(0)')
+    eq-str(bigint.from-u64(4294967296).to-str(), '4294967296', 'from-u64(2^32) 拆兩 limb')
+    eq-str(bigint.from-u64(9223372036854775807).to-str(), '9223372036854775807', 'from-u64(i64.MAX)')
+    runner.is-false(bigint.from-u64(0).is-neg(), 'from-u64 恆非負')
+}
+
+t-abs-add-sub = () {
+    eq-str(bigint.from-i64(3).abs-add(bigint.from-i64(4)).to-str(), '7', 'abs-add(3,4) == 7')
+    eq-str(bigint.from-i64(4294967295).abs-add(bigint.from-i64(1)).to-str(), '4294967296', 'abs-add 跨 limb 進位')
+    eq-str(bigint.from-i64(7).abs-sub(bigint.from-i64(3)).to-str(), '4', 'abs-sub(7,3) == 4')
+    eq-str(bigint.from-i64(4294967296).abs-sub(bigint.from-i64(1)).to-str(), '4294967295', 'abs-sub 跨 limb 借位')
+}
+
+t-add-sub-bigint = () {
+    a = bigint.from-i64(100)
+    b = bigint.from-i64(7)
+    na = bigint.from-i64(-100)
+    nb = bigint.from-i64(-7)
+    eq-str(a.add-bigint(b).to-str(), '107', 'add 同號正')
+    eq-str(na.add-bigint(nb).to-str(), '-107', 'add 同號負')
+    eq-str(a.add-bigint(nb).to-str(), '93', 'add 異號 |self|>|b|')
+    eq-str(b.add-bigint(na).to-str(), '-93', 'add 異號 |self|<|b|')
+    eq-str(a.sub-bigint(b).to-str(), '93', 'sub 同號 |self|>|b|')
+    eq-str(na.sub-bigint(nb).to-str(), '-93', 'sub 同號皆負')
+    eq-str(a.sub-bigint(nb).to-str(), '107', 'sub 異號')
+    eq-str(b.sub-bigint(a).to-str(), '-93', 'sub 同號 |self|<|b|')
+}
+
+; mul-bigint：符號合成 + 跨 limb 乘積
+t-mul-bigint = () {
+    eq-str(bigint.from-i64(100).mul-bigint(bigint.from-i64(7)).to-str(), '700', 'mul 正正')
+    eq-str(bigint.from-i64(-100).mul-bigint(bigint.from-i64(7)).to-str(), '-700', 'mul 負正')
+    eq-str(bigint.from-i64(-100).mul-bigint(bigint.from-i64(-7)).to-str(), '700', 'mul 負負得正')
+    eq-str(bigint.zero().mul-bigint(bigint.from-i64(1234)).to-str(), '0', 'mul 乘零')
+    eq-str(bigint.from-i64(1).mul-bigint(bigint.from-i64(1234)).to-str(), '1234', 'mul 乘一')
+    eq-str(bigint.from-i64(4294967296).mul-bigint(bigint.from-i64(4294967296)).to-str(), '18446744073709551616', 'mul 跨 limb：2^32 * 2^32 == 2^64')
+}
+
+; 十六進制
+...
+
+; to-hex 的 limb 是 32 位（8 個 nibble），最高 limb 前導零必須略去
+t-to-hex = () {
+    eq-str(bigint.zero().to-hex(), '0', 'to-hex(0)')
+    eq-str(bigint.from-i64(255).to-hex(), 'ff', 'to-hex(255)')
+    eq-str(bigint.from-i64(-16).to-hex(), '-10', 'to-hex(-16) 帶負號')
+    eq-str(bigint.from-i64(4294967295).to-hex(), 'ffffffff', 'to-hex(2^32-1) 單 limb 滿')
+    eq-str(bigint.from-i64(4294967296).to-hex(), '100000000', 'to-hex(2^32) 跨 limb')
+    eq-str(bigint.from-i64(4660).to-hex(), '1234', 'to-hex(0x1234)')
+    f = bigint.from-i64(16).pow(20)
+    eq-str(f.to-hex(), '100000000000000000000', 'to-hex(16^20) = 1 後接 20 個 0')
+}
+
+; 移位
+...
+
+t-shl-shr = () {
+    a = bigint.from-i64(1)
+    eq-str(bigint.shl(a, 3).to-str(), '8', 'shl(1,3) == 8')
+    b = bigint.from-i64(255)
+    eq-str(bigint.shl(b, 4).to-str(), '4080', 'shl(255,4) == 4080')
+    eq-str(bigint.shl(b, 32).to-str(), '1095216660480', 'shl(255,32) 跨 limb')
+    c = bigint.from-i64(256)
+    eq-str(bigint.shr(c, 2).to-str(), '64', 'shr(256,2) == 64')
+    eq-str(bigint.shr(b, 4).to-str(), '15', 'shr(255,4) == 15')
+}
+
+; shl1 / shr1 為原地（原地倍增/減半）方法
+t-shl1-shr1 = () {
+    a = bigint.from-i64(3)
+    a.shl1()
+    eq-str(a.to-str(), '6', 'shl1 3 -> 6')
+    a.shr1()
+    eq-str(a.to-str(), '3', 'shr1 6 -> 3')
+    z = bigint.zero()
+    z.shl1()
+    eq-str(z.to-str(), '0', 'shl1 0 -> 0')
+    b = bigint.from-i64(2147483648)
+    b.shl1()
+    eq-str(b.to-str(), '4294967296', 'shl1 跨 limb 進位')
+    b.shr1()
+    eq-str(b.to-str(), '2147483648', 'shr1 跨 limb 借位')
+}
+
+; 模冪
+...
+
+t-mod-pow = () {
+    eq-str(bigint.from-i64(2).mod-pow(bigint.from-i64(10), bigint.from-i64(1000)).to-str(), '24', '2^10 mod 1000 = 24')
+    eq-str(bigint.from-i64(3).mod-pow(bigint.from-i64(5), bigint.from-i64(7)).to-str(), '5', '3^5 mod 7 = 5')
+    eq-str(bigint.from-i64(3).mod-pow(bigint.from-i64(0), bigint.from-i64(7)).to-str(), '1', 'exp=0 回 1')
+    eq-str(bigint.from-i64(7).mod-pow(bigint.from-i64(13), bigint.from-i64(11)).to-str(), '2', '7^13 mod 11 = 2')
+    eq-str(bigint.from-i64(5).mod-pow(bigint.from-i64(117), bigint.from-i64(19)).to-str(), '1', '5^117 mod 19 = 1')
+    eq-str(bigint.from-i64(2).mod-pow(bigint.from-i64(64), bigint.from-i64(1000000007)).to-str(), '582344008', '2^64 mod 1e9+7')
+    eq-str(bigint.from-i64(5).mod-pow(bigint.from-i64(3), bigint.from-i64(0)).to-str(), '0', 'modulus=0 回 0')
+}
+
+; 正規化
+...
+
+t-normalize = () {
+    a = bigint.from-i64(4294967296)
+    a.normalize()
+    eq-str(a.to-str(), '4294967296', 'normalize 對規範值為 no-op')
+    z = bigint.zero()
+    z.normalize()
+    eq-str(z.to-str(), '0', 'normalize 保留零值')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('bigint.from-i64', t-from-i64)
+p2, f2 = runner.test('bigint.zero-one', t-zero-one)
+p3, f3 = runner.test('bigint.cmp', t-cmp)
+p4, f4 = runner.test('bigint.eq', t-eq)
+p5, f5 = runner.test('bigint.is-zero', t-is-zero)
+p6, f6 = runner.test('bigint.is-neg', t-is-neg)
+p7, f7 = runner.test('bigint.add', t-add)
+p8, f8 = runner.test('bigint.sub', t-sub)
+p9, f9 = runner.test('bigint.mul', t-mul)
+p10, f10 = runner.test('bigint.div-mod', t-div-mod)
+p11, f11 = runner.test('bigint.div-mod 多 limb', t-div-mod-multi)
+p12, f12 = runner.test('bigint.mod-public', t-mod-public)
+p13, f13 = runner.test('bigint.pow', t-pow)
+p14, f14 = runner.test('bigint.gcd', t-gcd)
+p15, f15 = runner.test('bigint.lcm', t-lcm)
+p16, f16 = runner.test('bigint.operator-mixed', t-operator-mixed)
+p17, f17 = runner.test('bigint.to-i64', t-to-i64)
+p18, f18 = runner.test('bigint.copy', t-copy)
+p19, f19 = runner.test('bigint.cmp-helpers', t-cmp-helpers)
+p20, f20 = runner.test('bigint.abs-add-sub', t-abs-add-sub)
+p21, f21 = runner.test('bigint.add-sub-bigint', t-add-sub-bigint)
+p22, f22 = runner.test('bigint.to-hex', t-to-hex)
+p23, f23 = runner.test('bigint.shl-shr', t-shl-shr)
+p24, f24 = runner.test('bigint.shl1-shr1', t-shl1-shr1)
+p25, f25 = runner.test('bigint.mod-pow', t-mod-pow)
+p26, f26 = runner.test('bigint.normalize', t-normalize)
+p27, f27 = runner.test('bigint.mul-bigint', t-mul-bigint)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

@@ -11,7 +11,7 @@
 ; Regression for the runtime join-set (__join-enter / __join-push /
 ; __join-leave) and hir.DesugarAsyncGroups.desugarFlowArmSpawns.
 
-# /test/runner
+# test/runner
 
 add = (a i64, b i64) (r i64) {
     s = a + b

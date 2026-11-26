@@ -15,9 +15,9 @@
 ;   %str-long = { i32, i32, i8* }（16B），外部 API 仍是 i64；
 ;   %vec 與 %option 的 24B inline payload 槽【未變】（optSlotDefaultBytes = 24）。
 
-# /test/runner.eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/cg-runtime
 # /compiler/src/cg
 # /compiler/src/mir

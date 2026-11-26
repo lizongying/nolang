@@ -1,4 +1,4 @@
-# /test/runner
+# test/runner
 
 ; merged category 'option' -- members: match-index-option.no, option-elem-container.no, option-index.no, option-more.no, option-test.no, option.no
 ; (originals backed up under tests/_archive/option/)

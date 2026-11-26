@@ -12,7 +12,7 @@
 ; coro-join-chaniter.no (chan iteration). Regression for desugarFlowArmSpawns
 ; + join-set.
 
-# /test/runner
+# test/runner
 
 signal chan[i64] = with-cap(1)
 done chan[i64] = with-cap(1)

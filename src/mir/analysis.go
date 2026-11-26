@@ -810,6 +810,7 @@ func (m *Module) markEnumPayloadOwners(f *Function) {
 // docs/design/tagged-enum-payload-ownership.md §9.
 func (m *Module) markEnumParamOwners() {
 	m.enumExtractSites = map[FuncID]map[ValueID]bool{}
+	m.enumCtorMoveParams = map[FuncID]map[int]bool{}
 	for i := range m.Funcs {
 		f := &m.Funcs[i]
 		if f.IsExtern {
@@ -834,6 +835,55 @@ func (m *Module) markEnumParamOwners() {
 		}
 		if len(sites) > 0 {
 			m.enumExtractSites[f.ID] = sites
+		}
+	}
+	// A single-block wrapper that constructs a tagged enum directly from one of
+	// its parameters transfers that parameter into the enum. Record the exact
+	// argument positions so the caller can suppress the matching drop. Requiring
+	// one total use avoids claiming a move when the parameter is read elsewhere;
+	// requiring one block keeps the transfer unconditional.
+	for i := range m.Funcs {
+		f := &m.Funcs[i]
+		if f.IsExtern || f.Variadic || len(f.Blocks) != 1 {
+			continue
+		}
+		paramIndex := make(map[ValueID]int, len(f.Params))
+		for idx, p := range f.Params {
+			paramIndex[p] = idx
+		}
+		uses := map[ValueID]int{}
+		ctorParams := map[int]bool{}
+		blk := m.Block(f.Blocks[0])
+		if blk == nil {
+			continue
+		}
+		for _, iid := range blk.Insts {
+			inst := m.Inst(iid)
+			if inst == nil {
+				continue
+			}
+			for _, a := range inst.Args {
+				if a > NoVal {
+					uses[a]++
+				}
+			}
+			if inst.Op != OpEnumNew {
+				continue
+			}
+			for _, a := range inst.Args {
+				if idx, ok := paramIndex[a]; ok {
+					ctorParams[idx] = true
+				}
+			}
+		}
+		moved := map[int]bool{}
+		for idx := range ctorParams {
+			if uses[f.Params[idx]] == 1 {
+				moved[idx] = true
+			}
+		}
+		if len(moved) > 0 {
+			m.enumCtorMoveParams[f.ID] = moved
 		}
 	}
 	// R1: a borrowed enum parameter the callee extracts must be owning IN THE
@@ -863,6 +913,25 @@ func (m *Module) markEnumParamOwners() {
 				continue
 			}
 			m.enumOwnsPayload[p] = true
+		}
+	}
+}
+
+// markEnumConstructorCallMoves records the call arguments whose ownership is
+// transferred into the callee's returned enum. Drop insertion and leak checking
+// must use the same whole-module decision; otherwise suppressing the caller's
+// drop without the matching leak exemption rejects valid constructor wrappers.
+func (m *Module) markEnumConstructorCallMoves(inst *Inst, moveSrc map[ValueID]bool) {
+	if inst == nil || inst.Op != OpCall || inst.Callee != NoVal {
+		return
+	}
+	cid, ok := m.FuncByName[inst.Sym]
+	if !ok {
+		return
+	}
+	for idx := range m.enumCtorMoveParams[cid] {
+		if idx < len(inst.Args) && inst.Args[idx] > NoVal {
+			moveSrc[inst.Args[idx]] = true
 		}
 	}
 }
@@ -1865,6 +1934,10 @@ func (m *Module) insertDrops(f *Function, rep *Report) {
 			if inst == nil {
 				continue
 			}
+			// Constructor wrappers consume these exact call arguments into an
+			// enum payload. The callee has no independent parameter drop, so the
+			// caller must not free the same payload after the call.
+			m.markEnumConstructorCallMoves(inst, moveSrc)
 			// STRUCT WITH POINTER FIELDS: `b = a` lowers to OpMove, and
 			// emitMove lowers OpMove as a BITWISE copy. Under the inline layout
 			// that *is* a value copy, so it was always correct. Under the
@@ -3320,6 +3393,9 @@ func (m *Module) checkDropCount(f *Function, rep *Report) {
 					}
 				}
 			}
+			// Keep the leak verifier aligned with insertDrops: a constructor
+			// call owns its transferred arguments through the returned enum.
+			m.markEnumConstructorCallMoves(inst, moveSrc)
 		}
 	}
 	dropCount := map[ValueID]int{}

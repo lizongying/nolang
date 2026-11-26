@@ -1,0 +1,18 @@
+; Public nosql API. The engine is implemented in Nolang and has no SQLite FFI.
+@ /example/nosql/src/value.sql-value
+@ /example/nosql/src/value.affinity
+@ /example/nosql/src/value.truth
+@ /example/nosql/src/value.null-value
+@ /example/nosql/src/value.integer-value
+@ /example/nosql/src/value.real-value
+@ /example/nosql/src/value.text-value
+@ /example/nosql/src/value.blob-value
+@ /example/nosql/src/value.affinity-of-declared
+@ /example/nosql/src/value.apply-affinity
+@ /example/nosql/src/value.compare
+@ /example/nosql/src/error.db-result
+@ /example/nosql/src/error.ok-result
+@ /example/nosql/src/error.make-result
+@ /example/nosql/src/error.base-code
+@ /example/nosql/src/error.lookup-code
+@ /example/nosql/src/test-support.new make-test-context

@@ -598,7 +598,7 @@ walkStmt/walkExpr + report + seen 去重 + canonPath 归属，`checker/checker.g
    review 清单：① 依赖「常量越界 = 编译错误」的测试（tests/oob-slice-assign.no 等）改为显式
    越界臂行为；② 所在函数有 option 结果参数的热点站人工改 `?=`；③ str/txt 字节写
    （str.no 大量 `val[i] = .byte(i)`）确认 growth guard 行为不变；④ 多赋值目标形态专门设计。
-3. 验证门：`make gen no` 重编 → `no vet src/std` 0 error → `no test test/std/` 47/47 →
+3. 验证门：`make gen no` 重编 → `no vet src/std` 0 error → `no test test-std/src/` 47/47 →
    `tests/mem-safety/` 全绿 → 三后端冒烟 → `make test` 基线（build 4 + checker 2 + fmt 1
    为既有失败，新增即回归）。
 4. 打开 `idxwrite` ERROR，全仓 vet/build 清零后收尾。
@@ -781,9 +781,9 @@ bare `ok` / `err` / `nil` / `some` 是**模式**，payload 是零常量（`nil` 
 | B | 按左值容量分流 | `lowerUnwrapAssign` 三处 `nil` / `err` 臂、`lowerUnwrapAssignToIndex`、`makePropagateGuard` 共 5 个生成点；`?T` / `mayok` 左值改走 `IsPropagation` 整包浅拷（现有机制，见 `ast.go:712`），**预设路径一行不动**；`block_match.go` 的 `halt` 旗标相应只在「仍会上抛」时置位 |
 | C | `ok` / `nil` 作为 union 成员 | `mayok = ok \| nil` 的型别解析与单态化；确认变体作为型别名成员后的 tag 表示与 `match` 穷尽性 |
 | D | 缺值改 `err`（见 14.6） | builtin / codegen 的 map `get` 等站点 |
-| E | 回归与文档 | 新增「`?T` 左值收下 `nil` / `err`」「`mayok` 上抛 `err`」「预设 `?=` 仍上抛 `nil`」三组断言；`make test` + `no test test/std`；同步 `AGENTS.md` / `nolang-syntax/SKILL.md` / `docs/docs/lang/syntax.md` / i18n en |
+| E | 回归与文档 | 新增「`?T` 左值收下 `nil` / `err`」「`mayok` 上抛 `err`」「预设 `?=` 仍上抛 `nil`」三组断言；`make test` + `no test test-std/src`；同步 `AGENTS.md` / `nolang-syntax/SKILL.md` / `docs/docs/lang/syntax.md` / i18n en |
 
-验收：`make gen no` 通过；`make test` 与 `no test test/std` 全绿；`tests/` 语料冒烟；
+验收：`make gen no` 通过；`make test` 与 `no test test-std/src` 全绿；`tests/` 语料冒烟；
 预设 `?=` 的三态行为与 14.1 表格**逐行一致**（不回归）。
 
 ### 14.6 配套规则：值本身可能是 `nil` 的「缺值」改 `err`

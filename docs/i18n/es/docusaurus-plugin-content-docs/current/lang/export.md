@@ -11,22 +11,21 @@ Nolang usa la palabra clave `@` en el archivo `lib.no` de la raíz del paquete p
 ## Sintaxis
 
 ```no
-@ path.func
+@ path[.func]
 [alias]
 ```
 
-- `path` — Ruta del módulo (relativa a la raíz del paquete, empieza con `/`, sin la extensión `.no`)
-- `func` — Nombre de la función/constante/enumeración que se va a exportar
-- `alias` — Alias opcional que se usa al importar desde fuera
+- `path` — Ruta del módulo (relativa a la raíz del paquete o del workspace, sin la extensión `.no`)
+- `func` — Opcional. Función/constante/enumeración a exportar; si se omite, se exporta el módulo completo
+- `alias` — Alias opcional usado al importar desde fuera; puede contener `/` (p. ej. `test/assert`)
 
 ## Reglas
 
 - Las sentencias de exportación **solo** se pueden escribir en el archivo `lib.no` de la raíz del paquete (la única excepción es la sección siguiente, «Alias invocables globales»)
 - Un elemento exportado por línea
-- Los elementos exportados solo pueden ser símbolos finales como funciones, constantes, enumeraciones
-- **Se debe indicar el nombre del símbolo**: `@ std/txt` (solo la ruta, sin `func` ni `alias`) es un error (`lgxbfk9a`).
-  Esta forma no declara nada — todos los consumidores asumen que hay un nombre de símbolo —, por lo que ya no se ignora silenciosamente.
-  Tampoco sirve para «vincular un tipo a un módulo»: los tipos no tienen una capa de nombre global, y el alias de `@` solo tiene sentido para símbolos invocables
+- **Exportación de símbolo** `@ path.func [alias]`: exporta una función, constante o enumeración del módulo
+- **Exportación de módulo** `@ path [alias]`: exporta el módulo completo. El alias es opcional y por defecto es el último segmento de `path`, así que `@ /test/src/assert` equivale a `@ /test/src/assert assert`. Un alias de varios segmentos como `@ /test/src/assert test/assert` permite importar el módulo como `# test/assert`
+- Una exportación de módulo solo registra un nombre de módulo, no un alias invocable; no puede vincular un tipo a un módulo (los tipos no tienen una capa de nombre global)
 - Las estructuras, enumeraciones y otros tipos referenciados por funciones exportadas se exportan **automáticamente**, sin necesidad de declararlos manualmente
 - Si una función exportada no existe en el módulo, el LSP muestra un error
 

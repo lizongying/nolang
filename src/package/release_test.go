@@ -110,18 +110,20 @@ func TestToolBinaryName(t *testing.T) {
 }
 
 func TestReleaseAssetNameAndURL(t *testing.T) {
-	if got, want := ReleaseAssetName("nogit", "linux", "amd64"), "nogit-linux-amd64"; got != want {
-		t.Errorf("ReleaseAssetName(linux/amd64) = %q, want %q", got, want)
+	cases := []struct{ name, version, goos, goarch, want string }{
+		{"nogit", "v0.1.33", "linux", "amd64", "nogit-linux-amd64-v0.1.33"},
+		{"no", "v0.4.35", "darwin", "amd64", "no-darwin-amd64-v0.4.35"},
+		{"nogit", "v0.1.33", "darwin", "arm64", "nogit-darwin-arm64-v0.1.33"},
+		{"nogit", "v0.1.33", "windows", "amd64", "nogit-windows-amd64-v0.1.33.exe"},
 	}
-	if got, want := ReleaseAssetName("nogit", "darwin", "arm64"), "nogit-darwin-arm64"; got != want {
-		t.Errorf("ReleaseAssetName(darwin/arm64) = %q, want %q", got, want)
-	}
-	if got, want := ReleaseAssetName("nogit", "windows", "amd64"), "nogit-windows-amd64.exe"; got != want {
-		t.Errorf("ReleaseAssetName(windows/amd64) = %q, want %q", got, want)
+	for _, c := range cases {
+		if got := ReleaseAssetName(c.name, c.version, c.goos, c.goarch); got != c.want {
+			t.Errorf("ReleaseAssetName(%q, %q, %q, %q) = %q, want %q", c.name, c.version, c.goos, c.goarch, got, c.want)
+		}
 	}
 
 	spec := ToolSpec{Name: "nogit", Version: "v0.1.33", Host: "github.com", Owner: "lizongying", Repo: "notools"}
-	want := "https://github.com/lizongying/notools/releases/download/v0.1.33/nogit-linux-amd64"
+	want := "https://github.com/lizongying/notools/releases/download/v0.1.33/nogit-linux-amd64-v0.1.33"
 	if got := ReleaseAssetURL(spec, "v0.1.33", "linux", "amd64"); got != want {
 		t.Errorf("ReleaseAssetURL = %q, want %q", got, want)
 	}

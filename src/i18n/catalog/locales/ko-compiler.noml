@@ -138,7 +138,7 @@ Nolang 프로그래밍 언어 (버전 %s)
   no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
                     바이너리 설치 (~/no/bin/에 저장, /usr/local/bin/에 심볼릭 링크)
                     즉 `no`가 실행되는 플랫폼용으로 미리 빌드된 GitHub release
-                    자산을 내려받습니다 (<tool>-<os>-<arch>, 예: nogit-darwin-arm64).
+                    자산을 내려받습니다 (<tool>-<os>-<arch>-<version>, 예: nogit-darwin-arm64-v0.1.33).
                     인자가 없으면: 현재 패키지를 빌드해 설치합니다.
                     -u    강제로 다시 내려받아 재설치
     예:

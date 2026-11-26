@@ -92,7 +92,7 @@ import (
 // NOLANG_STD_SRC 時，std 模組走 parseEmbeddedProgram，既不讀也不寫 Tier 1；
 // Tier 0 blob 由 make 的 STDSIG_GEN 依賴（含 src/parser/*.go）自動重烤，加上
 // ExternSignatureFingerprint 折入了 ASTVersion，雙重自洽，無需靠本次 bump。
-// （更正：先前把 `no test test/std/ed25519.no` 的簽名 S 全 0 歸因於陳舊 Tier 1
+// （更正：先前把 `no test test-std/src/ed25519.no` 的簽名 S 全 0 歸因於陳舊 Tier 1
 // blob，為誤判——該症狀是 std 模組的 MIR 降級缺陷：lowerIf 在 arm body 走安全
 // 索引後未替當前 block 接上 terminator，已由 src/mir/hir2mir.go 修正。當時 scratch
 // 檔的內容是新增的，Tier 1 必然 miss；sc-muladd 所在的 std 又不經過 Tier 1，所以

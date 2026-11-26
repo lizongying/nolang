@@ -225,10 +225,12 @@ check = (t ast, path str) (out []str) {
         }
         dot = f0.index('.no')
         dot > 0 -> {
-            f0 = f0.slice-bytes(0, dot).to-str(): {
-                ok -> it
-
-                -> ''
+            v_f0 = f0.slice-bytes(0, dot).to-str()
+            f0 = ''
+            v_f0: {
+                ok -> f0 = it
+                err -> f0 = ''
+                nil -> f0 = ''
             }
         }
         ck-sig-bsearch(sig.mok, f0) >= 0 -> {
@@ -279,15 +281,19 @@ check = (t ast, path str) (out []str) {
                     own = ''
                     v != '@' -> {
                         amp = v.index('&')
-                        own = v.slice-bytes(0, amp).to-str(): {
-                            ok -> it
-
-                            -> ''
+                        v_own = v.slice-bytes(0, amp).to-str()
+                        own = ''
+                        v_own: {
+                            ok -> own = it
+                            err -> own = ''
+                            nil -> own = ''
                         }
-                        bo = v.slice-bytes(amp + 1, v.len-bytes()).to-str(): {
-                            ok -> it
-
-                            -> ''
+                        v_bo = v.slice-bytes(amp + 1, v.len-bytes()).to-str()
+                        bo = ''
+                        v_bo: {
+                            ok -> bo = it
+                            err -> bo = ''
+                            nil -> bo = ''
                         }
 
                         ; 自模块裸调放行（正主 arm⑦ checker.go:8270：owner==curModule 整臂 return）

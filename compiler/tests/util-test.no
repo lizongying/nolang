@@ -6,10 +6,10 @@
 ; ⚠️ 測試 runner 的斷言失敗【不會】自動改變行程退出碼，本檔結尾必須自己
 ;    exit(1)，否則差分 harness 會把失敗讀成通過。
 
-# /test/runner.eq
-# /test/runner.str-eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.str-eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/util/sb.sb
 # /compiler/src/util/intern.itab
 

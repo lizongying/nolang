@@ -10,7 +10,7 @@
 ; 鎖死四種形態：裸宣告 vec 迴圈寫、遠端下標（> 預設 1024 容量，驗證分配尺寸
 ; 覆蓋 idx+1）、with-len(0)、負下標走 catch-all（不寫入）。
 
-# /test/runner
+# test/runner
 
 ; 1) 裸宣告 vec + 迴圈 option 寫
 t-unalloc-loop = () {

@@ -1,4 +1,4 @@
-# /test/runner
+# test/runner
 
 ; merged category 'txt' -- 2 source files
 ; sources: jp13.no, jp16.no

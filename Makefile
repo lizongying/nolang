@@ -55,7 +55,7 @@ endif
 # same IDs.
 TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/checker/unknown_field.go src/checker/builtin_struct_decl.go src/lsp/vet.go
 
-.PHONY: all no force lsp package clean help FORCE no-wasm lsp-wasm wasm-imports-check wasm-runtime-smoke playground playground-smoke playground-demos gen stamp-traceid install test
+.PHONY: all no force lsp package clean help FORCE no-wasm lsp-wasm wasm-imports-check wasm-runtime-smoke playground playground-smoke playground-demos gen stamp-traceid install test test-nosql
 
 # ── FORCE REBUILD ─────────────────────────────────
 # GNU make (3.81 and 4.x) has NO `--force` long option: `make no --force` dies
@@ -173,6 +173,11 @@ gen: $(STDSIG_GEN)
 .PHONY: test
 test: $(STDSIG_GEN) verify-ty
 	cd src && $(GO) test -count=1 $(LD_FLAGS_WITH_SIG) ./...
+
+# Package-local nosql gates; keep the compiler and engine test surfaces separate.
+.PHONY: test-nosql
+test-nosql:
+	$(MAKE) -C example/nosql test-nosql NO=$(abspath $(NO_BIN))
 
 # ── TYPE-SYSTEM GATE ──────────────────────────────
 # A type is a structure (src/ty), not a string. This gate fails when a package
@@ -532,6 +537,7 @@ help:
 	@echo "  make install    強制重裝全局 no（~/no/bin/no + /usr/local/bin/no 軟鏈接）"
 	@echo "  make lsp        構建 vscode-nolang/server/lsp"
 	@echo "  make gen        gen stdsig_gen.go"
+	@echo "  make test-nosql run nosql package build, vet, and strict tests"
 	@echo "  make stamp-traceid  替換 checker 源碼中的占位符為各自唯一的隨機 base36 ID"
 	@echo "  make package    跨譯 LSP 並打包 VSCode 拓展"
 	@echo "  make no-wasm    跨譯 no 為 WebAssembly (wasip1) → docs/static/wasm/no.wasm"

@@ -21,9 +21,9 @@
 ;   這些 self-host 函式的頂層常量只有在入口檔直接 import 時才會生成（bug #85）。
 ; ⚠️ 訊息一律用單引號字串；nolang 的 "..." 是 char 字面量，不是字串。
 
-# /test/runner.is-true
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.is-true
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/drv
 # /compiler/src/ix
 # /compiler/src/asp

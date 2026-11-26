@@ -4,10 +4,10 @@
 ; 表規模若變，下面的 CK-SIG-N-* 斷言會紅——這是刻意的盤點氣閂，提醒同步更新
 ; 本檔數量與錨點（錨點鍵逐一在 stdsig_gen.go 內 grep 可復核）。
 
-# /test/runner.eq
-# /test/runner.str-eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.str-eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/ck-sig
 
 ; ck-sig-test.no — compiler/src/ck-sig.no（M3-b stdsig 表）的單元測試

@@ -1,4 +1,4 @@
-# /test/runner
+# test/runner
 
 t-in-bounds = () {
     s txt = 'a-b-c'

@@ -15,10 +15,10 @@
 ; ⚠️ 本檔只測【收集器】（ps.e-ln/e-cl/e-msg/e-code + ps-err-count）；
 ;    渲染行形已由 diag-test.no 釘死，端到端 CLI 契約由 L3 差分覆蓋。
 
-# /test/runner.eq
-# /test/runner.str-eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.str-eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/lx

@@ -341,6 +341,12 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		// URL 風格的導入路徑但未在 dependencies 中宣告
 		return nil, i18n.Errorf("7sfqpwmj", "dependency not found: %q is not declared in package.noml dependencies", path)
 	}
+	// 工作區套件別名 + lib.no 模組級匯出（`# test/assert`）。
+	// 必須先於下方的直接拼接：那條路徑會把 `test` 當成普通目錄，
+	// 完全看不到 workspace.noml 的 `test: '/test'` 與 test/lib.no 的映射。
+	if resolved := checker.ResolvePackageExport(path, t.workspaceRoot()); resolved != "" {
+		return t.resolveFile(resolved)
+	}
 	// 非 std 路徑 → 透過 alias 解析（一律相對於工作區根目錄，不再以當前源碼檔目錄為基準）
 	modulePath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)
 	if !strings.HasSuffix(modulePath, ".no") {

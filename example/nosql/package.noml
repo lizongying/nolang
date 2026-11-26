@@ -1,0 +1,17 @@
+{
+  name: 'nosql'
+  description: 'Self-contained SQLite-compatible database engine for Nolang'
+  keywords: ['nolang', 'sqlite', 'database', 'sql', 'pure']
+  author: 'lizongying'
+  email: 'lizongying@msn.com'
+  organization: 'nolang'
+  repository: 'https://github.com/lizongying/nolang'
+  homepage: 'https://lizongying.github.io/nolang'
+  license: 'Apache-2.0'
+  dependencies: []
+  compiler: {
+    version: ''
+  }
+  ignore: []
+  category: 'database'
+}

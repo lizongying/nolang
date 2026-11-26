@@ -98,7 +98,7 @@ func (l *lowerer) warnUnreachableArms(sm *SurfaceMatch) {
 	var enumVariants []string
 	setType := func(t string) {
 		matchedVarType = t
-		if vs, ok := l.p.sem.EnumVariantsOf(t); ok {
+		if vs, ok := l.p.enumVariantsOf(t); ok {
 			isEnumType = true
 			enumVariants = vs
 		}

@@ -1,0 +1,262 @@
+; std-byte.no — byte 模組測試
+;
+; 執行：no test test-std/src/byte.no
+; 覆蓋：[]byte.to-i64-be / []byte.to-i64-le /
+;       []byte.to-hex / []byte.to-hex-lower /
+;       []byte.index / []byte.index-from / []byte.slice /
+;       []byte.to-str / []byte.to-str
+; 未測：i64.to-bytes-be/le（[?]byte 返回類型 codegen 問題）
+;
+; 注（2026-11-03 更正）：本檔曾記「[]byte.to-str（與 str.eq 交互有問題，預存 bug）」，
+; 實測是誤記。真正的限制在 str.eq 本身——它是兩參形式 a.eq(b, n)，n 為「比較的位元組
+; 數」，少傳 n 會在 codegen 報「eq-raw: needs (receiver, b, n)」，與 to-str 無關。
+; to-str 語義正確（byte→0~255 碼點→UTF-8 重編碼），已補 t-to-str-* 覆蓋。
+; 另注意 str.len() 是「碼點數」不是「位元組數」，位元組數要用 len-bytes()。
+
+# test/runner
+
+passed = 0
+failed = 0
+
+; 位元組與整數轉換
+...
+
+; 大端解讀：高空位元組在前（0x12,0x34,0x56）應得 0x123456
+t-to-i64-be = () {
+    data []byte = [0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56]
+    v = data.to-i64-be()
+    runner.eq(v, 0x123456, 'to-i64-be == 0x123456')
+}
+
+; 小端解讀：低位元組在前，同一位元組序列仍得 0x123456
+t-to-i64-le = () {
+    data []byte = [0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00]
+    v = data.to-i64-le()
+    runner.eq(v, 0x123456, 'to-i64-le == 0x123456')
+}
+
+; 短切片：只有 2 個位元組時只組出 0x1234，不越界讀取
+t-to-i64-le-short = () {
+    data []byte = [0x34, 0x12]
+    v = data.to-i64-le()
+    runner.eq(v, 0x1234, 'to-i64-le 2 bytes == 0x1234')
+}
+
+; 十六進制編碼
+...
+
+; to-hex 輸出大寫十六進位：0x12,0xAB,0xCD 應得 6 字元 '12ABCD'
+t-to-hex = () {
+    data []byte = [0x12, 0xab, 0xcd]
+    s = data.to-hex()
+    runner.eq(s.len(), 6, 'to-hex len == 6')
+    runner.str-eq(s, '12ABCD', 'to-hex content')
+}
+
+; to-hex-lower 輸出小寫且高位補零：0xFF,0x00,0x0A 應得 'ff000a'
+t-to-hex-lower = () {
+    data []byte = [0xff, 0x00, 0x0a]
+    s = data.to-hex-lower()
+    runner.eq(s.len(), 6, 'to-hex-lower len == 6')
+    runner.str-eq(s, 'ff000a', 'to-hex-lower content')
+}
+
+; 查找與切片
+...
+
+; 子序列查找：'HIJK' 中找 'HI' 得 0，找不到 'xyz' 得 -1
+t-index = () {
+    data []byte = [72, 73, 0, 72, 73]
+    pos = data.index('HI')
+    runner.eq(pos, 0, 'index HI == 0')
+    pos2 = data.index('xyz')
+    runner.eq(pos2, -1, 'index xyz == -1')
+}
+
+; 指定起始位置查找：從下標 1 起找 'AB' 得 2，從 0 起得 0
+t-index-from = () {
+    data []byte = [65, 66, 65, 66]
+    pos = data.index-from('AB', 1)
+    runner.eq(pos, 2, 'index-from AB@1 == 2')
+    pos2 = data.index-from('AB', 0)
+    runner.eq(pos2, 0, 'index-from AB@0 == 0')
+}
+
+; 切片視圖：切出下標 1..4 應得長 3，元素為 20,30,40
+t-slice = () {
+    data []byte = [10, 20, 30, 40, 50]
+    sub = data.slice(1, 4)
+    runner.eq(sub.len(), 3, 'slice len == 3')
+    b0 = sub[0]: {
+        ok -> it
+
+        -> 0
+    }
+    runner.eq(b0, 20, 'slice [0] == 20')
+    b1 = sub[1]: {
+        ok -> it
+
+        -> 0
+    }
+    runner.eq(b1, 30, 'slice [1] == 30')
+    b2 = sub[2]: {
+        ok -> it
+
+        -> 0
+    }
+    runner.eq(b2, 40, 'slice [2] == 40')
+}
+
+; 位元組切片 → 字符串
+...
+
+; ASCII：每個位元組是 0~127 碼點，1:1 輸出，碼點數與位元組數相同
+t-to-str-ascii = () {
+    data []byte = [0x41, 0x42]
+    s = data.to-str()
+    runner.eq(s.len-bytes(), 2, 'to-str ASCII bytes == 2')
+    runner.eq(s.len(), 2, 'to-str ASCII cps == 2')
+    runner.str-eq(s, 'AB', 'to-str ASCII content')
+}
+
+; 非 ASCII 位元組也原樣拷貝：0x80 0xE9 → 80 E9（不進行 UTF-8 重編碼）
+t-to-str-2byte = () {
+    data []byte = [0x80, 0xe9]
+    s = data.to-str()
+    runner.eq(s.len-bytes(), 2, 'to-str 2-byte bytes == 2')
+    runner.eq(s.len(), 1, 'to-str 2-byte cps == 1')
+    h = s.to-bytes().to-hex()
+    runner.str-eq(h, '80E9', 'to-str 2-byte hex')
+}
+
+; []byte.to-str 現在是 1:1 逐字節拷貝：合法 UTF-8 流不會被二次編碼。
+t-to-str-one-to-one = () {
+    data []byte = [0xc3, 0xa9]
+    s-opt = data.to-str()
+    s = s-opt: {
+        ok -> it
+
+        nil || err -> ''
+    }
+    h = s.to-bytes().to-hex()
+    runner.str-eq(h, 'C3A9', 'to-str copies 1:1')
+}
+
+; 空切片 → 空串（with-len(0) 起手，迴圈零次）
+t-to-str-empty = () {
+    data []byte = []
+    s = data.to-str()
+    runner.eq(s.len-bytes(), 0, 'to-str empty bytes == 0')
+    runner.eq(s.len(), 0, 'to-str empty cps == 0')
+    runner.str-eq(s, '', 'to-str empty content')
+}
+
+; 切片視圖之後再轉換：只看視圖範圍（下標 2..4 的 E9 21 原樣拷貝）
+t-to-str-slice = () {
+    data []byte = [0x68, 0x69, 0xe9, 0x21]
+    h = data.slice(2, 4).to-str().to-bytes().to-hex()
+    runner.str-eq(h, 'E921', 'to-str on slice view')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('byte.to-i64-be', t-to-i64-be)
+
+#{overflow=wrap}
+passed = passed + p1
+
+#{overflow=wrap}
+failed = failed + f1
+p2, f2 = runner.test('byte.to-i64-le', t-to-i64-le)
+
+#{overflow=wrap}
+passed = passed + p2
+
+#{overflow=wrap}
+failed = failed + f2
+p3, f3 = runner.test('byte.to-i64-le short', t-to-i64-le-short)
+
+#{overflow=wrap}
+passed = passed + p3
+
+#{overflow=wrap}
+failed = failed + f3
+p4, f4 = runner.test('byte.to-hex', t-to-hex)
+
+#{overflow=wrap}
+passed = passed + p4
+
+#{overflow=wrap}
+failed = failed + f4
+p5, f5 = runner.test('byte.to-hex-lower', t-to-hex-lower)
+
+#{overflow=wrap}
+passed = passed + p5
+
+#{overflow=wrap}
+failed = failed + f5
+p6, f6 = runner.test('byte.index', t-index)
+
+#{overflow=wrap}
+passed = passed + p6
+
+#{overflow=wrap}
+failed = failed + f6
+p7, f7 = runner.test('byte.index-from', t-index-from)
+
+#{overflow=wrap}
+passed = passed + p7
+
+#{overflow=wrap}
+failed = failed + f7
+p8, f8 = runner.test('byte.slice', t-slice)
+
+#{overflow=wrap}
+passed = passed + p8
+
+#{overflow=wrap}
+failed = failed + f8
+p9, f9 = runner.test('byte.to-str ascii', t-to-str-ascii)
+
+#{overflow=wrap}
+passed = passed + p9
+
+#{overflow=wrap}
+failed = failed + f9
+p10, f10 = runner.test('byte.to-str 2-byte', t-to-str-2byte)
+
+#{overflow=wrap}
+passed = passed + p10
+
+#{overflow=wrap}
+failed = failed + f10
+p11, f11 = runner.test('byte.to-str 1:1 copy', t-to-str-one-to-one)
+
+#{overflow=wrap}
+passed = passed + p11
+
+#{overflow=wrap}
+failed = failed + f11
+p12, f12 = runner.test('byte.to-str empty', t-to-str-empty)
+
+#{overflow=wrap}
+passed = passed + p12
+
+#{overflow=wrap}
+failed = failed + f12
+p13, f13 = runner.test('byte.to-str slice', t-to-str-slice)
+
+#{overflow=wrap}
+passed = passed + p13
+
+#{overflow=wrap}
+failed = failed + f13
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

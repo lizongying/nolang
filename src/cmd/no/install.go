@@ -23,9 +23,9 @@ import (
 //	no install [-u] <tool>[:<version>]@<host>/<owner>/<repo>
 //	                                                  從 GitHub Releases 下載預編二進位
 //
-// 遠端形式抓的是**二進位**而不是源碼：資產名由工具名 + `no` 自身所在平台決定
-// （<tool>-<goos>-<goarch>，Windows 帶 .exe），因此裝進來的就是可直接執行的檔案，
-// 不需要本地 LLVM 工具鏈、也不需要該工具是 Nolang 寫的。
+// 遠端形式抓的是**二進位**而不是源碼：資產名由工具名 + `no` 自身所在平台 + release
+// tag 決定（<tool>-<goos>-<goarch>-<version>，Windows 帶 .exe），因此裝進來的就是
+// 可直接執行的檔案，不需要本地 LLVM 工具鏈、也不需要該工具是 Nolang 寫的。
 func installCommand(args []string) {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
 	update := fs.Bool("u", false, "force re-download / re-install")
@@ -48,9 +48,10 @@ func installCommand(args []string) {
 		fmt.Println("    version          release tag, e.g. v0.1.33 (default: latest release)")
 		fmt.Println("    host/owner/repo  GitHub repository; 'github.com' may be omitted")
 		fmt.Println("")
-		fmt.Println("Asset lookup: <tool>-<os>-<arch> (plus .exe on Windows), where")
-		fmt.Println("<os>-<arch> is the platform of the running `no`, e.g.:")
-		fmt.Println("  linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64")
+		fmt.Println("Asset lookup: <tool>-<os>-<arch>-<version> (plus .exe on Windows), where")
+		fmt.Println("<os>-<arch> is the platform of the running `no` and <version> is the")
+		fmt.Println("resolved release tag (e.g. v0.4.35), e.g.:")
+		fmt.Println("  no-darwin-amd64-v0.4.35, nogit-linux-arm64-v0.1.33, nogit-windows-amd64-v0.1.33.exe")
 		fmt.Println("")
 		fmt.Println("Flags:")
 		fs.PrintDefaults()

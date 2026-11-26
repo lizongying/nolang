@@ -318,7 +318,7 @@ no install nogit@lizongying/notools                       # 省略 host，默認
 no install -u nogit@github.com/lizongying/notools         # 強制重新下載
 ```
 
-La instalación remota descarga un **binario precompilado**, no código fuente: el nombre del recurso es `<tool>-<os>-<arch>` (con `.exe` en Windows), donde `<os>-<arch>` se toma de la plataforma en la que se ejecuta el propio `no` (p. ej. `darwin-arm64`, `linux-amd64`); por eso no se necesita una cadena de herramientas LLVM local y la herramienta instalada no tiene por qué estar escrita en Nolang. Si se omite la versión, se consulta `releases/latest`; definir `$GITHUB_TOKEN` (o `$GH_TOKEN`) evita el límite de la API de GitHub.
+La instalación remota descarga un **binario precompilado**, no código fuente: el nombre del recurso es `<tool>-<os>-<arch>-<version>` (con `.exe` en Windows), donde `<os>-<arch>` se toma de la plataforma en la que se ejecuta el propio `no` (p. ej. `darwin-arm64`, `linux-amd64`); por eso no se necesita una cadena de herramientas LLVM local y la herramienta instalada no tiene por qué estar escrita en Nolang. Si se omite la versión, se consulta `releases/latest`; definir `$GITHUB_TOKEN` (o `$GH_TOKEN`) evita el límite de la API de GitHub.
 
 Proceso de instalación:
 

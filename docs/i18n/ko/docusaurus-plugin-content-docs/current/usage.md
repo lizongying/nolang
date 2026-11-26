@@ -321,7 +321,7 @@ no install nogit@lizongying/notools                       # 省略 host，默認
 no install -u nogit@github.com/lizongying/notools         # 強制重新下載
 ```
 
-원격 설치는 소스가 아닌 **사전 컴파일된 바이너리**를 가져옵니다. 자산 이름은 `<tool>-<os>-<arch>`이며(Windows는
+원격 설치는 소스가 아닌 **사전 컴파일된 바이너리**를 가져옵니다. 자산 이름은 `<tool>-<os>-<arch>-<version>`이며(Windows는
 `.exe` 포함), 여기서 `<os>-<arch>`는 `no` 자체가 실행되는 플랫폼(예: `darwin-arm64`,
 `linux-amd64`)에서 가져옵니다. 따라서 로컬 LLVM 도구 모음이 필요 없고, 설치되는 도구가 Nolang로 작성되었을 필요도 없습니다.
 버전을 생략하면 `releases/latest`를 조회합니다. `$GITHUB_TOKEN`(또는 `$GH_TOKEN`)을 설정하면 GitHub

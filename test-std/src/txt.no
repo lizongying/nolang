@@ -1,0 +1,1215 @@
+; std-txt.no — txt（固定 256 位元組字串）模組測試
+;
+; 執行：no test test-std/src/txt.no
+; 覆蓋：len / empty / eq / compare / to-str / to-hex / len-bytes / to-bytes /
+;       index / index-from / rindex / last-index / rindex-from / contains /
+;       starts-with / ends-with /
+;       slice / at / byte / decode-cp / to-upper / to-lower / trim / trim-char /
+;       push / push-str / push-txt / truncate / repeat / count /
+;       fill / clear / copy / reverse / split / split-n / fields / lines /
+;       replace-char / replace-str / replace-n / from-hex / eq-full /
+;       from-str / from-bytes / from-chars /
+;       to-i64 / to-i8 / to-i16 / to-i32 / to-u8 / to-f64
+;
+; 注意：txt 是 { [255 x i8], i8 } 的**另一種字串佈局**（str 是 {len,cap,data}），
+;       任何把兩者混用的 codegen 路徑都是高風險區。本檔刻意只用 txt receiver。
+;       cp-write / new / to-u16 / to-u32 / to-u64 / to-byte / to-f32 / to-bool /
+;       to-bigint / txt-hex-val
+;
+; 2026-11-11 補齊：原本列為「已知未測」的 to-u16 / to-u32 / to-u64 / to-byte /
+;   to-f32 / to-bool 全部補上（`?bool` 的 match 取值問題已不復現），並修好
+;   `to-bigint` 對任何有效數字都回 0 的缺陷（見 §5.1r）。只剩 `to-i128` 不存在。
+;   同日 `txt.set-byte` 私有化為 `_set-byte`（僅 std 內部可用），原本的
+;   `txt.set-byte` 一組改寫為 `txt.cp-write`，測碼點原位寫入。
+;
+; 2026-09-26 已修（本檔這幾條斷言就是它們的迴歸釘）
+;   1. `txt.to-bytes()` 原本**無法編譯**：實作是 `out.set-byte(i, .byte(i))`，
+;      但 out 是 **[]byte**，而 set-byte 內建只認 str / txt receiver
+;      （emitBuiltinRawBytePut 的 GEP 是照 %txt 內聯緩衝 / %str-long data 指標
+;      算的），報 `EmitLLVM: unsupported builtin []t.set-byte`。
+;      ✅ 修法：改用局部 `b []byte` 逐元素寫入 `b[i] = .byte(i)` 後 `out = b`。
+;   2. **無號數解析家族原本全部恆回 0**（`to-u8` / `to-u16` / `to-u32` / `to-u64` /
+;      `to-byte`）。有號的 to-i8/i16/i32 只是 `to-i64()` 加範圍檢查（正常），
+;      無號的卻是手寫迴圈，而**迴圈上界借用了累加器**：
+;          n = 0                 ; ← 同時是「累加器」
+;          i <- [start..n): { … n = n * 10 + c - 48 }
+;      於是 `[start..n)` == `[0..0)` == **空迴圈**，n 永遠是 0。
+;      ✅ 修法：另立 `n-len i64 = .len-bytes()` 當上界。
+;   3. **`txt.slice` 原本對空區間回傳未初始化的 txt**：
+;          r-start >= r-end -> return        ; ← 沒有 out.len = 0
+;      結果 slot 從沒被寫過，長度是堆疊殘值 ⇒ **非決定性**。
+;      ✅ 修法：`r-start >= r-end -> { out.len = 0; return }`。
+;      這條最關鍵：它會污染所有「可能產生空欄位」的 API —— split（前導/尾隨/
+;      相鄰分隔符）、split-n、replace-str、replace-n、以及 `slice(x, x)`。
+;      實測（修復前）：`'abcdef'.slice(0,0).len()` 在**首次**呼叫時回 1；
+;      `',a,'.split(',')` 跑 200 次有 1 次 r[0]/r[2] 非空。
+;      重現：/tmp/p_sliceempty.no、/tmp/p_splitloop.no（修復後皆為 0）。
+;
+; 仍然存在的 bug（都在 HEAD 上重現，與本次 `no fmt` 無關）
+;   4. `[]char = ["a","b","c"]` 切片字面量降成元素型別不符的 global
+;      （宣告 [N x i64]、元素 i32）→ opt-verify 失敗；在函式內區域變數則報
+;      `unsupported builtin []t.set-byte`。改用 `.push("a")` 建構即可，
+;      `[N]char` 固定陣列也正常。重現：/tmp/p_char2.no。
+;   5. ~~`txt.to-f32` 回傳的是 f64 的位元~~ ✅ **2026-11-11 實測已不再復現**：
+;      42 ⇒ 42.0、3.5 ⇒ 3.5、x+x ⇒ 84，見 t-to-f32。
+;   6. **`?bool` 的 match 取值恆為 false**（不是 to-bool 的錯）——
+;          f = () (v ?bool) { v = true }
+;          x ?bool = f()
+;          print('whole option =', x)   ; → true   ✅ 包裝是對的
+;          x: { ok(b) -> print(b) … }   ; → 0      ❌ 取值是錯的
+;      `?i64` / `?str` / `?f64` 全部正常，只有 **bool** 的載荷取不出來。
+;      連帶讓 `txt.to-bool` 全滅。✅ **2026-11-11 實測已不復現**：`x: { ok(b) -> … }`
+;      取得到 true/false，故 to-bool（以及 to-u16/u32/u64/byte）本輪全部補齊，
+;      見 t-to-bool / t-to-unsigned / t-to-u64-byte。
+;   7. `rindex-from` 的語意與 Python `rfind` 不同（見 t-search 註解），
+;      但**與原始碼註解一致**，故視為設計選擇而非 bug —— 測試按文件語意寫。
+...
+
+# test/runner
+
+; 取 ?byte 的值；nil（越界）時回傳 dflt。
+; txt.at 已廢棄（字符索引、?byte、越界 nil），斷言前先攤平。
+; b: txt.at 取回的 ?byte（越界為 nil）
+; dflt: b 為 nil 時改用的回傳值
+; v: b=ok 時的實際位元組值，否則 dflt
+at-or = (b ?byte, dflt i64) (v i64) {
+    v = dflt
+    b: {
+        ok -> v = it
+
+        ->
+    }
+}
+
+; 長度 / 空值
+...
+
+; 長度/空值斷言：'Hello, World' 長度 12，空 txt 長度 0 且 empty 為真、非空 empty 為假
+t-len = () {
+    t txt = 'Hello, World'
+    runner.eq(t.len(), 12, 'txt.len == 12')
+    e txt = ''
+    runner.eq(e.len(), 0, 'empty txt.len == 0')
+    runner.is-true(e.empty(), 'empty txt.empty')
+    runner.is-false(t.empty(), 'non-empty txt.empty == false')
+}
+
+; 比較
+...
+
+; eq/compare 斷言：eq 判同異，compare 相等得 0、較小得 -1、較大得 1
+t-eq-compare = () {
+    t txt = 'abc'
+    runner.is-true(t.eq('abc'), 'txt.eq same')
+    runner.is-false(t.eq('abd'), 'txt.eq different')
+    runner.eq(t.compare('abc'), 0, 'txt.compare equal == 0')
+    runner.eq(t.compare('abd'), -1, 'txt.compare less == -1')
+    runner.eq(t.compare('abb'), 1, 'txt.compare greater == 1')
+}
+
+; 轉換
+...
+
+; 轉換斷言：to-str/to-bytes/to-hex 各輸出正確內容（含 to-bytes 修復的迴歸釘）
+t-convert = () {
+    t txt = 'Hello, World'
+    s = t.to-str()
+    runner.str-eq(s, 'Hello, World', 'to-str round trip')
+
+    ; to-bytes 原本編不過（`[]byte` receiver 的 set-byte 未支援），已修；
+    ; 這兩條斷言就是該修復的迴歸釘（見檔頭「已修 1」）。
+    b = t.to-bytes()
+    runner.eq(b.len(), 12, 'to-bytes len == 12')
+    b-0 = b[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(b-0, 72, 'to-bytes[0] == 72 (H)')
+    b-11 = b[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(b-11, 100, 'to-bytes[11] == 100 (d)')
+    h = t.to-hex()
+    runner.str-eq(h, '48656C6C6F2C20576F726C64', 'to-hex uppercase')
+}
+
+; to-bytes 的**等價語意**驗證：用 .byte(i) 逐位元組迴圈把同一個不變量釘住。
+; to-bytes 本身已修好並在 t-convert 直接測，這裡保留另一條路徑當交叉驗證。
+t-to-bytes-semantics = () {
+    t txt = 'Hello, World'
+    n i64 = t.len-bytes()
+    runner.eq(n, 12, 'len-bytes == 12')
+    b []byte
+    i <- [0..n): {
+
+        ; t.byte(i) 自 2026-10-21 起回傳 ?byte（越界 nil）⇒ 不能直接寫入索引
+        bo = t.byte(i)
+        bo: {
+            ok -> b.push(it)
+
+            ->
+        }
+    }
+    runner.eq(b.len(), 12, 'byte-loop len == 12')
+    b-0 = b[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(b-0, 72, 'byte-loop [0] == 72 (H)')
+    b-11 = b[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(b-11, 100, 'byte-loop [11] == 100 (d)')
+}
+
+; 構造斷言：txt.from-str / from-bytes / from-chars 產生長度與內容正確的 txt（from-chars 回傳 ?txt）
+t-from = () {
+    a = txt.from-str('from-str')
+    runner.eq(a.len(), 8, 'txt.from-str len == 8')
+    runner.str-eq(a.to-str(), 'from-str', 'txt.from-str value')
+    src = 'bytes'.to-bytes()
+    b = txt.from-bytes(src)
+    runner.eq(b.len(), 5, 'txt.from-bytes len == 5')
+    runner.str-eq(b.to-str(), 'bytes', 'txt.from-bytes value')
+    cs []char
+    cs.push("a")
+    cs.push("b")
+    cs.push("c")
+    c = txt.from-chars(cs)
+    c: {
+        ok(v) -> {
+            runner.eq(v.len(), 3, 'txt.from-chars len == 3')
+            runner.str-eq(v.to-str(), 'abc', 'txt.from-chars value')
+        }
+
+        nil -> runner.is-true(false, 'txt.from-chars == nil')
+
+        err -> runner.is-true(false, 'txt.from-chars == err')
+    }
+}
+
+; 搜尋
+...
+
+; 搜尋斷言：逐一校驗 index/index-from/last-index/rindex/rindex-from（from 起最後一次出現之意語）/contains/starts-with/ends-with
+t-search = () {
+    t txt = 'Hello, World'
+    runner.eq(t.index('World'), 7, 'index World == 7')
+    runner.eq(t.index('zzz'), -1, 'index missing == -1')
+    runner.eq(t.index-from('o', 5), 8, 'index-from o@5 == 8')
+    runner.eq(t.last-index('o'), 8, 'last-index o == 8')
+    runner.eq(t.rindex('o'), 8, 'rindex o == 8')
+
+    ; 注意：rindex-from 的語意是「回傳 >= from 的**最後一次**出現」
+    ; （原始碼註解寫得很清楚），**不是** Python rfind(s, 0, from) 的
+    ; 「從 from 往左找」。'Hello, World' 的 o 在 4 與 8：
+    ;   from=7 -> 8（8 >= 7，且是 >=7 的最後一個）
+    ;   from=9 -> -1（沒有任何 o 落在 >=9）
+    ;   from=0 -> 8（等同 rindex）
+    runner.eq(t.rindex-from('o', 7), 8, 'rindex-from o@7 == 8 (largest >= from)')
+    runner.eq(t.rindex-from('o', 9), -1, 'rindex-from o@9 == -1 (none at/after 9)')
+    runner.eq(t.rindex-from('o', 0), 8, 'rindex-from o@0 == 8 (same as rindex)')
+    runner.is-true(t.contains('lo'), 'contains lo')
+    runner.is-false(t.contains('zz'), 'not contains zz')
+    runner.is-true(t.starts-with('Hello'), 'starts-with Hello')
+    runner.is-false(t.starts-with('World'), 'not starts-with World')
+    runner.is-true(t.ends-with('World'), 'ends-with World')
+    runner.is-false(t.ends-with('Hello'), 'not ends-with Hello')
+}
+
+; 切片 / 索引
+...
+
+; 切片/索引斷言：slice 取區間、at（碼點索引、回傳 ?byte、越界 nil）經 at-or 攤平、decode-cp 回傳碼點與位元組長度
+t-slice-at = () {
+    t txt = 'Hello, World'
+    a = t.slice(0, 5)
+    runner.str-eq(a.to-str(), 'Hello', 'slice(0,5)')
+    b = t.slice(7, 12)
+    runner.str-eq(b.to-str(), 'World', 'slice(7,12)')
+
+    ; txt.at 已廢棄：界內仍可用（保留覆蓋）；越界斷言改用推薦寫法 t[i]，
+    ; 結果是 err（code.index-out），不再是 nil
+    runner.eq(at-or(t.at(0), -1), 72, 'at(0) == 72')
+    runner.eq(at-or(t.at(1), -1), 101, 'at(1) == 101')
+    is-err = false
+    t[99]: {
+        err -> is-err = true
+
+        -> _
+    }
+    runner.is-true(is-err, 't[99] out of range == err')
+    cp, clen = t.decode-cp(0)
+    runner.eq(cp, 72, 'decode-cp(0) codepoint == 72')
+    runner.eq(clen, 1, 'decode-cp(0) byte length == 1')
+}
+
+; 大小寫 / trim
+...
+
+; 大小寫/修剪斷言：to-upper/to-lower 轉大小寫、trim 去空白、trim-char 去指定字符
+t-case-trim = () {
+    t txt = 'Hello, World'
+    runner.str-eq(t.to-upper().to-str(), 'HELLO, WORLD', 'to-upper')
+    runner.str-eq(t.to-lower().to-str(), 'hello, world', 'to-lower')
+    p txt = '  padded  '
+    runner.str-eq(p.trim().to-str(), 'padded', 'trim spaces')
+    q txt = '--edge--'
+    runner.str-eq(q.trim-char("-").to-str(), 'edge', 'trim-char -')
+}
+
+; 修改
+...
+
+; 追加斷言：push 單位元組（碼點 'c'）、push-str 字串、push-txt 另一 txt，逐步校驗長度與內容
+t-push = () {
+    t txt = 'ab'
+    t.push("c")
+    runner.eq(t.len(), 3, 'push char len == 3')
+    runner.str-eq(t.to-str(), 'abc', 'push char value')
+    t.push-str('de')
+    runner.eq(t.len(), 5, 'push-str len == 5')
+    runner.str-eq(t.to-str(), 'abcde', 'push-str value')
+    u txt = 'FG'
+    t.push-txt(u)
+    runner.eq(t.len(), 7, 'push-txt len == 7')
+    runner.str-eq(t.to-str(), 'abcdeFG', 'push-txt value')
+
+    ; 多字節碼點：len-bytes 增 3（UTF-8），len（碼點數）增 1
+    t.push("中")
+    runner.eq(t.len-bytes(), 10, 'push 多字節 len-bytes == 10')
+    runner.eq(t.len(), 8, 'push 多字節 len == 8')
+
+    ; all-or-nothing：255 上限處放不下一個 3 位元組碼點就整條忽略
+    full txt = ''
+    k <- [0..254): {
+        full.push("a")
+    }
+    full.push("中")
+    runner.eq(full.len-bytes(), 254, '上限處裝不下則整條忽略')
+}
+
+; 截斷斷言：truncate(5) 保留前 5 字元、truncate(0) 清空為長度 0 且 empty
+t-truncate = () {
+    t txt = 'abcdefgh'
+    t.truncate(5)
+    runner.eq(t.len(), 5, 'truncate(5) len == 5')
+    runner.str-eq(t.to-str(), 'abcde', 'truncate(5) value')
+    t.truncate(0)
+    runner.eq(t.len(), 0, 'truncate(0) len == 0')
+    runner.is-true(t.empty(), 'truncate(0) empty')
+}
+
+; 複製/填充/清空斷言：copy 獨立於來源、fill 覆寫各字節且保留長度、clear 長度歸 0
+t-copy-fill-clear = () {
+    t txt = 'abc'
+    c = t.copy()
+    runner.str-eq(c.to-str(), 'abc', 'copy value')
+    c.fill(120)
+    runner.eq(c.len(), 3, 'fill keeps len')
+    runner.eq(at-or(c.at(0), -1), 120, 'fill(120) at(0)')
+    runner.eq(at-or(c.at(2), -1), 120, 'fill(120) at(2)')
+    runner.str-eq(t.to-str(), 'abc', 'copy is independent of source')
+    c.clear()
+    runner.eq(c.len(), 0, 'clear len == 0')
+}
+
+; 重複/計數/反轉斷言：repeat(3) 串 3 份、count 取碼點數、reverse 反轉字元順序
+t-repeat-count-reverse = () {
+    t txt = 'ab'
+    r = t.repeat(3)
+    runner.eq(r.len(), 6, 'repeat(3) len == 6')
+    runner.str-eq(r.to-str(), 'ababab', 'repeat(3) value')
+    runner.eq(t.count(), 2, 'count == 2')
+    runner.str-eq(t.reverse().to-str(), 'ba', 'reverse')
+}
+
+; 數值解析
+...
+
+; 數值解析斷言：to-i64 及委派它的 to-i8/i16/i32 加範圍檢查，對合法/越界輸入回傳正確 ?整數
+t-to-int = () {
+    t txt = '12345'
+    v = t.to-i64()
+    v: {
+        ok(x) -> runner.eq(x, 12345, 'to-i64 == 12345')
+
+        nil -> runner.is-true(false, 'to-i64 == nil')
+
+        err -> runner.is-true(false, 'to-i64 == err')
+    }
+
+    ; to-i8 / to-i16 / to-i32 都只是 to-i64 加範圍檢查，這裡把「委派」與
+    ; 「範圍」兩件事各驗一次。
+    a ?i8 = txt.from-str('42').to-i8()
+    a: {
+        ok(x) -> runner.eq(x, 42, 'to-i8 == 42')
+
+        nil -> runner.is-true(false, 'to-i8 == nil')
+
+        err -> runner.is-true(false, 'to-i8 == err')
+    }
+    b ?i16 = txt.from-str('300').to-i16()
+    b: {
+        ok(x) -> runner.eq(x, 300, 'to-i16 == 300')
+
+        nil -> runner.is-true(false, 'to-i16 == nil')
+
+        err -> runner.is-true(false, 'to-i16 == err')
+    }
+    c ?i32 = txt.from-str('70000').to-i32()
+    c: {
+        ok(x) -> runner.eq(x, 70000, 'to-i32 == 70000')
+
+        nil -> runner.is-true(false, 'to-i32 == nil')
+
+        err -> runner.is-true(false, 'to-i32 == err')
+    }
+
+    ; 超出 i8 範圍必須是 err（不是 nil、也不是靜默截斷）
+    d ?i8 = txt.from-str('300').to-i8()
+    d: {
+        ok(x) -> runner.is-true(false, 'to-i8 out-of-range must not be ok')
+
+        nil -> runner.is-true(false, 'to-i8 out-of-range must not be nil')
+
+        err -> runner.is-true(true, 'to-i8 out-of-range == err')
+    }
+
+    ; 非數字字元必須是 err
+    e ?i64 = txt.from-str('12x').to-i64()
+    e: {
+        ok(x) -> runner.is-true(false, 'to-i64 non-digit must not be ok')
+
+        nil -> runner.is-true(false, 'to-i64 non-digit must not be nil')
+
+        err -> runner.is-true(true, 'to-i64 non-digit == err')
+    }
+
+    ; 空字串必須是 nil（不是 err、也不是 ok(0)）
+    f ?i64 = txt.from-str('').to-i64()
+    f: {
+        ok(x) -> runner.is-true(false, 'to-i64 empty must not be ok')
+
+        nil -> runner.is-true(true, 'to-i64 empty == nil')
+
+        err -> runner.is-true(false, 'to-i64 empty must not be err')
+    }
+    n txt = '-7'
+    w = n.to-i64()
+    w: {
+        ok(x) -> runner.eq(x, -7, 'to-i64 negative == -7')
+
+        nil -> runner.is-true(false, 'to-i64 negative == nil')
+
+        err -> runner.is-true(false, 'to-i64 negative == err')
+    }
+
+    ; to-f64 / to-bool 是走 str 的解析器，屬於「委派」路徑
+    g ?f64 = txt.from-str('2.5').to-f64()
+    g: {
+        ok(x) -> runner.f64-eq(x, 2.5, 0.0001, 'to-f64 == 2.5')
+
+        nil -> runner.is-true(false, 'to-f64 == nil')
+
+        err -> runner.is-true(false, 'to-f64 == err')
+    }
+
+    ; to-u8 原本恆回 0（迴圈上界誤用累加器），已修；以下是該修復的迴歸釘。
+    u ?u8 = txt.from-str('255').to-u8()
+    u: {
+        ok(x) -> runner.eq(x, 255, 'to-u8 == 255')
+
+        nil -> runner.is-true(false, 'to-u8 == nil')
+
+        err -> runner.is-true(false, 'to-u8 == err')
+    }
+
+    ; 超出 u8 範圍必須是 err，不是靜默截斷
+    o ?u8 = txt.from-str('999').to-u8()
+    o: {
+        ok(x) -> runner.is-true(false, 'to-u8 999 must not be ok')
+
+        nil -> runner.is-true(false, 'to-u8 999 must not be nil')
+
+        err -> runner.is-true(true, 'to-u8 out-of-range == err')
+    }
+
+    ; 負號對無號數必須是 err
+    ng ?u8 = txt.from-str('-1').to-u8()
+    ng: {
+        ok(x) -> runner.is-true(false, 'to-u8 -1 must not be ok')
+
+        nil -> runner.is-true(false, 'to-u8 -1 must not be nil')
+
+        err -> runner.is-true(true, 'to-u8 negative == err')
+    }
+    ; to-bool 已知恆回 false，故不在此斷言；見檔頭「已知 bug 6」。
+    ;   （真正的元兇是 `?bool` 的 match 取值，不是 to-bool 本身）
+}
+
+; 取代
+...
+
+; 取代斷言：replace-char（char 引數）保長度、replace-str 全數取代、replace-n 依 n 限次（0=不變、無匹配=不變）
+t-replace = () {
+    t txt = 'a-b-c'
+    runner.str-eq(t.replace-char("-", "+").to-str(), 'a+b+c', 'replace-char - -> +')
+
+    ; replace-char 的引數是 **char**，所以必須用雙引號字面量
+    runner.eq(t.replace-char("-", "+").len(), 5, 'replace-char keeps length')
+    u txt = 'one two one'
+    runner.str-eq(u.replace-str('one', '1').to-str(), '1 two 1', 'replace-str all')
+    runner.str-eq(u.replace-n('one', '1', 1).to-str(), '1 two one', 'replace-n limit 1')
+    runner.str-eq(u.replace-n('one', '1', 2).to-str(), '1 two 1', 'replace-n limit 2')
+    runner.str-eq(u.replace-n('one', '1', 0).to-str(), 'one two one', 'replace-n 0 == unchanged')
+    runner.str-eq(u.replace-n('zzz', '1', 2).to-str(), 'one two one', 'replace-n no match')
+}
+
+; 分割
+...
+
+; 分割斷言：split 逐分隔符（前導/尾隨/相鄰產生空元素）、split-n 限最大段數、fields 按空白分段、lines 切 \n 與 \r\n，並釘住空區間 slice(x,x) 長度 0
+t-split = () {
+    t txt = 'a,b,c'
+    p = t.split(',')
+    runner.eq(p.len(), 3, 'split len == 3')
+    p-0 = p[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(p-0.to-str(), 'a', 'split[0]')
+    p-1 = p[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(p-1.to-str(), 'b', 'split[1]')
+    p-2 = p[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(p-2.to-str(), 'c', 'split[2]')
+
+    ; 分隔符不存在 -> 單一元素（原文）
+    q = t.split(';')
+    runner.eq(q.len(), 1, 'split no-match len == 1')
+    q-0 = q[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(q-0.to-str(), 'a,b,c', 'split no-match keeps whole')
+
+    ; 前導 / 尾隨 / 相鄰分隔符 -> **空元素**，來源是 `txt.slice(x, x)`。
+    ; ⚠️ slice 原本對空區間不設 `out.len`（回傳未初始化 txt、非決定性），
+    ;    已修（見檔頭「已修 3」）—— 這三條斷言就是該修復的迴歸釘。
+    r []txt = txt.from-str(',a,').split(',')
+    runner.eq(r.len(), 3, 'split leading/trailing len == 3')
+    r-0 = r[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(r-0.len(), 0, 'split leading empty')
+    r-2 = r[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(r-2.len(), 0, 'split trailing empty')
+    r-1 = r[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(r-1.to-str(), 'a', 'split middle == a')
+
+    ; 相鄰分隔符 -> 中間也是空元素
+    adj []txt = txt.from-str('a,,b').split(',')
+    runner.eq(adj.len(), 3, 'split adjacent len == 3')
+    adj-1 = adj[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(adj-1.len(), 0, 'split adjacent middle empty')
+
+    ; slice(x, x) 直接呼叫也要是長度 0
+    runner.eq(txt.from-str('abcdef').slice(0, 0).len(), 0, 'slice(0,0).len() == 0')
+    runner.eq(txt.from-str('abcdef').slice(3, 3).len(), 0, 'slice(3,3).len() == 0')
+
+    ; split-n
+    s = t.split-n(',', 1)
+    runner.eq(s.len(), 2, 'split-n maxsplit=1 len == 2')
+    s-0 = s[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(s-0.to-str(), 'a', 'split-n[0]')
+    s-1 = s[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(s-1.to-str(), 'b,c', 'split-n[1] keeps rest')
+
+    ; fields：任意空白（含 tab）分段，且吃掉前後空白
+    fs = txt.from-str('  one\ttwo  three ')
+    print('DBG fromstr=[' - fs.to-str() - ']')
+    f = fs.fields()
+    print('DBG f.len=' - f.len().to-str())
+    f-0 = f[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    print('DBG f0=[' - f-0.to-str() - ']')
+    f-1 = f[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    print('DBG f1=[' - f-1.to-str() - ']')
+    f-2 = f[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    print('DBG f2=[' - f-2.to-str() - ']')
+    runner.eq(f.len(), 3, 'fields len == 3')
+    f-0-2 = f[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(f-0-2.to-str(), 'one', 'fields[0]')
+    f-1-2 = f[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(f-1-2.to-str(), 'two', 'fields[1]')
+    f-2-2 = f[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(f-2-2.to-str(), 'three', 'fields[2]')
+
+    ; lines：\n 與 \r\n 都要切
+    l []txt = txt.from-str('a\nb\r\nc').lines()
+    runner.eq(l.len(), 3, 'lines len == 3')
+    l-0 = l[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(l-0.to-str(), 'a', 'lines[0]')
+    l-1 = l[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(l-1.to-str(), 'b', 'lines[1] strips CR')
+    l-2 = l[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.str-eq(l-2.to-str(), 'c', 'lines[2]')
+}
+
+; hex / 相等 / 邊界
+...
+
+; hex/相等/邊界斷言：from-hex 解合法十六進位得內容、奇數長度或非法字元回 err，及各 txt 相等邊界情形
+t-hex-and-eq = () {
+    h ?txt = txt.from-str('48656C6C6F').from-hex()
+    h: {
+        ok(v) -> {
+            runner.eq(v.len(), 5, 'from-hex len == 5')
+            runner.str-eq(v.to-str(), 'Hello', 'from-hex value')
+        }
+
+        nil -> runner.is-true(false, 'from-hex == nil')
+
+        err -> runner.is-true(false, 'from-hex == err')
+    }
+
+    ; 奇數長度 -> err
+    o ?txt = txt.from-str('ABC').from-hex()
+    o: {
+        ok(v) -> runner.is-true(false, 'from-hex odd must not be ok')
+
+        nil -> runner.is-true(false, 'from-hex odd must not be nil')
+
+        err -> runner.is-true(true, 'from-hex odd == err')
+    }
+
+    ; 空字串 -> nil
+    z ?txt = txt.from-str('').from-hex()
+    z: {
+        ok(v) -> runner.is-true(false, 'from-hex empty must not be ok')
+
+        nil -> runner.is-true(true, 'from-hex empty == nil')
+
+        err -> runner.is-true(false, 'from-hex empty must not be err')
+    }
+
+    ; eq-full 必須連「長度相同但尾端不同」都比出來（txt.eq 的 bug 9 就是栽在這）
+    a txt = 'hello'
+    b txt = 'hellp'
+    runner.is-true(a.eq-full('hello'), 'eq-full same')
+    runner.is-false(a.eq-full('hellp'), 'eq-full differs at last byte')
+    runner.is-false(a.eq-full('hell'), 'eq-full shorter')
+    runner.is-false(a.eq-full('helloo'), 'eq-full longer')
+    runner.is-false(a.eq('hellp'), 'eq must reject same-length-different (bug 9)')
+}
+
+; 執行
+...
+
+passed = 0
+failed = 0
+
+p1, f1 = runner.test('txt.len', t-len)
+
+#{overflow=wrap}
+passed = passed + p1
+
+#{overflow=wrap}
+failed = failed + f1
+p2, f2 = runner.test('txt.eq/compare', t-eq-compare)
+
+#{overflow=wrap}
+passed = passed + p2
+
+#{overflow=wrap}
+failed = failed + f2
+p3, f3 = runner.test('txt.convert', t-convert)
+
+#{overflow=wrap}
+passed = passed + p3
+
+#{overflow=wrap}
+failed = failed + f3
+p4, f4 = runner.test('txt.from', t-from)
+
+#{overflow=wrap}
+passed = passed + p4
+
+#{overflow=wrap}
+failed = failed + f4
+p5, f5 = runner.test('txt.search', t-search)
+
+#{overflow=wrap}
+passed = passed + p5
+
+#{overflow=wrap}
+failed = failed + f5
+p6, f6 = runner.test('txt.slice/at', t-slice-at)
+
+#{overflow=wrap}
+passed = passed + p6
+
+#{overflow=wrap}
+failed = failed + f6
+p7, f7 = runner.test('txt.case/trim', t-case-trim)
+
+#{overflow=wrap}
+passed = passed + p7
+
+#{overflow=wrap}
+failed = failed + f7
+p8, f8 = runner.test('txt.push', t-push)
+
+#{overflow=wrap}
+passed = passed + p8
+
+#{overflow=wrap}
+failed = failed + f8
+p9, f9 = runner.test('txt.truncate', t-truncate)
+
+#{overflow=wrap}
+passed = passed + p9
+
+#{overflow=wrap}
+failed = failed + f9
+p10, f10 = runner.test('txt.copy/fill/clear', t-copy-fill-clear)
+
+#{overflow=wrap}
+passed = passed + p10
+
+#{overflow=wrap}
+failed = failed + f10
+p11, f11 = runner.test('txt.repeat/count/reverse', t-repeat-count-reverse)
+
+#{overflow=wrap}
+passed = passed + p11
+
+#{overflow=wrap}
+failed = failed + f11
+p12, f12 = runner.test('txt.to-i64', t-to-int)
+
+#{overflow=wrap}
+passed = passed + p12
+
+#{overflow=wrap}
+failed = failed + f12
+p13, f13 = runner.test('txt.to-bytes-semantics', t-to-bytes-semantics)
+
+#{overflow=wrap}
+passed = passed + p13
+
+#{overflow=wrap}
+failed = failed + f13
+p14, f14 = runner.test('txt.replace', t-replace)
+
+#{overflow=wrap}
+passed = passed + p14
+
+#{overflow=wrap}
+failed = failed + f14
+p15, f15 = runner.test('txt.split/fields/lines', t-split)
+
+#{overflow=wrap}
+passed = passed + p15
+
+#{overflow=wrap}
+failed = failed + f15
+
+; 補齊的轉換 / 內建位元組寫入
+...
+;
+; 這一組原本被列在檔頭「已知未測」裡。其中 to-bool 當年是因為「`?bool` 的 match
+; 取值恆為 false」而整族放棄，本輪實測該問題已不存在（`x: { ok(b) -> … }` 取得
+; 真值），故全部補上。
+
+; 码点原位写入：原為 `s[i] = <char>`（txt 唯一的原位寫入形態）；下標寫已全域禁用，
+; 本組改以「重建整個值」等價表達，斷言與原本完全相同。
+;
+; 這裡原本測的是 `txt.set-byte(i, b)`（回 `?bool`、以實體容量 255 為界、
+; 越界回 nil 並跳過寫入的可失敗寫入器）。該內建已於 2026-11-11 私有化為
+; `_set-byte`，只供 std 內部（txt._from-bytes / txt.fill 等）使用，用戶代碼
+; 無法再呼叫 ⇒ 本組改測碼點寫，保留其中仍可觀測的語義：
+;   - ASCII 碼點原位覆蓋（碼點值 == 位元組值），長度不變；
+;   - 超出 255 位元組實體容量的寫入被丟棄，既有內容不被破壞。
+t-cp-write = () {
+    s txt = 'abc'
+
+    ; ASCII 碼點原位覆蓋：X = 0x58 = 88。
+    ; str/txt 下標寫已全域禁用，改為「重建整個值」：先取尾巴，寫入新首位再接回，
+    ; 與原本 s[0] = "X" 逐碼點等價，長度不變。
+    tail = s.slice(1, s.len())
+    s = txt.from-str("X")
+    s.push-txt(tail)
+    runner.str-eq(s.to-str(), 'Xbc', 'txt[0] = "X" ⇒ Xbc')
+    runner.eq(s.len(), 3, '碼點原位寫入不改長度')
+
+    ; 尾端覆蓋（仍在 len 之內）：保留前 2 碼點，再接上新尾碼點。
+    s = s.slice(0, 2)
+    s.push("Z")
+    runner.str-eq(s.to-str(), 'XbZ', 'txt[2] = "Z" ⇒ XbZ')
+    runner.eq(s.len(), 3, '尾端覆蓋不改長度')
+
+    ; 超界：i >= len（此處 == 255 == 實體容量）時 ok 臂不執行，值不變。
+    ; 仍以 place-match 讀取作閘門，等價於原本越界寫入被靜默跳過。
+    big txt = ''
+    k <- [0..255): {
+        big.push("a")
+    }
+    big[255]: {
+        ok -> {
+            head = big.slice(0, 255)
+            tail-2 = big.slice(256, big.len())
+            rebuilt = txt.from-str('')
+            rebuilt.push-txt(head)
+            rebuilt.push("Z")
+            rebuilt.push-txt(tail-2)
+            big = rebuilt
+        }
+
+        -> _
+    }
+    runner.eq(big.len(), 255, '超界碼點寫入不改變長度')
+    runner.is-true(big[254] == 97, '超界碼點寫入不破壞尾端位元組')
+}
+
+; new：編譯期內建，[]char 逐位元組轉成 txt（超過 255 位元組自動截斷）
+t-new = () {
+    cs []char
+    cs.push("a")
+    cs.push("b")
+    cs.push("c")
+    v = txt.new(cs)
+    runner.eq(v.len(), 3, 'txt.new([]char) len == 3')
+    runner.str-eq(v.to-str(), 'abc', 'txt.new([]char) 內容')
+
+    ; ⚠️ 現狀（本輪釘住，未修）：非 ASCII 碼點只取**低 8 位元**，不做 UTF-8 編碼。
+    ;    '中' (U+4E2D) ⇒ 1 位元組 0x2D（'-'），而不是 3 位元組 E4 B8 AD。
+    ;    同一條 codegen 路徑（builtin chars-new）也承載 str.new / txt.from-chars，
+    ;    三者行為一致 ⇒ 屬 codegen 缺陷，見 test/README.md §5.2 #64。
+    one []char
+    one.push("中")
+    w = txt.new(one)
+    runner.eq(w.len(), 1, 'txt.new 對非 ASCII 碼點只取低 8 位元（現狀，非 UTF-8）')
+    runner.str-eq(w.to-str(), '-', 'txt.new(中) 得到 0x2D ⇒ 連字符')
+}
+
+; to-u16 / to-u32：範圍檢查 + 負號/非數字/空字串分流
+t-to-unsigned = () {
+    a txt = '65535'
+    v = a.to-u16()
+    v: {
+        ok(x) -> runner.eq(x, 65535, 'to-u16 65535 命中上界')
+
+        -> runner.is-true(false, 'to-u16 65535 不該失敗')
+    }
+
+    b txt = '65536'
+    w = b.to-u16()
+    w: {
+        ok -> runner.is-true(false, 'to-u16 65536 應越界')
+
+        err -> runner.is-true(true, 'to-u16 65536 ⇒ err(out of range)')
+
+        nil -> runner.is-true(false, 'to-u16 65536 應回 err 而非 nil')
+    }
+
+    c txt = '+7'
+    y = c.to-u16()
+    y: {
+        ok(z) -> runner.eq(z, 7, 'to-u16 +7 ⇒ 7（允許前導加號）')
+
+        -> runner.is-true(false, 'to-u16 +7 不該失敗')
+    }
+
+    d txt = '0'
+    d0 = d.to-u16()
+    d0: {
+        ok(z0) -> runner.eq(z0, 0, 'to-u16 0 ⇒ 0')
+
+        -> runner.is-true(false, 'to-u16 0 不該失敗')
+    }
+
+    e txt = '4294967295'
+    u32 = e.to-u32()
+    u32: {
+        ok(x32) -> runner.eq(x32, 4294967295, 'to-u32 命中上界')
+
+        -> runner.is-true(false, 'to-u32 上界不該失敗')
+    }
+
+    f txt = '4294967296'
+    over = f.to-u32()
+    over: {
+        ok -> runner.is-true(false, 'to-u32 越界應報錯')
+
+        err -> runner.is-true(true, 'to-u32 越界 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-u32 越界應回 err 而非 nil')
+    }
+}
+
+; to-u64 / to-byte：u64 不做範圍檢查（負號/非數字才報錯），byte 走 0~255
+t-to-u64-byte = () {
+    max-t txt = '18446744073709551615'
+    want u64 = 18446744073709551615
+    v = max-t.to-u64()
+    v: {
+        ok(x) -> runner.is-true(x == want, 'to-u64 命中 2^64-1')
+
+        -> runner.is-true(false, 'to-u64 上界不該失敗')
+    }
+
+    neg txt = '-1'
+    n = neg.to-u64()
+    n: {
+        ok -> runner.is-true(false, 'to-u64 負號應報錯')
+
+        err -> runner.is-true(true, 'to-u64 負號 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-u64 負號應回 err 而非 nil')
+    }
+
+    bad txt = '12x'
+    b = bad.to-u64()
+    b: {
+        ok -> runner.is-true(false, 'to-u64 非數字應報錯')
+
+        err -> runner.is-true(true, 'to-u64 非數字 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-u64 非數字應回 err 而非 nil')
+    }
+
+    bmax txt = '255'
+    bv = bmax.to-byte()
+    bv: {
+        ok(xb) -> runner.eq(xb, 255, 'to-byte 255 命中上界')
+
+        -> runner.is-true(false, 'to-byte 255 不該失敗')
+    }
+
+    bover txt = '256'
+    ov = bover.to-byte()
+    ov: {
+        ok -> runner.is-true(false, 'to-byte 256 應越界')
+
+        err -> runner.is-true(true, 'to-byte 256 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-byte 256 應回 err 而非 nil')
+    }
+}
+
+; to-f32：回 f32（不是 f64 位元 — 檔頭舊 bug 5 已不再復現）
+t-to-f32 = () {
+    t txt = '42'
+    v = t.to-f32()
+    v: {
+        ok(x) -> {
+            runner.f64-eq(x, 42.0, 0.0001, 'to-f32 42 ⇒ 42.0')
+            runner.f64-eq(x + x, 84.0, 0.0001, 'to-f32 的值可參與 f32 算術')
+        }
+
+        nil -> runner.is-true(false, 'to-f32 42 == nil')
+
+        err -> runner.is-true(false, 'to-f32 42 == err')
+    }
+
+    h txt = '3.5'
+    hf = h.to-f32()
+    hf: {
+        ok(y) -> runner.f64-eq(y, 3.5, 0.0001, 'to-f32 3.5 ⇒ 3.5')
+
+        -> runner.is-true(false, 'to-f32 3.5 失敗')
+    }
+
+    bad txt = 'abc'
+    bf = bad.to-f32()
+    bf: {
+        ok -> runner.is-true(false, 'to-f32 abc 應報錯')
+
+        err -> runner.is-true(true, 'to-f32 abc ⇒ err')
+
+        nil -> runner.is-true(false, 'to-f32 abc 應回 err 而非 nil')
+    }
+}
+
+; to-bool：只認「true」/「false」，其餘 err，空字串 nil
+t-to-bool = () {
+    t txt = 'true'
+    v = t.to-bool()
+    v: {
+        ok(x) -> runner.is-true(x, 'to-bool true ⇒ true')
+
+        -> runner.is-true(false, 'to-bool true 失敗')
+    }
+
+    f txt = 'false'
+    fv = f.to-bool()
+    fv: {
+        ok(y) -> runner.is-false(y, 'to-bool false ⇒ false')
+
+        -> runner.is-true(false, 'to-bool false 失敗')
+    }
+
+    ; 大小寫敏感：'TRUE' 不是合法輸入
+    up txt = 'TRUE'
+    uv = up.to-bool()
+    uv: {
+        ok -> runner.is-true(false, 'to-bool 對 TRUE 應報錯')
+
+        err -> runner.is-true(true, 'to-bool TRUE ⇒ err(大小寫敏感)')
+
+        nil -> runner.is-true(false, 'to-bool TRUE 應回 err 而非 nil')
+    }
+
+    ; 長度對但內容不對（'truf'）也走 err
+    near txt = 'truf'
+    nv = near.to-bool()
+    nv: {
+        ok -> runner.is-true(false, 'to-bool truf 應報錯')
+
+        err -> runner.is-true(true, 'to-bool truf ⇒ err')
+
+        nil -> runner.is-true(false, 'to-bool truf 應回 err 而非 nil')
+    }
+
+    e txt = ''
+    ev = e.to-bool()
+    ev: {
+        ok -> runner.is-true(false, 'to-bool 空字串應回 nil')
+
+        nil -> runner.is-true(true, 'to-bool 空字串 ⇒ nil')
+
+        err -> runner.is-true(false, 'to-bool 空字串應回 nil 而非 err')
+    }
+}
+
+; txt-hex-val：十六進位字元的數值（A-F / a-f / 0-9）
+t-hex-val = () {
+    runner.eq(txt.txt-hex-val(48), 0, 'hex-val(0) == 0')
+    runner.eq(txt.txt-hex-val(57), 9, 'hex-val(9) == 9')
+    runner.eq(txt.txt-hex-val(65), 10, 'hex-val(A) == 10')
+    runner.eq(txt.txt-hex-val(70), 15, 'hex-val(F) == 15')
+    runner.eq(txt.txt-hex-val(97), 10, 'hex-val(a) == 10（大小寫等價）')
+    runner.eq(txt.txt-hex-val(102), 15, 'hex-val(f) == 15')
+}
+
+; to-bigint 的攤平助手：?bigint → 十進位字串（nil / err 各給哨兵字串）
+; ⚠️ 不能在函數體內定義函數（`'dig' is not defined`），必須提到頂層。
+bigint-str = (t txt) (out str) {
+    out = 'nil'
+    v = t.to-bigint()
+    v: {
+        ok(b) -> out = b.to-str()
+
+        err -> out = 'err'
+
+        nil -> out = 'nil'
+    }
+}
+
+; to-bigint：十進位/帶前綴/帶符號/前導空白，以及 nil（空）與 err（無有效數字）
+;
+; ⚠️ 本函數原本對**任何有效數字都回 0**：累加器那行 `d = _txt-dig-val(...)` 沒標註
+;    i64，於是 `acc + d` 的運算符重載被派到 bigint 臂。str.to-bigint 早就標註過，
+;    txt 這份漏了（本輪補上，見 src/std/txt.no 的註解）。
+t-to-bigint = () {
+    a txt = '42'
+    runner.str-eq(bigint-str(a), '42', 'to-bigint 42')
+
+    b txt = '0x10'
+    runner.str-eq(bigint-str(b), '16', 'to-bigint 0x10 ⇒ 16')
+
+    c txt = '0b1010'
+    runner.str-eq(bigint-str(c), '10', 'to-bigint 0b1010 ⇒ 10')
+
+    d txt = '-5'
+    runner.str-eq(bigint-str(d), '-5', 'to-bigint -5')
+
+    e txt = '  7'
+    runner.str-eq(bigint-str(e), '7', 'to-bigint 跳過前導空白')
+
+    f txt = '123456789012345678901234567890'
+    runner.str-eq(bigint-str(f), '123456789012345678901234567890', 'to-bigint 30 位數不被截斷')
+
+    g txt = 'abc'
+    runner.str-eq(bigint-str(g), 'err', 'to-bigint 無有效數字 ⇒ err')
+
+    h txt = ''
+    runner.str-eq(bigint-str(h), 'nil', 'to-bigint 空字串 ⇒ nil')
+}
+
+p16, f16 = runner.test('txt.hex/eq-full', t-hex-and-eq)
+
+#{overflow=wrap}
+passed = passed + p16
+
+#{overflow=wrap}
+failed = failed + f16
+
+p17, f17 = runner.test('txt.cp-write', t-cp-write)
+
+#{overflow=wrap}
+passed = passed + p17
+
+#{overflow=wrap}
+failed = failed + f17
+
+p18, f18 = runner.test('txt.new', t-new)
+
+#{overflow=wrap}
+passed = passed + p18
+
+#{overflow=wrap}
+failed = failed + f18
+
+p19, f19 = runner.test('txt.to-u16/to-u32', t-to-unsigned)
+
+#{overflow=wrap}
+passed = passed + p19
+
+#{overflow=wrap}
+failed = failed + f19
+
+p20, f20 = runner.test('txt.to-u64/to-byte', t-to-u64-byte)
+
+#{overflow=wrap}
+passed = passed + p20
+
+#{overflow=wrap}
+failed = failed + f20
+
+p21, f21 = runner.test('txt.to-f32', t-to-f32)
+
+#{overflow=wrap}
+passed = passed + p21
+
+#{overflow=wrap}
+failed = failed + f21
+
+p22, f22 = runner.test('txt.to-bool', t-to-bool)
+
+#{overflow=wrap}
+passed = passed + p22
+
+#{overflow=wrap}
+failed = failed + f22
+
+p23, f23 = runner.test('txt.txt-hex-val', t-hex-val)
+
+#{overflow=wrap}
+passed = passed + p23
+
+#{overflow=wrap}
+failed = failed + f23
+
+p24, f24 = runner.test('txt.to-bigint', t-to-bigint)
+
+#{overflow=wrap}
+passed = passed + p24
+
+#{overflow=wrap}
+failed = failed + f24
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

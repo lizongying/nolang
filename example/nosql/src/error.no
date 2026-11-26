@@ -1,0 +1,374 @@
+; SQLite-compatible result codes and structured engine errors.
+
+SQLITE-OK = 0
+SQLITE-ERROR = 1
+SQLITE-INTERNAL = 2
+SQLITE-PERM = 3
+SQLITE-ABORT = 4
+SQLITE-BUSY = 5
+SQLITE-LOCKED = 6
+SQLITE-NOMEM = 7
+SQLITE-READONLY = 8
+SQLITE-INTERRUPT = 9
+SQLITE-IOERR = 10
+SQLITE-CORRUPT = 11
+SQLITE-NOTFOUND = 12
+SQLITE-FULL = 13
+SQLITE-CANTOPEN = 14
+SQLITE-PROTOCOL = 15
+SQLITE-EMPTY = 16
+SQLITE-SCHEMA = 17
+SQLITE-TOOBIG = 18
+SQLITE-CONSTRAINT = 19
+SQLITE-MISMATCH = 20
+SQLITE-MISUSE = 21
+SQLITE-NOLFS = 22
+SQLITE-AUTH = 23
+SQLITE-FORMAT = 24
+SQLITE-RANGE = 25
+SQLITE-NOTADB = 26
+SQLITE-NOTICE = 27
+SQLITE-WARNING = 28
+SQLITE-ROW = 100
+SQLITE-DONE = 101
+
+SQLITE-CONSTRAINT-CHECK = 275
+SQLITE-CONSTRAINT-COMMITHOOK = 531
+SQLITE-CONSTRAINT-FOREIGNKEY = 787
+SQLITE-CONSTRAINT-FUNCTION = 1043
+SQLITE-CONSTRAINT-NOTNULL = 1299
+SQLITE-CONSTRAINT-PRIMARYKEY = 1555
+SQLITE-CONSTRAINT-TRIGGER = 1811
+SQLITE-CONSTRAINT-UNIQUE = 2067
+SQLITE-CONSTRAINT-VTAB = 2323
+SQLITE-CONSTRAINT-ROWID = 2579
+SQLITE-CONSTRAINT-PINNED = 2835
+SQLITE-CONSTRAINT-DATATYPE = 3091
+
+SQLITE-ERROR-MISSING-COLLSEQ = 257
+SQLITE-ERROR-RETRY = 513
+SQLITE-ERROR-SNAPSHOT = 769
+
+SQLITE-IOERR-READ = 266
+SQLITE-IOERR-SHORT-READ = 522
+SQLITE-IOERR-WRITE = 778
+SQLITE-IOERR-FSYNC = 1034
+SQLITE-IOERR-DIR-FSYNC = 1290
+SQLITE-IOERR-TRUNCATE = 1546
+SQLITE-IOERR-FSTAT = 1802
+SQLITE-IOERR-UNLOCK = 2058
+SQLITE-IOERR-RDLOCK = 2314
+SQLITE-IOERR-DELETE = 2570
+SQLITE-IOERR-BLOCKED = 2826
+SQLITE-IOERR-NOMEM = 3082
+SQLITE-IOERR-ACCESS = 3338
+SQLITE-IOERR-CHECKRESERVEDLOCK = 3594
+SQLITE-IOERR-LOCK = 3850
+SQLITE-IOERR-CLOSE = 4106
+SQLITE-IOERR-DIR-CLOSE = 4362
+SQLITE-IOERR-SHMOPEN = 4618
+SQLITE-IOERR-SHMSIZE = 4874
+SQLITE-IOERR-SHMLOCK = 5130
+SQLITE-IOERR-SHMMAP = 5386
+SQLITE-IOERR-SEEK = 5642
+SQLITE-IOERR-DELETE-NOENT = 5898
+SQLITE-IOERR-MMAP = 6154
+SQLITE-IOERR-GETTEMPPATH = 6410
+SQLITE-IOERR-CONVPATH = 6666
+SQLITE-IOERR-VNODE = 6922
+SQLITE-IOERR-AUTH = 7178
+SQLITE-IOERR-BEGIN-ATOMIC = 7434
+SQLITE-IOERR-COMMIT-ATOMIC = 7690
+SQLITE-IOERR-ROLLBACK-ATOMIC = 7946
+SQLITE-IOERR-DATA = 8202
+SQLITE-IOERR-CORRUPTFS = 8458
+
+SQLITE-CORRUPT-VTAB = 267
+SQLITE-CORRUPT-SEQUENCE = 523
+SQLITE-CORRUPT-INDEX = 779
+
+SQLITE-LOCKED-SHAREDCACHE = 262
+SQLITE-LOCKED-VTAB = 518
+
+SQLITE-BUSY-RECOVERY = 261
+SQLITE-BUSY-SNAPSHOT = 517
+SQLITE-BUSY-TIMEOUT = 773
+
+SQLITE-CANTOPEN-NOTEMPDIR = 270
+SQLITE-CANTOPEN-ISDIR = 526
+SQLITE-CANTOPEN-FULLPATH = 782
+SQLITE-CANTOPEN-CONVPATH = 1038
+SQLITE-CANTOPEN-DIRTYWAL = 1294
+SQLITE-CANTOPEN-SYMLINK = 1550
+
+SQLITE-READONLY-RECOVERY = 264
+SQLITE-READONLY-CANTLOCK = 520
+SQLITE-READONLY-ROLLBACK = 776
+SQLITE-READONLY-DBMOVED = 1032
+SQLITE-READONLY-CANTINIT = 1288
+SQLITE-READONLY-DIRECTORY = 1544
+
+SQLITE-ABORT-ROLLBACK = 516
+
+SQLITE-AUTH-USER = 279
+SQLITE-NOTICE-RECOVER-WAL = 283
+SQLITE-NOTICE-RECOVER-ROLLBACK = 539
+SQLITE-WARNING-AUTOINDEX = 284
+SQLITE-OK-LOAD-PERMANENTLY = 256
+
+; Result carries both the primary code and the original extended code.
+db-result {
+    code i64
+    extended-code i64
+    message str
+    sql-offset i64
+}
+
+ok-result = () (r db-result) {
+    r = db-result{
+        code: SQLITE-OK
+        extended-code: SQLITE-OK
+        message: 'not an error'
+        sql-offset: -1
+    }
+}
+
+make-result = (extended-code i64, message str) (r db-result) {
+    r = db-result{
+        code: extended-code & 255
+        extended-code: extended-code
+        message: message
+        sql-offset: -1
+    }
+}
+
+base-code = (extended-code i64) (code i64) {
+    code = extended-code & 255
+}
+
+; Cross-module constant lookup keeps callers independent from compiler constant folding.
+; Names match sqlite3.h without the SQLITE_ prefix. The table covers the
+; complete public result-code list pinned by our canonical SQLite version.
+lookup-code = (name str) (code i64) {
+    {
+        name == 'OK' -> code = SQLITE-OK
+
+        name == 'ERROR' -> code = SQLITE-ERROR
+
+        name == 'INTERNAL' -> code = SQLITE-INTERNAL
+
+        name == 'PERM' -> code = SQLITE-PERM
+
+        name == 'ABORT' -> code = SQLITE-ABORT
+
+        name == 'BUSY' -> code = SQLITE-BUSY
+
+        name == 'LOCKED' -> code = SQLITE-LOCKED
+
+        name == 'NOMEM' -> code = SQLITE-NOMEM
+
+        name == 'READONLY' -> code = SQLITE-READONLY
+
+        name == 'INTERRUPT' -> code = SQLITE-INTERRUPT
+
+        name == 'IOERR' -> code = SQLITE-IOERR
+
+        name == 'CORRUPT' -> code = SQLITE-CORRUPT
+
+        name == 'NOTFOUND' -> code = SQLITE-NOTFOUND
+
+        name == 'FULL' -> code = SQLITE-FULL
+
+        name == 'CANTOPEN' -> code = SQLITE-CANTOPEN
+
+        name == 'PROTOCOL' -> code = SQLITE-PROTOCOL
+
+        name == 'EMPTY' -> code = SQLITE-EMPTY
+
+        name == 'SCHEMA' -> code = SQLITE-SCHEMA
+
+        name == 'TOOBIG' -> code = SQLITE-TOOBIG
+
+        name == 'CONSTRAINT' -> code = SQLITE-CONSTRAINT
+
+        name == 'MISMATCH' -> code = SQLITE-MISMATCH
+
+        name == 'MISUSE' -> code = SQLITE-MISUSE
+
+        name == 'NOLFS' -> code = SQLITE-NOLFS
+
+        name == 'AUTH' -> code = SQLITE-AUTH
+
+        name == 'FORMAT' -> code = SQLITE-FORMAT
+
+        name == 'RANGE' -> code = SQLITE-RANGE
+
+        name == 'NOTADB' -> code = SQLITE-NOTADB
+
+        name == 'NOTICE' -> code = SQLITE-NOTICE
+
+        name == 'WARNING' -> code = SQLITE-WARNING
+
+        name == 'ROW' -> code = SQLITE-ROW
+
+        name == 'DONE' -> code = SQLITE-DONE
+
+        name == 'CONSTRAINT_CHECK' -> code = SQLITE-CONSTRAINT-CHECK
+
+        name == 'CONSTRAINT_COMMITHOOK' -> code = SQLITE-CONSTRAINT-COMMITHOOK
+
+        name == 'CONSTRAINT_FOREIGNKEY' -> code = SQLITE-CONSTRAINT-FOREIGNKEY
+
+        name == 'CONSTRAINT_FUNCTION' -> code = SQLITE-CONSTRAINT-FUNCTION
+
+        name == 'CONSTRAINT_NOTNULL' -> code = SQLITE-CONSTRAINT-NOTNULL
+
+        name == 'CONSTRAINT_PRIMARYKEY' -> code = SQLITE-CONSTRAINT-PRIMARYKEY
+
+        name == 'CONSTRAINT_TRIGGER' -> code = SQLITE-CONSTRAINT-TRIGGER
+
+        name == 'CONSTRAINT_UNIQUE' -> code = SQLITE-CONSTRAINT-UNIQUE
+
+        name == 'CONSTRAINT_VTAB' -> code = SQLITE-CONSTRAINT-VTAB
+
+        name == 'CONSTRAINT_ROWID' -> code = SQLITE-CONSTRAINT-ROWID
+
+        name == 'CONSTRAINT_PINNED' -> code = SQLITE-CONSTRAINT-PINNED
+
+        name == 'CONSTRAINT_DATATYPE' -> code = SQLITE-CONSTRAINT-DATATYPE
+
+        name == 'ERROR_MISSING_COLLSEQ' -> code = SQLITE-ERROR-MISSING-COLLSEQ
+
+        name == 'ERROR_RETRY' -> code = SQLITE-ERROR-RETRY
+
+        name == 'ERROR_SNAPSHOT' -> code = SQLITE-ERROR-SNAPSHOT
+
+        name == 'IOERR_READ' -> code = SQLITE-IOERR-READ
+
+        name == 'IOERR_SHORT_READ' -> code = SQLITE-IOERR-SHORT-READ
+
+        name == 'IOERR_WRITE' -> code = SQLITE-IOERR-WRITE
+
+        name == 'IOERR_FSYNC' -> code = SQLITE-IOERR-FSYNC
+
+        name == 'IOERR_DIR_FSYNC' -> code = SQLITE-IOERR-DIR-FSYNC
+
+        name == 'IOERR_TRUNCATE' -> code = SQLITE-IOERR-TRUNCATE
+
+        name == 'IOERR_FSTAT' -> code = SQLITE-IOERR-FSTAT
+
+        name == 'IOERR_UNLOCK' -> code = SQLITE-IOERR-UNLOCK
+
+        name == 'IOERR_RDLOCK' -> code = SQLITE-IOERR-RDLOCK
+
+        name == 'IOERR_DELETE' -> code = SQLITE-IOERR-DELETE
+
+        name == 'IOERR_BLOCKED' -> code = SQLITE-IOERR-BLOCKED
+
+        name == 'IOERR_NOMEM' -> code = SQLITE-IOERR-NOMEM
+
+        name == 'IOERR_ACCESS' -> code = SQLITE-IOERR-ACCESS
+
+        name == 'IOERR_CHECKRESERVEDLOCK' -> code = SQLITE-IOERR-CHECKRESERVEDLOCK
+
+        name == 'IOERR_LOCK' -> code = SQLITE-IOERR-LOCK
+
+        name == 'IOERR_CLOSE' -> code = SQLITE-IOERR-CLOSE
+
+        name == 'IOERR_DIR_CLOSE' -> code = SQLITE-IOERR-DIR-CLOSE
+
+        name == 'IOERR_SHMOPEN' -> code = SQLITE-IOERR-SHMOPEN
+
+        name == 'IOERR_SHMSIZE' -> code = SQLITE-IOERR-SHMSIZE
+
+        name == 'IOERR_SHMLOCK' -> code = SQLITE-IOERR-SHMLOCK
+
+        name == 'IOERR_SHMMAP' -> code = SQLITE-IOERR-SHMMAP
+
+        name == 'IOERR_SEEK' -> code = SQLITE-IOERR-SEEK
+
+        name == 'IOERR_DELETE_NOENT' -> code = SQLITE-IOERR-DELETE-NOENT
+
+        name == 'IOERR_MMAP' -> code = SQLITE-IOERR-MMAP
+
+        name == 'IOERR_GETTEMPPATH' -> code = SQLITE-IOERR-GETTEMPPATH
+
+        name == 'IOERR_CONVPATH' -> code = SQLITE-IOERR-CONVPATH
+
+        name == 'IOERR_VNODE' -> code = SQLITE-IOERR-VNODE
+
+        name == 'IOERR_AUTH' -> code = SQLITE-IOERR-AUTH
+
+        name == 'IOERR_BEGIN_ATOMIC' -> code = SQLITE-IOERR-BEGIN-ATOMIC
+
+        name == 'IOERR_COMMIT_ATOMIC' -> code = SQLITE-IOERR-COMMIT-ATOMIC
+
+        name == 'IOERR_ROLLBACK_ATOMIC' -> code = SQLITE-IOERR-ROLLBACK-ATOMIC
+
+        name == 'IOERR_DATA' -> code = SQLITE-IOERR-DATA
+
+        name == 'IOERR_CORRUPTFS' -> code = SQLITE-IOERR-CORRUPTFS
+
+        name == 'CORRUPT_VTAB' -> code = SQLITE-CORRUPT-VTAB
+
+        name == 'CORRUPT_SEQUENCE' -> code = SQLITE-CORRUPT-SEQUENCE
+
+        name == 'CORRUPT_INDEX' -> code = SQLITE-CORRUPT-INDEX
+
+        name == 'LOCKED_SHAREDCACHE' -> code = SQLITE-LOCKED-SHAREDCACHE
+
+        name == 'LOCKED_VTAB' -> code = SQLITE-LOCKED-VTAB
+
+        name == 'BUSY_RECOVERY' -> code = SQLITE-BUSY-RECOVERY
+
+        name == 'BUSY_SNAPSHOT' -> code = SQLITE-BUSY-SNAPSHOT
+
+        name == 'BUSY_TIMEOUT' -> code = SQLITE-BUSY-TIMEOUT
+
+        name == 'CANTOPEN_NOTEMPDIR' -> code = SQLITE-CANTOPEN-NOTEMPDIR
+
+        name == 'CANTOPEN_ISDIR' -> code = SQLITE-CANTOPEN-ISDIR
+
+        name == 'CANTOPEN_FULLPATH' -> code = SQLITE-CANTOPEN-FULLPATH
+
+        name == 'CANTOPEN_CONVPATH' -> code = SQLITE-CANTOPEN-CONVPATH
+
+        name == 'CANTOPEN_DIRTYWAL' -> code = SQLITE-CANTOPEN-DIRTYWAL
+
+        name == 'CANTOPEN_SYMLINK' -> code = SQLITE-CANTOPEN-SYMLINK
+
+        name == 'READONLY_RECOVERY' -> code = SQLITE-READONLY-RECOVERY
+
+        name == 'READONLY_CANTLOCK' -> code = SQLITE-READONLY-CANTLOCK
+
+        name == 'READONLY_ROLLBACK' -> code = SQLITE-READONLY-ROLLBACK
+
+        name == 'READONLY_DBMOVED' -> code = SQLITE-READONLY-DBMOVED
+
+        name == 'READONLY_CANTINIT' -> code = SQLITE-READONLY-CANTINIT
+
+        name == 'READONLY_DIRECTORY' -> code = SQLITE-READONLY-DIRECTORY
+
+        name == 'ABORT_ROLLBACK' -> code = SQLITE-ABORT-ROLLBACK
+
+        name == 'AUTH_USER' -> code = SQLITE-AUTH-USER
+
+        name == 'NOTICE_RECOVER_WAL' -> code = SQLITE-NOTICE-RECOVER-WAL
+
+        name == 'NOTICE_RECOVER_ROLLBACK' -> code = SQLITE-NOTICE-RECOVER-ROLLBACK
+
+        name == 'WARNING_AUTOINDEX' -> code = SQLITE-WARNING-AUTOINDEX
+
+        name == 'OK_LOAD_PERMANENTLY' -> code = SQLITE-OK-LOAD-PERMANENTLY
+
+        -> code = SQLITE-ERROR
+    }
+}
+
+db-result.is-ok = () (ok bool) {
+    ok = .code == SQLITE-OK
+}
+
+db-result.is-error = () (failed bool) {
+    failed = .code != SQLITE-OK
+}

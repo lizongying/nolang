@@ -54,10 +54,12 @@ sb.push-byte = (b i64) {
 ; 轉為 str（一次拷貝）
 ; r: 結果字串
 sb.str = () (r str) {
-    r = .buf.to-str(): {
-        ok -> it
-
-        -> ''
+    o = .buf.to-str()
+    r = ''
+    o: {
+        ok -> r = it
+        err -> r = ''
+        nil -> r = ''
     }
 }
 

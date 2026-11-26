@@ -109,27 +109,27 @@ runs:
         echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
         # ── 2. Pick the release asset for this runner ───────────────────────
-        # SUFFIX is the asset base (os_arch); EXT is the trailing file extension,
-        # kept separate so the version can be inserted BEFORE the .exe, matching
-        # exactly how the release workflow (build.yml) names its assets.
+        # SUFFIX is the os-arch pair; EXT is the trailing file extension, kept
+        # separate so the tag can be inserted BEFORE the .exe. Asset names are
+        # no-<os>-<arch>-<tag>[.exe] / no-llvm-<os>-<arch>-<tag>[.exe], where
+        # <tag> is the full release tag including the leading "v" (e.g. v0.4.35).
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
-          Linux-X64)   SUFFIX="linux_amd64";   EXT="" ;;
-          Linux-ARM64) SUFFIX="linux_arm64";   EXT="" ;;
-          macOS-X64)   SUFFIX="darwin_amd64";  EXT="" ;;
-          macOS-ARM64) SUFFIX="darwin_arm64";  EXT="" ;;
-          Windows-X64) SUFFIX="windows_amd64"; EXT=".exe" ;;
+          Linux-X64)   SUFFIX="linux-amd64";   EXT="" ;;
+          Linux-ARM64) SUFFIX="linux-arm64";   EXT="" ;;
+          macOS-X64)   SUFFIX="darwin-amd64";  EXT="" ;;
+          macOS-ARM64) SUFFIX="darwin-arm64";  EXT="" ;;
+          Windows-X64) SUFFIX="windows-amd64"; EXT=".exe" ;;
           *) echo "::error::Unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
         esac
 
         # Prefer the self-contained `no-llvm-*` asset. It links a static libLLVM
         # built with all backends (x86 + aarch64 + arm + wasm) and compiles
         # in-process via the LLVM C API, so opt/llc are never invoked — `-cc zig`
-        # supplies the assembler/linker. Releases older than v0.4.0 do not
-        # publish it; fall back to the pure-Go `no_*` asset, which *does* shell
-        # out to opt/llc, so the caller must provide them (this action does not
-        # install LLVM).
-        EMBEDDED="no-llvm-${SUFFIX}-${VERSION_NO_V}${EXT}"
-        PLAIN="no-${SUFFIX}-${VERSION_NO_V}${EXT}"
+        # supplies the assembler/linker. Releases that do not publish it fall
+        # back to the pure-Go `no-*` asset, which *does* shell out to opt/llc,
+        # so the caller must provide them (this action does not install LLVM).
+        EMBEDDED="no-llvm-${SUFFIX}-${TAG}${EXT}"
+        PLAIN="no-${SUFFIX}-${TAG}${EXT}"
         ASSET_NAMES=$(printf '%s' "$REL_JSON" | jq -r '.assets[]?.name')
         has_asset() { printf '%s\n' "$ASSET_NAMES" | grep -qxF -- "$1"; }
 

@@ -58,10 +58,10 @@ no run path/to/file.no
 这些测试是自举链路的实跑验证，和 Go 侧单测互补。
 `
       syntax: `
-no test test/std/
+no test test-std/src/
 `
       example: `
-./bin/no test test/std/
+./bin/no test test-std/src/
 `
       related: ['make-test', 'no-build']
       refs: ['test/std', 'Makefile']

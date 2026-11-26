@@ -23,8 +23,10 @@ echo "[shim] 编译 PNG 解码 (img_png.c, zlib)"
 
 "$AR" rcs "$W/dist/libnoui-shim.a" "$W/dist/shim.o" "$W/dist/img_png.o"
 
-echo "[shim] 编译 SDL_GPU 后端 (gpu_shim.c)"
-"$CLANG" -c -O1 -I"$SDL_I" \
+# 阶段82：GPU 后端新增纹理管线 —— 文字要 SDL_ttf（头文件），PNG 解码复用
+# img_png.c（已编进 libnoui-shim.a，链接顺序见 package.noml：gpu-shim 在前）。
+echo "[shim] 编译 SDL_GPU 后端 (gpu_shim.c, 含纹理 / 文字)"
+"$CLANG" -c -O1 -I"$SDL_I" -I"$TTF_I" -I"$W/src/shim" \
   "$W/src/shim/gpu_shim.c" -o "$W/dist/gpu_shim.o"
 "$AR" rcs "$W/dist/libnoui-gpu-shim.a" "$W/dist/gpu_shim.o"
 

@@ -11,9 +11,9 @@
 ;   ⚠️ drv.* 模組函式（drv.no 用 `drv.x = (...)` 點號名）因自舉 parser 對「點號名函式定義」
 ;      的 signature 計數有 bug（c5 多算 1），暫不入表——屬切片 5 的前置 parser 缺陷，本件不收。
 
-# /test/runner.is-true
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.is-true
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/drv
 # /compiler/src/asp
 # /compiler/src/ast

@@ -1444,7 +1444,7 @@ noml.doc.get-str(...) 完成，接收者被整条丢掉（该形态的契约是�
 写在实参首位」），MIR 只能按 synthRecv 给缺失的 self 补一个零值常量 —— 读到空
 pool，get-str 静默回 nil，再往 strs []str 取值就是 SIGSEGV。修法在 src/checker：
 新增词法作用域栈，局部绑定存在时不改写（绑定优先于同名型别）。修好后
-no test test/std/noml.no 346 条断言全绿。
+no test test-std/src/noml.no 346 条断言全绿。
 
 第二轮修复（同期落地）：**未知成员现在会编译错误**。src/checker/unknown_field.go
 新增 ValidateUnknownFields（trace o4x247ya）：接收者型别已知是 struct、成员

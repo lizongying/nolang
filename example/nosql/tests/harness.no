@@ -1,0 +1,8 @@
+# /example/nosql/src/test-support test-support
+
+ctx = test-support.new()
+ctx.check(true, 'successful assertion is counted')
+ctx.check-code(7, 7, 7)
+ctx.check(ctx.checks == 3, 'nested assertions update the caller counter')
+ctx.check(ctx.failures == 0, 'successful assertions do not record failures')
+ctx.done()

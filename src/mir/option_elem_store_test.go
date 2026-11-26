@@ -3,7 +3,7 @@ package mir
 import "testing"
 
 // TestOptionValueElementStoreKeepsPayload pins the std/dom.no build failure that
-// made `no test test/std` red:
+// made `no test test-std/src` red:
 //
 //	dom.ll: '%lv.7954' defined with type '%option = type { i64, [3 x i64] }'
 //	         but expected '%str-long = type { i64, i64, ptr }'

@@ -11,22 +11,21 @@ Nolang utilise le mot-clé `@` dans le fichier `lib.no` à la racine du paquet p
 ## Syntaxe
 
 ```no
-@ path.func
+@ path[.func]
 [alias]
 ```
 
-- `path` — Chemin du module (relatif à la racine du paquet, commence par `/`, sans l'extension `.no`)
-- `func` — Nom de la fonction/constante/énumération à exporter
-- `alias` — Alias optionnel utilisé lors de l'import externe
+- `path` — Chemin du module (relatif à la racine du paquet ou de l'espace de travail, sans l'extension `.no`)
+- `func` — Optionnel. Fonction/constante/énumération à exporter ; omis, le module entier est exporté
+- `alias` — Alias optionnel utilisé lors de l'import externe ; peut contenir `/` (ex. `test/assert`)
 
 ## Règles
 
 - Les instructions d'export ne peuvent **être écrites que** dans le fichier `lib.no` à la racine du paquet (la seule exception est la section suivante, « Aliases appelables globaux »)
 - Un élément exporté par ligne
-- Les éléments exportés ne peuvent être que des symboles finaux tels que fonctions, constantes, énumérations
-- **Le nom du symbole doit être fourni** : `@ std/txt` (chemin seul, sans `func` ni `alias`) est une erreur (`lgxbfk9a`).
-  Une telle écriture ne déclare rien — tous les consommateurs partent du principe qu'il y a un nom de symbole — elle n'est donc plus ignorée silencieusement.
-  Elle ne peut pas non plus servir à « lier un type à un module » : les types n'ont pas de nom global, et l'alias de `@` n'a de sens que pour les symboles appelables
+- **Export de symbole** `@ path.func [alias]` : exporte une fonction, une constante ou une énumération du module
+- **Export de module** `@ path [alias]` : exporte le module entier. L'alias est facultatif et vaut par défaut le dernier segment de `path` ; `@ /test/src/assert` équivaut donc à `@ /test/src/assert assert`. Un alias en plusieurs segments comme `@ /test/src/assert test/assert` rend le module importable via `# test/assert`
+- Un export de module n'enregistre qu'un nom de module, pas un alias appelable ; il ne peut pas lier un type à un module (les types n'ont pas de couche de nom global)
 - Les structures, énumérations et autres types référencés par une fonction exportée sont **automatiquement exportés**, sans déclaration manuelle
 - Si une fonction exportée n'existe pas dans le module, le LSP signale une erreur
 

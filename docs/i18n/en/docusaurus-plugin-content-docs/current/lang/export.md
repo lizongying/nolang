@@ -11,19 +11,21 @@ Nolang uses the `@` keyword in the package root `lib.no` file to declare exporte
 ## Syntax
 
 ```no
-@ path.func
+@ path[.func]
 [alias]
 ```
 
-- `path` — Module path (relative to package root, starts with `/`, without `.no` extension)
-- `func` — Name of the function/constant/enum to export
-- `alias` — Optional alias name used when importing externally
+- `path` — Module path (relative to the package root or workspace root, without `.no` extension)
+- `func` — Optional. Function/constant/enum to export; omit it to export the whole module
+- `alias` — Optional alias used when importing externally; may contain `/` (e.g. `test/assert`)
 
 ## Rules
 
 - Export statements can **only** be written in the package root `lib.no` file (the one exception is the next section, "Global callable aliases")
 - One export item per line
-- Exported items can only be final symbols such as functions, constants, enums
+- **Symbol export** `@ path.func [alias]` exports a function, constant or enum from the module
+- **Module export** `@ path [alias]` exports the whole module. The alias is optional and defaults to the last segment of `path`, so `@ /test/src/assert` is equivalent to `@ /test/src/assert assert`. A multi-segment alias such as `@ /test/src/assert test/assert` makes the module importable as `# test/assert`
+- A module export registers only a module name, not a callable alias; it cannot bind a type to a module (types have no global-name layer)
 - Structs and enums referenced by exported functions are **automatically exported** — no manual declaration needed
 - If an exported function does not exist in the module, LSP will report an error
 

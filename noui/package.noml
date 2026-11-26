@@ -3,7 +3,7 @@
   description: 'GPUI 精神内核的 Nolang 实现 —— 可运行纵切面'
   license: 'Apache-2.0'
   compiler: {
-    link-libs: ['noui-shim', 'SDL3', 'SDL3_ttf', 'z', 'noui-gpu-shim']
+    link-libs: ['noui-gpu-shim', 'noui-shim', 'SDL3', 'SDL3_ttf', 'z']
     version: ''
   }
   output: '/dist'

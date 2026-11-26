@@ -15,7 +15,7 @@
 ; ⚠️ 顺序就是本档的全部价值：真挂起后 `co` 不再「spawn 即跑到底」，
 ; 任何退回 run-to-completion 的改动都会先把第一组翻成 a1 a2 b1 b2。
 
-# /test/runner
+# test/runner
 
 ; 两数相加（显式解包 ?i64）
 ; a: 左加数

@@ -3,10 +3,10 @@
 ;   沉默（max）/dot 整子樹跳過/本地遮蔽/'_' 前綴/ALL-CAPS/自模組裸調。
 ; ck.check 回值每條 'L|C|CODE|MSG'（坐標=token 起始 1-based）。
 
-# /test/runner.eq
-# /test/runner.str-eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.str-eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/lx

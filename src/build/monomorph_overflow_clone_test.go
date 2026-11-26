@@ -3,6 +3,7 @@
 package build
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +21,12 @@ import (
 //
 // 回归保障：substituteStmt 必须把 OverflowMode 携带到单态化克隆体。
 func TestMonomorphPreservesOverflowAnnotation(t *testing.T) {
-	path := filepath.Join("..", "..", "test", "std", "arr.no")
+	// 測試陣列已從 test/std/arr.no 遷到 test-std/src/arr.no（獨立 std 測試包）。
+	// 兩條路徑都接受，避免遷移過渡期因 fixture 移動而假紅。
+	path := filepath.Join("..", "..", "test-std", "src", "arr.no")
+	if _, err := os.Stat(path); err != nil {
+		path = filepath.Join("..", "..", "test", "std", "arr.no")
+	}
 	lints, err := VetFileWithLints(path, BuildOptions{})
 	if err != nil {
 		t.Fatalf("VetFileWithLints(%s) 返回 error: %v", path, err)

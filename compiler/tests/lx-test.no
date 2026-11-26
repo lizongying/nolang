@@ -13,10 +13,10 @@
 ; ⚠️ 每一次「讀取」切片元素都回傳 ?T，需以值 match / `?=` 顯式消費，**即使是字面量索引**
 ;    （實測：`t = ts[0]` 未消費 ?T 會報錯並拒絕編譯）。
 
-# /test/runner.eq
-# /test/runner.str-eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.str-eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/tok
 # /compiler/src/lx
 

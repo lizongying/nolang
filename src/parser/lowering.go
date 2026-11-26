@@ -2749,9 +2749,12 @@ func (l *lowerer) preRegisterEnumArmBindings(sm *SurfaceMatch) {
 	p := l.p
 	mt, ok := p.sem.FuncVarType(l.curFuncName, ident.Value)
 	if !ok || mt == "" {
+		mt = p.astLocalVarType(l.curFuncName, ident.Value)
+	}
+	if mt == "" {
 		return
 	}
-	if _, isEnum := p.sem.EnumVariantsOf(mt); !isEnum {
+	if _, isEnum := p.enumVariantsOf(mt); !isEnum {
 		return
 	}
 	saved := p.curFuncName
@@ -2846,7 +2849,7 @@ func (l *lowerer) rejectItInNonOkArm(sm *SurfaceMatch) {
 	// 就是被匹配的值本身（不存在 nil / err 的可能），不能報錯。
 	if ident, ok := sm.Matched.(*Identifier); ok {
 		if t, ok := l.p.sem.FuncVarType(l.curFuncName, ident.Value); ok {
-			if _, isEnum := l.p.sem.EnumVariantsOf(t); isEnum {
+			if _, isEnum := l.p.enumVariantsOf(t); isEnum {
 				return
 			}
 			if !ty.IsOptionRaw(t) && !strings.Contains(t, "|") {
@@ -4508,7 +4511,7 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	if ident, ok := matched.(*Identifier); ok {
 		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok {
 			matchedVarType = t
-			if vs, ok := p.sem.EnumVariantsOf(t); ok {
+			if vs, ok := p.enumVariantsOf(t); ok {
 				isEnumType = true
 				enumVariants = vs
 			}
@@ -4524,7 +4527,7 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 			// instead of the unscoped global VarTypes fallback.
 			if at := p.astLocalVarType(p.curFuncName, ident.Value); at != "" {
 				matchedVarType = at
-				if vs, ok := p.sem.EnumVariantsOf(at); ok {
+				if vs, ok := p.enumVariantsOf(at); ok {
 					isEnumType = true
 					enumVariants = vs
 				}
@@ -5791,7 +5794,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			// 之前的 lowering 階段明確攔下，給出可替換寫法的診斷。
 			if strTxtBase {
 				pos := s.Pos()
-				p.saveErrorf("stridxwr", "line %d, column %d: cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-bytes-str()`", pos.Line, pos.Column)
+				p.saveErrorf("stridxwr", "line %d, column %d: cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-str()`", pos.Line, pos.Column)
 				continue
 			}
 			// D11：`#{index-out=DEF}` 註解已移除，臂內 RHS 不再做「越界取 DEF」
@@ -5929,6 +5932,21 @@ func unionElemType(t string) string {
 		return elem[0]
 	}
 	return ""
+}
+
+// enumVariantsOf 查詢枚舉變體名列表。模組前綴化只改寫 AST 型別名，
+// 解析期的 EnumVariants 仍以裸名登記，因此精確鍵落空時再去掉模組前綴。
+func (p *Parser) enumVariantsOf(enumType string) ([]string, bool) {
+	if p.sem == nil || enumType == "" {
+		return nil, false
+	}
+	if vs, ok := p.sem.EnumVariantsOf(enumType); ok {
+		return vs, true
+	}
+	if idx := strings.LastIndex(enumType, "."); idx > 0 {
+		return p.sem.EnumVariantsOf(enumType[idx+1:])
+	}
+	return nil, false
 }
 
 // enumVariantPayload 查詢枚舉變體的載荷型別，回傳 "" 表示單元變體或不存在。

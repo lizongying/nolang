@@ -1813,6 +1813,13 @@ type Module struct {
 	// See docs/design/tagged-enum-payload-ownership.md §9.
 	enumExtractSites map[FuncID]map[ValueID]bool
 
+	// enumCtorMoveParams records function parameters consumed directly by an
+	// OpEnumNew in a single-block constructor wrapper. The caller must transfer
+	// that argument to the callee and suppress its own drop; the returned enum's
+	// destructor is the payload's sole owner. Keyed by function and explicit
+	// parameter index, so methods and ordinary calls share the same rule.
+	enumCtorMoveParams map[FuncID]map[int]bool
+
 	// TypeAliases maps a named function-type alias (e.g. `test-cb` from
 	// `test-cb = ()`) to the KindFunc MIR type ID it denotes. Populated during
 	// HIR lowering from KTypeAlias nodes flagged FlagFuncType. internType
@@ -1940,8 +1947,9 @@ func NewModule(name string) *Module {
 
 		// Kept out of the aligned run above so adding it does not re-indent
 		// every pre-existing line (gofmt aligns contiguous key/value runs).
-		enumOwnsPayload:  map[ValueID]bool{},
-		enumExtractSites: map[FuncID]map[ValueID]bool{},
+		enumOwnsPayload:    map[ValueID]bool{},
+		enumExtractSites:   map[FuncID]map[ValueID]bool{},
+		enumCtorMoveParams: map[FuncID]map[int]bool{},
 	}
 	// reserve index 0 of each slice as a nil element
 	m.Funcs = append(m.Funcs, Function{})

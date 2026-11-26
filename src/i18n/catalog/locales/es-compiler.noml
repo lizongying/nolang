@@ -138,7 +138,7 @@ Opciones globales:
   no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
                     Instalar un binario (se guarda en ~/no/bin/, enlace simbólico en /usr/local/bin/)
                     Descarga un asset de release de GitHub precompilado para la plataforma
-                    en la que se ejecuta `no` (<tool>-<os>-<arch>, p. ej. nogit-darwin-arm64).
+                    en la que se ejecuta `no` (<tool>-<os>-<arch>-<version>, p. ej. nogit-darwin-arm64-v0.1.33).
                     Sin argumento: compilar e instalar el paquete actual.
                     -u    forzar la descarga e instalación de nuevo
     Ejemplos:

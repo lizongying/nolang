@@ -13,7 +13,7 @@
 ; （零值 `zero-recv`）必须无条件 prepend —— 那里 HIR 的第一个实参即使写成
 ; 标识符 `self`，语义上也是**输入参数**，不是被调方法的接收者。
 
-# /test/runner
+# test/runner
 
 ; 裸 `.` 当实参
 str.via-bare-dot = () (out txt) {

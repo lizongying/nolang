@@ -1,0 +1,172 @@
+; std-bzip2.no — archive/bzip2 模組測試
+;
+; 執行：no test test-std/src/bzip2.no
+; 覆蓋：bzip2.decompress —— 以系統 bzip2 -9 產生的真實串流做黃金比對，
+;       完整走過 Huffman 碼表建構（len-count / base / limit / perm）、
+;       symbol map（in-use-16 / in-use）、MTF 與 BWT 反變換（count / cum / rank / lf）
+
+# test/runner
+
+; /usr/bin/bzip2 -9 對 BZ2-EXP 壓縮所得的真實 .bz2 串流（121 位元組）
+BZ2-REF []byte = [
+    66, 90, 104, 57, 49, 65, 89, 38,
+    83, 89, 180, 202, 206, 106, 0, 0,
+    33, 217, 128, 0, 16, 64, 0, 127,
+    224, 63, 255, 255, 240, 32, 0, 72,
+    168, 208, 104, 105, 163, 77, 61, 76,
+    38, 70, 158, 163, 106, 24, 211, 79,
+    81, 161, 145, 233, 13, 12, 141, 50,
+    51, 70, 18, 156, 81, 38, 141, 99,
+    150, 106, 211, 85, 236, 205, 192, 58,
+    105, 221, 40, 89, 35, 70, 129, 111,
+    157, 252, 105, 211, 20, 161, 34, 121,
+    173, 5, 33, 141, 254, 232, 55, 76,
+    53, 220, 173, 64, 71, 224, 95, 25,
+    9, 185, 50, 202, 83, 238, 130, 238,
+    72, 167, 10, 18, 22, 153, 89, 205,
+    64,
+]
+
+; BZ2-REF 解壓後的期望位元組（82 位元組 ASCII）
+BZ2-EXP []byte = [
+    116, 104, 101, 32, 113, 117, 105, 99,
+    107, 32, 98, 114, 111, 119, 110, 32,
+    102, 111, 120, 32, 106, 117, 109, 112,
+    115, 32, 111, 118, 101, 114, 32, 116,
+    104, 101, 32, 108, 97, 122, 121, 32,
+    100, 111, 103, 10, 48, 49, 50, 51,
+    52, 53, 54, 55, 56, 57, 32, 97,
+    98, 99, 100, 101, 102, 103, 104, 105,
+    106, 107, 108, 109, 110, 111, 112, 113,
+    114, 115, 116, 117, 118, 119, 120, 121,
+    122, 10,
+]
+
+; 黃金比對：解壓真實 bzip2 串流，逐位元組對比期望輸出
+t-decompress-golden = () {
+    out = bzip2.decompress(BZ2-REF)
+    runner.eq(out.len(), 82, 'decompressed len == 82')
+    n = out.len()
+    m = 0
+    i <- [0..n): {
+        a ?i64 = out[i]
+        b ?i64 = BZ2-EXP[i]
+        {
+            a == b -> {
+            }
+
+            -> {
+
+                #{overflow=wrap}
+                m-opt = m + 1
+                m-opt: {
+                    ok -> m = it
+
+                    -> _
+                }
+            }
+        }
+    }
+    runner.eq(m, 0, 'all bytes match golden bzip2 output')
+}
+
+; 邊界：空輸入不產生任何位元組
+t-decompress-empty = () {
+    raw []byte = []
+    out = bzip2.decompress(raw)
+    runner.eq(out.len(), 0, 'empty input -> empty output')
+}
+
+; 位元讀取器（MSB-first）
+...
+
+; bzip2 的位元流是高位在前的
+t-bit-reader = () {
+    br = bz-bit-reader{}
+    br.data = [0xb5]
+    br.pos = 0
+    br.bit-buf = 0
+    br.bit-cnt = 0
+
+    b0 = br.read-bit()
+    b1 = br.read-bit()
+    b2 = br.read-bit()
+    b3 = br.read-bit()
+    runner.eq(b0, 1, '0xB5 = 1011_0101，MSB first：bit0 = 1')
+    runner.eq(b1, 0, 'bit1 = 0')
+    runner.eq(b2, 1, 'bit2 = 1')
+    runner.eq(b3, 1, 'bit3 = 1')
+
+    v = br.read-bits(4)
+    runner.eq(v, 5, 'read-bits(4) 續讀 0101 = 5')
+
+    z = br.read-bit()
+    runner.eq(z, 0, '資料耗盡時 read-bit 回 0')
+}
+
+; Huffman 碼表建構 / 解碼
+...
+
+; 兩符號、長度各 1 → 規範碼 0 與 1
+t-huffman = () {
+    lens = [1, 1]
+    h = bz-huffman{}
+    h.build(lens, 2)
+
+    runner.eq(h.min-len, 1, 'min-len = 1')
+    runner.eq(h.max-len, 1, 'max-len = 1')
+
+    r0 = bz-bit-reader{}
+    r0.data = [0x00]
+    r0.pos = 0
+    r0.bit-buf = 0
+    r0.bit-cnt = 0
+    s0 = h.decode(r0)
+    runner.eq(s0, 0, '首位元 0 解出符號 0')
+
+    r1 = bz-bit-reader{}
+    r1.data = [0x80]
+    r1.pos = 0
+    r1.bit-buf = 0
+    r1.bit-cnt = 0
+    s1 = h.decode(r1)
+    runner.eq(s1, 1, '首位元 1 解出符號 1')
+
+    r2 = bz-bit-reader{}
+    r2.data = [0x80]
+    r2.pos = 0
+    r2.bit-buf = 0
+    r2.bit-cnt = 0
+    s2 = h.decode-symbol(r2)
+    runner.eq(s2, 1, 'decode-symbol 首位元 1 解出符號 1')
+}
+
+; 壓縮端：目前只產出合法 BZh 前綴
+...
+
+; 已知缺陷（test/README.md §5.2 #14）：區塊資料（BWT/MTF/Huffman）尚未實作，
+; 產出僅 24 位元組且會讓本模組的解壓端卡住等資料；此處只驗魔數。
+t-compress-prefix = () {
+    src = 'hello hello hello world'.to-bytes()
+    z = bzip2.compress(src)
+
+    head = z.slice(0, 4)
+    runner.str-eq(head.to-hex(), '425A6839', 'BZh9 魔數（block-size 9 = 900k）')
+}
+
+; 執行
+...
+
+p1, f1 = runner.test('bzip2.decompress golden stream', t-decompress-golden)
+p2, f2 = runner.test('bzip2.decompress empty input', t-decompress-empty)
+p3, f3 = runner.test('bzip2.bit-reader', t-bit-reader)
+p4, f4 = runner.test('bzip2.huffman', t-huffman)
+p5, f5 = runner.test('bzip2.compress prefix', t-compress-prefix)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

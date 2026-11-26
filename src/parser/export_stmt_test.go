@@ -14,17 +14,14 @@ func parseExportSrc(src string) []string {
 	return p.Errors()
 }
 
-// TestExportWithoutSymbolRejected 釘住「`@ path` 單獨寫」不再是靜默 no-op。
+// TestExportWithoutSymbolAccepted 釘住「`@ path` 單獨寫」是合法的「整包導出」。
 //
-// 背景（2026-11-12）：`src/std/global.no` 曾被寫上 `@ std/txt` / `@ std/str`，
-// 想表達「txt / str 的定義在那些模組」。但 `@` 的每個消費方
-// （hir.registerAliasSigs、mir.collectAliases、checker.ValidateExportSymbols、
-// checker.filterByExports）都以「有符號名」為前提，Function 為空的宣告會被
-// 全部跳過：既不改變行為，也不報錯。作者因此會誤以為綁定成功了。
-//
-// 這種「無意義但也沒人管」的寫法與 docs/docs/lang/annotation-scope.md 的原則
-// （非法與無意義都必須報錯）衝突，所以改成解析期錯誤 lgxbfk9a。
-func TestExportWithoutSymbolRejected(t *testing.T) {
+// 背景：過去此寫法被解析期錯誤 lgxbfk9a 拒絕（consumers 都以有符號名為前提，
+// Function 為空的宣告會被全部跳過）。但包級 lib.no 需要它來聲明「這個包導出
+// 某個模組」：`@ /test/src/assert` 等價於 `@ /test/src/assert assert`，
+// 讓 `# test/assert` 可以導入。現在全局放寬，語義由 checker/build 的
+// lib.no 解析鏈賦予；hir/mir 仍不把它註冊成 callable alias。
+func TestExportWithoutSymbolAccepted(t *testing.T) {
 	cases := map[string]string{
 		"bare path":        "@ std/txt\n",
 		"bare path slash":  "@ /std/txt\n",
@@ -33,14 +30,50 @@ func TestExportWithoutSymbolRejected(t *testing.T) {
 	}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
-			errs := parseExportSrc(src)
-			if len(errs) == 0 {
-				t.Fatalf("no diagnostic for %q; a symbol-less export must be rejected", strings.TrimSpace(src))
-			}
-			if !strings.Contains(strings.Join(errs, "\n"), "lgxbfk9a") {
-				t.Errorf("diagnostics %v do not mention lgxbfk9a", errs)
+			if errs := parseExportSrc(src); len(errs) != 0 {
+				t.Errorf("unexpected diagnostics for %q: %v", strings.TrimSpace(src), errs)
 			}
 		})
+	}
+}
+
+// TestExportMultiSegmentAlias 釘住多段模組名別名：`@ path test/assert` 讓
+// `# test/assert` 可以按這個名字導入模組（見 checker.ResolvePackageExport）。
+func TestExportMultiSegmentAlias(t *testing.T) {
+	cases := map[string]string{
+		"bare module + multi alias": "@ /test/src/assert test/assert\n",
+		"explicit as + multi alias": "@ /test/src/assert as test/assert\n",
+		"symbol + single alias":     "@ /test/src/assert.eq assert-eq\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if errs := parseExportSrc(src); len(errs) != 0 {
+				t.Errorf("unexpected diagnostics for %q: %v", strings.TrimSpace(src), errs)
+			}
+		})
+	}
+	p := New(lexer.New("@ /test/src/assert test/assert\n"))
+	prog := p.ParseProgram()
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parse errors: %v", p.Errors())
+	}
+	var es *ExportStatement
+	for _, stmt := range prog.Statements {
+		if e, ok := stmt.(*ExportStatement); ok {
+			es = e
+		}
+	}
+	if es == nil {
+		t.Fatal("no ExportStatement parsed")
+	}
+	if es.Path != "/test/src/assert" {
+		t.Errorf("Path = %q, want /test/src/assert", es.Path)
+	}
+	if es.Alias != "test/assert" {
+		t.Errorf("Alias = %q, want test/assert", es.Alias)
+	}
+	if es.Function != "" {
+		t.Errorf("Function = %q, want empty", es.Function)
 	}
 }
 

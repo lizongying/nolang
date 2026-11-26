@@ -25,6 +25,8 @@
 ;   app-drop() (s str)                取最近一次拖放的路径 / 文本（读完即空，配合 t==19/24）
 ;   app-display-scale()/scale1000()   窗口 DPI 缩放
 ;   app-draw-round-rect/-shadow/-image-rot  圆角矩形 / 投影 / 旋转翻转图片
+;   app-font-open(path,size) / app-font-ready()  字体初始化（后端无关）/ 是否可用
+;   app-scale1000()                    窗口 DPI 缩放 x1000（后端无关）
 ;   app-text() (s str)              取最近一次文本输入的 UTF-8（读完即空，配合 t==7）
 ;   app-clipboard-copy(s) / app-clipboard-paste()  系统剪贴板写 / 读
 ;   app-quit() (yes bool)           退出事件标志（t==1 后置位）
@@ -102,6 +104,28 @@ _noui-gpu-draw-rect = (x f64, y f64, w f64, h f64, r i32, g i32, b i32, a i32) (
 _noui-gpu-frame = () ()
 #{c}
 _noui-gpu-delay = (ms i32) ()
+#{c}
+; 阶段82：GPU 纹理管线。图片与文字统一走纹理注册表（id 从 1 起）；
+; 文字渲染成白底 alpha 蒙版纹理，绘制时用顶点色染色。
+_noui-gpu-font-init = (path str, size f64) (ok i32)
+#{c}
+_noui-gpu-font-active = () (yes i32)
+#{c}
+_noui-gpu-img-load = (path str) (id i64)
+#{c}
+_noui-gpu-text-load = (text str) (id i64)
+#{c}
+_noui-gpu-tex-size = (id i64) (wh i64)
+#{c}
+_noui-gpu-draw-tex = (x f64, y f64, w f64, h f64, id i64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-gpu-draw-tex-rot = (x f64, y f64, w f64, h f64, id i64, angle f64, flip i32) ()
+#{c}
+_noui-gpu-draw-round = (x f64, y f64, w f64, h f64, rad f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-gpu-draw-shadow = (x f64, y f64, w f64, h f64, rad f64, dy f64, r i32, g i32, b i32, a i32) ()
+#{c}
+_noui-gpu-display-scale1000 = () (v i64)
 #{c}
 _noui-gpu-quit = () ()
 #{c}
@@ -183,6 +207,41 @@ app-gpu-mode = () (on i64) {
 ; GPU 设备是否已初始化（0=没有；用于测试与诊断）
 app-gpu-active = () (yes i64) {
     yes = _noui-gpu-active()
+}
+
+; ============================================================================
+; 阶段82：字体与 DPI 的后端无关封装
+;
+; 两个后端的字体 / 窗口 API 名字不同（shim.c vs gpu_shim.c），但字号策略一致：
+; 先乘窗口 DPI 缩放，再按候选清单逐个尝试。
+; ============================================================================
+app-font-open = (path str, size f64) (ok i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { ok = _noui-gpu-font-init(path, size) }
+    (gpu == 0) -> { ok = _noui-font-init(path, size) }
+}
+
+app-scale1000 = () (v i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { v = _noui-gpu-display-scale1000() }
+    (gpu == 0) -> { v = _noui-window-display-scale1000() }
+}
+
+; 字体是否可用（1=TTF 渲染；0=回退 DebugText / 跳过文本）
+app-font-ready = () (yes i64) {
+    yes = APP-FONT[0]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; ============================================================================
@@ -361,7 +420,7 @@ app-init = (title str) (ok i64) {
             return
         }
         print('GPU window handle: {h}')
-        print('GPU backend: rects only, text/image drawing skipped')
+        print('GPU backend: quads + textures (text/image/round/shadow)')
     }
     (gpu == 0) -> {
         r = _noui-init()
@@ -379,20 +438,20 @@ app-init = (title str) (ok i64) {
         }
         print('window handle: {h}')
         (h > 0) -> { APP-WIN-ID[0] = h }
-        ; 阶段81：字号跟随窗口 DPI 缩放；字体按候选列表逐个尝试，全失败才回退
-        ; DebugText（此前只有单一硬编码路径，换机器就静默丢字体）。
-        sz = _noui-window-display-scale1000()
-        sc = sz.to-f64() / 1000.0
-        (sc < 1.0) -> { sc = 1.0 }
-        fs = 16.0 * sc
-        fv = _noui-font-init('/System/Library/Fonts/Supplemental/Arial.ttf', fs)
-        (fv == 0) -> { fv = _noui-font-init('/System/Library/Fonts/Helvetica.ttc', fs) }
-        (fv == 0) -> { fv = _noui-font-init('/System/Library/Fonts/PingFang.ttc', fs) }
-        (fv == 0) -> { fv = _noui-font-init('/Library/Fonts/Arial.ttf', fs) }
-        (fv == 0) -> { fv = _noui-font-init('/System/Library/Fonts/Menlo.ttc', fs) }
-        APP-FONT[0] = fv
-        (APP-FONT[0] == 0) -> { print('font init failed, fallback to debug text') }
     }
+    ; 阶段81/82：两个后端共用同一份字体初始化 —— 字号先乘窗口 DPI 缩放，
+    ; 字体候选逐个尝试，全失败才回退 DebugText（GPU 后端回退为跳过文本）。
+    sz = app-scale1000()
+    sc = sz.to-f64() / 1000.0
+    (sc < 1.0) -> { sc = 1.0 }
+    fs = 16.0 * sc
+    fv = app-font-open('/System/Library/Fonts/Supplemental/Arial.ttf', fs)
+    (fv == 0) -> { fv = app-font-open('/System/Library/Fonts/Helvetica.ttc', fs) }
+    (fv == 0) -> { fv = app-font-open('/System/Library/Fonts/PingFang.ttc', fs) }
+    (fv == 0) -> { fv = app-font-open('/Library/Fonts/Arial.ttf', fs) }
+    (fv == 0) -> { fv = app-font-open('/System/Library/Fonts/Menlo.ttc', fs) }
+    APP-FONT[0] = fv
+    (APP-FONT[0] == 0) -> { print('font init failed, fallback to debug text') }
     APP-ROOT[0] = cmp-root()
     ok = 0
 }
@@ -556,20 +615,37 @@ app-clipboard-paste = () (s str) {
 ; shim 侧把 PNG 解成 SDL_Texture，注册表 id 从 1 起；nolang 侧只持标量 id。
 ; C-SPRITE 组件在 cs-paint 时按 id 发 CS-IMG 指令，app-draw-scene 拉伸绘制。
 ; ============================================================================
-; 加载 PNG 建纹理；成功返回 id（>0），失败（文件不存在 / 解码失败）返回 0
+; 加载 PNG 建纹理；成功返回 id（>0），失败（文件不存在 / 解码失败）返回 0。
+; 阶段82：两个后端的纹理注册表各自独立，加载口必须跟着当前后端走。
 app-img-load = (path str) (id i64) {
-    id = _noui-img-load(path)
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { id = _noui-gpu-img-load(path) }
+    (gpu == 0) -> { id = _noui-img-load(path) }
+}
+
+app-img-wh = (id i64) (wh i64) {
+    gpu = APP-GPU[0]: {
+        ok -> it
+
+        -> 0
+    }
+    (gpu != 0) -> { wh = _noui-gpu-tex-size(id) }
+    (gpu == 0) -> { wh = _noui-img-size(id) }
 }
 
 ; 图片像素宽（id 无效返回 0）
 app-img-w = (id i64) (w i64) {
-    wh = _noui-img-size(id)
+    wh = app-img-wh(id)
     w = wh >> 32
 }
 
 ; 图片像素高（id 无效返回 0）
 app-img-h = (id i64) (h i64) {
-    wh = _noui-img-size(id)
+    wh = app-img-wh(id)
     h = wh & 0xFFFFFFFF
 }
 
@@ -669,8 +745,8 @@ app-hover = (root i64, px i64, py i64) (h i64) {
 ; ============================================================================
 app-draw-scene = () {
     n = cs-scene-count()
-    ; 阶段79：GPU 后端只画矩形（无纹理管线），文本/图片指令静默跳过；
-    ; 裁剪是 SDL_Render 的概念，GPU 路径同样跳过。
+    ; 阶段82：GPU 后端的四边形 / 纹理 / 圆角 / 投影都有对应出口，只有裁剪
+    ; （SDL_Render 概念）仍跳过 —— 指令顺序即 z 序，两个后端一致。
     gpu = APP-GPU[0]: {
         ok -> it
 
@@ -697,6 +773,18 @@ app-draw-scene = () {
         }
         (cf == 0) -> { (gpu == 0) -> { _noui-clip-clear() } }
         (k == CS-TEXT) -> {
+            (gpu != 0) -> {
+                ; 阶段82：文字渲染成白底 alpha 蒙版纹理（按串缓存），绘制时顶点色染色
+                t = cs-scene-t(i)
+                tid = _noui-gpu-text-load(t)
+                (tid > 0) -> {
+                    wh = _noui-gpu-tex-size(tid)
+                    twi = wh >> 32
+                    thi = wh - cs-mul(twi, 4294967296)
+                    _noui-gpu-draw-tex(xf, yf, twi.to-f64(), thi.to-f64(), tid,
+                                       col-r(c), col-g(c), col-b(c), col-a(c))
+                }
+            }
             (gpu == 0) -> {
                 t = cs-scene-t(i)
                 fv = APP-FONT[0]: {
@@ -734,10 +822,18 @@ app-draw-scene = () {
             }
         }
         ; 阶段78：图片 / 精灵。id <= 0（未加载）时静默跳过，盒子即目标矩形。
-        ; GPU 后端没有纹理采样管线，跳过。
+        ; 阶段82：GPU 后端走纹理采样，颜色恒为白（纹理自带颜色）。
         (k == CS-IMG) -> {
+            iid = cs-scene-si(i)
+            (gpu != 0) -> {
+                (iid > 0) -> {
+                    w = cs-scene-w(i)
+                    ht = cs-scene-h(i)
+                    _noui-gpu-draw-tex(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
+                                       iid, 255, 255, 255, 255)
+                }
+            }
             (gpu == 0) -> {
-                iid = cs-scene-si(i)
                 (iid > 0) -> {
                     w = cs-scene-w(i)
                     ht = cs-scene-h(i)
@@ -745,14 +841,15 @@ app-draw-scene = () {
                 }
             }
         }
-        ; 阶段81：圆角矩形。GPU 后端无逐行绘制能力，降级为直角矩形（颜色不变）。
+        ; 阶段81：圆角矩形。阶段82 起 GPU 后端由片元 SDF 画真圆角（含边缘 AA）。
         (k == CS-ROUND) -> {
             w = cs-scene-w(i)
             ht = cs-scene-h(i)
             rad = cs-scene-sr(i)
             rf = rad.to-f64() / 100.0
             (gpu != 0) -> {
-                _noui-gpu-draw-rect(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0, col-r(c), col-g(c), col-b(c), col-a(c))
+                _noui-gpu-draw-round(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
+                                     rf, col-r(c), col-g(c), col-b(c), col-a(c))
             }
             (gpu == 0) -> {
                 (rf <= 0.0) -> {
@@ -763,8 +860,17 @@ app-draw-scene = () {
                 }
             }
         }
-        ; 阶段81：投影（仅软件渲染器；GPU 无多层半透明混合管线）
+        ; 阶段81：投影。阶段82 起 GPU 后端拆成多层半透明圆角矩形叠加。
         (k == CS-SHADOW) -> {
+            (gpu != 0) -> {
+                w = cs-scene-w(i)
+                ht = cs-scene-h(i)
+                rad = cs-scene-sr(i)
+                dy = cs-scene-sd(i)
+                _noui-gpu-draw-shadow(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
+                                      rad.to-f64() / 100.0, dy.to-f64() / 100.0,
+                                      col-r(c), col-g(c), col-b(c), col-a(c))
+            }
             (gpu == 0) -> {
                 w = cs-scene-w(i)
                 ht = cs-scene-h(i)
@@ -775,8 +881,19 @@ app-draw-scene = () {
                                   col-r(c), col-g(c), col-b(c), col-a(c))
             }
         }
-        ; 阶段81：旋转 / 翻转图片（与 CS-IMG 一样受 GPU 纹理管线限制）
+        ; 阶段81：旋转 / 翻转图片。阶段82 起 GPU 后端用采样绘制 + CPU 侧旋转顶点。
         (k == CS-IMGR) -> {
+            (gpu != 0) -> {
+                iid = cs-scene-si(i)
+                (iid > 0) -> {
+                    w = cs-scene-w(i)
+                    ht = cs-scene-h(i)
+                    ang = cs-scene-sa(i)
+                    fl = cs-scene-sf(i)
+                    _noui-gpu-draw-tex-rot(xf, yf, w.to-f64() / 100.0, ht.to-f64() / 100.0,
+                                           iid, ang.to-f64() / 100.0, pxi(fl))
+                }
+            }
             (gpu == 0) -> {
                 iid = cs-scene-si(i)
                 (iid > 0) -> {

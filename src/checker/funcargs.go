@@ -492,6 +492,112 @@ func resolveModuleFilePath(use *parser.UseStatement, p *pkg.Package, rootDir str
 			return filePath
 		}
 	}
+	// 工作區套件別名 + lib.no 模組級匯出（`# test/assert`）。
+	// 必須在最後的「直接拼 <ws>/<path>.no」之前：那條路徑會把 `test` 當成
+	// 普通目錄，找不到 test/assert.no 就報錯，完全看不到 lib.no 的映射。
+	wsRoot := ""
+	if p != nil {
+		wsRoot = p.WorkspaceRoot()
+	}
+	if wsRoot == "" && rootDir != "" {
+		if ws, ok := pkg.FindWorkspaceRoot(rootDir); ok {
+			wsRoot = ws
+		}
+	}
+	if resolved := ResolvePackageExport(path, wsRoot); resolved != "" {
+		return resolved
+	}
+	return ""
+}
+
+// ResolvePackageExport 解析「工作區套件別名 + 包內 lib.no 模組級匯出」形式的
+// 導入路徑。build 與 checker 共用此口徑，避免一邊按別名解析、另一邊按目錄
+// 拼接而產生簽名缺失。
+//
+//	`test/src/assert` → workspace 的 test → <ws>/test/src/assert.no
+//	`test/assert`     → <ws>/test/lib.no 中別名為 assert 的模組級匯出
+//	                    （`@ /test/src/assert` 的默認別名就是 assert）
+//	                    → <ws>/test/src/assert.no
+//
+// 只認模組級匯出（ExportStatement.Function == ""）。`@ path.fn alias` 是符號
+// 匯出，不是模組別名，不能在這裡被當成模組解析。
+//
+// 找不到映射或非工作區別名時回傳空字串，呼叫方續走原本的解析路徑。
+func ResolvePackageExport(importPath, workspaceRoot string) string {
+	if importPath == "" || workspaceRoot == "" {
+		return ""
+	}
+	segs := strings.Split(importPath, "/")
+	if len(segs) < 2 {
+		return ""
+	}
+	alias := segs[0]
+	rest := strings.Join(segs[1:], "/")
+	pkgDir, ok := pkg.ResolveWorkspaceAlias(alias, workspaceRoot)
+	if !ok {
+		return ""
+	}
+
+	// 1. 直接檔案：`# test/src/assert` → <pkgDir>/src/assert.no
+	direct := filepath.Join(pkgDir, filepath.FromSlash(rest))
+	if !strings.HasSuffix(direct, ".no") {
+		direct += ".no"
+	}
+	if _, err := os.Stat(direct); err == nil {
+		return filepath.Clean(direct)
+	}
+
+	// 2. lib.no 模組級匯出：`# test/assert` → `@ /test/src/assert`
+	libPath := filepath.Join(pkgDir, "lib.no")
+	source, err := os.ReadFile(libPath)
+	if err != nil {
+		return ""
+	}
+	l := lexer.NewCached(libPath, string(source))
+	p := parser.New(l)
+	libProg := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		return ""
+	}
+	for _, stmt := range libProg.Statements {
+		es, ok := stmt.(*parser.ExportStatement)
+		if !ok || es.Function != "" {
+			continue
+		}
+		exportAlias := es.Alias
+		if exportAlias == "" {
+			// 裸導出 `@ /test/src/assert` 等價於 `@ /test/src/assert assert`。
+			exportAlias = moduleShortName(es.Path)
+		}
+		if exportAlias != rest && exportAlias != importPath {
+			continue
+		}
+		if modFile := resolveExportModuleFile(es.Path, pkgDir, workspaceRoot); modFile != "" {
+			return modFile
+		}
+	}
+	return ""
+}
+
+// resolveExportModuleFile 把 lib.no 模組級匯出的 Path 轉成磁碟上的 .no 檔案。
+// `/` 前綴相對 workspace 根目錄；無前綴相對包目錄；`std/` 由 StdFS 處理，
+// 不經過本解析函式。
+func resolveExportModuleFile(exportPath, pkgDir, workspaceRoot string) string {
+	var full string
+	switch {
+	case strings.HasPrefix(exportPath, "/"):
+		full = filepath.Join(workspaceRoot, strings.TrimPrefix(exportPath, "/"))
+	case strings.HasPrefix(exportPath, "std/"):
+		return ""
+	default:
+		full = filepath.Join(pkgDir, filepath.FromSlash(exportPath))
+	}
+	if !strings.HasSuffix(full, ".no") {
+		full += ".no"
+	}
+	if _, err := os.Stat(full); err == nil {
+		return filepath.Clean(full)
+	}
 	return ""
 }
 
@@ -2559,6 +2665,14 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						if variadicAt >= 0 && pi == variadicAt {
 							expectedType = strings.TrimPrefix(expectedType, "[]")
 						}
+						// 隱式泛型函式（`f = (a t, b t) ...`）的形參在 checker 階段
+						// 仍是未綁定的型別變數：t 會在 monomorphization 時由實參決定。
+						// 與下方「argType 仍含型別變數就跳過」對稱，此處也必須跳過，
+						// 否則 `assert.eq(1, 1, 'msg')` 被誤報
+						// `expected 't', got 'i64'`，泛型函式呼叫點根本到不了 codegen。
+						if mentionsTypeVar(expectedType) {
+							continue
+						}
 						// D1 必須放在 `argType == "" continue` 之前：resolveExprType
 						// 刻意不帶 funcTypes，呼叫結果當實參時回 ""，過去整條
 						// 3604icnf 因此失效（`p(q())` 把 ?T 當 T 用的盲點）。
@@ -2847,6 +2961,40 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			}
 		}
 	}
+	// Compute the module's relative path (without .no extension) from the file
+	// path and lib.no location. Used both for whole-module exports and for
+	// limiting symbol validation to this module's own exports.
+	pkgRoot := filepath.Dir(libPath)
+	modRelPath := ""
+	if modFilePath != "" {
+		rel, err := filepath.Rel(pkgRoot, modFilePath)
+		if err == nil {
+			modRelPath = strings.TrimSuffix(rel, ".no")
+		}
+	}
+	// 模組級匯出（`@ /test/src/assert`，無符號）代表「整包導出」：不註冊
+	// callable alias，也不做符號名檢查。命中目前模組時保留全部頂層定義，
+	// 否則 `# test/assert` 拿到的會是被過濾成空殼的模組。
+	exportAll := false
+	for _, e := range exports {
+		if e.fn != "" || modRelPath == "" {
+			continue
+		}
+		rel := strings.TrimPrefix(e.path, "/")
+		// `/test/src/assert` 在 test/lib.no 中是以包目录名開頭的 workspace
+		// 路徑；去掉前綴才能和 modRelPath（`src/assert`）對上。
+		if base := filepath.Base(pkgRoot); base != "" && strings.HasPrefix(rel, base+"/") {
+			rel = strings.TrimPrefix(rel, base+"/")
+		}
+		if filepath.Clean(rel) == filepath.Clean(modRelPath) {
+			exportAll = true
+			break
+		}
+	}
+	if exportAll {
+		return prog
+	}
+
 	// Validate that all exported names exist in the module.
 	// Skip validation when the program has no function definitions (e.g. lib.no
 	// itself only contains ExportStatement + UseStatement); the actual definitions
@@ -2859,19 +3007,10 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		}
 	}
 	if hasFuncDefs {
-		// Compute the module's relative path (without .no extension) from the
-		// file path and lib.no location. Only exports whose Path matches this
-		// module are validated, avoiding false positives from other modules'
-		// exports in the same lib.no file.
-		modRelPath := ""
-		if modFilePath != "" {
-			pkgRoot := filepath.Dir(libPath)
-			rel, err := filepath.Rel(pkgRoot, modFilePath)
-			if err == nil {
-				modRelPath = strings.TrimSuffix(rel, ".no")
-			}
-		}
 		for _, e := range exports {
+			if e.fn == "" {
+				continue // 模組級匯出已在上方可處理，不參與符號檢查
+			}
 			// Skip validation for exports that don't belong to this module.
 			if modRelPath != "" {
 				if !strings.HasSuffix(e.path, "/"+modRelPath) && e.path != "/"+modRelPath && e.path != modRelPath {
@@ -2885,6 +3024,9 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 	}
 	exported := make(map[string]string)
 	for _, e := range exports {
+		if e.fn == "" {
+			continue
+		}
 		name := e.fn
 		if e.alias != "" {
 			exported[name] = e.alias

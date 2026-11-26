@@ -9,7 +9,7 @@ import (
 )
 
 // ToolSpec 是 `no install <tool>[:<version>]@<host>/<owner>/<repo>` 的解析結果：
-// 從 GitHub Releases 抓取預編二進位資產（如 nogit-linux-amd64）並安裝到 ~/no/bin/。
+// 從 GitHub Releases 抓取預編二進位資產（如 nogit-linux-amd64-v0.1.33）並安裝到 ~/no/bin/。
 //
 // 之所以是「工具名 + 倉庫」兩級而不是「包 = 倉庫」：一個倉庫可以產出多個可執行檔
 // （notools 就有 nogit / noimg / nonpm / nouv / noagent …），資產名前綴決定抓哪一個，
@@ -111,8 +111,9 @@ func (t ToolSpec) DepKey() string {
 	return fmt.Sprintf("%s@%s/%s/%s", t.Name, t.Host, t.Owner, t.Repo)
 }
 
-// ToolBinaryName 回傳安裝到磁碟上的檔名：Windows 需要 .exe 後綴才可執行
-// （資產名、~/no/bin 下的檔名與 /usr/local/bin 下的軟鏈接名三處一致）。
+// ToolBinaryName 回傳安裝到磁碟上的檔名：Windows 需要 .exe 後綴才可執行。
+// 這是統一命令名（~/no/bin 下的檔名與 /usr/local/bin 下的軟鏈接名一致），
+// 刻意不帶版本／平台——版本只體現在 release 資產名（見 ReleaseAssetName）。
 // goos 由呼叫端傳入（runtime.GOOS），以便單測覆蓋非宿主平台。
 func ToolBinaryName(name, goos string) string {
 	// 使用者可能直接寫 `no uninstall nogit.exe`，避免二次加後綴。
@@ -122,25 +123,25 @@ func ToolBinaryName(name, goos string) string {
 	return name
 }
 
-// ReleaseAssetName 回傳 release 資產檔名：<tool>-<goos>-<goarch>（Windows 加 .exe）。
-// 這與 notools / nolang 自身 release 的資產命名一致，例如：
+// ReleaseAssetName 回傳 release 資產檔名：<tool>-<goos>-<goarch>-<version>（Windows 加 .exe）。
+// version 是完整的 release tag（含前導 v），例如：
 //
-//	nogit-linux-amd64, nogit-darwin-arm64, nogit-windows-amd64.exe
-func ReleaseAssetName(name, goos, goarch string) string {
+//	nogit-linux-amd64-v0.1.33, no-darwin-amd64-v0.4.35, no-windows-amd64-v0.4.35.exe
+func ReleaseAssetName(name, version, goos, goarch string) string {
 	if goos == "windows" {
-		return fmt.Sprintf("%s-%s-%s.exe", name, goos, goarch)
+		return fmt.Sprintf("%s-%s-%s-%s.exe", name, goos, goarch, version)
 	}
-	return fmt.Sprintf("%s-%s-%s", name, goos, goarch)
+	return fmt.Sprintf("%s-%s-%s-%s", name, goos, goarch, version)
 }
 
 // ReleaseAssetURL 回傳給定版本的資產下載網址：
-// https://<host>/<owner>/<repo>/releases/download/<version>/<tool>-<goos>-<goarch>
+// https://<host>/<owner>/<repo>/releases/download/<version>/<tool>-<goos>-<goarch>-<version>
 func ReleaseAssetURL(t ToolSpec, version, goos, goarch string) string {
-	return fmt.Sprintf("%s/releases/download/%s/%s", t.RepoURL(), version, ReleaseAssetName(t.Name, goos, goarch))
+	return fmt.Sprintf("%s/releases/download/%s/%s", t.RepoURL(), version, ReleaseAssetName(t.Name, version, goos, goarch))
 }
 
 // ReleaseASTAssetName 回傳預編 AST 包的資產檔名：<tool>-ast.zip。
-// 與二進位資產（<tool>-<os>-<arch>）不同，AST 包與平台無關，所以檔名不帶 os/arch。
+// 與二進位資產（<tool>-<os>-<arch>-<version>）不同，AST 包與平台無關，所以檔名不帶 os/arch。
 func ReleaseASTAssetName(name string) string {
 	return name + "-ast.zip"
 }

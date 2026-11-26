@@ -7,7 +7,7 @@ import (
 
 // These two tests pin a pair of narrow-integer defects that both came from the
 // same misunderstanding of how MIR stores integers, and that together made
-// `no test test/std` hang and lose four crypto/math suites.
+// `no test test-std/src` hang and lose four crypto/math suites.
 //
 // Background: MIR flattens every integer EXCEPT byte/u8/i8 to an i64 slot —
 // llvmTypeOf(KindInt) returns "i64" for i16/u16/i32/u32, GlobalDecl.Type holds

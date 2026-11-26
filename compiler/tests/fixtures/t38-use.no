@@ -1,4 +1,4 @@
-# /test/runner
+# test/runner
 # std/math
 # std/net/http
 # std/number

@@ -93,7 +93,7 @@ export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:$PATH"
 
 make no                              # 改过 src/std 或 Go 代码必做
 ./bin/no vet src/std                 # 必须 0 error
-./bin/no test test/std               # 目录级 gate：ALL TESTS PASSED / rc=0
+./bin/no test test-std/src               # 目录级 gate：ALL TESTS PASSED / rc=0
 cd src && go test -count=1 ./mir/ ./fmt/ ./parser/ ./lexer/ ./hir/ ./checker/
 ```
 

@@ -37,10 +37,10 @@
 ;         双嵌套调用实参（外层池基址落在内层池项之后，值 id 跳号）／str 混排实参／循环体内算式实参；
 ;         回归靶：初版边降边推时嵌套入池挤偏外层基址（c6 发成 @f(%v1,%v2)），现整段入池后必须为 @f(%v2,%v3)
 
-# /test/runner.eq
-# /test/runner.str-eq
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.eq
+# test/runner.str-eq
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/asp
 # /compiler/src/ast
 # /compiler/src/lx

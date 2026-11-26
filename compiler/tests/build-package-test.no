@@ -15,9 +15,9 @@
 ;   只有在入口檔「直接 import」這些模組時才會生成（bug #85），否則 codegen 報
 ;   consumer reads value 0。故下面把 ast/ps/asp/lx/tok/mir/cg/... 全列上。
 
-# /test/runner.is-true
-# /test/runner.failed-count
-# /test/runner.summary
+# test/runner.is-true
+# test/runner.failed-count
+# test/runner.summary
 # /compiler/src/drv
 # /compiler/src/asp
 # /compiler/src/ast

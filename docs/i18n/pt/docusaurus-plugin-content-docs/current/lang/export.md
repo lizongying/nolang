@@ -11,22 +11,21 @@ O Nolang usa a palavra-chave `@` no ficheiro `lib.no` da raiz do pacote para dec
 ## Sintaxe
 
 ```no
-@ path.func
+@ path[.func]
 [alias]
 ```
 
-- `path` — caminho do módulo (relativo à raiz do pacote, começa com `/`, sem a extensão `.no`)
-- `func` — nome da função/constante/enum a exportar
-- `alias` — alcunha opcional usada na importação externa
+- `path` — caminho do módulo (relativo à raiz do pacote ou do workspace, sem a extensão `.no`)
+- `func` — opcional. Função/constante/enum a exportar; se omitido, exporta o módulo inteiro
+- `alias` — alcunha opcional usada na importação externa; pode conter `/` (ex. `test/assert`)
 
 ## Regras
 
 - As instruções de exportação só podem **ser escritas** no ficheiro `lib.no` da raiz do pacote (a única exceção é a secção seguinte, "Alcunhas chamáveis globais")
 - Um item de exportação por linha
-- Os itens exportados só podem ser símbolos finais como funções, constantes, enums
-- **É obrigatório indicar o nome do símbolo**: `@ std/txt` (apenas o caminho, sem `func` nem `alias`) é um erro (`lgxbfk9a`).
-  Essa grafia não declara nada — todos os consumidores partem do princípio de que "há um nome de símbolo" — pelo que deixa de ser ignorada silenciosamente.
-  Também não serve para "associar um tipo a um módulo": os tipos não têm essa camada de nome global, e a alcunha do `@` só tem significado para símbolos chamáveis
+- **Exportação de símbolo** `@ path.func [alias]`: exporta uma função, constante ou enum do módulo
+- **Exportação de módulo** `@ path [alias]`: exporta o módulo inteiro. A alcunha é opcional e por omissão é o último segmento de `path`, pelo que `@ /test/src/assert` equivale a `@ /test/src/assert assert`. Uma alcunha com vários segmentos como `@ /test/src/assert test/assert` permite importar o módulo como `# test/assert`
+- Uma exportação de módulo regista apenas um nome de módulo, não uma alcunha chamável; não pode associar um tipo a um módulo (os tipos não têm essa camada de nome global)
 - Os structs, enums e outros tipos referenciados pelas funções exportadas são **exportados automaticamente**, sem necessidade de declaração manual
 - Se uma função exportada não existir no módulo, o LSP apresenta um erro
 
