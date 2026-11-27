@@ -1,6 +1,6 @@
 # Nolang 自舉（Self-Hosting）技術方案：`compiler` 子項目
 
-> **文檔定位**：這是一份**前向設計（forward design）＋ as-built 實施日誌**的活文檔：§0–§4／§7–§11 描述目標形態、分階段路線圖與驗收門禁，§5.3.4 的逐輪增量已遷至歸檔文檔（見文檔導航）。**`compiler/` 子項目自 2026-10-09 起已存在並持續推進**（**2026-11-26 現況**：`compiler/src` 的 M4-e 已推進至 **s175**（元素為具名結構體的切片型別碼 `TY-SVEC-BASE` 與兩個新 op `OP-VECGETSTP`／`OP-OPTGETST`），並完成 v0.4.34→v0.4.37 工具鏈代次漂移適配（`str.to-bytes-str()` 下架、`to-str()` option 化、`compiler/tests` 的 runner 匯入路徑由 `test/runner.*` 遷至 `test/src/runner.no` 並經 `test/lib.no` 轉出；末批 v0.4.37 為 `# path _` 廢棄別名匯入與 selfhost 佔位變數清理，見 §97）；2026-11-26 第二輪已用 **`make FORCE=1 no` 干淨重建** `./bin/no` 為 **`v0.4.37-1-gdcf134c4-dirty`（buildDate 2026-11-26 09:14:42，mtime 17:14；舊的 v0.4.36-dirty 15:14 版備份為 `tmp/bin-no-v0436-dirty.bak`）**，並以此二進位重測：全量 L0 重掃 18 套 = **16 綠／2 紅**（`h2m-test` `'passed:' 1395 / 'failed:' 42 / 'total:' 1437`、`ck-test` rc=1），與 v0.4.36-dirty 那次的 16/2 **逐項相同**；且 `no build compiler` 仍 **1 ERROR**（`lx.no:1666 unknown callee sb.init`）——此 ERROR 本輪**歸因結清**（見 **§98**）：**非 dirty artifact**，觸發點收窄為 `compiler/main.no:32` 的 `# /compiler/src/util/sb.sb _`，**刪該行或改為裸匯入即 rc=0**，且副本能完整 build 出可執行的 `noc`；**2026-11-26 第三輪**再以（18:03 被平行會話重建、buildDate 10:03:08 的）同一版二進位複驗 `no build compiler` **仍 rc=1**（錯誤逐字相同），重跑**干淨人口普查**得 **`'LF:` 7,940／`'ID:` 420／`'DB:` 16,213／`unsupported constructs: 8034`／dropped 94**（⚠️ 與 §95 輪內普查**不同口徑、不可相接**，本節作為**新基線**），並**驗證 `ck-test` 修法**（只刪 `:151` 的 `p str = ''` 即 20/20 `ALL TESTS PASSED`）；**2026-11-26 第四輪**把兩處修法**真的落進工作樹**——`main.no:32` 改裸匯入 `# /compiler/src/util/sb.sb`、`ck-test.no:151` 刪重複宣告——`no build compiler` 恢復 **rc=0** 並出行駛的 `tmp/noc-s1x`（`noc v0.0.1-m0`），全量 L0 重掃由 16 綠／2 紅轉為 **17 綠／1 紅**（全套裝 2515 assertions、2473 passed／42 failed；唯一的紅仍是 `h2m-test` 1395/1437，分佈不變）；**2026-11-26 第五輪**凍結 ctl/SUT 重跑 **L0–L4**（結論：**四級全紅＋L1 缺 oracle**），途中修正 `scripts/selfhost_diff.sh` 的 L0 glob（原 `'*_test.no'` 自初始提交起從未匹配連字號檔名）、並經 `--self-test` 證明 **L4 golden 已過期**（控制組自己都對不上）。**2026-11-26 第六輪**把 §100–§101 Residuals ④（`h2m-test` 42 FAIL）的根因**定位至「結構體值 × 控制流（mem==1）」型別碼／鋪槽失配族**（↔ s122／s174 同族）：同一份碼直線式 unsup=0、一加入 for/if 即 1~6，最小復現 struct 局部 + for 得 4~6（s99c 原文 6），並確立「**外部探針 unsup 讀值不可信、一律以 `drv.pkg-ll-cov` 權威通道為準**」的方法論（⚠️ 僅定位未修復）。**2026-11-26 第七輪**把 Residuals ①（`sb.init` unknown callee）**結案**：逐行定位到「parser 把 `# /compiler/src/util/sb.sb _` 解成函數導入（Function=sb、Alias=_）＋ 只合併同名函式 ⇒ 一個都沒合併 ＋ 去重標記使 lx/h2m 自己的裸導入被跳過」，並以「還原 `_` 即復現 rc=1、移除即 rc=0」實測收斂；同輪清 Residuals ⑥：以凍結 ctl 重生成 L4 golden（243 條）並套用，期間抓到 **harness stdin 缺陷**（語料程式讀 stdin 污染指紋且吃光 `while read` 迴圈），已修 6 處為 `</dev/null`；重跑後 ctl 自檢 SAME=239／DIFF=4（殘差全為 corpus 非確定性）、真跑 SAME=17／DIFF=226。最新七輪見 **§95–§103**。**2026-11-23 的舊快照保留為歷史**：其時 `compiler/src/*.no` **16 檔**＋`compiler/src/util/*.no` 2 檔，合計 **46,960 行**，M0–M3 完成，M4-e 推至 **s152**（見 §6／§6.5／§11.2 B4／§12 ⑰–§70）。⚠️ **上述舊快照的工具鏈阻塞（其時 v0.4.29+，HEAD `d236a956`）已不復存在**——阻塞內容為 `compiler/src` 尚未移居 option 化算術與安全索引讀，`no build compiler` **12 ERROR**、L0 18 套僅 **5 套綠**，而 §66–§70 的綠燈證據係 pin 在 **v0.4.28 代次**（`tmp/s148/wt`，`d21fbb35`）；該輪記帳詳 **§71**，現況以上面 2026-11-26 段為準）凡標「2026-10-09 工作樹（`HEAD = 4feaaf70`）」的行號／計數屬**歷史證據**，不是現狀；同理 §4.1.1 的 2026-10-30 盤點、§6.5 的 2026-10-29 啟動摸底、文末 2026-11-06 快照均已 frozen 為歷史紀錄
+> **文檔定位**：這是一份**前向設計（forward design）＋ as-built 實施日誌**的活文檔：§0–§4／§7–§11 描述目標形態、分階段路線圖與驗收門禁，§5.3.4 的逐輪增量已遷至歸檔文檔（見文檔導航）。**`compiler/` 子項目自 2026-10-09 起已存在並持續推進**（**2026-11-26 現況**：`compiler/src` 的 M4-e 已推進至 **s175**（元素為具名結構體的切片型別碼 `TY-SVEC-BASE` 與兩個新 op `OP-VECGETSTP`／`OP-OPTGETST`），並完成 v0.4.34→v0.4.37 工具鏈代次漂移適配（`str.to-bytes-str()` 下架、`to-str()` option 化、`compiler/tests` 的 runner 匯入路徑由 `test/runner.*` 遷至 `test/src/runner.no` 並經 `test/lib.no` 轉出；末批 v0.4.37 為 `# path _` 廢棄別名匯入與 selfhost 佔位變數清理，見 §97）；2026-11-26 第二輪已用 **`make FORCE=1 no` 干淨重建** `./bin/no` 為 **`v0.4.37-1-gdcf134c4-dirty`（buildDate 2026-11-26 09:14:42，mtime 17:14；舊的 v0.4.36-dirty 15:14 版備份為 `tmp/bin-no-v0436-dirty.bak`）**，並以此二進位重測：全量 L0 重掃 18 套 = **16 綠／2 紅**（`h2m-test` `'passed:' 1395 / 'failed:' 42 / 'total:' 1437`、`ck-test` rc=1），與 v0.4.36-dirty 那次的 16/2 **逐項相同**；且 `no build compiler` 仍 **1 ERROR**（`lx.no:1666 unknown callee sb.init`）——此 ERROR 本輪**歸因結清**（見 **§98**）：**非 dirty artifact**，觸發點收窄為 `compiler/main.no:32` 的 `# /compiler/src/util/sb.sb _`，**刪該行或改為裸匯入即 rc=0**，且副本能完整 build 出可執行的 `noc`；**2026-11-26 第三輪**再以（18:03 被平行會話重建、buildDate 10:03:08 的）同一版二進位複驗 `no build compiler` **仍 rc=1**（錯誤逐字相同），重跑**干淨人口普查**得 **`'LF:` 7,940／`'ID:` 420／`'DB:` 16,213／`unsupported constructs: 8034`／dropped 94**（⚠️ 與 §95 輪內普查**不同口徑、不可相接**，本節作為**新基線**），並**驗證 `ck-test` 修法**（只刪 `:151` 的 `p str = ''` 即 20/20 `ALL TESTS PASSED`）；**2026-11-26 第四輪**把兩處修法**真的落進工作樹**——`main.no:32` 改裸匯入 `# /compiler/src/util/sb.sb`、`ck-test.no:151` 刪重複宣告——`no build compiler` 恢復 **rc=0** 並出行駛的 `tmp/noc-s1x`（`noc v0.0.1-m0`），全量 L0 重掃由 16 綠／2 紅轉為 **17 綠／1 紅**（全套裝 2515 assertions、2473 passed／42 failed；唯一的紅仍是 `h2m-test` 1395/1437，分佈不變）；**2026-11-26 第五輪**凍結 ctl/SUT 重跑 **L0–L4**（結論：**四級全紅＋L1 缺 oracle**），途中修正 `scripts/selfhost_diff.sh` 的 L0 glob（原 `'*_test.no'` 自初始提交起從未匹配連字號檔名）、並經 `--self-test` 證明 **L4 golden 已過期**（控制組自己都對不上）。**2026-11-26 第六輪**把 §100–§101 Residuals ④（`h2m-test` 42 FAIL）的根因**定位至「結構體值 × 控制流（mem==1）」型別碼／鋪槽失配族**（↔ s122／s174 同族）：同一份碼直線式 unsup=0、一加入 for/if 即 1~6，最小復現 struct 局部 + for 得 4~6（s99c 原文 6），並確立「**外部探針 unsup 讀值不可信、一律以 `drv.pkg-ll-cov` 權威通道為準**」的方法論（⚠️ 僅定位未修復）。**2026-11-26 第七輪**把 Residuals ①（`sb.init` unknown callee）**結案**：逐行定位到「parser 把 `# /compiler/src/util/sb.sb _` 解成函數導入（Function=sb、Alias=_）＋ 只合併同名函式 ⇒ 一個都沒合併 ＋ 去重標記使 lx/h2m 自己的裸導入被跳過」，並以「還原 `_` 即復現 rc=1、移除即 rc=0」實測收斂；同輪清 Residuals ⑥：以凍結 ctl 重生成 L4 golden（243 條）並套用，期間抓到 **harness stdin 缺陷**（語料程式讀 stdin 污染指紋且吃光 `while read` 迴圈），已修 6 處為 `</dev/null`；重跑後 ctl 自檢 SAME=239／DIFF=4（殘差全為 corpus 非確定性）、真跑 SAME=17／DIFF=226；L0 以新口徑重跑 ctl_ok=17／sut_ok=0，與 §101 逐位相同。**2026-11-27 第八輪**在新 HEAD（`50b900c6`，v0.4.38）上逐項複驗（首用二進位 buildDate 17:36:36；⚠️ 輪中平行會話改動 `src/mir/codegen.go` 等並把 `bin/no` 再重建為 `v0.4.38-dirty(18:39:24)`，已用兩支二進位各驗一次、結果一致）：§103 結案的兩處修法已隨該外部提交落地（`build -check compiler` rc=0、`ck-test` 20/20）、L0 重掃仍 **17 綠／1 紅**（2515 assertions＝2473 passed＋42 failed）、`h2m-test` 的 42 條 FAIL 清單與 §102 **逐條相同**、人口普查得 LF 7,940／ID 420／**DB 16,212**／unsup 8,034／dropped 94（DB 與 §99 只差 1 條 `blk-expr`），並抓到普查輸出**不再帶 `'` 引號殼**的前綴漂移（新 Residual ⑫）；⚠️ Residual ⑨（`tests/enum-annotation.no`）**未因 v0.4.38 修復**，仍 rc=1。**2026-11-27 第九輪**把 §104 Residual ⑤ 清掉大半：凍結 `tmp/ctl-frozen-s104.no`、重建 `tmp/noc-s104`，以修正後 harness 重跑 **L0／L2／L3／L4**——L0 ctl_ok=17（唯 h2m-test 紅）、L2 SAME=137／DIFF=226（SUT 只差 `coro-basic.no`）、L3 歸一化後不同 127 檔／[ERROR] 集合不同 14 檔（G5 穩定性自檢 ✅）、L4 SAME=17／DIFF=226（與 §103 完全相同，ctl 對 golden 自檢 0 對不上；自檢 SAME=240／DIFF=3，3 檔皆為已知非確定語料）；並抓到 **harness 預設 timeout 60s 的 ctl_ok 假性下降**（13 vs 17，新 Residual ⑭）與 **L4 自檢對非確定語料的假陰性**（新 Residual ⑮）。L5 依 DR-6 仍不具前提。**2026-11-27 第十輪**主攻 Residual ⑨：以探針二分把 `tests/enum-annotation.no` 收窄成**確定性極小重現 `tmp/ea-bisect/m24.no`**（約 17 行，三次重跑 stderr md5 相同），失敗需「enum ≥2 變體且含 ≥2 欄位 payload × 對該 enum match × 有 struct 欄位被讀取」三條件同時成立，根因假說指向與 Residual ④ 同族的 **MIR 型別碼／鋪槽碰撞**；另就平行會話第三度重建的 `bin/no`（04:00:55，`v0.4.38-dirty(20:00:47)`）複驗——普查日誌逐位元組相同、`h2m-test` 1395／42／1437 不變、`ck-test` 20/20，但 **`enum-annotation` 仍 rc=1**（⑨ 未修）；**2026-11-27 第十一輪**把 Residual ⑨ 推到 **IR 級**——以 `NOLANG_MIR_DUMP_MIR=1` 看到 `m24` 失敗點的 block 4 是 `move dst=0 args=[30 23]`（=`EmitMoveInto(dst=23, src=30)`，而 23 定義在兄弟分支 block 2），對照組 `v5` 同一位置是正確的 `getfield dst=21:i64 args=[19]`，並以新探針 `c1`（只把 `print(h.x)` 換成 `print('done')`）得 **rc=0** 證明觸發者是「match 彙流塊中的 struct 欄位讀取值」本身。**2026-11-27 第十二輪**把 Residual ⑨ **根因結案**：以「只改名、不改結構」的雙向探針（`c2` 改結構體名／`c3` 改 arm 繫結名皆 rc=0，`c4` 改碰撞名仍 rc=1）證明觸發條件是「**match arm 繫結名 == 後續區域變數名**」，並得到 **13 行最小重現 `tmp/ea-bisect/c14.no`**（單變體單欄位亦紅，故 §106 的「≥2 變體／≥2 欄位」條件是非必要的過度收斂，已更正）；機制為 **arm 繫結常駐函式全域的 `l.locals`、match 結束後未退出 scope**，隨後的 `h = pt{…}` 被當成對 arm 值 23 的 re-binding，而 `h.x` 的接收者型別仍是 `i64` ⇒ 回 NoVal ⇒ bug #85；同時更正 §107 把 `move dst=0 args=[30 23]` 誤述為「欄位讀取」。**2026-11-27 第十三輪**把 Residual ⑨ 收窄到**單一行條件缺陷**：以 `c16`（合成臂繫結陰影**既有**同名區域變數 ⇒ rc=0、`3|3|`）與 `c14`（無既有綁定 ⇒ rc=1）對照，確認 `src/mir/hir2mir.go:4162-4164` 的 `if hasExisting && armScoped` 只在有既有綁定時記錄還原條目，`restoreArmScoped`（`:4696-4704`）因此對「憑空出現」的臂繫結無事可做；而同檔 `:4315-4318` 對手寫 arm-body 綁定已是用 `absent: true` 處理——**唯獨合成臂繫結缺此分支**。修正點與回歸清單已記入 §109（**未實施**）；另發現 **Residual ⑯**：arm 體內**手寫**同名區域名會在 checker 期泄漏（`c15` 的型別錯誤）。**2026-11-27 第十四輪**重判 Residual ④：把 `h2m-test` 的內嵌測例字串抽出來獨立編譯（`tmp/ea-bisect/h2m-c.no`／`h2m-d.no`），42 條 FAIL 中 **40 條**（s99c 14／s99d 13／s99k 7／s99m 7）在現行工具鏈上根本過不了語意檢查——失敗點全為 option 化算術的 `cannot assign ?i64 value to i64 variable 'n'／field target`，故 ④ **不是** MIR 型別碼／鋪槽失配，而是**測例字串未隨 v0.4.34→v0.4.37 漂移更新**；餘 1 條 s162 屬另一類。同輪記下 **Residual ⑰**（迴圈內兩個 match 形式 option 改寫陳述並存時 struct 欄位累加只生效一次）。**2026-11-27 第十五輪**把 Residual ⑰ 收斂：同一迴圈內，`p.y = add(p.y, 1)`（助手傳回純 i64）逐輪得到 **3|4|5|6|7**，但在 match 臂內 `p.y = it` 則得 **3|3|3|3|3**（每輪讀到陳舊值）；純量區域變數在臂內賦值則正常（`n` 可推進到 3）。⇒ 缺陷專屬於「**match 臂內對 struct 欄位賦值**」，疑與 §109 的 armScoped／陳舊 slot 家族同源但**無名稱碰撞**；另記 **Residual ⑱**（`opt-o` 已達 `p.y=7` 而 `print(f())` 回 3）。**2026-11-27 第十六輪**做一次一致性校訂：修正 §105–§108 四段 Residuals 的範圍宣告誤植（「①–⑱ 沿用」其時只到 ⑮）與 §111 的漏號（「①–⑯」→「①–⑰」），並核對 ①–⑱ 序列完整、註明 residuals 圈號與章節標圈號為兩套獨立命名空間。**2026-11-27 第十七輪**把 Residual ⑱ 改判：以 `opt-v`／`opt-x`／`opt-y`／`opt-s`／`opt-z` 探針與 `NOLANG_MIR_DUMP_MIR=1` 證明 `p.y = 9` 之後的 `p.x + p.y` 在 HIR→MIR 階段被 comptime 摺成字面量初值 3（MIR 中既無 `getfield` 也無 `add`），並非 option 拆包／result param 回寫；機制是 `dropConstAgg`（`hir2mir.go:8283`）唯一呼叫點在 KIndex 元素寫入（`:16497`），`obj.field = v`（約 `:16575`）從未淘汰 cvAgg。**2026-11-27 第十八輪**把 Residual ⑯ 結案為**非缺陷**：以 `s1`–`s5` 探針證明 arm 體內新宣告的名字在 match 結束後仍可見可再用（同型別），且**一般迴圈體也一樣**，加上 `AGENTS.md` §3.11「函式作用域內同名重複賦值＝覆蓋重賦值、型別必須相同」與 `src/parser/lowering.go:610-640` 的 `declaredLocals` 僅在 FunctionDefinition 邊界重置，判定此為**現行語言語意**而非 checker 泄漏；同時更正 §109「⑯ 與 ⑨ 不同路徑」之說（兩者同源於函式範圍語意，但 ⑨ 的真正缺陷是型別表未隨重綁同步）。⚠️ 本輪 `bin/no` 已被平行會話第五度重建（`v0.4.38-dirty(2026-11-26 21:34:27)`，mtime 05:34），dirty 30 項。**2026-11-27 第十九輪**把 Residual ⑰ 併回 ⑱：以 `opt-k` 的 MIR（迴圈體 block 只有一條 `const`、沒有 `getfield`／`add`）證明「臂內寫回不生效」的真相是右側 `p.y + 1` 先被 comptime 摺成常數，且 `NOLANG_COMPTIME=0` 時 `opt-k`／`opt-n` 皆正確回 3,4,5,6,7,8；相反地 `m24`（⑨）在同样開關下仍 rc=1，故 ⑨ 與本折疊族無關。**2026-11-27 第二十輪**做二進位第六度重建後的一致性重驗：⚠️ `bin/no` 現為 **`v0.4.38-dirty(2026-11-27 00:15:17)`（mtime Nov 27 08:15）**、dirty 由 33 增至 **49 項**；把 §111／§113／§114／§115 的探針全量重跑，**每一條都與舊記錄一致**（含 `opt-k` @ `NOLANG_COMPTIME=0` 回 3,4,5,6,7,8 而 `m24` 同開關仍 rc=1），`ck-test` 亦 20/0/20 且 rc=0 —— 現時態聲明悉數成立、無需修正。**2026-11-27 第二十一輪**把 Residual ⑨ 的成因封口：新探針 `t1`（arm 後 `print(h)` 得 3）、「t2」（同型別重綁 `h = 99` 生效）、「t3」（跨型別重綁 `h = pt{x:1}` ⇒ build rc=1、codegen bug #85 NoVal）加上 **`vet` 的不對稱**——`s1`／`c15` 都報 `15w45dqk`，而 `t3` 的 `vet` 是「No issues found」——證明缺陷是 **checker 給 match 臂自己的 `localScope`（臂後名字消失）與 MIR 的 `l.locals` 函式全域（留著 i64）之間的角色模型不一致**；同輪重跑 `h2m-test`＝**1395/42/1437**（與 s109 一致，④ 的計量不變）。**2026-11-27 第二十二輪**結掉 Residual ⑫：把人口普查放回當前二進位重跑（`tmp/cov-census-s118.log`，LF 7,940／ID 420／DB 16,212／unsup 8,034／dropped 94），與 `v38` **逐位元組相同**、皆無引號殼 ⇒ 判定為輸出格式漂移、**口徑改裸字前綴**後結案；同輪以**凍結工件**（`tmp/noc-s104` vs `tmp/ctl-frozen-s104.no`）重跑 L4，結果與 `gates-L4c-s104.out` **逐行相同**（SAME=17／DIFF=226／sut_ok=15、ctl_ok=239、golden 自檢 0 對不上），並釐清 ⑮ 的證據場景不可用本次結果充數。最新二十八輪見 **§95–§124**。**2026-11-23 的舊快照保留為歷史**：其時 `compiler/src/*.no` **16 檔**＋`compiler/src/util/*.no` 2 檔，合計 **46,960 行**，M0–M3 完成，M4-e 推至 **s152**（見 §6／§6.5／§11.2 B4／§12 ⑰–§70）。⚠️ **上述舊快照的工具鏈阻塞（其時 v0.4.29+，HEAD `d236a956`）已不復存在**——阻塞內容為 `compiler/src` 尚未移居 option 化算術與安全索引讀，`no build compiler` **12 ERROR**、L0 18 套僅 **5 套綠**，而 §66–§70 的綠燈證據係 pin 在 **v0.4.28 代次**（`tmp/s148/wt`，`d21fbb35`）；該輪記帳詳 **§71**，〈**最新一輪為 §124：Residual ⑨ 已於未提交工作樹修補**——平行會話把 §109 建議的 `absent` 分支落進 `src/mir/hir2mir.go`（現行 `:4253-4264`；`restoreArmScoped` 對 `absent` 條目執行 `delete`，現行 `:4794-4803`），新建的 `./bin/no`（`v0.4.38-dirty(2026-11-27 03:20:29)`）使 `m24`／`c14`／`c4`／`t3`／`tests/enum-annotation.no` **全部由 rc=1 轉為 rc=0**（`m24` 产物執行得 `6`／`3`），同一批在凍結 ctl 上仍紅；另記未追蹤的回歸語料 `tests/enum-index-nested-arm.no`（凍結 ctl rc=1、新二進位 8×`ok`）、Go 測試 `TestEnumArmPayloadBindingDoesNotLeak` `ok`，以及 `:4254`→**`:4265`**、`:4403-4404`→**`:4414-4415`**、`:4783-4792`→**`:4794-4803`** 的再位移（`:4251` 不變）。**此前為 §123：錨點稽核（續）**——擴到 §103／§113／§117，發現 `hir2mir.go` 的漂移量**同檔內不一致**（`:8000` 前約 +72、之後 +153～+165），且 §117 的 `:4215`／`:4747-4756` **不是 HEAD 座標**（HEAD 為 `:4163`／`:4695` 起），係當時未提交工作樹的中間態；§103 的 `codegen.go:15150` 亦屬相對 HEAD 即已陳舊者（現行 `:15166`）。以凍結 ctl 復測 `opt-v` MIR 仍無 `getfield`／`add`，§113 機制成立。**此前為 §122：行號錨點漂移稽核**——未提交的 `src/mir/hir2mir.go`（**+224/−59**）把 §109 的 ⑨ 缺陷錨點整批 **+88～+90**（`:4162-4164`→**`:4250-4253`**、`:4315-4318`→**`:4403-4404`**、`:4696-4704`→**`:4783-4792`**），§114 引的 `lowering.go:610-640` 現為 **`:625-647`**；以凍結 ctl 復測 `m24` rc=1／`c16` rc=0 輸出 `3|3|`，⑨ 結論不變。另登錄數處**相對 HEAD 即已陳舊**的引用（`codegen.go:8670-8727` 該區間非 `emitMove`、`lowering.go:1224/1384` 非 `Raw:` 賦值、`expr.go:753` 的 `parseStringLiteral` 現為 `:960`），保留為歷史快照不予改寫。**此前為 §121：更正 residual ⑤——`L5` 不是「未跑（前提未備）」，而是 harness 根本沒有實作 L5**——`grep -rn 'L5' scripts/` 零結果、總結迴圈寫死 `L0 L1 L2 L3 L4`，而 `--levels L5` 不加 `--self-test` 時回 **rc=0、`RESULT: PASS`**（日誌前段甚至先印出 `PASS`，`--self-test` 才以 rc=3 抓到「沒有任何 level PASS」）；前提本身亦不可達（`tmp/noc-s104 build -o … compiler` 印 `unsupported constructs: 8034 (pkg-ll)`／`no code generated`、**rc=1**，與 §99 普查的 8034／dropped 94 逐項相同）。⑤ 因此改判為「**工具缺口（harness 未實作 L5）＋實現缺口（s2-vs-s3 前提不可達）**」分開記帳，並在 §7.1 表後補 ※ 夾註標明「五級」應讀作「四條已實作＋一條已定義但未實作」。〉現況以上面最新（2026-11-27 第二十八輪）段為準）凡標「2026-10-09 工作樹（`HEAD = 4feaaf70`）」的行號／計數屬**歷史證據**，不是現狀；同理 §4.1.1 的 2026-10-30 盤點、§6.5 的 2026-10-29 啟動摸底、文末 2026-11-06 快照均已 frozen 為歷史紀錄
 >
 > **一句話目標**：在 `compiler/` 子項目中用 **Nolang 自身**實現一個完整編譯器 `noc`，使它能夠**編譯自己**，並以S0 → S1 → S2 → S3 定點的方式證明自舉成立；同時用**五級差分門禁**保證它與現有 Go 實作 `no` 的行為一致
 >
@@ -1702,6 +1702,8 @@ M5 目標＝拿下「自舉唯一剩餘結構性閘」——`#` 模組導入（w
 | **L4** | 行為                    | `tests/golden/mir-baseline.tsv` | `REGRESS = 0`；所有 DIVERGE 逐一歸因             | **~7–17 分鐘** |
 | **L5** | 自舉                    | s2 vs s3                        | 行為定點 + （加分）逐位元組定點                         | 分鐘           |
 
+> ⚠️ **L5 現狀（2026-11-27 第二十五輪補註）**：本表標題作「**五級門禁總表**」卻列了 **6 列**（L0–L5），DR-6（`:42`）的「**五級差分**」亦然——這個不一致自始存在。更關鍵的是 `scripts/selfhost_diff.sh` **只實作 L0–L4**：`LEVELS` 預設 `L0,L1,L2,L3,L4`（`:70`）、全檔無任何 L5 方塊，而 `--levels L5` 會靜默回 `RESULT: PASS`、rc=0（詳見 **§121**）。L5 的驗證歷來靠每輪人工單行指令（例：`./tmp/s163/noc-s1 build -o tmp/s163/noc-s2 compiler`），從未進入差分矩陣，且其前提（s2 vs s3）在現行工作樹不可達。**在 L5 接進 harness 之前，「五級」應讀作「四條已實作＋一條已定義但未實作」。**
+
 #### 7.1.1 L1 的 oracle：**repo 外的只讀 dumper**（繞過 P0-②）
 
 **問題**：L1 要一把能吐出規範化 token 流的尺子文檔原訂靠 **P0-②（新增 `no tokens` 子命令）**，但那需要改 `src/`而自舉的 M0/M1 階段有一條硬約束：**`src/` 不得改動**（`no` 必須始終是一把可信可回歸的尺子，DR-5）
@@ -2014,7 +2016,7 @@ tag 比較與 `let it T` 綁定；`lowerer.inferValueMatchResult` 把值位 matc
 
 **⑤ 本輪更正清單**：檔頭定位、§4.1.1 標題＋警示＋表頭＋as-built 校正、§6 M4 列、§6.5 M4-e 條、§11.2 B4、文末 2026-11-06 快照標記為歷史並補 2026-11-12 快照；**第二輪**再補 §5.3.4.bh 歷史警示、§6.5 三條 M4-c 摘要的過期標記、§11.2 B8 理由校正，並**新增 B28 記帳**（`%str-long` 24B→16B 當日未同步，**已於 ⑥ 清償**）。**凡 2026-10-09（`HEAD = 4feaaf70`）的行號／計數一律保留為歷史證據**；§11.2 既有基線表 B1–B27 原文亦保留（其 `:2148` 一類行號同屬歷史座標），只在 B8 尾與表末 B28 追加校正；B28 於 ⑥ 由「未同步」改記為「已清償」。**以上①–⑤兩輪均為 doc-only，未動 `compiler/`；⑥ 與 ⑦ 才是後續兩輪實作輪次。**
 
-> ⑥–⑯（2026-11-12 ~ 2026-11-15）的 11 節歷史追記已原樣遷至 [`nolang-selfhost-history.md` §二](nolang-selfhost-history.md)，本文自 ⑰ 起保留連續追記，訖於文末 **§103（s175＋工具鏈漂移適配 v0.4.34→v0.4.37＋`sb.init` ERROR 歸因結案／干淨重建＋干净人口普查重跑／`ck-test` 修法驗證＋兩處修法落盤、L0 轉 17 綠／1 紅＋五級差分門 L0–L4 重跑／harness glob 與 stdin 口徑修正＋以權威 `pkg-ll-cov` 通道把 `h2m-test` 42 FAIL 定位至「結構體值 × 控制流（mem=1）」型別碼／鋪槽失配族＋L4 golden 重生成並套用）**；**2026-11-26 第七輪校正：補至 §103**；**2026-11-26 第六輪校正：補至 §102**；**2026-11-26 第五輪校正：補至 §101**；**2026-11-26 第四輪校正：補至 §100**；**2026-11-26 第三輪校正：補至 §99**；**2026-11-26 第二輪校正：原只列至 §71／s153，補至 §98**；**2026-11-23 校正紀錄保留**：原文作「最新 ㉛ 在文末」，實際上 ㉜–㊿（s114–s133）與 §51–§70（s134–s152）皆已追加於本文，㉛ 之後還有 39 節）。
+> ⑥–⑯（2026-11-12 ~ 2026-11-15）的 11 節歷史追記已原樣遷至 [`nolang-selfhost-history.md` §二](nolang-selfhost-history.md)，本文自 ⑰ 起保留連續追記，訖於文末 **§124（Residual ⑨ 已於未提交工作樹修補：平行會話採納 §109 的 `absent` 分支，全組探針由紅轉綠——另記未追蹤回歸檔 `tests/enum-index-nested-arm.no` 與錨點再位移）**；**此前為 §123（錨點稽核（續）：§103／§113／§117 的引用各自位移，§117 的數字不對應 HEAD）**；**此前為 §122（行號錨點漂移稽核：未提交的 Go 改動使 §109／§114 引用整批位移，另記數處相對 HEAD 即已陳舊的引用）**；**此前為 §121（Residual ⑤ 更正：`L5` 未被 harness 實作——`--levels L5` 靜默假通過）**；**此前為 §120（Residual ⑮ 拆開量：位址列印 vs 穩定不符）**；**此前為 §119（Residual ⑭ 定量收尾：L0 重型 unit-test 在預設 `--timeout 60` 下的 ctl_ok 落差）**；**此前為 §118（Residual ⑫ 結案＋L4 凍結重跑）**；**此前為 §117（Residual ⑨ 因果鏈收尾：checker localScope vs MIR 函式全域）**；**此前為 §116（二進位第六度重建後的一致性重驗）**；**此前為 §115（Residual ⑰ 與 ⑱ 同根：臂內寫回不生效的真相是 comptime 折疊）**；**此前為 §114（Residual ⑯ 改判：arm／迴圈體內新宣告的名字是函式範圍，非缺陷）**；**此前為 §113（Residual ⑱ 改判：comptime 把字面量 struct 的欄位摺成初始值）**；**此前為 §112（一致性校訂：Residuals 範圍宣告誤植與 residuals 序號的命名空間）**；**此前為 §111（Residual ⑰ 收斂：match 臂內對 struct 欄位賦值時跨迭代寫回不生效）**；**此前為 §110（Residual ④ 重判：`h2m-test` 42 FAIL 為內嵌測例字串未隨 option 化算術漂移更新）**；**此前為 §109（Residual ⑨ 缺陷位置結案：`armScoped` 缺 absent 分支，`hir2mir.go:4162-4164`）**；**此前為 §108（Residual ⑨ 根因結案：match arm 繫結的作用域洩漏——更名實驗＋13 行最小重現，並更正 §106／§107 假說）**；**此前為 §107（Residual ⑨ 的 IR 級定位：MIR dump 顯示 `print(h.x)` 側的 `move dst=0 args=[30 23]`）**；**此前為 §106（`enum-annotation` 回歸歸因收窄：確定性極小重現＋邊界反例＋型別碼／鋪槽碰撞假說）**；**此前為 §105（現行 HEAD 五級門重整跑 L0／L2／L3／L4＋harness timeout 假陰性＋自檢對非確定語料的假陰性）**；**此前為 §104（v0.4.38／`50b900c6` 現況複驗：兩處修法已隨外部提交落地＋L0 重掃 17 綠／1 紅＋普查基線與引號殼漂移）**；**此前為 §103（s175＋工具鏈漂移適配 v0.4.34→v0.4.37＋`sb.init` ERROR 歸因結案／干淨重建＋乾淨人口普查重跑／`ck-test` 修法驗證＋兩處修法落盤、L0 轉 17 綠／1 紅＋五級差分門 L0–L4 重跑／harness glob 與 stdin 口徑修正＋以權威 `pkg-ll-cov` 通道把 `h2m-test` 42 FAIL 定位至「結構體值 × 控制流（mem=1）」型別碼／鋪槽失配族＋L4 golden 重生成並套用）**；**2026-11-27 第二十八輪校正：補至 §124**；**2026-11-27 第二十七輪校正：補至 §123**；**2026-11-27 第二十六輪校正：補至 §122**；**2026-11-27 第二十五輪校正：補至 §121**；**2026-11-27 第二十四輪校正：補至 §120**；**2026-11-27 第二十三輪校正：補至 §119**；**2026-11-27 第二十二輪校正：補至 §118**；**2026-11-27 第二十一輪校正：補至 §117**；**2026-11-27 第二十輪校正：補至 §116**；**2026-11-27 第十九輪校正：補至 §115**；**2026-11-27 第十八輪校正：補至 §114**；**2026-11-27 第十七輪校正：補至 §113**；**2026-11-27 第十六輪校正：補至 §112**；**2026-11-27 第十五輪校正：補至 §111**；**2026-11-27 第十四輪校正：補至 §110**；**2026-11-27 第十三輪校正：補至 §109**；**2026-11-27 第十二輪校正：補至 §108**；**2026-11-27 第十一輪校正：補至 §107**；**2026-11-27 第十輪校正：補至 §106**；**2026-11-27 第九輪校正：補至 §105**；**2026-11-27 第八輪校正：補至 §104**；**2026-11-26 第七輪校正：補至 §103**；**2026-11-26 第六輪校正：補至 §102**；**2026-11-26 第五輪校正：補至 §101**；**2026-11-26 第四輪校正：補至 §100**；**2026-11-26 第三輪校正：補至 §99**；**2026-11-26 第二輪校正：原只列至 §71／s153，補至 §98**；**2026-11-23 校正紀錄保留**：原文作「最新 ㉛ 在文末」，實際上 ㉜–㊿（s114–s133）與 §51–§70（s134–s152）皆已追加於本文，㉛ 之後還有 39 節）。
 
 ## 附錄 A：實測證據與可重跑命令
 
@@ -8559,7 +8561,7 @@ LF 零變化（無新增失分構造）；dropped +1 **完全可歸因**：新�
 - **`--self-test`（ctl==sut，凍結 ctl）**：**rc=0**、`SELF-TEST OK：SUT == CTL，無任何 FAIL，3 層 PASS`——L0 PASS（SAME=18）、L2 PASS 363/363、L3 PASS；**但 L4 仍 FAIL（SAME=36／DIFF=18）**⇒ ⚠️ **控制組自己就對不上 golden**，即 golden 基線**已過期**，**L4 的 FAIL 不能全數算在 SUT 頭上**。另注意同一支二進位跑兩次出現 ctl_ok=50／sut_ok=54 的不對稱（各 2–3 檔空輸出），推測是 60s 逾時下的**噪聲**而非確定性差異。L1 依然 UNAVAILABLE（非 PASS）。證據 `tmp/gates-selftest.out`。
 - **Residuals（承 §100，更新）**：① 機制未定位（同 §98–§100）；② ✅ build 恢復；③ ✅ `ck-test` 落盤轉綠；④ `h2m-test` 42 FAIL 未動；⑤ **L0–L4 本輪已重跑**：**全部未過**（L0 sut 0/18、L1 UNAVAILABLE、L2 SAME=0/363、L3 全紅+14 檔 ERROR 集合不同、L4 SAME=18/150），並修正 harness 的 L0 glob、新開「L4 golden 過期」；⑥ **L4 golden 需重生成**（未做；repo 已有工具 `scripts/mir_golden.sh`，用法見該腳本 `--update` 說明，且腳本自帶「run alone rc=0 卻在 frozen baseline 記成 124」的逾時警語）；⑦ **L5 未跑**——按 DR-6 的連鎖語意，L5 需 L4 先綠，本輪不具備前提；⑧ 普查新基線見 §99。
 - **工作樹／scratch**：`tmp/ctl-frozen.no`、`tmp/noc-s1x`、`tmp/gates-v37fix.out`（作廢輪）、`tmp/gates-v37fix-r2.out`、`tmp/gates-L0-v37fix-r2.out`、`tmp/gates-L0-tmo900.out`、`tmp/gates-selftest.out`、`tmp/l2probe/`、`tmp/ctl-ast-arr.txt`、`tmp/sut-ast-arr.txt`、`tmp/t-ctl.out`、`tmp/t-sut.out`、`tmp/t-ctl-ck.out`、`tmp/probe-s99c.no`＋`tmp/probe-s99c.out`。
-- **未提交任何改動**（`scripts/selfhost_diff.sh` 兩行修正仍在工作樹；本節為 as-built 補記）。
+- **未提交任何改動**（其時；`scripts/selfhost_diff.sh` 兩行修正仍在工作樹。後於 2026-11-27 01:57:24 被平行會話的 `50b900c6` 一併收錄，見 §103 末條；本節為 as-built 補記）。
 
 ### 102. 以權威 `pkg-ll-cov` 通道分離 `h2m-test` 42 FAIL 的共同根因：結構體值 × 控制流（mem==1）型別碼失配族（2026-11-26 第六輪；未留 sNNN 輪次標記）
 
@@ -8596,11 +8598,13 @@ LF 零變化（無新增失分構造）；dropped +1 **完全可歸因**：新�
 - **對 42 FAIL 的意義與界線**：`h2m-test` 的 `s99c` 家族（以及首批失敗的 `s99d`／`s99k`／`s99m`）斷言的是 `agg.unsup == 0` 與 specific IR 字串；既然最小復現（struct 局部 + for）在**當前 h2m** 下必得 4~6，這些斷言在現狀下不可能通過——**這解釋了為何 §100 的 L0 重掃它們一動不動**。但 **`s99d`／`s99k`／`s99m` 的片段結構更複雜（struct 形參傳遞、RC retain/release、borrow 門禁），本輪只對 `s99c` 做了權威口徑復現，其餘屬推論、未逐條驗證**。
 - **Residuals（承 §101，更新）**：① 機制未定位（同 §98–§100）；② ✅ build 恢復；③ ✅ `ck-test` 落盤轉綠；④ **由「未動」改為「已定位但未修」**：根因＝**結構體值 × 控制流（mem=1）的型別碼／鋪槽失配族**（↔ s122／s174 同族），最小復現 struct 局部 + for ⇒ unsup=4~6、直線式同源碼 0；**修法未找到**（`ty-of` 補分支無效）；⑤ L0–L4 本輪未重跑（沿用 §101）；⑥ L4 golden 需重生成（未做）；⑦ L5 未跑（需 L4 先綠）；⑧ 普查新基線見 §99。
 - **工作樹／scratch**：`tmp/mini/`（`cases/c0–c14.no`、`mini-a／mini-b.no`、`probe.sh`）、`tmp/run-mini-cov*.no`、`tmp/run-mini-batch*.no`、`tmp/mini-batch*.out`、`tmp/mini-cov*.out`、`tmp/probe-s99c2–4.no`＋`.out`、`tmp/h2m-test-s102.out`（重跑：passed 1395／failed 42／total 1437）、`tmp/h2m.no.bak-s102`、`tmp/h2m.no.pre-site-tags`。
-- **未提交任何改動**（`compiler/src/h2m.no` 的臨時量測均已回退；工作樹仍只有 §100–§101 的 `compiler/main.no`、`compiler/tests/ck-test.no`、`scripts/selfhost_diff.sh` 三點更動＋平行會話的更動；本節為 as-built 補記）。
+- **未提交任何改動**（其時；`compiler/src/h2m.no` 的臨時量測均已回退，工作樹只有 §100–§101 的 `compiler/main.no`／`compiler/tests/ck-test.no`／`scripts/selfhost_diff.sh` 三點更動。後於 2026-11-27 01:57:24 被平行會話的 `50b900c6` 一併收錄，見 §103 末條；本節為 as-built 補記）。
 
 ### 103. `sb.init` 未知 callee 機制結案（parser 函數導入選擇性合併 × 模組去重）＋ L4 golden 重生成與 L4 重跑（2026-11-26 第七輪；未留 sNNN 輪次標記）
 
 > 本輪清 §100–§102 Residuals ①（`sb.init` 機制）與 ⑥（L4 golden 需重生成）。①**結案**：機制已逐行定位，並以「還原 `_` 即復現、移除即 rc=0」實測收斂。⑥**執行**：以凍結 ctl 重生成 golden，再以凍結 ctl＋既有 SUT 重跑 L4。
+>
+> ⚠️ **※ §123 行號校正（2026-11-27 第二十七輪）**：本節的 `src/build/transpiler_merge.go:358` 現為 **`:361`**、struct 分支的 `:477` 現為 **`:478`**；`src/mir/codegen.go:15150`（`unknown callee` 的 `failAbort`）在 HEAD 已是 **`:15162`**、現行工作樹為 **`:15166`**（詳見 §123）。同節的 `:273`／`:539` 與 `src/parser/stmt.go:703–729` 複驗**仍然準確**；機制結論不變。
 
 - **`sb.init` 機制（Residual ①，結案）**：觸發語句是 `compiler/main.no:32` 的 `# /compiler/src/util/sb.sb _`。**語法解開（實測 AST 佐證，`tmp/use-probe-s103.out`）**：同一批三行變體解出
   `# /compiler/src/util/sb.sb _` → `{path: /compiler/src/util/sb, function: sb, alias: _}`；
@@ -8612,7 +8616,7 @@ LF 零變化（無新增失分構造）；dropped +1 **完全可歸因**：新�
   - **75 條為新增檔**（含平行會話留在 `tests/` 的 scratch：`_tmp-wrapclone/{min,min2,probe,repro,repro2}.no`、`_jp7.no`、`_known-deadlock/join-parked.no`）；
   - 共有 168 條中 **97 條完全不變**、**55 條同 rc 僅 stdout hash 漂移**、**16 條 rc 翻轉**——其中 **15 條 1→0**（既有缺陷修好，如 `hpack`／`http3`／`tls`／`wasi-fib`／`yaml` 等），**僅 1 條 0→1 的真回歸**：`tests/enum-annotation.no`（`[ERROR] nolang-codegen: func _nolang_main: consumer reads value 0 (NoVal)…`，bug #85 族），而該檔自 2026-11-24 起未被改動且工作樹乾淨 ⇒ 是 **ctl 端的真實退化**。⚠️ 本輪**如實將此一併凍結進 golden 並開為殘餘**，不讓 gate 把它藏起來。
   - rc!=0 四條的成因已核：`enum-annotation`＝codegen NoVal；`char.no`＝程序自行 exit 5；`_tmp-wrapclone/probe.no`＝印出 hello 後 SIGTRAP；`_known-deadlock/join-parked.no`＝刻意 deadlock＋SIGTRAP。
-  - 套用作業：`cp tmp/mir-baseline.candidate-s103.tsv tests/golden/mir-baseline.tsv`（即腳本 Review 區塊明示的 apply 指令），243 條、`git status` 呈 ` M`（未提交）。
+  - 套用作業：`cp tmp/mir-baseline.candidate-s103.tsv tests/golden/mir-baseline.tsv`（即腳本 Review 區塊明示的 apply 指令），243 條；套用作業當下 `git status` 呈 ` M`（其時未提交；後於 01:57:24 被 `50b900c6` 收錄，見末條）。
 - **L4 重跑前，先抓到一個 harness 缺陷（本輪修正）**：第一次以凍結 ctl＋`noc-s1x` 跑 L4（獨立 workdir，排除 /tmp 共享污染），`--self-test`（ctl==sut）**竟然 FAIL**——只量到 90 檔、SAME=86／DIFF=4。但 golden 自檢抽 3 檔 0 對不上、且 ctl 是同一支二進位，自檢本就該全綠。**根因＝harness 沒把語料程式的 stdin 接到 `/dev/null`**：
   - `mir_golden.sh` 擷指紋時是 `$NO run "$f" < /dev/null`，而 `selfhost_diff.sh` 所有 corpus 執行都沒指定 stdin ⇒ 會讀 stdin 的測試（`tests/loop-test.no` 走 `fs.get-line()`）吃到外層 `while read ... done < files.txt` 同一個 fd。
   - 直接證據：`ctl run tests/byte.no </dev/null` → `fcddbaef4f55…`（**恰等於 golden**）；同一支 `< files.txt` → `20ab235cbe66…`；`get.no` 同理（`439f61cc10c9` vs `12e45ebbf809`）。
@@ -8622,9 +8626,500 @@ LF 零變化（無新增失分構造）；dropped +1 **完全可歸因**：新�
   - `--self-test`（ctl==sut）：**量測 243 檔、SAME=239／DIFF=4**（stdin 修正前是 90 檔、SAME=86）。golden 自檢抽 3 檔 0 對不上。⇒ **ctl 對新 golden 已基本自洽**，剩下 4 個 DIFF 全部可解釋為「語料本身非確定」而非 oracle 過期：
     - `tests/https-server.no`：sut=(**124**,…)＝逾時（網路類，時間相關）；
     - `tests/number.no`／`tests/number-3.no`：**每次執行 stdout 都不同**（實測 `number.no` 第 41 行印出 `some(...)` 的內容，值為 `4303806976`↔`4342850048` 這類位址量級數字，三次 hashes 各異）⇒ corpus 天生不可凍結；
-    - `tests/mem-safety/vec-insert-capacity.no`：現行重跑恆為 `9ed368d919a0`，但 staging 當下擷到 `efd328e7ee20` ⇒ 擷取時的環境漂移（JOBS=4 平行負載下），非確定性的另一例。
+    - `tests/mem-safety/vec-insert-capacity.no`：現行重跑恆為 `9ed368d919a0`，但 staging 當下擷到 `efd328e7ee20` ⇒ 擷取時的環境漂移（JOBS=4 平行負載下），非確定性的另一例。（※ **§120 更正**：本檔在 121 次量測中恆為 `9ed368d919a0`，golden 的 `efd328e7ee20` 從未再現，且對 heap layout／環境／4-way 平行皆不敏感 ⇒ 應歸類為「**穩定不符（stale golden）**」，而非「擷取漂移」。）
   - 真跑（SUT=`noc-s1x`）：**SAME=17／DIFF=226**、`sut_ok=15`／`sut_empty=2`、ctl_ok=239（audit 已排除 mass-noop：SUT 大多 rc=1、stdout 空）。L4 仍 **FAIL**——但與 §101 的差異在於：**現在 golden 是自洽的**，FAIL 可全數歸因於 SUT（先前連 ctl 都對不上 golden）。證據 `tmp/gates-L4-fixed-s103.out`、`tmp/sdh4b-self/`、`tmp/sdh4b-real/`、`tmp/num-a.txt`／`tmp/num-b.txt`。
-- **口徑變更的既往影響（如實標註）**：§101 的 L0/L2/L3 數字是在**未隔離 stdin** 的舊口徑下量到的；本節不溯及改寫那些歷史記錄，但標明 L0/L3 若重跑可能略有出入（殘餘 ⑩）。
-- **Residuals（承 §102，更新）**：① ✅ **結案**（如上）；② ✅；③ ✅；④ 已定位但未修（同 §102）；⑤ L0–L4 未全面重跑（沿用 §101；本輪 ctl 二進位已被平行會話重建，故 L4 一律用凍結副本）；⑥ ✅ **已重生成並套用**（新基線 243 條）；⑦ **L5 未跑**——L4 仍 FAIL，依 DR-6 連鎖語意不具備前提；⑧ 普查新基線見 §99；⑨ **ctl 端 `tests/enum-annotation.no` 由 rc=0 退成 rc=1**（codegen NoVal，bug #85 族，未查根因）；⑩ **harness stdin 缺陷已修**（見上；L0/L3 的舊數字是在未隔離 stdin 的口徑下量到的）；⑪ **corpus 天生非確定**：`number.no`／`number-3.no` 每次 stdout 不同（印到位址量級數字）、`https-server.no` 逾時、`vec-insert-capacity.no` 擷取漂移 ⇒ L4 自檢永遠會有少量 DIFF， gate 需容忍或把這幾檔剔出語料。
-- **工作樹／scratch**：`tmp/ctl-frozen-s103.no`（sha256 `406312b10cd9ebce…`，31,594,930 bytes）、`tmp/noc-sbmech`（失敗輪殘留）、`tmp/noc-sbmech2`（成功對照）、`tmp/main.no.bak-s103`、`tmp/selfhost_diff.sh.bak-s103`、`tmp/use-probe-s103.out`、`tmp/s103-old.list`／`tmp/s103-new.list`、`tmp/s103-stdin-probe.txt`、`tmp/probe-{in,out}.txt`、`tmp/num-a.txt`／`tmp/num-b.txt`、`tmp/mir-baseline.candidate-s103.tsv`、`tmp/golden-stage-s103.log`、`tmp/gates-L4-s103.out`、`tmp/gates-L4-iso-s103.out`、`tmp/gates-L4-fixed-s103.out`、`tmp/sdh4{,-b}-{self,real}/`。
-- **未提交任何改動**（本輪更動＝`docs/design/nolang-selfhost.md`、`tests/golden/mir-baseline.tsv`、`scripts/selfhost_diff.sh`（stdin 口徑修正）；§100–§102 的 `compiler/main.no`／`compiler/tests/ck-test.no`／`scripts/selfhost_diff.sh` glob 修正仍在工作樹）。
+- **L0 以新口徑重跑（凍結 ctl＋`noc-s1x`、`--timeout 900`、workdir `tmp/sdh0-l103/`）**：**files=18、ctl_ok=17、sut_ok=0、SAME=0／DIFF=18**——與 §101 的 L0（17 綠／1 紅）**逐位相同**（ctl 唯一紅仍是 `h2m-test` rc=1）。⇒ **stdin 修正沒有更動 L0 的結論**，§101 的 L0 數字可以續用。證據 `tmp/gates-L0-fixed-s103.out`、`tmp/sdh0-l103/L0.tsv`。
+- **口徑變更的既往影響（如實標註）**：§101 的 L2/L3 數字仍是在**未隔離 stdin** 的舊口徑下量到的（L0 已验证不受影響）；本節不溯及改寫那些歷史記錄，但標明 L2/L3 若重跑可能略有出入（殘餘 ⑩）。
+- **Residuals（承 §102，更新）**：① ✅ **結案**（如上）；② ✅；③ ✅；④ 已定位但未修（同 §102）；⑤ **L0 已在新口徑重跑**（結果與 §101 逐位相同，見上）；L2/L3/L4 未以修正後 harness 重跑（L4 已跑，見上）；⑥ ✅ **已重生成並套用**（新基線 243 條）；⑦ **L5 未跑**——L4 仍 FAIL，依 DR-6 連鎖語意不具備前提；⑧ 普查新基線見 §99；⑨ **ctl 端 `tests/enum-annotation.no` 由 rc=0 退成 rc=1**（codegen NoVal，bug #85 族，未查根因）；⑩ **harness stdin 缺陷已修**（見上；L0/L3 的舊數字是在未隔離 stdin 的口徑下量到的）；⑪ **corpus 天生非確定**：`number.no`／`number-3.no` 每次 stdout 不同（印到位址量級數字）、`https-server.no` 逾時、`vec-insert-capacity.no` 擷取漂移 ⇒ L4 自檢永遠會有少量 DIFF， gate 需容忍或把這幾檔剔出語料。
+- **工作樹／scratch**：`tmp/ctl-frozen-s103.no`（sha256 `406312b10cd9ebce…`，31,594,930 bytes）、`tmp/noc-sbmech`（失敗輪殘留）、`tmp/noc-sbmech2`（成功對照）、`tmp/main.no.bak-s103`、`tmp/selfhost_diff.sh.bak-s103`、`tmp/use-probe-s103.out`、`tmp/s103-old.list`／`tmp/s103-new.list`、`tmp/s103-stdin-probe.txt`、`tmp/probe-{in,out}.txt`、`tmp/num-a.txt`／`tmp/num-b.txt`、`tmp/mir-baseline.candidate-s103.tsv`、`tmp/golden-stage-s103.log`、`tmp/gates-L4-s103.out`、`tmp/gates-L4-iso-s103.out`、`tmp/gates-L4-fixed-s103.out`、`tmp/sdh4{,-b}-{self,real}/`、`tmp/gates-L0-fixed-s103.out`、`tmp/sdh0-l103/`。
+- **提交狀態（如實記錄，紅線被外部動作打破）**：⚠️ **平行會話於 2026-11-27 01:57:24 以 `50b900c6`（`v0.4.38`）把本輪當時的更動一併提交**——含 `compiler/main.no`、`compiler/tests/ck-test.no`、`scripts/selfhost_diff.sh`（glob＋stdin 口徑）、`tests/golden/mir-baseline.tsv`（243 條新基線）與本文檔（§102／§103）。**該提交非本 agent 所為**，但「不得提交」的紅線客觀上已被打破，故照實記帳、不掩飾。目前**工作樹只剩本文檔的後續增補**（L0 新口徑重跑、Residuals ⑤⑩⑪、措辭校正；`git status` 僅 ` M docs/design/nolang-selfhost.md`），`compiler/src/h2m.no` 仍與 HEAD 無差異。
+
+### 104. v0.4.38（`50b900c6`）現況複驗：兩處修法已隨外部提交落地、L0 維持 17 綠／1 紅、普查基線的引號殼漂移（2026-11-27 第八輪；未留 sNNN 輪次標記）
+
+> 本輪把 §99／§102／§103 的「現時態」聲明拿到新 HEAD 與現行 `./bin/no` 上逐項複驗；不重跑 L2–L5（理由見 Residuals）。
+
+- **盤點（2026-11-27）**：`git log -3` 顯示 **HEAD＝`50b900c6`（`v0.4.38`，2026-11-27 01:57:24）**，上一層為 `dcf134c4`（`ci(test): skip noui-test and nosql-test until complete`）。本輪開始時 `git status --porcelain` 只有 ` M docs/design/nolang-selfhost.md`；**但在本節寫完前，平行會話又動了工作樹**——`src/mir/codegen.go`（02:22:39）、`src/mir/enum_drop_count_test.go`（02:21:26）、`src/checker/funcargs.go`（02:39:07）、`example/nosql/lib.no`（02:36:28）＋兩個未追蹤檔 `example/nosql/{src,tests}/token.no`，並於 **02:39:38 重建 `./bin/no`**（見「二進位二度重建」條）。⚠️ 本節所有量測皆**標明所用二進位**，不混用。首輪量測用二進位：mtime **Nov 27 01:36**、`version` 為 **`v0.4.37-1-gdcf134c4-dirty(2026-11-26 17:36:36)`**——重建於 `50b900c6` 之前，但 `compiler/` 源碼與該提交後一致，故可當作 v0.4.38 的 ctl 使用。
+- **兩處修法已落地（`50b900c6` 的 diff 佐證）**：該提交把 §100–§103 的一大批工作樹改動一併收錄，其中正是 §103 結案的兩處：
+  - `compiler/main.no:32`：`# /compiler/src/util/sb.sb _` → **`# /compiler/src/util/sb.sb`**（拿掉 discard-alias `_`；即 §103 的「移除即 rc=0」寫法）；
+  - `compiler/tests/ck-test.no`：刪掉 `test-order` 內重複的 `p str = ''`（§99 的 `:151`）。
+  - **實測**：`./bin/no build -check compiler` ⇒ **rc=0、`Check successful: compiler`**（同一指令在 §99 當日是 rc=1、`lx.no:1666 unknown callee sb.init`）；`./bin/no run compiler/tests/ck-test.no </dev/null` ⇒ **rc=0、20 passed／0 failed／ALL TESTS PASSED**。⇒ **Residuals ①／② 在工作樹層面已清**（① 的機制結案仍見 §103）。
+- **L0 全量重掃（首輪二進位＝01:36 版 `v0.4.37-1-gdcf134c4-dirty(17:36:36)`，18 套）**：逐項表 `tmp/l0-sweep-s104.txt`＋原始輸出 `tmp/l0raw-s104/`。結果 **17 綠／1 紅**：唯一紅為 **`h2m-test`（passed 1395／failed 42／total 1437、rc=1）**；其餘 17 套 rc=0（`ast` 48、`build-package` 8、`cg-runtime` 188、`cg-str16` 41、**`cg` 363**、`ck-sig` 50、`ck` 20、`diag` 7、`drv-build` 65、`lx` 81、`pkg-ll-call` 5、`pkg-ll` 10、`pkg-sigs` 5、`ps-err` 46、`ps` 52、`tok` 62、`util` 27）。全套裝 **2515 assertions = 2473 passed + 42 failed**，與 §101／§99 的數字**逐位相同**。⚠️ 順帶更正一處歷史敘事：§5.3.4.eo 所記「`cg-test.no` 整檔當前不可編譯」已不復見——現行是 **363/363 全綠**。
+- **`h2m-test` 失敗清單逐條未變**：42 條為 `s99c`×14（local-loop unsup／define f／slot alloca／control flow／store／load from slot／ret／param-loop unsup／param sig／param init slot…）、`s99d`×12（struct by value 全流程）、`s99k`×8（local-release／return-no-release 的 mem mode＋retain／release emitted）、`s99m`×6（call-borrow／indirect-return 各 3）、`s162` vecstruct len ty——**與 §102 的案例表完全相同**（證據 `tmp/h2m-test-s104-fails.txt`）。⇒ **§102 的表在 v0.4.38 下仍成立**。
+- **Residual ⑨ 未解（重要）**：以現行二進位重跑 `./bin/no run tests/enum-annotation.no </dev/null` ⇒ **仍 rc=1**，錯誤逐字為 `[ERROR] nolang-codegen: func _nolang_main: consumer reads value 0 (NoVal) … [m1rcg000]`（bug #85 族），stdout sha256 `786792cb855d…`；該檔自 `a4b7c66f` 起未再變更（mtime Nov 24 20:58）。⇒ v0.4.38 標稱的「preserve populated enum layouts across synthetic main」**並未覆蓋此例**，⑨ 保持未結。
+- **人口普查重跑（同一支 harness，內容逐字未改；首輪二進位＝01:36 版）**：`./bin/no run tmp/s154/cov-main.no > tmp/cov-census-v38.log 2> tmp/cov-census-v38.err`（harness 即 §99 用的 `tmp/s176/lab/cov-main.no`，二者 diff 為空）：
+  - **LF 7,940、ID 420** —— 與 §99 **相同**；
+  - **DB 16,212**（§99 為 **16,213**）：把 §99 日誌的 `'` 引號殼剝除後與本次日誌逐行 diff，**只差一行 `DB:__nolang_main:blk-expr`**（舊 15 條、新 14 條），其餘 32,514 行逐字相同；
+  - **`unsupported constructs: 8034 (pkg-ll)`**、**dropped 94**（stderr 共 95 行＝94 條 dropped＋1 行 unsup）——與 §99 **相同**。
+  - ⚠️ **前綴字面漂移（新發現）**：現行輸出**不再帶 `'` 引號殼**——§99 的 grep 口徑 `^'LF:` 在這次日誌是 **0 條**（開頭是 `BEGIN main`、接 `make:BlockStatement:construct`，LF/ID/DB 皆為裸字）。由於剝殼後內容只差上述一行，可斷定引號殼屬**輸出格式漂移**而非 Coverage 語意變化。成因無法由現存工件定論：`git log -- compiler/src/drv.no` 顯示該檔自 `9b70438a`（v0.4.36）起未被更動，故 §99 當日的帶殼版本很可能來自**未提交的工作樹狀態**（與 §95 記錄的 patch1.py／patch2.py 同期現象一致），也不能排除純 build-to-build 差異。**開為 Residual ⑫**；方法論教訓：計數應以**剝殼後的內容**為準，勿依賴引號前綴。
+- **二進位二度重建（平行會話，02:39:38）與再複驗**：平行會話把未提交的 `src/mir/codegen.go`（enum drop 計數，+6/−1）、`src/checker/funcargs.go`（+49，另新增 `src/checker/package_export_test.go`）、`example/nosql/lib.no`（+1）等更動重建進 `./bin/no`，新 `version` 為 **`v0.4.38-dirty(2026-11-26 18:39:24)`**。以這支新二進位再跑關鍵項：
+  - `tests/enum-annotation.no` ⇒ **仍 rc=1**、錯誤逐字相同、stdout sha256 仍 `786792cb855d…`；
+  - `compiler/tests/ck-test.no` ⇒ **rc=0、20 passed／0 failed**；
+  - 人口普查 ⇒ LF 7,940／ID 420／DB 16,212／unsup 8,034／dropped 94，且**日誌與首輪逐位元組相同**（`diff tmp/cov-census-v38.log tmp/cov-census-v38b.log` 為 0 行）；
+  - `h2m-test` ⇒ **1395／42／1437** 不變。
+  ⇒ 並行中的 `src/` 更動**並未改變**本節任一計量；但這支二進位是 **dirty 工作樹**的產物，若那些更動繼續演進，數字需再驗（Residual ⑬）。
+- **L4／L5 本輪未重跑**：ctl 二進位已不是 §103 凍結的 `tmp/ctl-frozen-s103.no`（且 golden 已由 §103 重生成 243 條並被 `50b900c6` 提交）；要重跑得先重凍結 ctl，屬下一輪工作。**L5 依 DR-6 仍不具備前提**（L4 FAIL）。
+- **Residuals（承 §103，更新）**：① ✅ **結案且修法已落地**（`build -check compiler` rc=0）；② ✅ **修法已落地**（`ck-test` 20/20）；③ ✅（同 §102）；④ 未修（mem==1 struct×控制流型別碼失配族，同 §102）；⑤ **L0 已重掃（17 綠／1 紅，與 §101／§99 逐位相同）**，L2/L3/L4 未以修正後 harness 全面重跑；⑥ ✅；⑦ **L5 未跑**（L4 仍 FAIL）；⑧ **普查新基線＝本節**（LF 7,940／ID 420／DB 16,212／unsup 8,034／dropped 94；其中 DB 與 §99 差 1 條 `blk-expr`）；⑨ **未解**——v0.4.38 後 `tests/enum-annotation.no` 仍 rc=1；⑩ stdin 口徑已修正（§99 的舊數字為未隔離口徑，但本輪普查證明其**內容**與現行一致）；⑪ corpus 天生非確定（未重跑，沿用 §103）；⑫ **普查輸出的 `'` 引號殼前綴漂移**（新；見上）；⑬ **平行會話的 dirty `src/` 更動已重建 `bin/no`**（02:39:38，`v0.4.38-dirty(18:39:24)`）——本輪計量已用兩支二進位各驗一次且一致，但該工作樹更動仍在進行，後續任一輪都須重確認。
+- **工作樹／scratch**：`tmp/l0-sweep-s104.txt`＋`tmp/l0raw-s104/`（18 套逐項）、`tmp/check-compiler-s104.out`、`tmp/ck-test-s104{,-b}.out`、`tmp/h2m-test-s104{,-b}{,-fails}.out`／`.err`、`tmp/ea-s104{,-b}.{out,err}`、`tmp/cov-census-v38{,-b}.{log,err}`（兩者 diff 為 0 行）、`tmp/cov-old-norm.txt`（§99 日誌剝殼版）、`tmp/qprobe{,2}.no`。既有：`tmp/ctl-frozen-s103.no`、`tmp/mir-baseline.candidate-s103.tsv`、`tmp/gates-L4-fixed-s103.out` 等（見 §103）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**；不得提交為倉庫紅線——⚠️ 但紅線已於 §103 末條記錄被平行會話 `50b900c6` 外部打破一次，本輪沒有新的提交動作）。
+
+### 105. 現行 HEAD 上的五級門重整跑：L0／L2／L3／L4 全数刷新，L5 仍不具前提（2026-11-27 第九輪；未留 sNNN 輪次標記）
+
+> 本輪清 §104 Residual ⑤：在現行 HEAD 凍結一支 ctl、從現行工作樹重建 SUT，用**已修正 stdin 口徑**的 `scripts/selfhost_diff.sh` 把 L0／L2／L3／L4 全部重跑。L5 依 DR-6 仍需 L4 先綠，故未跑。（※ **§121 更正**：把 ⑤ 記作「L5 未跑——前提未備」並不完整：`scripts/selfhost_diff.sh` **根本沒有實作 L5**，連 `--levels L5` 都只是一條靜默空轉路徑（回 `RESULT: PASS`、rc=0）。⑤ 應分「工具缺口（harness 未實作）」與「實現缺口（s2-vs-s3 不可達）」兩句記帳，詳見 §121。）
+
+- **凍結與建置**：`cp bin/no tmp/ctl-frozen-s104.no`（**31,595,042 bytes**、sha256 `9eaafb362eaf22e0…`、mtime Nov 27 02:53:53）；`./bin/no build -o tmp/noc-s104 compiler` ⇒ **rc=0**、`Build successful: tmp/noc-s104`（**4,348,776 bytes**、sha256 `2cf79669f04ab335…`）。⚠️ 這支 ctl 是**平行會話的 dirty 重建版**（`v0.4.38-dirty(2026-11-26 18:39:24)`，見 §104），非純 `50b900c6`；但它對已提交 golden 的自檢 **0 對不上**（見下），且 §104 已證明它與 01:36 版在普查日誌上逐位元組一致。
+- **⚠️ 抓到 harness 的 timeout 假陰性（本輪方法論教訓，新 Residual ⑭）**：第一次跑 L0 用**預設 `--timeout 60`**，得到 **ctl_ok=13**（5 檔 rc=124：ck-sig／ck／h2m／pkg-ll／pkg-sigs），看似 ctl 退化。實為**負載下的逾時假象**：單獨計時 `tmp/ctl-frozen-s104.no run compiler/tests/ck-test.no </dev/null` 需 **6 分 30 秒**（rc=0），遠超 60 秒。改 **`--timeout 1200`** 重跑 ⇒ **ctl_ok=17**，與 §101／§103／§104 完全一致。⇒ 此後 L0–L4 重跑必須給足 timeout，否則會把「慢」誤判成「壞」。證據 `tmp/gates-L0-s104.out`（60s，13）對比 `tmp/gates-L0b-s104.out`（1200s，17）。
+- **L0（ctl=frozen-s104、SUT=noc-s104、timeout 1200）**：**ctl_ok=17／18**（唯一非 ok＝`h2m-test` rc=1）、`sut_ok=0`、`ctl_empty=0`／`sut_empty=0`、SAME=0／DIFF=18。SUT 全紅為**預期**：自託管 `noc` 對 `compiler/tests/*-test.no` 這種大批 unit-test 語料本就 mass-unsupported——實測 `tmp/noc-s104 run compiler/tests/ast-test.no </dev/null` ⇒ rc=1、`noc: unsupported constructs: 236 (M4-d SHS subset)`、stdout 空（sha256 `e3b0c44298fc…`）。證據 `tmp/gates-L0b-s104.out`＋`tmp/sdh0b-s104/`。
+- **L4 真跑（vs 已提交 golden 243 筆）**：**golden 自檢抽 3 檔、0 對不上**；量測 243 檔（語料 363 檔，其中 **120 檔不在 golden 內**故未量測）⇒ **SAME=17／DIFF=226**、`sut_ok=15`／`sut_empty=2`、`ctl_ok=239`／`ctl_empty=5`。與 §103 的 L4 數字**完全相同** ⇒ L4 現況未因 v0.4.38 改變，**仍 FAIL**；但因 ctl 對 golden 自洽，FAIL 可全數歸因於 SUT。證據 `tmp/gates-L4c-s104.out`＋`tmp/sdh4c-s104/`。
+- **L4 自檢（ctl==sut==frozen-s104）**：**SAME=240／DIFF=3**（§103 為 239／4）。3 個 DIFF **全數**是已知非確定語料：`tests/number.no`、`tests/number-3.no`（輸出位址量級數字）與 `tests/mem-safety/vec-insert-capacity.no`（擷取漂移）——即 Residual ⑪，**沒有新的 ctl↔golden 漂移**。⚠️ 依 DR-6「自檢須全 PASS」，L4 嚴格說**未綠**：這是 gate 對天生非確定語料的假陰性面（新 Residual ⑮）。（※ **§120 更正**：3 個 DIFF 只有 `number*.no` 是真·非確定；`vec-insert-capacity.no` 是**確定但與 golden 穩定不符**，兩者修法不同——前者剔除或改寫測試，後者重擷 golden。）
+- **L2（`no ast`）**：`files=363`、`ctl_ok=363`／`ctl_empty=0`；**SAME=137／DIFF=226**；`sut_ok=362`——SUT 端**只差 `tests/coro-basic.no` 一檔**（失敗集合：`only-sut-fails: tests/coro-basic.no`）。oracle 覆蓋 **403,802 行、0 行 `<unknown>`**（71/71 節點型別全覆蓋）。證據 `tmp/gates-L23-s104.out`＋`tmp/sdh23-s104/L2.tsv`。
+- **L3（`no vet`）**：`ctl_ok=363`；**G5 oracle 穩定性自檢 ✅**（抽 5 檔各跑 2 次、歸一化後一致）；**歸一化後不同 127 檔**、**[ERROR] 集合不同 14 檔**（含 `tests/_known-deadlock/join-parked.no`、`tests/async-arg-move.no`、`tests/async-more.no`）；`sut_ok=349`。樣本差異：`src/std/archive/{tar,xz,zstd}.no` 的 HINT（overflow 宣告、未使用常數）在 SUT 端消失（`< [HINT] nolang-overflow…`／`[HINT] nolang-lint…` vs `> No issues found.`）⇒ SUT 的 lint／overflow 提示尚未實作齊。
+- **L1／L5**：L1 未跑（無 `tokens` oracle，跑了也只會誠實報 UNAVAILABLE）；**L5 未跑**——L4 仍 FAIL，依 DR-6 連鎖語意不具前提。
+- **Residuals（承 §104，更新）**：①–⑬ 沿用（⑤以外的判斷不變）；⑤ **已大幅清掉**：L0／L2／L3／L4 皆在現行 HEAD 以修正後 harness 重跑完成（數字見上），僅 **L5 未跑**（※ **§121 更正**：更準確的說法是「**harness 未實作 L5**，且 s2-vs-s3 前提本身亦不可達」——非單純「被前提卡住」；見 §121）；⑨ 未解（§104 已用兩支二進位確認仍紅，本輪未再動）；⑩ 已修；⑪ 仍未解（L4 自檢 3 檔）；⑫ 引號殼漂移（⚠️ **已於 §118 結案**：兩支二進位日誌逐位元組相同、皆為裸字前綴，屬輸出格式漂移，口徑已改裸字）；⑬ dirty ctl（本輪即用它，詳見上）；**⑭ 新**：harness 預設 timeout 60s 在笨重的 `compiler/tests` unit-test 上造成 ctl_ok 假性下降（13 vs 17），重跑必須顯式提高 timeout；**⑮ 新**：L4 自檢對非確定語料（`number*.no`／`vec-insert-capacity.no`）永遠會有 3 個 DIFF，DR-6 的「自檢全 PASS」前提需要「剔除或容忍」條款，否則 L4 永遠不可能正式轉綠、L5 也永遠無法開跑。
+- **工作樹／scratch**：`tmp/ctl-frozen-s104.no`、`tmp/noc-s104`、`tmp/build-noc-s104.out`、`tmp/gates-L0-s104.out`、`tmp/gates-L0b-s104.out`、`tmp/gates-L4c-s104.out`、`tmp/gates-L4c-self.out`、`tmp/gates-L23-s104.out`、`tmp/sdh0{-b}-s104/`、`tmp/sdh4c{,-self}/`、`tmp/sdh23-s104/`、`tmp/nocs104-direct.{out,err}`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**；不得提交為倉庫紅線——紅線已由平行會話 `50b900c6` 外部打破過一次，見 §103／§104）。
+
+### 106. `enum-annotation` 回歸歸因收窄（確定性極小重現＋邊界反例）＋平行會話三度重建二進位的複驗（2026-11-27 第十輪；未留 sNNN 輪次標記）
+
+> 本輪主攻 §104 Residual ⑨：用「拆構件 → 組合 → 逐條件消去」的探針法，把一份 152 行的端到端測試壓到約 17 行的**確定性**重現，並給出根因假說。另複驗平行會話新重建的二進位。
+
+- **盤點**：HEAD 仍 **`50b900c6`（v0.4.38）**；平行會話持續改 `src/`（新增／更動 `src/parser/{lowering.go,astdiskcache.go,option_arith_chain_infer_test.go,semviews_test.go}`、`src/mir/{void_method_call_test.go,option_arith_match_test.go}`、`example/nosql/src/*` 等），並於 **04:00:55 第三度重建 `./bin/no`**——`version` 為 **`v0.4.38-dirty(2026-11-26 20:00:47)`**。本節所有二分探針皆用這支二進位。
+- **複驗（04:00 版）**：`tests/enum-annotation.no` ⇒ **rc=1**（錯誤逐字不變，stdout sha256 `786792cb855d…`）；`compiler/tests/ck-test.no` ⇒ rc=0、**20/20**；人口普查 ⇒ **LF 7,940／ID 420／DB 16,212／unsup 8,034／dropped 94**，且日誌與 §105 的 v38b **逐位元組相同**（`diff` 0 行）；`h2m-test` ⇒ **1395／42／1437** 不變。⇒ 新一輪 `src/` 更動**未改變任何計量**。證據 `tmp/ea-s106.{out,err}`、`tmp/ck-test-s106.out`、`tmp/cov-census-v38c.{log,err}`、`tmp/h2m-test-s106.{out,err}`。
+- **Residual ⑨ 歸因收窄（本節主要進展）**：探針目錄 **`tmp/ea-bisect/`**（34 個 `.no` 及其輸出）。
+  - **單構件全綠**：`color`（列舉＋取值）、`box`（列舉＋match）、`shape`（circle/rect/dot＋match）、`plain`（無載荷＋match）、`pt`／`holder`（struct 欄位 `{inline}` 三種寫法）**各自 rc=0**；把原檔頭 120 行截出亦 rc=1 ⇒ 與檔尾說明文字無關。
+  - **失敗需三個條件同時成立**（缺一即 rc=0）：① enum 有 **≥2 個變體**，且至少一個變體帶 **≥2 個 payload 欄位**；② 對該 enum 做 **match**；③ 程式中另有 **struct 值的欄位被讀取**（只建構不讀則 rc=0）。
+  - **確定性極小重現 `tmp/ea-bisect/m24.no`**（約 17 行）：
+    ```
+    shape { rect(w i64, h i64), dot, }
+    s shape = rect(2, 3)
+    s: { rect(w, h) -> print(w * h)   dot -> print('dot') }
+    pt { x i64 }
+    h = pt{ x: 3 }
+    print(h.x)
+    ```
+    ⇒ rc=1、`[ERROR] nolang-codegen: func _nolang_main: consumer reads value 0 (NoVal) … [m1rcg000]`；**三次重跑 stderr md5 完全相同**（`79f4ccbfd5be…`）⇒ 非確定性、可穩定復現。
+  - **邊界反例（全部 rc=0）**：單變體 enum（`m21`）、單欄位 payload（`m19`）、不 match（`m18`）、struct 只建構不讀（`v1`）、以全局 `i64` 代替 struct（`v4`）、無 struct（`m20`）、enum＋未使用的 struct（`m9`）。
+  - **根因假說**：這是「**enum 載荷佈局 × struct 佈局**」在 MIR lowering 的**型別碼／鋪槽指派碰撞**——與 §102 Residual ④（mem==1 struct 值 × 控制流 for/if）**同一族**。佐證：`#{inline}` 註解有無不影響（`m4`／`m6` 皆紅）、f64／i64 不拘（`m13` 紅）、定義順序不拘（`m10` 紅）。**修補未完成**，但案例已從「一個檔案無故紅」收窄為「確定性 17 行列舉 + 明確邊界」。
+- **Residuals（承 §105，更新）**：①–⑮ 沿用；⑨ **部分結案**——機制收窄為上述三條件與確定性重現（`m24`），根因假說指向與 ④ 同族的型別碼／鋪槽碰撞，**修補仍未完成**（⚠️ **成因已於 §117 封口**：已非「假說」，而是 checker 的 arm `localScope` 與 MIR 的函式全域 `l.locals` 之模型落差，並以 `t1`–`t3`＋`vet` 不對稱坐實）；④ 未修（吸納 ⑨ 的重現作同族第二例）；⑬ **仍在**——平行會話再兩度重建二進位（02:39→04:00:55），本輪已就 04:00 版複驗全部關鍵計量、與上一輪一致；其余不變（⑤ 僅 L5 未跑、⑭ timeout 假陰性、⑮ 自檢對非確定語料的假陰性）。
+- **工作樹／scratch**：`tmp/ea-bisect/`（34 探針＋輸出，含 `m24.no`／`m24.{1,2,3}.{out,err}`）、`tmp/ea-s106.{out,err}`、`tmp/ck-test-s106.out`、`tmp/h2m-test-s106.{out,err}`、`tmp/cov-census-v38c.{log,err}`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 107. Residual ⑨ 的 IR 級定位：`print(h.x)` 被 lowering 成 `EmitMoveInto(23, 30)`（2026-11-27 第十一輪；未留 sNNN 輪次標記）
+
+> 本輪把 §106 的「型別碼／鋪槽碰撞」假說往程式碼推一步：以 MIR dump 直接看到失敗點，並給出可與正常路徑逐行對比的證據。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` **第四度重建**（mtime Nov 27 04:42:50，`./bin/no version` = **`v0.4.38-dirty(2026-11-26 20:42:41)`**）；`git status` 27 項 dirty／untracked，皆屬平行會話更動（未還原、未覆蓋）。
+- **方法論（新工具口徑）**：`NOLANG_MIR_DUMP_MIR=1 ./bin/no build -o <out> <src>.no` 可印出整份 MIR（structs／globals／func／block／instruction），`NOLANG_MIR_DEBUG_UNDEF=1` 則印 `[mir-undef] func=_nolang_main value=0 llvm="i64" slot=""`。⚠️ 早前誤用的 `NOLANG_MIR_DEBUG=1` **不會**產生 MIR 文字（只在 panic 時輸出），本輪已更正。
+- **對照組（`tmp/ea-bisect/v5.no`，rc=0）的正確 lowering**：`structlit dst=19:pt` → `const dst=20:i64` → `setfield dst=0 args=[19 20]` → **`getfield dst=21:i64(owned=false) args=[19]`** → `call dst=22:str args=[21] sym=i64.pretty`。證據 `tmp/v5-dumpmir.err`。
+- **失敗組（`tmp/ea-bisect/m24.no`，rc=1）的 block 4**（`preds=[2 7]`、`succs=[]`，即 enum match 兩臂的**彙流塊**）：
+  ```
+  block 4 (preds=[2 7] succs=[])
+    structlit  dst=30:pt(owned=false) args=[] sym=pt
+    const      dst=31:i64(owned=false) args=[]
+    setfield   dst=0 args=[30 31]
+    move       dst=0 args=[30 23]        ← 應為 getfield dst=<v>:i64 args=[30]
+    call       dst=0 args=[0] sym=print
+    TERM return args=[] targets=[]
+  ```
+  且 `23` 的定義在 **block 2**（enum 的 `rect` 分支）：`enum-field dst=23:i64(owned=false) args=[18]`。證據 `tmp/m24-dumpmir.err`。
+- **判讀（關鍵）**：`OpMove` 的 `dst=0 args=[A B]` 形狀即 `Builder.EmitMoveInto(dst=B, src=A)`——見 `src/mir/builder.go:362`：「Dst stays NoVal and the target value is carried in Args[1] (Args[0] is the moved-from source)」，語意是**把 A 搬進既有 slot B**（對已綁定變數的賦值／result-param 回寫）。因此 `move dst=0 args=[30 23]` 是「**把 struct 值 30 賦值到既有 value 23**」，而 23 是**兄弟分支 block 2 的 enum 載荷值**——這既不是 `h.x` 的欄位讀取，也構成**支配權違反**（在 block 4 參照 block 2 才定義的值）。緊接的 `call print args=[0]` 因目的地（dst slot）查不到 slot 而拿到 NoVal，遂觸發 `src/mir/codegen.go:6356` 的 bug #85 診斷（trace id `m1rcg000`）。⇒ §106 的假說上修為更具體的陳述：**在 enum match 的彙流塊中，緊接 struct 建構之後的欄位讀取被 lowering 成一次「指派到竄值既有 value id」的 EmitMoveInto**，而不是 `getfield`。
+- **邊界再確認（04:42 版二進位）**：`m24` 重跑仍 **rc=1**、stderr md5 仍 **`79f4ccbfd5be3551a4b0358c59e1eb63`**（與 §106 三次重跑相同）。新探針 **`tmp/ea-bisect/c1.no`**（保留 enum≥2 變體＋match＋struct，僅把 `print(h.x)` 換成 `print('done')`）⇒ **rc=0**、輸出 `6|done|` ⇒ **觸發者是該彙流塊中的「struct 欄位讀取值」本身**，而非 `print`、非 enum 比對本身；與 §106 的 `v1`（建 struct 但不讀）互為正反例。
+- **Residuals（承 §106，更新）**：①–⑮ 沿用；⑨ **歸因結案至 IR 級**——失敗點已定位為「match 彙流塊中 `h.x` 被降級為 `EmitMoveInto(23, 30)`」、邊界由 `c1` 再收窄一格，**修補仍未完成**；④ 未修（吸收 ⑨ 作同族第二例）；⑬ **仍在**——平行會話第四度重建 `bin/no`（02:39→04:00:55→04:42:50），本輪以 04:42 版複驗 m24 行為不變；其余不變（⑤ 僅 L5 未跑、⑭ timeout 假陰性、⑮ 自檢對非確定語料的假陰性、⑫ 引號殼漂移）。
+- **工作樹／scratch**：`tmp/m24-dumpmir.{out,err}`、`tmp/v5-dumpmir.err`、`tmp/v5.bin`、`tmp/m24.bin`、`tmp/ea-bisect/c1.{no,out,err}`、`tmp/ea-bisect/m24-r2.{out,err}`、`tmp/ea-bisect/`（35 探針）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 108. Residual ⑨ 根因結案：**match arm 繫結的作用域洩漏**（更名實驗＋13 行最小重現；並更正 §106／§107 的假說）（2026-11-27 第十二輪；未留 sNNN 輪次標記）
+
+> 本輪以「只改名、不改結構」的探針把 §106／§107 的「enum 載荷佈局 × struct 佈局碰撞」假說**推翻並取代**為**名稱碰撞（arm 繫結的作用域洩漏）**，得到 13 行的最小重現與雙向對照。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` 仍是 §107 那支（mtime Nov 27 04:42、`v0.4.38-dirty(2026-11-26 20:42:41)`）；`git status --porcelain` **29 項**（平行會話持續更動，未還原、未覆蓋）。
+- **決定性更名實驗（同結構、只換名字）**：
+  - `tmp/ea-bisect/c2.no`——把結構體變數 `h` 改名 `zz`（arm 繫結仍需 `h`）⇒ **rc=0**、輸出 `6|3|`。
+  - `tmp/ea-bisect/c3.no`——保留結構體 `h`，把 arm 繫結改為 `rect(a, b)` ⇒ **rc=0**、輸出 `6|3|`。
+  - `tmp/ea-bisect/c4.no`——結構體改用 `w`（與 arm 的 `w` 碰撞）⇒ **rc=1**（同款 `[m1rcg000]`）。
+  ⇒ 兩個方向任一改名都痊癒、任一同名都失敗：**觸發條件是「arm 繫結名 == 後續區域變數名」**，與 enum 的變體數／payload 欄位數**無關**。
+- **13 行最小重現 `tmp/ea-bisect/c14.no`**（單變體、單 payload 欄位）：
+  ```
+  shape { rect(h i64), }
+  s shape = rect(3)
+  s: { rect(h) -> print(h) }
+  pt { x i64 }
+  h = pt{ x: 3 }
+  print(h.x)
+  ```
+  ⇒ **rc=1**、同款 bug #85 診斷。⇒ §106 的「① enum ≥2 變體且至少一個帶 ≥2 payload 欄位」**並非必要條件**（`c5` 單變體双字段、`c14` 單變体單字段皆紅），屬該輪的**過度收斂**，予以更正。
+- **邊界矩陣（04:42 版二進位實測）**：`c6`（無 enum／無 match）rc=0；`c11`（碰撞但只 `print(h)` 不取欄位）rc=0、輸出 `6|3|`；`c12`（碰撞後 `h = 99; print(h)` 純量 re-bind）rc=0、輸出 `6|99|` ⇒ **純量 re-binding 不會被污染**；`c13`（固化宣告 `h pt = pt{x:3}`）**仍 rc=1** ⇒ 宣告形式（帶型別與否）都逃不掉；`c1`（把 `print(h.x)` 換成 `print('done')`）rc=0。
+- **MIR 對照（正確側 vs 錯誤側）**：`c2` 的 block 4（`preds=[2 7]`）為 `structlit dst=30:pt` → `const dst=31:i64` → `setfield dst=0 args=[30 31]` → **`getfield dst=32:i64(owned=false) args=[30]`** → `call dst=33:str args=[32] sym=i64.pretty` → `print`；而 `m24` 同一位置是 `… setfield dst=0 args=[30 31]` → `move dst=0 args=[30 23]` → `call dst=0 args=[0] sym=print`。證據 `tmp/c2-dump.err`（rc=0）對照 `tmp/m24-dumpmir.err`（rc=1）。
+- **機制判讀（含對 §107 的自我更正）**：`l.locals` 是**函式全域**對應（`src/mir/hir2mir.go` 在 4190–4280 的 arm-`it` 註解即明寫「the `locals` map is function-global」）。match arm 的繫結值（此例 23＝block 2 的 `enum-field dst=23:i64 args=[18]`）在 match 結束後**沒有退出 scope**，因此隨後的 `h = pt{…}`（或 `h pt = …`）被當成**對既有 slot 23 的 re-binding**，降低為 `EmitMoveInto(existing=23, src=30)`——即 dump 裡那句 `move dst=0 args=[30 23]`（**形狀本身合法**，且確實在 block 4 參照了 block 2 才定義的 23，支配權問題仍在）。真正的缺陷是**名稱解析仍回傳 23（型別 `i64`）**：`lowerDotRead` 對 `h.x` 取的接收者型別是 `i64`，找不到 struct layout，回 `NoVal` 且未被擋下，於是 `print` 的引數成了 NoVal，觸發 `src/mir/codegen.go:6356` 的 bug #85。⚠️ **更正 §107**：該輪把 `move dst=0 args=[30 23]` 描述的「欄位讀取被誤發成指派」不準確——它是**碰撞造成的 re-binding**；§107 剩餘的部分（dst=0 形狀＝`EmitMoveInto`、23 為 block 2 的 enum 載荷、支配權違反、bug #85 診斷）不變。
+- **結論**：Residual ⑨ 由「型別碼／鋪槽碰撞」改判為「**match arm 繫結的作用域洩漏**（arm binding 常駐 `l.locals`，污染後續同名區域綁定）」，最小重現 13 行、確定性（可重跑）。**修補未完成**（正解應是在 match 結束時把 arm 繫結的 value id 從 `l.locals` 退出，或讓 arm 繫結使用獨立 scope／shadow 標記）。
+- **Residuals（承 §107，更新）**：①–⑮ 沿用；⑨ **根因結案（待修補）**——假說由「enum 載荷佈局碰撞」更正為「arm 繫結作用域洩漏」（證據：`c2`／`c3` 雙向更名即癒、`c4`／`c14` 同名即紅）；④ **需重判**——本輪的純量 re-bind 不受影響（`c12` rc=0）與「struct 值 × 控制流（mem==1）」的原假設不完全吻合，其「同族第二例」的地位應下修為「待定」，待以同法重查；⑬ **仍在**（29 項 dirty）；其余不變（⑤ 僅 L5 未跑、⑭ timeout 假陰性、⑮ 自檢對非確定語料的假陰性、⑫ 引號殼漂移）。
+- **工作樹／scratch**：`tmp/ea-bisect/{c2,c3,c4,c5,c6,c11,c12,c13,c14}.{no,out,err}`、`tmp/c2-dump.{out,err}`、`tmp/c2.bin`、`tmp/m24-dumpmir.err`、`tmp/v5-dumpmir.err`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 109. Residual ⑨ 的**缺陷位置結案**：`armScoped` 只記錄「有既有綁定」的臂繫結（`hir2mir.go:4162-4164`）（2026-11-27 第十三輪；未留 sNNN 輪次標記）
+
+> 本輪以兩個判別性探針（`c15`／`c16`）把 §108 的「作用域洩漏」再收窄成**單一行條件缺陷**，並指出可執行的修正點。仍**只記帳、不改编译器源碼**（工作樹由平行會話主導，且紅線為僅記帳）。
+>
+> ⚠️ **※ §122 行號校正（2026-11-27 第二十六輪）**：下列 `:4160`／`:4162-4164`／`:4163`／`:4166`／`:4315-4318`／`:4696-4704` 皆為**當時的快照**（與 HEAD `50b900c6` 一致）；未提交的 `src/mir/hir2mir.go` 改動（**+224/−59**）把這批錨點整批 **+88～+90**——現行工作樹為 `:4248`／`:4250-4253`／`:4251`／`:4254`／`:4403-4404`／`:4783-4792`（詳表與復測見 §122）。**機制描述與修正點不變**，⑨ 仍未修補；同輪以凍結 ctl 復測 `m24`／`c16` 行為亦不變。
+>
+> ⚠️ **※ §124 狀態翻轉（2026-11-27 第二十八輪）**：上句「⑨ 仍未修補」**已被推翻**——平行會話已把本節的修正點落進工作樹（新增 `else if !hasExisting && armScoped && name != ""` 的 `absent: true` 分支，現行 `src/mir/hir2mir.go`**`:4253-4264`**；`restoreArmScoped` 對 `absent` 條目執行 `delete`，現行 **`:4794-4803`**），且新建的 `./bin/no` 使 `m24`／`c14`／`c4`／`t3`／`tests/enum-annotation.no` **全部由 rc=1 轉為 rc=0**（`m24` 产物執行得 `6`／`3`）。上方表列的 `:4254`／`:4403-4404`／`:4783-4792` 再位移為 **`:4265`**／**`:4414-4415`**／**`:4794-4803`**，`:4251` **不變**。詳見 §124。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` 仍是 `v0.4.38-dirty(2026-11-26 20:42:41)`（mtime Nov 27 04:42）；平行會話續有更動（未還原、未覆蓋）。
+- **判別探針 A（`tmp/ea-bisect/c15.no`，arm 體內**手寫**同名區域名）**：arm 體內寫 `z = 7`，match 之後 `z = pt{ x: 3 }; print(z.x)` ⇒ **rc=1，但是 compiler 期的型別錯誤**：`cannot assign pt value to i64 variable 'z'`。⇒ **語意層（checker）也看得到 arm 體內的 `z`**——這是一條**獨立于合成臂繫結**的滲漏路徑（手法寫的 arm-body 賦值被当成 function-visible 變數），本輪僅記錄、未深挖。
+- **判別探針 B（`tmp/ea-bisect/c16.no`，**合成臂繫結**阴影一個**既有的同名區域變數**）**：先 `h pt = pt{ x: 9 }`，再讓 arm 綁 `rect(h i64)`，match 後 `h = pt{ x: 3 }; print(h.x)` ⇒ **rc=0、輸出 `3|3|`**。⇒ 當 arm 繫結**有既有綁定可阴影**時，還原機制**正確運作**（`locals["h"]` 被放回型別為 `pt` 的值）。
+- **缺陷位置（程式碼級）**：`src/mir/hir2mir.go`
+  - `:4160` `armBinding := name != "it" && n.Flags&hir.FlagArmBinding != 0`（合成臂繫結標記，來自 `parser/tohir.go:663` 的 `IsArmBinding`）。
+  - `:4162-4164` `existing, hasExisting := l.locals[name]`／`if hasExisting && armScoped { l.armScoped = append(l.armScoped, armScopedBind{name: name, saved: existing}) }`——**只有在「該名字於 arm 之前已存在」時才記錄還原條目**。
+  - `:4696-4704` `restoreArmScoped(base)`：走訪 `armScoped`，`absent` 則 `delete(l.locals, name)`，否則回填 `saved`；因此**未被記錄的名字永遠不會被刪除**。
+  - **對照組**：`:4315-4318` 對「arm 體內**手寫**的 let／指派阴影**模組可見全域**」已使用 `armScopedBind{name: name, absent: true}`（無既有綁定時記錄 absent）——**唯獨合成臂繫結（`FlagArmBinding`）缺這個 absent 分支**，這正是漏洞所在。
+- **完整因果鏈（修訂版）**：① 合成臂繫結 `h` 在 arm 之前無既有綁定 ⇒ ② `:4163` 的 `hasExisting` 為假，**不記錄任何 armScoped 條目** ⇒ ③ match 結束时 `restoreArmScoped` 無事可做，`locals["h"]` 仍指向 arm 值 23（型別 `i64`）⇒ ④ 之後 `h = pt{…}` 命中 `:4166` 的 re-binding 路徑，發射 `EmitMoveInto(existing=23, src=30)`（形狀合法但目的地錯）⇒ ⑤ `h.x` 以 23 為接收者（`i64`）找不到 struct layout 而回 NoVal ⇒ ⑥ `print` 拿到 NoVal，觸發 `codegen.go:6356` bug #85。
+- **修正點（建議，未實施）**：把 `:4162-4164` 改為對 `armScoped` **無條件記錄**——有既有綁定記 `saved=existing`，無則記 `absent: true`（即複製 `:4315-4316` 的既有做法）；這樣 `restoreArmScoped` 會在 arm 結束时 `delete(l.locals,"h")`，後續同名牌告自然走「新綁定」路徑。⚠️ 施加前須回歸 `tests/tagged-enum.no`、`tests/mem-safety/json-nested-match.no`、`tests/fs-error-complete.no`、`tests/enum-annotation.no`（registry 裡既有臂繫結回歸遍地都是，此檔早已内建 `arm_shadow_global_test.go` 專門守護 `absent` 行為）。
+- **Residuals（承 §108，更新）**：①–⑮ 沿用；⑨ **缺陷位置結案**——由 §108 的「作用域洩漏」收窄為「`armScoped` 缺 absent 分支」（`hir2mir.go:4162-4164`，對照 `:4315-4318`），**仍未修補**（正解與回歸清單如上）；④ **需重判**（維持 §108 的下修，待定）；**⑯ 新**：arm 體內**手寫**同名區域名會在 checker 期泄漏（`c15` 的 `cannot assign pt value to i64 variable 'z'`），當時判為與 ⑨ 的合成臂繫結**不同路徑**、需另案追。⚠️ **已於 §114 結案為非缺陷**——此為「函式範圍」現行語意（arm／迴圈體皆然），並非checker 泄漏；⑨ 的真正缺陷是型別表未同步，兩者需在成因上分離；⑬ **仍在**；其余不變（⑤ 僅 L5 未跑、⑭ timeout 假陰性、⑮ 自檢對非確定語料的假陰性、⑫ 引號殼漂移）。
+- **工作樹／scratch**：`tmp/ea-bisect/{c15,c16}.{no,out,err}`、`tmp/ea-bisect/c{2,3,4,5,6,11,12,13,14}.{no,out,err}`、`tmp/c2-dump.{out,err}`、`tmp/m24-dumpmir.err`、`tmp/v5-dumpmir.err`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 110. Residual ④ 重判：`h2m-test` 42 FAIL 是**內嵌測例字串未隨 option 化算術漂移更新**（40 條直接證據），非 MIR 型別碼失配（2026-11-27 第十四輪；未留 sNNN 輪次標記）
+
+> 依 §108 的承諾，用 ⑨ 輪導入的「把測試字串抽出來獨立編譯」手法重查 ④。結論**推翻** §102／§106 對 ④ 的「struct 值 × 控制流（mem==1）型別碼／鋪槽失配族」歸因。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` 仍 `v0.4.38-dirty(2026-11-26 20:42:41)`（mtime Nov 27 04:42）；`git status --porcelain` **31 項**（平行會話續動，未還原、未覆蓋）。重跑 `./bin/no run compiler/tests/h2m-test.no </dev/null` ⇒ **passed 1395／failed 42／total 1437**，與 §102／§104／§105 逐位相同（證據 `tmp/h2m-test-s109.{out,err}`）。
+- **42 條的分群**：`s99c` 14、`s99d` 13、`s99k` 7、`s99m` 7、`s162` 1（`tmp/h2m-test-s104-fails.txt`）。
+- **直接證據（抽出內嵌字串獨立編譯）**：`test-s99c-local-loop` 的 `src` 原字串寫成 `tmp/ea-bisect/h2m-c.no`、`test-s99d-local-call` 的寫成 `tmp/ea-bisect/h2m-d.no`，各自 `run` ⇒ **rc=1，且失敗點全在 option 化算術**：`cannot assign ?i64 value to i64 field target; an option cannot be unwrapped implicitly`（`p.y = p.y + 1`）、`cannot assign ?i64 value to i64 variable 'n'`（`n = n + 1`）、`... variable 'r'`（`r = p.x + p.y`）。s99k／s99m 的內嵌字串同樣含 `n = n + 1`（见 `compiler/tests/h2m-test.no:4704`／`:4746` 附近的 `src = ...`）。⇒ 這 40 條是**測例程式本身在現行工具鏈上無法通過語意檢查**，所以 `h2m-lower-program` 要嘛拿到帶錯誤的 AST、要嘛直接回 unsup——**與 MIR 型別碼／鋪槽無關**。
+- **殘餘 1 條（`s162 vecstruct len ty`）**：該例內嵌字串為 `r = h.pts.len()`（無 option 算術），失敗的是型別碼期望（TY-VECSTRUCT 的 `.len()` 應為 TY-I64），屬**另一類**，本輪未深查。
+- **現代化改寫並不可靠（重要告誡）**： diagnostics 建議的 `n + 1: { ok -> n = it … }` 形式可通過 compile（`tmp/ea-bisect/opt-f.no`：`(n<3)` 迴圈後 `print(n)` 得 3 ⇒ 回寫生效），但**同一改寫套到 s99c 的 struct 欄位時語意不對**：`tmp/ea-bisect/opt-e.no`／`opt-i.no` 的 `print(p.y)` 在 `(n<5)` 迴圈後只得到 **3**（應為 7），即迴圈內**兩個 match 陳述並存時 p.y 只遞增一次**（未深查，記為 **Residual ⑰**）。因此**不主張**「把 40 條改寫即可修好」——那需要逐例驗證，且 ⑰ 可能是真實的獨立缺陷。
+- **Residuals（承 §109，更新）**：①–⑯ 沿用；④ **改判**——由「struct 值 × 控制流（mem==1）型別碼／鋪槽失配族」（§102／§106）改判為「**h2m-test 內嵌測例字串未隨 v0.4.34→v0.4.37 的 option 化算術漂移更新**」，40/42 有直接證據（`h2m-c.no`／`h2m-d.no` 的独立编译錯誤），**另 1 條 s162 為獨立項**；本章同時**更正** §106／§108 把 ④ 當作 ⑨「同族第二例」的說法（⑨ 已結案為 armScoped 缺 absent 分支，與 ④ 無因果關係）；**⑰ 新**：迴圈內兩個 match 形式的 option 改寫陳述並存時，struct 欄位的累加只生效一次（`opt-i.no` 的 p.y=3 vs 預期 7）。⚠️ **已於 §115 併回 ⑱**——真因為 `p.y + 1` 被 comptime 摺成常數，非臂內寫回缺陷；⑨ **仍未修補**（修正點見 §109）；⑯ 仍在；其余不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性）。
+- **工作樹／scratch**：`tmp/h2m-test-s109.{out,err}`、`tmp/ea-bisect/h2m-{c,d}.{no,out,err}`、`tmp/ea-bisect/opt-{a,b,c,d,e,f,g,h,i}.{no,out,err}`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 111. Residual ⑰ 收斂：**match 臂內對 struct 欄位賦值時，跨迴圈迭代的寫回不生效**（對照組證明非「欄位×迴圈」一般缺陷）（2026-11-27 第十五輪；未留 sNNN 輪次標記）
+
+> 把 §110 一筆帶過的 ⑰ 變成有對照的結論：同一迴圈、同一欄位，**用一般運算式賦值**可以逐輪累加，**在 match 臂內賦值**則每輪都讀到陳舊值。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` 仍 `v0.4.38-dirty(2026-11-26 20:42:41)`（mtime Nov 27 04:42）；平行會話續動（未還原、未覆蓋）。
+- **再現（`tmp/ea-bisect/opt-k.no`／`opt-n.no`，兩種官方建議改寫各一次）**：`(n < 5)` 迴圈內同時做 `n + 1: { ok -> n = it … }` 與 `p.y + 1: { ok -> p.y = it … }`（`opt-n` 為二步式 `t = p.y + 1` 再開 match），每輪 `print(p.y)` ⇒ **3|3|3|3|3**（五行全同），即 `p.y` 每輪都從陳舊的 2 加到 3，**疊代間的寫回完全沒有攜帶**。rc=0（可穩定重跑）。
+- **對照組 A（`tmp/ea-bisect/opt-o.no`，排除「struct 欄位 × 迴圈」的一般性）**：把讀改寫呼叫改成呼叫一個傳回**純 `i64`** 的助手 `add(a,b)`（助手內部同样用 match 拆 option），迴圈內 `p.y = add(p.y, 1)` ⇒ **3|4|5|6|7**（正確逐輪累加）⇒ **struct 欄位在迴圈內的寫回本身沒問題**，缺陷專屬於「**在 match 臂內賦值**」。
+- **對照組 B（純量）**：`opt-f.no` 的 `n + 1: { ok -> n = it … }` 讓 `n` 逐輪推進（`(n<3)` 後 `print(n)` 得 3）⇒ **純量區域變數在臂內賦值可正常攜帶**，缺陷專屬於「**struct 欄位**」。
+- **其它边界**：`?=` 形式不可用（`tmp/ea-bisect/opt-l.no`：`?= can only be used inside a function with an option-typed result param`）；`p.x + p.y: { … }` 直接當收尾表示式會被拒（`opt-o` 首版：`match arm in expression context must end with an expression`）。
+- **判讀**：臂內的 `p.y = it` 多半被降到**每輪新建成的臂內槽**（與 §109 的 `armScoped`／陳舊 slot 家族同一類機制），而臂外的 `p` 仍指向進入匹配前的slot，於是每輪讀到同一個陳舊值。⚠️ 本例**沒有任何名稱碰撞**（`p` 不被任何 arm 繫結占用），所以它是該家族的**第二個獨立表現**，而非 ⑨ 的直接後果。**修補未完成**。
+- **附带觀察（未解）**：`opt-o.no` 的 `print(f())` _outputs_ **3**，而逐輪 `p.y` 已達 7（`p.x+p.y` 應為 8）；即函式尾部的 option 拆包賦值給結果參數 `r` 也未如預期回寫。此點本輪**未深查**，僅記錄（可能與上述臂內寫回缺陷同源，或為另一獨立缺陷）。
+- **Residuals（承 §110，更新）**：①–⑰ 沿用；④ 已改判（§110）；**⑰ 收斂**——陳述由「未深查」升級為「**match 臂內對 struct 欄位賦值時跨迭代寫回不生效**」，附兩組對照（`opt-o` 的 3→7 正確、`opt-k`／`opt-n` 的 3,3,3,3,3 錯誤），疑與 ⑨ 的 armScoped／陳舊 slot 家族同源但**無名稱碰撞**（⚠️ **此假說已於 §115 撤回**：「陳舊值」來自 `p.y + 1` 的 comptime 折疊，不是陳舊 slot）；**⑱ 新**：`opt-o` 依序打印已達 `p.y=7`，`print(f())` 卻回 3（當時記為「尾部 option 拆包賦值給 result param 未回寫」；**已於 §113 改判**——真因為 comptime 把字面量 struct 的欄位摺成初始值，與 option／result param 無關）；⑨ **仍未修補**（修正點見 §109）；其余不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性、⑯ checker 泄漏）。
+- **工作樹／scratch**：`tmp/ea-bisect/opt-{j,k,l,m,n,o}.{no,out,err}`（含 optics 溯源序列）、`tmp/ea-bisect/h2m-{c,d}.{no,out,err}`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 112. 一致性校訂：Residuals 範圍宣告誤植與 residuals 序號的命名空間（2026-11-27 第十六輪；未留 sNNN 輪次標記）
+
+> 承 §108／§110／§111 建立的「現時態聲明必須與證據一致」原則，本輪**不做新的蟲體定位**，只把已經寫下的 residuals 範圍宣告與實際序列對齊。
+
+- **盤點**：HEAD 仍 `50b900c6`；`./bin/no version` 仍 `v0.4.38-dirty(2026-11-26 20:42:41)`（mtime Nov 27 04:42）；`git status --porcelain` 仍為平行會話的 dirty 工作樹（本節記帳時 31 項，**未還原、未覆蓋、未提交**）。
+- **校訂內容（五處，皆為文件中既有的範圍宣告，非蟲體結論）**：
+  - §105／§106／§107／§108 四段的 Residuals 行原寫「①–⑱ 沿用」，但**其撰寫時點 residuals 只定義到 ⑮**（⑯ 遲至 §109、⑰ 遲至 §110、⑱ 遲至 §111 才引入），屬超前誤植 ⇒ 已批次改為「**①–⑮ 沿用**」。
+  - §111（承 §110 的 residuals 行）原寫「①–⑯ 沿用」，漏收同節新引入的 ⑰ ⇒ 已改為「**①–⑰ 沿用**」。
+  - 校訂後逐段重掃一次，範圍與「承 §N」的對應為：承 §104 → ①–⑬；承 §105 → ①–⑮；承 §106 → ①–⑮；承 §107 → ①–⑮；承 §108 → ①–⑮；承 §109 → ①–⑯；承 §110 → ①–⑰。
+  - 同輪修掉 §111 residuals 行的**錯字**：「吿述由…」→「陳述由…」。
+- **序列完整性核對**：現行 residuals 序列為 **①–⑱**（①②③已結案／清償；④已改判；⑤僅剩 L5 未跑；⑥已結案；⑧為普查基線錨；⑨根因結案待修；⑩已修；⑪–⑮環境與門禁側缺口；⑯ checker 泄漏；⑰ arm 內 struct 欄位寫回不生效；⑱尾部 option 拆包賦值未回寫）。⑯／⑰／⑱ 為 §109／§110／§111 陸續新增，此前各輪的範圍宣告不可能涵蓋，故上述五處是**文件演化的必然遺跡**，而非新缺陷。
+- **命名空間提醒（新記錄，避免後續誤讀）**：本文的歷史追記章節標同時使用圈號（如 `### ⑰`／`### ①` 等小節），**與 residuals 的 ①–⑱ 是兩套獨立序列**。區別在於 residuals 一律寫在「**Residuals（承 §N，更新）**」項目符號之後，且上下文必帶「沿用／新／未修補」等語彙；閱讀時勿把某節標題的 ⑰ 誤認為 residual ⑰。此提醒僅為可讀性，不改動既有編號。
+- **方法論**：以 `grep -n "^\- \*\*Residuals"` 取所有 residuals 段頭，再逐段抽出「承 §N」與範圍 token 核對；掃描一律以 python3 精確定位行號，**不做整檔正則掃**（歷史段落本就含簡體字，整檔掃會大量假陽性）。
+- **Residuals（承 §111，更新）**：①–⑰ 沿用，另 **⑱ 沿用**（尾部 option 拆包賦值未回寫，未深查）；本輪**未新增**任何 residual，只做範圍宣告與錯字校訂；⑨ **仍未修補**（修正點見 §109）；其餘不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性、⑯ checker 泄漏、⑰ 臂內欄位寫回）。
+- **工作樹／scratch**：本輪無新增探針；沿用 `tmp/ea-bisect/`（`m24`／`c*`／`h2m-*`／`opt-*`）既有證據檔。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 113. Residual ⑱ 改判：**不是** option 拆包／result param 回寫，而是 **comptime 把「字面量 struct 的欄位」摺成初始值**（`p.y = 9` 之後 `p.x + p.y` 仍得 3）（2026-11-27 第十七輪；未留 sNNN 輪次標記）
+
+> §111 把 ⑱ 記作「尾部 option 拆包賦值給 result param 未回寫」。本輪以探針序列把它幹掉：真正的缺陷是**編譯期常數摺疊**，與 option／result param 完全無關。
+>
+> ⚠️ **※ §123 行號校正（2026-11-27 第二十七輪）**：下方「機制定位」的五個 `:NNNN` 引用在**未提交的 `src/mir/hir2mir.go`**（+224/−59）下各位移不同——`:3746-3750`→**`:3817-3825`**、`:3752-3759`→**`:3826-3833`**、`:8283`→**`:8436`**、`:8533`→**`:8686`**、`:9814`→**`:9967`**、`:16497`→**`:16662`**、`:16575`→**`:16740`**（詳表見 §123）。同輪以凍結 ctl 復測 `opt-v`，MIR 仍無 `getfield`／`add`，**機制成立**。
+
+- **盤點**：HEAD 仍 `50b900c6`；`./bin/no version` 仍 `v0.4.38-dirty(2026-11-26 20:42:41)`（mtime Nov 27 04:42）；`git status --porcelain` 仍 31 項 dirty（平行會話，**未還原、未覆蓋、未提交**）。
+- **由 ⑱ 原本的現象出發（承 §111 的 `opt-o.no`）**：`f()` 內 `(n<5)` 迴圈把 `p.y` 從 2 累加到 7（逐輪 `print(p.y)` 得 3,4,5,6,7），但函式尾 `t2 = p.x + p.y` ⇒ `print(f())` 回 **3**。
+- **收窄一：與迴圈無關**。新探針 `tmp/ea-bisect/opt-v.no` 用**直線式**程式碼：`p = Point{x:1,y:2}`、`p.y = 9`、`print(p.x + p.y)` ⇒ 印出 **3**（預期 10），`w = p.x + p.y; print(w)` ⇒ `some(3)`。即令沒有任何控制流，仍錯。
+- **收窄二：直接讀欄位是好的，算術纔壞**。`tmp/ea-bisect/opt-x.no` 依次印：`print(p.y)` → **9**（真实的）、`print(p.x)` → **1**、`print(p.x + 5)` → **6**（x 沒被改過，正常）、`print(p.y + 5)` → **7**（＝**2**+5，陳舊）、`w = p.x + p.y` → `some(3)`（＝1+2，全陳舊）。同一個人、同一個 slot，**單獨读**拿到新值，**放進算術運算元**拿到字面量初值。
+- **收窄三：僅限 `+`？否**。`tmp/ea-bisect/opt-y.no`：`w = p.y` ⇒ `print(w)` 得 **9**（賦值拷貝正常）；`v = p.y - 1` ⇒ `some(1)`（2−1）；`c = p.y * 2` ⇒ `some(4)`（2×2）。⇒ 任何二元運算都中招。
+- **繞過一（先抄到區域變數）**：`opt-s.no`／`opt-y.no` 的 `a1 = p.x`、`b1 = p.y`、`s = a1 + b1` ⇒ **some(10)**／`some(10)` 正確。⇒ 只要不直接對欄位做運算就沒事。
+- **繞過二（不是字面量建造的 struct）**：`tmp/ea-bisect/opt-z.no` 以 `mk(a,b)` 回傳的 struct 同樣 `p.y = 9` 後再算 `p.x + p.y` ⇒ **some(10)** 完全正常。⇒ 缺陷專屬於**以 struct literal 初始化**的區域變數。
+- **MIR 地面真值（`NOLANG_MIR_DUMP_MIR=1 ./bin/no build -o tmp/ea-bisect/opt-v.bin tmp/ea-bisect/opt-v.no`）**：`func f` 的 block 2 依序為 `structlit dst=19:Point`、`setfield [19 20]`、`setfield [19 21]`、**`setfield [19 22]`（`p.y = 9` 確實有發出）**，接著就直接是 `const dst=25:i64` + `option-wrap dst=26:?i64`——**整段沒有半條 `getfield`、沒有半條 `add`**。即 `p.x + p.y` 在 HIR→MIR 階段就被摺成常數 3，runtime 從未計算它。
+- **機制定位（`src/mir/hir2mir.go`，皆為靜態閱讀，未修改）**：
+  - `:3752-3759`：KLet 初始化若 `comptimeFold` 失敗但 `comptimeAggValue` 成功，就把結果記進 `l.constLocals[name]`（struct literal 走此支，成為 cvAgg）。
+  - `:9814`：`lowerExpr` 開頭無條件嘗試 `comptimeFold(id)`；`evalConst` 遇到 `KIdent` 時查 `l.constLocals[name]`（`:8533`）。
+  - `:8283` `dropConstAgg`：唯一負責「讓 cvAgg 失效」的函式，其說明文字就寫明「folder 沒有 mutation 概念，任何 element write 都必須 drop」。
+  - **關鍵缺口**：`dropConstAgg` 的**唯一呼叫點**在 KIndex 元素寫入路径（`:16497`，`a[i] = v`）；而 `obj.field = v` 的 setfield 路徑（約 `:16575`）**從未呼叫它**。於是有容器（`vec`／切片）防護、無 struct 欄位防護。
+  - 另一條也不適用：`constLocalWrites` / `reassignedNames`（`:3746-3750`）只統計**裸名稱**的多次賦值，欄位目標（KDot）不計入，所以 `p` 仍被當作單次赋值的常數区域。
+- **判定**：⑱ **不是** option 拆包／result param 回寫缺陷，**改判為**「struct literal 的 cvAgg 不被欄位寫入淘汰，使後續任何對該欄位的算術摺回初值」。此與 ⑰（臂內 struct 欄位寫回不生效）**表象相近但機制不同**：⑰ 是寫入端的 slot 語意，⑱ 是讀取端的摺疊；兩者目前**沒有共享名稱碰撞或同一修正點**。
+- **可復現繞過（非修復）**：`NOLANG_COMPTIME=0 ./bin/no run tmp/ea-bisect/opt-o.no` ⇒ 末尾正確回 **8**；`opt-x.no` 在同樣的開關下 `p.y + 5` 回 14、`p.x + p.y` 回 some(10)。⇒ 證明成因就是 comptime 折疊，且關掉它即避開（但那是關掉了整個 fold 機制，不是治本）。
+- **修正點提案（未實施）**：在 `obj.field = v` 且接收者為裸 `KIdent` 時，對該名稱呼叫 `l.dropConstAgg(name)`，與 KIndex 路徑同口徑；或讓 `scanReassignedNames` 把「附著於某名稱的欄位／元素寫入」一併計入。**回歸清單**：`compiler/tests`、`src/mir/comptime_fold_test.go` 全族（含 `TestComptimeFoldsPureCall` 等倚賴折疊的測例）、以及本文既有的 `tests/golden/mir-baseline.tsv`（L4 golden 可能因折疊去留而變動，需重生成後再比對）。
+- **Residuals（承 §112，更新）**：①–⑰ 沿用，另 **⑱ 已改判**（本節）：由「尾部 option 拆包賦值未回寫」改為「**struct literal 的 cvAgg 不被欄位寫入淘汰**」，附 MIR 證據、五條收窄邊界與 `NOLANG_COMPTIME=0` 對照；⑨ **仍未修補**（修正點見 §109）；其餘不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性、⑯ checker 泄漏、⑰ 臂內欄位寫回）。
+- **工作樹／scratch**：`tmp/ea-bisect/opt-{p,q,r,s,t,v,x,y,z}.{no,out,err}`、`tmp/ea-bisect/opt-t.mir`、`tmp/ea-bisect/opt-v.{mir,bin}`（皆為本輪新增或沿用）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 114. Residual ⑯ 改判：**arm／迴圈體內新宣告的名字是「函式範圍」**，此為現行語意而非 checker 泄漏（真缺陷另在型別表未同步）（2026-11-27 第十八輪；未留 sNNN 輪次標記）
+
+> §109 把 ⑯ 記作「arm 體內**手寫**同名區域名會在 checker 期泄漏，與 ⑨ 的合成臂繫結為**不同路徑**，需另案追」。本輪以 `s1`–`s5` 探針把這條親屬關係整個翻轉：**手寫名字與合成臂繫結走的其實是同一條「函式範圍」規則**，而 arm 絕非特例——**迴圈體也一樣**。
+
+- **盤點**：HEAD 仍 `50b900c6`；⚠️ **`bin/no` 已被平行會話第五度重建**——本版為 **`v0.4.38-dirty(2026-11-26 21:34:27)`（mtime Nov 27 05:34）**，與 §113 記錄的 `20:42:41` 不同；`git status --porcelain` 為 **30 項**（上輪 31）。**未還原、未覆蓋、未提交**；本輪所有計量皆用 05:34 這支二進位。
+- **重現原案（`tmp/ea-bisect/c15.no`）**：arm 體內 `z = 7`（新名字），match 之後 `z = pt{ x: 3 }` ⇒ `:14:7 [ERROR] cannot assign pt value to i64 variable 'z'`。也就是 arm 內那個 `z:i64` 在 match 結束後仍是 `z` 的型別。
+- **探針 A（換名字、不改結構，`s1.no`）**：arm 體內 `q = 7`、match 後 `q = pt{ x: 3 }` ⇒ 同樣報 `cannot assign pt value to i64 variable 'q'`（`:14:7`）。⇒ 與名稱是否巧合、是否為合成臂繫結**完全無關**。
+- **探針 B（連 arm 都不要，`s2.no`）**：`pt{x i64}`；`(n < 1) { r = 7; print(r) }`；迴圈後 `r = pt{ x: 3 }` ⇒ 報 `cannot assign pt value to i64 variable 'r'`（`:9:7`）。⇒ **一般迴圈體也有完全相同的泄漏**，arm 不是必要條件。
+- **探針 C（執行期能見度，`s4.no`／`s5.no`）**：`s4` 在 arm 內 `q = 7`，match 後 `q = 99` ⇒ rc=0、輸出 **7／99**；`s5` 在 `(n<1)` 迴圈內 `r = 7`（並以官方建議的 option 拆包把 `n` 推進到 1），迴圈後 `print(r)` 得 **7**、再 `r = 99` 列印 **99**。⇒ 名字确實**繼續在函式內可用**，且同型別重賦值合法——正是 §3.11 描述的行為。
+- **反向邊界（`s3.no`）**：外層 `z = 1`（i64）、arm 內 `z = 2` ⇒ rc=0、输出 **2／2**；內層赋值為合法重賦值並**一路留到 match 之外**。⇒ 「覆蓋重賦值」在 arm 內外都成立，沒有「內層比較多人們直覺的區塊陰影」。
+- **檔案證據（靜態閱讀，未修改）**：`AGENTS.md` §3.11（約 `:562`）明文「**函数作用域内同名重復赋值 = 覆盖重赋值**（非新建栈變量），且類型必须相同（否則语法不允许）」；`src/parser/lowering.go:610-640` 的 `declaredLocals` **只在進入 `FunctionDefinition` 時重置**（`savedDeclared` 保存／還原於函式定義邊界），全程**沒有任何 arm／block 的 push-pop**。⇒ 「函式範圍」是實作與文件一致的现行规則，不是誰的疏失。（※ **§122 行號校正**：`:610-640` 為當時的快照，現行工作樹為 **`:625-647`**——同輪 `src/parser/lowering.go` 有 **+395/−33** 的未提交改動。）
+- **判定（⑯ 結案為非缺陷）**：⑯ **不是缺陷**，降級為「已知語意边界」——Nolang 的局部名稱為**函式範圍**，arm 體／迴圈體內的新宣言會成為該函式的一個局部名，因此（a）其在塊外可見可再用（`s4`／`s5`），（b）若塊外有同名宣告，則兩者被當成**同一**局部，型別必須一致（`c15`／`s1`／`s2` 的報錯正是此規則）。若要改成「區塊作用域」，那是**語言變更**而不是缺陷修補，必須另開語言提案，不應記在Residuals 項下。
+- **對 §109 記載的更正**：§109 說 ⑯ 與 ⑨「為不同路徑」應予更正——兩者在「名字沒有退出嵌套結構」這一點上**同源**（都是函式範圍語意的下游）。但兩者**症狀與嚴重度不同**，仍需分別記：⑨ 的實際缺陷不在 scope 本身，而在 **arm 繫結退出後型別表（`l.locals["h"]`）仍停在舊型別／舊 slot**，使隨後 `h = pt{…}` 一方面被 checker 当成 i64、一方面在 MIR 產生 `EmitMoveInto` 到 i64 目的地，最後 `h.x` 回 NoVal（bug #85 族）；此缺陷**依舊未修補**，修正點見 §109。
+- **Residuals（承 §113，更新）**：①–⑰ 沿用，⑱ 已改判（§113）；**⑯ ✅ 結案為非缺陷（現行語意＝函式範圍）**，自残留項移出，改為「已知語意边界」條目；⑨ **仍未修補**（其缺陷為型別表未同步，與 ⑯ 的 scope 議題分離）；其餘不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性、⑰ 臂內欄位寫回）。
+- **工作樹／scratch**：`tmp/ea-bisect/{s1,s2,s3,s4,s5}.{no,out,err}`（本輪新增）、`c15.{no,out,err}`（沿用）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 115. Residual ⑰ 與 ⑱ **同根**：臂內「寫回不生效」的真相是 **`p.y + 1` 先被 comptime 摺成常數**（⑰ 併回 ⑱，非獨立缺陷）（2026-11-27 第十九輪；未留 sNNN 輪次標記）
+
+> §110／§111 把 ⑰ 記成「match 臂內對 struct 欄位賦值時跨迭代寫回不生效」，並與 ⑱ 分案。本輪的 MIR 直接證否：那個「不生效的寫入」**寫的是常數**——因為右側的 `p.y + 1` 在 lowering 期就被摺掉了。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` 仍 `v0.4.38-dirty(2026-11-26 21:34:27)`（mtime Nov 27 05:34，與 §114 同一支）；⚠️ dirty 由 30 項回到 **33 項**（平行會話續動）。**未還原、未覆蓋、未提交**。
+- **MIR 地面真值（`NOLANG_MIR_DUMP_MIR=1 ./bin/no build -o tmp/ea-bisect/opt-k.bin tmp/ea-bisect/opt-k.no`）**：`func f` 的迴圈體區塊 9（`preds=[8 12]`、`succs=[13 14]`，即 `p.y + 1: {…}` 的入口）**只有一條 `const dst=33:i64` 與一條 `cond-br`**——**沒有 `getfield`、沒有 `add`**。接續的 block 13 把兩個**由常數 wrap 出來的 option** 做 `eq` 比較（`dst=35` 與 `dst=37`），恆真後走 block 16：`move dst=39 args=[35]`（`it`＝`some(3)`）再 `setfield [19 39]`。⇒ 每輪把 `p.y` 寫成 **3**，block 15 的 `getfield [19]` 自然恆印 3。這正是 `opt-k`／`opt-n` 輸出 **3|3|3|3|3**（加上尾部 `print(f())` 的第六個 3）的機制。
+- **決定性對照**：`NOLANG_COMPTIME=0 ./bin/no run tmp/ea-bisect/opt-k.no` ⇒ **3|4|5|6|7|8**；`opt-n` 同樣 ⇒ **3|4|5|6|7|8**。關掉折疊即完全正確，與 §113 對 ⑱ 的判定一致。
+- **為何 §111 的對照 A（`opt-o`）本來就正確**：`opt-o` 把右式改成呼叫助手 `add(p.y, 1)`；`add` 是**函式呼叫**，不是 `constLocals` 能展開的常數表達式，`comptimeFold` 不會對它取 `p.y` 的 cvAgg 值 ⇒ 每輪如實計算。對照 B（純量 `n`）不受影響，也是同一理由（純量沒有 cvAgg 可摺）。
+- **判定（⑰ 併回 ⑱）**：⑰ **不是獨立缺陷**，與 ⑱ 為**同一根因**——struct literal 的 cvAgg 不被欄位寫入淘汰（修正點見 §113），只是表現位置不同（一個在尾段直線、一個在迴圈體的 match 臂）。§111 所述「臂內的 `p.y = it` 多半被降到每輪新建成的臂內槽……疑與 ⑨ 的 armScoped／陳舊 slot 家族同源」**予以撤回**：此例沒有任何名稱碰撞（`p` 未被任何 arm 繫結占用），「陳舊值」來自**摺疊常數**而非陳舊 slot。
+- **與 ⑨ 的界線仍成立**：以 `m24`（⑨ 的最小重現）實測，`NOLANG_COMPTIME=0 ./bin/no build -o tmp/ea-bisect/m24b.bin tmp/ea-bisect/m24.no` **仍 rc=1**（錯誤內容不變）⇒ ⑨ 與本折疊族**無關**，維持 §109 的「型別表未隨重綁同步」歸因。
+- **Residuals（承 §114，更新）**：①–⑱ 沿用（⑯ 已結案為非缺陷，§114；④ 已改判，§110；⑱ 已改判，§113）；**⑰ 併回 ⑱**——兩者同源於「cvAgg 不被欄位寫入淘汰」，殘餘清單上合併為 **⑱ 一條**（修正點見 §113）；⑨ **仍未修補**（修正點見 §109）；④ 已改判（§110）；其餘不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性）。
+- **工作樹／scratch**：`tmp/ea-bisect/opt-k.mir`、`tmp/ea-bisect/opt-k.bin`、`tmp/ea-bisect/m24b.{bin,err}`（本輪新增）、`opt-{i,k,n,o}.no`（沿用）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 116. 二進位**第六度重建**後的一致性重驗：所有探針級聲明悉數重現，`ck-test` 20/0/20（2026-11-27 第二十輪；未留 sNNN 輪次標記）
+
+> §108／§110／§113／§114／§115 的現時態聲明全部綁在「當時那支 `bin/no`」上。平行會話每次重建都會讓版本戳跳動，因此本輪不做新蟲體推演，專做一件事：**把已經寫下的聲明逐條放回当前二進位重跑一遍**，能重現的才繼續留在「現時態」，不能的重判。
+
+- **盤點**：HEAD 仍 `50b900c6`（訊息仍為 `v0.4.38`）；⚠️ `bin/no` 已**第六度重建**——本版 **`version: v0.4.38-dirty(2026-11-27 00:15:17)`、mtime Nov 27 08:15**（前五次依次為 20:42:41→21:34:27→…→本輪），與 §114／§115 記錄的 21:34:27 不同；`git status --porcelain` 由 33 項增至 **49 項**（平行會話續動）。**未還原、未覆蓋、未提交**；本節所有計量皆用 08:15 這支二進位。
+- **探針全量重現（逐條比對 §111／§113／§114／§115 的記錄值）**：
+
+  | 探針 | 本輪（08:15 二進位） | 舊記錄 | 結論 |
+  | --- | --- | --- | --- |
+  | `opt-o` | `3|4|5|6|7|3|` | 同 | ✅ 一致（⑱ 尾部回 3） |
+  | `opt-k` | `3|3|3|3|3|3|` | 同 | ✅ 一致（⑰ 每輪折疊為 3） |
+  | `opt-v` | `3|some(3)|3|` | 同 | ✅ 一致（直線式也摺） |
+  | `opt-x` | `9|1|6|7|some(3)|3|` | 同 | ✅ 一致（p.y+5＝7 陳舊） |
+  | `opt-s` | `1|7|some(8)|8|` | 同 | ✅ 一致（先抄區域變數即正確） |
+  | `opt-z` | `9|some(10)|10|` | 同 | ✅ 一致（函式建造的 struct 正常） |
+  | `s1`／`s2`／`c15` | rc=1（型別錯誤） | 同 | ✅ 一致（⑯ 語意报錯） |
+  | `s3`／`s4`／`s5` | rc=0 | 同 | ✅ 一致（函式範圍可見） |
+  | `m24` | rc=1 | 同 | ✅ 一致（⑨ 未修補） |
+  | `opt-k`／`opt-o` @ `NOLANG_COMPTIME=0` | `3|4|5|6|7|8|` | 同 | ✅ 一致（折疊為成因） |
+  | `m24` @ `NOLANG_COMPTIME=0` | rc=1 | 同 | ✅ 一致（⑨ 與折疊族無關） |
+
+- **`ck-test`（`./bin/no test compiler/tests/ck-test.no`）**：rc=0、`passed: 20  failed: 0  total: 20`、`ALL TESTS PASSED`，與 `tmp/ck-test-s106.out` 完全一致（⚠️ 過程耗時約 5–6 分鐘，遠超一般測例；本輪以背景任務執行後再收結果）。
+- **判定**：**§109–§115 的每一條探針級声明在 08:15 二進位上悉數重現**，無需修正任何既有結論；本次二進位變更屬平行會話的例行重建，未改變 S0 的可觀察行為。**這正是「現時態聲明要與證據一致」原則的自我檢查**：若任一條不再重現，就表示環境已漂移，必須改寫而不是沿用。
+- **Residuals（承 §115，更新）**：①–⑱ 沿用（⑯ 已結案為非缺陷；④ 已改判 §110；⑧ 為普查基線錨；⑰ 已併回 ⑱）；本輪**未新增也未更動任何 residual**；⑨ **仍未修補**（修正點見 §109）；其餘不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性）。
+- **工作樹／scratch**：`tmp/ck-test-s116.{out,err}`、`tmp/ea-bisect/{s1,s2,s3,s4,s5,c15}.e2`、`tmp/ea-bisect/m24-s116.{bin,err}`、`tmp/ea-bisect/m24b-s116.bin`（本輪新增）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 117. Residual ⑨ 的因果鏈收尾：**checker 給 match 臂自己的 `localScope`，MIR 的 `l.locals` 卻是函式全域**（另重跑 `h2m-test`＝1395/42/1437）（2026-11-27 第二十一輪；未留 sNNN 輪次標記）
+
+> §109 已把 ⑨ 收窄到 `armScoped` 缺 absent 分支；本輪補上**另一半的機制**：為什麼 `vet` 對 `t3` 說「No issues found」、`build` 卻在 codegen 炸 bug #85——因為兩個階段對「arm 绑定名字的壽命」用的是不同模型。
+>
+> ⚠️ **※ §123 行號校正（2026-11-27 第二十七輪）**：下方 MIR 端的 `:4215` 與 `:4747-4756` **不對應 HEAD**（HEAD 為 `:4163`／`:4695` 起），係**當時未提交工作樹**的座標；現行工作樹為 **`:4251`** 與 **`:4783-4792`**（見 §123）。機制結論不變。
+>
+> ⚠️ **※ §124 狀態更新（2026-11-27 第二十八輪）**：`restoreArmScoped` 現行已再位移為 **`:4794-4803`**，且其 `:4796-4798` **新增了對 `absent` 條目的 `delete`**——即本節描述的「合成臂繫結缺 absent 分支」缺口**已於未提交工作樹修補**，`m24` 等判別性探針由 rc=1 轉為 rc=0（詳見 §124）。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` 仍 **`v0.4.38-dirty(2026-11-27 00:15:17)`（mtime Nov 27 08:15）**，與 §116 同一支；`git status --porcelain` **51 項**（§116 為 49）。**未還原、未覆蓋、未提交**。
+- **`h2m-test` 重跑（`./bin/no test compiler/tests/h2m-test.no`）**：rc=1、`passed: 1395／failed: 42／total: 1437`、`SOME TESTS FAILED`，**與 `tmp/h2m-test-s109.out` 完全一致**。⇒ §110 用於 residual ④ 的分母（42 條 FAIL）與 40/42 option 漂移的計量**繼續成立**，無需在數字上修正。
+- **新探針三則（`tmp/ea-bisect/t1–t3`，皆為單變體 enum 的 arm 綁定型別洩漏行為）**：
+  - `t1`：`s: { rect(h) -> print(h) }` 之後 `print(h)` ⇒ rc=0、輸出 **3／3**。⇒ arm 綁定的名字**在 arm 後可讀、值也對**（符合 §114 的函式範圍語意）。
+  - `t2`：同 `t1`，但 arm 後 `h = 99` 再印 ⇒ rc=0、輸出 **3／99**。⇒ **同型別**重綁合法且生效。
+  - `t3`：同 `t1`，但 arm 後 `h = pt{ x: 1 }` 再印 `h.x` ⇒ **rc=1**，`nolang-codegen: func _nolang_main: consumer reads value 0 (NoVal) … (bug #85) [m1rcg000]`。⇒ **跨型別**重綁就爆。
+- **關鍵不對稱（`./bin/no vet` 逐檔比對）**：`s1`／`c15` 明確報 `:14:7 [ERROR] nolang-compile: cannot assign pt value to i64 variable 'q'/'z' [15w45dqk]`；而 **`t3` 的 `vet` 是「No issues found.」（rc=0）**，同一句 `h = pt{…}` 直到 `build` 才由 codegen 以 bug #85 現形。⇒ **問題不只在 MIR：連 semantic checker 都看不見這條重綁**。
+- **機制（靜態閱讀，未修改）**：
+  - checker 端：`src/checker/checker.go:13370` 註解明言「match 臂的 `it` / `ok(v)` 綁定也是合成 LetStatement（IsArmBinding）」，而 checker 走的是**有 push/pop 的 `localScope`**（臂有自己的作用域）；因此 arm 一結束，`h` 就不在型別表裡，臂後的 `h = pt{…}` 被當成**全新的隱式區域**，永遠不會觸發 `15w45dqk`。
+  - MIR 端：`src/mir/hir2mir.go` 的 `l.locals` 是**函式全域 map**；arm 綁定若 `!hasExisting`，`:4215` 的 `if hasExisting && armScoped` 就不會記進 `l.armScoped`，`restoreArmScoped`（`:4747-4756`）自然不會 restore/delete，`l.locals["h"]` 便一直留在 **i64** 這格。
+  - 於是同一句 `h = pt{x:1}`：checker 認為是新建 pt 區域，MIR 則走既有 i64 名的 re-binding 路徑（`EmitMoveInto(existing, val)`），把 struct 值搬進 i64 目的地；之後 `h.x` 以 i64 為接收者找不到 layout 回 `NoVal` ⇒ bug #85。**與 §107／§109 的因果鏈完全接上，且此次把「為什麼繞過 `15w45dqk`」也補齊了**。
+- **判定（⑨ 仍未修補，但成因已封口）**：⑨ 的缺陷不是「scope 沒退出」本身（依 §114，名字留下來是**現行語意**），而是 **checker 與 MIR 對同一個 arm 綁定型別的生命週期模型不一致**：MIR 留在舊型別，checker 直接當它不存在。可行修法因此有兩條互斥路線——(a) 讓 MIR 在 arm 繫結退出後也以相同規則淘汰（配合既有 `armScopedBind.absent` 機制，把 `!hasExisting` 分支也記進去）；(b) 保留可見度但**同步型別表**（重綁時更新 `l.locals[name]` 的型別，使 re-binding 走型別轉換或拒絕），並讓 checker 也把它登記為同名重賦值。**在語言確定採哪種之前不宜先動手**；這條界定記此。
+- **Residuals（承 §116，更新）**：①–⑱ 沿用；**④ 的計量經重跑確認不變**（`h2m-test` 1395/42/1437）；**⑨ 仍未修補**，但成因由「假說指向」升級為「**已封口的三段證據**」（t1／t2／t3 ＋ `vet` 不對稱 ＋ 兩端源碼模型差異）；⑯ 已結案為非缺陷（§114）；⑰ 已併回 ⑱（§115）；其餘不變（⑤ 僅 L5 未跑、⑪ corpus 非確定、⑫ 引號殼漂移、⑬ dirty、⑭ timeout 假陰性、⑮ L4 自檢假陰性）。
+- **工作樹／scratch**：`tmp/ea-bisect/{t1,t2,t3}.{no,out,err}`、`tmp/ea-bisect/t3.bin`、`tmp/h2m-test-s117.{out,err}`（本輪新增）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 118. Residual ⑫ 結案（引號殼＝輸出格式漂移，口徑已定）：普查重跑**逐位元組相同**；凍結工件上重跑 L4 亦**逐行等同 s104**（2026-11-27 第二十二輪；未留 sNNN 輪次標記）
+
+> 本輪不推新蟲體，專做兩件「可再現性」工作：把人口普查放回当前二進位重跑，把五級差分門禁的 L4 放回**凍結工件**重跑——兩者都是以前判定的直接依據。
+
+- **盤點**：HEAD 仍 `50b900c6`；`bin/no` 仍 **`v0.4.38-dirty(2026-11-27 00:15:17)`（mtime Nov 27 08:15）**；`git status --porcelain` **63 項**（§117 為 51，平行會話續動）。**未還原、未覆蓋、未提交**。
+- **人口普查重跑（`./bin/no run tmp/s154/cov-main.no`）**：rc=0；`tmp/cov-census-s118.log` 共 32,515 行（stderr 95 行）。計量：**LF 7,940／ID 420／DB 16,212／unsupported 8,034／dropped 94**；帶 `'` 殼的前綴數 **0**。與 `tmp/cov-census-v38.log` 的 `diff` 為 **0 行**（逐位元組相同）。⇒ §103 的 ⑫ 觀察在當前二進位上**完全重現**：引號殼確實已不存在，且內容不再隨构建漂移。
+- **⑫ 結案（非缺陷，降級為「輸出格式漂移＋口徑校正」）**：兩支獨立二進位（v38 首輪、本輪）各跑一次得到**逐位元組相同**的日誌，且皆為裸字前綴；剝殼後與 §99 的差異只剩一行（`DB:__nolang_main:blk-expr`）。因此判定引號殼屬**輸出格式漂移**（最可能來自 §99 當日的未提交工作樹狀態），**無 Coverage 語意影響**。方法論已定：**計數一律用裸字口徑**（`^LF:`／`^ID:`／`^DB:`），不再依賴引號前綴。⑫ 自此**移出 residual 清單**（改為「已知輸出格式边界」條目）。成因若仍要深究需 §99 當日工件，現存工件不足以定論，如實保留此句。
+- **L4 門禁重跑（`./scripts/selfhost_diff.sh --sut tmp/noc-s104 --ctl tmp/ctl-frozen-s104.no --levels L4`，**完全使用凍結的 Mach-O 工件**）**：rc=1；`files: 363`、golden 243 筆、`[golden 自檢] 控制組抽 3 檔，對不上 0 檔`、**`SAME=17  DIFF=226  sut_ok=15`**、假通過稽核 **`ctl_ok=239  ctl_empty=5  sut_ok=15  sut_empty=2`**、`RESULT: FAIL`。與 `tmp/gates-L4c-s104.out` **逐行相同**（含 226 條 DIFF 明細）。⇒ 凍結 SUT `noc-s104` 仍是「mass-noop 型」（只有 15 檔有輸出），L4 的失敗是**SUT 太弱**而非 harness 橡皮圖章。
+- **釐清 ⑮ 的適用場景**：⑮ 所述「非確定語料恆有 3 個 DIFF」的證據來自 `tmp/gates-L4-fixed-s103.out` **上半段那次健康控制組**的清單——`tests/number.no`、`tests/number-3.no`、`tests/mem-safety/vec-insert-capacity.no`（同批另有 `tests/https-server.no` 為 `sut=(124,…)` 逾時例，即 ⑭ 的具體化）。**本次凍結 L4 的 226 DIFF 是另一回事**（SUT 大量空輸出），不可拿來當作 ⑮ 的復證；⑮ 仍須以健康 ctl 重跑才能復現，故此**保持開案**。
+- **Residuals（承 §117，更新）**：①–⑱ 沿用；**⑫ ✅ 結案**（引號殼＝輸出格式漂移；口徑改裸字前綴；見本節）；**④ 的計量再確認**（§117 的 `h2m-test` 1395/42/1437）；**⑨ 仍未修補**（成因已封口，§117）；⑤ 仍僅 **L5 未跑**（L4 依凍結工件重跑仍 FAIL，且屬 SUT mass-noop 型）；**⑮ 保持開案**（需健康 ctl 才能復現其 3 個非確定 DIFF）；⑯ 已結案（§114）；⑰ 已併回 ⑱（§115）；其餘不變（⑪ corpus 非確定、⑬ dirty、⑭ timeout 假陰性）。
+- **工作樹／scratch**：`tmp/cov-census-s118.{log,err}`、`tmp/gates-L4c-s118.out`（本輪新增）。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 119. Residual ⑭ 定量收尾：L0 重型 unit-test 在預設 `--timeout 60` 下的 ctl_ok 落差——同工件自比＋逐檔 wall time（2026-11-27 第二十三輪；未留 sNNN 輪次標記）
+
+- **盤點（含本輪的資源池漂移）**：HEAD 仍 `50b900c6`。本輪開始時 `git status --porcelain`（外加 `env -u GIT_CONFIG_*` 前綴）為 **66 項**、`./bin/no version` = `v0.4.38-dirty(2026-11-27 00:15:17)`（mtime Nov 27 08:15），與 §117／§118 相同；**量測期間平行會話續動**，本輪結束時已變成 **74 項**、`bin/no` 被重建為 `v0.4.38-dirty(2026-11-27 00:54:15)`（mtime Nov 27 08:54）。⚠️ 因此**本輪所有量測都刻意使用凍結工件** `tmp/ctl-frozen-s104.no`（Mach-O、31,595,042 bytes、mtime Nov 27 02:53、sha256 `9eaafb362eaf…ce5a86f`），不受 `bin/no` 重建影響——這正是 §103 立「凍結 ctl」做法的價值。本文由 **8,931 行**變為 **8,960 行**（+29）。
+- **量測 A：同工件自比（SUT ≡ CTL）、L0、TMO=60**。命令：
+  `./scripts/selfhost_diff.sh --ctl tmp/ctl-frozen-s104.no --self-test --levels L0 --timeout 60 --workdir tmp/tmo-meas/L0-t60`
+  結果：`files=18  ctl_ok=12  ctl_empty=0  sut_ok=12  sut_empty=0`、`SAME=18  DIFF=0`、`RESULT: PASS`。逐檔明細見 `tmp/tmo-meas/L0-t60/L0.tsv`：rc=124 共 **6 檔**＝`build-package-test`／`ck-sig-test`／`ck-test`／`h2m-test`／`pkg-ll-test`／`pkg-sigs-test`。（⚠️ `h2m-test` 的 rc=1 是 §110 已封口的 42 FAIL 漂移，與本輪的 rc=124 不同因。）
+- **量測 B：逐檔 wall time**（`< /dev/null`、序列單跑、無其他背景負載；腳本 `tmp/tmo-meas/perfile.sh`，原始輸出 `tmp/tmo-meas/perfile-times.txt`）：
+
+  | 檔 | rc | secs |
+  | --- | --- | --- |
+  | `build-package-test` | 0 | 47（同一支工件另三次：95／93／110，見 `tmp/tmo-meas/bp3.{sh,txt}`） |
+  | `ck-sig-test` | 0 | 200 |
+  | `ck-test` | 0 | 340 |
+  | `h2m-test` | 1 | 98 |
+  | `pkg-ll-test` | 0 | 468 |
+  | `pkg-sigs-test` | 0 | 235 |
+
+  ⇒ 六檔全部 > 60s（最小 47s），最慢 `pkg-ll-test` **468s**。`ck-test` 在 §104 記的是 **390s（6 分 30 秒）**，本輪 340s ⇒ 同一支凍結工件、同一條命令有 **約 13%** 的輪次落差。
+- **⑭ 的「邊界競態」直接證據**：`build-package-test` 的 wall time 在 **47–110s** 之間漂移，正好跨越 60s 邊界。同一支凍結 ctl、同一條 `… run compiler/tests/build-package-test.no </dev/null`：§104 的真實比較（TMO=60）它 **rc=0**（故 ctl_ok=13），本輪自比（TMO=60）它 **rc=124**（故 ctl_ok=12）。**同一工件、同一命令、不同輪次 ⇒ 不同 rc**。
+- **收窄 ⑭ 的危害面**：本輪自比在 `ctl_ok` 由 17 掉到 12 的情況下仍判 `PASS`、`DIFF=0`——因為 SUT 與 CTL 是同一支 binary。對照 §104 的真實比較（ctl=frozen-s104、sut=noc-s104），TMO=60 與 TMO=1200 都是 `SAME=0／DIFF=18`（SUT mass-noop 使然），**判定同樣沒有翻轉**。所以 ⑭ 的實際危害應收窄為：
+  1. **計量失真**：報表的 `ctl_ok` 與 `[G2]` 括注會把 ctl 的健康度講低——`tmp/gates-L0-s104.out`（60s）作「控制組 13/18」，`tmp/gates-L0b-s104.out`（1200s）作「控制組 17/18」。
+  2. **警報失真**：`guard_level` 的 **G1** 條件是 `ctl_ok == 0` ⇒ 若 TMO 再縮小到「整批皆逾時」，G1 會把本輪寫成 `SELFCHECK-FAIL` 並作廢——把「慢」誤判成「oracle 不存在」。（本輪 ctl_ok=12，距 G1 很遠，未觸發。）
+  3. **假 DIFF 的風險（推得，未重現）**：`fp()` 對同一檔先跑 CTL 再跑 SUT，兩次是**不同時刻**；若某檔的 runtime 貼在 TMO 邊界，就可能 ctl=124（stdout 空）而 sut=0（stdout 非空）⇒ `SAME=0`、判 `FAIL`，但兩支 binary 語意相同。這才是「假陰性」的本體。量化根據即上一點：`build-package-test` 在 47–110s 之間漂移，任何落在這個區間的 TMO 都會踩到。
+- **充分閾值（推得，未實跑中間點）**：以最慢檔 `pkg-ll-test` 的 468s 為準，TMO 必須 **≥ 468s**（含並行 session 的負載餘量則更高）才能拿回 `ctl_ok=17`。§101 用的 `--timeout 900`（約 1.9×）與 §103／§104 用的 `--timeout 1200`（約 2.6×）都在安全側。**TMO=300 仍不足**（`pkg-ll` 468s 必逾時，`ck` 340s 亦超過）。建議：L0 固定使用 `--timeout 900` 以上；或把 L0 拆成「快檔」與「重型 unit-test」兩批、各自給 timeout——⚠️ harness 目前只有單一全域 `TMO`（`scripts/selfhost_diff.sh:74` 的 `TMO=${TMO:-60}`），**沒有 per-level 旋鈕**，拆批需在腳本端新增（本輪不動腳本，僅記錄）。
+- **Residuals（承 §118，更新）**：①–⑱ 沿用；**⑭ 已限量化並收窄**——由「harness 默認 timeout 造成 ctl_ok 假性下降」收窄為「**在 L0 重型 unit-test 上 TMO=60 使 ctl_ok 由 17 掉到 12，且 `build-package-test` 的 47–110s 漂移可直接令同一工件在同一 TMO 下時 rc=0、時 rc=124**」；判定面（PASS/FAIL）在自比與 §104 的真實比較中皆未翻轉，真正未封堵的是第 3 點（假 DIFF 風險，**推得未重現**）。⑤ 仍僅 **L5 未跑**；⑨ 仍未修補（成因已封口，§117）；⑮ 保持開案（需健康 ctl 才能復現其 3 個非確定 DIFF）；其餘不變（⑪ corpus 非確定、⑬ dirty）。
+- **工作樹／scratch**：`tmp/tmo-meas/`（`L0-t60.{out,err}`＋`L0-t60/L0.tsv`、`perfile.{sh,times.txt}`、`bp3.{sh,txt}`、`x.{out,err}`）。既有：`tmp/gates-L0-s104.out`（TMO=60，ctl_ok=13）、`tmp/gates-L0b-s104.out`（TMO=1200，ctl_ok=17）、`tmp/ctl-frozen-s104.no`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 120. Residual ⑮ 拆開量：`number*.no` 確為「位址列印」（結構性不可凍結），但 `vec-insert-capacity.no` 是「穩定不符」（stale golden），不是擷取漂移（2026-11-27 第二十四輪；未留 sNNN 輪次標記）
+
+> §103／§105 把 L4 自檢那 3 個 DIFF 一概記作「已知非確定語料」。本輪把三檔分開、各跑十餘次到百餘次（含並行、環境擾動與兩代 `./bin/no`），證明這個歸類**只對其中兩檔成立**：第三檔在 121 次各種條件下輸出完全相同，卻始終不符合 golden——它不是漂移，是 **golden 條目本身對不上**。
+
+- **盤點**：HEAD 仍 `50b900c6`（2026-11-27 01:57:24 +0800；本輪未動、未提交）。本輪**兩度**撞上平行會話重建 `./bin/no`：輪初為 `v0.4.38-dirty(2026-11-27 00:54:15)`（mtime Nov 27 08:54、31,644,898 bytes），輪末已是 **`v0.4.38-dirty(2026-11-27 02:10:17)`（mtime Nov 27 10:10、31,644,962 bytes）**；`git status --porcelain`（`env -u GIT_CONFIG_*` 前綴）由 §119 輪末的 **74 項**再增至 **78 項**。⚠️ 因此本輪量測主體一律使用**凍結工件** `tmp/ctl-frozen-s104.no`（Mach-O、31,595,042 bytes、mtime Nov 27 02:53、sha256 `9eaafb362eaf…ce5a86f`），`./bin/no` 僅作**跨代對照**（兩代都跑，見下表結）。本文由 **8,960 行**變為 **8,985 行**（+25；此為本文沿用的口徑＝`split('\n')` 段數，比 `wc -l` 的 **8,984** 多 1，§119 已如此記）。
+- **量測通道**：`CTL run <檔> </dev/null >out 2>/dev/null`，序列單跑（唯一例外是 4-way 平行那一輪，見表）。每跑記 `rc`／`sha256(stdout)`／`bytes`；原始輸出留在 `tmp/ea-bisect/`。⚠️ `tmp/ea-bisect/vic-load-r5.txt` 的 `rc=$?` 取自 `wait`（該輪的聚合值，非逐 job），且 `tmp/ea-bisect/vic-ub-r5.txt` 是**單行指令內聯**跑的（無 `.sh`），兩者都在表下註明，不影響 hash 結論。
+- **結果（核心表）**：
+
+  | 檔 | golden（`mir-baseline.tsv`） | 跑法 | 次數 | 相異 stdout hash | bytes |
+  | --- | --- | --- | --- | --- | --- |
+  | `tests/number.no` | `98550d9fae0c` | 凍結 ctl ×14 ＋ `bin/no` ×3 | **17** | **17（每次都不同）** | 466 |
+  | `tests/number-3.no` | `4fd721be9ff8` | 凍結 ctl ×14 ＋ `bin/no` ×3 | **17** | **17（每次都不同）** | 888 |
+  | `tests/mem-safety/vec-insert-capacity.no` | `efd328e7ee20` | 凍結 ctl ×101（含 malloc 環境擾動 15、`PADVAR` 60 種長度 60）＋ 凍結 ctl 4-way 平行 ×12 ＋ `bin/no` ×8 | **121** | **1**（恆為 `9ed368d919a0`） | 193 |
+  | `tests/all.no`（對照組） | `d657afcf82e1` | 凍結 ctl ×8 ＋ `bin/no` ×3 | 11 | 1（**恰等於 golden**） | 85 |
+
+  原始證據：`tmp/ea-bisect/nondet-r5.txt`、`nondet2-r5.txt`、`vic-load-r5.txt`、`vic-env-r5.txt`、`vic-ub-r5.txt`、`drift-current-r5.txt`。
+- **`number*.no`：確為非確定，而且是「結構性」的**。`tests/number.no` 兩次執行之間**恰好只有一行不同**——輸出第 41 行、`val=` 下一行的**裸數字**（五次兩兩相比皆為 1 行，值域約 `4.30–4.35×10⁹`）；原始碼對應 `tests/number.no:171` 的 `n = 'abc'.to-i64()`（把字串字面位的位址當整數用）再於 `:178` 印出。`tests/number-3.no` 則有 **3 行**不同（輸出第 4／6／8 行的 `some(<位址>)`）。⇒ golden 對這兩檔的記錄值只是**某一次快照**，**"凍結"在結構上不可能成立**——這部分 **§103／§105 的判斷正確**，本輪只是把它從「三次 hashes 各異」加重到「各 17 次全相異、且相異處可逐行指名」。
+- **`vec-insert-capacity.no`：不是漂移，是穩定不符**。121 次全部相同（`9ed368d919a03020…`、193 bytes、內容為 5 行 `test-*: true` ＋ `all done`），**從未出現** golden 的 `efd328e7ee20`。進一步排除「環境相依」：`MallocScribble=1`／`MallocPreScribble=1`／`MallocGuardEdges=1`／`MallocNanoZone=1`／200KB 環境變數／`PADVAR` 長度 37–2220 共 60 種，全數不改；4-way 平行 3 輪亦不改。⇒ 它的 stdout **對 heap layout 與環境都不敏感**，是**確定性**的，只是**與 golden 那列對不上**。
+- **判定（更正 §103／§105 的歸類）**：`git blame` 顯示 golden 該列由 **`50b900c6`（即 HEAD 本身）** 寫入，而語料 `tests/mem-safety/vec-insert-capacity.no` 自上（2026-11-10 的 `a4b7c66f`）未被改動 ⇒ 「擷取時的環境漂移（JOBS=4 平行負載下）」（§103 原文）**在這一輪證據下不成立**：平行與環境都被排除。剩下的解釋是 **golden 條目為 stale／不可重現的擷取**（最可能是擷取當下用的二進位或工作樹狀態與現在不同）。⚠️ 如實保留一句：**不能排除**擷取當時工作樹帶有未提交差異；要完全定論需要擷取當下的工件，目前不存在。**這也讓 ⑮ 的性質分裂**：`number*.no` 需要的是「**剔除或改寫測試**」（光列 UNSTABLE 只能去雜音），`vec-insert-capacity.no` 需要的是「**重擷該列 golden**」（它是確定性的，重擷即可相符）。
+- **對照組證明量測通道無雜訊**：`tests/all.no` 11/11 全同，且**恰等於 golden 的 `d657afcf82e1e90b`**。同一通道在同一批 script 下，既能重現 golden（對照組），也能穩定重現 121 次同一值（vec 檔），故「17/17 全相異」與「121/121 全相同」都是**檔案本身的性質**，不是量測雜訊或腳本 bug。
+- **⑮ 最具體的修法位置（本輪不動腳本，僅記錄）**：`scripts/mir_golden.sh:133-157` **已有** `MIR_GOLDEN_UNSTABLE` 機制（目前是 **EMPTY**，且附有「re-add 需連同 (a) 具體理由 (b) 蟲號」的告警）；但 `scripts/selfhost_diff.sh` 的 L4 段（約 `:538-608`）**完全不讀它**——`L4.tsv` 只有 SAME／DIFF 二分，任何 mismatch 就令 `L4.status=FAIL`（`:599-604`）。最具體修法即：把同一份（或獨立的 `L4_UNSTABLE`）名單套到 L4，命中檔記為 `UNSTABLE` 而非 `DIFF`，`PASS` 改寫為「`DIFF==0` 且非 UNSTABLE 檔全数 SAME」，摘要另行印出 `UNSTABLE=n`；`number*.no` Entries 的理由應寫「印出指標位址，結構性不可凍結」（對應蟲號待指定），`vec-insert-capacity.no` 則**不該**進 UNSTABLE——它是確定性的，應走「重擷 golden」而非豁免。⚠️ 未實作的原因同 §119：DR-6 的語料與 gate 語意變更需要獨立驗證輪次，且 `scripts/selfhost_diff.sh` 可能正被平行會話編輯，不宜疊改。
+- **Residuals（承 §119，更新）**：①–⑱ 沿用；**⑮ 部分結案**——3 個 DIFF 拆成「2 個真·非確定（`number*.no`，各 17 次全相異、相異處可指名）」＋「1 個穩定不符（`vec-insert-capacity.no`，121 次全同但非 golden）」，§103 第 8627 行與 §105 第 8671 行的歸類已在本節更正（該處加了 ※ 夾註）；**修法案仍開**（未動腳本，位置見上）。**⑪ 同步收窄**（移除 `vec-insert-capacity.no` 的「擷取漂移」說法）。其餘不變：⑤ 仍僅 **L5 未跑**（L4 未綠）；⑨ 仍未修補（成因已封口，§117）；⑬ dirty（78 項）；**⑭ 已限量化**（§119）。
+- **工作樹／scratch**：`tmp/ea-bisect/{nondet,nondet2,vic-load,vic-env}.{sh,*‑r5.txt}`、`tmp/ea-bisect/vic-ub-r5.txt`（無 `.sh`）、`tmp/ea-bisect/drift-current-r5.txt`、`tmp/ea-bisect/num.{a,b,c,d,e}.out`、`num3.{a,b}.out`、`vice.*.out`／`vicb.*.out`／`vicp.*.*.out`／`dc.*.out`（本輪新增）。既有：`tmp/ctl-frozen-s104.no`、`tmp/sdh4c-self/L4.tsv`（SAME=240／DIFF=3）、`tmp/gates-L4c-s118.out`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 121. Residual ⑤ 更正：`L5` 不是「未跑（前提未備）」，而是 **harness 根本沒有實作 L5**——`--levels L5` 會靜默印出 `RESULT: PASS`（2026-11-27 第二十五輪；未留 sNNN 輪次標記）
+
+> §104–§119 每一輪都把 residual ⑤ 記成「L5 未跑——依 DR-6 連鎖語意不具備前提」。本輪直接查 `scripts/`：**L5 在差分矩陣裡連一個方塊都不存在**（`grep -rn 'L5' scripts/` 零結果、總結迴圈寫死 `L0 L1 L2 L3 L4`），而 `--levels L5` 不加 `--self-test` 時回 **rc=0、`RESULT: PASS`**。⇒ ⑤ 把「**未實作**」誤述成「被前提卡住」。本節更正措辭，並補上前提本身的現況（仍不可達，見下）。
+>
+> ⚠️ 順帶一併記錄文件內部的兩個不一致：§7.1 標題「五級門禁總表」有 **6 列**、DR-6 的「五級差分」也列 6 項（分別見本文 §7.1 與 DR-6 `:42`），以及 ⑤ 的措辭本身。前者已在 §7.1 表後補 ※ 夾註（**不動 DR-6 原文**，設計凍結條目不溯及改寫，與 §103／§105 的更正方式一致）；後者見本節末。
+
+- **盤點／工件**：HEAD 仍 `50b900c6`。⚠️ `./bin/no` 於本輪內**兩度被平行會話重建**——由 §120 輪末的 `v0.4.38-dirty(2026-11-27 02:10:17)` 先變 `v0.4.38-dirty(2026-11-27 02:32:39)`（mtime Nov 27 10:32），再變 **`v0.4.38-dirty(2026-11-27 02:36:31)`（mtime Nov 27 10:36、31,644,994 bytes）**；`git status --porcelain`（`env -u GIT_CONFIG_*` 前綴）本輪結束時為 **79 項**（§120 輪末為 78 項）。因此本節一律使用**凍結工件**：`tmp/ctl-frozen-s104.no`（31,595,042 bytes、sha256 `9eaafb362eaf…ce5a86f`）與 `tmp/noc-s104`（4,348,776 bytes、sha256 `2cf79669f04a…`、`noc v0.0.1-m0`），**不使用 `./bin/no`**。本文由 **8,985 行**變為 **9,010 行**（+25；口徑同 §119／§120＝`split('\n')` 段數，比 `wc -l` 的 **9,009** 多 1）。
+- **證據一：harness 沒有 L5**。`scripts/selfhost_diff.sh` 的 `LEVELS` 預設為 `L0,L1,L2,L3,L4`（`:70`），而 `--levels` 只寫這一個變數（`:94`）。全檔消費 `$LEVELS` 的地方只有 6 處：L0 `:368`、L1 `:391`、L2 `:424`、L3 `:469`、L4 `:538` 五個 `if echo ",$LEVELS," | grep -q ',LX,'` 方塊，加上總結迴圈的過濾（`:617`）；**沒有第七處，也沒有任何 L5 方塊**。總結（`:616`）、假通過稽核（`:653`）、MASS-NOOP 說明（`:668`）三段巡覽亦皆寫死 `for L in L0 L1 L2 L3 L4`。`grep -rn 'L5' scripts/` 零結果；`Makefile` 也沒有 S0→S1→S2→S3 鏈的 target。⇒ **L5 的驗證歷來是每輪人工單行指令**（例如 §86 的 `./tmp/s163/noc-s1 build -o tmp/s163/noc-s2 compiler`），從未進入差分矩陣。
+- **證據二：`--levels L5` 是一條靜默的空轉路徑（假通過）**。以凍結 ctl＝SUT 實測兩次（`tmp/l5-plain-r6.txt`／`tmp/l5-self-r6.txt`）：
+
+  | 指令 | rc | SUMMARY 內容 | workdir 產出 |
+  | --- | --- | --- | --- |
+  | `--levels L5`（**不**加 `--self-test`） | **0** | 空——只有「假通過稽核」的三行說明，沒有任何 level 列 | **沒有任何 `.tsv`／`.status`**（`files: 363`） |
+  | `--levels L5 --self-test` | **3** | 同上 | 同上 |
+
+  ⚠️ 缺陷不止於「空轉」：`RESULT:` 的四個分支（`:676-679`）在自我檢查（`:703-706`）**之前**印出 ⇒ 第二次跑的日誌前段照樣先出現一行 `RESULT: PASS`，之後才補上 `SELF-TEST FAILED：沒有任何 level PASS ⇒ 這份自檢是空洞的`。**只讀 `RESULT:` 那一行的話，兩次都是 PASS。**
+- **證據三：前提本身亦不可達（⑤ 的方向對、理由錯）**。`./tmp/noc-s104 build -o tmp/noc2-r5 compiler`（完整日誌 `tmp/l5-bootstrap-r6.txt`）：印出長串 `dropped (calls unsupported)`（`cg-runtime-*`／`h2m-*` 等共 **94** 條）後，以 `noc: unsupported constructs: 8034 (pkg-ll)`、`noc: no code generated` 收束，**未產出 `tmp/noc2-r5`**（該路徑不存在），**rc=1**，耗時 3:35（user 132s）。⇒ `noc-s2` 不存在 ⇒ s2-vs-s3 無從比。其 `unsup 8034`／dropped **94** 與 §99 人口普查**逐項相同**，可視為同一口徑的兩個通道（此點本輪首次並列核實）。⚠️ 本節第一次量測時以管道取 `rc`，在 zsh 下 `PIPESTATUS` 未生效而退回 `tail` 的狀態，誤讀為 **0**；重跑直接取 rc 後更正為 **1**——如實保留這個量測教訓，免得日後把管線狀態當成受測物的退出碼。
+- **Residual ⑤ 的更正文**：既有寫法「L5 未跑——依 DR-6 連鎖語意不具備前提」把兩件事混成一句。正確需**分兩句記帳**：**(a) 工具缺口**——harness **未實作 L5**（`--levels L5` 靜默假通過），這是可以在 `scripts/selfhost_diff.sh` 補的；**(b) 實現缺口**——前提本身不可達（自舉鏈停在 `unsup 8034 (pkg-ll)`／`no code generated`，`noc-s2` 不存在，s2-vs-s3 無從比），這要靠 M4-e 收斂。兩者混為一談的代價是：(a) 看起來「只要等 (b)」，於是工具缺口永遠沒人修；(b) 看起來「只是還沒跑到」，於是 `--levels L5` 的假通過會被當成正常使用者行為。
+- **修法位置（本輪不動腳本，僅記錄）**：最低成本的止血＝讓 `--levels` 碰到未實作的 level 時**報錯退出**（例：`ERROR: unimplemented level: L5`），而不是靜默略過。完整實作則需要：S2／S3 兩支 binary 的路徑參數、語料與判據（① 行為定點＝`(noc-s2, f)` vs `(noc-s3, f)` 的 rc＋stdout；② 逐位元組定點＝兩支 binary 的 sha256），並在既有的五個 level 方塊之外補第六個，且總結／假通過稽核／MASS-NOOP 三段巡覽也要一起補。⚠️ 未作的原因與 §119／§120 相同：`scripts/selfhost_diff.sh` 可能正被平行會話編輯，不宜疊改。
+- **Residuals（承 §120，更新）**：①–⑱ 沿用；**⑤ 改判**為「**L5 未被 harness 實作**（`--levels L5` 靜默假通過；見本節）**且其前提本身不可達**（`unsup 8034`）」——工具缺口與實現缺口分開記帳。其餘不變：⑨ 仍未修補（成因已封口，§117）；⑬ dirty（**79 項**）；⑭ 已限量化（§119）；⑮ 部分結案（修法案仍開，§120）。
+- **工作樹／scratch**：`tmp/l5-self-r6.txt`、`tmp/l5-plain-r6.txt`、`tmp/l5-bootstrap-r6.txt`（本輪新增）、`tmp/l5probe{,-r6,-r6c}/`（前兩者內只有 `files.*`，佐證「未產生任何 tsv」；`-r6b` 那次因 SUT 不存在而在 `collect_corpus` 前退出，目錄是空的）。既有：`tmp/noc-s104`、`tmp/ctl-frozen-s104.no`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 122. 行號錨點漂移稽核：未提交的 Go 改動使 §109／§114 的引用整批位移，另發現數處**相對 HEAD 即已陳舊**的引用（2026-11-27 第二十六輪；未留 sNNN 輪次標記）
+
+> §109（Residual ⑨ 缺陷位置結案）把 `:4162-4164` 等行號當成「現勢座標」反覆回引（§114／§117／§120），但工作樹裡的 `src/mir/hir2mir.go` 正被平行會話大幅改寫。本輪做一次**錨點稽核**：凡被後輪當作現勢依據的引用，一律以現行工作樹複驗並加 ※ 校正；歷史快照本身不回溯改寫。同輪以凍結 ctl 復測 ⑨ 的兩個判別探針，確認**機制與結論不受原始碼行位移影響**。
+
+- **盤點**：HEAD 仍 `50b900c6`；`./bin/no` 本輪**未被重建**，仍是 `v0.4.38-dirty(2026-11-27 02:36:31)`（mtime Nov 27 10:36、31,644,994 bytes，同 §121 輪末）。`git status --porcelain` 為 **81 項**（§121 輪末 79 項）；`git diff --stat` 合計 **46 檔、+2,312/−522**，其中三個 Go 檔為 `src/mir/hir2mir.go` **+224/−59**、`src/parser/lowering.go` **+395/−33**、`src/mir/codegen.go` **+5/−1**。`compiler/` **不在** dirty 清單 ⇒ 所有 `compiler/src/*.no:NNNN` 引用不受影響。本文由 §121 輪末的 **9,010 行**（口徑＝`split('\n')` 段數，其時 `wc -l` 9,009）變為 **9,038 行**（`wc -l` **9,037**；含本輪兩處 ※ 校正與本節）。
+- **本輪漂移（皆為未提交改動所致）**：
+
+  | 對象（描述） | 文中／當時的引用 | HEAD `50b900c6` | 現行工作樹 | 漂移 |
+  | --- | --- | --- | --- | --- |
+  | `armBinding := name != "it" && …`（§109） | `:4160` | 4160 | **4248** | +88 |
+  | `existing, hasExisting := l.locals[name]` | `:4162` | 4162 | **4250** | +88 |
+  | `if hasExisting && armScoped {` | `:4163` | 4163 | **4251** | +88 |
+  | append `saved` | `:4164` | 4164 | **4252** | +88 |
+  | re-binding 路徑（`ok && !armScoped`） | `:4166` | ~4166 | **4254** | +88 |
+  | 對照組 `absent: true`（手寫 arm-body） | `:4315-4318` | 4316 | **4403-4404** | +88 |
+  | `restoreArmScoped`（含 delete 分支） | `:4696-4704` | 4695 起 | **4783-4792**（delete 於 **4785-4786**） | +88 |
+  | `declaredLocals` 重置區塊（§114） | `lowering.go:610-640` | 614／629 | **`:625-647`**（629／644） | +15 |
+  | `FlagArmBinding` 組合（§109 引 `tohir.go:663`） | `:663` | 663 | **`:667`** | +4 |
+
+  ⚠️ 不可由此推論「本文所有 Go 行號都已對齊」：上表只涵蓋被後輪回引的錨點。**抽查亦發現數處相對 HEAD 即已陳舊**的引用（非本輪造成），例如 §107 的 `codegen.go:8670-8727`（HEAD 該區間是 option payload 的 clone／free helper，`emitMove` 在 HEAD 位於 `:9063`）、§5.3.2 的 `parser/lowering.go:1224/1244/1247/1254/1363/1384`（HEAD 的 `Raw:` 賦值在 `:2706-2731`）、以及 `parser/expr.go:753`（`parseStringLiteral` 現行在 `:960`，且 `expr.go` 不在 dirty 清單）。此數者**原樣保留為歷史快照**，不追溯改寫——與 §103／§105／§121 的更正方式一致（只在被當作現勢依據時補 ※）。
+- **`codegen.go` 的「剛好對齊」要講清楚**：§108／§109 引的 bug #85 診斷行 `codegen.go:6356` 在**現行工作樹仍是 6356**（`consumer reads value 0 (NoVal) …`），但在 HEAD 是 **6352**——工作樹的 +4 位移恰好把該行推回 6356。**不可**因為「數字沒變」就以為原始碼沒動；判定應以內容為準。
+- **行為復測（凍結 ctl，不使用 `./bin/no`）**：`./tmp/ctl-frozen-s104.no build -o tmp/m24-r7.bin tmp/ea-bisect/m24.no` ⇒ **rc=1**、輸出逐字為 `… [ERROR] nolang-codegen: func _nolang_main: consumer reads value 0 (NoVal) … [m1rcg000]`（`tmp/m24-r7.{out,err}`）；`./tmp/ctl-frozen-s104.no run tmp/ea-bisect/c16.no` ⇒ **rc=0、輸出 `3|3|`**（`tmp/c16-r7.out`）。⇒ §109 的「無既有綁定 ⇒ 紅、有既有綁定 ⇒ 綠」判斷在現行二進位下**依然成立**，⑨ 的成因與修正點不變。
+- **Residuals（承 §121，更新）**：①–⑱ 沿用；⑨ **仍未修補**（成因同 §117／§121，僅行號漂移需依本節校正）；⑤ 維持 §121 的「工具缺口＋實現缺口」分帳；其余不變（⑬ dirty **81 項**；⑭ 已限量化；⑮ 部分結案）。本輪為**行號稽核**，不新增 raw-code 缺陷項。（⚠️ **※ §124 推翻（2026-11-27 第二十八輪）**：句中「⑨ 仍未修補」已被平行會話的未提交修法推翻——見 §124。）
+- **工作樹／scratch**：`tmp/m24-r7.{out,err,bin}`、`tmp/c16-r7.{out,err}`（本輪新增）。既有：`tmp/noc-s104`、`tmp/ctl-frozen-s104.no`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 123. 錨點稽核（續）：§103／§113／§117 的引用各自位移，且 §117 的數字**不對應 HEAD**（2026-11-27 第二十七輪；未留 sNNN 輪次標記）
+
+> 承 §122。本輪把稽核擴到另外三個被後輪回引的章節，得到一個重要教訓：**漂移量在同一份檔案內也不一致**——`src/mir/hir2mir.go` 在 `:8000` 之前約 +72、之後 +153～+165，所以不可用「整批 +N」一口號帶過。同時發現 §117 的兩個數字**與 HEAD 根本不符**，係當時未提交工作樹的座標（見下）。
+
+- **盤點**：HEAD 仍 `50b900c6`；`./bin/no` 未被重建，仍是 `v0.4.38-dirty(2026-11-27 02:36:31)`；`git status --porcelain` 本輪量測為 **81 項**、輪末再量為 **83 項**；`git diff --stat` 由 **+2,312/−522** 增至 **+2,401/−522**——皆為平行會話持續新增（故本節所有行號皆標明「現行工作樹」，並不等同 HEAD）；三個 Go 檔的未提交改動為 `hir2mir.go` +224/−59、`lowering.go` +395/−33、`codegen.go` +5/−1。本文由 §122 輪末的 **9,038 行**（`split('\n')`；其時 `wc -l` 9,037）變為 **9,088 行**（`wc -l` **9,087**；含本節與三處 ※ 校正）。
+- **§113（Residual ⑱ 的機制定位，`src/mir/hir2mir.go`）**：
+
+  | 文中引用 | 對象 | HEAD `50b900c6` | 現行工作樹 | 漂移 |
+  | --- | --- | --- | --- | --- |
+  | `:3746-3750` | `constLocalWrites`／`reassignedNames` 判定 | 3746-3750 | **3817-3825** | +71 |
+  | `:3752-3759` | cvAgg 記入 `l.constLocals[name]` | 3752-3759 | **3826-3833** | +74 |
+  | `:8283` | `dropConstAgg` 定義 | 8283 | **8436** | +153 |
+  | `:8533` | `evalConst` 查 `l.constLocals[name]` | 8533 | **8686** | +153 |
+  | `:9814` | `lowerExpr` 開頭的 `comptimeFold(id)` | 9814 | **9967** | +153 |
+  | `:16497` | KIndex 路徑唯一的 `dropConstAgg` 呼叫 | 16497 | **16662** | +165 |
+  | `:16575` | `obj.field = v` 的 `OpSetField` | 16575 | **16740** | +165 |
+
+  ⚠️ `:16497` 與 `:16575` 由 +153 再跳為 **+165**，代表兩處之間又有新程式碼插入——**同一章內的引用不可彼此推算**。已加 ※ 夾註於 §113 開頭。
+- **§117（Residual ⑨ 的因果鏈，`src/mir/hir2mir.go`）**：
+
+  | 文中引用 | 對象 | HEAD `50b900c6` | 現行工作樹 |
+  | --- | --- | --- | --- |
+  | `:4215` | `if hasExisting && armScoped` | **4163**（不符） | **4251** |
+  | `:4747-4756` | `restoreArmScoped` 本體 | **4695 起**（不符） | **4783-4792** |
+
+  ⇒ 這兩個數字**不是 HEAD 快照**，而是 §117 撰寫當時工作樹的中間態；本輪首次標明，並已加 ※ 夾註。（此例也說明：本文的 `:NNNN` 有些是**版本座標**、有些是**工作樹快照**，不能一律當成 HEAD 座標。）
+- **§103（`sb.init` 機制）**：
+
+  | 文中引用 | 對象 | HEAD `50b900c6` | 現行工作樹 |
+  | --- | --- | --- | --- |
+  | `transpiler_merge.go:358` | `loadedUserModules[use.Path] = true` | 358 | **361** |
+  | `:477` | struct 分支條件 `getTypeDefName(ms) == …` | 477 | **478** |
+  | `:273` | 去重守衛 `ModuleAlias() == "" && loadedUserModules[path]` | 273 | **273** ✅ |
+  | `:539` | drain `pendingUses` | 539 | **539** ✅ |
+  | `codegen.go:15150` | `unknown callee` 的 `failAbort` | **15162**（即已陳舊） | **15166** |
+  | `stmt.go:703–729` | DOT 分支的 `isFn` 判定 | 703-729 | **703-729** ✅ |
+
+  ⇒ 已加 ※ 夾註於 §103 開頭。其中 `codegen.go:15150` 屬**相對 HEAD 即已陳舊**的一類（同 §122 登錄的 `codegen.go:8670-8727`）。
+- **行為復測（凍結 ctl）**：`NOLANG_MIR_DUMP_MIR=1 ./tmp/ctl-frozen-s104.no build -o tmp/opt-v-r7.bin tmp/ea-bisect/opt-v.no`（rc=0；日誌 `tmp/opt-v-r7.err`）→ `func f` 的 block 依序為 `structlit dst=19:Point`、`setfield [19 20]`、`setfield [19 21]`、`setfield [19 22]`，其後**直到 `option-wrap dst=26:?i64` 都沒有任何 `getfield`／`add`**。⇒ §113 的「`p.x + p.y` 在 HIR→MIR 階段即被摺成常數」在現行二進位下**依然成立**。
+- **不受影響的一類（順帶抽驗）**：§95／§96 對 `compiler/src/h2m.no` 的引用（`:7827`／`:3497`／`:7041`／`:5827`／`:7546`／`:3453`／`:3739`／`:6991`）逐條比對**全部準確**——因為 `compiler/` 不在 dirty 清單（同 §122 的結論）。
+- **Residuals（承 §122，更新）**：①–⑱ 沿用；⑨ 仍未修補；⑤ 維持分帳；其余不變（⑬ dirty：本輪量測 **81 項**、輪末 **83 項**；⑭ 已限量化；⑮ 部分結案）。本輪為**行號稽核之延續**，不新增原始碼缺陷項。（⚠️ **※ §124 推翻（2026-11-27 第二十八輪）**：句中「⑨ 仍未修補」已被平行會話的未提交修法推翻——殘缺的 `absent` 分支已補於 `src/mir/hir2mir.go`，判別性探針全由紅轉綠；見 §124。）
+- **工作樹／scratch**：`tmp/opt-v-r7.{bin,err}`、`tmp/opt-v-r7.mir`（本輪新增）。既有：`tmp/noc-s104`、`tmp/ctl-frozen-s104.no`、`tmp/m24-r7.*`、`tmp/c16-r7.*`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。
+
+### 124. Residual ⑨ **已於未提交工作樹修補**：平行會話採納 §109 的 `absent` 分支，全組探針由紅轉綠（另記新回歸檔與錨點再位移）（2026-11-27 第二十八輪；未留 sNNN 輪次標記）
+
+> 承 §122／§123。複查 §109「修正點（**未實施**）」時發現**平行會話已把它落進工作樹**——本文不動原始碼（紅線為僅記帳），但 ⑨ 的現時態因此由「仍未修補」翻轉為「**已修補（未提交）**」；本節同時是結案記錄與一次新的漂移稽核。
+
+- **盤點**：HEAD 仍 `50b900c6`；`./bin/no` 在本輪內**又被重建兩次**——輪初為 `v0.4.38-dirty(2026-11-27 03:13:19)`（mtime Nov 27 11:13），輪中再為 **`v0.4.38-dirty(2026-11-27 03:20:29)`（mtime Nov 27 11:20、31,644,994 bytes）**，以下行為復測一律用**後者**；`git status --porcelain` **83 項**；`git diff --stat` 為 **46 檔、+2,434/−522**；三個 Go 檔的 numstat 為 `src/mir/hir2mir.go` **+235/−59**（§123 其時 +224/−59，差額 **+11** 即本節的 absent 分支）、`src/parser/lowering.go` **+428/−33**（§123 其時 +395/−33）、`src/mir/codegen.go` **+5/−1**。本文由 §123 輪末的 **9,088 行**（其時 `wc -l` 9,087）變為 **9,126 行**（`wc -l` **9,125**；含本節與兩處 ※ 夾註）。
+- **修法（未提交 diff，逐字位置）**：`src/mir/hir2mir.go` 在 `armBinding` 判定後新增 **`else if !hasExisting && armScoped && name != ""`** 分支（現行 **`:4253-4264`**，append 於 `:4263`），把「凭空出現」的臂繫結記成 `armScopedBind{name: name, absent: true}`；`restoreArmScoped`（現行 **`:4794-4803`**）對 `absent` 條目執行 **`delete(l.locals, …)`**（`:4796-4798`）。註解自引「stale f64 slot: `h.inl` lowered against f64 -> NoVal -> **codegen bug #85**（`tests/enum-annotation.no`）」，並說明此分支**鏡像**上方既有的 `saved` 路徑、而 `it` 被排除在 `armBinding` 之外。就機制而言這正是 §109 指出的缺口，也是 §117 手寫 arm-body 對照組（`:4414-4415` 的 `absent: true`）早就有的寫法——**唯獨合成臂繫結缺此分支**，今已補齊。`absent` 欄位本身早已存在於 `armScopedBind`（`:543-548`），故修法**不需要新增資料結構**。
+- **行為復測（凍結 ctl vs 現行 bin/no）**：同一批探針二進位更換前後的對照——
+
+  | 探針 | 凍結 `tmp/ctl-frozen-s104.no` | 現行 `./bin/no`（03:20:29） |
+  | --- | --- | --- |
+  | `m24`（最小重現） | **rc=1**（NoVal `[m1rcg000]`） | **rc=0**，产物執行印出 `6`／`3` |
+  | `c14`（13 行最小） | **rc=1**（同上） | rc=0，`3|3|` |
+  | `c4`（改名仍紅組） | **rc=1**（同上） | rc=0，`6|3|` |
+  | `t3`（跨型別重綁） | **rc=1**（同上） | rc=0，`3|1` |
+  | `c2`／`c3`／`t1`／`t2` | rc=0（對照組，本就綠） | rc=0，輸出不變（`6|3|`／`6|3|`／`3|`／`3|99|`） |
+  | `tests/enum-annotation.no` | **rc=1** | **rc=0** |
+
+  ⇒ ⑨ 的**判別性探針全部由紅轉綠**；且 `m24` 不只 rc=0，其产物執行得到 `6`／`3`，正是 §106 記錄的正確語意值——這是一次**行為結案**，而非只是把錯誤輸出關掉。
+- **Go 單元測試（未追蹤檔）**：平行會話另新增 `src/mir/enum_arm_binding_leak_test.go`（68 行，`TestEnumArmPayloadBindingDoesNotLeak`），以內嵌 `.no` 源（`rect(w f64, h f64)` 之後接 `h = holder{…}`）斷言不再出現 `no struct layout for f64 (field inl/out/bare)`。`cd src && go test ./mir/ -run TestEnumArmPayloadBindingDoesNotLeak` ⇒ **`ok github.com/lizongying/nolang/mir 0.403s`**；連帶 `mir/enum_index_arm_subject_test.go` 的 `TestNestedSafeIndexEnumArmSubjectBindsRealPayloads`／`TestSafeIndexEnumArmSubjectBindsRealPayloads` 亦 **ok（0.513s）**。⚠️ 倉庫根**沒有** `go.mod`，module 根在 `src/`，指令必須 `cd src`。
+- **新回歸語料（未追蹤）**：`tests/enum-index-nested-arm.no`（Nov 27 10:37、2,387 bytes、93 行、14 個 `check(...)`）——巢狀 safe-index tagged-enum match：外層 option 臂的合成 `it` 必須在內層 match 各自繫結 payload 後**仍是 row 型別**。凍結 ctl ⇒ **rc=1**（`builtin str-len-bytes: missing receiver [1u2vckag]`）；現行 bin/no ⇒ **rc=0**，已執行的 8 條 check 全數 `ok`（`direct-integer`／`direct-text`／`direct-out-of-range`／`nested-text`／`nested-integer`／`nested-out-of-range`／`outer-it-after-inner`／`outer-it-still-row`）。⚠️ 此檔**尚未追蹤**，HEAD 沒有它；又因它現在就存在於 `tests/`，以 harness 的語料口徑 `CORPUS="tests src/std"`＋`GLOB='*.no'` 掃出的檔案數會由 §121 其時的 **363** 增至 **364**——本輪**未重跑**差分門，此為口徑推算而非實測。
+- **錨點再位移（因 +11 行）**：§122／§123 表中的現行座標本輪後再動——
+
+  | 章節引用 | 對象 | §122／§123 當時 | 本輪現行 |
+  | --- | --- | --- | --- |
+  | §109／§122 的 `:4254` | re-binding 路徑 `if existing, ok := …` | `:4254` | **`:4265`** |
+  | §122 的 `:4403-4404` | 手寫 arm-body 的 `absent: true` 對照組 | `:4403-4404` | **`:4414-4415`** |
+  | §117／§122 的 `:4783-4792` | `restoreArmScoped` 本體 | `:4783-4792` | **`:4794-4803`** |
+  | §109／§117 的 `:4251` | `if hasExisting && armScoped` | `:4251` | `:4251` ✅（新分支插在其**後**） |
+
+  ⇒ `:4251` 原地不動，但其**語意已變**（該行之下多了本節的 absent 分支）。§122／§123 的表格數字一律視為「輪末快照」，本輪**不回去改寫**，改以本表校正。
+- **Residuals（承 §123，更新；本行為 §124 的現況）**：①–⑱ 沿用；**⑨ 記為「已修補（未提交）」**——修法即 §109 建議的 absent 分支，判別性探針全綠且有 Go 單元測試佐證，但**尚未 commit**（⑬ dirty 仍 **83 項**），故不寫「已結案關閉」。⚠️ 此結案**仰賴工作樹狀態**：一旦 `git checkout`／`clean` 掉 `src/mir/hir2mir.go` 或 `bin/no`，⑨ 立即復發——上表的凍結 ctl 欄就是復發時的樣子。⑤ 維持分帳；其余不變（⑭ 已限量化；⑮ 部分結案）。
+- **工作樹／scratch**：`tmp/{m24,c14,c2,c3,c4,t1,t2,t3,nia,ea}-r8.bin` 與 `tmp/{m24,c14,c4,t3,nia}-fr.bin`（本輪新增）；`tmp/nia-r8.bin` 執行輸出 8×`ok`。既有：`tmp/noc-s104`、`tmp/ctl-frozen-s104.no`、`tmp/m24-r7.*`、`tmp/c16-r7.*`、`tmp/opt-v-r7.*`。
+- **未提交任何改動**（本輪更動＝**僅本文檔**）。

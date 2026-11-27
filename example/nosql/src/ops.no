@@ -1,0 +1,210 @@
+; SQL value conversions and non-recursive operators shared by the parser,
+; analyzer, and executor.
+# /example/nosql/src/value
+
+add-depth = (left i64, right i64) (out i64) {
+    #{overflow=wrap}
+    out = left + right: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+sql-text = (v sql-value) (out str) {
+    out = ''
+    v: {
+        sql-null -> {
+        }
+
+        integer(n) -> out = integer-to-text(n)
+
+        real(n) -> out = real-to-text(n)
+
+        text(s) -> out = s
+
+        blob(b) -> out = b.to-str()
+    }
+}
+
+sql-integer = (v sql-value) (out ?i64) {
+    out = nil
+    v: {
+        integer(n) -> out = ok(n)
+
+        real(n) -> out = n.to-i64()
+
+        text(s) -> out = s.to-i64()
+
+        -> _
+    }
+}
+
+sql-real = (v sql-value) (out ?f64) {
+    out = v.to-real()
+}
+
+sql-boolean = (v sql-value) (out sql-value) {
+    truth-value = v.to-truth()
+    truth-value: {
+        sql-true -> out = integer(1)
+
+        sql-false -> out = integer(0)
+
+        unknown -> out = sql-null
+    }
+}
+
+sql-not = (v sql-value) (out sql-value) {
+    out = sql-boolean(v)
+    out: {
+        sql-null -> _
+
+        integer(n) -> {
+            inverted ?i64 = 1 - n
+            inverted: {
+                ok(value) -> out = integer(value)
+
+                -> out = sql-null
+            }
+        }
+
+        -> _
+    }
+}
+
+sql-compare-op = (left sql-value, right sql-value, operator-text str) (out sql-value) {
+    out = sql-null
+    left.is-null() -> return
+    right.is-null() -> return
+    order = compare(left, right)
+    {
+        operator-text == '=' || operator-text == '==' -> {
+            order == 0 -> out = integer(1)
+            order != 0 -> out = integer(0)
+        }
+
+        operator-text == '!=' || operator-text == '<>' -> {
+            order != 0 -> out = integer(1)
+            order == 0 -> out = integer(0)
+        }
+
+        operator-text == '<' -> {
+            order < 0 -> out = integer(1)
+            order >= 0 -> out = integer(0)
+        }
+
+        operator-text == '<=' -> {
+            order <= 0 -> out = integer(1)
+            order > 0 -> out = integer(0)
+        }
+
+        operator-text == '>' -> {
+            order > 0 -> out = integer(1)
+            order <= 0 -> out = integer(0)
+        }
+
+        operator-text == '>=' -> {
+            order >= 0 -> out = integer(1)
+            order < 0 -> out = integer(0)
+        }
+
+        -> out = sql-null
+    }
+}
+
+sql-and = (left sql-value, right sql-value) (out sql-value) {
+    lt = left.to-truth()
+    rt = right.to-truth()
+    {
+        lt == sql-false || rt == sql-false -> out = integer(0)
+
+        lt == unknown || rt == unknown -> out = sql-null
+
+        -> out = integer(1)
+    }
+}
+
+sql-or = (left sql-value, right sql-value) (out sql-value) {
+    lt = left.to-truth()
+    rt = right.to-truth()
+    {
+        lt == sql-true || rt == sql-true -> out = integer(1)
+
+        lt == unknown || rt == unknown -> out = sql-null
+
+        -> out = integer(0)
+    }
+}
+
+like-char-equal = (left char, right char) (same bool) {
+    same = left.to-upper() == right.to-upper()
+}
+
+like-match = (pattern str, text str) (matched bool) {
+    matched = false
+    pattern.len() == 0 -> {
+        text.len() == 0 -> matched = true
+        return
+    }
+
+    pattern-char = pattern[0]: {
+        ok -> it
+
+        -> " "
+    }
+
+    {
+        pattern-char == '%' -> {
+            rest = pattern.slice(1, pattern.len())
+            like-match(rest, text) -> {
+                matched = true
+                return
+            }
+
+            text.len() > 0 -> {
+                matched = like-match(pattern, text.slice(1, text.len()))
+                return
+            }
+        }
+
+        pattern-char == '_' -> {
+            text.len() > 0 -> matched = like-match(pattern.slice(1, pattern.len()), text.slice(1, text.len()))
+            return
+        }
+
+        -> {
+            text.len() == 0 -> return
+            text-char = text[0]: {
+                ok -> it
+
+                -> " "
+            }
+
+            like-char-equal(pattern-char, text-char) -> matched = like-match(pattern.slice(1, pattern.len()), text.slice(1, text.len()))
+        }
+    }
+}
+
+sql-values-equal = (left []sql-value, right []sql-value) (same bool) {
+    same = left.len() == right.len()
+    same == false -> return
+    i <- [0..left.len()): {
+        lv = left[i]: {
+            ok -> it
+
+            -> sql-null
+        }
+
+        rv = right[i]: {
+            ok -> it
+
+            -> sql-null
+        }
+
+        compare(lv, rv) != 0 -> {
+            same = false
+            return
+        }
+    }
+}

@@ -1,0 +1,466 @@
+; SQLite SQL tokenizer. Tokens retain byte offsets into the original source.
+token-kind {
+    tok-eof,
+    tok-word,
+    tok-quoted-identifier,
+    tok-string,
+    tok-blob,
+    tok-integer,
+    tok-real,
+    tok-parameter,
+    tok-punctuation,
+}
+
+token {
+    kind token-kind
+    text str
+    literal []byte
+    offset i64
+    end i64
+}
+
+tokenizer {
+    source str
+    pos i64
+    tokens []token
+    error-message str
+    error-offset i64
+}
+
+tokenizer.new = (source str) (out tokenizer) {
+    out = tokenizer{
+        source: source
+        pos: 0
+        error-offset: -1
+    }
+}
+
+tokenizer.advance = (n i64) {
+    delta = .pos + n
+    .pos = delta: {
+        ok -> it
+
+        ->
+    }
+}
+
+tokenizer.peek = (offset i64) (out byte) {
+    delta = .pos + offset
+    index = delta: {
+        ok -> it
+
+        -> 0
+    }
+    index < 0 -> return
+    index >= .source.len-bytes() -> return
+    value = .source.byte(index)
+    value: {
+        ok -> out = it
+
+        -> _
+    }
+}
+
+tokenizer.slice-text = (start i64, end i64) (out str) {
+    bytes = .source.slice-bytes(start, end)
+    bytes: {
+        ok -> {
+            copied = it.to-str()
+            copied: {
+                ok -> out = it
+
+                -> _
+            }
+        }
+
+        -> _
+    }
+}
+
+tokenizer.add = (kind token-kind, start i64, end i64, text str) {
+    .tokens.push(token{
+        kind: kind
+        text: text
+        offset: start
+        end: end
+    })
+}
+
+tokenizer.fail = (message str) {
+    .fail-at(message, .pos)
+}
+
+tokenizer.fail-at = (message str, offset i64) {
+    .error-message != '' -> return
+    .error-message = message
+    .error-offset = offset
+}
+
+tokenizer.scan-all = () {
+    !! {
+        .error-message != '' -> return
+        .scan-skip()
+        .error-message != '' -> return
+        .scan-one() == false -> break
+    }
+    .error-message != '' -> return
+    .tokens.push(token{
+        kind: tok-eof
+        text: ''
+        offset: .pos
+        end: .pos
+    })
+}
+
+tokenizer.scan-skip = () {
+    !! {
+        b = .peek(0)
+        {
+            b == 32 || b == 9 || b == 10 || b == 13 || b == 11 || b == 12 -> .advance(1)
+
+            b == 45 && .peek(1) == 45 -> {
+                .advance(2)
+                (.pos < .source.len-bytes()) {
+                    b = .peek(0)
+                    b == 10 || b == 13 -> break
+                    .advance(1)
+                }
+            }
+
+            b == 47 && .peek(1) == 42 -> {
+                start = .pos
+                .advance(2)
+                closed = false
+                (.pos < .source.len-bytes()) {
+                    b = .peek(0)
+                    b == 42 && .peek(1) == 47 -> {
+                        .advance(2)
+                        closed = true
+                        break
+                    }
+                    .advance(1)
+                }
+                ! closed -> .pos = start
+                ! closed -> .fail('unterminated block comment')
+                ! closed -> return
+            }
+
+            -> break
+        }
+    }
+}
+
+tokenizer.scan-one = () (made bool) {
+    .pos >= .source.len-bytes() -> return
+    start = .pos
+    b = .peek(0)
+    {
+        b == 39 -> made = .scan-quoted(39, 39, tok-string, true)
+
+        b == 34 -> made = .scan-quoted(34, 34, tok-quoted-identifier, true)
+
+        b == 96 -> made = .scan-quoted(96, 96, tok-quoted-identifier, true)
+
+        b == 91 -> made = .scan-quoted(91, 93, tok-quoted-identifier, false)
+
+        (b == 88 || b == 120) && .peek(1) == 39 -> made = .scan-blob()
+
+        b >= 48 && b <= 57 -> made = .scan-number()
+
+        b == 46 && .peek(1) >= 48 && .peek(1) <= 57 -> made = .scan-number()
+
+        tokenizer.word-start(b) -> made = .scan-word()
+
+        b == 63 || b == 64 || b == 36 || b == 58 -> made = .scan-parameter()
+
+        -> made = .scan-operator()
+    }
+    made == false -> .pos = start
+}
+
+tokenizer.word-start = (b byte) (yes bool) {
+    {
+        b >= 65 && b <= 90 -> yes = true
+
+        b >= 97 && b <= 122 -> yes = true
+
+        b == 95 -> yes = true
+
+        b >= 128 -> yes = true
+    }
+}
+
+tokenizer.word-continue = (b byte) (yes bool) {
+    tokenizer.word-start(b) -> yes = true
+    {
+        b >= 48 && b <= 57 -> yes = true
+
+        b == 36 -> yes = true
+    }
+}
+
+tokenizer.scan-word = () (made bool) {
+    start = .pos
+    .advance(1)
+    (.pos < .source.len-bytes()) {
+        tokenizer.word-continue(.peek(0)) == false -> break
+        .advance(1)
+    }
+    text = .slice-text(start, .pos)
+    .add(tok-word, start, .pos, text)
+    made = true
+}
+
+tokenizer.scan-parameter = () (made bool) {
+    start = .pos
+    sigil = .peek(0)
+    .advance(1)
+    {
+        sigil == 63 -> {
+            (.peek(0) >= 48 && .peek(0) <= 57) {
+                .advance(1)
+                (.peek(0) >= 48 && .peek(0) <= 57) {
+                    .advance(1)
+                    (.peek(0) >= 48 && .peek(0) <= 57) {
+                        .advance(1)
+                    }
+                }
+            }
+        }
+
+        -> {
+            (tokenizer.word-start(.peek(0))) {
+                .advance(1)
+                (.pos < .source.len-bytes()) {
+                    tokenizer.word-continue(.peek(0)) == false -> break
+                    .advance(1)
+                }
+            }
+        }
+    }
+    text = .slice-text(start, .pos)
+    .add(tok-parameter, start, .pos, text)
+    made = true
+}
+
+tokenizer.scan-number = () (made bool) {
+    start = .pos
+    .peek(0) == 48 && (.peek(1) == 120 || .peek(1) == 88) -> {
+        .advance(2)
+        digits = 0
+        (.pos < .source.len-bytes()) {
+            tokenizer.hex-digit(.peek(0)) < 0 -> break
+            .advance(1)
+            next = digits + 1
+            digits = next: {
+                ok -> it
+
+                -> 0
+            }
+        }
+        digits == 0 -> .fail('hexadecimal literal requires at least one digit')
+        digits == 0 -> return
+        text = .slice-text(start, .pos)
+        .add(tok-integer, start, .pos, text)
+        made = true
+        return
+    }
+
+    is-real = false
+    .peek(0) == 46 -> {
+        is-real = true
+        .advance(1)
+    }
+    (.peek(0) >= 48 && .peek(0) <= 57) {
+        (.pos < .source.len-bytes()) {
+            .peek(0) >= 48 && .peek(0) <= 57 -> .advance(1)
+            (.peek(0) >= 48 && .peek(0) <= 57) == false -> break
+        }
+    }
+
+    .peek(0) == 46 -> {
+        is-real = true
+        .advance(1)
+        (.pos < .source.len-bytes()) {
+            .peek(0) >= 48 && .peek(0) <= 57 -> .advance(1)
+            (.peek(0) >= 48 && .peek(0) <= 57) == false -> break
+        }
+    }
+
+    .peek(0) == 101 || .peek(0) == 69 -> {
+        is-real = true
+        .advance(1)
+        .peek(0) == 43 || .peek(0) == 45 -> .advance(1)
+        (.peek(0) >= 48 && .peek(0) <= 57) == false -> {
+            .fail('exponent requires at least one digit')
+            return
+        }
+        (.pos < .source.len-bytes()) {
+            .peek(0) >= 48 && .peek(0) <= 57 -> .advance(1)
+            (.peek(0) >= 48 && .peek(0) <= 57) == false -> break
+        }
+    }
+
+    text = .slice-text(start, .pos)
+    {
+        is-real -> .add(tok-real, start, .pos, text)
+
+        -> .add(tok-integer, start, .pos, text)
+    }
+    made = true
+}
+
+tokenizer.scan-quoted = (open byte, close byte, kind token-kind, doubled bool) (made bool) {
+    start = .pos
+    .advance(1)
+    bytes []byte = with-cap(16)
+    closed = false
+    (.pos < .source.len-bytes()) {
+        b = .peek(0)
+        {
+            b == close -> {
+                {
+                    doubled && .peek(1) == close -> {
+                        bytes.push(close)
+                        .advance(2)
+                    }
+
+                    -> {
+                        .advance(1)
+                        closed = true
+                        break
+                    }
+                }
+            }
+
+            -> {
+                bytes.push(b)
+                .advance(1)
+            }
+        }
+    }
+    ! closed -> {
+        .fail-at('unterminated quoted token', start)
+        return
+    }
+    converted = bytes.to-str()
+    text = ''
+    converted: {
+        ok -> text = it
+
+        -> _
+    }
+    .add(kind, start, .pos, text)
+    made = true
+}
+
+tokenizer.scan-blob = () (made bool) {
+    start = .pos
+    .advance(2)
+    bytes []byte = with-cap(16)
+    high = -1
+    closed = false
+    (.pos < .source.len-bytes()) {
+        b = .peek(0)
+        b == 39 -> {
+            high >= 0 -> {
+                .fail('BLOB literal has an odd number of hexadecimal digits')
+                return
+            }
+            .advance(1)
+            closed = true
+            break
+        }
+        digit = tokenizer.hex-digit(b)
+        digit < 0 -> {
+            .fail('BLOB literal contains a non-hexadecimal byte')
+            return
+        }
+        {
+            high < 0 -> high = digit
+
+            -> {
+                packed = high * 16 + digit: {
+                    ok -> it
+
+                    -> 0
+                }
+                bytes.push(packed & 255)
+                high = -1
+            }
+        }
+        .advance(1)
+    }
+    ! closed -> {
+        .fail('unterminated BLOB literal')
+        return
+    }
+    .tokens.push(token{
+        kind: tok-blob
+        text: .slice-text(start, .pos)
+        literal: bytes
+        offset: start
+        end: .pos
+    })
+    made = true
+}
+
+tokenizer.scan-operator = () (made bool) {
+    start = .pos
+    a = .peek(0)
+    b = .peek(1)
+    {
+        a == 45 && b == 62 && .peek(2) == 62 -> .advance(3)
+
+        a == 45 && b == 62 -> .advance(2)
+
+        a == 60 && b == 62 -> .advance(2)
+
+        a == 61 && b == 61 -> .advance(2)
+
+        a == 33 && b == 61 -> .advance(2)
+
+        a == 60 && b == 61 -> .advance(2)
+
+        a == 62 && b == 61 -> .advance(2)
+
+        a == 60 && b == 60 -> .advance(2)
+
+        a == 62 && b == 62 -> .advance(2)
+
+        a == 124 && b == 124 -> .advance(2)
+
+        a == 40 || a == 41 || a == 44 || a == 59 -> .advance(1)
+
+        a == 43 || a == 45 || a == 42 || a == 47 || a == 37 -> .advance(1)
+
+        a == 38 || a == 124 || a == 94 || a == 126 -> .advance(1)
+
+        a == 61 || a == 60 || a == 62 || a == 46 || a == 58 -> .advance(1)
+
+        -> {
+            .fail('unrecognized token')
+            return
+        }
+    }
+    text = .slice-text(start, .pos)
+    .add(tok-punctuation, start, .pos, text)
+    made = true
+}
+
+tokenizer.hex-digit = (b byte) (out i64) {
+    out = -1
+    {
+        b >= 48 && b <= 57 -> out = b.to-i64() - 48
+
+        b >= 65 && b <= 70 -> out = b.to-i64() - 65 + 10
+
+        b >= 97 && b <= 102 -> out = b.to-i64() - 97 + 10
+    }
+}
+
+tokenize = (source str) (out tokenizer) {
+    lexer = tokenizer.new(source)
+    lexer.scan-all()
+    out = lexer
+}

@@ -62,7 +62,7 @@ func (c *codegen) emitBuiltinStrPushBytes(inst *Inst) error {
 	if rt != "%str-long" {
 		return c.failAbort(inst, codegenTraceID, "builtin %s: unsupported receiver type %s", ff, rt)
 	}
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return c.failAbort(inst, codegenTraceID, "builtin %s: receiver has no slot", ff)
 	}

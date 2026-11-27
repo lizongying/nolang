@@ -6345,9 +6345,10 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			// AST `s.Type` 保持 nil——optunuse／ovfhndld 等「宣告為 option」的
 			// 判定若只看 AST 會靜默把這些站點漏報成「未標註的新變數」。補一筆
 			// side-table 讀取（同時也涵蓋 `a = v[i]` 等 synthesizeNullableType
-			// 路徑寫入的推斷）。declaredOption 視為「使用者的變數型別是 option」
-			// 的存在性，與來源無關。
-			if !declaredOption && s.Name != nil && sem != nil && sem.HasInferredType(s) {
+			// 路徑寫入的推斷）。InferredType 也可能記錄值位 match 的 plain payload
+			// 型別（如 str），因此必須檢查實際型別，不能把「有推斷事實」當成
+			// 「是 option」。
+			if !declaredOption && s.Name != nil && sem != nil && ty.IsOptionRaw(sem.InferredType(s)) {
 				declaredOption = true
 			}
 			// 結果參數的型別寫在簽名上，不在陳述的型別節點上：`int.div = (b int) (q ?int) { q = . / b }`
@@ -6371,7 +6372,7 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			if nt, ok := s.Type.(*parser.NullableType); ok && nt.IsInferred {
 				inferredOption = true
 			}
-			if !inferredOption && sem != nil && sem.HasInferredType(s) {
+			if !inferredOption && sem != nil && ty.IsOptionRaw(sem.InferredType(s)) {
 				inferredOption = true
 			}
 			explicitOption := declaredOption && !inferredOption
@@ -7000,8 +7001,8 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 					plainDeclared := s.Type != nil && !ty.IsOptionRaw(letType)
 					// S3：lowering 把 `a = arr[i]` 的 ?elem 推斷寫入 Program.Sem.
 					// InferredType（synthesizeNullableType）。AST 上 s.Type 為空，
-					// 與「顯式 ?T」走同一條豁免。
-					inferredOption := sem != nil && sem.HasInferredType(s)
+					// 與「顯式 ?T」走同一條豁免；plain 推斷型別不算 option。
+					inferredOption := sem != nil && ty.IsOptionRaw(sem.InferredType(s))
 					// D11 補洞：顯式 plain 型別**不是**「已消費」，而是「把 option
 					// 連同邊界檢查一起關掉」。lowering 的 maybeCaptureOptionAssign
 					// 對 `ls.Type != nil && !option` 直接 return（lowering.go:1451，

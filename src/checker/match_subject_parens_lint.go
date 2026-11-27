@@ -16,7 +16,7 @@ import (
 // 建議移除（no fmt 會自動移除，見 fmt/control.go 的 formatSurfaceMatch）。
 //
 // 只提示、不報錯：這是不影響語意的風格問題，交由 human / fmt 決定。
-const matchSubjectParensTraceID = "msubjparen"
+const matchSubjectParensTraceID = "msubjprn"
 
 // ValidateMatchSubjectParens 對 `: { … }` 主語被一層或多層括號包住的位置
 // 發 HINT（`msubjparen`），建議直接寫 `expr: { … }`。
@@ -33,7 +33,7 @@ func ValidateMatchSubjectParens(program *parser.Program, mainFile string) []Vali
 			Column:  pos.Column,
 			File:    file,
 			TraceID: matchSubjectParensTraceID,
-			Message: i18n.T(matchSubjectParensTraceID,
+			Message: i18n.T("msubjprn",
 				"the subject of a value match is wrapped in parentheses; they are redundant because parentheses carry no semantics here (the match binds to the whole expression, then the result is assigned). Write `expr: { ... }` instead — `no fmt` removes these parentheses automatically."),
 		})
 	}

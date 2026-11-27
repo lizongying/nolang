@@ -1,6 +1,6 @@
 # Red lines — 违反了就静默出错或丢东西
 
-**权威顺序**：实测 > `AGENTS.md`（语法与编码权威） > `.agents/rules/nolang-red-lines.md`（红线总入口） > 记忆笔记。
+**权威顺序**（全项目统一，此处不另列）：实测 > `AGENTS.md`（语法与编码权威）> `.agents/rules/nolang-red-lines.md`（红线总入口，含两份子规则）> 角色 skill（`nolang-compiler` / `nolang-app`）> `nolang-core` > 记忆笔记。完整口径见 `nolang-core/SKILL.md`。
 
 本档只放**每次动手前必须扫一眼**的条目；完整论证、命令与环境见
 `.agents/rules/nolang-red-lines.md`（`alwaysApply`，宿主支持时无需点名加载；内含任务路由表指向编译器 / 应用两份完整红线）。

@@ -139,8 +139,8 @@ cd /tmp/pristine && make no
 
 ## 与其他 Skill 的关系
 
-- [nolang-build](file://../nolang-build/SKILL.md) — 构建流程中的 Post-Build Verification 已包含 `no vet`，本 skill 将其提升为强制规则
-- [nolang-debug](file://../nolang-debug/SKILL.md) — 调试流程中的第 5 步也包含 `no vet` 验证
-- [nolang-std](file://../nolang-std/SKILL.md) — 修改标准库 API 时参考，修改后必须验证
-- [nolang-syntax](file://../nolang-syntax/SKILL.md) — 语法参考，修改 `.no` 文件后必须验证
-- [nolang-memory](file://../nolang-memory/SKILL.md) — 内存相关修改后必须验证
+- [build](m30-build.md) — 构建流程；本模块负责构建后的验收门槛
+- [debug](m50-debug.md) — 编译器排错；命中调试任务时由 `nolang-compiler` 路由
+- [std](m20-std.md) — 修改标准库 API 时参考，修改后必须验证
+- [syntax](m10-syntax.md) — 语法参考，修改 `.no` 文件后必须验证
+- [memory](m60-memory.md) — 内存相关修改后必须验证；该模块已隔离，加载前必须读取失效横幅

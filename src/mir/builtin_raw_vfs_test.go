@@ -121,6 +121,47 @@ func TestRawWindowsTruncateKeepsSuccessfulOpenHandle(t *testing.T) {
 	}
 }
 
+func TestRawWindowsPreludeUsesValidBinaryOperandSyntax(t *testing.T) {
+	for _, goarch := range []string{"amd64", "arm64"} {
+		withTarget(t, "windows", goarch)
+		ir := rawWindowsShimsIR
+		if strings.Contains(ir, "or i64 %ar, i64 %aw") {
+			t.Fatalf("%s raw_open repeats the type of the second binary operand", goarch)
+		}
+		for _, want := range []string{
+			"%desired = or i64 %ar, %aw",
+			"%desired32 = trunc i64 %desired to i32",
+			"i32 %desired32, i32 7",
+		} {
+			if !strings.Contains(ir, want) {
+				t.Errorf("%s Windows raw_open IR missing %q", goarch, want)
+			}
+		}
+	}
+}
+
+func TestRawWindowsPreludeHasUniqueSSAValues(t *testing.T) {
+	for _, goarch := range []string{"amd64", "arm64"} {
+		withTarget(t, "windows", goarch)
+		ir := rawWindowsShimsIR
+		functions := regexp.MustCompile(`(?ms)^define[^\n]*?@[^\s(]+\([^\n]*?\) \{\n(.*?)^\}`).FindAllStringSubmatch(ir, -1)
+		if len(functions) == 0 {
+			t.Fatalf("%s Windows raw VFS prelude has no function bodies", goarch)
+		}
+		definitions := regexp.MustCompile(`(?m)^\s*(%[-A-Za-z$._][-A-Za-z$._0-9]*)\s*=`)
+		for _, function := range functions {
+			seen := make(map[string]bool)
+			for _, definition := range definitions.FindAllStringSubmatch(function[1], -1) {
+				name := definition[1]
+				if seen[name] {
+					t.Fatalf("%s Windows raw VFS prelude defines %s more than once in one function", goarch, name)
+				}
+				seen[name] = true
+			}
+		}
+	}
+}
+
 func TestRawWindowsRangeLocksPreserveZeroLengthAndFlags(t *testing.T) {
 	withTarget(t, "windows", "arm64")
 	ir := rawWindowsShimsIR

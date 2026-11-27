@@ -415,7 +415,7 @@ comment line, and when it really is a standalone note (not documentation for wha
 
 The Nolang standard library provides a rich set of common functionality, including string operations, byte conversions, hash computation, network communication, etc.
 
-**Rule: If the standard library already provides corresponding functionality, reimplementing it yourself is not recommended.** Developers should carefully review the [standard library reference](file://../nolang-std/SKILL.md) to avoid reinventing the wheel.
+**Rule: If the standard library already provides corresponding functionality, reimplementing it yourself is not recommended.** Developers should carefully review the [standard library reference](../m20-std.md) to avoid reinventing the wheel.
 
 ```no
 #{fmt-skip}
@@ -871,7 +871,7 @@ ok = s[0] == 'h'; comparison promotes char -> str
 
 ### String Methods
 
-For the complete list of string methods, see the [standard library reference — str module](file://../nolang-std/SKILL.md).
+For the complete list of string methods, see the [standard library reference — str module](../std/20-core.md).
 
 ### Auto Length Tracking
 

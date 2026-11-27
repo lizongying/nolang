@@ -68,6 +68,7 @@ available for workflows that only need the compiler without the build step.
 | `fail-on-error`    | `false`| Fail the job if any target fails (else report & continue). |
 | `extra-flags`      | `""`   | Extra flags appended to every `no build` (e.g. `-unsafe`). |
 | `ld-flags`         | `""`   | Space-separated `-ld-KEY=VALUE` pairs injected as compile-time global constants (e.g. `-ld-VERSION=1.0.0 -ld-DEBUG=true`). Boolean shorthand: `-ld-RELEASE`. |
+| `windows-pdb`      | `true` | Keep the `.pdb` emitted for Windows targets. Set `false` to delete it from the output directory after a successful Windows build; other targets are unaffected. |
 
 ## Outputs
 

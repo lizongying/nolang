@@ -183,7 +183,7 @@ apply-numeric-affinity = (v sql-value) (out sql-value) {
                 -> {
                     real-parsed = s.to-f64()
                     real-parsed: {
-                        ok(n) -> out = real(n)
+                        ok(number) -> out = real(number)
 
                         -> out = v
                     }
@@ -215,7 +215,14 @@ apply-affinity = (v sql-value, a affinity) (out sql-value) {
             v: {
                 integer(n) -> out = real(integer-to-real(n))
 
-                text -> out = apply-numeric-affinity(v)
+                text -> {
+                    numeric = apply-numeric-affinity(v)
+                    numeric: {
+                        integer(n) -> out = real(integer-to-real(n))
+
+                        -> out = numeric
+                    }
+                }
 
                 -> out = v
             }

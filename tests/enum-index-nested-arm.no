@@ -1,0 +1,93 @@
+; Regression for nested safe-index tagged-enum matches. The outer option arm's
+; synthetic `it` must remain typed while inner matches bind their own payloads.
+
+check = (label str, condition bool) {
+    condition -> print('ok', label)
+
+    ! condition -> print('FAIL', label)
+}
+
+cell {
+    sql-null,
+    integer(v i64),
+    text(v str),
+}
+
+row {
+    values []cell
+}
+
+result {
+    rows []row
+}
+
+make-result = () (out result) {
+    source = row{}
+    source.values.push(integer(2))
+    source.values.push(text('BETA'))
+    source.values.push(integer(12))
+    out.rows.push(source)
+}
+
+read-cell = (source row, index i64) (out i64) {
+    out = -1
+    out = source.values[index]: {
+        text(value) -> value.len-bytes()
+
+        integer(number) -> number
+
+        -> -1
+    }
+}
+
+run = () {
+    returned = make-result()
+
+    ; Direct safe-index enum match.
+    direct = row{}
+    direct.values.push(integer(2))
+    direct.values.push(text('BETA'))
+    check('direct-integer', read-cell(direct, 0) == 2)
+    check('direct-text', read-cell(direct, 1) == 4)
+    check('direct-out-of-range', read-cell(direct, 9) == -1)
+
+    returned.rows[0]: {
+        ok -> {
+            row-length = it.values.len()
+
+            ; First inner match rebinds `it`; the outer row type must survive.
+            it.values[1]: {
+                text(name-text) -> check('nested-text', name-text == 'BETA')
+
+                integer(number) -> check('nested-text-kind', false)
+
+                -> check('nested-text-fallback', false)
+            }
+
+            ; A second inner match must still see the outer row, not the first
+            ; inner match's enum or payload type.
+            it.values[2]: {
+                integer(score-number) -> check('nested-integer', score-number == 12)
+
+                text(name-text) -> check('nested-integer-kind', false)
+
+                -> check('nested-integer-fallback', false)
+            }
+
+            ; Failed safe reads must take the inner fallback without disturbing
+            ; the outer `it` binding.
+            it.values[9]: {
+                text(name-text) -> check('nested-range-kind', false)
+
+                -> check('nested-out-of-range', true)
+            }
+
+            check('outer-it-after-inner', row-length == 3)
+            check('outer-it-still-row', it.values.len() == 3)
+        }
+
+        -> check('outer-row-fallback', false)
+    }
+}
+
+run()

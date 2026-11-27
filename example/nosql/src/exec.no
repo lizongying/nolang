@@ -1,0 +1,604 @@
+; Catalog-backed in-memory statement execution. This is the semantic baseline:
+; statements are analyzed and executed in order so DDL is visible to later DML.
+# /example/nosql/src/db
+# /example/nosql/src/expr
+# /example/nosql/src/analyzer
+# /example/nosql/src/parser
+# /example/nosql/src/select
+# /example/nosql/src/error codes
+
+memory-db.fail = (message str, offset i64) {
+    .result.is-ok() == false -> return
+    .result = make-result(codes.lookup-code('ERROR'), message)
+    .result.sql-offset = offset
+}
+
+memory-db.constraint-fail = (message str, code-name str, offset i64) {
+    .result.is-ok() == false -> return
+    .result = make-result(codes.lookup-code(code-name), message)
+    .result.sql-offset = offset
+}
+
+memory-db.execute = (program sql-program, parameters []sql-value) (out db-execution) {
+    .program = program
+    .parameters = parameters
+    .result = ok-result()
+    .names = []
+    .rows = []
+    .changes = 0
+    program.has-error() -> {
+        .fail(program.error-message, program.error-offset)
+    }
+
+    program.has-error() == false -> {
+        i <- [0..program.statements.len()): {
+            statement-id = program.statement(i)
+            statement-id < 0 -> continue
+            .execute-statement(statement-id)
+            .result.is-error() -> break
+        }
+    }
+
+    out = db-execution{
+        result: .result
+        names: .names
+        rows: .rows
+    }
+}
+
+memory-db.execute-statement = (id i64) {
+    node = .program.node(id)
+    analyzer = new-sql-analyzer(.program, .catalog)
+    analyzer.reset-scope()
+    analyzer.analyze-statement(id)
+    analyzer.has-error() -> {
+        .fail(analyzer.error-message, analyzer.error-offset)
+        return
+    }
+
+    {
+        node.kind == sql-select || node.kind == sql-values -> .execute-select(id)
+
+        node.kind == sql-create-table -> .execute-create-table(node)
+
+        node.kind == sql-drop-table -> .execute-drop-table(node)
+
+        node.kind == sql-insert -> .execute-insert(node)
+
+        node.kind == sql-update -> .execute-update(node)
+
+        node.kind == sql-delete -> .execute-delete(node)
+
+        node.kind == sql-begin || node.kind == sql-commit || node.kind == sql-rollback || node.kind == sql-savepoint || node.kind == sql-release || node.kind == sql-pragma -> {
+        }
+
+        -> .fail('unsupported SQL statement', node.offset)
+    }
+}
+
+memory-db.execute-create-table = (node sql-node) {
+    .catalog.find-table(node.text) >= 0 -> {
+        node.flags & 1 == 1 -> return
+        .fail('table already exists: ' - node.text, node.offset)
+        return
+    }
+
+    definitions = .program.node(node.a)
+    definitions.kind != sql-list || definitions.kids.len() == 0 -> {
+        .fail('CREATE TABLE requires at least one column', node.offset)
+        return
+    }
+
+    table = empty-db-table()
+    table.name = node.text
+    context = new-exec-context(.program, .catalog)
+    context.parameters = .parameters
+    i <- [0..definitions.kids.len()): {
+        definition-id = definitions.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        definition-id < 0 -> continue
+        definition = .program.node(definition-id)
+        definition.kind != sql-column-def -> continue
+        column = empty-db-column()
+        column.name = definition.text
+        column.flags = definition.flags
+        column.default-node = definition.a
+        declared = .program.node(definition.b)
+        column.declared = declared.text
+        column.affinity = affinity-of-declared(column.declared)
+        definition.a >= 0 -> {
+            value = context.evaluate(definition.a)
+            context.error-message != '' -> {
+                .fail(context.error-message, definition.offset)
+                return
+            }
+
+            column.default-value = apply-affinity(value, column.affinity)
+            column.has-default = true
+        }
+
+        table.columns.push(column)
+    }
+
+    table.columns.len() == 0 -> {
+        .fail('CREATE TABLE requires at least one column', node.offset)
+        return
+    }
+
+    i <- [0..definitions.kids.len()): {
+        definition-id = definitions.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        definition-id < 0 -> continue
+        definition = .program.node(definition-id)
+        definition.kind != sql-table-constraint -> continue
+        {
+            definition.text == 'PRIMARY KEY' || definition.text == 'UNIQUE' -> {
+                columns = .program.node(definition.a)
+                j <- [0..columns.kids.len()): {
+                    column-id = columns.kids[j]: {
+                        ok -> it
+
+                        -> -1
+                    }
+
+                    column-id < 0 -> continue
+                    column-name = .program.node(column-id).text
+                    column-index = table.find-column(column-name)
+                    column-index < 0 -> continue
+                    column = table.column(column-index)
+                    definition.text == 'PRIMARY KEY' -> column.flags = column.flags | 1
+                    definition.text == 'UNIQUE' -> column.flags = column.flags | 4
+                    table.columns[column-index]: {
+                        ok -> it = column
+
+                        -> _
+                    }
+                }
+            }
+
+            -> {
+            }
+        }
+    }
+
+    table.flags = .program.child(id, 0)
+    .catalog.tables.push(table)
+}
+
+memory-db.execute-drop-table = (node sql-node) {
+    table-index = .catalog.find-table(node.text)
+    table-index < 0 -> {
+        .fail('no such table: ' - node.text, node.offset)
+        return
+    }
+
+    .catalog.remove-table(table-index)
+}
+
+memory-db.integer-primary-key = (table db-table) (index i64) {
+    index = -1
+    i <- [0..table.columns.len()): {
+        column = table.column(i)
+        column.flags & 1 == 1 && column.declared.to-upper().contains('INT') -> {
+            index = i
+            return
+        }
+    }
+}
+
+memory-db.validate-row = (table db-table, row db-row, skip-index i64) (valid bool) {
+    valid = true
+    primary-key = .integer-primary-key(table)
+    i <- [0..table.columns.len()): {
+        column = table.column(i)
+        value = row.values[i]: {
+            ok -> it
+
+            -> sql-null
+        }
+
+        value.is-null() && column.flags & 2 == 2 -> {
+            .constraint-fail('NOT NULL constraint failed: ' - table.name - '.' - column.name, 'CONSTRAINT_NOTNULL', column.default-node)
+            valid = false
+            return
+        }
+
+        (column.flags & 4 == 4 || column.flags & 1 == 1) && value.is-null() == false -> {
+            i == primary-key -> continue
+            j <- [0..table.rows.len()): {
+                j == skip-index -> continue
+                existing = table.row(j)
+                other = existing.values[i]: {
+                    ok -> it
+
+                    -> sql-null
+                }
+
+                compare(value, other) == 0 -> {
+                    .constraint-fail('UNIQUE constraint failed: ' - table.name - '.' - column.name, 'CONSTRAINT_UNIQUE', column.default-node)
+                    valid = false
+                    return
+                }
+            }
+        }
+    }
+
+    primary-key >= 0 -> {
+        j <- [0..table.rows.len()): {
+            j == skip-index -> continue
+            table.row(j).rowid == row.rowid -> {
+                .constraint-fail('UNIQUE constraint failed: ' - table.name - '.rowid', 'CONSTRAINT_PRIMARYKEY', -1)
+                valid = false
+                return
+            }
+        }
+    }
+}
+
+memory-db.insert-row = (table-index i64, node sql-node, supplied []sql-value, defaults bool, returning-id i64) {
+    table = .catalog.table(table-index)
+    targets []i64 = []
+    {
+        node.a >= 0 -> {
+            columns = .program.node(node.a)
+            i <- [0..columns.kids.len()): {
+                column-id = columns.kids[i]: {
+                    ok -> it
+
+                    -> -1
+                }
+
+                column-id < 0 -> continue
+                targets.push(table.find-column(.program.node(column-id).text))
+            }
+        }
+
+        -> {
+            i <- [0..table.columns.len()): {
+                targets.push(i)
+            }
+        }
+    }
+
+    defaults == false && supplied.len() != targets.len() -> {
+        .fail('table ' - table.name - ' has ' - targets.len().to-str() - ' columns but ' - supplied.len().to-str() - ' values were supplied', node.offset)
+        return
+    }
+
+    row = empty-db-row()
+    i <- [0..table.columns.len()): {
+        column = table.column(i)
+        column.has-default -> row.values.push(column.default-value)
+        column.has-default == false -> row.values.push(sql-null)
+    }
+
+    context = new-exec-context(.program, .catalog)
+    context.parameters = .parameters
+    context.add-source(table, base-name(table.name), row)
+    defaults == false -> {
+        i <- [0..targets.len()): {
+            target = targets[i]: {
+                ok -> it
+
+                -> -1
+            }
+
+            target < 0 -> continue
+            value = supplied[i]: {
+                ok -> it
+
+                -> sql-null
+            }
+
+            column = table.column(target)
+            value = apply-affinity(value, column.affinity)
+            row.values[target]: {
+                ok -> it = value
+
+                -> _
+            }
+        }
+    }
+
+    primary-key = .integer-primary-key(table)
+    {
+        primary-key >= 0 -> {
+            value = row.values[primary-key]: {
+                ok -> it
+
+                -> sql-null
+            }
+
+            {
+                value.is-null() -> {
+                    row.rowid = table.next-rowid
+                    row.values[primary-key]: {
+                        ok -> it = integer(row.rowid)
+
+                        -> _
+                    }
+                }
+
+                -> {
+                    number = sql-integer(value)
+                    number: {
+                        ok(n) -> {
+                            row.rowid = n
+                            row.values[primary-key]: {
+                                ok -> it = integer(n)
+
+                                -> _
+                            }
+                        }
+
+                        -> .fail('datatype mismatch', node.offset)
+                    }
+                }
+            }
+        }
+
+        -> row.rowid = table.next-rowid
+    }
+
+    .result.is-error() -> return
+    .validate-row(table, row, -1)
+    .result.is-error() -> return
+    table.append-row(row)
+    .catalog.replace-table(table-index, table)
+    .last-insert-rowid = row.rowid
+    next-change ?i64 = .changes + 1
+    next-change: {
+        ok -> .changes = it
+
+        -> _
+    }
+
+    next-total ?i64 = .total-changes + 1
+    next-total: {
+        ok -> .total-changes = it
+
+        -> _
+    }
+
+    .append-returning(table, returning-id, row)
+}
+
+memory-db.execute-insert = (node sql-node) {
+    table-index = .catalog.find-table(node.text)
+    table-index < 0 -> {
+        .fail('no such table: ' - node.text, node.offset)
+        return
+    }
+
+    returning-id = node.kids[0]: {
+        ok -> it
+
+        -> -1
+    }
+
+    {
+        node.b >= 0 -> {
+            values-node = .program.node(node.b)
+            i <- [0..values-node.kids.len()): {
+                row-id = values-node.kids[i]: {
+                    ok -> it
+
+                    -> -1
+                }
+
+                row-id < 0 -> continue
+                row-node = .program.node(row-id)
+                expressions = .program.node(row-node.a)
+                context = new-exec-context(.program, .catalog)
+                context.parameters = .parameters
+                table = .catalog.table(table-index)
+                context.add-source(table, base-name(table.name), empty-db-row())
+                supplied []sql-value = []
+                j <- [0..expressions.kids.len()): {
+                    expression-id = expressions.kids[j]: {
+                        ok -> it
+
+                        -> -1
+                    }
+
+                    value = context.evaluate(expression-id)
+                    context.error-message != '' -> {
+                        .fail(context.error-message, .program.node(expression-id).offset)
+                        return
+                    }
+
+                    supplied.push(value)
+                }
+
+                .insert-row(table-index, node, supplied, false, returning-id)
+                .result.is-error() -> return
+            }
+        }
+
+        node.c >= 0 -> {
+            .execute-select(node.c)
+            .result.is-error() -> return
+            selected = .rows
+            .rows = []
+            .names = []
+            i <- [0..selected.len()): {
+                row = selected[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                .insert-row(table-index, node, row.values, false, returning-id)
+                .result.is-error() -> return
+            }
+        }
+
+        -> .insert-row(table-index, node, [], true, returning-id)
+    }
+}
+
+memory-db.execute-update = (node sql-node) {
+    table-index = .catalog.find-table(node.text)
+    table-index < 0 -> {
+        .fail('no such table: ' - node.text, node.offset)
+        return
+    }
+
+    table = .catalog.table(table-index)
+    assignments = .program.node(node.a)
+    where-id = node.b
+    returning-id = node.kids[0]: {
+        ok -> it
+
+        -> -1
+    }
+
+    changed = 0
+    i <- [0..table.rows.len()): {
+        row = table.row(i)
+        context = new-exec-context(.program, .catalog)
+        context.parameters = .parameters
+        context.add-source(table, base-name(table.name), row)
+        where-id >= 0 -> {
+            value = context.evaluate(where-id)
+            context.error-message != '' -> {
+                .fail(context.error-message, .program.node(where-id).offset)
+                return
+            }
+
+            value.to-truth() != sql-true -> continue
+        }
+
+        updated = row
+        j <- [0..assignments.kids.len()): {
+            assignment-id = assignments.kids[j]: {
+                ok -> it
+
+                -> -1
+            }
+
+            assignment-id < 0 -> continue
+            assignment = .program.node(assignment-id)
+            column-index = table.find-column(assignment.text)
+            value = context.evaluate(assignment.b)
+            context.error-message != '' -> {
+                .fail(context.error-message, assignment.offset)
+                return
+            }
+
+            column = table.column(column-index)
+            value = apply-affinity(value, column.affinity)
+            updated.values[column-index]: {
+                ok -> it = value
+
+                -> _
+            }
+        }
+
+        primary-key = .integer-primary-key(table)
+        primary-key >= 0 -> {
+            value = updated.values[primary-key]: {
+                ok -> it
+
+                -> sql-null
+            }
+
+            value.is-null() -> {
+                updated.rowid = table.next-rowid
+                updated.values[primary-key]: {
+                    ok -> it = integer(updated.rowid)
+
+                    -> _
+                }
+            }
+
+            value.is-null() == false -> {
+                number = sql-integer(value)
+                number: {
+                    ok(n) -> updated.rowid = n
+
+                    -> .fail('datatype mismatch', node.offset)
+                }
+            }
+        }
+
+        .result.is-error() -> return
+        .validate-row(table, updated, i)
+        .result.is-error() -> return
+        table.replace-row(i, updated)
+        changed = add-wrap(changed, 1)
+        .append-returning(table, returning-id, updated)
+        .result.is-error() -> return
+    }
+
+    .catalog.replace-table(table-index, table)
+    .changes = changed
+    next-total ?i64 = .total-changes + changed
+    next-total: {
+        ok -> .total-changes = it
+
+        -> _
+    }
+}
+
+memory-db.execute-delete = (node sql-node) {
+    table-index = .catalog.find-table(node.text)
+    table-index < 0 -> {
+        .fail('no such table: ' - node.text, node.offset)
+        return
+    }
+
+    table = .catalog.table(table-index)
+    where-id = node.b
+    returning-id = node.kids[0]: {
+        ok -> it
+
+        -> -1
+    }
+
+    kept []db-row = []
+    changed = 0
+    i <- [0..table.rows.len()): {
+        row = table.row(i)
+        context = new-exec-context(.program, .catalog)
+        context.parameters = .parameters
+        context.add-source(table, base-name(table.name), row)
+        remove = true
+        where-id >= 0 -> {
+            value = context.evaluate(where-id)
+            context.error-message != '' -> {
+                .fail(context.error-message, .program.node(where-id).offset)
+                return
+            }
+
+            value.to-truth() == sql-true -> remove = true
+            value.to-truth() != sql-true -> remove = false
+        }
+
+        remove -> {
+            changed = add-wrap(changed, 1)
+            .append-returning(table, returning-id, row)
+            .result.is-error() -> return
+        }
+
+        remove == false -> kept.push(row)
+    }
+
+    table.rows = kept
+    .catalog.replace-table(table-index, table)
+    .changes = changed
+    next-total ?i64 = .total-changes + changed
+    next-total: {
+        ok -> .total-changes = it
+
+        -> _
+    }
+}

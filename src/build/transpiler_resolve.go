@@ -179,7 +179,15 @@ func subPathAfter(importPath, p string) (rest string, hit bool) {
 }
 
 func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, error) {
-	// use path.fn → 載入 path.no 並取出 fn 函數
+	return t.resolveUseWithExportFilter(use, true)
+}
+
+// resolveUseWithExportFilter resolves a module and optionally applies the
+// package's lib.no export surface. Module assembly disables the filter while
+// collecting transitive dependencies, then applies it only to direct imports
+// from outside the package.
+func (t *Transpiler) resolveUseWithExportFilter(use *parser.UseStatement, filterExports bool) (*parser.Program, error) {
+	// use path.fn → 載入 path.no 並取出 fn 函式
 	path := use.Path
 
 	// 源碼導入約束：禁止 "./" 和 "../" 相對跳轉
@@ -203,7 +211,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 					return nil, err
 				}
 				if modPath != "" {
-					return t.resolveFile(modPath)
+					return t.resolveFileWithExportFilter(modPath, filterExports)
 				}
 			}
 		}
@@ -218,7 +226,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		if nomlPath := nomlImportPath(fullPath); nomlPath != "" {
 			return t.resolveNomlFile(nomlPath)
 		}
-		return t.resolveFile(fullPath)
+		return t.resolveFileWithExportFilter(fullPath, filterExports)
 	}
 	// std/ 開頭 → 標準庫路徑（預設只從內嵌 StdFS 載入，支援單二進制分發）
 	if strings.HasPrefix(path, "std/") || path == "std" {
@@ -308,7 +316,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 		if relPath != "" {
 			fallback := "src/" + path + ".no"
 			if _, err := os.Stat(fallback); err == nil {
-				return t.resolveFile(fallback)
+				return t.resolveFileWithExportFilter(fallback, filterExports)
 			}
 		}
 		return nil, i18n.Errorf("u0g1w0d7", "js compatibility module not found: %s", relPath)
@@ -333,7 +341,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 				return nil, err
 			}
 			if modPath != "" {
-				return t.resolveFile(modPath)
+				return t.resolveFileWithExportFilter(modPath, filterExports)
 			}
 		}
 	}
@@ -345,7 +353,7 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	// 必須先於下方的直接拼接：那條路徑會把 `test` 當成普通目錄，
 	// 完全看不到 workspace.noml 的 `test: '/test'` 與 test/lib.no 的映射。
 	if resolved := checker.ResolvePackageExport(path, t.workspaceRoot()); resolved != "" {
-		return t.resolveFile(resolved)
+		return t.resolveFileWithExportFilter(resolved, filterExports)
 	}
 	// 非 std 路徑 → 透過 alias 解析（一律相對於工作區根目錄，不再以當前源碼檔目錄為基準）
 	modulePath := pkg.ResolveToWorkspaceRoot(t.workspaceRoot(), path)
@@ -357,22 +365,42 @@ func (t *Transpiler) resolveUse(use *parser.UseStatement) (*parser.Program, erro
 	if nomlPath := nomlImportPath(modulePath); nomlPath != "" {
 		return t.resolveNomlFile(nomlPath)
 	}
-	return t.resolveFile(modulePath)
+	return t.resolveFileWithExportFilter(modulePath, filterExports)
 }
 
 // resolveFile parses a .no file and applies lib.no export filtering if present.
 func (t *Transpiler) resolveFile(filePath string) (*parser.Program, error) {
+	return t.resolveFileWithExportFilter(filePath, true)
+}
+
+func (t *Transpiler) resolveFileWithExportFilter(filePath string, filterExports bool) (*parser.Program, error) {
 	prog, err := t.parseFile(filePath)
 	if err != nil {
 		return nil, err
 	}
-	// Apply lib.no export filtering
-	pkgRoot := findPackageRootFromFile(filePath)
-	if pkgRoot != "" {
-		libPath := filepath.Join(pkgRoot, "lib.no")
-		if _, err := os.Stat(libPath); err == nil {
-			prog = checker.FilterByExports(prog, libPath, filePath)
-		}
+	if filterExports {
+		prog = t.filterPackageExports(prog, filePath)
 	}
 	return prog, nil
+}
+
+// filterPackageExports applies lib.no only when the importer is outside the
+// package. Package-local code may use private modules, while external callers
+// see only the declared surface. The caller decides whether an import is direct;
+// transitive dependencies are deliberately unfiltered so an exported API keeps
+// its private implementation closure.
+func (t *Transpiler) filterPackageExports(prog *parser.Program, filePath string) *parser.Program {
+	pkgRoot := findPackageRootFromFile(filePath)
+	if pkgRoot == "" {
+		return prog
+	}
+	entryRoot := findPackageRootFromFile(t.sourcePath)
+	if entryRoot != "" && filepath.Clean(entryRoot) == filepath.Clean(pkgRoot) {
+		return prog
+	}
+	libPath := filepath.Join(pkgRoot, "lib.no")
+	if _, err := os.Stat(libPath); err == nil {
+		return checker.FilterByExports(prog, libPath, filePath)
+	}
+	return prog
 }

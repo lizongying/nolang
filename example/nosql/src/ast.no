@@ -1,0 +1,194 @@
+; Flat SQL AST. Nodes are append-only and refer to children by arena index.
+; SELECT children: WITH, projections, FROM, WHERE, GROUP BY, HAVING, ORDER BY,
+; LIMIT, OFFSET, RETURNING. A missing clause is -1.
+sql-node-kind {
+    sql-invalid,
+    sql-list,
+    sql-select,
+    sql-values,
+    sql-insert,
+    sql-update,
+    sql-delete,
+    sql-create-table,
+    sql-drop-table,
+    sql-alter-table,
+    sql-create-index,
+    sql-drop-index,
+    sql-create-view,
+    sql-drop-view,
+    sql-create-trigger,
+    sql-drop-trigger,
+    sql-begin,
+    sql-commit,
+    sql-rollback,
+    sql-savepoint,
+    sql-release,
+    sql-pragma,
+    sql-literal-null,
+    sql-literal-integer,
+    sql-literal-real,
+    sql-literal-string,
+    sql-literal-blob,
+    sql-column,
+    sql-star,
+    sql-parameter,
+    sql-unary,
+    sql-binary,
+    sql-function,
+    sql-collate,
+    sql-cast,
+    sql-between,
+    sql-in,
+    sql-like,
+    sql-is,
+    sql-case,
+    sql-when,
+    sql-subquery,
+    sql-projection,
+    sql-from-table,
+    sql-join,
+    sql-order-item,
+    sql-column-def,
+    sql-table-constraint,
+    sql-assignment,
+    sql-upsert,
+    sql-returning,
+    sql-window,
+}
+
+sql-node {
+    kind sql-node-kind
+    text str
+    literal []byte
+    a i64
+    b i64
+    c i64
+    flags i64
+    kids []i64
+    offset i64
+}
+
+sql-node.argument = (index i64) (id i64) {
+    id = -1
+    index < 0 -> return
+    index >= .kids.len() -> return
+    id = .kids[index]: {
+        ok -> it
+
+        -> -1
+    }
+}
+
+sql-program {
+    nodes []sql-node
+    statements []i64
+    error-message str
+    error-offset i64
+}
+
+new-sql-program = () (out sql-program) {
+    out = sql-program{
+        nodes: []
+        statements: []
+        error-offset: -1
+    }
+}
+
+sql-program.has-error = () (yes bool) {
+    yes = .error-message != ''
+}
+
+sql-program.fail = (message str, offset i64) {
+    .error-message != '' -> return
+    .error-message = message
+    .error-offset = offset
+}
+
+sql-program.push-node = (node sql-node) {
+    .nodes.push(node)
+}
+
+sql-program.node = (id i64) (out sql-node) {
+    id < 0 -> return
+    id >= .nodes.len() -> return
+    out = .nodes[id]: {
+        ok -> it
+
+        -> _
+    }
+}
+
+sql-program.child = (id i64, slot i64) (out i64) {
+    out = -1
+    node = .node(id)
+    node.kind == sql-invalid -> return
+    slot < 0 -> return
+    slot >= node.kids.len() -> return
+    out = node.kids[slot]: {
+        ok -> it
+
+        -> _
+    }
+}
+
+sql-program.set-node-a = (id i64, value i64) {
+    id < 0 -> return
+    id >= .nodes.len() -> return
+    node = .node(id)
+    node.a = value
+    .nodes[id]: {
+        ok -> it = node
+
+        -> _
+    }
+}
+
+sql-program.set-node-b = (id i64, value i64) {
+    id < 0 -> return
+    id >= .nodes.len() -> return
+    node = .node(id)
+    node.b = value
+    .nodes[id]: {
+        ok -> it = node
+
+        -> _
+    }
+}
+
+sql-program.kind-of = (id i64) (out sql-node-kind) {
+    node = .node(id)
+    out = node.kind
+}
+
+sql-program.make-list = (items []i64) {
+    .push-node(sql-node{
+        kind: sql-list
+        text: ''
+        a: -1
+        b: -1
+        c: -1
+        flags: 0
+        kids: items
+        offset: -1
+    })
+}
+
+sql-program.add-statement = (id i64) {
+    id < 0 -> return
+    .statements.push(id)
+}
+
+sql-program.statement-count = () (count i64) {
+    count = .statements.len()
+}
+
+sql-program.statement = (index i64) (out i64) {
+    out = -1
+    index < 0 -> return
+    index >= .statements.len() -> return
+    out = .statements[index]: {
+        ok -> it
+
+        -> _
+    }
+}

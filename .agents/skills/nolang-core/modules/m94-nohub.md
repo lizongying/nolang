@@ -1,10 +1,8 @@
----
-name: nolang-publish-to-nohub
-description: 把一个 Nolang 仓库公开或收录到 nohub（元数据注册中心）的标准流程：在 lizongying/nohub 的 repos 目录下增加作者收录条目并发起 PR，预先自查仓库存在、作者身份、仓库根 workspace.noml、至少一个 package 四项要求。当用户要求把某 Nolang 仓库公开到 nohub、收录到 nohub、加到 repos 清单、向 nohub 提 PR，或询问 nohub 收录要求时使用。
-agent_created: true
----
+# 公开到 nohub（nohub 收录）
 
-# Nolang 公开到 nohub
+> **定位**：本模块是 [release](m92-release.md) 之后的**可选后续步骤**——版本发布完成后，若要把仓库公开到
+> nohub 索引，再加载本模块。它也可以在未发版时单独使用（收录与发版互不强制依赖）。
+> 与红线冲突时以 [`m00-redlines.md`](m00-redlines.md) 为准（尤其 `git add -A` 与 checkout/reset/stash 禁令）。
 
 ## 概述
 
@@ -12,7 +10,7 @@ nohub 是「只索引、不存码」的社区包注册中心。把一个 Nolang 
 `lizongying/nohub` 的 `repos/<host>/<owner>.noml`（作者收录记录）里加一条你的仓库短名，然后由作者本人开 PR。
 合并后，你的仓库就会被 nohub 收录索引，别人可以用 `no search/info/docs` 找到它。
 
-本 skill 只讲**使用者要做什么、要满足什么要求**。它不替用户执行不可逆的 git 操作（add / commit / push / 开 PR）——
+本模块只讲**使用者要做什么、要满足什么要求**。它不替用户执行不可逆的 git 操作（add / commit / push / 开 PR）——
 这些必须由用户逐步确认后自行完成。
 
 ## 关键事实（动手前必读）
@@ -26,7 +24,7 @@ nohub 是「只索引、不存码」的社区包注册中心。把一个 Nolang 
 
 ### 第 1 步：确认仓库满足四项要求
 
-提交前逐项自查（详见 `references/admission-checks.md`）：
+提交前逐项自查（详见 [`../references/nohub-admission-checks.md`](../references/nohub-admission-checks.md)）：
 
 1. **仓库存在且公开**：`https://github.com/<owner>/<repo>` 可访问；你的账号对其有 push 权限。
 2. **作者匹配**：目标文件路径里的 `<owner>` 等于你的 GitHub login。
@@ -75,10 +73,11 @@ nohub 是「只索引、不存码」的社区包注册中心。把一个 Nolang 
 
 ### 第 4 步：PR 检查与收录生效
 
-PR 提交后会有一个自动检查，核对你的仓库是否满足上面四项要求；检查不通过会标红，按 `references/admission-checks.md`
-的失败对照表修正后再推送。检查通过并合并后，仓库即被收录；稍后用 `no search <包名>` 验证能否检索到。
+PR 提交后会有一个自动检查，核对你的仓库是否满足上面四项要求；检查不通过会标红，按
+[`../references/nohub-admission-checks.md`](../references/nohub-admission-checks.md) 的失败对照表修正后再推送。
+检查通过并合并后，仓库即被收录；稍后用 `no search <包名>` 验证能否检索到。
 
 ## 资源
 
-- `references/admission-checks.md` —— 四项要求的判定规则、失败对照、noml 字段约束与开 PR 前自查方法。
-- `scripts/precheck.sh` —— 开 PR 前的本地自查脚本（只读检查作者记录格式与重复元素；网络项给出手工验证命令）。
+- [`../references/nohub-admission-checks.md`](../references/nohub-admission-checks.md) —— 四项要求的判定规则、失败对照、noml 字段约束与开 PR 前自查方法。
+- [`../scripts/precheck-nohub.sh`](../scripts/precheck-nohub.sh) —— 开 PR 前的本地自查脚本（只读检查作者记录格式与重复元素；网络项给出手工验证命令）。

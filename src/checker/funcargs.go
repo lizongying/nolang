@@ -6,12 +6,13 @@ package checker
 
 import (
 	"fmt"
-	"github.com/lizongying/nolang/i18n"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/lizongying/nolang/i18n"
 
 	"github.com/lizongying/nolang/builtin"
 	"github.com/lizongying/nolang/cache"
@@ -3050,7 +3051,14 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			enums[s.Name] = true
 		}
 	}
-	// Auto-export types referenced by exported functions
+	// Auto-export types referenced by retained functions. This includes private
+	// implementation types returned by helpers and instantiated inside function
+	// bodies, not just types visible in the package's public signatures.
+	collectTypeName := func(name string, result map[string]bool) {
+		if structs[name] || enums[name] || interfaces[name] {
+			result[name] = true
+		}
+	}
 	var collectTypes func(t parser.Type, result map[string]bool)
 	collectTypes = func(t parser.Type, result map[string]bool) {
 		if t == nil {
@@ -3058,9 +3066,7 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		}
 		switch tt := t.(type) {
 		case *parser.NamedType:
-			if structs[tt.Value] || enums[tt.Value] || interfaces[tt.Value] {
-				result[tt.Value] = true
-			}
+			collectTypeName(tt.Value, result)
 		case *parser.ArrayType:
 			collectTypes(tt.Elem, result)
 		case *parser.SliceType:
@@ -3073,23 +3079,80 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			collectTypes(tt.Type, result)
 		}
 	}
-	autoResult := make(map[string]bool)
+	// Public types form a transitive closure: a returned struct is not usable if
+	// the structs/enums in its fields (or tagged-enum payloads) were filtered out.
+	// Collect each local type's dependencies once, then walk the closure to a
+	// fixed point so recursive and mutually recursive layouts remain intact.
+	typeDeps := make(map[string][]parser.Type)
 	for _, stmt := range prog.Statements {
-		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
-			if _, isExported := exported[fd.Name]; !isExported {
-				continue
+		switch s := stmt.(type) {
+		case *parser.StructDefinition:
+			for _, field := range s.Fields {
+				typeDeps[s.Name] = append(typeDeps[s.Name], field.Type)
 			}
-			for _, param := range fd.Parameters {
-				collectTypes(param.Type, autoResult)
+		case *parser.TaggedEnumDefinition:
+			for _, variant := range s.Variants {
+				typeDeps[s.Name] = append(typeDeps[s.Name], variant.Type)
+				for _, field := range variant.Fields {
+					typeDeps[s.Name] = append(typeDeps[s.Name], field.Type)
+				}
 			}
-			for _, result := range fd.Results {
-				collectTypes(result.Type, autoResult)
+		case *parser.InterfaceDefinition:
+			for _, method := range s.Methods {
+				for _, param := range method.Parameters {
+					typeDeps[s.Name] = append(typeDeps[s.Name], param.Type)
+				}
+				for _, result := range method.Results {
+					typeDeps[s.Name] = append(typeDeps[s.Name], result.Type)
+				}
 			}
 		}
 	}
-	for name := range autoResult {
-		exported[name] = ""
+	autoResult := make(map[string]bool)
+	typeWorklist := make([]string, 0)
+	typeQueued := make(map[string]bool)
+	expandTypeClosure := func() {
+		for name := range autoResult {
+			if typeQueued[name] {
+				continue
+			}
+			typeWorklist = append(typeWorklist, name)
+			typeQueued[name] = true
+		}
+		for len(typeWorklist) > 0 {
+			name := typeWorklist[0]
+			typeWorklist = typeWorklist[1:]
+			for _, dep := range typeDeps[name] {
+				collectTypes(dep, autoResult)
+			}
+			for added := range autoResult {
+				if typeQueued[added] {
+					continue
+				}
+				typeWorklist = append(typeWorklist, added)
+				typeQueued[added] = true
+			}
+		}
+		for name := range autoResult {
+			exported[name] = ""
+		}
 	}
+	collectFunctionTypes := func(fd *parser.FunctionDefinition) {
+		for _, param := range fd.Parameters {
+			collectTypes(param.Type, autoResult)
+		}
+		for _, result := range fd.Results {
+			collectTypes(result.Type, autoResult)
+		}
+	}
+	for _, stmt := range prog.Statements {
+		if fd, ok := stmt.(*parser.FunctionDefinition); ok {
+			if _, isExported := exported[fd.Name]; isExported {
+				collectFunctionTypes(fd)
+			}
+		}
+	}
+	expandTypeClosure()
 
 	// Track call dependencies: if an exported function calls another function
 	// defined in the same module, that function must also be kept (transitively).
@@ -3178,6 +3241,7 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 				walkExpr(elem)
 			}
 		case *parser.StructLiteral:
+			collectTypeName(e.Type, autoResult)
 			for _, f := range e.Fields {
 				walkExpr(f.Value)
 			}
@@ -3190,6 +3254,7 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			walkExpr(e.Alternative)
 		case *parser.CastExpression:
 			walkExpr(e.Expr)
+			collectTypes(e.Type, autoResult)
 		}
 	}
 	walkStmts = func(stmts []parser.Statement) {
@@ -3199,6 +3264,7 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 			}
 			switch s := stmt.(type) {
 			case *parser.LetStatement:
+				collectTypes(s.Type, autoResult)
 				walkExpr(s.Value)
 			case *parser.ExpressionStatement:
 				walkExpr(s.Expression)
@@ -3259,23 +3325,38 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 	// 型別一旦導出，其方法就屬於該型別的公開 ABI，必須一併導出。
 	// 必須放在下方 worklist 傳遞閉包「之前」：方法體會呼叫 FFI 宣告與其他
 	// 同模組 helper，那些依賴要靠閉包一併帶出。
-	for _, stmt := range prog.Statements {
-		fd, ok := stmt.(*parser.FunctionDefinition)
-		if !ok {
-			continue
-		}
-		dot := strings.Index(fd.Name, ".")
-		if dot <= 0 {
-			continue
-		}
-		if _, ok := exported[fd.Name[:dot]]; ok {
-			exported[fd.Name] = ""
+	exportTypeMethods := func() {
+		for name := range funcDefs {
+			dot := strings.Index(name, ".")
+			if dot <= 0 {
+				continue
+			}
+			_, typeRetained := autoResult[name[:dot]]
+			_, typeExported := exported[name[:dot]]
+			if typeRetained || typeExported {
+				exported[name] = ""
+			}
 		}
 	}
-	// Iteratively expand the keep set with call dependencies (transitive closure)
+	exportTypeMethods()
+	// Iteratively expand the keep set with call, constant, type, and method
+	// dependencies. A helper's private result type can introduce more methods,
+	// whose bodies can in turn introduce more helpers and types.
 	worklist := make([]string, 0, len(exported))
+	queued := make(map[string]bool, len(exported))
 	for name := range exported {
 		worklist = append(worklist, name)
+		queued[name] = true
+	}
+	enqueue := func(name string) {
+		if _, alreadyKept := exported[name]; !alreadyKept {
+			exported[name] = ""
+		}
+		if queued[name] {
+			return
+		}
+		worklist = append(worklist, name)
+		queued[name] = true
 	}
 	for len(worklist) > 0 {
 		name := worklist[0]
@@ -3284,22 +3365,21 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 		if !ok {
 			continue
 		}
-		prevLen := len(calledFuncs)
+		prevExported := len(exported)
+		collectFunctionTypes(fd)
 		collectCalledFuncs(fd.Body)
+		expandTypeClosure()
+		exportTypeMethods()
 		// 方法體直接引用的同模組常量一併導出（見 referencedConsts 的說明）。
 		for c := range referencedConsts {
-			if _, alreadyKept := exported[c]; !alreadyKept {
-				exported[c] = ""
-				worklist = append(worklist, c)
-			}
+			enqueue(c)
 		}
-		// Add newly discovered called functions to worklist and exported set
-		if len(calledFuncs) > prevLen {
-			for called := range calledFuncs {
-				if _, alreadyKept := exported[called]; !alreadyKept {
-					exported[called] = ""
-					worklist = append(worklist, called)
-				}
+		for called := range calledFuncs {
+			enqueue(called)
+		}
+		if len(exported) > prevExported {
+			for added := range exported {
+				enqueue(added)
 			}
 		}
 	}

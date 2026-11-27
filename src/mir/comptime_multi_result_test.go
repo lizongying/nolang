@@ -1,6 +1,7 @@
 package mir
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -67,5 +68,95 @@ main = () () {
 `)
 	if !hasCallSym(on, "g") {
 		t.Errorf("multi-result call with a runtime argument was folded away; syms=%v", callSyms(on))
+	}
+}
+
+// An explicit arg-form call must allocate one result per named output before
+// bindOutParams can copy those results into the caller's destinations. Methods
+// also exercise the receiver/self exclusion in resultTypesOfCallee.
+func TestMultiResultMethodArgFormBindsAllLocalOutputs(t *testing.T) {
+	t.Setenv("NOLANG_COMPTIME", "0")
+	mod := lowerForTest(t, `probe {
+}
+
+probe.resolve = (name str) (source-out i64, column-out i64, matches-out i64) {
+    source-out = 1
+    column-out = 2
+    matches-out = 3
+}
+
+main = () () {
+    p probe
+    source i64 = -1
+    column i64 = -1
+    matches i64 = -1
+    p.resolve('id', source, column, matches)
+    print(source)
+    print(column)
+    print(matches)
+}
+`)
+	assertArgFormOutputMoves(t, mod, ".resolve", 3)
+}
+
+// Output destinations are not restricted to function locals. A module global
+// named as an explicit out-argument must receive the corresponding result just
+// like an ordinary assignment to that global.
+func TestMultiResultArgFormBindsModuleGlobalOutputs(t *testing.T) {
+	t.Setenv("NOLANG_COMPTIME", "0")
+	mod := lowerForTest(t, `resolve = (name str) (source-out i64, column-out i64, matches-out i64) {
+    source-out = 1
+    column-out = 2
+    matches-out = 3
+}
+
+SOURCE i64 = -1
+COLUMN i64 = -1
+MATCHES i64 = -1
+
+main = () () {
+    resolve('id', SOURCE, COLUMN, MATCHES)
+    print(SOURCE)
+    print(COLUMN)
+    print(MATCHES)
+}
+`)
+	assertArgFormOutputMoves(t, mod, "resolve", 3)
+}
+
+func assertArgFormOutputMoves(t *testing.T, mod *Module, calleeSuffix string, outputs int) {
+	t.Helper()
+	var call *Inst
+	for i := range mod.Insts {
+		inst := &mod.Insts[i]
+		if inst.Op == OpCall && strings.HasSuffix(inst.Sym, calleeSuffix) {
+			call = inst
+			break
+		}
+	}
+	if call == nil {
+		t.Fatalf("no call to %q was lowered\n%s", calleeSuffix, mod.String())
+	}
+	if len(call.Results) != outputs {
+		t.Fatalf("call to %q allocated %d results; want %d\n%s", call.Sym, len(call.Results), outputs, mod.String())
+	}
+	if len(call.Args) < outputs {
+		t.Fatalf("call to %q has %d arguments; want at least %d output destinations", call.Sym, len(call.Args), outputs)
+	}
+	base := len(call.Args) - outputs
+	for k, result := range call.Results {
+		destination := call.Args[base+k]
+		found := false
+		for i := range mod.Insts {
+			move := &mod.Insts[i]
+			if move.Op == OpMove && move.Dst == NoVal && len(move.Args) == 2 &&
+				move.Args[0] == result && move.Args[1] == destination {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("result %d of %q was not moved into its explicit output destination %d\n%s", k, call.Sym, destination, mod.String())
+		}
 	}
 }

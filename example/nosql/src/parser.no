@@ -1,0 +1,1413 @@
+# /example/nosql/src/ast
+# /example/nosql/src/token
+
+; SQL parser over the flat AST arena. Parsing methods mutate the parser and
+; publish their result through last-node; this matches Nolang's receiver rules.
+sql-parser {
+    tokens []token
+    pos i64
+    program sql-program
+    depth i64
+    last-node i64
+    last-name str
+    last-order i64
+    last-limit i64
+    last-offset i64
+    last-returning i64
+    parameter-count i64
+    parameter-names []str
+    parameter-indices []i64
+    matched bool
+    error-message str
+    error-offset i64
+}
+
+add-wrap = (left i64, right i64) (out i64) {
+    #{overflow=wrap}
+    out = left + right: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+sub-wrap = (left i64, right i64) (out i64) {
+    #{overflow=wrap}
+    out = left - right: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+new-sql-parser = (tokens []token) (out sql-parser) {
+    out = sql-parser{
+        tokens: tokens
+        pos: 0
+        program: sql-program{
+            nodes: []
+            statements: []
+            error-offset: -1
+        }
+        depth: 0
+        last-node: -1
+        parameter-count: 0
+        parameter-names: []
+        parameter-indices: []
+        error-offset: -1
+    }
+}
+
+sql-parser.peek = (offset i64) (out token) {
+    index = add-wrap(.pos, offset)
+    index < 0 -> return
+    index >= .tokens.len() -> return
+    out = .tokens[index]: {
+        ok -> it
+
+        -> _
+    }
+}
+
+sql-parser.at-end = () (yes bool) {
+    yes = .peek(0).kind == tok-eof
+}
+
+sql-parser.advance = () {
+    .pos = add-wrap(.pos, 1)
+}
+
+sql-parser.fail = (message str) {
+    .error-message != '' -> return
+    .error-message = message
+    .error-offset = .peek(0).offset
+}
+
+sql-parser.fail-at = (message str, offset i64) {
+    .error-message != '' -> return
+    .error-message = message
+    .error-offset = offset
+}
+
+sql-parser.word = (text str) (yes bool) {
+    current = .peek(0)
+    current.kind == tok-word -> yes = current.text.to-upper() == text.to-upper()
+}
+
+sql-parser.punct = (text str) (yes bool) {
+    current = .peek(0)
+    current.kind == tok-punctuation -> yes = current.text == text
+}
+
+sql-parser.accept-word = (text str) (yes bool) {
+    yes = .word(text)
+    yes -> .advance()
+}
+
+sql-parser.accept-punct = (text str) (yes bool) {
+    yes = .punct(text)
+    yes -> .advance()
+}
+
+sql-parser.expect-word = (text str) {
+    .accept-word(text) == false -> .fail('expected ' - text)
+}
+
+sql-parser.expect-punct = (text str) {
+    .accept-punct(text) == false -> .fail('expected ' - text)
+}
+
+sql-parser.identifier = () (yes bool) {
+    current = .peek(0)
+    yes = current.kind == tok-word || current.kind == tok-quoted-identifier
+}
+
+sql-parser.expect-identifier = () {
+    .identifier() == false -> .fail('expected identifier')
+}
+
+sql-parser.parse-name = () {
+    .last-name = ''
+    .expect-identifier()
+    .error-message != '' -> return
+    current = .peek(0)
+    .last-name = current.text
+    .advance()
+    !! {
+        .punct('.') == false -> break
+        .advance()
+        .expect-identifier()
+        .error-message != '' -> return
+        current = .peek(0)
+        .last-name = .last-name - '.' - current.text
+        .advance()
+    }
+}
+
+sql-parser.add-node = (kind sql-node-kind, text str, a i64, b i64, c i64, flags i64, kids []i64, literal []byte, offset i64) {
+    .last-node = .program.nodes.len()
+    .program.push-node(sql-node{
+        kind: kind
+        text: text
+        literal: literal
+        a: a
+        b: b
+        c: c
+        flags: flags
+        kids: kids
+        offset: offset
+    })
+}
+
+sql-parser.add-list = (items []i64) {
+    .add-node(sql-list, '', -1, -1, -1, 0, items, [], -1)
+}
+
+sql-parser.add-parameter = (text str, offset i64) {
+    index i64 = -1
+    text.len() == 0 -> {
+        .fail('invalid SQL parameter')
+        return
+    }
+
+    text.starts-with('?') -> {
+        text.len() == 1 -> index = add-wrap(.parameter-count, 1)
+        text.len() > 1 -> {
+            digits = text.slice(1, text.len())
+            index = digits.to-i64(): {
+                ok -> it
+
+                -> -1
+            }
+
+            index < 0 -> .fail('invalid SQL parameter')
+        }
+    }
+
+    text.starts-with('?') == false -> {
+        i <- [0.. .parameter-names.len()): {
+            existing = .parameter-names[i]: {
+                ok -> it
+
+                -> ''
+            }
+
+            existing == text -> index = .parameter-indices[i]: {
+                ok -> it
+
+                -> -1
+            }
+        }
+
+        index < 0 -> {
+            index = add-wrap(.parameter-count, 1)
+            .parameter-names.push(text)
+            .parameter-indices.push(index)
+        }
+    }
+
+    index > .parameter-count -> .parameter-count = index
+    .add-node(sql-parameter, text, -1, -1, -1, index, [], [], offset)
+}
+
+sql-parser.parse-all = () {
+    !! {
+        .at-end() -> break
+        .parse-statement()
+        .error-message != '' -> break
+        .accept-punct(';') == false -> {
+            .at-end() == false -> .fail('expected semicolon after statement')
+        }
+        .error-message != '' -> break
+    }
+}
+
+sql-parser.parse-statement = () {
+    .last-node = -1
+    {
+        .word('SELECT') || .word('WITH') || .word('VALUES') -> .parse-select()
+
+        .word('INSERT') || .word('REPLACE') -> .parse-insert()
+
+        .word('UPDATE') -> .parse-update()
+
+        .word('DELETE') -> .parse-delete()
+
+        .word('CREATE') -> .parse-create()
+
+        .word('DROP') -> .parse-drop()
+
+        .word('ALTER') -> .parse-alter()
+
+        .word('BEGIN') -> .parse-transaction(sql-begin)
+
+        .word('COMMIT') || .word('END') -> .parse-transaction(sql-commit)
+
+        .word('ROLLBACK') -> .parse-rollback()
+
+        .word('SAVEPOINT') -> .parse-savepoint(sql-savepoint)
+
+        .word('RELEASE') -> .parse-savepoint(sql-release)
+
+        .word('PRAGMA') -> .parse-pragma()
+
+        -> .fail('unsupported SQL statement')
+    }
+    .error-message != '' -> return
+    .program.add-statement(.last-node)
+}
+
+sql-parser.operator-precedence = (current token) (precedence i64) {
+    current.kind == tok-punctuation -> {
+        {
+            current.text == '->>' || current.text == '->' -> precedence = 9
+
+            current.text == '||' -> precedence = 8
+
+            current.text == '*' || current.text == '/' || current.text == '%' -> precedence = 7
+
+            current.text == '+' || current.text == '-' -> precedence = 6
+
+            current.text == '&' || current.text == '|' || current.text == '<<' || current.text == '>>' -> precedence = 5
+
+            current.text == '=' || current.text == '==' || current.text == '!=' || current.text == '<>' || current.text == '<' || current.text == '<=' || current.text == '>' || current.text == '>=' -> precedence = 4
+        }
+    }
+    current.kind == tok-word -> {
+        upper = current.text.to-upper()
+        {
+            upper == 'AND' -> precedence = 2
+
+            upper == 'OR' -> precedence = 1
+        }
+    }
+}
+
+sql-parser.parse-expression = (minimum i64) {
+    .depth = add-wrap(.depth, 1)
+    .depth > 128 -> .fail('expression nesting exceeds 128')
+    .depth > 128 -> return
+    .parse-unary()
+    left = .last-node
+    !! {
+        .error-message != '' -> break
+        current = .peek(0)
+        upper = current.text.to-upper()
+        {
+            current.kind == tok-word && (upper == 'IS' || upper == 'IN' || upper == 'BETWEEN' || upper == 'LIKE' || upper == 'GLOB' || upper == 'MATCH' || upper == 'REGEXP' || upper == 'ISNULL' || upper == 'NOTNULL') && minimum <= 4 -> {
+                .parse-special-operator(left, upper)
+                left = .last-node
+            }
+
+            -> {
+                precedence = .operator-precedence(current)
+                precedence < minimum -> break
+                precedence == 0 -> break
+                .advance()
+                .parse-expression(add-wrap(precedence, 1))
+                right = .last-node
+                .add-node(sql-binary, current.text, left, right, -1, 0, [], [], current.offset)
+                left = .last-node
+            }
+        }
+    }
+    .depth = sub-wrap(.depth, 1)
+    .last-node = left
+}
+
+sql-parser.parse-special-operator = (left i64, operator-text str) {
+    .last-node = left
+    offset = .peek(0).offset
+    .advance()
+    negated = false
+    .accept-word('NOT') -> negated = true
+    {
+        operator-text == 'IS' -> {
+            {
+                .accept-word('NULL') -> {
+                    flags = 0
+                    negated -> flags = 1
+                    .add-node(sql-is, 'IS NULL', left, -1, -1, flags, [], [], offset)
+                }
+
+                .accept-word('TRUE') -> {
+                    flags = 0
+                    negated -> flags = 1
+                    .add-node(sql-is, 'IS TRUE', left, -1, -1, flags, [], [], offset)
+                }
+
+                .accept-word('FALSE') -> {
+                    flags = 0
+                    negated -> flags = 1
+                    .add-node(sql-is, 'IS FALSE', left, -1, -1, flags, [], [], offset)
+                }
+
+                -> {
+                    .parse-expression(5)
+                    right = .last-node
+                    flags = 0
+                    negated -> flags = 1
+                    .add-node(sql-is, 'IS', left, right, -1, flags, [], [], offset)
+                }
+            }
+        }
+
+        operator-text == 'IN' -> {
+            .expect-punct('(')
+            items []i64 = []
+            {
+                .word('SELECT') || .word('WITH') -> {
+                    .parse-select()
+                    right = .last-node
+                    .expect-punct(')')
+                    flags = 0
+                    negated -> flags = 1
+                    .add-node(sql-in, 'IN', left, right, -1, flags, [], [], offset)
+                }
+
+                -> {
+                    !! {
+                        .punct(')') -> break
+                        .parse-expression(0)
+                        items.push(.last-node)
+                        .accept-punct(',') == false -> break
+                    }
+                    .expect-punct(')')
+                    .add-list(items)
+                    right = .last-node
+                    flags = 0
+                    negated -> flags = 1
+                    .add-node(sql-in, 'IN', left, right, -1, flags, [], [], offset)
+                }
+            }
+        }
+
+        operator-text == 'BETWEEN' -> {
+            .parse-expression(5)
+            low = .last-node
+            .expect-word('AND')
+            .parse-expression(5)
+            high = .last-node
+            flags = 0
+            negated -> flags = 1
+            .add-node(sql-between, 'BETWEEN', left, low, high, flags, [], [], offset)
+        }
+
+        operator-text == 'LIKE' || operator-text == 'GLOB' || operator-text == 'MATCH' || operator-text == 'REGEXP' -> {
+            .parse-expression(5)
+            right = .last-node
+            flags = 0
+            negated -> flags = 1
+            .add-node(sql-like, operator-text, left, right, -1, flags, [], [], offset)
+        }
+
+        operator-text == 'ISNULL' -> .add-node(sql-is, 'ISNULL', left, -1, -1, 0, [], [], offset)
+
+        operator-text == 'NOTNULL' -> .add-node(sql-is, 'NOTNULL', left, -1, -1, 1, [], [], offset)
+    }
+}
+
+sql-parser.parse-unary = () {
+    .last-node = -1
+    current = .peek(0)
+    upper = current.text.to-upper()
+    {
+        current.kind == tok-punctuation && (current.text == '+' || current.text == '-' || current.text == '~') -> {
+            offset = current.offset
+            .advance()
+            .parse-unary()
+            operand = .last-node
+            .add-node(sql-unary, current.text, operand, -1, -1, 0, [], [], offset)
+        }
+
+        current.kind == tok-word && upper == 'NOT' -> {
+            offset = current.offset
+            .advance()
+            .parse-expression(4)
+            operand = .last-node
+            .add-node(sql-unary, 'NOT', operand, -1, -1, 0, [], [], offset)
+        }
+
+        -> .parse-primary()
+    }
+    !! {
+        .word('COLLATE') == false -> break
+        offset = .peek(0).offset
+        .advance()
+        .parse-name()
+        expression = .last-node
+        .add-node(sql-collate, .last-name, expression, -1, -1, 0, [], [], offset)
+    }
+}
+
+sql-parser.parse-primary = () {
+    .last-node = -1
+    current = .peek(0)
+    upper = current.text.to-upper()
+    {
+        current.kind == tok-string -> {
+            text = current.text
+            offset = current.offset
+            .advance()
+            !! {
+                .peek(0).kind != tok-string -> break
+                text = text - .peek(0).text
+                .advance()
+            }
+            .add-node(sql-literal-string, text, -1, -1, -1, 0, [], [], offset)
+        }
+
+        current.kind == tok-integer -> {
+            .add-node(sql-literal-integer, current.text, -1, -1, -1, 0, [], [], current.offset)
+            .advance()
+        }
+
+        current.kind == tok-real -> {
+            .add-node(sql-literal-real, current.text, -1, -1, -1, 0, [], [], current.offset)
+            .advance()
+        }
+
+        current.kind == tok-blob -> {
+            .add-node(sql-literal-blob, current.text, -1, -1, -1, 0, [], current.literal, current.offset)
+            .advance()
+        }
+
+        current.kind == tok-parameter -> {
+            .add-parameter(current.text, current.offset)
+            .advance()
+        }
+
+        current.kind == tok-punctuation && current.text == '*' -> {
+            .add-node(sql-star, '*', -1, -1, -1, 0, [], [], current.offset)
+            .advance()
+        }
+
+        current.kind == tok-punctuation && current.text == '(' -> {
+            .advance()
+            {
+                .word('SELECT') || .word('WITH') || .word('VALUES') -> {
+                    .parse-select()
+                    expression = .last-node
+                    .expect-punct(')')
+                    .add-node(sql-subquery, '', expression, -1, -1, 0, [], [], current.offset)
+                }
+
+                -> {
+                    .parse-expression(0)
+                    expression = .last-node
+                    .expect-punct(')')
+                    .last-node = expression
+                }
+            }
+        }
+
+        current.kind == tok-word && upper == 'NULL' -> {
+            .add-node(sql-literal-null, 'NULL', -1, -1, -1, 0, [], [], current.offset)
+            .advance()
+        }
+
+        current.kind == tok-word && (upper == 'TRUE' || upper == 'FALSE') -> {
+            .add-node(sql-literal-integer, upper, -1, -1, -1, 0, [], [], current.offset)
+            .advance()
+        }
+
+        current.kind == tok-word && upper == 'CAST' -> .parse-cast()
+
+        current.kind == tok-word && upper == 'CASE' -> .parse-case()
+
+        current.kind == tok-word && upper == 'EXISTS' -> {
+            offset = current.offset
+            .advance()
+            .expect-punct('(')
+            .parse-select()
+            query = .last-node
+            .expect-punct(')')
+            .add-node(sql-function, 'exists', query, -1, -1, 0, [], [], offset)
+        }
+
+        (current.kind == tok-word || current.kind == tok-quoted-identifier) && .peek(1).text == '.' && .peek(2).text == '*' -> {
+            name = current.text
+            .advance()
+            .advance()
+            .add-node(sql-star, name, -1, -1, -1, 0, [], [], current.offset)
+            .advance()
+        }
+
+        current.kind == tok-word || current.kind == tok-quoted-identifier -> {
+            .parse-name()
+            name = .last-name
+            offset = current.offset
+            {
+                .punct('(') -> .parse-function(name, offset)
+
+                -> .add-node(sql-column, name, -1, -1, -1, 0, [], [], offset)
+            }
+        }
+
+        -> .fail('expected expression')
+    }
+}
+
+sql-parser.parse-function = (name str, offset i64) {
+    .expect-punct('(')
+    args []i64 = []
+    {
+        .punct(')') == false -> {
+            !! {
+                .punct(')') -> break
+                .parse-expression(0)
+                args.push(.last-node)
+                .accept-punct(',') == false -> break
+            }
+        }
+    }
+    .expect-punct(')')
+    .add-node(sql-function, name, -1, -1, -1, 0, args, [], offset)
+}
+
+sql-parser.parse-cast = () {
+    offset = .peek(0).offset
+    .advance()
+    .expect-punct('(')
+    .parse-expression(0)
+    expression = .last-node
+    .expect-word('AS')
+    type-name = .parse-type-name()
+    .expect-punct(')')
+    .add-node(sql-cast, type-name, expression, -1, -1, 0, [], [], offset)
+}
+
+sql-parser.parse-case = () {
+    offset = .peek(0).offset
+    .advance()
+    base = -1
+    .word('WHEN') == false -> {
+        .parse-expression(0)
+        base = .last-node
+    }
+    whens []i64 = []
+    !! {
+        .accept-word('WHEN') == false -> break
+        .parse-expression(0)
+        condition = .last-node
+        .expect-word('THEN')
+        .parse-expression(0)
+        result = .last-node
+        .add-node(sql-when, '', condition, result, -1, 0, [], [], offset)
+        whens.push(.last-node)
+    }
+    whens.len() == 0 -> .fail('CASE requires at least one WHEN arm')
+    otherwise = -1
+    .accept-word('ELSE') -> {
+        .parse-expression(0)
+        otherwise = .last-node
+    }
+    .expect-word('END')
+    .add-node(sql-case, '', base, otherwise, -1, 0, whens, [], offset)
+}
+
+sql-parser.parse-type-name = () (type-name str) {
+    type-name = ''
+    .expect-identifier()
+    .error-message != '' -> return
+    current = .peek(0)
+    type-name = current.text
+    .advance()
+    !! {
+        .identifier() == false -> break
+        upper = .peek(0).text.to-upper()
+        upper == 'CONSTRAINT' || upper == 'PRIMARY' || upper == 'NOT' || upper == 'UNIQUE' || upper == 'CHECK' || upper == 'DEFAULT' || upper == 'COLLATE' || upper == 'REFERENCES' || upper == 'GENERATED' -> break
+        current = .peek(0)
+        type-name = type-name - ' ' - current.text
+        .advance()
+    }
+    .accept-punct('(') -> {
+        type-name = type-name - '('
+        !! {
+            .at-end() -> break
+            current = .peek(0)
+            current.kind == tok-punctuation && current.text == ')' -> break
+            type-name = type-name - current.text
+            .advance()
+        }
+        .expect-punct(')')
+        type-name = type-name - ')'
+    }
+}
+
+sql-parser.reserved-alias = () (reserved bool) {
+    current = .peek(0)
+    current.kind == tok-word -> {
+        upper = current.text.to-upper()
+        {
+            upper == 'FROM' || upper == 'WHERE' || upper == 'GROUP' || upper == 'HAVING' || upper == 'ORDER' || upper == 'LIMIT' || upper == 'OFFSET' || upper == 'RETURNING' || upper == 'UNION' || upper == 'EXCEPT' || upper == 'INTERSECT' || upper == 'JOIN' || upper == 'INNER' || upper == 'LEFT' || upper == 'RIGHT' || upper == 'FULL' || upper == 'CROSS' || upper == 'ON' || upper == 'USING' -> reserved = true
+        }
+    }
+}
+
+sql-parser.parse-projection = () {
+    .last-node = -1
+    current = .peek(0)
+    {
+        current.kind == tok-punctuation && current.text == '*' -> {
+            .add-node(sql-star, '*', -1, -1, -1, 0, [], [], current.offset)
+            .advance()
+            expression = .last-node
+            .add-node(sql-projection, '', expression, -1, -1, 0, [], [], current.offset)
+        }
+
+        -> {
+            .parse-expression(0)
+            expression = .last-node
+            alias = ''
+            {
+                .accept-word('AS') -> {
+                    .expect-identifier()
+                    alias = .peek(0).text
+                    .advance()
+                }
+
+                -> {
+                    .identifier() && .reserved-alias() == false -> {
+                        alias = .peek(0).text
+                        .advance()
+                    }
+                }
+            }
+            .add-node(sql-projection, alias, expression, -1, -1, 0, [], [], current.offset)
+        }
+    }
+}
+
+sql-parser.parse-select = () {
+    .last-node = -1
+    offset = .peek(0).offset
+    with-clause = -1
+    .accept-word('WITH') -> {
+        .parse-with-clause()
+        with-clause = .last-node
+    }
+    distinct = 0
+    {
+        .accept-word('SELECT') == false -> {
+            .word('VALUES') -> distinct = 0
+            .word('VALUES') == false -> .fail('expected SELECT')
+        }
+    }
+    {
+    .word('VALUES') == false -> {
+        .accept-word('DISTINCT') -> distinct = 1
+        .accept-word('ALL') -> distinct = 0
+        projections []i64 = []
+        !! {
+            .parse-projection()
+            projections.push(.last-node)
+            .accept-punct(',') == false -> break
+        }
+        .add-list(projections)
+        projection-list = .last-node
+        from-list = -1
+        .accept-word('FROM') -> {
+            .parse-from-list()
+            from-list = .last-node
+        }
+        where-clause = -1
+        .accept-word('WHERE') -> {
+            .parse-expression(0)
+            where-clause = .last-node
+        }
+        group-list = -1
+        .accept-word('GROUP') -> {
+            .expect-word('BY')
+            .parse-expression-list()
+            group-list = .last-node
+        }
+        having = -1
+        .accept-word('HAVING') -> {
+            .parse-expression(0)
+            having = .last-node
+        }
+        .parse-order-limit-returning()
+        order-list = .last-order
+        limit = .last-limit
+        offset-clause = .last-offset
+        returning = .last-returning
+        .add-node(sql-select, '', -1, -1, -1, distinct, [with-clause, projection-list, from-list, where-clause, group-list, having, order-list, limit, offset-clause, returning], [], offset)
+    }
+
+    -> {
+        .parse-values()
+        .add-node(sql-values, '', .last-node, -1, -1, distinct, [with-clause], [], offset)
+    }
+    }
+}
+
+sql-parser.parse-with-clause = () {
+    recursive = 0
+    .accept-word('RECURSIVE') -> recursive = 1
+    ctes []i64 = []
+    !! {
+        .parse-name()
+        name = .last-name
+        column-list = -1
+        .accept-punct('(') -> {
+            columns []i64 = []
+            !! {
+                .expect-identifier()
+                current = .peek(0)
+                .add-node(sql-column, current.text, -1, -1, -1, 0, [], [], current.offset)
+                columns.push(.last-node)
+                .advance()
+                .accept-punct(',') == false -> break
+            }
+            .expect-punct(')')
+            .add-list(columns)
+            column-list = .last-node
+        }
+        .expect-word('AS')
+        .accept-word('MATERIALIZED') -> recursive = recursive | 2
+        .accept-word('NOT') -> {
+            .expect-word('MATERIALIZED')
+            recursive = recursive | 4
+        }
+        .expect-punct('(')
+        .parse-select()
+        query = .last-node
+        .expect-punct(')')
+        .add-node(sql-list, name, query, -1, -1, recursive, [column-list], [], .peek(0).offset)
+        ctes.push(.last-node)
+        .accept-punct(',') == false -> break
+    }
+    .add-list(ctes)
+}
+
+sql-parser.parse-expression-list = () {
+    items []i64 = []
+    !! {
+        .parse-expression(0)
+        items.push(.last-node)
+        .accept-punct(',') == false -> break
+    }
+    .add-list(items)
+}
+
+sql-parser.parse-from-list = () {
+    items []i64 = []
+    !! {
+        .parse-from-item()
+        items.push(.last-node)
+        .accept-punct(',') == false -> break
+    }
+    .add-list(items)
+}
+
+sql-parser.parse-from-item = () {
+    offset = .peek(0).offset
+    .parse-name()
+    name = .last-name
+    alias = ''
+    {
+        .accept-word('AS') -> {
+            .expect-identifier()
+            alias = .peek(0).text
+            .advance()
+        }
+
+        -> {
+            .identifier() && .reserved-alias() == false && .word('INDEXED') == false -> {
+                alias = .peek(0).text
+                .advance()
+            }
+        }
+    }
+    .add-node(sql-from-table, name, -1, -1, -1, 0, [], [], offset)
+    left = .last-node
+    alias-node = -1
+    alias != '' -> {
+        .add-node(sql-column, alias, -1, -1, -1, 0, [], [], offset)
+        alias-node = .last-node
+    }
+    .program.set-node-a(left, alias-node)
+    .last-node = left
+    !! {
+        join-type = ''
+        {
+            .accept-word('INNER') -> join-type = 'INNER'
+
+            .accept-word('LEFT') -> {
+                join-type = 'LEFT'
+                .accept-word('OUTER') -> {
+                }
+            }
+
+            .accept-word('RIGHT') -> {
+                join-type = 'RIGHT'
+                .accept-word('OUTER') -> {
+                }
+            }
+
+            .accept-word('FULL') -> {
+                join-type = 'FULL'
+                .accept-word('OUTER') -> {
+                }
+            }
+
+            .accept-word('CROSS') -> join-type = 'CROSS'
+        }
+        .accept-word('JOIN') == false -> {
+            join-type == '' -> break
+            .fail('expected JOIN')
+            break
+        }
+        .parse-name()
+        right-name = .last-name
+        .add-node(sql-from-table, right-name, -1, -1, -1, 0, [], [], .peek(0).offset)
+        right = .last-node
+        condition = -1
+        using-list = -1
+        {
+            .accept-word('ON') -> {
+                .parse-expression(0)
+                condition = .last-node
+            }
+
+            -> {
+                .accept-word('USING') -> {
+                .expect-punct('(')
+                names []i64 = []
+                !! {
+                    .expect-identifier()
+                    current = .peek(0)
+                    .add-node(sql-column, current.text, -1, -1, -1, 0, [], [], current.offset)
+                    names.push(.last-node)
+                    .advance()
+                    .accept-punct(',') == false -> break
+                }
+                .expect-punct(')')
+                .add-list(names)
+                using-list = .last-node
+                }
+            }
+        }
+        .add-node(sql-join, join-type, left, right, condition, 0, [using-list], [], .peek(0).offset)
+        left = .last-node
+    }
+    .last-node = left
+}
+
+sql-parser.parse-order-limit-returning = () {
+    .last-order = -1
+    .last-limit = -1
+    .last-offset = -1
+    .last-returning = -1
+    .accept-word('ORDER') -> {
+        .expect-word('BY')
+        items []i64 = []
+        !! {
+            .parse-expression(0)
+            expression = .last-node
+            flags = 0
+            .accept-word('DESC') -> flags = 1
+            .accept-word('ASC') -> flags = 0
+            .accept-word('NULLS') -> {
+                .accept-word('FIRST') -> flags = flags | 2
+                .accept-word('LAST') -> flags = flags | 4
+            }
+            .add-node(sql-order-item, '', expression, -1, -1, flags, [], [], .peek(0).offset)
+            items.push(.last-node)
+            .accept-punct(',') == false -> break
+        }
+        .add-list(items)
+        .last-order = .last-node
+    }
+    .accept-word('LIMIT') -> {
+        .parse-expression(0)
+        .last-limit = .last-node
+        {
+            .accept-word('OFFSET') -> {
+                .parse-expression(0)
+                .last-offset = .last-node
+            }
+
+            -> {
+                .accept-punct(',') -> {
+                    first = .last-limit
+                    .parse-expression(0)
+                    .last-offset = first
+                    .last-limit = .last-node
+                }
+            }
+        }
+    }
+    .accept-word('RETURNING') -> {
+        items []i64 = []
+        !! {
+            .parse-projection()
+            items.push(.last-node)
+            .accept-punct(',') == false -> break
+        }
+        .add-list(items)
+        .last-returning = .last-node
+    }
+}
+
+sql-parser.parse-values = () {
+    .expect-word('VALUES')
+    rows []i64 = []
+    !! {
+        .expect-punct('(')
+        .parse-expression-list()
+        row = .last-node
+        .expect-punct(')')
+        .add-node(sql-list, '', row, -1, -1, 0, [], [], .peek(0).offset)
+        rows.push(.last-node)
+        .accept-punct(',') == false -> break
+    }
+    .add-list(rows)
+}
+
+sql-parser.parse-create = () {
+    .expect-word('CREATE')
+    {
+        .accept-word('TABLE') -> .parse-create-table()
+
+        .accept-word('INDEX') -> .parse-create-index(false)
+
+        .accept-word('UNIQUE') -> {
+            .expect-word('INDEX')
+            .parse-create-index(true)
+        }
+
+        .accept-word('VIEW') -> .parse-create-view()
+
+        .accept-word('TRIGGER') -> .parse-create-trigger()
+
+        -> .fail('unsupported CREATE statement')
+    }
+}
+
+sql-parser.parse-create-table = () {
+    offset = .peek(0).offset
+    flags = 0
+    .accept-word('IF') -> {
+        .expect-word('NOT')
+        .expect-word('EXISTS')
+        flags = 1
+    }
+    .accept-word('TEMP') || .accept-word('TEMPORARY') -> flags = flags | 2
+    .parse-name()
+    name = .last-name
+    .expect-punct('(')
+    definitions []i64 = []
+    !! {
+        .punct(')') -> break
+        .parse-column-def()
+        definitions.push(.last-node)
+        .accept-punct(',') == false -> break
+    }
+    .expect-punct(')')
+    .add-list(definitions)
+    columns = .last-node
+    strict = 0
+    .accept-word('WITHOUT') -> {
+        .expect-word('ROWID')
+        strict = strict | 1
+    }
+    .accept-word('STRICT') -> strict = strict | 2
+    .add-node(sql-create-table, name, columns, -1, -1, flags, [strict], [], offset)
+}
+
+sql-parser.parse-name-list = () {
+    .expect-punct('(')
+    names []i64 = []
+    !! {
+        .punct(')') -> break
+        .parse-name()
+        .add-node(sql-column, .last-name, -1, -1, -1, 0, [], [], .peek(0).offset)
+        names.push(.last-node)
+        .accept-punct(',') == false -> break
+    }
+    .expect-punct(')')
+    .add-list(names)
+}
+
+sql-parser.parse-table-constraint = () {
+    offset = .peek(0).offset
+    upper = .peek(0).text.to-upper()
+    .parse-name()
+    name = .last-name
+    upper == 'CONSTRAINT' -> {
+        .parse-name()
+        name = .last-name
+        upper = .peek(0).text.to-upper()
+    }
+    left = -1
+    right = -1
+    kids []i64 = []
+    {
+        upper == 'PRIMARY' -> {
+            name = 'PRIMARY KEY'
+            .expect-word('KEY')
+            .parse-name-list()
+            left = .last-node
+        }
+
+        upper == 'UNIQUE' -> {
+            name = 'UNIQUE'
+            .parse-name-list()
+            left = .last-node
+        }
+
+        upper == 'CHECK' -> {
+            name = 'CHECK'
+            .expect-punct('(')
+            .parse-expression(0)
+            .expect-punct(')')
+            left = .last-node
+        }
+
+        upper == 'FOREIGN' -> {
+            name = 'FOREIGN KEY'
+            .expect-word('KEY')
+            .parse-name-list()
+            left = .last-node
+            .expect-word('REFERENCES')
+            .parse-name()
+            .add-node(sql-from-table, .last-name, -1, -1, -1, 0, [], [], .peek(0).offset)
+            right = .last-node
+            .punct('(') -> {
+                .parse-name-list()
+                kids.push(.last-node)
+            }
+        }
+
+        -> .fail('unsupported table constraint')
+    }
+    .add-node(sql-table-constraint, name, left, right, -1, 0, kids, [], offset)
+}
+
+sql-parser.parse-column-def = () {
+    offset = .peek(0).offset
+    upper = .peek(0).text.to-upper()
+    upper == 'CONSTRAINT' || upper == 'PRIMARY' || upper == 'UNIQUE' || upper == 'CHECK' || upper == 'FOREIGN' -> {
+        .parse-table-constraint()
+        return
+    }
+    .parse-name()
+    name = .last-name
+    type-name = .parse-type-name()
+    flags = 0
+    default-value = -1
+    !! {
+        {
+            .accept-word('PRIMARY') -> {
+                .expect-word('KEY')
+                flags = flags | 1
+            }
+
+            .accept-word('NOT') -> {
+                .expect-word('NULL')
+                flags = flags | 2
+            }
+
+            .accept-word('UNIQUE') -> flags = flags | 4
+
+            .accept-word('DEFAULT') -> {
+                .parse-expression(0)
+                default-value = .last-node
+            }
+
+            .accept-word('COLLATE') -> {
+                .parse-name()
+            }
+
+            .accept-word('REFERENCES') -> {
+                .parse-name()
+            }
+
+            .accept-word('GENERATED') || .accept-word('AS') -> {
+                .expect-punct('(')
+                .parse-expression(0)
+                .expect-punct(')')
+                flags = flags | 8
+            }
+
+            -> break
+        }
+    }
+    .add-node(sql-column-def, name, default-value, -1, -1, flags, [], [], offset)
+    column-id = .last-node
+    .program.set-node-b(column-id, .program.nodes.len())
+    .add-node(sql-literal-string, type-name, -1, -1, -1, 0, [], [], offset)
+    .last-node = column-id
+}
+
+sql-parser.parse-create-index = (unique bool) {
+    offset = .peek(0).offset
+    flags = 0
+    unique -> flags = 1
+    .accept-word('IF') -> {
+        .expect-word('NOT')
+        .expect-word('EXISTS')
+        flags = flags | 2
+    }
+    .parse-name()
+    name = .last-name
+    .expect-word('ON')
+    .parse-name()
+    table-name = .last-name
+    .add-node(sql-from-table, table-name, -1, -1, -1, 0, [], [], offset)
+    table-id = .last-node
+    .expect-punct('(')
+    .parse-expression-list()
+    columns = .last-node
+    .expect-punct(')')
+    .add-node(sql-create-index, name, columns, table-id, -1, flags, [], [], offset)
+}
+
+sql-parser.parse-create-view = () {
+    offset = .peek(0).offset
+    .accept-word('IF') -> {
+        .expect-word('NOT')
+        .expect-word('EXISTS')
+    }
+    .parse-name()
+    name = .last-name
+    .expect-word('AS')
+    .parse-select()
+    query = .last-node
+    .add-node(sql-create-view, name, query, -1, -1, 0, [], [], offset)
+}
+
+sql-parser.parse-create-trigger = () {
+    .fail('trigger parsing is not implemented yet')
+}
+
+sql-parser.parse-drop = () {
+    .expect-word('DROP')
+    {
+        .accept-word('TABLE') -> .parse-drop-object(sql-drop-table)
+
+        .accept-word('VIEW') -> .parse-drop-object(sql-drop-view)
+
+        .accept-word('INDEX') -> .parse-drop-object(sql-drop-index)
+
+        .accept-word('TRIGGER') -> .parse-drop-object(sql-drop-trigger)
+
+        -> .fail('unsupported DROP statement')
+    }
+}
+
+sql-parser.parse-drop-object = (kind sql-node-kind) {
+    offset = .peek(0).offset
+    .accept-word('IF') -> {
+        .expect-word('EXISTS')
+    }
+    .parse-name()
+    name = .last-name
+    .add-node(kind, name, -1, -1, -1, 0, [], [], offset)
+}
+
+sql-parser.parse-alter = () {
+    .fail('ALTER TABLE parsing is not implemented yet')
+}
+
+sql-parser.parse-insert = () {
+    offset = .peek(0).offset
+    flags = 0
+    {
+        .accept-word('REPLACE') -> flags = 2
+
+        -> {
+        .expect-word('INSERT')
+        .accept-word('OR') -> {
+            conflict = .peek(0).text.to-upper()
+            .advance()
+            {
+                conflict == 'ROLLBACK' -> flags = 1
+
+                conflict == 'ABORT' -> flags = 2
+
+                conflict == 'REPLACE' -> flags = 3
+
+                conflict == 'FAIL' -> flags = 4
+
+                conflict == 'IGNORE' -> flags = 5
+
+                -> .fail('unknown INSERT conflict policy')
+            }
+        }
+        }
+    }
+    .expect-word('INTO')
+    .parse-name()
+    table-name = .last-name
+    column-list = -1
+    .accept-punct('(') -> {
+        columns []i64 = []
+        !! {
+            .expect-identifier()
+            current = .peek(0)
+            .add-node(sql-column, current.text, -1, -1, -1, 0, [], [], current.offset)
+            columns.push(.last-node)
+            .advance()
+            .accept-punct(',') == false -> break
+        }
+        .expect-punct(')')
+        .add-list(columns)
+        column-list = .last-node
+    }
+    values = -1
+    selected = -1
+    {
+        .accept-word('DEFAULT') -> {
+            .expect-word('VALUES')
+        }
+
+        .word('VALUES') -> {
+            .parse-values()
+            values = .last-node
+        }
+
+        -> {
+            .parse-select()
+            selected = .last-node
+        }
+    }
+    .parse-order-limit-returning()
+    .add-node(sql-insert, table-name, column-list, values, selected, flags, [.last-returning], [], offset)
+}
+
+sql-parser.parse-update = () {
+    offset = .peek(0).offset
+    .expect-word('UPDATE')
+    flags = 0
+    .accept-word('OR') -> {
+        conflict = .peek(0).text.to-upper()
+        .advance()
+        {
+            conflict == 'ROLLBACK' -> flags = 1
+
+            conflict == 'ABORT' -> flags = 2
+
+            conflict == 'REPLACE' -> flags = 3
+
+            conflict == 'FAIL' -> flags = 4
+
+            conflict == 'IGNORE' -> flags = 5
+
+            -> .fail('unknown UPDATE conflict policy')
+        }
+    }
+    .parse-name()
+    table-name = .last-name
+    .expect-word('SET')
+    assignments []i64 = []
+    !! {
+        .parse-name()
+        column-name = .last-name
+        .expect-punct('=')
+        .parse-expression(0)
+        value = .last-node
+        .add-node(sql-assignment, column-name, -1, value, -1, 0, [], [], .peek(0).offset)
+        assignments.push(.last-node)
+        .accept-punct(',') == false -> break
+    }
+    .add-list(assignments)
+    assignment-list = .last-node
+    where-clause = -1
+    .accept-word('WHERE') -> {
+        .parse-expression(0)
+        where-clause = .last-node
+    }
+    .parse-order-limit-returning()
+    .add-node(sql-update, table-name, assignment-list, where-clause, -1, flags, [.last-returning], [], offset)
+}
+
+sql-parser.parse-delete = () {
+    offset = .peek(0).offset
+    .expect-word('DELETE')
+    .expect-word('FROM')
+    .parse-name()
+    table-name = .last-name
+    where-clause = -1
+    .accept-word('WHERE') -> {
+        .parse-expression(0)
+        where-clause = .last-node
+    }
+    .parse-order-limit-returning()
+    .add-node(sql-delete, table-name, -1, where-clause, -1, 0, [.last-returning], [], offset)
+}
+
+sql-parser.parse-transaction = (kind sql-node-kind) {
+    offset = .peek(0).offset
+    .advance()
+    mode = ''
+    .accept-word('DEFERRED') -> mode = 'DEFERRED'
+    .accept-word('IMMEDIATE') -> mode = 'IMMEDIATE'
+    .accept-word('EXCLUSIVE') -> mode = 'EXCLUSIVE'
+    .add-node(kind, mode, -1, -1, -1, 0, [], [], offset)
+}
+
+sql-parser.parse-rollback = () {
+    offset = .peek(0).offset
+    .advance()
+    .accept-word('TRANSACTION') -> {
+    }
+    savepoint = ''
+    .accept-word('TO') -> {
+        .accept-word('SAVEPOINT') -> {
+        }
+        .parse-name()
+        savepoint = .last-name
+    }
+    .add-node(sql-rollback, savepoint, -1, -1, -1, 0, [], [], offset)
+}
+
+sql-parser.parse-savepoint = (kind sql-node-kind) {
+    offset = .peek(0).offset
+    .advance()
+    .parse-name()
+    name = .last-name
+    .add-node(kind, name, -1, -1, -1, 0, [], [], offset)
+}
+
+sql-parser.parse-pragma = () {
+    offset = .peek(0).offset
+    .advance()
+    .parse-name()
+    name = .last-name
+    value = -1
+    {
+        .accept-punct('=') -> {
+            .parse-expression(0)
+            value = .last-node
+        }
+
+        -> {
+            .accept-punct('(') -> {
+                .parse-expression(0)
+                value = .last-node
+                .expect-punct(')')
+            }
+        }
+    }
+    .add-node(sql-pragma, name, value, -1, -1, 0, [], [], offset)
+}
+
+parse-sql = (source str) (out sql-program) {
+    lexed = token.tokenize(source)
+    lexed.error-message != '' -> {
+        out = sql-program{
+            nodes: []
+            statements: []
+            error-offset: -1
+        }
+        out.fail(lexed.error-message, lexed.error-offset)
+        return
+    }
+    state = new-sql-parser(lexed.tokens)
+    state.parse-all()
+    out = state.program
+    state.error-message != '' -> out.fail(state.error-message, state.error-offset)
+}

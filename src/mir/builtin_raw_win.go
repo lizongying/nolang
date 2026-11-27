@@ -88,7 +88,7 @@ translate:
   %haswr = icmp ne i64 %wr, 0
   %ar = select i1 %hasrd, i64 2147483648, i64 0
   %aw = select i1 %haswr, i64 1073741824, i64 0
-  %desired = or i64 %ar, i64 %aw
+  %desired = or i64 %ar, %aw
   %dispnew = select i1 %hasexcl, i64 1, i64 4
   %disp = select i1 %hascreate, i64 %dispnew, i64 3
   %attrs = or i64 128, 1073741824
@@ -241,9 +241,9 @@ wait:
   call i32 @CloseHandle(i64 %ev)
   br i1 %gok, label %complete, label %fail
 complete:
-  %nv = load i32, i32* %n
-  %n64 = zext i32 %nv to i64
-  ret i64 %n64
+  %nv2 = load i32, i32* %n
+  %n642 = zext i32 %nv2 to i64
+  ret i64 %n642
 fail:
   %err = phi i32 [ %le, %pending ], [ %gle, %wait ]
   call i32 @CloseHandle(i64 %ev)

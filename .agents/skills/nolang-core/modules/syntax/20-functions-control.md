@@ -386,7 +386,7 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 }
 ```
 
-**Debugging hint:** if a function returns an unexpected zero value (`found` should be `true` but is `false`, or `result` should have a value but is `nil`), check that **every** success-path branch explicitly assigns the out parameter. The compiler does not infer intent — it only zero-fills unassigned out params. See `.agents/skills/nolang-debug/SKILL.md`.
+**Debugging hint:** if a function returns an unexpected zero value (`found` should be `true` but is `false`, or `result` should have a value but is `nil`), check that **every** success-path branch explicitly assigns the out parameter. The compiler does not infer intent — it only zero-fills unassigned out params. See [compiler debugging](../m50-debug.md).
 
 ### Methods on Union Types
 

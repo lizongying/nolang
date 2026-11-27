@@ -1,0 +1,988 @@
+; Deterministic SQL expression evaluation over the flat arena. The context owns
+; the current source rows and is reused for projections, predicates, and ordering.
+# /example/nosql/src/ast
+# /example/nosql/src/schema
+# /example/nosql/src/value
+# /example/nosql/src/ops
+
+exec-source {
+    table-name str
+    alias str
+    columns []db-column
+    row db-row
+}
+
+exec-context {
+    program sql-program
+    catalog db-catalog
+    sources []exec-source
+    parameters []sql-value
+    aggregate-rows []db-row
+    has-aggregate bool
+    depth i64
+    error-message str
+}
+
+new-exec-context = (program sql-program, catalog db-catalog) (out exec-context) {
+    out = exec-context{
+        program: program
+        catalog: catalog
+        sources: []
+        parameters: []
+        aggregate-rows: []
+        has-aggregate: false
+        depth: 0
+        error-message: ''
+    }
+}
+
+exec-context.fail = (message str) {
+    .error-message == '' -> .error-message = message
+}
+
+exec-context.add-source = (table db-table, alias str, row db-row) {
+    .sources.push(exec-source{
+        table-name: table.name
+        alias: alias
+        columns: table.columns
+        row: row
+    })
+}
+
+exec-context.set-row = (source-index i64, row db-row) {
+    source-index < 0 -> return
+    source-index >= .sources.len() -> return
+    source = .sources[source-index]: {
+        ok -> it
+
+        -> _
+    }
+
+    .sources[source-index]: {
+        ok -> it = exec-source{
+            table-name: source.table-name
+            alias: source.alias
+            columns: source.columns
+            row: row
+        }
+
+        -> _
+    }
+}
+
+exec-context.column = (name str) (out sql-value) {
+    out = sql-null
+    parts = name.split('.')
+    qualifier = ''
+    local = name
+    parts.len() > 1 -> {
+        qualifier = parts[0]: {
+            ok -> it
+
+            -> ''
+        }
+
+        last-index ?i64 = parts.len() - 1
+        last-index: {
+            ok(number) -> {
+                local = parts[number]: {
+                    ok -> it
+
+                    -> name
+                }
+            }
+
+            -> _
+        }
+    }
+
+    matches = 0
+    i <- [0.. .sources.len()): {
+        source = .sources[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        qualifier != '' -> {
+            same-name(qualifier, source.alias) == false -> {
+                same-name(qualifier, base-name(source.table-name)) == false -> continue
+            }
+        }
+
+        {
+            local.to-upper() == 'ROWID' || local.to-upper() == '_ROWID_' || local.to-upper() == 'OID' -> {
+                out = integer(source.row.rowid)
+                next-match ?i64 = matches + 1
+                next-match: {
+                    ok -> matches = it
+
+                    -> _
+                }
+            }
+
+            -> {
+                column-index = find-db-column(source.columns, local)
+                column-index < 0 -> continue
+                out = source.row.values[column-index]: {
+                    ok -> it
+
+                    -> sql-null
+                }
+
+                next-match ?i64 = matches + 1
+                next-match: {
+                    ok -> matches = it
+
+                    -> _
+                }
+            }
+        }
+    }
+
+    matches == 0 -> .fail('no such column: ' - name)
+    matches > 1 -> .fail('ambiguous column name: ' - name)
+}
+
+exec-context.eval-unary = (node sql-node) (out sql-value) {
+    value = .evaluate(node.a)
+    .error-message != '' -> return
+    {
+        node.text == '+' -> out = value
+
+        node.text == '-' -> {
+            value: {
+                integer(n) -> {
+                    negative ?i64 = 0 - n
+                    negative: {
+                        ok(number) -> out = integer(number)
+
+                        -> out = real(0.0 - n.to-f64())
+                    }
+                }
+
+                real(n) -> out = real(0.0 - n)
+
+                -> out = sql-null
+            }
+        }
+
+        node.text == '~' -> {
+            integer-value = sql-integer(value)
+            integer-value: {
+                ok(n) -> out = integer(~n)
+
+                -> out = sql-null
+            }
+        }
+
+        node.text == 'NOT' -> out = sql-not(value)
+
+        -> .fail('unsupported unary operator: ' - node.text)
+    }
+}
+
+exec-context.eval-is = (node sql-node) (out sql-value) {
+    left = .evaluate(node.a)
+    .error-message != '' -> return
+    right = sql-null
+    node.b >= 0 -> right = .evaluate(node.b)
+    .error-message != '' -> return
+    {
+        left.is-null() && right.is-null() -> out = integer(1)
+
+        left.is-null() || right.is-null() -> out = integer(0)
+
+        -> {
+            equal = sql-compare-op(left, right, '=')
+            equal: {
+                integer(n) -> out = integer(n)
+
+                -> out = integer(0)
+            }
+        }
+    }
+
+    node.flags & 1 == 1 -> out = sql-not(out)
+}
+
+exec-context.eval-between = (node sql-node) (out sql-value) {
+    value = .evaluate(node.a)
+    low = .evaluate(node.b)
+    high = .evaluate(node.c)
+    .error-message != '' -> return
+    lower = sql-compare-op(value, low, '>=')
+    upper = sql-compare-op(value, high, '<=')
+    out = sql-and(lower, upper)
+    node.flags & 1 == 1 -> out = sql-not(out)
+}
+
+exec-context.eval-in = (node sql-node) (out sql-value) {
+    value = .evaluate(node.a)
+    .error-message != '' -> return
+    right = .program.node(node.b)
+    right.kind != sql-list -> {
+        .fail('IN requires a value list')
+        return
+    }
+
+    found = false
+    has-null = false
+    i <- [0..right.kids.len()): {
+        item-id = right.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        item-id < 0 -> continue
+        item = .evaluate(item-id)
+        .error-message != '' -> return
+        item.is-null() -> has-null = true
+        equal = sql-compare-op(value, item, '=')
+        equal: {
+            integer(n) -> {
+                n == 1 -> found = true
+            }
+
+            -> _
+        }
+    }
+
+    {
+        found -> out = integer(1)
+
+        value.is-null() || has-null -> out = sql-null
+
+        -> out = integer(0)
+    }
+
+    node.flags & 1 == 1 -> out = sql-not(out)
+}
+
+exec-context.eval-binary = (node sql-node) (out sql-value) {
+    left = .evaluate(node.a)
+    .error-message != '' -> return
+    {
+        node.text == 'AND' -> {
+            left.to-truth() == sql-false -> {
+                out = integer(0)
+                return
+            }
+        }
+
+        node.text == 'OR' -> {
+            left.to-truth() == sql-true -> {
+                out = integer(1)
+                return
+            }
+        }
+
+        -> {
+        }
+    }
+
+    right = .evaluate(node.b)
+    .error-message != '' -> return
+    {
+        node.text == '=' || node.text == '==' || node.text == '!=' || node.text == '<>' || node.text == '<' || node.text == '<=' || node.text == '>' || node.text == '>=' -> out = sql-compare-op(left, right, node.text)
+
+        node.text == 'AND' -> out = sql-and(left, right)
+
+        node.text == 'OR' -> out = sql-or(left, right)
+
+        node.text == '||' -> {
+            {
+                left.is-null() || right.is-null() -> out = sql-null
+
+                -> out = text(sql-text(left) - sql-text(right))
+            }
+        }
+
+        node.text == '+' || node.text == '-' || node.text == '*' || node.text == '/' || node.text == '%' -> {
+            left.is-null() || right.is-null() -> {
+                out = sql-null
+                return
+            }
+
+            left-real = sql-real(left)
+            right-real = sql-real(right)
+            left-real: {
+                ok(lf) -> {
+                    right-real: {
+                        ok(rf) -> {
+                            {
+                                node.text == '/' && rf == 0.0 -> {
+                                    out = sql-null
+                                    return
+                                }
+
+                                node.text == '%' && rf == 0.0 -> {
+                                    out = sql-null
+                                    return
+                                }
+                            }
+
+                            left: {
+                                integer(li) -> {
+                                    right: {
+                                        integer(ri) -> {
+                                            {
+                                                node.text == '+' -> {
+                                                    sum ?i64 = li + ri
+                                                    sum: {
+                                                        ok(n) -> out = integer(n)
+
+                                                        -> out = real(lf + rf)
+                                                    }
+                                                }
+
+                                                node.text == '-' -> {
+                                                    difference ?i64 = li - ri
+                                                    difference: {
+                                                        ok(n) -> out = integer(n)
+
+                                                        -> out = real(lf - rf)
+                                                    }
+                                                }
+
+                                                node.text == '*' -> {
+                                                    product ?i64 = li * ri
+                                                    product: {
+                                                        ok(n) -> out = integer(n)
+
+                                                        -> out = real(lf * rf)
+                                                    }
+                                                }
+
+                                                node.text == '/' -> {
+                                                    ri == 0 -> {
+                                                        out = sql-null
+                                                        return
+                                                    }
+
+                                                    quotient ?i64 = li / ri
+                                                    quotient: {
+                                                        ok(number) -> out = integer(number)
+
+                                                        -> out = sql-null
+                                                    }
+                                                }
+
+                                                -> {
+                                                    ri == 0 -> {
+                                                        out = sql-null
+                                                        return
+                                                    }
+
+                                                    remainder ?i64 = li % ri
+                                                    remainder: {
+                                                        ok(number) -> out = integer(number)
+
+                                                        -> out = sql-null
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        -> {
+                                            node.text == '+' -> out = real(lf + rf)
+                                            node.text == '-' -> out = real(lf - rf)
+                                            node.text == '*' -> out = real(lf * rf)
+                                            node.text == '/' -> out = real(lf / rf)
+                                            -> out = sql-null
+                                        }
+                                    }
+                                }
+
+                                -> {
+                                    node.text == '+' -> out = real(lf + rf)
+                                    node.text == '-' -> out = real(lf - rf)
+                                    node.text == '*' -> out = real(lf * rf)
+                                    node.text == '/' -> out = real(lf / rf)
+                                    -> out = sql-null
+                                }
+                            }
+                        }
+
+                        -> out = sql-null
+                    }
+                }
+
+                -> out = sql-null
+            }
+        }
+
+        node.text == '&' || node.text == '|' || node.text == '^' || node.text == '<<' || node.text == '>>' -> {
+            li ?i64 = sql-integer(left)
+            ri ?i64 = sql-integer(right)
+            li: {
+                ok(ln) -> {
+                    ri: {
+                        ok(rn) -> {
+                            node.text == '&' -> out = integer(ln & rn)
+                            node.text == '|' -> out = integer(ln | rn)
+                            node.text == '^' -> out = integer(ln ^ rn)
+                            node.text == '<<' -> out = integer(ln << rn)
+                            node.text == '>>' -> out = integer(ln >> rn)
+                        }
+
+                        -> out = sql-null
+                    }
+                }
+
+                -> out = sql-null
+            }
+        }
+
+        -> .fail('unsupported binary operator: ' - node.text)
+    }
+}
+
+exec-context.eval-case = (node sql-node) (out sql-value) {
+    out = sql-null
+    base = sql-null
+    node.a >= 0 -> base = .evaluate(node.a)
+    .error-message != '' -> return
+    i <- [0..node.kids.len()): {
+        when-id = node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        when-id < 0 -> continue
+        when-node = .program.node(when-id)
+        condition = .evaluate(when-node.a)
+        .error-message != '' -> return
+        matches = false
+        {
+            node.a >= 0 -> matches = sql-compare-op(base, condition, '=') == integer(1)
+
+            -> {
+                condition.to-truth() == sql-true -> matches = true
+            }
+        }
+
+        matches -> {
+            out = .evaluate(when-node.b)
+            return
+        }
+    }
+
+    node.b >= 0 -> out = .evaluate(node.b)
+}
+
+exec-context.eval-cast = (node sql-node) (out sql-value) {
+    value = .evaluate(node.a)
+    .error-message != '' -> return
+    type-name = node.text.to-upper()
+    {
+        type-name.contains('INT') -> {
+            integer-number = sql-integer(value)
+            integer-number: {
+                ok(n) -> out = integer(n)
+
+                -> out = integer(0)
+            }
+        }
+
+        type-name.contains('REAL') || type-name.contains('FLOA') || type-name.contains('DOUB') -> {
+            real-number = sql-real(value)
+            real-number: {
+                ok(n) -> out = real(n)
+
+                -> out = real(0.0)
+            }
+        }
+
+        type-name.contains('TEXT') || type-name.contains('CHAR') || type-name.contains('CLOB') -> out = text(sql-text(value))
+
+        type-name.contains('BLOB') -> {
+            value: {
+                blob(b) -> out = blob(b)
+
+                text(s) -> out = blob(s.to-bytes())
+
+                -> out = blob(sql-text(value).to-bytes())
+            }
+        }
+
+        -> out = value
+    }
+}
+
+exec-context.eval-like = (node sql-node) (out sql-value) {
+    left = .evaluate(node.a)
+    right = .evaluate(node.b)
+    .error-message != '' -> return
+    left.is-null() || right.is-null() -> {
+        out = sql-null
+        return
+    }
+
+    {
+        like-match(sql-text(right), sql-text(left)) -> out = integer(1)
+
+        -> out = integer(0)
+    }
+    node.flags & 1 == 1 -> out = sql-not(out)
+}
+
+exec-context.eval-scalar = (node sql-node) (out sql-value) {
+    name = node.text.to-upper()
+    out = sql-null
+    {
+        name == 'COALESCE' || name == 'IFNULL' -> {
+            i <- [0..node.kids.len()): {
+                argument-id = node.argument( i)
+                argument-id < 0 -> continue
+                value = .evaluate(argument-id)
+                .error-message != '' -> return
+                value.is-null() == false -> {
+                    out = value
+                    return
+                }
+            }
+        }
+
+        name == 'NULLIF' -> {
+            left = .evaluate(node.argument( 0))
+            right = .evaluate(node.argument( 1))
+            .error-message != '' -> return
+            left.is-null() || right.is-null() -> {
+                out = left
+                return
+            }
+
+            compare(left, right) == 0 -> {
+                out = sql-null
+                return
+            }
+
+            out = left
+        }
+
+        name == 'TYPEOF' -> {
+            value = .evaluate(node.argument( 0))
+            .error-message != '' -> return
+            out = text(value.kind-name())
+        }
+
+        name == 'LENGTH' -> {
+            value = .evaluate(node.argument( 0))
+            .error-message != '' -> return
+            value: {
+                sql-null -> _
+
+                text(s) -> out = integer(s.len())
+
+                blob(b) -> out = integer(b.len())
+
+                -> out = integer(sql-text(value).len())
+            }
+        }
+
+        name == 'HEX' -> {
+            value = .evaluate(node.argument( 0))
+            .error-message != '' -> return
+            value: {
+                blob(b) -> out = text(b.to-hex())
+
+                text(s) -> out = text(s.to-bytes().to-hex())
+
+                -> out = text(sql-text(value).to-bytes().to-hex())
+            }
+        }
+
+        name == 'LOWER' || name == 'UPPER' -> {
+            value = .evaluate(node.argument( 0))
+            .error-message != '' -> return
+            value.is-null() -> return
+            text-value = sql-text(value)
+            name == 'LOWER' -> out = text(text-value.to-lower())
+            name == 'UPPER' -> out = text(text-value.to-upper())
+        }
+
+        name == 'ABS' -> {
+            value = .evaluate(node.argument( 0))
+            .error-message != '' -> return
+            value: {
+                integer(n) -> {
+                    {
+                        n < 0 -> {
+                            magnitude ?i64 = 0 - n
+                            magnitude: {
+                                ok(number) -> out = integer(number)
+
+                                -> out = real(0.0 - n.to-f64())
+                            }
+                        }
+
+                        -> out = integer(n)
+                    }
+                }
+
+                real(n) -> {
+                    n < 0.0 -> out = real(0.0 - n)
+                    n >= 0.0 -> out = real(n)
+                }
+
+                -> out = real(0.0)
+            }
+        }
+
+        name == 'LIKELY' || name == 'UNLIKELY' || name == 'LIKELIHOOD' -> out = .evaluate(node.argument( 0))
+
+        name == 'MIN' || name == 'MAX' -> {
+            node.kids.len() > 1 -> {
+                first = .evaluate(node.argument( 0))
+                .error-message != '' -> return
+                out = first
+                i <- [1..node.kids.len()): {
+                    value = .evaluate(node.argument( i))
+                    .error-message != '' -> return
+                    value.is-null() -> continue
+                    out.is-null() -> {
+                        out = value
+                        continue
+                    }
+
+                    order = compare(out, value)
+                    {
+                        name == 'MIN' && order > 0 -> out = value
+
+                        name == 'MAX' && order < 0 -> out = value
+
+                        -> _
+                    }
+                }
+            }
+        }
+
+        -> {
+            name == 'COUNT' || name == 'SUM' || name == 'AVG' || name == 'TOTAL' || name == 'GROUP_CONCAT' -> _
+            name == 'MIN' || name == 'MAX' -> _
+            -> .fail('no such function: ' - node.text)
+        }
+    }
+}
+
+exec-context.eval-aggregate = (node sql-node) (out sql-value) {
+    name = node.text.to-upper()
+    out = sql-null
+    {
+        name == 'COUNT' -> {
+            count = 0
+            argument-id = node.argument(0)
+            star = .program.node(argument-id).kind == sql-star
+            i <- [0.. .aggregate-rows.len()): {
+                row = .aggregate-rows[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                star -> {
+                    next-count ?i64 = count + 1
+                    next-count: {
+                        ok -> count = it
+
+                        -> _
+                    }
+                }
+
+                star == false -> {
+                    row-context = new-exec-context(.program, .catalog)
+                    row-context.sources = .sources
+                    row-context.parameters = .parameters
+                    row-context.set-row(0, row)
+                    value = row-context.evaluate(argument-id)
+                    row-context.error-message != '' -> {
+                        .error-message = row-context.error-message
+                        return
+                    }
+
+                    value.is-null() == false -> {
+                        next-count ?i64 = count + 1
+                        next-count: {
+                            ok -> count = it
+
+                            -> _
+                        }
+                    }
+                }
+            }
+
+            out = integer(count)
+        }
+
+        name == 'SUM' || name == 'AVG' || name == 'TOTAL' -> {
+            argument-id = node.argument(0)
+            count = 0
+            integer-sum = 0
+            real-sum = 0.0
+            all-integer = true
+            i <- [0.. .aggregate-rows.len()): {
+                row = .aggregate-rows[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                row-context = new-exec-context(.program, .catalog)
+                row-context.sources = .sources
+                row-context.parameters = .parameters
+                row-context.set-row(0, row)
+                value = row-context.evaluate(argument-id)
+                row-context.error-message != '' -> {
+                    .error-message = row-context.error-message
+                    return
+                }
+
+                value.is-null() -> continue
+                number = sql-real(value)
+                number: {
+                    ok(n) -> {
+                        next-count ?i64 = count + 1
+                        next-count: {
+                            ok -> count = it
+
+                            -> _
+                        }
+
+                        real-sum = real-sum + n
+                        value: {
+                            integer(iv) -> {
+                                all-integer -> {
+                                    next-sum ?i64 = integer-sum + iv
+                                    next-sum: {
+                                        ok -> integer-sum = it
+
+                                        -> all-integer = false
+                                    }
+                                }
+                            }
+
+                            -> all-integer = false
+                        }
+                    }
+
+                    -> _
+                }
+            }
+
+            {
+                name == 'TOTAL' -> out = real(real-sum)
+
+                count == 0 -> out = sql-null
+
+                name == 'SUM' && all-integer -> out = integer(integer-sum)
+
+                name == 'SUM' -> out = real(real-sum)
+
+                name == 'AVG' -> out = real(real-sum / count.to-f64())
+            }
+        }
+
+        name == 'MIN' || name == 'MAX' -> {
+            argument-id = node.argument(0)
+            i <- [0.. .aggregate-rows.len()): {
+                row = .aggregate-rows[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                row-context = new-exec-context(.program, .catalog)
+                row-context.sources = .sources
+                row-context.parameters = .parameters
+                row-context.set-row(0, row)
+                value = row-context.evaluate(argument-id)
+                row-context.error-message != '' -> {
+                    .error-message = row-context.error-message
+                    return
+                }
+
+                value.is-null() -> continue
+                out.is-null() -> {
+                    out = value
+                    continue
+                }
+
+                order = compare(out, value)
+                {
+                    name == 'MIN' && order > 0 -> out = value
+
+                    name == 'MAX' && order < 0 -> out = value
+
+                    -> _
+                }
+            }
+        }
+
+        name == 'GROUP_CONCAT' -> {
+            value-id = node.argument(0)
+            separator = ','
+            node.kids.len() > 1 -> {
+                separator-value = .evaluate(node.argument(1))
+                .error-message != '' -> return
+                separator-value.is-null() -> return
+                separator = sql-text(separator-value)
+            }
+
+            result = ''
+            first = true
+            i <- [0.. .aggregate-rows.len()): {
+                row = .aggregate-rows[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                row-context = new-exec-context(.program, .catalog)
+                row-context.sources = .sources
+                row-context.parameters = .parameters
+                row-context.set-row(0, row)
+                value = row-context.evaluate(value-id)
+                row-context.error-message != '' -> {
+                    .error-message = row-context.error-message
+                    return
+                }
+
+                value.is-null() -> continue
+                first == false -> result = result - separator
+                result = result - sql-text(value)
+                first = false
+            }
+
+            first == false -> out = text(result)
+        }
+
+        -> .fail('unsupported aggregate: ' - node.text)
+    }
+}
+
+exec-context.eval-function = (node sql-node) (out sql-value) {
+    name = node.text.to-upper()
+    {
+        name == 'COUNT' || name == 'SUM' || name == 'AVG' || name == 'TOTAL' || name == 'GROUP_CONCAT' -> {
+            .has-aggregate == false -> .fail('aggregate function used without an aggregate query')
+            .has-aggregate -> out = .eval-aggregate(node)
+        }
+
+        name == 'MIN' || name == 'MAX' -> {
+            node.kids.len() == 1 -> {
+                .has-aggregate == false -> .fail('aggregate function used without an aggregate query')
+                .has-aggregate -> out = .eval-aggregate(node)
+            }
+
+            node.kids.len() != 1 -> out = .eval-scalar(node)
+        }
+
+        -> out = .eval-scalar(node)
+    }
+}
+
+exec-context.evaluate = (id i64) (out sql-value) {
+    out = sql-null
+    id < 0 -> return
+    .depth >= 128 -> {
+        .fail('expression nesting exceeds 128')
+        return
+    }
+
+    .depth = add-depth(.depth, 1)
+    out = .evaluate-node(id)
+    .depth = add-depth(.depth, -1)
+}
+
+exec-context.evaluate-node = (id i64) (out sql-value) {
+    out = sql-null
+    node = .program.node(id)
+    {
+        node.kind == sql-literal-null -> out = sql-null
+
+        node.kind == sql-literal-integer -> {
+            {
+                node.text == 'TRUE' -> out = integer(1)
+
+                node.text == 'FALSE' -> out = integer(0)
+
+                -> {
+                    number = node.text.to-i64()
+                    number: {
+                        ok(n) -> out = integer(n)
+
+                        -> {
+                            real-number = node.text.to-f64()
+                            real-number: {
+                                ok(value) -> out = real(value)
+
+                                -> out = real(0.0)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        node.kind == sql-literal-real -> {
+            real-number = node.text.to-f64()
+            real-number: {
+                ok(value) -> out = real(value)
+
+                -> out = real(0.0)
+            }
+        }
+
+        node.kind == sql-literal-string -> out = text(node.text)
+
+        node.kind == sql-literal-blob -> out = blob(node.literal)
+
+        node.kind == sql-column -> out = .column(node.text)
+
+        node.kind == sql-parameter -> {
+            index = node.flags
+            index >= 1 && index <= .parameters.len() -> {
+                parameter-index ?i64 = index - 1
+                parameter-index: {
+                    ok(position) -> {
+                        out = .parameters[position]: {
+                            ok -> it
+
+                            -> sql-null
+                        }
+                    }
+
+                    -> _
+                }
+            }
+
+            index < 1 || index > .parameters.len() -> .fail('missing SQL parameter')
+        }
+
+        node.kind == sql-unary -> out = .eval-unary(node)
+
+        node.kind == sql-binary -> out = .eval-binary(node)
+
+        node.kind == sql-is -> out = .eval-is(node)
+
+        node.kind == sql-between -> out = .eval-between(node)
+
+        node.kind == sql-in -> out = .eval-in(node)
+
+        node.kind == sql-like -> out = .eval-like(node)
+
+        node.kind == sql-case -> out = .eval-case(node)
+
+        node.kind == sql-cast -> out = .eval-cast(node)
+
+        node.kind == sql-collate -> out = .evaluate(node.a)
+
+        node.kind == sql-function -> out = .eval-function(node)
+
+        -> .fail('unsupported expression')
+    }
+}
+

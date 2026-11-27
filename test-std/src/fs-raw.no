@@ -44,6 +44,13 @@ str-of = (o ?str) (v str) {
     }
 }
 
+; tmp/ is gitignored, so a clean checkout has no such directory. mkdtemp only
+; creates the final component and fails when its parent is missing.
+ensure-repo-tmp-dir = () {
+    fs.is-dir('tmp') -> return
+    os.mkdir('tmp', 493)
+}
+
 raw-lock-child = (path str, conflicting bool) {
     fd = fd-of(raw.raw-open(path, raw.RAW-READ | raw.RAW-WRITE, 0))
     fd < 0 -> exit(2)
@@ -277,6 +284,8 @@ mode == '--raw-lock-child-allowed' -> {
     raw-lock-child(path, false)
     return
 }
+
+ensure-repo-tmp-dir()
 
 p1, f1 = runner.test('fs.raw-capabilities', t-capabilities)
 p2, f2 = runner.test('fs.raw-open-flags', t-open-flags)

@@ -69,6 +69,22 @@ func TestOptUnuseInterpolationVsConcat(t *testing.T) {
 }`,
 			wantOptUnuse: 0,
 		},
+		{
+			// A value match publishes its plain payload type to InferredType.
+			// Concatenation does not consume options, but key-str is not one.
+			name: "plain_value_match_result_in_concat",
+			src: `f = () () {
+    ek []str = ['key']
+    e i64 = 0
+    key-str = ek[e]: {
+        ok -> it
+        -> ''
+    }
+    out = '"' - key-str - '":'
+    io.outln(out)
+}`,
+			wantOptUnuse: 0,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

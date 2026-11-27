@@ -687,7 +687,7 @@ s.push(42)
 val = s.pop()
 ```
 
-The same pattern applies to `heap`, `deque`, `path`, `regexp`, `file`, `io-reader`, `io-writer`, `sse-client`. See the [standard library reference](file://../nolang-std/SKILL.md) for the full API.
+The same pattern applies to `heap`, `deque`, `path`, `regexp`, `file`, `io-reader`, `io-writer`, `sse-client`. See the [standard library reference](../m20-std.md) for the full API.
 
 ### Networking Modules
 

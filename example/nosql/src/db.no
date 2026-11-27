@@ -1,0 +1,38 @@
+; Shared in-memory engine state. Query and statement modules extend this type
+; without introducing an import cycle.
+# /example/nosql/src/ast
+# /example/nosql/src/schema
+# /example/nosql/src/value
+# /example/nosql/src/error codes
+
+db-execution {
+    result db-result
+    names []str
+    rows []db-row
+}
+
+memory-db {
+    catalog db-catalog
+    program sql-program
+    parameters []sql-value
+    result db-result
+    names []str
+    rows []db-row
+    changes i64
+    total-changes i64
+    last-insert-rowid i64
+}
+
+new-memory-db = () (out memory-db) {
+    out = memory-db{
+        catalog: new-db-catalog()
+        program: new-sql-program()
+        parameters: []
+        result: ok-result()
+        names: []
+        rows: []
+        changes: 0
+        total-changes: 0
+        last-insert-rowid: 0
+    }
+}

@@ -222,6 +222,10 @@ type hirConv struct {
 	//
 	// 只對**這一個**節點生效：巢狀的綁定 let、if 鏈等仍照常 remember。
 	captureOrigin Node
+	// armVarTypes mirrors Parser.armVarTypes while an arm body is emitted.
+	// Scratch parsers inherit this stack so nested SurfaceMatch resolution sees
+	// the outer synthetic binding without writing its type into Sem.FuncVarTypes.
+	armVarTypes []map[string]string
 }
 
 // remember records the HIR id assigned to an AST node so the checker can later
@@ -1601,6 +1605,7 @@ func (c *hirConv) scratchParser() *Parser {
 		curFuncName: c.curFunc,
 		Filename:    c.curFile,
 		prog:        c.prog,
+		armVarTypes: append([]map[string]string(nil), c.armVarTypes...),
 	}
 	// The safe-index local container-type table (idxLocalTypes) is collected
 	// into c.sem.IdxLocalTypes by precomputeIdxLocalTypes (run once at the
@@ -1946,14 +1951,14 @@ func (c *hirConv) emitMatchIfHIR(plan *matchIfPlan, line, col int32) int32 {
 			Line: line, Col: col,
 		})
 	case plan.altBody != nil:
-		alt = c.stmt(plan.altBody)
+		alt = c.stmtWithArmBindings(plan.altBody)
 	}
 	nodes := []int32{
 		c.slot("cond", c.expr(plan.cond)),
-		c.slot("then", c.stmt(plan.body)),
+		c.slot("then", c.stmtWithArmBindings(plan.body)),
 		c.slot("else", alt),
 		c.slot("matched", c.expr(plan.matched)),
-		c.slot("dot-val", c.stmt(plan.dotValBody)),
+		c.slot("dot-val", c.stmtWithArmBindings(plan.dotValBody)),
 		c.slot("range", c.expr(plan.rangePattern)),
 		c.slot("eq", c.expr(plan.eqPattern)),
 		c.slot("raw", c.expr(plan.rawCond)),
@@ -1967,6 +1972,43 @@ func (c *hirConv) emitMatchIfHIR(plan *matchIfPlan, line, col int32) int32 {
 		nodes = append(nodes, c.slot("val", c.expr(v)))
 	}
 	return c.b.Add(hir.Node{Kind: hir.KIf, First: c.kids(nodes), Line: line, Col: col})
+}
+
+// withVarTypes temporarily pushes lexical type overrides for H0 lowering.
+func (c *hirConv) withVarTypes(types map[string]string, emit func() int32) int32 {
+	if len(types) == 0 {
+		return emit()
+	}
+	c.armVarTypes = append(c.armVarTypes, types)
+	defer func() { c.armVarTypes = c.armVarTypes[:len(c.armVarTypes)-1] }()
+	return emit()
+}
+
+// stmtWithArmBindings exposes the typed synthetic bindings prepended by
+// rewriteSubjectArm while lowering that arm. Nested matches consume these types
+// through scratchParser; the overrides disappear before the next sibling arm.
+func (c *hirConv) stmtWithArmBindings(body *BlockStatement) int32 {
+	if body == nil {
+		return hir.NoID
+	}
+	types := make(map[string]string)
+	for _, stmt := range body.Statements {
+		ls, ok := stmt.(*LetStatement)
+		if !ok || ls == nil || !ls.IsArmBinding || ls.Name == nil {
+			break
+		}
+		typ := ""
+		if ls.Type != nil {
+			typ = typeString(ls.Type)
+		}
+		if typ == "" && c.sem != nil {
+			typ = c.sem.InferredType(ls)
+		}
+		if typ != "" {
+			types[ls.Name.Value] = typ
+		}
+	}
+	return c.withVarTypes(types, func() int32 { return c.stmt(body) })
 }
 
 // subjectMatchDirectEmits counts how many subject matches took the S-c1
@@ -2012,7 +2054,14 @@ func (c *hirConv) emitSubjectMatchHIR(sp *Parser, prep *subjectMatchPrep, line, 
 		return hir.NoID
 	}
 	subjectMatchDirectEmits.Add(1)
-	inner := c.emitMatchIfHIR(plan, line, col)
+	var inner int32
+	if prep.enumIndex && prep.matchedVarType != "" {
+		inner = c.withVarTypes(map[string]string{"it": prep.matchedVarType}, func() int32 {
+			return c.emitMatchIfHIR(plan, line, col)
+		})
+	} else {
+		inner = c.emitMatchIfHIR(plan, line, col)
+	}
 	// The E-segment wrappers that emitSubjectMatchAST builds around the chain
 	// must be mirrored here so the HIR is byte-identical to the legacy route.
 	// hasRawCond wraps the chain in `if 1 { it = matched; <chain> }`; subjName
@@ -2056,6 +2105,38 @@ func (c *hirConv) emitSubjectMatchWrappersHIR(prep *subjectMatchPrep, inner int3
 				c.slot("cond", one()),
 				c.slot("then", block),
 				c.slot("matched", c.expr(matched)),
+			}),
+			Line: line, Col: col,
+		})
+	}
+
+	// Safe-index enum matches consume the option read in an outer ok guard. Its
+	// arm peels a plain, independently-owned enum into `it`, then binds the named
+	// subject used by the ordinary variant chain. The wildcard body handles both
+	// index failure and unmatched variants, exactly as in emitSubjectMatchPlain.
+	if prep.enumIndex && prep.subjName != "" && prep.itStmt != nil && prep.enumValueStmt != nil {
+		cond := c.expr(&InfixExpression{
+			Token:    tok,
+			Left:     &Identifier{Token: tok, Value: prep.subjName},
+			Operator: "==",
+			Right:    &Identifier{Token: tok, Value: "ok"},
+		})
+		block := c.b.Add(hir.Node{
+			Kind: hir.KBlock,
+			First: c.kids([]int32{
+				c.stmt(prep.itStmt),
+				c.stmt(prep.enumValueStmt),
+				chainExpr(inner),
+			}),
+			Line: line, Col: col,
+		})
+		inner = c.b.Add(hir.Node{
+			Kind: hir.KIf,
+			First: c.kids([]int32{
+				c.slot("cond", cond),
+				c.slot("then", block),
+				c.slot("else", c.stmtWithArmBindings(prep.enumIndexFallback)),
+				c.slot("matched", c.expr(&Identifier{Token: tok, Value: prep.subjName})),
 			}),
 			Line: line, Col: col,
 		})

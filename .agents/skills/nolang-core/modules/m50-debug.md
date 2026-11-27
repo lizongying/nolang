@@ -301,7 +301,7 @@ compiler bug**. Rule these out before filing anything as a codegen defect.
 baseline binary (e.g. build `bin/no` from a baseline worktree, then copy it under
 project-local `tmp/` such as `tmp/no-head`). If the baseline behaves identically, the cause is either long-standing or — far more
 likely for a freshly written probe — a syntax error on your side. Re-read
-`.agents/skills/nolang-syntax/SKILL.md` before touching codegen.
+[`m10-syntax.md`](m10-syntax.md) before touching codegen.
 
 ## Minimal Repro Snippet (template)
 

@@ -5766,7 +5766,11 @@ func (c *codegen) emitSlotZeroInit(lt string, owned bool, v ValueID, s string) {
 		c.optStoreTag(s, c.optDeclLTOfLLVM(lt), 1)
 		return
 	}
-	if !owned && !c.structSlotNeedsZero(lt) && !c.resultParam[v] {
+	// A tagged enum can own heap at the VALUE level while Type.Owned stays false
+	// (see Module.enumOwnsPayload). Its slot therefore needs the same safe zero
+	// state as str/vec/struct slots: drop placement also cleans up loop locals on
+	// exits reached before their defining instruction ran.
+	if !owned && !c.mod.enumOwnsPayload[v] && !c.structSlotNeedsZero(lt) && !c.resultParam[v] {
 		return
 	}
 	// A STRUCT THAT GETS A DROP must start zeroed even though it is not `owned`

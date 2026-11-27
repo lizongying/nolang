@@ -312,8 +312,9 @@ func prefixMethodNames(stmts []parser.Statement, typeOwner map[string]string, lo
 			}
 		}
 		if count == 1 {
-			// 恰好一個模組定義該型別，用 "module.name" 前綴
-			fd.Name = match + "." + fd.Name
+			// 恰好一個模組定義該型別：用 "module.name" 取代裸型別前綴，
+			// 而不是附加到整個 "type.method" 名稱上。
+			fd.Name = match + "." + fd.Name[dotIdx+1:]
 		}
 		// count == 0：無定義，不處理
 		// count > 1：同名結構體跨模組，bare name 有歧義，保持原樣

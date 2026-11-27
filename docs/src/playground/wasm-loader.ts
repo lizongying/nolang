@@ -44,8 +44,8 @@
  * does not win over the glue's own functions, `instantiateWasi()` builds the
  * import object itself and replaces `poll_oneoff` with a JS implementation.
  */
-import {init} from '@wasmer/wasi';
-import type {WASI} from '@wasmer/wasi';
+import { init } from '@wasmer/wasi';
+import type { WASI } from '@wasmer/wasi';
 
 export type WasmLoadStage = 'wasi-init' | 'fetch' | 'compile';
 
@@ -100,7 +100,7 @@ async function fetchAndCompile(spec: WasmLoadSpec): Promise<WasmRuntime> {
   const cache: RequestCache = spec.immutable ? 'force-cache' : 'no-cache';
   let response: Response;
   try {
-    response = await fetch(spec.url, {cache});
+    response = await fetch(spec.url, { cache });
   } catch (e) {
     throw new WasmLoadError(spec.name, 'fetch', describe(e));
   }
@@ -126,17 +126,17 @@ async function fetchAndCompile(spec: WasmLoadSpec): Promise<WasmRuntime> {
   }
 
   if (module) {
-    return {module, bytes: Number(response.headers.get('content-length') ?? 0)};
+    return { module, bytes: Number(response.headers.get('content-length') ?? 0) };
   }
 
   try {
     // Re-fetch only when a streaming attempt consumed the body.
-    const source = streaming ? await fetch(spec.url, {cache}) : response;
+    const source = streaming ? await fetch(spec.url, { cache }) : response;
     if (!source.ok) {
       throw new Error(`HTTP ${source.status} ${source.statusText}`.trim());
     }
     const bytes = await source.arrayBuffer();
-    return {module: await WebAssembly.compile(bytes), bytes: bytes.byteLength};
+    return { module: await WebAssembly.compile(bytes), bytes: bytes.byteLength };
   } catch (e) {
     throw new WasmLoadError(spec.name, 'compile', describe(e));
   }
@@ -290,13 +290,13 @@ export function unsupportedRawVfsHost(): RawVfsHost {
 export function wasiImportOverrides(
   wasi: WASI,
   module: WebAssembly.Module,
-): {overrides: Record<string, Record<string, () => number>>; stubbed: string[]} {
+): { overrides: Record<string, Record<string, () => number>>; stubbed: string[] } {
   let provided: Set<string>;
   try {
     const imports = wasi.getImports(module) as Record<string, Record<string, unknown> | undefined>;
     provided = new Set(Object.keys(imports[WASI_NAMESPACE] ?? {}));
   } catch {
-    return {overrides: {}, stubbed: []};
+    return { overrides: {}, stubbed: [] };
   }
 
   const missing: Record<string, () => number> = {};
@@ -310,7 +310,7 @@ export function wasiImportOverrides(
   }
 
   return {
-    overrides: stubbed.length > 0 ? {[WASI_NAMESPACE]: missing} : {},
+    overrides: stubbed.length > 0 ? { [WASI_NAMESPACE]: missing } : {},
     stubbed,
   };
 }
@@ -386,8 +386,8 @@ export function makePollOneoff(getMemory: () => WebAssembly.Memory | null): (
     if (!memory || memory.buffer.byteLength === 0) return ENOSYS;
 
     const view = new DataView(memory.buffer);
-    const clocks: {userdata: bigint; delay: bigint}[] = [];
-    const fds: {userdata: bigint; type: number}[] = [];
+    const clocks: { userdata: bigint; delay: bigint }[] = [];
+    const fds: { userdata: bigint; type: number }[] = [];
     let shortest: bigint | null = null;
 
     for (let i = 0; i < nsubs; i++) {
@@ -400,17 +400,17 @@ export function makePollOneoff(getMemory: () => WebAssembly.Memory | null): (
         const nowNs = BigInt(Math.round(performance.now() * 1e6));
         let delay = (flags & CLOCK_ABSTIME) !== 0 ? timeout - nowNs : timeout;
         if (delay < 0n) delay = 0n;
-        clocks.push({userdata, delay});
+        clocks.push({ userdata, delay });
         if (shortest === null || delay < shortest) shortest = delay;
       } else {
-        fds.push({userdata, type});
+        fds.push({ userdata, type });
       }
     }
 
     if (shortest !== null) sleepNs(shortest);
 
-    const fired: {userdata: bigint; type: number}[] =
-      clocks.length > 0 ? clocks.map((c) => ({userdata: c.userdata, type: EVENT_TYPE_CLOCK})) : fds;
+    const fired: { userdata: bigint; type: number }[] =
+      clocks.length > 0 ? clocks.map((c) => ({ userdata: c.userdata, type: EVENT_TYPE_CLOCK })) : fds;
     const nbytes = clocks.length > 0 ? 0n : 1n;
 
     let count = 0;
@@ -450,7 +450,7 @@ export function instantiateWasi(
   module: WebAssembly.Module,
   rawHost: RawVfsHost = unsupportedRawVfsHost(),
 ): WasiInstantiation {
-  const {overrides, stubbed} = wasiImportOverrides(wasi, module);
+  const { overrides, stubbed } = wasiImportOverrides(wasi, module);
   const shimmed: string[] = [];
 
   let glue: Record<string, Record<string, WebAssembly.ImportValue>>;
@@ -460,7 +460,7 @@ export function instantiateWasi(
     // Probing failed (unknown glue version): fall back to the merging path and
     // accept that trap-prone functions cannot be replaced.
     const instance = wasi.instantiate(module, overrides) as unknown as WebAssembly.Instance;
-    return {instance, stubbed, shimmed};
+    return { instance, stubbed, shimmed };
   }
 
   const wasiNamespace: Record<string, WebAssembly.ImportValue> = {
@@ -489,5 +489,5 @@ export function instantiateWasi(
   const instance = new WebAssembly.Instance(module, imports);
   const exported = instance.exports.memory;
   lastMemory = exported instanceof WebAssembly.Memory ? exported : null;
-  return {instance, stubbed, shimmed};
+  return { instance, stubbed, shimmed };
 }

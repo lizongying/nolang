@@ -21,7 +21,7 @@
 ;   quarantined      内容部分失效：默认关，且加载时必须先打出失效横幅
 {
   name: 'nolang-core'
-  version: '1.0.0'
+  version: '1.3.0'
   budget: 1200
   inline: ['redlines']
 
@@ -199,6 +199,24 @@
       confirm: true
       conflicts: ['redlines.git']
       budget: 230
+    }
+
+    nohub: {
+      path: 'modules/m94-nohub.md'
+      title: '公开到 nohub（release 后续步骤）'
+      default: false
+      trigger: ['nohub', '收录', '公开到 nohub', 'repos 清单', 'publish-to-nohub']
+      confirm: true
+      conflicts: ['redlines.git']
+      budget: 95
+    }
+
+    review: {
+      path: 'modules/m95-review.md'
+      title: '`.no` 代码审查（语法 / 风格 / 安全，给最终代码）'
+      default: 'auto'
+      trigger: ['审查', 'review', '检查代码', '看看有没有问题', '代码风格', '规范检查']
+      budget: 90
     }
 
     memory: {

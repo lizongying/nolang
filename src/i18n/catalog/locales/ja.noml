@@ -2,7 +2,6 @@
 ; キーは変更しないでください。`make i18n` がソースから生成します。
 ; 書式指定子（%s / %d / %q / %v）は en と完全に一致させる必要があります。
 {
-  '04mmq0us': 'lencap struct: struct %s では関数 %d 内で len/cap を使用できません'
   '04tb4mwj': 'eq-raw: i1 を %s に格納できません'
   '060maaj0': `
 エラー: %v
@@ -28,7 +27,6 @@
 `
   '0qnjitgt': 'builtin %s: C 呼び出し仕様がありません'
   '0tjeipjr': '\'for init; cond; update\' は非推奨です。代わりにカンマ \',\' を使用してください'
-  '0ts2eetl': 'builtin %s: 値がありません'
   '0x41uhua': '\'for i in ...\' は非推奨です。代わりに \'i <- ...\' を使用してください'
   '0z120eni': 'net-recv-nb: 第 1 引数のデータポインタを取得できません'
   '11069k6b': '%s'
@@ -51,12 +49,10 @@
   repository: %s
 
 `
-  '1j6i9o1o': 'slice 演算のレシーバスロット'
   '1k6cdcgx': '型の後に \'.\' を期待しましたが %s でした'
   '1lg2qpwf': 'syslog: 第 1 引数を C 文字列にマーシャルできません'
   '1lssiwyr': 'ジェネリック引数名を期待しましたが %s でした'
   '1m1ocf8t': '未対応のホスト %q です（github.com のみ対応）'
-  '1plv4fne': 'str-from-vec の出力先スロット'
   '1qz0p808': '依存キー %s の後にモジュールパスがありません'
   '1rk772tt': `
 src ディレクトリ作成エラー: %v
@@ -76,7 +72,6 @@ src ディレクトリ作成エラー: %v
 依存を追加しました: %s = %s
 
 `
-  '21irdw5o': '$str_concat: 引数の型が一致しません'
   '2243l8if': '..any は標準ライブラリでのみ許可され、ユーザーコードでは使用できません（関数: %s）'
   '238u1xr7': 'embed: 使用できるのは []byte / [N]byte / fs.embed 宣言のみです。型なし宣言が指定されました'
   '23ki71z9': 'Direct WASM バックエンドを使用（LLVM ツールチェーン不要、ブラウザ対応）'
@@ -92,7 +87,6 @@ src ディレクトリ作成エラー: %v
   '2fke76na': 'wasm: 関数/code の数が一致しません: 関数 %d 個に対して code %d 個'
   '2g4xt4m5': 'net-listen: 結果スロットがありません'
   '2ixluoth': 'テストを実行します。'
-  '2kqboupo': '未対応の builtin %s です'
   '2ls7kxqp': '関数名 “%s” を再代入できません'
   '2lsu55tb': 'ネイティブ wasm モジュール %q が package.noml の依存に宣言されていません。dependencies: [\'%s:^latest\']（または dev-dependencies）を追加して npm install を実行してください'
   '2lxm8j4k': 'バックエンド:'
@@ -114,15 +108,12 @@ LLVM ツールチェーンが見つかりません
   Windows: winget install LLVM.LLVM
 
 `
-  '2xqxrts5': 'builtin %s の結果: %s'
-  '2ylupu1o': '未対応のレシーバ型 %s です'
   '309fjp3b': '\'as\' の後に型を期待しましたが %s でした'
   '30pb3dos': '列挙値の名前を期待しましたが %s でした'
   '33exppv5': 'noml: フィールド %s: 数値を期待しましたが %T でした'
   '3604icnf': '第 %d 引数（\'%s\'）: \'%s\' を期待する箇所に型 \'%s\' の裸の option 値を渡すには明示的なアンラップが必要です（値に対して match し、`-> it` アーム内で呼び出してください）。option 引数の暗黙的アンラップは許可されていません'
   '379z4njd': '“%s” はこのスコープで既に宣言されています'
   '39o3yr8x': '未対応の sum ファイルバージョン %q です（%s を期待）'
-  '3aeomnek': 'setfield スロット'
   '3b9bxfnt': '配列 \'%s\' の %s 要素に %s 値を代入できません'
   '3bl2ts85': 'JS ビルドエラー: %w'
   '3ei0a0o0': '式を期待しましたが nil でした'
@@ -139,7 +130,6 @@ LLVM ツールチェーンが見つかりません
 
 `
   '3lu6n4np': '\'#{buildin}\' はコンパイラ所有のレイアウト型（str / vec / txt / arr）にのみ有効で、\'%s\' では何も行いません。削除してください。'
-  '3nktiaae': 'setfield: %q にフィールド %q が見つかりません（struct キー %q）'
   '3owkeirf': '%s/%s のリリース情報を解析中: %w'
   '3pry7fmd': 'カンマまたは右括弧を期待しましたが %s でした'
   '3r03yk09': '\')\' を期待しました'
@@ -170,15 +160,11 @@ Markdown（.md/.mdx）は -md 指定時のみ処理します: 整形するのは
   '4ewgvnbn': '\'->\' の連鎖条件（a -> b -> c）は推奨されません。条件を &&/|| でまとめるか \'{ }\' ブロックを使用して、微妙なスコープのバグを避けてください'
   '4eyd78yc': 'ファイル／ディレクトリ未指定で workspace.noml がある場合、'
   '4g7bz9oy': 'net-accept-nb: (listen-fd) が必要です'
-  '4hmw6w3i': 'borrow の引数個数'
   '4m2w3mkd': 'vec.push: レシーバスロットがありません'
   '4o348fh8': '範囲を閉じる \']\' または \')\' を期待しましたが %s でした'
   '4oy26jat': 'builtin %s: 結果 0 にスロットがありません'
   '4pj8z50l': '  JS バックエンドのモジュール解決なので、`# npm/<pkg>` の ESM インポートやネイティブ'
-  '4ptt84li': '%s: 引数の型が一致しません'
-  '4qhyyund': '関数 %s 内に不明な呼び出し先 %s があります'
   '4r3ghy7k': 'git／環境から事前入力:'
-  '4rsqarsx': 'eprint の txt スロット'
   '4scfdhhp': 'utime: 結果スロットがありません'
   '4uv9dunu': 'str.clear: レシーバが必要です'
   '4y6hz2la': 'embed: 使用できるのは []byte / [N]byte / fs.embed 宣言のみです。%s が指定されました'
@@ -190,7 +176,6 @@ Markdown（.md/.mdx）は -md 指定時のみ処理します: 整形するのは
   '5bj5o9ci': 'str.clear: レシーバスロットがありません'
   '5blqb26x': '\')\' を期待しました'
   '5ci3l7h9': '  no add nogit:v0.1.33@github.com/lizongying/notools'
-  '5cid832p': '不明なプライベートフィールド builtin %s です'
   '5ckkrp9f': 'noml: フィールド %s[%d]: 依存要素は文字列である必要がありますが %T でした'
   '5eo1kvb9': 'noml: フィールド %s: オブジェクトを期待しましたが %T でした'
   '5i2q1afu': '  hint: スキップしたブロックはそのまま残します。意図的な擬似コードは \'```no skip\' またはブロック内の \'; nolang-fmt:skip\' 行で明示してください'
@@ -214,11 +199,8 @@ Markdown（.md/.mdx）は -md 指定時のみ処理します: 整形するのは
   '5o3x4h4d': '最高性能のため境界チェックを省略（安全でない）'
   '5qjs01mp': '右括弧を期待しましたが %s でした'
   '5qpe9buw': 'win-write-pipe: (handle, data) が必要です'
-  '5ve092z6': '関数 %s 内で未対応の引数型 %s です'
-  '5yjn9wrj': 'setfield: %q にフィールド %q が見つかりません（option %q）'
   '603y6hgq': '各パッケージは package.noml の dependencies（または'
   '61bm2pzr': 'すべての依存を最新に更新しました。'
-  '62z2cnfe': 'option peel スロット'
   '63lrmg48': '標準入力がパイプの場合（例 echo \'x=1\' | no fmt）は標準入力から読みます。'
   '64bt3a50': 'Nolang ソースを実行ファイルにビルドします。'
   '64t1vgh6': 'vec.remove: レシーバとインデックスが必要です'
@@ -238,11 +220,9 @@ Parser ASTVersion: %s
 %d 件のキャッシュエントリを削除しました。
 
 `
-  '6o12uzmx': 'waitpid: windows では未対応です'
   '6p2o4902': 'アセット %s がサイズ上限（%d バイト）を超えています'
   '6qca9xu4': 'embed: 明示的な値と組み合わせることはできません'
   '6svrp0le': '使い方: no fmt [flags] <file|dir>'
-  '6umfb8yv': 'builtin %s: %s'
   '6xq3uson': 'getgrouplist: 2 つの結果（gids, n）が必要です'
   '6y4tyjln': 'noml: フィールド %s: 未対応のターゲット種別 %s です'
   '73myjkcm': '  no test                     tests/ ディレクトリの全 .no を実行'
@@ -250,7 +230,6 @@ Parser ASTVersion: %s
   '74e32kaz': '--llvm-capi で LLVM C API によりプロセス内で IR をコンパイル（非デバッグビルドのみ。既定は無効）。'
   '755ldw47': 'extern 宣言内に右括弧を期待しましたが %s でした'
   '75f5l5xg': 'load-le-%s: 出力先スロットがありません'
-  '75pom499': 'txt の出力先スロット'
   '75qapexc': '第 %d 引数を %s から %s に変換できません'
   '75yiyise': 'union %q の型 match には型パターン（例: %q ->）または既定アーム（->）が必要です'
   '76fao0mm': `
@@ -264,7 +243,6 @@ Parser ASTVersion: %s
 `
   '7clod0r1': 'elif 内に左中括弧を期待しましたが %s でした'
   '7dl1fkwt': 'WASM ビルドでは LLVM ツールチェーンを利用できません。--wasm-direct フラグを使用してください'
-  '7f3qhn9l': 'txt インデックスのレシーバスロット'
   '7f6c9808': `
 tests ディレクトリ作成エラー: %v
 
@@ -285,7 +263,6 @@ tests ディレクトリ作成エラー: %v
   '7tcn8wox': '例:'
   '7usot77o': 'ある種の問題に対して自動修正を適用します: \'overflow\'（未注釈の整数演算に #{overflow=wrap} を付与）、\'redundant\'（推論型と同じ型注釈を削除、例 `x str = \'\'` -> `x = \'\'`）、\'match\'（網羅的でない option match に不足の nil/err アームを補う）、\'unwrap\'（外へ伝播も展開もされない option バインディングを消費: 関数が ?T を返すなら `x ?= expr`、そうでなければ `x-opt = expr` と次行の文 match `x-opt: { ok -> x = it -> }`）、\'main\'（最上位の `main = () { ... }` ラッパーを省き本体の文を最上位へ持ち上げ。main に引数／戻り値や直接 return がある場合は省略）、\'index-out\'（#{index-out=DEF} の読み取りを明示的な match に展開）'
   '7zfvvuin': '問題は見つかりませんでした。'
-  '802t452i': 'builtin %s: option の結果を %s の出力先へ'
   '81b2ea3o': 'extern 宣言内に \'(\' を期待しましたが %s でした'
   '82csl5ay': 'str.to-bool: レシーバがありません'
   '82hkddyo': `
@@ -301,7 +278,6 @@ tests ディレクトリ作成エラー: %v
 
 `
   '87zc5awf': '%s の読み取り専用フィールド \'%s\' を変更できません。長さはバッファから導出されます — 代わりに truncate(n) を使用してください'
-  '8870qbob': '%s 内の間接呼び出し先が不正です'
   '894luer5': 'このコメントはどこにも付着していません。独立したコメントとして残すには、後ろに `...`（プレースホルダ文）を置いてください。不要なら移動または削除してください'
   '89pwo0vg': 'noml: map のキーは文字列でなければなりません: %T'
   '8apmtyk6': '入力ファイルの読み取り: %w'
@@ -313,7 +289,6 @@ tests ディレクトリ作成エラー: %v
   '8haww14h': 'write-file: パスとデータが必要です'
   '8j6njczi': 'extern 宣言内にカンマまたは右括弧を期待しましたが %s でした'
   '8jsgdrcw': 'JS 生成エラー: %w'
-  '8k0xmfmo': 'str インデックスの出力先スロット（dst=%d type=%s）'
   '8ndov8z0': 'net-dial: (host, port) が必要です'
   '8o5wqxi2': '左括弧を期待しましたが %s でした'
   '8r4nnper': '  no add nogit@lizongying/notools                   ホストは既定で github.com'
@@ -321,7 +296,6 @@ tests ディレクトリ作成エラー: %v
 ビルド済み: %s
 
 `
-  '8rjhajw9': '$str_concat: 引数個数が不正です'
   '8sf1ugcv': 'noml: 未対応の値型 %T です'
   '8t1jaj02': '整数演算 `a OP b` に `#{overflow = ...}` 注釈が付いていないため、`%s` はオーバーフロー時の動作が未宣言の `?T` に束縛されます。この式を含む文に注釈を付け、オーバーフロー時に取る値を指定してください: `#{overflow = wrap}`（無音のラップアラウンド）/`clamp0`（下溢で 0）/`min`/`max`/`saturate`（飽和クランプ）、または `#{overflow = u8-max}` のような型接頭辞付き形式。注釈は文ごとに作用します。option の消費は別の問題です。'
   '8ux5w599': '`noc ast` とバイト単位で比較されるため、この形式は仕様です。'
@@ -353,7 +327,6 @@ tests ディレクトリ作成エラー: %v
   '9c615d3t': 'ジェネリック引数内に \',\' または \'>\' を期待しましたが %s でした'
   '9e82usj6': '依存 %q: package.noml では相対パス（./ ../）は許可されません。workspace 相対パスには先頭に `/` を付けてください'
   '9edsvha2': '抽出したアーカイブ内にパッケージ %s が見つかりません'
-  '9emnu2fu': 'extern の str 引数'
   '9ljl8qke': 'ラベル #%s の後にループ本体を期待しましたが、\'(cond) { }\' のない \'(\' でした'
   '9novjn6s': '  no pack ./nogit                  パッケージディレクトリを梱包'
   '9onc0638': 'readlink: パスを C 文字列にマーシャルできません'
@@ -363,17 +336,14 @@ tests ディレクトリ作成エラー: %v
   '9v43hxr2': '%d 個のエラー、%d 個の警告、%d 個のヒント'
   '9yjr7gj6': 'struct 定義内にフィールド名を期待しましたが %s でした'
   '9yqaweku': '  no fmt -w main.no           ファイルをその場で整形'
-  'a2hjr26f': 'str インデックスのレシーバスロット'
   'a3duuqtg': '引数の型を期待しましたが %s でした'
   'a3yrogp1': '文字列連結: “+” の代わりに “-” を使用してください'
   'a5247dgy': 'LLVM C API: IR 用のメモリバッファ作成に失敗しました'
   'a7ee394w': 'win-find-first-file: パス引数が必要です'
-  'a7wjyiq9': 'pipe: windows では未対応です'
   'aazb9b1n': 'option（?T）ペイロードを option 構造体にインライン化するバイト閾値。option 構造体の全体サイズで判定（既定 264 = 1 バイトのタグ + 7 バイトのパディング + 256 バイトのペイロード、最小 16）。超えるペイロードはヒープにボックス化'
   'aih7e3j0': 'nil を非 option 変数 “%s” に代入できません'
   'al7nsvgl': 'vec.insert: レシーバ、インデックス、要素が必要です'
   'aljknpjz': 'builtin %s: 不明なビット演算です'
-  'am0g79ly': '%s: 引数がありません'
   'amiajbn5': 'net-icmp-open: 結果スロットがありません'
   'amyp0ig8': `
 最新リリースの解決エラー: %v
@@ -386,7 +356,6 @@ tests ディレクトリ作成エラー: %v
   'axj3m1pb': '式の先頭に予期しない \'as\' があります'
   'axtpo500': 'win-find-first-file: パスを C 文字列にマーシャルできません'
   'ayjrpinp': 'noml: DecodeInto には非 nil ポインタが必要ですが %T でした'
-  'aywuxg5w': 'builtin %s レシーバ %s: %s'
   'aze4pgle': 'Markdown ファイル（.md/.mdx）内の Nolang コードブロックも整形する'
   'b1narysr': 'バイナリ'
   'b360mu4g': '引数名を期待しましたが %s でした'
@@ -401,7 +370,6 @@ tests ディレクトリ作成エラー: %v
   'bbv2nbtt': '%q の後にフィールド型を期待しましたが %s でした'
   'beppq99h': 'builtin %s: 結果スロットがありません'
   'bikq8xen': '出力形式: file:line:col: [SEVERITY] source: message'
-  'bjj14xsi': 'lencap スロット'
   'bp7m5374': 'arr.zero: レシーバスロットがありません'
   'bsaaq6j7': 'utime: パスを C 文字列にマーシャルできません'
   'bsnjql1o': 'HTML 出力 %s の書き込み: %w'
@@ -434,14 +402,12 @@ tests ディレクトリ作成エラー: %v
   'chnrcvcl': '受信ループ \'<- ch: { ... }\' のチャネル名の後に \':\' を期待しましたが %s でした'
   'chnrcvdt': '\'.\' の後にフィールド名を期待しましたが %s でした'
   'chnrcvex': '\'<-\' の後にチャネル名を期待しましたが %s でした'
-  'chwlna99': '組み込み %s ではチャネルを初期化できません。with-cap(n) を使用してください'
   'ci3l2aku': 'ブラウザで開く（--js が必要）'
   'cjih2jtt': '関数型エイリアス内に \'=\' を期待しましたが %s でした'
   'ckaj3355': '不明な関数 “%s.%s”: モジュール “%s” にトップレベル関数 “%s” がありません'
   'cldvfmqx': 'waitpid: pid, options が必要です'
   'cn2p79sm': '%s:%d: Nolang コードブロックをスキップしました: %s'
   'cnsb9bys': 'import %s: 型 %q は %s でも定義されています。トップレベルの #{name = \'...\'} 注釈で区別してください'
-  'coronowl': 'OpRun: スロットがありません'
   'cotvjhmy': 'exec-shell: コマンドを C 文字列にマーシャルできません'
   'cpefnxwk': 'str-truncate: レシーバにスロットがありません'
   'cpyd2teh': '%s@%s のダウンロード: %w'
@@ -453,9 +419,9 @@ tests ディレクトリ作成エラー: %v
 メインファイルの書き込みエラー: %v
 
 `
-  'czinamrs': 'process-exec: windows では未対応です'
   'd1xzecbk': 'builtin get-arch: 結果スロットがありません'
   'd4faltsr': 'デフォルト'
+  'd8c4hm2k': 'Run the full compile pipeline but write no output files (no binary, JS, WASM, header or IR)'
   'd8en6a9j': 'MIR IR の LLVM 検証に失敗しました: %v: %s'
   'ddljrny8': 'struct リテラル内にフィールド名を期待しましたが %s でした'
   'ddutfwr8': '%s でのエラー: %w'
@@ -504,7 +470,6 @@ AST 依存 %s の同期エラー: %v
   'efflaapc': '\'case\' または \'default\' を期待しましたが %s でした'
   'ehsahzu5': '  no vet src/std/            src/std/ の全 .no を検証'
   'eit5cjgr': 'tar.gz アーカイブの抽出: %w'
-  'ejbt38ik': 'slice 演算の出力先スロット'
   'elep1kra': '  no build                  カレントディレクトリまたは workspace.noml のプロジェクトをビルド'
   'elps0exp': '`...` は何もしないプレースホルダ文で値を持たないため、式の位置では使えません（%d 行目）。ブロック内の単独の行に書いてください（例: `-> {` 改行 `    ...` 改行 `}`）'
   'elps0ln0': '`...` は単独の行に置く必要があります: %d 行目で `...` の前にコードを置けません。単独の行にするか削除してください'
@@ -525,6 +490,7 @@ AST 依存 %s の同期エラー: %v
   'f0p0dfha': 'val() コンストラクタは非推奨です。明示的な構築には ok(x)、暗黙的な代入には `name = expr` を使用してください'
   'f10x20nf': 'option を返す関数 \'%s\' を裸の算術引数で呼び出すには明示的なアンラップが必要です: まず \'x ?= %s(...)\' で引数をアンラップするか、結果をアンラップしてください（例: \'y ?= %s(...)\'）'
   'f3j66rlp': 'フォーマット指定子 \'%c\' は整数型を必要としますが \'%s\' でした（指定子: %q）'
+  'f3n0v6q1': 'Use --check to validate a full build (including codegen) without writing any artifacts.'
   'f5gbhit6': '  no test --wasm-direct       Direct WASM バックエンドで wasmtime によりテスト'
   'f5ikdmuc': 'struct リテラル内にフィールド名を期待しましたが %s でした'
   'fcs3wo7u': `
@@ -539,7 +505,6 @@ AST 依存 %s の同期エラー: %v
 `
   'fh3ukes8': 'net-set-recv-timeout: 結果スロットがありません'
   'fixlabel': 'fix:'
-  'fk1sb6ss': 'syslog: windows では未対応です'
   'flfh2ueu': 'インストール対象 %q が不正です: リポジトリは <host>/<owner>/<repo> または <owner>/<repo> である必要があります'
   'fs4qotyl': 'zip アーカイブの展開: %w'
   'fu1ow141': 'テストファイルが見つかりません: '
@@ -569,7 +534,6 @@ AST 依存 %s の同期エラー: %v
   'ghvjbe8q': '不正なトークン %q です'
   'gir1e4fn': 'net-udp-sendto: ホストを C 文字列にマーシャルできません'
   'giw7e5rb': '注釈を閉じる \'}\' を期待しましたが %s でした'
-  'giy30qq2': 'OpRun: 不明な async 呼び出し先 %q です'
   'gjsrgyn8': '-annotations を付けると含まれます。'
   'gl4bahpp': `
 clang が見つかりません。LLVM ツールチェーンが完全にインストールされているか確認してください
@@ -618,9 +582,7 @@ workspace.noml に '%s' を登録しました
   'hr4y7owq': 'getgrouplist: %v'
   'htdgzowm': '  no fmt                      カレントディレクトリを整形（整形が必要なファイルを一覧）'
   'hun7qbmc': '  no ast src/std/vec.no             vec.no の AST を表示'
-  'hvk8qwyj': 'borrow の出力先スロット'
   'hvuu1dxx': '  no build --js -o app.js main.no                    JS バックエンドで出力先を指定'
-  'hxy8tpyp': 'slice 演算のレシーバ型'
   'hzkv5tvl': '列挙値の注釈を閉じる \'}\' を期待しましたが %s でした'
   'hzv4zwx4': 'LLVM C API: トリプル %q のターゲットマシン作成に失敗しました'
   'i0q22lpt': 'カンマまたは右括弧を期待しましたが %s でした'
@@ -648,11 +610,9 @@ AST キャッシュディレクトリ: %s
   'iky4xsx4': 'メソッド “%s.%s” は %d 個の戻り値を持ちますが、インターフェースは %d 個を期待しています'
   'ippfc6p4': 'utime: path、atime、mtime が必要です'
   'iqszywlc': 'wasm32-wasi ターゲットでは $WASI_SYSROOT に wasi-sysroot のパスを設定してください。'
-  'iqtr8mht': 'option ラップの出力先'
   'irjygycv': 'val() コンストラクタは非推奨です。明示的な構築には ok(x)、暗黙的な代入には `name = expr` を使用してください'
   'irnz2m56': 'ループ本体を開く \'{\' を期待しましたが %s でした'
   'is8zuoph': '  - src/（ソースディレクトリ）'
-  'itcnc2oz': '%s 内の間接呼び出し先のスロットがありません'
   'iubb5mnf': '  no test -target x86_64-linux-gnu'
   'iykbgab6': 'vec.sort: レシーバが必要です'
   'iyn3rgtm': '“self” (.) は構造体メソッド内でのみ使用できます。match 値を指している場合は “it” を使用してください'
@@ -664,7 +624,6 @@ AST キャッシュディレクトリ: %s
   'j1onng8y': 'カンマまたは右括弧を期待しましたが %s でした'
   'j2lwz7pe': 'LLVM C API: %s に失敗しました'
   'j2n5poza': 'native bind=ffi（import %q）には、束縛する #{c} extern 宣言が少なくとも 1 つ必要です'
-  'j312ij2o': 'インデックスの出力先スロット（dst=%d type=%s）'
   'j3r9pdsp': 'switch 式の後に \'{\' を期待しましたが %s でした'
   'j3u5n35e': 'インストール対象が空です'
   'j42y1qyx': 'std シグネチャの収集: %w'
@@ -677,7 +636,6 @@ AST キャッシュディレクトリ: %s
   'jko9phaw': 'LLVM アセンブルに失敗しました: %w'
   'jl86npdd': '最新リリースの解決: %w'
   'jlv0jw10': '解決方法:'
-  'jmamxa8i': 'lencap の出力先スロット'
   'jppwnc4n': 'struct 名の後に \'{\' を期待しましたが %s でした'
   'jpy06p6d': 'ワークスペースにビルド対象が見つかりません'
   'juu3smx0': '#{...} 注釈はノードのフィールドではなく意味論の副表に置かれるため、'
@@ -691,13 +649,10 @@ AST キャッシュディレクトリ: %s
   'k3g4ofs4': '整形結果の代わりに色付き差分を出力'
   'k3r7mbqd': 'else 分岐（行単独の \'->\'）は if-group の中に書く必要があります。\'cond ->\' 分岐とこの \'->\' をまとめて { ... } で囲んでください（else を持たない単独の \'cond ->\' は囲わなくてもできます）'
   'k3xq7vna': 'builtin %s: レシーバまたはソースがありません'
-  'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 結果スロットがありません'
   'k7m2q9xa': '__join-push: タスクハンドルがありません'
   'k8je3usi': '%s は既に存在し、ES モジュールではありません（"type": "module" がありません）。代わりに出力を .mjs として生成してください（no build --js -o out.mjs）'
   'k9179drd': '“%s” は関数であり呼び出す必要があります。%s(...) のことですか?'
-  'k9270vd6': 'getfield のフィールド'
-  'ke8i906b': 'MIR->LLVM がパニックしました（復帰済み、旧実装にフォールバック）: %v'
   'kfxfk3n1': 'ファイル／ディレクトリ未指定で標準入力が端末の場合:'
   'kg4qzfdu': '  no add nogit@github.com/lizongying/notools        最新リリース'
   'ki6qzzsx': '  --json           構造化 JSON 診断を出力（CI／ツール向け）'
@@ -712,11 +667,7 @@ AST キャッシュディレクトリ: %s
   'kxikdkzu': 'net-accept: 結果スロットがありません'
   'kzomgjsg': '~match 文が空です'
   'kzsepkro': 'モジュール %s の読み込み: %w'
-  'p7mn4vta': 'モジュール %s の読み込み: package.noml の依存関係がありません'
-  'p7prettymiss': 'print の第 %d 引数（型 \'%s\'）には .pretty() メソッドがありません'
-  'q3wz8hkb': 'モジュール %s の読み込み: AST パッケージ依存ではありません'
   'l0ifbo16': 'zip アーカイブが展開サイズ上限（%d バイト）を超えています'
-  'l1ypawem': 'str-from-vec: 型が不正です %s -> %s'
   'l332fwh9': `
 ワークスペースを %s に初期化しました
 
@@ -730,7 +681,6 @@ AST キャッシュディレクトリ: %s
   'ldfvpa0x': 'option は暗黙にアンラップできません（これは単なるコピーなので失敗ブランチが破棄されます）。%s ラップアラウンドやクランプを意図している場合、`#{overflow = wrap` はオーバーフロー時に取る値だけを変え、結果は依然として `?%s` でアンラップが必要です。'
   'lehy8lls': '  no fmt main.no              整形して標準出力へ'
   'let8mtmo': '使い方: no build [flags] <file|directory>'
-  'lgxbfk9a': 'export にはシンボル名が必要です: \'@ %s\' だけでは何も宣言しません（\'@ %s.<シンボル>\' と書いてください）'
   'ljfz84ro': '関数型を開始する \'(\' を期待しましたが %s でした'
   'lkiy53ow': '16 進リテラル “%s” が大文字を使用しています。フォーマット時に小文字に変換されます（例: 0xff）'
   'lqcz5x45': '%s からアーカイブデータを読み取り中: %w'
@@ -741,8 +691,8 @@ AST キャッシュディレクトリ: %s
 %s で ESM 出力を配信（Ctrl+C で停止）
 
 `
-  'lx7lbupc': 'indexstore スロット'
   'lzgs7cds': '  no fmt -fix=redundant main.no   冗長な型注釈の削除をプレビュー'
+  'm0db1nfx': 'unexpected \'%s\' at start of expression'
   'm0nvgkbt': '引数は次の順に解決されます:'
   'm13ljyfp': '\'no vet src/std\' 向けに解析済み std Program AST を再利用（実験的、各 std モジュールの再解析を省略）'
   'm17ikt3w': 'builtin %s: %s を %s に格納できません'
@@ -771,27 +721,24 @@ utils.no の書き込みエラー: %v
   'm8blb8q2': 'noml: 行 %d 列 %d: %s'
   'mbnaky32': 'レジストリ認証トークン（未使用: アップロードは未実装）'
   'meket0n4': 'vec.clear: レシーバスロットがありません'
-  'mf29f4fh': 'clone スロット'
   'mgnh35fz': 'builtin %s: %s の結果を %s スロットに格納できません'
   'mh9jwcfu': '  no fmt -loop-style=suffix f.no  ループを \'{ } (cond)\' / \'{ } * N\' で書く'
   'mhfvvp1u': '依存の深さ上限を超えました（%d）: %s@%s'
   'mi13i3vc': '右括弧を期待しましたが %s でした'
   'mimqybn2': 'vec.pop: レシーバが必要です'
-  'mkpo3f8h': 'utf8-at の出力先スロット'
   'mlm7xpcj': '`%s %s= %s` は非推奨です。外側の関数に option の結果があるため、保存時に `no fmt` が `?=` 形式に書き換えます（複合代入の右辺は今や `?T` で、`?=` を通ってアンラップまたは伝播されます）'
   'mlyz11mg': '--js-runtime <cmd> で `no run --js` の JS ランタイムを選びます（node、bun、deno など）。'
   'mmcrtoio': '使い方: no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': 'struct フィールド名の後に \':\' を期待しましたが %s でした'
+  'msubjprn': 'the subject of a value match is wrapped in parentheses; they are redundant because parentheses carry no semantics here (the match binds to the whole expression, then the result is assigned). Write `expr: { ... }` instead — `no fmt` removes these parentheses automatically.'
   'mt377i94': '  no build --wasm-direct -target wasm32-wasi main.no  LLVM ツールチェーンなしで WASM を生成'
   'mv6ox1tw': 'uname: 結果スロットがありません'
   'mw127e39': '配列型内に \']\' を期待しましたが %s でした'
   'mwhgbhbp': '  パッケージインポート（#{bind = ffi|wasm}）が解決されるため失敗しません — LLVM は'
-  'mz7tmynt': 'builtin %s: レシーバがありません'
   'mzwb28br': 'フォーマット文字列内の未定義変数 “%s”'
   'mzxtskah': 'eq-raw: (receiver, b, n) が必要です'
   'n00utq2q': 'process-exec: 引数を C 文字列にマーシャルできません'
   'n08bzk5j': '結果は `no add <tool>@<host>/<owner>/<repo>` がダウンロードするものそのものです:'
-  'n0hl9vde': 'builtin %s の第 %d 引数: %s'
   'n0mlfmt1': 'fmt: -fix applies to Nolang sources only; .noml files have no automatic fixes'
   'n0mlfmt2': 'cannot format %s: %d problem(s), file left unchanged'
   'n0mlfmt3': `
@@ -826,7 +773,6 @@ and left unchanged. -fix does not apply to them.
   'ne9gyl5c': '  no run --js main.no            JS バックエンドでビルドし node で実行'
   'ne9kyew7': 'FFI 名の後に \'=\' を期待しましたが %s でした'
   'nejhwtgd': '依存が見つかりません。'
-  'ngj8b3uj': 'utime: windows では未対応です'
   'nh8jhhz7': 'std AST: %w'
   'nik0cll9': '\'for cond { }\' は非推奨です。代わりに \'{ } (cond)\' ループを使用してください'
   'njsutn36': 'インターフェース内にメソッド名を期待しましたが %s でした'
@@ -864,7 +810,6 @@ and left unchanged. -fix does not apply to them.
   'ocsanpe6': 'インストール対象 %q が不正です: ツール名にパス区切り文字を含められません'
   'oh0vy2qd': 'メンバー %q: オブジェクトリテラルの型がありません（#{type = \'<struct>\'} で注釈してください）'
   'oi4vt42g': '循環依存を検出しました: %s'
-  'ojuksusl': 'option ラップのスロット'
   'okt5tvxy': `
 Zig コンパイラが見つかりません
   macOS: brew install zig
@@ -874,12 +819,10 @@ Zig コンパイラが見つかりません
 `
   'ol0l3ova': '型 “%s” が見つかりません。“%s.%s” のことですか?'
   'ol21t36r': '  no run --js --js-runtime bun main.no     同上、bun を使用（node、bun、deno など）'
-  'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '整数除算・剰余の除数がリテラル定数 0 です。これは LLVM では未定義動作（ゼロによる sdiv/srem）で、予測不能な結果を生みます。実行時のゼロチェックを追加するか、関数が失敗を option として返すようにしてください。'
   'oraub2m9': '`%s %s= %s` は未対応です: インデックス読み取りは option（範囲外では nil）を返すため、複合代入はインデックスを 2 回評価して失敗を破棄してしまいます'
   'orjs902d': '\'switch/case/default\' は非推奨です。代わりに \'x: { 1-> ... }\' を使用してください'
   'os0j8ix4': '配列 \'%s\' の %s 要素に %s 値を代入できません'
-  'osrb7a78': 'move スロット'
   'oswu0as1': '条件式内に \':\' を期待しましたが %s でした'
   'oxgtqeo0': 'write-file: 結果スロットがありません'
   'oyfkw3qi': '（未設定）'
@@ -887,10 +830,9 @@ Zig コンパイラが見つかりません
   'p1ujpxwi': 'vec.remove: レシーバスロットがありません'
   'p215kqvl': 'cancelled: i1 を %s に格納できません'
   'p2epl19k': 'option でない変数 \'%s\' に nil を代入できません'
-  'p2m0wxh1': 'exec-shell: windows では未対応です'
   'p56zjfhi': '\'%s\' の型を推論できません: %s() には左辺の明示的な型注釈が必要です（例: `name []byte = %s(n)`）'
   'p763k84p': '%s の作成: %w'
-  'p9dt2hwe': 'builtin %s のレシーバ %s'
+  'p7mn4vta': 'モジュール %s の読み込み: package.noml の依存関係がありません'
   'p9jv1dcz': 'workspace.noml が空です'
   'pa3bgtjn': 'ブラウザ ESM import map の CDN ベース（既定 https://esm.sh。package.noml の compiler.esm-cdn でも設定可）'
   'paiorrdo': '--lang には値が必要です（例: --lang=zh-cn）'
@@ -903,7 +845,6 @@ Zig コンパイラが見つかりません
   'pibk34ed': 'sum ファイルのマーシャル: %w'
   'plsdygti': '型 match のアームパターン %q は union %q のメンバーではありません'
   'pne07fog': 'メンバー %q[%d]: 配列にオブジェクトとスカラーが混在しています。#{type = \'[]<elem>\'} で注釈してください'
-  'prohiujy': 'getgroups: windows では未対応です'
   'puql0oxg': 'getgrouplist: 結果スロットがありません'
   'pxxxqtg6': '\'{\' を期待しました'
   'pyo62z10': 'get-priority: which、who が必要です'
@@ -912,9 +853,11 @@ Zig コンパイラが見つかりません
   'q20a8lbi': 'JS 出力の書き込み: %w'
   'q2qgyoqo': 'win-wait-process: (proc-handle, timeout-ms) が必要です'
   'q3v8kn2m': '\',\' の後に変数名を期待しましたが %s でした'
+  'q3wz8hkb': 'モジュール %s の読み込み: AST パッケージ依存ではありません'
   'q4nilcmp': '\'%s\' (%s) を nil と比較できません: nil と比較できるのは option (`?T`) だけです。`?%s` として宣言するか、具体的な値と比較してください'
   'q76kxtef': '  no fmt -d                   カレントディレクトリの全 .no の差分を表示'
   'q7k2nzr4': '除数 %d は、この整数除算／剰余が左オペランドから継承する狭い型 %s に収まらないため、リテラルは 0 に切り詰められ、この演算は常にゼロ除算になります（結果は 0 に固定されます）。まずオペランドを i64 に広げ（例: `av i64 = arr[i]`）、i64 で除算してください。値がすでに範囲内ならこの演算を削除してください。'
+  'q9f2s7wa': '  no build --check main.no                           validate the whole build, write nothing'
   'q9m9no8c': 'フィールド注釈を閉じる \'}\' を期待しましたが %s でした'
   'q9p5bmd0': 'C リンカ（clang/cc/gcc）が見つかりません'
   'qa8z0cwo': `
@@ -948,7 +891,6 @@ lib.no の書き込みエラー: %v
   'r1wo1izg': '  # npm/lodash.get as get    名前付きエクスポート 1 つ'
   'r28q9t6z': 'ラベル #%s の後にループ本体を期待しましたが %s でした'
   'r315uabz': 'net-send: 第 1 引数のデータポインタを取得できません'
-  'r4mh5mrg': 'waitpid-nohang: windows では未対応です'
   'r4ng3f0r': '\'for\' キーワードはコンテナ反復では使用できません。代わりに \'%s <- xs:\' を使用してください'
   'r5fkc5h1': '  no build --js --browser main.no                    ブラウザ向け JS + HTML を生成'
   'r60tokvf': '複数変数のリストの後に \'=\' を期待しました'
@@ -963,26 +905,23 @@ lib.no の書き込みエラー: %v
   'rhajr9l9': '非推奨: str.len プロパティは削除されました。バイト長には s.len-bytes()、コードポイント数には s.len() を使用してください'
   'rkd2pw8p': 'プロセス内 LLVM C API のコンパイルに失敗しました（%s=0 で無効化できます）: %w'
   'rlfpckc0': 'インターフェースメソッド名の後に \'(\' を期待しましたが %s でした'
-  'rn4mb8sc': 'builtin %s: レシーバにスロットがありません'
   'rocoxbru': '~match 式の後に \'{\' を期待しましたが %s でした'
   'rolk5ods': '列挙値の注釈を閉じる \'}\' を期待しましたが %s でした'
   'roqeis8q': '左中括弧を期待しましたが %s でした'
   'rp7sdc6j': 'win-get-exit-code: proc-handle 引数が必要です'
   'rpazw1l7': '依存を追加します（事前ビルド済み AST パッケージ: <tool>-ast.zip）。'
+  'rswd8k2n': '\'%s\' is a reserved keyword and cannot be used as an identifier; rename it (e.g. \'%s\')'
   'rsz5rmmt': '%s を取得中: %w'
   'rtopy0mf': 'vec.insert: レシーバスロットがありません'
   'rusw4b0k': 'メソッド名を期待しましたが %s でした'
   'ruwo1dvw': 'cancel: タスクハンドルがありません'
   'rw998t51': 'win-wsa-startup: 結果スロットがありません'
   's116sd0b': 'ビルドエラー: %w'
-  's28lrleh': 'MIR codegen は %s を処理できませんでした: %s'
   's8gh6opt': 'コンパイルエラー: %w'
   'sbiepwk2': '\'case\' または \'default\' を期待しましたが %s でした'
   'sciigwn4': 'インターフェースメソッド内に結果名を期待しましたが %s でした'
   'sckw2o8b': '計数ループ本体を開く \'{\' を期待しましたが %s でした'
   'sd13rw1l': '関数型エイリアスの \'=\' の後に \'(\' を期待しましたが %s でした'
-  'sehpprvy': 'builtin %s: 不正な値型 %s です'
-  'seta2gk3': 'builtin %s: レシーバスロットがありません'
   'sgk4yra9': 'そのようなファイル、ディレクトリ、またはパッケージはありません: %s'
   'sh7h3f59': `
 ワークスペースファイルの書き込みエラー: %v
@@ -994,13 +933,12 @@ lib.no の書き込みエラー: %v
   'sm0xomza': 'str.to-bool: 結果スロットがありません'
   'sm7rjfcm': '変数 \'%s\' が重複しています'
   'so08hhvh': 'embed: ディレクトリが空です: %s（解決後: %s）'
-  'soo3tmk2': '借用された %s 引数の move は MIR バックエンドでは未対応です'
   'soq2h6t2': 'extern 宣言内に引数名を期待しましたが %s でした'
   'squ5w5co': '--js と併用して --browser を付けると、ブラウザ向け JS と HTML ラッパーを生成します。'
   'srpc0cgx': '--js --browser でブラウザ向け JS + HTML を生成し既定のブラウザで開きます。'
   'ssddj3qk': '%s のチェックサムが一致しません: 期待 %s、実際 %s（インストールを中止します）'
   'sstb7ij2': '注釈を閉じる \'}\' を期待しましたが %s でした'
-  'stbjgjqz': 'builtin %s の固定長配列 %s'
+  'stridxwr': 'cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-str()`'
   'su2q9at6': '使い方: no test [<file>]'
   'suhqncsk': '  1. 既存の .no ファイル        -> そのファイルを実行'
   'sv3fw1hp': `
@@ -1012,12 +950,14 @@ AST を梱包しました: %s
   't22pcf4p': 'embed: ファイルが見つかりません: %s（解決後: %s）'
   't2fwnrfi': '  stat   キャッシュの場所、エントリ数、サイズ、ASTVersion を表示'
   't4jhbz5z': '関数名の後に \'=\' を期待しましたが %s でした'
+  't4y7k2m8': `
+Check successful: %s
+
+`
   't5l89pst': `
 依存 %s が見つかりません。
 
 `
-  't5qq2leo': 'lencap kind: %s（%s）に対する len/cap は関数 %d 内では未対応です'
-  't5rup04t': 'move 元スロット v%d -> v%d'
   't8440cno': '環境変数: NOLANG_AST_CACHE_OFF=1 でキャッシュ無効、NOLANG_AST_CACHE_DIR でディレクトリを上書き。'
   'tb2zxq0f': '\'%s.%s []T\' は許可されていません: フィールドの型は \'%s\' の型定義に属します。フィールドに格納するには \'%s.%s = ...\' と書いてください'
   'tbfsq7ph': '  no pub                       dist/<name>-ast.zip を書き出す'
@@ -1044,7 +984,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'tho8xc47': '作成されたファイル:'
   'tjwokiw9': '配列リテラル内にカンマまたは右角括弧を期待しましたが %s でした'
   'tlwmf1le': 'Nolang では明示的な型キャスト `expr %s` は許可されていません。安全な拡幅／同幅変換には宣言形式 `name %s = expr` を使ってください'
-  'tmiibvan': 'builtin %s: 出力先スロットがありません'
   'tmqnqq9x': '依存関係が見つかりません: %q は package.noml の dependencies で宣言されていません'
   'tnj4py6b': '同期する依存はありません。'
   'tosnl9r7': '回数とループ本体の間に \'*\' を期待しましたが %s でした'
@@ -1057,7 +996,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'ttdybn5d': 'fmt: -md と -fix は併用できません（自動修正は .no ソースのみが対象）'
   'ttlxcrgt': '範囲式内に \'[\' または \'(\' または文字列を期待しましたが %s でした'
   'u0g1w0d7': 'js 互換モジュールが見つかりません: %s'
-  'u3g4qexx': 'builtin %s: 不正な引数型 %s です'
   'u3if6wak': '  no fmt -fix=match -w src/       不足している match の腕をその場で補う'
   'u4oybn9r': '%s は既にインストールされています（%s）。再インストールまたは更新には -u を使用してください'
   'u5qmp19f': 'option の match はすべてのブランチ（err、nil、ok）を処理する必要があります（不足: %s）'
@@ -1086,7 +1024,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'ux1lstn1': 'unix-listen: 結果スロットがありません'
   'ux1lstn2': 'unix-listen: パスを C 文字列にマーシャルできません'
   'uzugz5vn': 'ディレクトリは自動的に再帰処理されます。'
-  'uzzd8eqi': 'get-line: 結果がありません'
   'v0avn8e4': '検証に成功しました'
   'v0thbcmv': '引数名を期待しましたが %s でした'
   'v1a6rxna': 'カンマまたは右括弧を期待しましたが %s でした'
@@ -1099,7 +1036,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'v7zs1nru': 'フォーマット指定子 \'s\' は str/bool/整数型を必要としますが \'%s\' でした（指定子: %q）'
   'v8tulbl4': 'プロジェクト:'
   'v9hnqn6w': 'import %q: ESM（npm）の import は JS バックエンドでのみ対応しています。`no build --js` または `no run --js` で再ビルドしてください（指定子 %q はネイティブバイナリにリンクできません）'
-  'v9milo3k': 'getgrouplist: windows では未対応です'
   'vas3pyce': 'パッケージレジストリ URL（未使用: アップロードは未実装）'
   've2dzkxe': '  no test -timeout 90 test-std/src   ディレクトリ全体を順に実行；各ファイルは 90 秒上限'
   'vekjerf5': '埋め込み StdFS に std モジュールが見つかりません: %s'
@@ -1110,14 +1046,10 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'vffhhi55': '出力ファイルのパス'
   'vgfb39et': 'std AST: %s の読み取り: %w'
   'vgljm585': 'builtin %s: ?str の結果は %%option スロットを期待しましたが %s でした'
-  'vgxfhc6x': 'sysctl: windows では未対応です'
-  'vh7osqp5': '%s に呼び出し先がありません'
   'vhmg22wa': '依存を同期しています...'
   'vhpiqfim': '浮動小数点の範囲境界は未対応です。整数を使用してください'
-  'vhpl1qzt': 'slice 演算の引数個数'
   'viuznngf': 'net-udp-recvfrom: 第 1 引数のデータポインタを取得できません'
   'vjj66evx': '引数なしならカレントディレクトリの main.no を実行します。'
-  'vjkycl6v': 'utf8-at のレシーバスロット'
   'vkq3r0r2': '`# npm/lodash.get as get` または `# npm/lodash.default as d`。いずれも'
   'vm9uj5g4': 'builtin %s: 生の str が %s スロットに格納されました'
   'vmp8s7tq': 'value match（`subject: { arms }`）は文レベルの構造であり、代入の右辺（括弧で囲むのは任意）にのみ現れます。演算子のオペランド、関数引数、比較、戻り値、リテラルなどの式の中では使用できません。まず結果を変数にバインドしてから使用してください: `v = subject: { ok -> it ... }`、その後 `v` を使用します。'
@@ -1132,15 +1064,12 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
 
 `
   'w3k1bwpp': 'ジェネリック引数内に \',\' または \'>\' を期待しましたが %s でした'
-  'w6av3lqe': 'builtin %s: ソースの型が不正です %s'
   'w6xtqb7k': 'net-listen: (host, port) が必要です'
   'w6zt4h9c': '複数変数のリストの後に \'=\' を期待しました'
   'w826wv42': '  no run foo                   パッケージ \'foo\' を実行（workspace.noml より）'
-  'w9ajg8ow': 'eprint は str/i64/byte/char/bool の引数を期待しましたが %s でした'
   'wbsevkfk': '  no fmt -d main.no           色付き差分を表示'
   'wcbo6a01': 'バリアント注釈を閉じる \'}\' を期待しましたが %s でした'
-  'wcoza64y': '  no build --option-inline-threshold=16 main.no   8 バイトを超える ?T ペイロードをすべてボックス化'
-  'wd8mx0q7': 'callee が nil です'
+  'wcoza64y': '  no build --option-payload-inline-threshold=16 main.no   8 バイトを超える ?T ペイロードをすべてボックス化'
   'wdk3k728': '出力パラメータ \'%s\'（?T）が読み取られていますが関数本体で一度も代入されていません — nullable 出力パラメータの未初期化使用です'
   'wdpztov8': 'LLVM C API: IR が空です'
   'wekxh2lc': 'インターフェース “%s”: 不明な親インターフェース “%s”'
@@ -1152,7 +1081,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'wk4p8399': 'getgroups: 2 つの結果（gids, n）が必要です'
   'wlbc2ct9': 'import %q: ソースコードでは相対パス（./ ../）は許可されません。代わりにワークスペースの別名かリモートパッケージ識別子を使用してください'
   'wlcp0pp6': '不正な ESM パッケージ指定子 %q です'
-  'wmq5sd19': 'builtin %s 用の LLVM intrinsic %s を削除しました'
   'wnskovpc': '計数ループの \'*\' の前に整数の回数を期待しましたが %s でした'
   'wo778frg': 'bool.to-str: %%str-long を %s に変換できません'
   'wo8qw0ac': '標準ライブラリのソース:'
@@ -1162,14 +1090,11 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'wu70c4w0': 'workspace.noml の全プロジェクトが並列にビルドされます。'
   'ww5ngyyh': 'win-create-process: (cmdline, dir, stdin, stdout, stderr) が必要です'
   'x51zwxlr': '#{%s} ディレクティブの後に識別子を期待しましたが %s でした'
-  'x57xvqny': '関数 %s 内に未対応の値型 %s があります'
   'x649sxw4': 'embed: ディレクトリ %s の読み取りに失敗しました: %w'
   'x6snirjy': '使い方: no ast [-annotations] <file>'
   'x6swm2kk': '“%s” は小文字とハイフンのみを使用してください'
   'x6tqaeqp': 'インターフェースメソッド内に引数名を期待しましたが %s でした'
-  'x8bk3eqw': 'getfield スロット'
   'xczzji7g': '左中括弧を期待しましたが %s でした'
-  'xe32iowe': 'term'
   'xev7d0na': `
   ast  %s %s
 
@@ -1188,17 +1113,13 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'xmicjezl': '整数演算 `a OP b` に `#{overflow = ...}` 注釈が付いていないため、オーバーフロー時の動作が宣言されていません。この式を含む文に注釈を付け、オーバーフロー時に取る値を指定してください: `#{overflow = wrap}`（無音のラップアラウンド）/`clamp0`（下溢で 0）/`min`/`max`/`saturate`（飽和クランプ）、または `#{overflow = u8-max}` のような型接頭辞付き形式。注釈は文ごとに作用するため、隣の文に書いた注釈はここには及びません。'
   'xo6e53hm': '配列 \'%s\' の読み取り専用フィールド \'len\' を変更できません'
   'xpp5i92s': 'option の match はすべてのブランチ（err、nil、ok）を処理する必要があります（不足: %s）'
-  'xqz68d5m': 'builtin %s の引数個数'
   'xrmnmwf4': '\':\' を期待しましたが %s でした'
   'xsstot9b': 'net-recv-nb: (fd, buf, n) が必要です'
   'xtblgfzq': '数値リテラルに %s を呼び出すのは冗長です。変換先の型を直接書いてください（例: %s）'
-  'y1t4g09v': 'lencap 型'
   'y23ty9w4': 'release: 値が必要です'
   'y2vkykls': 'eq-raw: 結果スロットがありません'
   'y4yjmhz2': 'builtin %s: 不明な LLVMConv 種別 %d です'
   'y4yxzacz': 'builtin %s: scratch バッファが具体化されていません'
-  'y5f921sg': 'txt インデックスの出力先スロット（dst=%d type=%s）'
-  'y8ieefsr': 'builtin %s: 引数が不正です'
   'y9lj5a9g': '引数名または型を期待しましたが %s でした'
   'yevhjra2': 'LLVM C API: %s に失敗しました: %s'
   'yf6kxdmz': '文は単なるリテラル値にはできません。関数を呼び出すか変数に代入してください'
@@ -1210,7 +1131,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
 `
   'ygx2q6sp': 'builtin chars-new: 結果スロットがありません'
   'yh8904fm': '代入演算子を期待しましたが %s でした'
-  'yhg5vw4v': 'borrow の入力元スロット'
   'yhin5u09': 'ネイティブポリシー: %w'
   'yj5ek705': '左中括弧を期待しましたが %s でした'
   'yjiapu40': 'builtin %s: 結果がありません'
@@ -1228,10 +1148,8 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'z68vr2e2': 'builtin %s: 引数 %d を C 文字列にマーシャルできません'
   'z87sn8u5': 'カンマまたは右括弧を期待しましたが %s でした'
   'z8rfu6gf': 'WASM 出力 %s の書き込み: %w'
-  'z9tyfwf5': 'move に出力先がありません'
   'zae1l26t': '%s の書き込み: %w'
   'zc1zfsat': '匿名関数型の構文 \'()\' は無効です。名前付き関数型エイリアスを使用するか、package.noml で \'anonymous-fn-type\' を有効にしてください'
-  'zcelvmmy': 'OpAwait: スロットがありません'
   'zdbv29a2': `
 ブラウザで開きました: %s
 
@@ -1240,7 +1158,6 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'zlotlakj': '  no fmt -d src/              src/ の全 .no の差分を表示'
   'zm1ivicl': 'ループ本体の文を期待しましたが %s でした'
   'zm87x8w0': 'ディレクトリならその中の全 .no を検証します。'
-  'zodppsnm': 'MIR->LLVM: %s'
   'zpeqou62': 'CI で `no add` が取得するアセットを生成します:'
   'zpgykko6': '%s に main.no が見つかりません'
   'zql6tu9p': 'ワークスペース内の依存パス %q が見つかりません'
@@ -1254,5 +1171,4 @@ AST 依存 %s の同期エラー: モジュールが空です
 
 `
   'zzcfoc04': 'dist ディレクトリの作成: %w'
-  'stridxwr': 'cannot write through an index of a str or txt (place-match `s[i]: { ok -> it = v }` is not allowed); strings are immutable positions: append with `s.push(c)` / `s.push-str(t)`, overwrite bytes with `s.fill(b)`, replace the whole value with `s = ...` / concatenation, or build a `[]byte` and call `to-str()`'
 }

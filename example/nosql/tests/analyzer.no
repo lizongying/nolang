@@ -1,0 +1,80 @@
+# /example/nosql/src/test-support test-support
+# /example/nosql/src/ast
+# /example/nosql/src/parser
+# /example/nosql/src/schema
+# /example/nosql/src/analyzer
+
+CTX = test-support.new()
+
+CATALOG = new-db-catalog()
+TABLE = empty-db-table()
+TABLE.name = 'items'
+ID-COLUMN = empty-db-column()
+ID-COLUMN.name = 'id'
+ID-COLUMN.declared = 'INTEGER'
+NAME-COLUMN = empty-db-column()
+NAME-COLUMN.name = 'name'
+NAME-COLUMN.declared = 'TEXT'
+TABLE.columns.push(ID-COLUMN)
+TABLE.columns.push(NAME-COLUMN)
+CATALOG.tables.push(TABLE)
+
+VALID-PROGRAM = parser.parse-sql('SELECT t.id, t.name FROM main.items AS t WHERE t.id >= ?1 ORDER BY t.name LIMIT 5 OFFSET 1')
+VALID-ANALYZER = new-sql-analyzer(VALID-PROGRAM, CATALOG)
+VALID-ANALYZER.reset-scope()
+VALID-ANALYZER.analyze-program()
+CTX.check(VALID-ANALYZER.has-error() == false, 'valid schema-aware SELECT analyzes: ' - VALID-ANALYZER.error-message)
+CTX.check(VALID-ANALYZER.output-names.len() == 2, 'SELECT output names are recorded')
+CTX.check(VALID-ANALYZER.parameter-count == 1, 'parameter index is recorded')
+
+STAR-PROGRAM = parser.parse-sql('SELECT * FROM items')
+STAR-ANALYZER = new-sql-analyzer(STAR-PROGRAM, CATALOG)
+STAR-ANALYZER.reset-scope()
+STAR-ANALYZER.analyze-program()
+CTX.check(STAR-ANALYZER.has-error() == false, 'star projection analyzes')
+CTX.check(STAR-ANALYZER.output-names.len() == 2, 'star projection expands schema columns')
+
+UNKNOWN-PROGRAM = parser.parse-sql('SELECT missing FROM items')
+UNKNOWN-ANALYZER = new-sql-analyzer(UNKNOWN-PROGRAM, CATALOG)
+UNKNOWN-ANALYZER.reset-scope()
+UNKNOWN-ANALYZER.analyze-program()
+CTX.check(UNKNOWN-ANALYZER.has-error(), 'unknown column is rejected')
+
+BAD-QUALIFIER-PROGRAM = parser.parse-sql('SELECT nope.id FROM items AS t')
+BAD-QUALIFIER-ANALYZER = new-sql-analyzer(BAD-QUALIFIER-PROGRAM, CATALOG)
+BAD-QUALIFIER-ANALYZER.reset-scope()
+BAD-QUALIFIER-ANALYZER.analyze-program()
+CTX.check(BAD-QUALIFIER-ANALYZER.has-error(), 'unknown table qualifier is rejected')
+
+JOIN-PROGRAM = parser.parse-sql('SELECT id FROM items AS a JOIN items AS b ON a.id = b.id')
+JOIN-ANALYZER = new-sql-analyzer(JOIN-PROGRAM, CATALOG)
+JOIN-ANALYZER.reset-scope()
+JOIN-ANALYZER.analyze-program()
+CTX.check(JOIN-ANALYZER.has-error(), 'ambiguous unqualified column is rejected')
+
+FUNCTION-PROGRAM = parser.parse-sql('SELECT not_a_function(id) FROM items')
+FUNCTION-ANALYZER = new-sql-analyzer(FUNCTION-PROGRAM, CATALOG)
+FUNCTION-ANALYZER.reset-scope()
+FUNCTION-ANALYZER.analyze-program()
+CTX.check(FUNCTION-ANALYZER.has-error(), 'unknown scalar function is rejected')
+
+AGGREGATE-PROGRAM = parser.parse-sql('SELECT name, COUNT(*) FROM items GROUP BY name HAVING COUNT(*) > 1')
+AGGREGATE-ANALYZER = new-sql-analyzer(AGGREGATE-PROGRAM, CATALOG)
+AGGREGATE-ANALYZER.reset-scope()
+AGGREGATE-ANALYZER.analyze-program()
+CTX.check(AGGREGATE-ANALYZER.has-error() == false, 'aggregate query analyzes: ' - AGGREGATE-ANALYZER.error-message)
+CTX.check(AGGREGATE-ANALYZER.aggregate-found, 'aggregate usage is recorded')
+
+ALIAS-PROGRAM = parser.parse-sql('SELECT name AS label, COUNT(*) AS total FROM items GROUP BY name ORDER BY total DESC')
+ALIAS-ANALYZER = new-sql-analyzer(ALIAS-PROGRAM, CATALOG)
+ALIAS-ANALYZER.reset-scope()
+ALIAS-ANALYZER.analyze-program()
+CTX.check(ALIAS-ANALYZER.has-error() == false, 'ORDER BY projection alias analyzes: ' - ALIAS-ANALYZER.error-message)
+
+UNKNOWN-ORDER-PROGRAM = parser.parse-sql('SELECT name FROM items ORDER BY missing')
+UNKNOWN-ORDER-ANALYZER = new-sql-analyzer(UNKNOWN-ORDER-PROGRAM, CATALOG)
+UNKNOWN-ORDER-ANALYZER.reset-scope()
+UNKNOWN-ORDER-ANALYZER.analyze-program()
+CTX.check(UNKNOWN-ORDER-ANALYZER.has-error(), 'unknown ORDER BY column is rejected')
+
+CTX.done()

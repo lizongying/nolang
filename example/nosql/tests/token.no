@@ -1,0 +1,186 @@
+# /example/nosql/src/test-support test-support
+# /example/nosql/src/token
+
+CTX = test-support.new()
+
+token-at = (tokens []token, index i64) (out token) {
+    tokens[index]: {
+        ok -> out = it
+
+        -> _
+    }
+}
+
+find-token = (tokens []token, text str) (index i64) {
+    index = -1
+    i <- [0..tokens.len()): {
+        item = tokens[i]: {
+            ok -> it
+
+            -> _
+        }
+        item.text == text -> {
+            index = i
+            return
+        }
+    }
+}
+
+source = 'SELECT "id", \'it\'\'s\', x\'00FF\', 12, 3.5e+2, ?1, @name, $x, :x, a->>\'b\', a || b FROM [main].[t] -- tail\n WHERE id >= 0x10;'
+lexed = token.tokenize(source)
+CTX.check(lexed.error-message == '', 'valid SQL tokenizes without errors: ' - lexed.error-message)
+CTX.check(lexed.tokens.len() > 30, 'tokenizer emits the complete token stream')
+CTX.check(lexed.tokens[lexed.tokens.len() - 1].kind == tok-eof, 'token stream ends with EOF')
+
+select-token = find-token(lexed.tokens, 'SELECT')
+CTX.check(select-token >= 0, 'keyword token is retained')
+select-token >= 0 -> {
+    item = token-at(lexed.tokens, select-token)
+    CTX.check(item.kind == tok-word, 'keyword begins as a word token')
+    CTX.check(item.offset == 0, 'first token retains its source offset')
+}
+
+quoted-index = find-token(lexed.tokens, 'id')
+quoted-index >= 0 -> {
+    item = token-at(lexed.tokens, quoted-index)
+    CTX.check(item.kind == tok-quoted-identifier, 'double quotes produce an identifier token')
+}
+
+string-index = find-token(lexed.tokens, 'it\'s')
+string-index >= 0 -> {
+    item = token-at(lexed.tokens, string-index)
+    CTX.check(item.kind == tok-string, 'doubled quote is decoded in a string literal')
+}
+
+blob-index = find-token(lexed.tokens, 'x\'00FF\'')
+blob-index >= 0 -> {
+    item = token-at(lexed.tokens, blob-index)
+    CTX.check(item.kind == tok-blob, 'X quote introduces a BLOB token')
+    CTX.check(item.literal.len() == 2, 'BLOB token stores decoded bytes')
+    first = item.literal[0]: {
+        ok -> it
+
+        -> 255
+    }
+    second = item.literal[1]: {
+        ok -> it
+
+        -> 0
+    }
+    CTX.check(first == 0 && second == 255, 'BLOB hexadecimal bytes are decoded')
+}
+
+real-index = find-token(lexed.tokens, '3.5e+2')
+real-index >= 0 -> {
+    item = token-at(lexed.tokens, real-index)
+    CTX.check(item.kind == tok-real, 'decimal exponent literal is real')
+}
+
+hex-index = find-token(lexed.tokens, '0x10')
+hex-index >= 0 -> {
+    item = token-at(lexed.tokens, hex-index)
+    CTX.check(item.kind == tok-integer, 'hexadecimal literal is integer')
+}
+
+integer-literals = [
+    '0',
+    '123',
+    '0x10',
+    '0Xff',
+]
+i <- [0..integer-literals.len()): {
+    literal = integer-literals[i]: {
+        ok -> it
+
+        -> ''
+    }
+    single = token.tokenize(literal)
+    CTX.check(single.error-message == '', 'integer literal tokenizes: ' - literal)
+    CTX.check(single.tokens.len() == 2, 'integer literal has one token and EOF: ' - literal)
+    single.tokens.len() == 2 -> {
+        item = token-at(single.tokens, 0)
+        CTX.check(item.kind == tok-integer, 'integer storage class is retained: ' - literal)
+        CTX.check(item.text == literal, 'integer literal text is retained: ' - literal)
+    }
+}
+
+real-literals = [
+    '3.5',
+    '.5',
+    '3.',
+    '1e2',
+    '1E-2',
+    '3.5e+2',
+]
+i <- [0..real-literals.len()): {
+    literal = real-literals[i]: {
+        ok -> it
+
+        -> ''
+    }
+    single = token.tokenize(literal)
+    CTX.check(single.error-message == '', 'real literal tokenizes: ' - literal)
+    CTX.check(single.tokens.len() == 2, 'real literal has one token and EOF: ' - literal)
+    single.tokens.len() == 2 -> {
+        item = token-at(single.tokens, 0)
+        CTX.check(item.kind == tok-real, 'real storage class is retained: ' - literal)
+        CTX.check(item.text == literal, 'real literal text is retained: ' - literal)
+    }
+}
+
+json-index = find-token(lexed.tokens, '->>')
+CTX.check(json-index >= 0, 'three-byte JSON arrow is one token')
+concat-index = find-token(lexed.tokens, '||')
+CTX.check(concat-index >= 0, 'concatenation operator is one token')
+
+parameter-names = [
+    '?1',
+    '@name',
+    '$x',
+    ':x',
+]
+i <- [0..parameter-names.len()): {
+    name = parameter-names[i]: {
+        ok -> it
+
+        -> ''
+    }
+    index = find-token(lexed.tokens, name)
+    CTX.check(index >= 0, 'parameter is tokenized: ' - name)
+}
+
+empty = token.tokenize('  -- only a comment\n /* and another */ ')
+CTX.check(empty.error-message == '', 'comments alone are valid')
+CTX.check(empty.tokens.len() == 1, 'comments alone produce only EOF')
+CTX.check(empty.tokens[0].kind == tok-eof, 'empty input ends with EOF')
+
+unterminated = token.tokenize('SELECT \'missing')
+CTX.check(unterminated.error-message == 'unterminated quoted token', 'unterminated string reports a stable error')
+CTX.check(unterminated.error-offset == 7, 'string error points at the opening quote')
+
+unterminated-identifier = token.tokenize('SELECT "missing')
+CTX.check(unterminated-identifier.error-message == 'unterminated quoted token', 'unterminated identifier reports a stable error')
+CTX.check(unterminated-identifier.error-offset == 7, 'identifier error points at the opening quote')
+
+bad-exponent = token.tokenize('SELECT 1e+')
+CTX.check(bad-exponent.error-message == 'exponent requires at least one digit', 'malformed exponent is rejected')
+
+bad-hex = token.tokenize('SELECT 0x')
+CTX.check(bad-hex.error-message == 'hexadecimal literal requires at least one digit', 'empty hexadecimal literal is rejected')
+
+odd-blob = token.tokenize('SELECT x\'0\'')
+CTX.check(odd-blob.error-message == 'BLOB literal has an odd number of hexadecimal digits', 'odd BLOB is rejected')
+
+bad-blob = token.tokenize('SELECT x\'zz\'')
+CTX.check(bad-blob.error-message == 'BLOB literal contains a non-hexadecimal byte', 'non-hex BLOB is rejected')
+
+bad-comment = token.tokenize('SELECT 1 /* missing')
+CTX.check(bad-comment.error-message == 'unterminated block comment', 'unterminated comment is rejected')
+
+bad-character = token.tokenize('SELECT `unterminated')
+CTX.check(bad-character.error-message == 'unterminated quoted token', 'unterminated backtick identifier is rejected')
+
+unknown = token.tokenize('SELECT \\')
+CTX.check(unknown.error-message == 'unrecognized token', 'unknown byte is rejected')
+
+CTX.done()

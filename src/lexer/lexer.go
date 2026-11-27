@@ -990,8 +990,13 @@ func (l *Lexer) scanToken() (tok Token) {
 		// Raw string literal: `content`
 		// Opening ` must be followed by newline; closing ` must be alone on its line.
 		// No escape processing; all bytes preserved as-is.
+		// Keep the full original text in Raw so `no fmt` reproduces the backticks
+		// verbatim; otherwise the formatter re-emits it as a single-quoted string
+		// and any embedded quote breaks the output (e.g. SQL literals with 'x').
+		rawStart := l.position
 		tok.Type = STRING
 		tok.Literal = l.readRawString()
+		tok.Raw = l.input[rawStart:l.position]
 		return tok
 	case 0:
 		tok.Type = EOF

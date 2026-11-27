@@ -53,9 +53,11 @@ type TypeFacts struct {
 // 與 `TypeFacts` 相反，本型別**必須導出**：它是 `detCached.TypeFacts` 的 gob
 // 線值（`[]detU32Facts` 的 V），gob 要對它做反射編碼。
 type TypeFact struct {
-	// InferredType 是 lowering 為某個 LetStatement 推斷出的 `?T` 型別字串
-	//（如 "?i64"）。原 AST 寫點 `s.Type = &NullableType{IsInferred: true}`
-	// 在 §1.4 下被禁止，S3 起改記於此。
+	// InferredType 是 lowering 為某個 LetStatement 推斷出的型別字串，
+	// 可能是 option（如 "?i64"）或 plain payload／整數型別（如 "i64"）。
+	// option 專用消費者必須以 ty.IsOptionRaw 檢查實際值，不能只憑條目存在。
+	// 原 AST 寫點 `s.Type = &NullableType{IsInferred: true}` 在 §1.4 下被禁止，
+	// S3 起改記於此。
 	//
 	// 寫入者：lowering.go:931（publishInferredType，唯一）。
 	// 讀取者：tohir 的 KLet（:449）、fmt 的 nullable 型別跳過渲染（:392）、
@@ -121,7 +123,7 @@ func (t *TypeFacts) fact(n Node) *TypeFact {
 	return f
 }
 
-// SetInferred 記錄 lowering 推斷出的 `?T` 型別字串。
+// SetInferred 記錄 lowering 推斷出的 option 或 plain 型別字串。
 //
 // ⚠️ 空字串**直接忽略、不建條目** —— 原 `SemanticContext.SetInferredType`
 // 的守衛（`if typ == "" return`）必須逐字保留：條目集合會影響 blob 版面與合併
@@ -133,7 +135,7 @@ func (t *TypeFacts) SetInferred(n Node, typ string) {
 	t.fact(n).InferredType = typ
 }
 
-// InferredOf 回傳節點的推斷 `?T` 型別字串（無則 ""）。nil 安全。
+// InferredOf 回傳節點的推斷型別字串（無則 ""）。nil 安全。
 func (t *TypeFacts) InferredOf(n Node) string {
 	if t == nil || n == nil {
 		return ""

@@ -1,5 +1,20 @@
 # 更新日誌
 
+## v0.4.39
+
+- feat(parser): support tagged-enum matches on safe-index subjects with an outer ok guard, payload arm bindings and a wildcard fallback
+- fix(parser): keep receiver inference scoped to value-match subjects and allow plain payload types in inferred-type facts
+- refactor(parser): carry lexical arm-binding types through HIR conversion, detect method-call arms and bump the AST cache version
+- fix(mir): resolve call result types through the callee slot with alias precedence, bind named out-arguments and preserve option tags on reassignment
+- fix(mir): delete fresh arm-scoped bindings at arm exit, peel raw option-arm subjects and write builtins through nested field receivers
+- fix(build): apply lib.no export filtering only to direct external imports and resolve imported constructors as module globals
+- fix(checker): treat only option-valued inferred types as options and retain transitive type dependencies when filtering package exports
+- fix(lexer): retain raw-string token text so the formatter reproduces backticks and embedded quotes verbatim
+- chore(i18n): regenerate locale catalogs to drop obsolete IDs and add strings for --check, payload threshold and lint trace IDs
+- feat(nosql): add a pure-Nolang SQL engine with tokenizer, flat AST, parser, schema catalog, analyzer and in-memory executor
+- docs(skills): split nolang-core into a shared core with compiler and app roles, add nohub and review modules and append self-hosting debug rounds
+- test: add nested safe-index enum, option-tag, arm-binding and fs-raw regressions across parser, mir, build and std suites
+
 ## v0.4.38
 
 - feat(mir): add tagged enum aggregate layout and tag-switched clone/drop helpers with option, vector and index ownership fixes

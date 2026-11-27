@@ -3,6 +3,9 @@ package fmt
 import (
 	"strings"
 	"testing"
+
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
 // REGRESSION GUARD (in-as-identifier statement boundary).
@@ -359,6 +362,56 @@ func TestFormatNestedChainArmKeepsBraceGroup(t *testing.T) {
 	}
 	if out != in {
 		t.Fatalf("if-group braces inside an arm body were rewritten:\n--- want ---\n%s\n--- got ---\n%s", in, out)
+	}
+	out2, _ := FormatFileWithErrors(out)
+	if out2 != out {
+		t.Fatalf("not idempotent:\n--- pass1 ---\n%s\n--- pass2 ---\n%s", out, out2)
+	}
+}
+
+// REGRESSION GUARD (a nested if-group led by `.method()` keeps its braces).
+//
+// Receiver-less method calls need the same top-level arm scan as `obj.method()`.
+// Without it, the synthetic wrapper is lost and writeArm absorbs the inner
+// fallback into the outer chain; the formatted source then fails to reparse.
+func TestFormatMethodLedNestedChainArmKeepsBraceGroup(t *testing.T) {
+	in := "parser {\n" +
+		"}\n" +
+		"\n" +
+		"parser.accept-word = (s str) (ok bool) {\n" +
+		"    ok = s == 'NULL'\n" +
+		"}\n" +
+		"\n" +
+		"parser.parse = () (out i64) {\n" +
+		"    {\n" +
+		"        .accept-word('SELECT') -> {\n" +
+		"            {\n" +
+		"                .accept-word('NULL') -> {\n" +
+		"                    out = 1\n" +
+		"                }\n" +
+		"\n" +
+		"                -> {\n" +
+		"                    out = 2\n" +
+		"                }\n" +
+		"            }\n" +
+		"        }\n" +
+		"\n" +
+		"        -> {\n" +
+		"            out = 0\n" +
+		"        }\n" +
+		"    }\n" +
+		"}\n"
+	out, errs := FormatFileWithErrors(in)
+	if len(errs) > 0 {
+		t.Fatalf("format errors: %v", errs)
+	}
+	if out != in {
+		t.Fatalf("method-led if-group braces were rewritten:\n--- want ---\n%s\n--- got ---\n%s", in, out)
+	}
+	p := parser.New(lexer.New(out))
+	p.ParseProgram()
+	if perrs := p.Errors(); len(perrs) > 0 {
+		t.Fatalf("formatted source no longer parses: %v", perrs)
 	}
 	out2, _ := FormatFileWithErrors(out)
 	if out2 != out {

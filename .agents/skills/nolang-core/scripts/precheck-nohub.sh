@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 开 PR 前对作者收录记录做只读自查。
-# 用法：precheck.sh <repos/github.com/<owner>.noml> [nohub 仓库根目录]
+# 用法：precheck-nohub.sh <repos/github.com/<owner>.noml> [nohub 仓库根目录]
 # 检查：文件存在、noml 顶层是数组、元素短名非空且不重复；网络项打印手工验证命令。
 # 不修改任何文件，不执行 git 写操作。
 
@@ -10,7 +10,7 @@ FILE="${1:-}"
 ROOT="${2:-/Users/lizongying/IdeaProjects/nohub}"
 
 if [ -z "$FILE" ]; then
-  echo "用法: precheck.sh <repos/github.com/<owner>.noml> [nohub 仓库根目录]" >&2
+  echo "用法: precheck-nohub.sh <repos/github.com/<owner>.noml> [nohub 仓库根目录]" >&2
   exit 2
 fi
 

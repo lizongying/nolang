@@ -219,6 +219,12 @@ git ls-remote --tags origin vX.Y.Z   # 远端 tag 是否已存在
 | 2 | 保留给特殊情况（脏树不再是障碍，不会回 2） | 一般不出现 |
 | 3 | 日志正文非英文或格式不合规范 | 重写条目 |
 
+## 后续步骤：公开到 nohub（可选）
+
+版本 tag 推送、release CI 触发之后，若还要让仓库出现在 nohub 索引里，接着加载
+[`m94-nohub.md`](m94-nohub.md)。收录与发版互不强制依赖——也可以单独做收录，但「发版 → 收录」是常见顺序。
+两者都涉及不可逆 git 操作，同样遵守红线：禁 `git add -A`、每步等用户确认。
+
 ## 参考
 
 - `references/release-pipeline.md` —— CI 细节、`history.sh` 行为、回滚 tag 的方法

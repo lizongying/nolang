@@ -481,9 +481,10 @@ func (s *SemanticContext) IndexIsInBounds(n Node) bool {
 	return s.nodeFacts.IndexInBoundsOf(n)
 }
 
-// SetInferredType 為一個 LetStatement 記錄 lowering 推斷出的 ?T 型別字串。
-// 這是純語義事實：不會改寫 AST，可在 SkipLowering 路徑下仍提供同一份證明。
-// empty 字串會被忽略（nil receiver / nil 節點安全）。
+// SetInferredType 為一個 LetStatement 記錄 lowering 推斷出的 option 或 plain
+// 型別字串。這是純語義事實：不會改寫 AST，可在 SkipLowering 路徑下仍提供
+// 同一份證明。option 專用消費者須以 ty.IsOptionRaw 檢查實際值。empty 字串
+// 會被忽略（nil receiver / nil 節點安全）。
 func (s *SemanticContext) SetInferredType(n Node, typ string) {
 	if s == nil {
 		return
@@ -491,8 +492,8 @@ func (s *SemanticContext) SetInferredType(n Node, typ string) {
 	s.typeFacts.ensure().SetInferred(n, typ)
 }
 
-// InferredType 回傳該節點的推斷 ?T 型別字串（如 `"?i64"`），未記錄時回 ""。
-// Nil receiver / nil 節點安全。
+// InferredType 回傳該節點的推斷型別字串（可能是 option 或 plain），未記錄時
+// 回 ""。Nil receiver / nil 節點安全。
 func (s *SemanticContext) InferredType(n Node) string {
 	if s == nil {
 		return ""
@@ -500,7 +501,7 @@ func (s *SemanticContext) InferredType(n Node) string {
 	return s.typeFacts.InferredOf(n)
 }
 
-// HasInferredType 報告節點是否帶推斷的 ?T 型別（Nil-safe）。
+// HasInferredType 報告節點是否帶任何推斷型別（Nil-safe）；它不證明型別是 option。
 func (s *SemanticContext) HasInferredType(n Node) bool {
 	return s.InferredType(n) != ""
 }

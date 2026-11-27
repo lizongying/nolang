@@ -243,9 +243,10 @@ type lowerer struct {
 	// constructor is a PATTERN (not a value being built). armEnum/armVariant
 	// carry it into the arm body so field bindings can be projected onto the
 	// payload (see lowerKLet).
-	inArmCond  bool
-	armEnum    *TaggedEnumInfo
-	armVariant *VariantInfo
+	inArmCond     bool
+	armEnum       *TaggedEnumInfo
+	armVariant    *VariantInfo
+	armOptionType TypeID
 	// armEnumPrefer is the subject's enum type and armSubjectID the subject
 	// expression, both captured while an arm condition is lowered; see lowerIf.
 	armEnumPrefer string
@@ -2033,6 +2034,36 @@ func (l *lowerer) slotArgs(id int32, prefix string) []int32 {
 	return out
 }
 
+// existingBindingType returns the storage type of an ordinary, unannotated
+// reassignment. The RHS type describes the value being converted; it is not the
+// assignment target. Synthetic match bindings are excluded because their names
+// are arm-scoped and may reuse a slot left by an arm with a different payload.
+func (l *lowerer) existingBindingType(n *hir.Node) TypeID {
+	if n == nil || n.Kind != hir.KLet ||
+		n.Flags&(hir.FlagSynthetic|hir.FlagArmBinding) != 0 {
+		return NoType
+	}
+	// A rebind of an option-typed out-parameter (`out = ok(n)` where `out ?i64`)
+	// reaches HIR as `let out t=code`: the RHS-derived `code` is a placeholder,
+	// not the target's declared type. Trusting it here makes typeOfNode report
+	// `code`, so letDeclaredType's peel path re-wraps the already-wrapped
+	// constructor (two `option-wrap` for one `ok(n)`). Ignore the placeholder
+	// and fall back to the existing slot's real type.
+	nt := l.pkg.Type(n.Type)
+	if nt != "" && nt != "code" && nt != "void" {
+		return NoType
+	}
+	name := l.pkg.Str(n.S)
+	if name == "" {
+		return NoType
+	}
+	slot, ok := l.locals[name]
+	if !ok {
+		return NoType
+	}
+	return l.valueTypeOf(slot)
+}
+
 func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 	if n == nil {
 		return l.voidType
@@ -2043,6 +2074,12 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 	// produced `alloca void` and broke the module).
 	switch n.Kind {
 	case hir.KLet:
+		// An unannotated reassignment keeps the existing binding's type. In
+		// particular, `out ?i64` followed by `out = err(...)` must not derive a
+		// plain payload target from the constructor and peel the option tag.
+		if t := l.existingBindingType(n); t != NoType && t != l.voidType {
+			return t
+		}
 		// A top-level `let` binding (`SBOX [256]byte = [...]`, perm-600, ...) —
 		// derive its type from the declared annotation so module-level constants
 		// in imported library modules register as lazily-materialized globals
@@ -2191,21 +2228,49 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 		}
 		return l.inferredTypeOf(n)
 	case hir.KCall:
-		// A call expression's type is the callee's (first) result type. Resolve
-		// the callee name and look up its signature; nolang calls return a single
-		// value (or the first of a multi-return), which is what the infix/operand
-		// context needs.
-		callee := ""
-		for _, c := range l.pkg.Children(n.Id) {
-			if cn := l.pkg.Node(c); cn != nil {
-				callee = l.pkg.Str(cn.S)
-			}
-			break
-		}
-		if callee != "" {
-			if cid, ok := l.mod.FuncByName[callee]; ok {
-				if cf := l.mod.Func(cid); cf != nil && len(cf.Results) > 0 {
-					return cf.Results[0]
+		// A call expression's type is the callee's (first) result type. The
+		// callee lives inside the call's "fn" slot, not on the call node itself.
+		fnID := l.slot(n.Id, "fn")
+		fnn := l.pkg.Node(fnID)
+		if fnn != nil {
+			switch fnn.Kind {
+			case hir.KIdent:
+				callee := l.pkg.Str(fnn.S)
+				if callee != "" {
+					// Match resolveCallee's alias precedence. A bare std name
+					// can collide with another module's function (io.err vs the
+					// global err -> err.new alias), so the raw table lookup is
+					// not authoritative until aliases and qualified-call vetoes
+					// have been considered.
+					if _, bound := l.locals[callee]; !bound && !n.Has(hir.FlagQualifiedCall) {
+						if target, ok := l.resolveAlias(callee); ok {
+							callee = target
+						}
+					}
+					if cid, ok := l.mod.FuncByName[callee]; ok {
+						if cf := l.mod.Func(cid); cf != nil {
+							resultIdx := 0
+							if cf.IsMethod {
+								resultIdx = 1
+							}
+							if len(cf.Results) > resultIdx {
+								return cf.Results[resultIdx]
+							}
+						}
+					}
+					// Global registration runs before reachability-driven
+					// function lowering populates mod.FuncByName. The merged
+					// HIR signature is already available through funcNames,
+					// including imported aliases.
+					if rt := l.resultTypeOfCallee(callee); rt != NoType && rt != l.voidType {
+						return rt
+					}
+				}
+			case hir.KDot:
+				// Resolve a method from its receiver's static type without
+				// lowering the receiver or emitting stray instructions.
+				if rt := l.methodResultType(n.Id); rt != NoType && rt != l.voidType {
+					return rt
 				}
 			}
 		}
@@ -2780,6 +2845,14 @@ func (l *lowerer) letTypeRaw(n *hir.Node) string {
 		switch cn.Kind {
 		case hir.KStructLit:
 			return l.pkg.Str(cn.S) // struct name, e.g. "fs.file"
+		case hir.KCall:
+			// An unannotated call-initialized global (notably an imported
+			// constructor) takes its type from the callee's HIR result.
+			if rt := l.typeOfNode(cn); rt != NoType && rt != l.voidType {
+				if typ := l.mod.Type(rt); typ != nil && typ.Raw != "" && typ.Raw != "void" {
+					return typ.Raw
+				}
+			}
 		case hir.KStrLit:
 			return "str"
 		case hir.KCharLit:
@@ -3613,6 +3686,17 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				}
 			}
 		}
+		// An unnormalized option arm can repeat the raw matched expression in
+		// its synthetic `let it = ...` instead of naming a typed ?T temporary.
+		// Recover the option type from the arm condition so the repeated safe
+		// index is wrapped, then peel its payload below.
+		armOptionType := NoType
+		if name == "it" && (n.Flags&hir.FlagArmBinding != 0 || n.Flags&hir.FlagSynthetic != 0) &&
+			l.pkg.Type(n.Type) == "" && l.armOptionType != NoType {
+			armOptionType = l.armOptionType
+			l.typeHint = armOptionType
+			l.hintDeclared = true
+		}
 		for _, c := range l.pkg.Children(id) {
 			childID = c
 			cn := l.pkg.Node(c)
@@ -3761,6 +3845,20 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				}
 			}
 			break
+		}
+		if armOptionType != NoType && val != NoVal {
+			if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
+				if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption && vty.T != nil {
+					if et := l.b.Type(vty.T.ElemRaw()); et != NoType && et != l.voidType {
+						peeled := l.b.Emit(OpMove, et, []ValueID{val}, "")
+						if ety := l.mod.Type(et); ety != nil && l.mod.typeOwnsHeap(ety) {
+							val = l.b.Emit(OpClone, et, []ValueID{peeled}, "")
+						} else {
+							val = peeled
+						}
+					}
+				}
+			}
 		}
 		l.typeHint = NoType
 		if name == "it" && val != NoVal {
@@ -4162,6 +4260,17 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			existing, hasExisting := l.locals[name]
 			if hasExisting && armScoped {
 				l.armScoped = append(l.armScoped, armScopedBind{name: name, saved: existing})
+			} else if !hasExisting && armScoped && name != "" {
+				// A fresh arm binding with NO prior local used to be left in
+				// l.locals when the arm ended, leaking into the enclosing scope.
+				// A later binding of the same name (e.g. `h = holder{...}` after
+				// `rect(w f64, h f64)` matched) then hit the rebind path and wrote
+				// into the stale f64 slot: `h.inl` lowered against f64 -> NoVal ->
+				// codegen bug #85 (tests/enum-annotation.no). Record `absent` so
+				// restoreArmScoped DELETES the binding at arm end, mirroring the
+				// has-existing case above. `it` is excluded from armBinding and
+				// keeps its own per-arm save/restore in lowerIf.
+				l.armScoped = append(l.armScoped, armScopedBind{name: name, absent: true})
 			}
 			if existing, ok := l.locals[name]; ok && !armScoped {
 				// A re-assignment of a name that aliases a container element
@@ -4703,6 +4812,63 @@ func (l *lowerer) restoreArmScoped(base int) {
 	l.armScoped = l.armScoped[:base]
 }
 
+func (l *lowerer) bareOptionVariant(n *hir.Node) bool {
+	if n == nil {
+		return false
+	}
+	if n.Kind == hir.KNilLit {
+		return true
+	}
+	if n.Kind != hir.KIdent {
+		return false
+	}
+	switch l.pkg.Str(n.S) {
+	case "err", "ok", "some", "nil":
+		return true
+	}
+	return false
+}
+
+// optionArmType recovers the ?T tested by a desugared option arm. Normalized
+// matches name a typed synthetic subject; this fallback covers raw index/call
+// subjects whose parse-time type was unavailable.
+func (l *lowerer) optionArmType(condID int32) TypeID {
+	n := l.pkg.Node(condID)
+	if n == nil || n.Kind != hir.KInfix {
+		return NoType
+	}
+	op := l.pkg.Str(n.S)
+	if op != "==" && op != "!=" {
+		return NoType
+	}
+	children := l.pkg.Children(condID)
+	if len(children) != 2 {
+		return NoType
+	}
+	left, right := l.pkg.Node(children[0]), l.pkg.Node(children[1])
+	var subject *hir.Node
+	switch {
+	case l.bareOptionVariant(right):
+		subject = left
+	case l.bareOptionVariant(left):
+		subject = right
+	default:
+		return NoType
+	}
+	if subject == nil {
+		return NoType
+	}
+	if t := l.typeOfNode(subject); t != NoType && t != l.voidType {
+		if ty := l.mod.Type(t); ty != nil && ty.Kind == KindOption {
+			return t
+		}
+	}
+	if subject.Kind == hir.KIndex {
+		return l.cmpIndexSafeHint(subject.Id, true)
+	}
+	return NoType
+}
+
 func (l *lowerer) lowerIf(n *hir.Node) {
 	condID := l.slot(n.Id, "cond")
 	thenID := l.slot(n.Id, "then")
@@ -4725,8 +4891,10 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	// install its own variant, but it must not erase the enclosing pattern or
 	// leave the last arm's subject active in a later function.
 	savedArmVariant, savedArmEnum := l.armVariant, l.armEnum
+	savedArmOptionType := l.armOptionType
 	savedItSrc := l.itSrc
 	l.armSubjectID = hir.NoID
+	l.armOptionType = NoType
 
 	// Enclosing continuation: the merge block of the nearest enclosing
 	// control-flow construct (pushed by the caller's lowerIf/lowerFor). When
@@ -4803,6 +4971,9 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	l.b.SetBlock(thenBlk)
 	if thenID != hir.NoID {
 		l.armSubjectID = hir.NoID
+		if thenIsArm {
+			l.armOptionType = l.optionArmType(condID)
+		}
 		// A NESTED match arm (matchDepth > 0 before the increment) rebinds the
 		// function-global `it` slot to its own subject — that rebinding is
 		// REQUIRED, the arm body must see the inner value
@@ -4847,6 +5018,7 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		// The variant pattern only applies to THIS arm's body. Restore the
 		// enclosing pattern (if any) before lowering the else-chain.
 		l.armVariant, l.armEnum = savedArmVariant, savedArmEnum
+		l.armOptionType = savedArmOptionType
 		l.itSrc = savedItSrc
 		if thenIsArm {
 			l.matchDepth--
@@ -4897,6 +5069,7 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		l.restoreArmScoped(armScopedBase)
 		l.restoreArmPlaces(armPlaceBase)
 		l.armVariant, l.armEnum = savedArmVariant, savedArmEnum
+		l.armOptionType = savedArmOptionType
 		l.itSrc = savedItSrc
 		if elseIsArm {
 			l.matchDepth--
@@ -4927,6 +5100,7 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 	// Also cover an empty then/else shape: no arm body may leak its pattern or
 	// subject into code lowered after this if-chain.
 	l.armVariant, l.armEnum = savedArmVariant, savedArmEnum
+	l.armOptionType = savedArmOptionType
 	l.itSrc = savedItSrc
 
 	// Seed the capture slot in the block that DOMINATES both arms.
@@ -10405,10 +10579,17 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// the code point and then compared it against a string with no payload
 		// extraction. Both are fixed by giving the read the `?elem` hint, which
 		// makes emitCmp compare the PAYLOAD — the same reading `?T == 5` has.
+		patternCmp := false
+		if i == 2 && (op == OpEq || op == OpNe) {
+			ln := l.pkg.Node(lr[0])
+			rn := l.pkg.Node(lr[1])
+			patternCmp = (ln != nil && ln.Kind == hir.KIndex && l.bareOptionVariant(rn)) ||
+				(rn != nil && rn.Kind == hir.KIndex && l.bareOptionVariant(ln))
+		}
 		lowerOperand := func(cid int32) ValueID {
 			saved := l.typeHint
 			if isCmp {
-				if optT := l.cmpIndexSafeHint(cid); optT != NoType {
+				if optT := l.cmpIndexSafeHint(cid, patternCmp); optT != NoType {
 					l.typeHint = optT
 				}
 			}
@@ -10432,29 +10613,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				// A bare option-variant operand (`nil`, `err`, `ok`, `some`)
 				// carries no type of its own; seed l.typeHint with its sibling's
 				// ?T type so the variant lowers to the correct discriminant.
-				isVar := func(nd *hir.Node) bool {
-					if nd == nil {
-						return false
-					}
-					if nd.Kind == hir.KNilLit {
-						return true
-					}
-					if nd.Kind == hir.KIdent {
-						switch l.pkg.Str(nd.S) {
-						case "err", "ok", "some", "nil":
-							return true
-						}
-					}
-					return false
-				}
 				switch {
-				case isVar(ln) && !isVar(rn):
+				case l.bareOptionVariant(ln) && !l.bareOptionVariant(rn):
 					rv = lowerOperand(lr[1])
 					saved := l.typeHint
 					l.typeHint = l.valueTypeOf(rv)
 					lv = lowerOperand(lr[0])
 					l.typeHint = saved
-				case isVar(rn) && !isVar(ln):
+				case l.bareOptionVariant(rn) && !l.bareOptionVariant(ln):
 					lv = lowerOperand(lr[0])
 					saved := l.typeHint
 					l.typeHint = l.valueTypeOf(lv)
@@ -14020,7 +14186,16 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// returned value — every `x = f()` would read an uninitialized slot (0 /
 	// garbage). Routing through EmitCallMulti keeps the single- and multi-result
 	// paths identical and correct.
-	dsts := l.b.EmitCallMulti([]TypeID{resTyp}, argv, callee)
+	callTypes := []TypeID{resTyp}
+	// A caller may receive several named results through explicit trailing
+	// out-arguments (`resolve(name, source, column, matches)`). Allocate every
+	// real result before binding them back; methods omit their implicit `self`
+	// result in resultTypesOfCallee. Single-result and builtin calls retain the
+	// existing result type selected above.
+	if resultTypes := l.resultTypesOfCallee(callee); len(resultTypes) > 1 {
+		callTypes = resultTypes
+	}
+	dsts := l.b.EmitCallMulti(callTypes, argv, callee)
 	if len(dsts) == 0 {
 		return NoVal
 	}
@@ -14114,12 +14289,11 @@ func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
 	//   - Non-variadic callee: arg-form requires len(args) == kParam+kResult;
 	//     otherwise the result params are pure RETURN values bound by an LHS
 	//     assign (`r = f(...)`), not caller-supplied out-arguments.
-	//   - For a METHOD, the HIR call args include the receiver as the first
-	//     argument (e.g. `src.copy(dst)` has args=[src, dst]), so arg-form
-	//     requires len(args) == 1(receiver) + kParam + kResult. Without the
-	//     +1 for the receiver, `src.copy(dst)` is rejected (2 != 0+1) and the
-	//     result is never moved back into `dst` (test-str copy test reads the
-	//     unmodified '------').
+	//   - A METHOD written as a dot call keeps its receiver in the callee's
+	//     KDot node, so `src.copy(dst)` has args=[dst]. A flattened method
+	//     call (`str.copy(src, dst)`) uses a KIdent callee and carries the
+	//     receiver as args[0]. Only the latter needs the +1 offset; applying
+	//     it to both shapes rejects ordinary dot-call output binding.
 	//   - Variadic callee: the spread makes the count meaningless — `mx(p, q)`
 	//     (2 spread elements, no out-argument) has len(args) == kParam+kResult by
 	//     pure coincidence, while `mx(1, 2, r)` (1 out-argument) does not. So a
@@ -14132,7 +14306,13 @@ func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
 	//     trace/BPT trap: `r = number.max(a, b)`).
 	recvOffset := 0
 	if isMethod {
-		recvOffset = 1 // the receiver (self) is the first HIR arg
+		fnID := l.slot(n.Id, "fn")
+		if fn := l.pkg.Node(fnID); fn != nil && fn.Kind == hir.KIdent && !n.Has(hir.FlagQualifiedCall) {
+			// Flattened/self method calls carry the receiver in args[0].
+			// Module-qualified free functions are KIdent calls too, but their
+			// first argument is an ordinary input, not `self`.
+			recvOffset = 1
+		}
 	}
 	variadicArgForm := fdef.Has(hir.FlagVariadic) && l.stmtCall == n.Id
 	if fdef.Has(hir.FlagVariadic) && !variadicArgForm {
@@ -14163,7 +14343,10 @@ func (l *lowerer) bindOutParams(n *hir.Node, callee string, dsts []ValueID) {
 		nm := l.pkg.Str(an.S)
 		slot, ok := l.locals[nm]
 		if !ok {
-			continue
+			if !l.globalVisible(nm) {
+				continue
+			}
+			slot = l.lowerGlobalRef(nm)
 		}
 		if dsts[k] == slot {
 			// Self-move: the callee's result slot coincides with the caller's
@@ -16059,7 +16242,7 @@ func (l *lowerer) indexElemHintType(id int32, cty *Type) TypeID {
 //
 // Map subscripts are excluded on purpose: `m[k]` lowers to hashmap.get, which
 // already returns `?V`, and forcing an option hint here would wrap it twice.
-func (l *lowerer) cmpIndexSafeHint(id int32) TypeID {
+func (l *lowerer) cmpIndexSafeHint(id int32, variantPattern bool) TypeID {
 	n := l.pkg.Node(id)
 	if n == nil || n.Kind != hir.KIndex {
 		return NoType
@@ -16116,19 +16299,22 @@ func (l *lowerer) cmpIndexSafeHint(id int32) TypeID {
 			payload = pt
 		}
 	}
-	// Only scalar/string payloads get the option-wrapped read. A container or
-	// struct payload keeps the BARE read, on purpose: comparing two `?[]i64`
-	// would go through emitOptionValueEq, whose payload test cannot compare a
-	// %vec (there is no structural option-payload equality), so it would fall
-	// back to the DISCRIMINANT and turn `a[i] == b[j]` on `[][]i64` into "are
-	// both present" — silently true for `[1] == [9]`. The bare read hands
-	// emitCmp two %vec values, which it compares structurally through
-	// codegen.vecDeepEq (equal length + equal elements). The trade-off is that
-	// such a read is unchecked, exactly like every other non-option consumer.
-	switch payload.Kind {
-	case KindInt, KindFloat, KindBool, KindChar, KindStr:
-	default:
-		return NoType
+	// Only scalar/string payloads get the option-wrapped read in an ordinary
+	// value comparison. A container or struct payload keeps the BARE read there,
+	// on purpose: comparing two `?[]i64` would go through emitOptionValueEq, whose
+	// payload test cannot compare a %vec (there is no structural option-payload
+	// equality), so it would fall back to the DISCRIMINANT and turn `a[i] == b[j]`
+	// on `[][]i64` into "are both present" — silently true for `[1] == [9]`.
+	//
+	// A bare option variant is different: `a[i] == ok` / `a[i] == nil` is a TAG
+	// test, never a payload comparison. It must safe-wrap aggregate elements too,
+	// including when parser-side type recovery left the match unnormalized.
+	if !variantPattern {
+		switch payload.Kind {
+		case KindInt, KindFloat, KindBool, KindChar, KindStr:
+		default:
+			return NoType
+		}
 	}
 	// `[]?T` already reads an option: the element IS the option, so the hint is
 	// the element type itself (`??T` is not a type any read can produce).

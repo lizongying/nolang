@@ -188,6 +188,12 @@ func (p *Parser) prepareInferredTypes(program *Program) {
 	if program == nil || program.Sem == nil {
 		return
 	}
+	// AST replay needs the complete program to recover method receiver types.
+	// ParseProgram runs this pass before LowerSurface binds p.prog, while the
+	// cache rebuild path already has it bound; align both paths here.
+	savedProg := p.prog
+	p.prog = program
+	defer func() { p.prog = savedProg }()
 	// Reuse the same walker as lowering so function-scope state
 	// (curFuncName / declaredLocals) and surface sugar states are mirrored
 	// exactly. The walker only invokes the pure analyzers below; no AST field
@@ -281,8 +287,8 @@ type lowerer struct {
 	//  2. 語義表（VarTypes）不記錄由字面量推斷出的型別（`mi = 0.0`），單靠它
 	//     判斷「是否已宣告」會漏判，故這裡自行記錄。
 	declaredLocals map[string]bool
-	// analysisOnly 為 true 時，walker 只跑推斷型別分析（推斷 ?T 並寫入
-	// Program.Sem 的 InferredType side-table），不做任何結構性改寫
+	// analysisOnly 為 true 時，walker 只跑推斷型別分析（推斷 option／plain
+	// 型別並寫入 Program.Sem 的 InferredType side-table），不做任何結構性改寫
 	//（不替換 SurfaceMatch / UnwrapAssign / IndexExpression / LetStatement）。
 	// 由 prepareInferredTypes 用於 SkipLowering 路徑下補齊側表，使
 	// ASTToHIR / checker / formatter 看到與降糖路徑同樣的 ?T 事實。
@@ -540,6 +546,16 @@ func (l *lowerer) walk(v reflect.Value) {
 				// SkipUnwrapLowering 旗標已隨 §4.3 刪除，option 算術推斷在此一律進行。
 				arithRoot := false
 				if ls, ok := stmt.(*LetStatement); ok {
+					// 本地 tagged-enum 構造器綁定（`value = integer(5)`）的型別要發布到
+					// InferredType/VarTypes，否則後續 `value: { integer(iv) -> ... }` 的
+					// 主語無型別，降糖退化成 `value === integer` 比較鏈而非 enum tag 匹配。
+					if ls.Type == nil && ls.Value != nil {
+						if call, ok := unwrapLowerExpr(ls.Value).(*CallExpression); ok {
+							if et := l.p.enumConstructorType(call); et != "" {
+								l.publishInferredType(ls, et)
+							}
+						}
+					}
 					arithRoot = l.inferOptionArith(ls)
 					// 值位 match 的結果也是一個 plain 綁定：`x = opt: { ok -> it  -> 0 }`
 					// 的 x 是 option payload（如 i64），不是 option。此前這條綁定完全
@@ -600,6 +616,15 @@ func (l *lowerer) walk(v reflect.Value) {
 		}
 	case reflect.Struct:
 		t := v.Type()
+		// A value match on an assignment RHS has no LetStatement result to drive
+		// inferValueMatchResult. Recover its subject dependencies explicitly before
+		// descending into the assignment, using the assignment as the source-order
+		// boundary for prior declarations.
+		if v.CanAddr() {
+			if ae, ok := v.Addr().Interface().(*AssignExpression); ok {
+				l.inferValueMatchAssignmentDependencies(ae)
+			}
+		}
 		// Detect FunctionDefinition to track current function name for
 		// function-scoped variable type lookups during match desugaring.
 		var savedFuncName string
@@ -671,10 +696,10 @@ func (l *lowerer) walk(v reflect.Value) {
 // runInferredTypeAnalysis walks the program invoking the same analyzer pipeline
 // that the lowering pass uses for inferOptionArith / synthesizeNullableType
 // (via maybeCaptureOptionAssign's root-typing branch) but in analysisOnly mode:
-// no AST field is written, no sugar node is replaced. The inferred ?T is
-// published to Program.Sem's type-facts table via publishInferredType so the
-// SkipLowering path produces the same HIR / checker / formatter output as the
-// default path.
+// no AST field is written, no sugar node is replaced. Inferred option and plain
+// types are published to Program.Sem's type-facts table via publishInferredType
+// so the SkipLowering path produces the same HIR / checker / formatter output
+// as the default path.
 func (l *lowerer) runInferredTypeAnalysis(program *Program) {
 	if program == nil {
 		return
@@ -1365,11 +1390,10 @@ func (l *lowerer) inferAliasType(s *LetStatement) {
 
 // publishPlainType 只把「純別名型別」登記進變數型別副表，**不寫 InferredType**。
 //
-// InferredType 的合約是「lowering 推斷出的 `?T`」（見 resolver.go SetInferredType
-// 的註解），而 checker 直接拿 `HasInferredType` 當「這個綁定的型別是推斷出來的
-// option」判據（checker.go 的 declaredOption / inferredOption）。把 plain 型別
-// 寫進去，一個從未被讀取的 `i64` 別名（`n = count`）就會被當成「option 綁定後
-// 從未消費」而報 ERROR optunuse —— 型別對、診斷錯。
+// 純別名是區域型別鏈的事實，不是節點上的算術／值位 match 推斷結果；後者仍由
+// publishInferredType 寫入。InferredType 現在可同時保存 option 與 plain 型別，
+// 因此 option 專用消費者必須檢查實際字串（ty.IsOptionRaw），不能把
+// HasInferredType 當成 option 判據。
 func (l *lowerer) publishPlainType(s *LetStatement, typ string) {
 	if s == nil || s.Name == nil || typ == "" || l == nil || l.p == nil {
 		return
@@ -1436,7 +1460,7 @@ func (l *lowerer) inferValueMatchResult(s *LetStatement) {
 	if !ok || sm.Matched == nil {
 		return
 	}
-	// 必須真的有 ok／值臂承接 payload；純萬用臂或型別 match 的結果型別
+	// 必須真的有 ok／值臂承接 payload；純萬能臂或型別 match 的結果型別
 	// 不一定等於 payload，交給既有推斷路徑。
 	hasOkArm := false
 	for i := range sm.Arms {
@@ -1453,6 +1477,15 @@ func (l *lowerer) inferValueMatchResult(s *LetStatement) {
 	if !hasOkArm {
 		return
 	}
+	// The parse-time method stack has unwound before this post-parse analysis.
+	// Recover it only for this subject lookup; pushing it for the whole function
+	// walk changes unrelated receiver facts and breaks cache reconstruction.
+	restoreReceiver := l.scopeValueMatchReceiver()
+	defer restoreReceiver()
+	// A subject identifier may name an earlier receiver-dependent temporary whose
+	// first-pass arithmetic inference ran without the method stack. Recover only
+	// the declarations reachable from this subject, never the whole function.
+	l.inferValueMatchSubjectDependencies(sm.Matched, s, map[*LetStatement]bool{})
 	if subjElem := l.p.optionSubjectElemType(l.curFuncName, sm.Matched); subjElem != "" {
 		// 與 checker.inferExprType(*SurfaceMatch) 對齊：值位 match 的結果型別由
 		// 臂體末尾表達式決定，**不必**等於主語 option 的 payload。上面「結果型別
@@ -1471,6 +1504,182 @@ func (l *lowerer) inferValueMatchResult(s *LetStatement) {
 		}
 		l.publishInferredType(s, subjElem)
 	}
+}
+
+// scopeValueMatchReceiver restores the method receiver after a scoped subject
+// lookup. Both result bindings and assignment RHSs use this guard so unrelated
+// self-field arithmetic elsewhere in the method remains untouched.
+func (l *lowerer) scopeValueMatchReceiver() func() {
+	savedDepth := len(l.p.methodStructStack)
+	if savedDepth == 0 {
+		if receiverType := functionSelfType(l.curFuncDef); receiverType != "" {
+			l.p.methodStructStack = append(l.p.methodStructStack, receiverType)
+			return func() { l.p.methodStructStack = l.p.methodStructStack[:savedDepth] }
+		}
+	}
+	return func() {}
+}
+
+// inferValueMatchAssignmentDependencies covers `obj.field = opt: { ... }` and
+// indexed/global assignment forms. These matches are not LetStatements, so the
+// result-binding pass never visits them; without this hook a receiver-dependent
+// subject temporary stays untyped and HIR falls back to `temp == ok`.
+func (l *lowerer) inferValueMatchAssignmentDependencies(a *AssignExpression) {
+	if a == nil || a.Value == nil {
+		return
+	}
+	sm, ok := unwrapLowerExpr(a.Value).(*SurfaceMatch)
+	if !ok || sm.Matched == nil {
+		return
+	}
+	restoreReceiver := l.scopeValueMatchReceiver()
+	defer restoreReceiver()
+	l.inferValueMatchSubjectDependencies(sm.Matched, a, map[*LetStatement]bool{})
+}
+
+// inferValueMatchSubjectDependencies seeds type inference for prior local
+// declarations reachable from a value-match subject. It runs only while a
+// value-match receiver scope is active, so unrelated self-field arithmetic
+// elsewhere in the method remains untouched.
+func (l *lowerer) inferValueMatchSubjectDependencies(e Expression, before Node, visiting map[*LetStatement]bool) {
+	if l == nil || l.p == nil || e == nil {
+		return
+	}
+	switch x := unwrapLowerExpr(e).(type) {
+	case *Identifier:
+		if x.Value != "self" && x.Value != "." && x.Value != "it" && x.Value != "_" {
+			l.inferValueMatchLocalDependency(x.Value, before, visiting)
+		}
+	case *DotExpression:
+		l.inferValueMatchSubjectDependencies(x.Receiver, before, visiting)
+	case *IndexExpression:
+		l.inferValueMatchSubjectDependencies(x.Left, before, visiting)
+		l.inferValueMatchSubjectDependencies(x.Index, before, visiting)
+	case *CallExpression:
+		// A bare callee names a function, not a local value. Method callees still
+		// carry their receiver as a DotExpression and must be traversed.
+		if _, isIdent := unwrapLowerExpr(x.Function).(*Identifier); !isIdent {
+			l.inferValueMatchSubjectDependencies(x.Function, before, visiting)
+		}
+		for _, arg := range x.Arguments {
+			l.inferValueMatchSubjectDependencies(arg, before, visiting)
+		}
+	case *InfixExpression:
+		l.inferValueMatchSubjectDependencies(x.Left, before, visiting)
+		l.inferValueMatchSubjectDependencies(x.Right, before, visiting)
+	case *PrefixExpression:
+		l.inferValueMatchSubjectDependencies(x.Right, before, visiting)
+	case *GroupedExpression:
+		l.inferValueMatchSubjectDependencies(x.Expression, before, visiting)
+	case *SliceExpression:
+		l.inferValueMatchSubjectDependencies(x.Left, before, visiting)
+		if x.Range != nil {
+			l.inferValueMatchSubjectDependencies(x.Range.Start, before, visiting)
+			l.inferValueMatchSubjectDependencies(x.Range.End, before, visiting)
+		}
+	case *RangeExpression:
+		l.inferValueMatchSubjectDependencies(x.Start, before, visiting)
+		l.inferValueMatchSubjectDependencies(x.End, before, visiting)
+	case *AssignExpression:
+		l.inferValueMatchSubjectDependencies(x.Left, before, visiting)
+		l.inferValueMatchSubjectDependencies(x.Value, before, visiting)
+	}
+}
+
+// inferValueMatchLocalDependency reruns the guarded inference pipeline for the
+// latest declaration of name preceding before. The rerun uses the declaration
+// state that existed at that point, not the later state accumulated by the main
+// walk; otherwise a first declaration is mistaken for a reassignment and
+// captureTargetAllowsOption correctly refuses to give it an option type.
+func (l *lowerer) inferValueMatchLocalDependency(name string, before Node, visiting map[*LetStatement]bool) {
+	if name == "" || l.curFuncDef == nil {
+		return
+	}
+	for _, prm := range l.curFuncDef.Parameters {
+		if prm != nil && prm.Name == name {
+			return
+		}
+	}
+	dep := l.priorLetForValueMatch(name, before)
+	if dep == nil || visiting[dep] || dep.Type != nil {
+		return
+	}
+	if l.p.sem != nil && l.p.sem.InferredType(dep) != "" {
+		return
+	}
+	// FuncVarTypes alone is not enough to skip: the cache serializes the
+	// post-prepare symbol table but not TypeFacts, so a decoded dependency may
+	// already know its type while its node-keyed inferred fact still needs republishing.
+	visiting[dep] = true
+	defer delete(visiting, dep)
+
+	l.inferValueMatchSubjectDependencies(dep.Value, dep, visiting)
+	savedDeclared := l.declaredLocals
+	l.declaredLocals = l.valueMatchDeclaredLocalsBefore(dep)
+	l.inferOptionArith(dep)
+	l.inferValueMatchResult(dep)
+	l.inferBitwiseResult(dep)
+	l.inferAliasType(dep)
+	l.declaredLocals = savedDeclared
+}
+
+// priorLetForValueMatch returns the latest same-named declaration before the
+// match-result binding or assignment in source order. scopeNodesOf excludes
+// nested function definitions, matching the main lowering walk's function scope.
+func (l *lowerer) priorLetForValueMatch(name string, before Node) *LetStatement {
+	if l == nil || l.p == nil || l.curFuncDef == nil || before == nil {
+		return nil
+	}
+	lets := l.p.scopeNodesOf(l.curFuncDef).lets
+	if binding, ok := before.(*LetStatement); ok {
+		for i, ls := range lets {
+			if ls != binding {
+				continue
+			}
+			for j := i - 1; j >= 0; j-- {
+				if prior := lets[j]; prior != nil && prior.Name != nil && prior.Name.Value == name {
+					return prior
+				}
+			}
+			return nil
+		}
+		return nil
+	}
+	pos := before.Pos()
+	var found *LetStatement
+	for _, ls := range lets {
+		if ls == nil || ls.Name == nil || ls.Name.Value != name {
+			continue
+		}
+		p := ls.Pos()
+		if p.Line < pos.Line || (p.Line == pos.Line && p.Column < pos.Column) {
+			found = ls
+		}
+	}
+	return found
+}
+
+// valueMatchDeclaredLocalsBefore reconstructs the main walker's declaration
+// set immediately before dep: parameters plus preceding user declarations.
+func (l *lowerer) valueMatchDeclaredLocalsBefore(dep *LetStatement) map[string]bool {
+	declared := map[string]bool{}
+	if l == nil || l.curFuncDef == nil || dep == nil {
+		return declared
+	}
+	for _, prm := range l.curFuncDef.Parameters {
+		if prm != nil && prm.Name != "" {
+			declared[prm.Name] = true
+		}
+	}
+	for _, ls := range l.p.scopeNodesOf(l.curFuncDef).lets {
+		if ls == dep {
+			break
+		}
+		if ls != nil && ls.Name != nil && !ls.IsSynthetic {
+			declared[ls.Name.Value] = true
+		}
+	}
+	return declared
 }
 
 // valueMatchOkArmType 回報值位 match 的 ok 臂末尾表達式之靜態型別（可能帶
@@ -1496,6 +1705,20 @@ func (l *lowerer) valueMatchOkArmType(sm *SurfaceMatch, subjElem string) string 
 			continue
 		}
 		expr := unwrapLowerExpr(last.Expression)
+		// `ok -> it.<field>`: operandPlainType 對 it 走 astFieldAccessType 會拿到共享
+		// it 槽的錯誤 receiver 型別。改用值 match 主語 payload 型別 subjElem 查 struct
+		// 欄位，得到臂尾真實型別（std/json 的 `cd = .nodes[i]: { ok -> it.count -> 0 }`
+		// 應登記 i64，而非 subjElem 的 struct 名）。structFieldsOf 已優先帶模組前綴，
+		// blob 重建路徑亦可解析正確 struct。
+		if dot, ok := expr.(*DotExpression); ok && subjElem != "" {
+			if id, ok := dot.Receiver.(*Identifier); ok && (id.Value == "it" || id.Value == "_") {
+				if fields, ok := l.p.structFieldsOf(subjElem); ok {
+					if ft, ok := fields[dot.Property]; ok && ft != "" {
+						return ft
+					}
+				}
+			}
+		}
 		if t := l.operandPlainType(expr); t != "" {
 			return t
 		}
@@ -2742,14 +2965,17 @@ func (l *lowerer) preRegisterEnumArmBindings(sm *SurfaceMatch) {
 	if sm == nil || len(sm.Arms) == 0 {
 		return
 	}
-	ident, ok := sm.Matched.(*Identifier)
-	if !ok {
-		return
-	}
 	p := l.p
-	mt, ok := p.sem.FuncVarType(l.curFuncName, ident.Value)
-	if !ok || mt == "" {
-		mt = p.astLocalVarType(l.curFuncName, ident.Value)
+	mt := ""
+	if ident, ok := sm.Matched.(*Identifier); ok {
+		if t, ok := p.funcVarType(l.curFuncName, ident.Value); ok {
+			mt = t
+		}
+		if mt == "" {
+			mt = p.astLocalVarType(l.curFuncName, ident.Value)
+		}
+	} else {
+		mt = p.indexedEnumMatchElem(sm.Matched, sm.Arms)
 	}
 	if mt == "" {
 		return
@@ -3117,7 +3343,7 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	if p.astVarTypeBusy == nil {
 		p.astVarTypeBusy = make(map[string]bool)
 	}
-	busyKey := funcName + "\x00" + varName
+	busyKey := p.astVarTypeContextKey(funcName, varName)
 	if p.astVarTypeBusy[busyKey] {
 		return ""
 	}
@@ -3125,7 +3351,9 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	// 降糖期 resolveReceiverType 會對同一個 (函式, 變數) 反覆發問（每個臂、每個
 	// 巢狀 match 各一次）。沒有快取時 genstdsig 直接跑不完（O(N·M)，被 OOM/超時
 	// 砍掉）。H0 期 AST 已凍結，快取安全；快取掛在 *Parser 上，不同 Program
-	// 用不同 parser，不會互相污染。
+	// 用不同 parser，不會互相污染。receiver-scoped field lookup 還依賴
+	// methodStructStack，故 key 必須包含當前接收者；否則無 stack 時記下的負
+	// 快取會讓隨後 value-match dependency 的 scoped lookup 永遠 miss。
 	if v, ok := p.astVarTypeCache[busyKey]; ok {
 		return v
 	}
@@ -3137,6 +3365,17 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	}
 	p.astVarTypeCache[busyKey] = t
 	return t
+}
+
+// astVarTypeContextKey scopes AST-replay results by the active method receiver.
+// Only the top receiver participates in self/field resolution, but including it
+// keeps both positive and negative cache entries valid across scoped pushes.
+func (p *Parser) astVarTypeContextKey(funcName, varName string) string {
+	key := funcName + "\x00" + varName
+	if p != nil && len(p.methodStructStack) > 0 {
+		key += "\x00receiver=" + p.methodStructStack[len(p.methodStructStack)-1]
+	}
+	return key
 }
 
 // iterVarType 推導 range-for 迭代變數的靜態型別。口徑與 checker.iterElemType
@@ -3218,15 +3457,22 @@ func (p *Parser) astFieldAccessType(funcName string, e *DotExpression) string {
 	case *Identifier:
 		name := r.Value
 		if name == "self" || name == "." {
-			return ""
-		}
-		if p.sem != nil {
-			if t, ok := p.sem.FuncVarType(funcName, name); ok {
-				recvType = t
+			// Receiver recovery is deliberately scoped. The post-parse walker has
+			// no method stack except while inferValueMatchResult resolves a match
+			// subject and its dependencies; recovering from p.prog here would give
+			// every unrelated self-field expression an inferred option type.
+			if len(p.methodStructStack) > 0 {
+				recvType = p.methodStructStack[len(p.methodStructStack)-1]
 			}
-		}
-		if recvType == "" {
-			recvType = p.astLocalVarType(funcName, name)
+		} else {
+			if p.sem != nil {
+				if t, ok := p.sem.FuncVarType(funcName, name); ok {
+					recvType = t
+				}
+			}
+			if recvType == "" {
+				recvType = p.astLocalVarType(funcName, name)
+			}
 		}
 	case *DotExpression:
 		recvType = p.astFieldAccessType(funcName, r)
@@ -3244,6 +3490,37 @@ func (p *Parser) astFieldAccessType(funcName string, e *DotExpression) string {
 		return ""
 	}
 	return fields[e.Property]
+}
+
+// enumConstructorType returns the tagged-enum type produced by an
+// unqualified variant constructor. As in MIR, an ambiguous variant name is not
+// guessed: the call is only usable when exactly one enum declares that variant.
+func (p *Parser) enumConstructorType(call *CallExpression) string {
+	if call == nil || p.sem == nil {
+		return ""
+	}
+	ident, ok := call.Function.(*Identifier)
+	if !ok || ident.Value == "" {
+		return ""
+	}
+	match := ""
+	for enumName, variants := range p.sem.EnumVariants {
+		found := false
+		for _, variant := range variants {
+			if variant == ident.Value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		if match != "" {
+			return ""
+		}
+		match = enumName
+	}
+	return match
 }
 
 // computeAstLocalVarType is the uncached body of astLocalVarType.
@@ -3325,6 +3602,8 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 		}
 		if call, ok := ls.Value.(*CallExpression); ok {
 			if rt := p.returnTypeFromCallExpr(call); rt != "" {
+				types[name] = rt
+			} else if rt := p.enumConstructorType(call); rt != "" {
 				types[name] = rt
 			}
 		}
@@ -3986,6 +4265,13 @@ type subjectMatchPrep struct {
 	hasExplicitNil     bool
 	enumListedVariants map[string]bool
 	matchedIsEnum      bool
+	// enumIndex marks a safe-index subject whose arms are tagged-enum patterns.
+	// The option read is evaluated once, then the ok arm binds a plain enum to
+	// `it` before running the ordinary enum match chain.
+	enumIndex         bool
+	enumIndexFallback *BlockStatement
+	enumValueName     string
+	enumValueStmt     *LetStatement
 }
 
 // matchSubjectTypeRaw is the declared type of a synthesised `__match_subj`
@@ -4346,6 +4632,66 @@ func optionArithOperandInt(e Expression, lookup arithTypeLookup) (string, bool) 
 //	   the explicit-variant bookkeeping (hasExplicit*, enumListedVariants) is
 //	   filled in.
 
+// indexedEnumMatchElem recognises a safe-index subject whose arms name
+// variants of the element's tagged enum. Scalar value matches deliberately do
+// not qualify: `values[i]: { 5 -> ... }` keeps element-comparison semantics.
+func (p *Parser) indexedEnumMatchElem(matched Expression, arms []MatchArm) string {
+	idx, ok := unwrapLowerExpr(matched).(*IndexExpression)
+	if !ok || !p.isSafeIndexBase(idx) {
+		return ""
+	}
+	elem := p.inferIndexElemType(idx)
+	variants, ok := p.enumVariantsOf(elem)
+	if !ok {
+		return ""
+	}
+	members := make(map[string]bool, len(variants))
+	for _, variant := range variants {
+		members[variant] = true
+	}
+	isVariant := func(cond Expression) bool {
+		switch c := cond.(type) {
+		case *Identifier:
+			return members[c.Value]
+		case *CallExpression:
+			fn, ok := c.Function.(*Identifier)
+			if !ok || !members[fn.Value] {
+				return false
+			}
+			if len(c.Arguments) == 0 {
+				return true
+			}
+			_, ok = enumPayloadVariantOf(p, elem, c)
+			return ok
+		default:
+			return false
+		}
+	}
+	for i := range arms {
+		a := &arms[i]
+		if a.BindingVariant != "" && members[a.BindingVariant] {
+			return elem
+		}
+		if a.IsDotVal && members["ok"] {
+			return elem
+		}
+		for _, pattern := range a.MultiOptionPatterns {
+			if members[pattern] {
+				return elem
+			}
+		}
+		for _, pattern := range a.MultiValuePatterns {
+			if isVariant(pattern) {
+				return elem
+			}
+		}
+		if isVariant(a.Condition) {
+			return elem
+		}
+	}
+	return ""
+}
+
 func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	prep := &subjectMatchPrep{}
 	tok, matched, arms := sm.Token, sm.Matched, sm.Arms
@@ -4389,8 +4735,10 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	subjName := ""
 	subjElem := ""
 	// 「這是不是 option match」——臂裡出現 `ok ->`（IsDotVal）或 ok/nil/err 模式
-	// 即成立。索引與呼叫兩種主語的歸一化共用此判定。
-	isOptMatch := false
+	// 即成立。索引與呼叫兩種主語的歸一化共用此判定。安全索引上的標籤列舉
+	// 變體臂也需要 option 讀取，但隨後必須剝成 plain enum 再跑變體鏈。
+	indexedEnumElem := p.indexedEnumMatchElem(matched, arms)
+	isOptMatch := indexedEnumElem != ""
 	for _, a := range arms {
 		if a.IsDotVal {
 			isOptMatch = true
@@ -4408,7 +4756,9 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	}
 	if isOptMatch {
 		subjValueElem := ""
-		if idx, ok := matched.(*IndexExpression); ok && p.isSafeIndexBase(idx) {
+		if indexedEnumElem != "" {
+			subjValueElem = indexedEnumElem
+		} else if idx, ok := matched.(*IndexExpression); ok && p.isSafeIndexBase(idx) {
 			subjValueElem = p.inferIndexElemType(idx)
 		} else if call, ok := matched.(*CallExpression); ok {
 			// 呼叫主語（`v = mb.to-i64(): { ok -> it.to-f64()  -> 0.0 }`）：回傳
@@ -4509,7 +4859,7 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	isEnumType := false
 	var enumVariants []string
 	if ident, ok := matched.(*Identifier); ok {
-		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok {
+		if t, ok := p.funcVarType(p.curFuncName, ident.Value); ok {
 			matchedVarType = t
 			if vs, ok := p.enumVariantsOf(t); ok {
 				isEnumType = true
@@ -4570,6 +4920,19 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 			matchedVarType = p.returnTypeFromCallExpr(call)
 		}
 	}
+	if indexedEnumElem != "" {
+		// The synthetic __match_subj is ?enum, but variant destructuring and
+		// payload projection operate on a plain enum. The ok wrapper first peels
+		// the option into `it`, then moves that independently-owned enum into a
+		// named subject for the ordinary variant chain.
+		matchedVarType = indexedEnumElem
+		enumVariants, isEnumType = p.enumVariantsOf(indexedEnumElem)
+		prep.enumValueName = fmt.Sprintf("__match_value_%d_%d", tok.Line, tok.Column)
+		p.sem.SetFuncVarType(p.curFuncName, prep.enumValueName, indexedEnumElem)
+		p.setVarType(prep.enumValueName, indexedEnumElem)
+		matched = &Identifier{Token: tok, Value: prep.enumValueName}
+		prep.matched = matched
+	}
 
 	// Determine element type from option type for per-arm `it` type inference.
 	// For ?i64, elemType = "i64"; for result unions (i64 | err), extract the payload type.
@@ -4626,12 +4989,39 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 		arms[i].Body = zb
 	}
 
+	// A plain wildcard is both the enum chain's unmatched-variant fallback and
+	// the safe-read failure fallback. Keep its original body before arm rewrites
+	// prepend enum bindings; the option-failure path has no enum payload.
+	enumIndex := indexedEnumElem != ""
+	var enumIndexFallback *BlockStatement
+	if enumIndex {
+		for i := range arms {
+			if arms[i].IsWildcard && !arms[i].IsDotVal {
+				enumIndexFallback = arms[i].Body
+				break
+			}
+		}
+	}
+
 	// Shared it binding (used for hasRawCond or fallback)
 	itStmt := p.buildItBinding(tok, matched)
 
 	// For hasRawCond, set the element type on the shared binding for LSP inference
 	if itStmt != nil && elemType != "" {
 		itStmt.Type = &NamedType{Value: elemType}
+	}
+	if enumIndex && itStmt != nil {
+		// This binding is the ok-only option peel. MIR sees a plain enum sink
+		// initialized from ?enum and emits move+clone for owning payloads.
+		itStmt.Value = &Identifier{Token: tok, Value: subjName}
+		itStmt.IsArmBinding = true
+		prep.enumValueStmt = &LetStatement{
+			Token:       tok,
+			Name:        &Identifier{Token: tok, Value: prep.enumValueName},
+			Type:        buildType(indexedEnumElem, tok),
+			Value:       &Identifier{Token: tok, Value: "it"},
+			IsSynthetic: true,
+		}
 	}
 
 	// Check if any arm uses ok(cond) — if so, `it` must be bound BEFORE the if-chain
@@ -4747,6 +5137,8 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	prep.hasExplicitNil = hasExplicitNil
 	prep.enumListedVariants = enumListedVariants
 	prep.matchedIsEnum = matchedIsEnum
+	prep.enumIndex = enumIndex
+	prep.enumIndexFallback = enumIndexFallback
 	return prep
 }
 
@@ -5296,6 +5688,30 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 					&ExpressionStatement{Token: tok, Expression: ifExpr},
 				},
 			},
+		}
+	}
+
+	// Safe-index enum matches have two stages: the outer guard consumes index
+	// failure, then binds a plain enum for the ordinary variant chain. The same
+	// wildcard body remains the inner chain's unmatched-variant fallback.
+	if prep.enumIndex && subjName != "" && itStmt != nil && ifExpr != nil {
+		ifExpr = &IfExpression{
+			Token: tok,
+			Condition: &InfixExpression{
+				Token:    tok,
+				Left:     &Identifier{Token: tok, Value: subjName},
+				Operator: "==",
+				Right:    &Identifier{Token: tok, Value: "ok"},
+			},
+			Consequence: &BlockStatement{
+				Token: tok,
+				Statements: []Statement{
+					itStmt,
+					prep.enumValueStmt,
+					&ExpressionStatement{Token: tok, Expression: ifExpr},
+				},
+			},
+			Alternative: prep.enumIndexFallback,
 		}
 	}
 

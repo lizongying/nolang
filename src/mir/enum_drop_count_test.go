@@ -2,6 +2,7 @@ package mir
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -210,5 +211,38 @@ func TestCheckDropCountReportsLeakedOptionPeelSource(t *testing.T) {
 	if !rep.HasErrors() {
 		t.Fatalf("option peel source with no drop is a leak, but checkDropCount reported "+
 			"nothing\n%s", mod.String())
+	}
+}
+
+// Drop placement treats a local slot as valid on every cleanup path, including a
+// loop exit reached before the loop body initialized it. Heap-owning scalar and
+// aggregate slots are zeroed in the prologue for exactly that reason. A tagged
+// enum owns heap at the VALUE level (enumOwnsPayload), while Type.Owned remains
+// false, so the zero-init predicate must consult the value-level ownership map
+// too. Otherwise an early return or zero-iteration loop drops uninitialized
+// stack bytes through the enum destructor and frees a garbage payload pointer.
+func TestEnumSlotZeroInitFollowsPayloadOwnership(t *testing.T) {
+	const lt = "%tenum_e_res"
+	const slot = "%v7.s"
+	mod := NewModule("enum-zero-init")
+	mod.enumOwnsPayload = map[ValueID]bool{7: true}
+
+	var owned strings.Builder
+	c := &codegen{mod: mod, sb: &owned, resultParam: map[ValueID]bool{}}
+	c.emitSlotZeroInit(lt, false, 7, slot)
+	want := "  store " + lt + " zeroinitializer, " + lt + "* " + slot + "\n"
+	if got := owned.String(); got != want {
+		t.Fatalf("an owning tagged-enum slot must start in a destructor-safe zero "+
+			"state; got %q, want %q", got, want)
+	}
+
+	// Negative control: a non-owning enum has no destructor and must not pay for
+	// a prologue store merely because its LLVM representation is an aggregate.
+	delete(mod.enumOwnsPayload, 7)
+	var borrowed strings.Builder
+	c.sb = &borrowed
+	c.emitSlotZeroInit(lt, false, 7, slot)
+	if got := borrowed.String(); got != "" {
+		t.Fatalf("a non-owning tagged-enum slot was unnecessarily zero-initialized: %q", got)
 	}
 }

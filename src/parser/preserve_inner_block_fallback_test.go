@@ -95,7 +95,8 @@ func TestPreserveInnerBlockMixedContentFallback(t *testing.T) {
 // direct-double bare match must still produce the synthetic IsWrapper block,
 // otherwise the formatter would add a brace level on every `no fmt` run.
 func TestPreserveInnerBlockBareMatchStillWrapped(t *testing.T) {
-	const src = `f = (s str) (pos i64) {
+	cases := map[string]string{
+		"identifierMethod": `f = (s str) (pos i64) {
     pos = -1
     c = s[0]
     {
@@ -107,40 +108,82 @@ func TestPreserveInnerBlockBareMatchStillWrapped(t *testing.T) {
         }
     }
 }
+`,
+		"receiverlessMethod": `f = (s str) (pos i64) {
+    pos = -1
+    {
+        s.len() > 0 -> {
+            {
+                .accept-word('x') -> pos = 1
+                -> pos = 2
+            }
+        }
+    }
+}
+`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			prog, _ := preserveInnerParse(t, src)
+			var wrappers int
+			var walk func(Node)
+			walk = func(n Node) {
+				if n == nil {
+					return
+				}
+				switch x := n.(type) {
+				case *Program:
+					for _, s := range x.Statements {
+						walk(s)
+					}
+				case *FunctionDefinition:
+					walk(x.Body)
+				case *BlockStatement:
+					if x.IsWrapper {
+						wrappers++
+					}
+					for _, s := range x.Statements {
+						walk(s)
+					}
+				case *ExpressionStatement:
+					if x.Expression != nil {
+						walk(x.Expression)
+					}
+				case *SurfaceMatch:
+					for i := range x.Arms {
+						walk(x.Arms[i].Body)
+					}
+				}
+			}
+			walk(prog)
+			if wrappers == 0 {
+				t.Error("direct-double bare match no longer produces an IsWrapper block")
+			}
+		})
+	}
+}
+
+// A plain receiver-less method call is still a statement block. The arm scan
+// added for `.method() -> ...` must not reinterpret ordinary method calls.
+func TestPreserveInnerBlockMethodCallStatement(t *testing.T) {
+	const src = `parser {}
+parser.ping = () {}
+parser.run = () {
+    {
+        .ping()
+        .ping()
+    }
+}
 `
 	prog, _ := preserveInnerParse(t, src)
-	var wrappers int
-	var walk func(Node)
-	walk = func(n Node) {
-		if n == nil {
-			return
-		}
-		switch x := n.(type) {
-		case *Program:
-			for _, s := range x.Statements {
-				walk(s)
-			}
-		case *FunctionDefinition:
-			walk(x.Body)
-		case *BlockStatement:
-			if x.IsWrapper {
-				wrappers++
-			}
-			for _, s := range x.Statements {
-				walk(s)
-			}
-		case *ExpressionStatement:
-			if x.Expression != nil {
-				walk(x.Expression)
-			}
-		case *SurfaceMatch:
-			for i := range x.Arms {
-				walk(x.Arms[i].Body)
-			}
-		}
+	fn := prog.Statements[2].(*FunctionDefinition)
+	block := fn.Body.Statements[0].(*BlockStatement)
+	if block.IsWrapper || len(block.Statements) != 2 {
+		t.Fatalf("method-call statement block misclassified: %#v", block)
 	}
-	walk(prog)
-	if wrappers == 0 {
-		t.Error("direct-double bare match no longer produces an IsWrapper block")
+	for _, stmt := range block.Statements {
+		if _, ok := stmt.(*ExpressionStatement); !ok {
+			t.Fatalf("method call parsed as %T, want ExpressionStatement", stmt)
+		}
 	}
 }

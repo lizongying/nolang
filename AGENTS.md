@@ -75,27 +75,45 @@ no build glossary            # 构建词条库前端 -> glossary/dist/glossary
 
 **优先级**：工作区 skill（`.agents/skills/`）优先；同名 / 同功能时以工作区版为准。
 
-**权威顺序**（冲突时按此裁决）：实测 > `AGENTS.md`（语法与编码权威）>
-`.agents/rules/nolang-red-lines.md`（总入口 + 共用规则，按任务路由到编译器 / 应用两份）> `nolang-core` skill > 记忆笔记。
+**权威顺序**（冲突时按此裁决；唯一权威定义在 `nolang-core/SKILL.md`，本处为精简同步，
+红线族与两个角色 skill 只引用、不复述另一套口径）：实测 > `AGENTS.md`（语法与编码权威） >
+`.agents/rules/nolang-red-lines.md`（总入口 + 共用规则，含编译器 / 应用两份子规则）>
+角色 skill（`nolang-compiler` / `nolang-app`）> `nolang-core` > 记忆笔记。
 
 | skill | 位置 | 何时用 |
 | --- | --- | --- |
-| `nolang-core` | `.agents/skills/nolang-core`（工作区，优先） | **本项目主力**：写 / 改 `.no`、查语法 / 类型 / 注解 / FFI、查 std 模块签名、`make` / `no vet` / `no test`、修 parser / fmt / LSP 缺陷、内存与所有权、内建函数注册、embed / import 路径解析、自举性能、英文文档 i18n、打 tag 发版 |
+| `nolang-core` | `.agents/skills/nolang-core`（工作区，优先） | **共享底座**：语言语义、std API、构建 / 验收规则、CLI，以及全部详细参考模块；两个角色 skill 都必须以它为依赖 |
+| `nolang-compiler` | `.agents/skills/nolang-compiler` | 改 `src/**/*.go`、`src/std/**`、`compiler/**`、`tests/**/*.go`；parser / checker / HIR / MIR / codegen、fmt / LSP、builtin、AST 缓存、自举、工具链文档与发版 |
+| `nolang-app` | `.agents/skills/nolang-app` | 写 / 改 `example/**/*.no`、`tests/**/*.no` 与业务 `.no`；std API、包 / workspace、FFI host interop、option / 容器 / 所有权 / 并发、应用构建与测试 |
 
-**`nolang-core` 加载协议**（由十多个旧 skill 合并而来，正文按开关分档）：
+**职责与依赖方向**：`nolang-core` 只拥有共享知识与全部详细参考模块（唯一来源），并兼作**上下文分流入口**；
+两个角色 skill 只拥有各自角色工作流（编译器：改动分类 / 版本闸 / 测试先行 / 自举闸 / 工具链验收；
+应用：安全预检 / 包上下文 / build-run-test 验证）。依赖单向：**compiler / app → core**，
+core 不反向依赖两个角色 skill（core 内指向角色 skill 的链接只作导航）。详细判定与依赖表见 `nolang-core/SKILL.md`。
 
-1. **先读 `SKILL.md`**，不要直接翻 `modules/` 目录；开关表与路由都在里面。
-2. **按开关表分档加载**：`default: true` 的 `build` / `verify` 常驻；`auto` 的 `syntax` / `std`
-   命中 trigger 才载；`false` 的（`cli` / `debug` / `builtin` / `path-resolution` /
-   `selfhost-perf` / `docs-i18n` / `release` / `memory`）仅显式点名或 `requires` 拉起才载。
+**上下文路由**（core 按当前项目上下文判断入口，命中即停）：
+目标含 `src/**/*.go` / `src/std/**` / `compiler/**` / `tests/**/*.go` → `nolang-compiler`；
+目标含 `example/**/*.no` / `tests/**/*.no` / 业务 `.no` → `nolang-app`；
+审查 `.no` 代码的语法 / 风格 / 安全并要建议或最终代码 → 留 `nolang-core` 加载 `review` 模块；
+纯名词 / 语法 / std 签名 / 规则查询无改动目标 → 留 `nolang-core`；编译器 + 应用混合 → 两个都读、验收门禁分开跑；
+信号不足 → 从 core 加载共享模块再按需追加角色。
+
+**角色 skill + `nolang-core` 加载协议**（正文按开关分档）：
+
+1. **先按任务选角色入口**：编译器 / std / 自举读 `nolang-compiler`，应用 `.no` 读 `nolang-app`；
+   混合任务两个都读。角色 skill 会回到 `nolang-core` 加载共享模块，不要形成循环。
+2. **共享模块按角色加载**：编译器任务常驻 `build` / `verify`；应用任务按需加载 `syntax` / `std` / `cli`，
+   普通应用改动不重建编译器、不 vet `src/std`。`false` 档仅在显式点名或 `requires` 时加载。
 3. **子视图再挑一档**：`syntax/`（7 个视图）与 `std/`（10 个视图）命中父模块后按 trigger
    只读一两个，**不要整目录读**。
 4. **预算**：单次加载正文上限 **1200 行**；超了先只读路由（`m10-syntax` / `m20-std`），正文按需追加。
 5. **旧名仍是触发词**：`nolang-syntax` / `nolang-std` / `nolang-build` / `nolang-vet` /
    `nolang-debug` / `nolang-memory` / `nolang-builtin` / `nolang-path-resolution` /
-   `nolang-selfhost-perf` / `nolang-docs-i18n` / `nolang-release` 说旧名等价于载对应模块。
-6. **两个特殊档**：`memory` 已 `quarantined`（内容部分失效，默认关，加载必须先打失效横幅，
-   活实现在 `src/mir/`）；`release` **执行前必须用户确认**，且禁 `git add -A`。
+   `nolang-selfhost-perf` / `nolang-docs-i18n` / `nolang-release` / `nolang-publish-to-nohub`
+   说旧名等价于载对应模块。
+6. **三个特殊档**：`memory` 已 `quarantined`（内容部分失效，默认关，加载必须先打失效横幅，
+   活实现在 `src/mir/`）；`release` 与 `nohub`（`nolang-publish-to-nohub` 收敛而来，release 的可选后续步骤）
+   **执行前必须用户确认**，且禁 `git add -A`。
 7. **改 skill 配置后**：`python3 .agents/skills/nolang-core/scripts/core.py gen` 重渲染开关表；
    提交前跑 `python3 .agents/skills/nolang-core/scripts/core.py check`（漂移 / 路径 / 孤儿模块）
    与 `... links`（内部相对链接可达）。**不要手改 SKILL.md 里的开关表**。

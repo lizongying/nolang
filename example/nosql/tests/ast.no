@@ -1,0 +1,42 @@
+# /example/nosql/src/test-support test-support
+# /example/nosql/src/ast
+
+CTX = test-support.new()
+program = new-sql-program()
+projection-list = program.nodes.len()
+program.make-list([11, 12, 13])
+clauses = [-1, projection-list, 4, 5, -1, 6, -1, -1, -1, -1]
+root = program.nodes.len()
+program.push-node(sql-node{
+    kind: sql-select
+    text: 'SELECT'
+    a: 0
+    b: -1
+    c: -1
+    flags: 1
+    kids: clauses
+    offset: 0
+})
+program.add-statement(root)
+
+CTX.check(program.statement-count() == 1, 'program retains one statement root')
+CTX.check(program.statement(0) == root, 'statement root has a stable arena index')
+CTX.check(program.kind-of(root) == sql-select, 'node kind survives storage')
+CTX.check(program.child(root, 0) == -1, 'missing SELECT clause is explicit')
+CTX.check(program.child(root, 1) == projection-list, 'SELECT projection list is addressable')
+list-node = program.node(projection-list)
+CTX.check(list-node.kind == sql-list, 'list has its own node kind')
+CTX.check(list-node.kids.len() == 3, 'list retains every item')
+CTX.check(list-node.kids[1] == 12, 'list item order is preserved')
+select-node = program.node(root)
+CTX.check(select-node.flags == 1, 'node flags survive storage')
+CTX.check(select-node.offset == 0, 'source offset survives storage')
+CTX.check(program.node(-1).kind == sql-invalid, 'negative node index is safe')
+CTX.check(program.node(999).kind == sql-invalid, 'out-of-range node index is safe')
+CTX.check(program.child(root, 99) == -1, 'out-of-range child slot is safe')
+program.set-node-a(root, 77)
+program.set-node-b(root, 88)
+updated = program.node(root)
+CTX.check(updated.a == 77 && updated.b == 88, 'arena field setters replace the stored node')
+CTX.check(updated.kind == sql-select && updated.kids.len() == 10, 'arena update preserves unrelated node fields')
+CTX.done()

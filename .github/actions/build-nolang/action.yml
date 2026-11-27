@@ -104,6 +104,14 @@ inputs:
       .no file. Defaults to `entry` when empty.
     required: false
     default: ""
+  windows-pdb:
+    description: >-
+      When "false", remove the .pdb debug-symbol file emitted next to each
+      Windows cross-compiled binary (the linker creates one automatically).
+      Only affects windows/* targets; other targets are untouched. Defaults to
+      "true" (keep .pdb files) so existing callers keep the current behaviour.
+    required: false
+    default: "true"
 
 outputs:
   output-dir:
@@ -379,6 +387,7 @@ runs:
         LD_FLAGS: ${{ inputs.ld-flags }}
         TARGETS: ${{ inputs.targets }}
         FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+        WINDOWS_PDB: ${{ inputs.windows-pdb }}
       run: |
         set -euo pipefail
         no version
@@ -431,6 +440,15 @@ runs:
 
           if [ "$brc" -eq 0 ] && [ -s "$OUT" ]; then
             echo "::notice::Built $t -> $OUT"
+            # The Windows linker emits a .pdb next to the .exe. Drop it when
+            # asked to; no `no build` flag controls this, so remove it here.
+            if [ "$WINDOWS_PDB" != "true" ] && [ "$EXT" = ".exe" ]; then
+              PDB="${OUT%.exe}.pdb"
+              if [ -f "$PDB" ]; then
+                echo "Removing $PDB (windows-pdb=false)"
+                rm -f "$PDB"
+              fi
+            fi
             ok_list="$ok_list$OUT"$'\n'
           else
             echo "::error::Build failed for $t (rc=$brc)"

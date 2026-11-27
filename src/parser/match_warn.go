@@ -95,6 +95,7 @@ func (l *lowerer) warnUnreachableArms(sm *SurfaceMatch) {
 	// —— 這裡**不**寫回 sem（那會污染糖形態的符號表），只用來判列舉。
 	matchedVarType := ""
 	isEnumType := false
+	indexedEnum := false
 	var enumVariants []string
 	setType := func(t string) {
 		matchedVarType = t
@@ -108,7 +109,12 @@ func (l *lowerer) warnUnreachableArms(sm *SurfaceMatch) {
 			setType(t)
 		}
 	} else if idx, ok := matched.(*IndexExpression); ok && l.p.isSafeIndexBase(idx) {
-		if matchArmsAreOptionMatch(sm.Arms) {
+		if elem := l.p.indexedEnumMatchElem(matched, sm.Arms); elem != "" {
+			// Variant arms run on the plain enum peeled by the ok guard. The
+			// surrounding safe read can still fail, so a wildcard remains reachable.
+			indexedEnum = true
+			setType(elem)
+		} else if matchArmsAreOptionMatch(sm.Arms) {
 			if elem := l.p.inferIndexElemType(idx); elem != "" {
 				subjType := "?" + elem
 				if len(elem) > 0 && elem[0] == '?' {
@@ -174,6 +180,9 @@ func (l *lowerer) warnUnreachableArms(sm *SurfaceMatch) {
 		var msg string
 		switch {
 		case isEnumType:
+			if indexedEnum {
+				continue
+			}
 			remaining := 0
 			for _, v := range enumVariants {
 				if !listedVariants[v] {

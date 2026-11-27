@@ -48,7 +48,6 @@ class Parser:
             else:
                 return
 
-
     def parse(self):
         self.skip()
         return self.value()
@@ -64,7 +63,8 @@ class Parser:
             return self.string()
         m = BARE.match(self.s, self.i)
         if not m:
-            raise ValueError(f"无法解析位置 {self.i}: {self.s[self.i:self.i + 20]!r}")
+            raise ValueError(
+                f"无法解析位置 {self.i}: {self.s[self.i:self.i + 20]!r}")
         self.i = m.end()
         word = m.group(0)
         if word == "true":
@@ -94,7 +94,8 @@ class Parser:
             if self.s[self.i] == "}":
                 self.i += 1
                 return out
-            key = self.string() if self.s[self.i] == "'" else BARE.match(self.s, self.i).group(0)
+            key = self.string() if self.s[self.i] == "'" else BARE.match(
+                self.s, self.i).group(0)
             if self.s[self.i] == "'":
                 pass
             else:
@@ -123,7 +124,7 @@ def load() -> dict:
 def render(cfg: dict) -> str:
     mods = cfg["modules"]
     order = ["build", "verify", "syntax", "std", "cli", "debug", "builtin",
-             "path-resolution", "selfhost-perf", "docs-i18n", "release", "memory"]
+             "path-resolution", "selfhost-perf", "docs-i18n", "release", "nohub", "review", "memory"]
 
     def state(m: dict) -> str:
         if m.get("quarantined"):
@@ -148,11 +149,13 @@ def render(cfg: dict) -> str:
             trig_s += f" …（{len(trig)} 项）"
         cons = []
         if m.get("requires"):
-            cons.append("requires " + " + ".join(f"`{r}`" for r in m["requires"]))
+            cons.append(
+                "requires " + " + ".join(f"`{r}`" for r in m["requires"]))
         if m.get("confirm"):
             cons.append("**执行前必须用户确认**")
         if m.get("conflicts"):
-            cons.append("冲突时以 " + " / ".join(f"`{c}`" for c in m["conflicts"]) + " 优先")
+            cons.append(
+                "冲突时以 " + " / ".join(f"`{c}`" for c in m["conflicts"]) + " 优先")
         if m.get("quarantined"):
             cons.append("加载必须先打失效横幅")
         path = ROOT / m["path"]
@@ -161,7 +164,8 @@ def render(cfg: dict) -> str:
             f"{trig_s or '—'} | {'；'.join(cons) or '—'} | {_size(m['path'])} |"
         )
 
-    children = [(n, c) for n in ("syntax", "std") for c in (mods[n].get("children") or {}).items()]
+    children = [(n, c) for n in ("syntax", "std")
+                for c in (mods[n].get("children") or {}).items()]
     if children:
         lines += [
             "",
@@ -172,7 +176,8 @@ def render(cfg: dict) -> str:
         ]
         for _, (cname, c) in children:
             trig_s = "、".join(f"`{t}`" for t in (c.get("trigger") or [])[:8])
-            lines.append(f"| [`{Path(c['path']).name}`]({c['path']}) | {trig_s or '—'} | {_size(c['path'])} |")
+            lines.append(
+                f"| [`{Path(c['path']).name}`]({c['path']}) | {trig_s or '—'} | {_size(c['path'])} |")
 
     lines += [
         "",
@@ -220,12 +225,14 @@ def cmd_gen(cfg: dict) -> int:
 def cmd_check(cfg: dict) -> int:
     rc = 0
     text = ENTRY.read_text(encoding="utf-8")
-    m = re.search(re.escape(BEGIN) + r"(.*?)" + re.escape(END), text, flags=re.S)
+    m = re.search(re.escape(BEGIN) + r"(.*?)" +
+                  re.escape(END), text, flags=re.S)
     if not m:
         print("ERROR: SKILL.md 缺少开关表标记")
         return 1
     if m.group(1).strip() != render(cfg).strip():
-        print("ERROR: SKILL.md 的开关表与 skill-config.noml 漂移 —— 跑 `python3 scripts/core.py gen`")
+        print(
+            "ERROR: SKILL.md 的开关表与 skill-config.noml 漂移 —— 跑 `python3 scripts/core.py gen`")
         rc = 1
     else:
         print("check: 开关表与配置一致")
@@ -235,12 +242,13 @@ def cmd_check(cfg: dict) -> int:
             print(f"ERROR: 配置指向的文件不存在：{rel}")
             rc = 1
 
-    referenced = {Path(p).resolve() for p in all_paths(cfg)}
+    referenced = {(ROOT / p).resolve() for p in all_paths(cfg)}
     referenced.add(CONFIG.resolve())
     for f in sorted((ROOT / "modules").rglob("*.md")):
         if f.resolve() not in referenced:
             print(f"WARN: 孤儿模块（未被配置引用）：{f.relative_to(ROOT)}")
-    print(f"check: {len(all_paths(cfg))} 个模块路径全部存在" if rc == 0 else "check: 有失败项")
+    print(f"check: {len(all_paths(cfg))} 个模块路径全部存在" if rc ==
+          0 else "check: 有失败项")
     return rc
 
 

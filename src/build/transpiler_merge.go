@@ -238,7 +238,7 @@ func newCompileAssembly(t *Transpiler, program *parser.Program, varTypes, global
 // processUseAndMerge 載入 UseStatement 指定的模組，將其非 UseStatement 語句
 // 合併進 merged，並把模組內部的 UseStatement 收集進 pendingUses 供遞歸處理
 // （傳遞依賴，見 mergeModules 的 drain 迴圈）。
-func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
+func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement, direct bool) error {
 	t := a.t
 	// 第三方 ESM 導入（# npm/<specifier>）：JS 後端下**不**解析為 .no 原始碼。
 	// 與 js_backend.go 的 processUseAndMerge 同口徑：先校驗 specifier 與
@@ -285,7 +285,7 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	// 階段一律當成錯誤（別名只對 `.noml` 或 `# path.fn as alias` 有意義），
 	// 導致 src/std/global.no 的 `# std/err error` 無法通過 `no vet src/std`。
 	moduleAlias := use.ModuleAlias()
-	modProg, err := t.resolveUse(use)
+	modProg, err := t.resolveUseWithExportFilter(use, false)
 	if err != nil {
 		return i18n.Errorf("kzsepkro", "loading module %s: %w", use.Path, err)
 	}
@@ -297,6 +297,9 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	// 解析模組的源碼檔案路徑，供 vet lint 歸因使用。
 	// std/ 模組 → GetStdSourceFile；用戶模組 → workspace 根目錄解析。
 	modFile := resolveModuleFile(use.Path, t.workspaceRoot())
+	if direct {
+		modProg = t.filterPackageExports(modProg, modFile)
+	}
 	useModShort := checker.ModuleShortName(use.Path)
 	if moduleAlias != "" {
 		useModShort = moduleAlias
@@ -514,7 +517,7 @@ func (a *compileAssembly) mergeLoadedModule(use *parser.UseStatement, modProg *p
 func (a *compileAssembly) mergeModules() error {
 	for _, stmt := range a.program.Statements {
 		if use, ok := stmt.(*parser.UseStatement); ok {
-			if err := a.processUseAndMerge(use); err != nil {
+			if err := a.processUseAndMerge(use, true); err != nil {
 				return err
 			}
 			continue
@@ -539,7 +542,7 @@ func (a *compileAssembly) mergeModules() error {
 	for len(a.pendingUses) > 0 {
 		use := a.pendingUses[0]
 		a.pendingUses = a.pendingUses[1:]
-		if err := a.processUseAndMerge(use); err != nil {
+		if err := a.processUseAndMerge(use, false); err != nil {
 			return err
 		}
 	}

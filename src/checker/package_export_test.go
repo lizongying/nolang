@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lizongying/nolang/parser"
 )
 
 // writeTestWorkspace 在測試用工作區裡放一個 workspace.noml 映射與一個包。
@@ -57,6 +59,115 @@ func TestResolvePackageExportRejectsNonModuleExport(t *testing.T) {
 	ws := writeTestWorkspace(t, "@ /foo/src/assert.check assert\n")
 	if got := ResolvePackageExport("test/assert", ws); got != "" {
 		t.Fatalf("symbol export must not resolve as module alias, got %q", got)
+	}
+}
+
+// TestFilterByExportsKeepsTransitiveFieldTypes pins the public-type closure:
+// exporting a function that returns a struct must also retain the structs and
+// enums referenced by its fields, recursively. Otherwise a valid package import
+// reaches MIR with an incomplete type table.
+func TestFilterByExportsKeepsTransitiveFieldTypes(t *testing.T) {
+	root := t.TempDir()
+	pkgDir := filepath.Join(root, "pkg")
+	modPath := filepath.Join(pkgDir, "src", "types.no")
+	libPath := filepath.Join(pkgDir, "lib.no")
+	if err := os.MkdirAll(filepath.Dir(modPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(libPath, []byte("@ /pkg/src/types.make\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prog := mustParse(t, `kind {
+    first,
+    second,
+}
+item {
+    kind kind
+}
+holder {
+    items []item
+}
+make = () (out holder) {
+}
+`)
+	filtered := filterByExports(prog, libPath, modPath)
+	kept := make(map[string]bool)
+	for _, stmt := range filtered.Statements {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			kept[s.Name] = true
+		case *parser.StructDefinition:
+			kept[s.Name] = true
+		case *parser.EnumDefinition:
+			kept[s.Name] = true
+		}
+	}
+	for _, name := range []string{"make", "holder", "item", "kind"} {
+		if !kept[name] {
+			t.Errorf("exported function's transitive type %q was filtered out; kept=%v", name, kept)
+		}
+	}
+}
+
+// TestFilterByExportsKeepsPrivateStateAndMethods pins the implementation-type
+// closure: an exported function may construct a private struct through a helper
+// and call its methods. The private type, its methods, and their transitive
+// helpers must survive filtering even though they are not package exports.
+func TestFilterByExportsKeepsPrivateStateAndMethods(t *testing.T) {
+	root := t.TempDir()
+	pkgDir := filepath.Join(root, "pkg")
+	modPath := filepath.Join(pkgDir, "src", "parser.no")
+	libPath := filepath.Join(pkgDir, "lib.no")
+	if err := os.MkdirAll(filepath.Dir(modPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(libPath, []byte("@ /pkg/src/parser.parse\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prog := mustParse(t, `state {
+    value i64
+}
+
+state.run = () {
+    .value = next(.value)
+}
+
+next = (x i64) (out i64) {
+    out = x + 1
+}
+
+new-state = () (out state) {
+    out.value = 0
+}
+
+parse = (source str) (out i64) {
+    p state
+    p = new-state()
+    p.run()
+    out = p.value
+}
+
+unused = () (out i64) {
+    out = 99
+}
+`)
+	filtered := filterByExports(prog, libPath, modPath)
+	kept := make(map[string]bool)
+	for _, stmt := range filtered.Statements {
+		switch s := stmt.(type) {
+		case *parser.FunctionDefinition:
+			kept[s.Name] = true
+		case *parser.StructDefinition:
+			kept[s.Name] = true
+		}
+	}
+	for _, name := range []string{"parse", "new-state", "state", "state.run", "next"} {
+		if !kept[name] {
+			t.Errorf("private dependency %q was filtered out; kept=%v", name, kept)
+		}
+	}
+	if kept["unused"] {
+		t.Error("unrelated private function must remain filtered out")
 	}
 }
 

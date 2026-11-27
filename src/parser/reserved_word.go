@@ -45,7 +45,7 @@ func (p *Parser) warnReservedWordAsIdentifier(tok lexer.Token) {
 	if !isReservedWordToken(tok.Type) || tok.Literal == "" {
 		return
 	}
-	p.warnf(tok, reservedWordID, reservedWordCode,
+	p.warnf(tok, "rswd8k2n", reservedWordCode,
 		"'%s' is a reserved keyword and cannot be used as an identifier; rename it (e.g. '%s')",
 		tok.Literal, tok.Literal+"v")
 }

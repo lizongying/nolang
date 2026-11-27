@@ -53,10 +53,10 @@
 
 ## 四、开 PR 前自查
 
-跑 skill 自带的只读自查脚本（把路径换成你的作者记录）：
+跑 core 自带的只读自查脚本（把路径换成你的作者记录）：
 
 ```bash
-<skill目录>/scripts/precheck.sh repos/github.com/<owner>.noml /Users/lizongying/IdeaProjects/nohub
+<core-dir>/scripts/precheck-nohub.sh repos/github.com/<owner>.noml /Users/lizongying/IdeaProjects/nohub
 ```
 
 脚本只做只读检查：文件是否存在、noml 顶层是否为数组、短名是否合法且不重复，并打印需要网络确认的仓库与 workspace 地址。

@@ -82,10 +82,11 @@ func arraySizeOf(e Expression) (string, int64) {
 //
 // The parser synthesises a `self` result param for methods (see decl.go), so
 // the receiver type is recoverable from the definition itself. lowering.go
-// pushes it onto Parser.methodStructStack while walking a function body —
-// the parse-time push/pop has long since unwound by then, and
-// indexBaseContainerRaw / resolveReceiverType both resolve `self` through
-// that stack (a miss silently disables the D9 write-side `?=` branch).
+// pushes it onto Parser.methodStructStack only while resolving a value-match
+// subject and its reachable dependencies; the parse-time push/pop has long
+// since unwound by then. indexBaseContainerRaw / resolveReceiverType resolve
+// `self` through that scoped stack, so a miss outside the scope must not trigger
+// whole-function receiver inference.
 func functionSelfType(fd *FunctionDefinition) string {
 	if fd == nil {
 		return ""
@@ -98,6 +99,25 @@ func functionSelfType(fd *FunctionDefinition) string {
 	return ""
 }
 
+// funcVarType resolves a function-local type with active synthetic arm
+// bindings taking precedence over the name-keyed semantic symbol table. The
+// stack is lexical and belongs to the current lowering context, so sibling arms
+// cannot overwrite one another's `it` type.
+func (p *Parser) funcVarType(funcName, name string) (string, bool) {
+	if p == nil {
+		return "", false
+	}
+	for i := len(p.armVarTypes) - 1; i >= 0; i-- {
+		if t, ok := p.armVarTypes[i][name]; ok {
+			return t, true
+		}
+	}
+	if p.sem == nil {
+		return "", false
+	}
+	return p.sem.FuncVarType(funcName, name)
+}
+
 // resolveReceiverType 解析方法調用接收者的型別，用於推斷方法返回型別。
 // 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})、
 // 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
@@ -107,7 +127,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 		// setVarType 已不再把函數參數/區域變數寫入全域 VarTypes，若這裡只查
 		// 全域快照，body 解析期將找不到接收者型別（如 `path.split('.')` 的
 		// `path`），導致方法返回型別推斷靜默丟失。
-		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
+		if t, ok := p.funcVarType(p.curFuncName, ident.Value); ok && t != "" {
 			return strings.TrimPrefix(t, "?")
 		}
 		// S1 翻轉後，std 模塊以 surface 形態從 blob 回放，H0 的 scratchParser 帶來
@@ -160,7 +180,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 				// 應解析為 tls.conn.recv）。此回退讓 inferTypeFromCallExpr 能推斷
 				// 方法呼叫的回傳型別，避免 match 的 it 綁定型別缺失而誤報。
 				// 優先查函數作用域表（含全域回退），與 Identifier 分支同理。
-				if t, ok := p.sem.FuncVarType(p.curFuncName, dot.Property); ok && t != "" {
+				if t, ok := p.funcVarType(p.curFuncName, dot.Property); ok && t != "" {
 					return strings.TrimPrefix(t, "?")
 				}
 			}
@@ -619,7 +639,7 @@ func (p *Parser) indexBaseVarType(name string) string {
 		return t.Raw()
 	}
 	if p.sem != nil {
-		if t, ok := p.sem.FuncVarType(p.curFuncName, name); ok && t != "" {
+		if t, ok := p.funcVarType(p.curFuncName, name); ok && t != "" {
 			return t
 		}
 		if t, ok := p.sem.VarTypes[name]; ok && t != nil {
@@ -676,13 +696,17 @@ func (p *Parser) structFieldsOf(typeName string) (map[string]string, bool) {
 	if typeName == "" || p.structFields == nil {
 		return nil, false
 	}
-	if f, ok := p.structFields[typeName]; ok {
-		return f, true
-	}
+	// 先查带模块前缀的键，再查裸名。baked std 表同时含 `json.pool`（正确）与
+	// `pool`（另一模块的同名 struct，字段不同）：若先命中裸名，blob 重建路径
+	// 会把 `cd = .nodes[i]` 的元素推成错误类型（[]node 而非 []value）。
+	// fresh 路径只有裸名时，带前缀查询落空后仍回到裸名，行为不变。
 	if m := p.currentModuleName(); m != "" {
 		if f, ok := p.structFields[m+"."+typeName]; ok {
 			return f, true
 		}
+	}
+	if f, ok := p.structFields[typeName]; ok {
+		return f, true
 	}
 	var found map[string]string
 	for k, f := range p.structFields {

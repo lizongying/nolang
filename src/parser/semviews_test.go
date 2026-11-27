@@ -104,8 +104,20 @@ func TestBuildSemViewsMatchesFreshParse(t *testing.T) {
 				if wantFacts[i] != gotFacts[i] {
 					factDiverged++
 					if factDiverged <= 5 {
-						t.Errorf("%s: fact #%d differs: fresh=%q rebuilt=%q",
-							path, i, wantFacts[i], gotFacts[i])
+						var node Node
+						occurrence := 0
+						walkProgramNodes(fresh, func(n Node) {
+							if occurrence == i {
+								node = n
+							}
+							occurrence++
+						})
+						nodeName := ""
+						if ls, ok := node.(*LetStatement); ok && ls.Name != nil {
+							nodeName = ls.Name.Value
+						}
+						t.Errorf("%s: fact #%d differs: fresh=%q rebuilt=%q node=%T name=%s",
+							path, i, wantFacts[i], gotFacts[i], node, nodeName)
 					}
 					break
 				}

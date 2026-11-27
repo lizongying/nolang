@@ -1,4 +1,9 @@
 ; Public nosql API. The engine is implemented in Nolang and has no SQLite FFI.
+# /example/nosql/src/db
+# /example/nosql/src/ops
+# /example/nosql/src/expr
+# /example/nosql/src/select
+# /example/nosql/src/exec
 @ /example/nosql/src/value.sql-value
 @ /example/nosql/src/value.affinity
 @ /example/nosql/src/value.truth
@@ -26,4 +31,27 @@
 @ /example/nosql/src/codec.serial-of-value
 @ /example/nosql/src/codec.encode-record
 @ /example/nosql/src/codec.decode-record
+@ /example/nosql/src/token.tokenize
+@ /example/nosql/src/ast.sql-node-kind
+@ /example/nosql/src/ast.sql-node
+@ /example/nosql/src/ast.sql-program
+@ /example/nosql/src/ast.new-sql-program
+@ /example/nosql/src/parser.parse-sql
+@ /example/nosql/src/schema.db-column
+@ /example/nosql/src/schema.db-row
+@ /example/nosql/src/schema.db-table
+@ /example/nosql/src/schema.db-catalog
+@ /example/nosql/src/schema.new-db-catalog
+@ /example/nosql/src/schema.base-name
+@ /example/nosql/src/schema.same-name
+@ /example/nosql/src/analyzer.bound-source
+@ /example/nosql/src/analyzer.analysis-scope
+@ /example/nosql/src/analyzer.sql-analyzer
+@ /example/nosql/src/analyzer.new-sql-analyzer
+@ /example/nosql/src/analyzer.sql-analyzer.has-error
+@ /example/nosql/src/analyzer.sql-analyzer.analyze-program
+@ /example/nosql/src/db.db-execution
+@ /example/nosql/src/db.memory-db
+@ /example/nosql/src/db.new-memory-db
+@ /example/nosql/src/exec.memory-db.execute
 @ /example/nosql/src/test-support.new make-test-context

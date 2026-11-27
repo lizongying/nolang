@@ -1,0 +1,201 @@
+; In-memory schema catalog. Tables and rows are value-owned; mutations replace
+; complete vector elements so the catalog remains valid under Nolang move rules.
+# /example/nosql/src/ast
+# /example/nosql/src/value
+
+db-column {
+    name str
+    declared str
+    affinity affinity
+    flags i64
+    default-node i64
+    default-value sql-value
+    has-default bool
+}
+
+db-row {
+    rowid i64
+    values []sql-value
+}
+
+db-table {
+    name str
+    columns []db-column
+    rows []db-row
+    next-rowid i64
+    flags i64
+}
+
+db-catalog {
+    tables []db-table
+}
+
+new-db-catalog = () (out db-catalog) {
+    out = db-catalog{
+        tables: []
+    }
+}
+
+empty-db-column = () (out db-column) {
+    out = db-column{
+        name: ''
+        declared: ''
+        affinity: integer-affinity
+        flags: 0
+        default-node: -1
+        default-value: sql-null
+        has-default: false
+    }
+}
+
+empty-db-row = () (out db-row) {
+    out = db-row{
+        rowid: 0
+        values: []
+    }
+}
+
+empty-db-table = () (out db-table) {
+    out = db-table{
+        name: ''
+        columns: []
+        rows: []
+        next-rowid: 1
+        flags: 0
+    }
+}
+
+base-name = (name str) (out str) {
+    out = name
+    parts = name.split('.')
+    parts.len() == 0 -> return
+    last ?i64 = parts.len() - 1
+    last: {
+        ok(number) -> index = number
+
+        -> index = 0
+    }
+    out = parts[index]: {
+        ok -> it
+
+        -> name
+    }
+}
+
+same-name = (left str, right str) (yes bool) {
+    yes = left.to-upper() == right.to-upper()
+}
+
+find-db-column = (columns []db-column, name str) (index i64) {
+    index = -1
+    i <- [0..columns.len()): {
+        column = columns[i]: {
+            ok -> it
+
+            -> empty-db-column()
+        }
+
+        same-name(column.name, name) -> {
+            index = i
+            break
+        }
+    }
+}
+
+db-table.find-column = (name str) (index i64) {
+    index = find-db-column(.columns, name)
+}
+
+db-table.column = (index i64) (out db-column) {
+    index < 0 -> return
+    index >= .columns.len() -> return
+    out = .columns[index]: {
+        ok -> it
+
+        -> empty-db-column()
+    }
+}
+
+db-table.row = (index i64) (out db-row) {
+    index < 0 -> return
+    index >= .rows.len() -> return
+    out = .rows[index]: {
+        ok -> it
+
+        -> empty-db-row()
+    }
+}
+
+db-catalog.find-table = (name str) (index i64) {
+    index = -1
+    wanted = base-name(name)
+    i <- [0.. .tables.len()): {
+        table = .tables[i]: {
+            ok -> it
+
+            -> empty-db-table()
+        }
+
+        same-name(table.name, wanted) -> {
+            index = i
+            break
+        }
+    }
+}
+
+db-catalog.table = (index i64) (out db-table) {
+    index < 0 -> return
+    index >= .tables.len() -> return
+    out = .tables[index]: {
+        ok -> it
+
+        -> empty-db-table()
+    }
+}
+
+db-catalog.replace-table = (index i64, table db-table) {
+    index < 0 -> return
+    index >= .tables.len() -> return
+    .tables[index]: {
+        ok -> it = table
+
+        -> _
+    }
+}
+
+db-catalog.remove-table = (index i64) {
+    index < 0 -> return
+    index >= .tables.len() -> return
+    .tables.remove(index)
+}
+
+db-table.replace-row = (index i64, row db-row) {
+    index < 0 -> return
+    index >= .rows.len() -> return
+    .rows[index]: {
+        ok -> it = row
+
+        -> _
+    }
+}
+
+db-table.append-row = (row db-row) {
+    .rows.push(row)
+    rowid = row.rowid
+    rowid >= .next-rowid -> {
+        next-id ?i64 = rowid + 1
+        next-id: {
+            ok -> .next-rowid = it
+
+            -> _
+        }
+    }
+}
+
+db-table.row-count = () (count i64) {
+    count = .rows.len()
+}
+
+db-catalog.table-count = () (count i64) {
+    count = .tables.len()
+}

@@ -1,0 +1,685 @@
+; Schema-aware validation over the flat SQL AST. The analyzer records output
+; names and aggregate usage while leaving execution policy to the executor.
+# /example/nosql/src/ast
+# /example/nosql/src/schema
+# /example/nosql/src/value
+
+bound-source {
+    table-name str
+    alias str
+    table-index i64
+    columns []db-column
+}
+
+analysis-scope {
+    sources []bound-source
+}
+
+sql-analyzer {
+    program sql-program
+    catalog db-catalog
+    scope analysis-scope
+    output-names []str
+    error-message str
+    error-offset i64
+    aggregate-found bool
+    parameter-count i64
+}
+
+empty-bound-source = () (out bound-source) {
+    out = bound-source{
+        table-name: ''
+        alias: ''
+        table-index: -1
+        columns: []
+    }
+}
+
+new-sql-analyzer = (program sql-program, catalog db-catalog) (out sql-analyzer) {
+    out = sql-analyzer{
+        program: program
+        catalog: catalog
+        scope: analysis-scope{
+            sources: []
+        }
+        output-names: []
+        error-offset: -1
+        parameter-count: 0
+    }
+}
+
+sql-analyzer.has-error = () (yes bool) {
+    yes = .error-message != ''
+}
+
+sql-analyzer.fail = (message str, id i64) {
+    .error-message != '' -> return
+    node = .program.node(id)
+    .error-message = message
+    .error-offset = node.offset
+}
+
+sql-analyzer.fail-at = (message str, offset i64) {
+    .error-message != '' -> return
+    .error-message = message
+    .error-offset = offset
+}
+
+sql-analyzer.reset-scope = () {
+    .scope = analysis-scope{
+        sources: []
+    }
+    .output-names = []
+    .aggregate-found = false
+}
+
+sql-analyzer.analyze-program = () {
+    i <- [0.. .program.statements.len()): {
+        id = .program.statements[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        id < 0 -> continue
+        .reset-scope()
+        .analyze-statement(id)
+        .has-error() -> break
+    }
+}
+
+sql-analyzer.analyze-statement = (id i64) {
+    node = .program.node(id)
+    kind = node.kind
+    {
+        kind == sql-select -> .analyze-select(id)
+
+        kind == sql-values -> .analyze-values(node.a)
+
+        kind == sql-insert -> .analyze-insert(node)
+
+        kind == sql-update -> .analyze-update(node)
+
+        kind == sql-delete -> .analyze-delete(node)
+
+        kind == sql-create-table -> .analyze-create-table(node)
+
+        kind == sql-drop-table -> {
+            .catalog.find-table(node.text) < 0 -> .fail('no such table: ' - node.text, id)
+        }
+
+        kind == sql-create-index -> {
+            table-index = .catalog.find-table(.program.node(node.b).text)
+            table-index < 0 -> .fail('no such table: ' - .program.node(node.b).text, id)
+        }
+
+        kind == sql-create-view -> .analyze-select(node.a)
+
+        kind == sql-begin || kind == sql-commit || kind == sql-rollback || kind == sql-savepoint || kind == sql-release || kind == sql-pragma -> {
+        }
+
+        -> .fail('unsupported SQL statement', id)
+    }
+}
+
+sql-analyzer.analyze-select = (id i64) {
+    node = .program.node(id)
+    .program.child(id, 0) >= 0 -> .fail('CTE analysis is not implemented yet', id)
+    .has-error() -> return
+    from-id = .program.child(id, 2)
+    from-id >= 0 -> .bind-from(from-id)
+    .has-error() -> return
+    projection-list = .program.child(id, 1)
+    .analyze-projection-list(projection-list)
+    .has-error() -> return
+    where-id = .program.child(id, 3)
+    where-id >= 0 -> .analyze-expression(where-id)
+    .has-error() -> return
+    group-id = .program.child(id, 4)
+    group-id >= 0 -> .analyze-expression-list(group-id)
+    .has-error() -> return
+    having-id = .program.child(id, 5)
+    having-id >= 0 -> .analyze-expression(having-id)
+    .has-error() -> return
+    order-id = .program.child(id, 6)
+    order-id >= 0 -> .analyze-order-list(order-id)
+    .has-error() -> return
+    limit-id = .program.child(id, 7)
+    limit-id >= 0 -> .analyze-expression(limit-id)
+    offset-id = .program.child(id, 8)
+    offset-id >= 0 -> .analyze-expression(offset-id)
+}
+
+sql-analyzer.bind-from = (id i64) {
+    node = .program.node(id)
+    {
+        node.kind == sql-from-table -> {
+            table-index = .catalog.find-table(node.text)
+            table-index < 0 -> {
+                .fail('no such table: ' - node.text, id)
+                return
+            }
+
+            table = .catalog.table(table-index)
+            alias = base-name(table.name)
+            node.a >= 0 -> alias = .program.node(node.a).text
+            .scope.sources.push(bound-source{
+                table-name: table.name
+                alias: alias
+                table-index: table-index
+                columns: table.columns
+            })
+        }
+
+        node.kind == sql-list -> {
+            i <- [0..node.kids.len()): {
+                child = node.kids[i]: {
+                    ok -> it
+
+                    -> -1
+                }
+
+                child >= 0 -> .bind-from(child)
+                .has-error() -> break
+            }
+        }
+
+        node.kind == sql-join -> {
+            .bind-from(node.a)
+            .has-error() -> return
+            .bind-from(node.b)
+            .has-error() -> return
+            node.c >= 0 -> .analyze-expression(node.c)
+            node.kids.len() > 0 -> {
+                using-id = node.kids[0]: {
+                    ok -> it
+
+                    -> -1
+                }
+
+                using-id >= 0 -> .analyze-using-list(using-id)
+            }
+        }
+
+        -> .fail('invalid FROM clause', id)
+    }
+}
+
+sql-analyzer.analyze-using-list = (id i64) {
+    node = .program.node(id)
+    i <- [0..node.kids.len()): {
+        column-id = node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        column-id < 0 -> continue
+        column = .program.node(column-id)
+        source = 0
+        column-index = 0
+        matches = 0
+        .resolve-column(column.text, source, column-index, matches)
+        matches == 0 -> .fail('no such column: ' - column.text, column-id)
+    }
+}
+
+sql-analyzer.analyze-projection-list = (id i64) {
+    id < 0 -> {
+        .fail('SELECT requires a projection list', id)
+        return
+    }
+
+    node = .program.node(id)
+    node.kind != sql-list -> {
+        .fail('invalid projection list', id)
+        return
+    }
+
+    i <- [0..node.kids.len()): {
+        projection-id = node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        projection-id < 0 -> continue
+        projection = .program.node(projection-id)
+        projection.kind != sql-projection -> {
+            .fail('invalid projection', projection-id)
+            continue
+        }
+
+        expression = .program.node(projection.a)
+        {
+            expression.kind == sql-star -> {
+                .expand-star(expression)
+            }
+
+            -> {
+                .analyze-expression(projection.a)
+                name = projection.text
+                name == '' -> name = .expression-name(projection.a)
+                .output-names.push(name)
+            }
+        }
+    }
+}
+
+sql-analyzer.expand-star = (star sql-node) {
+    qualifier = star.text
+    qualifier == '*' -> qualifier = ''
+    i <- [0.. .scope.sources.len()): {
+        source = .scope.sources[i]: {
+            ok -> it
+
+            -> empty-bound-source()
+        }
+
+        qualifier != '' -> {
+            same-name(qualifier, source.alias) == false -> {
+                same-name(qualifier, base-name(source.table-name)) == false -> continue
+            }
+        }
+
+        j <- [0..source.columns.len()): {
+            column = source.columns[j]: {
+                ok -> it
+
+                -> schema.empty-db-column()
+            }
+
+            .output-names.push(column.name)
+        }
+    }
+}
+
+sql-analyzer.expression-name = (id i64) (name str) {
+    node = .program.node(id)
+    name = node.text
+    name != '' -> return
+    {
+        node.kind == sql-column -> name = node.text
+
+        node.kind == sql-literal-integer || node.kind == sql-literal-real || node.kind == sql-literal-string -> name = node.text
+
+        node.kind == sql-function -> name = node.text
+
+        -> name = 'expression'
+    }
+}
+
+sql-analyzer.analyze-expression-list = (id i64) {
+    node = .program.node(id)
+    i <- [0..node.kids.len()): {
+        child = node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        child >= 0 -> .analyze-expression(child)
+        .has-error() -> break
+    }
+}
+
+sql-analyzer.output-alias-index = (name str) (index i64) {
+    index = -1
+    i <- [0.. .output-names.len()): {
+        output-name = .output-names[i]: {
+            ok -> it
+
+            -> ''
+        }
+
+        same-name(output-name, name) -> {
+            index = i
+            break
+        }
+    }
+}
+
+sql-analyzer.analyze-order-list = (id i64) {
+    node = .program.node(id)
+    i <- [0..node.kids.len()): {
+        item-id = node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        item-id < 0 -> continue
+        item = .program.node(item-id)
+        expression = .program.node(item.a)
+        expression.kind == sql-literal-integer -> {
+            ordinal = expression.text.to-i64()
+            ordinal: {
+                ok(number) -> {
+                    number >= 1 -> {
+                        number > .output-names.len() -> .fail('ORDER BY term out of range', item-id)
+                    }
+                }
+
+                -> _
+            }
+        }
+
+        expression.kind != sql-literal-integer -> {
+            alias-index = -1
+            expression.kind == sql-column -> alias-index = .output-alias-index(expression.text)
+            alias-index < 0 -> .analyze-expression(item.a)
+        }
+        .has-error() -> break
+    }
+}
+
+sql-analyzer.analyze-expression = (id i64) {
+    id < 0 -> return
+    node = .program.node(id)
+    {
+        node.kind == sql-literal-null || node.kind == sql-literal-integer || node.kind == sql-literal-real || node.kind == sql-literal-string || node.kind == sql-literal-blob -> {
+        }
+
+        node.kind == sql-column -> {
+            source = 0
+            column-index = 0
+            matches = 0
+            .resolve-column(node.text, source, column-index, matches)
+            matches == 0 -> .fail('no such column: ' - node.text, id)
+            matches > 1 -> .fail('ambiguous column name: ' - node.text, id)
+        }
+
+        node.kind == sql-parameter -> {
+            node.flags > .parameter-count -> .parameter-count = node.flags
+        }
+
+        node.kind == sql-unary -> .analyze-expression(node.a)
+
+        node.kind == sql-binary -> {
+            .analyze-expression(node.a)
+            .analyze-expression(node.b)
+        }
+
+        node.kind == sql-collate || node.kind == sql-cast -> .analyze-expression(node.a)
+
+        node.kind == sql-is || node.kind == sql-like -> {
+            .analyze-expression(node.a)
+            node.b >= 0 -> .analyze-expression(node.b)
+        }
+
+        node.kind == sql-between -> {
+            .analyze-expression(node.a)
+            .analyze-expression(node.b)
+            .analyze-expression(node.c)
+        }
+
+        node.kind == sql-in -> {
+            .analyze-expression(node.a)
+            right = .program.node(node.b)
+            right.kind == sql-list -> .analyze-expression-list(node.b)
+            right.kind != sql-list -> .analyze-expression(node.b)
+        }
+
+        node.kind == sql-case -> {
+            node.a >= 0 -> .analyze-expression(node.a)
+            node.b >= 0 -> .analyze-expression(node.b)
+            i <- [0..node.kids.len()): {
+                when-id = node.kids[i]: {
+                    ok -> it
+
+                    -> -1
+                }
+
+                when-id < 0 -> continue
+                when-node = .program.node(when-id)
+                .analyze-expression(when-node.a)
+                .analyze-expression(when-node.b)
+            }
+        }
+
+        node.kind == sql-function -> .analyze-function(node)
+
+        node.kind == sql-subquery -> {
+            old-scope = .scope
+            old-names = .output-names
+            old-aggregate = .aggregate-found
+            .reset-scope()
+            .analyze-select(node.a)
+            .scope = old-scope
+            .output-names = old-names
+            .aggregate-found = old-aggregate
+        }
+
+        -> .fail('unsupported expression', id)
+    }
+}
+
+sql-analyzer.analyze-function = (node sql-node) {
+    name = node.text.to-upper()
+    i <- [0..node.kids.len()): {
+        argument = node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        argument >= 0 -> {
+            argument-node = .program.node(argument)
+            argument-node.kind == sql-star -> {
+                name != 'COUNT' -> .fail('wrong number of arguments to function ' - node.text, argument)
+                node.kids.len() != 1 -> .fail('wrong number of arguments to function ' - node.text, argument)
+            }
+
+            argument-node.kind != sql-star -> .analyze-expression(argument)
+        }
+    }
+
+    {
+        name == 'COUNT' || name == 'SUM' || name == 'AVG' || name == 'TOTAL' || name == 'GROUP_CONCAT' -> {
+            .aggregate-found = true
+        }
+
+        name == 'MIN' || name == 'MAX' -> {
+            node.kids.len() == 1 -> .aggregate-found = true
+        }
+
+        name == 'ABS' || name == 'COALESCE' || name == 'IFNULL' || name == 'NULLIF' || name == 'LENGTH' || name == 'LOWER' || name == 'UPPER' || name == 'SUBSTR' || name == 'SUBSTRING' || name == 'TRIM' || name == 'LTRIM' || name == 'RTRIM' || name == 'ROUND' || name == 'TYPEOF' || name == 'QUOTE' || name == 'REPLACE' || name == 'INSTR' || name == 'HEX' || name == 'UNICODE' || name == 'LIKELIHOOD' || name == 'LIKELY' || name == 'UNLIKELY' -> {
+        }
+
+        -> .fail-at('no such function: ' - node.text, node.offset)
+    }
+}
+
+sql-analyzer.resolve-column = (name str) (source-out i64, column-out i64, matches-out i64) {
+    source-out = -1
+    column-out = -1
+    matches-out = 0
+    parts = name.split('.')
+    qualifier = ''
+    local = name
+    parts.len() > 1 -> {
+        qualifier = parts[0]: {
+            ok -> it
+
+            -> ''
+        }
+
+        last-index ?i64 = parts.len() - 1
+        last-index: {
+            ok(index-number) -> {
+                local = parts[index-number]: {
+                    ok -> it
+
+                    -> name
+                }
+            }
+
+            -> {
+                local = name
+            }
+        }
+    }
+
+    i <- [0.. .scope.sources.len()): {
+        source = .scope.sources[i]: {
+            ok -> it
+
+            -> empty-bound-source()
+        }
+
+        qualifier != '' -> {
+            same-name(qualifier, source.alias) == false -> {
+                same-name(qualifier, base-name(source.table-name)) == false -> continue
+            }
+        }
+
+        table = .catalog.table(source.table-index)
+        column-index = table.find-column(local)
+        column-index >= 0 -> {
+            next-match ?i64 = matches-out + 1
+            next-match: {
+                ok -> matches-out = it
+
+                -> _
+            }
+            source-out = i
+            column-out = column-index
+            continue
+        }
+
+        local.to-upper() == 'ROWID' || local.to-upper() == '_ROWID_' || local.to-upper() == 'OID' -> {
+            next-match ?i64 = matches-out + 1
+            next-match: {
+                ok -> matches-out = it
+
+                -> _
+            }
+            source-out = i
+            column-out = -1
+        }
+    }
+}
+
+sql-analyzer.analyze-values = (id i64) {
+    node = .program.node(id)
+    i <- [0..node.kids.len()): {
+        row-id = node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        row-id < 0 -> continue
+        row-node = .program.node(row-id)
+        .analyze-expression-list(row-node.a)
+        .has-error() -> break
+    }
+}
+
+sql-analyzer.analyze-insert = (node sql-node) {
+    table-index = .catalog.find-table(node.text)
+    table-index < 0 -> {
+        .fail-at('no such table: ' - node.text, node.offset)
+        return
+    }
+
+    table = .catalog.table(table-index)
+    node.a >= 0 -> {
+        columns = .program.node(node.a)
+        i <- [0..columns.kids.len()): {
+            column-id = columns.kids[i]: {
+                ok -> it
+
+                -> -1
+            }
+
+            column-id < 0 -> continue
+            column = .program.node(column-id)
+            table.find-column(column.text) < 0 -> .fail('no such column: ' - column.text, column-id)
+        }
+    }
+
+    node.b >= 0 -> .analyze-values(node.b)
+    node.c >= 0 -> .analyze-select(node.c)
+}
+
+sql-analyzer.analyze-update = (node sql-node) {
+    table-index = .catalog.find-table(node.text)
+    table-index < 0 -> {
+        .fail-at('no such table: ' - node.text, node.offset)
+        return
+    }
+
+    table = .catalog.table(table-index)
+    .scope.sources.push(bound-source{
+        table-name: table.name
+        alias: base-name(table.name)
+        table-index: table-index
+        columns: table.columns
+    })
+    assignments = .program.node(node.a)
+    i <- [0..assignments.kids.len()): {
+        assignment-id = assignments.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        assignment-id < 0 -> continue
+        assignment = .program.node(assignment-id)
+        table.find-column(assignment.text) < 0 -> .fail('no such column: ' - assignment.text, assignment-id)
+        .analyze-expression(assignment.b)
+    }
+
+    node.c >= 0 -> .analyze-expression(node.c)
+}
+
+sql-analyzer.analyze-delete = (node sql-node) {
+    table-index = .catalog.find-table(node.text)
+        table-index < 0 -> {
+        .fail-at('no such table: ' - node.text, node.offset)
+        return
+    }
+
+    table = .catalog.table(table-index)
+    .scope.sources.push(bound-source{
+        table-name: table.name
+        alias: base-name(table.name)
+        table-index: table-index
+        columns: table.columns
+    })
+    node.c >= 0 -> .analyze-expression(node.c)
+}
+
+sql-analyzer.analyze-create-table = (node sql-node) {
+    .catalog.find-table(node.text) >= 0 -> {
+        .fail-at('table already exists: ' - node.text, node.offset)
+        return
+    }
+
+    definitions = .program.node(node.a)
+    names []str = []
+    i <- [0..definitions.kids.len()): {
+        definition-id = definitions.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        definition-id < 0 -> continue
+        definition = .program.node(definition-id)
+        definition.kind != sql-column-def -> continue
+        j <- [0..names.len()): {
+            existing = names[j]: {
+                ok -> it
+
+                -> ''
+            }
+
+            same-name(existing, definition.text) -> .fail('duplicate column name: ' - definition.text, definition-id)
+        }
+
+        names.push(definition.text)
+        definition.a >= 0 -> .analyze-expression(definition.a)
+    }
+}

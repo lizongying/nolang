@@ -55,6 +55,43 @@ converted-int: {
     -> ctx.check(false, 'INTEGER affinity must produce INTEGER')
 }
 
+converted-real = value.apply-affinity(value.text-value('3.5'), value.affinity.real-affinity)
+ctx.check(converted-real.kind-name() == 'real', 'REAL affinity converts decimal text')
+converted-real-number = converted-real.to-real()
+converted-real-number: {
+    ok(v) -> ctx.check(v == 3.5, 'REAL affinity preserves the numeric value: ' - v.to-str())
+
+    -> ctx.check(false, 'REAL affinity must produce REAL')
+}
+
+converted-integer-real = value.apply-affinity(value.text-value('42'), value.affinity.real-affinity)
+ctx.check(converted-integer-real.kind-name() == 'real', 'REAL affinity converts integral text to REAL')
+converted-numeric-real = value.apply-affinity(value.text-value('3.5'), value.affinity.numeric-affinity)
+ctx.check(converted-numeric-real.kind-name() == 'real', 'NUMERIC affinity converts decimal text: ' - converted-numeric-real.kind-name())
+converted-direct-real = value.apply-affinity(value.integer-value(42), value.affinity.real-affinity)
+ctx.check(converted-direct-real.kind-name() == 'real', 'REAL affinity converts INTEGER values')
+parsed-decimal = '3.5'.to-f64()
+parsed-decimal: {
+    ok(v) -> ctx.check(v == 3.5, 'decimal text parses as f64')
+
+    -> ctx.check(false, 'decimal text must parse as f64')
+}
+sample-decimal = '3.5'
+integer-attempt = sample-decimal.to-i64()
+integer-attempt: {
+    ok -> ctx.check(false, 'decimal text must not parse as INTEGER')
+
+    err -> ctx.check(true, 'decimal text rejects INTEGER parsing')
+
+    nil -> ctx.check(false, 'decimal text must not be empty')
+}
+real-attempt = sample-decimal.to-f64()
+real-attempt: {
+    ok(v) -> ctx.check(v == 3.5, 'decimal text parses after an integer attempt')
+
+    -> ctx.check(false, 'integer parsing must not consume decimal text')
+}
+
 ctx.check(value.integer-value(0).to-truth() == value.truth.sql-false, 'zero is false')
 ctx.check(value.integer-value(1).to-truth() == value.truth.sql-true, 'nonzero is true')
 ctx.check(n.to-truth() == value.truth.unknown, 'NULL truth is unknown')

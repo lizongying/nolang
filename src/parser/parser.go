@@ -50,15 +50,16 @@ type Parser struct {
 	methodSignatures map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
 	structFields     map[string]map[string]string // struct 名 → 欄位名 → 型別字串
 
-	// astVarTypeBusy 是 astLocalVarType 的在途集合（鍵 "func\x00var"）。
+	// astVarTypeBusy 是 astLocalVarType 的在途集合（鍵含 func／var／接收者上下文）。
 	// astLocalVarType 會為「let 的 RHS 是呼叫」去問 returnTypeFromCallExpr，
 	// 後者又要解析接收者型別，可能再回到 astLocalVarType（`x = f(x)`、
 	// `a = b` / `b = a` 之類的自引用或環）。沒有這道守衛就是無限遞迴——
 	// 表現為 genstdsig 在 runtime 疊爆堆疊（mgc.go 崩）。
 	astVarTypeBusy map[string]bool
 	// astVarTypeCache 是 astLocalVarType 的結果快取（同鍵），含「查無」的負快取。
-	// H0 降糖期同一個 (函式, 變數) 會被反覆發問，每次都重走函式體會讓
-	// genstdsig 跑不完。
+	// H0 降糖期同一個 (函式, 變數, 接收者) 會被反覆發問，每次都重走函式體
+	// 會讓 genstdsig 跑不完；接收者上下文必須入鍵，避免 scoped lookup 讀到
+	// 無 methodStructStack 時留下的負快取。
 	astVarTypeCache map[string]string
 	// astScopeIndex 是 computeAstLocalVarType 的函式體作用域索引（鍵：函式定義
 	// 指標）。原本每個被查詢的變數都要重跑三趟全樹反射走訪（實測佔單次建置
@@ -95,6 +96,13 @@ type Parser struct {
 	// sem.FuncVarTypes / VarTypes，避免 `a`/`av` 等常見名竄改 std 函式
 	// 區域變數型別（跨函數型別污染會讓 str.to-i8 等 std 函式 codegen 崩潰）。
 	idxLocalTypes map[string]map[string]*ty.Type
+
+	// armVarTypes holds lexical type overrides for synthetic match-arm bindings.
+	// The semantic symbol table is keyed by function and name, so it cannot
+	// represent sibling arms whose implicit `it` has different types. H0 pushes
+	// one map while lowering each rewritten arm body and scratch parsers inherit
+	// the active stack for nested matches.
+	armVarTypes []map[string]string
 
 	// pendingAnnotations 暫存待附加到宣告的註解條目
 	pendingAnnotations []*AnnotationEntry
@@ -830,8 +838,8 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 		// e.g. { .scheme == 'http' -> ... }
 		// But if .field is followed by = (assignment), it's a statement block,
 		// not a match arm. e.g. -> { .connected = false ... }
-		// Also, .method() (LPAREN after IDENT) is a method call statement,
-		// not a match arm pattern.
+		// A .method() prefix can be either a statement or an arm condition.
+		// Scan its balanced call for a top-level -> before deciding.
 		if tok2.Type == lexer.IDENT {
 			var tok3 lexer.Token
 			if base == -1 {
@@ -843,7 +851,33 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 				return blockUnknown // statement block, not match
 			}
 			if tok3.Type == lexer.LPAREN {
-				return blockUnknown // method call statement, not match
+				depth := 0
+				for i := base + 2; i < base+40; i++ {
+					t := p.look(i)
+					switch t.Type {
+					case lexer.LPAREN, lexer.LBRACE, lexer.LBRACKET:
+						depth++
+					case lexer.RPAREN, lexer.RBRACKET:
+						if depth == 0 {
+							return blockUnknown
+						}
+						depth--
+					case lexer.RBRACE:
+						if depth == 0 {
+							return blockUnknown
+						}
+						depth--
+					case lexer.RARROW:
+						if depth == 0 {
+							return blockMatch
+						}
+					case lexer.NEWLINE, lexer.EOF:
+						if depth == 0 {
+							return blockUnknown
+						}
+					}
+				}
+				return blockUnknown
 			}
 		}
 		return blockMatch

@@ -1,0 +1,189 @@
+# /example/nosql/src/test-support test-support
+# /example/nosql/src/ast
+# /example/nosql/src/parser
+# /example/nosql/src/db
+# /example/nosql/src/exec
+# /example/nosql/src/value
+# /example/nosql/src/error codes
+
+CTX = test-support.new()
+DB = new-memory-db()
+
+run = (source str) (out db-execution) {
+    program = parser.parse-sql(source)
+    out = DB.execute(program, [])
+}
+
+run-with = (source str, parameters []sql-value) (out db-execution) {
+    program = parser.parse-sql(source)
+    out = DB.execute(program, parameters)
+}
+
+check-value = (actual sql-value, expected sql-value, message str) {
+    CTX.check(compare(actual, expected) == 0 && actual.kind-name() == expected.kind-name(), message)
+}
+
+created = run('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score INTEGER DEFAULT 7, tag TEXT UNIQUE)')
+CTX.check(created.result.is-ok(), 'CREATE TABLE succeeds: ' - created.result.message)
+
+inserted = run(`
+INSERT INTO items(name, tag) VALUES ('alpha', 'a'), ('beta', 'b'), ('gamma', NULL)
+`)
+CTX.check(inserted.result.is-ok(), 'multi-row INSERT succeeds: ' - inserted.result.message)
+CTX.check(inserted.rows.len() == 0, 'INSERT without RETURNING has no rows')
+
+returned = run(`
+INSERT INTO items(name, tag) VALUES ('delta', 'd') RETURNING id, name, score
+`)
+CTX.check(returned.result.is-ok(), 'INSERT RETURNING succeeds: ' - returned.result.message)
+CTX.check(returned.names.len() == 3, 'INSERT RETURNING preserves column names')
+CTX.check(returned.rows.len() == 1, 'INSERT RETURNING returns one row')
+returned.rows[0]: {
+    ok -> {
+        check-value(it.values[0], integer(4), 'integer primary key is assigned')
+        check-value(it.values[1], text('delta'), 'RETURNING sees inserted text')
+        check-value(it.values[2], integer(7), 'column default is applied')
+    }
+
+    -> CTX.check(false, 'INSERT RETURNING row must be present')
+}
+
+selected = run('SELECT id, name, score, tag FROM items ORDER BY id DESC LIMIT 2 OFFSET 1')
+CTX.check(selected.result.is-ok(), 'ordered SELECT succeeds: ' - selected.result.message)
+CTX.check(selected.rows.len() == 2, 'LIMIT and OFFSET bound the result')
+selected.rows[0]: {
+    ok -> {
+        check-value(it.values[0], integer(3), 'OFFSET skips the newest row')
+        check-value(it.values[1], text('gamma'), 'ordered projection preserves text')
+        check-value(it.values[2], integer(7), 'stored default remains an integer')
+        CTX.check(it.values[3].is-null(), 'NULL remains NULL')
+    }
+
+    -> CTX.check(false, 'first ordered row must be present')
+}
+selected.rows[1]: {
+    ok -> check-value(it.values[0], integer(2), 'second ordered row id')
+
+    -> CTX.check(false, 'second ordered row must be present')
+}
+
+bound = run-with('SELECT name FROM items WHERE id >= ?1 ORDER BY id', [integer(2)])
+CTX.check(bound.result.is-ok(), 'bound SELECT succeeds: ' - bound.result.message)
+CTX.check(bound.rows.len() == 3, 'SQL parameter filters rows')
+
+updated = run(`
+UPDATE items SET score = score + 5, name = 'BETA' WHERE id = 2 RETURNING id, name, score
+`)
+CTX.check(updated.result.is-ok(), 'UPDATE RETURNING succeeds: ' - updated.result.message)
+CTX.check(updated.rows.len() == 1, 'UPDATE RETURNING returns one row')
+updated.rows[0]: {
+    ok -> {
+        check-value(it.values[1], text('BETA'), 'UPDATE applies text assignment')
+        check-value(it.values[2], integer(12), 'UPDATE expression reads the old row')
+        check-value(it.values[0], integer(2), 'UPDATE RETURNING preserves rowid')
+    }
+
+    -> CTX.check(false, 'updated row must be present')
+}
+
+deleted = run('DELETE FROM items WHERE id = 3 RETURNING id, name')
+CTX.check(deleted.result.is-ok(), 'DELETE RETURNING succeeds: ' - deleted.result.message)
+CTX.check(deleted.rows.len() == 1, 'DELETE RETURNING returns one row')
+deleted.rows[0]: {
+    ok -> {
+        check-value(it.values[0], integer(3), 'DELETE RETURNING preserves deleted rowid')
+        check-value(it.values[1], text('gamma'), 'DELETE RETURNING sees deleted values')
+    }
+
+    -> CTX.check(false, 'deleted row must be present')
+}
+
+before-failure = run('SELECT COUNT(*) AS n FROM items')
+before-failure.rows[0]: {
+    ok -> check-value(it.values[0], integer(3), 'three rows remain before failed INSERT')
+
+    -> CTX.check(false, 'count row must be present')
+}
+
+failed-insert = run(`
+INSERT INTO items(name, tag) VALUES ('duplicate-a', 'd'), ('duplicate-b', 'd')
+`)
+CTX.check(failed-insert.result.is-error(), 'UNIQUE violation fails the statement')
+after-failure = run('SELECT COUNT(*) AS n FROM items')
+after-failure.rows[0]: {
+    ok -> check-value(it.values[0], integer(3), 'failed multi-row INSERT rolls back earlier rows')
+
+    -> CTX.check(false, 'count row after failure must be present')
+}
+
+not-null = run(`
+INSERT INTO items(name, tag) VALUES (NULL, 'not-null')
+`)
+CTX.check(not-null.result.is-error(), 'NOT NULL violation is rejected')
+
+missing-column = run('SELECT missing FROM items')
+CTX.check(missing-column.result.is-error(), 'unknown column is rejected before execution')
+
+aggregate-created = run('CREATE TABLE sales (dept TEXT, amount INTEGER)')
+CTX.check(aggregate-created.result.is-ok(), 'sales table is created')
+aggregate-inserted = run(`
+INSERT INTO sales VALUES ('a', 5), ('a', 8), ('b', 20), ('b', 1), ('c', 2)
+`)
+CTX.check(aggregate-inserted.result.is-ok(), 'sales rows are inserted')
+aggregated = run('SELECT dept, COUNT(*) AS n, SUM(amount) AS total, AVG(amount) AS mean FROM sales GROUP BY dept HAVING SUM(amount) > 10 ORDER BY total DESC')
+CTX.check(aggregated.result.is-ok(), 'grouped aggregate SELECT succeeds: ' - aggregated.result.message)
+CTX.check(aggregated.rows.len() == 2, 'HAVING filters groups')
+aggregated.rows[0]: {
+    ok -> {
+        check-value(it.values[0], text('b'), 'largest aggregate group sorts first')
+        check-value(it.values[1], integer(2), 'COUNT(*) counts group rows')
+        check-value(it.values[2], integer(21), 'SUM preserves integer storage class')
+        check-value(it.values[3], real(10.5), 'AVG returns a real')
+    }
+
+    -> CTX.check(false, 'first aggregate row must be present')
+}
+aggregated.rows[1]: {
+    ok -> {
+        check-value(it.values[0], text('a'), 'second aggregate group follows')
+        check-value(it.values[1], integer(2), 'second group count')
+        check-value(it.values[2], integer(13), 'second group sum')
+    }
+
+    -> CTX.check(false, 'second aggregate row must be present')
+}
+
+values = run(`
+VALUES (1, 'x'), (2, 'y')
+`)
+CTX.check(values.result.is-ok(), 'VALUES executes: ' - values.result.message)
+CTX.check(values.rows.len() == 2, 'VALUES preserves row count')
+values.rows[1]: {
+    ok -> {
+        check-value(it.values[0], integer(2), 'VALUES preserves integer value')
+        check-value(it.values[1], text('y'), 'VALUES preserves text value')
+    }
+
+    -> CTX.check(false, 'second VALUES row must be present')
+}
+
+affinity-created = run('CREATE TABLE affinity (i INTEGER, r REAL, t TEXT, b BLOB)')
+CTX.check(affinity-created.result.is-ok(), 'affinity table is created')
+affinity-inserted = run(`
+INSERT INTO affinity VALUES ('42', '3.5', 9, X'0102')
+`)
+CTX.check(affinity-inserted.result.is-ok(), 'affinity values are inserted: ' - affinity-inserted.result.message)
+affinity-selected = run('SELECT typeof(i), typeof(r), typeof(t), typeof(b), hex(b) FROM affinity')
+affinity-selected.rows[0]: {
+    ok -> {
+        check-value(it.values[0], text('integer'), 'INTEGER affinity stores an integer')
+        check-value(it.values[1], text('real'), 'REAL affinity stores a real')
+        check-value(it.values[2], text('text'), 'TEXT affinity stores text')
+        check-value(it.values[3], text('blob'), 'BLOB literal remains a blob')
+        check-value(it.values[4], text('0102'), 'HEX preserves blob bytes')
+    }
+
+    -> CTX.check(false, 'affinity row must be present')
+}
+
+CTX.done()

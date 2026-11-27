@@ -1992,12 +1992,11 @@ func (c *codegen) emitBuiltinBoolToStr(inst *Inst) error {
 // `rows len: 0` after push). In that case we compute the GEP address of the
 // struct field directly, so the builtin mutates the struct in place.
 //
-// The logic mirrors emitCallBody's OpGetField GEP optimization (see codegen.go
-// around the "Exception: when the receiver is the result of OpGetField"
-// comment). Returns the slot string (may be a GEP register) and a bool
-// indicating whether a GEP was emitted (true) or the plain slot was used
-// (false).
-func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
+// Nested projections are resolved through lvalueAddrOf so a receiver such as
+// `state.scope.sources` is rooted at the original struct parameter rather than
+// at the temporary produced by the first field read. Returns the slot string
+// (may be a GEP register) and whether a GEP was emitted.
+func (c *codegen) resolveReceiverSlot(recv ValueID, use *Inst) (string, bool) {
 	slot := c.valSlot[recv]
 	if slot == "" {
 		return "", false
@@ -2013,8 +2012,8 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 	}
 	gfRecv := defInst.Args[0]
 	gfFieldName := defInst.Str
-	gfRecvSlot, ok2 := c.valSlot[gfRecv]
-	if !ok2 || gfRecvSlot == "" {
+	gfRecvSlot := c.valSlot[gfRecv]
+	if gfRecvSlot == "" {
 		return slot, false
 	}
 	// Resolve the struct type and field index, mirroring emitGetField's lookup.
@@ -2038,6 +2037,14 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 	}
 	if gfRecvLT == "" {
 		return slot, false
+	}
+	// The immediate receiver may itself be a field/index projection. Mutating
+	// its alloca would only update a by-value temporary; follow the complete
+	// lvalue chain when it preserves the receiver's storage layout.
+	if p, ptid, projected := c.lvalueAddrOf(gfRecv, use); projected && p != "" {
+		if pt := c.mod.Type(ptid); pt != nil && c.llvmTypeOf(pt) == gfRecvLT {
+			gfRecvSlot = p
+		}
 	}
 	// Strip option wrapper if needed (mirrors emitGetField).
 	if isOptionType(gfRecvLT) {
@@ -2126,7 +2133,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	}
 	recv := inst.Args[0]
 	elem := inst.Args[1]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("4m2w3mkd", "vec.push: no receiver slot")
 	}
@@ -2463,7 +2470,7 @@ func (c *codegen) emitBuiltinVecClear(inst *Inst) error {
 	if len(inst.Args) < 1 {
 		return i18n.Errorf("krvc469y", "vec.clear: needs receiver")
 	}
-	slot, _ := c.resolveReceiverSlot(inst.Args[0])
+	slot, _ := c.resolveReceiverSlot(inst.Args[0], inst)
 	if slot == "" {
 		return i18n.Errorf("meket0n4", "vec.clear: no receiver slot")
 	}
@@ -2484,7 +2491,7 @@ func (c *codegen) emitBuiltinStrClear(inst *Inst) error {
 	if len(inst.Args) < 1 {
 		return i18n.Errorf("4uv9dunu", "str.clear: needs receiver")
 	}
-	slot, _ := c.resolveReceiverSlot(inst.Args[0])
+	slot, _ := c.resolveReceiverSlot(inst.Args[0], inst)
 	if slot == "" {
 		return i18n.Errorf("5bj5o9ci", "str.clear: no receiver slot")
 	}
@@ -2508,7 +2515,7 @@ func (c *codegen) emitBuiltinArrZero(inst *Inst) error {
 		return i18n.Errorf("ihr1vm8m", "arr.zero: needs receiver")
 	}
 	recv := inst.Args[0]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("bp7m5374", "arr.zero: no receiver slot")
 	}
@@ -2566,7 +2573,7 @@ func (c *codegen) emitBuiltinVecTruncate(inst *Inst) error {
 		return nil
 	}
 	recv := inst.Args[0]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("26rmtbup", "vec.truncate: no receiver slot")
 	}
@@ -2595,7 +2602,7 @@ func (c *codegen) emitBuiltinVecPop(inst *Inst) error {
 		return i18n.Errorf("mimqybn2", "vec.pop: needs receiver")
 	}
 	recv := inst.Args[0]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("qew8n04j", "vec.pop: no receiver slot")
 	}
@@ -2640,7 +2647,7 @@ func (c *codegen) emitBuiltinVecReverse(inst *Inst) error {
 		return i18n.Errorf("m5fpbrwd", "vec.reverse: needs receiver")
 	}
 	recv := inst.Args[0]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("uwaizocg", "vec.reverse: no receiver slot")
 	}
@@ -2666,8 +2673,10 @@ func (c *codegen) emitBuiltinVecReverse(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("%s:\n", lHead))
 	iR := c.treg("rvi")
 	c.sb.WriteString(fmt.Sprintf("  %s = phi i64 [ 0, %%%s ], [ %s, %%%s ]\n", iR, lBody, iNext, lTail))
+	lenMinusOne := c.treg("rvl1")
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, 1\n", lenMinusOne, lenG))
 	jR := c.treg("rvj")
-	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s, 1\n", jR, lenG, iR))
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", jR, lenMinusOne, iR))
 	cmpI := c.treg("rvci")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", cmpI, iR, jR))
 	c.sb.WriteString(fmt.Sprintf("  br i1 %s, label %%%s, label %%%s\n", cmpI, lSwap, lDone))
@@ -2707,7 +2716,7 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 		return i18n.Errorf("al7nsvgl", "vec.insert: needs receiver, index, element")
 	}
 	recv := inst.Args[0]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("rtopy0mf", "vec.insert: no receiver slot")
 	}
@@ -2918,7 +2927,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 		return i18n.Errorf("64t1vgh6", "vec.remove: needs receiver, index")
 	}
 	recv := inst.Args[0]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("p1ujpxwi", "vec.remove: no receiver slot")
 	}
@@ -2968,7 +2977,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %s\n", bytes1, idxClamp2, stride))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", newBuf, srcPtr, bytes1))
 	restCount := c.treg("rmrc")
-	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s, 1\n", restCount, lenG, idxClamp2))
+	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", restCount, dec, idxClamp2))
 	restNeg := c.treg("rmrn")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp slt i64 %s, 0\n", restNeg, restCount))
 	restCountC := c.treg("rmrcc")
@@ -3007,7 +3016,7 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 		return i18n.Errorf("iykbgab6", "vec.sort: needs receiver")
 	}
 	recv := inst.Args[0]
-	slot, _ := c.resolveReceiverSlot(recv)
+	slot, _ := c.resolveReceiverSlot(recv, inst)
 	if slot == "" {
 		return i18n.Errorf("0coyzo4x", "vec.sort: no receiver slot")
 	}
@@ -4216,7 +4225,7 @@ func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
 	if len(inst.Args) < 2 {
 		return i18n.Errorf("h4vlfsi9", "str-truncate: needs receiver and n")
 	}
-	recvSlot, _ := c.resolveReceiverSlot(inst.Args[0])
+	recvSlot, _ := c.resolveReceiverSlot(inst.Args[0], inst)
 	if recvSlot == "" {
 		return i18n.Errorf("cpefnxwk", "str-truncate: receiver has no slot")
 	}

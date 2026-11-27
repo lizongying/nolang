@@ -1227,11 +1227,6 @@ byte is a distinct type rather than an alias of u8, so []byte.len is not instant
 []byte.slice: takes the sub-slice [start, end)
 Returns a new slice
 `
-  'bytes.to-str': `
-[]byte.to-str: 1:1 byte-wise copy (keeps the original []byte.to-str semantics).
-For scenarios where buf is already a legal UTF-8 byte stream (reading files / sub-process output); no per-codepoint re-encoding is needed.
-this function is equivalent to the old []byte.to-str.
-`
   'bytes.to-chars': `
 ⚠️ Compiler limitation: both the legacy and MIR backends currently have incomplete support for []char (i32 elements) slices
 (unlike []byte / []i64, []char's len/cap/stride have latent bugs in codegen,
@@ -1243,6 +1238,11 @@ if you only need the final byte→code-point→UTF-8 string result, just use b.t
   'bytes.to-hex-lower': '[]byte.to-hex-lower: encodes a []byte as a lowercase hexadecimal string'
   'bytes.to-i64-be': '[]byte.to-i64-be: converts big-endian bytes to an int64 (1 to 8 bytes)'
   'bytes.to-i64-le': '[]byte.to-i64-le: converts little-endian bytes to an int64 (1 to 8 bytes)'
+  'bytes.to-str': `
+[]byte.to-str: 1:1 byte-wise copy (keeps the original []byte.to-str semantics).
+For scenarios where buf is already a legal UTF-8 byte stream (reading files / sub-process output); no per-codepoint re-encoding is needed.
+this function is equivalent to the old []byte.to-str.
+`
   'bytes.to-txt': `
 []byte.to-txt: converts []byte to txt (truncated to 255 bytes)
 returns out: the fixed 256-byte txt struct

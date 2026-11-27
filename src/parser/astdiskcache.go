@@ -433,7 +433,16 @@ import (
 // 裡帶過 `<- ch: { ok -> r = it }`，會記成解析失敗後被丟掉的空 block，故必 bump。
 // 2026-11-24.1：Program 新增 SourcePath / ModulePath 兩個隱式註解，detProgram
 // 影子同步攜帶；gob 往返的樹比舊版多兩個欄位，舊 blob 不解碼新欄位，故必 bump。
-const ASTVersion = "2026-11-24.1"
+// 2026-11-27.1：prepareInferredTypes 現在綁定完整 Program，讓 fresh parse 與
+// CachedProgram 重建都能解析 self 欄位型別；舊 blob 的推斷事實可能仍缺這批
+// InferredType，重用會改變 option 算術與值位 match 的 HIR，故必 bump。
+// 2026-11-27.2：receiver 型別恢復收斂到 value-match subject 的可達依賴，且
+// AST replay 快取依接收者上下文分鍵；無關 self-field 算術不再取得推斷型別，
+// 舊 blob 重建會保留舊的過度推斷，故必 bump。
+// 2026-11-27.3：assignment RHS 上的 value match 也恢復 subject 依賴；欄位／
+// 索引目標此前沒有 LetStatement 觸發推斷，舊 blob 會把 `temp == ok` 重建成
+// 非 option match，故必 bump。
+const ASTVersion = "2026-11-27.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

@@ -1,0 +1,661 @@
+; Deterministic SELECT/VALUES execution: scans, predicates, grouping, aggregates,
+; DISTINCT, stable ordering, and LIMIT/OFFSET. Joins and CTEs remain explicit errors
+; until their planner/executor semantics are implemented.
+# /example/nosql/src/db
+# /example/nosql/src/expr
+# /example/nosql/src/ops
+# /example/nosql/src/analyzer
+# /example/nosql/src/error codes
+
+exec-group {
+    keys []sql-value
+    rows []db-row
+    representative db-row
+}
+
+exec-sort-row {
+    row db-row
+    keys []sql-value
+}
+
+memory-db.project-row = (context exec-context, list-id i64) (out db-row) {
+    out = empty-db-row()
+    work = context
+    list = .program.node(list-id)
+    i <- [0..list.kids.len()): {
+        projection-id = list.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        projection-id < 0 -> continue
+        projection = .program.node(projection-id)
+        expression = .program.node(projection.a)
+        {
+            expression.kind == sql-star -> {
+                j <- [0..work.sources.len()): {
+                    source = work.sources[j]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    expression.text != '' -> {
+                        same-name(expression.text, source.alias) == false -> {
+                            same-name(expression.text, base-name(source.table-name)) == false -> continue
+                        }
+                    }
+
+                    k <- [0..source.row.values.len()): {
+                        value = source.row.values[k]: {
+                            ok -> it
+
+                            -> sql-null
+                        }
+
+                        out.values.push(value)
+                    }
+                }
+            }
+
+            -> {
+                value = work.evaluate(projection.a)
+                work.error-message != '' -> {
+                    .result = make-result(codes.lookup-code('ERROR'), work.error-message)
+                    .result.sql-offset = expression.offset
+                    return
+                }
+
+                out.values.push(value)
+            }
+        }
+    }
+
+    work.sources.len() > 0 -> {
+        source = work.sources[0]: {
+            ok -> out.rowid = it.row.rowid
+
+            -> _
+        }
+    }
+}
+
+memory-db.returning-names = (table db-table, list-id i64) (names []str) {
+    list = .program.node(list-id)
+    i <- [0..list.kids.len()): {
+        projection-id = list.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        projection-id < 0 -> continue
+        projection = .program.node(projection-id)
+        expression = .program.node(projection.a)
+        {
+            expression.kind == sql-star -> {
+                j <- [0..table.columns.len()): {
+                    column = table.column(j)
+                    names.push(column.name)
+                }
+            }
+
+            -> {
+                name = projection.text
+                name == '' -> name = expression.text
+                name == '' -> name = 'expression'
+                names.push(name)
+            }
+        }
+    }
+}
+
+memory-db.append-returning = (table db-table, list-id i64, row db-row) {
+    list-id < 0 -> return
+    .names.len() == 0 -> .names = .returning-names(table, list-id)
+    context = new-exec-context(.program, .catalog)
+    alias = base-name(table.name)
+    context.add-source(table, alias, row)
+    context.parameters = .parameters
+    projected = .project-row(context, list-id)
+    .result.is-error() -> return
+    .rows.push(projected)
+}
+
+memory-db.compare-sort-keys = (left []sql-value, right []sql-value, order-node sql-node) (order i64) {
+    order = 0
+    i <- [0..left.len()): {
+        lv = left[i]: {
+            ok -> it
+
+            -> sql-null
+        }
+
+        rv = right[i]: {
+            ok -> it
+
+            -> sql-null
+        }
+
+        item-id = order-node.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        item = .program.node(item-id)
+        descending = item.flags & 1 == 1
+        {
+            lv.is-null() && rv.is-null() -> continue
+
+            lv.is-null() -> {
+                nulls-first = descending == false
+                item.flags & 2 == 2 -> nulls-first = true
+                item.flags & 4 == 4 -> nulls-first = false
+                nulls-first -> order = -1
+                nulls-first == false -> order = 1
+                return
+            }
+
+            rv.is-null() -> {
+                nulls-first = descending == false
+                item.flags & 2 == 2 -> nulls-first = true
+                item.flags & 4 == 4 -> nulls-first = false
+                nulls-first -> order = 1
+                nulls-first == false -> order = -1
+                return
+            }
+        }
+
+        order = compare(lv, rv)
+        descending -> {
+            negated ?i64 = 0 - order
+            negated: {
+                ok -> order = it
+
+                -> _
+            }
+        }
+
+        order != 0 -> return
+    }
+}
+
+memory-db.make-sort-row = (row db-row, context exec-context, order-id i64) (out exec-sort-row) {
+    out = exec-sort-row{
+        row: row
+        keys: []
+    }
+    order-id < 0 -> return
+    work = context
+    order-list = .program.node(order-id)
+    i <- [0..order-list.kids.len()): {
+        item-id = order-list.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        item-id < 0 -> continue
+        item = .program.node(item-id)
+        expression = .program.node(item.a)
+        {
+            expression.kind == sql-literal-integer -> {
+                ordinal = sql-integer(work.evaluate(item.a))
+                ordinal: {
+                    ok(number) -> {
+                        number >= 1 && number <= row.values.len() -> {
+                            value-index ?i64 = number - 1
+                            value-index: {
+                                ok(index) -> {
+                                    value = row.values[index]: {
+                                        ok -> it
+
+                                        -> sql-null
+                                    }
+
+                                    out.keys.push(value)
+                                }
+
+                                -> _
+                            }
+                        }
+                    }
+
+                    -> _
+                }
+            }
+
+            -> {
+                alias-index = -1
+                j <- [0.. .names.len()): {
+                    name = .names[j]: {
+                        ok -> it
+
+                        -> ''
+                    }
+
+                    same-name(name, expression.text) -> alias-index = j
+                }
+
+                alias-index >= 0 -> {
+                    value = row.values[alias-index]: {
+                        ok -> it
+
+                        -> sql-null
+                    }
+
+                    out.keys.push(value)
+                }
+
+                alias-index < 0 -> {
+                    value = work.evaluate(item.a)
+                    work.error-message != '' -> {
+                        .result = make-result(codes.lookup-code('ERROR'), work.error-message)
+                        .result.sql-offset = expression.offset
+                        return
+                    }
+
+                    out.keys.push(value)
+                }
+            }
+        }
+    }
+}
+
+memory-db.sort-rows = (items []exec-sort-row, order-id i64) (out []exec-sort-row) {
+    out = items
+    order-id < 0 -> return
+    order-node = .program.node(order-id)
+    i <- [1..out.len()): {
+        current = out[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        j = i - 1
+        (j >= 0) {
+            previous = out[j]: {
+                ok -> it
+
+                -> _
+            }
+
+            .compare-sort-keys(current.keys, previous.keys, order-node) >= 0 -> break
+            out[j + 1]: {
+                ok -> it = previous
+
+                -> _
+            }
+
+            j = j - 1
+        }
+
+        out[j + 1]: {
+            ok -> it = current
+
+            -> _
+        }
+    }
+}
+
+memory-db.execute-values = (node sql-node) {
+    list = .program.node(node.a)
+    .names = []
+    width = 0
+    i <- [0..list.kids.len()): {
+        row-id = list.kids[i]: {
+            ok -> it
+
+            -> -1
+        }
+
+        row-id < 0 -> continue
+        row-node = .program.node(row-id)
+        expressions = .program.node(row-node.a)
+        width = expressions.kids.len()
+        context = new-exec-context(.program, .catalog)
+        context.parameters = .parameters
+        row = empty-db-row()
+        j <- [0..expressions.kids.len()): {
+            expression-id = expressions.kids[j]: {
+                ok -> it
+
+                -> -1
+            }
+
+            value = context.evaluate(expression-id)
+            context.error-message != '' -> {
+                .result = make-result(codes.lookup-code('ERROR'), context.error-message)
+                return
+            }
+
+            row.values.push(value)
+            .names.len() <= j -> .names.push('column' - (j + 1).to-str())
+        }
+
+        node.flags & 1 == 1 -> {
+            duplicate = false
+            k <- [0.. .rows.len()): {
+                existing = .rows[k]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                sql-values-equal(row.values, existing.values) -> duplicate = true
+            }
+
+            duplicate == false -> .rows.push(row)
+        }
+
+        node.flags & 1 != 1 -> .rows.push(row)
+    }
+
+    width == 0 -> .fail('VALUES requires at least one row', node.offset)
+}
+
+memory-db.execute-select = (id i64) {
+    node = .program.node(id)
+    node.kind == sql-values -> {
+        .execute-values(node)
+        return
+    }
+
+    .program.child(id, 0) >= 0 -> {
+        .fail('CTE execution is not implemented yet', node.offset)
+        return
+    }
+
+    analyzer = new-sql-analyzer(.program, .catalog)
+    analyzer.reset-scope()
+    analyzer.analyze-select(id)
+    analyzer.has-error() -> {
+        .fail(analyzer.error-message, analyzer.error-offset)
+        return
+    }
+
+    .names = analyzer.output-names
+    from-id = .program.child(id, 2)
+    from-node = .program.node(from-id)
+    from-node.kind == sql-list -> from-node = .program.node(.program.child(from-id, 0))
+    from-node.kind == sql-join || from-node.kind == sql-list -> {
+        .fail('JOIN execution is not implemented yet', node.offset)
+        return
+    }
+
+    from-node.kind != sql-invalid && from-node.kind != sql-from-table -> {
+        .fail('invalid FROM clause', node.offset)
+        return
+    }
+
+    has-source = from-node.kind == sql-from-table
+    table = empty-db-table()
+    alias = ''
+    has-source -> {
+        table-index = .catalog.find-table(from-node.text)
+        table-index < 0 -> {
+            .fail('no such table: ' - from-node.text, node.offset)
+            return
+        }
+
+        table = .catalog.table(table-index)
+        alias = base-name(table.name)
+        from-node.a >= 0 -> alias = .program.node(from-node.a).text
+    }
+
+    base-context = new-exec-context(.program, .catalog)
+    base-context.parameters = .parameters
+    has-source -> base-context.add-source(table, alias, empty-db-row())
+    where-id = .program.child(id, 3)
+    filtered []db-row = []
+    {
+        has-source -> {
+            i <- [0..table.rows.len()): {
+                row = table.row(i)
+                context = base-context
+                context.set-row(0, row)
+                where-id >= 0 -> {
+                    value = context.evaluate(where-id)
+                    context.error-message != '' -> {
+                        .fail(context.error-message, .program.node(where-id).offset)
+                        return
+                    }
+
+                    value.to-truth() != sql-true -> continue
+                }
+
+                filtered.push(row)
+            }
+        }
+
+        -> filtered.push(empty-db-row())
+    }
+
+    group-id = .program.child(id, 4)
+    aggregate-query = analyzer.aggregate-found || group-id >= 0
+    sort-items []exec-sort-row = []
+    {
+        aggregate-query == false -> {
+            i <- [0..filtered.len()): {
+                row = filtered[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                context = base-context
+                context.set-row(0, row)
+                projected = .project-row(context, .program.child(id, 1))
+                .result.is-error() -> return
+                node.flags & 1 == 1 -> {
+                    duplicate = false
+                    j <- [0.. .rows.len()): {
+                        existing = .rows[j]: {
+                            ok -> it
+
+                            -> _
+                        }
+
+                        sql-values-equal(projected.values, existing.values) -> duplicate = true
+                    }
+
+                    duplicate -> continue
+                }
+
+                sort-items.push(.make-sort-row(projected, context, .program.child(id, 6)))
+                .result.is-error() -> return
+            }
+        }
+
+        aggregate-query -> {
+            groups []exec-group = []
+            {
+                group-id < 0 -> {
+                    representative = empty-db-row()
+                    filtered.len() > 0 -> {
+                        representative = filtered[0]: {
+                            ok -> it
+
+                            -> _
+                        }
+                    }
+
+                    groups.push(exec-group{
+                        keys: []
+                        rows: filtered
+                        representative: representative
+                    })
+                }
+
+                -> {
+                    group-node = .program.node(group-id)
+                    i <- [0..filtered.len()): {
+                        row = filtered[i]: {
+                            ok -> it
+
+                            -> _
+                        }
+
+                        context = base-context
+                        context.set-row(0, row)
+                        keys []sql-value = []
+                        j <- [0..group-node.kids.len()): {
+                            expression-id = group-node.kids[j]: {
+                                ok -> it
+
+                                -> -1
+                            }
+
+                            keys.push(context.evaluate(expression-id))
+                            context.error-message != '' -> {
+                                .fail(context.error-message, .program.node(expression-id).offset)
+                                return
+                            }
+                        }
+
+                        group-index = -1
+                        j <- [0..groups.len()): {
+                            group = groups[j]: {
+                                ok -> it
+
+                                -> _
+                            }
+
+                            sql-values-equal(keys, group.keys) -> group-index = j
+                        }
+
+                        group-index < 0 -> {
+                            groups.push(exec-group{
+                                keys: keys
+                                rows: [row]
+                                representative: row
+                            })
+                        }
+
+                        group-index >= 0 -> {
+                            group = groups[group-index]: {
+                                ok -> it
+
+                                -> _
+                            }
+
+                            group.rows.push(row)
+                            groups[group-index]: {
+                                ok -> it = group
+
+                                -> _
+                            }
+                        }
+                    }
+                }
+            }
+
+            having-id = .program.child(id, 5)
+            i <- [0..groups.len()): {
+                group = groups[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                context = base-context
+                context.set-row(0, group.representative)
+                context.has-aggregate = true
+                context.aggregate-rows = group.rows
+                having-id >= 0 -> {
+                    value = context.evaluate(having-id)
+                    context.error-message != '' -> {
+                        .fail(context.error-message, .program.node(having-id).offset)
+                        return
+                    }
+
+                    value.to-truth() != sql-true -> continue
+                }
+
+                projected = .project-row(context, .program.child(id, 1))
+                .result.is-error() -> return
+                node.flags & 1 == 1 -> {
+                    duplicate = false
+                    j <- [0.. .rows.len()): {
+                        existing = .rows[j]: {
+                            ok -> it
+
+                            -> _
+                        }
+
+                        sql-values-equal(projected.values, existing.values) -> duplicate = true
+                    }
+
+                    duplicate -> continue
+                }
+
+                sort-items.push(.make-sort-row(projected, context, .program.child(id, 6)))
+                .result.is-error() -> return
+            }
+        }
+    }
+
+    sort-items = .sort-rows(sort-items, .program.child(id, 6))
+    limit = -1
+    offset = 0
+    limit-id = .program.child(id, 7)
+    limit-id >= 0 -> {
+        context = base-context
+        value = context.evaluate(limit-id)
+        context.error-message != '' -> {
+            .fail(context.error-message, .program.node(limit-id).offset)
+            return
+        }
+
+        number = sql-integer(value)
+        number: {
+            ok(n) -> limit = n
+
+            -> .fail('datatype mismatch', .program.node(limit-id).offset)
+        }
+    }
+
+    offset-id = .program.child(id, 8)
+    offset-id >= 0 -> {
+        context = base-context
+        value = context.evaluate(offset-id)
+        context.error-message != '' -> {
+            .fail(context.error-message, .program.node(offset-id).offset)
+            return
+        }
+
+        number = sql-integer(value)
+        number: {
+            ok(n) -> {
+                n > 0 -> offset = n
+            }
+
+            -> .fail('datatype mismatch', .program.node(offset-id).offset)
+        }
+    }
+
+    i <- [0..sort-items.len()): {
+        i < offset -> continue
+        remaining ?i64 = i - offset
+        remaining: {
+            ok(count) -> {
+                limit >= 0 && count >= limit -> break
+            }
+
+            -> _
+        }
+
+        item = sort-items[i]
+        item: {
+            ok(found) -> {
+                row = found.row
+                .rows.push(row)
+            }
+
+            -> _
+        }
+    }
+}
