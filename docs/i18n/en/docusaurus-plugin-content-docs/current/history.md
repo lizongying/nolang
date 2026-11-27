@@ -6,6 +6,13 @@ sidebar_position: 2
 
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
+## v0.4.40
+
+- fix(wasm): keep scalar nil literal comparisons live so playground option-match arm fires
+- fix(mir): select target-specific flock lock types for raw POSIX range locks
+- test(wasm): pin scalar option nil arm emission for the direct-WASM backend
+- test(mir): assert raw POSIX lock constants across Linux and Darwin targets
+
 ## v0.4.39
 
 - feat(parser): support tagged-enum matches on safe-index subjects with an outer ok guard, payload arm bindings and a wildcard fallback

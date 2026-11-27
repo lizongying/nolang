@@ -745,23 +745,33 @@ func (g *Generator) emitInfix(sb *bytes.Buffer, ie *parser.InfixExpression) ValT
 				g.emitRawOptionTagCompare(sb, ie.Left, tag, op == "!=")
 				return I32
 			}
-			// match 的 tag 探測（`__match_subj == ok` / `== nil` / `== err`）。
-			// 見 optionTagLiteral 的註解：此後端沒有 option 表示，只有成功路徑，
-			// 必須常量折疊，否則 `x == ok` 會退化成 `x == 0` 而永遠走兜底臂。
-			if vt := g.emitExpr(sb, ie.Left); vt != Void {
-				sb.WriteByte(OpDrop) // 只為可能的副作用求值
+			// A bare NilLiteral is not a statically-false variant tag here:
+			// legacy scalar options have no tag at all, so `r = nil` simply
+			// stores 0 and `r == nil` must fall through to the normal numeric
+			// comparison. v0.4.38 started recognising NilLiteral in
+			// optionTagLiteral for raw VFS tag compares; without this guard
+			// that also folded legacy `x == nil` to false, making every
+			// `nil ->` match arm dead (playground demo option-match).
+			// Identifier-form ok/nil/err still use the fold below.
+			if _, isNilLiteral := ie.Right.(*parser.NilLiteral); !isNilLiteral {
+				// match 的 tag 探測（`__match_subj == ok` / `== nil` / `== err`）。
+				// 見 optionTagLiteral 的註解：此後端沒有 option 表示，只有成功路徑，
+				// 必須常量折疊，否則 `x == ok` 會退化成 `x == 0` 而永遠走兜底臂。
+				if vt := g.emitExpr(sb, ie.Left); vt != Void {
+					sb.WriteByte(OpDrop) // 只為可能的副作用求值
+				}
+				hit := tag == "ok"
+				if op == "!=" {
+					hit = !hit
+				}
+				sb.WriteByte(OpI32Const)
+				if hit {
+					writeSLEB(sb, 1)
+				} else {
+					writeSLEB(sb, 0)
+				}
+				return I32
 			}
-			hit := tag == "ok"
-			if op == "!=" {
-				hit = !hit
-			}
-			sb.WriteByte(OpI32Const)
-			if hit {
-				writeSLEB(sb, 1)
-			} else {
-				writeSLEB(sb, 0)
-			}
-			return I32
 		}
 		g.emitExpr(sb, ie.Left)
 		g.emitExpr(sb, ie.Right)

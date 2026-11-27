@@ -1,5 +1,12 @@
 # 更新日誌
 
+## v0.4.40
+
+- fix(wasm): keep scalar nil literal comparisons live so playground option-match arm fires
+- fix(mir): select target-specific flock lock types for raw POSIX range locks
+- test(wasm): pin scalar option nil arm emission for the direct-WASM backend
+- test(mir): assert raw POSIX lock constants across Linux and Darwin targets
+
 ## v0.4.39
 
 - feat(parser): support tagged-enum matches on safe-index subjects with an outer ok guard, payload arm bindings and a wildcard fallback

@@ -94,6 +94,34 @@ func TestValueMatchArmChainStaysValid(t *testing.T) {
 	}
 }
 
+// TestNilArmStaysLiveForScalarOption pins the scalar-option `nil ->` arm that
+// the playground `option-match` demo depends on. Commit 50b900c6 (v0.4.38)
+// taught optionTagLiteral about *parser.NilLiteral so raw VFS options could
+// compare their real tag, but the same recognition also folded legacy scalar
+// `x == nil` to a constant false: `r = nil` stores 0 into an i64 local, yet
+// the match probe never fired. A scalar NilLiteral must therefore fall through
+// to the normal numeric comparison (see emitInfix in codegen.go).
+func TestNilArmStaysLiveForScalarOption(t *testing.T) {
+	const src = "safe-div = (a i64, b i64) (r ?i64) {\n" +
+		"    b == 0 -> {\n" +
+		"        r = nil\n" +
+		"        return\n" +
+		"    }\n" +
+		"    r = a / b\n" +
+		"}\n" +
+		"d = safe-div(10, 0)\n" +
+		"d: {\n" +
+		"    nil -> print('undefined')\n" +
+		"    -> print('wrong: {it}')\n" +
+		"}\n"
+
+	mod := parseAndGenerate(t, src)
+	validateWithWasmTools(t, mod)
+	if out, ok := runWithWasmtime(t, mod); ok && !strings.Contains(out, "undefined") {
+		t.Errorf("stdout = %q, want %q (scalar nil tag probe must not fold to false)", out, "undefined")
+	}
+}
+
 func TestValueMatchFieldTargetStores(t *testing.T) {
 	// `self.n = <value match>`: the address and the arm result go through
 	// temporaries, then one store. Before the fix this emitted a store with

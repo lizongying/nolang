@@ -31,9 +31,16 @@ func rawPOSIXSupportIR() string {
 	}
 	oCreate, oExcl, oTrunc, oDirectory := int64(512), int64(2048), int64(1024), int64(0x100000)
 	setlk, setlkw := int64(8), int64(9)
+	// F_RDLCK / F_WRLCK / F_UNLCK are OS-specific. They are NOT the same
+	// across Darwin and Linux: the old code hard-coded Darwin's values, so on
+	// Linux F_SETLK with type 3 (Darwin F_WRLCK) was EINVAL and every exclusive
+	// range lock failed. Keep them alongside the FLOCK layout constants above,
+	// which are already selected per target.
+	rdlck, wrlck, unlck := int64(1), int64(3), int64(2) // Darwin: F_RDLCK=1, F_WRLCK=3, F_UNLCK=2
 	if targetGOOS() == "linux" {
 		oCreate, oExcl, oTrunc, oDirectory = 64, 128, 512, 0x10000
 		setlk, setlkw = 6, 7
+		rdlck, wrlck, unlck = 0, 1, 2 // Linux: F_RDLCK=0, F_WRLCK=1, F_UNLCK=2
 	}
 	r := strings.NewReplacer(
 		"@ERRNO@", "@"+errnoFnNameForRawTarget(),
@@ -43,6 +50,9 @@ func rawPOSIXSupportIR() string {
 		"@O_DIRECTORY@", fmt.Sprint(oDirectory),
 		"@FCNTL_SETLK@", fmt.Sprint(setlk),
 		"@FCNTL_SETLKW@", fmt.Sprint(setlkw),
+		"@FLOCK_RDLCK@", fmt.Sprint(rdlck),
+		"@FLOCK_WRLCK@", fmt.Sprint(wrlck),
+		"@FLOCK_UNLCK@", fmt.Sprint(unlck),
 		"@STAT_SIZE@", fmt.Sprint(st.Size),
 		"@STAT_SIZE_OFF@", fmt.Sprint(st.SizeOff),
 		"@FLOCK_SIZE@", fmt.Sprint(flockSize),
@@ -341,7 +351,7 @@ einval:
   call void @nolang.raw_posix_errno(i32 22)
   ret i32 -1
 lock:
-  %type = select i1 %exclusive, i32 3, i32 1
+  %type = select i1 %exclusive, i32 @FLOCK_WRLCK@, i32 @FLOCK_RDLCK@
   %buf = alloca [@FLOCK_SIZE@ x i8], align 8
   %p = bitcast [@FLOCK_SIZE@ x i8]* %buf to i8*
   call void @llvm.memset.p0i8.i64(i8* %p, i8 0, i64 @FLOCK_SIZE@, i1 false)
@@ -369,7 +379,7 @@ unlock:
   %buf = alloca [@FLOCK_SIZE@ x i8], align 8
   %p = bitcast [@FLOCK_SIZE@ x i8]* %buf to i8*
   call void @llvm.memset.p0i8.i64(i8* %p, i8 0, i64 @FLOCK_SIZE@, i1 false)
-  call void @nolang.raw_posix_set_flock(i8* %p, i64 %start, i64 %length, i32 2)
+  call void @nolang.raw_posix_set_flock(i8* %p, i64 %start, i64 %length, i32 @FLOCK_UNLCK@)
   %fd = trunc i64 %handle to i32
   %r = call i32 (i32, i32, ...) @fcntl(i32 %fd, i32 @FCNTL_SETLK@, i8* %p)
   ret i32 %r

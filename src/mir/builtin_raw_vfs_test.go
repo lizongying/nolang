@@ -64,11 +64,12 @@ func TestRawPOSIXSupportUsesTargetConstantsAndLayouts(t *testing.T) {
 		typeOff, whenceOff  int64
 		startOff, lengthOff int64
 		setlk, setlkw       int64
+		rdlck, wrlck, unlck int64
 	}{
-		{"linux", "amd64", 64, 128, 512, 0x10000, 32, 0, 2, 8, 16, 6, 7},
-		{"linux", "arm64", 64, 128, 512, 0x10000, 32, 0, 2, 8, 16, 6, 7},
-		{"darwin", "amd64", 512, 2048, 1024, 0x100000, 24, 20, 22, 0, 8, 8, 9},
-		{"darwin", "arm64", 512, 2048, 1024, 0x100000, 24, 20, 22, 0, 8, 8, 9},
+		{"linux", "amd64", 64, 128, 512, 0x10000, 32, 0, 2, 8, 16, 6, 7, 0, 1, 2},
+		{"linux", "arm64", 64, 128, 512, 0x10000, 32, 0, 2, 8, 16, 6, 7, 0, 1, 2},
+		{"darwin", "amd64", 512, 2048, 1024, 0x100000, 24, 20, 22, 0, 8, 8, 9, 1, 3, 2},
+		{"darwin", "arm64", 512, 2048, 1024, 0x100000, 24, 20, 22, 0, 8, 8, 9, 1, 3, 2},
 	}
 	for _, tc := range cases {
 		withTarget(t, tc.goos, tc.goarch)
@@ -97,6 +98,11 @@ func TestRawPOSIXSupportUsesTargetConstantsAndLayouts(t *testing.T) {
 			"call i64 @pwrite(i32 %fd, i8* %data, i64 %count, i64 %offset)",
 			"%cmd = select i1 %nonblocking, i32 " + itoa(int(tc.setlk)) + ", i32 " + itoa(int(tc.setlkw)),
 			"call i32 (i32, i32, ...) @fcntl(i32 %fd, i32 " + itoa(int(tc.setlk)) + ", i8* %p)",
+			// Lock types are OS-specific. Darwin F_WRLCK=3 is invalid on
+			// Linux (F_WRLCK=1) — reusing it silently broke every exclusive
+			// range lock in the Linux CI (fs.raw-range-locks / xproc-locks).
+			"%type = select i1 %exclusive, i32 " + itoa(int(tc.wrlck)) + ", i32 " + itoa(int(tc.rdlck)),
+			"i32 " + itoa(int(tc.unlck)) + ")\n", // raw_unlock_range -> F_UNLCK
 		} {
 			if !strings.Contains(ir, want) {
 				t.Errorf("%s/%s raw POSIX IR missing %q", tc.goos, tc.goarch, want)
